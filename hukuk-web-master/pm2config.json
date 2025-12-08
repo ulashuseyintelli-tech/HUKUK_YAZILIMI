@@ -1,0 +1,12 @@
+{
+	"apps": [
+		{
+			"name": "hukuk-web",
+			"script": "./server.js",
+			"env": {
+				"NODE_ENV": "production",
+				"PORT": "3030"
+			}
+		}
+	]
+}

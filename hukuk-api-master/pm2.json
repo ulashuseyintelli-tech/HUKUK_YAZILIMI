@@ -1,0 +1,12 @@
+{
+  "apps": [
+    {
+      "name": "hukuk-api",
+      "script": "./app.js",
+      "env": {
+        "NODE_ENV": "production",
+        "PORT": "8081"
+      }
+    }
+  ]
+}

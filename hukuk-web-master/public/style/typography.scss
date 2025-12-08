@@ -1,0 +1,94 @@
+@font-face {
+	font-family: 'MyriadPro';
+	src: url('../fonts/Proxima\ Nova\ Thin.otf');
+	font-weight: 400;
+}
+@font-face {
+	font-family: 'MyriadPro';
+	src: url('../fonts/Proxima\ Nova\ Bold.otf');
+	font-weight: 500;
+}
+@font-face {
+	font-family: 'MyriadPro';
+	src: url('../fonts/Proxima\ Nova\ Bold.otf');
+	font-weight: bold;
+}
+@font-face {
+	font-family: 'MyriadPro';
+	src: url('../fonts/Proxima\ Nova\ Extrabold.otf');
+	font-weight: 800;
+}
+// @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;700&display=swap');
+// @import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+
+* {
+	// font-family: 'Roboto', sans-serif;
+	font-family: 'Poppins', sans-serif;
+}
+
+.fs-xxsm {
+	font-size: 8px;
+}
+.fs-xsm {
+	font-size: 0.75rem;
+}
+.fs-sm {
+	font-size: 0.9rem;
+}
+.fs-nm {
+	font-size: 1rem;
+}
+.fs-md {
+	font-size: 1.1rem;
+}
+.fs-lg {
+	font-size: 1.25rem;
+}
+.fs-xl {
+	font-size: 1.5rem !important;
+}
+.fs-xxl {
+	font-size: 2rem;
+}
+.fs-head {
+	font-size: 3rem;
+}
+
+.bold {
+	font-weight: bold;
+}
+.italic {
+	font-style: italic;
+}
+.underline {
+	text-decoration: underline;
+}
+.lthrough {
+	text-decoration: line-through;
+}
+.ta-center {
+	text-align: center;
+}
+.ta-left {
+	text-align: left;
+}
+.ta-right {
+	text-align: right;
+}
+
+.fw-300 {
+	font-weight: 300;
+}
+.fw-400 {
+	font-weight: 400;
+}
+.fw-500 {
+	font-weight: 500;
+}
+.fw-600 {
+	font-weight: 600;
+}
+.fw-700 {
+	font-weight: 700;
+}

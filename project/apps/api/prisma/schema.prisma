@@ -1,0 +1,340 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ==================== TENANT & AUTH ====================
+
+model Tenant {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  plan      Plan     @default(FREE)
+  settings  Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users       User[]
+  cases       Case[]
+  debtors     Debtor[]
+  clients     Client[]
+  tasks       Task[]
+  courts      Court[]
+  collections Collection[]
+  lawyers     Lawyer[]
+
+  @@index([slug])
+}
+
+model User {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  email        String
+  passwordHash String
+  name         String
+  surname      String
+  role         UserRole @default(USER)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  assignedTasks Task[] @relation("AssignedTasks")
+  createdTasks  Task[] @relation("CreatedTasks")
+
+  @@unique([tenantId, email])
+  @@index([tenantId])
+}
+
+// ==================== CORE MODELS ====================
+
+model Client {
+  id           String     @id @default(cuid())
+  tenantId     String
+  tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  type         ClientType
+  name         String
+  identityNo   String? // TC veya Vergi No
+  taxOffice    String?
+  email        String?
+  phone        String?
+  address      Json?
+  notes        String?
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  cases Case[]
+
+  @@index([tenantId])
+  @@index([tenantId, identityNo])
+}
+
+model Debtor {
+  id         String     @id @default(cuid())
+  tenantId   String
+  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  type       DebtorType
+  name       String
+  identityNo String? // TC veya Vergi No
+  taxOffice  String?
+  email      String?
+  phone      String?
+  addresses  Json?
+  notes      String?
+  createdAt  DateTime   @default(now())
+  updatedAt  DateTime   @updatedAt
+
+  caseDebtors CaseDebtor[]
+  assets      Asset[]
+
+  @@index([tenantId])
+  @@index([tenantId, identityNo])
+}
+
+model Case {
+  id                  String     @id @default(cuid())
+  tenantId            String
+  tenant              Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  fileNumber          String
+  executionFileNumber String?
+  type                CaseType
+  subType             String?    // Alt takip tipi (GENEL, vs.)
+  status              CaseStatus @default(ACTIVE)
+  clientId            String?
+  client              Client?    @relation(fields: [clientId], references: [id])
+  courtId             String?
+  court               Court?     @relation(fields: [courtId], references: [id])
+  principalAmount     Decimal?   @db.Decimal(15, 2)
+  interestRate        Decimal?   @db.Decimal(5, 2)
+  startDate           DateTime?
+  notes               String?
+  metadata            Json?
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+
+  debtors     CaseDebtor[]
+  lawyers     CaseLawyer[]
+  tasks       Task[]
+  collections Collection[]
+  dues        Due[]
+
+  @@unique([tenantId, fileNumber])
+  @@index([tenantId, status])
+  @@index([tenantId, createdAt])
+}
+
+model CaseDebtor {
+  id        String   @id @default(cuid())
+  caseId    String
+  case      Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  debtorId  String
+  debtor    Debtor   @relation(fields: [debtorId], references: [id], onDelete: Cascade)
+  role      String   @default("DEBTOR") // DEBTOR, GUARANTOR, etc.
+  createdAt DateTime @default(now())
+
+  @@unique([caseId, debtorId])
+}
+
+model Due {
+  id          String   @id @default(cuid())
+  caseId      String
+  case        Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  type        DueType
+  description String?
+  amount      Decimal  @db.Decimal(15, 2)
+  dueDate     DateTime
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([caseId])
+}
+
+model Asset {
+  id          String    @id @default(cuid())
+  debtorId    String
+  debtor      Debtor    @relation(fields: [debtorId], references: [id], onDelete: Cascade)
+  type        AssetType
+  description String
+  value       Decimal?  @db.Decimal(15, 2)
+  details     Json?
+  status      String    @default("ACTIVE")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([debtorId])
+}
+
+model Task {
+  id           String     @id @default(cuid())
+  tenantId     String
+  tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  caseId       String?
+  case         Case?      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  title        String
+  description  String?
+  status       TaskStatus @default(PENDING)
+  priority     Priority   @default(MEDIUM)
+  dueDate      DateTime?
+  assigneeId   String?
+  assignee     User?      @relation("AssignedTasks", fields: [assigneeId], references: [id])
+  createdById  String?
+  createdBy    User?      @relation("CreatedTasks", fields: [createdById], references: [id])
+  completedAt  DateTime?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([tenantId, status])
+  @@index([tenantId, dueDate])
+  @@index([assigneeId])
+}
+
+model Court {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name      String
+  city      String
+  type      String?
+  address   String?
+  phone     String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  cases Case[]
+
+  @@index([tenantId])
+}
+
+model Lawyer {
+  id           String   @id @default(cuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name         String
+  surname      String
+  barNumber    String?  // Baro sicil no
+  barName      String?  // Baro adı
+  identityNo   String?  // TC Kimlik No
+  email        String?
+  phone        String?
+  address      String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  caseLawyers CaseLawyer[]
+
+  @@index([tenantId])
+}
+
+model CaseLawyer {
+  id          String   @id @default(cuid())
+  caseId      String
+  case        Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  lawyerId    String
+  lawyer      Lawyer   @relation(fields: [lawyerId], references: [id], onDelete: Cascade)
+  canSign     Boolean  @default(false) // İmza yetkisi
+  createdAt   DateTime @default(now())
+
+  @@unique([caseId, lawyerId])
+}
+
+model Collection {
+  id          String          @id @default(cuid())
+  tenantId    String
+  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  caseId      String
+  case        Case            @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  amount      Decimal         @db.Decimal(15, 2)
+  type        CollectionType
+  date        DateTime
+  description String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([tenantId])
+  @@index([caseId])
+}
+
+// ==================== ENUMS ====================
+
+enum Plan {
+  FREE
+  PRO
+  ENTERPRISE
+}
+
+enum UserRole {
+  ADMIN
+  USER
+  VIEWER
+}
+
+enum ClientType {
+  INDIVIDUAL
+  COMPANY
+}
+
+enum DebtorType {
+  INDIVIDUAL
+  COMPANY
+}
+
+enum CaseType {
+  GENERAL_EXECUTION
+  MORTGAGE
+  PLEDGE
+  BANKRUPTCY
+  CHECK
+  BOND
+  RENTAL
+  OTHER
+}
+
+enum CaseStatus {
+  ACTIVE
+  CLOSED
+  SUSPENDED
+  ARCHIVED
+}
+
+enum DueType {
+  PRINCIPAL
+  INTEREST
+  EXPENSE
+  OTHER
+}
+
+enum AssetType {
+  VEHICLE
+  IMMOVABLE
+  BANK_ACCOUNT
+  SALARY
+  SHARE
+  OTHER
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum CollectionType {
+  CASH
+  BANK_TRANSFER
+  CHECK
+  OTHER
+}
