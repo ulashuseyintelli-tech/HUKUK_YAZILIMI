@@ -133,7 +133,7 @@ cd docker
 docker-compose up -d postgres redis
 ```
 
-### 2. Environment ve Şema
+### 2. Environment ve Şema 
 
 ```bash
 cp apps/api/.env.example apps/api/.env
