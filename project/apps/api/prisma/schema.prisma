@@ -18,16 +18,36 @@ model Tenant {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  users       User[]
-  cases       Case[]
-  debtors     Debtor[]
-  clients     Client[]
-  tasks       Task[]
-  courts      Court[]
-  collections Collection[]
-  lawyers     Lawyer[]
+  users              User[]
+  cases              Case[]
+  debtors            Debtor[]
+  clients            Client[]
+  tasks              Task[]
+  courts             Court[]
+  collections        Collection[]
+  lawyers            Lawyer[]
+  workflowTemplates  WorkflowTemplate[]
+  executionOffices   ExecutionOffice[]
 
   @@index([slug])
+}
+
+model WorkflowTemplate {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  code        String
+  name        String
+  description String?
+  formTypeCode String?
+  steps       Json
+  triggers    Json?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
 }
 
 model User {
@@ -45,9 +65,39 @@ model User {
 
   assignedTasks Task[] @relation("AssignedTasks")
   createdTasks  Task[] @relation("CreatedTasks")
+  statusChanges CaseStatusHistory[] @relation("StatusChangedBy")
 
   @@unique([tenantId, email])
   @@index([tenantId])
+}
+
+// ==================== İCRA DAİRESİ ====================
+
+model ExecutionOffice {
+  id          String   @id @default(cuid())
+  tenantId    String
+  tenant      Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  name        String   // İstanbul 5. İcra Dairesi
+  city        String   // İstanbul
+  district    String?  // Kadıköy
+  officeCode  String?  // Daire kodu
+  uyapCode    String?  // UYAP kodu
+  taxNumber   String?  // Vergi numarası
+  bankName    String?  // Banka adı
+  branchName  String?  // Şube adı
+  iban        String?  // IBAN
+  address     String?
+  phone       String?
+  fax         String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  cases       Case[]
+
+  @@index([tenantId])
+  @@index([city])
+  @@index([uyapCode])
 }
 
 // ==================== CORE MODELS ====================
@@ -58,7 +108,7 @@ model Client {
   tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   type         ClientType
   name         String
-  identityNo   String? // TC veya Vergi No
+  identityNo   String?
   taxOffice    String?
   email        String?
   phone        String?
@@ -80,7 +130,7 @@ model Debtor {
   tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   type       DebtorType
   name       String
-  identityNo String? // TC veya Vergi No
+  identityNo String?
   taxOffice  String?
   email      String?
   phone      String?
@@ -96,37 +146,192 @@ model Debtor {
   @@index([tenantId, identityNo])
 }
 
+
+// ==================== CASE (TAKİP) - GENİŞLETİLMİŞ ====================
+
 model Case {
-  id                  String     @id @default(cuid())
+  id                  String        @id @default(cuid())
   tenantId            String
-  tenant              Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  fileNumber          String
-  executionFileNumber String?
-  type                CaseType
-  subType             String?    // Alt takip tipi (GENEL, vs.)
-  status              CaseStatus @default(ACTIVE)
+  tenant              Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  // Temel Bilgiler
+  fileNumber          String        // Büro dosya no
+  executionFileNumber String?       // İcra dosya no (2024/12345)
+  
+  // Takip Tipi ve Form (A.1)
+  type                CaseType      // Takip türü enum
+  formTypeId          String?       // Form tipi referansı
+  formType            FormType?     @relation("CaseFormType", fields: [formTypeId], references: [id])
+  
+  // Takip Yolu (A.2)
+  executionPath       ExecutionPath @default(HACIZ) // HACIZ, IFLAS, REHIN
+  
+  // Alt Takip Türü (A.7)
+  subType             String?       // GENEL, KAMBIYO, vs.
+  
+  // Alt Kategori - UYAP Uyumlu (Genel/Nafaka/Döviz)
+  subCategory         CaseSubCategory @default(GENEL)
+  
+  // Para Birimi
+  currency            Currency      @default(TRY)
+  
+  // MTS (Merkezi Takip Sistemi) Dosyası mı?
+  isMtsCase           Boolean       @default(false)
+  mtsReferenceNo      String?       // MTS referans numarası
+  mtsReturnDate       DateTime?     // MTS'den icra takibine dönüş tarihi
+  
+  // Faiz Bilgileri
+  interestType        InterestType  @default(YASAL)
+  interestStartDate   DateTime?     // Faiz başlangıç tarihi
+  interestDescription String?       // Faiz açıklaması (şablonlar için)
+  
+  // Döviz Alacağı Bilgileri
+  exchangeDate        DateTime?     // Kur tarihi (döviz alacağı için)
+  exchangeRateType    String?       // "TAKIP_TARIHI" veya "ODEME_TARIHI"
+  
+  // Nafaka Bilgileri
+  nafakaStartDate     DateTime?     // Nafaka başlangıç tarihi
+  monthlyNafakaAmount Decimal?      @db.Decimal(15, 2) // Aylık nafaka tutarı
+  
+  // Takip Tarihi (A.3) - Zorunlu
+  caseDate            DateTime      @default(now()) // Takip başlangıç tarihi
+  
+  // İcra Dairesi (A.5)
+  executionOfficeId   String?
+  executionOffice     ExecutionOffice? @relation(fields: [executionOfficeId], references: [id])
+  
+  // UYAP Bilgileri (A.6)
+  uyapDosyaId         String?       // UYAP dosya ID
+  uyapBirimKodu       String?       // UYAP birim kodu
+  hasUyapWarning      Boolean       @default(false) // UYAP kodu eksik uyarısı
+  
+  // Statü Sistemi (B.13-16)
+  caseStatus          LegalCaseStatus @default(DERDEST)
+  
+  // 4. Madde Talep (A.8)
+  hasArticle4Request  Boolean       @default(false) // Takip talebi var mı?
+  article4RequestDate DateTime?     // Takip talebi tarihi
+  
+  // Dosya Yönetim Flag'leri (A.9)
+  isArchived          Boolean       @default(false) // Arşiv dosyası
+  showToClient        Boolean       @default(true)  // Müvekkile göster
+  allowUyapActions    Boolean       @default(true)  // UYAP'ta işlem yap
+  
+  // Otomasyon Ayarları (A.10-11)
+  isAutomationEnabled Boolean       @default(true)  // Otomasyon açık/kapalı
+  nextAutoAction      String?       // Sıradaki otomatik işlem
+  automationConfig    Json?         // Otomasyon ayarları detayı
+  
+  // Gün Sayacı (A.4)
+  daysLeft            Int?          // Kalan gün sayısı
+  nextActionAt        DateTime?     // Sonraki işlem zamanı
+  
+  // Risk Skoru (A.12)
+  riskScore           Int?          // 0-100 arası risk skoru
+  
+  // Workflow
+  workflowStage       WorkflowStage @default(INITIAL)
+  
+  // Eski alanlar (geriye uyumluluk)
+  status              CaseStatus    @default(ACTIVE)
   clientId            String?
-  client              Client?    @relation(fields: [clientId], references: [id])
+  client              Client?       @relation(fields: [clientId], references: [id])
   courtId             String?
-  court               Court?     @relation(fields: [courtId], references: [id])
-  principalAmount     Decimal?   @db.Decimal(15, 2)
-  interestRate        Decimal?   @db.Decimal(5, 2)
+  court               Court?        @relation(fields: [courtId], references: [id])
+  principalAmount     Decimal?      @db.Decimal(15, 2)
+  interestRate        Decimal?      @db.Decimal(5, 2)
   startDate           DateTime?
   notes               String?
   metadata            Json?
-  createdAt           DateTime   @default(now())
-  updatedAt           DateTime   @updatedAt
+  
+  // Otomasyon tracking
+  isAutoMode          Boolean       @default(false)
+  autoActionsCount    Int           @default(0)
+  lastAutoActionAt    DateTime?
+  
+  // OCR / Belge Tarama Bilgileri
+  preDetectedCaseType   String?       // AI/rule tahmini (ILAMLI, KAMBIYO, vs.)
+  preDetectedSubCategory String?      // Alt kategori tahmini (GENEL, NAFAKA, DOVIZ)
+  ocrText               String?       // OCR'dan çıkarılan metin (ilk 2000 karakter)
+  isAutoDetected        Boolean       @default(false) // Otomatik tespit edildi mi
+  confidenceScore       Int?          // Güven skoru (0-100)
+  sourceDocumentId      String?       // Kaynak belge ID (CaseDocument referansı)
+  detectionKeywords     Json?         // Tespit edilen anahtar kelimeler
+  
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 
-  debtors     CaseDebtor[]
-  lawyers     CaseLawyer[]
-  tasks       Task[]
-  collections Collection[]
-  dues        Due[]
+  // İlişkiler
+  debtors             CaseDebtor[]
+  lawyers             CaseLawyer[]
+  tasks               Task[]
+  collections         Collection[]
+  dues                Due[]
+  lifecycleEvents     CaseLifecycle[]
+  enforcementActions  EnforcementAction[]
+  decisionLogs        DecisionLog[]
+  notifications       NotificationQueue[]
+  riskReports         RiskReport[]
+  statusHistory       CaseStatusHistory[]
+  documents           CaseDocument[]
 
   @@unique([tenantId, fileNumber])
   @@index([tenantId, status])
+  @@index([tenantId, caseStatus])
   @@index([tenantId, createdAt])
+  @@index([formTypeId])
+  @@index([workflowStage])
+  @@index([nextActionAt])
+  @@index([executionOfficeId])
+  @@index([isAutomationEnabled])
 }
+
+// Statü Değişim Geçmişi (B.18)
+model CaseStatusHistory {
+  id            String          @id @default(cuid())
+  caseId        String
+  case          Case            @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  fromStatus    LegalCaseStatus?
+  toStatus      LegalCaseStatus
+  reason        String?         // Değişim nedeni
+  changedById   String?
+  changedBy     User?           @relation("StatusChangedBy", fields: [changedById], references: [id])
+  automationWasEnabled Boolean? // Otomasyon durumu değişti mi
+  createdAt     DateTime        @default(now())
+
+  @@index([caseId])
+  @@index([createdAt])
+}
+
+// Dosya Belgeleri
+model CaseDocument {
+  id            String   @id @default(cuid())
+  caseId        String
+  case          Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  documentType  DocumentType
+  title         String
+  description   String?
+  filePath      String?
+  fileSize      Int?
+  mimeType      String?
+  isGenerated   Boolean  @default(false) // Sistem tarafından üretildi mi
+  generatedAt   DateTime?
+  metadata      Json?
+  
+  // OCR Bilgileri
+  ocrText           String?   // OCR'dan çıkarılan tam metin
+  ocrProcessedAt    DateTime? // OCR işlem tarihi
+  ocrConfidence     Int?      // OCR güven skoru
+  isSourceDocument  Boolean   @default(false) // Takip için kaynak belge mi
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([caseId])
+  @@index([documentType])
+  @@index([isSourceDocument])
+}
+
 
 model CaseDebtor {
   id        String   @id @default(cuid())
@@ -134,7 +339,7 @@ model CaseDebtor {
   case      Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
   debtorId  String
   debtor    Debtor   @relation(fields: [debtorId], references: [id], onDelete: Cascade)
-  role      String   @default("DEBTOR") // DEBTOR, GUARANTOR, etc.
+  role      String   @default("DEBTOR")
   createdAt DateTime @default(now())
 
   @@unique([caseId, debtorId])
@@ -216,9 +421,9 @@ model Lawyer {
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name         String
   surname      String
-  barNumber    String?  // Baro sicil no
-  barName      String?  // Baro adı
-  identityNo   String?  // TC Kimlik No
+  barNumber    String?
+  barName      String?
+  identityNo   String?
   email        String?
   phone        String?
   address      String?
@@ -237,7 +442,7 @@ model CaseLawyer {
   case        Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
   lawyerId    String
   lawyer      Lawyer   @relation(fields: [lawyerId], references: [id], onDelete: Cascade)
-  canSign     Boolean  @default(false) // İmza yetkisi
+  canSign     Boolean  @default(false)
   createdAt   DateTime @default(now())
 
   @@unique([caseId, lawyerId])
@@ -258,6 +463,245 @@ model Collection {
 
   @@index([tenantId])
   @@index([caseId])
+}
+
+// ==================== AUTOMATION MODELS ====================
+
+model CaseLifecycle {
+  id          String         @id @default(cuid())
+  caseId      String
+  case        Case           @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  stage       WorkflowStage
+  action      String
+  description String?
+  triggeredBy TriggerType    @default(MANUAL)
+  metadata    Json?
+  createdAt   DateTime       @default(now())
+
+  @@index([caseId])
+  @@index([stage])
+  @@index([createdAt])
+}
+
+model EnforcementAction {
+  id              String              @id @default(cuid())
+  caseId          String
+  case            Case                @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  type            EnforcementType
+  status          EnforcementStatus   @default(PENDING)
+  targetType      String?
+  targetDetails   Json?
+  requestDate     DateTime?
+  responseDate    DateTime?
+  responseDetails Json?
+  amount          Decimal?            @db.Decimal(15, 2)
+  notes           String?
+  documentPath    String?
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+
+  @@index([caseId])
+  @@index([type])
+  @@index([status])
+}
+
+model RiskReport {
+  id              String   @id @default(cuid())
+  caseId          String
+  case            Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  overallScore    Int
+  collectionProb  Int?
+  recommendedAction String?
+  factors         Json?
+  assetAnalysis   Json?
+  debtorAnalysis  Json?
+  aiSuggestions   Json?
+  createdAt       DateTime @default(now())
+
+  @@index([caseId])
+  @@index([overallScore])
+}
+
+model DecisionLog {
+  id            String       @id @default(cuid())
+  caseId        String
+  case          Case         @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  decisionType  DecisionType
+  decision      String
+  reasoning     String?
+  confidence    Int?
+  inputData     Json?
+  outcome       String?
+  isAutomatic   Boolean      @default(false)
+  executedAt    DateTime?
+  createdAt     DateTime     @default(now())
+
+  @@index([caseId])
+  @@index([decisionType])
+  @@index([isAutomatic])
+}
+
+model NotificationQueue {
+  id              String             @id @default(cuid())
+  caseId          String
+  case            Case               @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  type            NotificationType
+  channel         NotificationChannel
+  recipient       String
+  recipientName   String?
+  subject         String?
+  content         String?
+  templateCode    String?
+  status          NotificationStatus @default(PENDING)
+  scheduledAt     DateTime?
+  sentAt          DateTime?
+  deliveredAt     DateTime?
+  responseAt      DateTime?
+  expiresAt       DateTime?
+  errorMessage    String?
+  metadata        Json?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([caseId])
+  @@index([status])
+  @@index([scheduledAt])
+  @@index([expiresAt])
+}
+
+
+// ==================== BELGE ŞABLONLARI ====================
+
+model DocumentTemplate {
+  id              String   @id @default(cuid())
+  code            String   @unique  // TAKIP_TALEBI_GENEL, ODEME_EMRI_NAFAKA vs.
+  name            String            // Takip Talebi - Genel
+  title           String            // Başlık
+  description     String?
+  category        DocumentCategory
+  subCategory     CaseSubCategory?  // Hangi alt kategori için
+  currency        Currency?         // Hangi para birimi için
+  
+  // Şablon İçeriği
+  templateContent String            // Şablon metni (değişkenlerle)
+  headerContent   String?           // Üst bilgi
+  footerContent   String?           // Alt bilgi
+  
+  // Değişkenler
+  variables       Json?             // Kullanılan değişkenler listesi
+  
+  // UYAP Bilgileri
+  uyapCode        String?           // UYAP belge kodu
+  iikMaddesi      String?           // İİK maddesi
+  
+  // Ayarlar
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([category])
+  @@index([subCategory])
+  @@index([isActive])
+}
+
+// Belge Kategorisi
+enum DocumentCategory {
+  TAKIP_TALEBI      // 4. Madde Takip Talebi
+  ODEME_EMRI        // Ödeme Emri
+  HACIZ_MUZEKKERESI // Haciz Müzekkeresi
+  SATIS_ILANI       // Satış İlanı
+  REDDIYAT          // Reddiyat Yazısı
+  MTS_DONUS         // MTS Geri Dönüş Yazısı
+  ITIRAZ            // İtiraz Dilekçesi
+  DIGER             // Diğer
+}
+
+// ==================== UYAP ENTEGRASYON LOGLARI ====================
+
+model UyapRequestLog {
+  id              String   @id @default(cuid())
+  caseId          String?
+  requestType     String            // sendPaymentOrder, checkTebligat vs.
+  requestData     Json?             // Gönderilen veri
+  requestAt       DateTime @default(now())
+  
+  // Yanıt
+  responseData    Json?
+  responseAt      DateTime?
+  
+  // Durum
+  status          UyapRequestStatus @default(PENDING)
+  errorMessage    String?
+  retryCount      Int      @default(0)
+  
+  // Referanslar
+  evkNo           String?           // Evrak kayıt numarası
+  uyapDosyaId     String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([caseId])
+  @@index([status])
+  @@index([requestType])
+}
+
+enum UyapRequestStatus {
+  PENDING
+  SENT
+  SUCCESS
+  FAILED
+  RETRY
+}
+
+// ==================== FORM METADATA ====================
+
+model FormType {
+  id                String          @id @default(cuid())
+  code              String          @unique
+  name              String
+  title             String
+  description       String?
+  category          FormCategory
+  procedureType     ProcedureType
+  uyapCode          String?
+  iikMaddesi        String?
+  usageScenario     String?
+  exampleCase       String?
+  hasJudgment       Boolean         @default(false)
+  needsMortgage     Boolean         @default(false)
+  isKambiyo         Boolean         @default(false)
+  isRental          Boolean         @default(false)
+  requiredDocuments Json?
+  defaultWorkflow   String?
+  sortOrder         Int             @default(0)
+  isActive          Boolean         @default(true)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  subForms          FormSubType[]
+  cases             Case[]          @relation("CaseFormType")
+
+  @@index([category])
+  @@index([isActive])
+}
+
+model FormSubType {
+  id              String    @id @default(cuid())
+  formTypeId      String
+  formType        FormType  @relation(fields: [formTypeId], references: [id], onDelete: Cascade)
+  code            String    @unique
+  name            String
+  title           String
+  uyapCode        String?
+  usageScenario   String?
+  sortOrder       Int       @default(0)
+  isActive        Boolean   @default(true)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([formTypeId])
 }
 
 // ==================== ENUMS ====================
@@ -295,11 +739,77 @@ enum CaseType {
   OTHER
 }
 
+// Eski statü (geriye uyumluluk)
 enum CaseStatus {
   ACTIVE
   CLOSED
   SUSPENDED
   ARCHIVED
+}
+
+// Yeni Hukuki Statü Sistemi (B.13-14)
+enum LegalCaseStatus {
+  DERDEST           // Aktif takip, otomasyon açık
+  ISLEMDE           // İşlem yapılıyor, otomasyon açık
+  DERKENAR          // Beklemede, otomasyon açık
+  HITAM             // Sonuçlandı, otomasyon kapalı
+  INFAZ             // İnfaz edildi, otomasyon kapalı
+  MUVEKKILE_IADE    // Müvekkile iade, otomasyon kapalı
+  ACIZ              // Aciz vesikası, otomasyon kapalı
+  BATAK             // Tahsil imkansız, otomasyon kapalı
+  MAHSUP            // Mahsup edildi, otomasyon kapalı
+  TEMLIK            // Temlik edildi, otomasyon kapalı
+}
+
+// Takip Yolu (A.2)
+enum ExecutionPath {
+  HACIZ             // Haciz yolu
+  IFLAS             // İflas yolu
+  REHIN             // Rehin paraya çevirme
+  IPOTEK            // İpotek paraya çevirme
+  TAHLIYE           // Tahliye
+}
+
+// Alt Kategori - UYAP Uyumlu
+enum CaseSubCategory {
+  GENEL             // Genel alacak (standart faiz)
+  NAFAKA            // Nafaka alacağı (dönemsel)
+  DOVIZ             // Döviz alacağı (kur hesaplamalı)
+  KIRA              // Kira alacağı
+  CEZA              // Ceza alacağı
+}
+
+// Para Birimi
+enum Currency {
+  TRY               // Türk Lirası
+  USD               // Amerikan Doları
+  EUR               // Euro
+  GBP               // İngiliz Sterlini
+  CHF               // İsviçre Frangı
+}
+
+// Faiz Türü
+enum InterestType {
+  YASAL             // Yasal faiz (değişken oranlı)
+  SABIT             // Sabit faiz
+  AVANS             // Avans faizi
+  TEMERRUT          // Temerrüt faizi
+  YOKSUN            // Yoksun kalınan faiz
+}
+
+// Belge Türleri
+enum DocumentType {
+  ARTICLE_4_REQUEST   // 4. Madde Takip Talebi
+  PAYMENT_ORDER       // Ödeme Emri
+  SEIZURE_REQUEST     // Haciz Talebi
+  SEIZURE_NOTICE      // Haciz Müzekkeresi
+  BANK_NOTICE         // Banka Müzekkeresi
+  VEHICLE_NOTICE      // Araç Müzekkeresi
+  PROPERTY_NOTICE     // Taşınmaz Müzekkeresi
+  SALARY_NOTICE       // Maaş Haczi Müzekkeresi
+  SALE_REQUEST        // Satış Talebi
+  OBJECTION           // İtiraz Dilekçesi
+  OTHER               // Diğer
 }
 
 enum DueType {
@@ -337,4 +847,121 @@ enum CollectionType {
   BANK_TRANSFER
   CHECK
   OTHER
+}
+
+enum FormCategory {
+  GENEL_ICRA
+  KAMBIYO
+  IPOTEK_REHIN
+  IFLAS
+  KIRA
+}
+
+enum ProcedureType {
+  ILAMSIZ
+  ILAMLI
+  KAMBIYO
+  IPOTEK
+  REHIN
+  IFLAS
+  KIRA_ALACAK
+  TAHLIYE
+}
+
+// ==================== AUTOMATION ENUMS ====================
+
+enum WorkflowStage {
+  INITIAL
+  PAYMENT_ORDER
+  WAITING_RESPONSE
+  OBJECTION
+  ENFORCEMENT
+  SEIZURE
+  SALE_REQUEST
+  AUCTION
+  COLLECTION
+  PARTIAL_PAYMENT
+  FULL_PAYMENT
+  CLOSED
+  SUSPENDED
+}
+
+enum TriggerType {
+  MANUAL
+  AUTO
+  SYSTEM
+  AI
+}
+
+enum EnforcementType {
+  BANK_INQUIRY
+  BANK_SEIZURE
+  VEHICLE_INQUIRY
+  VEHICLE_SEIZURE
+  PROPERTY_INQUIRY
+  PROPERTY_SEIZURE
+  SALARY_SEIZURE
+  MOVABLE_SEIZURE
+  TRAVEL_BAN
+  SALE_REQUEST
+  AUCTION
+}
+
+enum EnforcementStatus {
+  PENDING
+  REQUESTED
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+  CANCELLED
+  PARTIAL
+}
+
+enum DecisionType {
+  FORM_SELECTION
+  NEXT_ACTION
+  ENFORCEMENT_TYPE
+  RISK_ASSESSMENT
+  COLLECTION_STRATEGY
+  CASE_CLOSURE
+  STATUS_CHANGE
+}
+
+enum NotificationType {
+  PAYMENT_ORDER
+  SEIZURE_NOTICE
+  SALE_NOTICE
+  REMINDER
+  INFO
+  WARNING
+}
+
+enum NotificationChannel {
+  E_TEBLIGAT
+  PTT
+  SMS
+  EMAIL
+  PUSH
+}
+
+enum NotificationStatus {
+  PENDING
+  SCHEDULED
+  SENT
+  DELIVERED
+  READ
+  RESPONDED
+  FAILED
+  EXPIRED
+}
+
+// OCR Tespit Edilen Takip Türü
+enum DetectedCaseType {
+  ILAMLI            // İlamlı takip
+  ILAMSIZ           // İlamsız takip
+  KAMBIYO           // Kambiyo senetlerine özgü
+  KIRA              // Kira alacağı
+  IPOTEK            // İpotek paraya çevirme
+  REHIN             // Rehin paraya çevirme
+  UNKNOWN           // Belirsiz
 }

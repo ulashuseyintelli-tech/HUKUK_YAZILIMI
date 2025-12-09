@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Plus, Search, Filter, FileText, Loader2 } from "lucide-react";
 import { Badge } from "@hukuk/ui";
@@ -44,10 +45,15 @@ const statusColors: Record<string, "default" | "success" | "warning" | "destruct
 };
 
 export default function CasesPage() {
+  const searchParams = useSearchParams();
+  const urlStatus = searchParams.get("status");
+  
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState(urlStatus || "all");
+
+  const pageTitle = "Eski Takipler";
 
   const fetchCases = async () => {
     try {
@@ -62,6 +68,12 @@ export default function CasesPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    if (urlStatus) {
+      setStatusFilter(urlStatus);
+    }
+  }, [urlStatus]);
 
   useEffect(() => {
     fetchCases();
@@ -80,7 +92,7 @@ export default function CasesPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Takipler</h1>
+          <h1 className="text-2xl font-bold">{pageTitle}</h1>
           <p className="text-muted-foreground">Tüm icra takiplerinizi yönetin</p>
         </div>
         <Link

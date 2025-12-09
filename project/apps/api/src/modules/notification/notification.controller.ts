@@ -1,0 +1,99 @@
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Param,
+  Body,
+  Query,
+  UseGuards,
+} from "@nestjs/common";
+import { NotificationService } from "./notification.service";
+import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { NotificationStatus } from "@prisma/client";
+
+@Controller("notifications")
+@UseGuards(JwtAuthGuard)
+export class NotificationController {
+  constructor(private notificationService: NotificationService) {}
+
+  // Dosya için tebligatları getir
+  @Get("case/:caseId")
+  async findByCaseId(@Param("caseId") caseId: string) {
+    return this.notificationService.findByCaseId(caseId);
+  }
+
+  // Ödeme emri tebligatı oluştur
+  @Post("case/:caseId/payment-order")
+  async createPaymentOrder(
+    @Param("caseId") caseId: string,
+    @Body() body: { tcNo: string; name: string; address?: string }
+  ) {
+    return this.notificationService.createPaymentOrderNotification(caseId, body);
+  }
+
+  // Tebligat durumunu güncelle
+  @Put(":id/status")
+  async updateStatus(
+    @Param("id") id: string,
+    @Body() body: { status: NotificationStatus; deliveredAt?: string; errorMessage?: string }
+  ) {
+    return this.notificationService.updateStatus(id, body.status, {
+      deliveredAt: body.deliveredAt ? new Date(body.deliveredAt) : undefined,
+      errorMessage: body.errorMessage,
+    });
+  }
+
+  // E-Tebligat durumu kontrol et
+  @Post(":id/check-status")
+  async checkStatus(@Param("id") id: string) {
+    return this.notificationService.checkETebligatStatus(id);
+  }
+
+  // Ödeme süresi bilgisi
+  @Get("case/:caseId/payment-deadline")
+  async getPaymentDeadline(@Param("caseId") caseId: string) {
+    return this.notificationService.getPaymentDeadline(caseId);
+  }
+
+  // SMS gönder
+  @Post("case/:caseId/sms")
+  async sendSMS(
+    @Param("caseId") caseId: string,
+    @Body() body: { phone: string; message: string }
+  ) {
+    return this.notificationService.sendSMS(caseId, body.phone, body.message);
+  }
+
+  // Email gönder
+  @Post("case/:caseId/email")
+  async sendEmail(
+    @Param("caseId") caseId: string,
+    @Body() body: { email: string; subject: string; content: string }
+  ) {
+    return this.notificationService.sendEmail(
+      caseId,
+      body.email,
+      body.subject,
+      body.content
+    );
+  }
+
+  // Bekleyen tebligatlar
+  @Get("pending")
+  async findPending() {
+    return this.notificationService.findPending();
+  }
+
+  // Süresi dolan tebligatlar
+  @Get("expired")
+  async findExpired() {
+    return this.notificationService.findExpired();
+  }
+
+  // İstatistikler
+  @Get("stats")
+  async getStats(@Query("tenantId") tenantId?: string) {
+    return this.notificationService.getStats(tenantId);
+  }
+}

@@ -1,0 +1,194 @@
+# Implementation Plan
+
+- [x] 1. Form Metadata Yapısını Oluştur
+
+
+
+
+  - [ ] 1.1 FormMetadata, SubFormMetadata, FormCategory interface'lerini tanımla
+    - apps/web/src/types/form-metadata.ts dosyası oluştur
+
+
+    - Tüm gerekli alanları içeren interface'ler yaz
+    - _Requirements: 6.1_
+
+
+  - [x] 1.2 Form metadata konfigürasyonunu oluştur
+
+
+
+
+    - apps/web/src/config/form-metadata.ts dosyası oluştur
+    - 11 form için tüm metadata'yı tanımla (title, usageScenario, iikMaddesi, requiredDocuments vb.)
+
+
+    - _Requirements: 6.1, 6.2_
+  - [ ] 1.3 Write property test for form metadata schema completeness
+    - **Property 13: Form Metadata Schema Completeness**
+
+    - **Validates: Requirements 6.1**
+
+
+- [x] 2. Wizard Bileşenini Oluştur
+
+
+  - [ ] 2.1 WizardState interface ve wizard sorularını tanımla
+    - apps/web/src/types/wizard.ts dosyası oluştur
+    - 4 soru için konfigürasyon objesi oluştur
+    - _Requirements: 1.1_
+
+
+
+
+  - [ ] 2.2 FormWizard bileşenini oluştur
+    - apps/web/src/components/case/FormWizard.tsx dosyası oluştur
+
+    - 4 soruluk adım adım sihirbaz UI'ı
+
+    - Soru kartları ve seçenek butonları
+    - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5_
+
+
+  - [ ] 2.3 Wizard filtreleme mantığını implement et
+    - getRecommendedForm fonksiyonu yaz
+
+
+    - Cevaplara göre form listesini filtrele
+    - En uygun formu belirle
+    - _Requirements: 1.2, 1.3, 1.4, 1.5, 1.6_
+
+
+
+
+  - [ ] 2.4 Write property tests for wizard filtering logic
+    - **Property 1: Wizard Answer Filtering - Judgment**
+    - **Property 2: Wizard Answer Filtering - Kambiyo**
+    - **Property 3: Wizard Answer Filtering - Mortgage**
+    - **Property 4: Wizard Answer Filtering - Rental**
+
+
+    - **Validates: Requirements 1.2, 1.3, 1.4, 1.5**
+
+- [ ] 3. Kategori Filtreleme Sistemini Oluştur
+  - [x] 3.1 Kategori konfigürasyonunu tanımla
+
+    - formCategories array'ini oluştur (GENEL_ICRA, KAMBIYO, IPOTEK_REHIN, IFLAS, KIRA)
+
+
+    - Her kategori için label ve icon tanımla
+    - _Requirements: 2.1_
+
+
+
+
+  - [ ] 3.2 CategoryFilter bileşenini oluştur
+    - apps/web/src/components/case/CategoryFilter.tsx dosyası oluştur
+
+
+    - Yatay filtre butonları (Tümü, Genel İcra, Kambiyo, İpotek/Rehin, İflas, Kira)
+    - Seçili kategori vurgulama
+
+
+    - _Requirements: 2.1, 2.2, 2.4_
+  - [ ] 3.3 Kategori filtreleme mantığını implement et
+    - filterFormsByCategory fonksiyonu yaz
+
+
+    - groupFormsByCategory fonksiyonu yaz
+    - _Requirements: 2.2, 2.3_
+
+  - [x] 3.4 Write property tests for category filtering
+
+    - **Property 5: Category Grouping Completeness**
+
+    - **Property 6: Category Filter Correctness**
+
+
+
+    - **Property 7: All Forms Category Distribution**
+    - **Validates: Requirements 2.1, 2.2, 2.3**
+
+
+
+- [ ] 4. Form Kartlarını Yeniden Tasarla
+  - [x] 4.1 FormCard bileşenini oluştur
+
+
+
+
+    - apps/web/src/components/case/FormCard.tsx dosyası oluştur
+    - Hukuki başlık (title) ana başlık olarak
+    - Form numarası ve İİK maddesi alt satırda
+    - Kullanım senaryosu açıklaması
+
+    - Bilgi ikonu (detay modalı için)
+    - _Requirements: 3.1, 3.2_
+  - [x] 4.2 FormDetailModal bileşenini oluştur
+
+    - apps/web/src/components/case/FormDetailModal.tsx dosyası oluştur
+    - İİK maddesi detayı
+    - Örnek senaryo
+
+
+    - Gerekli belgeler listesi
+    - _Requirements: 3.3_
+  - [ ] 4.3 Write property test for form card content
+    - **Property 8: Form Card Content Completeness**
+    - **Validates: Requirements 3.1, 3.2**
+
+- [ ] 5. Checkpoint - Temel bileşenler tamamlandı
+  - Ensure all tests pass, ask the user if questions arise.
+
+- [ ] 6. Sık/Son Kullanılanlar Özelliğini Ekle
+  - [ ] 6.1 Form kullanım geçmişi için localStorage yönetimi
+    - apps/web/src/hooks/useFormHistory.ts hook'u oluştur
+    - Kullanım sayısı ve son kullanım tarihi kaydet
+    - _Requirements: 4.2_
+  - [ ] 6.2 FrequentForms bileşenini oluştur
+    - apps/web/src/components/case/FrequentForms.tsx dosyası oluştur
+    - En sık kullanılan 3 form (İlamsız, Kambiyo, Kira)
+    - _Requirements: 4.1_
+  - [ ] 6.3 RecentForms bileşenini oluştur
+    - apps/web/src/components/case/RecentForms.tsx dosyası oluştur
+    - Son 5 kullanılan form
+    - Kullanım sayısı gösterimi
+    - _Requirements: 4.3, 4.4_
+  - [ ] 6.4 Write property tests for usage history
+    - **Property 9: Form Usage History Persistence**
+    - **Property 10: Usage History Display Count**
+    - **Validates: Requirements 4.2, 4.4**
+
+- [ ] 7. Cross-check Uyarı Sistemini Ekle
+  - [ ] 7.1 Cross-check mantığını implement et
+    - apps/web/src/utils/form-cross-check.ts dosyası oluştur
+    - checkFormConsistency fonksiyonu yaz
+    - Form seçimi ile veri tutarlılığını kontrol et
+    - _Requirements: 5.1, 5.2_
+  - [ ] 7.2 CrossCheckWarning bileşenini oluştur
+    - apps/web/src/components/case/CrossCheckWarning.tsx dosyası oluştur
+    - Uyarı mesajı ve önerilen form
+    - "Formu Değiştir" ve "Devam Et" butonları
+    - _Requirements: 5.3, 5.4_
+  - [ ] 7.3 Write property tests for cross-check logic
+    - **Property 11: Cross-check Kambiyo Inconsistency**
+    - **Property 12: Cross-check Rental Inconsistency**
+    - **Validates: Requirements 5.1, 5.2**
+
+- [ ] 8. NewCasePage'i Yeniden Yapılandır
+  - [ ] 8.1 Tüm bileşenleri NewCasePage'e entegre et
+    - FormWizard'ı ilk adım olarak ekle
+    - CategoryFilter'ı form listesi üstüne ekle
+    - FrequentForms ve RecentForms bölümlerini ekle
+    - FormCard'ları yeni tasarımla değiştir
+    - _Requirements: 1.1, 2.1, 3.1, 4.1_
+  - [ ] 8.2 Wizard'dan form seçimine geçiş akışını implement et
+    - Önerilen form vurgulama
+    - "Sihirbazı Atla" butonu
+    - _Requirements: 1.6, 1.7_
+  - [ ] 8.3 Cross-check entegrasyonunu ekle
+    - Form seçimi sonrası tutarlılık kontrolü
+    - Uyarı modalı gösterimi
+    - _Requirements: 5.1, 5.2, 5.3, 5.4_
+
+- [ ] 9. Final Checkpoint - Tüm özellikler tamamlandı
+  - Ensure all tests pass, ask the user if questions arise.

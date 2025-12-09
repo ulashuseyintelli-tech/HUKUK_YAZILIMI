@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -13,11 +14,15 @@ import { CaseService } from "./case.service";
 import { CreateCaseDto, UpdateCaseDto } from "./dto/case.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
+import { OcrService } from "../ocr/ocr.service";
 
 @Controller("cases")
 @UseGuards(JwtAuthGuard)
 export class CaseController {
-  constructor(private caseService: CaseService) {}
+  constructor(
+    private caseService: CaseService,
+    private ocrService: OcrService
+  ) {}
 
   @Get()
   findAll(
@@ -36,6 +41,12 @@ export class CaseController {
   @Get("stats")
   getStats(@CurrentUser("tenantId") tenantId: string) {
     return this.caseService.getStats(tenantId);
+  }
+
+  @Get("next-file-number")
+  async getNextFileNumber(@CurrentUser("tenantId") tenantId: string) {
+    const fileNumber = await this.caseService.getNextFileNumber(tenantId);
+    return { fileNumber };
   }
 
   @Get(":id")
@@ -60,5 +71,34 @@ export class CaseController {
   @Delete(":id")
   delete(@CurrentUser("tenantId") tenantId: string, @Param("id") id: string) {
     return this.caseService.delete(tenantId, id);
+  }
+
+  @Patch(":id")
+  patchFlags(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Body() dto: Partial<UpdateCaseDto>
+  ) {
+    return this.caseService.patchFlags(tenantId, id, dto);
+  }
+
+  /**
+   * Metin içeriğinden takip türü öner
+   * POST /cases/suggest-type
+   */
+  @Post("suggest-type")
+  suggestCaseType(@Body() body: { text: string }) {
+    const result = this.ocrService.classifyDocument(body.text);
+    return {
+      success: true,
+      suggestion: {
+        caseType: result.detectedType,
+        subCategory: result.detectedSubCategory,
+        confidence: result.confidence,
+        matchedKeywords: result.matchedKeywords,
+        suggestedFormCode: result.suggestedFormCode,
+        explanation: result.explanation,
+      },
+    };
   }
 }

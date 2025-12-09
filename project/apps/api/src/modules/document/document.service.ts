@@ -1,0 +1,182 @@
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { PrismaService } from "../../prisma/prisma.service";
+import { TemplateService, DocumentData } from "./template.service";
+import { TDocumentDefinitions } from "pdfmake/interfaces";
+
+@Injectable()
+export class DocumentService {
+  private readonly logger = new Logger(DocumentService.name);
+  private printer: any;
+
+  constructor(
+    private prisma: PrismaService,
+    private templateService: TemplateService
+  ) {
+    // pdfmake için basit bir yaklaşım kullanacağız
+  }
+
+  // Dosya verilerini hazırla
+  async prepareDocumentData(caseId: string): Promise<DocumentData> {
+    const caseData = await this.prisma.case.findUnique({
+      where: { id: caseId },
+      include: {
+        client: true,
+        debtors: { include: { debtor: true } },
+        lawyers: { include: { lawyer: true } },
+        formType: true,
+        collections: true,
+        executionOffice: true, // İcra dairesi bilgilerini dahil et
+        dues: true, // Alacak kalemlerini dahil et
+      },
+    });
+
+    if (!caseData) {
+      throw new NotFoundException("Dosya bulunamadı");
+    }
+
+    const debtor = caseData.debtors[0]?.debtor;
+    const lawyer = caseData.lawyers[0]?.lawyer;
+    
+    // Alacak kalemlerinden toplam hesapla
+    const principal = caseData.dues
+      ?.filter(d => d.type === 'PRINCIPAL')
+      .reduce((sum, d) => sum + Number(d.amount), 0) || Number(caseData.principalAmount || 0);
+    
+    const interest = caseData.dues
+      ?.filter(d => d.type === 'INTEREST')
+      .reduce((sum, d) => sum + Number(d.amount), 0) || 0;
+    
+    const expenses = caseData.dues
+      ?.filter(d => d.type === 'EXPENSE' || d.type === 'OTHER')
+      .reduce((sum, d) => sum + Number(d.amount), 0) || 0;
+
+    // Eğer dues yoksa eski hesaplama yöntemi
+    const interestRate = Number(caseData.interestRate || 0);
+    const daysSinceStart = caseData.startDate
+      ? Math.floor((Date.now() - caseData.startDate.getTime()) / (1000 * 60 * 60 * 24))
+      : 0;
+    const calculatedInterest = interest || (principal * interestRate * daysSinceStart) / 36500;
+
+    return {
+      fileNumber: caseData.fileNumber,
+      executionOffice: caseData.executionOffice?.name || (caseData.metadata as any)?.executionOffice as string,
+      // İcra Dairesi Detay Bilgileri
+      executionOfficeDetails: caseData.executionOffice ? {
+        name: caseData.executionOffice.name,
+        uyapCode: caseData.executionOffice.uyapCode || undefined,
+        taxNumber: caseData.executionOffice.taxNumber || undefined,
+        bankName: caseData.executionOffice.bankName || undefined,
+        branchName: caseData.executionOffice.branchName || undefined,
+        iban: caseData.executionOffice.iban || undefined,
+      } : undefined,
+      creditor: {
+        name: caseData.client?.name || "Alacaklı",
+        identityNo: caseData.client?.identityNo || undefined,
+        address: (caseData.client?.address as any)?.text,
+      },
+      debtor: {
+        name: debtor?.name || "Borçlu",
+        identityNo: debtor?.identityNo || undefined,
+        address: (debtor?.addresses as any)?.primary,
+      },
+      lawyer: lawyer
+        ? {
+            name: `${lawyer.name} ${lawyer.surname}`,
+            barNumber: lawyer.barNumber || undefined,
+          }
+        : undefined,
+      amounts: {
+        principal,
+        interest: Math.round(calculatedInterest * 100) / 100,
+        expenses,
+        total: principal + calculatedInterest + expenses,
+      },
+      dates: {
+        created: caseData.createdAt,
+        dueDate: caseData.startDate || undefined,
+      },
+      formType: caseData.formType?.code,
+      notes: caseData.notes || undefined,
+    };
+  }
+
+  // Ödeme emri PDF oluştur
+  async generatePaymentOrder(caseId: string): Promise<Buffer> {
+    const data = await this.prepareDocumentData(caseId);
+    const docDefinition = this.templateService.getPaymentOrderTemplate(data);
+    return this.generatePdf(docDefinition);
+  }
+
+  // Haciz müzekkeresi PDF oluştur
+  async generateSeizureNotice(
+    caseId: string,
+    targetType: string,
+    targetDetails: any
+  ): Promise<Buffer> {
+    const data = await this.prepareDocumentData(caseId);
+    const docDefinition = this.templateService.getSeizureNoticeTemplate(
+      data,
+      targetType,
+      targetDetails
+    );
+    return this.generatePdf(docDefinition);
+  }
+
+  // Satış talebi PDF oluştur
+  async generateSaleRequest(caseId: string, assetDetails: any): Promise<Buffer> {
+    const data = await this.prepareDocumentData(caseId);
+    const docDefinition = this.templateService.getSaleRequestTemplate(data, assetDetails);
+    return this.generatePdf(docDefinition);
+  }
+
+  // PDF oluştur (basit versiyon - gerçek implementasyon için pdfmake kullanılacak)
+  private async generatePdf(docDefinition: TDocumentDefinitions): Promise<Buffer> {
+    // Basit bir text-based PDF simülasyonu
+    // Gerçek implementasyonda pdfmake kullanılacak
+    const content = JSON.stringify(docDefinition, null, 2);
+    return Buffer.from(content, "utf-8");
+  }
+
+  // UYAP XML formatı oluştur
+  async generateUyapXml(caseId: string): Promise<string> {
+    const data = await this.prepareDocumentData(caseId);
+
+    const xml = `<?xml version="1.0" encoding="UTF-8"?>
+<IcraTakip>
+  <DosyaNo>${data.fileNumber}</DosyaNo>
+  <TakipTuru>${data.formType || "GENEL"}</TakipTuru>
+  <Alacakli>
+    <AdSoyad>${data.creditor.name}</AdSoyad>
+    <TCKimlikNo>${data.creditor.identityNo || ""}</TCKimlikNo>
+    <Adres>${data.creditor.address || ""}</Adres>
+  </Alacakli>
+  <Borclu>
+    <AdSoyad>${data.debtor.name}</AdSoyad>
+    <TCKimlikNo>${data.debtor.identityNo || ""}</TCKimlikNo>
+    <Adres>${data.debtor.address || ""}</Adres>
+  </Borclu>
+  <AlacakBilgileri>
+    <AsilAlacak>${data.amounts.principal}</AsilAlacak>
+    <Faiz>${data.amounts.interest}</Faiz>
+    <Masraf>${data.amounts.expenses}</Masraf>
+    <Toplam>${data.amounts.total}</Toplam>
+  </AlacakBilgileri>
+  <Tarih>${data.dates.created.toISOString()}</Tarih>
+</IcraTakip>`;
+
+    return xml;
+  }
+
+  // Belge listesi
+  async getDocumentTypes() {
+    return [
+      { code: "PAYMENT_ORDER", name: "Ödeme Emri", description: "İcra takibi ödeme emri" },
+      { code: "SEIZURE_BANK", name: "Banka Haciz Müzekkeresi", description: "Banka hesaplarına haciz" },
+      { code: "SEIZURE_VEHICLE", name: "Araç Haciz Müzekkeresi", description: "Araç üzerine haciz" },
+      { code: "SEIZURE_PROPERTY", name: "Taşınmaz Haciz Müzekkeresi", description: "Taşınmaz üzerine haciz" },
+      { code: "SEIZURE_SALARY", name: "Maaş Haczi Müzekkeresi", description: "Maaş haczi" },
+      { code: "SALE_REQUEST", name: "Satış Talebi", description: "Hacizli mal satış talebi" },
+      { code: "UYAP_XML", name: "UYAP XML", description: "UYAP entegrasyon dosyası" },
+    ];
+  }
+}

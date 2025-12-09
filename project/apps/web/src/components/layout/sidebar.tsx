@@ -1,11 +1,11 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { useState, useEffect } from "react";
 import {
   Scale,
   LayoutDashboard,
-  FileText,
   Users,
   CheckSquare,
   Bell,
@@ -13,26 +13,47 @@ import {
   Building2,
   Gavel,
   CreditCard,
+  PlusCircle,
+  FolderOpen,
+  Sparkles,
+  Wand2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useUserSettings } from "@/lib/user-settings";
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Takipler", href: "/cases", icon: FileText },
+  { name: "Yeni Takip Oluştur", href: "/cases/new", icon: PlusCircle },
+  { name: "Eski Takipler", href: "/cases", icon: FolderOpen },
+  { name: "AI Tools", href: "/ai-tools", icon: Sparkles },
   { name: "Borçlular", href: "/debtors", icon: Users },
   { name: "Müvekkiller", href: "/clients", icon: Building2 },
   { name: "Görevler", href: "/tasks", icon: CheckSquare },
   { name: "Bildirimler", href: "/notifications", icon: Bell },
   { name: "Mahkemeler", href: "/courts", icon: Gavel },
   { name: "Tahsilatlar", href: "/collections", icon: CreditCard },
-];
-
-const bottomNavigation = [
+  { name: "İcra Daireleri", href: "/admin/execution-offices", icon: Building2 },
   { name: "Ayarlar", href: "/settings", icon: Settings },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const { settings, updateSettings, loaded } = useUserSettings();
+
+  const handleWizardToggle = () => {
+    updateSettings({ showWizardOnNewCase: !settings.showWizardOnNewCase });
+  };
+
+  // Yeni Takip Oluştur'a tıklandığında sayfayı sıfırla
+  const handleNavClick = (e: React.MouseEvent, href: string) => {
+    if (href === "/cases/new" && pathname === "/cases/new") {
+      e.preventDefault();
+      // Sayfayı yeniden yükle (state'leri sıfırlamak için)
+      router.refresh();
+      window.location.href = "/cases/new";
+    }
+  };
 
   return (
     <aside className="fixed inset-y-0 left-0 z-50 hidden w-64 flex-col border-r bg-white lg:flex">
@@ -41,13 +62,14 @@ export function Sidebar() {
         <span className="font-bold">Hukuk Platform</span>
       </div>
 
-      <nav className="flex-1 space-y-1 p-4">
+      <nav className="flex-1 space-y-1 p-4 overflow-y-auto">
         {navigation.map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
           return (
             <Link
               key={item.name}
               href={item.href}
+              onClick={(e) => handleNavClick(e, item.href)}
               className={cn(
                 "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
                 isActive
@@ -62,26 +84,36 @@ export function Sidebar() {
         })}
       </nav>
 
-      <div className="border-t p-4">
-        {bottomNavigation.map((item) => {
-          const isActive = pathname === item.href;
-          return (
-            <Link
-              key={item.name}
-              href={item.href}
+      {/* Sihirbaz Toggle */}
+      {loaded && (
+        <div className="border-t p-4">
+          <div 
+            onClick={handleWizardToggle}
+            className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-muted cursor-pointer"
+          >
+            <div className="flex items-center gap-3">
+              <Wand2 className={cn("h-5 w-5", settings.showWizardOnNewCase ? "text-purple-500" : "text-gray-400")} />
+              <span className="text-sm font-medium text-muted-foreground">Sihirbaz</span>
+            </div>
+            <div
               className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm font-medium transition-colors",
-                isActive
-                  ? "bg-primary/10 text-primary"
-                  : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                "w-9 h-5 rounded-full transition-colors",
+                settings.showWizardOnNewCase ? "bg-purple-500" : "bg-gray-200"
               )}
             >
-              <item.icon className="h-5 w-5" />
-              {item.name}
-            </Link>
-          );
-        })}
-      </div>
+              <div
+                className={cn(
+                  "w-4 h-4 bg-white rounded-full shadow transform transition-transform mt-0.5",
+                  settings.showWizardOnNewCase ? "translate-x-4 ml-0.5" : "translate-x-0.5"
+                )}
+              />
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground px-3 mt-1">
+            {settings.showWizardOnNewCase ? "Yeni takipte açık" : "Yeni takipte kapalı"}
+          </p>
+        </div>
+      )}
     </aside>
   );
 }

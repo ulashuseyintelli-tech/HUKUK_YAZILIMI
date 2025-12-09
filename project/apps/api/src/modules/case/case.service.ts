@@ -1,11 +1,70 @@
-import { Injectable, NotFoundException, ConflictException } from "@nestjs/common";
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
-import { CreateCaseDto, UpdateCaseDto } from "./dto/case.dto";
-import { Prisma } from "@prisma/client";
+import { CreateCaseDto, UpdateCaseDto, CaseSubCategory, Currency } from "./dto/case.dto";
+import { Prisma, LegalCaseStatus } from "@prisma/client";
+import { isInitialStatus } from "../case-status/case-status.service";
 
 @Injectable()
 export class CaseService {
   constructor(private prisma: PrismaService) {}
+
+  /**
+   * İlamlı Alt Kategori Validasyonları
+   * - Nafaka + Döviz aynı anda seçilemez
+   * - Döviz seçildiğinde kur tarihi zorunlu
+   * - Nafaka seçildiğinde aylık tutar önerilir
+   */
+  private validateSubCategoryRules(dto: CreateCaseDto) {
+    const { subCategory, currency, exchangeDate, nafakaStartDate, monthlyNafakaAmount } = dto;
+
+    // Kural 1: Nafaka + Döviz aynı anda olamaz
+    if (subCategory === CaseSubCategory.NAFAKA && currency && currency !== Currency.TRY) {
+      throw new BadRequestException(
+        "Nafaka alacağı sadece TL cinsinden olabilir. Döviz ve nafaka aynı anda seçilemez."
+      );
+    }
+
+    // Kural 2: Döviz alacağı seçildiğinde para birimi TRY olamaz
+    if (subCategory === CaseSubCategory.DOVIZ && (!currency || currency === Currency.TRY)) {
+      throw new BadRequestException(
+        "Döviz alacağı seçildiğinde para birimi (USD, EUR, GBP, CHF) belirtilmelidir."
+      );
+    }
+
+    // Kural 3: Döviz alacağı için kur tarihi zorunlu (uyarı seviyesinde)
+    if (subCategory === CaseSubCategory.DOVIZ && !exchangeDate) {
+      // Uyarı: Kur tarihi belirtilmedi, fiili ödeme tarihi kullanılacak
+      // Bu bir hata değil, sadece bilgi
+    }
+
+    // Kural 4: Nafaka için başlangıç tarihi ve aylık tutar önerilir
+    if (subCategory === CaseSubCategory.NAFAKA) {
+      if (!nafakaStartDate) {
+        // Uyarı seviyesinde - zorunlu değil
+      }
+      if (!monthlyNafakaAmount) {
+        // Uyarı seviyesinde - zorunlu değil
+      }
+    }
+
+    // Kural 5: Alt kategori otomatik belirleme (currency'ye göre)
+    // Bu frontend'de yapılacak, backend sadece validasyon yapar
+  }
+
+  /**
+   * Alt kategoriye göre faiz açıklaması otomatik oluştur
+   */
+  private generateInterestDescription(subCategory: CaseSubCategory, currency?: Currency): string {
+    switch (subCategory) {
+      case CaseSubCategory.NAFAKA:
+        return "devam eden aylarla birlikte tahsili talebidir.";
+      case CaseSubCategory.DOVIZ:
+        return "fiili ödeme tarihindeki T.C. Merkez Bankası efektif satış kuru üzerinden Türk Lirası karşılığının tahsili talebidir.";
+      case CaseSubCategory.GENEL:
+      default:
+        return "değişen oranlarda yasal faizi ile birlikte tahsili talebidir.";
+    }
+  }
 
   async findAll(tenantId: string, params?: { status?: string; page?: number; limit?: number }) {
     const { status, page = 1, limit = 20 } = params || {};
@@ -42,11 +101,20 @@ export class CaseService {
       include: {
         client: true,
         court: true,
+        formType: { select: { id: true, name: true, code: true } },
+        executionOffice: true,
         debtors: { include: { debtor: true } },
         lawyers: { include: { lawyer: true } },
         tasks: { orderBy: { createdAt: "desc" }, take: 10 },
         collections: { orderBy: { date: "desc" } },
         dues: true,
+        lifecycleEvents: { orderBy: { createdAt: "desc" }, take: 20 },
+        statusHistory: { 
+          orderBy: { createdAt: "desc" }, 
+          take: 10,
+          include: { changedBy: { select: { name: true, surname: true } } }
+        },
+        riskReports: { orderBy: { createdAt: "desc" }, take: 1 },
       },
     });
 
@@ -58,6 +126,16 @@ export class CaseService {
   }
 
   async create(tenantId: string, dto: CreateCaseDto) {
+    // B.5: Başlangıç statüsü validasyonu
+    if (dto.caseStatus && !isInitialStatus(dto.caseStatus as LegalCaseStatus)) {
+      throw new BadRequestException(
+        `Geçersiz başlangıç statüsü: ${dto.caseStatus}. Sadece DERDEST, ISLEMDE veya DERKENAR seçilebilir.`
+      );
+    }
+
+    // İlamlı Alt Kategori Validasyonları
+    this.validateSubCategoryRules(dto);
+
     try {
       return await this.prisma.$transaction(async (tx) => {
         // 1. Alacaklı (Client) - mevcut veya yeni
@@ -94,6 +172,44 @@ export class CaseService {
             type: dto.type,
             subType: dto.subType,
             status: dto.status || "ACTIVE",
+            // Yeni alanlar
+            executionPath: dto.executionPath || "HACIZ",
+            caseStatus: dto.caseStatus || "DERDEST",
+            caseDate: dto.startDate ? new Date(dto.startDate) : new Date(),
+            executionOfficeId: dto.executionOfficeId,
+            uyapBirimKodu: dto.uyapBirimKodu,
+            hasUyapWarning: !dto.uyapBirimKodu,
+            hasArticle4Request: dto.hasArticle4Request || false,
+            isAutomationEnabled: true,
+            // Alt Kategori ve Para Birimi (UYAP Uyumlu)
+            subCategory: dto.subCategory || "GENEL",
+            currency: dto.currency || "TRY",
+            // MTS Bilgileri
+            isMtsCase: dto.isMtsCase || false,
+            mtsReferenceNo: dto.mtsReferenceNo,
+            // Faiz Bilgileri
+            interestType: dto.interestType || "YASAL",
+            interestStartDate: dto.interestStartDate ? new Date(dto.interestStartDate) : undefined,
+            interestDescription: dto.interestDescription || this.generateInterestDescription(
+              (dto.subCategory as CaseSubCategory) || CaseSubCategory.GENEL,
+              dto.currency as Currency
+            ),
+            // Döviz Bilgileri (Prisma generate sonrası aktif olacak)
+            ...(dto.exchangeDate && { exchangeDate: new Date(dto.exchangeDate) }),
+            ...(dto.exchangeRateType && { exchangeRateType: dto.exchangeRateType }),
+            ...(!dto.exchangeRateType && dto.subCategory === "DOVIZ" && { exchangeRateType: "ODEME_TARIHI" }),
+            // Nafaka Bilgileri
+            ...(dto.nafakaStartDate && { nafakaStartDate: new Date(dto.nafakaStartDate) }),
+            ...(dto.monthlyNafakaAmount && { monthlyNafakaAmount: dto.monthlyNafakaAmount }),
+            // OCR / Belge Tarama Bilgileri
+            ...(dto.preDetectedCaseType && { preDetectedCaseType: dto.preDetectedCaseType }),
+            ...(dto.preDetectedSubCategory && { preDetectedSubCategory: dto.preDetectedSubCategory }),
+            ...(dto.ocrText && { ocrText: dto.ocrText.substring(0, 2000) }), // İlk 2000 karakter
+            ...(dto.isAutoDetected !== undefined && { isAutoDetected: dto.isAutoDetected }),
+            ...(dto.confidenceScore !== undefined && { confidenceScore: dto.confidenceScore }),
+            ...(dto.sourceDocumentId && { sourceDocumentId: dto.sourceDocumentId }),
+            ...(dto.detectionKeywords && { detectionKeywords: dto.detectionKeywords }),
+            // Eski alanlar
             clientId,
             courtId: dto.courtId,
             principalAmount: dto.principalAmount,
@@ -167,7 +283,32 @@ export class CaseService {
           }
         }
 
-        // 5. Tam case'i döndür
+        // 5. Alacak Kalemleri (Dues)
+        if (dto.dues && dto.dues.length > 0) {
+          for (const dueDto of dto.dues) {
+            await tx.due.create({
+              data: {
+                caseId: newCase.id,
+                type: dueDto.type,
+                description: dueDto.description,
+                amount: dueDto.amount,
+                dueDate: new Date(dueDto.dueDate),
+              },
+            });
+          }
+
+          // Ana para toplamını hesapla ve case'e yaz
+          const principalDues = dto.dues.filter(d => d.type === 'PRINCIPAL');
+          if (principalDues.length > 0) {
+            const totalPrincipal = principalDues.reduce((sum, d) => sum + d.amount, 0);
+            await tx.case.update({
+              where: { id: newCase.id },
+              data: { principalAmount: totalPrincipal },
+            });
+          }
+        }
+
+        // 6. Tam case'i döndür
         return tx.case.findUnique({
           where: { id: newCase.id },
           include: {
@@ -178,6 +319,7 @@ export class CaseService {
             lawyers: {
               include: { lawyer: { select: { id: true, name: true, surname: true } } },
             },
+            dues: true,
           },
         });
       });
@@ -239,5 +381,63 @@ export class CaseService {
     ]);
 
     return { total, active, closed, thisMonth };
+  }
+
+  // Sıradaki dosya numarasını al
+  async getNextFileNumber(tenantId: string): Promise<string> {
+    const currentYear = new Date().getFullYear();
+    
+    // Bu yıla ait en son dosya numarasını bul
+    const lastCase = await this.prisma.case.findFirst({
+      where: {
+        tenantId,
+        fileNumber: {
+          startsWith: `${currentYear}/`,
+        },
+      },
+      orderBy: { fileNumber: 'desc' },
+      select: { fileNumber: true },
+    });
+
+    let nextNumber = 1;
+    if (lastCase?.fileNumber) {
+      // Format: 2025/1234
+      const parts = lastCase.fileNumber.split('/');
+      if (parts.length === 2) {
+        const lastNumber = parseInt(parts[1], 10);
+        if (!isNaN(lastNumber)) {
+          nextNumber = lastNumber + 1;
+        }
+      }
+    }
+
+    return `${currentYear}/${nextNumber}`;
+  }
+
+  // Dosya flag'lerini güncelle (K.47-50)
+  async patchFlags(tenantId: string, id: string, dto: Partial<UpdateCaseDto>) {
+    await this.findOne(tenantId, id);
+
+    // Sadece izin verilen flag'leri güncelle
+    const allowedFlags = [
+      'isArchived',
+      'showToClient',
+      'allowUyapActions',
+      'hasArticle4Request',
+      'isAutomationEnabled',
+      'automationConfig',
+    ];
+
+    const data: any = {};
+    for (const key of allowedFlags) {
+      if (dto[key as keyof typeof dto] !== undefined) {
+        data[key] = dto[key as keyof typeof dto];
+      }
+    }
+
+    return this.prisma.case.update({
+      where: { id },
+      data,
+    });
   }
 }

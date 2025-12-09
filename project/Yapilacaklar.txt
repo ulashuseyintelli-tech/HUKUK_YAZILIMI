@@ -1,0 +1,293 @@
+
+Şimdiye kadar konuştuğumuz **tüm konuları**, tek tek adlandırılmış şekilde **birbirine entegre ederek**,
+tam kapsamlı **“İcra Yazılımı Akıllı Sihirbaz + OCR + Takip Mimarisi + UYAP Uyumluluk + UI/UX”**
+başlığı altında **tek, bütünleşik bir MİMARİ ANA PLANA** dönüştür.
+
+Bu plan doğrudan proje dökümanı olarak kullanılabilir.
+Backend + frontend + otomasyon + belge motoru + sihirbaz + UI + veri modeli **tam entegre**.
+
+---
+
+# 🔥 **LİMAX İCRA YAZILIMI — TAM ENTEGRASYONLU MİMARİ ANA PLANI**
+
+(Tüm görüşmelerde konuşulan tüm mimari kararları içerir)
+
+---
+
+# 🟥 1) **SİHİRBAZ MİMARİSİ (WIZARD FLOW)**
+
+Sihirbaz artık **sistemin beyni**.
+Kullanıcı ister belge yüklesin, ister elle seçim yapsın, sistem takibi doğru yere yönlendirir.
+
+---
+
+## 1.1. **Sihirbaz Başlangıç Ekranı (Adım 1)**
+
+### Başlık: **Akıllı Takip Sihirbazı**
+
+### Alt başlık: *Takibin dayanağı olan belge türünü seçin veya belgenizi taratın.*
+
+### Kullanıcıya üç kart gösterilir:
+
+### **(A) Mahkeme Kararı / İlam**
+
+Alt açıklama (düzeltilmiş, ideal metin):
+
+> Mahkemece verilmiş kesinleşmiş karar, nafaka hükmü veya ilam niteliğinde belge.
+
+• Para alacağı ilamı
+• Nafaka kararı
+• Tazminat / alacak hükmü
+
+→ Bu seçim **İlamlı Takip Sihirbazı** akışını başlatır.
+
+---
+
+### **(B) Senet / Bono / Çek**
+
+Açıklama:
+
+> Kambiyo senetleri (bono, poliçe, çek) için özel takip türü.
+
+• Emre muharrer senet
+• Hamiline çek
+• Poliçe
+
+→ Bu seçim **Kambiyo Takibi (Form 10)** akışını başlatır.
+
+---
+
+### **(C) Sözleşme / Fatura / Diğer Yazılı Belge**
+
+Açıklama:
+
+> Yazılı belgeye dayalı ilamsız takip, kira alacağı veya tahliye işlemleri.
+
+• Kira sözleşmesi
+• Satış faturası
+• Taahhütname
+
+→ Bu seçim **İlamsız Takip Sihirbazı** akışını başlatır.
+
+---
+
+## 1.2. Belge Taramalı Akış (OCR Modülü)
+
+Kartların üstünde bir kutu bulunur:
+
+### **📄 Belgeni Tara – Takip Türünü Ben Belirleyeyim**
+
+(PDF / JPG yükle → OCR → otomatik sınıflandırma)
+
+OCR analiz eder →
+Rule-based + AI sınıflandırma →
+Takip türü önerilir:
+
+Örnek:
+
+> “Belgenize göre en uygun takip türü: **İlamlı Nafaka Takibi**”
+
+Kullanıcı:
+
+* [Kabul et] → Doğrudan ilamlı nafaka akışına girer
+* [Değiştir] → Sihirbaz branch’lerine yönlendirilir
+
+---
+
+## 1.3. **Sihirbaz Adım 2 — SEÇİLEN BELGE TÜRÜNE GÖRE ÖZEL SORULAR**
+
+### **A) Kullanıcı ILAM seçtiyse → İLAMLI SİHİRBAZ**
+
+Eski “İlamlı mı / İlamsız mı?” sorusu tamamen kaldırılır.
+
+Sorular artık ŞUNLAR:
+
+#### **Soru 1:**
+
+Bu ilam para alacağı içeriyor mu?
+
+* Evet → Soru 2
+* Hayır → Bilgilendirme (çocuk teslimi yok → takibi açılamaz)
+
+#### **Soru 2:**
+
+Alacak TL mi, Döviz mi?
+
+* Döviz → `caseType = ILAMLI`, `subCategory = DOVIZ`
+* TL → Soru 3
+
+#### **Soru 3:**
+
+Bu alacak nafaka niteliğinde mi?
+
+* Evet → `ILAMLI_NAFAKA`
+* Hayır → `ILAMLI_GENEL`
+
+---
+
+### **B) Kullanıcı KAMBİYO seçtiyse → KAMBİYO SİHİRBAZI**
+
+Sorular:
+
+* Senet tipi: Bono / Poliçe / Çek
+* Vade tarihi
+* Keşideci / borçlu bilgisi
+  → `caseType = KAMBIYO`, `form=Form 10`
+
+---
+
+### **C) Kullanıcı YAZILI BELGE seçtiyse → İLAMSIZ SİHİRBAZI**
+
+Sorular:
+
+* Kira alacağı mı? → Form 13
+* Tahliye mi? → Form 14
+* Genel alacak mı? → Form 7
+* Rehnin paraya çevrilmesi mi? (Taşınır) → Form 8
+
+---
+
+## 1.4. Sihirbaz **opsiyonel hale getirildi**
+
+Kullanıcı hiçbir seçim yapmadan “İleri” derse:
+
+→ **Doğrudan klasik form listesi** ekranına gider.
+Sihirbaz **zorunlu tünel olmaktan çıkar**, akıllı bir rehbere dönüşür.
+
+---
+
+# 🟧 2) **İLAMLI TAKİP TİPLERİ EKRANI – YENİ DÜZEN**
+
+### Sorunlar:
+
+* Kart açıklamaları yeterince açıklayıcı değil
+* “Çocuk Teslimi” hâlâ görünüyor (hukuken kalktı)
+
+### Yapılacaklar:
+
+### ✔ Tüm ilamlı kartların başlıkları şu formatta olacak:
+
+* **İlamlı Para Alacağı**
+* **İlamlı Nafaka**
+* **İlamlı Döviz Alacağı**
+* **İlamlı Tahliye**
+* **İlamlı Taşınır Teslimi**
+* **İlamlı Taşınmaz Tahliye ve Teslimi**
+* **İlamlı İşin Yapılması**
+* **İlamlı İrtifak Hakkı**
+* **İlamlı Teminat**
+
+### ✔ Alt satır format standardı:
+
+`Form 2–5 • UYAP: 53–54–55`
+
+### ✔ “Çocuk Teslimi” derhal kaldırılacak:
+
+* `caseType.isDeprecated = true`
+* UI’dan tamamen gizlenir
+* Sadece eski dosyalarda “okuma modunda” görünür
+* Yeni takip açılamaz
+
+---
+
+# 🟩 3) **BELGE ÜRETİM MOTORU (TEMPLATE ENGINE)**
+
+### Takip Talebi (Örnek 1) üç varyanta ayrılır:
+
+#### **1) İlamlı Genel Alacak**
+
+Metin:
+
+> “...icra gideri, vekalet ücreti ve takip tarihinden itibaren asıl alacağa işleyecek (değişen oranlarda) faizi ile tahsili talebidir.”
+
+#### **2) İlamlı Nafaka**
+
+Metin:
+
+> “...takip tarihinden itibaren işleyecek faizi ile **devam eden aylık nafakaların birlikte tahsilini** talep ederiz.”
+
+#### **3) İlamlı Döviz**
+
+Metin:
+
+> “...faiz ile **fiili ödeme tarihindeki efektif kur üzerinden** tahsili talebidir.”
+
+### Template değişkenleri:
+
+* `{{principal}}`
+* `{{currency}}`
+* `{{exchangeDate}}`
+* `{{nafakaStart}}`
+* `{{interestRate}}`
+* `{{enforcementOffice.bankInfo}}`
+* `{{uyapCode}}`
+
+---
+
+# 🟥 4) **BACKEND / DOMAIN MODEL**
+
+Tüm konuşmaların birleştiği nihai veri modeli:
+
+## Case Modeli:
+
+* `caseType`
+* `subCategory` (GENEL / NAFAKA / DÖVİZ)
+* `documentBaseType` (ILAM / KAMBIYO / YAZILI)
+* `preDetectedCaseType` (OCR önerisi)
+* `hasArticle4Request`
+* `isTrackingActive`
+* `enforcementOfficeId`
+* `uyapCode`
+* `bankName`, `iban`, `taxNumber`
+* `nextActionAt`
+* `status` (DERDEST / ISLEMDE / DERKENAR / HİTAM / ACİZ / BATAK / MAHSUP)
+* `createdBy`, `auditLog[]`
+
+---
+
+# 🟩 5) **OTOMASYON MOTORU**
+
+* `hasArticle4Request = true` → otomasyon aktif
+* Takip talebi yoksa → otomasyon, haciz, ödeme emri **başlamaz**
+* İlamlı nafaka → her ay yeni alacak satırı oluştur
+* İlamlı döviz → fiili ödeme anında kur hesaplaması
+* İlamsız → klasik süre takibi
+* Kambiyo → 5 günlük ödeme süresi + itiraz yolu
+
+---
+
+# 🟨 6) **UYAP ENTEGRASYONU (Hazırlık Fazı)**
+
+Tüm UYAP çağrılarının ön koşulu:
+
+```
+if (!case.hasArticle4Request) throw "Takip talebi olmadan UYAP işlemi yapılamaz.";
+```
+
+UYAP katmanı (şimdilik stub):
+
+* `UyapService.sendPaymentOrder()`
+* `UyapService.sendHacizRequest()`
+* `UyapService.queryTebligatStatus()`
+* `UyapService.sendDocument()`
+
+UYAP birim kodları → EnforcementOffice tablosundan otomatik çekilecek.
+
+---
+
+# 🟧 7) **FRONTEND / UI MİMARİSİ**
+
+## Kartlar:
+
+* İlk ekran: 3’lü dayanak kartları
+* OCR yükleme kutusu
+* İlamsız / ilamlı / kambiyo alt sihirbaz ekranları
+* “İleri → Seçim yapmadan form listesine git” opsiyonu
+* Çocuk teslimi tüm UI’dan kaldırıldı
+
+## Statü kartları:
+
+* Aktif: DERDEST – İŞLEMDE – DERKENAR
+* Sonuçlanan: HİTAM – İNFAZ – MÜVEKKİLE İADE
+* Tahsil imkânsız: ACİZ – BATAK – MAHSUP
+

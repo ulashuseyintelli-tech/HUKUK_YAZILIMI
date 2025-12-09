@@ -114,6 +114,11 @@ class ApiClient {
     return this.request<any>("/cases/stats");
   }
 
+  async getNextFileNumber() {
+    const res = await this.request<{ fileNumber: string }>("/cases/next-file-number");
+    return res.fileNumber;
+  }
+
   // Debtors
   async getDebtors(params?: { page?: number; limit?: number; search?: string }) {
     const query = new URLSearchParams();
@@ -187,6 +192,97 @@ class ApiClient {
   async searchDebtors(search?: string) {
     const query = search ? `?search=${encodeURIComponent(search)}` : "";
     return this.request<any>(`/debtors${query}`);
+  }
+
+  // Form Types
+  async getFormTypes(category?: string) {
+    const query = category ? `?category=${encodeURIComponent(category)}` : "";
+    return this.request<any[]>(`/form-types${query}`);
+  }
+
+  async getFormType(code: string) {
+    return this.request<any>(`/form-types/${code}`);
+  }
+
+  async getFormTypeCategories() {
+    return this.request<string[]>("/form-types/categories");
+  }
+
+  async getFrequentFormTypes(limit?: number) {
+    const query = limit ? `?limit=${limit}` : "";
+    return this.request<any[]>(`/form-types/frequent${query}`);
+  }
+
+  // Generic HTTP methods
+  async get<T = any>(endpoint: string): Promise<{ data: T }> {
+    const data = await this.request<T>(endpoint);
+    return { data };
+  }
+
+  async post<T = any>(endpoint: string, body?: any): Promise<{ data: T }> {
+    const data = await this.request<T>(endpoint, {
+      method: "POST",
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    return { data };
+  }
+
+  // Automation
+  async getAutomationStats() {
+    return this.request<any>("/automation/stats");
+  }
+
+  async toggleAutoMode(caseId: string) {
+    return this.request<any>(`/automation/cases/${caseId}/toggle-auto`, {
+      method: "POST",
+    });
+  }
+
+  // AI
+  async getAiStats() {
+    return this.request<any>("/ai/stats");
+  }
+
+  async getAiSuggestions(caseId: string) {
+    return this.request<any>(`/ai/case/${caseId}/suggest`);
+  }
+
+  async getAiPrediction(caseId: string) {
+    return this.request<any>(`/ai/case/${caseId}/predict`);
+  }
+
+  // Case Status
+  async getStatusList() {
+    return this.request<any>("/case-status/list");
+  }
+
+  async changeCaseStatus(caseId: string, status: string, reason?: string) {
+    return this.request<any>(`/case-status/${caseId}/change`, {
+      method: "POST",
+      body: JSON.stringify({ status, reason }),
+    });
+  }
+
+  async getCaseStatusHistory(caseId: string) {
+    return this.request<any>(`/case-status/${caseId}/history`);
+  }
+
+  // Generic PATCH
+  async patch<T = any>(endpoint: string, body?: any): Promise<{ data: T }> {
+    const data = await this.request<T>(endpoint, {
+      method: "PATCH",
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    return { data };
+  }
+
+  // Generic PUT
+  async put<T = any>(endpoint: string, body?: any): Promise<{ data: T }> {
+    const data = await this.request<T>(endpoint, {
+      method: "PUT",
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    return { data };
   }
 }
 
