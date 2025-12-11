@@ -284,6 +284,14 @@ class ApiClient {
     });
     return { data };
   }
+
+  // Generic DELETE
+  async delete<T = any>(endpoint: string): Promise<{ data: T }> {
+    const data = await this.request<T>(endpoint, {
+      method: "DELETE",
+    });
+    return { data };
+  }
 }
 
 export const api = new ApiClient();

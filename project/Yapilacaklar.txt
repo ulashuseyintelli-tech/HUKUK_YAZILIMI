@@ -1,293 +1,443 @@
+2025-12-09 20:40
 
-Şimdiye kadar konuştuğumuz **tüm konuları**, tek tek adlandırılmış şekilde **birbirine entegre ederek**,
-tam kapsamlı **“İcra Yazılımı Akıllı Sihirbaz + OCR + Takip Mimarisi + UYAP Uyumluluk + UI/UX”**
-başlığı altında **tek, bütünleşik bir MİMARİ ANA PLANA** dönüştür.
+Durumu net görüyorum:
+Ekran küçüldüğünde **ana dashboard bileşenleri responsive davranmıyor**, grid kendini dar alana uyarlayamıyor ve bileşenler üst üste-yan yana sıkışıp **kayboluyormuş gibi** görünmeye başlıyor.
 
-Bu plan doğrudan proje dökümanı olarak kullanılabilir.
-Backend + frontend + otomasyon + belge motoru + sihirbaz + UI + veri modeli **tam entegre**.
+Tam ekran görüntüsünde her şey düzgün; küçültülmüş ekranda ise:
 
----
+* Kartlar genişlik hesaplamasında taşma yapıyor,
+* Sol menü + içerik alanı birlikte daraldığı için **Dashboard container içeriği kesiliyor**,
+* Risk dağılımı, otomasyon durumu gibi widget'lar breakpoint’te olması gereken şekilde alta inmiyor.
 
-# 🔥 **LİMAX İCRA YAZILIMI — TAM ENTEGRASYONLU MİMARİ ANA PLANI**
+Bu teknik olarak **CSS grid + responsive breakpoint** sorunu.
 
-(Tüm görüşmelerde konuşulan tüm mimari kararları içerir)
-
----
-
-# 🟥 1) **SİHİRBAZ MİMARİSİ (WIZARD FLOW)**
-
-Sihirbaz artık **sistemin beyni**.
-Kullanıcı ister belge yüklesin, ister elle seçim yapsın, sistem takibi doğru yere yönlendirir.
+Ben sana şimdi **kesin çözümü** üç aşamada yazıyorum. Yazılımcıya doğrudan verebilirsin.
 
 ---
 
-## 1.1. **Sihirbaz Başlangıç Ekranı (Adım 1)**
+# 🔧 1) Sorunun Temel Nedeni
 
-### Başlık: **Akıllı Takip Sihirbazı**
+Dashboard şu anda büyük ihtimalle şunu yapıyor:
 
-### Alt başlık: *Takibin dayanağı olan belge türünü seçin veya belgenizi taratın.*
-
-### Kullanıcıya üç kart gösterilir:
-
-### **(A) Mahkeme Kararı / İlam**
-
-Alt açıklama (düzeltilmiş, ideal metin):
-
-> Mahkemece verilmiş kesinleşmiş karar, nafaka hükmü veya ilam niteliğinde belge.
-
-• Para alacağı ilamı
-• Nafaka kararı
-• Tazminat / alacak hükmü
-
-→ Bu seçim **İlamlı Takip Sihirbazı** akışını başlatır.
-
----
-
-### **(B) Senet / Bono / Çek**
-
-Açıklama:
-
-> Kambiyo senetleri (bono, poliçe, çek) için özel takip türü.
-
-• Emre muharrer senet
-• Hamiline çek
-• Poliçe
-
-→ Bu seçim **Kambiyo Takibi (Form 10)** akışını başlatır.
-
----
-
-### **(C) Sözleşme / Fatura / Diğer Yazılı Belge**
-
-Açıklama:
-
-> Yazılı belgeye dayalı ilamsız takip, kira alacağı veya tahliye işlemleri.
-
-• Kira sözleşmesi
-• Satış faturası
-• Taahhütname
-
-→ Bu seçim **İlamsız Takip Sihirbazı** akışını başlatır.
-
----
-
-## 1.2. Belge Taramalı Akış (OCR Modülü)
-
-Kartların üstünde bir kutu bulunur:
-
-### **📄 Belgeni Tara – Takip Türünü Ben Belirleyeyim**
-
-(PDF / JPG yükle → OCR → otomatik sınıflandırma)
-
-OCR analiz eder →
-Rule-based + AI sınıflandırma →
-Takip türü önerilir:
-
-Örnek:
-
-> “Belgenize göre en uygun takip türü: **İlamlı Nafaka Takibi**”
-
-Kullanıcı:
-
-* [Kabul et] → Doğrudan ilamlı nafaka akışına girer
-* [Değiştir] → Sihirbaz branch’lerine yönlendirilir
-
----
-
-## 1.3. **Sihirbaz Adım 2 — SEÇİLEN BELGE TÜRÜNE GÖRE ÖZEL SORULAR**
-
-### **A) Kullanıcı ILAM seçtiyse → İLAMLI SİHİRBAZ**
-
-Eski “İlamlı mı / İlamsız mı?” sorusu tamamen kaldırılır.
-
-Sorular artık ŞUNLAR:
-
-#### **Soru 1:**
-
-Bu ilam para alacağı içeriyor mu?
-
-* Evet → Soru 2
-* Hayır → Bilgilendirme (çocuk teslimi yok → takibi açılamaz)
-
-#### **Soru 2:**
-
-Alacak TL mi, Döviz mi?
-
-* Döviz → `caseType = ILAMLI`, `subCategory = DOVIZ`
-* TL → Soru 3
-
-#### **Soru 3:**
-
-Bu alacak nafaka niteliğinde mi?
-
-* Evet → `ILAMLI_NAFAKA`
-* Hayır → `ILAMLI_GENEL`
-
----
-
-### **B) Kullanıcı KAMBİYO seçtiyse → KAMBİYO SİHİRBAZI**
-
-Sorular:
-
-* Senet tipi: Bono / Poliçe / Çek
-* Vade tarihi
-* Keşideci / borçlu bilgisi
-  → `caseType = KAMBIYO`, `form=Form 10`
-
----
-
-### **C) Kullanıcı YAZILI BELGE seçtiyse → İLAMSIZ SİHİRBAZI**
-
-Sorular:
-
-* Kira alacağı mı? → Form 13
-* Tahliye mi? → Form 14
-* Genel alacak mı? → Form 7
-* Rehnin paraya çevrilmesi mi? (Taşınır) → Form 8
-
----
-
-## 1.4. Sihirbaz **opsiyonel hale getirildi**
-
-Kullanıcı hiçbir seçim yapmadan “İleri” derse:
-
-→ **Doğrudan klasik form listesi** ekranına gider.
-Sihirbaz **zorunlu tünel olmaktan çıkar**, akıllı bir rehbere dönüşür.
-
----
-
-# 🟧 2) **İLAMLI TAKİP TİPLERİ EKRANI – YENİ DÜZEN**
-
-### Sorunlar:
-
-* Kart açıklamaları yeterince açıklayıcı değil
-* “Çocuk Teslimi” hâlâ görünüyor (hukuken kalktı)
-
-### Yapılacaklar:
-
-### ✔ Tüm ilamlı kartların başlıkları şu formatta olacak:
-
-* **İlamlı Para Alacağı**
-* **İlamlı Nafaka**
-* **İlamlı Döviz Alacağı**
-* **İlamlı Tahliye**
-* **İlamlı Taşınır Teslimi**
-* **İlamlı Taşınmaz Tahliye ve Teslimi**
-* **İlamlı İşin Yapılması**
-* **İlamlı İrtifak Hakkı**
-* **İlamlı Teminat**
-
-### ✔ Alt satır format standardı:
-
-`Form 2–5 • UYAP: 53–54–55`
-
-### ✔ “Çocuk Teslimi” derhal kaldırılacak:
-
-* `caseType.isDeprecated = true`
-* UI’dan tamamen gizlenir
-* Sadece eski dosyalarda “okuma modunda” görünür
-* Yeni takip açılamaz
-
----
-
-# 🟩 3) **BELGE ÜRETİM MOTORU (TEMPLATE ENGINE)**
-
-### Takip Talebi (Örnek 1) üç varyanta ayrılır:
-
-#### **1) İlamlı Genel Alacak**
-
-Metin:
-
-> “...icra gideri, vekalet ücreti ve takip tarihinden itibaren asıl alacağa işleyecek (değişen oranlarda) faizi ile tahsili talebidir.”
-
-#### **2) İlamlı Nafaka**
-
-Metin:
-
-> “...takip tarihinden itibaren işleyecek faizi ile **devam eden aylık nafakaların birlikte tahsilini** talep ederiz.”
-
-#### **3) İlamlı Döviz**
-
-Metin:
-
-> “...faiz ile **fiili ödeme tarihindeki efektif kur üzerinden** tahsili talebidir.”
-
-### Template değişkenleri:
-
-* `{{principal}}`
-* `{{currency}}`
-* `{{exchangeDate}}`
-* `{{nafakaStart}}`
-* `{{interestRate}}`
-* `{{enforcementOffice.bankInfo}}`
-* `{{uyapCode}}`
-
----
-
-# 🟥 4) **BACKEND / DOMAIN MODEL**
-
-Tüm konuşmaların birleştiği nihai veri modeli:
-
-## Case Modeli:
-
-* `caseType`
-* `subCategory` (GENEL / NAFAKA / DÖVİZ)
-* `documentBaseType` (ILAM / KAMBIYO / YAZILI)
-* `preDetectedCaseType` (OCR önerisi)
-* `hasArticle4Request`
-* `isTrackingActive`
-* `enforcementOfficeId`
-* `uyapCode`
-* `bankName`, `iban`, `taxNumber`
-* `nextActionAt`
-* `status` (DERDEST / ISLEMDE / DERKENAR / HİTAM / ACİZ / BATAK / MAHSUP)
-* `createdBy`, `auditLog[]`
-
----
-
-# 🟩 5) **OTOMASYON MOTORU**
-
-* `hasArticle4Request = true` → otomasyon aktif
-* Takip talebi yoksa → otomasyon, haciz, ödeme emri **başlamaz**
-* İlamlı nafaka → her ay yeni alacak satırı oluştur
-* İlamlı döviz → fiili ödeme anında kur hesaplaması
-* İlamsız → klasik süre takibi
-* Kambiyo → 5 günlük ödeme süresi + itiraz yolu
-
----
-
-# 🟨 6) **UYAP ENTEGRASYONU (Hazırlık Fazı)**
-
-Tüm UYAP çağrılarının ön koşulu:
-
-```
-if (!case.hasArticle4Request) throw "Takip talebi olmadan UYAP işlemi yapılamaz.";
+```css
+.grid-cols-4
 ```
 
-UYAP katmanı (şimdilik stub):
+gibi sabit kolonlu bir yapı kullanıyor.
+Ekran küçülünce grid 4 kolonu sığdıramıyor → bileşenler taşmaya başlıyor.
 
-* `UyapService.sendPaymentOrder()`
-* `UyapService.sendHacizRequest()`
-* `UyapService.queryTebligatStatus()`
-* `UyapService.sendDocument()`
+Ayrıca sol menü sabit genişlikte olduğu için içerik alanı daraldığında grid kolonu hâlâ "4 kolonmuş gibi" davranıyor.
 
-UYAP birim kodları → EnforcementOffice tablosundan otomatik çekilecek.
+Kısacası:
+
+### ❌ Breakpoint tetiklenmiyor
+
+### ❌ Grid küçülen alana göre kendini tek/çift kolona düşürmüyor
+
+### ❌ Min-height veya overflow ayarı içeriği kırpıyor
 
 ---
 
-# 🟧 7) **FRONTEND / UI MİMARİSİ**
+# 🔨 2) Kesin Çözüm (Tailwind / React için)
 
-## Kartlar:
+Dashboard grid container’ı **esnek responsive** olmalı:
 
-* İlk ekran: 3’lü dayanak kartları
-* OCR yükleme kutusu
-* İlamsız / ilamlı / kambiyo alt sihirbaz ekranları
-* “İleri → Seçim yapmadan form listesine git” opsiyonu
-* Çocuk teslimi tüm UI’dan kaldırıldı
+```html
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
+```
 
-## Statü kartları:
+Bu ne demek?
 
-* Aktif: DERDEST – İŞLEMDE – DERKENAR
-* Sonuçlanan: HİTAM – İNFAZ – MÜVEKKİLE İADE
-* Tahsil imkânsız: ACİZ – BATAK – MAHSUP
+* **grid-cols-1** → telefon
+* **sm:grid-cols-2** → tablet / küçük ekran
+* **lg:grid-cols-4** → büyük ekran
+
+O zaman ekran küçülünce kartlar **otomatik alta iner**, hiçbir şey kaybolmaz.
+
+---
+
+# 🎯 3) Kartların Taşmasını Engellemek
+
+Her kart için:
+
+```html
+<div class="p-4 bg-white rounded-xl shadow-sm min-w-0">
+```
+
+Buradaki **min-w-0** kritik.
+Çünkü grid içindeki bileşenler aksi halde taşma yapıyor ve “kayboluyor gibi” görünüyor.
+
+Bu tam olarak senin ekran küçültünce yaşadığın problem.
+
+---
+
+# 📌 4) Sol Menü Daraltılabilir Olmalı
+
+Sol menu genişliği şu anda sabit (ör: 280px).
+Ekran küçükken içerik alanını eziyor.
+
+### Çözüm:
+
+* **md’de expanded**,
+* **sm’de collapsed** olmalı.
+
+Tailwind örneği:
+
+```html
+<aside class="hidden sm:block w-64 ...">
+```
+
+veya:
+
+```html
+<aside class="w-64 md:w-56 lg:w-64 transition-all">
+```
+
+Bu sayede küçük ekranda içerik alanı rahatlar, kartlar da görünür kalır.
+
+---
+
+# 🧪 5) Overflow Sorunu
+
+Dashboard container şu anda olası şu hatayı yapıyor:
+
+```css
+overflow: hidden;
+```
+
+Bu, içerik taşınca **görünmez oluyor**.
+Mutlaka kaldırılmalı veya `overflow-auto` yapılmalı.
+
+---
+
+# 💎 6) Sana Özet:
+
+Küçük ekranda kaybolma sorununun nedeni **grid’in responsive olmaması + kartların min-width taşması + sidebar’ın sabit genişliği**.
+
+Doğru yapı:
+
+### Container:
+
+```html
+<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
+```
+
+### Kart:
+
+```html
+<div class="bg-white p-4 rounded-xl shadow-sm min-w-0">
+```
+
+### Sidebar:
+
+```html
+<aside class="hidden md:block w-64">
+```
+
+### Ana içerik:
+
+```html
+<div class="flex-1 overflow-auto">
+```
+
+Bunları uygularsan dashboard, ister telefon ekranı kadar daralt, istemediğin hiçbir şey kaybolmaz.
+
+---Tamam, şimdi bu dashboard’u “oyuncak proje” seviyesinden “kurumsal hukuk otomasyonu” seviyesine çıkartalım.
+
+Aşağıyı yazılımcıya + tasarımcıya direkt verebilirsin: UI/UX mimari dökümanıdır.
+
+---
+
+## 1. Global Layout Mimarisi
+
+**Ana iskelet (tüm uygulama):**
+
+* Üstte **Topbar**
+
+  * Sol: Arama çubuğu (Takip, borçlu, avukat vs. için global search)
+  * Orta: Sayfa başlığı / breadcrumb
+  * Sağ: Bildirim ikonu, kullanıcı menüsü (kullanıcı adı, rol), AI durumu göstergesi (AI Aktif)
+
+* Solda **Sidebar (Ana Menü)** 
+
+  * Dashboard
+  * Yeni Takip Oluştur
+  * Eski Takipler
+  * AI Tools
+  * Borçlular
+  * Müvekkiller
+  * Görevler
+  * Bildirimler
+  * Mahkemeler
+  * Tarifeler
+  * Sistem Özeti
+  * Ayarlar
+  * En altta: **Sihirbaz / Otomasyon Switch**
+
+* Ortada **Content Area**
+
+  * Her sayfa için farklı layout ama Dashboard için grid yapı
+
+**Responsive davranış:**
+
+* `lg` ve üstü: Sidebar sabit, topbar sabit.
+* `md` ve altı: Sidebar gizli, hamburger menü ile açılır.
+* Content alanı her zaman `flex-1 overflow-auto`.
+
+---
+
+## 2. Dashboard Bilgi Mimarisi
+
+Dashboard’u şu 6 ana bloğa bölelim:
+
+1. **Üst Özet Kartları**
+2. **Risk Dağılımı**
+3. **Otomasyon Durumu**
+4. **Yaklaşan Otomatik İşlemler**
+5. **Son Otomatik İşlemler**
+6. **AI İçgörü / Uyarı Paneli (opsiyonel ama şık)**
+
+### 2.1. Üst Özet Kartları (4’lü grid)
+
+Satır 1, 4 kart:
+
+1. **Toplam Dosya**
+2. **Otomatik Modda Olan Dosya Sayısı**
+3. **Bekleyen İşlem (queue’deki event sayısı)**
+4. **Bugün Tamamlanan İşlem Sayısı**
+
+Her kart:
+
+* Başlık
+* Büyük bold sayı
+* Altında küçük açıklama
+* Sağ üstte ikon (dosya, yıldırım, saat, tik gibi)
+* Tıklanabilir → ilgili filtrelenmiş liste sayfasına gider:
+
+  * Toplam Dosya → /takipler
+  * Otomatik Mod → /takipler?mode=auto
+  * Bekleyen İşlem → /otomasyon/kuyruk
+  * Bugün Tamamlanan → /otomasyon/logs?today=1
+
+---
+
+### 2.2. Risk Dağılımı Kartı
+
+Sol altta, geniş bir kart.
+
+İçerik:
+
+* Başlık: **Risk Dağılımı**
+* Altında 4 satır:
+
+  * Düşük (yeşil nokta)
+  * Orta (sarı)
+  * Yüksek (kırmızı)
+  * Belirsiz (gri)
+
+Her satırda:
+
+* Etiket
+* Adet (X dosya)
+* Yüzde (toplam aktif dosya içinde)
+* Sağda küçük yatay bar (progress)
+
+Tıklanabilir:
+
+* “Yüksek” satırına tıklayınca → /takipler?risk=high
+* Altında küçük gri metin: “Toplam Aktif Dosya: X”
+
+---
+
+### 2.3. Otomasyon Durumu Kartı
+
+Risk kartının sağında bir kart:
+
+* Başlık: **Otomasyon Durumu**
+* Alt satırlar:
+
+  * Kural Motoru → Çalışıyor / Pasif / Hatalı
+  * İş Akışı Motoru → Çalışıyor / Pasif
+  * Tebligat Sistemi → Aktif / Beklemede
+  * AI Karar Modülü → Aktif / Pasif
+
+Her biri:
+
+* Solunda ikon (pulse, flow, mail, brain)
+* Sağında durum etiketi (chip):
+
+  * Yeşil: Çalışıyor / Aktif
+  * Sarı: Beklemede
+  * Kırmızı: Hata / Pasif
+
+Kartın sağ üst köşesinde: **“Sistem Logları” linki** → /otomasyon/logs
+
+---
+
+### 2.4. Yaklaşan Otomatik İşlemler
+
+Sağ üstte, dikey liste kartı:
+
+* Başlık: **Yaklaşan Otomatik İşlemler**
+* Her satır:
+
+  * Dosya No: 2024/1234 (tıklanınca /takip/2024-1234)
+  * İşlem: Haciz İstebi / Risk Kontrolü / Mernis Sorgu
+  * Zaman: “2 saat sonra”, “1 gün sonra”
+  * Sağda chip: İşlem tipi (Haciz, Kontrol, Bildirim vs.)
+
+Altında: “Tüm planlanan işlemleri gör” linki → /otomasyon/schedule
+
+---
+
+### 2.5. Son Otomatik İşlemler
+
+Sol alt tarafta kart:
+
+* Başlık: **Son Otomatik İşlemler**
+* Liste:
+
+  * İşlem açıklaması: “Ödeme emri gönderildi”
+  * Dosya: 2024/1234
+  * Süre: “10 dk önce”
+  * Sonuç: Başarılı / Uyarı / Hata (renkli etiket)
+
+Altında filtre butonları:
+
+* Hepsi | Başarılı | Uyarı | Hata
+
+---
+
+### 2.6. AI İçgörü / Uyarı Paneli (Opsiyonel ama güzel)
+
+Sağ alt tarafta küçük kart:
+
+* Başlık: **AI Önerileri**
+* İçerik (örnek):
+
+  * “Yüksek riskli 5 dosyada 3 gündür işlem yok”
+  * “3 müvekkilin toplam 1M üzeri alacağı var, raporlamayı öneriyorum”
+  * “Şu dosyalarda adres başarısız, yeni adres araştırması tetiklenebilir”
+
+Buton: **“Detaylı Analiz Al”** → /ai/analiz veya popup
+
+---
+
+## 3. Responsive Grid Yapısı
+
+Tailwind mantığıyla düşünecek olursak:
+
+* **Üst 4 kart:**
+
+```html
+<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+  <!-- 4 summary card -->
+</div>
+```
+
+* **Orta satır: Risk + Otomasyon Durumu**
+
+```html
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+  <!-- Risk Dağılımı -->
+  <!-- Otomasyon Durumu -->
+</div>
+```
+
+* **Alt satır: Son İşlemler + Yaklaşan İşlemler + AI Paneli**
+
+```html
+<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
+  <!-- Son Otomatik İşlemler (lg: 2 kolon span) -->
+  <!-- Yaklaşan İşlemler -->
+</div>
+```
+
+Son İşlemler kartına `lg:col-span-2` verirsin, sağda tek kolonda Yaklaşan İşlemler durur. AI panelini sonradan 3. kart gibi ekleyebilirsin.
+
+---
+
+## 4. Tasarım Dili / Görsel Sistem
+
+* Arkaplan: çok açık gri (#F5F5F7)
+* Kartlar: beyaz, `rounded-xl`, `shadow-sm`
+* Font: modern sans (Inter / Nunito benzeri)
+* İkonlar: basit, minimal (Heroicons / Lucide tarzı)
+* Renk kodları:
+
+  * Risk:
+
+    * Düşük: yeşil (#22c55e)
+    * Orta: sarı (#eab308)
+    * Yüksek: kırmızı (#ef4444)
+    * Belirsiz: gri (#9ca3af)
+  * Durum:
+
+    * Aktif: yeşil chip
+    * Pasif: gri chip
+    * Hata: kırmızı chip
+
+---
+
+## 5. Kullanıcı Akışları (UX)
+
+1. **Dashboard’a giren kullanıcı:**
+
+   * İlk bakışta:
+
+     * Kaç dosya var?
+     * Otomasyon çalışıyor mu?
+     * Risk nasıl dağılmış?
+     * Şimdi–az sonra hangi otomatik işler olacak?
+   * 1–2 saniyede “sistemin nabzını” okur.
+
+2. **Riskten kaynağa gitme:**
+
+   * “Yüksek” risk satırına tıklar → filtreli dosya listesi
+   * Oradan tek klikle dosya detaya
+
+3. **Hata takibi:**
+
+   * Son Otomatik İşlemler kartında “Hata” filtresi
+   * İşleme tıklayınca log detay sayfasına (hangi dosya, ne hata, ne zaman)
+
+4. **Otomasyon güven kontrolü:**
+
+   * Otomasyon Durumu kartında modüllerin hepsini görür
+   * Bir modül “Hata”/“Pasif” ise, sağ üst “Sistem Logları” linki ile detay
+
+5. **AI destek:**
+
+   * AI Önerileri kartı ile:
+
+     * Riskli ama 3 gündür dokunulmamış dosyalar
+     * Tahsilat potansiyeli yüksek ama hacze gitmemiş dosyalar
+   * “Detaylı Analiz Al” diyerek otomatik rapor sayfası
+
+---
+
+## 6. Teknik Notlar (Yazılımcıya kısa talimat)
+
+* Layout: `flex flex-col h-screen`
+* Üst Navbar: sabit yükseklik, `flex-none`
+* Alt içerik: `flex flex-row flex-1 overflow-hidden`
+
+  * Sidebar: `hidden md:block w-64`
+  * Content: `flex-1 overflow-auto p-4`
+
+Grid ve kart yapısı için:
+
+* Her kartta `min-w-0` kullanın → taşma/kaybolma biter.
+* Container genişliği: `max-w-6xl mx-auto` gibi ortalanmış olsun, 4K ekranda da saçmalamasın.
+
+---
+
+Bu mimariyi uygularsan:
+
+* Ekran küçülünce hiçbir şey kaybolmaz.
+* Dashboard gerçekten bir **“otomatik icra kontrol kulesi”** gibi çalışır.
+* Risk, otomasyon, yaklaşan işler ve loglar tek bakışta okunur.
+
+Sonraki hamlede istersen bu Dashboard için **tam bir component hiyerarşi / React component isimleri ve props şeması** da çıkarırım; frontend’çi copy–paste mantığıyla yürür.
+
 

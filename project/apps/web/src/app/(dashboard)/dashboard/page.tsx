@@ -16,10 +16,24 @@ interface AutomationStats {
 }
 
 interface RiskDistribution {
-  low: number;
-  medium: number;
-  high: number;
-  critical: number;
+  id: string | null;
+  code: string;
+  name: string;
+  color: string;
+  count: number;
+  totalAmount: number;
+  percentage: number;
+}
+
+interface RiskSummaryData {
+  totalActive: number;
+  distribution: RiskDistribution[];
+  summary: {
+    high: number;
+    medium: number;
+    low: number;
+    unassigned: number;
+  };
 }
 
 interface UpcomingAction {
@@ -33,7 +47,7 @@ interface UpcomingAction {
 
 export default function DashboardPage() {
   const [automationStats, setAutomationStats] = useState<AutomationStats | null>(null);
-  const [riskDistribution, setRiskDistribution] = useState<RiskDistribution | null>(null);
+  const [riskSummary, setRiskSummary] = useState<RiskSummaryData | null>(null);
   const [upcomingActions, setUpcomingActions] = useState<UpcomingAction[]>([]);
   const [aiConfigured, setAiConfigured] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -44,9 +58,10 @@ export default function DashboardPage() {
 
   const loadDashboardData = async () => {
     try {
-      const [autoRes, aiRes] = await Promise.all([
+      const [autoRes, aiRes, riskRes] = await Promise.all([
         api.get('/automation/stats').catch(() => ({ data: null })),
         api.get('/ai/stats').catch(() => ({ data: null })),
+        api.get('/reports/risk-summary').catch(() => ({ data: null })),
       ]);
       
       if (autoRes.data?.data) {
@@ -54,6 +69,9 @@ export default function DashboardPage() {
       }
       if (aiRes.data?.data) {
         setAiConfigured(aiRes.data.data.isOpenAiConfigured);
+      }
+      if (riskRes.data?.data) {
+        setRiskSummary(riskRes.data.data);
       }
     } catch (error) {
       console.error('Dashboard data load error:', error);
@@ -63,19 +81,19 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="space-y-6 px-4 sm:px-0">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold">Tam Otomatik İcra Dashboard</h1>
-          <p className="text-muted-foreground">Otomasyon durumu ve sistem özeti</p>
+          <h1 className="text-xl sm:text-2xl font-bold">Tam Otomatik İcra Dashboard</h1>
+          <p className="text-sm text-muted-foreground">Otomasyon durumu ve sistem özeti</p>
         </div>
         <div className="flex items-center gap-2">
           {aiConfigured ? (
-            <span className="flex items-center gap-1 text-sm bg-green-100 text-green-700 px-3 py-1 rounded-full">
+            <span className="flex items-center gap-1 text-xs sm:text-sm bg-green-100 text-green-700 px-3 py-1 rounded-full">
               <Brain className="h-4 w-4" /> AI Aktif
             </span>
           ) : (
-            <span className="flex items-center gap-1 text-sm bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full">
+            <span className="flex items-center gap-1 text-xs sm:text-sm bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full">
               <Brain className="h-4 w-4" /> AI Yapılandırılmadı
             </span>
           )}
@@ -84,7 +102,7 @@ export default function DashboardPage() {
 
 
       {/* Otomasyon Stats */}
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="Toplam Dosya"
           value={automationStats?.totalCases?.toString() || '0'}
@@ -113,25 +131,45 @@ export default function DashboardPage() {
       </div>
 
       {/* Risk Dağılımı ve Otomasyon Durumu */}
-      <div className="grid gap-6 lg:grid-cols-3">
+      <div className="grid gap-4 sm:gap-6 grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
         {/* Risk Dağılımı */}
-        <div className="bg-white rounded-xl border p-6">
-          <h2 className="font-semibold mb-4 flex items-center gap-2">
-            <AlertTriangle className="h-5 w-5 text-orange-500" />
+        <div className="bg-white rounded-xl border p-4 sm:p-6">
+          <h2 className="font-semibold mb-3 sm:mb-4 flex items-center gap-2 text-sm sm:text-base">
+            <AlertTriangle className="h-4 w-4 sm:h-5 sm:w-5 text-orange-500" />
             Risk Dağılımı
           </h2>
-          <div className="space-y-3">
-            <RiskBar label="Düşük Risk" count={12} total={50} color="green" />
-            <RiskBar label="Orta Risk" count={20} total={50} color="yellow" />
-            <RiskBar label="Yüksek Risk" count={15} total={50} color="orange" />
-            <RiskBar label="Kritik" count={3} total={50} color="red" />
-          </div>
+          {riskSummary ? (
+            <div className="space-y-3">
+              {riskSummary.distribution.map((risk) => (
+                <RiskBarDynamic 
+                  key={risk.code} 
+                  label={risk.name} 
+                  count={risk.count} 
+                  total={riskSummary.totalActive} 
+                  color={risk.color || '#9ca3af'} 
+                />
+              ))}
+              <div className="pt-3 mt-3 border-t">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Toplam Aktif Dosya</span>
+                  <span className="font-semibold">{riskSummary.totalActive}</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <RiskBar label="Düşük Risk" count={0} total={1} color="green" />
+              <RiskBar label="Orta Risk" count={0} total={1} color="yellow" />
+              <RiskBar label="Yüksek Risk" count={0} total={1} color="orange" />
+              <RiskBar label="Belirsiz" count={0} total={1} color="red" />
+            </div>
+          )}
         </div>
 
         {/* Otomasyon Durumu */}
-        <div className="bg-white rounded-xl border p-6">
-          <h2 className="font-semibold mb-4 flex items-center gap-2">
-            <Activity className="h-5 w-5 text-blue-500" />
+        <div className="bg-white rounded-xl border p-4 sm:p-6">
+          <h2 className="font-semibold mb-3 sm:mb-4 flex items-center gap-2 text-sm sm:text-base">
+            <Activity className="h-4 w-4 sm:h-5 sm:w-5 text-blue-500" />
             Otomasyon Durumu
           </h2>
           <div className="space-y-4">
@@ -157,9 +195,9 @@ export default function DashboardPage() {
         </div>
 
         {/* Yaklaşan İşlemler */}
-        <div className="bg-white rounded-xl border p-6">
-          <h2 className="font-semibold mb-4 flex items-center gap-2">
-            <Clock className="h-5 w-5 text-purple-500" />
+        <div className="bg-white rounded-xl border p-4 sm:p-6">
+          <h2 className="font-semibold mb-3 sm:mb-4 flex items-center gap-2 text-sm sm:text-base">
+            <Clock className="h-4 w-4 sm:h-5 sm:w-5 text-purple-500" />
             Yaklaşan Otomatik İşlemler
           </h2>
           <div className="space-y-3">
@@ -185,11 +223,11 @@ export default function DashboardPage() {
 
 
       {/* Son İşlemler ve AI Önerileri */}
-      <div className="grid gap-6 lg:grid-cols-2">
+      <div className="grid gap-4 sm:gap-6 grid-cols-1 lg:grid-cols-2">
         {/* Son Otomatik İşlemler */}
-        <div className="bg-white rounded-xl border p-6">
-          <h2 className="font-semibold mb-4 flex items-center gap-2">
-            <Zap className="h-5 w-5 text-yellow-500" />
+        <div className="bg-white rounded-xl border p-4 sm:p-6">
+          <h2 className="font-semibold mb-3 sm:mb-4 flex items-center gap-2 text-sm sm:text-base">
+            <Zap className="h-4 w-4 sm:h-5 sm:w-5 text-yellow-500" />
             Son Otomatik İşlemler
           </h2>
           <div className="space-y-3">
@@ -218,9 +256,9 @@ export default function DashboardPage() {
         </div>
 
         {/* AI Önerileri */}
-        <div className="bg-white rounded-xl border p-6">
-          <h2 className="font-semibold mb-4 flex items-center gap-2">
-            <Brain className="h-5 w-5 text-indigo-500" />
+        <div className="bg-white rounded-xl border p-4 sm:p-6">
+          <h2 className="font-semibold mb-3 sm:mb-4 flex items-center gap-2 text-sm sm:text-base">
+            <Brain className="h-4 w-4 sm:h-5 sm:w-5 text-indigo-500" />
             AI Önerileri
           </h2>
           {aiConfigured ? (
@@ -275,14 +313,14 @@ function StatCard({
   };
 
   return (
-    <div className="bg-white rounded-xl border p-6">
+    <div className="bg-white rounded-xl border p-4 sm:p-6">
       <div className="flex items-center justify-between">
-        <span className="text-muted-foreground text-sm">{title}</span>
-        <span className={`p-2 rounded-lg ${colors[color]}`}>{icon}</span>
+        <span className="text-muted-foreground text-xs sm:text-sm">{title}</span>
+        <span className={`p-1.5 sm:p-2 rounded-lg ${colors[color]}`}>{icon}</span>
       </div>
-      <div className="mt-3">
-        <span className="text-3xl font-bold">{value}</span>
-        {subtitle && <span className="ml-1 text-sm text-muted-foreground">{subtitle}</span>}
+      <div className="mt-2 sm:mt-3">
+        <span className="text-2xl sm:text-3xl font-bold">{value}</span>
+        {subtitle && <span className="ml-1 text-xs sm:text-sm text-muted-foreground">{subtitle}</span>}
       </div>
     </div>
   );
@@ -299,7 +337,7 @@ function RiskBar({
   total: number; 
   color: 'green' | 'yellow' | 'orange' | 'red';
 }) {
-  const percentage = (count / total) * 100;
+  const percentage = total > 0 ? (count / total) * 100 : 0;
   const colors = {
     green: 'bg-green-500',
     yellow: 'bg-yellow-500',
@@ -317,6 +355,38 @@ function RiskBar({
         <div 
           className={`h-full ${colors[color]} rounded-full transition-all`}
           style={{ width: `${percentage}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function RiskBarDynamic({ 
+  label, 
+  count, 
+  total, 
+  color 
+}: { 
+  label: string; 
+  count: number; 
+  total: number; 
+  color: string;
+}) {
+  const percentage = total > 0 ? (count / total) * 100 : 0;
+
+  return (
+    <div>
+      <div className="flex justify-between text-sm mb-1">
+        <span className="flex items-center gap-2">
+          <span className="w-3 h-3 rounded-full" style={{ backgroundColor: color }} />
+          {label}
+        </span>
+        <span className="font-medium">{count} <span className="text-muted-foreground text-xs">(%{Math.round(percentage)})</span></span>
+      </div>
+      <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
+        <div 
+          className="h-full rounded-full transition-all"
+          style={{ width: `${percentage}%`, backgroundColor: color }}
         />
       </div>
     </div>

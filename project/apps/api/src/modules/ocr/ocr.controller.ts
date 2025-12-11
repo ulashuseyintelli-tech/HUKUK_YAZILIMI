@@ -66,17 +66,26 @@ export class OcrController {
           "image/jpeg",
           "image/png",
           "image/webp",
+          "image/tiff",
+          "image/bmp",
           "text/plain",
+          "text/rtf",
+          "application/rtf",
           "application/octet-stream", // UDF dosyaları için
+          "application/msword", // .doc (eski Word)
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document", // .docx
         ];
-        // UDF uzantısı kontrolü
-        const isUdf = file.originalname?.toLowerCase().endsWith(".udf");
-        if (allowedMimes.includes(file.mimetype) || isUdf) {
+        // Uzantı bazlı kontrol (MIME type güvenilir değil)
+        const lowerName = file.originalname?.toLowerCase() || "";
+        const allowedExtensions = [".udf", ".doc", ".docx", ".rtf", ".tiff", ".tif", ".bmp"];
+        const hasAllowedExtension = allowedExtensions.some(ext => lowerName.endsWith(ext));
+        
+        if (allowedMimes.includes(file.mimetype) || hasAllowedExtension) {
           cb(null, true);
         } else {
           cb(
             new BadRequestException(
-              "Desteklenmeyen dosya formatı. PDF, UDF, JPG, PNG veya TXT yükleyin."
+              "Desteklenmeyen dosya formatı. PDF, Word (DOC/DOCX), RTF, UDF, JPG, PNG, TIFF veya TXT yükleyin."
             ),
             false
           );
@@ -108,13 +117,17 @@ export class OcrController {
         const result = useAI 
           ? await this.ocrService.classifyDocumentWithAI(filenameHints)
           : this.ocrService.classifyDocument(filenameHints);
+        
+        // Dosya adından tahmin yapıldığında güven skoru
+        const adjustedConfidence = Math.min(result.confidence, 70);
+        
         return {
           success: true,
           result: {
             ...result,
-            confidence: Math.min(result.confidence, 30), // Dosya adından düşük güven
+            confidence: adjustedConfidence,
             explanation:
-              "Dosya içeriği okunamadı, dosya adından tahmin yapıldı. " +
+              `📁 Dosya içeriği okunamadı (taranmış PDF veya özel format olabilir). Dosya adı "${file.originalname}" üzerinden tahmin yapıldı. ` +
               result.explanation,
           },
           extractedText: "",
@@ -144,26 +157,57 @@ export class OcrController {
    * Dosya adından ipuçları çıkar
    */
   private extractHintsFromFilename(filename: string): string | null {
-    const lower = filename.toLowerCase();
+    // Türkçe karakterleri normalize et
+    const lower = filename
+      .toLowerCase()
+      .replace(/İ/g, "i")
+      .replace(/I/g, "ı")
+      .replace(/Ğ/g, "ğ")
+      .replace(/Ü/g, "ü")
+      .replace(/Ş/g, "ş")
+      .replace(/Ö/g, "ö")
+      .replace(/Ç/g, "ç");
+    
     const hints: string[] = [];
 
-    if (lower.includes("ilam") || lower.includes("karar")) {
-      hints.push("mahkemesi", "karar", "ilam");
+    // İlamlı takip
+    if (lower.includes("ilam") || lower.includes("karar") || lower.includes("mahkeme")) {
+      hints.push("mahkemesi", "karar", "ilam", "hüküm");
     }
+    
+    // Nafaka
     if (lower.includes("nafaka")) {
-      hints.push("nafaka", "aylık");
+      hints.push("nafaka", "aylık", "iştirak nafakası", "yoksulluk nafakası");
     }
+    
+    // Kambiyo - Senet/Bono
     if (lower.includes("senet") || lower.includes("bono")) {
-      hints.push("bono", "senet");
+      hints.push("bono", "senet", "emre muharrer", "vade");
     }
+    
+    // Kambiyo - Çek
     if (lower.includes("cek") || lower.includes("çek")) {
-      hints.push("çek");
+      hints.push("çek", "banka", "keşideci", "hamiline");
     }
-    if (lower.includes("kira")) {
-      hints.push("kira", "tahliye");
+    
+    // Kira
+    if (lower.includes("kira") || lower.includes("kiralama") || lower.includes("sozlesme") || lower.includes("sözleşme")) {
+      hints.push("kira", "tahliye", "kiracı", "kiraya veren", "kira bedeli");
     }
-    if (lower.includes("ipotek")) {
-      hints.push("ipotek", "tapu");
+    
+    // İpotek
+    if (lower.includes("ipotek") || lower.includes("tapu") || lower.includes("gayrimenkul")) {
+      hints.push("ipotek", "tapu", "gayrimenkul", "taşınmaz", "ada", "parsel", "tapu sicil");
+    }
+    
+    // Rehin
+    if (lower.includes("rehin") || lower.includes("teminat")) {
+      hints.push("rehin", "teminat", "taşınır rehni");
+    }
+    
+    // Fatura / Alacak
+    if (lower.includes("fatura") || lower.includes("alacak") || lower.includes("borc") || lower.includes("borç")) {
+      hints.push("fatura", "alacak", "borç", "ödeme");
     }
 
     return hints.length > 0 ? hints.join(" ") : null;

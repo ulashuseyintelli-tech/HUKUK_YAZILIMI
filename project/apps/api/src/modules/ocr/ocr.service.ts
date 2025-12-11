@@ -2,6 +2,8 @@ import { Injectable, Logger } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import * as Tesseract from "tesseract.js";
 import * as sharp from "sharp";
+import * as AdmZip from "adm-zip";
+import * as mammoth from "mammoth";
 import OpenAI from "openai";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pdfParse = require("pdf-parse");
@@ -478,9 +480,75 @@ JSON formatında yanıt ver:
   }
 
   /**
-   * PDF'den metin çıkar (UDF dahil)
+   * UDF dosyasından metin çıkar (UYAP formatı)
+   * UDF = ZIP içinde content.xml + documentproperties.xml + sign.sgn
    */
-  async extractTextFromPdf(buffer: Buffer): Promise<string> {
+  async extractTextFromUdf(buffer: Buffer): Promise<{ text: string; metadata: Record<string, string> }> {
+    try {
+      this.logger.log("UDF dosyası açılıyor...");
+      
+      const zip = new AdmZip(buffer);
+      const zipEntries = zip.getEntries();
+      
+      this.logger.log(`UDF içinde ${zipEntries.length} dosya bulundu`);
+      
+      let contentText = "";
+      const metadata: Record<string, string> = {};
+      
+      for (const entry of zipEntries) {
+        this.logger.debug(`UDF dosya: ${entry.entryName}`);
+        
+        if (entry.entryName === "content.xml") {
+          // Ana içerik - CDATA içindeki metin
+          const contentXml = entry.getData().toString("utf-8");
+          
+          // CDATA içeriğini çıkar
+          const cdataMatch = contentXml.match(/<!\[CDATA\[([\s\S]*?)\]\]>/);
+          if (cdataMatch) {
+            contentText = cdataMatch[1];
+            this.logger.log(`content.xml'den ${contentText.length} karakter çıkarıldı`);
+          } else {
+            // CDATA yoksa tüm content tag'ini al
+            const contentMatch = contentXml.match(/<content>([\s\S]*?)<\/content>/);
+            if (contentMatch) {
+              contentText = contentMatch[1];
+            }
+          }
+        } else if (entry.entryName === "documentproperties.xml") {
+          // Meta veriler
+          const propsXml = entry.getData().toString("utf-8");
+          
+          // entry key="xxx" değerlerini çıkar
+          const entryRegex = /<entry key="([^"]+)">([^<]*)<\/entry>/g;
+          let match;
+          while ((match = entryRegex.exec(propsXml)) !== null) {
+            metadata[match[1]] = match[2];
+            this.logger.debug(`UDF meta: ${match[1]} = ${match[2]}`);
+          }
+        }
+      }
+      
+      if (!contentText) {
+        throw new Error("UDF dosyasında içerik bulunamadı");
+      }
+      
+      // Metin temizleme
+      const cleanedText = this.cleanOcrText(contentText);
+      
+      this.logger.log(`UDF başarıyla okundu. Metin: ${cleanedText.length} karakter, Meta: ${Object.keys(metadata).length} alan`);
+      
+      return { text: cleanedText, metadata };
+    } catch (error: any) {
+      this.logger.error("UDF okuma hatası:", error);
+      throw new Error(`UDF dosyası okunamadı: ${error.message}`);
+    }
+  }
+
+  /**
+   * PDF'den metin çıkar
+   * @returns Metin veya null (bozuk encoding durumunda)
+   */
+  async extractTextFromPdf(buffer: Buffer): Promise<string | null> {
     try {
       this.logger.log("PDF metin çıkarma başlatılıyor...");
       
@@ -510,6 +578,12 @@ JSON formatında yanıt ver:
       
       // Debug: Çıkarılan metni logla
       this.logger.debug(`PDF metin (ilk 500 karakter): ${cleanedText.substring(0, 500)}`);
+      
+      // Metnin geçerli olup olmadığını kontrol et (bozuk encoding tespiti)
+      if (!this.isValidText(cleanedText)) {
+        this.logger.warn("PDF metni bozuk encoding içeriyor, OCR deneniyor...");
+        return null; // OCR'a fallback için null döndür
+      }
       
       return cleanedText;
     } catch (error: any) {
@@ -619,26 +693,251 @@ JSON formatında yanıt ver:
   }
 
   /**
+   * Metnin geçerli Türkçe/İngilizce metin olup olmadığını kontrol et
+   * Bozuk encoding (Çince karakterler vb.) tespiti
+   */
+  private isValidText(text: string): boolean {
+    if (!text || text.length < 50) return false;
+    
+    // Türkçe ve İngilizce karakterler (Latin alfabesi + Türkçe özel karakterler)
+    const validCharsRegex = /[a-zA-ZğüşıöçĞÜŞİÖÇ0-9\s.,;:!?'"()\-\/\\@#$%&*+=<>[\]{}|~`^_]/g;
+    const validChars = text.match(validCharsRegex) || [];
+    
+    // Geçerli karakter oranı
+    const validRatio = validChars.length / text.length;
+    
+    this.logger.debug(`Metin geçerlilik oranı: ${(validRatio * 100).toFixed(1)}%`);
+    
+    // En az %60 geçerli karakter olmalı
+    return validRatio >= 0.6;
+  }
+
+  /**
+   * Word (.docx) dosyasından metin çıkar
+   * DOCX = ZIP içinde word/document.xml
+   */
+  async extractTextFromDocx(buffer: Buffer): Promise<string> {
+    try {
+      this.logger.log("Word (DOCX) dosyası açılıyor...");
+      
+      const zip = new AdmZip(buffer);
+      const zipEntries = zip.getEntries();
+      
+      this.logger.log(`DOCX içinde ${zipEntries.length} dosya bulundu`);
+      
+      let contentText = "";
+      
+      for (const entry of zipEntries) {
+        // Ana içerik word/document.xml içinde
+        if (entry.entryName === "word/document.xml") {
+          const documentXml = entry.getData().toString("utf-8");
+          
+          // <w:t> tag'leri içindeki metinleri çıkar
+          const textMatches = documentXml.match(/<w:t[^>]*>([^<]*)<\/w:t>/g);
+          if (textMatches) {
+            const texts = textMatches.map(match => {
+              const textMatch = match.match(/<w:t[^>]*>([^<]*)<\/w:t>/);
+              return textMatch ? textMatch[1] : "";
+            });
+            contentText = texts.join(" ");
+          }
+          
+          this.logger.log(`document.xml'den ${contentText.length} karakter çıkarıldı`);
+          break;
+        }
+      }
+      
+      if (!contentText) {
+        // Alternatif: tüm XML içeriğinden metin çıkar
+        for (const entry of zipEntries) {
+          if (entry.entryName.endsWith(".xml") && entry.entryName.includes("word")) {
+            const xml = entry.getData().toString("utf-8");
+            // Tüm tag'leri kaldır
+            const text = xml.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim();
+            if (text.length > contentText.length) {
+              contentText = text;
+            }
+          }
+        }
+      }
+      
+      if (!contentText) {
+        throw new Error("Word dosyasında içerik bulunamadı");
+      }
+      
+      // Metin temizleme
+      const cleanedText = this.cleanOcrText(contentText);
+      
+      this.logger.log(`Word dosyası başarıyla okundu. Metin: ${cleanedText.length} karakter`);
+      
+      return cleanedText;
+    } catch (error: any) {
+      this.logger.error("Word okuma hatası:", error);
+      throw new Error(`Word dosyası okunamadı: ${error.message}`);
+    }
+  }
+
+  /**
+   * Eski Word (.doc) dosyasından metin çıkar - mammoth kullanarak
+   */
+  async extractTextFromDoc(buffer: Buffer): Promise<string> {
+    try {
+      this.logger.log("Eski Word (.doc) dosyası okunuyor (mammoth)...");
+      
+      const result = await mammoth.extractRawText({ buffer });
+      const extractedText = result.value;
+      
+      if (!extractedText || extractedText.trim().length === 0) {
+        throw new Error("Word dosyasında içerik bulunamadı");
+      }
+      
+      // Metin temizleme
+      const cleanedText = this.cleanOcrText(extractedText);
+      
+      this.logger.log(`Eski Word dosyası başarıyla okundu. Metin: ${cleanedText.length} karakter`);
+      
+      // Uyarıları logla
+      if (result.messages && result.messages.length > 0) {
+        result.messages.forEach(msg => {
+          this.logger.debug(`Mammoth uyarı: ${msg.message}`);
+        });
+      }
+      
+      return cleanedText;
+    } catch (error: any) {
+      this.logger.error("Eski Word okuma hatası:", error);
+      // Daha kullanıcı dostu hata mesajı
+      if (error.message?.includes("Could not find") || error.message?.includes("docx")) {
+        throw new Error("Bu dosya çok eski bir Word formatında veya bozuk olabilir. Lütfen dosyayı Word'de açıp .docx olarak kaydedin.");
+      }
+      throw new Error(`Eski Word dosyası okunamadı: ${error.message}`);
+    }
+  }
+
+  /**
    * Dosya tipine göre metin çıkar
    */
   async extractText(
     buffer: Buffer,
     mimeType: string,
     filename?: string
-  ): Promise<{ text: string; method: string }> {
-    // UDF dosyaları PDF formatındadır
-    const isUdf = filename?.toLowerCase().endsWith(".udf");
+  ): Promise<{ text: string; method: string; metadata?: Record<string, string> }> {
+    const lowerFilename = filename?.toLowerCase() || "";
+    const isUdf = lowerFilename.endsWith(".udf");
+    const isDocx = lowerFilename.endsWith(".docx") || 
+                   mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    const isDoc = lowerFilename.endsWith(".doc") || 
+                  mimeType === "application/msword";
     
-    if (mimeType === "application/pdf" || isUdf) {
+    // UDF dosyaları - UYAP formatı (ZIP içinde XML)
+    if (isUdf) {
+      const { text, metadata } = await this.extractTextFromUdf(buffer);
+      return { text, method: "udf-parse", metadata };
+    }
+    
+    // Word DOCX dosyaları (Office 2007+)
+    if (isDocx) {
+      const text = await this.extractTextFromDocx(buffer);
+      return { text, method: "docx-parse" };
+    }
+    
+    // Eski Word DOC dosyaları - mammoth ile oku
+    if (isDoc) {
+      const text = await this.extractTextFromDoc(buffer);
+      return { text, method: "doc-parse" };
+    }
+    
+    // PDF dosyaları
+    if (mimeType === "application/pdf" || lowerFilename.endsWith(".pdf")) {
       const text = await this.extractTextFromPdf(buffer);
-      return { text, method: isUdf ? "udf-parse" : "pdf-parse" };
-    } else if (mimeType.startsWith("image/")) {
+      
+      // Eğer metin null ise (bozuk encoding), PDF'i görüntüye çevirip OCR dene
+      if (text === null) {
+        this.logger.log("PDF metni bozuk, OCR ile yeniden deneniyor...");
+        try {
+          // PDF'in ilk sayfasını görüntüye çevir ve OCR yap
+          const ocrText = await this.extractTextFromPdfWithOcr(buffer);
+          if (ocrText && ocrText.length > 50) {
+            return { text: ocrText, method: "pdf-ocr" };
+          }
+        } catch (ocrError) {
+          this.logger.warn("PDF OCR başarısız:", ocrError);
+        }
+        // OCR da başarısız olduysa, dosya adından ipucu al
+        return { text: "", method: "pdf-parse-failed" };
+      }
+      
+      return { text, method: "pdf-parse" };
+    }
+    
+    // RTF dosyaları - basit metin çıkarma
+    if (lowerFilename.endsWith(".rtf") || mimeType === "application/rtf" || mimeType === "text/rtf") {
+      const text = this.extractTextFromRtf(buffer);
+      return { text, method: "rtf-parse" };
+    }
+    
+    // Görüntü dosyaları - OCR (TIFF dahil)
+    const isImage = mimeType.startsWith("image/") || 
+                    lowerFilename.endsWith(".tiff") || 
+                    lowerFilename.endsWith(".tif") ||
+                    lowerFilename.endsWith(".bmp");
+    if (isImage) {
       const text = await this.extractTextFromImage(buffer);
       return { text, method: "ocr" };
-    } else if (mimeType === "text/plain") {
+    }
+    
+    // Düz metin
+    if (mimeType === "text/plain" || lowerFilename.endsWith(".txt")) {
       return { text: buffer.toString("utf-8"), method: "plain-text" };
     }
 
     return { text: "", method: "unsupported" };
+  }
+
+  /**
+   * RTF dosyasından metin çıkar (basit yöntem)
+   */
+  private extractTextFromRtf(buffer: Buffer): string {
+    try {
+      this.logger.log("RTF dosyası okunuyor...");
+      
+      let rtfContent = buffer.toString("utf-8");
+      
+      // RTF kontrol karakterlerini temizle
+      // 1. Header'ı kaldır
+      rtfContent = rtfContent.replace(/^\{\\rtf1[^}]*\}/g, "");
+      
+      // 2. Kontrol kelimelerini kaldır (\par, \pard, \b, \i vb.)
+      rtfContent = rtfContent.replace(/\\[a-z]+\d*\s?/gi, " ");
+      
+      // 3. Özel karakterleri dönüştür
+      rtfContent = rtfContent.replace(/\\'([0-9a-f]{2})/gi, (match, hex) => {
+        return String.fromCharCode(parseInt(hex, 16));
+      });
+      
+      // 4. Süslü parantezleri kaldır
+      rtfContent = rtfContent.replace(/[{}]/g, "");
+      
+      // 5. Fazla boşlukları temizle
+      rtfContent = rtfContent.replace(/\s+/g, " ").trim();
+      
+      this.logger.log(`RTF'den ${rtfContent.length} karakter çıkarıldı`);
+      
+      return rtfContent;
+    } catch (error: any) {
+      this.logger.error("RTF okuma hatası:", error);
+      throw new Error(`RTF dosyası okunamadı: ${error.message}`);
+    }
+  }
+
+  /**
+   * PDF'den OCR ile metin çıkar (bozuk encoding durumunda)
+   * Not: Bu basit bir implementasyon - gerçek PDF-to-image için pdf-poppler gerekir
+   */
+  private async extractTextFromPdfWithOcr(buffer: Buffer): Promise<string> {
+    // PDF'i doğrudan OCR'a göndermeyi dene (bazı OCR kütüphaneleri PDF destekler)
+    // Şimdilik bu özellik için placeholder - ileride pdf-poppler ile geliştirilebilir
+    this.logger.warn("PDF OCR özelliği henüz tam desteklenmiyor. Dosya adından ipucu alınacak.");
+    return "";
   }
 }

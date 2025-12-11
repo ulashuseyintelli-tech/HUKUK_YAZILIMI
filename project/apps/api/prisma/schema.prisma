@@ -7,6 +7,179 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ==================== LOOKUP TABLOLARI ====================
+
+model LookupTakipTuru {
+  id          String   @id @default(cuid())
+  tenantId    String
+  code        String   // ILAMSIZ_GENEL, ILAMLI, NAFAKA, vb.
+  name        String   // İlamsız Genel Haciz
+  description String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  
+  // Varsayılan değerler (otomatik doldurma için)
+  defaultMahiyetTipiId  String?  // Takip türüne göre varsayılan mahiyet tipi
+  defaultBorcluTipiId   String?  // Takip türüne göre varsayılan borçlu tipi
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  cases       Case[]   @relation("CaseTakipTuru")
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([isActive])
+}
+
+model LookupAsama {
+  id          String   @id @default(cuid())
+  tenantId    String
+  code        String   // DOSYA_ACILDI, TEBLIG, HACIZ_TALEP, vb.
+  name        String   // Dosya Açıldı
+  description String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  cases       Case[]   @relation("CaseAsama")
+  stageHistory CaseStageHistory[]
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([isActive])
+}
+
+model LookupRisk {
+  id          String   @id @default(cuid())
+  tenantId    String
+  code        String   // DUSUK, ORTA, YUKSEK
+  name        String   // Düşük
+  description String?
+  color       String?  // #22c55e (yeşil), #eab308 (sarı), #ef4444 (kırmızı)
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  cases       Case[]   @relation("CaseRisk")
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([isActive])
+}
+
+model LookupBorcluTipi {
+  id          String   @id @default(cuid())
+  tenantId    String
+  code        String   // GERCEK_KISI, TUZEL_KISI, KAMU
+  name        String   // Gerçek Kişi
+  description String?
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  cases       Case[]   @relation("CaseBorcluTipi")
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([isActive])
+}
+
+model LookupDurumEtiketi {
+  id          String   @id @default(cuid())
+  tenantId    String
+  code        String   // MASRAF_BEKLIYOR, ADRES_ARASTIRMA, vb.
+  name        String   // Masraf Bekliyor
+  description String?
+  color       String?  // Badge rengi
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  cases       Case[]   @relation("CaseDurumEtiketi")
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([isActive])
+}
+
+// Mahiyet Tipi (Alacak Türü) - Büro içi sınıflandırma + UYAP uyumu
+model LookupMahiyetTipi {
+  id           String   @id @default(cuid())
+  tenantId     String
+  code         String   // PARA, KIRA, AIDAT, KREDI, NAFAKA, vb. (internal_code)
+  name         String   // Genel Para Alacağı, Kira Alacağı, vb.
+  uyapCode     String?  // UYAP iş/takip kodu eşleştirmesi (opsiyonel)
+  description  String?
+  sortOrder    Int      @default(0)
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  cases        Case[]   @relation("CaseMahiyetTipi")
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([isActive])
+}
+
+// ==================== ESNEK GRUPLAMA SİSTEMİ ====================
+
+model GroupDefinition {
+  id          String   @id @default(cuid())
+  tenantId    String
+  name        String   // Aksu Grup Portföyü, Stratejik Dosyalar, vb.
+  description String?
+  isGlobal    Boolean  @default(true)  // true: tüm büro, false: müvekkile özel
+  clientId    String?  // Müvekkile bağlı grup için
+  color       String?  // UI renk kodu (#3b82f6)
+  createdById String?  // Oluşturan kullanıcı
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  caseGroups  CaseGroup[]
+
+  @@index([tenantId])
+  @@index([clientId])
+  @@index([isActive])
+}
+
+model CaseGroup {
+  id          String   @id @default(cuid())
+  caseId      String
+  case        Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  groupId     String
+  group       GroupDefinition @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  assignedById String?  // Atayan kullanıcı
+  assignedAt  DateTime @default(now())
+
+  @@unique([caseId, groupId])
+  @@index([caseId])
+  @@index([groupId])
+}
+
+// Aşama Tarihçesi (PART 10 - SLA takibi için)
+model CaseStageHistory {
+  id          String   @id @default(cuid())
+  caseId      String
+  case        Case     @relation("CaseStageHistory", fields: [caseId], references: [id], onDelete: Cascade)
+  asamaId     String
+  asama       LookupAsama @relation(fields: [asamaId], references: [id])
+  startedAt   DateTime @default(now())
+  endedAt     DateTime?
+  changedById String?  // Değiştiren kullanıcı
+  notes       String?
+
+  @@index([caseId])
+  @@index([asamaId])
+  @@index([startedAt])
+}
+
 // ==================== TENANT & AUTH ====================
 
 model Tenant {
@@ -66,6 +239,7 @@ model User {
   assignedTasks Task[] @relation("AssignedTasks")
   createdTasks  Task[] @relation("CreatedTasks")
   statusChanges CaseStatusHistory[] @relation("StatusChangedBy")
+  sorumluCases  Case[] @relation("SorumluPersonel")
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -232,7 +406,42 @@ model Case {
   // Workflow
   workflowStage       WorkflowStage @default(INITIAL)
   
-  // Eski alanlar (geriye uyumluluk)
+  // ==================== YENİ LOOKUP ALANLARI ====================
+  // Takip Türü (ZORUNLU)
+  takipTuruId         String?
+  takipTuru           LookupTakipTuru? @relation("CaseTakipTuru", fields: [takipTuruId], references: [id])
+  
+  // Aşama
+  asamaId             String?
+  asama               LookupAsama?  @relation("CaseAsama", fields: [asamaId], references: [id])
+  
+  // Risk Sınıfı
+  riskId              String?
+  risk                LookupRisk?   @relation("CaseRisk", fields: [riskId], references: [id])
+  
+  // Borçlu Tipi
+  borcluTipiId        String?
+  borcluTipi          LookupBorcluTipi? @relation("CaseBorcluTipi", fields: [borcluTipiId], references: [id])
+  
+  // Durum Etiketi
+  durumEtiketiId      String?
+  durumEtiketi        LookupDurumEtiketi? @relation("CaseDurumEtiketi", fields: [durumEtiketiId], references: [id])
+  
+  // Mahiyet Tipi (Alacak Türü)
+  mahiyetTipiId       String?
+  mahiyetTipi         LookupMahiyetTipi? @relation("CaseMahiyetTipi", fields: [mahiyetTipiId], references: [id])
+  mahiyetKodu         String?       // UYAP kodu veya büro içi kısa kod (otomatik veya manuel)
+  
+  // Sorumlu Personel (ZORUNLU)
+  sorumluPersonelId   String?
+  sorumluPersonel     User?         @relation("SorumluPersonel", fields: [sorumluPersonelId], references: [id])
+  
+  // Ek Bilgi Alanları
+  dahiliNot           String?       // Müvekkile gitmez
+  muvekkilNotu        String?       // Raporlarda görünür
+  sonDegerlendirmeTarihi DateTime?  // Son değerlendirme tarihi
+
+  // ==================== ESKİ ALANLAR (geriye uyumluluk) ====================
   status              CaseStatus    @default(ACTIVE)
   clientId            String?
   client              Client?       @relation(fields: [clientId], references: [id])
@@ -274,6 +483,8 @@ model Case {
   riskReports         RiskReport[]
   statusHistory       CaseStatusHistory[]
   documents           CaseDocument[]
+  groups              CaseGroup[]
+  stageHistory        CaseStageHistory[] @relation("CaseStageHistory")
 
   @@unique([tenantId, fileNumber])
   @@index([tenantId, status])
@@ -284,6 +495,12 @@ model Case {
   @@index([nextActionAt])
   @@index([executionOfficeId])
   @@index([isAutomationEnabled])
+  @@index([takipTuruId])
+  @@index([asamaId])
+  @@index([riskId])
+  @@index([durumEtiketiId])
+  @@index([mahiyetTipiId])
+  @@index([sorumluPersonelId])
 }
 
 // Statü Değişim Geçmişi (B.18)

@@ -25,11 +25,12 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="min-h-screen bg-slate-50 overflow-hidden w-full max-w-full">
       <Sidebar />
-      <div className="lg:pl-64">
+      {/* Sidebar genişlikleri: sm:w-56, md:w-60, lg:w-64 */}
+      <div className="sm:pl-56 md:pl-60 lg:pl-64 min-w-0 w-full max-w-full transition-all duration-300">
         <Header />
-        <main className="p-6">{children}</main>
+        <main className="p-3 sm:p-4 md:p-6 min-w-0 w-full max-w-full overflow-x-hidden box-border">{children}</main>
       </div>
     </div>
   );

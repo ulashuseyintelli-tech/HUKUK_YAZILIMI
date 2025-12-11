@@ -1,12 +1,35 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Settings, Wand2, Bell, Zap, Eye, RotateCcw, Check, Moon, Sun } from "lucide-react";
+import { Settings, Wand2, Bell, Zap, Eye, RotateCcw, Check, Moon, Sun, MapPin } from "lucide-react";
 import { useUserSettings, UserSettings } from "@/lib/user-settings";
+import { api } from "@/lib/api";
 
 export default function SettingsPage() {
   const { settings, updateSettings, resetSettings, loaded } = useUserSettings();
   const [saved, setSaved] = useState(false);
+  const [cities, setCities] = useState<string[]>([]);
+
+  // İlleri yükle
+  useEffect(() => {
+    const loadCities = async () => {
+      try {
+        const res = await api.get('/execution-offices');
+        const offices = res?.data?.data || [];
+        const uniqueCities = [...new Set(offices.map((o: any) => o.city))] as string[];
+        // Sıralama: İstanbul, Ankara, İzmir önce, sonra alfabetik
+        const bigCities = ['İstanbul', 'Ankara', 'İzmir'];
+        const sorted = [
+          ...bigCities.filter(c => uniqueCities.includes(c)),
+          ...uniqueCities.filter(c => !bigCities.includes(c)).sort((a, b) => a.localeCompare(b, 'tr'))
+        ];
+        setCities(sorted);
+      } catch (e) {
+        console.error('İller yüklenemedi:', e);
+      }
+    };
+    loadCities();
+  }, []);
 
   const handleToggle = (key: keyof UserSettings) => {
     updateSettings({ [key]: !settings[key] });
@@ -94,6 +117,26 @@ export default function SettingsPage() {
                 <option value="IPOTEK">İpotek Paraya Çevirme</option>
                 <option value="TAHLIYE">Tahliye</option>
               </select>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium mb-1">Varsayılan İl</label>
+              <p className="text-xs text-muted-foreground mb-2">Yeni takip oluştururken bu il otomatik seçili gelir ve liste başında görünür</p>
+              <select
+                value={settings.defaultCity}
+                onChange={(e) => handleSelect("defaultCity", e.target.value)}
+                className="w-full max-w-xs rounded-lg border px-3 py-2 text-sm"
+              >
+                <option value="">Seçilmedi (Konum tespiti kullanılır)</option>
+                {cities.map(city => (
+                  <option key={city} value={city}>{city}</option>
+                ))}
+              </select>
+              {settings.defaultCity && (
+                <p className="text-xs text-green-600 mt-1 flex items-center gap-1">
+                  <MapPin className="h-3 w-3" /> {settings.defaultCity} varsayılan il olarak ayarlandı
+                </p>
+              )}
             </div>
           </div>
         </div>

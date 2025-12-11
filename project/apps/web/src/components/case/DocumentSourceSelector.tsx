@@ -83,12 +83,25 @@ export function DocumentSourceSelector({ onSelect, onSkip }: DocumentSourceSelec
 
   // Dosya seçimi
   const handleFileSelect = (file: File) => {
-    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/webp', 'text/plain', 'application/octet-stream'];
-    const isUdf = file.name.toLowerCase().endsWith('.udf');
-    if (!allowedTypes.includes(file.type) && !isUdf) {
-      setScanError('Desteklenmeyen dosya formatı. PDF, UDF, JPG, PNG veya TXT yükleyin.');
+    const lowerName = file.name.toLocaleLowerCase('tr-TR');
+    
+    // Uzantı kontrolü (MIME type güvenilir değil, uzantıya bak)
+    const isPdf = lowerName.endsWith('.pdf');
+    const isUdf = lowerName.endsWith('.udf');
+    const isDocx = lowerName.endsWith('.docx');
+    const isDoc = lowerName.endsWith('.doc') && !lowerName.endsWith('.docx');
+    const isRtf = lowerName.endsWith('.rtf');
+    const isImage = ['.jpg', '.jpeg', '.png', '.webp', '.tiff', '.tif', '.bmp'].some(ext => lowerName.endsWith(ext));
+    const isTxt = lowerName.endsWith('.txt');
+    
+    // Desteklenen formatlar (artık .doc da destekleniyor)
+    const isSupported = isPdf || isUdf || isDocx || isDoc || isRtf || isImage || isTxt;
+    
+    if (!isSupported) {
+      setScanError('Desteklenmeyen dosya formatı. PDF, Word (DOC/DOCX), RTF, UDF, JPG, PNG, TIFF veya TXT yükleyin.');
       return;
     }
+    
     if (file.size > 10 * 1024 * 1024) {
       setScanError('Dosya boyutu 10MB\'dan büyük olamaz.');
       return;
@@ -226,15 +239,15 @@ export function DocumentSourceSelector({ onSelect, onSkip }: DocumentSourceSelec
   };
 
   return (
-    <div className="bg-white rounded-xl border p-6 mb-6">
+    <div className="bg-white rounded-lg border p-3 sm:p-4 mb-3 sm:mb-4">
       {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
-        <div className="p-2 bg-primary/10 rounded-lg">
-          <Sparkles className="h-6 w-6 text-primary" />
+      <div className="flex items-center gap-2 mb-3 sm:mb-4">
+        <div className="p-1.5 bg-primary/10 rounded-lg">
+          <Sparkles className="h-5 w-5 text-primary" />
         </div>
         <div>
-          <h2 className="font-semibold text-lg">🧙‍♂️ Akıllı Takip Sihirbazı</h2>
-          <p className="text-sm text-muted-foreground">
+          <h2 className="font-semibold text-base">🧙‍♂️ Akıllı Takip Sihirbazı</h2>
+          <p className="text-xs text-muted-foreground">
             Takibin dayanağı olan belge türünü seçin veya belgenizi taratın
           </p>
         </div>
@@ -312,22 +325,22 @@ export function DocumentSourceSelector({ onSelect, onSkip }: DocumentSourceSelec
 
       {/* Belge Tarama Seçenekleri */}
       {!scanResult && (
-        <div className="mb-6">
+        <div className="mb-3 sm:mb-4">
           {/* Ana Tarama Butonu */}
           <button
             onClick={() => { setShowFileUpload(!showFileUpload); setShowTextInput(false); }}
-            className="w-full p-4 border-2 border-dashed border-primary/30 rounded-xl hover:border-primary hover:bg-primary/5 transition-all flex items-center justify-center gap-3 group"
+            className="w-full p-2 sm:p-3 border-2 border-dashed border-primary/30 rounded-lg hover:border-primary hover:bg-primary/5 transition-all flex items-center gap-2 sm:gap-3 group"
           >
-            <div className="p-2 bg-primary/10 rounded-lg group-hover:bg-primary/20 transition-colors">
-              <ScanLine className="h-6 w-6 text-primary" />
+            <div className="p-1.5 bg-primary/10 rounded-lg group-hover:bg-primary/20 transition-colors flex-shrink-0">
+              <ScanLine className="h-5 w-5 text-primary" />
             </div>
-            <div className="text-left">
-              <div className="font-medium text-primary">📄 Belgeni Tara – Takip Türünü Ben Belirleyeyim</div>
-              <div className="text-sm text-muted-foreground">
+            <div className="text-left flex-1 min-w-0">
+              <div className="font-medium text-primary text-sm">📄 Belgeni Tara – Takip Türünü Ben Belirleyeyim</div>
+              <div className="text-xs text-muted-foreground hidden sm:block">
                 PDF, görüntü veya metin yükleyin, sistem otomatik takip türünü önersin
               </div>
             </div>
-            <ArrowRight className="h-5 w-5 text-primary opacity-0 group-hover:opacity-100 transition-opacity" />
+            <ArrowRight className="h-4 w-4 text-primary opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
           </button>
 
           {/* Dosya Yükleme Alanı */}
@@ -373,7 +386,7 @@ export function DocumentSourceSelector({ onSelect, onSkip }: DocumentSourceSelec
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept=".pdf,.udf,.jpg,.jpeg,.png,.webp,.txt"
+                      accept=".pdf,.udf,.doc,.docx,.rtf,.jpg,.jpeg,.png,.webp,.tiff,.tif,.bmp,.txt"
                       onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
                       className="hidden"
                     />
@@ -386,7 +399,7 @@ export function DocumentSourceSelector({ onSelect, onSkip }: DocumentSourceSelec
                       Dosyayı sürükleyip bırakın veya tıklayın
                     </p>
                     <p className="text-xs text-muted-foreground">
-                      PDF, UDF, JPG, PNG veya TXT (max 10MB)
+                      PDF, Word (DOC/DOCX), RTF, UDF, JPG, PNG, TIFF veya TXT (max 10MB)
                     </p>
                   </div>
 
@@ -518,13 +531,13 @@ export function DocumentSourceSelector({ onSelect, onSkip }: DocumentSourceSelec
       {/* Belge Türü Kartları */}
       {!scanResult && (
         <>
-          <div className="mb-4">
-            <h3 className="text-sm font-medium text-muted-foreground mb-3">
+          <div className="mb-2">
+            <h3 className="text-xs font-medium text-muted-foreground">
               veya manuel olarak dayanak belge türünü seçin:
             </h3>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
             {documentCards.map((card) => {
               const colors = getColorClasses(card.color);
               const Icon = card.icon;
@@ -533,28 +546,16 @@ export function DocumentSourceSelector({ onSelect, onSkip }: DocumentSourceSelec
                 <button
                   key={card.type}
                   onClick={() => onSelect(card.type)}
-                  className={`p-4 border-2 rounded-xl text-left transition-all ${colors.hover} group`}
+                  className={`p-2 sm:p-3 border-2 rounded-lg text-left transition-all ${colors.hover} group min-w-0`}
                 >
-                  <div className={`p-2 ${colors.bg} rounded-lg w-fit mb-3`}>
-                    <Icon className={`h-6 w-6 ${colors.text}`} />
-                  </div>
-                  <h4 className="font-semibold mb-1">{card.title}</h4>
-                  <p className="text-sm text-muted-foreground mb-3">{card.description}</p>
-                  
-                  {/* Örnekler */}
-                  <div className="space-y-1 mb-3">
-                    {card.examples.map((example, i) => (
-                      <div key={i} className="text-xs text-muted-foreground flex items-center gap-1">
-                        <span className="w-1 h-1 bg-gray-300 rounded-full" />
-                        {example}
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Sonraki Akış */}
-                  <div className={`text-xs ${colors.text} flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity`}>
-                    <ArrowRight className="h-3 w-3" />
-                    {card.nextFlow}
+                  <div className="flex sm:flex-col items-center sm:items-start gap-2 sm:gap-0">
+                    <div className={`p-1.5 ${colors.bg} rounded-lg flex-shrink-0 sm:mb-2`}>
+                      <Icon className={`h-4 w-4 sm:h-5 sm:w-5 ${colors.text}`} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="font-semibold text-xs sm:text-sm truncate sm:whitespace-normal">{card.title}</h4>
+                      <p className="text-xs text-muted-foreground hidden sm:block mt-1">{card.description}</p>
+                    </div>
                   </div>
                 </button>
               );
@@ -564,16 +565,13 @@ export function DocumentSourceSelector({ onSelect, onSkip }: DocumentSourceSelec
       )}
 
       {/* Skip Button - Sihirbazı Atlama */}
-      <div className="mt-6 pt-4 border-t flex items-center justify-between">
-        <p className="text-xs text-muted-foreground">
-          Sihirbazı kullanmak zorunda değilsiniz
-        </p>
+      <div className="mt-4 pt-3 border-t flex items-center justify-end">
         <button
           onClick={onSkip}
-          className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-colors flex items-center gap-2"
+          className="px-3 py-1.5 text-xs sm:text-sm border border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-colors flex items-center gap-1"
         >
-          <ArrowRight className="h-4 w-4" />
-          Sihirbazı Atla, Form Seçimine Git
+          <ArrowRight className="h-3 w-3" />
+          <span className="hidden sm:inline">Sihirbazı Atla,</span> Form Seçimine Git
         </button>
       </div>
     </div>

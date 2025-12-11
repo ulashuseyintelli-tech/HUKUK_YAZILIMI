@@ -18,6 +18,11 @@ import {
   Clock,
   Activity,
   Settings,
+  Tag,
+  Plus,
+  X,
+  Info,
+  Save,
 } from "lucide-react";
 import { Badge } from "@hukuk/ui";
 import { api } from "@/lib/api";
@@ -101,7 +106,27 @@ interface CaseDetail {
   ocrText?: string;
   isAutoDetected?: boolean;
   confidenceScore?: number;
+  // Ek Bilgi Alanları
+  dahiliNot?: string;
+  muvekkilNotu?: string;
+  sonDegerlendirmeTarihi?: string;
+  // Lookup İlişkileri
+  takipTuru?: { id: string; name: string; code: string };
+  asama?: { id: string; name: string; code: string };
+  risk?: { id: string; name: string; color?: string };
+  borcluTipi?: { id: string; name: string };
+  durumEtiketi?: { id: string; name: string; color?: string };
+  sorumluPersonel?: { id: string; name: string; surname: string };
   formType?: { id: string; name: string; code: string };
+  mahiyetTipi?: { id: string; name: string; code: string; uyapCode?: string };
+  reportingSummary?: string;
+  dues?: {
+    id: string;
+    type: string;
+    description?: string;
+    amount: number;
+    dueDate: string;
+  }[];
   client?: {
     id: string;
     name: string;
@@ -150,6 +175,49 @@ export default function CaseDetailPage() {
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiSuggestions, setAiSuggestions] = useState<any[]>([]);
   const [aiPrediction, setAiPrediction] = useState<any>(null);
+  
+  // Groups state
+  const [caseGroups, setCaseGroups] = useState<any[]>([]);
+  const [allGroups, setAllGroups] = useState<any[]>([]);
+  const [showNewGroupModal, setShowNewGroupModal] = useState(false);
+  const [newGroupName, setNewGroupName] = useState("");
+  const [newGroupDescription, setNewGroupDescription] = useState("");
+  const [newGroupColor, setNewGroupColor] = useState("#3b82f6");
+  
+  // Ek Bilgi state
+  const [extraInfo, setExtraInfo] = useState({
+    dahiliNot: "",
+    muvekkilNotu: "",
+    sonDegerlendirmeTarihi: "",
+  });
+  const [extraInfoSaving, setExtraInfoSaving] = useState(false);
+  
+  // Raporlama Panel state
+  const [showReportingPanel, setShowReportingPanel] = useState(false);
+  const [reportingData, setReportingData] = useState({
+    takipTuruId: "",
+    mahiyetTipiId: "",
+    riskId: "",
+    durumEtiketiId: "",
+    borcluTipiId: "",
+    sorumluPersonelId: "",
+  });
+  const [reportingSaving, setReportingSaving] = useState(false);
+  const [lookups, setLookups] = useState<{
+    takipTuru: any[];
+    mahiyetTipi: any[];
+    risk: any[];
+    durumEtiketi: any[];
+    borcluTipi: any[];
+    users: any[];
+  }>({
+    takipTuru: [],
+    mahiyetTipi: [],
+    risk: [],
+    durumEtiketi: [],
+    borcluTipi: [],
+    users: [],
+  });
 
   const handleAiAnalysis = async () => {
     if (!caseData) return;
@@ -176,19 +244,156 @@ export default function CaseDetailPage() {
   useEffect(() => {
     if (params.id) {
       fetchCase();
+      fetchGroups();
+      fetchLookups();
     }
   }, [params.id]);
+
+  const fetchLookups = async () => {
+    try {
+      const [takipTuruRes, mahiyetTipiRes, riskRes, durumEtiketiRes, borcluTipiRes, usersRes] = await Promise.all([
+        api.get('/lookups/takipTuru'),
+        api.get('/lookups/mahiyetTipi'),
+        api.get('/lookups/risk'),
+        api.get('/lookups/durumEtiketi'),
+        api.get('/lookups/borcluTipi'),
+        api.get('/users'),
+      ]);
+      setLookups({
+        takipTuru: takipTuruRes?.data?.data || [],
+        mahiyetTipi: mahiyetTipiRes?.data?.data || [],
+        risk: riskRes?.data?.data || [],
+        durumEtiketi: durumEtiketiRes?.data?.data || [],
+        borcluTipi: borcluTipiRes?.data?.data || [],
+        users: usersRes?.data?.data || [],
+      });
+    } catch (error) {
+      console.error("Lookup verileri yüklenemedi:", error);
+    }
+  };
+
+  const fetchGroups = async () => {
+    try {
+      const [caseGroupsRes, allGroupsRes] = await Promise.all([
+        api.get(`/cases/${params.id}/groups`),
+        api.get('/groups'),
+      ]);
+      setCaseGroups(caseGroupsRes?.data?.data || []);
+      setAllGroups(allGroupsRes?.data?.data || []);
+    } catch (error) {
+      console.error("Gruplar yüklenemedi:", error);
+    }
+  };
+
+  const handleAddGroup = async (groupId: string) => {
+    try {
+      await api.post(`/cases/${params.id}/groups/${groupId}`);
+      fetchGroups();
+    } catch (error) {
+      console.error("Grup eklenemedi:", error);
+    }
+  };
+
+  const handleRemoveGroup = async (groupId: string) => {
+    try {
+      await api.delete(`/cases/${params.id}/groups/${groupId}`);
+      fetchGroups();
+    } catch (error) {
+      console.error("Grup çıkarılamadı:", error);
+    }
+  };
+
+  const handleCreateGroup = async () => {
+    if (!newGroupName.trim()) return;
+    try {
+      await api.post('/groups', {
+        name: newGroupName,
+        description: newGroupDescription,
+        color: newGroupColor,
+        isGlobal: true,
+      });
+      setNewGroupName("");
+      setNewGroupDescription("");
+      setShowNewGroupModal(false);
+      fetchGroups();
+    } catch (error) {
+      console.error("Grup oluşturulamadı:", error);
+    }
+  };
 
   const fetchCase = async () => {
     try {
       setLoading(true);
       const data = await api.getCase(params.id as string);
       setCaseData(data);
+      // Ek bilgi alanlarını güncelle
+      setExtraInfo({
+        dahiliNot: data.dahiliNot || "",
+        muvekkilNotu: data.muvekkilNotu || "",
+        sonDegerlendirmeTarihi: data.sonDegerlendirmeTarihi?.split("T")[0] || "",
+      });
+      // Raporlama verilerini güncelle
+      setReportingData({
+        takipTuruId: data.takipTuru?.id || "",
+        mahiyetTipiId: data.mahiyetTipi?.id || "",
+        riskId: data.risk?.id || "",
+        durumEtiketiId: data.durumEtiketi?.id || "",
+        borcluTipiId: data.borcluTipi?.id || "",
+        sorumluPersonelId: data.sorumluPersonel?.id || "",
+      });
     } catch (error) {
       console.error("Takip yüklenemedi:", error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSaveExtraInfo = async () => {
+    if (!caseData) return;
+    setExtraInfoSaving(true);
+    try {
+      await api.patch(`/cases/${caseData.id}`, {
+        dahiliNot: extraInfo.dahiliNot || null,
+        muvekkilNotu: extraInfo.muvekkilNotu || null,
+        sonDegerlendirmeTarihi: extraInfo.sonDegerlendirmeTarihi || null,
+      });
+      fetchCase();
+    } catch (error) {
+      console.error("Ek bilgi kaydedilemedi:", error);
+    } finally {
+      setExtraInfoSaving(false);
+    }
+  };
+
+  const handleSaveReporting = async () => {
+    if (!caseData) return;
+    setReportingSaving(true);
+    try {
+      await api.patch(`/cases/${caseData.id}`, {
+        takipTuruId: reportingData.takipTuruId || null,
+        mahiyetTipiId: reportingData.mahiyetTipiId || null,
+        riskId: reportingData.riskId || null,
+        durumEtiketiId: reportingData.durumEtiketiId || null,
+        borcluTipiId: reportingData.borcluTipiId || null,
+        sorumluPersonelId: reportingData.sorumluPersonelId || null,
+      });
+      setShowReportingPanel(false);
+      fetchCase();
+    } catch (error) {
+      console.error("Raporlama bilgisi kaydedilemedi:", error);
+    } finally {
+      setReportingSaving(false);
+    }
+  };
+
+  // Alacak kalemi tipi etiketleri
+  const dueTypeLabels: Record<string, string> = {
+    PRINCIPAL: "Asıl Alacak",
+    INTEREST: "İşleyen Faiz",
+    EXPENSE: "Takip Gideri",
+    COURT_FEE: "Mahkeme Harcı",
+    LAWYER_FEE: "Vekalet Ücreti",
+    OTHER: "Diğer",
   };
 
   // Statü değiştir
@@ -245,7 +450,10 @@ export default function CaseDetailPage() {
 
   const tabs = [
     { id: "overview", label: "Genel Bilgiler", icon: FileText },
+    { id: "dues", label: "Alacak Kalemleri", icon: DollarSign },
     { id: "status", label: "Statü", icon: Activity },
+    { id: "groups", label: "Gruplar", icon: Tag },
+    { id: "extra", label: "Ek Bilgi", icon: Info },
     { id: "automation", label: "Otomasyon", icon: Settings },
     { id: "timeline", label: "Zaman Çizelgesi", icon: Clock },
     { id: "documents", label: "Belgeler", icon: FileText },
@@ -254,23 +462,21 @@ export default function CaseDetailPage() {
   ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3 sm:space-y-4">
       {/* Header */}
-      <div className="flex items-start justify-between">
-        <div>
-          <Link
-            href="/cases"
-            className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground mb-2"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Takiplere Dön
-          </Link>
-        </div>
+      <div className="flex items-center justify-between">
+        <Link
+          href="/cases"
+          className="inline-flex items-center gap-1 text-xs sm:text-sm text-muted-foreground hover:text-foreground"
+        >
+          <ArrowLeft className="h-3 w-3 sm:h-4 sm:w-4" />
+          Takiplere Dön
+        </Link>
         <Link
           href={`/cases/${caseData.id}/edit`}
-          className="inline-flex items-center gap-2 px-3 py-2 border rounded-lg hover:bg-muted"
+          className="inline-flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-2 text-xs sm:text-sm border rounded-lg hover:bg-muted"
         >
-          <Edit className="h-4 w-4" />
+          <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
           Düzenle
         </Link>
       </div>
@@ -290,15 +496,15 @@ export default function CaseDetailPage() {
       />
 
       {/* Quick Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-xl border p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <DollarSign className="h-5 w-5 text-blue-600" />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
+        <div className="bg-white rounded-lg border p-2 sm:p-3">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-blue-100 rounded-lg">
+              <DollarSign className="h-4 w-4 text-blue-600" />
             </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Ana Para</p>
-              <p className="text-lg font-semibold">
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Ana Para</p>
+              <p className="text-sm sm:text-base font-semibold truncate">
                 {caseData.principalAmount
                   ? `${Number(caseData.principalAmount).toLocaleString("tr-TR")} ₺`
                   : "-"}
@@ -307,14 +513,14 @@ export default function CaseDetailPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <Calendar className="h-5 w-5 text-green-600" />
+        <div className="bg-white rounded-lg border p-2 sm:p-3">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-green-100 rounded-lg">
+              <Calendar className="h-4 w-4 text-green-600" />
             </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Takip Tarihi</p>
-              <p className="text-lg font-semibold">
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Takip Tarihi</p>
+              <p className="text-sm sm:text-base font-semibold truncate">
                 {caseData.caseDate
                   ? new Date(caseData.caseDate).toLocaleDateString("tr-TR")
                   : "-"}
@@ -323,26 +529,26 @@ export default function CaseDetailPage() {
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-purple-100 rounded-lg">
-              <Users className="h-5 w-5 text-purple-600" />
+        <div className="bg-white rounded-lg border p-2 sm:p-3">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-purple-100 rounded-lg">
+              <Users className="h-4 w-4 text-purple-600" />
             </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Borçlu Sayısı</p>
-              <p className="text-lg font-semibold">{caseData.debtors?.length || 0}</p>
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Borçlu Sayısı</p>
+              <p className="text-sm sm:text-base font-semibold">{caseData.debtors?.length || 0}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white rounded-xl border p-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-orange-100 rounded-lg">
-              <Clock className="h-5 w-5 text-orange-600" />
+        <div className="bg-white rounded-lg border p-2 sm:p-3">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-orange-100 rounded-lg">
+              <Clock className="h-4 w-4 text-orange-600" />
             </div>
-            <div>
-              <p className="text-sm text-muted-foreground">Kalan Gün</p>
-              <p className="text-lg font-semibold">
+            <div className="min-w-0">
+              <p className="text-xs text-muted-foreground">Kalan Gün</p>
+              <p className="text-sm sm:text-base font-semibold truncate">
                 {caseData.daysLeft !== undefined ? `${caseData.daysLeft} gün` : "-"}
               </p>
             </div>
@@ -351,27 +557,28 @@ export default function CaseDetailPage() {
       </div>
 
       {/* Tabs */}
-      <div className="border-b">
-        <div className="flex gap-1 overflow-x-auto">
+      <div className="border-b -mx-3 sm:-mx-4 md:-mx-6 px-3 sm:px-4 md:px-6">
+        <div className="flex gap-0.5 overflow-x-auto scrollbar-hide">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2 border-b-2 -mb-px transition-colors whitespace-nowrap ${
+              className={`flex items-center gap-1 px-2 sm:px-3 py-1.5 sm:py-2 border-b-2 -mb-px transition-colors whitespace-nowrap text-xs sm:text-sm ${
                 activeTab === tab.id
                   ? "border-primary text-primary"
                   : "border-transparent text-muted-foreground hover:text-foreground"
               }`}
             >
-              <tab.icon className="h-4 w-4" />
-              {tab.label}
+              <tab.icon className="h-3 w-3 sm:h-4 sm:w-4" />
+              <span className="hidden sm:inline">{tab.label}</span>
+              <span className="sm:hidden">{tab.label.split(' ')[0]}</span>
             </button>
           ))}
         </div>
       </div>
 
       {/* Tab Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
         {/* Main Content */}
         <div className="lg:col-span-2 space-y-6">
           {activeTab === "overview" && (
@@ -407,10 +614,167 @@ export default function CaseDetailPage() {
                   </p>
                 </div>
               </div>
+
+              {/* Risk Sınıfı ve Durum Etiketi */}
+              <div className="border-t pt-6">
+                <h4 className="font-semibold mb-4">📊 Dosya Durumu</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Risk Sınıfı */}
+                  <div className="p-4 bg-amber-50 rounded-lg border border-amber-200">
+                    <label className="block text-sm font-medium text-amber-800 mb-2">Risk Sınıfı</label>
+                    <select
+                      value={caseData.risk?.id || ""}
+                      onChange={async (e) => {
+                        try {
+                          await api.patch(`/cases/${caseData.id}`, { riskId: e.target.value || null });
+                          fetchCase();
+                        } catch (err) { console.error(err); }
+                      }}
+                      className="w-full rounded-lg border border-amber-300 px-3 py-2 text-sm outline-none focus:border-amber-500 bg-white"
+                    >
+                      <option value="">Belirsiz</option>
+                      {lookups.risk.map((item: any) => (
+                        <option key={item.id} value={item.id}>{item.name}</option>
+                      ))}
+                    </select>
+                    {caseData.risk && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full" style={{ backgroundColor: caseData.risk.color || '#9ca3af' }} />
+                        <span className="text-sm font-medium" style={{ color: caseData.risk.color }}>{caseData.risk.name}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Durum Etiketi */}
+                  <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
+                    <label className="block text-sm font-medium text-blue-800 mb-2">Durum Etiketi</label>
+                    <select
+                      value={caseData.durumEtiketi?.id || ""}
+                      onChange={async (e) => {
+                        try {
+                          await api.patch(`/cases/${caseData.id}`, { durumEtiketiId: e.target.value || null });
+                          fetchCase();
+                        } catch (err) { console.error(err); }
+                      }}
+                      className="w-full rounded-lg border border-blue-300 px-3 py-2 text-sm outline-none focus:border-blue-500 bg-white"
+                    >
+                      <option value="">Seçiniz</option>
+                      {lookups.durumEtiketi.map((item: any) => (
+                        <option key={item.id} value={item.id}>{item.name}</option>
+                      ))}
+                    </select>
+                    {caseData.durumEtiketi && (
+                      <div className="mt-2 flex items-center gap-2">
+                        <span className="w-3 h-3 rounded-full" style={{ backgroundColor: caseData.durumEtiketi.color || '#3b82f6' }} />
+                        <span className="text-sm font-medium" style={{ color: caseData.durumEtiketi.color }}>{caseData.durumEtiketi.name}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
               {caseData.notes && (
                 <div>
                   <h4 className="font-medium mb-2">Notlar</h4>
                   <p className="text-muted-foreground">{caseData.notes}</p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === "dues" && (
+            <div className="bg-white rounded-xl border p-6 space-y-6">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <DollarSign className="h-5 w-5" />
+                  Alacak Kalemleri
+                </h3>
+              </div>
+
+              {/* Raporlama Özeti Banner */}
+              <div 
+                onClick={() => setShowReportingPanel(true)}
+                className="p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200 cursor-pointer hover:shadow-md transition-shadow"
+              >
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs text-purple-600 font-medium mb-1">📊 Raporlama Özeti</p>
+                    <p className="font-medium text-purple-900">
+                      {caseData.reportingSummary || "Sınıflandırılmamış - Tıklayarak düzenleyin"}
+                    </p>
+                  </div>
+                  <Edit className="h-5 w-5 text-purple-400" />
+                </div>
+              </div>
+
+              {/* Alacak Kalemleri Tablosu */}
+              {caseData.dues && caseData.dues.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b bg-gray-50">
+                        <th className="text-left py-3 px-4 font-medium">Kalem Türü</th>
+                        <th className="text-left py-3 px-4 font-medium">Açıklama</th>
+                        <th className="text-right py-3 px-4 font-medium">Tutar</th>
+                        <th className="text-left py-3 px-4 font-medium">Vade Tarihi</th>
+                        <th className="text-left py-3 px-4 font-medium">Raporlama</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {caseData.dues.map((due) => (
+                        <tr key={due.id} className="border-b hover:bg-gray-50">
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-1 rounded text-xs font-medium ${
+                              due.type === 'PRINCIPAL' ? 'bg-blue-100 text-blue-700' :
+                              due.type === 'INTEREST' ? 'bg-green-100 text-green-700' :
+                              due.type === 'EXPENSE' ? 'bg-orange-100 text-orange-700' :
+                              'bg-gray-100 text-gray-700'
+                            }`}>
+                              {dueTypeLabels[due.type] || due.type}
+                            </span>
+                          </td>
+                          <td className="py-3 px-4 text-muted-foreground">
+                            {due.description || "-"}
+                          </td>
+                          <td className="py-3 px-4 text-right font-medium">
+                            {Number(due.amount).toLocaleString("tr-TR")} ₺
+                          </td>
+                          <td className="py-3 px-4">
+                            {new Date(due.dueDate).toLocaleDateString("tr-TR")}
+                          </td>
+                          <td className="py-3 px-4">
+                            <button
+                              onClick={() => setShowReportingPanel(true)}
+                              className="text-xs text-purple-600 hover:text-purple-800 hover:underline truncate max-w-[200px] block"
+                              title={caseData.reportingSummary || "Düzenle"}
+                            >
+                              {caseData.reportingSummary 
+                                ? (caseData.reportingSummary.length > 30 
+                                    ? caseData.reportingSummary.substring(0, 30) + "..." 
+                                    : caseData.reportingSummary)
+                                : "Düzenle →"}
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-gray-100 font-semibold">
+                        <td colSpan={2} className="py-3 px-4">Toplam</td>
+                        <td className="py-3 px-4 text-right">
+                          {caseData.dues.reduce((sum, d) => sum + Number(d.amount), 0).toLocaleString("tr-TR")} ₺
+                        </td>
+                        <td colSpan={2}></td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-8 border-2 border-dashed rounded-lg">
+                  <DollarSign className="h-12 w-12 mx-auto text-gray-300 mb-3" />
+                  <p className="text-muted-foreground">Henüz alacak kalemi eklenmemiş</p>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Takip oluştururken alacak kalemleri ekleyebilirsiniz
+                  </p>
                 </div>
               )}
             </div>
@@ -423,6 +787,224 @@ export default function CaseDetailPage() {
                 currentStatus={caseData.caseStatus || "DERDEST"}
                 onStatusChange={handleStatusChange}
               />
+            </div>
+          )}
+
+          {activeTab === "groups" && (
+            <div className="bg-white rounded-xl border p-6 space-y-6">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Tag className="h-5 w-5" />
+                  Dosya Grupları
+                </h3>
+                <button
+                  onClick={() => setShowNewGroupModal(true)}
+                  className="text-sm text-primary hover:underline flex items-center gap-1"
+                >
+                  <Plus className="h-4 w-4" /> Yeni Grup Oluştur
+                </button>
+              </div>
+
+              {/* Mevcut Gruplar */}
+              <div>
+                <h4 className="text-sm font-medium mb-2">Bu Dosyanın Grupları</h4>
+                {caseGroups.length === 0 ? (
+                  <p className="text-muted-foreground text-sm py-4 text-center border-2 border-dashed rounded-lg">
+                    Bu dosya henüz bir gruba eklenmedi
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {caseGroups.map((cg: any) => (
+                      <span
+                        key={cg.id}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium"
+                        style={{ backgroundColor: `${cg.group?.color || '#3b82f6'}20`, color: cg.group?.color || '#3b82f6' }}
+                      >
+                        {cg.group?.name}
+                        <button
+                          onClick={() => handleRemoveGroup(cg.group?.id)}
+                          className="ml-1 hover:bg-black/10 rounded-full p-0.5"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Grup Ekle */}
+              <div>
+                <h4 className="text-sm font-medium mb-2">Gruba Ekle</h4>
+                <div className="flex flex-wrap gap-2">
+                  {allGroups
+                    .filter((g: any) => !caseGroups.find((cg: any) => cg.group?.id === g.id))
+                    .map((group: any) => (
+                      <button
+                        key={group.id}
+                        onClick={() => handleAddGroup(group.id)}
+                        className="px-3 py-1.5 text-sm border rounded-full hover:bg-gray-50 flex items-center gap-1"
+                        style={{ borderColor: group.color || '#e5e7eb' }}
+                      >
+                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: group.color || '#3b82f6' }} />
+                        {group.name}
+                        {group._count?.caseGroups !== undefined && (
+                          <span className="text-xs text-muted-foreground">({group._count.caseGroups})</span>
+                        )}
+                      </button>
+                    ))}
+                  {allGroups.filter((g: any) => !caseGroups.find((cg: any) => cg.group?.id === g.id)).length === 0 && (
+                    <p className="text-sm text-muted-foreground">Tüm gruplara eklenmiş</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Yeni Grup Modal */}
+              {showNewGroupModal && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                  <div className="bg-white rounded-xl p-6 w-full max-w-md">
+                    <h3 className="font-semibold mb-4">Yeni Grup Oluştur</h3>
+                    <div className="space-y-4">
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Grup Adı *</label>
+                        <input
+                          type="text"
+                          value={newGroupName}
+                          onChange={(e) => setNewGroupName(e.target.value)}
+                          placeholder="Ör: Stratejik Dosyalar"
+                          className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Açıklama</label>
+                        <textarea
+                          value={newGroupDescription}
+                          onChange={(e) => setNewGroupDescription(e.target.value)}
+                          placeholder="Grup açıklaması..."
+                          rows={2}
+                          className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary resize-none"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-sm font-medium mb-1">Renk</label>
+                        <div className="flex gap-2">
+                          {['#3b82f6', '#22c55e', '#eab308', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'].map((color) => (
+                            <button
+                              key={color}
+                              type="button"
+                              onClick={() => setNewGroupColor(color)}
+                              className={`w-8 h-8 rounded-full border-2 ${newGroupColor === color ? 'border-gray-900' : 'border-transparent'}`}
+                              style={{ backgroundColor: color }}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2 mt-6">
+                      <button
+                        onClick={() => setShowNewGroupModal(false)}
+                        className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+                      >
+                        İptal
+                      </button>
+                      <button
+                        onClick={handleCreateGroup}
+                        disabled={!newGroupName.trim()}
+                        className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
+                      >
+                        Oluştur
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {activeTab === "extra" && (
+            <div className="bg-white rounded-xl border p-6 space-y-6">
+              <div className="flex items-center justify-between">
+                <h3 className="font-semibold flex items-center gap-2">
+                  <Info className="h-5 w-5" />
+                  Ek Bilgiler
+                </h3>
+                <button
+                  onClick={handleSaveExtraInfo}
+                  disabled={extraInfoSaving}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
+                >
+                  {extraInfoSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  Kaydet
+                </button>
+              </div>
+
+              {/* Sınıflandırma Bilgileri (Sadece Görüntüleme) */}
+              <div className="p-4 bg-purple-50 rounded-lg">
+                <h4 className="text-sm font-semibold mb-3 text-purple-800">📊 Sınıflandırma Bilgileri</h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
+                  <div>
+                    <span className="text-purple-600">Takip Türü:</span>
+                    <p className="font-medium">{caseData.takipTuru?.name || "-"}</p>
+                  </div>
+                  <div>
+                    <span className="text-purple-600">Aşama:</span>
+                    <p className="font-medium">{caseData.asama?.name || "-"}</p>
+                  </div>
+                  <div>
+                    <span className="text-purple-600">Risk:</span>
+                    <p className="font-medium" style={{ color: caseData.risk?.color }}>{caseData.risk?.name || "-"}</p>
+                  </div>
+                  <div>
+                    <span className="text-purple-600">Borçlu Tipi:</span>
+                    <p className="font-medium">{caseData.borcluTipi?.name || "-"}</p>
+                  </div>
+                  <div>
+                    <span className="text-purple-600">Durum Etiketi:</span>
+                    <p className="font-medium" style={{ color: caseData.durumEtiketi?.color }}>{caseData.durumEtiketi?.name || "-"}</p>
+                  </div>
+                  <div>
+                    <span className="text-purple-600">Sorumlu:</span>
+                    <p className="font-medium">{caseData.sorumluPersonel ? `${caseData.sorumluPersonel.name} ${caseData.sorumluPersonel.surname}` : "-"}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Notlar */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Dahili Not <span className="text-xs text-muted-foreground">(Müvekkile gitmez)</span>
+                  </label>
+                  <textarea
+                    value={extraInfo.dahiliNot}
+                    onChange={(e) => setExtraInfo({ ...extraInfo, dahiliNot: e.target.value })}
+                    rows={3}
+                    placeholder="Sadece büro içi görünür notlar..."
+                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary resize-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">
+                    Müvekkil Notu <span className="text-xs text-muted-foreground">(Raporlarda görünür)</span>
+                  </label>
+                  <textarea
+                    value={extraInfo.muvekkilNotu}
+                    onChange={(e) => setExtraInfo({ ...extraInfo, muvekkilNotu: e.target.value })}
+                    rows={3}
+                    placeholder="Müvekkile gösterilebilir notlar..."
+                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary resize-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Son Değerlendirme Tarihi</label>
+                  <input
+                    type="date"
+                    value={extraInfo.sonDegerlendirmeTarihi}
+                    onChange={(e) => setExtraInfo({ ...extraInfo, sonDegerlendirmeTarihi: e.target.value })}
+                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+                  />
+                </div>
+              </div>
             </div>
           )}
 
@@ -549,6 +1131,74 @@ export default function CaseDetailPage() {
                 Risk Analizi
               </h3>
 
+              {/* Risk Sınıfı Güncelleme */}
+              <div className="bg-amber-50 rounded-xl p-6 border border-amber-200">
+                <h4 className="font-medium flex items-center gap-2 mb-4">
+                  <AlertTriangle className="h-5 w-5 text-amber-600" />
+                  Risk Sınıfı Belirleme
+                </h4>
+                <p className="text-sm text-amber-700 mb-4">
+                  Risk durumu dosya açıldıktan sonra mal varlığı, maaş haczi imkanı, taahhüt durumu, karşılıksız çek cezası gibi faktörlere göre manuel belirlenir.
+                </p>
+                <div className="grid grid-cols-1 gap-3">
+                  {lookups.risk.map((risk: any) => (
+                    <button
+                      key={risk.id}
+                      onClick={async () => {
+                        try {
+                          await api.patch(`/cases/${caseData.id}`, { riskId: risk.id });
+                          fetchCase();
+                        } catch (e) { console.error(e); }
+                      }}
+                      className={`flex items-center justify-between p-4 rounded-lg border-2 transition-all ${
+                        caseData.risk?.id === risk.id 
+                          ? 'border-amber-500 bg-white shadow-md' 
+                          : 'border-gray-200 hover:border-gray-300 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3">
+                        <span 
+                          className="w-4 h-4 rounded-full" 
+                          style={{ backgroundColor: risk.color || '#9ca3af' }}
+                        />
+                        <div className="text-left">
+                          <p className="font-medium">{risk.name}</p>
+                          <p className="text-xs text-muted-foreground">{risk.description}</p>
+                        </div>
+                      </div>
+                      {caseData.risk?.id === risk.id && (
+                        <span className="text-amber-600 text-sm font-medium">✓ Seçili</span>
+                      )}
+                    </button>
+                  ))}
+                  {/* Belirsiz seçeneği */}
+                  <button
+                    onClick={async () => {
+                      try {
+                        await api.patch(`/cases/${caseData.id}`, { riskId: null });
+                        fetchCase();
+                      } catch (e) { console.error(e); }
+                    }}
+                    className={`flex items-center justify-between p-4 rounded-lg border-2 transition-all ${
+                      !caseData.risk?.id 
+                        ? 'border-amber-500 bg-white shadow-md' 
+                        : 'border-gray-200 hover:border-gray-300 bg-white'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="w-4 h-4 rounded-full bg-gray-400" />
+                      <div className="text-left">
+                        <p className="font-medium">Belirsiz</p>
+                        <p className="text-xs text-muted-foreground">Henüz değerlendirilmedi</p>
+                      </div>
+                    </div>
+                    {!caseData.risk?.id && (
+                      <span className="text-amber-600 text-sm font-medium">✓ Seçili</span>
+                    )}
+                  </button>
+                </div>
+              </div>
+
               {/* Risk Skoru */}
               <div className="bg-gray-50 rounded-xl p-6">
                 <div className="flex items-center justify-between mb-4">
@@ -601,6 +1251,156 @@ export default function CaseDetailPage() {
           />
         </div>
       </div>
+
+      {/* Raporlama Düzenleme Paneli */}
+      {showReportingPanel && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-6">
+              <h3 className="font-semibold text-lg flex items-center gap-2">
+                📊 Raporlama Bilgileri
+              </h3>
+              <button
+                onClick={() => setShowReportingPanel(false)}
+                className="p-1 hover:bg-gray-100 rounded"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              {/* Takip Türü */}
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Takip Türü <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={reportingData.takipTuruId}
+                  onChange={(e) => setReportingData({ ...reportingData, takipTuruId: e.target.value })}
+                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+                >
+                  <option value="">Seçiniz...</option>
+                  {lookups.takipTuru.map((item: any) => (
+                    <option key={item.id} value={item.id}>{item.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Mahiyet Tipi */}
+              <div>
+                <label className="block text-sm font-medium mb-1">Mahiyet Tipi (Alacak Türü)</label>
+                <select
+                  value={reportingData.mahiyetTipiId}
+                  onChange={(e) => setReportingData({ ...reportingData, mahiyetTipiId: e.target.value })}
+                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+                >
+                  <option value="">Seçiniz...</option>
+                  {lookups.mahiyetTipi.map((item: any) => (
+                    <option key={item.id} value={item.id}>{item.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Risk Sınıfı */}
+              <div>
+                <label className="block text-sm font-medium mb-1">Risk Sınıfı</label>
+                <select
+                  value={reportingData.riskId}
+                  onChange={(e) => setReportingData({ ...reportingData, riskId: e.target.value })}
+                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+                >
+                  <option value="">Seçiniz...</option>
+                  {lookups.risk.map((item: any) => (
+                    <option key={item.id} value={item.id} style={{ color: item.color }}>{item.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Durum Etiketi */}
+              <div>
+                <label className="block text-sm font-medium mb-1">Durum Etiketi</label>
+                <select
+                  value={reportingData.durumEtiketiId}
+                  onChange={(e) => setReportingData({ ...reportingData, durumEtiketiId: e.target.value })}
+                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+                >
+                  <option value="">Seçiniz...</option>
+                  {lookups.durumEtiketi.map((item: any) => (
+                    <option key={item.id} value={item.id}>{item.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Borçlu Tipi */}
+              <div>
+                <label className="block text-sm font-medium mb-1">Borçlu Tipi</label>
+                <select
+                  value={reportingData.borcluTipiId}
+                  onChange={(e) => setReportingData({ ...reportingData, borcluTipiId: e.target.value })}
+                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+                >
+                  <option value="">Seçiniz...</option>
+                  {lookups.borcluTipi.map((item: any) => (
+                    <option key={item.id} value={item.id}>{item.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Sorumlu Personel */}
+              <div>
+                <label className="block text-sm font-medium mb-1">
+                  Sorumlu Personel <span className="text-red-500">*</span>
+                </label>
+                <select
+                  value={reportingData.sorumluPersonelId}
+                  onChange={(e) => setReportingData({ ...reportingData, sorumluPersonelId: e.target.value })}
+                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+                >
+                  <option value="">Seçiniz...</option>
+                  {lookups.users.map((user: any) => (
+                    <option key={user.id} value={user.id}>{user.name} {user.surname}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Mevcut Gruplar */}
+              {caseGroups.length > 0 && (
+                <div className="p-3 bg-gray-50 rounded-lg">
+                  <p className="text-xs text-muted-foreground mb-2">Gruplar:</p>
+                  <div className="flex flex-wrap gap-1">
+                    {caseGroups.map((cg: any) => (
+                      <span
+                        key={cg.id}
+                        className="px-2 py-0.5 rounded text-xs"
+                        style={{ backgroundColor: `${cg.group?.color || '#3b82f6'}20`, color: cg.group?.color || '#3b82f6' }}
+                      >
+                        {cg.group?.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 mt-6 pt-4 border-t">
+              <button
+                onClick={() => setShowReportingPanel(false)}
+                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                İptal
+              </button>
+              <button
+                onClick={handleSaveReporting}
+                disabled={reportingSaving}
+                className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2"
+              >
+                {reportingSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                Kaydet
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* AI Suggestions Modal */}
       <AiSuggestionsModal

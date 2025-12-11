@@ -115,6 +115,15 @@ export class CaseService {
           include: { changedBy: { select: { name: true, surname: true } } }
         },
         riskReports: { orderBy: { createdAt: "desc" }, take: 1 },
+        // Lookup ilişkileri
+        takipTuru: { select: { id: true, code: true, name: true } },
+        asama: { select: { id: true, code: true, name: true } },
+        risk: { select: { id: true, code: true, name: true, color: true } },
+        borcluTipi: { select: { id: true, code: true, name: true } },
+        durumEtiketi: { select: { id: true, code: true, name: true, color: true } },
+        mahiyetTipi: { select: { id: true, code: true, name: true, uyapCode: true } },
+        sorumluPersonel: { select: { id: true, name: true, surname: true } },
+        groups: { include: { group: { select: { id: true, name: true, color: true } } } },
       },
     });
 
@@ -122,7 +131,51 @@ export class CaseService {
       throw new NotFoundException("Takip bulunamadı");
     }
 
-    return caseItem;
+    // Raporlama özeti oluştur
+    const reportingSummary = this.buildReportingSummary(caseItem);
+
+    return {
+      ...caseItem,
+      reportingSummary,
+    };
+  }
+
+  /**
+   * Raporlama özeti oluştur
+   * Format: "Mahiyet / Takip Türü / Risk: X / Durum: Y"
+   */
+  private buildReportingSummary(caseItem: any): string {
+    const parts: string[] = [];
+
+    // Mahiyet Tipi
+    if (caseItem.mahiyetTipi?.name) {
+      parts.push(caseItem.mahiyetTipi.name);
+    }
+
+    // Takip Türü (kısa)
+    if (caseItem.takipTuru?.name) {
+      // Kısa versiyon: "İlamsız Genel Haciz" -> "İlamsız"
+      const shortName = caseItem.takipTuru.name.split(' ')[0];
+      parts.push(shortName);
+    }
+
+    // Risk
+    if (caseItem.risk?.name) {
+      parts.push(`Risk: ${caseItem.risk.name}`);
+    }
+
+    // Durum Etiketi
+    if (caseItem.durumEtiketi?.name) {
+      parts.push(`Durum: ${caseItem.durumEtiketi.name}`);
+    }
+
+    // Grup sayısı
+    const groupCount = caseItem.groups?.length || 0;
+    if (groupCount > 0) {
+      parts.push(`${groupCount} grup`);
+    }
+
+    return parts.length > 0 ? parts.join(' / ') : 'Sınıflandırılmamış';
   }
 
   async create(tenantId: string, dto: CreateCaseDto) {
@@ -439,5 +492,35 @@ export class CaseService {
       where: { id },
       data,
     });
+  }
+
+  // Toplu güncelleme (Batch Update)
+  async batchUpdate(
+    tenantId: string,
+    caseIds: string[],
+    updates: {
+      riskId?: string | null;
+      durumEtiketiId?: string | null;
+      sorumluPersonelId?: string | null;
+      takipTuruId?: string | null;
+      mahiyetTipiId?: string | null;
+    },
+  ) {
+    // Sadece bu tenant'a ait dosyaları güncelle
+    const result = await this.prisma.case.updateMany({
+      where: {
+        id: { in: caseIds },
+        tenantId,
+      },
+      data: {
+        ...(updates.riskId !== undefined && { riskId: updates.riskId }),
+        ...(updates.durumEtiketiId !== undefined && { durumEtiketiId: updates.durumEtiketiId }),
+        ...(updates.sorumluPersonelId !== undefined && { sorumluPersonelId: updates.sorumluPersonelId }),
+        ...(updates.takipTuruId !== undefined && { takipTuruId: updates.takipTuruId }),
+        ...(updates.mahiyetTipiId !== undefined && { mahiyetTipiId: updates.mahiyetTipiId }),
+      },
+    });
+
+    return { updatedCount: result.count };
   }
 }

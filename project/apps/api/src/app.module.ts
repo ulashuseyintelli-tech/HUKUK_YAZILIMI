@@ -21,6 +21,9 @@ import { UyapModule } from "./modules/uyap/uyap.module";
 import { SchedulerModule } from "./modules/scheduler/scheduler.module";
 import { RuleEngineModule } from "./modules/rule-engine/rule-engine.module";
 import { OcrModule } from "./modules/ocr/ocr.module";
+import { LookupModule } from "./modules/lookup/lookup.module";
+import { GroupModule } from "./modules/group/group.module";
+import { ReportModule } from "./modules/report/report.module";
 
 @Module({
   imports: [
@@ -48,6 +51,9 @@ import { OcrModule } from "./modules/ocr/ocr.module";
     SchedulerModule,
     RuleEngineModule,
     OcrModule,
+    LookupModule,
+    GroupModule,
+    ReportModule,
   ],
 })
 export class AppModule {}

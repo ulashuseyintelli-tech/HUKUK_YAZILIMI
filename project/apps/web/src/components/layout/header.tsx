@@ -1,25 +1,80 @@
 "use client";
 
-import { Bell, Search, Menu, User, LogOut } from "lucide-react";
+import { Bell, Search, Menu, User, LogOut, X, Scale, LayoutDashboard, PlusCircle, FolderOpen, Sparkles, Users, Building2, CheckSquare, Settings } from "lucide-react";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth-context";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { cn } from "@/lib/utils";
+
+const mobileNavigation = [
+  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
+  { name: "Yeni Takip", href: "/cases/new", icon: PlusCircle },
+  { name: "Takipler", href: "/cases", icon: FolderOpen },
+  { name: "AI Tools", href: "/ai-tools", icon: Sparkles },
+  { name: "Borçlular", href: "/debtors", icon: Users },
+  { name: "Müvekkiller", href: "/clients", icon: Building2 },
+  { name: "Görevler", href: "/tasks", icon: CheckSquare },
+  { name: "Ayarlar", href: "/settings", icon: Settings },
+];
 
 export function Header() {
   const { user, logout } = useAuth();
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const pathname = usePathname();
 
   return (
-    <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b bg-white px-6">
-      <button
-        className="lg:hidden"
-        onClick={() => setShowMobileMenu(!showMobileMenu)}
-      >
-        <Menu className="h-6 w-6" />
-      </button>
+    <>
+      <header className="sticky top-0 z-40 flex h-16 items-center gap-4 border-b bg-white px-4 sm:px-6">
+        <button
+          className="sm:hidden p-2 -ml-2 rounded-lg hover:bg-muted"
+          onClick={() => setShowMobileMenu(!showMobileMenu)}
+        >
+          <Menu className="h-6 w-6" />
+        </button>
+
+        {/* Mobile Menu Overlay - sadece mobilde (sm altında) */}
+        {showMobileMenu && (
+          <div className="fixed inset-0 z-50 sm:hidden">
+            <div className="fixed inset-0 bg-black/50" onClick={() => setShowMobileMenu(false)} />
+            <div className="fixed inset-y-0 left-0 w-72 bg-white shadow-xl">
+              <div className="flex h-16 items-center justify-between border-b px-4">
+                <div className="flex items-center gap-2">
+                  <Scale className="h-6 w-6 text-primary" />
+                  <span className="font-bold">Hukuk Platform</span>
+                </div>
+                <button onClick={() => setShowMobileMenu(false)} className="p-2 rounded-lg hover:bg-muted">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+              <nav className="p-4 space-y-1">
+                {mobileNavigation.map((item) => {
+                  const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+                  return (
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      onClick={() => setShowMobileMenu(false)}
+                      className={cn(
+                        "flex items-center gap-3 rounded-lg px-3 py-3 text-sm font-medium transition-colors",
+                        isActive
+                          ? "bg-primary/10 text-primary"
+                          : "text-muted-foreground hover:bg-muted hover:text-foreground"
+                      )}
+                    >
+                      <item.icon className="h-5 w-5" />
+                      {item.name}
+                    </Link>
+                  );
+                })}
+              </nav>
+            </div>
+          </div>
+        )}
 
       {/* Search */}
-      <div className="flex-1 max-w-md">
+      <div className="flex-1 min-w-0 max-w-md">
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -67,6 +122,7 @@ export function Header() {
           )}
         </div>
       </div>
-    </header>
+      </header>
+    </>
   );
 }

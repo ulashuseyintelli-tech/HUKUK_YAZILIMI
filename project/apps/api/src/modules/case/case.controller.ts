@@ -101,4 +101,31 @@ export class CaseController {
       },
     };
   }
+
+  /**
+   * Toplu güncelleme (Batch Update)
+   * POST /cases/batch-update
+   */
+  @Post("batch-update")
+  async batchUpdate(
+    @CurrentUser("tenantId") tenantId: string,
+    @Body()
+    body: {
+      caseIds: string[];
+      updates: {
+        riskId?: string | null;
+        durumEtiketiId?: string | null;
+        sorumluPersonelId?: string | null;
+        takipTuruId?: string | null;
+        mahiyetTipiId?: string | null;
+      };
+    }
+  ) {
+    const result = await this.caseService.batchUpdate(
+      tenantId,
+      body.caseIds,
+      body.updates
+    );
+    return { success: true, data: result };
+  }
 }
