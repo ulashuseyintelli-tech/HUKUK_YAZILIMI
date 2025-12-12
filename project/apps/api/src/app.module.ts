@@ -24,6 +24,11 @@ import { OcrModule } from "./modules/ocr/ocr.module";
 import { LookupModule } from "./modules/lookup/lookup.module";
 import { GroupModule } from "./modules/group/group.module";
 import { ReportModule } from "./modules/report/report.module";
+import { OfficeModule } from "./modules/office/office.module";
+import { StaffModule } from "./modules/staff/staff.module";
+import { ClientNotificationModule } from "./modules/client-notification/client-notification.module";
+import { GreetingModule } from "./modules/greeting/greeting.module";
+import { ExportImportModule } from "./modules/export-import/export-import.module";
 
 @Module({
   imports: [
@@ -54,6 +59,11 @@ import { ReportModule } from "./modules/report/report.module";
     LookupModule,
     GroupModule,
     ReportModule,
+    OfficeModule,
+    StaffModule,
+    ClientNotificationModule,
+    GreetingModule,
+    ExportImportModule,
   ],
 })
 export class AppModule {}

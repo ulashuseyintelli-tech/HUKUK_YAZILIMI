@@ -234,4 +234,60 @@ export class OcrController {
       },
     };
   }
+
+  /**
+   * Vekaletname belgesi tara ve bilgileri çıkar
+   * POST /ocr/scan-poa (Power of Attorney)
+   */
+  @Post("scan-poa")
+  @UseInterceptors(
+    FileInterceptor("file", {
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+      fileFilter: (req, file, cb) => {
+        const allowedMimes = [
+          "application/pdf",
+          "image/jpeg",
+          "image/png",
+          "image/webp",
+          "image/tiff",
+          "image/bmp",
+          "text/plain",
+          "application/msword",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ];
+        const lowerName = file.originalname?.toLowerCase() || "";
+        const allowedExtensions = [".udf", ".doc", ".docx", ".tiff", ".tif"];
+        const hasAllowedExtension = allowedExtensions.some(ext => lowerName.endsWith(ext));
+        
+        if (allowedMimes.includes(file.mimetype) || hasAllowedExtension) {
+          cb(null, true);
+        } else {
+          cb(
+            new BadRequestException(
+              "Desteklenmeyen dosya formatı. PDF, Word, JPG, PNG veya TIFF yükleyin."
+            ),
+            false
+          );
+        }
+      },
+    })
+  )
+  async scanPowerOfAttorney(
+    @UploadedFile() file: Express.Multer.File
+  ) {
+    if (!file) {
+      throw new BadRequestException("Dosya yüklenmedi");
+    }
+
+    const result = await this.ocrService.scanPowerOfAttorney(
+      file.buffer,
+      file.mimetype,
+      file.originalname
+    );
+
+    return {
+      success: true,
+      data: result,
+    };
+  }
 }

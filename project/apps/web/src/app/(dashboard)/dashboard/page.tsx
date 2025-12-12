@@ -81,24 +81,26 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="space-y-6 px-4 sm:px-0">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+    <div className="h-full flex flex-col overflow-hidden">
+      <div className="flex items-center justify-between mb-2">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold">Tam Otomatik İcra Dashboard</h1>
-          <p className="text-sm text-muted-foreground">Otomasyon durumu ve sistem özeti</p>
+          <h1 className="text-lg font-bold">Dashboard</h1>
+          <p className="text-xs text-muted-foreground">Otomasyon durumu</p>
         </div>
         <div className="flex items-center gap-2">
           {aiConfigured ? (
-            <span className="flex items-center gap-1 text-xs sm:text-sm bg-green-100 text-green-700 px-3 py-1 rounded-full">
-              <Brain className="h-4 w-4" /> AI Aktif
+            <span className="flex items-center gap-1 text-xs bg-green-100 text-green-700 px-2 py-0.5 rounded-full">
+              <Brain className="h-3 w-3" /> AI Aktif
             </span>
           ) : (
-            <span className="flex items-center gap-1 text-xs sm:text-sm bg-yellow-100 text-yellow-700 px-3 py-1 rounded-full">
-              <Brain className="h-4 w-4" /> AI Yapılandırılmadı
+            <span className="flex items-center gap-1 text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">
+              <Brain className="h-3 w-3" /> AI Yapılandırılmadı
             </span>
           )}
         </div>
       </div>
+      
+      <div className="flex-1 overflow-auto space-y-3">
 
 
       {/* Otomasyon Stats */}
@@ -287,6 +289,7 @@ export default function DashboardPage() {
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   );

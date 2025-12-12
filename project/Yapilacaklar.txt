@@ -1,443 +1,307 @@
-2025-12-09 20:40
+# HUKUK YAZILIMI - YAPILACAKLAR LİSTESİ
 
-Durumu net görüyorum:
-Ekran küçüldüğünde **ana dashboard bileşenleri responsive davranmıyor**, grid kendini dar alana uyarlayamıyor ve bileşenler üst üste-yan yana sıkışıp **kayboluyormuş gibi** görünmeye başlıyor.
+## ✅ TAMAMLANAN MODÜLLER
 
-Tam ekran görüntüsünde her şey düzgün; küçültülmüş ekranda ise:
+### 1. Personel/Ekip Sistemi
+- [x] StaffMember ve CaseStaff modelleri
+- [x] Staff API endpoint'leri
+- [x] Ayarlar > Büro Ayarları > Personel bölümü
+- [x] Takip sihirbazı Step 2 - Avukatlar ve Ekip/Personel
 
-* Kartlar genişlik hesaplamasında taşma yapıyor,
-* Sol menü + içerik alanı birlikte daraldığı için **Dashboard container içeriği kesiliyor**,
-* Risk dağılımı, otomasyon durumu gibi widget'lar breakpoint’te olması gereken şekilde alta inmiyor.
+### 2. Müvekkil (Alacaklı) Temel Sistemi
+- [x] Client modeli genişletildi (firstName, lastName, tckn, vkn, yetkiler)
+- [x] ClientContact, ClientBankAccount, ClientPowerOfAttorney modelleri
+- [x] CaseClient ilişki tablosu
+- [x] Client API endpoint'leri
+- [x] Ayarlar > Müvekkiller sayfası (tablo görünümü)
+- [x] Yeni takipte müvekkil ekleme → Client tablosuna kayıt
 
-Bu teknik olarak **CSS grid + responsive breakpoint** sorunu.
-
-Ben sana şimdi **kesin çözümü** üç aşamada yazıyorum. Yazılımcıya doğrudan verebilirsin.
+### 3. Vekaletname Tarama (OCR)
+- [x] OpenAI ile vekaletname tarama
+- [x] Vision API desteği (görüntü dosyaları için)
+- [x] PDF'i görüntüye çevirme (pdf-poppler)
+- [x] PoaScannerWizard bileşeni
+- [x] Drag & Drop dosya yükleme
 
 ---
 
-# 🔧 1) Sorunun Temel Nedeni
+## 🔄 MÜVEKKİL İLETİŞİM & PORTAL SİSTEMİ
 
-Dashboard şu anda büyük ihtimalle şunu yapıyor:
+### 4. İletişim Modülü (Ofis Tarafı)
 
-```css
-.grid-cols-4
+#### 4.1 ClientNotification Tablosu
+- [x] Model oluştur (clientId, caseId, channel, type, subject, body, status, sentAt)
+- [x] Kanallar: EMAIL, SMS, WHATSAPP
+- [x] Tipler: MASRAF_ISTEK, GENEL_BILGILENDIRME, RAPOR, HATIRLATMA
+
+#### 4.2 E-posta Gönderimi
+- [x] SMTP ayarları (Büro Ayarları'na ekle)
+- [x] Nodemailer entegrasyonu
+- [x] E-posta şablonları:
+  - Masraf talebi şablonu
+  - Genel bilgilendirme şablonu
+  - Dosya durum raporu şablonu
+- [x] Müvekkil listesinde "E-posta Gönder" butonu
+- [x] Şablon seçimi + içerik düzenleme modalı
+- [x] Gönderim sonrası ClientNotification kaydı
+
+#### 4.3 SMS Gönderimi
+- [x] SMS API entegrasyonu (NetGSM / İleti Merkezi)
+- [x] SMS API ayarları (Büro Ayarları'na ekle)
+- [x] Müvekkil listesinde "SMS Gönder" butonu
+- [x] Karakter sayacı (160 karakter sınırı)
+- [ ] SMS şablonları (kısa metin) - opsiyonel
+
+#### 4.4 WhatsApp Entegrasyonu (Opsiyonel)
+- [ ] WhatsApp Business API araştırması
+- [ ] Basit link ile mesaj açma (wa.me/numara?text=...)
+
+#### 4.8 Otomatik Tebrik Sistemi ✅
+- [x] Client modeline doğum tarihi (birthDate) eklendi
+- [x] Client modeline kuruluş tarihi (foundingDate) eklendi
+- [x] Client modeline vekalet başlangıç tarihi (poaStartDate) eklendi
+- [x] Tebrik tercihleri (sendBirthdayGreeting, sendAnniversaryGreeting, sendHolidayGreeting)
+- [x] Tebrik kanalı seçimi (EMAIL, SMS, BOTH)
+- [x] SpecialDay modeli (bayramlar, anma günleri)
+- [x] Varsayılan özel günler (Ramazan, Kurban, Cumhuriyet, 10 Kasım vb.)
+- [x] GreetingService - otomatik tebrik kontrolü (her gün 09:00)
+- [x] Müvekkil formuna tebrik ayarları bölümü eklendi
+- [x] Doğum günü tebriği
+- [x] Kuruluş yıldönümü tebriği (şirketler)
+- [x] Vekalet yıldönümü tebriği (işbirliği)
+- [x] Bayram tebriği (dini ve milli)
+- [x] Anma günü mesajı (10 Kasım)
+- [x] Büro Ayarları'na otomatik tebrik açma/kapama ayarı eklendi
+- [x] Gönderim saati ayarı (varsayılan: 09:00)
+
+#### 4.5 Toplu Gönderim
+- [ ] Müvekkil listesinde çoklu seçim
+- [ ] Toplu e-posta gönderimi
+- [ ] Toplu SMS gönderimi
+- [ ] Filtreli gönderim (şehir, dosya durumu vb.)
+
+#### 4.9 Dışa/İçe Aktarma (Export/Import) ✅
+- [x] ExportImportModule oluşturuldu
+- [x] Müvekkilleri Excel'e aktar
+- [x] Müvekkilleri PDF'e aktar
+- [x] Takipleri Excel'e aktar
+- [x] Takipleri PDF'e aktar
+- [x] Müvekkil içe aktarma şablonu (Excel)
+- [x] Excel'den müvekkil toplu içe aktarma
+- [x] Müvekkiller sayfasına Export/Import butonları eklendi
+
+#### 4.6 Masraf Talebi Sistemi
+- [ ] ExpenseRequest modeli
+- [ ] Masraf kalemi tanımlama
+- [ ] Dosya bazlı masraf listesi
+- [ ] "Masraf Talebi Gönder" butonu (e-posta/SMS)
+- [ ] Otomatik şablon doldurma (dosya no, tutar, müvekkil adı)
+- [ ] Masraf durumu takibi (Bekliyor/Onaylandı/Reddedildi/Ödendi)
+
+#### 4.7 Otomatik Hatırlatıcı (BONUS)
+- [ ] Avans eşik değeri ayarı (örn: 1000 TL)
+- [ ] Avans < eşik olduğunda otomatik uyarı
+- [ ] Scheduler ile günlük kontrol
+- [ ] Otomatik e-posta/SMS gönderimi (opsiyonel)
+
+---
+
+### 5. Müvekkil Portalı (Müvekkil Tarafı)
+
+#### 5.1 Müvekkil Hesabı
+- [ ] User.globalRole = "CLIENT" desteği
+- [ ] User.clientId ilişkisi
+- [ ] Client.portalEnabled flag'i
+- [ ] Şifre oluşturma (e-posta ile link)
+- [ ] Şifremi unuttum mekanizması
+- [ ] E-posta doğrulama
+
+#### 5.2 Portal Layout & Auth
+- [ ] /portal route grubu
+- [ ] Ayrı layout (portal-layout.tsx)
+- [ ] Portal giriş sayfası (/portal/login)
+- [ ] Portal middleware (sadece CLIENT rolü)
+
+#### 5.3 Portal Dashboard
+- [ ] Hoşgeldin mesajı
+- [ ] Açık dosya sayısı kartı
+- [ ] Toplam tahsilat kartı
+- [ ] Son işlemler listesi
+- [ ] Bekleyen masraf talepleri
+
+#### 5.4 Dosya Listesi
+- [ ] Sadece müvekkilin dosyaları (clientId filtresi)
+- [ ] Açık / Kapalı sekmeleri
+- [ ] Dosya no, borçlu, durum, son işlem kolonları
+- [ ] Arama ve filtreleme
+
+#### 5.5 Dosya Detay Sayfası
+- [ ] Dosya özet bilgileri
+- [ ] Borçlu bilgileri
+- [ ] Alacak türü ve tutarı
+- [ ] Dosya durumu (Derdest/HİTAM/Aciz)
+- [ ] İşlem zaman çizelgesi (timeline)
+- [ ] Tahsilat tablosu
+- [ ] Masraf/avans tablosu
+- [ ] İndirilebilir belgeler (izin verilenler)
+
+#### 5.6 İletişim
+- [ ] "Ofise Mesaj Gönder" formu
+- [ ] Mesaj geçmişi görüntüleme
+- [ ] Bildirimler
+
+#### 5.7 Güvenlik & Yetki
+- [ ] Sadece görüntüleme yetkisi (işlem tetikleyemez)
+- [ ] Sadece kendi dosyalarını görebilir
+- [ ] Session timeout
+- [ ] Hukuki uyarı metni
+
+---
+
+### 6. Müvekkil CRM Kartı (Ofis Tarafı)
+
+#### 6.1 Müvekkil Profil Sayfası
+- [ ] /settings/clients/[id] detay sayfası
+- [ ] Temel bilgiler sekmesi
+- [ ] İletişim geçmişi sekmesi (gönderilen e-posta/SMS)
+- [ ] Dosyalar sekmesi (müvekkilin tüm dosyaları)
+- [ ] Masraf talepleri sekmesi
+
+#### 6.2 Müvekkil İstatistikleri
+- [ ] Toplam dosya sayısı
+- [ ] Açık / Kapalı dosya sayısı
+- [ ] Toplam alacak tutarı
+- [ ] Toplam tahsilat tutarı
+- [ ] Tahsilat oranı (%)
+- [ ] Aciz / batak dosya sayısı
+- [ ] Son 30 günde yapılan işlemler
+
+#### 6.3 Raporlama
+- [ ] Müvekkil bazlı dosya raporu
+- [ ] Müvekkil bazlı tahsilat raporu
+- [ ] Müvekkil bazlı masraf raporu
+- [ ] PDF export
+- [ ] Excel export
+
+---
+
+## 📋 VERİTABANI DEĞİŞİKLİKLERİ
+
+### ClientNotification (İletişim Logu)
+```prisma
+model ClientNotification {
+  id          String   @id @default(cuid())
+  tenantId    String
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id])
+  caseId      String?
+  case        Case?    @relation(fields: [caseId], references: [id])
+  channel     String   // EMAIL, SMS, WHATSAPP
+  type        String   // MASRAF_ISTEK, GENEL_BILGILENDIRME, RAPOR
+  subject     String?
+  body        String
+  status      String   @default("PENDING") // PENDING, SENT, FAILED
+  sentAt      DateTime?
+  sentById    String
+  sentBy      User     @relation(fields: [sentById], references: [id])
+  errorMessage String?
+  createdAt   DateTime @default(now())
+}
 ```
 
-gibi sabit kolonlu bir yapı kullanıyor.
-Ekran küçülünce grid 4 kolonu sığdıramıyor → bileşenler taşmaya başlıyor.
-
-Ayrıca sol menü sabit genişlikte olduğu için içerik alanı daraldığında grid kolonu hâlâ "4 kolonmuş gibi" davranıyor.
-
-Kısacası:
-
-### ❌ Breakpoint tetiklenmiyor
-
-### ❌ Grid küçülen alana göre kendini tek/çift kolona düşürmüyor
-
-### ❌ Min-height veya overflow ayarı içeriği kırpıyor
-
----
-
-# 🔨 2) Kesin Çözüm (Tailwind / React için)
-
-Dashboard grid container’ı **esnek responsive** olmalı:
-
-```html
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
+### ExpenseRequest (Masraf Talebi)
+```prisma
+model ExpenseRequest {
+  id          String   @id @default(cuid())
+  tenantId    String
+  caseId      String
+  case        Case     @relation(fields: [caseId], references: [id])
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id])
+  items       Json     // [{description, amount}]
+  totalAmount Decimal
+  status      String   @default("PENDING") // PENDING, APPROVED, REJECTED, PAID
+  sentAt      DateTime?
+  sentVia     String?  // EMAIL, SMS
+  respondedAt DateTime?
+  paidAt      DateTime?
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
 ```
 
-Bu ne demek?
-
-* **grid-cols-1** → telefon
-* **sm:grid-cols-2** → tablet / küçük ekran
-* **lg:grid-cols-4** → büyük ekran
-
-O zaman ekran küçülünce kartlar **otomatik alta iner**, hiçbir şey kaybolmaz.
-
----
-
-# 🎯 3) Kartların Taşmasını Engellemek
-
-Her kart için:
-
-```html
-<div class="p-4 bg-white rounded-xl shadow-sm min-w-0">
+### Client Güncellemesi
+```prisma
+model Client {
+  // ... mevcut alanlar
+  portalEnabled Boolean @default(false)
+  // ... relations
+  notifications ClientNotification[]
+  expenseRequests ExpenseRequest[]
+}
 ```
 
-Buradaki **min-w-0** kritik.
-Çünkü grid içindeki bileşenler aksi halde taşma yapıyor ve “kayboluyor gibi” görünüyor.
-
-Bu tam olarak senin ekran küçültünce yaşadığın problem.
-
----
-
-# 📌 4) Sol Menü Daraltılabilir Olmalı
-
-Sol menu genişliği şu anda sabit (ör: 280px).
-Ekran küçükken içerik alanını eziyor.
-
-### Çözüm:
-
-* **md’de expanded**,
-* **sm’de collapsed** olmalı.
-
-Tailwind örneği:
-
-```html
-<aside class="hidden sm:block w-64 ...">
+### User Güncellemesi
+```prisma
+model User {
+  // ... mevcut alanlar
+  globalRole String @default("STAFF") // ADMIN, LAWYER, STAFF, CLIENT
+  clientId   String? // CLIENT rolü için
+  client     Client? @relation(fields: [clientId], references: [id])
+}
 ```
 
-veya:
+---
 
-```html
-<aside class="w-64 md:w-56 lg:w-64 transition-all">
-```
+## 🎯 GELİŞTİRME SIRASI
 
-Bu sayede küçük ekranda içerik alanı rahatlar, kartlar da görünür kalır.
+### Faz 1: Temel İletişim (1-2 hafta)
+1. ClientNotification modeli
+2. SMTP ayarları + Nodemailer
+3. E-posta gönderimi (tek müvekkil)
+4. İletişim geçmişi görüntüleme
+
+### Faz 2: Masraf Talebi (1 hafta)
+1. ExpenseRequest modeli
+2. Masraf talebi oluşturma
+3. E-posta ile gönderim
+4. Durum takibi
+
+### Faz 3: SMS Entegrasyonu (3-5 gün)
+1. SMS API entegrasyonu
+2. SMS gönderimi
+3. Toplu SMS
+
+### Faz 4: Müvekkil Portalı (2-3 hafta)
+1. Portal auth sistemi
+2. Portal layout
+3. Dosya listesi
+4. Dosya detay
+5. Mesajlaşma
+
+### Faz 5: CRM & Raporlama (1 hafta)
+1. Müvekkil profil sayfası
+2. İstatistikler
+3. Raporlar
 
 ---
 
-# 🧪 5) Overflow Sorunu
+## 🚫 ŞİMDİLİK EKLENMEYECEKLER
 
-Dashboard container şu anda olası şu hatayı yapıyor:
-
-```css
-overflow: hidden;
-```
-
-Bu, içerik taşınca **görünmez oluyor**.
-Mutlaka kaldırılmalı veya `overflow-auto` yapılmalı.
+| Özellik | Gerekçe |
+|---------|---------|
+| Online Ödeme | Fintech lisansı gerektirir, mevzuat karmaşık |
+| 2FA | İlk aşamada gereksiz, sonra eklenebilir |
+| E-posta açılma takibi | Teknik olarak güvenilmez |
+| Push notification | Mobil uygulama gerektirir |
 
 ---
 
-# 💎 6) Sana Özet:
-
-Küçük ekranda kaybolma sorununun nedeni **grid’in responsive olmaması + kartların min-width taşması + sidebar’ın sabit genişliği**.
-
-Doğru yapı:
-
-### Container:
-
-```html
-<div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 w-full">
-```
-
-### Kart:
-
-```html
-<div class="bg-white p-4 rounded-xl shadow-sm min-w-0">
-```
-
-### Sidebar:
-
-```html
-<aside class="hidden md:block w-64">
-```
-
-### Ana içerik:
-
-```html
-<div class="flex-1 overflow-auto">
-```
-
-Bunları uygularsan dashboard, ister telefon ekranı kadar daralt, istemediğin hiçbir şey kaybolmaz.
-
----Tamam, şimdi bu dashboard’u “oyuncak proje” seviyesinden “kurumsal hukuk otomasyonu” seviyesine çıkartalım.
-
-Aşağıyı yazılımcıya + tasarımcıya direkt verebilirsin: UI/UX mimari dökümanıdır.
-
----
-
-## 1. Global Layout Mimarisi
-
-**Ana iskelet (tüm uygulama):**
-
-* Üstte **Topbar**
-
-  * Sol: Arama çubuğu (Takip, borçlu, avukat vs. için global search)
-  * Orta: Sayfa başlığı / breadcrumb
-  * Sağ: Bildirim ikonu, kullanıcı menüsü (kullanıcı adı, rol), AI durumu göstergesi (AI Aktif)
-
-* Solda **Sidebar (Ana Menü)** 
-
-  * Dashboard
-  * Yeni Takip Oluştur
-  * Eski Takipler
-  * AI Tools
-  * Borçlular
-  * Müvekkiller
-  * Görevler
-  * Bildirimler
-  * Mahkemeler
-  * Tarifeler
-  * Sistem Özeti
-  * Ayarlar
-  * En altta: **Sihirbaz / Otomasyon Switch**
-
-* Ortada **Content Area**
-
-  * Her sayfa için farklı layout ama Dashboard için grid yapı
-
-**Responsive davranış:**
-
-* `lg` ve üstü: Sidebar sabit, topbar sabit.
-* `md` ve altı: Sidebar gizli, hamburger menü ile açılır.
-* Content alanı her zaman `flex-1 overflow-auto`.
-
----
-
-## 2. Dashboard Bilgi Mimarisi
-
-Dashboard’u şu 6 ana bloğa bölelim:
-
-1. **Üst Özet Kartları**
-2. **Risk Dağılımı**
-3. **Otomasyon Durumu**
-4. **Yaklaşan Otomatik İşlemler**
-5. **Son Otomatik İşlemler**
-6. **AI İçgörü / Uyarı Paneli (opsiyonel ama şık)**
-
-### 2.1. Üst Özet Kartları (4’lü grid)
-
-Satır 1, 4 kart:
-
-1. **Toplam Dosya**
-2. **Otomatik Modda Olan Dosya Sayısı**
-3. **Bekleyen İşlem (queue’deki event sayısı)**
-4. **Bugün Tamamlanan İşlem Sayısı**
-
-Her kart:
-
-* Başlık
-* Büyük bold sayı
-* Altında küçük açıklama
-* Sağ üstte ikon (dosya, yıldırım, saat, tik gibi)
-* Tıklanabilir → ilgili filtrelenmiş liste sayfasına gider:
-
-  * Toplam Dosya → /takipler
-  * Otomatik Mod → /takipler?mode=auto
-  * Bekleyen İşlem → /otomasyon/kuyruk
-  * Bugün Tamamlanan → /otomasyon/logs?today=1
-
----
-
-### 2.2. Risk Dağılımı Kartı
-
-Sol altta, geniş bir kart.
-
-İçerik:
-
-* Başlık: **Risk Dağılımı**
-* Altında 4 satır:
-
-  * Düşük (yeşil nokta)
-  * Orta (sarı)
-  * Yüksek (kırmızı)
-  * Belirsiz (gri)
-
-Her satırda:
-
-* Etiket
-* Adet (X dosya)
-* Yüzde (toplam aktif dosya içinde)
-* Sağda küçük yatay bar (progress)
-
-Tıklanabilir:
-
-* “Yüksek” satırına tıklayınca → /takipler?risk=high
-* Altında küçük gri metin: “Toplam Aktif Dosya: X”
-
----
-
-### 2.3. Otomasyon Durumu Kartı
-
-Risk kartının sağında bir kart:
-
-* Başlık: **Otomasyon Durumu**
-* Alt satırlar:
-
-  * Kural Motoru → Çalışıyor / Pasif / Hatalı
-  * İş Akışı Motoru → Çalışıyor / Pasif
-  * Tebligat Sistemi → Aktif / Beklemede
-  * AI Karar Modülü → Aktif / Pasif
-
-Her biri:
-
-* Solunda ikon (pulse, flow, mail, brain)
-* Sağında durum etiketi (chip):
-
-  * Yeşil: Çalışıyor / Aktif
-  * Sarı: Beklemede
-  * Kırmızı: Hata / Pasif
-
-Kartın sağ üst köşesinde: **“Sistem Logları” linki** → /otomasyon/logs
-
----
-
-### 2.4. Yaklaşan Otomatik İşlemler
-
-Sağ üstte, dikey liste kartı:
-
-* Başlık: **Yaklaşan Otomatik İşlemler**
-* Her satır:
-
-  * Dosya No: 2024/1234 (tıklanınca /takip/2024-1234)
-  * İşlem: Haciz İstebi / Risk Kontrolü / Mernis Sorgu
-  * Zaman: “2 saat sonra”, “1 gün sonra”
-  * Sağda chip: İşlem tipi (Haciz, Kontrol, Bildirim vs.)
-
-Altında: “Tüm planlanan işlemleri gör” linki → /otomasyon/schedule
-
----
-
-### 2.5. Son Otomatik İşlemler
-
-Sol alt tarafta kart:
-
-* Başlık: **Son Otomatik İşlemler**
-* Liste:
-
-  * İşlem açıklaması: “Ödeme emri gönderildi”
-  * Dosya: 2024/1234
-  * Süre: “10 dk önce”
-  * Sonuç: Başarılı / Uyarı / Hata (renkli etiket)
-
-Altında filtre butonları:
-
-* Hepsi | Başarılı | Uyarı | Hata
-
----
-
-### 2.6. AI İçgörü / Uyarı Paneli (Opsiyonel ama güzel)
-
-Sağ alt tarafta küçük kart:
-
-* Başlık: **AI Önerileri**
-* İçerik (örnek):
-
-  * “Yüksek riskli 5 dosyada 3 gündür işlem yok”
-  * “3 müvekkilin toplam 1M üzeri alacağı var, raporlamayı öneriyorum”
-  * “Şu dosyalarda adres başarısız, yeni adres araştırması tetiklenebilir”
-
-Buton: **“Detaylı Analiz Al”** → /ai/analiz veya popup
-
----
-
-## 3. Responsive Grid Yapısı
-
-Tailwind mantığıyla düşünecek olursak:
-
-* **Üst 4 kart:**
-
-```html
-<div class="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-  <!-- 4 summary card -->
-</div>
-```
-
-* **Orta satır: Risk + Otomasyon Durumu**
-
-```html
-<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
-  <!-- Risk Dağılımı -->
-  <!-- Otomasyon Durumu -->
-</div>
-```
-
-* **Alt satır: Son İşlemler + Yaklaşan İşlemler + AI Paneli**
-
-```html
-<div class="grid grid-cols-1 lg:grid-cols-3 gap-4 mt-4">
-  <!-- Son Otomatik İşlemler (lg: 2 kolon span) -->
-  <!-- Yaklaşan İşlemler -->
-</div>
-```
-
-Son İşlemler kartına `lg:col-span-2` verirsin, sağda tek kolonda Yaklaşan İşlemler durur. AI panelini sonradan 3. kart gibi ekleyebilirsin.
-
----
-
-## 4. Tasarım Dili / Görsel Sistem
-
-* Arkaplan: çok açık gri (#F5F5F7)
-* Kartlar: beyaz, `rounded-xl`, `shadow-sm`
-* Font: modern sans (Inter / Nunito benzeri)
-* İkonlar: basit, minimal (Heroicons / Lucide tarzı)
-* Renk kodları:
-
-  * Risk:
-
-    * Düşük: yeşil (#22c55e)
-    * Orta: sarı (#eab308)
-    * Yüksek: kırmızı (#ef4444)
-    * Belirsiz: gri (#9ca3af)
-  * Durum:
-
-    * Aktif: yeşil chip
-    * Pasif: gri chip
-    * Hata: kırmızı chip
-
----
-
-## 5. Kullanıcı Akışları (UX)
-
-1. **Dashboard’a giren kullanıcı:**
-
-   * İlk bakışta:
-
-     * Kaç dosya var?
-     * Otomasyon çalışıyor mu?
-     * Risk nasıl dağılmış?
-     * Şimdi–az sonra hangi otomatik işler olacak?
-   * 1–2 saniyede “sistemin nabzını” okur.
-
-2. **Riskten kaynağa gitme:**
-
-   * “Yüksek” risk satırına tıklar → filtreli dosya listesi
-   * Oradan tek klikle dosya detaya
-
-3. **Hata takibi:**
-
-   * Son Otomatik İşlemler kartında “Hata” filtresi
-   * İşleme tıklayınca log detay sayfasına (hangi dosya, ne hata, ne zaman)
-
-4. **Otomasyon güven kontrolü:**
-
-   * Otomasyon Durumu kartında modüllerin hepsini görür
-   * Bir modül “Hata”/“Pasif” ise, sağ üst “Sistem Logları” linki ile detay
-
-5. **AI destek:**
-
-   * AI Önerileri kartı ile:
-
-     * Riskli ama 3 gündür dokunulmamış dosyalar
-     * Tahsilat potansiyeli yüksek ama hacze gitmemiş dosyalar
-   * “Detaylı Analiz Al” diyerek otomatik rapor sayfası
-
----
-
-## 6. Teknik Notlar (Yazılımcıya kısa talimat)
-
-* Layout: `flex flex-col h-screen`
-* Üst Navbar: sabit yükseklik, `flex-none`
-* Alt içerik: `flex flex-row flex-1 overflow-hidden`
-
-  * Sidebar: `hidden md:block w-64`
-  * Content: `flex-1 overflow-auto p-4`
-
-Grid ve kart yapısı için:
-
-* Her kartta `min-w-0` kullanın → taşma/kaybolma biter.
-* Container genişliği: `max-w-6xl mx-auto` gibi ortalanmış olsun, 4K ekranda da saçmalamasın.
-
----
-
-Bu mimariyi uygularsan:
-
-* Ekran küçülünce hiçbir şey kaybolmaz.
-* Dashboard gerçekten bir **“otomatik icra kontrol kulesi”** gibi çalışır.
-* Risk, otomasyon, yaklaşan işler ve loglar tek bakışta okunur.
-
-Sonraki hamlede istersen bu Dashboard için **tam bir component hiyerarşi / React component isimleri ve props şeması** da çıkarırım; frontend’çi copy–paste mantığıyla yürür.
-
-
+## 📝 TEKNİK NOTLAR
+
+- E-posta: Nodemailer + SMTP (Gmail, Yandex, kurumsal)
+- SMS: NetGSM veya İleti Merkezi API
+- WhatsApp: wa.me link ile basit entegrasyon
+- Portal: Aynı Next.js app, farklı layout
+- Auth: Mevcut JWT sistemi, role bazlı yetkilendirme

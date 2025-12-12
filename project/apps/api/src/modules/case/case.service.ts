@@ -191,28 +191,36 @@ export class CaseService {
 
     try {
       return await this.prisma.$transaction(async (tx) => {
-        // 1. Alacaklı (Client) - mevcut veya yeni
-        let clientId: string | undefined;
+        // 1. Alacaklıları (Clients) hazırla - tüm creditors'ları kaydet
+        const clientIds: string[] = [];
+        let primaryClientId: string | undefined;
+        
         if (dto.creditors && dto.creditors.length > 0) {
-          const firstCreditor = dto.creditors[0];
-          if (firstCreditor.id) {
-            // Mevcut client kullan
-            clientId = firstCreditor.id;
-          } else {
-            // Yeni client oluştur
-            const client = await tx.client.create({
-              data: {
-                tenantId,
-                type: firstCreditor.type,
-                name: firstCreditor.name,
-                identityNo: firstCreditor.identityNo,
-                taxOffice: firstCreditor.taxOffice,
-                phone: firstCreditor.phone,
-                email: firstCreditor.email,
-                address: firstCreditor.address ? { text: firstCreditor.address } : undefined,
-              },
-            });
-            clientId = client.id;
+          for (const creditor of dto.creditors) {
+            let clientId: string;
+            
+            if (creditor.id) {
+              // Mevcut client kullan
+              clientId = creditor.id;
+            } else {
+              // Yeni client oluştur
+              const client = await tx.client.create({
+                data: {
+                  tenantId,
+                  type: creditor.type,
+                  name: creditor.name,
+                  identityNo: creditor.identityNo,
+                  taxOffice: creditor.taxOffice,
+                  phone: creditor.phone,
+                  email: creditor.email,
+                  address: creditor.address || undefined,
+                },
+              });
+              clientId = client.id;
+            }
+            
+            clientIds.push(clientId);
+            if (!primaryClientId) primaryClientId = clientId;
           }
         }
 
@@ -263,7 +271,7 @@ export class CaseService {
             ...(dto.sourceDocumentId && { sourceDocumentId: dto.sourceDocumentId }),
             ...(dto.detectionKeywords && { detectionKeywords: dto.detectionKeywords }),
             // Eski alanlar
-            clientId,
+            clientId: primaryClientId,
             courtId: dto.courtId,
             principalAmount: dto.principalAmount,
             interestRate: dto.interestRate,
@@ -272,7 +280,20 @@ export class CaseService {
           },
         });
 
-        // 3. Avukatları - mevcut veya yeni
+        // 3. CaseClient ilişkilerini oluştur (tüm alacaklılar için)
+        if (clientIds.length > 0) {
+          for (let i = 0; i < clientIds.length; i++) {
+            await tx.caseClient.create({
+              data: {
+                caseId: newCase.id,
+                clientId: clientIds[i],
+                role: i === 0 ? "ALACAKLI" : "ORTAK_ALACAKLI",
+              },
+            });
+          }
+        }
+
+        // 4. Avukatları - mevcut veya yeni
         if (dto.lawyers && dto.lawyers.length > 0) {
           for (const lawyerDto of dto.lawyers) {
             let lawyerId: string;
@@ -286,7 +307,11 @@ export class CaseService {
                   tenantId,
                   name: lawyerDto.name,
                   surname: lawyerDto.surname,
+                  tckn: lawyerDto.tckn,
                   barNumber: lawyerDto.barNumber,
+                  barCity: lawyerDto.barCity,
+                  phone: lawyerDto.phone,
+                  email: lawyerDto.email,
                 },
               });
               lawyerId = lawyer.id;
@@ -297,12 +322,15 @@ export class CaseService {
                 caseId: newCase.id,
                 lawyerId,
                 canSign: lawyerDto.canSign || false,
+                isResponsible: lawyerDto.isResponsible || false,
+                hasSignatureAuthority: lawyerDto.hasSignatureAuthority || false,
+                role: lawyerDto.isResponsible ? 'RESPONSIBLE' : 'ASSIGNED',
               },
             });
           }
         }
 
-        // 4. Borçluları - mevcut veya yeni
+        // 5. Borçluları - mevcut veya yeni
         if (dto.debtors && dto.debtors.length > 0) {
           for (const debtorDto of dto.debtors) {
             let debtorId: string;
@@ -336,7 +364,7 @@ export class CaseService {
           }
         }
 
-        // 5. Alacak Kalemleri (Dues)
+        // 6. Alacak Kalemleri (Dues)
         if (dto.dues && dto.dues.length > 0) {
           for (const dueDto of dto.dues) {
             await tx.due.create({

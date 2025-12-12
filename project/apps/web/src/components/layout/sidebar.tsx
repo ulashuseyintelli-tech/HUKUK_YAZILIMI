@@ -32,7 +32,8 @@ const navigation = [
   { name: "Mahkemeler", href: "/courts", icon: Gavel },
   { name: "Tahsilatlar", href: "/collections", icon: CreditCard },
   { name: "İcra Daireleri", href: "/admin/execution-offices", icon: Building2 },
-  { name: "Ayarlar", href: "/settings", icon: Settings },
+  { name: "Müvekkiller", href: "/settings/clients", icon: Users },
+  { name: "Büro Ayarları", href: "/settings/office", icon: Settings },
 ];
 
 export function Sidebar() {

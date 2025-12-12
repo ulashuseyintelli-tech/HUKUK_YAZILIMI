@@ -188,6 +188,10 @@ model Tenant {
   slug      String   @unique
   plan      Plan     @default(FREE)
   settings  Json?
+  
+  // Hesap tipi (profesyonel vs vatandaş)
+  accountType AccountType @default(PROFESSIONAL)
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -201,8 +205,17 @@ model Tenant {
   lawyers            Lawyer[]
   workflowTemplates  WorkflowTemplate[]
   executionOffices   ExecutionOffice[]
+  office             Office?  // Her tenant'ın tek bir ofisi var
 
   @@index([slug])
+  @@index([accountType])
+}
+
+enum AccountType {
+  PROFESSIONAL  // Hukuk bürosu / Avukat
+  CORPORATE     // Şirket hukuk departmanı
+  PUBLIC        // Kamu avukatı
+  CITIZEN       // Vatandaş (avukatsız)
 }
 
 model WorkflowTemplate {
@@ -281,21 +294,163 @@ model Client {
   tenantId     String
   tenant       Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   type         ClientType
-  name         String
-  identityNo   String?
-  taxOffice    String?
-  email        String?
-  phone        String?
-  address      Json?
+  
+  // === ORTAK ALAN ===
+  displayName  String?    // Görünen ad (otomatik: Ad Soyad veya Kurum Adı)
+  
+  // === ŞAHIS BİLGİLERİ ===
+  firstName    String?
+  lastName     String?
+  tckn         String?    // TC Kimlik No (11 hane)
+  isForeigner  Boolean    @default(false)  // Yabancı uyruklu
+  nationality  String?    // Uyruk
+  gender       String?    // E, K
+  birthDate    DateTime?  // Doğum Tarihi (tebrik için)
+  
+  // === KURUM BİLGİLERİ ===
+  companyName  String?    // Kurum/Şirket Adı
+  companyType  String?    // Anonim, Limited, Kamu, vb.
+  vkn          String?    // Vergi Kimlik No (10 hane)
+  mersisNo     String?    // MERSİS No
+  detsisNo     String?    // DETSİS No (Kamu için)
+  taxOffice    String?    // Vergi Dairesi
+  ticaretSicilNo String?  // Ticaret Sicil No
+  foundingDate DateTime?  // Kuruluş Tarihi (yıldönümü tebriği için)
+  
+  // === VEKALET BİLGİLERİ ===
+  poaStartDate DateTime?  // Vekalet Başlangıç Tarihi (işbirliği yıldönümü için)
+  
+  // === TEBRİK AYARLARI ===
+  sendBirthdayGreeting    Boolean @default(true)  // Doğum günü tebriği gönder
+  sendAnniversaryGreeting Boolean @default(true)  // Yıldönümü tebriği gönder
+  sendHolidayGreeting     Boolean @default(true)  // Bayram tebriği gönder
+  greetingChannel         String? // EMAIL, SMS, BOTH - varsayılan: EMAIL
+  
+  // === ADRES ===
+  address      String?
+  city         String?
+  district     String?
+  postalCode   String?
+  region       String?    // İcra Bölgesi (İstanbul 1. Bölge vb.)
+  useMernisAddress Boolean @default(false)
+  useUyapAddress   Boolean @default(false)
+  
+  // === YETKİLER (Vekaletname Kapsamı) ===
+  canCollect   Boolean    @default(true)   // Ahzu Kabza
+  canWaive     Boolean    @default(false)  // Feragat
+  canSettle    Boolean    @default(false)  // Sulh
+  canRelease   Boolean    @default(false)  // İbra
+  
+  // === PORTAL ERİŞİMİ ===
+  hasPortalAccess Boolean @default(false)
+  portalUserId    String?
+  
+  // === DİĞER ===
   notes        String?
   isActive     Boolean    @default(true)
+  sortOrder    Int        @default(0)
+  
+  // Eski alanlar (geriye uyumluluk)
+  name         String?    // @deprecated - displayName kullan
+  identityNo   String?    // @deprecated - tckn veya vkn kullan
+  email        String?    // @deprecated - contacts kullan
+  phone        String?    // @deprecated - contacts kullan
+  
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
 
-  cases Case[]
+  // İLİŞKİLER
+  cases            Case[]
+  contacts         ClientContact[]
+  bankAccounts     ClientBankAccount[]
+  powerOfAttorneys ClientPowerOfAttorney[]
+  caseClients      CaseClient[]
+  notifications    ClientNotification[]
+  expenseRequests  ExpenseRequest[]
 
   @@index([tenantId])
-  @@index([tenantId, identityNo])
+  @@index([tenantId, tckn])
+  @@index([tenantId, vkn])
+  @@index([type])
+  @@index([isActive])
+}
+
+// Müvekkil İletişim Bilgileri (Çoklu telefon/email)
+model ClientContact {
+  id          String   @id @default(cuid())
+  clientId    String
+  client      Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  type        String   // HOME_PHONE, WORK_PHONE, MOBILE, FAX, EMAIL
+  value       String
+  label       String?  // "İş", "Ev", "Asistan"
+  isPrimary   Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([clientId])
+  @@index([type])
+}
+
+// Müvekkil Banka Hesabı
+model ClientBankAccount {
+  id              String   @id @default(cuid())
+  clientId        String
+  client          Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  bankName        String
+  branchName      String?
+  iban            String
+  accountHolder   String?  // Hesap sahibi adı
+  showInDocuments Boolean  @default(false)  // Takip talebinde göster
+  isPrimary       Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([clientId])
+}
+
+// Müvekkil Vekaletnamesi
+model ClientPowerOfAttorney {
+  id            String    @id @default(cuid())
+  clientId      String
+  client        Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  notaryName    String?   // Noter Adı
+  notaryCity    String?   // Noter İli
+  journalNo     String?   // Yevmiye No
+  poaDate       DateTime? // Noter Tarihi
+  poaNumber     String?   // Vekalet No
+  filePath      String?   // Dosya yolu (.pdf, .jpg)
+  fileSize      Int?
+  scope         String?   // Vekalet kapsamı açıklaması
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@index([clientId])
+  @@index([isActive])
+}
+
+// Dosya-Müvekkil İlişkisi (Takipte yer alan müvekkiller)
+model CaseClient {
+  id                  String   @id @default(cuid())
+  caseId              String
+  case                Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  clientId            String
+  client              Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  role                String   @default("ALACAKLI")  // ALACAKLI, ORTAK_ALACAKLI
+  
+  // Bu takip için özel ayarlar
+  showBankInDocuments Boolean  @default(false)
+  
+  // Atama bilgileri
+  assignedAt          DateTime @default(now())
+  assignedById        String?
+  notes               String?
+  
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  @@unique([caseId, clientId])
+  @@index([caseId])
+  @@index([clientId])
 }
 
 model Debtor {
@@ -485,6 +640,7 @@ model Case {
   documents           CaseDocument[]
   groups              CaseGroup[]
   stageHistory        CaseStageHistory[] @relation("CaseStageHistory")
+  caseClients         CaseClient[]
 
   @@unique([tenantId, fileNumber])
   @@index([tenantId, status])
@@ -632,25 +788,162 @@ model Court {
   @@index([tenantId])
 }
 
+// ==================== BÜRO BİLGİLERİ ====================
+
+model Office {
+  id              String   @id @default(cuid())
+  tenantId        String   @unique  // Her tenant'ın tek bir ofisi var
+  tenant          Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  // Temel Bilgiler
+  name            String   // Hukuk Bürosu adı
+  
+  // Adres
+  address         String?
+  city            String?
+  district        String?
+  postalCode      String?
+  
+  // İletişim
+  phone           String?
+  fax             String?
+  email           String?
+  website         String?
+  
+  // Baro Bilgisi
+  barAssociation  String?  // Bağlı olduğu baro
+  
+  // Varsayılan İcra Dairesi
+  defaultExecutionOfficeId String?
+  
+  // SMTP Ayarları (E-posta Gönderimi)
+  smtpHost        String?  // smtp.gmail.com, smtp.yandex.com, vb.
+  smtpPort        Int?     // 587, 465, vb.
+  smtpUser        String?  // E-posta adresi
+  smtpPass        String?  // Uygulama şifresi (şifrelenmiş)
+  smtpSecure      Boolean  @default(false) // TLS/SSL
+  smtpFromName    String?  // Gönderen adı
+  smtpFromEmail   String?  // Gönderen e-posta
+  
+  // SMS Ayarları (Opsiyonel)
+  smsProvider     String?  // NETGSM, ILETI_MERKEZI, vb.
+  smsApiKey       String?
+  smsApiSecret    String?
+  smsSender       String?  // Gönderen adı
+  
+  // Otomatik Tebrik Ayarları
+  autoGreetingEnabled     Boolean @default(true)  // Otomatik tebrik sistemi açık/kapalı
+  autoGreetingTime        String? @default("09:00") // Tebrik gönderim saati (HH:mm)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // İlişkiler
+  bankAccounts    OfficeBankAccount[]
+  lawyers         Lawyer[]
+  lawyerTemplates LawyerTemplate[]
+
+  @@index([tenantId])
+}
+
+model OfficeBankAccount {
+  id          String   @id @default(cuid())
+  officeId    String
+  office      Office   @relation(fields: [officeId], references: [id], onDelete: Cascade)
+  
+  bankName    String
+  branchName  String?
+  iban        String
+  accountName String?  // Hesap sahibi adı
+  isDefault   Boolean  @default(false)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([officeId])
+}
+
+// ==================== AVUKAT ====================
+
 model Lawyer {
   id           String   @id @default(cuid())
   tenantId     String
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  officeId     String?
+  office       Office?  @relation(fields: [officeId], references: [id])
+  
+  // Kişisel Bilgiler
   name         String
   surname      String
-  barNumber    String?
-  barName      String?
-  identityNo   String?
+  tckn         String?  // TC Kimlik No (zorunlu)
+  gender       String?  // E, K, D
+  
+  // Unvan/Sıfat - İsmin önünde görünecek (Av., Stj. Av., Huk. Müş., İcra Kat., vb.)
+  title        String?  // Varsayılan: role'e göre otomatik belirlenir
+  
+  // Mesleki Bilgiler
+  barNumber    String?  // Baro Sicil No
+  barCity      String?  // Kayıtlı olduğu baro (İstanbul, Ankara...)
+  tbbNo        String?  // TBB No
+  lawyerType   String?  // BARO, KURUM, SOZLESMELI
+  
+  // Vergi Bilgileri
+  vergiDairesi String?  // Vergi Dairesi
+  vergiNo      String?  // Vergi No (zorunlu)
+  
+  // İletişim
   email        String?
   phone        String?
   address      String?
+  city         String?
+  district     String?
+  
+  // Banka Bilgileri
+  bankName     String?
+  iban         String?
+  
+  // Statü
+  isInHouseCounsel Boolean @default(false)  // Kurum Avukatı
+  isEmployee       Boolean @default(false)  // Sigortalı (SSK'lı)
+  
+  // Rol
+  role         LawyerRole @default(EMPLOYEE)
+  
+  // Genel Yetkiler (büro genelinde)
+  canSign              Boolean @default(false)  // Genel imza yetkisi
+  canAppearInUyap      Boolean @default(false)  // UYAP'ta görünebilir
+  canBeResponsible     Boolean @default(true)   // Dosya sorumlusu olabilir
+  isDefaultForNewCases Boolean @default(false)  // Yeni dosyalarda otomatik seç
+  
+  // UYAP Bilgileri (ileride kullanılacak)
+  uyapUsername    String?
+  uyapToken       String?  // Şifrelenmiş
+  eSignatureSerial String? // E-imza seri no
+  
+  // Durum
   isActive     Boolean  @default(true)
+  sortOrder    Int      @default(0)
+  
+  // Eski alanlar (geriye uyumluluk)
+  barName      String?  // @deprecated - barCity kullan
+  identityNo   String?  // @deprecated - tckn kullan
+  
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  caseLawyers CaseLawyer[]
+  caseLawyers  CaseLawyer[]
+  powerOfAttorneys PowerOfAttorney[]
 
   @@index([tenantId])
+  @@index([officeId])
+  @@index([isActive])
+}
+
+enum LawyerRole {
+  OWNER      // Büro sahibi
+  PARTNER    // Ortak
+  EMPLOYEE   // Çalışan avukat
+  INTERN     // Stajyer
 }
 
 model CaseLawyer {
@@ -659,10 +952,120 @@ model CaseLawyer {
   case        Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
   lawyerId    String
   lawyer      Lawyer   @relation(fields: [lawyerId], references: [id], onDelete: Cascade)
-  canSign     Boolean  @default(false)
-  createdAt   DateTime @default(now())
+  
+  // Bu dosyadaki rol
+  role        CaseLawyerRole @default(ASSIGNED)
+  
+  // Bu dosyadaki yetkiler
+  hasSignatureAuthority Boolean @default(false)  // Bu dosyada imza yetkisi
+  isResponsible         Boolean @default(false)  // Dosya sorumlusu mu
+  
+  // Müvekkil portalı
+  visibleToClient       Boolean @default(true)
+  
+  // Bildirimler
+  receiveNotifications  Boolean @default(true)
+  
+  // Vekalet bilgisi
+  powerOfAttorneyId     String?
+  powerOfAttorney       PowerOfAttorney? @relation(fields: [powerOfAttorneyId], references: [id])
+  
+  // Atama bilgileri
+  assignedAt    DateTime @default(now())
+  assignedById  String?  // Kim atadı
+  notes         String?  // Özel notlar
+  
+  // Eski alan (geriye uyumluluk)
+  canSign       Boolean  @default(false)  // @deprecated - hasSignatureAuthority kullan
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @default(now()) @updatedAt
 
   @@unique([caseId, lawyerId])
+  @@index([caseId])
+  @@index([lawyerId])
+  @@index([isResponsible])
+}
+
+enum CaseLawyerRole {
+  RESPONSIBLE  // Sorumlu avukat
+  ASSIGNED     // Atanmış avukat
+  ASSISTANT    // Yardımcı
+  INTERN       // Stajyer
+}
+
+// ==================== AVUKAT ŞABLONU ====================
+
+model LawyerTemplate {
+  id          String   @id @default(cuid())
+  officeId    String
+  office      Office   @relation(fields: [officeId], references: [id], onDelete: Cascade)
+  
+  name        String   // "Standart İcra Takibi", "Önemli Dosya"
+  description String?
+  isDefault   Boolean  @default(false)  // Varsayılan şablon mu
+  
+  // Şablondaki avukatlar (JSON)
+  // [{lawyerId: "xxx", role: "RESPONSIBLE", hasSignatureAuthority: true}]
+  lawyers     Json
+  
+  // Hangi takip türleri için geçerli
+  applicableFor String?  // "ICRA", "DAVA", "ALL"
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([officeId])
+  @@index([isDefault])
+}
+
+// ==================== VEKALETNAME ====================
+
+model PowerOfAttorney {
+  id              String   @id @default(cuid())
+  tenantId        String
+  
+  // Vekalet veren (müvekkil)
+  clientId        String?
+  clientName      String?  // Müvekkil adı (client yoksa)
+  
+  // Vekil (avukat)
+  lawyerId        String
+  lawyer          Lawyer   @relation(fields: [lawyerId], references: [id])
+  
+  // Vekalet bilgileri
+  type            PowerOfAttorneyType @default(GENEL)
+  scope           String?  // Vekalet kapsamı açıklaması
+  
+  // Tarihler
+  issueDate       DateTime  // Düzenleme tarihi
+  expiryDate      DateTime? // Bitiş tarihi (varsa)
+  
+  // Noter bilgileri
+  notaryName      String?   // Noter adı
+  notaryCity      String?   // Noter ili
+  registerNo      String?   // Yevmiye no
+  
+  // Belge
+  documentPath    String?   // Vekalet belgesi dosya yolu
+  
+  isActive        Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  caseLawyers     CaseLawyer[]
+
+  @@index([tenantId])
+  @@index([lawyerId])
+  @@index([clientId])
+  @@index([isActive])
+}
+
+enum PowerOfAttorneyType {
+  GENEL           // Genel vekaletname
+  OZEL            // Özel vekaletname
+  ICRA            // İcra vekaletnamesi
+  DAVA            // Dava vekaletnamesi
 }
 
 model Collection {
@@ -936,8 +1339,10 @@ enum UserRole {
 }
 
 enum ClientType {
-  INDIVIDUAL
-  COMPANY
+  INDIVIDUAL // @deprecated - PERSON kullan
+  PERSON     // Şahıs (Gerçek Kişi)
+  COMPANY    // Kurum (Tüzel Kişi)
+  PUBLIC     // Kamu Kurumu
 }
 
 enum DebtorType {
@@ -1181,4 +1586,280 @@ enum DetectedCaseType {
   IPOTEK            // İpotek paraya çevirme
   REHIN             // Rehin paraya çevirme
   UNKNOWN           // Belirsiz
+}
+
+// ==================== OFİS PERSONELİ (AVUKAT HARİÇ) ====================
+
+// Personel Türleri
+enum StaffType {
+  STAJYER_AVUKAT    // Stajyer Avukat
+  OFIS_KATIBI       // Ofis Katibi
+  ADLI_KATIP        // Adli Katip (adliye koordinasyonu)
+  SEKRETER          // Sekreter
+  MUHASEBE          // Muhasebe
+  ARSIV             // Arşiv Sorumlusu
+  DIGER             // Diğer
+}
+
+// Ofis Personeli (Avukat hariç tüm çalışanlar)
+model StaffMember {
+  id          String     @id @default(cuid())
+  tenantId    String
+  officeId    String?
+  
+  // Kişisel Bilgiler
+  firstName   String
+  lastName    String
+  tckn        String?    // TC Kimlik No
+  email       String?
+  phone       String?
+  
+  // Personel Türü
+  staffType   StaffType
+  
+  // Genel Yetkiler (büro genelinde varsayılan)
+  canCreateCase        Boolean @default(false)  // Dosya oluşturabilir
+  canEditCase          Boolean @default(false)  // Dosya düzenleyebilir
+  canGenerateDocuments Boolean @default(false)  // Belge taslağı hazırlayabilir
+  canApproveDocuments  Boolean @default(false)  // Belge onaylayabilir
+  canSeeFinance        Boolean @default(false)  // Muhasebe modülünü görebilir
+  canApproveFinance    Boolean @default(false)  // Muhasebe işlemi onaylayabilir
+  canSendNotifications Boolean @default(false)  // Tebligat gönderebilir
+  
+  isActive    Boolean    @default(true)
+  sortOrder   Int        @default(0)
+  
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+
+  caseAssignments CaseStaff[]
+
+  @@index([tenantId])
+  @@index([officeId])
+  @@index([staffType])
+  @@index([isActive])
+}
+
+// Dosya Bazlı Personel Ataması
+model CaseStaff {
+  id            String      @id @default(cuid())
+  caseId        String
+  staffMemberId String
+  staffMember   StaffMember @relation(fields: [staffMemberId], references: [id], onDelete: Cascade)
+  
+  // Bu dosyadaki rol
+  roleOnCase    String      // STAJYER, KONTROL, YAZI_ISLERI, MUHASEBE, TEBLIGAT, ARSIV
+  
+  // Bu dosyadaki yetkiler (personelin genel yetkilerini override edebilir)
+  canEdit       Boolean     @default(false)  // Dosya içeriğini düzenleyebilir
+  canApprove    Boolean     @default(false)  // İşlem onaylayabilir
+  canView       Boolean     @default(true)   // Sadece görüntüleyebilir
+  
+  // Bildirimler
+  receiveNotifications Boolean @default(true)
+  
+  // Atama bilgileri
+  assignedAt    DateTime    @default(now())
+  assignedById  String?     // Kim atadı
+  notes         String?     // Özel notlar
+  
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@unique([caseId, staffMemberId])
+  @@index([caseId])
+  @@index([staffMemberId])
+  @@index([roleOnCase])
+}
+
+// ==================== MÜVEKKİL İLETİŞİM SİSTEMİ ====================
+
+// Müvekkil Bildirimleri (E-posta, SMS, WhatsApp logu)
+model ClientNotification {
+  id            String   @id @default(cuid())
+  tenantId      String
+  clientId      String
+  client        Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  caseId        String?  // İlgili dosya (opsiyonel)
+  
+  // İletişim Kanalı
+  channel       String   // EMAIL, SMS, WHATSAPP
+  
+  // Bildirim Türü
+  type          String   // MASRAF_ISTEK, GENEL_BILGILENDIRME, RAPOR, HATIRLATMA, DIGER
+  
+  // İçerik
+  subject       String?  // E-posta konusu
+  body          String   @db.Text // Mesaj içeriği
+  
+  // Durum
+  status        String   @default("PENDING") // PENDING, SENT, DELIVERED, FAILED
+  sentAt        DateTime?
+  deliveredAt   DateTime?
+  errorMessage  String?
+  
+  // Gönderen
+  sentById      String
+  
+  // Meta
+  metadata      Json?    // Ek bilgiler (template id, vs.)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([clientId])
+  @@index([caseId])
+  @@index([channel])
+  @@index([type])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Masraf Talepleri
+model ExpenseRequest {
+  id            String   @id @default(cuid())
+  tenantId      String
+  caseId        String
+  clientId      String
+  client        Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  
+  // Masraf Kalemleri
+  items         Json     // [{description: string, amount: number}]
+  totalAmount   Decimal  @db.Decimal(15, 2)
+  
+  // Durum
+  status        String   @default("PENDING") // PENDING, SENT, APPROVED, REJECTED, PAID
+  
+  // Gönderim
+  sentAt        DateTime?
+  sentVia       String?  // EMAIL, SMS
+  notificationId String? // İlgili ClientNotification
+  
+  // Yanıt
+  respondedAt   DateTime?
+  responseNotes String?
+  
+  // Ödeme
+  paidAt        DateTime?
+  paidAmount    Decimal? @db.Decimal(15, 2)
+  
+  // Oluşturan
+  createdById   String
+  
+  notes         String?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([clientId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// E-posta Şablonları
+model EmailTemplate {
+  id          String   @id @default(cuid())
+  tenantId    String
+  
+  // Şablon Bilgileri
+  name        String   // Şablon adı
+  code        String   // Benzersiz kod (MASRAF_TALEBI, BILGILENDIRME, vb.)
+  category    String   // MASRAF, BILGILENDIRME, RAPOR, DIGER
+  
+  // İçerik
+  subject     String   // E-posta konusu (değişkenler içerebilir)
+  body        String   @db.Text // HTML içerik (değişkenler içerebilir)
+  
+  // Değişkenler: {{clientName}}, {{caseNo}}, {{amount}}, {{dueDate}}, vb.
+  
+  isActive    Boolean  @default(true)
+  isDefault   Boolean  @default(false) // Varsayılan şablon
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+  @@index([category])
+  @@index([isActive])
+}
+
+// ==================== ÖZEL GÜNLER & TEBRİK SİSTEMİ ====================
+
+// Özel Günler (Bayramlar, Anma Günleri, vb.)
+model SpecialDay {
+  id          String   @id @default(cuid())
+  tenantId    String?  // null = sistem geneli, değer = büroya özel
+  
+  // Gün Bilgileri
+  name        String   // Ramazan Bayramı, Kurban Bayramı, 10 Kasım, vb.
+  type        String   // RELIGIOUS (Dini), NATIONAL (Milli), MEMORIAL (Anma), CUSTOM (Özel)
+  
+  // Tarih (yıl olmadan - her yıl tekrarlar)
+  month       Int      // 1-12
+  day         Int      // 1-31
+  
+  // Bazı bayramlar değişken tarihli (Hicri takvim)
+  isVariable  Boolean  @default(false)  // Değişken tarihli mi
+  year        Int?     // Değişken tarihli ise hangi yıl için geçerli
+  
+  // Mesaj Şablonu
+  greetingMessage String?  // Varsayılan tebrik mesajı
+  smsMessage      String?  // SMS için kısa mesaj (160 karakter)
+  
+  // Ayarlar
+  isActive    Boolean  @default(true)
+  sendGreeting Boolean @default(true)  // Otomatik tebrik gönder
+  daysBeforeReminder Int @default(0)   // Kaç gün önce hatırlat
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([month, day])
+  @@index([type])
+  @@index([isActive])
+}
+
+// Tebrik Kuyruğu (Gönderilecek tebrikler)
+model GreetingQueue {
+  id          String   @id @default(cuid())
+  tenantId    String
+  
+  // Alıcı
+  clientId    String
+  
+  // Tebrik Türü
+  type        String   // BIRTHDAY, FOUNDING_ANNIVERSARY, POA_ANNIVERSARY, HOLIDAY, MEMORIAL
+  
+  // Özel gün referansı (bayram/anma günü için)
+  specialDayId String?
+  
+  // Gönderim
+  channel     String   // EMAIL, SMS, BOTH
+  scheduledAt DateTime // Gönderilecek tarih/saat
+  
+  // Mesaj
+  subject     String?  // E-posta konusu
+  message     String   // Mesaj içeriği
+  
+  // Durum
+  status      String   @default("PENDING") // PENDING, SENT, FAILED, CANCELLED
+  sentAt      DateTime?
+  errorMessage String?
+  
+  // İlişkili bildirim
+  notificationId String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([clientId])
+  @@index([scheduledAt])
+  @@index([status])
+  @@index([type])
 }

@@ -1,35 +1,64 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from "@nestjs/common";
-import { ClientService } from "./client.service";
-import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
-import { CurrentUser } from "../auth/decorators/current-user.decorator";
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ClientService } from './client.service';
 
-@Controller("clients")
+@Controller('clients')
 @UseGuards(JwtAuthGuard)
 export class ClientController {
   constructor(private clientService: ClientService) {}
 
+  // Tüm müvekkilleri listele
   @Get()
-  findAll(@CurrentUser("tenantId") tenantId: string) {
-    return this.clientService.findAll(tenantId);
+  async findAll(@Request() req: any, @Query('type') type?: string, @Query('search') search?: string) {
+    const tenantId = req.user.tenantId;
+    if (search) {
+      return { data: await this.clientService.search(tenantId, search) };
+    }
+    return { data: await this.clientService.findAll(tenantId, type) };
   }
 
-  @Get(":id")
-  findOne(@CurrentUser("tenantId") tenantId: string, @Param("id") id: string) {
-    return this.clientService.findOne(tenantId, id);
+  // Tek müvekkil getir
+  @Get(':id')
+  async findOne(@Request() req: any, @Param('id') id: string) {
+    const tenantId = req.user.tenantId;
+    const client = await this.clientService.findOne(id, tenantId);
+    if (!client) return { error: 'Müvekkil bulunamadı' };
+    return { data: client };
   }
 
+  // Yeni müvekkil oluştur
   @Post()
-  create(@CurrentUser("tenantId") tenantId: string, @Body() data: any) {
-    return this.clientService.create(tenantId, data);
+  async create(@Request() req: any, @Body() body: any) {
+    const tenantId = req.user.tenantId;
+    try {
+      const client = await this.clientService.create(tenantId, body);
+      return { data: client };
+    } catch (error: any) {
+      return { error: error.message };
+    }
   }
 
-  @Put(":id")
-  update(@CurrentUser("tenantId") tenantId: string, @Param("id") id: string, @Body() data: any) {
-    return this.clientService.update(tenantId, id, data);
+  // Müvekkil güncelle
+  @Put(':id')
+  async update(@Request() req: any, @Param('id') id: string, @Body() body: any) {
+    const tenantId = req.user.tenantId;
+    try {
+      const client = await this.clientService.update(id, tenantId, body);
+      return { data: client };
+    } catch (error: any) {
+      return { error: error.message };
+    }
   }
 
-  @Delete(":id")
-  delete(@CurrentUser("tenantId") tenantId: string, @Param("id") id: string) {
-    return this.clientService.delete(tenantId, id);
+  // Müvekkil sil
+  @Delete(':id')
+  async remove(@Request() req: any, @Param('id') id: string) {
+    const tenantId = req.user.tenantId;
+    try {
+      await this.clientService.remove(id, tenantId);
+      return { success: true };
+    } catch (error: any) {
+      return { error: error.message };
+    }
   }
 }

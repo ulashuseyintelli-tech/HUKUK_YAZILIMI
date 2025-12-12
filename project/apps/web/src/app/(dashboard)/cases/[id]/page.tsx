@@ -449,39 +449,31 @@ export default function CaseDetailPage() {
   }
 
   const tabs = [
-    { id: "overview", label: "Genel Bilgiler", icon: FileText },
-    { id: "dues", label: "Alacak Kalemleri", icon: DollarSign },
+    { id: "overview", label: "Genel", icon: FileText },
+    { id: "dues", label: "Alacak", icon: DollarSign },
     { id: "status", label: "Statü", icon: Activity },
-    { id: "groups", label: "Gruplar", icon: Tag },
+    { id: "groups", label: "Grup", icon: Tag },
     { id: "extra", label: "Ek Bilgi", icon: Info },
-    { id: "automation", label: "Otomasyon", icon: Settings },
-    { id: "timeline", label: "Zaman Çizelgesi", icon: Clock },
-    { id: "documents", label: "Belgeler", icon: FileText },
-    { id: "parties", label: "Taraflar", icon: Users },
-    { id: "risk", label: "Risk Analizi", icon: AlertTriangle },
+    { id: "automation", label: "Oto.", icon: Settings },
+    { id: "timeline", label: "Zaman", icon: Clock },
+    { id: "documents", label: "Belge", icon: FileText },
+    { id: "parties", label: "Taraf", icon: Users },
+    { id: "risk", label: "Risk", icon: AlertTriangle },
   ];
 
   return (
-    <div className="space-y-3 sm:space-y-4">
+    <div className="h-full flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <Link
-          href="/cases"
-          className="inline-flex items-center gap-1 text-xs sm:text-sm text-muted-foreground hover:text-foreground"
-        >
-          <ArrowLeft className="h-3 w-3 sm:h-4 sm:w-4" />
-          Takiplere Dön
+      <div className="flex items-center justify-between mb-2">
+        <Link href="/cases" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-3 w-3" /> Takiplere Dön
         </Link>
-        <Link
-          href={`/cases/${caseData.id}/edit`}
-          className="inline-flex items-center gap-1 px-2 py-1 sm:px-3 sm:py-2 text-xs sm:text-sm border rounded-lg hover:bg-muted"
-        >
-          <Edit className="h-3 w-3 sm:h-4 sm:w-4" />
-          Düzenle
+        <Link href={`/cases/${caseData.id}/edit`} className="inline-flex items-center gap-1 px-2 py-1 text-xs border rounded hover:bg-muted">
+          <Edit className="h-3 w-3" /> Düzenle
         </Link>
       </div>
 
-      {/* Summary Card (E.26-27) */}
+      {/* Summary Card - Kompakt */}
       <CaseSummaryCard
         fileNumber={caseData.fileNumber}
         formType={caseData.formType?.name || caseTypeLabels[caseData.type]}
@@ -495,125 +487,84 @@ export default function CaseDetailPage() {
         nextAutoAction={caseData.nextAutoAction}
       />
 
-      {/* Quick Stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 sm:gap-3">
-        <div className="bg-white rounded-lg border p-2 sm:p-3">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-blue-100 rounded-lg">
-              <DollarSign className="h-4 w-4 text-blue-600" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs text-muted-foreground">Ana Para</p>
-              <p className="text-sm sm:text-base font-semibold truncate">
-                {caseData.principalAmount
-                  ? `${Number(caseData.principalAmount).toLocaleString("tr-TR")} ₺`
-                  : "-"}
-              </p>
+      {/* Quick Stats - Kompakt */}
+      <div className="grid grid-cols-4 gap-2 my-2">
+        <div className="bg-white rounded border p-2">
+          <div className="flex items-center gap-1.5">
+            <DollarSign className="h-3 w-3 text-blue-600" />
+            <div>
+              <p className="text-[10px] text-muted-foreground">Ana Para</p>
+              <p className="text-xs font-semibold">{caseData.principalAmount ? `${Number(caseData.principalAmount).toLocaleString("tr-TR")} ₺` : "-"}</p>
             </div>
           </div>
         </div>
-
-        <div className="bg-white rounded-lg border p-2 sm:p-3">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-green-100 rounded-lg">
-              <Calendar className="h-4 w-4 text-green-600" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs text-muted-foreground">Takip Tarihi</p>
-              <p className="text-sm sm:text-base font-semibold truncate">
-                {caseData.caseDate
-                  ? new Date(caseData.caseDate).toLocaleDateString("tr-TR")
-                  : "-"}
-              </p>
+        <div className="bg-white rounded border p-2">
+          <div className="flex items-center gap-1.5">
+            <Calendar className="h-3 w-3 text-green-600" />
+            <div>
+              <p className="text-[10px] text-muted-foreground">Tarih</p>
+              <p className="text-xs font-semibold">{caseData.caseDate ? new Date(caseData.caseDate).toLocaleDateString("tr-TR") : "-"}</p>
             </div>
           </div>
         </div>
-
-        <div className="bg-white rounded-lg border p-2 sm:p-3">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-purple-100 rounded-lg">
-              <Users className="h-4 w-4 text-purple-600" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs text-muted-foreground">Borçlu Sayısı</p>
-              <p className="text-sm sm:text-base font-semibold">{caseData.debtors?.length || 0}</p>
+        <div className="bg-white rounded border p-2">
+          <div className="flex items-center gap-1.5">
+            <Users className="h-3 w-3 text-purple-600" />
+            <div>
+              <p className="text-[10px] text-muted-foreground">Borçlu</p>
+              <p className="text-xs font-semibold">{caseData.debtors?.length || 0}</p>
             </div>
           </div>
         </div>
-
-        <div className="bg-white rounded-lg border p-2 sm:p-3">
-          <div className="flex items-center gap-2">
-            <div className="p-1.5 bg-orange-100 rounded-lg">
-              <Clock className="h-4 w-4 text-orange-600" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs text-muted-foreground">Kalan Gün</p>
+        <div className="bg-white rounded border p-2">
+          <div className="flex items-center gap-1.5">
+            <Clock className="h-3 w-3 text-orange-600" />
+            <div>
+              <p className="text-[10px] text-muted-foreground">Kalan Gün</p>
               <p className="text-sm sm:text-base font-semibold truncate">
                 {caseData.daysLeft !== undefined ? `${caseData.daysLeft} gün` : "-"}
               </p>
             </div>
           </div>
         </div>
+              <p className="text-xs font-semibold">{caseData.daysLeft !== undefined ? `${caseData.daysLeft}` : "-"}</p>
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* Tabs */}
-      <div className="border-b -mx-3 sm:-mx-4 md:-mx-6 px-3 sm:px-4 md:px-6">
-        <div className="flex gap-0.5 overflow-x-auto scrollbar-hide">
+      <div className="border-b">
+        <div className="flex gap-0.5 overflow-x-auto">
           {tabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-1 px-2 sm:px-3 py-1.5 sm:py-2 border-b-2 -mb-px transition-colors whitespace-nowrap text-xs sm:text-sm ${
-                activeTab === tab.id
-                  ? "border-primary text-primary"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-              }`}
+              className={`flex items-center gap-1 px-2 py-1 border-b-2 -mb-px text-xs ${activeTab === tab.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
             >
-              <tab.icon className="h-3 w-3 sm:h-4 sm:w-4" />
-              <span className="hidden sm:inline">{tab.label}</span>
-              <span className="sm:hidden">{tab.label.split(' ')[0]}</span>
+              <tab.icon className="h-3 w-3" />
+              {tab.label}
             </button>
           ))}
         </div>
       </div>
 
       {/* Tab Content */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
-        {/* Main Content */}
-        <div className="lg:col-span-2 space-y-6">
-          {activeTab === "overview" && (
-            <div className="bg-white rounded-xl border p-6 space-y-6">
-              <h3 className="font-semibold">Takip Bilgileri</h3>
-              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                <div>
-                  <p className="text-sm text-muted-foreground">Takip No</p>
-                  <p className="font-medium">{caseData.fileNumber}</p>
+      <div className="flex-1 overflow-auto mt-2">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
+          {/* Main Content */}
+          <div className="lg:col-span-2 space-y-3">
+            {activeTab === "overview" && (
+              <div className="bg-white rounded-lg border p-3 space-y-3">
+                <h3 className="text-sm font-semibold">Takip Bilgileri</h3>
+                <div className="grid grid-cols-3 gap-2 text-xs">
+                  <div><p className="text-muted-foreground">Takip No</p><p className="font-medium">{caseData.fileNumber}</p></div>
+                  <div><p className="text-muted-foreground">İcra Dosya No</p><p className="font-medium">{caseData.executionFileNumber || "-"}</p></div>
+                  <div><p className="text-muted-foreground">Takip Türü</p><p className="font-medium">{caseData.formType?.name || caseTypeLabels[caseData.type]}</p></div>
+                  <div><p className="text-muted-foreground">Alt Tür</p><p className="font-medium">{caseData.subType || "-"}</p></div>
+                  <div><p className="text-muted-foreground">Faiz Oranı</p><p className="font-medium">{caseData.interestRate ? `%${caseData.interestRate}` : "-"}</p></div>
+                  <div><p className="text-muted-foreground">Oluşturulma</p><p className="font-medium">{new Date(caseData.createdAt).toLocaleDateString("tr-TR")}</p></div>
                 </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">İcra Dosya No</p>
-                  <p className="font-medium">{caseData.executionFileNumber || "-"}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Takip Türü</p>
-                  <p className="font-medium">{caseData.formType?.name || caseTypeLabels[caseData.type]}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Alt Tür</p>
-                  <p className="font-medium">{caseData.subType || "-"}</p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Faiz Oranı</p>
-                  <p className="font-medium">
-                    {caseData.interestRate ? `%${caseData.interestRate}` : "-"}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-muted-foreground">Oluşturulma</p>
-                  <p className="font-medium">
-                    {new Date(caseData.createdAt).toLocaleDateString("tr-TR")}
-                  </p>
-                </div>
-              </div>
 
               {/* Risk Sınıfı ve Durum Etiketi */}
               <div className="border-t pt-6">
@@ -1074,7 +1025,7 @@ export default function CaseDetailPage() {
                       <div key={l.id} className="border rounded-lg p-4 flex items-center justify-between">
                         <div>
                           <p className="font-medium">
-                            {l.lawyer.name} {l.lawyer.surname}
+                            {(l.lawyer as any).displayName || `Av. ${l.lawyer.name} ${l.lawyer.surname}`}
                           </p>
                           {l.lawyer.barNumber && (
                             <p className="text-sm text-muted-foreground">

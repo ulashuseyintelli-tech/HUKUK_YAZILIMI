@@ -212,9 +212,9 @@ export class DocumentTemplateService {
       } : undefined,
 
       creditor: caseData.client ? {
-        name: caseData.client.name,
+        name: caseData.client.name || undefined,
         identityNo: caseData.client.identityNo || undefined,
-        address: (caseData.client.address as any)?.text || undefined,
+        address: caseData.client.address || undefined,
       } : undefined,
 
       debtor: debtor ? {

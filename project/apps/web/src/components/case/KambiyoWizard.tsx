@@ -24,9 +24,10 @@ interface KambiyoWizardResult {
 interface KambiyoWizardProps {
   onComplete: (result: KambiyoWizardResult) => void;
   onSkip: () => void;
+  onBack?: () => void;
 }
 
-export function KambiyoWizard({ onComplete, onSkip }: KambiyoWizardProps) {
+export function KambiyoWizard({ onComplete, onSkip, onBack }: KambiyoWizardProps) {
   const [selectedType, setSelectedType] = useState<KambiyoSenetType | null>(null);
 
   const handleSenetTypeSelect = (senetType: KambiyoSenetType) => {
@@ -176,12 +177,14 @@ export function KambiyoWizard({ onComplete, onSkip }: KambiyoWizardProps) {
         </div>
       </div>
 
-      {/* Skip Button */}
-      <div className="mt-6 pt-4 border-t">
-        <button
-          onClick={onSkip}
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
+      {/* Buttons */}
+      <div className="mt-6 pt-4 border-t flex items-center justify-between">
+        {onBack && (
+          <button onClick={onBack} className="flex items-center gap-1.5 text-sm font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 px-3 py-1.5 rounded-lg transition-colors">
+            <ArrowLeft className="h-4 w-4" /> Geri
+          </button>
+        )}
+        <button onClick={onSkip} className="text-sm text-muted-foreground hover:text-foreground">
           Sihirbazı atla, manuel seçim yap →
         </button>
       </div>

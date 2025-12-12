@@ -39,13 +39,75 @@ export class LawyerDto {
   @IsString()
   surname: string;
 
+  // Kimlik Bilgileri
+  @IsString()
+  @IsOptional()
+  tckn?: string;
+
+  @IsString()
+  @IsOptional()
+  gender?: string;
+
+  // Mesleki Bilgiler
   @IsString()
   @IsOptional()
   barNumber?: string;
 
+  @IsString()
+  @IsOptional()
+  barCity?: string;
+
+  @IsString()
+  @IsOptional()
+  tbbNo?: string;
+
+  // Vergi Bilgileri
+  @IsString()
+  @IsOptional()
+  vergiDairesi?: string;
+
+  @IsString()
+  @IsOptional()
+  vergiNo?: string;
+
+  // İletişim
+  @IsString()
+  @IsOptional()
+  phone?: string;
+
+  @IsString()
+  @IsOptional()
+  email?: string;
+
+  // Banka Bilgileri
+  @IsString()
+  @IsOptional()
+  bankName?: string;
+
+  @IsString()
+  @IsOptional()
+  iban?: string;
+
+  // Statü
+  @IsBoolean()
+  @IsOptional()
+  isInHouseCounsel?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  isEmployee?: boolean;
+
   @IsBoolean()
   @IsOptional()
   canSign?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  isResponsible?: boolean;
+
+  @IsBoolean()
+  @IsOptional()
+  hasSignatureAuthority?: boolean;
 }
 
 export class PartyDto {

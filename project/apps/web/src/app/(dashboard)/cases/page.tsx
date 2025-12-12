@@ -89,15 +89,16 @@ export default function CasesPage() {
   });
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
+    <div className="h-full flex flex-col overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center justify-between mb-2">
         <div>
-          <h1 className="text-2xl font-bold">{pageTitle}</h1>
-          <p className="text-muted-foreground">Tüm icra takiplerinizi yönetin</p>
+          <h1 className="text-lg font-bold">{pageTitle}</h1>
+          <p className="text-xs text-muted-foreground">Tüm icra takiplerinizi yönetin</p>
         </div>
         <Link
           href="/cases/new"
-          className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90"
+          className="inline-flex items-center gap-1 bg-primary text-primary-foreground px-3 py-1.5 text-sm rounded-lg hover:bg-primary/90"
         >
           <Plus className="h-4 w-4" />
           Yeni Takip
@@ -105,115 +106,89 @@ export default function CasesPage() {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-4">
+      <div className="flex gap-2 mb-2">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Search className="absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
             type="search"
             placeholder="Dosya no veya borçlu ara..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full rounded-lg border bg-background py-2 pl-10 pr-4 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary"
+            className="w-full rounded border bg-background py-1.5 pl-8 pr-3 text-sm outline-none focus:border-primary"
           />
         </div>
-        <div className="flex items-center gap-2">
-          <Filter className="h-4 w-4 text-muted-foreground" />
-          <select
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-            className="rounded-lg border bg-background px-3 py-2 text-sm outline-none focus:border-primary"
-          >
-            <option value="all">Tüm Durumlar</option>
-            <option value="ACTIVE">Aktif</option>
-            <option value="CLOSED">Kapalı</option>
-            <option value="SUSPENDED">Askıda</option>
-          </select>
-        </div>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="rounded border bg-background px-2 py-1.5 text-sm outline-none focus:border-primary"
+        >
+          <option value="all">Tümü</option>
+          <option value="ACTIVE">Aktif</option>
+          <option value="CLOSED">Kapalı</option>
+          <option value="SUSPENDED">Askıda</option>
+        </select>
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-xl border overflow-hidden">
+      <div className="flex-1 bg-white rounded-lg border overflow-hidden flex flex-col">
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <div className="flex items-center justify-center flex-1">
+            <Loader2 className="h-6 w-6 animate-spin text-primary" />
           </div>
         ) : (
-          <>
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-muted/50">
-                  <tr>
-                    <th className="text-left px-4 py-3 text-sm font-medium">Dosya No</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium">Takip Türü</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium">Müvekkil</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium">Borçlu</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium">Tutar</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium">Durum</th>
-                    <th className="text-left px-4 py-3 text-sm font-medium">Tarih</th>
+          <div className="flex-1 overflow-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-muted/50 sticky top-0">
+                <tr>
+                  <th className="text-left px-3 py-2 font-medium">Dosya No</th>
+                  <th className="text-left px-3 py-2 font-medium">Tür</th>
+                  <th className="text-left px-3 py-2 font-medium">Müvekkil</th>
+                  <th className="text-left px-3 py-2 font-medium">Borçlu</th>
+                  <th className="text-left px-3 py-2 font-medium">Tutar</th>
+                  <th className="text-left px-3 py-2 font-medium">Durum</th>
+                  <th className="text-left px-3 py-2 font-medium">Tarih</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {filteredCases.map((caseItem) => (
+                  <tr key={caseItem.id} className="hover:bg-muted/30">
+                    <td className="px-3 py-2">
+                      <Link href={`/cases/${caseItem.id}`} className="flex items-center gap-1 text-primary hover:underline">
+                        <FileText className="h-3 w-3" />
+                        {caseItem.fileNumber}
+                      </Link>
+                    </td>
+                    <td className="px-3 py-2">{caseTypeLabels[caseItem.type] || caseItem.type}</td>
+                    <td className="px-3 py-2">{caseItem.client?.name || "-"}</td>
+                    <td className="px-3 py-2">
+                      {caseItem.debtors?.[0]?.debtor.name || "-"}
+                      {caseItem.debtors?.length > 1 && <span className="text-muted-foreground"> +{caseItem.debtors.length - 1}</span>}
+                    </td>
+                    <td className="px-3 py-2 font-medium">
+                      {caseItem.principalAmount ? `${caseItem.principalAmount.toLocaleString("tr-TR")} ₺` : "-"}
+                    </td>
+                    <td className="px-3 py-2">
+                      <Badge variant={statusColors[caseItem.status] || "default"}>
+                        {statusLabels[caseItem.status] || caseItem.status}
+                      </Badge>
+                    </td>
+                    <td className="px-3 py-2 text-muted-foreground">
+                      {new Date(caseItem.createdAt).toLocaleDateString("tr-TR")}
+                    </td>
                   </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {filteredCases.map((caseItem) => (
-                    <tr key={caseItem.id} className="hover:bg-muted/30">
-                      <td className="px-4 py-3">
-                        <Link
-                          href={`/cases/${caseItem.id}`}
-                          className="flex items-center gap-2 text-primary hover:underline"
-                        >
-                          <FileText className="h-4 w-4" />
-                          {caseItem.fileNumber}
-                        </Link>
-                        {caseItem.executionFileNumber && (
-                          <p className="text-xs text-muted-foreground">
-                            {caseItem.executionFileNumber}
-                          </p>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-sm">
-                        {caseTypeLabels[caseItem.type] || caseItem.type}
-                      </td>
-                      <td className="px-4 py-3 text-sm">{caseItem.client?.name || "-"}</td>
-                      <td className="px-4 py-3 text-sm">
-                        {caseItem.debtors?.[0]?.debtor.name || "-"}
-                        {caseItem.debtors?.length > 1 && (
-                          <span className="text-muted-foreground">
-                            {" "}+{caseItem.debtors.length - 1}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-sm font-medium">
-                        {caseItem.principalAmount
-                          ? `${caseItem.principalAmount.toLocaleString("tr-TR")} ₺`
-                          : "-"}
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge variant={statusColors[caseItem.status] || "default"}>
-                          {statusLabels[caseItem.status] || caseItem.status}
-                        </Badge>
-                      </td>
-                      <td className="px-4 py-3 text-sm text-muted-foreground">
-                        {new Date(caseItem.createdAt).toLocaleDateString("tr-TR")}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
+                ))}
+              </tbody>
+            </table>
             {filteredCases.length === 0 && (
-              <div className="text-center py-12">
-                <FileText className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-                <p className="text-muted-foreground">Takip bulunamadı</p>
-                <Link
-                  href="/cases/new"
-                  className="inline-flex items-center gap-2 mt-4 text-primary hover:underline"
-                >
-                  <Plus className="h-4 w-4" />
-                  İlk takibinizi oluşturun
+              <div className="text-center py-8">
+                <FileText className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
+                <p className="text-sm text-muted-foreground">Takip bulunamadı</p>
+                <Link href="/cases/new" className="inline-flex items-center gap-1 mt-2 text-sm text-primary hover:underline">
+                  <Plus className="h-3 w-3" /> İlk takibinizi oluşturun
                 </Link>
               </div>
             )}
-          </>
+          </div>
         )}
       </div>
     </div>

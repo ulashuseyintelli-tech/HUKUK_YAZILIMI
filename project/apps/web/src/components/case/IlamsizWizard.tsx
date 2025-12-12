@@ -1,17 +1,10 @@
 "use client";
 
 import { useState } from "react";
-import {
-  Home,
-  FileText,
-  Package,
-  CheckCircle,
-  ArrowRight,
-  ArrowLeft,
-  Sparkles,
-} from "lucide-react";
+import { FileText, CheckCircle, ArrowLeft, Sparkles } from "lucide-react";
 
 export type IlamsizResultType = "KIRA_ALACAK" | "TAHLIYE" | "GENEL" | "REHIN";
+export type MahiyetType = "FATURA" | "SOZLESME" | "CARI_HESAP" | "AIDAT" | "HIZMET" | "DIGER";
 
 interface IlamsizWizardResult {
   resultType: IlamsizResultType;
@@ -19,37 +12,65 @@ interface IlamsizWizardResult {
   formTitle: string;
   explanation: string;
   uyapCode: string;
+  mahiyetType?: MahiyetType;
+  mahiyetCode?: string;
 }
 
 interface IlamsizWizardProps {
   onComplete: (result: IlamsizWizardResult) => void;
   onSkip: () => void;
+  onBack?: () => void;
+  initialStep?: number;
+  onStepChange?: (step: number) => void;
+  initialAnswers?: { isKira: boolean | null };
+  onAnswersChange?: (answers: { isKira: boolean | null }) => void;
 }
 
-type Step = 1 | 2;
+type Step = 1 | 2 | 3;
 
-export function IlamsizWizard({ onComplete, onSkip }: IlamsizWizardProps) {
-  const [step, setStep] = useState<Step>(1);
-  const [answers, setAnswers] = useState({
-    isKira: null as boolean | null,
+const MAHIYET_OPTIONS = [
+  { type: "FATURA" as MahiyetType, code: "FATURA", label: "Fatura Alacağı", icon: "🧾", desc: "Mal veya hizmet faturası" },
+  { type: "SOZLESME" as MahiyetType, code: "SOZLESME", label: "Sözleşme Alacağı", icon: "📝", desc: "Sözleşmeye dayalı alacak" },
+  { type: "CARI_HESAP" as MahiyetType, code: "CARI_HESAP", label: "Cari Hesap", icon: "📊", desc: "Cari hesap bakiyesi" },
+  { type: "AIDAT" as MahiyetType, code: "AIDAT", label: "Aidat Alacağı", icon: "🏢", desc: "Site/apartman aidatı" },
+  { type: "HIZMET" as MahiyetType, code: "HIZMET", label: "Hizmet Bedeli", icon: "🔧", desc: "Hizmet karşılığı alacak" },
+  { type: "DIGER" as MahiyetType, code: "DIGER", label: "Diğer Alacak", icon: "📋", desc: "Diğer ilamsız alacaklar" },
+];
+
+export function IlamsizWizard({ onComplete, onSkip, onBack, initialStep = 1, onStepChange, initialAnswers, onAnswersChange }: IlamsizWizardProps) {
+  // initialStep'i answers ile uyumlu hale getir
+  const getValidInitialStep = (): Step => {
+    if (initialStep === 3 && initialAnswers?.isKira === false) return 3;
+    if (initialStep === 2 && initialAnswers?.isKira === true) return 2;
+    return 1;
+  };
+  
+  const [step, setStepInternal] = useState<Step>(getValidInitialStep());
+  const [answers, setAnswersInternal] = useState({
+    isKira: initialAnswers?.isKira ?? null,
     kiraType: null as "ALACAK" | "TAHLIYE" | null,
+    mahiyetType: null as MahiyetType | null,
   });
 
-  // Soru 1: Kira ile ilgili mi?
-  const handleKiraAnswer = (isKira: boolean) => {
+  // Step değiştiğinde parent'a bildir
+  const setStep = (newStep: Step) => {
+    setStepInternal(newStep);
+    onStepChange?.(newStep);
+  };
+
+  // Answers değiştiğinde parent'a bildir
+  const setAnswers = (newAnswers: typeof answers) => {
+    setAnswersInternal(newAnswers);
+    onAnswersChange?.({ isKira: newAnswers.isKira });
+  };
+
+  // Soru 1: Alacak türü
+  const handleAlacakTuru = (isKira: boolean) => {
     setAnswers({ ...answers, isKira });
     if (isKira) {
       setStep(2); // Kira alacağı mı tahliye mi?
     } else {
-      // Kira değilse direkt genel ilamsız
-      const result: IlamsizWizardResult = {
-        resultType: "GENEL",
-        suggestedFormCode: "FORM_7",
-        formTitle: "İlamsız İcra Takibi",
-        explanation: "Fatura, sözleşme veya cari hesap alacağınız için standart ilamsız icra takibi uygundur.",
-        uyapCode: "49",
-      };
-      onComplete(result);
+      setStep(3); // Mahiyet seçimi
     }
   };
 
@@ -58,151 +79,149 @@ export function IlamsizWizard({ onComplete, onSkip }: IlamsizWizardProps) {
     setAnswers({ ...answers, kiraType });
     
     if (kiraType === "ALACAK") {
-      const result: IlamsizWizardResult = {
+      onComplete({
         resultType: "KIRA_ALACAK",
         suggestedFormCode: "FORM_13",
         formTitle: "Kira Alacağı Takibi",
         explanation: "Kira sözleşmesine dayalı birikmiş kira alacaklarınızın tahsili için kira alacağı takibi uygundur.",
         uyapCode: "51",
-      };
-      onComplete(result);
+        mahiyetType: "SOZLESME",
+        mahiyetCode: "KIRA",
+      });
     } else {
-      const result: IlamsizWizardResult = {
+      onComplete({
         resultType: "TAHLIYE",
         suggestedFormCode: "FORM_14",
         formTitle: "Tahliye Takibi",
         explanation: "Kira süresi sona ermiş veya sözleşmeye aykırılık nedeniyle kiracının tahliyesi için tahliye takibi uygundur.",
         uyapCode: "56",
-      };
-      onComplete(result);
+        mahiyetType: "SOZLESME",
+        mahiyetCode: "TAHLIYE",
+      });
     }
   };
 
-  const goBack = () => {
-    if (step === 2) setStep(1);
+  // Soru 3: Mahiyet seçimi
+  const handleMahiyetSelect = (mahiyet: typeof MAHIYET_OPTIONS[0]) => {
+    onComplete({
+      resultType: "GENEL",
+      suggestedFormCode: "FORM_7",
+      formTitle: "İlamsız İcra Takibi",
+      explanation: `${mahiyet.label} için standart ilamsız icra takibi uygundur.`,
+      uyapCode: "49",
+      mahiyetType: mahiyet.type,
+      mahiyetCode: mahiyet.code,
+    });
   };
 
+  const goBack = () => {
+    if (step === 1 && onBack) {
+      onBack(); // Belge seçiciye dön
+    } else if (step === 2) {
+      setStep(1);
+    } else if (step === 3) {
+      setStep(1);
+    }
+  };
+
+  const totalSteps = answers.isKira === false ? 2 : 2;
+
   return (
-    <div className="bg-white rounded-xl border p-6 mb-6">
-      {/* Header */}
-      <div className="flex items-center gap-3 mb-6">
+    <div className="bg-white rounded-xl border p-4 mb-4">
+      <div className="flex items-center gap-3 mb-4">
         <div className="p-2 bg-purple-100 rounded-lg">
-          <Sparkles className="h-6 w-6 text-purple-600" />
+          <Sparkles className="h-5 w-5 text-purple-600" />
         </div>
         <div>
-          <h2 className="font-semibold text-lg">İlamsız Takip Sihirbazı</h2>
-          <p className="text-sm text-muted-foreground">
-            Yazılı belgenize uygun takip türünü belirleyelim
-          </p>
+          <h2 className="font-semibold">İlamsız Takip Sihirbazı</h2>
+          <p className="text-xs text-muted-foreground">Yazılı belgenize uygun takip türünü belirleyelim</p>
         </div>
       </div>
 
-      {/* Progress */}
-      <div className="flex items-center gap-2 mb-6">
+      <div className="flex items-center gap-2 mb-4">
         {[1, 2].map((s) => (
           <div key={s} className="flex items-center">
-            <div
-              className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium ${
-                s < step
-                  ? "bg-purple-500 text-white"
-                  : s === step
-                    ? "bg-purple-600 text-white"
-                    : "bg-gray-100 text-gray-400"
-              }`}
-            >
-              {s < step ? <CheckCircle className="h-4 w-4" /> : s}
+            <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-medium ${s < step ? "bg-purple-500 text-white" : s === step || (step === 3 && s === 2) ? "bg-purple-600 text-white" : "bg-gray-100 text-gray-400"}`}>
+              {s < step || (step === 3 && s === 2) ? <CheckCircle className="h-3 w-3" /> : s}
             </div>
-            {s < 2 && (
-              <div
-                className={`w-12 h-1 mx-1 rounded ${s < step ? "bg-purple-500" : "bg-gray-200"}`}
-              />
-            )}
+            {s < 2 && <div className={`w-8 h-0.5 mx-1 rounded ${s < step ? "bg-purple-500" : "bg-gray-200"}`} />}
           </div>
         ))}
       </div>
 
-      {/* Step 1: Kira ile ilgili mi? */}
       {step === 1 && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 text-purple-600 mb-4">
-            <Home className="h-5 w-5" />
-            <h3 className="font-medium">Soru 1: Bu alacak kira ile ilgili mi?</h3>
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-purple-600 mb-3">
+            <FileText className="h-4 w-4" />
+            <h3 className="text-sm font-medium">Alacağınızın türü nedir?</h3>
           </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <button
-              onClick={() => handleKiraAnswer(true)}
-              className="p-4 border-2 rounded-xl hover:border-purple-500 hover:bg-purple-50 transition-all text-left group"
-            >
-              <div className="text-2xl mb-2">🏠</div>
-              <div className="font-medium">Evet, Kira İle İlgili</div>
-              <div className="text-sm text-muted-foreground">
-                Kira alacağı veya tahliye
-              </div>
+          <div className="grid grid-cols-2 gap-3">
+            <button onClick={() => handleAlacakTuru(false)} className="p-3 border-2 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-all text-left">
+              <div className="text-xl mb-1">📄</div>
+              <div className="text-sm font-medium">Fatura / Sözleşme</div>
+              <div className="text-xs text-muted-foreground">Fatura, sözleşme, cari hesap</div>
             </button>
-
-            <button
-              onClick={() => handleKiraAnswer(false)}
-              className="p-4 border-2 rounded-xl hover:border-purple-500 hover:bg-purple-50 transition-all text-left group"
-            >
-              <div className="text-2xl mb-2">📄</div>
-              <div className="font-medium">Hayır, Diğer Alacak</div>
-              <div className="text-sm text-muted-foreground">
-                Fatura, sözleşme, cari hesap
-              </div>
+            <button onClick={() => handleAlacakTuru(true)} className="p-3 border-2 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-all text-left">
+              <div className="text-xl mb-1">🏠</div>
+              <div className="text-sm font-medium">Kira / Tahliye</div>
+              <div className="text-xs text-muted-foreground">Kira alacağı veya tahliye</div>
             </button>
           </div>
+          {onBack && (
+            <button onClick={goBack} className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-200 hover:border-gray-400 transition-colors mt-3">
+              <ArrowLeft className="h-4 w-4" /> Geri
+            </button>
+          )}
         </div>
       )}
 
-      {/* Step 2: Kira alacağı mı tahliye mi? */}
       {step === 2 && (
-        <div className="space-y-4">
-          <div className="flex items-center gap-2 text-purple-600 mb-4">
-            <FileText className="h-5 w-5" />
-            <h3 className="font-medium">Soru 2: Ne tür bir kira takibi?</h3>
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-purple-600 mb-3">
+            <FileText className="h-4 w-4" />
+            <h3 className="text-sm font-medium">Ne tür bir kira takibi?</h3>
           </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <button
-              onClick={() => handleKiraTypeAnswer("ALACAK")}
-              className="p-4 border-2 rounded-xl hover:border-purple-500 hover:bg-purple-50 transition-all text-left"
-            >
-              <div className="text-2xl mb-2">💰</div>
-              <div className="font-medium">Kira Alacağı</div>
-              <div className="text-sm text-muted-foreground">
-                Birikmiş kira borcunun tahsili
-              </div>
+          <div className="grid grid-cols-2 gap-3">
+            <button onClick={() => handleKiraTypeAnswer("ALACAK")} className="p-3 border-2 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-all text-left">
+              <div className="text-xl mb-1">💰</div>
+              <div className="text-sm font-medium">Kira Alacağı</div>
+              <div className="text-xs text-muted-foreground">Birikmiş kira borcu</div>
             </button>
-
-            <button
-              onClick={() => handleKiraTypeAnswer("TAHLIYE")}
-              className="p-4 border-2 rounded-xl hover:border-purple-500 hover:bg-purple-50 transition-all text-left"
-            >
-              <div className="text-2xl mb-2">🚪</div>
-              <div className="font-medium">Tahliye</div>
-              <div className="text-sm text-muted-foreground">
-                Kiracının tahliyesi
-              </div>
+            <button onClick={() => handleKiraTypeAnswer("TAHLIYE")} className="p-3 border-2 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-all text-left">
+              <div className="text-xl mb-1">🚪</div>
+              <div className="text-sm font-medium">Tahliye</div>
+              <div className="text-xs text-muted-foreground">Kiracının tahliyesi</div>
             </button>
           </div>
-
-          <button
-            onClick={goBack}
-            className="flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground mt-4"
-          >
-            <ArrowLeft className="h-4 w-4" />
-            Geri
+          <button onClick={goBack} className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-200 hover:border-gray-400 transition-colors mt-3">
+            <ArrowLeft className="h-4 w-4" /> Geri
           </button>
         </div>
       )}
 
-      {/* Skip Button */}
-      <div className="mt-6 pt-4 border-t">
-        <button
-          onClick={onSkip}
-          className="text-sm text-muted-foreground hover:text-foreground"
-        >
+      {step === 3 && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2 text-purple-600 mb-3">
+            <FileText className="h-4 w-4" />
+            <h3 className="text-sm font-medium">Alacağınızın mahiyetini seçin:</h3>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+            {MAHIYET_OPTIONS.map((m) => (
+              <button key={m.type} onClick={() => handleMahiyetSelect(m)} className="p-2 border-2 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-all text-left">
+                <div className="text-lg">{m.icon}</div>
+                <div className="text-xs font-medium">{m.label}</div>
+                <div className="text-[10px] text-muted-foreground">{m.desc}</div>
+              </button>
+            ))}
+          </div>
+          <button onClick={goBack} className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-200 hover:border-gray-400 transition-colors mt-3">
+            <ArrowLeft className="h-4 w-4" /> Geri
+          </button>
+        </div>
+      )}
+
+      <div className="mt-4 pt-3 border-t">
+        <button onClick={onSkip} className="text-xs text-muted-foreground hover:text-foreground">
           Sihirbazı atla, manuel seçim yap →
         </button>
       </div>

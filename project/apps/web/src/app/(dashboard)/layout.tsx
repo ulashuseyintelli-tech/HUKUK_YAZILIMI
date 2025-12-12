@@ -25,12 +25,12 @@ export default function DashboardLayout({
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 overflow-hidden w-full max-w-full">
+    <div className="h-screen bg-slate-50">
       <Sidebar />
       {/* Sidebar genişlikleri: sm:w-56, md:w-60, lg:w-64 */}
-      <div className="sm:pl-56 md:pl-60 lg:pl-64 min-w-0 w-full max-w-full transition-all duration-300">
+      <div className="sm:pl-56 md:pl-60 lg:pl-64 h-screen flex flex-col transition-all duration-300">
         <Header />
-        <main className="p-3 sm:p-4 md:p-6 min-w-0 w-full max-w-full overflow-x-hidden box-border">{children}</main>
+        <main className="flex-1 p-4 md:p-6 overflow-auto scrollbar-hide">{children}</main>
       </div>
     </div>
   );

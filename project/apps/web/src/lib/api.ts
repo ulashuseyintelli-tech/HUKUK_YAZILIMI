@@ -214,7 +214,19 @@ class ApiClient {
   }
 
   // Generic HTTP methods
-  async get<T = any>(endpoint: string): Promise<{ data: T }> {
+  async get<T = any>(endpoint: string, options?: { responseType?: "json" | "blob" }): Promise<{ data: T }> {
+    if (options?.responseType === "blob") {
+      const token = this.getToken();
+      const headers: HeadersInit = {
+        ...(token && { Authorization: `Bearer ${token}` }),
+      };
+      const response = await fetch(`${API_URL}/api${endpoint}`, { headers });
+      if (!response.ok) {
+        throw new Error("İndirme hatası");
+      }
+      const blob = await response.blob();
+      return { data: blob as unknown as T };
+    }
     const data = await this.request<T>(endpoint);
     return { data };
   }

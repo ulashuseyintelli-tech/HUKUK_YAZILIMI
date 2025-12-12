@@ -4,9 +4,14 @@ import * as Tesseract from "tesseract.js";
 import * as sharp from "sharp";
 import * as AdmZip from "adm-zip";
 import * as mammoth from "mammoth";
+import * as fs from "fs";
+import * as path from "path";
+import * as os from "os";
 import OpenAI from "openai";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pdfParse = require("pdf-parse");
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const pdfPoppler = require("pdf-poppler");
 
 /**
  * Belge Sınıflandırma Sonucu
@@ -35,6 +40,42 @@ export enum DetectedSubCategory {
   NAFAKA = "NAFAKA",
   DOVIZ = "DOVIZ",
   KIRA = "KIRA",
+}
+
+/**
+ * Vekaletname tarama sonucu
+ */
+export interface PowerOfAttorneyResult {
+  // Müvekkil bilgileri
+  clientType: "PERSON" | "COMPANY" | "PUBLIC";
+  firstName?: string;
+  lastName?: string;
+  companyName?: string;
+  tckn?: string;
+  vkn?: string;
+  taxOffice?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  city?: string;
+  district?: string;
+  // Vekaletname bilgileri
+  poaNumber?: string;
+  poaDate?: string;
+  notaryName?: string;
+  notaryCity?: string;
+  // Yetkiler
+  canCollect: boolean;
+  canWaive: boolean;
+  canSettle: boolean;
+  canRelease: boolean;
+  // Avukat bilgileri
+  lawyerName?: string;
+  lawyerBarNumber?: string;
+  lawyerBarCity?: string;
+  // Meta
+  confidence: number;
+  rawText?: string;
 }
 
 /**
@@ -939,5 +980,385 @@ JSON formatında yanıt ver:
     // Şimdilik bu özellik için placeholder - ileride pdf-poppler ile geliştirilebilir
     this.logger.warn("PDF OCR özelliği henüz tam desteklenmiyor. Dosya adından ipucu alınacak.");
     return "";
+  }
+
+  /**
+   * Vekaletname belgesi tarama - OpenAI ile
+   */
+  async scanPowerOfAttorney(buffer: Buffer, mimeType: string, filename?: string): Promise<PowerOfAttorneyResult> {
+    // Görüntü dosyası mı kontrol et
+    const isImage = mimeType.startsWith("image/") || 
+                    filename?.toLowerCase().endsWith(".jpg") ||
+                    filename?.toLowerCase().endsWith(".jpeg") ||
+                    filename?.toLowerCase().endsWith(".png") ||
+                    filename?.toLowerCase().endsWith(".tiff") ||
+                    filename?.toLowerCase().endsWith(".tif");
+
+    // 1. Belgeden metin çıkar
+    const { text } = await this.extractText(buffer, mimeType, filename);
+    
+    // Görüntü dosyası veya metin çıkarılamadıysa Vision API kullan
+    if (isImage || !text || text.length < 50) {
+      this.logger.log("Metin çıkarılamadı veya görüntü dosyası, Vision API deneniyor...");
+      return this.scanPoaWithVision(buffer, mimeType);
+    }
+
+    this.logger.log(`Vekaletname tarama başlatılıyor. Metin uzunluğu: ${text.length}`);
+
+    // 2. OpenAI ile analiz et
+    if (!this.openai) {
+      this.logger.warn("OpenAI yapılandırılmamış, kural tabanlı analiz yapılacak");
+      return this.parsePoaWithRules(text);
+    }
+
+    const model = this.configService.get<string>("OPENAI_MODEL") || "gpt-4";
+
+    try {
+      const response = await this.openai.chat.completions.create({
+        model,
+        messages: [
+          {
+            role: "system",
+            content: `Sen bir Türk hukuku uzmanısın. Verilen vekaletname metnini analiz ederek müvekkil ve vekalet bilgilerini çıkar.
+
+Vekaletnamelerde şu bilgiler bulunur:
+- Müvekkil (vekalet veren): Ad Soyad veya Şirket Adı, TC Kimlik No veya Vergi No
+- Vekil (avukat): Ad Soyad, Baro Sicil No
+- Noter bilgileri: Noter adı, yevmiye no, tarih
+- Yetkiler: Ahzu kabza (para alma), feragat, sulh, ibra, dava açma vb.
+
+Yetki tespiti için şu ifadeleri ara:
+- "ahzu kabza" veya "para alma" = canCollect: true
+- "feragat" = canWaive: true  
+- "sulh" veya "uzlaşma" = canSettle: true
+- "ibra" = canRelease: true
+
+JSON formatında yanıt ver:
+{
+  "clientType": "PERSON|COMPANY|PUBLIC",
+  "firstName": "Ad (şahıs ise)",
+  "lastName": "Soyad (şahıs ise)",
+  "companyName": "Şirket adı (kurum ise)",
+  "tckn": "TC Kimlik No (11 hane, şahıs ise)",
+  "vkn": "Vergi No (10 hane, kurum ise)",
+  "taxOffice": "Vergi dairesi",
+  "phone": "Telefon",
+  "address": "Adres",
+  "city": "İl",
+  "district": "İlçe",
+  "poaNumber": "Vekaletname/Yevmiye numarası",
+  "poaDate": "Vekaletname tarihi (YYYY-MM-DD)",
+  "notaryName": "Noter adı",
+  "notaryCity": "Noter ili",
+  "canCollect": true/false,
+  "canWaive": true/false,
+  "canSettle": true/false,
+  "canRelease": true/false,
+  "lawyerName": "Avukat adı soyadı",
+  "lawyerBarNumber": "Baro sicil no",
+  "lawyerBarCity": "Kayıtlı baro",
+  "confidence": 0-100
+}`
+          },
+          {
+            role: "user",
+            content: `Aşağıdaki vekaletname metnini analiz et ve bilgileri çıkar:\n\n${text.substring(0, 4000)}`
+          }
+        ],
+        temperature: 0.1,
+        ...(model.startsWith("o1") ? { max_completion_tokens: 1000 } : { max_tokens: 1000 }),
+      });
+
+      const content = response.choices[0]?.message?.content || "{}";
+      this.logger.debug(`OpenAI vekaletname yanıtı: ${content}`);
+
+      const parsed = JSON.parse(content);
+
+      return {
+        clientType: parsed.clientType || "PERSON",
+        firstName: parsed.firstName || undefined,
+        lastName: parsed.lastName || undefined,
+        companyName: parsed.companyName || undefined,
+        tckn: parsed.tckn || undefined,
+        vkn: parsed.vkn || undefined,
+        taxOffice: parsed.taxOffice || undefined,
+        phone: parsed.phone || undefined,
+        email: parsed.email || undefined,
+        address: parsed.address || undefined,
+        city: parsed.city || undefined,
+        district: parsed.district || undefined,
+        poaNumber: parsed.poaNumber || undefined,
+        poaDate: parsed.poaDate || undefined,
+        notaryName: parsed.notaryName || undefined,
+        notaryCity: parsed.notaryCity || undefined,
+        canCollect: parsed.canCollect ?? true,
+        canWaive: parsed.canWaive ?? false,
+        canSettle: parsed.canSettle ?? false,
+        canRelease: parsed.canRelease ?? false,
+        lawyerName: parsed.lawyerName || undefined,
+        lawyerBarNumber: parsed.lawyerBarNumber || undefined,
+        lawyerBarCity: parsed.lawyerBarCity || undefined,
+        confidence: parsed.confidence || 70,
+        rawText: text.substring(0, 1000),
+      };
+    } catch (error) {
+      this.logger.error("OpenAI vekaletname analiz hatası:", error);
+      return this.parsePoaWithRules(text);
+    }
+  }
+
+  /**
+   * Kural tabanlı vekaletname analizi (OpenAI yoksa fallback)
+   */
+  private parsePoaWithRules(text: string): PowerOfAttorneyResult {
+    const lowerText = text.toLowerCase();
+    
+    // TC Kimlik No bul (11 haneli sayı)
+    const tcknMatch = text.match(/\b(\d{11})\b/);
+    const tckn = tcknMatch ? tcknMatch[1] : undefined;
+
+    // VKN bul (10 haneli sayı)
+    const vknMatch = text.match(/vergi\s*(?:no|numarası|kimlik)\s*[:\s]*(\d{10})/i);
+    const vkn = vknMatch ? vknMatch[1] : undefined;
+
+    // Şirket adı bul
+    const companyPatterns = [
+      /([A-ZĞÜŞİÖÇ][A-ZĞÜŞİÖÇa-zğüşıöç\s]+(?:A\.?Ş\.?|LTD\.?\s*ŞTİ\.?|ANONİM\s*ŞİRKETİ|LİMİTED\s*ŞİRKETİ))/i,
+    ];
+    let companyName: string | undefined;
+    for (const pattern of companyPatterns) {
+      const match = text.match(pattern);
+      if (match) {
+        companyName = match[1].trim();
+        break;
+      }
+    }
+
+    // Yetkileri tespit et
+    const canCollect = lowerText.includes("ahzu kabza") || lowerText.includes("para alma") || lowerText.includes("tahsil");
+    const canWaive = lowerText.includes("feragat");
+    const canSettle = lowerText.includes("sulh") || lowerText.includes("uzlaşma");
+    const canRelease = lowerText.includes("ibra");
+
+    // Noter bilgileri
+    const notaryMatch = text.match(/(\d+)\.\s*noter/i);
+    const notaryName = notaryMatch ? `${notaryMatch[1]}. Noter` : undefined;
+
+    // Yevmiye no
+    const yevmiyeMatch = text.match(/yevmiye\s*(?:no|numarası)?\s*[:\s]*(\d+)/i);
+    const poaNumber = yevmiyeMatch ? yevmiyeMatch[1] : undefined;
+
+    // Tarih bul
+    const dateMatch = text.match(/(\d{2})[\.\/](\d{2})[\.\/](\d{4})/);
+    const poaDate = dateMatch ? `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}` : undefined;
+
+    // Avukat adı
+    const lawyerMatch = text.match(/(?:av\.|avukat)\s*([A-ZĞÜŞİÖÇ][a-zğüşıöç]+\s+[A-ZĞÜŞİÖÇ][a-zğüşıöç]+)/i);
+    const lawyerName = lawyerMatch ? lawyerMatch[1] : undefined;
+
+    // Baro sicil no
+    const barMatch = text.match(/(?:baro\s*(?:sicil)?\s*(?:no|numarası)?)\s*[:\s]*(\d+)/i);
+    const lawyerBarNumber = barMatch ? barMatch[1] : undefined;
+
+    const clientType = companyName || vkn ? "COMPANY" : "PERSON";
+
+    return {
+      clientType,
+      companyName,
+      tckn: clientType === "PERSON" ? tckn : undefined,
+      vkn: clientType === "COMPANY" ? (vkn || tckn) : undefined,
+      canCollect,
+      canWaive,
+      canSettle,
+      canRelease,
+      poaNumber,
+      poaDate,
+      notaryName,
+      lawyerName,
+      lawyerBarNumber,
+      confidence: 40,
+      rawText: text.substring(0, 1000),
+    };
+  }
+
+  /**
+   * OpenAI Vision API ile vekaletname tarama (görüntü dosyaları için)
+   */
+  private async scanPoaWithVision(buffer: Buffer, mimeType: string): Promise<PowerOfAttorneyResult> {
+    if (!this.openai) {
+      throw new Error("OpenAI yapılandırılmamış. Görüntü dosyaları için OpenAI API anahtarı gereklidir.");
+    }
+
+    let imageBuffer = buffer;
+    let imageMediaType = "image/jpeg";
+
+    // PDF ise görüntüye çevir
+    if (mimeType === "application/pdf") {
+      this.logger.log("PDF görüntüye çevriliyor...");
+      try {
+        imageBuffer = await this.convertPdfToImage(buffer);
+        imageMediaType = "image/jpeg";
+      } catch (error: any) {
+        this.logger.error("PDF görüntüye çevrilemedi:", error);
+        throw new Error("PDF dosyası işlenemedi. Lütfen vekaletname görüntüsünü (JPG, PNG) yükleyin.");
+      }
+    } else {
+      imageMediaType = mimeType.includes("png") ? "image/png" : 
+                       mimeType.includes("gif") ? "image/gif" : 
+                       mimeType.includes("webp") ? "image/webp" : "image/jpeg";
+    }
+
+    this.logger.log("Vision API ile vekaletname taranıyor...");
+
+    // Görüntüyü base64'e çevir
+    const base64Image = imageBuffer.toString("base64");
+
+    try {
+      const response = await this.openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `Bu bir Türk vekaletname belgesidir. Lütfen belgedeki bilgileri analiz et ve aşağıdaki JSON formatında döndür:
+
+{
+  "clientType": "PERSON veya COMPANY veya PUBLIC",
+  "firstName": "Müvekkilin adı (şahıs ise)",
+  "lastName": "Müvekkilin soyadı (şahıs ise)",
+  "companyName": "Şirket adı (kurum ise)",
+  "tckn": "TC Kimlik No (11 hane)",
+  "vkn": "Vergi No (10 hane, kurum ise)",
+  "taxOffice": "Vergi dairesi",
+  "address": "Adres",
+  "city": "İl",
+  "district": "İlçe",
+  "poaNumber": "Yevmiye numarası",
+  "poaDate": "Tarih (YYYY-MM-DD formatında)",
+  "notaryName": "Noter adı",
+  "notaryCity": "Noter ili",
+  "canCollect": true/false (ahzu kabza yetkisi var mı),
+  "canWaive": true/false (feragat yetkisi var mı),
+  "canSettle": true/false (sulh yetkisi var mı),
+  "canRelease": true/false (ibra yetkisi var mı),
+  "lawyerName": "Avukat adı soyadı",
+  "lawyerBarNumber": "Baro sicil no",
+  "lawyerBarCity": "Kayıtlı baro",
+  "confidence": 0-100 (ne kadar emin olduğun)
+}
+
+Sadece JSON döndür, başka açıklama ekleme.`
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:${imageMediaType};base64,${base64Image}`,
+                  detail: "high"
+                }
+              }
+            ]
+          }
+        ],
+        max_tokens: 1500,
+      });
+
+      const content = response.choices[0]?.message?.content || "{}";
+      this.logger.debug(`Vision API yanıtı: ${content}`);
+
+      // JSON'u parse et (bazen markdown code block içinde gelebilir)
+      let jsonStr = content;
+      const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[1];
+      }
+
+      const parsed = JSON.parse(jsonStr.trim());
+
+      return {
+        clientType: parsed.clientType || "PERSON",
+        firstName: parsed.firstName || undefined,
+        lastName: parsed.lastName || undefined,
+        companyName: parsed.companyName || undefined,
+        tckn: parsed.tckn || undefined,
+        vkn: parsed.vkn || undefined,
+        taxOffice: parsed.taxOffice || undefined,
+        phone: parsed.phone || undefined,
+        email: parsed.email || undefined,
+        address: parsed.address || undefined,
+        city: parsed.city || undefined,
+        district: parsed.district || undefined,
+        poaNumber: parsed.poaNumber || undefined,
+        poaDate: parsed.poaDate || undefined,
+        notaryName: parsed.notaryName || undefined,
+        notaryCity: parsed.notaryCity || undefined,
+        canCollect: parsed.canCollect ?? true,
+        canWaive: parsed.canWaive ?? false,
+        canSettle: parsed.canSettle ?? false,
+        canRelease: parsed.canRelease ?? false,
+        lawyerName: parsed.lawyerName || undefined,
+        lawyerBarNumber: parsed.lawyerBarNumber || undefined,
+        lawyerBarCity: parsed.lawyerBarCity || undefined,
+        confidence: parsed.confidence || 70,
+      };
+    } catch (error: any) {
+      this.logger.error("Vision API hatası:", error);
+      throw new Error(`Vekaletname görüntüsü analiz edilemedi: ${error.message}`);
+    }
+  }
+
+  /**
+   * PDF'i görüntüye çevir (ilk sayfa)
+   */
+  private async convertPdfToImage(pdfBuffer: Buffer): Promise<Buffer> {
+    // Geçici dosya oluştur
+    const tempDir = os.tmpdir();
+    const tempPdfPath = path.join(tempDir, `poa_${Date.now()}.pdf`);
+    const tempOutputPath = path.join(tempDir, `poa_${Date.now()}`);
+
+    try {
+      // PDF'i geçici dosyaya yaz
+      fs.writeFileSync(tempPdfPath, pdfBuffer);
+
+      // PDF'i görüntüye çevir
+      const opts = {
+        format: "jpeg",
+        out_dir: tempDir,
+        out_prefix: path.basename(tempOutputPath),
+        page: 1,
+        scale: 2048, // Yüksek çözünürlük
+      };
+
+      await pdfPoppler.convert(tempPdfPath, opts);
+
+      // Oluşturulan görüntüyü oku
+      const outputImagePath = `${tempOutputPath}-1.jpg`;
+      
+      if (!fs.existsSync(outputImagePath)) {
+        throw new Error("PDF görüntüye çevrilemedi");
+      }
+
+      const imageBuffer = fs.readFileSync(outputImagePath);
+
+      // Geçici dosyaları temizle
+      try {
+        fs.unlinkSync(tempPdfPath);
+        fs.unlinkSync(outputImagePath);
+      } catch {
+        // Temizleme hatası önemli değil
+      }
+
+      this.logger.log(`PDF görüntüye çevrildi: ${imageBuffer.length} bytes`);
+      return imageBuffer;
+    } catch (error: any) {
+      // Geçici dosyaları temizle
+      try {
+        if (fs.existsSync(tempPdfPath)) fs.unlinkSync(tempPdfPath);
+      } catch {
+        // Temizleme hatası önemli değil
+      }
+      throw error;
+    }
   }
 }
