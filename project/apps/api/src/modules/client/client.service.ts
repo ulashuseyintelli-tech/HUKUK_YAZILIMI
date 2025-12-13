@@ -7,7 +7,7 @@ export class ClientService {
 
   // Tüm müvekkilleri listele
   async findAll(tenantId: string, type?: string) {
-    return this.prisma.client.findMany({
+    const clients = await this.prisma.client.findMany({
       where: { 
         tenantId, 
         isActive: true,
@@ -19,8 +19,10 @@ export class ClientService {
           select: { cases: true }
         }
       },
-      orderBy: [{ name: 'asc' }],
+      orderBy: [{ createdAt: 'desc' }],
     });
+    console.log(`[ClientService] Found ${clients.length} clients for tenant ${tenantId}`);
+    return clients;
   }
 
   // Tek müvekkil getir

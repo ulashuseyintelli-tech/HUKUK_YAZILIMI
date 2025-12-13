@@ -5,3 +5,6 @@ export { PdfExportModal } from "./pdf-export";
 export { ScheduledReports } from "./scheduled-reports";
 export { EmailReportModal } from "./email-report-modal";
 export { UserActivityReport } from "./user-activity-report";
+export { CaseDurationAnalysis } from "./case-duration-analysis";
+export { CaseComparisonChart } from "./case-comparison-chart";
+export { CollectionAnalysisReport } from "./collection-analysis";

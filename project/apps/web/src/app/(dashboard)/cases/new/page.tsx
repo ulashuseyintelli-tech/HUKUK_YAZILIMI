@@ -184,15 +184,20 @@ export default function NewCasePage() {
   const loadExistingData = async () => {
     try {
       const [lawyersRes, clientsRes, debtorsRes, officesRes, lookupsRes, usersRes, staffRes] = await Promise.all([
-        api.getLawyers().catch(() => []), api.getClients().catch(() => []), 
-        api.searchDebtors().catch(() => []), api.get('/execution-offices').catch(() => ({ data: { data: [] } })),
+        api.getLawyers().catch((e) => { console.error("getLawyers error:", e); return []; }), 
+        api.get('/clients').catch((e) => { console.error("getClients error:", e); return { data: { data: [] } }; }), 
+        api.searchDebtors().catch((e) => { console.error("searchDebtors error:", e); return []; }), 
+        api.get('/execution-offices').catch(() => ({ data: { data: [] } })),
         api.get('/lookups').catch(() => ({ data: { data: { takipTuru: [], asama: [], risk: [], borcluTipi: [], durumEtiketi: [] } } })),
         api.get('/users').catch(() => ({ data: { data: [] } })),
         api.get('/staff').catch(() => ({ data: { data: [] } })),
       ]);
       const allLawyers = lawyersRes || [];
       setExistingLawyers(allLawyers);
-      setExistingClients(clientsRes?.data || clientsRes || []);
+      console.log("Full clientsRes:", JSON.stringify(clientsRes, null, 2));
+      const clientsList = clientsRes?.data?.data || [];
+      console.log("Extracted clientsList length:", clientsList.length);
+      setExistingClients(clientsList);
       setExistingDebtors(debtorsRes?.data || debtorsRes || []);
       setExecutionOffices(officesRes?.data?.data || []);
       setLookups(lookupsRes?.data?.data || { takipTuru: [], asama: [], risk: [], borcluTipi: [], durumEtiketi: [], mahiyetTipi: [] });

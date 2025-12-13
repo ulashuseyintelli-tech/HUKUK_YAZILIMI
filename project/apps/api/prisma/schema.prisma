@@ -2085,6 +2085,46 @@ model CalendarEvent {
   @@index([isCompleted])
 }
 
+// ==================== HATA KAYITLARI (ERROR LOG) ====================
+
+model ErrorLog {
+  id            String   @id @default(cuid())
+  tenantId      String?
+  
+  // Hata Bilgileri
+  level         String   // ERROR, WARN, INFO, DEBUG
+  source        String   // API, FRONTEND, CRON, UYAP, vb.
+  message       String
+  stack         String?  // Stack trace
+  
+  // Bağlam
+  endpoint      String?  // API endpoint
+  method        String?  // GET, POST, PUT, DELETE
+  statusCode    Int?
+  
+  // Kullanıcı
+  userId        String?
+  userIp        String?
+  userAgent     String?
+  
+  // Ek Bilgiler
+  metadata      Json?    // Request body, params, vb.
+  
+  // Çözüm Durumu
+  isResolved    Boolean  @default(false)
+  resolvedAt    DateTime?
+  resolvedBy    String?
+  resolution    String?
+  
+  createdAt     DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([level])
+  @@index([source])
+  @@index([createdAt])
+  @@index([isResolved])
+}
+
 // ==================== DENETİM KAYITLARI (AUDIT LOG) ====================
 
 // Audit Log - Tüm önemli işlemlerin kaydı

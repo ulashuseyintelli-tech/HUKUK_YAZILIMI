@@ -33,6 +33,8 @@ import { PoaModule } from "./modules/poa/poa.module";
 import { PortalModule } from "./modules/portal/portal.module";
 import { CalendarModule } from "./modules/calendar/calendar.module";
 import { AuditModule } from "./modules/audit/audit.module";
+import { SeedModule } from "./modules/seed/seed.module";
+import { ErrorLogModule } from "./modules/error-log/error-log.module";
 
 @Module({
   imports: [
@@ -72,6 +74,8 @@ import { AuditModule } from "./modules/audit/audit.module";
     PortalModule,
     CalendarModule,
     AuditModule,
+    SeedModule,
+    ErrorLogModule,
   ],
 })
 export class AppModule {}

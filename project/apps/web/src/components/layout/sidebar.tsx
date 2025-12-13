@@ -20,29 +20,31 @@ import {
   BarChart3,
   Calendar,
   Shield,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserSettings } from "@/lib/user-settings";
 
 const navigation = [
-  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Yeni Takip Oluştur", href: "/cases/new", icon: PlusCircle },
-  { name: "Eski Takipler", href: "/cases", icon: FolderOpen },
-  { name: "Raporlar", href: "/reports", icon: BarChart3 },
-  { name: "Takvim", href: "/calendar", icon: Calendar },
-  { name: "AI Tools", href: "/ai-tools", icon: Sparkles },
-  { name: "Borçlular", href: "/debtors", icon: Users },
-  { name: "Müvekkiller", href: "/clients", icon: Building2 },
-  { name: "Görevler", href: "/tasks", icon: CheckSquare },
-  { name: "Bildirimler", href: "/notifications", icon: Bell },
-  { name: "Mahkemeler", href: "/courts", icon: Gavel },
-  { name: "Tahsilatlar", href: "/collections", icon: CreditCard },
-  { name: "İcra Daireleri", href: "/admin/execution-offices", icon: Building2 },
-  { name: "Müvekkiller", href: "/settings/clients", icon: Users },
-  { name: "Portal Yönetimi", href: "/settings/portal", icon: Globe },
-  { name: "Audit Log", href: "/settings/audit", icon: Shield },
-  { name: "Bildirim Ayarları", href: "/settings/notifications", icon: Bell },
-  { name: "Büro Ayarları", href: "/settings/office", icon: Settings },
+  { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, disabled: false },
+  { name: "Yeni Takip Oluştur", href: "/cases/new", icon: PlusCircle, disabled: false },
+  { name: "Eski Takipler", href: "/cases", icon: FolderOpen, disabled: false },
+  { name: "Raporlar", href: "/reports", icon: BarChart3, disabled: false },
+  { name: "Takvim", href: "/calendar", icon: Calendar, disabled: false },
+  { name: "AI Tools", href: "/ai-tools", icon: Sparkles, disabled: false },
+  { name: "Borçlular", href: "/debtors", icon: Users, disabled: false },
+  { name: "Müvekkiller", href: "/clients", icon: Building2, disabled: true }, // Sayfa yok
+  { name: "Görevler", href: "/tasks", icon: CheckSquare, disabled: false },
+  { name: "Bildirimler", href: "/notifications", icon: Bell, disabled: true }, // Sayfa yok
+  { name: "Mahkemeler", href: "/courts", icon: Gavel, disabled: true }, // Sayfa yok
+  { name: "Tahsilatlar", href: "/collections", icon: CreditCard, disabled: true }, // Sayfa yok
+  { name: "İcra Daireleri", href: "/admin/execution-offices", icon: Building2, disabled: false },
+  { name: "Müvekkiller (Ayarlar)", href: "/settings/clients", icon: Users, disabled: false },
+  { name: "Portal Yönetimi", href: "/settings/portal", icon: Globe, disabled: false },
+  { name: "Audit Log", href: "/settings/audit", icon: Shield, disabled: false },
+  { name: "Hata Logları", href: "/settings/error-logs", icon: AlertTriangle, disabled: false },
+  { name: "Bildirim Ayarları", href: "/settings/notifications", icon: Bell, disabled: false },
+  { name: "Büro Ayarları", href: "/settings/office", icon: Settings, disabled: false },
 ];
 
 export function Sidebar() {
@@ -74,6 +76,20 @@ export function Sidebar() {
       <nav className="flex-1 space-y-1 p-2 lg:p-4 overflow-y-auto">
         {navigation.map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+          
+          if (item.disabled) {
+            return (
+              <div
+                key={item.name}
+                className="flex items-center gap-2 lg:gap-3 rounded-lg px-2 lg:px-3 py-2 text-xs lg:text-sm font-medium text-gray-300 cursor-not-allowed"
+                title="Bu sayfa henüz hazır değil"
+              >
+                <item.icon className="h-4 w-4 lg:h-5 lg:w-5 flex-shrink-0" />
+                <span className="truncate">{item.name}</span>
+              </div>
+            );
+          }
+          
           return (
             <Link
               key={item.name}
