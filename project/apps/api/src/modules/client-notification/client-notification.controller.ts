@@ -129,4 +129,20 @@ export class ClientNotificationController {
   testSmsConnection(@CurrentUser("tenantId") tenantId: string) {
     return this.service.testSmsConnection(tenantId);
   }
+
+  // Toplu e-posta gönder
+  @Post("bulk-email")
+  sendBulkEmail(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @Body()
+    body: {
+      recipients: string[]; // client IDs
+      subject: string;
+      message: string;
+      type: "clients" | "debtors";
+    }
+  ) {
+    return this.service.sendBulkEmail(tenantId, userId, body);
+  }
 }

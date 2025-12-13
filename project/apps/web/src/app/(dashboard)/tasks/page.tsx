@@ -1,8 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, CheckCircle2, Circle, Clock, AlertCircle } from "lucide-react";
+import { Plus, CheckCircle2, Circle, Clock, AlertCircle, LayoutGrid, List } from "lucide-react";
 import { Badge } from "@hukuk/ui";
+import Link from "next/link";
 
 const mockTasks = [
   {
@@ -83,10 +84,19 @@ export default function TasksPage() {
             {pendingCount} bekleyen, {inProgressCount} devam eden görev
           </p>
         </div>
-        <button className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90">
-          <Plus className="h-4 w-4" />
-          Yeni Görev
-        </button>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/tasks/kanban"
+            className="inline-flex items-center gap-2 px-3 py-2 border rounded-lg hover:bg-gray-50"
+          >
+            <LayoutGrid className="h-4 w-4" />
+            Kanban
+          </Link>
+          <button className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90">
+            <Plus className="h-4 w-4" />
+            Yeni Görev
+          </button>
+        </div>
       </div>
 
       {/* Filter Tabs */}

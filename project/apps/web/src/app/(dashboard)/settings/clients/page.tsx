@@ -1,9 +1,10 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, X, Search, Building2, User, Landmark, Edit2, Trash2, Loader2, Mail, Send, MessageSquare, Download, Upload, FileSpreadsheet, FileText } from "lucide-react";
+import { Plus, X, Search, Building2, User, Landmark, Edit2, Trash2, Loader2, Mail, Send, MessageSquare, Download, Upload, FileSpreadsheet, FileText, FileCheck, AlertTriangle, Clock, CheckCircle, Globe, Users } from "lucide-react";
 import { api } from "@/lib/api";
 import { PoaScannerWizard } from "@/components/client/PoaScannerWizard";
+import { BulkEmailModal } from "@/components/bulk-email-modal";
 
 const CLIENT_TYPES = [
   { value: "PERSON", label: "Şahıs", icon: User, color: "bg-gray-100 text-gray-700" },
@@ -26,6 +27,12 @@ export default function ClientsSettingsPage() {
   const [smsClient, setSmsClient] = useState<any>(null);
   const [showImportModal, setShowImportModal] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [showPoaModal, setShowPoaModal] = useState(false);
+  const [poaClient, setPoaClient] = useState<any>(null);
+  const [showPortalModal, setShowPortalModal] = useState(false);
+  const [portalClient, setPortalClient] = useState<any>(null);
+  const [selectedClients, setSelectedClients] = useState<string[]>([]);
+  const [showBulkEmailModal, setShowBulkEmailModal] = useState(false);
 
   useEffect(() => { loadClients(); }, []);
 
@@ -40,14 +47,46 @@ export default function ClientsSettingsPage() {
   const handleSave = async (data: any) => {
     setSaving(true);
     try {
+      let clientId: string;
+      
       if (editingClient) {
         await api.put(`/clients/${editingClient.id}`, data);
+        clientId = editingClient.id;
       } else {
-        await api.post("/clients", data);
+        const res = await api.post("/clients", data);
+        clientId = res.data?.id || res.data?.data?.id;
       }
+      
+      // Taranmış veriden geldiyse ve vekalet bilgileri varsa, otomatik vekalet oluştur
+      if (scannedData && clientId && (scannedData.poaNumber || scannedData.poaDate || scannedData.notaryName)) {
+        try {
+          await api.post("/poa", {
+            clientId,
+            journalNo: scannedData.poaNumber,
+            poaNumber: scannedData.poaNumber,
+            dateIssued: scannedData.poaDate ? new Date(scannedData.poaDate) : undefined,
+            notaryName: scannedData.notaryName,
+            notaryCity: scannedData.notaryCity,
+            isLimited: scannedData.isLimited || false,
+            validUntil: scannedData.validUntil ? new Date(scannedData.validUntil) : undefined,
+            scopeType: scannedData.scopeType || "GENEL",
+            scopeDescription: scannedData.scopeDescription,
+            canCollect: scannedData.canCollect ?? true,
+            canWaive: scannedData.canWaive ?? false,
+            canSettle: scannedData.canSettle ?? false,
+            canRelease: scannedData.canRelease ?? false,
+          });
+          console.log("Vekalet otomatik oluşturuldu");
+        } catch (poaErr) {
+          console.warn("Vekalet oluşturulamadı:", poaErr);
+          // Vekalet oluşturulamazsa bile müvekkil kaydedildi, devam et
+        }
+      }
+      
       await loadClients();
       setShowModal(false);
       setEditingClient(null);
+      setScannedData(null);
     } catch (e: any) { alert(e.message || "Hata oluştu"); }
     finally { setSaving(false); }
   };
@@ -129,9 +168,15 @@ export default function ClientsSettingsPage() {
             setShowModal(true);
           }}
         />
+        {scannedData && !showModal && (
+          <div className="mt-2 p-2 bg-green-50 border border-green-200 rounded text-sm text-green-700 flex items-center gap-2">
+            <CheckCircle className="h-4 w-4" />
+            Vekaletname tarandı. Müvekkil kaydedildiğinde vekalet bilgileri de otomatik eklenecek.
+          </div>
+        )}
       </div>
 
-      {/* Filtreler */}
+      {/* Filtreler ve Toplu İşlemler */}
       <div className="flex gap-2 mb-4">
         <div className="relative flex-1">
           <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -141,6 +186,24 @@ export default function ClientsSettingsPage() {
           <option value="ALL">Tüm Türler</option>
           {CLIENT_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
         </select>
+        {selectedClients.length > 0 && (
+          <div className="flex items-center gap-2 px-3 py-1.5 bg-blue-50 border border-blue-200 rounded">
+            <Users className="h-4 w-4 text-blue-600" />
+            <span className="text-sm text-blue-700 font-medium">{selectedClients.length} seçili</span>
+            <button
+              onClick={() => setShowBulkEmailModal(true)}
+              className="flex items-center gap-1 px-2 py-1 bg-blue-600 text-white text-xs rounded hover:bg-blue-700"
+            >
+              <Mail className="h-3 w-3" /> Toplu E-posta
+            </button>
+            <button
+              onClick={() => setSelectedClients([])}
+              className="p-1 text-blue-600 hover:bg-blue-100 rounded"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Liste - Tablo Görünümü */}
@@ -153,6 +216,14 @@ export default function ClientsSettingsPage() {
           <table className="w-full text-sm">
             <thead className="bg-gray-50 sticky top-0">
               <tr className="border-b">
+                <th className="px-3 py-2 w-8">
+                  <input
+                    type="checkbox"
+                    checked={selectedClients.length === filtered.length && filtered.length > 0}
+                    onChange={(e) => setSelectedClients(e.target.checked ? filtered.map(c => c.id) : [])}
+                    className="rounded"
+                  />
+                </th>
                 <th className="text-left px-3 py-2 font-medium text-gray-600">Tür</th>
                 <th className="text-left px-3 py-2 font-medium text-gray-600">Ad / Unvan</th>
                 <th className="text-left px-3 py-2 font-medium text-gray-600">TCKN / VKN</th>
@@ -167,7 +238,21 @@ export default function ClientsSettingsPage() {
                 const typeInfo = CLIENT_TYPES.find(t => t.value === client.type) || CLIENT_TYPES[0];
                 const TypeIcon = typeInfo.icon;
                 return (
-                  <tr key={client.id} className="hover:bg-gray-50 transition-colors">
+                  <tr key={client.id} className={`hover:bg-gray-50 transition-colors ${selectedClients.includes(client.id) ? 'bg-blue-50' : ''}`}>
+                    <td className="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedClients.includes(client.id)}
+                        onChange={(e) => {
+                          if (e.target.checked) {
+                            setSelectedClients([...selectedClients, client.id]);
+                          } else {
+                            setSelectedClients(selectedClients.filter(id => id !== client.id));
+                          }
+                        }}
+                        className="rounded"
+                      />
+                    </td>
                     <td className="px-3 py-2">
                       <div className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs ${typeInfo.color}`}>
                         <TypeIcon className="h-3 w-3" />
@@ -185,6 +270,12 @@ export default function ClientsSettingsPage() {
                     </td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex justify-end gap-1">
+                        <button onClick={() => { setPoaClient(client); setShowPoaModal(true); }} className="p-1.5 text-amber-500 hover:bg-amber-50 rounded" title="Vekaletler">
+                          <FileCheck className="h-4 w-4" />
+                        </button>
+                        <button onClick={() => { setPortalClient(client); setShowPortalModal(true); }} className={`p-1.5 rounded ${client.hasPortalAccess ? "text-cyan-500 hover:bg-cyan-50" : "text-gray-400 hover:bg-gray-50"}`} title={client.hasPortalAccess ? "Portal Erişimi Var" : "Portal Erişimi Ver"}>
+                          <Globe className="h-4 w-4" />
+                        </button>
                         <button onClick={() => { setEmailClient(client); setShowEmailModal(true); }} className="p-1.5 text-green-500 hover:bg-green-50 rounded" title="E-posta Gönder">
                           <Mail className="h-4 w-4" />
                         </button>
@@ -246,6 +337,31 @@ export default function ClientsSettingsPage() {
           onSuccess={() => { setShowImportModal(false); loadClients(); }}
         />
       )}
+
+      {/* Vekaletler Modal */}
+      {showPoaModal && poaClient && (
+        <ClientPoaModal
+          client={poaClient}
+          onClose={() => { setShowPoaModal(false); setPoaClient(null); }}
+        />
+      )}
+
+      {/* Portal Erişimi Modal */}
+      {showPortalModal && portalClient && (
+        <PortalAccessModal
+          client={portalClient}
+          onClose={() => { setShowPortalModal(false); setPortalClient(null); }}
+          onSuccess={() => { setShowPortalModal(false); setPortalClient(null); loadClients(); }}
+        />
+      )}
+
+      {/* Toplu E-posta Modal */}
+      <BulkEmailModal
+        isOpen={showBulkEmailModal}
+        onClose={() => { setShowBulkEmailModal(false); setSelectedClients([]); }}
+        recipients={clients.filter(c => selectedClients.includes(c.id)).map(c => ({ id: c.id, name: c.name, email: c.email }))}
+        type="clients"
+      />
 
     </div>
   );
@@ -610,7 +726,14 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
 
           {/* Vekaletname Bilgileri */}
           <div className="border rounded-lg p-3 bg-blue-50">
-            <p className="text-xs font-medium text-blue-800 mb-2">Vekaletname Bilgileri</p>
+            <div className="flex items-center justify-between mb-2">
+              <p className="text-xs font-medium text-blue-800">Vekaletname Bilgileri</p>
+              {scannedData && (
+                <span className="px-2 py-0.5 bg-green-100 text-green-700 rounded text-xs flex items-center gap-1">
+                  ✓ Taramadan alındı - Kaydet&apos;e basınca vekalet de oluşturulacak
+                </span>
+              )}
+            </div>
             <div className="grid grid-cols-4 gap-2">
               <div>
                 <label className="block text-xs font-medium mb-1">Yevmiye No</label>
@@ -629,8 +752,10 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
                 <input value={form.notaryCity} onChange={e => setForm({...form, notaryCity: e.target.value})} placeholder="İstanbul" className="w-full border rounded px-2 py-1.5 text-sm" />
               </div>
             </div>
-            {scannedData && (
-              <p className="text-xs text-blue-600 mt-2">✓ Vekaletname taramasından alındı (Güven: %{scannedData.confidence})</p>
+            {scannedData?.isLimited && (
+              <div className="mt-2 p-2 bg-amber-100 rounded text-xs text-amber-800">
+                ⚠️ Süreli vekalet tespit edildi: {scannedData.validUntil ? new Date(scannedData.validUntil).toLocaleDateString("tr-TR") + "'e kadar geçerli" : "Bitiş tarihi belirtilmemiş"}
+              </div>
             )}
           </div>
 
@@ -1050,9 +1175,7 @@ function ImportClientsModal({ onClose, onSuccess }: { onClose: () => void; onSuc
       const formData = new FormData();
       formData.append("file", file);
 
-      const res = await api.post("/export-import/clients/import", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      const res = await api.post("/export-import/clients/import", formData);
 
       setResult(res.data);
       if (res.data.success > 0) {
@@ -1128,6 +1251,494 @@ function ImportClientsModal({ onClose, onSuccess }: { onClose: () => void; onSuc
             {importing ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
             {importing ? "İçe Aktarılıyor..." : "İçe Aktar"}
           </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// Müvekkil Vekaletleri Modal
+function ClientPoaModal({ client, onClose }: { client: any; onClose: () => void }) {
+  const [poas, setPoas] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [lawyers, setLawyers] = useState<any[]>([]);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    notaryName: "",
+    notaryCity: "",
+    journalNo: "",
+    poaNumber: "",
+    dateIssued: "",
+    isLimited: false,
+    validUntil: "",
+    scopeType: "GENEL",
+    scopeDescription: "",
+    canCollect: true,
+    canWaive: false,
+    canSettle: false,
+    canRelease: false,
+    lawyerIds: [] as string[],
+  });
+
+  useEffect(() => {
+    loadPoas();
+    loadLawyers();
+  }, [client.id]);
+
+  const loadPoas = async () => {
+    try {
+      const res = await api.get(`/poa/client/${client.id}`);
+      setPoas(res.data || []);
+    } catch (e) {
+      console.error("Vekaletler yüklenemedi:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadLawyers = async () => {
+    try {
+      const res = await api.get("/lawyers");
+      setLawyers(res.data?.data || res.data || []);
+    } catch (e) {
+      console.error("Avukatlar yüklenemedi:", e);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!form.journalNo && !form.poaNumber) {
+      alert("Yevmiye No veya Vekalet No zorunludur");
+      return;
+    }
+    if (form.isLimited && !form.validUntil) {
+      alert("Süreli vekalet için geçerlilik bitiş tarihi zorunludur");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await api.post("/poa", {
+        clientId: client.id,
+        ...form,
+        dateIssued: form.dateIssued ? new Date(form.dateIssued) : undefined,
+        validUntil: form.validUntil ? new Date(form.validUntil) : undefined,
+      });
+      await loadPoas();
+      setShowAddForm(false);
+      setForm({
+        notaryName: "",
+        notaryCity: "",
+        journalNo: "",
+        poaNumber: "",
+        dateIssued: "",
+        isLimited: false,
+        validUntil: "",
+        scopeType: "GENEL",
+        scopeDescription: "",
+        canCollect: true,
+        canWaive: false,
+        canSettle: false,
+        canRelease: false,
+        lawyerIds: [],
+      });
+    } catch (e: any) {
+      alert(e.message || "Vekalet eklenemedi");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (poaId: string) => {
+    if (!confirm("Bu vekaleti silmek istediğinize emin misiniz?")) return;
+    try {
+      await api.delete(`/poa/${poaId}`);
+      await loadPoas();
+    } catch (e: any) {
+      alert(e.message || "Silinemedi");
+    }
+  };
+
+  const handleFileUpload = async (poaId: string, file: File) => {
+    setUploading(poaId);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      await api.post(`/poa/${poaId}/upload`, formData);
+      await loadPoas();
+    } catch (e: any) {
+      alert(e.message || "Dosya yüklenemedi");
+    } finally {
+      setUploading(null);
+    }
+  };
+
+  const handleFileDownload = async (poaId: string, filename: string) => {
+    try {
+      const res = await api.get(`/poa/${poaId}/download`, { responseType: "blob" });
+      const blob = new Blob([res.data]);
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = filename || "vekalet";
+      link.click();
+    } catch (e: any) {
+      alert(e.message || "Dosya indirilemedi");
+    }
+  };
+
+  const handleFileDelete = async (poaId: string) => {
+    if (!confirm("Dosyayı silmek istediğinize emin misiniz?")) return;
+    try {
+      await api.delete(`/poa/${poaId}/file`);
+      await loadPoas();
+    } catch (e: any) {
+      alert(e.message || "Dosya silinemedi");
+    }
+  };
+
+  const getStatusBadge = (poa: any) => {
+    if (poa.status === "EXPIRED") {
+      return <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-xs flex items-center gap-1"><X className="h-3 w-3" /> Süresi Dolmuş</span>;
+    }
+    if (poa.status === "REVOKED") {
+      return <span className="px-1.5 py-0.5 bg-gray-100 text-gray-700 rounded text-xs">İptal Edilmiş</span>;
+    }
+    if (poa.isLimited && poa.validUntil) {
+      const daysLeft = Math.ceil((new Date(poa.validUntil).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+      if (daysLeft <= 30) {
+        return <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-xs flex items-center gap-1"><AlertTriangle className="h-3 w-3" /> {daysLeft} gün kaldı</span>;
+      }
+      return <span className="px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded text-xs flex items-center gap-1"><Clock className="h-3 w-3" /> {new Date(poa.validUntil).toLocaleDateString("tr-TR")}&apos;e kadar</span>;
+    }
+    return <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs flex items-center gap-1"><CheckCircle className="h-3 w-3" /> Süresiz</span>;
+  };
+
+  const getScopeLabel = (scopeType: string) => {
+    switch (scopeType) {
+      case "ICRA_TAKIP": return "İcra Takipleri";
+      case "BU_DOSYA": return "Bu Dosya İçin";
+      case "OZEL": return "Özel Kapsam";
+      default: return "Genel";
+    }
+  };
+
+  const clientName = client.displayName || client.name || `${client.firstName || ""} ${client.lastName || ""}`.trim();
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg w-full max-w-3xl max-h-[90vh] overflow-auto">
+        <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white">
+          <div>
+            <h3 className="font-semibold flex items-center gap-2">
+              <FileCheck className="h-5 w-5 text-amber-500" />
+              Vekaletler
+            </h3>
+            <p className="text-sm text-muted-foreground">{clientName}</p>
+          </div>
+          <button onClick={onClose}><X className="h-5 w-5" /></button>
+        </div>
+
+        <div className="p-4">
+          {/* Vekalet Listesi */}
+          {loading ? (
+            <div className="text-center py-8"><Loader2 className="h-6 w-6 animate-spin mx-auto" /></div>
+          ) : poas.length === 0 && !showAddForm ? (
+            <div className="text-center py-8 text-muted-foreground">
+              <FileCheck className="h-12 w-12 mx-auto mb-2 opacity-30" />
+              <p>Henüz vekalet kaydı yok</p>
+            </div>
+          ) : (
+            <div className="space-y-3 mb-4">
+              {poas.map(poa => (
+                <div key={poa.id} className={`p-3 border rounded-lg ${poa.status === "EXPIRED" ? "bg-red-50 border-red-200" : poa.status === "REVOKED" ? "bg-gray-50" : "bg-white"}`}>
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        {getStatusBadge(poa)}
+                        <span className="text-xs text-gray-500">{getScopeLabel(poa.scopeType)}</span>
+                      </div>
+                      <div className="grid grid-cols-4 gap-2 text-sm">
+                        <div>
+                          <span className="text-gray-500 text-xs">Yevmiye:</span>
+                          <p className="font-medium">{poa.journalNo || poa.poaNumber || "-"}</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-500 text-xs">Tarih:</span>
+                          <p>{poa.dateIssued ? new Date(poa.dateIssued).toLocaleDateString("tr-TR") : "-"}</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-500 text-xs">Noter:</span>
+                          <p>{poa.notaryName || "-"} {poa.notaryCity && `(${poa.notaryCity})`}</p>
+                        </div>
+                        <div>
+                          <span className="text-gray-500 text-xs">Avukatlar:</span>
+                          <p>{poa.lawyers?.map((l: any) => `${l.lawyer?.name} ${l.lawyer?.surname}`).join(", ") || "-"}</p>
+                        </div>
+                      </div>
+                      <div className="flex gap-2 mt-2">
+                        {poa.canCollect && <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs">Ahzu Kabza</span>}
+                        {poa.canWaive && <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs">Feragat</span>}
+                        {poa.canSettle && <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs">Sulh</span>}
+                        {poa.canRelease && <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs">İbra</span>}
+                      </div>
+                      {/* Dosya Yükleme/İndirme */}
+                      <div className="flex items-center gap-2 mt-2 pt-2 border-t">
+                        {poa.filePath ? (
+                          <>
+                            <button onClick={() => handleFileDownload(poa.id, `vekalet_${poa.journalNo || poa.poaNumber}.pdf`)} className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-100 text-blue-700 rounded hover:bg-blue-200">
+                              <Download className="h-3 w-3" /> Dosyayı İndir
+                            </button>
+                            <button onClick={() => handleFileDelete(poa.id)} className="flex items-center gap-1 px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200">
+                              <Trash2 className="h-3 w-3" /> Dosyayı Sil
+                            </button>
+                            <span className="text-xs text-gray-500">({Math.round((poa.fileSize || 0) / 1024)} KB)</span>
+                          </>
+                        ) : (
+                          <label className="flex items-center gap-1 px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200 cursor-pointer">
+                            {uploading === poa.id ? (
+                              <><Loader2 className="h-3 w-3 animate-spin" /> Yükleniyor...</>
+                            ) : (
+                              <><Upload className="h-3 w-3" /> Dosya Yükle</>
+                            )}
+                            <input type="file" accept=".pdf,.jpg,.jpeg,.png" className="hidden" onChange={e => e.target.files?.[0] && handleFileUpload(poa.id, e.target.files[0])} disabled={uploading === poa.id} />
+                          </label>
+                        )}
+                      </div>
+                    </div>
+                    <button onClick={() => handleDelete(poa.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Sil">
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Yeni Vekalet Formu */}
+          {showAddForm ? (
+            <div className="border rounded-lg p-4 bg-blue-50">
+              <h4 className="font-medium mb-3">Yeni Vekalet Ekle</h4>
+              <div className="grid grid-cols-4 gap-3 mb-3">
+                <div>
+                  <label className="block text-xs font-medium mb-1">Yevmiye No</label>
+                  <input value={form.journalNo} onChange={e => setForm({...form, journalNo: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1">Vekalet No</label>
+                  <input value={form.poaNumber} onChange={e => setForm({...form, poaNumber: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1">Düzenleme Tarihi</label>
+                  <input type="date" value={form.dateIssued} onChange={e => setForm({...form, dateIssued: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1">Kapsam</label>
+                  <select value={form.scopeType} onChange={e => setForm({...form, scopeType: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm">
+                    <option value="GENEL">Genel</option>
+                    <option value="ICRA_TAKIP">İcra Takipleri</option>
+                    <option value="BU_DOSYA">Bu Dosya İçin</option>
+                    <option value="OZEL">Özel Kapsam</option>
+                  </select>
+                </div>
+              </div>
+              <div className="grid grid-cols-4 gap-3 mb-3">
+                <div>
+                  <label className="block text-xs font-medium mb-1">Noter Adı</label>
+                  <input value={form.notaryName} onChange={e => setForm({...form, notaryName: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1">Noter İli</label>
+                  <input value={form.notaryCity} onChange={e => setForm({...form, notaryCity: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" />
+                </div>
+                <div className="col-span-2">
+                  <label className="block text-xs font-medium mb-1">Avukatlar</label>
+                  <select multiple value={form.lawyerIds} onChange={e => setForm({...form, lawyerIds: Array.from(e.target.selectedOptions, o => o.value)})} className="w-full border rounded px-2 py-1.5 text-sm h-[60px]">
+                    {lawyers.map(l => <option key={l.id} value={l.id}>{l.name} {l.surname}</option>)}
+                  </select>
+                </div>
+              </div>
+              
+              {/* Süreli Vekalet */}
+              <div className="flex items-center gap-4 mb-3 p-2 bg-amber-50 rounded">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={form.isLimited} onChange={e => setForm({...form, isLimited: e.target.checked})} className="w-4 h-4 rounded" />
+                  <span className="text-sm font-medium">Süreli Vekalet</span>
+                </label>
+                {form.isLimited && (
+                  <div>
+                    <label className="text-xs font-medium mr-2">Bitiş Tarihi:</label>
+                    <input type="date" value={form.validUntil} onChange={e => setForm({...form, validUntil: e.target.value})} className="border rounded px-2 py-1 text-sm" />
+                  </div>
+                )}
+              </div>
+
+              {/* Yetkiler */}
+              <div className="flex flex-wrap gap-4 mb-3">
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="checkbox" checked={form.canCollect} onChange={e => setForm({...form, canCollect: e.target.checked})} className="w-4 h-4 rounded" />
+                  <span className="text-sm">Ahzu Kabza</span>
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="checkbox" checked={form.canWaive} onChange={e => setForm({...form, canWaive: e.target.checked})} className="w-4 h-4 rounded" />
+                  <span className="text-sm">Feragat</span>
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="checkbox" checked={form.canSettle} onChange={e => setForm({...form, canSettle: e.target.checked})} className="w-4 h-4 rounded" />
+                  <span className="text-sm">Sulh</span>
+                </label>
+                <label className="flex items-center gap-1.5 cursor-pointer">
+                  <input type="checkbox" checked={form.canRelease} onChange={e => setForm({...form, canRelease: e.target.checked})} className="w-4 h-4 rounded" />
+                  <span className="text-sm">İbra</span>
+                </label>
+              </div>
+
+              <div className="flex justify-end gap-2">
+                <button onClick={() => setShowAddForm(false)} className="px-3 py-1.5 text-sm border rounded hover:bg-gray-50">İptal</button>
+                <button onClick={handleSave} disabled={saving} className="px-3 py-1.5 text-sm bg-primary text-white rounded hover:bg-primary/90 disabled:opacity-50">
+                  {saving ? "Kaydediliyor..." : "Kaydet"}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <button onClick={() => setShowAddForm(true)} className="w-full py-2 border-2 border-dashed rounded-lg text-sm text-muted-foreground hover:border-primary hover:text-primary transition-colors flex items-center justify-center gap-1">
+              <Plus className="h-4 w-4" /> Yeni Vekalet Ekle
+            </button>
+          )}
+        </div>
+
+        <div className="flex justify-end p-4 border-t">
+          <button onClick={onClose} className="px-4 py-2 text-sm border rounded hover:bg-gray-50">Kapat</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+
+// Portal Erişimi Modal
+function PortalAccessModal({ client, onClose, onSuccess }: { client: any; onClose: () => void; onSuccess: () => void }) {
+  const [email, setEmail] = useState(client.email || "");
+  const [password, setPassword] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [disabling, setDisabling] = useState(false);
+
+  const handleCreate = async () => {
+    if (!email || !password) {
+      alert("E-posta ve şifre zorunludur");
+      return;
+    }
+    if (password.length < 6) {
+      alert("Şifre en az 6 karakter olmalıdır");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await api.post("/portal/admin/create-user", {
+        clientId: client.id,
+        email,
+        password,
+      });
+      alert("Portal erişimi başarıyla oluşturuldu");
+      onSuccess();
+    } catch (e: any) {
+      alert(e.message || "Portal erişimi oluşturulamadı");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDisable = async () => {
+    if (!confirm("Portal erişimini kaldırmak istediğinize emin misiniz?")) return;
+    
+    setDisabling(true);
+    try {
+      await api.post("/portal/admin/disable-user", { clientId: client.id });
+      alert("Portal erişimi kaldırıldı");
+      onSuccess();
+    } catch (e: any) {
+      alert(e.message || "Portal erişimi kaldırılamadı");
+    } finally {
+      setDisabling(false);
+    }
+  };
+
+  const clientName = client.displayName || client.name || `${client.firstName || ""} ${client.lastName || ""}`.trim();
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-lg w-full max-w-md">
+        <div className="flex justify-between items-center p-4 border-b">
+          <div>
+            <h3 className="font-semibold flex items-center gap-2">
+              <Globe className="h-5 w-5 text-cyan-500" />
+              Portal Erişimi
+            </h3>
+            <p className="text-sm text-muted-foreground">{clientName}</p>
+          </div>
+          <button onClick={onClose}><X className="h-5 w-5" /></button>
+        </div>
+
+        <div className="p-4">
+          {client.hasPortalAccess ? (
+            <div className="space-y-4">
+              <div className="p-4 bg-green-50 border border-green-200 rounded-lg">
+                <div className="flex items-center gap-2 text-green-700">
+                  <CheckCircle className="h-5 w-5" />
+                  <span className="font-medium">Portal erişimi aktif</span>
+                </div>
+                <p className="text-sm text-green-600 mt-1">
+                  Bu müvekkil portala giriş yapabilir.
+                </p>
+              </div>
+              <button
+                onClick={handleDisable}
+                disabled={disabling}
+                className="w-full py-2 bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+              >
+                {disabling ? "Kaldırılıyor..." : "Portal Erişimini Kaldır"}
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-600">
+                Bu müvekkil için portal hesabı oluşturun. Müvekkil bu bilgilerle portala giriş yapabilecek.
+              </p>
+              <div>
+                <label className="block text-sm font-medium mb-1">E-posta</label>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="ornek@email.com"
+                  className="w-full border rounded px-3 py-2 text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Şifre</label>
+                <input
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="En az 6 karakter"
+                  className="w-full border rounded px-3 py-2 text-sm"
+                />
+              </div>
+              <button
+                onClick={handleCreate}
+                disabled={saving}
+                className="w-full py-2 bg-cyan-600 text-white rounded hover:bg-cyan-700 disabled:opacity-50"
+              >
+                {saving ? "Oluşturuluyor..." : "Portal Erişimi Oluştur"}
+              </button>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end p-4 border-t">
+          <button onClick={onClose} className="px-4 py-2 text-sm border rounded hover:bg-gray-50">Kapat</button>
         </div>
       </div>
     </div>

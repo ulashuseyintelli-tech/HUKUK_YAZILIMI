@@ -231,7 +231,32 @@ class ApiClient {
     return { data };
   }
 
-  async post<T = any>(endpoint: string, body?: any): Promise<{ data: T }> {
+  async post<T = any>(endpoint: string, body?: any, options?: { headers?: Record<string, string> }): Promise<{ data: T }> {
+    // FormData için özel işlem
+    if (body instanceof FormData) {
+      const token = this.getToken();
+      const headers: HeadersInit = {
+        ...(token && { Authorization: `Bearer ${token}` }),
+        ...options?.headers,
+      };
+      // Content-Type'ı kaldır, browser otomatik ayarlasın
+      delete (headers as any)["Content-Type"];
+      
+      const response = await fetch(`${API_URL}/api${endpoint}`, {
+        method: "POST",
+        headers,
+        body,
+      });
+      
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.message || "Bir hata oluştu");
+      }
+      
+      const data = await response.json();
+      return { data };
+    }
+    
     const data = await this.request<T>(endpoint, {
       method: "POST",
       body: body ? JSON.stringify(body) : undefined,

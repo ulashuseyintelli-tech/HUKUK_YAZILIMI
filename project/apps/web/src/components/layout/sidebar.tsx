@@ -16,6 +16,10 @@ import {
   FolderOpen,
   Sparkles,
   Wand2,
+  Globe,
+  BarChart3,
+  Calendar,
+  Shield,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserSettings } from "@/lib/user-settings";
@@ -24,6 +28,8 @@ const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
   { name: "Yeni Takip Oluştur", href: "/cases/new", icon: PlusCircle },
   { name: "Eski Takipler", href: "/cases", icon: FolderOpen },
+  { name: "Raporlar", href: "/reports", icon: BarChart3 },
+  { name: "Takvim", href: "/calendar", icon: Calendar },
   { name: "AI Tools", href: "/ai-tools", icon: Sparkles },
   { name: "Borçlular", href: "/debtors", icon: Users },
   { name: "Müvekkiller", href: "/clients", icon: Building2 },
@@ -33,6 +39,9 @@ const navigation = [
   { name: "Tahsilatlar", href: "/collections", icon: CreditCard },
   { name: "İcra Daireleri", href: "/admin/execution-offices", icon: Building2 },
   { name: "Müvekkiller", href: "/settings/clients", icon: Users },
+  { name: "Portal Yönetimi", href: "/settings/portal", icon: Globe },
+  { name: "Audit Log", href: "/settings/audit", icon: Shield },
+  { name: "Bildirim Ayarları", href: "/settings/notifications", icon: Bell },
   { name: "Büro Ayarları", href: "/settings/office", icon: Settings },
 ];
 

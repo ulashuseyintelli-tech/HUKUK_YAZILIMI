@@ -1,11 +1,12 @@
 "use client";
 
-import { Bell, Search, Menu, User, LogOut, X, Scale, LayoutDashboard, PlusCircle, FolderOpen, Sparkles, Users, Building2, CheckSquare, Settings } from "lucide-react";
-import { useState } from "react";
+import { Bell, Search, Menu, User, LogOut, X, Scale, LayoutDashboard, PlusCircle, FolderOpen, Sparkles, Users, Building2, CheckSquare, Settings, FileText, Loader2, Sun, Moon } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
 import { useAuth } from "@/lib/auth-context";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { api } from "@/lib/api";
 
 const mobileNavigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
@@ -18,11 +19,94 @@ const mobileNavigation = [
   { name: "Ayarlar", href: "/settings", icon: Settings },
 ];
 
+interface SearchResult {
+  type: 'case' | 'client' | 'debtor';
+  id: string;
+  title: string;
+  subtitle?: string;
+}
+
 export function Header() {
   const { user, logout } = useAuth();
   const [showMobileMenu, setShowMobileMenu] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
   const pathname = usePathname();
+  const router = useRouter();
+
+  // Click outside to close
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setShowResults(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Debounced search
+  useEffect(() => {
+    if (!searchQuery || searchQuery.length < 2) {
+      setSearchResults([]);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setSearching(true);
+      try {
+        const [casesRes, clientsRes, debtorsRes] = await Promise.all([
+          api.get(`/cases?search=${encodeURIComponent(searchQuery)}&limit=5`).catch(() => ({ data: [] })),
+          api.get(`/clients?search=${encodeURIComponent(searchQuery)}&limit=5`).catch(() => ({ data: [] })),
+          api.get(`/debtors?search=${encodeURIComponent(searchQuery)}&limit=5`).catch(() => ({ data: [] })),
+        ]);
+
+        const results: SearchResult[] = [];
+        
+        (casesRes.data || []).slice(0, 3).forEach((c: any) => {
+          results.push({ type: 'case', id: c.id, title: c.fileNumber, subtitle: c.executionFileNumber || c.type });
+        });
+        
+        (clientsRes.data || []).slice(0, 3).forEach((c: any) => {
+          results.push({ type: 'client', id: c.id, title: c.displayName || c.name, subtitle: c.tckn || c.vkn });
+        });
+        
+        (debtorsRes.data || []).slice(0, 3).forEach((d: any) => {
+          results.push({ type: 'debtor', id: d.id, title: d.name, subtitle: d.identityNo });
+        });
+
+        setSearchResults(results);
+        setShowResults(true);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const handleResultClick = (result: SearchResult) => {
+    setShowResults(false);
+    setSearchQuery('');
+    if (result.type === 'case') router.push(`/cases/${result.id}`);
+    else if (result.type === 'client') router.push(`/settings/clients`);
+    else if (result.type === 'debtor') router.push(`/debtors`);
+  };
+
+  const getTypeLabel = (type: string) => {
+    switch (type) {
+      case 'case': return 'Takip';
+      case 'client': return 'Müvekkil';
+      case 'debtor': return 'Borçlu';
+      default: return type;
+    }
+  };
 
   return (
     <>
@@ -74,19 +158,79 @@ export function Header() {
         )}
 
       {/* Search */}
-      <div className="flex-1 min-w-0 max-w-md">
+      <div className="flex-1 min-w-0 max-w-md" ref={searchRef}>
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          {searching ? (
+            <Loader2 className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground animate-spin" />
+          ) : (
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          )}
           <input
             type="search"
-            placeholder="Takip, borçlu ara..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            onFocus={() => searchResults.length > 0 && setShowResults(true)}
+            placeholder="Takip, müvekkil, borçlu ara... (Ctrl+K)"
             className="w-full rounded-lg border bg-muted/50 py-2 pl-10 pr-4 text-sm outline-none focus:border-primary focus:ring-1 focus:ring-primary"
           />
+          
+          {/* Search Results Dropdown */}
+          {showResults && searchResults.length > 0 && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg max-h-80 overflow-auto z-50">
+              {searchResults.map((result, i) => (
+                <button
+                  key={`${result.type}-${result.id}`}
+                  onClick={() => handleResultClick(result)}
+                  className="w-full flex items-center gap-3 px-4 py-3 hover:bg-gray-50 text-left border-b last:border-0"
+                >
+                  <div className={`p-2 rounded-lg ${
+                    result.type === 'case' ? 'bg-blue-100 text-blue-600' :
+                    result.type === 'client' ? 'bg-green-100 text-green-600' :
+                    'bg-orange-100 text-orange-600'
+                  }`}>
+                    {result.type === 'case' ? <FileText className="h-4 w-4" /> :
+                     result.type === 'client' ? <Building2 className="h-4 w-4" /> :
+                     <Users className="h-4 w-4" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">{result.title}</p>
+                    <p className="text-xs text-gray-500">{getTypeLabel(result.type)} {result.subtitle && `• ${result.subtitle}`}</p>
+                  </div>
+                </button>
+              ))}
+              {searchQuery.length >= 2 && (
+                <div className="px-4 py-2 text-xs text-gray-500 bg-gray-50">
+                  {searchResults.length} sonuç bulundu
+                </div>
+              )}
+            </div>
+          )}
+          
+          {showResults && searchQuery.length >= 2 && searchResults.length === 0 && !searching && (
+            <div className="absolute top-full left-0 right-0 mt-1 bg-white border rounded-lg shadow-lg p-4 text-center text-sm text-gray-500 z-50">
+              Sonuç bulunamadı
+            </div>
+          )}
         </div>
       </div>
 
       {/* Right side */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 sm:gap-4">
+        {/* Theme Toggle */}
+        <button
+          onClick={() => {
+            const html = document.documentElement;
+            const isDark = html.classList.contains('dark');
+            html.classList.toggle('dark', !isDark);
+            localStorage.setItem('theme', isDark ? 'light' : 'dark');
+          }}
+          className="rounded-lg p-2 hover:bg-muted"
+          title="Tema Değiştir"
+        >
+          <Sun className="h-5 w-5 hidden dark:block" />
+          <Moon className="h-5 w-5 dark:hidden" />
+        </button>
+
         <button className="relative rounded-lg p-2 hover:bg-muted">
           <Bell className="h-5 w-5" />
           <span className="absolute right-1 top-1 h-2 w-2 rounded-full bg-destructive" />

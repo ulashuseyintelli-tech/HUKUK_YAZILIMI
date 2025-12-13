@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -23,6 +23,9 @@ import {
   X,
   Info,
   Save,
+  FileCheck,
+  Share2,
+  StickyNote,
 } from "lucide-react";
 import { Badge } from "@hukuk/ui";
 import { api } from "@/lib/api";
@@ -34,6 +37,9 @@ import {
   CaseFlagsPanel,
   CaseTimeline,
   DocumentGenerator,
+  CaseNotes,
+  ShareCaseModal,
+  CaseTags,
 } from "@/components/case";
 
 const caseTypeLabels: Record<string, string> = {
@@ -47,19 +53,7 @@ const caseTypeLabels: Record<string, string> = {
   OTHER: "Diğer",
 };
 
-const statusLabels: Record<string, string> = {
-  ACTIVE: "Aktif",
-  CLOSED: "Kapalı",
-  SUSPENDED: "Askıda",
-  ARCHIVED: "Arşiv",
-};
 
-const statusColors: Record<string, "default" | "success" | "warning" | "destructive"> = {
-  ACTIVE: "success",
-  CLOSED: "default",
-  SUSPENDED: "warning",
-  ARCHIVED: "default",
-};
 
 interface CaseDetail {
   id: string;
@@ -164,7 +158,6 @@ interface CaseDetail {
 
 export default function CaseDetailPage() {
   const params = useParams();
-  const router = useRouter();
   const [caseData, setCaseData] = useState<CaseDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("overview");
@@ -191,6 +184,12 @@ export default function CaseDetailPage() {
     sonDegerlendirmeTarihi: "",
   });
   const [extraInfoSaving, setExtraInfoSaving] = useState(false);
+  
+  // Vekalet kontrolü state
+  const [poaWarnings, setPoaWarnings] = useState<{ clientName: string; lawyerName: string; message: string; }[]>([]);
+  
+  // Share modal state
+  const [showShareModal, setShowShareModal] = useState(false);
   
   // Raporlama Panel state
   const [showReportingPanel, setShowReportingPanel] = useState(false);
@@ -348,6 +347,50 @@ export default function CaseDetailPage() {
     }
   };
 
+  // Vekalet kontrolü - müvekkil ve avukat kombinasyonları için
+  const checkPoaValidity = async (data: CaseDetail) => {
+    if (!data.client?.id || !data.lawyers?.length) {
+      setPoaWarnings([]);
+      return;
+    }
+
+    const warnings: typeof poaWarnings = [];
+
+    for (const lawyerEntry of data.lawyers) {
+      if (!lawyerEntry.lawyer?.id) continue;
+      
+      try {
+        const response = await api.get(`/poa/check/valid?clientId=${data.client.id}&lawyerId=${lawyerEntry.lawyer.id}`);
+        const result = response.data;
+        
+        if (!result.isValid) {
+          warnings.push({
+            clientName: data.client.name,
+            lawyerName: `${lawyerEntry.lawyer.name} ${lawyerEntry.lawyer.surname}`,
+            message: result.message || "Geçerli vekalet bulunamadı",
+          });
+        } else if (result.daysRemaining !== undefined && result.daysRemaining <= 30) {
+          warnings.push({
+            clientName: data.client.name,
+            lawyerName: `${lawyerEntry.lawyer.name} ${lawyerEntry.lawyer.surname}`,
+            message: `Vekalet ${result.daysRemaining} gün içinde sona erecek`,
+          });
+        }
+      } catch (err) {
+        // API hatası - sessizce geç
+      }
+    }
+    
+    setPoaWarnings(warnings);
+  };
+
+  // Case yüklendiğinde vekalet kontrolü yap
+  useEffect(() => {
+    if (caseData) {
+      checkPoaValidity(caseData);
+    }
+  }, [caseData?.id]);
+
   const handleSaveExtraInfo = async () => {
     if (!caseData) return;
     setExtraInfoSaving(true);
@@ -451,6 +494,7 @@ export default function CaseDetailPage() {
   const tabs = [
     { id: "overview", label: "Genel", icon: FileText },
     { id: "dues", label: "Alacak", icon: DollarSign },
+    { id: "notes", label: "Notlar", icon: StickyNote },
     { id: "status", label: "Statü", icon: Activity },
     { id: "groups", label: "Grup", icon: Tag },
     { id: "extra", label: "Ek Bilgi", icon: Info },
@@ -468,9 +512,17 @@ export default function CaseDetailPage() {
         <Link href="/cases" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-3 w-3" /> Takiplere Dön
         </Link>
-        <Link href={`/cases/${caseData.id}/edit`} className="inline-flex items-center gap-1 px-2 py-1 text-xs border rounded hover:bg-muted">
-          <Edit className="h-3 w-3" /> Düzenle
-        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowShareModal(true)}
+            className="inline-flex items-center gap-1 px-2 py-1 text-xs border rounded hover:bg-muted"
+          >
+            <Share2 className="h-3 w-3" /> Paylaş
+          </button>
+          <Link href={`/cases/${caseData.id}/edit`} className="inline-flex items-center gap-1 px-2 py-1 text-xs border rounded hover:bg-muted">
+            <Edit className="h-3 w-3" /> Düzenle
+          </Link>
+        </div>
       </div>
 
       {/* Summary Card - Kompakt */}
@@ -486,6 +538,55 @@ export default function CaseDetailPage() {
         lastAction={caseData.lifecycleEvents?.[0]?.action}
         nextAutoAction={caseData.nextAutoAction}
       />
+
+      {/* Vekalet Uyarı Bandı */}
+      {poaWarnings.length > 0 && (
+        <div className={`rounded-lg p-3 my-2 ${
+          poaWarnings.some(w => w.message.includes("bulunamadı")) 
+            ? "bg-red-50 border border-red-200" 
+            : "bg-amber-50 border border-amber-200"
+        }`}>
+          <div className="flex items-start gap-2">
+            <FileCheck className={`h-4 w-4 mt-0.5 flex-shrink-0 ${
+              poaWarnings.some(w => w.message.includes("bulunamadı")) 
+                ? "text-red-600" 
+                : "text-amber-600"
+            }`} />
+            <div className="flex-1 min-w-0">
+              <p className={`text-xs font-medium ${
+                poaWarnings.some(w => w.message.includes("bulunamadı")) 
+                  ? "text-red-800" 
+                  : "text-amber-800"
+              }`}>
+                {poaWarnings.some(w => w.message.includes("bulunamadı")) 
+                  ? "⚠️ Geçerli Vekalet Yok - UYAP İşlemleri Engellenecek" 
+                  : "⏰ Vekalet Süresi Dolmak Üzere"}
+              </p>
+              <ul className="mt-1 space-y-0.5">
+                {poaWarnings.map((warning, idx) => (
+                  <li key={idx} className={`text-xs ${
+                    warning.message.includes("bulunamadı") 
+                      ? "text-red-700" 
+                      : "text-amber-700"
+                  }`}>
+                    • <span className="font-medium">{warning.lawyerName}</span> → {warning.clientName}: {warning.message}
+                  </li>
+                ))}
+              </ul>
+            </div>
+            <Link
+              href="/settings/clients"
+              className={`text-xs text-white px-2 py-1 rounded flex-shrink-0 ${
+                poaWarnings.some(w => w.message.includes("bulunamadı")) 
+                  ? "bg-red-600 hover:bg-red-700" 
+                  : "bg-amber-600 hover:bg-amber-700"
+              }`}
+            >
+              Vekalet Ekle
+            </Link>
+          </div>
+        </div>
+      )}
 
       {/* Quick Stats - Kompakt */}
       <div className="grid grid-cols-4 gap-2 my-2">
@@ -521,13 +622,7 @@ export default function CaseDetailPage() {
             <Clock className="h-3 w-3 text-orange-600" />
             <div>
               <p className="text-[10px] text-muted-foreground">Kalan Gün</p>
-              <p className="text-sm sm:text-base font-semibold truncate">
-                {caseData.daysLeft !== undefined ? `${caseData.daysLeft} gün` : "-"}
-              </p>
-            </div>
-          </div>
-        </div>
-              <p className="text-xs font-semibold">{caseData.daysLeft !== undefined ? `${caseData.daysLeft}` : "-"}</p>
+              <p className="text-xs font-semibold">{caseData.daysLeft !== undefined ? `${caseData.daysLeft} gün` : "-"}</p>
             </div>
           </div>
         </div>
@@ -565,7 +660,16 @@ export default function CaseDetailPage() {
                   <div><p className="text-muted-foreground">Faiz Oranı</p><p className="font-medium">{caseData.interestRate ? `%${caseData.interestRate}` : "-"}</p></div>
                   <div><p className="text-muted-foreground">Oluşturulma</p><p className="font-medium">{new Date(caseData.createdAt).toLocaleDateString("tr-TR")}</p></div>
                 </div>
+                {/* Etiketler */}
+                <div className="pt-2 border-t">
+                  <p className="text-xs text-muted-foreground mb-2">Etiketler</p>
+                  <CaseTags caseId={caseData.id} />
+                </div>
+              </div>
+            )}
 
+            {activeTab === "overview" && (
+              <div className="bg-white rounded-lg border p-3 space-y-3">
               {/* Risk Sınıfı ve Durum Etiketi */}
               <div className="border-t pt-6">
                 <h4 className="font-semibold mb-4">📊 Dosya Durumu</h4>
@@ -729,6 +833,10 @@ export default function CaseDetailPage() {
                 </div>
               )}
             </div>
+          )}
+
+          {activeTab === "notes" && (
+            <CaseNotes caseId={caseData.id} />
           )}
 
           {activeTab === "status" && (
@@ -1202,6 +1310,7 @@ export default function CaseDetailPage() {
           />
         </div>
       </div>
+    </div>
 
       {/* Raporlama Düzenleme Paneli */}
       {showReportingPanel && (
@@ -1362,6 +1471,14 @@ export default function CaseDetailPage() {
         loading={aiLoading}
         error={aiError}
         caseFileNumber={caseData.fileNumber}
+      />
+
+      {/* Share Case Modal */}
+      <ShareCaseModal
+        caseId={caseData.id}
+        fileNumber={caseData.fileNumber}
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
       />
     </div>
   );

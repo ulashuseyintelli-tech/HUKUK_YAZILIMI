@@ -491,4 +491,105 @@ export class ClientNotificationService {
       throw new BadRequestException(`SMTP bağlantı hatası: ${error.message}`);
     }
   }
+
+  // Toplu e-posta gönder
+  async sendBulkEmail(
+    tenantId: string,
+    userId: string,
+    data: {
+      recipients: string[];
+      subject: string;
+      message: string;
+      type: "clients" | "debtors";
+    }
+  ) {
+    const { recipients, subject, message, type } = data;
+    
+    if (!recipients || recipients.length === 0) {
+      throw new BadRequestException("En az bir alıcı seçilmelidir");
+    }
+
+    // SMTP ayarlarını al
+    const smtpSettings = await this.officeService.getFullSmtpSettings(tenantId);
+    if (!smtpSettings.smtpHost || !smtpSettings.smtpUser) {
+      throw new BadRequestException("SMTP ayarları yapılandırılmamış");
+    }
+
+    // Alıcıları getir
+    let recipientList: { id: string; email: string | null; name: string }[] = [];
+    
+    if (type === "clients") {
+      const clients = await this.prisma.client.findMany({
+        where: { id: { in: recipients }, tenantId },
+        select: { id: true, email: true, displayName: true },
+      });
+      recipientList = clients.map(c => ({ id: c.id, email: c.email, name: c.displayName || "Müvekkil" }));
+    } else {
+      const debtors = await this.prisma.debtor.findMany({
+        where: { id: { in: recipients }, tenantId },
+        select: { id: true, email: true, name: true },
+      });
+      recipientList = debtors.map(d => ({ id: d.id, email: d.email, name: d.name }));
+    }
+
+    // E-posta adresi olanları filtrele
+    const validRecipients = recipientList.filter(r => r.email);
+    
+    if (validRecipients.length === 0) {
+      throw new BadRequestException("Seçilen alıcıların hiçbirinde e-posta adresi yok");
+    }
+
+    // Transporter oluştur
+    const transporter = nodemailer.createTransport({
+      host: smtpSettings.smtpHost,
+      port: smtpSettings.smtpPort || 587,
+      secure: smtpSettings.smtpSecure || false,
+      auth: {
+        user: smtpSettings.smtpUser,
+        pass: smtpSettings.smtpPass,
+      },
+    } as nodemailer.TransportOptions);
+
+    // Her alıcıya e-posta gönder
+    const results = { sent: 0, failed: 0, errors: [] as string[] };
+    
+    for (const recipient of validRecipients) {
+      try {
+        await transporter.sendMail({
+          from: smtpSettings.smtpFromEmail || smtpSettings.smtpUser,
+          to: recipient.email!,
+          subject: subject,
+          html: `<p>Sayın ${recipient.name},</p>${message.replace(/\n/g, "<br>")}`,
+        });
+
+        // Bildirim kaydı oluştur
+        if (type === "clients") {
+          await this.prisma.clientNotification.create({
+            data: {
+              tenantId,
+              clientId: recipient.id,
+              type: "BULK_EMAIL",
+              channel: "EMAIL",
+              subject,
+              body: message,
+              status: "SENT",
+              sentAt: new Date(),
+              sentById: userId,
+            },
+          });
+        }
+
+        results.sent++;
+      } catch (error: any) {
+        results.failed++;
+        results.errors.push(`${recipient.email}: ${error.message}`);
+      }
+    }
+
+    return {
+      success: true,
+      message: `${results.sent} e-posta gönderildi, ${results.failed} başarısız`,
+      details: results,
+    };
+  }
 }

@@ -73,10 +73,79 @@ export interface PowerOfAttorneyResult {
   lawyerName?: string;
   lawyerBarNumber?: string;
   lawyerBarCity?: string;
+  // SÜRELİ VEKALET BİLGİLERİ (YENİ)
+  isLimited?: boolean;           // Süreli vekalet mi?
+  validUntil?: string;           // Geçerlilik bitiş tarihi (YYYY-MM-DD)
+  scopeType?: "GENEL" | "ICRA_TAKIP" | "BU_DOSYA" | "OZEL";
+  scopeDescription?: string;     // Kapsam açıklaması
+  // Çoklu avukat desteği (YENİ)
+  lawyers?: {
+    name: string;
+    barNumber?: string;
+    barCity?: string;
+  }[];
   // Meta
   confidence: number;
   rawText?: string;
 }
+
+/**
+ * Süreli vekalet tespiti için keyword'ler
+ */
+const SURELI_VEKALET_KEYWORDS = [
+  "tarihine kadar geçerlidir",
+  "tarihine kadar gecerlidir",
+  "süre ile sınırlı",
+  "sure ile sinirli",
+  "süreli vekalet",
+  "sureli vekalet",
+  "geçerlilik süresi",
+  "gecerlilik suresi",
+  "bitiş tarihi",
+  "bitis tarihi",
+  "son geçerlilik",
+  "son gecerlilik",
+  "tarihine kadar",
+  "süresiz değildir",
+  "suresiz degildir",
+  "belirli süre",
+  "belirli sure",
+  "sınırlı süre",
+  "sinirli sure",
+];
+
+/**
+ * Vekalet kapsamı tespiti için keyword'ler
+ */
+const KAPSAM_KEYWORDS = {
+  ICRA_TAKIP: [
+    "icra takip",
+    "icra işleri",
+    "icra dairesi",
+    "icra müdürlüğü",
+    "icra takibi",
+    "icra dosyası",
+    "haciz",
+    "tahsilat",
+  ],
+  BU_DOSYA: [
+    "bu dosya",
+    "işbu dava",
+    "bu takip",
+    "bu dava",
+    "işbu dosya",
+    "belirli dosya",
+    "tek dosya",
+  ],
+  OZEL: [
+    "özel vekalet",
+    "ozel vekalet",
+    "sınırlı yetki",
+    "sinirli yetki",
+    "belirli işlem",
+    "belirli islem",
+  ],
+};
 
 /**
  * Keyword grupları - belge sınıflandırma için
@@ -1023,15 +1092,28 @@ JSON formatında yanıt ver:
 
 Vekaletnamelerde şu bilgiler bulunur:
 - Müvekkil (vekalet veren): Ad Soyad veya Şirket Adı, TC Kimlik No veya Vergi No
-- Vekil (avukat): Ad Soyad, Baro Sicil No
+- Vekil (avukat): Ad Soyad, Baro Sicil No (birden fazla avukat olabilir)
 - Noter bilgileri: Noter adı, yevmiye no, tarih
 - Yetkiler: Ahzu kabza (para alma), feragat, sulh, ibra, dava açma vb.
+- SÜRELİ VEKALET: "...tarihine kadar geçerlidir", "süreli vekalet", "geçerlilik süresi" gibi ifadeler
+- KAPSAM: Genel, İcra Takipleri, Bu Dosya İçin, Özel
 
 Yetki tespiti için şu ifadeleri ara:
 - "ahzu kabza" veya "para alma" = canCollect: true
 - "feragat" = canWaive: true  
 - "sulh" veya "uzlaşma" = canSettle: true
 - "ibra" = canRelease: true
+
+SÜRELİ VEKALET TESPİTİ:
+- "...tarihine kadar geçerlidir" ifadesi varsa isLimited: true
+- Bitiş tarihi varsa validUntil alanına YYYY-MM-DD formatında yaz
+- Süresiz vekaletlerde isLimited: false
+
+KAPSAM TESPİTİ:
+- "icra takip", "icra işleri" → scopeType: "ICRA_TAKIP"
+- "bu dosya", "işbu dava" → scopeType: "BU_DOSYA"
+- "özel vekalet", "sınırlı yetki" → scopeType: "OZEL"
+- Genel ifadeler veya belirtilmemişse → scopeType: "GENEL"
 
 JSON formatında yanıt ver:
 {
@@ -1054,9 +1136,11 @@ JSON formatında yanıt ver:
   "canWaive": true/false,
   "canSettle": true/false,
   "canRelease": true/false,
-  "lawyerName": "Avukat adı soyadı",
-  "lawyerBarNumber": "Baro sicil no",
-  "lawyerBarCity": "Kayıtlı baro",
+  "isLimited": true/false,
+  "validUntil": "Bitiş tarihi (YYYY-MM-DD) veya null",
+  "scopeType": "GENEL|ICRA_TAKIP|BU_DOSYA|OZEL",
+  "scopeDescription": "Kapsam açıklaması (varsa)",
+  "lawyers": [{"name": "Avukat adı", "barNumber": "Sicil no", "barCity": "Baro"}],
   "confidence": 0-100
 }`
           },
@@ -1066,13 +1150,23 @@ JSON formatında yanıt ver:
           }
         ],
         temperature: 0.1,
-        ...(model.startsWith("o1") ? { max_completion_tokens: 1000 } : { max_tokens: 1000 }),
+        ...(model.startsWith("o1") ? { max_completion_tokens: 1500 } : { max_tokens: 1500 }),
       });
 
       const content = response.choices[0]?.message?.content || "{}";
       this.logger.debug(`OpenAI vekaletname yanıtı: ${content}`);
 
       const parsed = JSON.parse(content);
+
+      // Çoklu avukat desteği - eski format ile uyumluluk
+      let lawyers = parsed.lawyers;
+      if (!lawyers && parsed.lawyerName) {
+        lawyers = [{
+          name: parsed.lawyerName,
+          barNumber: parsed.lawyerBarNumber,
+          barCity: parsed.lawyerBarCity,
+        }];
+      }
 
       return {
         clientType: parsed.clientType || "PERSON",
@@ -1095,9 +1189,16 @@ JSON formatında yanıt ver:
         canWaive: parsed.canWaive ?? false,
         canSettle: parsed.canSettle ?? false,
         canRelease: parsed.canRelease ?? false,
-        lawyerName: parsed.lawyerName || undefined,
-        lawyerBarNumber: parsed.lawyerBarNumber || undefined,
-        lawyerBarCity: parsed.lawyerBarCity || undefined,
+        // Süreli vekalet bilgileri
+        isLimited: parsed.isLimited ?? false,
+        validUntil: parsed.validUntil || undefined,
+        scopeType: parsed.scopeType || "GENEL",
+        scopeDescription: parsed.scopeDescription || undefined,
+        // Çoklu avukat
+        lawyers: lawyers || undefined,
+        lawyerName: parsed.lawyerName || lawyers?.[0]?.name || undefined,
+        lawyerBarNumber: parsed.lawyerBarNumber || lawyers?.[0]?.barNumber || undefined,
+        lawyerBarCity: parsed.lawyerBarCity || lawyers?.[0]?.barCity || undefined,
         confidence: parsed.confidence || 70,
         rawText: text.substring(0, 1000),
       };
@@ -1148,17 +1249,83 @@ JSON formatında yanıt ver:
     const yevmiyeMatch = text.match(/yevmiye\s*(?:no|numarası)?\s*[:\s]*(\d+)/i);
     const poaNumber = yevmiyeMatch ? yevmiyeMatch[1] : undefined;
 
-    // Tarih bul
-    const dateMatch = text.match(/(\d{2})[\.\/](\d{2})[\.\/](\d{4})/);
-    const poaDate = dateMatch ? `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}` : undefined;
+    // Tarih bul (tüm tarihleri bul)
+    const dateRegex = /(\d{2})[\.\/](\d{2})[\.\/](\d{4})/g;
+    const allDates: string[] = [];
+    let dateMatch;
+    while ((dateMatch = dateRegex.exec(text)) !== null) {
+      allDates.push(`${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}`);
+    }
+    const poaDate = allDates[0]; // İlk tarih genellikle düzenleme tarihi
 
-    // Avukat adı
-    const lawyerMatch = text.match(/(?:av\.|avukat)\s*([A-ZĞÜŞİÖÇ][a-zğüşıöç]+\s+[A-ZĞÜŞİÖÇ][a-zğüşıöç]+)/i);
-    const lawyerName = lawyerMatch ? lawyerMatch[1] : undefined;
+    // SÜRELİ VEKALET TESPİTİ
+    let isLimited = false;
+    let validUntil: string | undefined;
+    
+    // Süreli vekalet keyword'lerini kontrol et
+    for (const keyword of SURELI_VEKALET_KEYWORDS) {
+      if (lowerText.includes(keyword)) {
+        isLimited = true;
+        break;
+      }
+    }
+    
+    // "...tarihine kadar" ifadesinden sonraki tarihi bul
+    const validUntilMatch = text.match(/(\d{2})[\.\/](\d{2})[\.\/](\d{4})\s*tarihine\s*kadar/i);
+    if (validUntilMatch) {
+      isLimited = true;
+      validUntil = `${validUntilMatch[3]}-${validUntilMatch[2]}-${validUntilMatch[1]}`;
+    } else if (isLimited && allDates.length > 1) {
+      // Süreli vekalet tespit edildi ama tarih bulunamadı, son tarihi kullan
+      validUntil = allDates[allDates.length - 1];
+    }
+
+    // KAPSAM TESPİTİ
+    let scopeType: "GENEL" | "ICRA_TAKIP" | "BU_DOSYA" | "OZEL" = "GENEL";
+    let scopeDescription: string | undefined;
+    
+    for (const keyword of KAPSAM_KEYWORDS.ICRA_TAKIP) {
+      if (lowerText.includes(keyword)) {
+        scopeType = "ICRA_TAKIP";
+        scopeDescription = "İcra takip işlemleri için";
+        break;
+      }
+    }
+    if (scopeType === "GENEL") {
+      for (const keyword of KAPSAM_KEYWORDS.BU_DOSYA) {
+        if (lowerText.includes(keyword)) {
+          scopeType = "BU_DOSYA";
+          scopeDescription = "Belirli dosya için";
+          break;
+        }
+      }
+    }
+    if (scopeType === "GENEL") {
+      for (const keyword of KAPSAM_KEYWORDS.OZEL) {
+        if (lowerText.includes(keyword)) {
+          scopeType = "OZEL";
+          scopeDescription = "Özel kapsam";
+          break;
+        }
+      }
+    }
+
+    // Avukat adı (birden fazla olabilir)
+    const lawyerRegex = /(?:av\.|avukat)\s*([A-ZĞÜŞİÖÇ][a-zğüşıöç]+\s+[A-ZĞÜŞİÖÇ][a-zğüşıöç]+)/gi;
+    const lawyers: { name: string; barNumber?: string; barCity?: string }[] = [];
+    let lawyerMatch;
+    while ((lawyerMatch = lawyerRegex.exec(text)) !== null) {
+      lawyers.push({ name: lawyerMatch[1] });
+    }
 
     // Baro sicil no
     const barMatch = text.match(/(?:baro\s*(?:sicil)?\s*(?:no|numarası)?)\s*[:\s]*(\d+)/i);
     const lawyerBarNumber = barMatch ? barMatch[1] : undefined;
+    
+    // İlk avukata baro sicil no ekle
+    if (lawyers.length > 0 && lawyerBarNumber) {
+      lawyers[0].barNumber = lawyerBarNumber;
+    }
 
     const clientType = companyName || vkn ? "COMPANY" : "PERSON";
 
@@ -1174,8 +1341,15 @@ JSON formatında yanıt ver:
       poaNumber,
       poaDate,
       notaryName,
-      lawyerName,
-      lawyerBarNumber,
+      // Süreli vekalet
+      isLimited,
+      validUntil,
+      scopeType,
+      scopeDescription,
+      // Avukatlar
+      lawyers: lawyers.length > 0 ? lawyers : undefined,
+      lawyerName: lawyers[0]?.name,
+      lawyerBarNumber: lawyers[0]?.barNumber,
       confidence: 40,
       rawText: text.substring(0, 1000),
     };
@@ -1243,11 +1417,16 @@ JSON formatında yanıt ver:
   "canWaive": true/false (feragat yetkisi var mı),
   "canSettle": true/false (sulh yetkisi var mı),
   "canRelease": true/false (ibra yetkisi var mı),
-  "lawyerName": "Avukat adı soyadı",
-  "lawyerBarNumber": "Baro sicil no",
-  "lawyerBarCity": "Kayıtlı baro",
+  "isLimited": true/false (süreli vekalet mi - "tarihine kadar geçerlidir" ifadesi var mı),
+  "validUntil": "Geçerlilik bitiş tarihi (YYYY-MM-DD) veya null",
+  "scopeType": "GENEL|ICRA_TAKIP|BU_DOSYA|OZEL",
+  "scopeDescription": "Kapsam açıklaması",
+  "lawyers": [{"name": "Avukat adı", "barNumber": "Sicil no", "barCity": "Baro"}],
   "confidence": 0-100 (ne kadar emin olduğun)
 }
+
+SÜRELİ VEKALET: "...tarihine kadar geçerlidir", "süreli vekalet" gibi ifadeler varsa isLimited: true yap.
+KAPSAM: İcra takip işlemleri için ise ICRA_TAKIP, belirli dosya için ise BU_DOSYA, özel kapsam ise OZEL, genel ise GENEL.
 
 Sadece JSON döndür, başka açıklama ekleme.`
               },
@@ -1276,6 +1455,16 @@ Sadece JSON döndür, başka açıklama ekleme.`
 
       const parsed = JSON.parse(jsonStr.trim());
 
+      // Çoklu avukat desteği
+      let lawyers = parsed.lawyers;
+      if (!lawyers && parsed.lawyerName) {
+        lawyers = [{
+          name: parsed.lawyerName,
+          barNumber: parsed.lawyerBarNumber,
+          barCity: parsed.lawyerBarCity,
+        }];
+      }
+
       return {
         clientType: parsed.clientType || "PERSON",
         firstName: parsed.firstName || undefined,
@@ -1297,9 +1486,16 @@ Sadece JSON döndür, başka açıklama ekleme.`
         canWaive: parsed.canWaive ?? false,
         canSettle: parsed.canSettle ?? false,
         canRelease: parsed.canRelease ?? false,
-        lawyerName: parsed.lawyerName || undefined,
-        lawyerBarNumber: parsed.lawyerBarNumber || undefined,
-        lawyerBarCity: parsed.lawyerBarCity || undefined,
+        // Süreli vekalet
+        isLimited: parsed.isLimited ?? false,
+        validUntil: parsed.validUntil || undefined,
+        scopeType: parsed.scopeType || "GENEL",
+        scopeDescription: parsed.scopeDescription || undefined,
+        // Çoklu avukat
+        lawyers: lawyers || undefined,
+        lawyerName: parsed.lawyerName || lawyers?.[0]?.name || undefined,
+        lawyerBarNumber: parsed.lawyerBarNumber || lawyers?.[0]?.barNumber || undefined,
+        lawyerBarCity: parsed.lawyerBarCity || lawyers?.[0]?.barCity || undefined,
         confidence: parsed.confidence || 70,
       };
     } catch (error: any) {

@@ -118,7 +118,7 @@ export class NotificationService {
     });
 
     // Tebligat teslim edildiyse dosya aşamasını güncelle
-    if (status === NotificationStatus.DELIVERED) {
+    if (status === NotificationStatus.DELIVERED && notification.caseId) {
       await this.prisma.case.update({
         where: { id: notification.caseId },
         data: { workflowStage: WorkflowStage.WAITING_RESPONSE },

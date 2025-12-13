@@ -29,6 +29,10 @@ import { StaffModule } from "./modules/staff/staff.module";
 import { ClientNotificationModule } from "./modules/client-notification/client-notification.module";
 import { GreetingModule } from "./modules/greeting/greeting.module";
 import { ExportImportModule } from "./modules/export-import/export-import.module";
+import { PoaModule } from "./modules/poa/poa.module";
+import { PortalModule } from "./modules/portal/portal.module";
+import { CalendarModule } from "./modules/calendar/calendar.module";
+import { AuditModule } from "./modules/audit/audit.module";
 
 @Module({
   imports: [
@@ -64,6 +68,10 @@ import { ExportImportModule } from "./modules/export-import/export-import.module
     ClientNotificationModule,
     GreetingModule,
     ExportImportModule,
+    PoaModule,
+    PortalModule,
+    CalendarModule,
+    AuditModule,
   ],
 })
 export class AppModule {}

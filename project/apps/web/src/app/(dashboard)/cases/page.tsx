@@ -3,9 +3,10 @@
 import { useState, useEffect } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
-import { Plus, Search, Filter, FileText, Loader2 } from "lucide-react";
+import { Plus, Search, FileText, Loader2, Files } from "lucide-react";
 import { Badge } from "@hukuk/ui";
 import { api } from "@/lib/api";
+import { BulkDocumentGenerator } from "@/components/case";
 
 interface CaseItem {
   id: string;
@@ -52,6 +53,8 @@ export default function CasesPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState(urlStatus || "all");
+  const [selectedCases, setSelectedCases] = useState<string[]>([]);
+  const [showBulkDocModal, setShowBulkDocModal] = useState(false);
 
   const pageTitle = "Eski Takipler";
 
@@ -87,6 +90,22 @@ export default function CasesPage() {
       c.debtors?.some((d) => d.debtor.name.toLowerCase().includes(searchLower))
     );
   });
+
+  const toggleSelectCase = (caseId: string) => {
+    setSelectedCases(prev => 
+      prev.includes(caseId) 
+        ? prev.filter(id => id !== caseId)
+        : [...prev, caseId]
+    );
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedCases.length === filteredCases.length) {
+      setSelectedCases([]);
+    } else {
+      setSelectedCases(filteredCases.map(c => c.id));
+    }
+  };
 
   return (
     <div className="h-full flex flex-col overflow-hidden">
@@ -127,6 +146,15 @@ export default function CasesPage() {
           <option value="CLOSED">Kapalı</option>
           <option value="SUSPENDED">Askıda</option>
         </select>
+        {selectedCases.length > 0 && (
+          <button
+            onClick={() => setShowBulkDocModal(true)}
+            className="inline-flex items-center gap-1 bg-blue-600 text-white px-3 py-1.5 text-sm rounded-lg hover:bg-blue-700"
+          >
+            <Files className="h-4 w-4" />
+            Toplu Belge ({selectedCases.length})
+          </button>
+        )}
       </div>
 
       {/* Table */}
@@ -140,6 +168,14 @@ export default function CasesPage() {
             <table className="w-full text-sm">
               <thead className="bg-muted/50 sticky top-0">
                 <tr>
+                  <th className="text-left px-3 py-2 font-medium w-8">
+                    <input
+                      type="checkbox"
+                      checked={selectedCases.length === filteredCases.length && filteredCases.length > 0}
+                      onChange={toggleSelectAll}
+                      className="rounded"
+                    />
+                  </th>
                   <th className="text-left px-3 py-2 font-medium">Dosya No</th>
                   <th className="text-left px-3 py-2 font-medium">Tür</th>
                   <th className="text-left px-3 py-2 font-medium">Müvekkil</th>
@@ -151,7 +187,15 @@ export default function CasesPage() {
               </thead>
               <tbody className="divide-y">
                 {filteredCases.map((caseItem) => (
-                  <tr key={caseItem.id} className="hover:bg-muted/30">
+                  <tr key={caseItem.id} className={`hover:bg-muted/30 ${selectedCases.includes(caseItem.id) ? 'bg-blue-50' : ''}`}>
+                    <td className="px-3 py-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedCases.includes(caseItem.id)}
+                        onChange={() => toggleSelectCase(caseItem.id)}
+                        className="rounded"
+                      />
+                    </td>
                     <td className="px-3 py-2">
                       <Link href={`/cases/${caseItem.id}`} className="flex items-center gap-1 text-primary hover:underline">
                         <FileText className="h-3 w-3" />
@@ -191,6 +235,13 @@ export default function CasesPage() {
           </div>
         )}
       </div>
+
+      {/* Bulk Document Generator Modal */}
+      <BulkDocumentGenerator
+        selectedCaseIds={selectedCases}
+        isOpen={showBulkDocModal}
+        onClose={() => setShowBulkDocModal(false)}
+      />
     </div>
   );
 }

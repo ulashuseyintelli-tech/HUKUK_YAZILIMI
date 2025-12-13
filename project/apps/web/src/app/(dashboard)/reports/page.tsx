@@ -11,7 +11,14 @@ import {
   Loader2,
   TrendingUp,
   DollarSign,
+  PieChart,
+  Scale,
+  Sliders,
+  Clock,
+  Mail,
 } from "lucide-react";
+import { AdvancedStats } from "@/components/dashboard/advanced-stats";
+import { ClientPerformanceReport, LawyerWorkloadReport, CustomReportBuilder, PdfExportModal, ScheduledReports, EmailReportModal } from "@/components/reports";
 
 interface DashboardStats {
   totalCases: number;
@@ -83,6 +90,8 @@ export default function ReportsPage() {
   // Toplu güncelleme state'leri
   const [selectedCases, setSelectedCases] = useState<Set<string>>(new Set());
   const [showBatchPanel, setShowBatchPanel] = useState(false);
+  const [showPdfModal, setShowPdfModal] = useState(false);
+  const [showEmailModal, setShowEmailModal] = useState(false);
   const [batchUpdates, setBatchUpdates] = useState({
     riskId: "",
     durumEtiketiId: "",
@@ -268,6 +277,11 @@ export default function ReportsPage() {
 
   const tabs = [
     { id: "dashboard", label: "Genel Bakış", icon: BarChart3 },
+    { id: "istatistik", label: "Gelişmiş İstatistik", icon: PieChart },
+    { id: "muvekkil", label: "Müvekkil Performans", icon: Users },
+    { id: "avukat", label: "Avukat İş Yükü", icon: Scale },
+    { id: "ozel", label: "Özel Rapor", icon: Sliders },
+    { id: "zamanlama", label: "Zamanlanmış", icon: Clock },
     { id: "dosyalar", label: "Dosya Listesi", icon: FileText },
     { id: "personel", label: "Personel Performans", icon: Users },
     { id: "risk", label: "Risk Analizi", icon: AlertTriangle },
@@ -276,9 +290,27 @@ export default function ReportsPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold">Raporlar</h1>
-        <p className="text-muted-foreground">Dosya ve performans analizleri</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Raporlar</h1>
+          <p className="text-muted-foreground">Dosya ve performans analizleri</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowEmailModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+          >
+            <Mail className="h-4 w-4" />
+            E-posta Gönder
+          </button>
+          <button
+            onClick={() => setShowPdfModal(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700"
+          >
+            <FileText className="h-4 w-4" />
+            PDF Rapor
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -307,6 +339,31 @@ export default function ReportsPage() {
         </div>
       ) : (
         <>
+          {/* Gelişmiş İstatistikler */}
+          {activeTab === "istatistik" && (
+            <AdvancedStats />
+          )}
+
+          {/* Müvekkil Performans */}
+          {activeTab === "muvekkil" && (
+            <ClientPerformanceReport />
+          )}
+
+          {/* Avukat İş Yükü */}
+          {activeTab === "avukat" && (
+            <LawyerWorkloadReport />
+          )}
+
+          {/* Özel Rapor Oluşturucu */}
+          {activeTab === "ozel" && (
+            <CustomReportBuilder />
+          )}
+
+          {/* Zamanlanmış Raporlar */}
+          {activeTab === "zamanlama" && (
+            <ScheduledReports />
+          )}
+
           {/* Dashboard */}
           {activeTab === "dashboard" && dashboardStats && (
             <div className="space-y-6">
@@ -874,6 +931,19 @@ export default function ReportsPage() {
           </div>
         </div>
       )}
+
+      {/* PDF Export Modal */}
+      <PdfExportModal
+        isOpen={showPdfModal}
+        onClose={() => setShowPdfModal(false)}
+        caseIds={selectedCases.size > 0 ? Array.from(selectedCases) : undefined}
+      />
+
+      {/* Email Report Modal */}
+      <EmailReportModal
+        isOpen={showEmailModal}
+        onClose={() => setShowEmailModal(false)}
+      />
     </div>
   );
 }

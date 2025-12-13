@@ -2,7 +2,7 @@ import { Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { PrismaService } from "../../prisma/prisma.service";
 import { WorkflowEngine } from "./workflow-engine.service";
-import { CaseStatus, WorkflowStage, NotificationStatus, LegalCaseStatus } from "@prisma/client";
+import { CaseStatus, WorkflowStage, NotificationStatus, LegalCaseStatus, PoaStatus } from "@prisma/client";
 
 // Otomasyon açık olan statüler (C.19)
 const AUTOMATION_ENABLED_STATUSES: LegalCaseStatus[] = [
@@ -142,7 +142,7 @@ export class AutomationService {
       });
 
       // Dosya otomatik moddaysa işle
-      if (notification.case.isAutoMode) {
+      if (notification.case?.isAutoMode && notification.caseId) {
         await this.workflowEngine.processCase(notification.caseId);
       }
     }
@@ -150,6 +150,203 @@ export class AutomationService {
     this.logger.log(
       `Processed ${expiredNotifications.length} expired notifications`
     );
+  }
+
+  // Her gün saat 2'de süresi dolan vekaletleri EXPIRED olarak işaretle
+  @Cron(CronExpression.EVERY_DAY_AT_2AM)
+  async updateExpiredPoas(): Promise<void> {
+    this.logger.log("Checking for expired powers of attorney...");
+
+    const now = new Date();
+
+    const result = await this.prisma.clientPowerOfAttorney.updateMany({
+      where: {
+        isLimited: true,
+        status: PoaStatus.ACTIVE,
+        validUntil: { lt: now },
+      },
+      data: {
+        status: PoaStatus.EXPIRED,
+      },
+    });
+
+    if (result.count > 0) {
+      this.logger.log(`Marked ${result.count} powers of attorney as EXPIRED`);
+    } else {
+      this.logger.log("No expired powers of attorney found");
+    }
+  }
+
+  // Her gün saat 9'da süresi dolmak üzere olan vekaletler için bildirim gönder
+  @Cron(CronExpression.EVERY_DAY_AT_9AM)
+  async sendExpiringPoaNotifications(): Promise<void> {
+    this.logger.log("Checking for expiring powers of attorney to notify...");
+
+    const now = new Date();
+    const in7Days = new Date();
+    in7Days.setDate(in7Days.getDate() + 7);
+    const in30Days = new Date();
+    in30Days.setDate(in30Days.getDate() + 30);
+
+    // 7 gün içinde süresi dolacak vekaletleri bul
+    const expiringPoas = await this.prisma.clientPowerOfAttorney.findMany({
+      where: {
+        isLimited: true,
+        status: PoaStatus.ACTIVE,
+        validUntil: {
+          gte: now,
+          lte: in30Days,
+        },
+      },
+      include: {
+        client: {
+          select: { id: true, displayName: true, tenantId: true },
+        },
+        lawyers: {
+          include: {
+            lawyer: {
+              select: { id: true, name: true, surname: true, email: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (expiringPoas.length === 0) {
+      this.logger.log("No expiring powers of attorney found");
+      return;
+    }
+
+    // Tenant bazında grupla
+    const poasByTenant = new Map<string, typeof expiringPoas>();
+    for (const poa of expiringPoas) {
+      const tenantId = poa.client.tenantId;
+      if (!poasByTenant.has(tenantId)) {
+        poasByTenant.set(tenantId, []);
+      }
+      poasByTenant.get(tenantId)!.push(poa);
+    }
+
+    // Her tenant için bildirim oluştur
+    for (const [tenantId, poas] of poasByTenant) {
+      try {
+        // Tenant'ın admin kullanıcısını bul
+        const adminUser = await this.prisma.user.findFirst({
+          where: { tenantId, role: 'ADMIN' },
+          select: { id: true, email: true },
+        });
+
+        if (!adminUser?.email) continue;
+
+        // Bildirim içeriği oluştur
+        const urgentPoas = poas.filter(p => {
+          const daysLeft = Math.ceil((new Date(p.validUntil!).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+          return daysLeft <= 7;
+        });
+
+        const warningPoas = poas.filter(p => {
+          const daysLeft = Math.ceil((new Date(p.validUntil!).getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+          return daysLeft > 7 && daysLeft <= 30;
+        });
+
+        // Bildirim kuyruğuna ekle
+        await this.prisma.notificationQueue.create({
+          data: {
+            tenantId,
+            type: 'POA_EXPIRING',
+            channel: 'EMAIL',
+            recipient: adminUser.email,
+            subject: `⚠️ Süresi Dolmak Üzere Olan Vekaletler (${poas.length} adet)`,
+            content: this.buildPoaExpiringEmailBody(urgentPoas, warningPoas),
+            status: NotificationStatus.PENDING,
+            metadata: {
+              urgentCount: urgentPoas.length,
+              warningCount: warningPoas.length,
+              poaIds: poas.map(p => p.id),
+            },
+          },
+        });
+
+        this.logger.log(`Created POA expiring notification for tenant ${tenantId}: ${poas.length} POAs`);
+      } catch (error) {
+        this.logger.error(`Failed to create notification for tenant ${tenantId}: ${error}`);
+      }
+    }
+  }
+
+  // Vekalet süresi dolacak e-posta içeriği oluştur
+  private buildPoaExpiringEmailBody(
+    urgentPoas: any[],
+    warningPoas: any[],
+  ): string {
+    let html = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #d97706;">⚠️ Süresi Dolmak Üzere Olan Vekaletler</h2>
+        <p>Aşağıdaki vekaletlerin süresi dolmak üzeredir. Lütfen gerekli işlemleri yapınız.</p>
+    `;
+
+    if (urgentPoas.length > 0) {
+      html += `
+        <h3 style="color: #dc2626; margin-top: 20px;">🔴 Acil (7 gün içinde)</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+          <tr style="background: #fef2f2;">
+            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Müvekkil</th>
+            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Avukat(lar)</th>
+            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Bitiş Tarihi</th>
+            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Kalan</th>
+          </tr>
+      `;
+      for (const poa of urgentPoas) {
+        const daysLeft = Math.ceil((new Date(poa.validUntil).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        const lawyerNames = poa.lawyers?.map((l: any) => `${l.lawyer.name} ${l.lawyer.surname}`).join(', ') || '-';
+        html += `
+          <tr>
+            <td style="padding: 8px; border: 1px solid #ddd;">${poa.client.displayName}</td>
+            <td style="padding: 8px; border: 1px solid #ddd;">${lawyerNames}</td>
+            <td style="padding: 8px; border: 1px solid #ddd;">${new Date(poa.validUntil).toLocaleDateString('tr-TR')}</td>
+            <td style="padding: 8px; border: 1px solid #ddd; color: #dc2626; font-weight: bold;">${daysLeft} gün</td>
+          </tr>
+        `;
+      }
+      html += '</table>';
+    }
+
+    if (warningPoas.length > 0) {
+      html += `
+        <h3 style="color: #d97706; margin-top: 20px;">🟡 Uyarı (30 gün içinde)</h3>
+        <table style="width: 100%; border-collapse: collapse; margin-bottom: 20px;">
+          <tr style="background: #fffbeb;">
+            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Müvekkil</th>
+            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Avukat(lar)</th>
+            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Bitiş Tarihi</th>
+            <th style="padding: 8px; border: 1px solid #ddd; text-align: left;">Kalan</th>
+          </tr>
+      `;
+      for (const poa of warningPoas) {
+        const daysLeft = Math.ceil((new Date(poa.validUntil).getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+        const lawyerNames = poa.lawyers?.map((l: any) => `${l.lawyer.name} ${l.lawyer.surname}`).join(', ') || '-';
+        html += `
+          <tr>
+            <td style="padding: 8px; border: 1px solid #ddd;">${poa.client.displayName}</td>
+            <td style="padding: 8px; border: 1px solid #ddd;">${lawyerNames}</td>
+            <td style="padding: 8px; border: 1px solid #ddd;">${new Date(poa.validUntil).toLocaleDateString('tr-TR')}</td>
+            <td style="padding: 8px; border: 1px solid #ddd; color: #d97706;">${daysLeft} gün</td>
+          </tr>
+        `;
+      }
+      html += '</table>';
+    }
+
+    html += `
+        <p style="margin-top: 20px; color: #666;">
+          Bu bildirim otomatik olarak gönderilmiştir. Vekaletleri yönetmek için 
+          <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/settings/clients">Müvekkiller</a> 
+          sayfasını ziyaret edin.
+        </p>
+      </div>
+    `;
+
+    return html;
   }
 
   // Her gün gece yarısı risk skorlarını güncelle

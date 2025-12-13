@@ -1,5 +1,6 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { PoaService } from '../poa/poa.service';
 
 /**
  * UYAP Entegrasyon Servisi
@@ -25,6 +26,7 @@ export interface PaymentOrderRequest {
   caseId: string;
   executionOfficeCode: string;
   creditor: {
+    id?: string; // Client ID - vekalet kontrolü için
     name: string;
     identityNo?: string;
     address?: string;
@@ -34,10 +36,13 @@ export interface PaymentOrderRequest {
     identityNo?: string;
     address?: string;
   };
+  lawyerId?: string; // Vekalet kontrolü için
+  tenantId?: string; // Vekalet kontrolü için
   amount: number;
   currency: string;
   interestType?: string;
   interestStartDate?: Date;
+  skipPoaCheck?: boolean; // Test için vekalet kontrolünü atla
 }
 
 export interface TebligatStatus {
@@ -52,19 +57,131 @@ export interface HacizRequest {
   targetType: 'BANK' | 'VEHICLE' | 'PROPERTY' | 'SALARY';
   targetDetails: Record<string, any>;
   amount: number;
+  clientId?: string; // Vekalet kontrolü için
+  lawyerId?: string; // Vekalet kontrolü için
+  tenantId?: string; // Vekalet kontrolü için
+  skipPoaCheck?: boolean; // Test için vekalet kontrolünü atla
+}
+
+export interface PoaValidationResult {
+  isValid: boolean;
+  message: string;
+  daysRemaining?: number;
+  poaId?: string;
 }
 
 @Injectable()
 export class UyapService {
   private readonly logger = new Logger(UyapService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    @Inject(forwardRef(() => PoaService))
+    private poaService: PoaService,
+  ) {}
+
+  /**
+   * Vekalet geçerliliğini kontrol et (UYAP işlemlerinden önce)
+   * PoaService'i kullanır
+   */
+  async validatePowerOfAttorney(clientId: string, lawyerId: string, tenantId: string): Promise<PoaValidationResult> {
+    if (!clientId || !lawyerId) {
+      return {
+        isValid: false,
+        message: 'Müvekkil veya avukat bilgisi eksik',
+      };
+    }
+
+    const result = await this.poaService.checkValidPoa(clientId, lawyerId, tenantId);
+
+    if (!result.isValid) {
+      // Avukat ve müvekkil isimlerini al
+      const [client, lawyer] = await Promise.all([
+        this.prisma.client.findUnique({ where: { id: clientId }, select: { displayName: true } }),
+        this.prisma.lawyer.findUnique({ where: { id: lawyerId }, select: { name: true, surname: true } }),
+      ]);
+
+      return {
+        isValid: false,
+        message: `${lawyer?.name} ${lawyer?.surname} için ${client?.displayName} müvekkiline ait geçerli vekalet bulunamadı`,
+      };
+    }
+
+    return {
+      isValid: true,
+      message: 'Geçerli vekalet mevcut',
+      daysRemaining: result.daysRemaining,
+      poaId: result.poa?.id,
+    };
+  }
+
+  /**
+   * Takip için tüm müvekkil-avukat kombinasyonlarının vekaletlerini kontrol et
+   */
+  async validateCasePoaForUyap(caseId: string, tenantId: string): Promise<{ isValid: boolean; errors: string[] }> {
+    const caseData = await this.prisma.case.findUnique({
+      where: { id: caseId },
+      include: {
+        caseClients: { include: { client: true } },
+        lawyers: { include: { lawyer: true } },
+      },
+    });
+
+    if (!caseData) {
+      return { isValid: false, errors: ['Takip bulunamadı'] };
+    }
+
+    const errors: string[] = [];
+
+    // Her müvekkil-avukat kombinasyonu için vekalet kontrolü
+    for (const clientEntry of caseData.caseClients) {
+      for (const lawyerEntry of caseData.lawyers) {
+        const result = await this.validatePowerOfAttorney(
+          clientEntry.clientId,
+          lawyerEntry.lawyerId,
+          tenantId,
+        );
+
+        if (!result.isValid) {
+          errors.push(result.message);
+        } else if (result.daysRemaining !== undefined && result.daysRemaining <= 7) {
+          // 7 günden az kaldıysa uyarı (ama bloklamaz)
+          this.logger.warn(
+            `Vekalet uyarısı: ${result.daysRemaining} gün kaldı - Case: ${caseId}`,
+          );
+        }
+      }
+    }
+
+    return {
+      isValid: errors.length === 0,
+      errors,
+    };
+  }
 
   /**
    * UYAP'a ödeme emri gönder
    * Şimdilik stub - gerçek implementasyon UYAP API açıldığında yapılacak
    */
   async sendPaymentOrder(request: PaymentOrderRequest): Promise<UyapResponse> {
+    // Vekalet kontrolü
+    if (!request.skipPoaCheck && request.creditor.id && request.lawyerId && request.tenantId) {
+      const poaValidation = await this.validatePowerOfAttorney(
+        request.creditor.id,
+        request.lawyerId,
+        request.tenantId,
+      );
+
+      if (!poaValidation.isValid) {
+        this.logger.error(`UYAP işlemi engellendi - Vekalet hatası: ${poaValidation.message}`);
+        throw new BadRequestException({
+          code: 'POA_VALIDATION_FAILED',
+          message: `UYAP işlemi yapılamaz: ${poaValidation.message}`,
+          details: 'Geçerli vekalet olmadan UYAP\'a gönderim yapılamaz',
+        });
+      }
+    }
+
     const requestId = await this.logRequest('sendPaymentOrder', request);
 
     try {
@@ -137,6 +254,24 @@ export class UyapService {
    * Banka, araç, taşınmaz veya maaş haczi
    */
   async pushHacizRequest(request: HacizRequest): Promise<UyapResponse> {
+    // Vekalet kontrolü
+    if (!request.skipPoaCheck && request.clientId && request.lawyerId && request.tenantId) {
+      const poaValidation = await this.validatePowerOfAttorney(
+        request.clientId,
+        request.lawyerId,
+        request.tenantId,
+      );
+
+      if (!poaValidation.isValid) {
+        this.logger.error(`UYAP Haciz işlemi engellendi - Vekalet hatası: ${poaValidation.message}`);
+        throw new BadRequestException({
+          code: 'POA_VALIDATION_FAILED',
+          message: `Haciz talebi yapılamaz: ${poaValidation.message}`,
+          details: 'Geçerli vekalet olmadan haciz talebi gönderilemez',
+        });
+      }
+    }
+
     const requestId = await this.logRequest('pushHacizRequest', request);
 
     try {

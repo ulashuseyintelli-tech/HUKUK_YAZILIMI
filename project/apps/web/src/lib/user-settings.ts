@@ -18,6 +18,24 @@ export interface UserSettings {
   // Varsayılan Değerler
   defaultExecutionPath: string;
   defaultCity: string;
+  
+  // Dashboard Widget'ları
+  dashboardWidgets: {
+    stats: boolean;
+    expiringPoas: boolean;
+    riskDistribution: boolean;
+    automationStatus: boolean;
+    upcomingActions: boolean;
+    recentActions: boolean;
+    aiSuggestions: boolean;
+    calendar: boolean;
+  };
+  
+  // Dashboard Widget Sırası
+  dashboardWidgetOrder: string[];
+  
+  // Dashboard Düzenleme Kilidi
+  dashboardLocked: boolean;
 }
 
 const DEFAULT_SETTINGS: UserSettings = {
@@ -29,6 +47,26 @@ const DEFAULT_SETTINGS: UserSettings = {
   defaultAutoModeEnabled: true,
   defaultExecutionPath: 'HACIZ',
   defaultCity: '',
+  dashboardWidgets: {
+    stats: true,
+    expiringPoas: true,
+    riskDistribution: true,
+    automationStatus: true,
+    upcomingActions: true,
+    recentActions: true,
+    aiSuggestions: true,
+    calendar: true,
+  },
+  dashboardWidgetOrder: [
+    'quickSummary',
+    'recentFavorites',
+    'expiringPoas',
+    'stats',
+    'riskAutomation',
+    'activityEvents',
+    'aiSuggestions',
+  ],
+  dashboardLocked: true,
 };
 
 const STORAGE_KEY = 'hukuk_user_settings';

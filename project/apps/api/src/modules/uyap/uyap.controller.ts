@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
 import { UyapService } from './uyap.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
@@ -6,6 +6,40 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 @UseGuards(JwtAuthGuard)
 export class UyapController {
   constructor(private uyapService: UyapService) {}
+
+  /**
+   * Vekalet geçerliliğini kontrol et (UYAP işlemi öncesi)
+   * @query clientId - Müvekkil ID
+   * @query lawyerId - Avukat ID
+   */
+  @Get('poa/validate')
+  async validatePoa(
+    @Query('clientId') clientId: string,
+    @Query('lawyerId') lawyerId: string,
+    @Req() req: any,
+  ) {
+    const tenantId = req.user?.tenantId;
+    const result = await this.uyapService.validatePowerOfAttorney(clientId, lawyerId, tenantId);
+    return {
+      ...result,
+      canProceedToUyap: result.isValid,
+    };
+  }
+
+  /**
+   * Takip için tüm vekaletleri kontrol et (UYAP gönderimi öncesi)
+   * @param caseId - Takip ID
+   */
+  @Get('poa/validate/case/:caseId')
+  async validateCasePoa(@Param('caseId') caseId: string, @Req() req: any) {
+    const tenantId = req.user?.tenantId;
+    const result = await this.uyapService.validateCasePoaForUyap(caseId, tenantId);
+    return {
+      ...result,
+      canProceedToUyap: result.isValid,
+      errorCount: result.errors.length,
+    };
+  }
 
   /**
    * UYAP bağlantı durumu

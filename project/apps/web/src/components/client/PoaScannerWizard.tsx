@@ -27,6 +27,17 @@ interface PoaScanResult {
   lawyerName?: string;
   lawyerBarNumber?: string;
   lawyerBarCity?: string;
+  // Süreli vekalet bilgileri
+  isLimited?: boolean;
+  validUntil?: string;
+  scopeType?: "GENEL" | "ICRA_TAKIP" | "BU_DOSYA" | "OZEL";
+  scopeDescription?: string;
+  // Çoklu avukat
+  lawyers?: {
+    name: string;
+    barNumber?: string;
+    barCity?: string;
+  }[];
   confidence: number;
   rawText?: string;
 }
@@ -384,15 +395,71 @@ export function PoaScannerWizard({ onScanComplete, onClose, compact = false }: P
                     </span>
                   </p>
                 )}
-                {result.lawyerName && (
-                  <p>
-                    <span className="text-gray-500">Vekil:</span>{" "}
-                    <span>
-                      {result.lawyerName}
-                      {result.lawyerBarNumber && ` #${result.lawyerBarNumber}`}
+                
+                {/* Süreli Vekalet Bilgisi */}
+                <div className="pt-2 border-t mt-2">
+                  <p className="text-gray-500 mb-1">Geçerlilik:</p>
+                  {result.isLimited ? (
+                    <div className="flex items-center gap-1">
+                      <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-xs font-medium">
+                        Süreli Vekalet
+                      </span>
+                      {result.validUntil && (
+                        <span className="text-amber-700 text-xs">
+                          {new Date(result.validUntil).toLocaleDateString("tr-TR")}&apos;e kadar
+                        </span>
+                      )}
+                    </div>
+                  ) : (
+                    <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs">
+                      Süresiz
                     </span>
-                  </p>
+                  )}
+                </div>
+
+                {/* Kapsam */}
+                {result.scopeType && result.scopeType !== "GENEL" && (
+                  <div className="pt-1">
+                    <p className="text-gray-500 mb-1">Kapsam:</p>
+                    <span className={`px-1.5 py-0.5 rounded text-xs ${
+                      result.scopeType === "ICRA_TAKIP" ? "bg-blue-100 text-blue-700" :
+                      result.scopeType === "BU_DOSYA" ? "bg-purple-100 text-purple-700" :
+                      "bg-gray-100 text-gray-700"
+                    }`}>
+                      {result.scopeType === "ICRA_TAKIP" ? "İcra Takipleri" :
+                       result.scopeType === "BU_DOSYA" ? "Bu Dosya İçin" :
+                       result.scopeType === "OZEL" ? "Özel Kapsam" : "Genel"}
+                    </span>
+                    {result.scopeDescription && (
+                      <p className="text-gray-500 text-xs mt-1">{result.scopeDescription}</p>
+                    )}
+                  </div>
                 )}
+
+                {/* Avukatlar */}
+                <div className="pt-2 border-t mt-2">
+                  <p className="text-gray-500 mb-1">Vekil(ler):</p>
+                  {result.lawyers && result.lawyers.length > 0 ? (
+                    <div className="space-y-1">
+                      {result.lawyers.map((lawyer, idx) => (
+                        <p key={idx} className="text-xs">
+                          <span className="font-medium">{lawyer.name}</span>
+                          {lawyer.barNumber && <span className="text-gray-500"> #{lawyer.barNumber}</span>}
+                          {lawyer.barCity && <span className="text-gray-400"> ({lawyer.barCity})</span>}
+                        </p>
+                      ))}
+                    </div>
+                  ) : result.lawyerName ? (
+                    <p>
+                      <span className="font-medium">{result.lawyerName}</span>
+                      {result.lawyerBarNumber && <span className="text-gray-500"> #{result.lawyerBarNumber}</span>}
+                    </p>
+                  ) : (
+                    <span className="text-gray-400">Tespit edilemedi</span>
+                  )}
+                </div>
+
+                {/* Yetkiler */}
                 <div className="pt-2 border-t mt-2">
                   <p className="text-gray-500 mb-1">Yetkiler:</p>
                   <div className="flex flex-wrap gap-1">
@@ -428,7 +495,7 @@ export function PoaScannerWizard({ onScanComplete, onClose, compact = false }: P
             </div>
           </div>
 
-          {/* Uyarı */}
+          {/* Uyarılar */}
           {result.confidence < 70 && (
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg flex items-start gap-2">
               <AlertCircle className="h-4 w-4 text-amber-600 flex-shrink-0 mt-0.5" />
@@ -437,6 +504,20 @@ export function PoaScannerWizard({ onScanComplete, onClose, compact = false }: P
                 <p>
                   Bazı bilgiler doğru çıkarılamamış olabilir. Lütfen bilgileri
                   kontrol edin ve gerekirse düzeltin.
+                </p>
+              </div>
+            </div>
+          )}
+          
+          {/* Süreli vekalet uyarısı */}
+          {result.isLimited && result.validUntil && (
+            <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-start gap-2">
+              <AlertCircle className="h-4 w-4 text-blue-600 flex-shrink-0 mt-0.5" />
+              <div className="text-xs text-blue-700">
+                <p className="font-medium">Süreli Vekalet Tespit Edildi</p>
+                <p>
+                  Bu vekalet <strong>{new Date(result.validUntil).toLocaleDateString("tr-TR")}</strong> tarihine kadar geçerlidir.
+                  Süre dolduğunda sistem sizi uyaracaktır.
                 </p>
               </div>
             </div>

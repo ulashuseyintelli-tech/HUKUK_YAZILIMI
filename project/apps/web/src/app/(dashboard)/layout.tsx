@@ -2,6 +2,8 @@
 
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
+import { KeyboardShortcuts } from "@/components/keyboard-shortcuts";
+import { QuickActions } from "@/components/quick-actions";
 import { useAuth } from "@/lib/auth-context";
 import { Loader2 } from "lucide-react";
 
@@ -27,10 +29,12 @@ export default function DashboardLayout({
   return (
     <div className="h-screen bg-slate-50">
       <Sidebar />
-      {/* Sidebar genişlikleri: sm:w-56, md:w-60, lg:w-64 */}
-      <div className="sm:pl-56 md:pl-60 lg:pl-64 h-screen flex flex-col transition-all duration-300">
+      <KeyboardShortcuts />
+      <QuickActions />
+      {/* Mobilde sidebar yok, sm ve üstünde sidebar padding'i */}
+      <div className="pl-0 sm:pl-56 md:pl-60 lg:pl-64 h-screen flex flex-col transition-all duration-300">
         <Header />
-        <main className="flex-1 p-4 md:p-6 overflow-auto scrollbar-hide">{children}</main>
+        <main className="flex-1 p-3 sm:p-4 md:p-6 overflow-auto scrollbar-hide">{children}</main>
       </div>
     </div>
   );

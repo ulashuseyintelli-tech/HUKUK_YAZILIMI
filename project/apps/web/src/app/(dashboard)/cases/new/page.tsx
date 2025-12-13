@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, FileCheck } from "lucide-react";
 import { api } from "@/lib/api";
 import { FormMetadata, SubFormMetadata, FormCategory } from "@/types/form-metadata";
 import { WizardAnswers } from "@/types/wizard";
@@ -17,7 +17,7 @@ import { FormCard } from "@/components/case/FormCard";
 import { FormDetailModal } from "@/components/case/FormDetailModal";
 import { FrequentForms } from "@/components/case/FrequentForms";
 import { RecentForms } from "@/components/case/RecentForms";
-import { DocumentSourceSelector, DocumentSourceType, ClassificationResult } from "@/components/case/DocumentSourceSelector";
+import { DocumentSourceSelector, DocumentSourceType, ClassificationResult, PoaScanResult } from "@/components/case/DocumentSourceSelector";
 import { WizardResultCard } from "@/components/case/WizardResultCard";
 import { PoaScannerWizard } from "@/components/client/PoaScannerWizard";
 import { useFormHistory } from "@/hooks/useFormHistory";
@@ -138,6 +138,10 @@ export default function NewCasePage() {
   const [debtors, setDebtors] = useState<Party[]>([]);
   const [dues, setDues] = useState<DueItem[]>([]);
   const [lookups, setLookups] = useState<Lookups>({ takipTuru: [], asama: [], risk: [], borcluTipi: [], durumEtiketi: [], mahiyetTipi: [] });
+  
+  // Vekalet kontrolü state'leri
+  const [poaWarnings, setPoaWarnings] = useState<{ clientId: string; clientName: string; lawyerId: string; lawyerName: string; message: string; }[]>([]);
+  const [checkingPoa, setCheckingPoa] = useState(false);
   const [users, setUsers] = useState<{ id: string; name: string; surname: string; }[]>([]);
 
   useEffect(() => { loadExistingData(); }, []);
@@ -296,6 +300,143 @@ export default function NewCasePage() {
       setShowWizard(true);
     }
   };
+
+  // Vekaletname tarama sonucunu işle - müvekkil ve vekalet oluştur
+  const handlePoaScan = async (result: PoaScanResult) => {
+    try {
+      // 1. Müvekkil oluştur
+      const clientData = {
+        type: result.clientType,
+        firstName: result.firstName,
+        lastName: result.lastName,
+        companyName: result.companyName,
+        tckn: result.tckn,
+        vkn: result.vkn,
+        taxOffice: result.taxOffice,
+        phone: result.phone,
+        email: result.email,
+        address: result.address,
+        city: result.city,
+        district: result.district,
+        canCollect: result.canCollect,
+        canWaive: result.canWaive,
+        canSettle: result.canSettle,
+        canRelease: result.canRelease,
+      };
+      
+      const clientResponse = await api.post("/clients", clientData);
+      const savedClient = clientResponse.data || clientResponse;
+      
+      // 2. Vekalet oluştur
+      const poaData = {
+        clientId: savedClient.id,
+        notaryName: result.notaryName,
+        notaryCity: result.notaryCity,
+        journalNo: result.poaNumber,
+        poaNumber: result.poaNumber,
+        dateIssued: result.poaDate ? new Date(result.poaDate) : undefined,
+        isLimited: result.isLimited || false,
+        validUntil: result.validUntil ? new Date(result.validUntil) : undefined,
+        scopeType: result.scopeType || "GENEL",
+        scopeDescription: result.scopeDescription,
+        canCollect: result.canCollect,
+        canWaive: result.canWaive,
+        canSettle: result.canSettle,
+        canRelease: result.canRelease,
+        // Avukatları bul ve ekle
+        lawyerIds: [] as string[],
+      };
+      
+      // Avukatları eşleştir
+      if (result.lawyers && result.lawyers.length > 0) {
+        for (const lawyer of result.lawyers) {
+          const matchedLawyer = existingLawyers.find(
+            l => l.barNumber === lawyer.barNumber || 
+                 (l.name?.toLowerCase() === lawyer.name?.split(' ')[0]?.toLowerCase() && 
+                  l.surname?.toLowerCase() === lawyer.name?.split(' ').slice(1).join(' ')?.toLowerCase())
+          );
+          if (matchedLawyer) {
+            poaData.lawyerIds.push(matchedLawyer.id);
+          }
+        }
+      } else if (result.lawyerBarNumber) {
+        const matchedLawyer = existingLawyers.find(l => l.barNumber === result.lawyerBarNumber);
+        if (matchedLawyer) {
+          poaData.lawyerIds.push(matchedLawyer.id);
+        }
+      }
+      
+      await api.post("/poa", poaData);
+      
+      // 3. Müvekkil listesini yenile ve seçili olarak ekle
+      const clientsRes = await api.get("/clients");
+      setExistingClients(clientsRes.data?.data || []);
+      addExistingCreditor(savedClient);
+      
+      // 4. Bilgi mesajı göster
+      alert(`✅ Müvekkil "${savedClient.displayName}" ve vekalet kaydı başarıyla oluşturuldu!\n\nŞimdi takip türünü seçebilirsiniz.`);
+      
+    } catch (err: any) {
+      alert(`Hata: ${err.message || "Müvekkil veya vekalet oluşturulamadı"}`);
+    }
+  };
+
+  // Vekalet kontrolü - müvekkil ve avukat kombinasyonları için
+  const checkPoaValidity = async () => {
+    if (creditors.length === 0 || lawyers.length === 0) {
+      setPoaWarnings([]);
+      return;
+    }
+
+    setCheckingPoa(true);
+    const warnings: typeof poaWarnings = [];
+
+    try {
+      for (const creditor of creditors) {
+        if (!creditor.id) continue; // Yeni eklenen müvekkiller için kontrol yapma
+        
+        for (const lawyer of lawyers) {
+          if (!lawyer.id) continue; // Yeni eklenen avukatlar için kontrol yapma
+          
+          try {
+            const response = await api.get(`/poa/check/valid?clientId=${creditor.id}&lawyerId=${lawyer.id}`);
+            const result = response.data;
+            
+            if (!result.isValid) {
+              warnings.push({
+                clientId: creditor.id,
+                clientName: creditor.name,
+                lawyerId: lawyer.id,
+                lawyerName: `${lawyer.name} ${lawyer.surname}`,
+                message: result.message || "Geçerli vekalet bulunamadı",
+              });
+            } else if (result.daysRemaining !== undefined && result.daysRemaining <= 30) {
+              warnings.push({
+                clientId: creditor.id,
+                clientName: creditor.name,
+                lawyerId: lawyer.id,
+                lawyerName: `${lawyer.name} ${lawyer.surname}`,
+                message: `Vekalet ${result.daysRemaining} gün içinde sona erecek`,
+              });
+            }
+          } catch (err) {
+            // API hatası - sessizce geç
+          }
+        }
+      }
+      
+      setPoaWarnings(warnings);
+    } finally {
+      setCheckingPoa(false);
+    }
+  };
+
+  // Müvekkil veya avukat değiştiğinde vekalet kontrolü yap
+  useEffect(() => {
+    if (currentStep >= 2) {
+      checkPoaValidity();
+    }
+  }, [creditors, lawyers, currentStep]);
 
   const handleWizardComplete = (recommended: FormMetadata | null, answers: WizardAnswers) => {
     setWizardAnswers(answers); setRecommendedForm(recommended); setShowWizard(false);
@@ -555,7 +696,7 @@ export default function NewCasePage() {
         {currentStep === 0 && (
           <div>
             {showDocumentSelector ? (
-              <DocumentSourceSelector onSelect={handleDocumentSourceSelect} onSkip={() => { setShowDocumentSelector(false); setShowWizard(false); }} />
+              <DocumentSourceSelector onSelect={handleDocumentSourceSelect} onSkip={() => { setShowDocumentSelector(false); setShowWizard(false); }} onPoaScan={handlePoaScan} />
             ) : wizardResult ? (
               <WizardResultCard result={wizardResult} onAccept={() => {
                 setCaseData(prev => ({ ...prev, subCategory: wizardResult.subCategory, currency: wizardResult.currency as any, interestType: wizardResult.interestRateType === "DEGISKEN" ? "YASAL" : "SABIT", interestDescription: wizardResult.interestDescription }));
@@ -667,8 +808,9 @@ export default function NewCasePage() {
         )}
 
         {currentStep === 2 && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {/* Sol: Avukatlar */}
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {/* Sol: Avukatlar */}
             <div className="border rounded-lg p-3">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-sm font-semibold">👨‍⚖️ Avukatlar {lawyers.length > 0 && <span className="ml-1 bg-primary/10 text-primary px-1.5 py-0.5 rounded-full text-xs">{lawyers.length}</span>}</h3>
@@ -720,10 +862,27 @@ export default function NewCasePage() {
                   setSelectedStaff(updated);
                 }}
               />
-              <p className="text-xs text-muted-foreground mt-2 p-1.5 bg-amber-50 rounded border border-amber-200">
-                ⚠️ Personel UYAP/takip belgelerinde görünmez
-              </p>
+                <p className="text-xs text-muted-foreground mt-2 p-1.5 bg-amber-50 rounded border border-amber-200">
+                  ⚠️ Personel UYAP/takip belgelerinde görünmez
+                </p>
+              </div>
             </div>
+
+            {/* Vekalet Uyarı Bandı - Step 2 */}
+            {poaWarnings.length > 0 && creditors.length > 0 && (
+              <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-amber-800 mb-1">⚠️ Vekalet Eksik</p>
+                    <p className="text-xs text-amber-700">
+                      Seçilen müvekkil(ler) için bazı avukatlara ait geçerli vekalet bulunamadı.
+                      Müvekkiller adımında detayları görebilirsiniz.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -824,6 +983,45 @@ export default function NewCasePage() {
                 )}
               </div>
             </div>
+
+            {/* Vekalet Uyarı Bandı */}
+            {poaWarnings.length > 0 && (
+              <div className="mt-4 p-3 bg-amber-50 border border-amber-300 rounded-lg">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="text-sm font-medium text-amber-800 mb-2">⚠️ Vekalet Uyarısı</p>
+                    <div className="space-y-1">
+                      {poaWarnings.map((warning, idx) => (
+                        <p key={idx} className="text-xs text-amber-700">
+                          <span className="font-medium">{warning.clientName}</span> için <span className="font-medium">Av. {warning.lawyerName}</span> adına: {warning.message}
+                        </p>
+                      ))}
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      <Link
+                        href="/settings/clients"
+                        target="_blank"
+                        className="px-3 py-1.5 bg-amber-600 text-white text-xs rounded hover:bg-amber-700 flex items-center gap-1"
+                      >
+                        <FileCheck className="h-3.5 w-3.5" />
+                        Vekalet Ekle
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => setPoaWarnings([])}
+                        className="px-3 py-1.5 border border-amber-400 text-amber-700 text-xs rounded hover:bg-amber-100"
+                      >
+                        Yine de Devam Et
+                      </button>
+                    </div>
+                    <p className="text-xs text-amber-600 mt-2">
+                      💡 Vekalet eklemeden UYAP'a gönderim yapmamanız önerilir.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

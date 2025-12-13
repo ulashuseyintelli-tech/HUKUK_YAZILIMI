@@ -367,12 +367,41 @@ model Client {
   caseClients      CaseClient[]
   notifications    ClientNotification[]
   expenseRequests  ExpenseRequest[]
+  portalUser       ClientPortalUser?
 
   @@index([tenantId])
   @@index([tenantId, tckn])
   @@index([tenantId, vkn])
   @@index([type])
   @@index([isActive])
+}
+
+// ==================== MÜVEKKİL PORTALI ====================
+
+// Portal Kullanıcısı (Müvekkil girişi için)
+model ClientPortalUser {
+  id            String   @id @default(cuid())
+  clientId      String   @unique
+  client        Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  email         String
+  passwordHash  String
+  isActive      Boolean  @default(true)
+  lastLoginAt   DateTime?
+  loginCount    Int      @default(0)
+  
+  // Şifre sıfırlama
+  resetToken    String?
+  resetTokenExp DateTime?
+  
+  // İki faktörlü doğrulama (opsiyonel)
+  twoFactorEnabled Boolean @default(false)
+  twoFactorSecret  String?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([email])
+  @@index([clientId])
 }
 
 // Müvekkil İletişim Bilgileri (Çoklu telefon/email)
@@ -407,25 +436,86 @@ model ClientBankAccount {
   @@index([clientId])
 }
 
+// Vekalet Durumu
+enum PoaStatus {
+  ACTIVE    // Geçerli
+  EXPIRED   // Süresi Dolmuş
+  REVOKED   // İptal Edilmiş
+  PENDING   // Onay Bekliyor (portal için)
+}
+
+// Vekalet Kapsamı
+enum PoaScopeType {
+  GENEL       // Tüm işlemler
+  ICRA_TAKIP  // Sadece icra takipleri
+  BU_DOSYA    // Belirli dosya için
+  OZEL        // Özel kapsam (açıklama ile)
+}
+
 // Müvekkil Vekaletnamesi
 model ClientPowerOfAttorney {
   id            String    @id @default(cuid())
   clientId      String
   client        Client    @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  
+  // Temel Bilgiler
   notaryName    String?   // Noter Adı
   notaryCity    String?   // Noter İli
   journalNo     String?   // Yevmiye No
-  poaDate       DateTime? // Noter Tarihi
   poaNumber     String?   // Vekalet No
+  dateIssued    DateTime? // Düzenleme Tarihi (eski: poaDate)
+  
+  // SÜRELİ VEKALET
+  isLimited     Boolean   @default(false)  // Süreli mi?
+  validUntil    DateTime?                   // Geçerlilik Bitiş Tarihi
+  status        PoaStatus @default(ACTIVE)  // Durum
+  
+  // KAPSAM
+  scopeType     PoaScopeType @default(GENEL)
+  scopeDescription String?   // Özel kapsam açıklaması (eski: scope)
+  
+  // YETKİLER
+  canCollect    Boolean   @default(true)   // Ahzu Kabza
+  canWaive      Boolean   @default(false)  // Feragat
+  canSettle     Boolean   @default(false)  // Sulh
+  canRelease    Boolean   @default(false)  // İbra
+  
+  // Dosya
   filePath      String?   // Dosya yolu (.pdf, .jpg)
   fileSize      Int?
-  scope         String?   // Vekalet kapsamı açıklaması
+  mimeType      String?   // Dosya türü
+  
+  // Meta
   isActive      Boolean   @default(true)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
+  
+  // Eski alanlar (geriye uyumluluk)
+  poaDate       DateTime? // @deprecated - dateIssued kullan
+  scope         String?   // @deprecated - scopeDescription kullan
+
+  // İlişkiler
+  lawyers       PoaLawyer[]
 
   @@index([clientId])
   @@index([isActive])
+  @@index([status])
+  @@index([validUntil])
+}
+
+// Vekalet-Avukat İlişkisi (Bir vekalette birden fazla avukat olabilir)
+model PoaLawyer {
+  id          String   @id @default(cuid())
+  poaId       String
+  poa         ClientPowerOfAttorney @relation(fields: [poaId], references: [id], onDelete: Cascade)
+  lawyerId    String
+  lawyer      Lawyer   @relation(fields: [lawyerId], references: [id], onDelete: Cascade)
+  isPrimary   Boolean  @default(false)  // Ana vekil mi?
+  createdAt   DateTime @default(now())
+
+  @@unique([poaId, lawyerId])
+  @@index([poaId])
+  @@index([lawyerId])
 }
 
 // Dosya-Müvekkil İlişkisi (Takipte yer alan müvekkiller)
@@ -932,7 +1022,8 @@ model Lawyer {
   updatedAt    DateTime @updatedAt
 
   caseLawyers  CaseLawyer[]
-  powerOfAttorneys PowerOfAttorney[]
+  poaLawyers   PoaLawyer[]  // Avukatın dahil olduğu vekaletler
+  powerOfAttorneys PowerOfAttorney[]  // Eski vekalet modeli ilişkisi
 
   @@index([tenantId])
   @@index([officeId])
@@ -1163,8 +1254,9 @@ model DecisionLog {
 
 model NotificationQueue {
   id              String             @id @default(cuid())
-  caseId          String
-  case            Case               @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  tenantId        String?            // Tenant bazlı bildirimler için (vekalet uyarıları vb.)
+  caseId          String?            // Dosya bazlı bildirimler için (opsiyonel)
+  case            Case?              @relation(fields: [caseId], references: [id], onDelete: Cascade)
   type            NotificationType
   channel         NotificationChannel
   recipient       String
@@ -1183,6 +1275,7 @@ model NotificationQueue {
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
+  @@index([tenantId])
   @@index([caseId])
   @@index([status])
   @@index([scheduledAt])
@@ -1556,6 +1649,8 @@ enum NotificationType {
   REMINDER
   INFO
   WARNING
+  POA_EXPIRING    // Süresi dolmak üzere olan vekalet bildirimi
+  POA_EXPIRED     // Süresi dolmuş vekalet bildirimi
 }
 
 enum NotificationChannel {
@@ -1713,6 +1808,93 @@ model ClientNotification {
   @@index([channel])
   @@index([type])
   @@index([status])
+}
+
+// Portal Bildirimleri (Müvekkil portalında gösterilecek bildirimler)
+model PortalNotification {
+  id            String   @id @default(cuid())
+  clientId      String
+  caseId        String?  // İlgili dosya (opsiyonel)
+  
+  // Bildirim Türü
+  type          String   // TAHSILAT, ISLEM, BELGE, DURUM_DEGISIKLIGI, GENEL
+  
+  // İçerik
+  title         String
+  message       String
+  
+  // Durum
+  isRead        Boolean  @default(false)
+  readAt        DateTime?
+  
+  // Link (opsiyonel - tıklandığında yönlendirilecek sayfa)
+  linkUrl       String?
+  
+  createdAt     DateTime @default(now())
+
+  @@index([clientId])
+  @@index([caseId])
+  @@index([isRead])
+  @@index([createdAt])
+}
+
+// Portal Belgeleri (Müvekkilin portaldan yüklediği belgeler)
+model PortalDocument {
+  id            String   @id @default(cuid())
+  clientId      String
+  caseId        String?  // İlgili dosya (opsiyonel)
+  tenantId      String
+  
+  // Belge Bilgileri
+  type          String   // VEKALET, KIMLIK, SOZLESME, DIGER
+  title         String
+  description   String?
+  
+  // Dosya Bilgileri
+  fileName      String
+  filePath      String
+  fileSize      Int
+  mimeType      String
+  
+  // Durum
+  status        String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  reviewedAt    DateTime?
+  reviewedBy    String?  // User ID
+  reviewNote    String?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([caseId])
+  @@index([tenantId])
+  @@index([status])
+}
+
+// Portal Mesajları (Müvekkil-Büro arası mesajlaşma)
+model PortalMessage {
+  id            String   @id @default(cuid())
+  clientId      String
+  tenantId      String
+  caseId        String?  // İlgili dosya (opsiyonel)
+  
+  // Mesaj İçeriği
+  content       String
+  
+  // Gönderen
+  senderType    String   // CLIENT veya OFFICE
+  senderId      String   // ClientPortalUser ID veya User ID
+  senderName    String
+  
+  // Okunma Durumu
+  isRead        Boolean  @default(false)
+  readAt        DateTime?
+  
+  createdAt     DateTime @default(now())
+
+  @@index([clientId])
+  @@index([tenantId])
+  @@index([caseId])
   @@index([createdAt])
 }
 
@@ -1862,4 +2044,79 @@ model GreetingQueue {
   @@index([scheduledAt])
   @@index([status])
   @@index([type])
+}
+
+// ==================== TAKVİM & AJANDA ====================
+
+// Takvim Etkinlikleri
+model CalendarEvent {
+  id            String   @id @default(cuid())
+  tenantId      String
+  
+  // Etkinlik Bilgileri
+  title         String
+  description   String?
+  date          DateTime
+  time          String?  // "10:00" formatında
+  
+  // Tür
+  type          String   // DURUSMA, HATIRLATICI, GOREV, DIGER
+  
+  // İlişkili Dosya (opsiyonel)
+  caseId        String?
+  
+  // Konum
+  location      String?
+  
+  // Durum
+  isCompleted   Boolean  @default(false)
+  completedAt   DateTime?
+  
+  // Oluşturan
+  createdById   String
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([date])
+  @@index([caseId])
+  @@index([type])
+  @@index([isCompleted])
+}
+
+// ==================== DENETİM KAYITLARI (AUDIT LOG) ====================
+
+// Audit Log - Tüm önemli işlemlerin kaydı
+model AuditLog {
+  id            String   @id @default(cuid())
+  tenantId      String
+  
+  // İşlem Bilgileri
+  action        String   // CREATE, UPDATE, DELETE, LOGIN, LOGOUT, EXPORT, vb.
+  entityType    String   // CASE, CLIENT, POA, USER, vb.
+  entityId      String?  // İlgili kaydın ID'si
+  
+  // Kullanıcı
+  userId        String?
+  userName      String?
+  userIp        String?
+  userAgent     String?
+  
+  // Değişiklik Detayları
+  oldValues     Json?    // Eski değerler
+  newValues     Json?    // Yeni değerler
+  
+  // Ek Bilgiler
+  description   String?
+  metadata      Json?
+  
+  createdAt     DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([action])
+  @@index([entityType])
+  @@index([entityId])
+  @@index([userId])
+  @@index([createdAt])
 }

@@ -1,12 +1,61 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException } from "@nestjs/common";
+import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 import { CreateCaseDto, UpdateCaseDto, CaseSubCategory, Currency } from "./dto/case.dto";
 import { Prisma, LegalCaseStatus } from "@prisma/client";
 import { isInitialStatus } from "../case-status/case-status.service";
+import { AuditService } from "../audit/audit.service";
 
 @Injectable()
 export class CaseService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(CaseService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private auditService: AuditService,
+  ) {}
+
+  /**
+   * Vekalet kontrolü - müvekkil ve avukat arasında geçerli vekalet var mı?
+   */
+  private async checkPoaValidity(clientId: string, lawyerId: string): Promise<{ valid: boolean; message?: string }> {
+    const now = new Date();
+    
+    const validPoa = await this.prisma.clientPowerOfAttorney.findFirst({
+      where: {
+        clientId,
+        status: "ACTIVE",
+        isActive: true,
+        lawyers: {
+          some: { lawyerId },
+        },
+        OR: [
+          { isLimited: false },
+          { isLimited: true, validUntil: { gte: now } },
+        ],
+      },
+      include: {
+        client: { select: { displayName: true } },
+        lawyers: {
+          where: { lawyerId },
+          include: { lawyer: { select: { name: true, surname: true } } },
+        },
+      },
+    });
+
+    if (!validPoa) {
+      return { valid: false, message: "Geçerli vekalet bulunamadı" };
+    }
+
+    // Süresi dolmak üzere mi kontrol et (30 gün)
+    if (validPoa.isLimited && validPoa.validUntil) {
+      const daysLeft = Math.ceil((validPoa.validUntil.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+      if (daysLeft <= 30) {
+        return { valid: true, message: `Vekalet ${daysLeft} gün içinde sona erecek` };
+      }
+    }
+
+    return { valid: true };
+  }
 
   /**
    * İlamlı Alt Kategori Validasyonları
@@ -190,7 +239,7 @@ export class CaseService {
     this.validateSubCategoryRules(dto);
 
     try {
-      return await this.prisma.$transaction(async (tx) => {
+      const result = await this.prisma.$transaction(async (tx) => {
         // 1. Alacaklıları (Clients) hazırla - tüm creditors'ları kaydet
         const clientIds: string[] = [];
         let primaryClientId: string | undefined;
@@ -390,7 +439,7 @@ export class CaseService {
         }
 
         // 6. Tam case'i döndür
-        return tx.case.findUnique({
+        const createdCase = await tx.case.findUnique({
           where: { id: newCase.id },
           include: {
             client: { select: { id: true, name: true } },
@@ -403,7 +452,51 @@ export class CaseService {
             dues: true,
           },
         });
+
+        return { case: createdCase, clientIds, lawyerIds: dto.lawyers?.map(l => l.id).filter(Boolean) || [] };
       });
+
+      // 7. Vekalet kontrolü (transaction dışında)
+      const poaWarnings: string[] = [];
+      if (result.clientIds.length > 0 && result.lawyerIds.length > 0) {
+        for (const clientId of result.clientIds) {
+          for (const lawyerId of result.lawyerIds) {
+            const poaCheck = await this.checkPoaValidity(clientId, lawyerId as string);
+            if (!poaCheck.valid) {
+              // Müvekkil ve avukat isimlerini al
+              const client = await this.prisma.client.findUnique({ where: { id: clientId }, select: { displayName: true } });
+              const lawyer = await this.prisma.lawyer.findUnique({ where: { id: lawyerId as string }, select: { name: true, surname: true } });
+              poaWarnings.push(`${lawyer?.name} ${lawyer?.surname} → ${client?.displayName}: ${poaCheck.message}`);
+            } else if (poaCheck.message) {
+              // Süresi dolmak üzere uyarısı
+              const client = await this.prisma.client.findUnique({ where: { id: clientId }, select: { displayName: true } });
+              const lawyer = await this.prisma.lawyer.findUnique({ where: { id: lawyerId as string }, select: { name: true, surname: true } });
+              poaWarnings.push(`${lawyer?.name} ${lawyer?.surname} → ${client?.displayName}: ${poaCheck.message}`);
+            }
+          }
+        }
+      }
+
+      if (poaWarnings.length > 0) {
+        this.logger.warn(`Takip oluşturuldu ancak vekalet uyarıları var: ${poaWarnings.join(', ')}`);
+      }
+
+      // Audit log
+      if (result.case) {
+        await this.auditService.log({
+          tenantId,
+          action: 'CREATE',
+          entityType: 'CASE',
+          entityId: result.case.id,
+          newValues: { fileNumber: result.case.fileNumber, type: result.case.type },
+          description: `Yeni takip oluşturuldu: ${result.case.fileNumber}`,
+        });
+      }
+
+      return {
+        ...result.case,
+        poaWarnings: poaWarnings.length > 0 ? poaWarnings : undefined,
+      };
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError) {
         if (error.code === "P2002") {
@@ -432,18 +525,42 @@ export class CaseService {
       }
     });
 
-    return this.prisma.case.update({
+    const updated = await this.prisma.case.update({
       where: { id },
       data,
     });
+
+    // Audit log
+    await this.auditService.log({
+      tenantId,
+      action: 'UPDATE',
+      entityType: 'CASE',
+      entityId: id,
+      newValues: data,
+      description: `Takip güncellendi: ${updated.fileNumber}`,
+    });
+
+    return updated;
   }
 
   async delete(tenantId: string, id: string) {
-    await this.findOne(tenantId, id);
+    const existing = await this.findOne(tenantId, id);
 
-    return this.prisma.case.delete({
+    await this.prisma.case.delete({
       where: { id },
     });
+
+    // Audit log
+    await this.auditService.log({
+      tenantId,
+      action: 'DELETE',
+      entityType: 'CASE',
+      entityId: id,
+      oldValues: { fileNumber: existing.fileNumber },
+      description: `Takip silindi: ${existing.fileNumber}`,
+    });
+
+    return { success: true };
   }
 
   async getStats(tenantId: string) {
@@ -550,5 +667,131 @@ export class CaseService {
     });
 
     return { updatedCount: result.count };
+  }
+
+  // ==================== DOSYA NOTLARI ====================
+
+  async getNotes(tenantId: string, caseId: string) {
+    // Dosyanın bu tenant'a ait olduğunu kontrol et
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+    });
+    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+
+    // CaseLifecycle tablosundan notları çek
+    const events = await this.prisma.caseLifecycle.findMany({
+      where: {
+        caseId,
+        action: "NOTE_ADDED",
+      },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return events.map((e) => ({
+      id: e.id,
+      content: e.description || "",
+      createdAt: e.createdAt,
+      createdBy: null,
+      isPrivate: (e.metadata as any)?.isPrivate || false,
+    }));
+  }
+
+  async addNote(tenantId: string, caseId: string, _userId: string, content: string, isPrivate = false) {
+    // Dosyanın bu tenant'a ait olduğunu kontrol et
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+    });
+    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+
+    // CaseLifecycle olarak kaydet
+    const note = await this.prisma.caseLifecycle.create({
+      data: {
+        caseId,
+        stage: "INITIAL",
+        action: "NOTE_ADDED",
+        description: content,
+        triggeredBy: "MANUAL",
+        metadata: { isPrivate },
+      },
+    });
+
+    return {
+      id: note.id,
+      content: note.description,
+      createdAt: note.createdAt,
+      createdBy: null,
+      isPrivate,
+    };
+  }
+
+  async deleteNote(tenantId: string, caseId: string, noteId: string) {
+    // Dosyanın bu tenant'a ait olduğunu kontrol et
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+    });
+    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+
+    await this.prisma.caseLifecycle.delete({
+      where: { id: noteId },
+    });
+
+    return { success: true };
+  }
+
+  // ==================== DOSYA ZAMAN ÇİZELGESİ ====================
+
+  async getTimeline(tenantId: string, caseId: string) {
+    // Dosyanın bu tenant'a ait olduğunu kontrol et
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+    });
+    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+
+    const events = await this.prisma.caseLifecycle.findMany({
+      where: { caseId },
+      orderBy: { createdAt: "desc" },
+    });
+
+    return events.map((e) => ({
+      id: e.id,
+      type: this.mapActionToTimelineType(e.action),
+      title: this.getTimelineTitle(e.action),
+      description: e.description,
+      date: e.createdAt,
+      user: undefined,
+      metadata: e.metadata,
+    }));
+  }
+
+  private mapActionToTimelineType(action: string): string {
+    const mapping: Record<string, string> = {
+      CREATED: "CREATED",
+      STATUS_CHANGED: "STATUS_CHANGE",
+      TEBLIGAT_SENT: "TEBLIGAT",
+      TEBLIGAT_DELIVERED: "TEBLIGAT",
+      HACIZ_REQUESTED: "HACIZ",
+      HACIZ_COMPLETED: "HACIZ",
+      COLLECTION_ADDED: "TAHSILAT",
+      NOTE_ADDED: "NOTE",
+      DOCUMENT_ADDED: "DOCUMENT",
+      HEARING_SCHEDULED: "DURUSMA",
+    };
+    return mapping[action] || "NOTE";
+  }
+
+  private getTimelineTitle(action: string): string {
+    const titles: Record<string, string> = {
+      CREATED: "Dosya oluşturuldu",
+      STATUS_CHANGED: "Durum değiştirildi",
+      TEBLIGAT_SENT: "Tebligat gönderildi",
+      TEBLIGAT_DELIVERED: "Tebligat teslim edildi",
+      HACIZ_REQUESTED: "Haciz talebi yapıldı",
+      HACIZ_COMPLETED: "Haciz tamamlandı",
+      COLLECTION_ADDED: "Tahsilat kaydedildi",
+      NOTE_ADDED: "Not eklendi",
+      DOCUMENT_ADDED: "Belge eklendi",
+      HEARING_SCHEDULED: "Duruşma planlandı",
+    };
+    return titles[action] || action;
   }
 }
