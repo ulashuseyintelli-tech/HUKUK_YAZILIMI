@@ -58,10 +58,11 @@ export default function PortalManagementPage() {
   const fetchPendingDocs = async () => {
     setLoading(true);
     try {
-      const data = await api.get("/portal/admin/documents/pending");
-      setPendingDocs(data);
+      const res = await api.get("/portal/admin/documents/pending");
+      setPendingDocs(Array.isArray(res.data) ? res.data : (res.data?.data || []));
     } catch (e) {
       console.error(e);
+      setPendingDocs([]);
     } finally {
       setLoading(false);
     }
@@ -70,8 +71,8 @@ export default function PortalManagementPage() {
   const fetchClients = async () => {
     setLoading(true);
     try {
-      const data = await api.get("/portal/admin/messages/clients");
-      setClients(data);
+      const res = await api.get("/portal/admin/messages/clients");
+      setClients(Array.isArray(res.data) ? res.data : (res.data?.data || []));
     } catch (e) {
       console.error(e);
     } finally {
@@ -101,8 +102,8 @@ export default function PortalManagementPage() {
   const selectClient = async (client: ClientWithMessages) => {
     setSelectedClient(client);
     try {
-      const data = await api.get(`/portal/admin/messages/${client.id}`);
-      setMessages(data.messages);
+      const res = await api.get<{ messages: any[] }>(`/portal/admin/messages/${client.id}`);
+      setMessages(res.data?.messages || []);
       // Okunmamış sayısını sıfırla
       setClients(prev => prev.map(c => c.id === client.id ? { ...c, unreadCount: 0 } : c));
     } catch (e) {
@@ -117,8 +118,8 @@ export default function PortalManagementPage() {
       await api.post(`/portal/admin/messages/${selectedClient.id}`, { content: newMessage });
       setNewMessage("");
       // Mesajları yenile
-      const data = await api.get(`/portal/admin/messages/${selectedClient.id}`);
-      setMessages(data.messages);
+      const res = await api.get<{ messages: any[] }>(`/portal/admin/messages/${selectedClient.id}`);
+      setMessages(res.data?.messages || []);
     } catch (e) {
       console.error(e);
     } finally {

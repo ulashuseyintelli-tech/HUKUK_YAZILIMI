@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import * as Tesseract from "tesseract.js";
 import * as sharp from "sharp";
@@ -8,6 +8,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
 import OpenAI from "openai";
+import { ClaimEngineService } from "../claim-engine/claim-engine.service";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pdfParse = require("pdf-parse");
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -40,6 +41,82 @@ export enum DetectedSubCategory {
   NAFAKA = "NAFAKA",
   DOVIZ = "DOVIZ",
   KIRA = "KIRA",
+}
+
+/**
+ * Borç evrakı tarama sonucu - Borçlu Sihirbazı için
+ */
+export interface DebtDocumentResult {
+  // Evrak türü
+  documentType: "FATURA" | "SENET" | "CEK" | "KIRA" | "CARI_HESAP" | "SOZLESME" | "DIGER";
+  
+  // Tespit edilen kişiler/kurumlar
+  parties: {
+    name: string;
+    type: "INDIVIDUAL" | "COMPANY" | "PUBLIC_INSTITUTION";
+    role: "BORCLU" | "ALACAKLI" | "KEFIL" | "CIRANTA" | "AVAL" | "MUTESELSIL";
+    identityNo?: string; // TCKN veya VKN
+    address?: string;
+    city?: string;
+    district?: string;
+    phone?: string;
+    confidence: number;
+  }[];
+  
+  // Borç bilgileri
+  debtInfo: {
+    amount?: number;
+    currency: "TRY" | "USD" | "EUR" | "GBP" | "CHF";
+    dueDate?: string; // YYYY-MM-DD
+    issueDate?: string; // Düzenleme tarihi
+    documentNo?: string; // Fatura no, senet no, çek no vb.
+    description?: string;
+  };
+  
+  // Banka bilgileri (çek için)
+  bankInfo?: {
+    bankName?: string;
+    branchName?: string;
+    accountNo?: string;
+    iban?: string;
+  };
+  
+  // Önerilen takip türü
+  suggestedCaseType: "ILAMLI" | "ILAMSIZ" | "KAMBIYO" | "KIRA";
+  
+  // Meta
+  confidence: number;
+  rawText?: string;
+  matchedKeywords?: string[];
+}
+
+/**
+ * Dış dosya (haciz yazısı) tarama sonucu - Alacak Haczi için
+ */
+export interface ExternalCaseDocumentResult {
+  // Dış dosya bilgileri
+  externalOffice?: string;      // İcra dairesi adı
+  externalCaseNo?: string;      // Dosya numarası (2024/12345)
+  
+  // Karşı taraf bilgileri
+  counterpartyName?: string;    // Borçlumuzun alacaklı olduğu kişi/kurum
+  counterpartyIdentityNo?: string;
+  
+  // Alacak bilgileri
+  claimAmount?: number;
+  claimCurrency: "TRY" | "USD" | "EUR";
+  
+  // Haciz bilgileri
+  attachmentDate?: string;      // Haciz tarihi
+  attachmentType?: "BANKA" | "MAAS" | "TASINMAZ" | "ARAC" | "ALACAK" | "DIGER";
+  
+  // Belge türü
+  documentType: "HACIZ_YAZISI" | "DOSYA_CIKTISI" | "IHBARNAME_CEVABI" | "DIGER";
+  
+  // Meta
+  confidence: number;
+  rawText?: string;
+  matchedKeywords?: string[];
 }
 
 /**
@@ -349,12 +426,88 @@ export class OcrService {
   private readonly logger = new Logger(OcrService.name);
   private openai: OpenAI | null = null;
 
-  constructor(private configService: ConfigService) {
+  constructor(
+    private configService: ConfigService,
+    @Optional() private claimEngineService?: ClaimEngineService,
+  ) {
     const apiKey = this.configService.get<string>("OPENAI_API_KEY");
     if (apiKey && apiKey !== "sk-your-openai-api-key-here") {
       this.openai = new OpenAI({ apiKey });
       this.logger.log("OpenAI client initialized for OCR classification");
     }
+  }
+
+  /**
+   * Claim Engine ile belge sınıflandırma
+   * YAML kurallarını kullanarak belge türünü tespit eder
+   */
+  classifyWithClaimEngine(textContent: string): {
+    docType: string;
+    confidence: number;
+    matchedKeywords: string[];
+    routing: {
+      caseType: string;
+      subCategory: string;
+      form: string;
+      routeType: string;
+    } | null;
+  } {
+    if (!this.claimEngineService) {
+      return {
+        docType: 'OTHER',
+        confidence: 0,
+        matchedKeywords: [],
+        routing: null,
+      };
+    }
+
+    // Belge türünü sınıflandır
+    const classification = this.claimEngineService.classifyDocument(textContent);
+    
+    // Takip türünü belirle
+    const routing = this.claimEngineService.routeCase(
+      classification.docType,
+      textContent,
+    );
+
+    return {
+      docType: classification.docType,
+      confidence: classification.confidence,
+      matchedKeywords: classification.matchedKeywords,
+      routing,
+    };
+  }
+
+  /**
+   * Claim Engine ile alacak kalemleri şablonlarını getir
+   */
+  getClaimItemTemplates(subCategory: string) {
+    if (!this.claimEngineService) {
+      return [];
+    }
+    return this.claimEngineService.getClaimItemTemplates(subCategory);
+  }
+
+  /**
+   * Claim Engine ile dosya doğrulama
+   */
+  validateWithClaimEngine(
+    caseType: string,
+    subCategory: string,
+    claimItems: Array<{ type: string }>,
+    extractedData: Record<string, any>,
+    wizardData: Record<string, any> = {},
+  ) {
+    if (!this.claimEngineService) {
+      return { isValid: true, errors: [], warnings: [] };
+    }
+    return this.claimEngineService.validateCase(
+      caseType,
+      subCategory,
+      claimItems,
+      extractedData,
+      wizardData,
+    );
   }
 
   /**
@@ -1501,6 +1654,618 @@ Sadece JSON döndür, başka açıklama ekleme.`
     } catch (error: any) {
       this.logger.error("Vision API hatası:", error);
       throw new Error(`Vekaletname görüntüsü analiz edilemedi: ${error.message}`);
+    }
+  }
+
+  /**
+   * Borç evrakı tarama - Borçlu Sihirbazı için
+   * Fatura, senet, çek, kira sözleşmesi, cari hesap ekstresi vb.
+   */
+  async scanDebtDocument(buffer: Buffer, mimeType: string, filename?: string): Promise<DebtDocumentResult> {
+    // 1. Belgeden metin çıkar
+    const { text } = await this.extractText(buffer, mimeType, filename);
+    
+    // Görüntü dosyası veya metin çıkarılamadıysa Vision API kullan
+    const isImage = mimeType.startsWith("image/") || 
+                    filename?.toLowerCase().endsWith(".jpg") ||
+                    filename?.toLowerCase().endsWith(".jpeg") ||
+                    filename?.toLowerCase().endsWith(".png") ||
+                    filename?.toLowerCase().endsWith(".tiff");
+    
+    if (isImage || !text || text.length < 50) {
+      this.logger.log("Metin çıkarılamadı veya görüntü dosyası, Vision API deneniyor...");
+      return this.scanDebtDocumentWithVision(buffer, mimeType);
+    }
+
+    this.logger.log(`Borç evrakı tarama başlatılıyor. Metin uzunluğu: ${text.length}`);
+
+    // 2. OpenAI ile analiz et
+    if (!this.openai) {
+      this.logger.warn("OpenAI yapılandırılmamış, kural tabanlı analiz yapılacak");
+      return this.parseDebtDocumentWithRules(text);
+    }
+
+    const model = this.configService.get<string>("OPENAI_MODEL") || "gpt-4";
+
+    try {
+      const response = await this.openai.chat.completions.create({
+        model,
+        messages: [
+          {
+            role: "system",
+            content: `Sen bir Türk icra hukuku uzmanısın. Verilen borç evrakını analiz ederek borçlu bilgilerini, vade ve tutarı çıkar.
+
+Evrak türleri:
+- FATURA: Ticari fatura, e-fatura
+- SENET: Bono, emre muharrer senet
+- CEK: Çek
+- KIRA: Kira sözleşmesi
+- CARI_HESAP: Cari hesap ekstresi
+- SOZLESME: Diğer sözleşmeler
+- DIGER: Belirsiz
+
+Rol tespiti:
+- BORCLU: Borçlu, müşteri, alıcı, kiracı, keşideci (çekte)
+- ALACAKLI: Alacaklı, satıcı, kiraya veren, lehtar
+- KEFIL: Kefil, müşterek borçlu
+- CIRANTA: Ciranta (çek/senette)
+- AVAL: Aval veren
+- MUTESELSIL: Müteselsil borçlu
+
+JSON formatında yanıt ver:
+{
+  "documentType": "FATURA|SENET|CEK|KIRA|CARI_HESAP|SOZLESME|DIGER",
+  "parties": [
+    {
+      "name": "Ad Soyad veya Şirket Adı",
+      "type": "INDIVIDUAL|COMPANY|PUBLIC_INSTITUTION",
+      "role": "BORCLU|ALACAKLI|KEFIL|CIRANTA|AVAL|MUTESELSIL",
+      "identityNo": "TCKN (11 hane) veya VKN (10 hane)",
+      "address": "Adres",
+      "city": "İl",
+      "district": "İlçe",
+      "phone": "Telefon",
+      "confidence": 0-100
+    }
+  ],
+  "debtInfo": {
+    "amount": 12345.67,
+    "currency": "TRY|USD|EUR|GBP|CHF",
+    "dueDate": "YYYY-MM-DD",
+    "issueDate": "YYYY-MM-DD",
+    "documentNo": "Belge numarası",
+    "description": "Açıklama"
+  },
+  "bankInfo": {
+    "bankName": "Banka adı (çek için)",
+    "branchName": "Şube",
+    "accountNo": "Hesap no",
+    "iban": "IBAN"
+  },
+  "suggestedCaseType": "ILAMLI|ILAMSIZ|KAMBIYO|KIRA",
+  "confidence": 0-100,
+  "matchedKeywords": ["kelime1", "kelime2"]
+}`
+          },
+          {
+            role: "user",
+            content: `Aşağıdaki borç evrakını analiz et ve bilgileri çıkar:\n\n${text.substring(0, 4000)}`
+          }
+        ],
+        temperature: 0.1,
+        ...(model.startsWith("o1") ? { max_completion_tokens: 2000 } : { max_tokens: 2000 }),
+      });
+
+      const content = response.choices[0]?.message?.content || "{}";
+      this.logger.debug(`OpenAI borç evrakı yanıtı: ${content}`);
+
+      const parsed = JSON.parse(content);
+
+      return {
+        documentType: parsed.documentType || "DIGER",
+        parties: (parsed.parties || []).map((p: any) => ({
+          name: p.name || "",
+          type: p.type || "INDIVIDUAL",
+          role: p.role || "BORCLU",
+          identityNo: p.identityNo,
+          address: p.address,
+          city: p.city,
+          district: p.district,
+          phone: p.phone,
+          confidence: p.confidence || 70,
+        })),
+        debtInfo: {
+          amount: parsed.debtInfo?.amount,
+          currency: parsed.debtInfo?.currency || "TRY",
+          dueDate: parsed.debtInfo?.dueDate,
+          issueDate: parsed.debtInfo?.issueDate,
+          documentNo: parsed.debtInfo?.documentNo,
+          description: parsed.debtInfo?.description,
+        },
+        bankInfo: parsed.bankInfo,
+        suggestedCaseType: parsed.suggestedCaseType || "ILAMSIZ",
+        confidence: parsed.confidence || 70,
+        rawText: text.substring(0, 1000),
+        matchedKeywords: parsed.matchedKeywords || [],
+      };
+    } catch (error) {
+      this.logger.error("OpenAI borç evrakı analiz hatası:", error);
+      return this.parseDebtDocumentWithRules(text);
+    }
+  }
+
+  /**
+   * Kural tabanlı borç evrakı analizi (OpenAI yoksa fallback)
+   */
+  private parseDebtDocumentWithRules(text: string): DebtDocumentResult {
+    const lowerText = text.toLowerCase();
+    const parties: DebtDocumentResult["parties"] = [];
+    
+    // Evrak türü tespit et
+    let documentType: DebtDocumentResult["documentType"] = "DIGER";
+    let suggestedCaseType: DebtDocumentResult["suggestedCaseType"] = "ILAMSIZ";
+    const matchedKeywords: string[] = [];
+    
+    // Çek tespiti
+    if (lowerText.includes("bu çek") || lowerText.includes("çek karşılığında") || 
+        lowerText.includes("keşideci") || lowerText.includes("hamiline")) {
+      documentType = "CEK";
+      suggestedCaseType = "KAMBIYO";
+      matchedKeywords.push("çek", "keşideci");
+    }
+    // Senet tespiti
+    else if (lowerText.includes("emre muharrer") || lowerText.includes("bono") || 
+             lowerText.includes("senet") && lowerText.includes("vade")) {
+      documentType = "SENET";
+      suggestedCaseType = "KAMBIYO";
+      matchedKeywords.push("senet", "bono");
+    }
+    // Fatura tespiti
+    else if (lowerText.includes("fatura") || lowerText.includes("e-fatura") || 
+             lowerText.includes("kdv") || lowerText.includes("vergi dairesi")) {
+      documentType = "FATURA";
+      suggestedCaseType = "ILAMSIZ";
+      matchedKeywords.push("fatura", "kdv");
+    }
+    // Kira tespiti
+    else if (lowerText.includes("kira") || lowerText.includes("kiracı") || 
+             lowerText.includes("kiraya veren") || lowerText.includes("tahliye")) {
+      documentType = "KIRA";
+      suggestedCaseType = "KIRA";
+      matchedKeywords.push("kira", "kiracı");
+    }
+    // Cari hesap tespiti
+    else if (lowerText.includes("cari hesap") || lowerText.includes("bakiye") || 
+             lowerText.includes("ekstre")) {
+      documentType = "CARI_HESAP";
+      suggestedCaseType = "ILAMSIZ";
+      matchedKeywords.push("cari hesap", "bakiye");
+    }
+
+    // TC Kimlik No bul (11 haneli sayı)
+    const tcknMatches = text.match(/\b(\d{11})\b/g);
+    
+    // VKN bul (10 haneli sayı)
+    const vknMatch = text.match(/vergi\s*(?:no|numarası|kimlik)\s*[:\s]*(\d{10})/i);
+    
+    // Şirket adı bul
+    const companyMatch = text.match(/([A-ZĞÜŞİÖÇ][A-ZĞÜŞİÖÇa-zğüşıöç\s]+(?:A\.?Ş\.?|LTD\.?\s*ŞTİ\.?|ANONİM\s*ŞİRKETİ|LİMİTED\s*ŞİRKETİ))/i);
+    
+    if (companyMatch) {
+      parties.push({
+        name: companyMatch[1].trim(),
+        type: "COMPANY",
+        role: "BORCLU",
+        identityNo: vknMatch?.[1],
+        confidence: 50,
+      });
+    }
+    
+    // Tutar bul
+    const amountMatch = text.match(/(?:toplam|tutar|bedel|miktar)\s*[:\s]*([0-9.,]+)\s*(?:tl|₺|türk lirası)/i);
+    const amount = amountMatch ? parseFloat(amountMatch[1].replace(/\./g, "").replace(",", ".")) : undefined;
+    
+    // Para birimi
+    let currency: "TRY" | "USD" | "EUR" | "GBP" | "CHF" = "TRY";
+    if (lowerText.includes("usd") || lowerText.includes("dolar")) currency = "USD";
+    else if (lowerText.includes("eur") || lowerText.includes("euro")) currency = "EUR";
+    
+    // Tarih bul
+    const dateMatch = text.match(/(\d{2})[\.\/](\d{2})[\.\/](\d{4})/);
+    const dueDate = dateMatch ? `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}` : undefined;
+    
+    // Belge no bul
+    const docNoMatch = text.match(/(?:fatura|senet|çek|belge)\s*(?:no|numarası)\s*[:\s]*([A-Z0-9\-\/]+)/i);
+    const documentNo = docNoMatch?.[1];
+
+    return {
+      documentType,
+      parties,
+      debtInfo: {
+        amount,
+        currency,
+        dueDate,
+        documentNo,
+      },
+      suggestedCaseType,
+      confidence: 40,
+      rawText: text.substring(0, 1000),
+      matchedKeywords,
+    };
+  }
+
+  /**
+   * Vision API ile borç evrakı tarama (görüntü dosyaları için)
+   */
+  private async scanDebtDocumentWithVision(buffer: Buffer, mimeType: string): Promise<DebtDocumentResult> {
+    if (!this.openai) {
+      throw new Error("OpenAI yapılandırılmamış. Görüntü dosyaları için OpenAI API anahtarı gereklidir.");
+    }
+
+    let imageBuffer = buffer;
+    let imageMediaType = "image/jpeg";
+
+    // PDF ise görüntüye çevir
+    if (mimeType === "application/pdf") {
+      this.logger.log("PDF görüntüye çevriliyor...");
+      try {
+        imageBuffer = await this.convertPdfToImage(buffer);
+        imageMediaType = "image/jpeg";
+      } catch (error: any) {
+        this.logger.error("PDF görüntüye çevrilemedi:", error);
+        throw new Error("PDF dosyası işlenemedi. Lütfen belge görüntüsünü (JPG, PNG) yükleyin.");
+      }
+    } else {
+      imageMediaType = mimeType.includes("png") ? "image/png" : 
+                       mimeType.includes("gif") ? "image/gif" : 
+                       mimeType.includes("webp") ? "image/webp" : "image/jpeg";
+    }
+
+    this.logger.log("Vision API ile borç evrakı taranıyor...");
+
+    const base64Image = imageBuffer.toString("base64");
+
+    try {
+      const response = await this.openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `Bu bir Türk borç evrakıdır (fatura, senet, çek, kira sözleşmesi vb.). Belgedeki bilgileri analiz et ve JSON formatında döndür:
+
+{
+  "documentType": "FATURA|SENET|CEK|KIRA|CARI_HESAP|SOZLESME|DIGER",
+  "parties": [
+    {
+      "name": "Ad Soyad veya Şirket Adı",
+      "type": "INDIVIDUAL|COMPANY|PUBLIC_INSTITUTION",
+      "role": "BORCLU|ALACAKLI|KEFIL|CIRANTA|AVAL|MUTESELSIL",
+      "identityNo": "TCKN veya VKN",
+      "address": "Adres",
+      "city": "İl",
+      "phone": "Telefon",
+      "confidence": 0-100
+    }
+  ],
+  "debtInfo": {
+    "amount": 12345.67,
+    "currency": "TRY|USD|EUR|GBP|CHF",
+    "dueDate": "YYYY-MM-DD",
+    "issueDate": "YYYY-MM-DD",
+    "documentNo": "Belge numarası",
+    "description": "Açıklama"
+  },
+  "bankInfo": {
+    "bankName": "Banka adı (çek için)",
+    "branchName": "Şube",
+    "iban": "IBAN"
+  },
+  "suggestedCaseType": "ILAMLI|ILAMSIZ|KAMBIYO|KIRA",
+  "confidence": 0-100,
+  "matchedKeywords": ["kelime1", "kelime2"]
+}
+
+ROL TESPİTİ:
+- Faturada: Alıcı = BORCLU, Satıcı = ALACAKLI
+- Senette: Düzenleyen = BORCLU, Lehtar = ALACAKLI, Kefil = KEFIL
+- Çekte: Keşideci = BORCLU, Lehtar = ALACAKLI, Ciranta = CIRANTA
+- Kirada: Kiracı = BORCLU, Kiraya veren = ALACAKLI
+
+Sadece JSON döndür.`
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:${imageMediaType};base64,${base64Image}`,
+                  detail: "high"
+                }
+              }
+            ]
+          }
+        ],
+        max_tokens: 2000,
+      });
+
+      const content = response.choices[0]?.message?.content || "{}";
+      this.logger.debug(`Vision API borç evrakı yanıtı: ${content}`);
+
+      let jsonStr = content;
+      const jsonMatch = content.match(/```(?:json)?\s*([\s\S]*?)```/);
+      if (jsonMatch) {
+        jsonStr = jsonMatch[1];
+      }
+
+      const parsed = JSON.parse(jsonStr.trim());
+
+      return {
+        documentType: parsed.documentType || "DIGER",
+        parties: (parsed.parties || []).map((p: any) => ({
+          name: p.name || "",
+          type: p.type || "INDIVIDUAL",
+          role: p.role || "BORCLU",
+          identityNo: p.identityNo,
+          address: p.address,
+          city: p.city,
+          district: p.district,
+          phone: p.phone,
+          confidence: p.confidence || 70,
+        })),
+        debtInfo: {
+          amount: parsed.debtInfo?.amount,
+          currency: parsed.debtInfo?.currency || "TRY",
+          dueDate: parsed.debtInfo?.dueDate,
+          issueDate: parsed.debtInfo?.issueDate,
+          documentNo: parsed.debtInfo?.documentNo,
+          description: parsed.debtInfo?.description,
+        },
+        bankInfo: parsed.bankInfo,
+        suggestedCaseType: parsed.suggestedCaseType || "ILAMSIZ",
+        confidence: parsed.confidence || 70,
+        matchedKeywords: parsed.matchedKeywords || [],
+      };
+    } catch (error: any) {
+      this.logger.error("Vision API borç evrakı hatası:", error);
+      throw new Error(`Borç evrakı görüntüsü analiz edilemedi: ${error.message}`);
+    }
+  }
+
+  /**
+   * Dış dosya (haciz yazısı) tarama - Alacak Haczi için
+   * Haciz yazısı, dosya çıktısı, ihbarname cevabı vb.
+   */
+  async scanExternalCaseDocument(buffer: Buffer, mimeType: string, filename?: string): Promise<ExternalCaseDocumentResult> {
+    // 1. Belgeden metin çıkar
+    const { text } = await this.extractText(buffer, mimeType, filename);
+    
+    // Görüntü dosyası veya metin çıkarılamadıysa Vision API kullan
+    const isImage = mimeType.startsWith("image/") || 
+                    filename?.toLowerCase().endsWith(".jpg") ||
+                    filename?.toLowerCase().endsWith(".jpeg") ||
+                    filename?.toLowerCase().endsWith(".png");
+    
+    if (isImage || !text || text.length < 50) {
+      this.logger.log("Metin çıkarılamadı veya görüntü dosyası, Vision API deneniyor...");
+      return this.scanExternalCaseWithVision(buffer, mimeType);
+    }
+
+    this.logger.log(`Dış dosya tarama başlatılıyor. Metin uzunluğu: ${text.length}`);
+
+    // 2. OpenAI ile analiz et
+    if (!this.openai) {
+      this.logger.warn("OpenAI yapılandırılmamış, kural tabanlı analiz yapılacak");
+      return this.parseExternalCaseWithRules(text);
+    }
+
+    const model = this.configService.get<string>("OPENAI_MODEL") || "gpt-4";
+
+    try {
+      const response = await this.openai.chat.completions.create({
+        model,
+        messages: [
+          {
+            role: "system",
+            content: `Sen bir Türk icra hukuku uzmanısın. Verilen haciz yazısı veya icra dosyası çıktısını analiz ederek dosya bilgilerini çıkar.
+
+Bu belge, borçlumuzun başka bir icra dosyasında ALACAKLI olduğu durumu gösterir. Biz bu dosyadaki alacağa haciz koymak istiyoruz.
+
+Çıkarılacak bilgiler:
+- İcra dairesi adı (örn: "İstanbul 5. İcra Dairesi")
+- Dosya numarası (örn: "2024/12345")
+- Karşı borçlu (dış dosyadaki borçlu - bizim borçlumuzun alacaklı olduğu kişi)
+- Alacak tutarı ve para birimi
+- Haciz tarihi (varsa)
+- Belge türü
+
+JSON formatında yanıt ver:
+{
+  "externalOffice": "İcra dairesi adı",
+  "externalCaseNo": "Dosya numarası (2024/12345 formatında)",
+  "counterpartyName": "Karşı borçlu adı/ünvanı",
+  "counterpartyIdentityNo": "TCKN veya VKN (varsa)",
+  "claimAmount": 12345.67,
+  "claimCurrency": "TRY|USD|EUR",
+  "attachmentDate": "YYYY-MM-DD (varsa)",
+  "attachmentType": "BANKA|MAAS|TASINMAZ|ARAC|ALACAK|DIGER",
+  "documentType": "HACIZ_YAZISI|DOSYA_CIKTISI|IHBARNAME_CEVABI|DIGER",
+  "confidence": 0-100,
+  "matchedKeywords": ["bulunan", "anahtar", "kelimeler"]
+}`
+          },
+          {
+            role: "user",
+            content: `Aşağıdaki belgeyi analiz et ve dış dosya bilgilerini çıkar:\n\n${text.substring(0, 4000)}`
+          }
+        ],
+        temperature: 0.1,
+        ...(model.startsWith("o1") ? { max_completion_tokens: 1000 } : { max_tokens: 1000 }),
+      });
+
+      const content = response.choices[0]?.message?.content || "{}";
+      this.logger.debug(`OpenAI dış dosya yanıtı: ${content}`);
+
+      const parsed = JSON.parse(content);
+
+      return {
+        externalOffice: parsed.externalOffice || undefined,
+        externalCaseNo: parsed.externalCaseNo || undefined,
+        counterpartyName: parsed.counterpartyName || undefined,
+        counterpartyIdentityNo: parsed.counterpartyIdentityNo || undefined,
+        claimAmount: parsed.claimAmount || undefined,
+        claimCurrency: parsed.claimCurrency || "TRY",
+        attachmentDate: parsed.attachmentDate || undefined,
+        attachmentType: parsed.attachmentType || undefined,
+        documentType: parsed.documentType || "DIGER",
+        confidence: parsed.confidence || 70,
+        rawText: text.substring(0, 1000),
+        matchedKeywords: parsed.matchedKeywords || [],
+      };
+    } catch (error: any) {
+      this.logger.error("OpenAI dış dosya analizi hatası:", error);
+      return this.parseExternalCaseWithRules(text);
+    }
+  }
+
+  /**
+   * Kural tabanlı dış dosya analizi (OpenAI yoksa)
+   */
+  private parseExternalCaseWithRules(text: string): ExternalCaseDocumentResult {
+    const lowerText = text.toLowerCase();
+    const matchedKeywords: string[] = [];
+
+    // İcra dairesi tespiti
+    const officeMatch = text.match(/(\d+)\.\s*İcra\s*(?:Dairesi|Müdürlüğü)/i) ||
+                        text.match(/([\wğüşıöçĞÜŞİÖÇ\s]+)\s*İcra\s*(?:Dairesi|Müdürlüğü)/i);
+    const externalOffice = officeMatch ? officeMatch[0].trim() : undefined;
+    if (externalOffice) matchedKeywords.push("icra dairesi");
+
+    // Dosya numarası tespiti
+    const caseNoMatch = text.match(/(?:Dosya\s*(?:No|Numarası)?|Esas\s*No)\s*[:\s]*(\d{4}\/\d+)/i) ||
+                        text.match(/(\d{4}\/\d{3,})/);
+    const externalCaseNo = caseNoMatch ? caseNoMatch[1] : undefined;
+    if (externalCaseNo) matchedKeywords.push("dosya no");
+
+    // Tutar tespiti
+    const amountMatch = text.match(/(?:toplam|alacak|tutar|borç)\s*[:\s]*([\d.,]+)\s*(?:TL|TRY|₺|USD|\$|EUR|€)/i);
+    let claimAmount: number | undefined;
+    let claimCurrency: "TRY" | "USD" | "EUR" = "TRY";
+    if (amountMatch) {
+      claimAmount = parseFloat(amountMatch[1].replace(/\./g, "").replace(",", "."));
+      if (amountMatch[0].includes("USD") || amountMatch[0].includes("$")) claimCurrency = "USD";
+      else if (amountMatch[0].includes("EUR") || amountMatch[0].includes("€")) claimCurrency = "EUR";
+      matchedKeywords.push("tutar");
+    }
+
+    // Karşı borçlu tespiti
+    const counterpartyMatch = text.match(/(?:borçlu|davalı)\s*[:\s]*([A-ZĞÜŞİÖÇ][a-zğüşıöç]+(?:\s+[A-ZĞÜŞİÖÇ][a-zğüşıöç]+)*)/i);
+    const counterpartyName = counterpartyMatch ? counterpartyMatch[1] : undefined;
+    if (counterpartyName) matchedKeywords.push("borçlu");
+
+    // Tarih tespiti
+    const dateMatch = text.match(/(\d{2})[\.\/](\d{2})[\.\/](\d{4})/);
+    const attachmentDate = dateMatch ? `${dateMatch[3]}-${dateMatch[2]}-${dateMatch[1]}` : undefined;
+
+    // Belge türü tespiti
+    let documentType: "HACIZ_YAZISI" | "DOSYA_CIKTISI" | "IHBARNAME_CEVABI" | "DIGER" = "DIGER";
+    if (lowerText.includes("haciz müzekkeresi") || lowerText.includes("haciz yazısı")) {
+      documentType = "HACIZ_YAZISI";
+      matchedKeywords.push("haciz yazısı");
+    } else if (lowerText.includes("dosya çıktısı") || lowerText.includes("dosya örneği")) {
+      documentType = "DOSYA_CIKTISI";
+      matchedKeywords.push("dosya çıktısı");
+    } else if (lowerText.includes("ihbarname") && lowerText.includes("cevap")) {
+      documentType = "IHBARNAME_CEVABI";
+      matchedKeywords.push("ihbarname cevabı");
+    }
+
+    return {
+      externalOffice,
+      externalCaseNo,
+      counterpartyName,
+      claimAmount,
+      claimCurrency,
+      attachmentDate,
+      documentType,
+      confidence: matchedKeywords.length >= 3 ? 60 : 30,
+      rawText: text.substring(0, 1000),
+      matchedKeywords,
+    };
+  }
+
+  /**
+   * Vision API ile dış dosya tarama
+   */
+  private async scanExternalCaseWithVision(buffer: Buffer, mimeType: string): Promise<ExternalCaseDocumentResult> {
+    if (!this.openai) {
+      throw new Error("OpenAI yapılandırılmamış. Görüntü dosyaları için OpenAI API anahtarı gereklidir.");
+    }
+
+    let imageBuffer = buffer;
+    let imageMediaType = "image/jpeg";
+
+    // PDF ise görüntüye çevir
+    if (mimeType === "application/pdf") {
+      imageBuffer = await this.convertPdfToImage(buffer);
+      imageMediaType = "image/jpeg";
+    } else if (mimeType.startsWith("image/")) {
+      imageMediaType = mimeType;
+    }
+
+    const base64Image = imageBuffer.toString("base64");
+
+    try {
+      const response = await this.openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text: `Bu bir icra dosyası belgesi (haciz yazısı, dosya çıktısı veya ihbarname cevabı). Lütfen analiz et ve şu bilgileri JSON formatında çıkar:
+{
+  "externalOffice": "İcra dairesi adı",
+  "externalCaseNo": "Dosya numarası (2024/12345)",
+  "counterpartyName": "Karşı borçlu adı",
+  "claimAmount": 12345.67,
+  "claimCurrency": "TRY|USD|EUR",
+  "attachmentDate": "YYYY-MM-DD",
+  "documentType": "HACIZ_YAZISI|DOSYA_CIKTISI|IHBARNAME_CEVABI|DIGER",
+  "confidence": 0-100
+}`
+              },
+              {
+                type: "image_url",
+                image_url: {
+                  url: `data:${imageMediaType};base64,${base64Image}`,
+                  detail: "high"
+                }
+              }
+            ]
+          }
+        ],
+        max_tokens: 1000,
+      });
+
+      const content = response.choices[0]?.message?.content || "{}";
+      const parsed = JSON.parse(content);
+
+      return {
+        externalOffice: parsed.externalOffice || undefined,
+        externalCaseNo: parsed.externalCaseNo || undefined,
+        counterpartyName: parsed.counterpartyName || undefined,
+        claimAmount: parsed.claimAmount || undefined,
+        claimCurrency: parsed.claimCurrency || "TRY",
+        attachmentDate: parsed.attachmentDate || undefined,
+        documentType: parsed.documentType || "DIGER",
+        confidence: parsed.confidence || 70,
+        matchedKeywords: [],
+      };
+    } catch (error: any) {
+      this.logger.error("Vision API dış dosya hatası:", error);
+      throw new Error(`Dış dosya görüntüsü analiz edilemedi: ${error.message}`);
     }
   }
 

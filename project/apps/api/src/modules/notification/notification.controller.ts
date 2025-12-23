@@ -96,4 +96,32 @@ export class NotificationController {
   async getStats(@Query("tenantId") tenantId?: string) {
     return this.notificationService.getStats(tenantId);
   }
+
+  // ==================== TAHSİLAT BİLDİRİMİ ŞABLONLARI ====================
+
+  /**
+   * Tahsilat bildirimi şablonlarını oluştur (SMS ve E-posta)
+   * POST /notifications/collection-templates
+   */
+  @Post("collection-templates")
+  async getCollectionTemplates(
+    @Body() body: {
+      debtorName: string;
+      amount: number;
+      currency: string;
+      dueDate?: string;
+      documentNo?: string;
+      documentType?: string;
+      creditorName?: string;
+      fileNumber?: string;
+      bankName?: string;
+      iban?: string;
+    }
+  ) {
+    const templates = this.notificationService.getCollectionTemplates(body);
+    return {
+      success: true,
+      data: templates,
+    };
+  }
 }

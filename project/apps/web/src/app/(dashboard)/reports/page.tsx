@@ -18,7 +18,7 @@ import {
   Mail,
 } from "lucide-react";
 import { AdvancedStats } from "@/components/dashboard/advanced-stats";
-import { ClientPerformanceReport, LawyerWorkloadReport, CustomReportBuilder, PdfExportModal, ScheduledReports, EmailReportModal } from "@/components/reports";
+import { ClientPerformanceReport, LawyerWorkloadReport, CustomReportBuilder, PdfExportModal, ScheduledReports, EmailReportModal, CaseDebtReport, InterestReport, CollectionHistoryReport } from "@/components/reports";
 
 interface DashboardStats {
   totalCases: number;
@@ -278,6 +278,9 @@ export default function ReportsPage() {
   const tabs = [
     { id: "dashboard", label: "Genel Bakış", icon: BarChart3 },
     { id: "istatistik", label: "Gelişmiş İstatistik", icon: PieChart },
+    { id: "dosya-borc", label: "Dosya Borç", icon: DollarSign },
+    { id: "faiz", label: "Faiz Raporu", icon: TrendingUp },
+    { id: "tahsilat", label: "Tahsilat Geçmişi", icon: DollarSign },
     { id: "muvekkil", label: "Müvekkil Performans", icon: Users },
     { id: "avukat", label: "Avukat İş Yükü", icon: Scale },
     { id: "ozel", label: "Özel Rapor", icon: Sliders },
@@ -342,6 +345,21 @@ export default function ReportsPage() {
           {/* Gelişmiş İstatistikler */}
           {activeTab === "istatistik" && (
             <AdvancedStats />
+          )}
+
+          {/* Dosya Borç Raporu */}
+          {activeTab === "dosya-borc" && (
+            <CaseDebtReport />
+          )}
+
+          {/* Faiz Raporu */}
+          {activeTab === "faiz" && (
+            <InterestReport />
+          )}
+
+          {/* Tahsilat Geçmişi */}
+          {activeTab === "tahsilat" && (
+            <CollectionHistoryReport />
           )}
 
           {/* Müvekkil Performans */}

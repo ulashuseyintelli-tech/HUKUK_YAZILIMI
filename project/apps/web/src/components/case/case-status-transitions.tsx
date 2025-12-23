@@ -119,7 +119,9 @@ export function CaseStatusTransitions({ caseId, currentStatus, onStatusChange }:
                       {toConfig.label}
                     </span>
                     {transition.requiresApproval && (
-                      <AlertTriangle className="h-3 w-3 text-orange-500 ml-auto" title="Onay gerektirir" />
+                      <span title="Onay gerektirir">
+                        <AlertTriangle className="h-3 w-3 text-orange-500 ml-auto" />
+                      </span>
                     )}
                   </button>
                 );

@@ -142,6 +142,44 @@ export class PartyDto {
   address?: string;
 }
 
+// Yeni CaseDebtor DTO - Gelişmiş borçlu bilgileri
+export class CaseDebtorDto {
+  @IsString()
+  debtorId: string;
+
+  @IsString()
+  @IsOptional()
+  role?: string;
+
+  @IsNumber()
+  @IsOptional()
+  liabilityAmount?: number;
+
+  @IsString()
+  @IsOptional()
+  liabilityType?: string;
+
+  @IsString()
+  @IsOptional()
+  notificationMode?: string;
+
+  @IsString()
+  @IsOptional()
+  selectedAddressId?: string;
+
+  @IsBoolean()
+  @IsOptional()
+  prepareNotification?: boolean;
+
+  @IsString()
+  @IsOptional()
+  ilanenJustification?: string;
+
+  @IsString()
+  @IsOptional()
+  caseNote?: string;
+}
+
 export enum ExecutionPath {
   HACIZ = "HACIZ",
   IFLAS = "IFLAS",
@@ -358,6 +396,13 @@ export class CreateCaseDto {
   @Type(() => PartyDto)
   @IsOptional()
   debtors?: PartyDto[];
+
+  // Yeni CaseDebtor formatı - Gelişmiş borçlu bilgileri
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CaseDebtorDto)
+  @IsOptional()
+  caseDebtors?: CaseDebtorDto[];
 
   @IsArray()
   @ValidateNested({ each: true })

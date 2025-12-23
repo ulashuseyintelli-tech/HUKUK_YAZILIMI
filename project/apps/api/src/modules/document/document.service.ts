@@ -167,6 +167,69 @@ export class DocumentService {
     return xml;
   }
 
+  // 89/1 Haciz İhbarnamesi PDF oluştur
+  async generateIhbarname89_1(
+    caseId: string,
+    thirdPartyDetails: {
+      name: string;
+      type: "BANKA" | "ISVEREN" | "KIRACI" | "DIGER";
+      identityNo?: string;
+      address?: string;
+    }
+  ): Promise<Buffer> {
+    const data = await this.prepareDocumentData(caseId);
+    const docDefinition = this.templateService.getIhbarname89_1Template(data, thirdPartyDetails);
+    return this.generatePdf(docDefinition);
+  }
+
+  // 89/2 Haciz İhbarnamesi PDF oluştur
+  async generateIhbarname89_2(
+    caseId: string,
+    thirdPartyDetails: {
+      name: string;
+      type: "BANKA" | "ISVEREN" | "KIRACI" | "DIGER";
+      identityNo?: string;
+      address?: string;
+      firstIhbarnameDate: string;
+    }
+  ): Promise<Buffer> {
+    const data = await this.prepareDocumentData(caseId);
+    const docDefinition = this.templateService.getIhbarname89_2Template(data, thirdPartyDetails);
+    return this.generatePdf(docDefinition);
+  }
+
+  // 89/3 Haciz İhbarnamesi PDF oluştur
+  async generateIhbarname89_3(
+    caseId: string,
+    thirdPartyDetails: {
+      name: string;
+      type: "BANKA" | "ISVEREN" | "KIRACI" | "DIGER";
+      identityNo?: string;
+      address?: string;
+      firstIhbarnameDate: string;
+      secondIhbarnameDate: string;
+    }
+  ): Promise<Buffer> {
+    const data = await this.prepareDocumentData(caseId);
+    const docDefinition = this.templateService.getIhbarname89_3Template(data, thirdPartyDetails);
+    return this.generatePdf(docDefinition);
+  }
+
+  // Alacak Haczi Talebi (Dosya Haczi) PDF oluştur
+  async generateAlacakHacziTalebi(
+    caseId: string,
+    externalCaseDetails: {
+      externalOffice: string;
+      externalCaseNo: string;
+      counterpartyName: string;
+      claimAmount: number;
+    }
+  ): Promise<Buffer> {
+    const data = await this.prepareDocumentData(caseId);
+    const docDefinition = this.templateService.getAlacakHacziTalebiTemplate(data, externalCaseDetails);
+    return this.generatePdf(docDefinition);
+  }
+
   // Belge listesi
   async getDocumentTypes() {
     return [
@@ -176,6 +239,10 @@ export class DocumentService {
       { code: "SEIZURE_PROPERTY", name: "Taşınmaz Haciz Müzekkeresi", description: "Taşınmaz üzerine haciz" },
       { code: "SEIZURE_SALARY", name: "Maaş Haczi Müzekkeresi", description: "Maaş haczi" },
       { code: "SALE_REQUEST", name: "Satış Talebi", description: "Hacizli mal satış talebi" },
+      { code: "IHBARNAME_89_1", name: "89/1 Haciz İhbarnamesi", description: "Birinci haciz ihbarnamesi (İİK m. 89/1)" },
+      { code: "IHBARNAME_89_2", name: "89/2 Haciz İhbarnamesi", description: "İkinci haciz ihbarnamesi (İİK m. 89/2)" },
+      { code: "IHBARNAME_89_3", name: "89/3 Haciz İhbarnamesi", description: "Üçüncü haciz ihbarnamesi (İİK m. 89/3)" },
+      { code: "ALACAK_HACZI_TALEBI", name: "Alacak Haczi Talebi", description: "Dosya haczi / alacak haczi talebi" },
       { code: "UYAP_XML", name: "UYAP XML", description: "UYAP entegrasyon dosyası" },
     ];
   }

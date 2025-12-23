@@ -119,4 +119,59 @@ export class ReportController {
     });
     return { success: true, data: csvData, contentType: 'text/csv' };
   }
+
+  // ==================== YENİ RAPORLAR ====================
+
+  // Dosya Borç Raporu (Kapak Hesabı)
+  @Get('case-debt/:caseId')
+  async getCaseDebtReport(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('caseId') caseId: string,
+    @Query('calculationDate') calculationDate?: string,
+  ) {
+    const data = await this.service.getCaseDebtReport(tenantId, caseId, calculationDate);
+    return { success: true, data };
+  }
+
+  // Faiz Raporu
+  @Get('interest/:caseId')
+  async getInterestReport(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('caseId') caseId: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    const data = await this.service.getInterestReport(tenantId, caseId, startDate, endDate);
+    return { success: true, data };
+  }
+
+  // Tahsilat Geçmişi Raporu
+  @Get('collection-history')
+  async getCollectionHistoryReport(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query('caseId') caseId?: string,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+    @Query('channels') channels?: string,
+    @Query('statuses') statuses?: string,
+  ) {
+    const data = await this.service.getCollectionHistoryReport(tenantId, {
+      caseId,
+      startDate,
+      endDate,
+      channels: channels ? channels.split(',') : undefined,
+      statuses: statuses ? statuses.split(',') : undefined,
+    });
+    return { success: true, data };
+  }
+
+  // Tahsilat Özet Raporu
+  @Get('collection-summary')
+  async getCollectionSummary(
+    @CurrentUser('tenantId') tenantId: string,
+    @Query('period') period?: 'week' | 'month' | 'year',
+  ) {
+    const data = await this.service.getCollectionSummary(tenantId, period);
+    return { success: true, data };
+  }
 }

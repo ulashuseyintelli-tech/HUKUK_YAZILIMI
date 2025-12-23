@@ -41,6 +41,7 @@ import {
   ShareCaseModal,
   CaseTags,
 } from "@/components/case";
+import { ClaimItemPanel } from "@/components/claim-item";
 
 const caseTypeLabels: Record<string, string> = {
   GENERAL_EXECUTION: "Genel Haciz Yoluyla Takip",
@@ -737,14 +738,7 @@ export default function CaseDetailPage() {
           )}
 
           {activeTab === "dues" && (
-            <div className="bg-white rounded-xl border p-6 space-y-6">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold flex items-center gap-2">
-                  <DollarSign className="h-5 w-5" />
-                  Alacak Kalemleri
-                </h3>
-              </div>
-
+            <div className="space-y-4">
               {/* Raporlama Özeti Banner */}
               <div 
                 onClick={() => setShowReportingPanel(true)}
@@ -761,77 +755,8 @@ export default function CaseDetailPage() {
                 </div>
               </div>
 
-              {/* Alacak Kalemleri Tablosu */}
-              {caseData.dues && caseData.dues.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b bg-gray-50">
-                        <th className="text-left py-3 px-4 font-medium">Kalem Türü</th>
-                        <th className="text-left py-3 px-4 font-medium">Açıklama</th>
-                        <th className="text-right py-3 px-4 font-medium">Tutar</th>
-                        <th className="text-left py-3 px-4 font-medium">Vade Tarihi</th>
-                        <th className="text-left py-3 px-4 font-medium">Raporlama</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {caseData.dues.map((due) => (
-                        <tr key={due.id} className="border-b hover:bg-gray-50">
-                          <td className="py-3 px-4">
-                            <span className={`px-2 py-1 rounded text-xs font-medium ${
-                              due.type === 'PRINCIPAL' ? 'bg-blue-100 text-blue-700' :
-                              due.type === 'INTEREST' ? 'bg-green-100 text-green-700' :
-                              due.type === 'EXPENSE' ? 'bg-orange-100 text-orange-700' :
-                              'bg-gray-100 text-gray-700'
-                            }`}>
-                              {dueTypeLabels[due.type] || due.type}
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 text-muted-foreground">
-                            {due.description || "-"}
-                          </td>
-                          <td className="py-3 px-4 text-right font-medium">
-                            {Number(due.amount).toLocaleString("tr-TR")} ₺
-                          </td>
-                          <td className="py-3 px-4">
-                            {new Date(due.dueDate).toLocaleDateString("tr-TR")}
-                          </td>
-                          <td className="py-3 px-4">
-                            <button
-                              onClick={() => setShowReportingPanel(true)}
-                              className="text-xs text-purple-600 hover:text-purple-800 hover:underline truncate max-w-[200px] block"
-                              title={caseData.reportingSummary || "Düzenle"}
-                            >
-                              {caseData.reportingSummary 
-                                ? (caseData.reportingSummary.length > 30 
-                                    ? caseData.reportingSummary.substring(0, 30) + "..." 
-                                    : caseData.reportingSummary)
-                                : "Düzenle →"}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="bg-gray-100 font-semibold">
-                        <td colSpan={2} className="py-3 px-4">Toplam</td>
-                        <td className="py-3 px-4 text-right">
-                          {caseData.dues.reduce((sum, d) => sum + Number(d.amount), 0).toLocaleString("tr-TR")} ₺
-                        </td>
-                        <td colSpan={2}></td>
-                      </tr>
-                    </tfoot>
-                  </table>
-                </div>
-              ) : (
-                <div className="text-center py-8 border-2 border-dashed rounded-lg">
-                  <DollarSign className="h-12 w-12 mx-auto text-gray-300 mb-3" />
-                  <p className="text-muted-foreground">Henüz alacak kalemi eklenmemiş</p>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    Takip oluştururken alacak kalemleri ekleyebilirsiniz
-                  </p>
-                </div>
-              )}
+              {/* Alacak Kalemleri Panel */}
+              <ClaimItemPanel caseId={caseData.id} />
             </div>
           )}
 

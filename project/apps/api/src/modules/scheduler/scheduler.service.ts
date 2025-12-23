@@ -354,6 +354,173 @@ export class SchedulerService {
   }
 
   /**
+   * Her gün saat 10:00'da çalışır
+   * 89 İhbarname sürelerini kontrol eder
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_10AM)
+  async checkIhbarnameDeadlines() {
+    this.logger.log('⏰ 89 İhbarname süre kontrolü başladı...');
+
+    try {
+      // 7 günlük cevap süresi dolan ihbarnameleri bul
+      const sevenDaysAgo = new Date();
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+
+      // 89/1 süresi dolan (89/2 gönderilmemiş)
+      const expired89_1 = await this.db.thirdParty.findMany({
+        where: {
+          ihbarname89_1_date: { lte: sevenDaysAgo },
+          ihbarname89_2_date: null,
+          responseDate: null,
+        },
+        include: {
+          caseDebtor: {
+            include: {
+              case: { select: { id: true, fileNumber: true, tenantId: true } },
+              debtor: { select: { name: true } },
+            },
+          },
+        },
+      });
+
+      // 89/2 süresi dolan (89/3 gönderilmemiş)
+      const expired89_2 = await this.db.thirdParty.findMany({
+        where: {
+          ihbarname89_2_date: { lte: sevenDaysAgo },
+          ihbarname89_3_date: null,
+          responseDate: null,
+        },
+        include: {
+          caseDebtor: {
+            include: {
+              case: { select: { id: true, fileNumber: true, tenantId: true } },
+              debtor: { select: { name: true } },
+            },
+          },
+        },
+      });
+
+      this.logger.log(`📋 89/1 süresi dolan: ${expired89_1.length}, 89/2 süresi dolan: ${expired89_2.length}`);
+
+      // Hatırlatma task'ları oluştur
+      for (const tp of expired89_1) {
+        await this.createIhbarnameReminderTask(tp, '89/2');
+      }
+
+      for (const tp of expired89_2) {
+        await this.createIhbarnameReminderTask(tp, '89/3');
+      }
+    } catch (error) {
+      this.logger.error('89 İhbarname kontrolü hatası:', error);
+    }
+  }
+
+  /**
+   * İhbarname hatırlatma task'ı oluştur
+   */
+  private async createIhbarnameReminderTask(thirdParty: any, nextIhbarname: string) {
+    const caseData = thirdParty.caseDebtor?.case;
+    if (!caseData) return;
+
+    // Aynı task zaten var mı kontrol et
+    const existingTask = await this.db.task.findFirst({
+      where: {
+        caseId: caseData.id,
+        title: { contains: `${nextIhbarname} - ${thirdParty.name}` },
+        status: 'PENDING',
+      },
+    });
+
+    if (existingTask) return;
+
+    // Yeni task oluştur
+    await this.db.task.create({
+      data: {
+        tenantId: caseData.tenantId,
+        caseId: caseData.id,
+        title: `${nextIhbarname} İhbarname Gönder - ${thirdParty.name}`,
+        description: `${caseData.fileNumber} dosyasında ${thirdParty.caseDebtor?.debtor?.name || 'borçlu'} için ${thirdParty.name}'a ${nextIhbarname} haciz ihbarnamesi gönderilmeli. Önceki ihbarname süresi doldu.`,
+        status: 'PENDING',
+        priority: 'HIGH',
+        dueDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000), // 2 gün içinde
+      },
+    });
+
+    this.logger.log(`✅ Task oluşturuldu: ${nextIhbarname} - ${thirdParty.name} (${caseData.fileNumber})`);
+  }
+
+  /**
+   * Alacak haczi (dış dosya) takibi
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_11AM)
+  async checkExternalCaseFollowups() {
+    this.logger.log('⏰ Alacak haczi takip kontrolü başladı...');
+
+    try {
+      // 30 günden fazla HACIZ_KONDU durumunda bekleyen dış dosyalar
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      const pendingExternalCases = await this.db.externalCase.findMany({
+        where: {
+          attachmentStatus: { in: ['HACIZ_KONDU', 'CEVAP_BEKLENIYOR'] },
+          attachedAt: { lte: thirtyDaysAgo },
+        },
+        include: {
+          caseDebtor: {
+            include: {
+              case: { select: { id: true, fileNumber: true, tenantId: true } },
+              debtor: { select: { name: true } },
+            },
+          },
+        },
+      });
+
+      this.logger.log(`📋 Takip gerektiren dış dosya: ${pendingExternalCases.length}`);
+
+      for (const ec of pendingExternalCases) {
+        await this.createExternalCaseFollowupTask(ec);
+      }
+    } catch (error) {
+      this.logger.error('Alacak haczi takip kontrolü hatası:', error);
+    }
+  }
+
+  /**
+   * Dış dosya takip task'ı oluştur
+   */
+  private async createExternalCaseFollowupTask(externalCase: any) {
+    const caseData = externalCase.caseDebtor?.case;
+    if (!caseData) return;
+
+    // Aynı task zaten var mı kontrol et
+    const existingTask = await this.db.task.findFirst({
+      where: {
+        caseId: caseData.id,
+        title: { contains: `Alacak Haczi Takip - ${externalCase.externalCaseNo}` },
+        status: 'PENDING',
+      },
+    });
+
+    if (existingTask) return;
+
+    // Yeni task oluştur
+    await this.db.task.create({
+      data: {
+        tenantId: caseData.tenantId,
+        caseId: caseData.id,
+        title: `Alacak Haczi Takip - ${externalCase.externalCaseNo}`,
+        description: `${caseData.fileNumber} dosyasında ${externalCase.externalOffice} ${externalCase.externalCaseNo} nolu dış dosyaya konulan haciz 30 günü aştı. Durum sorgulanmalı.`,
+        status: 'PENDING',
+        priority: 'MEDIUM',
+        dueDate: new Date(Date.now() + 3 * 24 * 60 * 60 * 1000), // 3 gün içinde
+      },
+    });
+
+    this.logger.log(`✅ Task oluşturuldu: Alacak Haczi Takip - ${externalCase.externalCaseNo}`);
+  }
+
+  /**
    * Scheduler durumunu getir
    */
   async getStatus() {
@@ -362,6 +529,8 @@ export class SchedulerService {
       activeMtsCases,
       failedUyapRequests,
       upcomingTasks,
+      expiredIhbarnames,
+      pendingExternalCases,
     ] = await Promise.all([
       this.db.case.count({
         where: {
@@ -381,6 +550,22 @@ export class SchedulerService {
           dueDate: { lte: new Date(Date.now() + 24 * 60 * 60 * 1000) },
         },
       }),
+      // 89 ihbarname süresi dolanlar
+      this.db.thirdParty.count({
+        where: {
+          OR: [
+            { ihbarname89_1_date: { lte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }, ihbarname89_2_date: null, responseDate: null },
+            { ihbarname89_2_date: { lte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) }, ihbarname89_3_date: null, responseDate: null },
+          ],
+        },
+      }),
+      // Bekleyen dış dosyalar
+      this.db.externalCase.count({
+        where: {
+          attachmentStatus: { in: ['HACIZ_KONDU', 'CEVAP_BEKLENIYOR'] },
+          attachedAt: { lte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+        },
+      }),
     ]);
 
     return {
@@ -388,6 +573,8 @@ export class SchedulerService {
       activeMtsCases,
       failedUyapRequests,
       upcomingTasks,
+      expiredIhbarnames,
+      pendingExternalCases,
       lastCheck: new Date().toISOString(),
     };
   }

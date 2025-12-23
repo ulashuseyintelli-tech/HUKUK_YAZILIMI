@@ -229,6 +229,7 @@ export default function ClientsSettingsPage() {
                 <th className="text-left px-3 py-2 font-medium text-gray-600">TCKN / VKN</th>
                 <th className="text-left px-3 py-2 font-medium text-gray-600">Telefon</th>
                 <th className="text-left px-3 py-2 font-medium text-gray-600">E-posta</th>
+                <th className="text-left px-3 py-2 font-medium text-gray-600">Vekalet</th>
                 <th className="text-left px-3 py-2 font-medium text-gray-600">Takip Sayısı</th>
                 <th className="text-right px-3 py-2 font-medium text-gray-600 w-28">İşlem</th>
               </tr>
@@ -259,10 +260,47 @@ export default function ClientsSettingsPage() {
                         {typeInfo.label}
                       </div>
                     </td>
-                    <td className="px-3 py-2 font-medium">{client.name}</td>
+                    <td className="px-3 py-2">
+                      <button 
+                        onClick={() => { setEditingClient(client); setScannedData(null); setShowModal(true); }} 
+                        className="font-medium text-left hover:text-primary hover:underline transition-colors"
+                        title="Düzenlemek için tıklayın"
+                      >
+                        {client.name}
+                      </button>
+                    </td>
                     <td className="px-3 py-2 font-mono text-xs text-gray-600">{client.identityNo || "-"}</td>
                     <td className="px-3 py-2 text-gray-600">{client.phone || "-"}</td>
                     <td className="px-3 py-2 text-gray-600">{client.email || "-"}</td>
+                    <td className="px-3 py-2">
+                      {client.poaCount > 0 || client._count?.poas > 0 ? (
+                        <button 
+                          onClick={() => { setPoaClient(client); setShowPoaModal(true); }}
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs cursor-pointer hover:opacity-80 ${
+                            client.hasExpiredPoa ? 'bg-red-100 text-red-700' : 
+                            client.hasExpiringPoa ? 'bg-amber-100 text-amber-700' : 
+                            'bg-green-100 text-green-700'
+                          }`}
+                          title="Vekaletleri görüntüle"
+                        >
+                          {client.hasExpiredPoa ? (
+                            <><X className="h-3 w-3" /> Süresi Dolmuş</>
+                          ) : client.hasExpiringPoa ? (
+                            <><Clock className="h-3 w-3" /> Süresi Yakın</>
+                          ) : (
+                            <><CheckCircle className="h-3 w-3" /> Geçerli</>
+                          )}
+                        </button>
+                      ) : (
+                        <button 
+                          onClick={() => { setPoaClient(client); setShowPoaModal(true); }}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs bg-gray-100 text-gray-500 hover:bg-gray-200 cursor-pointer"
+                          title="Vekalet ekle"
+                        >
+                          <Plus className="h-3 w-3" /> Ekle
+                        </button>
+                      )}
+                    </td>
                     <td className="px-3 py-2 text-center">
                       <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-medium">
                         {client._count?.cases || 0}

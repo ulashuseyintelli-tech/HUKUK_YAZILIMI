@@ -46,14 +46,17 @@ export default function CalendarPage() {
       const year = currentDate.getFullYear();
       const month = currentDate.getMonth() + 1;
       const res = await api.get(`/calendar/events?year=${year}&month=${month}`);
-      setEvents(res.data || res || []);
+      // API response: { data: [...] } ve api.get sarıyor: { data: { data: [...] } } veya { data: [...] }
+      const eventList = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+      // Tarihleri YYYY-MM-DD formatına çevir
+      const formattedEvents = eventList.map((e: any) => ({
+        ...e,
+        date: e.date ? new Date(e.date).toISOString().split('T')[0] : e.date,
+      }));
+      setEvents(formattedEvents);
     } catch (e) {
-      console.error(e);
-      // Mock data for demo
-      setEvents([
-        { id: "1", title: "Duruşma - 2024/1234", date: `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}-15`, time: "10:00", type: "DURUSMA", location: "İstanbul 5. İcra Mahkemesi" },
-        { id: "2", title: "Vekalet yenileme hatırlatıcısı", date: `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}-20`, type: "HATIRLATICI" },
-      ]);
+      console.error("Etkinlikler yüklenemedi:", e);
+      setEvents([]);
     } finally {
       setLoading(false);
     }
@@ -77,7 +80,10 @@ export default function CalendarPage() {
 
   const getEventsForDay = (day: number) => {
     const dateStr = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-    return events.filter(e => e.date === dateStr);
+    return events.filter(e => {
+      const eventDate = e.date?.split('T')[0] || e.date;
+      return eventDate === dateStr;
+    });
   };
 
   const isToday = (day: number) => {
@@ -148,6 +154,24 @@ export default function CalendarPage() {
     setNewEvent({ title: "", description: "", date: "", time: "", type: "HATIRLATICI", location: "" });
   };
 
+  const openAddModal = (date?: Date) => {
+    const targetDate = date || new Date();
+    const dateStr = `${targetDate.getFullYear()}-${String(targetDate.getMonth() + 1).padStart(2, "0")}-${String(targetDate.getDate()).padStart(2, "0")}`;
+    setNewEvent({ title: "", description: "", date: dateStr, time: "", type: "HATIRLATICI", location: "" });
+    setEditingEvent(null);
+    setShowAddModal(true);
+  };
+
+  const handleDayClick = (day: number) => {
+    const clickedDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
+    setSelectedDate(clickedDate);
+  };
+
+  const handleDayDoubleClick = (day: number) => {
+    const clickedDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
+    openAddModal(clickedDate);
+  };
+
   const selectedDateEvents = selectedDate ? getEventsForDay(selectedDate.getDate()) : [];
 
   return (
@@ -157,7 +181,7 @@ export default function CalendarPage() {
           <CalendarIcon className="h-5 w-5 text-blue-600" />
           <h1 className="text-xl font-semibold">Takvim</h1>
         </div>
-        <button onClick={() => setShowAddModal(true)} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
+        <button onClick={() => openAddModal()} className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
           <Plus className="h-4 w-4" /> Etkinlik Ekle
         </button>
       </div>
@@ -190,7 +214,8 @@ export default function CalendarPage() {
               return (
                 <div
                   key={day}
-                  onClick={() => setSelectedDate(new Date(currentDate.getFullYear(), currentDate.getMonth(), day))}
+                  onClick={() => handleDayClick(day)}
+                  onDoubleClick={() => handleDayDoubleClick(day)}
                   className={`h-24 border rounded-lg p-1 cursor-pointer hover:bg-gray-50 ${isToday(day) ? "bg-blue-50 border-blue-300" : ""} ${isSelected ? "ring-2 ring-blue-500" : ""}`}
                 >
                   <div className={`text-sm font-medium ${isToday(day) ? "text-blue-600" : ""}`}>{day}</div>
@@ -210,12 +235,22 @@ export default function CalendarPage() {
 
         {/* Seçili Gün Detayları */}
         <div className="bg-white rounded-lg border p-4">
-          <h3 className="font-semibold mb-4">
-            {selectedDate ? `${selectedDate.getDate()} ${MONTHS[selectedDate.getMonth()]}` : "Bir gün seçin"}
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold">
+              {selectedDate ? `${selectedDate.getDate()} ${MONTHS[selectedDate.getMonth()]}` : "Bir gün seçin"}
+            </h3>
+            {selectedDate && (
+              <button onClick={() => openAddModal(selectedDate)} className="text-xs text-blue-600 hover:underline flex items-center gap-1">
+                <Plus className="h-3 w-3" /> Ekle
+              </button>
+            )}
+          </div>
           {selectedDate ? (
             selectedDateEvents.length === 0 ? (
-              <p className="text-gray-500 text-sm">Bu günde etkinlik yok</p>
+              <div className="text-center py-4">
+                <p className="text-gray-500 text-sm mb-2">Bu günde etkinlik yok</p>
+                <button onClick={() => openAddModal(selectedDate)} className="text-sm text-blue-600 hover:underline">+ Etkinlik Ekle</button>
+              </div>
             ) : (
               <div className="space-y-3">
                 {selectedDateEvents.map(event => (

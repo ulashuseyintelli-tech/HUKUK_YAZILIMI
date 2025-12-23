@@ -544,25 +544,96 @@ model CaseClient {
 }
 
 model Debtor {
-  id         String     @id @default(cuid())
-  tenantId   String
-  tenant     Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  type       DebtorType
-  name       String
-  identityNo String?
-  taxOffice  String?
-  email      String?
-  phone      String?
-  addresses  Json?
-  notes      String?
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
+  id                    String     @id @default(cuid())
+  tenantId              String
+  tenant                Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  // Temel Bilgiler
+  type                  DebtorType
+  
+  // Gerçek Kişi Alanları (INDIVIDUAL)
+  firstName             String?
+  lastName              String?
+  tckn                  String?    @db.VarChar(11)
+  gender                String?    // E, K
+  birthDate             DateTime?
+  fatherName            String?
+  motherName            String?
+  birthPlace            String?
+  
+  // Tüzel Kişi Alanları (COMPANY)
+  companyName           String?
+  vkn                   String?    @db.VarChar(10)
+  taxOffice             String?
+  mersisNo              String?
+  tradeRegisterNo       String?
+  
+  // Kamu Kurumu Alanları (PUBLIC_INSTITUTION)
+  institutionName       String?
+  detsisNo              String?
+  institutionType       PublicInstitutionType?
+  parentInstitution     String?
+  authorizedPerson      String?
+  
+  // Computed Display Name (Ad Soyad veya Ünvan)
+  name                  String
+  // Kimlik No (TCKN, VKN veya DETSİS)
+  identityNo            String?
+  
+  // İletişim
+  email                 String?
+  phone                 String?
+  kepAddress            String?
+  
+  // Risk ve Notlar
+  riskLevel             DebtorRiskLevel?
+  riskNotes             String?
+  notes                 String?
+  
+  // Eski alan (geriye uyumluluk)
+  addresses             Json?
+  
+  // Timestamps
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
 
-  caseDebtors CaseDebtor[]
-  assets      Asset[]
+  // Relations
+  debtorAddresses       DebtorAddress[]
+  caseDebtors           CaseDebtor[]
+  assets                Asset[]
+  communications        DebtorCommunication[]
 
   @@index([tenantId])
   @@index([tenantId, identityNo])
+  @@index([tenantId, tckn])
+  @@index([tenantId, vkn])
+  @@index([tenantId, detsisNo])
+  @@index([tenantId, name])
+}
+
+// Borçlu Adresi
+model DebtorAddress {
+  id            String   @id @default(cuid())
+  debtorId      String
+  debtor        Debtor   @relation(fields: [debtorId], references: [id], onDelete: Cascade)
+  
+  addressType   String   // EV, IS, TEBLIGAT, MERNIS, KEP
+  street        String
+  city          String
+  district      String?
+  postalCode    String?
+  country       String   @default("Türkiye")
+  
+  isPrimary     Boolean  @default(false)
+  isMernis      Boolean  @default(false)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Used in case debtors
+  caseDebtors   CaseDebtor[]
+
+  @@index([debtorId])
 }
 
 
@@ -731,6 +802,8 @@ model Case {
   groups              CaseGroup[]
   stageHistory        CaseStageHistory[] @relation("CaseStageHistory")
   caseClients         CaseClient[]
+  tebligatlar         Tebligat[]
+  claimItems          ClaimItem[]
 
   @@unique([tenantId, fileNumber])
   @@index([tenantId, status])
@@ -796,16 +869,44 @@ model CaseDocument {
 }
 
 
+// Dosya Borçlusu - Genişletilmiş Model
 model CaseDebtor {
-  id        String   @id @default(cuid())
-  caseId    String
-  case      Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  debtorId  String
-  debtor    Debtor   @relation(fields: [debtorId], references: [id], onDelete: Cascade)
-  role      String   @default("DEBTOR")
-  createdAt DateTime @default(now())
+  id                    String           @id @default(cuid())
+  caseId                String
+  case                  Case             @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  debtorId              String
+  debtor                Debtor           @relation(fields: [debtorId], references: [id], onDelete: Cascade)
+  
+  // Rol ve Sorumluluk
+  role                  DebtorRole       @default(ASIL_BORCLU)
+  liabilityAmount       Decimal?         @db.Decimal(15, 2)
+  liabilityType         LiabilityType?
+  
+  // Tebligat
+  notificationMode      DebtorNotificationMode @default(NORMAL)
+  selectedAddressId     String?
+  selectedAddress       DebtorAddress?   @relation(fields: [selectedAddressId], references: [id])
+  prepareNotification   Boolean          @default(true)
+  ilanenJustification   String?          // İlanen tebligat gerekçesi
+  
+  // Borçlu Vekili
+  debtorLawyerId        String?
+  debtorLawyerName      String?
+  debtorLawyerBarNo     String?
+  
+  // Dosyaya Özel
+  caseNote              String?
+  
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @default(now()) @updatedAt
 
-  @@unique([caseId, debtorId])
+  // Relations
+  thirdParties          ThirdParty[]
+  externalCases         ExternalCase[]
+
+  @@unique([caseId, debtorId, role])
+  @@index([caseId])
+  @@index([debtorId])
 }
 
 model Due {
@@ -816,10 +917,42 @@ model Due {
   description String?
   amount      Decimal  @db.Decimal(15, 2)
   dueDate     DateTime
+  
+  // Para Birimi
+  currency    String   @default("TRY")  // TRY, USD, EUR, GBP, CHF
+  
+  // Faiz Detayları (type = INTEREST için)
+  interestType      String?   // YASAL, TICARI, AVANS, TEMERRUT, OZEL
+  interestRate      Decimal?  @db.Decimal(5, 2)  // Faiz oranı (%)
+  interestStartDate DateTime? // Faiz başlangıç tarihi
+  interestEndDate   DateTime? // Faiz bitiş tarihi
+  interestDays      Int?      // Faiz gün sayısı
+  
+  // Kaynak Belge Referansı
+  sourceDocumentId  String?   // CaseDocument referansı
+  sourceDocumentNo  String?   // Belge numarası (fatura no, senet no vb.)
+  
+  // Vergi/Kesinti Bilgileri
+  hasKdv            Boolean   @default(false)  // KDV dahil mi
+  kdvRate           Decimal?  @db.Decimal(5, 2) // KDV oranı
+  hasBsmv           Boolean   @default(false)  // BSMV dahil mi (bankacılık)
+  hasKkdf           Boolean   @default(false)  // KKDF dahil mi (kredi)
+  
+  // Kesinleşme Durumu (ilamlı takipler için)
+  requiresFinalization Boolean @default(false) // Kesinleşme gerekiyor mu
+  isFinalized          Boolean @default(false) // Kesinleşti mi
+  finalizationDate     DateTime?              // Kesinleşme tarihi
+  finalizationNote     String?                // Kesinleşme notu
+  
+  // Sıralama ve Öncelik
+  sortOrder   Int      @default(0)
+  isPrimary   Boolean  @default(false)  // Ana alacak kalemi mi
+  
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@index([caseId])
+  @@index([type])
 }
 
 model Asset {
@@ -835,6 +968,128 @@ model Asset {
   updatedAt   DateTime  @updatedAt
 
   @@index([debtorId])
+}
+
+// ==================== ÜÇÜNCÜ ŞAHIS (89 İHBARNAME) ====================
+
+model ThirdParty {
+  id              String          @id @default(cuid())
+  tenantId        String
+  caseDebtorId    String
+  caseDebtor      CaseDebtor      @relation(fields: [caseDebtorId], references: [id], onDelete: Cascade)
+  
+  // Temel Bilgiler
+  type            ThirdPartyType
+  name            String
+  identityNo      String?         // TCKN veya VKN
+  
+  // İletişim
+  address         String
+  city            String?
+  phone           String?
+  email           String?
+  kepAddress      String?
+  
+  // İlişki
+  relationDesc    String?         // Borçlu ile ilişki açıklaması
+  
+  // 89 İhbarname Takibi
+  ihbarname89_1_date      DateTime?
+  ihbarname89_1_status    String?   // GONDERILDI, TEBLIG_EDILDI, CEVAP_ALINDI
+  ihbarname89_2_date      DateTime?
+  ihbarname89_2_status    String?
+  ihbarname89_3_date      DateTime?
+  ihbarname89_3_status    String?
+  
+  // Cevap
+  responseDate    DateTime?
+  responseContent String?
+  
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+
+  @@index([caseDebtorId])
+  @@index([tenantId])
+}
+
+// ==================== DIŞ DOSYA (ALACAK HACZİ) ====================
+
+// Borçlunun alacaklı olduğu icra dosyaları - alacak haczi için
+model ExternalCase {
+  id                String   @id @default(cuid())
+  tenantId          String
+  caseDebtorId      String
+  caseDebtor        CaseDebtor @relation(fields: [caseDebtorId], references: [id], onDelete: Cascade)
+  
+  // Dış Dosya Bilgileri
+  externalOffice    String          // İcra dairesi adı
+  externalOfficeId  String?         // UYAP birim kodu (varsa)
+  externalCaseNo    String          // Dosya numarası (2024/12345)
+  
+  // Karşı Taraf (Dış dosyadaki borçlu)
+  counterpartyName  String          // Borçlumuzun alacaklı olduğu kişi/kurum
+  counterpartyId    String?         // Sistemde kayıtlıysa debtor ID
+  
+  // Alacak Bilgileri
+  claimAmount       Decimal         @db.Decimal(15, 2)
+  claimCurrency     String          @default("TRY")
+  
+  // Haciz Durumu
+  attachmentStatus  ExternalCaseStatus @default(HACIZ_TALEP)
+  attachedAt        DateTime?       // Haciz konulma tarihi
+  
+  // Tahsilat Takibi
+  receivedAmount    Decimal         @default(0) @db.Decimal(15, 2)
+  lastReceivedAt    DateTime?
+  
+  // Notlar
+  notes             String?
+  priorityNote      String?         // Sıra, rüçhan notları
+  
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([caseDebtorId])
+  @@index([tenantId])
+  @@index([externalCaseNo])
+}
+
+enum ExternalCaseStatus {
+  HACIZ_TALEP       // Haciz talep edildi
+  HACIZ_KONDU       // Haciz konuldu
+  CEVAP_BEKLENIYOR  // Cevap bekleniyor
+  TAHSIL_BASLADI    // Tahsilat başladı
+  KAPANDI           // Kapandı
+}
+
+// ==================== BORÇLU İLETİŞİM ====================
+
+model DebtorCommunication {
+  id            String   @id @default(cuid())
+  tenantId      String
+  debtorId      String
+  debtor        Debtor   @relation(fields: [debtorId], references: [id], onDelete: Cascade)
+  caseId        String?
+  
+  channel       String   // SMS, EMAIL, PHONE_CALL
+  templateId    String?
+  templateName  String?
+  content       String
+  
+  status        String   @default("PENDING") // PENDING, SENT, DELIVERED, FAILED
+  sentAt        DateTime?
+  deliveredAt   DateTime?
+  failReason    String?
+  
+  // Telefon görüşmesi için
+  callDuration  Int?
+  callNotes     String?
+  
+  createdAt     DateTime @default(now())
+
+  @@index([debtorId])
+  @@index([caseId])
+  @@index([tenantId])
 }
 
 model Task {
@@ -1160,20 +1415,111 @@ enum PowerOfAttorneyType {
 }
 
 model Collection {
-  id          String          @id @default(cuid())
-  tenantId    String
-  tenant      Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  caseId      String
-  case        Case            @relation(fields: [caseId], references: [id], onDelete: Cascade)
-  amount      Decimal         @db.Decimal(15, 2)
-  type        CollectionType
-  date        DateTime
-  description String?
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id              String          @id @default(cuid())
+  tenantId        String
+  tenant          Tenant          @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  caseId          String
+  case            Case            @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  caseDebtorId    String?         // Hangi borçludan tahsil edildi
+  
+  // Tutar Bilgileri
+  amount          Decimal         @db.Decimal(15, 2)
+  currency        String          @default("TRY")
+  
+  // Tahsilat Türü ve Kanalı
+  type            CollectionType
+  channel         CollectionChannel @default(BANKA)
+  
+  // Tarih
+  date            DateTime
+  valueDate       DateTime?       // Valör tarihi
+  
+  // Kaynak Bilgisi
+  sourceType      CollectionSource? // Nereden geldi
+  sourceId        String?          // Kaynak ID (ExternalCase, ThirdParty vs.)
+  
+  // Mahsup Bilgileri
+  allocations     CollectionAllocation[]
+  
+  // Açıklama ve Notlar
+  description     String?
+  receiptNo       String?         // Makbuz no
+  bankName        String?         // Banka adı
+  accountNo       String?         // Hesap no
+  notes           String?
+  
+  // Durum
+  status          CollectionStatus @default(CONFIRMED)
+  cancelledAt     DateTime?
+  cancelReason    String?
+  
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  createdById     String?
 
   @@index([tenantId])
   @@index([caseId])
+  @@index([caseDebtorId])
+  @@index([date])
+  @@index([status])
+}
+
+// Tahsilat Mahsup Kaydı (Hangi alacak kalemine ne kadar mahsup edildi)
+model CollectionAllocation {
+  id              String     @id @default(cuid())
+  collectionId    String
+  collection      Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+  
+  // Mahsup Edilen Kalem
+  allocationType  AllocationType  // PRINCIPAL, INTEREST, EXPENSE, FEE, OTHER
+  amount          Decimal    @db.Decimal(15, 2)
+  description     String?
+  
+  createdAt       DateTime   @default(now())
+
+  @@index([collectionId])
+}
+
+// Tahsilat Kanalı
+enum CollectionChannel {
+  NAKIT           // Nakit
+  BANKA           // Banka havalesi/EFT
+  CEK             // Çek
+  SENET           // Senet
+  KREDI_KARTI     // Kredi kartı
+  ICRA_DAIRESI    // İcra dairesinden
+  HACIZ           // Haciz yoluyla
+  DIGER           // Diğer
+}
+
+// Tahsilat Kaynağı
+enum CollectionSource {
+  MANUAL          // Manuel giriş
+  EXTERNAL_CASE   // Dış dosyadan (alacak haczi)
+  THIRD_PARTY     // Üçüncü şahıstan (89 ihbarname)
+  BANK_SEIZURE    // Banka haczi
+  SALARY_SEIZURE  // Maaş haczi
+  AUCTION         // Satış/ihale
+  SETTLEMENT      // Sulh/anlaşma
+}
+
+// Tahsilat Durumu
+enum CollectionStatus {
+  PENDING         // Beklemede
+  CONFIRMED       // Onaylandı
+  CANCELLED       // İptal edildi
+  REFUNDED        // İade edildi
+}
+
+// Mahsup Türü
+enum AllocationType {
+  PRINCIPAL       // Ana para
+  INTEREST        // Faiz
+  EXPENSE         // Masraf
+  FEE             // Harç
+  ATTORNEY_FEE    // Vekalet ücreti
+  PENALTY         // Ceza/tazminat
+  OTHER           // Diğer
 }
 
 // ==================== AUTOMATION MODELS ====================
@@ -1280,6 +1626,150 @@ model NotificationQueue {
   @@index([status])
   @@index([scheduledAt])
   @@index([expiresAt])
+}
+
+
+// ==================== TEBLİGAT SİSTEMİ ====================
+
+// Tebligat Kaydı - İcra tebligatları için özel model
+model Tebligat {
+  id              String           @id @default(cuid())
+  tenantId        String
+  caseId          String
+  case            Case             @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  caseDebtorId    String?          // Hangi borçluya
+  
+  // Tebligat Türü
+  tebligatType    TebligatType     // ODEME_EMRI, ICRA_EMRI, HACIZ_IHBARNAMESI, vs.
+  
+  // Adres Bilgileri
+  addressType     TebligatAddressType  // BILINEN, MERNIS, TICARET_SICIL, KEP
+  addressId       String?          // DebtorAddress referansı
+  addressText     String           // Tam adres metni
+  city            String?
+  district        String?
+  
+  // Muhatap Bilgileri
+  recipientName   String           // Borçlu adı
+  recipientTcVkn  String?          // TC/VKN
+  
+  // Tebligat Kanalı
+  channel         TebligatChannel  // PTT, KEP, UETS, ILANEN
+  
+  // Durum Takibi
+  status          TebligatStatus   @default(HAZIRLANDI)
+  
+  // Tarihler
+  preparedAt      DateTime         @default(now())  // Hazırlandı
+  sentAt          DateTime?        // Gönderildi
+  deliveredAt     DateTime?        // Teslim edildi
+  returnedAt      DateTime?        // İade geldi
+  
+  // PTT/Tebligat Sonucu
+  pttResult       TebligatPttResult?  // PTT şerhi
+  pttResultDate   DateTime?
+  pttResultNote   String?          // PTT açıklama
+  
+  // 21/1 - 21/2 Bilgileri
+  tk21Type        Tk21Type?        // TK_21_1, TK_21_2
+  muhtarlikDate   DateTime?        // Muhtarlığa bırakılma tarihi
+  ilanDate        DateTime?        // İhbar yapıştırma tarihi
+  tebligSayilmaDate DateTime?      // Tebliğ edilmiş sayılma tarihi (21/2 için +15 gün)
+  
+  // Sonraki Adım
+  nextAction      TebligatNextAction?
+  nextActionDate  DateTime?
+  
+  // Belge
+  documentId      String?          // Oluşturulan belge
+  barcodeNo       String?          // PTT barkod no
+  
+  // Notlar
+  notes           String?
+  metadata        Json?
+  
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([caseDebtorId])
+  @@index([status])
+  @@index([tebligatType])
+}
+
+// Tebligat Türü
+enum TebligatType {
+  ODEME_EMRI           // Ödeme Emri
+  ICRA_EMRI            // İcra Emri
+  TAHLIYE_EMRI         // Tahliye Emri
+  HACIZ_IHBARNAMESI_89_1  // 89/1 Haciz İhbarnamesi
+  HACIZ_IHBARNAMESI_89_2  // 89/2 Haciz İhbarnamesi
+  HACIZ_IHBARNAMESI_89_3  // 89/3 Haciz İhbarnamesi
+  SATIS_ILANI          // Satış İlanı
+  KIYMET_TAKDIRI       // Kıymet Takdiri
+  DIGER                // Diğer
+}
+
+// Tebligat Adres Türü
+enum TebligatAddressType {
+  BILINEN              // Bilinen en son adres (TK m.10)
+  MERNIS               // MERNİS adresi (TK m.10/2)
+  TICARET_SICIL        // Ticaret sicil adresi (tüzel kişiler)
+  KEP                  // KEP adresi
+  VERGI_DAIRESI        // Vergi dairesi adresi
+}
+
+// Tebligat Kanalı
+enum TebligatChannel {
+  PTT                  // PTT ile fiziki tebligat
+  KEP                  // Kayıtlı Elektronik Posta
+  UETS                 // Ulusal Elektronik Tebligat Sistemi
+  ILANEN               // İlanen tebligat
+  ELDEN                // Elden tebligat
+}
+
+// Tebligat Durumu
+enum TebligatStatus {
+  HAZIRLANDI           // Hazırlandı, gönderilmedi
+  GONDERILDI           // Gönderildi, sonuç bekleniyor
+  TESLIM_EDILDI        // Muhataba teslim edildi
+  IADE_GELDI           // İade geldi (çeşitli nedenlerle)
+  MUHTARLIGA_BIRAKILDI // Muhtarlığa bırakıldı (21/1 veya 21/2)
+  TEBLIG_EDILMIS_SAYILDI // Tebliğ edilmiş sayıldı (21/2 +15 gün)
+  IPTAL                // İptal edildi
+}
+
+// PTT Sonucu (Şerh)
+enum TebligatPttResult {
+  TESLIM_EDILDI        // Muhataba teslim edildi
+  AYNI_KONUTTA_TESLIM  // Aynı konutta birlikte oturana teslim
+  ISYERINDE_TESLIM     // İşyerinde çalışana teslim
+  ADRESTE_BULUNAMADI   // Muhatap adreste bulunamadı
+  TASINMIS             // Taşınmış
+  ADRES_YETERSIZ       // Adres yetersiz
+  BINA_YIKILMIS        // Bina yıkılmış
+  ADRES_KAPALI         // Adres kapalı
+  IMTINA               // Tebligatı almaktan imtina
+  MUHTARLIGA_BIRAKILDI // Muhtarlığa bırakıldı
+  VEFAT                // Muhatap vefat etmiş
+  TANIMIYOR            // Adreste tanınmıyor
+  DIGER                // Diğer
+}
+
+// TK 21 Türü
+enum Tk21Type {
+  TK_21_1              // Bilinen adreste imtina (aynı gün tebliğ)
+  TK_21_2              // MERNİS adresi (ihbar + 15 gün)
+}
+
+// Sonraki Adım
+enum TebligatNextAction {
+  MERNIS_TEBLIGAT      // MERNİS adresine tebligat çıkar
+  ILANEN_TEBLIGAT      // İlanen tebligat başlat
+  TEBLIG_TAMAMLANDI    // Tebligat tamamlandı
+  YENI_ADRES_ARA       // Yeni adres araştır
+  BEKLE                // Bekle (süre dolmadı)
 }
 
 
@@ -1439,8 +1929,67 @@ enum ClientType {
 }
 
 enum DebtorType {
-  INDIVIDUAL
-  COMPANY
+  INDIVIDUAL         // Gerçek Kişi (PERSON)
+  COMPANY            // Tüzel Kişi / Şirket
+  PUBLIC_INSTITUTION // Kamu Kurumu
+}
+
+// Borçlu Rolü - Dosya bazında borçlunun hukuki rolü
+enum DebtorRole {
+  ASIL_BORCLU       // Asıl Borçlu
+  MUSETEREK_BORCLU  // Müşterek (Müteselsil) Borçlu
+  ADI_KEFIL         // Adi Kefil
+  MUTESELSIL_KEFIL  // Müteselsil Kefil
+  AVAL              // Aval Veren
+  CIRANTA           // Ciranta
+  LEHDAR            // Lehdar
+  KESIDECI          // Keşideci
+  MUHATAP           // Muhatap (Çekte)
+  MIRASCI           // Mirasçı
+  TASFIYE_MEMURU    // Tasfiye Memuru
+  IFLAS_MASASI      // İflas Masası
+}
+
+// Tebligat Modu
+enum DebtorNotificationMode {
+  NORMAL    // PTT ile normal tebligat
+  KEP       // Kayıtlı Elektronik Posta
+  UETS      // Ulusal Elektronik Tebligat Sistemi
+  ILANEN    // İlanen Tebligat
+}
+
+// Sorumluluk Türü
+enum LiabilityType {
+  TAM       // Tam sorumluluk
+  KISMI     // Kısmi sorumluluk
+  SINIRLI   // Sınırlı sorumluluk
+}
+
+// Üçüncü Şahıs Türü (89 İhbarname)
+enum ThirdPartyType {
+  ISVEREN       // İşveren
+  BANKA         // Banka
+  KIRACI        // Kiracı
+  BORC_ALACAKLI // Borç-Alacaklı
+  DIGER         // Diğer
+}
+
+// Kamu Kurumu Türü
+enum PublicInstitutionType {
+  BAKANLIK
+  BELEDIYE
+  IL_OZEL_IDARESI
+  UNIVERSITE
+  KIT
+  DIGER_KAMU
+}
+
+// Borçlu Risk Seviyesi
+enum DebtorRiskLevel {
+  DUSUK
+  ORTA
+  YUKSEK
+  COK_YUKSEK
 }
 
 enum CaseType {
@@ -1528,10 +2077,19 @@ enum DocumentType {
 }
 
 enum DueType {
-  PRINCIPAL
-  INTEREST
-  EXPENSE
-  OTHER
+  PRINCIPAL         // Ana Para (Asıl Alacak)
+  INTEREST          // Faiz
+  EXPENSE           // Masraf
+  VEKALET_UCRETI    // Vekalet Ücreti
+  HARC              // Harç
+  TAZMINAT          // Tazminat
+  CEZAI_SART        // Cezai Şart
+  NAFAKA            // Nafaka
+  KIRA              // Kira Alacağı
+  AIDAT             // Aidat
+  KOMISYON          // Komisyon
+  PRIM              // Prim/İkramiye
+  OTHER             // Diğer
 }
 
 enum AssetType {
@@ -2159,4 +2717,244 @@ model AuditLog {
   @@index([entityId])
   @@index([userId])
   @@index([createdAt])
+}
+
+// ==================== KAMU KURUMLARI (DETSİS) ====================
+
+// Kamu Kurumu Türleri
+enum PublicInstitutionCategory {
+  BAKANLIK           // Bakanlıklar
+  GENEL_MUDURLUK     // Genel Müdürlükler
+  BASKANLIK          // Başkanlıklar
+  KURUL              // Kurullar
+  KURUM              // Kurumlar
+  UNIVERSITE         // Üniversiteler
+  BELEDIYE           // Belediyeler
+  IL_OZEL_IDARESI    // İl Özel İdareleri
+  VALILIK            // Valilikler
+  KAYMAKAMLIK        // Kaymakamlıklar
+  MAHKEME            // Mahkemeler
+  SAVCILIK           // Savcılıklar
+  ICRA_DAIRESI       // İcra Daireleri
+  CEZAEVI            // Ceza İnfaz Kurumları
+  HASTANE            // Kamu Hastaneleri ve Üniversite Hastaneleri
+  DIGER              // Diğer
+}
+
+// Kamu Kurumu Rehberi (DETSİS verileri)
+model PublicInstitution {
+  id              String   @id @default(cuid())
+  
+  // DETSİS Bilgileri
+  detsisNo        String   @unique  // DETSİS numarası
+  name            String             // Kurum adı
+  shortName       String?            // Kısa ad
+  
+  // Kategori ve Hiyerarşi
+  category        PublicInstitutionCategory
+  parentId        String?            // Üst kurum ID
+  parent          PublicInstitution? @relation("InstitutionHierarchy", fields: [parentId], references: [id])
+  children        PublicInstitution[] @relation("InstitutionHierarchy")
+  
+  // Adres Bilgileri
+  city            String?
+  district        String?
+  address         String?
+  postalCode      String?
+  
+  // İletişim
+  phone           String?
+  fax             String?
+  email           String?
+  website         String?
+  kepAddress      String?            // KEP adresi
+  
+  // Ek Bilgiler
+  isActive        Boolean  @default(true)
+  sortOrder       Int      @default(0)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([name])
+  @@index([category])
+  @@index([city])
+  @@index([parentId])
+  @@index([isActive])
+}
+
+// UYAP Birim Kodları (Mahkemeler, İcra Daireleri, Savcılıklar vb.)
+model UyapUnit {
+  id              String   @id @default(cuid())
+  
+  // UYAP Bilgileri
+  birimId         String   @unique  // UYAP birim ID
+  name            String             // Birim adı
+  uyapCode        String?            // Organizasyon kodu (1.04.045.000.6005 gibi)
+  
+  // Kategori
+  unitType        UyapUnitType
+  
+  // Konum
+  city            String?
+  district        String?
+  
+  // Ek Bilgiler
+  isActive        Boolean  @default(true)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([name])
+  @@index([unitType])
+  @@index([city])
+  @@index([isActive])
+}
+
+enum UyapUnitType {
+  ICRA_DAIRESI        // İcra Daireleri
+  ICRA_MAHKEMESI      // İcra Mahkemeleri
+  ASLIYE_HUKUK        // Asliye Hukuk Mahkemeleri
+  ASLIYE_CEZA         // Asliye Ceza Mahkemeleri
+  AGIR_CEZA           // Ağır Ceza Mahkemeleri
+  SULH_HUKUK          // Sulh Hukuk Mahkemeleri
+  SULH_CEZA           // Sulh Ceza Mahkemeleri
+  AILE_MAHKEMESI      // Aile Mahkemeleri
+  IS_MAHKEMESI        // İş Mahkemeleri
+  TUKETICI_MAHKEMESI  // Tüketici Mahkemeleri
+  KADASTRO_MAHKEMESI  // Kadastro Mahkemeleri
+  TICARET_MAHKEMESI   // Ticaret Mahkemeleri
+  IDARE_MAHKEMESI     // İdare Mahkemeleri
+  VERGI_MAHKEMESI     // Vergi Mahkemeleri
+  SAVCILIK            // Savcılıklar
+  CEZA_INFAZ          // Ceza İnfaz Kurumları
+  DIGER               // Diğer
+}
+
+// ==================== ALACAK KALEMLERİ SİSTEMİ ====================
+
+// Alacak Kalemi - Dosyadaki her bir alacak bileşeni
+model ClaimItem {
+  id              String           @id @default(cuid())
+  tenantId        String
+  caseId          String
+  case            Case             @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  
+  // Kalem Türü
+  itemType        ClaimItemType    // PRINCIPAL, INTEREST, EXPENSE, FEE, ATTORNEY_FEE, PENALTY, TAX, OTHER
+  
+  // Tutar Bilgileri
+  amount          Decimal          @db.Decimal(15, 2)
+  currency        String           @default("TRY")
+  
+  // Kaynak Belge
+  sourceDocumentId String?         // CaseDocument referansı
+  sourceDocumentType DocumentSourceType? // FATURA, CEK, SENET, KIRA, SOZLESME, ILAM, DIGER
+  
+  // Faiz Bilgileri (itemType = INTEREST için)
+  interestType    InterestType?    // YASAL, TICARI, AVANS, OZEL
+  interestRate    Decimal?         @db.Decimal(5, 2)
+  interestStartDate DateTime?
+  interestEndDate DateTime?
+  
+  // Vade/Tarih Bilgileri
+  dueDate         DateTime?        // Vade tarihi
+  issueDate       DateTime?        // Düzenleme tarihi
+  
+  // Açıklama
+  description     String?
+  referenceNo     String?          // Fatura no, çek no, senet no vb.
+  
+  // Hesaplama
+  isCalculated    Boolean          @default(false)  // Otomatik hesaplandı mı
+  calculatedAt    DateTime?
+  
+  // Borçlu Sorumluluğu
+  isAllDebtorsLiable Boolean       @default(true)   // Tüm borçlular sorumlu mu
+  liableDebtorIds String[]         // Sorumlu borçlu ID'leri (isAllDebtorsLiable=false ise)
+  
+  // Durum
+  status          ClaimItemStatus  @default(ACTIVE)
+  
+  // Sıralama
+  sortOrder       Int              @default(0)
+  
+  // Meta
+  metadata        Json?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  createdById     String?
+
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([itemType])
+  @@index([status])
+}
+
+// Alacak Kalemi Türü
+enum ClaimItemType {
+  PRINCIPAL       // Asıl Alacak (Ana Para)
+  INTEREST        // Faiz
+  PRE_INTEREST    // Takip Öncesi Faiz
+  POST_INTEREST   // Takip Sonrası Faiz
+  EXPENSE         // Masraf
+  FEE             // Harç
+  ATTORNEY_FEE    // Vekalet Ücreti
+  PENALTY         // Ceza/Tazminat
+  CHECK_PENALTY   // Karşılıksız Çek Tazminatı
+  CONTRACTUAL_PENALTY // Cezai Şart
+  TAX_KDV         // KDV
+  TAX_BSMV        // BSMV
+  TAX_KKDF        // KKDF
+  OTHER           // Diğer
+}
+
+// Kaynak Belge Türü
+enum DocumentSourceType {
+  FATURA          // Fatura
+  CEK             // Çek
+  SENET           // Senet/Bono
+  KIRA            // Kira Sözleşmesi
+  SOZLESME        // Sözleşme
+  ILAM            // Mahkeme İlamı
+  KARAR           // Mahkeme Kararı
+  BORC_SENEDI     // Borç Senedi
+  KREDI           // Kredi Sözleşmesi
+  DIGER           // Diğer
+}
+
+// Alacak Kalemi Durumu
+enum ClaimItemStatus {
+  ACTIVE          // Aktif
+  COLLECTED       // Tahsil Edildi
+  WAIVED          // Feragat Edildi
+  CANCELLED       // İptal Edildi
+}
+
+// Faiz Oranları Tablosu (Merkez Bankası oranları)
+model InterestRate {
+  id              String           @id @default(cuid())
+  
+  // Faiz Türü
+  interestType    InterestType
+  currency        String           @default("TRY")
+  
+  // Oran ve Dönem
+  rate            Decimal          @db.Decimal(5, 2)  // Yıllık oran
+  startDate       DateTime         // Geçerlilik başlangıcı
+  endDate         DateTime?        // Geçerlilik bitişi (null = hala geçerli)
+  
+  // Kaynak
+  source          String?          // TCMB, Resmi Gazete vb.
+  sourceDate      DateTime?
+  
+  // Meta
+  isActive        Boolean          @default(true)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([interestType])
+  @@index([currency])
+  @@index([startDate])
+  @@index([isActive])
 }

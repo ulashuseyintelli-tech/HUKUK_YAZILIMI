@@ -22,7 +22,7 @@ export class CalendarController {
   @Post("events")
   async createEvent(
     @CurrentUser("tenantId") tenantId: string,
-    @CurrentUser("sub") userId: string,
+    @CurrentUser("id") userId: string,
     @Body() body: {
       title: string;
       description?: string;

@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, FileCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculator, TrendingUp, Receipt, Banknote, FileCheck } from "lucide-react";
+import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
 import { FormMetadata, SubFormMetadata, FormCategory } from "@/types/form-metadata";
 import { WizardAnswers } from "@/types/wizard";
@@ -20,17 +21,51 @@ import { RecentForms } from "@/components/case/RecentForms";
 import { DocumentSourceSelector, DocumentSourceType, ClassificationResult, PoaScanResult } from "@/components/case/DocumentSourceSelector";
 import { WizardResultCard } from "@/components/case/WizardResultCard";
 import { PoaScannerWizard } from "@/components/client/PoaScannerWizard";
+import { DebtorStep } from "@/components/debtor";
+import { CaseDebtor } from "@/types/debtor";
 import { useFormHistory } from "@/hooks/useFormHistory";
 import { useUserSettings } from "@/lib/user-settings";
 
 const steps = [
-  { id: 0, title: "Form Seçimi" },
-  { id: 1, title: "Takip Bilgileri" },
-  { id: 2, title: "Avukatlar" },
-  { id: 3, title: "Alacaklılar" },
-  { id: 4, title: "Borçlular" },
-  { id: 5, title: "Alacak Kalemleri" },
+  { id: 0, title: "Form Seçimi", icon: "📋" },
+  { id: 1, title: "Takip Bilgileri", icon: "📝" },
+  { id: 2, title: "Avukatlar", icon: "👨‍⚖️" },
+  { id: 3, title: "Müvekkiller", icon: "👥" },
+  { id: 4, title: "Borçlular", icon: "💰" },
+  { id: 5, title: "Alacak Kalemleri", icon: "💵" },
 ];
+
+// Kalem türü etiketleri
+const KALEM_TURU_LABELS: Record<string, string> = {
+  ASIL_ALACAK: "Asıl Alacak",
+  CEK: "Çek Alacağı",
+  SENET: "Senet / Bono Alacağı",
+  FATURA: "Fatura Alacağı",
+  KIRA: "Kira Alacağı",
+  ILAM: "İlam Alacağı",
+  NAFAKA: "Nafaka",
+  ISLEMIS_FAIZ: "İşlemiş Faiz",
+  CEK_TAZMINATI: "Çek Tazminatı",
+  KOMISYON: "Komisyon",
+  IHTIYATI_HACIZ_HARCI: "İhtiyati Haciz Harcı",
+  IHTIYATI_VEKALET: "İhtiyati Haciz Vekalet Ücreti",
+  VEKALET_UCRETI: "Vekalet Ücreti",
+  KDV: "KDV",
+  BSMV: "BSMV",
+  KKDF: "KKDF",
+  DIGER: "Diğer",
+};
+
+// Faiz oranları (2024 güncel)
+const FAIZ_ORANLARI: Record<string, number> = {
+  TICARI: 48,
+  TICARI_2007_ONCESI: 57,
+  YASAL: 24,
+  BANKA_TL: 50,
+  KAMU_BANKA_TL: 45,
+  KAMU_BANKA_USD: 5,
+  KAMU_BANKA_EUR: 4,
+};
 
 interface Lawyer { 
   id?: string; 
@@ -71,7 +106,18 @@ interface Lawyer {
 }
 interface Party { id?: string; type: "INDIVIDUAL" | "COMPANY"; name: string; identityNo?: string; taxOffice?: string; phone?: string; email?: string; address?: string; isNew?: boolean; }
 interface ExecutionOffice { id: string; name: string; city: string; district?: string; uyapCode?: string; taxNumber?: string; bankName?: string; branchName?: string; iban?: string; }
-interface DueItem { type: "PRINCIPAL" | "INTEREST" | "EXPENSE" | "OTHER"; description: string; amount: string; dueDate: string; }
+interface DueItem { 
+  type: "PRINCIPAL" | "INTEREST" | "EXPENSE" | "OTHER"; 
+  description: string; 
+  amount: string; 
+  dueDate: string;
+  // Faiz hesaplama için ek alanlar
+  interestType?: "YASAL" | "TICARI" | "AVANS" | "TEMERRUT";
+  interestRate?: number;
+  interestAmount?: number;
+  interestStartDate?: string;
+  interestEndDate?: string;
+}
 interface LookupItem { id: string; code: string; name: string; description?: string; color?: string; uyapCode?: string; sortOrder: number; }
 interface TakipTuruItem extends LookupItem { defaultMahiyetTipiId?: string; defaultBorcluTipiId?: string; }
 interface Lookups { takipTuru: TakipTuruItem[]; asama: LookupItem[]; risk: LookupItem[]; borcluTipi: LookupItem[]; durumEtiketi: LookupItem[]; mahiyetTipi: LookupItem[]; }
@@ -135,7 +181,8 @@ export default function NewCasePage() {
   const [detectedCity, setDetectedCity] = useState<string>(""); // Konum tespiti ile bulunan il
   const [lawyers, setLawyers] = useState<Lawyer[]>([]);
   const [creditors, setCreditors] = useState<Party[]>([]);
-  const [debtors, setDebtors] = useState<Party[]>([]);
+  const [debtors, setDebtors] = useState<Party[]>([]); // Eski format (geriye uyumluluk)
+  const [caseDebtors, setCaseDebtors] = useState<CaseDebtor[]>([]); // Yeni format
   const [dues, setDues] = useState<DueItem[]>([]);
   const [lookups, setLookups] = useState<Lookups>({ takipTuru: [], asama: [], risk: [], borcluTipi: [], durumEtiketi: [], mahiyetTipi: [] });
   
@@ -271,10 +318,18 @@ export default function NewCasePage() {
       if (ilamliForm) setSelectedForm(ilamliForm);
     } else if (sourceType === "KAMBIYO") {
       // Kambiyo takibi için varsayılan değerler
-      const kambiyoTakipTuru = lookups.takipTuru.find(t => t.code === "KAMBIYO_SENET" || t.code === "KAMBIYO_CEK" || t.name?.toLowerCase().includes("kambiyo"));
-      // Mahiyet: SENET (senede dayalı alacak)
-      const kambiyoMahiyet = lookups.mahiyetTipi.find(m => m.code === "SENET") || lookups.mahiyetTipi.find(m => m.code === "CEK") || lookups.mahiyetTipi.find(m => m.name?.toLowerCase().includes("senet"));
+      // NOT: Varsayılan olarak SENET seçiliyor, kullanıcı Step 1'de ÇEK veya SENET seçebilir
+      const kambiyoSenetTakipTuru = lookups.takipTuru.find(t => t.code === "KAMBIYO_SENET");
+      const kambiyoCekTakipTuru = lookups.takipTuru.find(t => t.code === "KAMBIYO_CEK");
+      const kambiyoGenelTakipTuru = lookups.takipTuru.find(t => t.code === "ILAMSIZ_KAMBIYO" || t.name?.toLowerCase().includes("kambiyo"));
+      // Öncelik: KAMBIYO_SENET > KAMBIYO_CEK > Genel Kambiyo
+      const kambiyoTakipTuru = kambiyoSenetTakipTuru || kambiyoCekTakipTuru || kambiyoGenelTakipTuru;
+      
+      // Mahiyet: SENET (varsayılan)
+      const kambiyoMahiyet = lookups.mahiyetTipi.find(m => m.code === "SENET") || lookups.mahiyetTipi.find(m => m.name?.toLowerCase().includes("senet"));
       const gercekKisi = lookups.borcluTipi.find(b => b.code === "GERCEK_KISI") || lookups.borcluTipi.find(b => b.name?.toLowerCase().includes("gerçek"));
+      
+      console.log(`[DocumentSource] KAMBIYO seçildi -> takipTuru: ${kambiyoTakipTuru?.code}, mahiyet: ${kambiyoMahiyet?.code}`);
       
       setCaseData(prev => ({
         ...prev,
@@ -463,12 +518,34 @@ export default function NewCasePage() {
   const handleTakipTuruChange = (takipTuruId: string) => {
     const selectedTakipTuru = lookups.takipTuru.find(t => t.id === takipTuruId);
     
+    console.log(`[TakipTuru] Değişti: ${selectedTakipTuru?.code} (${selectedTakipTuru?.name})`);
+    
     setCaseData(prev => {
       const updates: Partial<typeof prev> = { takipTuruId };
       
       if (selectedTakipTuru) {
-        // Varsayılan Mahiyet Tipi
-        if (selectedTakipTuru.defaultMahiyetTipiId && !prev.mahiyetTipiId) {
+        // Takip türüne göre mahiyet kodunu otomatik ayarla
+        // KAMBIYO_CEK -> CEK, KAMBIYO_SENET -> SENET, vb.
+        const takipTuruMahiyetMap: Record<string, string> = {
+          KAMBIYO_CEK: "CEK",
+          KAMBIYO_SENET: "SENET",
+          ILAMSIZ_KAMBIYO: "SENET",
+          ILAMSIZ_GENEL: "PARA",
+          ILAMSIZ_KIRA: "KIRA",
+          ILAMLI: "TAZMINAT",
+          NAFAKA: "NAFAKA",
+          KIRA: "KIRA",
+        };
+        
+        const mahiyetKodu = takipTuruMahiyetMap[selectedTakipTuru.code];
+        if (mahiyetKodu) {
+          const mahiyet = lookups.mahiyetTipi.find(m => m.code === mahiyetKodu);
+          if (mahiyet) {
+            updates.mahiyetTipiId = mahiyet.id;
+            updates.mahiyetKodu = mahiyet.code;
+          }
+        } else if (selectedTakipTuru.defaultMahiyetTipiId) {
+          // Varsayılan Mahiyet Tipi (map'te yoksa)
           updates.mahiyetTipiId = selectedTakipTuru.defaultMahiyetTipiId;
           const mahiyet = lookups.mahiyetTipi.find(m => m.id === selectedTakipTuru.defaultMahiyetTipiId);
           if (mahiyet) updates.mahiyetKodu = mahiyet.code;
@@ -653,6 +730,19 @@ export default function NewCasePage() {
           hasSignatureAuthority: l.hasSignatureAuthority || false,
         })),
         creditors: creditors.filter(c => c.name).map(c => ({ id: c.isNew ? undefined : c.id, type: c.type, name: c.name, identityNo: c.identityNo, taxOffice: c.taxOffice, phone: c.phone, email: c.email, address: c.address })),
+        // Yeni CaseDebtor formatı
+        caseDebtors: caseDebtors.map(cd => ({
+          debtorId: cd.debtorId,
+          role: cd.role,
+          liabilityAmount: cd.liabilityAmount,
+          liabilityType: cd.liabilityType,
+          notificationMode: cd.notificationMode,
+          selectedAddressId: cd.selectedAddressId,
+          prepareNotification: cd.prepareNotification,
+          ilanenJustification: cd.ilanenJustification,
+          caseNote: cd.caseNote,
+        })),
+        // Eski format (geriye uyumluluk)
         debtors: debtors.filter(d => d.name).map(d => ({ id: d.isNew ? undefined : d.id, type: d.type, name: d.name, identityNo: d.identityNo, taxOffice: d.taxOffice, phone: d.phone, email: d.email, address: d.address })),
         dues: dues.filter(d => d.amount && parseFloat(d.amount) > 0).map(d => ({ type: d.type, description: d.description || undefined, amount: parseFloat(d.amount), dueDate: d.dueDate })),
       });
@@ -673,24 +763,54 @@ export default function NewCasePage() {
         <span className="text-xs text-muted-foreground">{currentStep + 1} / {steps.length}</span>
       </div>
 
-      <div className="mb-2">
-        {/* Stepper - kompakt */}
-        <div className="flex gap-0.5">
-          {steps.map((step) => (
-            <button
-              key={step.id}
-              type="button"
-              onClick={() => goToStep(step.id)}
-              title={step.title}
-              className={`flex-1 h-1.5 rounded-full transition-colors ${currentStep >= step.id ? "bg-primary" : "bg-gray-200"}`}
-            />
-          ))}
-        </div>
-        <div className="flex justify-between mt-1">
-          {steps.map((step) => (
-            <button key={step.id} onClick={() => goToStep(step.id)} className={`text-[10px] ${currentStep === step.id ? "text-primary font-medium" : "text-gray-400"}`}>
-              {step.title}
-            </button>
+      <div className="mb-4 p-3 bg-gradient-to-r from-slate-50 to-gray-50 rounded-xl border">
+        {/* Stepper - Geliştirilmiş */}
+        <div className="flex items-center">
+          {steps.map((step, index) => (
+            <div key={step.id} className="flex items-center flex-1">
+              {/* Step Circle */}
+              <button
+                type="button"
+                onClick={() => goToStep(step.id)}
+                className={`relative flex flex-col items-center group transition-all ${
+                  currentStep === step.id ? 'scale-105' : ''
+                }`}
+              >
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all shadow-sm ${
+                  currentStep > step.id 
+                    ? 'bg-gradient-to-br from-green-500 to-emerald-600 text-white shadow-green-200' 
+                    : currentStep === step.id 
+                      ? 'bg-gradient-to-br from-primary to-blue-600 text-white shadow-blue-200 ring-4 ring-primary/20' 
+                      : 'bg-white border-2 border-gray-300 text-gray-400 group-hover:border-primary/50'
+                }`}>
+                  {currentStep > step.id ? (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                  ) : (
+                    <span>{step.id + 1}</span>
+                  )}
+                </div>
+                <span className={`mt-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
+                  currentStep === step.id 
+                    ? 'text-primary' 
+                    : currentStep > step.id 
+                      ? 'text-green-600' 
+                      : 'text-gray-500 group-hover:text-gray-700'
+                }`}>
+                  {step.title}
+                </span>
+              </button>
+              
+              {/* Connector Line */}
+              {index < steps.length - 1 && (
+                <div className="flex-1 mx-2">
+                  <div className={`h-1 rounded-full transition-all ${
+                    currentStep > step.id 
+                      ? 'bg-gradient-to-r from-green-500 to-emerald-500' 
+                      : 'bg-gray-200'
+                  }`} />
+                </div>
+              )}
+            </div>
           ))}
         </div>
       </div>
@@ -892,20 +1012,33 @@ export default function NewCasePage() {
         )}
 
         {currentStep === 3 && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-between mb-2">
-              <div>
-                <h2 className="text-lg font-semibold">Takipte Yer Alacak Müvekkiller (Alacaklılar)</h2>
-                <p className="text-xs text-muted-foreground">Aşağıdan müvekkil seçin veya yeni müvekkil ekleyin.</p>
-              </div>
-              <button type="button" onClick={() => setShowNewClientModal(true)} className="flex items-center gap-1 px-3 py-1.5 bg-primary text-white text-xs rounded hover:bg-primary/90">
-                <Plus className="h-3.5 w-3.5" /> Manuel Ekle
-              </button>
+          <div className="space-y-4">
+            {/* Başlık ve Açıklama */}
+            <div>
+              <h2 className="text-xl font-bold text-gray-800">👥 Müvekkiller / Alacaklılar</h2>
+              <p className="text-sm text-muted-foreground mt-1">Takipte yer alacak müvekkilleri seçin veya yeni ekleyin</p>
             </div>
 
-            {/* Vekaletname Tarama Sihirbazı */}
-            <div className="mb-3">
+            {/* Aksiyon Butonları - Yan Yana */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {/* Manuel Ekle Butonu - Sol */}
+              <button 
+                type="button" 
+                onClick={() => setShowNewClientModal(true)} 
+                className="p-4 bg-gradient-to-r from-emerald-50 to-teal-50 border-2 border-dashed border-emerald-300 rounded-xl hover:border-emerald-500 hover:shadow-md transition-all flex items-center gap-3 group"
+              >
+                <div className="p-2.5 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl shadow-md group-hover:shadow-lg transition-shadow">
+                  <Plus className="h-5 w-5 text-white" />
+                </div>
+                <div className="text-left">
+                  <div className="font-semibold text-emerald-800 text-sm">✍️ Manuel Müvekkil Ekle</div>
+                  <div className="text-xs text-emerald-600/80">Bilgileri kendiniz girerek yeni müvekkil oluşturun</div>
+                </div>
+              </button>
+
+              {/* Vekaletname Tara Butonu - Sağ */}
               <PoaScannerWizard
+                asButton={true}
                 onScanComplete={async (result) => {
                   try {
                     const clientData = {
@@ -962,26 +1095,7 @@ export default function NewCasePage() {
                     <p className="text-xs text-muted-foreground mt-1">Soldaki listeden müvekkil ekleyin</p>
                   </div>
                 ) : (
-                  <div className="space-y-2 max-h-64 overflow-y-auto">
-                    {creditors.map((creditor, index) => {
-                      const isCompany = creditor.type === 'COMPANY';
-                      const isPublic = (creditor.type as string) === 'PUBLIC';
-                      return (
-                        <div key={index} className="p-2 rounded-lg border border-gray-200 text-xs">
-                          <div className="flex items-center justify-between mb-1">
-                            <div className="flex items-center gap-2">
-                              <span className="font-medium">{creditor.name}</span>
-                              <span className={`px-1.5 py-0.5 rounded text-xs ${isCompany ? 'bg-blue-100 text-blue-700' : isPublic ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'}`}>
-                                {isCompany ? 'Kurum' : isPublic ? 'Kamu' : 'Şahıs'}
-                              </span>
-                            </div>
-                            <button type="button" onClick={() => removeCreditor(index)} className="text-red-500 hover:text-red-700">✕</button>
-                          </div>
-                          {creditor.identityNo && <p className="text-muted-foreground">{isCompany || isPublic ? 'VKN' : 'TCKN'}: {creditor.identityNo}</p>}
-                        </div>
-                      );
-                    })}
-                  </div>
+                  <SelectedCreditorsList creditors={creditors} onRemove={removeCreditor} />
                 )}
                 {creditors.length === 0 && (
                   <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">⚠️ Devam etmek için en az 1 müvekkil seçmelisiniz</p>
@@ -1031,50 +1145,60 @@ export default function NewCasePage() {
         )}
 
         {currentStep === 4 && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-xl font-semibold">Borçlular</h2>
-              <button type="button" onClick={addNewDebtor} className="text-sm text-primary hover:underline flex items-center gap-1"><Plus className="h-4 w-4" /> Yeni Borçlu</button>
-            </div>
-            {existingDebtors.length > 0 && (<div className="mb-4"><label className="block text-sm font-medium mb-2">Mevcut Borçlulardan Seç</label><div className="flex flex-wrap gap-2">{existingDebtors.filter(d => !debtors.find(sd => sd.id === d.id)).map(debtor => (<button key={debtor.id} type="button" onClick={() => addExistingDebtor(debtor)} className="px-3 py-1 text-sm border rounded-full hover:bg-primary hover:text-white hover:border-primary">{debtor.name}</button>))}</div></div>)}
-            {debtors.length === 0 ? (<p className="text-center py-8 text-muted-foreground">Henüz borçlu eklenmedi</p>) : (<div className="space-y-3">{debtors.map((debtor, index) => (<PartyForm key={index} party={debtor} isNew={debtor.isNew || false} onUpdate={(field, value) => updateDebtor(index, field, value)} onRemove={() => removeDebtor(index)} />))}</div>)}
-          </div>
+          <DebtorStep
+            selectedDebtors={caseDebtors}
+            onDebtorsChange={setCaseDebtors}
+            onDebtInfoDetected={(debtInfo) => {
+              // Borç evrakından tespit edilen bilgileri alacak kalemlerine otomatik aktar
+              if (debtInfo.amount) {
+                const newDue: DueItem = {
+                  type: "PRINCIPAL",
+                  description: debtInfo.documentNo 
+                    ? `${debtInfo.documentNo} numaralı belgeye istinaden asıl alacak`
+                    : "Asıl Alacak (Borç evrakından tespit edildi)",
+                  amount: debtInfo.amount.toString(),
+                  dueDate: debtInfo.dueDate || new Date().toISOString().split("T")[0],
+                };
+                // Mevcut kalemlere ekle (aynı tutar yoksa)
+                const existingAmount = dues.find(d => d.amount === newDue.amount && d.type === "PRINCIPAL");
+                if (!existingAmount) {
+                  setDues([...dues, newDue]);
+                }
+                // Para birimini güncelle
+                if (debtInfo.currency && debtInfo.currency !== "TRY") {
+                  setCaseData(prev => ({ ...prev, currency: debtInfo.currency as any }));
+                }
+              }
+            }}
+          />
         )}
 
         {currentStep === 5 && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between mb-4">
-              <div>
-                <h2 className="text-xl font-semibold">Alacak Kalemleri</h2>
-                <p className="text-sm text-muted-foreground">Ana para, faiz, masraf ve diğer alacak kalemlerini ekleyin</p>
-              </div>
-              <button type="button" onClick={addNewDue} className="text-sm text-primary hover:underline flex items-center gap-1"><Plus className="h-4 w-4" /> Kalem Ekle</button>
-            </div>
-            {dues.length === 0 ? (
-              <div className="text-center py-12 border-2 border-dashed rounded-lg">
-                <p className="text-muted-foreground mb-4">Henüz alacak kalemi eklenmedi</p>
-                <button type="button" onClick={addNewDue} className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90"><Plus className="h-4 w-4" /> İlk Kalemi Ekle</button>
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {dues.map((due, index) => (
-                  <div key={index} className="border rounded-lg p-4 relative">
-                    <button type="button" onClick={() => removeDue(index)} className="absolute top-2 right-2 text-gray-400 hover:text-red-500"><X className="h-5 w-5" /></button>
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                      <div><label className="block text-xs font-medium mb-1">Kalem Türü</label><select value={due.type} onChange={e => updateDue(index, "type", e.target.value)} className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"><option value="PRINCIPAL">Ana Para</option><option value="INTEREST">Faiz</option><option value="EXPENSE">Masraf</option><option value="OTHER">Diğer</option></select></div>
-                      <div><label className="block text-xs font-medium mb-1">Tutar (₺) <span className="text-red-500">*</span></label><input type="number" value={due.amount} onChange={e => updateDue(index, "amount", e.target.value)} placeholder="0.00" className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary" /></div>
-                      <div><label className="block text-xs font-medium mb-1">Vade Tarihi</label><input type="date" value={due.dueDate} onChange={e => updateDue(index, "dueDate", e.target.value)} className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary" /></div>
-                      <div><label className="block text-xs font-medium mb-1">Açıklama</label><input type="text" value={due.description} onChange={e => updateDue(index, "description", e.target.value)} placeholder="Ör: Kira alacağı" className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary" /></div>
-                    </div>
-                  </div>
-                ))}
-                <div className="mt-4 p-4 bg-primary/5 rounded-lg flex justify-between items-center">
-                  <span className="font-medium">Toplam Alacak:</span>
-                  <span className="text-xl font-bold text-primary">{getTotalDues().toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</span>
-                </div>
-              </div>
-            )}
-          </div>
+          <ProfessionalClaimItemForm
+            caseType={selectedForm?.category}
+            formCode={selectedForm?.code}
+            currency={caseData.currency || "TRY"}
+            takipTuruCode={lookups.takipTuru.find(t => t.id === caseData.takipTuruId)?.code}
+            documentSource={documentSource}
+            onItemsChange={(items) => {
+              // Yeni tablo bazlı form'dan gelen verileri dues formatına dönüştür
+              const principalTypes = ["ASIL_ALACAK", "CEK", "SENET", "FATURA", "KIRA", "ILAM", "NAFAKA"];
+              const newDues = items.map(item => ({
+                type: principalTypes.includes(item.kalemTuru) ? "PRINCIPAL" as const :
+                      item.kalemTuru === "ISLEMIS_FAIZ" ? "INTEREST" as const :
+                      "OTHER" as const,
+                description: item.aciklama || KALEM_TURU_LABELS[item.kalemTuru] || "Alacak",
+                amount: item.tutar.toString(),
+                dueDate: item.vadeTarihi,
+                interestType: item.faizTuru as any,
+                interestRate: FAIZ_ORANLARI[item.faizTuru] || 0,
+                interestAmount: item.hesaplananFaiz || 0,
+                interestStartDate: item.faizBaslangic,
+                interestEndDate: item.faizBitis,
+              }));
+              setDues(newDues);
+            }}
+          />
         )}
 
         {/* Wizard açıkken ana sayfa butonlarını gizle - wizard kendi butonlarını kullanır */}
@@ -1405,8 +1529,8 @@ function LawyerSelectionStep({
                     </div>
                     <div className="flex items-center gap-1">
                       {lawyer.canSign && <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">İmza ✓</span>}
-                      <button type="button" onClick={() => startEditing(lawyer)} className="p-1 text-blue-500 hover:bg-blue-100 rounded" title="Düzenle">
-                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                      <button type="button" onClick={() => startEditing(lawyer)} className="px-2 py-1 text-xs font-medium bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg hover:from-amber-600 hover:to-orange-600 shadow-sm hover:shadow transition-all flex items-center gap-1" title="Düzenle">
+                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
                       </button>
                       {!isSelected ? (
                         <button type="button" onClick={() => onAddLawyer(lawyer)} className="p-1 text-primary hover:bg-primary/10 rounded" title="Takibe Ekle">
@@ -1744,6 +1868,7 @@ function CompactLawyerSelection({
   onUpdateLawyer: (index: number, field: keyof Lawyer, value: any) => void;
 }) {
   const [search, setSearch] = useState("");
+  const [viewingLawyer, setViewingLawyer] = useState<any>(null);
   const filtered = existingLawyers.filter(l => 
     l.name?.toLowerCase().includes(search.toLowerCase()) || l.surname?.toLowerCase().includes(search.toLowerCase())
   );
@@ -1758,7 +1883,9 @@ function CompactLawyerSelection({
           const isSelected = selectedLawyers.find(sl => sl.id === lawyer.id);
           return (
             <div key={lawyer.id} className={`flex items-center justify-between p-1.5 rounded text-xs ${isSelected ? 'bg-green-50 border border-green-300' : 'hover:bg-gray-50'}`}>
-              <span>{lawyer.title || "Av."} {lawyer.name} {lawyer.surname} <span className="text-muted-foreground">({roleLabels[lawyer.role] || ""})</span></span>
+              <button type="button" onClick={() => setViewingLawyer(lawyer)} className="text-left hover:text-primary hover:underline">
+                {lawyer.title || "Av."} {lawyer.name} {lawyer.surname} <span className="text-muted-foreground">({roleLabels[lawyer.role] || ""})</span>
+              </button>
               {!isSelected ? (
                 <button type="button" onClick={() => onAddLawyer(lawyer)} className="text-primary hover:underline">Ekle</button>
               ) : (
@@ -1777,7 +1904,9 @@ function CompactLawyerSelection({
           {selectedLawyers.map((lawyer, index) => (
             <div key={index} className={`p-1.5 rounded text-xs border ${lawyer.isResponsible ? 'border-primary bg-primary/5' : 'border-gray-200'}`}>
               <div className="flex items-center justify-between">
-                <span className="font-medium">{lawyer.title || "Av."} {lawyer.name} {lawyer.surname}</span>
+                <button type="button" onClick={() => setViewingLawyer(lawyer)} className="font-medium text-left hover:text-primary hover:underline">
+                  {lawyer.title || "Av."} {lawyer.name} {lawyer.surname}
+                </button>
                 <button type="button" onClick={() => onRemoveLawyer(index)} className="text-red-500 hover:text-red-700">✕</button>
               </div>
               <div className="flex items-center gap-3 mt-1">
@@ -1794,6 +1923,116 @@ function CompactLawyerSelection({
           ))}
         </div>
       )}
+
+      {/* Avukat Detay Modal */}
+      {viewingLawyer && (
+        <LawyerDetailModal lawyer={viewingLawyer} onClose={() => setViewingLawyer(null)} />
+      )}
+    </div>
+  );
+}
+
+// Avukat Detay Modal
+function LawyerDetailModal({ lawyer, onClose }: { lawyer: any; onClose: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({ ...lawyer });
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/lawyers/${lawyer.id}`, form);
+      alert("Avukat bilgileri güncellendi");
+      onClose();
+    } catch (err: any) {
+      alert(err.message || "Güncelleme başarısız");
+    }
+    setSaving(false);
+  };
+
+  const roleLabels: Record<string, string> = { OWNER: "Büro Sahibi", PARTNER: "Ortak", EMPLOYEE: "Avukat", INTERN: "Stajyer" };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-lg max-h-[85vh] overflow-auto shadow-2xl">
+        <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-indigo-100 rounded-lg">
+              <svg className="h-5 w-5 text-indigo-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>
+            </div>
+            <div>
+              <h3 className="font-semibold">{lawyer.title || "Av."} {lawyer.name} {lawyer.surname}</h3>
+              <p className="text-xs text-muted-foreground">{roleLabels[lawyer.role] || lawyer.role}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {!editing && (
+              <button onClick={() => setEditing(true)} className="px-3 py-1.5 text-xs font-medium bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg hover:from-amber-600 hover:to-orange-600 shadow-sm hover:shadow-md transition-all flex items-center gap-1.5">
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                Düzenle
+              </button>
+            )}
+            <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"><X className="h-5 w-5" /></button>
+          </div>
+        </div>
+        
+        <div className="p-4 space-y-4">
+          {editing ? (
+            <>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-xs font-medium mb-1">Ad</label><input value={form.name || ""} onChange={e => setForm({...form, name: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+                <div><label className="block text-xs font-medium mb-1">Soyad</label><input value={form.surname || ""} onChange={e => setForm({...form, surname: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+                <div><label className="block text-xs font-medium mb-1">TC Kimlik No</label><input value={form.tckn || ""} onChange={e => setForm({...form, tckn: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm font-mono" /></div>
+                <div><label className="block text-xs font-medium mb-1">Baro Sicil No</label><input value={form.barNumber || ""} onChange={e => setForm({...form, barNumber: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+                <div><label className="block text-xs font-medium mb-1">Kayıtlı Baro</label><input value={form.barCity || ""} onChange={e => setForm({...form, barCity: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+                <div><label className="block text-xs font-medium mb-1">TBB No</label><input value={form.tbbNo || ""} onChange={e => setForm({...form, tbbNo: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+                <div><label className="block text-xs font-medium mb-1">Telefon</label><input value={form.phone || ""} onChange={e => setForm({...form, phone: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+                <div><label className="block text-xs font-medium mb-1">E-posta</label><input value={form.email || ""} onChange={e => setForm({...form, email: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+                <div><label className="block text-xs font-medium mb-1">Vergi Dairesi</label><input value={form.vergiDairesi || ""} onChange={e => setForm({...form, vergiDairesi: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+                <div><label className="block text-xs font-medium mb-1">Vergi No</label><input value={form.vergiNo || ""} onChange={e => setForm({...form, vergiNo: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm font-mono" /></div>
+                <div><label className="block text-xs font-medium mb-1">Banka</label><input value={form.bankName || ""} onChange={e => setForm({...form, bankName: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+                <div><label className="block text-xs font-medium mb-1">IBAN</label><input value={form.iban || ""} onChange={e => setForm({...form, iban: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm font-mono" /></div>
+              </div>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={form.canSign || false} onChange={e => setForm({...form, canSign: e.target.checked})} className="w-4 h-4 rounded" /><span className="text-sm">İmza Yetkisi</span></label>
+                <label className="flex items-center gap-2 cursor-pointer"><input type="checkbox" checked={form.isDefaultForNewCases || false} onChange={e => setForm({...form, isDefaultForNewCases: e.target.checked})} className="w-4 h-4 rounded" /><span className="text-sm">Varsayılan Avukat</span></label>
+              </div>
+            </>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                {lawyer.tckn && <div><span className="text-muted-foreground">TC Kimlik:</span> <span className="font-mono">{lawyer.tckn}</span></div>}
+                {lawyer.barNumber && <div><span className="text-muted-foreground">Baro Sicil:</span> {lawyer.barNumber}</div>}
+                {lawyer.barCity && <div><span className="text-muted-foreground">Kayıtlı Baro:</span> {lawyer.barCity}</div>}
+                {lawyer.tbbNo && <div><span className="text-muted-foreground">TBB No:</span> {lawyer.tbbNo}</div>}
+                {lawyer.phone && <div><span className="text-muted-foreground">Telefon:</span> {lawyer.phone}</div>}
+                {lawyer.email && <div><span className="text-muted-foreground">E-posta:</span> {lawyer.email}</div>}
+                {lawyer.vergiDairesi && <div><span className="text-muted-foreground">Vergi Dairesi:</span> {lawyer.vergiDairesi}</div>}
+                {lawyer.vergiNo && <div><span className="text-muted-foreground">Vergi No:</span> <span className="font-mono">{lawyer.vergiNo}</span></div>}
+                {lawyer.bankName && <div><span className="text-muted-foreground">Banka:</span> {lawyer.bankName}</div>}
+                {lawyer.iban && <div className="col-span-2"><span className="text-muted-foreground">IBAN:</span> <span className="font-mono text-xs">{lawyer.iban}</span></div>}
+              </div>
+              <div className="flex gap-2 pt-2 border-t">
+                {lawyer.canSign && <span className="px-2 py-1 bg-amber-100 text-amber-700 text-xs rounded">İmza Yetkisi ✓</span>}
+                {lawyer.isDefaultForNewCases && <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">Varsayılan ✓</span>}
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 p-4 border-t sticky bottom-0 bg-white">
+          {editing ? (
+            <>
+              <button onClick={() => setEditing(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">İptal</button>
+              <button onClick={handleSave} disabled={saving} className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1">
+                {saving ? <><Loader2 className="h-4 w-4 animate-spin" /> Kaydediliyor...</> : <><Check className="h-4 w-4" /> Kaydet</>}
+              </button>
+            </>
+          ) : (
+            <button onClick={onClose} className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">Kapat</button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1807,6 +2046,7 @@ function CompactStaffSelection({
   onUpdateStaff: (index: number, field: string, value: any) => void;
 }) {
   const [search, setSearch] = useState("");
+  const [viewingStaff, setViewingStaff] = useState<any>(null);
   const staffTypeLabels: Record<string, string> = {
     STAJYER_AVUKAT: "Stajyer", OFIS_KATIBI: "Katip", ADLI_KATIP: "Adli Katip",
     SEKRETER: "Sekreter", MUHASEBE: "Muhasebe", ARSIV: "Arşiv"
@@ -1824,7 +2064,9 @@ function CompactStaffSelection({
           const isSelected = selectedStaff.find(ss => ss.id === staff.id);
           return (
             <div key={staff.id} className={`flex items-center justify-between p-1.5 rounded text-xs ${isSelected ? 'bg-green-50 border border-green-300' : 'hover:bg-gray-50'}`}>
-              <span>{staff.firstName} {staff.lastName} <span className="text-muted-foreground">({staffTypeLabels[staff.staffType] || staff.staffType})</span></span>
+              <button type="button" onClick={() => setViewingStaff(staff)} className="text-left hover:text-primary hover:underline">
+                {staff.firstName} {staff.lastName} <span className="text-muted-foreground">({staffTypeLabels[staff.staffType] || staff.staffType})</span>
+              </button>
               {!isSelected ? (
                 <button type="button" onClick={() => onAddStaff(staff)} className="text-primary hover:underline">Ekle</button>
               ) : (
@@ -1843,7 +2085,9 @@ function CompactStaffSelection({
           {selectedStaff.map((staff, index) => (
             <div key={index} className="p-1.5 rounded text-xs border border-gray-200">
               <div className="flex items-center justify-between">
-                <span className="font-medium">{staff.firstName} {staff.lastName}</span>
+                <button type="button" onClick={() => setViewingStaff(staff)} className="font-medium text-left hover:text-primary hover:underline">
+                  {staff.firstName} {staff.lastName}
+                </button>
                 <button type="button" onClick={() => onRemoveStaff(index)} className="text-red-500 hover:text-red-700">✕</button>
               </div>
               <div className="flex items-center gap-2 mt-1">
@@ -1864,6 +2108,110 @@ function CompactStaffSelection({
           ))}
         </div>
       )}
+
+      {/* Personel Detay Modal */}
+      {viewingStaff && (
+        <StaffDetailModal staff={viewingStaff} onClose={() => setViewingStaff(null)} />
+      )}
+    </div>
+  );
+}
+
+// Personel Detay Modal
+function StaffDetailModal({ staff, onClose }: { staff: any; onClose: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({ ...staff });
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/staff/${staff.id}`, form);
+      alert("Personel bilgileri güncellendi");
+      onClose();
+    } catch (err: any) {
+      alert(err.message || "Güncelleme başarısız");
+    }
+    setSaving(false);
+  };
+
+  const staffTypeLabels: Record<string, string> = {
+    STAJYER_AVUKAT: "Stajyer Avukat", OFIS_KATIBI: "Ofis Katibi", ADLI_KATIP: "Adli Katip",
+    SEKRETER: "Sekreter", MUHASEBE: "Muhasebe", ARSIV: "Arşiv", DIGER: "Diğer"
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-md max-h-[85vh] overflow-auto shadow-2xl">
+        <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white">
+          <div className="flex items-center gap-2">
+            <div className="p-2 bg-purple-100 rounded-lg">
+              <svg className="h-5 w-5 text-purple-600" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
+            </div>
+            <div>
+              <h3 className="font-semibold">{staff.firstName} {staff.lastName}</h3>
+              <p className="text-xs text-muted-foreground">{staffTypeLabels[staff.staffType] || staff.staffType}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {!editing && (
+              <button onClick={() => setEditing(true)} className="px-3 py-1.5 text-xs font-medium bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg hover:from-amber-600 hover:to-orange-600 shadow-sm hover:shadow-md transition-all flex items-center gap-1.5">
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                Düzenle
+              </button>
+            )}
+            <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"><X className="h-5 w-5" /></button>
+          </div>
+        </div>
+        
+        <div className="p-4 space-y-4">
+          {editing ? (
+            <div className="grid grid-cols-2 gap-3">
+              <div><label className="block text-xs font-medium mb-1">Ad</label><input value={form.firstName || ""} onChange={e => setForm({...form, firstName: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+              <div><label className="block text-xs font-medium mb-1">Soyad</label><input value={form.lastName || ""} onChange={e => setForm({...form, lastName: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+              <div className="col-span-2">
+                <label className="block text-xs font-medium mb-1">Görev</label>
+                <select value={form.staffType || ""} onChange={e => setForm({...form, staffType: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm">
+                  <option value="STAJYER_AVUKAT">Stajyer Avukat</option>
+                  <option value="OFIS_KATIBI">Ofis Katibi</option>
+                  <option value="ADLI_KATIP">Adli Katip</option>
+                  <option value="SEKRETER">Sekreter</option>
+                  <option value="MUHASEBE">Muhasebe</option>
+                  <option value="ARSIV">Arşiv</option>
+                  <option value="DIGER">Diğer</option>
+                </select>
+              </div>
+              <div><label className="block text-xs font-medium mb-1">Telefon</label><input value={form.phone || ""} onChange={e => setForm({...form, phone: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+              <div><label className="block text-xs font-medium mb-1">E-posta</label><input value={form.email || ""} onChange={e => setForm({...form, email: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+            </div>
+          ) : (
+            <div className="space-y-2 text-sm">
+              {staff.phone && <div><span className="text-muted-foreground">Telefon:</span> {staff.phone}</div>}
+              {staff.email && <div><span className="text-muted-foreground">E-posta:</span> {staff.email}</div>}
+              {staff.isActive !== undefined && (
+                <div className="pt-2 border-t">
+                  <span className={`px-2 py-1 rounded text-xs ${staff.isActive ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                    {staff.isActive ? 'Aktif' : 'Pasif'}
+                  </span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 p-4 border-t sticky bottom-0 bg-white">
+          {editing ? (
+            <>
+              <button onClick={() => setEditing(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">İptal</button>
+              <button onClick={handleSave} disabled={saving} className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1">
+                {saving ? <><Loader2 className="h-4 w-4 animate-spin" /> Kaydediliyor...</> : <><Check className="h-4 w-4" /> Kaydet</>}
+              </button>
+            </>
+          ) : (
+            <button onClick={onClose} className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">Kapat</button>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1878,6 +2226,7 @@ function CompactClientSelection({
 }) {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<string>("ALL");
+  const [viewingClient, setViewingClient] = useState<any>(null);
   
   const filtered = existingClients.filter(c => {
     const matchesSearch = c.name?.toLowerCase().includes(search.toLowerCase()) || 
@@ -1906,7 +2255,9 @@ function CompactClientSelection({
           return (
             <div key={client.id} className={`flex items-center justify-between p-1.5 rounded text-xs ${isSelected ? 'bg-green-50 border border-green-300' : 'hover:bg-gray-100'}`}>
               <div className="flex-1">
-                <span className="font-medium">{client.name}</span>
+                <button type="button" onClick={() => setViewingClient(client)} className="font-medium text-left hover:text-primary hover:underline">
+                  {client.name}
+                </button>
                 <span className={`ml-2 px-1 py-0.5 rounded text-xs ${client.type === 'COMPANY' ? 'bg-blue-100 text-blue-700' : client.type === 'PUBLIC' ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-600'}`}>
                   {typeLabels[client.type] || 'Şahıs'}
                 </span>
@@ -1921,6 +2272,240 @@ function CompactClientSelection({
           );
         })}
         {filtered.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">Müvekkil bulunamadı</p>}
+      </div>
+
+      {/* Müvekkil Detay Modal */}
+      {viewingClient && (
+        <ClientDetailModal client={viewingClient} onClose={() => setViewingClient(null)} />
+      )}
+    </div>
+  );
+}
+
+// Müvekkil Detay Modal
+function ClientDetailModal({ client, onClose }: { client: any; onClose: () => void }) {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({ 
+    ...client,
+    poaNumber: client.poaNumber || "",
+    poaDate: client.poaDate || "",
+    notaryName: client.notaryName || "",
+    notaryCity: client.notaryCity || "",
+    isLimitedPoa: client.isLimitedPoa || false,
+    poaValidUntil: client.poaValidUntil || "",
+    poaScopeType: client.poaScopeType || "GENEL",
+  });
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      await api.put(`/clients/${client.id}`, form);
+      alert("Müvekkil bilgileri güncellendi");
+      onClose();
+    } catch (err: any) {
+      alert(err.message || "Güncelleme başarısız");
+    }
+    setSaving(false);
+  };
+
+  const isPerson = client.type === "PERSON" || client.type === "INDIVIDUAL";
+  const typeLabels: Record<string, string> = { INDIVIDUAL: "Şahıs", PERSON: "Şahıs", COMPANY: "Kurum", PUBLIC: "Kamu" };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      <div className="bg-white rounded-xl w-full max-w-lg max-h-[85vh] overflow-auto shadow-2xl">
+        <div className="flex justify-between items-center p-4 border-b sticky top-0 bg-white">
+          <div className="flex items-center gap-2">
+            <div className={`p-2 rounded-lg ${client.type === 'COMPANY' ? 'bg-blue-100' : client.type === 'PUBLIC' ? 'bg-purple-100' : 'bg-emerald-100'}`}>
+              <svg className={`h-5 w-5 ${client.type === 'COMPANY' ? 'text-blue-600' : client.type === 'PUBLIC' ? 'text-purple-600' : 'text-emerald-600'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                {client.type === 'COMPANY' || client.type === 'PUBLIC' ? (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                ) : (
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                )}
+              </svg>
+            </div>
+            <div>
+              <h3 className="font-semibold">{client.name || client.displayName}</h3>
+              <p className="text-xs text-muted-foreground">{typeLabels[client.type] || client.type}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            {!editing && (
+              <button onClick={() => setEditing(true)} className="px-3 py-1.5 text-xs font-medium bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg hover:from-amber-600 hover:to-orange-600 shadow-sm hover:shadow-md transition-all flex items-center gap-1.5">
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                Düzenle
+              </button>
+            )}
+            <button onClick={onClose} className="p-1.5 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"><X className="h-5 w-5" /></button>
+          </div>
+        </div>
+        
+        <div className="p-4 space-y-4">
+          {editing ? (
+            <div className="space-y-3">
+              {isPerson ? (
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="block text-xs font-medium mb-1">Ad</label><input value={form.firstName || ""} onChange={e => setForm({...form, firstName: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+                  <div><label className="block text-xs font-medium mb-1">Soyad</label><input value={form.lastName || ""} onChange={e => setForm({...form, lastName: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+                  <div className="col-span-2"><label className="block text-xs font-medium mb-1">TC Kimlik No</label><input value={form.tckn || form.identityNo || ""} onChange={e => setForm({...form, tckn: e.target.value, identityNo: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm font-mono" /></div>
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  <div><label className="block text-xs font-medium mb-1">Kurum Adı</label><input value={form.companyName || form.name || ""} onChange={e => setForm({...form, companyName: e.target.value, name: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className="block text-xs font-medium mb-1">VKN</label><input value={form.vkn || form.identityNo || ""} onChange={e => setForm({...form, vkn: e.target.value, identityNo: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm font-mono" /></div>
+                    <div><label className="block text-xs font-medium mb-1">Vergi Dairesi</label><input value={form.taxOffice || ""} onChange={e => setForm({...form, taxOffice: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+                  </div>
+                </div>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-xs font-medium mb-1">Telefon</label><input value={form.phone || ""} onChange={e => setForm({...form, phone: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+                <div><label className="block text-xs font-medium mb-1">E-posta</label><input value={form.email || ""} onChange={e => setForm({...form, email: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+              </div>
+              <div><label className="block text-xs font-medium mb-1">Adres</label><textarea value={form.address || ""} onChange={e => setForm({...form, address: e.target.value})} rows={2} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div><label className="block text-xs font-medium mb-1">İl</label><input value={form.city || ""} onChange={e => setForm({...form, city: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+                <div><label className="block text-xs font-medium mb-1">İlçe</label><input value={form.district || ""} onChange={e => setForm({...form, district: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+              </div>
+              
+              {/* Vekalet Bilgileri - Düzenleme */}
+              <div className="pt-3 border-t">
+                <p className="text-xs font-semibold text-indigo-700 mb-2 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full"></span>
+                  Vekalet Bilgileri
+                </p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div><label className="block text-xs font-medium mb-1">Yevmiye No</label><input value={form.poaNumber || ""} onChange={e => setForm({...form, poaNumber: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" placeholder="12345" /></div>
+                  <div><label className="block text-xs font-medium mb-1">Vekalet Tarihi</label><input type="date" value={form.poaDate || ""} onChange={e => setForm({...form, poaDate: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" /></div>
+                  <div><label className="block text-xs font-medium mb-1">Noter Adı</label><input value={form.notaryName || ""} onChange={e => setForm({...form, notaryName: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" placeholder="1. Noter" /></div>
+                  <div><label className="block text-xs font-medium mb-1">Noter İli</label><input value={form.notaryCity || ""} onChange={e => setForm({...form, notaryCity: e.target.value})} className="w-full border rounded px-2 py-1.5 text-sm" placeholder="İstanbul" /></div>
+                </div>
+                
+                {/* Süreli Vekalet */}
+                <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                  <div className="flex items-center gap-2 mb-2">
+                    <input type="checkbox" id="isLimitedPoa" checked={form.isLimitedPoa || false} onChange={e => setForm({...form, isLimitedPoa: e.target.checked})} className="rounded border-amber-400 text-amber-600 focus:ring-amber-500" />
+                    <label htmlFor="isLimitedPoa" className="text-xs font-medium text-amber-800">⏰ Süreli Vekalet</label>
+                  </div>
+                  {form.isLimitedPoa && (
+                    <div className="grid grid-cols-2 gap-3 mt-2">
+                      <div>
+                        <label className="block text-xs font-medium mb-1 text-amber-700">Vekalet Bitiş Tarihi</label>
+                        <input type="date" value={form.poaValidUntil || ""} onChange={e => setForm({...form, poaValidUntil: e.target.value})} className="w-full border border-amber-300 rounded px-2 py-1.5 text-sm bg-white focus:ring-amber-500 focus:border-amber-500" />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1 text-amber-700">Kapsam</label>
+                        <select value={form.poaScopeType || "GENEL"} onChange={e => setForm({...form, poaScopeType: e.target.value})} className="w-full border border-amber-300 rounded px-2 py-1.5 text-sm bg-white focus:ring-amber-500 focus:border-amber-500">
+                          <option value="GENEL">Genel Vekalet</option>
+                          <option value="ICRA_TAKIP">İcra Takipleri</option>
+                          <option value="BU_DOSYA">Bu Dosya İçin</option>
+                          <option value="OZEL">Özel Kapsam</option>
+                        </select>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                {/* Vekalet Yetkileri - Düzenleme */}
+                <div className="mt-3">
+                  <p className="text-xs font-medium text-muted-foreground mb-2">Vekalet Yetkileri</p>
+                  <div className="flex flex-wrap gap-3">
+                    <label className="flex items-center gap-1.5 text-xs"><input type="checkbox" checked={form.canCollect || false} onChange={e => setForm({...form, canCollect: e.target.checked})} className="rounded border-gray-300 text-green-600 focus:ring-green-500" /> Ahzu Kabza</label>
+                    <label className="flex items-center gap-1.5 text-xs"><input type="checkbox" checked={form.canWaive || false} onChange={e => setForm({...form, canWaive: e.target.checked})} className="rounded border-gray-300 text-green-600 focus:ring-green-500" /> Feragat</label>
+                    <label className="flex items-center gap-1.5 text-xs"><input type="checkbox" checked={form.canSettle || false} onChange={e => setForm({...form, canSettle: e.target.checked})} className="rounded border-gray-300 text-green-600 focus:ring-green-500" /> Sulh</label>
+                    <label className="flex items-center gap-1.5 text-xs"><input type="checkbox" checked={form.canRelease || false} onChange={e => setForm({...form, canRelease: e.target.checked})} className="rounded border-gray-300 text-green-600 focus:ring-green-500" /> İbra</label>
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                {isPerson && client.firstName && <div><span className="text-muted-foreground">Ad:</span> {client.firstName}</div>}
+                {isPerson && client.lastName && <div><span className="text-muted-foreground">Soyad:</span> {client.lastName}</div>}
+                {!isPerson && client.companyName && <div className="col-span-2"><span className="text-muted-foreground">Kurum:</span> {client.companyName}</div>}
+                {(client.tckn || client.identityNo) && <div><span className="text-muted-foreground">{isPerson ? 'TCKN:' : 'VKN:'}</span> <span className="font-mono">{client.tckn || client.identityNo}</span></div>}
+                {client.taxOffice && <div><span className="text-muted-foreground">Vergi Dairesi:</span> {client.taxOffice}</div>}
+                {client.phone && <div><span className="text-muted-foreground">Telefon:</span> {client.phone}</div>}
+                {client.email && <div><span className="text-muted-foreground">E-posta:</span> {client.email}</div>}
+                {client.city && <div><span className="text-muted-foreground">İl:</span> {client.city}</div>}
+                {client.district && <div><span className="text-muted-foreground">İlçe:</span> {client.district}</div>}
+              </div>
+              {client.address && (
+                <div className="text-sm pt-2 border-t">
+                  <span className="text-muted-foreground">Adres:</span>
+                  <p className="mt-1">{client.address}</p>
+                </div>
+              )}
+              {/* Vekalet Bilgileri */}
+              {(client.poaNumber || client.poaDate || client.notaryName) && (
+                <div className="pt-2 border-t">
+                  <p className="text-xs font-semibold text-indigo-700 mb-2 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full"></span>
+                    Vekalet Bilgileri
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    {client.poaNumber && <div><span className="text-muted-foreground">Yevmiye No:</span> {client.poaNumber}</div>}
+                    {client.poaDate && <div><span className="text-muted-foreground">Tarih:</span> {new Date(client.poaDate).toLocaleDateString('tr-TR')}</div>}
+                    {client.notaryName && <div><span className="text-muted-foreground">Noter:</span> {client.notaryName}</div>}
+                    {client.notaryCity && <div><span className="text-muted-foreground">Noter İli:</span> {client.notaryCity}</div>}
+                  </div>
+                  
+                  {/* Süreli Vekalet Uyarısı */}
+                  {client.isLimitedPoa && (
+                    <div className="mt-2 p-2 bg-amber-50 border border-amber-200 rounded-lg">
+                      <div className="flex items-center gap-2">
+                        <span className="text-amber-600">⏰</span>
+                        <div className="text-xs">
+                          <span className="font-medium text-amber-800">Süreli Vekalet</span>
+                          {client.poaValidUntil && (
+                            <span className="text-amber-700 ml-1">
+                              - {new Date(client.poaValidUntil).toLocaleDateString('tr-TR')}&apos;e kadar geçerli
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      {client.poaScopeType && client.poaScopeType !== 'GENEL' && (
+                        <div className="mt-1 text-xs text-amber-600">
+                          Kapsam: {client.poaScopeType === 'ICRA_TAKIP' ? 'İcra Takipleri' : client.poaScopeType === 'BU_DOSYA' ? 'Bu Dosya İçin' : 'Özel'}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+              
+              {/* Vekalet Yetkileri */}
+              <div className="pt-2 border-t">
+                <p className="text-xs font-medium text-muted-foreground mb-2">Vekalet Yetkileri</p>
+                <div className="flex flex-wrap gap-2">
+                  {client.canCollect && <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">Ahzu Kabza ✓</span>}
+                  {client.canWaive && <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">Feragat ✓</span>}
+                  {client.canSettle && <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">Sulh ✓</span>}
+                  {client.canRelease && <span className="px-2 py-1 bg-green-100 text-green-700 text-xs rounded">İbra ✓</span>}
+                  {!client.canCollect && !client.canWaive && !client.canSettle && !client.canRelease && (
+                    <span className="text-xs text-muted-foreground">Yetki bilgisi yok</span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 p-4 border-t sticky bottom-0 bg-white">
+          {editing ? (
+            <>
+              <button onClick={() => setEditing(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">İptal</button>
+              <button onClick={handleSave} disabled={saving} className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1">
+                {saving ? <><Loader2 className="h-4 w-4 animate-spin" /> Kaydediliyor...</> : <><Check className="h-4 w-4" /> Kaydet</>}
+              </button>
+            </>
+          ) : (
+            <button onClick={onClose} className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">Kapat</button>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -2229,6 +2814,562 @@ function NewClientModal({ onSave, onClose, saving }: {
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+
+// Seçili Müvekkiller Listesi - İsme tıklanınca detay modalı açılır
+function SelectedCreditorsList({ creditors, onRemove }: { creditors: Party[]; onRemove: (index: number) => void }) {
+  const [viewingClient, setViewingClient] = useState<any>(null);
+
+  return (
+    <>
+      <div className="space-y-2 max-h-64 overflow-y-auto">
+        {creditors.map((creditor, index) => {
+          const isCompany = creditor.type === 'COMPANY';
+          const isPublic = (creditor.type as string) === 'PUBLIC';
+          return (
+            <div key={index} className="p-2 rounded-lg border border-gray-200 text-xs">
+              <div className="flex items-center justify-between mb-1">
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => setViewingClient(creditor)} className="font-medium hover:text-primary hover:underline text-left">
+                    {creditor.name}
+                  </button>
+                  <span className={`px-1.5 py-0.5 rounded text-xs ${isCompany ? 'bg-blue-100 text-blue-700' : isPublic ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-700'}`}>
+                    {isCompany ? 'Kurum' : isPublic ? 'Kamu' : 'Şahıs'}
+                  </span>
+                </div>
+                <button type="button" onClick={() => onRemove(index)} className="text-red-500 hover:text-red-700">✕</button>
+              </div>
+              {creditor.identityNo && <p className="text-muted-foreground">{isCompany || isPublic ? 'VKN' : 'TCKN'}: {creditor.identityNo}</p>}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Müvekkil Detay Modal */}
+      {viewingClient && (
+        <ClientDetailModal client={viewingClient} onClose={() => setViewingClient(null)} />
+      )}
+    </>
+  );
+}
+
+
+// Alacak Kalemleri Adımı - Faiz Hesaplama ve Kapak Hesabı
+function DuesStep({
+  dues,
+  caseData,
+  onAddDue,
+  onUpdateDue,
+  onRemoveDue,
+  getTotalDues,
+  extractedData,
+  wizardData,
+}: {
+  dues: DueItem[];
+  caseData: any;
+  onAddDue: () => void;
+  onUpdateDue: (index: number, field: keyof DueItem, value: any) => void;
+  onRemoveDue: (index: number) => void;
+  getTotalDues: () => number;
+  extractedData?: Record<string, any>;
+  wizardData?: Record<string, any>;
+}) {
+  const [showInterestPanel, setShowInterestPanel] = useState(false);
+  const [calculatingInterest, setCalculatingInterest] = useState(false);
+  const [generatingFromRules, setGeneratingFromRules] = useState(false);
+  const [validationResult, setValidationResult] = useState<{
+    isValid: boolean;
+    errors: { id: string; message: string }[];
+    warnings: { id: string; message: string }[];
+  } | null>(null);
+  const [interestResult, setInterestResult] = useState<{
+    principal: number;
+    rate: number;
+    days: number;
+    interest: number;
+    total: number;
+    description: string;
+  } | null>(null);
+  const [interestForm, setInterestForm] = useState({
+    principalIndex: -1, // Hangi ana para kalemi için hesaplanacak
+    interestType: "YASAL" as "YASAL" | "TICARI" | "AVANS" | "TEMERRUT",
+    customRate: "",
+    startDate: "",
+    endDate: new Date().toISOString().split("T")[0],
+  });
+
+  // Faiz oranları (2024 yılı için)
+  const interestRates = {
+    YASAL: 24, // Yasal faiz %24
+    TICARI: 48, // Ticari faiz (avans faizi x 1.5) yaklaşık
+    AVANS: 32, // Avans faizi (TCMB reeskont)
+    TEMERRUT: 24, // Temerrüt faizi (yasal faiz ile aynı)
+  };
+
+  // Ana para kalemlerini bul
+  const principalDues = dues.filter(d => d.type === "PRINCIPAL");
+
+  // ClaimEngine'den otomatik alacak kalemleri oluştur
+  const generateFromClaimEngine = async () => {
+    // subCategory veya formCode'dan takip türünü belirle
+    const subCategory = caseData.subCategory || caseData.formCode || "ILAMSIZ_GENEL";
+    
+    setGeneratingFromRules(true);
+    try {
+      const response = await api.post("/claim-engine/generate-items", {
+        subCategory,
+        extractedData: extractedData || {
+          total_amount: caseData.totalAmount,
+          currency: caseData.currency,
+          due_date: caseData.dueDate,
+        },
+        wizardData: wizardData || {},
+      });
+
+      const generatedItems = response.data || [];
+      
+      if (generatedItems.length === 0) {
+        // Varsayılan ana para kalemi ekle
+        onAddDue();
+        return;
+      }
+      
+      // Oluşturulan kalemleri dues'a ekle
+      for (let i = 0; i < generatedItems.length; i++) {
+        const item = generatedItems[i];
+        if (item.amount || item.required) {
+          onAddDue();
+          // State güncellemesi için biraz bekle
+          await new Promise(resolve => setTimeout(resolve, 150));
+          const newIndex = dues.length + i;
+          const typeMap: Record<string, DueItem["type"]> = {
+            PRINCIPAL: "PRINCIPAL",
+            ACCRUED_INTEREST: "INTEREST",
+            POST_INTEREST_RULE: "INTEREST",
+            PENALTY: "OTHER",
+            FEE: "EXPENSE",
+            ATTORNEY_FEE: "EXPENSE",
+            OTHER: "OTHER",
+          };
+          onUpdateDue(newIndex, "type", typeMap[item.type] || "OTHER");
+          onUpdateDue(newIndex, "amount", (item.amount || 0).toString());
+          onUpdateDue(newIndex, "description", item.label || "Alacak kalemi");
+          if (item.dueDate) onUpdateDue(newIndex, "dueDate", item.dueDate);
+        }
+      }
+    } catch (error) {
+      console.error("Otomatik oluşturma hatası:", error);
+      // Hata durumunda varsayılan ana para kalemi ekle
+      onAddDue();
+    } finally {
+      setGeneratingFromRules(false);
+    }
+  };
+
+  // ClaimEngine ile doğrulama (opsiyonel - hata verirse sessizce geç)
+  const validateWithClaimEngine = async () => {
+    const subCategory = caseData.subCategory || caseData.formCode;
+    const caseType = caseData.caseType || caseData.formCategory;
+    
+    if (!caseType || !subCategory) return;
+
+    try {
+      const response = await api.post("/claim-engine/validate", {
+        caseType,
+        subCategory,
+        claimItems: dues.map(d => ({ type: d.type })),
+        extractedData: extractedData || {},
+        wizardData: wizardData || {},
+      });
+
+      if (response.data) {
+        setValidationResult(response.data);
+      }
+    } catch (error) {
+      // Doğrulama hatası kritik değil, sessizce geç
+      console.log("Doğrulama atlandı:", error);
+    }
+  };
+
+  // Faiz hesapla
+  const calculateInterest = async () => {
+    if (interestForm.principalIndex < 0) {
+      alert("Lütfen faiz hesaplanacak ana para kalemini seçin");
+      return;
+    }
+    
+    const principalDue = principalDues[interestForm.principalIndex];
+    if (!principalDue) return;
+
+    const principal = parseFloat(principalDue.amount) || 0;
+    const startDate = interestForm.startDate || principalDue.dueDate;
+    
+    if (!startDate) {
+      alert("Lütfen faiz başlangıç tarihi belirleyin");
+      return;
+    }
+
+    setCalculatingInterest(true);
+    try {
+      const rate = interestForm.customRate 
+        ? parseFloat(interestForm.customRate) 
+        : interestRates[interestForm.interestType];
+      
+      const response = await api.get(`/rule-engine/interest?principal=${principal}&startDate=${startDate}&endDate=${interestForm.endDate}&rate=${rate}`);
+      const result = response.data;
+      setInterestResult(result);
+    } catch (err) {
+      console.error("Faiz hesaplama hatası:", err);
+      // Fallback: Manuel hesaplama
+      const rate = interestForm.customRate 
+        ? parseFloat(interestForm.customRate) 
+        : interestRates[interestForm.interestType];
+      const start = new Date(startDate);
+      const end = new Date(interestForm.endDate);
+      const days = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
+      const dailyRate = rate / 365 / 100;
+      const interest = principal * dailyRate * days;
+      
+      setInterestResult({
+        principal,
+        rate,
+        days,
+        interest: Math.round(interest * 100) / 100,
+        total: principal + interest,
+        description: `${days} gün için %${rate} ${interestForm.interestType.toLowerCase()} faiz`,
+      });
+    }
+    setCalculatingInterest(false);
+  };
+
+  // Hesaplanan faizi alacak kalemi olarak ekle
+  const addInterestAsDue = () => {
+    if (!interestResult) return;
+    
+    const principalDue = principalDues[interestForm.principalIndex];
+    const interestTypeLabels = {
+      YASAL: "Yasal Faiz",
+      TICARI: "Ticari Faiz",
+      AVANS: "Avans Faizi",
+      TEMERRUT: "Temerrüt Faizi",
+    };
+    
+    // Yeni faiz kalemi ekle
+    onAddDue();
+    // Son eklenen kalemi güncelle
+    setTimeout(() => {
+      const newIndex = dues.length;
+      onUpdateDue(newIndex, "type", "INTEREST");
+      onUpdateDue(newIndex, "amount", interestResult.interest.toFixed(2));
+      onUpdateDue(newIndex, "description", `${interestTypeLabels[interestForm.interestType]} (${principalDue?.description || "Ana Para"} için - ${interestResult.days} gün)`);
+      onUpdateDue(newIndex, "dueDate", interestForm.endDate);
+      onUpdateDue(newIndex, "interestType", interestForm.interestType);
+      onUpdateDue(newIndex, "interestRate", interestResult.rate);
+      onUpdateDue(newIndex, "interestAmount", interestResult.interest);
+      onUpdateDue(newIndex, "interestStartDate", interestForm.startDate || principalDue?.dueDate);
+      onUpdateDue(newIndex, "interestEndDate", interestForm.endDate);
+    }, 100);
+    
+    setInterestResult(null);
+    setShowInterestPanel(false);
+  };
+
+  // Kapak hesabı (toplam alacak özeti)
+  const getKapakHesabi = () => {
+    const principal = dues.filter(d => d.type === "PRINCIPAL").reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
+    const interest = dues.filter(d => d.type === "INTEREST").reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
+    const expense = dues.filter(d => d.type === "EXPENSE").reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
+    const other = dues.filter(d => d.type === "OTHER").reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
+    const total = principal + interest + expense + other;
+    
+    return { principal, interest, expense, other, total };
+  };
+
+  const kapak = getKapakHesabi();
+  const currencySymbol = caseData.currency === "USD" ? "$" : caseData.currency === "EUR" ? "€" : "₺";
+
+  return (
+    <div className="space-y-4">
+      {/* Başlık */}
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h2 className="text-xl font-semibold">Alacak Kalemleri</h2>
+          <p className="text-sm text-muted-foreground">Ana para, faiz, masraf ve diğer alacak kalemlerini ekleyin</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <button 
+            type="button" 
+            onClick={generateFromClaimEngine}
+            disabled={generatingFromRules}
+            className="text-sm text-emerald-600 hover:text-emerald-700 flex items-center gap-1 px-3 py-1.5 border border-emerald-200 rounded-lg hover:bg-emerald-50 disabled:opacity-50"
+          >
+            {generatingFromRules ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <FileCheck className="h-4 w-4" />
+            )}
+            Otomatik Oluştur
+          </button>
+          <button 
+            type="button" 
+            onClick={() => setShowInterestPanel(!showInterestPanel)} 
+            className="text-sm text-orange-600 hover:text-orange-700 flex items-center gap-1 px-3 py-1.5 border border-orange-200 rounded-lg hover:bg-orange-50"
+          >
+            <Calculator className="h-4 w-4" /> Faiz Hesapla
+          </button>
+          <button type="button" onClick={onAddDue} className="text-sm text-primary hover:underline flex items-center gap-1">
+            <Plus className="h-4 w-4" /> Kalem Ekle
+          </button>
+        </div>
+      </div>
+
+      {/* Doğrulama Uyarıları */}
+      {validationResult && (validationResult.errors.length > 0 || validationResult.warnings.length > 0) && (
+        <div className="space-y-2">
+          {validationResult.errors.map((err) => (
+            <div key={err.id} className="flex items-center gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+              <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+              {err.message}
+            </div>
+          ))}
+          {validationResult.warnings.map((warn) => (
+            <div key={warn.id} className="flex items-center gap-2 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm">
+              <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+              {warn.message}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Faiz Hesaplama Paneli */}
+      {showInterestPanel && (
+        <div className="border-2 border-orange-200 rounded-lg p-4 bg-orange-50/50">
+          <div className="flex items-center gap-2 mb-3">
+            <TrendingUp className="h-5 w-5 text-orange-600" />
+            <h3 className="font-semibold text-orange-800">Faiz Hesaplama</h3>
+          </div>
+          
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-3 mb-4">
+            {/* Ana Para Seçimi */}
+            <div>
+              <label className="block text-xs font-medium mb-1">Ana Para Kalemi</label>
+              <select 
+                value={interestForm.principalIndex}
+                onChange={e => {
+                  const idx = parseInt(e.target.value);
+                  setInterestForm(prev => ({ 
+                    ...prev, 
+                    principalIndex: idx,
+                    startDate: idx >= 0 ? principalDues[idx]?.dueDate || "" : ""
+                  }));
+                }}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-orange-500"
+              >
+                <option value={-1}>Seçin...</option>
+                {principalDues.map((due, idx) => (
+                  <option key={idx} value={idx}>
+                    {due.description || `Ana Para ${idx + 1}`} - {parseFloat(due.amount || "0").toLocaleString('tr-TR')} {currencySymbol}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Faiz Türü */}
+            <div>
+              <label className="block text-xs font-medium mb-1">Faiz Türü</label>
+              <select 
+                value={interestForm.interestType}
+                onChange={e => setInterestForm(prev => ({ ...prev, interestType: e.target.value as any, customRate: "" }))}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-orange-500"
+              >
+                <option value="YASAL">Yasal Faiz (%{interestRates.YASAL})</option>
+                <option value="TICARI">Ticari Faiz (%{interestRates.TICARI})</option>
+                <option value="AVANS">Avans Faizi (%{interestRates.AVANS})</option>
+                <option value="TEMERRUT">Temerrüt Faizi (%{interestRates.TEMERRUT})</option>
+              </select>
+            </div>
+
+            {/* Özel Oran */}
+            <div>
+              <label className="block text-xs font-medium mb-1">Özel Oran (%)</label>
+              <input 
+                type="number" 
+                value={interestForm.customRate}
+                onChange={e => setInterestForm(prev => ({ ...prev, customRate: e.target.value }))}
+                placeholder={`Varsayılan: ${interestRates[interestForm.interestType]}`}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-orange-500"
+              />
+            </div>
+
+            {/* Başlangıç Tarihi */}
+            <div>
+              <label className="block text-xs font-medium mb-1">Başlangıç (Vade)</label>
+              <input 
+                type="date" 
+                value={interestForm.startDate}
+                onChange={e => setInterestForm(prev => ({ ...prev, startDate: e.target.value }))}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-orange-500"
+              />
+            </div>
+
+            {/* Bitiş Tarihi */}
+            <div>
+              <label className="block text-xs font-medium mb-1">Bitiş (Bugün)</label>
+              <input 
+                type="date" 
+                value={interestForm.endDate}
+                onChange={e => setInterestForm(prev => ({ ...prev, endDate: e.target.value }))}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-orange-500"
+              />
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
+            <button 
+              type="button" 
+              onClick={calculateInterest}
+              disabled={calculatingInterest || interestForm.principalIndex < 0}
+              className="px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 flex items-center gap-2"
+            >
+              {calculatingInterest ? <Loader2 className="h-4 w-4 animate-spin" /> : <Calculator className="h-4 w-4" />}
+              Hesapla
+            </button>
+            
+            {interestResult && (
+              <div className="flex-1 flex items-center justify-between bg-white rounded-lg p-3 border border-orange-200">
+                <div className="text-sm">
+                  <span className="text-gray-600">{interestResult.description}</span>
+                  <div className="font-semibold text-orange-700">
+                    Faiz: {interestResult.interest.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {currencySymbol}
+                  </div>
+                </div>
+                <button 
+                  type="button" 
+                  onClick={addInterestAsDue}
+                  className="px-3 py-1.5 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 flex items-center gap-1"
+                >
+                  <Plus className="h-4 w-4" /> Kalem Olarak Ekle
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Alacak Kalemleri Listesi */}
+      {dues.length === 0 ? (
+        <div className="text-center py-12 border-2 border-dashed rounded-lg">
+          <p className="text-muted-foreground mb-4">Henüz alacak kalemi eklenmedi</p>
+          <button type="button" onClick={onAddDue} className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90">
+            <Plus className="h-4 w-4" /> İlk Kalemi Ekle
+          </button>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {dues.map((due, index) => (
+            <div key={index} className={`border rounded-lg p-4 relative ${due.type === "INTEREST" ? "border-orange-200 bg-orange-50/30" : due.type === "EXPENSE" ? "border-blue-200 bg-blue-50/30" : ""}`}>
+              <button type="button" onClick={() => onRemoveDue(index)} className="absolute top-2 right-2 text-gray-400 hover:text-red-500">
+                <X className="h-5 w-5" />
+              </button>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-xs font-medium mb-1">Kalem Türü</label>
+                  <select 
+                    value={due.type} 
+                    onChange={e => onUpdateDue(index, "type", e.target.value)} 
+                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+                  >
+                    <option value="PRINCIPAL">Ana Para</option>
+                    <option value="INTEREST">Faiz</option>
+                    <option value="EXPENSE">Masraf</option>
+                    <option value="OTHER">Diğer</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1">Tutar ({currencySymbol}) <span className="text-red-500">*</span></label>
+                  <input 
+                    type="number" 
+                    value={due.amount} 
+                    onChange={e => onUpdateDue(index, "amount", e.target.value)} 
+                    placeholder="0.00" 
+                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1">Vade Tarihi</label>
+                  <input 
+                    type="date" 
+                    value={due.dueDate} 
+                    onChange={e => onUpdateDue(index, "dueDate", e.target.value)} 
+                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary" 
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium mb-1">Açıklama</label>
+                  <input 
+                    type="text" 
+                    value={due.description} 
+                    onChange={e => onUpdateDue(index, "description", e.target.value)} 
+                    placeholder="Ör: Kira alacağı" 
+                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary" 
+                  />
+                </div>
+              </div>
+              {/* Faiz detayları (varsa) */}
+              {due.type === "INTEREST" && due.interestRate && (
+                <div className="mt-2 pt-2 border-t border-orange-200 text-xs text-orange-700">
+                  <span className="font-medium">%{due.interestRate}</span> oran ile hesaplandı
+                  {due.interestStartDate && due.interestEndDate && (
+                    <span className="ml-2">({due.interestStartDate} - {due.interestEndDate})</span>
+                  )}
+                </div>
+              )}
+            </div>
+          ))}
+
+          {/* Kapak Hesabı (Toplam Alacak Özeti) */}
+          <div className="mt-6 border-2 border-primary/20 rounded-lg overflow-hidden">
+            <div className="bg-primary/5 px-4 py-2 flex items-center gap-2">
+              <Receipt className="h-5 w-5 text-primary" />
+              <h3 className="font-semibold">Kapak Hesabı (Alacak Özeti)</h3>
+            </div>
+            <div className="p-4">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4 text-sm">
+                <div className="text-center p-3 bg-gray-50 rounded-lg">
+                  <div className="text-xs text-gray-500 mb-1">Ana Para</div>
+                  <div className="font-semibold text-lg">{kapak.principal.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {currencySymbol}</div>
+                </div>
+                <div className="text-center p-3 bg-orange-50 rounded-lg">
+                  <div className="text-xs text-orange-600 mb-1">Faiz</div>
+                  <div className="font-semibold text-lg text-orange-700">{kapak.interest.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {currencySymbol}</div>
+                </div>
+                <div className="text-center p-3 bg-blue-50 rounded-lg">
+                  <div className="text-xs text-blue-600 mb-1">Masraf</div>
+                  <div className="font-semibold text-lg text-blue-700">{kapak.expense.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {currencySymbol}</div>
+                </div>
+                <div className="text-center p-3 bg-gray-50 rounded-lg">
+                  <div className="text-xs text-gray-500 mb-1">Diğer</div>
+                  <div className="font-semibold text-lg">{kapak.other.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {currencySymbol}</div>
+                </div>
+                <div className="text-center p-3 bg-primary/10 rounded-lg border-2 border-primary/30">
+                  <div className="text-xs text-primary mb-1 font-medium">TOPLAM ALACAK</div>
+                  <div className="font-bold text-xl text-primary">{kapak.total.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} {currencySymbol}</div>
+                </div>
+              </div>
+              
+              {/* Faiz açıklaması */}
+              {caseData.interestDescription && (
+                <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg text-sm text-yellow-800">
+                  <strong>Faiz Talebi:</strong> {caseData.interestDescription}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

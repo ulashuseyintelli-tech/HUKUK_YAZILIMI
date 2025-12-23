@@ -174,4 +174,93 @@ export class DocumentController {
       content,
     };
   }
+
+  // ==================== 89 İHBARNAME BELGELERİ ====================
+
+  // 89/1 Haciz İhbarnamesi PDF
+  @Post("case/:caseId/ihbarname-89-1")
+  @Header("Content-Type", "application/pdf")
+  async getIhbarname89_1(
+    @Param("caseId") caseId: string,
+    @Body() body: {
+      name: string;
+      type: "BANKA" | "ISVEREN" | "KIRACI" | "DIGER";
+      identityNo?: string;
+      address?: string;
+    },
+    @Res() res: Response
+  ) {
+    const pdf = await this.documentService.generateIhbarname89_1(caseId, body);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="89-1-ihbarname-${caseId}.pdf"`
+    );
+    res.send(pdf);
+  }
+
+  // 89/2 Haciz İhbarnamesi PDF
+  @Post("case/:caseId/ihbarname-89-2")
+  @Header("Content-Type", "application/pdf")
+  async getIhbarname89_2(
+    @Param("caseId") caseId: string,
+    @Body() body: {
+      name: string;
+      type: "BANKA" | "ISVEREN" | "KIRACI" | "DIGER";
+      identityNo?: string;
+      address?: string;
+      firstIhbarnameDate: string;
+    },
+    @Res() res: Response
+  ) {
+    const pdf = await this.documentService.generateIhbarname89_2(caseId, body);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="89-2-ihbarname-${caseId}.pdf"`
+    );
+    res.send(pdf);
+  }
+
+  // 89/3 Haciz İhbarnamesi PDF
+  @Post("case/:caseId/ihbarname-89-3")
+  @Header("Content-Type", "application/pdf")
+  async getIhbarname89_3(
+    @Param("caseId") caseId: string,
+    @Body() body: {
+      name: string;
+      type: "BANKA" | "ISVEREN" | "KIRACI" | "DIGER";
+      identityNo?: string;
+      address?: string;
+      firstIhbarnameDate: string;
+      secondIhbarnameDate: string;
+    },
+    @Res() res: Response
+  ) {
+    const pdf = await this.documentService.generateIhbarname89_3(caseId, body);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="89-3-ihbarname-${caseId}.pdf"`
+    );
+    res.send(pdf);
+  }
+
+  // Alacak Haczi Talebi (Dosya Haczi) PDF
+  @Post("case/:caseId/alacak-haczi-talebi")
+  @Header("Content-Type", "application/pdf")
+  async getAlacakHacziTalebi(
+    @Param("caseId") caseId: string,
+    @Body() body: {
+      externalOffice: string;
+      externalCaseNo: string;
+      counterpartyName: string;
+      claimAmount: number;
+    },
+    @Res() res: Response
+  ) {
+    const pdf = await this.documentService.generateAlacakHacziTalebi(caseId, body);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="alacak-haczi-talebi-${caseId}.pdf"`
+    );
+    res.send(pdf);
+  }
 }

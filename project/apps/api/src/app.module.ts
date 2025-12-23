@@ -35,6 +35,11 @@ import { CalendarModule } from "./modules/calendar/calendar.module";
 import { AuditModule } from "./modules/audit/audit.module";
 import { SeedModule } from "./modules/seed/seed.module";
 import { ErrorLogModule } from "./modules/error-log/error-log.module";
+import { PublicInstitutionModule } from "./modules/public-institution/public-institution.module";
+import { TebligatModule } from "./modules/tebligat/tebligat.module";
+import { CollectionModule } from "./modules/collection/collection.module";
+import { ClaimItemModule } from "./modules/claim-item/claim-item.module";
+import { ClaimEngineModule } from "./modules/claim-engine/claim-engine.module";
 
 @Module({
   imports: [
@@ -76,6 +81,11 @@ import { ErrorLogModule } from "./modules/error-log/error-log.module";
     AuditModule,
     SeedModule,
     ErrorLogModule,
+    PublicInstitutionModule,
+    TebligatModule,
+    CollectionModule,
+    ClaimItemModule,
+    ClaimEngineModule,
   ],
 })
 export class AppModule {}

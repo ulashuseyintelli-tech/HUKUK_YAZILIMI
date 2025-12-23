@@ -1,0 +1,443 @@
+version: 1
+engine: claim_engine_rules
+
+defaults:
+  currency: TRY
+  require_article4_request_to_start: true
+  rounding:
+    mode: HALF_UP
+    scale: 2
+
+# ------------------------------------------------------------
+# 1) DOCUMENT CLASSIFICATION (OCR/AI -> docType)
+# ------------------------------------------------------------
+document_classification:
+  hints:
+    INVOICE:
+      any_of: ["FATURA", "ALICI", "GENEL TOPLAM", "VKN", "KDV"]
+    LEASE:
+      any_of: ["KİRA SÖZLEŞMESİ", "KİRACI", "KİRALAYAN", "AYLIK KİRA", "TAHLİYE"]
+    CHECK:
+      any_of: ["ÇEK", "KEŞİDECİ", "BANKA", "ŞUBE", "SERİ NO", "ÇEK NO"]
+    PROMISSORY:
+      any_of: ["BONO", "EMRE MUHARRER SENET", "SENET", "DÜZENLEYEN", "LEHTAR", "VADE"]
+    JUDGMENT:
+      any_of: ["T.C.", "MAHKEMESİ", "ESAS NO", "KARAR NO", "HÜKÜM", "GEREKÇE"]
+    CURRENT_ACCOUNT:
+      any_of: ["CARİ HESAP", "EKSTRE", "BAKİYE", "DÖNEM"]
+
+# ------------------------------------------------------------
+# 2) CASE TYPE ROUTING (docType + answers -> caseType/subCategory/form)
+# ------------------------------------------------------------
+case_routing:
+  rules:
+    - id: route_judgment_forex
+      when:
+        docType: JUDGMENT
+        any_of_contains: ["USD", "EUR", "GBP", "DÖVİZ", "EFEKTİF KUR", "FİİLİ ÖDEME TARİHİ"]
+      then:
+        caseType: ILAMLI
+        subCategory: ILAMLI_DOVIZ
+        form: "FORM_2_3_4_5"
+        routeType: HACIZ
+
+    - id: route_judgment_nafaka
+      when:
+        docType: JUDGMENT
+        any_of_contains: ["NAFAKA", "İŞTİRAK NAFAKASI", "YOKSULLUK NAFAKASI", "HER AY"]
+      then:
+        caseType: ILAMLI
+        subCategory: ILAMLI_NAFAKA
+        form: "FORM_2_3_4_5"
+        routeType: HACIZ
+
+    - id: route_judgment_general
+      when:
+        docType: JUDGMENT
+      then:
+        caseType: ILAMLI
+        subCategory: ILAMLI_GENEL
+        form: "FORM_2_3_4_5"
+        routeType: HACIZ
+
+    - id: route_check
+      when:
+        docType: CHECK
+      then:
+        caseType: KAMBIYO
+        subCategory: KAMBIYO_CEK
+        form: "FORM_10"
+        routeType: HACIZ
+
+    - id: route_promissory
+      when:
+        docType: PROMISSORY
+      then:
+        caseType: KAMBIYO
+        subCategory: KAMBIYO_SENET
+        form: "FORM_10"
+        routeType: HACIZ
+
+    - id: route_lease_tahliye
+      when:
+        docType: LEASE
+        any_of_contains: ["TAHLİYE TAAHHÜDÜ", "TAHLİYE", "ÖDENMEYEN KİRA"]
+      then:
+        caseType: TAHLIYE
+        subCategory: TAHLIYE_KIRA
+        form: "FORM_14"
+        routeType: HACIZ
+
+    - id: route_lease_rent
+      when:
+        docType: LEASE
+      then:
+        caseType: ILAMSIZ
+        subCategory: ILAMSIZ_KIRA
+        form: "FORM_13"
+        routeType: HACIZ
+
+    - id: route_invoice_general
+      when:
+        docType: INVOICE
+      then:
+        caseType: ILAMSIZ
+        subCategory: ILAMSIZ_GENEL
+        form: "FORM_7"
+        routeType: HACIZ
+
+    - id: route_default_written
+      when:
+        docType: OTHER
+      then:
+        caseType: ILAMSIZ
+        subCategory: ILAMSIZ_GENEL
+        form: "FORM_7"
+        routeType: HACIZ
+
+
+# ------------------------------------------------------------
+# 3) CLAIM ITEM GENERATION (docType/caseType -> default items)
+# ------------------------------------------------------------
+claim_item_sets:
+  templates:
+
+    ILAMSIZ_GENEL:
+      items:
+        - type: PRINCIPAL
+          label: "Asıl Alacak"
+          amount_source: "doc.extracted.total_amount"
+          currency_source: "doc.extracted.currency"
+          date_source: "doc.extracted.due_date"
+          required: true
+
+        - type: POST_INTEREST_RULE
+          label: "Takip Sonrası Faiz Kuralı"
+          required: true
+          rule_ref: "interest_rules.default_post_interest"
+
+    ILAMSIZ_KIRA:
+      items:
+        - type: PRINCIPAL
+          label: "Kira Alacağı (Dönemsel)"
+          amount_source: "doc.extracted.rent_amount"
+          period_source: "wizard.rent_periods"
+          currency_source: "doc.extracted.currency"
+          required: true
+
+        - type: POST_INTEREST_RULE
+          label: "Takip Sonrası Faiz Kuralı"
+          required: false
+          rule_ref: "interest_rules.default_post_interest"
+
+    TAHLIYE_KIRA:
+      items:
+        - type: PRINCIPAL
+          label: "Kira Alacağı (varsa)"
+          amount_source: "wizard.optional_rent_arrears"
+          currency_source: "wizard.currency"
+          required: false
+
+        - type: OTHER
+          label: "Tahliye Talebi (parametre)"
+          amount_source: null
+          required: true
+          params:
+            requires_reason: true
+            reasons:
+              - "Tahliye taahhüdü"
+              - "Temerrüt (ödenmeyen kira)"
+              - "Sözleşme şartı"
+
+    KAMBIYO_CEK:
+      items:
+        - type: PRINCIPAL
+          label: "Çek Alacağı"
+          amount_source: "doc.extracted.instrument_amount"
+          currency_source: "doc.extracted.currency"
+          date_source: "doc.extracted.issue_or_due_date"
+          required: true
+
+        - type: ACCRUED_INTEREST
+          label: "İşlemiş Faiz (Takip Öncesi)"
+          required: false
+          calc_ref: "interest_calculators.pre_filing_interest"
+          params:
+            interest_rule_ref: "interest_rules.kambiyo_default_pre_interest"
+
+        - type: PENALTY
+          label: "Karşılıksız Çek Tazminatı"
+          required: false
+          calc_ref: "penalty_calculators.bad_check_compensation"
+          params:
+            rate: 0.10
+            base_item_type: PRINCIPAL
+
+        - type: COMMISSION
+          label: "Komisyon"
+          required: false
+          amount_source: "wizard.optional_commission"
+
+        - type: FEE
+          label: "İhtiyati Haciz Harcı"
+          required: false
+          amount_source: "wizard.optional_precautionary_fee"
+
+        - type: ATTORNEY_FEE
+          label: "İhtiyati Haciz Vekalet Ücreti"
+          required: false
+          amount_source: "wizard.optional_precautionary_attorney_fee"
+
+        - type: POST_INTEREST_RULE
+          label: "Takip Sonrası Faiz Kuralı"
+          required: true
+          rule_ref: "interest_rules.kambiyo_default_post_interest"
+
+    KAMBIYO_SENET:
+      items:
+        - type: PRINCIPAL
+          label: "Senet/Bono Alacağı"
+          amount_source: "doc.extracted.instrument_amount"
+          currency_source: "doc.extracted.currency"
+          date_source: "doc.extracted.due_date"
+          required: true
+
+        - type: ACCRUED_INTEREST
+          label: "İşlemiş Faiz (Takip Öncesi)"
+          required: false
+          calc_ref: "interest_calculators.pre_filing_interest"
+          params:
+            interest_rule_ref: "interest_rules.kambiyo_default_pre_interest"
+
+        - type: POST_INTEREST_RULE
+          label: "Takip Sonrası Faiz Kuralı"
+          required: true
+          rule_ref: "interest_rules.kambiyo_default_post_interest"
+
+    ILAMLI_GENEL:
+      items:
+        - type: PRINCIPAL
+          label: "İlamlı Asıl Alacak"
+          amount_source: "doc.extracted.judgment_amount"
+          currency_source: "doc.extracted.currency"
+          date_source: "doc.extracted.judgment_date"
+          required: true
+
+        - type: POST_INTEREST_RULE
+          label: "Takip Sonrası Faiz Kuralı"
+          required: true
+          rule_ref: "interest_rules.ilamli_default_post_interest"
+
+    ILAMLI_NAFAKA:
+      items:
+        - type: PRINCIPAL
+          label: "Nafaka (Dönemsel)"
+          amount_source: "doc.extracted.nafaka_amount"
+          period_source: "wizard.nafaka_periods"
+          currency_source: "doc.extracted.currency"
+          required: true
+
+        - type: POST_INTEREST_RULE
+          label: "Takip Sonrası Faiz Kuralı"
+          required: false
+          rule_ref: "interest_rules.ilamli_default_post_interest"
+
+    ILAMLI_DOVIZ:
+      items:
+        - type: PRINCIPAL
+          label: "Döviz Asıl Alacak"
+          amount_source: "doc.extracted.judgment_amount"
+          currency_source: "doc.extracted.currency"
+          required: true
+
+        - type: OTHER
+          label: "Kur Kuralı"
+          required: true
+          params:
+            exchange_policy:
+              - "Fiili ödeme tarihindeki efektif kur"
+              - "Takip tarihindeki kur"
+              - "Belirli tarih kuru"
+
+        - type: POST_INTEREST_RULE
+          label: "Takip Sonrası Faiz Kuralı"
+          required: true
+          rule_ref: "interest_rules.ilamli_default_post_interest"
+
+
+# ------------------------------------------------------------
+# 4) INTEREST RULES (pre/post filing; currency constraints)
+# ------------------------------------------------------------
+interest_rules:
+  default_post_interest:
+    interestType: LEGAL
+    annualRate: null          # if null -> fetch from interest_table by date
+    variableRate: true
+    startDateSource: "case.filingDate"
+    baseItemType: PRINCIPAL
+
+  kambiyo_default_pre_interest:
+    interestType: COMMERCIAL
+    annualRate: null
+    variableRate: true
+    startDateSource: "doc.extracted.due_or_issue_date"
+    endDateSource: "case.filingDate"
+    baseItemType: PRINCIPAL
+
+  kambiyo_default_post_interest:
+    interestType: COMMERCIAL
+    annualRate: null
+    variableRate: true
+    startDateSource: "case.filingDate"
+    baseItemType: PRINCIPAL
+
+  ilamli_default_post_interest:
+    interestType: LEGAL
+    annualRate: null
+    variableRate: true
+    startDateSource: "case.filingDate"
+    baseItemType: PRINCIPAL
+
+# ------------------------------------------------------------
+# 5) VALIDATIONS & WARNINGS (legal safety layer)
+# ------------------------------------------------------------
+validations:
+  - id: require_at_least_one_principal
+    severity: ERROR
+    when:
+      missing_item_type: PRINCIPAL
+    message: "Asıl alacak kalemi olmadan takip oluşturulamaz."
+
+  - id: judgment_finalization_warning
+    severity: WARNING
+    when:
+      caseType: ILAMLI
+      any_of:
+        - missing_field: "doc.extracted.finalization_note"
+        - missing_field: "wizard.finalization_date"
+    message: "Bazı ilamlar kesinleşmeden icraya konulamaz. Kesinleşme şerhini kontrol edin."
+
+  - id: forex_requires_exchange_policy
+    severity: ERROR
+    when:
+      caseType: ILAMLI
+      subCategory: ILAMLI_DOVIZ
+      missing_field: "wizard.exchange_policy"
+    message: "Döviz alacağı için kur kuralı seçilmelidir."
+
+  - id: debtor_roles_required_for_kambiyo
+    severity: WARNING
+    when:
+      caseType: KAMBIYO
+      missing_field: "case.debtors"
+    message: "Kambiyo takibinde keşideci/ciranta/aval gibi sorumluların rolü doğru seçilmelidir."
+
+  - id: check_penalty_rate_validation
+    severity: WARNING
+    when:
+      subCategory: KAMBIYO_CEK
+      field_value_not_in:
+        field: "wizard.check_penalty_rate"
+        values: [0.10, 0.20]
+    message: "Karşılıksız çek tazminatı oranı %10 veya %20 olmalıdır."
+
+  - id: nafaka_period_required
+    severity: ERROR
+    when:
+      subCategory: ILAMLI_NAFAKA
+      missing_field: "wizard.nafaka_periods"
+    message: "Nafaka takibinde dönem bilgisi zorunludur."
+
+  - id: tahliye_reason_required
+    severity: ERROR
+    when:
+      caseType: TAHLIYE
+      missing_field: "wizard.tahliye_reason"
+    message: "Tahliye takibinde tahliye sebebi belirtilmelidir."
+
+# ------------------------------------------------------------
+# 6) OUTPUT TEMPLATES (Takip Talebi / docs mapping)
+# ------------------------------------------------------------
+templates:
+  takip_talebi_ornek_1:
+    by_case:
+      ILAMSIZ_GENEL: "tpl_ornek1_ilamsiz_genel"
+      ILAMSIZ_KIRA: "tpl_ornek1_kira_alacagi"
+      TAHLIYE_KIRA: "tpl_ornek1_tahliye"
+      KAMBIYO_CEK: "tpl_ornek1_kambiyo"
+      KAMBIYO_SENET: "tpl_ornek1_kambiyo"
+      ILAMLI_GENEL: "tpl_ornek1_ilamli_genel"
+      ILAMLI_NAFAKA: "tpl_ornek1_ilamli_nafaka"
+      ILAMLI_DOVIZ: "tpl_ornek1_ilamli_doviz"
+
+# ------------------------------------------------------------
+# 7) OPTIONAL: COMMUNICATION SUGGESTIONS (SMS/Email drafts)
+# ------------------------------------------------------------
+communication_suggestions:
+  debtor_payment_reminder:
+    when:
+      any_of_caseTypes: ["ILAMSIZ", "KAMBIYO", "ILAMLI", "TAHLIYE"]
+    sms_template: "sms_ode_hatirlatma_resmi"
+    email_template: "mail_ode_hatirlatma_resmi"
+
+  debtor_legal_warning:
+    when:
+      any_of_caseTypes: ["ILAMSIZ", "KAMBIYO"]
+    sms_template: "sms_yasal_uyari"
+    email_template: "mail_yasal_uyari"
+
+# ------------------------------------------------------------
+# 8) PENALTY CALCULATORS
+# ------------------------------------------------------------
+penalty_calculators:
+  bad_check_compensation:
+    description: "Karşılıksız çek tazminatı hesaplama"
+    formula: "principal * rate"
+    default_rate: 0.10
+    max_rate: 0.20
+
+# ------------------------------------------------------------
+# 9) INTEREST RATE TABLE (Varsayılan oranlar - 2024)
+# ------------------------------------------------------------
+interest_rate_table:
+  TRY:
+    LEGAL:
+      - start_date: "2024-01-01"
+        rate: 24
+    COMMERCIAL:
+      - start_date: "2024-01-01"
+        rate: 48
+  USD:
+    LEGAL:
+      - start_date: "2024-01-01"
+        rate: 9
+    COMMERCIAL:
+      - start_date: "2024-01-01"
+        rate: 12
+  EUR:
+    LEGAL:
+      - start_date: "2024-01-01"
+        rate: 9
+    COMMERCIAL:
+      - start_date: "2024-01-01"
+        rate: 12

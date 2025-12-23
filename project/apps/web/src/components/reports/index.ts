@@ -8,3 +8,6 @@ export { UserActivityReport } from "./user-activity-report";
 export { CaseDurationAnalysis } from "./case-duration-analysis";
 export { CaseComparisonChart } from "./case-comparison-chart";
 export { CollectionAnalysisReport } from "./collection-analysis";
+export { CaseDebtReport } from "./CaseDebtReport";
+export { InterestReport } from "./InterestReport";
+export { CollectionHistoryReport } from "./CollectionHistoryReport";

@@ -1,5 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { PUBLIC_INSTITUTIONS_DATA } from '../public-institution/public-institution-seed';
+import { EXTENDED_INSTITUTIONS_DATA } from '../public-institution/public-institution-seed-extended';
+import { SAVCILIK_DATA } from '../public-institution/public-institution-seed-savcilik';
+import { ALL_BELEDIYE_DATA } from '../public-institution/public-institution-seed-belediye';
+import { ALL_BELEDIYE_DATA_2 } from '../public-institution/public-institution-seed-belediye-2';
+import { UYAP_ICRA_ALL_DATA } from '../public-institution/uyap-icra-all';
+import { HASTANE_DATA } from '../public-institution/public-institution-seed-hastane';
+import { KAMU_HASTANE_DATA } from '../public-institution/public-institution-seed-hastane-2';
+import { DEVLET_HASTANE_DATA } from '../public-institution/public-institution-seed-hastane-3';
+import { MAHKEME_DATA } from '../public-institution/public-institution-seed-mahkeme';
 
 @Injectable()
 export class SeedService {
@@ -19,6 +29,8 @@ export class SeedService {
       debtors: await this.seedDebtors(tenantId),
       executionOffices: await this.seedExecutionOffices(tenantId),
       cases: await this.seedCases(tenantId),
+      publicInstitutions: await this.seedPublicInstitutions(),
+      publicInstitutionDebtors: await this.seedPublicInstitutionDebtors(tenantId),
     };
     return { success: true, message: 'Tüm veriler oluşturuldu', results };
   }
@@ -249,18 +261,55 @@ export class SeedService {
   }
 
   async seedDebtors(tenantId: string) {
-    const debtors = [
+    // 20 Şahıs Borçlu
+    const individualDebtors = [
       { name: 'Hasan Kara', type: 'INDIVIDUAL', identityNo: '98765432101', email: 'hasan@email.com', phone: '05401234567' },
       { name: 'Veli Yılmaz', type: 'INDIVIDUAL', identityNo: '98765432102', email: 'veli@email.com', phone: '05401234568' },
-      { name: 'Sigma Ticaret Ltd.', type: 'COMPANY', identityNo: '9876543210', taxOffice: 'Kadıköy', email: 'info@sigma.com', phone: '02161234567' },
       { name: 'Zehra Özdemir', type: 'INDIVIDUAL', identityNo: '98765432103', email: 'zehra@email.com', phone: '05401234569' },
-      { name: 'Kappa İnşaat A.Ş.', type: 'COMPANY', identityNo: '9876543211', taxOffice: 'Beşiktaş', email: 'info@kappa.com', phone: '02121234580' },
       { name: 'Murat Şen', type: 'INDIVIDUAL', identityNo: '98765432104', email: 'murat@email.com', phone: '05401234570' },
-      { name: 'Lambda Tekstil', type: 'COMPANY', identityNo: '9876543212', taxOffice: 'Nilüfer', email: 'info@lambda.com', phone: '02241234567' },
       { name: 'Seda Acar', type: 'INDIVIDUAL', identityNo: '98765432105', email: 'seda@email.com', phone: '05401234571' },
-      { name: 'Epsilon Gıda Ltd.', type: 'COMPANY', identityNo: '9876543213', taxOffice: 'Çankaya', email: 'info@epsilon.com', phone: '03121234567' },
       { name: 'Kemal Yıldız', type: 'INDIVIDUAL', identityNo: '98765432106', email: 'kemal@email.com', phone: '05401234572' },
+      { name: 'Ayşe Demir', type: 'INDIVIDUAL', identityNo: '98765432107', email: 'ayse.demir@email.com', phone: '05401234573' },
+      { name: 'Mehmet Çelik', type: 'INDIVIDUAL', identityNo: '98765432108', email: 'mehmet.celik@email.com', phone: '05401234574' },
+      { name: 'Fatma Yılmaz', type: 'INDIVIDUAL', identityNo: '98765432109', email: 'fatma.yilmaz@email.com', phone: '05401234575' },
+      { name: 'Ali Öztürk', type: 'INDIVIDUAL', identityNo: '98765432110', email: 'ali.ozturk@email.com', phone: '05401234576' },
+      { name: 'Emine Kaya', type: 'INDIVIDUAL', identityNo: '98765432111', email: 'emine.kaya@email.com', phone: '05401234577' },
+      { name: 'Mustafa Arslan', type: 'INDIVIDUAL', identityNo: '98765432112', email: 'mustafa.arslan@email.com', phone: '05401234578' },
+      { name: 'Hatice Şahin', type: 'INDIVIDUAL', identityNo: '98765432113', email: 'hatice.sahin@email.com', phone: '05401234579' },
+      { name: 'İbrahim Koç', type: 'INDIVIDUAL', identityNo: '98765432114', email: 'ibrahim.koc@email.com', phone: '05401234580' },
+      { name: 'Zeynep Aydın', type: 'INDIVIDUAL', identityNo: '98765432115', email: 'zeynep.aydin@email.com', phone: '05401234581' },
+      { name: 'Ahmet Polat', type: 'INDIVIDUAL', identityNo: '98765432116', email: 'ahmet.polat@email.com', phone: '05401234582' },
+      { name: 'Elif Güneş', type: 'INDIVIDUAL', identityNo: '98765432117', email: 'elif.gunes@email.com', phone: '05401234583' },
+      { name: 'Osman Erdoğan', type: 'INDIVIDUAL', identityNo: '98765432118', email: 'osman.erdogan@email.com', phone: '05401234584' },
+      { name: 'Merve Aksoy', type: 'INDIVIDUAL', identityNo: '98765432119', email: 'merve.aksoy@email.com', phone: '05401234585' },
+      { name: 'Burak Tekin', type: 'INDIVIDUAL', identityNo: '98765432120', email: 'burak.tekin@email.com', phone: '05401234586' },
     ];
+
+    // 20 Kurum Borçlu
+    const companyDebtors = [
+      { name: 'Sigma Ticaret Ltd. Şti.', type: 'COMPANY', identityNo: '9876543210', taxOffice: 'Kadıköy', email: 'info@sigma.com', phone: '02161234567' },
+      { name: 'Kappa İnşaat A.Ş.', type: 'COMPANY', identityNo: '9876543211', taxOffice: 'Beşiktaş', email: 'info@kappa.com', phone: '02121234580' },
+      { name: 'Lambda Tekstil San. Tic. Ltd.', type: 'COMPANY', identityNo: '9876543212', taxOffice: 'Nilüfer', email: 'info@lambda.com', phone: '02241234567' },
+      { name: 'Epsilon Gıda Ltd. Şti.', type: 'COMPANY', identityNo: '9876543213', taxOffice: 'Çankaya', email: 'info@epsilon.com', phone: '03121234567' },
+      { name: 'Omega Otomotiv A.Ş.', type: 'COMPANY', identityNo: '9876543214', taxOffice: 'Kartal', email: 'info@omega.com', phone: '02161234568' },
+      { name: 'Delta Lojistik Ltd. Şti.', type: 'COMPANY', identityNo: '9876543215', taxOffice: 'Ümraniye', email: 'info@delta.com', phone: '02161234569' },
+      { name: 'Alfa Yazılım A.Ş.', type: 'COMPANY', identityNo: '9876543216', taxOffice: 'Şişli', email: 'info@alfa.com', phone: '02121234581' },
+      { name: 'Beta Enerji San. Tic. A.Ş.', type: 'COMPANY', identityNo: '9876543217', taxOffice: 'Maltepe', email: 'info@beta.com', phone: '02161234570' },
+      { name: 'Gamma Mobilya Ltd. Şti.', type: 'COMPANY', identityNo: '9876543218', taxOffice: 'Pendik', email: 'info@gamma.com', phone: '02161234571' },
+      { name: 'Zeta Elektronik A.Ş.', type: 'COMPANY', identityNo: '9876543219', taxOffice: 'Bakırköy', email: 'info@zeta.com', phone: '02121234582' },
+      { name: 'Eta Kimya San. Ltd. Şti.', type: 'COMPANY', identityNo: '9876543220', taxOffice: 'Gebze', email: 'info@eta.com', phone: '02621234567' },
+      { name: 'Theta Makina A.Ş.', type: 'COMPANY', identityNo: '9876543221', taxOffice: 'Konak', email: 'info@theta.com', phone: '02321234567' },
+      { name: 'Iota Plastik Ltd. Şti.', type: 'COMPANY', identityNo: '9876543222', taxOffice: 'Osmangazi', email: 'info@iota.com', phone: '02241234568' },
+      { name: 'Mu Medikal San. Tic. A.Ş.', type: 'COMPANY', identityNo: '9876543223', taxOffice: 'Yenimahalle', email: 'info@mu.com', phone: '03121234568' },
+      { name: 'Nu Tarım Ürünleri Ltd.', type: 'COMPANY', identityNo: '9876543224', taxOffice: 'Seyhan', email: 'info@nu.com', phone: '03221234567' },
+      { name: 'Xi İnşaat Malzemeleri A.Ş.', type: 'COMPANY', identityNo: '9876543225', taxOffice: 'Muratpaşa', email: 'info@xi.com', phone: '02421234567' },
+      { name: 'Omicron Turizm Ltd. Şti.', type: 'COMPANY', identityNo: '9876543226', taxOffice: 'Bodrum', email: 'info@omicron.com', phone: '02521234567' },
+      { name: 'Pi Danışmanlık A.Ş.', type: 'COMPANY', identityNo: '9876543227', taxOffice: 'Çankaya', email: 'info@pi.com', phone: '03121234569' },
+      { name: 'Rho Perakende Tic. Ltd.', type: 'COMPANY', identityNo: '9876543228', taxOffice: 'Ataşehir', email: 'info@rho.com', phone: '02161234572' },
+      { name: 'Tau Telekomünikasyon A.Ş.', type: 'COMPANY', identityNo: '9876543229', taxOffice: 'Levent', email: 'info@tau.com', phone: '02121234583' },
+    ];
+
+    const debtors = [...individualDebtors, ...companyDebtors];
     let created = 0;
     for (const d of debtors) {
       const exists = await this.prisma.debtor.findFirst({ where: { tenantId, identityNo: d.identityNo } });
@@ -269,7 +318,7 @@ export class SeedService {
         created++;
       }
     }
-    return { created, message: `${created} borçlu oluşturuldu` };
+    return { created, message: `${created} borçlu oluşturuldu (${individualDebtors.length} şahıs, ${companyDebtors.length} kurum)` };
   }
 
 
@@ -406,5 +455,169 @@ export class SeedService {
       }
     }
     return { fixed, message: `${fixed} avukat düzeltildi` };
+  }
+
+  // Kamu kurumlarını Debtor tablosuna da ekle (borçlu olarak kullanılabilmesi için)
+  async seedPublicInstitutionDebtors(tenantId: string) {
+    this.logger.log('Kamu kurumları borçlu olarak ekleniyor...');
+    
+    // Önce PublicInstitution tablosunda veri var mı kontrol et
+    const institutionCount = await this.prisma.publicInstitution.count();
+    this.logger.log(`PublicInstitution tablosunda ${institutionCount} kayıt var`);
+    
+    // Eğer PublicInstitution tablosu boşsa, önce seed et
+    if (institutionCount === 0) {
+      this.logger.log('PublicInstitution tablosu boş, önce seed ediliyor...');
+      await this.seedPublicInstitutions();
+    }
+    
+    // PublicInstitution tablosundan tüm kurumları al (limit yok)
+    const institutions = await this.prisma.publicInstitution.findMany({
+      where: { isActive: true },
+    });
+
+    this.logger.log(`${institutions.length} kurum bulundu, borçlu olarak ekleniyor...`);
+
+    let created = 0;
+    let skipped = 0;
+
+    for (const inst of institutions) {
+      try {
+        // DETSİS no ile kontrol et
+        const existing = await this.prisma.debtor.findFirst({
+          where: { 
+            tenantId, 
+            detsisNo: inst.detsisNo,
+          },
+        });
+
+        if (existing) {
+          skipped++;
+          continue;
+        }
+
+        // Kurum türünü belirle (schema'daki enum değerlerine göre)
+        // PublicInstitutionType: BAKANLIK, BELEDIYE, IL_OZEL_IDARESI, UNIVERSITE, KIT, DIGER_KAMU
+        const institutionTypeMap: Record<string, string> = {
+          BAKANLIK: 'BAKANLIK',
+          GENEL_MUDURLUK: 'DIGER_KAMU',
+          BASKANLIK: 'DIGER_KAMU',
+          KURUL: 'DIGER_KAMU',
+          KURUM: 'KIT',
+          UNIVERSITE: 'UNIVERSITE',
+          BELEDIYE: 'BELEDIYE',
+          IL_OZEL_IDARESI: 'IL_OZEL_IDARESI',
+          VALILIK: 'DIGER_KAMU',
+          KAYMAKAMLIK: 'DIGER_KAMU',
+          MAHKEME: 'DIGER_KAMU',
+          SAVCILIK: 'DIGER_KAMU',
+          HASTANE: 'DIGER_KAMU',
+          ICRA_DAIRESI: 'DIGER_KAMU',
+        };
+
+        const debtorData: any = {
+          tenantId,
+          type: 'PUBLIC_INSTITUTION',
+          name: inst.name,
+          institutionName: inst.name,
+          detsisNo: inst.detsisNo,
+          institutionType: institutionTypeMap[inst.category] || 'DIGER_KAMU',
+          identityNo: inst.detsisNo,
+        };
+
+        // KEP adresi varsa ekle
+        if (inst.kepAddress) {
+          debtorData.kepAddress = inst.kepAddress;
+        }
+
+        await this.prisma.debtor.create({ data: debtorData });
+        created++;
+      } catch (err: any) {
+        this.logger.warn(`Kurum eklenemedi: ${inst.name} - ${err.message}`);
+        skipped++;
+      }
+    }
+
+    this.logger.log(`Kamu kurumu borçluları: ${created} oluşturuldu, ${skipped} atlandı`);
+    return { created, skipped, message: `${created} kamu kurumu borçlu olarak eklendi` };
+  }
+
+  // Kamu kurumları seed (DETSİS verileri + UYAP İcra Daireleri)
+  async seedPublicInstitutions() {
+    this.logger.log('Kamu kurumları seed ediliyor...');
+    
+    // Mevcut kamu kurumları verileri
+    const allData = [
+      ...PUBLIC_INSTITUTIONS_DATA, 
+      ...EXTENDED_INSTITUTIONS_DATA, 
+      ...SAVCILIK_DATA,
+      ...ALL_BELEDIYE_DATA,
+      ...ALL_BELEDIYE_DATA_2,
+      ...HASTANE_DATA,
+      ...KAMU_HASTANE_DATA,
+      ...DEVLET_HASTANE_DATA,
+      ...MAHKEME_DATA,
+    ];
+    
+    // 81 İl UYAP İcra Dairelerini PublicInstitution'a ekle (852 kayıt)
+    const icraDaireleri = UYAP_ICRA_ALL_DATA.map(u => ({
+      detsisNo: `UYAP-${u.birimId}`,
+      name: u.name,
+      category: 'ICRA_DAIRESI' as any,
+      city: u.city,
+    }));
+    
+    let created = 0;
+    let skipped = 0;
+
+    // Önce normal kamu kurumlarını ekle
+    for (const inst of allData) {
+      const existing = await this.prisma.publicInstitution.findUnique({
+        where: { detsisNo: inst.detsisNo },
+      });
+
+      if (existing) {
+        skipped++;
+        continue;
+      }
+
+      await this.prisma.publicInstitution.create({
+        data: {
+          detsisNo: inst.detsisNo,
+          name: inst.name,
+          category: inst.category as any,
+          city: inst.city,
+          district: (inst as any).district,
+          isActive: true,
+        },
+      });
+      created++;
+    }
+
+    // Sonra 81 il icra dairelerini ekle
+    for (const icra of icraDaireleri) {
+      const existing = await this.prisma.publicInstitution.findUnique({
+        where: { detsisNo: icra.detsisNo },
+      });
+
+      if (existing) {
+        skipped++;
+        continue;
+      }
+
+      await this.prisma.publicInstitution.create({
+        data: {
+          detsisNo: icra.detsisNo,
+          name: icra.name,
+          category: icra.category,
+          city: icra.city,
+          isActive: true,
+        },
+      });
+      created++;
+    }
+
+    this.logger.log(`Kamu kurumları: ${created} oluşturuldu, ${skipped} atlandı`);
+    return { created, skipped, message: `${created} kamu kurumu oluşturuldu` };
   }
 }

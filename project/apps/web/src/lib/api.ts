@@ -264,6 +264,21 @@ class ApiClient {
     return { data };
   }
 
+  async put<T = any>(endpoint: string, body?: any): Promise<{ data: T }> {
+    const data = await this.request<T>(endpoint, {
+      method: "PUT",
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    return { data };
+  }
+
+  async delete<T = any>(endpoint: string): Promise<{ data: T }> {
+    const data = await this.request<T>(endpoint, {
+      method: "DELETE",
+    });
+    return { data };
+  }
+
   // Automation
   async getAutomationStats() {
     return this.request<any>("/automation/stats");
@@ -309,23 +324,6 @@ class ApiClient {
     const data = await this.request<T>(endpoint, {
       method: "PATCH",
       body: body ? JSON.stringify(body) : undefined,
-    });
-    return { data };
-  }
-
-  // Generic PUT
-  async put<T = any>(endpoint: string, body?: any): Promise<{ data: T }> {
-    const data = await this.request<T>(endpoint, {
-      method: "PUT",
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    return { data };
-  }
-
-  // Generic DELETE
-  async delete<T = any>(endpoint: string): Promise<{ data: T }> {
-    const data = await this.request<T>(endpoint, {
-      method: "DELETE",
     });
     return { data };
   }

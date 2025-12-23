@@ -1,5 +1,10 @@
-import { Injectable } from '@nestjs/common';
-import { PrismaService } from '../../prisma/prisma.service';
+import { Injectable, NotFoundException } from "@nestjs/common";
+import { PrismaService } from "../../prisma/prisma.service";
+import {
+  CaseDebtReportResult,
+  InterestReportResult,
+  CollectionHistoryReportResult,
+} from "./dto/report.dto";
 
 @Injectable()
 export class ReportService {
@@ -455,5 +460,366 @@ export class ReportService {
     ].join('\n');
 
     return '\uFEFF' + csvContent; // UTF-8 BOM
+  }
+
+  // ==================== YENİ RAPORLAR ====================
+
+  // 10. Dosya Borç Raporu (Kapak Hesabı)
+  async getCaseDebtReport(tenantId: string, caseId: string, calculationDate?: string): Promise<CaseDebtReportResult> {
+    const calcDate = calculationDate ? new Date(calculationDate) : new Date();
+
+    // Dosya bilgilerini al
+    const caseData = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+      include: {
+        client: { select: { displayName: true, name: true } },
+        debtors: {
+          include: {
+            debtor: { select: { id: true, name: true, tckn: true, vkn: true } },
+          },
+        },
+      },
+    });
+
+    if (!caseData) {
+      throw new NotFoundException('Dosya bulunamadı');
+    }
+
+    // Tahsilatları ayrı sorgula
+    const collections = await (this.prisma.collection as any).findMany({
+      where: { caseId, status: 'CONFIRMED' },
+      include: { allocations: true },
+    });
+
+    // Alacak kalemlerini hesapla
+    const principalAmount = Number(caseData.principalAmount || 0);
+    const interestRate = Number(caseData.interestRate || 0);
+    
+    // Faiz hesaplama (basit faiz)
+    let interestAmount = 0;
+    if (caseData.interestStartDate && interestRate > 0) {
+      const startDate = new Date(caseData.interestStartDate);
+      const days = Math.floor((calcDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+      interestAmount = (principalAmount * interestRate * days) / (365 * 100);
+    }
+
+    // Tahsilat toplamları
+    const totalCollected = collections.reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0);
+    
+    // Mahsup dağılımı
+    const allocatedByType: Record<string, number> = {};
+    collections.forEach((c: any) => {
+      (c.allocations || []).forEach((alloc: any) => {
+        const type = alloc.allocationType || 'OTHER';
+        allocatedByType[type] = (allocatedByType[type] || 0) + Number(alloc.amount || 0);
+      });
+    });
+
+    // Masraf ve harç (varsayılan değerler - gerçek sistemde ayrı tablolardan gelir)
+    const expenseAmount = 0;
+    const feeAmount = 0;
+    const attorneyFeeAmount = 0;
+
+    // Toplam alacak
+    const totalClaim = principalAmount + interestAmount + expenseAmount + feeAmount + attorneyFeeAmount;
+
+    // Kalan borç
+    const remainingDebt = Math.max(0, totalClaim - totalCollected);
+
+    return {
+      caseInfo: {
+        id: caseData.id,
+        fileNumber: caseData.fileNumber,
+        executionFileNumber: caseData.executionFileNumber || undefined,
+        clientName: caseData.client?.displayName || caseData.client?.name || 'Bilinmiyor',
+        status: caseData.caseStatus,
+        openDate: caseData.caseDate?.toISOString() || caseData.createdAt.toISOString(),
+      },
+      debtors: caseData.debtors.map(cd => ({
+        id: cd.debtor.id,
+        name: cd.debtor.name,
+        tcNo: cd.debtor.tckn || cd.debtor.vkn || undefined,
+        role: cd.role,
+      })),
+      claimDetails: {
+        principalAmount,
+        currency: caseData.currency || 'TRY',
+        interestAmount: Math.round(interestAmount * 100) / 100,
+        interestRate: interestRate || undefined,
+        interestType: caseData.interestType || undefined,
+        interestStartDate: caseData.interestStartDate?.toISOString(),
+        interestEndDate: calcDate.toISOString(),
+        expenseAmount,
+        feeAmount,
+        attorneyFeeAmount,
+        otherAmount: 0,
+        totalClaim: Math.round(totalClaim * 100) / 100,
+      },
+      collectionDetails: {
+        totalCollected: Math.round(totalCollected * 100) / 100,
+        collectionCount: collections.length,
+        byType: allocatedByType,
+        lastCollectionDate: collections.length > 0 
+          ? collections.sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]?.date?.toISOString()
+          : undefined,
+      },
+      balance: {
+        remainingDebt: Math.round(remainingDebt * 100) / 100,
+        remainingPrincipal: Math.max(0, principalAmount - (allocatedByType['PRINCIPAL'] || 0)),
+        remainingInterest: Math.max(0, interestAmount - (allocatedByType['INTEREST'] || 0)),
+        remainingExpense: Math.max(0, expenseAmount - (allocatedByType['EXPENSE'] || 0)),
+        remainingFee: Math.max(0, feeAmount - (allocatedByType['FEE'] || 0)),
+        remainingAttorneyFee: Math.max(0, attorneyFeeAmount - (allocatedByType['ATTORNEY_FEE'] || 0)),
+      },
+      calculationDate: calcDate.toISOString(),
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  // 11. Faiz Raporu
+  async getInterestReport(
+    tenantId: string,
+    caseId: string,
+    startDate?: string,
+    endDate?: string,
+  ): Promise<InterestReportResult> {
+    const caseData = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+    });
+
+    if (!caseData) {
+      throw new NotFoundException('Dosya bulunamadı');
+    }
+
+    const principalAmount = Number(caseData.principalAmount || 0);
+    const interestRate = Number(caseData.interestRate || 0);
+    const interestStartDate = startDate 
+      ? new Date(startDate) 
+      : (caseData.interestStartDate || caseData.caseDate || new Date());
+    const interestEndDate = endDate ? new Date(endDate) : new Date();
+
+    // Gün sayısı
+    const totalDays = Math.max(0, Math.floor(
+      (interestEndDate.getTime() - new Date(interestStartDate).getTime()) / (1000 * 60 * 60 * 24)
+    ));
+
+    // Toplam faiz
+    const totalInterest = (principalAmount * interestRate * totalDays) / (365 * 100);
+
+    // Günlük dağılım (son 30 gün veya toplam süre hangisi küçükse)
+    const dailyBreakdown: InterestReportResult['dailyBreakdown'] = [];
+    const daysToShow = Math.min(totalDays, 30);
+    let cumulativeInterest = 0;
+
+    for (let i = 0; i < daysToShow; i++) {
+      const date = new Date(interestEndDate);
+      date.setDate(date.getDate() - (daysToShow - 1 - i));
+      
+      const dailyInterest = (principalAmount * interestRate) / (365 * 100);
+      cumulativeInterest += dailyInterest;
+
+      dailyBreakdown.push({
+        date: date.toISOString().split('T')[0],
+        principal: principalAmount,
+        rate: interestRate,
+        dailyInterest: Math.round(dailyInterest * 100) / 100,
+        cumulativeInterest: Math.round(cumulativeInterest * 100) / 100,
+      });
+    }
+
+    return {
+      caseInfo: {
+        id: caseData.id,
+        fileNumber: caseData.fileNumber,
+        principalAmount,
+        currency: caseData.currency || 'TRY',
+      },
+      interestDetails: {
+        type: caseData.interestType || 'YASAL',
+        rate: interestRate,
+        startDate: new Date(interestStartDate).toISOString(),
+        endDate: interestEndDate.toISOString(),
+        days: totalDays,
+        calculatedAmount: Math.round(totalInterest * 100) / 100,
+      },
+      dailyBreakdown,
+      summary: {
+        totalDays,
+        averageRate: interestRate,
+        totalInterest: Math.round(totalInterest * 100) / 100,
+      },
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  // 12. Tahsilat Geçmişi Raporu
+  async getCollectionHistoryReport(
+    tenantId: string,
+    filters?: {
+      caseId?: string;
+      startDate?: string;
+      endDate?: string;
+      channels?: string[];
+      statuses?: string[];
+    },
+  ): Promise<CollectionHistoryReportResult> {
+    const where: any = { tenantId };
+
+    if (filters?.caseId) where.caseId = filters.caseId;
+    if (filters?.startDate || filters?.endDate) {
+      where.date = {};
+      if (filters.startDate) where.date.gte = new Date(filters.startDate);
+      if (filters.endDate) where.date.lte = new Date(filters.endDate);
+    }
+    if (filters?.channels?.length) where.channel = { in: filters.channels };
+    if (filters?.statuses?.length) where.status = { in: filters.statuses };
+
+    const collections: any[] = await (this.prisma.collection as any).findMany({
+      where,
+      include: {
+        case: { select: { fileNumber: true } },
+        allocations: true,
+      },
+      orderBy: { date: 'desc' },
+    });
+
+    // Özet hesaplamalar
+    const confirmed = collections.filter((c: any) => c.status === 'CONFIRMED');
+    const pending = collections.filter((c: any) => c.status === 'PENDING');
+    const cancelled = collections.filter((c: any) => c.status === 'CANCELLED');
+
+    const totalCollected = confirmed.reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0);
+    const totalPending = pending.reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0);
+    const totalCancelled = cancelled.reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0);
+
+    // Kanal bazlı dağılım
+    const byChannelMap = new Map<string, { count: number; total: number }>();
+    confirmed.forEach((c: any) => {
+      const channel = c.channel || 'DIGER';
+      const existing = byChannelMap.get(channel) || { count: 0, total: 0 };
+      byChannelMap.set(channel, {
+        count: existing.count + 1,
+        total: existing.total + Number(c.amount || 0),
+      });
+    });
+
+    const byChannel = Array.from(byChannelMap.entries()).map(([channel, data]) => ({
+      channel,
+      count: data.count,
+      total: Math.round(data.total * 100) / 100,
+      percentage: totalCollected > 0 ? Math.round((data.total / totalCollected) * 100) : 0,
+    }));
+
+    // Kaynak bazlı dağılım
+    const bySourceMap = new Map<string, { count: number; total: number }>();
+    confirmed.forEach((c: any) => {
+      const source = c.sourceType || 'MANUAL';
+      const existing = bySourceMap.get(source) || { count: 0, total: 0 };
+      bySourceMap.set(source, {
+        count: existing.count + 1,
+        total: existing.total + Number(c.amount || 0),
+      });
+    });
+
+    const bySource = Array.from(bySourceMap.entries()).map(([source, data]) => ({
+      source,
+      count: data.count,
+      total: Math.round(data.total * 100) / 100,
+      percentage: totalCollected > 0 ? Math.round((data.total / totalCollected) * 100) : 0,
+    }));
+
+    // Aylık dağılım
+    const byMonthMap = new Map<string, { count: number; total: number }>();
+    confirmed.forEach((c: any) => {
+      const month = c.date.toISOString().substring(0, 7); // YYYY-MM
+      const existing = byMonthMap.get(month) || { count: 0, total: 0 };
+      byMonthMap.set(month, {
+        count: existing.count + 1,
+        total: existing.total + Number(c.amount || 0),
+      });
+    });
+
+    const byMonth = Array.from(byMonthMap.entries())
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([month, data]) => ({
+        month,
+        count: data.count,
+        total: Math.round(data.total * 100) / 100,
+      }));
+
+    return {
+      summary: {
+        totalCollected: Math.round(totalCollected * 100) / 100,
+        totalPending: Math.round(totalPending * 100) / 100,
+        totalCancelled: Math.round(totalCancelled * 100) / 100,
+        collectionCount: confirmed.length,
+        averageAmount: confirmed.length > 0 
+          ? Math.round((totalCollected / confirmed.length) * 100) / 100 
+          : 0,
+      },
+      byChannel,
+      bySource,
+      byMonth,
+      collections: collections.slice(0, 100).map((c: any) => ({
+        id: c.id,
+        date: c.date.toISOString(),
+        amount: Number(c.amount),
+        currency: c.currency || 'TRY',
+        channel: c.channel || 'DIGER',
+        source: c.sourceType || undefined,
+        status: c.status || 'CONFIRMED',
+        caseFileNumber: c.case?.fileNumber || undefined,
+        description: c.description || undefined,
+      })),
+      generatedAt: new Date().toISOString(),
+    };
+  }
+
+  // 13. Tahsilat Özet Raporu (Dashboard için)
+  async getCollectionSummary(tenantId: string, period?: 'week' | 'month' | 'year') {
+    const now = new Date();
+    let startDate: Date;
+
+    switch (period) {
+      case 'week':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case 'year':
+        startDate = new Date(now.getFullYear(), 0, 1);
+        break;
+      case 'month':
+      default:
+        startDate = new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+
+    const [periodCollections, totalCollections, pendingCollections] = await Promise.all([
+      (this.prisma.collection as any).aggregate({
+        where: {
+          tenantId,
+          status: 'CONFIRMED',
+          date: { gte: startDate },
+        },
+        _sum: { amount: true },
+        _count: { id: true },
+      }),
+      (this.prisma.collection as any).aggregate({
+        where: { tenantId, status: 'CONFIRMED' },
+        _sum: { amount: true },
+      }),
+      (this.prisma.collection as any).aggregate({
+        where: { tenantId, status: 'PENDING' },
+        _sum: { amount: true },
+        _count: { id: true },
+      }),
+    ]);
+
+    return {
+      period: period || 'month',
+      periodTotal: Number(periodCollections?._sum?.amount || 0),
+      periodCount: periodCollections?._count?.id || 0,
+      allTimeTotal: Number(totalCollections?._sum?.amount || 0),
+      pendingTotal: Number(pendingCollections?._sum?.amount || 0),
+      pendingCount: pendingCollections?._count?.id || 0,
+    };
   }
 }

@@ -379,8 +379,27 @@ export class CaseService {
           }
         }
 
-        // 5. Borçluları - mevcut veya yeni
-        if (dto.debtors && dto.debtors.length > 0) {
+        // 5. Borçluları - Yeni CaseDebtor formatı (öncelikli)
+        if (dto.caseDebtors && dto.caseDebtors.length > 0) {
+          for (const caseDebtorDto of dto.caseDebtors) {
+            await tx.caseDebtor.create({
+              data: {
+                caseId: newCase.id,
+                debtorId: caseDebtorDto.debtorId,
+                role: (caseDebtorDto.role as any) || "ASIL_BORCLU",
+                liabilityAmount: caseDebtorDto.liabilityAmount,
+                liabilityType: caseDebtorDto.liabilityType,
+                notificationMode: (caseDebtorDto.notificationMode as any) || "NORMAL",
+                selectedAddressId: caseDebtorDto.selectedAddressId,
+                prepareNotification: caseDebtorDto.prepareNotification ?? true,
+                ilanenJustification: caseDebtorDto.ilanenJustification,
+                caseNote: caseDebtorDto.caseNote,
+              } as any,
+            });
+          }
+        }
+        // Eski format (geriye uyumluluk) - sadece caseDebtors yoksa kullan
+        else if (dto.debtors && dto.debtors.length > 0) {
           for (const debtorDto of dto.debtors) {
             let debtorId: string;
             if (debtorDto.id) {
@@ -407,7 +426,7 @@ export class CaseService {
               data: {
                 caseId: newCase.id,
                 debtorId,
-                role: "DEBTOR",
+                role: "ASIL_BORCLU",
               },
             });
           }

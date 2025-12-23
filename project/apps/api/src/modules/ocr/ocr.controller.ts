@@ -236,6 +236,120 @@ export class OcrController {
   }
 
   /**
+   * Borç evrakı tara ve bilgileri çıkar (Borçlu Sihirbazı için)
+   * POST /ocr/scan-debt-document
+   * Fatura, senet, çek, kira sözleşmesi, cari hesap ekstresi vb.
+   */
+  @Post("scan-debt-document")
+  @UseInterceptors(
+    FileInterceptor("file", {
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+      fileFilter: (req, file, cb) => {
+        const allowedMimes = [
+          "application/pdf",
+          "image/jpeg",
+          "image/png",
+          "image/webp",
+          "image/tiff",
+          "image/bmp",
+          "text/plain",
+          "application/msword",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ];
+        const lowerName = file.originalname?.toLowerCase() || "";
+        const allowedExtensions = [".udf", ".doc", ".docx", ".tiff", ".tif"];
+        const hasAllowedExtension = allowedExtensions.some(ext => lowerName.endsWith(ext));
+        
+        if (allowedMimes.includes(file.mimetype) || hasAllowedExtension) {
+          cb(null, true);
+        } else {
+          cb(
+            new BadRequestException(
+              "Desteklenmeyen dosya formatı. PDF, Word, JPG, PNG veya TIFF yükleyin."
+            ),
+            false
+          );
+        }
+      },
+    })
+  )
+  async scanDebtDocument(
+    @UploadedFile() file: Express.Multer.File
+  ) {
+    if (!file) {
+      throw new BadRequestException("Dosya yüklenmedi");
+    }
+
+    const result = await this.ocrService.scanDebtDocument(
+      file.buffer,
+      file.mimetype,
+      file.originalname
+    );
+
+    return {
+      success: true,
+      data: result,
+    };
+  }
+
+  /**
+   * Dış dosya belgesi tara (Alacak Haczi için)
+   * POST /ocr/scan-external-case
+   * Haciz yazısı, dosya çıktısı, ihbarname cevabı vb.
+   */
+  @Post("scan-external-case")
+  @UseInterceptors(
+    FileInterceptor("file", {
+      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+      fileFilter: (req, file, cb) => {
+        const allowedMimes = [
+          "application/pdf",
+          "image/jpeg",
+          "image/png",
+          "image/webp",
+          "image/tiff",
+          "image/bmp",
+          "text/plain",
+          "application/msword",
+          "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ];
+        const lowerName = file.originalname?.toLowerCase() || "";
+        const allowedExtensions = [".udf", ".doc", ".docx", ".tiff", ".tif"];
+        const hasAllowedExtension = allowedExtensions.some(ext => lowerName.endsWith(ext));
+        
+        if (allowedMimes.includes(file.mimetype) || hasAllowedExtension) {
+          cb(null, true);
+        } else {
+          cb(
+            new BadRequestException(
+              "Desteklenmeyen dosya formatı. PDF, Word, JPG, PNG veya TIFF yükleyin."
+            ),
+            false
+          );
+        }
+      },
+    })
+  )
+  async scanExternalCaseDocument(
+    @UploadedFile() file: Express.Multer.File
+  ) {
+    if (!file) {
+      throw new BadRequestException("Dosya yüklenmedi");
+    }
+
+    const result = await this.ocrService.scanExternalCaseDocument(
+      file.buffer,
+      file.mimetype,
+      file.originalname
+    );
+
+    return {
+      success: true,
+      data: result,
+    };
+  }
+
+  /**
    * Vekaletname belgesi tara ve bilgileri çıkar
    * POST /ocr/scan-poa (Power of Attorney)
    */

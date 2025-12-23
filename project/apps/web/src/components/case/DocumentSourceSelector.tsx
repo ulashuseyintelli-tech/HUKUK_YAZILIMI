@@ -356,16 +356,16 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
 
       {/* OCR Sonucu Gösterimi */}
       {scanResult && (
-        <div className="mb-6 p-4 bg-gradient-to-r from-green-50 to-emerald-50 border border-green-200 rounded-xl">
+        <div className="mb-6 p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-cyan-50 border border-emerald-200 rounded-xl shadow-sm">
           <div className="flex items-start gap-3">
-            <div className="p-2 bg-green-100 rounded-lg">
-              <CheckCircle className="h-5 w-5 text-green-600" />
+            <div className="p-2.5 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl shadow-md">
+              <CheckCircle className="h-5 w-5 text-white" />
             </div>
             <div className="flex-1">
-              <h3 className="font-semibold text-green-800 mb-1">
+              <h3 className="font-semibold text-emerald-800 mb-1 flex items-center gap-2">
                 📌 Sistem belgenize göre en uygun takip türünü belirledi
               </h3>
-              <p className="text-lg font-bold text-green-900 mb-2">
+              <p className="text-lg font-bold text-emerald-900 mb-2">
                 {scanResult.detectedType === "ILAMLI" && "İlamlı Takip"}
                 {scanResult.detectedType === "KAMBIYO" && "Kambiyo Senetlerine Özgü Takip"}
                 {scanResult.detectedType === "KIRA" && "Kira Alacağı Takibi"}
@@ -374,28 +374,30 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
                 {scanResult.detectedType === "UNKNOWN" && "Belirsiz - Manuel Seçim Önerilir"}
                 {scanResult.detectedSubCategory && ` - ${scanResult.detectedSubCategory}`}
               </p>
-              <p className="text-sm text-green-700 mb-3">{scanResult.explanation}</p>
+              <p className="text-sm text-emerald-700 mb-3">{scanResult.explanation}</p>
               
               {/* Güven Skoru */}
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-xs text-green-600">Güven:</span>
-                <div className="flex-1 h-2 bg-green-100 rounded-full max-w-[200px]">
+              <div className="flex items-center gap-2 mb-3 p-2 bg-white/50 rounded-lg">
+                <span className="text-xs text-emerald-600 font-medium">Güven:</span>
+                <div className="flex-1 h-2 bg-emerald-100 rounded-full max-w-[200px]">
                   <div 
                     className={`h-full rounded-full ${
-                      scanResult.confidence >= 70 ? "bg-green-500" : 
+                      scanResult.confidence >= 70 ? "bg-emerald-500" : 
                       scanResult.confidence >= 40 ? "bg-yellow-500" : "bg-red-500"
                     }`}
                     style={{ width: `${scanResult.confidence}%` }}
                   />
                 </div>
-                <span className="text-xs font-medium text-green-700">%{scanResult.confidence}</span>
+                <span className={`px-2 py-0.5 rounded-lg text-xs font-medium ${scanResult.confidence >= 70 ? "bg-emerald-100 text-emerald-700" : scanResult.confidence >= 40 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
+                  %{scanResult.confidence}
+                </span>
               </div>
 
               {/* Eşleşen Anahtar Kelimeler */}
               {scanResult.matchedKeywords.length > 0 && (
-                <div className="flex flex-wrap gap-1 mb-3">
+                <div className="flex flex-wrap gap-1.5 mb-3">
                   {scanResult.matchedKeywords.slice(0, 6).map((keyword, i) => (
-                    <span key={i} className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded-full">
+                    <span key={i} className="px-2.5 py-1 bg-emerald-100 text-emerald-700 text-xs rounded-lg font-medium">
                       {keyword}
                     </span>
                   ))}
@@ -403,17 +405,17 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
               )}
 
               {/* Aksiyon Butonları */}
-              <div className="flex gap-2">
+              <div className="flex gap-2 pt-2 border-t border-emerald-100">
                 <button
                   onClick={handleAcceptResult}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
+                  className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white rounded-xl hover:from-emerald-700 hover:to-teal-700 transition-all shadow-md hover:shadow-lg flex items-center gap-2"
                 >
                   <CheckCircle className="h-4 w-4" />
                   Kabul Et
                 </button>
                 <button
                   onClick={handleRejectResult}
-                  className="px-4 py-2 border border-green-300 text-green-700 rounded-lg hover:bg-green-50 transition-colors flex items-center gap-2"
+                  className="px-4 py-2 border border-emerald-300 text-emerald-700 rounded-xl hover:bg-emerald-50 transition-colors flex items-center gap-2"
                 >
                   <X className="h-4 w-4" />
                   Değiştir
@@ -427,49 +429,53 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
       {/* Belge Tarama Seçenekleri */}
       {!scanResult && !poaScanResult && (
         <div className="mb-3 sm:mb-4 space-y-2">
-          {/* Ana Tarama Butonu */}
+          {/* Ana Tarama Butonu - Takip Türü + Borçlu + Vade Tespiti */}
           <button
             onClick={() => { setShowFileUpload(!showFileUpload); setShowTextInput(false); setShowPoaScanner(false); }}
-            className="w-full p-2 sm:p-3 border-2 border-dashed border-primary/30 rounded-lg hover:border-primary hover:bg-primary/5 transition-all flex items-center gap-2 sm:gap-3 group"
+            className="w-full p-3 sm:p-4 bg-gradient-to-r from-emerald-50 via-teal-50 to-cyan-50 border-2 border-dashed border-emerald-300 rounded-xl hover:border-emerald-500 hover:shadow-md transition-all flex items-center gap-3 group"
           >
-            <div className="p-1.5 bg-primary/10 rounded-lg group-hover:bg-primary/20 transition-colors flex-shrink-0">
-              <ScanLine className="h-5 w-5 text-primary" />
+            <div className="p-2.5 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl shadow-md group-hover:shadow-lg transition-shadow flex-shrink-0">
+              <ScanLine className="h-5 w-5 text-white" />
             </div>
             <div className="text-left flex-1 min-w-0">
-              <div className="font-medium text-primary text-sm">📄 Belgeni Tara – Takip Türünü Ben Belirleyeyim</div>
-              <div className="text-xs text-muted-foreground hidden sm:block">
-                PDF, görüntü veya metin yükleyin, sistem otomatik takip türünü önersin
+              <div className="font-semibold text-emerald-800 text-sm flex items-center gap-2">
+                📄 Borç Evrakını Tara – Takip Türü, Borçlu ve Vadeyi Tespit Et
+              </div>
+              <div className="text-xs text-emerald-600/80 hidden sm:block mt-0.5">
+                Fatura, senet, çek, kira sözleşmesi veya mahkeme kararı yükleyin - takip türü, borçlu ve vade otomatik tespit edilsin
               </div>
             </div>
-            <ArrowRight className="h-4 w-4 text-primary opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+            <ArrowRight className="h-5 w-5 text-emerald-500 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all flex-shrink-0" />
           </button>
 
           {/* Vekaletname Tarama Butonu */}
           <button
             onClick={() => { setShowPoaScanner(!showPoaScanner); setShowFileUpload(false); setShowTextInput(false); }}
-            className="w-full p-2 sm:p-3 border-2 border-dashed border-blue-300 rounded-lg hover:border-blue-500 hover:bg-blue-50 transition-all flex items-center gap-2 sm:gap-3 group"
+            className="w-full p-3 sm:p-4 bg-gradient-to-r from-indigo-50 via-blue-50 to-cyan-50 border-2 border-dashed border-indigo-300 rounded-xl hover:border-indigo-500 hover:shadow-md transition-all flex items-center gap-3 group"
           >
-            <div className="p-1.5 bg-blue-100 rounded-lg group-hover:bg-blue-200 transition-colors flex-shrink-0">
-              <FileCheck className="h-5 w-5 text-blue-600" />
+            <div className="p-2.5 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-xl shadow-md group-hover:shadow-lg transition-shadow flex-shrink-0">
+              <FileCheck className="h-5 w-5 text-white" />
             </div>
             <div className="text-left flex-1 min-w-0">
-              <div className="font-medium text-blue-700 text-sm">📋 Vekaletname Tara – Müvekkil ve Vekalet Oluştur</div>
-              <div className="text-xs text-blue-600/70 hidden sm:block">
+              <div className="font-semibold text-indigo-800 text-sm flex items-center gap-2">
+                📋 Vekaletname Tara – Müvekkil ve Vekalet Oluştur
+              </div>
+              <div className="text-xs text-indigo-600/80 hidden sm:block mt-0.5">
                 Vekaletname tarayın, müvekkil ve vekalet kaydı otomatik oluşturulsun
               </div>
             </div>
-            <ArrowRight className="h-4 w-4 text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0" />
+            <ArrowRight className="h-5 w-5 text-indigo-500 opacity-0 group-hover:opacity-100 group-hover:translate-x-1 transition-all flex-shrink-0" />
           </button>
 
           {/* Dosya Yükleme Alanı */}
           {showFileUpload && (
-            <div className="mt-4 p-4 bg-gray-50 rounded-lg">
+            <div className="mt-4 p-4 bg-gradient-to-br from-emerald-50/50 to-teal-50/50 rounded-xl border border-emerald-200">
               {/* Tab Seçimi */}
               <div className="flex gap-2 mb-4">
                 <button
                   onClick={() => { setShowTextInput(false); }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    !showTextInput ? 'bg-primary text-white' : 'bg-white border hover:bg-gray-100'
+                  className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                    !showTextInput ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md' : 'bg-white border border-emerald-200 hover:bg-emerald-50'
                   }`}
                 >
                   <Upload className="h-4 w-4 inline mr-2" />
@@ -477,8 +483,8 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
                 </button>
                 <button
                   onClick={() => { setShowTextInput(true); setSelectedFile(null); }}
-                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                    showTextInput ? 'bg-primary text-white' : 'bg-white border hover:bg-gray-100'
+                  className={`px-4 py-2 rounded-xl text-sm font-medium transition-all ${
+                    showTextInput ? 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md' : 'bg-white border border-emerald-200 hover:bg-emerald-50'
                   }`}
                 >
                   <FileText className="h-4 w-4 inline mr-2" />
@@ -495,10 +501,10 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
                     onDragLeave={handleDragLeave}
                     onDrop={handleDrop}
                     onClick={() => fileInputRef.current?.click()}
-                    className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-all ${
+                    className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
                       isDragging 
-                        ? 'border-primary bg-primary/5' 
-                        : 'border-gray-300 hover:border-primary hover:bg-gray-100'
+                        ? 'border-emerald-500 bg-emerald-100 scale-[1.02] shadow-lg' 
+                        : 'border-emerald-300 hover:border-emerald-500 hover:bg-white/70 hover:shadow-md'
                     }`}
                   >
                     <input
@@ -508,42 +514,44 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
                       onChange={(e) => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
                       className="hidden"
                     />
-                    <div className="flex justify-center gap-2 mb-3">
-                      <File className="h-8 w-8 text-gray-400" />
-                      <Image className="h-8 w-8 text-gray-400" />
-                      <FileType className="h-8 w-8 text-gray-400" />
+                    <div className={`w-16 h-16 mx-auto mb-3 rounded-2xl flex items-center justify-center transition-colors ${isDragging ? "bg-emerald-200" : "bg-emerald-100"}`}>
+                      <div className="flex gap-1">
+                        <File className={`h-5 w-5 ${isDragging ? "text-emerald-600" : "text-emerald-400"}`} />
+                        <Image className={`h-5 w-5 ${isDragging ? "text-emerald-600" : "text-emerald-400"}`} />
+                        <FileType className={`h-5 w-5 ${isDragging ? "text-emerald-600" : "text-emerald-400"}`} />
+                      </div>
                     </div>
-                    <p className="text-sm font-medium text-gray-700 mb-1">
-                      Dosyayı sürükleyip bırakın veya tıklayın
+                    <p className="text-sm font-medium text-emerald-800 mb-1">
+                      {isDragging ? "Dosyayı Bırakın" : "Dosyayı sürükleyip bırakın veya tıklayın"}
                     </p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs text-emerald-600/80">
                       PDF, Word (DOC/DOCX), RTF, UDF, JPG, PNG, TIFF veya TXT (max 10MB)
                     </p>
                   </div>
 
                   {/* Seçilen Dosya */}
                   {selectedFile && (
-                    <div className="mt-3 p-3 bg-white border rounded-lg flex items-center justify-between">
+                    <div className="mt-3 p-3 bg-white border border-emerald-200 rounded-xl flex items-center justify-between shadow-sm">
                       <div className="flex items-center gap-3">
-                        <div className="p-2 bg-blue-50 rounded-lg">
+                        <div className="p-2 bg-emerald-100 rounded-xl">
                           {selectedFile.type.includes('pdf') ? (
-                            <FileText className="h-5 w-5 text-blue-600" />
+                            <FileText className="h-5 w-5 text-emerald-600" />
                           ) : selectedFile.type.includes('image') ? (
-                            <Image className="h-5 w-5 text-blue-600" />
+                            <Image className="h-5 w-5 text-emerald-600" />
                           ) : (
-                            <File className="h-5 w-5 text-blue-600" />
+                            <File className="h-5 w-5 text-emerald-600" />
                           )}
                         </div>
                         <div>
-                          <p className="text-sm font-medium">{selectedFile.name}</p>
-                          <p className="text-xs text-muted-foreground">
+                          <p className="text-sm font-medium text-emerald-800">{selectedFile.name}</p>
+                          <p className="text-xs text-emerald-600/70">
                             {(selectedFile.size / 1024).toFixed(1)} KB
                           </p>
                         </div>
                       </div>
                       <button
                         onClick={(e) => { e.stopPropagation(); setSelectedFile(null); }}
-                        className="p-1 hover:bg-gray-100 rounded"
+                        className="p-1.5 hover:bg-emerald-50 rounded-lg transition-colors"
                       >
                         <X className="h-4 w-4 text-gray-500" />
                       </button>
@@ -589,20 +597,22 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
               )}
 
               {/* AI Checkbox */}
-              <div className="mt-4 p-3 bg-gradient-to-r from-purple-50 to-indigo-50 border border-purple-200 rounded-lg">
+              <div className="mt-4 p-3 bg-gradient-to-r from-violet-50 to-purple-50 border border-violet-200 rounded-xl">
                 <label className="flex items-center gap-3 cursor-pointer">
                   <input
                     type="checkbox"
                     checked={useAI}
                     onChange={(e) => setUseAI(e.target.checked)}
-                    className="w-5 h-5 rounded border-purple-300 text-purple-600 focus:ring-purple-500"
+                    className="w-5 h-5 rounded-lg border-violet-300 text-violet-600 focus:ring-violet-500"
                   />
                   <div className="flex items-center gap-2">
-                    <Sparkles className="h-4 w-4 text-purple-600" />
-                    <span className="font-medium text-purple-900">Yapay Zeka ile Yorumla</span>
+                    <div className="p-1 bg-violet-100 rounded-lg">
+                      <Sparkles className="h-4 w-4 text-violet-600" />
+                    </div>
+                    <span className="font-medium text-violet-900">Yapay Zeka ile Yorumla</span>
                   </div>
                 </label>
-                <p className="text-xs text-purple-700 mt-1 ml-8">
+                <p className="text-xs text-violet-700 mt-1 ml-8">
                   OpenAI GPT ile daha akıllı belge analizi (daha yavaş ama daha doğru)
                 </p>
               </div>
@@ -612,8 +622,8 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
                 <button
                   onClick={showTextInput ? handleTextAnalysis : handleFileUpload}
                   disabled={isScanning || (showTextInput ? !textInput.trim() : !selectedFile)}
-                  className={`px-4 py-2 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 ${
-                    useAI ? 'bg-purple-600 hover:bg-purple-700' : 'bg-primary hover:bg-primary/90'
+                  className={`px-5 py-2.5 text-white rounded-xl transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-md hover:shadow-lg ${
+                    useAI ? 'bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700' : 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700'
                   }`}
                 >
                   {isScanning ? (
@@ -636,7 +646,7 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
                     setSelectedFile(null);
                     setScanError(null); 
                   }}
-                  className="px-4 py-2 border rounded-lg hover:bg-gray-100 transition-colors"
+                  className="px-4 py-2 border border-gray-300 rounded-xl hover:bg-white/70 transition-colors"
                 >
                   İptal
                 </button>
@@ -646,10 +656,12 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
 
           {/* Vekaletname Tarama Alanı */}
           {showPoaScanner && (
-            <div className="mt-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+            <div className="mt-4 p-4 bg-gradient-to-br from-indigo-50/50 to-blue-50/50 rounded-xl border border-indigo-200">
               <div className="flex items-center gap-2 mb-3">
-                <FileCheck className="h-5 w-5 text-blue-600" />
-                <span className="font-medium text-blue-800">Vekaletname Tarama</span>
+                <div className="p-1.5 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-lg">
+                  <FileCheck className="h-4 w-4 text-white" />
+                </div>
+                <span className="font-semibold text-indigo-800">Vekaletname Tarama</span>
               </div>
 
               {/* Drag & Drop Alanı */}
@@ -658,8 +670,8 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
                 onDragLeave={handleDragLeave}
                 onDrop={(e) => { e.preventDefault(); setIsDragging(false); const file = e.dataTransfer.files[0]; if (file) handlePoaFileSelect(file); }}
                 onClick={() => poaFileInputRef.current?.click()}
-                className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-all ${
-                  isDragging ? 'border-blue-500 bg-blue-100' : 'border-blue-300 hover:border-blue-500 hover:bg-blue-100/50'
+                className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
+                  isDragging ? 'border-indigo-500 bg-indigo-100 scale-[1.02] shadow-lg' : 'border-indigo-300 hover:border-indigo-500 hover:bg-white/70 hover:shadow-md'
                 }`}
               >
                 <input
@@ -671,30 +683,41 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
                 />
                 {poaScanning ? (
                   <div className="py-4">
-                    <Loader2 className="h-8 w-8 mx-auto text-blue-600 animate-spin mb-2" />
-                    <p className="text-sm text-blue-700">Vekaletname taranıyor...</p>
-                    <p className="text-xs text-blue-600">{poaFileName}</p>
+                    <div className="w-16 h-16 mx-auto mb-3 rounded-2xl bg-indigo-100 flex items-center justify-center">
+                      <Loader2 className="h-8 w-8 text-indigo-600 animate-spin" />
+                    </div>
+                    <p className="text-sm font-medium text-indigo-700">Vekaletname taranıyor...</p>
+                    <p className="text-xs text-indigo-600">{poaFileName}</p>
+                    <div className="mt-3 mx-auto max-w-xs">
+                      <div className="h-1.5 bg-indigo-100 rounded-full overflow-hidden">
+                        <div className="h-full bg-gradient-to-r from-indigo-500 to-blue-500 rounded-full animate-pulse" style={{ width: '60%' }} />
+                      </div>
+                    </div>
                   </div>
                 ) : (
                   <>
-                    <FileCheck className="h-10 w-10 mx-auto text-blue-400 mb-2" />
-                    <p className="text-sm font-medium text-blue-700 mb-1">Vekaletname dosyasını sürükleyin veya tıklayın</p>
-                    <p className="text-xs text-blue-600">PDF, Word, JPG, PNG veya TIFF (max 10MB)</p>
+                    <div className={`w-16 h-16 mx-auto mb-3 rounded-2xl flex items-center justify-center transition-colors ${isDragging ? "bg-indigo-200" : "bg-indigo-100"}`}>
+                      <FileCheck className={`h-8 w-8 ${isDragging ? "text-indigo-600" : "text-indigo-400"}`} />
+                    </div>
+                    <p className="text-sm font-medium text-indigo-800 mb-1">
+                      {isDragging ? "Dosyayı Bırakın" : "Vekaletname dosyasını sürükleyin veya tıklayın"}
+                    </p>
+                    <p className="text-xs text-indigo-600/80">PDF, Word, JPG, PNG veya TIFF (max 10MB)</p>
                   </>
                 )}
               </div>
 
               {/* Hata Mesajı */}
               {scanError && (
-                <div className="mt-3 p-2 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700 text-sm">
+                <div className="mt-3 p-2.5 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-red-700 text-sm">
                   <AlertTriangle className="h-4 w-4" />
                   {scanError}
                 </div>
               )}
 
               {/* Bilgi Notu */}
-              <div className="mt-3 p-2 bg-blue-100 rounded-lg">
-                <p className="text-xs text-blue-700">
+              <div className="mt-3 p-2.5 bg-indigo-100/70 rounded-xl">
+                <p className="text-xs text-indigo-700">
                   <strong>💡 İpucu:</strong> Vekaletname tarandığında müvekkil bilgileri ve vekalet kaydı otomatik oluşturulur. 
                   Ardından takip türü seçimine devam edebilirsiniz.
                 </p>
@@ -704,7 +727,7 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
               <div className="mt-3 flex justify-end">
                 <button
                   onClick={() => { setShowPoaScanner(false); setScanError(null); }}
-                  className="px-4 py-2 border border-blue-300 text-blue-700 rounded-lg hover:bg-blue-100 transition-colors"
+                  className="px-4 py-2 border border-indigo-300 text-indigo-700 rounded-xl hover:bg-indigo-50 transition-colors"
                 >
                   İptal
                 </button>
@@ -716,18 +739,23 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
 
       {/* Vekaletname Tarama Sonucu */}
       {poaScanResult && (
-        <div className="mb-6 p-4 bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-xl">
+        <div className="mb-6 p-4 bg-gradient-to-r from-indigo-50 via-blue-50 to-cyan-50 border border-indigo-200 rounded-xl shadow-sm">
           <div className="flex items-start gap-3">
-            <div className="p-2 bg-blue-100 rounded-lg">
-              <FileCheck className="h-5 w-5 text-blue-600" />
+            <div className="p-2.5 bg-gradient-to-br from-indigo-500 to-blue-600 rounded-xl shadow-md">
+              <FileCheck className="h-5 w-5 text-white" />
             </div>
             <div className="flex-1">
-              <h3 className="font-semibold text-blue-800 mb-2">📋 Vekaletname Tarama Sonucu</h3>
+              <h3 className="font-semibold text-indigo-800 mb-3 flex items-center gap-2">
+                📋 Vekaletname Tarama Sonucu
+              </h3>
               
               <div className="grid grid-cols-2 gap-4 mb-3">
                 {/* Müvekkil Bilgileri */}
-                <div className="p-3 bg-white rounded-lg border">
-                  <p className="text-xs font-semibold text-gray-700 mb-2 border-b pb-1">Müvekkil Bilgileri</p>
+                <div className="p-3 bg-white rounded-xl border shadow-sm">
+                  <p className="text-xs font-semibold text-indigo-800 mb-2 border-b border-indigo-100 pb-1 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 bg-indigo-500 rounded-full"></span>
+                    Müvekkil Bilgileri
+                  </p>
                   <div className="space-y-1 text-xs">
                     <p><span className="text-gray-500">Tür:</span> <span className="font-medium">{poaScanResult.clientType === "PERSON" ? "Şahıs" : poaScanResult.clientType === "COMPANY" ? "Kurum" : "Kamu"}</span></p>
                     {poaScanResult.firstName && <p><span className="text-gray-500">Ad Soyad:</span> <span className="font-medium">{poaScanResult.firstName} {poaScanResult.lastName}</span></p>}
@@ -738,45 +766,50 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
                 </div>
 
                 {/* Vekalet Bilgileri */}
-                <div className="p-3 bg-white rounded-lg border">
-                  <p className="text-xs font-semibold text-gray-700 mb-2 border-b pb-1">Vekalet Bilgileri</p>
+                <div className="p-3 bg-white rounded-xl border shadow-sm">
+                  <p className="text-xs font-semibold text-indigo-800 mb-2 border-b border-indigo-100 pb-1 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 bg-blue-500 rounded-full"></span>
+                    Vekalet Bilgileri
+                  </p>
                   <div className="space-y-1 text-xs">
                     {poaScanResult.poaNumber && <p><span className="text-gray-500">Yevmiye No:</span> <span className="font-medium">{poaScanResult.poaNumber}</span></p>}
                     {poaScanResult.poaDate && <p><span className="text-gray-500">Tarih:</span> <span>{poaScanResult.poaDate}</span></p>}
                     {poaScanResult.notaryName && <p><span className="text-gray-500">Noter:</span> <span>{poaScanResult.notaryName}</span></p>}
                     {poaScanResult.isLimited ? (
-                      <p><span className="text-gray-500">Geçerlilik:</span> <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-xs">Süreli - {poaScanResult.validUntil && new Date(poaScanResult.validUntil).toLocaleDateString("tr-TR")}</span></p>
+                      <p><span className="text-gray-500">Geçerlilik:</span> <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-lg text-xs">Süreli - {poaScanResult.validUntil && new Date(poaScanResult.validUntil).toLocaleDateString("tr-TR")}</span></p>
                     ) : (
-                      <p><span className="text-gray-500">Geçerlilik:</span> <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-xs">Süresiz</span></p>
+                      <p><span className="text-gray-500">Geçerlilik:</span> <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded-lg text-xs">Süresiz</span></p>
                     )}
                   </div>
                 </div>
               </div>
 
               {/* Güven Skoru */}
-              <div className="flex items-center gap-2 mb-3">
-                <span className="text-xs text-blue-600">Güven:</span>
-                <div className="flex-1 h-2 bg-blue-100 rounded-full max-w-[200px]">
+              <div className="flex items-center gap-2 mb-3 p-2 bg-white/50 rounded-lg">
+                <span className="text-xs text-indigo-600 font-medium">Güven:</span>
+                <div className="flex-1 h-2 bg-indigo-100 rounded-full max-w-[200px]">
                   <div 
                     className={`h-full rounded-full ${poaScanResult.confidence >= 70 ? "bg-green-500" : poaScanResult.confidence >= 40 ? "bg-yellow-500" : "bg-red-500"}`}
                     style={{ width: `${poaScanResult.confidence}%` }}
                   />
                 </div>
-                <span className="text-xs font-medium text-blue-700">%{poaScanResult.confidence}</span>
+                <span className={`px-2 py-0.5 rounded-lg text-xs font-medium ${poaScanResult.confidence >= 70 ? "bg-green-100 text-green-700" : poaScanResult.confidence >= 40 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>
+                  %{poaScanResult.confidence}
+                </span>
               </div>
 
               {/* Aksiyon Butonları */}
-              <div className="flex gap-2">
+              <div className="flex gap-2 pt-2 border-t border-indigo-100">
                 <button
                   onClick={handleAcceptPoaResult}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+                  className="px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white rounded-xl hover:from-indigo-700 hover:to-blue-700 transition-all shadow-md hover:shadow-lg flex items-center gap-2"
                 >
                   <CheckCircle className="h-4 w-4" />
                   Müvekkil ve Vekalet Oluştur
                 </button>
                 <button
                   onClick={() => { setPoaScanResult(null); setShowPoaScanner(true); }}
-                  className="px-4 py-2 border border-blue-300 text-blue-700 rounded-lg hover:bg-blue-50 transition-colors flex items-center gap-2"
+                  className="px-4 py-2 border border-indigo-300 text-indigo-700 rounded-xl hover:bg-indigo-50 transition-colors flex items-center gap-2"
                 >
                   <X className="h-4 w-4" />
                   Farklı Dosya Yükle
@@ -798,21 +831,26 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
 
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
             {documentCards.map((card) => {
-              const colors = getColorClasses(card.color);
               const Icon = card.icon;
+              const colorStyles = {
+                blue: { gradient: "from-blue-500 to-indigo-600", bg: "bg-blue-50", border: "border-blue-200 hover:border-blue-400", text: "text-blue-800" },
+                green: { gradient: "from-emerald-500 to-teal-600", bg: "bg-emerald-50", border: "border-emerald-200 hover:border-emerald-400", text: "text-emerald-800" },
+                purple: { gradient: "from-purple-500 to-violet-600", bg: "bg-purple-50", border: "border-purple-200 hover:border-purple-400", text: "text-purple-800" },
+              };
+              const style = colorStyles[card.color as keyof typeof colorStyles] || colorStyles.blue;
               
               return (
                 <button
                   key={card.type}
                   onClick={() => onSelect(card.type)}
-                  className={`p-2 sm:p-3 border-2 rounded-lg text-left transition-all ${colors.hover} group min-w-0`}
+                  className={`p-3 sm:p-4 border-2 rounded-xl text-left transition-all ${style.bg} ${style.border} hover:shadow-md group min-w-0`}
                 >
                   <div className="flex sm:flex-col items-center sm:items-start gap-2 sm:gap-0">
-                    <div className={`p-1.5 ${colors.bg} rounded-lg flex-shrink-0 sm:mb-2`}>
-                      <Icon className={`h-4 w-4 sm:h-5 sm:w-5 ${colors.text}`} />
+                    <div className={`p-2 bg-gradient-to-br ${style.gradient} rounded-xl shadow-sm flex-shrink-0 sm:mb-2`}>
+                      <Icon className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-xs sm:text-sm truncate sm:whitespace-normal">{card.title}</h4>
+                      <h4 className={`font-semibold text-xs sm:text-sm truncate sm:whitespace-normal ${style.text}`}>{card.title}</h4>
                       <p className="text-xs text-muted-foreground hidden sm:block mt-1">{card.description}</p>
                     </div>
                   </div>
@@ -824,12 +862,12 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
       )}
 
       {/* Skip Button - Sihirbazı Atlama */}
-      <div className="mt-4 pt-3 border-t flex items-center justify-end">
+      <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-end">
         <button
           onClick={onSkip}
-          className="px-3 py-1.5 text-xs sm:text-sm border border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-colors flex items-center gap-1"
+          className="px-4 py-2 text-xs sm:text-sm border border-gray-300 rounded-xl hover:bg-gray-50 hover:border-gray-400 hover:shadow-sm transition-all flex items-center gap-1.5 text-gray-600 hover:text-gray-800"
         >
-          <ArrowRight className="h-3 w-3" />
+          <ArrowRight className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Sihirbazı Atla,</span> Form Seçimine Git
         </button>
       </div>
