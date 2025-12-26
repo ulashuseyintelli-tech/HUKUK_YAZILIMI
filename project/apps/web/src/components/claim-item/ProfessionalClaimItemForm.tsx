@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Plus,
   Trash2,
@@ -22,7 +22,11 @@ import {
   Edit2,
   Users,
   Link2,
+  Loader2,
+  FileUp,
+  X,
 } from "lucide-react";
+import { api } from "@/lib/api";
 
 // Kalem türleri (tablo için)
 const KALEM_TURU_OPTIONS = [
@@ -219,12 +223,121 @@ export function ProfessionalClaimItemForm({
   const [showCekModal, setShowCekModal] = useState<string | null>(null);
   const [appliedTakipTuruCode, setAppliedTakipTuruCode] = useState<string | undefined>(takipTuruCode);
   
+  // OCR/Evrak yükleme state'leri
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const [ocrResult, setOcrResult] = useState<any>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
   // Takip sonrası faiz kuralı
   const [takipSonrasiFaiz, setTakipSonrasiFaiz] = useState({
     faizTuru: initialDefaults.faizTuru,
     degiskenOran: true,
     baslangic: new Date().toISOString().split("T")[0],
   });
+
+  // Evrak yükleme fonksiyonu
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploading(true);
+    setUploadError(null);
+    setOcrResult(null);
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const response = await api.post("/ocr/scan-debt-document", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+
+      if (response.data?.success && response.data?.data) {
+        const data = response.data.data;
+        setOcrResult(data);
+        
+        // OCR sonuçlarından alacak kalemlerini otomatik oluştur
+        applyOcrResults(data);
+      }
+    } catch (error: any) {
+      console.error("OCR hatası:", error);
+      setUploadError(error.response?.data?.message || "Evrak taranamadı. Lütfen tekrar deneyin.");
+    } finally {
+      setIsUploading(false);
+      // Input'u temizle (aynı dosyayı tekrar yükleyebilmek için)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  // OCR sonuçlarını alacak kalemlerine uygula
+  const applyOcrResults = (data: any) => {
+    const defaults = getDefaultsFromProps(takipTuruCode, documentSource, formCode);
+    const yeniKalemler: ClaimItem[] = [];
+    
+    // Evrak türüne göre kalem türünü belirle
+    let kalemTuru = defaults.kalemTuru;
+    if (data.documentType === "CEK") kalemTuru = "CEK";
+    else if (data.documentType === "SENET") kalemTuru = "SENET";
+    else if (data.documentType === "FATURA") kalemTuru = "FATURA";
+    else if (data.documentType === "KIRA") kalemTuru = "KIRA";
+    
+    // Ana alacak
+    const debtInfo = data.debtInfo || {};
+    const amount = debtInfo.amount || data.amount || data.totalAmount;
+    
+    if (amount && amount > 0) {
+      const anaAlacak = createEmptyItem(debtInfo.currency || currency, kalemTuru, "YOK");
+      anaAlacak.tutar = amount;
+      anaAlacak.vadeTarihi = debtInfo.dueDate || debtInfo.issueDate || new Date().toISOString().split("T")[0];
+      anaAlacak.kaynakEvrak = debtInfo.documentNo || "";
+      anaAlacak.aciklama = debtInfo.description || `${data.documentType || "Evrak"} alacağı`;
+      
+      // Çek bilgileri varsa ekle
+      if (data.documentType === "CEK") {
+        anaAlacak.kalemTuru = "CEK";
+        const bankInfo = data.bankInfo || {};
+        anaAlacak.cekBilgileri = {
+          ibrazTarihi: debtInfo.dueDate || anaAlacak.vadeTarihi,
+          duzenlemeYeri: "",
+          cekSeriNo: debtInfo.documentNo || "",
+          hesapNo: bankInfo.accountNo || "",
+          bankaVeSube: bankInfo.bankName ? `${bankInfo.bankName} ${bankInfo.branchName || ""}`.trim() : "",
+          cekiImzalayanlar: "",
+        };
+      }
+      
+      yeniKalemler.push(anaAlacak);
+    }
+    
+    // İşlemiş faiz ekle (eğer vade tarihi geçmişse)
+    const vadeTarihi = debtInfo.dueDate;
+    if (vadeTarihi) {
+      const vadeDate = new Date(vadeTarihi);
+      const today = new Date();
+      if (vadeDate < today) {
+        const faizKalem = createEmptyItem(debtInfo.currency || currency, "ISLEMIS_FAIZ", defaults.faizTuru);
+        faizKalem.faizBaslangic = vadeTarihi;
+        faizKalem.faizBitis = today.toISOString().split("T")[0];
+        faizKalem.aciklama = "İşlemiş faiz";
+        yeniKalemler.push(faizKalem);
+      }
+    }
+    
+    // Çek tazminatı (çek ise)
+    if (data.documentType === "CEK" && amount && amount > 0) {
+      const tazminatKalem = createEmptyItem(debtInfo.currency || currency, "CEK_TAZMINATI", "YOK");
+      tazminatKalem.tutar = Math.round(amount * 0.10 * 100) / 100;
+      tazminatKalem.aciklama = "Karşılıksız çek tazminatı (%10)";
+      yeniKalemler.push(tazminatKalem);
+    }
+    
+    if (yeniKalemler.length > 0) {
+      setItems(yeniKalemler);
+    }
+  };
 
   // takipTuruCode değiştiğinde güncelle
   useEffect(() => {
@@ -460,12 +573,31 @@ export function ProfessionalClaimItemForm({
               Borç evrakını yükleyin → tutar/vade/faizi otomatik oluşturalım.
             </p>
             <div className="flex flex-wrap gap-2">
+              {/* Gizli file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.txt,.tiff,.tif"
+                onChange={handleFileUpload}
+                className="hidden"
+              />
               <button
                 type="button"
-                className="flex items-center gap-2 px-3 py-2 bg-white border border-blue-300 rounded-lg hover:bg-blue-50 text-sm font-medium text-blue-700"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isUploading}
+                className="flex items-center gap-2 px-3 py-2 bg-white border border-blue-300 rounded-lg hover:bg-blue-50 text-sm font-medium text-blue-700 disabled:opacity-50"
               >
-                <Upload className="h-4 w-4" />
-                Evrak Yükle
+                {isUploading ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    Taranıyor...
+                  </>
+                ) : (
+                  <>
+                    <Upload className="h-4 w-4" />
+                    Evrak Yükle
+                  </>
+                )}
               </button>
               <button
                 type="button"
@@ -496,6 +628,45 @@ export function ProfessionalClaimItemForm({
             </div>
           </div>
         </div>
+        
+        {/* Upload Error */}
+        {uploadError && (
+          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
+            <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-sm text-red-700">{uploadError}</p>
+            </div>
+            <button onClick={() => setUploadError(null)} className="text-red-500 hover:text-red-700">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        )}
+        
+        {/* OCR Sonucu */}
+        {ocrResult && (
+          <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
+            <div className="flex items-start gap-2">
+              <Check className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-green-800">Evrak başarıyla tarandı!</p>
+                <p className="text-xs text-green-600 mt-1">
+                  {ocrResult.documentType && `Tür: ${ocrResult.documentType}`}
+                  {ocrResult.debtInfo?.amount && ` | Tutar: ${ocrResult.debtInfo.amount.toLocaleString("tr-TR")} ${ocrResult.debtInfo?.currency || "TL"}`}
+                  {ocrResult.debtInfo?.dueDate && ` | Vade: ${new Date(ocrResult.debtInfo.dueDate).toLocaleDateString("tr-TR")}`}
+                  {ocrResult.debtInfo?.documentNo && ` | No: ${ocrResult.debtInfo.documentNo}`}
+                </p>
+                {ocrResult.parties && ocrResult.parties.length > 0 && (
+                  <p className="text-xs text-green-600 mt-1">
+                    Taraflar: {ocrResult.parties.map((p: any) => `${p.name} (${p.role})`).join(", ")}
+                  </p>
+                )}
+              </div>
+              <button onClick={() => setOcrResult(null)} className="text-green-500 hover:text-green-700">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+        )}
         {/* Algılanan bilgi (OCR sonrası gösterilecek) */}
         {takipTuruCode && (
           <div className="mt-3 pt-3 border-t border-blue-200">
@@ -555,6 +726,7 @@ export function ProfessionalClaimItemForm({
                 <th className="px-2 py-3 text-center font-medium text-gray-600 min-w-[110px]">Vade/Tarih</th>
                 <th className="px-2 py-3 text-center font-medium text-gray-600 min-w-[100px]">Faiz Türü</th>
                 <th className="px-2 py-3 text-center font-medium text-gray-600 min-w-[110px]">Faiz Başlangıç</th>
+                <th className="px-2 py-3 text-center font-medium text-gray-600 min-w-[110px]">Faiz Bitiş</th>
                 <th className="px-2 py-3 text-right font-medium text-gray-600 min-w-[90px]">Hesaplanan</th>
                 <th className="px-2 py-3 text-center font-medium text-gray-600 min-w-[80px]">Sorumlu</th>
                 <th className="px-2 py-3 text-center font-medium text-gray-600 min-w-[80px]">Kaynak</th>
@@ -661,6 +833,20 @@ export function ProfessionalClaimItemForm({
                         type="date"
                         value={item.faizBaslangic}
                         onChange={(e) => updateItem(item.id, { faizBaslangic: e.target.value })}
+                        className="w-full border rounded px-1 py-1.5 text-sm bg-orange-50"
+                      />
+                    ) : (
+                      <span className="text-gray-400 text-center block">—</span>
+                    )}
+                  </td>
+                  
+                  {/* Faiz Bitiş */}
+                  <td className="px-2 py-2">
+                    {isFaizKalemi(item.kalemTuru) ? (
+                      <input
+                        type="date"
+                        value={item.faizBitis}
+                        onChange={(e) => updateItem(item.id, { faizBitis: e.target.value })}
                         className="w-full border rounded px-1 py-1.5 text-sm bg-orange-50"
                       />
                     ) : (

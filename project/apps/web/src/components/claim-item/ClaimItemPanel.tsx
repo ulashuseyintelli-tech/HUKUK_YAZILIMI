@@ -242,20 +242,33 @@ export function ClaimItemPanel({ caseId }: Props) {
                     <p className="text-sm text-muted-foreground">
                       {item.description || item.referenceNo || "-"}
                     </p>
-                    {item.interestRate && (
-                      <p className="text-xs text-green-600">
-                        %{item.interestRate} {item.interestType}
-                      </p>
-                    )}
+                    <div className="flex items-center gap-3 mt-1">
+                      {item.dueDate && (
+                        <span className="text-xs text-gray-500">
+                          Vade: {new Date(item.dueDate).toLocaleDateString("tr-TR")}
+                        </span>
+                      )}
+                      {item.interestRate && (
+                        <span className="text-xs text-green-600">
+                          %{item.interestRate} {item.interestType}
+                        </span>
+                      )}
+                      {item.interestStartDate && item.interestEndDate && (
+                        <span className="text-xs text-orange-600">
+                          {new Date(item.interestStartDate).toLocaleDateString("tr-TR")} - {new Date(item.interestEndDate).toLocaleDateString("tr-TR")}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
-                <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2">
                   <span className="text-lg font-bold">
                     {formatCurrency(item.amount, item.currency)}
                   </span>
                   <button
                     onClick={() => handleDelete(item.id)}
                     className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
+                    title="Sil"
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
