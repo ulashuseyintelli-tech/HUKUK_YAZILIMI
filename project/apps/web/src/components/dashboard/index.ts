@@ -21,3 +21,5 @@ export { CollectionTargetTracker } from "./collection-target-tracker";
 export { ActivitySummary } from "./activity-summary";
 export { CaseStatusDashboard } from "./case-status-dashboard";
 export { LawyerPerformanceCompare } from "./lawyer-performance-compare";
+export { CollectionDashboard } from "./collection-dashboard";
+export { PersonelPerformance } from "./personel-performance";

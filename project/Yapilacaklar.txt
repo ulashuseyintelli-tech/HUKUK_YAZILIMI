@@ -211,11 +211,15 @@ project/apps/api/src/
 
 ## 🔮 GELECEKTEKİ İŞLER (Opsiyonel)
 
-### Raporlama ve Dashboard
-- [ ] Dosya istatistikleri dashboard'u
-- [ ] Tahsilat raporları
-- [ ] Avukat performans raporları
-- [ ] Müvekkil bazlı raporlar
+### Raporlama ve Dashboard ✅ TAMAMLANDI
+- [x] Dosya istatistikleri dashboard'u (mevcut)
+- [x] Tahsilat raporları (CollectionDashboard)
+- [x] Avukat/Personel performans raporları (PersonelPerformance)
+- [x] Müvekkil bazlı raporlar (ClientReport API)
+- [x] Risk raporları (RiskReport API)
+- [x] Dosya borç raporu / Kapak hesabı (CaseDebtReport API)
+- [x] Faiz raporu (InterestReport API)
+- [x] CSV export desteği
 
 ### Otomasyon İyileştirmeleri
 - [ ] Otomatik tebligat takibi (PTT barkod sorgulama cron job)

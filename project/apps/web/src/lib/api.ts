@@ -774,6 +774,89 @@ class ApiClient {
       method: "POST",
     });
   }
+
+  // ============================================
+  // Reports API
+  // ============================================
+
+  async getDashboardStats() {
+    return this.request<DashboardStats>("/reports/dashboard");
+  }
+
+  async getClientReport(clientId?: string) {
+    const query = clientId ? `?clientId=${clientId}` : '';
+    return this.request<ClientReport>(`/reports/client${query}`);
+  }
+
+  async getPersonelReport(filters?: { personelId?: string; startDate?: string; endDate?: string }) {
+    const params = new URLSearchParams();
+    if (filters?.personelId) params.set('personelId', filters.personelId);
+    if (filters?.startDate) params.set('startDate', filters.startDate);
+    if (filters?.endDate) params.set('endDate', filters.endDate);
+    const query = params.toString() ? `?${params}` : '';
+    return this.request<PersonelReport[]>(`/reports/personel${query}`);
+  }
+
+  async getRiskReport(riskId?: string) {
+    const query = riskId ? `?riskId=${riskId}` : '';
+    return this.request<RiskReport>(`/reports/risk${query}`);
+  }
+
+  async getRiskSummary() {
+    return this.request<RiskSummary>("/reports/risk-summary");
+  }
+
+  async getGroupReport(groupId: string) {
+    return this.request<GroupReport>(`/reports/group/${groupId}`);
+  }
+
+  async getCaseDebtReport(caseId: string, calculationDate?: string) {
+    const query = calculationDate ? `?calculationDate=${calculationDate}` : '';
+    return this.request<CaseDebtReport>(`/reports/case-debt/${caseId}${query}`);
+  }
+
+  async getInterestReport(caseId: string, startDate?: string, endDate?: string) {
+    const params = new URLSearchParams();
+    if (startDate) params.set('startDate', startDate);
+    if (endDate) params.set('endDate', endDate);
+    const query = params.toString() ? `?${params}` : '';
+    return this.request<InterestReport>(`/reports/interest/${caseId}${query}`);
+  }
+
+  async getCollectionHistoryReport(filters?: {
+    caseId?: string;
+    startDate?: string;
+    endDate?: string;
+    channels?: string[];
+    statuses?: string[];
+  }) {
+    const params = new URLSearchParams();
+    if (filters?.caseId) params.set('caseId', filters.caseId);
+    if (filters?.startDate) params.set('startDate', filters.startDate);
+    if (filters?.endDate) params.set('endDate', filters.endDate);
+    if (filters?.channels?.length) params.set('channels', filters.channels.join(','));
+    if (filters?.statuses?.length) params.set('statuses', filters.statuses.join(','));
+    const query = params.toString() ? `?${params}` : '';
+    return this.request<CollectionHistoryReport>(`/reports/collection-history${query}`);
+  }
+
+  async getCollectionSummary(period?: 'week' | 'month' | 'year') {
+    const query = period ? `?period=${period}` : '';
+    return this.request<CollectionSummary>(`/reports/collection-summary${query}`);
+  }
+
+  async exportCasesAsCsv(filters?: {
+    takipTuruId?: string;
+    riskId?: string;
+    caseStatus?: string;
+  }) {
+    const params = new URLSearchParams();
+    if (filters?.takipTuruId) params.set('takipTuruId', filters.takipTuruId);
+    if (filters?.riskId) params.set('riskId', filters.riskId);
+    if (filters?.caseStatus) params.set('caseStatus', filters.caseStatus);
+    const query = params.toString() ? `?${params}` : '';
+    return this.request<{ data: string; contentType: string }>(`/reports/export/cases${query}`);
+  }
 }
 
 // ============================================
@@ -1097,6 +1180,188 @@ export interface UyapDebtorAssets {
     companies: any[];
   };
   message: string;
+}
+
+// ============================================
+// Report Types
+// ============================================
+
+export interface DashboardStats {
+  totalCases: number;
+  activeCases: number;
+  closedCases: number;
+  totalCollection: number;
+  byTakipTuru: Array<{ takipTuru: string; count: number }>;
+}
+
+export interface ClientReport {
+  total: number;
+  byAsama: Array<{ asama: string; count: number; totalAmount: number }>;
+  byDurumEtiketi: Array<{ durumEtiketi: string; color?: string; count: number }>;
+  byRisk: Array<{ risk: string; color?: string; count: number; totalAmount: number }>;
+}
+
+export interface PersonelReport {
+  personel: string;
+  personelId: string;
+  totalCases: number;
+  closedCases: number;
+  totalCollection: number;
+  closureRate: number;
+}
+
+export interface RiskReport {
+  summary: Array<{ risk: string; color?: string; count: number; totalAmount: number }>;
+  cases: Array<{
+    id: string;
+    fileNumber: string;
+    principalAmount: number;
+    riskScore?: number;
+    risk?: string;
+    riskColor?: string;
+    asama?: string;
+    durumEtiketi?: string;
+    caseStatus: string;
+  }>;
+}
+
+export interface RiskSummary {
+  totalActive: number;
+  distribution: Array<{
+    id: string | null;
+    code: string;
+    name: string;
+    color: string;
+    count: number;
+    totalAmount: number;
+    percentage: number;
+  }>;
+  summary: {
+    high: number;
+    medium: number;
+    low: number;
+    unassigned: number;
+  };
+}
+
+export interface GroupReport {
+  group: { id: string; name: string; color?: string };
+  totalCases: number;
+  totalAmount: number;
+  totalCollection: number;
+  collectionRate: number;
+  byAsama: Array<{ asama: string; count: number }>;
+}
+
+export interface CaseDebtReport {
+  caseInfo: {
+    id: string;
+    fileNumber: string;
+    executionFileNumber?: string;
+    clientName: string;
+    status: string;
+    openDate: string;
+  };
+  debtors: Array<{
+    id: string;
+    name: string;
+    tcNo?: string;
+    role: string;
+  }>;
+  claimDetails: {
+    principalAmount: number;
+    currency: string;
+    interestAmount: number;
+    interestRate?: number;
+    interestType?: string;
+    interestStartDate?: string;
+    interestEndDate: string;
+    expenseAmount: number;
+    feeAmount: number;
+    attorneyFeeAmount: number;
+    otherAmount: number;
+    totalClaim: number;
+  };
+  collectionDetails: {
+    totalCollected: number;
+    collectionCount: number;
+    byType: Record<string, number>;
+    lastCollectionDate?: string;
+  };
+  balance: {
+    remainingDebt: number;
+    remainingPrincipal: number;
+    remainingInterest: number;
+    remainingExpense: number;
+    remainingFee: number;
+    remainingAttorneyFee: number;
+  };
+  calculationDate: string;
+  generatedAt: string;
+}
+
+export interface InterestReport {
+  caseInfo: {
+    id: string;
+    fileNumber: string;
+    principalAmount: number;
+    currency: string;
+  };
+  interestDetails: {
+    type: string;
+    rate: number;
+    startDate: string;
+    endDate: string;
+    days: number;
+    calculatedAmount: number;
+  };
+  dailyBreakdown: Array<{
+    date: string;
+    principal: number;
+    rate: number;
+    dailyInterest: number;
+    cumulativeInterest: number;
+  }>;
+  summary: {
+    totalDays: number;
+    averageRate: number;
+    totalInterest: number;
+  };
+  generatedAt: string;
+}
+
+export interface CollectionHistoryReport {
+  summary: {
+    totalCollected: number;
+    totalPending: number;
+    totalCancelled: number;
+    collectionCount: number;
+    averageAmount: number;
+  };
+  byChannel: Array<{ channel: string; count: number; total: number; percentage: number }>;
+  bySource: Array<{ source: string; count: number; total: number; percentage: number }>;
+  byMonth: Array<{ month: string; count: number; total: number }>;
+  collections: Array<{
+    id: string;
+    date: string;
+    amount: number;
+    currency: string;
+    channel: string;
+    source?: string;
+    status: string;
+    caseFileNumber?: string;
+    description?: string;
+  }>;
+  generatedAt: string;
+}
+
+export interface CollectionSummary {
+  period: string;
+  periodTotal: number;
+  periodCount: number;
+  allTimeTotal: number;
+  pendingTotal: number;
+  pendingCount: number;
 }
 
 export const api = new ApiClient();
