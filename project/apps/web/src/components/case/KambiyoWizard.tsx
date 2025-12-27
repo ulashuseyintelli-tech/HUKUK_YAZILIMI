@@ -128,7 +128,7 @@ export function KambiyoWizard({ onComplete, onSkip, onBack }: KambiyoWizardProps
             }`}
           >
             <div className="text-2xl mb-2">📜</div>
-            <div className="font-medium">Bono</div>
+            <div className="font-medium">Senet / Bono</div>
             <div className="text-xs text-muted-foreground">
               Emre muharrer senet
             </div>
