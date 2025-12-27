@@ -1,4 +1,2 @@
-export { NotificationCenter, addNotification, getUnreadCount } from "./notification-center";
-export { BackupNotification } from "./backup-notification";
-export { NotificationSummary } from "./notification-summary";
-export { SystemNotificationCenter } from "./system-notifications";
+export { NotificationCenter, NotificationBell } from "./NotificationCenter";
+export type { Notification, NotificationType, NotificationPriority } from "./NotificationCenter";

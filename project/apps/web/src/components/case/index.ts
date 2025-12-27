@@ -65,3 +65,5 @@ export { TebligatPanel } from "./TebligatPanel";
 export { UyapPanel } from "./UyapPanel";
 export { ESignPanel } from "./ESignPanel";
 export { BankPanel } from "./BankPanel";
+export { CaseDetailTabs } from "./CaseDetailTabs";
+export { BulkOperationsPanel } from "./BulkOperationsPanel";
