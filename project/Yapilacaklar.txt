@@ -27,11 +27,13 @@
 - [x] ValidationGateModule oluşturuldu
 - [x] claim-item-sets.yaml güncellendi (çek tazminatı default ON)
 
-### 4. Frontend ValidationGate Entegrasyonu (2025-12-28)
-- [x] api.ts'e ValidationGate API fonksiyonları eklendi
-- [x] useValidation hook'u oluşturuldu (pre-submit + backend)
-- [x] ValidationPanel bileşeni oluşturuldu
-- [x] Wizard'a pre-submit validasyon entegre edildi
+### 5. Enstrüman/Kira/İlam/Teminat Modülleri (2025-12-28)
+- [x] CaseInstrument modülü (Çek/Senet CRUD)
+- [x] CaseLease modülü (Kira sözleşmesi CRUD)
+- [x] CaseJudgment modülü (İlam CRUD)
+- [x] CaseCollateral modülü (Rehin/İpotek CRUD)
+- [x] Frontend form bileşenleri (InstrumentForm, LeaseForm, JudgmentForm, CollateralForm)
+- [x] API fonksiyonları api.ts'e eklendi
 
 ---
 
@@ -144,11 +146,19 @@ interest_policy:
   - Takip türü, avukat, müvekkil, borçlu zorunlu kontrolleri
   - Kambiyo/döviz takiplerinde özel uyarılar
 
-### Öncelik 2: Enstrüman/Kira/İlam Formları
-- [ ] CaseInstrument formu (Çek/Senet bilgileri)
-- [ ] CaseLease formu (Kira sözleşmesi)
-- [ ] CaseJudgment formu (İlam bilgileri)
-- [ ] CaseCollateral formu (Rehin/İpotek)
+### Öncelik 2: Enstrüman/Kira/İlam Formları ✅ TAMAMLANDI
+- [x] CaseInstrument modülü (Backend + Frontend)
+  - CRUD API endpoint'leri
+  - InstrumentForm bileşeni (Çek/Senet)
+- [x] CaseLease modülü (Backend + Frontend)
+  - CRUD API endpoint'leri
+  - LeaseForm bileşeni (Kira sözleşmesi)
+- [x] CaseJudgment modülü (Backend + Frontend)
+  - CRUD API endpoint'leri
+  - JudgmentForm bileşeni (İlam)
+- [x] CaseCollateral modülü (Backend + Frontend)
+  - CRUD API endpoint'leri
+  - CollateralForm bileşeni (Rehin/İpotek)
 
 ### Öncelik 3: Tebligat Modülü
 - [ ] Tebligat oluşturma

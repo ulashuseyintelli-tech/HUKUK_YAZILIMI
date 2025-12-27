@@ -47,6 +47,10 @@ import { ExchangeRateModule } from "./modules/exchange-rate/exchange-rate.module
 import { TariffModule } from "./modules/tariff/tariff.module";
 import { PdfModule } from "./modules/pdf/pdf.module";
 import { ValidationGateModule } from "./modules/validation-gate/validation-gate.module";
+import { CaseInstrumentModule } from "./modules/case-instrument/case-instrument.module";
+import { CaseLeaseModule } from "./modules/case-lease/case-lease.module";
+import { CaseJudgmentModule } from "./modules/case-judgment/case-judgment.module";
+import { CaseCollateralModule } from "./modules/case-collateral/case-collateral.module";
 
 @Module({
   imports: [
@@ -100,6 +104,10 @@ import { ValidationGateModule } from "./modules/validation-gate/validation-gate.
     TariffModule,
     PdfModule,
     ValidationGateModule,
+    CaseInstrumentModule,
+    CaseLeaseModule,
+    CaseJudgmentModule,
+    CaseCollateralModule,
   ],
 })
 export class AppModule {}

@@ -419,6 +419,142 @@ class ApiClient {
   async getAddressSuggestions() {
     return this.request<AddressSuggestionsResponse>("/validation-gate/address-suggestions");
   }
+
+  // ============================================
+  // Case Instrument (Cek/Senet) API
+  // ============================================
+
+  async createInstrument(data: Omit<CaseInstrument, 'id' | 'createdAt'>) {
+    return this.request<CaseInstrument>("/case-instruments", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getInstrumentsByCase(caseId: string) {
+    return this.request<CaseInstrument[]>(`/case-instruments/case/${caseId}`);
+  }
+
+  async getInstrument(id: string) {
+    return this.request<CaseInstrument>(`/case-instruments/${id}`);
+  }
+
+  async updateInstrument(id: string, data: Partial<CaseInstrument>) {
+    return this.request<CaseInstrument>(`/case-instruments/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteInstrument(id: string) {
+    return this.request<void>(`/case-instruments/${id}`, { method: "DELETE" });
+  }
+
+  async getInstrumentsTotal(caseId: string) {
+    return this.request<{ total: number }>(`/case-instruments/case/${caseId}/total`);
+  }
+
+  // ============================================
+  // Case Lease (Kira) API
+  // ============================================
+
+  async createLease(data: Omit<CaseLease, 'id' | 'createdAt'>) {
+    return this.request<CaseLease>("/case-leases", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getLeaseByCase(caseId: string) {
+    return this.request<CaseLease | null>(`/case-leases/case/${caseId}`);
+  }
+
+  async getLease(id: string) {
+    return this.request<CaseLease>(`/case-leases/${id}`);
+  }
+
+  async updateLease(id: string, data: Partial<CaseLease>) {
+    return this.request<CaseLease>(`/case-leases/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteLease(id: string) {
+    return this.request<void>(`/case-leases/${id}`, { method: "DELETE" });
+  }
+
+  async getLeaseDebt(caseId: string) {
+    return this.request<{ total: number; months: number; monthlyRent: number }>(`/case-leases/case/${caseId}/debt`);
+  }
+
+  // ============================================
+  // Case Judgment (Ilam) API
+  // ============================================
+
+  async createJudgment(data: Omit<CaseJudgment, 'id' | 'createdAt'>) {
+    return this.request<CaseJudgment>("/case-judgments", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getJudgmentByCase(caseId: string) {
+    return this.request<CaseJudgment | null>(`/case-judgments/case/${caseId}`);
+  }
+
+  async getJudgment(id: string) {
+    return this.request<CaseJudgment>(`/case-judgments/${id}`);
+  }
+
+  async updateJudgment(id: string, data: Partial<CaseJudgment>) {
+    return this.request<CaseJudgment>(`/case-judgments/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteJudgment(id: string) {
+    return this.request<void>(`/case-judgments/${id}`, { method: "DELETE" });
+  }
+
+  async getJudgmentTotal(caseId: string) {
+    return this.request<{ total: number; judgmentAmount: number; monthlyNafaka: number }>(`/case-judgments/case/${caseId}/total`);
+  }
+
+  // ============================================
+  // Case Collateral (Rehin/Ipotek) API
+  // ============================================
+
+  async createCollateral(data: Omit<CaseCollateral, 'id' | 'createdAt'>) {
+    return this.request<CaseCollateral>("/case-collaterals", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getCollateralsByCase(caseId: string) {
+    return this.request<CaseCollateral[]>(`/case-collaterals/case/${caseId}`);
+  }
+
+  async getCollateral(id: string) {
+    return this.request<CaseCollateral>(`/case-collaterals/${id}`);
+  }
+
+  async updateCollateral(id: string, data: Partial<CaseCollateral>) {
+    return this.request<CaseCollateral>(`/case-collaterals/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteCollateral(id: string) {
+    return this.request<void>(`/case-collaterals/${id}`, { method: "DELETE" });
+  }
+
+  async getCollateralsTotal(caseId: string) {
+    return this.request<{ totalEstimated: number; totalMortgage: number; count: number }>(`/case-collaterals/case/${caseId}/total`);
+  }
 }
 
 // ============================================
@@ -459,6 +595,138 @@ export interface CheckCompensationInfo {
 export interface AddressSuggestionsResponse {
   createTask: boolean;
   suggestions: string[];
+}
+
+// ============================================
+// Case Instrument (Cek/Senet) Types
+// ============================================
+
+export type InstrumentType = 'CEK' | 'SENET' | 'BONO' | 'POLICE';
+
+export interface CaseInstrument {
+  id: string;
+  caseId: string;
+  instrumentType: InstrumentType;
+  serialNo: string;
+  issueDate: string;
+  maturityDate: string;
+  amount: number;
+  currency: string;
+  bankName?: string;
+  branchName?: string;
+  accountNo?: string;
+  checkNo?: string;
+  drawerName?: string;
+  drawerIdentityNo?: string;
+  endorserName?: string;
+  endorserIdentityNo?: string;
+  issuerName?: string;
+  issuerIdentityNo?: string;
+  issuerAddress?: string;
+  payeeName?: string;
+  payeeIdentityNo?: string;
+  guarantorName?: string;
+  guarantorIdentityNo?: string;
+  protestDate?: string;
+  protestNo?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+// ============================================
+// Case Lease (Kira) Types
+// ============================================
+
+export type PropertyType = 'KONUT' | 'ISYERI' | 'ARSA' | 'DIGER';
+export type EvictionReason = 'KIRA_BORCU' | 'TAHLIYE_TAAHHUTNAMESI' | 'IHTIYAC' | 'YENIDEN_INSAAT' | 'DIGER';
+
+export interface CaseLease {
+  id: string;
+  caseId: string;
+  propertyType: PropertyType;
+  propertyAddress: string;
+  propertyCity?: string;
+  propertyDistrict?: string;
+  leaseStartDate: string;
+  leaseEndDate?: string;
+  monthlyRent: number;
+  rentCurrency: string;
+  depositAmount?: number;
+  evictionReason?: EvictionReason;
+  evictionNoticeDate?: string;
+  evictionDeadline?: string;
+  unpaidMonths?: number;
+  unpaidRentTotal?: number;
+  lastPaymentDate?: string;
+  landlordName?: string;
+  landlordIdentityNo?: string;
+  tenantName?: string;
+  tenantIdentityNo?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+// ============================================
+// Case Judgment (Ilam) Types
+// ============================================
+
+export type NafakaType = 'YOKSULLUK' | 'ISTIRAK' | 'TEDBIR' | 'DIGER';
+
+export interface CaseJudgment {
+  id: string;
+  caseId: string;
+  courtName: string;
+  courtCity?: string;
+  courtType?: string;
+  caseNo?: string;
+  decisionNo?: string;
+  decisionDate: string;
+  finalizationDate?: string;
+  finalizationNote?: string;
+  judgmentAmount?: number;
+  judgmentSummary?: string;
+  currency: string;
+  interestRate?: number;
+  interestStartDate?: string;
+  requiresFinalization?: boolean;
+  isFinalized?: boolean;
+  nafakaType?: NafakaType;
+  monthlyNafaka?: number;
+  nafakaStartDate?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+// ============================================
+// Case Collateral (Rehin/Ipotek) Types
+// ============================================
+
+export type CollateralType = 'IPOTEK' | 'TASIT_REHNI' | 'TICARI_ISLETME_REHNI' | 'MENKUL_REHNI' | 'DIGER';
+
+export interface CaseCollateral {
+  id: string;
+  caseId: string;
+  collateralType: CollateralType;
+  description: string;
+  tapuInfo?: string;
+  parcelNo?: string;
+  blockNo?: string;
+  propertyAddress?: string;
+  propertyCity?: string;
+  propertyDistrict?: string;
+  vehiclePlate?: string;
+  vehicleInfo?: string;
+  serialNumber?: string;
+  estimatedValue?: number;
+  mortgageAmount?: number;
+  mortgageRank?: number;
+  currency: string;
+  registrationDate?: string;
+  registrationNo?: string;
+  notaryName?: string;
+  notaryCity?: string;
+  notes?: string;
+  createdAt: string;
 }
 
 export const api = new ApiClient();
