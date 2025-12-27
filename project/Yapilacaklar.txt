@@ -196,10 +196,41 @@ project/apps/api/src/
 │   ├── template-engine/           # Belge şablonları
 │   ├── claim-engine/              # Alacak kalemi üretimi
 │   ├── fee-engine/                # Masraf hesaplama
-│   └── rule-engine/               # Kural motoru
+│   ├── rule-engine/               # Kural motoru
+│   ├── tebligat/                  # Tebligat yönetimi (PTT + UETS/KEP)
+│   ├── uyap/                      # UYAP entegrasyonu
+│   ├── case-instrument/           # Çek/Senet modülü
+│   ├── case-lease/                # Kira sözleşmesi modülü
+│   ├── case-judgment/             # İlam modülü
+│   └── case-collateral/           # Rehin/İpotek modülü
 └── prisma/
     └── schema.prisma              # Veritabanı şeması
 ```
+
+---
+
+## 🔮 GELECEKTEKİ İŞLER (Opsiyonel)
+
+### Raporlama ve Dashboard
+- [ ] Dosya istatistikleri dashboard'u
+- [ ] Tahsilat raporları
+- [ ] Avukat performans raporları
+- [ ] Müvekkil bazlı raporlar
+
+### Otomasyon İyileştirmeleri
+- [ ] Otomatik tebligat takibi (PTT barkod sorgulama cron job)
+- [ ] Vade hatırlatma bildirimleri
+- [ ] Otomatik faiz güncelleme
+
+### Entegrasyonlar
+- [ ] E-imza entegrasyonu (gerçek)
+- [ ] UYAP gerçek API entegrasyonu (API açıldığında)
+- [ ] Banka entegrasyonları (tahsilat takibi)
+- [ ] SMS/E-posta bildirim servisleri
+
+### Mobil Uygulama
+- [ ] React Native mobil uygulama
+- [ ] Push notification desteği
 
 ---
 
