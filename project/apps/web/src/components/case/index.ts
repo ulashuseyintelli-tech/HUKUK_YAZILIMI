@@ -61,3 +61,4 @@ export { DocumentVersioning } from "./document-versioning";
 export { TagStatistics } from "./tag-statistics";
 export { CaseCostEstimate } from "./cost-estimate";
 export { TransactionSummary } from "./transaction-summary";
+export { TebligatPanel } from "./TebligatPanel";

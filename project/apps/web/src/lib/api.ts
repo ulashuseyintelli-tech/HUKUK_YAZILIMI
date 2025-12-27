@@ -555,6 +555,126 @@ class ApiClient {
   async getCollateralsTotal(caseId: string) {
     return this.request<{ totalEstimated: number; totalMortgage: number; count: number }>(`/case-collaterals/case/${caseId}/total`);
   }
+
+  // ============================================
+  // Tebligat API
+  // ============================================
+
+  async createTebligat(data: Omit<Tebligat, 'id' | 'createdAt' | 'status'>) {
+    return this.request<Tebligat>("/tebligat", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getTebligatsByCase(caseId: string) {
+    return this.request<Tebligat[]>(`/tebligat/case/${caseId}`);
+  }
+
+  async getTebligatsByCaseDebtor(caseDebtorId: string) {
+    return this.request<Tebligat[]>(`/tebligat/case-debtor/${caseDebtorId}`);
+  }
+
+  async getTebligat(id: string) {
+    return this.request<Tebligat>(`/tebligat/${id}`);
+  }
+
+  async updateTebligat(id: string, data: Partial<Tebligat>) {
+    return this.request<Tebligat>(`/tebligat/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async markTebligatAsSent(id: string, barcodeNo?: string) {
+    return this.request<Tebligat>(`/tebligat/${id}/send`, {
+      method: "POST",
+      body: JSON.stringify({ barcodeNo }),
+    });
+  }
+
+  async recordPttResult(id: string, data: {
+    pttResult: TebligatPttResult;
+    pttResultDate?: string;
+    pttResultNote?: string;
+    barcodeNo?: string;
+    tk21Type?: 'TK_21_1' | 'TK_21_2';
+    muhtarlikDate?: string;
+    ilanDate?: string;
+  }) {
+    return this.request<{ tebligat: Tebligat; nextAction: TebligatNextAction; message: string }>(`/tebligat/${id}/ptt-result`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async checkAddressPriority(caseId: string, caseDebtorId?: string, addressType?: TebligatAddressType) {
+    const params = new URLSearchParams();
+    if (caseDebtorId) params.set('caseDebtorId', caseDebtorId);
+    if (addressType) params.set('addressType', addressType);
+    return this.request<{
+      currentAddressType: TebligatAddressType;
+      canUseMernis: boolean;
+      mustUseBilinen: boolean;
+      suggestedAction: TebligatNextAction;
+      message: string;
+    }>(`/tebligat/check-priority/${caseId}?${params}`);
+  }
+
+  async createMernisTebligat(id: string, mernisAddress: string) {
+    return this.request<Tebligat>(`/tebligat/${id}/create-mernis`, {
+      method: "POST",
+      body: JSON.stringify({ mernisAddress }),
+    });
+  }
+
+  async getTebligatSummary(caseId?: string) {
+    const query = caseId ? `?caseId=${caseId}` : '';
+    return this.request<TebligatSummary>(`/tebligat/summary${query}`);
+  }
+
+  async getPendingTebligatActions() {
+    return this.request<Tebligat[]>("/tebligat/pending-actions");
+  }
+
+  // PTT Barkod Sorgulama
+  async trackPttBarcode(barcodeNo: string) {
+    return this.request<PttTrackingResult>(`/tebligat/ptt-track/${barcodeNo}`);
+  }
+
+  async trackPttBarcodesBulk(barcodeNos: string[]) {
+    return this.request<Record<string, PttTrackingResult>>("/tebligat/ptt-track-bulk", {
+      method: "POST",
+      body: JSON.stringify({ barcodeNos }),
+    });
+  }
+
+  // UETS/KEP
+  async checkUetsRegistration(tcVkn: string) {
+    return this.request<UetsRecipient>(`/tebligat/uets-check/${tcVkn}`);
+  }
+
+  async sendTebligatViaUets(id: string, subject: string, content: string) {
+    return this.request<{ success: boolean; uetsNo?: string; errorMessage?: string }>(`/tebligat/${id}/send-uets`, {
+      method: "POST",
+      body: JSON.stringify({ subject, content }),
+    });
+  }
+
+  async sendTebligatViaKep(id: string, subject: string, content: string) {
+    return this.request<{ success: boolean; kepNo?: string; errorMessage?: string }>(`/tebligat/${id}/send-kep`, {
+      method: "POST",
+      body: JSON.stringify({ subject, content }),
+    });
+  }
+
+  async checkUetsDeliveryStatus(uetsNo: string) {
+    return this.request<{ uetsNo: string; status: string; deliveredAt?: string; readAt?: string }>(`/tebligat/uets-status/${uetsNo}`);
+  }
+
+  async determineElectronicChannel(tcVkn: string) {
+    return this.request<TebligatChannel | null>(`/tebligat/electronic-channel/${tcVkn}`);
+  }
 }
 
 // ============================================
@@ -727,6 +847,82 @@ export interface CaseCollateral {
   notaryCity?: string;
   notes?: string;
   createdAt: string;
+}
+
+// ============================================
+// Tebligat Types
+// ============================================
+
+export type TebligatType = 'ODEME_EMRI' | 'ICRA_EMRI' | 'TAHLIYE_EMRI' | 'HACIZ_IHBARNAMESI_89_1' | 'HACIZ_IHBARNAMESI_89_2' | 'HACIZ_IHBARNAMESI_89_3' | 'SATIS_ILANI' | 'KIYMET_TAKDIRI' | 'DIGER';
+export type TebligatAddressType = 'BILINEN' | 'MERNIS' | 'TICARET_SICIL' | 'KEP' | 'VERGI_DAIRESI';
+export type TebligatChannel = 'PTT' | 'KEP' | 'UETS' | 'ILANEN' | 'ELDEN';
+export type TebligatStatus = 'HAZIRLANDI' | 'GONDERILDI' | 'TESLIM_EDILDI' | 'IADE_GELDI' | 'MUHTARLIGA_BIRAKILDI' | 'TEBLIG_EDILMIS_SAYILDI' | 'IPTAL';
+export type TebligatPttResult = 'TESLIM_EDILDI' | 'AYNI_KONUTTA_TESLIM' | 'ISYERINDE_TESLIM' | 'ADRESTE_BULUNAMADI' | 'TASINMIS' | 'ADRES_YETERSIZ' | 'BINA_YIKILMIS' | 'ADRES_KAPALI' | 'IMTINA' | 'MUHTARLIGA_BIRAKILDI' | 'VEFAT' | 'TANIMIYOR' | 'DIGER';
+export type TebligatNextAction = 'MERNIS_TEBLIGAT' | 'ILANEN_TEBLIGAT' | 'TEBLIG_TAMAMLANDI' | 'YENI_ADRES_ARA' | 'BEKLE';
+
+export interface Tebligat {
+  id: string;
+  caseId: string;
+  caseDebtorId?: string;
+  tebligatType: TebligatType;
+  addressType: TebligatAddressType;
+  addressId?: string;
+  addressText: string;
+  city?: string;
+  district?: string;
+  recipientName: string;
+  recipientTcVkn?: string;
+  channel: TebligatChannel;
+  status: TebligatStatus;
+  barcodeNo?: string;
+  sentAt?: string;
+  deliveredAt?: string;
+  returnedAt?: string;
+  pttResult?: TebligatPttResult;
+  pttResultDate?: string;
+  pttResultNote?: string;
+  tk21Type?: 'TK_21_1' | 'TK_21_2';
+  muhtarlikDate?: string;
+  ilanDate?: string;
+  tebligSayilmaDate?: string;
+  nextAction?: TebligatNextAction;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface TebligatSummary {
+  total: number;
+  hazirlanan: number;
+  gonderilen: number;
+  teslimEdilen: number;
+  iadeGelen: number;
+  tebligEdilmisSayilan: number;
+  bekleyenIslem: number;
+}
+
+export interface PttTrackingResult {
+  barcodeNo: string;
+  status: string;
+  statusCode: string;
+  lastUpdate: string;
+  deliveryDate?: string;
+  recipientName?: string;
+  deliveryLocation?: string;
+  events: Array<{
+    date: string;
+    location: string;
+    status: string;
+    description: string;
+  }>;
+  mappedResult?: TebligatPttResult;
+}
+
+export interface UetsRecipient {
+  tcVkn: string;
+  name: string;
+  kepAddress?: string;
+  uetsAddress?: string;
+  isRegistered: boolean;
 }
 
 export const api = new ApiClient();

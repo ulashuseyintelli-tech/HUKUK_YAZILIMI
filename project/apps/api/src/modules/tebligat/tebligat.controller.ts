@@ -9,6 +9,8 @@ import {
   UseGuards,
 } from "@nestjs/common";
 import { TebligatService } from "./tebligat.service";
+import { PttTrackingService } from "./ptt-tracking.service";
+import { UetsService, UetsSendRequest } from "./uets.service";
 import {
   CreateTebligatDto,
   RecordPttResultDto,
@@ -21,7 +23,11 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 @Controller("tebligat")
 @UseGuards(JwtAuthGuard)
 export class TebligatController {
-  constructor(private tebligatService: TebligatService) {}
+  constructor(
+    private tebligatService: TebligatService,
+    private pttTrackingService: PttTrackingService,
+    private uetsService: UetsService,
+  ) {}
 
   // ==================== CRUD ====================
 
@@ -171,5 +177,101 @@ export class TebligatController {
   @Get("pending-actions")
   getPendingActions(@CurrentUser("tenantId") tenantId: string) {
     return this.tebligatService.getPendingActions(tenantId);
+  }
+
+  // ==================== PTT BARKOD SORGULAMA ====================
+
+  /**
+   * PTT barkod sorgula
+   * GET /tebligat/ptt-track/:barcodeNo
+   */
+  @Get("ptt-track/:barcodeNo")
+  trackPttBarcode(@Param("barcodeNo") barcodeNo: string) {
+    return this.pttTrackingService.trackBarcode(barcodeNo);
+  }
+
+  /**
+   * Toplu PTT barkod sorgula
+   * POST /tebligat/ptt-track-bulk
+   */
+  @Post("ptt-track-bulk")
+  async trackPttBarcodesBulk(@Body() body: { barcodeNos: string[] }) {
+    const results = await this.pttTrackingService.trackMultipleBarcodes(body.barcodeNos);
+    return Object.fromEntries(results);
+  }
+
+  // ==================== UETS/KEP ====================
+
+  /**
+   * Alicinin UETS/KEP kayitli olup olmadigini kontrol et
+   * GET /tebligat/uets-check/:tcVkn
+   */
+  @Get("uets-check/:tcVkn")
+  checkUetsRegistration(@Param("tcVkn") tcVkn: string) {
+    return this.uetsService.checkRecipientRegistration(tcVkn);
+  }
+
+  /**
+   * UETS ile tebligat gonder
+   * POST /tebligat/:id/send-uets
+   */
+  @Post(":id/send-uets")
+  async sendViaUets(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Body() body: { subject: string; content: string }
+  ) {
+    const tebligat = await this.tebligatService.findById(tenantId, id);
+    
+    const request: UetsSendRequest = {
+      tebligatId: id,
+      recipientTcVkn: tebligat.recipientTcVkn,
+      recipientName: tebligat.recipientName,
+      subject: body.subject,
+      content: body.content,
+    };
+
+    return this.uetsService.sendViaUets(request);
+  }
+
+  /**
+   * KEP ile tebligat gonder
+   * POST /tebligat/:id/send-kep
+   */
+  @Post(":id/send-kep")
+  async sendViaKep(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Body() body: { subject: string; content: string }
+  ) {
+    const tebligat = await this.tebligatService.findById(tenantId, id);
+    
+    const request: UetsSendRequest = {
+      tebligatId: id,
+      recipientTcVkn: tebligat.recipientTcVkn,
+      recipientName: tebligat.recipientName,
+      subject: body.subject,
+      content: body.content,
+    };
+
+    return this.uetsService.sendViaKep(request);
+  }
+
+  /**
+   * UETS/KEP teslim durumunu sorgula
+   * GET /tebligat/uets-status/:uetsNo
+   */
+  @Get("uets-status/:uetsNo")
+  checkUetsDeliveryStatus(@Param("uetsNo") uetsNo: string) {
+    return this.uetsService.checkDeliveryStatus(uetsNo);
+  }
+
+  /**
+   * Elektronik tebligat icin en uygun kanali belirle
+   * GET /tebligat/electronic-channel/:tcVkn
+   */
+  @Get("electronic-channel/:tcVkn")
+  determineElectronicChannel(@Param("tcVkn") tcVkn: string) {
+    return this.uetsService.determineElectronicChannel(tcVkn);
   }
 }
