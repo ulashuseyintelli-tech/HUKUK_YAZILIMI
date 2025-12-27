@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculator, TrendingUp, Receipt, Banknote, FileCheck, Calendar, XCircle, Info } from "lucide-react";
@@ -28,6 +28,54 @@ import { useFormHistory } from "@/hooks/useFormHistory";
 import { useUserSettings } from "@/lib/user-settings";
 import { usePreSubmitValidation } from "@/hooks/useValidation";
 import { ValidationError } from "@/lib/api";
+
+// LocalStorage key for wizard state persistence
+const WIZARD_STORAGE_KEY = "case_wizard_draft";
+
+// Wizard state'ini localStorage'a kaydet
+function saveWizardState(state: any) {
+  if (typeof window !== "undefined") {
+    try {
+      localStorage.setItem(WIZARD_STORAGE_KEY, JSON.stringify({
+        ...state,
+        savedAt: new Date().toISOString(),
+      }));
+    } catch (e) {
+      console.error("Wizard state kaydedilemedi:", e);
+    }
+  }
+}
+
+// Wizard state'ini localStorage'dan yükle
+function loadWizardState(): any | null {
+  if (typeof window !== "undefined") {
+    try {
+      const saved = localStorage.getItem(WIZARD_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        // 24 saatten eski kayıtları temizle
+        const savedAt = new Date(parsed.savedAt);
+        const now = new Date();
+        const hoursDiff = (now.getTime() - savedAt.getTime()) / (1000 * 60 * 60);
+        if (hoursDiff > 24) {
+          localStorage.removeItem(WIZARD_STORAGE_KEY);
+          return null;
+        }
+        return parsed;
+      }
+    } catch (e) {
+      console.error("Wizard state yüklenemedi:", e);
+    }
+  }
+  return null;
+}
+
+// Wizard state'ini temizle
+function clearWizardState() {
+  if (typeof window !== "undefined") {
+    localStorage.removeItem(WIZARD_STORAGE_KEY);
+  }
+}
 
 const steps = [
   { id: 0, title: "Form Seçimi", icon: "📋" },
@@ -195,6 +243,51 @@ export default function NewCasePage() {
   const [poaWarnings, setPoaWarnings] = useState<{ clientId: string; clientName: string; lawyerId: string; lawyerName: string; message: string; }[]>([]);
   const [checkingPoa, setCheckingPoa] = useState(false);
   const [users, setUsers] = useState<{ id: string; name: string; surname: string; }[]>([]);
+  const [draftLoaded, setDraftLoaded] = useState(false);
+
+  // LocalStorage'dan taslak yükle (sayfa yenilendiğinde)
+  useEffect(() => {
+    const savedState = loadWizardState();
+    if (savedState && !draftLoaded) {
+      console.log("Taslak yükleniyor:", savedState.savedAt);
+      
+      // State'leri geri yükle
+      if (savedState.currentStep !== undefined) setCurrentStep(savedState.currentStep);
+      if (savedState.lawyers?.length > 0) setLawyers(savedState.lawyers);
+      if (savedState.creditors?.length > 0) setCreditors(savedState.creditors);
+      if (savedState.caseDebtors?.length > 0) setCaseDebtors(savedState.caseDebtors);
+      if (savedState.selectedStaff?.length > 0) setSelectedStaff(savedState.selectedStaff);
+      if (savedState.dues?.length > 0) setDues(savedState.dues);
+      if (savedState.caseData) setCaseData(prev => ({ ...prev, ...savedState.caseData }));
+      if (savedState.selectedCity) setSelectedCity(savedState.selectedCity);
+      if (savedState.documentSource) setDocumentSource(savedState.documentSource);
+      if (savedState.showWizard !== undefined) setShowWizard(savedState.showWizard);
+      if (savedState.showDocumentSelector !== undefined) setShowDocumentSelector(savedState.showDocumentSelector);
+      
+      setDraftLoaded(true);
+    }
+  }, []);
+
+  // State değişikliklerini localStorage'a kaydet
+  useEffect(() => {
+    if (!draftLoaded) return; // İlk yükleme tamamlanmadan kaydetme
+    
+    const stateToSave = {
+      currentStep,
+      lawyers,
+      creditors,
+      caseDebtors,
+      selectedStaff,
+      dues,
+      caseData,
+      selectedCity,
+      documentSource,
+      showWizard,
+      showDocumentSelector,
+    };
+    
+    saveWizardState(stateToSave);
+  }, [currentStep, lawyers, creditors, caseDebtors, selectedStaff, dues, caseData, selectedCity, documentSource, showWizard, showDocumentSelector, draftLoaded]);
 
   useEffect(() => { loadExistingData(); }, []);
   
@@ -297,22 +390,29 @@ export default function NewCasePage() {
       setUsers(usersRes?.data?.data || []);
       setExistingStaff(staffRes?.data?.data || []);
       
-      // Varsayılan avukatları otomatik seç
-      const defaultLawyers = allLawyers.filter((l: any) => l.isDefaultForNewCases && l.isActive);
-      if (defaultLawyers.length > 0) {
-        const selectedLawyers = defaultLawyers.map((l: any, index: number) => ({
-          id: l.id,
-          name: l.name,
-          surname: l.surname,
-          barNumber: l.barNumber,
-          barCity: l.barCity,
-          role: l.role,
-          canSign: l.canSign,
-          isNew: false,
-          isResponsible: index === 0, // İlk avukat sorumlu
-          hasSignatureAuthority: l.canSign,
-        }));
-        setLawyers(selectedLawyers);
+      // Varsayılan avukatları otomatik seç (localStorage'dan yüklenmemişse)
+      const savedState = loadWizardState();
+      const hasLoadedLawyers = savedState?.lawyers?.length > 0;
+      
+      if (!hasLoadedLawyers) {
+        const defaultLawyers = allLawyers.filter((l: any) => l.isDefaultForNewCases && l.isActive);
+        if (defaultLawyers.length > 0) {
+          const selectedLawyers = defaultLawyers.map((l: any, index: number) => ({
+            id: l.id,
+            name: l.name,
+            surname: l.surname,
+            displayName: l.displayName,
+            title: l.title,
+            barNumber: l.barNumber,
+            barCity: l.barCity,
+            role: l.role,
+            canSign: l.canSign,
+            isNew: false,
+            isResponsible: index === 0, // İlk avukat sorumlu
+            hasSignatureAuthority: l.canSign,
+          }));
+          setLawyers(selectedLawyers);
+        }
       }
       
       // Varsayılan aşama: "Dosya Açıldı"
@@ -769,6 +869,8 @@ export default function NewCasePage() {
         dues: dues.filter(d => d.amount && parseFloat(d.amount) > 0).map(d => ({ type: d.type, description: d.description || undefined, amount: parseFloat(d.amount), dueDate: d.dueDate })),
       });
       if (selectedForm) recordUsage(selectedForm.code);
+      // Başarılı kayıt sonrası taslağı temizle
+      clearWizardState();
       router.push(`/cases/${response.id}`);
     } catch (err: any) { setError(err.message || "Takip oluşturulurken bir hata oluştu"); } finally { setLoading(false); }
   };
@@ -782,7 +884,23 @@ export default function NewCasePage() {
         <Link href="/cases" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-3 w-3" /> Takiplere Dön
         </Link>
-        <span className="text-xs text-muted-foreground">{currentStep + 1} / {steps.length}</span>
+        <div className="flex items-center gap-3">
+          {draftLoaded && (lawyers.length > 0 || creditors.length > 0 || caseDebtors.length > 0) && (
+            <button
+              type="button"
+              onClick={() => {
+                if (confirm("Taslak silinecek ve tüm girilen bilgiler kaybolacak. Emin misiniz?")) {
+                  clearWizardState();
+                  window.location.reload();
+                }
+              }}
+              className="text-xs text-orange-600 hover:text-orange-700 hover:underline"
+            >
+              Taslağı Temizle
+            </button>
+          )}
+          <span className="text-xs text-muted-foreground">{currentStep + 1} / {steps.length}</span>
+        </div>
       </div>
 
       <div className="mb-4 p-3 bg-gradient-to-r from-slate-50 to-gray-50 rounded-xl border">
