@@ -1397,8 +1397,8 @@ function ExpandableTextarea({ name, label, value, onChange, placeholder }: {
   );
 }
 
-// Avukat Seçim Adımı Bileşeni - Tek kaynak: Ayarlar'daki avukatlar
-// Sihirbaz sadece seçim yapar + aynı endpoint'e yazan hızlı ekleme modali sunar
+// Avukat Seçim Adımı Bileşeni - Basitleştirilmiş versiyon
+// Üstte seçilmiş avukatlar, altta eklenebilecek diğer avukatlar
 function LawyerSelectionStep({
   existingLawyers,
   selectedLawyers,
@@ -1421,20 +1421,6 @@ function LawyerSelectionStep({
   onRefreshLawyers: () => Promise<void>;
 }) {
   const [searchTerm, setSearchTerm] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [deletingId, setDeletingId] = useState<string | null>(null);
-  const [formData, setFormData] = useState<any>({});
-  
-  // Form modları: null = kapalı, "add" = yeni ekleme, lawyer objesi = düzenleme
-  const [formMode, setFormMode] = useState<null | "add" | any>(null);
-  const isAddingNew = formMode === "add";
-  const editingLawyer = formMode && formMode !== "add" ? formMode : null;
-  
-  const filteredLawyers = existingLawyers.filter(l => 
-    (l.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-     l.surname?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-     l.barNumber?.includes(searchTerm))
-  );
 
   const roleLabels: Record<string, string> = {
     OWNER: "Büro Sahibi",
@@ -1443,274 +1429,191 @@ function LawyerSelectionStep({
     INTERN: "Stajyer",
   };
 
-  // Yeni avukat ekleme formunu aç
-  const startAddingNew = () => {
-    setFormData({ 
-      name: "", surname: "", tckn: "", gender: "", 
-      barNumber: "", barCity: "", tbbNo: "", 
-      vergiDairesi: "", vergiNo: "", 
-      phone: "", email: "", 
-      bankName: "", iban: "", 
-      isInHouseCounsel: false, isEmployee: false, canSign: false,
-      role: "EMPLOYEE"
-    });
-    setFormMode("add");
-  };
+  // Seçilmemiş avukatları filtrele
+  const unselectedLawyers = existingLawyers.filter(l => 
+    !selectedLawyers.find(sl => sl.id === l.id)
+  );
 
-  // Mevcut avukatı düzenleme formunu aç
-  const startEditing = (lawyer: any) => {
-    setFormData({ ...lawyer });
-    setFormMode(lawyer);
-  };
-
-  // Formu kapat
-  const cancelForm = () => {
-    setFormMode(null);
-    setFormData({});
-  };
-
-  // Kaydet - Ayarlar'daki aynı endpoint'i kullanır
-  const handleSave = async () => {
-    if (!formData.name?.trim() || !formData.surname?.trim()) {
-      alert("Ad ve Soyad zorunludur");
-      return;
-    }
-    if (isAddingNew) {
-      // Yeni avukat için zorunlu alanlar
-      if (!formData.tckn || formData.tckn.length !== 11) {
-        alert("TC Kimlik No 11 haneli olmalıdır");
-        return;
-      }
-      if (!formData.vergiNo || formData.vergiNo.length !== 10) {
-        alert("Vergi No 10 haneli olmalıdır");
-        return;
-      }
-    }
-    
-    setSaving(true);
-    try {
-      if (isAddingNew) {
-        // Yeni avukat - POST /lawyers (Ayarlar'daki aynı endpoint)
-        const response = await api.post('/lawyers', formData);
-        const saved = response.data || response;
-        // Ofis avukat listesine eklendi, şimdi bu takibe de ekle
-        onAddLawyer(saved);
-        await onRefreshLawyers();
-      } else {
-        // Mevcut avukat güncelleme - PUT /lawyers/:id
-        const response = await api.put(`/lawyers/${editingLawyer.id}`, formData);
-        const updated = response.data || response;
-        await onRefreshLawyers();
-        // Seçili avukatlar listesinde varsa güncelle
-        const selectedIndex = selectedLawyers.findIndex(l => l.id === editingLawyer.id);
-        if (selectedIndex >= 0) {
-          onUpdateLawyer(selectedIndex, "name", updated.name);
-          onUpdateLawyer(selectedIndex, "surname", updated.surname);
-        }
-      }
-      cancelForm();
-    } catch (err: any) {
-      alert(err.message || "Hata oluştu");
-    }
-    setSaving(false);
-  };
+  // Arama filtresi
+  const filteredUnselected = unselectedLawyers.filter(l => 
+    !searchTerm || 
+    l.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    l.surname?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    l.barNumber?.includes(searchTerm)
+  );
 
   return (
     <div className="space-y-4">
-      <div className="mb-2">
-        <h2 className="text-lg font-semibold">Takipte Yer Alacak Avukatlar</h2>
-        <p className="text-xs text-muted-foreground">
-          Soldaki listeden avukat seçin veya yeni ekleyin. Seçilen avukatlar sağda görünür.
-          <a href="/settings/office" target="_blank" className="ml-2 text-primary hover:underline">Ayarlar'da düzenle →</a>
-        </p>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Sol: Büro Avukatları (Ayarlar'daki liste) + Hızlı Ekleme */}
-        <div className="border rounded-lg p-3 bg-gray-50 space-y-3">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold">Büro Avukatları</h3>
-            <button type="button" onClick={startAddingNew} className="text-xs text-primary hover:underline flex items-center gap-1">
-              <Plus className="h-3 w-3" /> Yeni Ekle
-            </button>
+      {/* Üst: Seçilmiş Avukatlar */}
+      <div className="border rounded-lg p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            ✅ Seçilmiş Avukatlar
+            {selectedLawyers.length > 0 && (
+              <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-xs">
+                {selectedLawyers.length}
+              </span>
+            )}
+          </h3>
+        </div>
+        
+        {selectedLawyers.length === 0 ? (
+          <div className="text-center py-6 border-2 border-dashed rounded-lg bg-gray-50">
+            <p className="text-sm text-muted-foreground">Henüz avukat seçilmedi</p>
+            <p className="text-xs text-muted-foreground mt-1">Aşağıdaki listeden avukat ekleyin</p>
           </div>
-          
-          {/* Hızlı Ekleme / Düzenleme Formu - Ayarlar'daki aynı endpoint'i kullanır */}
-          {(isAddingNew || editingLawyer) && (
-            <div className={`p-3 ${isAddingNew ? 'bg-green-50 border-green-200' : 'bg-blue-50 border-blue-200'} border rounded-lg space-y-2`}>
-              <div className="flex items-center justify-between mb-2">
-                <span className={`text-xs font-semibold ${isAddingNew ? 'text-green-700' : 'text-blue-700'}`}>
-                  {isAddingNew ? "🚀 Hızlı Avukat Ekle" : `✏️ ${editingLawyer?.name} ${editingLawyer?.surname}`}
-                </span>
-                <div className="flex items-center gap-2">
-                  {!isAddingNew && (
-                    <a href="/settings/office" target="_blank" className="text-xs text-blue-600 hover:underline">
-                      Detaylı düzenle →
-                    </a>
-                  )}
-                  <button type="button" onClick={cancelForm} className="text-xs text-gray-500 hover:text-gray-700">İptal</button>
-                </div>
-              </div>
-              
-              {/* Zorunlu Alanlar - Sarı arka plan */}
-              <div className="p-2 bg-amber-50 rounded border border-amber-200">
-                <p className="text-xs text-amber-700 mb-2 font-medium">Zorunlu Alanlar</p>
-                <div className="grid grid-cols-3 gap-2">
-                  <input type="text" value={formData.name || ""} onChange={(e) => setFormData({...formData, name: e.target.value})} placeholder="Ad *" className="rounded border px-2 py-1 text-xs border-amber-300 bg-white" />
-                  <input type="text" value={formData.surname || ""} onChange={(e) => setFormData({...formData, surname: e.target.value})} placeholder="Soyad *" className="rounded border px-2 py-1 text-xs border-amber-300 bg-white" />
-                  <input type="text" value={formData.tckn || ""} onChange={(e) => setFormData({...formData, tckn: e.target.value.replace(/\D/g, "")})} placeholder="TC Kimlik No *" maxLength={11} className="rounded border px-2 py-1 text-xs border-amber-300 bg-white" />
-                </div>
-                <div className="grid grid-cols-2 gap-2 mt-2">
-                  <input type="text" value={formData.vergiNo || ""} onChange={(e) => setFormData({...formData, vergiNo: e.target.value.replace(/\D/g, "")})} placeholder="Vergi No *" maxLength={10} className="rounded border px-2 py-1 text-xs border-amber-300 bg-white" />
-                  <input type="text" value={formData.barNumber || ""} onChange={(e) => setFormData({...formData, barNumber: e.target.value})} placeholder="Baro Sicil No *" className="rounded border px-2 py-1 text-xs border-amber-300 bg-white" />
-                </div>
-              </div>
-              
-              {/* Opsiyonel Alanlar */}
-              <div className="grid grid-cols-4 gap-2">
-                <select value={formData.title || ""} onChange={(e) => setFormData({...formData, title: e.target.value})} className="rounded border px-2 py-1 text-xs" title="Unvan/Sıfat">
-                  <option value="">Unvan (Otomatik)</option>
-                  <option value="Av.">Av.</option>
-                  <option value="Stj. Av.">Stj. Av.</option>
-                  <option value="Huk. Müş.">Huk. Müş.</option>
-                  <option value="İcra Kat.">İcra Kat.</option>
-                  <option value="Sek.">Sek.</option>
-                  <option value="Muh.">Muh.</option>
-                </select>
-                <select value={formData.role || "EMPLOYEE"} onChange={(e) => setFormData({...formData, role: e.target.value})} className="rounded border px-2 py-1 text-xs">
-                  <option value="OWNER">Büro Sahibi</option>
-                  <option value="PARTNER">Ortak</option>
-                  <option value="EMPLOYEE">Avukat</option>
-                  <option value="INTERN">Stajyer</option>
-                </select>
-                <input type="text" value={formData.barCity || ""} onChange={(e) => setFormData({...formData, barCity: e.target.value})} placeholder="Kayıtlı Baro" className="rounded border px-2 py-1 text-xs" />
-                <input type="text" value={formData.vergiDairesi || ""} onChange={(e) => setFormData({...formData, vergiDairesi: e.target.value})} placeholder="Vergi Dairesi" className="rounded border px-2 py-1 text-xs" />
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <input type="text" value={formData.bankName || ""} onChange={(e) => setFormData({...formData, bankName: e.target.value})} placeholder="Banka Adı" className="rounded border px-2 py-1 text-xs" />
-                <input type="text" value={formData.iban || ""} onChange={(e) => setFormData({...formData, iban: e.target.value.toUpperCase()})} placeholder="IBAN" className="rounded border px-2 py-1 text-xs font-mono" />
-              </div>
-              <div className="flex items-center gap-4">
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="checkbox" checked={formData.canSign || false} onChange={(e) => setFormData({...formData, canSign: e.target.checked})} className="w-3.5 h-3.5 rounded" />
-                  <span className="text-xs">İmza Yetkisi</span>
-                </label>
-                <label className="flex items-center gap-1.5 cursor-pointer">
-                  <input type="checkbox" checked={formData.isDefaultForNewCases || false} onChange={(e) => setFormData({...formData, isDefaultForNewCases: e.target.checked})} className="w-3.5 h-3.5 rounded" />
-                  <span className="text-xs">Yeni takiplerde varsayılan</span>
-                </label>
-              </div>
-              <div className="flex justify-between items-center pt-2 border-t">
-                <p className="text-xs text-gray-500">
-                  {isAddingNew ? "Kayıt Ayarlar > Avukatlar'a da eklenir" : "Değişiklikler tüm takiplere yansır"}
-                </p>
-                <button type="button" onClick={handleSave} disabled={saving} className={`px-3 py-1 text-xs text-white rounded flex items-center gap-1 ${isAddingNew ? 'bg-green-600 hover:bg-green-700' : 'bg-blue-600 hover:bg-blue-700'} disabled:opacity-50`}>
-                  {saving ? <><Loader2 className="h-3 w-3 animate-spin" /> Kaydediliyor...</> : <><Check className="h-3 w-3" /> {isAddingNew ? 'Kaydet ve Ekle' : 'Güncelle'}</>}
-                </button>
-              </div>
-            </div>
-          )}
-          
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Ad, soyad veya sicil no ile ara..."
-            className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary"
-          />
-          
-          <div className="max-h-48 overflow-y-auto space-y-1">
-            {filteredLawyers.length === 0 ? (
-              <p className="text-xs text-muted-foreground text-center py-4">
-                {searchTerm ? "Sonuç bulunamadı" : "Henüz avukat eklenmedi. Ayarlar'dan veya yukarıdaki formdan ekleyebilirsiniz."}
-              </p>
-            ) : (
-              filteredLawyers.map((lawyer) => {
-                const isSelected = selectedLawyers.find(sl => sl.id === lawyer.id);
-                return (
-                  <div
-                    key={lawyer.id}
-                    className={`w-full flex items-center justify-between p-2 rounded border transition-colors ${isSelected ? 'bg-green-50 border-green-300' : 'hover:bg-white border-transparent hover:border-primary/30'}`}
-                  >
-                    <div className="flex-1">
-                      <span className="text-sm font-medium">{lawyer.displayName || `${lawyer.title || (lawyer.role === "INTERN" ? "Stj. Av." : "Av.")} ${lawyer.name} ${lawyer.surname}`}</span>
-                      {lawyer.barNumber && <span className="text-xs text-muted-foreground ml-2">#{lawyer.barNumber}</span>}
+        ) : (
+          <div className="space-y-2">
+            {selectedLawyers.map((lawyer, index) => (
+              <div 
+                key={lawyer.id || index} 
+                className={`p-3 rounded-lg border-2 transition-all ${
+                  lawyer.isResponsible 
+                    ? 'border-primary bg-primary/5' 
+                    : 'border-gray-200 hover:border-gray-300'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium">
+                        {lawyer.displayName || `${lawyer.title || (lawyer.role === "INTERN" ? "Stj. Av." : "Av.")} ${lawyer.name} ${lawyer.surname}`}
+                      </span>
+                      {lawyer.barNumber && (
+                        <span className="text-xs text-muted-foreground">#{lawyer.barNumber}</span>
+                      )}
                       {lawyer.role && (
-                        <span className={`ml-2 text-xs px-1.5 py-0.5 rounded ${lawyer.role === "OWNER" ? "bg-purple-100 text-purple-700" : lawyer.role === "PARTNER" ? "bg-blue-100 text-blue-700" : lawyer.role === "INTERN" ? "bg-gray-100 text-gray-600" : "bg-green-100 text-green-700"}`}>
+                        <span className={`text-xs px-1.5 py-0.5 rounded ${
+                          lawyer.role === "OWNER" ? "bg-purple-100 text-purple-700" : 
+                          lawyer.role === "PARTNER" ? "bg-blue-100 text-blue-700" : 
+                          lawyer.role === "INTERN" ? "bg-gray-100 text-gray-600" : 
+                          "bg-green-100 text-green-700"
+                        }`}>
                           {roleLabels[lawyer.role] || lawyer.role}
                         </span>
                       )}
-                      {isSelected && <span className="ml-2 text-xs text-green-600">✓ Seçili</span>}
-                    </div>
-                    <div className="flex items-center gap-1">
-                      {lawyer.canSign && <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">İmza ✓</span>}
-                      <button type="button" onClick={() => startEditing(lawyer)} className="px-2 py-1 text-xs font-medium bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg hover:from-amber-600 hover:to-orange-600 shadow-sm hover:shadow transition-all flex items-center gap-1" title="Düzenle">
-                        <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
-                      </button>
-                      {!isSelected ? (
-                        <button type="button" onClick={() => onAddLawyer(lawyer)} className="p-1 text-primary hover:bg-primary/10 rounded" title="Takibe Ekle">
-                          <Plus className="h-4 w-4" />
-                        </button>
-                      ) : (
-                        <button type="button" onClick={() => { const idx = selectedLawyers.findIndex(sl => sl.id === lawyer.id); if (idx >= 0) onRemoveLawyer(idx); }} className="p-1 text-orange-500 hover:bg-orange-100 rounded" title="Takipten Çıkar">
-                          <X className="h-4 w-4" />
-                        </button>
+                      {lawyer.canSign && (
+                        <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
+                          İmza ✓
+                        </span>
                       )}
                     </div>
-                  </div>
-                );
-              })
-            )}
-          </div>
-        </div>
-
-        {/* Sağ: Bu Takip İçin Seçili Avukatlar - Sadece isim ve yetkiler */}
-        <div className="border rounded-lg p-3">
-          <h3 className="text-sm font-semibold mb-2">Bu Takip İçin Seçili Avukatlar</h3>
-          
-          {selectedLawyers.length === 0 ? (
-            <div className="text-center py-8 border-2 border-dashed rounded-lg">
-              <p className="text-sm text-muted-foreground">Henüz avukat seçilmedi</p>
-              <p className="text-xs text-muted-foreground mt-1">Soldaki listeden avukat ekleyin</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {selectedLawyers.map((lawyer, index) => (
-                <div key={index} className={`p-2 rounded-lg border ${lawyer.isResponsible ? 'border-primary bg-primary/5' : 'border-gray-200'}`}>
-                  <div className="flex items-center justify-between">
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="text-sm font-medium">{lawyer.displayName || `${lawyer.title || (lawyer.role === "INTERN" ? "Stj. Av." : "Av.")} ${lawyer.name} ${lawyer.surname}`}</span>
-                        {lawyer.barNumber && <span className="text-xs text-muted-foreground">#{lawyer.barNumber}</span>}
-                        {lawyer.role && (
-                          <span className={`text-xs px-1.5 py-0.5 rounded ${lawyer.role === "OWNER" ? "bg-purple-100 text-purple-700" : lawyer.role === "PARTNER" ? "bg-blue-100 text-blue-700" : lawyer.role === "INTERN" ? "bg-gray-100 text-gray-600" : "bg-green-100 text-green-700"}`}>
-                            {roleLabels[lawyer.role] || lawyer.role}
-                          </span>
-                        )}
-                        {lawyer.canSign && <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">İmza ✓</span>}
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <label className="flex items-center gap-1.5 cursor-pointer">
-                          <input type="radio" name="responsibleLawyer" checked={lawyer.isResponsible || false} onChange={() => onUpdateLawyer(index, "isResponsible", true)} className="w-3.5 h-3.5 text-primary" />
-                          <span className="text-xs">Sorumlu Avukat</span>
-                        </label>
-                        <label className="flex items-center gap-1.5 cursor-pointer">
-                          <input type="checkbox" checked={lawyer.hasSignatureAuthority || false} onChange={(e) => onUpdateLawyer(index, "hasSignatureAuthority", e.target.checked)} className="w-3.5 h-3.5 rounded" />
-                          <span className="text-xs">İmza Yetkisi</span>
-                        </label>
-                      </div>
+                    
+                    {/* Yetkiler */}
+                    <div className="flex items-center gap-4 mt-2">
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input 
+                          type="radio" 
+                          name="responsibleLawyer" 
+                          checked={lawyer.isResponsible || false} 
+                          onChange={() => {
+                            selectedLawyers.forEach((_, i) => {
+                              if (i !== index) onUpdateLawyer(i, "isResponsible", false);
+                            });
+                            onUpdateLawyer(index, "isResponsible", true);
+                          }} 
+                          className="w-3.5 h-3.5 text-primary" 
+                        />
+                        <span className="text-xs">Sorumlu Avukat</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 cursor-pointer">
+                        <input 
+                          type="checkbox" 
+                          checked={lawyer.hasSignatureAuthority || false} 
+                          onChange={(e) => onUpdateLawyer(index, "hasSignatureAuthority", e.target.checked)} 
+                          className="w-3.5 h-3.5 rounded" 
+                        />
+                        <span className="text-xs">İmza Yetkisi</span>
+                      </label>
                     </div>
-                    <button type="button" onClick={() => onRemoveLawyer(index)} className="flex-shrink-0 p-1.5 text-red-500 hover:text-red-700 hover:bg-red-100 rounded border border-red-300 bg-red-50" title="Listeden Çıkar">
-                      <X className="h-4 w-4" />
-                    </button>
                   </div>
+                  
+                  <button 
+                    type="button" 
+                    onClick={() => onRemoveLawyer(index)} 
+                    className="flex-shrink-0 p-2 text-red-500 hover:text-red-700 hover:bg-red-100 rounded-lg transition-colors" 
+                    title="Listeden Çıkar"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
                 </div>
-              ))}
-            </div>
-          )}
-          
-          {selectedLawyers.length > 0 && !selectedLawyers.some(l => l.isResponsible) && (
-            <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">⚠️ Lütfen bir sorumlu avukat seçin</p>
+              </div>
+            ))}
+          </div>
+        )}
+        
+        {selectedLawyers.length > 0 && !selectedLawyers.some(l => l.isResponsible) && (
+          <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
+            ⚠️ Lütfen bir sorumlu avukat seçin
+          </p>
+        )}
+      </div>
+
+      {/* Alt: Eklenebilecek Diğer Avukatlar */}
+      <div className="border rounded-lg p-4 bg-gray-50">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-semibold flex items-center gap-2">
+            👨‍⚖️ Diğer Avukatlar
+            {unselectedLawyers.length > 0 && (
+              <span className="bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full text-xs">
+                {unselectedLawyers.length}
+              </span>
+            )}
+          </h3>
+          <a 
+            href="/settings/office" 
+            target="_blank" 
+            className="text-xs text-primary hover:underline"
+          >
+            Ayarlar →
+          </a>
+        </div>
+        
+        {/* Arama */}
+        <input
+          type="text"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Ara..."
+          className="w-full rounded border px-3 py-2 text-sm outline-none focus:border-primary mb-3"
+        />
+        
+        {/* Avukat Listesi */}
+        <div className="max-h-48 overflow-y-auto space-y-1">
+          {filteredUnselected.length === 0 ? (
+            <p className="text-xs text-muted-foreground text-center py-4">
+              {searchTerm ? "Sonuç bulunamadı" : "Tüm avukatlar seçilmiş"}
+            </p>
+          ) : (
+            filteredUnselected.map((lawyer) => (
+              <div
+                key={lawyer.id}
+                className="flex items-center justify-between p-2 rounded hover:bg-white border border-transparent hover:border-gray-200 transition-colors"
+              >
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm">
+                    {lawyer.displayName || `${lawyer.title || (lawyer.role === "INTERN" ? "Stj. Av." : "Av.")} ${lawyer.name} ${lawyer.surname}`}
+                  </span>
+                  {lawyer.role && (
+                    <span className={`text-xs px-1.5 py-0.5 rounded ${
+                      lawyer.role === "OWNER" ? "bg-purple-100 text-purple-700" : 
+                      lawyer.role === "PARTNER" ? "bg-blue-100 text-blue-700" : 
+                      lawyer.role === "INTERN" ? "bg-gray-100 text-gray-600" : 
+                      "bg-green-100 text-green-700"
+                    }`}>
+                      {roleLabels[lawyer.role] || lawyer.role}
+                    </span>
+                  )}
+                </div>
+                <button 
+                  type="button" 
+                  onClick={() => onAddLawyer(lawyer)} 
+                  className="text-xs text-primary hover:underline flex items-center gap-1"
+                >
+                  Ekle
+                </button>
+              </div>
+            ))
           )}
         </div>
       </div>
