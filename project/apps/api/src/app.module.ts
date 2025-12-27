@@ -51,6 +51,8 @@ import { CaseInstrumentModule } from "./modules/case-instrument/case-instrument.
 import { CaseLeaseModule } from "./modules/case-lease/case-lease.module";
 import { CaseJudgmentModule } from "./modules/case-judgment/case-judgment.module";
 import { CaseCollateralModule } from "./modules/case-collateral/case-collateral.module";
+import { ESignModule } from "./modules/esign/esign.module";
+import { BankModule } from "./modules/bank/bank.module";
 
 @Module({
   imports: [
@@ -108,6 +110,8 @@ import { CaseCollateralModule } from "./modules/case-collateral/case-collateral.
     CaseLeaseModule,
     CaseJudgmentModule,
     CaseCollateralModule,
+    ESignModule,
+    BankModule,
   ],
 })
 export class AppModule {}

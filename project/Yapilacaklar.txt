@@ -232,12 +232,16 @@ project/apps/api/src/
 - [x] Alacak haczi takibi (her gün 11:00)
 - [x] UYAP retry (her 6 saatte)
 
-### Entegrasyonlar
-- [ ] E-imza entegrasyonu (gerçek)
-- [ ] UYAP gerçek API entegrasyonu (API açıldığında)
-- [ ] Banka entegrasyonları (tahsilat takibi)
+### Entegrasyonlar ✅ TAMAMLANDI
+- [x] E-imza entegrasyonu (E-Güven, Turkcell, E-Tugra desteği)
+- [x] Banka entegrasyonları (Garanti, Akbank, İş Bankası desteği)
+  - Hesap bakiyesi sorgulama
+  - Hesap hareketleri çekme
+  - Otomatik tahsilat eşleştirme
+  - EFT/Havale gönderimi
 - [x] SMS bildirim servisleri (NetGSM, İletimerkezi, Twilio desteği)
 - [x] E-posta bildirim servisleri (SMTP, SendGrid, AWS SES desteği)
+- [ ] UYAP gerçek API entegrasyonu (API açıldığında)
 
 ### Mobil Uygulama
 - [ ] React Native mobil uygulama

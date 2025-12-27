@@ -3310,3 +3310,160 @@ enum AddressTaskStatus {
   RESOLVED        // Çözüldü
   CANCELLED       // İptal
 }
+
+
+// ==================== E-IMZA LOGLARI ====================
+
+model EsignLog {
+  id              String   @id @default(cuid())
+  
+  // Belge Bilgileri
+  documentId      String
+  documentName    String
+  
+  // İmzacı Bilgileri
+  signerId        String
+  signerName      String
+  signerTcNo      String
+  
+  // İmza Bilgileri
+  signatureType   String   // QUALIFIED, ADVANCED, SIMPLE
+  provider        String   // eguven, turkcell, etugra, mock
+  transactionId   String?
+  
+  // Durum
+  status          String   @default("PENDING") // PENDING, SUCCESS, FAILED
+  errorCode       String?
+  errorMessage    String?
+  
+  // Tarihler
+  signedAt        DateTime?
+  completedAt     DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([documentId])
+  @@index([signerId])
+  @@index([status])
+  @@index([provider])
+  @@index([createdAt])
+}
+
+// ==================== BANKA ENTEGRASYONU ====================
+
+model BankAccount {
+  id              String   @id @default(cuid())
+  tenantId        String
+  
+  // Hesap Bilgileri
+  bankCode        String   // Banka kodu (0001, 0010, vb.)
+  bankName        String   // Banka adı
+  branchCode      String?  // Şube kodu
+  branchName      String?  // Şube adı
+  accountNo       String?  // Hesap numarası
+  iban            String   // IBAN
+  currency        String   @default("TRY")
+  accountType     String   @default("VADESIZ") // VADESIZ, VADELI, YATIRIM
+  
+  // Sahip Bilgileri
+  ownerType       String   // TENANT, CLIENT
+  ownerId         String?  // Client ID (müvekkil hesabıysa)
+  ownerName       String
+  
+  // Entegrasyon
+  isIntegrated    Boolean  @default(false)
+  integrationProvider String? // garanti, akbank, isbank, vb.
+  lastSyncAt      DateTime?
+  
+  // Durum
+  isActive        Boolean  @default(true)
+  isPrimary       Boolean  @default(false)
+  
+  // Meta
+  notes           String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // İlişkiler
+  transactions    BankTransaction[]
+
+  @@unique([tenantId, iban])
+  @@index([tenantId])
+  @@index([ownerType, ownerId])
+  @@index([isActive])
+}
+
+model BankTransaction {
+  id              String   @id @default(cuid())
+  tenantId        String
+  bankAccountId   String
+  
+  // İşlem Bilgileri
+  transactionDate DateTime
+  valueDate       DateTime?
+  amount          Decimal  @db.Decimal(18, 2)
+  currency        String   @default("TRY")
+  transactionType String   // INCOMING, OUTGOING
+  
+  // Karşı Taraf
+  counterpartyName String?
+  counterpartyIban String?
+  counterpartyBank String?
+  
+  // Açıklama
+  description     String?
+  referenceNo     String?
+  
+  // Eşleştirme
+  isMatched       Boolean  @default(false)
+  matchedCaseId   String?
+  matchedCollectionId String?
+  matchedAt       DateTime?
+  matchedById     String?
+  
+  // Banka Verisi
+  bankReferenceId String?  // Bankanın verdiği referans
+  rawData         Json?    // Ham banka verisi
+  
+  // Meta
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  // İlişkiler
+  bankAccount     BankAccount @relation(fields: [bankAccountId], references: [id])
+
+  @@index([tenantId])
+  @@index([bankAccountId])
+  @@index([transactionDate])
+  @@index([isMatched])
+  @@index([matchedCaseId])
+}
+
+model BankIntegrationLog {
+  id              String   @id @default(cuid())
+  tenantId        String
+  bankAccountId   String?
+  
+  // İşlem Bilgileri
+  action          String   // SYNC, TRANSFER, BALANCE_CHECK
+  provider        String   // garanti, akbank, isbank, vb.
+  
+  // Sonuç
+  status          String   @default("PENDING") // PENDING, SUCCESS, FAILED
+  transactionCount Int?
+  errorCode       String?
+  errorMessage    String?
+  
+  // Veri
+  requestData     Json?
+  responseData    Json?
+  
+  // Tarihler
+  startedAt       DateTime @default(now())
+  completedAt     DateTime?
+  
+  @@index([tenantId])
+  @@index([bankAccountId])
+  @@index([status])
+  @@index([startedAt])
+}
