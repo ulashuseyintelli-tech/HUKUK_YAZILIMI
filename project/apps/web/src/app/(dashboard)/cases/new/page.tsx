@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculator, TrendingUp, Receipt, Banknote, FileCheck, Calendar } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculator, TrendingUp, Receipt, Banknote, FileCheck, Calendar, XCircle, Info } from "lucide-react";
 import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
 import { FormMetadata, SubFormMetadata, FormCategory } from "@/types/form-metadata";
@@ -26,6 +26,8 @@ import { CaseDebtor } from "@/types/debtor";
 import { PeriodSelector } from "@/components/case/PeriodSelector";
 import { useFormHistory } from "@/hooks/useFormHistory";
 import { useUserSettings } from "@/lib/user-settings";
+import { usePreSubmitValidation } from "@/hooks/useValidation";
+import { ValidationError } from "@/lib/api";
 
 const steps = [
   { id: 0, title: "Form Seçimi", icon: "📋" },
@@ -127,9 +129,11 @@ export default function NewCasePage() {
   const router = useRouter();
   const { recordUsage, getRecentForms } = useFormHistory();
   const { settings, loaded: settingsLoaded } = useUserSettings();
+  const { errors: validationErrors, warnings: validationWarnings, validateCaseCreation, clearValidation, hasErrors: hasValidationErrors } = usePreSubmitValidation();
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [showValidationPanel, setShowValidationPanel] = useState(false);
   const [showWizard, setShowWizard] = useState(true);
   const [showDocumentSelector, setShowDocumentSelector] = useState(true);
   const [documentSource, setDocumentSource] = useState<DocumentSourceType>(null);
@@ -682,7 +686,33 @@ export default function NewCasePage() {
   };
 
   const handleSubmit = async () => {
-    setError(""); setLoading(true);
+    setError(""); 
+    
+    // Pre-submit validasyon
+    const validation = validateCaseCreation({
+      takipTuruId: caseData.takipTuruId,
+      mahiyetKodu: caseData.mahiyetKodu,
+      lawyers: lawyers.filter(l => l.name && l.surname),
+      creditors: creditors.filter(c => c.name),
+      caseDebtors: caseDebtors,
+      dues: dues.filter(d => d.amount && parseFloat(d.amount) > 0),
+      subCategory: caseData.subCategory,
+      currency: caseData.currency,
+    });
+
+    // Hata varsa goster ve durdur
+    if (!validation.valid) {
+      setShowValidationPanel(true);
+      setError("Lutfen zorunlu alanlari doldurun");
+      return;
+    }
+
+    // Uyari varsa goster ama devam et
+    if (validation.warnings.length > 0) {
+      setShowValidationPanel(true);
+    }
+
+    setLoading(true);
     try {
       const response = await api.createCase({
         fileNumber: caseData.fileNumber, executionFileNumber: caseData.executionFileNumber || undefined,
@@ -1252,6 +1282,38 @@ export default function NewCasePage() {
               setDues(newDues);
             }}
           />
+        )}
+
+        {/* Validasyon Paneli - Son adimda goster */}
+        {currentStep === steps.length - 1 && showValidationPanel && (validationErrors.length > 0 || validationWarnings.length > 0) && (
+          <div className={`mt-4 p-4 rounded-lg border ${validationErrors.length > 0 ? 'bg-red-50 border-red-200' : 'bg-amber-50 border-amber-200'}`}>
+            <div className="flex items-center justify-between mb-2">
+              <h4 className={`text-sm font-medium flex items-center gap-2 ${validationErrors.length > 0 ? 'text-red-700' : 'text-amber-700'}`}>
+                {validationErrors.length > 0 ? (
+                  <><XCircle className="h-4 w-4" /> Eksik Alanlar</>
+                ) : (
+                  <><AlertTriangle className="h-4 w-4" /> Uyarilar</>
+                )}
+              </h4>
+              <button type="button" onClick={() => setShowValidationPanel(false)} className="text-gray-400 hover:text-gray-600">
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <ul className="space-y-1">
+              {validationErrors.map((err, i) => (
+                <li key={`err-${i}`} className="text-sm text-red-600 flex items-start gap-2">
+                  <XCircle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                  {err.message}
+                </li>
+              ))}
+              {validationWarnings.map((warn, i) => (
+                <li key={`warn-${i}`} className={`text-sm flex items-start gap-2 ${warn.severity === 'info' ? 'text-blue-600' : 'text-amber-600'}`}>
+                  {warn.severity === 'info' ? <Info className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" /> : <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />}
+                  {warn.message}
+                </li>
+              ))}
+            </ul>
+          </div>
         )}
 
         {/* Wizard açıkken ana sayfa butonlarını gizle - wizard kendi butonlarını kullanır */}

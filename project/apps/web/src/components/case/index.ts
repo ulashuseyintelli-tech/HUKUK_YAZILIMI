@@ -48,6 +48,7 @@ export { TagGroups } from "./tag-groups";
 export { CaseSummaryReport } from "./case-summary-report";
 export { CaseCostSummary } from "./case-cost-summary";
 export { CaseStatusHistory } from "./case-status-history";
+export { ValidationPanel } from "./ValidationPanel";
 export { BulkCaseAssignment } from "./bulk-case-assignment";
 export { PriorityMatrix } from "./priority-matrix";
 export { DocumentTemplateManager } from "./document-templates";

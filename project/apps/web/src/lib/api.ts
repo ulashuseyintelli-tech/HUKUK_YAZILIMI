@@ -327,6 +327,138 @@ class ApiClient {
     });
     return { data };
   }
+
+  // ============================================
+  // ValidationGate API
+  // ============================================
+
+  /**
+   * Belirli bir gate icin dosyayi validate et
+   */
+  async validateGate(caseId: string, gateId: string, additionalData?: Record<string, any>) {
+    return this.request<ValidationGateResult>(`/validation-gate/${caseId}/validate/${gateId}`, {
+      method: "POST",
+      body: additionalData ? JSON.stringify(additionalData) : undefined,
+    });
+  }
+
+  /**
+   * Tum gate'leri validate et
+   */
+  async validateAllGates(caseId: string, additionalData?: Record<string, any>) {
+    return this.request<Record<string, ValidationGateResult>>(`/validation-gate/${caseId}/validate-all`, {
+      method: "POST",
+      body: additionalData ? JSON.stringify(additionalData) : undefined,
+    });
+  }
+
+  /**
+   * Gate 1 - Takip Olusturma validasyonu
+   */
+  async validateCaseCreation(caseId: string, additionalData?: Record<string, any>) {
+    return this.request<ValidationGateResult>(`/validation-gate/${caseId}/case-creation`, {
+      method: "POST",
+      body: additionalData ? JSON.stringify(additionalData) : undefined,
+    });
+  }
+
+  /**
+   * Gate 2 - Ornek 1 Uretimi validasyonu
+   */
+  async validateOrnek1Generation(caseId: string, additionalData?: Record<string, any>) {
+    return this.request<ValidationGateResult>(`/validation-gate/${caseId}/ornek1-generation`, {
+      method: "POST",
+      body: additionalData ? JSON.stringify(additionalData) : undefined,
+    });
+  }
+
+  /**
+   * Gate 3 - Tebligat validasyonu
+   */
+  async validateServiceOfProcess(caseId: string, additionalData?: Record<string, any>) {
+    return this.request<ValidationGateResult>(`/validation-gate/${caseId}/service-of-process`, {
+      method: "POST",
+      body: additionalData ? JSON.stringify(additionalData) : undefined,
+    });
+  }
+
+  /**
+   * Gate 4 - UYAP Gonderimi validasyonu
+   */
+  async validateUyapIntegration(caseId: string, additionalData?: Record<string, any>) {
+    return this.request<ValidationGateResult>(`/validation-gate/${caseId}/uyap-integration`, {
+      method: "POST",
+      body: additionalData ? JSON.stringify(additionalData) : undefined,
+    });
+  }
+
+  /**
+   * Validasyon kurallarini getir
+   */
+  async getValidationRules() {
+    return this.request<ValidationRulesResponse>("/validation-gate/rules");
+  }
+
+  /**
+   * Politika degerini getir
+   */
+  async getValidationPolicy(key: string) {
+    return this.request<{ key: string; value: any }>(`/validation-gate/policy?key=${encodeURIComponent(key)}`);
+  }
+
+  /**
+   * Cek tazminati bilgisi
+   */
+  async getCheckCompensationInfo() {
+    return this.request<CheckCompensationInfo>("/validation-gate/check-compensation-info");
+  }
+
+  /**
+   * Adres onerileri
+   */
+  async getAddressSuggestions() {
+    return this.request<AddressSuggestionsResponse>("/validation-gate/address-suggestions");
+  }
+}
+
+// ============================================
+// ValidationGate Types
+// ============================================
+
+export interface ValidationError {
+  code: string;
+  message: string;
+  field?: string;
+  severity: 'error' | 'warning' | 'info';
+}
+
+export interface ValidationGateResult {
+  gateId: string;
+  gateName: string;
+  passed: boolean;
+  errors: ValidationError[];
+  warnings: ValidationError[];
+  infos: ValidationError[];
+  validatedAt: string;
+}
+
+export interface ValidationRulesResponse {
+  version: number;
+  engine: string;
+  policies: Record<string, any>;
+  case_types: Array<{ code: string; name: string; category: string }>;
+  gates: Array<{ id: string; name: string; description: string }>;
+}
+
+export interface CheckCompensationInfo {
+  defaultOn: boolean;
+  rate: number;
+  ratePercent: string;
+}
+
+export interface AddressSuggestionsResponse {
+  createTask: boolean;
+  suggestions: string[];
 }
 
 export const api = new ApiClient();
