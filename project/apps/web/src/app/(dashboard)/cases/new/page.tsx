@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculator, TrendingUp, Receipt, Banknote, FileCheck } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculator, TrendingUp, Receipt, Banknote, FileCheck, Calendar } from "lucide-react";
 import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
 import { FormMetadata, SubFormMetadata, FormCategory } from "@/types/form-metadata";
@@ -23,6 +23,7 @@ import { WizardResultCard } from "@/components/case/WizardResultCard";
 import { PoaScannerWizard } from "@/components/client/PoaScannerWizard";
 import { DebtorStep } from "@/components/debtor";
 import { CaseDebtor } from "@/types/debtor";
+import { PeriodSelector } from "@/components/case/PeriodSelector";
 import { useFormHistory } from "@/hooks/useFormHistory";
 import { useUserSettings } from "@/lib/user-settings";
 
@@ -166,7 +167,7 @@ export default function NewCasePage() {
     fileNumber: "", executionFileNumber: "", startDate: new Date().toISOString().split("T")[0], 
     notes: "", executionPath: "HACIZ", executionOfficeId: "", uyapBirimKodu: "",
     caseStatus: "DERDEST", hasArticle4Request: false,
-    subCategory: "GENEL" as "GENEL" | "NAFAKA" | "DOVIZ",
+    subCategory: "GENEL" as "GENEL" | "NAFAKA" | "DOVIZ" | "CEK" | "SENET" | "FATURA" | "KIRA",
     currency: "TRY" as "TRY" | "USD" | "EUR" | "GBP" | "CHF",
     interestType: "YASAL", interestDescription: "",
     nafakaStartDate: "", monthlyNafakaAmount: "",
@@ -227,6 +228,47 @@ export default function NewCasePage() {
       );
     }
   }, [settings.defaultCity]);
+
+  // Lookups yüklendiğinde ve documentSource seçildiğinde mahiyet tipini otomatik ayarla
+  useEffect(() => {
+    if (lookups.mahiyetTipi.length === 0) return; // Lookups henüz yüklenmedi
+    if (!documentSource) return; // Document source henüz seçilmedi
+    if (caseData.mahiyetTipiId) return; // Mahiyet tipi zaten seçilmiş
+    
+    // Document source'a göre varsayılan mahiyet tipini belirle
+    let mahiyetCode: string | null = null;
+    let takipTuruCode: string | null = null;
+    
+    if (documentSource === "ILAM") {
+      mahiyetCode = "TAZMINAT";
+      takipTuruCode = "ILAMLI";
+    } else if (documentSource === "KAMBIYO") {
+      // Kambiyo için subCategory'ye göre belirle (CEK veya SENET)
+      mahiyetCode = caseData.subCategory === "CEK" ? "CEK" : "SENET";
+      takipTuruCode = caseData.subCategory === "CEK" ? "KAMBIYO_CEK" : "KAMBIYO_SENET";
+    } else if (documentSource === "SOZLESME") {
+      mahiyetCode = "FATURA";
+      takipTuruCode = "ILAMSIZ_GENEL";
+    }
+    
+    if (mahiyetCode) {
+      const mahiyet = lookups.mahiyetTipi.find(m => m.code === mahiyetCode);
+      const takipTuru = lookups.takipTuru.find(t => t.code === takipTuruCode);
+      const gercekKisi = lookups.borcluTipi.find(b => b.code === "GERCEK_KISI");
+      
+      console.log(`[useEffect] Mahiyet tipi ayarlanıyor: ${mahiyetCode} -> ${mahiyet?.id}`);
+      
+      if (mahiyet || takipTuru) {
+        setCaseData(prev => ({
+          ...prev,
+          mahiyetTipiId: mahiyet?.id || prev.mahiyetTipiId,
+          mahiyetKodu: mahiyet?.code || mahiyetCode || prev.mahiyetKodu,
+          takipTuruId: takipTuru?.id || prev.takipTuruId,
+          borcluTipiId: gercekKisi?.id || prev.borcluTipiId,
+        }));
+      }
+    }
+  }, [lookups.mahiyetTipi, lookups.takipTuru, lookups.borcluTipi, documentSource, caseData.subCategory]);
 
   const loadExistingData = async () => {
     try {
@@ -296,67 +338,17 @@ export default function NewCasePage() {
       else if (ocrResultData.detectedSubCategory === "DOVIZ") setCaseData(prev => ({ ...prev, subCategory: "DOVIZ", currency: "USD" }));
     }
     
-    // Belge türüne göre sınıflandırma bilgilerini otomatik doldur
+    // Belge türüne göre temel ayarları yap (mahiyet tipi useEffect ile otomatik ayarlanacak)
     if (sourceType === "ILAM") {
-      // İlamlı takip için varsayılan değerler
-      const ilamliTakipTuru = lookups.takipTuru.find(t => t.code === "ILAMLI" || t.name?.toLowerCase().includes("ilamlı"));
-      // Mahiyet: TAZMINAT (mahkeme kararına dayalı tazminat)
-      const ilamliMahiyet = lookups.mahiyetTipi.find(m => m.code === "TAZMINAT") || lookups.mahiyetTipi.find(m => m.name?.toLowerCase().includes("tazminat"));
-      const gercekKisi = lookups.borcluTipi.find(b => b.code === "GERCEK_KISI") || lookups.borcluTipi.find(b => b.name?.toLowerCase().includes("gerçek"));
-      
-      setCaseData(prev => ({
-        ...prev,
-        takipTuruId: ilamliTakipTuru?.id || prev.takipTuruId,
-        mahiyetTipiId: ilamliMahiyet?.id || prev.mahiyetTipiId,
-        mahiyetKodu: ilamliMahiyet?.code || prev.mahiyetKodu,
-        borcluTipiId: gercekKisi?.id || prev.borcluTipiId,
-        executionPath: "HACIZ",
-      }));
-      
+      setCaseData(prev => ({ ...prev, executionPath: "HACIZ" }));
       setShowWizard(true);
       const ilamliForm = formMetadata.find(f => f.code === "FORM_2_3_4_5");
       if (ilamliForm) setSelectedForm(ilamliForm);
     } else if (sourceType === "KAMBIYO") {
-      // Kambiyo takibi için varsayılan değerler
-      // NOT: Varsayılan olarak SENET seçiliyor, kullanıcı Step 1'de ÇEK veya SENET seçebilir
-      const kambiyoSenetTakipTuru = lookups.takipTuru.find(t => t.code === "KAMBIYO_SENET");
-      const kambiyoCekTakipTuru = lookups.takipTuru.find(t => t.code === "KAMBIYO_CEK");
-      const kambiyoGenelTakipTuru = lookups.takipTuru.find(t => t.code === "ILAMSIZ_KAMBIYO" || t.name?.toLowerCase().includes("kambiyo"));
-      // Öncelik: KAMBIYO_SENET > KAMBIYO_CEK > Genel Kambiyo
-      const kambiyoTakipTuru = kambiyoSenetTakipTuru || kambiyoCekTakipTuru || kambiyoGenelTakipTuru;
-      
-      // Mahiyet: SENET (varsayılan)
-      const kambiyoMahiyet = lookups.mahiyetTipi.find(m => m.code === "SENET") || lookups.mahiyetTipi.find(m => m.name?.toLowerCase().includes("senet"));
-      const gercekKisi = lookups.borcluTipi.find(b => b.code === "GERCEK_KISI") || lookups.borcluTipi.find(b => b.name?.toLowerCase().includes("gerçek"));
-      
-      console.log(`[DocumentSource] KAMBIYO seçildi -> takipTuru: ${kambiyoTakipTuru?.code}, mahiyet: ${kambiyoMahiyet?.code}`);
-      
-      setCaseData(prev => ({
-        ...prev,
-        takipTuruId: kambiyoTakipTuru?.id || prev.takipTuruId,
-        mahiyetTipiId: kambiyoMahiyet?.id || prev.mahiyetTipiId,
-        mahiyetKodu: kambiyoMahiyet?.code || prev.mahiyetKodu,
-        borcluTipiId: gercekKisi?.id || prev.borcluTipiId,
-        executionPath: "HACIZ",
-      }));
-      
+      setCaseData(prev => ({ ...prev, executionPath: "HACIZ", subCategory: "SENET" })); // Varsayılan SENET, wizard'da değişebilir
       setShowWizard(true);
     } else if (sourceType === "SOZLESME") {
-      // İlamsız/Sözleşme takibi için varsayılan değerler
-      const ilamsizTakipTuru = lookups.takipTuru.find(t => t.code === "ILAMSIZ_GENEL" || t.name?.toLowerCase().includes("ilamsız"));
-      // Mahiyet: FATURA (fatura ve cari hesap alacağı)
-      const sozlesmeMahiyet = lookups.mahiyetTipi.find(m => m.code === "FATURA") || lookups.mahiyetTipi.find(m => m.code === "PARA") || lookups.mahiyetTipi.find(m => m.name?.toLowerCase().includes("fatura"));
-      const gercekKisi = lookups.borcluTipi.find(b => b.code === "GERCEK_KISI") || lookups.borcluTipi.find(b => b.name?.toLowerCase().includes("gerçek"));
-      
-      setCaseData(prev => ({
-        ...prev,
-        takipTuruId: ilamsizTakipTuru?.id || prev.takipTuruId,
-        mahiyetTipiId: sozlesmeMahiyet?.id || prev.mahiyetTipiId,
-        mahiyetKodu: sozlesmeMahiyet?.code || prev.mahiyetKodu,
-        borcluTipiId: gercekKisi?.id || prev.borcluTipiId,
-        executionPath: "HACIZ",
-      }));
-      
+      setCaseData(prev => ({ ...prev, executionPath: "HACIZ" }));
       setShowWizard(true);
     }
   };
@@ -831,7 +823,68 @@ export default function NewCasePage() {
               <CaseWizard onComplete={(result) => { setWizardResult(result); setShowWizard(false); }} onSkip={() => setShowWizard(false)} />
             ) : showWizard && documentSource === "KAMBIYO" ? (
               <KambiyoWizard 
-                onComplete={(result) => { const kambiyoForm = formMetadata.find(f => f.code === result.suggestedFormCode); if (kambiyoForm) setSelectedForm(kambiyoForm); setShowWizard(false); setCurrentStep(1); }} 
+                onComplete={(result) => { 
+                  const kambiyoForm = formMetadata.find(f => f.code === result.suggestedFormCode); 
+                  if (kambiyoForm) setSelectedForm(kambiyoForm); 
+                  
+                  // Senet türüne göre takip türü ve mahiyet güncelle
+                  const isCek = result.senetType === "CEK";
+                  const takipTuruCode = isCek ? "KAMBIYO_CEK" : "KAMBIYO_SENET";
+                  const mahiyetCode = isCek ? "CEK" : "SENET";
+                  
+                  const takipTuru = lookups.takipTuru.find(t => t.code === takipTuruCode) || 
+                                   lookups.takipTuru.find(t => t.code === "ILAMSIZ_KAMBIYO") ||
+                                   lookups.takipTuru.find(t => t.name?.toLowerCase().includes("kambiyo"));
+                  
+                  // Mahiyet tipi - birden fazla fallback ile
+                  const mahiyet = lookups.mahiyetTipi.find(m => m.code === mahiyetCode) ||
+                                 lookups.mahiyetTipi.find(m => m.name?.toLowerCase().includes(isCek ? "çek" : "senet"));
+                  
+                  console.log(`[KambiyoWizard] Seçilen: ${result.senetType}`);
+                  console.log(`[KambiyoWizard] lookups.mahiyetTipi:`, lookups.mahiyetTipi);
+                  console.log(`[KambiyoWizard] Aranan mahiyetCode: ${mahiyetCode}, Bulunan:`, mahiyet);
+                  console.log(`[KambiyoWizard] takipTuru:`, takipTuru);
+                  
+                  setCaseData(prev => ({
+                    ...prev,
+                    takipTuruId: takipTuru?.id || prev.takipTuruId,
+                    mahiyetTipiId: mahiyet?.id || prev.mahiyetTipiId,
+                    mahiyetKodu: mahiyetCode,
+                    subCategory: isCek ? "CEK" : "SENET",
+                    interestType: "TICARI", // Kambiyo için ticari faiz
+                    interestDescription: isCek 
+                      ? "Çek bedeline takip tarihinden itibaren ticari faiz işletilmesini talep ederiz."
+                      : "Senet bedeline vade tarihinden itibaren ticari faiz işletilmesini talep ederiz.",
+                  }));
+                  
+                  // Çek için otomatik alacak kalemleri oluştur (ana para + %10 tazminat)
+                  if (isCek) {
+                    // Boş ana para kalemi ekle - kullanıcı tutarı girecek
+                    setDues([
+                      { 
+                        type: "PRINCIPAL", 
+                        description: "Çek Bedeli", 
+                        amount: "", 
+                        dueDate: new Date().toISOString().split("T")[0],
+                        interestType: "TICARI",
+                      },
+                    ]);
+                  } else {
+                    // Senet/Bono için ana para kalemi
+                    setDues([
+                      { 
+                        type: "PRINCIPAL", 
+                        description: result.senetType === "BONO" ? "Bono Bedeli" : "Poliçe Bedeli", 
+                        amount: "", 
+                        dueDate: new Date().toISOString().split("T")[0],
+                        interestType: "TICARI",
+                      },
+                    ]);
+                  }
+                  
+                  setShowWizard(false); 
+                  setCurrentStep(1); 
+                }} 
                 onSkip={() => { setShowWizard(false); const kambiyoForm = formMetadata.find(f => f.code === "FORM_10"); if (kambiyoForm) setSelectedForm(kambiyoForm); }}
                 onBack={() => { setShowWizard(false); setShowDocumentSelector(true); }}
               />
@@ -2878,6 +2931,10 @@ function DuesStep({
   wizardData?: Record<string, any>;
 }) {
   const [showInterestPanel, setShowInterestPanel] = useState(false);
+  const [showPeriodSelector, setShowPeriodSelector] = useState(false);
+  const [showTakipTalebiPreview, setShowTakipTalebiPreview] = useState(false);
+  const [takipTalebiContent, setTakipTalebiContent] = useState<string>("");
+  const [generatingTakipTalebi, setGeneratingTakipTalebi] = useState(false);
   const [calculatingInterest, setCalculatingInterest] = useState(false);
   const [generatingFromRules, setGeneratingFromRules] = useState(false);
   const [validationResult, setValidationResult] = useState<{
@@ -2895,7 +2952,7 @@ function DuesStep({
   } | null>(null);
   const [interestForm, setInterestForm] = useState({
     principalIndex: -1, // Hangi ana para kalemi için hesaplanacak
-    interestType: "YASAL" as "YASAL" | "TICARI" | "AVANS" | "TEMERRUT",
+    interestType: (caseData.interestType === "TICARI" ? "TICARI" : "YASAL") as "YASAL" | "TICARI" | "AVANS" | "TEMERRUT",
     customRate: "",
     startDate: "",
     endDate: new Date().toISOString().split("T")[0],
@@ -2911,6 +2968,168 @@ function DuesStep({
 
   // Ana para kalemlerini bul
   const principalDues = dues.filter(d => d.type === "PRINCIPAL");
+  
+  // Çek takibi mi kontrol et
+  const isCekTakibi = caseData.subCategory === "CEK" || caseData.mahiyetKodu === "CEK";
+  
+  // Nafaka veya Kira takibi mi kontrol et (dönemsel alacak)
+  const isNafakaTakibi = caseData.subCategory === "NAFAKA" || caseData.mahiyetKodu === "NAFAKA";
+  const isKiraTakibi = caseData.subCategory === "KIRA" || caseData.mahiyetKodu === "KIRA";
+  const isPeriodic = isNafakaTakibi || isKiraTakibi;
+  
+  // Çek tazminatı kalemi var mı kontrol et
+  const hasCekTazminati = dues.some(d => d.description?.includes("Çek Tazminatı") || d.description?.includes("tazminat"));
+  
+  // Otomatik faiz hesaplama fonksiyonu
+  const calculateAutoInterest = async (principal: number, dueDate: string, interestType: "YASAL" | "TICARI") => {
+    const today = new Date();
+    const due = new Date(dueDate);
+    
+    // Vade tarihi gelecekte ise faiz hesaplanmaz
+    if (due >= today) return null;
+    
+    const days = Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
+    if (days <= 0) return null;
+    
+    const rate = interestType === "TICARI" ? interestRates.TICARI : interestRates.YASAL;
+    const dailyRate = rate / 365 / 100;
+    const interest = principal * dailyRate * days;
+    
+    return {
+      interest: Math.round(interest * 100) / 100,
+      days,
+      rate,
+      startDate: dueDate,
+      endDate: today.toISOString().split("T")[0],
+    };
+  };
+
+  // Ana para değiştiğinde çek tazminatını ve faizi otomatik hesapla/güncelle
+  const handlePrincipalAmountChange = async (index: number, newAmount: string) => {
+    onUpdateDue(index, "amount", newAmount);
+    
+    const amount = parseFloat(newAmount) || 0;
+    if (amount <= 0) return;
+    
+    const dueDate = dues[index]?.dueDate;
+    
+    // 1. Çek takibi ise tazminat hesapla
+    if (isCekTakibi) {
+      const tazminatAmount = amount * 0.10; // %10 çek tazminatı
+      
+      // Mevcut tazminat kalemini bul veya yeni ekle
+      const tazminatIndex = dues.findIndex(d => d.description?.includes("Çek Tazminatı"));
+      
+      if (tazminatIndex >= 0) {
+        onUpdateDue(tazminatIndex, "amount", tazminatAmount.toFixed(2));
+      } else if (!hasCekTazminati) {
+        setTimeout(() => {
+          onAddDue();
+          setTimeout(() => {
+            const newIndex = dues.length;
+            onUpdateDue(newIndex, "type", "OTHER");
+            onUpdateDue(newIndex, "amount", tazminatAmount.toFixed(2));
+            onUpdateDue(newIndex, "description", "Çek Tazminatı (%10)");
+            onUpdateDue(newIndex, "dueDate", dueDate || new Date().toISOString().split("T")[0]);
+          }, 50);
+        }, 50);
+      }
+    }
+    
+    // 2. Vade tarihi varsa ve geçmişse faiz hesapla
+    if (dueDate) {
+      const interestType = isCekTakibi || caseData.interestType === "TICARI" ? "TICARI" : "YASAL";
+      const autoInterest = await calculateAutoInterest(amount, dueDate, interestType);
+      
+      if (autoInterest && autoInterest.interest > 0) {
+        // Bu ana para için mevcut faiz kalemini bul
+        const existingInterestIndex = dues.findIndex(d => 
+          d.type === "INTEREST" && 
+          d.description?.includes(dues[index]?.description || "Ana Para")
+        );
+        
+        const interestLabel = interestType === "TICARI" ? "Ticari" : "Yasal";
+        const description = `İşlemiş ${interestLabel} Faiz (${dues[index]?.description || "Ana Para"} - ${autoInterest.days} gün)`;
+        
+        if (existingInterestIndex >= 0) {
+          // Mevcut faizi güncelle
+          onUpdateDue(existingInterestIndex, "amount", autoInterest.interest.toFixed(2));
+          onUpdateDue(existingInterestIndex, "description", description);
+        } else {
+          // Yeni faiz kalemi ekle
+          const delay = isCekTakibi ? 200 : 100; // Çek tazminatı eklendiyse biraz daha bekle
+          setTimeout(() => {
+            onAddDue();
+            setTimeout(() => {
+              const newIndex = dues.length + (isCekTakibi && !hasCekTazminati ? 1 : 0);
+              onUpdateDue(newIndex, "type", "INTEREST");
+              onUpdateDue(newIndex, "amount", autoInterest.interest.toFixed(2));
+              onUpdateDue(newIndex, "description", description);
+              onUpdateDue(newIndex, "dueDate", autoInterest.endDate);
+              onUpdateDue(newIndex, "interestType", interestType);
+              onUpdateDue(newIndex, "interestRate", autoInterest.rate);
+              onUpdateDue(newIndex, "interestStartDate", autoInterest.startDate);
+              onUpdateDue(newIndex, "interestEndDate", autoInterest.endDate);
+            }, 50);
+          }, delay);
+        }
+      }
+    }
+  };
+  
+  // Vade tarihi değiştiğinde faiz başlangıç tarihini otomatik ayarla ve faizi hesapla
+  const handleDueDateChange = async (index: number, newDate: string) => {
+    onUpdateDue(index, "dueDate", newDate);
+    
+    // Ana para kalemi ise ve faiz paneli açıksa, faiz başlangıç tarihini güncelle
+    if (dues[index]?.type === "PRINCIPAL" && interestForm.principalIndex === index) {
+      setInterestForm(prev => ({ ...prev, startDate: newDate }));
+    }
+    
+    // Ana para kalemi ise ve tutar varsa, faizi otomatik hesapla
+    if (dues[index]?.type === "PRINCIPAL") {
+      const amount = parseFloat(dues[index]?.amount || "0");
+      if (amount > 0 && newDate) {
+        const interestType = isCekTakibi || caseData.interestType === "TICARI" ? "TICARI" : "YASAL";
+        const autoInterest = await calculateAutoInterest(amount, newDate, interestType);
+        
+        if (autoInterest && autoInterest.interest > 0) {
+          // Bu ana para için mevcut faiz kalemini bul
+          const existingInterestIndex = dues.findIndex(d => 
+            d.type === "INTEREST" && 
+            d.description?.includes(dues[index]?.description || "Ana Para")
+          );
+          
+          const interestLabel = interestType === "TICARI" ? "Ticari" : "Yasal";
+          const description = `İşlemiş ${interestLabel} Faiz (${dues[index]?.description || "Ana Para"} - ${autoInterest.days} gün)`;
+          
+          if (existingInterestIndex >= 0) {
+            // Mevcut faizi güncelle
+            onUpdateDue(existingInterestIndex, "amount", autoInterest.interest.toFixed(2));
+            onUpdateDue(existingInterestIndex, "description", description);
+            onUpdateDue(existingInterestIndex, "interestStartDate", autoInterest.startDate);
+            onUpdateDue(existingInterestIndex, "interestEndDate", autoInterest.endDate);
+          } else {
+            // Yeni faiz kalemi ekle
+            setTimeout(() => {
+              onAddDue();
+              setTimeout(() => {
+                const newIdx = dues.length;
+                onUpdateDue(newIdx, "type", "INTEREST");
+                onUpdateDue(newIdx, "amount", autoInterest.interest.toFixed(2));
+                onUpdateDue(newIdx, "description", description);
+                onUpdateDue(newIdx, "dueDate", autoInterest.endDate);
+                onUpdateDue(newIdx, "interestType", interestType);
+                onUpdateDue(newIdx, "interestRate", autoInterest.rate);
+                onUpdateDue(newIdx, "interestStartDate", autoInterest.startDate);
+                onUpdateDue(newIdx, "interestEndDate", autoInterest.endDate);
+              }, 50);
+            }, 100);
+          }
+        }
+      }
+    }
+  };
 
   // ClaimEngine'den otomatik alacak kalemleri oluştur
   const generateFromClaimEngine = async () => {
@@ -2919,7 +3138,8 @@ function DuesStep({
     
     setGeneratingFromRules(true);
     try {
-      const response = await api.post("/claim-engine/generate-items", {
+      // 1. ClaimEngine'den alacak kalemlerini al
+      const claimResponse = await api.post("/claim-engine/generate-items", {
         subCategory,
         extractedData: extractedData || {
           total_amount: caseData.totalAmount,
@@ -2929,17 +3149,45 @@ function DuesStep({
         wizardData: wizardData || {},
       });
 
-      const generatedItems = response.data || [];
+      const generatedItems = claimResponse.data || [];
       
-      if (generatedItems.length === 0) {
+      // 2. Fee Engine'den masrafları al
+      const caseType = caseData.takipTuruId ? 
+        (caseData.mahiyetKodu === "CEK" ? "KAMBIYO" : 
+         caseData.mahiyetKodu === "SENET" ? "KAMBIYO" :
+         caseData.subCategory === "NAFAKA" ? "ILAMLI" :
+         caseData.subCategory === "DOVIZ" ? "ILAMLI" :
+         caseData.subCategory === "KIRA" ? "KIRA" :
+         "ILAMSIZ") : "ILAMSIZ";
+      
+      const principalAmount = parseFloat(caseData.totalAmount || "0") || 0;
+      
+      let feeItems: any[] = [];
+      try {
+        const feeResponse = await api.post("/fee-engine/calculate-opening-fees", {
+          caseType,
+          principalAmount,
+          accruedInterest: 0,
+          debtorCount: 1,
+          postageType: "NORMAL",
+        });
+        feeItems = feeResponse.data?.items || [];
+      } catch (feeError) {
+        console.log("Fee Engine hatası (devam ediliyor):", feeError);
+      }
+      
+      // Tüm kalemleri birleştir
+      const allItems = [...generatedItems, ...feeItems];
+      
+      if (allItems.length === 0) {
         // Varsayılan ana para kalemi ekle
         onAddDue();
         return;
       }
       
       // Oluşturulan kalemleri dues'a ekle
-      for (let i = 0; i < generatedItems.length; i++) {
-        const item = generatedItems[i];
+      for (let i = 0; i < allItems.length; i++) {
+        const item = allItems[i];
         if (item.amount || item.required) {
           onAddDue();
           // State güncellemesi için biraz bekle
@@ -2951,12 +3199,15 @@ function DuesStep({
             POST_INTEREST_RULE: "INTEREST",
             PENALTY: "OTHER",
             FEE: "EXPENSE",
+            POSTAGE: "EXPENSE",
+            STAMP: "EXPENSE",
             ATTORNEY_FEE: "EXPENSE",
+            EXPENSE: "EXPENSE",
             OTHER: "OTHER",
           };
           onUpdateDue(newIndex, "type", typeMap[item.type] || "OTHER");
           onUpdateDue(newIndex, "amount", (item.amount || 0).toString());
-          onUpdateDue(newIndex, "description", item.label || "Alacak kalemi");
+          onUpdateDue(newIndex, "description", item.label || item.description || "Alacak kalemi");
           if (item.dueDate) onUpdateDue(newIndex, "dueDate", item.dueDate);
         }
       }
@@ -2968,6 +3219,219 @@ function DuesStep({
       setGeneratingFromRules(false);
     }
   };
+
+  // Fee Engine'den sadece masrafları ekle
+  const addFeesFromEngine = async () => {
+    const caseType = caseData.takipTuruId ? 
+      (caseData.mahiyetKodu === "CEK" ? "KAMBIYO" : 
+       caseData.mahiyetKodu === "SENET" ? "KAMBIYO" :
+       caseData.subCategory === "NAFAKA" ? "ILAMLI" :
+       caseData.subCategory === "DOVIZ" ? "ILAMLI" :
+       caseData.subCategory === "KIRA" ? "KIRA" :
+       "ILAMSIZ") : "ILAMSIZ";
+    
+    // Ana para toplamını hesapla
+    const principalTotal = dues
+      .filter(d => d.type === "PRINCIPAL")
+      .reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
+    
+    // İşlemiş faiz toplamını hesapla
+    const interestTotal = dues
+      .filter(d => d.type === "INTEREST")
+      .reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
+    
+    setGeneratingFromRules(true);
+    try {
+      const response = await api.post("/fee-engine/calculate-opening-fees", {
+        caseType,
+        principalAmount: principalTotal,
+        accruedInterest: interestTotal,
+        debtorCount: 1,
+        postageType: "NORMAL",
+      });
+      
+      const feeItems = response.data?.items || [];
+      
+      if (feeItems.length === 0) {
+        alert("Bu takip türü için masraf bulunamadı.");
+        return;
+      }
+      
+      // Mevcut masraf kalemlerini kontrol et (tekrar eklemeyi önle)
+      const existingFeeDescriptions = dues
+        .filter(d => d.type === "EXPENSE")
+        .map(d => d.description?.toLowerCase());
+      
+      for (let i = 0; i < feeItems.length; i++) {
+        const item = feeItems[i];
+        
+        // Aynı masraf zaten varsa atla
+        if (existingFeeDescriptions.includes(item.label?.toLowerCase())) {
+          continue;
+        }
+        
+        onAddDue();
+        await new Promise(resolve => setTimeout(resolve, 150));
+        const newIndex = dues.length + i;
+        onUpdateDue(newIndex, "type", "EXPENSE");
+        onUpdateDue(newIndex, "amount", (item.amount || 0).toString());
+        onUpdateDue(newIndex, "description", item.label || "Masraf");
+        onUpdateDue(newIndex, "dueDate", new Date().toISOString().split("T")[0]);
+      }
+      
+      // Toplam masrafı göster
+      const totalFees = response.data?.total || 0;
+      console.log(`✅ ${feeItems.length} masraf kalemi eklendi. Toplam: ${totalFees.toFixed(2)} ₺`);
+      
+    } catch (error) {
+      console.error("Masraf ekleme hatası:", error);
+      alert("Masraflar eklenirken bir hata oluştu.");
+    } finally {
+      setGeneratingFromRules(false);
+    }
+  };
+
+  // Dönem seçiciden gelen dönemleri alacak kalemi olarak ekle
+  const handlePeriodsSelected = async (periods: { year: number; month: number; amount: number; dueDate: string; description: string }[]) => {
+    for (let i = 0; i < periods.length; i++) {
+      const period = periods[i];
+      onAddDue();
+      await new Promise(resolve => setTimeout(resolve, 150));
+      const newIndex = dues.length + i;
+      onUpdateDue(newIndex, "type", "PRINCIPAL");
+      onUpdateDue(newIndex, "amount", period.amount.toString());
+      onUpdateDue(newIndex, "description", period.description);
+      onUpdateDue(newIndex, "dueDate", period.dueDate);
+    }
+  };
+
+  // Takip Talebi (Örnek 1) önizleme
+  const generateTakipTalebiPreview = async () => {
+    setGeneratingTakipTalebi(true);
+    try {
+      const templateData = {
+        fileNumber: caseData.fileNumber || "2025/...",
+        filingDate: caseData.startDate || new Date().toISOString().split("T")[0],
+        executionOffice: {
+          name: "... İcra Müdürlüğü",
+          city: "...",
+        },
+        creditors: [], // Wizard'dan gelecek
+        lawyers: [], // Wizard'dan gelecek
+        debtors: [], // Wizard'dan gelecek
+        claimItems: dues.map(d => ({
+          type: d.type,
+          description: d.description || (d.type === "PRINCIPAL" ? "Asıl Alacak" : d.type === "INTEREST" ? "Faiz" : "Masraf"),
+          amount: parseFloat(d.amount) || 0,
+          currency: caseData.currency || "TRY",
+          dueDate: d.dueDate,
+        })),
+        totals: {
+          principal: kapak.principal,
+          interest: kapak.interest,
+          fees: kapak.expense,
+          total: kapak.total,
+          currency: caseData.currency || "TRY",
+        },
+        interestInfo: {
+          type: caseData.interestType === "TICARI" ? "TICARI" : "YASAL",
+          description: caseData.interestDescription || "yasal faizi ile birlikte",
+          variableRate: true,
+        },
+        caseType: caseData.subCategory?.includes("ILAMLI") ? "ILAMLI" : "ILAMSIZ",
+        subCategory: caseData.subCategory || "GENEL",
+        executionPath: caseData.executionPath || "HACIZ",
+      };
+
+      const response = await api.post("/template-engine/takip-talebi/preview", templateData);
+      setTakipTalebiContent(response.data?.html || response.data?.content || "Belge oluşturulamadı");
+      setShowTakipTalebiPreview(true);
+    } catch (error) {
+      console.error("Takip talebi oluşturma hatası:", error);
+      // Fallback: Basit önizleme
+      const simplePreview = `
+        <div style="font-family: 'Courier New', monospace; white-space: pre-wrap; padding: 20px;">
+          <h2 style="text-align: center;">TAKİP TALEBİ (ÖRNEK 1)</h2>
+          <p><strong>Dosya No:</strong> ${caseData.fileNumber || "..."}</p>
+          <p><strong>Takip Tarihi:</strong> ${caseData.startDate || new Date().toLocaleDateString('tr-TR')}</p>
+          <hr/>
+          <h3>ALACAK KALEMLERİ:</h3>
+          ${dues.map((d, i) => `<p>${i + 1}. ${d.description || d.type}: ${parseFloat(d.amount || "0").toLocaleString('tr-TR')} ${currencySymbol}</p>`).join('')}
+          <hr/>
+          <p><strong>TOPLAM:</strong> ${kapak.total.toLocaleString('tr-TR')} ${currencySymbol}</p>
+        </div>
+      `;
+      setTakipTalebiContent(simplePreview);
+      setShowTakipTalebiPreview(true);
+    } finally {
+      setGeneratingTakipTalebi(false);
+    }
+  };
+
+  // Frontend validasyonu - alacak kalemlerini kontrol et
+  const validateClaimItems = () => {
+    const errors: { id: string; message: string }[] = [];
+    const warnings: { id: string; message: string }[] = [];
+    
+    // 1. Ana para kontrolü
+    const principalItems = dues.filter(d => d.type === "PRINCIPAL");
+    if (principalItems.length === 0) {
+      errors.push({ id: "no_principal", message: "Asıl alacak (ana para) kalemi olmadan takip oluşturulamaz." });
+    }
+    
+    // 2. Tutar kontrolü
+    const emptyAmounts = dues.filter(d => !d.amount || parseFloat(d.amount) <= 0);
+    if (emptyAmounts.length > 0) {
+      errors.push({ id: "empty_amount", message: `${emptyAmounts.length} kalemde tutar girilmemiş.` });
+    }
+    
+    // 3. Çek takibi için tazminat kontrolü
+    if (isCekTakibi && principalItems.length > 0 && !hasCekTazminati) {
+      warnings.push({ id: "no_cek_tazminati", message: "Çek takibinde %10 çek tazminatı eklenmemiş. Otomatik eklemek için ana para tutarını güncelleyin." });
+    }
+    
+    // 4. İlamlı takip için kesinleşme kontrolü
+    if ((caseData.subCategory === "ILAMLI" || caseData.mahiyetKodu === "TAZMINAT") && !caseData.hasArticle4Request) {
+      warnings.push({ id: "ilam_finalization", message: "Bazı ilamlar kesinleşmeden icraya konulamaz. Kesinleşme şerhini kontrol edin." });
+    }
+    
+    // 5. Döviz takibi için kur kuralı kontrolü
+    if (caseData.subCategory === "DOVIZ" && !caseData.exchangeRateType) {
+      errors.push({ id: "forex_policy", message: "Döviz alacağı için kur kuralı seçilmelidir." });
+    }
+    
+    // 6. Nafaka takibi için dönem kontrolü
+    if (caseData.subCategory === "NAFAKA" && principalItems.length === 0) {
+      warnings.push({ id: "nafaka_periods", message: "Nafaka takibinde dönemsel alacak kalemleri eklenmeli." });
+    }
+    
+    // 7. Faiz kalemi varsa ama ana para yoksa
+    const interestItems = dues.filter(d => d.type === "INTEREST");
+    if (interestItems.length > 0 && principalItems.length === 0) {
+      errors.push({ id: "interest_without_principal", message: "Faiz kalemi var ama ana para kalemi yok." });
+    }
+    
+    // 8. Toplam tutar kontrolü
+    const total = dues.reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
+    if (total <= 0 && dues.length > 0) {
+      errors.push({ id: "zero_total", message: "Toplam alacak tutarı sıfır veya negatif olamaz." });
+    }
+    
+    setValidationResult({
+      isValid: errors.length === 0,
+      errors,
+      warnings,
+    });
+  };
+
+  // Alacak kalemleri değiştiğinde validasyonu çalıştır
+  useEffect(() => {
+    if (dues.length > 0) {
+      validateClaimItems();
+    } else {
+      setValidationResult(null);
+    }
+  }, [dues, caseData.subCategory, caseData.mahiyetKodu, caseData.hasArticle4Request, caseData.exchangeRateType]);
 
   // ClaimEngine ile doğrulama (opsiyonel - hata verirse sessizce geç)
   const validateWithClaimEngine = async () => {
@@ -2986,11 +3450,16 @@ function DuesStep({
       });
 
       if (response.data) {
-        setValidationResult(response.data);
+        // Backend validasyonunu frontend ile birleştir
+        setValidationResult(prev => ({
+          isValid: (prev?.isValid ?? true) && response.data.isValid,
+          errors: [...(prev?.errors || []), ...(response.data.errors || [])],
+          warnings: [...(prev?.warnings || []), ...(response.data.warnings || [])],
+        }));
       }
     } catch (error) {
       // Doğrulama hatası kritik değil, sessizce geç
-      console.log("Doğrulama atlandı:", error);
+      console.log("Backend doğrulama atlandı:", error);
     }
   };
 
@@ -3115,6 +3584,28 @@ function DuesStep({
           </button>
           <button 
             type="button" 
+            onClick={addFeesFromEngine}
+            disabled={generatingFromRules}
+            className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1 px-3 py-1.5 border border-blue-200 rounded-lg hover:bg-blue-50 disabled:opacity-50"
+          >
+            {generatingFromRules ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Receipt className="h-4 w-4" />
+            )}
+            Masrafları Ekle
+          </button>
+          {isPeriodic && (
+            <button 
+              type="button" 
+              onClick={() => setShowPeriodSelector(true)}
+              className="text-sm text-purple-600 hover:text-purple-700 flex items-center gap-1 px-3 py-1.5 border border-purple-200 rounded-lg hover:bg-purple-50"
+            >
+              <Calendar className="h-4 w-4" /> Dönem Seç
+            </button>
+          )}
+          <button 
+            type="button" 
             onClick={() => setShowInterestPanel(!showInterestPanel)} 
             className="text-sm text-orange-600 hover:text-orange-700 flex items-center gap-1 px-3 py-1.5 border border-orange-200 rounded-lg hover:bg-orange-50"
           >
@@ -3125,6 +3616,40 @@ function DuesStep({
           </button>
         </div>
       </div>
+
+      {/* Çek Takibi Bilgi Kutusu */}
+      {isCekTakibi && (
+        <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+          <div className="flex items-start gap-2">
+            <Banknote className="h-5 w-5 text-blue-600 mt-0.5" />
+            <div className="text-sm text-blue-800">
+              <p className="font-medium mb-1">Çek Takibi - Otomatik Hesaplama Aktif</p>
+              <ul className="space-y-1 text-xs">
+                <li>✅ Ana para girildiğinde <strong>%10 çek tazminatı</strong> otomatik eklenir</li>
+                <li>✅ Vade tarihi geçmişse <strong>işlemiş ticari faiz</strong> otomatik hesaplanır</li>
+                <li>• Kambiyo takiplerinde ticari faiz (%{interestRates.TICARI}) uygulanır</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Genel Takip Bilgi Kutusu (Çek değilse) */}
+      {!isCekTakibi && dues.length === 0 && (
+        <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
+          <div className="flex items-start gap-2">
+            <Calculator className="h-5 w-5 text-green-600 mt-0.5" />
+            <div className="text-sm text-green-800">
+              <p className="font-medium mb-1">Otomatik Faiz Hesaplama</p>
+              <ul className="space-y-1 text-xs">
+                <li>✅ Ana para ve vade tarihi girildiğinde <strong>işlemiş faiz</strong> otomatik hesaplanır</li>
+                <li>✅ Faiz türü: {caseData.interestType === "TICARI" ? `Ticari (%${interestRates.TICARI})` : `Yasal (%${interestRates.YASAL})`}</li>
+                <li>• Masrafları eklemek için "Masrafları Ekle" butonunu kullanın</li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Doğrulama Uyarıları */}
       {validationResult && (validationResult.errors.length > 0 || validationResult.warnings.length > 0) && (
@@ -3293,7 +3818,7 @@ function DuesStep({
                   <input 
                     type="number" 
                     value={due.amount} 
-                    onChange={e => onUpdateDue(index, "amount", e.target.value)} 
+                    onChange={e => due.type === "PRINCIPAL" ? handlePrincipalAmountChange(index, e.target.value) : onUpdateDue(index, "amount", e.target.value)} 
                     placeholder="0.00" 
                     className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary" 
                   />
@@ -3303,7 +3828,7 @@ function DuesStep({
                   <input 
                     type="date" 
                     value={due.dueDate} 
-                    onChange={e => onUpdateDue(index, "dueDate", e.target.value)} 
+                    onChange={e => handleDueDateChange(index, e.target.value)} 
                     className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary" 
                   />
                 </div>
@@ -3366,9 +3891,84 @@ function DuesStep({
                   <strong>Faiz Talebi:</strong> {caseData.interestDescription}
                 </div>
               )}
+              
+              {/* Takip Talebi Önizle Butonu */}
+              {dues.length > 0 && kapak.total > 0 && (
+                <div className="mt-4 flex justify-end">
+                  <button
+                    type="button"
+                    onClick={generateTakipTalebiPreview}
+                    disabled={generatingTakipTalebi}
+                    className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {generatingTakipTalebi ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <FileCheck className="h-4 w-4" />
+                    )}
+                    Takip Talebi Önizle
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
+      )}
+
+      {/* Takip Talebi Önizleme Modal */}
+      {showTakipTalebiPreview && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden">
+            <div className="bg-green-600 px-6 py-4 flex items-center justify-between text-white">
+              <div className="flex items-center gap-3">
+                <FileCheck className="h-6 w-6" />
+                <h2 className="text-lg font-semibold">Takip Talebi (Örnek 1) Önizleme</h2>
+              </div>
+              <button onClick={() => setShowTakipTalebiPreview(false)} className="text-white/80 hover:text-white">
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+            <div className="p-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+              <div dangerouslySetInnerHTML={{ __html: takipTalebiContent }} />
+            </div>
+            <div className="px-6 py-4 border-t bg-gray-50 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setShowTakipTalebiPreview(false)}
+                className="px-4 py-2 border rounded-lg hover:bg-gray-100"
+              >
+                Kapat
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  // Basit text indirme
+                  const blob = new Blob([takipTalebiContent.replace(/<[^>]*>/g, '')], { type: 'text/plain;charset=utf-8' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `takip-talebi-${caseData.fileNumber || 'belge'}.txt`;
+                  a.click();
+                  URL.revokeObjectURL(url);
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
+              >
+                <ArrowRight className="h-4 w-4" /> İndir
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dönem Seçici Modal */}
+      {showPeriodSelector && (
+        <PeriodSelector
+          type={isNafakaTakibi ? "NAFAKA" : "KIRA"}
+          monthlyAmount={parseFloat(caseData.monthlyNafakaAmount || "0") || 1000}
+          currency={caseData.currency || "TRY"}
+          onPeriodsSelected={handlePeriodsSelected}
+          onClose={() => setShowPeriodSelector(false)}
+        />
       )}
     </div>
   );

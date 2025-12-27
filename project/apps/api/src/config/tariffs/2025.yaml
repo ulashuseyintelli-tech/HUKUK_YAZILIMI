@@ -1,0 +1,135 @@
+# ============================================
+# 2025 YILI TARİFE TABLOSU
+# İcra Takibi Harç ve Masrafları
+# ============================================
+
+version: 1
+year: 2025
+effective_date: "2025-01-01"
+
+# --------------------------------------------
+# SABİT HARÇLAR
+# --------------------------------------------
+fixed_fees:
+  # Başvurma Harcı (tüm takiplerde)
+  application_fee:
+    amount: 615.40
+    label: "Başvurma Harcı"
+    item_type: FEE
+    applies_to: ["ILAMSIZ", "ILAMLI", "KAMBIYO", "KIRA", "TAHLIYE", "REHIN", "IFLAS"]
+    
+  # Vekalet Suret Harcı
+  poa_copy_fee:
+    amount: 87.50
+    label: "Vekalet Suret Harcı"
+    item_type: FEE
+    applies_to: ["ILAMSIZ", "ILAMLI", "KAMBIYO", "KIRA", "TAHLIYE", "REHIN", "IFLAS"]
+    
+  # Vekalet Pulu / Baro Pulu
+  bar_stamp_fee:
+    amount: 138.00
+    label: "Vekalet Pulu"
+    item_type: STAMP
+    applies_to: ["ILAMSIZ", "ILAMLI", "KAMBIYO", "KIRA", "TAHLIYE", "REHIN", "IFLAS"]
+
+# --------------------------------------------
+# NİSPİ HARÇLAR
+# --------------------------------------------
+rate_fees:
+  # İlamsız Peşin Harç (binde 5)
+  ilamsiz_pesin_harc:
+    rate: 0.005
+    label: "Peşin Harç"
+    item_type: FEE
+    base: "principal_plus_interest"  # Anapara + işlemiş faiz
+    applies_to: ["ILAMSIZ", "KIRA"]
+    min_amount: 100.00
+    max_amount: null
+    
+  # Kambiyo Peşin Harç (binde 5)
+  kambiyo_pesin_harc:
+    rate: 0.005
+    label: "Peşin Harç"
+    item_type: FEE
+    base: "principal_plus_interest"
+    applies_to: ["KAMBIYO"]
+    min_amount: 100.00
+    max_amount: null
+
+# --------------------------------------------
+# TEBLİGAT ÜCRETLERİ
+# --------------------------------------------
+postage:
+  UETS:
+    amount: 15.00
+    label: "UETS Tebligat"
+    description: "Elektronik tebligat (KEP/UETS)"
+    
+  NORMAL:
+    amount: 210.00
+    label: "Normal Tebligat"
+    description: "PTT normal tebligat"
+    
+  FAST:
+    amount: 420.00
+    label: "Hızlı Tebligat"
+    description: "PTT hızlı tebligat"
+    
+  PUBLIC_ANNOUNCEMENT:
+    amount: null  # İlan metnine göre hesaplanır
+    label: "İlanen Tebligat"
+    description: "Gazete ilanı ile tebligat"
+    formula: "ilan_satir_sayisi * satir_ucreti"
+
+# --------------------------------------------
+# FAİZ ORANLARI (Yıllık %)
+# --------------------------------------------
+interest_rates:
+  TRY:
+    YASAL:
+      - start_date: "2024-07-01"
+        rate: 24
+      - start_date: "2025-01-01"
+        rate: 24  # Güncellenecek
+    TICARI:
+      - start_date: "2024-07-01"
+        rate: 48
+      - start_date: "2025-01-01"
+        rate: 48  # Güncellenecek
+    AVANS:
+      - start_date: "2024-07-01"
+        rate: 32
+      - start_date: "2025-01-01"
+        rate: 32  # Güncellenecek
+        
+  USD:
+    YASAL:
+      - start_date: "2024-01-01"
+        rate: 9
+    TICARI:
+      - start_date: "2024-01-01"
+        rate: 12
+        
+  EUR:
+    YASAL:
+      - start_date: "2024-01-01"
+        rate: 9
+    TICARI:
+      - start_date: "2024-01-01"
+        rate: 12
+
+# --------------------------------------------
+# CEZA/TAZMİNAT ORANLARI
+# --------------------------------------------
+penalties:
+  bad_check_compensation:
+    default_rate: 0.10  # %10
+    max_rate: 0.20      # %20
+    label: "Karşılıksız Çek Tazminatı"
+    base: "principal"
+    
+  contractual_penalty:
+    default_rate: null  # Sözleşmeden
+    max_rate: null
+    label: "Cezai Şart"
+    base: "principal"

@@ -340,26 +340,26 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
   };
 
   return (
-    <div className="space-y-6">
-      {/* 🧠 Akıllı Borçlu Sihirbazı - Üst Panel */}
-      <div className="bg-gradient-to-r from-amber-50 via-orange-50 to-yellow-50 border-2 border-amber-200 rounded-xl p-4">
-        <div className="flex items-center gap-3 mb-3">
-          <div className="p-2.5 bg-gradient-to-br from-amber-500 to-orange-600 rounded-xl shadow-md">
-            <Sparkles className="h-5 w-5 text-white" />
-          </div>
-          <div className="flex-1">
-            <h3 className="font-semibold text-amber-900 flex items-center gap-2">
-              🧠 Akıllı Borçlu Sihirbazı
-            </h3>
-            <p className="text-xs text-amber-700">
-              Borç evrakını yükleyin, borçluyu / rolü / vade-tutarı otomatik tespit edelim
-            </p>
+    <div className="space-y-3">
+      {/* 🧠 Akıllı Borçlu Sihirbazı - Kompakt Üst Panel */}
+      <div className="bg-gradient-to-r from-amber-50 via-orange-50 to-yellow-50 border border-amber-200 rounded-xl p-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-gradient-to-br from-amber-500 to-orange-600 rounded-lg shadow-sm">
+              <Sparkles className="h-4 w-4 text-white" />
+            </div>
+            <div>
+              <h3 className="font-medium text-amber-900 text-sm">🧠 Akıllı Borçlu Sihirbazı</h3>
+              <p className="text-xs text-amber-700">
+                Borç evrakını yükleyin, borçluyu / rolü / vade-tutarı otomatik tespit edelim
+              </p>
+            </div>
           </div>
           {!showWizard && (
             <button
               type="button"
               onClick={() => setShowWizard(true)}
-              className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl hover:from-amber-600 hover:to-orange-600 transition-all shadow-md flex items-center gap-2"
+              className="px-3 py-1.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg hover:from-amber-600 hover:to-orange-600 transition-all shadow-sm flex items-center gap-1.5 text-sm"
             >
               <ScanLine className="h-4 w-4" />
               Evrak Tara
@@ -369,16 +369,16 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
 
         {/* Sihirbaz Açık */}
         {showWizard && !wizardResult && (
-          <div className="mt-4 p-4 bg-white/70 rounded-xl border border-amber-200">
+          <div className="mt-3 p-3 bg-white/70 rounded-lg border border-amber-200">
             {/* Dosya Yükleme Alanı */}
             <div
               onDragOver={handleDragOver}
               onDragLeave={handleDragLeave}
               onDrop={handleDrop}
               onClick={() => fileInputRef.current?.click()}
-              className={`border-2 border-dashed rounded-xl p-6 text-center cursor-pointer transition-all ${
+              className={`border-2 border-dashed rounded-lg p-4 text-center cursor-pointer transition-all ${
                 isDragging 
-                  ? "border-amber-500 bg-amber-100 scale-[1.02] shadow-lg" 
+                  ? "border-amber-500 bg-amber-100 scale-[1.01]" 
                   : "border-amber-300 hover:border-amber-500 hover:bg-amber-50"
               }`}
             >
@@ -389,52 +389,39 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
                 onChange={(e) => e.target.files?.[0] && handleWizardFileSelect(e.target.files[0])}
                 className="hidden"
               />
-              <div className="w-16 h-16 mx-auto mb-3 rounded-2xl bg-amber-100 flex items-center justify-center">
-                <Upload className="h-8 w-8 text-amber-500" />
+              <div className="flex items-center justify-center gap-3">
+                <Upload className="h-6 w-6 text-amber-500" />
+                <div className="text-left">
+                  <p className="text-sm font-medium text-amber-800">
+                    {isDragging ? "Dosyayı Bırakın" : "Borç evrakını sürükleyip bırakın veya tıklayın"}
+                  </p>
+                  <p className="text-xs text-amber-600">
+                    Fatura, senet, çek, kira sözleşmesi (PDF, JPG, PNG, Word)
+                  </p>
+                </div>
               </div>
-              <p className="text-sm font-medium text-amber-800 mb-1">
-                {isDragging ? "Dosyayı Bırakın" : "Borç evrakını sürükleyip bırakın veya tıklayın"}
-              </p>
-              <p className="text-xs text-amber-600">
-                Fatura, senet, çek, kira sözleşmesi, cari hesap ekstresi (PDF, JPG, PNG, Word)
-              </p>
             </div>
 
-            {/* Seçilen Dosya */}
-            {selectedFile && (
-              <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <FileText className="h-5 w-5 text-amber-600" />
-                  <div>
-                    <p className="text-sm font-medium text-amber-800">{selectedFile.name}</p>
-                    <p className="text-xs text-amber-600">{(selectedFile.size / 1024).toFixed(1)} KB</p>
-                  </div>
+            {/* Seçilen Dosya ve Aksiyon */}
+            <div className="mt-2 flex items-center gap-2">
+              {selectedFile && (
+                <div className="flex-1 p-2 bg-amber-50 border border-amber-200 rounded-lg flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-amber-600" />
+                  <span className="text-sm text-amber-800 truncate">{selectedFile.name}</span>
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setSelectedFile(null); }}
+                    className="p-1 hover:bg-amber-100 rounded"
+                  >
+                    <X className="h-3 w-3 text-amber-600" />
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={(e) => { e.stopPropagation(); setSelectedFile(null); }}
-                  className="p-1.5 hover:bg-amber-100 rounded-lg"
-                >
-                  <X className="h-4 w-4 text-amber-600" />
-                </button>
-              </div>
-            )}
-
-            {/* Hata Mesajı */}
-            {wizardError && (
-              <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-xl flex items-center gap-2 text-red-700 text-sm">
-                <AlertTriangle className="h-4 w-4" />
-                {wizardError}
-              </div>
-            )}
-
-            {/* Aksiyon Butonları */}
-            <div className="mt-4 flex gap-2">
+              )}
               <button
                 type="button"
                 onClick={handleWizardScan}
                 disabled={!selectedFile || wizardScanning}
-                className="px-5 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl hover:from-amber-600 hover:to-orange-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shadow-md"
+                className="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-lg hover:from-amber-600 hover:to-orange-600 transition-all disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1.5 text-sm"
               >
                 {wizardScanning ? (
                   <>
@@ -444,83 +431,78 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
                 ) : (
                   <>
                     <Sparkles className="h-4 w-4" />
-                    Tara ve Analiz Et
+                    Tara
                   </>
                 )}
               </button>
               <button
                 type="button"
                 onClick={() => { setShowWizard(false); resetWizard(); }}
-                className="px-4 py-2 border border-amber-300 text-amber-700 rounded-xl hover:bg-amber-50"
+                className="px-3 py-2 border border-amber-300 text-amber-700 rounded-lg hover:bg-amber-50 text-sm"
               >
                 İptal
               </button>
             </div>
+
+            {/* Hata Mesajı */}
+            {wizardError && (
+              <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700 text-xs">
+                <AlertTriangle className="h-4 w-4" />
+                {wizardError}
+              </div>
+            )}
           </div>
         )}
 
-        {/* Sihirbaz Sonuçları */}
+        {/* Sihirbaz Sonuçları - Kompakt */}
         {wizardResult && (
-          <div className="mt-4 space-y-4">
-            {/* Evrak Türü ve Güven */}
-            <div className="p-3 bg-white/70 rounded-xl border border-amber-200 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <FileCheck className="h-5 w-5 text-amber-600" />
-                <div>
-                  <p className="text-sm font-medium text-amber-900">
-                    Evrak Türü: {DocumentTypeLabels[wizardResult.documentType] || wizardResult.documentType}
-                  </p>
-                  <p className="text-xs text-amber-600">
-                    Önerilen Takip: {wizardResult.suggestedCaseType === "KAMBIYO" ? "Kambiyo Takibi" : 
-                                    wizardResult.suggestedCaseType === "KIRA" ? "Kira Takibi" : "İlamsız Takip"}
-                  </p>
-                </div>
-              </div>
+          <div className="mt-3 space-y-2">
+            {/* Evrak Türü */}
+            <div className="p-2 bg-white/70 rounded-lg border border-amber-200 flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <span className="text-xs text-amber-600">Güven:</span>
-                <span className={`px-2 py-0.5 rounded-lg text-xs font-medium ${
-                  wizardResult.confidence >= 70 ? "bg-emerald-100 text-emerald-700" : 
-                  wizardResult.confidence >= 40 ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"
-                }`}>
-                  %{wizardResult.confidence}
+                <FileCheck className="h-4 w-4 text-amber-600" />
+                <span className="text-sm font-medium text-amber-900">
+                  {DocumentTypeLabels[wizardResult.documentType] || wizardResult.documentType}
+                </span>
+                <span className="text-xs text-amber-600">
+                  ({wizardResult.suggestedCaseType === "KAMBIYO" ? "Kambiyo" : wizardResult.suggestedCaseType === "KIRA" ? "Kira" : "İlamsız"})
                 </span>
               </div>
+              <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                wizardResult.confidence >= 70 ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+              }`}>
+                %{wizardResult.confidence}
+              </span>
             </div>
 
-            {/* Bulunan Kişiler/Kurumlar */}
+            {/* Bulunan Kişiler - Kompakt Liste */}
             {wizardResult.parties.length > 0 && (
-              <div className="p-4 bg-white/70 rounded-xl border border-amber-200">
-                <h4 className="font-medium text-amber-900 mb-3 flex items-center gap-2">
-                  <Users className="h-4 w-4" /> Bulunan Kişiler/Kurumlar
+              <div className="p-2 bg-white/70 rounded-lg border border-amber-200">
+                <h4 className="font-medium text-amber-900 mb-2 text-sm flex items-center gap-1">
+                  <Users className="h-3.5 w-3.5" /> Bulunan Kişiler
                 </h4>
-                <div className="space-y-2">
+                <div className="space-y-1">
                   {wizardResult.parties.map((party, index) => (
-                    <div key={index} className="p-3 bg-amber-50 rounded-lg flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        {party.type === "INDIVIDUAL" && <Users className="h-4 w-4 text-emerald-500" />}
-                        {party.type === "COMPANY" && <Building2 className="h-4 w-4 text-blue-500" />}
-                        {party.type === "PUBLIC_INSTITUTION" && <Landmark className="h-4 w-4 text-purple-500" />}
-                        <div>
-                          <p className="font-medium text-amber-900">{party.name}</p>
-                          <div className="flex items-center gap-2 text-xs text-amber-600">
-                            <span className={`px-1.5 py-0.5 rounded ${
-                              party.role === "BORCLU" ? "bg-red-100 text-red-700" :
-                              party.role === "ALACAKLI" ? "bg-green-100 text-green-700" :
-                              "bg-amber-100 text-amber-700"
-                            }`}>
-                              {RoleLabels[party.role] || party.role}
-                            </span>
-                            {party.identityNo && <span>{party.identityNo}</span>}
-                            {party.city && <span>{party.city}</span>}
-                          </div>
-                        </div>
+                    <div key={index} className="p-2 bg-amber-50 rounded flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {party.type === "INDIVIDUAL" && <Users className="h-3.5 w-3.5 text-emerald-500" />}
+                        {party.type === "COMPANY" && <Building2 className="h-3.5 w-3.5 text-blue-500" />}
+                        {party.type === "PUBLIC_INSTITUTION" && <Landmark className="h-3.5 w-3.5 text-purple-500" />}
+                        <span className="font-medium text-sm text-amber-900">{party.name}</span>
+                        <span className={`px-1.5 py-0.5 rounded text-xs ${
+                          party.role === "BORCLU" ? "bg-red-100 text-red-700" :
+                          party.role === "ALACAKLI" ? "bg-green-100 text-green-700" :
+                          "bg-amber-100 text-amber-700"
+                        }`}>
+                          {RoleLabels[party.role] || party.role}
+                        </span>
                       </div>
                       {(party.role === "BORCLU" || party.role === "KEFIL" || party.role === "CIRANTA" || 
                         party.role === "AVAL" || party.role === "MUTESELSIL") && (
                         <button
                           type="button"
                           onClick={() => handleAcceptParty(party)}
-                          className="px-3 py-1.5 bg-emerald-500 text-white text-xs rounded-lg hover:bg-emerald-600 flex items-center gap-1"
+                          className="px-2 py-1 bg-emerald-500 text-white text-xs rounded hover:bg-emerald-600 flex items-center gap-1"
                         >
                           <CheckCircle className="h-3 w-3" /> Ekle
                         </button>
@@ -531,166 +513,42 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
               </div>
             )}
 
-            {/* Tebligat Adresi Önerisi */}
-            {wizardResult.parties.some(p => p.address && (p.role === "BORCLU" || p.role === "KEFIL" || p.role === "CIRANTA")) && (
-              <div className="p-4 bg-white/70 rounded-xl border border-amber-200">
-                <h4 className="font-medium text-amber-900 mb-3 flex items-center gap-2">
-                  <MapPin className="h-4 w-4" /> Tebligat Adresi Önerisi
-                </h4>
-                <div className="space-y-2">
-                  {wizardResult.parties
-                    .filter(p => p.address && (p.role === "BORCLU" || p.role === "KEFIL" || p.role === "CIRANTA"))
-                    .map((party, index) => (
-                      <div key={index} className="p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
-                        <div className="flex items-start justify-between">
-                          <div className="flex-1">
-                            <p className="text-sm font-medium text-blue-900 mb-1">{party.name}</p>
-                            <div className="flex items-start gap-2">
-                              <MapPin className="h-4 w-4 text-blue-500 mt-0.5 flex-shrink-0" />
-                              <div>
-                                <p className="text-sm text-blue-800">{party.address}</p>
-                                {(party.district || party.city) && (
-                                  <p className="text-xs text-blue-600 mt-0.5">
-                                    {party.district && `${party.district} / `}{party.city}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                          </div>
-                          <span className="px-2 py-1 bg-blue-100 text-blue-700 text-xs rounded-lg">
-                            Belgeden Tespit
-                          </span>
-                        </div>
-                        <p className="text-xs text-blue-600 mt-2 italic">
-                          💡 Bu adres borçlu eklenirken tebligat adresi olarak kaydedilecek
-                        </p>
-                      </div>
-                    ))}
-                </div>
-              </div>
-            )}
-
-            {/* Borç Bilgileri */}
+            {/* Borç Bilgileri - Kompakt */}
             {(wizardResult.debtInfo.amount || wizardResult.debtInfo.dueDate) && (
-              <div className="p-4 bg-white/70 rounded-xl border border-amber-200">
-                <h4 className="font-medium text-amber-900 mb-3 flex items-center gap-2">
-                  <DollarSign className="h-4 w-4" /> Borç Bilgileri
-                </h4>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="p-2 bg-white/70 rounded-lg border border-amber-200">
+                <div className="flex items-center gap-4 text-sm">
                   {wizardResult.debtInfo.amount && (
-                    <div className="p-2 bg-amber-50 rounded-lg">
-                      <p className="text-xs text-amber-600">Tutar</p>
-                      <p className="font-semibold text-amber-900">
+                    <div>
+                      <span className="text-xs text-amber-600">Tutar: </span>
+                      <span className="font-semibold text-amber-900">
                         {CurrencySymbols[wizardResult.debtInfo.currency]}{wizardResult.debtInfo.amount.toLocaleString("tr-TR")}
-                      </p>
+                      </span>
                     </div>
                   )}
                   {wizardResult.debtInfo.dueDate && (
-                    <div className="p-2 bg-amber-50 rounded-lg">
-                      <p className="text-xs text-amber-600">Vade</p>
-                      <p className="font-semibold text-amber-900">
+                    <div>
+                      <span className="text-xs text-amber-600">Vade: </span>
+                      <span className="font-semibold text-amber-900">
                         {new Date(wizardResult.debtInfo.dueDate).toLocaleDateString("tr-TR")}
-                      </p>
+                      </span>
                     </div>
                   )}
                   {wizardResult.debtInfo.documentNo && (
-                    <div className="p-2 bg-amber-50 rounded-lg">
-                      <p className="text-xs text-amber-600">Belge No</p>
-                      <p className="font-semibold text-amber-900">{wizardResult.debtInfo.documentNo}</p>
+                    <div>
+                      <span className="text-xs text-amber-600">Belge No: </span>
+                      <span className="font-semibold text-amber-900">{wizardResult.debtInfo.documentNo}</span>
                     </div>
                   )}
-                  {wizardResult.debtInfo.issueDate && (
-                    <div className="p-2 bg-amber-50 rounded-lg">
-                      <p className="text-xs text-amber-600">Düzenleme</p>
-                      <p className="font-semibold text-amber-900">
-                        {new Date(wizardResult.debtInfo.issueDate).toLocaleDateString("tr-TR")}
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Banka Bilgileri (Çek için) */}
-            {wizardResult.bankInfo && (wizardResult.bankInfo.bankName || wizardResult.bankInfo.iban) && (
-              <div className="p-4 bg-white/70 rounded-xl border border-amber-200">
-                <h4 className="font-medium text-amber-900 mb-3 flex items-center gap-2">
-                  <Building2 className="h-4 w-4" /> Banka Bilgileri
-                </h4>
-                <div className="grid grid-cols-2 gap-3">
-                  {wizardResult.bankInfo.bankName && (
-                    <div className="p-2 bg-amber-50 rounded-lg">
-                      <p className="text-xs text-amber-600">Banka</p>
-                      <p className="font-semibold text-amber-900">{wizardResult.bankInfo.bankName}</p>
-                    </div>
-                  )}
-                  {wizardResult.bankInfo.branchName && (
-                    <div className="p-2 bg-amber-50 rounded-lg">
-                      <p className="text-xs text-amber-600">Şube</p>
-                      <p className="font-semibold text-amber-900">{wizardResult.bankInfo.branchName}</p>
-                    </div>
-                  )}
-                  {wizardResult.bankInfo.iban && (
-                    <div className="p-2 bg-amber-50 rounded-lg col-span-2">
-                      <p className="text-xs text-amber-600">IBAN</p>
-                      <p className="font-semibold text-amber-900 font-mono text-sm">{wizardResult.bankInfo.iban}</p>
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Tahsilat İletişimi Önerisi */}
-            {wizardResult.debtInfo.amount && wizardResult.parties.some(p => p.role === "BORCLU") && (
-              <div className="p-4 bg-gradient-to-r from-violet-50 to-purple-50 rounded-xl border border-violet-200">
-                <h4 className="font-medium text-violet-900 mb-3 flex items-center gap-2">
-                  <Mail className="h-4 w-4" /> Tahsilat İletişimi
-                </h4>
-                <p className="text-sm text-violet-700 mb-3">
-                  Borçluya ödeme hatırlatması göndermek için SMS veya e-posta taslağı hazırlandı.
-                </p>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const debtorParty = wizardResult.parties.find(p => p.role === "BORCLU");
-                      if (debtorParty && wizardResult.debtInfo.amount) {
-                        const smsText = `Sayın ${debtorParty.name},\n\n${wizardResult.debtInfo.documentNo ? `${wizardResult.debtInfo.documentNo} numaralı belgeye istinaden ` : ""}${CurrencySymbols[wizardResult.debtInfo.currency]}${wizardResult.debtInfo.amount.toLocaleString("tr-TR")} tutarındaki borcunuzun ${wizardResult.debtInfo.dueDate ? `${new Date(wizardResult.debtInfo.dueDate).toLocaleDateString("tr-TR")} tarihinde vadesi dolmuştur` : "ödenmesi gerekmektedir"}.\n\nBorcunuzu en kısa sürede ödemenizi rica ederiz.`;
-                        navigator.clipboard.writeText(smsText);
-                        alert("SMS metni panoya kopyalandı!");
-                      }
-                    }}
-                    className="px-4 py-2 bg-violet-500 text-white text-sm rounded-lg hover:bg-violet-600 flex items-center gap-2"
-                  >
-                    <Phone className="h-4 w-4" />
-                    SMS Taslağını Kopyala
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const debtorParty = wizardResult.parties.find(p => p.role === "BORCLU");
-                      if (debtorParty && wizardResult.debtInfo.amount) {
-                        const emailSubject = `Ödeme Hatırlatması - ${CurrencySymbols[wizardResult.debtInfo.currency]}${wizardResult.debtInfo.amount.toLocaleString("tr-TR")}`;
-                        const emailBody = `Sayın ${debtorParty.name},\n\n${wizardResult.debtInfo.documentNo ? `${wizardResult.debtInfo.documentNo} numaralı belgeye istinaden ` : ""}${CurrencySymbols[wizardResult.debtInfo.currency]}${wizardResult.debtInfo.amount.toLocaleString("tr-TR")} tutarındaki borcunuz bulunmaktadır.\n\n${wizardResult.debtInfo.dueDate ? `Vade Tarihi: ${new Date(wizardResult.debtInfo.dueDate).toLocaleDateString("tr-TR")}\n\n` : ""}Borcunuzu en kısa sürede ödemenizi rica ederiz.\n\nSaygılarımızla`;
-                        const mailtoLink = `mailto:${debtorParty.phone || ""}?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
-                        window.open(mailtoLink, "_blank");
-                      }
-                    }}
-                    className="px-4 py-2 bg-violet-100 text-violet-700 text-sm rounded-lg hover:bg-violet-200 flex items-center gap-2"
-                  >
-                    <Mail className="h-4 w-4" />
-                    E-posta Taslağını Aç
-                  </button>
                 </div>
               </div>
             )}
 
             {/* Aksiyon Butonları */}
-            <div className="flex gap-2 pt-2">
+            <div className="flex gap-2">
               <button
                 type="button"
                 onClick={handleAcceptAllDebtors}
-                className="px-5 py-2.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-xl hover:from-emerald-600 hover:to-teal-600 transition-all shadow-md flex items-center gap-2"
+                className="px-4 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 text-white rounded-lg hover:from-emerald-600 hover:to-teal-600 transition-all text-sm flex items-center gap-1.5"
               >
                 <CheckCircle className="h-4 w-4" />
                 Tüm Borçluları Ekle
@@ -698,15 +556,15 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
               <button
                 type="button"
                 onClick={resetWizard}
-                className="px-4 py-2 border border-amber-300 text-amber-700 rounded-xl hover:bg-amber-50 flex items-center gap-2"
+                className="px-3 py-1.5 border border-amber-300 text-amber-700 rounded-lg hover:bg-amber-50 text-sm flex items-center gap-1"
               >
-                <ScanLine className="h-4 w-4" />
-                Yeni Evrak Tara
+                <ScanLine className="h-3.5 w-3.5" />
+                Yeni Tara
               </button>
               <button
                 type="button"
                 onClick={() => { setShowWizard(false); resetWizard(); }}
-                className="px-4 py-2 border border-gray-300 text-gray-600 rounded-xl hover:bg-gray-50"
+                className="px-3 py-1.5 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 text-sm"
               >
                 Kapat
               </button>
@@ -715,62 +573,62 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
         )}
       </div>
 
-      {/* Header */}
+      {/* Header - Kompakt */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-xl font-semibold">Borçlular</h2>
-          <p className="text-sm text-muted-foreground">
+          <h2 className="text-lg font-semibold">Borçlular</h2>
+          <p className="text-xs text-muted-foreground">
             Takibe dahil edilecek borçluları seçin veya yeni borçlu ekleyin
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex gap-1.5">
           <button
             type="button"
             onClick={() => openNewDebtorModal(DebtorType.INDIVIDUAL)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-emerald-500 text-white rounded-lg hover:bg-emerald-600"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs bg-emerald-500 text-white rounded-lg hover:bg-emerald-600"
           >
-            <Users className="h-4 w-4" /> Şahıs Ekle
+            <Users className="h-3.5 w-3.5" /> Şahıs Ekle
           </button>
           <button
             type="button"
             onClick={() => openNewDebtorModal(DebtorType.COMPANY)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-500 text-white rounded-lg hover:bg-blue-600"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs bg-blue-500 text-white rounded-lg hover:bg-blue-600"
           >
-            <Building2 className="h-4 w-4" /> Kurum Ekle
+            <Building2 className="h-3.5 w-3.5" /> Kurum Ekle
           </button>
           <button
             type="button"
             onClick={() => openNewDebtorModal(DebtorType.PUBLIC_INSTITUTION)}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm bg-purple-500 text-white rounded-lg hover:bg-purple-600"
+            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs bg-purple-500 text-white rounded-lg hover:bg-purple-600"
           >
-            <Landmark className="h-4 w-4" /> Kamu Ekle
+            <Landmark className="h-3.5 w-3.5" /> Kamu Ekle
           </button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Sol Panel: Borçlu Rehberi */}
-        <div className="border rounded-lg p-4">
-          <h3 className="font-medium mb-3 flex items-center gap-2">
+        <div className="border rounded-lg p-3">
+          <h3 className="font-medium mb-2 flex items-center gap-2 text-sm">
             <Search className="h-4 w-4" /> Borçlu Rehberi
           </h3>
 
           {/* Arama ve Filtre */}
-          <div className="flex gap-2 mb-3">
+          <div className="flex gap-2 mb-2">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
               <input
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Ad, TCKN, VKN veya telefon..."
-                className="w-full pl-9 pr-3 py-2 text-sm border rounded-lg focus:outline-none focus:border-primary"
+                className="w-full pl-8 pr-3 py-1.5 text-sm border rounded-lg focus:outline-none focus:border-primary"
               />
             </div>
           </div>
 
           {/* Tip Filtreleri */}
-          <div className="flex gap-1 mb-3">
+          <div className="flex gap-1 mb-2">
             {[
               { value: "ALL", label: "Tümü", icon: null },
               { value: DebtorType.INDIVIDUAL, label: "Şahıs", icon: Users },
@@ -781,7 +639,7 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
                 key={opt.value}
                 type="button"
                 onClick={() => setTypeFilter(opt.value as any)}
-                className={`px-3 py-1.5 text-xs rounded-full flex items-center gap-1 ${
+                className={`px-2 py-1 text-xs rounded-full flex items-center gap-1 ${
                   typeFilter === opt.value
                     ? "bg-primary text-white"
                     : "bg-gray-100 hover:bg-gray-200"
@@ -794,87 +652,84 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
           </div>
 
 
-          {/* Borçlu Listesi */}
-          <div className="max-h-[400px] overflow-y-auto space-y-2">
+          {/* Borçlu Listesi - Daha kısa */}
+          <div className="max-h-[280px] overflow-y-auto space-y-1.5">
             {loading ? (
-              <div className="text-center py-8 text-muted-foreground">Yükleniyor...</div>
+              <div className="text-center py-6 text-muted-foreground text-sm">Yükleniyor...</div>
             ) : filteredDebtors.length === 0 ? (
-              <div className="text-center py-8 text-muted-foreground">
+              <div className="text-center py-6 text-muted-foreground text-sm">
                 {searchTerm ? "Sonuç bulunamadı" : "Borçlu bulunamadı"}
               </div>
             ) : (
-              filteredDebtors.map((debtor) => (
+              filteredDebtors.slice(0, 10).map((debtor) => (
                 <div
                   key={debtor.id}
-                  className="p-3 border rounded-lg hover:border-primary hover:bg-primary/5 transition-colors"
+                  className="p-2 border rounded-lg hover:border-primary hover:bg-primary/5 transition-colors"
                 >
-                  <div className="flex items-start justify-between">
+                  <div className="flex items-center justify-between">
                     <div className="flex-1 cursor-pointer" onClick={() => addDebtorToCase(debtor)}>
                       <div className="flex items-center gap-2">
-                        {debtor.type === DebtorType.INDIVIDUAL && <Users className="h-4 w-4 text-emerald-500" />}
-                        {debtor.type === DebtorType.COMPANY && <Building2 className="h-4 w-4 text-blue-500" />}
-                        {debtor.type === DebtorType.PUBLIC_INSTITUTION && <Landmark className="h-4 w-4 text-purple-500" />}
-                        <span className="font-medium">{debtor.name}</span>
+                        {debtor.type === DebtorType.INDIVIDUAL && <Users className="h-3.5 w-3.5 text-emerald-500" />}
+                        {debtor.type === DebtorType.COMPANY && <Building2 className="h-3.5 w-3.5 text-blue-500" />}
+                        {debtor.type === DebtorType.PUBLIC_INSTITUTION && <Landmark className="h-3.5 w-3.5 text-purple-500" />}
+                        <span className="font-medium text-sm">{debtor.name}</span>
                       </div>
-                      <div className="text-xs text-muted-foreground mt-1 flex flex-wrap gap-2">
+                      <div className="text-xs text-muted-foreground mt-0.5 flex flex-wrap gap-2">
                         {debtor.identityNo && <span>{debtor.identityNo}</span>}
-                        {debtor.phone && <span className="flex items-center gap-1"><Phone className="h-3 w-3" />{debtor.phone}</span>}
-                        {debtor.email && <span className="flex items-center gap-1"><Mail className="h-3 w-3" />{debtor.email}</span>}
+                        {debtor.phone && <span className="flex items-center gap-0.5"><Phone className="h-3 w-3" />{debtor.phone}</span>}
+                        {debtor.email && <span className="flex items-center gap-0.5"><Mail className="h-3 w-3" />{debtor.email}</span>}
                       </div>
-                      {debtor.debtorAddresses?.[0] && (
-                        <div className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-                          <MapPin className="h-3 w-3" />
-                          {debtor.debtorAddresses[0].city}
-                          {debtor.debtorAddresses[0].district && ` / ${debtor.debtorAddresses[0].district}`}
-                        </div>
-                      )}
                     </div>
                     <div className="flex items-center gap-1">
                       <button
                         type="button"
                         onClick={(e) => { e.stopPropagation(); openEditDebtorModal(debtor); }}
-                        className="text-xs p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg"
+                        className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
                         title="Düzenle"
                       >
-                        <Edit2 className="h-3.5 w-3.5" />
+                        <Edit2 className="h-3 w-3" />
                       </button>
                       <button
                         type="button"
                         onClick={() => addDebtorToCase(debtor)}
-                        className="text-xs px-2.5 py-1.5 bg-primary/10 text-primary rounded-lg hover:bg-primary hover:text-white flex items-center gap-1 font-medium"
+                        className="text-xs px-2 py-1 bg-primary/10 text-primary rounded hover:bg-primary hover:text-white flex items-center gap-0.5 font-medium"
                       >
-                        <Plus className="h-3 w-3" />
-                        Ekle
+                        + Ekle
                       </button>
                     </div>
                   </div>
                 </div>
               ))
             )}
+            {filteredDebtors.length > 10 && (
+              <p className="text-xs text-center text-muted-foreground py-1">
+                +{filteredDebtors.length - 10} daha... (arama yapın)
+              </p>
+            )}
           </div>
         </div>
 
         {/* Sağ Panel: Seçili Borçlular */}
-        <div className="border rounded-lg p-4">
-          <h3 className="font-medium mb-3 flex items-center gap-2">
+        <div className="border rounded-lg p-3">
+          <h3 className="font-medium mb-2 flex items-center gap-2 text-sm">
             <Users className="h-4 w-4" /> Bu Takip İçin Seçili Borçlular
             {selectedDebtors.length > 0 && (
-              <span className="text-xs bg-primary text-white px-2 py-0.5 rounded-full">
+              <span className="text-xs bg-primary text-white px-1.5 py-0.5 rounded-full">
                 {selectedDebtors.length}
               </span>
             )}
           </h3>
 
           {selectedDebtors.length === 0 ? (
-            <div className="text-center py-12 border-2 border-dashed rounded-lg">
-              <AlertCircle className="h-8 w-8 mx-auto text-muted-foreground mb-2" />
-              <p className="text-muted-foreground">Henüz borçlu seçilmedi</p>
-              <p className="text-xs text-muted-foreground mt-1">
+            <div className="text-center py-8 border-2 border-dashed rounded-lg">
+              <AlertCircle className="h-6 w-6 mx-auto text-muted-foreground mb-1" />
+              <p className="text-muted-foreground text-sm">Henüz borçlu seçilmedi</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
                 Sol panelden mevcut borçlu seçin veya yeni borçlu ekleyin
               </p>
             </div>
           ) : (
-            <div className="space-y-3 max-h-[400px] overflow-y-auto">
+            <div className="space-y-2 max-h-[280px] overflow-y-auto">
               {selectedDebtors.map((caseDebtor, index) => (
                 <SelectedDebtorCard
                   key={caseDebtor.debtorId}

@@ -1,0 +1,174 @@
+# ============================================
+# MASRAF PROFİLLERİ (Fee Profiles)
+# Takip türüne göre uygulanacak harç/masraf setleri
+# ============================================
+
+version: 1
+engine: fee_profiles
+
+# --------------------------------------------
+# İLAMSIZ TAKİP AÇILIŞ MASRAFLARI
+# --------------------------------------------
+ILAMSIZ_OPENING:
+  applies_to_case_types: ["ILAMSIZ", "KIRA", "TAHLIYE"]
+  tariff_year: 2025
+  
+  fixed_fee_items:
+    - code: "application_fee"
+      item_type: FEE
+      label: "Başvurma Harcı"
+      auto_add: true
+      
+    - code: "poa_copy_fee"
+      item_type: FEE
+      label: "Vekalet Suret Harcı"
+      auto_add: true
+      
+    - code: "bar_stamp_fee"
+      item_type: STAMP
+      label: "Vekalet Pulu"
+      auto_add: true
+      
+  rate_fee_items:
+    - code: "ilamsiz_pesin_harc"
+      item_type: FEE
+      label: "Peşin Harç"
+      auto_add: true
+      formula:
+        base: "case.claimTotals.principalPlusInterest"
+        rate_from_tariff: "ilamsiz_pesin_harc"
+        
+  postage_policy:
+    default: "NORMAL"
+    allow: ["UETS", "NORMAL", "FAST", "PUBLIC_ANNOUNCEMENT"]
+    auto_add: true
+    per_debtor: true  # Her borçlu için ayrı tebligat
+
+# --------------------------------------------
+# KAMBİYO TAKİBİ AÇILIŞ MASRAFLARI
+# --------------------------------------------
+KAMBIYO_OPENING:
+  applies_to_case_types: ["KAMBIYO"]
+  tariff_year: 2025
+  
+  fixed_fee_items:
+    - code: "application_fee"
+      item_type: FEE
+      label: "Başvurma Harcı"
+      auto_add: true
+      
+    - code: "poa_copy_fee"
+      item_type: FEE
+      label: "Vekalet Suret Harcı"
+      auto_add: true
+      
+    - code: "bar_stamp_fee"
+      item_type: STAMP
+      label: "Vekalet Pulu"
+      auto_add: true
+      
+  rate_fee_items:
+    - code: "kambiyo_pesin_harc"
+      item_type: FEE
+      label: "Peşin Harç"
+      auto_add: true
+      formula:
+        base: "case.claimTotals.principalPlusInterest"
+        rate_from_tariff: "kambiyo_pesin_harc"
+        
+  postage_policy:
+    default: "NORMAL"
+    allow: ["UETS", "NORMAL", "FAST", "PUBLIC_ANNOUNCEMENT"]
+    auto_add: true
+    per_debtor: true
+
+# --------------------------------------------
+# İLAMLI TAKİP AÇILIŞ MASRAFLARI
+# --------------------------------------------
+ILAMLI_OPENING:
+  applies_to_case_types: ["ILAMLI"]
+  tariff_year: 2025
+  
+  fixed_fee_items:
+    - code: "application_fee"
+      item_type: FEE
+      label: "Başvurma Harcı"
+      auto_add: true
+      
+    - code: "poa_copy_fee"
+      item_type: FEE
+      label: "Vekalet Suret Harcı"
+      auto_add: true
+      
+    - code: "bar_stamp_fee"
+      item_type: STAMP
+      label: "Vekalet Pulu"
+      auto_add: true
+      
+  rate_fee_items: []  # İlamlıda peşin harç yok
+  
+  postage_policy:
+    default: "UETS"  # İlamlıda genelde UETS tercih edilir
+    allow: ["UETS", "NORMAL", "FAST", "PUBLIC_ANNOUNCEMENT"]
+    auto_add: true
+    per_debtor: true
+
+# --------------------------------------------
+# REHİN TAKİBİ AÇILIŞ MASRAFLARI
+# --------------------------------------------
+REHIN_OPENING:
+  applies_to_case_types: ["REHIN"]
+  tariff_year: 2025
+  
+  fixed_fee_items:
+    - code: "application_fee"
+      item_type: FEE
+      label: "Başvurma Harcı"
+      auto_add: true
+      
+    - code: "poa_copy_fee"
+      item_type: FEE
+      label: "Vekalet Suret Harcı"
+      auto_add: true
+      
+    - code: "bar_stamp_fee"
+      item_type: STAMP
+      label: "Vekalet Pulu"
+      auto_add: true
+      
+  rate_fee_items: []
+  
+  postage_policy:
+    default: "NORMAL"
+    allow: ["UETS", "NORMAL", "FAST"]
+    auto_add: true
+
+# --------------------------------------------
+# İFLAS TAKİBİ AÇILIŞ MASRAFLARI
+# --------------------------------------------
+IFLAS_OPENING:
+  applies_to_case_types: ["IFLAS"]
+  tariff_year: 2025
+  
+  fixed_fee_items:
+    - code: "application_fee"
+      item_type: FEE
+      label: "Başvurma Harcı"
+      auto_add: true
+      
+    - code: "poa_copy_fee"
+      item_type: FEE
+      label: "Vekalet Suret Harcı"
+      auto_add: true
+      
+    - code: "bar_stamp_fee"
+      item_type: STAMP
+      label: "Vekalet Pulu"
+      auto_add: true
+      
+  rate_fee_items: []
+  
+  postage_policy:
+    default: "NORMAL"
+    allow: ["UETS", "NORMAL", "FAST", "PUBLIC_ANNOUNCEMENT"]
+    auto_add: true
