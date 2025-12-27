@@ -1,0 +1,480 @@
+# ============================================
+# MASTER VALİDASYON KURALLARI
+# Tüm takip tipleri için zorunlu unsurlar
+# Yapılacaklar.txt dokümanına göre
+# ============================================
+
+version: 1
+engine: enforcement_master_validations
+
+# ------------------------------------------------------------
+# 0) GLOBAL POLİTİKALAR
+# ------------------------------------------------------------
+policies:
+  address_policy:
+    allow_case_creation_without_address: true        # Gate1'de adres opsiyonel
+    block_service_without_address: true              # Gate3'te adres zorunlu
+    create_task_when_address_missing: true
+    address_help_suggestions:
+      - method: "MERNIS"
+        label: "MERNİS adresi araştır"
+        description: "Nüfus müdürlüğü kayıtlı adres"
+      - method: "TICARET_SICIL"
+        label: "Ticaret Sicil/MERSİS adresi"
+        description: "Şirketler için ticaret sicil adresi"
+      - method: "SGK"
+        label: "SGK işveren tespiti"
+        description: "Çalışan borçlu için işveren adresi"
+      - method: "ABONELIK"
+        label: "Abonelik/web servis sorgusu"
+        description: "Elektrik, su, doğalgaz abonelik adresi"
+      - method: "MANUEL"
+        label: "Manuel adres ekle"
+        description: "Bilinen adresi manuel gir"
+
+  check_policy:
+    bad_check_compensation_default_on: true          # Çek tazminatı default ON
+    bad_check_compensation_rate: 0.10                # %10 oran
+    allow_user_disable: true                         # Kullanıcı kapatabilir
+
+  interest_policy:
+    require_post_filing_interest_by_default: true    # Takip sonrası faiz varsayılan
+    allow_variable_rate: true                        # Değişen oranlarda faiz
+
+  template_policy:
+    allow_ornek1_without_debtor_address: true        # Adres olmadan Örnek1 üretilebilir
+
+# ------------------------------------------------------------
+# 1) TAKİP TİPLERİ
+# ------------------------------------------------------------
+case_types:
+  - code: ILAMSIZ_GENEL
+    name: "İlamsız Genel Haciz"
+    category: ILAMSIZ
+    
+  - code: KIRA_ALACAGI
+    name: "Kira Alacağı"
+    category: ILAMSIZ
+    
+  - code: TAHLIYE
+    name: "Tahliye"
+    category: ILAMSIZ
+    
+  - code: KAMBIYO_CEK
+    name: "Kambiyo - Çek"
+    category: KAMBIYO
+    
+  - code: KAMBIYO_SENET
+    name: "Kambiyo - Senet"
+    category: KAMBIYO
+    
+  - code: ILAMLI_GENEL
+    name: "İlamlı Genel"
+    category: ILAMLI
+    
+  - code: ILAMLI_NAFAKA
+    name: "İlamlı Nafaka"
+    category: ILAMLI
+    
+  - code: ILAMLI_DOVIZ
+    name: "İlamlı Döviz"
+    category: ILAMLI
+    
+  - code: REHIN_IPOTEK
+    name: "Rehin/İpotek"
+    category: REHIN
+    
+  - code: ISCILIK
+    name: "İşçilik Alacağı"
+    category: ILAMLI
+
+# ------------------------------------------------------------
+# 2) GATE TANIMLARI
+# ------------------------------------------------------------
+gates:
+  - id: GATE_1_CASE_CREATION
+    name: "Takip Oluşturma"
+    description: "Dosya açılır, taraflar/kalemler hazırlanır"
+    
+  - id: GATE_2_ORNEK1_GENERATION
+    name: "Takip Talebi Üretimi"
+    description: "Örnek 1 üretilecekse zorunlu alanlar kontrol edilir"
+    
+  - id: GATE_3_SERVICE_OF_PROCESS
+    name: "Tebligat"
+    description: "Tebligat çıkarılacaksa adres zorunlu"
+    
+  - id: GATE_4_UYAP_INTEGRATION
+    name: "UYAP Gönderimi"
+    description: "UYAP'a gönderim için tüm belgeler hazır olmalı"
+
+# ------------------------------------------------------------
+# 3) ÖRNEK 1 BENT ZORUNLULUKLARI
+# ------------------------------------------------------------
+ornek1_bends:
+  # Bent 1: Alacaklı + Vekil
+  bend1_creditor:
+    name: "Alacaklı ve Vekil Bilgileri"
+    applies_to: ALL
+    required_at_gates: [GATE_1_CASE_CREATION, GATE_2_ORNEK1_GENERATION]
+    fields:
+      - path: "case.clients"
+        rule: "min_count"
+        params: { min: 1 }
+        severity: ERROR
+        message: "En az 1 alacaklı (müvekkil) seçilmelidir"
+        
+      - path: "case.clients[0].identity"
+        rule: "identity_valid"
+        severity: ERROR
+        message: "Alacaklı için TCKN veya VKN zorunludur"
+        
+      - path: "case.clients[0].address"
+        rule: "exists"
+        severity: ERROR
+        message: "Alacaklı adresi zorunludur"
+
+  # Bent 2: Borçlu
+  bend2_debtor:
+    name: "Borçlu Bilgileri"
+    applies_to: ALL
+    required_at_gates: [GATE_1_CASE_CREATION]
+    fields:
+      - path: "case.debtors"
+        rule: "min_count"
+        params: { min: 1 }
+        severity: ERROR
+        message: "En az 1 borçlu seçilmelidir"
+        
+      - path: "case.debtors[0].name"
+        rule: "exists"
+        severity: ERROR
+        message: "Borçlu adı/ünvanı zorunludur"
+        
+      - path: "case.debtors[0].address"
+        rule: "optional_at_gate"
+        severity: WARNING
+        message: "Borçlu adresi yok - takip açılabilir ancak tebligat için adres gerekecek"
+
+  # Bent 2 - Gate 3: Tebligat için adres zorunlu
+  bend2_service_address:
+    name: "Tebligat Adresi"
+    applies_to: ALL
+    required_at_gates: [GATE_3_SERVICE_OF_PROCESS]
+    fields:
+      - path: "case.debtors[*].selectedAddressId"
+        rule: "exists"
+        severity: ERROR
+        message: "Tebligat için borçluya ait seçili adres zorunludur"
+        on_fail_action: "create_address_task"
+
+  # Bent 3: Tereke/Mirasçı
+  bend3_estate:
+    name: "Tereke/Mirasçı Bilgileri"
+    applies_to: []
+    conditional:
+      when: { "case.flags.isEstateCase": true }
+      required_at_gates: [GATE_1_CASE_CREATION, GATE_2_ORNEK1_GENERATION]
+      fields:
+        - path: "case.estateHeirs"
+          rule: "min_count"
+          params: { min: 1 }
+          severity: ERROR
+          message: "Tereke takibinde mirasçı bilgileri zorunludur"
+
+  # Bent 4: Alacak Kalemleri
+  bend4_claim_items:
+    name: "Alacak Kalemleri"
+    applies_to: ALL
+    required_at_gates: [GATE_2_ORNEK1_GENERATION]
+    fields:
+      - path: "case.claimItems"
+        rule: "has_item_type"
+        params: { type: "PRINCIPAL" }
+        severity: ERROR
+        message: "Asıl alacak (ana para) kalemi olmadan takip talebi oluşturulamaz"
+        
+      - path: "case.claimItems"
+        rule: "total_positive"
+        severity: ERROR
+        message: "Alacak toplamı sıfırdan büyük olmalıdır"
+
+  # Bent 5: Rehin/İpotek
+  bend5_collateral:
+    name: "Rehin/İpotek Bilgileri"
+    applies_to: [REHIN_IPOTEK]
+    required_at_gates: [GATE_2_ORNEK1_GENERATION]
+    fields:
+      - path: "case.collateral"
+        rule: "exists"
+        severity: ERROR
+        message: "Rehin/İpotekli takipte rehin konusu bilgisi zorunludur"
+        
+      - path: "case.collateral.description"
+        rule: "exists"
+        severity: ERROR
+        message: "Rehin konusu açıklaması zorunludur"
+
+  # Bent 6: İlam Bilgisi
+  bend6_judgment:
+    name: "İlam Bilgileri"
+    applies_to: [ILAMLI_GENEL, ILAMLI_NAFAKA, ILAMLI_DOVIZ, ISCILIK]
+    required_at_gates: [GATE_2_ORNEK1_GENERATION]
+    fields:
+      - path: "case.judgment.courtName"
+        rule: "exists"
+        severity: ERROR
+        message: "İlamlı takipte karar mercii zorunludur"
+        
+      - path: "case.judgment.decisionDate"
+        rule: "exists"
+        severity: ERROR
+        message: "İlamlı takipte karar tarihi zorunludur"
+        
+      - path: "case.judgment.finalizationNote"
+        rule: "warning_if_missing"
+        severity: WARNING
+        message: "Bazı ilamlar kesinleşmeden icraya konulamaz - kesinleşme şerhini kontrol edin"
+
+  # Bent 7: Kira/Tahliye
+  bend7_lease:
+    name: "Kira/Tahliye Bilgileri"
+    applies_to: [KIRA_ALACAGI, TAHLIYE]
+    required_at_gates: [GATE_2_ORNEK1_GENERATION]
+    fields:
+      - path: "case.lease.startDate"
+        rule: "exists"
+        severity: ERROR
+        message: "Kira/tahliye takibinde sözleşme başlangıç tarihi zorunludur"
+        
+      - path: "case.lease.monthlyRent"
+        rule: "exists"
+        severity: ERROR
+        message: "Kira bedeli zorunludur"
+
+  # Bent 7 - Tahliye özel
+  bend7_eviction:
+    name: "Tahliye Sebebi"
+    applies_to: [TAHLIYE]
+    required_at_gates: [GATE_2_ORNEK1_GENERATION]
+    fields:
+      - path: "case.lease.evictionReason"
+        rule: "exists"
+        severity: ERROR
+        message: "Tahliye takibinde tahliye sebebi seçilmelidir"
+        
+      - path: "case.lease.propertyAddress"
+        rule: "exists"
+        severity: ERROR
+        message: "Tahliye adresi (taşınmaz adresi) zorunludur"
+
+  # Bent 8: Kambiyo Enstrümanı
+  bend8_instrument:
+    name: "Çek/Senet Bilgileri"
+    applies_to: [KAMBIYO_CEK, KAMBIYO_SENET]
+    required_at_gates: [GATE_1_CASE_CREATION, GATE_2_ORNEK1_GENERATION]
+    fields:
+      - path: "case.instrument"
+        rule: "exists"
+        severity: ERROR
+        message: "Kambiyo takibinde enstrüman (çek/senet) bilgileri zorunludur"
+        
+      - path: "case.instrument.serialNo"
+        rule: "exists"
+        severity: ERROR
+        message: "Çek/Senet seri numarası zorunludur"
+        
+      - path: "case.instrument.amount"
+        rule: "positive"
+        severity: ERROR
+        message: "Çek/Senet bedeli zorunludur"
+
+  # Bent 8 - İlamsız borç sebebi
+  bend8_debt_reason:
+    name: "Borcun Sebebi"
+    applies_to: [ILAMSIZ_GENEL]
+    required_at_gates: [GATE_2_ORNEK1_GENERATION]
+    fields:
+      - path: "case.debtReason"
+        rule: "exists"
+        severity: ERROR
+        message: "İlamsız takipte borcun sebebi (fatura/sözleşme vb.) zorunludur"
+
+  # Bent 9: Takip Yolu
+  bend9_route:
+    name: "Takip Yolu"
+    applies_to: ALL
+    required_at_gates: [GATE_1_CASE_CREATION]
+    fields:
+      - path: "case.executionPath"
+        rule: "exists"
+        severity: ERROR
+        message: "Takip yolu (HACİZ/REHİN/İFLAS) zorunludur"
+
+# ------------------------------------------------------------
+# 4) TAKİP TİPİNE ÖZEL ZORUNLULUKLAR
+# ------------------------------------------------------------
+type_specific_rules:
+  # Çek Takibi
+  KAMBIYO_CEK:
+    required_at_gates: [GATE_1_CASE_CREATION, GATE_2_ORNEK1_GENERATION]
+    fields:
+      - path: "case.instrument.issueDate"
+        rule: "exists"
+        severity: ERROR
+        message: "Çekte keşide tarihi zorunludur"
+        
+      - path: "case.instrument.presentmentDate"
+        rule: "exists"
+        severity: ERROR
+        message: "Çekte ibraz tarihi zorunludur"
+        
+      - path: "case.instrument.bankName"
+        rule: "exists"
+        severity: ERROR
+        message: "Çekte banka adı zorunludur"
+        
+      - path: "case.instrument.bankBranch"
+        rule: "exists"
+        severity: ERROR
+        message: "Çekte banka şubesi zorunludur"
+        
+    # Otomatik kalemler
+    auto_items:
+      - item_type: CHECK_PENALTY
+        label: "Karşılıksız Çek Tazminatı"
+        default_on: true
+        rate_policy_key: "policies.check_policy.bad_check_compensation_rate"
+        base_item_type: PRINCIPAL
+        user_can_disable: true
+
+  # Senet Takibi
+  KAMBIYO_SENET:
+    required_at_gates: [GATE_1_CASE_CREATION, GATE_2_ORNEK1_GENERATION]
+    fields:
+      - path: "case.instrument.issueDate"
+        rule: "exists"
+        severity: ERROR
+        message: "Senette keşide tarihi zorunludur"
+        
+      - path: "case.instrument.maturityDate"
+        rule: "exists"
+        severity: ERROR
+        message: "Senette vade tarihi zorunludur"
+        
+      - path: "case.instrument"
+        rule: "issue_before_maturity"
+        severity: ERROR
+        message: "Senette keşide tarihi vade tarihinden sonra olamaz"
+        
+    # Opsiyonel kalemler
+    optional_items:
+      - item_type: EXPENSE
+        label: "Protesto Masrafı"
+        enabled_by: "wizard.protestoYapildi"
+
+  # Kira Alacağı
+  KIRA_ALACAGI:
+    required_at_gates: [GATE_2_ORNEK1_GENERATION]
+    fields:
+      - path: "wizard.rentPeriods"
+        rule: "min_count"
+        params: { min: 1 }
+        severity: ERROR
+        message: "Kira alacağı için en az bir dönem seçilmelidir"
+
+  # Nafaka
+  ILAMLI_NAFAKA:
+    required_at_gates: [GATE_2_ORNEK1_GENERATION]
+    fields:
+      - path: "case.judgment.nafakaType"
+        rule: "exists"
+        severity: ERROR
+        message: "Nafaka türü (iştirak/yoksulluk) seçilmelidir"
+        
+      - path: "case.judgment.monthlyNafaka"
+        rule: "positive"
+        severity: ERROR
+        message: "Aylık nafaka tutarı zorunludur"
+        
+      - path: "wizard.nafakaPeriods"
+        rule: "min_count"
+        params: { min: 1 }
+        severity: ERROR
+        message: "Nafaka için dönem (devam eden aylar) seçilmelidir"
+
+  # Döviz Alacağı
+  ILAMLI_DOVIZ:
+    required_at_gates: [GATE_2_ORNEK1_GENERATION]
+    fields:
+      - path: "case.currency"
+        rule: "not_equals"
+        params: { value: "TRY" }
+        severity: ERROR
+        message: "Döviz alacağı için para birimi (USD, EUR, vb.) seçilmelidir"
+        
+      - path: "wizard.exchangePolicy"
+        rule: "exists"
+        severity: ERROR
+        message: "Döviz alacağı için kur politikası seçilmelidir"
+
+  # Rehin/İpotek
+  REHIN_IPOTEK:
+    required_at_gates: [GATE_2_ORNEK1_GENERATION]
+    fields:
+      - path: "case.collateral.collateralType"
+        rule: "exists"
+        severity: ERROR
+        message: "Rehin/İpotek türü belirtilmelidir"
+
+# ------------------------------------------------------------
+# 5) GATE 4 - UYAP GÖNDERİM KURALLARI
+# ------------------------------------------------------------
+uyap_submission_rules:
+  required_at_gates: [GATE_4_UYAP_INTEGRATION]
+  fields:
+    - path: "case.ornek1Generated"
+      rule: "equals"
+      params: { value: true }
+      severity: ERROR
+      message: "UYAP gönderimi için Örnek 1 (Takip Talebi) oluşturulmalıdır"
+      
+    - path: "case.lawyers"
+      rule: "has_signer"
+      severity: ERROR
+      message: "UYAP gönderimi için imza yetkili avukat gereklidir"
+      
+    - path: "case.executionOffice.uyapCode"
+      rule: "exists"
+      severity: ERROR
+      message: "UYAP gönderimi için icra dairesi UYAP kodu gereklidir"
+
+# ------------------------------------------------------------
+# 6) OTOMATİK ÖNERİ POLİTİKALARI
+# ------------------------------------------------------------
+auto_suggestions:
+  # Çek tazminatı - varsayılan açık
+  check_compensation:
+    applies_to: [KAMBIYO_CEK]
+    default_on: true
+    
+  # İşlemiş faiz - vade varsa öner
+  accrued_interest:
+    applies_to: ALL
+    condition: "case.claimItems[type=PRINCIPAL].dueDate < today"
+    suggest: true
+    
+  # Takip sonrası faiz - her dosyada varsayılan
+  post_filing_interest:
+    applies_to: ALL
+    default_on: true
+    
+  # Dönem seçimi - kira/nafaka için zorunlu
+  period_selection:
+    applies_to: [KIRA_ALACAGI, ILAMLI_NAFAKA]
+    required: true
+    
+  # Kur politikası - döviz için zorunlu
+  exchange_policy:
+    applies_to: [ILAMLI_DOVIZ]
+    required: true

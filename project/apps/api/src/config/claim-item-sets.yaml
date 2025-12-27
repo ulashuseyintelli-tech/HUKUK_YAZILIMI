@@ -129,12 +129,13 @@ KAMBIYO_CEK:
         
     - type: PENALTY
       label: "Karşılıksız Çek Tazminatı"
-      required: false
+      required: true
+      default_on: true
       calc_ref: "percent_of_principal"
       params:
         rate: 0.10
         max_rate: 0.20
-        condition: "wizard.isKarsilıksiz"
+        user_can_disable: true
         
     - type: EXPENSE
       label: "Komisyon"

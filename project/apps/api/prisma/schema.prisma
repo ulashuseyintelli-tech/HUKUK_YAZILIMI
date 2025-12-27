@@ -2958,3 +2958,355 @@ model InterestRate {
   @@index([startDate])
   @@index([isActive])
 }
+
+
+// ==================== ZORUNLU UNSURLAR MİMARİSİ ====================
+// Yapılacaklar.txt'deki "Master Zorunlu Unsurlar" dokümanına göre
+
+// ==================== ENSTRÜMAN (ÇEK/SENET) ====================
+
+// Çek veya Senet bilgileri - Kambiyo takipleri için
+model CaseInstrument {
+  id              String           @id @default(cuid())
+  tenantId        String
+  caseId          String
+  
+  // Enstrüman Türü
+  instrumentType  InstrumentType   // CEK, SENET, BONO, POLICE
+  
+  // Temel Bilgiler
+  serialNo        String           // Seri/Numara
+  amount          Decimal          @db.Decimal(15, 2)
+  currency        String           @default("TRY")
+  
+  // Tarihler
+  issueDate       DateTime         // Keşide tarihi
+  maturityDate    DateTime?        // Vade tarihi (senet için)
+  presentmentDate DateTime?        // İbraz tarihi (çek için)
+  
+  // Çek Bilgileri
+  bankName        String?          // Banka adı
+  bankBranch      String?          // Şube adı
+  bankCode        String?          // Banka kodu
+  accountNo       String?          // Hesap numarası
+  
+  // Taraflar
+  drawerName      String?          // Keşideci adı
+  drawerIdentity  String?          // Keşideci TCKN/VKN
+  payeeName       String?          // Lehdar adı
+  payeeIdentity   String?          // Lehdar TCKN/VKN
+  
+  // Ciranta/Aval Bilgileri (JSON array)
+  endorsers       Json?            // [{name, identity, date}]
+  avals           Json?            // [{name, identity, amount}]
+  
+  // Çek Durumu
+  isProtested     Boolean          @default(false)  // Protesto edildi mi
+  protestDate     DateTime?        // Protesto tarihi
+  protestNo       String?          // Protesto numarası
+  isBounced       Boolean          @default(false)  // Karşılıksız mı (çek)
+  bounceDate      DateTime?        // Karşılıksız çıkma tarihi
+  bounceReason    String?          // Karşılıksız nedeni
+  
+  // Belge
+  documentId      String?          // Taranmış belge referansı
+  
+  // Meta
+  notes           String?
+  metadata        Json?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([instrumentType])
+  @@index([serialNo])
+}
+
+enum InstrumentType {
+  CEK             // Çek
+  SENET           // Senet/Bono
+  BONO            // Bono
+  POLICE          // Poliçe
+}
+
+// ==================== KİRA SÖZLEŞMESİ ====================
+
+// Kira sözleşmesi bilgileri - Kira alacağı ve tahliye takipleri için
+model CaseLease {
+  id              String           @id @default(cuid())
+  tenantId        String
+  caseId          String
+  
+  // Sözleşme Bilgileri
+  contractDate    DateTime?        // Sözleşme tarihi
+  startDate       DateTime         // Kira başlangıç tarihi
+  endDate         DateTime?        // Kira bitiş tarihi
+  
+  // Kira Bedeli
+  monthlyRent     Decimal          @db.Decimal(15, 2)
+  currency        String           @default("TRY")
+  paymentDay      Int?             // Ödeme günü (1-31)
+  
+  // Taşınmaz Bilgileri
+  propertyType    PropertyType     @default(KONUT)
+  propertyAddress String           // Taşınmaz adresi
+  propertyCity    String?
+  propertyDistrict String?
+  
+  // Taraflar
+  landlordName    String?          // Kiralayan adı
+  landlordIdentity String?         // Kiralayan TCKN/VKN
+  tenantName      String?          // Kiracı adı (borçlu)
+  tenantIdentity  String?          // Kiracı TCKN/VKN
+  
+  // Tahliye Bilgileri (tahliye takibi için)
+  evictionReason  EvictionReason?  // Tahliye sebebi
+  evictionCommitmentDate DateTime? // Tahliye taahhüdü tarihi
+  evictionNoticeDate DateTime?     // İhtar tarihi
+  
+  // Dönemsel Alacaklar (JSON array)
+  // [{year: 2024, month: 1, amount: 5000, isPaid: false, dueDate: "2024-01-05"}]
+  rentPeriods     Json?
+  
+  // Belge
+  documentId      String?          // Taranmış sözleşme referansı
+  
+  // Meta
+  notes           String?
+  metadata        Json?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([tenantId])
+  @@index([caseId])
+}
+
+enum PropertyType {
+  KONUT           // Konut
+  ISYERI          // İşyeri
+  ARSA            // Arsa
+  TARLA           // Tarla
+  DIGER           // Diğer
+}
+
+enum EvictionReason {
+  TAAHHUT         // Tahliye taahhüdü
+  TEMERRUT        // Kira ödenmemesi (temerrüt)
+  SOZLESME_SONU   // Sözleşme süresi sonu
+  IHTIYAC         // Malik ihtiyacı
+  YENIDEN_INSAAT  // Yeniden inşa/imar
+  DIGER           // Diğer
+}
+
+// ==================== İLAM BİLGİSİ ====================
+
+// Mahkeme ilamı bilgileri - İlamlı takipler için
+model CaseJudgment {
+  id              String           @id @default(cuid())
+  tenantId        String
+  caseId          String
+  
+  // Mahkeme Bilgileri
+  courtName       String           // Mahkeme adı
+  courtCity       String?          // Mahkeme ili
+  courtType       String?          // Mahkeme türü (Asliye Hukuk, İş, vb.)
+  
+  // Karar Bilgileri
+  caseNo          String?          // Esas numarası (2024/123)
+  decisionNo      String?          // Karar numarası (2024/456)
+  decisionDate    DateTime         // Karar tarihi
+  
+  // Hüküm
+  judgmentSummary String?          // Hüküm özeti
+  judgmentAmount  Decimal?         @db.Decimal(15, 2)  // Hükmedilen tutar
+  currency        String           @default("TRY")
+  
+  // Faiz Hükmü
+  interestType    InterestType?    // İlamda belirtilen faiz türü
+  interestRate    Decimal?         @db.Decimal(5, 2)   // İlamda belirtilen faiz oranı
+  interestStartDate DateTime?      // Faiz başlangıç tarihi
+  
+  // Kesinleşme
+  requiresFinalization Boolean     @default(false)  // Kesinleşme gerekiyor mu
+  isFinalized     Boolean          @default(false)  // Kesinleşti mi
+  finalizationDate DateTime?       // Kesinleşme tarihi
+  finalizationNote String?         // Kesinleşme şerhi
+  
+  // Nafaka Özel Alanları
+  nafakaType      NafakaType?      // Nafaka türü
+  monthlyNafaka   Decimal?         @db.Decimal(15, 2)  // Aylık nafaka tutarı
+  nafakaStartDate DateTime?        // Nafaka başlangıç tarihi
+  
+  // Belge
+  documentId      String?          // Taranmış ilam referansı
+  
+  // Meta
+  notes           String?
+  metadata        Json?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([courtName])
+  @@index([decisionDate])
+}
+
+enum NafakaType {
+  ISTIRAK         // İştirak nafakası (çocuk)
+  YOKSULLUK       // Yoksulluk nafakası
+  TEDBIR          // Tedbir nafakası
+  YARDIM          // Yardım nafakası
+}
+
+// ==================== REHİN/İPOTEK ====================
+
+// Rehin veya ipotek bilgileri - Rehinli takipler için
+model CaseCollateral {
+  id              String           @id @default(cuid())
+  tenantId        String
+  caseId          String
+  
+  // Rehin Türü
+  collateralType  CollateralType   // IPOTEK, TASIT_REHNI, TICARI_REHIN, DIGER
+  
+  // Rehin Konusu
+  description     String           // Rehin konusu açıklaması
+  
+  // Taşınmaz Bilgileri (ipotek için)
+  propertyType    String?          // Konut, İşyeri, Arsa, vb.
+  propertyAddress String?
+  propertyCity    String?
+  propertyDistrict String?
+  tapuInfo        String?          // Ada/Parsel bilgisi
+  
+  // Taşınır Bilgileri (taşıt rehni için)
+  vehiclePlate    String?          // Plaka
+  vehicleType     String?          // Araç türü
+  vehicleBrand    String?          // Marka
+  vehicleModel    String?          // Model
+  vehicleYear     Int?             // Yıl
+  
+  // Rehin Tutarı
+  collateralAmount Decimal?        @db.Decimal(15, 2)
+  currency        String           @default("TRY")
+  
+  // Rehin Veren
+  pledgorName     String?          // Rehin veren adı
+  pledgorIdentity String?          // Rehin veren TCKN/VKN
+  isPledgorDebtor Boolean          @default(true)  // Rehin veren borçlu mu
+  
+  // Tescil Bilgileri
+  registrationDate DateTime?       // Tescil tarihi
+  registrationNo  String?          // Tescil numarası
+  registrationOffice String?       // Tescil dairesi
+  
+  // Sıra (Derece)
+  rank            Int              @default(1)  // Rehin sırası (1, 2, 3...)
+  
+  // Belge
+  documentId      String?          // Taranmış belge referansı
+  
+  // Meta
+  notes           String?
+  metadata        Json?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([collateralType])
+}
+
+enum CollateralType {
+  IPOTEK          // Taşınmaz ipoteği
+  TASIT_REHNI     // Taşıt rehni
+  TICARI_REHIN    // Ticari işletme rehni
+  ALACAK_REHNI    // Alacak rehni
+  MENKUL_REHIN    // Menkul rehni
+  DIGER           // Diğer
+}
+
+// ==================== VALİDASYON GATE SİSTEMİ ====================
+
+// Validasyon sonuçları - Her gate geçişinde kaydedilir
+model ValidationResult {
+  id              String           @id @default(cuid())
+  tenantId        String
+  caseId          String
+  
+  // Gate Bilgisi
+  gateId          ValidationGate   // GATE_1, GATE_2, GATE_3, GATE_4
+  gateName        String           // "Takip Oluşturma", "Örnek 1 Üretimi", vb.
+  
+  // Sonuç
+  isValid         Boolean          // Geçti mi
+  validatedAt     DateTime         @default(now())
+  
+  // Hatalar ve Uyarılar (JSON array)
+  // [{id: "no_principal", severity: "ERROR", message: "..."}]
+  errors          Json?
+  warnings        Json?
+  
+  // Validasyon Detayları
+  checkedFields   Json?            // Kontrol edilen alanlar
+  missingFields   Json?            // Eksik alanlar
+  
+  // Kullanıcı
+  validatedById   String?
+  
+  // Meta
+  metadata        Json?
+  createdAt       DateTime         @default(now())
+
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([gateId])
+  @@index([isValid])
+  @@index([validatedAt])
+}
+
+enum ValidationGate {
+  GATE_1_CASE_CREATION      // Takip oluşturma
+  GATE_2_ORNEK1_GENERATION  // Örnek 1 üretimi
+  GATE_3_SERVICE_OF_PROCESS // Tebligat
+  GATE_4_UYAP_INTEGRATION   // UYAP gönderimi
+}
+
+// Adres eksikliği task'ı - Gate 3'te adres yoksa oluşturulur
+model AddressMissingTask {
+  id              String           @id @default(cuid())
+  tenantId        String
+  caseId          String
+  debtorId        String
+  
+  // Durum
+  status          AddressTaskStatus @default(PENDING)
+  
+  // Önerilen Yöntemler
+  suggestedMethods Json?           // ["MERNIS", "TICARET_SICIL", "SGK", "MANUEL"]
+  
+  // Çözüm
+  resolvedAt      DateTime?
+  resolvedById    String?
+  resolutionMethod String?         // Hangi yöntemle çözüldü
+  foundAddressId  String?          // Bulunan adres ID
+  
+  // Meta
+  notes           String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([debtorId])
+  @@index([status])
+}
+
+enum AddressTaskStatus {
+  PENDING         // Bekliyor
+  IN_PROGRESS     // Araştırılıyor
+  RESOLVED        // Çözüldü
+  CANCELLED       // İptal
+}

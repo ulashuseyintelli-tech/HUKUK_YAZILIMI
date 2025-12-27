@@ -46,6 +46,7 @@ import { TemplateEngineModule } from "./modules/template-engine/template-engine.
 import { ExchangeRateModule } from "./modules/exchange-rate/exchange-rate.module";
 import { TariffModule } from "./modules/tariff/tariff.module";
 import { PdfModule } from "./modules/pdf/pdf.module";
+import { ValidationGateModule } from "./modules/validation-gate/validation-gate.module";
 
 @Module({
   imports: [
@@ -98,6 +99,7 @@ import { PdfModule } from "./modules/pdf/pdf.module";
     ExchangeRateModule,
     TariffModule,
     PdfModule,
+    ValidationGateModule,
   ],
 })
 export class AppModule {}
