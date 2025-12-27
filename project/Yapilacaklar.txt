@@ -221,10 +221,16 @@ project/apps/api/src/
 - [x] Faiz raporu (InterestReport API)
 - [x] CSV export desteği
 
-### Otomasyon İyileştirmeleri
-- [ ] Otomatik tebligat takibi (PTT barkod sorgulama cron job)
-- [ ] Vade hatırlatma bildirimleri
-- [ ] Otomatik faiz güncelleme
+### Otomasyon İyileştirmeleri ✅ TAMAMLANDI
+- [x] Otomatik tebligat takibi (PTT barkod sorgulama cron job - her 4 saatte)
+- [x] Vade hatırlatma bildirimleri (her gün 08:00)
+- [x] Otomatik faiz güncelleme (her gün 02:00)
+- [x] Ödeme emri süre takibi (her gün 09:00)
+- [x] Nafaka dönem otomasyonu (her ayın 1'i)
+- [x] MTS 7 gün kontrolü (her gün 10:00)
+- [x] 89 İhbarname süre takibi (her gün 10:00)
+- [x] Alacak haczi takibi (her gün 11:00)
+- [x] UYAP retry (her 6 saatte)
 
 ### Entegrasyonlar
 - [ ] E-imza entegrasyonu (gerçek)

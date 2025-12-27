@@ -531,6 +531,7 @@ export class SchedulerService {
       upcomingTasks,
       expiredIhbarnames,
       pendingExternalCases,
+      pendingTebligat,
     ] = await Promise.all([
       this.db.case.count({
         where: {
@@ -566,6 +567,13 @@ export class SchedulerService {
           attachedAt: { lte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
         },
       }),
+      // Gönderilmiş tebligatlar
+      this.db.tebligat.count({
+        where: {
+          status: 'GONDERILDI',
+          barcodeNo: { not: null },
+        },
+      }),
     ]);
 
     return {
@@ -575,7 +583,236 @@ export class SchedulerService {
       upcomingTasks,
       expiredIhbarnames,
       pendingExternalCases,
+      pendingTebligat,
       lastCheck: new Date().toISOString(),
     };
+  }
+
+  /**
+   * Her 4 saatte bir çalışır
+   * PTT barkod sorgulama ile tebligat durumlarını günceller
+   */
+  @Cron('0 */4 * * *') // Her 4 saatte bir
+  async checkTebligatStatus() {
+    this.logger.log('⏰ Tebligat durum kontrolü başladı...');
+
+    try {
+      // Gönderilmiş ve barkodu olan tebligatları bul
+      const pendingTebligat = await this.db.tebligat.findMany({
+        where: {
+          status: 'GONDERILDI',
+          barcodeNo: { not: null },
+          channel: 'PTT',
+        },
+        take: 50, // Her seferde max 50 tebligat
+        orderBy: { sentAt: 'asc' }, // En eski gönderilenden başla
+      });
+
+      this.logger.log(`📋 ${pendingTebligat.length} tebligat sorgulanacak`);
+
+      for (const tebligat of pendingTebligat) {
+        await this.queryPttBarcode(tebligat);
+      }
+    } catch (error) {
+      this.logger.error('Tebligat kontrolü hatası:', error);
+    }
+  }
+
+  /**
+   * PTT barkod sorgulama (mock - gerçek API entegrasyonu için güncellenmeli)
+   */
+  private async queryPttBarcode(tebligat: any) {
+    try {
+      // Mock: Gerçek PTT API entegrasyonu burada yapılacak
+      // Şimdilik rastgele sonuç üretiyoruz (test için)
+      const mockResults = ['TESLIM_EDILDI', 'IADE_GELDI', 'GONDERILDI'];
+      const randomResult = mockResults[Math.floor(Math.random() * mockResults.length)];
+
+      // Sadece durum değiştiyse güncelle
+      if (randomResult !== 'GONDERILDI') {
+        const updateData: any = {
+          pttResultDate: new Date(),
+        };
+
+        if (randomResult === 'TESLIM_EDILDI') {
+          updateData.status = 'TESLIM_EDILDI';
+          updateData.deliveredAt = new Date();
+          updateData.pttResult = 'TESLIM_EDILDI';
+          updateData.nextAction = 'TEBLIG_TAMAMLANDI';
+        } else if (randomResult === 'IADE_GELDI') {
+          updateData.status = 'IADE_GELDI';
+          updateData.returnedAt = new Date();
+          updateData.pttResult = 'ADRESTE_BULUNAMADI';
+          updateData.nextAction = 'MERNIS_TEBLIGAT';
+        }
+
+        await this.db.tebligat.update({
+          where: { id: tebligat.id },
+          data: updateData,
+        });
+
+        this.logger.log(`✅ Tebligat güncellendi: ${tebligat.barcodeNo} -> ${randomResult}`);
+
+        // İade geldiyse task oluştur
+        if (randomResult === 'IADE_GELDI') {
+          await this.createTebligatFollowupTask(tebligat);
+        }
+      }
+    } catch (error) {
+      this.logger.error(`Barkod sorgulama hatası (${tebligat.barcodeNo}):`, error);
+    }
+  }
+
+  /**
+   * Tebligat takip task'ı oluştur
+   */
+  private async createTebligatFollowupTask(tebligat: any) {
+    // Case bilgisini al
+    const caseData = await this.db.case.findUnique({
+      where: { id: tebligat.caseId },
+      select: { id: true, fileNumber: true, tenantId: true },
+    });
+
+    if (!caseData) return;
+
+    await this.db.task.create({
+      data: {
+        tenantId: caseData.tenantId,
+        caseId: caseData.id,
+        title: `Tebligat İade - ${tebligat.recipientName}`,
+        description: `${caseData.fileNumber} dosyasında ${tebligat.recipientName}'a gönderilen tebligat iade geldi. MERNİS adresi sorgulanarak yeni tebligat çıkarılmalı.`,
+        status: 'PENDING',
+        priority: 'HIGH',
+        dueDate: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000), // 2 gün içinde
+      },
+    });
+
+    this.logger.log(`✅ Tebligat takip task'ı oluşturuldu: ${caseData.fileNumber}`);
+  }
+
+  /**
+   * Her gün saat 08:00'da çalışır
+   * Vade hatırlatma bildirimleri gönderir
+   */
+  @Cron(CronExpression.EVERY_DAY_AT_8AM)
+  async sendDueReminders() {
+    this.logger.log('⏰ Vade hatırlatma kontrolü başladı...');
+
+    try {
+      const threeDaysLater = new Date();
+      threeDaysLater.setDate(threeDaysLater.getDate() + 3);
+
+      // 3 gün içinde vadesi dolacak alacaklar
+      const upcomingDues = await this.db.due.findMany({
+        where: {
+          dueDate: {
+            gte: new Date(),
+            lte: threeDaysLater,
+          },
+          isPaid: false,
+        },
+        include: {
+          case: {
+            select: {
+              id: true,
+              fileNumber: true,
+              tenantId: true,
+              sorumluPersonelId: true,
+            },
+          },
+        },
+      });
+
+      this.logger.log(`📋 ${upcomingDues.length} alacak vadesi yaklaşıyor`);
+
+      // Dosya bazında grupla
+      const caseMap = new Map<string, any[]>();
+      for (const due of upcomingDues) {
+        if (!due.case) continue;
+        const existing = caseMap.get(due.case.id) || [];
+        existing.push(due);
+        caseMap.set(due.case.id, existing);
+      }
+
+      // Her dosya için bildirim oluştur
+      for (const [caseId, dues] of caseMap) {
+        const caseData = dues[0].case;
+        const totalAmount = dues.reduce((sum, d) => sum + Number(d.amount || 0), 0);
+
+        await this.db.notification.create({
+          data: {
+            tenantId: caseData.tenantId,
+            userId: caseData.sorumluPersonelId,
+            type: 'DUE_REMINDER',
+            title: 'Vade Hatırlatması',
+            message: `${caseData.fileNumber} dosyasında ${dues.length} alacak kaleminin vadesi 3 gün içinde doluyor. Toplam: ${totalAmount.toLocaleString('tr-TR')} TL`,
+            data: { caseId, dueCount: dues.length, totalAmount },
+            isRead: false,
+          },
+        });
+      }
+
+      this.logger.log(`✅ ${caseMap.size} dosya için vade hatırlatması oluşturuldu`);
+    } catch (error) {
+      this.logger.error('Vade hatırlatma hatası:', error);
+    }
+  }
+
+  /**
+   * Her gün gece 02:00'de çalışır
+   * Faiz tutarlarını günceller
+   */
+  @Cron('0 2 * * *') // Her gün saat 02:00
+  async updateInterestAmounts() {
+    this.logger.log('⏰ Faiz güncelleme başladı...');
+
+    try {
+      // Aktif dosyaları al
+      const activeCases = await this.db.case.findMany({
+        where: {
+          caseStatus: { in: ['DERDEST', 'ISLEMDE'] },
+          interestRate: { gt: 0 },
+          interestStartDate: { not: null },
+        },
+        select: {
+          id: true,
+          fileNumber: true,
+          principalAmount: true,
+          interestRate: true,
+          interestStartDate: true,
+          calculatedInterest: true,
+        },
+      });
+
+      this.logger.log(`📋 ${activeCases.length} dosya için faiz hesaplanacak`);
+
+      let updatedCount = 0;
+      const today = new Date();
+
+      for (const caseData of activeCases) {
+        const startDate = new Date(caseData.interestStartDate);
+        const days = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+        
+        if (days <= 0) continue;
+
+        const principal = Number(caseData.principalAmount || 0);
+        const rate = Number(caseData.interestRate || 0);
+        const newInterest = Math.round((principal * rate * days) / (365 * 100) * 100) / 100;
+
+        // Sadece değişiklik varsa güncelle
+        const currentInterest = Number(caseData.calculatedInterest || 0);
+        if (Math.abs(newInterest - currentInterest) > 0.01) {
+          await this.db.case.update({
+            where: { id: caseData.id },
+            data: { calculatedInterest: newInterest },
+          });
+          updatedCount++;
+        }
+      }
+
+      this.logger.log(`✅ ${updatedCount} dosyada faiz güncellendi`);
+    } catch (error) {
+      this.logger.error('Faiz güncelleme hatası:', error);
+    }
   }
 }
