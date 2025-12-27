@@ -236,7 +236,8 @@ project/apps/api/src/
 - [ ] E-imza entegrasyonu (gerçek)
 - [ ] UYAP gerçek API entegrasyonu (API açıldığında)
 - [ ] Banka entegrasyonları (tahsilat takibi)
-- [ ] SMS/E-posta bildirim servisleri
+- [x] SMS bildirim servisleri (NetGSM, İletimerkezi, Twilio desteği)
+- [x] E-posta bildirim servisleri (SMTP, SendGrid, AWS SES desteği)
 
 ### Mobil Uygulama
 - [ ] React Native mobil uygulama
