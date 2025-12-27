@@ -199,6 +199,10 @@ project/apps/api/src/
 │   ├── rule-engine/               # Kural motoru
 │   ├── tebligat/                  # Tebligat yönetimi (PTT + UETS/KEP)
 │   ├── uyap/                      # UYAP entegrasyonu
+│   ├── esign/                     # E-imza entegrasyonu
+│   ├── bank/                      # Banka entegrasyonu
+│   ├── notification/              # SMS/E-posta bildirimleri
+│   ├── scheduler/                 # Cron job'lar
 │   ├── case-instrument/           # Çek/Senet modülü
 │   ├── case-lease/                # Kira sözleşmesi modülü
 │   ├── case-judgment/             # İlam modülü
@@ -234,11 +238,17 @@ project/apps/api/src/
 
 ### Entegrasyonlar ✅ TAMAMLANDI
 - [x] E-imza entegrasyonu (E-Güven, Turkcell, E-Tugra desteği)
+  - ESignModule backend modülü
+  - ESignPanel frontend bileşeni
+  - API fonksiyonları (signDocument, getSignStatus, getSignLogs, vb.)
 - [x] Banka entegrasyonları (Garanti, Akbank, İş Bankası desteği)
+  - BankModule backend modülü
+  - BankPanel frontend bileşeni
   - Hesap bakiyesi sorgulama
   - Hesap hareketleri çekme
   - Otomatik tahsilat eşleştirme
   - EFT/Havale gönderimi
+  - API fonksiyonları (getBankAccounts, syncBankTransactions, autoMatchTransactions, vb.)
 - [x] SMS bildirim servisleri (NetGSM, İletimerkezi, Twilio desteği)
 - [x] E-posta bildirim servisleri (SMTP, SendGrid, AWS SES desteği)
 - [ ] UYAP gerçek API entegrasyonu (API açıldığında)

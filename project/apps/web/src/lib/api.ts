@@ -1364,4 +1364,291 @@ export interface CollectionSummary {
   pendingCount: number;
 }
 
+// ============================================
+// E-Sign Types
+// ============================================
+
+export type ESignProvider = 'E_GUVEN' | 'TURKCELL' | 'E_TUGRA';
+export type ESignStatus = 'PENDING' | 'SIGNED' | 'REJECTED' | 'EXPIRED' | 'ERROR';
+
+export interface ESignRequest {
+  documentId: string;
+  documentName: string;
+  documentContent: string;
+  signerId: string;
+  signerName: string;
+  signerTcNo: string;
+  provider?: ESignProvider;
+  callbackUrl?: string;
+}
+
+export interface ESignResponse {
+  success: boolean;
+  requestId?: string;
+  signUrl?: string;
+  errorMessage?: string;
+  provider: ESignProvider;
+}
+
+export interface ESignStatusResponse {
+  requestId: string;
+  status: ESignStatus;
+  signedAt?: string;
+  signedDocument?: string;
+  errorMessage?: string;
+}
+
+export interface ESignLog {
+  id: string;
+  caseId?: string;
+  documentId: string;
+  documentName: string;
+  signerId: string;
+  signerName: string;
+  provider: ESignProvider;
+  status: ESignStatus;
+  requestId?: string;
+  signedAt?: string;
+  errorMessage?: string;
+  createdAt: string;
+}
+
+// ============================================
+// Bank Types
+// ============================================
+
+export type BankProvider = 'GARANTI' | 'AKBANK' | 'ISBANK' | 'YAPI_KREDI' | 'ZIRAAT' | 'VAKIF' | 'HALK' | 'DIGER';
+export type BankTransactionType = 'INCOMING' | 'OUTGOING';
+export type BankTransactionStatus = 'PENDING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
+
+export interface BankAccount {
+  id: string;
+  tenantId: string;
+  bankProvider: BankProvider;
+  accountName: string;
+  iban: string;
+  currency: string;
+  balance?: number;
+  lastSyncAt?: string;
+  isActive: boolean;
+  createdAt: string;
+}
+
+export interface BankTransaction {
+  id: string;
+  bankAccountId: string;
+  transactionType: BankTransactionType;
+  amount: number;
+  currency: string;
+  description?: string;
+  senderName?: string;
+  senderIban?: string;
+  receiverName?: string;
+  receiverIban?: string;
+  referenceNo?: string;
+  transactionDate: string;
+  valueDate?: string;
+  status: BankTransactionStatus;
+  matchedCaseId?: string;
+  matchedCollectionId?: string;
+  isAutoMatched: boolean;
+  createdAt: string;
+}
+
+export interface BankBalanceResponse {
+  iban: string;
+  balance: number;
+  currency: string;
+  availableBalance: number;
+  lastUpdate: string;
+}
+
+export interface BankTransferRequest {
+  fromIban: string;
+  toIban: string;
+  amount: number;
+  currency: string;
+  description?: string;
+  receiverName: string;
+}
+
+export interface BankTransferResponse {
+  success: boolean;
+  referenceNo?: string;
+  errorMessage?: string;
+  status: BankTransactionStatus;
+}
+
+// Singleton export
 export const api = new ApiClient();
+
+// ============================================
+// E-Sign API Functions (ApiClient extension)
+// ============================================
+
+// E-Sign fonksiyonlari
+api.signDocument = async function(data: ESignRequest): Promise<ESignResponse> {
+  return this.request<ESignResponse>("/esign/sign", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+};
+
+api.getSignStatus = async function(requestId: string): Promise<ESignStatusResponse> {
+  return this.request<ESignStatusResponse>(`/esign/status/${requestId}`);
+};
+
+api.getSignLogs = async function(caseId?: string): Promise<ESignLog[]> {
+  const query = caseId ? `?caseId=${caseId}` : '';
+  return this.request<ESignLog[]>(`/esign/logs${query}`);
+};
+
+api.getAvailableSignProviders = async function(): Promise<{ providers: ESignProvider[]; default: ESignProvider }> {
+  return this.request<{ providers: ESignProvider[]; default: ESignProvider }>("/esign/providers");
+};
+
+api.cancelSignRequest = async function(requestId: string): Promise<{ success: boolean; message: string }> {
+  return this.request<{ success: boolean; message: string }>(`/esign/cancel/${requestId}`, {
+    method: "POST",
+  });
+};
+
+// ============================================
+// Bank API Functions (ApiClient extension)
+// ============================================
+
+// Bank hesap fonksiyonlari
+api.getBankAccounts = async function(): Promise<BankAccount[]> {
+  return this.request<BankAccount[]>("/bank/accounts");
+};
+
+api.createBankAccount = async function(data: Omit<BankAccount, 'id' | 'tenantId' | 'createdAt' | 'lastSyncAt'>): Promise<BankAccount> {
+  return this.request<BankAccount>("/bank/accounts", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+};
+
+api.updateBankAccount = async function(id: string, data: Partial<BankAccount>): Promise<BankAccount> {
+  return this.request<BankAccount>(`/bank/accounts/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(data),
+  });
+};
+
+api.deleteBankAccount = async function(id: string): Promise<void> {
+  return this.request<void>(`/bank/accounts/${id}`, { method: "DELETE" });
+};
+
+// Bakiye sorgulama
+api.getBankBalance = async function(iban: string): Promise<BankBalanceResponse> {
+  return this.request<BankBalanceResponse>(`/bank/balance/${encodeURIComponent(iban)}`);
+};
+
+api.syncBankBalance = async function(accountId: string): Promise<BankBalanceResponse> {
+  return this.request<BankBalanceResponse>(`/bank/accounts/${accountId}/sync`, {
+    method: "POST",
+  });
+};
+
+// Hesap hareketleri
+api.getBankTransactions = async function(filters?: {
+  accountId?: string;
+  startDate?: string;
+  endDate?: string;
+  type?: BankTransactionType;
+  status?: BankTransactionStatus;
+  unmatched?: boolean;
+}): Promise<BankTransaction[]> {
+  const params = new URLSearchParams();
+  if (filters?.accountId) params.set('accountId', filters.accountId);
+  if (filters?.startDate) params.set('startDate', filters.startDate);
+  if (filters?.endDate) params.set('endDate', filters.endDate);
+  if (filters?.type) params.set('type', filters.type);
+  if (filters?.status) params.set('status', filters.status);
+  if (filters?.unmatched) params.set('unmatched', 'true');
+  const query = params.toString() ? `?${params}` : '';
+  return this.request<BankTransaction[]>(`/bank/transactions${query}`);
+};
+
+api.syncBankTransactions = async function(accountId: string, startDate?: string, endDate?: string): Promise<{ count: number; transactions: BankTransaction[] }> {
+  const params = new URLSearchParams();
+  if (startDate) params.set('startDate', startDate);
+  if (endDate) params.set('endDate', endDate);
+  const query = params.toString() ? `?${params}` : '';
+  return this.request<{ count: number; transactions: BankTransaction[] }>(`/bank/accounts/${accountId}/sync-transactions${query}`, {
+    method: "POST",
+  });
+};
+
+// Tahsilat eslestirme
+api.matchTransactionToCase = async function(transactionId: string, caseId: string): Promise<{ success: boolean; collectionId?: string }> {
+  return this.request<{ success: boolean; collectionId?: string }>(`/bank/transactions/${transactionId}/match`, {
+    method: "POST",
+    body: JSON.stringify({ caseId }),
+  });
+};
+
+api.unmatchTransaction = async function(transactionId: string): Promise<{ success: boolean }> {
+  return this.request<{ success: boolean }>(`/bank/transactions/${transactionId}/unmatch`, {
+    method: "POST",
+  });
+};
+
+api.autoMatchTransactions = async function(): Promise<{ matched: number; unmatched: number }> {
+  return this.request<{ matched: number; unmatched: number }>("/bank/auto-match", {
+    method: "POST",
+  });
+};
+
+// EFT/Havale
+api.sendBankTransfer = async function(data: BankTransferRequest): Promise<BankTransferResponse> {
+  return this.request<BankTransferResponse>("/bank/transfer", {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+};
+
+api.getTransferStatus = async function(referenceNo: string): Promise<{ referenceNo: string; status: BankTransactionStatus; completedAt?: string }> {
+  return this.request<{ referenceNo: string; status: BankTransactionStatus; completedAt?: string }>(`/bank/transfer/status/${referenceNo}`);
+};
+
+// Banka entegrasyon durumu
+api.getBankIntegrationStatus = async function(): Promise<{ connected: boolean; providers: BankProvider[]; lastSync?: string }> {
+  return this.request<{ connected: boolean; providers: BankProvider[]; lastSync?: string }>("/bank/status");
+};
+
+// TypeScript icin ApiClient'a method tanimlari ekleme
+declare module './api' {
+  interface ApiClient {
+    // E-Sign methods
+    signDocument(data: ESignRequest): Promise<ESignResponse>;
+    getSignStatus(requestId: string): Promise<ESignStatusResponse>;
+    getSignLogs(caseId?: string): Promise<ESignLog[]>;
+    getAvailableSignProviders(): Promise<{ providers: ESignProvider[]; default: ESignProvider }>;
+    cancelSignRequest(requestId: string): Promise<{ success: boolean; message: string }>;
+    
+    // Bank methods
+    getBankAccounts(): Promise<BankAccount[]>;
+    createBankAccount(data: Omit<BankAccount, 'id' | 'tenantId' | 'createdAt' | 'lastSyncAt'>): Promise<BankAccount>;
+    updateBankAccount(id: string, data: Partial<BankAccount>): Promise<BankAccount>;
+    deleteBankAccount(id: string): Promise<void>;
+    getBankBalance(iban: string): Promise<BankBalanceResponse>;
+    syncBankBalance(accountId: string): Promise<BankBalanceResponse>;
+    getBankTransactions(filters?: {
+      accountId?: string;
+      startDate?: string;
+      endDate?: string;
+      type?: BankTransactionType;
+      status?: BankTransactionStatus;
+      unmatched?: boolean;
+    }): Promise<BankTransaction[]>;
+    syncBankTransactions(accountId: string, startDate?: string, endDate?: string): Promise<{ count: number; transactions: BankTransaction[] }>;
+    matchTransactionToCase(transactionId: string, caseId: string): Promise<{ success: boolean; collectionId?: string }>;
+    unmatchTransaction(transactionId: string): Promise<{ success: boolean }>;
+    autoMatchTransactions(): Promise<{ matched: number; unmatched: number }>;
+    sendBankTransfer(data: BankTransferRequest): Promise<BankTransferResponse>;
+    getTransferStatus(referenceNo: string): Promise<{ referenceNo: string; status: BankTransactionStatus; completedAt?: string }>;
+    getBankIntegrationStatus(): Promise<{ connected: boolean; providers: BankProvider[]; lastSync?: string }>;
+  }
+}
