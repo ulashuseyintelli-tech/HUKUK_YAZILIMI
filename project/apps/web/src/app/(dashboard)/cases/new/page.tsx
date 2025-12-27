@@ -244,16 +244,21 @@ export default function NewCasePage() {
   const [checkingPoa, setCheckingPoa] = useState(false);
   const [users, setUsers] = useState<{ id: string; name: string; surname: string; }[]>([]);
   const [draftLoaded, setDraftLoaded] = useState(false);
+  const [dataLoaded, setDataLoaded] = useState(false);
 
-  // LocalStorage'dan taslak yükle (sayfa yenilendiğinde)
+  // LocalStorage'dan taslak yükle (sayfa yenilendiğinde) - EN ÖNCE ÇALIŞMALI
   useEffect(() => {
     const savedState = loadWizardState();
-    if (savedState && !draftLoaded) {
-      console.log("Taslak yükleniyor:", savedState.savedAt);
+    if (savedState) {
+      console.log("📦 Taslak yükleniyor:", savedState.savedAt);
+      console.log("📦 Kaydedilmiş avukatlar:", savedState.lawyers?.length || 0);
       
       // State'leri geri yükle
       if (savedState.currentStep !== undefined) setCurrentStep(savedState.currentStep);
-      if (savedState.lawyers?.length > 0) setLawyers(savedState.lawyers);
+      if (savedState.lawyers?.length > 0) {
+        console.log("📦 Avukatlar yükleniyor:", savedState.lawyers);
+        setLawyers(savedState.lawyers);
+      }
       if (savedState.creditors?.length > 0) setCreditors(savedState.creditors);
       if (savedState.caseDebtors?.length > 0) setCaseDebtors(savedState.caseDebtors);
       if (savedState.selectedStaff?.length > 0) setSelectedStaff(savedState.selectedStaff);
@@ -263,14 +268,16 @@ export default function NewCasePage() {
       if (savedState.documentSource) setDocumentSource(savedState.documentSource);
       if (savedState.showWizard !== undefined) setShowWizard(savedState.showWizard);
       if (savedState.showDocumentSelector !== undefined) setShowDocumentSelector(savedState.showDocumentSelector);
-      
-      setDraftLoaded(true);
     }
+    setDraftLoaded(true);
   }, []);
 
   // State değişikliklerini localStorage'a kaydet
   useEffect(() => {
-    if (!draftLoaded) return; // İlk yükleme tamamlanmadan kaydetme
+    // Hem draft hem data yüklenmeden kaydetme
+    if (!draftLoaded || !dataLoaded) return;
+    
+    console.log("💾 Taslak kaydediliyor, avukat sayısı:", lawyers.length);
     
     const stateToSave = {
       currentStep,
@@ -287,9 +294,14 @@ export default function NewCasePage() {
     };
     
     saveWizardState(stateToSave);
-  }, [currentStep, lawyers, creditors, caseDebtors, selectedStaff, dues, caseData, selectedCity, documentSource, showWizard, showDocumentSelector, draftLoaded]);
+  }, [currentStep, lawyers, creditors, caseDebtors, selectedStaff, dues, caseData, selectedCity, documentSource, showWizard, showDocumentSelector, draftLoaded, dataLoaded]);
 
-  useEffect(() => { loadExistingData(); }, []);
+  // Mevcut verileri yükle - draftLoaded olduktan sonra
+  useEffect(() => { 
+    if (draftLoaded) {
+      loadExistingData(); 
+    }
+  }, [draftLoaded]);
   
   // Varsayılan il ayarını uygula
   useEffect(() => {
@@ -390,12 +402,18 @@ export default function NewCasePage() {
       setUsers(usersRes?.data?.data || []);
       setExistingStaff(staffRes?.data?.data || []);
       
-      // Varsayılan avukatları otomatik seç (localStorage'dan yüklenmemişse)
-      const savedState = loadWizardState();
-      const hasLoadedLawyers = savedState?.lawyers?.length > 0;
-      
-      if (!hasLoadedLawyers) {
+      // Varsayılan avukatları otomatik seç (localStorage'dan veya mevcut seçimden yüklenmemişse)
+      // lawyers state'i zaten localStorage'dan yüklendiyse dokunma
+      setLawyers(currentLawyers => {
+        if (currentLawyers.length > 0) {
+          console.log("✅ Mevcut avukatlar korunuyor:", currentLawyers.length);
+          return currentLawyers;
+        }
+        
+        // Mevcut avukat yoksa varsayılanları yükle
         const defaultLawyers = allLawyers.filter((l: any) => l.isDefaultForNewCases && l.isActive);
+        console.log("🔍 Varsayılan avukatlar:", defaultLawyers.length);
+        
         if (defaultLawyers.length > 0) {
           const selectedLawyers = defaultLawyers.map((l: any, index: number) => ({
             id: l.id,
@@ -408,12 +426,15 @@ export default function NewCasePage() {
             role: l.role,
             canSign: l.canSign,
             isNew: false,
-            isResponsible: index === 0, // İlk avukat sorumlu
+            isResponsible: index === 0,
             hasSignatureAuthority: l.canSign,
           }));
-          setLawyers(selectedLawyers);
+          console.log("✅ Varsayılan avukatlar yüklendi:", selectedLawyers.length);
+          return selectedLawyers;
         }
-      }
+        
+        return currentLawyers;
+      });
       
       // Varsayılan aşama: "Dosya Açıldı"
       const defaultAsama = lookupsRes?.data?.data?.asama?.find((a: LookupItem) => a.code === 'DOSYA_ACILDI');
@@ -430,7 +451,13 @@ export default function NewCasePage() {
         const nextFileNumber = await api.getNextFileNumber();
         if (nextFileNumber) setCaseData(prev => ({ ...prev, fileNumber: nextFileNumber }));
       } catch (e) { console.error("Dosya numarası alınamadı:", e); }
-    } catch (err) { console.error("Mevcut veriler yüklenemedi:", err); }
+      
+      // Data yükleme tamamlandı
+      setDataLoaded(true);
+    } catch (err) { 
+      console.error("Mevcut veriler yüklenemedi:", err); 
+      setDataLoaded(true); // Hata olsa bile dataLoaded'ı set et
+    }
   };
 
   const handleDocumentSourceSelect = (sourceType: DocumentSourceType, ocrResultData?: ClassificationResult) => {
