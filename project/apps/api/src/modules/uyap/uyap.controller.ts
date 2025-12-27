@@ -107,4 +107,68 @@ export class UyapController {
       retriedCount: count,
     };
   }
+
+  /**
+   * UYAP'a evrak gönder
+   */
+  @Post('document/submit')
+  async submitDocument(@Body() body: any, @Req() req: any) {
+    const tenantId = req.user?.tenantId;
+    return this.uyapService.submitDocument({
+      caseId: body.caseId,
+      documentType: body.documentType,
+      documentContent: body.documentContent,
+      documentName: body.documentName,
+      clientId: body.clientId,
+      lawyerId: body.lawyerId,
+      tenantId,
+    });
+  }
+
+  /**
+   * Takip durumunu sorgula
+   */
+  @Get('case/:caseId/status')
+  async queryCaseStatus(
+    @Param('caseId') caseId: string,
+    @Query('uyapDosyaId') uyapDosyaId?: string,
+  ) {
+    return this.uyapService.queryCaseStatus(caseId, uyapDosyaId);
+  }
+
+  /**
+   * Borçlu mal varlığı sorgula
+   */
+  @Post('debtor/assets')
+  async queryDebtorAssets(@Body() body: { debtorIdentityNo: string; caseId: string }) {
+    return this.uyapService.queryDebtorAssets(body.debtorIdentityNo, body.caseId);
+  }
+
+  /**
+   * UYAP istek geçmişi
+   */
+  @Get('history')
+  async getRequestHistory(
+    @Query('caseId') caseId?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.uyapService.getRequestHistory(caseId, limit ? parseInt(limit) : 50);
+  }
+
+  /**
+   * Haciz talebi gönder
+   */
+  @Post('haciz')
+  async pushHacizRequest(@Body() body: any, @Req() req: any) {
+    const tenantId = req.user?.tenantId;
+    return this.uyapService.pushHacizRequest({
+      caseId: body.caseId,
+      targetType: body.targetType,
+      targetDetails: body.targetDetails,
+      amount: body.amount,
+      clientId: body.clientId,
+      lawyerId: body.lawyerId,
+      tenantId,
+    });
+  }
 }

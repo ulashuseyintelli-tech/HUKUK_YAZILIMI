@@ -675,6 +675,105 @@ class ApiClient {
   async determineElectronicChannel(tcVkn: string) {
     return this.request<TebligatChannel | null>(`/tebligat/electronic-channel/${tcVkn}`);
   }
+
+  // ============================================
+  // UYAP API
+  // ============================================
+
+  async getUyapStatus() {
+    return this.request<UyapStatus>("/uyap/status");
+  }
+
+  async getUyapStats() {
+    return this.request<{ total: number; pending: number; success: number; failed: number }>("/uyap/stats");
+  }
+
+  async validateUyapPoa(clientId: string, lawyerId: string) {
+    return this.request<UyapPoaValidation>(`/uyap/poa/validate?clientId=${clientId}&lawyerId=${lawyerId}`);
+  }
+
+  async validateUyapCasePoa(caseId: string) {
+    return this.request<UyapCasePoaValidation>(`/uyap/poa/validate/case/${caseId}`);
+  }
+
+  async submitUyapDocument(data: {
+    caseId: string;
+    documentType: UyapDocumentType;
+    documentContent: string;
+    documentName: string;
+    clientId?: string;
+    lawyerId?: string;
+  }) {
+    return this.request<UyapResponse>("/uyap/document/submit", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async queryUyapCaseStatus(caseId: string, uyapDosyaId?: string) {
+    const query = uyapDosyaId ? `?uyapDosyaId=${uyapDosyaId}` : '';
+    return this.request<UyapResponse<UyapCaseStatus>>(`/uyap/case/${caseId}/status${query}`);
+  }
+
+  async queryUyapDebtorAssets(debtorIdentityNo: string, caseId: string) {
+    return this.request<UyapResponse<UyapDebtorAssets>>("/uyap/debtor/assets", {
+      method: "POST",
+      body: JSON.stringify({ debtorIdentityNo, caseId }),
+    });
+  }
+
+  async getUyapRequestHistory(caseId?: string, limit?: number) {
+    const params = new URLSearchParams();
+    if (caseId) params.set('caseId', caseId);
+    if (limit) params.set('limit', limit.toString());
+    const query = params.toString() ? `?${params}` : '';
+    return this.request<UyapRequestLog[]>(`/uyap/history${query}`);
+  }
+
+  async sendUyapPaymentOrder(data: {
+    caseId: string;
+    executionOfficeCode: string;
+    creditor: { id?: string; name: string; identityNo?: string; address?: string };
+    debtor: { name: string; identityNo?: string; address?: string };
+    lawyerId?: string;
+    amount: number;
+    currency: string;
+    interestType?: string;
+    interestStartDate?: string;
+  }) {
+    return this.request<UyapResponse>("/uyap/test/payment-order", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async sendUyapHacizRequest(data: {
+    caseId: string;
+    targetType: HacizTargetType;
+    targetDetails: Record<string, any>;
+    amount: number;
+    clientId?: string;
+    lawyerId?: string;
+  }) {
+    return this.request<UyapResponse>("/uyap/haciz", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async checkUyapTebligat(tebligatId: string) {
+    return this.request<UyapResponse>(`/uyap/tebligat/${tebligatId}`);
+  }
+
+  async checkUyapMts(referenceNo: string) {
+    return this.request<UyapResponse>(`/uyap/mts/${referenceNo}`);
+  }
+
+  async retryUyapFailedRequests() {
+    return this.request<{ message: string; retriedCount: number }>("/uyap/retry-failed", {
+      method: "POST",
+    });
+  }
 }
 
 // ============================================
@@ -923,6 +1022,81 @@ export interface UetsRecipient {
   kepAddress?: string;
   uetsAddress?: string;
   isRegistered: boolean;
+}
+
+// ============================================
+// UYAP Types
+// ============================================
+
+export type UyapDocumentType = 'TAKIP_TALEBI' | 'DILEKCE' | 'BEYAN' | 'ITIRAZ' | 'HACIZ_TALEBI' | 'DIGER';
+export type UyapRequestStatus = 'PENDING' | 'SUCCESS' | 'FAILED' | 'RETRY';
+export type HacizTargetType = 'BANK' | 'VEHICLE' | 'PROPERTY' | 'SALARY';
+
+export interface UyapResponse<T = any> {
+  success: boolean;
+  data?: T;
+  errorCode?: string;
+  errorMessage?: string;
+  evkNo?: string;
+  requestId: string;
+}
+
+export interface UyapStatus {
+  connected: boolean;
+  mode: 'STUB' | 'LIVE';
+  message: string;
+  stats: {
+    total: number;
+    pending: number;
+    success: number;
+    failed: number;
+  };
+}
+
+export interface UyapPoaValidation {
+  isValid: boolean;
+  message: string;
+  daysRemaining?: number;
+  poaId?: string;
+  canProceedToUyap: boolean;
+}
+
+export interface UyapCasePoaValidation {
+  isValid: boolean;
+  errors: string[];
+  canProceedToUyap: boolean;
+  errorCount: number;
+}
+
+export interface UyapRequestLog {
+  id: string;
+  requestType: string;
+  status: UyapRequestStatus;
+  evkNo?: string;
+  createdAt: string;
+  responseAt?: string;
+  errorMessage?: string;
+}
+
+export interface UyapCaseStatus {
+  caseId: string;
+  localStatus: string;
+  uyapDosyaId?: string;
+  uyapStatus: string;
+  lastSync: string;
+  message: string;
+}
+
+export interface UyapDebtorAssets {
+  debtorIdentityNo: string;
+  queryDate: string;
+  assets: {
+    bankAccounts: any[];
+    vehicles: any[];
+    properties: any[];
+    companies: any[];
+  };
+  message: string;
 }
 
 export const api = new ApiClient();

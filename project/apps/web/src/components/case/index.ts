@@ -62,3 +62,4 @@ export { TagStatistics } from "./tag-statistics";
 export { CaseCostEstimate } from "./cost-estimate";
 export { TransactionSummary } from "./transaction-summary";
 export { TebligatPanel } from "./TebligatPanel";
+export { UyapPanel } from "./UyapPanel";

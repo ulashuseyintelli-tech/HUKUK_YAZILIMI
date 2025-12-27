@@ -367,6 +367,188 @@ export class UyapService {
   }
 
   /**
+   * UYAP'a dosya/evrak gönder
+   * Takip talebi, dilekçe vb. evrakları UYAP'a yükler
+   */
+  async submitDocument(request: {
+    caseId: string;
+    documentType: 'TAKIP_TALEBI' | 'DILEKCE' | 'BEYAN' | 'ITIRAZ' | 'HACIZ_TALEBI' | 'DIGER';
+    documentContent: string; // Base64 encoded PDF
+    documentName: string;
+    clientId?: string;
+    lawyerId?: string;
+    tenantId?: string;
+    skipPoaCheck?: boolean;
+  }): Promise<UyapResponse> {
+    // Vekalet kontrolü
+    if (!request.skipPoaCheck && request.clientId && request.lawyerId && request.tenantId) {
+      const poaValidation = await this.validatePowerOfAttorney(
+        request.clientId,
+        request.lawyerId,
+        request.tenantId,
+      );
+
+      if (!poaValidation.isValid) {
+        this.logger.error(`UYAP evrak gönderimi engellendi - Vekalet hatası: ${poaValidation.message}`);
+        throw new BadRequestException({
+          code: 'POA_VALIDATION_FAILED',
+          message: `Evrak gönderilemez: ${poaValidation.message}`,
+        });
+      }
+    }
+
+    const requestId = await this.logRequest('submitDocument', {
+      caseId: request.caseId,
+      documentType: request.documentType,
+      documentName: request.documentName,
+      hasContent: !!request.documentContent,
+    });
+
+    try {
+      this.logger.log(`[STUB] UYAP'a evrak gönderiliyor: ${request.documentType} - ${request.documentName}`);
+
+      const response: UyapResponse = {
+        success: true,
+        requestId,
+        evkNo: `DOC-${Date.now()}`,
+        data: {
+          message: 'Evrak UYAP kuyruğuna alındı (STUB)',
+          documentType: request.documentType,
+          documentName: request.documentName,
+          submittedAt: new Date(),
+        },
+      };
+
+      await this.logResponse(requestId, response);
+      return response;
+    } catch (error: any) {
+      const errorResponse: UyapResponse = {
+        success: false,
+        requestId,
+        errorCode: 'UYAP_DOCUMENT_ERROR',
+        errorMessage: error.message,
+      };
+      await this.logResponse(requestId, errorResponse, error.message);
+      return errorResponse;
+    }
+  }
+
+  /**
+   * Takip durumunu UYAP'tan sorgula
+   */
+  async queryCaseStatus(caseId: string, uyapDosyaId?: string): Promise<UyapResponse> {
+    const requestId = await this.logRequest('queryCaseStatus', { caseId, uyapDosyaId });
+
+    try {
+      this.logger.log(`[STUB] UYAP takip durumu sorgulanıyor: ${caseId}`);
+
+      // Veritabanından case bilgilerini al
+      const caseData = await this.prisma.case.findUnique({
+        where: { id: caseId },
+        select: {
+          id: true,
+          fileNumber: true,
+          status: true,
+          uyapDosyaId: true,
+          uyapBirimKodu: true,
+        },
+      });
+
+      const response: UyapResponse = {
+        success: true,
+        requestId,
+        data: {
+          caseId,
+          localStatus: caseData?.status || 'UNKNOWN',
+          uyapDosyaId: caseData?.uyapDosyaId || uyapDosyaId,
+          uyapStatus: 'PENDING', // UYAP'tan gelecek
+          lastSync: new Date(),
+          message: 'UYAP durum sorgusu henüz aktif değil (STUB)',
+          // Gerçek implementasyonda UYAP'tan gelecek alanlar:
+          // uyapStatus: 'ACIK' | 'KAPALI' | 'ARSIV' | 'BEKLEMEDE'
+          // lastAction: string
+          // pendingActions: string[]
+        },
+      };
+
+      await this.logResponse(requestId, response);
+      return response;
+    } catch (error: any) {
+      const errorResponse: UyapResponse = {
+        success: false,
+        requestId,
+        errorCode: 'UYAP_STATUS_ERROR',
+        errorMessage: error.message,
+      };
+      await this.logResponse(requestId, errorResponse, error.message);
+      return errorResponse;
+    }
+  }
+
+  /**
+   * UYAP'tan borçlu mal varlığı sorgula
+   */
+  async queryDebtorAssets(debtorIdentityNo: string, caseId: string): Promise<UyapResponse> {
+    const requestId = await this.logRequest('queryDebtorAssets', { debtorIdentityNo, caseId });
+
+    try {
+      this.logger.log(`[STUB] Borçlu mal varlığı sorgulanıyor: ${debtorIdentityNo}`);
+
+      const response: UyapResponse = {
+        success: true,
+        requestId,
+        data: {
+          debtorIdentityNo,
+          queryDate: new Date(),
+          assets: {
+            bankAccounts: [], // Banka hesapları
+            vehicles: [], // Araçlar
+            properties: [], // Taşınmazlar
+            companies: [], // Şirket ortaklıkları
+          },
+          message: 'Mal varlığı sorgusu henüz aktif değil (STUB)',
+        },
+      };
+
+      await this.logResponse(requestId, response);
+      return response;
+    } catch (error: any) {
+      const errorResponse: UyapResponse = {
+        success: false,
+        requestId,
+        errorCode: 'UYAP_ASSET_QUERY_ERROR',
+        errorMessage: error.message,
+      };
+      await this.logResponse(requestId, errorResponse, error.message);
+      return errorResponse;
+    }
+  }
+
+  /**
+   * UYAP istek geçmişini getir
+   */
+  async getRequestHistory(caseId?: string, limit = 50): Promise<any[]> {
+    const where = caseId
+      ? { requestData: { path: ['caseId'], equals: caseId } }
+      : {};
+
+    return this.prisma.uyapRequestLog.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+      select: {
+        id: true,
+        requestType: true,
+        status: true,
+        evkNo: true,
+        createdAt: true,
+        responseAt: true,
+        errorMessage: true,
+      },
+    });
+  }
+
+  /**
    * MTS (Merkezi Takip Sistemi) sorgusu
    */
   async checkMtsStatus(mtsReferenceNo: string): Promise<UyapResponse> {

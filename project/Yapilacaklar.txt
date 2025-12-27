@@ -167,10 +167,15 @@ interest_policy:
 - [x] Tebligat takibi
 - [x] TebligatPanel frontend bileşeni
 
-### Öncelik 4: UYAP Entegrasyonu
-- [ ] UYAP API bağlantısı
-- [ ] Dosya gönderimi
-- [ ] Durum sorgulama
+### Öncelik 4: UYAP Entegrasyonu ✅ TAMAMLANDI
+- [x] UYAP API bağlantısı (stub modunda)
+- [x] Dosya/evrak gönderimi (submitDocument)
+- [x] Durum sorgulama (queryCaseStatus)
+- [x] Borçlu mal varlığı sorgulama (queryDebtorAssets)
+- [x] Haciz talebi gönderimi
+- [x] Vekalet kontrolü entegrasyonu
+- [x] UyapPanel frontend bileşeni
+- [x] API fonksiyonları api.ts'e eklendi
 
 ---
 
