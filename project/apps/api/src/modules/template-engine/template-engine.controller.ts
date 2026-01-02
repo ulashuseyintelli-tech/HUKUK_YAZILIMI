@@ -263,4 +263,183 @@ export class TemplateEngineController {
     res.setHeader('Content-Disposition', `attachment; filename="${documentType}-${caseId}.udf"`);
     res.send(JSON.stringify(udfDocument, null, 2));
   }
+
+  // ============================================
+  // KARŞILIKSIZ ÇEK ŞİKAYET DİLEKÇESİ ENDPOINT'LERİ
+  // ============================================
+
+  /**
+   * Karşılıksız Çek Şikayet Dilekçesi oluştur - Case ID ile
+   */
+  @Get('karsiliksiz-cek/case/:caseId')
+  async generateKarsiliksizCekSikayetFromCase(@Param('caseId') caseId: string): Promise<GeneratedDocument> {
+    return this.templateEngineService.generateKarsiliksizCekSikayetFromCase(caseId);
+  }
+
+  /**
+   * Karşılıksız Çek Şikayet Dilekçesi önizleme - Case ID ile
+   */
+  @Get('karsiliksiz-cek/case/:caseId/preview')
+  async previewKarsiliksizCekSikayet(@Param('caseId') caseId: string): Promise<{ html: string }> {
+    const doc = await this.templateEngineService.generateKarsiliksizCekSikayetFromCase(caseId);
+    const html = `
+      <div style="font-family: 'Courier New', monospace; white-space: pre-wrap; padding: 20px; background: white; border: 1px solid #ccc;">
+        ${doc.content.replace(/\n/g, '<br>')}
+      </div>
+    `;
+    return { html };
+  }
+
+  /**
+   * Karşılıksız Çek Şikayet Dilekçesi Word indir - Case ID ile
+   */
+  @Get('karsiliksiz-cek/case/:caseId/word')
+  async downloadKarsiliksizCekSikayetWord(
+    @Param('caseId') caseId: string,
+    @Res() res: Response
+  ): Promise<void> {
+    const wordBuffer = await this.templateEngineService.generateKarsiliksizCekSikayetWord(caseId);
+    
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="karsiliksiz-cek-sikayet-${caseId}.docx"`);
+    res.send(wordBuffer);
+  }
+
+  /**
+   * Karşılıksız Çek Şikayet Dilekçesi Text indir - Case ID ile
+   */
+  @Get('karsiliksiz-cek/case/:caseId/download')
+  async downloadKarsiliksizCekSikayet(
+    @Param('caseId') caseId: string,
+    @Res() res: Response
+  ): Promise<void> {
+    const doc = await this.templateEngineService.generateKarsiliksizCekSikayetFromCase(caseId);
+    
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="karsiliksiz-cek-sikayet-${caseId}.txt"`);
+    res.send(doc.content);
+  }
+
+  // ============================================
+  // İTİRAZIN İPTALİ DİLEKÇESİ ENDPOINT'LERİ
+  // ============================================
+
+  /**
+   * İtirazın İptali Dilekçesi oluştur - Case ID ile
+   */
+  @Get('itirazin-iptali/case/:caseId')
+  async generateItirazinIptaliFromCase(@Param('caseId') caseId: string): Promise<{ title: string; content: string }> {
+    return this.templateEngineService.generateItirazinIptaliFromCase(caseId);
+  }
+
+  /**
+   * İtirazın İptali Dilekçesi önizleme
+   */
+  @Get('itirazin-iptali/case/:caseId/preview')
+  async previewItirazinIptali(@Param('caseId') caseId: string): Promise<{ html: string }> {
+    const doc = await this.templateEngineService.generateItirazinIptaliFromCase(caseId);
+    const html = `
+      <div style="font-family: 'Courier New', monospace; white-space: pre-wrap; padding: 20px; background: white; border: 1px solid #ccc;">
+        ${doc.content.replace(/\n/g, '<br>')}
+      </div>
+    `;
+    return { html };
+  }
+
+  /**
+   * İtirazın İptali Dilekçesi Word indir
+   */
+  @Get('itirazin-iptali/case/:caseId/word')
+  async downloadItirazinIptaliWord(
+    @Param('caseId') caseId: string,
+    @Res() res: Response
+  ): Promise<void> {
+    const wordBuffer = await this.templateEngineService.generateItirazinIptaliWord(caseId);
+    
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="itirazin-iptali-${caseId}.docx"`);
+    res.send(wordBuffer);
+  }
+
+  // ============================================
+  // TASARRUFUN İPTALİ DİLEKÇESİ ENDPOINT'LERİ
+  // ============================================
+
+  /**
+   * Tasarrufun İptali Dilekçesi oluştur - Case ID ile
+   */
+  @Get('tasarrufun-iptali/case/:caseId')
+  async generateTasarrufunIptaliFromCase(@Param('caseId') caseId: string): Promise<{ title: string; content: string }> {
+    return this.templateEngineService.generateTasarrufunIptaliFromCase(caseId);
+  }
+
+  /**
+   * Tasarrufun İptali Dilekçesi önizleme
+   */
+  @Get('tasarrufun-iptali/case/:caseId/preview')
+  async previewTasarrufunIptali(@Param('caseId') caseId: string): Promise<{ html: string }> {
+    const doc = await this.templateEngineService.generateTasarrufunIptaliFromCase(caseId);
+    const html = `
+      <div style="font-family: 'Courier New', monospace; white-space: pre-wrap; padding: 20px; background: white; border: 1px solid #ccc;">
+        ${doc.content.replace(/\n/g, '<br>')}
+      </div>
+    `;
+    return { html };
+  }
+
+  /**
+   * Tasarrufun İptali Dilekçesi Word indir
+   */
+  @Get('tasarrufun-iptali/case/:caseId/word')
+  async downloadTasarrufunIptaliWord(
+    @Param('caseId') caseId: string,
+    @Res() res: Response
+  ): Promise<void> {
+    const wordBuffer = await this.templateEngineService.generateTasarrufunIptaliWord(caseId);
+    
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="tasarrufun-iptali-${caseId}.docx"`);
+    res.send(wordBuffer);
+  }
+
+  // ============================================
+  // DOLANDIRICILIK SUÇ DUYURUSU ENDPOINT'LERİ
+  // ============================================
+
+  /**
+   * Dolandırıcılık Suç Duyurusu oluştur - Case ID ile
+   */
+  @Get('dolandiricilik/case/:caseId')
+  async generateDolandiricilikFromCase(@Param('caseId') caseId: string): Promise<{ title: string; content: string }> {
+    return this.templateEngineService.generateDolandiricilikSucDuyurusuFromCase(caseId);
+  }
+
+  /**
+   * Dolandırıcılık Suç Duyurusu önizleme
+   */
+  @Get('dolandiricilik/case/:caseId/preview')
+  async previewDolandiricilik(@Param('caseId') caseId: string): Promise<{ html: string }> {
+    const doc = await this.templateEngineService.generateDolandiricilikSucDuyurusuFromCase(caseId);
+    const html = `
+      <div style="font-family: 'Courier New', monospace; white-space: pre-wrap; padding: 20px; background: white; border: 1px solid #ccc;">
+        ${doc.content.replace(/\n/g, '<br>')}
+      </div>
+    `;
+    return { html };
+  }
+
+  /**
+   * Dolandırıcılık Suç Duyurusu Word indir
+   */
+  @Get('dolandiricilik/case/:caseId/word')
+  async downloadDolandiricilikWord(
+    @Param('caseId') caseId: string,
+    @Res() res: Response
+  ): Promise<void> {
+    const wordBuffer = await this.templateEngineService.generateDolandiricilikSucDuyurusuWord(caseId);
+    
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="dolandiricilik-suc-duyurusu-${caseId}.docx"`);
+    res.send(wordBuffer);
+  }
 }

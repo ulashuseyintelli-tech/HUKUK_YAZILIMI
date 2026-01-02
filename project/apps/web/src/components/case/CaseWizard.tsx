@@ -1,18 +1,21 @@
 "use client";
 
-import { Sparkles, Banknote, Home, Package, Briefcase, FileText, Shield } from "lucide-react";
+import { Sparkles, Banknote, Home, Package, Briefcase, FileText, Shield, Building, Heart } from "lucide-react";
 
 export type CaseSubCategoryType = "GENEL" | "NAFAKA" | "DOVIZ";
 export type CurrencyType = "TRY" | "USD" | "EUR" | "GBP" | "CHF";
 export type InterestRateType = "DEGISKEN" | "SABIT";
 export type IlamliTakipType =
   | "PARA_ALACAGI"
+  | "NAFAKA"
   | "TASINIR"
   | "TASINMAZ"
   | "TAHLIYE"
   | "IS_YAPILMASI"
   | "IRTIFAK"
-  | "TEMINAT";
+  | "TEMINAT"
+  | "IPOTEK"
+  | "TASINIR_REHNI";
 
 interface WizardResult {
   subCategory: CaseSubCategoryType;
@@ -42,6 +45,27 @@ const ilamliTakipTurleri = [
     title: "İlamlı Para Alacağı",
     description: "Mahkeme kararına dayalı para alacağı (tazminat, alacak hükmü)",
     subFormCode: "FORM_5_ALACAK",
+  },
+  {
+    type: "NAFAKA" as IlamliTakipType,
+    icon: Heart,
+    title: "İlamlı Nafaka",
+    description: "Nafaka kararına dayalı aylık nafaka alacağının tahsili",
+    subFormCode: "FORM_5_NAFAKA",
+  },
+  {
+    type: "IPOTEK" as IlamliTakipType,
+    icon: Building,
+    title: "İlamlı İpotek",
+    description: "İpotek akit tablosuna veya ilama dayalı ipotek alacağının tahsili",
+    subFormCode: "FORM_6",
+  },
+  {
+    type: "TASINIR_REHNI" as IlamliTakipType,
+    icon: Package,
+    title: "İlamlı Taşınır Rehni",
+    description: "İlama dayalı taşınır rehni alacağının tahsili",
+    subFormCode: "FORM_44",
   },
   {
     type: "TASINIR" as IlamliTakipType,

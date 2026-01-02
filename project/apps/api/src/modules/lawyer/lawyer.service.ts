@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
-import { LawyerRole } from "@prisma/client";
+import { LawyerRole, LawyerRank } from "@prisma/client";
 
 // Rol'e göre varsayılan unvan/sıfat
 const DEFAULT_TITLES: Record<string, string> = {
@@ -124,10 +124,12 @@ export class LawyerService {
       vergiNo?: string;
       email?: string;
       phone?: string;
+      fax?: string;
       address?: string;
       city?: string;
       district?: string;
       bankName?: string;
+      branchName?: string;
       iban?: string;
       isInHouseCounsel?: boolean;
       isEmployee?: boolean;
@@ -137,6 +139,11 @@ export class LawyerService {
       canAppearInUyap?: boolean;
       canBeResponsible?: boolean;
       isDefaultForNewCases?: boolean;
+      // Yeni alanlar
+      lawyerRank?: LawyerRank;
+      defaultPermissions?: any;
+      permissionsLocked?: boolean;
+      canModifyOtherPermissions?: boolean;
     }
   ) {
     // Office'i al veya oluştur
@@ -190,10 +197,12 @@ export class LawyerService {
       vergiNo?: string;
       email?: string;
       phone?: string;
+      fax?: string;
       address?: string;
       city?: string;
       district?: string;
       bankName?: string;
+      branchName?: string;
       iban?: string;
       isInHouseCounsel?: boolean;
       isEmployee?: boolean;
@@ -205,6 +214,11 @@ export class LawyerService {
       isDefaultForNewCases?: boolean;
       sortOrder?: number;
       isActive?: boolean;
+      // Yeni alanlar
+      lawyerRank?: LawyerRank;
+      defaultPermissions?: any;
+      permissionsLocked?: boolean;
+      canModifyOtherPermissions?: boolean;
     }
   ) {
     // Avukatın bu tenant'a ait olduğunu kontrol et

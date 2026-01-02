@@ -102,4 +102,17 @@ export class StaffService {
       orderBy: [{ sortOrder: 'asc' }, { firstName: 'asc' }],
     });
   }
+
+  // Sıralama güncelle
+  async updateOrder(tenantId: string, staffIds: string[]) {
+    // Her personelin sırasını güncelle
+    const updates = staffIds.map((id, index) =>
+      this.prisma.staffMember.updateMany({
+        where: { id, tenantId },
+        data: { sortOrder: index },
+      })
+    );
+    await Promise.all(updates);
+    return { success: true };
+  }
 }

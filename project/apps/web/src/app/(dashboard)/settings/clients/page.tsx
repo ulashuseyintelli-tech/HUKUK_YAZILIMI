@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, X, Search, Building2, User, Landmark, Edit2, Trash2, Loader2, Mail, Send, MessageSquare, Download, Upload, FileSpreadsheet, FileText, FileCheck, AlertTriangle, Clock, CheckCircle, Globe, Users } from "lucide-react";
+import { Plus, X, Search, Building2, User, Landmark, Edit2, Trash2, Loader2, Mail, Send, MessageSquare, Download, Upload, FileSpreadsheet, FileText, FileCheck, AlertTriangle, Clock, CheckCircle, Globe, Users, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { api } from "@/lib/api";
 import { PoaScannerWizard } from "@/components/client/PoaScannerWizard";
 import { BulkEmailModal } from "@/components/bulk-email-modal";
@@ -11,6 +11,9 @@ const CLIENT_TYPES = [
   { value: "COMPANY", label: "Kurum", icon: Building2, color: "bg-blue-100 text-blue-700" },
   { value: "PUBLIC", label: "Kamu", icon: Landmark, color: "bg-purple-100 text-purple-700" },
 ];
+
+type ClientSortField = "type" | "name" | "identityNo" | "phone" | "email" | "caseCount";
+type SortDirection = "asc" | "desc" | null;
 
 export default function ClientsSettingsPage() {
   const [clients, setClients] = useState<any[]>([]);
@@ -33,6 +36,10 @@ export default function ClientsSettingsPage() {
   const [portalClient, setPortalClient] = useState<any>(null);
   const [selectedClients, setSelectedClients] = useState<string[]>([]);
   const [showBulkEmailModal, setShowBulkEmailModal] = useState(false);
+  
+  // Sıralama state'leri
+  const [sortField, setSortField] = useState<ClientSortField | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
 
   useEffect(() => { loadClients(); }, []);
 
@@ -130,6 +137,56 @@ export default function ClientsSettingsPage() {
     return matchesSearch && matchesType;
   });
 
+  // Sıralama fonksiyonu
+  const handleSort = (field: ClientSortField) => {
+    if (sortField === field) {
+      if (sortDirection === "asc") {
+        setSortDirection("desc");
+      } else if (sortDirection === "desc") {
+        setSortDirection(null);
+        setSortField(null);
+      } else {
+        setSortDirection("asc");
+      }
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
+
+  // Sıralanmış liste
+  const sortedClients = [...filtered].sort((a, b) => {
+    if (!sortField || !sortDirection) return 0;
+    
+    let aValue: any, bValue: any;
+    
+    if (sortField === "caseCount") {
+      aValue = a._count?.cases || 0;
+      bValue = b._count?.cases || 0;
+      return sortDirection === "asc" ? aValue - bValue : bValue - aValue;
+    }
+    
+    aValue = (a[sortField] || "").toString().toLowerCase();
+    bValue = (b[sortField] || "").toString().toLowerCase();
+    
+    if (sortDirection === "asc") {
+      return aValue.localeCompare(bValue, "tr");
+    } else {
+      return bValue.localeCompare(aValue, "tr");
+    }
+  });
+
+  // Sıralama ikonu
+  const SortIcon = ({ field }: { field: ClientSortField }) => {
+    if (sortField !== field) {
+      return <ChevronsUpDown className="h-3 w-3 text-gray-400" />;
+    }
+    if (sortDirection === "asc") {
+      return <ChevronUp className="h-3 w-3 text-primary" />;
+    }
+    return <ChevronDown className="h-3 w-3 text-primary" />;
+  };
+
   if (loading) return <div className="p-4 text-center">Yükleniyor...</div>;
 
   return (
@@ -214,28 +271,58 @@ export default function ClientsSettingsPage() {
           </div>
         ) : (
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 sticky top-0">
+            <thead className="bg-gray-50 sticky top-0 z-10">
               <tr className="border-b">
                 <th className="px-3 py-2 w-8">
                   <input
                     type="checkbox"
-                    checked={selectedClients.length === filtered.length && filtered.length > 0}
-                    onChange={(e) => setSelectedClients(e.target.checked ? filtered.map(c => c.id) : [])}
+                    checked={selectedClients.length === sortedClients.length && sortedClients.length > 0}
+                    onChange={(e) => setSelectedClients(e.target.checked ? sortedClients.map(c => c.id) : [])}
                     className="rounded"
                   />
                 </th>
-                <th className="text-left px-3 py-2 font-medium text-gray-600">Tür</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-600">Ad / Unvan</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-600">TCKN / VKN</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-600">Telefon</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-600">E-posta</th>
+                <th 
+                  className="text-left px-3 py-2 font-medium text-gray-600 cursor-pointer hover:bg-gray-100 select-none"
+                  onClick={() => handleSort("type")}
+                >
+                  <div className="flex items-center gap-1">Tür <SortIcon field="type" /></div>
+                </th>
+                <th 
+                  className="text-left px-3 py-2 font-medium text-gray-600 cursor-pointer hover:bg-gray-100 select-none"
+                  onClick={() => handleSort("name")}
+                >
+                  <div className="flex items-center gap-1">Ad / Unvan <SortIcon field="name" /></div>
+                </th>
+                <th 
+                  className="text-left px-3 py-2 font-medium text-gray-600 cursor-pointer hover:bg-gray-100 select-none"
+                  onClick={() => handleSort("identityNo")}
+                >
+                  <div className="flex items-center gap-1">TCKN / VKN <SortIcon field="identityNo" /></div>
+                </th>
+                <th 
+                  className="text-left px-3 py-2 font-medium text-gray-600 cursor-pointer hover:bg-gray-100 select-none"
+                  onClick={() => handleSort("phone")}
+                >
+                  <div className="flex items-center gap-1">Telefon <SortIcon field="phone" /></div>
+                </th>
+                <th 
+                  className="text-left px-3 py-2 font-medium text-gray-600 cursor-pointer hover:bg-gray-100 select-none"
+                  onClick={() => handleSort("email")}
+                >
+                  <div className="flex items-center gap-1">E-posta <SortIcon field="email" /></div>
+                </th>
                 <th className="text-left px-3 py-2 font-medium text-gray-600">Vekalet</th>
-                <th className="text-left px-3 py-2 font-medium text-gray-600">Takip Sayısı</th>
+                <th 
+                  className="text-left px-3 py-2 font-medium text-gray-600 cursor-pointer hover:bg-gray-100 select-none"
+                  onClick={() => handleSort("caseCount")}
+                >
+                  <div className="flex items-center gap-1">Takip Sayısı <SortIcon field="caseCount" /></div>
+                </th>
                 <th className="text-right px-3 py-2 font-medium text-gray-600 w-28">İşlem</th>
               </tr>
             </thead>
             <tbody className="divide-y">
-              {filtered.map(client => {
+              {sortedClients.map(client => {
                 const typeInfo = CLIENT_TYPES.find(t => t.value === client.type) || CLIENT_TYPES[0];
                 const TypeIcon = typeInfo.icon;
                 return (

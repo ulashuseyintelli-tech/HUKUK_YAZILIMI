@@ -43,6 +43,19 @@ export class PoaController {
   }
 
   /**
+   * Müvekkil + Birden fazla avukat için geçerli vekalet kontrolü
+   * POST /api/poa/check/valid-for-lawyers
+   * Body: { clientId: string, lawyerIds: string[] }
+   */
+  @Post("check/valid-for-lawyers")
+  async checkValidPoaForLawyers(
+    @Body() body: { clientId: string; lawyerIds: string[] },
+    @Request() req: any
+  ) {
+    return this.poaService.checkValidPoaForLawyers(body.clientId, body.lawyerIds, req.user.tenantId);
+  }
+
+  /**
    * Süresi dolmak üzere olan vekaletler
    * GET /api/poa/expiring/list?days=30
    */

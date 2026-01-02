@@ -1,317 +1,355 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Loader2, Save, Plus, X } from "lucide-react";
+import { ArrowLeft, Save, Loader2, AlertCircle, Check } from "lucide-react";
 import { api } from "@/lib/api";
 
+interface CaseData {
+  id: string;
+  fileNumber: string;
+  executionFileNumber?: string;
+  type: string;
+  status: string;
+  executionPath: string;
+  executionOfficeId?: string;
+  startDate?: string;
+  notes?: string;
+  principalAmount?: number;
+  currency?: string;
+  interestType?: string;
+  caseStatus?: string;
+}
+
+interface ExecutionOffice {
+  id: string;
+  name: string;
+  city: string;
+}
+
 const caseTypes = [
-  { value: "GENERAL_EXECUTION", label: "Genel Haciz Yoluyla Takip" },
-  { value: "MORTGAGE", label: "İpotekli Takip" },
-  { value: "PLEDGE", label: "Rehinli Takip" },
-  { value: "CHECK", label: "Çek Takibi" },
-  { value: "BOND", label: "Senet Takibi" },
-  { value: "RENTAL", label: "Kira Takibi" },
-  { value: "BANKRUPTCY", label: "İflas Takibi" },
+  { value: "GENERAL_EXECUTION", label: "Genel Haciz" },
+  { value: "MORTGAGE", label: "İpotekli" },
+  { value: "PLEDGE", label: "Rehinli" },
+  { value: "CHECK", label: "Çek" },
+  { value: "BOND", label: "Senet" },
+  { value: "RENTAL", label: "Kira" },
+  { value: "BANKRUPTCY", label: "İflas" },
   { value: "OTHER", label: "Diğer" },
 ];
 
-const subTypes = [
-  { value: "GENEL", label: "Genel" },
-  { value: "KAMBIYO", label: "Kambiyo Senetleri" },
-  { value: "IPOTEK", label: "İpotek" },
-  { value: "REHIN", label: "Rehin" },
-  { value: "IFLAS", label: "İflas" },
+const caseStatuses = [
+  { value: "DERDEST", label: "Derdest (Devam Ediyor)" },
+  { value: "KAPALI", label: "Kapalı" },
+  { value: "ASKIDA", label: "Askıda" },
+  { value: "ARSIV", label: "Arşiv" },
 ];
 
-const statusOptions = [
-  { value: "ACTIVE", label: "Aktif" },
-  { value: "CLOSED", label: "Kapalı" },
-  { value: "SUSPENDED", label: "Askıda" },
-  { value: "ARCHIVED", label: "Arşiv" },
+const executionPaths = [
+  { value: "HACIZ", label: "Haciz Yolu" },
+  { value: "IFLAS", label: "İflas Yolu" },
+  { value: "REHIN", label: "Rehin Yolu" },
+  { value: "IPOTEK", label: "İpotek Yolu" },
 ];
 
 export default function EditCasePage() {
-  const params = useParams();
   const router = useRouter();
+  const params = useParams();
+  const caseId = params.id as string;
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-  const [activeTab, setActiveTab] = useState("info");
-
-  const [caseData, setCaseData] = useState<any>(null);
-  const [formData, setFormData] = useState({
-    fileNumber: "",
-    executionFileNumber: "",
-    type: "GENERAL_EXECUTION",
-    subType: "GENEL",
-    status: "ACTIVE",
-    startDate: "",
-    principalAmount: "",
-    interestRate: "",
-    notes: "",
-  });
-
-  // Mevcut kayıtlar
-  const [existingLawyers, setExistingLawyers] = useState<any[]>([]);
-  const [existingClients, setExistingClients] = useState<any[]>([]);
-  const [existingDebtors, setExistingDebtors] = useState<any[]>([]);
-
-  // Seçilen kayıtlar
-  const [lawyers, setLawyers] = useState<any[]>([]);
-  const [creditors, setCreditors] = useState<any[]>([]);
-  const [debtors, setDebtors] = useState<any[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState(false);
+  const [caseData, setCaseData] = useState<CaseData | null>(null);
+  const [executionOffices, setExecutionOffices] = useState<ExecutionOffice[]>([]);
+  const [selectedCity, setSelectedCity] = useState("");
 
   useEffect(() => {
-    if (params.id) {
-      loadData();
-    }
-  }, [params.id]);
+    loadData();
+  }, [caseId]);
 
   const loadData = async () => {
     try {
       setLoading(true);
-      const [caseRes, lawyersRes, clientsRes, debtorsRes] = await Promise.all([
-        api.getCase(params.id as string),
-        api.getLawyers(),
-        api.getClients(),
-        api.searchDebtors(),
+      const [caseRes, officesRes] = await Promise.all([
+        api.get(`/cases/${caseId}`),
+        api.get('/execution-offices'),
       ]);
-
-      setCaseData(caseRes);
-      setFormData({
-        fileNumber: caseRes.fileNumber || "",
-        executionFileNumber: caseRes.executionFileNumber || "",
-        type: caseRes.type || "GENERAL_EXECUTION",
-        subType: caseRes.subType || "GENEL",
-        status: caseRes.status || "ACTIVE",
-        startDate: caseRes.startDate ? caseRes.startDate.split("T")[0] : "",
-        principalAmount: caseRes.principalAmount?.toString() || "",
-        interestRate: caseRes.interestRate?.toString() || "",
-        notes: caseRes.notes || "",
-      });
-
-      // Mevcut avukatları yükle
-      setLawyers(caseRes.lawyers?.map((l: any) => ({
-        id: l.lawyer.id,
-        name: l.lawyer.name,
-        surname: l.lawyer.surname,
-        barNumber: l.lawyer.barNumber,
-        canSign: l.canSign,
-        isNew: false,
-      })) || []);
-
-      // Mevcut alacaklıyı yükle
-      if (caseRes.client) {
-        setCreditors([{ ...caseRes.client, isNew: false }]);
+      
+      const data = caseRes.data?.data || caseRes.data;
+      setCaseData(data);
+      setExecutionOffices(officesRes.data?.data || []);
+      
+      // İcra dairesinin ilini bul
+      if (data.executionOfficeId) {
+        const office = (officesRes.data?.data || []).find((o: ExecutionOffice) => o.id === data.executionOfficeId);
+        if (office) setSelectedCity(office.city);
       }
-
-      // Mevcut borçluları yükle
-      setDebtors(caseRes.debtors?.map((d: any) => ({
-        ...d.debtor,
-        role: d.role,
-        isNew: false,
-      })) || []);
-
-      setExistingLawyers(lawyersRes || []);
-      setExistingClients(clientsRes?.data || clientsRes || []);
-      setExistingDebtors(debtorsRes?.data || debtorsRes || []);
-    } catch (err) {
-      console.error("Veri yüklenemedi:", err);
-      setError("Takip bilgileri yüklenemedi");
+    } catch (err: any) {
+      setError(err.message || "Veri yüklenemedi");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData((prev) => ({ ...prev, [name]: value }));
-  };
-
-  const handleSave = async () => {
-    setError("");
-    setSaving(true);
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!caseData) return;
 
     try {
-      await api.updateCase(params.id as string, {
-        fileNumber: formData.fileNumber,
-        executionFileNumber: formData.executionFileNumber || undefined,
-        type: formData.type,
-        subType: formData.subType,
-        status: formData.status,
-        principalAmount: formData.principalAmount ? parseFloat(formData.principalAmount) : undefined,
-        interestRate: formData.interestRate ? parseFloat(formData.interestRate) : undefined,
-        startDate: formData.startDate || undefined,
-        notes: formData.notes || undefined,
+      setSaving(true);
+      setError(null);
+      
+      await api.put(`/cases/${caseId}`, {
+        fileNumber: caseData.fileNumber,
+        executionFileNumber: caseData.executionFileNumber,
+        type: caseData.type,
+        executionPath: caseData.executionPath,
+        executionOfficeId: caseData.executionOfficeId,
+        startDate: caseData.startDate,
+        notes: caseData.notes,
+        caseStatus: caseData.caseStatus,
       });
-
-      router.push(`/cases/${params.id}`);
+      
+      setSuccess(true);
+      setTimeout(() => {
+        router.push(`/cases/${caseId}`);
+      }, 1000);
     } catch (err: any) {
-      setError(err.message || "Kaydetme sırasında bir hata oluştu");
+      setError(err.message || "Kaydetme başarısız");
     } finally {
       setSaving(false);
     }
   };
 
+  const updateField = (field: keyof CaseData, value: any) => {
+    setCaseData(prev => prev ? { ...prev, [field]: value } : null);
+  };
+
+  // İllere göre icra dairelerini filtrele
+  const cities = [...new Set(executionOffices.map(o => o.city))].sort();
+  const filteredOffices = selectedCity 
+    ? executionOffices.filter(o => o.city === selectedCity)
+    : executionOffices;
+
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-12">
+      <div className="flex items-center justify-center h-64">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
 
-  const tabs = [
-    { id: "info", label: "Takip Bilgileri" },
-    { id: "lawyers", label: "Avukatlar" },
-    { id: "creditors", label: "Alacaklılar" },
-    { id: "debtors", label: "Borçlular" },
-  ];
-
+  if (!caseData) {
+    return (
+      <div className="text-center py-12">
+        <AlertCircle className="h-12 w-12 text-red-500 mx-auto mb-4" />
+        <h2 className="text-lg font-semibold">Takip bulunamadı</h2>
+        <Link href="/cases" className="text-primary hover:underline mt-2 inline-block">
+          Takip listesine dön
+        </Link>
+      </div>
+    );
+  }
 
   return (
-    <div className="max-w-4xl mx-auto">
-      <div className="mb-6 flex items-center justify-between">
-        <Link href={`/cases/${params.id}`} className="inline-flex items-center gap-2 text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-4 w-4" /> Takibe Dön
+    <div className="max-w-3xl mx-auto">
+      {/* Header */}
+      <div className="flex items-center gap-4 mb-6">
+        <Link
+          href={`/cases/${caseId}`}
+          className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+        >
+          <ArrowLeft className="h-5 w-5" />
         </Link>
-        <button onClick={handleSave} disabled={saving}
-          className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50">
-          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-          {saving ? "Kaydediliyor..." : "Kaydet"}
-        </button>
+        <div>
+          <h1 className="text-xl font-bold">Takip Düzenle</h1>
+          <p className="text-sm text-muted-foreground">{caseData.fileNumber}</p>
+        </div>
       </div>
 
-      <div className="bg-white rounded-xl border">
-        <div className="border-b px-6 pt-4">
-          <div className="flex gap-4">
-            {tabs.map((tab) => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2 border-b-2 -mb-px ${activeTab === tab.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}>
-                {tab.label}
-              </button>
-            ))}
+      {/* Success Message */}
+      {success && (
+        <div className="bg-green-50 text-green-700 p-4 rounded-lg mb-6 flex items-center gap-2">
+          <Check className="h-5 w-5" />
+          Değişiklikler kaydedildi, yönlendiriliyorsunuz...
+        </div>
+      )}
+
+      {/* Error Message */}
+      {error && (
+        <div className="bg-red-50 text-red-700 p-4 rounded-lg mb-6 flex items-center gap-2">
+          <AlertCircle className="h-5 w-5" />
+          {error}
+        </div>
+      )}
+
+      {/* Form */}
+      <form onSubmit={handleSubmit} className="bg-white rounded-xl border p-6 space-y-6">
+        {/* Dosya Bilgileri */}
+        <div>
+          <h3 className="font-semibold mb-4">Dosya Bilgileri</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Dosya Numarası</label>
+              <input
+                type="text"
+                value={caseData.fileNumber}
+                onChange={(e) => updateField('fileNumber', e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">İcra Dosya Numarası</label>
+              <input
+                type="text"
+                value={caseData.executionFileNumber || ''}
+                onChange={(e) => updateField('executionFileNumber', e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
+                placeholder="2025/12345"
+              />
+            </div>
           </div>
         </div>
 
-        <div className="p-6">
-          {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg">{error}</div>}
-
-          {activeTab === "info" && (
-            <div className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">Takip No</label>
-                  <input type="text" name="fileNumber" value={formData.fileNumber} onChange={handleChange}
-                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">İcra Dosya No</label>
-                  <input type="text" name="executionFileNumber" value={formData.executionFileNumber} onChange={handleChange}
-                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Takip Türü</label>
-                  <select name="type" value={formData.type} onChange={handleChange}
-                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary">
-                    {caseTypes.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Alt Takip Tipi</label>
-                  <select name="subType" value={formData.subType} onChange={handleChange}
-                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary">
-                    {subTypes.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Durum</label>
-                  <select name="status" value={formData.status} onChange={handleChange}
-                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary">
-                    {statusOptions.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Başlangıç Tarihi</label>
-                  <input type="date" name="startDate" value={formData.startDate} onChange={handleChange}
-                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Ana Para (₺)</label>
-                  <input type="number" name="principalAmount" value={formData.principalAmount} onChange={handleChange}
-                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary" />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Faiz Oranı (%)</label>
-                  <input type="number" name="interestRate" value={formData.interestRate} onChange={handleChange}
-                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary" />
-                </div>
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">Notlar</label>
-                <textarea name="notes" value={formData.notes} onChange={handleChange} rows={3}
-                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary resize-none" />
-              </div>
+        {/* Takip Türü ve Yolu */}
+        <div>
+          <h3 className="font-semibold mb-4">Takip Bilgileri</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Takip Türü</label>
+              <select
+                value={caseData.type}
+                onChange={(e) => updateField('type', e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
+              >
+                {caseTypes.map(t => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
             </div>
-          )}
-
-          {activeTab === "lawyers" && (
-            <div className="space-y-4">
-              <p className="text-muted-foreground">Mevcut avukatlar:</p>
-              {lawyers.length === 0 ? (
-                <p className="text-center py-4 text-muted-foreground">Avukat bilgisi yok</p>
-              ) : (
-                <div className="space-y-2">
-                  {lawyers.map((l, i) => (
-                    <div key={i} className="border rounded-lg p-3 flex justify-between items-center">
-                      <span>{l.name} {l.surname} {l.barNumber && `(${l.barNumber})`}</span>
-                      {l.canSign && <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">İmza Yetkili</span>}
-                    </div>
-                  ))}
-                </div>
-              )}
+            <div>
+              <label className="block text-sm font-medium mb-1">Takip Yolu</label>
+              <select
+                value={caseData.executionPath}
+                onChange={(e) => updateField('executionPath', e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
+              >
+                {executionPaths.map(p => (
+                  <option key={p.value} value={p.value}>{p.label}</option>
+                ))}
+              </select>
             </div>
-          )}
-
-          {activeTab === "creditors" && (
-            <div className="space-y-4">
-              <p className="text-muted-foreground">Mevcut alacaklılar:</p>
-              {creditors.length === 0 ? (
-                <p className="text-center py-4 text-muted-foreground">Alacaklı bilgisi yok</p>
-              ) : (
-                <div className="space-y-2">
-                  {creditors.map((c, i) => (
-                    <div key={i} className="border rounded-lg p-3">
-                      <p className="font-medium">{c.name}</p>
-                      <p className="text-sm text-muted-foreground">{c.identityNo} {c.phone && `• ${c.phone}`}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === "debtors" && (
-            <div className="space-y-4">
-              <p className="text-muted-foreground">Mevcut borçlular:</p>
-              {debtors.length === 0 ? (
-                <p className="text-center py-4 text-muted-foreground">Borçlu bilgisi yok</p>
-              ) : (
-                <div className="space-y-2">
-                  {debtors.map((d, i) => (
-                    <div key={i} className="border rounded-lg p-3">
-                      <p className="font-medium">{d.name}</p>
-                      <p className="text-sm text-muted-foreground">{d.identityNo} {d.phone && `• ${d.phone}`}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          )}
+          </div>
         </div>
-      </div>
+
+        {/* İcra Dairesi */}
+        <div>
+          <h3 className="font-semibold mb-4">İcra Dairesi</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">İl</label>
+              <select
+                value={selectedCity}
+                onChange={(e) => {
+                  setSelectedCity(e.target.value);
+                  updateField('executionOfficeId', '');
+                }}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
+              >
+                <option value="">İl seçin</option>
+                {cities.map(city => (
+                  <option key={city} value={city}>{city}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">İcra Dairesi</label>
+              <select
+                value={caseData.executionOfficeId || ''}
+                onChange={(e) => updateField('executionOfficeId', e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
+                disabled={!selectedCity}
+              >
+                <option value="">İcra dairesi seçin</option>
+                {filteredOffices.map(office => (
+                  <option key={office.id} value={office.id}>{office.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Durum */}
+        <div>
+          <h3 className="font-semibold mb-4">Durum</h3>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium mb-1">Dosya Durumu</label>
+              <select
+                value={caseData.caseStatus || 'DERDEST'}
+                onChange={(e) => updateField('caseStatus', e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
+              >
+                {caseStatuses.map(s => (
+                  <option key={s.value} value={s.value}>{s.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Başlangıç Tarihi</label>
+              <input
+                type="date"
+                value={caseData.startDate?.split('T')[0] || ''}
+                onChange={(e) => updateField('startDate', e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Notlar */}
+        <div>
+          <label className="block text-sm font-medium mb-1">Notlar</label>
+          <textarea
+            value={caseData.notes || ''}
+            onChange={(e) => updateField('notes', e.target.value)}
+            rows={3}
+            className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary resize-none"
+            placeholder="Dosya ile ilgili notlar..."
+          />
+        </div>
+
+        {/* Buttons */}
+        <div className="flex gap-3 pt-4 border-t">
+          <Link
+            href={`/cases/${caseId}`}
+            className="px-4 py-2 text-gray-700 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+          >
+            İptal
+          </Link>
+          <button
+            type="submit"
+            disabled={saving}
+            className="flex-1 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors disabled:opacity-50 flex items-center justify-center gap-2"
+          >
+            {saving ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" />
+                Kaydediliyor...
+              </>
+            ) : (
+              <>
+                <Save className="h-4 w-4" />
+                Kaydet
+              </>
+            )}
+          </button>
+        </div>
+      </form>
     </div>
   );
 }

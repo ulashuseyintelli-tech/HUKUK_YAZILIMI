@@ -2,14 +2,14 @@
 
 import React, { useState, useEffect, useRef } from "react";
 import { 
-  Plus, Search, Users, Building2, Landmark, X, MapPin, Mail, Phone, AlertCircle,
-  ScanLine, Sparkles, Upload, FileText, Loader2, CheckCircle, ArrowRight, Edit2, Trash2,
-  Calendar, DollarSign, FileCheck, AlertTriangle
+  Search, Users, Building2, Landmark, X, AlertCircle,
+  ScanLine, Sparkles, Upload, FileText, Loader2, CheckCircle,
+  AlertTriangle, Scroll, FileCheck
 } from "lucide-react";
 import { api } from "@/lib/api";
 import {
   Debtor, CaseDebtor, DebtorType, DebtorRole, NotificationMode,
-  DebtorTypeLabels, DebtorRoleLabels, NotificationModeLabels,
+  TebligatLegalMethod, TebligatDeliveryType,
 } from "@/types/debtor";
 import { NewDebtorModal } from "./NewDebtorModal";
 import { SelectedDebtorCard } from "./SelectedDebtorCard";
@@ -69,15 +69,6 @@ const DocumentTypeLabels: Record<string, string> = {
   DIGER: "Diğer",
 };
 
-// Para birimi sembolleri
-const CurrencySymbols: Record<string, string> = {
-  TRY: "₺",
-  USD: "$",
-  EUR: "€",
-  GBP: "£",
-  CHF: "CHF",
-};
-
 interface DebtorStepProps {
   selectedDebtors: CaseDebtor[];
   onDebtorsChange: (debtors: CaseDebtor[]) => void;
@@ -133,11 +124,25 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
 
   const addDebtorToCase = (debtor: Debtor) => {
     const primaryAddress = debtor.debtorAddresses?.find((a) => a.isPrimary);
+    
+    // Elektronik tebligat zorunlu mu?
+    const isElectronicRequired = 
+      debtor.type === DebtorType.COMPANY || 
+      debtor.type === DebtorType.PUBLIC_INSTITUTION || 
+      !!debtor.kepAddress;
+    
+    const defaultLegalMethod = isElectronicRequired 
+      ? TebligatLegalMethod.ELECTRONIC 
+      : TebligatLegalMethod.POSTAL;
+    
     const newCaseDebtor: CaseDebtor = {
       debtorId: debtor.id,
       debtor,
       role: DebtorRole.ASIL_BORCLU,
       notificationMode: debtor.kepAddress ? NotificationMode.KEP : NotificationMode.NORMAL,
+      tebligatLegalMethod: defaultLegalMethod,
+      tebligatDeliveryType: defaultLegalMethod === TebligatLegalMethod.POSTAL ? TebligatDeliveryType.NORMAL : undefined,
+      isElectronicRequired,
       selectedAddressId: primaryAddress?.id,
       selectedAddress: primaryAddress,
       prepareNotification: true,
@@ -272,11 +277,24 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
                    party.role === "MUTESELSIL" ? DebtorRole.MUSETEREK_BORCLU :
                    DebtorRole.ASIL_BORCLU;
       
+      // Elektronik tebligat zorunlu mu?
+      const isElectronicRequired = 
+        savedDebtor.type === DebtorType.COMPANY || 
+        savedDebtor.type === DebtorType.PUBLIC_INSTITUTION || 
+        !!savedDebtor.kepAddress;
+      
+      const defaultLegalMethod = isElectronicRequired 
+        ? TebligatLegalMethod.ELECTRONIC 
+        : TebligatLegalMethod.POSTAL;
+      
       const newCaseDebtor: CaseDebtor = {
         debtorId: savedDebtor.id,
         debtor: savedDebtor,
         role,
         notificationMode: NotificationMode.NORMAL,
+        tebligatLegalMethod: defaultLegalMethod,
+        tebligatDeliveryType: defaultLegalMethod === TebligatLegalMethod.POSTAL ? TebligatDeliveryType.NORMAL : undefined,
+        isElectronicRequired,
         prepareNotification: true,
         isNew: false,
       };
@@ -539,6 +557,13 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
             className="inline-flex items-center gap-0.5 px-2 py-1 text-[10px] bg-purple-500 text-white rounded hover:bg-purple-600"
           >
             <Landmark className="h-3 w-3" /> Kamu
+          </button>
+          <button
+            type="button"
+            onClick={() => openNewDebtorModal(DebtorType.ESTATE)}
+            className="inline-flex items-center gap-0.5 px-2 py-1 text-[10px] bg-amber-500 text-white rounded hover:bg-amber-600"
+          >
+            <Scroll className="h-3 w-3" /> Tereke
           </button>
         </div>
       </div>

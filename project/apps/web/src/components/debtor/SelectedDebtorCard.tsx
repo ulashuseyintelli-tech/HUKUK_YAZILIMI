@@ -1,11 +1,27 @@
 "use client";
 
-import React, { useState } from "react";
-import { X, Users, Building2, Landmark, MapPin, ChevronDown, ChevronUp, Phone, Mail, FileText, Edit2 } from "lucide-react";
+import React, { useState, useEffect } from "react";
+import { X, Users, Building2, Landmark, MapPin, ChevronDown, ChevronUp, Phone, Mail, FileText, Edit2, Zap, Truck, AlertCircle, CheckCircle, Scroll, Barcode } from "lucide-react";
 import {
   CaseDebtor, Debtor, DebtorType, DebtorRole,
   DebtorRoleLabels, DebtorTypeLabels,
+  TebligatLegalMethod, TebligatDeliveryType,
 } from "@/types/debtor";
+
+// Elektronik tebligat zorunlu mu?
+function isElectronicNotificationRequired(debtor: Debtor): boolean {
+  if (debtor.type === DebtorType.COMPANY) return true;
+  if (debtor.type === DebtorType.PUBLIC_INSTITUTION) return true;
+  if (debtor.kepAddress) return true;
+  return false;
+}
+
+function getDefaultLegalMethod(debtor: Debtor): TebligatLegalMethod {
+  if (isElectronicNotificationRequired(debtor)) {
+    return TebligatLegalMethod.ELECTRONIC;
+  }
+  return TebligatLegalMethod.POSTAL;
+}
 
 interface SelectedDebtorCardProps {
   caseDebtor: CaseDebtor;
@@ -20,225 +36,212 @@ export function SelectedDebtorCard({ caseDebtor, onUpdate, onRemove, onEdit }: S
   if (!debtor) return null;
 
   const addresses = debtor.debtorAddresses || [];
+  const isElectronicRequired = isElectronicNotificationRequired(debtor);
+  const isEstate = debtor.type === DebtorType.ESTATE;
+  
+  useEffect(() => {
+    if (!caseDebtor.tebligatLegalMethod && !isEstate) {
+      const defaultMethod = getDefaultLegalMethod(debtor);
+      onUpdate({ 
+        tebligatLegalMethod: defaultMethod,
+        tebligatDeliveryType: defaultMethod === TebligatLegalMethod.POSTAL ? TebligatDeliveryType.NORMAL : undefined,
+        isElectronicRequired,
+      });
+    }
+  }, [debtor.id]);
+
+  const currentLegalMethod = caseDebtor.tebligatLegalMethod || getDefaultLegalMethod(debtor);
+  const currentDeliveryType = caseDebtor.tebligatDeliveryType || TebligatDeliveryType.NORMAL;
 
   return (
-    <div className="border rounded-lg bg-white relative overflow-hidden">
+    <div className="border rounded-lg bg-white relative overflow-hidden p-3">
       {/* Üst Butonlar */}
       <div className="absolute top-2 right-2 flex items-center gap-1 z-10">
         {onEdit && (
-          <button
-            type="button"
-            onClick={() => onEdit(debtor)}
-            className="text-gray-400 hover:text-blue-500 p-1"
-            title="Borçluyu Düzenle"
-          >
+          <button type="button" onClick={() => onEdit(debtor)} className="text-gray-400 hover:text-blue-500 p-1" title="Düzenle">
             <Edit2 className="h-4 w-4" />
           </button>
         )}
-        <button
-          type="button"
-          onClick={onRemove}
-          className="text-gray-400 hover:text-red-500 p-1"
-          title="Kaldır"
-        >
+        <button type="button" onClick={onRemove} className="text-gray-400 hover:text-red-500 p-1" title="Kaldır">
           <X className="h-4 w-4" />
         </button>
       </div>
 
-      {/* Borçlu Başlık - Tıklanabilir */}
-      <div 
-        className="flex items-center gap-2 mb-3 pr-6 cursor-pointer hover:bg-gray-50 p-2 -m-2 rounded transition-colors"
-        onClick={() => setShowDetails(!showDetails)}
-      >
+      {/* Borçlu Başlık */}
+      <div className="flex items-center gap-2 mb-2 pr-16 cursor-pointer" onClick={() => setShowDetails(!showDetails)}>
         {debtor.type === DebtorType.INDIVIDUAL && <Users className="h-4 w-4 text-emerald-500" />}
         {debtor.type === DebtorType.COMPANY && <Building2 className="h-4 w-4 text-blue-500" />}
         {debtor.type === DebtorType.PUBLIC_INSTITUTION && <Landmark className="h-4 w-4 text-purple-500" />}
-        <span className="font-medium">{debtor.name}</span>
-        {debtor.identityNo && (
-          <span className="text-xs text-muted-foreground">({debtor.identityNo})</span>
-        )}
-        <span className="ml-auto mr-4 text-gray-400">
+        {isEstate && <Scroll className="h-4 w-4 text-amber-500" />}
+        <span className="font-medium text-sm">{debtor.name}</span>
+        {debtor.identityNo && <span className="text-xs text-gray-500">({debtor.identityNo})</span>}
+        <span className="ml-auto text-gray-400">
           {showDetails ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </span>
       </div>
 
       {/* Detay Paneli */}
       {showDetails && (
-        <div className="bg-gray-50 border-t border-b mb-3 -mx-3 px-3 py-3">
-          <div className="text-xs font-medium text-gray-500 mb-2 flex items-center gap-1">
-            <FileText className="h-3 w-3" />
-            {DebtorTypeLabels[debtor.type]} Bilgileri
+        <div className="bg-gray-50 rounded p-2 mb-2 text-xs">
+          <div className="font-medium text-gray-600 mb-1 flex items-center gap-1">
+            <FileText className="h-3 w-3" /> {DebtorTypeLabels[debtor.type]}
           </div>
-          <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-            {/* Şahıs Bilgileri */}
-            {debtor.type === DebtorType.INDIVIDUAL && (
-              <>
-                {debtor.tckn && (
-                  <div><span className="text-gray-500">TC Kimlik:</span> {debtor.tckn}</div>
-                )}
-                {debtor.fatherName && (
-                  <div><span className="text-gray-500">Baba Adı:</span> {debtor.fatherName}</div>
-                )}
-                {debtor.motherName && (
-                  <div><span className="text-gray-500">Anne Adı:</span> {debtor.motherName}</div>
-                )}
-                {debtor.birthDate && (
-                  <div><span className="text-gray-500">Doğum Tarihi:</span> {new Date(debtor.birthDate).toLocaleDateString('tr-TR')}</div>
-                )}
-                {debtor.birthPlace && (
-                  <div><span className="text-gray-500">Doğum Yeri:</span> {debtor.birthPlace}</div>
-                )}
-              </>
-            )}
-            {/* Şirket Bilgileri */}
-            {debtor.type === DebtorType.COMPANY && (
-              <>
-                {debtor.vkn && (
-                  <div><span className="text-gray-500">VKN:</span> {debtor.vkn}</div>
-                )}
-                {debtor.taxOffice && (
-                  <div><span className="text-gray-500">Vergi Dairesi:</span> {debtor.taxOffice}</div>
-                )}
-                {debtor.mersisNo && (
-                  <div><span className="text-gray-500">MERSİS No:</span> {debtor.mersisNo}</div>
-                )}
-                {debtor.tradeRegisterNo && (
-                  <div><span className="text-gray-500">Ticaret Sicil No:</span> {debtor.tradeRegisterNo}</div>
-                )}
-              </>
-            )}
-            {/* Kamu Kurumu Bilgileri */}
-            {debtor.type === DebtorType.PUBLIC_INSTITUTION && (
-              <>
-                {debtor.detsisNo && (
-                  <div><span className="text-gray-500">DETSİS No:</span> {debtor.detsisNo}</div>
-                )}
-                {debtor.parentInstitution && (
-                  <div><span className="text-gray-500">Bağlı Kurum:</span> {debtor.parentInstitution}</div>
-                )}
-                {debtor.authorizedPerson && (
-                  <div><span className="text-gray-500">Yetkili Kişi:</span> {debtor.authorizedPerson}</div>
-                )}
-              </>
-            )}
-            {/* Ortak İletişim Bilgileri */}
-            {debtor.phone && (
-              <div className="flex items-center gap-1">
-                <Phone className="h-3 w-3 text-gray-400" />
-                <span className="text-gray-500">Tel:</span> {debtor.phone}
-              </div>
-            )}
-            {debtor.email && (
-              <div className="flex items-center gap-1">
-                <Mail className="h-3 w-3 text-gray-400" />
-                <span className="text-gray-500">E-posta:</span> {debtor.email}
-              </div>
-            )}
-            {debtor.kepAddress && (
-              <div className="col-span-2">
-                <span className="text-gray-500">KEP:</span> {debtor.kepAddress}
-              </div>
-            )}
-            {/* Adresler */}
-            {addresses.length > 0 && (
-              <div className="col-span-2 mt-2 pt-2 border-t">
-                <div className="text-xs font-medium text-gray-500 mb-1 flex items-center gap-1">
-                  <MapPin className="h-3 w-3" /> Kayıtlı Adresler ({addresses.length})
-                </div>
-                <div className="space-y-1">
-                  {addresses.map((addr, idx) => (
-                    <div key={addr.id || idx} className="text-xs bg-white px-2 py-1 rounded border">
-                      <span className="font-medium">{addr.city}{addr.district ? ` / ${addr.district}` : ""}</span>
-                      {addr.isPrimary && <span className="ml-1 text-emerald-600">(Ana)</span>}
-                      {addr.isMernis && <span className="ml-1 text-blue-600">(MERNİS)</span>}
-                      {addr.street && <div className="text-gray-500 truncate">{addr.street}</div>}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-            {/* Risk Bilgisi */}
-            {debtor.riskLevel && (
-              <div className="col-span-2 mt-2 pt-2 border-t">
-                <span className="text-gray-500">Risk Seviyesi:</span>{" "}
-                <span className={`font-medium ${
-                  debtor.riskLevel === 'COK_YUKSEK' ? 'text-red-600' :
-                  debtor.riskLevel === 'YUKSEK' ? 'text-orange-600' :
-                  debtor.riskLevel === 'ORTA' ? 'text-yellow-600' : 'text-green-600'
-                }`}>
-                  {debtor.riskLevel === 'COK_YUKSEK' ? 'Çok Yüksek' :
-                   debtor.riskLevel === 'YUKSEK' ? 'Yüksek' :
-                   debtor.riskLevel === 'ORTA' ? 'Orta' : 'Düşük'}
-                </span>
-                {debtor.riskNotes && <div className="text-xs text-gray-500 mt-1">{debtor.riskNotes}</div>}
-              </div>
-            )}
-            {/* Notlar */}
-            {debtor.notes && (
-              <div className="col-span-2 mt-2 pt-2 border-t">
-                <span className="text-gray-500">Notlar:</span>
-                <div className="text-xs text-gray-600 mt-1">{debtor.notes}</div>
-              </div>
-            )}
+          <div className="grid grid-cols-2 gap-1 text-gray-600">
+            {debtor.type === DebtorType.INDIVIDUAL && debtor.tckn && <div>TCKN: {debtor.tckn}</div>}
+            {debtor.type === DebtorType.COMPANY && debtor.vkn && <div>VKN: {debtor.vkn}</div>}
+            {debtor.phone && <div className="flex items-center gap-1"><Phone className="h-3 w-3" /> {debtor.phone}</div>}
+            {debtor.email && <div className="flex items-center gap-1"><Mail className="h-3 w-3" /> {debtor.email}</div>}
           </div>
+          {/* Tereke Mirasçıları */}
+          {isEstate && debtor.estateHeirs && debtor.estateHeirs.length > 0 && (
+            <div className="mt-2 pt-2 border-t">
+              <div className="font-medium text-amber-700 mb-1">Mirasçılar ({debtor.estateHeirs.length})</div>
+              {debtor.estateHeirs.map((heir, idx) => (
+                <div key={idx} className="bg-amber-50 px-2 py-1 rounded mb-1 border border-amber-200">
+                  <div className="flex justify-between">
+                    <span className="font-medium">{heir.name}</span>
+                    {heir.shareRatio && <span className="text-amber-600">{heir.shareRatio}</span>}
+                  </div>
+                  {heir.city && <div className="text-gray-500">{heir.city}{heir.district ? ` / ${heir.district}` : ""}</div>}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
 
       {/* Kontroller */}
-      <div className="grid grid-cols-2 gap-2">
-        {/* Rol Seçimi */}
+      <div className="grid grid-cols-2 gap-2 text-sm">
         <div>
           <label className="block text-xs font-medium mb-1">Rol</label>
           <select
             value={caseDebtor.role}
             onChange={(e) => onUpdate({ role: e.target.value as DebtorRole })}
-            className="w-full text-sm border rounded px-2 py-1.5 focus:outline-none focus:border-primary"
+            className="w-full border rounded px-2 py-1.5 text-xs"
           >
-            {Object.entries(DebtorRoleLabels).map(([value, label]) => (
-              <option key={value} value={value}>{label}</option>
-            ))}
+            {Object.entries(DebtorRoleLabels).map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
         </div>
-
-        {/* Tebligat Adresi */}
         <div>
           <label className="block text-xs font-medium mb-1 flex items-center gap-1">
-            <MapPin className="h-3 w-3" /> Tebligat Adresi
+            <MapPin className="h-3 w-3" /> {isEstate ? "Mirasçılar" : "Tebligat Adresi"}
           </label>
-          {addresses.length > 0 ? (
+          {isEstate ? (
+            <div className="text-xs text-amber-600 bg-amber-50 px-2 py-1.5 rounded border border-amber-200">
+              {debtor.estateHeirs?.length || 0} mirasçıya ayrı tebligat
+            </div>
+          ) : addresses.length > 0 ? (
             <select
               value={caseDebtor.selectedAddressId || ""}
               onChange={(e) => {
                 const addr = addresses.find((a) => a.id === e.target.value);
                 onUpdate({ selectedAddressId: e.target.value, selectedAddress: addr });
               }}
-              className="w-full text-sm border rounded px-2 py-1.5 focus:outline-none focus:border-primary"
+              className="w-full border rounded px-2 py-1.5 text-xs"
             >
               {addresses.map((addr) => (
                 <option key={addr.id} value={addr.id}>
-                  {addr.city}{addr.district ? ` / ${addr.district}` : ""} 
-                  {addr.isPrimary ? " (Ana)" : ""}
-                  {addr.isMernis ? " (MERNİS)" : ""}
+                  {addr.city}{addr.district ? ` / ${addr.district}` : ""}{addr.isPrimary ? " (Ana)" : ""}
                 </option>
               ))}
             </select>
           ) : (
-            <div className="text-xs text-amber-600 bg-amber-50 px-2 py-1.5 rounded">
-              Adres tanımlı değil
-            </div>
+            <div className="text-xs text-amber-600 bg-amber-50 px-2 py-1.5 rounded">Adres yok</div>
           )}
         </div>
       </div>
 
+
+      {/* Tereke için Mirasçı Listesi */}
+      {isEstate && debtor.estateHeirs && debtor.estateHeirs.length > 0 && (
+        <div className="mt-2 p-2 bg-amber-50 rounded border border-amber-200">
+          <div className="text-xs font-medium text-amber-800 mb-1">📬 Mirasçı Tebligat Adresleri</div>
+          <div className="space-y-1">
+            {debtor.estateHeirs.map((heir, idx) => (
+              <div key={idx} className="text-xs bg-white px-2 py-1 rounded border flex justify-between">
+                <span className="font-medium">{heir.name}</span>
+                <span className="text-gray-500">{heir.city || "Adres yok"}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Tebligat Yöntemi - Tereke hariç */}
+      {!isEstate && (
+        <div className="mt-2 p-2 bg-slate-50 rounded border">
+          <div className="flex items-center gap-2 flex-wrap">
+            <label className="text-xs font-medium text-slate-600">Tebligat:</label>
+            {isElectronicRequired ? (
+              <div className="flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 rounded text-xs">
+                <Zap className="h-3 w-3" /> E-Tebligat (zorunlu) <CheckCircle className="h-3 w-3" />
+              </div>
+            ) : (
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => onUpdate({ tebligatLegalMethod: TebligatLegalMethod.ELECTRONIC, tebligatDeliveryType: undefined })}
+                  className={`flex items-center gap-1 px-2 py-1 rounded text-xs ${currentLegalMethod === TebligatLegalMethod.ELECTRONIC ? "bg-blue-500 text-white" : "bg-white border hover:bg-blue-50"}`}
+                >
+                  <Zap className="h-3 w-3" /> E-Tebligat
+                </button>
+                <div className="flex items-center">
+                  <button
+                    type="button"
+                    onClick={() => onUpdate({ tebligatLegalMethod: TebligatLegalMethod.POSTAL, tebligatDeliveryType: TebligatDeliveryType.NORMAL })}
+                    className={`flex items-center gap-1 px-2 py-1 rounded-l text-xs border-y border-l ${
+                      currentLegalMethod === TebligatLegalMethod.POSTAL && currentDeliveryType === TebligatDeliveryType.NORMAL 
+                        ? "bg-emerald-500 text-white border-emerald-500" 
+                        : "bg-white hover:bg-emerald-50 border-gray-200"
+                    }`}
+                  >
+                    <Truck className="h-3 w-3" /> Posta
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onUpdate({ tebligatLegalMethod: TebligatLegalMethod.POSTAL, tebligatDeliveryType: TebligatDeliveryType.HIZLI })}
+                    className={`px-2 py-1 rounded-r text-xs border ${
+                      currentLegalMethod === TebligatLegalMethod.POSTAL && currentDeliveryType === TebligatDeliveryType.HIZLI 
+                        ? "bg-orange-500 text-white border-orange-500" 
+                        : "bg-white hover:bg-orange-50 border-gray-200"
+                    }`}
+                  >
+                    Hızlı
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          {isElectronicRequired && !debtor.kepAddress && (
+            <div className="mt-1 flex items-center gap-1 text-xs text-amber-600">
+              <AlertCircle className="h-3 w-3" /> KEP adresi tanımlı değil
+            </div>
+          )}
+          {/* Barkod No - Posta seçiliyse göster */}
+          {currentLegalMethod === TebligatLegalMethod.POSTAL && (
+            <div className="mt-2 flex items-center gap-2">
+              <Barcode className="h-3 w-3 text-gray-400" />
+              <input
+                type="text"
+                value={caseDebtor.notificationBarcode || ""}
+                onChange={(e) => onUpdate({ notificationBarcode: e.target.value })}
+                placeholder="PTT Barkod No (opsiyonel)"
+                className="flex-1 text-xs border rounded px-2 py-1"
+              />
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Dosya Notu */}
       <div className="mt-2">
-        <label className="block text-xs font-medium mb-1">Dosya Notu (Opsiyonel)</label>
+        <label className="block text-xs font-medium mb-1">Dosya Notu</label>
         <input
           type="text"
           value={caseDebtor.caseNote || ""}
           onChange={(e) => onUpdate({ caseNote: e.target.value })}
           placeholder="Bu borçlu için özel not..."
-          className="w-full text-sm border rounded px-2 py-1.5 focus:outline-none focus:border-primary"
+          className="w-full text-xs border rounded px-2 py-1.5"
         />
       </div>
     </div>

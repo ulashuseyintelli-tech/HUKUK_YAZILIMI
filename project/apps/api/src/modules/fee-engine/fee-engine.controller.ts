@@ -104,4 +104,91 @@ export class FeeEngineController {
   getCurrentTariffYear(): { year: number } {
     return { year: this.feeEngineService.getCurrentTariffYear() };
   }
+
+  /**
+   * Faiz hesapla
+   */
+  @Post('calculate-interest')
+  calculateInterest(
+    @Body() dto: { 
+      principal: number; 
+      startDate: string; 
+      endDate: string; 
+      interestType?: string;
+      currency?: string;
+    },
+  ): { 
+    principal: number; 
+    interest: number; 
+    total: number; 
+    rate: number;
+    days: number;
+    startDate: string;
+    endDate: string;
+    interestType: string;
+  } {
+    const startDate = new Date(dto.startDate);
+    const endDate = new Date(dto.endDate);
+    const days = Math.ceil((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    
+    const rate = this.feeEngineService.getInterestRate(
+      dto.currency || 'TRY',
+      dto.interestType || 'YASAL',
+      startDate,
+    );
+    
+    // Yıllık faiz oranını günlük faize çevir ve hesapla
+    const dailyRate = rate / 100 / 365;
+    const interest = dto.principal * dailyRate * days;
+    
+    return {
+      principal: dto.principal,
+      interest: Math.round(interest * 100) / 100,
+      total: Math.round((dto.principal + interest) * 100) / 100,
+      rate,
+      days,
+      startDate: dto.startDate,
+      endDate: dto.endDate,
+      interestType: dto.interestType || 'YASAL',
+    };
+  }
+
+  /**
+   * Masraf hesapla (basit)
+   */
+  @Post('calculate')
+  calculate(
+    @Body() dto: { 
+      principal: number; 
+      caseType?: string;
+      profile?: string;
+    },
+  ): { 
+    principal: number;
+    fees: Array<{ name: string; amount: number }>;
+    total: number;
+    profile: string;
+  } {
+    const items = this.feeEngineService.calculateOpeningFees(
+      dto.caseType || 'ILAMSIZ_GENEL',
+      dto.principal,
+      0,
+      1,
+      'NORMAL',
+    );
+    
+    const fees = items.map(item => ({
+      name: item.label,
+      amount: item.amount,
+    }));
+    
+    const total = this.feeEngineService.calculateTotalFees(items);
+    
+    return {
+      principal: dto.principal,
+      fees,
+      total,
+      profile: dto.profile || 'STANDART',
+    };
+  }
 }

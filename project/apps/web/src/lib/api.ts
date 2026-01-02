@@ -119,6 +119,69 @@ class ApiClient {
     return res.fileNumber;
   }
 
+  // Case Lawyers
+  async getCaseLawyers(caseId: string) {
+    return this.request<any>(`/cases/${caseId}/lawyers`);
+  }
+
+  async addCaseLawyer(caseId: string, data: {
+    lawyerId: string;
+    role?: 'RESPONSIBLE' | 'ASSIGNED' | 'ASSISTANT' | 'INTERN';
+    canSign?: boolean;
+  }) {
+    return this.request<any>(`/cases/${caseId}/lawyers`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async removeCaseLawyer(caseId: string, caseLawyerId: string) {
+    return this.request<any>(`/cases/${caseId}/lawyers/${caseLawyerId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async updateCaseLawyer(caseId: string, caseLawyerId: string, data: {
+    role?: 'RESPONSIBLE' | 'ASSIGNED' | 'ASSISTANT' | 'INTERN';
+    canSign?: boolean;
+    casePermissions?: {
+      canEditCase?: boolean;
+      canGenerateDocs?: boolean;
+      canSyncUYAP?: boolean;
+      canViewFinance?: boolean;
+      canEditFinance?: boolean;
+      canChangeStatus?: boolean;
+      canEditParties?: boolean;
+    };
+    receiveNotifications?: boolean;
+  }) {
+    return this.request<any>(`/cases/${caseId}/lawyers/${caseLawyerId}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Case Staff
+  async getCaseStaff(caseId: string) {
+    return this.request<any>(`/cases/${caseId}/staff`);
+  }
+
+  async addCaseStaff(caseId: string, data: {
+    staffMemberId: string;
+    roleOnCase?: string;
+  }) {
+    return this.request<any>(`/cases/${caseId}/staff`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async removeCaseStaff(caseId: string, caseStaffId: string) {
+    return this.request<any>(`/cases/${caseId}/staff/${caseStaffId}`, {
+      method: "DELETE",
+    });
+  }
+
   // Debtors
   async getDebtors(params?: { page?: number; limit?: number; search?: string }) {
     const query = new URLSearchParams();
@@ -186,6 +249,26 @@ class ApiClient {
       method: "POST",
       body: JSON.stringify(data),
     });
+  }
+
+  async updateLawyer(id: string, data: {
+    phone?: string;
+    email?: string;
+    address?: string;
+    bankName?: string;
+    branchName?: string;
+    iban?: string;
+  }) {
+    return this.request<any>(`/lawyers/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Staff Members
+  async getStaffMembers(search?: string) {
+    const query = search ? `?search=${encodeURIComponent(search)}` : "";
+    return this.request<any[]>(`/staff${query}`);
   }
 
   // Debtors - search için güncelleme
@@ -812,6 +895,109 @@ class ApiClient {
     return this.request<{ total: number; claimedTotal: number; count: number; claimedCount: number }>(`/precautionary-orders/${orderId}/costs/total`);
   }
 
+  // ============================================
+  // İlgili Davalar (Related Lawsuits) API
+  // ============================================
+
+  /**
+   * Tüm dava türlerini getir
+   */
+  async getRelatedLawsuitTypes() {
+    return this.request<{ types: any[] }>('/related-lawsuits/types');
+  }
+
+  /**
+   * Takip türüne göre dava türlerini getir
+   */
+  async getRelatedLawsuitTypesByCaseType(caseType: string) {
+    return this.request<{ caseType: string; types: any[] }>(`/related-lawsuits/types/by-case-type?caseType=${caseType}`);
+  }
+
+  /**
+   * Aşamaya göre dava türlerini getir
+   */
+  async getRelatedLawsuitTypesByStage(stage: string) {
+    return this.request<{ stage: string; types: any[] }>(`/related-lawsuits/types/by-stage?stage=${stage}`);
+  }
+
+  /**
+   * Dosya için açılabilecek davaları kontrol et
+   */
+  async checkAvailableLawsuits(data: {
+    caseType: string;
+    stage: string;
+    instrumentType?: string;
+    instrumentDates?: {
+      presentationDate?: string;
+      maturityDate?: string;
+      objectionDate?: string;
+    };
+  }) {
+    return this.request<{ lawsuits: any[] }>('/related-lawsuits/check-available', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /**
+   * Dosya için dava önerileri al
+   */
+  async getRelatedLawsuitRecommendations(data: {
+    caseType: string;
+    stage: string;
+    instrumentType?: string;
+    instrumentDates?: {
+      presentationDate?: string;
+      maturityDate?: string;
+      objectionDate?: string;
+    };
+  }) {
+    return this.request<{ recommendations: any[] }>('/related-lawsuits/recommendations', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /**
+   * Karşılıksız çek şikayet dilekçesi verilerini hazırla
+   */
+  async prepareKarsiliksizCekPetition(data: {
+    creditor: { name: string; identityNo?: string; address?: string };
+    debtor: { name: string; identityNo?: string; address?: string };
+    instrument: {
+      serialNo: string;
+      amount: number;
+      currency?: string;
+      bank: string;
+      branch?: string;
+      presentationDate: string;
+      dishonorDate?: string;
+      issuePlace?: string;
+    };
+    lawyer?: { name: string; barNumber: string };
+  }) {
+    return this.request<{
+      data: any;
+      templateInfo: any;
+      uyapDavaTuru: string;
+      courtType: string;
+    }>('/related-lawsuits/prepare/karsiliksiz-cek', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /**
+   * UYAP dava türü kodunu getir
+   */
+  async getUyapLawsuitCode(lawsuitCode: string) {
+    return this.request<{
+      lawsuitCode: string;
+      uyapDavaTuru: string;
+      courtType: string;
+    }>(`/related-lawsuits/uyap-code/${lawsuitCode}`);
+  }
+
   /**
    * API URL'ini al (private helper)
    */
@@ -1311,6 +1497,350 @@ class ApiClient {
 
   async getBankIntegrationStatus(): Promise<{ connected: boolean; providers: BankProvider[]; lastSync?: string }> {
     return this.request<{ connected: boolean; providers: BankProvider[]; lastSync?: string }>("/bank/status");
+  }
+
+  // ============================================
+  // Payment Instruction API
+  // ============================================
+
+  /**
+   * Ödeme talimatı oluştur
+   */
+  async createPaymentInstruction(data: {
+    caseId: string;
+    payerType: 'DEBTOR' | 'CREDITOR' | 'LAWYER';
+    purpose: string;
+    amount: number;
+    payerName?: string;
+    description?: string;
+  }) {
+    return this.request<PaymentInstructionResult>('/payment-instructions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /**
+   * Borçlu ödeme talimatı oluştur (kısayol)
+   */
+  async createDebtorPaymentInstruction(caseId: string, amount: number, debtorName: string) {
+    return this.request<PaymentInstructionResult>('/payment-instructions/debtor', {
+      method: 'POST',
+      body: JSON.stringify({ caseId, amount, debtorName }),
+    });
+  }
+
+  /**
+   * Harç/Masraf ödeme talimatı oluştur (kısayol)
+   */
+  async createFeePaymentInstruction(caseId: string, purpose: string, amount: number) {
+    return this.request<PaymentInstructionResult>('/payment-instructions/fee', {
+      method: 'POST',
+      body: JSON.stringify({ caseId, purpose, amount }),
+    });
+  }
+
+  /**
+   * Ödeme türlerini listele
+   */
+  async getPaymentPurposes() {
+    return this.request<Array<{
+      value: string;
+      label: string;
+      targetAccount: 'EMANET' | 'HARC' | 'CEZAEVI';
+      allowedPayers: Array<'DEBTOR' | 'CREDITOR' | 'LAWYER'>;
+    }>>('/payment-instructions/purposes');
+  }
+
+  /**
+   * Ödeme türlerini ödeyene göre filtrele
+   */
+  async getPaymentPurposesByPayer(payerType: 'DEBTOR' | 'CREDITOR' | 'LAWYER') {
+    return this.request<Array<{ value: string; label: string }>>(
+      `/payment-instructions/purposes-by-payer?payerType=${payerType}`
+    );
+  }
+
+  // ============================================
+  // Expense Request API
+  // ============================================
+
+  async getExpenseRequests(params?: { caseId?: string; clientId?: string; status?: string }) {
+    const query = new URLSearchParams();
+    if (params?.caseId) query.set('caseId', params.caseId);
+    if (params?.clientId) query.set('clientId', params.clientId);
+    if (params?.status) query.set('status', params.status);
+    return this.request<any[]>(`/expense-requests?${query}`);
+  }
+
+  async getExpenseRequest(id: string) {
+    return this.request<any>(`/expense-requests/${id}`);
+  }
+
+  async getExpenseRequestsByCase(caseId: string) {
+    return this.request<any[]>(`/expense-requests/by-case/${caseId}`);
+  }
+
+  async createExpenseRequest(data: { caseId: string; clientId: string; items: any[]; dueDate?: string; notes?: string; paidByLawyer?: boolean }) {
+    return this.request<any>('/expense-requests', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async createExpenseRequestFromPackage(data: {
+    caseId: string;
+    clientId: string;
+    packageCode: string;
+    items: Array<{
+      itemCode: string;
+      label: string;
+      suggestedAmount: number;
+      finalAmount: number;
+      wasOverridden?: boolean;
+    }>;
+    dueDate?: string;
+    notes?: string;
+    sendEmail?: boolean;
+    sendSms?: boolean;
+    sendWhatsapp?: boolean;
+    paidByLawyer?: boolean;
+  }) {
+    return this.request<any>('/expense-requests/from-package', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateExpenseRequest(id: string, data: any) {
+    return this.request<any>(`/expense-requests/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async sendExpenseRequest(id: string, channel: string, notificationId?: string) {
+    return this.request<any>(`/expense-requests/${id}/send`, {
+      method: 'POST',
+      body: JSON.stringify({ channel, notificationId }),
+    });
+  }
+
+  async remindExpenseRequest(id: string) {
+    return this.request<any>(`/expense-requests/${id}/remind`, {
+      method: 'POST',
+    });
+  }
+
+  async receiveExpenseRequest(id: string, paidAmount: number, receiptDocId?: string) {
+    return this.request<any>(`/expense-requests/${id}/receive`, {
+      method: 'POST',
+      body: JSON.stringify({ paidAmount, receiptDocId }),
+    });
+  }
+
+  async cancelExpenseRequest(id: string, reason?: string) {
+    return this.request<any>(`/expense-requests/${id}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  async deleteExpenseRequest(id: string) {
+    return this.request<{ success: boolean }>(`/expense-requests/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getExpenseRequestStats(caseId?: string) {
+    const query = caseId ? `?caseId=${caseId}` : '';
+    return this.request<{ pending: number; sent: number; received: number; totalReceived: number }>(`/expense-requests/stats${query}`);
+  }
+
+  async markExpenseRequestAsReceived(id: string, paidAmount: number, receiptDocId?: string) {
+    return this.request<any>(`/expense-requests/${id}/receive`, {
+      method: 'POST',
+      body: JSON.stringify({ paidAmount, receiptDocId }),
+    });
+  }
+
+  // ============================================
+  // Cost Package API (Masraf Paketleri)
+  // ============================================
+
+  async getCostPackages() {
+    return this.request<any[]>('/cost-packages');
+  }
+
+  async getCostPackage(code: string) {
+    return this.request<any>(`/cost-packages/${code}`);
+  }
+
+  async computeExpenseRequest(caseId: string, packageCode: string, params?: {
+    debtorCount?: number;
+    tebligatCount?: number;
+    principalAmount?: number;
+  }) {
+    return this.request<{
+      packageCode: string;
+      packageName: string;
+      items: Array<{
+        itemCode: string;
+        label: string;
+        suggestedAmount: number;
+        finalAmount: number;
+        isEditable: boolean;
+        calcParams?: any;
+        sortOrder: number;
+      }>;
+      totalSuggested: number;
+      messageTemplateCode: string | null;
+    }>('/cost-packages/compute', {
+      method: 'POST',
+      body: JSON.stringify({ caseId, packageCode, ...params }),
+    });
+  }
+
+  // ============================================
+  // Case Balance API (Masraf Bakiyesi)
+  // ============================================
+
+  async getCaseBalance(caseId: string) {
+    return this.request<{
+      id: string;
+      caseId: string;
+      balance: number;
+      lowThreshold: number;
+      isLow: boolean;
+      recentLedger: any[];
+    }>(`/cases/${caseId}/balance`);
+  }
+
+  async getCaseBalanceLedger(caseId: string) {
+    return this.request<any[]>(`/cases/${caseId}/balance/ledger`);
+  }
+
+  async creditCaseBalance(caseId: string, data: {
+    amount: number;
+    source: string;
+    sourceId?: string;
+    description?: string;
+  }) {
+    return this.request<{ success: boolean; newBalance: number; ledgerId: string }>(`/cases/${caseId}/balance/credit`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async debitCaseBalance(caseId: string, data: {
+    amount: number;
+    source: string;
+    sourceId?: string;
+    description?: string;
+  }) {
+    return this.request<{ success: boolean; newBalance: number; ledgerId: string; isLow: boolean }>(`/cases/${caseId}/balance/debit`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // ============================================
+  // Stage Trigger API (Aşama Tetikleyici)
+  // ============================================
+
+  async triggerStage(caseId: string, eventCode: string, params?: {
+    estimatedAmount?: number;
+    tebligatCount?: number;
+    debtorCount?: number;
+    notes?: string;
+  }) {
+    return this.request<{
+      action: 'OPEN_EXPENSE_MODAL' | 'READY' | 'OFFER_DEBIT_OR_REQUEST' | 'DEBIT_FROM_BALANCE' | 'SUGGEST_ONLY' | 'BLOCKED';
+      expenseRequestId?: string;
+      caseStatus?: string;
+      debitedAmount?: number;
+      newBalance?: number;
+      suggestion?: {
+        title: string;
+        description: string;
+        packageCode?: string;
+      };
+      blockReason?: string;
+    }>(`/cases/${caseId}/stage-trigger`, {
+      method: 'POST',
+      body: JSON.stringify({ eventCode, params }),
+    });
+  }
+
+  async prepareForUyap(caseId: string) {
+    return this.request<{
+      action: 'OPEN_EXPENSE_MODAL' | 'READY' | 'BLOCKED';
+      expenseRequestId?: string;
+      caseStatus?: string;
+      blockReason?: string;
+    }>(`/cases/${caseId}/uyap/prepare`, {
+      method: 'POST',
+    });
+  }
+
+  async executeOperation(caseId: string, operationCode: string, amount: number, description?: string) {
+    return this.request<any>(`/cases/${caseId}/operations`, {
+      method: 'POST',
+      body: JSON.stringify({ operationCode, amount, description }),
+    });
+  }
+
+  // ============================================
+  // Message Template API
+  // ============================================
+
+  async getMessageTemplates(params?: { category?: string; channel?: string; isActive?: boolean }) {
+    const query = new URLSearchParams();
+    if (params?.category) query.set('category', params.category);
+    if (params?.channel) query.set('channel', params.channel);
+    if (params?.isActive !== undefined) query.set('isActive', String(params.isActive));
+    return this.request<any[]>(`/message-templates?${query}`);
+  }
+
+  async getMessageTemplate(id: string) {
+    return this.request<any>(`/message-templates/${id}`);
+  }
+
+  async getMessageTemplateByCode(code: string) {
+    return this.request<any>(`/message-templates/by-code/${code}`);
+  }
+
+  async createMessageTemplate(data: any) {
+    return this.request<any>('/message-templates', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateMessageTemplate(id: string, data: any) {
+    return this.request<any>(`/message-templates/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteMessageTemplate(id: string) {
+    return this.request<{ success: boolean }>(`/message-templates/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async renderMessageTemplate(id: string, tokens: Record<string, string>) {
+    return this.request<{ subject?: string; body: string }>(`/message-templates/${id}/render`, {
+      method: 'POST',
+      body: JSON.stringify(tokens),
+    });
+  }
+
+  async seedMessageTemplates() {
+    return this.request<{ success: boolean; message: string }>('/message-templates/seed', {
+      method: 'POST',
+    });
   }
 }
 
@@ -2048,8 +2578,84 @@ export interface UdfDocument {
   };
 }
 
+// ============================================
+// Payment Instruction Types
+// ============================================
+
+export interface PaymentInstructionResult {
+  bankName: string;
+  iban: string;
+  ibanFormatted: string;
+  description: string;
+  executionOfficeName: string;
+  executionFileNumber: string;
+  amount: number;
+  purpose: string;
+  purposeLabel: string;
+  warnings?: string[];
+}
+
 // Singleton export
 export const api = new ApiClient();
+
+// ============================================
+// Expense Request Types
+// ============================================
+
+export type ExpenseRequestStatus = 'PENDING' | 'SENT' | 'REMINDED' | 'RECEIVED' | 'OVERDUE' | 'CANCELLED';
+
+export interface ExpenseItem {
+  type: string;
+  description: string;
+  amount: number;
+}
+
+export interface ExpenseRequest {
+  id: string;
+  tenantId: string;
+  caseId: string;
+  clientId: string;
+  items: ExpenseItem[];
+  totalAmount: number;
+  currency: string;
+  dueDate?: string;
+  status: ExpenseRequestStatus;
+  sentAt?: string;
+  sentVia?: string;
+  reminderCount: number;
+  lastReminderAt?: string;
+  paidAt?: string;
+  paidAmount?: number;
+  receiptDocId?: string;
+  notes?: string;
+  createdAt: string;
+  case?: { id: string; fileNumber: string; executionFileNumber?: string };
+  client?: { id: string; name: string; displayName?: string; phone?: string; email?: string };
+}
+
+// ============================================
+// Message Template Types
+// ============================================
+
+export type MessageTemplateCategory = 'CLIENT_INFO' | 'EXPENSE_REQUEST' | 'EXPENSE_REMINDER' | 'COLLECTION_INFO' | 'DEBTOR_NOTICE' | 'GREETING' | 'OTHER';
+export type MessageTemplateChannel = 'EMAIL' | 'SMS' | 'WHATSAPP';
+
+export interface MessageTemplate {
+  id: string;
+  tenantId: string;
+  code: string;
+  name: string;
+  description?: string;
+  category: MessageTemplateCategory;
+  channel: MessageTemplateChannel;
+  subject?: string;
+  body: string;
+  availableTokens?: string[];
+  isActive: boolean;
+  isSystem: boolean;
+  sortOrder: number;
+  createdAt: string;
+}
 
 // TypeScript icin ApiClient'a method tanimlari ekleme
 declare module './api' {
@@ -2083,5 +2689,28 @@ declare module './api' {
     sendBankTransfer(data: BankTransferRequest): Promise<BankTransferResponse>;
     getTransferStatus(referenceNo: string): Promise<{ referenceNo: string; status: BankTransactionStatus; completedAt?: string }>;
     getBankIntegrationStatus(): Promise<{ connected: boolean; providers: BankProvider[]; lastSync?: string }>;
+    
+    // Expense Request methods
+    getExpenseRequests(params?: { caseId?: string; clientId?: string; status?: ExpenseRequestStatus }): Promise<ExpenseRequest[]>;
+    getExpenseRequest(id: string): Promise<ExpenseRequest>;
+    getExpenseRequestsByCase(caseId: string): Promise<ExpenseRequest[]>;
+    createExpenseRequest(data: { caseId: string; clientId: string; items: ExpenseItem[]; dueDate?: string; notes?: string }): Promise<ExpenseRequest>;
+    updateExpenseRequest(id: string, data: Partial<ExpenseRequest>): Promise<ExpenseRequest>;
+    sendExpenseRequest(id: string, channel: string): Promise<ExpenseRequest>;
+    remindExpenseRequest(id: string): Promise<ExpenseRequest>;
+    receiveExpenseRequest(id: string, paidAmount: number, receiptDocId?: string): Promise<ExpenseRequest>;
+    cancelExpenseRequest(id: string, reason?: string): Promise<ExpenseRequest>;
+    deleteExpenseRequest(id: string): Promise<{ success: boolean }>;
+    getExpenseRequestStats(caseId?: string): Promise<{ pending: number; sent: number; received: number; totalReceived: number }>;
+    
+    // Message Template methods
+    getMessageTemplates(params?: { category?: MessageTemplateCategory; channel?: MessageTemplateChannel; isActive?: boolean }): Promise<MessageTemplate[]>;
+    getMessageTemplate(id: string): Promise<MessageTemplate>;
+    getMessageTemplateByCode(code: string): Promise<MessageTemplate>;
+    createMessageTemplate(data: Omit<MessageTemplate, 'id' | 'tenantId' | 'createdAt' | 'isSystem' | 'sortOrder'>): Promise<MessageTemplate>;
+    updateMessageTemplate(id: string, data: Partial<MessageTemplate>): Promise<MessageTemplate>;
+    deleteMessageTemplate(id: string): Promise<{ success: boolean }>;
+    renderMessageTemplate(id: string, tokens: Record<string, string>): Promise<{ subject?: string; body: string }>;
+    seedMessageTemplates(): Promise<{ success: boolean; message: string }>;
   }
 }

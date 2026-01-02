@@ -1,60 +1,55 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useParams } from "next/navigation";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
   Loader2,
-  FileText,
-  User,
-  Users,
-  Scale,
-  Calendar,
-  DollarSign,
   Edit,
-  Brain,
-  AlertTriangle,
-  Clock,
-  Activity,
-  Settings,
-  Tag,
-  Plus,
-  X,
-  Info,
-  Save,
-  FileCheck,
   Share2,
-  StickyNote,
+  Trash2,
+  RefreshCw,
+  Save,
+  X,
+  AlertTriangle,
+  Link2,
+  ChevronRight,
+  CheckCircle2,
+  XCircle,
+  Building2,
+  CreditCard,
+  Copy,
+  Info,
+  User,
+  Shield,
+  Bell,
+  FileText,
+  Eye,
+  Settings,
+  Phone,
+  Mail,
+  MapPin,
+  Users,
+  Receipt,
 } from "lucide-react";
-import { Badge } from "@hukuk/ui";
 import { api } from "@/lib/api";
-import { AiSuggestionsModal } from "@/components/ui/AiSuggestionsModal";
-import {
-  CaseSummaryCard,
-  StatusCards,
-  AutomationPanel,
-  CaseFlagsPanel,
-  CaseTimeline,
-  DocumentGenerator,
-  CaseNotes,
-  ShareCaseModal,
-  CaseTags,
-} from "@/components/case";
-import { ClaimItemPanel } from "@/components/claim-item";
+import { PaymentInstructionModal } from "@/components/payment/PaymentInstructionModal";
+import { ExpenseRequestModal, BalanceWidget, ExpenseRequestList } from "@/components/expense";
+import { SendMessageModal } from "@/components/message/SendMessageModal";
 
-const caseTypeLabels: Record<string, string> = {
-  GENERAL_EXECUTION: "Genel Haciz Yoluyla Takip",
-  MORTGAGE: "İpotekli Takip",
-  PLEDGE: "Rehinli Takip",
-  CHECK: "Çek Takibi",
-  BOND: "Senet Takibi",
-  RENTAL: "Kira Takibi",
-  BANKRUPTCY: "İflas Takibi",
-  OTHER: "Diğer",
-};
+// ============================================
+// TİPLER
+// ============================================
 
-
+interface BankAccount {
+  id: string;
+  bankName: string;
+  branchName?: string;
+  iban: string;
+  accountHolder?: string;
+  isPrimary?: boolean;
+}
 
 interface CaseDetail {
   id: string;
@@ -67,1344 +62,2409 @@ interface CaseDetail {
   executionPath: string;
   caseDate: string;
   principalAmount?: number;
-  interestRate?: number;
-  startDate?: string;
-  notes?: string;
+  currency?: string;
+  uyapBirimKodu?: string;
   createdAt: string;
   workflowStage?: string;
-  riskScore?: number;
-  isAutoMode?: boolean;
-  isAutomationEnabled?: boolean;
-  autoActionsCount?: number;
-  nextActionAt?: string;
-  nextAutoAction?: string;
-  daysLeft?: number;
-  hasArticle4Request?: boolean;
-  isArchived?: boolean;
-  showToClient?: boolean;
-  allowUyapActions?: boolean;
-  hasUyapWarning?: boolean;
-  uyapBirimKodu?: string;
-  automationConfig?: any;
-  // Alt Kategori ve Para Birimi
-  subCategory?: "GENEL" | "NAFAKA" | "DOVIZ" | "KIRA" | "CEZA";
-  currency?: "TRY" | "USD" | "EUR" | "GBP" | "CHF";
-  interestType?: string;
-  interestDescription?: string;
-  nafakaStartDate?: string;
-  monthlyNafakaAmount?: number;
-  exchangeDate?: string;
-  exchangeRateType?: string;
-  // OCR Bilgileri
-  preDetectedCaseType?: string;
-  preDetectedSubCategory?: string;
-  ocrText?: string;
-  isAutoDetected?: boolean;
-  confidenceScore?: number;
-  // Ek Bilgi Alanları
-  dahiliNot?: string;
-  muvekkilNotu?: string;
-  sonDegerlendirmeTarihi?: string;
-  // Lookup İlişkileri
-  takipTuru?: { id: string; name: string; code: string };
-  asama?: { id: string; name: string; code: string };
-  risk?: { id: string; name: string; color?: string };
-  borcluTipi?: { id: string; name: string };
-  durumEtiketi?: { id: string; name: string; color?: string };
-  sorumluPersonel?: { id: string; name: string; surname: string };
-  formType?: { id: string; name: string; code: string };
-  mahiyetTipi?: { id: string; name: string; code: string; uyapCode?: string };
-  reportingSummary?: string;
-  dues?: {
+  subCategory?: string;
+  lastAutoActionAt?: string; // Son işlem tarihi (eski alan)
+  lastEnforcementActionAt?: string; // Son icrai işlem tarihi (İİK 78 için)
+  executionOffice?: {
     id: string;
-    type: string;
-    description?: string;
-    amount: number;
-    dueDate: string;
-  }[];
+    name: string;
+    city: string;
+    uyapCode?: string;
+    bankName?: string;
+    branchName?: string;
+    iban?: string;
+  };
   client?: {
     id: string;
     name: string;
-    type: string;
-    identityNo?: string;
+    displayName?: string;
+    type?: 'INDIVIDUAL' | 'COMPANY' | 'PUBLIC';
+    tckn?: string;
+    vkn?: string;
+    taxOffice?: string;
     phone?: string;
     email?: string;
+    address?: string;
+    city?: string;
+    district?: string;
+    bankAccounts?: BankAccount[];
   };
+  caseClients?: {
+    id: string;
+    role?: string;
+    client: {
+      id: string;
+      name: string;
+      displayName?: string;
+      type?: 'INDIVIDUAL' | 'COMPANY' | 'PUBLIC';
+      tckn?: string;
+      vkn?: string;
+      taxOffice?: string;
+      phone?: string;
+      email?: string;
+      address?: string;
+      city?: string;
+      district?: string;
+      bankAccounts?: BankAccount[];
+    };
+  }[];
   debtors: {
     id: string;
     role: string;
     debtor: {
       id: string;
       name: string;
-      type: string;
-      identityNo?: string;
-      phone?: string;
+      displayName?: string;
+      tckn?: string;
     };
   }[];
   lawyers?: {
     id: string;
     canSign: boolean;
+    role?: 'RESPONSIBLE' | 'ASSIGNED' | 'ASSISTANT' | 'INTERN';
+    caseRole?: 'RESPONSIBLE' | 'ASSIGNED' | 'ASSISTANT' | 'INTERN'; // alias for role
+    isResponsible?: boolean;
+    casePermissions?: {
+      canEditCase?: boolean;
+      canGenerateDocs?: boolean;
+      canSyncUYAP?: boolean;
+      canViewFinance?: boolean;
+      canEditFinance?: boolean;
+      canChangeStatus?: boolean;
+      canEditParties?: boolean;
+    };
+    receiveNotifications?: boolean;
+    permissions?: {
+      canEditCase?: boolean;
+      canGenerateDocs?: boolean;
+      canSyncUYAP?: boolean;
+      canViewFinance?: boolean;
+      canEditFinance?: boolean;
+      canChangeStatus?: boolean;
+      canEditParties?: boolean;
+      receivesNotifications?: boolean;
+    };
     lawyer: {
       id: string;
       name: string;
       surname: string;
       barNumber?: string;
+      phone?: string;
+      email?: string;
+      address?: string;
+      bankName?: string;
+      branchName?: string;
+      iban?: string;
+      lawyerRank?: 'PARTNER' | 'MANAGER' | 'AUTHORIZED' | 'LAWYER' | 'INTERN';
+      defaultPermissions?: {
+        canEditCase?: boolean;
+        canGenerateDocs?: boolean;
+        canSyncUYAP?: boolean;
+        canViewFinance?: boolean;
+        canEditFinance?: boolean;
+        canChangeStatus?: boolean;
+        canEditParties?: boolean;
+      };
     };
   }[];
-  tasks: any[];
-  collections: any[];
-  lifecycleEvents?: any[];
-  riskReports?: any[];
+  staff?: {
+    id: string;
+    canSign?: boolean;
+    roleOnCase?: string;
+    staffMember: {
+      id: string;
+      firstName: string;
+      lastName: string;
+      staffType?: string;
+      phone?: string;
+      email?: string;
+    };
+  }[];
+  claimItems?: any[];
+  instruments?: any[];
+  formType?: { id: string; name: string; code: string };
 }
+
+// Avukat Drawer için tip
+interface SelectedLawyer {
+  caseLawyerId: string;
+  lawyerId: string;
+  name: string;
+  surname: string;
+  barNumber?: string;
+  phone?: string;
+  email?: string;
+  address?: string;
+  bankName?: string;
+  branchName?: string;
+  iban?: string;
+  canSign: boolean;
+  caseRole?: 'RESPONSIBLE' | 'ASSIGNED' | 'ASSISTANT' | 'INTERN';
+  lawyerRank?: 'PARTNER' | 'MANAGER' | 'AUTHORIZED' | 'LAWYER' | 'INTERN';
+  permissions?: {
+    canEditCase?: boolean;
+    canGenerateDocs?: boolean;
+    canSyncUYAP?: boolean;
+    canViewFinance?: boolean;
+    canEditFinance?: boolean;
+    canChangeStatus?: boolean;
+    canEditParties?: boolean;
+    receivesNotifications?: boolean;
+  };
+}
+
+// ============================================
+// YARDIMCI FONKSİYONLAR
+// ============================================
+
+const formatDate = (date: string) => {
+  if (!date) return '-';
+  return new Date(date).toLocaleDateString('tr-TR');
+};
+
+const formatDateTime = (date: string) => {
+  if (!date) return '-';
+  return new Date(date).toLocaleString('tr-TR', { 
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit'
+  });
+};
+
+const calculateDayCount = (startDate: string): number => {
+  if (!startDate) return 0;
+  const start = new Date(startDate);
+  const now = new Date();
+  const diffTime = Math.abs(now.getTime() - start.getTime());
+  return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+};
+
+const getDayCountStyle = (days: number) => {
+  if (days <= 180) return { bg: 'bg-green-50', border: 'border-green-200', text: 'text-green-700' };
+  if (days <= 720) return { bg: 'bg-yellow-50', border: 'border-yellow-200', text: 'text-yellow-700' };
+  return { bg: 'bg-red-50', border: 'border-red-200', text: 'text-red-700' };
+};
+
+// Kalan gün hesaplama (son icrai işlem tarihinden 365 gün - İİK 78)
+const INACTIVITY_THRESHOLD_DAYS = 365; // Büro ayarından alınabilir
+
+const calculateRemainingDays = (caseDate: string, lastEnforcementDate?: string): number => {
+  // Son icrai işlem tarihi varsa onu kullan, yoksa takip açılış tarihini
+  const baseDate = lastEnforcementDate ? new Date(lastEnforcementDate) : new Date(caseDate);
+  const now = new Date();
+  const daysPassed = Math.ceil((now.getTime() - baseDate.getTime()) / (1000 * 60 * 60 * 24));
+  return INACTIVITY_THRESHOLD_DAYS - daysPassed;
+};
+
+// Kalan gün renk skalası ve etiket - rafine renkler
+const getRemainingDaysStyle = (days: number) => {
+  if (days <= 0) return { text: 'text-white', bg: 'bg-black', border: 'border-black', label: 'Kritik' };
+  if (days <= 60) return { text: 'text-red-600', bg: 'bg-red-100', border: 'border-red-300', label: 'Riskli' };
+  if (days <= 180) return { text: 'text-yellow-600', bg: 'bg-yellow-100', border: 'border-yellow-300', label: 'Dikkat' };
+  return { text: 'text-[#1E8E5A]', bg: 'bg-[#E6F6EC]', border: 'border-[#BFE6CF]', label: 'Güvenli' };
+};
+
+// IBAN maskeleme
+const maskIban = (iban: string) => {
+  if (!iban || iban.length < 10) return iban;
+  return `${iban.slice(0, 4)}...${iban.slice(-4)}`;
+};
+
+// Panoya kopyalama
+const copyToClipboard = async (text: string, label: string) => {
+  try {
+    await navigator.clipboard.writeText(text);
+    // Toast notification yerine basit alert (sonra toast eklenebilir)
+    console.log(`${label} kopyalandı: ${text}`);
+    return true;
+  } catch (err) {
+    console.error('Kopyalama hatası:', err);
+    return false;
+  }
+};
+
+const caseTypeLabels: Record<string, string> = {
+  GENERAL_EXECUTION: "Genel Haciz Yoluyla Takip",
+  MORTGAGE: "İpotekli Takip",
+  PLEDGE: "Rehinli Takip",
+  CHECK: "Kambiyo Senetleri (Çek)",
+  BOND: "Kambiyo Senetleri (Senet)",
+  RENTAL: "Kira Takibi",
+  BANKRUPTCY: "İflas Takibi",
+  OTHER: "Diğer",
+};
+
+const caseTypeShort: Record<string, string> = {
+  GENERAL_EXECUTION: "Genel Haciz",
+  MORTGAGE: "İpotekli",
+  PLEDGE: "Rehinli",
+  CHECK: "Çek (Kambiyo)",
+  BOND: "Senet (Kambiyo)",
+  RENTAL: "Kira",
+  BANKRUPTCY: "İflas",
+  OTHER: "Diğer",
+};
+
+const statusOptions = [
+  { value: 'DERDEST', label: 'Derdest' },
+  { value: 'TAHSILAT', label: 'Tahsilat' },
+  { value: 'KAPALI', label: 'Kapalı' },
+  { value: 'ASKIDA', label: 'Askıda' },
+  { value: 'DURDURULDU', label: 'Durduruldu' },
+];
+
+const executionPathOptions = [
+  { value: 'HACIZ', label: 'HACİZ' },
+  { value: 'IFLAS', label: 'İFLAS' },
+  { value: 'REHIN', label: 'REHİN' },
+  { value: 'TAHLIYE', label: 'TAHLİYE' },
+];
+
+const subCategoryOptions = [
+  { value: 'GENEL', label: 'GENEL' },
+  { value: 'NAFAKA', label: 'NAFAKA' },
+  { value: 'DOVIZ', label: 'DÖVİZ' },
+  { value: 'KIRA', label: 'KİRA' },
+];
+
+// ============================================
+// BLOCK FIELD COMPONENT
+// ============================================
+
+interface BlockFieldProps {
+  label: string;
+  value: string | number | undefined;
+  editable?: boolean;
+  editMode?: boolean;
+  type?: 'text' | 'select';
+  options?: { value: string; label: string }[];
+  onChange?: (value: string) => void;
+  onSave?: (value: string) => void;
+  large?: boolean;
+  placeholder?: string;
+}
+
+interface BlockFieldProps {
+  label: string;
+  value: string | number | undefined;
+  editable?: boolean;
+  editMode?: boolean;
+  type?: 'text' | 'select';
+  options?: { value: string; label: string }[];
+  onChange?: (value: string) => void;
+  onSave?: (value: string) => void;
+  large?: boolean;
+  placeholder?: string;
+}
+
+function BlockField({ label, value, editable = false, editMode = false, type = 'text', options = [], onChange, onSave, large = false, placeholder }: BlockFieldProps) {
+  const [isEditing, setIsEditing] = useState(false);
+  const [localValue, setLocalValue] = useState(value?.toString() || '');
+  const inputRef = useRef<HTMLInputElement>(null);
+  const saveButtonRef = useRef<HTMLButtonElement>(null);
+  
+  // value prop değiştiğinde localValue'yu güncelle
+  useEffect(() => {
+    setLocalValue(value?.toString() || '');
+  }, [value]);
+
+  // Edit moduna girince input'a focus
+  useEffect(() => {
+    if (isEditing && inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, [isEditing]);
+  
+  const doSave = () => {
+    console.log('BlockField doSave called:', label, 'value:', localValue, 'original:', value);
+    setIsEditing(false);
+    if (onSave && localValue !== (value?.toString() || '')) {
+      console.log('BlockField calling onSave:', label, localValue);
+      onSave(localValue);
+    }
+  };
+
+  const handleBlur = (e: React.FocusEvent) => {
+    // Eğer kaydet butonuna tıklandıysa, blur'u yoksay (buton kendi save'ini yapacak)
+    if (saveButtonRef.current?.contains(e.relatedTarget as Node)) {
+      return;
+    }
+    doSave();
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      doSave();
+    } else if (e.key === 'Escape') {
+      setLocalValue(value?.toString() || '');
+      setIsEditing(false);
+    }
+  };
+  
+  const displayValue = value || '';
+  const isEmpty = !displayValue;
+  const defaultPlaceholder = placeholder || (large ? 'Dosya no girin' : 'Girin');
+
+  // Global editMode aktifse veya local edit modundaysa
+  const showInput = editable && (editMode || isEditing);
+  
+  return (
+    <div>
+      <p className="text-[10px] text-gray-500 uppercase tracking-wide mb-0.5">{label}</p>
+      {showInput ? (
+        <div className="flex gap-1">
+          {type === 'select' ? (
+            <select 
+              value={localValue} 
+              onChange={(e) => setLocalValue(e.target.value)} 
+              onBlur={handleBlur}
+              className={`flex-1 bg-white border border-blue-400 rounded px-2 py-1.5 ${large ? 'text-lg font-bold' : 'text-sm font-semibold'} focus:ring-2 focus:ring-blue-200 focus:outline-none`}
+            >
+              {options.map(opt => <option key={opt.value} value={opt.value}>{opt.label}</option>)}
+            </select>
+          ) : (
+            <input 
+              ref={inputRef}
+              type="text" 
+              value={localValue} 
+              onChange={(e) => setLocalValue(e.target.value)} 
+              onBlur={handleBlur}
+              onKeyDown={handleKeyDown}
+              placeholder={defaultPlaceholder}
+              className={`flex-1 bg-white border border-blue-400 rounded px-2 py-1.5 ${large ? 'text-lg font-bold' : 'text-sm font-semibold'} focus:ring-2 focus:ring-blue-200 focus:outline-none`} 
+            />
+          )}
+          <button 
+            ref={saveButtonRef}
+            onClick={doSave}
+            className="px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 text-xs"
+            title="Kaydet"
+          >
+            <Save className="h-3 w-3" />
+          </button>
+        </div>
+      ) : isEmpty && editable ? (
+        // Boş ve düzenlenebilir - soft çerçeveli kutu + edit butonu
+        <div className="flex items-center gap-2">
+          <div className="flex-1 border border-dashed border-amber-300 bg-amber-50/50 rounded px-3 py-2">
+            <span className={`text-amber-600/70 italic ${large ? 'text-base' : 'text-sm'}`}>
+              {defaultPlaceholder}
+            </span>
+          </div>
+          <button 
+            onClick={() => setIsEditing(true)}
+            className="p-2 border border-purple-300 bg-purple-50 rounded hover:bg-purple-100 transition-colors"
+            title="Düzenle"
+          >
+            <Edit className="h-4 w-4 text-purple-600" />
+          </button>
+        </div>
+      ) : (
+        // Değer var veya düzenlenemez
+        <div className="flex items-center gap-2">
+          <span className={`flex-1 ${large ? 'text-lg font-bold text-blue-700' : 'text-sm font-semibold text-gray-900'}`}>
+            {displayValue || '—'}
+          </span>
+          {editable && (
+            <button 
+              onClick={() => setIsEditing(true)}
+              className="p-1.5 border border-gray-200 bg-gray-50 rounded hover:bg-gray-100 hover:border-purple-300 transition-colors"
+              title="Düzenle"
+            >
+              <Edit className="h-3 w-3 text-gray-500 hover:text-purple-600" />
+            </button>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
+// DRAWER COMPONENT
+// ============================================
+
+interface DrawerProps {
+  isOpen: boolean;
+  onClose: () => void;
+  title: string;
+  children: React.ReactNode;
+}
+
+function Drawer({ isOpen, onClose, title, children }: DrawerProps) {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex">
+      <div className="fixed inset-0 bg-black/30" onClick={onClose} />
+      <div className="ml-auto w-[480px] bg-white h-full shadow-xl flex flex-col relative">
+        <div className="p-4 border-b flex items-center justify-between bg-gray-50">
+          <h2 className="font-semibold text-lg">{title}</h2>
+          <button onClick={onClose} className="p-1 hover:bg-gray-200 rounded"><X className="h-5 w-5" /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================
+// ANA COMPONENT
+// ============================================
 
 export default function CaseDetailPage() {
   const params = useParams();
+  const searchParams = useSearchParams();
+  const fixParam = searchParams.get('fix');
+  const fromFilter = searchParams.get('fromFilter');
+  
   const [caseData, setCaseData] = useState<CaseDetail | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState("overview");
-  
-  // AI Modal state
-  const [aiModalOpen, setAiModalOpen] = useState(false);
-  const [aiLoading, setAiLoading] = useState(false);
-  const [aiError, setAiError] = useState<string | null>(null);
-  const [aiSuggestions, setAiSuggestions] = useState<any[]>([]);
-  const [aiPrediction, setAiPrediction] = useState<any>(null);
-  
-  // Groups state
-  const [caseGroups, setCaseGroups] = useState<any[]>([]);
-  const [allGroups, setAllGroups] = useState<any[]>([]);
-  const [showNewGroupModal, setShowNewGroupModal] = useState(false);
-  const [newGroupName, setNewGroupName] = useState("");
-  const [newGroupDescription, setNewGroupDescription] = useState("");
-  const [newGroupColor, setNewGroupColor] = useState("#3b82f6");
-  
-  // Ek Bilgi state
-  const [extraInfo, setExtraInfo] = useState({
-    dahiliNot: "",
-    muvekkilNotu: "",
-    sonDegerlendirmeTarihi: "",
+  const [editMode, setEditMode] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [editedData, setEditedData] = useState<Partial<CaseDetail>>({});
+  const [financeDrawerOpen, setFinanceDrawerOpen] = useState(false);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  const [lawyerDrawerOpen, setLawyerDrawerOpen] = useState(false);
+  const [selectedLawyer, setSelectedLawyer] = useState<SelectedLawyer | null>(null);
+  const [lawyerDrawerTab, setLawyerDrawerTab] = useState<'permissions' | 'profile'>('permissions');
+  const [lawyerPermissions, setLawyerPermissions] = useState({
+    canEditCase: false,
+    canGenerateDocs: false,
+    canSyncUYAP: false,
+    canViewFinance: false,
+    canEditFinance: false,
+    canChangeStatus: false,
+    canEditParties: false,
+    receivesNotifications: true,
   });
-  const [extraInfoSaving, setExtraInfoSaving] = useState(false);
-  
-  // Vekalet kontrolü state
-  const [poaWarnings, setPoaWarnings] = useState<{ clientName: string; lawyerName: string; message: string; }[]>([]);
-  
-  // Share modal state
-  const [showShareModal, setShowShareModal] = useState(false);
-  
-  // Raporlama Panel state
-  const [showReportingPanel, setShowReportingPanel] = useState(false);
-  const [reportingData, setReportingData] = useState({
-    takipTuruId: "",
-    mahiyetTipiId: "",
-    riskId: "",
-    durumEtiketiId: "",
-    borcluTipiId: "",
-    sorumluPersonelId: "",
+  const [lawyerProfile, setLawyerProfile] = useState({
+    phone: '',
+    email: '',
+    address: '',
+    bankName: '',
+    branchName: '',
+    iban: '',
   });
-  const [reportingSaving, setReportingSaving] = useState(false);
-  const [lookups, setLookups] = useState<{
-    takipTuru: any[];
-    mahiyetTipi: any[];
-    risk: any[];
-    durumEtiketi: any[];
-    borcluTipi: any[];
-    users: any[];
-  }>({
-    takipTuru: [],
-    mahiyetTipi: [],
-    risk: [],
-    durumEtiketi: [],
-    borcluTipi: [],
-    users: [],
-  });
-
-  const handleAiAnalysis = async () => {
-    if (!caseData) return;
-    
-    setAiModalOpen(true);
-    setAiLoading(true);
-    setAiError(null);
-    
-    try {
-      const [suggestRes, predictRes] = await Promise.all([
-        api.get(`/ai/case/${caseData.id}/suggest`),
-        api.get(`/ai/case/${caseData.id}/predict`),
-      ]);
-      
-      setAiSuggestions(suggestRes.data?.data || []);
-      setAiPrediction(predictRes.data?.data || null);
-    } catch (error: any) {
-      setAiError(error.message || 'AI analizi yapılırken bir hata oluştu');
-    } finally {
-      setAiLoading(false);
-    }
+  
+  // Müvekkil Drawer State
+  const [clientDrawerOpen, setClientDrawerOpen] = useState(false);
+  const [expenseModalOpen, setExpenseModalOpen] = useState(false);
+  const [expenseClientId, setExpenseClientId] = useState<string>('');
+  const [expenseClientName, setExpenseClientName] = useState<string>('');
+  const [expensePackageCode, setExpensePackageCode] = useState<string>('');
+  const [selectedClient, setSelectedClient] = useState<{
+    id: string;
+    name: string;
+    displayName?: string;
+    type?: 'INDIVIDUAL' | 'COMPANY' | 'PUBLIC';
+    tckn?: string;
+    vkn?: string;
+    taxOffice?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+    city?: string;
+    district?: string;
+    bankAccounts?: BankAccount[];
+    role?: string;
+  } | null>(null);
+  
+  // Mesaj Gönder Modal State
+  const [messageModalOpen, setMessageModalOpen] = useState(false);
+  
+  // Ekip Ekleme Modal State
+  const [teamModalOpen, setTeamModalOpen] = useState(false);
+  const [availableLawyers, setAvailableLawyers] = useState<any[]>([]);
+  const [availableStaff, setAvailableStaff] = useState<any[]>([]);
+  const [teamModalTab, setTeamModalTab] = useState<'lawyers' | 'staff'>('lawyers');
+  const [addingTeamMember, setAddingTeamMember] = useState(false);
+  
+  // Fix highlight state
+  const [highlightedSection, setHighlightedSection] = useState<string | null>(null);
+  
+  // Fix Registry - hangi fix key hangi section'a gider
+  const fixRegistry: Record<string, { section: string; field: string; expand?: string }> = {
+    "case.documents.powerOfAttorney": { section: "documents", field: "poaUpload", expand: "documentsTab" },
+    "party.debtor.address": { section: "parties.debtors", field: "debtorAddress", expand: "debtorsPanel" },
+    "party.identity": { section: "parties", field: "identityNo", expand: "partiesPanel" },
+    "party.contact": { section: "parties", field: "contactInfo", expand: "partiesPanel" },
+    "enforcement.uyap.connect": { section: "enforcement", field: "uyapConnect", expand: "enforcementDrawer" },
+    "enforcement.payment.iban": { section: "enforcement", field: "iban", expand: "enforcementDrawer" },
+    "automation.enable": { section: "automation", field: "enableToggle", expand: "automationPanel" },
+    "automation.errors": { section: "automation", field: "lastError", expand: "automationPanel" },
+    "risk.time.remainingDays": { section: "lifecycle", field: "remainingDays", expand: "lifecycleCard" },
+    "lifecycle.addAction": { section: "lifecycle", field: "addActionButton", expand: "lifecyclePanel" },
+    "finance.collection": { section: "finance", field: "addCollection", expand: "financePanel" },
+    "finance.summary": { section: "finance", field: "recalcButton", expand: "financePanel" },
   };
-
+  
+  // Fix parametresi varsa ilgili section'ı highlight et
   useEffect(() => {
-    if (params.id) {
-      fetchCase();
-      fetchGroups();
-      fetchLookups();
+    if (fixParam && !loading) {
+      const fixConfig = fixRegistry[fixParam];
+      if (fixConfig) {
+        setHighlightedSection(fixConfig.section);
+        
+        // 3 saniye sonra highlight'ı kaldır
+        const timer = setTimeout(() => {
+          setHighlightedSection(null);
+        }, 3000);
+        
+        // İlgili element'e scroll
+        setTimeout(() => {
+          const element = document.querySelector(`[data-fix-section="${fixConfig.section}"]`);
+          if (element) {
+            element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          }
+        }, 500);
+        
+        return () => clearTimeout(timer);
+      }
     }
-  }, [params.id]);
+  }, [fixParam, loading]);
 
-  const fetchLookups = async () => {
-    try {
-      const [takipTuruRes, mahiyetTipiRes, riskRes, durumEtiketiRes, borcluTipiRes, usersRes] = await Promise.all([
-        api.get('/lookups/takipTuru'),
-        api.get('/lookups/mahiyetTipi'),
-        api.get('/lookups/risk'),
-        api.get('/lookups/durumEtiketi'),
-        api.get('/lookups/borcluTipi'),
-        api.get('/users'),
-      ]);
-      setLookups({
-        takipTuru: takipTuruRes?.data?.data || [],
-        mahiyetTipi: mahiyetTipiRes?.data?.data || [],
-        risk: riskRes?.data?.data || [],
-        durumEtiketi: durumEtiketiRes?.data?.data || [],
-        borcluTipi: borcluTipiRes?.data?.data || [],
-        users: usersRes?.data?.data || [],
-      });
-    } catch (error) {
-      console.error("Lookup verileri yüklenemedi:", error);
-    }
-  };
-
-  const fetchGroups = async () => {
-    try {
-      const [caseGroupsRes, allGroupsRes] = await Promise.all([
-        api.get(`/cases/${params.id}/groups`),
-        api.get('/groups'),
-      ]);
-      setCaseGroups(caseGroupsRes?.data?.data || []);
-      setAllGroups(allGroupsRes?.data?.data || []);
-    } catch (error) {
-      console.error("Gruplar yüklenemedi:", error);
-    }
-  };
-
-  const handleAddGroup = async (groupId: string) => {
-    try {
-      await api.post(`/cases/${params.id}/groups/${groupId}`);
-      fetchGroups();
-    } catch (error) {
-      console.error("Grup eklenemedi:", error);
-    }
-  };
-
-  const handleRemoveGroup = async (groupId: string) => {
-    try {
-      await api.delete(`/cases/${params.id}/groups/${groupId}`);
-      fetchGroups();
-    } catch (error) {
-      console.error("Grup çıkarılamadı:", error);
-    }
-  };
-
-  const handleCreateGroup = async () => {
-    if (!newGroupName.trim()) return;
-    try {
-      await api.post('/groups', {
-        name: newGroupName,
-        description: newGroupDescription,
-        color: newGroupColor,
-        isGlobal: true,
-      });
-      setNewGroupName("");
-      setNewGroupDescription("");
-      setShowNewGroupModal(false);
-      fetchGroups();
-    } catch (error) {
-      console.error("Grup oluşturulamadı:", error);
-    }
-  };
-
-  const fetchCase = async () => {
+  const fetchCase = useCallback(async () => {
     try {
       setLoading(true);
       const data = await api.getCase(params.id as string);
       setCaseData(data);
-      // Ek bilgi alanlarını güncelle
-      setExtraInfo({
-        dahiliNot: data.dahiliNot || "",
-        muvekkilNotu: data.muvekkilNotu || "",
-        sonDegerlendirmeTarihi: data.sonDegerlendirmeTarihi?.split("T")[0] || "",
-      });
-      // Raporlama verilerini güncelle
-      setReportingData({
-        takipTuruId: data.takipTuru?.id || "",
-        mahiyetTipiId: data.mahiyetTipi?.id || "",
-        riskId: data.risk?.id || "",
-        durumEtiketiId: data.durumEtiketi?.id || "",
-        borcluTipiId: data.borcluTipi?.id || "",
-        sorumluPersonelId: data.sorumluPersonel?.id || "",
-      });
+      setEditedData({});
     } catch (error) {
       console.error("Takip yüklenemedi:", error);
     } finally {
       setLoading(false);
     }
+  }, [params.id]);
+
+  useEffect(() => {
+    if (params.id) fetchCase();
+  }, [params.id, fetchCase]);
+
+  const dayCount = useMemo(() => {
+    if (!caseData?.caseDate) return 0;
+    return calculateDayCount(caseData.caseDate);
+  }, [caseData?.caseDate]);
+
+  const dayStyle = useMemo(() => getDayCountStyle(dayCount), [dayCount]);
+
+  // Kalan gün hesaplama (İİK 78 - son icrai işlemden itibaren)
+  const remainingDays = useMemo(() => {
+    if (!caseData?.caseDate) return 365;
+    // Öncelik: lastEnforcementActionAt > lastAutoActionAt > caseDate
+    const lastAction = caseData.lastEnforcementActionAt || caseData.lastAutoActionAt;
+    return calculateRemainingDays(caseData.caseDate, lastAction);
+  }, [caseData?.caseDate, caseData?.lastEnforcementActionAt, caseData?.lastAutoActionAt]);
+
+  const remainingStyle = useMemo(() => getRemainingDaysStyle(remainingDays), [remainingDays]);
+
+  const handleFieldChange = (field: string, value: string) => {
+    setEditedData(prev => ({ ...prev, [field]: value }));
   };
 
-  // Vekalet kontrolü - müvekkil ve avukat kombinasyonları için
-  const checkPoaValidity = async (data: CaseDetail) => {
-    if (!data.client?.id || !data.lawyers?.length) {
-      setPoaWarnings([]);
+  // Tek alan için otomatik kaydetme - değeri doğrudan al
+  const handleAutoSave = async (field: string, value: string) => {
+    if (!caseData) return;
+    // Boş string de geçerli bir değer olabilir (silme işlemi için)
+    if (value === undefined || value === null) return;
+    try {
+      console.log('Auto-saving:', field, '=', value, 'for case:', caseData.id);
+      const response = await api.patch(`/cases/${caseData.id}`, { [field]: value });
+      console.log('Auto-save response:', response);
+      await fetchCase();
+    } catch (error: any) {
+      console.error("Kaydetme hatası:", error);
+      console.error("Error details:", error?.response?.data || error?.message);
+      alert(`Kaydetme başarısız: ${error?.message || 'Bilinmeyen hata'}`);
+    }
+  };
+
+  // İcra dairesi banka bilgilerini kaydet
+  const handleExecutionOfficeBankSave = async (field: string, value: string) => {
+    if (!caseData?.executionOffice?.id) return;
+    try {
+      console.log('Saving execution office bank:', field, value);
+      await api.put(`/execution-offices/${caseData.executionOffice.id}`, { [field]: value });
+      await fetchCase();
+    } catch (error) {
+      console.error("İcra dairesi kaydetme hatası:", error);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!caseData || Object.keys(editedData).length === 0) {
+      setEditMode(false);
       return;
     }
+    setSaving(true);
+    try {
+      await api.patch(`/cases/${caseData.id}`, editedData);
+      await fetchCase();
+      setEditMode(false);
+    } catch (error) {
+      console.error("Kaydetme hatası:", error);
+      alert("Kaydetme başarısız");
+    } finally {
+      setSaving(false);
+    }
+  };
 
-    const warnings: typeof poaWarnings = [];
+  const handleCancel = () => {
+    setEditedData({});
+    setEditMode(false);
+  };
 
-    for (const lawyerEntry of data.lawyers) {
-      if (!lawyerEntry.lawyer?.id) continue;
+  // Ekip modal açıldığında avukat ve personel listesini yükle
+  const loadTeamOptions = async () => {
+    try {
+      const [lawyers, staff] = await Promise.all([
+        api.getLawyers(),
+        api.getStaffMembers(),
+      ]);
       
-      try {
-        const response = await api.get(`/poa/check/valid?clientId=${data.client.id}&lawyerId=${lawyerEntry.lawyer.id}`);
-        const result = response.data;
-        
-        if (!result.isValid) {
-          warnings.push({
-            clientName: data.client.name,
-            lawyerName: `${lawyerEntry.lawyer.name} ${lawyerEntry.lawyer.surname}`,
-            message: result.message || "Geçerli vekalet bulunamadı",
-          });
-        } else if (result.daysRemaining !== undefined && result.daysRemaining <= 30) {
-          warnings.push({
-            clientName: data.client.name,
-            lawyerName: `${lawyerEntry.lawyer.name} ${lawyerEntry.lawyer.surname}`,
-            message: `Vekalet ${result.daysRemaining} gün içinde sona erecek`,
-          });
-        }
-      } catch (err) {
-        // API hatası - sessizce geç
-      }
+      // Zaten dosyada olan avukatları filtrele
+      const existingLawyerIds = caseData?.lawyers?.map(l => l.lawyer.id) || [];
+      const filteredLawyers = (lawyers || []).filter((l: any) => !existingLawyerIds.includes(l.id));
+      setAvailableLawyers(filteredLawyers);
+      
+      // Zaten dosyada olan personelleri filtrele
+      const existingStaffIds = caseData?.staff?.map(s => s.staffMember.id) || [];
+      const filteredStaff = (staff || []).filter((s: any) => !existingStaffIds.includes(s.id));
+      setAvailableStaff(filteredStaff);
+    } catch (error) {
+      console.error('Ekip listesi yüklenemedi:', error);
+    }
+  };
+
+  // Ekip modal açıldığında
+  useEffect(() => {
+    if (teamModalOpen) {
+      loadTeamOptions();
+    }
+  }, [teamModalOpen, caseData]);
+
+  // Avukat ekle
+  const handleAddLawyer = async (lawyerId: string) => {
+    if (!caseData) return;
+    setAddingTeamMember(true);
+    try {
+      await api.addCaseLawyer(caseData.id, { lawyerId });
+      await fetchCase();
+      await loadTeamOptions();
+    } catch (error: any) {
+      alert(error.message || 'Avukat eklenemedi');
+    } finally {
+      setAddingTeamMember(false);
+    }
+  };
+
+  // Personel ekle
+  const handleAddStaff = async (staffMemberId: string) => {
+    if (!caseData) return;
+    setAddingTeamMember(true);
+    try {
+      await api.addCaseStaff(caseData.id, { staffMemberId });
+      await fetchCase();
+      await loadTeamOptions();
+    } catch (error: any) {
+      alert(error.message || 'Personel eklenemedi');
+    } finally {
+      setAddingTeamMember(false);
+    }
+  };
+
+  // Avukat satırına tıklama
+  const handleLawyerClick = (le: NonNullable<CaseDetail['lawyers']>[0]) => {
+    // Öncelik sırası: 1) casePermissions (dosyaya özel), 2) lawyer.defaultPermissions (büro ayarları), 3) varsayılan true
+    const storedCasePermissions = le.casePermissions || le.permissions;
+    const lawyerDefaultPermissions = le.lawyer.defaultPermissions;
+    const hasCasePermissions = storedCasePermissions && Object.keys(storedCasePermissions).length > 0;
+    const hasLawyerDefaults = lawyerDefaultPermissions && Object.keys(lawyerDefaultPermissions).length > 0;
+    
+    // Yetkileri belirle
+    let permissions: typeof lawyerPermissions;
+    if (hasCasePermissions) {
+      // Dosyaya özel yetkiler var
+      permissions = {
+        canEditCase: storedCasePermissions?.canEditCase || false,
+        canGenerateDocs: storedCasePermissions?.canGenerateDocs || false,
+        canSyncUYAP: storedCasePermissions?.canSyncUYAP || false,
+        canViewFinance: storedCasePermissions?.canViewFinance || false,
+        canEditFinance: storedCasePermissions?.canEditFinance || false,
+        canChangeStatus: storedCasePermissions?.canChangeStatus || false,
+        canEditParties: storedCasePermissions?.canEditParties || false,
+        receivesNotifications: le.receiveNotifications ?? (le.permissions as any)?.receivesNotifications ?? true,
+      };
+    } else if (hasLawyerDefaults) {
+      // Büro ayarlarındaki varsayılan yetkiler
+      permissions = {
+        canEditCase: lawyerDefaultPermissions?.canEditCase ?? true,
+        canGenerateDocs: lawyerDefaultPermissions?.canGenerateDocs ?? true,
+        canSyncUYAP: lawyerDefaultPermissions?.canSyncUYAP ?? true,
+        canViewFinance: lawyerDefaultPermissions?.canViewFinance ?? true,
+        canEditFinance: lawyerDefaultPermissions?.canEditFinance ?? true,
+        canChangeStatus: lawyerDefaultPermissions?.canChangeStatus ?? true,
+        canEditParties: lawyerDefaultPermissions?.canEditParties ?? true,
+        receivesNotifications: le.receiveNotifications ?? true,
+      };
+    } else {
+      // Hiçbir yetki tanımlı değil - varsayılan olarak tümü açık
+      permissions = {
+        canEditCase: true,
+        canGenerateDocs: true,
+        canSyncUYAP: true,
+        canViewFinance: true,
+        canEditFinance: true,
+        canChangeStatus: true,
+        canEditParties: true,
+        receivesNotifications: true,
+      };
     }
     
-    setPoaWarnings(warnings);
+    // role alanını oku (API'den role olarak geliyor)
+    const caseRole = le.role || le.caseRole || 'ASSIGNED';
+    
+    setSelectedLawyer({
+      caseLawyerId: le.id,
+      lawyerId: le.lawyer.id,
+      name: le.lawyer.name,
+      surname: le.lawyer.surname,
+      barNumber: le.lawyer.barNumber,
+      phone: le.lawyer.phone,
+      email: le.lawyer.email,
+      address: le.lawyer.address,
+      bankName: le.lawyer.bankName,
+      branchName: le.lawyer.branchName,
+      iban: le.lawyer.iban,
+      canSign: le.canSign,
+      caseRole: caseRole,
+      lawyerRank: le.lawyer.lawyerRank,
+      permissions: permissions,
+    });
+    setLawyerPermissions(permissions);
+    setLawyerProfile({
+      phone: le.lawyer.phone || '',
+      email: le.lawyer.email || '',
+      address: le.lawyer.address || '',
+      bankName: le.lawyer.bankName || '',
+      branchName: le.lawyer.branchName || '',
+      iban: le.lawyer.iban || '',
+    });
+    setLawyerDrawerTab('permissions');
+    setLawyerDrawerOpen(true);
   };
 
-  // Case yüklendiğinde vekalet kontrolü yap
-  useEffect(() => {
-    if (caseData) {
-      checkPoaValidity(caseData);
-    }
-  }, [caseData?.id]);
-
-  const handleSaveExtraInfo = async () => {
-    if (!caseData) return;
-    setExtraInfoSaving(true);
+  // Dosya yetkileri kaydet
+  const handleSaveCasePermissions = async () => {
+    if (!selectedLawyer || !caseData) return;
     try {
-      await api.patch(`/cases/${caseData.id}`, {
-        dahiliNot: extraInfo.dahiliNot || null,
-        muvekkilNotu: extraInfo.muvekkilNotu || null,
-        sonDegerlendirmeTarihi: extraInfo.sonDegerlendirmeTarihi || null,
+      await api.updateCaseLawyer(caseData.id, selectedLawyer.caseLawyerId, {
+        role: selectedLawyer.caseRole,
+        canSign: selectedLawyer.canSign,
+        casePermissions: lawyerPermissions,
+        receiveNotifications: lawyerPermissions.receivesNotifications,
       });
-      fetchCase();
+      await fetchCase();
+      setLawyerDrawerOpen(false);
     } catch (error) {
-      console.error("Ek bilgi kaydedilemedi:", error);
-    } finally {
-      setExtraInfoSaving(false);
+      console.error('Yetki kaydetme hatası:', error);
+      alert('Yetki kaydetme başarısız');
     }
   };
 
-  const handleSaveReporting = async () => {
-    if (!caseData) return;
-    setReportingSaving(true);
+  // Avukat profili kaydet (global)
+  const handleSaveLawyerProfile = async () => {
+    if (!selectedLawyer) return;
+    const confirmed = window.confirm('Bu değişiklikler avukatın TÜM dosyalarında görünecek. Devam etmek istiyor musunuz?');
+    if (!confirmed) return;
     try {
-      await api.patch(`/cases/${caseData.id}`, {
-        takipTuruId: reportingData.takipTuruId || null,
-        mahiyetTipiId: reportingData.mahiyetTipiId || null,
-        riskId: reportingData.riskId || null,
-        durumEtiketiId: reportingData.durumEtiketiId || null,
-        borcluTipiId: reportingData.borcluTipiId || null,
-        sorumluPersonelId: reportingData.sorumluPersonelId || null,
-      });
-      setShowReportingPanel(false);
-      fetchCase();
+      await api.updateLawyer(selectedLawyer.lawyerId, lawyerProfile);
+      await fetchCase();
+      setLawyerDrawerOpen(false);
     } catch (error) {
-      console.error("Raporlama bilgisi kaydedilemedi:", error);
-    } finally {
-      setReportingSaving(false);
+      console.error('Profil kaydetme hatası:', error);
+      alert('Profil güncelleme başarısız');
     }
   };
 
-  // Alacak kalemi tipi etiketleri
-  const dueTypeLabels: Record<string, string> = {
-    PRINCIPAL: "Asıl Alacak",
-    INTEREST: "İşleyen Faiz",
-    EXPENSE: "Takip Gideri",
-    COURT_FEE: "Mahkeme Harcı",
-    LAWYER_FEE: "Vekalet Ücreti",
-    OTHER: "Diğer",
-  };
-
-  // Statü değiştir
-  const handleStatusChange = async (newStatus: string) => {
+  // UYAP'a gönderim hazırlığı - masraf kontrolü
+  const handlePrepareForUyap = async () => {
     if (!caseData) return;
     try {
-      await api.post(`/case-status/${caseData.id}/change`, { status: newStatus });
-      fetchCase();
-    } catch (error) {
-      console.error("Statü değiştirilemedi:", error);
+      const result = await api.prepareForUyap(caseData.id);
+      
+      if (result.action === 'READY') {
+        // Masraf ödendi, UYAP'a gönderime hazır
+        alert('Dosya UYAP\'a gönderime hazır!');
+        // TODO: UYAP gönderim işlemini başlat
+      } else if (result.action === 'OPEN_EXPENSE_MODAL') {
+        // Masraf talebi gerekiyor
+        const client = caseData.caseClients?.[0]?.client || caseData.client;
+        if (client) {
+          setExpenseClientId(client.id);
+          setExpenseClientName(client.displayName || client.name || '');
+          setExpensePackageCode('UYAP_PRE');
+          setExpenseModalOpen(true);
+        }
+      } else if (result.action === 'BLOCKED') {
+        // Masraf ödenmemiş, engellendi
+        alert(result.blockReason || 'Masraf avansı ödenmeden UYAP\'a gönderim yapılamaz.');
+      }
+    } catch (error: any) {
+      console.error('UYAP hazırlık hatası:', error);
+      alert(error.message || 'UYAP hazırlık işlemi başarısız');
     }
   };
 
-  // Flag değiştir
-  const handleFlagChange = async (flags: any) => {
+  // Masraf talebi oluştur (paket ile)
+  const handleCreateExpenseRequest = (packageCode?: string) => {
     if (!caseData) return;
-    try {
-      await api.patch(`/cases/${caseData.id}`, flags);
-      fetchCase();
-    } catch (error) {
-      console.error("Flag değiştirilemedi:", error);
+    const client = caseData.caseClients?.[0]?.client || caseData.client;
+    if (client) {
+      setExpenseClientId(client.id);
+      setExpenseClientName(client.displayName || client.name || '');
+      setExpensePackageCode(packageCode || '');
+      setExpenseModalOpen(true);
     }
   };
 
-  // Auto mode toggle
-  const handleToggleAutoMode = async () => {
-    if (!caseData) return;
-    try {
-      await api.post(`/automation/cases/${caseData.id}/toggle-auto`);
-      fetchCase();
-    } catch (error) {
-      console.error("Toggle error:", error);
-    }
+  const getValue = (field: keyof CaseDetail) => {
+    return editedData[field] !== undefined ? editedData[field] : caseData?.[field];
   };
+
+  // Müvekkil banka hesabı
+  const clientBankAccount = useMemo(() => {
+    const client = caseData?.caseClients?.[0]?.client || caseData?.client;
+    return client?.bankAccounts?.find(b => b.isPrimary) || client?.bankAccounts?.[0];
+  }, [caseData]);
+
+  // Avukat banka hesabı (imza yetkili avukat öncelikli)
+  const lawyerBankAccount = useMemo(() => {
+    if (!caseData?.lawyers?.length) return null;
+    const signingLawyer = caseData.lawyers.find(l => l.canSign)?.lawyer;
+    const firstLawyer = caseData.lawyers[0]?.lawyer;
+    const lawyer = signingLawyer || firstLawyer;
+    if (!lawyer) return null;
+    return { 
+      bankName: lawyer.bankName || null, 
+      branchName: lawyer.branchName || null, 
+      iban: lawyer.iban || null, 
+      name: `Av. ${lawyer.name} ${lawyer.surname}` 
+    };
+  }, [caseData?.lawyers]);
+
+  // Avukatlı takip mi? (en az bir avukat atanmış)
+  const isLawyerCase = (caseData?.lawyers?.length || 0) > 0;
+
+  // İcra dairesi banka bilgileri
+  const executionOfficeBankInfo = useMemo(() => ({
+    bankName: caseData?.executionOffice?.bankName,
+    branchName: caseData?.executionOffice?.branchName,
+    iban: caseData?.executionOffice?.iban,
+  }), [caseData?.executionOffice]);
+
+  const hasUyap = !!caseData?.uyapBirimKodu || !!caseData?.executionOffice?.uyapCode;
+  const hasExecutionOfficeBank = !!executionOfficeBankInfo.bankName && !!executionOfficeBankInfo.iban;
+  // Avukatlı takipte avukat bankası, avukatsız takipte müvekkil bankası kontrol edilir
+  const hasPaymentBank = isLawyerCase ? !!lawyerBankAccount?.iban : !!clientBankAccount?.iban;
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    );
+    return <div className="flex items-center justify-center h-screen"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   }
 
   if (!caseData) {
     return (
       <div className="text-center py-12">
         <p className="text-muted-foreground">Takip bulunamadı</p>
-        <Link href="/cases" className="text-primary hover:underline mt-2 inline-block">
-          Takiplere dön
-        </Link>
+        <Link href="/cases" className="text-primary hover:underline mt-2 inline-block">Takiplere dön</Link>
       </div>
     );
   }
 
-  const tabs = [
-    { id: "overview", label: "Genel", icon: FileText },
-    { id: "dues", label: "Alacak", icon: DollarSign },
-    { id: "notes", label: "Notlar", icon: StickyNote },
-    { id: "status", label: "Statü", icon: Activity },
-    { id: "groups", label: "Grup", icon: Tag },
-    { id: "extra", label: "Ek Bilgi", icon: Info },
-    { id: "automation", label: "Oto.", icon: Settings },
-    { id: "timeline", label: "Zaman", icon: Clock },
-    { id: "documents", label: "Belge", icon: FileText },
-    { id: "parties", label: "Taraf", icon: Users },
-    { id: "risk", label: "Risk", icon: AlertTriangle },
-  ];
-
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-2">
-        <Link href="/cases" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-3 w-3" /> Takiplere Dön
-        </Link>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setShowShareModal(true)}
-            className="inline-flex items-center gap-1 px-2 py-1 text-xs border rounded hover:bg-muted"
-          >
-            <Share2 className="h-3 w-3" /> Paylaş
-          </button>
-          <Link href={`/cases/${caseData.id}/edit`} className="inline-flex items-center gap-1 px-2 py-1 text-xs border rounded hover:bg-muted">
-            <Edit className="h-3 w-3" /> Düzenle
-          </Link>
-        </div>
-      </div>
-
-      {/* Summary Card - Kompakt */}
-      <CaseSummaryCard
-        fileNumber={caseData.fileNumber}
-        formType={caseData.formType?.name || caseTypeLabels[caseData.type]}
-        executionPath={caseData.executionPath || "HACIZ"}
-        caseStatus={caseData.caseStatus || "DERDEST"}
-        isAutomationEnabled={caseData.isAutomationEnabled ?? true}
-        hasUyapWarning={caseData.hasUyapWarning ?? !caseData.uyapBirimKodu}
-        uyapCode={caseData.uyapBirimKodu}
-        riskScore={caseData.riskScore}
-        lastAction={caseData.lifecycleEvents?.[0]?.action}
-        nextAutoAction={caseData.nextAutoAction}
-      />
-
-      {/* Vekalet Uyarı Bandı */}
-      {poaWarnings.length > 0 && (
-        <div className={`rounded-lg p-3 my-2 ${
-          poaWarnings.some(w => w.message.includes("bulunamadı")) 
-            ? "bg-red-50 border border-red-200" 
-            : "bg-amber-50 border border-amber-200"
-        }`}>
-          <div className="flex items-start gap-2">
-            <FileCheck className={`h-4 w-4 mt-0.5 flex-shrink-0 ${
-              poaWarnings.some(w => w.message.includes("bulunamadı")) 
-                ? "text-red-600" 
-                : "text-amber-600"
-            }`} />
-            <div className="flex-1 min-w-0">
-              <p className={`text-xs font-medium ${
-                poaWarnings.some(w => w.message.includes("bulunamadı")) 
-                  ? "text-red-800" 
-                  : "text-amber-800"
-              }`}>
-                {poaWarnings.some(w => w.message.includes("bulunamadı")) 
-                  ? "⚠️ Geçerli Vekalet Yok - UYAP İşlemleri Engellenecek" 
-                  : "⏰ Vekalet Süresi Dolmak Üzere"}
-              </p>
-              <ul className="mt-1 space-y-0.5">
-                {poaWarnings.map((warning, idx) => (
-                  <li key={idx} className={`text-xs ${
-                    warning.message.includes("bulunamadı") 
-                      ? "text-red-700" 
-                      : "text-amber-700"
-                  }`}>
-                    • <span className="font-medium">{warning.lawyerName}</span> → {warning.clientName}: {warning.message}
-                  </li>
-                ))}
-              </ul>
+    <div className="h-screen flex flex-col bg-[#F1F3F6] overflow-hidden">
+      
+      {/* FIX MODE BANNER - Eksiklik giderme modunda göster */}
+      {fixParam && fromFilter && (
+        <div className="bg-amber-50 border-b border-amber-200 px-4 py-2 flex-shrink-0">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-1.5 bg-amber-100 rounded-full">
+                <AlertTriangle className="h-4 w-4 text-amber-600" />
+              </div>
+              <div>
+                <span className="text-sm font-medium text-amber-900">Eksiklik Giderme Modu</span>
+                <span className="text-xs text-amber-700 ml-2">
+                  İlgili alan aşağıda vurgulanmıştır
+                </span>
+              </div>
             </div>
-            <Link
-              href="/settings/clients"
-              className={`text-xs text-white px-2 py-1 rounded flex-shrink-0 ${
-                poaWarnings.some(w => w.message.includes("bulunamadı")) 
-                  ? "bg-red-600 hover:bg-red-700" 
-                  : "bg-amber-600 hover:bg-amber-700"
-              }`}
-            >
-              Vekalet Ekle
-            </Link>
+            <div className="flex items-center gap-2">
+              <Link
+                href={`/cases?quickFilter=${fromFilter}`}
+                className="text-xs px-3 py-1.5 bg-amber-100 text-amber-800 rounded hover:bg-amber-200 transition-colors"
+              >
+                ← Listeye Dön
+              </Link>
+            </div>
           </div>
         </div>
       )}
-
-      {/* Quick Stats - Kompakt */}
-      <div className="grid grid-cols-4 gap-2 my-2">
-        <div className="bg-white rounded border p-2">
-          <div className="flex items-center gap-1.5">
-            <DollarSign className="h-3 w-3 text-blue-600" />
-            <div>
-              <p className="text-[10px] text-muted-foreground">Ana Para</p>
-              <p className="text-xs font-semibold">{caseData.principalAmount ? `${Number(caseData.principalAmount).toLocaleString("tr-TR")} ₺` : "-"}</p>
-            </div>
+      
+      {/* HEADER */}
+      <div className="bg-white border-b px-4 py-2 flex-shrink-0">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Link href="/cases" className="text-gray-500 hover:text-gray-700"><ArrowLeft className="h-5 w-5" /></Link>
+            <span className="text-sm text-gray-500">TAKİP:</span>
+            <span className="font-bold text-gray-700">{caseData.fileNumber}</span>
+            <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+              caseData.caseStatus === 'DERDEST' ? 'bg-blue-100 text-blue-800' :
+              caseData.caseStatus === 'KAPALI' ? 'bg-gray-200 text-gray-700' :
+              caseData.caseStatus === 'TAHSILAT' ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+            }`}>{caseData.caseStatus}</span>
+            <span className="text-sm text-gray-500">{caseTypeShort[caseData.type] || caseData.type} • {caseData.executionPath || 'HACİZ'}</span>
           </div>
-        </div>
-        <div className="bg-white rounded border p-2">
-          <div className="flex items-center gap-1.5">
-            <Calendar className="h-3 w-3 text-green-600" />
-            <div>
-              <p className="text-[10px] text-muted-foreground">Tarih</p>
-              <p className="text-xs font-semibold">{caseData.caseDate ? new Date(caseData.caseDate).toLocaleDateString("tr-TR") : "-"}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded border p-2">
-          <div className="flex items-center gap-1.5">
-            <Users className="h-3 w-3 text-purple-600" />
-            <div>
-              <p className="text-[10px] text-muted-foreground">Borçlu</p>
-              <p className="text-xs font-semibold">{caseData.debtors?.length || 0}</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-white rounded border p-2">
-          <div className="flex items-center gap-1.5">
-            <Clock className="h-3 w-3 text-orange-600" />
-            <div>
-              <p className="text-[10px] text-muted-foreground">Kalan Gün</p>
-              <p className="text-xs font-semibold">{caseData.daysLeft !== undefined ? `${caseData.daysLeft} gün` : "-"}</p>
-            </div>
+          <div className="flex items-center gap-2">
+            {editMode ? (
+              <>
+                <button onClick={handleCancel} className="px-3 py-1.5 text-sm border rounded hover:bg-gray-50 flex items-center gap-1"><X className="h-4 w-4" /> İptal</button>
+                <button onClick={handleSave} disabled={saving} className="px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 flex items-center gap-1 disabled:opacity-50">
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />} Kaydet
+                </button>
+              </>
+            ) : (
+              <>
+                <button onClick={fetchCase} className="p-2 hover:bg-gray-100 rounded" title="Yenile"><RefreshCw className="h-4 w-4" /></button>
+                <button 
+                  onClick={() => setPaymentModalOpen(true)} 
+                  className="px-3 py-1.5 text-sm bg-green-600 text-white rounded hover:bg-green-700 flex items-center gap-1"
+                  title="Ödeme Talimatı"
+                >
+                  <CreditCard className="h-4 w-4" /> Ödeme Talimatı
+                </button>
+                <button onClick={() => setEditMode(true)} className="p-2 hover:bg-gray-100 rounded" title="Düzenle"><Edit className="h-4 w-4" /></button>
+                <button className="p-2 hover:bg-gray-100 rounded" title="Paylaş"><Share2 className="h-4 w-4" /></button>
+                <button className="p-2 hover:bg-red-50 rounded text-red-600" title="Sil"><Trash2 className="h-4 w-4" /></button>
+              </>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Tabs */}
-      <div className="border-b">
-        <div className="flex gap-0.5 overflow-x-auto">
-          {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-1 px-2 py-1 border-b-2 -mb-px text-xs ${activeTab === tab.id ? "border-primary text-primary" : "border-transparent text-muted-foreground hover:text-foreground"}`}
-            >
-              <tab.icon className="h-3 w-3" />
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* Tab Content */}
-      <div className="flex-1 overflow-auto mt-2">
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-2">
-          {/* Main Content */}
-          <div className="lg:col-span-2 space-y-3">
-            {activeTab === "overview" && (
-              <div className="bg-white rounded-lg border p-3 space-y-3">
-                <h3 className="text-sm font-semibold">Takip Bilgileri</h3>
-                <div className="grid grid-cols-3 gap-2 text-xs">
-                  <div><p className="text-muted-foreground">Takip No</p><p className="font-medium">{caseData.fileNumber}</p></div>
-                  <div><p className="text-muted-foreground">İcra Dosya No</p><p className="font-medium">{caseData.executionFileNumber || "-"}</p></div>
-                  <div><p className="text-muted-foreground">Takip Türü</p><p className="font-medium">{caseData.formType?.name || caseTypeLabels[caseData.type]}</p></div>
-                  <div><p className="text-muted-foreground">Alt Tür</p><p className="font-medium">{caseData.subType || "-"}</p></div>
-                  <div><p className="text-muted-foreground">Faiz Oranı</p><p className="font-medium">{caseData.interestRate ? `%${caseData.interestRate}` : "-"}</p></div>
-                  <div><p className="text-muted-foreground">Oluşturulma</p><p className="font-medium">{new Date(caseData.createdAt).toLocaleDateString("tr-TR")}</p></div>
+      {/* ANA PANEL - 3 BLOK KOMPAKT */}
+      <div className="bg-white border-b px-3 py-2 flex-shrink-0">
+        <div className="grid grid-cols-12 gap-2">
+          
+          {/* KART A: İCRA MERCİİ & ENTEGRASYON (5/12) - Bulut Mavisi */}
+          <div className="col-span-5 bg-[#EEF4FB] border border-[#DCE6F2] rounded-lg p-2 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+            <div className="flex items-center justify-between mb-1.5 border-b pb-1">
+              <h4 className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider">İcra Mercii & Entegrasyon</h4>
+              <button onClick={() => setFinanceDrawerOpen(true)} className="text-blue-600 hover:text-blue-800 text-[9px] flex items-center gap-0.5">
+                Detaylar <ChevronRight className="h-2.5 w-2.5" />
+              </button>
+            </div>
+            <div className="space-y-1">
+              {/* İcra Dosya No - kompakt */}
+              <BlockField 
+                label="İcra Dosya No" 
+                value={getValue('executionFileNumber') as string || ''} 
+                editable={true}
+                large={true}
+                onSave={(v) => handleAutoSave('executionFileNumber', v)}
+                placeholder="2025/12345 E."
+              />
+              
+              {/* İcra Dairesi - tek satır */}
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-[9px] text-gray-500 uppercase">İcra Dairesi</span>
+                <div className="flex items-center gap-1">
+                  <span className="font-medium text-gray-900 text-[11px]">
+                    {caseData.executionOffice?.name || '— Seçilmemiş'}
+                  </span>
+                  <button 
+                    onClick={() => setFinanceDrawerOpen(true)}
+                    className="p-1 hover:bg-purple-100 rounded"
+                    title="Detaylar"
+                  >
+                    <Edit className="h-2.5 w-2.5 text-purple-500" />
+                  </button>
                 </div>
-                {/* Etiketler */}
-                <div className="pt-2 border-t">
-                  <p className="text-xs text-muted-foreground mb-2">Etiketler</p>
-                  <CaseTags caseId={caseData.id} />
+              </div>
+              
+              {/* Entegrasyon - sıkı grid */}
+              <div className="pt-1 border-t space-y-0.5 text-[11px]">
+                {/* UYAP + Kod tek satırda */}
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500">UYAP</span>
+                  <span className={`font-medium flex items-center gap-1 ${hasUyap ? 'text-green-600' : 'text-red-500'}`}>
+                    {hasUyap ? (
+                      <>
+                        <CheckCircle2 className="h-3 w-3" /> Bağlı 
+                        <span className="text-gray-500 font-mono text-[10px]">({caseData.uyapBirimKodu || caseData.executionOffice?.uyapCode})</span>
+                        <button className="text-blue-500 hover:text-blue-700 ml-1" title="Senkronize Et">
+                          <RefreshCw className="h-2.5 w-2.5" />
+                        </button>
+                      </>
+                    ) : (
+                      <><XCircle className="h-3 w-3" /> Bağlı Değil</>
+                    )}
+                  </span>
+                </div>
+                {/* UYAP'a Gönder Butonu */}
+                <button
+                  onClick={handlePrepareForUyap}
+                  disabled={!hasUyap}
+                  className={`w-full mt-1 py-1 px-2 text-[10px] font-medium rounded flex items-center justify-center gap-1 transition-colors ${
+                    hasUyap 
+                      ? 'bg-blue-600 text-white hover:bg-blue-700' 
+                      : 'bg-gray-200 text-gray-500 cursor-not-allowed'
+                  }`}
+                  title={hasUyap ? 'UYAP\'a gönderim hazırlığı başlat' : 'UYAP bağlantısı gerekli'}
+                >
+                  <FileText className="h-3 w-3" />
+                  UYAP'a Gönder
+                </button>
+                {/* Banka */}
+                <div className="flex items-center justify-between group">
+                  <span className="text-gray-500">Banka</span>
+                  <div className="flex items-center gap-1">
+                    <span 
+                      className={`font-medium cursor-pointer hover:underline ${caseData.executionOffice?.bankName ? 'text-green-600' : 'text-orange-500'}`}
+                      onClick={() => setFinanceDrawerOpen(true)}
+                    >
+                      {caseData.executionOffice?.bankName || '— Tanımsız'}
+                    </span>
+                    {caseData.executionOffice?.bankName && (
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); copyToClipboard(caseData.executionOffice?.bankName || '', 'Banka'); }}
+                        className="opacity-0 group-hover:opacity-100 hover:bg-gray-200 rounded p-0.5"
+                      >
+                        <Copy className="h-2.5 w-2.5 text-gray-400" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+                {/* IBAN */}
+                <div className="flex items-center justify-between group">
+                  <span className="text-gray-500">IBAN</span>
+                  <div className="flex items-center gap-1">
+                    <span 
+                      className={`font-medium font-mono text-[10px] cursor-pointer hover:underline ${caseData.executionOffice?.iban ? 'text-green-600' : 'text-orange-500'}`}
+                      onClick={() => setFinanceDrawerOpen(true)}
+                      title={caseData.executionOffice?.iban || ''}
+                    >
+                      {caseData.executionOffice?.iban ? maskIban(caseData.executionOffice.iban) : '— Tanımsız'}
+                    </span>
+                    {caseData.executionOffice?.iban && (
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); copyToClipboard(caseData.executionOffice?.iban || '', 'IBAN'); }}
+                        className="opacity-0 group-hover:opacity-100 hover:bg-gray-200 rounded p-0.5"
+                      >
+                        <Copy className="h-2.5 w-2.5 text-gray-400" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* KART B: TAKİBİN YAŞAMI (3/12) - Açık Yeşil (risk durumuna göre değişir) */}
+          <div className={`col-span-3 rounded-lg p-2 shadow-[0_1px_2px_rgba(0,0,0,0.04)] ${remainingDays <= 60 ? 'bg-red-50 border border-red-200' : remainingDays <= 180 ? 'bg-yellow-50 border border-yellow-200' : 'bg-[#EDF8F1] border border-[#D7EFE2]'}`}>
+            <h4 className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5 border-b pb-1">Takibin Yaşamı</h4>
+            <div className="space-y-1">
+              {/* Açılış tarihi - inline */}
+              <div className="flex items-center justify-between text-[11px]">
+                <span className="text-gray-500">Açılış</span>
+                <span className="font-medium">{formatDate(caseData.caseDate)}</span>
+              </div>
+              
+              {/* Geçen / Kalan - inline metrikler */}
+              <div className="flex items-center justify-between py-1">
+                <div className="text-center">
+                  <span className="text-[9px] text-gray-500 uppercase block">Geçen</span>
+                  <span className="text-lg font-bold text-slate-600">{dayCount}</span>
+                  <span className="text-[9px] text-gray-400 ml-0.5">gün</span>
+                </div>
+                <div className="text-gray-300">|</div>
+                <div className="text-center">
+                  <span className={`text-[9px] uppercase block ${remainingStyle.text}`}>Kalan</span>
+                  <span className={`text-lg font-bold ${remainingStyle.text}`}>{remainingDays}</span>
+                  <span className={`text-[9px] ml-0.5 ${remainingStyle.text}`}>gün</span>
+                  {remainingDays <= 60 && <AlertTriangle className={`h-3 w-3 inline ml-1 ${remainingStyle.text}`} />}
+                </div>
+                <span className={`text-[9px] font-medium px-1.5 py-0.5 rounded ${remainingStyle.bg} ${remainingStyle.text}`}>
+                  {remainingStyle.label}
+                </span>
+              </div>
+              
+              {/* Son İşlem + Statü - sıkı */}
+              <div className="pt-1 border-t space-y-0.5 text-[11px]">
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500">Son İşlem</span>
+                  <span className="text-gray-600">
+                    {caseData.lastEnforcementActionAt || caseData.lastAutoActionAt 
+                      ? formatDate(caseData.lastEnforcementActionAt || caseData.lastAutoActionAt || '')
+                      : <span className="text-gray-400 italic">—</span>}
+                  </span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500">Statü</span>
+                  <span className={`font-medium ${caseData.caseStatus === 'DERDEST' ? 'text-blue-600' : 'text-gray-600'}`}>
+                    {caseData.caseStatus}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* KART C: TAKİP TÜRÜ (4/12) - Bulut Mavisi */}
+          <div className="col-span-4 bg-[#EEF4FB] border border-[#DCE6F2] rounded-lg p-2 shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+            <h4 className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5 border-b pb-1">Takip Türü</h4>
+            <div className="space-y-1 text-[11px]">
+              <div className="flex items-center justify-between">
+                <span className="text-gray-500">Tip</span>
+                <span className="font-medium text-gray-900">{caseTypeShort[caseData.type] || caseData.type}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-500">Yol</span>
+                <span className="font-medium text-gray-900" title={
+                  (getValue('executionPath') as string) === 'HACIZ' ? 'Haciz yoluyla takip işlemleri için geçerlidir.' :
+                  (getValue('executionPath') as string) === 'IFLAS' ? 'İflas yoluyla takip işlemleri için geçerlidir.' :
+                  (getValue('executionPath') as string) === 'REHIN' ? 'Rehin paraya çevirme işlemleri için geçerlidir.' :
+                  'Tahliye işlemleri için geçerlidir.'
+                }>
+                  {(getValue('executionPath') as string) || 'HACİZ'}
+                </span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-gray-500">Alt Tip</span>
+                <span className="font-medium text-gray-900">{(getValue('subCategory') as string) || 'GENEL'}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* DURUM ÖZETİ - kompakt */}
+        <div className="mt-1.5 pt-1.5 border-t flex items-center justify-between text-[9px]">
+          <div className="flex items-center gap-2">
+            <span className="text-gray-400">📌</span>
+            <span className={caseData.caseStatus === 'DERDEST' ? 'text-blue-600' : 'text-gray-500'}>
+              {caseData.caseStatus === 'DERDEST' ? 'Aktif' : caseData.caseStatus}
+            </span>
+            <span className="text-gray-300">•</span>
+            <span className={hasUyap ? 'text-green-600' : 'text-red-500'}>
+              UYAP {hasUyap ? '✓' : '✗'}
+            </span>
+            <span className="text-gray-300">•</span>
+            <span className={hasExecutionOfficeBank ? 'text-green-600' : 'text-orange-500'}>
+              Banka {hasExecutionOfficeBank ? '✓' : '✗'}
+            </span>
+            <span className="text-gray-300">•</span>
+            <span className={remainingStyle.text}>{remainingStyle.label}</span>
+          </div>
+          <span className="text-gray-400">{caseData.fileNumber}</span>
+        </div>
+      </div>
+
+      {/* ANA İÇERİK */}
+      <div className="flex-1 overflow-hidden flex flex-col bg-[#F1F3F6]">
+        
+        {/* DOSYA TARAFLARI - Yatay 3 Sütun */}
+        <div className="mx-3 mt-3 bg-[#EDF8F1] border border-[#D7EFE2] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)] px-3 py-2 flex-shrink-0">
+          <div className="flex items-center justify-between mb-1.5">
+            <h4 className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Dosya Tarafları</h4>
+            <Link href={`/cases/${caseData.id}/edit?tab=parties`} className="text-[10px] text-blue-600 hover:underline">Düzenle</Link>
+          </div>
+          <div className="grid grid-cols-3 gap-2 text-xs">
+            {/* Yetkili Avukatlar + Stj. Avukatlar + Personel */}
+            <div className="bg-white border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)] overflow-hidden">
+              <div className="px-2 py-1 bg-blue-50 border-b border-blue-100 flex items-center justify-between">
+                <span className="font-semibold text-blue-800 text-[11px]">Dosya Ekibi</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => setTeamModalOpen(true)}
+                    className="text-[9px] text-blue-600 hover:text-blue-700 hover:bg-blue-100 px-1.5 py-0.5 rounded flex items-center gap-0.5"
+                    title="Ekip Üyesi Ekle"
+                  >
+                    <Users className="h-3 w-3" />
+                    + Ekle
+                  </button>
+                  <span className="text-[9px] text-blue-600">{(caseData.lawyers?.length || 0) + (caseData.staff?.length || 0)}</span>
+                </div>
+              </div>
+              <div className="divide-y max-h-48 overflow-y-auto">
+                {/* Yetkili Avukatlar Başlık */}
+                {(caseData.lawyers?.filter(le => le.lawyer.lawyerRank !== 'INTERN' && !le.lawyer.barNumber?.startsWith('STJ'))?.length || 0) > 0 && (
+                  <div className="px-2 py-1 bg-blue-50/50">
+                    <span className="text-[9px] font-semibold text-blue-600 uppercase">Yetkili Avukatlar</span>
+                  </div>
+                )}
+                {/* Avukatlar */}
+                {caseData.lawyers?.filter(le => le.lawyer.lawyerRank !== 'INTERN' && !le.lawyer.barNumber?.startsWith('STJ')).map((le) => {
+                  const lawyerRank = le.lawyer.lawyerRank || 'LAWYER';
+                  const rankLabel = lawyerRank === 'PARTNER' ? 'Ortak' : 
+                                   lawyerRank === 'MANAGER' ? 'Yönetici' : 
+                                   lawyerRank === 'AUTHORIZED' ? 'Yetkili' : 'Avukat';
+                  const rankColor = lawyerRank === 'PARTNER' ? 'bg-purple-100 text-purple-700' : 
+                                   lawyerRank === 'MANAGER' ? 'bg-blue-100 text-blue-700' : 
+                                   lawyerRank === 'AUTHORIZED' ? 'bg-green-100 text-green-700' : 
+                                   'bg-gray-100 text-gray-700';
+                  return (
+                  <div 
+                    key={le.id} 
+                    className="px-2 py-1.5 hover:bg-blue-50 cursor-pointer transition-colors group"
+                    onClick={() => handleLawyerClick(le)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-[11px] truncate group-hover:text-blue-700">Av. {le.lawyer.name} {le.lawyer.surname}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className={`text-[8px] ${rankColor} px-1 py-0.5 rounded font-medium`}>{rankLabel}</span>
+                        {le.canSign && <span className="text-[8px] bg-blue-100 text-blue-700 px-1 py-0.5 rounded font-medium">İmza</span>}
+                        <ChevronRight className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100" />
+                      </div>
+                    </div>
+                  </div>
+                  );
+                })}
+                
+                {/* Stajyer Avukatlar Başlık */}
+                {(caseData.lawyers?.filter(le => le.lawyer.lawyerRank === 'INTERN' || le.lawyer.barNumber?.startsWith('STJ'))?.length || 0) > 0 && (
+                  <div className="px-2 py-1 bg-orange-50/50">
+                    <span className="text-[9px] font-semibold text-orange-600 uppercase">Stajyer Avukatlar</span>
+                  </div>
+                )}
+                {/* Stajyer Avukatlar */}
+                {caseData.lawyers?.filter(le => le.lawyer.lawyerRank === 'INTERN' || le.lawyer.barNumber?.startsWith('STJ')).map((le) => (
+                  <div 
+                    key={le.id} 
+                    className="px-2 py-1.5 hover:bg-orange-50 cursor-pointer transition-colors group"
+                    onClick={() => handleLawyerClick(le)}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-[11px] truncate group-hover:text-orange-700">Stj. Av. {le.lawyer.name} {le.lawyer.surname}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[8px] bg-orange-100 text-orange-700 px-1 py-0.5 rounded font-medium">Stajyer</span>
+                        <ChevronRight className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                
+                {/* Yetkili Personel Başlık */}
+                {(caseData.staff?.length || 0) > 0 && (
+                  <div className="px-2 py-1 bg-purple-50/50">
+                    <span className="text-[9px] font-semibold text-purple-600 uppercase">Yetkili Personel</span>
+                  </div>
+                )}
+                {/* Adli Personel */}
+                {caseData.staff?.map((se) => (
+                  <div key={se.id} className="px-2 py-1.5 hover:bg-purple-50 cursor-pointer transition-colors group">
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-[11px] truncate group-hover:text-purple-700">{se.staffMember.firstName} {se.staffMember.lastName}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[8px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded font-medium">{se.roleOnCase || se.staffMember.staffType || 'Personel'}</span>
+                        <ChevronRight className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100" />
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                {!caseData.lawyers?.length && !caseData.staff?.length && (
+                  <p className="text-[10px] text-gray-400 text-center py-2">—</p>
+                )}
+              </div>
+            </div>
+
+            {/* Müvekkiller */}
+            <div className="bg-white border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)] overflow-hidden">
+              <div className="px-2 py-1 bg-green-50 border-b border-green-100 flex items-center justify-between">
+                <span className="font-semibold text-green-800 text-[11px]">Müvekkiller</span>
+                <div className="flex items-center gap-1">
+                  <button
+                    onClick={() => {
+                      const firstClient = caseData.caseClients?.[0]?.client || caseData.client;
+                      if (firstClient) {
+                        setExpenseClientId(firstClient.id);
+                        setExpenseClientName(firstClient.displayName || firstClient.name || '');
+                        setExpenseModalOpen(true);
+                      }
+                    }}
+                    className="text-[9px] text-amber-600 hover:text-amber-700 hover:bg-amber-50 px-1.5 py-0.5 rounded flex items-center gap-0.5"
+                    title="Masraf Talebi Oluştur"
+                  >
+                    <Receipt className="h-3 w-3" />
+                    Masraf
+                  </button>
+                  <span className="text-[9px] text-green-600">{caseData.caseClients?.length || (caseData.client ? 1 : 0)}</span>
+                </div>
+              </div>
+              <div className="divide-y max-h-32 overflow-y-auto">
+                {caseData.caseClients?.length ? caseData.caseClients.map((cc) => {
+                  const client = cc.client;
+                  const identityNo = client.type === 'INDIVIDUAL' ? client.tckn : client.vkn;
+                  const hasContact = client.phone || client.email;
+                  const hasAddress = client.address || client.city;
+                  return (
+                    <div 
+                      key={cc.id} 
+                      className="px-2 py-1.5 hover:bg-green-50 cursor-pointer transition-colors group"
+                      onClick={() => {
+                        setSelectedClient({ ...client, role: cc.role });
+                        setClientDrawerOpen(true);
+                      }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-[11px] truncate group-hover:text-green-700">
+                            {client.displayName || client.name}
+                          </p>
+                          <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                            {identityNo && (
+                              <span className="text-[9px] text-gray-500">
+                                {client.type === 'INDIVIDUAL' ? 'TC' : 'VKN'}: {identityNo}
+                              </span>
+                            )}
+                            {client.phone && (
+                              <span className="text-[9px] text-gray-400">📞 {client.phone.slice(0, 7)}...</span>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          {!identityNo && <span className="text-[8px] bg-amber-100 text-amber-700 px-1 py-0.5 rounded">Kimlik Eksik</span>}
+                          {!hasContact && <span className="text-[8px] bg-orange-100 text-orange-700 px-1 py-0.5 rounded">İletişim Eksik</span>}
+                          <ChevronRight className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100" />
+                        </div>
+                      </div>
+                    </div>
+                  );
+                }) : caseData.client ? (
+                  <div 
+                    className="px-2 py-1.5 hover:bg-green-50 cursor-pointer transition-colors group"
+                    onClick={() => {
+                      setSelectedClient(caseData.client!);
+                      setClientDrawerOpen(true);
+                    }}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="min-w-0 flex-1">
+                        <p className="font-medium text-[11px] truncate group-hover:text-green-700">
+                          {caseData.client.displayName || caseData.client.name}
+                        </p>
+                      </div>
+                      <ChevronRight className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100" />
+                    </div>
+                  </div>
+                ) : <p className="text-[10px] text-gray-400 text-center py-2">—</p>}
+              </div>
+            </div>
+
+            {/* Borçlular - Vurgulu */}
+            <div className="bg-red-50/50 border border-red-200 rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)] overflow-hidden">
+              <div className="px-2 py-1 bg-red-100 border-b border-red-200 flex items-center justify-between">
+                <span className="font-semibold text-red-800 text-[11px]">Borçlular</span>
+                <span className="text-[9px] bg-red-600 text-white px-1.5 py-0.5 rounded-full font-bold">{caseData.debtors?.length || 0}</span>
+              </div>
+              <div className="divide-y divide-red-100 max-h-24 overflow-y-auto">
+                {caseData.debtors?.length ? caseData.debtors.map((de) => (
+                  <div key={de.id} className="px-2 py-1.5 hover:bg-red-50 border-l-2 border-red-400">
+                    <p className="font-medium text-[11px] text-gray-900">{de.debtor.displayName || de.debtor.name}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {de.debtor.tckn && <span className="text-[9px] text-gray-500">TCKN: {de.debtor.tckn}</span>}
+                      <span className="text-[8px] bg-red-100 text-red-700 px-1 py-0.5 rounded font-medium">{de.role === 'ASIL_BORCLU' ? 'Asıl' : de.role}</span>
+                    </div>
+                  </div>
+                )) : <p className="text-[10px] text-gray-400 text-center py-2">—</p>}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ALT İÇERİK - 2 Panel */}
+        <div className="flex-1 overflow-hidden flex gap-3 p-3">
+          {/* SOL - Alacak + Notlar */}
+          <div className="flex-1 flex flex-col overflow-hidden gap-3">
+            {/* Alacak Kalemleri Bloğu */}
+            <div className="bg-white border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)] p-3 flex-shrink-0">
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="text-[11px] font-semibold text-gray-700">Alacak Kalemleri</h3>
+                <Link href={`/cases/${caseData.id}/edit?tab=claims`} className="text-[10px] text-blue-600 hover:underline">+ Ekle</Link>
+              </div>
+              <div className="border border-[#E5E7EB] rounded-lg overflow-hidden">
+                <table className="w-full text-[11px]">
+                  <thead className="bg-[#F8FAFC]">
+                    <tr>
+                      <th className="text-left p-1.5 font-medium">Açıklama</th>
+                      <th className="text-center p-1.5 font-medium w-20">Vade</th>
+                      <th className="text-right p-1.5 font-medium w-28">Tutar</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white">
+                    {caseData.claimItems?.length ? caseData.claimItems.map((item: any) => (
+                      <tr key={item.id} className="border-t border-[#E5E7EB] hover:bg-gray-50">
+                        <td className="p-1.5">{item.description}</td>
+                        <td className="p-1.5 text-center">{formatDate(item.dueDate || '')}</td>
+                        <td className="p-1.5 text-right font-medium">{Number(item.amount).toLocaleString('tr-TR')} {item.currency || 'TRY'}</td>
+                      </tr>
+                    )) : caseData.instruments?.length ? caseData.instruments.map((inst: any) => (
+                      <tr key={inst.id} className="border-t border-[#E5E7EB] hover:bg-gray-50">
+                        <td className="p-1.5">{inst.instrumentType === 'CEK' ? 'Çek' : 'Senet'} - {inst.serialNo}</td>
+                        <td className="p-1.5 text-center">{formatDate(inst.maturityDate || '')}</td>
+                        <td className="p-1.5 text-right font-medium">{Number(inst.amount).toLocaleString('tr-TR')} TRY</td>
+                      </tr>
+                    )) : (
+                      <tr>
+                        <td colSpan={3} className="p-3 text-center text-gray-400">
+                          {caseData.principalAmount ? (
+                            <div><span className="text-gray-500">Asıl Alacak: </span><span className="font-semibold text-gray-700">{Number(caseData.principalAmount).toLocaleString('tr-TR')} {caseData.currency || 'TRY'}</span></div>
+                          ) : '—'}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            {/* Notlar Bloğu */}
+            <div className="flex-1 overflow-hidden flex flex-col bg-white border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)] p-3">
+              <h4 className="text-[11px] font-semibold text-gray-700 mb-2">Notlar</h4>
+              <div className="flex-1 overflow-y-auto bg-[#FAFAFB] border border-[#E5E7EB] rounded-lg p-2">
+                <p className="text-[10px] text-gray-400 text-center py-2">Henüz not eklenmemiş</p>
+              </div>
+            </div>
+          </div>
+
+          {/* SAĞ - Hesap Özeti */}
+          <div className="w-72 bg-white border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)] flex flex-col overflow-hidden flex-shrink-0">
+            <div className="px-2 py-1.5 bg-blue-600 text-white">
+              <h3 className="text-[11px] font-semibold">Hesap Özeti</h3>
+              <p className="text-[9px] opacity-80">{formatDate(new Date().toISOString())}</p>
+            </div>
+            <div className="flex-1 overflow-y-auto p-2 space-y-1.5 text-[11px]">
+              {/* Masraf Bakiyesi Widget */}
+              <div className="mb-2">
+                <BalanceWidget 
+                  caseId={caseData.id} 
+                  onCreateExpenseRequest={() => handleCreateExpenseRequest('UYAP_PRE')}
+                  compact={true}
+                />
+              </div>
+
+              {/* Masraf Talepleri Listesi */}
+              <div className="mb-2 border-t pt-2">
+                <p className="text-[10px] text-gray-500 uppercase mb-1.5">Masraf Talepleri</p>
+                <ExpenseRequestList 
+                  caseId={caseData.id}
+                  onCreateNew={() => handleCreateExpenseRequest()}
+                  onRefresh={fetchCase}
+                  compact={true}
+                />
+              </div>
+              
+              <div className="flex justify-between"><span className="text-gray-600">Asıl Alacak</span><span className="font-medium">{Number(caseData.principalAmount || 0).toLocaleString('tr-TR')} ₺</span></div>
+              <hr />
+              <div className="flex justify-between p-1.5 bg-blue-50 rounded font-semibold text-blue-800"><span>Takip Tutarı</span><span>{Number(caseData.principalAmount || 0).toLocaleString('tr-TR')} ₺</span></div>
+              <hr />
+              <div className="space-y-0.5 text-[10px]">
+                <p className="font-medium text-gray-600">İcra Masrafları:</p>
+                <div className="flex justify-between pl-2"><span className="text-gray-500">Başvurma Harcı</span><span>615 ₺</span></div>
+                <div className="flex justify-between pl-2"><span className="text-gray-500">Vekalet Harcı</span><span>88 ₺</span></div>
+                <div className="flex justify-between pl-2"><span className="text-gray-500">Peşin Harç</span><span>{(Number(caseData.principalAmount || 0) * 0.005).toLocaleString('tr-TR')} ₺</span></div>
+              </div>
+              <hr />
+              <div className="flex justify-between"><span className="text-gray-600">Vekalet Ücreti</span><span className="font-medium">{Math.max(Number(caseData.principalAmount || 0) * 0.12, 17000).toLocaleString('tr-TR')} ₺</span></div>
+              <hr />
+              <div className="flex justify-between p-1.5 bg-red-50 rounded font-bold text-red-800"><span>Son Borç</span><span>{(Number(caseData.principalAmount || 0) * 1.5).toLocaleString('tr-TR')} ₺</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* AVUKAT DETAY DRAWER */}
+      <Drawer isOpen={lawyerDrawerOpen} onClose={() => setLawyerDrawerOpen(false)} title={selectedLawyer ? `Av. ${selectedLawyer.name} ${selectedLawyer.surname}` : 'Avukat Detayı'}>
+        {selectedLawyer && (
+          <div className="space-y-4">
+            {/* Sekme Başlıkları */}
+            <div className="flex border-b">
+              <button
+                onClick={() => setLawyerDrawerTab('permissions')}
+                className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  lawyerDrawerTab === 'permissions' 
+                    ? 'border-blue-600 text-blue-600' 
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <Shield className="h-4 w-4 inline mr-1" />
+                Dosya Yetkileri
+              </button>
+              <button
+                onClick={() => setLawyerDrawerTab('profile')}
+                className={`flex-1 py-2 text-sm font-medium border-b-2 transition-colors ${
+                  lawyerDrawerTab === 'profile' 
+                    ? 'border-purple-600 text-purple-600' 
+                    : 'border-transparent text-gray-500 hover:text-gray-700'
+                }`}
+              >
+                <User className="h-4 w-4 inline mr-1" />
+                Avukat Profili
+              </button>
+            </div>
+
+            {/* Kapsam Etiketi */}
+            <div className={`text-xs px-2 py-1 rounded ${
+              lawyerDrawerTab === 'permissions' 
+                ? 'bg-blue-50 text-blue-700' 
+                : 'bg-purple-50 text-purple-700'
+            }`}>
+              📌 Kapsam: {lawyerDrawerTab === 'permissions' ? 'Bu dosya' : 'Büro genel (tüm dosyalar)'}
+            </div>
+
+            {/* SEKME A: DOSYA YETKİLERİ */}
+            {lawyerDrawerTab === 'permissions' && (
+              <div className="space-y-4">
+                {/* Büro Ayarlarındaki Rank - Bilgi Amaçlı */}
+                {selectedLawyer.lawyerRank && (
+                  <div className="p-2 bg-gray-50 border border-gray-200 rounded-lg">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs text-gray-500">Büro Ayarlarındaki Yetki Durumu:</span>
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded ${
+                        selectedLawyer.lawyerRank === 'PARTNER' ? 'bg-purple-100 text-purple-700' :
+                        selectedLawyer.lawyerRank === 'MANAGER' ? 'bg-blue-100 text-blue-700' :
+                        selectedLawyer.lawyerRank === 'AUTHORIZED' ? 'bg-green-100 text-green-700' :
+                        selectedLawyer.lawyerRank === 'LAWYER' ? 'bg-gray-100 text-gray-700' :
+                        'bg-orange-100 text-orange-700'
+                      }`}>
+                        {selectedLawyer.lawyerRank === 'PARTNER' ? 'Ortak Avukat' :
+                         selectedLawyer.lawyerRank === 'MANAGER' ? 'Yönetici Avukat' :
+                         selectedLawyer.lawyerRank === 'AUTHORIZED' ? 'Yetkili Avukat' :
+                         selectedLawyer.lawyerRank === 'LAWYER' ? 'Avukat' :
+                         selectedLawyer.lawyerRank === 'INTERN' ? 'Stajyer' : selectedLawyer.lawyerRank}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Rol Seçimi */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Bu Dosyadaki Rol</label>
+                  <select 
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                    value={selectedLawyer.caseRole || 'ASSIGNED'}
+                    onChange={(e) => {
+                      const newRole = e.target.value as 'RESPONSIBLE' | 'ASSIGNED' | 'ASSISTANT' | 'INTERN';
+                      setSelectedLawyer({...selectedLawyer, caseRole: newRole});
+                      
+                      // Rol değiştiğinde varsayılan yetkileri ayarla
+                      // Önce büro ayarlarındaki defaultPermissions'ı kontrol et
+                      const lawyerDefaults = selectedLawyer.permissions;
+                      
+                      let newPermissions = { ...lawyerPermissions };
+                      switch (newRole) {
+                        case 'RESPONSIBLE':
+                          // Sorumlu avukat - tüm yetkiler açık
+                          newPermissions = {
+                            canEditCase: true,
+                            canGenerateDocs: true,
+                            canSyncUYAP: true,
+                            canViewFinance: true,
+                            canEditFinance: true,
+                            canChangeStatus: true,
+                            canEditParties: true,
+                            receivesNotifications: true,
+                          };
+                          break;
+                        case 'ASSIGNED':
+                          // Yetkili avukat - büro ayarlarından veya geniş yetkiler
+                          newPermissions = lawyerDefaults ? {
+                            canEditCase: lawyerDefaults.canEditCase ?? true,
+                            canGenerateDocs: lawyerDefaults.canGenerateDocs ?? true,
+                            canSyncUYAP: lawyerDefaults.canSyncUYAP ?? true,
+                            canViewFinance: lawyerDefaults.canViewFinance ?? true,
+                            canEditFinance: lawyerDefaults.canEditFinance ?? false,
+                            canChangeStatus: lawyerDefaults.canChangeStatus ?? false,
+                            canEditParties: lawyerDefaults.canEditParties ?? false,
+                            receivesNotifications: lawyerPermissions.receivesNotifications,
+                          } : {
+                            canEditCase: true,
+                            canGenerateDocs: true,
+                            canSyncUYAP: true,
+                            canViewFinance: true,
+                            canEditFinance: false,
+                            canChangeStatus: false,
+                            canEditParties: false,
+                            receivesNotifications: true,
+                          };
+                          break;
+                        case 'ASSISTANT':
+                          // Yardımcı avukat - temel yetkiler
+                          newPermissions = {
+                            canEditCase: true,
+                            canGenerateDocs: true,
+                            canSyncUYAP: false,
+                            canViewFinance: true,
+                            canEditFinance: false,
+                            canChangeStatus: false,
+                            canEditParties: false,
+                            receivesNotifications: true,
+                          };
+                          break;
+                        case 'INTERN':
+                          // Stajyer - kısıtlı yetkiler
+                          newPermissions = {
+                            canEditCase: false,
+                            canGenerateDocs: true,
+                            canSyncUYAP: false,
+                            canViewFinance: true,
+                            canEditFinance: false,
+                            canChangeStatus: false,
+                            canEditParties: false,
+                            receivesNotifications: true,
+                          };
+                          break;
+                      }
+                      setLawyerPermissions(newPermissions);
+                    }}
+                  >
+                    <option value="RESPONSIBLE">Sorumlu Avukat</option>
+                    <option value="ASSIGNED">Yetkili Avukat</option>
+                    <option value="ASSISTANT">Yardımcı Avukat</option>
+                    <option value="INTERN">Stajyer Avukat</option>
+                  </select>
+                  <p className="text-[10px] text-gray-500 mt-1">
+                    Rol değiştiğinde yetkiler otomatik ayarlanır. Manuel olarak da değiştirebilirsiniz.
+                  </p>
+                </div>
+
+                {/* Yetkiler */}
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-2">Yetkiler</label>
+                  <div className="space-y-2 bg-gray-50 rounded-lg p-3">
+                    {[
+                      { key: 'canEditCase', label: 'Dosyayı düzenleme', icon: Edit },
+                      { key: 'canGenerateDocs', label: 'Evrak oluşturma', icon: FileText },
+                      { key: 'canSyncUYAP', label: 'UYAP senkron başlatma', icon: RefreshCw },
+                      { key: 'canViewFinance', label: 'Hesap özeti görme', icon: Eye },
+                      { key: 'canEditFinance', label: 'Masraf/harç düzenleme', icon: CreditCard },
+                      { key: 'canChangeStatus', label: 'Statü değiştirme', icon: Settings },
+                      { key: 'canEditParties', label: 'Tarafları düzenleme', icon: Users },
+                    ].map(({ key, label, icon: Icon }) => (
+                      <label key={key} className="flex items-center gap-2 cursor-pointer hover:bg-white p-1 rounded">
+                        <input
+                          type="checkbox"
+                          checked={lawyerPermissions[key as keyof typeof lawyerPermissions]}
+                          onChange={(e) => setLawyerPermissions({...lawyerPermissions, [key]: e.target.checked})}
+                          className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                        />
+                        <Icon className="h-4 w-4 text-gray-500" />
+                        <span className="text-sm text-gray-700">{label}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+
+                {/* İmza Yetkisi */}
+                <div className="flex items-center justify-between p-3 bg-blue-50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Edit className="h-4 w-4 text-blue-600" />
+                    <span className="text-sm font-medium text-blue-800">Bu dosyada imza yetkisi</span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={selectedLawyer.canSign}
+                      onChange={(e) => setSelectedLawyer({...selectedLawyer, canSign: e.target.checked})}
+                      className="sr-only peer" 
+                    />
+                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                {/* Bildirim */}
+                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Bell className="h-4 w-4 text-gray-600" />
+                    <span className="text-sm text-gray-700">Bildirim alsın</span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={lawyerPermissions.receivesNotifications}
+                      onChange={(e) => setLawyerPermissions({...lawyerPermissions, receivesNotifications: e.target.checked})}
+                      className="sr-only peer" 
+                    />
+                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
+                </div>
+
+                {/* Kaydet Butonu */}
+                <button
+                  onClick={handleSaveCasePermissions}
+                  className="w-full py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium text-sm flex items-center justify-center gap-2"
+                >
+                  <Save className="h-4 w-4" />
+                  Bu dosya için kaydet
+                </button>
+              </div>
+            )}
+
+            {/* SEKME B: AVUKAT PROFİLİ */}
+            {lawyerDrawerTab === 'profile' && (
+              <div className="space-y-4">
+                {/* Uyarı */}
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-800">
+                  ⚠️ Burada yaptığınız değişiklikler bu avukatın <strong>tüm dosyalarında</strong> görünür.
+                </div>
+
+                {/* Temel Bilgiler */}
+                <div className="space-y-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Ad Soyad</label>
+                    <p className="text-sm font-semibold text-gray-900">Av. {selectedLawyer.name} {selectedLawyer.surname}</p>
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">Baro / Sicil No</label>
+                    <p className="text-sm text-gray-900">{selectedLawyer.barNumber || '—'}</p>
+                  </div>
+                </div>
+
+                {/* İletişim Bilgileri */}
+                <div className="space-y-3 bg-gray-50 rounded-lg p-3">
+                  <h4 className="text-xs font-semibold text-gray-600 uppercase">İletişim</h4>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1 flex items-center gap-1">
+                      <Phone className="h-3 w-3" /> Telefon
+                    </label>
+                    <input
+                      type="text"
+                      value={lawyerProfile.phone}
+                      onChange={(e) => setLawyerProfile({...lawyerProfile, phone: e.target.value})}
+                      className="w-full border rounded px-2 py-1.5 text-sm"
+                      placeholder="0532 xxx xx xx"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1 flex items-center gap-1">
+                      <Mail className="h-3 w-3" /> E-posta
+                    </label>
+                    <input
+                      type="email"
+                      value={lawyerProfile.email}
+                      onChange={(e) => setLawyerProfile({...lawyerProfile, email: e.target.value})}
+                      className="w-full border rounded px-2 py-1.5 text-sm"
+                      placeholder="avukat@email.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1 flex items-center gap-1">
+                      <MapPin className="h-3 w-3" /> Adres
+                    </label>
+                    <textarea
+                      value={lawyerProfile.address}
+                      onChange={(e) => setLawyerProfile({...lawyerProfile, address: e.target.value})}
+                      className="w-full border rounded px-2 py-1.5 text-sm"
+                      rows={2}
+                      placeholder="Büro adresi"
+                    />
+                  </div>
+                </div>
+
+                {/* Banka Bilgileri */}
+                <div className="space-y-3 bg-purple-50 rounded-lg p-3">
+                  <h4 className="text-xs font-semibold text-purple-700 uppercase">Banka Bilgileri</h4>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Banka Adı</label>
+                    <input
+                      type="text"
+                      value={lawyerProfile.bankName}
+                      onChange={(e) => setLawyerProfile({...lawyerProfile, bankName: e.target.value})}
+                      className="w-full border rounded px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">Şube</label>
+                    <input
+                      type="text"
+                      value={lawyerProfile.branchName}
+                      onChange={(e) => setLawyerProfile({...lawyerProfile, branchName: e.target.value})}
+                      className="w-full border rounded px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-500 mb-1">IBAN</label>
+                    <input
+                      type="text"
+                      value={lawyerProfile.iban}
+                      onChange={(e) => setLawyerProfile({...lawyerProfile, iban: e.target.value})}
+                      className="w-full border rounded px-2 py-1.5 text-sm font-mono"
+                      placeholder="TR00 0000 0000 0000 0000 0000 00"
+                    />
+                  </div>
+                </div>
+
+                {/* Kaydet Butonu */}
+                <button
+                  onClick={handleSaveLawyerProfile}
+                  className="w-full py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium text-sm flex items-center justify-center gap-2"
+                >
+                  <Save className="h-4 w-4" />
+                  Profili güncelle (Büro genel)
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </Drawer>
+
+      {/* BANKA & ENTEGRASYON DRAWER */}
+      <Drawer isOpen={financeDrawerOpen} onClose={() => setFinanceDrawerOpen(false)} title="Banka & Entegrasyon Detayı">
+        <div className="space-y-6">
+          
+          {/* İCRA DAİRESİ BANKA BİLGİLERİ */}
+          <div>
+            <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-purple-600" /> İcra Dairesi Hesap Bilgileri
+            </h3>
+            <div className="space-y-3 bg-purple-50 p-3 rounded-lg border border-purple-200">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">İcra Dairesi</label>
+                <p className="text-sm font-medium">{caseData.executionOffice?.name || '— Seçilmemiş'}</p>
+              </div>
+              <BlockField 
+                label="Banka Adı" 
+                value={caseData.executionOffice?.bankName || ''} 
+                editable={!!caseData.executionOffice?.id}
+                onSave={(v) => handleExecutionOfficeBankSave('bankName', v)}
+                placeholder="Banka adı girin"
+              />
+              <BlockField 
+                label="Şube" 
+                value={caseData.executionOffice?.branchName || ''} 
+                editable={!!caseData.executionOffice?.id}
+                onSave={(v) => handleExecutionOfficeBankSave('branchName', v)}
+                placeholder="Şube adı girin"
+              />
+              <BlockField 
+                label="IBAN" 
+                value={caseData.executionOffice?.iban || ''} 
+                editable={!!caseData.executionOffice?.id}
+                onSave={(v) => handleExecutionOfficeBankSave('iban', v)}
+                placeholder="TR00 0000 0000 0000 0000 0000 00"
+              />
+            </div>
+          </div>
+
+          {/* MÜVEKKİL BANKA BİLGİLERİ */}
+          <div>
+            <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+              <Building2 className="h-4 w-4 text-blue-600" /> Müvekkil Banka Hesabı
+            </h3>
+            <div className="space-y-3 bg-gray-50 p-3 rounded-lg border">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Banka Adı</label>
+                <p className="text-sm font-medium">{clientBankAccount?.bankName || '— Kayıtlı Değil'}</p>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Şube</label>
+                <p className="text-sm font-medium">{clientBankAccount?.branchName || '—'}</p>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">IBAN</label>
+                <p className="text-sm font-medium font-mono">{clientBankAccount?.iban || '— Kayıtlı Değil'}</p>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Hesap Sahibi</label>
+                <p className="text-sm font-medium">{clientBankAccount?.accountHolder || '—'}</p>
+              </div>
+              {!clientBankAccount && !isLawyerCase && (
+                <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-xs text-red-700">
+                  ⚠️ Avukatsız takipte müvekkil banka hesabı zorunludur.
+                </div>
+              )}
+              {isLawyerCase && (
+                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700">
+                  ℹ️ Avukatlı takip - tahsilat avukat hesabına yapılacak.
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* UYAP BİLGİLERİ */}
+          <div>
+            <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+              <Link2 className="h-4 w-4 text-blue-600" /> UYAP & Senkron
+            </h3>
+            <div className="space-y-3 bg-gray-50 p-3 rounded-lg border">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-500">UYAP Bağlantısı</span>
+                <span className={`text-sm font-medium ${hasUyap ? 'text-green-600' : 'text-red-500'}`}>
+                  {hasUyap ? <><CheckCircle2 className="h-4 w-4 inline mr-1" /> Bağlı</> : <><XCircle className="h-4 w-4 inline mr-1" /> Bağlı Değil</>}
+                </span>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">UYAP Birim Kodu</label>
+                <p className="text-sm font-medium font-mono">{caseData.uyapBirimKodu || caseData.executionOffice?.uyapCode || '—'}</p>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">İcra Dairesi</label>
+                <p className="text-sm font-medium">{caseData.executionOffice?.name || '—'}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* TAHSİLAT BİLGİLERİ */}
+          <div>
+            <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
+              <CreditCard className="h-4 w-4 text-blue-600" /> Tahsilat Özeti
+            </h3>
+            <div className="space-y-3 bg-gray-50 p-3 rounded-lg border">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-500">Tahsilat Türü</span>
+                <span className="text-sm font-medium">{isLawyerCase ? 'Avukat Hesabına' : 'Müvekkil Hesabına'}</span>
+              </div>
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-500">Tahsilat Hesabı</span>
+                <span className={`text-sm font-medium ${hasPaymentBank ? 'text-green-600' : 'text-red-500'}`}>
+                  {hasPaymentBank ? '✔ Tanımlı' : '— Eksik'}
+                </span>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">Banka Dosya No</label>
+                <p className="text-sm font-medium">—</p>
+              </div>
+              {/* Ödeme Talimatı Butonu */}
+              <button
+                onClick={() => setPaymentModalOpen(true)}
+                className="w-full mt-2 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors flex items-center justify-center gap-2"
+              >
+                <CreditCard className="h-4 w-4" />
+                Ödeme Talimatı Oluştur
+              </button>
+            </div>
+          </div>
+
+          {/* UYARI */}
+          {(!hasExecutionOfficeBank || !hasPaymentBank) && (
+            <div className="p-3 bg-orange-50 border border-orange-200 rounded-lg">
+              <p className="text-sm font-medium text-orange-700 mb-1">⚠️ Eksik Bilgiler</p>
+              <ul className="text-xs text-orange-600 space-y-1">
+                {!hasExecutionOfficeBank && (
+                  <li>• İcra dairesi banka bilgileri eksik - <Link href="/settings/office" className="underline">Büro Ayarları</Link>'ndan düzenleyin</li>
+                )}
+                {!hasPaymentBank && isLawyerCase && (
+                  <li>• Avukat banka bilgileri eksik - <Link href="/settings/office" className="underline">Büro Ayarları</Link>'ndan düzenleyin</li>
+                )}
+                {!hasPaymentBank && !isLawyerCase && (
+                  <li>• Müvekkil banka bilgileri eksik - <Link href="/settings/clients" className="underline">Müvekkil Ayarları</Link>'ndan düzenleyin</li>
+                )}
+              </ul>
+            </div>
+          )}
+        </div>
+      </Drawer>
+
+      {/* Payment Instruction Modal */}
+      {caseData && (
+        <PaymentInstructionModal
+          isOpen={paymentModalOpen}
+          onClose={() => setPaymentModalOpen(false)}
+          caseId={caseData.id}
+          executionOfficeName={caseData.executionOffice?.name}
+          executionFileNumber={caseData.executionFileNumber}
+          debtorName={caseData.debtors?.[0]?.debtor?.name}
+        />
+      )}
+
+      {/* MÜVEKKİL DETAY DRAWER */}
+      <Drawer isOpen={clientDrawerOpen} onClose={() => setClientDrawerOpen(false)} title={selectedClient?.displayName || selectedClient?.name || 'Müvekkil Detayı'}>
+        {selectedClient && (
+          <div className="space-y-4">
+            {/* Müvekkil Tipi Badge */}
+            <div className="flex items-center gap-2">
+              <span className={`text-xs font-medium px-2 py-1 rounded ${
+                selectedClient.type === 'INDIVIDUAL' ? 'bg-blue-100 text-blue-700' :
+                selectedClient.type === 'COMPANY' ? 'bg-purple-100 text-purple-700' :
+                'bg-gray-100 text-gray-700'
+              }`}>
+                {selectedClient.type === 'INDIVIDUAL' ? '👤 Gerçek Kişi' :
+                 selectedClient.type === 'COMPANY' ? '🏢 Tüzel Kişi' :
+                 selectedClient.type === 'PUBLIC' ? '🏛️ Kamu Kurumu' : '📋 Müvekkil'}
+              </span>
+              {selectedClient.role && (
+                <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
+                  {selectedClient.role === 'ALACAKLI' ? 'Alacaklı' : 
+                   selectedClient.role === 'ORTAK_ALACAKLI' ? 'Ortak Alacaklı' : selectedClient.role}
+                </span>
+              )}
+            </div>
+
+            {/* Kimlik Bilgileri */}
+            <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+              <h4 className="text-xs font-semibold text-gray-600 uppercase flex items-center gap-1">
+                <User className="h-3 w-3" /> Kimlik Bilgileri
+              </h4>
+              <div className="grid grid-cols-2 gap-2 text-sm">
+                <div>
+                  <span className="text-xs text-gray-500 block">Ad / Ünvan</span>
+                  <span className="font-medium">{selectedClient.displayName || selectedClient.name}</span>
+                </div>
+                {selectedClient.type === 'INDIVIDUAL' ? (
+                  <div>
+                    <span className="text-xs text-gray-500 block">TC Kimlik No</span>
+                    <span className="font-medium font-mono">{selectedClient.tckn || <span className="text-amber-600 italic">Eksik</span>}</span>
+                  </div>
+                ) : (
+                  <>
+                    <div>
+                      <span className="text-xs text-gray-500 block">Vergi Kimlik No</span>
+                      <span className="font-medium font-mono">{selectedClient.vkn || <span className="text-amber-600 italic">Eksik</span>}</span>
+                    </div>
+                    {selectedClient.taxOffice && (
+                      <div className="col-span-2">
+                        <span className="text-xs text-gray-500 block">Vergi Dairesi</span>
+                        <span className="font-medium">{selectedClient.taxOffice}</span>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* İletişim Bilgileri */}
+            <div className="bg-blue-50 rounded-lg p-3 space-y-2">
+              <h4 className="text-xs font-semibold text-blue-700 uppercase flex items-center gap-1">
+                <Phone className="h-3 w-3" /> İletişim
+              </h4>
+              <div className="space-y-2 text-sm">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs text-gray-500 block">Telefon</span>
+                    <span className="font-medium">{selectedClient.phone || <span className="text-amber-600 italic">Eksik</span>}</span>
+                  </div>
+                  {selectedClient.phone && (
+                    <div className="flex gap-1">
+                      <button 
+                        onClick={() => copyToClipboard(selectedClient.phone!, 'Telefon')}
+                        className="p-1.5 hover:bg-blue-100 rounded"
+                        title="Kopyala"
+                      >
+                        <Copy className="h-3 w-3 text-blue-600" />
+                      </button>
+                      <a 
+                        href={`tel:${selectedClient.phone}`}
+                        className="p-1.5 hover:bg-blue-100 rounded"
+                        title="Ara"
+                      >
+                        <Phone className="h-3 w-3 text-blue-600" />
+                      </a>
+                    </div>
+                  )}
+                </div>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <span className="text-xs text-gray-500 block">E-posta</span>
+                    <span className="font-medium">{selectedClient.email || <span className="text-amber-600 italic">Eksik</span>}</span>
+                  </div>
+                  {selectedClient.email && (
+                    <div className="flex gap-1">
+                      <button 
+                        onClick={() => copyToClipboard(selectedClient.email!, 'E-posta')}
+                        className="p-1.5 hover:bg-blue-100 rounded"
+                        title="Kopyala"
+                      >
+                        <Copy className="h-3 w-3 text-blue-600" />
+                      </button>
+                      <a 
+                        href={`mailto:${selectedClient.email}`}
+                        className="p-1.5 hover:bg-blue-100 rounded"
+                        title="E-posta Gönder"
+                      >
+                        <Mail className="h-3 w-3 text-blue-600" />
+                      </a>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Adres Bilgileri */}
+            <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+              <h4 className="text-xs font-semibold text-gray-600 uppercase flex items-center gap-1">
+                <MapPin className="h-3 w-3" /> Adres
+              </h4>
+              {selectedClient.address || selectedClient.city ? (
+                <div className="text-sm">
+                  <p className="font-medium">{selectedClient.address || '—'}</p>
+                  {(selectedClient.district || selectedClient.city) && (
+                    <p className="text-gray-500 text-xs mt-1">
+                      {[selectedClient.district, selectedClient.city].filter(Boolean).join(' / ')}
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-amber-600 italic">Adres bilgisi eksik</p>
+              )}
+            </div>
+
+            {/* Banka Hesapları */}
+            {selectedClient.bankAccounts && selectedClient.bankAccounts.length > 0 && (
+              <div className="bg-green-50 rounded-lg p-3 space-y-2">
+                <h4 className="text-xs font-semibold text-green-700 uppercase flex items-center gap-1">
+                  <CreditCard className="h-3 w-3" /> Banka Hesapları
+                </h4>
+                <div className="space-y-2">
+                  {selectedClient.bankAccounts.map((account) => (
+                    <div key={account.id} className="bg-white rounded p-2 border border-green-200">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium">{account.bankName}</p>
+                          {account.branchName && <p className="text-xs text-gray-500">{account.branchName}</p>}
+                        </div>
+                        {account.isPrimary && (
+                          <span className="text-[8px] bg-green-600 text-white px-1.5 py-0.5 rounded">Birincil</span>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between mt-1">
+                        <span className="text-xs font-mono text-gray-600">{maskIban(account.iban)}</span>
+                        <button 
+                          onClick={() => copyToClipboard(account.iban, 'IBAN')}
+                          className="p-1 hover:bg-green-100 rounded"
+                          title="IBAN Kopyala"
+                        >
+                          <Copy className="h-3 w-3 text-green-600" />
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
 
-            {activeTab === "overview" && (
-              <div className="bg-white rounded-lg border p-3 space-y-3">
-              {/* Risk Sınıfı ve Durum Etiketi */}
-              <div className="border-t pt-6">
-                <h4 className="font-semibold mb-4">📊 Dosya Durumu</h4>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Risk Sınıfı */}
-                  <div className="p-4 bg-amber-50 rounded-lg border border-amber-200">
-                    <label className="block text-sm font-medium text-amber-800 mb-2">Risk Sınıfı</label>
-                    <select
-                      value={caseData.risk?.id || ""}
-                      onChange={async (e) => {
-                        try {
-                          await api.patch(`/cases/${caseData.id}`, { riskId: e.target.value || null });
-                          fetchCase();
-                        } catch (err) { console.error(err); }
-                      }}
-                      className="w-full rounded-lg border border-amber-300 px-3 py-2 text-sm outline-none focus:border-amber-500 bg-white"
-                    >
-                      <option value="">Belirsiz</option>
-                      {lookups.risk.map((item: any) => (
-                        <option key={item.id} value={item.id}>{item.name}</option>
-                      ))}
-                    </select>
-                    {caseData.risk && (
-                      <div className="mt-2 flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full" style={{ backgroundColor: caseData.risk.color || '#9ca3af' }} />
-                        <span className="text-sm font-medium" style={{ color: caseData.risk.color }}>{caseData.risk.name}</span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Durum Etiketi */}
-                  <div className="p-4 bg-blue-50 rounded-lg border border-blue-200">
-                    <label className="block text-sm font-medium text-blue-800 mb-2">Durum Etiketi</label>
-                    <select
-                      value={caseData.durumEtiketi?.id || ""}
-                      onChange={async (e) => {
-                        try {
-                          await api.patch(`/cases/${caseData.id}`, { durumEtiketiId: e.target.value || null });
-                          fetchCase();
-                        } catch (err) { console.error(err); }
-                      }}
-                      className="w-full rounded-lg border border-blue-300 px-3 py-2 text-sm outline-none focus:border-blue-500 bg-white"
-                    >
-                      <option value="">Seçiniz</option>
-                      {lookups.durumEtiketi.map((item: any) => (
-                        <option key={item.id} value={item.id}>{item.name}</option>
-                      ))}
-                    </select>
-                    {caseData.durumEtiketi && (
-                      <div className="mt-2 flex items-center gap-2">
-                        <span className="w-3 h-3 rounded-full" style={{ backgroundColor: caseData.durumEtiketi.color || '#3b82f6' }} />
-                        <span className="text-sm font-medium" style={{ color: caseData.durumEtiketi.color }}>{caseData.durumEtiketi.name}</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-              {caseData.notes && (
-                <div>
-                  <h4 className="font-medium mb-2">Notlar</h4>
-                  <p className="text-muted-foreground">{caseData.notes}</p>
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === "dues" && (
-            <div className="space-y-4">
-              {/* Raporlama Özeti Banner */}
-              <div 
-                onClick={() => setShowReportingPanel(true)}
-                className="p-4 bg-gradient-to-r from-purple-50 to-indigo-50 rounded-lg border border-purple-200 cursor-pointer hover:shadow-md transition-shadow"
-              >
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="text-xs text-purple-600 font-medium mb-1">📊 Raporlama Özeti</p>
-                    <p className="font-medium text-purple-900">
-                      {caseData.reportingSummary || "Sınıflandırılmamış - Tıklayarak düzenleyin"}
-                    </p>
-                  </div>
-                  <Edit className="h-5 w-5 text-purple-400" />
-                </div>
-              </div>
-
-              {/* Alacak Kalemleri Panel */}
-              <ClaimItemPanel caseId={caseData.id} />
-            </div>
-          )}
-
-          {activeTab === "notes" && (
-            <CaseNotes caseId={caseData.id} />
-          )}
-
-          {activeTab === "status" && (
-            <div className="bg-white rounded-xl border p-6">
-              <h3 className="font-semibold mb-4">Statü Değiştir</h3>
-              <StatusCards
-                currentStatus={caseData.caseStatus || "DERDEST"}
-                onStatusChange={handleStatusChange}
-              />
-            </div>
-          )}
-
-          {activeTab === "groups" && (
-            <div className="bg-white rounded-xl border p-6 space-y-6">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold flex items-center gap-2">
-                  <Tag className="h-5 w-5" />
-                  Dosya Grupları
-                </h3>
-                <button
-                  onClick={() => setShowNewGroupModal(true)}
-                  className="text-sm text-primary hover:underline flex items-center gap-1"
+            {/* Eksik Bilgi Uyarısı */}
+            {(!selectedClient.tckn && !selectedClient.vkn) || !selectedClient.phone || !selectedClient.address ? (
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                <p className="text-xs font-medium text-amber-700 mb-1">⚠️ Eksik Bilgiler</p>
+                <ul className="text-xs text-amber-600 space-y-0.5">
+                  {!selectedClient.tckn && !selectedClient.vkn && <li>• Kimlik numarası eksik</li>}
+                  {!selectedClient.phone && <li>• Telefon numarası eksik</li>}
+                  {!selectedClient.email && <li>• E-posta adresi eksik</li>}
+                  {!selectedClient.address && <li>• Adres bilgisi eksik</li>}
+                </ul>
+                <Link 
+                  href={`/settings/clients?edit=${selectedClient.id}`}
+                  className="inline-block mt-2 text-xs text-amber-700 underline hover:text-amber-800"
                 >
-                  <Plus className="h-4 w-4" /> Yeni Grup Oluştur
+                  Müvekkil bilgilerini düzenle →
+                </Link>
+              </div>
+            ) : null}
+
+            {/* Aksiyon Butonları */}
+            <div className="flex gap-2 pt-2 border-t">
+              <button 
+                onClick={() => {
+                  setMessageModalOpen(true);
+                }}
+                className="flex-1 py-2 px-3 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium flex items-center justify-center gap-1"
+              >
+                <Mail className="h-4 w-4" />
+                Mesaj Gönder
+              </button>
+              <Link 
+                href={`/settings/clients?edit=${selectedClient.id}`}
+                className="flex-1 py-2 px-3 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium flex items-center justify-center gap-1"
+              >
+                <Edit className="h-4 w-4" />
+                Düzenle
+              </Link>
+            </div>
+          </div>
+        )}
+      </Drawer>
+
+      {/* MASRAF TALEBİ MODAL */}
+      {caseData && (
+        <ExpenseRequestModal
+          isOpen={expenseModalOpen}
+          onClose={() => {
+            setExpenseModalOpen(false);
+            setExpensePackageCode('');
+          }}
+          caseId={caseData.id}
+          clientId={expenseClientId}
+          clientName={expenseClientName}
+          caseFileNumber={caseData.fileNumber}
+          executionFileNumber={caseData.executionFileNumber}
+          initialPackageCode={expensePackageCode}
+          onSuccess={() => {
+            // Refresh case data or show success message
+            fetchCase();
+          }}
+        />
+      )}
+
+      {/* MESAJ GÖNDER MODAL */}
+      {caseData && selectedClient && (
+        <SendMessageModal
+          isOpen={messageModalOpen}
+          onClose={() => setMessageModalOpen(false)}
+          recipientType="CLIENT"
+          recipientId={selectedClient.id}
+          recipientName={selectedClient.displayName || selectedClient.name}
+          recipientEmail={selectedClient.email}
+          recipientPhone={selectedClient.phone}
+          caseId={caseData.id}
+          caseFileNumber={caseData.fileNumber}
+          executionFileNumber={caseData.executionFileNumber}
+          executionOfficeName={caseData.executionOffice?.name}
+          onSuccess={() => {
+            setClientDrawerOpen(false);
+            fetchCase();
+          }}
+        />
+      )}
+
+      {/* EKİP EKLEME MODAL */}
+      {teamModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center">
+          <div className="fixed inset-0 bg-black/40" onClick={() => setTeamModalOpen(false)} />
+          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-md mx-4 max-h-[80vh] overflow-hidden flex flex-col">
+            {/* Header */}
+            <div className="px-5 py-4 border-b bg-gradient-to-r from-blue-50 to-indigo-50">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900">Dosya Ekibine Ekle</h2>
+                  <p className="text-sm text-gray-500 mt-0.5">Avukat veya personel seçin</p>
+                </div>
+                <button onClick={() => setTeamModalOpen(false)} className="p-1.5 hover:bg-gray-100 rounded-lg">
+                  <X className="h-5 w-5 text-gray-500" />
                 </button>
               </div>
-
-              {/* Mevcut Gruplar */}
-              <div>
-                <h4 className="text-sm font-medium mb-2">Bu Dosyanın Grupları</h4>
-                {caseGroups.length === 0 ? (
-                  <p className="text-muted-foreground text-sm py-4 text-center border-2 border-dashed rounded-lg">
-                    Bu dosya henüz bir gruba eklenmedi
-                  </p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {caseGroups.map((cg: any) => (
-                      <span
-                        key={cg.id}
-                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-sm font-medium"
-                        style={{ backgroundColor: `${cg.group?.color || '#3b82f6'}20`, color: cg.group?.color || '#3b82f6' }}
-                      >
-                        {cg.group?.name}
-                        <button
-                          onClick={() => handleRemoveGroup(cg.group?.id)}
-                          className="ml-1 hover:bg-black/10 rounded-full p-0.5"
-                        >
-                          <X className="h-3 w-3" />
-                        </button>
-                      </span>
-                    ))}
-                  </div>
-                )}
+              
+              {/* Tab Seçimi */}
+              <div className="flex gap-2 mt-3">
+                <button
+                  onClick={() => setTeamModalTab('lawyers')}
+                  className={`flex-1 py-2 px-3 text-sm rounded-lg border transition-colors ${
+                    teamModalTab === 'lawyers'
+                      ? "bg-blue-50 border-blue-300 text-blue-800"
+                      : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  <User className="h-4 w-4 inline mr-1.5" />
+                  Avukatlar ({availableLawyers.length})
+                </button>
+                <button
+                  onClick={() => setTeamModalTab('staff')}
+                  className={`flex-1 py-2 px-3 text-sm rounded-lg border transition-colors ${
+                    teamModalTab === 'staff'
+                      ? "bg-purple-50 border-purple-300 text-purple-800"
+                      : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                  }`}
+                >
+                  <Users className="h-4 w-4 inline mr-1.5" />
+                  Personel ({availableStaff.length})
+                </button>
               </div>
+            </div>
 
-              {/* Grup Ekle */}
-              <div>
-                <h4 className="text-sm font-medium mb-2">Gruba Ekle</h4>
-                <div className="flex flex-wrap gap-2">
-                  {allGroups
-                    .filter((g: any) => !caseGroups.find((cg: any) => cg.group?.id === g.id))
-                    .map((group: any) => (
-                      <button
-                        key={group.id}
-                        onClick={() => handleAddGroup(group.id)}
-                        className="px-3 py-1.5 text-sm border rounded-full hover:bg-gray-50 flex items-center gap-1"
-                        style={{ borderColor: group.color || '#e5e7eb' }}
-                      >
-                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: group.color || '#3b82f6' }} />
-                        {group.name}
-                        {group._count?.caseGroups !== undefined && (
-                          <span className="text-xs text-muted-foreground">({group._count.caseGroups})</span>
-                        )}
-                      </button>
-                    ))}
-                  {allGroups.filter((g: any) => !caseGroups.find((cg: any) => cg.group?.id === g.id)).length === 0 && (
-                    <p className="text-sm text-muted-foreground">Tüm gruplara eklenmiş</p>
+            {/* Content */}
+            <div className="flex-1 overflow-y-auto p-4">
+              {teamModalTab === 'lawyers' ? (
+                <div className="space-y-2">
+                  {availableLawyers.length === 0 ? (
+                    <p className="text-center text-gray-500 py-8">Eklenebilecek avukat yok</p>
+                  ) : (
+                    availableLawyers.map((lawyer: any) => {
+                      const rankLabel = lawyer.lawyerRank === 'PARTNER' ? 'Ortak' : 
+                                       lawyer.lawyerRank === 'MANAGER' ? 'Yönetici' : 
+                                       lawyer.lawyerRank === 'AUTHORIZED' ? 'Yetkili' : 
+                                       lawyer.lawyerRank === 'INTERN' ? 'Stajyer' : 'Avukat';
+                      const rankColor = lawyer.lawyerRank === 'PARTNER' ? 'bg-purple-100 text-purple-700' : 
+                                       lawyer.lawyerRank === 'MANAGER' ? 'bg-blue-100 text-blue-700' : 
+                                       lawyer.lawyerRank === 'AUTHORIZED' ? 'bg-green-100 text-green-700' : 
+                                       lawyer.lawyerRank === 'INTERN' ? 'bg-orange-100 text-orange-700' :
+                                       'bg-gray-100 text-gray-700';
+                      return (
+                        <div 
+                          key={lawyer.id}
+                          className="flex items-center justify-between p-3 border rounded-lg hover:bg-blue-50 transition-colors"
+                        >
+                          <div>
+                            <p className="font-medium text-sm">Av. {lawyer.name} {lawyer.surname}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <span className={`text-[10px] ${rankColor} px-1.5 py-0.5 rounded font-medium`}>{rankLabel}</span>
+                              {lawyer.barNumber && <span className="text-[10px] text-gray-500">{lawyer.barNumber}</span>}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => handleAddLawyer(lawyer.id)}
+                            disabled={addingTeamMember}
+                            className="px-3 py-1.5 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                          >
+                            {addingTeamMember ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Ekle'}
+                          </button>
+                        </div>
+                      );
+                    })
                   )}
                 </div>
-              </div>
-
-              {/* Yeni Grup Modal */}
-              {showNewGroupModal && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                  <div className="bg-white rounded-xl p-6 w-full max-w-md">
-                    <h3 className="font-semibold mb-4">Yeni Grup Oluştur</h3>
-                    <div className="space-y-4">
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Grup Adı *</label>
-                        <input
-                          type="text"
-                          value={newGroupName}
-                          onChange={(e) => setNewGroupName(e.target.value)}
-                          placeholder="Ör: Stratejik Dosyalar"
-                          className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Açıklama</label>
-                        <textarea
-                          value={newGroupDescription}
-                          onChange={(e) => setNewGroupDescription(e.target.value)}
-                          placeholder="Grup açıklaması..."
-                          rows={2}
-                          className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary resize-none"
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium mb-1">Renk</label>
-                        <div className="flex gap-2">
-                          {['#3b82f6', '#22c55e', '#eab308', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#f97316'].map((color) => (
-                            <button
-                              key={color}
-                              type="button"
-                              onClick={() => setNewGroupColor(color)}
-                              className={`w-8 h-8 rounded-full border-2 ${newGroupColor === color ? 'border-gray-900' : 'border-transparent'}`}
-                              style={{ backgroundColor: color }}
-                            />
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex justify-end gap-2 mt-6">
-                      <button
-                        onClick={() => setShowNewGroupModal(false)}
-                        className="px-4 py-2 border rounded-lg hover:bg-gray-50"
-                      >
-                        İptal
-                      </button>
-                      <button
-                        onClick={handleCreateGroup}
-                        disabled={!newGroupName.trim()}
-                        className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
-                      >
-                        Oluştur
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-
-          {activeTab === "extra" && (
-            <div className="bg-white rounded-xl border p-6 space-y-6">
-              <div className="flex items-center justify-between">
-                <h3 className="font-semibold flex items-center gap-2">
-                  <Info className="h-5 w-5" />
-                  Ek Bilgiler
-                </h3>
-                <button
-                  onClick={handleSaveExtraInfo}
-                  disabled={extraInfoSaving}
-                  className="inline-flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
-                >
-                  {extraInfoSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                  Kaydet
-                </button>
-              </div>
-
-              {/* Sınıflandırma Bilgileri (Sadece Görüntüleme) */}
-              <div className="p-4 bg-purple-50 rounded-lg">
-                <h4 className="text-sm font-semibold mb-3 text-purple-800">📊 Sınıflandırma Bilgileri</h4>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <span className="text-purple-600">Takip Türü:</span>
-                    <p className="font-medium">{caseData.takipTuru?.name || "-"}</p>
-                  </div>
-                  <div>
-                    <span className="text-purple-600">Aşama:</span>
-                    <p className="font-medium">{caseData.asama?.name || "-"}</p>
-                  </div>
-                  <div>
-                    <span className="text-purple-600">Risk:</span>
-                    <p className="font-medium" style={{ color: caseData.risk?.color }}>{caseData.risk?.name || "-"}</p>
-                  </div>
-                  <div>
-                    <span className="text-purple-600">Borçlu Tipi:</span>
-                    <p className="font-medium">{caseData.borcluTipi?.name || "-"}</p>
-                  </div>
-                  <div>
-                    <span className="text-purple-600">Durum Etiketi:</span>
-                    <p className="font-medium" style={{ color: caseData.durumEtiketi?.color }}>{caseData.durumEtiketi?.name || "-"}</p>
-                  </div>
-                  <div>
-                    <span className="text-purple-600">Sorumlu:</span>
-                    <p className="font-medium">{caseData.sorumluPersonel ? `${caseData.sorumluPersonel.name} ${caseData.sorumluPersonel.surname}` : "-"}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Notlar */}
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium mb-1">
-                    Dahili Not <span className="text-xs text-muted-foreground">(Müvekkile gitmez)</span>
-                  </label>
-                  <textarea
-                    value={extraInfo.dahiliNot}
-                    onChange={(e) => setExtraInfo({ ...extraInfo, dahiliNot: e.target.value })}
-                    rows={3}
-                    placeholder="Sadece büro içi görünür notlar..."
-                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary resize-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">
-                    Müvekkil Notu <span className="text-xs text-muted-foreground">(Raporlarda görünür)</span>
-                  </label>
-                  <textarea
-                    value={extraInfo.muvekkilNotu}
-                    onChange={(e) => setExtraInfo({ ...extraInfo, muvekkilNotu: e.target.value })}
-                    rows={3}
-                    placeholder="Müvekkile gösterilebilir notlar..."
-                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary resize-none"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium mb-1">Son Değerlendirme Tarihi</label>
-                  <input
-                    type="date"
-                    value={extraInfo.sonDegerlendirmeTarihi}
-                    onChange={(e) => setExtraInfo({ ...extraInfo, sonDegerlendirmeTarihi: e.target.value })}
-                    className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
-                  />
-                </div>
-              </div>
-            </div>
-          )}
-
-          {activeTab === "automation" && (
-            <AutomationPanel
-              isAutomationEnabled={caseData.isAutomationEnabled ?? true}
-              isAutoMode={caseData.isAutoMode ?? false}
-              daysLeft={caseData.daysLeft}
-              nextAutoAction={caseData.nextAutoAction}
-              nextActionAt={caseData.nextActionAt}
-              automationConfig={caseData.automationConfig}
-              onToggleAutoMode={handleToggleAutoMode}
-            />
-          )}
-
-          {activeTab === "timeline" && (
-            <CaseTimeline
-              currentStage={caseData.workflowStage || "INITIAL"}
-              events={caseData.lifecycleEvents || []}
-              caseCreatedAt={caseData.createdAt}
-            />
-          )}
-
-          {activeTab === "documents" && (
-            <DocumentGenerator
-              caseId={caseData.id}
-              hasArticle4Request={caseData.hasArticle4Request ?? false}
-              subCategory={caseData.subCategory || "GENEL"}
-              currency={caseData.currency || "TRY"}
-              onArticle4Change={(value) => handleFlagChange({ hasArticle4Request: value })}
-            />
-          )}
-
-          {activeTab === "parties" && (
-            <div className="space-y-6">
-              {/* Alacaklı */}
-              <div className="bg-white rounded-xl border p-6">
-                <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  <User className="h-5 w-5" />
-                  Alacaklı (Müvekkil)
-                </h3>
-                {caseData.client ? (
-                  <div className="border rounded-lg p-4">
-                    <p className="font-medium">{caseData.client.name}</p>
-                    <p className="text-sm text-muted-foreground">
-                      {caseData.client.type === "INDIVIDUAL" ? "Gerçek Kişi" : "Tüzel Kişi"}
-                      {caseData.client.identityNo && ` • ${caseData.client.identityNo}`}
-                    </p>
-                    {caseData.client.phone && (
-                      <p className="text-sm mt-1">📞 {caseData.client.phone}</p>
-                    )}
-                  </div>
-                ) : (
-                  <p className="text-muted-foreground">Alacaklı bilgisi yok</p>
-                )}
-              </div>
-
-              {/* Avukatlar */}
-              <div className="bg-white rounded-xl border p-6">
-                <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  <Scale className="h-5 w-5" />
-                  Yetkili Avukatlar
-                </h3>
-                {caseData.lawyers && caseData.lawyers.length > 0 ? (
-                  <div className="space-y-2">
-                    {caseData.lawyers.map((l) => (
-                      <div key={l.id} className="border rounded-lg p-4 flex items-center justify-between">
-                        <div>
-                          <p className="font-medium">
-                            {(l.lawyer as any).displayName || `Av. ${l.lawyer.name} ${l.lawyer.surname}`}
-                          </p>
-                          {l.lawyer.barNumber && (
-                            <p className="text-sm text-muted-foreground">
-                              Baro Sicil: {l.lawyer.barNumber}
-                            </p>
-                          )}
-                        </div>
-                        {l.canSign && <Badge variant="success">İmza Yetkili</Badge>}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-muted-foreground">Avukat bilgisi yok</p>
-                )}
-              </div>
-
-              {/* Borçlular */}
-              <div className="bg-white rounded-xl border p-6">
-                <h3 className="font-semibold mb-3 flex items-center gap-2">
-                  <Users className="h-5 w-5" />
-                  Borçlular
-                </h3>
-                {caseData.debtors && caseData.debtors.length > 0 ? (
-                  <div className="space-y-2">
-                    {caseData.debtors.map((d) => (
-                      <div key={d.id} className="border rounded-lg p-4">
-                        <div className="flex items-center justify-between">
+              ) : (
+                <div className="space-y-2">
+                  {availableStaff.length === 0 ? (
+                    <p className="text-center text-gray-500 py-8">Eklenebilecek personel yok</p>
+                  ) : (
+                    availableStaff.map((staff: any) => {
+                      const typeLabel = staff.staffType === 'STAJYER' ? 'Stajyer' :
+                                       staff.staffType === 'SEKRETER' ? 'Sekreter' :
+                                       staff.staffType === 'MUHASEBE' ? 'Muhasebe' :
+                                       staff.staffType === 'ARSIV' ? 'Arşiv' :
+                                       staff.staffType || 'Personel';
+                      return (
+                        <div 
+                          key={staff.id}
+                          className="flex items-center justify-between p-3 border rounded-lg hover:bg-purple-50 transition-colors"
+                        >
                           <div>
-                            <p className="font-medium">{d.debtor.name}</p>
-                            <p className="text-sm text-muted-foreground">
-                              {d.debtor.type === "INDIVIDUAL" ? "Gerçek Kişi" : "Tüzel Kişi"}
-                              {d.debtor.identityNo && ` • ${d.debtor.identityNo}`}
-                            </p>
+                            <p className="font-medium text-sm">{staff.firstName} {staff.lastName}</p>
+                            <span className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded font-medium">{typeLabel}</span>
                           </div>
-                          <Badge>{d.role === "DEBTOR" ? "Borçlu" : d.role}</Badge>
+                          <button
+                            onClick={() => handleAddStaff(staff.id)}
+                            disabled={addingTeamMember}
+                            className="px-3 py-1.5 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 disabled:opacity-50"
+                          >
+                            {addingTeamMember ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Ekle'}
+                          </button>
                         </div>
-                        {d.debtor.phone && (
-                          <p className="text-sm mt-2">📞 {d.debtor.phone}</p>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-muted-foreground">Borçlu bilgisi yok</p>
-                )}
-              </div>
-            </div>
-          )}
-
-          {activeTab === "risk" && (
-            <div className="bg-white rounded-xl border p-6 space-y-6">
-              <h3 className="font-semibold flex items-center gap-2">
-                <AlertTriangle className="h-5 w-5" />
-                Risk Analizi
-              </h3>
-
-              {/* Risk Sınıfı Güncelleme */}
-              <div className="bg-amber-50 rounded-xl p-6 border border-amber-200">
-                <h4 className="font-medium flex items-center gap-2 mb-4">
-                  <AlertTriangle className="h-5 w-5 text-amber-600" />
-                  Risk Sınıfı Belirleme
-                </h4>
-                <p className="text-sm text-amber-700 mb-4">
-                  Risk durumu dosya açıldıktan sonra mal varlığı, maaş haczi imkanı, taahhüt durumu, karşılıksız çek cezası gibi faktörlere göre manuel belirlenir.
-                </p>
-                <div className="grid grid-cols-1 gap-3">
-                  {lookups.risk.map((risk: any) => (
-                    <button
-                      key={risk.id}
-                      onClick={async () => {
-                        try {
-                          await api.patch(`/cases/${caseData.id}`, { riskId: risk.id });
-                          fetchCase();
-                        } catch (e) { console.error(e); }
-                      }}
-                      className={`flex items-center justify-between p-4 rounded-lg border-2 transition-all ${
-                        caseData.risk?.id === risk.id 
-                          ? 'border-amber-500 bg-white shadow-md' 
-                          : 'border-gray-200 hover:border-gray-300 bg-white'
-                      }`}
-                    >
-                      <div className="flex items-center gap-3">
-                        <span 
-                          className="w-4 h-4 rounded-full" 
-                          style={{ backgroundColor: risk.color || '#9ca3af' }}
-                        />
-                        <div className="text-left">
-                          <p className="font-medium">{risk.name}</p>
-                          <p className="text-xs text-muted-foreground">{risk.description}</p>
-                        </div>
-                      </div>
-                      {caseData.risk?.id === risk.id && (
-                        <span className="text-amber-600 text-sm font-medium">✓ Seçili</span>
-                      )}
-                    </button>
-                  ))}
-                  {/* Belirsiz seçeneği */}
-                  <button
-                    onClick={async () => {
-                      try {
-                        await api.patch(`/cases/${caseData.id}`, { riskId: null });
-                        fetchCase();
-                      } catch (e) { console.error(e); }
-                    }}
-                    className={`flex items-center justify-between p-4 rounded-lg border-2 transition-all ${
-                      !caseData.risk?.id 
-                        ? 'border-amber-500 bg-white shadow-md' 
-                        : 'border-gray-200 hover:border-gray-300 bg-white'
-                    }`}
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="w-4 h-4 rounded-full bg-gray-400" />
-                      <div className="text-left">
-                        <p className="font-medium">Belirsiz</p>
-                        <p className="text-xs text-muted-foreground">Henüz değerlendirilmedi</p>
-                      </div>
-                    </div>
-                    {!caseData.risk?.id && (
-                      <span className="text-amber-600 text-sm font-medium">✓ Seçili</span>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {/* Risk Skoru */}
-              <div className="bg-gray-50 rounded-xl p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <span className="text-lg font-medium">Genel Risk Skoru</span>
-                  <span className={`text-3xl font-bold ${
-                    (caseData.riskScore || 0) < 30 ? 'text-green-600' :
-                    (caseData.riskScore || 0) < 60 ? 'text-yellow-600' :
-                    (caseData.riskScore || 0) < 80 ? 'text-orange-600' : 'text-red-600'
-                  }`}>
-                    {caseData.riskScore || 0}/100
-                  </span>
-                </div>
-                <div className="h-4 bg-gray-200 rounded-full overflow-hidden">
-                  <div 
-                    className={`h-full rounded-full transition-all ${
-                      (caseData.riskScore || 0) < 30 ? 'bg-green-500' :
-                      (caseData.riskScore || 0) < 60 ? 'bg-yellow-500' :
-                      (caseData.riskScore || 0) < 80 ? 'bg-orange-500' : 'bg-red-500'
-                    }`}
-                    style={{ width: `${caseData.riskScore || 0}%` }}
-                  />
-                </div>
-              </div>
-
-              {/* AI Analizi */}
-              <div className="bg-indigo-50 rounded-xl p-6">
-                <h4 className="font-medium flex items-center gap-2 mb-4">
-                  <Brain className="h-5 w-5 text-indigo-600" />
-                  AI Önerileri
-                </h4>
-                <button 
-                  onClick={handleAiAnalysis}
-                  className="w-full py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors flex items-center justify-center gap-2"
-                >
-                  <Brain className="h-4 w-4" />
-                  AI Analizi Yap
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Sidebar */}
-        <div className="space-y-6">
-          <CaseFlagsPanel
-            isArchived={caseData.isArchived ?? false}
-            showToClient={caseData.showToClient ?? true}
-            allowUyapActions={caseData.allowUyapActions ?? true}
-            onFlagChange={handleFlagChange}
-          />
-        </div>
-      </div>
-    </div>
-
-      {/* Raporlama Düzenleme Paneli */}
-      {showReportingPanel && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between mb-6">
-              <h3 className="font-semibold text-lg flex items-center gap-2">
-                📊 Raporlama Bilgileri
-              </h3>
-              <button
-                onClick={() => setShowReportingPanel(false)}
-                className="p-1 hover:bg-gray-100 rounded"
-              >
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-
-            <div className="space-y-4">
-              {/* Takip Türü */}
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Takip Türü <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={reportingData.takipTuruId}
-                  onChange={(e) => setReportingData({ ...reportingData, takipTuruId: e.target.value })}
-                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
-                >
-                  <option value="">Seçiniz...</option>
-                  {lookups.takipTuru.map((item: any) => (
-                    <option key={item.id} value={item.id}>{item.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Mahiyet Tipi */}
-              <div>
-                <label className="block text-sm font-medium mb-1">Mahiyet Tipi (Alacak Türü)</label>
-                <select
-                  value={reportingData.mahiyetTipiId}
-                  onChange={(e) => setReportingData({ ...reportingData, mahiyetTipiId: e.target.value })}
-                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
-                >
-                  <option value="">Seçiniz...</option>
-                  {lookups.mahiyetTipi.map((item: any) => (
-                    <option key={item.id} value={item.id}>{item.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Risk Sınıfı */}
-              <div>
-                <label className="block text-sm font-medium mb-1">Risk Sınıfı</label>
-                <select
-                  value={reportingData.riskId}
-                  onChange={(e) => setReportingData({ ...reportingData, riskId: e.target.value })}
-                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
-                >
-                  <option value="">Seçiniz...</option>
-                  {lookups.risk.map((item: any) => (
-                    <option key={item.id} value={item.id} style={{ color: item.color }}>{item.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Durum Etiketi */}
-              <div>
-                <label className="block text-sm font-medium mb-1">Durum Etiketi</label>
-                <select
-                  value={reportingData.durumEtiketiId}
-                  onChange={(e) => setReportingData({ ...reportingData, durumEtiketiId: e.target.value })}
-                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
-                >
-                  <option value="">Seçiniz...</option>
-                  {lookups.durumEtiketi.map((item: any) => (
-                    <option key={item.id} value={item.id}>{item.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Borçlu Tipi */}
-              <div>
-                <label className="block text-sm font-medium mb-1">Borçlu Tipi</label>
-                <select
-                  value={reportingData.borcluTipiId}
-                  onChange={(e) => setReportingData({ ...reportingData, borcluTipiId: e.target.value })}
-                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
-                >
-                  <option value="">Seçiniz...</option>
-                  {lookups.borcluTipi.map((item: any) => (
-                    <option key={item.id} value={item.id}>{item.name}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Sorumlu Personel */}
-              <div>
-                <label className="block text-sm font-medium mb-1">
-                  Sorumlu Personel <span className="text-red-500">*</span>
-                </label>
-                <select
-                  value={reportingData.sorumluPersonelId}
-                  onChange={(e) => setReportingData({ ...reportingData, sorumluPersonelId: e.target.value })}
-                  className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
-                >
-                  <option value="">Seçiniz...</option>
-                  {lookups.users.map((user: any) => (
-                    <option key={user.id} value={user.id}>{user.name} {user.surname}</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Mevcut Gruplar */}
-              {caseGroups.length > 0 && (
-                <div className="p-3 bg-gray-50 rounded-lg">
-                  <p className="text-xs text-muted-foreground mb-2">Gruplar:</p>
-                  <div className="flex flex-wrap gap-1">
-                    {caseGroups.map((cg: any) => (
-                      <span
-                        key={cg.id}
-                        className="px-2 py-0.5 rounded text-xs"
-                        style={{ backgroundColor: `${cg.group?.color || '#3b82f6'}20`, color: cg.group?.color || '#3b82f6' }}
-                      >
-                        {cg.group?.name}
-                      </span>
-                    ))}
-                  </div>
+                      );
+                    })
+                  )}
                 </div>
               )}
             </div>
 
-            <div className="flex justify-end gap-2 mt-6 pt-4 border-t">
+            {/* Footer */}
+            <div className="px-5 py-4 border-t bg-gray-50">
               <button
-                onClick={() => setShowReportingPanel(false)}
-                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+                onClick={() => setTeamModalOpen(false)}
+                className="w-full py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg"
               >
-                İptal
-              </button>
-              <button
-                onClick={handleSaveReporting}
-                disabled={reportingSaving}
-                className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2"
-              >
-                {reportingSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
-                Kaydet
+                Kapat
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* AI Suggestions Modal */}
-      <AiSuggestionsModal
-        isOpen={aiModalOpen}
-        onClose={() => setAiModalOpen(false)}
-        suggestions={aiSuggestions}
-        prediction={aiPrediction}
-        loading={aiLoading}
-        error={aiError}
-        caseFileNumber={caseData.fileNumber}
-      />
-
-      {/* Share Case Modal */}
-      <ShareCaseModal
-        caseId={caseData.id}
-        fileNumber={caseData.fileNumber}
-        isOpen={showShareModal}
-        onClose={() => setShowShareModal(false)}
-      />
     </div>
   );
 }

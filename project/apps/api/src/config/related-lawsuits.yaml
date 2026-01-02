@@ -1,0 +1,435 @@
+# ============================================
+# İLGİLİ DAVALAR KURALLARI (Related Lawsuits Rules)
+# Takip aşamasına göre açılabilecek davalar
+# ============================================
+
+version: 1
+engine: related_lawsuits_engine
+
+# --------------------------------------------
+# DAVA TÜRLERİ
+# --------------------------------------------
+lawsuit_types:
+  # ==========================================
+  # CEZA DAVALARI
+  # ==========================================
+  KARSILIKSIZ_CEK:
+    code: "KARSILIKSIZ_CEK"
+    name: "Karşılıksız Çek Şikayeti"
+    category: "CEZA"
+    uyap_dava_turu: "CEZA_KARSILIKSIZ_CEK"
+    description: "5941 sayılı Çek Kanunu m.5 uyarınca karşılıksız çek şikayeti"
+    
+    # Hangi takip türlerinde gösterilecek
+    applies_to_case_types: ["KAMBIYO"]
+    applies_to_instruments: ["CEK"]
+    
+    # Hangi aşamada açılabilir (Prisma WorkflowStage enum değerleri)
+    available_stages:
+      - "INITIAL"           # Takip oluşturuldu
+      - "PAYMENT_ORDER"     # Ödeme emri gönderildi
+      - "WAITING_RESPONSE"  # Tebligat bekleniyor
+      - "OBJECTION"         # İtiraz edildi
+      - "ENFORCEMENT"       # Haciz aşaması
+      - "SEIZURE"           # Haciz uygulandı
+      - "COLLECTION"        # Tahsilat aşaması
+      - "PARTIAL_PAYMENT"   # Kısmi ödeme
+    
+    # Ön koşullar
+    prerequisites:
+      - "Çekin karşılıksız çıkmış olması"
+      - "İbraz süresinde bankaya ibraz edilmiş olması"
+    
+    # Süreler (kritik!)
+    deadlines:
+      sikayet_suresi_ay: 6      # Öğrenmeden itibaren
+      mutlak_sure_yil: 1        # İbraz tarihinden itibaren
+      start_date_field: "presentationDate"  # İbraz tarihi
+    
+    # Yetkili mahkeme
+    court_type: "İCRA CEZA MAHKEMESİ"
+    venue_rule: "Çekin keşide edildiği yer veya muhatap bankanın bulunduğu yer"
+    
+    # Dilekçe şablonu
+    template_code: "KARSILIKSIZ_CEK_SIKAYET"
+    
+    # Uyarı mesajları
+    warnings:
+      approaching: "Karşılıksız çek şikayet süresi dolmak üzere!"
+      expired: "Karşılıksız çek şikayet süresi dolmuş olabilir."
+    
+    # Otomatik hesaplama
+    auto_calculate: true
+    show_deadline_warning: true
+    
+  DOLANDIRICILIK:
+    code: "DOLANDIRICILIK"
+    name: "Dolandırıcılık Suç Duyurusu"
+    category: "CEZA"
+    uyap_dava_turu: "CEZA_DOLANDIRICILIK"
+    description: "TCK m.157-158 uyarınca dolandırıcılık suç duyurusu"
+    
+    applies_to_case_types: ["KAMBIYO", "ILAMSIZ", "ILAMLI"]
+    
+    available_stages:
+      - "INITIAL"
+      - "PAYMENT_ORDER"
+      - "WAITING_RESPONSE"
+      - "OBJECTION"
+    
+    prerequisites:
+      - "Hileli davranış ile aldatma"
+      - "Mağdurun zarara uğraması"
+      - "İlliyet bağı"
+    
+    deadlines:
+      sikayet_suresi_ay: 6
+      dava_zamanaşımı_yil: 8
+    
+    court_type: "CUMHURİYET BAŞSAVCILIĞI"
+    venue_rule: "Suçun işlendiği yer"
+    
+    template_code: "DOLANDIRICILIK_SUC_DUYURUSU"
+    auto_calculate: false
+    show_deadline_warning: false
+    optional: true
+    
+  GUVENI_KOTUYE_KULLANMA:
+    code: "GUVENI_KOTUYE_KULLANMA"
+    name: "Güveni Kötüye Kullanma Suç Duyurusu"
+    category: "CEZA"
+    uyap_dava_turu: "CEZA_GUVENI_KOTUYE_KULLANMA"
+    description: "TCK m.155 uyarınca güveni kötüye kullanma suç duyurusu"
+    
+    applies_to_case_types: ["KAMBIYO", "ILAMSIZ"]
+    
+    available_stages:
+      - "INITIAL"
+      - "PAYMENT_ORDER"
+      - "WAITING_RESPONSE"
+    
+    deadlines:
+      sikayet_suresi_ay: 6
+      dava_zamanaşımı_yil: 8
+    
+    court_type: "CUMHURİYET BAŞSAVCILIĞI"
+    template_code: "GUVENI_KOTUYE_KULLANMA_SUC_DUYURUSU"
+    optional: true
+    
+  RESMI_BELGEDE_SAHTECILIK:
+    code: "RESMI_BELGEDE_SAHTECILIK"
+    name: "Resmi Belgede Sahtecilik Suç Duyurusu"
+    category: "CEZA"
+    uyap_dava_turu: "CEZA_SAHTECILIK"
+    description: "TCK m.204 uyarınca resmi belgede sahtecilik"
+    
+    applies_to_case_types: ["KAMBIYO", "ILAMSIZ"]
+    applies_to_instruments: ["CEK", "BONO", "SENET"]
+    
+    available_stages:
+      - "INITIAL"
+      - "PAYMENT_ORDER"
+      - "WAITING_RESPONSE"
+      - "OBJECTION"
+    
+    deadlines:
+      dava_zamanaşımı_yil: 8
+    
+    court_type: "CUMHURİYET BAŞSAVCILIĞI"
+    template_code: "SAHTECILIK_SUC_DUYURUSU"
+    optional: true
+
+  # ==========================================
+  # HUKUK DAVALARI - TEBLİGAT ÖNCESİ
+  # ==========================================
+  TASARRUFUN_IPTALI:
+    code: "TASARRUFUN_IPTALI"
+    name: "Tasarrufun İptali Davası"
+    category: "HUKUK"
+    uyap_dava_turu: "HUKUK_TASARRUFUN_IPTALI"
+    description: "İİK m.277-284 uyarınca tasarrufun iptali davası"
+    
+    applies_to_case_types: ["KAMBIYO", "ILAMSIZ", "ILAMLI"]
+    
+    available_stages:
+      - "INITIAL"           # Erken açılabilir (riskli)
+      - "PAYMENT_ORDER"
+      - "WAITING_RESPONSE"
+      - "OBJECTION"
+      - "ENFORCEMENT"
+      - "SEIZURE"
+      - "COLLECTION"
+    
+    prerequisites:
+      - "Borçlunun mal kaçırma emaresi"
+      - "Aciz belgesi (normal şartlarda)"
+      - "Son 2-5 yıl içinde şüpheli tasarruf"
+    
+    deadlines:
+      dava_zamanaşımı_yil: 5
+      start_date_field: "transactionDate"
+    
+    court_type: "ASLİYE HUKUK MAHKEMESİ"
+    venue_rule: "Davalının yerleşim yeri"
+    
+    template_code: "TASARRUFUN_IPTALI_DAVA"
+    
+    risk_level: "HIGH"
+    risk_note: "Aciz belgesi olmadan açılması risklidir. Mal kaçırma emareleri çok net olmalı."
+    optional: true
+
+  # ==========================================
+  # HUKUK DAVALARI - TEBLİGAT SONRASI
+  # ==========================================
+  ITIRAZIN_IPTALI:
+    code: "ITIRAZIN_IPTALI"
+    name: "İtirazın İptali Davası"
+    category: "HUKUK"
+    uyap_dava_turu: "HUKUK_ITIRAZIN_IPTALI"
+    description: "İİK m.67 uyarınca itirazın iptali davası"
+    
+    applies_to_case_types: ["KAMBIYO", "ILAMSIZ"]
+    
+    # SADECE itiraz sonrası açılabilir
+    available_stages:
+      - "OBJECTION"
+    
+    prerequisites:
+      - "Borçlunun ödeme emrine itiraz etmiş olması"
+      - "İtirazın tebliğinden itibaren 1 yıl içinde açılması"
+    
+    deadlines:
+      dava_suresi_yil: 1
+      start_date_field: "objectionDate"
+    
+    court_type: "ASLİYE HUKUK MAHKEMESİ"
+    venue_rule: "İcra takibinin yapıldığı yer"
+    
+    template_code: "ITIRAZIN_IPTALI_DAVA"
+    
+    benefits:
+      - "İcra inkâr tazminatı talep edilebilir (%20)"
+      - "Yargılama giderleri"
+    
+    auto_calculate: true
+    show_deadline_warning: true
+
+  ITIRAZIN_KALDIRILMASI:
+    code: "ITIRAZIN_KALDIRILMASI"
+    name: "İtirazın Kaldırılması"
+    category: "HUKUK"
+    uyap_dava_turu: "ICRA_ITIRAZIN_KALDIRILMASI"
+    description: "İİK m.68 uyarınca itirazın kaldırılması"
+    
+    applies_to_case_types: ["KAMBIYO", "ILAMSIZ"]
+    
+    available_stages:
+      - "OBJECTION"
+    
+    prerequisites:
+      - "Borçlunun itiraz etmiş olması"
+      - "İmzası ikrar edilmiş senet veya resmi belge"
+    
+    deadlines:
+      dava_suresi_ay: 6
+      start_date_field: "objectionDate"
+    
+    court_type: "İCRA MAHKEMESİ"
+    venue_rule: "İcra dairesinin bulunduğu yer"
+    
+    template_code: "ITIRAZIN_KALDIRILMASI"
+    
+    benefits:
+      - "Daha hızlı sonuç"
+      - "İcra inkâr tazminatı (%20)"
+    
+    auto_calculate: true
+
+  MENFI_TESPIT:
+    code: "MENFI_TESPIT"
+    name: "Menfi Tespit Davası"
+    category: "HUKUK"
+    uyap_dava_turu: "HUKUK_MENFI_TESPIT"
+    description: "İİK m.72 uyarınca menfi tespit davası (borçlu açar)"
+    
+    applies_to_case_types: ["KAMBIYO", "ILAMSIZ", "ILAMLI"]
+    
+    available_stages:
+      - "WAITING_RESPONSE"
+      - "OBJECTION"
+      - "ENFORCEMENT"
+      - "SEIZURE"
+      - "COLLECTION"
+    
+    opened_by: "DEBTOR"  # Borçlu açar
+    
+    court_type: "ASLİYE HUKUK MAHKEMESİ"
+    template_code: "MENFI_TESPIT_DAVA"
+
+  ISTIRDAT:
+    code: "ISTIRDAT"
+    name: "İstirdat Davası"
+    category: "HUKUK"
+    uyap_dava_turu: "HUKUK_ISTIRDAT"
+    description: "İİK m.72 uyarınca istirdat davası (ödeme sonrası)"
+    
+    applies_to_case_types: ["KAMBIYO", "ILAMSIZ", "ILAMLI"]
+    
+    available_stages:
+      - "COLLECTION"
+      - "PARTIAL_PAYMENT"
+      - "FULL_PAYMENT"
+      - "CLOSED"
+    
+    prerequisites:
+      - "Borcun ödenmiş olması"
+      - "Ödemenin haksız olduğu iddiası"
+    
+    deadlines:
+      dava_suresi_yil: 1
+      start_date_field: "paymentDate"
+    
+    opened_by: "DEBTOR"
+    court_type: "ASLİYE HUKUK MAHKEMESİ"
+    template_code: "ISTIRDAT_DAVA"
+
+# --------------------------------------------
+# AŞAMA KURALLARI (Prisma WorkflowStage enum değerleri)
+# --------------------------------------------
+stage_rules:
+  INITIAL:
+    label: "Takip Oluşturuldu"
+    description: "Takip açıldı, tebligat henüz çıkmadı"
+    available_lawsuits:
+      - "KARSILIKSIZ_CEK"
+      - "DOLANDIRICILIK"
+      - "GUVENI_KOTUYE_KULLANMA"
+      - "RESMI_BELGEDE_SAHTECILIK"
+      - "TASARRUFUN_IPTALI"
+    
+  PAYMENT_ORDER:
+    label: "Ödeme Emri Gönderildi"
+    description: "Ödeme emri gönderildi, sonuç bekleniyor"
+    available_lawsuits:
+      - "KARSILIKSIZ_CEK"
+      - "DOLANDIRICILIK"
+      - "TASARRUFUN_IPTALI"
+    
+  WAITING_RESPONSE:
+    label: "Tebligat Bekleniyor"
+    description: "Ödeme emri tebliğ edildi, itiraz süresi başladı"
+    available_lawsuits:
+      - "KARSILIKSIZ_CEK"
+      - "TASARRUFUN_IPTALI"
+      - "MENFI_TESPIT"
+    
+  OBJECTION:
+    label: "İtiraz Edildi"
+    description: "Borçlu itiraz etti, takip durdu"
+    available_lawsuits:
+      - "ITIRAZIN_IPTALI"
+      - "ITIRAZIN_KALDIRILMASI"
+      - "KARSILIKSIZ_CEK"
+      - "TASARRUFUN_IPTALI"
+    
+  ENFORCEMENT:
+    label: "Haciz Aşaması"
+    description: "Haciz işlemleri başladı"
+    available_lawsuits:
+      - "KARSILIKSIZ_CEK"
+      - "TASARRUFUN_IPTALI"
+      - "MENFI_TESPIT"
+    
+  SEIZURE:
+    label: "Haciz Uygulandı"
+    description: "Haciz uygulandı, satış bekleniyor"
+    available_lawsuits:
+      - "KARSILIKSIZ_CEK"
+      - "TASARRUFUN_IPTALI"
+      - "MENFI_TESPIT"
+    
+  COLLECTION:
+    label: "Tahsilat Aşaması"
+    description: "Haciz/tahsilat işlemleri devam ediyor"
+    available_lawsuits:
+      - "KARSILIKSIZ_CEK"
+      - "TASARRUFUN_IPTALI"
+      - "ISTIRDAT"
+      - "MENFI_TESPIT"
+    
+  PARTIAL_PAYMENT:
+    label: "Kısmi Ödeme"
+    description: "Kısmi ödeme alındı"
+    available_lawsuits:
+      - "KARSILIKSIZ_CEK"
+      - "ISTIRDAT"
+    
+  FULL_PAYMENT:
+    label: "Tam Ödeme"
+    description: "Tam ödeme alındı"
+    available_lawsuits:
+      - "ISTIRDAT"
+    
+  CLOSED:
+    label: "Kapatıldı"
+    description: "Takip kapatıldı"
+    available_lawsuits:
+      - "ISTIRDAT"
+
+# --------------------------------------------
+# DİLEKÇE ŞABLONLARI
+# --------------------------------------------
+templates:
+  KARSILIKSIZ_CEK_SIKAYET:
+    name: "Karşılıksız Çek Şikayet Dilekçesi"
+    court_header: "İCRA CEZA MAHKEMESİ'NE"
+    sections:
+      - "sikayetci_bilgileri"
+      - "sanik_bilgileri"
+      - "cek_bilgileri"
+      - "olay_aciklamasi"
+      - "hukuki_dayanak"
+      - "sonuc_ve_talep"
+    required_fields:
+      - "sikayetci.ad_soyad"
+      - "sikayetci.tc_kimlik"
+      - "sikayetci.adres"
+      - "sanik.ad_soyad"
+      - "sanik.adres"
+      - "cek.seri_no"
+      - "cek.tutar"
+      - "cek.kesideci"
+      - "cek.banka"
+      - "cek.ibraz_tarihi"
+      - "cek.karsilik_tarihi"
+    
+  ITIRAZIN_IPTALI_DAVA:
+    name: "İtirazın İptali Dava Dilekçesi"
+    court_header: "ASLİYE HUKUK MAHKEMESİ'NE"
+    sections:
+      - "davaci_bilgileri"
+      - "davali_bilgileri"
+      - "dava_konusu"
+      - "icra_dosyasi_bilgileri"
+      - "olay_aciklamasi"
+      - "hukuki_dayanak"
+      - "deliller"
+      - "sonuc_ve_talep"
+
+# --------------------------------------------
+# UYARI KURALLARI
+# --------------------------------------------
+warning_rules:
+  # Karşılıksız çek için otomatik uyarı
+  karsilik_cek_deadline:
+    trigger: "CEK_INSTRUMENT"
+    condition: "days_until_deadline <= 30"
+    message: "Karşılıksız çek şikayet süresi {days_left} gün içinde dolacak!"
+    level: "WARNING"
+    action_button: "Şikayet Dilekçesi Hazırla"
+    
+  karsilik_cek_expired:
+    trigger: "CEK_INSTRUMENT"
+    condition: "days_until_deadline <= 0"
+    message: "Karşılıksız çek şikayet süresi dolmuş olabilir."
+    level: "ERROR"

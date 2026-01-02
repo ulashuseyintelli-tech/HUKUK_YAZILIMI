@@ -28,11 +28,13 @@ export class CaseController {
   findAll(
     @CurrentUser("tenantId") tenantId: string,
     @Query("status") status?: string,
+    @Query("expenseRequestStatus") expenseRequestStatus?: string,
     @Query("page") page?: string,
     @Query("limit") limit?: string
   ) {
     return this.caseService.findAll(tenantId, {
       status,
+      expenseRequestStatus,
       page: page ? parseInt(page) : undefined,
       limit: limit ? parseInt(limit) : undefined,
     });
@@ -130,6 +132,16 @@ export class CaseController {
   }
 
   /**
+   * Eksik UYAP kodlarını düzelt
+   * POST /cases/fix-uyap-codes
+   */
+  @Post("fix-uyap-codes")
+  async fixUyapCodes(@CurrentUser("tenantId") tenantId: string) {
+    const result = await this.caseService.fixMissingUyapCodes(tenantId);
+    return { success: true, data: result };
+  }
+
+  /**
    * Dosya notları - GET /cases/:id/notes
    */
   @Get(":id/notes")
@@ -174,5 +186,153 @@ export class CaseController {
     @Param("id") id: string
   ) {
     return this.caseService.getTimeline(tenantId, id);
+  }
+
+  // ==================== TEBLİGAT TAKİP ====================
+
+  /**
+   * Dosyadaki borçluların tebligat durumlarını getir
+   * GET /cases/:id/debtors/notifications
+   */
+  @Get(":id/debtors/notifications")
+  async getCaseDebtorsWithNotification(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string
+  ) {
+    return this.caseService.getCaseDebtorsWithNotification(tenantId, id);
+  }
+
+  /**
+   * Borçlu tebligat bilgisini güncelle
+   * PATCH /cases/:id/debtors/:caseDebtorId/notification
+   */
+  @Patch(":id/debtors/:caseDebtorId/notification")
+  async updateCaseDebtorNotification(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Param("caseDebtorId") caseDebtorId: string,
+    @Body() body: {
+      notificationBarcode?: string;
+      notificationSentDate?: string;
+      notificationDeliveredDate?: string;
+      notificationStatus?: string;
+      notificationNote?: string;
+    }
+  ) {
+    return this.caseService.updateCaseDebtorNotification(tenantId, id, caseDebtorId, body);
+  }
+
+  // ==================== AVUKAT YÖNETİMİ ====================
+
+  /**
+   * Dosyadaki avukatları getir
+   * GET /cases/:id/lawyers
+   */
+  @Get(":id/lawyers")
+  async getCaseLawyers(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string
+  ) {
+    return this.caseService.getCaseLawyers(tenantId, id);
+  }
+
+  /**
+   * Dosyaya avukat ekle
+   * POST /cases/:id/lawyers
+   */
+  @Post(":id/lawyers")
+  async addCaseLawyer(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Body() body: {
+      lawyerId: string;
+      role?: 'RESPONSIBLE' | 'ASSIGNED' | 'ASSISTANT' | 'INTERN';
+      canSign?: boolean;
+    }
+  ) {
+    return this.caseService.addCaseLawyer(tenantId, id, body);
+  }
+
+  /**
+   * Dosyadan avukat çıkar
+   * DELETE /cases/:id/lawyers/:caseLawyerId
+   */
+  @Delete(":id/lawyers/:caseLawyerId")
+  async removeCaseLawyer(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Param("caseLawyerId") caseLawyerId: string
+  ) {
+    return this.caseService.removeCaseLawyer(tenantId, id, caseLawyerId);
+  }
+
+  /**
+   * Dosyadaki avukatın rol ve yetkilerini güncelle
+   * PATCH /cases/:id/lawyers/:caseLawyerId
+   */
+  @Patch(":id/lawyers/:caseLawyerId")
+  async updateCaseLawyer(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Param("caseLawyerId") caseLawyerId: string,
+    @Body() body: {
+      role?: 'RESPONSIBLE' | 'ASSIGNED' | 'ASSISTANT' | 'INTERN';
+      canSign?: boolean;
+      hasSignatureAuthority?: boolean;
+      isResponsible?: boolean;
+      casePermissions?: {
+        canEditCase?: boolean;
+        canGenerateDocs?: boolean;
+        canSyncUYAP?: boolean;
+        canViewFinance?: boolean;
+        canEditFinance?: boolean;
+        canChangeStatus?: boolean;
+        canEditParties?: boolean;
+      };
+      receiveNotifications?: boolean;
+    }
+  ) {
+    return this.caseService.updateCaseLawyer(tenantId, id, caseLawyerId, body);
+  }
+
+  /**
+   * Dosyadaki personelleri getir
+   * GET /cases/:id/staff
+   */
+  @Get(":id/staff")
+  async getCaseStaff(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string
+  ) {
+    return this.caseService.getCaseStaff(tenantId, id);
+  }
+
+  /**
+   * Dosyaya personel ekle
+   * POST /cases/:id/staff
+   */
+  @Post(":id/staff")
+  async addCaseStaff(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Body() body: {
+      staffMemberId: string;
+      roleOnCase?: string;
+    }
+  ) {
+    return this.caseService.addCaseStaff(tenantId, id, body);
+  }
+
+  /**
+   * Dosyadan personel çıkar
+   * DELETE /cases/:id/staff/:caseStaffId
+   */
+  @Delete(":id/staff/:caseStaffId")
+  async removeCaseStaff(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Param("caseStaffId") caseStaffId: string
+  ) {
+    return this.caseService.removeCaseStaff(tenantId, id, caseStaffId);
   }
 }

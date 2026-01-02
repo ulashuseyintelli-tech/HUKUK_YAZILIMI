@@ -28,6 +28,8 @@ import { useFormHistory } from "@/hooks/useFormHistory";
 import { useUserSettings } from "@/lib/user-settings";
 import { usePreSubmitValidation } from "@/hooks/useValidation";
 import { ValidationError } from "@/lib/api";
+import { useLimitationCheck, LimitationCheckResult } from "@/hooks/useLimitationCheck";
+import { LimitationWarningModal, LimitationBanner } from "@/components/limitation/LimitationWarningModal";
 
 // LocalStorage key for wizard state persistence
 const WIZARD_STORAGE_KEY = "case_wizard_draft";
@@ -178,10 +180,13 @@ export default function NewCasePage() {
   const { recordUsage, getRecentForms } = useFormHistory();
   const { settings, loaded: settingsLoaded } = useUserSettings();
   const { errors: validationErrors, warnings: validationWarnings, validateCaseCreation, clearValidation, hasErrors: hasValidationErrors } = usePreSubmitValidation();
+  const { checkLimitation, result: limitationResult, logRisk } = useLimitationCheck();
   const [currentStep, setCurrentStep] = useState(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [showValidationPanel, setShowValidationPanel] = useState(false);
+  const [showLimitationModal, setShowLimitationModal] = useState(false);
+  const [limitationCheckResult, setLimitationCheckResult] = useState<LimitationCheckResult | null>(null);
   const [showWizard, setShowWizard] = useState(true);
   const [showDocumentSelector, setShowDocumentSelector] = useState(true);
   const [documentSource, setDocumentSource] = useState<DocumentSourceType>(null);
@@ -549,7 +554,14 @@ export default function NewCasePage() {
       };
       
       const clientResponse = await api.post("/clients", clientData);
-      const savedClient = clientResponse.data || clientResponse;
+      // API { data: client } döndürüyor, axios da { data: ... } sarıyor
+      const savedClient = clientResponse.data?.data || clientResponse.data || clientResponse;
+      
+      if (!savedClient?.id) {
+        throw new Error("Müvekkil kaydedilemedi - ID alınamadı");
+      }
+      
+      console.log("Müvekkil kaydedildi:", savedClient.id, savedClient.displayName);
       
       // 2. Vekalet oluştur
       const poaData = {
@@ -571,20 +583,44 @@ export default function NewCasePage() {
         lawyerIds: [] as string[],
       };
       
-      // Avukatları eşleştir
+      // Avukatları eşleştir - TCKN veya isim ile
       if (result.lawyers && result.lawyers.length > 0) {
         for (const lawyer of result.lawyers) {
-          const matchedLawyer = existingLawyers.find(
-            l => l.barNumber === lawyer.barNumber || 
-                 (l.name?.toLowerCase() === lawyer.name?.split(' ')[0]?.toLowerCase() && 
-                  l.surname?.toLowerCase() === lawyer.name?.split(' ').slice(1).join(' ')?.toLowerCase())
+          // Önce TCKN ile eşleştir (barNumber aslında TCKN olabilir)
+          let matchedLawyer = existingLawyers.find(
+            l => l.tckn === lawyer.barNumber
           );
+          
+          // TCKN ile bulunamadıysa baro sicil no ile dene
+          if (!matchedLawyer && lawyer.barNumber) {
+            matchedLawyer = existingLawyers.find(
+              l => l.barNumber === lawyer.barNumber
+            );
+          }
+          
+          // Hala bulunamadıysa isim ile eşleştir
+          if (!matchedLawyer && lawyer.name) {
+            const nameParts = lawyer.name.split(' ');
+            const firstName = nameParts[0]?.toLowerCase();
+            const lastName = nameParts.slice(1).join(' ')?.toLowerCase();
+            
+            matchedLawyer = existingLawyers.find(
+              l => l.name?.toLowerCase() === firstName && 
+                   l.surname?.toLowerCase() === lastName
+            );
+          }
+          
           if (matchedLawyer) {
             poaData.lawyerIds.push(matchedLawyer.id);
           }
         }
       } else if (result.lawyerBarNumber) {
-        const matchedLawyer = existingLawyers.find(l => l.barNumber === result.lawyerBarNumber);
+        // Önce TCKN olarak dene
+        let matchedLawyer = existingLawyers.find(l => l.tckn === result.lawyerBarNumber);
+        // Sonra baro sicil no olarak dene
+        if (!matchedLawyer) {
+          matchedLawyer = existingLawyers.find(l => l.barNumber === result.lawyerBarNumber);
+        }
         if (matchedLawyer) {
           poaData.lawyerIds.push(matchedLawyer.id);
         }
@@ -606,6 +642,7 @@ export default function NewCasePage() {
   };
 
   // Vekalet kontrolü - müvekkil ve avukat kombinasyonları için
+  // Seçili avukatlardan herhangi birine verilmiş vekalet varsa geçerli sayılır
   const checkPoaValidity = async () => {
     if (creditors.length === 0 || lawyers.length === 0) {
       setPoaWarnings([]);
@@ -616,36 +653,45 @@ export default function NewCasePage() {
     const warnings: typeof poaWarnings = [];
 
     try {
+      // Seçili avukatların ID'lerini al
+      const lawyerIds = lawyers.filter(l => l.id).map(l => l.id as string);
+      
+      if (lawyerIds.length === 0) {
+        setPoaWarnings([]);
+        return;
+      }
+
       for (const creditor of creditors) {
         if (!creditor.id) continue; // Yeni eklenen müvekkiller için kontrol yapma
         
-        for (const lawyer of lawyers) {
-          if (!lawyer.id) continue; // Yeni eklenen avukatlar için kontrol yapma
+        try {
+          // Yeni endpoint: Seçili avukatlardan herhangi birine verilmiş vekalet var mı?
+          const response = await api.post('/poa/check/valid-for-lawyers', {
+            clientId: creditor.id,
+            lawyerIds: lawyerIds,
+          });
+          const result = response.data;
           
-          try {
-            const response = await api.get(`/poa/check/valid?clientId=${creditor.id}&lawyerId=${lawyer.id}`);
-            const result = response.data;
-            
-            if (!result.isValid) {
-              warnings.push({
-                clientId: creditor.id,
-                clientName: creditor.name,
-                lawyerId: lawyer.id,
-                lawyerName: `${lawyer.name} ${lawyer.surname}`,
-                message: result.message || "Geçerli vekalet bulunamadı",
-              });
-            } else if (result.daysRemaining !== undefined && result.daysRemaining <= 30) {
-              warnings.push({
-                clientId: creditor.id,
-                clientName: creditor.name,
-                lawyerId: lawyer.id,
-                lawyerName: `${lawyer.name} ${lawyer.surname}`,
-                message: `Vekalet ${result.daysRemaining} gün içinde sona erecek`,
-              });
-            }
-          } catch (err) {
-            // API hatası - sessizce geç
+          if (!result.isValid) {
+            warnings.push({
+              clientId: creditor.id,
+              clientName: creditor.name,
+              lawyerId: "", // Artık tek avukat değil
+              lawyerName: "Seçili avukatlar",
+              message: result.message || "Seçili avukatlardan hiçbirine verilmiş geçerli vekalet bulunamadı",
+            });
+          } else if (result.daysRemaining !== undefined && result.daysRemaining <= 30) {
+            warnings.push({
+              clientId: creditor.id,
+              clientName: creditor.name,
+              lawyerId: "",
+              lawyerName: "Seçili avukatlar",
+              message: result.message || `Vekalet ${result.daysRemaining} gün içinde sona erecek`,
+            });
           }
+        } catch (err) {
+          // API hatası - sessizce geç
+          console.error("Vekalet kontrolü hatası:", err);
         }
       }
       
@@ -954,7 +1000,8 @@ export default function NewCasePage() {
       if (selectedForm) recordUsage(selectedForm.code);
       // Başarılı kayıt sonrası taslağı temizle
       clearWizardState();
-      router.push(`/cases/${response.id}`);
+      // Yeni takip oluşturuldu - belgeler sekmesine yönlendir
+      router.push(`/cases/${response.id}?tab=documents`);
     } catch (err: any) { setError(err.message || "Takip oluşturulurken bir hata oluştu"); } finally { setLoading(false); }
   };
 
@@ -1530,6 +1577,7 @@ export default function NewCasePage() {
               documentSource={documentSource}
               borcluSayisi={caseDebtors.length || 1}
               fileNumber={caseData.fileNumber}
+              takipTarihi={caseData.startDate}
               executionOffice={executionOffices.find(o => o.id === caseData.executionOfficeId) ? {
                 name: executionOffices.find(o => o.id === caseData.executionOfficeId)!.name,
                 city: executionOffices.find(o => o.id === caseData.executionOfficeId)!.city,

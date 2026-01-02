@@ -15,6 +15,9 @@ import {
   Loader2,
   MapPin,
   AlertTriangle,
+  ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import {
@@ -28,12 +31,19 @@ import { NewDebtorModal } from "@/components/debtor/NewDebtorModal";
 
 const PAGE_SIZE = 50; // Sayfa başına gösterilecek kayıt sayısı
 
+type DebtorSortField = "name" | "type" | "identityNo" | "phone" | "caseCount";
+type SortDirection = "asc" | "desc" | null;
+
 export default function DebtorsPage() {
   const [debtors, setDebtors] = useState<Debtor[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<DebtorType | "ALL">("ALL");
   const [currentPage, setCurrentPage] = useState(1);
+
+  // Sıralama state'leri
+  const [sortField, setSortField] = useState<DebtorSortField | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
 
   // Modal states
   const [showNewModal, setShowNewModal] = useState(false);
@@ -140,11 +150,61 @@ export default function DebtorsPage() {
     return matchesSearch && matchesType;
   });
 
+  // Sıralama fonksiyonu
+  const handleSort = (field: DebtorSortField) => {
+    if (sortField === field) {
+      if (sortDirection === "asc") {
+        setSortDirection("desc");
+      } else if (sortDirection === "desc") {
+        setSortDirection(null);
+        setSortField(null);
+      } else {
+        setSortDirection("asc");
+      }
+    } else {
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
+
+  // Sıralanmış liste
+  const sortedFiltered = [...filtered].sort((a, b) => {
+    if (!sortField || !sortDirection) return 0;
+    
+    let aValue: any, bValue: any;
+    
+    if (sortField === "caseCount") {
+      aValue = a._count?.caseDebtors || 0;
+      bValue = b._count?.caseDebtors || 0;
+      return sortDirection === "asc" ? aValue - bValue : bValue - aValue;
+    }
+    
+    aValue = (a[sortField] || "").toString().toLowerCase();
+    bValue = (b[sortField] || "").toString().toLowerCase();
+    
+    if (sortDirection === "asc") {
+      return aValue.localeCompare(bValue, "tr");
+    } else {
+      return bValue.localeCompare(aValue, "tr");
+    }
+  });
+
+  // Sıralama ikonu
+  const SortIcon = ({ field }: { field: DebtorSortField }) => {
+    if (sortField !== field) {
+      return <ChevronsUpDown className="h-3 w-3 text-gray-400" />;
+    }
+    if (sortDirection === "asc") {
+      return <ChevronUp className="h-3 w-3 text-primary" />;
+    }
+    return <ChevronDown className="h-3 w-3 text-primary" />;
+  };
+
   // Sayfalama hesaplamaları
-  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const totalPages = Math.ceil(sortedFiltered.length / PAGE_SIZE);
   const startIndex = (currentPage - 1) * PAGE_SIZE;
   const endIndex = startIndex + PAGE_SIZE;
-  const paginatedDebtors = filtered.slice(startIndex, endIndex);
+  const paginatedDebtors = sortedFiltered.slice(startIndex, endIndex);
 
   // Filtre veya arama değiştiğinde ilk sayfaya dön
   useEffect(() => {
@@ -327,11 +387,36 @@ export default function DebtorsPage() {
             <table className="w-full">
               <thead>
                 <tr>
-                  <th className="text-left px-4 py-3 text-sm font-medium w-[30%]">Borçlu</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium w-[10%]">Tür</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium w-[15%]">Kimlik/VKN</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium w-[25%]">İletişim</th>
-                  <th className="text-center px-4 py-3 text-sm font-medium w-[10%]">Dosya</th>
+                  <th 
+                    className="text-left px-4 py-3 text-sm font-medium w-[30%] cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("name")}
+                  >
+                    <div className="flex items-center gap-1">Borçlu <SortIcon field="name" /></div>
+                  </th>
+                  <th 
+                    className="text-left px-4 py-3 text-sm font-medium w-[10%] cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("type")}
+                  >
+                    <div className="flex items-center gap-1">Tür <SortIcon field="type" /></div>
+                  </th>
+                  <th 
+                    className="text-left px-4 py-3 text-sm font-medium w-[15%] cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("identityNo")}
+                  >
+                    <div className="flex items-center gap-1">Kimlik/VKN <SortIcon field="identityNo" /></div>
+                  </th>
+                  <th 
+                    className="text-left px-4 py-3 text-sm font-medium w-[25%] cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("phone")}
+                  >
+                    <div className="flex items-center gap-1">İletişim <SortIcon field="phone" /></div>
+                  </th>
+                  <th 
+                    className="text-center px-4 py-3 text-sm font-medium w-[10%] cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("caseCount")}
+                  >
+                    <div className="flex items-center justify-center gap-1">Dosya <SortIcon field="caseCount" /></div>
+                  </th>
                   <th className="text-center px-4 py-3 text-sm font-medium w-[10%]">İşlem</th>
                 </tr>
               </thead>
@@ -408,9 +493,9 @@ export default function DebtorsPage() {
           {/* Sayfalama Footer */}
           <div className="bg-gray-50 border-t px-4 py-3 flex items-center justify-between flex-shrink-0">
             <div className="text-sm text-gray-500">
-              Toplam {filtered.length} kayıt • Sayfa {currentPage}/{totalPages || 1}
+              Toplam {sortedFiltered.length} kayıt • Sayfa {currentPage}/{totalPages || 1}
               <span className="ml-2 text-gray-400">
-                ({startIndex + 1}-{Math.min(endIndex, filtered.length)} arası gösteriliyor)
+                ({startIndex + 1}-{Math.min(endIndex, sortedFiltered.length)} arası gösteriliyor)
               </span>
             </div>
             <div className="flex items-center gap-1">

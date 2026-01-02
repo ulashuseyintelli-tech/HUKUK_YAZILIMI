@@ -358,11 +358,11 @@ export class ClientNotificationService {
 
   // E-posta şablonlarını getir
   async getEmailTemplates(tenantId: string, category?: string) {
-    return this.prisma.emailTemplate.findMany({
+    return this.prisma.messageTemplate.findMany({
       where: {
         tenantId,
         isActive: true,
-        ...(category ? { category } : {}),
+        ...(category ? { category: category as any } : {}),
       },
       orderBy: { name: "asc" },
     });
@@ -380,10 +380,17 @@ export class ClientNotificationService {
       isDefault?: boolean;
     }
   ) {
-    return this.prisma.emailTemplate.create({
+    return this.prisma.messageTemplate.create({
       data: {
         tenantId,
-        ...data,
+        code: data.code,
+        name: data.name,
+        category: data.category as any,
+        channel: 'EMAIL',
+        subject: data.subject,
+        body: data.body,
+        isActive: true,
+        isSystem: false,
       },
     });
   }
@@ -400,9 +407,14 @@ export class ClientNotificationService {
       isDefault?: boolean;
     }
   ) {
-    return this.prisma.emailTemplate.update({
+    return this.prisma.messageTemplate.update({
       where: { id: templateId },
-      data,
+      data: {
+        name: data.name,
+        subject: data.subject,
+        body: data.body,
+        isActive: data.isActive,
+      },
     });
   }
 
@@ -452,13 +464,23 @@ export class ClientNotificationService {
     ];
 
     for (const template of templates) {
-      const existing = await this.prisma.emailTemplate.findUnique({
-        where: { tenantId_code: { tenantId, code: template.code } },
+      const existing = await this.prisma.messageTemplate.findFirst({
+        where: { tenantId, code: template.code },
       });
 
       if (!existing) {
-        await this.prisma.emailTemplate.create({
-          data: { tenantId, ...template },
+        await this.prisma.messageTemplate.create({
+          data: { 
+            tenantId, 
+            code: template.code,
+            name: template.name,
+            category: template.category as any,
+            channel: 'EMAIL',
+            subject: template.subject,
+            body: template.body,
+            isActive: true,
+            isSystem: true,
+          },
         });
       }
     }

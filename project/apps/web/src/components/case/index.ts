@@ -67,3 +67,8 @@ export { ESignPanel } from "./ESignPanel";
 export { BankPanel } from "./BankPanel";
 export { CaseDetailTabs } from "./CaseDetailTabs";
 export { BulkOperationsPanel } from "./BulkOperationsPanel";
+export { RelatedLawsuitsPanel } from "./RelatedLawsuitsPanel";
+export { UyapXmlPanel } from "./UyapXmlPanel";
+export { UyapStatusPanel } from "./UyapStatusPanel";
+export { BulkXmlExport } from "./BulkXmlExport";
+export { XmlImport } from "./XmlImport";

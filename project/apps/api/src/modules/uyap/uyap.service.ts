@@ -695,4 +695,281 @@ export class UyapService {
 
     return { total, pending, success, failed };
   }
+
+  // ==================== DAVA AÇMA (İLGİLİ DAVALAR) ====================
+
+  /**
+   * UYAP'a ceza davası (şikayet) gönder
+   * Karşılıksız çek, dolandırıcılık vb. ceza davaları için
+   */
+  async submitCriminalComplaint(request: {
+    caseId: string;
+    lawsuitType: 'KARSILIKSIZ_CEK' | 'DOLANDIRICILIK' | 'GUVENI_KOTUYE_KULLANMA' | 'RESMI_BELGEDE_SAHTECILIK';
+    uyapDavaTuru: string;
+    courtType: string;
+    documentContent: string; // Base64 encoded PDF/DOCX
+    documentName: string;
+    complainant: {
+      name: string;
+      identityNo?: string;
+      address?: string;
+    };
+    suspect: {
+      name: string;
+      identityNo?: string;
+      address?: string;
+    };
+    instrumentInfo?: {
+      type: 'CEK' | 'SENET';
+      serialNo: string;
+      amount: number;
+      currency: string;
+      presentationDate?: string;
+      dishonorDate?: string;
+    };
+    clientId?: string;
+    lawyerId?: string;
+    tenantId?: string;
+    skipPoaCheck?: boolean;
+  }): Promise<UyapResponse> {
+    // Vekalet kontrolü
+    if (!request.skipPoaCheck && request.clientId && request.lawyerId && request.tenantId) {
+      const poaValidation = await this.validatePowerOfAttorney(
+        request.clientId,
+        request.lawyerId,
+        request.tenantId,
+      );
+
+      if (!poaValidation.isValid) {
+        this.logger.error(`UYAP ceza davası gönderimi engellendi - Vekalet hatası: ${poaValidation.message}`);
+        throw new BadRequestException({
+          code: 'POA_VALIDATION_FAILED',
+          message: `Şikayet dilekçesi gönderilemez: ${poaValidation.message}`,
+        });
+      }
+    }
+
+    const requestId = await this.logRequest('submitCriminalComplaint', {
+      caseId: request.caseId,
+      lawsuitType: request.lawsuitType,
+      uyapDavaTuru: request.uyapDavaTuru,
+      courtType: request.courtType,
+      documentName: request.documentName,
+      complainant: request.complainant.name,
+      suspect: request.suspect.name,
+      hasInstrument: !!request.instrumentInfo,
+    });
+
+    try {
+      this.logger.log(`[STUB] UYAP'a ceza davası gönderiliyor: ${request.lawsuitType} - ${request.documentName}`);
+
+      // UYAP dava türü kodunu belirle
+      const uyapCodes: Record<string, string> = {
+        'KARSILIKSIZ_CEK': 'CEZA_KARSILIKSIZ_CEK',
+        'DOLANDIRICILIK': 'CEZA_DOLANDIRICILIK',
+        'GUVENI_KOTUYE_KULLANMA': 'CEZA_GUVENI_KOTUYE_KULLANMA',
+        'RESMI_BELGEDE_SAHTECILIK': 'CEZA_SAHTECILIK',
+      };
+
+      const response: UyapResponse = {
+        success: true,
+        requestId,
+        evkNo: `CEZA-${Date.now()}`,
+        data: {
+          message: 'Ceza davası şikayeti UYAP kuyruğuna alındı (STUB)',
+          lawsuitType: request.lawsuitType,
+          uyapDavaTuru: uyapCodes[request.lawsuitType] || request.uyapDavaTuru,
+          courtType: request.courtType,
+          documentName: request.documentName,
+          submittedAt: new Date(),
+          estimatedProcessing: '3-5 iş günü',
+          // Gerçek implementasyonda UYAP'tan gelecek:
+          // uyapDosyaNo: string
+          // mahkemeEsasNo: string
+          // durusmatarihi: Date
+        },
+      };
+
+      // Case'e ilgili dava kaydı ekle (opsiyonel)
+      try {
+        await this.prisma.caseLifecycle.create({
+          data: {
+            caseId: request.caseId,
+            stage: 'ENFORCEMENT',
+            action: 'CRIMINAL_COMPLAINT_SUBMITTED',
+            description: `${request.lawsuitType} şikayeti UYAP'a gönderildi`,
+            metadata: {
+              lawsuitType: request.lawsuitType,
+              evkNo: response.evkNo,
+              courtType: request.courtType,
+            },
+          },
+        });
+      } catch (e) {
+        this.logger.warn('Lifecycle event kaydedilemedi:', e);
+      }
+
+      await this.logResponse(requestId, response);
+      return response;
+    } catch (error: any) {
+      const errorResponse: UyapResponse = {
+        success: false,
+        requestId,
+        errorCode: 'UYAP_CRIMINAL_COMPLAINT_ERROR',
+        errorMessage: error.message,
+      };
+      await this.logResponse(requestId, errorResponse, error.message);
+      return errorResponse;
+    }
+  }
+
+  /**
+   * UYAP'a hukuk davası gönder
+   * İtirazın iptali, tasarrufun iptali vb. hukuk davaları için
+   */
+  async submitCivilLawsuit(request: {
+    caseId: string;
+    lawsuitType: 'ITIRAZIN_IPTALI' | 'ITIRAZIN_KALDIRILMASI' | 'TASARRUFUN_IPTALI' | 'MENFI_TESPIT' | 'ISTIRDAT';
+    uyapDavaTuru: string;
+    courtType: string;
+    documentContent: string;
+    documentName: string;
+    plaintiff: {
+      name: string;
+      identityNo?: string;
+      address?: string;
+    };
+    defendant: {
+      name: string;
+      identityNo?: string;
+      address?: string;
+    };
+    claimAmount?: number;
+    currency?: string;
+    relatedExecutionFile?: string;
+    clientId?: string;
+    lawyerId?: string;
+    tenantId?: string;
+    skipPoaCheck?: boolean;
+  }): Promise<UyapResponse> {
+    // Vekalet kontrolü
+    if (!request.skipPoaCheck && request.clientId && request.lawyerId && request.tenantId) {
+      const poaValidation = await this.validatePowerOfAttorney(
+        request.clientId,
+        request.lawyerId,
+        request.tenantId,
+      );
+
+      if (!poaValidation.isValid) {
+        this.logger.error(`UYAP hukuk davası gönderimi engellendi - Vekalet hatası: ${poaValidation.message}`);
+        throw new BadRequestException({
+          code: 'POA_VALIDATION_FAILED',
+          message: `Dava dilekçesi gönderilemez: ${poaValidation.message}`,
+        });
+      }
+    }
+
+    const requestId = await this.logRequest('submitCivilLawsuit', {
+      caseId: request.caseId,
+      lawsuitType: request.lawsuitType,
+      uyapDavaTuru: request.uyapDavaTuru,
+      courtType: request.courtType,
+      documentName: request.documentName,
+      plaintiff: request.plaintiff.name,
+      defendant: request.defendant.name,
+      claimAmount: request.claimAmount,
+    });
+
+    try {
+      this.logger.log(`[STUB] UYAP'a hukuk davası gönderiliyor: ${request.lawsuitType} - ${request.documentName}`);
+
+      const response: UyapResponse = {
+        success: true,
+        requestId,
+        evkNo: `HUKUK-${Date.now()}`,
+        data: {
+          message: 'Hukuk davası dilekçesi UYAP kuyruğuna alındı (STUB)',
+          lawsuitType: request.lawsuitType,
+          uyapDavaTuru: request.uyapDavaTuru,
+          courtType: request.courtType,
+          documentName: request.documentName,
+          claimAmount: request.claimAmount,
+          currency: request.currency || 'TRY',
+          submittedAt: new Date(),
+          estimatedProcessing: '5-7 iş günü',
+        },
+      };
+
+      // Case'e ilgili dava kaydı ekle
+      try {
+        await this.prisma.caseLifecycle.create({
+          data: {
+            caseId: request.caseId,
+            stage: 'ENFORCEMENT',
+            action: 'CIVIL_LAWSUIT_SUBMITTED',
+            description: `${request.lawsuitType} davası UYAP'a gönderildi`,
+            metadata: {
+              lawsuitType: request.lawsuitType,
+              evkNo: response.evkNo,
+              courtType: request.courtType,
+              claimAmount: request.claimAmount,
+            },
+          },
+        });
+      } catch (e) {
+        this.logger.warn('Lifecycle event kaydedilemedi:', e);
+      }
+
+      await this.logResponse(requestId, response);
+      return response;
+    } catch (error: any) {
+      const errorResponse: UyapResponse = {
+        success: false,
+        requestId,
+        errorCode: 'UYAP_CIVIL_LAWSUIT_ERROR',
+        errorMessage: error.message,
+      };
+      await this.logResponse(requestId, errorResponse, error.message);
+      return errorResponse;
+    }
+  }
+
+  /**
+   * İlgili dava durumunu sorgula
+   */
+  async queryRelatedLawsuitStatus(evkNo: string): Promise<UyapResponse> {
+    const requestId = await this.logRequest('queryRelatedLawsuitStatus', { evkNo });
+
+    try {
+      this.logger.log(`[STUB] İlgili dava durumu sorgulanıyor: ${evkNo}`);
+
+      const response: UyapResponse = {
+        success: true,
+        requestId,
+        data: {
+          evkNo,
+          status: 'PENDING', // PENDING, ACCEPTED, REJECTED, IN_PROGRESS, COMPLETED
+          queryDate: new Date(),
+          message: 'İlgili dava durumu sorgusu henüz aktif değil (STUB)',
+          // Gerçek implementasyonda UYAP'tan gelecek:
+          // mahkemeEsasNo: string
+          // durusmatarihi: Date
+          // sonrakiIslem: string
+          // kararOzeti: string
+        },
+      };
+
+      await this.logResponse(requestId, response);
+      return response;
+    } catch (error: any) {
+      const errorResponse: UyapResponse = {
+        success: false,
+        requestId,
+        errorCode: 'UYAP_LAWSUIT_STATUS_ERROR',
+        errorMessage: error.message,
+      };
+      await this.logResponse(requestId, errorResponse, error.message);
+      return errorResponse;
+    }
+  }
 }

@@ -55,6 +55,14 @@ import { ESignModule } from "./modules/esign/esign.module";
 import { BankModule } from "./modules/bank/bank.module";
 import { SummaryEngineModule } from "./modules/summary-engine/summary-engine.module";
 import { PrecautionaryOrderModule } from "./modules/precautionary-order/precautionary-order.module";
+import { LimitationEngineModule } from "./modules/limitation-engine/limitation-engine.module";
+import { RelatedLawsuitsModule } from "./modules/related-lawsuits/related-lawsuits.module";
+import { PaymentInstructionModule } from "./modules/payment-instruction/payment-instruction.module";
+import { ExpenseRequestModule } from "./modules/expense-request/expense-request.module";
+import { MessageTemplateModule } from "./modules/message-template/message-template.module";
+import { CostPackageModule } from "./modules/cost-package/cost-package.module";
+import { CaseBalanceModule } from "./modules/case-balance/case-balance.module";
+import { StageTriggerModule } from "./modules/stage-trigger/stage-trigger.module";
 
 @Module({
   imports: [
@@ -116,6 +124,14 @@ import { PrecautionaryOrderModule } from "./modules/precautionary-order/precauti
     BankModule,
     SummaryEngineModule,
     PrecautionaryOrderModule,
+    LimitationEngineModule,
+    RelatedLawsuitsModule,
+    PaymentInstructionModule,
+    ExpenseRequestModule,
+    MessageTemplateModule,
+    CostPackageModule,
+    CaseBalanceModule,
+    StageTriggerModule,
   ],
 })
 export class AppModule {}

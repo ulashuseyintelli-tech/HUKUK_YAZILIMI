@@ -4,6 +4,7 @@ export enum DebtorType {
   INDIVIDUAL = "INDIVIDUAL",
   COMPANY = "COMPANY",
   PUBLIC_INSTITUTION = "PUBLIC_INSTITUTION",
+  ESTATE = "ESTATE", // Tereke (Miras Ortaklığı)
 }
 
 export enum DebtorRole {
@@ -26,6 +27,19 @@ export enum NotificationMode {
   KEP = "KEP",
   UETS = "UETS",
   ILANEN = "ILANEN",
+}
+
+// Tebligat Hukuki Yöntemi (TK'ya göre)
+export enum TebligatLegalMethod {
+  ELECTRONIC = "ELECTRONIC",   // Elektronik (UETS/KEP) - Zorunlu olanlar için
+  POSTAL = "POSTAL",           // Posta yoluyla (PTT)
+  ILANEN = "ILANEN",           // İlanen tebligat
+}
+
+// Tebligat Hızı (sadece POSTAL için geçerli)
+export enum TebligatDeliveryType {
+  NORMAL = "NORMAL",           // Normal tebligat
+  HIZLI = "HIZLI",             // Hızlı tebligat (ek masraf)
 }
 
 export enum DebtorRiskLevel {
@@ -101,6 +115,12 @@ export interface Debtor {
   institutionType?: PublicInstitutionType;
   parentInstitution?: string;
   authorizedPerson?: string;
+  // Estate (Tereke) - Miras Ortaklığı
+  deceasedName?: string;      // Murisin adı soyadı
+  deceasedTckn?: string;      // Murisin TCKN'si
+  deathDate?: string;         // Ölüm tarihi
+  inheritanceDocPath?: string; // Veraset ilamı dosya yolu
+  estateHeirs?: EstateHeir[]; // Mirasçılar
   // Contact
   email?: string;
   phone?: string;
@@ -114,6 +134,20 @@ export interface Debtor {
   _count?: { caseDebtors: number; assets: number };
 }
 
+// Tereke Mirasçısı
+export interface EstateHeir {
+  id?: string;
+  debtorId?: string;
+  name: string;           // Mirasçı adı soyadı
+  tckn?: string;          // Mirasçı TCKN
+  address?: string;       // Mirasçı adresi
+  city?: string;          // İl
+  district?: string;      // İlçe
+  shareRatio?: string;    // Miras payı (ör: "1/4", "1/2")
+  phone?: string;         // Telefon
+  email?: string;         // E-posta
+}
+
 export interface CaseDebtor {
   id?: string;
   debtorId: string;
@@ -122,6 +156,10 @@ export interface CaseDebtor {
   liabilityAmount?: number;
   liabilityType?: string;
   notificationMode: NotificationMode;
+  // Yeni tebligat alanları
+  tebligatLegalMethod?: TebligatLegalMethod;  // Hukuki yöntem
+  tebligatDeliveryType?: TebligatDeliveryType; // Hız (sadece POSTAL için)
+  isElectronicRequired?: boolean;              // Elektronik zorunlu mu?
   selectedAddressId?: string;
   selectedAddress?: DebtorAddress;
   prepareNotification: boolean;
@@ -131,6 +169,12 @@ export interface CaseDebtor {
   debtorLawyerBarNo?: string;
   caseNote?: string;
   isNew?: boolean;
+  // Tebligat takip alanları
+  notificationBarcode?: string;        // PTT barkod numarası
+  notificationSentDate?: string;       // Gönderim tarihi
+  notificationDeliveredDate?: string;  // Tebliğ tarihi
+  notificationStatus?: string;         // Durum
+  notificationNote?: string;           // Not
 }
 
 export interface ThirdParty {
@@ -160,6 +204,7 @@ export const DebtorTypeLabels: Record<DebtorType, string> = {
   [DebtorType.INDIVIDUAL]: "Gerçek Kişi",
   [DebtorType.COMPANY]: "Tüzel Kişi",
   [DebtorType.PUBLIC_INSTITUTION]: "Kamu Kurumu",
+  [DebtorType.ESTATE]: "Tereke (Miras Ortaklığı)",
 };
 
 export const DebtorRoleLabels: Record<DebtorRole, string> = {
@@ -182,6 +227,17 @@ export const NotificationModeLabels: Record<NotificationMode, string> = {
   [NotificationMode.KEP]: "KEP",
   [NotificationMode.UETS]: "UETS",
   [NotificationMode.ILANEN]: "İlanen",
+};
+
+export const TebligatLegalMethodLabels: Record<TebligatLegalMethod, string> = {
+  [TebligatLegalMethod.ELECTRONIC]: "E-Tebligat",
+  [TebligatLegalMethod.POSTAL]: "Posta ile Tebligat",
+  [TebligatLegalMethod.ILANEN]: "İlanen Tebligat",
+};
+
+export const TebligatDeliveryTypeLabels: Record<TebligatDeliveryType, string> = {
+  [TebligatDeliveryType.NORMAL]: "Normal",
+  [TebligatDeliveryType.HIZLI]: "Hızlı (+masraf)",
 };
 
 export const DebtorRiskLabels: Record<DebtorRiskLevel, string> = {

@@ -1,10 +1,10 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { X, Loader2, Users, Building2, Landmark, Plus, MapPin, Search } from "lucide-react";
+import { X, Loader2, Users, Building2, Landmark, Plus, MapPin, Search, Scroll, Trash2 } from "lucide-react";
 import { api } from "@/lib/api";
 import {
-  Debtor, DebtorType, DebtorAddress, PublicInstitutionType,
+  Debtor, DebtorType, DebtorAddress, PublicInstitutionType, EstateHeir,
   DebtorTypeLabels, PublicInstitutionTypeLabels,
 } from "@/types/debtor";
 
@@ -68,6 +68,15 @@ export function NewDebtorModal({ initialType, editDebtor, onSave, onClose }: New
   const [institutionType, setInstitutionType] = useState<PublicInstitutionType | "">(editDebtor?.institutionType || "");
   const [parentInstitution, setParentInstitution] = useState(editDebtor?.parentInstitution || "");
 
+  // Estate (Tereke) fields
+  const [deceasedName, setDeceasedName] = useState(editDebtor?.deceasedName || "");
+  const [deceasedTckn, setDeceasedTckn] = useState(editDebtor?.deceasedTckn || "");
+  const [deathDate, setDeathDate] = useState(editDebtor?.deathDate?.split("T")[0] || "");
+  const [estateHeirs, setEstateHeirs] = useState<Partial<EstateHeir>[]>(
+    editDebtor?.estateHeirs?.length 
+      ? editDebtor.estateHeirs.map(h => ({ ...h }))
+      : [{ name: "", tckn: "", address: "", city: "", shareRatio: "" }]
+  );
 
   // Contact fields
   const [phone, setPhone] = useState(editDebtor?.phone || "");
@@ -83,6 +92,22 @@ export function NewDebtorModal({ initialType, editDebtor, onSave, onClose }: New
 
   const addAddress = () => {
     setAddresses([...addresses, { addressType: "EV", street: "", city: "", district: "", isPrimary: false, isMernis: false }]);
+  };
+
+  // Estate heir functions
+  const addHeir = () => {
+    setEstateHeirs([...estateHeirs, { name: "", tckn: "", address: "", city: "", shareRatio: "" }]);
+  };
+
+  const updateHeir = (index: number, field: string, value: string) => {
+    const updated = [...estateHeirs];
+    updated[index] = { ...updated[index], [field]: value };
+    setEstateHeirs(updated);
+  };
+
+  const removeHeir = (index: number) => {
+    if (estateHeirs.length <= 1) return;
+    setEstateHeirs(estateHeirs.filter((_, i) => i !== index));
   };
 
   const updateAddress = (index: number, field: string, value: any) => {
@@ -117,10 +142,21 @@ export function NewDebtorModal({ initialType, editDebtor, onSave, onClose }: New
       setError("Kurum adı zorunludur");
       return;
     }
+    if (type === DebtorType.ESTATE) {
+      if (!deceasedName) {
+        setError("Murisin (müteveffanın) adı zorunludur");
+        return;
+      }
+      const validHeirs = estateHeirs.filter(h => h.name && h.name.trim());
+      if (validHeirs.length === 0) {
+        setError("En az bir mirasçı girilmelidir");
+        return;
+      }
+    }
 
-    // At least one address with street and city
+    // At least one address with street and city (tereke hariç - mirasçı adresleri kullanılır)
     const validAddresses = addresses.filter(a => a.street && a.city);
-    if (validAddresses.length === 0) {
+    if (type !== DebtorType.ESTATE && validAddresses.length === 0) {
       setError("En az bir geçerli adres girilmelidir");
       return;
     }
@@ -152,6 +188,23 @@ export function NewDebtorModal({ initialType, editDebtor, onSave, onClose }: New
         payload.detsisNo = detsisNo || undefined;
         payload.institutionType = institutionType || undefined;
         payload.parentInstitution = parentInstitution || undefined;
+      } else if (type === DebtorType.ESTATE) {
+        payload.deceasedName = deceasedName;
+        payload.deceasedTckn = deceasedTckn || undefined;
+        payload.deathDate = deathDate || undefined;
+        // Mirasçıları ekle
+        payload.estateHeirs = estateHeirs
+          .filter(h => h.name && h.name.trim())
+          .map(h => ({
+            name: h.name,
+            tckn: h.tckn || undefined,
+            address: h.address || undefined,
+            city: h.city || undefined,
+            district: h.district || undefined,
+            shareRatio: h.shareRatio || undefined,
+            phone: h.phone || undefined,
+            email: h.email || undefined,
+          }));
       }
 
       let res;
@@ -178,6 +231,7 @@ export function NewDebtorModal({ initialType, editDebtor, onSave, onClose }: New
             {type === DebtorType.INDIVIDUAL && <Users className="h-5 w-5 text-emerald-500" />}
             {type === DebtorType.COMPANY && <Building2 className="h-5 w-5 text-blue-500" />}
             {type === DebtorType.PUBLIC_INSTITUTION && <Landmark className="h-5 w-5 text-purple-500" />}
+            {type === DebtorType.ESTATE && <Scroll className="h-5 w-5 text-amber-500" />}
             {isEditMode ? "Borçlu Düzenle" : "Yeni Borçlu Ekle"}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
@@ -193,22 +247,66 @@ export function NewDebtorModal({ initialType, editDebtor, onSave, onClose }: New
           {/* Tip Seçimi */}
           <div className="mb-4">
             <label className="block text-sm font-medium mb-2">Borçlu Türü</label>
-            <div className="flex gap-2">
-              {Object.entries(DebtorTypeLabels).map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => setType(value as DebtorType)}
-                  className={`flex-1 py-2 px-3 rounded-lg text-sm font-medium border transition-colors ${
-                    type === value
-                      ? "bg-primary text-white border-primary"
-                      : "bg-white hover:bg-gray-50 border-gray-200"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
+            <div className="flex gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={() => setType(DebtorType.INDIVIDUAL)}
+                disabled={type === DebtorType.ESTATE}
+                className={`flex-1 min-w-[100px] py-2 px-3 rounded-lg text-sm font-medium border transition-colors flex items-center justify-center gap-1 ${
+                  type === DebtorType.INDIVIDUAL
+                    ? "bg-emerald-500 text-white border-emerald-500"
+                    : type === DebtorType.ESTATE
+                    ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                    : "bg-white hover:bg-gray-50 border-gray-200"
+                }`}
+              >
+                <Users className="h-4 w-4" /> Gerçek Kişi
+              </button>
+              <button
+                type="button"
+                onClick={() => setType(DebtorType.COMPANY)}
+                disabled={type === DebtorType.ESTATE}
+                className={`flex-1 min-w-[100px] py-2 px-3 rounded-lg text-sm font-medium border transition-colors flex items-center justify-center gap-1 ${
+                  type === DebtorType.COMPANY
+                    ? "bg-blue-500 text-white border-blue-500"
+                    : type === DebtorType.ESTATE
+                    ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                    : "bg-white hover:bg-gray-50 border-gray-200"
+                }`}
+              >
+                <Building2 className="h-4 w-4" /> Tüzel Kişi
+              </button>
+              <button
+                type="button"
+                onClick={() => setType(DebtorType.PUBLIC_INSTITUTION)}
+                disabled={type === DebtorType.ESTATE}
+                className={`flex-1 min-w-[100px] py-2 px-3 rounded-lg text-sm font-medium border transition-colors flex items-center justify-center gap-1 ${
+                  type === DebtorType.PUBLIC_INSTITUTION
+                    ? "bg-purple-500 text-white border-purple-500"
+                    : type === DebtorType.ESTATE
+                    ? "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+                    : "bg-white hover:bg-gray-50 border-gray-200"
+                }`}
+              >
+                <Landmark className="h-4 w-4" /> Kamu Kurumu
+              </button>
+              <button
+                type="button"
+                onClick={() => setType(DebtorType.ESTATE)}
+                className={`flex-1 min-w-[100px] py-2 px-3 rounded-lg text-sm font-medium border transition-colors flex items-center justify-center gap-1 ${
+                  type === DebtorType.ESTATE
+                    ? "bg-amber-500 text-white border-amber-500"
+                    : "bg-white hover:bg-gray-50 border-gray-200"
+                }`}
+              >
+                <Scroll className="h-4 w-4" /> Tereke
+              </button>
             </div>
+            {type === DebtorType.ESTATE && (
+              <p className="text-xs text-amber-600 mt-2">
+                ⚠️ Tereke bir kişilik değildir. Takip mirasçılara yönelir, her mirasçıya ayrı tebligat yapılır.
+              </p>
+            )}
           </div>
 
           {/* Individual Fields */}
@@ -286,25 +384,191 @@ export function NewDebtorModal({ initialType, editDebtor, onSave, onClose }: New
             />
           )}
 
-          {/* Contact Fields */}
-          <div className="grid grid-cols-3 gap-3 mb-4">
-            <div>
-              <label className="block text-xs font-medium mb-1">Telefon</label>
-              <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="05XX XXX XX XX" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary" />
+          {/* Estate (Tereke) Fields */}
+          {type === DebtorType.ESTATE && (
+            <div className="mb-4">
+              {/* Muris Bilgileri */}
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 mb-3">
+                <h4 className="text-sm font-medium text-amber-800 mb-2 flex items-center gap-1">
+                  <Scroll className="h-4 w-4" /> Muris (Müteveffa) Bilgileri
+                </h4>
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2">
+                    <label className="block text-xs font-medium mb-1">Murisin Adı Soyadı <span className="text-red-500">*</span></label>
+                    <input
+                      type="text"
+                      value={deceasedName}
+                      onChange={(e) => setDeceasedName(e.target.value)}
+                      placeholder="Ör: Ahmet Yılmaz"
+                      className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Murisin TCKN</label>
+                    <input
+                      type="text"
+                      value={deceasedTckn}
+                      onChange={(e) => setDeceasedTckn(e.target.value.replace(/\D/g, "").slice(0, 11))}
+                      maxLength={11}
+                      placeholder="11 haneli"
+                      className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium mb-1">Ölüm Tarihi</label>
+                    <input
+                      type="date"
+                      value={deathDate}
+                      onChange={(e) => setDeathDate(e.target.value)}
+                      className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-amber-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Mirasçılar */}
+              <div className="border rounded-lg p-3">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-sm font-medium flex items-center gap-1">
+                    <Users className="h-4 w-4" /> Mirasçılar
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={addHeir}
+                    className="text-xs text-amber-600 hover:text-amber-700 flex items-center gap-1"
+                  >
+                    <Plus className="h-3 w-3" /> Mirasçı Ekle
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {estateHeirs.map((heir, index) => (
+                    <div key={index} className="bg-gray-50 border rounded-lg p-2 relative">
+                      {estateHeirs.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeHeir(index)}
+                          className="absolute top-2 right-2 text-gray-400 hover:text-red-500"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      )}
+                      <div className="grid grid-cols-4 gap-2">
+                        <div className="col-span-2">
+                          <label className="block text-xs font-medium mb-1">Ad Soyad <span className="text-red-500">*</span></label>
+                          <input
+                            type="text"
+                            value={heir.name || ""}
+                            onChange={(e) => updateHeir(index, "name", e.target.value)}
+                            placeholder="Mirasçı adı soyadı"
+                            className="w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium mb-1">TCKN</label>
+                          <input
+                            type="text"
+                            value={heir.tckn || ""}
+                            onChange={(e) => updateHeir(index, "tckn", e.target.value.replace(/\D/g, "").slice(0, 11))}
+                            maxLength={11}
+                            placeholder="11 haneli"
+                            className="w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium mb-1">Miras Payı</label>
+                          <input
+                            type="text"
+                            value={heir.shareRatio || ""}
+                            onChange={(e) => updateHeir(index, "shareRatio", e.target.value)}
+                            placeholder="Ör: 1/4"
+                            className="w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium mb-1">İl</label>
+                          <select
+                            value={heir.city || ""}
+                            onChange={(e) => updateHeir(index, "city", e.target.value)}
+                            className="w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-amber-500"
+                          >
+                            <option value="">Seçiniz</option>
+                            {CITIES.map((city) => (
+                              <option key={city} value={city}>{city}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium mb-1">İlçe</label>
+                          <input
+                            type="text"
+                            value={heir.district || ""}
+                            onChange={(e) => updateHeir(index, "district", e.target.value)}
+                            className="w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+                        <div className="col-span-2">
+                          <label className="block text-xs font-medium mb-1">Adres</label>
+                          <input
+                            type="text"
+                            value={heir.address || ""}
+                            onChange={(e) => updateHeir(index, "address", e.target.value)}
+                            placeholder="Mahalle, sokak, bina no..."
+                            className="w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium mb-1">Telefon</label>
+                          <input
+                            type="tel"
+                            value={heir.phone || ""}
+                            onChange={(e) => updateHeir(index, "phone", e.target.value)}
+                            placeholder="05XX XXX XX XX"
+                            className="w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium mb-1">E-posta</label>
+                          <input
+                            type="email"
+                            value={heir.email || ""}
+                            onChange={(e) => updateHeir(index, "email", e.target.value)}
+                            placeholder="ornek@mail.com"
+                            className="w-full border rounded px-2 py-1.5 text-sm focus:outline-none focus:border-amber-500"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-500 mt-2">
+                  💡 Veraset ilamındaki tüm mirasçıları ekleyin. Her mirasçıya ayrı tebligat yapılacaktır.
+                </p>
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-medium mb-1">E-posta</label>
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary" />
+          )}
+
+          {/* Contact Fields - Tereke hariç */}
+          {type !== DebtorType.ESTATE && (
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              <div>
+                <label className="block text-xs font-medium mb-1">Telefon</label>
+                <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="05XX XXX XX XX" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1">E-posta</label>
+                <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary" />
+              </div>
+              <div>
+                <label className="block text-xs font-medium mb-1">KEP Adresi</label>
+                <input type="email" value={kepAddress} onChange={(e) => setKepAddress(e.target.value)} placeholder="xxx@hs01.kep.tr" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary" />
+              </div>
             </div>
-            <div>
-              <label className="block text-xs font-medium mb-1">KEP Adresi</label>
-              <input type="email" value={kepAddress} onChange={(e) => setKepAddress(e.target.value)} placeholder="xxx@hs01.kep.tr" className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-primary" />
-            </div>
-          </div>
+          )}
 
 
-          {/* Addresses */}
-          <div className="mb-4">
+          {/* Addresses - Tereke hariç (tereke için mirasçı adresleri kullanılır) */}
+          {type !== DebtorType.ESTATE && (
+            <div className="mb-4">
             <div className="flex items-center justify-between mb-2">
               <label className="text-sm font-medium flex items-center gap-1">
                 <MapPin className="h-4 w-4" /> Adresler
@@ -363,6 +627,7 @@ export function NewDebtorModal({ initialType, editDebtor, onSave, onClose }: New
               ))}
             </div>
           </div>
+          )}
 
           {/* Footer */}
           <div className="flex justify-end gap-2 pt-4 border-t">

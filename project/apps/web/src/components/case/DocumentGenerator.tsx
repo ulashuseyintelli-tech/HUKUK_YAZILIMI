@@ -50,11 +50,43 @@ export function DocumentGenerator({
   const [previewContent, setPreviewContent] = useState<string | null>(null);
   const [previewTitle, setPreviewTitle] = useState<string>("");
   const [error, setError] = useState<string | null>(null);
+  const [documentStatus, setDocumentStatus] = useState<{
+    canGenerate: boolean;
+    missingFields: string[];
+  }>({ canGenerate: true, missingFields: [] });
 
-  // Şablonları yükle
+  // Şablonları ve belge durumunu yükle
   useEffect(() => {
     loadTemplates();
+    checkDocumentStatus();
   }, [caseId]);
+
+  const checkDocumentStatus = async () => {
+    try {
+      const token = localStorage.getItem('token');
+      // Basit bir test - takip talebi oluşturulabilir mi?
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/template-engine/takip-talebi/case/${caseId}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        setDocumentStatus({
+          canGenerate: false,
+          missingFields: [errorData.message || 'Belge oluşturulamıyor'],
+        });
+        setError(errorData.message || 'Belge oluşturulamıyor');
+      } else {
+        setDocumentStatus({ canGenerate: true, missingFields: [] });
+        setError(null);
+      }
+    } catch (err: any) {
+      console.error('Belge durumu kontrol hatası:', err);
+      setDocumentStatus({
+        canGenerate: false,
+        missingFields: ['API bağlantı hatası'],
+      });
+    }
+  };
 
   const loadTemplates = async () => {
     try {
@@ -188,12 +220,16 @@ export function DocumentGenerator({
   // PDF İndir
   const handleDownloadPdf = async (docType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi') => {
     setDownloading('pdf');
+    setError(null);
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/template-engine/case/${caseId}/pdf?type=${docType}`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
-      if (!response.ok) throw new Error('PDF indirilemedi');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `PDF indirilemedi (${response.status})`);
+      }
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -202,6 +238,7 @@ export function DocumentGenerator({
       a.click();
       URL.revokeObjectURL(url);
     } catch (err: any) {
+      console.error('PDF indirme hatası:', err);
       setError(err.message || 'PDF indirme hatası');
     } finally {
       setDownloading(null);
@@ -211,12 +248,16 @@ export function DocumentGenerator({
   // Word İndir
   const handleDownloadWord = async (docType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi') => {
     setDownloading('word');
+    setError(null);
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/template-engine/case/${caseId}/word?type=${docType}`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
-      if (!response.ok) throw new Error('Word indirilemedi');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `Word indirilemedi (${response.status})`);
+      }
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -225,6 +266,7 @@ export function DocumentGenerator({
       a.click();
       URL.revokeObjectURL(url);
     } catch (err: any) {
+      console.error('Word indirme hatası:', err);
       setError(err.message || 'Word indirme hatası');
     } finally {
       setDownloading(null);
@@ -234,12 +276,16 @@ export function DocumentGenerator({
   // UDF Oluştur (UYAP için)
   const handleGenerateUdf = async (docType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi') => {
     setDownloading('udf');
+    setError(null);
     try {
       const token = localStorage.getItem('token');
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/template-engine/case/${caseId}/udf/download?type=${docType}`, {
         headers: { 'Authorization': `Bearer ${token}` },
       });
-      if (!response.ok) throw new Error('UDF oluşturulamadı');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || `UDF oluşturulamadı (${response.status})`);
+      }
       const blob = await response.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -248,6 +294,7 @@ export function DocumentGenerator({
       a.click();
       URL.revokeObjectURL(url);
     } catch (err: any) {
+      console.error('UDF oluşturma hatası:', err);
       setError(err.message || 'UDF oluşturma hatası');
     } finally {
       setDownloading(null);
@@ -304,10 +351,33 @@ export function DocumentGenerator({
         </div>
       </div>
 
-      {error && (
+      {/* Belge Durumu Uyarısı */}
+      {!documentStatus.canGenerate && documentStatus.missingFields.length > 0 && (
+        <div className="bg-red-50 text-red-700 p-3 rounded-lg mb-4 text-sm">
+          <div className="flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+            <div>
+              <p className="font-medium">Belge oluşturulamıyor</p>
+              <ul className="mt-1 text-xs space-y-0.5">
+                {documentStatus.missingFields.map((field, idx) => (
+                  <li key={idx}>• {field}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {error && !documentStatus.missingFields.includes(error) && (
         <div className="bg-red-50 text-red-700 p-3 rounded-lg mb-4 text-sm flex items-center gap-2">
-          <AlertCircle className="h-4 w-4" />
-          {error}
+          <AlertCircle className="h-4 w-4 flex-shrink-0" />
+          <span>{error}</span>
+          <button 
+            onClick={() => setError(null)} 
+            className="ml-auto text-red-500 hover:text-red-700"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
       )}
 
@@ -453,8 +523,8 @@ export function DocumentGenerator({
       {/* Önizleme Modal */}
       {previewContent && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl max-w-3xl w-full max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between p-4 border-b">
+          <div className="bg-white rounded-xl w-[600px] max-w-[90vw] h-[90vh] flex flex-col shadow-2xl">
+            <div className="flex items-center justify-between p-4 border-b flex-shrink-0">
               <h3 className="font-semibold">{previewTitle}</h3>
               <div className="flex items-center gap-2">
                 <button
@@ -472,10 +542,12 @@ export function DocumentGenerator({
                 </button>
               </div>
             </div>
-            <div className="p-6 overflow-auto flex-1">
-              <pre className="whitespace-pre-wrap font-serif text-sm leading-relaxed">
-                {previewContent}
-              </pre>
+            <div className="p-6 overflow-y-auto flex-1 bg-gray-50">
+              <div className="bg-white border shadow-sm rounded p-6 min-h-full">
+                <pre className="whitespace-pre-wrap font-serif text-sm leading-relaxed">
+                  {previewContent}
+                </pre>
+              </div>
             </div>
           </div>
         </div>

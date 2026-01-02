@@ -1,26 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import {
   Mail,
   Building2,
@@ -29,10 +9,9 @@ import {
   CheckCircle,
   XCircle,
   Loader2,
-  AlertTriangle,
+  X,
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { toast } from "sonner";
 
 interface BulkCase {
   id: string;
@@ -95,12 +74,12 @@ export function BulkOperationsPanel({ cases, onComplete }: BulkOperationsPanelPr
 
   const runBulkOperation = async () => {
     if (selectedCases.length === 0) {
-      toast.error("Lutfen en az bir dosya secin");
+      alert("Lütfen en az bir dosya seçin");
       return;
     }
 
     if (!operationType) {
-      toast.error("Lutfen islem turu secin");
+      alert("Lütfen işlem türü seçin");
       return;
     }
 
@@ -120,7 +99,6 @@ export function BulkOperationsPanel({ cases, onComplete }: BulkOperationsPanelPr
 
         switch (operationType) {
           case "tebligat":
-            // Toplu tebligat olusturma
             result = await api.post(`/tebligat/bulk`, {
               caseIds: [caseId],
               tebligatType,
@@ -130,46 +108,43 @@ export function BulkOperationsPanel({ cases, onComplete }: BulkOperationsPanelPr
               caseId,
               fileNumber: caseData?.fileNumber || caseId,
               success: true,
-              message: "Tebligat olusturuldu",
+              message: "Tebligat oluşturuldu",
             });
             break;
 
           case "uyap":
-            // Toplu UYAP gonderimi
             result = await api.post(`/uyap/document/submit`, {
               caseId,
               documentType: uyapDocType,
-              documentContent: "Toplu islem",
+              documentContent: "Toplu işlem",
               documentName: `${uyapDocType}_${caseData?.fileNumber}`,
             });
             operationResults.push({
               caseId,
               fileNumber: caseData?.fileNumber || caseId,
               success: result.data?.success || false,
-              message: result.data?.success ? "UYAP'a gonderildi" : (result.data?.errorMessage || "Hata"),
+              message: result.data?.success ? "UYAP'a gönderildi" : (result.data?.errorMessage || "Hata"),
             });
             break;
 
           case "document":
-            // Toplu belge uretimi
             result = await api.post(`/template-engine/takip-talebi`, { caseId });
             operationResults.push({
               caseId,
               fileNumber: caseData?.fileNumber || caseId,
               success: true,
-              message: "Belge uretildi",
+              message: "Belge üretildi",
             });
             break;
 
           case "status":
-            // Toplu durum degisikligi
             if (newStatus) {
-              result = await api.changeCaseStatus(caseId, newStatus, "Toplu islem");
+              result = await api.changeCaseStatus(caseId, newStatus, "Toplu işlem");
               operationResults.push({
                 caseId,
                 fileNumber: caseData?.fileNumber || caseId,
                 success: true,
-                message: `Durum ${newStatus} olarak guncellendi`,
+                message: `Durum ${newStatus} olarak güncellendi`,
               });
             }
             break;
@@ -179,7 +154,7 @@ export function BulkOperationsPanel({ cases, onComplete }: BulkOperationsPanelPr
           caseId,
           fileNumber: caseData?.fileNumber || caseId,
           success: false,
-          message: error.message || "Islem basarisiz",
+          message: error.message || "İşlem başarısız",
         });
       }
 
@@ -189,9 +164,6 @@ export function BulkOperationsPanel({ cases, onComplete }: BulkOperationsPanelPr
     setResults(operationResults);
     setIsProcessing(false);
     setShowResultsDialog(true);
-
-    const successCount = operationResults.filter(r => r.success).length;
-    toast.success(`${successCount}/${total} islem basarili`);
 
     if (onComplete) {
       onComplete();
@@ -203,116 +175,94 @@ export function BulkOperationsPanel({ cases, onComplete }: BulkOperationsPanelPr
 
   return (
     <div className="space-y-4">
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
+      <div className="bg-white border rounded-xl p-4">
+        <div className="mb-4">
+          <h3 className="font-semibold flex items-center gap-2">
             <FileText className="h-5 w-5" />
-            Toplu Islemler
-          </CardTitle>
-          <CardDescription>
-            Birden fazla dosya icin toplu islem yapin
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
+            Toplu İşlemler
+          </h3>
+          <p className="text-sm text-muted-foreground">
+            Birden fazla dosya için toplu işlem yapın
+          </p>
+        </div>
+
+        <div className="space-y-4">
           {/* Operation Type Selection */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <label className="text-sm font-medium mb-2 block">Islem Turu</label>
-              <Select value={operationType} onValueChange={(v) => setOperationType(v as OperationType)}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Islem secin" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="tebligat">
-                    <div className="flex items-center gap-2">
-                      <Mail className="h-4 w-4" />
-                      Toplu Tebligat
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="uyap">
-                    <div className="flex items-center gap-2">
-                      <Building2 className="h-4 w-4" />
-                      Toplu UYAP Gonderimi
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="document">
-                    <div className="flex items-center gap-2">
-                      <FileText className="h-4 w-4" />
-                      Toplu Belge Uretimi
-                    </div>
-                  </SelectItem>
-                  <SelectItem value="status">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="h-4 w-4" />
-                      Toplu Durum Degisikligi
-                    </div>
-                  </SelectItem>
-                </SelectContent>
-              </Select>
+              <label className="text-sm font-medium mb-2 block">İşlem Türü</label>
+              <select
+                value={operationType}
+                onChange={(e) => setOperationType(e.target.value as OperationType)}
+                className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="">İşlem seçin</option>
+                <option value="tebligat">📧 Toplu Tebligat</option>
+                <option value="uyap">🏛️ Toplu UYAP Gönderimi</option>
+                <option value="document">📄 Toplu Belge Üretimi</option>
+                <option value="status">✅ Toplu Durum Değişikliği</option>
+              </select>
             </div>
 
             {/* Operation-specific options */}
             {operationType === "tebligat" && (
               <>
                 <div>
-                  <label className="text-sm font-medium mb-2 block">Tebligat Turu</label>
-                  <Select value={tebligatType} onValueChange={setTebligatType}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="ODEME_EMRI">Odeme Emri</SelectItem>
-                      <SelectItem value="ICRA_EMRI">Icra Emri</SelectItem>
-                      <SelectItem value="HACIZ_IHBARNAMESI_89_1">89/1 Ihbarnamesi</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <label className="text-sm font-medium mb-2 block">Tebligat Türü</label>
+                  <select
+                    value={tebligatType}
+                    onChange={(e) => setTebligatType(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="ODEME_EMRI">Ödeme Emri</option>
+                    <option value="ICRA_EMRI">İcra Emri</option>
+                    <option value="HACIZ_IHBARNAMESI_89_1">89/1 İhbarnamesi</option>
+                  </select>
                 </div>
                 <div>
                   <label className="text-sm font-medium mb-2 block">Kanal</label>
-                  <Select value={tebligatChannel} onValueChange={setTebligatChannel}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="PTT">PTT</SelectItem>
-                      <SelectItem value="UETS">UETS</SelectItem>
-                      <SelectItem value="KEP">KEP</SelectItem>
-                    </SelectContent>
-                  </Select>
+                  <select
+                    value={tebligatChannel}
+                    onChange={(e) => setTebligatChannel(e.target.value)}
+                    className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                  >
+                    <option value="PTT">PTT</option>
+                    <option value="UETS">UETS</option>
+                    <option value="KEP">KEP</option>
+                  </select>
                 </div>
               </>
             )}
 
             {operationType === "uyap" && (
               <div>
-                <label className="text-sm font-medium mb-2 block">Belge Turu</label>
-                <Select value={uyapDocType} onValueChange={setUyapDocType}>
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="TAKIP_TALEBI">Takip Talebi</SelectItem>
-                    <SelectItem value="HACIZ_TALEBI">Haciz Talebi</SelectItem>
-                    <SelectItem value="DILEKCE">Dilekce</SelectItem>
-                  </SelectContent>
-                </Select>
+                <label className="text-sm font-medium mb-2 block">Belge Türü</label>
+                <select
+                  value={uyapDocType}
+                  onChange={(e) => setUyapDocType(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="TAKIP_TALEBI">Takip Talebi</option>
+                  <option value="HACIZ_TALEBI">Haciz Talebi</option>
+                  <option value="DILEKCE">Dilekçe</option>
+                </select>
               </div>
             )}
 
             {operationType === "status" && (
               <div>
                 <label className="text-sm font-medium mb-2 block">Yeni Durum</label>
-                <Select value={newStatus} onValueChange={setNewStatus}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Durum secin" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ACTIVE">Aktif</SelectItem>
-                    <SelectItem value="PENDING">Beklemede</SelectItem>
-                    <SelectItem value="CLOSED">Kapali</SelectItem>
-                    <SelectItem value="ARCHIVED">Arsivlendi</SelectItem>
-                  </SelectContent>
-                </Select>
+                <select
+                  value={newStatus}
+                  onChange={(e) => setNewStatus(e.target.value)}
+                  className="w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
+                >
+                  <option value="">Durum seçin</option>
+                  <option value="ACTIVE">Aktif</option>
+                  <option value="PENDING">Beklemede</option>
+                  <option value="CLOSED">Kapalı</option>
+                  <option value="ARCHIVED">Arşivlendi</option>
+                </select>
               </div>
             )}
           </div>
@@ -321,31 +271,38 @@ export function BulkOperationsPanel({ cases, onComplete }: BulkOperationsPanelPr
           <div>
             <div className="flex items-center justify-between mb-2">
               <label className="text-sm font-medium">
-                Dosyalar ({selectedCases.length}/{cases.length} secili)
+                Dosyalar ({selectedCases.length}/{cases.length} seçili)
               </label>
-              <Button variant="ghost" size="sm" onClick={toggleAll}>
-                {selectedCases.length === cases.length ? "Hicbirini Secme" : "Tumunu Sec"}
-              </Button>
+              <button
+                type="button"
+                onClick={toggleAll}
+                className="text-sm text-primary hover:underline"
+              >
+                {selectedCases.length === cases.length ? "Hiçbirini Seçme" : "Tümünü Seç"}
+              </button>
             </div>
             <div className="border rounded-lg max-h-64 overflow-y-auto">
               {cases.map((c) => (
                 <div
                   key={c.id}
-                  className="flex items-center gap-3 p-3 border-b last:border-b-0 hover:bg-muted/50"
+                  className="flex items-center gap-3 p-3 border-b last:border-b-0 hover:bg-gray-50 cursor-pointer"
+                  onClick={() => toggleCase(c.id)}
                 >
-                  <Checkbox
+                  <input
+                    type="checkbox"
                     checked={selectedCases.includes(c.id)}
-                    onCheckedChange={() => toggleCase(c.id)}
+                    onChange={() => {}}
+                    className="h-4 w-4 rounded"
                   />
                   <div className="flex-1 min-w-0">
-                    <p className="font-medium truncate">{c.fileNumber}</p>
-                    <p className="text-sm text-muted-foreground truncate">
+                    <p className="font-medium truncate text-sm">{c.fileNumber}</p>
+                    <p className="text-xs text-muted-foreground truncate">
                       {c.clientName} - {c.principalAmount?.toLocaleString("tr-TR")} {c.currency}
                     </p>
                   </div>
-                  <Badge variant="outline" className="shrink-0">
-                    {c.debtorCount || 0} borclu
-                  </Badge>
+                  <span className="text-xs bg-gray-100 px-2 py-1 rounded">
+                    {c.debtorCount || 0} borçlu
+                  </span>
                 </div>
               ))}
             </div>
@@ -355,68 +312,88 @@ export function BulkOperationsPanel({ cases, onComplete }: BulkOperationsPanelPr
           {isProcessing && (
             <div className="space-y-2">
               <div className="flex items-center justify-between text-sm">
-                <span>Islem devam ediyor...</span>
+                <span>İşlem devam ediyor...</span>
                 <span>{progress}%</span>
               </div>
-              <Progress value={progress} />
+              <div className="w-full bg-gray-200 rounded-full h-2">
+                <div
+                  className="bg-primary h-2 rounded-full transition-all"
+                  style={{ width: `${progress}%` }}
+                />
+              </div>
             </div>
           )}
 
           {/* Action Button */}
-          <Button
+          <button
             onClick={runBulkOperation}
             disabled={isProcessing || selectedCases.length === 0 || !operationType}
-            className="w-full"
+            className="w-full py-2.5 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
           >
             {isProcessing ? (
               <>
-                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                Isleniyor...
+                <Loader2 className="h-4 w-4 animate-spin" />
+                İşleniyor...
               </>
             ) : (
               <>
-                <Send className="h-4 w-4 mr-2" />
-                {selectedCases.length} Dosya Icin Islemi Baslat
+                <Send className="h-4 w-4" />
+                {selectedCases.length} Dosya İçin İşlemi Başlat
               </>
             )}
-          </Button>
-        </CardContent>
-      </Card>
+          </button>
+        </div>
+      </div>
 
       {/* Results Dialog */}
-      <Dialog open={showResultsDialog} onOpenChange={setShowResultsDialog}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Islem Sonuclari</DialogTitle>
-            <DialogDescription>
-              {successCount} basarili, {failCount} basarisiz
-            </DialogDescription>
-          </DialogHeader>
-          <div className="max-h-64 overflow-y-auto space-y-2">
-            {results.map((result, idx) => (
-              <div
-                key={idx}
-                className={`flex items-center gap-2 p-2 rounded-lg ${
-                  result.success ? "bg-green-50" : "bg-red-50"
-                }`}
-              >
-                {result.success ? (
-                  <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
-                ) : (
-                  <XCircle className="h-4 w-4 text-red-600 shrink-0" />
-                )}
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-sm truncate">{result.fileNumber}</p>
-                  <p className="text-xs text-muted-foreground truncate">{result.message}</p>
-                </div>
+      {showResultsDialog && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl max-w-lg w-full">
+            <div className="flex items-center justify-between p-4 border-b">
+              <div>
+                <h3 className="font-semibold">İşlem Sonuçları</h3>
+                <p className="text-sm text-muted-foreground">
+                  {successCount} başarılı, {failCount} başarısız
+                </p>
               </div>
-            ))}
+              <button
+                onClick={() => setShowResultsDialog(false)}
+                className="p-1 hover:bg-gray-100 rounded"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            <div className="max-h-64 overflow-y-auto p-4 space-y-2">
+              {results.map((result, idx) => (
+                <div
+                  key={idx}
+                  className={`flex items-center gap-2 p-2 rounded-lg ${
+                    result.success ? "bg-green-50" : "bg-red-50"
+                  }`}
+                >
+                  {result.success ? (
+                    <CheckCircle className="h-4 w-4 text-green-600 shrink-0" />
+                  ) : (
+                    <XCircle className="h-4 w-4 text-red-600 shrink-0" />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <p className="font-medium text-sm truncate">{result.fileNumber}</p>
+                    <p className="text-xs text-muted-foreground truncate">{result.message}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="p-4 border-t">
+              <button
+                onClick={() => setShowResultsDialog(false)}
+                className="w-full py-2 bg-primary text-white rounded-lg hover:bg-primary/90"
+              >
+                Kapat
+              </button>
+            </div>
           </div>
-          <DialogFooter>
-            <Button onClick={() => setShowResultsDialog(false)}>Kapat</Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        </div>
+      )}
     </div>
   );
 }

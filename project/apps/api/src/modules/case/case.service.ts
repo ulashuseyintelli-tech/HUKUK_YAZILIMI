@@ -115,11 +115,20 @@ export class CaseService {
     }
   }
 
-  async findAll(tenantId: string, params?: { status?: string; page?: number; limit?: number }) {
-    const { status, page = 1, limit = 20 } = params || {};
+  async findAll(tenantId: string, params?: { status?: string; expenseRequestStatus?: string; page?: number; limit?: number }) {
+    const { status, expenseRequestStatus, page = 1, limit = 20 } = params || {};
 
     const where: any = { tenantId };
     if (status) where.status = status;
+    
+    // Masraf talebi durumuna göre filtreleme
+    if (expenseRequestStatus) {
+      where.expenseRequests = {
+        some: {
+          status: expenseRequestStatus,
+        },
+      };
+    }
 
     const [cases, total] = await Promise.all([
       this.prisma.case.findMany({
@@ -127,7 +136,45 @@ export class CaseService {
         include: {
           client: { select: { id: true, name: true } },
           debtors: {
-            include: { debtor: { select: { id: true, name: true } } },
+            include: { 
+              debtor: { 
+                select: { 
+                  id: true, 
+                  name: true, 
+                  identityNo: true,
+                  phone: true,
+                  email: true,
+                  addresses: true,
+                } 
+              },
+              selectedAddress: {
+                select: { id: true, street: true, city: true }
+              }
+            },
+          },
+          lawyers: {
+            include: { lawyer: { select: { id: true, name: true, surname: true } } },
+          },
+          executionOffice: { select: { id: true, name: true, city: true, uyapCode: true } },
+          risk: { select: { id: true, name: true, color: true } },
+          asama: { select: { id: true, name: true, code: true } },
+          takipTuru: { select: { id: true, name: true } },
+          sorumluPersonel: { select: { id: true, name: true, surname: true } },
+          lifecycleEvents: {
+            where: { action: { in: ['ICRA_ISLEMI', 'TEBLIGAT', 'HACIZ', 'TAHSILAT', 'STATUS_CHANGE'] } },
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: { createdAt: true },
+          },
+          collections: {
+            orderBy: { date: 'desc' },
+            take: 1,
+            select: { date: true },
+          },
+          expenseRequests: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: { id: true, status: true, totalAmount: true, dueDate: true, sentAt: true },
           },
           _count: { select: { tasks: true } },
         },
@@ -138,8 +185,71 @@ export class CaseService {
       this.prisma.case.count({ where }),
     ]);
 
+    // Her case için ek bilgileri hesapla
+    const now = new Date();
+    const casesWithExtras = await Promise.all(
+      cases.map(async (c) => {
+        // Vekalet kontrolü
+        let hasValidPoa = true;
+        if (c.clientId && c.lawyers && c.lawyers.length > 0) {
+          const lawyerIds = c.lawyers.map((l: any) => l.lawyerId);
+          const validPoa = await this.prisma.clientPowerOfAttorney.findFirst({
+            where: {
+              clientId: c.clientId,
+              status: "ACTIVE",
+              isActive: true,
+              lawyers: { some: { lawyerId: { in: lawyerIds } } },
+              OR: [
+                { isLimited: false },
+                { isLimited: true, validUntil: { gte: now } },
+              ],
+            },
+          });
+          hasValidPoa = !!validPoa;
+        }
+        
+        // Son işlem tarihi
+        const lastActionDate = c.lifecycleEvents?.[0]?.createdAt || null;
+        
+        // Son tahsilat tarihi
+        const lastCollectionDate = c.collections?.[0]?.date || null;
+        
+        // Kalan gün hesabı (pasifleşmeye)
+        let daysUntilPassive: number | null = null;
+        if (lastActionDate) {
+          const daysSinceLastAction = Math.floor((now.getTime() - new Date(lastActionDate).getTime()) / (1000 * 60 * 60 * 24));
+          daysUntilPassive = Math.max(0, 365 - daysSinceLastAction); // 1 yıl pasifleşme süresi varsayımı
+        }
+        
+        // Borçu adresleriyle birlikte döndür
+        const debtorsWithAddress = c.debtors.map((d: any) => ({
+          ...d,
+          debtor: {
+            ...d.debtor,
+            address: d.debtor.addresses?.primary || d.debtor.addresses?.notification || null,
+          },
+        }));
+        
+        return {
+          ...c,
+          debtors: debtorsWithAddress,
+          hasValidPoa,
+          lastActionDate: lastActionDate?.toISOString() || null,
+          lastCollectionDate: lastCollectionDate?.toISOString() || null,
+          daysUntilPassive,
+          // Masraf talebi durumu
+          latestExpenseRequest: c.expenseRequests?.[0] || null,
+          expenseRequestStatus: c.expenseRequests?.[0]?.status || null,
+          // lifecycleEvents ve collections'ı response'dan çıkar (gereksiz)
+          lifecycleEvents: undefined,
+          collections: undefined,
+          expenseRequests: undefined,
+        };
+      })
+    );
+
     return {
-      data: cases,
+      data: casesWithExtras,
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }
@@ -153,7 +263,70 @@ export class CaseService {
         formType: { select: { id: true, name: true, code: true } },
         executionOffice: true,
         debtors: { include: { debtor: true } },
-        lawyers: { include: { lawyer: true } },
+        lawyers: { 
+          include: { 
+            lawyer: {
+              select: {
+                id: true,
+                name: true,
+                surname: true,
+                barNumber: true,
+                phone: true,
+                email: true,
+                address: true,
+                bankName: true,
+                branchName: true,
+                iban: true,
+                lawyerRank: true,
+                defaultPermissions: true,
+              }
+            } 
+          } 
+        },
+        staff: {
+          include: {
+            staffMember: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                staffType: true,
+                phone: true,
+                email: true,
+              }
+            }
+          }
+        },
+        caseClients: { 
+          include: { 
+            client: {
+              select: {
+                id: true,
+                name: true,
+                displayName: true,
+                type: true,
+                tckn: true,
+                vkn: true,
+                taxOffice: true,
+                phone: true,
+                email: true,
+                address: true,
+                city: true,
+                district: true,
+                bankAccounts: {
+                  select: {
+                    id: true,
+                    bankName: true,
+                    branchName: true,
+                    iban: true,
+                    accountHolder: true,
+                    isPrimary: true,
+                  }
+                },
+              }
+            } 
+          } 
+        },
         tasks: { orderBy: { createdAt: "desc" }, take: 10 },
         collections: { orderBy: { date: "desc" } },
         dues: true,
@@ -180,11 +353,31 @@ export class CaseService {
       throw new NotFoundException("Takip bulunamadı");
     }
 
+    // Çek/Senet bilgilerini ayrı sorgula (CaseInstrument tablosu)
+    const instruments = await this.prisma.caseInstrument.findMany({
+      where: { caseId: id },
+      select: {
+        id: true,
+        instrumentType: true,
+        serialNo: true,
+        amount: true,
+        issueDate: true,
+        maturityDate: true,
+        presentmentDate: true,
+        isBounced: true,
+        bounceDate: true,
+        bankName: true,
+        bankBranch: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
     // Raporlama özeti oluştur
     const reportingSummary = this.buildReportingSummary(caseItem);
 
     return {
       ...caseItem,
+      instruments,
       reportingSummary,
     };
   }
@@ -273,6 +466,16 @@ export class CaseService {
           }
         }
 
+        // İcra dairesinin UYAP kodunu al (eğer DTO'da yoksa)
+        let uyapBirimKodu = dto.uyapBirimKodu;
+        if (!uyapBirimKodu && dto.executionOfficeId) {
+          const executionOffice = await tx.executionOffice.findUnique({
+            where: { id: dto.executionOfficeId },
+            select: { uyapCode: true },
+          });
+          uyapBirimKodu = executionOffice?.uyapCode || undefined;
+        }
+
         // 2. Case oluştur
         const newCase = await tx.case.create({
           data: {
@@ -287,8 +490,8 @@ export class CaseService {
             caseStatus: dto.caseStatus || "DERDEST",
             caseDate: dto.startDate ? new Date(dto.startDate) : new Date(),
             executionOfficeId: dto.executionOfficeId,
-            uyapBirimKodu: dto.uyapBirimKodu,
-            hasUyapWarning: !dto.uyapBirimKodu,
+            uyapBirimKodu: uyapBirimKodu,
+            hasUyapWarning: !uyapBirimKodu,
             hasArticle4Request: dto.hasArticle4Request || false,
             isAutomationEnabled: true,
             // Alt Kategori ve Para Birimi (UYAP Uyumlu)
@@ -346,9 +549,16 @@ export class CaseService {
         if (dto.lawyers && dto.lawyers.length > 0) {
           for (const lawyerDto of dto.lawyers) {
             let lawyerId: string;
+            let lawyerRank: string | null = null;
+            
             if (lawyerDto.id) {
-              // Mevcut avukat kullan
+              // Mevcut avukat kullan - lawyerRank'i al
               lawyerId = lawyerDto.id;
+              const existingLawyer = await tx.lawyer.findUnique({
+                where: { id: lawyerId },
+                select: { lawyerRank: true },
+              });
+              lawyerRank = existingLawyer?.lawyerRank || null;
             } else {
               // Yeni avukat oluştur
               const lawyer = await tx.lawyer.create({
@@ -366,14 +576,39 @@ export class CaseService {
               lawyerId = lawyer.id;
             }
 
+            // LawyerRank'e göre CaseLawyerRole belirle
+            let caseRole: 'RESPONSIBLE' | 'ASSIGNED' | 'ASSISTANT' | 'INTERN' = 'ASSIGNED';
+            if (lawyerDto.isResponsible) {
+              caseRole = 'RESPONSIBLE';
+            } else if (lawyerRank) {
+              // Büro ayarlarındaki rank'e göre dosya rolü
+              switch (lawyerRank) {
+                case 'PARTNER':
+                case 'MANAGER':
+                  caseRole = 'RESPONSIBLE'; // Ortak/Yönetici → Sorumlu
+                  break;
+                case 'AUTHORIZED':
+                  caseRole = 'ASSIGNED'; // Yetkili → Atanmış
+                  break;
+                case 'LAWYER':
+                  caseRole = 'ASSISTANT'; // Avukat → Yardımcı
+                  break;
+                case 'INTERN':
+                  caseRole = 'INTERN'; // Stajyer → Stajyer
+                  break;
+                default:
+                  caseRole = 'ASSIGNED';
+              }
+            }
+
             await tx.caseLawyer.create({
               data: {
                 caseId: newCase.id,
                 lawyerId,
                 canSign: lawyerDto.canSign || false,
-                isResponsible: lawyerDto.isResponsible || false,
+                isResponsible: caseRole === 'RESPONSIBLE',
                 hasSignatureAuthority: lawyerDto.hasSignatureAuthority || false,
-                role: lawyerDto.isResponsible ? 'RESPONSIBLE' : 'ASSIGNED',
+                role: caseRole,
               },
             });
           }
@@ -544,6 +779,18 @@ export class CaseService {
       }
     });
 
+    // İcra dairesi değiştiyse ve UYAP kodu yoksa, icra dairesinden al
+    if (data.executionOfficeId && !data.uyapBirimKodu) {
+      const executionOffice = await this.prisma.executionOffice.findUnique({
+        where: { id: data.executionOfficeId },
+        select: { uyapCode: true },
+      });
+      if (executionOffice?.uyapCode) {
+        data.uyapBirimKodu = executionOffice.uyapCode;
+        data.hasUyapWarning = false;
+      }
+    }
+
     const updated = await this.prisma.case.update({
       where: { id },
       data,
@@ -643,6 +890,12 @@ export class CaseService {
       'hasArticle4Request',
       'isAutomationEnabled',
       'automationConfig',
+      // Düzenlenebilir alanlar
+      'executionFileNumber',
+      'caseStatus',
+      'executionPath',
+      'subCategory',
+      'notes',
     ];
 
     const data: any = {};
@@ -650,6 +903,13 @@ export class CaseService {
       if (dto[key as keyof typeof dto] !== undefined) {
         data[key] = dto[key as keyof typeof dto];
       }
+    }
+
+    this.logger.log(`patchFlags called with dto: ${JSON.stringify(dto)}, filtered data: ${JSON.stringify(data)}`);
+
+    if (Object.keys(data).length === 0) {
+      this.logger.warn(`patchFlags: No allowed fields found in dto`);
+      return this.findOne(tenantId, id);
     }
 
     return this.prisma.case.update({
@@ -686,6 +946,46 @@ export class CaseService {
     });
 
     return { updatedCount: result.count };
+  }
+
+  // Eksik UYAP kodlarını düzelt
+  async fixMissingUyapCodes(tenantId: string) {
+    // UYAP kodu olmayan ama icra dairesi olan takipleri bul
+    const casesWithoutUyap = await this.prisma.case.findMany({
+      where: {
+        tenantId,
+        executionOfficeId: { not: null },
+        OR: [
+          { uyapBirimKodu: null },
+          { uyapBirimKodu: '' },
+        ],
+      },
+      include: {
+        executionOffice: {
+          select: { id: true, uyapCode: true, name: true },
+        },
+      },
+    });
+
+    let fixedCount = 0;
+    for (const c of casesWithoutUyap) {
+      if (c.executionOffice?.uyapCode) {
+        await this.prisma.case.update({
+          where: { id: c.id },
+          data: {
+            uyapBirimKodu: c.executionOffice.uyapCode,
+            hasUyapWarning: false,
+          },
+        });
+        fixedCount++;
+      }
+    }
+
+    return {
+      totalChecked: casesWithoutUyap.length,
+      fixedCount,
+      message: `${fixedCount} takibin UYAP kodu güncellendi`,
+    };
   }
 
   // ==================== DOSYA NOTLARI ====================
@@ -812,5 +1112,454 @@ export class CaseService {
       HEARING_SCHEDULED: "Duruşma planlandı",
     };
     return titles[action] || action;
+  }
+
+  // ==================== TEBLİGAT TAKİP ====================
+
+  /**
+   * CaseDebtor tebligat bilgilerini güncelle
+   */
+  async updateCaseDebtorNotification(
+    tenantId: string,
+    caseId: string,
+    caseDebtorId: string,
+    data: {
+      notificationBarcode?: string;
+      notificationSentDate?: string;
+      notificationDeliveredDate?: string;
+      notificationStatus?: string;
+      notificationNote?: string;
+    }
+  ) {
+    // Dosyanın bu tenant'a ait olduğunu kontrol et
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+    });
+    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+
+    // CaseDebtor'un bu dosyaya ait olduğunu kontrol et
+    const caseDebtor = await this.prisma.caseDebtor.findFirst({
+      where: { id: caseDebtorId, caseId },
+      include: { debtor: { select: { name: true } } },
+    });
+    if (!caseDebtor) throw new NotFoundException("Borçlu kaydı bulunamadı");
+
+    // Güncelle
+    const updated = await this.prisma.caseDebtor.update({
+      where: { id: caseDebtorId },
+      data: {
+        notificationBarcode: data.notificationBarcode || null,
+        notificationSentDate: data.notificationSentDate ? new Date(data.notificationSentDate) : null,
+        notificationDeliveredDate: data.notificationDeliveredDate ? new Date(data.notificationDeliveredDate) : null,
+        notificationStatus: data.notificationStatus || null,
+        notificationNote: data.notificationNote || null,
+      },
+      include: {
+        debtor: {
+          include: { estateHeirs: true },
+        },
+      },
+    });
+
+    // Timeline'a kaydet
+    if (data.notificationStatus === "GONDERILDI" && data.notificationSentDate) {
+      await this.prisma.caseLifecycle.create({
+        data: {
+          caseId,
+          stage: "INITIAL",
+          action: "TEBLIGAT_SENT",
+          description: `${caseDebtor.debtor.name} için tebligat gönderildi (Barkod: ${data.notificationBarcode || "-"})`,
+          triggeredBy: "MANUAL",
+          metadata: { caseDebtorId, barcode: data.notificationBarcode },
+        },
+      });
+    }
+
+    if (data.notificationStatus === "TEBLIG_EDILDI" && data.notificationDeliveredDate) {
+      await this.prisma.caseLifecycle.create({
+        data: {
+          caseId,
+          stage: "INITIAL",
+          action: "TEBLIGAT_DELIVERED",
+          description: `${caseDebtor.debtor.name} için tebligat teslim edildi`,
+          triggeredBy: "MANUAL",
+          metadata: { caseDebtorId, deliveredDate: data.notificationDeliveredDate },
+        },
+      });
+    }
+
+    return updated;
+  }
+
+  /**
+   * Dosyadaki tüm borçluların tebligat durumlarını getir
+   */
+  async getCaseDebtorsWithNotification(tenantId: string, caseId: string) {
+    // Dosyanın bu tenant'a ait olduğunu kontrol et
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+    });
+    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+
+    const caseDebtors = await this.prisma.caseDebtor.findMany({
+      where: { caseId },
+      include: {
+        debtor: {
+          include: {
+            estateHeirs: true,
+            debtorAddresses: true,
+          },
+        },
+        selectedAddress: true,
+      },
+      orderBy: { createdAt: "asc" },
+    });
+
+    return caseDebtors;
+  }
+
+  // ==================== DOSYA AVUKAT YÖNETİMİ ====================
+
+  /**
+   * Dosyadaki avukatın rol ve yetkilerini güncelle
+   */
+  async updateCaseLawyer(
+    tenantId: string,
+    caseId: string,
+    caseLawyerId: string,
+    data: {
+      role?: 'RESPONSIBLE' | 'ASSIGNED' | 'ASSISTANT' | 'INTERN';
+      canSign?: boolean;
+      hasSignatureAuthority?: boolean;
+      isResponsible?: boolean;
+      casePermissions?: {
+        canEditCase?: boolean;
+        canGenerateDocs?: boolean;
+        canSyncUYAP?: boolean;
+        canViewFinance?: boolean;
+        canEditFinance?: boolean;
+        canChangeStatus?: boolean;
+        canEditParties?: boolean;
+      };
+      receiveNotifications?: boolean;
+    }
+  ) {
+    // Dosyanın bu tenant'a ait olduğunu kontrol et
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+    });
+    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+
+    // CaseLawyer'ın bu dosyaya ait olduğunu kontrol et
+    const caseLawyer = await this.prisma.caseLawyer.findFirst({
+      where: { id: caseLawyerId, caseId },
+      include: { lawyer: { select: { name: true, surname: true } } },
+    });
+    if (!caseLawyer) throw new NotFoundException("Avukat kaydı bulunamadı");
+
+    // Güncelleme verisi hazırla
+    const updateData: any = {};
+    
+    if (data.role !== undefined) {
+      updateData.role = data.role;
+      // RESPONSIBLE rolü seçilirse isResponsible'ı da güncelle
+      updateData.isResponsible = data.role === 'RESPONSIBLE';
+    }
+    
+    if (data.canSign !== undefined) {
+      updateData.canSign = data.canSign;
+      updateData.hasSignatureAuthority = data.canSign;
+    }
+    
+    if (data.hasSignatureAuthority !== undefined) {
+      updateData.hasSignatureAuthority = data.hasSignatureAuthority;
+      updateData.canSign = data.hasSignatureAuthority;
+    }
+    
+    if (data.isResponsible !== undefined) {
+      updateData.isResponsible = data.isResponsible;
+      if (data.isResponsible) {
+        updateData.role = 'RESPONSIBLE';
+      }
+    }
+    
+    if (data.casePermissions !== undefined) {
+      updateData.casePermissions = data.casePermissions;
+      updateData.permissionSource = 'CUSTOM';
+    }
+    
+    if (data.receiveNotifications !== undefined) {
+      updateData.receiveNotifications = data.receiveNotifications;
+    }
+
+    // Güncelle
+    const updated = await this.prisma.caseLawyer.update({
+      where: { id: caseLawyerId },
+      data: updateData,
+      include: {
+        lawyer: {
+          select: {
+            id: true,
+            name: true,
+            surname: true,
+            barNumber: true,
+            lawyerRank: true,
+          },
+        },
+      },
+    });
+
+    // Audit log
+    await this.auditService.log({
+      tenantId,
+      action: 'UPDATE',
+      entityType: 'CASE_LAWYER',
+      entityId: caseLawyerId,
+      newValues: updateData,
+      description: `Avukat yetkileri güncellendi: ${caseLawyer.lawyer.name} ${caseLawyer.lawyer.surname}`,
+    });
+
+    this.logger.log(`CaseLawyer updated: ${caseLawyerId}, role: ${updated.role}, permissions: ${JSON.stringify(updated.casePermissions)}`);
+
+    return updated;
+  }
+
+  /**
+   * Dosyadaki tüm avukatları getir (detaylı)
+   */
+  async getCaseLawyers(tenantId: string, caseId: string) {
+    // Dosyanın bu tenant'a ait olduğunu kontrol et
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+    });
+    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+
+    const caseLawyers = await this.prisma.caseLawyer.findMany({
+      where: { caseId },
+      include: {
+        lawyer: {
+          select: {
+            id: true,
+            name: true,
+            surname: true,
+            barNumber: true,
+            phone: true,
+            email: true,
+            lawyerRank: true,
+            bankName: true,
+            branchName: true,
+            iban: true,
+          },
+        },
+      },
+      orderBy: [
+        { isResponsible: 'desc' },
+        { createdAt: 'asc' },
+      ],
+    });
+
+    return caseLawyers.map(cl => ({
+      id: cl.id,
+      lawyerId: cl.lawyerId,
+      role: cl.role,
+      canSign: cl.canSign,
+      hasSignatureAuthority: cl.hasSignatureAuthority,
+      isResponsible: cl.isResponsible,
+      casePermissions: cl.casePermissions,
+      permissionSource: cl.permissionSource,
+      receiveNotifications: cl.receiveNotifications,
+      lawyer: cl.lawyer,
+    }));
+  }
+
+  /**
+   * Dosyaya avukat ekle
+   */
+  async addCaseLawyer(tenantId: string, caseId: string, data: {
+    lawyerId: string;
+    role?: 'RESPONSIBLE' | 'ASSIGNED' | 'ASSISTANT' | 'INTERN';
+    canSign?: boolean;
+  }) {
+    // Dosyanın bu tenant'a ait olduğunu kontrol et
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+    });
+    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+
+    // Avukatın bu tenant'a ait olduğunu kontrol et
+    const lawyer = await this.prisma.lawyer.findFirst({
+      where: { id: data.lawyerId, tenantId },
+    });
+    if (!lawyer) throw new NotFoundException("Avukat bulunamadı");
+
+    // Zaten ekli mi kontrol et
+    const existing = await this.prisma.caseLawyer.findFirst({
+      where: { caseId, lawyerId: data.lawyerId },
+    });
+    if (existing) throw new BadRequestException("Bu avukat zaten dosyaya ekli");
+
+    // LawyerRank'e göre varsayılan rol belirle
+    let role = data.role;
+    if (!role) {
+      switch (lawyer.lawyerRank) {
+        case 'PARTNER':
+        case 'MANAGER':
+          role = 'RESPONSIBLE';
+          break;
+        case 'AUTHORIZED':
+          role = 'ASSIGNED';
+          break;
+        case 'INTERN':
+          role = 'INTERN';
+          break;
+        default:
+          role = 'ASSIGNED';
+      }
+    }
+
+    const caseLawyer = await this.prisma.caseLawyer.create({
+      data: {
+        caseId,
+        lawyerId: data.lawyerId,
+        role,
+        canSign: data.canSign ?? (lawyer.lawyerRank !== 'INTERN'),
+        isResponsible: role === 'RESPONSIBLE',
+      },
+      include: {
+        lawyer: {
+          select: {
+            id: true,
+            name: true,
+            surname: true,
+            barNumber: true,
+            lawyerRank: true,
+          },
+        },
+      },
+    });
+
+    return caseLawyer;
+  }
+
+  /**
+   * Dosyadan avukat çıkar
+   */
+  async removeCaseLawyer(tenantId: string, caseId: string, caseLawyerId: string) {
+    // Dosyanın bu tenant'a ait olduğunu kontrol et
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+    });
+    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+
+    // CaseLawyer'ın bu dosyaya ait olduğunu kontrol et
+    const caseLawyer = await this.prisma.caseLawyer.findFirst({
+      where: { id: caseLawyerId, caseId },
+    });
+    if (!caseLawyer) throw new NotFoundException("Avukat ataması bulunamadı");
+
+    await this.prisma.caseLawyer.delete({
+      where: { id: caseLawyerId },
+    });
+
+    return { success: true };
+  }
+
+  /**
+   * Dosyadaki personelleri getir
+   */
+  async getCaseStaff(tenantId: string, caseId: string) {
+    // Dosyanın bu tenant'a ait olduğunu kontrol et
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+    });
+    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+
+    const caseStaff = await this.prisma.caseStaff.findMany({
+      where: { caseId },
+      include: {
+        staffMember: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            staffType: true,
+            phone: true,
+            email: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    return caseStaff;
+  }
+
+  /**
+   * Dosyaya personel ekle
+   */
+  async addCaseStaff(tenantId: string, caseId: string, data: {
+    staffMemberId: string;
+    roleOnCase?: string;
+  }) {
+    // Dosyanın bu tenant'a ait olduğunu kontrol et
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+    });
+    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+
+    // Personelin bu tenant'a ait olduğunu kontrol et
+    const staffMember = await this.prisma.staffMember.findFirst({
+      where: { id: data.staffMemberId, tenantId },
+    });
+    if (!staffMember) throw new NotFoundException("Personel bulunamadı");
+
+    // Zaten ekli mi kontrol et
+    const existing = await this.prisma.caseStaff.findFirst({
+      where: { caseId, staffMemberId: data.staffMemberId },
+    });
+    if (existing) throw new BadRequestException("Bu personel zaten dosyaya ekli");
+
+    const caseStaff = await this.prisma.caseStaff.create({
+      data: {
+        caseId,
+        staffMemberId: data.staffMemberId,
+        roleOnCase: data.roleOnCase || staffMember.staffType,
+      },
+      include: {
+        staffMember: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            staffType: true,
+          },
+        },
+      },
+    });
+
+    return caseStaff;
+  }
+
+  /**
+   * Dosyadan personel çıkar
+   */
+  async removeCaseStaff(tenantId: string, caseId: string, caseStaffId: string) {
+    // Dosyanın bu tenant'a ait olduğunu kontrol et
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+    });
+    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+
+    // CaseStaff'ın bu dosyaya ait olduğunu kontrol et
+    const caseStaff = await this.prisma.caseStaff.findFirst({
+      where: { id: caseStaffId, caseId },
+    });
+    if (!caseStaff) throw new NotFoundException("Personel ataması bulunamadı");
+
+    await this.prisma.caseStaff.delete({
+      where: { id: caseStaffId },
+    });
+
+    return { success: true };
   }
 }

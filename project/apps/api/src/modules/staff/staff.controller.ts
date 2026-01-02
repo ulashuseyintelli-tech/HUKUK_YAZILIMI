@@ -64,4 +64,16 @@ export class StaffController {
       return { error: error.message };
     }
   }
+
+  // Sıralama güncelle
+  @Put('order/update')
+  async updateOrder(@Request() req: any, @Body() body: { staffIds: string[] }) {
+    const tenantId = req.user.tenantId;
+    try {
+      await this.staffService.updateOrder(tenantId, body.staffIds);
+      return { success: true };
+    } catch (error: any) {
+      return { error: error.message };
+    }
+  }
 }

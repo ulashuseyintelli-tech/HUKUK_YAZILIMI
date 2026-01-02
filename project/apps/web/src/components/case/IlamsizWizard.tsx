@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { FileText, CheckCircle, ArrowLeft, Sparkles } from "lucide-react";
 
-export type IlamsizResultType = "KIRA_ALACAK" | "TAHLIYE" | "GENEL" | "REHIN";
+export type IlamsizResultType = "KIRA_ALACAK" | "TAHLIYE" | "GENEL" | "REHIN" | "IPOTEK" | "TASINIR_REHNI" | "IFLAS_ADI";
 export type MahiyetType = "FATURA" | "SOZLESME" | "CARI_HESAP" | "AIDAT" | "HIZMET" | "DIGER";
 
 interface IlamsizWizardResult {
@@ -26,7 +26,7 @@ interface IlamsizWizardProps {
   onAnswersChange?: (answers: { isKira: boolean | null }) => void;
 }
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2 | 3 | 4;
 
 const MAHIYET_OPTIONS = [
   { type: "FATURA" as MahiyetType, code: "FATURA", label: "Fatura Alacağı", icon: "🧾", desc: "Mal veya hizmet faturası" },
@@ -35,6 +35,15 @@ const MAHIYET_OPTIONS = [
   { type: "AIDAT" as MahiyetType, code: "AIDAT", label: "Aidat Alacağı", icon: "🏢", desc: "Site/apartman aidatı" },
   { type: "HIZMET" as MahiyetType, code: "HIZMET", label: "Hizmet Bedeli", icon: "🔧", desc: "Hizmet karşılığı alacak" },
   { type: "DIGER" as MahiyetType, code: "DIGER", label: "Diğer Alacak", icon: "📋", desc: "Diğer ilamsız alacaklar" },
+];
+
+// İlamsız takip ana kategorileri
+const ILAMSIZ_KATEGORILER = [
+  { id: "GENEL", icon: "📄", title: "Genel İlamsız Takip", desc: "Fatura, sözleşme, cari hesap alacakları" },
+  { id: "KIRA", icon: "🏠", title: "Kira / Tahliye", desc: "Kira alacağı veya kiracı tahliyesi" },
+  { id: "IPOTEK", icon: "🏦", title: "İlamsız İpotek", desc: "İpotek akit tablosuna dayalı takip" },
+  { id: "TASINIR_REHNI", icon: "📦", title: "Taşınır Rehni", desc: "Araç, ticari işletme rehni takibi" },
+  { id: "IFLAS_ADI", icon: "⚠️", title: "İflas Adi Takip", desc: "Tacir borçluya karşı adi alacak için iflas" },
 ];
 
 export function IlamsizWizard({ onComplete, onSkip, onBack, initialStep = 1, onStepChange, initialAnswers, onAnswersChange }: IlamsizWizardProps) {
@@ -50,6 +59,7 @@ export function IlamsizWizard({ onComplete, onSkip, onBack, initialStep = 1, onS
     isKira: initialAnswers?.isKira ?? null,
     kiraType: null as "ALACAK" | "TAHLIYE" | null,
     mahiyetType: null as MahiyetType | null,
+    kategori: null as string | null,
   });
 
   // Step değiştiğinde parent'a bildir
@@ -64,7 +74,46 @@ export function IlamsizWizard({ onComplete, onSkip, onBack, initialStep = 1, onS
     onAnswersChange?.({ isKira: newAnswers.isKira });
   };
 
-  // Soru 1: Alacak türü
+  // Kategori seçimi
+  const handleKategoriSelect = (kategoriId: string) => {
+    setAnswers({ ...answers, kategori: kategoriId });
+    
+    if (kategoriId === "GENEL") {
+      setStep(3); // Mahiyet seçimi
+    } else if (kategoriId === "KIRA") {
+      setAnswers({ ...answers, kategori: kategoriId, isKira: true });
+      setStep(2); // Kira alacağı mı tahliye mi?
+    } else if (kategoriId === "IPOTEK") {
+      // İlamsız İpotek - direkt sonuç
+      onComplete({
+        resultType: "IPOTEK",
+        suggestedFormCode: "FORM_9",
+        formTitle: "İlamsız İpotek Takibi",
+        explanation: "İpotek akit tablosuna dayalı (ilamsız) ipotek alacağının tahsili için uygundur.",
+        uyapCode: "152",
+      });
+    } else if (kategoriId === "TASINIR_REHNI") {
+      // Taşınır Rehni - direkt sonuç
+      onComplete({
+        resultType: "TASINIR_REHNI",
+        suggestedFormCode: "FORM_8",
+        formTitle: "Taşınır Rehni Takibi",
+        explanation: "Taşınır rehni (ticari işletme rehni, araç rehni vb.) alacağının tahsili için uygundur.",
+        uyapCode: "50",
+      });
+    } else if (kategoriId === "IFLAS_ADI") {
+      // İflas Adi Takip - direkt sonuç
+      onComplete({
+        resultType: "IFLAS_ADI",
+        suggestedFormCode: "FORM_11",
+        formTitle: "İflas Adi Takip",
+        explanation: "Tacir borçluya karşı adi alacak (fatura, sözleşme vb.) için iflas yoluyla takip.",
+        uyapCode: "153",
+      });
+    }
+  };
+
+  // Soru 1: Alacak türü (eski mantık - artık kullanılmıyor)
   const handleAlacakTuru = (isKira: boolean) => {
     setAnswers({ ...answers, isKira });
     if (isKira) {
@@ -153,19 +202,20 @@ export function IlamsizWizard({ onComplete, onSkip, onBack, initialStep = 1, onS
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-purple-600 mb-3">
             <FileText className="h-4 w-4" />
-            <h3 className="text-sm font-medium">Alacağınızın türü nedir?</h3>
+            <h3 className="text-sm font-medium">Takip türünü seçin:</h3>
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <button onClick={() => handleAlacakTuru(false)} className="p-3 border-2 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-all text-left">
-              <div className="text-xl mb-1">📄</div>
-              <div className="text-sm font-medium">Fatura / Sözleşme</div>
-              <div className="text-xs text-muted-foreground">Fatura, sözleşme, cari hesap</div>
-            </button>
-            <button onClick={() => handleAlacakTuru(true)} className="p-3 border-2 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-all text-left">
-              <div className="text-xl mb-1">🏠</div>
-              <div className="text-sm font-medium">Kira / Tahliye</div>
-              <div className="text-xs text-muted-foreground">Kira alacağı veya tahliye</div>
-            </button>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {ILAMSIZ_KATEGORILER.map((kat) => (
+              <button 
+                key={kat.id}
+                onClick={() => handleKategoriSelect(kat.id)} 
+                className="p-3 border-2 rounded-lg hover:border-purple-500 hover:bg-purple-50 transition-all text-left"
+              >
+                <div className="text-xl mb-1">{kat.icon}</div>
+                <div className="text-sm font-medium">{kat.title}</div>
+                <div className="text-xs text-muted-foreground">{kat.desc}</div>
+              </button>
+            ))}
           </div>
           {onBack && (
             <button onClick={goBack} className="inline-flex items-center gap-2 px-4 py-2 bg-gray-100 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-200 hover:border-gray-400 transition-colors mt-3">

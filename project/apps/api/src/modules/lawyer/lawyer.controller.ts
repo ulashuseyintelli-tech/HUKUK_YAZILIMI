@@ -3,6 +3,7 @@ import {
   Get,
   Post,
   Put,
+  Patch,
   Delete,
   Body,
   Param,
@@ -12,7 +13,7 @@ import {
 import { LawyerService } from "./lawyer.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
-import { LawyerRole } from "@prisma/client";
+import { LawyerRole, LawyerRank } from "@prisma/client";
 
 @Controller("lawyers")
 @UseGuards(JwtAuthGuard)
@@ -65,18 +66,26 @@ export class LawyerController {
       vergiNo?: string;
       email?: string;
       phone?: string;
+      fax?: string;
       address?: string;
       city?: string;
       district?: string;
       bankName?: string;
+      branchName?: string;
       iban?: string;
       isInHouseCounsel?: boolean;
       isEmployee?: boolean;
       role?: LawyerRole;
+      title?: string;
       canSign?: boolean;
       canAppearInUyap?: boolean;
       canBeResponsible?: boolean;
       isDefaultForNewCases?: boolean;
+      // Yeni alanlar
+      lawyerRank?: LawyerRank;
+      defaultPermissions?: any;
+      permissionsLocked?: boolean;
+      canModifyOtherPermissions?: boolean;
     }
   ) {
     return this.lawyerService.create(tenantId, data);
@@ -100,20 +109,46 @@ export class LawyerController {
       vergiNo?: string;
       email?: string;
       phone?: string;
+      fax?: string;
       address?: string;
       city?: string;
       district?: string;
       bankName?: string;
+      branchName?: string;
       iban?: string;
       isInHouseCounsel?: boolean;
       isEmployee?: boolean;
       role?: LawyerRole;
+      title?: string;
       canSign?: boolean;
       canAppearInUyap?: boolean;
       canBeResponsible?: boolean;
       isDefaultForNewCases?: boolean;
       sortOrder?: number;
       isActive?: boolean;
+      // Yeni alanlar
+      lawyerRank?: LawyerRank;
+      defaultPermissions?: any;
+      permissionsLocked?: boolean;
+      canModifyOtherPermissions?: boolean;
+    }
+  ) {
+    return this.lawyerService.update(tenantId, id, data);
+  }
+
+  // Avukat kısmi güncelle (PATCH)
+  @Patch(":id")
+  patch(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Body()
+    data: {
+      phone?: string;
+      email?: string;
+      address?: string;
+      bankName?: string;
+      branchName?: string;
+      iban?: string;
     }
   ) {
     return this.lawyerService.update(tenantId, id, data);

@@ -71,6 +71,7 @@ export class DebtorService {
         where,
         include: {
           debtorAddresses: true,
+          estateHeirs: true,
           _count: { select: { caseDebtors: true, assets: true } },
         },
         orderBy: { createdAt: "desc" },
@@ -91,6 +92,7 @@ export class DebtorService {
       where: { id, tenantId },
       include: {
         debtorAddresses: { orderBy: { isPrimary: "desc" } },
+        estateHeirs: true,
         caseDebtors: {
           include: {
             case: { select: { id: true, fileNumber: true, status: true, caseStatus: true } },
@@ -126,10 +128,10 @@ export class DebtorService {
     // Compute name and identityNo
     const { name, identityNo } = this.computeNameAndIdentity(dto);
 
-    // Extract addresses from dto
-    const { addresses, ...debtorData } = dto;
+    // Extract addresses and estateHeirs from dto
+    const { addresses, estateHeirs, ...debtorData } = dto;
 
-    // Create debtor with addresses
+    // Create debtor with addresses and estate heirs
     const debtor = await this.prisma.debtor.create({
       data: {
         tenantId,
@@ -144,8 +146,26 @@ export class DebtorService {
               })),
             }
           : undefined,
+        // Tereke için mirasçıları oluştur
+        estateHeirs: dto.type === DebtorType.ESTATE && estateHeirs?.length
+          ? {
+              create: estateHeirs.map((heir) => ({
+                name: heir.name,
+                tckn: heir.tckn || null,
+                address: heir.address || "", // Zorunlu alan
+                city: heir.city || null,
+                district: heir.district || null,
+                shareRatio: heir.shareRatio || null,
+                phone: heir.phone || null,
+                email: heir.email || null,
+              })),
+            }
+          : undefined,
       },
-      include: { debtorAddresses: true },
+      include: { 
+        debtorAddresses: true,
+        estateHeirs: true,
+      },
     });
 
     return debtor;
@@ -386,6 +406,14 @@ export class DebtorService {
           throw new BadRequestException("Kamu kurumu için kurum adı zorunludur");
         }
         break;
+      case DebtorType.ESTATE:
+        if (!dto.deceasedName) {
+          throw new BadRequestException("Tereke için murisin adı zorunludur");
+        }
+        if (!dto.estateHeirs || dto.estateHeirs.length === 0) {
+          throw new BadRequestException("Tereke için en az bir mirasçı girilmelidir");
+        }
+        break;
     }
   }
 
@@ -405,6 +433,11 @@ export class DebtorService {
       case DebtorType.PUBLIC_INSTITUTION:
         name = dto.institutionName || "";
         identityNo = dto.detsisNo || null;
+        break;
+      case DebtorType.ESTATE:
+        // Tereke için isim: "Muris Adı Mirasçıları" formatında
+        name = `${dto.deceasedName || ""} Mirasçıları`.trim();
+        identityNo = dto.deceasedTckn || null;
         break;
     }
 

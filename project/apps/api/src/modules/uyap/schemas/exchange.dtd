@@ -1,0 +1,166 @@
+<!--
+  UYAP e-Takip XML DTD
+  Kaynak: https://uyap.gov.tr/e-takip-tanitimi-ve-programlari
+  Versiyon: 2024.03
+  
+  Bu DTD, icra takip sistemlerinden UYAP'a veri aktarımı için kullanılır.
+-->
+
+<!ELEMENT exchangeData (dosyalar)>
+
+<!ELEMENT dosyalar (dosya+)>
+
+<!ELEMENT dosya (taraf+, VekilKisi*, cek*, senet*, police*, kontratKefil*, digerAlacak*, evrak*, ilam?, alacakKalemi+)>
+<!ATTLIST dosya
+  dosyaTipi CDATA #REQUIRED
+  takipTuru CDATA #REQUIRED
+  takipYolu CDATA #REQUIRED
+  takipSekli CDATA #REQUIRED
+  mahiyetKodu CDATA #REQUIRED
+  birimKodu CDATA #REQUIRED
+  takipTarihi CDATA #REQUIRED
+  paraBirimi CDATA #REQUIRED
+>
+
+<!ELEMENT taraf (kisiKurumBilgileri, adres?, iban?, telefon?, eposta?)>
+<!ATTLIST taraf
+  sira CDATA #REQUIRED
+  rolTur CDATA #REQUIRED
+>
+
+<!ELEMENT kisiKurumBilgileri (kisiTumBilgileri | kurum)>
+<!ATTLIST kisiKurumBilgileri
+  tip CDATA #REQUIRED
+>
+
+<!ELEMENT kisiTumBilgileri (tcKimlikNo?, ad, soyad, babaAdi?, anaAdi?, dogumTarihi?, dogumYeri?)>
+<!ELEMENT tcKimlikNo (#PCDATA)>
+<!ELEMENT ad (#PCDATA)>
+<!ELEMENT soyad (#PCDATA)>
+<!ELEMENT babaAdi (#PCDATA)>
+<!ELEMENT anaAdi (#PCDATA)>
+<!ELEMENT dogumTarihi (#PCDATA)>
+<!ELEMENT dogumYeri (#PCDATA)>
+
+<!ELEMENT kurum (vergiNo?, mersisNo?, unvan, ticariSicilNo?)>
+<!ELEMENT vergiNo (#PCDATA)>
+<!ELEMENT mersisNo (#PCDATA)>
+<!ELEMENT unvan (#PCDATA)>
+<!ELEMENT ticariSicilNo (#PCDATA)>
+
+<!ELEMENT adres (ilKodu, ilceKodu?, mahalle?, caddeSokak?, kapiNo?, daireNo?, postaKodu?, tamAdres)>
+<!ATTLIST adres
+  adresTuru CDATA #REQUIRED
+>
+<!ELEMENT ilKodu (#PCDATA)>
+<!ELEMENT ilceKodu (#PCDATA)>
+<!ELEMENT mahalle (#PCDATA)>
+<!ELEMENT caddeSokak (#PCDATA)>
+<!ELEMENT kapiNo (#PCDATA)>
+<!ELEMENT daireNo (#PCDATA)>
+<!ELEMENT postaKodu (#PCDATA)>
+<!ELEMENT tamAdres (#PCDATA)>
+
+<!ELEMENT iban (#PCDATA)>
+<!ELEMENT telefon (#PCDATA)>
+<!ELEMENT eposta (#PCDATA)>
+
+<!ELEMENT VekilKisi (tcKimlikNo, adSoyad, baroSicilNo, baroAdi, adres?, telefon?, faks?, eposta?, iban?, bankaAdi?, tarafRef*)>
+<!ATTLIST VekilKisi
+  imzaYetkili CDATA #IMPLIED
+>
+<!ELEMENT adSoyad (#PCDATA)>
+<!ELEMENT baroSicilNo (#PCDATA)>
+<!ELEMENT baroAdi (#PCDATA)>
+<!ELEMENT faks (#PCDATA)>
+<!ELEMENT bankaAdi (#PCDATA)>
+<!ELEMENT tarafRef EMPTY>
+<!ATTLIST tarafRef
+  sira CDATA #REQUIRED
+>
+
+<!ELEMENT cek (seriNo, cekNo, tutar, paraBirimi, kesideTarihi, vadeTarihi?, ibrazTarihi?, kesideYeri?, odemeYeri?, bankaAdi?, subeAdi?, hesapNo?, kesideciRef?, cirantaRef*, karsiliksiz?, karsiliksizTarihi?)>
+<!ATTLIST cek
+  sira CDATA #REQUIRED
+>
+<!ELEMENT seriNo (#PCDATA)>
+<!ELEMENT cekNo (#PCDATA)>
+<!ELEMENT tutar (#PCDATA)>
+<!ELEMENT paraBirimi (#PCDATA)>
+<!ELEMENT kesideTarihi (#PCDATA)>
+<!ELEMENT vadeTarihi (#PCDATA)>
+<!ELEMENT ibrazTarihi (#PCDATA)>
+<!ELEMENT kesideYeri (#PCDATA)>
+<!ELEMENT odemeYeri (#PCDATA)>
+<!ELEMENT subeAdi (#PCDATA)>
+<!ELEMENT hesapNo (#PCDATA)>
+<!ELEMENT kesideciRef EMPTY>
+<!ATTLIST kesideciRef
+  sira CDATA #REQUIRED
+>
+<!ELEMENT cirantaRef EMPTY>
+<!ATTLIST cirantaRef
+  sira CDATA #REQUIRED
+>
+<!ELEMENT karsiliksiz (#PCDATA)>
+<!ELEMENT karsiliksizTarihi (#PCDATA)>
+
+<!ELEMENT senet (senetNo, tutar, paraBirimi, duzenlenmeTarihi, vadeTarihi, duzenlenmeYeri?, odemeYeri?, borcluRef?, lehtarRef?, cirantaRef*)>
+<!ATTLIST senet
+  sira CDATA #REQUIRED
+>
+<!ELEMENT senetNo (#PCDATA)>
+<!ELEMENT duzenlenmeTarihi (#PCDATA)>
+<!ELEMENT duzenlenmeYeri (#PCDATA)>
+<!ELEMENT borcluRef EMPTY>
+<!ATTLIST borcluRef
+  sira CDATA #REQUIRED
+>
+<!ELEMENT lehtarRef EMPTY>
+<!ATTLIST lehtarRef
+  sira CDATA #REQUIRED
+>
+
+<!ELEMENT police (policeNo, tutar, paraBirimi, duzenlenmeTarihi, vadeTarihi, kesideciRef?, muhatabRef?, lehtarRef?)>
+<!ATTLIST police
+  sira CDATA #REQUIRED
+>
+<!ELEMENT policeNo (#PCDATA)>
+<!ELEMENT muhatabRef EMPTY>
+<!ATTLIST muhatabRef
+  sira CDATA #REQUIRED
+>
+
+<!ELEMENT kontratKefil (kefilAdi, kefilTuru, limitTutar?, paraBirimi?)>
+<!ELEMENT kefilAdi (#PCDATA)>
+<!ELEMENT kefilTuru (#PCDATA)>
+<!ELEMENT limitTutar (#PCDATA)>
+
+<!ELEMENT digerAlacak (alacakTuru, aciklama, tutar, paraBirimi)>
+<!ELEMENT alacakTuru (#PCDATA)>
+<!ELEMENT aciklama (#PCDATA)>
+
+<!ELEMENT evrak (evrakTuru, evrakAdi, icerik?)>
+<!ELEMENT evrakTuru (#PCDATA)>
+<!ELEMENT evrakAdi (#PCDATA)>
+<!ELEMENT icerik (#PCDATA)>
+
+<!ELEMENT ilam (mahkemeAdi, mahkemeBirimKodu?, esasNo, kararNo, kararTarihi, kesinlesmeTarihi?, ilamOzeti?)>
+<!ELEMENT mahkemeAdi (#PCDATA)>
+<!ELEMENT mahkemeBirimKodu (#PCDATA)>
+<!ELEMENT esasNo (#PCDATA)>
+<!ELEMENT kararNo (#PCDATA)>
+<!ELEMENT kararTarihi (#PCDATA)>
+<!ELEMENT kesinlesmeTarihi (#PCDATA)>
+<!ELEMENT ilamOzeti (#PCDATA)>
+
+<!ELEMENT alacakKalemi (aciklama, tutar, paraBirimi, vadeTarihi?, faiz?)>
+<!ATTLIST alacakKalemi
+  sira CDATA #REQUIRED
+>
+
+<!ELEMENT faiz (faizTuru, faizOrani?, baslangicTarihi, islemisFaiz?)>
+<!ELEMENT faizTuru (#PCDATA)>
+<!ELEMENT faizOrani (#PCDATA)>
+<!ELEMENT baslangicTarihi (#PCDATA)>
+<!ELEMENT islemisFaiz (#PCDATA)>

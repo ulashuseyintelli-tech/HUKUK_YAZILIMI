@@ -39,6 +39,27 @@ export class ClientService {
 
   // Yeni müvekkil oluştur
   async create(tenantId: string, data: any) {
+    // TCKN veya VKN ile duplicate kontrolü
+    const identityNo = data.tckn || data.vkn;
+    if (identityNo) {
+      const existing = await this.prisma.client.findFirst({
+        where: {
+          tenantId,
+          OR: [
+            { tckn: identityNo },
+            { vkn: identityNo },
+            { identityNo: identityNo },
+          ],
+        },
+      });
+      
+      if (existing) {
+        console.log(`[ClientService] Duplicate müvekkil bulundu: ${existing.id} (${existing.displayName})`);
+        // Mevcut müvekkili döndür, yeni oluşturma
+        return this.findOne(existing.id, tenantId);
+      }
+    }
+
     const displayName = data.type === 'COMPANY' || data.type === 'PUBLIC'
       ? data.companyName
       : `${data.firstName || ''} ${data.lastName || ''}`.trim();

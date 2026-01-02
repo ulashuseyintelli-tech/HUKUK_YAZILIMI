@@ -1,11 +1,44 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Building2, Users, Plus, Pencil, Trash2, Check, X, Star, CreditCard, Loader2, Mail, MessageSquare } from "lucide-react";
+import { Building2, Users, Plus, Pencil, Trash2, Check, X, Star, CreditCard, Loader2, Mail, MessageSquare, GripVertical } from "lucide-react";
 import { api } from "@/lib/api";
 
 interface BankAccount { id: string; bankName: string; branchName?: string; iban: string; accountName?: string; isDefault: boolean; }
-interface Lawyer { id: string; name: string; surname: string; tckn?: string; barNumber?: string; barCity?: string; email?: string; phone?: string; role: "OWNER" | "PARTNER" | "EMPLOYEE" | "INTERN"; canSign: boolean; canAppearInUyap: boolean; isDefaultForNewCases: boolean; isActive: boolean; }
+interface Lawyer { 
+  id: string; 
+  name: string; 
+  surname: string; 
+  tckn?: string; 
+  barNumber?: string; 
+  barCity?: string; 
+  email?: string; 
+  phone?: string; 
+  fax?: string;
+  address?: string;
+  bankName?: string;
+  branchName?: string;
+  iban?: string;
+  vergiNo?: string;
+  title?: string;
+  role: "OWNER" | "PARTNER" | "EMPLOYEE" | "INTERN"; 
+  lawyerRank?: "PARTNER" | "MANAGER" | "AUTHORIZED" | "LAWYER" | "INTERN";
+  defaultPermissions?: {
+    canEditCase?: boolean;
+    canGenerateDocs?: boolean;
+    canSyncUYAP?: boolean;
+    canViewFinance?: boolean;
+    canEditFinance?: boolean;
+    canChangeStatus?: boolean;
+    canEditParties?: boolean;
+  };
+  permissionsLocked?: boolean;
+  canModifyOtherPermissions?: boolean;
+  canSign: boolean; 
+  canAppearInUyap: boolean; 
+  isDefaultForNewCases: boolean; 
+  isActive: boolean; 
+}
 interface Office { id: string; name: string; address?: string; city?: string; district?: string; phone?: string; fax?: string; email?: string; barAssociation?: string; bankAccounts: BankAccount[]; lawyers: Lawyer[]; smtpHost?: string; smtpPort?: number; smtpUser?: string; smtpPass?: string; smtpSecure?: boolean; smtpFromName?: string; smtpFromEmail?: string; }
 interface StaffMember { id: string; firstName: string; lastName: string; tckn?: string; email?: string; phone?: string; staffType: string; canCreateCase: boolean; canEditCase: boolean; canGenerateDocuments: boolean; canApproveDocuments: boolean; canSeeFinance: boolean; canApproveFinance: boolean; isActive: boolean; isDefaultForNewCases?: boolean; }
 interface SmtpSettings { smtpHost?: string; smtpPort?: number; smtpUser?: string; smtpPass?: string; smtpSecure?: boolean; smtpFromName?: string; smtpFromEmail?: string; }
@@ -276,13 +309,54 @@ export default function OfficeSettingsPage() {
             <button onClick={() => { setEditingLawyer(null); setShowLawyerModal(true); }} className="text-xs text-primary hover:underline flex items-center gap-0.5"><Plus className="h-3 w-3" />Ekle</button>
           </div>
           <div className="flex-1 overflow-auto">
-            {office?.lawyers?.map(lawyer => (
-              <div key={lawyer.id} className={`flex items-center justify-between p-2 border-b text-xs hover:bg-gray-50 ${lawyer.isDefaultForNewCases ? 'bg-amber-50' : ''}`}>
-                <div className="flex-1">
-                  <div className="flex items-center gap-1">
-                    <p className="font-medium">{(lawyer as any).displayName || `${(lawyer as any).title || "Av."} ${lawyer.name} ${lawyer.surname}`}</p>
+            {office?.lawyers?.map((lawyer, index) => (
+              <div 
+                key={lawyer.id} 
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('lawyerId', lawyer.id);
+                  e.dataTransfer.setData('lawyerIndex', index.toString());
+                  e.currentTarget.classList.add('opacity-50');
+                }}
+                onDragEnd={(e) => {
+                  e.currentTarget.classList.remove('opacity-50');
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.classList.add('bg-purple-100', 'border-purple-400');
+                }}
+                onDragLeave={(e) => {
+                  e.currentTarget.classList.remove('bg-purple-100', 'border-purple-400');
+                }}
+                onDrop={async (e) => {
+                  e.preventDefault();
+                  e.currentTarget.classList.remove('bg-purple-100', 'border-purple-400');
+                  const draggedId = e.dataTransfer.getData('lawyerId');
+                  const draggedIndex = parseInt(e.dataTransfer.getData('lawyerIndex'));
+                  if (draggedId === lawyer.id) return;
+                  
+                  // Yeni sıralama oluştur
+                  const lawyers = [...(office?.lawyers || [])];
+                  const [draggedLawyer] = lawyers.splice(draggedIndex, 1);
+                  lawyers.splice(index, 0, draggedLawyer);
+                  
+                  // API'ye gönder
+                  try {
+                    await api.put('/lawyers/order/update', { lawyerIds: lawyers.map(l => l.id) });
+                    await loadOffice();
+                    showSaved();
+                  } catch (err) { console.error(err); }
+                }}
+                className={`flex items-center justify-between p-2 border-b text-xs hover:bg-gray-50 cursor-move transition-colors ${lawyer.isDefaultForNewCases ? 'bg-amber-50' : ''}`}
+              >
+                <div className="flex items-center gap-2">
+                  <GripVertical className="h-3 w-3 text-gray-400 cursor-grab active:cursor-grabbing" />
+                  <div className="flex-1">
+                    <div className="flex items-center gap-1">
+                      <p className="font-medium">{(lawyer as any).displayName || `${(lawyer as any).title || "Av."} ${lawyer.name} ${lawyer.surname}`}</p>
+                    </div>
+                    <p className="text-muted-foreground">{lawyer.barNumber || "-"} • <span className={`px-1 rounded ${lawyer.role === "OWNER" ? "bg-purple-100 text-purple-700" : "bg-gray-100"}`}>{roleLabels[lawyer.role]}</span></p>
                   </div>
-                  <p className="text-muted-foreground">{lawyer.barNumber || "-"} • <span className={`px-1 rounded ${lawyer.role === "OWNER" ? "bg-purple-100 text-purple-700" : "bg-gray-100"}`}>{roleLabels[lawyer.role]}</span></p>
                 </div>
                 <div className="flex items-center gap-1">
                   {/* Varsayılan Seç Butonu */}
@@ -310,9 +384,9 @@ export default function OfficeSettingsPage() {
             ))}
             {(!office?.lawyers || office.lawyers.length === 0) && <p className="text-xs text-muted-foreground text-center py-4">Avukat yok</p>}
           </div>
-          {/* Varsayılan avukat bilgisi */}
+          {/* Sıralama ve varsayılan bilgisi */}
           <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-[10px] text-blue-700">
-            💡 "⭐ Varsayılan" olarak işaretlenen avukatlar yeni takiplerde otomatik seçili gelir.
+            💡 Sürükle-bırak ile sıralayın. "⭐ Varsayılan" avukatlar yeni takiplerde otomatik seçilir.
           </div>
         </div>
 
@@ -323,48 +397,75 @@ export default function OfficeSettingsPage() {
             <button onClick={() => { setEditingStaff(null); setShowStaffModal(true); }} className="text-xs text-primary hover:underline flex items-center gap-0.5"><Plus className="h-3 w-3" />Ekle</button>
           </div>
           <div className="flex-1 overflow-auto">
-            {staffList.map(staff => (
-              <div key={staff.id} className={`flex items-center justify-between p-2 border-b text-xs hover:bg-gray-50 ${staff.isDefaultForNewCases ? 'bg-amber-50' : ''}`}>
-                <div>
-                  <p className="font-medium">{staff.firstName} {staff.lastName}</p>
-                  <p className="text-muted-foreground"><span className={`px-1 rounded ${getStaffTypeColor(staff.staffType)}`}>{getStaffTypeLabel(staff.staffType)}</span></p>
+            {staffList.map((staff, index) => (
+              <div 
+                key={staff.id} 
+                draggable
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('staffId', staff.id);
+                  e.dataTransfer.setData('staffIndex', index.toString());
+                  e.currentTarget.classList.add('opacity-50');
+                }}
+                onDragEnd={(e) => {
+                  e.currentTarget.classList.remove('opacity-50');
+                }}
+                onDragOver={(e) => {
+                  e.preventDefault();
+                  e.currentTarget.classList.add('bg-orange-100', 'border-orange-400');
+                }}
+                onDragLeave={(e) => {
+                  e.currentTarget.classList.remove('bg-orange-100', 'border-orange-400');
+                }}
+                onDrop={async (e) => {
+                  e.preventDefault();
+                  e.currentTarget.classList.remove('bg-orange-100', 'border-orange-400');
+                  const draggedId = e.dataTransfer.getData('staffId');
+                  const draggedIndex = parseInt(e.dataTransfer.getData('staffIndex'));
+                  if (draggedId === staff.id) return;
+                  
+                  // Yeni sıralama oluştur
+                  const newList = [...staffList];
+                  const [draggedStaff] = newList.splice(draggedIndex, 1);
+                  newList.splice(index, 0, draggedStaff);
+                  
+                  // Optimistic update
+                  setStaffList(newList);
+                  
+                  // API'ye gönder
+                  try {
+                    await api.put('/staff/order/update', { staffIds: newList.map(s => s.id) });
+                    showSaved();
+                  } catch (err) { 
+                    console.error(err); 
+                    // Hata durumunda geri al
+                    await loadStaff();
+                  }
+                }}
+                className={`flex items-center justify-between p-2 border-b text-xs hover:bg-gray-50 cursor-move transition-colors ${staff.isDefaultForNewCases ? 'bg-amber-50' : ''}`}
+              >
+                <div className="flex items-center gap-2">
+                  <GripVertical className="h-3 w-3 text-gray-400 cursor-grab active:cursor-grabbing" />
+                  <div>
+                    <p className="font-medium">{staff.firstName} {staff.lastName}</p>
+                    <p className="text-muted-foreground"><span className={`px-1 rounded ${getStaffTypeColor(staff.staffType)}`}>{getStaffTypeLabel(staff.staffType)}</span></p>
+                  </div>
                 </div>
                 <div className="flex items-center gap-1">
                   {/* Varsayılan Seç Butonu */}
                   <button 
                     onClick={async () => {
                       const newValue = !staff.isDefaultForNewCases;
-                      console.log('Personel varsayılan güncelleniyor:', staff.id, staff.firstName, '-> isDefaultForNewCases:', newValue);
                       
-                      // Optimistic update - hemen UI'ı güncelle
+                      // Optimistic update
                       setStaffList(prev => prev.map(s => 
                         s.id === staff.id ? { ...s, isDefaultForNewCases: newValue } : s
                       ));
                       
                       try {
-                        const response = await api.put(`/staff/${staff.id}`, { isDefaultForNewCases: newValue });
-                        console.log('API yanıtı:', response.data);
-                        
-                        // API'den dönen veriyi kontrol et
-                        if (response.data?.error) {
-                          console.error('API hatası:', response.data.error);
-                          // Hata varsa geri al
-                          setStaffList(prev => prev.map(s => 
-                            s.id === staff.id ? { ...s, isDefaultForNewCases: !newValue } : s
-                          ));
-                        } else if (response.data?.data) {
-                          // Başarılı - API'den dönen veriyle güncelle
-                          console.log('Güncellenen personel:', response.data.data);
-                          setStaffList(prev => prev.map(s => 
-                            s.id === staff.id ? { ...s, ...response.data.data } : s
-                          ));
-                          showSaved();
-                        } else {
-                          showSaved();
-                        }
-                      } catch (e: any) { 
-                        console.error('Personel güncelleme hatası:', e);
-                        console.error('Hata detayı:', e.response?.data);
+                        await api.put(`/staff/${staff.id}`, { isDefaultForNewCases: newValue });
+                        showSaved();
+                      } catch (e) { 
+                        console.error(e);
                         // Hata durumunda geri al
                         setStaffList(prev => prev.map(s => 
                           s.id === staff.id ? { ...s, isDefaultForNewCases: !newValue } : s
@@ -387,9 +488,9 @@ export default function OfficeSettingsPage() {
             ))}
             {staffList.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">Personel yok</p>}
           </div>
-          {/* Varsayılan personel bilgisi */}
+          {/* Sıralama ve varsayılan bilgisi */}
           <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-[10px] text-blue-700">
-            💡 "⭐ Varsayılan" olarak işaretlenen personeller yeni takiplerde otomatik seçili gelir.
+            💡 Sürükle-bırak ile sıralayın. "⭐ Varsayılan" personeller yeni takiplerde otomatik seçilir.
           </div>
         </div>
 
@@ -483,10 +584,69 @@ function LawyerModal({ lawyer, onSave, onClose, saving }: { lawyer: any; onSave:
     name: lawyer?.name || "", surname: lawyer?.surname || "", tckn: lawyer?.tckn || "",
     title: lawyer?.title || "", barNumber: lawyer?.barNumber || "", barCity: lawyer?.barCity || "",
     vergiNo: lawyer?.vergiNo || "", email: lawyer?.email || "", phone: lawyer?.phone || "",
-    bankName: lawyer?.bankName || "", iban: lawyer?.iban || "",
+    fax: lawyer?.fax || "", address: lawyer?.address || "",
+    bankName: lawyer?.bankName || "", branchName: lawyer?.branchName || "", iban: lawyer?.iban || "",
     role: lawyer?.role || "EMPLOYEE", canSign: lawyer?.canSign || false,
     canAppearInUyap: lawyer?.canAppearInUyap || false, isDefaultForNewCases: lawyer?.isDefaultForNewCases || false,
+    // Yeni alanlar
+    lawyerRank: lawyer?.lawyerRank || "LAWYER",
+    permissionsLocked: lawyer?.permissionsLocked || false,
+    canModifyOtherPermissions: lawyer?.canModifyOtherPermissions || false,
+    // Varsayılan yetkiler
+    defaultPermissions: lawyer?.defaultPermissions || {
+      canEditCase: true,
+      canGenerateDocs: true,
+      canSyncUYAP: false,
+      canViewFinance: true,
+      canEditFinance: false,
+      canChangeStatus: false,
+      canEditParties: false,
+    },
   });
+
+  // Avukat tipine göre varsayılan yetkileri ayarla
+  const handleRankChange = (rank: string) => {
+    let defaultPerms = { ...form.defaultPermissions };
+    let canModify = false;
+    let locked = false;
+    
+    switch (rank) {
+      case 'PARTNER': // Ortak - Tüm yetkiler
+        defaultPerms = {
+          canEditCase: true, canGenerateDocs: true, canSyncUYAP: true,
+          canViewFinance: true, canEditFinance: true, canChangeStatus: true, canEditParties: true,
+        };
+        canModify = true;
+        break;
+      case 'MANAGER': // Yönetici - Geniş yetkiler
+        defaultPerms = {
+          canEditCase: true, canGenerateDocs: true, canSyncUYAP: true,
+          canViewFinance: true, canEditFinance: true, canChangeStatus: true, canEditParties: false,
+        };
+        canModify = true;
+        break;
+      case 'AUTHORIZED': // Yetkili Avukat
+        defaultPerms = {
+          canEditCase: true, canGenerateDocs: true, canSyncUYAP: false,
+          canViewFinance: true, canEditFinance: false, canChangeStatus: false, canEditParties: false,
+        };
+        break;
+      case 'LAWYER': // Avukat
+        defaultPerms = {
+          canEditCase: true, canGenerateDocs: true, canSyncUYAP: false,
+          canViewFinance: false, canEditFinance: false, canChangeStatus: false, canEditParties: false,
+        };
+        break;
+      case 'INTERN': // Stajyer
+        defaultPerms = {
+          canEditCase: false, canGenerateDocs: true, canSyncUYAP: false,
+          canViewFinance: false, canEditFinance: false, canChangeStatus: false, canEditParties: false,
+        };
+        break;
+    }
+    
+    setForm({ ...form, lawyerRank: rank, defaultPermissions: defaultPerms, canModifyOtherPermissions: canModify, permissionsLocked: locked });
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -494,38 +654,132 @@ function LawyerModal({ lawyer, onSave, onClose, saving }: { lawyer: any; onSave:
     onSave(form);
   };
 
+  const RANK_OPTIONS = [
+    { value: 'PARTNER', label: 'Ortak Avukat', color: 'bg-purple-100 text-purple-700', desc: 'Tüm yetkiler + yetki yönetimi' },
+    { value: 'MANAGER', label: 'Yönetici Avukat', color: 'bg-blue-100 text-blue-700', desc: 'Geniş yetkiler' },
+    { value: 'AUTHORIZED', label: 'Yetkili Avukat', color: 'bg-green-100 text-green-700', desc: 'Standart yetkiler' },
+    { value: 'LAWYER', label: 'Avukat', color: 'bg-gray-100 text-gray-700', desc: 'Temel yetkiler' },
+    { value: 'INTERN', label: 'Stajyer Avukat', color: 'bg-orange-100 text-orange-700', desc: 'Kısıtlı yetkiler' },
+  ];
+
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-white rounded-lg p-4 w-full max-w-lg">
+      <div className="bg-white rounded-lg p-4 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between mb-3">
           <h3 className="font-semibold">{lawyer ? "Avukat Düzenle" : "Yeni Avukat"}</h3>
           <button onClick={onClose}><X className="h-4 w-4" /></button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-3 text-xs">
+          {/* Kişisel Bilgiler */}
           <div className="grid grid-cols-4 gap-2">
             <div><label>Ad *</label><input value={form.name} onChange={e => setForm({...form, name: e.target.value})} required className="w-full border rounded px-2 py-1" /></div>
             <div><label>Soyad *</label><input value={form.surname} onChange={e => setForm({...form, surname: e.target.value})} required className="w-full border rounded px-2 py-1" /></div>
             <div><label>TCKN</label><input value={form.tckn} onChange={e => setForm({...form, tckn: e.target.value.replace(/\D/g, "")})} maxLength={11} className="w-full border rounded px-2 py-1" /></div>
             <div><label>Vergi No</label><input value={form.vergiNo} onChange={e => setForm({...form, vergiNo: e.target.value.replace(/\D/g, "")})} maxLength={10} className="w-full border rounded px-2 py-1" /></div>
           </div>
-          <div className="grid grid-cols-4 gap-2">
-            <div><label>Unvan</label><select value={form.title} onChange={e => setForm({...form, title: e.target.value})} className="w-full border rounded px-1 py-1"><option value="">Oto</option><option value="Av.">Av.</option><option value="Stj. Av.">Stj. Av.</option></select></div>
-            <div><label>Rol</label><select value={form.role} onChange={e => setForm({...form, role: e.target.value})} className="w-full border rounded px-1 py-1"><option value="OWNER">Sahip</option><option value="PARTNER">Ortak</option><option value="EMPLOYEE">Avukat</option><option value="INTERN">Stajyer</option></select></div>
-            <div><label>Baro Sicil</label><input value={form.barNumber} onChange={e => setForm({...form, barNumber: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
-            <div><label>Baro</label><input value={form.barCity} onChange={e => setForm({...form, barCity: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
+          
+          {/* Avukat Tipi ve Mesleki Bilgiler */}
+          <div className="p-3 bg-purple-50 border border-purple-200 rounded-lg">
+            <p className="font-semibold text-purple-800 mb-2">👔 Avukat Tipi & Hiyerarşi</p>
+            <div className="grid grid-cols-5 gap-2 mb-3">
+              {RANK_OPTIONS.map(opt => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  onClick={() => handleRankChange(opt.value)}
+                  className={`p-2 rounded-lg border-2 text-center transition-all ${
+                    form.lawyerRank === opt.value 
+                      ? 'border-purple-500 bg-purple-100' 
+                      : 'border-gray-200 hover:border-purple-300'
+                  }`}
+                >
+                  <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${opt.color}`}>{opt.label}</span>
+                  <p className="text-[9px] text-gray-500 mt-1">{opt.desc}</p>
+                </button>
+              ))}
+            </div>
+            <div className="grid grid-cols-4 gap-2">
+              <div><label>Unvan</label><select value={form.title} onChange={e => setForm({...form, title: e.target.value})} className="w-full border rounded px-1 py-1"><option value="">Oto</option><option value="Av.">Av.</option><option value="Stj. Av.">Stj. Av.</option></select></div>
+              <div><label>Baro Sicil</label><input value={form.barNumber} onChange={e => setForm({...form, barNumber: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
+              <div><label>Baro</label><input value={form.barCity} onChange={e => setForm({...form, barCity: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
+              <div><label>Eski Rol</label><select value={form.role} onChange={e => setForm({...form, role: e.target.value})} className="w-full border rounded px-1 py-1"><option value="OWNER">Sahip</option><option value="PARTNER">Ortak</option><option value="EMPLOYEE">Avukat</option><option value="INTERN">Stajyer</option></select></div>
+            </div>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+
+          {/* Varsayılan Yetkiler */}
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+            <p className="font-semibold text-blue-800 mb-2">🔐 Varsayılan Yetkiler (Yeni dosyalara otomatik uygulanır)</p>
+            <div className="grid grid-cols-4 gap-2">
+              <label className="flex items-center gap-1 p-1.5 bg-white rounded border hover:bg-gray-50 cursor-pointer">
+                <input type="checkbox" checked={form.defaultPermissions.canEditCase} onChange={e => setForm({...form, defaultPermissions: {...form.defaultPermissions, canEditCase: e.target.checked}})} />
+                <span>Dosya düzenleme</span>
+              </label>
+              <label className="flex items-center gap-1 p-1.5 bg-white rounded border hover:bg-gray-50 cursor-pointer">
+                <input type="checkbox" checked={form.defaultPermissions.canGenerateDocs} onChange={e => setForm({...form, defaultPermissions: {...form.defaultPermissions, canGenerateDocs: e.target.checked}})} />
+                <span>Evrak oluşturma</span>
+              </label>
+              <label className="flex items-center gap-1 p-1.5 bg-white rounded border hover:bg-gray-50 cursor-pointer">
+                <input type="checkbox" checked={form.defaultPermissions.canSyncUYAP} onChange={e => setForm({...form, defaultPermissions: {...form.defaultPermissions, canSyncUYAP: e.target.checked}})} />
+                <span>UYAP senkron</span>
+              </label>
+              <label className="flex items-center gap-1 p-1.5 bg-white rounded border hover:bg-gray-50 cursor-pointer">
+                <input type="checkbox" checked={form.defaultPermissions.canViewFinance} onChange={e => setForm({...form, defaultPermissions: {...form.defaultPermissions, canViewFinance: e.target.checked}})} />
+                <span>Hesap görme</span>
+              </label>
+              <label className="flex items-center gap-1 p-1.5 bg-white rounded border hover:bg-gray-50 cursor-pointer">
+                <input type="checkbox" checked={form.defaultPermissions.canEditFinance} onChange={e => setForm({...form, defaultPermissions: {...form.defaultPermissions, canEditFinance: e.target.checked}})} />
+                <span>Masraf düzenleme</span>
+              </label>
+              <label className="flex items-center gap-1 p-1.5 bg-white rounded border hover:bg-gray-50 cursor-pointer">
+                <input type="checkbox" checked={form.defaultPermissions.canChangeStatus} onChange={e => setForm({...form, defaultPermissions: {...form.defaultPermissions, canChangeStatus: e.target.checked}})} />
+                <span>Statü değiştirme</span>
+              </label>
+              <label className="flex items-center gap-1 p-1.5 bg-white rounded border hover:bg-gray-50 cursor-pointer">
+                <input type="checkbox" checked={form.defaultPermissions.canEditParties} onChange={e => setForm({...form, defaultPermissions: {...form.defaultPermissions, canEditParties: e.target.checked}})} />
+                <span>Taraf düzenleme</span>
+              </label>
+            </div>
+            
+            {/* Yetki Kilidi (Sadece Ortak görebilir) */}
+            {(form.lawyerRank === 'PARTNER' || form.lawyerRank === 'MANAGER') && (
+              <div className="mt-3 pt-3 border-t border-blue-200">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input type="checkbox" checked={form.permissionsLocked} onChange={e => setForm({...form, permissionsLocked: e.target.checked})} />
+                  <div>
+                    <span className="font-medium text-blue-800">🔒 Yetkileri kilitle</span>
+                    <p className="text-[10px] text-blue-600">Kilitlenirse yönetici avukatlar bile bu avukatın yetkilerini değiştiremez</p>
+                  </div>
+                </label>
+              </div>
+            )}
+          </div>
+
+          {/* İletişim */}
+          <div className="grid grid-cols-3 gap-2">
             <div><label>E-posta</label><input value={form.email} onChange={e => setForm({...form, email: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
             <div><label>Telefon</label><input value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
+            <div><label>Faks</label><input value={form.fax} onChange={e => setForm({...form, fax: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
           </div>
-          <div className="grid grid-cols-2 gap-2">
+          <div>
+            <label>Adres</label>
+            <input value={form.address} onChange={e => setForm({...form, address: e.target.value})} placeholder="Büro adresi" className="w-full border rounded px-2 py-1" />
+          </div>
+          
+          {/* Banka */}
+          <div className="grid grid-cols-3 gap-2">
             <div><label>Banka</label><input value={form.bankName} onChange={e => setForm({...form, bankName: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
+            <div><label>Şube</label><input value={form.branchName} onChange={e => setForm({...form, branchName: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
             <div><label>IBAN</label><input value={form.iban} onChange={e => setForm({...form, iban: e.target.value.toUpperCase()})} className="w-full border rounded px-2 py-1 font-mono" /></div>
           </div>
+          
+          {/* Genel Ayarlar */}
           <div className="flex flex-col gap-3 pt-2 border-t">
             <div className="flex gap-4">
               <label className="flex items-center gap-1"><input type="checkbox" checked={form.canSign} onChange={e => setForm({...form, canSign: e.target.checked})} />İmza yetkisi</label>
               <label className="flex items-center gap-1"><input type="checkbox" checked={form.canAppearInUyap} onChange={e => setForm({...form, canAppearInUyap: e.target.checked})} />UYAP</label>
+              {(form.lawyerRank === 'PARTNER' || form.lawyerRank === 'MANAGER') && (
+                <label className="flex items-center gap-1"><input type="checkbox" checked={form.canModifyOtherPermissions} onChange={e => setForm({...form, canModifyOtherPermissions: e.target.checked})} />Başkalarının yetkilerini değiştirebilir</label>
+              )}
             </div>
             <div className="p-2 bg-amber-50 border border-amber-200 rounded">
               <label className="flex items-center gap-2 cursor-pointer">

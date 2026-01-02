@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
-import { ArrowLeft, Search, Edit2, Check, X, Upload, Download, Building2 } from "lucide-react";
+import { ArrowLeft, Search, Edit2, Check, X, Upload, Download, Building2, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { api } from "@/lib/api";
 
 interface ExecutionOffice {
@@ -18,6 +18,9 @@ interface ExecutionOffice {
   isActive: boolean;
 }
 
+type SortField = "city" | "name" | "uyapCode" | "taxNumber" | "bankName" | "iban";
+type SortDirection = "asc" | "desc" | null;
+
 export default function ExecutionOfficesPage() {
   const [offices, setOffices] = useState<ExecutionOffice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -27,6 +30,10 @@ export default function ExecutionOfficesPage() {
   const [editData, setEditData] = useState<Partial<ExecutionOffice>>({});
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  
+  // Sıralama state'leri
+  const [sortField, setSortField] = useState<SortField | null>(null);
+  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
 
   useEffect(() => {
     loadOffices();
@@ -55,6 +62,50 @@ export default function ExecutionOfficesPage() {
       office.iban?.toLowerCase().includes(searchTerm.toLowerCase());
     return matchesSearch;
   });
+
+  // Sıralama fonksiyonu
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      // Aynı sütuna tıklandı - yönü değiştir veya sıfırla
+      if (sortDirection === "asc") {
+        setSortDirection("desc");
+      } else if (sortDirection === "desc") {
+        setSortDirection(null);
+        setSortField(null);
+      } else {
+        setSortDirection("asc");
+      }
+    } else {
+      // Farklı sütuna tıklandı
+      setSortField(field);
+      setSortDirection("asc");
+    }
+  };
+
+  // Sıralanmış liste
+  const sortedOffices = [...filteredOffices].sort((a, b) => {
+    if (!sortField || !sortDirection) return 0;
+    
+    const aValue = (a[sortField] || "").toString().toLowerCase();
+    const bValue = (b[sortField] || "").toString().toLowerCase();
+    
+    if (sortDirection === "asc") {
+      return aValue.localeCompare(bValue, "tr");
+    } else {
+      return bValue.localeCompare(aValue, "tr");
+    }
+  });
+
+  // Sıralama ikonu
+  const SortIcon = ({ field }: { field: SortField }) => {
+    if (sortField !== field) {
+      return <ChevronsUpDown className="h-3 w-3 text-gray-400" />;
+    }
+    if (sortDirection === "asc") {
+      return <ChevronUp className="h-3 w-3 text-primary" />;
+    }
+    return <ChevronDown className="h-3 w-3 text-primary" />;
+  };
 
   const startEdit = (office: ExecutionOffice) => {
     setEditingId(office.id);
@@ -204,24 +255,72 @@ export default function ExecutionOfficesPage() {
       <div className="bg-white rounded-xl border overflow-hidden">
         {loading ? (
           <div className="p-8 text-center text-muted-foreground">Yükleniyor...</div>
-        ) : filteredOffices.length === 0 ? (
+        ) : sortedOffices.length === 0 ? (
           <div className="p-8 text-center text-muted-foreground">İcra dairesi bulunamadı</div>
         ) : (
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-h-[calc(100vh-380px)] overflow-y-auto">
             <table className="w-full text-sm">
-              <thead className="bg-gray-50 border-b">
+              <thead className="bg-gray-50 border-b sticky top-0 z-10">
                 <tr>
-                  <th className="text-left px-4 py-3 font-medium">İl</th>
-                  <th className="text-left px-4 py-3 font-medium">İcra Dairesi</th>
-                  <th className="text-left px-4 py-3 font-medium">UYAP Kodu</th>
-                  <th className="text-left px-4 py-3 font-medium">Vergi No</th>
-                  <th className="text-left px-4 py-3 font-medium">Banka</th>
-                  <th className="text-left px-4 py-3 font-medium">IBAN</th>
+                  <th 
+                    className="text-left px-4 py-3 font-medium cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("city")}
+                  >
+                    <div className="flex items-center gap-1">
+                      İl
+                      <SortIcon field="city" />
+                    </div>
+                  </th>
+                  <th 
+                    className="text-left px-4 py-3 font-medium cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("name")}
+                  >
+                    <div className="flex items-center gap-1">
+                      İcra Dairesi
+                      <SortIcon field="name" />
+                    </div>
+                  </th>
+                  <th 
+                    className="text-left px-4 py-3 font-medium cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("uyapCode")}
+                  >
+                    <div className="flex items-center gap-1">
+                      UYAP Kodu
+                      <SortIcon field="uyapCode" />
+                    </div>
+                  </th>
+                  <th 
+                    className="text-left px-4 py-3 font-medium cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("taxNumber")}
+                  >
+                    <div className="flex items-center gap-1">
+                      Vergi No
+                      <SortIcon field="taxNumber" />
+                    </div>
+                  </th>
+                  <th 
+                    className="text-left px-4 py-3 font-medium cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("bankName")}
+                  >
+                    <div className="flex items-center gap-1">
+                      Banka
+                      <SortIcon field="bankName" />
+                    </div>
+                  </th>
+                  <th 
+                    className="text-left px-4 py-3 font-medium cursor-pointer hover:bg-gray-100 select-none"
+                    onClick={() => handleSort("iban")}
+                  >
+                    <div className="flex items-center gap-1">
+                      IBAN
+                      <SortIcon field="iban" />
+                    </div>
+                  </th>
                   <th className="text-left px-4 py-3 font-medium">İşlem</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
-                {filteredOffices.map((office) => (
+                {sortedOffices.map((office) => (
                   <tr key={office.id} className="hover:bg-gray-50">
                     <td className="px-4 py-3">{office.city}</td>
                     <td className="px-4 py-3 font-medium">{office.name}</td>

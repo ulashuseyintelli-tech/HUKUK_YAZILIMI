@@ -49,6 +49,7 @@
     "rxjs": "^7.8.1",
     "sharp": "^0.34.5",
     "tesseract.js": "^6.0.1",
+    "xmlbuilder2": "^4.0.3",
     "zod": "^3.22.4"
   },
   "devDependencies": {

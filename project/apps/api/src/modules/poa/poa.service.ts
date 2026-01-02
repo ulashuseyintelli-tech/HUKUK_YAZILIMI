@@ -110,12 +110,13 @@ export class PoaService {
       throw new BadRequestException("Süreli vekalet için geçerlilik bitiş tarihi zorunludur");
     }
 
-    const { lawyerIds, ...poaData } = dto;
+    const { lawyerIds, clientId: _, ...poaData } = dto;
 
     // Vekalet oluştur
     const poa = await this.prisma.clientPowerOfAttorney.create({
       data: {
         ...poaData,
+        client: { connect: { id: dto.clientId } },
         status: PoaStatus.ACTIVE,
       },
       include: {
@@ -278,6 +279,72 @@ export class PoaService {
       message: daysRemaining !== undefined && daysRemaining <= 30
         ? `Vekalet ${daysRemaining} gün içinde sona erecek`
         : undefined,
+    };
+  }
+
+  /**
+   * Müvekkil + Birden fazla avukat için geçerli vekalet kontrolü
+   * Seçili avukatlardan herhangi birine verilmiş vekalet varsa geçerli sayılır
+   */
+  async checkValidPoaForLawyers(clientId: string, lawyerIds: string[], tenantId: string): Promise<PoaValidationResult> {
+    const now = new Date();
+
+    // Seçili avukatlardan herhangi birine verilmiş geçerli vekalet var mı?
+    const validPoa = await this.prisma.clientPowerOfAttorney.findFirst({
+      where: {
+        clientId,
+        client: { tenantId },
+        status: PoaStatus.ACTIVE,
+        isActive: true,
+        lawyers: {
+          some: { lawyerId: { in: lawyerIds } },
+        },
+        OR: [
+          { isLimited: false },
+          {
+            isLimited: true,
+            validUntil: { gte: now },
+          },
+        ],
+      },
+      include: {
+        lawyers: {
+          include: {
+            lawyer: {
+              select: { id: true, name: true, surname: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (!validPoa) {
+      return {
+        isValid: false,
+        message: "Seçili avukatlardan hiçbirine verilmiş geçerli vekalet bulunamadı",
+      };
+    }
+
+    // Kalan gün hesapla
+    let daysRemaining: number | undefined;
+    if (validPoa.isLimited && validPoa.validUntil) {
+      const diffTime = validPoa.validUntil.getTime() - now.getTime();
+      daysRemaining = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    }
+
+    // Vekalette hangi avukatlar var
+    const poaLawyerIds = validPoa.lawyers.map(l => l.lawyerId);
+    const matchedLawyers = validPoa.lawyers
+      .filter(l => lawyerIds.includes(l.lawyerId))
+      .map(l => `${l.lawyer.name} ${l.lawyer.surname}`);
+
+    return {
+      isValid: true,
+      poa: validPoa,
+      daysRemaining,
+      message: daysRemaining !== undefined && daysRemaining <= 30
+        ? `Vekalet ${daysRemaining} gün içinde sona erecek (${matchedLawyers.join(", ")})`
+        : `Geçerli vekalet var (${matchedLawyers.join(", ")})`,
     };
   }
 

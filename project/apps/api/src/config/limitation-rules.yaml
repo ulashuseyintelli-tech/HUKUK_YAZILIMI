@@ -1,0 +1,289 @@
+# ============================================
+# ZAMANAŞIMI KURALLARI (Limitation Rules)
+# İcra takiplerinde zamanaşımı hesaplama ve uyarı sistemi
+# ============================================
+
+version: 1
+engine: limitation_engine
+
+# --------------------------------------------
+# GENEL AYARLAR
+# --------------------------------------------
+settings:
+  warning_threshold_days: 90      # Sarı uyarı eşiği (gün)
+  critical_threshold_days: 0      # Kırmızı uyarı eşiği (gün)
+  enable_logging: true            # Risk logları tutulsun mu
+  block_on_expired: false         # Süre dolmuşsa engelle (false = sadece uyar)
+
+# --------------------------------------------
+# UYARI SEVİYELERİ
+# --------------------------------------------
+warning_levels:
+  GREEN:
+    code: "GREEN"
+    label: "Uygun"
+    color: "#22c55e"
+    description: "Zamanaşımı süresi yeterli"
+    
+  YELLOW:
+    code: "YELLOW"
+    label: "Yaklaşıyor"
+    color: "#eab308"
+    description: "Zamanaşımı süresi dolmak üzere"
+    
+  RED:
+    code: "RED"
+    label: "Dolmuş"
+    color: "#ef4444"
+    description: "Zamanaşımı süresi dolmuş görünüyor"
+    
+  UNKNOWN:
+    code: "UNKNOWN"
+    label: "Hesaplanamadı"
+    color: "#6b7280"
+    description: "Zamanaşımı hesaplanamadı (eksik veri)"
+
+# --------------------------------------------
+# A) GENEL (TBK) ALACAKLAR - İlamsız Takipte En Sık
+# --------------------------------------------
+general_claims:
+  TBK_10:
+    code: "TBK_10"
+    name: "Adi Alacak"
+    description: "Fatura, cari hesap, sözleşme vb."
+    years: 10
+    start_date_field: "maturityDate"  # Muacceliyet/vade tarihi
+    legal_basis: "TBK m.146"
+    applies_to_case_types: ["ILAMSIZ", "GENEL", "FATURA"]
+    notes: "Genel kural - 10 yıllık zamanaşımı"
+    
+  TBK_5_KIRA:
+    code: "TBK_5_KIRA"
+    name: "Kira Alacağı"
+    description: "Kira bedeli alacakları"
+    years: 5
+    start_date_field: "maturityDate"  # Her kira dönemi vadesi
+    legal_basis: "TBK m.147/1"
+    applies_to_case_types: ["KIRA", "TAHLIYE"]
+    notes: "Dönem dönem hesaplanır"
+    
+  TBK_5_UCRET:
+    code: "TBK_5_UCRET"
+    name: "Ücret/Vekâlet/Komisyon"
+    description: "Hizmet ve vekâlet alacakları"
+    years: 5
+    start_date_field: "maturityDate"
+    legal_basis: "TBK m.147/2"
+    applies_to_case_types: ["ILAMSIZ", "GENEL"]
+    notes: "Hizmet/vekâlet alacakları"
+    
+  TBK_5_FAIZ:
+    code: "TBK_5_FAIZ"
+    name: "Faiz Alacağı"
+    description: "Faiz alacakları"
+    years: 5
+    start_date_field: "interestStartDate"  # Faizin muaccel olduğu tarih
+    legal_basis: "TBK m.147/3"
+    applies_to_case_types: ["ILAMSIZ", "ILAMLI", "KAMBIYO"]
+    notes: "Asıl alacaktan ayrı izlenir"
+    
+  TBK_5_ECRIMISIL:
+    code: "TBK_5_ECRIMISIL"
+    name: "Ecrimisil"
+    description: "Haksız işgal tazminatı"
+    years: 5
+    start_date_field: "maturityDate"
+    legal_basis: "TBK m.147"
+    applies_to_case_types: ["ILAMSIZ", "GENEL"]
+    notes: "İşgal/zararın doğduğu dönem"
+
+# --------------------------------------------
+# B) KAMBİYO SENETLERİ (Çek/Bono/Poliçe)
+# --------------------------------------------
+kambiyo_claims:
+  # BONO & POLİÇE
+  KAMB_BONO_ASIL:
+    code: "KAMB_BONO_ASIL"
+    name: "Bono/Poliçe - Asıl Borçlu"
+    description: "Bono veya poliçede asıl borçluya karşı"
+    years: 3
+    start_date_field: "maturityDate"  # Vade tarihi
+    legal_basis: "TTK m.749"
+    applies_to_case_types: ["KAMBIYO"]
+    instrument_types: ["BONO", "SENET", "POLICE"]
+    debtor_roles: ["ASIL_BORCLU", "KEFILASIL"]
+    notes: "Kambiyo yolunda asıl borçluya karşı"
+    
+  KAMB_BONO_CIRANTA:
+    code: "KAMB_BONO_CIRANTA"
+    name: "Bono/Poliçe - Ciranta"
+    description: "Bono veya poliçede cirantalara karşı"
+    years: 1
+    start_date_field: "maturityDate"  # Protesto/başvuru koşulları
+    legal_basis: "TTK m.749"
+    applies_to_case_types: ["KAMBIYO"]
+    instrument_types: ["BONO", "SENET", "POLICE"]
+    debtor_roles: ["CIRANTA", "AVAL"]
+    notes: "Cirantalara karşı 1 yıl"
+    
+  KAMB_BONO_CIRANTA_ARASI:
+    code: "KAMB_BONO_CIRANTA_ARASI"
+    name: "Cirantalar Arası Rücu"
+    description: "Cirantalar arasında rücu davası"
+    months: 6  # 6 ay
+    start_date_field: "paymentDate"  # Ödeme/dava tarihi
+    legal_basis: "TTK m.749"
+    applies_to_case_types: ["KAMBIYO"]
+    instrument_types: ["BONO", "SENET", "POLICE"]
+    notes: "Daha nadir kullanılır"
+    
+  # ÇEK
+  KAMB_CEK_KESIDECI:
+    code: "KAMB_CEK_KESIDECI"
+    name: "Çek - Keşideci"
+    description: "Çekte keşideciye karşı"
+    years: 3
+    start_date_field: "presentationDate"  # İbraz tarihi
+    legal_basis: "TTK m.814"
+    applies_to_case_types: ["KAMBIYO"]
+    instrument_types: ["CEK"]
+    debtor_roles: ["ASIL_BORCLU", "KESIDECI"]
+    notes: "İbraz süresi bitiminden itibaren"
+    
+  KAMB_CEK_CIRANTA:
+    code: "KAMB_CEK_CIRANTA"
+    name: "Çek - Ciranta"
+    description: "Çekte cirantalara karşı"
+    years: 1
+    start_date_field: "presentationDate"  # İbraz/protesto
+    legal_basis: "TTK m.814"
+    applies_to_case_types: ["KAMBIYO"]
+    instrument_types: ["CEK"]
+    debtor_roles: ["CIRANTA", "AVAL"]
+    notes: "Cirantalara karşı 1 yıl"
+
+# --------------------------------------------
+# C) İLAMLI TAKİP (Mahkeme Kararı)
+# --------------------------------------------
+judgment_claims:
+  ILAM_10:
+    code: "ILAM_10"
+    name: "Mahkeme İlamı"
+    description: "Mahkeme kararına dayalı alacak"
+    years: 10
+    start_date_field: "judgmentDate"  # Karar tarihi
+    alternative_start_field: "finalizationDate"  # Kesinleşme tarihi
+    legal_basis: "TBK m.156"
+    applies_to_case_types: ["ILAMLI"]
+    notes: "Karar tarihi veya kesinleşme tarihi esas alınabilir"
+    
+  ILAM_FAIZ_5:
+    code: "ILAM_FAIZ_5"
+    name: "İlam Faizi"
+    description: "İlama bağlı faiz alacağı"
+    years: 5
+    start_date_field: "interestStartDate"
+    legal_basis: "TBK m.147/3"
+    applies_to_case_types: ["ILAMLI"]
+    notes: "Asıl alacaktan ayrı hesaplanır"
+    
+  NAFAKA_10:
+    code: "NAFAKA_10"
+    name: "Nafaka İlamı"
+    description: "Nafaka kararına dayalı alacak"
+    years: 10
+    start_date_field: "judgmentDate"
+    legal_basis: "TBK m.156"
+    applies_to_case_types: ["ILAMLI", "NAFAKA"]
+    notes: "Nafaka ilamları da 10 yıllık zamanaşımına tabi"
+    
+  NAFAKA_BIRIKIMIS_5:
+    code: "NAFAKA_BIRIKIMIS_5"
+    name: "Birikmiş Nafaka"
+    description: "Birikmiş nafaka alacakları"
+    years: 5
+    start_date_field: "maturityDate"
+    legal_basis: "TBK m.147"
+    applies_to_case_types: ["ILAMLI", "NAFAKA"]
+    notes: "Her dönem için ayrı ayrı hesaplanır"
+
+# --------------------------------------------
+# D) REHİN TAKİBİ
+# --------------------------------------------
+collateral_claims:
+  REHIN_ALACAK:
+    code: "REHIN_ALACAK"
+    name: "Rehinle Teminatlı Alacak"
+    description: "Rehinle güvence altına alınmış alacak"
+    years: null  # Alacağın asıl süresine tabi
+    inherit_from_claim: true
+    legal_basis: "TMK m.864"
+    applies_to_case_types: ["REHIN"]
+    notes: "Alacağın asıl zamanaşımı süresi geçerli"
+    
+  REHIN_HAKKI:
+    code: "REHIN_HAKKI"
+    name: "Rehin Hakkı"
+    description: "Tescilli rehin hakkı"
+    years: 10
+    start_date_field: "registrationDate"
+    legal_basis: "TMK m.864"
+    applies_to_case_types: ["REHIN"]
+    notes: "Tescilli ise korunur"
+
+# --------------------------------------------
+# TAKİP TÜRÜ ÖNERİ KURALLARI
+# --------------------------------------------
+recommendation_rules:
+  # Kambiyo zamanaşımı dolduysa genel haciz öner
+  kambiyo_to_general:
+    condition: "kambiyo_expired"
+    from_types: ["KAMBIYO"]
+    recommended_type: "ILAMSIZ"
+    score_adjustment: -50
+    message: "Kambiyo zamanaşımı dolmuş görünüyor. Genel haciz yolu denenebilir ancak itiraz riski yüksektir."
+    
+  # İlam varsa ilamlı takip öner
+  prefer_judgment:
+    condition: "has_judgment"
+    recommended_type: "ILAMLI"
+    score_adjustment: +100
+    message: "Mahkeme kararı mevcut. İlamlı takip en güçlü dayanak olacaktır."
+    
+  # Kambiyo senedi varsa ve süre uygunsa kambiyo öner
+  prefer_kambiyo:
+    condition: "has_instrument_valid"
+    recommended_type: "KAMBIYO"
+    score_adjustment: +90
+    message: "Kambiyo senedi mevcut ve zamanaşımı süresi uygun."
+
+# --------------------------------------------
+# MODAL METİNLERİ
+# --------------------------------------------
+modal_texts:
+  YELLOW:
+    title: "Zamanaşımı Yaklaşıyor"
+    message: "Seçilen alacak türüne göre zamanaşımı süresinin dolmasına **{days_left} gün** kaldı görünüyor. Süre dolmadan işlem yapılması önerilir."
+    buttons:
+      - code: "PROCEED"
+        label: "Devam Et"
+        variant: "primary"
+      - code: "BACK"
+        label: "İncele"
+        variant: "secondary"
+        
+  RED:
+    title: "Zamanaşımı Riski (Süre Dolmuş Görünüyor)"
+    message: "Seçilen alacak türüne göre zamanaşımı süresi dolmuş görünüyor. Borçlu itiraz ederse takip iptal edilebilir. **Bu şekilde takip başlatılmasının sonuçları alacaklıya aittir.**"
+    buttons:
+      - code: "PROCEED"
+        label: "Devam Et"
+        variant: "danger"
+      - code: "BACK"
+        label: "Geri Dön"
+        variant: "secondary"
+        
+  UNKNOWN:
+    title: "Zamanaşımı Hesaplanamadı"
+    message: "Zamanaşımı hesaplanamadı: başlangıç tarihi veya alacak türü eksik."
+    type: "banner"

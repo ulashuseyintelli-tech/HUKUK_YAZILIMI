@@ -1,31 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { useState, useEffect, useRef } from "react";
 import {
   Bell,
   Mail,
-  AlertTriangle,
-  CheckCircle,
-  Info,
-  Clock,
-  FileText,
   Building2,
   CreditCard,
-  Trash2,
+  Clock,
+  FileText,
+  Info,
   Check,
   X,
 } from "lucide-react";
-import { api } from "@/lib/api";
 import { formatDistanceToNow } from "date-fns";
 import { tr } from "date-fns/locale";
 
@@ -64,17 +50,27 @@ export function NotificationCenter({ variant = "popover" }: NotificationCenterPr
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<"all" | "unread">("all");
+  const [isOpen, setIsOpen] = useState(false);
+  const popoverRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     loadNotifications();
-    // Poll for new notifications every 30 seconds
     const interval = setInterval(loadNotifications, 30000);
     return () => clearInterval(interval);
   }, []);
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
   const loadNotifications = async () => {
     try {
-      // Mock data - gercek API'den gelecek
       const mockNotifications: Notification[] = [
         {
           id: "1",
@@ -109,26 +105,6 @@ export function NotificationCenter({ variant = "popover" }: NotificationCenterPr
           caseFileNumber: "2024/12347",
           createdAt: new Date(Date.now() - 1000 * 60 * 60 * 5).toISOString(),
         },
-        {
-          id: "4",
-          type: "UYAP_FAILED",
-          title: "UYAP Hatasi",
-          message: "2024/12348 sayili dosyanin UYAP gonderimi basarisiz oldu",
-          priority: "urgent",
-          isRead: false,
-          caseId: "case-4",
-          caseFileNumber: "2024/12348",
-          createdAt: new Date(Date.now() - 1000 * 60 * 60 * 8).toISOString(),
-        },
-        {
-          id: "5",
-          type: "GAZETTE_UPDATE",
-          title: "Tarife Guncellendi",
-          message: "2025 yili harc tarifeleri Resmi Gazete'de yayinlandi",
-          priority: "low",
-          isRead: true,
-          createdAt: new Date(Date.now() - 1000 * 60 * 60 * 24).toISOString(),
-        },
       ];
       setNotifications(mockNotifications);
     } catch (error) {
@@ -139,20 +115,15 @@ export function NotificationCenter({ variant = "popover" }: NotificationCenterPr
   };
 
   const markAsRead = async (id: string) => {
-    setNotifications(prev =>
-      prev.map(n => (n.id === id ? { ...n, isRead: true } : n))
-    );
-    // API call: await api.post(`/notifications/${id}/read`);
+    setNotifications(prev => prev.map(n => (n.id === id ? { ...n, isRead: true } : n)));
   };
 
   const markAllAsRead = async () => {
     setNotifications(prev => prev.map(n => ({ ...n, isRead: true })));
-    // API call: await api.post('/notifications/read-all');
   };
 
   const deleteNotification = async (id: string) => {
     setNotifications(prev => prev.filter(n => n.id !== id));
-    // API call: await api.delete(`/notifications/${id}`);
   };
 
   const getIcon = (type: NotificationType) => {
@@ -179,26 +150,20 @@ export function NotificationCenter({ variant = "popover" }: NotificationCenterPr
 
   const getPriorityColor = (priority: NotificationPriority) => {
     switch (priority) {
-      case "urgent":
-        return "text-red-600 bg-red-50";
-      case "high":
-        return "text-orange-600 bg-orange-50";
-      case "medium":
-        return "text-blue-600 bg-blue-50";
-      default:
-        return "text-gray-600 bg-gray-50";
+      case "urgent": return "text-red-600 bg-red-50";
+      case "high": return "text-orange-600 bg-orange-50";
+      case "medium": return "text-blue-600 bg-blue-50";
+      default: return "text-gray-600 bg-gray-50";
     }
   };
 
   const unreadCount = notifications.filter(n => !n.isRead).length;
-  const filteredNotifications = filter === "unread" 
-    ? notifications.filter(n => !n.isRead)
-    : notifications;
+  const filteredNotifications = filter === "unread" ? notifications.filter(n => !n.isRead) : notifications;
 
   const NotificationList = () => (
     <div className="space-y-2">
       {filteredNotifications.length === 0 ? (
-        <div className="text-center py-8 text-muted-foreground">
+        <div className="text-center py-8 text-gray-500">
           <Bell className="h-8 w-8 mx-auto mb-2 opacity-50" />
           <p>Bildirim bulunmuyor</p>
         </div>
@@ -206,61 +171,39 @@ export function NotificationCenter({ variant = "popover" }: NotificationCenterPr
         filteredNotifications.map((notification) => {
           const Icon = getIcon(notification.type);
           return (
-            <div
-              key={notification.id}
-              className={`p-3 rounded-lg border transition-colors ${
-                notification.isRead ? "bg-background" : "bg-muted/50"
-              }`}
-            >
+            <div key={notification.id} className={`p-3 rounded-lg border transition-colors ${notification.isRead ? "bg-white" : "bg-blue-50/50"}`}>
               <div className="flex items-start gap-3">
                 <div className={`p-2 rounded-full ${getPriorityColor(notification.priority)}`}>
                   <Icon className="h-4 w-4" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <p className={`font-medium text-sm ${!notification.isRead ? "text-foreground" : "text-muted-foreground"}`}>
+                    <p className={`font-medium text-sm ${!notification.isRead ? "text-gray-900" : "text-gray-500"}`}>
                       {notification.title}
                     </p>
                     {!notification.isRead && (
-                      <Badge variant="default" className="h-5 text-xs">Yeni</Badge>
+                      <span className="px-1.5 py-0.5 text-xs bg-blue-600 text-white rounded">Yeni</span>
                     )}
                   </div>
-                  <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2">
-                    {notification.message}
-                  </p>
+                  <p className="text-sm text-gray-500 mt-0.5 line-clamp-2">{notification.message}</p>
                   <div className="flex items-center gap-2 mt-2">
-                    <span className="text-xs text-muted-foreground">
-                      {formatDistanceToNow(new Date(notification.createdAt), {
-                        addSuffix: true,
-                        locale: tr,
-                      })}
+                    <span className="text-xs text-gray-400">
+                      {formatDistanceToNow(new Date(notification.createdAt), { addSuffix: true, locale: tr })}
                     </span>
                     {notification.caseFileNumber && (
-                      <Badge variant="outline" className="text-xs">
-                        {notification.caseFileNumber}
-                      </Badge>
+                      <span className="px-1.5 py-0.5 text-xs border rounded">{notification.caseFileNumber}</span>
                     )}
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
                   {!notification.isRead && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-7 w-7"
-                      onClick={() => markAsRead(notification.id)}
-                    >
+                    <button onClick={() => markAsRead(notification.id)} className="p-1.5 hover:bg-gray-100 rounded">
                       <Check className="h-3.5 w-3.5" />
-                    </Button>
+                    </button>
                   )}
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7 text-muted-foreground hover:text-destructive"
-                    onClick={() => deleteNotification(notification.id)}
-                  >
+                  <button onClick={() => deleteNotification(notification.id)} className="p-1.5 hover:bg-red-100 hover:text-red-600 rounded text-gray-400">
                     <X className="h-3.5 w-3.5" />
-                  </Button>
+                  </button>
                 </div>
               </div>
             </div>
@@ -272,80 +215,72 @@ export function NotificationCenter({ variant = "popover" }: NotificationCenterPr
 
   if (variant === "full") {
     return (
-      <Card>
-        <CardHeader>
+      <div className="bg-white rounded-lg border shadow-sm">
+        <div className="p-4 border-b">
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2">
+            <h3 className="font-semibold flex items-center gap-2">
               <Bell className="h-5 w-5" />
               Bildirimler
               {unreadCount > 0 && (
-                <Badge variant="destructive">{unreadCount}</Badge>
+                <span className="px-2 py-0.5 text-xs bg-red-600 text-white rounded-full">{unreadCount}</span>
               )}
-            </CardTitle>
+            </h3>
             {unreadCount > 0 && (
-              <Button variant="ghost" size="sm" onClick={markAllAsRead}>
+              <button onClick={markAllAsRead} className="text-sm text-blue-600 hover:underline">
                 Tumunu Okundu Isaretle
-              </Button>
+              </button>
             )}
           </div>
-        </CardHeader>
-        <CardContent>
-          <Tabs value={filter} onValueChange={(v) => setFilter(v as "all" | "unread")}>
-            <TabsList className="mb-4">
-              <TabsTrigger value="all">Tumu ({notifications.length})</TabsTrigger>
-              <TabsTrigger value="unread">Okunmamis ({unreadCount})</TabsTrigger>
-            </TabsList>
-            <TabsContent value="all">
-              <NotificationList />
-            </TabsContent>
-            <TabsContent value="unread">
-              <NotificationList />
-            </TabsContent>
-          </Tabs>
-        </CardContent>
-      </Card>
+          <div className="flex gap-2 mt-3">
+            <button onClick={() => setFilter("all")} className={`px-3 py-1.5 text-sm rounded ${filter === "all" ? "bg-blue-600 text-white" : "bg-gray-100"}`}>
+              Tumu ({notifications.length})
+            </button>
+            <button onClick={() => setFilter("unread")} className={`px-3 py-1.5 text-sm rounded ${filter === "unread" ? "bg-blue-600 text-white" : "bg-gray-100"}`}>
+              Okunmamis ({unreadCount})
+            </button>
+          </div>
+        </div>
+        <div className="p-4">
+          <NotificationList />
+        </div>
+      </div>
     );
   }
 
   return (
-    <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="ghost" size="icon" className="relative">
-          <Bell className="h-5 w-5" />
-          {unreadCount > 0 && (
-            <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-destructive text-destructive-foreground text-xs flex items-center justify-center">
-              {unreadCount > 9 ? "9+" : unreadCount}
-            </span>
-          )}
-        </Button>
-      </PopoverTrigger>
-      <PopoverContent className="w-96 p-0" align="end">
-        <div className="p-4 border-b">
-          <div className="flex items-center justify-between">
-            <h4 className="font-semibold">Bildirimler</h4>
-            {unreadCount > 0 && (
-              <Button variant="ghost" size="sm" className="text-xs" onClick={markAllAsRead}>
-                Tumunu Oku
-              </Button>
-            )}
+    <div className="relative" ref={popoverRef}>
+      <button onClick={() => setIsOpen(!isOpen)} className="p-2 hover:bg-gray-100 rounded-lg relative">
+        <Bell className="h-5 w-5" />
+        {unreadCount > 0 && (
+          <span className="absolute -top-1 -right-1 h-5 w-5 rounded-full bg-red-600 text-white text-xs flex items-center justify-center">
+            {unreadCount > 9 ? "9+" : unreadCount}
+          </span>
+        )}
+      </button>
+      {isOpen && (
+        <div className="absolute right-0 mt-2 w-96 bg-white rounded-lg border shadow-lg z-50">
+          <div className="p-4 border-b">
+            <div className="flex items-center justify-between">
+              <h4 className="font-semibold">Bildirimler</h4>
+              {unreadCount > 0 && (
+                <button onClick={markAllAsRead} className="text-xs text-blue-600 hover:underline">Tumunu Oku</button>
+              )}
+            </div>
           </div>
-        </div>
-        <ScrollArea className="h-80">
-          <div className="p-2">
+          <div className="max-h-80 overflow-y-auto p-2">
             <NotificationList />
           </div>
-        </ScrollArea>
-        <div className="p-2 border-t">
-          <Button variant="ghost" className="w-full text-sm" asChild>
-            <a href="/notifications">Tum Bildirimleri Gor</a>
-          </Button>
+          <div className="p-2 border-t">
+            <a href="/notifications" className="block text-center text-sm text-blue-600 hover:underline py-2">
+              Tum Bildirimleri Gor
+            </a>
+          </div>
         </div>
-      </PopoverContent>
-    </Popover>
+      )}
+    </div>
   );
 }
 
-// Export for header usage
 export function NotificationBell() {
   return <NotificationCenter variant="popover" />;
 }

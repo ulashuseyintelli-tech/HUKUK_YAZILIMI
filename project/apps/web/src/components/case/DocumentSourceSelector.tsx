@@ -762,6 +762,10 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
                     {poaScanResult.companyName && <p><span className="text-gray-500">Kurum:</span> <span className="font-medium">{poaScanResult.companyName}</span></p>}
                     {poaScanResult.tckn && <p><span className="text-gray-500">TCKN:</span> <span className="font-mono">{poaScanResult.tckn}</span></p>}
                     {poaScanResult.vkn && <p><span className="text-gray-500">VKN:</span> <span className="font-mono">{poaScanResult.vkn}</span></p>}
+                    {poaScanResult.address && <p><span className="text-gray-500">Adres:</span> <span className="font-medium">{poaScanResult.address}</span></p>}
+                    {(poaScanResult.city || poaScanResult.district) && (
+                      <p><span className="text-gray-500">İl/İlçe:</span> <span className="font-medium">{[poaScanResult.district, poaScanResult.city].filter(Boolean).join(" / ")}</span></p>
+                    )}
                   </div>
                 </div>
 
@@ -774,11 +778,20 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
                   <div className="space-y-1 text-xs">
                     {poaScanResult.poaNumber && <p><span className="text-gray-500">Yevmiye No:</span> <span className="font-medium">{poaScanResult.poaNumber}</span></p>}
                     {poaScanResult.poaDate && <p><span className="text-gray-500">Tarih:</span> <span>{poaScanResult.poaDate}</span></p>}
-                    {poaScanResult.notaryName && <p><span className="text-gray-500">Noter:</span> <span>{poaScanResult.notaryName}</span></p>}
+                    {poaScanResult.notaryName && <p><span className="text-gray-500">Noter:</span> <span>{poaScanResult.notaryName}{poaScanResult.notaryCity ? ` (${poaScanResult.notaryCity})` : ""}</span></p>}
                     {poaScanResult.isLimited ? (
                       <p><span className="text-gray-500">Geçerlilik:</span> <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded-lg text-xs">Süreli - {poaScanResult.validUntil && new Date(poaScanResult.validUntil).toLocaleDateString("tr-TR")}</span></p>
                     ) : (
                       <p><span className="text-gray-500">Geçerlilik:</span> <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded-lg text-xs">Süresiz</span></p>
+                    )}
+                    {/* Vekiller */}
+                    {poaScanResult.lawyers && poaScanResult.lawyers.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-gray-100">
+                        <p className="text-gray-500 mb-1">Vekiller:</p>
+                        {poaScanResult.lawyers.map((lawyer, idx) => (
+                          <p key={idx} className="font-medium text-indigo-700">• {lawyer.name}</p>
+                        ))}
+                      </div>
                     )}
                   </div>
                 </div>

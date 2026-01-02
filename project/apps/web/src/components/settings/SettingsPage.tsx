@@ -1,20 +1,6 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import {
   Settings,
   Building2,
@@ -23,30 +9,21 @@ import {
   MessageSquare,
   PenTool,
   Bell,
-  Shield,
   Save,
   Loader2,
-  CheckCircle,
   Plus,
   Trash2,
 } from "lucide-react";
-import { api } from "@/lib/api";
-import { toast } from "sonner";
 
 interface TenantSettings {
-  // Genel
   firmName: string;
   firmAddress: string;
   firmPhone: string;
   firmEmail: string;
   taxNo: string;
-  
-  // E-imza
   esignProvider: "E_GUVEN" | "TURKCELL" | "E_TUGRA";
   esignApiKey: string;
   esignEnabled: boolean;
-  
-  // Banka
   bankAccounts: Array<{
     id: string;
     bankName: string;
@@ -55,15 +32,11 @@ interface TenantSettings {
     isDefault: boolean;
   }>;
   autoMatchEnabled: boolean;
-  
-  // SMS
   smsProvider: "NETGSM" | "ILETIMERKEZI" | "TWILIO";
   smsApiKey: string;
   smsApiSecret: string;
   smsSenderId: string;
   smsEnabled: boolean;
-  
-  // E-posta
   emailProvider: "SMTP" | "SENDGRID" | "AWS_SES";
   smtpHost: string;
   smtpPort: number;
@@ -72,18 +45,11 @@ interface TenantSettings {
   emailFromAddress: string;
   emailFromName: string;
   emailEnabled: boolean;
-  
-  // Bildirimler
   notifyOnTebligat: boolean;
   notifyOnPayment: boolean;
   notifyOnDeadline: boolean;
   notifyOnUyap: boolean;
   notifyDaysBefore: number;
-  
-  // Guvenlik
-  twoFactorEnabled: boolean;
-  sessionTimeout: number;
-  ipWhitelist: string[];
 }
 
 export function SettingsPage() {
@@ -116,9 +82,6 @@ export function SettingsPage() {
     notifyOnDeadline: true,
     notifyOnUyap: true,
     notifyDaysBefore: 3,
-    twoFactorEnabled: false,
-    sessionTimeout: 30,
-    ipWhitelist: [],
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -130,9 +93,6 @@ export function SettingsPage() {
 
   const loadSettings = async () => {
     try {
-      // Mock - gercek API'den gelecek
-      // const { data } = await api.get('/settings');
-      // setSettings(data);
       setSettings(prev => ({
         ...prev,
         firmName: "Ornek Hukuk Burosu",
@@ -148,11 +108,10 @@ export function SettingsPage() {
   const saveSettings = async () => {
     setSaving(true);
     try {
-      // await api.put('/settings', settings);
-      await new Promise(resolve => setTimeout(resolve, 1000)); // Mock delay
-      toast.success("Ayarlar kaydedildi");
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      alert("Ayarlar kaydedildi");
     } catch (error) {
-      toast.error("Ayarlar kaydedilemedi");
+      alert("Ayarlar kaydedilemedi");
     } finally {
       setSaving(false);
     }
@@ -196,6 +155,15 @@ export function SettingsPage() {
     );
   }
 
+  const tabs = [
+    { id: "general", label: "Genel", icon: Building2 },
+    { id: "esign", label: "E-Imza", icon: PenTool },
+    { id: "bank", label: "Banka", icon: CreditCard },
+    { id: "sms", label: "SMS", icon: MessageSquare },
+    { id: "email", label: "E-posta", icon: Mail },
+    { id: "notifications", label: "Bildirim", icon: Bell },
+  ];
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -204,473 +172,457 @@ export function SettingsPage() {
             <Settings className="h-6 w-6" />
             Ayarlar
           </h1>
-          <p className="text-muted-foreground">Sistem ve entegrasyon ayarlarini yonetin</p>
+          <p className="text-gray-500">Sistem ve entegrasyon ayarlarini yonetin</p>
         </div>
-        <Button onClick={saveSettings} disabled={saving}>
-          {saving ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-          ) : (
-            <Save className="h-4 w-4 mr-2" />
-          )}
+        <button
+          onClick={saveSettings}
+          disabled={saving}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+        >
+          {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           Kaydet
-        </Button>
+        </button>
       </div>
 
-      <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className="grid grid-cols-6 w-full">
-          <TabsTrigger value="general" className="flex items-center gap-1">
-            <Building2 className="h-4 w-4" />
-            <span className="hidden sm:inline">Genel</span>
-          </TabsTrigger>
-          <TabsTrigger value="esign" className="flex items-center gap-1">
-            <PenTool className="h-4 w-4" />
-            <span className="hidden sm:inline">E-Imza</span>
-          </TabsTrigger>
-          <TabsTrigger value="bank" className="flex items-center gap-1">
-            <CreditCard className="h-4 w-4" />
-            <span className="hidden sm:inline">Banka</span>
-          </TabsTrigger>
-          <TabsTrigger value="sms" className="flex items-center gap-1">
-            <MessageSquare className="h-4 w-4" />
-            <span className="hidden sm:inline">SMS</span>
-          </TabsTrigger>
-          <TabsTrigger value="email" className="flex items-center gap-1">
-            <Mail className="h-4 w-4" />
-            <span className="hidden sm:inline">E-posta</span>
-          </TabsTrigger>
-          <TabsTrigger value="notifications" className="flex items-center gap-1">
-            <Bell className="h-4 w-4" />
-            <span className="hidden sm:inline">Bildirim</span>
-          </TabsTrigger>
-        </TabsList>
+      {/* Tabs */}
+      <div className="flex gap-1 border-b">
+        {tabs.map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex items-center gap-1 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === tab.id
+                ? "border-blue-600 text-blue-600"
+                : "border-transparent text-gray-500 hover:text-gray-700"
+            }`}
+          >
+            <tab.icon className="h-4 w-4" />
+            <span className="hidden sm:inline">{tab.label}</span>
+          </button>
+        ))}
+      </div>
 
-        {/* Genel Ayarlar */}
-        <TabsContent value="general" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Firma Bilgileri</CardTitle>
-              <CardDescription>Hukuk burosu temel bilgileri</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Firma Adi</Label>
-                  <Input
-                    value={settings.firmName}
-                    onChange={(e) => updateSetting("firmName", e.target.value)}
-                    placeholder="Hukuk Burosu Adi"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Vergi No</Label>
-                  <Input
-                    value={settings.taxNo}
-                    onChange={(e) => updateSetting("taxNo", e.target.value)}
-                    placeholder="1234567890"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>E-posta</Label>
-                  <Input
-                    type="email"
-                    value={settings.firmEmail}
-                    onChange={(e) => updateSetting("firmEmail", e.target.value)}
-                    placeholder="info@firma.com"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>Telefon</Label>
-                  <Input
-                    value={settings.firmPhone}
-                    onChange={(e) => updateSetting("firmPhone", e.target.value)}
-                    placeholder="+90 212 123 45 67"
-                  />
-                </div>
-                <div className="space-y-2 md:col-span-2">
-                  <Label>Adres</Label>
-                  <Input
-                    value={settings.firmAddress}
-                    onChange={(e) => updateSetting("firmAddress", e.target.value)}
-                    placeholder="Firma adresi"
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* E-Imza Ayarlari */}
-        <TabsContent value="esign" className="mt-6">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>E-Imza Entegrasyonu</CardTitle>
-                  <CardDescription>E-imza saglayici ayarlari</CardDescription>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Label>Aktif</Label>
-                  <Switch
-                    checked={settings.esignEnabled}
-                    onCheckedChange={(v) => updateSetting("esignEnabled", v)}
-                  />
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Saglayici</Label>
-                  <Select
-                    value={settings.esignProvider}
-                    onValueChange={(v) => updateSetting("esignProvider", v as any)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="E_GUVEN">E-Guven</SelectItem>
-                      <SelectItem value="TURKCELL">Turkcell</SelectItem>
-                      <SelectItem value="E_TUGRA">E-Tugra</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>API Key</Label>
-                  <Input
-                    type="password"
-                    value={settings.esignApiKey}
-                    onChange={(e) => updateSetting("esignApiKey", e.target.value)}
-                    placeholder="••••••••"
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Banka Ayarlari */}
-        <TabsContent value="bank" className="mt-6">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
-                <div>
-                  <CardTitle>Banka Hesaplari</CardTitle>
-                  <CardDescription>Tahsilat icin banka hesaplari</CardDescription>
-                </div>
-                <Button variant="outline" size="sm" onClick={addBankAccount}>
-                  <Plus className="h-4 w-4 mr-1" />
-                  Hesap Ekle
-                </Button>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex items-center gap-2 mb-4">
-                <Switch
-                  checked={settings.autoMatchEnabled}
-                  onCheckedChange={(v) => updateSetting("autoMatchEnabled", v)}
+      {/* Tab Content */}
+      <div className="bg-white rounded-lg border shadow-sm">
+        {activeTab === "general" && (
+          <div className="p-6">
+            <h3 className="text-lg font-semibold mb-1">Firma Bilgileri</h3>
+            <p className="text-sm text-gray-500 mb-4">Hukuk burosu temel bilgileri</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Firma Adi</label>
+                <input
+                  type="text"
+                  value={settings.firmName}
+                  onChange={(e) => updateSetting("firmName", e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Hukuk Burosu Adi"
                 />
-                <Label>Otomatik tahsilat eslestirme</Label>
               </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Vergi No</label>
+                <input
+                  type="text"
+                  value={settings.taxNo}
+                  onChange={(e) => updateSetting("taxNo", e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="1234567890"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">E-posta</label>
+                <input
+                  type="email"
+                  value={settings.firmEmail}
+                  onChange={(e) => updateSetting("firmEmail", e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="info@firma.com"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Telefon</label>
+                <input
+                  type="text"
+                  value={settings.firmPhone}
+                  onChange={(e) => updateSetting("firmPhone", e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="+90 212 123 45 67"
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium mb-1">Adres</label>
+                <input
+                  type="text"
+                  value={settings.firmAddress}
+                  onChange={(e) => updateSetting("firmAddress", e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  placeholder="Firma adresi"
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
-              {settings.bankAccounts.length === 0 ? (
-                <p className="text-muted-foreground text-center py-4">
-                  Henuz banka hesabi eklenmemis
-                </p>
-              ) : (
-                <div className="space-y-3">
-                  {settings.bankAccounts.map((account) => (
-                    <div key={account.id} className="border rounded-lg p-4">
-                      <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
-                        <div className="space-y-1">
-                          <Label className="text-xs">Banka</Label>
-                          <Select
-                            value={account.bankName}
-                            onValueChange={(v) => updateBankAccount(account.id, "bankName", v)}
-                          >
-                            <SelectTrigger>
-                              <SelectValue placeholder="Banka secin" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="GARANTI">Garanti BBVA</SelectItem>
-                              <SelectItem value="AKBANK">Akbank</SelectItem>
-                              <SelectItem value="ISBANK">Is Bankasi</SelectItem>
-                              <SelectItem value="YAPI_KREDI">Yapi Kredi</SelectItem>
-                              <SelectItem value="ZIRAAT">Ziraat Bankasi</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs">Hesap Adi</Label>
-                          <Input
-                            value={account.accountName}
-                            onChange={(e) => updateBankAccount(account.id, "accountName", e.target.value)}
-                            placeholder="Hesap adi"
+        {activeTab === "esign" && (
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-semibold">E-Imza Entegrasyonu</h3>
+                <p className="text-sm text-gray-500">E-imza saglayici ayarlari</p>
+              </div>
+              <label className="flex items-center gap-2">
+                <span className="text-sm">Aktif</span>
+                <input
+                  type="checkbox"
+                  checked={settings.esignEnabled}
+                  onChange={(e) => updateSetting("esignEnabled", e.target.checked)}
+                  className="w-5 h-5 rounded"
+                />
+              </label>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Saglayici</label>
+                <select
+                  value={settings.esignProvider}
+                  onChange={(e) => updateSetting("esignProvider", e.target.value as any)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                >
+                  <option value="E_GUVEN">E-Guven</option>
+                  <option value="TURKCELL">Turkcell</option>
+                  <option value="E_TUGRA">E-Tugra</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">API Key</label>
+                <input
+                  type="password"
+                  value={settings.esignApiKey}
+                  onChange={(e) => updateSetting("esignApiKey", e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500"
+                  placeholder="••••••••"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "bank" && (
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-semibold">Banka Hesaplari</h3>
+                <p className="text-sm text-gray-500">Tahsilat icin banka hesaplari</p>
+              </div>
+              <button
+                onClick={addBankAccount}
+                className="flex items-center gap-1 px-3 py-1.5 text-sm border rounded-lg hover:bg-gray-50"
+              >
+                <Plus className="h-4 w-4" />
+                Hesap Ekle
+              </button>
+            </div>
+            <label className="flex items-center gap-2 mb-4">
+              <input
+                type="checkbox"
+                checked={settings.autoMatchEnabled}
+                onChange={(e) => updateSetting("autoMatchEnabled", e.target.checked)}
+                className="w-4 h-4 rounded"
+              />
+              <span className="text-sm">Otomatik tahsilat eslestirme</span>
+            </label>
+            {settings.bankAccounts.length === 0 ? (
+              <p className="text-gray-500 text-center py-4">Henuz banka hesabi eklenmemis</p>
+            ) : (
+              <div className="space-y-3">
+                {settings.bankAccounts.map((account) => (
+                  <div key={account.id} className="border rounded-lg p-4">
+                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium mb-1">Banka</label>
+                        <select
+                          value={account.bankName}
+                          onChange={(e) => updateBankAccount(account.id, "bankName", e.target.value)}
+                          className="w-full px-2 py-1.5 text-sm border rounded"
+                        >
+                          <option value="">Banka secin</option>
+                          <option value="GARANTI">Garanti BBVA</option>
+                          <option value="AKBANK">Akbank</option>
+                          <option value="ISBANK">Is Bankasi</option>
+                          <option value="YAPI_KREDI">Yapi Kredi</option>
+                          <option value="ZIRAAT">Ziraat Bankasi</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1">Hesap Adi</label>
+                        <input
+                          type="text"
+                          value={account.accountName}
+                          onChange={(e) => updateBankAccount(account.id, "accountName", e.target.value)}
+                          className="w-full px-2 py-1.5 text-sm border rounded"
+                          placeholder="Hesap adi"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium mb-1">IBAN</label>
+                        <input
+                          type="text"
+                          value={account.iban}
+                          onChange={(e) => updateBankAccount(account.id, "iban", e.target.value)}
+                          className="w-full px-2 py-1.5 text-sm border rounded"
+                          placeholder="TR00 0000 0000 0000"
+                        />
+                      </div>
+                      <div className="flex items-end gap-2">
+                        <label className="flex items-center gap-1">
+                          <input
+                            type="checkbox"
+                            checked={account.isDefault}
+                            onChange={(e) => updateBankAccount(account.id, "isDefault", e.target.checked)}
+                            className="w-4 h-4 rounded"
                           />
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-xs">IBAN</Label>
-                          <Input
-                            value={account.iban}
-                            onChange={(e) => updateBankAccount(account.id, "iban", e.target.value)}
-                            placeholder="TR00 0000 0000 0000 0000 0000 00"
-                          />
-                        </div>
-                        <div className="flex items-end gap-2">
-                          <div className="flex items-center gap-2">
-                            <Switch
-                              checked={account.isDefault}
-                              onCheckedChange={(v) => updateBankAccount(account.id, "isDefault", v)}
-                            />
-                            <Label className="text-xs">Varsayilan</Label>
-                          </div>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="text-destructive"
-                            onClick={() => removeBankAccount(account.id)}
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
+                          <span className="text-xs">Varsayilan</span>
+                        </label>
+                        <button
+                          onClick={() => removeBankAccount(account.id)}
+                          className="p-1.5 text-red-600 hover:bg-red-50 rounded"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
                       </div>
                     </div>
-                  ))}
-                </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === "sms" && (
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-semibold">SMS Entegrasyonu</h3>
+                <p className="text-sm text-gray-500">SMS bildirim ayarlari</p>
+              </div>
+              <label className="flex items-center gap-2">
+                <span className="text-sm">Aktif</span>
+                <input
+                  type="checkbox"
+                  checked={settings.smsEnabled}
+                  onChange={(e) => updateSetting("smsEnabled", e.target.checked)}
+                  className="w-5 h-5 rounded"
+                />
+              </label>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Saglayici</label>
+                <select
+                  value={settings.smsProvider}
+                  onChange={(e) => updateSetting("smsProvider", e.target.value as any)}
+                  className="w-full px-3 py-2 border rounded-lg"
+                >
+                  <option value="NETGSM">NetGSM</option>
+                  <option value="ILETIMERKEZI">Ileti Merkezi</option>
+                  <option value="TWILIO">Twilio</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Gonderen ID</label>
+                <input
+                  type="text"
+                  value={settings.smsSenderId}
+                  onChange={(e) => updateSetting("smsSenderId", e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  placeholder="HUKUKBURO"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">API Key</label>
+                <input
+                  type="password"
+                  value={settings.smsApiKey}
+                  onChange={(e) => updateSetting("smsApiKey", e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  placeholder="••••••••"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">API Secret</label>
+                <input
+                  type="password"
+                  value={settings.smsApiSecret}
+                  onChange={(e) => updateSetting("smsApiSecret", e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  placeholder="••••••••"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeTab === "email" && (
+          <div className="p-6">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <h3 className="text-lg font-semibold">E-posta Entegrasyonu</h3>
+                <p className="text-sm text-gray-500">E-posta bildirim ayarlari</p>
+              </div>
+              <label className="flex items-center gap-2">
+                <span className="text-sm">Aktif</span>
+                <input
+                  type="checkbox"
+                  checked={settings.emailEnabled}
+                  onChange={(e) => updateSetting("emailEnabled", e.target.checked)}
+                  className="w-5 h-5 rounded"
+                />
+              </label>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Saglayici</label>
+                <select
+                  value={settings.emailProvider}
+                  onChange={(e) => updateSetting("emailProvider", e.target.value as any)}
+                  className="w-full px-3 py-2 border rounded-lg"
+                >
+                  <option value="SMTP">SMTP</option>
+                  <option value="SENDGRID">SendGrid</option>
+                  <option value="AWS_SES">AWS SES</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Gonderen E-posta</label>
+                <input
+                  type="email"
+                  value={settings.emailFromAddress}
+                  onChange={(e) => updateSetting("emailFromAddress", e.target.value)}
+                  className="w-full px-3 py-2 border rounded-lg"
+                  placeholder="bildirim@firma.com"
+                />
+              </div>
+              {settings.emailProvider === "SMTP" && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">SMTP Host</label>
+                    <input
+                      type="text"
+                      value={settings.smtpHost}
+                      onChange={(e) => updateSetting("smtpHost", e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg"
+                      placeholder="smtp.gmail.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">SMTP Port</label>
+                    <input
+                      type="number"
+                      value={settings.smtpPort}
+                      onChange={(e) => updateSetting("smtpPort", parseInt(e.target.value))}
+                      className="w-full px-3 py-2 border rounded-lg"
+                      placeholder="587"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">SMTP Kullanici</label>
+                    <input
+                      type="text"
+                      value={settings.smtpUser}
+                      onChange={(e) => updateSetting("smtpUser", e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg"
+                      placeholder="kullanici@gmail.com"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium mb-1">SMTP Sifre</label>
+                    <input
+                      type="password"
+                      value={settings.smtpPassword}
+                      onChange={(e) => updateSetting("smtpPassword", e.target.value)}
+                      className="w-full px-3 py-2 border rounded-lg"
+                      placeholder="••••••••"
+                    />
+                  </div>
+                </>
               )}
-            </CardContent>
-          </Card>
-        </TabsContent>
+            </div>
+          </div>
+        )}
 
-        {/* SMS Ayarlari */}
-        <TabsContent value="sms" className="mt-6">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
+        {activeTab === "notifications" && (
+          <div className="p-6">
+            <h3 className="text-lg font-semibold mb-1">Bildirim Tercihleri</h3>
+            <p className="text-sm text-gray-500 mb-4">Hangi durumlarda bildirim alinacagini secin</p>
+            <div className="space-y-4">
+              <div className="flex items-center justify-between py-2">
                 <div>
-                  <CardTitle>SMS Entegrasyonu</CardTitle>
-                  <CardDescription>SMS bildirim ayarlari</CardDescription>
+                  <p className="font-medium">Tebligat Bildirimleri</p>
+                  <p className="text-sm text-gray-500">Tebligat teslim/iade durumlarinda</p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Label>Aktif</Label>
-                  <Switch
-                    checked={settings.smsEnabled}
-                    onCheckedChange={(v) => updateSetting("smsEnabled", v)}
-                  />
-                </div>
+                <input
+                  type="checkbox"
+                  checked={settings.notifyOnTebligat}
+                  onChange={(e) => updateSetting("notifyOnTebligat", e.target.checked)}
+                  className="w-5 h-5 rounded"
+                />
               </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Saglayici</Label>
-                  <Select
-                    value={settings.smsProvider}
-                    onValueChange={(v) => updateSetting("smsProvider", v as any)}
-                  >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="NETGSM">NetGSM</SelectItem>
-                      <SelectItem value="ILETIMERKEZI">Ileti Merkezi</SelectItem>
-                      <SelectItem value="TWILIO">Twilio</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Gonderen ID</Label>
-                  <Input
-                    value={settings.smsSenderId}
-                    onChange={(e) => updateSetting("smsSenderId", e.target.value)}
-                    placeholder="HUKUKBURO"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>API Key</Label>
-                  <Input
-                    type="password"
-                    value={settings.smsApiKey}
-                    onChange={(e) => updateSetting("smsApiKey", e.target.value)}
-                    placeholder="••••••••"
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label>API Secret</Label>
-                  <Input
-                    type="password"
-                    value={settings.smsApiSecret}
-                    onChange={(e) => updateSetting("smsApiSecret", e.target.value)}
-                    placeholder="••••••••"
-                  />
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* E-posta Ayarlari */}
-        <TabsContent value="email" className="mt-6">
-          <Card>
-            <CardHeader>
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between py-2">
                 <div>
-                  <CardTitle>E-posta Entegrasyonu</CardTitle>
-                  <CardDescription>E-posta bildirim ayarlari</CardDescription>
+                  <p className="font-medium">Odeme Bildirimleri</p>
+                  <p className="text-sm text-gray-500">Tahsilat yapildiginda</p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Label>Aktif</Label>
-                  <Switch
-                    checked={settings.emailEnabled}
-                    onCheckedChange={(v) => updateSetting("emailEnabled", v)}
-                  />
-                </div>
+                <input
+                  type="checkbox"
+                  checked={settings.notifyOnPayment}
+                  onChange={(e) => updateSetting("notifyOnPayment", e.target.checked)}
+                  className="w-5 h-5 rounded"
+                />
               </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label>Saglayici</Label>
-                  <Select
-                    value={settings.emailProvider}
-                    onValueChange={(v) => updateSetting("emailProvider", v as any)}
+              <div className="flex items-center justify-between py-2">
+                <div>
+                  <p className="font-medium">Sure Bildirimleri</p>
+                  <p className="text-sm text-gray-500">Yaklasan sureler icin</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={settings.notifyOnDeadline}
+                  onChange={(e) => updateSetting("notifyOnDeadline", e.target.checked)}
+                  className="w-5 h-5 rounded"
+                />
+              </div>
+              <div className="flex items-center justify-between py-2">
+                <div>
+                  <p className="font-medium">UYAP Bildirimleri</p>
+                  <p className="text-sm text-gray-500">UYAP islem sonuclarinda</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={settings.notifyOnUyap}
+                  onChange={(e) => updateSetting("notifyOnUyap", e.target.checked)}
+                  className="w-5 h-5 rounded"
+                />
+              </div>
+              <div className="pt-4 border-t">
+                <div className="flex items-center gap-4">
+                  <label className="text-sm font-medium">Sure uyarisi kac gun once</label>
+                  <select
+                    value={settings.notifyDaysBefore}
+                    onChange={(e) => updateSetting("notifyDaysBefore", parseInt(e.target.value))}
+                    className="px-3 py-1.5 border rounded-lg"
                   >
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="SMTP">SMTP</SelectItem>
-                      <SelectItem value="SENDGRID">SendGrid</SelectItem>
-                      <SelectItem value="AWS_SES">AWS SES</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Gonderen E-posta</Label>
-                  <Input
-                    type="email"
-                    value={settings.emailFromAddress}
-                    onChange={(e) => updateSetting("emailFromAddress", e.target.value)}
-                    placeholder="bildirim@firma.com"
-                  />
-                </div>
-                {settings.emailProvider === "SMTP" && (
-                  <>
-                    <div className="space-y-2">
-                      <Label>SMTP Host</Label>
-                      <Input
-                        value={settings.smtpHost}
-                        onChange={(e) => updateSetting("smtpHost", e.target.value)}
-                        placeholder="smtp.gmail.com"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>SMTP Port</Label>
-                      <Input
-                        type="number"
-                        value={settings.smtpPort}
-                        onChange={(e) => updateSetting("smtpPort", parseInt(e.target.value))}
-                        placeholder="587"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>SMTP Kullanici</Label>
-                      <Input
-                        value={settings.smtpUser}
-                        onChange={(e) => updateSetting("smtpUser", e.target.value)}
-                        placeholder="kullanici@gmail.com"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>SMTP Sifre</Label>
-                      <Input
-                        type="password"
-                        value={settings.smtpPassword}
-                        onChange={(e) => updateSetting("smtpPassword", e.target.value)}
-                        placeholder="••••••••"
-                      />
-                    </div>
-                  </>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-
-        {/* Bildirim Ayarlari */}
-        <TabsContent value="notifications" className="mt-6">
-          <Card>
-            <CardHeader>
-              <CardTitle>Bildirim Tercihleri</CardTitle>
-              <CardDescription>Hangi durumlarda bildirim alinacagini secin</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Tebligat Bildirimleri</p>
-                    <p className="text-sm text-muted-foreground">Tebligat teslim/iade durumlarinda</p>
-                  </div>
-                  <Switch
-                    checked={settings.notifyOnTebligat}
-                    onCheckedChange={(v) => updateSetting("notifyOnTebligat", v)}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Odeme Bildirimleri</p>
-                    <p className="text-sm text-muted-foreground">Tahsilat yapildiginda</p>
-                  </div>
-                  <Switch
-                    checked={settings.notifyOnPayment}
-                    onCheckedChange={(v) => updateSetting("notifyOnPayment", v)}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">Sure Bildirimleri</p>
-                    <p className="text-sm text-muted-foreground">Yaklasan sureler icin</p>
-                  </div>
-                  <Switch
-                    checked={settings.notifyOnDeadline}
-                    onCheckedChange={(v) => updateSetting("notifyOnDeadline", v)}
-                  />
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <p className="font-medium">UYAP Bildirimleri</p>
-                    <p className="text-sm text-muted-foreground">UYAP islem sonuclarinda</p>
-                  </div>
-                  <Switch
-                    checked={settings.notifyOnUyap}
-                    onCheckedChange={(v) => updateSetting("notifyOnUyap", v)}
-                  />
-                </div>
-                <div className="pt-4 border-t">
-                  <div className="flex items-center gap-4">
-                    <Label>Sure uyarisi kac gun once</Label>
-                    <Select
-                      value={settings.notifyDaysBefore.toString()}
-                      onValueChange={(v) => updateSetting("notifyDaysBefore", parseInt(v))}
-                    >
-                      <SelectTrigger className="w-24">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1">1 gun</SelectItem>
-                        <SelectItem value="2">2 gun</SelectItem>
-                        <SelectItem value="3">3 gun</SelectItem>
-                        <SelectItem value="5">5 gun</SelectItem>
-                        <SelectItem value="7">7 gun</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                    <option value={1}>1 gun</option>
+                    <option value={2}>2 gun</option>
+                    <option value={3}>3 gun</option>
+                    <option value={5}>5 gun</option>
+                    <option value={7}>7 gun</option>
+                  </select>
                 </div>
               </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

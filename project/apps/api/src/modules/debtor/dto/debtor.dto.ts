@@ -17,6 +17,7 @@ export enum DebtorType {
   INDIVIDUAL = "INDIVIDUAL",
   COMPANY = "COMPANY",
   PUBLIC_INSTITUTION = "PUBLIC_INSTITUTION",
+  ESTATE = "ESTATE", // Tereke (Miras Ortaklığı)
 }
 
 export enum DebtorRiskLevel {
@@ -110,6 +111,43 @@ export class UpdateDebtorAddressDto {
   isMernis?: boolean;
 }
 
+// ==================== ESTATE HEIR DTO ====================
+
+export class CreateEstateHeirDto {
+  @IsString()
+  name: string;
+
+  @IsString()
+  @IsOptional()
+  @Length(11, 11, { message: "TCKN 11 haneli olmalıdır" })
+  @Matches(/^[0-9]+$/, { message: "TCKN sadece rakam içermelidir" })
+  tckn?: string;
+
+  @IsString()
+  @IsOptional()
+  address?: string;
+
+  @IsString()
+  @IsOptional()
+  city?: string;
+
+  @IsString()
+  @IsOptional()
+  district?: string;
+
+  @IsString()
+  @IsOptional()
+  shareRatio?: string;
+
+  @IsString()
+  @IsOptional()
+  phone?: string;
+
+  @IsString()
+  @IsOptional()
+  email?: string;
+}
+
 // ==================== DEBTOR DTO ====================
 
 export class CreateDebtorDto {
@@ -194,6 +232,31 @@ export class CreateDebtorDto {
   @IsString()
   @IsOptional()
   authorizedPerson?: string;
+
+  // === ESTATE (Tereke - Miras Ortaklığı) ===
+  @IsString()
+  @IsOptional()
+  deceasedName?: string;
+
+  @IsString()
+  @IsOptional()
+  @Length(11, 11, { message: "Muris TCKN 11 haneli olmalıdır" })
+  @Matches(/^[0-9]+$/, { message: "Muris TCKN sadece rakam içermelidir" })
+  deceasedTckn?: string;
+
+  @IsDateString()
+  @IsOptional()
+  deathDate?: string;
+
+  @IsString()
+  @IsOptional()
+  inheritanceDocPath?: string;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateEstateHeirDto)
+  @IsOptional()
+  estateHeirs?: CreateEstateHeirDto[];
 
   // === İLETİŞİM ===
   @IsString()

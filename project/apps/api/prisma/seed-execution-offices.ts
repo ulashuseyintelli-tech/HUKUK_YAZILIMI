@@ -2,347 +2,1036 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-// Türkiye'nin 81 ili ve örnek icra daireleri
+// Türkiye'nin 81 ili ve icra daireleri (Tam banka bilgileriyle)
 const EXECUTION_OFFICES_DATA = [
-  // İSTANBUL (34)
-  { city: "İSTANBUL", name: "İstanbul 1. İcra Dairesi", uyapCode: "1001001" },
-  { city: "İSTANBUL", name: "İstanbul 2. İcra Dairesi", uyapCode: "1001002" },
-  { city: "İSTANBUL", name: "İstanbul 3. İcra Dairesi", uyapCode: "1001003" },
-  { city: "İSTANBUL", name: "İstanbul 4. İcra Dairesi", uyapCode: "1001004" },
-  { city: "İSTANBUL", name: "İstanbul 5. İcra Dairesi", uyapCode: "1001005" },
-  { city: "İSTANBUL", name: "İstanbul 6. İcra Dairesi", uyapCode: "1001006" },
-  { city: "İSTANBUL", name: "İstanbul 7. İcra Dairesi", uyapCode: "1001007" },
-  { city: "İSTANBUL", name: "İstanbul 8. İcra Dairesi", uyapCode: "1001008" },
-  { city: "İSTANBUL", name: "İstanbul 9. İcra Dairesi", uyapCode: "1001009" },
-  { city: "İSTANBUL", name: "İstanbul 10. İcra Dairesi", uyapCode: "1001010" },
-  { city: "İSTANBUL", name: "İstanbul Anadolu 1. İcra Dairesi", uyapCode: "1002001" },
-  { city: "İSTANBUL", name: "İstanbul Anadolu 2. İcra Dairesi", uyapCode: "1002002" },
-  { city: "İSTANBUL", name: "İstanbul Anadolu 3. İcra Dairesi", uyapCode: "1002003" },
-  { city: "İSTANBUL", name: "İstanbul Anadolu 4. İcra Dairesi", uyapCode: "1002004" },
-  { city: "İSTANBUL", name: "İstanbul Anadolu 5. İcra Dairesi", uyapCode: "1002005" },
-  { city: "İSTANBUL", name: "Bakırköy 1. İcra Dairesi", uyapCode: "1003001" },
-  { city: "İSTANBUL", name: "Bakırköy 2. İcra Dairesi", uyapCode: "1003002" },
-  { city: "İSTANBUL", name: "Bakırköy 3. İcra Dairesi", uyapCode: "1003003" },
-  { city: "İSTANBUL", name: "Küçükçekmece 1. İcra Dairesi", uyapCode: "1004001" },
-  { city: "İSTANBUL", name: "Küçükçekmece 2. İcra Dairesi", uyapCode: "1004002" },
+  // İSTANBUL (34) - Tam banka bilgileriyle (iidb.adalet.gov.tr)
+  { city: "İSTANBUL", district: "Adalar", name: "Adalar İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR350001500158007300720026", ibanHarc: "TR230001500158007300720048", ibanCezaevi: "TR920001500158007300720067" },
+  { city: "İSTANBUL", district: "Bakırköy", name: "Bakırköy 1. İcra Dairesi", uyapCode: "1320067729", taxNumber: "1320067729", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR670001500158007290498754", ibanHarc: "TR090001500158007290498731", ibanCezaevi: "TR080001500158007299331084" },
+  { city: "İSTANBUL", district: "Bakırköy", name: "Bakırköy 10. İcra Dairesi", uyapCode: "1300061173", taxNumber: "1300061173", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR170001500158007290499266", ibanHarc: "TR710001500158007290499264", ibanCezaevi: "TR770001500158007290497604" },
+  { city: "İSTANBUL", district: "Bakırköy", name: "Bakırköy 11. İcra Dairesi", uyapCode: "9980042065", taxNumber: "9980042065", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR700001500158007290499282", ibanHarc: "TR540001500158007290499279", ibanCezaevi: "TR370001500158007293788855" },
+  { city: "İSTANBUL", district: "Bakırköy", name: "Bakırköy 12. İcra Dairesi", uyapCode: "9980087082", taxNumber: "9980087082", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR970001500158007290497923", ibanHarc: "TR040001500158007290497948", ibanCezaevi: "TR170001500158007290538163" },
+  { city: "İSTANBUL", district: "Bakırköy", name: "Bakırköy 13. İcra Dairesi", uyapCode: "9980087091", taxNumber: "9980087091", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR780001500158007290499235", ibanHarc: "TR190001500158007290499230", ibanCezaevi: "TR300001500158007293904411" },
+  { city: "İSTANBUL", district: "Bakırköy", name: "Bakırköy 14. İcra Dairesi", uyapCode: "1320714451", taxNumber: "1320714451", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR120001500158007299084535", ibanHarc: "TR400001500158007299085389", ibanCezaevi: "TR630001500158007299329512" },
+  { city: "İSTANBUL", district: "Bakırköy", name: "Bakırköy 15. İcra Dairesi", uyapCode: "1320714428", taxNumber: "1320714428", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR870001500158007299085610", ibanHarc: "TR640001500158007299085636", ibanCezaevi: "TR180001500158007299330031" },
+  { city: "İSTANBUL", district: "Bakırköy", name: "Bakırköy 16. İcra Dairesi", uyapCode: "1320714436", taxNumber: "1320714436", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR230001500158007299085501", ibanHarc: "TR220001500158007299085519", ibanCezaevi: "TR440001500158007299327817" },
+  { city: "İSTANBUL", district: "Bakırköy", name: "Bakırköy 17. İcra Dairesi", uyapCode: "1320714443", taxNumber: "1320714443", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR080001500158007299085771", ibanHarc: "TR940001500158007299085872", ibanCezaevi: "TR070001500158007299323051" },
+  { city: "İSTANBUL", district: "Bakırköy", name: "Bakırköy 18. İcra Dairesi", uyapCode: "1320721138", taxNumber: "1320721138", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR510001500158007300589758", ibanHarc: "TR500001500158007300589776", ibanCezaevi: "TR330001500158007300589791" },
+  { city: "İSTANBUL", district: "Bakırköy", name: "Bakırköy 2. İcra Dairesi", uyapCode: "1320067786", taxNumber: "1320067786", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR520001500158007290498830", ibanHarc: "TR780001500158007290498847", ibanCezaevi: "TR910001500158007290510447" },
+  { city: "İSTANBUL", district: "Bakırköy", name: "Bakırköy 3. İcra Dairesi", uyapCode: "1320067802", taxNumber: "1320067802", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR060001500158007290498882", ibanHarc: "TR550001500158007290498873", ibanCezaevi: "TR020001500158007292185784" },
+  { city: "İSTANBUL", district: "Bakırköy", name: "Bakırköy 4. İcra Dairesi", uyapCode: "1320067843", taxNumber: "1320067843", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR170001500158007290499072", ibanHarc: "TR540001500158007290498988", ibanCezaevi: "TR060001500158007290498979" },
+  { city: "İSTANBUL", district: "Bakırköy", name: "Bakırköy 5. İcra Dairesi", uyapCode: "1320067877", taxNumber: "1320067877", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR090001500158007290499119", ibanHarc: "TR310001500158007290499111", ibanCezaevi: "TR610001500158007299333040" },
+  { city: "İSTANBUL", district: "Bakırköy", name: "Bakırköy 6. İcra Dairesi", uyapCode: "1320067949", taxNumber: "1320067949", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR320001500158007290499190", ibanHarc: "TR060001500158007290499173", ibanCezaevi: "TR470001500158007299325241" },
+  { city: "İSTANBUL", district: "Bakırköy", name: "Bakırköy 7. İcra Dairesi", uyapCode: "1320140113", taxNumber: "1320140113", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR900001500158007290499213", ibanHarc: "TR260001500158007290499201", ibanCezaevi: "TR090001500158007292603922" },
+  { city: "İSTANBUL", district: "Bakırköy", name: "Bakırköy 8. İcra Dairesi", uyapCode: "1320136097", taxNumber: "1320136097", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR290001500158007290499244", ibanHarc: "TR400001500158007290499240", ibanCezaevi: "TR870001500158007299611350" },
+  { city: "İSTANBUL", district: "Bakırköy", name: "Bakırköy 9. İcra Dairesi", uyapCode: "1300058866", taxNumber: "1300058866", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR390001500158007290499258", ibanHarc: "TR930001500158007290499256", ibanCezaevi: "TR570001500158007290497576" },
+  { city: "İSTANBUL", district: "Beykoz", name: "Beykoz İcra Dairesi", uyapCode: "4690034594", taxNumber: "4690034594", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR520001500158007290522498", ibanHarc: "TR220001500158007299356343", ibanCezaevi: "TR300001500158007293604778" },
+  { city: "İSTANBUL", district: "Büyükçekmece", name: "Büyükçekmece 1. İcra Dairesi", uyapCode: "1940129982", taxNumber: "1940129982", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR030001500158007290494668", ibanHarc: "TR440001500158007300573394", ibanCezaevi: "TR820001500158007300573389" },
+  { city: "İSTANBUL", district: "Büyükçekmece", name: "Büyükçekmece 2. İcra Dairesi", uyapCode: "1940129966", taxNumber: "1940129966", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR420001500158007290494645", ibanHarc: "TR490001500158007300573401", ibanCezaevi: "TR330001500158007300573398" },
+  { city: "İSTANBUL", district: "Büyükçekmece", name: "Büyükçekmece 3. İcra Dairesi", uyapCode: "1940432648", taxNumber: "1940432648", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR140001500158007292576284", ibanHarc: "TR110001500158007300573406", ibanCezaevi: "TR220001500158007300573402" },
+  { city: "İSTANBUL", district: "Çatalca", name: "Çatalca İcra Dairesi", uyapCode: "2310083092", taxNumber: "2310083092", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR820001500158007290492955", ibanHarc: "TR040001500158007299277806", ibanCezaevi: "TR210001500158007284964956" },
+  { city: "İSTANBUL", district: "Gaziosmanpaşa", name: "Gaziosmanpaşa 1. İcra Dairesi", uyapCode: "3890045137", taxNumber: "3890045137", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR310001500158007290503088", ibanHarc: "TR850001500158007299351717", ibanCezaevi: "TR550001500158007261967390" },
+  { city: "İSTANBUL", district: "Gaziosmanpaşa", name: "Gaziosmanpaşa 2. İcra Dairesi", uyapCode: "3890045144", taxNumber: "3890045144", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR510001500158007290503116", ibanHarc: "TR520001500158007299396446", ibanCezaevi: "TR210001500158007300576524" },
+  { city: "İSTANBUL", district: "Gaziosmanpaşa", name: "Gaziosmanpaşa 6. İcra Dairesi", uyapCode: "8150840097", taxNumber: "8150840097", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR610001500158007308269262", ibanHarc: "TR760001500158007308269283", ibanCezaevi: "TR640001500158007308269305" },
+  { city: "İSTANBUL", name: "İstanbul 1. İcra Dairesi", uyapCode: "4810042349", taxNumber: "4810042349", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR680001500158007264713905", ibanHarc: "TR170001500158007299460417", ibanCezaevi: "TR730001500158007300568895" },
+  { city: "İSTANBUL", name: "İstanbul 2. İcra Dairesi", uyapCode: "4810042438", taxNumber: "4810042438", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR020001500158007264298575", ibanHarc: "TR870001500158007299287467", ibanCezaevi: "TR840001500158007300568988" },
+  { city: "İSTANBUL", name: "İstanbul 3. İcra Dairesi", uyapCode: "0080736551", taxNumber: "0080736551", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR070001500158007265090490", ibanHarc: "TR440001500158007299319184", ibanCezaevi: "TR930001500158007300569020" },
+  { city: "İSTANBUL", name: "İstanbul 4. İcra Dairesi", uyapCode: "4810042533", taxNumber: "4810042533", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR130001500158007265091352", ibanHarc: "TR380001500158007299651129", ibanCezaevi: "TR860001500158007300569049" },
+  { city: "İSTANBUL", name: "İstanbul 5. İcra Dairesi", uyapCode: "4810042540", taxNumber: "4810042540", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR500001500158007265091753", ibanHarc: "TR250001500158007299831104", ibanCezaevi: "TR680001500158007300569082" },
+  { city: "İSTANBUL", name: "İstanbul 6. İcra Dairesi", uyapCode: "4810042574", taxNumber: "4810042574", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR150001500158007265091898", ibanHarc: "TR560001500158007299360193", ibanCezaevi: "TR280001500158007300569123" },
+  { city: "İSTANBUL", name: "İstanbul 7. İcra Dairesi", uyapCode: "4810042582", taxNumber: "4810042582", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR250001500158007265092009", ibanHarc: "TR860001500158007299352281", ibanCezaevi: "TR820001500158007300569218" },
+  { city: "İSTANBUL", name: "İstanbul 8. İcra Dairesi", uyapCode: "4810042591", taxNumber: "4810042591", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR950001500158007265092107", ibanHarc: "TR770001500158007299352346", ibanCezaevi: "TR650001500158007300569427" },
+  { city: "İSTANBUL", name: "İstanbul 9. İcra Dairesi", uyapCode: "4810042621", taxNumber: "4810042621", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR970001500158007265092168", ibanHarc: "TR490001500158007300570103", ibanCezaevi: "TR630001500158007300569463" },
+  { city: "İSTANBUL", name: "İstanbul 10. İcra Dairesi", uyapCode: "4810042365", taxNumber: "4810042365", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR140001500158007265092207", ibanHarc: "TR540001500158007299371190", ibanCezaevi: "TR400001500158007300569489" },
+  { city: "İSTANBUL", name: "İstanbul 11. İcra Dairesi", uyapCode: "4810042373", taxNumber: "4810042373", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR510001500158007262224609", ibanHarc: "TR630001500158007299352986", ibanCezaevi: "TR600001500158007300569517" },
+  { city: "İSTANBUL", name: "İstanbul 12. İcra Dairesi", uyapCode: "9260039305", taxNumber: "9260039305", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR520001500158007265092299", ibanHarc: "TR160001500158007299353638", ibanCezaevi: "TR040001500158007300569555" },
+  { city: "İSTANBUL", name: "İstanbul 13. İcra Dairesi", uyapCode: "4810042390", taxNumber: "4810042390", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR100001500158007265092376", ibanHarc: "TR820001500158007299352256", ibanCezaevi: "TR240001500158007300569583" },
+  { city: "İSTANBUL", name: "İstanbul 14. İcra Dairesi", uyapCode: "4810131149", taxNumber: "4810131149", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR070001500158007265092527", ibanHarc: "TR170001500158007299353135", ibanCezaevi: "TR280001500158007300569608" },
+  { city: "İSTANBUL", name: "İstanbul 18. İcra Dairesi", uyapCode: "1770001997", taxNumber: "1770001997", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR360001500158007290496984", ibanHarc: "TR770001500158007299374850", ibanCezaevi: "TR970001500158007300569627" },
+  { city: "İSTANBUL", name: "İstanbul 19. İcra Dairesi", uyapCode: "7510007173", taxNumber: "7510007173", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR100001500158007290498519", ibanHarc: "TR810001500158007299353826", ibanCezaevi: "TR900001500158007300569656" },
+  { city: "İSTANBUL", name: "İstanbul 20. İcra Dairesi", uyapCode: "8150134146", taxNumber: "8150134146", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR300001500158007265083092", ibanHarc: "TR040001500158007299379171", ibanCezaevi: "TR610001500158007300569693" },
+  { city: "İSTANBUL", name: "İstanbul 21. İcra Dairesi", uyapCode: "8150134113", taxNumber: "8150134113", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR150001500158007273257843", ibanHarc: "TR650001500158007299371477", ibanCezaevi: "TR590001500158007300569923" },
+  { city: "İSTANBUL", name: "İstanbul 22. İcra Dairesi", uyapCode: "3840004598", taxNumber: "3840004598", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR760001500158007290500241", ibanHarc: "TR840001500158007299353578", ibanCezaevi: "TR300001500158007300569960" },
+  { city: "İSTANBUL", name: "İstanbul 23. İcra Dairesi", uyapCode: "1660046689", taxNumber: "1660046689", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR800001500158007279989928", ibanHarc: "TR320001500158007299379249", ibanCezaevi: "TR770001500158007300570084" },
+  { city: "İSTANBUL", name: "İstanbul 24. İcra Dairesi", uyapCode: "1780009666", taxNumber: "1780009666", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR340001500158007279989689", ibanHarc: "TR570001500158007299355519", ibanCezaevi: "TR610001500158007300570081" },
+  { city: "İSTANBUL", name: "İstanbul 25. İcra Dairesi", uyapCode: "3840004563", taxNumber: "3840004563", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR250001500158007290502323", ibanHarc: "TR680001500158007299352120", ibanCezaevi: "TR020001500158007300570076" },
+  { city: "İSTANBUL", name: "İstanbul 26. İcra Dairesi", uyapCode: "4700046689", taxNumber: "4700046689", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR480001500158007272670399", ibanHarc: "TR920001500158007299348002", ibanCezaevi: "TR130001500158007300570072" },
+  { city: "İSTANBUL", name: "İstanbul 27. İcra Dairesi", uyapCode: "9050006821", taxNumber: "9050006821", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR710001500158007279989799", ibanHarc: "TR640001500158007299356945", ibanCezaevi: "TR890001500158007300570062" },
+  { city: "İSTANBUL", name: "İstanbul 28. İcra Dairesi", uyapCode: "3840004571", taxNumber: "3840004571", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR800001500158007290502206", ibanHarc: "TR420001500158007299354334", ibanCezaevi: "TR960001500158007300570033" },
+  { city: "İSTANBUL", name: "İstanbul 1. İflas Dairesi", uyapCode: "4810029005", taxNumber: "4810029005", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR290001500158007265092810", ibanHarc: "TR750001500158007299442883", ibanCezaevi: "TR260001500158007300570711" },
+  { city: "İSTANBUL", name: "İstanbul 2. İflas Dairesi", uyapCode: "4810042445", taxNumber: "4810042445", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR220001500158007265092839", ibanHarc: "TR240001500158007300570844", ibanCezaevi: "TR760001500158007300570878" },
+  { city: "İSTANBUL", name: "İstanbul 3. İflas Dairesi", uyapCode: "4810029046", taxNumber: "4810029046", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR550001500158007265092924", ibanHarc: "TR950001500158007299437964", ibanCezaevi: "TR200001500158007300570916" },
+  { city: "İSTANBUL", name: "İstanbul 29. İcra Dairesi", uyapCode: "8140031594", taxNumber: "8140031594", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR840001500158007279989856", ibanHarc: "TR560001500158007299353015", ibanCezaevi: "TR760001500158007300570005" },
+  { city: "İSTANBUL", name: "İstanbul 30. İcra Dairesi", uyapCode: "8140461747", taxNumber: "8140461747", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR080001500158007292558641", ibanHarc: "TR600001500158007299355950", ibanCezaevi: "TR500001500158007300569988" },
+  { city: "İSTANBUL", name: "İstanbul 31. İcra Dairesi", uyapCode: "8140121491", taxNumber: "8140121491", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR290001500158007279989973", ibanHarc: "TR070001500158007299352442", ibanCezaevi: "TR940001500158007300569972" },
+  { city: "İSTANBUL", name: "İstanbul 32. İcra Dairesi", uyapCode: "8150014373", taxNumber: "8150014373", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR580001500158007266882811", ibanHarc: "TR740001500158007299352012", ibanCezaevi: "TR850001500158007300569940" },
+  { city: "İSTANBUL", name: "İstanbul 33. İcra Dairesi", uyapCode: "9040023523", taxNumber: "9040023523", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR430001500158007290497052", ibanHarc: "TR370001500158007299371399", ibanCezaevi: "TR060001500158007300569713" },
+  { city: "İSTANBUL", name: "İstanbul 34. İcra Dairesi", uyapCode: "8150014412", taxNumber: "8150014412", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR280001500158007267020412", ibanHarc: "TR320001500158007299347918", ibanCezaevi: "TR020001500158007300569688" },
+  { city: "İSTANBUL", name: "İstanbul 35. İcra Dairesi", uyapCode: "8150014390", taxNumber: "8150014390", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR490001500158007267020325", ibanHarc: "TR280001500158007299346438", ibanCezaevi: "TR150001500158007300569648" },
+  { city: "İSTANBUL", name: "İstanbul 36. İcra Dairesi", uyapCode: "8140461692", taxNumber: "8140461692", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR020001500158007292558555", ibanHarc: "TR780001500158007299357178", ibanCezaevi: "TR430001500158007300569629" },
+  { city: "İSTANBUL", name: "İstanbul 37. İcra Dairesi", uyapCode: "4700040983", taxNumber: "4700040983", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR700001500158007290497051", ibanHarc: "TR460001500158007299371431", ibanCezaevi: "TR930001500158007300569602" },
+  { city: "İSTANBUL", name: "İstanbul Abonelik Sözleşmeleri İcra Dairesi", uyapCode: "4811196757", taxNumber: "4811196757", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR300001500158007312424427", ibanHarc: "TR850001500158007312424601", ibanCezaevi: "TR500001500158007312424649" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 1. İcra Dairesi", uyapCode: "4860033735", taxNumber: "4860033735", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR160001500158007290497053", ibanHarc: "TR290001500158007299378624", ibanCezaevi: "TR350001500158007300570743" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 2. İcra Dairesi", uyapCode: "4860033768", taxNumber: "4860033768", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR590001500158007290497055", ibanHarc: "TR790001500158007299385193", ibanCezaevi: "TR850001500158007300571201" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 3. İcra Dairesi", uyapCode: "4860033784", taxNumber: "4860033784", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR170001500158007290497035", ibanHarc: "TR980001500158007299395618", ibanCezaevi: "TR880001500158007300571147" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 4. İcra Dairesi", uyapCode: "4860033800", taxNumber: "4860033800", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR580001500158007290497073", ibanHarc: "TR500001500158007299438483", ibanCezaevi: "TR600001500158007300570099" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 5. İcra Dairesi", uyapCode: "4860033818", taxNumber: "4860033818", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR050001500158007290497057", ibanHarc: "TR300001500158007299374532", ibanCezaevi: "TR760001500158007300570102" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 6. İcra Dairesi", uyapCode: "4860119969", taxNumber: "4860119969", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR440001500158007290497131", ibanHarc: "TR840001500158007299375985", ibanCezaevi: "TR770001500158007300570181" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 7. İcra Dairesi", uyapCode: "4860120027", taxNumber: "4860120027", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR620001500158007290497098", ibanHarc: "TR510001500158007299374833", ibanCezaevi: "TR840001500158007300570540" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 8. İcra Dairesi", uyapCode: "4860502444", taxNumber: "4860502444", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR250001500158007290497182", ibanHarc: "TR410001500158007299391406", ibanCezaevi: "TR600001500158007300570875" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 9. İcra Dairesi", uyapCode: "7280022647", taxNumber: "7280022647", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR660001500158007290574820", ibanHarc: "TR170001500158007300569224", ibanCezaevi: "TR430001500158007300569241" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 10. İcra Dairesi", uyapCode: "7280051790", taxNumber: "7280051790", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR910001500158007290574855", ibanHarc: "TR380001500158007300569137", ibanCezaevi: "TR790001500158007300569175" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 11. İcra Dairesi", uyapCode: "5260047778", taxNumber: "5260047778", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR560001500158007290500213", ibanHarc: "TR080001500158007300569677", ibanCezaevi: "TR110001500158007285117620" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 12. İcra Dairesi", uyapCode: "9190045189", taxNumber: "9190045189", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR160001500158007290498120", ibanHarc: "TR460001500158007299352516", ibanCezaevi: "TR820001500158007300182673" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 13. İcra Dairesi", uyapCode: "9190045210", taxNumber: "9190045210", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR780001500158007290498071", ibanHarc: "TR710001500158007299359826", ibanCezaevi: "TR100001500158007299359857" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 14. İcra Dairesi", uyapCode: "9190045243", taxNumber: "9190045243", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR940001500158007290498171", ibanHarc: "TR430001500158007300573218", ibanCezaevi: "TR550001500158007299294542" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 15. İcra Dairesi", uyapCode: "9190100460", taxNumber: "9190100460", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR930001500158007290498092", ibanHarc: "TR530001500158007299355882", ibanCezaevi: "TR330001500158007299355854" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 16. İcra Dairesi", uyapCode: "9190380457", taxNumber: "9190380457", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR820001500158007297936929", ibanHarc: "TR050001500158007299296509", ibanCezaevi: "TR260001500158007299385371" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 17. İcra Dairesi", uyapCode: "9190380465", taxNumber: "9190380465", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR350001500158007297937096", ibanHarc: "TR660001500158007299301037", ibanCezaevi: "TR900001500158007299352597" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 18. İcra Dairesi", uyapCode: "9060232481", taxNumber: "9060232481", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR890001500158007290497291", ibanHarc: "TR290001500158007299248353", ibanCezaevi: "TR110001500158007284956115" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 19. İcra Dairesi", uyapCode: "9060287589", taxNumber: "9060287589", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR070001500158007290497312", ibanHarc: "TR170001500158007299244980", ibanCezaevi: "TR430001500158007285175341" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 20. İcra Dairesi", uyapCode: "9060418821", taxNumber: "9060418821", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR620001500158007292580755", ibanHarc: "TR860001500158007299248103", ibanCezaevi: "TR740001500158007292635150" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 21. İcra Dairesi", uyapCode: "9220076478", taxNumber: "9220076478", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR340001500158007290494207", ibanHarc: "TR070001500158007299294048", ibanCezaevi: "TR270001500158007286912996" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 22. İcra Dairesi", uyapCode: "9260043909", taxNumber: "9260043909", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR800001500158007290494252", ibanHarc: "TR180001500158007299294044", ibanCezaevi: "TR840001500158007287734142" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 23. İcra Dairesi", uyapCode: "9960047641", taxNumber: "9960047641", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR840001500158007290494277", ibanHarc: "TR450001500158007299294043", ibanCezaevi: "TR260001500158007285247427" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 24. İcra Dairesi", uyapCode: "3130015244", taxNumber: "3130015244", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR020001500158007290494298", ibanHarc: "TR880001500158007299294045", ibanCezaevi: "TR840001500158007285564931" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu 25. İcra Dairesi", uyapCode: "1660046663", taxNumber: "1660046663", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR590001500158007290494339", ibanHarc: "TR180001500158007299290164", ibanCezaevi: "TR670001500158007286743496" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu Abonelik Sözleşmeleri İcra Dairesi", uyapCode: "4811196708", taxNumber: "4811196708", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR110001500158007312418852", ibanHarc: "TR650001500158007312418947", ibanCezaevi: "TR690001500158007312418972" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu Banka Alacakları İcra Dairesi", uyapCode: "4811196716", taxNumber: "4811196716", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR810001500158007312418853", ibanHarc: "TR330001500158007312418941", ibanCezaevi: "TR630001500158007312418983" },
+  { city: "İSTANBUL", name: "İstanbul Anadolu Gayrimenkul Satış İcra Dairesi", uyapCode: "4811196694", taxNumber: "4811196694", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR540001500158007312418854", ibanHarc: "TR130001500158007312418913", ibanCezaevi: "TR980001500158007312418935" },
+  { city: "İSTANBUL", name: "İstanbul Gayrimenkul Satış İcra Dairesi", uyapCode: "4811197492", taxNumber: "4811197492", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR640001500158007312437298", ibanHarc: "TR040001500158007312437505", ibanCezaevi: "TR700001500158007312437675" },
+  { city: "İSTANBUL", district: "Küçükçekmece", name: "Küçükçekmece 1. İcra Dairesi", uyapCode: "6040002444", taxNumber: "6040002444", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR030001500158007290502234", ibanHarc: "TR300001500158007299263855", ibanCezaevi: "TR790001500158007300568981" },
+  { city: "İSTANBUL", district: "Küçükçekmece", name: "Küçükçekmece 2. İcra Dairesi", uyapCode: "6040002478", taxNumber: "6040002478", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR020001500158007290502155", ibanHarc: "TR550001500158007299266800", ibanCezaevi: "TR730001500158007300569089" },
+  { city: "İSTANBUL", district: "Küçükçekmece", name: "Küçükçekmece 3. İcra Dairesi", uyapCode: "6040002495", taxNumber: "6040002495", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR430001500158007290502193", ibanHarc: "TR180001500158007299292201", ibanCezaevi: "TR120001500158007300569217" },
+  { city: "İSTANBUL", district: "Küçükçekmece", name: "Küçükçekmece 4. İcra Dairesi", uyapCode: "6040387828", taxNumber: "6040387828", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR560001500158007290502347", ibanHarc: "TR580001500158007299292063", ibanCezaevi: "TR300001500158007300569281" },
+  { city: "İSTANBUL", district: "Silivri", name: "Silivri İcra Dairesi", uyapCode: "7700063061", taxNumber: "7700063061", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR390001500158007290498288", ibanHarc: "TR150001500158007300568193", ibanCezaevi: "TR250001500158007300568207" },
+  { city: "İSTANBUL", district: "Şile", name: "Şile İcra Dairesi", uyapCode: "8110367605", taxNumber: "8110367605", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR880001500158007299946758", ibanHarc: "TR370001500158007300570610", ibanCezaevi: "TR300001500158007300570736" },
   
-  // ANKARA (06)
-  { city: "ANKARA", name: "Ankara 1. İcra Dairesi", uyapCode: "0601001" },
-  { city: "ANKARA", name: "Ankara 2. İcra Dairesi", uyapCode: "0601002" },
-  { city: "ANKARA", name: "Ankara 3. İcra Dairesi", uyapCode: "0601003" },
-  { city: "ANKARA", name: "Ankara 4. İcra Dairesi", uyapCode: "0601004" },
-  { city: "ANKARA", name: "Ankara 5. İcra Dairesi", uyapCode: "0601005" },
-  { city: "ANKARA", name: "Ankara 6. İcra Dairesi", uyapCode: "0601006" },
-  { city: "ANKARA", name: "Ankara 7. İcra Dairesi", uyapCode: "0601007" },
-  { city: "ANKARA", name: "Ankara 8. İcra Dairesi", uyapCode: "0601008" },
-  { city: "ANKARA", name: "Ankara 9. İcra Dairesi", uyapCode: "0601009" },
-  { city: "ANKARA", name: "Ankara 10. İcra Dairesi", uyapCode: "0601010" },
-  { city: "ANKARA", name: "Sincan 1. İcra Dairesi", uyapCode: "0602001" },
-  { city: "ANKARA", name: "Sincan 2. İcra Dairesi", uyapCode: "0602002" },
+  // ANKARA (06) - Tam banka bilgileriyle
+  { city: "ANKARA", district: "Akyurt", name: "Akyurt İcra Dairesi", uyapCode: "0450034242", taxNumber: "0450034242", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR390001500158007300577946", ibanHarc: "TR200001500158007300577997", ibanCezaevi: "TR460001500158007300578014" },
+  { city: "ANKARA", name: "Ankara 1. İcra Dairesi", uyapCode: "1780009640", taxNumber: "1780009640", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR350001500158007290493025", ibanHarc: "TR230001500158007296864007", ibanCezaevi: "TR960001500158007300563049" },
+  { city: "ANKARA", name: "Ankara 2. İcra Dairesi", uyapCode: "4700046663", taxNumber: "4700046663", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR720001500158007290493038", ibanHarc: "TR260001500158007296864147", ibanCezaevi: "TR140001500158007300563070" },
+  { city: "ANKARA", name: "Ankara 3. İcra Dairesi", uyapCode: "9050006805", taxNumber: "9050006805", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR230001500158007290493047", ibanHarc: "TR790001500158007296864163", ibanCezaevi: "TR780001500158007300563082" },
+  { city: "ANKARA", name: "Ankara 4. İcra Dairesi", uyapCode: "3130004546", taxNumber: "3130004546", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR440001500158007290493057", ibanHarc: "TR420001500158007298776990", ibanCezaevi: "TR560001500158007300563090" },
+  { city: "ANKARA", name: "Ankara 5. İcra Dairesi", uyapCode: "1660046655", taxNumber: "1660046655", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR650001500158007290493067", ibanHarc: "TR980001500158007296864209", ibanCezaevi: "TR950001500158007300563164" },
+  { city: "ANKARA", name: "Ankara 6. İcra Dairesi", uyapCode: "0620004880", taxNumber: "0620004880", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR380001500158007290493068", ibanHarc: "TR930001500158007296864202", ibanCezaevi: "TR030001500158007300563171" },
+  { city: "ANKARA", name: "Ankara 7. İcra Dairesi", uyapCode: "9460019023", taxNumber: "9460019023", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR970001500158007290493073", ibanHarc: "TR740001500158007296864156", ibanCezaevi: "TR190001500158007300563174" },
+  { city: "ANKARA", name: "Ankara 8. İcra Dairesi", uyapCode: "7590007821", taxNumber: "7590007821", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR430001500158007290493075", ibanHarc: "TR880001500158007296864195", ibanCezaevi: "TR080001500158007300563178" },
+  { city: "ANKARA", name: "Ankara 9. İcra Dairesi", uyapCode: "3100003172", taxNumber: "3100003172", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR320001500158007290493079", ibanHarc: "TR290001500158007296863317", ibanCezaevi: "TR510001500158007300563180" },
+  { city: "ANKARA", name: "Ankara 10. İcra Dairesi", uyapCode: "6430032579", taxNumber: "6430032579", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR750001500158007290493081", ibanHarc: "TR820001500158007296863333", ibanCezaevi: "TR940001500158007300563182" },
+  { city: "ANKARA", name: "Ankara 11. İcra Dairesi", uyapCode: "6430013584", taxNumber: "6430013584", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR210001500158007290493083", ibanHarc: "TR700001500158007296863355", ibanCezaevi: "TR830001500158007300563186" },
+  { city: "ANKARA", name: "Ankara 12. İcra Dairesi", uyapCode: "6430024257", taxNumber: "6430024257", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR100001500158007290493087", ibanHarc: "TR730001500158007296864271", ibanCezaevi: "TR290001500158007300563188" },
+  { city: "ANKARA", name: "Ankara 13. İcra Dairesi", uyapCode: "6440005891", taxNumber: "6440005891", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR800001500158007290493088", ibanHarc: "TR550001500158007296863819", ibanCezaevi: "TR720001500158007300563190" },
+  { city: "ANKARA", name: "Ankara 14. İcra Dairesi", uyapCode: "9260040487", taxNumber: "9260040487", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR960001500158007290493091", ibanHarc: "TR290001500158007296863414", ibanCezaevi: "TR070001500158007300563196" },
+  { city: "ANKARA", name: "Ankara 15. İcra Dairesi", uyapCode: "6430013489", taxNumber: "6430013489", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR690001500158007290493092", ibanHarc: "TR950001500158007296864263", ibanCezaevi: "TR230001500158007300563199" },
+  { city: "ANKARA", name: "Ankara 16. İcra Dairesi", uyapCode: "6420023099", taxNumber: "6420023099", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR850001500158007290493095", ibanHarc: "TR160001500158007296864036", ibanCezaevi: "TR180001500158007300563483" },
+  { city: "ANKARA", name: "Ankara 17. İcra Dairesi", uyapCode: "6440006044", taxNumber: "6440006044", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR040001500158007290493098", ibanHarc: "TR620001500158007296864081", ibanCezaevi: "TR490001500158007300563992" },
+  { city: "ANKARA", name: "Ankara 18. İcra Dairesi", uyapCode: "6430028189", taxNumber: "6430028189", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR740001500158007290493099", ibanHarc: "TR850001500158007296864152", ibanCezaevi: "TR770001500158007300565040" },
+  { city: "ANKARA", name: "Ankara 19. İcra Dairesi", uyapCode: "6430014895", taxNumber: "6430014895", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR470001500158007290493100", ibanHarc: "TR220001500158007296864025", ibanCezaevi: "TR880001500158007300565133" },
+  { city: "ANKARA", name: "Ankara 20. İcra Dairesi", uyapCode: "9810010636", taxNumber: "9810010636", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR900001500158007290493102", ibanHarc: "TR830001500158007296863994", ibanCezaevi: "TR740001500158007300565191" },
+  { city: "ANKARA", name: "Ankara 21. İcra Dairesi", uyapCode: "4700021559", taxNumber: "4700021559", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR630001500158007290493103", ibanHarc: "TR790001500158007296864066", ibanCezaevi: "TR240001500158007300565218" },
+  { city: "ANKARA", name: "Ankara 22. İcra Dairesi", uyapCode: "3890029505", taxNumber: "3890029505", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR360001500158007290493104", ibanHarc: "TR920001500158007296864220", ibanCezaevi: "TR500001500158007300565429" },
+  { city: "ANKARA", name: "Ankara 23. İcra Dairesi", uyapCode: "9810010757", taxNumber: "9810010757", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR090001500158007290493105", ibanHarc: "TR740001500158007296864253", ibanCezaevi: "TR300001500158007300565498" },
+  { city: "ANKARA", name: "Ankara 24. İcra Dairesi", uyapCode: "9810007613", taxNumber: "9810007613", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR790001500158007290493106", ibanHarc: "TR980001500158007296864015", ibanCezaevi: "TR120001500158007300565531" },
+  { city: "ANKARA", name: "Ankara 25. İcra Dairesi", uyapCode: "9810009301", taxNumber: "9810009301", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR250001500158007290493108", ibanHarc: "TR150001500158007296864054", ibanCezaevi: "TR100001500158007300565567" },
+  { city: "ANKARA", name: "Ankara 26. İcra Dairesi", uyapCode: "9810007800", taxNumber: "9810007800", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR950001500158007290493109", ibanHarc: "TR430001500158007296864132", ibanCezaevi: "TR450001500158007300565616" },
+  { city: "ANKARA", name: "Ankara 27. İcra Dairesi", uyapCode: "9810010790", taxNumber: "9810010790", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR680001500158007290493110", ibanHarc: "TR300001500158007296864075", ibanCezaevi: "TR600001500158007300565637" },
+  { city: "ANKARA", name: "Ankara 28. İcra Dairesi", uyapCode: "9810007727", taxNumber: "9810007727", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR410001500158007290493111", ibanHarc: "TR570001500158007296864171", ibanCezaevi: "TR410001500158007300565688" },
+  { city: "ANKARA", name: "Ankara 29. İcra Dairesi", uyapCode: "9810007605", taxNumber: "9810007605", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR140001500158007290493112", ibanHarc: "TR080001500158007296864180", ibanCezaevi: "TR020001500158007300566099" },
+  { city: "ANKARA", name: "Ankara 30. İcra Dairesi", uyapCode: "6490026151", taxNumber: "6490026151", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR840001500158007290493113", ibanHarc: "TR140001500158007296864072", ibanCezaevi: "TR890001500158007300566279" },
+  { city: "ANKARA", name: "Ankara 31. İcra Dairesi", uyapCode: "0690076582", taxNumber: "0690076582", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR030001500158007290493116", ibanHarc: "TR850001500158007296864055", ibanCezaevi: "TR810001500158007300566326" },
+  { city: "ANKARA", name: "Ankara 32. İcra Dairesi", uyapCode: "6490083908", taxNumber: "6490083908", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR190001500158007290493119", ibanHarc: "TR100001500158007296864241", ibanCezaevi: "TR880001500158007300563193" },
+  { city: "ANKARA", name: "Ankara 33. İcra Dairesi", uyapCode: "6490695402", taxNumber: "6490695402", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR150001500158007306482865", ibanHarc: "TR060001500158007306482930", ibanCezaevi: "TR360001500158007306482972" },
+  { city: "ANKARA", name: "Ankara Batı İcra Dairesi", uyapCode: "7700415900", taxNumber: "7700415900", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR310001500158007301621616", ibanHarc: "TR280001500158007301621961", ibanCezaevi: "TR530001500158007301621996" },
+  { city: "ANKARA", name: "Ankara Gayrimenkul Satış İcra Dairesi", uyapCode: "8150922395", taxNumber: "8150922395", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR810001500158007309615068", ibanHarc: "TR790001500158007309615104", ibanCezaevi: "TR030001500158007309615114" },
+  { city: "ANKARA", district: "Bala", name: "Bala İcra Dairesi", uyapCode: "1340067198", taxNumber: "1340067198", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR620001500158007300593149", ibanHarc: "TR710001500158007300592890", ibanCezaevi: "TR280001500158007300592985" },
+  { city: "ANKARA", district: "Beypazarı", name: "Beypazarı İcra Dairesi", uyapCode: "8150296807", taxNumber: "8150296807", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR390001500158007299109560", ibanHarc: "TR210001500158007299355585", ibanCezaevi: "TR860001500158007300568661" },
+  { city: "ANKARA", district: "Çubuk", name: "Çubuk İcra Dairesi", uyapCode: "2630035303", taxNumber: "2630035303", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR800001500158007298729746", ibanHarc: "TR830001500158007299440993", ibanCezaevi: "TR770001500158007300588514" },
+  { city: "ANKARA", district: "Elmadağ", name: "Elmadağ İcra Dairesi", uyapCode: "3320048303", taxNumber: "3320048303", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR150001500158007300577699", ibanHarc: "TR390001500158007300577752", ibanCezaevi: "TR150001500158007300577796" },
+  { city: "ANKARA", district: "Gölbaşı", name: "Gölbaşı(Ankara) İcra Dairesi", uyapCode: "4070051012", taxNumber: "4070051012", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR500001500158007290498478", ibanHarc: "TR050001500158007299394576", ibanCezaevi: "TR860001500158007290575624" },
+  { city: "ANKARA", district: "Haymana", name: "Haymana İcra Dairesi", uyapCode: "4600326056", taxNumber: "4600326056", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR310001500158007300576150", ibanHarc: "TR180001500158007300576093", ibanCezaevi: "TR910001500158007300576137" },
+  { city: "ANKARA", district: "Kahramankazan", name: "Kahramankazan İcra Dairesi", uyapCode: "5410070949", taxNumber: "5410070949", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR500001500158007299088410", ibanHarc: "TR310001500158007299310106", ibanCezaevi: "TR310001500158007299088461" },
+  { city: "ANKARA", district: "Kalecik", name: "Kalecik İcra Dairesi", uyapCode: "4910279554", taxNumber: "4910279554", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR250001500158007300621848", ibanHarc: "TR820001500158007300621792", ibanCezaevi: "TR370001500158007300621826" },
+  { city: "ANKARA", district: "Kızılcahamam", name: "Kızılcahamam İcra Dairesi", uyapCode: "4840034862", taxNumber: "4840034862", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR180001500158007300575123", ibanHarc: "TR180001500158007300575220", ibanCezaevi: "TR040001500158007300575181" },
+  { city: "ANKARA", district: "Nallıhan", name: "Nallıhan İcra Dairesi", uyapCode: "6280030438", taxNumber: "6280030438", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR030001500158007300615939", ibanHarc: "TR920001500158007300615986", ibanCezaevi: "TR530001500158007300616009" },
+  { city: "ANKARA", district: "Polatlı", name: "Polatlı İcra Dairesi", uyapCode: "7320046637", taxNumber: "7320046637", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR470001500158007290500860", ibanHarc: "TR680001500158007299350180", ibanCezaevi: "TR730001500158007287357786" },
+  { city: "ANKARA", district: "Şereflikoçhisar", name: "Şereflikoçhisar İcra Dairesi", uyapCode: "8100286705", taxNumber: "8100286705", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR550001500158007290560274", ibanHarc: "TR840001500158007299410129", ibanCezaevi: "TR490001500158007285807285" },
   
-  // İZMİR (35)
-  { city: "İZMİR", name: "İzmir 1. İcra Dairesi", uyapCode: "3501001" },
-  { city: "İZMİR", name: "İzmir 2. İcra Dairesi", uyapCode: "3501002" },
-  { city: "İZMİR", name: "İzmir 3. İcra Dairesi", uyapCode: "3501003" },
-  { city: "İZMİR", name: "İzmir 4. İcra Dairesi", uyapCode: "3501004" },
-  { city: "İZMİR", name: "İzmir 5. İcra Dairesi", uyapCode: "3501005" },
-  { city: "İZMİR", name: "İzmir 6. İcra Dairesi", uyapCode: "3501006" },
-  { city: "İZMİR", name: "İzmir 7. İcra Dairesi", uyapCode: "3501007" },
-  { city: "İZMİR", name: "İzmir 8. İcra Dairesi", uyapCode: "3501008" },
-  { city: "İZMİR", name: "Karşıyaka 1. İcra Dairesi", uyapCode: "3502001" },
-  { city: "İZMİR", name: "Karşıyaka 2. İcra Dairesi", uyapCode: "3502002" },
+  // İZMİR (35) - Tam banka bilgileriyle
+  { city: "İZMİR", district: "Aliağa", name: "Aliağa İcra Dairesi", uyapCode: "0520059686", taxNumber: "0520059686", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR730001500158007290517270", ibanHarc: "TR450001500158007299340215", ibanCezaevi: "TR860001500158007300573705" },
+  { city: "İZMİR", district: "Bayındır", name: "Bayındır İcra Dairesi", uyapCode: "1530062717", taxNumber: "1530062717", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR650001500158007300578836", ibanHarc: "TR290001500158007300578805", ibanCezaevi: "TR390001500158007300578819" },
+  { city: "İZMİR", district: "Bergama", name: "Bergama İcra Dairesi", uyapCode: "1650037818", taxNumber: "1650037818", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR380001500158007290495784", ibanHarc: "TR080001500158007299287337", ibanCezaevi: "TR940001500158007297734177" },
+  { city: "İZMİR", district: "Çeşme", name: "Çeşme İcra Dairesi", uyapCode: "2420439872", taxNumber: "2420439872", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR820001500158007290496544", ibanHarc: "TR970001500158007299343256", ibanCezaevi: "TR970001500158007285092016" },
+  { city: "İZMİR", district: "Dikili", name: "Dikili İcra Dairesi", uyapCode: "4690034407", taxNumber: "4690034407", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR530001500158007297155049", ibanHarc: "TR420001500158007299344052", ibanCezaevi: "TR820001500158007297154915" },
+  { city: "İZMİR", district: "Foça", name: "Foça İcra Dairesi", uyapCode: "3880038460", taxNumber: "3880038460", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR610001500158007300411680", ibanHarc: "TR880001500158007300567849", ibanCezaevi: "TR020001500158007300411772" },
+  { city: "İZMİR", name: "İzmir 1. İcra Dairesi", uyapCode: "4840007922", taxNumber: "4840007922", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR210001500158007290492986", ibanHarc: "TR560001500158007299328183", ibanCezaevi: "TR800001500158007300569933" },
+  { city: "İZMİR", name: "İzmir 2. İcra Dairesi", uyapCode: "4840010944", taxNumber: "4840010944", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR260001500158007290492993", ibanHarc: "TR580001500158007299328341", ibanCezaevi: "TR030001500158007300569961" },
+  { city: "İZMİR", name: "İzmir 3. İcra Dairesi", uyapCode: "4840016135", taxNumber: "4840016135", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR790001500158007290493009", ibanHarc: "TR220001500158007292739003", ibanCezaevi: "TR330001500158007296064450" },
+  { city: "İZMİR", name: "İzmir 4. İcra Dairesi", uyapCode: "4840009230", taxNumber: "4840009230", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR890001500158007290493023", ibanHarc: "TR450001500158007299328478", ibanCezaevi: "TR210001500158007300570025" },
+  { city: "İZMİR", name: "İzmir 5. İcra Dairesi", uyapCode: "4840007834", taxNumber: "4840007834", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR610001500158007290493042", ibanHarc: "TR100001500158007299328526", ibanCezaevi: "TR940001500158007300570069" },
+  { city: "İZMİR", name: "İzmir 6. İcra Dairesi", uyapCode: "4840006931", taxNumber: "4840006931", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR490001500158007290492288", ibanHarc: "TR720001500158007299328574", ibanCezaevi: "TR400001500158007300570071" },
+  { city: "İZMİR", name: "İzmir 7. İcra Dairesi", uyapCode: "4840016465", taxNumber: "4840016465", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR740001500158007290493196", ibanHarc: "TR420001500158007299328629", ibanCezaevi: "TR830001500158007300570073" },
+  { city: "İZMİR", name: "İzmir 8. İcra Dairesi", uyapCode: "4840014647", taxNumber: "4840014647", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR080001500158007290493414", ibanHarc: "TR900001500158007299328929", ibanCezaevi: "TR920001500158007296064455" },
+  { city: "İZMİR", name: "İzmir 9. İcra Dairesi", uyapCode: "4840009159", taxNumber: "4840009159", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR560001500158007290493423", ibanHarc: "TR650001500158007299328991", ibanCezaevi: "TR070001500158007300570083" },
+  { city: "İZMİR", name: "İzmir 10. İcra Dairesi", uyapCode: "4840013252", taxNumber: "4840013252", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR080001500158007290492250", ibanHarc: "TR890001500158007299329044", ibanCezaevi: "TR380001500158007296064457" },
+  { city: "İZMİR", name: "İzmir 11. İcra Dairesi", uyapCode: "4840013211", taxNumber: "4840013211", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR230001500158007290493435", ibanHarc: "TR280001500158007299329075", ibanCezaevi: "TR110001500158007296064458" },
+  { city: "İZMİR", name: "İzmir 12. İcra Dairesi", uyapCode: "4840013244", taxNumber: "4840013244", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR120001500158007290493439", ibanHarc: "TR420001500158007299329211", ibanCezaevi: "TR810001500158007296064459" },
+  { city: "İZMİR", name: "İzmir 13. İcra Dairesi", uyapCode: "4840016739", taxNumber: "4840016739", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR490001500158007290493452", ibanHarc: "TR230001500158007299329262", ibanCezaevi: "TR540001500158007296064460" },
+  { city: "İZMİR", name: "İzmir 14. İcra Dairesi", uyapCode: "4840013229", taxNumber: "4840013229", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR040001500158007290493486", ibanHarc: "TR860001500158007299329292", ibanCezaevi: "TR270001500158007296064461" },
+  { city: "İZMİR", name: "İzmir 15. İcra Dairesi", uyapCode: "4840013203", taxNumber: "4840013203", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR950001500158007290493497", ibanHarc: "TR830001500158007299329346", ibanCezaevi: "TR970001500158007296064462" },
+  { city: "İZMİR", name: "İzmir 16. İcra Dairesi", uyapCode: "4840173641", taxNumber: "4840173641", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR460001500158007290493506", ibanHarc: "TR580001500158007299329408", ibanCezaevi: "TR700001500158007296064463" },
+  { city: "İZMİR", name: "İzmir 17. İcra Dairesi", uyapCode: "4840174505", taxNumber: "4840174505", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR670001500158007290493516", ibanHarc: "TR680001500158007299329616", ibanCezaevi: "TR430001500158007296064464" },
+  { city: "İZMİR", name: "İzmir 18. İcra Dairesi", uyapCode: "8150014453", taxNumber: "8150014453", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR830001500158007290497690", ibanHarc: "TR730001500158007299329914", ibanCezaevi: "TR160001500158007296064465" },
+  { city: "İZMİR", name: "İzmir 19. İcra Dairesi", uyapCode: "4840525446", taxNumber: "4840525446", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR580001500158007290493581", ibanHarc: "TR860001500158007299330068", ibanCezaevi: "TR860001500158007296064466" },
+  { city: "İZMİR", name: "İzmir 20. İcra Dairesi", uyapCode: "4840685450", taxNumber: "4840685450", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR730001500158007290493602", ibanHarc: "TR090001500158007299330387", ibanCezaevi: "TR280001500158007300570093" },
+  { city: "İZMİR", name: "İzmir 21. İcra Dairesi", uyapCode: "4840685628", taxNumber: "4840685628", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR230001500158007290493629", ibanHarc: "TR790001500158007299330485", ibanCezaevi: "TR550001500158007300570092" },
+  { city: "İZMİR", name: "İzmir 22. İcra Dairesi", uyapCode: "4840685636", taxNumber: "4840685636", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR600001500158007290493642", ibanHarc: "TR090001500158007299330678", ibanCezaevi: "TR390001500158007300570089" },
+  { city: "İZMİR", name: "İzmir 23. İcra Dairesi", uyapCode: "4840686027", taxNumber: "4840686027", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR920001500158007290493648", ibanHarc: "TR070001500158007299330714", ibanCezaevi: "TR660001500158007300570088" },
+  { city: "İZMİR", name: "İzmir 24. İcra Dairesi", uyapCode: "4840756269", taxNumber: "4840756269", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR620001500158007296395765", ibanHarc: "TR250001500158007299330778", ibanCezaevi: "TR230001500158007300570086" },
+  { city: "İZMİR", name: "İzmir 25. İcra Dairesi", uyapCode: "4840756251", taxNumber: "4840756251", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR810001500158007296395811", ibanHarc: "TR750001500158007299330848", ibanCezaevi: "TR500001500158007300570085" },
+  { city: "İZMİR", name: "İzmir 26. İcra Dairesi", uyapCode: "4840773321", taxNumber: "4840773321", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR430001500158007297855181", ibanHarc: "TR770001500158007299331006", ibanCezaevi: "TR340001500158007300570082" },
+  { city: "İZMİR", name: "İzmir 27. İcra Dairesi", uyapCode: "10706525", taxNumber: "10706525", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR940001500158007299062204", ibanHarc: "TR210001500158007299331044", ibanCezaevi: "TR880001500158007300570080" },
+  { city: "İZMİR", name: "İzmir 28. İcra Dairesi", uyapCode: "0010706509", taxNumber: "0010706509", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR600001500158007299062234", ibanHarc: "TR190001500158007299331080", ibanCezaevi: "TR290001500158007300570075" },
+  { city: "İZMİR", name: "İzmir İflas Müdürlüğü", uyapCode: "4840010937", taxNumber: "4840010937", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR270001500158007290496467", ibanHarc: "TR320001500158007296064468", ibanCezaevi: "TR030001500158007282847673" },
+  { city: "İZMİR", district: "Karaburun", name: "Karaburun İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR900001500158007300572566", ibanHarc: "TR870001500158007300572814", ibanCezaevi: "TR100001500158007300572745" },
+  { city: "İZMİR", district: "Karşıyaka", name: "Karşıyaka 1. İcra Dairesi", uyapCode: "5250020055", taxNumber: "5250020055", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR300001500158007290494473", ibanHarc: "TR680001500158007299245517", ibanCezaevi: "TR060001500158007284863085" },
+  { city: "İZMİR", district: "Karşıyaka", name: "Karşıyaka 2. İcra Dairesi", uyapCode: "5250021023", taxNumber: "5250021023", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR560001500158007290493714", ibanHarc: "TR060001500158007299248088", ibanCezaevi: "TR660001500158007286177131" },
+  { city: "İZMİR", district: "Karşıyaka", name: "Karşıyaka 3. İcra Dairesi", uyapCode: "5250048539", taxNumber: "5250048539", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR890001500158007290494284", ibanHarc: "TR880001500158007299248164", ibanCezaevi: "TR800001500158007284906664" },
+  { city: "İZMİR", district: "Karşıyaka", name: "Karşıyaka 4. İcra Dairesi", uyapCode: "5250215715", taxNumber: "5250215715", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR100001500158007290493572", ibanHarc: "TR130001500158007299248738", ibanCezaevi: "TR180001500158007287702156" },
+  { city: "İZMİR", district: "Kemalpaşa", name: "Kemalpaşa İcra Dairesi", uyapCode: "4690063570", taxNumber: "4690063570", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR550001500158007292439358", ibanHarc: "TR520001500158007299294790", ibanCezaevi: "TR670001500158007300570458" },
+  { city: "İZMİR", district: "Kınık", name: "Kınık İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR370001500158007300574490", ibanHarc: "TR890001500158007300574427", ibanCezaevi: "TR710001500158007300574460" },
+  { city: "İZMİR", district: "Kiraz", name: "Kiraz İcra Dairesi", uyapCode: "5630336472", taxNumber: "5630336472", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR410001500158007300579074", ibanHarc: "TR430001500158007300579038", ibanCezaevi: "TR420001500158007300579056" },
+  { city: "İZMİR", district: "Menderes", name: "Menderes İcra Dairesi", uyapCode: "6140080939", taxNumber: "6140080939", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR120001500158007290572397", ibanHarc: "TR340001500158007274319166", ibanCezaevi: "TR870001500158007285922128" },
+  { city: "İZMİR", district: "Menemen", name: "Menemen İcra Dairesi", uyapCode: "6150046952", taxNumber: "6150046952", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR470001500158007290496786", ibanHarc: "TR790001500158007299352116", ibanCezaevi: "TR100001500158007295192931" },
+  { city: "İZMİR", district: "Ödemiş", name: "Ödemiş İcra Dairesi", uyapCode: "8790095098", taxNumber: "8790095098", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR980001500158007290510612", ibanHarc: "TR910001500158007299253057", ibanCezaevi: "TR480001500158007293614930" },
+  { city: "İZMİR", district: "Seferihisar", name: "Seferihisar İcra Dairesi", uyapCode: "7580074106", taxNumber: "7580074106", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR030001500158007300570446", ibanHarc: "TR350001500158007300570355", ibanCezaevi: "TR580001500158007300570426" },
+  { city: "İZMİR", district: "Selçuk", name: "Selçuk İcra Dairesi", uyapCode: "7590061037", taxNumber: "7590061037", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR950001500158007297182229", ibanHarc: "TR810001500158007299280785", ibanCezaevi: "TR210001500158007297362138" },
+  { city: "İZMİR", district: "Tire", name: "Tire İcra Dairesi", uyapCode: "8450041408", taxNumber: "8450041408", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR650001500158007299463530", ibanHarc: "TR710001500158007299463519", ibanCezaevi: "TR210001500158007300575263" },
+  { city: "İZMİR", district: "Torbalı", name: "Torbalı İcra Dairesi", uyapCode: "8560246843", taxNumber: "8560246843", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR360001500158007290515899", ibanHarc: "TR890001500158007300576270", ibanCezaevi: "TR930001500158007300576295" },
+  { city: "İZMİR", district: "Urla", name: "Urla İcra Dairesi", uyapCode: "8940006768", taxNumber: "8940006768", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR190001500158007296260448", ibanHarc: "TR860001500158007299374785", ibanCezaevi: "TR850001500158007300567030" },
   
-  // BURSA (16)
-  { city: "BURSA", name: "Bursa 1. İcra Dairesi", uyapCode: "1601001" },
-  { city: "BURSA", name: "Bursa 2. İcra Dairesi", uyapCode: "1601002" },
-  { city: "BURSA", name: "Bursa 3. İcra Dairesi", uyapCode: "1601003" },
-  { city: "BURSA", name: "Bursa 4. İcra Dairesi", uyapCode: "1601004" },
-  { city: "BURSA", name: "Bursa 5. İcra Dairesi", uyapCode: "1601005" },
+  // BURSA (16) - Tam banka bilgileriyle
+  { city: "BURSA", name: "Bursa 1. İcra Dairesi", uyapCode: "1780009658", taxNumber: "1780009658", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR330001500158007290499754", ibanHarc: "TR590001500158007299301939", ibanCezaevi: "TR500001500158007300567563" },
+  { city: "BURSA", name: "Bursa 2. İcra Dairesi", uyapCode: "4700046671", taxNumber: "4700046671", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR840001500158007290499806", ibanHarc: "TR240001500158007299302181", ibanCezaevi: "TR440001500158007300580572" },
+  { city: "BURSA", name: "Bursa 3. İcra Dairesi", uyapCode: "1910027923", taxNumber: "1910027923", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR330001500158007290499851", ibanHarc: "TR350001500158007299302274", ibanCezaevi: "TR870001500158007300567576" },
+  { city: "BURSA", name: "Bursa 4. İcra Dairesi", uyapCode: "1910023953", taxNumber: "1910023953", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR580001500158007290499886", ibanHarc: "TR430001500158007299302324", ibanCezaevi: "TR460001500158007300579954" },
+  { city: "BURSA", name: "Bursa 5. İcra Dairesi", uyapCode: "1910023371", taxNumber: "1910023371", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR840001500158007290499903", ibanHarc: "TR210001500158007299297967", ibanCezaevi: "TR160001500158007300567593" },
+  { city: "BURSA", name: "Bursa 6. İcra Dairesi", uyapCode: "0620004899", taxNumber: "0620004899", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR720001500158007290499925", ibanHarc: "TR560001500158007299302381", ibanCezaevi: "TR670001500158007300581128" },
+  { city: "BURSA", name: "Bursa 7. İcra Dairesi", uyapCode: "1910027948", taxNumber: "1910027948", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR540001500158007290499958", ibanHarc: "TR830001500158007299432942", ibanCezaevi: "TR350001500158007300578115" },
+  { city: "BURSA", name: "Bursa 8. İcra Dairesi", uyapCode: "1910115877", taxNumber: "1910115877", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR740001500158007290499986", ibanHarc: "TR680001500158007299277236", ibanCezaevi: "TR230001500158007300578040" },
+  { city: "BURSA", name: "Bursa 9. İcra Dairesi", uyapCode: "3100150263", taxNumber: "3100150263", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR300001500158007290500002", ibanHarc: "TR540001500158007299293687", ibanCezaevi: "TR160001500158007300573316" },
+  { city: "BURSA", name: "Bursa 10. İcra Dairesi", uyapCode: "6430105714", taxNumber: "6430105714", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR230001500158007290500031", ibanHarc: "TR140001500158007299293728", ibanCezaevi: "TR850001500158007300573335" },
+  { city: "BURSA", name: "Bursa 11. İcra Dairesi", uyapCode: "1910481491", taxNumber: "1910481491", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR590001500158007290500062", ibanHarc: "TR070001500158007299303166", ibanCezaevi: "TR870001500158007300580477" },
+  { city: "BURSA", name: "Bursa 12. İcra Dairesi", uyapCode: "1910541419", taxNumber: "1910541419", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR090001500158007290500089", ibanHarc: "TR200001500158007299303417", ibanCezaevi: "TR640001500158007300578078" },
+  { city: "BURSA", name: "Bursa 13. İcra Dairesi", uyapCode: "0010631200", taxNumber: "0010631200", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR020001500158007290500118", ibanHarc: "TR680001500158007299303620", ibanCezaevi: "TR310001500158007300579836" },
+  { city: "BURSA", name: "Bursa 14. İcra Dairesi", uyapCode: "6430372730", taxNumber: "6430372730", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR230001500158007298413097", ibanHarc: "TR030001500158007299355133", ibanCezaevi: "TR360001500158007298411893" },
+  { city: "BURSA", name: "Bursa 15. İcra Dairesi", uyapCode: "6430372747", taxNumber: "6430372747", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR080001500158007298413076", ibanHarc: "TR720001500158007299304712", ibanCezaevi: "TR600001500158007298412140" },
+  { city: "BURSA", name: "Bursa 16. İcra Dairesi", uyapCode: "6420371290", taxNumber: "6420371290", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR910001500158007298413037", ibanHarc: "TR170001500158007299381168", ibanCezaevi: "TR090001500158007298412185" },
+  { city: "BURSA", name: "Bursa 17. İcra Dairesi", uyapCode: "6440364778", taxNumber: "6440364778", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR230001500158007298413000", ibanHarc: "TR510001500158007299307806", ibanCezaevi: "TR340001500158007298412220" },
+  { city: "BURSA", name: "Bursa 18. İcra Dairesi", uyapCode: "6430372755", taxNumber: "6430372755", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR420001500158007298412949", ibanHarc: "TR500001500158007299355160", ibanCezaevi: "TR100001500158007298412264" },
+  { city: "BURSA", name: "Bursa 19. İcra Dairesi", uyapCode: "6430372763", taxNumber: "6430372763", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR560001500158007298412891", ibanHarc: "TR200001500158007299368601", ibanCezaevi: "TR230001500158007298412418" },
+  { city: "BURSA", name: "Bursa 20. İcra Dairesi", uyapCode: "9810630909", taxNumber: "9810630909", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR470001500158007298412762", ibanHarc: "TR590001500158007299336762", ibanCezaevi: "TR560001500158007298412697" },
+  { city: "BURSA", district: "Gemlik", name: "Gemlik İcra Dairesi", uyapCode: "3910046042", taxNumber: "3910046042", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR030001500158007290501167", ibanHarc: "TR820001500158007299383490", ibanCezaevi: "TR480001500158007300564592" },
+  { city: "BURSA", district: "İnegöl", name: "İnegöl İcra Dairesi", uyapCode: "4780568257", taxNumber: "4780568257", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR950001500158007306017280", ibanHarc: "TR070001500158007306017312", ibanCezaevi: "TR570001500158007306017382" },
+  { city: "BURSA", district: "İznik", name: "İznik İcra Dairesi", uyapCode: "4840088920", taxNumber: "4840088920", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR860001500158007300587576", ibanHarc: "TR940001500158007300587626", ibanCezaevi: "TR440001500158007300587653" },
+  { city: "BURSA", district: "Karacabey", name: "Karacabey İcra Dairesi", uyapCode: "5060047346", taxNumber: "5060047346", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR810001500158007290496853", ibanHarc: "TR130001500158007299356117", ibanCezaevi: "TR530001500158007300200558" },
+  { city: "BURSA", district: "Keles", name: "Keles İcra Dairesi", uyapCode: "5430071654", taxNumber: "5430071654", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR210001500158007300782843", ibanHarc: "TR260001500158007300782850", ibanCezaevi: "TR150001500158007300782854" },
+  { city: "BURSA", district: "Mudanya", name: "Mudanya İcra Dairesi", uyapCode: "6230044995", taxNumber: "6230044995", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR470001500158007290520939", ibanHarc: "TR690001500158007300575563", ibanCezaevi: "TR830001500158007300575602" },
+  { city: "BURSA", district: "Mustafakemalpaşa", name: "Mustafakemalpaşa İcra Dairesi", uyapCode: "6240059536", taxNumber: "6240059536", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR120001500158007290501975", ibanHarc: "TR720001500158007299264942", ibanCezaevi: "TR130001500158007290500890" },
+  { city: "BURSA", district: "Orhaneli", name: "Orhaneli İcra Dairesi", uyapCode: "6470052664", taxNumber: "6470052664", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR930001500158007300783002", ibanHarc: "TR120001500158007300783005", ibanCezaevi: "TR550001500158007300783007" },
+  { city: "BURSA", district: "Orhangazi", name: "Orhangazi İcra Dairesi", uyapCode: "4690034368", taxNumber: "4690034368", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR150001500158007290496295", ibanHarc: "TR030001500158007285433790", ibanCezaevi: "TR280001500158007300250478" },
+  { city: "BURSA", district: "Yenişehir", name: "Yenişehir İcra Dairesi", uyapCode: "4690124136", taxNumber: "4690124136", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR930001500158007300578138", ibanHarc: "TR980001500158007300578145", ibanCezaevi: "TR280001500158007300578144" },
 
-  // ANTALYA (07)
-  { city: "ANTALYA", name: "Antalya 1. İcra Dairesi", uyapCode: "0701001" },
-  { city: "ANTALYA", name: "Antalya 2. İcra Dairesi", uyapCode: "0701002" },
-  { city: "ANTALYA", name: "Antalya 3. İcra Dairesi", uyapCode: "0701003" },
-  { city: "ANTALYA", name: "Antalya 4. İcra Dairesi", uyapCode: "0701004" },
-  { city: "ANTALYA", name: "Alanya 1. İcra Dairesi", uyapCode: "0702001" },
-  { city: "ANTALYA", name: "Alanya 2. İcra Dairesi", uyapCode: "0702002" },
+  // ANTALYA (07) - Tam banka bilgileriyle
+  { city: "ANTALYA", district: "Akseki", name: "Akseki İcra Dairesi", uyapCode: "0340036685", taxNumber: "0340036685", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR690001500158007300578182", ibanHarc: "TR740001500158007300578189", ibanCezaevi: "TR310001500158007300578187" },
+  { city: "ANTALYA", district: "Alanya", name: "Alanya İcra Dairesi", uyapCode: "0011797830", taxNumber: "0011797830", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR870001500158007308885617", ibanHarc: "TR220001500158007308885720", ibanCezaevi: "TR530001500158007308885744" },
+  { city: "ANTALYA", name: "Antalya 1. İcra Dairesi", uyapCode: "9220083033", taxNumber: "9220083033", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR790001500158007290501157", ibanHarc: "TR040001500158007300573435", ibanCezaevi: "TR740001500158007300573436" },
+  { city: "ANTALYA", name: "Antalya 2. İcra Dairesi", uyapCode: "0700044337", taxNumber: "0700044337", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR820001500158007290501200", ibanHarc: "TR920001500158007300578253", ibanCezaevi: "TR380001500158007300578255" },
+  { city: "ANTALYA", name: "Antalya 3. İcra Dairesi", uyapCode: "700044344", taxNumber: "700044344", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR970001500158007290501221", ibanHarc: "TR630001500158007300573440", ibanCezaevi: "TR090001500158007300573442" },
+  { city: "ANTALYA", name: "Antalya 4. İcra Dairesi", uyapCode: "0700044303", taxNumber: "0700044303", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR900001500158007290501444", ibanHarc: "TR540001500158007300578258", ibanCezaevi: "TR270001500158007300578259" },
+  { city: "ANTALYA", name: "Antalya 5. İcra Dairesi", uyapCode: "0700044466", taxNumber: "0700044466", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR080001500158007290501465", ibanHarc: "TR970001500158007300578260", ibanCezaevi: "TR160001500158007300578263" },
+  { city: "ANTALYA", name: "Antalya 7. İcra Dairesi", uyapCode: "0700049947", taxNumber: "0700049947", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR720001500158007290501574", ibanHarc: "TR470001500158007300573437", ibanCezaevi: "TR900001500158007300573439" },
+  { city: "ANTALYA", name: "Antalya 8. İcra Dairesi", uyapCode: "07000319530", taxNumber: "07000319530", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR830001500158007296372786", ibanHarc: "TR320001500158007300578266", ibanCezaevi: "TR050001500158007300578267" },
+  { city: "ANTALYA", name: "Antalya Abonelik Sözleşmeleri İcra Dairesi", uyapCode: "0700808317", taxNumber: "0700808317", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR130001500158007309603876", ibanHarc: "TR470001500158007309603943", ibanCezaevi: "TR550001500158007309603993" },
+  { city: "ANTALYA", name: "Antalya Banka Alacakları İcra Dairesi", uyapCode: "0700808325", taxNumber: "0700808325", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR160001500158007309604016", ibanHarc: "TR680001500158007309604050", ibanCezaevi: "TR060001500158007309604099" },
+  { city: "ANTALYA", name: "Antalya Gayrimenkul Satış İcra Dairesi", uyapCode: "0700808309", taxNumber: "0700808309", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR760001500158007309603712", ibanHarc: "TR510001500158007309603774", ibanCezaevi: "TR440001500158007309603803" },
+  { city: "ANTALYA", name: "Antalya Genel İcra Dairesi", uyapCode: "0700808287", taxNumber: "0700808287", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR760001500158007309603615", ibanHarc: "TR420001500158007309603645", ibanCezaevi: "TR880001500158007309603690" },
+  { city: "ANTALYA", district: "Demre", name: "Demre İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR340001500158007300572022", ibanHarc: "TR210001500158007300571965", ibanCezaevi: "TR140001500158007300571994" },
+  { city: "ANTALYA", district: "Elmalı", name: "Elmalı İcra Dairesi", uyapCode: "3320049597", taxNumber: "3320049597", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR540001500158007300647613", ibanHarc: "TR790001500158007300647648", ibanCezaevi: "TR730001500158007300647659" },
+  { city: "ANTALYA", district: "Finike", name: "Finike İcra Dairesi", uyapCode: "3880089444", taxNumber: "3880089444", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR460001500158007300577238", ibanHarc: "TR480001500158007300577687", ibanCezaevi: "TR840001500158007300578106" },
+  { city: "ANTALYA", district: "Gazipaşa", name: "Gazipaşa İcra Dairesi", uyapCode: "3890098443", taxNumber: "3890098443", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR850001500158007290568658", ibanHarc: "TR200001500158007299435725", ibanCezaevi: "TR980001500158007299435776" },
+  { city: "ANTALYA", district: "Gündoğmuş", name: "Gündoğmuş İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR700001500158007300788266", ibanHarc: "TR190001500158007300788311", ibanCezaevi: "TR290001500158007300788325" },
+  { city: "ANTALYA", district: "Kaş", name: "Kaş İcra Dairesi", uyapCode: "5270063718", taxNumber: "5270063718", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR980001500158007298673550", ibanHarc: "TR200001500158007299390620", ibanCezaevi: "TR350001500158007299390641" },
+  { city: "ANTALYA", district: "Kemer", name: "Kemer İcra Dairesi", uyapCode: "5440146368", taxNumber: "5440146368", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR880001500158007290509046", ibanHarc: "TR810001500158007299377203", ibanCezaevi: "TR570001500158007285453770" },
+  { city: "ANTALYA", district: "Korkuteli", name: "Korkuteli İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR780001500158007300581027", ibanHarc: "TR750001500158007300580984", ibanCezaevi: "TR300001500158007300581018" },
+  { city: "ANTALYA", district: "Kumluca", name: "Kumluca İcra Dairesi", uyapCode: "4690034657", taxNumber: "4690034657", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR390001500158007297115725", ibanHarc: "TR910001500158007299417860", ibanCezaevi: "TR820001500158007300160072" },
+  { city: "ANTALYA", district: "Manavgat", name: "Manavgat 1. İcra Dairesi", uyapCode: "6110064974", taxNumber: "6110064974", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR150001500158007290496004", ibanHarc: "TR390001500158007299285324", ibanCezaevi: "TR920001500158007300568941" },
+  { city: "ANTALYA", district: "Manavgat", name: "Manavgat 2. İcra Dairesi", uyapCode: "6110095149", taxNumber: "6110095149", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR930001500158007290496152", ibanHarc: "TR110001500158007299285440", ibanCezaevi: "TR950001500158007300564134" },
+  { city: "ANTALYA", district: "Serik", name: "Serik İcra Dairesi", uyapCode: "7620042286", taxNumber: "7620042286", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR510001500158007290508742", ibanHarc: "TR280001500158007299394259", ibanCezaevi: "TR090001500158007285039959" },
   
-  // ADANA (01)
-  { city: "ADANA", name: "Adana 1. İcra Dairesi", uyapCode: "0101001" },
-  { city: "ADANA", name: "Adana 2. İcra Dairesi", uyapCode: "0101002" },
-  { city: "ADANA", name: "Adana 3. İcra Dairesi", uyapCode: "0101003" },
-  { city: "ADANA", name: "Adana 4. İcra Dairesi", uyapCode: "0101004" },
-  { city: "ADANA", name: "Adana 5. İcra Dairesi", uyapCode: "0101005" },
+  // ADANA (01) - Tam banka bilgileriyle
+  { city: "ADANA", name: "Adana 1. İcra Dairesi", uyapCode: "8150014094", taxNumber: "8150014094", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR890001500158007290493508", ibanHarc: "TR860001500158007299280501", ibanCezaevi: "TR750001500158007299521065" },
+  { city: "ADANA", name: "Adana 2. İcra Dairesi", uyapCode: "8150014051", taxNumber: "8150014051", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR110001500158007290493554", ibanHarc: "TR410001500158007299281505", ibanCezaevi: "TR190001500158007299539436" },
+  { city: "ADANA", name: "Adana 3. İcra Dairesi", uyapCode: "8150014077", taxNumber: "8150014077", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR710001500158007290493444", ibanHarc: "TR510001500158007299309940", ibanCezaevi: "TR520001500158007299514786" },
+  { city: "ADANA", name: "Adana 4. İcra Dairesi", uyapCode: "8150014043", taxNumber: "8150014043", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR480001500158007290492791", ibanHarc: "TR900001500158007299310208", ibanCezaevi: "TR220001500158007300573984" },
+  { city: "ADANA", name: "Adana 5. İcra Dairesi", uyapCode: "8150014036", taxNumber: "8150014036", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR900001500158007290493587", ibanHarc: "TR130001500158007299309072", ibanCezaevi: "TR680001500158007300573350" },
+  { city: "ADANA", name: "Adana 6. İcra Dairesi", uyapCode: "8150014028", taxNumber: "8150014028", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR460001500158007290493603", ibanHarc: "TR050001500158007299310962", ibanCezaevi: "TR410001500158007299538943" },
+  { city: "ADANA", name: "Adana 7. İcra Dairesi", uyapCode: "8150014085", taxNumber: "8150014085", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR790001500158007290494173", ibanHarc: "TR140001500158007299262688", ibanCezaevi: "TR440001500158007299537143" },
+  { city: "ADANA", name: "Adana 8. İcra Dairesi", uyapCode: "8150014069", taxNumber: "8150014069", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR290001500158007290493133", ibanHarc: "TR960001500158007299256750", ibanCezaevi: "TR400001500158007300573369" },
+  { city: "ADANA", name: "Adana 9. İcra Dairesi", uyapCode: "0070125533", taxNumber: "0070125533", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR380001500158007290492874", ibanHarc: "TR880001500158007299259707", ibanCezaevi: "TR740001500158007299544557" },
+  { city: "ADANA", name: "Adana 10. İcra Dairesi", uyapCode: "8150123409", taxNumber: "8150123409", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR720001500158007290493135", ibanHarc: "TR070001500158007299307531", ibanCezaevi: "TR760001500158007299541223" },
+  { city: "ADANA", name: "Adana 11. İcra Dairesi", uyapCode: "6430356717", taxNumber: "6430356717", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR110001500158007290494233", ibanHarc: "TR860001500158007299262168", ibanCezaevi: "TR150001500158007299539411" },
+  { city: "ADANA", name: "Adana 12. İcra Dairesi", uyapCode: "6430356849", taxNumber: "6430356849", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR580001500158007290492999", ibanHarc: "TR060001500158007299254296", ibanCezaevi: "TR830001500158007299528681" },
+  { city: "ADANA", name: "Adana 13. İcra Dairesi", uyapCode: "6440349596", taxNumber: "6440349596", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR500001500158007290494307", ibanHarc: "TR810001500158007299308430", ibanCezaevi: "TR690001500158007299544259" },
+  { city: "ADANA", name: "Adana 14. İcra Dairesi", uyapCode: "6430356740", taxNumber: "6430356740", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR840001500158007290493792", ibanHarc: "TR260001500158007299281678", ibanCezaevi: "TR910001500158007299518740" },
+  { city: "ADANA", name: "Adana Abonelik Sözleşmeleri İcra Dairesi", uyapCode: "0071302841", taxNumber: "0071302841", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR330001500158007312991144", ibanHarc: "TR530001500158007312991269", ibanCezaevi: "TR950001500158007312991483" },
+  { city: "ADANA", name: "Adana Banka Alacakları İcra Dairesi", uyapCode: "0071302859", taxNumber: "0071302859", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR100001500158007312991558", ibanHarc: "TR150001500158007312991662", ibanCezaevi: "TR370001500158007312991751" },
+  { city: "ADANA", name: "Adana Gayrimenkul Satış İcra Dairesi", uyapCode: "0071302867", taxNumber: "0071302867", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR830001500158007312990826", ibanHarc: "TR880001500158007312990930", ibanCezaevi: "TR960001500158007312991077" },
+  { city: "ADANA", name: "Adana Genel İcra Dairesi", uyapCode: "0071302875", taxNumber: "0071302875", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR270001500158007312990282", ibanHarc: "TR370001500158007312990587", ibanCezaevi: "TR710001500158007312990751" },
+  { city: "ADANA", district: "Aladağ", name: "Aladağ İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR890001500158007300598871", ibanHarc: "TR430001500158007300598923", ibanCezaevi: "TR690001500158007300598940" },
+  { city: "ADANA", district: "Ceyhan", name: "Ceyhan İcra Dairesi", uyapCode: "2070050084", taxNumber: "2070050084", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR840001500158007290494374", ibanHarc: "TR170001500158007299429086", ibanCezaevi: "TR350001500158007300574041" },
+  { city: "ADANA", district: "İmamoğlu", name: "İmamoğlu İcra Dairesi", uyapCode: "4740130372", taxNumber: "4740130372", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR670001500158007300577345", ibanHarc: "TR330001500158007300577278", ibanCezaevi: "TR470001500158007300577317" },
+  { city: "ADANA", district: "Karaisalı", name: "Karaisalı İcra Dairesi", uyapCode: "5130072036", taxNumber: "5130072036", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR680001500158007300758135", ibanHarc: "TR150001500158007300758119", ibanCezaevi: "TR520001500158007300758132" },
+  { city: "ADANA", district: "Karataş", name: "Karataş İcra Dairesi", uyapCode: "5220065566", taxNumber: "5220065566", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR360001500158007300695952", ibanHarc: "TR980001500158007300696000", ibanCezaevi: "TR800001500158007300696033" },
+  { city: "ADANA", district: "Kozan", name: "Kozan İcra Dairesi", uyapCode: "0070069483", taxNumber: "0070069483", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR950001500158007290495922", ibanHarc: "TR660001500158007299379219", ibanCezaevi: "TR270001500158007300569238" },
+  { city: "ADANA", district: "Pozantı", name: "Pozantı İcra Dairesi", uyapCode: "7330057612", taxNumber: "7330057612", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR900001500158007300597204", ibanHarc: "TR380001500158007300597267", ibanCezaevi: "TR200001500158007300597300" },
+  { city: "ADANA", district: "Tufanbeyli", name: "Tufanbeyli İcra Dairesi", uyapCode: "4690058760", taxNumber: "4690058760", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR330001500158007300593186", ibanHarc: "TR260001500158007300593215", ibanCezaevi: "TR680001500158007300593235" },
+  { city: "ADANA", district: "Yumurtalık", name: "Yumurtalık İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR400001500158007300688023", ibanHarc: "TR640001500158007300687979", ibanCezaevi: "TR780001500158007300688018" },
   
-  // KOCAELİ (41)
-  { city: "KOCAELİ", name: "Kocaeli 1. İcra Dairesi", uyapCode: "4101001" },
-  { city: "KOCAELİ", name: "Kocaeli 2. İcra Dairesi", uyapCode: "4101002" },
-  { city: "KOCAELİ", name: "Kocaeli 3. İcra Dairesi", uyapCode: "4101003" },
-  { city: "KOCAELİ", name: "Gebze 1. İcra Dairesi", uyapCode: "4102001" },
-  { city: "KOCAELİ", name: "Gebze 2. İcra Dairesi", uyapCode: "4102002" },
+  // KOCAELİ (41) - Tam banka bilgileriyle
+  { city: "KOCAELİ", district: "Gebze", name: "Gebze İcra Dairesi", uyapCode: "3890788498", taxNumber: "3890788498", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR740001500158007305145434", ibanHarc: "TR690001500158007305145524", ibanCezaevi: "TR830001500158007305145563" },
+  { city: "KOCAELİ", district: "Gölcük", name: "Gölcük İcra Dairesi", uyapCode: "4690056948", taxNumber: "4690056948", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR980001500158007290519730", ibanHarc: "TR920001500158007299433459", ibanCezaevi: "TR420001500158007293625902" },
+  { city: "KOCAELİ", district: "Kandıra", name: "Kandıra İcra Dairesi", uyapCode: "8150081229", taxNumber: "8150081229", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR920001500158007300583879", ibanHarc: "TR950001500158007300583922", ibanCezaevi: "TR390001500158007300583960" },
+  { city: "KOCAELİ", district: "Karamürsel", name: "Karamürsel İcra Dairesi", uyapCode: "4690057509", taxNumber: "4690057509", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR110001500158007290497628", ibanHarc: "TR500001500158007299423448", ibanCezaevi: "TR620001500158007286575679" },
+  { city: "KOCAELİ", name: "Kocaeli İcra Dairesi", uyapCode: "5650931249", taxNumber: "5650931249", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR140001500158007306611990", ibanHarc: "TR020001500158007306612012", ibanCezaevi: "TR980001500158007306612030" },
+  { city: "KOCAELİ", district: "Körfez", name: "Körfez İcra Dairesi", uyapCode: "5860013179", taxNumber: "5860013179", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR420001500158007290500077", ibanHarc: "TR180001500158007300568818", ibanCezaevi: "TR870001500158007300568837" },
   
-  // GAZİANTEP (27)
-  { city: "GAZİANTEP", name: "Gaziantep 1. İcra Dairesi", uyapCode: "2701001" },
-  { city: "GAZİANTEP", name: "Gaziantep 2. İcra Dairesi", uyapCode: "2701002" },
-  { city: "GAZİANTEP", name: "Gaziantep 3. İcra Dairesi", uyapCode: "2701003" },
-  { city: "GAZİANTEP", name: "Gaziantep 4. İcra Dairesi", uyapCode: "2701004" },
+  // GAZİANTEP (27) - Tam banka bilgileriyle
+  { city: "GAZİANTEP", district: "Araban", name: "Araban İcra Dairesi", uyapCode: "0710231952", taxNumber: "0710231952", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR910001500158007300577398", ibanHarc: "TR450001500158007300577450", ibanCezaevi: "TR910001500158007300577398" },
+  { city: "GAZİANTEP", name: "Gaziantep İcra Dairesi", uyapCode: "3890725709", taxNumber: "3890725709", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR950001500158007300899754", ibanHarc: "TR620001500158007300899766", ibanCezaevi: "TR770001500158007300899787" },
+  { city: "GAZİANTEP", district: "İslahiye", name: "İslahiye İcra Dairesi", uyapCode: "4810091293", taxNumber: "4810091293", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR500001500158007300577651", ibanHarc: "TR970001500158007300577678", ibanCezaevi: "TR330001500158007300577666" },
+  { city: "GAZİANTEP", district: "Nizip", name: "Nizip İcra Dairesi", uyapCode: "6310200916", taxNumber: "6310200916", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR080001500158007290526976", ibanHarc: "TR730001500158007299444762", ibanCezaevi: "TR760001500158007285493392" },
+  { city: "GAZİANTEP", district: "Nurdağı", name: "Nurdağı İcra Dairesi", uyapCode: "6320147156", taxNumber: "6320147156", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR110001500158007300579614", ibanHarc: "TR460001500158007300579566", ibanCezaevi: "TR710001500158007300579601" },
   
-  // KONYA (42)
-  { city: "KONYA", name: "Konya 1. İcra Dairesi", uyapCode: "4201001" },
-  { city: "KONYA", name: "Konya 2. İcra Dairesi", uyapCode: "4201002" },
-  { city: "KONYA", name: "Konya 3. İcra Dairesi", uyapCode: "4201003" },
-  { city: "KONYA", name: "Konya 4. İcra Dairesi", uyapCode: "4201004" },
+  // KONYA (42) - Tam banka bilgileriyle
+  { city: "KONYA", district: "Akşehir", name: "Akşehir İcra Dairesi", uyapCode: "0380062259", taxNumber: "0380062259", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR610001500158007290527186", ibanHarc: "TR190001500158007299373275", ibanCezaevi: "TR020001500158007299373290" },
+  { city: "KONYA", district: "Beyşehir", name: "Beyşehir İcra Dairesi", uyapCode: "4690056842", taxNumber: "4690056842", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR890001500158007300567637", ibanHarc: "TR930001500158007296048917", ibanCezaevi: "TR840001500158007293599441" },
+  { city: "KONYA", district: "Bozkır", name: "Bozkır İcra Dairesi", uyapCode: "18400075661", taxNumber: "18400075661", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR050001500158007300684676", ibanHarc: "TR410001500158007300684707", ibanCezaevi: "TR180001500158007300684733" },
+  { city: "KONYA", district: "Cihanbeyli", name: "Cihanbeyli İcra Dairesi", uyapCode: "4690034480", taxNumber: "4690034480", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR890001500158007300620987", ibanHarc: "TR220001500158007300621029", ibanCezaevi: "TR180001500158007300621004" },
+  { city: "KONYA", district: "Çumra", name: "Çumra İcra Dairesi", uyapCode: "4690058924", taxNumber: "4690058924", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR320001500158007300744912", ibanHarc: "TR120001500158007300744884", ibanCezaevi: "TR920001500158007300744899" },
+  { city: "KONYA", district: "Doğanhisar", name: "Doğanhisar İcra Dairesi", uyapCode: "4690277689", taxNumber: "4690277689", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR570001500158007300592075", ibanHarc: "TR170001500158007300592019", ibanCezaevi: "TR690001500158007300592053" },
+  { city: "KONYA", district: "Ereğli", name: "Ereğli(Konya) İcra Dairesi", uyapCode: "4690058205", taxNumber: "4690058205", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR830001500158007290502734", ibanHarc: "TR150001500158007299282749", ibanCezaevi: "TR410001500158007297403488" },
+  { city: "KONYA", district: "Hadim", name: "Hadim İcra Dairesi", uyapCode: "8150077787", taxNumber: "8150077787", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR060001500158007300685240", ibanHarc: "TR430001500158007300685253", ibanCezaevi: "TR110001500158007300685247" },
+  { city: "KONYA", district: "Ilgın", name: "Ilgın İcra Dairesi", uyapCode: "4650042699", taxNumber: "4650042699", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR470001500158007300580324", ibanHarc: "TR970001500158007300580200", ibanCezaevi: "TR050001500158007300580304" },
+  { city: "KONYA", district: "Kadınhanı", name: "Kadınhanı İcra Dairesi", uyapCode: "4860072459", taxNumber: "4860072459", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR030001500158007300616521", ibanHarc: "TR090001500158007300616510", ibanCezaevi: "TR410001500158007300616516" },
+  { city: "KONYA", district: "Karapınar", name: "Karapınar İcra Dairesi", uyapCode: "4690034690", taxNumber: "4690034690", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR320001500158007300575259", ibanHarc: "TR230001500158007300575227", ibanCezaevi: "TR540001500158007300575251" },
+  { city: "KONYA", name: "Konya 1. İcra Dairesi", uyapCode: "1780009682", taxNumber: "1780009682", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR820001500158007290495186", ibanHarc: "TR290001500158007299303643", ibanCezaevi: "TR830001500158007290569179" },
+  { city: "KONYA", name: "Konya 2. İcra Dairesi", uyapCode: "4700046702", taxNumber: "4700046702", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR910001500158007290495218", ibanHarc: "TR570001500158007299299259", ibanCezaevi: "TR970001500158007290569218" },
+  { city: "KONYA", name: "Konya 3. İcra Dairesi", uyapCode: "9050006846", taxNumber: "9050006846", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR420001500158007290495227", ibanHarc: "TR430001500158007299304167", ibanCezaevi: "TR100001500158007290569232" },
+  { city: "KONYA", name: "Konya 4. İcra Dairesi", uyapCode: "3130004554", taxNumber: "3130004554", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR950001500158007290495437", ibanHarc: "TR390001500158007299299389", ibanCezaevi: "TR140001500158007290526480" },
+  { city: "KONYA", name: "Konya 5. İcra Dairesi", uyapCode: "1660046671", taxNumber: "1660046671", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR460001500158007290495446", ibanHarc: "TR050001500158007299296897", ibanCezaevi: "TR510001500158007290521740" },
+  { city: "KONYA", name: "Konya 6. İcra Dairesi", uyapCode: "0620004911", taxNumber: "0620004911", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR300001500158007290495443", ibanHarc: "TR190001500158007299296354", ibanCezaevi: "TR320001500158007290546041" },
+  { city: "KONYA", name: "Konya 7. İcra Dairesi", uyapCode: "9460035056", taxNumber: "9460035056", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR240001500158007290495454", ibanHarc: "TR850001500158007299296233", ibanCezaevi: "TR520001500158007290569252" },
+  { city: "KONYA", name: "Konya 8. İcra Dairesi", uyapCode: "0010220317", taxNumber: "0010220317", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR140001500158007290495440", ibanHarc: "TR980001500158007299296872", ibanCezaevi: "TR350001500158007290569267" },
+  { city: "KONYA", name: "Konya 9. İcra Dairesi", uyapCode: "0010221158", taxNumber: "0010221158", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR190001500158007290495447", ibanHarc: "TR930001500158007299294731", ibanCezaevi: "TR290001500158007290569278" },
+  { city: "KONYA", name: "Konya 10. İcra Dairesi", uyapCode: "6430264906", taxNumber: "6430264906", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR940001500158007290495455", ibanHarc: "TR580001500158007299296331", ibanCezaevi: "TR280001500158007290569296" },
+  { city: "KONYA", name: "Konya 12. İcra Dairesi", uyapCode: "6430366362", taxNumber: "6430366362", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR420001500158007292606432", ibanHarc: "TR360001500158007299263262", ibanCezaevi: "TR320001500158007292615924" },
+  { city: "KONYA", name: "Konya 13. İcra Dairesi", uyapCode: "6440359083", taxNumber: "6440359083", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR680001500158007292606255", ibanHarc: "TR520001500158007299402169", ibanCezaevi: "TR960001500158007292615742" },
+  { city: "KONYA", district: "Kulu", name: "Kulu İcra Dairesi", uyapCode: "4690061449", taxNumber: "4690061449", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR770001500158007300571927", ibanHarc: "TR420001500158007300571878", ibanCezaevi: "TR350001500158007300571907" },
+  { city: "KONYA", district: "Sarayönü", name: "Sarayönü İcra Dairesi", uyapCode: "0080080620", taxNumber: "0080080620", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR540001500158007300591353", ibanHarc: "TR940001500158007300591312", ibanCezaevi: "TR550001500158007300591335" },
+  { city: "KONYA", district: "Seydişehir", name: "Seydişehir İcra Dairesi", uyapCode: "4690056876", taxNumber: "4690056876", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR390001500158007290529134", ibanHarc: "TR560001500158007299337495", ibanCezaevi: "TR550001500158007290532726" },
+  { city: "KONYA", district: "Yunak", name: "Yunak İcra Dairesi", uyapCode: "9840036632", taxNumber: "9840036632", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR690001500158007300629689", ibanHarc: "TR380001500158007300629762", ibanCezaevi: "TR530001500158007300629783" },
   
-  // MERSİN (33)
-  { city: "MERSİN", name: "Mersin 1. İcra Dairesi", uyapCode: "3301001" },
-  { city: "MERSİN", name: "Mersin 2. İcra Dairesi", uyapCode: "3301002" },
-  { city: "MERSİN", name: "Mersin 3. İcra Dairesi", uyapCode: "3301003" },
-  { city: "MERSİN", name: "Tarsus 1. İcra Dairesi", uyapCode: "3302001" },
+  // MERSİN (33) - Tam banka bilgileriyle
+  { city: "MERSİN", district: "Anamur", name: "Anamur İcra Dairesi", uyapCode: "4690111800", taxNumber: "4690111800", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR630001500158007290494655", ibanHarc: "TR140001500158007299430886", ibanCezaevi: "TR360001500158007300572083" },
+  { city: "MERSİN", district: "Aydıncık", name: "Aydıncık(Mersin) İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR150001500158007300611164", ibanHarc: "TR570001500158007300611184", ibanCezaevi: "TR890001500158007300611190" },
+  { city: "MERSİN", district: "Erdemli", name: "Erdemli İcra Dairesi", uyapCode: "3460041009", taxNumber: "3460041009", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR940001500158007290501275", ibanHarc: "TR110001500158007300572727", ibanCezaevi: "TR330001500158007300572816" },
+  { city: "MERSİN", district: "Gülnar", name: "Gülnar İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR170001500158007300576887", ibanHarc: "TR620001500158007300576853", ibanCezaevi: "TR020001500158007300576866" },
+  { city: "MERSİN", name: "Mersin 1. İcra Dairesi", uyapCode: "0010303070", taxNumber: "0010303070", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR030001500158007290521731", ibanHarc: "TR740001500158007299364234", ibanCezaevi: "TR790001500158007300568011" },
+  { city: "MERSİN", name: "Mersin 2. İcra Dairesi", uyapCode: "0010303054", taxNumber: "0010303054", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR390001500158007290521083", ibanHarc: "TR790001500158007299373456", ibanCezaevi: "TR080001500158007300568028" },
+  { city: "MERSİN", name: "Mersin 3. İcra Dairesi", uyapCode: "0010303039", taxNumber: "0010303039", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR520001500158007290521043", ibanHarc: "TR330001500158007299308130", ibanCezaevi: "TR450001500158007300568041" },
+  { city: "MERSİN", name: "Mersin 4. İcra Dairesi", uyapCode: "0010303013", taxNumber: "0010303013", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR430001500158007290521690", ibanHarc: "TR300001500158007299388500", ibanCezaevi: "TR970001500158007300568075" },
+  { city: "MERSİN", name: "Mersin 5. İcra Dairesi", uyapCode: "0010302965", taxNumber: "0010302965", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR360001500158007290520943", ibanHarc: "TR720001500158007299410151", ibanCezaevi: "TR480001500158007300568084" },
+  { city: "MERSİN", name: "Mersin 6. İcra Dairesi", uyapCode: "6180253402", taxNumber: "6180253402", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR940001500158007290521160", ibanHarc: "TR790001500158007299373844", ibanCezaevi: "TR100001500158007300568089" },
+  { city: "MERSİN", name: "Mersin 7. İcra Dairesi", uyapCode: "0010303005", taxNumber: "0010303005", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR290001500158007290520972", ibanHarc: "TR950001500158007299307208", ibanCezaevi: "TR410001500158007300568113" },
+  { city: "MERSİN", name: "Mersin 8. İcra Dairesi", uyapCode: "001032973", taxNumber: "001032973", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR290001500158007290520875", ibanHarc: "TR300001500158007299364250", ibanCezaevi: "TR180001500158007300568139" },
+  { city: "MERSİN", district: "Mut", name: "Mut İcra Dairesi", uyapCode: "6250058914", taxNumber: "6250058914", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR590001500158007300572833", ibanHarc: "TR960001500158007300572846", ibanCezaevi: "TR320001500158007300572931" },
+  { city: "MERSİN", district: "Silifke", name: "Silifke İcra Dairesi", uyapCode: "7700064787", taxNumber: "7700064787", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR720001500158007290494493", ibanHarc: "TR580001500158007299429124", ibanCezaevi: "TR950001500158007299429137" },
+  { city: "MERSİN", district: "Tarsus", name: "Tarsus İcra Dairesi", uyapCode: "9220076913", taxNumber: "9220076913", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR200001500158007289104255", ibanHarc: "TR030001500158007299351544", ibanCezaevi: "TR570001500158007299433313" },
   
-  // DİYARBAKIR (21)
-  { city: "DİYARBAKIR", name: "Diyarbakır 1. İcra Dairesi", uyapCode: "2101001" },
-  { city: "DİYARBAKIR", name: "Diyarbakır 2. İcra Dairesi", uyapCode: "2101002" },
-  { city: "DİYARBAKIR", name: "Diyarbakır 3. İcra Dairesi", uyapCode: "2101003" },
+  // DİYARBAKIR (21) - Tam banka bilgileriyle
+  { city: "DİYARBAKIR", district: "Bismil", name: "Bismil İcra Dairesi", uyapCode: "1780529943", taxNumber: "1780529943", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR340001500158007300574544", ibanHarc: "TR850001500158007300574499", ibanCezaevi: "TR620001500158007300574525" },
+  { city: "DİYARBAKIR", district: "Çermik", name: "Çermik İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR960001500158007300677606", ibanHarc: "TR310001500158007300677612", ibanCezaevi: "TR900001500158007300677617" },
+  { city: "DİYARBAKIR", district: "Çınar", name: "Çınar İcra Dairesi", uyapCode: "2510237471", taxNumber: "2510237471", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR100001500158007300576528", ibanHarc: "TR760001500158007300576504", ibanCezaevi: "TR480001500158007300576523" },
+  { city: "DİYARBAKIR", district: "Çüngüş", name: "Çüngüş İcra Dairesi", uyapCode: "7320068060", taxNumber: "7320068060", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR440001500158007300765842", ibanHarc: "TR640001500158007300765870", ibanCezaevi: "TR530001500158007300765971" },
+  { city: "DİYARBAKIR", district: "Dicle", name: "Dicle İcra Dairesi", uyapCode: "2950328181", taxNumber: "2950328181", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR180001500158007300765437", ibanHarc: "TR710001500158007300765453", ibanCezaevi: "TR430001500158007300765472" },
+  { city: "DİYARBAKIR", name: "Diyarbakır İcra Dairesi", uyapCode: "2651172146", taxNumber: "2651172146", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR750001500158007306863965", ibanHarc: "TR460001500158007306864002", ibanCezaevi: "TR770001500158007306864026" },
+  { city: "DİYARBAKIR", district: "Eğil", name: "Eğil İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR060001500158007300686598", ibanHarc: "TR890001500158007300686559", ibanCezaevi: "TR340001500158007300686579" },
+  { city: "DİYARBAKIR", district: "Ergani", name: "Ergani İcra Dairesi", uyapCode: "3540077871", taxNumber: "3540077871", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR660001500158007300584153", ibanHarc: "TR450001500158007300584337", ibanCezaevi: "TR270001500158007300584370" },
+  { city: "DİYARBAKIR", district: "Hani", name: "Hani İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR150001500158007300766752", ibanHarc: "TR840001500158007300766771", ibanCezaevi: "TR080001500158007300766781" },
+  { city: "DİYARBAKIR", district: "Hazro", name: "Hazro İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR350001500158007300619049", ibanHarc: "TR680001500158007300619134", ibanCezaevi: "TR260001500158007300619211" },
+  { city: "DİYARBAKIR", district: "Kulp", name: "Kulp İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR820001500158007300765740", ibanHarc: "TR260001500158007300765778", ibanCezaevi: "TR250001500158007300765796" },
+  { city: "DİYARBAKIR", district: "Lice", name: "Lice İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR050001500158007300755098", ibanHarc: "TR960001500158007300755109", ibanCezaevi: "TR310001500158007300755115" },
+  { city: "DİYARBAKIR", district: "Silvan", name: "Silvan İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR750001500158007300597183", ibanHarc: "TR070001500158007300597146", ibanCezaevi: "TR920001500158007300597168" },
   
-  // KAYSERİ (38)
-  { city: "KAYSERİ", name: "Kayseri 1. İcra Dairesi", uyapCode: "3801001" },
-  { city: "KAYSERİ", name: "Kayseri 2. İcra Dairesi", uyapCode: "3801002" },
-  { city: "KAYSERİ", name: "Kayseri 3. İcra Dairesi", uyapCode: "3801003" },
+  // KAYSERİ (38) - Tam banka bilgileriyle
+  { city: "KAYSERİ", district: "Bünyan", name: "Bünyan İcra Dairesi", uyapCode: "8150316090", taxNumber: "8150316090", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR530001500158007300616591", ibanHarc: "TR800001500158007300616590", ibanCezaevi: "TR420001500158007300616595" },
+  { city: "KAYSERİ", district: "Develi", name: "Develi İcra Dairesi", uyapCode: "2940103006", taxNumber: "2940103006", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR460001500158007300595377", ibanHarc: "TR260001500158007300595349", ibanCezaevi: "TR900001500158007300595361" },
+  { city: "KAYSERİ", district: "İncesu", name: "İncesu İcra Dairesi", uyapCode: "4780080378", taxNumber: "4780080378", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR570001500158007300632621", ibanHarc: "TR610001500158007300632646", ibanCezaevi: "TR020001500158007300632641" },
+  { city: "KAYSERİ", name: "Kayseri Abonelik Sözleşmeleri İcra Dairesi", uyapCode: "5400695177", taxNumber: "5400695177", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR620001500158007308959205", ibanHarc: "TR710001500158007308959237", ibanCezaevi: "TR760001500158007308959244" },
+  { city: "KAYSERİ", name: "Kayseri Banka Alacakları İcra Dairesi", uyapCode: "5400695169", taxNumber: "5400695169", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR390001500158007308959134", ibanHarc: "TR320001500158007308959163", ibanCezaevi: "TR310001500158007308959181" },
+  { city: "KAYSERİ", name: "Kayseri Gayrimenkul Satış İcra Dairesi", uyapCode: "5400695151", taxNumber: "5400695151", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR940001500158007308959017", ibanHarc: "TR790001500158007308959093", ibanCezaevi: "TR400001500158007308959116" },
+  { city: "KAYSERİ", name: "Kayseri Genel İcra Dairesi", uyapCode: "5400695143", taxNumber: "5400695143", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR700001500158007308958867", ibanHarc: "TR480001500158007308958972", ibanCezaevi: "TR090001500158007308958995" },
+  { city: "KAYSERİ", district: "Pınarbaşı", name: "Pınarbaşı(Kayseri) İcra Dairesi", uyapCode: "4690065276", taxNumber: "4690065276", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR630001500158007300616605", ibanHarc: "TR200001500158007300616603", ibanCezaevi: "TR790001500158007300616608" },
+  { city: "KAYSERİ", district: "Sarıoğlan", name: "Sarıoğlan İcra Dairesi", uyapCode: "7500321291", taxNumber: "7500321291", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR610001500158007300583855", ibanHarc: "TR550001500158007300583963", ibanCezaevi: "TR570001500158007300583927" },
+  { city: "KAYSERİ", district: "Sarız", name: "Sarız İcra Dairesi", uyapCode: "7510374459", taxNumber: "7510374459", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR680001500158007300731557", ibanHarc: "TR840001500158007300731560", ibanCezaevi: "TR190001500158007300731566" },
+  { city: "KAYSERİ", district: "Tomarza", name: "Tomarza İcra Dairesi", uyapCode: "4690061256", taxNumber: "4690061256", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR760001500158007300575631", ibanHarc: "TR610001500158007300575610", ibanCezaevi: "TR550001500158007300575621" },
+  { city: "KAYSERİ", district: "Yahyalı", name: "Yahyalı İcra Dairesi", uyapCode: "8150077528", taxNumber: "8150077528", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR570001500158007300595082", ibanHarc: "TR640001500158007300595053", ibanCezaevi: "TR200001500158007300595069" },
+  { city: "KAYSERİ", district: "Yeşilhisar", name: "Yeşilhisar İcra Dairesi", uyapCode: "9510177374", taxNumber: "9510177374", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR040001500158007300612623", ibanHarc: "TR810001500158007300612595", ibanCezaevi: "TR050001500158007300612605" },
   
-  // ESKİŞEHİR (26)
-  { city: "ESKİŞEHİR", name: "Eskişehir 1. İcra Dairesi", uyapCode: "2601001" },
-  { city: "ESKİŞEHİR", name: "Eskişehir 2. İcra Dairesi", uyapCode: "2601002" },
-  { city: "ESKİŞEHİR", name: "Eskişehir 3. İcra Dairesi", uyapCode: "2601003" },
+  // ESKİŞEHİR (26) - Tam banka bilgileriyle
+  { city: "ESKİŞEHİR", district: "Beylikova", name: "Beylikova İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR250001500158007300581690", ibanHarc: "TR180001500158007300581428", ibanCezaevi: "TR590001500158007300581660" },
+  { city: "ESKİŞEHİR", district: "Çifteler", name: "Çifteler İcra Dairesi", uyapCode: "2550035798", taxNumber: "2550035798", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR260001500158007300614264", ibanHarc: "TR880001500158007300614215", ibanCezaevi: "TR970001500158007300614247" },
+  { city: "ESKİŞEHİR", name: "Eskişehir 1. İcra Dairesi", uyapCode: "3800035166", taxNumber: "3800035166", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR160001500158007290543225", ibanHarc: "TR760001500158007299370309", ibanCezaevi: "TR340001500158007299370289" },
+  { city: "ESKİŞEHİR", name: "Eskişehir 2. İcra Dairesi", uyapCode: "3800035182", taxNumber: "3800035182", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR850001500158007290543244", ibanHarc: "TR830001500158007299351462", ibanCezaevi: "TR760001500158007299351491" },
+  { city: "ESKİŞEHİR", name: "Eskişehir 3. İcra Dairesi", uyapCode: "3800035205", taxNumber: "3800035205", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR190001500158007290543268", ibanHarc: "TR850001500158007299351329", ibanCezaevi: "TR660001500158007299351380" },
+  { city: "ESKİŞEHİR", name: "Eskişehir 4. İcra Dairesi", uyapCode: "3800035221", taxNumber: "3800035221", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR710001500158007290543302", ibanHarc: "TR720001500158007299383767", ibanCezaevi: "TR330001500158007299383790" },
+  { city: "ESKİŞEHİR", name: "Eskişehir 5. İcra Dairesi", uyapCode: "3800035246", taxNumber: "3800035246", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR230001500158007290543390", ibanHarc: "TR690001500158007299301177", ibanCezaevi: "TR430001500158007299360039" },
+  { city: "ESKİŞEHİR", name: "Eskişehir 6. İcra Dairesi", uyapCode: "3800504541", taxNumber: "3800504541", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR290001500158007293285375", ibanHarc: "TR060001500158007299354206", ibanCezaevi: "TR400001500158007299354273" },
+  { city: "ESKİŞEHİR", name: "Eskişehir 7. İcra Dairesi", uyapCode: "3800504559", taxNumber: "3800504559", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR130001500158007293282656", ibanHarc: "TR250001500158007299287322", ibanCezaevi: "TR210001500158007300570995" },
+  { city: "ESKİŞEHİR", name: "Eskişehir 8. İcra Dairesi", uyapCode: "3800513054", taxNumber: "3800513054", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR350001500158007297872009", ibanHarc: "TR750001500158007299386914", ibanCezaevi: "TR520001500158007300570340" },
+  { city: "ESKİŞEHİR", district: "Mihalıççık", name: "Mihalıççık İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR530001500158007300713106", ibanHarc: "TR250001500158007300713125", ibanCezaevi: "TR130001500158007300713147" },
+  { city: "ESKİŞEHİR", district: "Sivrihisar", name: "Sivrihisar İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR570001500158007300574033", ibanHarc: "TR970001500158007300573895", ibanCezaevi: "TR910001500158007300574003" },
   
-  // SAMSUN (55)
-  { city: "SAMSUN", name: "Samsun 1. İcra Dairesi", uyapCode: "5501001" },
-  { city: "SAMSUN", name: "Samsun 2. İcra Dairesi", uyapCode: "5501002" },
-  { city: "SAMSUN", name: "Samsun 3. İcra Dairesi", uyapCode: "5501003" },
+  // SAMSUN (55) - Tam banka bilgileriyle
+  { city: "SAMSUN", district: "Alaçam", name: "Alaçam İcra Dairesi", uyapCode: "0470351891", taxNumber: "0470351891", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR570001500158007300577913", ibanHarc: "TR540001500158007300577870", ibanCezaevi: "TR040001500158007300577897" },
+  { city: "SAMSUN", district: "Bafra", name: "Bafra İcra Dairesi", uyapCode: "1290030810", taxNumber: "1290030810", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR450001500158007290503903", ibanHarc: "TR540001500158007299371578", ibanCezaevi: "TR240001500158007284942010" },
+  { city: "SAMSUN", district: "Çarşamba", name: "Çarşamba İcra Dairesi", uyapCode: "2310070183", taxNumber: "2310070183", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR450001500158007290521460", ibanHarc: "TR090001500158007299293721", ibanCezaevi: "TR110001500158007300559632" },
+  { city: "SAMSUN", district: "Havza", name: "Havza İcra Dairesi", uyapCode: "4600273312", taxNumber: "4600273312", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR120001500158007300575231", ibanHarc: "TR860001500158007300575160", ibanCezaevi: "TR450001500158007300575219" },
+  { city: "SAMSUN", district: "Kavak", name: "Kavak İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR050001500158007300581856", ibanHarc: "TR630001500158007300581879", ibanCezaevi: "TR080001500158007300581899" },
+  { city: "SAMSUN", district: "Ladik", name: "Ladik İcra Dairesi", uyapCode: "0070338754", taxNumber: "0070338754", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR630001500158007300577126", ibanHarc: "TR910001500158007300577204", ibanCezaevi: "TR810001500158007300577190" },
+  { city: "SAMSUN", name: "Samsun İcra Dairesi", uyapCode: "3090356976", taxNumber: "3090356976", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR100001500158007303627760", ibanHarc: "TR360001500158007303627971", ibanCezaevi: "TR070001500158007303628008" },
+  { city: "SAMSUN", district: "Terme", name: "Terme İcra Dairesi", uyapCode: "4690057148", taxNumber: "4690057148", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR930001500158007290567641", ibanHarc: "TR740001500158007299431164", ibanCezaevi: "TR460001500158007299466685" },
+  { city: "SAMSUN", district: "Vezirköprü", name: "Vezirköprü İcra Dairesi", uyapCode: "9250059896", taxNumber: "9250059896", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR830001500158007300584041", ibanHarc: "TR270001500158007300584176", ibanCezaevi: "TR180001500158007300584144" },
   
-  // DENİZLİ (20)
-  { city: "DENİZLİ", name: "Denizli 1. İcra Dairesi", uyapCode: "2001001" },
-  { city: "DENİZLİ", name: "Denizli 2. İcra Dairesi", uyapCode: "2001002" },
-  { city: "DENİZLİ", name: "Denizli 3. İcra Dairesi", uyapCode: "2001003" },
+  // DENİZLİ (20) - Tam banka bilgileriyle
+  { city: "DENİZLİ", district: "Acıpayam", name: "Acıpayam İcra Dairesi", uyapCode: "4690057308", taxNumber: "4690057308", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR800001500158007300572649", ibanHarc: "TR390001500158007300572611", ibanCezaevi: "TR540001500158007300572632" },
+  { city: "DENİZLİ", district: "Buldan", name: "Buldan İcra Dairesi", uyapCode: "4690034665", taxNumber: "4690034665", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR390001500158007300573193", ibanHarc: "TR130001500158007300573176", ibanCezaevi: "TR610001500158007300573185" },
+  { city: "DENİZLİ", district: "Çal", name: "Çal İcra Dairesi", uyapCode: "2250057879", taxNumber: "2250057879", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR490001500158007300578154", ibanHarc: "TR650001500158007300578157", ibanCezaevi: "TR970001500158007300578163" },
+  { city: "DENİZLİ", district: "Çameli", name: "Çameli İcra Dairesi", uyapCode: "2280415805", taxNumber: "2280415805", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR330001500158007300572719", ibanHarc: "TR130001500158007300572691", ibanCezaevi: "TR120001500158007300572709" },
+  { city: "DENİZLİ", district: "Çardak", name: "Çardak İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR880001500158007300586570", ibanHarc: "TR770001500158007300586574", ibanCezaevi: "TR560001500158007300586564" },
+  { city: "DENİZLİ", district: "Çivril", name: "Çivril İcra Dairesi", uyapCode: "2580012245", taxNumber: "2580012245", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR850001500158007300566933", ibanHarc: "TR070001500158007300566979", ibanCezaevi: "TR600001500158007300566995" },
+  { city: "DENİZLİ", name: "Denizli 1. İcra Dairesi", uyapCode: "2920073450", taxNumber: "2920073450", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR030001500158007290499906", ibanHarc: "TR470001500158007299347551", ibanCezaevi: "TR500001500158007299347594" },
+  { city: "DENİZLİ", name: "Denizli 2. İcra Dairesi", uyapCode: "2920073602", taxNumber: "2920073602", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR360001500158007290499700", ibanHarc: "TR240001500158007299352330", ibanCezaevi: "TR830001500158007295591257" },
+  { city: "DENİZLİ", name: "Denizli 3. İcra Dairesi", uyapCode: "2920073911", taxNumber: "2920073911", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR180001500158007290499830", ibanHarc: "TR220001500158007299352657", ibanCezaevi: "TR470001500158007299352692" },
+  { city: "DENİZLİ", name: "Denizli 4. İcra Dairesi", uyapCode: "2920073506", taxNumber: "2920073506", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR420001500158007290499980", ibanHarc: "TR570001500158007299352415", ibanCezaevi: "TR340001500158007295591266" },
+  { city: "DENİZLİ", name: "Denizli 5. İcra Dairesi", uyapCode: "2920122439", taxNumber: "2920122439", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR630001500158007290499990", ibanHarc: "TR950001500158007299352507", ibanCezaevi: "TR770001500158007295591268" },
+  { city: "DENİZLİ", name: "Denizli 7. İcra Dairesi", uyapCode: "2920575441", taxNumber: "2920575441", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR300001500158007290502039", ibanHarc: "TR980001500158007299352938", ibanCezaevi: "TR930001500158007295591271" },
+  { city: "DENİZLİ", name: "Denizli 8. İcra Dairesi", uyapCode: "0010684285", taxNumber: "0010684285", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR920001500158007297760597", ibanHarc: "TR870001500158007299353039", ibanCezaevi: "TR900001500158007299353179" },
+  { city: "DENİZLİ", name: "Denizli 9. İcra Dairesi", uyapCode: "0010684323", taxNumber: "0010684323", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR800001500158007297760619", ibanHarc: "TR790001500158007299351922", ibanCezaevi: "TR570001500158007299352027" },
+  { city: "DENİZLİ", district: "Kale", name: "Kale (Denizli) İcra Dairesi", uyapCode: "4690057420", taxNumber: "4690057420", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR360001500158007300586536", ibanHarc: "TR040001500158007300586530", ibanCezaevi: "TR900001500158007300586534" },
+  { city: "DENİZLİ", district: "Sarayköy", name: "Sarayköy İcra Dairesi", uyapCode: "7450051090", taxNumber: "7450051090", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR600001500158007300616465", ibanHarc: "TR220001500158007300616470", ibanCezaevi: "TR650001500158007300616472" },
+  { city: "DENİZLİ", district: "Tavas", name: "Tavas İcra Dairesi", uyapCode: "4690122039", taxNumber: "4690122039", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR410001500158007300586543", ibanHarc: "TR350001500158007300586554", ibanCezaevi: "TR730001500158007300586549" },
   
-  // ŞANLIURFA (63)
-  { city: "ŞANLIURFA", name: "Şanlıurfa 1. İcra Dairesi", uyapCode: "6301001" },
-  { city: "ŞANLIURFA", name: "Şanlıurfa 2. İcra Dairesi", uyapCode: "6301002" },
+  // ŞANLIURFA (63) - Tam banka bilgileriyle
+  { city: "ŞANLIURFA", district: "Akçakale", name: "Akçakale İcra Dairesi", uyapCode: "0180150587", taxNumber: "0180150587", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR050001500158007300580498", ibanHarc: "TR370001500158007300580407", ibanCezaevi: "TR290001500158007300580454" },
+  { city: "ŞANLIURFA", district: "Birecik", name: "Birecik İcra Dairesi", uyapCode: "1770044190", taxNumber: "1770044190", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR870001500158007300583872", ibanHarc: "TR140001500158007300583925", ibanCezaevi: "TR870001500158007300583969" },
+  { city: "ŞANLIURFA", district: "Bozova", name: "Bozova İcra Dairesi", uyapCode: "4690358352", taxNumber: "4690358352", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR730001500158007300577043", ibanHarc: "TR840001500158007300576942", ibanCezaevi: "TR160001500158007300577002" },
+  { city: "ŞANLIURFA", district: "Ceylanpınar", name: "Ceylanpınar İcra Dairesi", uyapCode: "2090470473", taxNumber: "2090470473", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR320001500158007300583116", ibanHarc: "TR600001500158007300583000", ibanCezaevi: "TR780001500158007300583064" },
+  { city: "ŞANLIURFA", district: "Halfeti", name: "Halfeti İcra Dairesi", uyapCode: "4550102559", taxNumber: "4550102559", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR130001500158007300584040", ibanHarc: "TR750001500158007300584088", ibanCezaevi: "TR850001500158007300584102" },
+  { city: "ŞANLIURFA", district: "Harran", name: "Harran İcra Dairesi", uyapCode: "4690441211", taxNumber: "4690441211", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR400001500158007300581032", ibanHarc: "TR200001500158007300581004", ibanCezaevi: "TR080001500158007300581026" },
+  { city: "ŞANLIURFA", district: "Hilvan", name: "Hilvan İcra Dairesi", uyapCode: "4630311414", taxNumber: "4630311414", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR620001500158007300587911", ibanHarc: "TR220001500158007300587952", ibanCezaevi: "TR640001500158007300587972" },
+  { city: "ŞANLIURFA", district: "Siverek", name: "Siverek İcra Dairesi", uyapCode: "4690064435", taxNumber: "4690064435", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR620001500158007300572100", ibanHarc: "TR020001500158007300572016", ibanCezaevi: "TR200001500158007300572080" },
+  { city: "ŞANLIURFA", district: "Suruç", name: "Suruç İcra Dairesi", uyapCode: "7840180442", taxNumber: "7840180442", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR860001500158007300584666", ibanHarc: "TR340001500158007300584632", ibanCezaevi: "TR920001500158007300584655" },
+  { city: "ŞANLIURFA", name: "Şanlıurfa 1. İcra Dairesi", uyapCode: "1770001741", taxNumber: "1770001741", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR320001500158007290527320", ibanHarc: "TR350001500158007299346603", ibanCezaevi: "TR650001500158007300565450" },
+  { city: "ŞANLIURFA", name: "Şanlıurfa 2. İcra Dairesi", uyapCode: "4700093111", taxNumber: "4700093111", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR510001500158007290501273", ibanHarc: "TR080001500158007299355528", ibanCezaevi: "TR360001500158007300569561" },
+  { city: "ŞANLIURFA", name: "Şanlıurfa 3. İcra Dairesi", uyapCode: "7990369481", taxNumber: "7990369481", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR290001500158007290520099", ibanHarc: "TR980001500158007299373211", ibanCezaevi: "TR290001500158007300569590" },
+  { city: "ŞANLIURFA", name: "Şanlıurfa 4. İcra Dairesi", uyapCode: "7990383289", taxNumber: "7990383289", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR780001500158007299021461", ibanHarc: "TR540001500158007299385546", ibanCezaevi: "TR550001500158007300565339" },
+  { city: "ŞANLIURFA", district: "Viranşehir", name: "Viranşehir İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR800001500158007300583222", ibanHarc: "TR240001500158007300583163", ibanCezaevi: "TR220001500158007300583199" },
   
-  // MALATYA (44)
-  { city: "MALATYA", name: "Malatya 1. İcra Dairesi", uyapCode: "4401001" },
-  { city: "MALATYA", name: "Malatya 2. İcra Dairesi", uyapCode: "4401002" },
+  // MALATYA (44) - Tam banka bilgileriyle
+  { city: "MALATYA", district: "Akçadağ", name: "Akçadağ İcra Dairesi", uyapCode: "4690472707", taxNumber: "4690472707", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR870001500158007300593184", ibanHarc: "TR910001500158007300593209", ibanCezaevi: "TR970001500158007300593198" },
+  { city: "MALATYA", district: "Arapgir", name: "Arapgir İcra Dairesi", uyapCode: "0720350393", taxNumber: "0720350393", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR870001500158007300623545", ibanHarc: "TR290001500158007300623522", ibanCezaevi: "TR660001500158007300623535" },
+  { city: "MALATYA", district: "Darende", name: "Darende İcra Dairesi", uyapCode: "2700143612", taxNumber: "2700143612", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR670001500158007290502537", ibanHarc: "TR930001500158007300583473", ibanCezaevi: "TR830001500158007290574514" },
+  { city: "MALATYA", district: "Doğanşehir", name: "Doğanşehir İcra Dairesi", uyapCode: "3080504144", taxNumber: "3080504144", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR590001500158007300589420", ibanHarc: "TR890001500158007300589365", ibanCezaevi: "TR600001500158007300589402" },
+  { city: "MALATYA", district: "Hekimhan", name: "Hekimhan İcra Dairesi", uyapCode: "4690034720", taxNumber: "4690034720", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR780001500158007300686757", ibanHarc: "TR820001500158007300686782", ibanCezaevi: "TR650001500158007300686797" },
+  { city: "MALATYA", name: "Malatya İcra Dairesi", uyapCode: "6110573957", taxNumber: "6110573957", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR100001500158007301720934", ibanHarc: "TR890001500158007301720967", ibanCezaevi: "TR980001500158007301720999" },
+  { city: "MALATYA", district: "Pütürge", name: "Pütürge İcra Dairesi", uyapCode: "7330344339", taxNumber: "7330344339", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR580001500158007300764911", ibanHarc: "TR770001500158007300764860", ibanCezaevi: "TR250001500158007300764923" },
   
-  // KAHRAMANMARAŞ (46)
-  { city: "KAHRAMANMARAŞ", name: "Kahramanmaraş 1. İcra Dairesi", uyapCode: "4601001" },
-  { city: "KAHRAMANMARAŞ", name: "Kahramanmaraş 2. İcra Dairesi", uyapCode: "4601002" },
+  // KAHRAMANMARAŞ (46) - Tam banka bilgileriyle
+  { city: "KAHRAMANMARAŞ", district: "Afşin", name: "Afşin İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR660001500158007290568321", ibanHarc: "TR770001500158007299614149", ibanCezaevi: "TR370001500158007300573326" },
+  { city: "KAHRAMANMARAŞ", district: "Andırın", name: "Andırın İcra Dairesi", uyapCode: "4690381957", taxNumber: "4690381957", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR620001500158007300581994", ibanHarc: "TR410001500158007300582081", ibanCezaevi: "TR430001500158007300582045" },
+  { city: "KAHRAMANMARAŞ", district: "Elbistan", name: "Elbistan İcra Dairesi", uyapCode: "3310060964", taxNumber: "3310060964", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR840001500158007290495053", ibanHarc: "TR770001500158007285576600", ibanCezaevi: "TR390001500158007289928801" },
+  { city: "KAHRAMANMARAŞ", district: "Göksun", name: "Göksun İcra Dairesi", uyapCode: "4050281076", taxNumber: "4050281076", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR140001500158007300595080", ibanHarc: "TR250001500158007300595173", ibanCezaevi: "TR540001500158007300595136" },
+  { city: "KAHRAMANMARAŞ", name: "Kahramanmaraş İcra Dairesi", uyapCode: "4870536817", taxNumber: "4870536817", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR940001500158007305170973", ibanHarc: "TR040001500158007305171041", ibanCezaevi: "TR910001500158007305171124" },
+  { city: "KAHRAMANMARAŞ", district: "Pazarcık", name: "Pazarcık İcra Dairesi", uyapCode: "7230054296", taxNumber: "7230054296", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR250001500158007300588383", ibanHarc: "TR700001500158007300588252", ibanCezaevi: "TR060001500158007300588337" },
+  { city: "KAHRAMANMARAŞ", district: "Türkoğlu", name: "Türkoğlu İcra Dairesi", uyapCode: "4690059464", taxNumber: "4690059464", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR630001500158007300604577", ibanHarc: "TR520001500158007300604193", ibanCezaevi: "TR280001500158007300604528" },
   
-  // VAN (65)
-  { city: "VAN", name: "Van 1. İcra Dairesi", uyapCode: "6501001" },
-  { city: "VAN", name: "Van 2. İcra Dairesi", uyapCode: "6501002" },
+  // VAN (65) - Tam banka bilgileriyle
+  { city: "VAN", district: "Bahçesaray", name: "Bahçesaray İcra Dairesi", uyapCode: "1310714883", taxNumber: "1310714883", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR330001500158007300800087", ibanHarc: "TR930001500158007300800074", ibanCezaevi: "TR870001500158007300800085" },
+  { city: "VAN", district: "Başkale", name: "Başkale İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR400001500158007300613333", ibanHarc: "TR600001500158007300613361", ibanCezaevi: "TR430001500158007300613376" },
+  { city: "VAN", district: "Çaldıran", name: "Çaldıran İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR730001500158007300767163", ibanHarc: "TR110001500158007300767212", ibanCezaevi: "TR370001500158007300767229" },
+  { city: "VAN", district: "Çatak", name: "Çatak İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR110001500158007300686411", ibanHarc: "TR440001500158007300686496", ibanCezaevi: "TR900001500158007300686541" },
+  { city: "VAN", district: "Erciş", name: "Erciş İcra Dairesi", uyapCode: "3410037093", taxNumber: "3410037093", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR430001500158007300596110", ibanHarc: "TR520001500158007300596142", ibanCezaevi: "TR730001500158007300596152" },
+  { city: "VAN", district: "Gevaş", name: "Gevaş İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR460001500158007301061656", ibanHarc: "TR970001500158007301061611", ibanCezaevi: "TR840001500158007301061651" },
+  { city: "VAN", district: "Gürpınar", name: "Gürpınar İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR650001500158007300797765", ibanHarc: "TR180001500158007300797738", ibanCezaevi: "TR600001500158007300797758" },
+  { city: "VAN", district: "Muradiye", name: "Muradiye İcra Dairesi", uyapCode: "6240414397", taxNumber: "6240414397", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR500001500158007300649528", ibanHarc: "TR180001500158007300649522", ibanCezaevi: "TR130001500158007300649515" },
+  { city: "VAN", district: "Özalp", name: "Özalp İcra Dairesi", uyapCode: "8150292664", taxNumber: "8150292664", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR780001500158007300578117", ibanHarc: "TR410001500158007300578104", ibanCezaevi: "TR890001500158007300578113" },
+  { city: "VAN", district: "Saray", name: "Saray(Van) İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR370001500158007300761312", ibanHarc: "TR680001500158007300761336", ibanCezaevi: "TR080001500158007300761349" },
+  { city: "VAN", name: "Van 1. İcra Dairesi", uyapCode: "9220077322", taxNumber: "9220077322", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR920001500158007290498498", ibanHarc: "TR070001500158007299299674", ibanCezaevi: "TR800001500158007290498520" },
+  { city: "VAN", name: "Van 2. İcra Dairesi", uyapCode: "9220077314", taxNumber: "9220077314", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR790001500158007290498441", ibanHarc: "TR250001500158007299294597", ibanCezaevi: "TR420001500158007290577192" },
   
-  // BATMAN (72)
-  { city: "BATMAN", name: "Batman 1. İcra Dairesi", uyapCode: "7201001" },
+  // BATMAN (72) - Tam banka bilgileriyle
+  { city: "BATMAN", name: "Batman İcra Dairesi", uyapCode: "1500591361", taxNumber: "1500591361", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR820001500158007305430664" },
+  { city: "BATMAN", district: "Gercüş", name: "Gercüş İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR040001500158007300592544" },
+  { city: "BATMAN", district: "Kozluk", name: "Kozluk İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR670001500158007300588015" },
+  { city: "BATMAN", district: "Sason", name: "Sason İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR680001500158007300755904" },
   
-  // ELAZIĞ (23)
-  { city: "ELAZIĞ", name: "Elazığ 1. İcra Dairesi", uyapCode: "2301001" },
-  { city: "ELAZIĞ", name: "Elazığ 2. İcra Dairesi", uyapCode: "2301002" },
+  // ELAZIĞ (23) - Tam banka bilgileriyle
+  { city: "ELAZIĞ", name: "Elazığ 1. İcra Dairesi", uyapCode: "1780096295", taxNumber: "1780096295", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR300001500158007290497092", ibanHarc: "TR470001500158007299353371", ibanCezaevi: "TR860001500158007300568273" },
+  { city: "ELAZIĞ", name: "Elazığ 2. İcra Dairesi", uyapCode: "4700081795", taxNumber: "4700081795", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR320001500158007290497541", ibanHarc: "TR730001500158007299353097", ibanCezaevi: "TR620001500158007300568608" },
+  { city: "ELAZIĞ", name: "Elazığ 3. İcra Dairesi", uyapCode: "9050043324", taxNumber: "9050043324", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR070001500158007290498282", ibanHarc: "TR640001500158007299353938", ibanCezaevi: "TR580001500158007300568680" },
+  { city: "ELAZIĞ", district: "Karakoçan", name: "Karakoçan İcra Dairesi", uyapCode: "5150416083", taxNumber: "5150416083", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR490001500158007300601725", ibanHarc: "TR910001500158007300601745", ibanCezaevi: "TR660001500158007300601807" },
+  { city: "ELAZIĞ", district: "Keban", name: "Keban İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR170001500158007300595705", ibanHarc: "TR970001500158007300595720", ibanCezaevi: "TR150001500158007300595741" },
+  { city: "ELAZIĞ", district: "Kovancılar", name: "Kovancılar İcra Dairesi", uyapCode: "5810585398", taxNumber: "5810585398", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR920001500158007300598914", ibanHarc: "TR630001500158007300598951", ibanCezaevi: "TR910001500158007300598932" },
+  { city: "ELAZIĞ", district: "Maden", name: "Maden İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR020001500158007300614987", ibanHarc: "TR980001500158007300615005", ibanCezaevi: "TR110001500158007300615019" },
+  { city: "ELAZIĞ", district: "Palu", name: "Palu İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR090001500158007300634358", ibanHarc: "TR770001500158007300634395", ibanCezaevi: "TR590001500158007300634428" },
   
-  // ERZURUM (25)
-  { city: "ERZURUM", name: "Erzurum 1. İcra Dairesi", uyapCode: "2501001" },
-  { city: "ERZURUM", name: "Erzurum 2. İcra Dairesi", uyapCode: "2501002" },
+  // ERZURUM (25) - Tam banka bilgileriyle
+  { city: "ERZURUM", district: "Aşkale", name: "Aşkale İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR130001500158007290499629", ibanHarc: "TR580001500158007299430579", ibanCezaevi: "TR390001500158007290499646" },
+  { city: "ERZURUM", district: "Çat", name: "Çat İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR170001500158007300644593", ibanHarc: "TR970001500158007300644705", ibanCezaevi: "TR280001500158007300644686" },
+  { city: "ERZURUM", name: "Erzurum 1. İcra Dairesi", uyapCode: "3770051022", taxNumber: "3770051022", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR590001500158007290502002", ibanHarc: "TR280001500158007299351191", ibanCezaevi: "TR710001500158007299351193" },
+  { city: "ERZURUM", name: "Erzurum 2. İcra Dairesi", uyapCode: "3770051351", taxNumber: "3770051351", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR730001500158007290501847", ibanHarc: "TR440001500158007299351194", ibanCezaevi: "TR170001500158007299351195" },
+  { city: "ERZURUM", name: "Erzurum 3. İcra Dairesi", uyapCode: "3770276317", taxNumber: "3770276317", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR550001500158007290502171", ibanHarc: "TR570001500158007299432634", ibanCezaevi: "TR160001500158007290502097" },
+  { city: "ERZURUM", name: "Erzurum 4. İcra Dairesi", uyapCode: "3770418800", taxNumber: "3770418800", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR550001500158007290501977", ibanHarc: "TR380001500158007299439766", ibanCezaevi: "TR140001500158007290501066" },
+  { city: "ERZURUM", name: "Erzurum 5. İcra Dairesi", uyapCode: "3770420674", taxNumber: "3770420674", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR630001500158007297757045", ibanHarc: "TR400001500158007299352624", ibanCezaevi: "TR040001500158007299352690" },
+  { city: "ERZURUM", district: "Hınıs", name: "Hınıs İcra Dairesi", uyapCode: "4620288954", taxNumber: "4620288954", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR620001500158007300714302", ibanHarc: "TR600001500158007300714241", ibanCezaevi: "TR900001500158007300714283" },
+  { city: "ERZURUM", district: "Horasan", name: "Horasan İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR180001500158007300677652", ibanHarc: "TR390001500158007300677662", ibanCezaevi: "TR230001500158007300677659" },
+  { city: "ERZURUM", district: "İspir", name: "İspir İcra Dairesi", uyapCode: "4810096385", taxNumber: "4810096385", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR480001500158007300635499", ibanHarc: "TR550001500158007300635470", ibanCezaevi: "" },
+  { city: "ERZURUM", district: "Karayazı", name: "Karayazı İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR570001500158007300718854", ibanHarc: "TR360001500158007300718941", ibanCezaevi: "TR860001500158007300718914" },
+  { city: "ERZURUM", district: "Oltu", name: "Oltu İcra Dairesi", uyapCode: "6420240813", taxNumber: "6420240813", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR390001500158007300617910", ibanHarc: "TR660001500158007300618006", ibanCezaevi: "TR430001500158007300617935" },
+  { city: "ERZURUM", district: "Pasinler", name: "Pasinler İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR020001500158007300590834", ibanHarc: "TR690001500158007300590986", ibanCezaevi: "TR410001500158007300591005" },
+  { city: "ERZURUM", district: "Şenkaya", name: "Şenkaya İcra Dairesi", uyapCode: "8070288178", taxNumber: "8070288178", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR490001500158007300600076", ibanHarc: "TR750001500158007300600093", ibanCezaevi: "TR690001500158007300600104" },
+  { city: "ERZURUM", district: "Tekman", name: "Tekman İcra Dairesi", uyapCode: "8360276668", taxNumber: "8360276668", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR150001500158007300756276", ibanHarc: "TR880001500158007300756320", ibanCezaevi: "TR690001500158007300756371" },
+  { city: "ERZURUM", district: "Tortum", name: "Tortum İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR910001500158007300773435", ibanHarc: "TR250001500158007300773459", ibanCezaevi: "TR080001500158007300773474" },
   
-  // TRABZON (61)
-  { city: "TRABZON", name: "Trabzon 1. İcra Dairesi", uyapCode: "6101001" },
-  { city: "TRABZON", name: "Trabzon 2. İcra Dairesi", uyapCode: "6101002" },
+  // TRABZON (61) - Tam banka bilgileriyle
+  { city: "TRABZON", district: "Akçaabat", name: "Akçaabat İcra Dairesi", uyapCode: "0180045431", taxNumber: "0180045431", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR680001500158007290498445", ibanHarc: "TR510001500158007299471057", ibanCezaevi: "TR560001500158007293652519" },
+  { city: "TRABZON", district: "Araklı", name: "Araklı İcra Dairesi", uyapCode: "0710059622", taxNumber: "0710059622", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR430001500158007300580008", ibanHarc: "TR490001500158007300579900", ibanCezaevi: "TR500001500158007300579979" },
+  { city: "TRABZON", district: "Çaykara", name: "Çaykara İcra Dairesi", uyapCode: "4690386235", taxNumber: "4690386235", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR220001500158007300743734", ibanHarc: "TR690001500158007300743761", ibanCezaevi: "TR310001500158007300743766" },
+  { city: "TRABZON", district: "Maçka", name: "Maçka İcra Dairesi", uyapCode: "0080099381", taxNumber: "0080099381", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR020001500158007300577933", ibanHarc: "TR510001500158007300577827", ibanCezaevi: "TR950001500158007300577908" },
+  { city: "TRABZON", district: "Of", name: "Of İcra Dairesi", uyapCode: "6340049304", taxNumber: "6340049304", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR340001500158007300567463", ibanHarc: "TR570001500158007300567437", ibanCezaevi: "TR830001500158007300567454" },
+  { city: "TRABZON", district: "Sürmene", name: "Sürmene İcra Dairesi", uyapCode: "4690034787", taxNumber: "4690034787", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR590001500158007300567498", ibanHarc: "TR440001500158007300567477", ibanCezaevi: "TR110001500158007300567489" },
+  { city: "TRABZON", district: "Tonya", name: "Tonya İcra Dairesi", uyapCode: "8500045140", taxNumber: "8500045140", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR660001500158007300676885", ibanHarc: "TR970001500158007300676909", ibanCezaevi: "TR880001500158007300676974" },
+  { city: "TRABZON", name: "Trabzon İcra Dairesi", uyapCode: "8590587307", taxNumber: "8590587307", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR650001500158007301568624", ibanHarc: "TR900001500158007301568659", ibanCezaevi: "TR730001500158007301568674" },
+  { city: "TRABZON", district: "Vakfıkebir", name: "Vakfıkebir İcra Dairesi", uyapCode: "9220079948", taxNumber: "9220079948", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR280001500158007300328660", ibanHarc: "TR020001500158007300569009", ibanCezaevi: "TR280001500158007300569026" },
   
-  // HATAY (31)
-  { city: "HATAY", name: "Hatay 1. İcra Dairesi", uyapCode: "3101001" },
-  { city: "HATAY", name: "Hatay 2. İcra Dairesi", uyapCode: "3101002" },
-  { city: "HATAY", name: "İskenderun 1. İcra Dairesi", uyapCode: "3102001" },
+  // HATAY (31) - Tam banka bilgileriyle
+  { city: "HATAY", district: "Altınözü", name: "Altınözü İcra Dairesi", uyapCode: "4690315376", taxNumber: "4690315376", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR270001500158007300582527", ibanHarc: "TR130001500158007300582488", ibanCezaevi: "TR170001500158007300582610" },
+  { city: "HATAY", district: "Dörtyol", name: "Dörtyol İcra Dairesi", uyapCode: "4690034448", taxNumber: "4690034448", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR540001500158007290500734", ibanHarc: "TR810001500158007299396409", ibanCezaevi: "TR600001500158007300569323" },
+  { city: "HATAY", district: "Erzin", name: "Erzin İcra Dairesi", uyapCode: "3770064217", taxNumber: "3770064217", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR600001500158007300624419", ibanHarc: "TR160001500158007300624629", ibanCezaevi: "TR420001500158007300624646" },
+  { city: "HATAY", district: "Hassa", name: "Hassa İcra Dairesi", uyapCode: "4580060348", taxNumber: "4580060348", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR250001500158007300580526", ibanHarc: "TR250001500158007300580332", ibanCezaevi: "" },
+  { city: "HATAY", name: "Hatay İcra Dairesi", uyapCode: "0010762434", taxNumber: "0010762434", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR310001500158007300893922", ibanHarc: "TR600001500158007300893982", ibanCezaevi: "TR840001500158007300894035" },
+  { city: "HATAY", district: "İskenderun", name: "İskenderun İcra Dairesi", uyapCode: "4800505319", taxNumber: "4800505319", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR610001500158007303556420", ibanHarc: "TR770001500158007303556423", ibanCezaevi: "TR280001500158007303556432" },
+  { city: "HATAY", district: "Kırıkhan", name: "Kırıkhan İcra Dairesi", uyapCode: "5570064514", taxNumber: "5570064514", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR830001500158007290520582", ibanHarc: "TR830001500158007299572622", ibanCezaevi: "TR620001500158007290520572" },
+  { city: "HATAY", district: "Reyhanlı", name: "Reyhanlı İcra Dairesi", uyapCode: "7350187787", taxNumber: "7350187787", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR270001500158007300579520", ibanHarc: "TR730001500158007300579468", ibanCezaevi: "TR770001500158007300579493" },
+  { city: "HATAY", district: "Samandağ", name: "Samandağ İcra Dairesi", uyapCode: "7420023943", taxNumber: "7420023943", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR710001500158007300157457", ibanHarc: "TR220001500158007300506957", ibanCezaevi: "TR560001500158007301368093" },
+  { city: "HATAY", district: "Yayladağı", name: "Yayladağı İcra Dairesi", uyapCode: "9430444286", taxNumber: "9430444286", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR440001500158007300703762", ibanHarc: "TR920001500158007300703674", ibanCezaevi: "TR130001500158007300703738" },
   
-  // MANİSA (45)
-  { city: "MANİSA", name: "Manisa 1. İcra Dairesi", uyapCode: "4501001" },
-  { city: "MANİSA", name: "Manisa 2. İcra Dairesi", uyapCode: "4501002" },
+  // MANİSA (45) - Tam banka bilgileriyle
+  { city: "MANİSA", district: "Akhisar", name: "Akhisar İcra Dairesi", uyapCode: "8150076820", taxNumber: "8150076820", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR120001500158007290516622", ibanHarc: "TR140001500158007299331267", ibanCezaevi: "TR570001500158007294758980" },
+  { city: "MANİSA", district: "Alaşehir", name: "Alaşehir İcra Dairesi", uyapCode: "0480040759", taxNumber: "0480040759", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR230001500158007290498188", ibanHarc: "TR940001500158007299350197", ibanCezaevi: "TR690001500158007285351025" },
+  { city: "MANİSA", district: "Demirci", name: "Demirci İcra Dairesi", uyapCode: "2820046751", taxNumber: "2820046751", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR340001500158007297985323", ibanHarc: "TR080001500158007299267840", ibanCezaevi: "TR400001500158007300568034" },
+  { city: "MANİSA", district: "Gördes", name: "Gördes İcra Dairesi", uyapCode: "4090055454", taxNumber: "4090055454", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR740001500158007300589732", ibanHarc: "TR940001500158007300589760", ibanCezaevi: "TR340001500158007300589773" },
+  { city: "MANİSA", district: "Kırkağaç", name: "Kırkağaç İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR770001500158007300577844", ibanHarc: "TR580001500158007300577895", ibanCezaevi: "TR810001500158007300577869" },
+  { city: "MANİSA", district: "Kula", name: "Kula İcra Dairesi", uyapCode: "4690064397", taxNumber: "4690064397", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR120001500158007296357962", ibanHarc: "TR030001500158007299351447", ibanCezaevi: "TR810001500158007296384074" },
+  { city: "MANİSA", name: "Manisa 1. İcra Dairesi", uyapCode: "8150014010", taxNumber: "8150014010", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR360001500158007290495044", ibanHarc: "TR780001500158007300565022", ibanCezaevi: "TR940001500158007300565025" },
+  { city: "MANİSA", name: "Manisa 2. İcra Dairesi", uyapCode: "8150014002", taxNumber: "8150014002", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR410001500158007290495051", ibanHarc: "TR110001500158007300564579", ibanCezaevi: "TR590001500158007300564588" },
+  { city: "MANİSA", name: "Manisa 3. İcra Dairesi", uyapCode: "8150016175", taxNumber: "8150016175", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR880001500158007290495078", ibanHarc: "TR170001500158007300578536", ibanCezaevi: "TR800001500158007300578566" },
+  { city: "MANİSA", name: "Manisa 4. İcra Dairesi", uyapCode: "6120571436", taxNumber: "6120571436", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR120001500158007292740444", ibanHarc: "TR700001500158007299248682", ibanCezaevi: "TR410001500158007300579268" },
+  { city: "MANİSA", district: "Salihli", name: "Salihli İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR910001500158007290498225", ibanHarc: "TR040001500158007299359674", ibanCezaevi: "TR350001500158007300568900" },
+  { city: "MANİSA", district: "Sarıgöl", name: "Sarıgöl İcra Dairesi", uyapCode: "7480030745", taxNumber: "7480030745", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR580001500158007300575470", ibanHarc: "TR750001500158007300575455", ibanCezaevi: "TR850001500158007300575469" },
+  { city: "MANİSA", district: "Saruhanlı", name: "Saruhanlı İcra Dairesi", uyapCode: "7520052153", taxNumber: "7520052153", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR030001500158007300586839", ibanHarc: "TR980001500158007300586875", ibanCezaevi: "TR230001500158007300587255" },
+  { city: "MANİSA", district: "Selendi", name: "Selendi İcra Dairesi", uyapCode: "7600065612", taxNumber: "7600065612", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR950001500158007300582176", ibanHarc: "TR810001500158007300582234", ibanCezaevi: "TR150001500158007300582258" },
+  { city: "MANİSA", district: "Soma", name: "Soma İcra Dairesi", uyapCode: "4690068850", taxNumber: "4690068850", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR960001500158007290494546", ibanHarc: "TR140001500158007299381125", ibanCezaevi: "TR160001500158007285168843" },
+  { city: "MANİSA", district: "Turgutlu", name: "Turgutlu İcra Dairesi", uyapCode: "4690056868", taxNumber: "4690056868", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR380001500158007290495881", ibanHarc: "TR860001500158007299305624", ibanCezaevi: "TR100001500158007300569447" },
   
-  // BALIKESİR (10)
-  { city: "BALIKESİR", name: "Balıkesir 1. İcra Dairesi", uyapCode: "1001001" },
-  { city: "BALIKESİR", name: "Balıkesir 2. İcra Dairesi", uyapCode: "1001002" },
+  // BALIKESİR (10) - Tam banka bilgileriyle
+  { city: "BALIKESİR", district: "Ayvalık", name: "Ayvalık İcra Dairesi", uyapCode: "1260295900", taxNumber: "1260295900", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR700001500158007290492977" },
+  { city: "BALIKESİR", name: "Balıkesir 1. İcra Dairesi", uyapCode: "1780095611", taxNumber: "1780095611", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR310001500158007290499305" },
+  { city: "BALIKESİR", name: "Balıkesir 2. İcra Dairesi", uyapCode: "4700077846", taxNumber: "4700077846", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR470001500158007290499308" },
+  { city: "BALIKESİR", name: "Balıkesir 3. İcra Dairesi", uyapCode: "9050036584", taxNumber: "9050036584", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR150001500158007290499884" },
+  { city: "BALIKESİR", name: "Balıkesir 4. İcra Dairesi", uyapCode: "1370367361", taxNumber: "1370367361", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR840001500158007292437381" },
+  { city: "BALIKESİR", district: "Bandırma", name: "Bandırma 1. İcra Dairesi", uyapCode: "4690057278", taxNumber: "4690057278", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR680001500158007290496893" },
+  { city: "BALIKESİR", district: "Bandırma", name: "Bandırma 2. İcra Dairesi", uyapCode: "1400060152", taxNumber: "1400060152", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR150001500158007290497265" },
+  { city: "BALIKESİR", district: "Bandırma", name: "Bandırma 3. İcra Dairesi", uyapCode: "1400350461", taxNumber: "1400350461", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR050001500158007297862461" },
+  { city: "BALIKESİR", district: "Bigadiç", name: "Bigadiç İcra Dairesi", uyapCode: "1700008380", taxNumber: "1700008380", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR660001500158007300618879" },
+  { city: "BALIKESİR", district: "Burhaniye", name: "Burhaniye İcra Dairesi", uyapCode: "1910069002", taxNumber: "1910069002", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR270001500158007290497728" },
+  { city: "BALIKESİR", district: "Dursunbey", name: "Dursunbey İcra Dairesi", uyapCode: "3180044578", taxNumber: "3180044578", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR600001500158007290554461" },
+  { city: "BALIKESİR", district: "Edremit", name: "Edremit İcra Dairesi", uyapCode: "3240467739", taxNumber: "3240467739", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR430001500158007305665233" },
+  { city: "BALIKESİR", district: "Erdek", name: "Erdek İcra Dairesi", uyapCode: "4690058254", taxNumber: "4690058254", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR480001500158007300573322" },
+  { city: "BALIKESİR", district: "Gönen", name: "Gönen(Balıkesir) İcra Dairesi", uyapCode: "4690060167", taxNumber: "4690060167", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR480001500158007292364406" },
+  { city: "BALIKESİR", district: "İvrindi", name: "İvrindi İcra Dairesi", uyapCode: "4690069752", taxNumber: "4690069752", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR180001500158007300580555" },
+  { city: "BALIKESİR", district: "Kepsut", name: "Kepsut İcra Dairesi", uyapCode: "4690221226", taxNumber: "4690221226", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR730001500158007300578886" },
+  { city: "BALIKESİR", district: "Manyas", name: "Manyas İcra Dairesi", uyapCode: "6120126894", taxNumber: "6120126894", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR160001500158007300574189" },
+  { city: "BALIKESİR", district: "Marmara", name: "Marmara İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR740001500158007300573242" },
+  { city: "BALIKESİR", district: "Savaştepe", name: "Savaştepe İcra Dairesi", uyapCode: "7530381672", taxNumber: "7530381672", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR360001500158007300579843" },
+  { city: "BALIKESİR", district: "Sındırgı", name: "Sındırgı İcra Dairesi", uyapCode: "7690310751", taxNumber: "7690310751", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR880001500158007300593651" },
+  { city: "BALIKESİR", district: "Susurluk", name: "Susurluk İcra Dairesi", uyapCode: "4690062378", taxNumber: "4690062378", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR750001500158007300580402" },
   
-  // AYDIN (09)
-  { city: "AYDIN", name: "Aydın 1. İcra Dairesi", uyapCode: "0901001" },
-  { city: "AYDIN", name: "Aydın 2. İcra Dairesi", uyapCode: "0901002" },
-  { city: "AYDIN", name: "Kuşadası 1. İcra Dairesi", uyapCode: "0902001" },
+  // AYDIN (09) - Tam banka bilgileriyle
+  { city: "AYDIN", name: "Aydın İcra Dairesi", uyapCode: "1150838835", taxNumber: "1150838835", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR150001500158007301636939", ibanHarc: "TR070001500158007301636986", ibanCezaevi: "TR850001500158007301637037" },
+  { city: "AYDIN", district: "Bozdoğan", name: "Bozdoğan İcra Dairesi", uyapCode: "4690034464", taxNumber: "4690034464", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR380001500158007300677680", ibanHarc: "TR440001500158007300677669", ibanCezaevi: "TR220001500158007300677677" },
+  { city: "AYDIN", district: "Çine", name: "Çine İcra Dairesi", uyapCode: "2570060646", taxNumber: "2570060646", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR460001500158007300578208", ibanHarc: "TR250001500158007300578198", ibanCezaevi: "TR300001500158007300578205" },
+  { city: "AYDIN", district: "Didim", name: "Didim(Yenihisar) İcra Dairesi", uyapCode: "4690034415", taxNumber: "4690034415", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR420001500158007290495906", ibanHarc: "TR780001500158007300577632", ibanCezaevi: "TR180001500158007290495950" },
+  { city: "AYDIN", district: "Germencik", name: "Germencik İcra Dairesi", uyapCode: "3940331189", taxNumber: "3940331189", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR690001500158007299049462", ibanHarc: "TR720001500158007300543596", ibanCezaevi: "TR170001500158007300543616" },
+  { city: "AYDIN", district: "Karacasu", name: "Karacasu İcra Dairesi", uyapCode: "5070068364", taxNumber: "5070068364", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR710001500158007300579698", ibanHarc: "TR670001500158007300579770", ibanCezaevi: "TR160001500158007300579815" },
+  { city: "AYDIN", district: "Kuşadası", name: "Kuşadası İcra Dairesi", uyapCode: "5980802394", taxNumber: "5980802394", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR600001500158007305277606", ibanHarc: "TR070001500158007305277687", ibanCezaevi: "TR570001500158007305277660" },
+  { city: "AYDIN", district: "Nazilli", name: "Nazilli İcra Dairesi", uyapCode: "4690057028", taxNumber: "4690057028", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR230001500158007290493920", ibanHarc: "TR330001500158007299290573", ibanCezaevi: "TR700001500158007285013738" },
+  { city: "AYDIN", district: "Söke", name: "Söke İcra Dairesi", uyapCode: "7780051692", taxNumber: "7780051692", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR550001500158007290492956", ibanHarc: "TR910001500158007299434544", ibanCezaevi: "TR410001500158007285104470" },
   
-  // TEKİRDAĞ (59)
-  { city: "TEKİRDAĞ", name: "Tekirdağ 1. İcra Dairesi", uyapCode: "5901001" },
-  { city: "TEKİRDAĞ", name: "Tekirdağ 2. İcra Dairesi", uyapCode: "5901002" },
-  { city: "TEKİRDAĞ", name: "Çorlu 1. İcra Dairesi", uyapCode: "5902001" },
+  // TEKİRDAĞ (59) - Tam banka bilgileriyle
+  { city: "TEKİRDAĞ", district: "Çerkezköy", name: "Çerkezköy İcra Dairesi", uyapCode: "2420057358", taxNumber: "2420057358", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR100001500158007290502884", ibanHarc: "TR980001500158007299389604", ibanCezaevi: "TR650001500158007300574859" },
+  { city: "TEKİRDAĞ", district: "Çorlu", name: "Çorlu 1. İcra Dairesi", uyapCode: "2610047413", taxNumber: "2610047413", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR100001500158007290495900", ibanHarc: "TR770001500158007300319533", ibanCezaevi: "TR300001500158007285443101" },
+  { city: "TEKİRDAĞ", district: "Çorlu", name: "Çorlu 2. İcra Dairesi", uyapCode: "2610101647", taxNumber: "2610101647", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR090001500158007290495918", ibanHarc: "TR230001500158007300323900", ibanCezaevi: "TR510001500158007287806128" },
+  { city: "TEKİRDAĞ", district: "Çorlu", name: "Çorlu 4. İcra Dairesi", uyapCode: "2610650260", taxNumber: "2610650260", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR380001500158007307203840", ibanHarc: "TR470001500158007307203872", ibanCezaevi: "TR620001500158007307203893" },
+  { city: "TEKİRDAĞ", district: "Hayrabolu", name: "Hayrabolu İcra Dairesi", uyapCode: "4600059655", taxNumber: "4600059655", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR160001500158007300574480", ibanHarc: "TR290001500158007300574440", ibanCezaevi: "TR870001500158007300574463" },
+  { city: "TEKİRDAĞ", district: "Malkara", name: "Malkara İcra Dairesi", uyapCode: "6110307506", taxNumber: "6110307506", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR590001500158007298979414", ibanHarc: "TR650001500158007299394660", ibanCezaevi: "TR800001500158007298979521" },
+  { city: "TEKİRDAĞ", district: "Marmaraereğlisi", name: "Marmaraereğlisi İcra Dairesi", uyapCode: "6090063750", taxNumber: "6090063750", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR600001500158007300578247", ibanHarc: "TR980001500158007300578242", ibanCezaevi: "TR170001500158007300578245" },
+  { city: "TEKİRDAĞ", district: "Muratlı", name: "Muratlı İcra Dairesi", uyapCode: "6240054041", taxNumber: "6240054041", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR530001500158007300584290", ibanHarc: "TR130001500158007300584234", ibanCezaevi: "TR710001500158007300584257" },
+  { city: "TEKİRDAĞ", district: "Saray", name: "Saray(Tekirdağ) İcra Dairesi", uyapCode: "7450256948", taxNumber: "7450256948", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR280001500158007300568250", ibanHarc: "TR510001500158007300568515", ibanCezaevi: "TR230001500158007300568534" },
+  { city: "TEKİRDAĞ", district: "Şarköy", name: "Şarköy İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR850001500158007300593705", ibanHarc: "TR220001500158007300593772", ibanCezaevi: "TR200001500158007300593808" },
+  { city: "TEKİRDAĞ", name: "Tekirdağ İcra Dairesi", uyapCode: "8360073878", taxNumber: "8360073878", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR240001500158007290521353", ibanHarc: "TR440001500158007299381167", ibanCezaevi: "TR310001500158007300573337" },
   
-  // SAKARYA (54)
-  { city: "SAKARYA", name: "Sakarya 1. İcra Dairesi", uyapCode: "5401001" },
-  { city: "SAKARYA", name: "Sakarya 2. İcra Dairesi", uyapCode: "5401002" },
+  // SAKARYA (54) - Tam banka bilgileriyle
+  { city: "SAKARYA", district: "Akyazı", name: "Akyazı İcra Dairesi", uyapCode: "4690034510", taxNumber: "4690034510", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR350001500158007300575593", ibanHarc: "TR540001500158007300575542", ibanCezaevi: "TR740001500158007300575570" },
+  { city: "SAKARYA", district: "Ferizli", name: "Ferizli İcra Dairesi", uyapCode: "3850191934", taxNumber: "3850191934", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR490001500158007300585914", ibanHarc: "TR230001500158007300585800", ibanCezaevi: "TR700001500158007300585924" },
+  { city: "SAKARYA", district: "Geyve", name: "Geyve İcra Dairesi", uyapCode: "3950094227", taxNumber: "3950094227", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR630001500158007300569269", ibanHarc: "TR540001500158007300569237", ibanCezaevi: "TR370001500158007300569252" },
+  { city: "SAKARYA", district: "Hendek", name: "Hendek İcra Dairesi", uyapCode: "8150080269", taxNumber: "8150080269", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR320001500158007290563598", ibanHarc: "TR790001500158007299428261", ibanCezaevi: "TR190001500158007299428274" },
+  { city: "SAKARYA", district: "Karasu", name: "Karasu İcra Dairesi", uyapCode: "5200048216", taxNumber: "5200048216", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR390001500158007300571350", ibanHarc: "TR470001500158007300571303", ibanCezaevi: "TR780001500158007300571327" },
+  { city: "SAKARYA", district: "Kaynarca", name: "Kaynarca İcra Dairesi", uyapCode: "5400213056", taxNumber: "5400213056", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR340001500158007300575708", ibanHarc: "TR590001500158007300575840", ibanCezaevi: "TR530001500158007300575754" },
+  { city: "SAKARYA", district: "Kocaali", name: "Kocaali İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR860001500158007300576809", ibanHarc: "TR760001500158007300576601", ibanCezaevi: "TR670001500158007300576666" },
+  { city: "SAKARYA", district: "Pamukova", name: "Pamukova İcra Dairesi", uyapCode: "7210058306", taxNumber: "7210058306", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR280001500158007300569317", ibanHarc: "TR360001500158007300569270", ibanCezaevi: "TR130001500158007300569296" },
+  { city: "SAKARYA", name: "Sakarya 1. İcra Dairesi", uyapCode: "7400043617", taxNumber: "7400043617", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR470001500158007290502121", ibanHarc: "TR630001500158007299377139", ibanCezaevi: "TR670001500158007299377164" },
+  { city: "SAKARYA", name: "Sakarya 2. İcra Dairesi", uyapCode: "7400043560", taxNumber: "7400043560", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR210001500158007290502104", ibanHarc: "TR260001500158007299377223", ibanCezaevi: "TR410001500158007299377244" },
+  { city: "SAKARYA", name: "Sakarya 3. İcra Dairesi", uyapCode: "0010415039", taxNumber: "0010415039", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR420001500158007290502114", ibanHarc: "TR890001500158007299377253", ibanCezaevi: "TR400001500158007299377262" },
+  { city: "SAKARYA", name: "Sakarya 4. İcra Dairesi", uyapCode: "7400319986", taxNumber: "7400319986", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR470001500158007290502218", ibanHarc: "TR020001500158007299377267", ibanCezaevi: "TR930001500158007299377278" },
+  { city: "SAKARYA", district: "Sapanca", name: "Sapanca İcra Dairesi", uyapCode: "7440305681", taxNumber: "7440305681", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR180001500158007300569206", ibanHarc: "TR420001500158007300569162", ibanCezaevi: "TR190001500158007300569188" },
   
-  // MUĞLA (48)
-  { city: "MUĞLA", name: "Muğla 1. İcra Dairesi", uyapCode: "4801001" },
-  { city: "MUĞLA", name: "Bodrum 1. İcra Dairesi", uyapCode: "4802001" },
-  { city: "MUĞLA", name: "Fethiye 1. İcra Dairesi", uyapCode: "4803001" },
-  { city: "MUĞLA", name: "Marmaris 1. İcra Dairesi", uyapCode: "4804001" },
+  // MUĞLA (48) - Tam banka bilgileriyle
+  { city: "MUĞLA", district: "Bodrum", name: "Bodrum 1. İcra Dairesi", uyapCode: "0070067829", taxNumber: "0070067829", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR410001500158007281269090", ibanHarc: "TR370001500158007299356558", ibanCezaevi: "TR070001500158007294470432" },
+  { city: "MUĞLA", district: "Bodrum", name: "Bodrum 2. İcra Dairesi", uyapCode: "0010259066", taxNumber: "0010259066", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR440001500158007290496549", ibanHarc: "TR160001500158007299371098", ibanCezaevi: "TR330001500158007300578151" },
+  { city: "MUĞLA", district: "Datça", name: "Datça İcra Dairesi", uyapCode: "4690061369", taxNumber: "4690061369", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR980001500158007297516049", ibanHarc: "TR760001500158007299430643", ibanCezaevi: "TR370001500158007299430666" },
+  { city: "MUĞLA", district: "Fethiye", name: "Fethiye İcra Dairesi", uyapCode: "3850694706", taxNumber: "3850694706", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR960001500158007303962899", ibanHarc: "TR460001500158007303963023", ibanCezaevi: "TR320001500158007303963081" },
+  { city: "MUĞLA", district: "Köyceğiz", name: "Köyceğiz İcra Dairesi", uyapCode: "8150077779", taxNumber: "8150077779", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR430001500158007300571084", ibanHarc: "TR090001500158007300571114", ibanCezaevi: "TR510001500158007300571134" },
+  { city: "MUĞLA", district: "Marmaris", name: "Marmaris 1. İcra Dairesi", uyapCode: "6120080359", taxNumber: "6120080359", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR820001500158007282430412", ibanHarc: "TR490001500158007299343635", ibanCezaevi: "TR700001500158007286156592" },
+  { city: "MUĞLA", district: "Marmaris", name: "Marmaris 2. İcra Dairesi", uyapCode: "6120164303", taxNumber: "6120164303", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR060001500158007290501113", ibanHarc: "TR150001500158007299432614", ibanCezaevi: "TR980001500158007285578647" },
+  { city: "MUĞLA", district: "Milas", name: "Milas İcra Dairesi", uyapCode: "6210071383", taxNumber: "6210071383", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR760001500158007290494712", ibanHarc: "TR680001500158007299371229", ibanCezaevi: "TR880001500158007286166647" },
+  { city: "MUĞLA", name: "Muğla 1. İcra Dairesi", uyapCode: "6230039591", taxNumber: "6230039591", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR090001500158007290498925", ibanHarc: "TR130001500158007299346320", ibanCezaevi: "TR340001500158007299346330" },
+  { city: "MUĞLA", name: "Muğla 2. İcra Dairesi", uyapCode: "6230103710", taxNumber: "6230103710", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR510001500158007290499236", ibanHarc: "TR790001500158007299305944", ibanCezaevi: "TR290001500158007299309851" },
+  { city: "MUĞLA", district: "Ortaca", name: "Ortaca İcra Dairesi", uyapCode: "6470064665", taxNumber: "6470064665", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR510001500158007292262793", ibanHarc: "TR540001500158007299323660", ibanCezaevi: "TR670001500158007300570264" },
+  { city: "MUĞLA", district: "Yatağan", name: "Yatağan İcra Dairesi", uyapCode: "9400055751", taxNumber: "9400055751", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR750001500158007300573224", ibanHarc: "TR850001500158007300573238", ibanCezaevi: "TR470001500158007300573243" },
 
-  // ORDU (52)
-  { city: "ORDU", name: "Ordu 1. İcra Dairesi", uyapCode: "5201001" },
+  // ORDU (52) - Tam banka bilgileriyle
+  { city: "ORDU", district: "Akkuş", name: "Akkuş İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR270001500158007300692428", ibanHarc: "TR790001500158007300692365", ibanCezaevi: "TR170001500158007300692414" },
+  { city: "ORDU", district: "Aybastı", name: "Aybastı İcra Dairesi", uyapCode: "1090379642", taxNumber: "1090379642", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR490001500158007300597263", ibanHarc: "TR240001500158007300597131", ibanCezaevi: "TR150001500158007300597196" },
+  { city: "ORDU", district: "Fatsa", name: "Fatsa İcra Dairesi", uyapCode: "8150291751", taxNumber: "8150291751", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR970001500158007290501124", ibanHarc: "TR370001500158007299433382", ibanCezaevi: "TR050001500158007300248273" },
+  { city: "ORDU", district: "Gölköy", name: "Gölköy İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR680001500158007300568597", ibanHarc: "TR330001500158007300568645", ibanCezaevi: "TR820001500158007300568539" },
+  { city: "ORDU", district: "Gürgentepe", name: "Gürgentepe İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR410001500158007300580335", ibanHarc: "TR740001500158007300580420", ibanCezaevi: "TR110001500158007300580487" },
+  { city: "ORDU", district: "Korgan", name: "Korgan İcra Dairesi", uyapCode: "5770487690", taxNumber: "5770487690", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR640001500158007300597478", ibanHarc: "TR740001500158007300597395", ibanCezaevi: "TR020001500158007300597430" },
+  { city: "ORDU", district: "Kumru", name: "Kumru İcra Dairesi", uyapCode: "4690361978", taxNumber: "4690361978", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR460001500158007300594407", ibanHarc: "TR710001500158007300594345", ibanCezaevi: "TR310001500158007300594386" },
+  { city: "ORDU", district: "Mesudiye", name: "Mesudiye İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR220001500158007300579028", ibanHarc: "TR200001500158007300579064", ibanCezaevi: "TR370001500158007300578952" },
+  { city: "ORDU", name: "Ordu İcra Dairesi", uyapCode: "6450365671", taxNumber: "6450365671", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR340001500158007304995610", ibanHarc: "TR150001500158007304995661", ibanCezaevi: "TR320001500158007304995646" },
+  { city: "ORDU", district: "Perşembe", name: "Perşembe İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR100001500158007300615231", ibanHarc: "TR240001500158007300614979", ibanCezaevi: "TR600001500158007300615204" },
+  { city: "ORDU", district: "Ünye", name: "Ünye İcra Dairesi", uyapCode: "9190046421", taxNumber: "9190046421", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR360001500158007290496693", ibanHarc: "TR410001500158007285860294", ibanCezaevi: "TR660001500158007290493340" },
   
-  // AFYONKARAHİSAR (03)
-  { city: "AFYONKARAHİSAR", name: "Afyonkarahisar 1. İcra Dairesi", uyapCode: "0301001" },
+  // AFYONKARAHİSAR (03) - Tam banka bilgileriyle
+  { city: "AFYONKARAHİSAR", name: "Afyonkarahisar İcra Dairesi", uyapCode: "0080805946", taxNumber: "0080805946", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR630001500158007301375436", ibanHarc: "TR770001500158007301375475", ibanCezaevi: "TR240001500158007301375459" },
+  { city: "AFYONKARAHİSAR", district: "Bolvadin", name: "Bolvadin İcra Dairesi", uyapCode: "1790058673", taxNumber: "1790058673", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR420001500158007290492317", ibanHarc: "TR110001500158007300568944", ibanCezaevi: "TR750001500158007300568859" },
+  { city: "AFYONKARAHİSAR", district: "Çay", name: "Çay İcra Dairesi", uyapCode: "2320075209", taxNumber: "2320075209", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR020001500158007300570464", ibanHarc: "TR720001500158007300570562", ibanCezaevi: "TR460001500158007300570545" },
+  { city: "AFYONKARAHİSAR", district: "Dazkırı", name: "Dazkırı İcra Dairesi", uyapCode: "2710076501", taxNumber: "2710076501", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR230001500158007300585606", ibanHarc: "TR490001500158007300585623", ibanCezaevi: "TR680001500158007300585669" },
+  { city: "AFYONKARAHİSAR", district: "Dinar", name: "Dinar İcra Dairesi", uyapCode: "0070068136", taxNumber: "0070068136", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR910001500158007290495509", ibanHarc: "TR070001500158007299328774", ibanCezaevi: "TR090001500158007290495530" },
+  { city: "AFYONKARAHİSAR", district: "Emirdağ", name: "Emirdağ İcra Dairesi", uyapCode: "3340012930", taxNumber: "3340012930", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR210001500158007290494344", ibanHarc: "TR760001500158007299584291", ibanCezaevi: "TR130001500158007300576862" },
+  { city: "AFYONKARAHİSAR", district: "İscehisar", name: "İscehisar İcra Dairesi", uyapCode: "4800172606", taxNumber: "4800172606", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR900001500158007300589153", ibanHarc: "TR650001500158007300589118", ibanCezaevi: "TR100001500158007300589138" },
+  { city: "AFYONKARAHİSAR", district: "Sandıklı", name: "Sandıklı İcra Dairesi", uyapCode: "7430047012", taxNumber: "7430047012", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR950001500158007290537244", ibanHarc: "TR280001500158007300571451", ibanCezaevi: "TR210001500158007300571480" },
+  { city: "AFYONKARAHİSAR", district: "Sinanpaşa", name: "Sinanpaşa İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR600001500158007300573300", ibanHarc: "TR930001500158007300573288", ibanCezaevi: "TR710001500158007300573296" },
+  { city: "AFYONKARAHİSAR", district: "Şuhut", name: "Şuhut İcra Dairesi", uyapCode: "8150343996", taxNumber: "8150343996", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR790001500158007300578875", ibanHarc: "TR970001500158007300579036", ibanCezaevi: "TR690001500158007300579055" },
   
-  // SİVAS (58)
-  { city: "SİVAS", name: "Sivas 1. İcra Dairesi", uyapCode: "5801001" },
+  // SİVAS (58) - Tam banka bilgileriyle
+  { city: "SİVAS", district: "Divriği", name: "Divriği İcra Dairesi", uyapCode: "0301039858", taxNumber: "0301039858", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR070001500158007290497409", ibanHarc: "TR540001500158007299354021", ibanCezaevi: "TR770001500158007284959777" },
+  { city: "SİVAS", district: "Gemerek", name: "Gemerek İcra Dairesi", uyapCode: "3910047227", taxNumber: "3910047227", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR380001500158007293610357", ibanHarc: "TR350001500158007299279188", ibanCezaevi: "TR680001500158007293610399" },
+  { city: "SİVAS", district: "Gürün", name: "Gürün İcra Dairesi", uyapCode: "4690061408", taxNumber: "4690061408", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR140001500158007300583731", ibanHarc: "TR940001500158007300583649", ibanCezaevi: "TR960001500158007300583710" },
+  { city: "SİVAS", district: "İmranlı", name: "İmranlı İcra Dairesi", uyapCode: "8150178833", taxNumber: "8150178833", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR410001500158007300613412", ibanHarc: "TR890001500158007300613421", ibanCezaevi: "TR400001500158007300613430" },
+  { city: "SİVAS", district: "Kangal", name: "Kangal İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR980001500158007292512207", ibanHarc: "TR590001500158007299418339", ibanCezaevi: "TR900001500158007293339858" },
+  { city: "SİVAS", district: "Koyulhisar", name: "Koyulhisar İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR690001500158007300620668", ibanHarc: "TR690001500158007300620616", ibanCezaevi: "" },
+  { city: "SİVAS", name: "Sivas İcra Dairesi", uyapCode: "7710521093", taxNumber: "7710521093", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR970001500158007307991291", ibanHarc: "TR720001500158007307991353", ibanCezaevi: "TR910001500158007307991399" },
+  { city: "SİVAS", district: "Suşehri", name: "Suşehri İcra Dairesi", uyapCode: "7840188265", taxNumber: "7840188265", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR110001500158007292189405", ibanHarc: "TR870001500158007299446159", ibanCezaevi: "TR420001500158007290568850" },
+  { city: "SİVAS", district: "Şarkışla", name: "Şarkışla İcra Dairesi", uyapCode: "8000057207", taxNumber: "8000057207", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR820001500158007290575890", ibanHarc: "TR700001500158007300576418", ibanCezaevi: "TR080001500158007292258911" },
+  { city: "SİVAS", district: "Yıldızeli", name: "Yıldızeli İcra Dairesi", uyapCode: "4690349005", taxNumber: "4690349005", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR770001500158007300622173", ibanHarc: "TR270001500158007300622103", ibanCezaevi: "TR630001500158007300622134" },
+  { city: "SİVAS", district: "Zara", name: "Zara İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR340001500158007300592877", ibanHarc: "TR400001500158007300593157", ibanCezaevi: "TR500001500158007300593171" },
   
-  // TOKAT (60)
-  { city: "TOKAT", name: "Tokat 1. İcra Dairesi", uyapCode: "6001001" },
+  // TOKAT (60) - Tam banka bilgileriyle
+  { city: "TOKAT", district: "Almus", name: "Almus İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR220001500158007300594354", ibanHarc: "TR150001500158007300594383", ibanCezaevi: "TR680001500158007300594399" },
+  { city: "TOKAT", district: "Artova", name: "Artova İcra Dairesi", uyapCode: "0850363387", taxNumber: "0850363387", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR280001500158007300572033", ibanHarc: "TR730001500158007300571999", ibanCezaevi: "TR610001500158007300572021" },
+  { city: "TOKAT", district: "Erbaa", name: "Erbaa İcra Dairesi", uyapCode: "4690181472", taxNumber: "4690181472", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR820001500158007290499260", ibanHarc: "TR980001500158007299328397", ibanCezaevi: "TR980001500158007300559812" },
+  { city: "TOKAT", district: "Niksar", name: "Niksar İcra Dairesi", uyapCode: "6310045995", taxNumber: "6310045995", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR750001500158007290495797", ibanHarc: "TR390001500158007299445083", ibanCezaevi: "TR600001500158007290495873" },
+  { city: "TOKAT", district: "Reşadiye", name: "Reşadiye İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR960001500158007300576144", ibanHarc: "TR080001500158007300576176", ibanCezaevi: "TR950001500158007300576162" },
+  { city: "TOKAT", name: "Tokat İcra Dairesi", uyapCode: "8460798721", taxNumber: "8460798721", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR770001500158007308346477", ibanHarc: "TR490001500158007308346496", ibanCezaevi: "TR800001500158007308346520" },
+  { city: "TOKAT", district: "Turhal", name: "Turhal İcra Dairesi", uyapCode: "4690059230", taxNumber: "4690059230", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR660001500158007290498578", ibanHarc: "TR200001500158007299471324", ibanCezaevi: "TR790001500158007290501060" },
+  { city: "TOKAT", district: "Zile", name: "Zile İcra Dairesi", uyapCode: "9980088833", taxNumber: "9980088833", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR970001500158007298080025", ibanHarc: "TR850001500158007299429414", ibanCezaevi: "TR520001500158007298080156" },
   
-  // ÇORUM (19)
-  { city: "ÇORUM", name: "Çorum 1. İcra Dairesi", uyapCode: "1901001" },
+  // ÇORUM (19) - Tam banka bilgileriyle
+  { city: "ÇORUM", district: "Alaca", name: "Alaca İcra Dairesi", uyapCode: "0470057358", taxNumber: "0470057358", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR390001500158007300749151", ibanHarc: "TR330001500158007300749162", ibanCezaevi: "TR160001500158007300749177" },
+  { city: "ÇORUM", district: "Bayat", name: "Bayat(Çorum) İcra Dairesi", uyapCode: "1510042532", taxNumber: "1510042532", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR900001500158007300572760", ibanHarc: "TR100001500158007300572842", ibanCezaevi: "TR110001500158007300572824" },
+  { city: "ÇORUM", name: "Çorum İcra Dairesi", uyapCode: "2620534367", taxNumber: "2620534367", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR810001500158007307582239", ibanHarc: "TR860001500158007307582246", ibanCezaevi: "TR750001500158007307582250" },
+  { city: "ÇORUM", district: "İskilip", name: "İskilip İcra Dairesi", uyapCode: "4690067198", taxNumber: "4690067198", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR160001500158007290360768", ibanHarc: "TR600001500158007299252839", ibanCezaevi: "TR350001500158007290498651" },
+  { city: "ÇORUM", district: "Kargı", name: "Kargı İcra Dairesi", uyapCode: "4690034712", taxNumber: "4690034712", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR240001500158007300623321", ibanHarc: "TR850001500158007300623290", ibanCezaevi: "TR730001500158007300623312" },
+  { city: "ÇORUM", district: "Osmancık", name: "Osmancık İcra Dairesi", uyapCode: "6480052775", taxNumber: "6480052775", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR680001500158007300578200", ibanHarc: "TR040001500158007300578188", ibanCezaevi: "TR360001500158007300578194" },
+  { city: "ÇORUM", district: "Sungurlu", name: "Sungurlu İcra Dairesi", uyapCode: "7840000493", taxNumber: "7840000493", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR170001500158007290567651", ibanHarc: "TR870001500158007284622619", ibanCezaevi: "TR780001500158007286895588" },
   
-  // AKSARAY (68)
-  { city: "AKSARAY", name: "Aksaray 1. İcra Dairesi", uyapCode: "6801001" },
+  // AKSARAY (68) - Tam banka bilgileriyle
+  { city: "AKSARAY", name: "Aksaray İcra Dairesi", uyapCode: "0340645411", taxNumber: "0340645411", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR740001500158007307937288", ibanHarc: "TR060001500158007307937348", ibanCezaevi: "TR460001500158007307937404" },
+  { city: "AKSARAY", district: "Eskil", name: "Eskil İcra Dairesi", uyapCode: "3800038855", taxNumber: "3800038855", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR560001500158007300577640", ibanHarc: "TR930001500158007300577653", ibanCezaevi: "TR760001500158007300577668" },
+  { city: "AKSARAY", district: "Ortaköy", name: "Ortaköy(Aksaray) İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR720001500158007300648744", ibanHarc: "TR470001500158007300648709", ibanCezaevi: "TR190001500158007300648728" },
   
-  // GİRESUN (28)
-  { city: "GİRESUN", name: "Giresun 1. İcra Dairesi", uyapCode: "2801001" },
+  // GİRESUN (28) - Tam banka bilgileriyle
+  { city: "GİRESUN", district: "Alucra", name: "Alucra İcra Dairesi", uyapCode: "0680112533", taxNumber: "0680112533", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR810001500158007300601246", ibanHarc: "TR240001500158007300601205", ibanCezaevi: "TR550001500158007300601229" },
+  { city: "GİRESUN", district: "Bulancak", name: "Bulancak İcra Dairesi", uyapCode: "1880051812", taxNumber: "1880051812", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR420001500158007290501823", ibanHarc: "TR050001500158007299351411", ibanCezaevi: "TR110001500158007300194136" },
+  { city: "GİRESUN", district: "Dereli", name: "Dereli İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR860001500158007300579137", ibanHarc: "TR890001500158007300579277", ibanCezaevi: "TR150001500158007300579251" },
+  { city: "GİRESUN", district: "Espiye", name: "Espiye İcra Dairesi", uyapCode: "3800506586", taxNumber: "3800506586", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR540001500158007300576997", ibanHarc: "TR380001500158007300576897", ibanCezaevi: "TR770001500158007300576971" },
+  { city: "GİRESUN", name: "Giresun İcra Dairesi", uyapCode: "3960945852", taxNumber: "3960945852", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR780001500158007306530910", ibanHarc: "TR110001500158007306530952", ibanCezaevi: "TR150001500158007306530977" },
+  { city: "GİRESUN", district: "Görele", name: "Görele İcra Dairesi", uyapCode: "4090333978", taxNumber: "4090333978", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR850001500158007300619507", ibanHarc: "TR910001500158007300619399", ibanCezaevi: "TR560001500158007300619447" },
+  { city: "GİRESUN", district: "Şebinkarahisar", name: "Şebinkarahisar İcra Dairesi", uyapCode: "8000361003", taxNumber: "8000361003", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR650001500158007300598042", ibanHarc: "TR910001500158007300597962", ibanCezaevi: "TR390001500158007300598025" },
+  { city: "GİRESUN", district: "Tirebolu", name: "Tirebolu İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR180001500158007300584823", ibanHarc: "TR040001500158007300584784", ibanCezaevi: "TR350001500158007300584808" },
   
-  // ISPARTA (32)
-  { city: "ISPARTA", name: "Isparta 1. İcra Dairesi", uyapCode: "3201001" },
+  // ISPARTA (32) - Tam banka bilgileriyle
+  { city: "ISPARTA", district: "Eğirdir", name: "Eğirdir İcra Dairesi", uyapCode: "4690060230", taxNumber: "4690060230", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR560001500158007282215928", ibanHarc: "TR910001500158007299351221", ibanCezaevi: "TR800001500158007290520248" },
+  { city: "ISPARTA", name: "Isparta İcra Dairesi", uyapCode: "4660060252", taxNumber: "4660060252", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR230001500158007290496248", ibanHarc: "TR850001500158007293617562", ibanCezaevi: "TR260001500158007299350742" },
+  { city: "ISPARTA", district: "Keçiborlu", name: "Keçiborlu İcra Dairesi", uyapCode: "5420065140", taxNumber: "5420065140", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR690001500158007300568288", ibanHarc: "TR600001500158007300568256", ibanCezaevi: "TR050001500158007300568276" },
+  { city: "ISPARTA", district: "Senirkent", name: "Senirkent İcra Dairesi", uyapCode: "4690034673", taxNumber: "4690034673", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR520001500158007300568109", ibanHarc: "TR210001500158007300568085", ibanCezaevi: "TR530001500158007300568091" },
+  { city: "ISPARTA", district: "Sütçüler", name: "Sütçüler İcra Dairesi", uyapCode: "7880055538", taxNumber: "7880055538", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR130001500158007300761259", ibanHarc: "TR220001500158007300761194", ibanCezaevi: "TR410001500158007300761240" },
+  { city: "ISPARTA", district: "Şarkikaraağaç", name: "Şarkikaraağaç İcra Dairesi", uyapCode: "8000359069", taxNumber: "8000359069", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR030001500158007300576654", ibanHarc: "TR110001500158007300576704", ibanCezaevi: "TR740001500158007300576734" },
+  { city: "ISPARTA", district: "Yalvaç", name: "Yalvaç İcra Dairesi", uyapCode: "4690034632", taxNumber: "4690034632", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR370001500158007300564984", ibanHarc: "TR440001500158007300564955", ibanCezaevi: "TR860001500158007300564975" },
   
-  // BOLU (14)
-  { city: "BOLU", name: "Bolu 1. İcra Dairesi", uyapCode: "1401001" },
+  // BOLU (14) - Tam banka bilgileriyle
+  { city: "BOLU", name: "Bolu İcra Dairesi", uyapCode: "1791135389", taxNumber: "1791135389", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR360001500158007308398431", ibanHarc: "TR380001500158007308398492", ibanCezaevi: "TR840001500158007308398537" },
+  { city: "BOLU", district: "Gerede", name: "Gerede İcra Dairesi", uyapCode: "3940062446", taxNumber: "3940062446", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR830001500158007293334746", ibanHarc: "TR480001500158007300569442", ibanCezaevi: "TR490001500158007293509279" },
+  { city: "BOLU", district: "Göynük", name: "Göynük İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR440001500158007300593958", ibanHarc: "TR510001500158007300594026", ibanCezaevi: "TR650001500158007300594162" },
+  { city: "BOLU", district: "Mengen", name: "Mengen İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR740001500158007300643373", ibanHarc: "TR670001500158007300643402", ibanCezaevi: "TR670001500158007300643402" },
+  { city: "BOLU", district: "Mudurnu", name: "Mudurnu İcra Dairesi", uyapCode: "6230010241", taxNumber: "6230010241", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR730001500158007300596831", ibanHarc: "TR390001500158007300596861", ibanCezaevi: "TR430001500158007300596886" },
   
-  // DÜZCE (81)
-  { city: "DÜZCE", name: "Düzce 1. İcra Dairesi", uyapCode: "8101001" },
+  // DÜZCE (81) - Tam banka bilgileriyle
+  { city: "DÜZCE", district: "Akçakoca", name: "Akçakoca İcra Dairesi", uyapCode: "0190062841", taxNumber: "0190062841", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR430001500158007300603773", ibanHarc: "TR030001500158007300603814", ibanCezaevi: "TR610001500158007300603837" },
+  { city: "DÜZCE", name: "Düzce İcra Dairesi", uyapCode: "3230523977", taxNumber: "3230523977", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR020001500158007303010305", ibanHarc: "TR600001500158007303010328", ibanCezaevi: "TR590001500158007303010346" },
+  { city: "DÜZCE", district: "Yığılca", name: "Yığılca İcra Dairesi", uyapCode: "8330064283", taxNumber: "8330064283", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR240001500158007300570068", ibanHarc: "TR860001500158007300570019", ibanCezaevi: "TR140001500158007300570054" },
   
-  // YALOVA (77)
-  { city: "YALOVA", name: "Yalova 1. İcra Dairesi", uyapCode: "7701001" },
+  // YALOVA (77) - Tam banka bilgileriyle
+  { city: "YALOVA", name: "Yalova İcra Dairesi", uyapCode: "8150081237", taxNumber: "8150081237", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR840001500158007274040361", ibanHarc: "TR510001500158007299360477", ibanCezaevi: "TR900001500158007295635654" },
   
-  // KARABÜK (78)
-  { city: "KARABÜK", name: "Karabük 1. İcra Dairesi", uyapCode: "7801001" },
+  // KARABÜK (78) - Tam banka bilgileriyle
+  { city: "KARABÜK", district: "Eskipazar", name: "Eskipazar İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR350001500158007300569385", ibanHarc: "TR710001500158007300569319", ibanCezaevi: "TR210001500158007300569346" },
+  { city: "KARABÜK", name: "Karabük İcra Dairesi", uyapCode: "5050054172", taxNumber: "5050054172", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR280001500158007290500135", ibanHarc: "TR710001500158007299388538", ibanCezaevi: "TR840001500158007285051995" },
+  { city: "KARABÜK", district: "Safranbolu", name: "Safranbolu İcra Dairesi", uyapCode: "7370005314", taxNumber: "7370005314", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR670001500158007290501373", ibanHarc: "TR850001500158007299439696", ibanCezaevi: "TR760001500158007290501502" },
+  { city: "KARABÜK", district: "Yenice", name: "Yenice(Karabük) İcra Dairesi", uyapCode: "9480064134", taxNumber: "9480064134", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR680001500158007300578006", ibanHarc: "TR930001500158007300578041", ibanCezaevi: "TR280001500158007300578047" },
   
-  // ZONGULDAK (67)
-  { city: "ZONGULDAK", name: "Zonguldak 1. İcra Dairesi", uyapCode: "6701001" },
+  // ZONGULDAK (67) - Tam banka bilgileriyle
+  { city: "ZONGULDAK", district: "Alaplı", name: "Alaplı İcra Dairesi", uyapCode: "0048005807", taxNumber: "0048005807", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR800001500158007300584386", ibanHarc: "TR600001500158007300584358", ibanCezaevi: "TR320001500158007300584377" },
+  { city: "ZONGULDAK", district: "Çaycuma", name: "Çaycuma İcra Dairesi", uyapCode: "2320092571", taxNumber: "2320092571", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR050001500158007300094722", ibanHarc: "TR330001500158007300567772", ibanCezaevi: "TR790001500158007300094748" },
+  { city: "ZONGULDAK", district: "Devrek", name: "Devrek İcra Dairesi", uyapCode: "2950001847", taxNumber: "2950001847", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR770001500158007290500999", ibanHarc: "TR580001500158007299398763", ibanCezaevi: "TR100001500158007285570531" },
+  { city: "ZONGULDAK", district: "Gökçebey", name: "Gökçebey İcra Dairesi", uyapCode: "4690034499", taxNumber: "4690034499", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR780001500158007300580833", ibanHarc: "TR370001500158007300578855", ibanCezaevi: "TR190001500158007300578888" },
+  { city: "ZONGULDAK", district: "Ereğli", name: "KDZ.Ereğli 1. İcra Dairesi", uyapCode: "5410054302", taxNumber: "5410054302", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR210001500158007290493762", ibanHarc: "TR920001500158007299443741", ibanCezaevi: "TR840001500158007300573353" },
+  { city: "ZONGULDAK", district: "Ereğli", name: "KDZ.Ereğli 2. İcra Dairesi", uyapCode: "5410502929", taxNumber: "5410502929", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR510001500158007290493901", ibanHarc: "TR620001500158007299441953", ibanCezaevi: "TR240001500158007300573075" },
+  { city: "ZONGULDAK", name: "Zonguldak 1. İcra Dairesi", uyapCode: "4690058318", taxNumber: "4690058318", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR600001500158007290499365", ibanHarc: "TR850001500158007300568000", ibanCezaevi: "TR930001500158007300567953" },
+  { city: "ZONGULDAK", name: "Zonguldak 2. İcra Dairesi", uyapCode: "0010523262", taxNumber: "0010523262", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR980001500158007290499360", ibanHarc: "TR130001500158007300568229", ibanCezaevi: "TR390001500158007300568246" },
   
-  // KASTAMONU (37)
-  { city: "KASTAMONU", name: "Kastamonu 1. İcra Dairesi", uyapCode: "3701001" },
+  // KASTAMONU (37) - Tam banka bilgileriyle
+  { city: "KASTAMONU", district: "Araç", name: "Araç İcra Dairesi", uyapCode: "0710353904", taxNumber: "0710353904", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR790001500158007300573540", ibanHarc: "TR320001500158007300573513", ibanCezaevi: "TR740001500158007300573533" },
+  { city: "KASTAMONU", district: "Azdavay", name: "Azdavay İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR360001500158007300567524", ibanHarc: "TR260001500158007300567510", ibanCezaevi: "TR740001500158007300567519" },
+  { city: "KASTAMONU", district: "Cide", name: "Cide İcra Dairesi", uyapCode: "4690071179", taxNumber: "4690071179", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR090001500158007300576934", ibanHarc: "TR280001500158007300577174", ibanCezaevi: "TR290001500158007300577156" },
+  { city: "KASTAMONU", district: "Devrekani", name: "Devrekani İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR710001500158007300575333", ibanHarc: "TR730001500158007300575297", ibanCezaevi: "TR500001500158007300575323" },
+  { city: "KASTAMONU", district: "İnebolu", name: "İnebolu İcra Dairesi", uyapCode: "4780095568", taxNumber: "4780095568", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR120001500158007300578238", ibanHarc: "TR500001500158007300578233", ibanCezaevi: "TR660001500158007300578236" },
+  { city: "KASTAMONU", name: "Kastamonu İcra Dairesi", uyapCode: "5270506114", taxNumber: "5270506114", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR960001500158007305285882", ibanHarc: "TR290001500158007305285924", ibanCezaevi: "TR030001500158007305285907" },
+  { city: "KASTAMONU", district: "Küre", name: "Küre İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR130001500158007300575504", ibanHarc: "TR620001500158007300575495", ibanCezaevi: "TR240001500158007300575500" },
+  { city: "KASTAMONU", district: "Taşköprü", name: "Taşköprü İcra Dairesi", uyapCode: "8290039833", taxNumber: "8290039833", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR080001500158007300569968", ibanHarc: "TR860001500158007300569922", ibanCezaevi: "TR950001500158007300569954" },
+  { city: "KASTAMONU", district: "Tosya", name: "Tosya İcra Dairesi", uyapCode: "8580048171", taxNumber: "8580048171", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR610001500158007290492751", ibanHarc: "TR430001500158007299360427", ibanCezaevi: "TR660001500158007300576684" },
   
-  // ÇANAKKALE (17)
-  { city: "ÇANAKKALE", name: "Çanakkale 1. İcra Dairesi", uyapCode: "1701001" },
+  // ÇANAKKALE (17) - Tam banka bilgileriyle
+  { city: "ÇANAKKALE", district: "Ayvacık", name: "Ayvacık İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR260001500158007300577598", ibanHarc: "TR500001500158007300577554", ibanCezaevi: "TR970001500158007300577581" },
+  { city: "ÇANAKKALE", district: "Bayramiç", name: "Bayramiç İcra Dairesi", uyapCode: "0080038832", taxNumber: "0080038832", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR170001500158007300582804", ibanHarc: "TR280001500158007300582897", ibanCezaevi: "TR730001500158007300582863" },
+  { city: "ÇANAKKALE", district: "Biga", name: "Biga İcra Dairesi", uyapCode: "1700007872", taxNumber: "1700007872", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR910001500158007290494248", ibanHarc: "TR920001500158007299338981", ibanCezaevi: "TR510001500158007285667666" },
+  { city: "ÇANAKKALE", district: "Çan", name: "Çan İcra Dairesi", uyapCode: "4690061310", taxNumber: "4690061310", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR930001500158007290534370", ibanHarc: "TR590001500158007299350536", ibanCezaevi: "TR400001500158007297024333" },
+  { city: "ÇANAKKALE", name: "Çanakkale İcra Dairesi", uyapCode: "2290633687", taxNumber: "2290633687", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR680001500158007307616714", ibanHarc: "TR830001500158007307616735", ibanCezaevi: "TR440001500158007307616758" },
+  { city: "ÇANAKKALE", district: "Ezine", name: "Ezine İcra Dairesi", uyapCode: "3840197835", taxNumber: "3840197835", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR610001500158007300582012", ibanHarc: "TR860001500158007300582047", ibanCezaevi: "TR790001500158007300582076" },
+  { city: "ÇANAKKALE", district: "Gelibolu", name: "Gelibolu İcra Dairesi", uyapCode: "3900054309", taxNumber: "3900054309", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR920001500158007290500729", ibanHarc: "TR840001500158007299440975", ibanCezaevi: "TR690001500158007287705312" },
+  { city: "ÇANAKKALE", district: "Gökçeada", name: "Gökçeada İcra Dairesi", uyapCode: "4690068366", taxNumber: "4690068366", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR350001500158007300618079", ibanHarc: "TR760001500158007300618117", ibanCezaevi: "TR260001500158007300618144" },
+  { city: "ÇANAKKALE", district: "Lapseki", name: "Lapseki İcra Dairesi", uyapCode: "6080100297", taxNumber: "6080100297", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR080001500158007300578019", ibanHarc: "TR920001500158007300578059", ibanCezaevi: "TR210001500158007300578076" },
+  { city: "ÇANAKKALE", district: "Yenice", name: "Yenice(Çanakkale) İcra Dairesi", uyapCode: "9480069637", taxNumber: "9480069637", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR200001500158007300584787", ibanHarc: "TR500001500158007300584732", ibanCezaevi: "TR210001500158007300584769" },
   
-  // EDİRNE (22)
-  { city: "EDİRNE", name: "Edirne 1. İcra Dairesi", uyapCode: "2201001" },
+  // ÇANKIRI (18) - Tam banka bilgileriyle
+  { city: "ÇANKIRI", name: "Çankırı İcra Dairesi", uyapCode: "2290045948", taxNumber: "2290045948", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR960001500158007290494449", ibanHarc: "TR330001500158007299396303", ibanCezaevi: "TR580001500158007300566934" },
+  { city: "ÇANKIRI", district: "Çerkeş", name: "Çerkeş İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR530001500158007300597676", ibanHarc: "TR500001500158007300597730", ibanCezaevi: "TR050001500158007300597764" },
+  { city: "ÇANKIRI", district: "Ilgaz", name: "Ilgaz İcra Dairesi", uyapCode: "4650044511", taxNumber: "4650044511", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR780001500158007300766200", ibanHarc: "TR110001500158007300766242", ibanCezaevi: "TR820001500158007300766225" },
+  { city: "ÇANKIRI", district: "Kurşunlu", name: "Kurşunlu İcra Dairesi", uyapCode: "4690061119", taxNumber: "4690061119", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR420001500158007300588659", ibanHarc: "TR520001500158007300588770", ibanCezaevi: "TR080001500158007300588689" },
+  { city: "ÇANKIRI", district: "Şabanözü", name: "Şabanözü İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR660001500158007300598218", ibanHarc: "TR850001500158007300598070", ibanCezaevi: "TR630001500158007300598175" },
   
-  // KIRKLARELİ (39)
-  { city: "KIRKLARELİ", name: "Kırklareli 1. İcra Dairesi", uyapCode: "3901001" },
+  // EDİRNE (22) - Tam banka bilgileriyle
+  { city: "EDİRNE", name: "Edirne İcra Dairesi", uyapCode: "3240456830", taxNumber: "3240456830", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR900001500158007304170102", ibanHarc: "TR110001500158007304170069", ibanCezaevi: "TR830001500158007304170034" },
+  { city: "EDİRNE", district: "Enez", name: "Enez İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR550001500158007300596088", ibanHarc: "TR530001500158007300596124", ibanCezaevi: "TR790001500158007300596141" },
+  { city: "EDİRNE", district: "İpsala", name: "İpsala İcra Dairesi", uyapCode: "4800057970", taxNumber: "4800057970", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR230001500158007300567564", ibanHarc: "TR510001500158007300567545", ibanCezaevi: "TR070001500158007300567561" },
+  { city: "EDİRNE", district: "Keşan", name: "Keşan İcra Dairesi", uyapCode: "4690078926", taxNumber: "4690078926", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR480001500158007290492694", ibanHarc: "TR770001500158007299340318", ibanCezaevi: "TR570001500158007290494569" },
+  { city: "EDİRNE", district: "Uzunköprü", name: "Uzunköprü İcra Dairesi", uyapCode: "9030064153", taxNumber: "9030064153", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR470001500158007290501248", ibanHarc: "TR390001500158007299303269", ibanCezaevi: "TR300001500158007299242806" },
   
-  // UŞAK (64)
-  { city: "UŞAK", name: "Uşak 1. İcra Dairesi", uyapCode: "6401001" },
+  // KIRKLARELİ (39) - Tam banka bilgileriyle
+  { city: "KIRKLARELİ", district: "Babaeski", name: "Babaeski İcra Dairesi", uyapCode: "1280047607", taxNumber: "1280047607", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR740001500158007298051630", ibanHarc: "TR790001500158007299296050", ibanCezaevi: "TR080001500158007298055243" },
+  { city: "KIRKLARELİ", district: "Demirköy", name: "Demirköy İcra Dairesi", uyapCode: "4690060289", taxNumber: "4690060289", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR500001500158007300577457", ibanHarc: "TR550001500158007300577367", ibanCezaevi: "TR840001500158007300577427" },
+  { city: "KIRKLARELİ", name: "Kırklareli İcra Dairesi", uyapCode: "5580076324", taxNumber: "5580076324", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR180001500158007300576675", ibanHarc: "TR700001500158007300576612", ibanCezaevi: "TR300001500158007300576653" },
+  { city: "KIRKLARELİ", district: "Lüleburgaz", name: "Lüleburgaz 1. İcra Dairesi", uyapCode: "6090058160", taxNumber: "6090058160", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR180001500158007290497114", ibanHarc: "TR540001500158007299438993", ibanCezaevi: "TR450001500158007285238161" },
+  { city: "KIRKLARELİ", district: "Lüleburgaz", name: "Lüleburgaz 2. İcra Dairesi", uyapCode: "6090100115", taxNumber: "6090100115", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR060001500158007290497136", ibanHarc: "TR840001500158007299380738", ibanCezaevi: "TR660001500158007284977823" },
+  { city: "KIRKLARELİ", district: "Pınarhisar", name: "Pınarhisar İcra Dairesi", uyapCode: "4690057381", taxNumber: "4690057381", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR510001500158007300577342", ibanHarc: "TR060001500158007300577279", ibanCezaevi: "TR360001500158007300577321" },
+  { city: "KIRKLARELİ", district: "Vize", name: "Vize İcra Dairesi", uyapCode: "4690068655", taxNumber: "4690068655", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR840001500158007300569085", ibanHarc: "TR270001500158007300569044", ibanCezaevi: "TR640001500158007300569057" },
   
-  // KÜTAHYA (43)
-  { city: "KÜTAHYA", name: "Kütahya 1. İcra Dairesi", uyapCode: "4301001" },
+  // UŞAK (64) - Tam banka bilgileriyle
+  { city: "UŞAK", district: "Banaz", name: "Banaz İcra Dairesi", uyapCode: "1400341695", taxNumber: "1400341695", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR220001500158007300567679", ibanHarc: "TR170001500158007300567672", ibanCezaevi: "TR330001500158007300567675" },
+  { city: "UŞAK", district: "Eşme", name: "Eşme İcra Dairesi", uyapCode: "3810056643", taxNumber: "3810056643", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR310001500158007300583328", ibanHarc: "TR100001500158007300583221", ibanCezaevi: "TR080001500158007300583257" },
+  { city: "UŞAK", district: "Sivaslı", name: "Sivaslı İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR210001500158007300568279", ibanHarc: "TR310001500158007300568293", ibanCezaevi: "TR890001500158007300568316" },
+  { city: "UŞAK", name: "Uşak 1. İcra Dairesi", uyapCode: "1780091193", taxNumber: "1780091193", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR220001500158007273398852", ibanHarc: "TR030001500158007299285681", ibanCezaevi: "TR120001500158007286881256" },
+  { city: "UŞAK", name: "Uşak 2. İcra Dairesi", uyapCode: "4700074335", taxNumber: "4700074335", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR520001500158007273398894", ibanHarc: "TR830001500158007299261349", ibanCezaevi: "TR150001500158007286744044" },
+  { city: "UŞAK", name: "Uşak 3. İcra Dairesi", uyapCode: "8960453133", taxNumber: "8960453133", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR230001500158007292709885", ibanHarc: "TR220001500158007299286697", ibanCezaevi: "TR200001500158007292710036" },
   
-  // BİLECİK (11)
-  { city: "BİLECİK", name: "Bilecik 1. İcra Dairesi", uyapCode: "1101001" },
+  // KÜTAHYA (43) - Tam banka bilgileriyle
+  { city: "KÜTAHYA", district: "Altıntaş", name: "Altıntaş İcra Dairesi", uyapCode: "0650080168", taxNumber: "0650080168", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR820001500158007293464550", ibanHarc: "TR240001500158007300610517", ibanCezaevi: "TR770001500158007300610533" },
+  { city: "KÜTAHYA", district: "Emet", name: "Emet İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR870001500158007300573202", ibanHarc: "TR550001500158007300573196", ibanCezaevi: "TR880001500158007300573184" },
+  { city: "KÜTAHYA", district: "Gediz", name: "Gediz İcra Dairesi", uyapCode: "0080081582", taxNumber: "0080081582", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR530001500158007300592341", ibanHarc: "TR400001500158007300592381", ibanCezaevi: "TR980001500158007300592404" },
+  { city: "KÜTAHYA", name: "Kütahya 1. İcra Dairesi", uyapCode: "9220078094", taxNumber: "9220078094", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR480001500158007272400254", ibanHarc: "TR500001500158007299378343", ibanCezaevi: "TR700001500158007300562741" },
+  { city: "KÜTAHYA", name: "Kütahya 2. İcra Dairesi", uyapCode: "9260045224", taxNumber: "9260045224", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR620001500158007290496516", ibanHarc: "TR140001500158007299377536", ibanCezaevi: "TR230001500158007295184355" },
+  { city: "KÜTAHYA", district: "Simav", name: "Simav İcra Dairesi", uyapCode: "7700061793", taxNumber: "7700061793", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR070001500158007290500028", ibanHarc: "TR060001500158007299356243", ibanCezaevi: "TR640001500158007285688093" },
+  { city: "KÜTAHYA", district: "Tavşanlı", name: "Tavşanlı İcra Dairesi", uyapCode: "8320054495", taxNumber: "8320054495", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR190001500158007292580462", ibanHarc: "TR320001500158007299407476", ibanCezaevi: "TR780001500158007299534300" },
   
-  // BURDUR (15)
-  { city: "BURDUR", name: "Burdur 1. İcra Dairesi", uyapCode: "1501001" },
+  // BİLECİK (11) - Tam banka bilgileriyle
+  { city: "BİLECİK", name: "Bilecik İcra Dairesi", uyapCode: "4690063546", taxNumber: "4690063546", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR620001500158007290519699", ibanHarc: "TR920001500158007300566807", ibanCezaevi: "TR930001500158007290519723" },
+  { city: "BİLECİK", district: "Bozüyük", name: "Bozüyük İcra Dairesi", uyapCode: "1860037236", taxNumber: "1860037236", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR290001500158007290495752", ibanHarc: "TR530001500158007299355591", ibanCezaevi: "TR360001500158007293601760" },
+  { city: "BİLECİK", district: "Gölpazarı", name: "Gölpazarı İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR250001500158007300585667", ibanHarc: "TR400001500158007300585688", ibanCezaevi: "TR610001500158007300585795" },
+  { city: "BİLECİK", district: "Osmaneli", name: "Osmaneli İcra Dairesi", uyapCode: "4690034551", taxNumber: "4690034551", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR270001500158007300594652", ibanHarc: "TR200001500158007300594778", ibanCezaevi: "TR390001500158007300594824" },
+  { city: "BİLECİK", district: "Söğüt", name: "Söğüt İcra Dairesi", uyapCode: "4690272145", taxNumber: "4690272145", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR380001500158007300595424", ibanHarc: "TR360001500158007300595460", ibanCezaevi: "TR240001500158007300595482" },
   
-  // AMASYA (05)
-  { city: "AMASYA", name: "Amasya 1. İcra Dairesi", uyapCode: "0501001" },
+  // BURDUR (15) - Tam banka bilgileriyle
+  { city: "BURDUR", district: "Bucak", name: "Bucak İcra Dairesi", uyapCode: "0070068015", taxNumber: "0070068015", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR790001500158007290499314", ibanHarc: "TR180001500158007299287157", ibanCezaevi: "TR040001500158007300568294" },
+  { city: "BURDUR", name: "Burdur İcra Dairesi", uyapCode: "1910066824", taxNumber: "1910066824", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR720001500158007290492747", ibanHarc: "TR630001500158007290493006", ibanCezaevi: "TR670001500158007290328034" },
+  { city: "BURDUR", district: "Gölhisar", name: "Gölhisar İcra Dairesi", uyapCode: "4070053248", taxNumber: "4070053248", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR810001500158007300569236", ibanHarc: "TR430001500158007300569144", ibanCezaevi: "TR150001500158007300569163" },
+  { city: "BURDUR", district: "Tefenni", name: "Tefenni İcra Dairesi", uyapCode: "0070086734", taxNumber: "0070086734", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR240001500158007300569389", ibanHarc: "TR370001500158007300569349", ibanCezaevi: "TR950001500158007300569372" },
+  { city: "BURDUR", district: "Yeşilova", name: "Yeşilova İcra Dairesi", uyapCode: "4690062344", taxNumber: "4690062344", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR040001500158007300569458", ibanHarc: "TR700001500158007300569434", ibanCezaevi: "TR260001500158007300569450" },
   
-  // KIRIKKALE (71)
-  { city: "KIRIKKALE", name: "Kırıkkale 1. İcra Dairesi", uyapCode: "7101001" },
+  // AMASYA (05) - Tam banka bilgileriyle
+  { city: "AMASYA", name: "Amasya İcra Dairesi", uyapCode: "0690742814", taxNumber: "0690742814", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR480001500158007306623115", ibanHarc: "TR220001500158007306623195", ibanCezaevi: "TR720001500158007306623265" },
+  { city: "AMASYA", district: "Gümüşhacıköy", name: "Gümüşhacıköy İcra Dairesi", uyapCode: "4250027687", taxNumber: "4250027687", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR190001500158007300601101", ibanHarc: "TR740001500158007300601178", ibanCezaevi: "TR970001500158007300601152" },
+  { city: "AMASYA", district: "Merzifon", name: "Merzifon İcra Dairesi", uyapCode: "6190077270", taxNumber: "6190077270", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR380001500158007290500828", ibanHarc: "TR820001500158007299243422", ibanCezaevi: "TR830001500158007290500988" },
+  { city: "AMASYA", district: "Suluova", name: "Suluova İcra Dairesi", uyapCode: "7820076567", taxNumber: "7820076567", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR830001500158007300577251", ibanHarc: "TR040001500158007300577315", ibanCezaevi: "TR270001500158007300577289" },
+  { city: "AMASYA", district: "Taşova", name: "Taşova İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR390001500158007300583378", ibanHarc: "TR150001500158007300583422", ibanCezaevi: "TR720001500158007300583463" },
   
-  // NEVŞEHİR (50)
-  { city: "NEVŞEHİR", name: "Nevşehir 1. İcra Dairesi", uyapCode: "5001001" },
+  // KIRIKKALE (71) - Tam banka bilgileriyle
+  { city: "KIRIKKALE", district: "Delice", name: "Delice İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR720001500158007300592581", ibanHarc: "TR650001500158007300592610", ibanCezaevi: "TR210001500158007300592626" },
+  { city: "KIRIKKALE", district: "Keskin", name: "Keskin İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR290001500158007300587341", ibanHarc: "TR110001500158007300587374", ibanCezaevi: "TR580001500158007300587401" },
+  { city: "KIRIKKALE", name: "Kırıkkale İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR440001500158007308545727", ibanHarc: "TR900001500158007308545772", ibanCezaevi: "TR450001500158007308545806" },
+  { city: "KIRIKKALE", district: "Sulakyurt", name: "Sulakyurt İcra Dairesi", uyapCode: "4690436674", taxNumber: "4690436674", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR320001500158007300589809", ibanHarc: "TR480001500158007300589812", ibanCezaevi: "TR910001500158007300589814" },
   
-  // NİĞDE (51)
-  { city: "NİĞDE", name: "Niğde 1. İcra Dairesi", uyapCode: "5101001" },
+  // NEVŞEHİR (50) - Tam banka bilgileriyle
+  { city: "NEVŞEHİR", district: "Avanos", name: "Avanos İcra Dairesi", uyapCode: "1040003022", taxNumber: "1040003022", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR670001500158007300594029", ibanHarc: "TR440001500158007300594055", ibanCezaevi: "TR050001500158007300594078" },
+  { city: "NEVŞEHİR", district: "Derinkuyu", name: "Derinkuyu İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR520001500158007300573347", ibanHarc: "TR420001500158007300573333", ibanCezaevi: "TR360001500158007300573344" },
+  { city: "NEVŞEHİR", district: "Gülşehir", name: "Gülşehir İcra Dairesi", uyapCode: "0080080189", taxNumber: "0080080189", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR610001500158007300576968", ibanHarc: "TR150001500158007300576923", ibanCezaevi: "TR240001500158007300576955" },
+  { city: "NEVŞEHİR", district: "Hacıbektaş", name: "Hacıbektaş İcra Dairesi", uyapCode: "4690034761", taxNumber: "4690034761", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR130001500158007300577638", ibanHarc: "TR040001500158007300577606", ibanCezaevi: "TR140001500158007300577620" },
+  { city: "NEVŞEHİR", district: "Kozaklı", name: "Kozaklı İcra Dairesi", uyapCode: "4690061101", taxNumber: "4690061101", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR960001500158007300577696", ibanHarc: "TR490001500158007300577669", ibanCezaevi: "TR960001500158007300577688" },
+  { city: "NEVŞEHİR", name: "Nevşehir İcra Dairesi", uyapCode: "6311192902", taxNumber: "6311192902", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR410001500158007308036628", ibanHarc: "TR330001500158007308036675", ibanCezaevi: "TR740001500158007308036713" },
+  { city: "NEVŞEHİR", district: "Ürgüp", name: "Ürgüp İcra Dairesi", uyapCode: "9190265373", taxNumber: "9190265373", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR710001500158007289261447", ibanHarc: "TR220001500158007299351202", ibanCezaevi: "TR780001500158007299097897" },
   
-  // YOZGAT (66)
-  { city: "YOZGAT", name: "Yozgat 1. İcra Dairesi", uyapCode: "6601001" },
+  // NİĞDE (51) - Tam banka bilgileriyle
+  { city: "NİĞDE", district: "Bor", name: "Bor İcra Dairesi", uyapCode: "1790062554", taxNumber: "1790062554", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR430001500158007300583888", ibanHarc: "TR080001500158007300583839", ibanCezaevi: "TR550001500158007300583866" },
+  { city: "NİĞDE", district: "Çamardı", name: "Çamardı İcra Dairesi", uyapCode: "2280751146", taxNumber: "2280751146", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR250001500158007300576743", ibanHarc: "TR160001500158007300576711", ibanCezaevi: "TR690001500158007300576727" },
+  { city: "NİĞDE", district: "Çiftlik", name: "Çiftlik İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR230001500158007300576682", ibanHarc: "TR520001500158007300576645", ibanCezaevi: "TR940001500158007300576665" },
+  { city: "NİĞDE", name: "Niğde İcra Dairesi", uyapCode: "6310079806", taxNumber: "6310079806", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR030001500158007290491370", ibanHarc: "TR180001500158007300576869", ibanCezaevi: "TR360001500158007300576836" },
+  { city: "NİĞDE", district: "Ulukışla", name: "Ulukışla İcra Dairesi", uyapCode: "8890086989", taxNumber: "8890086989", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR440001500158007300572618", ibanHarc: "TR840001500158007300572577", ibanCezaevi: "TR230001500158007300572608" },
   
-  // KIRŞEHİR (40)
-  { city: "KIRŞEHİR", name: "Kırşehir 1. İcra Dairesi", uyapCode: "4001001" },
+  // YOZGAT (66) - Tam banka bilgileriyle
+  { city: "YOZGAT", district: "Akdağmadeni", name: "Akdağmadeni İcra Dairesi", uyapCode: "0200085538", taxNumber: "0200085538", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR160001500158007300576808", ibanHarc: "TR080001500158007300576855", ibanCezaevi: "TR720001500158007300576867" },
+  { city: "YOZGAT", district: "Boğazlıyan", name: "Boğazlıyan İcra Dairesi", uyapCode: "4690065197", taxNumber: "4690065197", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR920001500158007300587856", ibanHarc: "TR430001500158007300587865", ibanCezaevi: "TR850001500158007300587885" },
+  { city: "YOZGAT", district: "Çayıralan", name: "Çayıralan İcra Dairesi", uyapCode: "2320077823", taxNumber: "2320077823", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR790001500158007300592552", ibanHarc: "TR730001500158007300592563", ibanCezaevi: "TR290001500158007300592579" },
+  { city: "YOZGAT", district: "Çekerek", name: "Çekerek İcra Dairesi", uyapCode: "4690034704", taxNumber: "4690034704", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR230001500158007300587740", ibanHarc: "TR260001500158007300587783", ibanCezaevi: "TR790001500158007300587799" },
+  { city: "YOZGAT", district: "Sarıkaya", name: "Sarıkaya İcra Dairesi", uyapCode: "0070079076", taxNumber: "0070079076", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR400001500158007300591605", ibanHarc: "TR970001500158007300591646", ibanCezaevi: "TR150001500158007300591667" },
+  { city: "YOZGAT", district: "Sorgun", name: "Sorgun İcra Dairesi", uyapCode: "4690057404", taxNumber: "4690057404", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR840001500158007300192434", ibanHarc: "TR570001500158007300565012", ibanCezaevi: "TR230001500158007300192465" },
+  { city: "YOZGAT", district: "Şefaatli", name: "Şefaatli İcra Dairesi", uyapCode: "4690058932", taxNumber: "4690058932", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR670001500158007300601886", ibanHarc: "TR550001500158007300601811", ibanCezaevi: "TR310001500158007300601855" },
+  { city: "YOZGAT", district: "Yerköy", name: "Yerköy İcra Dairesi", uyapCode: "9490052566", taxNumber: "9490052566", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR910001500158007299430664", ibanHarc: "TR550001500158007299430633", ibanCezaevi: "TR870001500158007300576888" },
+  { city: "YOZGAT", name: "Yozgat İcra Dairesi", uyapCode: "9820047555", taxNumber: "9820047555", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR120001500158007290567838", ibanHarc: "TR230001500158007299354094", ibanCezaevi: "TR380001500158007300576315" },
   
-  // KARAMAN (70)
-  { city: "KARAMAN", name: "Karaman 1. İcra Dairesi", uyapCode: "7001001" },
+  // KIRŞEHİR (40) - Tam banka bilgileriyle
+  { city: "KIRŞEHİR", district: "Kaman", name: "Kaman İcra Dairesi", uyapCode: "4940060727", taxNumber: "4940060727", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR670001500158007300580546", ibanHarc: "TR390001500158007300580565", ibanCezaevi: "TR540001500158007300580586" },
+  { city: "KIRŞEHİR", name: "Kırşehir İcra Dairesi", uyapCode: "5580073103", taxNumber: "5580073103", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR950001500158007290492139", ibanHarc: "TR770001500158007299267374", ibanCezaevi: "TR350001500158007302619965" },
+  { city: "KIRŞEHİR", district: "Mucur", name: "Mucur İcra Dairesi", uyapCode: "6230256326", taxNumber: "6230256326", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR450001500158007300579778", ibanHarc: "TR220001500158007300579707", ibanCezaevi: "TR090001500158007300579747" },
   
-  // OSMANİYE (80)
-  { city: "OSMANİYE", name: "Osmaniye 1. İcra Dairesi", uyapCode: "8001001" },
+  // KARAMAN (70) - Tam banka bilgileriyle
+  { city: "KARAMAN", district: "Ermenek", name: "Ermenek İcra Dairesi", uyapCode: "4690034796", taxNumber: "4690034796", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR060001500158007300713758", ibanHarc: "TR110001500158007300713765", ibanCezaevi: "TR260001500158007300713883" },
+  { city: "KARAMAN", name: "Karaman İcra Dairesi", uyapCode: "5180053000", taxNumber: "5180053000", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR450001500158007290495852", ibanHarc: "TR720001500158007299379499", ibanCezaevi: "TR250001500158007285376358" },
+  { city: "KARAMAN", district: "Sarıveliler", name: "Sarıveliler İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR220001500158007300713664", ibanHarc: "TR210001500158007300713682", ibanCezaevi: "TR580001500158007300713695" },
   
-  // ADIYAMAN (02)
-  { city: "ADIYAMAN", name: "Adıyaman 1. İcra Dairesi", uyapCode: "0201001" },
+  // OSMANİYE (80) - Tam banka bilgileriyle
+  { city: "OSMANİYE", district: "Bahçe", name: "Bahçe İcra Dairesi", uyapCode: "7320068060", taxNumber: "7320068060", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR890001500158007300572681", ibanHarc: "TR640001500158007300572646", ibanCezaevi: "TR360001500158007300572665" },
+  { city: "OSMANİYE", district: "Düziçi", name: "Düziçi İcra Dairesi", uyapCode: "3230301692", taxNumber: "3230301692", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR810001500158007300572146", ibanHarc: "TR600001500158007300572330", ibanCezaevi: "TR270001500158007300572342" },
+  { city: "OSMANİYE", district: "Kadirli", name: "Kadirli İcra Dairesi", uyapCode: "4860057808", taxNumber: "4860057808", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR260001500158007290496000", ibanHarc: "TR950001500158007299285480", ibanCezaevi: "TR410001500158007300562681" },
+  { city: "OSMANİYE", name: "Osmaniye 1. İcra Dairesi", uyapCode: "6480096211", taxNumber: "6480096211", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR290001500158007290496916", ibanHarc: "TR620001500158007299402765", ibanCezaevi: "TR100001500158007300564306" },
+  { city: "OSMANİYE", name: "Osmaniye 2. İcra Dairesi", uyapCode: "6480080374", taxNumber: "6480080374", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR980001500158007290496935", ibanHarc: "TR020001500158007299376879", ibanCezaevi: "TR150001500158007300565671" },
+  { city: "OSMANİYE", name: "Osmaniye 3. İcra Dairesi", uyapCode: "6481543214", taxNumber: "6481543214", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR470001500158007313988440", ibanHarc: "TR490001500158007313988695", ibanCezaevi: "TR140001500158007313988743" },
   
-  // AĞRI (04)
-  { city: "AĞRI", name: "Ağrı 1. İcra Dairesi", uyapCode: "0401001" },
+  // ADIYAMAN (02) - Tam banka bilgileriyle
+  { city: "ADIYAMAN", name: "Adıyaman İcra Dairesi", uyapCode: "4690034624", taxNumber: "4690034624", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR280001500158007290494315", ibanHarc: "TR970001500158007299436376", ibanCezaevi: "TR920001500158007300560890" },
+  { city: "ADIYAMAN", district: "Besni", name: "Besni İcra Dairesi", uyapCode: "1660200457", taxNumber: "1660200457", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR170001500158007300753524", ibanHarc: "TR400001500158007300753498", ibanCezaevi: "TR820001500158007300753518" },
+  { city: "ADIYAMAN", district: "Gerger", name: "Gerger İcra Dairesi", uyapCode: "3940441597", taxNumber: "3940441597", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR250001500158007300800716", ibanHarc: "TR370001500158007300800791", ibanCezaevi: "TR410001500158007300800816" },
+  { city: "ADIYAMAN", district: "Gölbaşı", name: "Gölbaşı(Adıyaman) İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR700001500158007300613084", ibanHarc: "TR960001500158007300613101", ibanCezaevi: "TR300001500158007300613125" },
+  { city: "ADIYAMAN", district: "Kahta", name: "Kahta İcra Dairesi", uyapCode: "4880577851", taxNumber: "4880577851", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR890001500158007300587716", ibanHarc: "TR120001500158007300587744", ibanCezaevi: "TR650001500158007300587760" },
   
-  // ARDAHAN (75)
-  { city: "ARDAHAN", name: "Ardahan 1. İcra Dairesi", uyapCode: "7501001" },
+  // AĞRI (04) - Tam banka bilgileriyle
+  { city: "AĞRI", name: "Ağrı İcra Dairesi", uyapCode: "0100047955", taxNumber: "0100047955", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR630001500158007290491939" },
+  { city: "AĞRI", district: "Diyadin", name: "Diyadin İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR290001500158007300625462" },
+  { city: "AĞRI", district: "Doğubayazıt", name: "Doğubayazıt İcra Dairesi", uyapCode: "4690034456", taxNumber: "4690034456", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR560001500158007300569977" },
+  { city: "AĞRI", district: "Eleşkirt", name: "Eleşkirt İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR560001500158007300600338" },
+  { city: "AĞRI", district: "Patnos", name: "Patnos İcra Dairesi", uyapCode: "7230258640", taxNumber: "7230258640", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR630001500158007300573343" },
+  { city: "AĞRI", district: "Taşlıçay", name: "Taşlıçay İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR390001500158007300612672" },
+  { city: "AĞRI", district: "Tutak", name: "Tutak İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR130001500158007300685017" },
   
-  // ARTVİN (08)
-  { city: "ARTVİN", name: "Artvin 1. İcra Dairesi", uyapCode: "0801001" },
+  // ARDAHAN (75) - Tam banka bilgileriyle
+  { city: "ARDAHAN", name: "Ardahan İcra Dairesi", uyapCode: "80038824", taxNumber: "80038824", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR150001500158007290501339" },
+  { city: "ARDAHAN", district: "Göle", name: "Göle İcra Dairesi", uyapCode: "4070018574", taxNumber: "4070018574", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR280001500158007300569414" },
+  { city: "ARDAHAN", district: "Hanak", name: "Hanak İcra Dairesi", uyapCode: "4560216300", taxNumber: "4560216300", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR870001500158007300574366" },
+  { city: "ARDAHAN", district: "Posof", name: "Posof İcra Dairesi", uyapCode: "7320600377", taxNumber: "7320600377", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR410001500158007300573351" },
   
-  // BARTIN (74)
-  { city: "BARTIN", name: "Bartın 1. İcra Dairesi", uyapCode: "7401001" },
+  // ARTVİN (08) - Tam banka bilgileriyle
+  { city: "ARTVİN", district: "Arhavi", name: "Arhavi İcra Dairesi", uyapCode: "0740319316", taxNumber: "0740319316", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR350001500158007300576466" },
+  { city: "ARTVİN", name: "Artvin İcra Dairesi", uyapCode: "0850041076", taxNumber: "0850041076", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR560001500158007290495654" },
+  { city: "ARTVİN", district: "Borçka", name: "Borçka İcra Dairesi", uyapCode: "0080091447", taxNumber: "0080091447", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR790001500158007300580621" },
+  { city: "ARTVİN", district: "Hopa", name: "Hopa İcra Dairesi", uyapCode: "4630075089", taxNumber: "4630075089", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR320001500158007300122560" },
+  { city: "ARTVİN", district: "Şavşat", name: "Şavşat İcra Dairesi", uyapCode: "8000056169", taxNumber: "8000056169", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR220001500158007300576021" },
+  { city: "ARTVİN", district: "Yusufeli", name: "Yusufeli İcra Dairesi", uyapCode: "4690069593", taxNumber: "4690069593", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR230001500158007300576585" },
   
-  // BAYBURT (69)
-  { city: "BAYBURT", name: "Bayburt 1. İcra Dairesi", uyapCode: "6901001" },
+  // BARTIN (74) - Tam banka bilgileriyle
+  { city: "BARTIN", district: "Amasra", name: "Amasra İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR650001500158007299194161" },
+  { city: "BARTIN", name: "Bartın İcra Dairesi", uyapCode: "1420071483", taxNumber: "1420071483", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR050001500158007290494341" },
+  { city: "BARTIN", district: "Ulus", name: "Ulus İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR850001500158007300688086" },
   
-  // BİNGÖL (12)
-  { city: "BİNGÖL", name: "Bingöl 1. İcra Dairesi", uyapCode: "1201001" },
+  // BAYBURT (69) - Tam banka bilgileriyle
+  { city: "BAYBURT", name: "Bayburt İcra Dairesi", uyapCode: "4690034803", taxNumber: "4690034803", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR550001500158007290496739" },
   
-  // BİTLİS (13)
-  { city: "BİTLİS", name: "Bitlis 1. İcra Dairesi", uyapCode: "1301001" },
+  // BİNGÖL (12) - Tam banka bilgileriyle
+  { city: "BİNGÖL", name: "Bingöl İcra Dairesi", uyapCode: "1760292874", taxNumber: "1760292874", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR170001500158007290497132" },
+  { city: "BİNGÖL", district: "Genç", name: "Genç İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR570001500158007300603715" },
+  { city: "BİNGÖL", district: "Karlıova", name: "Karlıova İcra Dairesi", uyapCode: "5240564263", taxNumber: "5240564263", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR690001500158007300784598" },
+  { city: "BİNGÖL", district: "Kiğı", name: "Kiğı İcra Dairesi", uyapCode: "4690495175", taxNumber: "4690495175", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR770001500158007300794445" },
+  { city: "BİNGÖL", district: "Solhan", name: "Solhan İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR720001500158007300724210" },
   
-  // ERZİNCAN (24)
-  { city: "ERZİNCAN", name: "Erzincan 1. İcra Dairesi", uyapCode: "2401001" },
+  // BİTLİS (13) - Tam banka bilgileriyle
+  { city: "BİTLİS", district: "Adilcevaz", name: "Adilcevaz İcra Dairesi", uyapCode: "0080748418", taxNumber: "0080748418", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR540001500158007300575833" },
+  { city: "BİTLİS", district: "Ahlat", name: "Ahlat İcra Dairesi", uyapCode: "4690059013", taxNumber: "4690059013", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR650001500158007300575732" },
+  { city: "BİTLİS", name: "Bitlis İcra Dairesi", uyapCode: "1780597772", taxNumber: "1780597772", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR030001500158007290571492" },
+  { city: "BİTLİS", district: "Güroymak", name: "Güroymak İcra Dairesi", uyapCode: "4460232505", taxNumber: "4460232505", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR850001500158007300583714" },
+  { city: "BİTLİS", district: "Hizan", name: "Hizan İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR020001500158007300614405" },
+  { city: "BİTLİS", district: "Mutki", name: "Mutki İcra Dairesi", uyapCode: "6250590177", taxNumber: "6250590177", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR090001500158007300584306" },
+  { city: "BİTLİS", district: "Tatvan", name: "Tatvan İcra Dairesi", uyapCode: "8310101517", taxNumber: "8310101517", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR880001500158007297164216" },
   
-  // GÜMÜŞHANe (29)
-  { city: "GÜMÜŞHANE", name: "Gümüşhane 1. İcra Dairesi", uyapCode: "2901001" },
+  // ERZİNCAN (24) - Tam banka bilgileriyle
+  { city: "ERZİNCAN", district: "Çayırlı", name: "Çayırlı İcra Dairesi", uyapCode: "4690066841", taxNumber: "4690066841", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR500001500158007300576778", ibanHarc: "TR860001500158007300576712", ibanCezaevi: "TR830001500158007300576766" },
+  { city: "ERZİNCAN", name: "Erzincan İcra Dairesi", uyapCode: "4690057043", taxNumber: "4690057043", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR870001500158007290496454", ibanHarc: "TR810001500158007299296887", ibanCezaevi: "TR810001500158007300573795" },
+  { city: "ERZİNCAN", district: "İliç", name: "İliç İcra Dairesi", uyapCode: "4720362339", taxNumber: "4720362339", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR820001500158007300576881", ibanHarc: "TR270001500158007300576804", ibanCezaevi: "TR510001500158007300576857" },
+  { city: "ERZİNCAN", district: "Kemah", name: "Kemah İcra Dairesi", uyapCode: "4690209963", taxNumber: "4690209963", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR330001500158007300576890", ibanHarc: "TR210001500158007300576815", ibanCezaevi: "TR300001500158007300576847" },
+  { city: "ERZİNCAN", district: "Kemaliye", name: "Kemaliye İcra Dairesi", uyapCode: "5440083908", taxNumber: "5440083908", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR180001500158007300576772", ibanHarc: "TR390001500158007300576588", ibanCezaevi: "TR200001500158007300576736" },
+  { city: "ERZİNCAN", district: "Refahiye", name: "Refahiye İcra Dairesi", uyapCode: "4690075606", taxNumber: "4690075606", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR600001500158007300576986", ibanHarc: "TR130001500158007300576959", ibanCezaevi: "TR280001500158007300576980" },
+  { city: "ERZİNCAN", district: "Tercan", name: "Tercan İcra Dairesi", uyapCode: "4690314908", taxNumber: "4690314908", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR170001500158007300577760", ibanHarc: "TR050001500158007300577782", ibanCezaevi: "TR260001500158007300577792" },
   
-  // HAKKARİ (30)
-  { city: "HAKKARİ", name: "Hakkari 1. İcra Dairesi", uyapCode: "3001001" },
+  // GÜMÜŞHANE (29) - Tam banka bilgileriyle
+  { city: "GÜMÜŞHANE", name: "Gümüşhane İcra Dairesi", uyapCode: "8150084247", taxNumber: "8150084247", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR920001500158007290569114", ibanHarc: "TR130001500158007299349618", ibanCezaevi: "TR490001500158007284936904" },
+  { city: "GÜMÜŞHANE", district: "Kelkit", name: "Kelkit İcra Dairesi", uyapCode: "8330320332", taxNumber: "8330320332", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR300001500158007300568699", ibanHarc: "TR300001500158007300568699", ibanCezaevi: "TR300001500158007300568699" },
+  { city: "GÜMÜŞHANE", district: "Şiran", name: "Şiran İcra Dairesi", uyapCode: "8130408616", taxNumber: "8130408616", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR410001500158007300569277", ibanHarc: "TR730001500158007300569186", ibanCezaevi: "TR450001500158007300569205" },
+  { city: "GÜMÜŞHANE", district: "Torul", name: "Torul İcra Dairesi", uyapCode: "4690161146", taxNumber: "4690161146", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR610001500158007300568820", ibanHarc: "TR680001500158007300568791", ibanCezaevi: "TR240001500158007300568807" },
   
-  // IĞDIR (76)
-  { city: "IĞDIR", name: "Iğdır 1. İcra Dairesi", uyapCode: "7601001" },
+  // HAKKARİ (30) - Tam banka bilgileriyle
+  { city: "HAKKARİ", district: "Çukurca", name: "Çukurca İcra Dairesi", uyapCode: "4690485794", taxNumber: "4690485794", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR550001500158007300751094", ibanHarc: "TR600001500158007300751101", ibanCezaevi: "TR380001500158007300751109" },
+  { city: "HAKKARİ", name: "Hakkari İcra Dairesi", uyapCode: "8150332265", taxNumber: "8150332265", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR630001500158007290567890", ibanHarc: "TR320001500158007299350149", ibanCezaevi: "TR080001500158007300565021" },
+  { city: "HAKKARİ", district: "Şemdinli", name: "Şemdinli İcra Dairesi", uyapCode: "7320068060", taxNumber: "7320068060", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR110001500158007300574182", ibanHarc: "TR290001500158007300574149", ibanCezaevi: "TR330001500158007300574174" },
+  { city: "HAKKARİ", district: "Yüksekova", name: "Yüksekova İcra Dairesi", uyapCode: "4690058061", taxNumber: "4690058061", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR230001500158007300574645", ibanHarc: "TR570001500158007300574615", ibanCezaevi: "TR560001500158007300574633" },
   
-  // KARS (36)
-  { city: "KARS", name: "Kars 1. İcra Dairesi", uyapCode: "3601001" },
+  // IĞDIR (76) - Tam banka bilgileriyle
+  { city: "IĞDIR", district: "Aralık", name: "Aralık İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR930001500158007300587256", ibanHarc: "TR060001500158007300586785", ibanCezaevi: "TR410001500158007300586834" },
+  { city: "IĞDIR", name: "Iğdır İcra Dairesi", uyapCode: "4650159936", taxNumber: "4650159936", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR560001500158007290504481", ibanHarc: "TR150001500158007299764548", ibanCezaevi: "TR920001500158007300572045" },
+  { city: "IĞDIR", district: "Tuzluca", name: "Tuzluca İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR240001500158007300588401", ibanHarc: "TR710001500158007300588428", ibanCezaevi: "TR080001500158007300588495" },
   
-  // KİLİS (79)
-  { city: "KİLİS", name: "Kilis 1. İcra Dairesi", uyapCode: "7901001" },
+  // KARS (36) - Tam banka bilgileriyle
+  { city: "KARS", district: "Arpaçay", name: "Arpaçay İcra Dairesi", uyapCode: "800285322", taxNumber: "800285322", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR350001500158007300596739", ibanHarc: "TR040001500158007300596618", ibanCezaevi: "TR200001500158007300596718" },
+  { city: "KARS", district: "Digor", name: "Digor İcra Dairesi", uyapCode: "4690065227", taxNumber: "4690065227", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR550001500158007300681157", ibanHarc: "TR090001500158007300681112", ibanCezaevi: "TR510001500158007300681132" },
+  { city: "KARS", district: "Kağızman", name: "Kağızman İcra Dairesi", uyapCode: "4870055520", taxNumber: "4870055520", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR980001500158007300596866", ibanHarc: "TR680001500158007300596824", ibanCezaevi: "TR130001500158007300596844" },
+  { city: "KARS", name: "Kars 1. İcra Dairesi", uyapCode: "5240214427", taxNumber: "5240214427", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR650001500158007290516832", ibanHarc: "TR640001500158007300569445", ibanCezaevi: "TR740001500158007300569459" },
+  { city: "KARS", name: "Kars 2. İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR500001500158007290516811", ibanHarc: "TR220001500158007300569522", ibanCezaevi: "TR120001500158007300569508" },
+  { city: "KARS", district: "Sarıkamış", name: "Sarıkamış İcra Dairesi", uyapCode: "7480036373", taxNumber: "7480036373", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR320001500158007300600382", ibanHarc: "TR440001500158007300600360", ibanCezaevi: "TR700001500158007300600377" },
   
-  // MARDİN (47)
-  { city: "MARDİN", name: "Mardin 1. İcra Dairesi", uyapCode: "4701001" },
+  // KİLİS (79) - Tam banka bilgileriyle
+  { city: "KİLİS", name: "Kilis İcra Dairesi", uyapCode: "4690058045", taxNumber: "4690058045", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR470001500158007290567887", ibanHarc: "TR500001500158007299408316", ibanCezaevi: "TR140001500158007300573352" },
   
-  // MUŞ (49)
-  { city: "MUŞ", name: "Muş 1. İcra Dairesi", uyapCode: "4901001" },
+  // MARDİN (47) - Tam banka bilgileriyle
+  { city: "MARDİN", district: "Dargeçit", name: "Dargeçit İcra Dairesi", uyapCode: "2700457817", taxNumber: "2700457817", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR650001500158007300788162", ibanHarc: "TR020001500158007300788132", ibanCezaevi: "TR820001500158007300788147" },
+  { city: "MARDİN", district: "Derik", name: "Derik İcra Dairesi", uyapCode: "4690374175", taxNumber: "4690374175", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR180001500158007300581040", ibanHarc: "TR830001500158007300581034", ibanCezaevi: "TR020001500158007300581037" },
+  { city: "MARDİN", district: "Kızıltepe", name: "Kızıltepe İcra Dairesi", uyapCode: "5620137490", taxNumber: "5620137490", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR510001500158007290528239", ibanHarc: "TR600001500158007300567577", ibanCezaevi: "TR380001500158007300567585" },
+  { city: "MARDİN", name: "Mardin İcra Dairesi", uyapCode: "6120051027", taxNumber: "6120051027", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR940001500158007272976479", ibanHarc: "TR380001500158007300570010", ibanCezaevi: "TR730001500158007300570059" },
+  { city: "MARDİN", district: "Mazıdağı", name: "Mazıdağı İcra Dairesi", uyapCode: "6130096540", taxNumber: "6130096540", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR300001500158007300622243", ibanHarc: "TR590001500158007300622206", ibanCezaevi: "TR310001500158007300622225" },
+  { city: "MARDİN", district: "Midyat", name: "Midyat İcra Dairesi", uyapCode: "4690060062", taxNumber: "4690060062", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR860001500158007300564587", ibanHarc: "TR080001500158007300564536", ibanCezaevi: "TR390001500158007300564560" },
+  { city: "MARDİN", district: "Nusaybin", name: "Nusaybin İcra Dairesi", uyapCode: "4690287480", taxNumber: "4690287480", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR670001500158007290568400", ibanHarc: "TR760001500158007299304058", ibanCezaevi: "TR520001500158007293598077" },
+  { city: "MARDİN", district: "Ömerli", name: "Ömerli İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR180001500158007300589285", ibanHarc: "TR900001500158007300589250", ibanCezaevi: "TR940001500158007300589275" },
+  { city: "MARDİN", district: "Savur", name: "Savur İcra Dairesi", uyapCode: "4690502190", taxNumber: "4690502190", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR890001500158007300588492", ibanHarc: "TR800001500158007300588460", ibanCezaevi: "TR790001500158007300588478" },
   
-  // RİZE (53)
-  { city: "RİZE", name: "Rize 1. İcra Dairesi", uyapCode: "5301001" },
+  // MUŞ (49) - Tam banka bilgileriyle
+  { city: "MUŞ", district: "Bulanık", name: "Bulanık İcra Dairesi", uyapCode: "1880074825", taxNumber: "1880074825", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR640001500158007300602231", ibanHarc: "TR740001500158007300602245", ibanCezaevi: "TR950001500158007300602352" },
+  { city: "MUŞ", district: "Malazgirt", name: "Malazgirt İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR500001500158007300601998", ibanHarc: "TR360001500158007300601959", ibanCezaevi: "TR130001500158007300601985" },
+  { city: "MUŞ", name: "Muş İcra Dairesi", uyapCode: "4690034376", taxNumber: "4690034376", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR100001500158007290504339", ibanHarc: "TR610001500158007299316356", ibanCezaevi: "TR730001500158007300572678" },
+  { city: "MUŞ", district: "Varto", name: "Varto İcra Dairesi", uyapCode: "4690431154", taxNumber: "4690431154", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR300001500158007300584801", ibanHarc: "TR580001500158007300584782", ibanCezaevi: "TR250001500158007300584794" },
   
-  // SİİRT (56)
-  { city: "SİİRT", name: "Siirt 1. İcra Dairesi", uyapCode: "5601001" },
+  // RİZE (53) - Tam banka bilgileriyle
+  { city: "RİZE", district: "Çayeli", name: "Çayeli İcra Dairesi", uyapCode: "2320083320", taxNumber: "2320083320", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR420001500158007300569550", ibanHarc: "TR620001500158007300569481", ibanCezaevi: "TR490001500158007300569521" },
+  { city: "RİZE", district: "Kalkandere", name: "Kalkandere İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR950001500158007300683735", ibanHarc: "TR390001500158007300683773", ibanCezaevi: "TR720001500158007300683761" },
+  { city: "RİZE", district: "Pazar", name: "Pazar(Rize) İcra Dairesi", uyapCode: "7230048535", taxNumber: "7230048535", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR270001500158007300579811", ibanHarc: "TR620001500158007300579666", ibanCezaevi: "TR300001500158007300579757" },
+  { city: "RİZE", name: "Rize İcra Dairesi", uyapCode: "7350448133", taxNumber: "7350448133", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR840001500158007290500582", ibanHarc: "TR430001500158007300569532", ibanCezaevi: "TR910001500158007300569638" },
   
-  // SİNOP (57)
-  { city: "SİNOP", name: "Sinop 1. İcra Dairesi", uyapCode: "5701001" },
+  // SİİRT (56) - Tam banka bilgileriyle
+  { city: "SİİRT", district: "Baykan", name: "Baykan İcra Dairesi", uyapCode: "4690314270", taxNumber: "4690314270", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR380001500158007300694558", ibanHarc: "TR460001500158007300694511", ibanCezaevi: "TR710001500158007300694546" },
+  { city: "SİİRT", district: "Eruh", name: "Eruh İcra Dairesi", uyapCode: "3760140943", taxNumber: "3760140943", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR970001500158007300684863", ibanHarc: "TR790001500158007300684799", ibanCezaevi: "TR760001500158007300684853" },
+  { city: "SİİRT", district: "Kurtalan", name: "Kurtalan İcra Dairesi", uyapCode: "5950681757", taxNumber: "5950681757", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR840001500158007300624084", ibanHarc: "TR360001500158007300624075", ibanCezaevi: "TR680001500158007300624081" },
+  { city: "SİİRT", district: "Pervari", name: "Pervari İcra Dairesi", uyapCode: "4690070090", taxNumber: "4690070090", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR900001500158007300713022", ibanHarc: "TR480001500158007300713002", ibanCezaevi: "TR150001500158007300713014" },
+  { city: "SİİRT", name: "Siirt İcra Dairesi", uyapCode: "4690060046", taxNumber: "4690060046", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR630001500158007290494267", ibanHarc: "TR720001500158007299381342", ibanCezaevi: "TR920001500158007300572724" },
+  { city: "SİİRT", district: "Şirvan", name: "Şirvan İcra Dairesi", uyapCode: "0080456381", taxNumber: "0080456381", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR470001500158007300691874", ibanHarc: "TR760001500158007300691837", ibanCezaevi: "TR370001500158007300691860" },
   
-  // ŞIRNAK (73)
-  { city: "ŞIRNAK", name: "Şırnak 1. İcra Dairesi", uyapCode: "7301001" },
+  // SİNOP (57) - Tam banka bilgileriyle
+  { city: "SİNOP", district: "Ayancık", name: "Ayancık İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR070001500158007300585797", ibanHarc: "TR030001500158007300585675", ibanCezaevi: "TR670001500158007300585687" },
+  { city: "SİNOP", district: "Boyabat", name: "Boyabat İcra Dairesi", uyapCode: "4690034384", taxNumber: "4690034384", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR680001500158007300586639", ibanHarc: "TR720001500158007300586567", ibanCezaevi: "TR150001500158007300586623" },
+  { city: "SİNOP", district: "Durağan", name: "Durağan İcra Dairesi", uyapCode: "3140064395", taxNumber: "3140064395", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR420001500158007300646083", ibanHarc: "TR390001500158007300646137", ibanCezaevi: "TR810001500158007300646157" },
+  { city: "SİNOP", district: "Gerze", name: "Gerze İcra Dairesi", uyapCode: "3940399436", taxNumber: "3940399436", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR780001500158007300586556", ibanHarc: "TR950001500158007300586541", ibanCezaevi: "TR460001500158007300586550" },
+  { city: "SİNOP", name: "Sinop İcra Dairesi", uyapCode: "7710215837", taxNumber: "7710215837", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR850001500158007290492998", ibanHarc: "TR880001500158007300569013", ibanCezaevi: "TR100001500158007285349662" },
+  { city: "SİNOP", district: "Türkeli", name: "Türkeli İcra Dairesi", uyapCode: "8770161318", taxNumber: "8770161318", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR150001500158007300579154", ibanHarc: "TR790001500158007300579263", ibanCezaevi: "TR390001500158007300579207" },
   
-  // TUNCELİ (62)
-  { city: "TUNCELİ", name: "Tunceli 1. İcra Dairesi", uyapCode: "6201001" },
+  // ŞIRNAK (73) - Tam banka bilgileriyle
+  { city: "ŞIRNAK", district: "Beytüşşebap", name: "Beytüşşebap İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR370001500158007300799239", ibanHarc: "TR820001500158007300799205", ibanCezaevi: "TR540001500158007300799224" },
+  { city: "ŞIRNAK", district: "Cizre", name: "Cizre İcra Dairesi", uyapCode: "2110385443", taxNumber: "2110385443", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR320001500158007297406269", ibanHarc: "TR080001500158007300575594", ibanCezaevi: "TR540001500158007297406358" },
+  { city: "ŞIRNAK", district: "İdil", name: "İdil İcra Dairesi", uyapCode: "4700590892", taxNumber: "4700590892", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR110001500158007300771868", ibanHarc: "TR780001500158007300771826", ibanCezaevi: "TR120001500158007300771850" },
+  { city: "ŞIRNAK", district: "Silopi", name: "Silopi İcra Dairesi", uyapCode: "7700231747", taxNumber: "7700231747", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR630001500158007300671895", ibanHarc: "TR510001500158007300671626", ibanCezaevi: "TR280001500158007300671749" },
+  { city: "ŞIRNAK", name: "Şırnak İcra Dairesi", uyapCode: "4690166812", taxNumber: "4690166812", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR290001500158007290570054", ibanHarc: "TR380001500158007299251101", ibanCezaevi: "TR840001500158007285238526" },
+  { city: "ŞIRNAK", district: "Uludere", name: "Uludere İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR680001500158007300672581", ibanHarc: "TR220001500158007300673603", ibanCezaevi: "TR850001500158007300673633" },
+  
+  // TUNCELİ (62) - Tam banka bilgileriyle
+  { city: "TUNCELİ", district: "Çemişgezek", name: "Çemişgezek İcra Dairesi", uyapCode: "2420488692", taxNumber: "2420488692", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR760001500158007300615110", ibanHarc: "TR850001500158007300615142", ibanCezaevi: "TR830001500158007300615178" },
+  { city: "TUNCELİ", district: "Hozat", name: "Hozat İcra Dairesi", uyapCode: "4640084301", taxNumber: "4640084301", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR930001500158007300613349", ibanHarc: "TR480001500158007300613383", ibanCezaevi: "TR680001500158007300613411" },
+  { city: "TUNCELİ", district: "Mazgirt", name: "Mazgirt İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR760001500158007300732286", ibanHarc: "TR590001500158007300732301", ibanCezaevi: "" },
+  { city: "TUNCELİ", district: "Nazımiye", name: "Nazımiye İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR520001500158007300638240", ibanHarc: "TR340001500158007300638273", ibanCezaevi: "" },
+  { city: "TUNCELİ", district: "Ovacık", name: "Ovacık(Tunceli) İcra Dairesi", uyapCode: "4690437860", taxNumber: "4690437860", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR900001500158007300721267", ibanHarc: "TR460001500158007300721283", ibanCezaevi: "TR130001500158007300721295" },
+  { city: "TUNCELİ", district: "Pertek", name: "Pertek İcra Dairesi", uyapCode: "7280051911", taxNumber: "7280051911", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR160001500158007300683702", ibanHarc: "TR090001500158007300683731", ibanCezaevi: "TR030001500158007300683742" },
+  { city: "TUNCELİ", district: "Pülümür", name: "Pülümür İcra Dairesi", uyapCode: "", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR660001500158007300751672", ibanHarc: "TR110001500158007300751692", ibanCezaevi: "" },
+  { city: "TUNCELİ", name: "Tunceli İcra Dairesi", uyapCode: "0080038857", taxNumber: "0080038857", bankName: "T. Vakıflar Bankası T.A.O.", iban: "TR940001500158007279074093", ibanHarc: "TR430001500158007299370612", ibanCezaevi: "TR980001500158007290542525" },
 ];
 
 async function seedExecutionOffices(tenantId: string) {
   console.log('🏛️ İcra daireleri seed işlemi başlıyor...');
   
   let created = 0;
+  let updated = 0;
   let skipped = 0;
   
   for (const office of EXECUTION_OFFICES_DATA) {
@@ -355,7 +1044,24 @@ async function seedExecutionOffices(tenantId: string) {
     });
     
     if (existing) {
-      skipped++;
+      // Eğer banka bilgisi varsa ve mevcut kayıtta yoksa güncelle
+      if ((office as any).bankName && !existing.bankName) {
+        await prisma.executionOffice.update({
+          where: { id: existing.id },
+          data: {
+            uyapCode: office.uyapCode || existing.uyapCode,
+            taxNumber: (office as any).taxNumber || existing.taxNumber,
+            bankName: (office as any).bankName,
+            iban: (office as any).iban,
+            ibanHarc: (office as any).ibanHarc,
+            ibanCezaevi: (office as any).ibanCezaevi,
+            district: (office as any).district || existing.district,
+          },
+        });
+        updated++;
+      } else {
+        skipped++;
+      }
       continue;
     }
     
@@ -364,14 +1070,20 @@ async function seedExecutionOffices(tenantId: string) {
         tenantId,
         name: office.name,
         city: office.city,
-        uyapCode: office.uyapCode,
+        district: (office as any).district,
+        uyapCode: office.uyapCode || undefined,
+        taxNumber: (office as any).taxNumber,
+        bankName: (office as any).bankName,
+        iban: (office as any).iban,
+        ibanHarc: (office as any).ibanHarc,
+        ibanCezaevi: (office as any).ibanCezaevi,
         isActive: true,
       },
     });
     created++;
   }
   
-  console.log(`✅ ${created} icra dairesi oluşturuldu, ${skipped} kayıt zaten mevcuttu.`);
+  console.log(`✅ ${created} icra dairesi oluşturuldu, ${updated} güncellendi, ${skipped} kayıt değişmedi.`);
   console.log(`📊 Toplam ${EXECUTION_OFFICES_DATA.length} kayıt işlendi.`);
 }
 

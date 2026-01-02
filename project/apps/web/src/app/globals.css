@@ -64,3 +64,26 @@
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
+
+/* Fix Highlight Animation - Eksiklik giderme modu için */
+@keyframes fix-pulse {
+  0%, 100% {
+    box-shadow: 0 0 0 0 rgba(251, 191, 36, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 8px rgba(251, 191, 36, 0);
+  }
+}
+
+.fix-highlight {
+  animation: fix-pulse 1s ease-in-out 3;
+  border-color: rgb(251, 191, 36) !important;
+  background-color: rgba(251, 191, 36, 0.1) !important;
+}
+
+/* Fix highlight için data attribute selector */
+[data-fix-highlight="true"] {
+  animation: fix-pulse 1s ease-in-out 3;
+  border-color: rgb(251, 191, 36) !important;
+  background-color: rgba(251, 191, 36, 0.1) !important;
+}

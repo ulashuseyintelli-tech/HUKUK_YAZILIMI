@@ -272,7 +272,9 @@ model ExecutionOffice {
   taxNumber   String?  // Vergi numarası
   bankName    String?  // Banka adı
   branchName  String?  // Şube adı
-  iban        String?  // IBAN
+  iban        String?  // Emanet IBAN
+  ibanHarc    String?  // Harç IBAN
+  ibanCezaevi String?  // Cezaevi IBAN
   address     String?
   phone       String?
   fax         String?
@@ -575,6 +577,12 @@ model Debtor {
   parentInstitution     String?
   authorizedPerson      String?
   
+  // Tereke Alanları (ESTATE) - Miras Ortaklığı
+  deceasedName          String?    // Müteveffanın (murisin) adı soyadı
+  deceasedTckn          String?    @db.VarChar(11) // Murisin TCKN'si
+  deathDate             DateTime?  // Ölüm tarihi
+  inheritanceDocPath    String?    // Veraset ilamı dosya yolu
+  
   // Computed Display Name (Ad Soyad veya Ünvan)
   name                  String
   // Kimlik No (TCKN, VKN veya DETSİS)
@@ -602,6 +610,7 @@ model Debtor {
   caseDebtors           CaseDebtor[]
   assets                Asset[]
   communications        DebtorCommunication[]
+  estateHeirs           EstateHeir[]  // Tereke mirasçıları
 
   @@index([tenantId])
   @@index([tenantId, identityNo])
@@ -609,6 +618,33 @@ model Debtor {
   @@index([tenantId, vkn])
   @@index([tenantId, detsisNo])
   @@index([tenantId, name])
+}
+
+// Tereke Mirasçısı - Miras ortaklığındaki mirasçı bilgileri
+model EstateHeir {
+  id            String   @id @default(cuid())
+  debtorId      String
+  debtor        Debtor   @relation(fields: [debtorId], references: [id], onDelete: Cascade)
+  
+  // Mirasçı Bilgileri
+  name          String   // Ad Soyad
+  tckn          String?  @db.VarChar(11)
+  address       String   // Yerleşim yeri adresi (zorunlu)
+  city          String?
+  district      String?
+  shareRatio    String?  // Pay oranı (örn: "1/4", "25%")
+  
+  // İletişim Bilgileri
+  phone         String?  // Telefon
+  email         String?  // E-posta
+  
+  // Sıralama
+  sortOrder     Int      @default(0)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([debtorId])
 }
 
 // Borçlu Adresi
@@ -792,6 +828,7 @@ model Case {
   // İlişkiler
   debtors             CaseDebtor[]
   lawyers             CaseLawyer[]
+  staff               CaseStaff[]
   tasks               Task[]
   collections         Collection[]
   dues                Due[]
@@ -809,6 +846,8 @@ model Case {
   claimItems          ClaimItem[]
   ledgerEntries       LedgerEntry[]      // Tahsilat/düzeltme kayıtları
   precautionaryOrders PrecautionaryOrder[] // İhtiyati haciz kararları
+  expenseRequests     ExpenseRequest[]   // Masraf talepleri
+  caseBalance         CaseBalance?       // Masraf bakiyesi (1:1)
 
   @@unique([tenantId, fileNumber])
   @@index([tenantId, status])
@@ -893,6 +932,13 @@ model CaseDebtor {
   selectedAddress       DebtorAddress?   @relation(fields: [selectedAddressId], references: [id])
   prepareNotification   Boolean          @default(true)
   ilanenJustification   String?          // İlanen tebligat gerekçesi
+  
+  // Tebligat Takip Bilgileri
+  notificationBarcode   String?          // PTT barkod numarası
+  notificationSentDate  DateTime?        // Tebligat gönderim tarihi
+  notificationDeliveredDate DateTime?    // Tebliğ tarihi
+  notificationStatus    String?          // GONDERILDI, TEBLIG_EDILDI, IADE, BEKLEMEDE
+  notificationNote      String?          // Tebligat notu (iade sebebi vb.)
   
   // Borçlu Vekili
   debtorLawyerId        String?
@@ -1127,15 +1173,22 @@ model Court {
   tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   name      String
   city      String
+  district  String?
   type      String?
+  courtType String?  // Mahkeme türü (Asliye Hukuk, Ağır Ceza, vb.)
+  courtCode String?  // Birim ID
+  uyapCode  String?  // UYAP organizasyon kodu
   address   String?
   phone     String?
+  isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   cases Case[]
 
   @@index([tenantId])
+  @@index([city])
+  @@index([uyapCode])
 }
 
 // ==================== BÜRO BİLGİLERİ ====================
@@ -1244,19 +1297,36 @@ model Lawyer {
   // İletişim
   email        String?
   phone        String?
+  fax          String?  // Faks numarası
   address      String?
   city         String?
   district     String?
   
   // Banka Bilgileri
   bankName     String?
+  branchName   String?  // Şube adı
   iban         String?
   
   // Statü
   isInHouseCounsel Boolean @default(false)  // Kurum Avukatı
   isEmployee       Boolean @default(false)  // Sigortalı (SSK'lı)
   
-  // Rol
+  // ==================== AVUKAT TİPİ VE YETKİ SİSTEMİ ====================
+  // Avukat Tipi (Hiyerarşi)
+  lawyerRank       LawyerRank @default(LAWYER)  // PARTNER, MANAGER, AUTHORIZED, LAWYER
+  
+  // Varsayılan Yetkiler (Büro genelinde - yeni dosyalara otomatik uygulanır)
+  defaultPermissions Json?  // { canEditCase, canGenerateDocs, canSyncUYAP, ... }
+  
+  // Yetki Kilidi (Ortak avukat tarafından belirlenir)
+  permissionsLocked Boolean @default(false)  // true ise yönetici bile değiştiremez
+  permissionsLockedBy String?  // Kilitleyen ortak avukat ID
+  permissionsLockedAt DateTime?
+  
+  // Yetki Değiştirme Yetkisi
+  canModifyOtherPermissions Boolean @default(false)  // Başka avukatların yetkilerini değiştirebilir mi
+  
+  // Rol (eski alan - geriye uyumluluk)
   role         LawyerRole @default(EMPLOYEE)
   
   // Genel Yetkiler (büro genelinde)
@@ -1288,6 +1358,16 @@ model Lawyer {
   @@index([tenantId])
   @@index([officeId])
   @@index([isActive])
+  @@index([lawyerRank])
+}
+
+// Avukat Tipi/Rütbesi (Hiyerarşi)
+enum LawyerRank {
+  PARTNER     // Ortak Avukat - Tüm yetkiler, yetki yönetimi
+  MANAGER     // Yönetici Avukat - Geniş yetkiler, ortak tarafından atanır
+  AUTHORIZED  // Yetkili Avukat - Büro ayarlarındaki varsayılan yetkiler
+  LAWYER      // Avukat - Büro ayarlarındaki varsayılan yetkiler
+  INTERN      // Stajyer Avukat - Kısıtlı yetkiler
 }
 
 enum LawyerRole {
@@ -1310,6 +1390,13 @@ model CaseLawyer {
   // Bu dosyadaki yetkiler
   hasSignatureAuthority Boolean @default(false)  // Bu dosyada imza yetkisi
   isResponsible         Boolean @default(false)  // Dosya sorumlusu mu
+  
+  // ==================== DOSYA ÖZEL YETKİLER ====================
+  // Bu yetkiler avukatın varsayılan yetkilerini override eder
+  casePermissions Json?  // { canEditCase, canGenerateDocs, canSyncUYAP, canViewFinance, canEditFinance, canChangeStatus, canEditParties }
+  
+  // Yetki kaynağı
+  permissionSource String @default("DEFAULT")  // DEFAULT (avukat varsayılanı), CUSTOM (dosya özel), LOCKED (kilitli)
   
   // Müvekkil portalı
   visibleToClient       Boolean @default(true)
@@ -1514,6 +1601,17 @@ enum CollectionStatus {
   CONFIRMED       // Onaylandı
   CANCELLED       // İptal edildi
   REFUNDED        // İade edildi
+}
+
+// Masraf Talebi Durumu
+enum ExpenseRequestStatus {
+  PENDING         // Oluşturuldu, henüz gönderilmedi
+  SENT            // Müvekkile gönderildi
+  REMINDED        // Hatırlatma gönderildi
+  RECEIVED        // Dekont/ödeme alındı
+  LAWYER_PAID     // Avukat karşıladı - müvekkilden tahsil edilecek
+  OVERDUE         // Süresi geçti
+  CANCELLED       // İptal edildi
 }
 
 // Mahsup Türü
@@ -1937,6 +2035,7 @@ enum DebtorType {
   INDIVIDUAL         // Gerçek Kişi (PERSON)
   COMPANY            // Tüzel Kişi / Şirket
   PUBLIC_INSTITUTION // Kamu Kurumu
+  ESTATE             // Tereke (Miras Ortaklığı)
 }
 
 // Borçlu Rolü - Dosya bazında borçlunun hukuki rolü
@@ -2064,6 +2163,7 @@ enum InterestType {
   AVANS             // Avans faizi
   TEMERRUT          // Temerrüt faizi
   YOKSUN            // Yoksun kalınan faiz
+  TICARI            // Ticari faiz
 }
 
 // Belge Türleri
@@ -2303,6 +2403,7 @@ model StaffMember {
 model CaseStaff {
   id            String      @id @default(cuid())
   caseId        String
+  case          Case        @relation(fields: [caseId], references: [id], onDelete: Cascade)
   staffMemberId String
   staffMember   StaffMember @relation(fields: [staffMemberId], references: [id], onDelete: Cascade)
   
@@ -2467,28 +2568,59 @@ model ExpenseRequest {
   id            String   @id @default(cuid())
   tenantId      String
   caseId        String
+  case          Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
   clientId      String
   client        Client   @relation(fields: [clientId], references: [id], onDelete: Cascade)
   
-  // Masraf Kalemleri
-  items         Json     // [{description: string, amount: number}]
-  totalAmount   Decimal  @db.Decimal(15, 2)
+  // Paket Bilgisi (otomatik oluşturma için)
+  packageCode   String?  // UYAP_PRE, RE_TEBLIGAT, HACIZ (null = manuel)
   
-  // Durum
-  status        String   @default("PENDING") // PENDING, SENT, APPROVED, REJECTED, PAID
+  // Masraf Kalemleri (eski format - geriye uyumluluk)
+  items         Json?    // [{type: string, description: string, amount: number}]
   
-  // Gönderim
+  // Yeni format - ayrı tablo
+  requestItems  ExpenseRequestItem[]
+  
+  // Tutarlar
+  totalSuggested Decimal? @db.Decimal(15, 2) // Sistem önerisi
+  totalAmount   Decimal  @db.Decimal(15, 2)  // Final tutar (override sonrası)
+  currency      String   @default("TRY")
+  
+  // Son Ödeme Tarihi
+  dueDate       DateTime?
+  
+  // Durum Makinesi
+  status        ExpenseRequestStatus @default(PENDING)
+  
+  // Gönderim Bilgileri
   sentAt        DateTime?
-  sentVia       String?  // EMAIL, SMS
+  sentVia       String?  // EMAIL, SMS, WHATSAPP
+  messageTemplateId String? // Kullanılan şablon
   notificationId String? // İlgili ClientNotification
+  
+  // Gönderim Tercihleri
+  sendEmail     Boolean  @default(false)
+  sendSms       Boolean  @default(false)
+  sendWhatsapp  Boolean  @default(false)
+  
+  // Render edilmiş mesaj (audit için)
+  renderedSubject String?
+  renderedBody  String?  @db.Text
+  
+  // Hatırlatma
+  reminderCount Int      @default(0)
+  lastReminderAt DateTime?
   
   // Yanıt
   respondedAt   DateTime?
   responseNotes String?
   
-  // Ödeme
+  // Ödeme/Dekont
   paidAt        DateTime?
   paidAmount    Decimal? @db.Decimal(15, 2)
+  receiptDocId  String?  // Dekont belgesi ID
+  paymentMethod String?  // MANUAL, BANK_MATCH, VIRTUAL_POS
+  paymentReference String? // Ödeme referans kodu (TB-xxx)
   
   // Oluşturan
   createdById   String
@@ -2502,27 +2634,76 @@ model ExpenseRequest {
   @@index([caseId])
   @@index([clientId])
   @@index([status])
+  @@index([packageCode])
   @@index([createdAt])
+  @@index([dueDate])
 }
 
-// E-posta Şablonları
-model EmailTemplate {
+// Masraf Talebi Kalemleri
+model ExpenseRequestItem {
+  id              String   @id @default(cuid())
+  expenseRequestId String
+  expenseRequest  ExpenseRequest @relation(fields: [expenseRequestId], references: [id], onDelete: Cascade)
+  
+  // Kalem Bilgileri
+  itemCode        String   // BASVURMA_HARCI, PESIN_HARC, TEBLIGAT_GIDERI
+  label           String   // "Başvurma Harcı"
+  description     String?
+  
+  // Tutarlar
+  suggestedAmount Decimal  @db.Decimal(15, 2) // Sistem önerisi
+  finalAmount     Decimal  @db.Decimal(15, 2) // Avukat girişi (override)
+  currency        String   @default("TRY")
+  
+  // Override Bilgisi
+  isEditable      Boolean  @default(true)
+  wasOverridden   Boolean  @default(false)
+  overrideReason  String?
+  overriddenById  String?
+  overriddenAt    DateTime?
+  
+  // Hesaplama Parametreleri (audit için)
+  calcParams      Json?    // {"debtorCount": 2, "unitAmount": 15.00}
+  
+  // Sıralama
+  sortOrder       Int      @default(0)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([expenseRequestId])
+  @@index([itemCode])
+}
+
+// Mesaj Şablonları (E-posta, SMS, WhatsApp)
+model MessageTemplate {
   id          String   @id @default(cuid())
   tenantId    String
   
   // Şablon Bilgileri
-  name        String   // Şablon adı
-  code        String   // Benzersiz kod (MASRAF_TALEBI, BILGILENDIRME, vb.)
-  category    String   // MASRAF, BILGILENDIRME, RAPOR, DIGER
+  code        String   // Benzersiz kod: MASRAF_TALEBI, MASRAF_HATIRLATMA, DOSYA_ACILDI, TAHSILAT_BILGI
+  name        String   // Görünen ad: "Masraf Talebi", "Hatırlatma"
+  description String?  // Açıklama
+  
+  // Kategori
+  category    MessageTemplateCategory
+  
+  // Kanal
+  channel     MessageTemplateChannel @default(EMAIL)
   
   // İçerik
-  subject     String   // E-posta konusu (değişkenler içerebilir)
-  body        String   @db.Text // HTML içerik (değişkenler içerebilir)
+  subject     String?  // E-posta konusu (SMS/WhatsApp için null)
+  body        String   @db.Text // Mesaj içeriği
   
-  // Değişkenler: {{clientName}}, {{caseNo}}, {{amount}}, {{dueDate}}, vb.
+  // Kullanılabilir Token'lar (bilgi amaçlı)
+  // {{clientName}}, {{caseFileNumber}}, {{executionFileNumber}}, {{executionOfficeName}}
+  // {{totalAmount}}, {{dueDate}}, {{items}}, {{lawyerName}}, {{officePhone}}
+  availableTokens Json? // ["clientName", "caseFileNumber", ...]
   
+  // Ayarlar
   isActive    Boolean  @default(true)
-  isDefault   Boolean  @default(false) // Varsayılan şablon
+  isSystem    Boolean  @default(false) // Sistem şablonu (silinemez)
+  sortOrder   Int      @default(0)
   
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -2530,7 +2711,26 @@ model EmailTemplate {
   @@unique([tenantId, code])
   @@index([tenantId])
   @@index([category])
+  @@index([channel])
   @@index([isActive])
+}
+
+// Mesaj Şablonu Kategorisi
+enum MessageTemplateCategory {
+  CLIENT_INFO       // Müvekkil bilgilendirme (dosya açıldı, durum güncelleme)
+  EXPENSE_REQUEST   // Masraf talebi
+  EXPENSE_REMINDER  // Masraf hatırlatma
+  COLLECTION_INFO   // Tahsilat bildirimi
+  DEBTOR_NOTICE     // Borçluya bildirim
+  GREETING          // Tebrik mesajları
+  OTHER             // Diğer
+}
+
+// Mesaj Şablonu Kanalı
+enum MessageTemplateChannel {
+  EMAIL             // E-posta
+  SMS               // SMS
+  WHATSAPP          // WhatsApp
 }
 
 // ==================== ÖZEL GÜNLER & TEBRİK SİSTEMİ ====================
@@ -3706,4 +3906,243 @@ enum PrecautionaryCostType {
   BILIRKISI         // Bilirkişi Ücreti
   MUHAFAZA          // Muhafaza Gideri
   DIGER             // Diğer Masraflar
+}
+
+// ==================== ZAMANAŞIMI RİSK LOG ====================
+
+// Zamanaşımı Risk Logu - Uyarı gösterildiğinde ve kullanıcı kararı kaydedilir
+model LimitationRiskLog {
+  id                String              @id @default(cuid())
+  tenantId          String
+  userId            String              // Uyarıyı gören kullanıcı
+  caseId            String?             // İlişkili dosya (varsa)
+  
+  // Risk Bilgileri
+  riskType          String              @default("LIMITATION") // LIMITATION
+  level             LimitationLevel     // GREEN, YELLOW, RED, UNKNOWN
+  
+  // Alacak Bilgileri
+  claimTypeCode     String              // TBK_10, KAMB_BONO_ASIL, vb.
+  role              String?             // Borçlu rolü (ASIL_BORCLU, CIRANTA, vb.)
+  
+  // Tarih Hesaplamaları
+  startDateInput    DateTime?           // Kullanıcının girdiği başlangıç tarihi
+  baseStartUsed     DateTime?           // Hesaplamada kullanılan tarih
+  expiryDate        DateTime?           // Hesaplanan bitiş tarihi
+  daysLeft          Int?                // Kalan gün sayısı
+  
+  // Kullanıcı Kararı
+  ackAction         LimitationAckAction? // PROCEED, BACK
+  ackAt             DateTime?           // Karar zamanı
+  
+  // Meta
+  metadata          Json?               // Ek bilgiler
+  createdAt         DateTime            @default(now())
+
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([userId])
+  @@index([level])
+  @@index([createdAt])
+}
+
+// Zamanaşımı Seviyesi
+enum LimitationLevel {
+  GREEN     // Süre yeterli
+  YELLOW    // Süre yaklaşıyor
+  RED       // Süre dolmuş
+  UNKNOWN   // Hesaplanamadı
+}
+
+// Kullanıcı Karar Aksiyonu
+enum LimitationAckAction {
+  PROCEED   // Devam Et
+  BACK      // Geri Dön
+}
+
+// ============================================
+// MASRAF OTOMASYON SİSTEMİ
+// ============================================
+
+// Masraf Paketi Tanımları (UYAP_PRE, RE_TEBLIGAT, HACIZ vb.)
+model CostPackage {
+  id          String   @id @default(cuid())
+  tenantId    String?  // null = sistem paketi (tüm tenant'lar için)
+  
+  code        String   // UYAP_PRE, RE_TEBLIGAT, HACIZ, SATIS, KIYMET_TAKDIRI
+  name        String   // "UYAP Öncesi / Takip Açılış Masrafları"
+  description String?
+  
+  // Hangi takip türleri için geçerli (null = tümü)
+  caseTypes   Json?    // ["GENERAL_EXECUTION", "CHECK", "BOND"] veya null
+  
+  // Sıralama ve durum
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  isSystem    Boolean  @default(false) // Sistem paketi (silinemez)
+  
+  // İlişkili mesaj şablonu
+  messageTemplateCode String? // TPL_UYAP_PRE, TPL_RE_TEBLIGAT
+  
+  items       CostPackageItem[]
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([code])
+  @@index([isActive])
+}
+
+// Masraf Paketi Kalemleri
+model CostPackageItem {
+  id          String   @id @default(cuid())
+  packageId   String
+  package     CostPackage @relation(fields: [packageId], references: [id], onDelete: Cascade)
+  
+  // Kalem Bilgileri
+  itemCode    String   // BASVURMA_HARCI, PESIN_HARC, TEBLIGAT_GIDERI
+  label       String   // "Başvurma Harcı", "Peşin Harç"
+  description String?
+  
+  // Tutar
+  defaultAmount Decimal @db.Decimal(15, 2) // Varsayılan tutar
+  currency    String   @default("TRY")
+  
+  // Hesaplama Kuralı (opsiyonel)
+  // Örn: {"type":"per_unit", "unitAmount":15.00, "multiplier":"debtorCount"}
+  // Örn: {"type":"percentage", "rate":0.005, "base":"principalAmount"}
+  calcRule    Json?
+  
+  // Düzenlenebilirlik
+  isEditable  Boolean  @default(true) // Avukat değiştirebilir mi
+  isRequired  Boolean  @default(true) // Zorunlu kalem mi
+  
+  // Sıralama
+  sortOrder   Int      @default(0)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([packageId])
+  @@index([itemCode])
+}
+
+// Dosya Masraf Bakiyesi (1:1 Case ile)
+model CaseBalance {
+  id          String   @id @default(cuid())
+  tenantId    String
+  caseId      String   @unique
+  case        Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  
+  // Bakiye
+  balance     Decimal  @db.Decimal(15, 2) @default(0)
+  currency    String   @default("TRY")
+  
+  // Eşik değeri (düşük bakiye uyarısı için)
+  lowThreshold Decimal? @db.Decimal(15, 2)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  ledger      BalanceLedger[]
+
+  @@index([tenantId])
+  @@index([caseId])
+}
+
+// Bakiye Hareketleri (Kredi/Debit)
+model BalanceLedger {
+  id          String   @id @default(cuid())
+  tenantId    String
+  caseBalanceId String
+  caseBalance CaseBalance @relation(fields: [caseBalanceId], references: [id], onDelete: Cascade)
+  
+  // Hareket Tipi
+  type        BalanceLedgerType
+  
+  // Tutar (pozitif = kredi, negatif = debit)
+  amount      Decimal  @db.Decimal(15, 2)
+  currency    String   @default("TRY")
+  
+  // Kaynak
+  source      String   // "expense_request:xxx", "operation:haciz", "manual_adjust"
+  sourceId    String?  // İlgili kayıt ID
+  
+  // Açıklama
+  description String?
+  
+  // Oluşturan
+  createdById String?
+  
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId])
+  @@index([caseBalanceId])
+  @@index([type])
+  @@index([createdAt])
+}
+
+enum BalanceLedgerType {
+  CREDIT      // Avans/ödeme geldi
+  DEBIT       // Masraf yapıldı
+  ADJUST      // Manuel düzeltme
+  REFUND      // İade
+}
+
+// Aşama Tetikleyici Kuralları
+model StageEventRule {
+  id          String   @id @default(cuid())
+  tenantId    String?  // null = sistem kuralı
+  
+  // Event Kodu
+  eventCode   String   // EVT_UYAP_SEND_CLICKED, EVT_TEBLIGAT_RETURNED, EVT_HACIZ_INIT
+  
+  // Tetiklenecek Paket
+  packageCode String?  // UYAP_PRE, RE_TEBLIGAT, HACIZ (null = operasyon)
+  
+  // Aksiyon Tipi
+  actionType  StageActionType
+  
+  // Kilit Kuralı
+  hardBlock   Boolean  @default(false) // true = işlemi tamamen engeller
+  
+  // Minimum bakiye gereksinimi (DEBIT_FROM_BALANCE için)
+  minBalanceRequired Decimal? @db.Decimal(15, 2)
+  
+  // İlişkili mesaj şablonu
+  messageTemplateCode String?
+  
+  // Öncelik (düşük = önce çalışır)
+  priority    Int      @default(50)
+  
+  // Durum
+  isActive    Boolean  @default(true)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([eventCode])
+  @@index([isActive])
+}
+
+enum StageActionType {
+  CREATE_EXPENSE_REQUEST  // Masraf talebi oluştur
+  DEBIT_FROM_BALANCE      // Bakiyeden düş
+  SUGGEST_ONLY            // Sadece öneri göster
+  BLOCK_UNTIL_PAID        // Ödeme gelene kadar engelle
+}
+
+// Stage Event Kodları (referans için enum)
+enum StageEventCode {
+  EVT_UYAP_SEND_CLICKED     // UYAP'a Gönder tıklandı
+  EVT_TEBLIGAT_REQUESTED    // Tebligat talebi
+  EVT_TEBLIGAT_RETURNED     // Tebligat iade
+  EVT_NEW_ADDRESS_ADDED     // Yeni adres eklendi
+  EVT_HACIZ_INIT            // Haciz başlat
+  EVT_HACIZ_EXECUTED        // Haciz yapıldı
+  EVT_SALE_INIT             // Satış başlat
+  EVT_VALUATION_INIT        // Kıymet takdiri başlat
+  EVT_BALANCE_LOW           // Bakiye düşük
 }
