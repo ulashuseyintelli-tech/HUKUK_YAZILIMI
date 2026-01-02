@@ -1,7 +1,7 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Res } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, UseGuards, Res, Query } from '@nestjs/common';
 import { Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { TemplateEngineService, TemplateData, GeneratedDocument } from './template-engine.service';
+import { TemplateEngineService, TemplateData, GeneratedDocument, UdfDocument } from './template-engine.service';
 
 // DTO'lar
 export class GenerateTakipTalebiDto {
@@ -159,5 +159,108 @@ export class TemplateEngineController {
   @Post('haciz-tutanagi')
   generateHacizTutanagi(@Body() dto: GenerateTakipTalebiDto): GeneratedDocument {
     return this.templateEngineService.generateHacizTutanagi(dto as TemplateData);
+  }
+
+  // ============================================
+  // PDF EXPORT ENDPOINT'LERİ
+  // ============================================
+
+  /**
+   * Takip Talebi PDF indir - JSON data ile
+   */
+  @Post('takip-talebi/pdf')
+  async downloadTakipTalebiPdf(@Body() dto: GenerateTakipTalebiDto, @Res() res: Response): Promise<void> {
+    const pdfBuffer = await this.templateEngineService.generateTakipTalebiPdf(dto as TemplateData);
+    
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="takip-talebi-${dto.fileNumber || 'belge'}.pdf"`);
+    res.send(pdfBuffer);
+  }
+
+  /**
+   * Takip Talebi PDF indir - Case ID ile
+   */
+  @Get('case/:caseId/pdf')
+  async downloadPdfFromCase(
+    @Param('caseId') caseId: string,
+    @Query('type') documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi',
+    @Res() res: Response
+  ): Promise<void> {
+    const pdfBuffer = await this.templateEngineService.generatePdfFromCase(caseId, documentType);
+    
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${documentType}-${caseId}.pdf"`);
+    res.send(pdfBuffer);
+  }
+
+  // ============================================
+  // WORD (DOCX) EXPORT ENDPOINT'LERİ
+  // ============================================
+
+  /**
+   * Takip Talebi Word indir - JSON data ile
+   */
+  @Post('takip-talebi/word')
+  async downloadTakipTalebiWord(@Body() dto: GenerateTakipTalebiDto, @Res() res: Response): Promise<void> {
+    const wordBuffer = await this.templateEngineService.generateTakipTalebiWord(dto as TemplateData);
+    
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="takip-talebi-${dto.fileNumber || 'belge'}.docx"`);
+    res.send(wordBuffer);
+  }
+
+  /**
+   * Takip Talebi Word indir - Case ID ile
+   */
+  @Get('case/:caseId/word')
+  async downloadWordFromCase(
+    @Param('caseId') caseId: string,
+    @Query('type') documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi',
+    @Res() res: Response
+  ): Promise<void> {
+    const wordBuffer = await this.templateEngineService.generateWordFromCase(caseId, documentType);
+    
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+    res.setHeader('Content-Disposition', `attachment; filename="${documentType}-${caseId}.docx"`);
+    res.send(wordBuffer);
+  }
+
+  // ============================================
+  // UDF (UYAP DOCUMENT FORMAT) ENDPOINT'LERİ
+  // ============================================
+
+  /**
+   * Takip Talebi UDF oluştur - JSON data ile (UYAP'a gönderim için)
+   */
+  @Post('takip-talebi/udf')
+  generateTakipTalebiUdf(@Body() dto: GenerateTakipTalebiDto): UdfDocument {
+    return this.templateEngineService.generateTakipTalebiUdf(dto as TemplateData);
+  }
+
+  /**
+   * UDF oluştur - Case ID ile (UYAP'a gönderim için)
+   */
+  @Get('case/:caseId/udf')
+  async generateUdfFromCase(
+    @Param('caseId') caseId: string,
+    @Query('type') documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi'
+  ): Promise<UdfDocument> {
+    return this.templateEngineService.generateUdfFromCase(caseId, documentType);
+  }
+
+  /**
+   * UDF dosyası indir - Case ID ile
+   */
+  @Get('case/:caseId/udf/download')
+  async downloadUdfFromCase(
+    @Param('caseId') caseId: string,
+    @Query('type') documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi',
+    @Res() res: Response
+  ): Promise<void> {
+    const udfDocument = await this.templateEngineService.generateUdfFromCase(caseId, documentType);
+    
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="${documentType}-${caseId}.udf"`);
+    res.send(JSON.stringify(udfDocument, null, 2));
   }
 }

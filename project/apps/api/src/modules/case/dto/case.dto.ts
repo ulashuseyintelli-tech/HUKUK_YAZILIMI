@@ -222,6 +222,7 @@ export enum Currency {
 // Faiz Türü
 export enum InterestType {
   YASAL = "YASAL",
+  TICARI = "TICARI",
   SABIT = "SABIT",
   AVANS = "AVANS",
   TEMERRUT = "TEMERRUT",
@@ -437,6 +438,47 @@ export class CreateCaseDto {
 
   @IsOptional()
   detectionKeywords?: string[];
+
+  // Lookup Alanları
+  @IsString()
+  @IsOptional()
+  takipTuruId?: string;
+
+  @IsString()
+  @IsOptional()
+  asamaId?: string;
+
+  @IsString()
+  @IsOptional()
+  riskId?: string;
+
+  @IsString()
+  @IsOptional()
+  borcluTipiId?: string;
+
+  @IsString()
+  @IsOptional()
+  durumEtiketiId?: string;
+
+  @IsString()
+  @IsOptional()
+  mahiyetTipiId?: string;
+
+  @IsString()
+  @IsOptional()
+  mahiyetKodu?: string;
+
+  @IsString()
+  @IsOptional()
+  sorumluPersonelId?: string;
+
+  @IsString()
+  @IsOptional()
+  dahiliNot?: string;
+
+  @IsString()
+  @IsOptional()
+  muvekkilNotu?: string;
 }
 
 export class UpdateCaseDto {

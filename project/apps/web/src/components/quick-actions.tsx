@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 
 const QUICK_ACTIONS = [
-  { id: 'newCase', label: 'Yeni Takip', icon: Plus, href: '/cases/new', color: 'bg-blue-500' },
+  { id: 'newCase', label: 'Yeni Takip', icon: Plus, href: '/cases/new?new=true', color: 'bg-blue-500' },
   { id: 'cases', label: 'Takipler', icon: FileText, href: '/cases', color: 'bg-indigo-500' },
   { id: 'clients', label: 'Müvekkiller', icon: Building2, href: '/settings/clients', color: 'bg-green-500' },
   { id: 'debtors', label: 'Borçlular', icon: Users, href: '/debtors', color: 'bg-orange-500' },

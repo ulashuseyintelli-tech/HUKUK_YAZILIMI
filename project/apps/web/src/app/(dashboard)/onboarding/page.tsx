@@ -44,7 +44,7 @@ export default function OnboardingPage() {
       description: 'Akıllı form sihirbazı ile doğru formu seçin',
       icon: <FileText className="h-6 w-6" />,
       action: 'Yeni Takip',
-      href: '/cases/new',
+      href: '/cases/new?new=true',
       completed: completedSteps.includes('first-case'),
     },
     {

@@ -1,53 +1,102 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState } from "react";
 import {
-  Plus,
-  Trash2,
   Calculator,
-  Percent,
   Receipt,
   FileText,
-  Banknote,
-  Building2,
-  Calendar,
   CreditCard,
-  AlertCircle,
-  Check,
-  ChevronDown,
-  ChevronUp,
-  Copy,
-  Upload,
-  Wand2,
-  Edit2,
-  Users,
-  Link2,
-  Loader2,
-  FileUp,
-  X,
+  Download,
+  FileDown,
+  Send,
+  Shield,
+  AlertTriangle,
+  Plus,
+  Trash2,
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, TemplateData } from "@/lib/api";
 
-// Kalem türleri (tablo için)
-const KALEM_TURU_OPTIONS = [
-  { value: "ASIL_ALACAK", label: "Asıl Alacak", category: "PRINCIPAL" },
-  { value: "CEK", label: "Asıl Alacak (Çek)", category: "PRINCIPAL" },
-  { value: "SENET", label: "Asıl Alacak (Senet)", category: "PRINCIPAL" },
-  { value: "FATURA", label: "Asıl Alacak (Fatura)", category: "PRINCIPAL" },
-  { value: "KIRA", label: "Kira Alacağı", category: "PRINCIPAL" },
-  { value: "ILAM", label: "İlam Alacağı", category: "PRINCIPAL" },
-  { value: "NAFAKA", label: "Nafaka", category: "PRINCIPAL" },
-  { value: "ISLEMIS_FAIZ", label: "İşlemiş Faiz", category: "INTEREST" },
-  { value: "CEK_TAZMINATI", label: "Çek Tazminatı (%10)", category: "PENALTY" },
-  { value: "KOMISYON", label: "Komisyon", category: "EXPENSE" },
-  { value: "IHTIYATI_HACIZ_HARCI", label: "İhtiyati Haciz Harcı", category: "EXPENSE" },
-  { value: "IHTIYATI_VEKALET", label: "İhtiyati Haciz Vekalet Ücreti", category: "FEE" },
-  { value: "VEKALET_UCRETI", label: "Vekalet Ücreti", category: "FEE" },
-  { value: "KDV", label: "KDV", category: "TAX" },
-  { value: "BSMV", label: "BSMV", category: "TAX" },
-  { value: "KKDF", label: "KKDF", category: "TAX" },
-  { value: "DIGER", label: "Diğer", category: "OTHER" },
-];
+// ============================================================================
+// TAKİP TİPİ KONFİGÜRASYONU
+// ============================================================================
+interface TakipTipiConfig {
+  label: string;
+  faizTuru: string;
+  tazminatOrani: number;
+  komisyonOrani: number;
+  zorunluAlanlar: string[];
+  ekBilgiler: string | null;
+  donemsel?: boolean;
+}
+
+const TAKIP_TIPI_CONFIG: Record<string, TakipTipiConfig> = {
+  CEK: {
+    label: "Çek",
+    faizTuru: "TICARI",
+    tazminatOrani: 0.10,      // %10 çek tazminatı
+    komisyonOrani: 0.003,     // %0.3 komisyon
+    zorunluAlanlar: ["tutar", "vadeTarihi", "cekSeriNo", "bankaVeSube"],
+    ekBilgiler: "cekBilgileri"
+  },
+  SENET: {
+    label: "Senet/Bono",
+    faizTuru: "TICARI",
+    tazminatOrani: 0,
+    komisyonOrani: 0.003,
+    zorunluAlanlar: ["tutar", "vadeTarihi"],
+    ekBilgiler: "senetBilgileri"
+  },
+  KIRA: {
+    label: "Kira Alacağı",
+    faizTuru: "YASAL",
+    tazminatOrani: 0,
+    komisyonOrani: 0,
+    zorunluAlanlar: ["tutar", "vadeTarihi"],
+    ekBilgiler: null,
+    donemsel: true
+  },
+  ILAM: {
+    label: "İlamlı Takip",
+    faizTuru: "YASAL",
+    tazminatOrani: 0,
+    komisyonOrani: 0,
+    zorunluAlanlar: ["tutar", "vadeTarihi"],
+    ekBilgiler: "ilamBilgileri"
+  },
+  FATURA: {
+    label: "Fatura Alacağı",
+    faizTuru: "TICARI",
+    tazminatOrani: 0,
+    komisyonOrani: 0,
+    zorunluAlanlar: ["tutar", "vadeTarihi"],
+    ekBilgiler: "faturaBilgileri"
+  },
+  NAFAKA: {
+    label: "Nafaka",
+    faizTuru: "YASAL",
+    tazminatOrani: 0,
+    komisyonOrani: 0,
+    zorunluAlanlar: ["tutar", "vadeTarihi"],
+    ekBilgiler: null,
+    donemsel: true
+  },
+  ASIL_ALACAK: {
+    label: "Genel Alacak",
+    faizTuru: "YASAL",
+    tazminatOrani: 0,
+    komisyonOrani: 0,
+    zorunluAlanlar: ["tutar", "vadeTarihi"],
+    ekBilgiler: null
+  },
+  ISCI_ALACAGI: {
+    label: "İşçi Alacağı",
+    faizTuru: "BANKA_TL",
+    tazminatOrani: 0,
+    komisyonOrani: 0,
+    zorunluAlanlar: ["tutar", "vadeTarihi"],
+    ekBilgiler: "isciAlacagiBilgileri"
+  }
+};
 
 // Para birimleri
 const CURRENCY_OPTIONS = [
@@ -60,52 +109,28 @@ const CURRENCY_OPTIONS = [
 
 // Faiz türleri
 const FAIZ_TURU_OPTIONS = [
-  { value: "YOK", label: "—", rate: 0, description: "Faiz yok" },
-  { value: "TICARI", label: "Ticari", rate: 48, description: "Ticari işlerde uygulanan faiz" },
-  { value: "YASAL", label: "Yasal", rate: 24, description: "Yasal faiz oranı" },
-  { value: "BANKA_TL", label: "Banka (TL)", rate: 50, description: "TL mevduat faizi" },
-  { value: "KAMU_BANKA_TL", label: "Kamu Bankası (TL)", rate: 45, description: "Kamu bankası TL faizi" },
-  { value: "KAMU_BANKA_USD", label: "Kamu Bankası (USD)", rate: 5, description: "Kamu bankası USD faizi" },
-  { value: "KAMU_BANKA_EUR", label: "Kamu Bankası (EUR)", rate: 4, description: "Kamu bankası EUR faizi" },
+  { value: "YOK", label: "Faiz Yok", rate: 0 },
+  { value: "TICARI", label: "Ticari (%48)", rate: 48 },
+  { value: "YASAL", label: "Yasal (%24)", rate: 24 },
+  { value: "BANKA_TL", label: "Banka TL (%50)", rate: 50 },
+  { value: "KAMU_BANKA_TL", label: "Kamu Bankası TL (%45)", rate: 45 },
 ];
 
-// Sorumlu borçlu seçenekleri
-const SORUMLU_OPTIONS = [
-  { value: "TUM_BORCLU", label: "Tüm Borçlular" },
-  { value: "SECILI", label: "Seçili Borçlular" },
-];
-
-// Kur kuralı seçenekleri (döviz için)
-const KUR_KURALI_OPTIONS = [
-  { value: "TAKIP_TARIHI", label: "Takip Tarihindeki Kur" },
-  { value: "FIILI_ODEME", label: "Fiili Ödeme Tarihindeki Kur" },
-];
-
-// Ay isimleri
-const AY_ISIMLERI = [
-  "Ocak", "Şubat", "Mart", "Nisan", "Mayıs", "Haziran",
-  "Temmuz", "Ağustos", "Eylül", "Ekim", "Kasım", "Aralık"
-];
-
-interface ClaimItem {
+// ============================================================================
+// INTERFACES
+// ============================================================================
+interface AlacakKalemi {
   id: string;
   kalemTuru: string;
-  tutar: number;
+  toplamTutar: number;      // Evraktaki asıl tutar
+  bakiyeTutar: number;      // Takipte istenen tutar
   currency: string;
   vadeTarihi: string;
-  faizTuru: string;
-  faizBaslangic: string;
-  faizBitis: string;
-  hesaplananFaiz: number;
-  sorumluBorclular: string;
-  kaynakEvrak: string;
+  takipOncesiFaiz: string;
+  takipSonrasiFaiz: string;
+  hesaplanmisFaiz: boolean;
   aciklama: string;
-  // Dönem bilgisi (kira/nafaka için)
-  donemAy?: number; // 0-11
-  donemYil?: number;
-  // Kur kuralı (döviz için)
-  kurKurali?: string;
-  // Çek bilgileri (sadece çek için)
+  // Çek bilgileri
   cekBilgileri?: {
     ibrazTarihi: string;
     duzenlemeYeri: string;
@@ -114,7 +139,63 @@ interface ClaimItem {
     bankaVeSube: string;
     cekiImzalayanlar: string;
   };
+  // Senet bilgileri
+  senetBilgileri?: {
+    duzenlemeYeri: string;
+    duzenlemeTarihi: string;
+  };
+  // İlam bilgileri
+  ilamBilgileri?: {
+    mahkemeAdi: string;
+    esasNo: string;
+    kararNo: string;
+    ilamTarihi: string;
+  };
+  // Fatura bilgileri
+  faturaBilgileri?: {
+    faturaNo: string;
+    faturaTarihi: string;
+  };
 }
+
+// Hesap özeti satırı
+interface HesapOzetiSatir {
+  key: string;
+  label: string;
+  tutar: number;
+  bold?: boolean;
+  color?: string;
+}
+
+// İhtiyati Haciz Kararı
+interface IhtiyatiHacizKarari {
+  mahkemeAdi: string;
+  kararTarihi: string;
+  esasNo: string;
+  kararNo: string;
+  kapsadigiTutar: number;
+  teminatVar: boolean;
+  teminatTuru: "NAKIT" | "TEMINAT_MEKTUBU" | "";
+  teminatTutari: number;
+  durum: "DRAFT" | "DECIDED" | "APPLIED" | "LIFTED";
+}
+
+// İhtiyati Haciz Masrafı
+interface IhtiyatiHacizMasrafi {
+  id: string;
+  tur: "HARC" | "POSTA" | "VEKALET" | "TEMINAT" | "YEDIEMIN" | "DIGER";
+  aciklama: string;
+  tutar: number;
+}
+
+const IHTIYATI_HACIZ_MASRAF_TURLERI = [
+  { value: "HARC", label: "İhtiyati Haciz Harcı" },
+  { value: "POSTA", label: "Tebligat/Posta Gideri" },
+  { value: "VEKALET", label: "Vekalet Ücreti" },
+  { value: "TEMINAT", label: "Teminat Masrafı" },
+  { value: "YEDIEMIN", label: "Yediemin Ücreti" },
+  { value: "DIGER", label: "Diğer" },
+];
 
 interface Props {
   caseType?: string;
@@ -122,59 +203,81 @@ interface Props {
   currency?: string;
   takipTuruCode?: string;
   documentSource?: "ILAM" | "KAMBIYO" | "SOZLESME" | "VEKALETNAME" | null;
-  onItemsChange?: (items: ClaimItem[]) => void;
-  initialItems?: ClaimItem[];
+  onItemsChange?: (items: any[]) => void;
+  onPrecautionaryChange?: (data: { karar: IhtiyatiHacizKarari | null; masraflar: IhtiyatiHacizMasrafi[] }) => void;
+  initialItems?: any[];
+  takipTarihi?: string;
+  borcluSayisi?: number;
+  // Belge oluşturma için gerekli veriler
+  fileNumber?: string;
+  executionOffice?: { name: string; city: string; uyapCode?: string };
+  creditors?: Array<{ type: 'INDIVIDUAL' | 'COMPANY'; name: string; identityNo?: string; taxNo?: string; address?: string }>;
+  lawyers?: Array<{ name: string; barNumber: string; barCity: string; address?: string }>;
+  debtors?: Array<{ type: 'INDIVIDUAL' | 'COMPANY'; name: string; identityNo?: string; taxNo?: string; address?: string; role?: string }>;
 }
 
-// Takip türüne göre varsayılan kalem seti
-const TAKIP_TURU_DEFAULTS: Record<string, { kalemTuru: string; faizTuru: string; ekKalemler: string[] }> = {
-  KAMBIYO_CEK: { kalemTuru: "CEK", faizTuru: "TICARI", ekKalemler: ["ISLEMIS_FAIZ", "CEK_TAZMINATI", "KOMISYON"] },
-  KAMBIYO_SENET: { kalemTuru: "SENET", faizTuru: "TICARI", ekKalemler: ["ISLEMIS_FAIZ"] },
-  ILAMSIZ_KAMBIYO: { kalemTuru: "SENET", faizTuru: "TICARI", ekKalemler: ["ISLEMIS_FAIZ"] },
-  ILAMLI: { kalemTuru: "ILAM", faizTuru: "YASAL", ekKalemler: [] },
-  ILAMSIZ_GENEL: { kalemTuru: "ASIL_ALACAK", faizTuru: "YASAL", ekKalemler: [] },
-  ILAMSIZ_KIRA: { kalemTuru: "KIRA", faizTuru: "YASAL", ekKalemler: [] },
-  KIRA: { kalemTuru: "KIRA", faizTuru: "YASAL", ekKalemler: [] },
-  NAFAKA: { kalemTuru: "NAFAKA", faizTuru: "YASAL", ekKalemler: [] },
-  REHIN_TASINIR: { kalemTuru: "ASIL_ALACAK", faizTuru: "TICARI", ekKalemler: [] },
-  REHIN_TASINMAZ: { kalemTuru: "ASIL_ALACAK", faizTuru: "TICARI", ekKalemler: [] },
-};
-
-// Faiz hesaplama fonksiyonu
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
 const hesaplaFaiz = (tutar: number, faizTuru: string, baslangic: string, bitis: string): number => {
-  if (!tutar || !baslangic || faizTuru === "YOK") return 0;
+  if (!tutar || !baslangic || !bitis || faizTuru === "YOK") return 0;
   const faizOption = FAIZ_TURU_OPTIONS.find(f => f.value === faizTuru);
   const rate = faizOption?.rate || 0;
   if (rate === 0) return 0;
   const startDate = new Date(baslangic);
-  const endDate = new Date(bitis || new Date());
+  const endDate = new Date(bitis);
   const days = Math.max(0, Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
   const dailyRate = rate / 365 / 100;
   return Math.round(tutar * dailyRate * days * 100) / 100;
 };
 
-// Gün sayısı hesaplama
-const hesaplaGunSayisi = (baslangic: string, bitis: string): number => {
-  if (!baslangic || !bitis) return 0;
-  const startDate = new Date(baslangic);
-  const endDate = new Date(bitis);
-  return Math.max(0, Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
+const formatCurrency = (amount: number, curr = "TRY") => {
+  const symbol = CURRENCY_OPTIONS.find(c => c.value === curr)?.symbol || "₺";
+  return `${amount.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${symbol}`;
 };
 
-const createEmptyItem = (currency = "TRY", kalemTuru = "ASIL_ALACAK", faizTuru = "YASAL"): ClaimItem => {
+// Avukatlık Asgari Ücret Tarifesi 2025 - İcra Takipleri
+const hesaplaVekaletUcreti = (takipTutari: number): number => {
+  // Kademeli tarife
+  const tarifeler = [
+    { min: 0, max: 55000, fixed: 11000, rate: 0 },
+    { min: 55000, max: 130000, fixed: 11000, rate: 0.14 },
+    { min: 130000, max: 390000, fixed: 21500, rate: 0.12 },
+    { min: 390000, max: 780000, fixed: 52700, rate: 0.08 },
+    { min: 780000, max: 1950000, fixed: 83900, rate: 0.04 },
+    { min: 1950000, max: Infinity, fixed: 130700, rate: 0.01 },
+  ];
+  
+  // Minimum ücret
+  const minimum = 11000;
+  
+  // Uygun kademeyi bul
+  for (const tarife of tarifeler) {
+    if (takipTutari <= tarife.max) {
+      const ucret = tarife.fixed + ((takipTutari - tarife.min) * tarife.rate);
+      return Math.max(ucret, minimum);
+    }
+  }
+  
+  // En yüksek kademe
+  const sonTarife = tarifeler[tarifeler.length - 1];
+  return sonTarife.fixed + ((takipTutari - sonTarife.min) * sonTarife.rate);
+};
+
+const createEmptyKalem = (kalemTuru: string, currency = "TRY"): AlacakKalemi => {
+  const config = TAKIP_TIPI_CONFIG[kalemTuru] || TAKIP_TIPI_CONFIG.ASIL_ALACAK;
   const today = new Date().toISOString().split("T")[0];
+  
   return {
-    id: `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+    id: `kalem_${Date.now()}_${Math.random().toString(36).slice(2, 11)}`,
     kalemTuru,
-    tutar: 0,
+    toplamTutar: 0,
+    bakiyeTutar: 0,
     currency,
     vadeTarihi: today,
-    faizTuru: kalemTuru === "ISLEMIS_FAIZ" ? faizTuru : "YOK",
-    faizBaslangic: today,
-    faizBitis: today,
-    hesaplananFaiz: 0,
-    sorumluBorclular: "TUM_BORCLU",
-    kaynakEvrak: "",
+    takipOncesiFaiz: config.faizTuru,
+    takipSonrasiFaiz: config.faizTuru,
+    hesaplanmisFaiz: false,
     aciklama: "",
     cekBilgileri: kalemTuru === "CEK" ? {
       ibrazTarihi: today,
@@ -187,1090 +290,1168 @@ const createEmptyItem = (currency = "TRY", kalemTuru = "ASIL_ALACAK", faizTuru =
   };
 };
 
-// Varsayılan değerleri hesapla
-function getDefaultsFromProps(
-  takipTuruCode?: string,
-  documentSource?: string | null,
-  formCode?: string
-): { kalemTuru: string; faizTuru: string; ekKalemler: string[] } {
-  if (takipTuruCode && TAKIP_TURU_DEFAULTS[takipTuruCode]) {
-    return TAKIP_TURU_DEFAULTS[takipTuruCode];
-  }
-  if (documentSource === "KAMBIYO") {
-    return { kalemTuru: "SENET", faizTuru: "TICARI", ekKalemler: ["ISLEMIS_FAIZ"] };
-  }
-  if (documentSource === "ILAM") {
-    return { kalemTuru: "ILAM", faizTuru: "YASAL", ekKalemler: [] };
-  }
-  return { kalemTuru: "ASIL_ALACAK", faizTuru: "YASAL", ekKalemler: [] };
-}
 
+// ============================================================================
+// MAIN COMPONENT
+// ============================================================================
 export function ProfessionalClaimItemForm({ 
-  caseType, 
-  formCode, 
+  caseType: _caseType, 
+  formCode: _formCode, 
   currency = "TRY", 
   takipTuruCode,
   documentSource,
-  onItemsChange, 
-  initialItems 
+  onItemsChange,
+  onPrecautionaryChange,
+  initialItems: _initialItems,
+  takipTarihi = new Date().toISOString().split("T")[0],
+  borcluSayisi = 1,
+  fileNumber = "",
+  executionOffice,
+  creditors = [],
+  lawyers = [],
+  debtors = [],
 }: Props) {
-  const initialDefaults = getDefaultsFromProps(takipTuruCode, documentSource, formCode);
   
-  const [items, setItems] = useState<ClaimItem[]>(
-    initialItems || [createEmptyItem(currency, initialDefaults.kalemTuru, initialDefaults.faizTuru)]
+  // Takip tipine göre varsayılan kalem türünü belirle
+  const getDefaultKalemTuru = () => {
+    if (takipTuruCode === "KAMBIYO_CEK") return "CEK";
+    if (takipTuruCode === "KAMBIYO_SENET") return "SENET";
+    if (takipTuruCode === "ILAMSIZ_KIRA" || takipTuruCode === "KIRA") return "KIRA";
+    if (takipTuruCode === "ILAMLI") return "ILAM";
+    if (takipTuruCode === "NAFAKA") return "NAFAKA";
+    if (documentSource === "KAMBIYO") return "CEK";
+    if (documentSource === "ILAM") return "ILAM";
+    return "ASIL_ALACAK";
+  };
+
+  const [kalem, setKalem] = useState<AlacakKalemi>(() => 
+    createEmptyKalem(getDefaultKalemTuru(), currency)
   );
-  const [editingItemId, setEditingItemId] = useState<string | null>(null);
-  const [showCekModal, setShowCekModal] = useState<string | null>(null);
-  const [appliedTakipTuruCode, setAppliedTakipTuruCode] = useState<string | undefined>(takipTuruCode);
-  
-  // OCR/Evrak yükleme state'leri
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadError, setUploadError] = useState<string | null>(null);
-  const [ocrResult, setOcrResult] = useState<any>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  
-  // Takip sonrası faiz kuralı
-  const [takipSonrasiFaiz, setTakipSonrasiFaiz] = useState({
-    faizTuru: initialDefaults.faizTuru,
-    degiskenOran: true,
-    baslangic: new Date().toISOString().split("T")[0],
+  const [hesapOzeti, setHesapOzeti] = useState<HesapOzetiSatir[]>([]);
+  const [isCalculated, setIsCalculated] = useState(false);
+  const [downloading, setDownloading] = useState<string | null>(null);
+
+  // İhtiyati Haciz State'leri
+  const [hasIhtiyatiHaciz, setHasIhtiyatiHaciz] = useState(false);
+  const [ihtiyatiHacizKarari, setIhtiyatiHacizKarari] = useState<IhtiyatiHacizKarari>({
+    mahkemeAdi: "",
+    kararTarihi: new Date().toISOString().split("T")[0],
+    esasNo: "",
+    kararNo: "",
+    kapsadigiTutar: 0,
+    teminatVar: false,
+    teminatTuru: "",
+    teminatTutari: 0,
+    durum: "DRAFT",
   });
+  const [ihtiyatiHacizMasraflari, setIhtiyatiHacizMasraflari] = useState<IhtiyatiHacizMasrafi[]>([]);
 
-  // Evrak yükleme fonksiyonu
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Template data oluştur
+  const buildTemplateData = (): TemplateData => {
+    const config = TAKIP_TIPI_CONFIG[kalem.kalemTuru] || TAKIP_TIPI_CONFIG.ASIL_ALACAK;
+    const takipOncesiFaiz = hesaplaFaiz(kalem.bakiyeTutar, kalem.takipOncesiFaiz, kalem.vadeTarihi, takipTarihi);
+    const tazminat = config.tazminatOrani > 0 ? kalem.bakiyeTutar * config.tazminatOrani : 0;
+    const komisyon = config.komisyonOrani > 0 ? kalem.bakiyeTutar * config.komisyonOrani : 0;
+    
+    const claimItems = [
+      { type: 'PRINCIPAL', description: config.label, amount: kalem.bakiyeTutar, currency: kalem.currency },
+    ];
+    
+    if (tazminat > 0) {
+      claimItems.push({ type: 'PENALTY', description: 'Karşılıksız Çek Tazminatı (%10)', amount: tazminat, currency: kalem.currency });
+    }
+    if (komisyon > 0) {
+      claimItems.push({ type: 'COMMISSION', description: 'Komisyon', amount: komisyon, currency: kalem.currency });
+    }
+    if (takipOncesiFaiz > 0) {
+      claimItems.push({ type: 'INTEREST', description: 'Takip Öncesi Faiz', amount: takipOncesiFaiz, currency: kalem.currency });
+    }
 
-    setIsUploading(true);
-    setUploadError(null);
-    setOcrResult(null);
+    const principal = kalem.bakiyeTutar + tazminat + komisyon;
+    const interest = takipOncesiFaiz;
+    const fees = 615.40 + 87.50 + (principal * 0.005) + 2 + (15 * borcluSayisi) + 138;
 
+    return {
+      fileNumber: fileNumber || `DOSYA-${Date.now()}`,
+      filingDate: takipTarihi,
+      executionOffice: executionOffice || { name: 'İcra Müdürlüğü', city: 'İstanbul' },
+      creditors: creditors.length > 0 ? creditors : [{ type: 'INDIVIDUAL', name: 'Alacaklı', address: '' }],
+      lawyers: lawyers.length > 0 ? lawyers : [{ name: 'Avukat', barNumber: '', barCity: '' }],
+      debtors: debtors.length > 0 ? debtors : [{ type: 'INDIVIDUAL', name: 'Borçlu', address: '' }],
+      claimItems,
+      totals: {
+        principal,
+        interest,
+        fees,
+        total: principal + interest + fees,
+        currency: kalem.currency,
+      },
+      interestInfo: {
+        type: config.faizTuru === 'TICARI' ? 'TICARI' : 'YASAL',
+        description: config.faizTuru === 'TICARI' ? 'değişen oranlarda ticari faizi ile birlikte' : 'yasal faizi ile birlikte',
+        variableRate: true,
+      },
+      caseType: takipTuruCode || 'ILAMSIZ',
+      subCategory: kalem.kalemTuru,
+      executionPath: 'HACIZ',
+      sourceDocument: kalem.kalemTuru === 'CEK' && kalem.cekBilgileri ? {
+        type: 'CEK',
+        number: kalem.cekBilgileri.cekSeriNo,
+        date: kalem.vadeTarihi,
+        bank: kalem.cekBilgileri.bankaVeSube,
+      } : undefined,
+    };
+  };
+
+  // PDF indir
+  const handleDownloadPdf = async () => {
+    if (!isCalculated) {
+      alert('Önce hesaplama yapın');
+      return;
+    }
+    setDownloading('pdf');
     try {
-      const formData = new FormData();
-      formData.append("file", file);
-
-      const response = await api.post("/ocr/scan-debt-document", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-
-      if (response.data?.success && response.data?.data) {
-        const data = response.data.data;
-        setOcrResult(data);
-        
-        // OCR sonuçlarından alacak kalemlerini otomatik oluştur
-        applyOcrResults(data);
-      }
-    } catch (error: any) {
-      console.error("OCR hatası:", error);
-      setUploadError(error.response?.data?.message || "Evrak taranamadı. Lütfen tekrar deneyin.");
+      const templateData = buildTemplateData();
+      const blob = await api.downloadTakipTalebiPdf(templateData);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `takip-talebi-${fileNumber || 'belge'}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('PDF indirme hatası:', error);
+      alert('PDF indirme hatası');
     } finally {
-      setIsUploading(false);
-      // Input'u temizle (aynı dosyayı tekrar yükleyebilmek için)
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
+      setDownloading(null);
     }
   };
 
-  // OCR sonuçlarını alacak kalemlerine uygula
-  const applyOcrResults = (data: any) => {
-    const defaults = getDefaultsFromProps(takipTuruCode, documentSource, formCode);
-    const yeniKalemler: ClaimItem[] = [];
-    
-    // Evrak türüne göre kalem türünü belirle
-    let kalemTuru = defaults.kalemTuru;
-    if (data.documentType === "CEK") kalemTuru = "CEK";
-    else if (data.documentType === "SENET") kalemTuru = "SENET";
-    else if (data.documentType === "FATURA") kalemTuru = "FATURA";
-    else if (data.documentType === "KIRA") kalemTuru = "KIRA";
-    
-    // Ana alacak
-    const debtInfo = data.debtInfo || {};
-    const amount = debtInfo.amount || data.amount || data.totalAmount;
-    
-    if (amount && amount > 0) {
-      const anaAlacak = createEmptyItem(debtInfo.currency || currency, kalemTuru, "YOK");
-      anaAlacak.tutar = amount;
-      anaAlacak.vadeTarihi = debtInfo.dueDate || debtInfo.issueDate || new Date().toISOString().split("T")[0];
-      anaAlacak.kaynakEvrak = debtInfo.documentNo || "";
-      anaAlacak.aciklama = debtInfo.description || `${data.documentType || "Evrak"} alacağı`;
-      
-      // Çek bilgileri varsa ekle
-      if (data.documentType === "CEK") {
-        anaAlacak.kalemTuru = "CEK";
-        const bankInfo = data.bankInfo || {};
-        anaAlacak.cekBilgileri = {
-          ibrazTarihi: debtInfo.dueDate || anaAlacak.vadeTarihi,
-          duzenlemeYeri: "",
-          cekSeriNo: debtInfo.documentNo || "",
-          hesapNo: bankInfo.accountNo || "",
-          bankaVeSube: bankInfo.bankName ? `${bankInfo.bankName} ${bankInfo.branchName || ""}`.trim() : "",
-          cekiImzalayanlar: "",
-        };
-      }
-      
-      yeniKalemler.push(anaAlacak);
+  // Word indir
+  const handleDownloadWord = async () => {
+    if (!isCalculated) {
+      alert('Önce hesaplama yapın');
+      return;
     }
-    
-    // İşlemiş faiz ekle (eğer vade tarihi geçmişse)
-    const vadeTarihi = debtInfo.dueDate;
-    if (vadeTarihi) {
-      const vadeDate = new Date(vadeTarihi);
-      const today = new Date();
-      if (vadeDate < today) {
-        const faizKalem = createEmptyItem(debtInfo.currency || currency, "ISLEMIS_FAIZ", defaults.faizTuru);
-        faizKalem.faizBaslangic = vadeTarihi;
-        faizKalem.faizBitis = today.toISOString().split("T")[0];
-        faizKalem.aciklama = "İşlemiş faiz";
-        yeniKalemler.push(faizKalem);
-      }
-    }
-    
-    // Çek tazminatı (çek ise)
-    if (data.documentType === "CEK" && amount && amount > 0) {
-      const tazminatKalem = createEmptyItem(debtInfo.currency || currency, "CEK_TAZMINATI", "YOK");
-      tazminatKalem.tutar = Math.round(amount * 0.10 * 100) / 100;
-      tazminatKalem.aciklama = "Karşılıksız çek tazminatı (%10)";
-      yeniKalemler.push(tazminatKalem);
-    }
-    
-    if (yeniKalemler.length > 0) {
-      setItems(yeniKalemler);
+    setDownloading('word');
+    try {
+      const templateData = buildTemplateData();
+      const blob = await api.downloadTakipTalebiWord(templateData);
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `takip-talebi-${fileNumber || 'belge'}.docx`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error) {
+      console.error('Word indirme hatası:', error);
+      alert('Word indirme hatası');
+    } finally {
+      setDownloading(null);
     }
   };
 
-  // takipTuruCode değiştiğinde güncelle
-  useEffect(() => {
-    if (!takipTuruCode || takipTuruCode === appliedTakipTuruCode) return;
-    
-    const hasUserData = items.length > 1 || (items.length === 1 && items[0].tutar > 0);
-    if (hasUserData) {
-      setAppliedTakipTuruCode(takipTuruCode);
+  // UDF oluştur (UYAP için)
+  const handleGenerateUdf = async () => {
+    if (!isCalculated) {
+      alert('Önce hesaplama yapın');
+      return;
+    }
+    setDownloading('udf');
+    try {
+      const templateData = buildTemplateData();
+      const udfDocument = await api.generateTakipTalebiUdf(templateData);
+      // UDF dosyasını indir
+      const blob = new Blob([JSON.stringify(udfDocument, null, 2)], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `takip-talebi-${fileNumber || 'belge'}.udf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      alert('UDF dosyası oluşturuldu. UYAP\'a yükleyebilirsiniz.');
+    } catch (error) {
+      console.error('UDF oluşturma hatası:', error);
+      alert('UDF oluşturma hatası');
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  // Kalem türü değiştiğinde
+  const handleKalemTuruChange = (yeniTur: string) => {
+    const config = TAKIP_TIPI_CONFIG[yeniTur] || TAKIP_TIPI_CONFIG.ASIL_ALACAK;
+    setKalem(prev => ({
+      ...prev,
+      kalemTuru: yeniTur,
+      takipOncesiFaiz: config.faizTuru,
+      takipSonrasiFaiz: config.faizTuru,
+      cekBilgileri: yeniTur === "CEK" ? {
+        ibrazTarihi: prev.vadeTarihi,
+        duzenlemeYeri: "",
+        cekSeriNo: "",
+        hesapNo: "",
+        bankaVeSube: "",
+        cekiImzalayanlar: "",
+      } : undefined,
+    }));
+    setIsCalculated(false);
+  };
+
+  // Zorunlu alanların dolu olup olmadığını kontrol et
+  const checkZorunluAlanlar = (): { valid: boolean; eksikAlanlar: string[] } => {
+    const config = TAKIP_TIPI_CONFIG[kalem.kalemTuru] || TAKIP_TIPI_CONFIG.ASIL_ALACAK;
+    const eksikAlanlar: string[] = [];
+
+    if (!kalem.bakiyeTutar || kalem.bakiyeTutar <= 0) eksikAlanlar.push("Bakiye Tutar");
+    if (!kalem.vadeTarihi) eksikAlanlar.push("Vade Tarihi");
+
+    if (kalem.kalemTuru === "CEK" && kalem.cekBilgileri) {
+      if (!kalem.cekBilgileri.cekSeriNo) eksikAlanlar.push("Çek Seri No");
+      if (!kalem.cekBilgileri.bankaVeSube) eksikAlanlar.push("Banka ve Şube");
+    }
+
+    return { valid: eksikAlanlar.length === 0, eksikAlanlar };
+  };
+
+  // Hesap özetini hesapla
+  const hesapla = () => {
+    const validation = checkZorunluAlanlar();
+    if (!validation.valid) {
+      alert(`Eksik alanlar: ${validation.eksikAlanlar.join(", ")}`);
       return;
     }
 
-    const newDefaults = getDefaultsFromProps(takipTuruCode, documentSource, formCode);
-    const newItem = createEmptyItem(currency, newDefaults.kalemTuru, newDefaults.faizTuru);
-    setItems([newItem]);
-    setTakipSonrasiFaiz(prev => ({ ...prev, faizTuru: newDefaults.faizTuru }));
-    setAppliedTakipTuruCode(takipTuruCode);
-  }, [takipTuruCode, appliedTakipTuruCode, documentSource, formCode, currency, items]);
+    const config = TAKIP_TIPI_CONFIG[kalem.kalemTuru] || TAKIP_TIPI_CONFIG.ASIL_ALACAK;
+    const today = new Date().toISOString().split("T")[0];
+    const satirlar: HesapOzetiSatir[] = [];
 
-  useEffect(() => {
-    onItemsChange?.(items);
-  }, [items, onItemsChange]);
-
-  // Ana alacak toplamını hesapla (memo)
-  const asilAlacakToplamMemo = items
-    .filter(i => ["ASIL_ALACAK", "CEK", "SENET", "FATURA", "KIRA", "ILAM", "NAFAKA"].includes(i.kalemTuru))
-    .reduce((sum, i) => sum + i.tutar, 0);
-
-  // Faiz kalemlerini güncelle fonksiyonu
-  const guncelleOtomatikFaizler = useCallback(() => {
-    if (asilAlacakToplamMemo <= 0) return;
-    
-    setItems(prev => {
-      let changed = false;
-      const updated = prev.map(item => {
-        if (item.kalemTuru === "ISLEMIS_FAIZ" && item.tutar === 0) {
-          const yeniFaiz = hesaplaFaiz(asilAlacakToplamMemo, item.faizTuru, item.faizBaslangic, item.faizBitis);
-          if (yeniFaiz !== item.hesaplananFaiz) {
-            changed = true;
-            return { ...item, hesaplananFaiz: yeniFaiz };
-          }
-        }
-        return item;
-      });
-      return changed ? updated : prev;
+    // 1. Asıl Alacak
+    satirlar.push({
+      key: "asil_alacak",
+      label: config.label,
+      tutar: kalem.bakiyeTutar,
     });
-  }, [asilAlacakToplamMemo]);
 
-  // Ana alacak değiştiğinde faizleri güncelle
-  useEffect(() => {
-    guncelleOtomatikFaizler();
-  }, [guncelleOtomatikFaizler]);
-
-  const updateItem = (id: string, updates: Partial<ClaimItem>) => {
-    setItems(prev => {
-      // Önce ana alacak toplamını hesapla (faiz hesabı için)
-      const currentAsilAlacak = prev
-        .filter(i => ["ASIL_ALACAK", "CEK", "SENET", "FATURA", "KIRA", "ILAM", "NAFAKA"].includes(i.kalemTuru))
-        .reduce((sum, i) => sum + i.tutar, 0);
-      
-      return prev.map(item => {
-        if (item.id !== id) return item;
-        
-        const newItem = { ...item, ...updates };
-        
-        // Vade tarihi değiştiğinde faiz başlangıcını güncelle
-        if (updates.vadeTarihi && !updates.faizBaslangic) {
-          newItem.faizBaslangic = updates.vadeTarihi;
-        }
-        
-        // Faiz hesapla (faiz türü olan kalemler için)
-        if (newItem.faizTuru !== "YOK" && newItem.kalemTuru === "ISLEMIS_FAIZ") {
-          // Faiz kalemi için ana alacak üzerinden hesapla
-          const bazTutar = newItem.tutar > 0 ? newItem.tutar : currentAsilAlacak;
-          newItem.hesaplananFaiz = hesaplaFaiz(
-            bazTutar,
-            newItem.faizTuru,
-            newItem.faizBaslangic,
-            newItem.faizBitis
-          );
-        }
-        
-        // Çek seçildiğinde çek bilgilerini ekle
-        if (updates.kalemTuru === "CEK" && !item.cekBilgileri) {
-          newItem.cekBilgileri = {
-            ibrazTarihi: newItem.vadeTarihi,
-            duzenlemeYeri: "",
-            cekSeriNo: "",
-            hesapNo: "",
-            bankaVeSube: "",
-            cekiImzalayanlar: "",
-          };
-        }
-        
-        return newItem;
+    // 2. Çek Tazminatı (sadece çek için)
+    if (config.tazminatOrani > 0) {
+      const tazminat = kalem.bakiyeTutar * config.tazminatOrani;
+      satirlar.push({
+        key: "tazminat",
+        label: "Karşılıksız Çek Tazminatı (%10)",
+        tutar: tazminat,
       });
-    });
-  };
+    }
 
-  const addItem = (kalemTuru?: string) => {
-    const defaults = getDefaultsFromProps(takipTuruCode, documentSource, formCode);
-    const newItem = createEmptyItem(
-      currency, 
-      kalemTuru || defaults.kalemTuru, 
-      kalemTuru === "ISLEMIS_FAIZ" ? defaults.faizTuru : "YOK"
+    // 3. Komisyon
+    if (config.komisyonOrani > 0) {
+      const komisyon = kalem.bakiyeTutar * config.komisyonOrani;
+      satirlar.push({
+        key: "komisyon",
+        label: "Komisyon",
+        tutar: komisyon,
+      });
+    }
+
+    // 4. Takip Öncesi Faiz
+    const takipOncesiFaiz = hesaplaFaiz(
+      kalem.bakiyeTutar,
+      kalem.takipOncesiFaiz,
+      kalem.vadeTarihi,
+      takipTarihi
     );
-    
-    // Çek tazminatı ekleniyorsa, mevcut çek tutarının %10'unu otomatik hesapla
-    if (kalemTuru === "CEK_TAZMINATI") {
-      const cekToplam = items
-        .filter(i => i.kalemTuru === "CEK")
-        .reduce((sum, i) => sum + i.tutar, 0);
-      if (cekToplam > 0) {
-        newItem.tutar = Math.round(cekToplam * 0.10 * 100) / 100;
-        newItem.aciklama = "Karşılıksız çek tazminatı (%10)";
-      }
+    if (takipOncesiFaiz > 0) {
+      satirlar.push({
+        key: "takip_oncesi_faiz",
+        label: "Takip Öncesi Faiz",
+        tutar: takipOncesiFaiz,
+      });
     }
-    
-    setItems(prev => [...prev, newItem]);
-    setEditingItemId(newItem.id);
-  };
 
-  const removeItem = (id: string) => {
-    if (items.length <= 1) return;
-    setItems(prev => prev.filter(item => item.id !== id));
-    if (editingItemId === id) setEditingItemId(null);
-  };
-
-  const duplicateItem = (id: string) => {
-    const itemToDuplicate = items.find(item => item.id === id);
-    if (!itemToDuplicate) return;
-    const newItem: ClaimItem = {
-      ...itemToDuplicate,
-      id: `item_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    };
-    setItems(prev => [...prev, newItem]);
-  };
-
-  // Otomatik kalem oluştur (OCR sonrası)
-  const otomatikKalemOlustur = () => {
-    const defaults = getDefaultsFromProps(takipTuruCode, documentSource, formCode);
-    const yeniKalemler: ClaimItem[] = [];
-    
-    // Ana alacak
-    yeniKalemler.push(createEmptyItem(currency, defaults.kalemTuru, "YOK"));
-    
-    // Ek kalemler
-    defaults.ekKalemler.forEach(ek => {
-      const faiz = ek === "ISLEMIS_FAIZ" ? defaults.faizTuru : "YOK";
-      yeniKalemler.push(createEmptyItem(currency, ek, faiz));
+    // 5. Takip Tutarı (ara toplam)
+    const takipTutari = satirlar.reduce((sum, s) => sum + s.tutar, 0);
+    satirlar.push({
+      key: "takip_tutari",
+      label: "TAKİP TUTARI",
+      tutar: takipTutari,
+      bold: true,
+      color: "blue",
     });
-    
-    setItems(yeniKalemler);
-  };
 
-  // Kira/Nafaka dönemsel kalem üretici
-  const [showDonemModal, setShowDonemModal] = useState(false);
-  const [donemSecim, setDonemSecim] = useState({
-    baslangicAy: new Date().getMonth(),
-    baslangicYil: new Date().getFullYear(),
-    bitisAy: new Date().getMonth(),
-    bitisYil: new Date().getFullYear(),
-    aylikTutar: 0,
-    kalemTuru: takipTuruCode === "NAFAKA" ? "NAFAKA" : "KIRA",
-  });
+    // 6. İcra Masrafları (Fee Engine'den gelecek - şimdilik sabit)
+    const basvurmaHarci = 615.40;
+    const vekaletHarci = 82.50;
+    const pesinHarc = takipTutari * 0.005; // Binde 5
+    const dosyaGideri = 2.00;
+    const tebligatGideri = 15.00 * borcluSayisi; // Her borçlu için ayrı tebligat
+    const pul = 130.00;
+    const icraMasraflari = basvurmaHarci + vekaletHarci + pesinHarc + dosyaGideri + tebligatGideri + pul;
 
-  const donemselKalemOlustur = () => {
-    const yeniKalemler: ClaimItem[] = [];
-    let ay = donemSecim.baslangicAy;
-    let yil = donemSecim.baslangicYil;
-    
-    while (yil < donemSecim.bitisYil || (yil === donemSecim.bitisYil && ay <= donemSecim.bitisAy)) {
-      const vadeTarihi = new Date(yil, ay, 1).toISOString().split("T")[0];
-      const item = createEmptyItem(currency, donemSecim.kalemTuru, "YOK");
-      item.tutar = donemSecim.aylikTutar;
-      item.vadeTarihi = vadeTarihi;
-      item.donemAy = ay;
-      item.donemYil = yil;
-      item.aciklama = `${AY_ISIMLERI[ay]} ${yil} ${donemSecim.kalemTuru === "NAFAKA" ? "Nafaka" : "Kira"}`;
-      yeniKalemler.push(item);
-      
-      ay++;
-      if (ay > 11) {
-        ay = 0;
-        yil++;
-      }
+    satirlar.push({ key: "basvurma_harci", label: "Başvurma Harcı", tutar: basvurmaHarci });
+    satirlar.push({ key: "vekalet_harci", label: "Vekalet Harcı", tutar: vekaletHarci });
+    satirlar.push({ key: "pesin_harc", label: "Peşin Harç", tutar: pesinHarc });
+    satirlar.push({ key: "dosya_gideri", label: "Dosya Gideri", tutar: dosyaGideri });
+    satirlar.push({ key: "tebligat_gideri", label: `Tebligat Gideri (${borcluSayisi} borçlu)`, tutar: tebligatGideri });
+    satirlar.push({ key: "pul", label: "Pul", tutar: pul });
+    satirlar.push({
+      key: "icra_masraflari",
+      label: "İCRA MASRAFLARI",
+      tutar: icraMasraflari,
+      bold: true,
+    });
+
+    // 6.5 İhtiyati Haciz Masrafları (varsa)
+    let ihtiyatiHacizToplam = 0;
+    if (hasIhtiyatiHaciz && ihtiyatiHacizMasraflari.length > 0) {
+      ihtiyatiHacizMasraflari.forEach((masraf, index) => {
+        satirlar.push({
+          key: `ihtiyati_haciz_${index}`,
+          label: masraf.aciklama,
+          tutar: masraf.tutar,
+        });
+        ihtiyatiHacizToplam += masraf.tutar;
+      });
+      satirlar.push({
+        key: "ihtiyati_haciz_toplam",
+        label: "İHTİYATİ HACİZ MASRAFLARI",
+        tutar: ihtiyatiHacizToplam,
+        bold: true,
+        color: "orange",
+      });
     }
-    
-    setItems(prev => [...prev.filter(i => i.kalemTuru !== "KIRA" && i.kalemTuru !== "NAFAKA"), ...yeniKalemler]);
-    setShowDonemModal(false);
+
+    // 7. Vekalet Ücreti (2025 Avukatlık Asgari Ücret Tarifesi)
+    const vekaletUcreti = hesaplaVekaletUcreti(takipTutari);
+    satirlar.push({
+      key: "vekalet_ucreti",
+      label: "Vekalet Ücreti",
+      tutar: vekaletUcreti,
+    });
+
+    // 8. Takip Sonrası Faiz
+    const takipSonrasiFaiz = hesaplaFaiz(
+      kalem.bakiyeTutar,
+      kalem.takipSonrasiFaiz,
+      takipTarihi,
+      today
+    );
+    satirlar.push({
+      key: "takip_sonrasi_faiz",
+      label: "Takip Sonrası Faiz",
+      tutar: takipSonrasiFaiz,
+    });
+
+    // 9. Toplam Borç (ihtiyati haciz masrafları dahil)
+    const toplamBorc = takipTutari + icraMasraflari + ihtiyatiHacizToplam + vekaletUcreti + takipSonrasiFaiz;
+    satirlar.push({
+      key: "toplam_borc",
+      label: "TOPLAM BORÇ TUTARI",
+      tutar: toplamBorc,
+      bold: true,
+      color: "green",
+    });
+
+    // 10. Tahsil Harcı Oranlarına Göre
+    const tahsilOranlari = [0, 0.0227, 0.0455, 0.0910, 0.1138];
+    tahsilOranlari.forEach((oran, index) => {
+      const sonBorc = toplamBorc * (1 + oran);
+      satirlar.push({
+        key: `tahsil_${index}`,
+        label: `%${(oran * 100).toFixed(2)} Tahsil Harcı`,
+        tutar: sonBorc,
+        color: index === 0 ? undefined : "gray",
+      });
+    });
+
+    setHesapOzeti(satirlar);
+    setIsCalculated(true);
+
+    // Parent'a bildir
+    if (onItemsChange) {
+      onItemsChange([{
+        ...kalem,
+        hesapOzeti: satirlar,
+      }]);
+    }
   };
 
-  // Döviz kontrolü
-  const isDoviz = currency !== "TRY";
-  const [kurKurali, setKurKurali] = useState("FIILI_ODEME");
 
-  // Ana alacak toplamı (faiz hesabı için baz)
-  const asilAlacakToplam = items
-    .filter(i => ["ASIL_ALACAK", "CEK", "SENET", "FATURA", "KIRA", "ILAM", "NAFAKA"].includes(i.kalemTuru))
-    .reduce((sum, i) => sum + i.tutar, 0);
-
-  // Toplam hesaplamaları
-  const toplamlar = {
-    asilAlacak: asilAlacakToplam,
-    islemisFaiz: items.filter(i => i.kalemTuru === "ISLEMIS_FAIZ").reduce((sum, i) => {
-      // Faiz kaleminde tutar girilmişse onu kullan, yoksa hesaplanan faizi kullan
-      return sum + (i.tutar > 0 ? i.tutar : i.hesaplananFaiz);
-    }, 0),
-    masraf: items.filter(i => ["KOMISYON", "IHTIYATI_HACIZ_HARCI"].includes(i.kalemTuru)).reduce((sum, i) => sum + i.tutar, 0),
-    vekaletUcreti: items.filter(i => ["IHTIYATI_VEKALET", "VEKALET_UCRETI"].includes(i.kalemTuru)).reduce((sum, i) => sum + i.tutar, 0),
-    diger: items.filter(i => ["CEK_TAZMINATI", "KDV", "BSMV", "KKDF", "DIGER"].includes(i.kalemTuru)).reduce((sum, i) => sum + i.tutar, 0),
-  };
-  const genelToplam = toplamlar.asilAlacak + toplamlar.islemisFaiz + toplamlar.masraf + toplamlar.vekaletUcreti + toplamlar.diger;
-
-  const formatCurrency = (amount: number, curr = currency) => {
-    const symbol = CURRENCY_OPTIONS.find(c => c.value === curr)?.symbol || "₺";
-    return `${amount.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${symbol}`;
-  };
-
-  // Faiz gerektiren kalem mi?
-  const isFaizKalemi = (kalemTuru: string) => kalemTuru === "ISLEMIS_FAIZ";
+  // ============================================================================
+  // RENDER
+  // ============================================================================
 
   return (
-    <div className="space-y-4">
-      {/* Üst Panel - Akıllı Sihirbaz */}
-      <div className="border-2 border-dashed border-blue-300 rounded-xl p-4 bg-blue-50/50">
-        <div className="flex items-start gap-3">
-          <div className="p-2 bg-blue-100 rounded-lg">
-            <Wand2 className="h-5 w-5 text-blue-600" />
-          </div>
-          <div className="flex-1">
-            <h3 className="font-semibold text-blue-900">Akıllı Alacak Kalemi Sihirbazı</h3>
-            <p className="text-sm text-blue-700 mb-3">
-              Borç evrakını yükleyin → tutar/vade/faizi otomatik oluşturalım.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              {/* Gizli file input */}
+    <div className="h-full flex gap-4">
+      {/* SOL PANEL - Alacak Kalemi Formu */}
+      <div className="flex-1 space-y-4 overflow-y-auto">
+        {/* Borcun Sebebi */}
+        <div className="border rounded-xl p-4 bg-white">
+          <h3 className="font-semibold mb-4 flex items-center gap-2">
+            <FileText className="h-5 w-5 text-blue-600" />
+            Alacak Bilgileri
+          </h3>
+          
+          <div className="grid grid-cols-2 gap-4">
+            {/* Borcun Sebebi */}
+            <div>
+              <label className="block text-sm font-medium mb-1">Borcun Sebebi</label>
+              <select
+                value={kalem.kalemTuru}
+                onChange={(e) => handleKalemTuruChange(e.target.value)}
+                className="w-full border rounded-lg px-3 py-2 bg-yellow-50 font-medium"
+              >
+                <option value="CEK">Çek</option>
+                <option value="SENET">Senet / Bono</option>
+                <option value="FATURA">Fatura</option>
+                <option value="KIRA">Kira Alacağı</option>
+                <option value="ILAM">İlam</option>
+                <option value="NAFAKA">Nafaka</option>
+                <option value="ASIL_ALACAK">Genel Alacak</option>
+              </select>
+            </div>
+
+            {/* Para Birimi */}
+            <div>
+              <label className="block text-sm font-medium mb-1">Para Birimi</label>
+              <select
+                value={kalem.currency}
+                onChange={(e) => setKalem(prev => ({ ...prev, currency: e.target.value }))}
+                className="w-full border rounded-lg px-3 py-2"
+              >
+                {CURRENCY_OPTIONS.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Vade/Keşide Tarihi */}
+            <div>
+              <label className="block text-sm font-medium mb-1">Vade/Keşide Tarihi *</label>
               <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.txt,.tiff,.tif"
-                onChange={handleFileUpload}
-                className="hidden"
+                type="date"
+                value={kalem.vadeTarihi}
+                onChange={(e) => {
+                  setKalem(prev => ({ ...prev, vadeTarihi: e.target.value }));
+                  setIsCalculated(false);
+                }}
+                className="w-full border rounded-lg px-3 py-2"
               />
-              <button
-                type="button"
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isUploading}
-                className="flex items-center gap-2 px-3 py-2 bg-white border border-blue-300 rounded-lg hover:bg-blue-50 text-sm font-medium text-blue-700 disabled:opacity-50"
-              >
-                {isUploading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Taranıyor...
-                  </>
-                ) : (
-                  <>
-                    <Upload className="h-4 w-4" />
-                    Evrak Yükle
-                  </>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={otomatikKalemOlustur}
-                className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm font-medium"
-              >
-                <Wand2 className="h-4 w-4" />
-                Otomatik Kalem Oluştur
-              </button>
-              <button
-                type="button"
-                onClick={() => addItem()}
-                className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium"
-              >
-                <Plus className="h-4 w-4" />
-                Manuel Ekle
-              </button>
-              {(takipTuruCode === "KIRA" || takipTuruCode === "ILAMSIZ_KIRA" || takipTuruCode === "NAFAKA") && (
-                <button
-                  type="button"
-                  onClick={() => setShowDonemModal(true)}
-                  className="flex items-center gap-2 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium"
-                >
-                  <Calendar className="h-4 w-4" />
-                  Dönemsel Kalem Oluştur
-                </button>
+            </div>
+
+            {/* Boş alan */}
+            <div></div>
+
+            {/* Toplam Tutar */}
+            <div>
+              <label className="block text-sm font-medium mb-1">Toplam Tutar (Evraktaki)</label>
+              <input
+                type="number"
+                step="0.01"
+                value={kalem.toplamTutar || ""}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value) || 0;
+                  setKalem(prev => ({ 
+                    ...prev, 
+                    toplamTutar: val,
+                    bakiyeTutar: prev.bakiyeTutar === 0 || prev.bakiyeTutar === prev.toplamTutar ? val : prev.bakiyeTutar
+                  }));
+                  setIsCalculated(false);
+                }}
+                placeholder="0,00"
+                className="w-full border rounded-lg px-3 py-2 text-right font-medium"
+              />
+            </div>
+
+            {/* Bakiye Tutar */}
+            <div>
+              <label className="block text-sm font-medium mb-1">Bakiye Tutar (Takipte İstenen) *</label>
+              <input
+                type="number"
+                step="0.01"
+                value={kalem.bakiyeTutar || ""}
+                onChange={(e) => {
+                  setKalem(prev => ({ ...prev, bakiyeTutar: parseFloat(e.target.value) || 0 }));
+                  setIsCalculated(false);
+                }}
+                placeholder="0,00"
+                className="w-full border rounded-lg px-3 py-2 text-right font-medium bg-blue-50"
+              />
+              {kalem.toplamTutar > 0 && kalem.bakiyeTutar < kalem.toplamTutar && (
+                <p className="text-xs text-orange-600 mt-1">
+                  Kısmi takip: {formatCurrency(kalem.toplamTutar - kalem.bakiyeTutar)} tahsil edilmiş
+                </p>
               )}
             </div>
-          </div>
-        </div>
-        
-        {/* Upload Error */}
-        {uploadError && (
-          <div className="mt-3 p-3 bg-red-50 border border-red-200 rounded-lg flex items-start gap-2">
-            <AlertCircle className="h-5 w-5 text-red-500 flex-shrink-0 mt-0.5" />
-            <div className="flex-1">
-              <p className="text-sm text-red-700">{uploadError}</p>
-            </div>
-            <button onClick={() => setUploadError(null)} className="text-red-500 hover:text-red-700">
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        )}
-        
-        {/* OCR Sonucu */}
-        {ocrResult && (
-          <div className="mt-3 p-3 bg-green-50 border border-green-200 rounded-lg">
-            <div className="flex items-start gap-2">
-              <Check className="h-5 w-5 text-green-500 flex-shrink-0 mt-0.5" />
-              <div className="flex-1">
-                <p className="text-sm font-medium text-green-800">Evrak başarıyla tarandı!</p>
-                <p className="text-xs text-green-600 mt-1">
-                  {ocrResult.documentType && `Tür: ${ocrResult.documentType}`}
-                  {ocrResult.debtInfo?.amount && ` | Tutar: ${ocrResult.debtInfo.amount.toLocaleString("tr-TR")} ${ocrResult.debtInfo?.currency || "TL"}`}
-                  {ocrResult.debtInfo?.dueDate && ` | Vade: ${new Date(ocrResult.debtInfo.dueDate).toLocaleDateString("tr-TR")}`}
-                  {ocrResult.debtInfo?.documentNo && ` | No: ${ocrResult.debtInfo.documentNo}`}
-                </p>
-                {ocrResult.parties && ocrResult.parties.length > 0 && (
-                  <p className="text-xs text-green-600 mt-1">
-                    Taraflar: {ocrResult.parties.map((p: any) => `${p.name} (${p.role})`).join(", ")}
-                  </p>
-                )}
-              </div>
-              <button onClick={() => setOcrResult(null)} className="text-green-500 hover:text-green-700">
-                <X className="h-4 w-4" />
-              </button>
-            </div>
-          </div>
-        )}
-        {/* Algılanan bilgi (OCR sonrası gösterilecek) */}
-        {takipTuruCode && (
-          <div className="mt-3 pt-3 border-t border-blue-200">
-            <p className="text-sm text-blue-800">
-              <span className="font-medium">Algılanan:</span>{" "}
-              {KALEM_TURU_OPTIONS.find(k => k.value === getDefaultsFromProps(takipTuruCode).kalemTuru)?.label || "—"} |{" "}
-              <span className="font-medium">Faiz:</span> {FAIZ_TURU_OPTIONS.find(f => f.value === getDefaultsFromProps(takipTuruCode).faizTuru)?.label || "—"}
-            </p>
-          </div>
-        )}
-        
-        {/* Hızlı Kalem Ekleme Butonları */}
-        <div className="mt-3 pt-3 border-t border-blue-200">
-          <p className="text-xs text-blue-600 mb-2 font-medium">Hızlı Ekle:</p>
-          <div className="flex flex-wrap gap-1">
-            <button type="button" onClick={() => addItem("ISLEMIS_FAIZ")} className="px-2 py-1 text-xs bg-orange-100 text-orange-700 rounded hover:bg-orange-200">+ İşlemiş Faiz</button>
-            {(takipTuruCode === "KAMBIYO_CEK" || items.some(i => i.kalemTuru === "CEK")) && (
-              <button type="button" onClick={() => addItem("CEK_TAZMINATI")} className="px-2 py-1 text-xs bg-red-100 text-red-700 rounded hover:bg-red-200">+ Çek Tazminatı</button>
-            )}
-            <button type="button" onClick={() => addItem("KOMISYON")} className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200">+ Komisyon</button>
-            <button type="button" onClick={() => addItem("IHTIYATI_HACIZ_HARCI")} className="px-2 py-1 text-xs bg-gray-100 text-gray-700 rounded hover:bg-gray-200">+ İht. Haciz Harcı</button>
-            <button type="button" onClick={() => addItem("IHTIYATI_VEKALET")} className="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200">+ İht. Vekalet Ücreti</button>
-            <button type="button" onClick={() => addItem("VEKALET_UCRETI")} className="px-2 py-1 text-xs bg-purple-100 text-purple-700 rounded hover:bg-purple-200">+ Vekalet Ücreti</button>
-          </div>
-        </div>
-      </div>
 
-      {/* İlamlı Takip Kesinleşme Uyarısı */}
-      {(takipTuruCode === "ILAMLI" || documentSource === "ILAM") && (
-        <div className="border rounded-xl p-4 bg-amber-50 border-amber-200">
-          <div className="flex items-start gap-3">
-            <AlertCircle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
-            <div>
-              <h4 className="font-medium text-amber-800">Kesinleşme Kontrolü</h4>
-              <p className="text-sm text-amber-700 mt-1">
-                İlamlı takiplerde, ilamın kesinleşmesi gerekip gerekmediğini kontrol ediniz.
+            {/* Açıklama */}
+            <div className="col-span-2">
+              <label className="block text-sm font-medium mb-1">Açıklama</label>
+              <textarea
+                value={kalem.aciklama}
+                onChange={(e) => setKalem(prev => ({ ...prev, aciklama: e.target.value }))}
+                placeholder="Borç hakkında ek açıklama (opsiyonel)..."
+                rows={2}
+                className="w-full border rounded-lg px-3 py-2 text-sm resize-none"
+              />
+              <p className="text-xs text-gray-500 mt-1">
+                Örn: Kısmi ödeme yapıldı, bakiye alacak takibe konulmuştur.
               </p>
-              <label className="flex items-center gap-2 mt-2 cursor-pointer">
-                <input type="checkbox" className="rounded border-amber-400" />
-                <span className="text-sm text-amber-800">İlam kesinleşmiştir / Kesinleşme gerekmemektedir</span>
+            </div>
+          </div>
+
+          {/* Faiz Ayarları */}
+          <div className="mt-4 pt-4 border-t">
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-sm font-medium">Uygulanacak Faiz ve Ücretler</h4>
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={kalem.hesaplanmisFaiz}
+                  onChange={(e) => setKalem(prev => ({ ...prev, hesaplanmisFaiz: e.target.checked }))}
+                  className="w-4 h-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                />
+                <span className="text-sm text-gray-600">Hesaplanmış Faiz</span>
               </label>
             </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Takip Öncesi Faiz</label>
+                <select
+                  value={kalem.takipOncesiFaiz}
+                  onChange={(e) => {
+                    setKalem(prev => ({ ...prev, takipOncesiFaiz: e.target.value }));
+                    setIsCalculated(false);
+                  }}
+                  className="w-full border rounded px-2 py-1.5 text-sm"
+                >
+                  {FAIZ_TURU_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">Takip Sonrası Faiz</label>
+                <select
+                  value={kalem.takipSonrasiFaiz}
+                  onChange={(e) => {
+                    setKalem(prev => ({ ...prev, takipSonrasiFaiz: e.target.value }));
+                    setIsCalculated(false);
+                  }}
+                  className="w-full border rounded px-2 py-1.5 text-sm"
+                >
+                  {FAIZ_TURU_OPTIONS.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
         </div>
-      )}
 
-      {/* Alacak Kalemleri Tablosu */}
-      <div className="border rounded-xl overflow-hidden bg-white">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 border-b">
-              <tr>
-                <th className="px-2 py-3 text-left font-medium text-gray-600 w-8">#</th>
-                <th className="px-2 py-3 text-left font-medium text-gray-600 min-w-[160px]">Kalem Türü</th>
-                <th className="px-2 py-3 text-right font-medium text-gray-600 min-w-[120px]">Tutar</th>
-                <th className="px-2 py-3 text-center font-medium text-gray-600 w-16">PB</th>
-                <th className="px-2 py-3 text-center font-medium text-gray-600 min-w-[110px]">Vade/Tarih</th>
-                <th className="px-2 py-3 text-center font-medium text-gray-600 min-w-[100px]">Faiz Türü</th>
-                <th className="px-2 py-3 text-center font-medium text-gray-600 min-w-[110px]">Faiz Başlangıç</th>
-                <th className="px-2 py-3 text-center font-medium text-gray-600 min-w-[110px]">Faiz Bitiş</th>
-                <th className="px-2 py-3 text-right font-medium text-gray-600 min-w-[90px]">Hesaplanan</th>
-                <th className="px-2 py-3 text-center font-medium text-gray-600 min-w-[80px]">Sorumlu</th>
-                <th className="px-2 py-3 text-center font-medium text-gray-600 min-w-[80px]">Kaynak</th>
-                <th className="px-2 py-3 text-left font-medium text-gray-600 min-w-[120px]">Açıklama</th>
-                <th className="px-2 py-3 text-center font-medium text-gray-600 w-20">İşlem</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {items.map((item, index) => (
-                <tr key={item.id} className={`hover:bg-gray-50 ${editingItemId === item.id ? "bg-yellow-50" : ""}`}>
-                  {/* # */}
-                  <td className="px-2 py-2">
-                    <span className="w-6 h-6 rounded-full bg-primary text-white text-xs flex items-center justify-center font-medium">
-                      {index + 1}
-                    </span>
-                  </td>
-                  
-                  {/* Kalem Türü */}
-                  <td className="px-2 py-2">
-                    <select
-                      value={item.kalemTuru}
-                      onChange={(e) => updateItem(item.id, { kalemTuru: e.target.value })}
-                      className="w-full border rounded px-2 py-1.5 text-sm bg-yellow-50 font-medium"
-                    >
-                      {KALEM_TURU_OPTIONS.map(opt => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                      ))}
-                    </select>
-                  </td>
-                  
-                  {/* Tutar */}
-                  <td className="px-2 py-2">
-                    {isFaizKalemi(item.kalemTuru) ? (
-                      <div className="relative">
+        {/* Çek Bilgileri (sadece çek için) */}
+        {kalem.kalemTuru === "CEK" && kalem.cekBilgileri && (
+          <div className="border rounded-xl p-4 bg-white">
+            <h3 className="font-semibold mb-4 flex items-center gap-2">
+              <CreditCard className="h-5 w-5 text-green-600" />
+              Çek Bilgileri
+            </h3>
+            
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">İbraz Tarihi</label>
+                <input
+                  type="date"
+                  value={kalem.cekBilgileri.ibrazTarihi}
+                  onChange={(e) => setKalem(prev => ({
+                    ...prev,
+                    cekBilgileri: { ...prev.cekBilgileri!, ibrazTarihi: e.target.value }
+                  }))}
+                  className="w-full border rounded-lg px-3 py-2"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Düzenleme Yeri</label>
+                <input
+                  type="text"
+                  value={kalem.cekBilgileri.duzenlemeYeri}
+                  onChange={(e) => setKalem(prev => ({
+                    ...prev,
+                    cekBilgileri: { ...prev.cekBilgileri!, duzenlemeYeri: e.target.value }
+                  }))}
+                  placeholder="İstanbul"
+                  className="w-full border rounded-lg px-3 py-2"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Çek Seri No *</label>
+                <input
+                  type="text"
+                  value={kalem.cekBilgileri.cekSeriNo}
+                  onChange={(e) => {
+                    setKalem(prev => ({
+                      ...prev,
+                      cekBilgileri: { ...prev.cekBilgileri!, cekSeriNo: e.target.value }
+                    }));
+                    setIsCalculated(false);
+                  }}
+                  placeholder="2068965"
+                  className="w-full border rounded-lg px-3 py-2 bg-yellow-50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Hesap No</label>
+                <input
+                  type="text"
+                  value={kalem.cekBilgileri.hesapNo}
+                  onChange={(e) => setKalem(prev => ({
+                    ...prev,
+                    cekBilgileri: { ...prev.cekBilgileri!, hesapNo: e.target.value }
+                  }))}
+                  className="w-full border rounded-lg px-3 py-2"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium mb-1">Banka ve Şube *</label>
+                <input
+                  type="text"
+                  value={kalem.cekBilgileri.bankaVeSube}
+                  onChange={(e) => {
+                    setKalem(prev => ({
+                      ...prev,
+                      cekBilgileri: { ...prev.cekBilgileri!, bankaVeSube: e.target.value }
+                    }));
+                    setIsCalculated(false);
+                  }}
+                  placeholder="Türkiye İş Bankası - Buca/İzmir Şubesi"
+                  className="w-full border rounded-lg px-3 py-2 bg-yellow-50"
+                />
+              </div>
+              <div className="col-span-2">
+                <label className="block text-sm font-medium mb-1">Çeki İmzalayanlar</label>
+                <input
+                  type="text"
+                  value={kalem.cekBilgileri.cekiImzalayanlar}
+                  onChange={(e) => setKalem(prev => ({
+                    ...prev,
+                    cekBilgileri: { ...prev.cekBilgileri!, cekiImzalayanlar: e.target.value }
+                  }))}
+                  className="w-full border rounded-lg px-3 py-2"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Senet Bilgileri (sadece senet için) */}
+        {kalem.kalemTuru === "SENET" && (
+          <div className="border rounded-xl p-4 bg-white">
+            <h3 className="font-semibold mb-4 flex items-center gap-2">
+              <FileText className="h-5 w-5 text-purple-600" />
+              Senet / Bono Bilgileri
+            </h3>
+            <p className="text-xs text-amber-600 bg-amber-50 p-2 rounded mb-4">
+              ℹ️ Senet bilgileri dosya oluşturulduktan sonra detaylı olarak eklenebilir.
+            </p>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Düzenleme Yeri</label>
+                <input
+                  type="text"
+                  value={kalem.senetBilgileri?.duzenlemeYeri || ""}
+                  onChange={(e) => setKalem(prev => ({
+                    ...prev,
+                    senetBilgileri: { ...prev.senetBilgileri, duzenlemeYeri: e.target.value, duzenlemeTarihi: prev.senetBilgileri?.duzenlemeTarihi || "" }
+                  }))}
+                  placeholder="İstanbul"
+                  className="w-full border rounded-lg px-3 py-2"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Düzenleme Tarihi</label>
+                <input
+                  type="date"
+                  value={kalem.senetBilgileri?.duzenlemeTarihi || ""}
+                  onChange={(e) => setKalem(prev => ({
+                    ...prev,
+                    senetBilgileri: { ...prev.senetBilgileri, duzenlemeTarihi: e.target.value, duzenlemeYeri: prev.senetBilgileri?.duzenlemeYeri || "" }
+                  }))}
+                  className="w-full border rounded-lg px-3 py-2"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Fatura Bilgileri (sadece fatura için) */}
+        {kalem.kalemTuru === "FATURA" && (
+          <div className="border rounded-xl p-4 bg-white">
+            <h3 className="font-semibold mb-4 flex items-center gap-2">
+              <Receipt className="h-5 w-5 text-blue-600" />
+              Fatura Bilgileri
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Fatura No</label>
+                <input
+                  type="text"
+                  value={kalem.faturaBilgileri?.faturaNo || ""}
+                  onChange={(e) => setKalem(prev => ({
+                    ...prev,
+                    faturaBilgileri: { ...prev.faturaBilgileri, faturaNo: e.target.value, faturaTarihi: prev.faturaBilgileri?.faturaTarihi || "" }
+                  }))}
+                  placeholder="FTR-2025-001"
+                  className="w-full border rounded-lg px-3 py-2"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Fatura Tarihi</label>
+                <input
+                  type="date"
+                  value={kalem.faturaBilgileri?.faturaTarihi || ""}
+                  onChange={(e) => setKalem(prev => ({
+                    ...prev,
+                    faturaBilgileri: { ...prev.faturaBilgileri, faturaTarihi: e.target.value, faturaNo: prev.faturaBilgileri?.faturaNo || "" }
+                  }))}
+                  className="w-full border rounded-lg px-3 py-2"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* İlam Bilgileri (sadece ilam için) */}
+        {kalem.kalemTuru === "ILAM" && (
+          <div className="border rounded-xl p-4 bg-white">
+            <h3 className="font-semibold mb-4 flex items-center gap-2">
+              <FileText className="h-5 w-5 text-red-600" />
+              İlam Bilgileri
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="col-span-2">
+                <label className="block text-sm font-medium mb-1">Mahkeme Adı *</label>
+                <input
+                  type="text"
+                  value={kalem.ilamBilgileri?.mahkemeAdi || ""}
+                  onChange={(e) => setKalem(prev => ({
+                    ...prev,
+                    ilamBilgileri: { 
+                      ...prev.ilamBilgileri, 
+                      mahkemeAdi: e.target.value,
+                      esasNo: prev.ilamBilgileri?.esasNo || "",
+                      kararNo: prev.ilamBilgileri?.kararNo || "",
+                      ilamTarihi: prev.ilamBilgileri?.ilamTarihi || ""
+                    }
+                  }))}
+                  placeholder="İstanbul 1. Asliye Hukuk Mahkemesi"
+                  className="w-full border rounded-lg px-3 py-2 bg-yellow-50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Esas No *</label>
+                <input
+                  type="text"
+                  value={kalem.ilamBilgileri?.esasNo || ""}
+                  onChange={(e) => setKalem(prev => ({
+                    ...prev,
+                    ilamBilgileri: { 
+                      ...prev.ilamBilgileri, 
+                      esasNo: e.target.value,
+                      mahkemeAdi: prev.ilamBilgileri?.mahkemeAdi || "",
+                      kararNo: prev.ilamBilgileri?.kararNo || "",
+                      ilamTarihi: prev.ilamBilgileri?.ilamTarihi || ""
+                    }
+                  }))}
+                  placeholder="2024/123"
+                  className="w-full border rounded-lg px-3 py-2 bg-yellow-50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">Karar No *</label>
+                <input
+                  type="text"
+                  value={kalem.ilamBilgileri?.kararNo || ""}
+                  onChange={(e) => setKalem(prev => ({
+                    ...prev,
+                    ilamBilgileri: { 
+                      ...prev.ilamBilgileri, 
+                      kararNo: e.target.value,
+                      mahkemeAdi: prev.ilamBilgileri?.mahkemeAdi || "",
+                      esasNo: prev.ilamBilgileri?.esasNo || "",
+                      ilamTarihi: prev.ilamBilgileri?.ilamTarihi || ""
+                    }
+                  }))}
+                  placeholder="2024/456"
+                  className="w-full border rounded-lg px-3 py-2 bg-yellow-50"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium mb-1">İlam Tarihi *</label>
+                <input
+                  type="date"
+                  value={kalem.ilamBilgileri?.ilamTarihi || ""}
+                  onChange={(e) => setKalem(prev => ({
+                    ...prev,
+                    ilamBilgileri: { 
+                      ...prev.ilamBilgileri, 
+                      ilamTarihi: e.target.value,
+                      mahkemeAdi: prev.ilamBilgileri?.mahkemeAdi || "",
+                      esasNo: prev.ilamBilgileri?.esasNo || "",
+                      kararNo: prev.ilamBilgileri?.kararNo || ""
+                    }
+                  }))}
+                  className="w-full border rounded-lg px-3 py-2 bg-yellow-50"
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* İHTİYATİ HACİZ BÖLÜMÜ */}
+        <div className="border rounded-xl p-4 bg-white">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold flex items-center gap-2">
+              <Shield className="h-5 w-5 text-orange-600" />
+              İhtiyati Haciz
+            </h3>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={hasIhtiyatiHaciz}
+                onChange={(e) => {
+                  setHasIhtiyatiHaciz(e.target.checked);
+                  if (!e.target.checked) {
+                    setIhtiyatiHacizMasraflari([]);
+                  }
+                  if (onPrecautionaryChange) {
+                    onPrecautionaryChange({
+                      karar: e.target.checked ? ihtiyatiHacizKarari : null,
+                      masraflar: e.target.checked ? ihtiyatiHacizMasraflari : [],
+                    });
+                  }
+                }}
+                className="w-4 h-4 rounded border-gray-300 text-orange-600 focus:ring-orange-500"
+              />
+              <span className="text-sm">Bu dosyada ihtiyati haciz kararı var</span>
+            </label>
+          </div>
+
+          {hasIhtiyatiHaciz && (
+            <div className="space-y-4">
+              {/* İhtiyati Haciz Kararı Bilgileri */}
+              <div className="bg-orange-50 rounded-lg p-4 border border-orange-200">
+                <h4 className="text-sm font-medium text-orange-800 mb-3 flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  İhtiyati Haciz Kararı
+                </h4>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2">
+                    <label className="block text-xs text-gray-600 mb-1">Mahkeme Adı *</label>
+                    <input
+                      type="text"
+                      value={ihtiyatiHacizKarari.mahkemeAdi}
+                      onChange={(e) => setIhtiyatiHacizKarari(prev => ({ ...prev, mahkemeAdi: e.target.value }))}
+                      placeholder="İstanbul 1. Asliye Ticaret Mahkemesi"
+                      className="w-full border rounded px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Karar Tarihi *</label>
+                    <input
+                      type="date"
+                      value={ihtiyatiHacizKarari.kararTarihi}
+                      onChange={(e) => setIhtiyatiHacizKarari(prev => ({ ...prev, kararTarihi: e.target.value }))}
+                      className="w-full border rounded px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Kapsadığı Tutar</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={ihtiyatiHacizKarari.kapsadigiTutar || ""}
+                      onChange={(e) => setIhtiyatiHacizKarari(prev => ({ ...prev, kapsadigiTutar: parseFloat(e.target.value) || 0 }))}
+                      placeholder="0,00"
+                      className="w-full border rounded px-2 py-1.5 text-sm text-right"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Esas No</label>
+                    <input
+                      type="text"
+                      value={ihtiyatiHacizKarari.esasNo}
+                      onChange={(e) => setIhtiyatiHacizKarari(prev => ({ ...prev, esasNo: e.target.value }))}
+                      placeholder="2025/123 D.İş"
+                      className="w-full border rounded px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-gray-600 mb-1">Karar No</label>
+                    <input
+                      type="text"
+                      value={ihtiyatiHacizKarari.kararNo}
+                      onChange={(e) => setIhtiyatiHacizKarari(prev => ({ ...prev, kararNo: e.target.value }))}
+                      placeholder="2025/456"
+                      className="w-full border rounded px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                  <div className="col-span-2 flex items-center gap-4 pt-2 border-t">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={ihtiyatiHacizKarari.teminatVar}
+                        onChange={(e) => setIhtiyatiHacizKarari(prev => ({ ...prev, teminatVar: e.target.checked }))}
+                        className="w-4 h-4 rounded border-gray-300"
+                      />
+                      <span className="text-sm">Teminat yatırıldı</span>
+                    </label>
+                    {ihtiyatiHacizKarari.teminatVar && (
+                      <>
+                        <select
+                          value={ihtiyatiHacizKarari.teminatTuru}
+                          onChange={(e) => setIhtiyatiHacizKarari(prev => ({ ...prev, teminatTuru: e.target.value as any }))}
+                          className="border rounded px-2 py-1 text-sm"
+                        >
+                          <option value="">Tür seçin</option>
+                          <option value="NAKIT">Nakit</option>
+                          <option value="TEMINAT_MEKTUBU">Teminat Mektubu</option>
+                        </select>
                         <input
                           type="number"
                           step="0.01"
-                          value={item.tutar || ""}
-                          onChange={(e) => updateItem(item.id, { tutar: parseFloat(e.target.value) || 0 })}
-                          placeholder={asilAlacakToplam > 0 ? `(${asilAlacakToplam.toLocaleString("tr-TR")})` : "0,00"}
-                          className="w-full border rounded px-2 py-1.5 text-sm text-right font-medium bg-orange-50"
-                          title="Boş bırakırsanız ana alacak üzerinden hesaplanır"
+                          value={ihtiyatiHacizKarari.teminatTutari || ""}
+                          onChange={(e) => setIhtiyatiHacizKarari(prev => ({ ...prev, teminatTutari: parseFloat(e.target.value) || 0 }))}
+                          placeholder="Tutar"
+                          className="w-32 border rounded px-2 py-1 text-sm text-right"
                         />
-                        {item.tutar === 0 && asilAlacakToplam > 0 && (
-                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-orange-500">⚡</span>
-                        )}
-                      </div>
-                    ) : (
-                      <input
-                        type="number"
-                        step="0.01"
-                        value={item.tutar || ""}
-                        onChange={(e) => updateItem(item.id, { tutar: parseFloat(e.target.value) || 0 })}
-                        placeholder="0,00"
-                        className="w-full border rounded px-2 py-1.5 text-sm text-right font-medium"
-                      />
+                      </>
                     )}
-                  </td>
-                  
-                  {/* Para Birimi */}
-                  <td className="px-2 py-2">
-                    <select
-                      value={item.currency}
-                      onChange={(e) => updateItem(item.id, { currency: e.target.value })}
-                      className="w-full border rounded px-1 py-1.5 text-sm bg-gray-50"
-                    >
-                      {CURRENCY_OPTIONS.map(opt => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                      ))}
-                    </select>
-                  </td>
-                  
-                  {/* Vade/Tarih */}
-                  <td className="px-2 py-2">
-                    <input
-                      type="date"
-                      value={item.vadeTarihi}
-                      onChange={(e) => updateItem(item.id, { vadeTarihi: e.target.value })}
-                      className="w-full border rounded px-1 py-1.5 text-sm"
-                    />
-                  </td>
-                  
-                  {/* Faiz Türü */}
-                  <td className="px-2 py-2">
-                    {isFaizKalemi(item.kalemTuru) ? (
-                      <select
-                        value={item.faizTuru}
-                        onChange={(e) => updateItem(item.id, { faizTuru: e.target.value })}
-                        className="w-full border rounded px-1 py-1.5 text-sm bg-orange-50"
-                      >
-                        {FAIZ_TURU_OPTIONS.filter(f => f.value !== "YOK").map(opt => (
-                          <option key={opt.value} value={opt.value}>{opt.label}</option>
-                        ))}
-                      </select>
-                    ) : (
-                      <span className="text-gray-400 text-center block">—</span>
-                    )}
-                  </td>
-                  
-                  {/* Faiz Başlangıç */}
-                  <td className="px-2 py-2">
-                    {isFaizKalemi(item.kalemTuru) ? (
-                      <input
-                        type="date"
-                        value={item.faizBaslangic}
-                        onChange={(e) => updateItem(item.id, { faizBaslangic: e.target.value })}
-                        className="w-full border rounded px-1 py-1.5 text-sm bg-orange-50"
-                      />
-                    ) : (
-                      <span className="text-gray-400 text-center block">—</span>
-                    )}
-                  </td>
-                  
-                  {/* Faiz Bitiş */}
-                  <td className="px-2 py-2">
-                    {isFaizKalemi(item.kalemTuru) ? (
-                      <input
-                        type="date"
-                        value={item.faizBitis}
-                        onChange={(e) => updateItem(item.id, { faizBitis: e.target.value })}
-                        className="w-full border rounded px-1 py-1.5 text-sm bg-orange-50"
-                      />
-                    ) : (
-                      <span className="text-gray-400 text-center block">—</span>
-                    )}
-                  </td>
-                  
-                  {/* Hesaplanan Faiz */}
-                  <td className="px-2 py-2 text-right">
-                    {isFaizKalemi(item.kalemTuru) && item.hesaplananFaiz > 0 ? (
-                      <div className="text-xs">
-                        <span className="font-bold text-orange-600">{formatCurrency(item.hesaplananFaiz, item.currency)}</span>
-                        <span className="text-gray-400 block">
-                          {hesaplaGunSayisi(item.faizBaslangic, item.faizBitis)} gün
-                        </span>
-                      </div>
-                    ) : (
-                      <span className="text-gray-400 text-center block">—</span>
-                    )}
-                  </td>
-                  
-                  {/* Sorumlu Borçlular */}
-                  <td className="px-2 py-2">
-                    <select
-                      value={item.sorumluBorclular}
-                      onChange={(e) => updateItem(item.id, { sorumluBorclular: e.target.value })}
-                      className="w-full border rounded px-1 py-1.5 text-xs"
-                    >
-                      {SORUMLU_OPTIONS.map(opt => (
-                        <option key={opt.value} value={opt.value}>{opt.label}</option>
-                      ))}
-                    </select>
-                  </td>
-                  
-                  {/* Kaynak Evrak */}
-                  <td className="px-2 py-2">
-                    {item.kalemTuru === "CEK" ? (
-                      <button
-                        type="button"
-                        onClick={() => setShowCekModal(item.id)}
-                        className="flex items-center gap-1 px-2 py-1 text-xs bg-blue-50 text-blue-700 rounded hover:bg-blue-100"
-                      >
-                        <CreditCard className="h-3 w-3" />
-                        {item.cekBilgileri?.cekSeriNo || "Çek"}
-                      </button>
-                    ) : (
-                      <input
-                        type="text"
-                        value={item.kaynakEvrak}
-                        onChange={(e) => updateItem(item.id, { kaynakEvrak: e.target.value })}
-                        placeholder="—"
-                        className="w-full border rounded px-1 py-1.5 text-xs"
-                      />
-                    )}
-                  </td>
-                  
-                  {/* Açıklama */}
-                  <td className="px-2 py-2">
-                    <input
-                      type="text"
-                      value={item.aciklama}
-                      onChange={(e) => updateItem(item.id, { aciklama: e.target.value })}
-                      placeholder="Açıklama..."
-                      className="w-full border rounded px-2 py-1.5 text-xs"
-                    />
-                  </td>
-                  
-                  {/* İşlem */}
-                  <td className="px-2 py-2">
-                    <div className="flex items-center justify-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => duplicateItem(item.id)}
-                        className="p-1 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded"
-                        title="Kopyala"
-                      >
-                        <Copy className="h-4 w-4" />
-                      </button>
-                      {items.length > 1 && (
+                  </div>
+                </div>
+              </div>
+
+              {/* İhtiyati Haciz Masrafları */}
+              <div className="bg-gray-50 rounded-lg p-4 border">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="text-sm font-medium text-gray-700">İhtiyati Haciz Masrafları</h4>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const yeniMasraf: IhtiyatiHacizMasrafi = {
+                        id: `ihm_${Date.now()}`,
+                        tur: "HARC",
+                        aciklama: "İhtiyati Haciz Harcı",
+                        tutar: 0,
+                      };
+                      setIhtiyatiHacizMasraflari(prev => [...prev, yeniMasraf]);
+                    }}
+                    className="flex items-center gap-1 px-2 py-1 text-xs bg-orange-100 text-orange-700 rounded hover:bg-orange-200"
+                  >
+                    <Plus className="h-3 w-3" />
+                    Masraf Ekle
+                  </button>
+                </div>
+
+                {ihtiyatiHacizMasraflari.length === 0 ? (
+                  <p className="text-xs text-gray-500 text-center py-4">
+                    Henüz masraf eklenmedi. "Masraf Ekle" butonuna tıklayın.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {ihtiyatiHacizMasraflari.map((masraf, index) => (
+                      <div key={masraf.id} className="flex items-center gap-2 bg-white p-2 rounded border">
+                        <select
+                          value={masraf.tur}
+                          onChange={(e) => {
+                            const yeniTur = e.target.value as IhtiyatiHacizMasrafi["tur"];
+                            const label = IHTIYATI_HACIZ_MASRAF_TURLERI.find(t => t.value === yeniTur)?.label || "";
+                            setIhtiyatiHacizMasraflari(prev => prev.map((m, i) => 
+                              i === index ? { ...m, tur: yeniTur, aciklama: label } : m
+                            ));
+                          }}
+                          className="border rounded px-2 py-1 text-xs flex-1"
+                        >
+                          {IHTIYATI_HACIZ_MASRAF_TURLERI.map(t => (
+                            <option key={t.value} value={t.value}>{t.label}</option>
+                          ))}
+                        </select>
+                        <input
+                          type="number"
+                          step="0.01"
+                          value={masraf.tutar || ""}
+                          onChange={(e) => {
+                            setIhtiyatiHacizMasraflari(prev => prev.map((m, i) => 
+                              i === index ? { ...m, tutar: parseFloat(e.target.value) || 0 } : m
+                            ));
+                          }}
+                          placeholder="Tutar"
+                          className="w-28 border rounded px-2 py-1 text-xs text-right"
+                        />
                         <button
                           type="button"
-                          onClick={() => removeItem(item.id)}
-                          className="p-1 text-red-500 hover:text-red-700 hover:bg-red-50 rounded"
-                          title="Sil"
+                          onClick={() => {
+                            setIhtiyatiHacizMasraflari(prev => prev.filter((_, i) => i !== index));
+                          }}
+                          className="p-1 text-red-500 hover:bg-red-50 rounded"
                         >
-                          <Trash2 className="h-4 w-4" />
+                          <Trash2 className="h-3 w-3" />
                         </button>
-                      )}
+                      </div>
+                    ))}
+                    <div className="flex justify-between pt-2 border-t text-sm font-medium">
+                      <span>Toplam İhtiyati Haciz Masrafı:</span>
+                      <span className="text-orange-600">
+                        {formatCurrency(ihtiyatiHacizMasraflari.reduce((sum, m) => sum + m.tutar, 0), kalem.currency)}
+                      </span>
                     </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
-        
-        {/* Tablo altı - Kalem Ekle */}
-        <div className="p-2 border-t bg-gray-50 flex items-center gap-2 flex-wrap">
+
+        {/* Hesapla Butonu */}
+        <div className="flex justify-end gap-3">
           <button
             type="button"
-            onClick={() => addItem()}
-            className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded border"
+            onClick={hesapla}
+            className="flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 font-medium"
           >
-            <Plus className="h-4 w-4" />
-            Yeni Kalem
+            <Calculator className="h-5 w-5" />
+            Hesapla
           </button>
-          <span className="text-gray-300">|</span>
-          <span className="text-xs text-gray-500">Hızlı:</span>
-          <button type="button" onClick={() => addItem("ISLEMIS_FAIZ")} className="px-2 py-1 text-xs bg-orange-50 text-orange-600 rounded hover:bg-orange-100 border border-orange-200">Faiz</button>
-          <button type="button" onClick={() => addItem("CEK_TAZMINATI")} className="px-2 py-1 text-xs bg-red-50 text-red-600 rounded hover:bg-red-100 border border-red-200">Tazminat</button>
-          <button type="button" onClick={() => addItem("KOMISYON")} className="px-2 py-1 text-xs bg-gray-50 text-gray-600 rounded hover:bg-gray-100 border border-gray-200">Komisyon</button>
-          <button type="button" onClick={() => addItem("VEKALET_UCRETI")} className="px-2 py-1 text-xs bg-purple-50 text-purple-600 rounded hover:bg-purple-100 border border-purple-200">Vekalet</button>
         </div>
       </div>
 
-      {/* Çek Bilgileri Modal */}
-      {showCekModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-lg mx-4">
-            <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
-              <CreditCard className="h-5 w-5 text-blue-600" />
-              Çek Bilgileri
-            </h3>
-            {(() => {
-              const item = items.find(i => i.id === showCekModal);
-              if (!item?.cekBilgileri) return null;
+
+      {/* SAĞ PANEL - Hesap Özeti */}
+      <div className="w-96 border-l pl-4 flex flex-col" style={{ maxHeight: 'calc(100vh - 200px)' }}>
+        <div className="bg-white pb-2">
+          <h3 className="font-semibold text-lg flex items-center gap-2 mb-4">
+            <Receipt className="h-5 w-5 text-purple-600" />
+            Hesap Özeti
+          </h3>
+        </div>
+
+        {!isCalculated ? (
+          <div className="text-center py-8 text-gray-500">
+            <Calculator className="h-12 w-12 mx-auto mb-3 text-gray-300" />
+            <p className="text-sm">Zorunlu alanları doldurup</p>
+            <p className="text-sm">"Hesapla" butonuna basın</p>
+          </div>
+        ) : (
+          <div className="flex flex-col flex-1">
+            {/* Hesap Özeti Satırları - Scroll edilebilir */}
+            <div className="flex-1 overflow-y-auto space-y-1 pr-2" style={{ maxHeight: '300px' }}>
+            {hesapOzeti.map((satir) => {
+              // Bölüm başlıkları
+              const isBolumBasligi = ["takip_tutari", "icra_masraflari", "ihtiyati_haciz_toplam", "toplam_borc"].includes(satir.key);
+              
+              // Tahsil harcı bölümü başlığı
+              if (satir.key === "tahsil_0") {
+                return (
+                  <div key="tahsil_baslik" className="pt-3 mt-3 border-t">
+                    <p className="text-xs font-medium text-gray-500 mb-2">Tahsil Harcı Oranlarına Göre Son Borç:</p>
+                    <div className={`flex justify-between py-1 ${satir.bold ? "font-bold" : ""}`}>
+                      <span className="text-sm">{satir.label}</span>
+                      <span className={`text-sm ${satir.color === "green" ? "text-green-600" : satir.color === "blue" ? "text-blue-600" : ""}`}>
+                        {formatCurrency(satir.tutar, kalem.currency)}
+                      </span>
+                    </div>
+                  </div>
+                );
+              }
+
               return (
-                <div className="space-y-3">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xs font-medium mb-1">İbraz Tarihi</label>
-                      <input
-                        type="date"
-                        value={item.cekBilgileri.ibrazTarihi}
-                        onChange={(e) => updateItem(item.id, { 
-                          cekBilgileri: { ...item.cekBilgileri!, ibrazTarihi: e.target.value } 
-                        })}
-                        className="w-full border rounded px-2 py-1.5 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium mb-1">Çek Seri No</label>
-                      <input
-                        type="text"
-                        value={item.cekBilgileri.cekSeriNo}
-                        onChange={(e) => updateItem(item.id, { 
-                          cekBilgileri: { ...item.cekBilgileri!, cekSeriNo: e.target.value } 
-                        })}
-                        className="w-full border rounded px-2 py-1.5 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium mb-1">Düzenleme Yeri</label>
-                      <input
-                        type="text"
-                        value={item.cekBilgileri.duzenlemeYeri}
-                        onChange={(e) => updateItem(item.id, { 
-                          cekBilgileri: { ...item.cekBilgileri!, duzenlemeYeri: e.target.value } 
-                        })}
-                        className="w-full border rounded px-2 py-1.5 text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs font-medium mb-1">Hesap No</label>
-                      <input
-                        type="text"
-                        value={item.cekBilgileri.hesapNo}
-                        onChange={(e) => updateItem(item.id, { 
-                          cekBilgileri: { ...item.cekBilgileri!, hesapNo: e.target.value } 
-                        })}
-                        className="w-full border rounded px-2 py-1.5 text-sm"
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <label className="block text-xs font-medium mb-1">Banka ve Şube</label>
-                      <input
-                        type="text"
-                        value={item.cekBilgileri.bankaVeSube}
-                        onChange={(e) => updateItem(item.id, { 
-                          cekBilgileri: { ...item.cekBilgileri!, bankaVeSube: e.target.value } 
-                        })}
-                        className="w-full border rounded px-2 py-1.5 text-sm"
-                      />
-                    </div>
-                    <div className="col-span-2">
-                      <label className="block text-xs font-medium mb-1">Çeki İmzalayanlar</label>
-                      <input
-                        type="text"
-                        value={item.cekBilgileri.cekiImzalayanlar}
-                        onChange={(e) => updateItem(item.id, { 
-                          cekBilgileri: { ...item.cekBilgileri!, cekiImzalayanlar: e.target.value } 
-                        })}
-                        className="w-full border rounded px-2 py-1.5 text-sm"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex justify-end pt-3 border-t">
-                    <button
-                      type="button"
-                      onClick={() => setShowCekModal(null)}
-                      className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 text-sm"
-                    >
-                      Tamam
-                    </button>
-                  </div>
+                <div
+                  key={satir.key}
+                  className={`flex justify-between py-1 ${
+                    isBolumBasligi ? "border-t pt-2 mt-2" : ""
+                  } ${satir.bold ? "font-bold" : ""} ${
+                    satir.color === "gray" ? "text-gray-500" : ""
+                  }`}
+                >
+                  <span className={`text-sm ${satir.bold ? "" : "text-gray-600"}`}>
+                    {satir.label}
+                  </span>
+                  <span className={`text-sm ${
+                    satir.color === "green" ? "text-green-600 font-bold" : 
+                    satir.color === "blue" ? "text-blue-600" : 
+                    satir.color === "orange" ? "text-orange-600" : ""
+                  }`}>
+                    {formatCurrency(satir.tutar, kalem.currency)}
+                  </span>
                 </div>
               );
-            })()}
-          </div>
-        </div>
-      )}
+            })}
+            </div>
 
-      {/* Dönemsel Kalem Modal (Kira/Nafaka) */}
-      {showDonemModal && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className="bg-white rounded-xl p-6 w-full max-w-md mx-4">
-            <h3 className="font-semibold text-lg mb-4 flex items-center gap-2">
-              <Calendar className="h-5 w-5 text-green-600" />
-              Dönemsel Kalem Oluştur ({donemSecim.kalemTuru === "NAFAKA" ? "Nafaka" : "Kira"})
-            </h3>
-            <div className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium mb-1">Başlangıç Ay/Yıl</label>
-                  <div className="flex gap-1">
-                    <select
-                      value={donemSecim.baslangicAy}
-                      onChange={(e) => setDonemSecim(prev => ({ ...prev, baslangicAy: parseInt(e.target.value) }))}
-                      className="flex-1 border rounded px-2 py-1.5 text-sm"
-                    >
-                      {AY_ISIMLERI.map((ay, i) => (
-                        <option key={i} value={i}>{ay}</option>
-                      ))}
-                    </select>
-                    <input
-                      type="number"
-                      value={donemSecim.baslangicYil}
-                      onChange={(e) => setDonemSecim(prev => ({ ...prev, baslangicYil: parseInt(e.target.value) }))}
-                      className="w-20 border rounded px-2 py-1.5 text-sm"
-                    />
-                  </div>
+            {/* Kaydet ve Belge Butonları - Her zaman görünür */}
+            <div className="pt-4 mt-4 border-t bg-white flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  if (onItemsChange) {
+                    onItemsChange([{
+                      ...kalem,
+                      hesapOzeti: hesapOzeti,
+                      isCalculated: true,
+                    }]);
+                  }
+                  alert("Alacak kalemi kaydedildi!");
+                }}
+                className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 font-medium text-base"
+              >
+                <FileText className="h-5 w-5" />
+                Kaydet
+              </button>
+
+              {/* Belge İndirme Butonları */}
+              <div className="mt-3 pt-3 border-t">
+                <p className="text-xs font-medium text-gray-600 mb-2">Takip Talebi İndir:</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    type="button"
+                    onClick={handleDownloadPdf}
+                    disabled={downloading !== null}
+                    className="flex flex-col items-center gap-1 px-2 py-2 border rounded-lg hover:bg-gray-50 disabled:opacity-50 text-xs"
+                  >
+                    <FileDown className="h-4 w-4 text-red-600" />
+                    <span>{downloading === 'pdf' ? '...' : 'PDF'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadWord}
+                    disabled={downloading !== null}
+                    className="flex flex-col items-center gap-1 px-2 py-2 border rounded-lg hover:bg-gray-50 disabled:opacity-50 text-xs"
+                  >
+                    <Download className="h-4 w-4 text-blue-600" />
+                    <span>{downloading === 'word' ? '...' : 'Word'}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleGenerateUdf}
+                    disabled={downloading !== null}
+                    className="flex flex-col items-center gap-1 px-2 py-2 border rounded-lg hover:bg-gray-50 disabled:opacity-50 text-xs"
+                    title="UYAP'a gönderim için UDF formatı"
+                  >
+                    <Send className="h-4 w-4 text-purple-600" />
+                    <span>{downloading === 'udf' ? '...' : 'UDF'}</span>
+                  </button>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium mb-1">Bitiş Ay/Yıl</label>
-                  <div className="flex gap-1">
-                    <select
-                      value={donemSecim.bitisAy}
-                      onChange={(e) => setDonemSecim(prev => ({ ...prev, bitisAy: parseInt(e.target.value) }))}
-                      className="flex-1 border rounded px-2 py-1.5 text-sm"
-                    >
-                      {AY_ISIMLERI.map((ay, i) => (
-                        <option key={i} value={i}>{ay}</option>
-                      ))}
-                    </select>
-                    <input
-                      type="number"
-                      value={donemSecim.bitisYil}
-                      onChange={(e) => setDonemSecim(prev => ({ ...prev, bitisYil: parseInt(e.target.value) }))}
-                      className="w-20 border rounded px-2 py-1.5 text-sm"
-                    />
-                  </div>
-                </div>
-              </div>
-              <div>
-                <label className="block text-xs font-medium mb-1">Aylık Tutar ({CURRENCY_OPTIONS.find(c => c.value === currency)?.symbol})</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={donemSecim.aylikTutar || ""}
-                  onChange={(e) => setDonemSecim(prev => ({ ...prev, aylikTutar: parseFloat(e.target.value) || 0 }))}
-                  placeholder="0,00"
-                  className="w-full border rounded px-2 py-1.5 text-sm"
-                />
-              </div>
-              {donemSecim.kalemTuru === "NAFAKA" && (
-                <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
-                  <label className="flex items-center gap-2 cursor-pointer">
-                    <input type="checkbox" className="rounded border-blue-400" />
-                    <span className="text-sm text-blue-800">Devam eden aylar (her ay otomatik yeni kalem eklensin)</span>
-                  </label>
-                  <p className="text-xs text-blue-600 mt-1 ml-6">Bu seçenek aktifken, her yeni ay başında otomatik nafaka kalemi oluşturulur.</p>
-                </div>
-              )}
-              <div className="flex justify-end gap-2 pt-3 border-t">
-                <button
-                  type="button"
-                  onClick={() => setShowDonemModal(false)}
-                  className="px-4 py-2 border rounded-lg hover:bg-gray-50 text-sm"
-                >
-                  İptal
-                </button>
-                <button
-                  type="button"
-                  onClick={donemselKalemOlustur}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm"
-                >
-                  Kalemleri Oluştur
-                </button>
               </div>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* Döviz Kur Kuralı (sadece döviz seçiliyse) */}
-      {isDoviz && (
-        <div className="border rounded-xl p-4 bg-yellow-50 border-yellow-200">
-          <h3 className="font-semibold mb-3 flex items-center gap-2">
-            <Banknote className="h-5 w-5 text-yellow-600" />
-            Döviz Kur Kuralı ({CURRENCY_OPTIONS.find(c => c.value === currency)?.label})
-          </h3>
-          <div className="flex flex-wrap gap-4">
-            {KUR_KURALI_OPTIONS.map(opt => (
-              <label key={opt.value} className="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="radio"
-                  name="kurKurali"
-                  value={opt.value}
-                  checked={kurKurali === opt.value}
-                  onChange={(e) => setKurKurali(e.target.value)}
-                  className="w-4 h-4"
-                />
-                <span className="text-sm">{opt.label}</span>
-              </label>
-            ))}
-          </div>
-          <p className="text-xs text-yellow-700 mt-2">
-            {kurKurali === "FIILI_ODEME" 
-              ? "Alacak, fiili ödeme tarihindeki TCMB döviz satış kuru üzerinden TL'ye çevrilecektir."
-              : "Alacak, takip tarihindeki TCMB döviz satış kuru üzerinden TL'ye çevrilecektir."}
-          </p>
-        </div>
-      )}
-
-      {/* Özet Paneli */}
-      <div className="border-2 border-primary/20 rounded-xl p-4 bg-primary/5">
-        <h3 className="font-semibold mb-3 flex items-center gap-2">
-          <Banknote className="h-5 w-5 text-primary" />
-          ÖZET
-        </h3>
-        <div className="grid grid-cols-2 md:grid-cols-6 gap-3">
-          <div className="text-center p-3 bg-white rounded-lg border">
-            <p className="text-xs text-muted-foreground">Asıl Alacak Toplamı</p>
-            <p className="text-lg font-bold">{formatCurrency(toplamlar.asilAlacak)}</p>
-          </div>
-          <div className="text-center p-3 bg-white rounded-lg border border-orange-200">
-            <p className="text-xs text-orange-600 font-medium">İşlemiş Faiz</p>
-            <p className="text-lg font-bold text-orange-600">{formatCurrency(toplamlar.islemisFaiz)}</p>
-          </div>
-          <div className="text-center p-3 bg-white rounded-lg border">
-            <p className="text-xs text-muted-foreground">Masraf/Harç</p>
-            <p className="text-lg font-bold">{formatCurrency(toplamlar.masraf)}</p>
-          </div>
-          <div className="text-center p-3 bg-white rounded-lg border">
-            <p className="text-xs text-muted-foreground">Vekalet Ücreti</p>
-            <p className="text-lg font-bold">{formatCurrency(toplamlar.vekaletUcreti)}</p>
-          </div>
-          <div className="text-center p-3 bg-white rounded-lg border">
-            <p className="text-xs text-muted-foreground">Diğer (Tazminat vb.)</p>
-            <p className="text-lg font-bold">{formatCurrency(toplamlar.diger)}</p>
-          </div>
-          <div className="text-center p-3 bg-primary/10 rounded-lg border-2 border-primary">
-            <p className="text-xs text-primary font-medium">TAKİP TOPLAMI</p>
-            <p className="text-xl font-bold text-primary">{formatCurrency(genelToplam)}</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Takip Sonrası Faiz Kuralı */}
-      <div className="border rounded-xl p-4 bg-gray-50">
-        <h3 className="font-semibold mb-3 flex items-center gap-2">
-          <Percent className="h-5 w-5 text-gray-600" />
-          Takip Sonrası Faiz Kuralı
-        </h3>
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-xs font-medium mb-1">Faiz Türü</label>
-            <select
-              value={takipSonrasiFaiz.faizTuru}
-              onChange={(e) => setTakipSonrasiFaiz(prev => ({ ...prev, faizTuru: e.target.value }))}
-              className="w-full border rounded px-2 py-1.5 text-sm"
-            >
-              {FAIZ_TURU_OPTIONS.filter(f => f.value !== "YOK").map(opt => (
-                <option key={opt.value} value={opt.value}>{opt.label} (%{opt.rate})</option>
-              ))}
-            </select>
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1">Oran</label>
-            <div className="flex items-center gap-2">
-              <input
-                type="text"
-                readOnly
-                value={`%${FAIZ_TURU_OPTIONS.find(f => f.value === takipSonrasiFaiz.faizTuru)?.rate || 0}`}
-                className="w-20 border rounded px-2 py-1.5 text-sm bg-gray-100 text-center font-medium"
-              />
-              <label className="flex items-center gap-1 text-xs">
-                <input
-                  type="checkbox"
-                  checked={takipSonrasiFaiz.degiskenOran}
-                  onChange={(e) => setTakipSonrasiFaiz(prev => ({ ...prev, degiskenOran: e.target.checked }))}
-                  className="rounded"
-                />
-                Değişken oranlara göre güncellenebilir
-              </label>
-            </div>
-          </div>
-          <div>
-            <label className="block text-xs font-medium mb-1">Başlangıç (Takip Tarihi)</label>
-            <input
-              type="date"
-              value={takipSonrasiFaiz.baslangic}
-              onChange={(e) => setTakipSonrasiFaiz(prev => ({ ...prev, baslangic: e.target.value }))}
-              className="w-full border rounded px-2 py-1.5 text-sm"
-            />
-          </div>
-          <div className="flex items-end">
-            <label className="flex items-center gap-2 text-sm">
-              <input type="checkbox" defaultChecked className="rounded" />
-              Bu metni Örnek 1'e ekle
-            </label>
-          </div>
-        </div>
+        )}
       </div>
     </div>
   );
 }
+
+export default ProfessionalClaimItemForm;

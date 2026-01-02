@@ -9,24 +9,22 @@ export interface CreateLeaseDto {
   propertyCity?: string;
   propertyDistrict?: string;
   // Sozlesme bilgileri
-  leaseStartDate: string;
-  leaseEndDate?: string;
+  startDate: string;
+  endDate?: string;
   monthlyRent: number;
-  rentCurrency?: string;
-  depositAmount?: number;
+  currency?: string;
+  paymentDay?: number;
   // Tahliye bilgileri
   evictionReason?: EvictionReason;
   evictionNoticeDate?: string;
-  evictionDeadline?: string;
-  // Kira borcu
-  unpaidMonths?: number;
-  unpaidRentTotal?: number;
-  lastPaymentDate?: string;
-  // Diger
+  evictionCommitmentDate?: string;
+  // Taraflar
   landlordName?: string;
-  landlordIdentityNo?: string;
+  landlordIdentity?: string;
   tenantName?: string;
-  tenantIdentityNo?: string;
+  tenantIdentity?: string;
+  // Diger
+  rentPeriods?: any;
   notes?: string;
 }
 
@@ -53,23 +51,20 @@ export class CaseLeaseService {
         propertyAddress: dto.propertyAddress,
         propertyCity: dto.propertyCity,
         propertyDistrict: dto.propertyDistrict,
-        leaseStartDate: new Date(dto.leaseStartDate),
-        leaseEndDate: dto.leaseEndDate ? new Date(dto.leaseEndDate) : null,
+        startDate: new Date(dto.startDate),
+        endDate: dto.endDate ? new Date(dto.endDate) : null,
         monthlyRent: dto.monthlyRent,
-        rentCurrency: dto.rentCurrency || 'TRY',
-        depositAmount: dto.depositAmount,
+        currency: dto.currency || 'TRY',
+        paymentDay: dto.paymentDay,
         evictionReason: dto.evictionReason,
         evictionNoticeDate: dto.evictionNoticeDate ? new Date(dto.evictionNoticeDate) : null,
-        evictionDeadline: dto.evictionDeadline ? new Date(dto.evictionDeadline) : null,
-        unpaidMonths: dto.unpaidMonths,
-        unpaidRentTotal: dto.unpaidRentTotal,
-        lastPaymentDate: dto.lastPaymentDate ? new Date(dto.lastPaymentDate) : null,
+        evictionCommitmentDate: dto.evictionCommitmentDate ? new Date(dto.evictionCommitmentDate) : null,
         landlordName: dto.landlordName,
-        landlordIdentityNo: dto.landlordIdentityNo,
+        landlordIdentity: dto.landlordIdentity,
         tenantName: dto.tenantName,
-        tenantIdentityNo: dto.tenantIdentityNo,
+        tenantIdentity: dto.tenantIdentity,
+        rentPeriods: dto.rentPeriods,
         notes: dto.notes,
-        createdById: userId,
       },
     });
   }
@@ -100,21 +95,19 @@ export class CaseLeaseService {
         ...(dto.propertyAddress && { propertyAddress: dto.propertyAddress }),
         ...(dto.propertyCity !== undefined && { propertyCity: dto.propertyCity }),
         ...(dto.propertyDistrict !== undefined && { propertyDistrict: dto.propertyDistrict }),
-        ...(dto.leaseStartDate && { leaseStartDate: new Date(dto.leaseStartDate) }),
-        ...(dto.leaseEndDate !== undefined && { leaseEndDate: dto.leaseEndDate ? new Date(dto.leaseEndDate) : null }),
+        ...(dto.startDate && { startDate: new Date(dto.startDate) }),
+        ...(dto.endDate !== undefined && { endDate: dto.endDate ? new Date(dto.endDate) : null }),
         ...(dto.monthlyRent !== undefined && { monthlyRent: dto.monthlyRent }),
-        ...(dto.rentCurrency && { rentCurrency: dto.rentCurrency }),
-        ...(dto.depositAmount !== undefined && { depositAmount: dto.depositAmount }),
+        ...(dto.currency && { currency: dto.currency }),
+        ...(dto.paymentDay !== undefined && { paymentDay: dto.paymentDay }),
         ...(dto.evictionReason !== undefined && { evictionReason: dto.evictionReason }),
         ...(dto.evictionNoticeDate !== undefined && { evictionNoticeDate: dto.evictionNoticeDate ? new Date(dto.evictionNoticeDate) : null }),
-        ...(dto.evictionDeadline !== undefined && { evictionDeadline: dto.evictionDeadline ? new Date(dto.evictionDeadline) : null }),
-        ...(dto.unpaidMonths !== undefined && { unpaidMonths: dto.unpaidMonths }),
-        ...(dto.unpaidRentTotal !== undefined && { unpaidRentTotal: dto.unpaidRentTotal }),
-        ...(dto.lastPaymentDate !== undefined && { lastPaymentDate: dto.lastPaymentDate ? new Date(dto.lastPaymentDate) : null }),
+        ...(dto.evictionCommitmentDate !== undefined && { evictionCommitmentDate: dto.evictionCommitmentDate ? new Date(dto.evictionCommitmentDate) : null }),
         ...(dto.landlordName !== undefined && { landlordName: dto.landlordName }),
-        ...(dto.landlordIdentityNo !== undefined && { landlordIdentityNo: dto.landlordIdentityNo }),
+        ...(dto.landlordIdentity !== undefined && { landlordIdentity: dto.landlordIdentity }),
         ...(dto.tenantName !== undefined && { tenantName: dto.tenantName }),
-        ...(dto.tenantIdentityNo !== undefined && { tenantIdentityNo: dto.tenantIdentityNo }),
+        ...(dto.tenantIdentity !== undefined && { tenantIdentity: dto.tenantIdentity }),
+        ...(dto.rentPeriods !== undefined && { rentPeriods: dto.rentPeriods }),
         ...(dto.notes !== undefined && { notes: dto.notes }),
       },
     });
@@ -125,14 +118,19 @@ export class CaseLeaseService {
     return this.prisma.caseLease.delete({ where: { id } });
   }
 
-  // Toplam kira borcu hesapla
+  // Toplam kira borcu hesapla (rentPeriods JSON'dan)
   async calculateTotalDebt(tenantId: string, caseId: string) {
     const lease = await this.findByCase(tenantId, caseId);
     if (!lease) return { total: 0, months: 0 };
 
+    // rentPeriods JSON array'inden hesapla
+    const periods = (lease.rentPeriods as any[]) || [];
+    const unpaidPeriods = periods.filter((p: any) => !p.isPaid);
+    const total = unpaidPeriods.reduce((sum: number, p: any) => sum + (Number(p.amount) || 0), 0);
+
     return {
-      total: Number(lease.unpaidRentTotal) || 0,
-      months: lease.unpaidMonths || 0,
+      total,
+      months: unpaidPeriods.length,
       monthlyRent: Number(lease.monthlyRent),
     };
   }

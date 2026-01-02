@@ -1,0 +1,378 @@
+# ============================================================
+# HESAP ÖZETİ MOTORU KURALLARI
+# Takip Muhasebesi - Sağ Panel Hesaplamaları
+# ============================================================
+version: 1
+engine: enforcement_accounting_summary
+
+# ------------------------------------------------------------
+# A) TEMEL POLİTİKALAR
+# ------------------------------------------------------------
+policies:
+  # demandedAmount = takipte istenen tutar; collectedAmount = tahsil
+  use_demanded_amount_for_summary: true
+  use_collected_amount_for_balance: true
+
+  # TBK 100 / BK 84 mahsup sırası (default)
+  allocation_order:
+    - EXPENSE
+    - FEE
+    - ATTORNEY_FEE
+    - PRE_INTEREST
+    - POST_INTEREST
+    - PRINCIPAL
+    - PENALTY
+    - CHECK_PENALTY
+    - COMMISSION
+    - OTHER
+
+  # Kambiyo çek tazminatı default ON
+  bad_check_compensation:
+    default_on: true
+    rate: 0.10
+    base_item_type: PRINCIPAL
+
+  # Para birimi
+  default_currency: TRY
+
+# ------------------------------------------------------------
+# B) KALEM TÜRLERİ -> BUCKET GRUPLAMA
+# ------------------------------------------------------------
+buckets:
+  principal_bucket:
+    label: "Asıl Alacak"
+    include_types: ["PRINCIPAL"]
+    color: "#1e40af"
+    
+  penalty_bucket:
+    label: "Tazminat"
+    include_types: ["PENALTY", "CHECK_PENALTY", "CONTRACTUAL_PENALTY"]
+    color: "#dc2626"
+    
+  commission_bucket:
+    label: "Komisyon"
+    include_types: ["COMMISSION"]
+    color: "#7c3aed"
+    
+  pre_interest_bucket:
+    label: "Takip Öncesi Faiz"
+    include_types: ["PRE_INTEREST", "INTEREST"]
+    color: "#ea580c"
+    
+  post_interest_bucket:
+    label: "Takip Sonrası Faiz"
+    include_types: ["POST_INTEREST"]
+    color: "#ca8a04"
+    
+  fees_bucket:
+    label: "Harçlar"
+    include_types: ["FEE", "STAMP"]
+    color: "#0891b2"
+    
+  expenses_bucket:
+    label: "Masraflar"
+    include_types: ["EXPENSE", "POSTAGE"]
+    color: "#059669"
+    
+  attorney_fee_bucket:
+    label: "Vekalet Ücreti"
+    include_types: ["ATTORNEY_FEE"]
+    color: "#be185d"
+    
+  tax_bucket:
+    label: "Vergiler"
+    include_types: ["TAX_KDV", "TAX_BSMV", "TAX_KKDF"]
+    color: "#6b7280"
+
+# ------------------------------------------------------------
+# C) ÖZET SATIRLARI (Sağ Panel)
+# Her satır = formül
+# ------------------------------------------------------------
+summary_sections:
+  # ═══════════════════════════════════════════════════════════
+  # ALACAKLAR GRUBU
+  # ═══════════════════════════════════════════════════════════
+  - section_key: alacaklar
+    section_label: "Alacaklar"
+    section_color: "#1e40af"
+    lines:
+      - key: principal_line
+        label: "Çek / Asıl Alacak"
+        amount:
+          sum_bucket: principal_bucket
+          field: demandedAmount
+        show_original: true  # Orijinal tutarı da göster
+
+      - key: bad_check_compensation_line
+        label: "Karşılıksız Çek Tazminatı"
+        amount:
+          sum_bucket: penalty_bucket
+          field: demandedAmount
+        auto_generate_if_missing:
+          when:
+            caseType_any_of: ["KAMBIYO_CEK"]
+            policy_true: "policies.bad_check_compensation.default_on"
+          generate:
+            type: CHECK_PENALTY
+            label: "Karşılıksız Çek Tazminatı (%10)"
+            calc_ref: percent_of_bucket
+            params:
+              rate_policy: "policies.bad_check_compensation.rate"
+              base_bucket: principal_bucket
+              base_field: demandedAmount
+
+      - key: commission_line
+        label: "Komisyon"
+        amount:
+          sum_bucket: commission_bucket
+          field: demandedAmount
+        hide_if_zero: true
+
+      - key: pre_interest_line
+        label: "Takip Öncesi Faiz"
+        amount:
+          sum_bucket: pre_interest_bucket
+          field: demandedAmount
+        hide_if_zero: true
+
+      - key: tax_line
+        label: "Vergiler (KDV/BSMV/KKDF)"
+        amount:
+          sum_bucket: tax_bucket
+          field: demandedAmount
+        hide_if_zero: true
+
+  # ═══════════════════════════════════════════════════════════
+  # TAKİP TUTARI (Alt Toplam)
+  # ═══════════════════════════════════════════════════════════
+  - section_key: takip_tutari
+    section_label: "Takip Tutarı"
+    section_color: "#059669"
+    is_subtotal: true
+    lines:
+      - key: takip_tutari_line
+        label: "Takip Tutarı"
+        amount:
+          sum_of_keys: 
+            - principal_line
+            - bad_check_compensation_line
+            - commission_line
+            - pre_interest_line
+            - tax_line
+        bold: true
+        highlight: true
+
+  # ═══════════════════════════════════════════════════════════
+  # İCRA MASRAFLARI GRUBU
+  # ═══════════════════════════════════════════════════════════
+  - section_key: icra_masraflari
+    section_label: "İcra Masrafları"
+    section_color: "#0891b2"
+    lines:
+      - key: application_fee_line
+        label: "Başvurma Harcı"
+        amount:
+          sum_items_by_label_contains: ["Başvurma Harcı"]
+          field: demandedAmount
+
+      - key: poa_copy_fee_line
+        label: "Vekalet Suret Harcı"
+        amount:
+          sum_items_by_label_contains: ["Vekalet Suret Harcı", "Vekalet Harcı"]
+          field: demandedAmount
+
+      - key: pesin_harc_line
+        label: "Peşin Harç"
+        amount:
+          sum_items_by_label_contains: ["Peşin Harç"]
+          field: demandedAmount
+
+      - key: file_expense_line
+        label: "Dosya Gideri"
+        amount:
+          sum_items_by_label_contains: ["Dosya Gideri"]
+          field: demandedAmount
+
+      - key: postage_line
+        label: "Tebligat Gideri"
+        amount:
+          sum_items_by_label_contains: ["Tebligat", "Posta", "UETS"]
+          field: demandedAmount
+
+      - key: stamp_line
+        label: "Vekalet Pulu"
+        amount:
+          sum_items_by_label_contains: ["Vekalet Pulu", "Baro Pulu"]
+          field: demandedAmount
+
+      - key: icra_masraflari_total
+        label: "İcra Masrafları Toplamı"
+        amount:
+          sum_of_keys:
+            - application_fee_line
+            - poa_copy_fee_line
+            - pesin_harc_line
+            - file_expense_line
+            - postage_line
+            - stamp_line
+        bold: true
+
+  # ═══════════════════════════════════════════════════════════
+  # VEKALET ÜCRETİ
+  # ═══════════════════════════════════════════════════════════
+  - section_key: vekalet_ucreti
+    section_label: "Vekalet Ücreti"
+    section_color: "#be185d"
+    lines:
+      - key: attorney_fee_line
+        label: "Vekalet Ücreti"
+        amount:
+          sum_bucket: attorney_fee_bucket
+          field: demandedAmount
+        note: "Karşı taraf vekalet ücreti (tarifeye göre)"
+        bold: true
+
+  # ═══════════════════════════════════════════════════════════
+  # TAKİP SONRASI FAİZ
+  # ═══════════════════════════════════════════════════════════
+  - section_key: takip_sonrasi_faiz
+    section_label: "Takip Sonrası Faiz"
+    section_color: "#ca8a04"
+    lines:
+      - key: post_filing_interest_line
+        label: "Takip Sonrası Faiz"
+        amount:
+          sum_bucket: post_interest_bucket
+          field: demandedAmount
+        fallback_virtual_calc:
+          calc_ref: post_filing_interest_virtual
+          params:
+            base_bucket: principal_bucket
+            base_remaining_field: remainingAmount
+            from_date: "case.filingDate"
+            to_date: "summary.asOfDate"
+            interest_rule_ref: "case.postFilingInterestRule"
+        note: "Bugün itibarıyla hesaplanmış"
+        italic: true
+
+  # ═══════════════════════════════════════════════════════════
+  # TOPLAM VE KALAN
+  # ═══════════════════════════════════════════════════════════
+  - section_key: toplam
+    section_label: "Toplam"
+    section_color: "#dc2626"
+    is_total: true
+    lines:
+      - key: total_gross_debt_line
+        label: "Toplam Borç Tutarı"
+        amount:
+          sum_of_keys:
+            - takip_tutari_line
+            - icra_masraflari_total
+            - attorney_fee_line
+            - post_filing_interest_line
+        bold: true
+        size: large
+
+      - key: total_collected_line
+        label: "Toplam Tahsilat"
+        amount:
+          sum_all_items:
+            field: collectedAmount
+        color: "#059669"
+        show_if_nonzero: true
+
+      - key: final_balance_line
+        label: "Son Borç Tutarı"
+        amount:
+          subtract:
+            left: total_gross_debt_line
+            right: total_collected_line
+        bold: true
+        size: xlarge
+        color: "#dc2626"
+        highlight: true
+
+# ------------------------------------------------------------
+# D) HESAPLANAN ALANLAR
+# ------------------------------------------------------------
+computed_fields:
+  - name: remainingAmount
+    formula: "demandedAmount - collectedAmount"
+    min: 0
+
+  - name: demandedPercentage
+    formula: "(demandedAmount / originalAmount) * 100"
+    format: percent
+
+# ------------------------------------------------------------
+# E) TAHSİLAT DAĞITIMI (TBK 100 / BK 84)
+# ------------------------------------------------------------
+ledger_allocation:
+  enabled: true
+  on_payment:
+    entryType: PAYMENT
+    apply_order_policy: "policies.allocation_order"
+    allocate_to:
+      EXPENSE: ["EXPENSE"]
+      FEE: ["FEE", "STAMP", "POSTAGE"]
+      ATTORNEY_FEE: ["ATTORNEY_FEE"]
+      PRE_INTEREST: ["PRE_INTEREST", "INTEREST"]
+      POST_INTEREST: ["POST_INTEREST"]
+      PRINCIPAL: ["PRINCIPAL"]
+      PENALTY: ["PENALTY", "CHECK_PENALTY", "CONTRACTUAL_PENALTY"]
+      COMMISSION: ["COMMISSION"]
+      OTHER: ["OTHER", "TAX_KDV", "TAX_BSMV", "TAX_KKDF"]
+
+# ------------------------------------------------------------
+# F) TAHSİL HARCI ORANLARINA GÖRE ALTERNATİF HESAPLAMA
+# ------------------------------------------------------------
+alternative_collection_fee_scenarios:
+  enabled: true
+  rates:
+    - rate: 0.0000
+      label: "Tahsil Harcı Yok"
+    - rate: 0.0227
+      label: "%2,27"
+    - rate: 0.0455
+      label: "%4,55"
+    - rate: 0.0910
+      label: "%9,10"
+    - rate: 0.1138
+      label: "%11,38"
+  base_key: final_balance_line
+  output_label: "Tahsil Harcı Oranlarına Göre Son Borç"
+  formula:
+    type: percent_on_balance
+    apply_on: final_balance_line
+
+# ------------------------------------------------------------
+# G) TAKİP TÜRÜNE GÖRE ÖZEL KURALLAR
+# ------------------------------------------------------------
+case_type_rules:
+  KAMBIYO_CEK:
+    auto_add_items:
+      - type: CHECK_PENALTY
+        label: "Karşılıksız Çek Tazminatı (%10)"
+        calc: "principal * 0.10"
+    interest_type: TICARI
+    
+  KAMBIYO_SENET:
+    interest_type: TICARI
+    
+  ILAMSIZ_GENEL:
+    interest_type: YASAL
+    
+  ILAMSIZ_KIRA:
+    auto_add_items:
+      - type: EXPENSE
+        label: "Tahliye Masrafı"
+        optional: true
+    interest_type: YASAL
+    
+  ILAMLI:
+    interest_type: YASAL
+    auto_add_items:
+      - type: ATTORNEY_FEE
+        label: "İlam Vekalet Ücreti"
+        from_judgment: true

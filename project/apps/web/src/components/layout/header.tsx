@@ -10,7 +10,7 @@ import { api } from "@/lib/api";
 
 const mobileNavigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { name: "Yeni Takip", href: "/cases/new", icon: PlusCircle },
+  { name: "Yeni Takip", href: "/cases/new?new=true", icon: PlusCircle },
   { name: "Takipler", href: "/cases", icon: FolderOpen },
   { name: "AI Tools", href: "/ai-tools", icon: Sparkles },
   { name: "Borçlular", href: "/debtors", icon: Users },

@@ -133,3 +133,43 @@ penalties:
     max_rate: null
     label: "Cezai Şart"
     base: "principal"
+
+# --------------------------------------------
+# AVUKATLIK ASGARİ ÜCRET TARİFESİ 2025
+# İcra ve İflas Takipleri (Karşı Taraf Vekalet Ücreti)
+# --------------------------------------------
+attorney_fees:
+  icra_takip:
+    # İcra dairelerinde yapılan takipler için
+    # Takip tutarı üzerinden kademeli hesaplama
+    tiers:
+      - min: 0
+        max: 55000
+        fixed: 11000  # 55.000 TL'ye kadar sabit 11.000 TL
+        rate: 0
+      - min: 55000
+        max: 130000
+        fixed: 11000
+        rate: 0.14    # 55.000 - 130.000 arası %14
+      - min: 130000
+        max: 390000
+        fixed: 21500  # 11.000 + (75.000 * 0.14)
+        rate: 0.12    # 130.000 - 390.000 arası %12
+      - min: 390000
+        max: 780000
+        fixed: 52700  # 21.500 + (260.000 * 0.12)
+        rate: 0.08    # 390.000 - 780.000 arası %8
+      - min: 780000
+        max: 1950000
+        fixed: 83900  # 52.700 + (390.000 * 0.08)
+        rate: 0.04    # 780.000 - 1.950.000 arası %4
+      - min: 1950000
+        max: null
+        fixed: 130700 # 83.900 + (1.170.000 * 0.04)
+        rate: 0.01    # 1.950.000 üzeri %1
+    
+    # Minimum ücret
+    minimum: 11000
+    
+    # Açıklama
+    description: "2025 Avukatlık Asgari Ücret Tarifesi - İcra Takipleri"

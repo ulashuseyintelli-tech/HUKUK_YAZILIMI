@@ -57,10 +57,10 @@ export function Sidebar() {
   };
 
   const handleNavClick = (e: React.MouseEvent, href: string) => {
-    if (href === "/cases/new" && pathname === "/cases/new") {
+    if (href === "/cases/new") {
       e.preventDefault();
-      router.refresh();
-      window.location.href = "/cases/new";
+      // Her zaman yeni başlangıç için ?new=true parametresi ekle
+      window.location.href = "/cases/new?new=true";
     }
   };
 

@@ -9,6 +9,8 @@ import {
   Check,
   Loader2,
   X,
+  FileDown,
+  Send,
 } from "lucide-react";
 import { api } from "@/lib/api";
 
@@ -43,6 +45,7 @@ export function DocumentGenerator({
   const [templates, setTemplates] = useState<DocumentTemplate[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [generating, setGenerating] = useState(false);
+  const [downloading, setDownloading] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [previewContent, setPreviewContent] = useState<string | null>(null);
   const [previewTitle, setPreviewTitle] = useState<string>("");
@@ -180,6 +183,75 @@ export function DocumentGenerator({
     a.download = `${previewTitle.replace(/\s+/g, "_")}.html`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  // PDF İndir
+  const handleDownloadPdf = async (docType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi') => {
+    setDownloading('pdf');
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/template-engine/case/${caseId}/pdf?type=${docType}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('PDF indirilemedi');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${docType}-${caseId}.pdf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setError(err.message || 'PDF indirme hatası');
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  // Word İndir
+  const handleDownloadWord = async (docType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi') => {
+    setDownloading('word');
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/template-engine/case/${caseId}/word?type=${docType}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('Word indirilemedi');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${docType}-${caseId}.docx`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setError(err.message || 'Word indirme hatası');
+    } finally {
+      setDownloading(null);
+    }
+  };
+
+  // UDF Oluştur (UYAP için)
+  const handleGenerateUdf = async (docType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi') => {
+    setDownloading('udf');
+    try {
+      const token = localStorage.getItem('token');
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/template-engine/case/${caseId}/udf/download?type=${docType}`, {
+        headers: { 'Authorization': `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('UDF oluşturulamadı');
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${docType}-${caseId}.udf`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      setError(err.message || 'UDF oluşturma hatası');
+    } finally {
+      setDownloading(null);
+    }
   };
 
   // Kategoriye göre grupla
@@ -335,11 +407,46 @@ export function DocumentGenerator({
               </>
             ) : (
               <>
-                <Download className="h-4 w-4" />
-                Belge Üret
+                <Eye className="h-4 w-4" />
+                Önizle
               </>
             )}
           </button>
+
+          {/* Hızlı İndirme Butonları */}
+          <div className="mt-4 pt-4 border-t">
+            <h4 className="text-sm font-medium text-muted-foreground mb-3">Hızlı İndirme</h4>
+            <div className="grid grid-cols-3 gap-2">
+              <button
+                onClick={() => handleDownloadPdf('takip-talebi')}
+                disabled={downloading !== null}
+                className="flex flex-col items-center gap-1 p-3 border rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              >
+                <FileDown className="h-5 w-5 text-red-600" />
+                <span className="text-xs font-medium">{downloading === 'pdf' ? 'İndiriliyor...' : 'PDF'}</span>
+              </button>
+              <button
+                onClick={() => handleDownloadWord('takip-talebi')}
+                disabled={downloading !== null}
+                className="flex flex-col items-center gap-1 p-3 border rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+              >
+                <Download className="h-5 w-5 text-blue-600" />
+                <span className="text-xs font-medium">{downloading === 'word' ? 'İndiriliyor...' : 'Word'}</span>
+              </button>
+              <button
+                onClick={() => handleGenerateUdf('takip-talebi')}
+                disabled={downloading !== null}
+                className="flex flex-col items-center gap-1 p-3 border rounded-lg hover:bg-gray-50 disabled:opacity-50 transition-colors"
+                title="UYAP'a gönderim için UDF formatı"
+              >
+                <Send className="h-5 w-5 text-purple-600" />
+                <span className="text-xs font-medium">{downloading === 'udf' ? 'Oluşturuluyor...' : 'UDF'}</span>
+              </button>
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-2 text-center">
+              UDF: UYAP'a gönderim formatı
+            </p>
+          </div>
         </>
       )}
 

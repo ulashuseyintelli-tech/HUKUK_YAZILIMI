@@ -116,7 +116,7 @@ export default function CasesPage() {
           <p className="text-xs text-muted-foreground">Tüm icra takiplerinizi yönetin</p>
         </div>
         <Link
-          href="/cases/new"
+          href="/cases/new?new=true"
           className="inline-flex items-center gap-1 bg-primary text-primary-foreground px-3 py-1.5 text-sm rounded-lg hover:bg-primary/90"
         >
           <Plus className="h-4 w-4" />
@@ -227,7 +227,7 @@ export default function CasesPage() {
               <div className="text-center py-8">
                 <FileText className="h-8 w-8 text-muted-foreground mx-auto mb-2" />
                 <p className="text-sm text-muted-foreground">Takip bulunamadı</p>
-                <Link href="/cases/new" className="inline-flex items-center gap-1 mt-2 text-sm text-primary hover:underline">
+                <Link href="/cases/new?new=true" className="inline-flex items-center gap-1 mt-2 text-sm text-primary hover:underline">
                   <Plus className="h-3 w-3" /> İlk takibinizi oluşturun
                 </Link>
               </div>

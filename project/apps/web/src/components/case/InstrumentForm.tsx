@@ -6,7 +6,7 @@ import { api, CaseInstrument, InstrumentType } from "@/lib/api";
 
 interface InstrumentFormProps {
   caseId: string;
-  instrumentType?: "CEK" | "SENET";
+  instrumentType?: InstrumentType;
   onTotalChange?: (total: number) => void;
 }
 

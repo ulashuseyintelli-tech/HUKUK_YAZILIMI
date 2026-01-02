@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InstrumentType } from '@prisma/client';
 
@@ -7,29 +7,31 @@ export interface CreateInstrumentDto {
   instrumentType: InstrumentType;
   serialNo: string;
   issueDate: string;
-  maturityDate: string;
+  maturityDate?: string;
+  presentmentDate?: string;
   amount: number;
   currency?: string;
-  // Cek alanlari
+  // Banka bilgileri
   bankName?: string;
-  branchName?: string;
+  bankBranch?: string;
+  bankCode?: string;
   accountNo?: string;
-  checkNo?: string;
+  // Taraflar
   drawerName?: string;
-  drawerIdentityNo?: string;
-  endorserName?: string;
-  endorserIdentityNo?: string;
-  // Senet alanlari
-  issuerName?: string;
-  issuerIdentityNo?: string;
-  issuerAddress?: string;
+  drawerIdentity?: string;
   payeeName?: string;
-  payeeIdentityNo?: string;
-  guarantorName?: string;
-  guarantorIdentityNo?: string;
-  // Ortak alanlar
+  payeeIdentity?: string;
+  // Ciranta/Aval (JSON)
+  endorsers?: any;
+  avals?: any;
+  // Protesto/Karşılıksız
+  isProtested?: boolean;
   protestDate?: string;
   protestNo?: string;
+  isBounced?: boolean;
+  bounceDate?: string;
+  bounceReason?: string;
+  // Diger
   notes?: string;
 }
 
@@ -55,28 +57,27 @@ export class CaseInstrumentService {
         instrumentType: dto.instrumentType,
         serialNo: dto.serialNo,
         issueDate: new Date(dto.issueDate),
-        maturityDate: new Date(dto.maturityDate),
+        maturityDate: dto.maturityDate ? new Date(dto.maturityDate) : null,
+        presentmentDate: dto.presentmentDate ? new Date(dto.presentmentDate) : null,
         amount: dto.amount,
         currency: dto.currency || 'TRY',
         bankName: dto.bankName,
-        branchName: dto.branchName,
+        bankBranch: dto.bankBranch,
+        bankCode: dto.bankCode,
         accountNo: dto.accountNo,
-        checkNo: dto.checkNo,
         drawerName: dto.drawerName,
-        drawerIdentityNo: dto.drawerIdentityNo,
-        endorserName: dto.endorserName,
-        endorserIdentityNo: dto.endorserIdentityNo,
-        issuerName: dto.issuerName,
-        issuerIdentityNo: dto.issuerIdentityNo,
-        issuerAddress: dto.issuerAddress,
+        drawerIdentity: dto.drawerIdentity,
         payeeName: dto.payeeName,
-        payeeIdentityNo: dto.payeeIdentityNo,
-        guarantorName: dto.guarantorName,
-        guarantorIdentityNo: dto.guarantorIdentityNo,
+        payeeIdentity: dto.payeeIdentity,
+        endorsers: dto.endorsers,
+        avals: dto.avals,
+        isProtested: dto.isProtested || false,
         protestDate: dto.protestDate ? new Date(dto.protestDate) : null,
         protestNo: dto.protestNo,
+        isBounced: dto.isBounced || false,
+        bounceDate: dto.bounceDate ? new Date(dto.bounceDate) : null,
+        bounceReason: dto.bounceReason,
         notes: dto.notes,
-        createdById: userId,
       },
     });
   }
@@ -99,7 +100,7 @@ export class CaseInstrumentService {
   }
 
   async update(tenantId: string, id: string, dto: UpdateInstrumentDto) {
-    const instrument = await this.findOne(tenantId, id);
+    await this.findOne(tenantId, id);
 
     return this.prisma.caseInstrument.update({
       where: { id },
@@ -107,26 +108,26 @@ export class CaseInstrumentService {
         ...(dto.instrumentType && { instrumentType: dto.instrumentType }),
         ...(dto.serialNo && { serialNo: dto.serialNo }),
         ...(dto.issueDate && { issueDate: new Date(dto.issueDate) }),
-        ...(dto.maturityDate && { maturityDate: new Date(dto.maturityDate) }),
+        ...(dto.maturityDate !== undefined && { maturityDate: dto.maturityDate ? new Date(dto.maturityDate) : null }),
+        ...(dto.presentmentDate !== undefined && { presentmentDate: dto.presentmentDate ? new Date(dto.presentmentDate) : null }),
         ...(dto.amount !== undefined && { amount: dto.amount }),
         ...(dto.currency && { currency: dto.currency }),
         ...(dto.bankName !== undefined && { bankName: dto.bankName }),
-        ...(dto.branchName !== undefined && { branchName: dto.branchName }),
+        ...(dto.bankBranch !== undefined && { bankBranch: dto.bankBranch }),
+        ...(dto.bankCode !== undefined && { bankCode: dto.bankCode }),
         ...(dto.accountNo !== undefined && { accountNo: dto.accountNo }),
-        ...(dto.checkNo !== undefined && { checkNo: dto.checkNo }),
         ...(dto.drawerName !== undefined && { drawerName: dto.drawerName }),
-        ...(dto.drawerIdentityNo !== undefined && { drawerIdentityNo: dto.drawerIdentityNo }),
-        ...(dto.endorserName !== undefined && { endorserName: dto.endorserName }),
-        ...(dto.endorserIdentityNo !== undefined && { endorserIdentityNo: dto.endorserIdentityNo }),
-        ...(dto.issuerName !== undefined && { issuerName: dto.issuerName }),
-        ...(dto.issuerIdentityNo !== undefined && { issuerIdentityNo: dto.issuerIdentityNo }),
-        ...(dto.issuerAddress !== undefined && { issuerAddress: dto.issuerAddress }),
+        ...(dto.drawerIdentity !== undefined && { drawerIdentity: dto.drawerIdentity }),
         ...(dto.payeeName !== undefined && { payeeName: dto.payeeName }),
-        ...(dto.payeeIdentityNo !== undefined && { payeeIdentityNo: dto.payeeIdentityNo }),
-        ...(dto.guarantorName !== undefined && { guarantorName: dto.guarantorName }),
-        ...(dto.guarantorIdentityNo !== undefined && { guarantorIdentityNo: dto.guarantorIdentityNo }),
+        ...(dto.payeeIdentity !== undefined && { payeeIdentity: dto.payeeIdentity }),
+        ...(dto.endorsers !== undefined && { endorsers: dto.endorsers }),
+        ...(dto.avals !== undefined && { avals: dto.avals }),
+        ...(dto.isProtested !== undefined && { isProtested: dto.isProtested }),
         ...(dto.protestDate !== undefined && { protestDate: dto.protestDate ? new Date(dto.protestDate) : null }),
         ...(dto.protestNo !== undefined && { protestNo: dto.protestNo }),
+        ...(dto.isBounced !== undefined && { isBounced: dto.isBounced }),
+        ...(dto.bounceDate !== undefined && { bounceDate: dto.bounceDate ? new Date(dto.bounceDate) : null }),
+        ...(dto.bounceReason !== undefined && { bounceReason: dto.bounceReason }),
         ...(dto.notes !== undefined && { notes: dto.notes }),
       },
     });

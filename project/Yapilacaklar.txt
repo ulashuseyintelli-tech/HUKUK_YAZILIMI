@@ -1,285 +1,1792 @@
-# HUKUK YAZILIMI - YAPILACAKLAR VE MİMARİ DOKÜMANI
-# Son Güncelleme: 2025-12-28
+2026-01-02 02:00 (TR)
 
-## ✅ TAMAMLANAN İŞLER
+Tam olarak doğru yere parmak bastın: **“Masraf Talebi” tek tek girilen bir form değil, takip yaşam döngüsünün otomatik ürettiği bir “masraf planı + talep akışı” olmalı.** Aksi halde her takipte aynı muhasebe/harç kalemleri yeniden yazılıyor, hata ve zaman kaybı.
 
-### 1. İleri Düzey İyileştirmeler (2025-12-27)
-- [x] TCMB Kur Entegrasyonu (ExchangeRateModule)
-- [x] Tarife Yönetimi (TariffModule) - YAML import/export
-- [x] PDF Export (PdfModule) - pdfkit ile
-- [x] Daha Fazla Şablon (TemplateEngineModule) - 11 şablon
-- [x] Resmî Gazete Tarife Takibi (GazetteWatcherService)
-
-### 2. Otomatik Faiz Hesaplama (2025-12-27)
-- [x] DuesStep'te vade tarihine göre otomatik faiz hesaplama
-- [x] Çek takibinde %10 tazminat otomatik ekleme
-- [x] Faiz türü otomatik belirleme (Ticari/Yasal)
-
-### 3. Zorunlu Unsurlar Mimarisi (2025-12-28)
-- [x] Prisma Schema güncellemesi:
-  - CaseInstrument (Çek/Senet bilgileri)
-  - CaseLease (Kira sözleşmesi)
-  - CaseJudgment (İlam bilgileri)
-  - CaseCollateral (Rehin/İpotek)
-  - ValidationResult (Gate sonuçları)
-  - AddressMissingTask (Adres eksikliği task'ı)
-- [x] master-validations.yaml oluşturuldu
-- [x] ValidationGateModule oluşturuldu
-- [x] claim-item-sets.yaml güncellendi (çek tazminatı default ON)
-
-### 5. Enstrüman/Kira/İlam/Teminat Modülleri (2025-12-28)
-- [x] CaseInstrument modülü (Çek/Senet CRUD)
-- [x] CaseLease modülü (Kira sözleşmesi CRUD)
-- [x] CaseJudgment modülü (İlam CRUD)
-- [x] CaseCollateral modülü (Rehin/İpotek CRUD)
-- [x] Frontend form bileşenleri (InstrumentForm, LeaseForm, JudgmentForm, CollateralForm)
-- [x] API fonksiyonları api.ts'e eklendi
+Aşağıdaki mimariyi kurarsan hem **UYAP öncesi masraf avansı** otomatik çıkar, hem **sonraki aşamalarda (yeniden tebligat, haciz, satış vs.)** yeni masraflar otomatik önerilir, hem de avukat **override** edebilir.
 
 ---
 
-## 🔥 ZORUNLU UNSURLAR MİMARİSİ (MASTER)
+## 1) Çekirdek Mantık: “Masraf Planı” (Cost Plan) + “Masraf Talebi” (Request)
 
-### Gate Sistemi
+### A) Masraf Planı (Takibe bağlı, dinamik)
 
-| Gate | Ad | Açıklama |
-|------|-----|----------|
-| GATE_1 | Takip Oluşturma | Dosya açılır, taraflar hazırlanır. Adres opsiyonel. |
-| GATE_2 | Örnek 1 Üretimi | Takip talebi üretilecekse zorunlu alanlar kontrol edilir. |
-| GATE_3 | Tebligat | Tebligat çıkarılacaksa adres zorunlu. |
-| GATE_4 | UYAP Gönderimi | Örnek 1 + evrak + imzacı avukat zorunlu. |
+Takip oluşturulunca sistem bir **MasrafPlanı** üretir:
 
-### Takip Tipleri
+* takip_türü (ilamsız, kambiyo, kira, ipoteğin paraya çevrilmesi vs.)
+* icra_dairesi (bazı gider/tebligat varsayımları değişebilir)
+* borçlu sayısı + adres sayısı (tebligat adedi)
+* tebligat kanalı (PTT / UETS / e-tebligat varsayımları)
+* vekil var mı, vekalet pulu vb.
+* peşin harç, başvurma harcı gibi **kalem seti**
 
-- ILAMSIZ_GENEL (Fatura/Sözleşme/Cari)
-- KIRA_ALACAGI (İlamsız kira)
-- TAHLIYE (İlamsız tahliye)
-- KAMBIYO_CEK (Çek)
-- KAMBIYO_SENET (Senet/Bono)
-- ILAMLI_GENEL (Genel ilamlı)
-- ILAMLI_NAFAKA (Nafaka)
-- ILAMLI_DOVIZ (Döviz alacağı)
-- REHIN_IPOTEK (Rehin/İpotek)
-- ISCILIK (İşçilik alacağı)
+Bu plan **öneri** üretir: “Bu takip UYAP’a gönderilmeden önce şu avans masraf gerekir.”
 
-### Politikalar
+### B) Masraf Talebi (Müvekkile giden “avans çağrısı”)
 
-```yaml
-check_policy:
-  bad_check_compensation_default_on: true  # Çek tazminatı varsayılan AÇIK
-  bad_check_compensation_rate: 0.10        # %10
+MasrafTalebi, planın o anki “gereken” parçalarını alır:
 
-address_policy:
-  allow_case_creation_without_address: true   # Gate1'de adres opsiyonel
-  block_service_without_address: true         # Gate3'te adres zorunlu
-  create_task_when_address_missing: true      # Adres eksikse task oluştur
+* kalemler (Başvurma, Vekalet, Peşin, Dosya, Tebligat…)
+* son ödeme tarihi
+* mesaj şablonu
+* alacaklı/müvekkil iletişim kanalı (e-posta/SMS/WhatsApp entegrasyonu varsa)
+* ödeme bilgisi (IBAN, açıklama formatı, referans kodu)
 
-interest_policy:
-  require_post_filing_interest_by_default: true  # Takip sonrası faiz varsayılan
+**İş akışı:** Talep gönderilir → ödeme gelirse “Onaylandı” → takip UYAP’a gönderime açılır.
+
+---
+
+## 2) Otomatik Oluşturma: “Aşama Tetikleyicileri” (Stage Triggers)
+
+Senin söylediğin senaryo tam bu:
+
+### Aşama 0 — “Takip Taslak”
+
+* Durum: TASLAK / UYAP’a gönderilmedi
+* Tetik: “Takip oluşturuldu” veya “UYAP’a Gönder” butonuna basıldı
+* Aksiyon: **MasrafPlanı hesapla + MasrafTalebi taslağı oluştur**
+* UI: Avukat “gözden geçir & düzenle” (override) → “Gönder”
+
+> Burada senin verdiğin kalemler otomatik dolar:
+
+* Başvurma Harcı 615,40
+* Vekalet Harcı 87,50
+* Peşin Harç 5.722,19
+* Dosya Gideri 2,00
+* Tebligat 15,00
+* Vekalet Pulu 138,00
+  Toplam = 6.580,09
+
+**Not:** Bu rakamlar takip türüne göre değişiyorsa, sistemde “Takip Türü → Kalem Seti” kural tablosu olmalı (aşağıda).
+
+### Aşama 1 — “Tebligat Çıktı / Tebliğ Edilemedi”
+
+* Tetik: “Tebligat iade”, “adres yetersiz”, “yeniden tebliğ”
+* Aksiyon: otomatik **yeni kalem öner**: “Yeniden Tebligat Gideri (adet x birim)”
+* Avukat düzenler → müvekkile yeni talep (veya mevcut talebe ek talep)
+
+### Aşama 2 — “Haciz Hazırlığı”
+
+* Tetik: “Hacze çık” veya “haciz talebi oluştur”
+* Aksiyon: **Haciz masrafları** otomatik önerilir (yol/posta/harç/vekil masrafı vs. nasıl modelleyeceksen)
+* Avukat override edebilir (çok/az görürse)
+
+### Aşama 3 — “Satış / Kıymet Takdiri / Bilirkişi”
+
+* Aynı mantık: her aşama bir “kalem paketi” önerir.
+
+Bu yapı sayesinde sistem **proaktif** olur: “Şu aşamaya geçmek istiyorsun → bunun masrafı şudur → müvekkilden avans gelmeden ilerleyemezsin.”
+
+---
+
+## 3) Kural Motoru: Kalem Seti + Hesaplama Formülü
+
+Bunu kodda “if-else cehennemi” yapma. Veriyle yönet.
+
+### Tablo 1: Masraf Kalem Kataloğu
+
+* code: BASVURMA_HARCI
+* ad: Başvurma Harcı
+* tür: Harç / Gider / Pul
+* varsayılan_birim: TL
+* düzenlenebilir: true/false
+* uyap_kodu (varsa)
+
+### Tablo 2: Takip Türü → Varsayılan Kalem Paketi
+
+Örn:
+
+* İlamsız Genel Haciz → [Başvurma, Peşin Harç, Tebligat, Dosya Gideri, Vekalet Pulu…]
+* Kambiyo → farklı kalemler olabilir.
+
+### Tablo 3: Hesap Formülü
+
+* tebligat_gideri = birim_tutar * tebligat_adedi
+* tebligat_adedi = borçlu_sayısı * (tebliğ_edilecek_adres_sayısı) * (gerekirse evrak seti katsayısı)
+
+### Tablo 4: Aşama → Ek Kalemler
+
+* “Yeniden Tebligat” aşaması → yeniden_tebligat_gideri
+* “Haciz” aşaması → haciz_gider_paketi
+
+Bu sayede tarife değişince sadece tablolar güncellenir.
+
+---
+
+## 4) Override Mantığı (Avukat Düzeltebilmeli)
+
+Senin “çok veya az görürse düzeltsin” şartın kritik. Bunu düzgün yap:
+
+* Her kalemde:
+
+  * **Önerilen Tutar**
+  * **Düzenlenen Tutar**
+  * **Düzenleme Gerekçesi** (opsiyonel ama audit için iyi)
+* Log:
+
+  * kim değiştirdi, ne zaman, eski→yeni
+
+UI’de de güzel görünür:
+
+* satırda “Öneri: 15,00” küçük gri
+* input’ta “15,00” editable
+* değiştirilince satır “manuel” etiket alır
+
+---
+
+## 5) Mesaj Şablonları: Opsiyonel ama Akıllı
+
+Masraf talebi gönderirken tek bir düz mail değil, **aşamaya göre şablon**.
+
+### Şablon Parametreleri
+
+* {dosya_no}, {icra_dairesi}, {takip_türü}
+* {toplam_tutar}
+* {kalem_listesi}
+* {son_odeme_tarihi}
+* {iban}, {aciklama_kodu}
+* {uyari}: “Masraf ödenmeden UYAP’a gönderim yapılamaz.”
+
+### Şablon Örnekleri (mantık)
+
+1. **UYAP öncesi avans**: “Takibin açılabilmesi için zorunlu başlangıç masrafları”
+2. **Yeniden tebligat**: “Tebligat iade oldu, yeniden tebliğ masrafı”
+3. **Haciz**: “Haciz işlemi için gerekli masraflar”
+
+Ve UI’de checkbox mantığı:
+
+* “E-posta gönder”
+* “SMS gönder” (varsa)
+* “WhatsApp gönder” (varsa)
+
+---
+
+## 6) UX Akışı: Senin ekrandaki modala “Otomatik mod” ekle
+
+Mevcut “Masraf Talebi Oluştur” modalı iyi; ama otomasyona geçince şu eklemeler şart:
+
+### Modal üstünde bir şerit:
+
+* “Kaynak: Sistem Önerisi (Takip Taslak / UYAP Öncesi)”
+* “Hesaplama: 1 borçlu, 1 tebligat, takip türü: …”
+* “Son güncelleme: …”
+
+### Kalem listesinde:
+
+* “+ Kalem Ekle” kalsın
+* ama ayrıca **“Paket Ekle”** olsun:
+
+  * “UYAP Öncesi Paket”
+  * “Yeniden Tebligat”
+  * “Haciz”
+  * (seçince otomatik satırlar eklenir)
+
+### Toplam Tutar:
+
+* zaten var, güzel.
+
+### “Oluştur” butonu:
+
+* “Taslak Kaydet” + “Gönder” şeklinde iki adım iyi olur.
+* Çünkü bazen avukat oluşturup sonra göndermek ister.
+
+---
+
+## 7) İş Kuralı: “Masraf gelmeden takip açılamaz”
+
+Bunu sisteme net koy:
+
+* Takip durum geçişleri:
+
+  * TASLAK → (MasrafTalebi ÖDENDİ) → UYAP_GONDERIME_HAZIR
+  * Ödenmediyse: UYAP’a gönder butonu “disabled” + neden mesajı
+
+Ama avukata “Sorumluluk bende” override yetkisi de verilebilir:
+
+* rol bazlı: admin/partner override edebilsin
+* override ederse log’a düşsün.
+
+---
+
+## 8) Teknik Model (Veri Şeması Kısa)
+
+* FollowUpCase (takip)
+* CostPlan (takibe 1..n)
+* CostItem (plan kalemleri)
+* ExpenseRequest (müvekkile giden talep) 1..n
+* ExpenseRequestItem (talep kalemleri)
+* Payment (talep ödemesi) (manuel işaretleme veya banka entegrasyonu)
+* NotificationLog (gönderimler: mail/sms)
+
+---
+
+## 9) En pratik “ilk sprint” planı (hemen değer üretir)
+
+1. **Takip oluşturulunca** otomatik “UYAP Öncesi Masraf Talebi Taslağı” üret.
+2. Modal açıldığında kalemler dolu gelsin (senin liste gibi).
+3. Avukat düzenlesin, “Gönder” deyince mail şablonu otomatik gitsin.
+4. Talep “Ödendi” işaretlenmeden UYAP’a gönderim kilitli olsun.
+5. “Yeniden Tebligat” butonuna basınca ikinci paket otomatik eklensin.
+
+Bu kadar bile işin %70’ini çözer.
+
+---
+
+İstersen bir sonraki adımda, senin verdiğin kalemleri **“İlamsız Genel Haciz” varsayılan paketi** olarak tanımlayıp, ekranda “Takip Türü / Borçlu sayısı / Tebligat adedi” değiştikçe **Toplam Tutarın canlı yeniden hesaplandığı** bir mantığı netleştiririm. Bu sistem, “insan hatasını” değil, “insan kararını” bırakır: otomatik önerir, avukat onaylar.
+
+
+---
+
+## [2026-01-02 - GÜNCEL DURUM]
+
+### ✅ TAMAMLANAN FAZLAR
+
+**Faz 1-2:** Müvekkil Kartı Zenginleştirme + Detay Drawer ✅
+**Faz 3-4:** ExpenseRequest Entity + Masraf Talebi Formu ✅
+**Faz 5:** MessageTemplate Entity + API ✅
+**Faz 6:** SendMessageModal + Entegrasyon ✅
+- SendMessageModal komponenti oluşturuldu
+- Şablon seçimi dropdown
+- Token önizleme (otomatik doldurma)
+- Kanal seçimi (Email/SMS/WhatsApp)
+- Özel mesaj yazma modu
+- Gönderim önizleme ve onay
+- Müvekkil drawer'a "Mesaj Gönder" butonu entegre edildi
+
+### ⏳ BEKLEYEN FAZLAR
+
+**Faz 7:** Hızlı Filtreler - Masraf Durumu ✅ TAMAMLANDI
+- "Masraf Bekleniyor" filtresi
+- "Masraf Talebi Gönderildi" filtresi
+- "Masraf Süresi Geçti" filtresi
+- "Masraf Alındı" filtresi
+- Yeni "Masraf Talebi" kategorisi eklendi
+
+**Faz 8:** WhatsApp/SMS Entegrasyonu (DÜŞÜK ÖNCELİK)
+2026-01-02 02:06 (TR)
+
+Netleştiriyorum: hedefimiz **“Takip oluştur → sistem masraf avansını otomatik çıkar → avukat 10 saniye kontrol eder → tek tıkla müvekkile gider → ödeme gelince UYAP’a gönderim açılır → süreçte yeni masraf doğarsa sistem yeni kalemi otomatik önerir.”** Bu kadar.
+
+Aşağıdaki model + akış + ekran davranışı “tam net” hali.
+
+---
+
+## 1) Net Akış: Durum Makinesi
+
+### Takip Durumları (minimum)
+
+1. **TASLAK**
+2. **MASRAF_BEKLENİYOR**
+3. **UYAP_GONDERIME_HAZIR**
+4. **UYAP_GONDERILDI**
+5. **ISLEMDE** (tebligat/haciz/satış vs.)
+
+### Geçiş kuralı (sert)
+
+* TASLAK → “UYAP’a Gönder” denirse:
+
+  * Eğer **aktif masraf talebi yoksa**: sistem otomatik **Masraf Talebi Taslağı** oluşturur ve modalı açar.
+  * Eğer **talep var ama ödenmedi**: UYAP’a gönderim **kilit** (buton pasif).
+* Masraf talebi **ÖDENDİ** işaretlenince:
+
+  * takip otomatik **UYAP_GONDERIME_HAZIR** olur.
+
+> İstersen “admin override” yetkisi koyarsın: “Ödenmedi ama gönder” (log zorunlu).
+
+---
+
+## 2) Masraf Motoru: “Paket” Mantığı (en net ve pratik)
+
+Sistemde masraf, tek tek kalem değil; **paket** olarak gelir.
+
+### Paket 1: UYAP ÖNCESİ / TAKİP AÇILIŞ PAKETİ
+
+Senin verdiğin set:
+
+* Başvurma Harcı = 615,40
+* Vekalet Harcı = 87,50
+* Peşin Harç = 5.722,19
+* Dosya Gideri = 2,00
+* Tebligat Gideri = 15,00
+* Vekalet Pulu = 138,00
+  **Toplam = 6.580,09**
+
+Bu paket **takip “taslak” oluşur oluşmaz** hazırda bekler.
+
+### Paket 2: YENİDEN TEBLİGAT PAKETİ
+
+Tetik: “Tebligat iade / adres yetersiz / yeniden tebligat”
+
+* Yeniden Tebligat Gideri = (birim) × (adet)
+* (opsiyonel) Zarf/posta/dosya gideri vb.
+
+### Paket 3: HACİZ PAKETİ
+
+Tetik: “Hacze çık”
+
+* Haciz giderleri (kalemlerinizi siz belirleyeceksiniz; sistem sadece paketi otomatik çağırır)
+
+> Not: Bugün senin net verdiğin sadece Paket 1. Paket 2-3’ün kalem listesini siz standartlaştırınca motor oturur.
+
+---
+
+## 3) Hesaplama: Kalemlerin Kaynağı + Override Kuralı
+
+Her kalem şu alanlarla tutulur:
+
+* **önerilen_tutar** (sistem hesapladı / tarifeden çekti)
+* **girilen_tutar** (avukat değiştirebilir)
+* **kilitli_mi** (örn. bazı harçlar kilitli olabilir)
+* **degisiklik_gerekcesi** (opsiyonel)
+* **degistiren / tarih** (audit)
+
+UI’de:
+
+* normalde input dolu gelir (önerilen)
+* avukat değiştirirse satır “MANUEL” etiketi alır
+
+---
+
+## 4) Ekran: Senin Modalın “Otomatik” hale gelmiş hali
+
+Şu anki modalın üstüne 3 şey ekliyoruz:
+
+### A) Başlık altına “Kaynak” etiketi
+
+**“Kaynak: UYAP Öncesi Paket (Otomatik)”**
+
+### B) Kalem satırlarında iki mod
+
+* “Kalem Ekle” yine kalsın
+* ayrıca **“Paket Ekle”** butonu:
+
+  * UYAP Öncesi
+  * Yeniden Tebligat
+  * Haciz
+
+### C) Butonlar
+
+* **Taslak Kaydet**
+* **Gönder ve Takibi Kilitle** (ödenene kadar)
+* (ödenince) “UYAP’a Gönder” aktif olur
+
+---
+
+## 5) Mesaj/Email Otomasyonu: tek şablon + parametreler
+
+### Gönderim Zamanı
+
+* Masraf talebi oluşturulunca **“Oluşturduktan sonra müvekkile e-posta gönder”** tikliyse otomatik gider.
+* Tikli değilse taslak kalır.
+
+### Email içeriği (sabit omurga)
+
+* Dosya: {dosya_no} / {icra_dairesi}
+* Amaç: “Takibin UYAP’a gönderilebilmesi için başlangıç masrafları”
+* Kalem listesi + toplam
+* Son ödeme tarihi
+* Ödeme bilgisi (IBAN + açıklama kodu: örn. “TB-{takip_id}”)
+
+> Ödeme açıklama kodu şart. Sonra banka entegrasyonu yaparsan otomatik eşleştirirsin.
+
+---
+
+## 6) “Sonraki aşama masrafları otomatik düşmeli” kısmı (net anlatım)
+
+Burada iki farklı gerçek var, ikisini ayırıyoruz:
+
+### 6.1. Avans “havuz” mantığı (önerim)
+
+Müvekkilden gelen masraf parası bir **Masraf Bakiyesi** olarak tutulur.
+
+* Masraf Talebi Ödendi → **bakiye += 6.580,09**
+* Tebligat/haciz yaptın → sistem “harcandı” olarak işaretler → **bakiye -= ilgili tutar**
+* bakiye yetmiyorsa → yeni masraf talebi öner
+
+Bu, senin “otomatik düşmeli” dediğin şeyin **en doğru** karşılığı.
+
+### 6.2. Alternatif: Talep bazlı kapatma
+
+Her masraf talebi, kendi kalemleri “karşılandı” kabul edilir, bakiye tutulmaz.
+Bu daha basit ama muhasebe/operasyon karışır.
+
+**Benim net önerim:** Bakiye havuzu.
+
+---
+
+## 7) Minimum Kural Tablosu (bugün hemen sisteme girilecek)
+
+### Takip Türü → UYAP Öncesi Paket eşlemesi
+
+Örn:
+
+* İlamsız Genel Haciz → Paket 1 (senin rakamlar)
+* Kambiyo → Paket 1b (ayrı tarife)
+* Kira → Paket 1c
+
+Bu tabloyu yapınca otomasyon başlar. İlk etapta tek takip türüyle bile çalışır.
+
+---
+
+## 8) “Ne zaman otomatik oluşturulsun?” (en net tercih)
+
+**Takip oluşturulduğu anda** değil, şu anda daha doğru tetik:
+
+* Avukat “UYAP’a Gönder”e bastığında otomatik oluştur.
+  Çünkü bazı takip taslakları çöpe gidiyor; gereksiz mail atmazsın.
+
+Ama opsiyon koyarsın:
+
+* Ayar: “Takip taslağı kaydedilince masraf talebi otomatik hazırlansın (gönderilmesin)”
+
+---
+
+## 9) Tam net “kullanıcı hikayesi” (senaryon)
+
+1. Avukat takip taslağını oluşturur.
+2. “UYAP’a Gönder” der.
+3. Sistem: “UYAP Öncesi Paket” ile masraf modalını otomatik doldurur (6.580,09).
+4. Avukat isterse kalemleri değiştirir (override).
+5. “Gönder ve Takibi Kilitle” der.
+6. Müvekkile mail gider.
+7. Ödeme geldi → sistemde “Ödendi” (manuel veya entegrasyon) → takip “UYAP_GONDERIME_HAZIR”.
+8. Avukat UYAP’a gönderir.
+9. Tebligat iade olursa → sistem “Yeniden Tebligat Paketi” önerir → yeni talep.
+
+Bitti. Otomasyon dediğin şey bu.
+
+---
+
+İstersen bir sonraki adımda, bu netliğe göre **veritabanı tablolarını (field field)** ve **API endpointlerini** (createDraftExpenseRequest, markPaid, applyStageTrigger vs.) tek sayfalık blueprint olarak yazarım; geliştirici direkt kodlamaya başlar.
+2026-01-02 02:10 (TR)
+
+Aşağıya geliştiricinin **direkt kodlamaya başlayacağı** şekilde: **DB şeması + API endpointleri + tetikleyici (stage trigger) + UI davranışı** blueprint’ini bırakıyorum. Bu, senin “masraf otomatik dolsun, opsiyonel mesajlar oluşsun, aşamaya göre yeni kalem gelsin, avukat düzeltebilsin, ödeme gelmeden UYAP’a kilitlensin” şartlarının tamamını karşılar.
+
+---
+
+## 1) Veritabanı Şeması (Minimum ama tam)
+
+### 1.1 `cases` (Takip)
+
+* `id` (uuid)
+* `case_no` (string, opsiyonel) — UYAP sonrası dolabilir
+* `client_id` (uuid) — müvekkil
+* `office_id` (uuid) — icra dairesi
+* `case_type` (enum) — ILAMSIZ, KAMBIYO, KIRA, …
+* `status` (enum)
+
+  * `DRAFT`
+  * `COST_PENDING`
+  * `READY_FOR_UYAP`
+  * `SENT_TO_UYAP`
+  * `IN_PROGRESS`
+* `debtor_count` (int)
+* `notification_pref` (json) — email/sms/whatsapp tercihleri
+* `created_by`, `created_at`, `updated_at`
+
+> Kural: `READY_FOR_UYAP` olmanın tek yolu **aktif masraf talebinin ödenmiş olması** (override hariç).
+
+---
+
+### 1.2 `cost_packages` (Masraf Paket Tanımı)
+
+* `id` (uuid)
+* `code` (string) — `UYAP_PRE`, `RE_TEBLIGAT`, `HACIZ`
+* `name` (string)
+* `case_type` (enum/null) — bazı paketler takip türüne göre farklılaşır
+* `is_active` (bool)
+
+### 1.3 `cost_package_items` (Paket Kalemleri)
+
+* `id`
+* `package_id`
+* `item_code` (string) — `BASVURMA_HARCI`, `PESIN_HARC`, `TEBLIGAT_GIDERI`…
+* `label` (string) — UI adı
+* `default_amount` (decimal(12,2)) — tarifeden gelen sabit
+* `is_editable` (bool) — avukat değiştirebilir mi
+* `calc_rule` (json/null)
+
+  * örn: `{ "type":"per_unit", "unit_amount":15.00, "multiplier":"tebligat_count" }`
+* `sort_order` (int)
+
+> Senin verdiğin UYAP Öncesi Paket, bu tabloda **sabit kalemler** olarak tanımlanır.
+
+---
+
+### 1.4 `expense_requests` (Masraf Talebi)
+
+* `id` (uuid)
+* `case_id` (uuid)
+* `package_code` (string) — `UYAP_PRE` / `RE_TEBLIGAT` / …
+* `status` (enum) — `DRAFT`, `SENT`, `PAID`, `CANCELLED`
+* `due_date` (date)
+* `notes` (text/null)
+* `send_email` (bool)
+* `send_sms` (bool)
+* `send_whatsapp` (bool)
+* `message_template_code` (string) — `TPL_UYAP_PRE`, `TPL_RE_TEBLIGAT`, …
+* `message_rendered` (text/null) — gönderilen nihai metin (audit)
+* `total_suggested` (decimal)
+* `total_final` (decimal) — avukat override sonrası
+* `created_by`, `created_at`, `sent_at`, `paid_at`
+
+> “Oluşturduktan sonra müvekkile e-posta gönder” = `send_email`.
+
+---
+
+### 1.5 `expense_request_items` (Talep Kalemleri)
+
+* `id`
+* `expense_request_id`
+* `item_code`
+* `label`
+* `suggested_amount` (decimal)
+* `final_amount` (decimal)
+* `is_editable` (bool)
+* `was_overridden` (bool)
+* `override_reason` (text/null)
+* `meta` (json/null) — hesap parametreleri (tebligat adedi vs.)
+
+---
+
+### 1.6 `payments` (Ödeme)
+
+* `id`
+* `expense_request_id`
+* `method` (enum) — `MANUAL`, `BANK_MATCH`, `VIRTUAL_POS`
+* `amount` (decimal)
+* `paid_at` (datetime)
+* `reference_code` (string) — “TB-{case_id_short}”
+* `raw_payload` (json/null) — entegrasyon varsa
+
+---
+
+### 1.7 `case_balances` (Masraf Bakiyesi / Havuz) ✅ (otomatik düşme için şart)
+
+* `case_id` (pk)
+* `balance_amount` (decimal)
+* `updated_at`
+
+### 1.8 `balance_ledger` (Bakiye Hareketleri) ✅
+
+* `id`
+* `case_id`
+* `type` (enum) — `CREDIT` (avans), `DEBIT` (harcama), `ADJUST`
+* `source` (string) — `expense_request:{id}` veya `operation:{id}`
+* `amount` (decimal) — kredi +, debit -
+* `description` (text)
+* `created_at`
+
+> “Hacze gidilecek masraf otomatik düşsün” = `DEBIT` ledger kaydı + `case_balances` güncellemesi.
+
+---
+
+### 1.9 `notifications` (Gönderim Log’u)
+
+* `id`
+* `expense_request_id`
+* `channel` (enum) — `EMAIL`, `SMS`, `WHATSAPP`
+* `to` (string)
+* `subject` (string/null)
+* `body` (text)
+* `status` (enum) — `QUEUED`, `SENT`, `FAILED`
+* `provider_response` (json/null)
+* `created_at`, `sent_at`
+
+---
+
+## 2) Kural Motoru (Hesaplama) — tek fonksiyon
+
+### `computeExpenseRequest(case_id, package_code) -> draft_request`
+
+Girdi:
+
+* `case_type`, `debtor_count`, `tebligat_count` (hesaplanır), vs.
+
+Çıktı:
+
+* item listesi: `suggested_amount` hesaplanmış
+* toplam: `total_suggested`
+
+Kurallar:
+
+* `default_amount` varsa direkt yaz
+* `calc_rule` varsa case parametresiyle çarp
+* `final_amount = suggested_amount` başlangıçta
+* avukat değiştirirse `final_amount` değişir, `was_overridden=true`
+
+---
+
+## 3) API Endpointleri (REST) — geliştiriciye direkt
+
+### 3.1 Takip / UYAP akışı
+
+**POST** `/cases`
+
+* takip taslağı oluşturur → `status=DRAFT`
+
+**POST** `/cases/{id}/uyap/prepare`
+
+* Amaç: “UYAP’a gönder” öncesi kontrol + masraf talebi üret
+* İş:
+
+  1. aktif `PAID` talep var mı? varsa → `{status:"READY"}`
+  2. yoksa: `create draft expense_request (UYAP_PRE)` + `status=COST_PENDING`
+* Response:
+
+  * `expense_request_id`
+  * `case_status`
+
+**POST** `/cases/{id}/uyap/send`
+
+* Preconditions: `case.status == READY_FOR_UYAP` (veya admin override)
+* İş: UYAP gönderim + log
+* Result: `status=SENT_TO_UYAP`
+
+---
+
+### 3.2 Masraf talebi
+
+**POST** `/expense-requests`
+Body:
+
+* `case_id`
+* `package_code`
+* `due_date`
+* `send_email/sms/whatsapp` (opsiyonel)
+* İş:
+
+  * `computeExpenseRequest` çalıştırır → DRAFT oluşturur
+
+**PATCH** `/expense-requests/{id}`
+
+* Avukat override:
+
+  * item bazında `final_amount`, `override_reason`
+  * `total_final` yeniden hesaplanır
+
+**POST** `/expense-requests/{id}/send`
+
+* İş:
+
+  * template render
+  * notifications create (email/sms/whatsapp)
+  * `status=SENT`, `sent_at=now`
+  * case `status=COST_PENDING` (zaten)
+
+**POST** `/expense-requests/{id}/mark-paid`
+Body:
+
+* `amount` (default: total_final)
+* `method` (MANUAL)
+* `paid_at`
+* İş:
+
+  1. payment kaydı
+  2. expense_request `status=PAID`
+  3. `case_balances += amount` + `balance_ledger CREDIT`
+  4. case `status=READY_FOR_UYAP` (eğer UYAP_PRE paketi ödediyse)
+
+> Bu endpoint, banka entegrasyonu gelene kadar manuel “ödendi” butonunun backend’i.
+
+---
+
+### 3.3 Aşama tetikleyicileri (yeniden tebligat, haciz vs.)
+
+**POST** `/cases/{id}/stage-trigger`
+Body:
+
+* `event_code` (enum) — `RE_TEBLIGAT_REQUIRED`, `HACIZ_INIT`, `SALE_INIT` …
+* `params` (json) — tebligat_adedi vs.
+  İş:
+* event_code → package_code map
+* `computeExpenseRequest(case_id, package_code)` ile draft talep üret
+* Response: yeni `expense_request_id`
+
+> UI’de “Yeniden tebligat” butonu bu: event gönderir, sistem paketi getirir.
+
+---
+
+### 3.4 Masraf “otomatik düşme” (bakiye debit)
+
+**POST** `/cases/{id}/operations`
+Body:
+
+* `operation_code` — `HACIZ_EXECUTED`, `TEBLIGAT_SENT`, `SALE_FEE_PAID`
+* `amount` — harcanan tutar
+* `description`
+  İş:
+* `balance_ledger DEBIT` oluştur
+* `case_balances -= amount`
+* Eğer bakiye < 0 veya eşik altıysa otomatik `expense_request` öner (opsiyon)
+
+---
+
+## 4) UI Net Davranış (senin ekranın üstüne)
+
+### 4.1 “UYAP’a Gönder” butonu
+
+* Tıkla → `/cases/{id}/uyap/prepare`
+* Response’da `expense_request_id` dönerse:
+
+  * Masraf modalını **dolu** aç
+  * durum: takip “MASRAF_BEKLENİYOR” badge’i
+
+### 4.2 Masraf Modal
+
+* Satırlar otomatik dolu (suggested=final)
+* Avukat değiştirince satır “MANUEL” badge
+* “Taslak Kaydet” → `PATCH /expense-requests/{id}`
+* “Gönder” → `POST /expense-requests/{id}/send`
+
+### 4.3 Ödeme
+
+* “Ödendi işaretle” → `POST /expense-requests/{id}/mark-paid`
+* Başarılı olunca takip ekranında:
+
+  * “UYAP’a Gönder” artık aktif
+  * bakiye widget: “Masraf Bakiyesi: X TL”
+
+### 4.4 Yeniden Tebligat / Haciz
+
+* Takip yaşamı panelinde “Yeniden Tebligat” butonu:
+
+  * `/cases/{id}/stage-trigger` (RE_TEBLIGAT_REQUIRED)
+  * yeni masraf talebi modalı otomatik gelir
+* “Hacze çık” butonu:
+
+  * stage-trigger(HACIZ_INIT) → paketi getir
+  * ödeme/bakiye uygunsa direkt “bakiye düş” (opsiyon)
+
+---
+
+## 5) Senin verdiğin rakamların sisteme tanımı (tek seferlik seed)
+
+`cost_packages`:
+
+* `code=UYAP_PRE`, `name=UYAP Öncesi / Takip Açılış Masrafları`
+
+`cost_package_items (UYAP_PRE)`:
+
+* BASVURMA_HARCI 615,40 editable? (genelde hayır ama sen istersen evet)
+* VEKALET_HARCI 87,50
+* PESIN_HARC 5.722,19
+* DOSYA_GIDERI 2,00
+* TEBLIGAT_GIDERI 15,00 (calc rule ile çoğaltılabilir)
+* VEKALET_PULU 138,00
+
+> Tebligat giderini “adet” ile çarpacaksan `calc_rule` kullan, değilse sabit bırak.
+
+---
+
+## 6) En kritik iki kural (işi “otomat” yapan şey)
+
+1. **Ödeme yoksa UYAP yok**
+   `cases.status != READY_FOR_UYAP` iken “UYAP’a Gönder” backend’de de reddedilecek.
+
+2. **Bakiye havuzu**
+   Ödeme → `CREDIT`, işlem → `DEBIT`.
+   Bu olmadan “otomatik düşme” dediğin şey “hikaye” olur.
+
+---
+
+İstersen bir sonraki mesajda bu blueprint’i 2 şeye daha çeviririm (ek soru sormadan):
+
+* **ERD diyagram metni** (tablolar arası ilişkiler)
+* **Mesaj şablonları**: UYAP öncesi / yeniden tebligat / haciz için hazır TR metinleri (parametreli)
+2026-01-02 02:14 (TR)
+
+Tamam. Aşağıya iki şeyi **hazır** bırakıyorum:
+
+1. **ERD (ilişki diyagramı metinle)** + kardinaliteler
+2. **Parametreli mesaj şablonları (TR)**: UYAP öncesi / yeniden tebligat / haciz (mail + kısa SMS)
+
+---
+
+## 1) ERD – Tablolar ve İlişkiler (net)
+
+### Ana varlıklar
+
+* **clients (müvekkil)** 1 — n **cases (takip)**
+* **cases** 1 — n **expense_requests**
+* **expense_requests** 1 — n **expense_request_items**
+* **expense_requests** 0..n — n **notifications**
+* **expense_requests** 0..n — 0..n **payments** *(pratikte 1 ödeme yeter ama parça ödeme opsiyonu için n)*
+* **cases** 1 — 1 **case_balances**
+* **cases** 1 — n **balance_ledger**
+
+### Paket sözlüğü
+
+* **cost_packages** 1 — n **cost_package_items**
+* **cost_packages** (code) — expense_requests.package_code *(FK değilse bile “code” ile bağlanır; önerim FK yap)*
+
+---
+
+### Kardinalite / iş kuralları (en önemli)
+
+1. **Bir case’in birden fazla masraf talebi olabilir** (UYAP öncesi + yeniden tebligat + haciz…)
+2. **Bir masraf talebinin çok kalemi olur** (items)
+3. **Case bakiyesi tektir** (1:1), hareket dökümü ledger’dadır (1:n)
+4. **Case UYAP’a gönderime hazır olmak için**:
+
+   * UYAP_PRE paketli en az bir request `PAID` olmalı
+   * veya admin override log’u olmalı
+
+---
+
+### “Zorunlu indeksler” (performans + doğruluk)
+
+* `expense_requests(case_id, status)`
+* `expense_requests(case_id, package_code, status)`
+* `expense_request_items(expense_request_id)`
+* `payments(expense_request_id, paid_at)`
+* `balance_ledger(case_id, created_at)`
+* `case_balances(case_id)` unique
+
+---
+
+## 2) Mesaj Şablonları (TR) — parametreli
+
+Aşağıdaki değişkenleri sistemden bas:
+
+* `{MUSTERI_ADI}`
+* `{DOSYA_ADI}` (takip adı/etiketi)
+* `{DOSYA_NO}` (varsa)
+* `{ICRA_DAIRESI}`
+* `{TAKIP_TURU}`
+* `{TOPLAM_TUTAR}`
+* `{SON_ODEME_TARIHI}`
+* `{IBAN}`
+* `{ODEME_ACIKLAMA}` (örn: `TB-{case_short}`)
+* `{KALEMLER}` (satır listesi)
+* `{LINK}` (varsa: müşteri panel ödeme/masraf görüntüleme linki)
+* `{AVUKAT_ADI}` / `{OFIS_ADI}` / `{TELEFON}`
+
+> `{KALEMLER}` format önerisi:
+> `- Başvurma Harcı: 615,40 TL` gibi.
+
+---
+
+# 2.1 Mail Şablonu — UYAP Öncesi Başlangıç Masrafları (TPL_UYAP_PRE)
+
+**Konu:** `{DOSYA_ADI} – Takip Açılış Masraf Avansı ({TOPLAM_TUTAR} TL)`
+
+**Gövde:**
+Sayın `{MUSTERI_ADI}`,
+
+`{ICRA_DAIRESI}` nezdinde başlatılacak **{TAKIP_TURU}** kapsamında dosyanın **UYAP’a gönderilebilmesi için** başlangıç masraf avansı gerekmektedir.
+
+**Masraf Kalemleri:**
+{KALEMLER}
+
+**Toplam:** `{TOPLAM_TUTAR} TL`
+**Son Ödeme Tarihi:** `{SON_ODEME_TARIHI}`
+
+Ödeme Bilgisi:
+**IBAN:** `{IBAN}`
+**Açıklama:** `{ODEME_ACIKLAMA}` *(açıklama kısmı mutlaka bu şekilde yazılmalıdır)*
+
+Ödeme yapıldığında dosya UYAP’a gönderim aşamasına alınacaktır.
+Dosya detaylarını görüntülemek için: `{LINK}`
+
+Bilgilerinize sunarız.
+`{AVUKAT_ADI}` – `{OFIS_ADI}`
+`{TELEFON}`
+
+---
+
+# 2.2 SMS (kısa) — UYAP Öncesi (TPL_UYAP_PRE_SMS)
+
+`{DOSYA_ADI} için UYAP öncesi masraf avansı: {TOPLAM_TUTAR} TL. Son tarih: {SON_ODEME_TARIHI}. IBAN: {IBAN}. Açıklama: {ODEME_ACIKLAMA}.`
+
+---
+
+# 2.3 Mail — Yeniden Tebligat Masrafı (TPL_RE_TEBLIGAT)
+
+**Konu:** `{DOSYA_ADI} – Yeniden Tebligat Masraf Talebi ({TOPLAM_TUTAR} TL)`
+
+**Gövde:**
+Sayın `{MUSTERI_ADI}`,
+
+`{ICRA_DAIRESI}` nezdindeki dosyamızda **tebligat işlemi sonuçlanmadığı için yeniden tebligat çıkarılması** gerekmektedir. İşlemin yapılabilmesi için aşağıdaki masraf avansının karşılanması gereklidir.
+
+**Masraf Kalemleri:**
+{KALEMLER}
+
+**Toplam:** `{TOPLAM_TUTAR} TL`
+**Son Ödeme Tarihi:** `{SON_ODEME_TARIHI}`
+
+Ödeme Bilgisi:
+**IBAN:** `{IBAN}`
+**Açıklama:** `{ODEME_ACIKLAMA}`
+
+Ödeme sonrasında yeniden tebligat işlemi başlatılacaktır.
+Dosya detayları: `{LINK}`
+
+`{AVUKAT_ADI}` – `{OFIS_ADI}`
+`{TELEFON}`
+
+---
+
+# 2.4 SMS — Yeniden Tebligat
+
+`{DOSYA_ADI}: Yeniden tebligat için masraf: {TOPLAM_TUTAR} TL. Son tarih: {SON_ODEME_TARIHI}. IBAN: {IBAN}. Açıklama: {ODEME_ACIKLAMA}.`
+
+---
+
+# 2.5 Mail — Haciz İşlemi Masraf Talebi (TPL_HACIZ)
+
+**Konu:** `{DOSYA_ADI} – Haciz İşlemi Masraf Talebi ({TOPLAM_TUTAR} TL)`
+
+**Gövde:**
+Sayın `{MUSTERI_ADI}`,
+
+`{ICRA_DAIRESI}` nezdindeki dosyada **haciz işlemlerine geçilebilmesi** için aşağıdaki masraf avansının karşılanması gerekmektedir.
+
+**Masraf Kalemleri:**
+{KALEMLER}
+
+**Toplam:** `{TOPLAM_TUTAR} TL`
+**Son Ödeme Tarihi:** `{SON_ODEME_TARIHI}`
+
+Ödeme Bilgisi:
+**IBAN:** `{IBAN}`
+**Açıklama:** `{ODEME_ACIKLAMA}`
+
+Ödeme sonrasında haciz işlemleri planlanarak yürütülecektir.
+Dosya detayları: `{LINK}`
+
+`{AVUKAT_ADI}` – `{OFIS_ADI}`
+`{TELEFON}`
+
+---
+
+# 2.6 SMS — Haciz
+
+`{DOSYA_ADI}: Haciz işlemi masrafı: {TOPLAM_TUTAR} TL. Son tarih: {SON_ODEME_TARIHI}. IBAN: {IBAN}. Açıklama: {ODEME_ACIKLAMA}.`
+
+---
+
+## 3) Bonus: Panel Linki yoksa bile “ödeme açıklaması” ile otomatik eşleştirme
+
+Ödeme açıklamasını standart yap:
+
+* `TB-{CASE_ID_SHORT}-{REQUEST_ID_SHORT}`
+  Örn: `TB-9F3A-2C11`
+
+Banka entegrasyonu gelince otomatik “match” için altın değerinde.
+
+---
+
+Sonraki adım olarak (ek soru sormadan) iki şeyi de çıkarabilirim:
+
+* **Stage-trigger event listesi** (hangi buton hangi paketi çağırıyor, hangi durumda otomatik öneri çıkıyor)
+* **UI bileşen metinleri** (buton isimleri, uyarı mesajları, badge’ler) direkt tasarıma gömülecek şekilde.
+2026-01-02 02:18 (TR)
+
+Aşağıya iki şeyi de “kodlanabilir netlikte” veriyorum:
+
+1. **Stage-trigger event listesi + otomatik öneri kuralları**
+2. **UI bileşen metinleri** (butonlar, badge’ler, uyarılar, toast’lar, empty-state)
+
+---
+
+## 1) Stage Trigger Event Listesi (Event → Paket → Kural)
+
+### Event sözlüğü (enum)
+
+A) **UYAP öncesi**
+
+* `EVT_UYAP_SEND_CLICKED`
+
+  * Paket: `UYAP_PRE`
+  * Ne zaman: kullanıcı “UYAP’a Gönder”e tıklayınca
+  * Aksiyon:
+
+    1. UYAP_PRE için `PAID` talep var mı? varsa `READY_FOR_UYAP`
+    2. yoksa `expense_request(DRAFT)` yarat, modal aç, case `COST_PENDING`
+
+B) **Tebligat**
+
+* `EVT_TEBLIGAT_REQUESTED`
+
+  * Paket: `TEBLIGAT` *(istersen ayrı paket, istemezsen yok)*
+  * Kural: bakiye yeterliyse “bakiye düş” öner; yetmezse talep oluştur
+
+* `EVT_TEBLIGAT_RETURNED` (iade)
+
+  * Paket: `RE_TEBLIGAT`
+  * Ne zaman: tebligat sonucu “iade” işaretlenince
+  * Aksiyon: otomatik yeni masraf talebi öner (modal “Taslak” açılır)
+  * Parametreler: `return_reason`, `needed_count` (kaç yeniden tebligat)
+
+* `EVT_NEW_ADDRESS_ADDED`
+
+  * Paket: `RE_TEBLIGAT` (veya `ADDRESS_TEBLIGAT`)
+  * Ne zaman: borçluya yeni adres eklendiğinde
+  * Aksiyon: “Yeni adrese tebligat için masraf gerekir” önerisi (non-blocking)
+
+C) **Haciz**
+
+* `EVT_HACIZ_INIT`
+
+  * Paket: `HACIZ`
+  * Ne zaman: “Hacze Çık / Haciz Talebi Oluştur” tıklanınca
+  * Aksiyon:
+
+    * Eğer `case_balance >= haciz_total` ise:
+
+      * seçenek A: “Masraf talebi oluşturmadan bakiyeden düş ve işleme başla”
+      * seçenek B: yine de talep oluştur (müvekkile bilgilendirme)
+    * Eğer bakiye yetmezse:
+
+      * `expense_request(DRAFT)` yarat + modal aç
+
+* `EVT_HACIZ_EXECUTED`
+
+  * Paket yok (bu operasyon)
+  * Aksiyon: `balance_ledger(DEBIT)` otomatik
+  * Parametre: gerçek harcanan tutar (avukat girer veya sabit)
+
+D) **Satış / Kıymet takdiri / Bilirkişi** (şimdilik opsiyon)
+
+* `EVT_VALUATION_INIT` → Paket: `KIYMET_TAKDIRI`
+* `EVT_SALE_INIT` → Paket: `SATIS`
+* Mantık aynı: bakiye yetmezse talep, yetiyorsa bakiyeden düş.
+
+---
+
+## 2) Otomatik Öneri Kuralları (hard vs soft)
+
+### Hard-block (işi kilitleyen)
+
+* `UYAP’a Gönder` → UYAP_PRE `PAID` değilse **kilit**
+* “İşleme geç” (Haciz/Satış gibi) → firma politikasına göre:
+
+  * **Önerim:** bakiye yoksa **soft-block** (uyarı + talep oluştur), admin override olabilir.
+
+### Soft suggestion (banner/öneri)
+
+* Tebligat iade oldu → “Yeniden tebligat masrafı” öner
+* Yeni adres eklendi → “Yeni tebligat masrafı” öner
+* Bakiye eşik altına düştü (örn. `< 500 TL`) → “Masraf bakiyesi düşük” uyarısı
+
+### Eşik (threshold)
+
+* `balance_low_threshold` ayarı: örn 250 TL / 500 TL
+* `auto_suggest_on_low_balance = true`
+
+---
+
+## 3) Stage Trigger Endpoint Şeması (backend contract)
+
+**POST** `/cases/{id}/stage-trigger`
+Body:
+
+```json
+{
+  "event_code": "EVT_HACIZ_INIT",
+  "params": {
+    "estimated_amount": 1500.00,
+    "tebligat_count": 2,
+    "notes": "İstanbul içi"
+  }
+}
+```
+
+Response:
+
+```json
+{
+  "action": "OPEN_EXPENSE_MODAL",
+  "expense_request_id": "uuid",
+  "case_status": "COST_PENDING"
+}
+```
+
+Alternatif response:
+
+```json
+{
+  "action": "DEBIT_FROM_BALANCE",
+  "debited_amount": 1500.00,
+  "new_balance": 320.50,
+  "case_status": "IN_PROGRESS"
+}
 ```
 
 ---
 
-## 📋 API ENDPOINT'LERİ
+## 4) UI Metinleri (Bileşen bazlı)
 
-### Validation Gate (/api/validation-gate)
-- POST /:caseId/validate/:gateId - Belirli gate için validasyon
-- POST /:caseId/validate-all - Tüm gate'leri validate et
-- POST /:caseId/case-creation - Gate 1 validasyonu
-- POST /:caseId/ornek1-generation - Gate 2 validasyonu
-- POST /:caseId/service-of-process - Gate 3 validasyonu
-- POST /:caseId/uyap-integration - Gate 4 validasyonu
-- GET /rules - Validasyon kurallarını getir
-- GET /policy?key=xxx - Politika değerini getir
-- GET /check-compensation-info - Çek tazminatı bilgisi
-- GET /address-suggestions - Adres önerileri
+### 4.1 Badge’ler (durum etiketleri)
 
-### Exchange Rate (/api/exchange-rate)
-- GET /rates - Tüm kurlar
-- GET /rate/:currency - Belirli kur
-- GET /convert - Döviz çevirme
-- GET /historical - Geçmiş kur
-- POST /refresh - Kurları güncelle
+* `DRAFT`: **Taslak**
+* `COST_PENDING`: **Masraf Bekleniyor**
+* `READY_FOR_UYAP`: **UYAP’a Gönderime Hazır**
+* `SENT_TO_UYAP`: **UYAP’a Gönderildi**
+* `IN_PROGRESS`: **İşlemde**
 
-### Tariff (/api/tariffs)
-- GET / - Tüm tarifeler
-- GET /active - Aktif tarife
-- GET /:year - Yıla göre tarife
-- POST /:year/create - Yeni tarife
-- PUT /:year - Tarife güncelle
-- DELETE /:year - Tarife sil
-- POST /:year/import - JSON import
-- GET /:year/export - JSON export
+### 4.2 UYAP butonu ve kilit mesajı
 
-### Gazette Watcher (/api/tariffs/gazette)
-- GET /notifications - Bildirimler
-- GET /notifications/unread - Okunmamış bildirimler
-- POST /notifications/:id/read - Okundu işaretle
-- POST /notifications/read-all - Tümünü okundu işaretle
-- POST /check - Manuel kontrol
-- GET /status - Servis durumu
+Buton: **UYAP’a Gönder**
 
-### Template Engine (/api/template-engine)
-- POST /takip-talebi - Takip talebi oluştur
-- POST /odeme-emri - Ödeme emri oluştur
-- POST /icra-emri - İcra emri oluştur
-- POST /haciz-tutanagi - Haciz tutanağı oluştur
-- GET /templates - Şablon listesi
+Kilit tooltip / inline mesaj:
 
-### PDF (/api/pdf)
-- GET /takip-talebi/:caseId - Takip talebi PDF
-- POST /generate - Genel PDF oluştur
-- POST /generate-table - Tablo PDF oluştur
+* **“Masraf avansı ödenmeden UYAP’a gönderim yapılamaz.”**
+  Alt aksiyon linki:
+* **“Masraf Talebini Gör”** / **“Talep Oluştur”**
 
----
+Admin override (rol varsa):
 
-## 🚀 SIRADAKI İŞLER
+* Buton: **“Sorumluluk Bende – Gönder”**
+* Zorunlu alan: “Override gerekçesi”
 
-### Öncelik 1: Frontend Entegrasyonu ✅ TAMAMLANDI
-- [x] ValidationGate API'yi frontend'e entegre et
-  - api.ts'e tüm ValidationGate fonksiyonları eklendi
-  - useValidation hook'u oluşturuldu (pre-submit + backend validasyon)
-  - ValidationPanel bileşeni oluşturuldu
-- [x] Dosya oluşturma wizard'ında gate validasyonları göster
-  - Son adımda validasyon paneli gösteriliyor
-  - Hatalar kırmızı, uyarılar sarı, bilgiler mavi
-- [x] Pre-submit validasyon sistemi
-  - Takip türü, avukat, müvekkil, borçlu zorunlu kontrolleri
-  - Kambiyo/döviz takiplerinde özel uyarılar
+### 4.3 Masraf modal başlıkları
 
-### Öncelik 2: Enstrüman/Kira/İlam Formları ✅ TAMAMLANDI
-- [x] CaseInstrument modülü (Backend + Frontend)
-  - CRUD API endpoint'leri
-  - InstrumentForm bileşeni (Çek/Senet)
-- [x] CaseLease modülü (Backend + Frontend)
-  - CRUD API endpoint'leri
-  - LeaseForm bileşeni (Kira sözleşmesi)
-- [x] CaseJudgment modülü (Backend + Frontend)
-  - CRUD API endpoint'leri
-  - JudgmentForm bileşeni (İlam)
-- [x] CaseCollateral modülü (Backend + Frontend)
-  - CRUD API endpoint'leri
-  - CollateralForm bileşeni (Rehin/İpotek)
+* Başlık: **Masraf Talebi Oluştur**
+* Alt başlık:
 
-### Öncelik 3: Tebligat Modülü ✅ TAMAMLANDI
-- [x] Tebligat oluşturma
-- [x] PTT entegrasyonu (ptt-tracking.service.ts)
-- [x] UETS/KEP entegrasyonu (uets.service.ts)
-- [x] Tebligat takibi
-- [x] TebligatPanel frontend bileşeni
+  * UYAP öncesi: **“Kaynak: UYAP Öncesi Açılış Paketi (Otomatik)”**
+  * yeniden tebligat: **“Kaynak: Yeniden Tebligat Paketi (Otomatik)”**
+  * haciz: **“Kaynak: Haciz Paketi (Otomatik)”**
 
-### Öncelik 4: UYAP Entegrasyonu ✅ TAMAMLANDI
-- [x] UYAP API bağlantısı (stub modunda)
-- [x] Dosya/evrak gönderimi (submitDocument)
-- [x] Durum sorgulama (queryCaseStatus)
-- [x] Borçlu mal varlığı sorgulama (queryDebtorAssets)
-- [x] Haciz talebi gönderimi
-- [x] Vekalet kontrolü entegrasyonu
-- [x] UyapPanel frontend bileşeni
-- [x] API fonksiyonları api.ts'e eklendi
+### 4.4 Modal butonları
+
+* Sol: **İptal**
+* Orta: **Taslak Kaydet**
+* Sağ: **Oluştur ve Gönder**
+* Eğer “gönderme” kapalıysa: **Oluştur**
+
+Checkbox metni:
+
+* **“Oluşturduktan sonra müvekkile e-posta gönder”**
+  (opsiyonel ek)
+* “SMS gönder”
+* “WhatsApp gönder”
+
+### 4.5 Toast mesajları
+
+* Taslak kaydedildi: **“Masraf talebi taslak olarak kaydedildi.”**
+* Gönderildi: **“Masraf talebi müvekkile gönderildi.”**
+* Ödendi işaretlendi: **“Ödeme işlendi. Dosya UYAP’a gönderime hazır.”**
+* Bakiye düştü: **“Masraf bakiyesinden düşüldü: {AMOUNT} TL”**
+* Hata: **“İşlem tamamlanamadı. Lütfen tekrar deneyin.”**
+
+### 4.6 Empty-state (masraf yoksa)
+
+Başlık: **Masraf talebi yok**
+Metin: **“Bu dosyada henüz masraf talebi oluşturulmadı.”**
+Buton: **“Masraf Talebi Oluştur”**
+
+### 4.7 Bakiye widget
+
+Başlık: **Masraf Bakiyesi**
+Değer: `{BALANCE} TL`
+Alt metin (low balance):
+
+* **“Bakiye düşük. Yeni işlem öncesi masraf talebi gerekebilir.”**
+  CTA:
+* **“Masraf Talebi Oluştur”**
 
 ---
 
-## 📁 DOSYA YAPISI
+## 5) “Otomatik öneri” UI’sı (çok kritik, çok pratik)
 
+Takip yaşamı paneline küçük bir “Öneriler” kutusu ekle:
+
+Örn:
+
+* ⚠️ **Yeniden tebligat gerekli** — “Talep oluştur”
+* ⚠️ **Haciz için masraf gerekiyor** — “Talep oluştur” / “Bakiyeden düş”
+* ℹ️ **Bakiye düşük** — “Talep oluştur”
+
+Bu kutu, stage-trigger eventlerinden beslenir.
+
+---
+
+İstersen bir sonraki adımda bunu da hazırlarım:
+
+* **Event→Paket mapping tablosu** (DB seed)
+* **Frontend component şeması** (React/Vue fark etmez) + state akışı (modal aç/kapat, optimistic update, permissions).
+2026-01-02 02:22 (TR)
+
+Tamam. Aşağıda **(1) Event→Paket mapping seed’i** ve **(2) Frontend component şeması + state akışı** var. Geliştirici bunu alıp direkt uygular.
+
+---
+
+## 1) Event → Paket Mapping (DB Seed + Kural)
+
+### 1.1 Tablo: `stage_event_rules`
+
+**Alanlar**
+
+* `id` (uuid)
+* `event_code` (string, unique)
+* `package_code` (string, nullable) — bazısı “operasyon” olur (paket yok)
+* `action_type` (enum)
+
+  * `CREATE_EXPENSE_REQUEST`
+  * `DEBIT_FROM_BALANCE`
+  * `SUGGEST_ONLY`
+  * `BLOCK_UNTIL_PAID`
+* `hard_block` (bool) — true ise işlemi kilitler
+* `min_balance_required` (decimal, nullable) — “bakiyeden düş” için eşik
+* `message_template_code` (string, nullable)
+* `priority` (int)
+* `is_active` (bool)
+
+### 1.2 Seed örneği (net)
+
+* `EVT_UYAP_SEND_CLICKED`
+
+  * package: `UYAP_PRE`
+  * action: `BLOCK_UNTIL_PAID`
+  * hard_block: true
+  * template: `TPL_UYAP_PRE`
+  * priority: 100
+
+* `EVT_TEBLIGAT_RETURNED`
+
+  * package: `RE_TEBLIGAT`
+  * action: `CREATE_EXPENSE_REQUEST`
+  * hard_block: false
+  * template: `TPL_RE_TEBLIGAT`
+  * priority: 80
+
+* `EVT_NEW_ADDRESS_ADDED`
+
+  * package: `RE_TEBLIGAT`
+  * action: `SUGGEST_ONLY`
+  * hard_block: false
+  * template: `TPL_RE_TEBLIGAT`
+  * priority: 30
+
+* `EVT_HACIZ_INIT`
+
+  * package: `HACIZ`
+  * action: `CREATE_EXPENSE_REQUEST` *(ama “bakiyeden düş” opsiyonu UI’de gösterilecek)*
+  * hard_block: false
+  * template: `TPL_HACIZ`
+  * priority: 90
+
+* `EVT_HACIZ_EXECUTED`
+
+  * package: null
+  * action: `DEBIT_FROM_BALANCE`
+  * hard_block: false
+  * priority: 95
+
+* `EVT_BALANCE_LOW`
+
+  * package: null
+  * action: `SUGGEST_ONLY`
+  * priority: 10
+
+> Not: `EVT_UYAP_SEND_CLICKED` hard-block. Diğerleri genelde soft (öneri + talep).
+
+---
+
+## 2) Frontend Component Şeması (ekran parçaları)
+
+### 2.1 Sayfa: `CaseDetailPage`
+
+Alt bileşenler:
+
+1. `CaseHeader`
+
+   * Status badge (Taslak / Masraf Bekleniyor / Hazır / Gönderildi)
+   * Ana aksiyonlar: **UYAP’a Gönder**, **Masraf Talebi Oluştur**
+2. `BalanceWidget`
+
+   * Masraf bakiyesi, düşük bakiye uyarısı
+3. `SuggestionsPanel`
+
+   * Otomatik öneriler (yeniden tebligat, haciz, bakiye düşük)
+4. `StageActionsPanel`
+
+   * Butonlar: “Yeniden Tebligat”, “Haciz”, “Satış” (opsiyon)
+5. `ExpenseRequestsTable`
+
+   * Talep listesi, durumlar, “Ödendi” aksiyonu
+6. `ExpenseRequestModal` (drawer/modal)
+
+   * Kalem listesi + override + gönderim seçenekleri
+
+---
+
+## 3) Frontend State Akışı (tam net)
+
+### 3.1 Global state (sayfa düzeyi)
+
+* `case` (id, status, type, office, debtor_count)
+* `balance` (amount)
+* `expenseRequests[]`
+* `suggestions[]` (server’dan gelebilir veya client eventlerden üretilebilir)
+* `permissions` (admin override var mı)
+
+### 3.2 Event handler’lar (butona basınca ne olur)
+
+#### A) “UYAP’a Gönder” tık
+
+1. Call: `POST /cases/{id}/uyap/prepare`
+2. Response:
+
+   * Eğer `action=OPEN_EXPENSE_MODAL` + `expense_request_id`:
+
+     * Modal aç
+     * case.status UI’da `COST_PENDING` olarak güncelle
+   * Eğer `action=READY`:
+
+     * `POST /cases/{id}/uyap/send`
+     * case.status → `SENT_TO_UYAP`
+
+**UI kuralı**
+
+* case.status `COST_PENDING` iken “UYAP’a Gönder” butonu pasif + mesaj:
+
+  * “Masraf avansı ödenmeden UYAP’a gönderim yapılamaz.”
+
+#### B) “Yeniden Tebligat” tık
+
+1. Call: `POST /cases/{id}/stage-trigger` body `{event_code:"EVT_TEBLIGAT_RETURNED", params:{...}}`
+2. Response: `expense_request_id`
+3. Modal aç (paket otomatik dolu)
+
+#### C) “Hacze Çık” tık
+
+1. Call: `POST /cases/{id}/stage-trigger` `{event_code:"EVT_HACIZ_INIT"}`
+2. Server iki yol döndürebilir:
+
+   * `OPEN_EXPENSE_MODAL` → modal
+   * `OFFER_DEBIT_OR_REQUEST` → UI iki seçenek gösterir:
+
+     * **Bakiyeden düş ve başla**
+     * **Masraf talebi oluştur**
+3. “Bakiyeden düş” seçilirse:
+
+   * Call: `POST /cases/{id}/operations` `{operation_code:"HACIZ_EXECUTED", amount: X}`
+   * balance güncelle, ledger/işlem kaydı görünür
+
+#### D) “Ödendi” (talep satırından)
+
+1. Call: `POST /expense-requests/{id}/mark-paid`
+2. UI:
+
+   * expense_request status → `PAID`
+   * balance += amount
+   * Eğer package `UYAP_PRE` ise case.status → `READY_FOR_UYAP`
+   * Toast: “Ödeme işlendi. Dosya UYAP’a gönderime hazır.”
+
+---
+
+## 4) Modal UX (kalem override + gönderim)
+
+### 4.1 Modal açılınca
+
+* Call: `GET /expense-requests/{id}` (items dahil)
+* Liste:
+
+  * Her satır: label + suggested (gri) + editable input(final)
+  * değişince satır “MANUEL” etiketi
+
+### 4.2 “Taslak Kaydet”
+
+* Call: `PATCH /expense-requests/{id}` (sadece değişen itemlar)
+* Toast: “Taslak kaydedildi.”
+
+### 4.3 “Oluştur ve Gönder”
+
+* Önce `PATCH` (gerekirse) → sonra `POST /expense-requests/{id}/send`
+* Status: `SENT`
+* Notifications log: UI’de “Gönderildi (Email)” gibi ikon gösterebilirsin.
+
+---
+
+## 5) SuggestionsPanel (otomatik öneri üretimi)
+
+### Kaynaklar
+
+* Backend’den: `/cases/{id}/suggestions` (opsiyonel endpoint)
+* Ya da client-side:
+
+  * case.status `COST_PENDING` → “Masraf bekleniyor”
+  * tebligat iade olayı işlendiyse → “Yeniden tebligat masrafı”
+  * balance < threshold → “Bakiye düşük”
+
+### Öneri kartı modeli
+
+* `id`, `type`, `title`, `desc`, `cta_label`, `cta_action`
+  Örn:
+* title: “Yeniden tebligat gerekli”
+* cta: “Talep oluştur” → stage-trigger çağır
+
+---
+
+## 6) İzinler (permission) – admin override netliği
+
+* `permissions.can_override_uyap_send = true` ise
+
+  * buton: “Sorumluluk bende – Gönder”
+  * tıklayınca modal: override gerekçesi zorunlu
+  * backend: `/cases/{id}/uyap/send?override=true`
+
+---
+
+## 7) “Bugün canlıya al” için Minimum UI checklist
+
+* UYAP’a Gönder → prepare → masraf modal açma ✅
+* Masraf kalemleri otomatik dolu ✅
+* Override + kaydet ✅
+* Gönderim checkbox + send ✅
+* Ödendi işaretle ✅
+* Ödeme sonrası UYAP aktif ✅
+* Yeniden tebligat butonu → yeni paket ✅
+* Bakiye widget (kredi) ✅
+
+---
+
+İstersen bir sonraki adımda bunu **tek bir “frontend state machine” diyagramı** gibi yazarım (durumlar + olaylar + reducer mantığı). Bu, ekipte kim yazarsa yazsın aynı davranışı garanti eder.
+2026-01-02 02:25 (TR)
+
+Aşağıdaki metin, frontend’de (React/Vue fark etmez) **tek kaynak gerçek** olacak şekilde yazılmış bir **state machine / reducer spesifikasyonu**. Geliştirici bunu alıp direkt store’a (Redux/Zustand/Pinia) veya kendi reducer’ına gömer; UI davranışı sabitlenir.
+
+---
+
+## 1) State Machine: CaseFlow (Takip Akışı)
+
+### 1.1 Durumlar (CaseFlowState)
+
+* `IDLE` (sayfa açılıyor)
+* `READY` (takip yüklendi; aksiyon bekliyor)
+* `COST_MODAL_OPEN` (masraf modalı açık)
+* `SENDING_REQUEST` (masraf talebi gönderiliyor)
+* `PAYMENT_POSTING` (ödeme işleniyor)
+* `UYAP_SENDING` (UYAP’a gönderiliyor)
+* `OPERATION_POSTING` (bakiye düşme/operasyon işleniyor)
+* `ERROR` (hata; kullanıcı tekrar deneyebilir)
+
+> Not: Bu, UI state; case’in “iş durumu” (`case.status`) ayrı bir alandır.
+
+---
+
+## 2) Store Modeli (tek obje)
+
+```text
+store = {
+  ui: {
+    state: CaseFlowState,
+    loading: boolean,
+    error: { code, message } | null,
+    activeModal: {
+      type: "EXPENSE_REQUEST" | "OVERRIDE_REASON" | null,
+      expenseRequestId: string | null
+    },
+    toastQueue: Toast[]
+  },
+
+  case: {
+    id,
+    status,           // DRAFT | COST_PENDING | READY_FOR_UYAP | SENT_TO_UYAP | IN_PROGRESS
+    caseType,
+    office,
+    debtorCount
+  },
+
+  balance: {
+    amount,
+    lowThreshold
+  },
+
+  expenseRequests: ExpenseRequestSummary[],
+
+  expenseRequestDraft: {
+    id,
+    packageCode,
+    status,           // DRAFT | SENT | PAID
+    dueDate,
+    sendEmail,
+    sendSms,
+    sendWhatsapp,
+    items: [
+      { itemCode, label, suggestedAmount, finalAmount, isEditable, wasOverridden, overrideReason }
+    ],
+    totals: { suggested, final }
+  } | null,
+
+  suggestions: SuggestionCard[],
+
+  permissions: {
+    canOverrideUyap: boolean
+  }
+}
 ```
-project/apps/api/src/
-├── config/
-│   ├── master-validations.yaml    # Gate kuralları
-│   ├── claim-item-sets.yaml       # Alacak kalemi setleri
-│   ├── fee-profiles.yaml          # Masraf profilleri
-│   └── tariffs/2025.yaml          # Harç tarifeleri
-├── modules/
-│   ├── validation-gate/           # Gate validasyon sistemi
-│   ├── exchange-rate/             # TCMB kur entegrasyonu
-│   ├── tariff/                    # Tarife yönetimi
-│   ├── pdf/                       # PDF export
-│   ├── template-engine/           # Belge şablonları
-│   ├── claim-engine/              # Alacak kalemi üretimi
-│   ├── fee-engine/                # Masraf hesaplama
-│   ├── rule-engine/               # Kural motoru
-│   ├── tebligat/                  # Tebligat yönetimi (PTT + UETS/KEP)
-│   ├── uyap/                      # UYAP entegrasyonu
-│   ├── esign/                     # E-imza entegrasyonu
-│   ├── bank/                      # Banka entegrasyonu
-│   ├── notification/              # SMS/E-posta bildirimleri
-│   ├── scheduler/                 # Cron job'lar
-│   ├── case-instrument/           # Çek/Senet modülü
-│   ├── case-lease/                # Kira sözleşmesi modülü
-│   ├── case-judgment/             # İlam modülü
-│   └── case-collateral/           # Rehin/İpotek modülü
-└── prisma/
-    └── schema.prisma              # Veritabanı şeması
-```
 
 ---
 
-## 🔮 GELECEKTEKİ İŞLER (Opsiyonel)
+## 3) Olaylar (Events) — UI’nin tek “giriş kapısı”
 
-### Raporlama ve Dashboard ✅ TAMAMLANDI
-- [x] Dosya istatistikleri dashboard'u (mevcut)
-- [x] Tahsilat raporları (CollectionDashboard)
-- [x] Avukat/Personel performans raporları (PersonelPerformance)
-- [x] Müvekkil bazlı raporlar (ClientReport API)
-- [x] Risk raporları (RiskReport API)
-- [x] Dosya borç raporu / Kapak hesabı (CaseDebtReport API)
-- [x] Faiz raporu (InterestReport API)
-- [x] CSV export desteği
+### 3.1 Sayfa yaşam döngüsü
 
-### Otomasyon İyileştirmeleri ✅ TAMAMLANDI
-- [x] Otomatik tebligat takibi (PTT barkod sorgulama cron job - her 4 saatte)
-- [x] Vade hatırlatma bildirimleri (her gün 08:00)
-- [x] Otomatik faiz güncelleme (her gün 02:00)
-- [x] Ödeme emri süre takibi (her gün 09:00)
-- [x] Nafaka dönem otomasyonu (her ayın 1'i)
-- [x] MTS 7 gün kontrolü (her gün 10:00)
-- [x] 89 İhbarname süre takibi (her gün 10:00)
-- [x] Alacak haczi takibi (her gün 11:00)
-- [x] UYAP retry (her 6 saatte)
+* `EV_PAGE_LOAD(caseId)`
+* `EV_PAGE_LOADED(payload)` / `EV_PAGE_LOAD_FAILED(error)`
 
-### Entegrasyonlar ✅ TAMAMLANDI
-- [x] E-imza entegrasyonu (E-Güven, Turkcell, E-Tugra desteği)
-  - ESignModule backend modülü
-  - ESignPanel frontend bileşeni
-  - API fonksiyonları (signDocument, getSignStatus, getSignLogs, vb.)
-- [x] Banka entegrasyonları (Garanti, Akbank, İş Bankası desteği)
-  - BankModule backend modülü
-  - BankPanel frontend bileşeni
-  - Hesap bakiyesi sorgulama
-  - Hesap hareketleri çekme
-  - Otomatik tahsilat eşleştirme
-  - EFT/Havale gönderimi
-  - API fonksiyonları (getBankAccounts, syncBankTransactions, autoMatchTransactions, vb.)
-- [x] SMS bildirim servisleri (NetGSM, İletimerkezi, Twilio desteği)
-- [x] E-posta bildirim servisleri (SMTP, SendGrid, AWS SES desteği)
-- [ ] UYAP gerçek API entegrasyonu (API açıldığında)
+### 3.2 UYAP akışı
 
-### Mobil Uygulama
-- [ ] React Native mobil uygulama
-- [ ] Push notification desteği
+* `EV_CLICK_UYAP_SEND()`
+* `EV_UYAP_PREPARE_OK(response)` / `EV_UYAP_PREPARE_FAIL(error)`
+* `EV_UYAP_SEND_OK(response)` / `EV_UYAP_SEND_FAIL(error)`
 
-### UI/UX Iyilestirmeleri ✅ TAMAMLANDI
-- [x] Dosya Detay Sayfasi (CaseDetailTabs) - Tum paneller tab'lar halinde
-- [x] Toplu Islemler Paneli (BulkOperationsPanel) - Toplu tebligat, UYAP, belge uretimi
-- [x] Bildirim Merkezi (NotificationCenter) - Tum bildirimler tek yerde
-- [x] Ayarlar Sayfasi (SettingsPage) - E-imza, Banka, SMS, E-posta ayarlari
+### 3.3 Masraf talebi modal
+
+* `EV_OPEN_EXPENSE_MODAL(expenseRequestId)`
+* `EV_EXPENSE_LOADED(draft)` / `EV_EXPENSE_LOAD_FAIL(error)`
+* `EV_EXPENSE_ITEM_CHANGED(itemCode, newAmount)`
+* `EV_EXPENSE_SAVE_DRAFT()`
+* `EV_EXPENSE_SAVE_OK()` / `EV_EXPENSE_SAVE_FAIL(error)`
+* `EV_EXPENSE_SEND()`
+* `EV_EXPENSE_SEND_OK()` / `EV_EXPENSE_SEND_FAIL(error)`
+* `EV_CLOSE_MODAL()`
+
+### 3.4 Ödeme
+
+* `EV_MARK_PAID(expenseRequestId, amount)`
+* `EV_MARK_PAID_OK(response)` / `EV_MARK_PAID_FAIL(error)`
+
+### 3.5 Stage/Operasyon (yeniden tebligat, haciz, bakiye düş)
+
+* `EV_TRIGGER_STAGE(eventCode, params)`
+* `EV_TRIGGER_STAGE_OK(response)` / `EV_TRIGGER_STAGE_FAIL(error)`
+* `EV_DEBIT_OPERATION(operationCode, amount, description)`
+* `EV_DEBIT_OPERATION_OK(response)` / `EV_DEBIT_OPERATION_FAIL(error)`
+
+### 3.6 Override
+
+* `EV_CLICK_OVERRIDE_UYAP()` (sadece yetkili)
+* `EV_SUBMIT_OVERRIDE_REASON(text)`
+* `EV_OVERRIDE_SEND_OK()` / `EV_OVERRIDE_SEND_FAIL(error)`
 
 ---
 
-## 🔧 ÇALIŞTIRMA
+## 4) Reducer Kuralları (state geçişleri)
 
-```bash
-# Geliştirme
-cd project
-pnpm dev
+### 4.1 Sayfa yükleme
 
-# Frontend: http://localhost:3000
-# API: http://localhost:8080
-```
+* `EV_PAGE_LOAD`:
+
+  * `ui.state = IDLE`, `ui.loading=true`, `ui.error=null`
+* `EV_PAGE_LOADED`:
+
+  * `ui.state = READY`, `ui.loading=false`
+  * `case/balance/expenseRequests/suggestions/permissions` doldur
+* `EV_PAGE_LOAD_FAILED`:
+
+  * `ui.state = ERROR`, `ui.loading=false`, `ui.error=error`
 
 ---
 
-## 📝 NOTLAR
+### 4.2 UYAP butonu (en kritik)
 
-- Eski proje `_archive/` klasöründe (git'te takip edilmiyor)
-- PostgreSQL: postgresql://postgres:postgres123@localhost:5432/hukuk_db
-- Türkçe karakterler ASCII'ye çevrildi (encoding sorunu)
+* `EV_CLICK_UYAP_SEND`:
+
+  * `ui.state = UYAP_SENDING`, `ui.loading=true`, `ui.error=null`
+  * Side-effect: `POST /cases/{id}/uyap/prepare`
+
+**Prepare sonucu:**
+
+* `EV_UYAP_PREPARE_OK`:
+
+  * Eğer `response.action == "OPEN_EXPENSE_MODAL"`:
+
+    * `ui.state = COST_MODAL_OPEN`
+    * `ui.loading=false`
+    * `ui.activeModal = {type:"EXPENSE_REQUEST", expenseRequestId}`
+    * `case.status = COST_PENDING`
+    * Side-effect: `GET /expense-requests/{id}` (draft yükle)
+  * Eğer `response.action == "READY"`:
+
+    * Side-effect: `POST /cases/{id}/uyap/send`
+    * `ui.state = UYAP_SENDING` devam
+* `EV_UYAP_PREPARE_FAIL`:
+
+  * `ui.state = ERROR`, `ui.loading=false`, `ui.error=error`
+
+**Send sonucu:**
+
+* `EV_UYAP_SEND_OK`:
+
+  * `ui.state = READY`, `ui.loading=false`
+  * `case.status = SENT_TO_UYAP`
+  * Toast: “UYAP’a gönderildi.”
+* `EV_UYAP_SEND_FAIL`:
+
+  * `ui.state = ERROR`, `ui.loading=false`, `ui.error=error`
+
+---
+
+### 4.3 Masraf modal açılma ve draft yükleme
+
+* `EV_OPEN_EXPENSE_MODAL(id)`:
+
+  * `ui.state = COST_MODAL_OPEN`
+  * `ui.activeModal = {type:"EXPENSE_REQUEST", expenseRequestId:id}`
+  * `ui.loading=true`
+  * Side-effect: `GET /expense-requests/{id}`
+
+* `EV_EXPENSE_LOADED(draft)`:
+
+  * `ui.loading=false`
+  * `expenseRequestDraft = draft`
+  * `ui.state = COST_MODAL_OPEN`
+
+* `EV_EXPENSE_ITEM_CHANGED(itemCode, newAmount)`:
+
+  * draft item `finalAmount` güncellenir
+  * `wasOverridden = (finalAmount != suggestedAmount)`
+  * totals `final` yeniden hesaplanır (sum)
+  * (ops) `newAmount < 0` ise anında validasyon hatası
+
+---
+
+### 4.4 Taslak kaydetme
+
+* `EV_EXPENSE_SAVE_DRAFT`:
+
+  * `ui.state = SENDING_REQUEST`, `ui.loading=true`
+  * Side-effect: `PATCH /expense-requests/{id}` (diff gönder)
+* `EV_EXPENSE_SAVE_OK`:
+
+  * `ui.loading=false`
+  * `ui.state = COST_MODAL_OPEN`
+  * Toast: “Masraf talebi taslak olarak kaydedildi.”
+* `EV_EXPENSE_SAVE_FAIL`:
+
+  * `ui.state = ERROR`, `ui.loading=false`, `ui.error=error`
+
+---
+
+### 4.5 Talebi gönderme
+
+* `EV_EXPENSE_SEND`:
+
+  * `ui.state = SENDING_REQUEST`, `ui.loading=true`
+  * Side-effect:
+
+    1. gerekirse `PATCH` (değişiklik varsa)
+    2. `POST /expense-requests/{id}/send`
+* `EV_EXPENSE_SEND_OK`:
+
+  * `ui.loading=false`
+  * `ui.state = READY`
+  * modal kapanır: `ui.activeModal=null`, `expenseRequestDraft=null`
+  * expenseRequests listesinde ilgili request `SENT` yapılır
+  * Toast: “Masraf talebi müvekkile gönderildi.”
+* `EV_EXPENSE_SEND_FAIL`:
+
+  * `ui.state = ERROR`, `ui.loading=false`, `ui.error=error`
+
+---
+
+### 4.6 Ödeme işleme (Ödendi)
+
+* `EV_MARK_PAID(id, amount)`:
+
+  * `ui.state = PAYMENT_POSTING`, `ui.loading=true`
+  * Side-effect: `POST /expense-requests/{id}/mark-paid`
+* `EV_MARK_PAID_OK(response)`:
+
+  * `ui.loading=false`
+  * `ui.state = READY`
+  * expenseRequests listesinde request `PAID`
+  * `balance.amount += response.amount`
+  * Eğer `response.packageCode == "UYAP_PRE"`:
+
+    * `case.status = READY_FOR_UYAP`
+  * Toast: “Ödeme işlendi. Dosya UYAP’a gönderime hazır.”
+* `EV_MARK_PAID_FAIL`:
+
+  * `ui.state = ERROR`, `ui.loading=false`, `ui.error=error`
+
+---
+
+### 4.7 Stage trigger (yeniden tebligat / haciz)
+
+* `EV_TRIGGER_STAGE(eventCode, params)`:
+
+  * `ui.state = OPERATION_POSTING`, `ui.loading=true`
+  * Side-effect: `POST /cases/{id}/stage-trigger`
+* `EV_TRIGGER_STAGE_OK(response)`:
+
+  * `ui.loading=false`
+  * Eğer `response.action == "OPEN_EXPENSE_MODAL"`:
+
+    * `ui.state = COST_MODAL_OPEN`
+    * modal açılır (expenseRequestId)
+    * Side-effect: `GET /expense-requests/{id}`
+  * Eğer `response.action == "OFFER_DEBIT_OR_REQUEST"`:
+
+    * `ui.state = READY`
+    * UI’de “iki seçenek” dialogu aç (client-only modal)
+* `EV_TRIGGER_STAGE_FAIL`:
+
+  * `ui.state = ERROR`, `ui.loading=false`, `ui.error=error`
+
+---
+
+### 4.8 Bakiye düşme (operasyon)
+
+* `EV_DEBIT_OPERATION(operationCode, amount, desc)`:
+
+  * `ui.state = OPERATION_POSTING`, `ui.loading=true`
+  * Side-effect: `POST /cases/{id}/operations`
+* `EV_DEBIT_OPERATION_OK(response)`:
+
+  * `ui.loading=false`
+  * `ui.state = READY`
+  * `balance.amount = response.newBalance`
+  * Toast: “Masraf bakiyesinden düşüldü: {amount} TL”
+* `EV_DEBIT_OPERATION_FAIL`:
+
+  * `ui.state = ERROR`, `ui.loading=false`, `ui.error=error`
+
+---
+
+### 4.9 Modal kapatma
+
+* `EV_CLOSE_MODAL`:
+
+  * `ui.activeModal=null`
+  * `expenseRequestDraft=null`
+  * `ui.state = READY`
+  * `ui.error=null` (modal içi hatayı temizle)
+
+---
+
+## 5) Derived Selectors (UI kararları)
+
+### 5.1 UYAP butonu aktif mi?
+
+* aktif: `case.status == READY_FOR_UYAP`
+* pasif: `case.status in [DRAFT, COST_PENDING]`
+* tooltip:
+
+  * DRAFT: “Masraf talebi oluşturulmadı.”
+  * COST_PENDING: “Masraf avansı ödenmeden UYAP’a gönderim yapılamaz.”
+
+### 5.2 “Bakiye düşük” uyarısı
+
+* `balance.amount < balance.lowThreshold` → suggestion kartı üret
+
+### 5.3 Modal “Gönder” butonu aktif mi?
+
+* draft var && totals.final > 0 && en az bir kanal seçili (veya email default true)
+
+---
+
+## 6) En net garanti: “UI asla backend kuralını çiğneyemez”
+
+* UI butonu aktif etse bile backend `case.status` kontrolüyle reddeder.
+* Bu yüzden reducer’da optimistic davranma: UYAP send sonrası status’u sadece `EV_UYAP_SEND_OK` ile değiştir.
+
+---
+
+Bu spesifikasyonu geliştiriciye verince, herkes aynı sistemi yazar; “buton bazen çalışıyor bazen çalışmıyor” tipi saçmalıklar biter.

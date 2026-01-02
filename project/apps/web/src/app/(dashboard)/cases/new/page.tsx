@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculator, TrendingUp, Receipt, Banknote, FileCheck, Calendar, XCircle, Info } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculator, TrendingUp, Receipt, Banknote, FileCheck, Calendar, XCircle, Info, Search, Users, Building2, Landmark, Edit2, Trash2, Phone, Mail, AlertCircle, Settings } from "lucide-react";
 import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
 import { FormMetadata, SubFormMetadata, FormCategory } from "@/types/form-metadata";
@@ -248,6 +248,17 @@ export default function NewCasePage() {
 
   // LocalStorage'dan taslak yükle (sayfa yenilendiğinde) - EN ÖNCE ÇALIŞMALI
   useEffect(() => {
+    // URL'de ?new=true varsa taslağı yükleme, sıfırdan başla
+    const urlParams = new URLSearchParams(window.location.search);
+    const isNewStart = urlParams.get('new') === 'true';
+    
+    if (isNewStart) {
+      // Yeni başlangıç - taslağı temizle ve sıfırdan başla
+      clearWizardState();
+      setDraftLoaded(true);
+      return;
+    }
+    
     const savedState = loadWizardState();
     if (savedState) {
       console.log("📦 Taslak yükleniyor:", savedState.savedAt);
@@ -400,7 +411,8 @@ export default function NewCasePage() {
       setExecutionOffices(officesRes?.data?.data || []);
       setLookups(lookupsRes?.data?.data || { takipTuru: [], asama: [], risk: [], borcluTipi: [], durumEtiketi: [], mahiyetTipi: [] });
       setUsers(usersRes?.data?.data || []);
-      setExistingStaff(staffRes?.data?.data || []);
+      const allStaff = staffRes?.data?.data || [];
+      setExistingStaff(allStaff);
       
       // Varsayılan avukatları otomatik seç (localStorage'dan veya mevcut seçimden yüklenmemişse)
       // lawyers state'i zaten localStorage'dan yüklendiyse dokunma
@@ -434,6 +446,35 @@ export default function NewCasePage() {
         }
         
         return currentLawyers;
+      });
+      
+      // Varsayılan personelleri otomatik seç (localStorage'dan veya mevcut seçimden yüklenmemişse)
+      setSelectedStaff(currentStaff => {
+        if (currentStaff.length > 0) {
+          console.log("✅ Mevcut personeller korunuyor:", currentStaff.length);
+          return currentStaff;
+        }
+        
+        // Mevcut personel yoksa varsayılanları yükle
+        const defaultStaff = allStaff.filter((s: any) => s.isDefaultForNewCases && s.isActive !== false);
+        console.log("🔍 Varsayılan personeller:", defaultStaff.length);
+        
+        if (defaultStaff.length > 0) {
+          const selectedStaffList = defaultStaff.map((s: any) => ({
+            id: s.id,
+            firstName: s.firstName,
+            lastName: s.lastName,
+            staffType: s.staffType,
+            roleOnCase: s.staffType,
+            canEdit: s.canEditCase || false,
+            canApprove: s.canApproveDocuments || false,
+            canView: true,
+          }));
+          console.log("✅ Varsayılan personeller yüklendi:", selectedStaffList.length);
+          return selectedStaffList;
+        }
+        
+        return currentStaff;
       });
       
       // Varsayılan aşama: "Dosya Açıldı"
@@ -812,8 +853,23 @@ export default function NewCasePage() {
     return mapping[category || ""] || "GENERAL_EXECUTION";
   };
 
+  // subCategory mapping - Frontend değerlerini Backend enum'una çevir
+  const mapSubCategoryToBackend = (subCat: string): "GENEL" | "NAFAKA" | "DOVIZ" | "KIRA" | "CEZA" => {
+    switch (subCat) {
+      case "NAFAKA": return "NAFAKA";
+      case "DOVIZ": return "DOVIZ";
+      case "KIRA": return "KIRA";
+      case "CEZA": return "CEZA";
+      // CEK, SENET, FATURA, ASIL_ALACAK, ILAM -> GENEL
+      default: return "GENEL";
+    }
+  };
+
   const handleSubmit = async () => {
     setError(""); 
+    
+    // Backend'e gönderilecek subCategory değerini hesapla
+    const backendSubCategory = mapSubCategoryToBackend(caseData.subCategory);
     
     // Pre-submit validasyon
     const validation = validateCaseCreation({
@@ -823,7 +879,7 @@ export default function NewCasePage() {
       creditors: creditors.filter(c => c.name),
       caseDebtors: caseDebtors,
       dues: dues.filter(d => d.amount && parseFloat(d.amount) > 0),
-      subCategory: caseData.subCategory,
+      subCategory: backendSubCategory,
       currency: caseData.currency,
     });
 
@@ -847,7 +903,7 @@ export default function NewCasePage() {
         startDate: caseData.startDate || undefined, notes: caseData.notes || undefined,
         executionPath: caseData.executionPath, caseStatus: caseData.caseStatus,
         executionOfficeId: caseData.executionOfficeId || undefined, uyapBirimKodu: caseData.uyapBirimKodu || undefined,
-        hasArticle4Request: caseData.hasArticle4Request, subCategory: caseData.subCategory, currency: caseData.currency,
+        hasArticle4Request: caseData.hasArticle4Request, subCategory: backendSubCategory, currency: caseData.currency,
         interestType: caseData.interestType, nafakaStartDate: caseData.nafakaStartDate || undefined,
         monthlyNafakaAmount: caseData.monthlyNafakaAmount ? parseFloat(caseData.monthlyNafakaAmount) : undefined,
         exchangeDate: caseData.exchangeDate || undefined, exchangeRateType: caseData.exchangeRateType,
@@ -906,8 +962,8 @@ export default function NewCasePage() {
   const recentHistory = getRecentForms();
 
   return (
-    <div className="h-full flex flex-col overflow-hidden">
-      <div className="flex items-center justify-between mb-2">
+    <div className="flex flex-col" style={{ height: 'calc(100vh - 120px)' }}>
+      <div className="flex items-center justify-between mb-1 flex-shrink-0">
         <Link href="/cases" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-3 w-3" /> Takiplere Dön
         </Link>
@@ -930,8 +986,8 @@ export default function NewCasePage() {
         </div>
       </div>
 
-      <div className="mb-4 p-3 bg-gradient-to-r from-slate-50 to-gray-50 rounded-xl border">
-        {/* Stepper - Geliştirilmiş */}
+      <div className="mb-2 p-2 bg-gradient-to-r from-slate-50 to-gray-50 rounded-lg border flex-shrink-0">
+        {/* Stepper - Kompakt */}
         <div className="flex items-center">
           {steps.map((step, index) => (
             <div key={step.id} className="flex items-center flex-1">
@@ -943,20 +999,20 @@ export default function NewCasePage() {
                   currentStep === step.id ? 'scale-105' : ''
                 }`}
               >
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold transition-all shadow-sm ${
+                <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold transition-all shadow-sm ${
                   currentStep > step.id 
                     ? 'bg-gradient-to-br from-green-500 to-emerald-600 text-white shadow-green-200' 
                     : currentStep === step.id 
-                      ? 'bg-gradient-to-br from-primary to-blue-600 text-white shadow-blue-200 ring-4 ring-primary/20' 
+                      ? 'bg-gradient-to-br from-primary to-blue-600 text-white shadow-blue-200 ring-2 ring-primary/20' 
                       : 'bg-white border-2 border-gray-300 text-gray-400 group-hover:border-primary/50'
                 }`}>
                   {currentStep > step.id ? (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
+                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>
                   ) : (
                     <span>{step.id + 1}</span>
                   )}
                 </div>
-                <span className={`mt-1.5 text-xs font-medium whitespace-nowrap transition-colors ${
+                <span className={`mt-1 text-[10px] font-medium whitespace-nowrap transition-colors ${
                   currentStep === step.id 
                     ? 'text-primary' 
                     : currentStep > step.id 
@@ -969,8 +1025,8 @@ export default function NewCasePage() {
               
               {/* Connector Line */}
               {index < steps.length - 1 && (
-                <div className="flex-1 mx-2">
-                  <div className={`h-1 rounded-full transition-all ${
+                <div className="flex-1 mx-1">
+                  <div className={`h-0.5 rounded-full transition-all ${
                     currentStep > step.id 
                       ? 'bg-gradient-to-r from-green-500 to-emerald-500' 
                       : 'bg-gray-200'
@@ -982,8 +1038,8 @@ export default function NewCasePage() {
         </div>
       </div>
 
-      <div className="flex-1 bg-white rounded-lg border p-3 overflow-auto">
-        {error && <div className="mb-4 p-3 bg-red-50 border border-red-200 text-red-700 rounded-lg text-sm">{error}</div>}
+      <div className="flex-1 bg-white rounded-lg border p-2 overflow-hidden flex flex-col min-h-0">
+        {error && <div className="mb-2 p-2 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs">{error}</div>}
 
         {currentStep === 0 && (
           <div>
@@ -1161,78 +1217,124 @@ export default function NewCasePage() {
         )}
 
         {currentStep === 2 && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* Sol: Avukatlar */}
-            <div className="border rounded-lg p-3">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-semibold">👨‍⚖️ Avukatlar {lawyers.length > 0 && <span className="ml-1 bg-primary/10 text-primary px-1.5 py-0.5 rounded-full text-xs">{lawyers.length}</span>}</h3>
-                <a href="/settings/office" target="_blank" className="text-xs text-primary hover:underline">Ayarlar →</a>
+          <div className="h-full flex flex-col overflow-hidden">
+            {/* Header - Kompakt */}
+            <div className="flex items-center justify-between mb-1 flex-shrink-0">
+              <div>
+                <h2 className="text-sm font-semibold">👨‍⚖️ Avukatlar & Personel</h2>
+                <p className="text-[10px] text-muted-foreground">Varsayılan olarak işaretlenenler otomatik seçilir</p>
               </div>
-              <CompactLawyerSelection
-                existingLawyers={existingLawyers}
-                selectedLawyers={lawyers}
-                onAddLawyer={(lawyer) => {
-                  if (!lawyers.find(l => l.id === lawyer.id)) {
-                    setLawyers([...lawyers, { ...lawyer, isNew: false, isResponsible: lawyers.length === 0, hasSignatureAuthority: lawyer.canSign }]);
-                  }
-                }}
-                onRemoveLawyer={(index) => {
-                  setLawyers(prev => {
-                    const removed = prev[index];
-                    const updated = prev.filter((_, i) => i !== index);
-                    if (removed?.isResponsible && updated.length > 0) updated[0] = { ...updated[0], isResponsible: true };
-                    return updated;
-                  });
-                }}
-                onUpdateLawyer={(index, field, value) => {
-                  const updated = [...lawyers];
-                  if (field === 'isResponsible' && value === true) updated.forEach((l, i) => { l.isResponsible = i === index; });
-                  else updated[index] = { ...updated[index], [field]: value };
-                  setLawyers(updated);
-                }}
-              />
+              <a href="/settings/office" target="_blank" className="px-2 py-1 bg-primary text-white text-[10px] rounded hover:bg-primary/90 flex items-center gap-1">
+                <Settings className="h-3 w-3" /> Büro Ayarları
+              </a>
             </div>
 
-            {/* Sağ: Ekip/Personel */}
-            <div className="border rounded-lg p-3">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-sm font-semibold">👥 Ekip/Personel {selectedStaff.length > 0 && <span className="ml-1 bg-primary/10 text-primary px-1.5 py-0.5 rounded-full text-xs">{selectedStaff.length}</span>}</h3>
-                <a href="/settings/office" target="_blank" className="text-xs text-primary hover:underline">Ayarlar →</a>
+            {/* İki Sütunlu Layout */}
+            <div className="flex-1 grid grid-cols-2 gap-2 min-h-0 overflow-hidden">
+              {/* Sol: Seçili Avukatlar */}
+              <div className="border rounded p-2 flex flex-col min-h-0 overflow-hidden">
+                <h3 className="font-medium mb-1 flex items-center gap-1 text-xs flex-shrink-0">
+                  <Users className="h-3 w-3" /> Seçili Avukatlar
+                  {lawyers.length > 0 && <span className="text-[10px] bg-primary text-white px-1 py-0.5 rounded-full">{lawyers.length}</span>}
+                </h3>
+
+                {lawyers.length === 0 ? (
+                  <div className="flex-1 flex items-center justify-center border border-dashed rounded bg-amber-50 border-amber-200">
+                    <div className="text-center p-2">
+                      <AlertTriangle className="h-5 w-5 mx-auto text-amber-500 mb-1" />
+                      <p className="text-amber-800 font-medium text-xs">Varsayılan avukat yok</p>
+                      <p className="text-[10px] text-amber-600">Büro Ayarları'ndan avukat ekleyin</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
+                    {lawyers.map((lawyer, index) => (
+                      <div key={lawyer.id || index} className={`p-1.5 border rounded text-xs ${lawyer.isResponsible ? 'bg-indigo-50 border-indigo-200' : 'bg-gray-50'}`}>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1">
+                            <Users className={`h-3 w-3 ${lawyer.isResponsible ? 'text-indigo-600' : 'text-gray-500'}`} />
+                            <span className="font-medium text-[11px]">{lawyer.displayName || `${lawyer.title || "Av."} ${lawyer.name} ${lawyer.surname}`}</span>
+                          </div>
+                          <button type="button" onClick={() => {
+                            setLawyers(prev => {
+                              const removed = prev[index];
+                              const updated = prev.filter((_, i) => i !== index);
+                              if (removed?.isResponsible && updated.length > 0) updated[0] = { ...updated[0], isResponsible: true };
+                              return updated;
+                            });
+                          }} className="p-0.5 text-gray-400 hover:text-red-600 rounded">
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 pt-1 border-t text-[10px]">
+                          <label className="flex items-center gap-0.5 cursor-pointer">
+                            <input type="radio" name="responsible" checked={lawyer.isResponsible || false} onChange={() => {
+                              const updated = [...lawyers];
+                              updated.forEach((l, i) => { l.isResponsible = i === index; });
+                              setLawyers(updated);
+                            }} className="w-2.5 h-2.5" />
+                            <span className={lawyer.isResponsible ? "font-medium text-indigo-700" : ""}>Sorumlu</span>
+                          </label>
+                          <label className="flex items-center gap-0.5 cursor-pointer">
+                            <input type="checkbox" checked={lawyer.hasSignatureAuthority || false} onChange={(e) => {
+                              const updated = [...lawyers];
+                              updated[index] = { ...updated[index], hasSignatureAuthority: e.target.checked };
+                              setLawyers(updated);
+                            }} className="w-2.5 h-2.5 rounded" />
+                            <span className={lawyer.hasSignatureAuthority ? "font-medium text-amber-700" : ""}>İmza Yetkisi</span>
+                          </label>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
-              <CompactStaffSelection
-                existingStaff={existingStaff}
-                selectedStaff={selectedStaff}
-                onAddStaff={(staff) => {
-                  if (!selectedStaff.find(s => s.id === staff.id)) {
-                    setSelectedStaff([...selectedStaff, { ...staff, roleOnCase: staff.staffType, canEdit: false, canApprove: false, canView: true }]);
-                  }
-                }}
-                onRemoveStaff={(index) => setSelectedStaff(selectedStaff.filter((_, i) => i !== index))}
-                onUpdateStaff={(index, field, value) => {
-                  const updated = [...selectedStaff];
-                  updated[index] = { ...updated[index], [field]: value };
-                  setSelectedStaff(updated);
-                }}
-              />
-                <p className="text-xs text-muted-foreground mt-2 p-1.5 bg-amber-50 rounded border border-amber-200">
+
+              {/* Sağ: Seçili Personel */}
+              <div className="border rounded p-2 flex flex-col min-h-0 overflow-hidden bg-gray-50">
+                <div className="flex items-center justify-between mb-1 flex-shrink-0">
+                  <h3 className="font-medium flex items-center gap-1 text-xs">
+                    👥 Seçili Personel
+                    {selectedStaff.length > 0 && <span className="text-[10px] bg-orange-500 text-white px-1 py-0.5 rounded-full">{selectedStaff.length}</span>}
+                  </h3>
+                </div>
+
+                {selectedStaff.length === 0 ? (
+                  <div className="flex-1 flex items-center justify-center border border-dashed rounded bg-white">
+                    <div className="text-center p-2">
+                      <Users className="h-5 w-5 mx-auto text-gray-400 mb-1" />
+                      <p className="text-gray-500 text-xs">Personel seçilmedi</p>
+                      <p className="text-[10px] text-gray-400">Varsayılan personeller otomatik eklenir</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
+                    {selectedStaff.map((staff, index) => (
+                      <div key={staff.id || index} className="p-1.5 bg-white border rounded flex items-center justify-between text-xs">
+                        <div>
+                          <span className="font-medium text-[11px]">{staff.firstName} {staff.lastName}</span>
+                          <span className="ml-1 text-[10px] text-gray-500">({staff.staffType})</span>
+                        </div>
+                        <button type="button" onClick={() => setSelectedStaff(selectedStaff.filter((_, i) => i !== index))} className="p-0.5 text-gray-400 hover:text-red-600 rounded">
+                          <Trash2 className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <p className="text-[10px] text-amber-600 mt-1 p-1 bg-amber-50 rounded border border-amber-200 flex-shrink-0">
                   ⚠️ Personel UYAP/takip belgelerinde görünmez
                 </p>
               </div>
             </div>
 
-            {/* Vekalet Uyarı Bandı - Step 2 */}
+            {/* Vekalet Uyarı Bandı */}
             {poaWarnings.length > 0 && creditors.length > 0 && (
-              <div className="p-3 bg-amber-50 border border-amber-300 rounded-lg">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
-                  <div className="flex-1">
-                    <p className="text-sm font-medium text-amber-800 mb-1">⚠️ Vekalet Eksik</p>
-                    <p className="text-xs text-amber-700">
-                      Seçilen müvekkil(ler) için bazı avukatlara ait geçerli vekalet bulunamadı.
-                      Müvekkiller adımında detayları görebilirsiniz.
-                    </p>
-                  </div>
+              <div className="mt-1 p-1.5 bg-amber-50 border border-amber-300 rounded flex-shrink-0">
+                <div className="flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3 text-amber-600" />
+                  <p className="text-[10px] text-amber-800">⚠️ Bazı avukatlar için geçerli vekalet bulunamadı</p>
                 </div>
               </div>
             )}
@@ -1240,131 +1342,146 @@ export default function NewCasePage() {
         )}
 
         {currentStep === 3 && (
-          <div className="space-y-4">
-            {/* Başlık ve Açıklama */}
-            <div>
-              <h2 className="text-xl font-bold text-gray-800">👥 Müvekkiller / Alacaklılar</h2>
-              <p className="text-sm text-muted-foreground mt-1">Takipte yer alacak müvekkilleri seçin veya yeni ekleyin</p>
-            </div>
-
-            {/* Aksiyon Butonları - Yan Yana */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-              {/* Manuel Ekle Butonu - Sol */}
-              <button 
-                type="button" 
-                onClick={() => setShowNewClientModal(true)} 
-                className="p-4 bg-gradient-to-r from-emerald-50 to-teal-50 border-2 border-dashed border-emerald-300 rounded-xl hover:border-emerald-500 hover:shadow-md transition-all flex items-center gap-3 group"
-              >
-                <div className="p-2.5 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl shadow-md group-hover:shadow-lg transition-shadow">
-                  <Plus className="h-5 w-5 text-white" />
-                </div>
-                <div className="text-left">
-                  <div className="font-semibold text-emerald-800 text-sm">✍️ Manuel Müvekkil Ekle</div>
-                  <div className="text-xs text-emerald-600/80">Bilgileri kendiniz girerek yeni müvekkil oluşturun</div>
-                </div>
-              </button>
-
-              {/* Vekaletname Tara Butonu - Sağ */}
-              <PoaScannerWizard
-                asButton={true}
-                onScanComplete={async (result) => {
-                  try {
-                    const clientData = {
-                      type: result.clientType,
-                      firstName: result.firstName,
-                      lastName: result.lastName,
-                      companyName: result.companyName,
-                      tckn: result.tckn,
-                      vkn: result.vkn,
-                      taxOffice: result.taxOffice,
-                      phone: result.phone,
-                      email: result.email,
-                      address: result.address,
-                      city: result.city,
-                      district: result.district,
-                      canCollect: result.canCollect,
-                      canWaive: result.canWaive,
-                      canSettle: result.canSettle,
-                      canRelease: result.canRelease,
-                      poaNumber: result.poaNumber,
-                      poaDate: result.poaDate,
-                      notaryName: result.notaryName,
-                      notaryCity: result.notaryCity,
-                    };
-                    const response = await api.post("/clients", clientData);
-                    const saved = response.data || response;
-                    const clientsRes = await api.get("/clients");
-                    setExistingClients(clientsRes.data?.data || []);
-                    addExistingCreditor(saved);
-                  } catch (err: any) {
-                    alert(err.message || "Müvekkil kaydedilemedi");
-                  }
-                }}
-              />
-            </div>
-            
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* Sol: Ofis Müvekkilleri */}
-              <div className="border rounded-lg p-3 bg-gray-50">
-                <h3 className="text-sm font-semibold mb-2">Ofis Müvekkilleri</h3>
-                <CompactClientSelection
-                  existingClients={existingClients}
-                  selectedClients={creditors}
-                  onAddClient={addExistingCreditor}
-                  onRemoveClient={(index) => removeCreditor(index)}
+          <div className="h-full flex flex-col overflow-hidden">
+            {/* Header - Kompakt */}
+            <div className="flex items-center justify-between flex-shrink-0 mb-1">
+              <div>
+                <h2 className="text-sm font-semibold">👥 Müvekkiller / Alacaklılar</h2>
+                <p className="text-[10px] text-muted-foreground">
+                  Takipte yer alacak müvekkilleri seçin veya yeni ekleyin
+                </p>
+              </div>
+              <div className="flex gap-1">
+                <button
+                  type="button"
+                  onClick={() => setShowNewClientModal(true)}
+                  className="inline-flex items-center gap-1 px-2 py-1 text-[10px] bg-emerald-500 text-white rounded hover:bg-emerald-600"
+                >
+                  <Plus className="h-3 w-3" /> Şahıs Ekle
+                </button>
+                <PoaScannerWizard
+                  asButton={true}
+                  onScanComplete={async (result) => {
+                    try {
+                      const clientData = {
+                        type: result.clientType,
+                        firstName: result.firstName,
+                        lastName: result.lastName,
+                        companyName: result.companyName,
+                        tckn: result.tckn,
+                        vkn: result.vkn,
+                        taxOffice: result.taxOffice,
+                        phone: result.phone,
+                        email: result.email,
+                        address: result.address,
+                        city: result.city,
+                        district: result.district,
+                        canCollect: result.canCollect,
+                        canWaive: result.canWaive,
+                        canSettle: result.canSettle,
+                        canRelease: result.canRelease,
+                        poaNumber: result.poaNumber,
+                        poaDate: result.poaDate,
+                        notaryName: result.notaryName,
+                        notaryCity: result.notaryCity,
+                      };
+                      const response = await api.post("/clients", clientData);
+                      const saved = response.data || response;
+                      const clientsRes = await api.get("/clients");
+                      setExistingClients(clientsRes.data?.data || []);
+                      addExistingCreditor(saved);
+                    } catch (err: any) {
+                      alert(err.message || "Müvekkil kaydedilemedi");
+                    }
+                  }}
                 />
               </div>
-              {/* Sağ: Seçili Müvekkiller */}
-              <div className="border rounded-lg p-3">
-                <h3 className="text-sm font-semibold mb-2">Bu Takip İçin Seçili Müvekkiller {creditors.length > 0 && <span className="ml-1 bg-primary/10 text-primary px-1.5 py-0.5 rounded-full text-xs">{creditors.length}</span>}</h3>
+            </div>
+
+            <div className="flex-1 grid grid-cols-2 gap-2 min-h-0 overflow-hidden">
+              {/* Sol Panel: Müvekkil Rehberi */}
+              <div className="border rounded p-2 flex flex-col min-h-0 overflow-hidden">
+                <h3 className="font-medium mb-1 flex items-center gap-1 text-xs flex-shrink-0">
+                  <Search className="h-3 w-3" /> Müvekkil Rehberi
+                </h3>
+                <div className="flex-1 overflow-hidden">
+                  <CreditorDirectoryPanel
+                    existingClients={existingClients}
+                    selectedClients={creditors}
+                    onAddClient={addExistingCreditor}
+                    onEditClient={(client) => {
+                      setShowNewClientModal(true);
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Sağ Panel: Seçili Müvekkiller */}
+              <div className="border rounded p-2 flex flex-col min-h-0 overflow-hidden">
+                <h3 className="font-medium mb-1 flex items-center gap-1 text-xs flex-shrink-0">
+                  <Users className="h-3 w-3" /> Bu Takip İçin Seçili Müvekkiller
+                  {creditors.length > 0 && (
+                    <span className="text-[10px] bg-primary text-white px-1 py-0.5 rounded-full">
+                      {creditors.length}
+                    </span>
+                  )}
+                </h3>
+
                 {creditors.length === 0 ? (
-                  <div className="text-center py-6 border-2 border-dashed rounded-lg">
-                    <p className="text-sm text-muted-foreground">Henüz müvekkil seçilmedi</p>
-                    <p className="text-xs text-muted-foreground mt-1">Soldaki listeden müvekkil ekleyin</p>
+                  <div className="flex-1 flex items-center justify-center border border-dashed rounded">
+                    <div className="text-center p-2">
+                      <AlertCircle className="h-5 w-5 mx-auto text-muted-foreground mb-1" />
+                      <p className="text-muted-foreground text-xs">Henüz müvekkil seçilmedi</p>
+                      <p className="text-[10px] text-muted-foreground">
+                        Sol panelden mevcut müvekkil seçin
+                      </p>
+                    </div>
                   </div>
                 ) : (
-                  <SelectedCreditorsList creditors={creditors} onRemove={removeCreditor} />
-                )}
-                {creditors.length === 0 && (
-                  <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">⚠️ Devam etmek için en az 1 müvekkil seçmelisiniz</p>
+                  <div className="flex-1 overflow-y-auto space-y-1 min-h-0">
+                    {creditors.map((creditor, index) => (
+                      <SelectedCreditorCard
+                        key={creditor.id || index}
+                        creditor={creditor}
+                        onRemove={() => removeCreditor(index)}
+                      />
+                    ))}
+                  </div>
                 )}
               </div>
             </div>
 
             {/* Vekalet Uyarı Bandı */}
             {poaWarnings.length > 0 && (
-              <div className="mt-4 p-3 bg-amber-50 border border-amber-300 rounded-lg">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle className="h-5 w-5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <div className="mt-1 p-1.5 bg-amber-50 border border-amber-300 rounded flex-shrink-0">
+                <div className="flex items-start gap-1">
+                  <AlertTriangle className="h-3 w-3 text-amber-600 flex-shrink-0 mt-0.5" />
                   <div className="flex-1">
-                    <p className="text-sm font-medium text-amber-800 mb-2">⚠️ Vekalet Uyarısı</p>
-                    <div className="space-y-1">
-                      {poaWarnings.map((warning, idx) => (
-                        <p key={idx} className="text-xs text-amber-700">
-                          <span className="font-medium">{warning.clientName}</span> için <span className="font-medium">Av. {warning.lawyerName}</span> adına: {warning.message}
+                    <p className="text-[10px] font-medium text-amber-800">⚠️ Vekalet Uyarısı</p>
+                    <div className="space-y-0.5 mt-0.5">
+                      {poaWarnings.slice(0, 2).map((warning, idx) => (
+                        <p key={idx} className="text-[10px] text-amber-700">
+                          <span className="font-medium">{warning.clientName}</span> - {warning.lawyerName}: {warning.message}
                         </p>
                       ))}
                     </div>
-                    <div className="mt-3 flex gap-2">
+                    <div className="mt-1 flex gap-1">
                       <Link
                         href="/settings/clients"
                         target="_blank"
-                        className="px-3 py-1.5 bg-amber-600 text-white text-xs rounded hover:bg-amber-700 flex items-center gap-1"
+                        className="px-2 py-0.5 bg-amber-600 text-white text-[10px] rounded hover:bg-amber-700 flex items-center gap-0.5"
                       >
-                        <FileCheck className="h-3.5 w-3.5" />
+                        <FileCheck className="h-2.5 w-2.5" />
                         Vekalet Ekle
                       </Link>
                       <button
                         type="button"
                         onClick={() => setPoaWarnings([])}
-                        className="px-3 py-1.5 border border-amber-400 text-amber-700 text-xs rounded hover:bg-amber-100"
+                        className="px-2 py-0.5 border border-amber-400 text-amber-700 text-[10px] rounded hover:bg-amber-100"
                       >
-                        Yine de Devam Et
+                        Devam Et
                       </button>
                     </div>
-                    <p className="text-xs text-amber-600 mt-2">
-                      💡 Vekalet eklemeden UYAP'a gönderim yapmamanız önerilir.
-                    </p>
                   </div>
                 </div>
               </div>
@@ -1373,60 +1490,93 @@ export default function NewCasePage() {
         )}
 
         {currentStep === 4 && (
-          <DebtorStep
-            selectedDebtors={caseDebtors}
-            onDebtorsChange={setCaseDebtors}
-            onDebtInfoDetected={(debtInfo) => {
-              // Borç evrakından tespit edilen bilgileri alacak kalemlerine otomatik aktar
-              if (debtInfo.amount) {
-                const newDue: DueItem = {
-                  type: "PRINCIPAL",
-                  description: debtInfo.documentNo 
-                    ? `${debtInfo.documentNo} numaralı belgeye istinaden asıl alacak`
-                    : "Asıl Alacak (Borç evrakından tespit edildi)",
-                  amount: debtInfo.amount.toString(),
-                  dueDate: debtInfo.dueDate || new Date().toISOString().split("T")[0],
-                };
-                // Mevcut kalemlere ekle (aynı tutar yoksa)
-                const existingAmount = dues.find(d => d.amount === newDue.amount && d.type === "PRINCIPAL");
-                if (!existingAmount) {
-                  setDues([...dues, newDue]);
+          <div className="h-full flex flex-col overflow-hidden">
+            <DebtorStep
+              selectedDebtors={caseDebtors}
+              onDebtorsChange={setCaseDebtors}
+              onDebtInfoDetected={(debtInfo) => {
+                // Borç evrakından tespit edilen bilgileri alacak kalemlerine otomatik aktar
+                if (debtInfo.amount) {
+                  const newDue: DueItem = {
+                    type: "PRINCIPAL",
+                    description: debtInfo.documentNo 
+                      ? `${debtInfo.documentNo} numaralı belgeye istinaden asıl alacak`
+                      : "Asıl Alacak (Borç evrakından tespit edildi)",
+                    amount: debtInfo.amount.toString(),
+                    dueDate: debtInfo.dueDate || new Date().toISOString().split("T")[0],
+                  };
+                  // Mevcut kalemlere ekle (aynı tutar yoksa)
+                  const existingAmount = dues.find(d => d.amount === newDue.amount && d.type === "PRINCIPAL");
+                  if (!existingAmount) {
+                    setDues([...dues, newDue]);
+                  }
+                  // Para birimini güncelle
+                  if (debtInfo.currency && debtInfo.currency !== "TRY") {
+                    setCaseData(prev => ({ ...prev, currency: debtInfo.currency as any }));
+                  }
                 }
-                // Para birimini güncelle
-                if (debtInfo.currency && debtInfo.currency !== "TRY") {
-                  setCaseData(prev => ({ ...prev, currency: debtInfo.currency as any }));
-                }
-              }
-            }}
-          />
+              }}
+            />
+          </div>
         )}
 
         {currentStep === 5 && (
-          <ProfessionalClaimItemForm
-            caseType={selectedForm?.category}
-            formCode={selectedForm?.code}
-            currency={caseData.currency || "TRY"}
-            takipTuruCode={lookups.takipTuru.find(t => t.id === caseData.takipTuruId)?.code}
-            documentSource={documentSource}
-            onItemsChange={(items) => {
-              // Yeni tablo bazlı form'dan gelen verileri dues formatına dönüştür
-              const principalTypes = ["ASIL_ALACAK", "CEK", "SENET", "FATURA", "KIRA", "ILAM", "NAFAKA"];
-              const newDues = items.map(item => ({
-                type: principalTypes.includes(item.kalemTuru) ? "PRINCIPAL" as const :
-                      item.kalemTuru === "ISLEMIS_FAIZ" ? "INTEREST" as const :
-                      "OTHER" as const,
-                description: item.aciklama || KALEM_TURU_LABELS[item.kalemTuru] || "Alacak",
-                amount: item.tutar.toString(),
-                dueDate: item.vadeTarihi,
-                interestType: item.faizTuru as any,
-                interestRate: FAIZ_ORANLARI[item.faizTuru] || 0,
-                interestAmount: item.hesaplananFaiz || 0,
-                interestStartDate: item.faizBaslangic,
-                interestEndDate: item.faizBitis,
-              }));
-              setDues(newDues);
-            }}
-          />
+          <div className="h-full overflow-y-auto">
+            <ProfessionalClaimItemForm
+              caseType={selectedForm?.category}
+              formCode={selectedForm?.code}
+              currency={caseData.currency || "TRY"}
+              takipTuruCode={lookups.takipTuru.find(t => t.id === caseData.takipTuruId)?.code}
+              documentSource={documentSource}
+              borcluSayisi={caseDebtors.length || 1}
+              fileNumber={caseData.fileNumber}
+              executionOffice={executionOffices.find(o => o.id === caseData.executionOfficeId) ? {
+                name: executionOffices.find(o => o.id === caseData.executionOfficeId)!.name,
+                city: executionOffices.find(o => o.id === caseData.executionOfficeId)!.city,
+                uyapCode: executionOffices.find(o => o.id === caseData.executionOfficeId)!.uyapCode,
+              } : undefined}
+              creditors={creditors.map(c => ({
+                type: c.type,
+                name: c.name,
+                identityNo: c.identityNo,
+                address: c.address,
+              }))}
+              lawyers={lawyers.map(l => ({
+                name: `${l.name} ${l.surname}`,
+                barNumber: l.barNumber || '',
+                barCity: l.barCity || '',
+              }))}
+              debtors={caseDebtors.map(cd => {
+                const debtor = existingDebtors.find((d: any) => d.id === cd.debtorId);
+                return {
+                  type: debtor?.type || 'INDIVIDUAL',
+                  name: debtor?.displayName || debtor?.name || '',
+                  identityNo: debtor?.tckn || debtor?.vkn,
+                  address: debtor?.address,
+                  role: cd.role,
+                };
+              })}
+              onItemsChange={(items) => {
+                // Yeni formattan dues formatına dönüştür
+                if (items.length > 0 && items[0].hesapOzeti) {
+                  // Yeni format - hesap özeti var
+                  const item = items[0];
+                  const newDues = [{
+                    type: "PRINCIPAL" as const,
+                    description: item.aciklama || "Asıl Alacak",
+                    amount: (item.bakiyeTutar || item.toplamTutar || 0).toString(),
+                    dueDate: item.vadeTarihi,
+                    interestType: item.takipOncesiFaiz as any,
+                    interestRate: 0,
+                    interestAmount: 0,
+                    interestStartDate: item.vadeTarihi,
+                    interestEndDate: caseData.startDate,
+                  }];
+                  setDues(newDues);
+                }
+              }}
+            />
+          </div>
         )}
 
         {/* Validasyon Paneli - Son adimda goster */}
@@ -1463,7 +1613,7 @@ export default function NewCasePage() {
 
         {/* Wizard açıkken ana sayfa butonlarını gizle - wizard kendi butonlarını kullanır */}
         {!(currentStep === 0 && showWizard && !showDocumentSelector) && (
-          <div className="flex flex-col sm:flex-row justify-between gap-3 mt-8 pt-4 border-t">
+          <div className="flex flex-col sm:flex-row justify-between gap-3 mt-8 pt-4 border-t mb-16">
             <button type="button" onClick={prevStep} className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-gray-100 border border-gray-300 text-gray-700 font-medium rounded-lg hover:bg-gray-200 hover:border-gray-400 transition-colors order-2 sm:order-1"><ArrowLeft className="h-4 w-4" /> Geri</button>
             {currentStep < steps.length - 1 ? (
               <button type="button" onClick={nextStep} className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 order-1 sm:order-2">İleri <ArrowRight className="h-4 w-4" /></button>
@@ -1566,6 +1716,7 @@ function LawyerSelectionStep({
   onRefreshLawyers: () => Promise<void>;
 }) {
   const [searchTerm, setSearchTerm] = useState("");
+  const [roleFilter, setRoleFilter] = useState<string>("ALL");
 
   const roleLabels: Record<string, string> = {
     OWNER: "Büro Sahibi",
@@ -1579,186 +1730,225 @@ function LawyerSelectionStep({
     !selectedLawyers.find(sl => sl.id === l.id)
   );
 
-  // Arama filtresi
-  const filteredUnselected = unselectedLawyers.filter(l => 
-    !searchTerm || 
-    l.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    l.surname?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    l.barNumber?.includes(searchTerm)
-  );
+  // Arama ve rol filtresi
+  const filteredUnselected = unselectedLawyers.filter(l => {
+    const matchesSearch = !searchTerm || 
+      l.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      l.surname?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      l.barNumber?.includes(searchTerm);
+    const matchesRole = roleFilter === "ALL" || l.role === roleFilter;
+    return matchesSearch && matchesRole;
+  });
 
   return (
-    <div className="space-y-4">
-      {/* Üst: Seçilmiş Avukatlar */}
-      <div className="border rounded-lg p-4">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold flex items-center gap-2">
-            ✅ Seçilmiş Avukatlar
+    <div className="space-y-3">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h2 className="text-lg font-semibold">Avukatlar</h2>
+          <p className="text-xs text-muted-foreground">
+            Takipte yer alacak avukatları seçin
+          </p>
+        </div>
+        <a 
+          href="/settings/office" 
+          target="_blank" 
+          className="text-xs text-primary hover:underline"
+        >
+          Ayarlar →
+        </a>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Sol Panel: Avukat Rehberi */}
+        <div className="border rounded-lg p-3">
+          <h3 className="font-medium mb-2 flex items-center gap-2 text-sm">
+            👨‍⚖️ Avukatlar
+          </h3>
+
+          {/* Arama */}
+          <div className="mb-2">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder="Ad, soyad veya sicil no..."
+              className="w-full px-3 py-1.5 text-sm border rounded-lg focus:outline-none focus:border-primary"
+            />
+          </div>
+
+          {/* Rol Filtreleri */}
+          <div className="flex gap-1 mb-2 flex-wrap">
+            {[
+              { value: "ALL", label: "Tümü" },
+              { value: "OWNER", label: "Büro Sahibi" },
+              { value: "PARTNER", label: "Ortak" },
+              { value: "EMPLOYEE", label: "Avukat" },
+              { value: "INTERN", label: "Stajyer" },
+            ].map((opt) => (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setRoleFilter(opt.value)}
+                className={`px-2 py-1 text-xs rounded-full ${
+                  roleFilter === opt.value
+                    ? "bg-primary text-white"
+                    : "bg-gray-100 hover:bg-gray-200"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Avukat Listesi */}
+          <div className="max-h-[280px] overflow-y-auto space-y-1.5">
+            {filteredUnselected.length === 0 ? (
+              <div className="text-center py-6 text-muted-foreground text-sm">
+                {searchTerm ? "Sonuç bulunamadı" : "Tüm avukatlar seçilmiş"}
+              </div>
+            ) : (
+              filteredUnselected.map((lawyer) => (
+                <div
+                  key={lawyer.id}
+                  className="p-2 border rounded-lg hover:border-primary hover:bg-primary/5 transition-colors"
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1 cursor-pointer" onClick={() => onAddLawyer(lawyer)}>
+                      <div className="flex items-center gap-2">
+                        <span className="font-medium text-sm">
+                          {lawyer.displayName || `${lawyer.title || (lawyer.role === "INTERN" ? "Stj. Av." : "Av.")} ${lawyer.name} ${lawyer.surname}`}
+                        </span>
+                        {lawyer.role && (
+                          <span className={`text-xs px-1.5 py-0.5 rounded ${
+                            lawyer.role === "OWNER" ? "bg-purple-100 text-purple-700" : 
+                            lawyer.role === "PARTNER" ? "bg-blue-100 text-blue-700" : 
+                            lawyer.role === "INTERN" ? "bg-gray-100 text-gray-600" : 
+                            "bg-green-100 text-green-700"
+                          }`}>
+                            {roleLabels[lawyer.role] || lawyer.role}
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5 flex flex-wrap gap-2">
+                        {lawyer.barNumber && <span>#{lawyer.barNumber}</span>}
+                        {lawyer.barCity && <span>{lawyer.barCity} Barosu</span>}
+                        {lawyer.canSign && <span className="text-amber-600">İmza ✓</span>}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => onAddLawyer(lawyer)}
+                      className="text-xs px-2 py-1 bg-primary/10 text-primary rounded hover:bg-primary hover:text-white flex items-center gap-0.5 font-medium"
+                    >
+                      + Ekle
+                    </button>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        {/* Sağ Panel: Seçili Avukatlar */}
+        <div className="border rounded-lg p-3">
+          <h3 className="font-medium mb-2 flex items-center gap-2 text-sm">
+            ✅ Bu Takip İçin Seçili Avukatlar
             {selectedLawyers.length > 0 && (
-              <span className="bg-green-100 text-green-700 px-2 py-0.5 rounded-full text-xs">
+              <span className="text-xs bg-primary text-white px-1.5 py-0.5 rounded-full">
                 {selectedLawyers.length}
               </span>
             )}
           </h3>
-        </div>
-        
-        {selectedLawyers.length === 0 ? (
-          <div className="text-center py-6 border-2 border-dashed rounded-lg bg-gray-50">
-            <p className="text-sm text-muted-foreground">Henüz avukat seçilmedi</p>
-            <p className="text-xs text-muted-foreground mt-1">Aşağıdaki listeden avukat ekleyin</p>
-          </div>
-        ) : (
-          <div className="space-y-2">
-            {selectedLawyers.map((lawyer, index) => (
-              <div 
-                key={lawyer.id || index} 
-                className={`p-3 rounded-lg border-2 transition-all ${
-                  lawyer.isResponsible 
-                    ? 'border-primary bg-primary/5' 
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className="flex-1">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-medium">
-                        {lawyer.displayName || `${lawyer.title || (lawyer.role === "INTERN" ? "Stj. Av." : "Av.")} ${lawyer.name} ${lawyer.surname}`}
-                      </span>
-                      {lawyer.barNumber && (
-                        <span className="text-xs text-muted-foreground">#{lawyer.barNumber}</span>
-                      )}
-                      {lawyer.role && (
-                        <span className={`text-xs px-1.5 py-0.5 rounded ${
-                          lawyer.role === "OWNER" ? "bg-purple-100 text-purple-700" : 
-                          lawyer.role === "PARTNER" ? "bg-blue-100 text-blue-700" : 
-                          lawyer.role === "INTERN" ? "bg-gray-100 text-gray-600" : 
-                          "bg-green-100 text-green-700"
-                        }`}>
-                          {roleLabels[lawyer.role] || lawyer.role}
+
+          {selectedLawyers.length === 0 ? (
+            <div className="text-center py-8 border-2 border-dashed rounded-lg">
+              <p className="text-muted-foreground text-sm">Henüz avukat seçilmedi</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Sol panelden mevcut avukat seçin
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2 max-h-[280px] overflow-y-auto">
+              {selectedLawyers.map((lawyer, index) => (
+                <div 
+                  key={lawyer.id || index} 
+                  className={`p-2 border rounded-lg transition-all ${
+                    lawyer.isResponsible 
+                      ? 'border-primary bg-primary/5' 
+                      : 'border-gray-200 hover:border-gray-300'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-medium text-sm">
+                          {lawyer.displayName || `${lawyer.title || (lawyer.role === "INTERN" ? "Stj. Av." : "Av.")} ${lawyer.name} ${lawyer.surname}`}
                         </span>
-                      )}
-                      {lawyer.canSign && (
-                        <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
-                          İmza ✓
-                        </span>
-                      )}
+                        {lawyer.role && (
+                          <span className={`text-xs px-1.5 py-0.5 rounded ${
+                            lawyer.role === "OWNER" ? "bg-purple-100 text-purple-700" : 
+                            lawyer.role === "PARTNER" ? "bg-blue-100 text-blue-700" : 
+                            lawyer.role === "INTERN" ? "bg-gray-100 text-gray-600" : 
+                            "bg-green-100 text-green-700"
+                          }`}>
+                            {roleLabels[lawyer.role] || lawyer.role}
+                          </span>
+                        )}
+                        {lawyer.canSign && (
+                          <span className="text-xs bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded">
+                            İmza ✓
+                          </span>
+                        )}
+                      </div>
+                      
+                      {/* Yetkiler */}
+                      <div className="flex items-center gap-3 mt-1.5">
+                        <label className="flex items-center gap-1 cursor-pointer">
+                          <input 
+                            type="radio" 
+                            name="responsibleLawyer" 
+                            checked={lawyer.isResponsible || false} 
+                            onChange={() => {
+                              selectedLawyers.forEach((_, i) => {
+                                if (i !== index) onUpdateLawyer(i, "isResponsible", false);
+                              });
+                              onUpdateLawyer(index, "isResponsible", true);
+                            }} 
+                            className="w-3 h-3 text-primary" 
+                          />
+                          <span className="text-xs">Sorumlu</span>
+                        </label>
+                        <label className="flex items-center gap-1 cursor-pointer">
+                          <input 
+                            type="checkbox" 
+                            checked={lawyer.hasSignatureAuthority || false} 
+                            onChange={(e) => onUpdateLawyer(index, "hasSignatureAuthority", e.target.checked)} 
+                            className="w-3 h-3 rounded" 
+                          />
+                          <span className="text-xs">İmza</span>
+                        </label>
+                      </div>
                     </div>
                     
-                    {/* Yetkiler */}
-                    <div className="flex items-center gap-4 mt-2">
-                      <label className="flex items-center gap-1.5 cursor-pointer">
-                        <input 
-                          type="radio" 
-                          name="responsibleLawyer" 
-                          checked={lawyer.isResponsible || false} 
-                          onChange={() => {
-                            selectedLawyers.forEach((_, i) => {
-                              if (i !== index) onUpdateLawyer(i, "isResponsible", false);
-                            });
-                            onUpdateLawyer(index, "isResponsible", true);
-                          }} 
-                          className="w-3.5 h-3.5 text-primary" 
-                        />
-                        <span className="text-xs">Sorumlu Avukat</span>
-                      </label>
-                      <label className="flex items-center gap-1.5 cursor-pointer">
-                        <input 
-                          type="checkbox" 
-                          checked={lawyer.hasSignatureAuthority || false} 
-                          onChange={(e) => onUpdateLawyer(index, "hasSignatureAuthority", e.target.checked)} 
-                          className="w-3.5 h-3.5 rounded" 
-                        />
-                        <span className="text-xs">İmza Yetkisi</span>
-                      </label>
-                    </div>
+                    <button 
+                      type="button" 
+                      onClick={() => onRemoveLawyer(index)} 
+                      className="p-1.5 text-red-500 hover:text-red-700 hover:bg-red-100 rounded transition-colors" 
+                      title="Çıkar"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
                   </div>
-                  
-                  <button 
-                    type="button" 
-                    onClick={() => onRemoveLawyer(index)} 
-                    className="flex-shrink-0 p-2 text-red-500 hover:text-red-700 hover:bg-red-100 rounded-lg transition-colors" 
-                    title="Listeden Çıkar"
-                  >
-                    <X className="h-4 w-4" />
-                  </button>
                 </div>
-              </div>
-            ))}
-          </div>
-        )}
-        
-        {selectedLawyers.length > 0 && !selectedLawyers.some(l => l.isResponsible) && (
-          <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
-            ⚠️ Lütfen bir sorumlu avukat seçin
-          </p>
-        )}
-      </div>
-
-      {/* Alt: Eklenebilecek Diğer Avukatlar */}
-      <div className="border rounded-lg p-4 bg-gray-50">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold flex items-center gap-2">
-            👨‍⚖️ Diğer Avukatlar
-            {unselectedLawyers.length > 0 && (
-              <span className="bg-gray-200 text-gray-600 px-2 py-0.5 rounded-full text-xs">
-                {unselectedLawyers.length}
-              </span>
-            )}
-          </h3>
-          <a 
-            href="/settings/office" 
-            target="_blank" 
-            className="text-xs text-primary hover:underline"
-          >
-            Ayarlar →
-          </a>
-        </div>
-        
-        {/* Arama */}
-        <input
-          type="text"
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder="Ara..."
-          className="w-full rounded border px-3 py-2 text-sm outline-none focus:border-primary mb-3"
-        />
-        
-        {/* Avukat Listesi */}
-        <div className="max-h-48 overflow-y-auto space-y-1">
-          {filteredUnselected.length === 0 ? (
-            <p className="text-xs text-muted-foreground text-center py-4">
-              {searchTerm ? "Sonuç bulunamadı" : "Tüm avukatlar seçilmiş"}
+              ))}
+            </div>
+          )}
+          
+          {selectedLawyers.length > 0 && !selectedLawyers.some(l => l.isResponsible) && (
+            <p className="text-xs text-amber-600 mt-2 flex items-center gap-1">
+              ⚠️ Lütfen bir sorumlu avukat seçin
             </p>
-          ) : (
-            filteredUnselected.map((lawyer) => (
-              <div
-                key={lawyer.id}
-                className="flex items-center justify-between p-2 rounded hover:bg-white border border-transparent hover:border-gray-200 transition-colors"
-              >
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm">
-                    {lawyer.displayName || `${lawyer.title || (lawyer.role === "INTERN" ? "Stj. Av." : "Av.")} ${lawyer.name} ${lawyer.surname}`}
-                  </span>
-                  {lawyer.role && (
-                    <span className={`text-xs px-1.5 py-0.5 rounded ${
-                      lawyer.role === "OWNER" ? "bg-purple-100 text-purple-700" : 
-                      lawyer.role === "PARTNER" ? "bg-blue-100 text-blue-700" : 
-                      lawyer.role === "INTERN" ? "bg-gray-100 text-gray-600" : 
-                      "bg-green-100 text-green-700"
-                    }`}>
-                      {roleLabels[lawyer.role] || lawyer.role}
-                    </span>
-                  )}
-                </div>
-                <button 
-                  type="button" 
-                  onClick={() => onAddLawyer(lawyer)} 
-                  className="text-xs text-primary hover:underline flex items-center gap-1"
-                >
-                  Ekle
-                </button>
-              </div>
-            ))
           )}
         </div>
       </div>
@@ -2022,7 +2212,240 @@ function StaffSelectionStep({
 }
 
 
-// Kompakt Avukat Seçimi - Tek sayfada yan yana görünüm için
+// Avukat Rehberi Paneli - DebtorStep gibi sol panel
+function LawyerDirectoryPanel({
+  existingLawyers, selectedLawyers, onAddLawyer
+}: {
+  existingLawyers: any[]; selectedLawyers: Lawyer[];
+  onAddLawyer: (lawyer: any) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [roleFilter, setRoleFilter] = useState<string>("ALL");
+  const [viewingLawyer, setViewingLawyer] = useState<any>(null);
+  
+  const filtered = existingLawyers.filter(l => {
+    const matchesSearch = !search || 
+      l.name?.toLowerCase().includes(search.toLowerCase()) || 
+      l.surname?.toLowerCase().includes(search.toLowerCase()) ||
+      l.barNumber?.includes(search) ||
+      l.displayName?.toLowerCase().includes(search.toLowerCase());
+    const matchesRole = roleFilter === "ALL" || l.role === roleFilter;
+    const notSelected = !selectedLawyers.find(sl => sl.id === l.id);
+    return matchesSearch && matchesRole && notSelected;
+  });
+
+  const roleLabels: Record<string, string> = { OWNER: "Büro Sahibi", PARTNER: "Ortak", EMPLOYEE: "Avukat", INTERN: "Stajyer" };
+
+  return (
+    <div className="space-y-2">
+      {/* Arama */}
+      <div className="relative">
+        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+        <input
+          type="text"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Ad, soyad veya baro sicil no..."
+          className="w-full pl-8 pr-3 py-1.5 text-sm border rounded-lg focus:outline-none focus:border-primary"
+        />
+      </div>
+
+      {/* Rol Filtreleri */}
+      <div className="flex gap-1 flex-wrap">
+        {[
+          { value: "ALL", label: "Tümü" },
+          { value: "OWNER", label: "Sahip" },
+          { value: "PARTNER", label: "Ortak" },
+          { value: "EMPLOYEE", label: "Avukat" },
+          { value: "INTERN", label: "Stajyer" },
+        ].map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => setRoleFilter(opt.value)}
+            className={`px-2 py-1 text-xs rounded-full ${
+              roleFilter === opt.value
+                ? "bg-primary text-white"
+                : "bg-gray-100 hover:bg-gray-200"
+            }`}
+          >
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Avukat Listesi */}
+      <div className="max-h-[280px] overflow-y-auto space-y-1.5">
+        {filtered.length === 0 ? (
+          <div className="text-center py-6 text-muted-foreground text-sm">
+            {search ? "Sonuç bulunamadı" : "Tüm avukatlar seçilmiş"}
+          </div>
+        ) : (
+          filtered.slice(0, 10).map((lawyer) => (
+            <div
+              key={lawyer.id}
+              className="p-2 border rounded-lg hover:border-primary hover:bg-primary/5 transition-colors"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex-1 cursor-pointer" onClick={() => onAddLawyer(lawyer)}>
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium text-sm">
+                      {lawyer.displayName || `${lawyer.title || "Av."} ${lawyer.name} ${lawyer.surname}`}
+                    </span>
+                    {lawyer.isDefaultForNewCases && (
+                      <span className="px-1.5 py-0.5 bg-green-100 text-green-700 text-xs rounded">Varsayılan</span>
+                    )}
+                  </div>
+                  <div className="text-xs text-muted-foreground mt-0.5 flex flex-wrap gap-2">
+                    <span className={`px-1.5 py-0.5 rounded ${
+                      lawyer.role === "OWNER" ? "bg-purple-100 text-purple-700" : 
+                      lawyer.role === "PARTNER" ? "bg-blue-100 text-blue-700" : 
+                      lawyer.role === "INTERN" ? "bg-gray-100 text-gray-600" : 
+                      "bg-green-100 text-green-700"
+                    }`}>
+                      {roleLabels[lawyer.role] || "Avukat"}
+                    </span>
+                    {lawyer.barNumber && <span>Sicil: {lawyer.barNumber}</span>}
+                    {lawyer.barCity && <span>{lawyer.barCity} Barosu</span>}
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); setViewingLawyer(lawyer); }}
+                    className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+                    title="Detay"
+                  >
+                    <Edit2 className="h-3 w-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => onAddLawyer(lawyer)}
+                    className="text-xs px-2 py-1 bg-primary/10 text-primary rounded hover:bg-primary hover:text-white flex items-center gap-0.5 font-medium"
+                  >
+                    + Ekle
+                  </button>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+        {filtered.length > 10 && (
+          <p className="text-xs text-center text-muted-foreground py-1">
+            +{filtered.length - 10} daha... (arama yapın)
+          </p>
+        )}
+      </div>
+
+      {/* Avukat Detay Modal */}
+      {viewingLawyer && (
+        <LawyerDetailModal lawyer={viewingLawyer} onClose={() => setViewingLawyer(null)} />
+      )}
+    </div>
+  );
+}
+
+// Seçili Avukat Kartı - DebtorStep'teki SelectedDebtorCard gibi
+function SelectedLawyerCard({ 
+  lawyer, 
+  onUpdate, 
+  onRemove 
+}: { 
+  lawyer: Lawyer; 
+  onUpdate: (field: keyof Lawyer, value: any) => void; 
+  onRemove: () => void;
+}) {
+  const [viewingLawyer, setViewingLawyer] = useState(false);
+  const roleLabels: Record<string, string> = { OWNER: "Büro Sahibi", PARTNER: "Ortak", EMPLOYEE: "Avukat", INTERN: "Stajyer" };
+
+  return (
+    <>
+      <div className={`p-2.5 border rounded-lg transition-colors ${
+        lawyer.isResponsible 
+          ? "bg-gradient-to-r from-indigo-50/50 to-purple-50/50 border-indigo-200" 
+          : "bg-gradient-to-r from-gray-50/50 to-slate-50/50 border-gray-200"
+      }`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 flex-1">
+            <div className={`p-1.5 rounded-lg ${lawyer.isResponsible ? 'bg-indigo-100' : 'bg-gray-100'}`}>
+              <Users className={`h-4 w-4 ${lawyer.isResponsible ? 'text-indigo-600' : 'text-gray-600'}`} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-sm truncate">
+                  {lawyer.displayName || `${lawyer.title || "Av."} ${lawyer.name} ${lawyer.surname}`}
+                </span>
+                {lawyer.role && (
+                  <span className={`px-1.5 py-0.5 rounded text-xs ${
+                    lawyer.role === "OWNER" ? "bg-purple-100 text-purple-700" : 
+                    lawyer.role === "PARTNER" ? "bg-blue-100 text-blue-700" : 
+                    lawyer.role === "INTERN" ? "bg-gray-100 text-gray-600" : 
+                    "bg-green-100 text-green-700"
+                  }`}>
+                    {roleLabels[lawyer.role] || "Avukat"}
+                  </span>
+                )}
+              </div>
+              {lawyer.barNumber && (
+                <div className="text-xs text-muted-foreground mt-0.5">
+                  Sicil: {lawyer.barNumber} {lawyer.barCity && `• ${lawyer.barCity}`}
+                </div>
+              )}
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setViewingLawyer(true)}
+              className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+              title="Detay"
+            >
+              <Edit2 className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={onRemove}
+              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              title="Kaldır"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+
+        {/* Yetki Seçenekleri */}
+        <div className="flex items-center gap-4 mt-2 pt-2 border-t border-gray-100">
+          <label className="flex items-center gap-1.5 cursor-pointer text-xs">
+            <input 
+              type="radio" 
+              name="responsible" 
+              checked={lawyer.isResponsible || false} 
+              onChange={() => onUpdate("isResponsible", true)} 
+              className="w-3.5 h-3.5 text-indigo-600" 
+            />
+            <span className={lawyer.isResponsible ? "font-medium text-indigo-700" : ""}>Sorumlu Avukat</span>
+          </label>
+          <label className="flex items-center gap-1.5 cursor-pointer text-xs">
+            <input 
+              type="checkbox" 
+              checked={lawyer.hasSignatureAuthority || false} 
+              onChange={(e) => onUpdate("hasSignatureAuthority", e.target.checked)} 
+              className="w-3.5 h-3.5 rounded text-amber-600" 
+            />
+            <span className={lawyer.hasSignatureAuthority ? "font-medium text-amber-700" : ""}>İmza Yetkisi</span>
+          </label>
+        </div>
+      </div>
+
+      {/* Avukat Detay Modal */}
+      {viewingLawyer && (
+        <LawyerDetailModal lawyer={lawyer} onClose={() => setViewingLawyer(false)} />
+      )}
+    </>
+  );
+}
+
+// Kompakt Avukat Seçimi - Tek sayfada yan yana görünüm için (geriye uyumluluk)
 function CompactLawyerSelection({
   existingLawyers, selectedLawyers, onAddLawyer, onRemoveLawyer, onUpdateLawyer
 }: {
@@ -2982,7 +3405,225 @@ function NewClientModal({ onSave, onClose, saving }: {
 }
 
 
-// Seçili Müvekkiller Listesi - İsme tıklanınca detay modalı açılır
+// Müvekkil Rehberi Paneli - DebtorStep gibi sol panel
+function CreditorDirectoryPanel({
+  existingClients, selectedClients, onAddClient, onEditClient
+}: {
+  existingClients: any[]; selectedClients: any[];
+  onAddClient: (client: any) => void; onEditClient?: (client: any) => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [typeFilter, setTypeFilter] = useState<string>("ALL");
+  const [viewingClient, setViewingClient] = useState<any>(null);
+  
+  const filtered = existingClients.filter(c => {
+    const matchesSearch = c.name?.toLowerCase().includes(search.toLowerCase()) || 
+                          c.displayName?.toLowerCase().includes(search.toLowerCase()) ||
+                          c.identityNo?.includes(search) ||
+                          c.tckn?.includes(search) ||
+                          c.vkn?.includes(search) ||
+                          c.phone?.includes(search);
+    const matchesType = typeFilter === "ALL" || c.type === typeFilter;
+    const notSelected = !selectedClients.find(sc => sc.id === c.id);
+    return matchesSearch && matchesType && notSelected;
+  });
+
+  const typeLabels: Record<string, string> = { INDIVIDUAL: "Şahıs", PERSON: "Şahıs", COMPANY: "Kurum", PUBLIC: "Kamu" };
+
+  return (
+    <div className="space-y-2">
+      {/* Arama ve Filtre */}
+      <div className="flex gap-2 mb-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Ad, TCKN, VKN veya telefon..."
+            className="w-full pl-8 pr-3 py-1.5 text-sm border rounded-lg focus:outline-none focus:border-primary"
+          />
+        </div>
+      </div>
+
+      {/* Tip Filtreleri */}
+      <div className="flex gap-1 mb-2">
+        {[
+          { value: "ALL", label: "Tümü", icon: null },
+          { value: "PERSON", label: "Şahıs", icon: Users },
+          { value: "INDIVIDUAL", label: "Şahıs", icon: Users },
+          { value: "COMPANY", label: "Kurum", icon: Building2 },
+          { value: "PUBLIC", label: "Kamu", icon: Landmark },
+        ].filter((opt, idx, arr) => {
+          // PERSON ve INDIVIDUAL aynı, sadece birini göster
+          if (opt.value === "INDIVIDUAL") return false;
+          return true;
+        }).map((opt) => (
+          <button
+            key={opt.value}
+            type="button"
+            onClick={() => setTypeFilter(opt.value)}
+            className={`px-2 py-1 text-xs rounded-full flex items-center gap-1 ${
+              typeFilter === opt.value
+                ? "bg-primary text-white"
+                : "bg-gray-100 hover:bg-gray-200"
+            }`}
+          >
+            {opt.icon && <opt.icon className="h-3 w-3" />}
+            {opt.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Müvekkil Listesi */}
+      <div className="max-h-[280px] overflow-y-auto space-y-1.5">
+        {filtered.length === 0 ? (
+          <div className="text-center py-6 text-muted-foreground text-sm">
+            {search ? "Sonuç bulunamadı" : "Müvekkil bulunamadı"}
+          </div>
+        ) : (
+          filtered.slice(0, 10).map((client) => {
+            const isCompany = client.type === 'COMPANY';
+            const isPublic = client.type === 'PUBLIC';
+            return (
+              <div
+                key={client.id}
+                className="p-2 border rounded-lg hover:border-primary hover:bg-primary/5 transition-colors"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1 cursor-pointer" onClick={() => onAddClient(client)}>
+                    <div className="flex items-center gap-2">
+                      {isCompany ? (
+                        <Building2 className="h-3.5 w-3.5 text-blue-500" />
+                      ) : isPublic ? (
+                        <Landmark className="h-3.5 w-3.5 text-purple-500" />
+                      ) : (
+                        <Users className="h-3.5 w-3.5 text-emerald-500" />
+                      )}
+                      <span className="font-medium text-sm">{client.displayName || client.name}</span>
+                    </div>
+                    <div className="text-xs text-muted-foreground mt-0.5 flex flex-wrap gap-2">
+                      {(client.tckn || client.vkn || client.identityNo) && (
+                        <span className="font-mono">{client.tckn || client.vkn || client.identityNo}</span>
+                      )}
+                      {client.phone && (
+                        <span className="flex items-center gap-0.5">
+                          <Phone className="h-3 w-3" />{client.phone}
+                        </span>
+                      )}
+                      {client.email && (
+                        <span className="flex items-center gap-0.5">
+                          <Mail className="h-3 w-3" />{client.email}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setViewingClient(client); }}
+                      className="p-1 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded"
+                      title="Düzenle"
+                    >
+                      <Edit2 className="h-3 w-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onAddClient(client)}
+                      className="text-xs px-2 py-1 bg-primary/10 text-primary rounded hover:bg-primary hover:text-white flex items-center gap-0.5 font-medium"
+                    >
+                      + Ekle
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })
+        )}
+        {filtered.length > 10 && (
+          <p className="text-xs text-center text-muted-foreground py-1">
+            +{filtered.length - 10} daha... (arama yapın)
+          </p>
+        )}
+      </div>
+
+      {/* Müvekkil Detay Modal */}
+      {viewingClient && (
+        <ClientDetailModal client={viewingClient} onClose={() => setViewingClient(null)} />
+      )}
+    </div>
+  );
+}
+
+// Seçili Müvekkil Kartı - DebtorStep'teki SelectedDebtorCard gibi
+function SelectedCreditorCard({ creditor, onRemove }: { creditor: any; onRemove: () => void }) {
+  const [viewingClient, setViewingClient] = useState(false);
+  const isCompany = creditor.type === 'COMPANY';
+  const isPublic = creditor.type === 'PUBLIC';
+
+  return (
+    <>
+      <div className="p-2.5 border rounded-lg bg-gradient-to-r from-emerald-50/50 to-teal-50/50 border-emerald-200">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2 flex-1">
+            <div className={`p-1.5 rounded-lg ${isCompany ? 'bg-blue-100' : isPublic ? 'bg-purple-100' : 'bg-emerald-100'}`}>
+              {isCompany ? (
+                <Building2 className="h-4 w-4 text-blue-600" />
+              ) : isPublic ? (
+                <Landmark className="h-4 w-4 text-purple-600" />
+              ) : (
+                <Users className="h-4 w-4 text-emerald-600" />
+              )}
+            </div>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2">
+                <span className="font-medium text-sm truncate">{creditor.displayName || creditor.name}</span>
+                <span className={`px-1.5 py-0.5 rounded text-xs ${
+                  isCompany ? 'bg-blue-100 text-blue-700' : 
+                  isPublic ? 'bg-purple-100 text-purple-700' : 
+                  'bg-emerald-100 text-emerald-700'
+                }`}>
+                  {isCompany ? 'Kurum' : isPublic ? 'Kamu' : 'Şahıs'}
+                </span>
+              </div>
+              <div className="text-xs text-muted-foreground flex flex-wrap gap-2 mt-0.5">
+                {(creditor.tckn || creditor.vkn || creditor.identityNo) && (
+                  <span className="font-mono">{creditor.tckn || creditor.vkn || creditor.identityNo}</span>
+                )}
+                {creditor.phone && <span>{creditor.phone}</span>}
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setViewingClient(true)}
+              className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+              title="Düzenle"
+            >
+              <Edit2 className="h-3.5 w-3.5" />
+            </button>
+            <button
+              type="button"
+              onClick={onRemove}
+              className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+              title="Kaldır"
+            >
+              <Trash2 className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Müvekkil Detay Modal */}
+      {viewingClient && (
+        <ClientDetailModal client={creditor} onClose={() => setViewingClient(false)} />
+      )}
+    </>
+  );
+}
+
+// Seçili Müvekkiller Listesi - İsme tıklanınca detay modalı açılır (geriye uyumluluk için)
 function SelectedCreditorsList({ creditors, onRemove }: { creditors: Party[]; onRemove: (index: number) => void }) {
   const [viewingClient, setViewingClient] = useState<any>(null);
 

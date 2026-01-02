@@ -557,6 +557,269 @@ class ApiClient {
   }
 
   // ============================================
+  // Template Engine API
+  // ============================================
+
+  /**
+   * Takip Talebi oluştur (text formatında)
+   */
+  async generateTakipTalebi(data: TemplateData): Promise<GeneratedDocument> {
+    return this.request<GeneratedDocument>("/template-engine/takip-talebi", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  /**
+   * Takip Talebi oluştur - Case ID ile
+   */
+  async generateTakipTalebiFromCase(caseId: string): Promise<GeneratedDocument> {
+    return this.request<GeneratedDocument>(`/template-engine/takip-talebi/case/${caseId}`);
+  }
+
+  /**
+   * Takip Talebi önizleme (HTML formatında)
+   */
+  async previewTakipTalebi(data: TemplateData): Promise<{ html: string }> {
+    return this.request<{ html: string }>("/template-engine/takip-talebi/preview", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  /**
+   * Takip Talebi PDF indir
+   */
+  async downloadTakipTalebiPdf(data: TemplateData): Promise<Blob> {
+    const token = this.getToken();
+    const response = await fetch(`${this.getApiUrl()}/api/template-engine/takip-talebi/pdf`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error("PDF indirme hatası");
+    return response.blob();
+  }
+
+  /**
+   * Takip Talebi Word indir
+   */
+  async downloadTakipTalebiWord(data: TemplateData): Promise<Blob> {
+    const token = this.getToken();
+    const response = await fetch(`${this.getApiUrl()}/api/template-engine/takip-talebi/word`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+      body: JSON.stringify(data),
+    });
+    if (!response.ok) throw new Error("Word indirme hatası");
+    return response.blob();
+  }
+
+  /**
+   * Takip Talebi UDF oluştur (UYAP için)
+   */
+  async generateTakipTalebiUdf(data: TemplateData): Promise<UdfDocument> {
+    return this.request<UdfDocument>("/template-engine/takip-talebi/udf", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  /**
+   * Case ID'den PDF indir
+   */
+  async downloadPdfFromCase(caseId: string, documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi'): Promise<Blob> {
+    const token = this.getToken();
+    const response = await fetch(`${this.getApiUrl()}/api/template-engine/case/${caseId}/pdf?type=${documentType}`, {
+      headers: {
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+    });
+    if (!response.ok) throw new Error("PDF indirme hatası");
+    return response.blob();
+  }
+
+  /**
+   * Case ID'den Word indir
+   */
+  async downloadWordFromCase(caseId: string, documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi'): Promise<Blob> {
+    const token = this.getToken();
+    const response = await fetch(`${this.getApiUrl()}/api/template-engine/case/${caseId}/word?type=${documentType}`, {
+      headers: {
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+    });
+    if (!response.ok) throw new Error("Word indirme hatası");
+    return response.blob();
+  }
+
+  /**
+   * Case ID'den UDF oluştur (UYAP için)
+   */
+  async generateUdfFromCase(caseId: string, documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi'): Promise<UdfDocument> {
+    return this.request<UdfDocument>(`/template-engine/case/${caseId}/udf?type=${documentType}`);
+  }
+
+  /**
+   * Case ID'den UDF dosyası indir
+   */
+  async downloadUdfFromCase(caseId: string, documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi'): Promise<Blob> {
+    const token = this.getToken();
+    const response = await fetch(`${this.getApiUrl()}/api/template-engine/case/${caseId}/udf/download?type=${documentType}`, {
+      headers: {
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+    });
+    if (!response.ok) throw new Error("UDF indirme hatası");
+    return response.blob();
+  }
+
+  /**
+   * Mevcut şablon listesi
+   */
+  async getTemplates(): Promise<Array<{ code: string; name: string; category: string }>> {
+    return this.request<Array<{ code: string; name: string; category: string }>>("/template-engine/templates");
+  }
+
+  // ============================================
+  // İhtiyati Haciz API
+  // ============================================
+
+  /**
+   * İhtiyati haciz kararı oluştur
+   */
+  async createPrecautionaryOrder(data: {
+    caseId: string;
+    orderType?: string;
+    courtName: string;
+    courtCity?: string;
+    decisionDate: string;
+    decisionNo?: string;
+    scopeNote?: string;
+    coveredDebtorIds?: string[];
+    securedAmount: number;
+    currency?: string;
+    requiresSecurityDeposit?: boolean;
+    securityDepositAmount?: number;
+    securityDepositType?: 'NAKIT' | 'TEMINAT_MEKTUBU' | 'GAYRIMENKUL' | 'KEFALET' | 'DIGER';
+    securityDepositNote?: string;
+    notes?: string;
+  }) {
+    return this.request<any>("/precautionary-orders", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  /**
+   * İhtiyati haciz kararını getir
+   */
+  async getPrecautionaryOrder(id: string) {
+    return this.request<any>(`/precautionary-orders/${id}`);
+  }
+
+  /**
+   * Dosyaya ait ihtiyati haciz kararlarını getir
+   */
+  async getPrecautionaryOrdersByCase(caseId: string) {
+    return this.request<any[]>(`/precautionary-orders/case/${caseId}`);
+  }
+
+  /**
+   * İhtiyati haciz kararını güncelle
+   */
+  async updatePrecautionaryOrder(id: string, data: any) {
+    return this.request<any>(`/precautionary-orders/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  /**
+   * İhtiyati haciz kararını uygula
+   */
+  async applyPrecautionaryOrder(id: string) {
+    return this.request<any>(`/precautionary-orders/${id}/apply`, {
+      method: "POST",
+    });
+  }
+
+  /**
+   * İhtiyati haciz kararını kaldır
+   */
+  async liftPrecautionaryOrder(id: string, reason?: string) {
+    return this.request<any>(`/precautionary-orders/${id}/lift`, {
+      method: "POST",
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  /**
+   * İhtiyati haciz kararını sil
+   */
+  async deletePrecautionaryOrder(id: string) {
+    return this.request<any>(`/precautionary-orders/${id}`, {
+      method: "DELETE",
+    });
+  }
+
+  /**
+   * İhtiyati haciz masraf kalemi ekle
+   */
+  async addPrecautionaryCost(orderId: string, data: {
+    costType: 'HARC' | 'POSTA' | 'VEKALET' | 'TEMINAT' | 'YEDIEMIN' | 'BILIRKISI' | 'MUHAFAZA' | 'DIGER';
+    amount: number;
+    currency?: string;
+    description?: string;
+    label?: string;
+    isClaimedInEnforcement?: boolean;
+  }) {
+    return this.request<any>(`/precautionary-orders/${orderId}/costs`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  /**
+   * İhtiyati haciz masraf kalemini güncelle
+   */
+  async updatePrecautionaryCost(costId: string, data: any) {
+    return this.request<any>(`/precautionary-orders/costs/${costId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  /**
+   * İhtiyati haciz masraf kalemini sil
+   */
+  async deletePrecautionaryCost(costId: string) {
+    return this.request<any>(`/precautionary-orders/costs/${costId}`, {
+      method: "DELETE",
+    });
+  }
+
+  /**
+   * İhtiyati haciz masraflarının toplamını hesapla
+   */
+  async getPrecautionaryCostsTotal(orderId: string) {
+    return this.request<{ total: number; claimedTotal: number; count: number; claimedCount: number }>(`/precautionary-orders/${orderId}/costs/total`);
+  }
+
+  /**
+   * API URL'ini al (private helper)
+   */
+  private getApiUrl(): string {
+    return process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+  }
+
+  // ============================================
   // Tebligat API
   // ============================================
 
@@ -856,6 +1119,198 @@ class ApiClient {
     if (filters?.caseStatus) params.set('caseStatus', filters.caseStatus);
     const query = params.toString() ? `?${params}` : '';
     return this.request<{ data: string; contentType: string }>(`/reports/export/cases${query}`);
+  }
+
+  // ============================================
+  // E-Sign Methods
+  // ============================================
+
+  async signDocument(data: ESignRequest): Promise<ESignResponse> {
+    return this.request<ESignResponse>("/esign/sign", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getSignStatus(requestId: string): Promise<ESignStatusResponse> {
+    return this.request<ESignStatusResponse>(`/esign/status/${requestId}`);
+  }
+
+  async getSignLogs(caseId?: string): Promise<ESignLog[]> {
+    const query = caseId ? `?caseId=${caseId}` : '';
+    return this.request<ESignLog[]>(`/esign/logs${query}`);
+  }
+
+  async getAvailableSignProviders(): Promise<{ providers: ESignProvider[]; default: ESignProvider }> {
+    return this.request<{ providers: ESignProvider[]; default: ESignProvider }>("/esign/providers");
+  }
+
+  async cancelSignRequest(requestId: string): Promise<{ success: boolean; message: string }> {
+    return this.request<{ success: boolean; message: string }>(`/esign/cancel/${requestId}`, {
+      method: "POST",
+    });
+  }
+
+  // ============================================
+  // Summary Engine Methods (Hesap Özeti Motoru)
+  // ============================================
+
+  /**
+   * Dosya için hesap özeti hesapla
+   */
+  async getCaseSummary(caseId: string, asOfDate?: string): Promise<SummaryResult> {
+    const query = asOfDate ? `?asOfDate=${asOfDate}` : '';
+    return this.request<SummaryResult>(`/summary-engine/case/${caseId}${query}`);
+  }
+
+  /**
+   * Tahsilat kaydet (TBK 100 ile otomatik dağıtım)
+   */
+  async recordPayment(caseId: string, data: {
+    amount: number;
+    entryDate?: string;
+    description?: string;
+    referenceNo?: string;
+    sourceType?: string;
+  }): Promise<{ ledgerEntry: any; allocations: any[] }> {
+    return this.request<{ ledgerEntry: any; allocations: any[] }>(`/summary-engine/case/${caseId}/payment`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  /**
+   * Kısmi talep güncelle (demandedAmount)
+   */
+  async updateDemandedAmount(claimItemId: string, demandedAmount: number): Promise<any> {
+    return this.request<any>(`/summary-engine/claim-item/${claimItemId}/demanded-amount`, {
+      method: "PUT",
+      body: JSON.stringify({ demandedAmount }),
+    });
+  }
+
+  /**
+   * Hesap motoru kurallarını getir
+   */
+  async getSummaryEngineRules(): Promise<{
+    rules: any;
+    buckets: Record<string, { label: string; include_types: string[]; color?: string }>;
+    allocationOrder: string[];
+  }> {
+    return this.request<any>("/summary-engine/rules");
+  }
+
+  /**
+   * Bucket listesini getir
+   */
+  async getSummaryBuckets(): Promise<Record<string, { label: string; include_types: string[]; color?: string }>> {
+    return this.request<any>("/summary-engine/buckets");
+  }
+
+  /**
+   * TBK 100 mahsup sırasını getir
+   */
+  async getAllocationOrder(): Promise<{ order: string[]; description: string }> {
+    return this.request<any>("/summary-engine/allocation-order");
+  }
+
+  // ============================================
+  // Bank Methods
+  // ============================================
+
+  async getBankAccounts(): Promise<BankAccount[]> {
+    return this.request<BankAccount[]>("/bank/accounts");
+  }
+
+  async createBankAccount(data: Omit<BankAccount, 'id' | 'tenantId' | 'createdAt' | 'lastSyncAt'>): Promise<BankAccount> {
+    return this.request<BankAccount>("/bank/accounts", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateBankAccount(id: string, data: Partial<BankAccount>): Promise<BankAccount> {
+    return this.request<BankAccount>(`/bank/accounts/${id}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteBankAccount(id: string): Promise<void> {
+    return this.request<void>(`/bank/accounts/${id}`, { method: "DELETE" });
+  }
+
+  async getBankBalance(iban: string): Promise<BankBalanceResponse> {
+    return this.request<BankBalanceResponse>(`/bank/balance/${encodeURIComponent(iban)}`);
+  }
+
+  async syncBankBalance(accountId: string): Promise<BankBalanceResponse> {
+    return this.request<BankBalanceResponse>(`/bank/accounts/${accountId}/sync`, {
+      method: "POST",
+    });
+  }
+
+  async getBankTransactions(filters?: {
+    accountId?: string;
+    startDate?: string;
+    endDate?: string;
+    type?: BankTransactionType;
+    status?: BankTransactionStatus;
+    unmatched?: boolean;
+  }): Promise<BankTransaction[]> {
+    const params = new URLSearchParams();
+    if (filters?.accountId) params.set('accountId', filters.accountId);
+    if (filters?.startDate) params.set('startDate', filters.startDate);
+    if (filters?.endDate) params.set('endDate', filters.endDate);
+    if (filters?.type) params.set('type', filters.type);
+    if (filters?.status) params.set('status', filters.status);
+    if (filters?.unmatched) params.set('unmatched', 'true');
+    const query = params.toString() ? `?${params}` : '';
+    return this.request<BankTransaction[]>(`/bank/transactions${query}`);
+  }
+
+  async syncBankTransactions(accountId: string, startDate?: string, endDate?: string): Promise<{ count: number; transactions: BankTransaction[] }> {
+    const params = new URLSearchParams();
+    if (startDate) params.set('startDate', startDate);
+    if (endDate) params.set('endDate', endDate);
+    const query = params.toString() ? `?${params}` : '';
+    return this.request<{ count: number; transactions: BankTransaction[] }>(`/bank/accounts/${accountId}/sync-transactions${query}`, {
+      method: "POST",
+    });
+  }
+
+  async matchTransactionToCase(transactionId: string, caseId: string): Promise<{ success: boolean; collectionId?: string }> {
+    return this.request<{ success: boolean; collectionId?: string }>(`/bank/transactions/${transactionId}/match`, {
+      method: "POST",
+      body: JSON.stringify({ caseId }),
+    });
+  }
+
+  async unmatchTransaction(transactionId: string): Promise<{ success: boolean }> {
+    return this.request<{ success: boolean }>(`/bank/transactions/${transactionId}/unmatch`, {
+      method: "POST",
+    });
+  }
+
+  async autoMatchTransactions(): Promise<{ matched: number; unmatched: number }> {
+    return this.request<{ matched: number; unmatched: number }>("/bank/auto-match", {
+      method: "POST",
+    });
+  }
+
+  async sendBankTransfer(data: BankTransferRequest): Promise<BankTransferResponse> {
+    return this.request<BankTransferResponse>("/bank/transfer", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getTransferStatus(referenceNo: string): Promise<{ referenceNo: string; status: BankTransactionStatus; completedAt?: string }> {
+    return this.request<{ referenceNo: string; status: BankTransactionStatus; completedAt?: string }>(`/bank/transfer/status/${referenceNo}`);
+  }
+
+  async getBankIntegrationStatus(): Promise<{ connected: boolean; providers: BankProvider[]; lastSync?: string }> {
+    return this.request<{ connected: boolean; providers: BankProvider[]; lastSync?: string }>("/bank/status");
   }
 }
 
@@ -1421,6 +1876,67 @@ export type BankProvider = 'GARANTI' | 'AKBANK' | 'ISBANK' | 'YAPI_KREDI' | 'ZIR
 export type BankTransactionType = 'INCOMING' | 'OUTGOING';
 export type BankTransactionStatus = 'PENDING' | 'COMPLETED' | 'FAILED' | 'CANCELLED';
 
+// Summary Engine Types
+export interface SummaryResult {
+  caseId: string;
+  asOfDate: string;
+  currency: string;
+  sections: SectionResult[];
+  totals: {
+    takipTutari: number;
+    icraMasraflari: number;
+    vekaletUcreti: number;
+    takipSonrasiFaiz: number;
+    toplamBorc: number;
+    toplamTahsilat: number;
+    sonBorc: number;
+  };
+  alternativeScenarios: Array<{
+    rate: number;
+    label: string;
+    amount: number;
+  }>;
+  items: ClaimItemSummary[];
+}
+
+export interface SectionResult {
+  key: string;
+  label: string;
+  color?: string;
+  isSubtotal?: boolean;
+  isTotal?: boolean;
+  lines: LineResult[];
+  sectionTotal: number;
+}
+
+export interface LineResult {
+  key: string;
+  label: string;
+  amount: number;
+  originalAmount?: number;
+  collectedAmount?: number;
+  remainingAmount?: number;
+  bold?: boolean;
+  highlight?: boolean;
+  note?: string;
+  color?: string;
+  size?: string;
+  italic?: boolean;
+  hidden?: boolean;
+}
+
+export interface ClaimItemSummary {
+  id: string;
+  itemType: string;
+  label: string;
+  originalAmount: number;
+  demandedAmount: number;
+  collectedAmount: number;
+  remainingAmount: number;
+  bucket: string;
+  status: string;
+}
+
 export interface BankAccount {
   id: string;
   tenantId: string;
@@ -1479,144 +1995,61 @@ export interface BankTransferResponse {
   status: BankTransactionStatus;
 }
 
+// ============================================
+// Template Engine Types
+// ============================================
+
+export interface TemplateData {
+  fileNumber: string;
+  filingDate: string;
+  executionNumber?: string;
+  executionOffice: { name: string; city: string; uyapCode?: string };
+  creditors: Array<{ type: 'INDIVIDUAL' | 'COMPANY'; name: string; identityNo?: string; taxNo?: string; address?: string }>;
+  lawyers: Array<{ name: string; barNumber: string; barCity: string; address?: string }>;
+  debtors: Array<{ type: 'INDIVIDUAL' | 'COMPANY'; name: string; identityNo?: string; taxNo?: string; address?: string; role?: string }>;
+  claimItems: Array<{ type: string; description: string; amount: number; currency: string; dueDate?: string }>;
+  totals: { principal: number; interest: number; fees: number; total: number; currency: string };
+  interestInfo: { type: 'YASAL' | 'TICARI' | 'CUSTOM'; rate?: number; description: string; variableRate: boolean };
+  caseType: string;
+  subCategory: string;
+  executionPath: string;
+  sourceDocument?: { type: string; number?: string; date?: string; bank?: string; branch?: string };
+}
+
+export interface GeneratedDocument {
+  title: string;
+  content: string;
+  format: 'text' | 'html';
+  templateCode: string;
+}
+
+export interface UdfDocument {
+  version: string;
+  documentType: string;
+  documentCode: string;
+  createdAt: string;
+  metadata: {
+    fileNumber: string;
+    executionOfficeCode?: string;
+    caseType: string;
+    subCategory: string;
+  };
+  content: {
+    sections: Array<{
+      type: string;
+      title?: string;
+      data: Record<string, any>;
+    }>;
+  };
+  signature?: {
+    lawyerBarNumber: string;
+    lawyerName: string;
+    timestamp: string;
+  };
+}
+
 // Singleton export
 export const api = new ApiClient();
-
-// ============================================
-// E-Sign API Functions (ApiClient extension)
-// ============================================
-
-// E-Sign fonksiyonlari
-api.signDocument = async function(data: ESignRequest): Promise<ESignResponse> {
-  return this.request<ESignResponse>("/esign/sign", {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-};
-
-api.getSignStatus = async function(requestId: string): Promise<ESignStatusResponse> {
-  return this.request<ESignStatusResponse>(`/esign/status/${requestId}`);
-};
-
-api.getSignLogs = async function(caseId?: string): Promise<ESignLog[]> {
-  const query = caseId ? `?caseId=${caseId}` : '';
-  return this.request<ESignLog[]>(`/esign/logs${query}`);
-};
-
-api.getAvailableSignProviders = async function(): Promise<{ providers: ESignProvider[]; default: ESignProvider }> {
-  return this.request<{ providers: ESignProvider[]; default: ESignProvider }>("/esign/providers");
-};
-
-api.cancelSignRequest = async function(requestId: string): Promise<{ success: boolean; message: string }> {
-  return this.request<{ success: boolean; message: string }>(`/esign/cancel/${requestId}`, {
-    method: "POST",
-  });
-};
-
-// ============================================
-// Bank API Functions (ApiClient extension)
-// ============================================
-
-// Bank hesap fonksiyonlari
-api.getBankAccounts = async function(): Promise<BankAccount[]> {
-  return this.request<BankAccount[]>("/bank/accounts");
-};
-
-api.createBankAccount = async function(data: Omit<BankAccount, 'id' | 'tenantId' | 'createdAt' | 'lastSyncAt'>): Promise<BankAccount> {
-  return this.request<BankAccount>("/bank/accounts", {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-};
-
-api.updateBankAccount = async function(id: string, data: Partial<BankAccount>): Promise<BankAccount> {
-  return this.request<BankAccount>(`/bank/accounts/${id}`, {
-    method: "PUT",
-    body: JSON.stringify(data),
-  });
-};
-
-api.deleteBankAccount = async function(id: string): Promise<void> {
-  return this.request<void>(`/bank/accounts/${id}`, { method: "DELETE" });
-};
-
-// Bakiye sorgulama
-api.getBankBalance = async function(iban: string): Promise<BankBalanceResponse> {
-  return this.request<BankBalanceResponse>(`/bank/balance/${encodeURIComponent(iban)}`);
-};
-
-api.syncBankBalance = async function(accountId: string): Promise<BankBalanceResponse> {
-  return this.request<BankBalanceResponse>(`/bank/accounts/${accountId}/sync`, {
-    method: "POST",
-  });
-};
-
-// Hesap hareketleri
-api.getBankTransactions = async function(filters?: {
-  accountId?: string;
-  startDate?: string;
-  endDate?: string;
-  type?: BankTransactionType;
-  status?: BankTransactionStatus;
-  unmatched?: boolean;
-}): Promise<BankTransaction[]> {
-  const params = new URLSearchParams();
-  if (filters?.accountId) params.set('accountId', filters.accountId);
-  if (filters?.startDate) params.set('startDate', filters.startDate);
-  if (filters?.endDate) params.set('endDate', filters.endDate);
-  if (filters?.type) params.set('type', filters.type);
-  if (filters?.status) params.set('status', filters.status);
-  if (filters?.unmatched) params.set('unmatched', 'true');
-  const query = params.toString() ? `?${params}` : '';
-  return this.request<BankTransaction[]>(`/bank/transactions${query}`);
-};
-
-api.syncBankTransactions = async function(accountId: string, startDate?: string, endDate?: string): Promise<{ count: number; transactions: BankTransaction[] }> {
-  const params = new URLSearchParams();
-  if (startDate) params.set('startDate', startDate);
-  if (endDate) params.set('endDate', endDate);
-  const query = params.toString() ? `?${params}` : '';
-  return this.request<{ count: number; transactions: BankTransaction[] }>(`/bank/accounts/${accountId}/sync-transactions${query}`, {
-    method: "POST",
-  });
-};
-
-// Tahsilat eslestirme
-api.matchTransactionToCase = async function(transactionId: string, caseId: string): Promise<{ success: boolean; collectionId?: string }> {
-  return this.request<{ success: boolean; collectionId?: string }>(`/bank/transactions/${transactionId}/match`, {
-    method: "POST",
-    body: JSON.stringify({ caseId }),
-  });
-};
-
-api.unmatchTransaction = async function(transactionId: string): Promise<{ success: boolean }> {
-  return this.request<{ success: boolean }>(`/bank/transactions/${transactionId}/unmatch`, {
-    method: "POST",
-  });
-};
-
-api.autoMatchTransactions = async function(): Promise<{ matched: number; unmatched: number }> {
-  return this.request<{ matched: number; unmatched: number }>("/bank/auto-match", {
-    method: "POST",
-  });
-};
-
-// EFT/Havale
-api.sendBankTransfer = async function(data: BankTransferRequest): Promise<BankTransferResponse> {
-  return this.request<BankTransferResponse>("/bank/transfer", {
-    method: "POST",
-    body: JSON.stringify(data),
-  });
-};
-
-api.getTransferStatus = async function(referenceNo: string): Promise<{ referenceNo: string; status: BankTransactionStatus; completedAt?: string }> {
-  return this.request<{ referenceNo: string; status: BankTransactionStatus; completedAt?: string }>(`/bank/transfer/status/${referenceNo}`);
-};
-
-// Banka entegrasyon durumu
-api.getBankIntegrationStatus = async function(): Promise<{ connected: boolean; providers: BankProvider[]; lastSync?: string }> {
-  return this.request<{ connected: boolean; providers: BankProvider[]; lastSync?: string }>("/bank/status");
-};
 
 // TypeScript icin ApiClient'a method tanimlari ekleme
 declare module './api' {

@@ -1,52 +1,27 @@
 "use client";
 
-import { useState } from "react";
-import { Plus, CheckCircle2, Circle, Clock, AlertCircle, LayoutGrid, List } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Plus, CheckCircle2, Circle, Clock, AlertCircle, LayoutGrid, Loader2, Trash2, Edit2, X } from "lucide-react";
 import { Badge } from "@hukuk/ui";
 import Link from "next/link";
+import { api } from "@/lib/api";
 
-const mockTasks = [
-  {
-    id: "1",
-    title: "Ödeme emri tebliği",
-    description: "2024/1001 dosyası için ödeme emri tebliğ edilecek",
-    status: "PENDING",
-    priority: "HIGH",
-    dueDate: "2024-12-10",
-    case: { fileNumber: "2024/1001" },
-  },
-  {
-    id: "2",
-    title: "Haciz işlemi",
-    description: "Borçlunun adresinde haciz yapılacak",
-    status: "IN_PROGRESS",
-    priority: "URGENT",
-    dueDate: "2024-12-11",
-    case: { fileNumber: "2024/1002" },
-  },
-  {
-    id: "3",
-    title: "Duruşma hazırlığı",
-    description: "İtiraz duruşması için evraklar hazırlanacak",
-    status: "PENDING",
-    priority: "MEDIUM",
-    dueDate: "2024-12-15",
-    case: { fileNumber: "2024/1003" },
-  },
-  {
-    id: "4",
-    title: "Tahsilat takibi",
-    description: "Taksit ödemesi kontrol edilecek",
-    status: "COMPLETED",
-    priority: "LOW",
-    dueDate: "2024-12-08",
-    case: { fileNumber: "2024/1001" },
-  },
-];
+interface Task {
+  id: string;
+  title: string;
+  description?: string;
+  status: string;
+  priority: string;
+  dueDate?: string;
+  case?: { id: string; fileNumber: string };
+  assignee?: { id: string; name: string; surname: string };
+  createdAt: string;
+}
 
 const statusIcons: Record<string, React.ReactNode> = {
   PENDING: <Circle className="h-5 w-5 text-muted-foreground" />,
   IN_PROGRESS: <Clock className="h-5 w-5 text-blue-500" />,
+  REVIEW: <Clock className="h-5 w-5 text-yellow-500" />,
   COMPLETED: <CheckCircle2 className="h-5 w-5 text-green-500" />,
 };
 
@@ -64,16 +39,155 @@ const priorityLabels: Record<string, string> = {
   URGENT: "Acil",
 };
 
-export default function TasksPage() {
-  const [filter, setFilter] = useState("all");
+const statusLabels: Record<string, string> = {
+  PENDING: "Bekliyor",
+  IN_PROGRESS: "Devam Ediyor",
+  REVIEW: "İnceleme",
+  COMPLETED: "Tamamlandı",
+};
 
-  const filteredTasks = mockTasks.filter((task) => {
+export default function TasksPage() {
+  const [tasks, setTasks] = useState<Task[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState("all");
+  const [showModal, setShowModal] = useState(false);
+  const [editingTask, setEditingTask] = useState<Task | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [cases, setCases] = useState<{ id: string; fileNumber: string }[]>([]);
+  const [users, setUsers] = useState<{ id: string; name: string; surname: string }[]>([]);
+  
+  const [form, setForm] = useState({
+    title: "",
+    description: "",
+    status: "PENDING",
+    priority: "MEDIUM",
+    dueDate: "",
+    caseId: "",
+    assigneeId: "",
+  });
+
+  useEffect(() => {
+    loadTasks();
+    loadLookups();
+  }, []);
+
+  const loadTasks = async () => {
+    try {
+      const res = await api.get("/tasks");
+      setTasks(res.data?.data || res.data || []);
+    } catch (e) {
+      console.error("Görevler yüklenemedi:", e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const loadLookups = async () => {
+    try {
+      const [casesRes, usersRes] = await Promise.all([
+        api.get("/cases?limit=100"),
+        api.get("/users"),
+      ]);
+      setCases(casesRes.data?.data || []);
+      setUsers(usersRes.data?.data || []);
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!form.title) return;
+    setSaving(true);
+    try {
+      const payload = {
+        ...form,
+        dueDate: form.dueDate || undefined,
+        caseId: form.caseId || undefined,
+        assigneeId: form.assigneeId || undefined,
+      };
+      
+      if (editingTask) {
+        await api.put(`/tasks/${editingTask.id}`, payload);
+      } else {
+        await api.post("/tasks", payload);
+      }
+      
+      setShowModal(false);
+      setEditingTask(null);
+      resetForm();
+      loadTasks();
+    } catch (e: any) {
+      alert(e.message || "Hata oluştu");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Bu görevi silmek istediğinize emin misiniz?")) return;
+    try {
+      await api.delete(`/tasks/${id}`);
+      loadTasks();
+    } catch (e: any) {
+      alert(e.message || "Silinemedi");
+    }
+  };
+
+  const handleStatusChange = async (task: Task, newStatus: string) => {
+    try {
+      await api.put(`/tasks/${task.id}`, { status: newStatus });
+      loadTasks();
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const openEditModal = (task: Task) => {
+    setEditingTask(task);
+    setForm({
+      title: task.title,
+      description: task.description || "",
+      status: task.status,
+      priority: task.priority,
+      dueDate: task.dueDate ? task.dueDate.split("T")[0] : "",
+      caseId: task.case?.id || "",
+      assigneeId: task.assignee?.id || "",
+    });
+    setShowModal(true);
+  };
+
+  const resetForm = () => {
+    setForm({
+      title: "",
+      description: "",
+      status: "PENDING",
+      priority: "MEDIUM",
+      dueDate: "",
+      caseId: "",
+      assigneeId: "",
+    });
+  };
+
+  const filteredTasks = tasks.filter((task) => {
     if (filter === "all") return true;
     return task.status === filter;
   });
 
-  const pendingCount = mockTasks.filter((t) => t.status === "PENDING").length;
-  const inProgressCount = mockTasks.filter((t) => t.status === "IN_PROGRESS").length;
+  const pendingCount = tasks.filter((t) => t.status === "PENDING").length;
+  const inProgressCount = tasks.filter((t) => t.status === "IN_PROGRESS").length;
+
+  const isOverdue = (dueDate?: string) => {
+    if (!dueDate) return false;
+    return new Date(dueDate) < new Date();
+  };
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-12">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -92,7 +206,10 @@ export default function TasksPage() {
             <LayoutGrid className="h-4 w-4" />
             Kanban
           </Link>
-          <button className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90">
+          <button 
+            onClick={() => { setEditingTask(null); resetForm(); setShowModal(true); }}
+            className="inline-flex items-center gap-2 bg-primary text-primary-foreground px-4 py-2 rounded-lg hover:bg-primary/90"
+          >
             <Plus className="h-4 w-4" />
             Yeni Görev
           </button>
@@ -105,6 +222,7 @@ export default function TasksPage() {
           { value: "all", label: "Tümü" },
           { value: "PENDING", label: "Bekleyen" },
           { value: "IN_PROGRESS", label: "Devam Eden" },
+          { value: "REVIEW", label: "İnceleme" },
           { value: "COMPLETED", label: "Tamamlanan" },
         ].map((tab) => (
           <button
@@ -129,7 +247,12 @@ export default function TasksPage() {
             className="bg-white rounded-xl border p-4 hover:shadow-md transition-shadow"
           >
             <div className="flex items-start gap-4">
-              <button className="mt-0.5">{statusIcons[task.status]}</button>
+              <button 
+                onClick={() => handleStatusChange(task, task.status === "COMPLETED" ? "PENDING" : "COMPLETED")}
+                className="mt-0.5"
+              >
+                {statusIcons[task.status]}
+              </button>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1">
                   <h3
@@ -142,17 +265,46 @@ export default function TasksPage() {
                   <Badge variant={priorityColors[task.priority]}>
                     {priorityLabels[task.priority]}
                   </Badge>
+                  <span className="text-xs px-2 py-0.5 bg-gray-100 rounded">
+                    {statusLabels[task.status]}
+                  </span>
                 </div>
-                <p className="text-sm text-muted-foreground mb-2">{task.description}</p>
+                {task.description && (
+                  <p className="text-sm text-muted-foreground mb-2">{task.description}</p>
+                )}
                 <div className="flex items-center gap-4 text-sm">
-                  <span className="text-muted-foreground">
-                    Dosya: <span className="text-primary">{task.case?.fileNumber}</span>
-                  </span>
-                  <span className="flex items-center gap-1 text-muted-foreground">
-                    <Clock className="h-4 w-4" />
-                    {new Date(task.dueDate).toLocaleDateString("tr-TR")}
-                  </span>
+                  {task.case && (
+                    <Link href={`/cases/${task.case.id}`} className="text-muted-foreground hover:text-primary">
+                      Dosya: <span className="text-primary">{task.case.fileNumber}</span>
+                    </Link>
+                  )}
+                  {task.dueDate && (
+                    <span className={`flex items-center gap-1 ${isOverdue(task.dueDate) && task.status !== "COMPLETED" ? "text-red-600" : "text-muted-foreground"}`}>
+                      <Clock className="h-4 w-4" />
+                      {new Date(task.dueDate).toLocaleDateString("tr-TR")}
+                      {isOverdue(task.dueDate) && task.status !== "COMPLETED" && " (Gecikmiş)"}
+                    </span>
+                  )}
+                  {task.assignee && (
+                    <span className="text-muted-foreground">
+                      Atanan: {task.assignee.name} {task.assignee.surname}
+                    </span>
+                  )}
                 </div>
+              </div>
+              <div className="flex items-center gap-1">
+                <button 
+                  onClick={() => openEditModal(task)}
+                  className="p-2 text-gray-400 hover:text-blue-500 hover:bg-blue-50 rounded"
+                >
+                  <Edit2 className="h-4 w-4" />
+                </button>
+                <button 
+                  onClick={() => handleDelete(task.id)}
+                  className="p-2 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
               </div>
               {task.priority === "URGENT" && task.status !== "COMPLETED" && (
                 <AlertCircle className="h-5 w-5 text-destructive" />
@@ -165,9 +317,138 @@ export default function TasksPage() {
           <div className="text-center py-12 bg-white rounded-xl border">
             <CheckCircle2 className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
             <p className="text-muted-foreground">Görev bulunamadı</p>
+            <button 
+              onClick={() => { setEditingTask(null); resetForm(); setShowModal(true); }}
+              className="mt-4 text-primary hover:underline"
+            >
+              + Yeni görev ekle
+            </button>
           </div>
         )}
       </div>
+
+      {/* Add/Edit Modal */}
+      {showModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-xl p-6 w-full max-w-lg">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">
+                {editingTask ? "Görevi Düzenle" : "Yeni Görev"}
+              </h2>
+              <button onClick={() => { setShowModal(false); setEditingTask(null); }} className="text-gray-400 hover:text-gray-600">
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Başlık *</label>
+                <input
+                  type="text"
+                  value={form.title}
+                  onChange={(e) => setForm({ ...form, title: e.target.value })}
+                  className="w-full border rounded-lg px-3 py-2"
+                  placeholder="Görev başlığı"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Açıklama</label>
+                <textarea
+                  value={form.description}
+                  onChange={(e) => setForm({ ...form, description: e.target.value })}
+                  className="w-full border rounded-lg px-3 py-2"
+                  rows={3}
+                  placeholder="Görev açıklaması"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Durum</label>
+                  <select
+                    value={form.status}
+                    onChange={(e) => setForm({ ...form, status: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2"
+                  >
+                    <option value="PENDING">Bekliyor</option>
+                    <option value="IN_PROGRESS">Devam Ediyor</option>
+                    <option value="REVIEW">İnceleme</option>
+                    <option value="COMPLETED">Tamamlandı</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Öncelik</label>
+                  <select
+                    value={form.priority}
+                    onChange={(e) => setForm({ ...form, priority: e.target.value })}
+                    className="w-full border rounded-lg px-3 py-2"
+                  >
+                    <option value="LOW">Düşük</option>
+                    <option value="MEDIUM">Orta</option>
+                    <option value="HIGH">Yüksek</option>
+                    <option value="URGENT">Acil</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Bitiş Tarihi</label>
+                <input
+                  type="date"
+                  value={form.dueDate}
+                  onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
+                  className="w-full border rounded-lg px-3 py-2"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">İlgili Dosya</label>
+                <select
+                  value={form.caseId}
+                  onChange={(e) => setForm({ ...form, caseId: e.target.value })}
+                  className="w-full border rounded-lg px-3 py-2"
+                >
+                  <option value="">Seçiniz</option>
+                  {cases.map((c) => (
+                    <option key={c.id} value={c.id}>{c.fileNumber}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Atanan Kişi</label>
+                <select
+                  value={form.assigneeId}
+                  onChange={(e) => setForm({ ...form, assigneeId: e.target.value })}
+                  className="w-full border rounded-lg px-3 py-2"
+                >
+                  <option value="">Seçiniz</option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>{u.name} {u.surname}</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-2 mt-6">
+              <button
+                onClick={() => { setShowModal(false); setEditingTask(null); }}
+                className="px-4 py-2 border rounded-lg hover:bg-gray-50"
+              >
+                İptal
+              </button>
+              <button
+                onClick={handleSave}
+                disabled={saving || !form.title}
+                className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
+              >
+                {saving ? "Kaydediliyor..." : editingTask ? "Güncelle" : "Kaydet"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

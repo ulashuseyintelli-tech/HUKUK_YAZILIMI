@@ -1,5 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import PdfPrinter from 'pdfmake';
+import type { TDocumentDefinitions, TFontDictionary } from 'pdfmake/interfaces';
+import { Document, Packer, Paragraph, TextRun, AlignmentType, HeadingLevel } from 'docx';
 
 export interface TemplateData {
   fileNumber: string;
@@ -26,6 +29,32 @@ export interface GeneratedDocument {
   content: string;
   format: 'text' | 'html';
   templateCode: string;
+}
+
+// UDF (UYAP Document Format) yapısı
+export interface UdfDocument {
+  version: string;
+  documentType: string;
+  documentCode: string;
+  createdAt: string;
+  metadata: {
+    fileNumber: string;
+    executionOfficeCode?: string;
+    caseType: string;
+    subCategory: string;
+  };
+  content: {
+    sections: Array<{
+      type: string;
+      title?: string;
+      data: Record<string, any>;
+    }>;
+  };
+  signature?: {
+    lawyerBarNumber: string;
+    lawyerName: string;
+    timestamp: string;
+  };
 }
 
 @Injectable()
@@ -712,5 +741,326 @@ Borclu: ............................    Yediemin: ..............................
                                           Icra Muduru
                                           Imza - Muhur
 ` };
+  }
+
+  // ============================================
+  // PDF, WORD VE UDF EXPORT FONKSİYONLARI
+  // ============================================
+
+  /**
+   * Takip Talebi'ni PDF olarak oluştur
+   */
+  async generateTakipTalebiPdf(data: TemplateData): Promise<Buffer> {
+    const doc = this.generateTakipTalebi(data);
+    return this.textToPdf(doc.content, doc.title);
+  }
+
+  /**
+   * Takip Talebi'ni Word (DOCX) olarak oluştur
+   */
+  async generateTakipTalebiWord(data: TemplateData): Promise<Buffer> {
+    const doc = this.generateTakipTalebi(data);
+    return this.textToWord(doc.content, doc.title);
+  }
+
+  /**
+   * Takip Talebi'ni UDF (UYAP Document Format) olarak oluştur
+   */
+  generateTakipTalebiUdf(data: TemplateData): UdfDocument {
+    return this.createUdfDocument(data, 'TAKIP_TALEBI', 'ORNEK_1');
+  }
+
+  /**
+   * Case ID'den PDF oluştur
+   */
+  async generatePdfFromCase(caseId: string, documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri'): Promise<Buffer> {
+    const caseData = await this.getCaseData(caseId);
+    let doc: GeneratedDocument;
+    
+    switch (documentType) {
+      case 'takip-talebi':
+        doc = this.generateTakipTalebi(caseData);
+        break;
+      case 'odeme-emri':
+        doc = this.generateOdemeEmri(caseData);
+        break;
+      case 'icra-emri':
+        doc = this.generateIcraEmri(caseData);
+        break;
+      default:
+        doc = this.generateTakipTalebi(caseData);
+    }
+    
+    return this.textToPdf(doc.content, doc.title);
+  }
+
+  /**
+   * Case ID'den Word oluştur
+   */
+  async generateWordFromCase(caseId: string, documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri'): Promise<Buffer> {
+    const caseData = await this.getCaseData(caseId);
+    let doc: GeneratedDocument;
+    
+    switch (documentType) {
+      case 'takip-talebi':
+        doc = this.generateTakipTalebi(caseData);
+        break;
+      case 'odeme-emri':
+        doc = this.generateOdemeEmri(caseData);
+        break;
+      case 'icra-emri':
+        doc = this.generateIcraEmri(caseData);
+        break;
+      default:
+        doc = this.generateTakipTalebi(caseData);
+    }
+    
+    return this.textToWord(doc.content, doc.title);
+  }
+
+  /**
+   * Case ID'den UDF oluştur (UYAP için)
+   */
+  async generateUdfFromCase(caseId: string, documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri'): Promise<UdfDocument> {
+    const caseData = await this.getCaseData(caseId);
+    
+    const documentCodeMap: Record<string, string> = {
+      'takip-talebi': 'ORNEK_1',
+      'odeme-emri': 'ORNEK_7',
+      'icra-emri': 'ORNEK_4',
+    };
+    
+    const documentTypeMap: Record<string, string> = {
+      'takip-talebi': 'TAKIP_TALEBI',
+      'odeme-emri': 'ODEME_EMRI',
+      'icra-emri': 'ICRA_EMRI',
+    };
+    
+    return this.createUdfDocument(
+      caseData, 
+      documentTypeMap[documentType] || 'TAKIP_TALEBI',
+      documentCodeMap[documentType] || 'ORNEK_1'
+    );
+  }
+
+  /**
+   * Text içeriğini PDF'e dönüştür
+   */
+  private async textToPdf(content: string, title: string): Promise<Buffer> {
+    const fonts: TFontDictionary = {
+      Courier: {
+        normal: 'Courier',
+        bold: 'Courier-Bold',
+        italics: 'Courier-Oblique',
+        bolditalics: 'Courier-BoldOblique'
+      }
+    };
+
+    const printer = new PdfPrinter(fonts);
+    
+    // İçeriği satırlara böl
+    const lines = content.split('\n');
+    const docContent: any[] = [];
+    
+    // Başlık
+    docContent.push({
+      text: title,
+      style: 'header',
+      alignment: 'center',
+      margin: [0, 0, 0, 20]
+    });
+    
+    // İçerik satırları
+    lines.forEach(line => {
+      docContent.push({
+        text: line || ' ',
+        style: 'content',
+        preserveLeadingSpaces: true
+      });
+    });
+
+    const docDefinition: TDocumentDefinitions = {
+      content: docContent,
+      styles: {
+        header: {
+          fontSize: 14,
+          bold: true,
+          font: 'Courier'
+        },
+        content: {
+          fontSize: 10,
+          font: 'Courier'
+        }
+      },
+      defaultStyle: {
+        font: 'Courier'
+      },
+      pageSize: 'A4',
+      pageMargins: [40, 60, 40, 60] as [number, number, number, number]
+    };
+
+    return new Promise((resolve, reject) => {
+      try {
+        const pdfDoc = printer.createPdfKitDocument(docDefinition);
+        const chunks: Buffer[] = [];
+        
+        pdfDoc.on('data', (chunk: Buffer) => chunks.push(chunk));
+        pdfDoc.on('end', () => resolve(Buffer.concat(chunks)));
+        pdfDoc.on('error', reject);
+        
+        pdfDoc.end();
+      } catch (error) {
+        reject(error);
+      }
+    });
+  }
+
+  /**
+   * Text içeriğini Word (DOCX) dosyasına dönüştür
+   */
+  private async textToWord(content: string, title: string): Promise<Buffer> {
+    const lines = content.split('\n');
+    const paragraphs: Paragraph[] = [];
+    
+    // Başlık
+    paragraphs.push(
+      new Paragraph({
+        children: [
+          new TextRun({
+            text: title,
+            bold: true,
+            size: 28, // 14pt
+            font: 'Courier New'
+          })
+        ],
+        alignment: AlignmentType.CENTER,
+        heading: HeadingLevel.HEADING_1,
+        spacing: { after: 400 }
+      })
+    );
+    
+    // İçerik satırları
+    lines.forEach(line => {
+      paragraphs.push(
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: line || ' ',
+              size: 20, // 10pt
+              font: 'Courier New'
+            })
+          ],
+          spacing: { line: 240 } // Single line spacing
+        })
+      );
+    });
+
+    const doc = new Document({
+      sections: [{
+        properties: {
+          page: {
+            margin: {
+              top: 1440, // 1 inch
+              right: 1440,
+              bottom: 1440,
+              left: 1440
+            }
+          }
+        },
+        children: paragraphs
+      }]
+    });
+
+    return Packer.toBuffer(doc);
+  }
+
+  /**
+   * UDF (UYAP Document Format) belgesi oluştur
+   */
+  private createUdfDocument(data: TemplateData, documentType: string, documentCode: string): UdfDocument {
+    const now = new Date().toISOString();
+    
+    return {
+      version: '1.0',
+      documentType,
+      documentCode,
+      createdAt: now,
+      metadata: {
+        fileNumber: data.fileNumber,
+        executionOfficeCode: data.executionOffice.uyapCode,
+        caseType: data.caseType,
+        subCategory: data.subCategory
+      },
+      content: {
+        sections: [
+          {
+            type: 'HEADER',
+            title: 'Takip Bilgileri',
+            data: {
+              fileNumber: data.fileNumber,
+              filingDate: data.filingDate,
+              executionNumber: data.executionNumber,
+              executionOffice: data.executionOffice,
+              executionPath: data.executionPath
+            }
+          },
+          {
+            type: 'CREDITORS',
+            title: 'Alacaklılar',
+            data: {
+              creditors: data.creditors
+            }
+          },
+          {
+            type: 'LAWYERS',
+            title: 'Vekiller',
+            data: {
+              lawyers: data.lawyers
+            }
+          },
+          {
+            type: 'DEBTORS',
+            title: 'Borçlular',
+            data: {
+              debtors: data.debtors
+            }
+          },
+          {
+            type: 'CLAIMS',
+            title: 'Alacak Kalemleri',
+            data: {
+              claimItems: data.claimItems,
+              totals: data.totals
+            }
+          },
+          {
+            type: 'INTEREST',
+            title: 'Faiz Bilgileri',
+            data: {
+              interestInfo: data.interestInfo
+            }
+          },
+          ...(data.sourceDocument ? [{
+            type: 'SOURCE_DOCUMENT',
+            title: 'Dayanak Belge',
+            data: {
+              sourceDocument: data.sourceDocument
+            }
+          }] : []),
+          ...(data.courtInfo ? [{
+            type: 'COURT_INFO',
+            title: 'Mahkeme Bilgileri',
+            data: {
+              courtInfo: data.courtInfo
+            }
+          }] : [])
+        ]
+      },
+      signature: data.lawyers.length > 0 ? {
+        lawyerBarNumber: data.lawyers[0].barNumber,
+        lawyerName: data.lawyers[0].name,
+        timestamp: now
+      } : undefined
+    };
   }
 }

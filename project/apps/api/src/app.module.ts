@@ -53,6 +53,8 @@ import { CaseJudgmentModule } from "./modules/case-judgment/case-judgment.module
 import { CaseCollateralModule } from "./modules/case-collateral/case-collateral.module";
 import { ESignModule } from "./modules/esign/esign.module";
 import { BankModule } from "./modules/bank/bank.module";
+import { SummaryEngineModule } from "./modules/summary-engine/summary-engine.module";
+import { PrecautionaryOrderModule } from "./modules/precautionary-order/precautionary-order.module";
 
 @Module({
   imports: [
@@ -112,6 +114,8 @@ import { BankModule } from "./modules/bank/bank.module";
     CaseCollateralModule,
     ESignModule,
     BankModule,
+    SummaryEngineModule,
+    PrecautionaryOrderModule,
   ],
 })
 export class AppModule {}

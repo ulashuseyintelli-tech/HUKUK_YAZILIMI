@@ -43,6 +43,7 @@ export class StaffService {
         canSeeFinance: data.canSeeFinance || false,
         canApproveFinance: data.canApproveFinance || false,
         canSendNotifications: data.canSendNotifications || false,
+        isDefaultForNewCases: data.isDefaultForNewCases || false,
         sortOrder: data.sortOrder || 0,
       },
     });
@@ -56,25 +57,28 @@ export class StaffService {
     });
     if (!existing) throw new Error('Personel bulunamadı');
 
+    // Sadece gönderilen alanları güncelle (undefined olanları atla)
+    const updateData: any = {};
+    if (data.firstName !== undefined) updateData.firstName = data.firstName;
+    if (data.lastName !== undefined) updateData.lastName = data.lastName;
+    if (data.tckn !== undefined) updateData.tckn = data.tckn;
+    if (data.email !== undefined) updateData.email = data.email;
+    if (data.phone !== undefined) updateData.phone = data.phone;
+    if (data.staffType !== undefined) updateData.staffType = data.staffType;
+    if (data.canCreateCase !== undefined) updateData.canCreateCase = data.canCreateCase;
+    if (data.canEditCase !== undefined) updateData.canEditCase = data.canEditCase;
+    if (data.canGenerateDocuments !== undefined) updateData.canGenerateDocuments = data.canGenerateDocuments;
+    if (data.canApproveDocuments !== undefined) updateData.canApproveDocuments = data.canApproveDocuments;
+    if (data.canSeeFinance !== undefined) updateData.canSeeFinance = data.canSeeFinance;
+    if (data.canApproveFinance !== undefined) updateData.canApproveFinance = data.canApproveFinance;
+    if (data.canSendNotifications !== undefined) updateData.canSendNotifications = data.canSendNotifications;
+    if (data.isDefaultForNewCases !== undefined) updateData.isDefaultForNewCases = data.isDefaultForNewCases;
+    if (data.sortOrder !== undefined) updateData.sortOrder = data.sortOrder;
+    if (data.isActive !== undefined) updateData.isActive = data.isActive;
+
     return this.prisma.staffMember.update({
       where: { id },
-      data: {
-        firstName: data.firstName,
-        lastName: data.lastName,
-        tckn: data.tckn,
-        email: data.email,
-        phone: data.phone,
-        staffType: data.staffType,
-        canCreateCase: data.canCreateCase,
-        canEditCase: data.canEditCase,
-        canGenerateDocuments: data.canGenerateDocuments,
-        canApproveDocuments: data.canApproveDocuments,
-        canSeeFinance: data.canSeeFinance,
-        canApproveFinance: data.canApproveFinance,
-        canSendNotifications: data.canSendNotifications,
-        sortOrder: data.sortOrder,
-        isActive: data.isActive,
-      },
+      data: updateData,
     });
   }
 

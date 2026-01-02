@@ -702,6 +702,9 @@ model Case {
   hasArticle4Request  Boolean       @default(false) // Takip talebi var mı?
   article4RequestDate DateTime?     // Takip talebi tarihi
   
+  // İhtiyati Haciz (Her takip türünde olabilir)
+  hasPrecautionaryOrder Boolean     @default(false) // İhtiyati haciz kararı var mı?
+  
   // Dosya Yönetim Flag'leri (A.9)
   isArchived          Boolean       @default(false) // Arşiv dosyası
   showToClient        Boolean       @default(true)  // Müvekkile göster
@@ -804,6 +807,8 @@ model Case {
   caseClients         CaseClient[]
   tebligatlar         Tebligat[]
   claimItems          ClaimItem[]
+  ledgerEntries       LedgerEntry[]      // Tahsilat/düzeltme kayıtları
+  precautionaryOrders PrecautionaryOrder[] // İhtiyati haciz kararları
 
   @@unique([tenantId, fileNumber])
   @@index([tenantId, status])
@@ -2278,6 +2283,7 @@ model StaffMember {
   canSeeFinance        Boolean @default(false)  // Muhasebe modülünü görebilir
   canApproveFinance    Boolean @default(false)  // Muhasebe işlemi onaylayabilir
   canSendNotifications Boolean @default(false)  // Tebligat gönderebilir
+  isDefaultForNewCases Boolean @default(false)  // Yeni dosyalarda otomatik seç
   
   isActive    Boolean    @default(true)
   sortOrder   Int        @default(0)
@@ -2843,7 +2849,16 @@ model ClaimItem {
   // Kalem Türü
   itemType        ClaimItemType    // PRINCIPAL, INTEREST, EXPENSE, FEE, ATTORNEY_FEE, PENALTY, TAX, OTHER
   
-  // Tutar Bilgileri
+  // ⭐ KAYNAK SÜREÇ - Ana takip mi, ihtiyati haciz mi?
+  sourceProcess   ClaimSourceProcess @default(MAIN_ENFORCEMENT)  // MAIN_ENFORCEMENT, PRECAUTIONARY
+  sourceProcessId String?          // İhtiyati haciz kararı ID'si (sourceProcess=PRECAUTIONARY ise)
+  
+  // ⭐ TAKİP MUHASEBESİ - Üç Tutar Sistemi
+  originalAmount  Decimal          @db.Decimal(15, 2)  // Evraktan gelen orijinal tutar (örn: çek bedeli 10.000)
+  demandedAmount  Decimal          @db.Decimal(15, 2)  // Bu takipte talep edilen tutar (örn: 8.000)
+  collectedAmount Decimal          @db.Decimal(15, 2) @default(0)  // Tahsil edilen tutar (TBK 100 ile dağıtılır)
+  
+  // Eski alan (geriye uyumluluk için korunuyor, yeni kayıtlarda demandedAmount kullanılacak)
   amount          Decimal          @db.Decimal(15, 2)
   currency        String           @default("TRY")
   
@@ -2864,10 +2879,12 @@ model ClaimItem {
   // Açıklama
   description     String?
   referenceNo     String?          // Fatura no, çek no, senet no vb.
+  label           String?          // Özet panelde görünecek etiket
   
   // Hesaplama
   isCalculated    Boolean          @default(false)  // Otomatik hesaplandı mı
   calculatedAt    DateTime?
+  isVirtual       Boolean          @default(false)  // Sanal kalem mi (sadece özette gösterilir)
   
   // Borçlu Sorumluluğu
   isAllDebtorsLiable Boolean       @default(true)   // Tüm borçlular sorumlu mu
@@ -2878,6 +2895,55 @@ model ClaimItem {
   
   // Sıralama
   sortOrder       Int              @default(0)
+  bucket          String?          // Özet panelde hangi gruba ait (principal_bucket, fees_bucket vb.)
+  
+  // Meta
+  metadata        Json?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  createdById     String?
+  
+  // İlişkiler
+  ledgerAllocations LedgerAllocation[]
+
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([itemType])
+  @@index([status])
+  @@index([bucket])
+}
+
+// ⭐ TAKİP DEFTERİ - Tahsilat ve Düzeltme Kayıtları (TBK 100 / BK 84)
+model LedgerEntry {
+  id              String           @id @default(cuid())
+  tenantId        String
+  caseId          String
+  case            Case             @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  
+  // Kayıt Türü
+  entryType       LedgerEntryType  // PAYMENT, ADJUSTMENT, WAIVER, REFUND
+  
+  // Tutar
+  amount          Decimal          @db.Decimal(15, 2)
+  currency        String           @default("TRY")
+  
+  // Tarih
+  entryDate       DateTime         @default(now())
+  effectiveDate   DateTime?        // İşlemin geçerli olduğu tarih
+  
+  // Açıklama
+  description     String?
+  referenceNo     String?          // Makbuz no, dekont no vb.
+  
+  // Kaynak
+  sourceType      String?          // BANKA, KASA, UYAP, MANUEL
+  sourceId        String?          // Banka işlem ID'si vb.
+  
+  // Dağıtım (TBK 100 sırasına göre)
+  allocations     LedgerAllocation[]
+  
+  // Durum
+  status          LedgerEntryStatus @default(CONFIRMED)
   
   // Meta
   metadata        Json?
@@ -2887,8 +2953,45 @@ model ClaimItem {
 
   @@index([tenantId])
   @@index([caseId])
-  @@index([itemType])
-  @@index([status])
+  @@index([entryType])
+  @@index([entryDate])
+}
+
+// Tahsilat Dağıtımı - Hangi kaleme ne kadar düşüldü
+model LedgerAllocation {
+  id              String           @id @default(cuid())
+  ledgerEntryId   String
+  ledgerEntry     LedgerEntry      @relation(fields: [ledgerEntryId], references: [id], onDelete: Cascade)
+  claimItemId     String
+  claimItem       ClaimItem        @relation(fields: [claimItemId], references: [id], onDelete: Cascade)
+  
+  // Dağıtılan Tutar
+  amount          Decimal          @db.Decimal(15, 2)
+  
+  // Sıra (TBK 100 mahsup sırası)
+  allocationOrder Int
+  
+  // Meta
+  createdAt       DateTime         @default(now())
+
+  @@index([ledgerEntryId])
+  @@index([claimItemId])
+}
+
+// Defter Kayıt Türü
+enum LedgerEntryType {
+  PAYMENT         // Tahsilat
+  ADJUSTMENT      // Düzeltme
+  WAIVER          // Feragat
+  REFUND          // İade
+  TRANSFER        // Virman
+}
+
+// Defter Kayıt Durumu
+enum LedgerEntryStatus {
+  PENDING         // Beklemede
+  CONFIRMED       // Onaylandı
+  CANCELLED       // İptal Edildi
 }
 
 // Alacak Kalemi Türü
@@ -2907,6 +3010,12 @@ enum ClaimItemType {
   TAX_BSMV        // BSMV
   TAX_KKDF        // KKDF
   OTHER           // Diğer
+}
+
+// Alacak Kalemi Kaynak Süreci
+enum ClaimSourceProcess {
+  MAIN_ENFORCEMENT  // Ana icra takibi
+  PRECAUTIONARY     // İhtiyati haciz
 }
 
 // Kaynak Belge Türü
@@ -3466,4 +3575,135 @@ model BankIntegrationLog {
   @@index([bankAccountId])
   @@index([status])
   @@index([startedAt])
+}
+
+
+// ==================== İHTİYATİ HACİZ MODÜLÜ ====================
+
+// İhtiyati Haciz Kararı Durumu
+enum PrecautionaryOrderStatus {
+  DRAFT           // Taslak (henüz karar alınmadı)
+  DECIDED         // Karar alındı
+  APPLIED         // Uygulandı
+  LIFTED          // Kaldırıldı
+  EXPIRED         // Süresi doldu
+  REJECTED        // Reddedildi
+}
+
+// Teminat Türü
+enum SecurityDepositType {
+  NAKIT           // Nakit teminat
+  TEMINAT_MEKTUBU // Banka teminat mektubu
+  GAYRIMENKUL     // Gayrimenkul ipoteği
+  KEFALET         // Kefalet
+  DIGER           // Diğer
+}
+
+// İhtiyati Haciz Kararı
+model PrecautionaryOrder {
+  id                    String                    @id @default(cuid())
+  tenantId              String
+  caseId                String
+  case                  Case                      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  
+  // Karar Türü
+  orderType             String                    @default("IHTIYATI_HACIZ") // IHTIYATI_HACIZ, IHTIYATI_TEDBIR
+  
+  // Mahkeme Bilgileri
+  courtName             String                    // Mahkeme adı
+  courtCity             String?                   // Mahkeme ili
+  decisionDate          DateTime                  // Karar tarihi
+  decisionNo            String?                   // Esas/Karar numarası
+  
+  // Kapsam
+  scopeNote             String?                   // Hangi alacak/borçlular için
+  coveredDebtorIds      String[]                  // Kapsanan borçlu ID'leri
+  
+  // Teminatlı Tutar
+  securedAmount         Decimal                   @db.Decimal(15, 2)
+  currency              String                    @default("TRY")
+  
+  // Teminat Bilgileri
+  requiresSecurityDeposit Boolean                 @default(false)
+  securityDepositAmount Decimal?                  @db.Decimal(15, 2)
+  securityDepositType   SecurityDepositType?
+  securityDepositNote   String?                   // Teminat açıklaması
+  securityDepositPaidAt DateTime?                 // Teminat yatırma tarihi
+  
+  // Durum
+  status                PrecautionaryOrderStatus  @default(DRAFT)
+  appliedAt             DateTime?                 // Uygulanma tarihi
+  liftedAt              DateTime?                 // Kaldırılma tarihi
+  liftReason            String?                   // Kaldırılma nedeni
+  expiresAt             DateTime?                 // Son geçerlilik tarihi
+  
+  // Belgeler
+  decisionDocumentId    String?                   // Karar belgesi (CaseDocument referansı)
+  
+  // Meta
+  notes                 String?
+  metadata              Json?
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+  createdById           String?
+
+  // İlişkiler
+  costs                 PrecautionaryCost[]
+
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([status])
+  @@index([decisionDate])
+}
+
+// İhtiyati Haciz Masraf Kalemi
+model PrecautionaryCost {
+  id                    String                    @id @default(cuid())
+  tenantId              String
+  precautionaryOrderId  String
+  precautionaryOrder    PrecautionaryOrder        @relation(fields: [precautionaryOrderId], references: [id], onDelete: Cascade)
+  
+  // Kalem Türü
+  costType              PrecautionaryCostType     // HARC, POSTA, VEKALET, TEMINAT, YEDIEMIN, DIGER
+  
+  // Tutar
+  amount                Decimal                   @db.Decimal(15, 2)
+  currency              String                    @default("TRY")
+  
+  // Açıklama
+  description           String?
+  label                 String?                   // Özet panelde görünecek etiket
+  
+  // Takipte Talep
+  isClaimedInEnforcement Boolean                  @default(true)  // Ana takipte talep ediliyor mu
+  claimItemId           String?                   // Bağlı ClaimItem ID'si (talep ediliyorsa)
+  
+  // Durum
+  isPaid                Boolean                   @default(false)
+  paidAt                DateTime?
+  paidAmount            Decimal?                  @db.Decimal(15, 2)
+  
+  // Sıralama
+  sortOrder             Int                       @default(0)
+  
+  // Meta
+  metadata              Json?
+  createdAt             DateTime                  @default(now())
+  updatedAt             DateTime                  @updatedAt
+
+  @@index([tenantId])
+  @@index([precautionaryOrderId])
+  @@index([costType])
+}
+
+// İhtiyati Haciz Masraf Türü
+enum PrecautionaryCostType {
+  HARC              // İhtiyati Haciz Harcı
+  POSTA             // Tebligat/Posta Gideri
+  VEKALET           // Vekalet Ücreti
+  TEMINAT           // Teminat Masrafı
+  YEDIEMIN          // Yediemin Ücreti
+  BILIRKISI         // Bilirkişi Ücreti
+  MUHAFAZA          // Muhafaza Gideri
+  DIGER             // Diğer Masraflar
 }

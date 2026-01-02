@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, Request } from '@nestjs/common';
-import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CaseInstrumentService, CreateInstrumentDto, UpdateInstrumentDto } from './case-instrument.service';
 
 @Controller('case-instruments')

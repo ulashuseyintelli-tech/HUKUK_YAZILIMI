@@ -7,7 +7,7 @@ import { api } from "@/lib/api";
 interface BankAccount { id: string; bankName: string; branchName?: string; iban: string; accountName?: string; isDefault: boolean; }
 interface Lawyer { id: string; name: string; surname: string; tckn?: string; barNumber?: string; barCity?: string; email?: string; phone?: string; role: "OWNER" | "PARTNER" | "EMPLOYEE" | "INTERN"; canSign: boolean; canAppearInUyap: boolean; isDefaultForNewCases: boolean; isActive: boolean; }
 interface Office { id: string; name: string; address?: string; city?: string; district?: string; phone?: string; fax?: string; email?: string; barAssociation?: string; bankAccounts: BankAccount[]; lawyers: Lawyer[]; smtpHost?: string; smtpPort?: number; smtpUser?: string; smtpPass?: string; smtpSecure?: boolean; smtpFromName?: string; smtpFromEmail?: string; }
-interface StaffMember { id: string; firstName: string; lastName: string; tckn?: string; email?: string; phone?: string; staffType: string; canCreateCase: boolean; canEditCase: boolean; canGenerateDocuments: boolean; canApproveDocuments: boolean; canSeeFinance: boolean; canApproveFinance: boolean; isActive: boolean; }
+interface StaffMember { id: string; firstName: string; lastName: string; tckn?: string; email?: string; phone?: string; staffType: string; canCreateCase: boolean; canEditCase: boolean; canGenerateDocuments: boolean; canApproveDocuments: boolean; canSeeFinance: boolean; canApproveFinance: boolean; isActive: boolean; isDefaultForNewCases?: boolean; }
 interface SmtpSettings { smtpHost?: string; smtpPort?: number; smtpUser?: string; smtpPass?: string; smtpSecure?: boolean; smtpFromName?: string; smtpFromEmail?: string; }
 
 const STAFF_TYPES = [
@@ -51,7 +51,14 @@ export default function OfficeSettingsPage() {
   const loadStaff = async () => {
     try {
       const res = await api.get("/staff");
-      setStaffList(res.data?.data || []);
+      console.log('Staff API yanıtı:', res.data);
+      // isDefaultForNewCases alanı undefined ise false olarak ayarla
+      const staffData = (res.data?.data || []).map((s: any) => ({
+        ...s,
+        isDefaultForNewCases: Boolean(s.isDefaultForNewCases),
+      }));
+      console.log('İşlenmiş staff verisi:', staffData.map((s: any) => ({ id: s.id, name: s.firstName, isDefault: s.isDefaultForNewCases })));
+      setStaffList([...staffData]); // Yeni array referansı oluştur
     } catch (e) { console.error("Personel yüklenemedi:", e); }
   };
 
@@ -270,20 +277,42 @@ export default function OfficeSettingsPage() {
           </div>
           <div className="flex-1 overflow-auto">
             {office?.lawyers?.map(lawyer => (
-              <div key={lawyer.id} className="flex items-center justify-between p-2 border-b text-xs hover:bg-gray-50">
-                <div>
-                  <p className="font-medium">{(lawyer as any).displayName || `${(lawyer as any).title || "Av."} ${lawyer.name} ${lawyer.surname}`}</p>
+              <div key={lawyer.id} className={`flex items-center justify-between p-2 border-b text-xs hover:bg-gray-50 ${lawyer.isDefaultForNewCases ? 'bg-amber-50' : ''}`}>
+                <div className="flex-1">
+                  <div className="flex items-center gap-1">
+                    <p className="font-medium">{(lawyer as any).displayName || `${(lawyer as any).title || "Av."} ${lawyer.name} ${lawyer.surname}`}</p>
+                  </div>
                   <p className="text-muted-foreground">{lawyer.barNumber || "-"} • <span className={`px-1 rounded ${lawyer.role === "OWNER" ? "bg-purple-100 text-purple-700" : "bg-gray-100"}`}>{roleLabels[lawyer.role]}</span></p>
                 </div>
                 <div className="flex items-center gap-1">
-                  {lawyer.canSign && <Check className="h-3 w-3 text-green-500" />}
-                  {lawyer.isDefaultForNewCases && <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />}
+                  {/* Varsayılan Seç Butonu */}
+                  <button 
+                    onClick={async () => {
+                      try {
+                        await api.put(`/lawyers/${lawyer.id}`, { isDefaultForNewCases: !lawyer.isDefaultForNewCases });
+                        await loadOffice();
+                        showSaved();
+                      } catch (e) { console.error(e); }
+                    }}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                      lawyer.isDefaultForNewCases 
+                        ? 'bg-amber-500 text-white hover:bg-amber-600' 
+                        : 'bg-gray-100 text-gray-600 hover:bg-amber-100 hover:text-amber-700'
+                    }`}
+                    title={lawyer.isDefaultForNewCases ? "Varsayılandan çıkar" : "Varsayılan yap"}
+                  >
+                    {lawyer.isDefaultForNewCases ? '⭐ Varsayılan' : '☆ Seç'}
+                  </button>
                   <button onClick={() => { setEditingLawyer(lawyer); setShowLawyerModal(true); }} className="p-1 hover:bg-gray-200 rounded"><Pencil className="h-3 w-3 text-gray-500" /></button>
                   <button onClick={() => handleDeleteLawyer(lawyer.id)} className="p-1 hover:bg-red-100 rounded"><Trash2 className="h-3 w-3 text-red-500" /></button>
                 </div>
               </div>
             ))}
             {(!office?.lawyers || office.lawyers.length === 0) && <p className="text-xs text-muted-foreground text-center py-4">Avukat yok</p>}
+          </div>
+          {/* Varsayılan avukat bilgisi */}
+          <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-[10px] text-blue-700">
+            💡 "⭐ Varsayılan" olarak işaretlenen avukatlar yeni takiplerde otomatik seçili gelir.
           </div>
         </div>
 
@@ -295,18 +324,72 @@ export default function OfficeSettingsPage() {
           </div>
           <div className="flex-1 overflow-auto">
             {staffList.map(staff => (
-              <div key={staff.id} className="flex items-center justify-between p-2 border-b text-xs hover:bg-gray-50">
+              <div key={staff.id} className={`flex items-center justify-between p-2 border-b text-xs hover:bg-gray-50 ${staff.isDefaultForNewCases ? 'bg-amber-50' : ''}`}>
                 <div>
                   <p className="font-medium">{staff.firstName} {staff.lastName}</p>
                   <p className="text-muted-foreground"><span className={`px-1 rounded ${getStaffTypeColor(staff.staffType)}`}>{getStaffTypeLabel(staff.staffType)}</span></p>
                 </div>
                 <div className="flex items-center gap-1">
+                  {/* Varsayılan Seç Butonu */}
+                  <button 
+                    onClick={async () => {
+                      const newValue = !staff.isDefaultForNewCases;
+                      console.log('Personel varsayılan güncelleniyor:', staff.id, staff.firstName, '-> isDefaultForNewCases:', newValue);
+                      
+                      // Optimistic update - hemen UI'ı güncelle
+                      setStaffList(prev => prev.map(s => 
+                        s.id === staff.id ? { ...s, isDefaultForNewCases: newValue } : s
+                      ));
+                      
+                      try {
+                        const response = await api.put(`/staff/${staff.id}`, { isDefaultForNewCases: newValue });
+                        console.log('API yanıtı:', response.data);
+                        
+                        // API'den dönen veriyi kontrol et
+                        if (response.data?.error) {
+                          console.error('API hatası:', response.data.error);
+                          // Hata varsa geri al
+                          setStaffList(prev => prev.map(s => 
+                            s.id === staff.id ? { ...s, isDefaultForNewCases: !newValue } : s
+                          ));
+                        } else if (response.data?.data) {
+                          // Başarılı - API'den dönen veriyle güncelle
+                          console.log('Güncellenen personel:', response.data.data);
+                          setStaffList(prev => prev.map(s => 
+                            s.id === staff.id ? { ...s, ...response.data.data } : s
+                          ));
+                          showSaved();
+                        } else {
+                          showSaved();
+                        }
+                      } catch (e: any) { 
+                        console.error('Personel güncelleme hatası:', e);
+                        console.error('Hata detayı:', e.response?.data);
+                        // Hata durumunda geri al
+                        setStaffList(prev => prev.map(s => 
+                          s.id === staff.id ? { ...s, isDefaultForNewCases: !newValue } : s
+                        ));
+                      }
+                    }}
+                    className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
+                      staff.isDefaultForNewCases 
+                        ? 'bg-amber-500 text-white hover:bg-amber-600' 
+                        : 'bg-gray-100 text-gray-600 hover:bg-amber-100 hover:text-amber-700'
+                    }`}
+                    title={staff.isDefaultForNewCases ? "Varsayılandan çıkar" : "Varsayılan yap"}
+                  >
+                    {staff.isDefaultForNewCases ? '⭐ Varsayılan' : '☆ Seç'}
+                  </button>
                   <button onClick={() => { setEditingStaff(staff); setShowStaffModal(true); }} className="p-1 hover:bg-gray-200 rounded"><Pencil className="h-3 w-3 text-gray-500" /></button>
                   <button onClick={() => handleDeleteStaff(staff.id)} className="p-1 hover:bg-red-100 rounded"><Trash2 className="h-3 w-3 text-red-500" /></button>
                 </div>
               </div>
             ))}
             {staffList.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">Personel yok</p>}
+          </div>
+          {/* Varsayılan personel bilgisi */}
+          <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-[10px] text-blue-700">
+            💡 "⭐ Varsayılan" olarak işaretlenen personeller yeni takiplerde otomatik seçili gelir.
           </div>
         </div>
 
@@ -439,10 +522,25 @@ function LawyerModal({ lawyer, onSave, onClose, saving }: { lawyer: any; onSave:
             <div><label>Banka</label><input value={form.bankName} onChange={e => setForm({...form, bankName: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
             <div><label>IBAN</label><input value={form.iban} onChange={e => setForm({...form, iban: e.target.value.toUpperCase()})} className="w-full border rounded px-2 py-1 font-mono" /></div>
           </div>
-          <div className="flex gap-4 pt-2 border-t">
-            <label className="flex items-center gap-1"><input type="checkbox" checked={form.canSign} onChange={e => setForm({...form, canSign: e.target.checked})} />İmza yetkisi</label>
-            <label className="flex items-center gap-1"><input type="checkbox" checked={form.canAppearInUyap} onChange={e => setForm({...form, canAppearInUyap: e.target.checked})} />UYAP</label>
-            <label className="flex items-center gap-1"><input type="checkbox" checked={form.isDefaultForNewCases} onChange={e => setForm({...form, isDefaultForNewCases: e.target.checked})} />Varsayılan</label>
+          <div className="flex flex-col gap-3 pt-2 border-t">
+            <div className="flex gap-4">
+              <label className="flex items-center gap-1"><input type="checkbox" checked={form.canSign} onChange={e => setForm({...form, canSign: e.target.checked})} />İmza yetkisi</label>
+              <label className="flex items-center gap-1"><input type="checkbox" checked={form.canAppearInUyap} onChange={e => setForm({...form, canAppearInUyap: e.target.checked})} />UYAP</label>
+            </div>
+            <div className="p-2 bg-amber-50 border border-amber-200 rounded">
+              <label className="flex items-center gap-2 cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={form.isDefaultForNewCases} 
+                  onChange={e => setForm({...form, isDefaultForNewCases: e.target.checked})} 
+                  className="w-4 h-4 rounded text-amber-600"
+                />
+                <div>
+                  <span className="font-medium text-amber-800">⭐ Yeni takiplerde otomatik seç</span>
+                  <p className="text-[10px] text-amber-600 mt-0.5">Bu avukat yeni takip oluşturulduğunda otomatik olarak seçili gelir</p>
+                </div>
+              </label>
+            </div>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="px-3 py-1 border rounded">İptal</button>
@@ -497,6 +595,7 @@ function StaffModal({ staff, onSave, onClose, saving }: { staff: any; onSave: (d
     canCreateCase: staff?.canCreateCase || false, canEditCase: staff?.canEditCase || false,
     canGenerateDocuments: staff?.canGenerateDocuments || false, canApproveDocuments: staff?.canApproveDocuments || false,
     canSeeFinance: staff?.canSeeFinance || false, canApproveFinance: staff?.canApproveFinance || false,
+    isDefaultForNewCases: staff?.isDefaultForNewCases || false,
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -540,6 +639,21 @@ function StaffModal({ staff, onSave, onClose, saving }: { staff: any; onSave: (d
               <label className="flex items-center gap-1"><input type="checkbox" checked={form.canSeeFinance} onChange={e => setForm({...form, canSeeFinance: e.target.checked})} />Muhasebe görebilir</label>
               <label className="flex items-center gap-1"><input type="checkbox" checked={form.canApproveFinance} onChange={e => setForm({...form, canApproveFinance: e.target.checked})} />Muhasebe onaylayabilir</label>
             </div>
+          </div>
+          {/* Varsayılan Seçeneği */}
+          <div className="p-2 bg-amber-50 border border-amber-200 rounded">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={form.isDefaultForNewCases} 
+                onChange={e => setForm({...form, isDefaultForNewCases: e.target.checked})} 
+                className="w-4 h-4 rounded text-amber-600"
+              />
+              <div>
+                <span className="font-medium text-amber-800">⭐ Yeni takiplerde otomatik seç</span>
+                <p className="text-[10px] text-amber-600 mt-0.5">Bu personel yeni takip oluşturulduğunda otomatik olarak seçili gelir</p>
+              </div>
+            </label>
           </div>
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="px-3 py-1 border rounded">İptal</button>
