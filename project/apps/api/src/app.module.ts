@@ -63,6 +63,8 @@ import { MessageTemplateModule } from "./modules/message-template/message-templa
 import { CostPackageModule } from "./modules/cost-package/cost-package.module";
 import { CaseBalanceModule } from "./modules/case-balance/case-balance.module";
 import { StageTriggerModule } from "./modules/stage-trigger/stage-trigger.module";
+import { AddressDiscoveryModule } from "./modules/address-discovery/address-discovery.module";
+import { AssetQueryModule } from "./modules/asset-query/asset-query.module";
 
 @Module({
   imports: [
@@ -132,6 +134,8 @@ import { StageTriggerModule } from "./modules/stage-trigger/stage-trigger.module
     CostPackageModule,
     CaseBalanceModule,
     StageTriggerModule,
+    AddressDiscoveryModule,
+    AssetQueryModule,
   ],
 })
 export class AppModule {}

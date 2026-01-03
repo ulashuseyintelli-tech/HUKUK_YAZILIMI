@@ -7,6 +7,8 @@ import { ThirdPartyService } from "./third-party.service";
 import { ThirdPartyController } from "./third-party.controller";
 import { DebtorCommunicationService } from "./communication.service";
 import { CommunicationController } from "./communication.controller";
+import { AddressService } from "./address.service";
+import { AddressController } from "./address.controller";
 
 @Module({
   controllers: [
@@ -14,18 +16,21 @@ import { CommunicationController } from "./communication.controller";
     CaseDebtorController,
     ThirdPartyController,
     CommunicationController,
+    AddressController,
   ],
   providers: [
     DebtorService,
     CaseDebtorService,
     ThirdPartyService,
     DebtorCommunicationService,
+    AddressService,
   ],
   exports: [
     DebtorService,
     CaseDebtorService,
     ThirdPartyService,
     DebtorCommunicationService,
+    AddressService,
   ],
 })
 export class DebtorModule {}

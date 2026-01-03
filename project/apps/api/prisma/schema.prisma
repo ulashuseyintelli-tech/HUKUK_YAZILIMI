@@ -206,6 +206,15 @@ model Tenant {
   workflowTemplates  WorkflowTemplate[]
   executionOffices   ExecutionOffice[]
   office             Office?  // Her tenant'ın tek bir ofisi var
+  
+  // Address Discovery
+  clientInfoRequests  ClientInfoRequest[]
+  uyapQueries         UyapQuery[]
+  institutionLetters  InstitutionLetter[]
+  addressResearches   AddressResearch[]
+  
+  // Asset Queries (FAZ 4)
+  assetQueries        AssetQuery[]
 
   @@index([slug])
   @@index([accountType])
@@ -253,6 +262,13 @@ model User {
   createdTasks  Task[] @relation("CreatedTasks")
   statusChanges CaseStatusHistory[] @relation("StatusChangedBy")
   sorumluCases  Case[] @relation("SorumluPersonel")
+  
+  // Address Discovery
+  uyapQueriesRequested    UyapQuery[]         @relation("UyapQueryRequester")
+  institutionLettersCreated InstitutionLetter[] @relation("InstitutionLetterCreator")
+  
+  // Asset Queries (FAZ 4)
+  assetQueriesRequested   AssetQuery[]        @relation("AssetQueryRequester")
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -370,6 +386,9 @@ model Client {
   notifications    ClientNotification[]
   expenseRequests  ExpenseRequest[]
   portalUser       ClientPortalUser?
+  
+  // Address Discovery
+  clientInfoRequests ClientInfoRequest[]
 
   @@index([tenantId])
   @@index([tenantId, tckn])
@@ -611,6 +630,9 @@ model Debtor {
   assets                Asset[]
   communications        DebtorCommunication[]
   estateHeirs           EstateHeir[]  // Tereke mirasçıları
+  
+  // Address Discovery
+  clientInfoRequests    ClientInfoRequest[]
 
   @@index([tenantId])
   @@index([tenantId, identityNo])
@@ -647,29 +669,65 @@ model EstateHeir {
   @@index([debtorId])
 }
 
-// Borçlu Adresi
+// Borçlu Adresi (Tebligat Kanunu'na Uygun - Genişletilmiş)
 model DebtorAddress {
-  id            String   @id @default(cuid())
-  debtorId      String
-  debtor        Debtor   @relation(fields: [debtorId], references: [id], onDelete: Cascade)
+  id              String   @id @default(cuid())
+  debtorId        String
+  debtor          Debtor   @relation(fields: [debtorId], references: [id], onDelete: Cascade)
   
-  addressType   String   // EV, IS, TEBLIGAT, MERNIS, KEP
-  street        String
-  city          String
-  district      String?
-  postalCode    String?
-  country       String   @default("Türkiye")
+  // Temel Bilgiler (Yeni - TK Uyumlu)
+  type            AddressType      @default(DECLARED)
+  subType         AddressSubType?
+  source          AddressSource    @default(USER_INPUT)
   
-  isPrimary     Boolean  @default(false)
-  isMernis      Boolean  @default(false)
+  // Adres Detayları
+  street          String
+  city            String
+  district        String?
+  postalCode      String?
+  country         String   @default("Türkiye")
+  fullText        String?  // Computed: tam adres metni
   
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  // Hukuki Bilgiler
+  legalPriority   LegalPriority @default(MEDIUM)
+  canApply21_2    Boolean  @default(false)  // TK 21/2 uygulanabilir mi?
+  
+  // Doğrulama
+  verified        Boolean  @default(false)
+  verifiedAt      DateTime?
+  verifiedSource  String?  // Sorgu referansı
+  
+  // Risk Durumu
+  riskFlags       AddressRiskFlag[]
+  riskNotes       String?
+  
+  // TK 21/2 Bilgileri (bila tebligat)
+  tk21_2Applied       Boolean   @default(false)
+  tk21_2MuhtarDate    DateTime?  // Muhtara teslim tarihi
+  tk21_2DoorPostDate  DateTime?  // Kapıya yapıştırma tarihi
+  tk21_2NoticeDate    DateTime?  // İhbarname tarihi
+  
+  // Meta
+  isPrimary       Boolean  @default(false)
+  notes           String?
+  
+  // Güven Skoru (Address Discovery)
+  confidenceScore Int?     // 0-100 arası güven skoru
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Eski alanlar (geriye uyumluluk - migration sonrası kaldırılabilir)
+  addressType     String?  // @deprecated - type kullan
+  isMernis        Boolean  @default(false) // @deprecated - type=MERNIS kullan
 
-  // Used in case debtors
-  caseDebtors   CaseDebtor[]
+  // İlişkiler
+  caseDebtors     CaseDebtor[]
+  serviceHistory  ServiceHistory[]
 
   @@index([debtorId])
+  @@index([type])
+  @@index([verified])
 }
 
 
@@ -848,6 +906,9 @@ model Case {
   precautionaryOrders PrecautionaryOrder[] // İhtiyati haciz kararları
   expenseRequests     ExpenseRequest[]   // Masraf talepleri
   caseBalance         CaseBalance?       // Masraf bakiyesi (1:1)
+  
+  // Address Discovery
+  clientInfoRequests  ClientInfoRequest[]
 
   @@unique([tenantId, fileNumber])
   @@index([tenantId, status])
@@ -980,6 +1041,14 @@ model CaseDebtor {
   thirdParties          ThirdParty[]
   externalCases         ExternalCase[]
   serviceHistory        ServiceHistory[]
+  
+  // Address Discovery
+  uyapQueries           UyapQuery[]
+  institutionLetters    InstitutionLetter[]
+  addressResearch       AddressResearch?
+  
+  // Asset Queries (FAZ 4)
+  assetQueries          AssetQuery[]
 
   @@unique([caseId, debtorId, role])
   @@index([caseId])
@@ -1000,6 +1069,12 @@ model ServiceHistory {
   trackingNo      String?
   returnReason    ServiceReturnReason?
   
+  // Adres Bağlantısı (Yeni - TK Uyumlu)
+  addressId       String?
+  address         DebtorAddress?      @relation(fields: [addressId], references: [id])
+  addressType     AddressType?        // Snapshot - tebligat anındaki adres türü
+  addressText     String?             // Snapshot - tebligat anındaki tam adres
+  
   // Tarihler
   actionDate      DateTime            // İşlem tarihi (gönderim/tebliğ/iade)
   
@@ -1010,6 +1085,7 @@ model ServiceHistory {
 
   @@index([caseDebtorId])
   @@index([toStatus])
+  @@index([addressId])
 }
 
 model Due {
@@ -2107,6 +2183,67 @@ enum DebtorRole {
   IFLAS_MASASI      // İflas Masası
 }
 
+// ==================== ADRES SİSTEMİ (TK UYUMLU) ====================
+
+// Adres Türü (Tebligat Kanunu'na uygun)
+enum AddressType {
+  MERNIS          // MERNİS Yerleşim Yeri (TK m.10/m.21)
+  BUSINESS_HQ     // İşyeri Merkez (TK m.12/m.13)
+  BUSINESS_BRANCH // İşyeri Şube
+  LEGAL_CENTER    // Tüzel Kişi Merkez (Ticaret Sicili)
+  DECLARED        // Bildirilen/Sözleşme Adresi (TK m.10/2)
+  KEP             // Kayıtlı Elektronik Posta Adresi
+}
+
+// Adres Alt Türü (İşyeri için)
+enum AddressSubType {
+  HQ              // Merkez
+  BRANCH          // Şube
+}
+
+// Adres Kaynağı
+enum AddressSource {
+  MERNIS          // MERNİS sorgusu
+  MERSIS          // MERSİS sorgusu
+  TICARET_SICILI  // Ticaret Sicil Gazetesi
+  CONTRACT        // Sözleşme
+  USER_INPUT      // Manuel giriş
+  UYAP            // UYAP sorgusu
+  
+  // UYAP Sorgu Detayları
+  UYAP_AA         // Nüfus + Adres sorgusu
+  UYAP_AB         // SGK sorgusu
+  UYAP_AF         // Ticaret Odası sorgusu
+  UYAP_AJ         // Vergi Dairesi sorgusu
+  UYAP_AR         // GSM sorgusu
+  
+  // Kurum Yazıları
+  SGK_LETTER      // SGK yazı yanıtı
+  VERGI_LETTER    // Vergi Dairesi yazı yanıtı
+  TICARET_SICILI_LETTER // Ticaret Sicili yazı yanıtı
+  BELEDIYE_LETTER // Belediye yazı yanıtı
+  
+  // Diğer
+  CLIENT          // Müvekkil beyanı
+  CROSS_FILE      // Başka dosyadan
+}
+
+// Adres Risk Durumu
+enum AddressRiskFlag {
+  ADDRESS_SUSPECT // Adres şüpheli
+  MOVED           // Taşınmış
+  CLOSED          // Kapalı
+  NOT_FOUND       // Bulunamadı
+  REFUSED         // Tebellüğden imtina
+}
+
+// Hukuki Öncelik
+enum LegalPriority {
+  HIGH            // Birincil tercih (MERNIS, LEGAL_CENTER)
+  MEDIUM          // İkincil tercih (DECLARED, BUSINESS)
+  LOW             // Son tercih
+}
+
 // Tebligat Modu
 enum DebtorNotificationMode {
   NORMAL    // PTT ile normal tebligat
@@ -2146,6 +2283,18 @@ enum AssetQueryStatus {
   NO        // Yok
   PENDING   // Sorgu devam ediyor
   ERROR     // Sorgu hatası
+}
+
+// Malvarlığı Sorgu Türü
+enum AssetQueryType {
+  VEHICLE       // Araç sorgusu (Trafik Tescil)
+  REAL_ESTATE   // Tapu sorgusu
+  BANK          // Banka hesabı sorgusu
+  SGK_WAGE      // SGK maaş sorgusu
+  SGK_EMPLOYER  // SGK işveren sorgusu
+  TAX           // Vergi dairesi sorgusu
+  TRADE_REGISTRY // Ticaret sicil sorgusu
+  GSM           // GSM operatör sorgusu
 }
 
 // Sorumluluk Türü
@@ -4231,4 +4380,266 @@ enum StageEventCode {
   EVT_SALE_INIT             // Satış başlat
   EVT_VALUATION_INIT        // Kıymet takdiri başlat
   EVT_BALANCE_LOW           // Bakiye düşük
+}
+
+
+// ==================== ADDRESS DISCOVERY MODULE ====================
+
+// Müvekkil Bilgi Talebi Durumu
+enum ClientInfoRequestStatus {
+  SENT          // Email gönderildi
+  RESPONDED     // Yanıt alındı
+  NO_RESPONSE   // Yanıt yok (timeout)
+}
+
+// Müvekkil Bilgi Talebi
+model ClientInfoRequest {
+  id            String   @id @default(cuid())
+  tenantId      String
+  caseId        String
+  clientId      String
+  debtorId      String?  // Belirli borçlu için (opsiyonel)
+  
+  emailTo       String
+  emailSubject  String
+  emailBody     String   @db.Text
+  
+  status        ClientInfoRequestStatus @default(SENT)
+  sentAt        DateTime @default(now())
+  respondedAt   DateTime?
+  responseNotes String?  @db.Text
+  
+  // Hatırlatma
+  reminderSentAt DateTime?
+  reminderCount  Int      @default(0)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  tenant        Tenant   @relation(fields: [tenantId], references: [id])
+  case          Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  client        Client   @relation(fields: [clientId], references: [id])
+  debtor        Debtor?  @relation(fields: [debtorId], references: [id])
+  
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([clientId])
+  @@index([status])
+  @@index([sentAt])
+}
+
+// UYAP Sorgu Türü
+enum UyapQueryType {
+  NUFUS_ADRES      // AA - Nüfus + Aile + Adres
+  SGK              // AB - SGK işyeri
+  TICARET_ODASI    // AF - Ticaret Odası
+  VERGI_DAIRESI    // AJ - Vergi Dairesi
+  GSM              // AR - GSM Operatörleri
+  GUMRUK           // AL - Gümrük
+  ORTAKLAR         // AH - Şirket ortakları
+  AILE             // AN - Aile üyeleri
+  ORTAK_DETAY      // AP - Ortak detayları
+}
+
+// UYAP Sorgu Durumu
+enum UyapQueryStatus {
+  PENDING       // Sorgu gönderildi, yanıt bekleniyor
+  COMPLETED     // Yanıt alındı
+  FAILED        // Sorgu başarısız
+  NO_RESULT     // Sonuç bulunamadı
+}
+
+// UYAP Sorguları
+model UyapQuery {
+  id            String   @id @default(cuid())
+  tenantId      String
+  caseDebtorId  String
+  
+  queryType     UyapQueryType
+  queryCode     String   // AA, AB, AF, AJ, AR, AL, AH, AN, AP
+  
+  status        UyapQueryStatus @default(PENDING)
+  requestedAt   DateTime @default(now())
+  requestedBy   String   // userId
+  respondedAt   DateTime?
+  
+  // Tetikleme türü
+  triggeredBy   String   @default("MANUAL") // MANUAL, AUTO
+  
+  // Sorgu sonucu (JSON)
+  response      Json?
+  errorMessage  String?
+  
+  // Bulunan adresler
+  addressesFound Int     @default(0)
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  tenant        Tenant      @relation(fields: [tenantId], references: [id])
+  caseDebtor    CaseDebtor  @relation(fields: [caseDebtorId], references: [id], onDelete: Cascade)
+  requestedByUser User      @relation("UyapQueryRequester", fields: [requestedBy], references: [id])
+  
+  @@index([tenantId])
+  @@index([caseDebtorId])
+  @@index([queryType])
+  @@index([status])
+  @@index([requestedAt])
+}
+
+// Kurum Türü
+enum InstitutionType {
+  SGK             // Sosyal Güvenlik Kurumu
+  VERGI_DAIRESI   // Vergi Dairesi
+  TICARET_SICILI  // Ticaret Sicili Müdürlüğü
+  BELEDIYE        // Belediye
+  TAPU            // Tapu Müdürlüğü
+  NUFUS           // Nüfus Müdürlüğü
+}
+
+// Kurum Yazısı Durumu
+enum InstitutionLetterStatus {
+  DRAFT         // Taslak
+  SENT          // Gönderildi
+  RESPONDED     // Yanıt alındı
+  NO_RESPONSE   // Yanıt yok
+}
+
+// Kurum Yazıları
+model InstitutionLetter {
+  id            String   @id @default(cuid())
+  tenantId      String
+  caseDebtorId  String
+  
+  institution   InstitutionType
+  letterType    String   // Yazı türü (adres sorgu, haciz ihbarnamesi, vs.)
+  
+  // Yazı içeriği
+  subject       String
+  body          String   @db.Text
+  documentUrl   String?  // Oluşturulan Word dosyası
+  
+  status        InstitutionLetterStatus @default(DRAFT)
+  sentAt        DateTime?
+  sentMethod    String?  // Posta, KEP, Elden
+  respondedAt   DateTime?
+  responseNotes String?  @db.Text
+  
+  // Bulunan bilgiler
+  addressesFound Int     @default(0)
+  
+  createdById   String?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  tenant        Tenant      @relation(fields: [tenantId], references: [id])
+  caseDebtor    CaseDebtor  @relation(fields: [caseDebtorId], references: [id], onDelete: Cascade)
+  createdByUser User?       @relation("InstitutionLetterCreator", fields: [createdById], references: [id])
+  
+  @@index([tenantId])
+  @@index([caseDebtorId])
+  @@index([institution])
+  @@index([status])
+  @@index([sentAt])
+}
+
+// Araştırma Durumu
+enum AddressResearchStatus {
+  NOT_STARTED   // Başlamadı
+  IN_PROGRESS   // Devam ediyor
+  COMPLETED     // Tamamlandı
+  EXHAUSTED     // Tüm kaynaklar tükendi
+}
+
+// Adres Araştırma Durumu
+model AddressResearch {
+  id            String   @id @default(cuid())
+  tenantId      String
+  caseDebtorId  String   @unique
+  
+  status        AddressResearchStatus @default(NOT_STARTED)
+  
+  // Araştırma adımları
+  clientInfoRequested   Boolean @default(false)
+  uyapQueriesCompleted  Boolean @default(false)
+  crossFileChecked      Boolean @default(false)
+  institutionLettersSent Boolean @default(false)
+  
+  // İstatistikler
+  totalAddressesFound   Int     @default(0)
+  failedNotifications   Int     @default(0)
+  
+  // Tarihler
+  startedAt     DateTime?
+  completedAt   DateTime?
+  
+  // Son öneri
+  lastSuggestion String?
+  lastSuggestionAt DateTime?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  tenant        Tenant      @relation(fields: [tenantId], references: [id])
+  caseDebtor    CaseDebtor  @relation(fields: [caseDebtorId], references: [id], onDelete: Cascade)
+  
+  @@index([tenantId])
+  @@index([status])
+  @@index([startedAt])
+}
+
+
+// ==================== ASSET QUERY MODULE ====================
+
+// Malvarlığı Sorgu Kaydı
+model AssetQuery {
+  id            String   @id @default(cuid())
+  tenantId      String
+  caseDebtorId  String
+  
+  // Sorgu Türü
+  queryType     AssetQueryType
+  
+  // Durum
+  status        AssetQueryJobStatus @default(QUEUED)
+  
+  // Talep Bilgileri
+  requestedAt   DateTime @default(now())
+  requestedBy   String   // userId
+  reason        String?  // Sorgu sebebi
+  
+  // İşlem Bilgileri
+  startedAt     DateTime?
+  completedAt   DateTime?
+  
+  // Sonuç
+  result        AssetQueryStatus?  // YES, NO, UNKNOWN, ERROR
+  resultData    Json?              // Detaylı sonuç verisi
+  errorMessage  String?
+  
+  // Idempotency
+  idempotencyKey String?  @unique
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  tenant        Tenant      @relation(fields: [tenantId], references: [id])
+  caseDebtor    CaseDebtor  @relation(fields: [caseDebtorId], references: [id], onDelete: Cascade)
+  requestedByUser User      @relation("AssetQueryRequester", fields: [requestedBy], references: [id])
+  
+  @@index([tenantId])
+  @@index([caseDebtorId])
+  @@index([queryType])
+  @@index([status])
+  @@index([requestedAt])
+}
+
+// Sorgu Job Durumu
+enum AssetQueryJobStatus {
+  QUEUED        // Kuyruğa alındı
+  PROCESSING    // İşleniyor
+  COMPLETED     // Tamamlandı
+  FAILED        // Başarısız
+  CANCELLED     // İptal edildi
 }

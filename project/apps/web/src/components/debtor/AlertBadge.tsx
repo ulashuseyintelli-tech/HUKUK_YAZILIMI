@@ -32,15 +32,25 @@ export function AlertBadge({ alertCount, alertLevel, issues }: AlertBadgeProps) 
 
   return (
     <div className="relative">
-      <button
-        type="button"
-        className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${config.bg} ${config.text} ${config.hoverBg} transition-colors`}
+      <div
+        role="button"
+        tabIndex={0}
+        className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${config.bg} ${config.text} ${config.hoverBg} transition-colors cursor-pointer`}
         onMouseEnter={() => setShowTooltip(true)}
         onMouseLeave={() => setShowTooltip(false)}
-        onClick={() => setShowTooltip(!showTooltip)}
+        onClick={(e) => {
+          e.stopPropagation();
+          setShowTooltip(!showTooltip);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.stopPropagation();
+            setShowTooltip(!showTooltip);
+          }
+        }}
       >
         {alertCount}
-      </button>
+      </div>
       
       {showTooltip && issues && issues.length > 0 && (
         <div className="absolute right-0 top-full mt-1 z-50 w-56 p-2 bg-white rounded-lg shadow-lg border border-slate-200">

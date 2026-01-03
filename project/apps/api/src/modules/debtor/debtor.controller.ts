@@ -72,6 +72,7 @@ export class DebtorController {
       returnedAt?: string;
       returnReason?: string;
       note?: string;
+      directEntry?: boolean;
     }
   ) {
     return this.debtorService.updateServiceStatus(

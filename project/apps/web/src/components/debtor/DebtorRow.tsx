@@ -1,9 +1,9 @@
 "use client";
 
-import { DebtorListItemDTO, DebtorRoleLabels } from "@/lib/api";
+import { DebtorListItemDTO, DebtorRoleLabels, AddressResearchStatus } from "@/lib/api";
 import { ServiceStatusBadge } from "./ServiceStatusBadge";
 import { AlertBadge } from "./AlertBadge";
-import { Building2, User, ChevronRight, Car, Home, Landmark, Briefcase, Calendar } from "lucide-react";
+import { Building2, User, ChevronRight, FolderSync, Search, CheckCircle2, AlertTriangle } from "lucide-react";
 
 interface DebtorRowProps {
   debtor: DebtorListItemDTO;
@@ -13,113 +13,88 @@ interface DebtorRowProps {
 export function DebtorRow({ debtor, onClick }: DebtorRowProps) {
   const PersonIcon = debtor.personType === "LEGAL" ? Building2 : User;
 
-  // Asset flags - only show if we have data
-  const hasAssetData = debtor.assets && (
-    debtor.assets.vehicle !== "UNKNOWN" ||
-    debtor.assets.realEstate !== "UNKNOWN" ||
-    debtor.assets.bank !== "UNKNOWN" ||
-    debtor.assets.sgkWage !== "UNKNOWN"
-  );
+  // Research status indicator config
+  const getResearchIndicator = (status?: AddressResearchStatus) => {
+    switch (status) {
+      case 'IN_PROGRESS':
+        return { icon: Search, color: 'text-blue-500', title: 'Adres araştırması devam ediyor' };
+      case 'COMPLETED':
+        return { icon: CheckCircle2, color: 'text-green-500', title: 'Adres araştırması tamamlandı' };
+      case 'EXHAUSTED':
+        return { icon: AlertTriangle, color: 'text-orange-500', title: 'Adres kaynakları tükendi' };
+      default:
+        return null;
+    }
+  };
 
-  // Format delivery date
-  const formattedDeliveryDate = debtor.deliveredAt 
-    ? new Date(debtor.deliveredAt).toLocaleDateString("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric" })
-    : null;
+  const researchIndicator = getResearchIndicator(debtor.researchStatus);
 
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
-      className="w-full flex items-start gap-2.5 p-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 transition-colors text-left group"
+      onKeyDown={(e) => {
+        if (e.key === "Enter" || e.key === " ") {
+          e.preventDefault();
+          onClick?.();
+        }
+      }}
+      className="w-full flex items-center gap-2 p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 hover:border-slate-300 transition-colors cursor-pointer group"
     >
       {/* Person type icon */}
-      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center mt-0.5 ${
+      <div className={`flex-shrink-0 w-7 h-7 rounded-full flex items-center justify-center ${
         debtor.personType === "LEGAL" ? "bg-blue-100 text-blue-600" : "bg-slate-100 text-slate-600"
       }`}>
-        <PersonIcon className="w-4 h-4" />
+        <PersonIcon className="w-3.5 h-3.5" />
       </div>
 
-      {/* Main content */}
+      {/* Name + Role */}
       <div className="flex-1 min-w-0">
-        {/* Top row: Name + Role */}
-        <div className="flex items-center gap-2 flex-wrap">
-          <span className="font-medium text-[12px] text-slate-900 truncate">{debtor.displayName}</span>
-          <span className="flex-shrink-0 px-1.5 py-0.5 text-[9px] font-medium rounded bg-slate-100 text-slate-600">
+        <div className="flex items-center gap-1.5">
+          <span className="font-medium text-[13px] text-slate-900 truncate">{debtor.displayName}</span>
+          <span className="flex-shrink-0 px-1.5 py-0.5 text-[9px] font-medium rounded bg-slate-100 text-slate-500">
             {DebtorRoleLabels[debtor.role] || debtor.role}
           </span>
+          {/* Cross-file address indicator */}
+          {debtor.hasDifferentAddressInOtherCase && (
+            <span 
+              className="flex-shrink-0 flex items-center gap-0.5 px-1.5 py-0.5 text-[9px] font-medium rounded bg-purple-100 text-purple-700"
+              title="Bu borçlunun başka dosyalarda farklı adresi var"
+            >
+              <FolderSync className="w-3 h-3" />
+              Farklı Adres
+            </span>
+          )}
+          {/* Research status indicator */}
+          {researchIndicator && (
+            <span title={researchIndicator.title}>
+              <researchIndicator.icon className={`w-3.5 h-3.5 ${researchIndicator.color}`} />
+            </span>
+          )}
         </div>
-
-        {/* Middle row: Identity + Address */}
-        <div className="flex items-center gap-2 mt-0.5 text-[10px] text-slate-500">
-          {debtor.identityMasked && (
-            <span>{debtor.identityMasked}</span>
-          )}
-          {debtor.identityMasked && debtor.addressShort && (
-            <span className="text-slate-300">•</span>
-          )}
-          {debtor.addressShort && (
-            <span className="truncate">{debtor.addressShort}</span>
-          )}
-        </div>
-
-        {/* TEBLİĞ TARİHİ - Kritik bilgi, belirgin göster */}
-        {formattedDeliveryDate && (
-          <div className="flex items-center gap-1 mt-1 px-1.5 py-0.5 bg-green-100 rounded text-[10px] text-green-700 font-medium w-fit">
-            <Calendar className="w-3 h-3" />
-            Tebliğ: {formattedDeliveryDate}
-          </div>
-        )}
-
-        {/* Bottom row: Asset flags (if available and no delivery date shown) */}
-        {hasAssetData && !formattedDeliveryDate && (
-          <div className="flex items-center gap-2 mt-1 text-[9px]">
-            {debtor.assets.vehicle !== "UNKNOWN" && (
-              <span className={`flex items-center gap-0.5 ${debtor.assets.vehicle === "YES" ? "text-emerald-600" : "text-slate-400"}`}>
-                <Car className="w-3 h-3" />
-                {debtor.assets.vehicle === "YES" ? "Var" : "Yok"}
-              </span>
-            )}
-            {debtor.assets.realEstate !== "UNKNOWN" && (
-              <span className={`flex items-center gap-0.5 ${debtor.assets.realEstate === "YES" ? "text-emerald-600" : "text-slate-400"}`}>
-                <Home className="w-3 h-3" />
-                {debtor.assets.realEstate === "YES" ? "Var" : "Yok"}
-              </span>
-            )}
-            {debtor.assets.bank !== "UNKNOWN" && (
-              <span className={`flex items-center gap-0.5 ${debtor.assets.bank === "YES" ? "text-emerald-600" : "text-slate-400"}`}>
-                <Landmark className="w-3 h-3" />
-                {debtor.assets.bank === "YES" ? "Var" : "Yok"}
-              </span>
-            )}
-            {debtor.assets.sgkWage !== "UNKNOWN" && (
-              <span className={`flex items-center gap-0.5 ${debtor.assets.sgkWage === "YES" ? "text-emerald-600" : "text-slate-400"}`}>
-                <Briefcase className="w-3 h-3" />
-                {debtor.assets.sgkWage === "YES" ? "Var" : "Yok"}
-              </span>
-            )}
-          </div>
+        {debtor.addressShort && (
+          <div className="text-[10px] text-slate-400 truncate">{debtor.addressShort}</div>
         )}
       </div>
 
-      {/* Right side: Service status + Alert */}
-      <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
-        {/* Service status badge with label (includes date if delivered) */}
-        <ServiceStatusBadge 
-          status={debtor.serviceStatus} 
-          serviceLabel={debtor.serviceLabel}
-          size="sm" 
-        />
+      {/* Service status badge - renk ile süreç yönetimi */}
+      <ServiceStatusBadge 
+        status={debtor.serviceStatus} 
+        serviceLabel={debtor.serviceLabel}
+        finalizationDate={debtor.finalizationDate}
+        size="sm" 
+      />
 
-        {/* Alert badge - shows issue count with tooltip */}
-        <AlertBadge 
-          alertCount={debtor.alertCount} 
-          alertLevel={debtor.alertLevel}
-          issues={debtor.issues}
-        />
-      </div>
+      {/* Alert badge */}
+      <AlertBadge 
+        alertCount={debtor.alertCount} 
+        alertLevel={debtor.alertLevel}
+        issues={debtor.issues}
+      />
 
       {/* Chevron */}
-      <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-slate-600 transition-colors flex-shrink-0 mt-2" />
-    </button>
+      <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-slate-500 transition-colors flex-shrink-0" />
+    </div>
   );
 }

@@ -1,11 +1,12 @@
 "use client";
 
-import { Clock, ArrowRight, Send, CheckCircle, AlertTriangle, RotateCcw } from "lucide-react";
+import { Clock, ArrowRight, Send, CheckCircle, AlertTriangle, RotateCcw, MapPin } from "lucide-react";
 import {
   ServiceStatus,
   ServiceStatusLabels,
   ServiceReturnReasonLabels,
   ServiceHistoryItem,
+  AddressTypeLabels,
 } from "@/lib/api";
 
 interface ServiceHistoryTimelineProps {
@@ -80,6 +81,18 @@ export function ServiceHistoryTimeline({ history, isLoading }: ServiceHistoryTim
 
             {/* Details */}
             <div className="mt-2 text-xs text-gray-500 space-y-1">
+              {/* Address info (TK compliance) */}
+              {item.addressText && (
+                <div className="flex items-start gap-1.5 p-2 bg-blue-50 rounded border border-blue-100">
+                  <MapPin className="w-3 h-3 text-blue-500 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <div className="font-medium text-blue-700">
+                      {item.addressType ? AddressTypeLabels[item.addressType] : "Adres"}
+                    </div>
+                    <div className="text-blue-600">{item.addressText}</div>
+                  </div>
+                </div>
+              )}
               {item.trackingNo && (
                 <div>Takip No: <span className="font-mono">{item.trackingNo}</span></div>
               )}

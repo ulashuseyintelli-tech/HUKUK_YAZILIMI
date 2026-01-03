@@ -257,6 +257,109 @@ class ApiClient {
     );
   }
 
+  // ==================== ADDRESS API (Tebligat Kanunu) ====================
+
+  async getDebtorAddresses(debtorId: string) {
+    return this.request<AddressDTO[]>(`/debtors/${debtorId}/addresses`);
+  }
+
+  async createAddress(debtorId: string, data: CreateAddressDTO) {
+    return this.request<AddressDTO>(`/debtors/${debtorId}/addresses`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateAddress(addressId: string, data: UpdateAddressDTO) {
+    return this.request<AddressDTO>(`/addresses/${addressId}`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteAddress(addressId: string) {
+    return this.request<{ success: boolean }>(`/addresses/${addressId}`, {
+      method: "DELETE",
+    });
+  }
+
+  async setActiveAddress(caseDebtorId: string, addressId: string) {
+    return this.request<{ success: boolean }>(
+      `/case-debtors/${caseDebtorId}/active-address`,
+      {
+        method: "POST",
+        body: JSON.stringify({ addressId }),
+      }
+    );
+  }
+
+  async getAddressHistory(addressId: string) {
+    return this.request<ServiceHistoryItem[]>(`/addresses/${addressId}/history`);
+  }
+
+  async addAddressRiskFlag(addressId: string, flag: AddressRiskFlag, reason?: string) {
+    return this.request<AddressDTO>(`/addresses/${addressId}/risk-flags`, {
+      method: "POST",
+      body: JSON.stringify({ flag, reason }),
+    });
+  }
+
+  async removeAddressRiskFlag(addressId: string, flag: AddressRiskFlag) {
+    return this.request<AddressDTO>(`/addresses/${addressId}/risk-flags/${flag}`, {
+      method: "DELETE",
+    });
+  }
+
+  async recordTK21_2(addressId: string, data: TK21_2RecordDTO) {
+    return this.request<AddressDTO>(`/addresses/${addressId}/tk21-2`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  }
+
+  // Address Verification
+  async verifyAddressViaMernis(addressId: string, tckn: string) {
+    return this.request<VerificationResultDTO>(`/addresses/${addressId}/verify/mernis`, {
+      method: "POST",
+      body: JSON.stringify({ tckn }),
+    });
+  }
+
+  async verifyAddressViaMersis(addressId: string, vkn: string) {
+    return this.request<VerificationResultDTO>(`/addresses/${addressId}/verify/mersis`, {
+      method: "POST",
+      body: JSON.stringify({ vkn }),
+    });
+  }
+
+  async verifyAllAddresses(debtorId: string) {
+    return this.request<BulkVerificationResultDTO>(`/debtors/${debtorId}/addresses/verify-all`, {
+      method: "POST",
+    });
+  }
+
+  // Phase 2: Next Address Suggestion
+  async suggestNextAddress(addressId: string, debtorId: string, returnReason: ServiceReturnReason) {
+    return this.request<NextAddressSuggestionDTO>(`/addresses/${addressId}/suggest-next`, {
+      method: "POST",
+      body: JSON.stringify({ debtorId, returnReason }),
+    });
+  }
+
+  // Phase 3: Address Success Stats
+  async getAddressStats(addressId: string) {
+    return this.request<AddressStatsDTO>(`/addresses/${addressId}/stats`);
+  }
+
+  async getAddressesSortedBySuccess(debtorId: string) {
+    return this.request<AddressWithStatsDTO[]>(`/debtors/${debtorId}/addresses/sorted`);
+  }
+
+  // Phase 4: Notification Chain
+  async getNotificationChain(debtorId: string) {
+    return this.request<NotificationChainDTO>(`/debtors/${debtorId}/notification-chain`);
+  }
+
   // Tasks
   async getTasks(params?: { status?: string; page?: number; limit?: number }) {
     const query = new URLSearchParams();
@@ -1903,6 +2006,236 @@ class ApiClient {
       method: 'POST',
     });
   }
+
+  // ==================== ADDRESS DISCOVERY API ====================
+
+  // Client Info Request
+  async createClientInfoRequest(data: CreateClientInfoRequestDTO) {
+    return this.request<ClientInfoRequestDTO>('/address-discovery/client-info-request', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getClientInfoRequestsForCase(caseId: string) {
+    return this.request<ClientInfoRequestDTO[]>(`/address-discovery/client-info-request/case/${caseId}`);
+  }
+
+  async getClientInfoRequest(id: string) {
+    return this.request<ClientInfoRequestDTO>(`/address-discovery/client-info-request/${id}`);
+  }
+
+  async markClientInfoRequestAsResponded(id: string, notes?: string) {
+    return this.request<ClientInfoRequestDTO>(`/address-discovery/client-info-request/${id}/respond`, {
+      method: 'PUT',
+      body: JSON.stringify({ notes }),
+    });
+  }
+
+  async sendClientInfoRequestReminder(id: string) {
+    return this.request<ClientInfoRequestDTO>(`/address-discovery/client-info-request/${id}/reminder`, {
+      method: 'POST',
+    });
+  }
+
+  async markClientInfoRequestAsNoResponse(id: string) {
+    return this.request<ClientInfoRequestDTO>(`/address-discovery/client-info-request/${id}/no-response`, {
+      method: 'PUT',
+    });
+  }
+
+  // UYAP Queries
+  async createUyapQuery(data: CreateUyapQueryDTO) {
+    return this.request<UyapQueryDTO>('/address-discovery/uyap-query', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getUyapQueriesForDebtor(caseDebtorId: string) {
+    return this.request<UyapQueryDTO[]>(`/address-discovery/uyap-query/debtor/${caseDebtorId}`);
+  }
+
+  async getUyapQuery(id: string) {
+    return this.request<UyapQueryDTO>(`/address-discovery/uyap-query/${id}`);
+  }
+
+  async recordUyapQueryResponse(id: string, data: UpdateUyapQueryResponseDTO) {
+    return this.request<UyapQueryDTO>(`/address-discovery/uyap-query/${id}/response`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async processUyapQueryAddresses(id: string, addresses: AddressFromQueryDTO[]) {
+    return this.request<any[]>(`/address-discovery/uyap-query/${id}/process-addresses`, {
+      method: 'POST',
+      body: JSON.stringify({ addresses }),
+    });
+  }
+
+  async getSuggestedUyapQueries(caseDebtorId: string) {
+    return this.request<UyapQuerySuggestion[]>(`/address-discovery/uyap-query/debtor/${caseDebtorId}/suggestions`);
+  }
+
+  async getUyapQueryTypes() {
+    return this.request<UyapQueryTypeInfo[]>('/address-discovery/uyap-query-types');
+  }
+
+  // Institution Letters
+  async createInstitutionLetter(data: CreateInstitutionLetterDTO) {
+    return this.request<InstitutionLetterDTO>('/address-discovery/institution-letter', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getInstitutionLettersForDebtor(caseDebtorId: string) {
+    return this.request<InstitutionLetterDTO[]>(`/address-discovery/institution-letter/debtor/${caseDebtorId}`);
+  }
+
+  async getInstitutionLetter(id: string) {
+    return this.request<InstitutionLetterDTO>(`/address-discovery/institution-letter/${id}`);
+  }
+
+  async markInstitutionLetterAsSent(id: string, data: MarkLetterAsSentDTO) {
+    return this.request<InstitutionLetterDTO>(`/address-discovery/institution-letter/${id}/sent`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async markInstitutionLetterAsResponded(id: string, data: MarkLetterAsRespondedDTO) {
+    return this.request<InstitutionLetterDTO>(`/address-discovery/institution-letter/${id}/responded`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async markInstitutionLetterAsNoResponse(id: string) {
+    return this.request<InstitutionLetterDTO>(`/address-discovery/institution-letter/${id}/no-response`, {
+      method: 'PUT',
+    });
+  }
+
+  async deleteInstitutionLetter(id: string) {
+    return this.request<{ success: boolean }>(`/address-discovery/institution-letter/${id}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async getInstitutionTemplates() {
+    return this.request<InstitutionTemplateInfo[]>('/address-discovery/institution-templates');
+  }
+
+  // Cross-File
+  async findSameDebtor(debtorId: string) {
+    return this.request<CrossFileMatch[]>(`/address-discovery/cross-file/${debtorId}`);
+  }
+
+  async getCrossFileAddresses(debtorId: string, currentCaseId: string) {
+    return this.request<CrossFileAddressDTO[]>(
+      `/address-discovery/cross-file/${debtorId}/addresses?currentCaseId=${currentCaseId}`
+    );
+  }
+
+  async copyAddressToCase(sourceAddressId: string, targetDebtorId: string) {
+    return this.request<AddressDTO>('/address-discovery/cross-file/copy-address', {
+      method: 'POST',
+      body: JSON.stringify({ sourceAddressId, targetDebtorId }),
+    });
+  }
+
+  async getCrossFileAddressCount(debtorId: string, currentCaseId: string) {
+    return this.request<{ count: number }>(
+      `/address-discovery/cross-file/${debtorId}/count?currentCaseId=${currentCaseId}`
+    );
+  }
+
+  // Confidence Score
+  async getConfidenceScore(addressId: string) {
+    return this.request<{ score: number }>(`/address-discovery/confidence/${addressId}`);
+  }
+
+  async getConfidenceScoreBreakdown(addressId: string) {
+    return this.request<ConfidenceScoreBreakdown>(`/address-discovery/confidence/${addressId}/breakdown`);
+  }
+
+  async updateAllConfidenceScores(debtorId: string) {
+    return this.request<{ success: boolean }>(`/address-discovery/confidence/debtor/${debtorId}/update-all`, {
+      method: 'POST',
+    });
+  }
+
+  // Research Status
+  async getResearchStatus(caseDebtorId: string) {
+    return this.request<AddressResearchDTO>(`/address-discovery/research/${caseDebtorId}`);
+  }
+
+  async startResearch(caseDebtorId: string) {
+    return this.request<AddressResearchDTO>(`/address-discovery/research/${caseDebtorId}/start`, {
+      method: 'POST',
+    });
+  }
+
+  async getResearchSuggestions(caseDebtorId: string) {
+    return this.request<ResearchSuggestion[]>(`/address-discovery/research/${caseDebtorId}/suggestions`);
+  }
+
+  async getResearchTimeline(caseDebtorId: string) {
+    return this.request<ResearchTimelineItem[]>(`/address-discovery/research/${caseDebtorId}/timeline`);
+  }
+
+  async completeResearch(caseDebtorId: string) {
+    return this.request<AddressResearchDTO>(`/address-discovery/research/${caseDebtorId}/complete`, {
+      method: 'PUT',
+    });
+  }
+
+  async markResearchAsExhausted(caseDebtorId: string) {
+    return this.request<AddressResearchDTO>(`/address-discovery/research/${caseDebtorId}/exhausted`, {
+      method: 'PUT',
+    });
+  }
+
+  // ============================================
+  // Asset Query API (FAZ 4)
+  // ============================================
+
+  async runAssetQueries(caseDebtorId: string, data: RunAssetQueriesDTO) {
+    return this.request<{ jobId: string; queries: AssetQueryDTO[] }>(
+      `/asset-queries/debtor/${caseDebtorId}/run`,
+      {
+        method: 'POST',
+        body: JSON.stringify(data),
+      }
+    );
+  }
+
+  async getAssetQueriesForDebtor(caseDebtorId: string) {
+    return this.request<AssetQueryDTO[]>(`/asset-queries/debtor/${caseDebtorId}`);
+  }
+
+  async getAssetSummary(caseDebtorId: string) {
+    return this.request<AssetSummaryDTO>(`/asset-queries/debtor/${caseDebtorId}/summary`);
+  }
+
+  async getAssetQuery(queryId: string) {
+    return this.request<AssetQueryDTO>(`/asset-queries/${queryId}`);
+  }
+
+  async updateAssetQueryResult(queryId: string, data: UpdateAssetQueryResultDTO) {
+    return this.request<AssetQueryDTO>(`/asset-queries/${queryId}/result`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async cancelAssetQuery(queryId: string) {
+    return this.request<{ success: boolean }>(`/asset-queries/${queryId}`, {
+      method: 'DELETE',
+    });
+  }
 }
 
 // ============================================
@@ -2665,6 +2998,215 @@ export const api = new ApiClient();
 
 export type ExpenseRequestStatus = 'PENDING' | 'SENT' | 'REMINDED' | 'RECEIVED' | 'OVERDUE' | 'CANCELLED';
 
+// ============================================
+// Address Discovery Types
+// ============================================
+
+export type ClientInfoRequestStatus = 'SENT' | 'RESPONDED' | 'NO_RESPONSE';
+export type UyapQueryStatus = 'PENDING' | 'COMPLETED' | 'FAILED' | 'NO_RESULT';
+export type UyapQueryType = 'NUFUS_ADRES' | 'SGK' | 'TICARET_ODASI' | 'VERGI_DAIRESI' | 'GSM' | 'GUMRUK' | 'ORTAKLAR' | 'AILE' | 'ORTAK_DETAY';
+export type InstitutionType = 'SGK' | 'VERGI_DAIRESI' | 'TICARET_SICILI' | 'BELEDIYE' | 'TAPU' | 'NUFUS';
+export type InstitutionLetterStatus = 'DRAFT' | 'SENT' | 'RESPONDED' | 'NO_RESPONSE';
+export type AddressResearchStatus = 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' | 'EXHAUSTED';
+
+export interface CreateClientInfoRequestDTO {
+  caseId: string;
+  clientId: string;
+  debtorId?: string;
+  emailTo?: string;
+  emailSubject?: string;
+  emailBody?: string;
+}
+
+export interface ClientInfoRequestDTO {
+  id: string;
+  caseId: string;
+  clientId: string;
+  debtorId?: string;
+  emailTo: string;
+  emailSubject: string;
+  emailBody: string;
+  status: ClientInfoRequestStatus;
+  sentAt: string;
+  respondedAt?: string;
+  responseNotes?: string;
+  reminderCount: number;
+  reminderSentAt?: string;
+  client?: { id: string; displayName: string };
+  debtor?: { id: string; name: string };
+}
+
+export interface CreateUyapQueryDTO {
+  caseDebtorId: string;
+  queryType: UyapQueryType;
+  notes?: string;
+}
+
+export interface UyapQueryDTO {
+  id: string;
+  caseDebtorId: string;
+  queryType: UyapQueryType;
+  queryCode: string;
+  status: UyapQueryStatus;
+  requestedAt: string;
+  respondedAt?: string;
+  response?: any;
+  errorMessage?: string;
+  addressesFound: number;
+  requestedByUser?: { name: string; surname: string };
+  caseDebtor?: {
+    debtor: { id: string; name: string };
+    case: { id: string; fileNumber: string };
+  };
+}
+
+export interface UpdateUyapQueryResponseDTO {
+  status: 'COMPLETED' | 'FAILED' | 'NO_RESULT';
+  response?: any;
+  errorMessage?: string;
+  addresses?: AddressFromQueryDTO[];
+}
+
+export interface AddressFromQueryDTO {
+  fullAddress: string;
+  city?: string;
+  district?: string;
+  neighborhood?: string;
+  street?: string;
+  buildingNo?: string;
+  apartmentNo?: string;
+  postalCode?: string;
+  addressType?: string;
+}
+
+export interface UyapQuerySuggestion {
+  queryType: UyapQueryType;
+  queryCode: string;
+  name: string;
+  priority: number;
+}
+
+export interface UyapQueryTypeInfo {
+  type: UyapQueryType;
+  code: string;
+  name: string;
+  forIndividual: boolean;
+  forCompany: boolean;
+}
+
+export interface CreateInstitutionLetterDTO {
+  caseDebtorId: string;
+  institution: InstitutionType;
+  letterType: string;
+  subject?: string;
+  body?: string;
+  recipientName?: string;
+  recipientAddress?: string;
+}
+
+export interface InstitutionLetterDTO {
+  id: string;
+  caseDebtorId: string;
+  institution: InstitutionType;
+  letterType: string;
+  subject: string;
+  body: string;
+  documentUrl?: string;
+  status: InstitutionLetterStatus;
+  sentAt?: string;
+  sentMethod?: string;
+  respondedAt?: string;
+  responseNotes?: string;
+  addressesFound: number;
+  createdAt: string;
+  caseDebtor?: {
+    debtor: { id: string; name: string };
+    case: { id: string; fileNumber: string };
+  };
+}
+
+export interface MarkLetterAsSentDTO {
+  sentMethod: string;
+  trackingNumber?: string;
+  notes?: string;
+}
+
+export interface MarkLetterAsRespondedDTO {
+  responseNotes?: string;
+  addressesFound?: number;
+  addresses?: AddressFromQueryDTO[];
+}
+
+export interface InstitutionTemplateInfo {
+  institution: InstitutionType;
+  name: string;
+  letterTypes: string[];
+  defaultSubject: string;
+}
+
+export interface CrossFileMatch {
+  caseId: string;
+  fileNumber: string;
+  debtorId: string;
+  debtorName: string;
+  addressCount: number;
+}
+
+export interface CrossFileAddressDTO {
+  id: string;
+  fullText: string;
+  city: string;
+  district?: string;
+  type: string;
+  source: string;
+  verified: boolean;
+  fromCase: {
+    id: string;
+    fileNumber: string;
+  };
+}
+
+export interface ConfidenceScoreBreakdown {
+  totalScore: number;
+  factors: {
+    sourceReliability: { score: number; weight: number; source: string };
+    verification: { score: number; weight: number; verified: boolean };
+    recency: { score: number; weight: number; daysSinceUpdate: number };
+    notificationSuccess: { score: number; weight: number; successRate: number };
+  };
+}
+
+export interface AddressResearchDTO {
+  id: string;
+  caseDebtorId: string;
+  status: AddressResearchStatus;
+  clientInfoRequested: boolean;
+  uyapQueriesCompleted: boolean;
+  crossFileChecked: boolean;
+  institutionLettersSent: boolean;
+  totalAddressesFound: number;
+  failedNotifications: number;
+  startedAt?: string;
+  completedAt?: string;
+}
+
+export interface ResearchSuggestion {
+  action: string;
+  priority: number;
+  reason: string;
+  actionLabel?: string;
+}
+
+export interface ResearchTimelineItem {
+  id: string;
+  type: 'CLIENT_INFO' | 'UYAP_QUERY' | 'INSTITUTION_LETTER' | 'CROSS_FILE' | 'ADDRESS_ADDED';
+  title: string;
+  description: string;
+  status: string;
+  date: string;
+  metadata?: any;
+}
+
 export interface ExpenseItem {
   type: string;
   description: string;
@@ -2731,7 +3273,8 @@ export type ServiceStatus =
   | "MUHTAR" 
   | "ANNOUNCEMENT" 
   | "FAILED" 
-  | "UNKNOWN";
+  | "UNKNOWN"
+  | "FINALIZED"; // Kesinleşti - tebliğ + yasal süre dolmuş
 
 export type ServiceReturnReason = 
   | "ADDRESS_NOT_FOUND" 
@@ -2743,6 +3286,82 @@ export type ServiceReturnReason =
   | "OTHER";
 
 export type AssetQueryStatus = "UNKNOWN" | "YES" | "NO" | "PENDING" | "ERROR";
+
+// Asset Query Types (FAZ 4)
+export type AssetQueryType = 
+  | "VEHICLE" 
+  | "REAL_ESTATE" 
+  | "BANK" 
+  | "SGK_WAGE" 
+  | "SGK_EMPLOYER" 
+  | "TAX" 
+  | "TRADE_REGISTRY" 
+  | "GSM";
+
+export type AssetQueryJobStatus = "QUEUED" | "PROCESSING" | "COMPLETED" | "FAILED" | "CANCELLED";
+
+export interface RunAssetQueriesDTO {
+  types: AssetQueryType[];
+  reason?: string;
+  idempotencyKey?: string;
+}
+
+export interface UpdateAssetQueryResultDTO {
+  result: AssetQueryStatus;
+  resultData?: Record<string, any>;
+  errorMessage?: string;
+}
+
+export interface AssetQueryDTO {
+  id: string;
+  queryType: AssetQueryType;
+  status: AssetQueryJobStatus;
+  result: AssetQueryStatus | null;
+  resultData: Record<string, any> | null;
+  errorMessage: string | null;
+  reason: string | null;
+  requestedAt: string;
+  requestedBy: string;
+  requestedByName: string;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface AssetSummaryDTO {
+  vehicle: AssetQueryStatus;
+  realEstate: AssetQueryStatus;
+  bank: AssetQueryStatus;
+  sgkWage: AssetQueryStatus;
+  lastQueryAt: string | null;
+  pendingQueries: number;
+}
+
+export const AssetQueryTypeLabels: Record<AssetQueryType, string> = {
+  VEHICLE: 'Araç Sorgusu',
+  REAL_ESTATE: 'Tapu Sorgusu',
+  BANK: 'Banka Hesabı',
+  SGK_WAGE: 'SGK Maaş',
+  SGK_EMPLOYER: 'SGK İşveren',
+  TAX: 'Vergi Dairesi',
+  TRADE_REGISTRY: 'Ticaret Sicil',
+  GSM: 'GSM Operatör',
+};
+
+export const AssetQueryJobStatusLabels: Record<AssetQueryJobStatus, string> = {
+  QUEUED: 'Kuyruğa Alındı',
+  PROCESSING: 'İşleniyor',
+  COMPLETED: 'Tamamlandı',
+  FAILED: 'Başarısız',
+  CANCELLED: 'İptal Edildi',
+};
+
+export const AssetQueryStatusLabels: Record<AssetQueryStatus, string> = {
+  UNKNOWN: 'Bilinmiyor',
+  YES: 'Var',
+  NO: 'Yok',
+  PENDING: 'Sorgulanıyor',
+  ERROR: 'Hata',
+};
 
 export type DebtorRole = 
   | "ASIL_BORCLU" 
@@ -2799,10 +3418,16 @@ export interface DebtorListItemDTO {
   serviceLabel: string;
   /** Tebliğ tarihi - hukuki süreler için kritik */
   deliveredAt?: string;
+  /** Kesinleşme tarihi - tebliğ + yasal süre (genellikle 7-14 gün) */
+  finalizationDate?: string;
   assets: AssetsDTO;
   alertCount: number;
   alertLevel: AlertLevel;
   issues: DebtorIssue[];
+  /** Cross-file: Bu borçlunun başka dosyalarda farklı adresi var mı? */
+  hasDifferentAddressInOtherCase?: boolean;
+  /** Address research status */
+  researchStatus?: AddressResearchStatus;
 }
 
 export interface ServiceDTO {
@@ -2823,8 +3448,221 @@ export interface AssetsDTO {
   lastQueryAt?: string;
 }
 
+// ==================== ADDRESS TYPES (Tebligat Kanunu) ====================
+
+export type AddressType = 
+  | "MERNIS"          // MERNİS Yerleşim Yeri (TK m.10/m.21)
+  | "BUSINESS_HQ"     // İşyeri Merkez (TK m.12/m.13)
+  | "BUSINESS_BRANCH" // İşyeri Şube
+  | "LEGAL_CENTER"    // Tüzel Kişi Merkez (Ticaret Sicili)
+  | "DECLARED"        // Bildirilen/Sözleşme Adresi (TK m.10/2)
+  | "KEP";            // Kayıtlı Elektronik Posta Adresi
+
+export type AddressSubType = "HQ" | "BRANCH";
+
+export type AddressSource = 
+  | "MERNIS"          // MERNİS sorgusu
+  | "MERSIS"          // MERSİS sorgusu
+  | "TICARET_SICILI"  // Ticaret Sicil Gazetesi
+  | "CONTRACT"        // Sözleşme
+  | "USER_INPUT"      // Manuel giriş
+  | "UYAP";           // UYAP sorgusu
+
+export type AddressRiskFlag = 
+  | "ADDRESS_SUSPECT" // Adres şüpheli
+  | "MOVED"           // Taşınmış
+  | "CLOSED"          // Kapalı
+  | "NOT_FOUND"       // Bulunamadı
+  | "REFUSED";        // Tebellüğden imtina
+
+export type LegalPriority = "HIGH" | "MEDIUM" | "LOW";
+
+export type VerificationStatus = "NOT_VERIFIED" | "PENDING" | "VERIFIED" | "FAILED" | "OUTDATED";
+
+export interface AddressDTO {
+  id: string;
+  type: AddressType;
+  subType?: AddressSubType;
+  source: AddressSource;
+  street: string;
+  city: string;
+  district?: string;
+  postalCode?: string;
+  fullText: string;
+  legalPriority: LegalPriority;
+  canApply21_2: boolean;
+  verified: boolean;
+  verifiedAt?: string;
+  riskFlags: AddressRiskFlag[];
+  isPrimary: boolean;
+  tk21_2Applied: boolean;
+  lastNotificationResult?: {
+    date: string;
+    status: string;
+  };
+  // Verification status
+  verificationStatus?: VerificationStatus;
+  verificationMessage?: string;
+  daysSinceVerification?: number;
+  // Confidence score (0-100)
+  confidenceScore?: number;
+}
+
+export interface VerificationResultDTO {
+  success: boolean;
+  verified: boolean;
+  source: AddressSource;
+  message: string;
+  newAddress?: {
+    street: string;
+    city: string;
+    district?: string;
+    postalCode?: string;
+  };
+  verifiedAt: string;
+}
+
+export interface BulkVerificationResultDTO {
+  total: number;
+  verified: number;
+  failed: number;
+  results: Array<{
+    addressId: string;
+    type: AddressType;
+    result: VerificationResultDTO;
+  }>;
+}
+
+// Phase 2: Next Address Suggestion
+export interface NextAddressSuggestionDTO {
+  nextAddress: AddressDTO | null;
+  suggestion: string;
+  canApplyTK21_2: boolean;
+  shouldAnnounce: boolean;
+}
+
+// Phase 3: Address Success Stats
+export interface AddressStatsDTO {
+  totalAttempts: number;
+  successCount: number;
+  failureCount: number;
+  successRate: number;
+  lastAttemptDate?: string;
+  lastResult?: string;
+}
+
+export interface AddressWithStatsDTO extends AddressDTO {
+  stats: {
+    totalAttempts: number;
+    successRate: number;
+    lastResult?: string;
+  };
+}
+
+// Phase 4: Notification Chain
+export interface NotificationChainDTO {
+  addresses: Array<{
+    address: AddressDTO;
+    attemptCount: number;
+    lastAttempt?: {
+      date: string;
+      status: string;
+      returnReason?: string;
+    };
+    isExhausted: boolean;
+    nextInChain: boolean;
+  }>;
+  currentAddressId?: string;
+  totalAttempts: number;
+  exhaustedCount: number;
+  remainingCount: number;
+  chainStatus: 'ACTIVE' | 'EXHAUSTED' | 'DELIVERED';
+  recommendation: string;
+}
+
+export interface CreateAddressDTO {
+  type: AddressType;
+  subType?: AddressSubType;
+  source: AddressSource;
+  street: string;
+  city: string;
+  district?: string;
+  postalCode?: string;
+  country?: string;
+  notes?: string;
+}
+
+export interface UpdateAddressDTO {
+  type?: AddressType;
+  subType?: AddressSubType;
+  source?: AddressSource;
+  street?: string;
+  city?: string;
+  district?: string;
+  postalCode?: string;
+  country?: string;
+  notes?: string;
+  verified?: boolean;
+  riskFlags?: AddressRiskFlag[];
+}
+
+export interface TK21_2RecordDTO {
+  muhtarDeliveryDate: string;
+  doorPostingDate: string;
+  noticeDate: string;
+  notes?: string;
+}
+
+export const AddressTypeLabels: Record<AddressType, string> = {
+  MERNIS: "MERNİS Yerleşim Yeri",
+  BUSINESS_HQ: "İşyeri Merkez",
+  BUSINESS_BRANCH: "İşyeri Şube",
+  LEGAL_CENTER: "Şirket Merkez (Ticaret Sicili)",
+  DECLARED: "Bildirilen Adres",
+  KEP: "KEP Adresi",
+};
+
+export const AddressTypeIcons: Record<AddressType, string> = {
+  MERNIS: "🏠",
+  BUSINESS_HQ: "🏢",
+  BUSINESS_BRANCH: "🏬",
+  LEGAL_CENTER: "🏛️",
+  DECLARED: "✍️",
+  KEP: "📧",
+};
+
+export const AddressSourceLabels: Record<AddressSource, string> = {
+  MERNIS: "MERNİS Sorgusu",
+  MERSIS: "MERSİS Sorgusu",
+  TICARET_SICILI: "Ticaret Sicil Gazetesi",
+  CONTRACT: "Sözleşme",
+  USER_INPUT: "Manuel Giriş",
+  UYAP: "UYAP Sorgusu",
+};
+
+export const AddressRiskFlagLabels: Record<AddressRiskFlag, string> = {
+  ADDRESS_SUSPECT: "Adres Şüpheli",
+  MOVED: "Taşınmış",
+  CLOSED: "Kapalı",
+  NOT_FOUND: "Bulunamadı",
+  REFUSED: "Tebellüğden İmtina",
+};
+
+export const LegalPriorityLabels: Record<LegalPriority, string> = {
+  HIGH: "Yüksek Öncelik",
+  MEDIUM: "Orta Öncelik",
+  LOW: "Düşük Öncelik",
+};
+
 export interface DebtorDetailDTO extends DebtorListItemDTO {
   emailMasked?: string;
+  // Full contact info (unmasked) for detail view
+  phone?: string;
+  email?: string;
+  identityNo?: string;
+  address?: string;
+  addresses?: AddressDTO[];  // Tebligat Kanunu'na uygun adres listesi
+  selectedAddressId?: string; // Aktif tebligat adresi
   service: ServiceDTO;
   assets: AssetsDTO;
   riskFlags: string[];
@@ -2849,6 +3687,7 @@ export const ServiceStatusLabels: Record<ServiceStatus, string> = {
   ANNOUNCEMENT: "İlan Yoluyla",
   FAILED: "Başarısız",
   UNKNOWN: "Bilinmiyor",
+  FINALIZED: "Kesinleşti",
 };
 
 export const ServiceReturnReasonLabels: Record<ServiceReturnReason, string> = {
@@ -2891,6 +3730,13 @@ export interface UpdateServiceStatusDTO {
   returnReason?: ServiceReturnReason;
   note?: string;
   directEntry?: boolean; // Skip state machine validation for manual date entry
+  // Address tracking
+  addressId?: string;
+  // TK 21/2 fields
+  applyTK21_2?: boolean;
+  tk21_2MuhtarDate?: string;
+  tk21_2DoorPostDate?: string;
+  tk21_2NoticeDate?: string;
 }
 
 export interface ServiceHistoryItem {
@@ -2904,6 +3750,10 @@ export interface ServiceHistoryItem {
   note?: string;
   createdAt: string;
   createdBy?: string;
+  // Address info (TK compliance)
+  addressId?: string;
+  addressType?: AddressType;
+  addressText?: string;
 }
 
 // Valid status transitions for UI validation
@@ -2911,12 +3761,13 @@ export const ServiceStatusTransitions: Record<ServiceStatus, ServiceStatus[]> = 
   NOT_STARTED: ["READY", "FAILED"],
   READY: ["SENT", "FAILED"],
   SENT: ["DELIVERED", "RETURNED", "MUHTAR", "FAILED"],
-  DELIVERED: [],
+  DELIVERED: [], // Terminal - kesinleşme otomatik hesaplanır
   RETURNED: ["READY", "FAILED"],
   MUHTAR: ["DELIVERED", "FAILED"],
   ANNOUNCEMENT: ["DELIVERED", "FAILED"],
   FAILED: ["READY"],
   UNKNOWN: ["NOT_STARTED", "READY", "SENT", "DELIVERED", "RETURNED", "MUHTAR", "ANNOUNCEMENT", "FAILED"],
+  FINALIZED: [], // Terminal - kesinleşmiş dosya
 };
 
 // TypeScript icin ApiClient'a method tanimlari ekleme

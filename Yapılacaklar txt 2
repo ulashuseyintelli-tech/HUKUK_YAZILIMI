@@ -1,0 +1,155 @@
+Notu net okudum. Mesele **“icra takip dosyalarında borçlunun güncel adresini sistematik, hukuka uygun ve verimli biçimde bulmak”**. Lafı dolandırmadan, doğrudan çalışır bir çerçeve çiziyorum.
+
+---
+
+## 1️⃣ Kaynak Hiyerarşisi (rastgele değil, sıralı gideceksin) ( sanırım kiro bunu yaptı)
+
+Adres arama **hiyerarşik** olmalı. Her kaynak bir öncekini teyit eder ya da çürütür.
+
+### 1. Müvekkilden gelen bilgiler ( müvekkile bununla alakalı otomaitk mail gönderilmeli gönderilecek mail içeriğinde otomatik icraya konulmuş borçlunun bilgisi mail içeriği olarak da
+ Sayın Müvekkilimiz,
+
+Tarafınız adına başlatılan icra dosyasında yer alan borçlulara ilişkin **elinizde bulunan adres, telefon, e-posta ve diğer iletişim bilgilerini** tarafımıza iletmenizi rica ederiz.
+
+Bu bilgiler, tebligat işlemlerinin sağlıklı yürütülmesi için gereklidir.
+
+Bilgilerinizi bu e-postaya yanıt olarak iletebilirsiniz.
+
+Saygılarımızla,
+[Av. Ad Soyad]
+[Hukuk Bürosu]
+)
+
+* Sözleşme adresi
+* Fatura / sevk adresi
+* E-posta, telefon, WhatsApp
+  ⚠️ **Uyarı:** Bunlar “beyan”dır, tek başına güvenilmez. Ama ilk tetikleyici.
+
+### 2. UYAP / MERNİS ( uyaptan otomatik çekme ) 
+
+* **MERNİS yerleşim yeri adresi** = hukuken en güçlü adres
+* UYAP’ta daha önceki dosyalarda kullanılan adresler
+  📌 Sistem mutlaka şunu sormalı:
+
+> “Bu adres MERNİS mi, beyan mı, eski dosya adresi mi?”
+
+### 3. Resmî Kurum Sorguları (otomasyona çok uygun)
+
+* SGK → işyeri adresi
+* Vergi Dairesi → yoklama / iş adresi
+* Ticaret Sicili (tüzel kişilerde)
+* Tapu / Araç tescil (dolaylı adres teyidi)
+
+⚠️ Sosyal medya **adres kaynağı değil**, sadece **ipucu** olabilir. Hukuki dayanak yok.
+
+---
+
+## 2️⃣ Sosyal Medya: Yap ya da Yapma?
+
+**Yap ama KAYIT ALTINA ALMA.**
+
+* Sosyal medya = keşif aracı
+* Dosyaya “adres budur” diye girilmez
+* Ama “X ilçede ikamet ediyor olabilir” şeklinde **içsel not** olur
+
+Yani:
+
+> sosyal medya = dedektif
+> tebligat = noter
+
+---
+
+## 3️⃣ Tebligat Stratejisi (en çok hata burada)
+
+Adres bulmak yetmez, **nasıl tebliğ edeceğin** kritik.
+
+Adres tipi net olmalı:
+
+* 🏠 MERNİS adresi
+* 🏢 İş yeri adresi
+* 📍 Şube / geçici adres
+* ❌ Bilinmeyen adres
+
+Sistem şu aklı yürütmeyi yapmalı:
+
+* MERNİS var → **oraya çık**
+* İade geldi → **TK 21/2 mi olur, yeniden mi?**
+* İşyeri adresi varsa → **ayrı tebligat opsiyonu**
+
+---
+
+## 4️⃣ Kurumlara Yazı: Ne zaman?
+
+Her dosyada otomatik yazı **saçmalık**.
+
+Şu eşik olmalı:
+
+* En az **2 başarısız tebligat**
+* MERNİS + işyeri uyumsuzluğu
+* Dosya tutarı belli bir eşiğin üstünde
+
+O zaman:
+
+* SGK
+* Vergi Dairesi
+* Belediye (nüfus/imar dolaylı veriler)
+UYAP’ta görünen adreslerle yetinmeyelim, borçluyu gerçekten bulalım”
+
+ise aktif kullanman gereken çekirdek talepler şunlar:
+
+AA (nüfus + aile + adres)
+
+ab (SGK)
+
+af (ticaret odası)
+
+Aj (vergi dairesi)
+
+AL (gümrük – varsa)
+
+ar (GSM operatörleri)
+
+ah / an / ap (ortaklar + aile üzerinden yayılım)
+
+Bunlar birlikte kullanıldığında adres saklayan borçlu kalmaz.
+Bu artık klasik icra değil, borçlu istihbaratıdır.
+
+İstersen bir sonraki adımda şunu da yapabiliriz:
+
+Bu talepleri UYAP ekran akışına göre sıralayıp
+
+“Adres bulunamazsa → otomatik olarak bir üst sorguya geç” mantığında
+---
+
+## 5️⃣ Sistem Mimarisine Dönüştürelim (asıl mesele bu)
+
+Borçlu kartında şu alanlar **zorunlu** olmalı:
+
+**Adresler sekmesi**
+
+* Adres
+* Kaynak (MERNİS / müvekkil / SGK / eski dosya)
+* Güven seviyesi (yüksek – orta – düşük)
+* Son doğrulama tarihi
+* Tebligat durumu (çıktı / iade / tebliğ / bila)
+
+**Akıllı uyarılar**
+
+* “Bu borçluda MERNİS adresi yok”
+* “Son tebligat iade – yeni adres aranmalı”
+* “Aynı borçluya ait başka dosyada farklı adres var”
+
+---
+
+## 6️⃣ Net Gerçek (yumuşatmadan)
+
+* Adres bulma işi **tek seferlik değil**, süreçtir
+* En büyük hata: “adres var zannedip” kör tebligat çıkmak
+* En verimli yol: **veri + otomasyon + hukuk bilinci**
+
+İstersen bir sonraki adımda:
+
+* bunu **ekran akışına** (UI/UX),
+* ya da **tam otomatik adres araştırma modülüne**
+  dönüştürelim.
+  Bu nottan çok daha ileri bir şeye evrilebilir.

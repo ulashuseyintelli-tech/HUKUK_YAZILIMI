@@ -1,9 +1,10 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger } from "@nestjs/common";
+import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger, Inject, forwardRef } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 import { CreateCaseDto, UpdateCaseDto, CaseSubCategory, Currency } from "./dto/case.dto";
 import { Prisma, LegalCaseStatus } from "@prisma/client";
 import { isInitialStatus } from "../case-status/case-status.service";
 import { AuditService } from "../audit/audit.service";
+import { ClientInfoRequestService } from "../address-discovery/client-info-request.service";
 
 @Injectable()
 export class CaseService {
@@ -12,6 +13,8 @@ export class CaseService {
   constructor(
     private prisma: PrismaService,
     private auditService: AuditService,
+    @Inject(forwardRef(() => ClientInfoRequestService))
+    private clientInfoRequestService: ClientInfoRequestService,
   ) {}
 
   /**
@@ -821,6 +824,13 @@ export class CaseService {
           newValues: { fileNumber: result.case.fileNumber, type: result.case.type },
           description: `Yeni takip oluşturuldu: ${result.case.fileNumber}`,
         });
+
+        // Otomatik müvekkil bilgi talebi gönder (arka planda)
+        this.clientInfoRequestService
+          .sendAutoRequestOnCaseCreate(tenantId, result.case.id)
+          .catch((err) => {
+            this.logger.warn(`Otomatik bilgi talebi gönderilemedi: ${err.message}`);
+          });
       }
 
       return {

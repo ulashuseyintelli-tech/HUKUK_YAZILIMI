@@ -57,10 +57,18 @@ export interface DebtorListItemDTO {
   serviceStatus: ServiceStatus;
   /** Pre-computed label with date, e.g. "Tebliğ Edildi — 12.01.2026" */
   serviceLabel: string;
+  /** Tebliğ tarihi */
+  deliveredAt?: string;
+  /** Kesinleşme tarihi */
+  finalizationDate?: string;
   assets: AssetsDTO;
   alertCount: number;
   alertLevel: AlertLevel;
   issues: DebtorIssue[];
+  /** Cross-file: Bu borçlunun başka dosyalarda farklı adresi var mı? */
+  hasDifferentAddressInOtherCase?: boolean;
+  /** Address research status */
+  researchStatus?: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' | 'EXHAUSTED';
 }
 
 export interface ServiceDTO {
@@ -83,12 +91,40 @@ export interface AssetsDTO {
 
 export interface DebtorDetailDTO extends DebtorListItemDTO {
   emailMasked?: string;
+  // Full contact info (unmasked) for detail view
+  phone?: string;
+  email?: string;
+  identityNo?: string;
+  address?: string;
+  // Addresses (Tebligat Kanunu'na uygun)
+  addresses?: AddressDTO[];
+  selectedAddressId?: string;
   service: ServiceDTO;
   assets: AssetsDTO;
   riskFlags: string[];
   staleDays?: number;
   quickNote?: string;
   issues: DebtorIssue[];
+}
+
+// Address DTO for frontend
+export interface AddressDTO {
+  id: string;
+  type: string;
+  subType?: string;
+  source: string;
+  street: string;
+  city: string;
+  district?: string;
+  postalCode?: string;
+  fullText: string;
+  legalPriority: string;
+  canApply21_2: boolean;
+  verified: boolean;
+  verifiedAt?: string;
+  riskFlags: string[];
+  isPrimary: boolean;
+  tk21_2Applied: boolean;
 }
 
 export interface DebtorsSummaryDTO {
@@ -614,14 +650,54 @@ export class DebtorService {
     });
 
     // Transform to DTOs and calculate issues
-    const items: DebtorListItemDTO[] = caseDebtors.map((cd) => {
+    const items: DebtorListItemDTO[] = [];
+    
+    for (const cd of caseDebtors) {
       const debtor = cd.debtor;
       const address = cd.selectedAddress || debtor.debtorAddresses[0];
       const issues = this.calculateDebtorIssues(cd, debtor, address);
       const alertLevel = this.getMaxAlertLevel(issues);
       const serviceStatus = (cd.serviceStatus as ServiceStatus) || "NOT_STARTED";
 
-      return {
+      // Kesinleşme tarihi hesapla (tebliğ + 7 gün - ilamsız icra için ödeme emrine itiraz süresi)
+      const finalizationDate = cd.deliveredAt 
+        ? new Date(cd.deliveredAt.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString()
+        : undefined;
+
+      // Check if debtor has different address in other cases (cross-file)
+      let hasDifferentAddressInOtherCase = false;
+      if (debtor.identityNo) {
+        const otherCaseAddresses = await this.prisma.debtorAddress.findMany({
+          where: {
+            debtor: {
+              identityNo: debtor.identityNo,
+              tenantId,
+              id: { not: debtor.id }, // Different debtor record (same person, different case)
+            },
+          },
+          select: { fullText: true },
+          take: 5,
+        });
+        
+        if (otherCaseAddresses.length > 0 && address?.fullText) {
+          // Check if any address is different
+          hasDifferentAddressInOtherCase = otherCaseAddresses.some(
+            (a) => a.fullText && a.fullText !== address.fullText
+          );
+        }
+      }
+
+      // Get address research status
+      let researchStatus: 'NOT_STARTED' | 'IN_PROGRESS' | 'COMPLETED' | 'EXHAUSTED' = 'NOT_STARTED';
+      const research = await this.prisma.addressResearch.findUnique({
+        where: { caseDebtorId: cd.id },
+        select: { status: true },
+      });
+      if (research) {
+        researchStatus = research.status as typeof researchStatus;
+      }
+
+      items.push({
         id: debtor.id,
         caseDebtorId: cd.id,
         displayName: debtor.name,
@@ -632,7 +708,8 @@ export class DebtorService {
         addressShort: address ? `${address.district || ""}/${address.city || ""}`.replace(/^\//, "") : undefined,
         serviceStatus,
         serviceLabel: this.computeServiceLabel(serviceStatus, cd),
-        deliveredAt: cd.deliveredAt?.toISOString(), // Tebliğ tarihi - hukuki süreler için kritik
+        deliveredAt: cd.deliveredAt?.toISOString(),
+        finalizationDate,
         assets: {
           vehicle: (cd.assetVehicle as AssetQueryStatus) || "UNKNOWN",
           realEstate: (cd.assetRealEstate as AssetQueryStatus) || "UNKNOWN",
@@ -643,8 +720,10 @@ export class DebtorService {
         alertCount: issues.length,
         alertLevel,
         issues,
-      };
-    });
+        hasDifferentAddressInOtherCase,
+        researchStatus,
+      });
+    }
 
     // Calculate summary
     const summary: DebtorsSummaryDTO = {
@@ -699,7 +778,32 @@ export class DebtorService {
       identityMasked: this.maskIdentity(debtor.identityNo, debtor.type),
       phoneMasked: this.maskPhone(debtor.phone),
       emailMasked: this.maskEmail(debtor.email),
+      // Full contact info for detail view
+      phone: debtor.phone || undefined,
+      email: debtor.email || undefined,
+      identityNo: debtor.identityNo || undefined,
+      address: address ? `${address.street || ""}, ${address.district || ""} / ${address.city || ""}`.replace(/^, /, "").replace(/ \/ $/, "") : undefined,
       addressShort: address ? `${address.district || ""}/${address.city || ""}`.replace(/^\//, "") : undefined,
+      // Addresses (Tebligat Kanunu'na uygun)
+      addresses: debtor.debtorAddresses.map((addr) => ({
+        id: addr.id,
+        type: addr.type,
+        subType: addr.subType || undefined,
+        source: addr.source,
+        street: addr.street,
+        city: addr.city,
+        district: addr.district || undefined,
+        postalCode: addr.postalCode || undefined,
+        fullText: addr.fullText || `${addr.street}, ${addr.district || ""} ${addr.city}`.trim(),
+        legalPriority: addr.legalPriority,
+        canApply21_2: addr.canApply21_2,
+        verified: addr.verified,
+        verifiedAt: addr.verifiedAt?.toISOString(),
+        riskFlags: (addr.riskFlags || []) as string[],
+        isPrimary: addr.isPrimary,
+        tk21_2Applied: addr.tk21_2Applied || false,
+      })),
+      selectedAddressId: caseDebtor.selectedAddressId || undefined,
       serviceStatus,
       serviceLabel: this.computeServiceLabel(serviceStatus, caseDebtor),
       alertCount: issues.length,
@@ -720,7 +824,7 @@ export class DebtorService {
         sgkWage: (caseDebtor.assetSgkWage as AssetQueryStatus) || "UNKNOWN",
         lastQueryAt: caseDebtor.assetLastQueryAt?.toISOString(),
       },
-      riskFlags: this.extractRiskFlags(debtor),
+      riskFlags: this.extractRiskFlags(debtor, debtor.debtorAddresses, caseDebtor.selectedAddressId || undefined),
       staleDays: this.calculateStaleDays(caseDebtor.updatedAt),
       quickNote: caseDebtor.quickNote || undefined,
       issues,
@@ -903,10 +1007,21 @@ export class DebtorService {
     return type === "INDIVIDUAL" || type === "ESTATE" ? "REAL" : "LEGAL";
   }
 
-  private extractRiskFlags(debtor: any): string[] {
+  private extractRiskFlags(debtor: any, addresses?: any[], selectedAddressId?: string): string[] {
     const flags: string[] = [];
-    if (debtor.riskLevel === "COK_YUKSEK") flags.push("BANKRUPTCY");
-    if (debtor.riskLevel === "YUKSEK") flags.push("ADDRESS_SUSPECT");
+    // Only add flags based on actual debtor status, not risk level
+    if (debtor.status === "BANKRUPT" || debtor.bankruptcyStatus) flags.push("BANKRUPTCY");
+    if (debtor.status === "CONCORDAT" || debtor.concordatStatus) flags.push("CONCORDAT");
+    if (debtor.status === "DECEASED" || debtor.isDeceased) flags.push("DECEASED");
+    if (debtor.type === "COMPANY" && debtor.status === "CLOSED") flags.push("COMPANY_CLOSED");
+    
+    // Add ADDRESS_SUSPECT only if the selected/active address has risk flags
+    if (addresses && selectedAddressId) {
+      const activeAddress = addresses.find(a => a.id === selectedAddressId);
+      if (activeAddress?.riskFlags?.includes("ADDRESS_SUSPECT")) {
+        flags.push("ADDRESS_SUSPECT");
+      }
+    }
     return flags;
   }
 
@@ -1019,7 +1134,8 @@ export class DebtorService {
       returnedAt?: string;
       returnReason?: string;
       note?: string;
-      directEntry?: boolean; // Skip state machine validation for manual date entry
+      directEntry?: boolean;
+      addressId?: string; // Tebligat yapılan adres ID'si
     }
   ): Promise<DebtorDetailDTO> {
     // Verify access
@@ -1028,10 +1144,9 @@ export class DebtorService {
       include: {
         debtor: {
           include: {
-            debtorAddresses: { orderBy: { isPrimary: "desc" } },
+            debtorAddresses: true,
           },
         },
-        selectedAddress: true,
       },
     });
 
@@ -1043,7 +1158,6 @@ export class DebtorService {
     const newStatus = data.status;
 
     // Direct entry mode allows skipping intermediate states
-    // Useful for manually entering historical data or correcting records
     const allowedDirectEntryStatuses: ServiceStatus[] = ["DELIVERED", "RETURNED", "MUHTAR", "ANNOUNCEMENT"];
     const isDirectEntryAllowed = data.directEntry && allowedDirectEntryStatuses.includes(newStatus);
 
@@ -1058,87 +1172,87 @@ export class DebtorService {
       });
     }
 
-    // Validate required fields based on status
-    if (newStatus === "DELIVERED" && !data.deliveredAt) {
-      throw new BadRequestException("Tebliğ tarihi zorunludur");
-    }
-    if ((newStatus === "MUHTAR" || newStatus === "ANNOUNCEMENT") && !data.deliveredAt) {
-      throw new BadRequestException("Tebliğ tarihi zorunludur");
-    }
-    if (newStatus === "RETURNED") {
-      if (!data.returnedAt) {
-        throw new BadRequestException("İade tarihi zorunludur");
-      }
-      if (!data.returnReason) {
-        throw new BadRequestException("İade sebebi zorunludur");
-      }
-    }
-    if (newStatus === "SENT" && !data.sentAt) {
-      throw new BadRequestException("Gönderim tarihi zorunludur");
-    }
-
     // Parse dates
     const sentAt = data.sentAt ? new Date(data.sentAt) : null;
     const deliveredAt = data.deliveredAt ? new Date(data.deliveredAt) : null;
     const returnedAt = data.returnedAt ? new Date(data.returnedAt) : null;
 
-    // Validate dates are not in the future
-    const now = new Date();
-    if (sentAt && sentAt > now) {
-      throw new BadRequestException("Gönderim tarihi gelecekte olamaz");
-    }
-    if (deliveredAt && deliveredAt > now) {
-      throw new BadRequestException("Tebliğ tarihi gelecekte olamaz");
-    }
-    if (returnedAt && returnedAt > now) {
-      throw new BadRequestException("İade tarihi gelecekte olamaz");
-    }
-
     // Determine actionDate based on status
     const actionDate = deliveredAt || returnedAt || sentAt || new Date();
 
-    // Update in transaction with history
-    const updated = await this.prisma.$transaction(async (tx) => {
-      // Create history record
-      await tx.serviceHistory.create({
-        data: {
-          caseDebtorId,
-          fromStatus: currentStatus,
-          toStatus: newStatus,
-          channel: data.channel as any || null,
-          trackingNo: data.trackingNo || null,
-          actionDate,
-          returnReason: data.returnReason as any || null,
-          note: data.note || null,
-          createdBy: userId,
-        },
-      });
+    // Map frontend channel to Prisma enum (DebtorNotificationMode)
+    const channelMapping: Record<string, string> = {
+      PHYSICAL: "NORMAL",
+      NORMAL: "NORMAL",
+      UETS: "UETS",
+      KEP: "KEP",
+      ILANEN: "ILANEN",
+      UNKNOWN: "NORMAL",
+    };
+    const mappedChannel = data.channel ? channelMapping[data.channel] || "NORMAL" : null;
 
+    // Get address info for history recording
+    let addressId: string | null = null;
+    let addressType: string | null = null;
+    let addressText: string | null = null;
+
+    // Use provided addressId or fall back to selectedAddressId
+    const targetAddressId = data.addressId || caseDebtor.selectedAddressId;
+    
+    if (targetAddressId) {
+      const address = caseDebtor.debtor.debtorAddresses.find(a => a.id === targetAddressId);
+      if (address) {
+        addressId = address.id;
+        addressType = address.type;
+        addressText = [address.street, address.district, address.city].filter(Boolean).join(", ");
+      }
+    }
+
+    try {
       // Update case debtor
-      return tx.caseDebtor.update({
+      await this.prisma.caseDebtor.update({
         where: { id: caseDebtorId },
         data: {
           serviceStatus: newStatus,
-          serviceChannel: data.channel as any || caseDebtor.serviceChannel,
+          serviceChannel: mappedChannel as any || caseDebtor.serviceChannel,
           trackingNo: data.trackingNo || caseDebtor.trackingNo,
           sentAt: sentAt || caseDebtor.sentAt,
           deliveredAt: deliveredAt || caseDebtor.deliveredAt,
           returnedAt: returnedAt || caseDebtor.returnedAt,
           returnReason: data.returnReason as any || caseDebtor.returnReason,
         },
-        include: {
-          debtor: {
-            include: {
-              debtorAddresses: { orderBy: { isPrimary: "desc" } },
-            },
-          },
-          selectedAddress: true,
-        },
       });
-    });
 
-    // Return updated detail
-    return this.getCaseDebtorDetail(tenantId, caseId, caseDebtorId);
+      // Create history record with address info (non-blocking)
+      try {
+        await this.prisma.serviceHistory.create({
+          data: {
+            caseDebtorId,
+            fromStatus: currentStatus,
+            toStatus: newStatus,
+            channel: mappedChannel as any || null,
+            trackingNo: data.trackingNo || null,
+            actionDate,
+            returnReason: data.returnReason as any || null,
+            note: data.note || null,
+            createdBy: userId,
+            // Address snapshot for TK compliance
+            addressId,
+            addressType: addressType as any || null,
+            addressText,
+          },
+        });
+      } catch (historyError) {
+        console.error("ServiceHistory create error:", historyError);
+        // Don't fail the main operation
+      }
+
+      // Return updated detail
+      return this.getCaseDebtorDetail(tenantId, caseId, caseDebtorId);
+    } catch (error) {
+      console.error("updateServiceStatus error:", error);
+      throw error;
+    }
   }
 
   /**
@@ -1159,6 +1273,10 @@ export class DebtorService {
     note?: string;
     createdAt: string;
     createdBy?: string;
+    // Address info (TK compliance)
+    addressId?: string;
+    addressType?: string;
+    addressText?: string;
   }[]> {
     // Verify access
     const caseDebtor = await this.prisma.caseDebtor.findFirst({
@@ -1186,6 +1304,10 @@ export class DebtorService {
       note: h.note || undefined,
       createdAt: h.createdAt.toISOString(),
       createdBy: h.createdBy || undefined,
+      // Address info (TK compliance)
+      addressId: h.addressId || undefined,
+      addressType: h.addressType || undefined,
+      addressText: h.addressText || undefined,
     }));
   }
 

@@ -1,0 +1,317 @@
+import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { PrismaService } from '@/prisma/prisma.service';
+import {
+  CreateUyapQueryDto,
+  UpdateUyapQueryResponseDto,
+  AddressFromQueryDto,
+  UyapQueryType,
+  UYAP_QUERY_CODES,
+  QUERY_HIERARCHY,
+} from './dto/uyap-query.dto';
+
+@Injectable()
+export class UyapQueryService {
+  private readonly logger = new Logger(UyapQueryService.name);
+
+  constructor(private prisma: PrismaService) {}
+
+  /**
+   * UYAP sorgusu oluştur
+   */
+  async createQuery(tenantId: string, userId: string, dto: CreateUyapQueryDto) {
+    // CaseDebtor'u doğrula
+    const caseDebtor = await this.prisma.caseDebtor.findFirst({
+      where: { id: dto.caseDebtorId },
+      include: {
+        case: { select: { tenantId: true, fileNumber: true } },
+        debtor: { select: { id: true, name: true, identityNo: true, type: true } },
+      },
+    });
+
+    if (!caseDebtor || caseDebtor.case.tenantId !== tenantId) {
+      throw new NotFoundException('Borçlu bulunamadı');
+    }
+
+    // Aynı sorgu daha önce yapılmış mı kontrol et
+    const existingQuery = await this.prisma.uyapQuery.findFirst({
+      where: {
+        caseDebtorId: dto.caseDebtorId,
+        queryType: dto.queryType,
+        status: { in: ['PENDING', 'COMPLETED'] },
+      },
+    });
+
+    if (existingQuery) {
+      throw new BadRequestException(
+        `Bu sorgu türü zaten ${existingQuery.status === 'PENDING' ? 'beklemede' : 'tamamlanmış'}`
+      );
+    }
+
+    const queryCode = UYAP_QUERY_CODES[dto.queryType];
+
+    const query = await this.prisma.uyapQuery.create({
+      data: {
+        tenantId,
+        caseDebtorId: dto.caseDebtorId,
+        queryType: dto.queryType,
+        queryCode,
+        status: 'PENDING',
+        requestedBy: userId,
+      },
+      include: {
+        caseDebtor: {
+          include: {
+            debtor: { select: { id: true, name: true } },
+            case: { select: { id: true, fileNumber: true } },
+          },
+        },
+      },
+    });
+
+    this.logger.log(
+      `UYAP sorgusu oluşturuldu: ${queryCode} - ${caseDebtor.debtor.name} (${caseDebtor.case.fileNumber})`
+    );
+
+    return query;
+  }
+
+  /**
+   * Sorgu sonucunu kaydet (manuel giriş)
+   */
+  async recordQueryResponse(
+    tenantId: string,
+    queryId: string,
+    dto: UpdateUyapQueryResponseDto
+  ) {
+    const query = await this.prisma.uyapQuery.findFirst({
+      where: { id: queryId, tenantId },
+    });
+
+    if (!query) {
+      throw new NotFoundException('Sorgu bulunamadı');
+    }
+
+    if (query.status !== 'PENDING') {
+      throw new BadRequestException('Bu sorgu zaten sonuçlandırılmış');
+    }
+
+    const updated = await this.prisma.uyapQuery.update({
+      where: { id: queryId },
+      data: {
+        status: dto.status,
+        respondedAt: new Date(),
+        response: dto.response || null,
+        errorMessage: dto.errorMessage,
+        addressesFound: dto.addresses?.length || 0,
+      },
+      include: {
+        caseDebtor: {
+          include: {
+            debtor: { select: { id: true, name: true } },
+          },
+        },
+      },
+    });
+
+    // Adresler varsa işle
+    if (dto.addresses && dto.addresses.length > 0) {
+      await this.processQueryAddresses(tenantId, queryId, dto.addresses);
+    }
+
+    this.logger.log(
+      `UYAP sorgu sonucu kaydedildi: ${query.queryCode} - ${dto.status} (${dto.addresses?.length || 0} adres)`
+    );
+
+    return updated;
+  }
+
+  /**
+   * Sorgudan gelen adresleri DebtorAddress'e ekle
+   */
+  async processQueryAddresses(
+    tenantId: string,
+    queryId: string,
+    addresses: AddressFromQueryDto[]
+  ) {
+    const query = await this.prisma.uyapQuery.findFirst({
+      where: { id: queryId, tenantId },
+      include: {
+        caseDebtor: {
+          include: { debtor: { select: { id: true } } },
+        },
+      },
+    });
+
+    if (!query) {
+      throw new NotFoundException('Sorgu bulunamadı');
+    }
+
+    const debtorId = query.caseDebtor.debtor.id;
+    const addressSource = this.getAddressSourceFromQueryType(query.queryType as UyapQueryType);
+
+    const createdAddresses = [];
+
+    for (const addr of addresses) {
+      // Aynı adres var mı kontrol et (basit karşılaştırma)
+      const existing = await this.prisma.debtorAddress.findFirst({
+        where: {
+          debtorId,
+          fullText: addr.fullAddress,
+        },
+      });
+
+      if (existing) {
+        this.logger.log(`Adres zaten mevcut, atlanıyor: ${addr.fullAddress.substring(0, 50)}...`);
+        continue;
+      }
+
+      const newAddress = await this.prisma.debtorAddress.create({
+        data: {
+          debtorId,
+          fullText: addr.fullAddress,
+          city: addr.city || 'Bilinmiyor',
+          district: addr.district,
+          street: addr.street || addr.fullAddress.substring(0, 200),
+          postalCode: addr.postalCode,
+          type: 'DECLARED',
+          source: addressSource as any,
+          verifiedSource: `UYAP ${query.queryCode} - ${queryId}`,
+          verified: true,
+          verifiedAt: new Date(),
+        },
+      });
+
+      createdAddresses.push(newAddress);
+    }
+
+    // Sorguyu güncelle
+    await this.prisma.uyapQuery.update({
+      where: { id: queryId },
+      data: { addressesFound: createdAddresses.length },
+    });
+
+    this.logger.log(`${createdAddresses.length} yeni adres eklendi (UYAP ${query.queryCode})`);
+
+    return createdAddresses;
+  }
+
+  /**
+   * Borçlu için sorguları getir
+   */
+  async getQueriesForDebtor(tenantId: string, caseDebtorId: string) {
+    return this.prisma.uyapQuery.findMany({
+      where: { tenantId, caseDebtorId },
+      include: {
+        requestedByUser: { select: { name: true, surname: true } },
+      },
+      orderBy: { requestedAt: 'desc' },
+    });
+  }
+
+  /**
+   * Tek bir sorguyu getir
+   */
+  async getQuery(tenantId: string, queryId: string) {
+    const query = await this.prisma.uyapQuery.findFirst({
+      where: { id: queryId, tenantId },
+      include: {
+        caseDebtor: {
+          include: {
+            debtor: { select: { id: true, name: true, identityNo: true } },
+            case: { select: { id: true, fileNumber: true } },
+          },
+        },
+        requestedByUser: { select: { name: true, surname: true } },
+      },
+    });
+
+    if (!query) {
+      throw new NotFoundException('Sorgu bulunamadı');
+    }
+
+    return query;
+  }
+
+  /**
+   * Önerilen sorguları getir (henüz yapılmamış)
+   */
+  async getSuggestedQueries(tenantId: string, caseDebtorId: string) {
+    // Borçlu tipini al
+    const caseDebtor = await this.prisma.caseDebtor.findFirst({
+      where: { id: caseDebtorId },
+      include: { debtor: { select: { type: true } } },
+    });
+
+    if (!caseDebtor) {
+      throw new NotFoundException('Borçlu bulunamadı');
+    }
+
+    const isCompany = caseDebtor.debtor.type === 'COMPANY' || 
+                      caseDebtor.debtor.type === 'PUBLIC_INSTITUTION';
+
+    // Yapılmış sorguları al
+    const completedQueries = await this.prisma.uyapQuery.findMany({
+      where: { caseDebtorId, status: { in: ['PENDING', 'COMPLETED'] } },
+      select: { queryType: true },
+    });
+
+    const completedTypes = completedQueries.map(q => q.queryType);
+
+    // Önerilen sorguları filtrele
+    const suggestions = QUERY_HIERARCHY
+      .filter(q => {
+        // Borçlu tipine uygun mu?
+        if (isCompany && !q.forCompany) return false;
+        if (!isCompany && !q.forIndividual) return false;
+        // Zaten yapılmış mı?
+        if (completedTypes.includes(q.type)) return false;
+        return true;
+      })
+      .map(q => ({
+        queryType: q.type,
+        queryCode: q.code,
+        name: q.name,
+        priority: q.priority,
+      }));
+
+    return suggestions;
+  }
+
+  /**
+   * Sorgu tipine göre AddressSource enum değeri
+   */
+  private getAddressSourceFromQueryType(queryType: UyapQueryType): string {
+    const mapping: Record<UyapQueryType, string> = {
+      [UyapQueryType.NUFUS_ADRES]: 'UYAP_AA',
+      [UyapQueryType.SGK]: 'UYAP_AB',
+      [UyapQueryType.TICARET_ODASI]: 'UYAP_AF',
+      [UyapQueryType.VERGI_DAIRESI]: 'UYAP_AJ',
+      [UyapQueryType.GSM]: 'UYAP_AR',
+      [UyapQueryType.GUMRUK]: 'UYAP',
+      [UyapQueryType.ORTAKLAR]: 'UYAP',
+      [UyapQueryType.AILE]: 'UYAP',
+      [UyapQueryType.ORTAK_DETAY]: 'UYAP',
+    };
+    return mapping[queryType] || 'UYAP';
+  }
+
+  /**
+   * Sorgu kodu için bilgi getir
+   */
+  getQueryInfo(queryCode: string) {
+    return QUERY_HIERARCHY.find(q => q.code === queryCode);
+  }
+
+  /**
+   * Tüm sorgu tiplerini getir
+   */
+  getAllQueryTypes() {
+    return QUERY_HIERARCHY.map(q => ({
+      type: q.type,
+      code: q.code,
+      name: q.name,
+      forIndividual: q.forIndividual,
+      forCompany: q.forCompany,
+    }));
+  }
+}
