@@ -1,0 +1,1126 @@
+2026-01-03 22:18 (TR)
+
+Geldik “Borçlular”a. Burası sistemin **motoru**; şu anki görünüm “kutu içinde isim” gibi kalmış. Avukatın işini hızlandıracak şekilde **borçluyu kişi değil, süreç objesi** yapmalıyız.
+
+Aşağıdaki tasarım, borçlu kartını **tebligat + malvarlığı + ödeme + risk** ekseninde kurar.
+
+---
+
+## 1) Borçlu kartında “olmazsa olmaz” alanlar (tek bakış)
+
+Her borçlu satırı/kartı şu 6 şeyi göstermeli:
+
+### A) Kimlik / Tip
+
+* **Tüzel / Gerçek** (badge)
+* Ünvan/Ad Soyad (kalın)
+* (varsa) VKN/TCKN masked
+* Telefon / e-posta (varsa)
+
+### B) Rol ve kapsam
+
+* **Asıl / Kefil / Avalist / Mirasçı / Temsilci** (senin ekranda “Asıl” var, iyi)
+* Birden fazla borçlu varsa: **Sıra** (1/3 gibi)
+
+### C) Tebligat durumu (en kritik)
+
+* 📬 **Tebligat:** “Çıkmadı / Çıktı / Tebliğ edildi / İade / Muhtara / İlan”
+* Son tebligat tarihi + PTT barkod (varsa)
+* “Tebliğ edilmedi” ise kırmızı uyarı
+
+> Sen daha önce “tebliğ edildi mi” görünmeli demiştin; burası tam yeri.
+
+### D) Tahsilat / ödeme sinyali
+
+* “Ödeme vaadi var / Yok”
+* Son ödeme / kısmi ödeme var mı?
+* (opsiyonel) IBAN/ödeme kanalı notu
+
+### E) Malvarlığı / haciz potansiyeli
+
+* 🚗 Araç: Var/Yok
+* 🏠 Tapu: Var/Yok
+* 🏦 Banka hesabı araştırması: Yapıldı/Yapılmadı
+* SGK/maaş: Var/Yok
+  (Hepsi “var/yok” toggle gibi, detay ayrı ekranda)
+
+### F) Risk & Not
+
+* ⚠️ “Adres şüpheli”, “İflas/konkordato”, “Tebligat iade”, “Şirket terk”
+* 1 satır **kısa not**
+
+---
+
+## 2) UI düzeni (borçlu kartı nasıl görünmeli)
+
+Şu anki kutu çok boş. Bunun yerine her borçlu “mini satır” olsun:
+
+**Üst satır**
+
+* [Karadeniz Gıda Ltd. Şti.]  (Tüzel) (Asıl)
+* sağda: **Tebligat: İade**  🔴
+
+**Alt satır**
+
+* VKN: 12**…  | Tel: 0***…
+* “Araç: Var • Tapu: Yok • Maaş: Var”
+* sağda ikon aksiyonlar: [📬 Tebligat] [🔍 Sorgu] [💬 Not] [⋯]
+
+Boşluk azalır, bilgi yoğunluğu artar.
+
+---
+
+## 3) “Borçlular” panelinin üst kısmına eklenmesi gereken özet şeridi
+
+Borçlular çok olunca avukat özet ister:
+
+* **Borçlu sayısı:** 3
+* **Tebliğ edilen:** 1
+* **İade/dönmeyen:** 2
+* **Riskli:** 1
+
+Bu şerit, kullanıcıyı direkt doğru işe iter.
+
+---
+
+## 4) Aksiyonlar (avukatın elini hızlandıran butonlar)
+
+Borçlu başına:
+
+* **📬 Tebligat işlemleri** (durum güncelle / barkod gir / tebliğ tarihi)
+* **🔍 Sorgular** (Araç/Tapu/Banka/SGK) — tek menü
+* **💬 Mesaj/Not** (müvekkile otomatik bilgilendirme için de kullanılabilir)
+* **💰 Ödeme bilgisi** (IBAN / ödeme notu / kısmi ödeme)
+
+Panelin genelinde (toplu):
+
+* “Seçili borçlulara tebligat hazırla”
+* “Seçili borçlular için sorgu başlat”
+* “Seçili borçlulara mesaj”
+
+---
+
+## 5) Sende şu an gözüken sorunu direkt söyleyeyim
+
+Ekranda borçlu kutusu kırmızı ve sağ üstte “1” var; bu muhtemelen:
+
+* “1 adet uyarı” veya “1 eksik bilgi” sayacı.
+
+Bu iyi fikir ama **neyin eksik olduğunu kartın içinde yazmıyor.**
+Şöyle olmalı:
+
+🔴 Eksik: “Tebligat çıkmadı”
+veya
+🔴 Eksik: “Adres yok / doğrulanmadı”
+
+“Sayı” tek başına anlamsız.
+
+---
+
+## 6) Frontend component taslağı (çok kısa, uygulanabilir)
+
+```
+<DebtorsPanel>
+  <DebtorsSummaryBar />
+  <DebtorList>
+    <DebtorRow />   // her borçlu
+  </DebtorList>
+</DebtorsPanel>
+```
+
+`DebtorRow` props:
+
+* debtorName, typeBadge, roleBadge
+* serviceStatus, serviceDate, barcode
+* assetFlags (vehicle/title/bank/sgk)
+* riskBadges[]
+* quickNote
+* actions handlers
+
+---
+
+Net: Borçlular kısmını “adres defteri” gibi değil, **süreç kontrol ekranı** gibi kurarsan yazılımın gerçek değeri ortaya çıkar.
+
+Bir sonraki adım olarak ben doğrudan:
+
+* “Tebligat durum enum’larını”
+* “Eksik bilgi kural setini (kırmızı 1’i ne tetikler?)”
+* ve `DebtorRow` için ideal data shape’ini
+  çıkarıp sana veririm.
+2026-01-03 22:21 (TR)
+
+Tamam. Borçlu modülü için **(1) Tebligat durum enum’ları**, **(2) “kırmızı 1” uyarı kural seti**, **(3) DebtorRow data shape + frontend component sözleşmesini** net şekilde veriyorum.
+
+---
+
+## 1) Tebligat Durum Enum’ları (hem backend hem frontend aynı konuşsun)
+
+### Tebligat aşaması (en pratik ve yeterli set)
+
+```ts
+export type ServiceStatus =
+  | "NOT_STARTED"      // hiç hazırlanmadı/çıkmadı
+  | "READY"            // tebliğ evrağı hazır (taslak/print)
+  | "SENT"             // PTT/elektronik gönderildi
+  | "DELIVERED"        // tebliğ edildi (tebliğ tarihi var)
+  | "RETURNED"         // iade (sebep var)
+  | "MUHTAR"           // muhtara teslim/tebligat kanunu prosedürü
+  | "ANNOUNCEMENT"     // ilan yoluyla
+  | "FAILED"           // teknik/işlemsel hata
+  | "UNKNOWN";         // eski kayıt/elde yok (migrasyon)
+```
+
+### İade sebebi (RETURNED için)
+
+```ts
+export type ReturnReason =
+  | "ADDRESS_NOT_FOUND"
+  | "MOVED"
+  | "REFUSED"
+  | "DECEASED"
+  | "COMPANY_CLOSED"
+  | "UNCLAIMED"
+  | "OTHER";
+```
+
+### Kanal (gelişirse iyi olur)
+
+```ts
+export type ServiceChannel = "PHYSICAL" | "UETS" | "KEP" | "UNKNOWN";
+```
+
+> Minimum viable: `ServiceStatus + deliveredAt + trackingNo` bile iş görür.
+
+---
+
+## 2) “Kırmızı 1” Uyarı Kural Seti (açık ve deterministik)
+
+### 2.1. Uyarı seviyeleri
+
+```ts
+export type AlertLevel = "NONE" | "INFO" | "WARN" | "DANGER";
+```
+
+### 2.2. Borçlu kartında uyarı üreten kurallar
+
+Aşağıdakilerden **her biri** bir “issue” üretir. UI’da sağ üstte sayı = issue sayısı.
+
+#### Kimlik / adres eksikleri (kritik)
+
+* `address` yoksa → **DANGER**
+* `personType=REAL` ve `tckn` yoksa → **WARN**
+* `personType=LEGAL` ve `vkn` yoksa → **WARN**
+* `phone/email` ikisi de yoksa → **INFO** (kritik değil ama faydalı)
+
+#### Tebligat kural seti (en kritik)
+
+* status `NOT_STARTED` → **DANGER** (takip var ama tebligat yok)
+* status `SENT` ve `sentAt` var ama 7 gün+ geçti & delivered/returned yok → **WARN**
+* status `RETURNED` ve `returnReason` yok → **WARN**
+* status `DELIVERED` ama `deliveredAt` yok → **DANGER** (tutarsız veri)
+* status `FAILED` → **DANGER**
+
+#### Risk sinyalleri (avukat odaklı)
+
+* `riskFlags` içinde `CONCORDAT`/`BANKRUPTCY` → **DANGER**
+* `riskFlags` içinde `ADDRESS_SUSPECT` → **WARN**
+* `staleDays >= 30` (borçluya dair işlem yok) → **WARN**
+
+#### Malvarlığı araştırması (opsiyonel ama işe yarar)
+
+* “hiç sorgu yapılmadı” & dosya yaşı 15 gün+ → **INFO/WARN** (senin iş akışına göre)
+
+---
+
+### 2.3. Issue nesnesi (UI’da tooltip/detail için)
+
+```ts
+export type DebtorIssue = {
+  code:
+    | "MISSING_ADDRESS"
+    | "MISSING_TCKN"
+    | "MISSING_VKN"
+    | "NO_CONTACT"
+    | "SERVICE_NOT_STARTED"
+    | "SERVICE_STUCK"
+    | "RETURN_REASON_MISSING"
+    | "DELIVERED_DATE_MISSING"
+    | "SERVICE_FAILED"
+    | "RISK_CONCORDAT"
+    | "RISK_BANKRUPTCY"
+    | "RISK_ADDRESS_SUSPECT"
+    | "STALE_30D"
+    | "NO_ASSET_QUERY";
+  level: AlertLevel;
+  label: string;      // ekranda göster
+};
+```
+
+---
+
+## 3) DebtorRow Data Shape (frontend sözleşmesi)
+
+### 3.1. DTO (listede göstermek için ideal)
+
+```ts
+export type DebtorRowDTO = {
+  id: string;
+
+  displayName: string;         // "Karadeniz Gıda Ltd. Şti."
+  personType: "REAL" | "LEGAL";
+  role: "ASIL" | "KEFIL" | "AVAL" | "MIRASCI" | "TEMSilci" | "DIGER";
+
+  identityMasked?: string;     // TCKN/VKN masked
+  phoneMasked?: string;
+  emailMasked?: string;
+
+  addressShort?: string;       // "Şişli/İstanbul" gibi (tam adres accordion)
+
+  service: {
+    status: ServiceStatus;
+    channel?: ServiceChannel;
+    trackingNo?: string;       // PTT barkod / UETS ref
+    sentAt?: string;           // ISO
+    deliveredAt?: string;      // ISO
+    returnedAt?: string;       // ISO
+    returnReason?: ReturnReason;
+  };
+
+  assets: {
+    vehicle: "YES" | "NO" | "UNKNOWN";
+    realEstate: "YES" | "NO" | "UNKNOWN";
+    bank: "YES" | "NO" | "UNKNOWN";
+    sgkWage: "YES" | "NO" | "UNKNOWN";
+    lastQueryAt?: string;      // ISO
+  };
+
+  riskFlags: Array<
+    | "ADDRESS_SUSPECT"
+    | "CONCORDAT"
+    | "BANKRUPTCY"
+    | "DECEASED"
+    | "COMPANY_CLOSED"
+  >;
+
+  staleDays?: number;          // borçlu üzerinde işlem yoksa
+  quickNote?: string;
+
+  issues: DebtorIssue[];       // “kırmızı 1” buradan türetilir
+  alertCount: number;          // issues.length
+  alertLevel: AlertLevel;      // max severity
+};
+```
+
+> Liste performansı için `issues` + `alertCount` backend’den gelsin.
+> (İstersen frontend hesaplar ama tutarlılık için backend daha iyi.)
+
+---
+
+## 4) Frontend component kontratı (React)
+
+```tsx
+export function DebtorRow({
+  debtor,
+  onOpenService,
+  onOpenQueries,
+  onOpenNote,
+  onMore,
+}: {
+  debtor: DebtorRowDTO;
+  onOpenService: (id: string) => void;
+  onOpenQueries: (id: string) => void;
+  onOpenNote: (id: string) => void;
+  onMore: (id: string) => void;
+}) {
+  // UI: 2 satır + sağda uyarı rozeti + aksiyon ikonları
+}
+```
+
+### UI’da gösterilecek minimumlar
+
+* Sol: `displayName` + badge’ler (personType, role)
+* Alt satır: `identityMasked • phoneMasked`
+* Orta: Tebligat durum chip’i (renkli)
+* Orta alt: assets flag’leri (🚗 🏠 🏦 💼)
+* Sağ: 🔴 `alertCount` + aksiyon ikonları
+
+---
+
+## 5) Panel üstü özet şeridi (DebtorsSummaryBar)
+
+Backend bir özet döndürsün:
+
+```ts
+export type DebtorsSummaryDTO = {
+  total: number;
+  delivered: number;
+  pending: number;     // NOT_STARTED/READY/SENT
+  returned: number;
+  danger: number;      // alertLevel=DANGER olan borçlu sayısı
+};
+```
+
+UI: “Borçlu 3 • Tebliğ 1 • Bekleyen 2 • İade 0 • Riskli 1”
+
+---
+
+## 6) Kırmızı “1” nasıl çalışmalı? (UX netliği)
+
+* Sağ üst rozet: `alertCount`
+* Rozete hover/click: küçük popover → `issues` listesi
+
+  * “Adres eksik”
+  * “Tebligat başlatılmadı”
+  * “İade sebebi girilmemiş”
+
+Böylece sayı **anlam kazanır**.
+
+---
+
+Bunları uygulayınca borçlular ekranı “liste” olmaktan çıkar, **süreç kontrol paneli** olur.
+
+Bir sonraki mantıklı adım: bunu **API endpoint’lerine** bölelim:
+
+* `GET /cases/:caseId/debtors` → DebtorRowDTO listesi + summary
+* `PUT /debtors/:id/service` → tebligat güncelle
+* `POST /debtors/:id/queries/run` → sorgu başlat
+* `PUT /debtors/:id/note` → kısa not
+
+2026-01-03 22:24 (TR)
+
+Aynen. Şimdi bunu **net API sözleşmesine** döküyorum: route’lar, request/response body’leri, validasyon, idempotency, hata kodları. “Yarın sabah backendçi bunu okuyup yazar” seviyesinde.
+
+---
+
+# 1) GET /cases/:caseId/debtors
+
+**Amaç:** Borçlu listesi + üst özet şeridi + (opsiyonel) sayfalama/sıralama.
+
+### Query (opsiyonel)
+
+* `q`: string (isim/vkn/tckn/telefon arama)
+* `status`: `ServiceStatus` (filtre)
+* `risk`: `danger|warn|any`
+* `sort`: `name|service|alerts|stale`
+* `order`: `asc|desc`
+* `page`: number
+* `pageSize`: number (default 20)
+
+### Response 200
+
+```json
+{
+  "summary": {
+    "total": 3,
+    "delivered": 1,
+    "pending": 2,
+    "returned": 0,
+    "danger": 1
+  },
+  "items": [
+    {
+      "id": "deb_123",
+      "displayName": "Karadeniz Gıda Ltd. Şti.",
+      "personType": "LEGAL",
+      "role": "ASIL",
+      "identityMasked": "VKN: 12****789",
+      "phoneMasked": "0532***9012",
+      "emailMasked": null,
+      "addressShort": "Şişli/İstanbul",
+      "service": {
+        "status": "NOT_STARTED",
+        "channel": "PHYSICAL",
+        "trackingNo": null,
+        "sentAt": null,
+        "deliveredAt": null,
+        "returnedAt": null,
+        "returnReason": null
+      },
+      "assets": {
+        "vehicle": "UNKNOWN",
+        "realEstate": "UNKNOWN",
+        "bank": "UNKNOWN",
+        "sgkWage": "UNKNOWN",
+        "lastQueryAt": null
+      },
+      "riskFlags": ["ADDRESS_SUSPECT"],
+      "staleDays": 12,
+      "quickNote": "Adres teyidi gerekli.",
+      "issues": [
+        { "code": "SERVICE_NOT_STARTED", "level": "DANGER", "label": "Tebligat başlatılmadı." },
+        { "code": "MISSING_ADDRESS", "level": "DANGER", "label": "Adres eksik." }
+      ],
+      "alertCount": 2,
+      "alertLevel": "DANGER"
+    }
+  ],
+  "page": 1,
+  "pageSize": 20,
+  "totalItems": 3
+}
+```
+
+### Hata
+
+* 404: caseId yok / erişim yok
+* 403: yetki yok
+
+---
+
+# 2) PUT /debtors/:id/service
+
+**Amaç:** Tebligat durumunu güncellemek (durum, tarih, barkod, iade sebebi vs.)
+
+### Request body
+
+```json
+{
+  "status": "SENT",
+  "channel": "PHYSICAL",
+  "trackingNo": "RR123456789TR",
+  "sentAt": "2026-01-03T18:10:00+03:00",
+  "deliveredAt": null,
+  "returnedAt": null,
+  "returnReason": null,
+  "note": "PTT’ye verildi."
+}
+```
+
+### Validasyon kuralları (sert)
+
+* `status=DELIVERED` ise `deliveredAt` zorunlu
+* `status=RETURNED` ise `returnedAt` + `returnReason` zorunlu
+* `status=SENT` ise `sentAt` önerilir, `trackingNo` önerilir
+* Tarihler ISO ve gelecekte olamaz (opsiyonel kural)
+
+### Response 200
+
+```json
+{
+  "id": "deb_123",
+  "service": {
+    "status": "SENT",
+    "channel": "PHYSICAL",
+    "trackingNo": "RR123456789TR",
+    "sentAt": "2026-01-03T18:10:00+03:00",
+    "deliveredAt": null,
+    "returnedAt": null,
+    "returnReason": null
+  },
+  "issues": [
+    { "code": "MISSING_ADDRESS", "level": "DANGER", "label": "Adres eksik." }
+  ],
+  "alertCount": 1,
+  "alertLevel": "DANGER"
+}
+```
+
+### Hata
+
+* 400: validasyon hatası (örn deliveredAt yok)
+* 404: debtor yok
+* 409: statü geçişi çakışması (opsiyonel; aşağıda anlattım)
+
+### Concurrency (öneri)
+
+* Header: `If-Match: <etag>`
+* Backend ETag kontrol eder, değişmişse:
+
+  * 412 Precondition Failed
+
+Bu sayede iki kişi aynı anda güncellerse biri diğerini ezmez.
+
+---
+
+# 3) POST /debtors/:id/queries/run
+
+**Amaç:** UYAP/entegrasyon sorgularını başlatmak (araç/tapu/banka/sgk vs). Asenkron çalışmalı.
+
+### Request body
+
+```json
+{
+  "types": ["VEHICLE", "REALESTATE", "BANK", "SGK_WAGE"],
+  "priority": "NORMAL",
+  "reason": "Haciz stratejisi için güncel veri.",
+  "idempotencyKey": "case_2026-2_deb_123_20260103_001"
+}
+```
+
+> `idempotencyKey` şart olsun: kullanıcı iki kez tıklayınca iki job açılmasın.
+
+### Response 202 (Accepted)
+
+```json
+{
+  "jobId": "job_987",
+  "status": "QUEUED",
+  "estimated": null
+}
+```
+
+### Job sonucu nasıl gelir?
+
+İki seçenek:
+
+**A) Polling endpoint**
+
+* `GET /queries/jobs/:jobId`
+
+**B) Push**
+
+* WebSocket / SSE
+
+MVP için polling yeter.
+
+### Örnek job status response 200
+
+```json
+{
+  "jobId": "job_987",
+  "status": "DONE",
+  "results": {
+    "vehicle": "YES",
+    "realEstate": "NO",
+    "bank": "UNKNOWN",
+    "sgkWage": "YES"
+  },
+  "updatedAt": "2026-01-03T18:15:00+03:00"
+}
+```
+
+### Hata
+
+* 400: types boş
+* 409: aynı idempotencyKey ile farklı payload
+* 429: rate limit (aynı borçluya saatte X sorgu)
+
+---
+
+# 4) PUT /debtors/:id/note
+
+**Amaç:** “Kısa not” (1–2 cümle) — avukatın hafıza çivisi.
+
+### Request body
+
+```json
+{
+  "text": "Adres teyidi gerekli, şirket taşınmış olabilir."
+}
+```
+
+### Validasyon
+
+* min 0, max 240 karakter (önerim)
+* boş gönderilirse not temizlenir (pratik)
+
+### Response 200
+
+```json
+{
+  "id": "deb_123",
+  "quickNote": "Adres teyidi gerekli, şirket taşınmış olabilir.",
+  "updatedAt": "2026-01-03T18:20:00+03:00",
+  "updatedBy": "usr_12"
+}
+```
+
+### Hata
+
+* 400: çok uzun
+* 404: debtor yok
+
+---
+
+## 5) Bonus: Statü geçiş kuralları (409’ı anlamlı kılar)
+
+İstersen statüleri “state machine” gibi kısıtlarız:
+
+* `NOT_STARTED -> READY -> SENT -> DELIVERED`
+* `SENT -> RETURNED`
+* `RETURNED -> READY` (yeniden tebligat)
+* Her yerden `FAILED` olabilir
+
+Geçersiz geçişte:
+
+* `409 Conflict` + “allowedTransitions”
+
+```json
+{
+  "error": "INVALID_STATUS_TRANSITION",
+  "from": "DELIVERED",
+  "to": "SENT",
+  "allowed": []
+}
+```
+
+---
+
+## 6) Frontend entegrasyon notu (çok pratik)
+
+* Liste sayfasında sadece `GET /cases/:caseId/debtors`
+* Tebligat modal kaydedince:
+
+  * `PUT /debtors/:id/service`
+  * response’taki `issues/alertCount` ile satırı anında güncelle
+* Sorgu başlatınca:
+
+  * `POST /debtors/:id/queries/run`
+  * job status’ı poll edip `assets` güncelle
+
+---
+
+İstersen bir sonraki adımda bunu **OpenAPI (Swagger) yaml** olarak da çıkarırım; backend + frontend aynı sözleşmeyi otomatik görür.
+
+
+================================================================================
+# 🎯 BORÇLU MODÜLÜ - UYGULAMA PLANI
+================================================================================
+Tarih: 2026-01-03 23:30 (TR)
+Durum: BAŞLANACAK
+
+Bu plan, yukarıdaki tasarımın adım adım uygulamasıdır.
+Her session'da buraya bakılacak, tamamlanan adımlar [x] işaretlenecek.
+
+---
+
+## 📁 BACKEND MODÜL YAPISI
+
+```
+apps/api/src/modules/
+├── debtor/
+│   ├── debtor.module.ts
+│   ├── debtor.controller.ts
+│   ├── debtor.service.ts
+│   ├── debtor-alert.service.ts   # Issue hesaplama
+│   └── dto/
+│       ├── debtor-list.dto.ts
+│       ├── debtor-detail.dto.ts
+│       └── debtor-summary.dto.ts
+│
+├── service-of-process/           # Tebligat modülü
+│   ├── service.module.ts
+│   ├── service.controller.ts
+│   ├── service.service.ts
+│   └── service-state-machine.ts
+│
+├── asset-query/                  # Malvarlığı sorgu (Faz 4)
+│   ├── query.module.ts
+│   ├── query.controller.ts
+│   └── query.service.ts
+```
+
+## 🎨 FRONTEND COMPONENT YAPISI
+
+```
+components/debtor/
+├── DebtorsPanel.tsx
+├── DebtorsSummaryBar.tsx
+├── DebtorList.tsx
+├── DebtorRow.tsx
+├── DebtorDetailDrawer.tsx
+├── ServiceStatusBadge.tsx
+├── AssetFlags.tsx
+├── AlertBadge.tsx
+└── modals/
+    ├── ServiceUpdateModal.tsx
+    └── NoteModal.tsx
+```
+
+---
+
+## ✅ FAZ 1: TEMEL ALTYAPI (Tahmini: 1-2 gün)
+Hedef: Borçlu listesi ve özet şeridi çalışır hale gelsin
+
+### Backend
+[x] 1.1. Prisma schema'ya tebligat alanları ekle (CaseDebtor modeline)
+    - serviceStatus: ServiceStatus enum ✓
+    - serviceChannel: ServiceChannel enum ✓
+    - trackingNo: String? ✓
+    - sentAt: DateTime? ✓
+    - deliveredAt: DateTime? ✓
+    - returnedAt: DateTime? ✓
+    - returnReason: ReturnReason enum? ✓
+    - quickNote: String? ✓
+    - Malvarlığı alanları (assetVehicle, assetRealEstate, assetBank, assetSgkWage) ✓
+    - ServiceHistory modeli ✓
+
+[x] 1.2. packages/types'a enum'ları ekle
+    - ServiceStatus, ReturnReason, ServiceChannel ✓
+    - AlertLevel, DebtorIssue ✓
+    - DebtorRole ✓
+    - AssetQueryStatus ✓
+    - DTO'lar (DebtorListItemDTO, DebtorDetailDTO, DebtorsSummaryDTO) ✓
+    - Label'lar ✓
+
+[x] 1.3. debtor.service.ts - getDebtorsForCase() metodu
+    - DebtorListItemDTO döndür ✓
+    - DebtorsSummaryDTO hesapla ✓
+    - getCaseDebtorDetail() metodu ✓
+    - updateQuickNote() metodu ✓
+    - calculateDebtorIssues() helper ✓
+
+[x] 1.4. debtor.controller.ts - endpoint'ler
+    - GET /debtors/case/:caseId ✓
+    - GET /debtors/case/:caseId/:caseDebtorId ✓
+    - PUT /debtors/case/:caseId/:caseDebtorId/note ✓
+
+### Frontend
+[x] 1.5. lib/api.ts - API fonksiyonları ve tipler
+    - getCaseDebtors(caseId) ✓
+    - getCaseDebtorDetail(caseId, caseDebtorId) ✓
+    - updateDebtorQuickNote() ✓
+    - Tüm DTO tipleri ✓
+    - Label map'leri ✓
+
+[x] 1.6. components/debtor/ - Yeni bileşenler
+    - DebtorsSummaryBar.tsx ✓
+    - DebtorRow.tsx ✓
+    - ServiceStatusBadge.tsx ✓
+    - AlertBadge.tsx ✓
+    - index.ts (exports) ✓
+
+[ ] 1.7. cases/[id]/page.tsx - Borçlular panelini güncelle
+    - DebtorsSummaryBar entegre et ✓
+    - DebtorRow kullan ✓
+    - Yeni API'yi çağır ✓
+
+---
+
+## 🔄 SON GÜNCELLEME
+Tarih: 2026-01-04 03:00
+Durum: FAZ 2 TAMAMLANDI ✅
+
+### FAZ 2 Özet (Tebligat Yönetimi):
+- Backend:
+  * State machine (SERVICE_TRANSITIONS) - Geçerli durum geçişleri ✓
+  * updateServiceStatus() - Validasyon + tarih kontrolleri ✓
+  * getServiceHistory() - Tebligat geçmişi ✓
+  * startNewServiceAttempt() - İade sonrası yeni deneme ✓
+  * ServiceHistory modeli (Prisma) ✓
+
+- Frontend:
+  * ServiceUpdateModal.tsx - Durum güncelleme modal'ı ✓
+  * ServiceHistoryTimeline.tsx - Geçmiş timeline ✓
+  * DebtorDetailDrawer.tsx - Borçlu detay drawer ✓
+  * API types (UpdateServiceStatusDTO, ServiceHistoryItem) ✓
+  * ServiceStatusTransitions (frontend validation) ✓
+
+### Tamamlanan Özellikler:
+1. ✅ Tebligat durumu güncelleme (modal ile)
+2. ✅ State machine validasyonu (geçersiz geçiş engellenir)
+3. ✅ Tarih validasyonları (gelecek tarih engellenir)
+4. ✅ İade sebebi zorunluluğu (RETURNED durumunda)
+5. ✅ Tebligat geçmişi timeline
+6. ✅ "Yeni Deneme" butonu (RETURNED/FAILED sonrası)
+7. ✅ Borçlu detay drawer (tüm bilgiler + aksiyonlar)
+8. ✅ Hızlı not düzenleme (drawer içinde)
+
+### Sonraki Adım: FAZ 3 - Alert Sistemi (zaten FAZ 1'de temel implement edildi)
+
+---
+
+## ✅ FAZ 2: TEBLİGAT YÖNETİMİ (Tahmini: 2-3 gün)
+Hedef: Tebligat durumu güncellenebilir olsun
+
+### Backend
+[x] 2.1. service-of-process/service-state-machine.ts
+    - Geçerli geçişler: NOT_STARTED→READY→SENT→DELIVERED ✓
+    - SENT→RETURNED, SENT→MUHTAR ✓
+    - RETURNED→READY (yeniden tebligat) ✓
+    - MUHTAR→DELIVERED, ANNOUNCEMENT→DELIVERED ✓
+    - (debtor.service.ts içinde SERVICE_TRANSITIONS olarak implement edildi)
+
+[x] 2.2. service.service.ts - updateServiceStatus()
+    - State machine validasyonu ✓
+    - deliveredAt zorunluluk kontrolü ✓
+    - returnReason zorunluluk kontrolü ✓
+    - Tarih validasyonu (gelecek tarih engeli) ✓
+
+[x] 2.3. service.controller.ts
+    - PUT /debtors/case/:caseId/:caseDebtorId/service ✓
+    - GET /debtors/case/:caseId/:caseDebtorId/service/history ✓
+    - POST /debtors/case/:caseId/:caseDebtorId/service/retry ✓
+
+### Frontend
+[x] 2.4. components/debtor/ServiceStatusBadge.tsx
+    - Renkli chip (yeşil=tebliğ, kırmızı=iade, sarı=bekliyor) ✓
+    - (FAZ 1'de zaten tamamlandı)
+
+[x] 2.5. components/debtor/modals/ServiceUpdateModal.tsx
+    - Durum seçimi dropdown ✓
+    - Tarih picker'lar ✓
+    - PTT barkod input ✓
+    - İade sebebi (RETURNED seçilince) ✓
+    - Kanal seçimi (PHYSICAL, UETS, KEP) ✓
+
+[x] 2.6. DebtorDetailDrawer.tsx - Tebligat bölümü
+    - Mevcut durum göster ✓
+    - "Güncelle" butonu → modal aç ✓
+    - "Yeni Deneme" butonu (RETURNED/FAILED için) ✓
+    - Tebligat geçmişi timeline ✓
+    - Malvarlığı flags ✓
+    - Hızlı not düzenleme ✓
+    - Risk uyarıları ✓
+
+---
+
+## ✅ FAZ 3: ALERT SİSTEMİ (Tahmini: 1-2 gün)
+Hedef: Eksik bilgi uyarıları çalışsın
+
+### Backend
+[ ] 3.1. debtor-alert.service.ts
+    - calculateIssues(debtor): DebtorIssue[]
+    - Kurallar:
+      * MISSING_ADDRESS → DANGER
+      * MISSING_TCKN/VKN → WARN
+      * SERVICE_NOT_STARTED → DANGER
+      * SERVICE_STUCK (7 gün+) → WARN
+      * RETURN_REASON_MISSING → WARN
+
+[ ] 3.2. getDebtorsForCase() - issues alanını doldur
+
+### Frontend
+[ ] 3.3. components/debtor/AlertBadge.tsx
+    - Kırmızı/sarı sayı rozeti
+    - Hover → tooltip ile issue listesi
+
+[ ] 3.4. DebtorRow.tsx - AlertBadge entegre et
+
+[ ] 3.5. DebtorsSummaryBar - "Riskli" sayısını göster
+
+---
+
+## ✅ FAZ 4: MALVARLIĞI SORGU (Tahmini: 3-4 gün) [OPSIYONEL]
+Hedef: Araç/Tapu/Banka/SGK sorguları başlatılabilsin
+
+### Backend
+[ ] 4.1. Prisma schema - DebtorAsset modeli
+    - vehicle, realEstate, bank, sgkWage: AssetStatus enum
+    - lastQueryAt: DateTime?
+
+[ ] 4.2. asset-query/query.service.ts
+    - runQueries(debtorId, types[])
+    - Bull queue entegrasyonu (asenkron)
+
+[ ] 4.3. query.controller.ts
+    - POST /cases/:caseId/queries (toplu)
+    - GET /queries/jobs/:jobId
+
+### Frontend
+[ ] 4.4. components/debtor/AssetFlags.tsx
+    - 🚗🏠🏦💼 ikonları
+    - YES=yeşil, NO=kırmızı, UNKNOWN=gri
+
+[ ] 4.5. DebtorRow.tsx - AssetFlags entegre et
+
+[ ] 4.6. Sorgu başlat butonu + polling
+
+---
+
+## 📝 NOTLAR
+
+### Mevcut Durum (2026-01-03)
+- Borçlu drawer'ı eklendi (basit versiyon)
+- Tıklanınca açılıyor ama veri yetersiz
+- Tebligat durumu yok
+- Alert sistemi yok
+
+### Öncelik Sırası
+1. FAZ 1 → En kritik, temel görünüm
+2. FAZ 2 → Tebligat avukatın ana işi
+3. FAZ 3 → UX iyileştirme
+4. FAZ 4 → Nice-to-have, UYAP entegrasyonu gerektirir
+
+### Bağımlılıklar
+- FAZ 2, FAZ 1'e bağlı
+- FAZ 3, FAZ 1'e bağlı
+- FAZ 4 bağımsız başlayabilir ama UI için FAZ 1 lazım
+
+---
+
+## 🔄 SON GÜNCELLEME
+Tarih: 2026-01-03 23:30
+Durum: Plan hazır, FAZ 1'e başlanacak
+
+
+2026-01-03 22:29 (TR)
+
+Evet—**tek ibare + tarih + “yenilenen tebligat” alt akışı** fikri çok daha temiz. Şu anki “yan yana sayaçlar” yerine borçlu satırında tek bir **Tebligat Durumu** ibaresi akıp gitsin; detay ve geçmiş ise açılır panelde yaşasın. Avukat zihni bunu daha hızlı okur.
+
+Aşağıdaki kurgu hem UI’ı sadeleştirir hem de tebligatın gerçek hayat kaosunu (bila, iade, tekrar tebliğ, yeni adres) düzgün taşır.
+
+---
+
+## 1) Borçlu satırında TEK İBARE (ve tebliğ tarihi)
+
+Borçlu kartının sağında **tek bir “Durum Chip’i”** olsun:
+
+### Örnek chip’ler (tek alan, değişerek gider)
+
+* ⚠️ **Tebligat Başlatılmadı**
+* ⏳ **Gönderildi** *(PTT: RR…)*
+* ✅ **Tebliğ Edildi – 12.01.2026**
+* 🔁 **Tebligat Tekrarlandı** *(Yeni adrese)*
+* ↩️ **İade – Adres Bulunamadı**
+* 🧾 **Bila / Muhtara – 18.01.2026** *(hangi prosedürse)*
+
+**Kural:** Durum chip’i *her zaman tek* ve *en güncel aksiyon gereken durumu* göstermeli.
+
+> Avukat için “şu an ne durumdayız?” sorusunun tek cevabı.
+
+---
+
+## 2) Tebliğ tarihini nasıl göstereceğiz?
+
+Sadece `DELIVERED / MUHTAR / ANNOUNCEMENT` gibi “sonuçlanan” statülerde tarih bas:
+
+* ✅ Tebliğ Edildi — **12 Oca 2026**
+* 🧾 Muhtara — **18 Oca 2026**
+* 📣 İlan — **03 Şub 2026**
+
+**SENT** durumunda tarih opsiyonel:
+
+* ⏳ Gönderildi — 05 Oca 2026 (isteğe bağlı)
+
+---
+
+## 3) “Bila” geldiğinde açılır pencere + ALTTA YENİ SÜREÇ
+
+Bu kısım tam “gerçek hayata uyum”.
+
+Mantık şu:
+
+* Her borçlu için tebligat **tek bir kayıt** değildir.
+* Tebligat **deneme/iterasyon** olarak gider.
+
+### Model: “Tebligat Denemeleri” (attempts)
+
+Borçluya bağlı `serviceAttempts[]` tut:
+
+* Attempt #1: Eski adres → Gönderildi → **Bila/İade**
+* Attempt #2: Yeni adres → Hazırlandı → Gönderildi → Bekleniyor
+* Attempt #3: ….
+
+### UI davranışı
+
+Borçlu satırında chip:
+
+* 🔁 **Tebligat Tekrarlandı**
+  veya eğer son attempt devam ediyorsa:
+* ⏳ **Gönderildi** (Attempt #2)
+
+Borçlu satırına tıklayınca açılır panel:
+
+* Üstte “Tebligat Geçmişi” (Attempt’ler timeline)
+* Altta “Aktif Tebligat Süreci” (sadece son attempt’in live durumu)
+
+---
+
+## 4) Açılır panel (borçlu alt drawer / accordion) wireframe
+
+Borçlu satırına tıklayınca:
+
+### A) Timeline (Geçmiş)
+
+```
+TEBLİGAT GEÇMİŞİ
+1) 02.01.2026 — Gönderildi (RR123...)
+   10.01.2026 — Bila / Muhtara (sebep: muhatap yok)
+   Adres: Bakırköy/İstanbul
+
+2) 12.01.2026 — Tekrar Tebligat (Yeni adres)
+   Durum: Hazırlandı
+   Adres: Ataşehir/İstanbul
+```
+
+### B) Aktif süreç (son attempt)
+
+```
+AKTİF TEBLİGAT (Attempt #2)
+Durum: Hazırlandı
+[ PTT’ye verildi ]  [ UETS gönder ]  [ İade gir ]  [ Tebliğ edildi gir ]
+Takip No: —
+```
+
+> Böylece “bila” gelince sistem “yeni tebligat aç” diye doğal bir akış sunar.
+
+---
+
+## 5) Sayaçlar ne olacak? (üst şeritte yan yana değil)
+
+Sayaçlar tamamen kalkmasın; ama “yan yana 0/1/0” kafa karıştırıyor.
+
+**Tek özet** yap:
+
+* “Tebligat: 1 borçlu işlem bekliyor”
+  ve tıklayınca filtrele.
+
+Ya da en iyi seçenek:
+
+* Üst şeritte sadece:
+
+  * **Borçlu: 5**
+  * **Riskli: 5**
+  * (opsiyonel) **İşlem Bekleyen: 5**
+
+“0 tebliğ 5 bekleyen 0 iade” gibi üçlü tabloyu kaldır.
+
+---
+
+## 6) Data modeli (backend DTO değişikliği)
+
+`debtor.service` tek nesne yerine:
+
+```ts
+type ServiceAttempt = {
+  id: string;
+  createdAt: string;
+  addressId?: string;
+  addressText?: string;
+
+  status: ServiceStatus;
+  channel?: ServiceChannel;
+  trackingNo?: string;
+
+  sentAt?: string;
+  deliveredAt?: string;
+  returnedAt?: string;
+  returnReason?: ReturnReason;
+
+  note?: string;
+};
+
+type DebtorRowDTO = {
+  ...
+  serviceCurrent: ServiceAttempt;     // en güncel attempt
+  serviceHistory: ServiceAttempt[];   // son 3-5 attempt (listede değil, expand’da)
+  serviceLabel: string;              // "Tebliğ Edildi — 12.01.2026" (listede hızlı)
+};
+```
+
+Listede performans için:
+
+* `serviceCurrent` + `serviceLabel` yeter
+* `serviceHistory` ancak expand olunca fetch edilebilir:
+
+  * `GET /debtors/:id/service-history`
+
+---
+
+## 7) Sonuç: Senin istediğin tam karşılanıyor
+
+* ✅ Tebliğden sonra **tarih** borçlu satırında görünüyor
+* ✅ “Yan yana göstergeler” yerine **tek ibare** var
+* ✅ “Bila/tekrar tebliğ” olunca borçlu expand’ında:
+
+  * üstte geçmiş
+  * altta yeni tebligat süreci
+    çalışıyor
+
+Bu kurgu hem sade, hem gerçek hayatta patlamıyor.
+
+Bir sonraki adım olarak direkt şunu yapalım (en pratik):
+
+* `ServiceAttempt` state machine + UI chip mapping tablosu (status → label + renk + tarih kuralı)
+* ve “Tekrar tebligat başlat” butonunun hangi alanları kopyalayıp hangilerini sıfırlayacağı (tracking sıfır, status READY, yeni addressId vs.) kurallarını yazayım.

@@ -25,6 +25,90 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 export class DebtorController {
   constructor(private debtorService: DebtorService) {}
 
+  // ==================== CASE DEBTORS (FAZ 1) ====================
+
+  @Get("case/:caseId")
+  getDebtorsForCase(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("caseId") caseId: string
+  ) {
+    return this.debtorService.getDebtorsForCase(tenantId, caseId);
+  }
+
+  @Get("case/:caseId/:caseDebtorId")
+  getCaseDebtorDetail(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("caseId") caseId: string,
+    @Param("caseDebtorId") caseDebtorId: string
+  ) {
+    return this.debtorService.getCaseDebtorDetail(tenantId, caseId, caseDebtorId);
+  }
+
+  @Put("case/:caseId/:caseDebtorId/note")
+  updateQuickNote(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @Param("caseId") caseId: string,
+    @Param("caseDebtorId") caseDebtorId: string,
+    @Body("text") text: string
+  ) {
+    return this.debtorService.updateQuickNote(tenantId, caseId, caseDebtorId, userId, text);
+  }
+
+  // ==================== FAZ 2: TEBLİGAT YÖNETİMİ ====================
+
+  @Put("case/:caseId/:caseDebtorId/service")
+  updateServiceStatus(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @Param("caseId") caseId: string,
+    @Param("caseDebtorId") caseDebtorId: string,
+    @Body() data: {
+      status: string;
+      channel?: string;
+      trackingNo?: string;
+      sentAt?: string;
+      deliveredAt?: string;
+      returnedAt?: string;
+      returnReason?: string;
+      note?: string;
+    }
+  ) {
+    return this.debtorService.updateServiceStatus(
+      tenantId,
+      caseId,
+      caseDebtorId,
+      userId,
+      data as any
+    );
+  }
+
+  @Get("case/:caseId/:caseDebtorId/service/history")
+  getServiceHistory(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("caseId") caseId: string,
+    @Param("caseDebtorId") caseDebtorId: string
+  ) {
+    return this.debtorService.getServiceHistory(tenantId, caseId, caseDebtorId);
+  }
+
+  @Post("case/:caseId/:caseDebtorId/service/retry")
+  startNewServiceAttempt(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @Param("caseId") caseId: string,
+    @Param("caseDebtorId") caseDebtorId: string,
+    @Body("newAddressId") newAddressId?: string
+  ) {
+    return this.debtorService.startNewServiceAttempt(
+      tenantId,
+      caseId,
+      caseDebtorId,
+      userId,
+      newAddressId
+    );
+  }
+
   // ==================== DEBTOR CRUD ====================
 
   @Get()

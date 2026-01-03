@@ -864,6 +864,7 @@ model Case {
   @@index([durumEtiketiId])
   @@index([mahiyetTipiId])
   @@index([sorumluPersonelId])
+  @@index([clientId])
 }
 
 // Statü Değişim Geçmişi (B.18)
@@ -926,19 +927,43 @@ model CaseDebtor {
   liabilityAmount       Decimal?         @db.Decimal(15, 2)
   liabilityType         LiabilityType?
   
-  // Tebligat
+  // Tebligat Modu ve Adres
   notificationMode      DebtorNotificationMode @default(NORMAL)
   selectedAddressId     String?
   selectedAddress       DebtorAddress?   @relation(fields: [selectedAddressId], references: [id])
   prepareNotification   Boolean          @default(true)
   ilanenJustification   String?          // İlanen tebligat gerekçesi
   
-  // Tebligat Takip Bilgileri
-  notificationBarcode   String?          // PTT barkod numarası
-  notificationSentDate  DateTime?        // Tebligat gönderim tarihi
-  notificationDeliveredDate DateTime?    // Tebliğ tarihi
-  notificationStatus    String?          // GONDERILDI, TEBLIG_EDILDI, IADE, BEKLEMEDE
-  notificationNote      String?          // Tebligat notu (iade sebebi vb.)
+  // ===== TEBLİGAT TAKİP BİLGİLERİ (Güncellenmiş) =====
+  serviceStatus         ServiceStatus    @default(NOT_STARTED)
+  serviceChannel        DebtorNotificationMode? // Kullanılan kanal (NORMAL/KEP/UETS)
+  trackingNo            String?          // PTT barkod / UETS referans no
+  sentAt                DateTime?        // Gönderim tarihi
+  deliveredAt           DateTime?        // Tebliğ tarihi
+  returnedAt            DateTime?        // İade tarihi
+  returnReason          ServiceReturnReason? // İade sebebi
+  muhtarDeliveredAt     DateTime?        // Muhtara teslim tarihi (TK 21/2)
+  announcementDate      DateTime?        // İlan tarihi
+  announcementExpiry    DateTime?        // İlan süresi bitişi
+  
+  // Eski alanlar (geriye uyumluluk - deprecated)
+  notificationBarcode   String?          @map("notification_barcode_old") // @deprecated - trackingNo kullan
+  notificationSentDate  DateTime?        @map("notification_sent_date_old") // @deprecated - sentAt kullan
+  notificationDeliveredDate DateTime?    @map("notification_delivered_date_old") // @deprecated - deliveredAt kullan
+  notificationStatus    String?          @map("notification_status_old") // @deprecated - serviceStatus kullan
+  notificationNote      String?          // Tebligat notu (iade sebebi detayı vb.)
+  
+  // ===== MALVARLIĞI SORGU DURUMLARI =====
+  assetVehicle          AssetQueryStatus @default(UNKNOWN)
+  assetRealEstate       AssetQueryStatus @default(UNKNOWN)
+  assetBank             AssetQueryStatus @default(UNKNOWN)
+  assetSgkWage          AssetQueryStatus @default(UNKNOWN)
+  assetLastQueryAt      DateTime?        // Son sorgu tarihi
+  
+  // ===== HIZLI NOT =====
+  quickNote             String?          // Avukatın kısa notu (max 240 karakter)
+  quickNoteUpdatedAt    DateTime?
+  quickNoteUpdatedBy    String?
   
   // Borçlu Vekili
   debtorLawyerId        String?
@@ -954,10 +979,37 @@ model CaseDebtor {
   // Relations
   thirdParties          ThirdParty[]
   externalCases         ExternalCase[]
+  serviceHistory        ServiceHistory[]
 
   @@unique([caseId, debtorId, role])
   @@index([caseId])
   @@index([debtorId])
+  @@index([serviceStatus])
+}
+
+// Tebligat Geçmişi - Audit Trail
+model ServiceHistory {
+  id              String              @id @default(cuid())
+  caseDebtorId    String
+  caseDebtor      CaseDebtor          @relation(fields: [caseDebtorId], references: [id], onDelete: Cascade)
+  
+  // Durum Değişikliği
+  fromStatus      ServiceStatus?
+  toStatus        ServiceStatus
+  channel         DebtorNotificationMode?
+  trackingNo      String?
+  returnReason    ServiceReturnReason?
+  
+  // Tarihler
+  actionDate      DateTime            // İşlem tarihi (gönderim/tebliğ/iade)
+  
+  // Meta
+  note            String?
+  createdBy       String?             // User ID
+  createdAt       DateTime            @default(now())
+
+  @@index([caseDebtorId])
+  @@index([toStatus])
 }
 
 model Due {
@@ -1554,6 +1606,7 @@ model Collection {
   @@index([caseDebtorId])
   @@index([date])
   @@index([status])
+  @@index([type])
 }
 
 // Tahsilat Mahsup Kaydı (Hangi alacak kalemine ne kadar mahsup edildi)
@@ -2060,6 +2113,39 @@ enum DebtorNotificationMode {
   KEP       // Kayıtlı Elektronik Posta
   UETS      // Ulusal Elektronik Tebligat Sistemi
   ILANEN    // İlanen Tebligat
+}
+
+// Tebligat Durumu (ServiceStatus)
+enum ServiceStatus {
+  NOT_STARTED   // Hiç hazırlanmadı/çıkmadı
+  READY         // Tebliğ evrağı hazır (taslak/print)
+  SENT          // PTT/elektronik gönderildi
+  DELIVERED     // Tebliğ edildi (tebliğ tarihi var)
+  RETURNED      // İade (sebep var)
+  MUHTAR        // Muhtara teslim (TK 21/2)
+  ANNOUNCEMENT  // İlan yoluyla
+  FAILED        // Teknik/işlemsel hata
+  UNKNOWN       // Eski kayıt/migrasyon
+}
+
+// Tebligat İade Sebebi
+enum ServiceReturnReason {
+  ADDRESS_NOT_FOUND  // Adres bulunamadı
+  MOVED              // Taşınmış
+  REFUSED            // Tebellüğden imtina
+  DECEASED           // Vefat
+  COMPANY_CLOSED     // Şirket kapanmış
+  UNCLAIMED          // Alınmadı/sahipsiz
+  OTHER              // Diğer
+}
+
+// Malvarlığı Sorgu Durumu
+enum AssetQueryStatus {
+  UNKNOWN   // Sorgu yapılmadı
+  YES       // Var
+  NO        // Yok
+  PENDING   // Sorgu devam ediyor
+  ERROR     // Sorgu hatası
 }
 
 // Sorumluluk Türü

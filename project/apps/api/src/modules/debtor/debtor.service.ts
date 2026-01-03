@@ -15,6 +15,107 @@ import {
   DebtorType,
 } from "./dto/debtor.dto";
 
+// Types for case debtors (FAZ 1)
+// Using inline types instead of @hukuk/types to avoid TypeScript strip-only mode issues
+
+export type ServiceStatus = "NOT_STARTED" | "READY" | "SENT" | "DELIVERED" | "RETURNED" | "MUHTAR" | "ANNOUNCEMENT" | "FAILED" | "UNKNOWN";
+export type AssetQueryStatus = "UNKNOWN" | "YES" | "NO" | "PENDING" | "ERROR";
+export type DebtorRole = "ASIL_BORCLU" | "MUSTEREK_BORCLU" | "KEFIL" | "AVALIST" | "MIRASCI" | "TEMSILCI" | "DIGER";
+export type AlertLevel = "NONE" | "INFO" | "WARN" | "DANGER";
+
+export type DebtorIssueCode =
+  | "MISSING_ADDRESS"
+  | "MISSING_TCKN"
+  | "MISSING_VKN"
+  | "NO_CONTACT"
+  | "SERVICE_NOT_STARTED"
+  | "SERVICE_STUCK"
+  | "RETURN_REASON_MISSING"
+  | "DELIVERED_DATE_MISSING"
+  | "SERVICE_FAILED"
+  | "RISK_CONCORDAT"
+  | "RISK_BANKRUPTCY"
+  | "RISK_ADDRESS_SUSPECT"
+  | "STALE_30D"
+  | "NO_ASSET_QUERY";
+
+export interface DebtorIssue {
+  code: DebtorIssueCode;
+  level: AlertLevel;
+  label: string;
+}
+
+export interface DebtorListItemDTO {
+  id: string;
+  caseDebtorId: string;
+  displayName: string;
+  personType: "REAL" | "LEGAL";
+  role: DebtorRole;
+  identityMasked?: string;
+  phoneMasked?: string;
+  addressShort?: string;
+  serviceStatus: ServiceStatus;
+  /** Pre-computed label with date, e.g. "Tebliğ Edildi — 12.01.2026" */
+  serviceLabel: string;
+  assets: AssetsDTO;
+  alertCount: number;
+  alertLevel: AlertLevel;
+  issues: DebtorIssue[];
+}
+
+export interface ServiceDTO {
+  status: ServiceStatus;
+  channel?: string;
+  trackingNo?: string;
+  sentAt?: string;
+  deliveredAt?: string;
+  returnedAt?: string;
+  returnReason?: string;
+}
+
+export interface AssetsDTO {
+  vehicle: AssetQueryStatus;
+  realEstate: AssetQueryStatus;
+  bank: AssetQueryStatus;
+  sgkWage: AssetQueryStatus;
+  lastQueryAt?: string;
+}
+
+export interface DebtorDetailDTO extends DebtorListItemDTO {
+  emailMasked?: string;
+  service: ServiceDTO;
+  assets: AssetsDTO;
+  riskFlags: string[];
+  staleDays?: number;
+  quickNote?: string;
+  issues: DebtorIssue[];
+}
+
+export interface DebtorsSummaryDTO {
+  total: number;
+  delivered: number;
+  pending: number;
+  returned: number;
+  danger: number;
+}
+
+const DebtorIssueLabelMap: Record<DebtorIssueCode, string> = {
+  MISSING_ADDRESS: "Adres eksik",
+  MISSING_TCKN: "TCKN eksik",
+  MISSING_VKN: "VKN eksik",
+  NO_CONTACT: "İletişim bilgisi yok",
+  SERVICE_NOT_STARTED: "Tebligat başlatılmadı",
+  SERVICE_STUCK: "Tebligat takılı (7+ gün)",
+  RETURN_REASON_MISSING: "İade sebebi girilmedi",
+  DELIVERED_DATE_MISSING: "Tebliğ tarihi eksik",
+  SERVICE_FAILED: "Tebligat başarısız",
+  RISK_CONCORDAT: "Konkordato riski",
+  RISK_BANKRUPTCY: "İflas riski",
+  RISK_ADDRESS_SUSPECT: "Adres şüpheli",
+  STALE_30D: "30+ gündür işlem yok",
+  NO_ASSET_QUERY: "Malvarlığı sorgusu yapılmadı",
+};
+
 @Injectable()
 export class DebtorService {
   constructor(private prisma: PrismaService) {}
@@ -473,5 +574,678 @@ export class DebtorService {
       byRisk: byRisk.reduce((acc, item) => ({ ...acc, [item.riskLevel || "NONE"]: item._count }), {}),
       recentlyAdded,
     };
+  }
+
+  // ==================== CASE DEBTORS (FAZ 1) ====================
+
+  /**
+   * Get debtors for a specific case with summary
+   * Returns DebtorListItemDTO[] + DebtorsSummaryDTO
+   */
+  async getDebtorsForCase(tenantId: string, caseId: string): Promise<{
+    summary: DebtorsSummaryDTO;
+    items: DebtorListItemDTO[];
+  }> {
+    // Verify case exists and belongs to tenant
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+      select: { id: true },
+    });
+
+    if (!caseExists) {
+      throw new NotFoundException("Takip bulunamadı");
+    }
+
+    // Fetch case debtors with debtor details
+    const caseDebtors = await this.prisma.caseDebtor.findMany({
+      where: { caseId },
+      include: {
+        debtor: {
+          include: {
+            debtorAddresses: { where: { isPrimary: true }, take: 1 },
+          },
+        },
+        selectedAddress: true,
+      },
+      orderBy: [
+        { role: "asc" },
+        { createdAt: "asc" },
+      ],
+    });
+
+    // Transform to DTOs and calculate issues
+    const items: DebtorListItemDTO[] = caseDebtors.map((cd) => {
+      const debtor = cd.debtor;
+      const address = cd.selectedAddress || debtor.debtorAddresses[0];
+      const issues = this.calculateDebtorIssues(cd, debtor, address);
+      const alertLevel = this.getMaxAlertLevel(issues);
+      const serviceStatus = (cd.serviceStatus as ServiceStatus) || "NOT_STARTED";
+
+      return {
+        id: debtor.id,
+        caseDebtorId: cd.id,
+        displayName: debtor.name,
+        personType: this.mapDebtorTypeToPersonType(debtor.type),
+        role: cd.role as DebtorRole,
+        identityMasked: this.maskIdentity(debtor.identityNo, debtor.type),
+        phoneMasked: this.maskPhone(debtor.phone),
+        addressShort: address ? `${address.district || ""}/${address.city || ""}`.replace(/^\//, "") : undefined,
+        serviceStatus,
+        serviceLabel: this.computeServiceLabel(serviceStatus, cd),
+        deliveredAt: cd.deliveredAt?.toISOString(), // Tebliğ tarihi - hukuki süreler için kritik
+        assets: {
+          vehicle: (cd.assetVehicle as AssetQueryStatus) || "UNKNOWN",
+          realEstate: (cd.assetRealEstate as AssetQueryStatus) || "UNKNOWN",
+          bank: (cd.assetBank as AssetQueryStatus) || "UNKNOWN",
+          sgkWage: (cd.assetSgkWage as AssetQueryStatus) || "UNKNOWN",
+          lastQueryAt: cd.assetLastQueryAt?.toISOString(),
+        },
+        alertCount: issues.length,
+        alertLevel,
+        issues,
+      };
+    });
+
+    // Calculate summary
+    const summary: DebtorsSummaryDTO = {
+      total: items.length,
+      delivered: items.filter((i) => i.serviceStatus === "DELIVERED").length,
+      pending: items.filter((i) => 
+        ["NOT_STARTED", "READY", "SENT"].includes(i.serviceStatus)
+      ).length,
+      returned: items.filter((i) => i.serviceStatus === "RETURNED").length,
+      danger: items.filter((i) => i.alertLevel === "DANGER").length,
+    };
+
+    return { summary, items };
+  }
+
+  /**
+   * Get detailed debtor info for drawer
+   */
+  async getCaseDebtorDetail(tenantId: string, caseId: string, caseDebtorId: string): Promise<DebtorDetailDTO> {
+    const caseDebtor = await this.prisma.caseDebtor.findFirst({
+      where: { 
+        id: caseDebtorId, 
+        caseId,
+        case: { tenantId },
+      },
+      include: {
+        debtor: {
+          include: {
+            debtorAddresses: { orderBy: { isPrimary: "desc" } },
+          },
+        },
+        selectedAddress: true,
+      },
+    });
+
+    if (!caseDebtor) {
+      throw new NotFoundException("Borçlu bulunamadı");
+    }
+
+    const debtor = caseDebtor.debtor;
+    const address = caseDebtor.selectedAddress || debtor.debtorAddresses[0];
+    const issues = this.calculateDebtorIssues(caseDebtor, debtor, address);
+    const alertLevel = this.getMaxAlertLevel(issues);
+    const serviceStatus = (caseDebtor.serviceStatus as ServiceStatus) || "NOT_STARTED";
+
+    return {
+      id: debtor.id,
+      caseDebtorId: caseDebtor.id,
+      displayName: debtor.name,
+      personType: this.mapDebtorTypeToPersonType(debtor.type),
+      role: caseDebtor.role as DebtorRole,
+      identityMasked: this.maskIdentity(debtor.identityNo, debtor.type),
+      phoneMasked: this.maskPhone(debtor.phone),
+      emailMasked: this.maskEmail(debtor.email),
+      addressShort: address ? `${address.district || ""}/${address.city || ""}`.replace(/^\//, "") : undefined,
+      serviceStatus,
+      serviceLabel: this.computeServiceLabel(serviceStatus, caseDebtor),
+      alertCount: issues.length,
+      alertLevel,
+      service: {
+        status: serviceStatus,
+        channel: caseDebtor.serviceChannel as any,
+        trackingNo: caseDebtor.trackingNo || undefined,
+        sentAt: caseDebtor.sentAt?.toISOString(),
+        deliveredAt: caseDebtor.deliveredAt?.toISOString(),
+        returnedAt: caseDebtor.returnedAt?.toISOString(),
+        returnReason: caseDebtor.returnReason as any,
+      },
+      assets: {
+        vehicle: (caseDebtor.assetVehicle as AssetQueryStatus) || "UNKNOWN",
+        realEstate: (caseDebtor.assetRealEstate as AssetQueryStatus) || "UNKNOWN",
+        bank: (caseDebtor.assetBank as AssetQueryStatus) || "UNKNOWN",
+        sgkWage: (caseDebtor.assetSgkWage as AssetQueryStatus) || "UNKNOWN",
+        lastQueryAt: caseDebtor.assetLastQueryAt?.toISOString(),
+      },
+      riskFlags: this.extractRiskFlags(debtor),
+      staleDays: this.calculateStaleDays(caseDebtor.updatedAt),
+      quickNote: caseDebtor.quickNote || undefined,
+      issues,
+    };
+  }
+
+  /**
+   * Update quick note for a case debtor
+   */
+  async updateQuickNote(
+    tenantId: string,
+    caseId: string,
+    caseDebtorId: string,
+    userId: string,
+    text: string
+  ): Promise<{ quickNote: string | null; updatedAt: string }> {
+    // Verify access
+    const caseDebtor = await this.prisma.caseDebtor.findFirst({
+      where: { id: caseDebtorId, caseId, case: { tenantId } },
+    });
+
+    if (!caseDebtor) {
+      throw new NotFoundException("Borçlu bulunamadı");
+    }
+
+    // Validate length
+    if (text && text.length > 240) {
+      throw new BadRequestException("Not en fazla 240 karakter olabilir");
+    }
+
+    const updated = await this.prisma.caseDebtor.update({
+      where: { id: caseDebtorId },
+      data: {
+        quickNote: text || null,
+        quickNoteUpdatedAt: new Date(),
+        quickNoteUpdatedBy: userId,
+      },
+    });
+
+    return {
+      quickNote: updated.quickNote,
+      updatedAt: updated.quickNoteUpdatedAt?.toISOString() || new Date().toISOString(),
+    };
+  }
+
+  // ==================== ISSUE CALCULATION ====================
+
+  private calculateDebtorIssues(
+    caseDebtor: any,
+    debtor: any,
+    address: any
+  ): DebtorIssue[] {
+    const issues: DebtorIssue[] = [];
+
+    // Address check
+    if (!address) {
+      issues.push({
+        code: "MISSING_ADDRESS",
+        level: "DANGER",
+        label: DebtorIssueLabelMap.MISSING_ADDRESS,
+      });
+    }
+
+    // Identity check based on type
+    if (debtor.type === "INDIVIDUAL" && !debtor.tckn) {
+      issues.push({
+        code: "MISSING_TCKN",
+        level: "WARN",
+        label: DebtorIssueLabelMap.MISSING_TCKN,
+      });
+    }
+    if (debtor.type === "COMPANY" && !debtor.vkn) {
+      issues.push({
+        code: "MISSING_VKN",
+        level: "WARN",
+        label: DebtorIssueLabelMap.MISSING_VKN,
+      });
+    }
+
+    // Contact check
+    if (!debtor.phone && !debtor.email) {
+      issues.push({
+        code: "NO_CONTACT",
+        level: "INFO",
+        label: DebtorIssueLabelMap.NO_CONTACT,
+      });
+    }
+
+    // Service status checks
+    const status = caseDebtor.serviceStatus || "NOT_STARTED";
+    
+    if (status === "NOT_STARTED") {
+      issues.push({
+        code: "SERVICE_NOT_STARTED",
+        level: "DANGER",
+        label: DebtorIssueLabelMap.SERVICE_NOT_STARTED,
+      });
+    }
+
+    if (status === "SENT" && caseDebtor.sentAt) {
+      const daysSinceSent = Math.floor(
+        (Date.now() - new Date(caseDebtor.sentAt).getTime()) / (1000 * 60 * 60 * 24)
+      );
+      if (daysSinceSent > 7) {
+        issues.push({
+          code: "SERVICE_STUCK",
+          level: "WARN",
+          label: DebtorIssueLabelMap.SERVICE_STUCK,
+        });
+      }
+    }
+
+    if (status === "RETURNED" && !caseDebtor.returnReason) {
+      issues.push({
+        code: "RETURN_REASON_MISSING",
+        level: "WARN",
+        label: DebtorIssueLabelMap.RETURN_REASON_MISSING,
+      });
+    }
+
+    if (status === "DELIVERED" && !caseDebtor.deliveredAt) {
+      issues.push({
+        code: "DELIVERED_DATE_MISSING",
+        level: "DANGER",
+        label: DebtorIssueLabelMap.DELIVERED_DATE_MISSING,
+      });
+    }
+
+    if (status === "FAILED") {
+      issues.push({
+        code: "SERVICE_FAILED",
+        level: "DANGER",
+        label: DebtorIssueLabelMap.SERVICE_FAILED,
+      });
+    }
+
+    // Risk flags
+    if (debtor.riskLevel === "COK_YUKSEK") {
+      issues.push({
+        code: "RISK_BANKRUPTCY",
+        level: "DANGER",
+        label: DebtorIssueLabelMap.RISK_BANKRUPTCY,
+      });
+    }
+
+    return issues;
+  }
+
+  private getMaxAlertLevel(issues: DebtorIssue[]): AlertLevel {
+    if (issues.some((i) => i.level === "DANGER")) return "DANGER";
+    if (issues.some((i) => i.level === "WARN")) return "WARN";
+    if (issues.some((i) => i.level === "INFO")) return "INFO";
+    return "NONE";
+  }
+
+  // ==================== MASKING HELPERS ====================
+
+  private maskIdentity(identityNo: string | null, type: string): string | undefined {
+    if (!identityNo) return undefined;
+    const prefix = type === "COMPANY" ? "VKN" : "TCKN";
+    if (identityNo.length <= 4) return `${prefix}: ${identityNo}`;
+    return `${prefix}: ${identityNo.slice(0, 2)}****${identityNo.slice(-2)}`;
+  }
+
+  private maskPhone(phone: string | null): string | undefined {
+    if (!phone) return undefined;
+    if (phone.length <= 4) return phone;
+    return `${phone.slice(0, 4)}***${phone.slice(-2)}`;
+  }
+
+  private maskEmail(email: string | null): string | undefined {
+    if (!email) return undefined;
+    const [local, domain] = email.split("@");
+    if (!domain) return email;
+    const maskedLocal = local.length > 2 ? `${local[0]}***${local.slice(-1)}` : local;
+    return `${maskedLocal}@${domain}`;
+  }
+
+  private mapDebtorTypeToPersonType(type: string): "REAL" | "LEGAL" {
+    return type === "INDIVIDUAL" || type === "ESTATE" ? "REAL" : "LEGAL";
+  }
+
+  private extractRiskFlags(debtor: any): string[] {
+    const flags: string[] = [];
+    if (debtor.riskLevel === "COK_YUKSEK") flags.push("BANKRUPTCY");
+    if (debtor.riskLevel === "YUKSEK") flags.push("ADDRESS_SUSPECT");
+    return flags;
+  }
+
+  private calculateStaleDays(updatedAt: Date): number {
+    return Math.floor((Date.now() - updatedAt.getTime()) / (1000 * 60 * 60 * 24));
+  }
+
+  /**
+   * Compute service label with date for display
+   * e.g. "Tebliğ Edildi — 12.01.2026" or "İade — Adres Bulunamadı"
+   */
+  private computeServiceLabel(status: ServiceStatus, caseDebtor: any): string {
+    const formatDate = (date: Date | null | undefined): string => {
+      if (!date) return "";
+      return new Date(date).toLocaleDateString("tr-TR", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      });
+    };
+
+    const returnReasonLabels: Record<string, string> = {
+      ADDRESS_NOT_FOUND: "Adres Bulunamadı",
+      MOVED: "Taşınmış",
+      REFUSED: "Reddetti",
+      DECEASED: "Vefat",
+      COMPANY_CLOSED: "Şirket Kapandı",
+      UNCLAIMED: "Alınmadı",
+      OTHER: "Diğer",
+    };
+
+    switch (status) {
+      case "NOT_STARTED":
+        return "Tebligat Başlatılmadı";
+      case "READY":
+        return "Hazırlandı";
+      case "SENT":
+        const sentDate = formatDate(caseDebtor.sentAt);
+        const trackingNo = caseDebtor.trackingNo;
+        if (trackingNo) {
+          return `Gönderildi — ${trackingNo.slice(0, 6)}...`;
+        }
+        return sentDate ? `Gönderildi — ${sentDate}` : "Gönderildi";
+      case "DELIVERED":
+        const deliveredDate = formatDate(caseDebtor.deliveredAt);
+        return deliveredDate ? `Tebliğ Edildi — ${deliveredDate}` : "Tebliğ Edildi";
+      case "RETURNED":
+        const reason = caseDebtor.returnReason;
+        const reasonLabel = reason ? returnReasonLabels[reason] || reason : "";
+        return reasonLabel ? `İade — ${reasonLabel}` : "İade";
+      case "MUHTAR":
+        const muhtarDate = formatDate(caseDebtor.deliveredAt);
+        return muhtarDate ? `Muhtara — ${muhtarDate}` : "Muhtara";
+      case "ANNOUNCEMENT":
+        const announcementDate = formatDate(caseDebtor.deliveredAt);
+        return announcementDate ? `İlan — ${announcementDate}` : "İlan";
+      case "FAILED":
+        return "Başarısız";
+      default:
+        return "Bilinmiyor";
+    }
+  }
+
+  // ==================== FAZ 2: TEBLİGAT YÖNETİMİ ====================
+
+  /**
+   * Valid state transitions for service status
+   */
+  private readonly SERVICE_TRANSITIONS: Record<ServiceStatus, ServiceStatus[]> = {
+    NOT_STARTED: ["READY", "FAILED"],
+    READY: ["SENT", "FAILED"],
+    SENT: ["DELIVERED", "RETURNED", "MUHTAR", "FAILED"],
+    DELIVERED: [], // Terminal state
+    RETURNED: ["READY", "FAILED"], // Can retry with new address
+    MUHTAR: ["DELIVERED", "FAILED"],
+    ANNOUNCEMENT: ["DELIVERED", "FAILED"],
+    FAILED: ["READY"], // Can retry
+    UNKNOWN: ["NOT_STARTED", "READY", "SENT", "DELIVERED", "RETURNED", "MUHTAR", "ANNOUNCEMENT", "FAILED"],
+  };
+
+  /**
+   * Check if a status transition is valid
+   */
+  private isValidTransition(from: ServiceStatus, to: ServiceStatus): boolean {
+    const allowed = this.SERVICE_TRANSITIONS[from] || [];
+    return allowed.includes(to);
+  }
+
+  /**
+   * Get allowed transitions from current status
+   */
+  private getAllowedTransitions(from: ServiceStatus): ServiceStatus[] {
+    return this.SERVICE_TRANSITIONS[from] || [];
+  }
+
+  /**
+   * Update service status for a case debtor
+   */
+  async updateServiceStatus(
+    tenantId: string,
+    caseId: string,
+    caseDebtorId: string,
+    userId: string,
+    data: {
+      status: ServiceStatus;
+      channel?: string;
+      trackingNo?: string;
+      sentAt?: string;
+      deliveredAt?: string;
+      returnedAt?: string;
+      returnReason?: string;
+      note?: string;
+      directEntry?: boolean; // Skip state machine validation for manual date entry
+    }
+  ): Promise<DebtorDetailDTO> {
+    // Verify access
+    const caseDebtor = await this.prisma.caseDebtor.findFirst({
+      where: { id: caseDebtorId, caseId, case: { tenantId } },
+      include: {
+        debtor: {
+          include: {
+            debtorAddresses: { orderBy: { isPrimary: "desc" } },
+          },
+        },
+        selectedAddress: true,
+      },
+    });
+
+    if (!caseDebtor) {
+      throw new NotFoundException("Borçlu bulunamadı");
+    }
+
+    const currentStatus = (caseDebtor.serviceStatus as ServiceStatus) || "NOT_STARTED";
+    const newStatus = data.status;
+
+    // Direct entry mode allows skipping intermediate states
+    // Useful for manually entering historical data or correcting records
+    const allowedDirectEntryStatuses: ServiceStatus[] = ["DELIVERED", "RETURNED", "MUHTAR", "ANNOUNCEMENT"];
+    const isDirectEntryAllowed = data.directEntry && allowedDirectEntryStatuses.includes(newStatus);
+
+    // Validate state transition (skip if direct entry mode)
+    if (!isDirectEntryAllowed && !this.isValidTransition(currentStatus, newStatus)) {
+      throw new ConflictException({
+        code: "INVALID_STATUS_TRANSITION",
+        message: `${currentStatus} → ${newStatus} geçişi geçersiz`,
+        from: currentStatus,
+        to: newStatus,
+        allowed: this.getAllowedTransitions(currentStatus),
+      });
+    }
+
+    // Validate required fields based on status
+    if (newStatus === "DELIVERED" && !data.deliveredAt) {
+      throw new BadRequestException("Tebliğ tarihi zorunludur");
+    }
+    if ((newStatus === "MUHTAR" || newStatus === "ANNOUNCEMENT") && !data.deliveredAt) {
+      throw new BadRequestException("Tebliğ tarihi zorunludur");
+    }
+    if (newStatus === "RETURNED") {
+      if (!data.returnedAt) {
+        throw new BadRequestException("İade tarihi zorunludur");
+      }
+      if (!data.returnReason) {
+        throw new BadRequestException("İade sebebi zorunludur");
+      }
+    }
+    if (newStatus === "SENT" && !data.sentAt) {
+      throw new BadRequestException("Gönderim tarihi zorunludur");
+    }
+
+    // Parse dates
+    const sentAt = data.sentAt ? new Date(data.sentAt) : null;
+    const deliveredAt = data.deliveredAt ? new Date(data.deliveredAt) : null;
+    const returnedAt = data.returnedAt ? new Date(data.returnedAt) : null;
+
+    // Validate dates are not in the future
+    const now = new Date();
+    if (sentAt && sentAt > now) {
+      throw new BadRequestException("Gönderim tarihi gelecekte olamaz");
+    }
+    if (deliveredAt && deliveredAt > now) {
+      throw new BadRequestException("Tebliğ tarihi gelecekte olamaz");
+    }
+    if (returnedAt && returnedAt > now) {
+      throw new BadRequestException("İade tarihi gelecekte olamaz");
+    }
+
+    // Determine actionDate based on status
+    const actionDate = deliveredAt || returnedAt || sentAt || new Date();
+
+    // Update in transaction with history
+    const updated = await this.prisma.$transaction(async (tx) => {
+      // Create history record
+      await tx.serviceHistory.create({
+        data: {
+          caseDebtorId,
+          fromStatus: currentStatus,
+          toStatus: newStatus,
+          channel: data.channel as any || null,
+          trackingNo: data.trackingNo || null,
+          actionDate,
+          returnReason: data.returnReason as any || null,
+          note: data.note || null,
+          createdBy: userId,
+        },
+      });
+
+      // Update case debtor
+      return tx.caseDebtor.update({
+        where: { id: caseDebtorId },
+        data: {
+          serviceStatus: newStatus,
+          serviceChannel: data.channel as any || caseDebtor.serviceChannel,
+          trackingNo: data.trackingNo || caseDebtor.trackingNo,
+          sentAt: sentAt || caseDebtor.sentAt,
+          deliveredAt: deliveredAt || caseDebtor.deliveredAt,
+          returnedAt: returnedAt || caseDebtor.returnedAt,
+          returnReason: data.returnReason as any || caseDebtor.returnReason,
+        },
+        include: {
+          debtor: {
+            include: {
+              debtorAddresses: { orderBy: { isPrimary: "desc" } },
+            },
+          },
+          selectedAddress: true,
+        },
+      });
+    });
+
+    // Return updated detail
+    return this.getCaseDebtorDetail(tenantId, caseId, caseDebtorId);
+  }
+
+  /**
+   * Get service history for a case debtor
+   */
+  async getServiceHistory(
+    tenantId: string,
+    caseId: string,
+    caseDebtorId: string
+  ): Promise<{
+    id: string;
+    fromStatus: ServiceStatus;
+    toStatus: ServiceStatus;
+    channel?: string;
+    trackingNo?: string;
+    actionDate?: string;
+    returnReason?: string;
+    note?: string;
+    createdAt: string;
+    createdBy?: string;
+  }[]> {
+    // Verify access
+    const caseDebtor = await this.prisma.caseDebtor.findFirst({
+      where: { id: caseDebtorId, caseId, case: { tenantId } },
+    });
+
+    if (!caseDebtor) {
+      throw new NotFoundException("Borçlu bulunamadı");
+    }
+
+    const history = await this.prisma.serviceHistory.findMany({
+      where: { caseDebtorId },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+    });
+
+    return history.map((h) => ({
+      id: h.id,
+      fromStatus: (h.fromStatus || "UNKNOWN") as ServiceStatus,
+      toStatus: h.toStatus as ServiceStatus,
+      channel: h.channel || undefined,
+      trackingNo: h.trackingNo || undefined,
+      actionDate: h.actionDate?.toISOString(),
+      returnReason: h.returnReason || undefined,
+      note: h.note || undefined,
+      createdAt: h.createdAt.toISOString(),
+      createdBy: h.createdBy || undefined,
+    }));
+  }
+
+  /**
+   * Start a new service attempt (after RETURNED)
+   * Resets status to READY and clears tracking info
+   */
+  async startNewServiceAttempt(
+    tenantId: string,
+    caseId: string,
+    caseDebtorId: string,
+    userId: string,
+    newAddressId?: string
+  ): Promise<DebtorDetailDTO> {
+    const caseDebtor = await this.prisma.caseDebtor.findFirst({
+      where: { id: caseDebtorId, caseId, case: { tenantId } },
+    });
+
+    if (!caseDebtor) {
+      throw new NotFoundException("Borçlu bulunamadı");
+    }
+
+    const currentStatus = (caseDebtor.serviceStatus as ServiceStatus) || "NOT_STARTED";
+
+    // Only allow from RETURNED or FAILED
+    if (!["RETURNED", "FAILED"].includes(currentStatus)) {
+      throw new BadRequestException(
+        "Yeni tebligat denemesi sadece iade veya başarısız durumdan başlatılabilir"
+      );
+    }
+
+    // Update with history
+    await this.prisma.$transaction(async (tx) => {
+      // Create history record
+      await tx.serviceHistory.create({
+        data: {
+          caseDebtorId,
+          fromStatus: currentStatus,
+          toStatus: "READY",
+          actionDate: new Date(),
+          note: "Yeni tebligat denemesi başlatıldı",
+          createdBy: userId,
+        },
+      });
+
+      // Reset service fields
+      await tx.caseDebtor.update({
+        where: { id: caseDebtorId },
+        data: {
+          serviceStatus: "READY",
+          trackingNo: null,
+          sentAt: null,
+          deliveredAt: null,
+          returnedAt: null,
+          returnReason: null,
+          selectedAddressId: newAddressId || caseDebtor.selectedAddressId,
+        },
+      });
+    });
+
+    return this.getCaseDebtorDetail(tenantId, caseId, caseDebtorId);
   }
 }

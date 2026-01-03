@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import { Plus, X, Search, Building2, User, Landmark, Edit2, Trash2, Loader2, Mail, Send, MessageSquare, Download, Upload, FileSpreadsheet, FileText, FileCheck, AlertTriangle, Clock, CheckCircle, Globe, Users, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { api } from "@/lib/api";
 import { PoaScannerWizard } from "@/components/client/PoaScannerWizard";
@@ -16,6 +17,9 @@ type ClientSortField = "type" | "name" | "identityNo" | "phone" | "email" | "cas
 type SortDirection = "asc" | "desc" | null;
 
 export default function ClientsSettingsPage() {
+  const searchParams = useSearchParams();
+  const editClientId = searchParams.get("edit");
+  
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -64,24 +68,28 @@ export default function ClientsSettingsPage() {
         clientId = res.data?.id || res.data?.data?.id;
       }
       
-      // Taranmış veriden geldiyse ve vekalet bilgileri varsa, otomatik vekalet oluştur
-      if (scannedData && clientId && (scannedData.poaNumber || scannedData.poaDate || scannedData.notaryName)) {
+      // Vekaletname bilgileri varsa (taranmış veya manuel girilmiş), otomatik vekalet oluştur
+      const poaData = scannedData || data;
+      const hasPoaInfo = poaData.poaNumber || poaData.poaDate || poaData.notaryName;
+      
+      if (clientId && hasPoaInfo && !editingClient) {
+        // Sadece yeni müvekkil oluştururken otomatik POA oluştur
         try {
           await api.post("/poa", {
             clientId,
-            journalNo: scannedData.poaNumber,
-            poaNumber: scannedData.poaNumber,
-            dateIssued: scannedData.poaDate ? new Date(scannedData.poaDate) : undefined,
-            notaryName: scannedData.notaryName,
-            notaryCity: scannedData.notaryCity,
-            isLimited: scannedData.isLimited || false,
-            validUntil: scannedData.validUntil ? new Date(scannedData.validUntil) : undefined,
-            scopeType: scannedData.scopeType || "GENEL",
-            scopeDescription: scannedData.scopeDescription,
-            canCollect: scannedData.canCollect ?? true,
-            canWaive: scannedData.canWaive ?? false,
-            canSettle: scannedData.canSettle ?? false,
-            canRelease: scannedData.canRelease ?? false,
+            journalNo: poaData.poaNumber,
+            poaNumber: poaData.poaNumber,
+            dateIssued: poaData.poaDate ? new Date(poaData.poaDate) : undefined,
+            notaryName: poaData.notaryName,
+            notaryCity: poaData.notaryCity,
+            isLimited: poaData.isLimited || false,
+            validUntil: poaData.validUntil ? new Date(poaData.validUntil) : undefined,
+            scopeType: poaData.scopeType || "GENEL",
+            scopeDescription: poaData.scopeDescription,
+            canCollect: poaData.canCollect ?? data.canCollect ?? true,
+            canWaive: poaData.canWaive ?? data.canWaive ?? false,
+            canSettle: poaData.canSettle ?? data.canSettle ?? false,
+            canRelease: poaData.canRelease ?? data.canRelease ?? false,
           });
           console.log("Vekalet otomatik oluşturuldu");
         } catch (poaErr) {
@@ -154,8 +162,14 @@ export default function ClientsSettingsPage() {
     }
   };
 
-  // Sıralanmış liste
+  // Sıralanmış liste - editClientId varsa en üste çıkar
   const sortedClients = [...filtered].sort((a, b) => {
+    // URL'den gelen edit parametresi varsa o müvekkili en üste al
+    if (editClientId) {
+      if (a.id === editClientId) return -1;
+      if (b.id === editClientId) return 1;
+    }
+    
     if (!sortField || !sortDirection) return 0;
     
     let aValue: any, bValue: any;
@@ -325,8 +339,9 @@ export default function ClientsSettingsPage() {
               {sortedClients.map(client => {
                 const typeInfo = CLIENT_TYPES.find(t => t.value === client.type) || CLIENT_TYPES[0];
                 const TypeIcon = typeInfo.icon;
+                const isHighlighted = client.id === editClientId;
                 return (
-                  <tr key={client.id} className={`hover:bg-gray-50 transition-colors ${selectedClients.includes(client.id) ? 'bg-blue-50' : ''}`}>
+                  <tr key={client.id} className={`hover:bg-gray-50 transition-colors ${selectedClients.includes(client.id) ? 'bg-blue-50' : ''} ${isHighlighted ? 'bg-yellow-50 ring-2 ring-yellow-400 ring-inset' : ''}`}>
                     <td className="px-3 py-2">
                       <input
                         type="checkbox"
@@ -349,7 +364,22 @@ export default function ClientsSettingsPage() {
                     </td>
                     <td className="px-3 py-2">
                       <button 
-                        onClick={() => { setEditingClient(client); setScannedData(null); setShowModal(true); }} 
+                        onClick={async () => { 
+                          // Müvekkil detayını POA'larla birlikte çek
+                          try {
+                            const res = await api.get(`/clients/${client.id}`);
+                            const fullClient = res.data?.data || res.data;
+                            setEditingClient(fullClient); 
+                            setScannedData(null); 
+                            setShowModal(true); 
+                          } catch (e) {
+                            console.error("Müvekkil detayı yüklenemedi:", e);
+                            // Fallback: liste verisini kullan
+                            setEditingClient(client); 
+                            setScannedData(null); 
+                            setShowModal(true);
+                          }
+                        }} 
                         className="font-medium text-left hover:text-primary hover:underline transition-colors"
                         title="Düzenlemek için tıklayın"
                       >
@@ -407,7 +437,17 @@ export default function ClientsSettingsPage() {
                         <button onClick={() => { setSmsClient(client); setShowSmsModal(true); }} className="p-1.5 text-purple-500 hover:bg-purple-50 rounded" title="SMS Gönder">
                           <MessageSquare className="h-4 w-4" />
                         </button>
-                        <button onClick={() => { setEditingClient(client); setScannedData(null); setShowModal(true); }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded" title="Düzenle">
+                        <button onClick={async () => { 
+                          try {
+                            const res = await api.get(`/clients/${client.id}`);
+                            const fullClient = res.data?.data || res.data;
+                            setEditingClient(fullClient); 
+                          } catch (e) {
+                            setEditingClient(client); 
+                          }
+                          setScannedData(null); 
+                          setShowModal(true); 
+                        }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded" title="Düzenle">
                           <Edit2 className="h-4 w-4" />
                         </button>
                         <button onClick={() => handleDelete(client.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Sil">
@@ -496,17 +536,17 @@ export default function ClientsSettingsPage() {
 function ClientModal({ client, scannedData, onSave, onClose, saving }: { client: any; scannedData?: any; onSave: (data: any) => void; onClose: () => void; saving: boolean }) {
   const [form, setForm] = useState({
     type: scannedData?.clientType || client?.type || "PERSON",
-    firstName: scannedData?.firstName || "",
-    lastName: scannedData?.lastName || "",
-    tckn: scannedData?.tckn || "",
-    gender: "",
-    companyName: scannedData?.companyName || client?.name || "",
-    vkn: scannedData?.vkn || "",
+    firstName: scannedData?.firstName || client?.firstName || "",
+    lastName: scannedData?.lastName || client?.lastName || "",
+    tckn: scannedData?.tckn || client?.tckn || "",
+    gender: client?.gender || "",
+    companyName: scannedData?.companyName || client?.companyName || client?.name || "",
+    vkn: scannedData?.vkn || client?.vkn || "",
     taxOffice: scannedData?.taxOffice || client?.taxOffice || "",
-    canCollect: scannedData?.canCollect ?? true,
-    canWaive: scannedData?.canWaive ?? false,
-    canSettle: scannedData?.canSettle ?? false,
-    canRelease: scannedData?.canRelease ?? false,
+    canCollect: scannedData?.canCollect ?? client?.canCollect ?? true,
+    canWaive: scannedData?.canWaive ?? client?.canWaive ?? false,
+    canSettle: scannedData?.canSettle ?? client?.canSettle ?? false,
+    canRelease: scannedData?.canRelease ?? client?.canRelease ?? false,
     notes: client?.notes || "",
     // Vekaletname bilgileri
     poaNumber: scannedData?.poaNumber || "",
@@ -574,6 +614,8 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
       }
     } else if (client) {
       const nameParts = client.name?.split(" ") || [];
+      // İlk aktif vekaletten bilgileri al
+      const activePoa = client.powerOfAttorneys?.find((p: any) => p.status === 'ACTIVE') || client.powerOfAttorneys?.[0];
       setForm(prev => ({
         ...prev,
         type: client.type || "PERSON",
@@ -584,15 +626,16 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
         companyName: client.companyName || (client.type === "COMPANY" || client.type === "PUBLIC" ? client.name || "" : ""),
         vkn: client.vkn || (client.type === "COMPANY" || client.type === "PUBLIC" ? client.identityNo || "" : ""),
         taxOffice: client.taxOffice || "",
-        canCollect: client.canCollect ?? true,
-        canWaive: client.canWaive ?? false,
-        canSettle: client.canSettle ?? false,
-        canRelease: client.canRelease ?? false,
+        canCollect: client.canCollect ?? activePoa?.canCollect ?? true,
+        canWaive: client.canWaive ?? activePoa?.canWaive ?? false,
+        canSettle: client.canSettle ?? activePoa?.canSettle ?? false,
+        canRelease: client.canRelease ?? activePoa?.canRelease ?? false,
         notes: client.notes || "",
-        poaNumber: client.poaNumber || "",
-        poaDate: client.poaDate || "",
-        notaryName: client.notaryName || "",
-        notaryCity: client.notaryCity || "",
+        // Vekaletname bilgileri - POA tablosundan
+        poaNumber: activePoa?.journalNo || activePoa?.poaNumber || "",
+        poaDate: activePoa?.dateIssued ? activePoa.dateIssued.split("T")[0] : "",
+        notaryName: activePoa?.notaryName || "",
+        notaryCity: activePoa?.notaryCity || "",
         // Tebrik alanları
         birthDate: client.birthDate ? client.birthDate.split("T")[0] : "",
         foundingDate: client.foundingDate ? client.foundingDate.split("T")[0] : "",
@@ -651,6 +694,11 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
       city: validAddresses.find(a => a.isPrimary)?.city || validAddresses[0]?.city,
       district: validAddresses.find(a => a.isPrimary)?.district || validAddresses[0]?.district,
       region: validAddresses.find(a => a.isPrimary)?.region || validAddresses[0]?.region,
+      // Vekaletname bilgileri
+      poaNumber: form.poaNumber,
+      poaDate: form.poaDate,
+      notaryName: form.notaryName,
+      notaryCity: form.notaryCity,
     });
   };
 

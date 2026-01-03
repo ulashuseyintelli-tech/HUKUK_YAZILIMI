@@ -8,7 +8,7 @@ import {
   Download, Filter, X, ChevronDown, ChevronUp, RefreshCw,
   Mail, MessageSquare, Archive, Copy, AlertTriangle,
   Calendar, DollarSign, Star, MoreHorizontal, UserCheck,
-  ChevronsUpDown
+  ChevronsUpDown, Users
 } from "lucide-react";
 import { Badge } from "@hukuk/ui";
 import { api } from "@/lib/api";
@@ -703,6 +703,8 @@ export default function CasesPage() {
   const searchParams = useSearchParams();
   const router = useRouter();
   const urlStatus = searchParams.get("status");
+  const urlClientId = searchParams.get("clientId");
+  const urlFilter = searchParams.get("filter"); // expiring, notification, stale gibi özel filtreler
   
   const [cases, setCases] = useState<CaseItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -780,6 +782,9 @@ export default function CasesPage() {
     ...defaultFilters,
     status: urlStatus ? [urlStatus] : [],
   });
+
+  // URL'den gelen clientId için müvekkil adı
+  const [urlClientName, setUrlClientName] = useState<string | null>(null);
 
   const [showBulkStatusModal, setShowBulkStatusModal] = useState(false);
   const [showBulkAssignModal, setShowBulkAssignModal] = useState(false);
@@ -1039,6 +1044,8 @@ export default function CasesPage() {
       if (filters.status.length > 0) params.status = filters.status.join(',');
       if (filters.caseType.length > 0) params.type = filters.caseType.join(',');
       if (filters.includeArchived) params.includeArchived = true;
+      // URL'den gelen clientId varsa API'ye gönder
+      if (urlClientId) params.clientId = urlClientId;
       
       const response = await api.getCases(params);
       setCases(response.data || []);
@@ -1055,9 +1062,26 @@ export default function CasesPage() {
     }
   }, [urlStatus]);
 
+  // URL'den clientId geldiğinde filtreye ekle
+  useEffect(() => {
+    if (urlClientId) {
+      setFilters(prev => ({ ...prev, clientId: [urlClientId] }));
+    }
+  }, [urlClientId]);
+
+  // URL'den gelen clientId için müvekkil adını bul
+  useEffect(() => {
+    if (urlClientId && clients.length > 0) {
+      const client = clients.find((c: any) => c.id === urlClientId);
+      setUrlClientName(client?.displayName || client?.name || null);
+    } else if (!urlClientId) {
+      setUrlClientName(null);
+    }
+  }, [urlClientId, clients]);
+
   useEffect(() => {
     fetchCases();
-  }, [filters.status, filters.caseType, filters.includeArchived]);
+  }, [filters.status, filters.caseType, filters.includeArchived, urlClientId]);
 
   const filteredCases = cases.filter((c) => {
     if (filters.search) {
@@ -1496,6 +1520,32 @@ export default function CasesPage() {
           </Link>
         </div>
       </div>
+
+      {/* Müvekkil Filtre Banner - URL'den clientId geldiğinde */}
+      {urlClientId && urlClientName && (
+        <div className="mb-3 p-3 bg-blue-50 border border-blue-200 rounded-lg flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4 text-blue-600" />
+            <span className="text-sm text-blue-800">
+              <span className="font-medium">{urlClientName}</span> müvekkilinin dosyaları gösteriliyor
+            </span>
+            <span className="text-xs text-blue-600 bg-blue-100 px-2 py-0.5 rounded-full">
+              {filteredCases.length} dosya
+            </span>
+          </div>
+          <button
+            onClick={() => {
+              router.push('/cases');
+              setFilters(prev => ({ ...prev, clientId: [] }));
+              setUrlClientName(null);
+            }}
+            className="inline-flex items-center gap-1 px-2 py-1 text-xs text-blue-700 hover:bg-blue-100 rounded transition-colors"
+          >
+            <X className="h-3 w-3" />
+            Filtreyi Kaldır
+          </button>
+        </div>
+      )}
 
       {/* Hızlı Filtre Chip'leri - Seçimlik Panel ile */}
       <div className="flex flex-wrap items-center gap-2 mb-3">
@@ -2095,48 +2145,68 @@ export default function CasesPage() {
                   )}
                 </div>
               </th>
+              {/* 1. DOSYA TAKİP NO */}
               <th 
                 className="p-3 text-left bg-muted cursor-pointer hover:bg-gray-200 select-none"
                 onClick={() => handleSort("fileNumber")}
               >
-                <div className="flex items-center">Dosya No <SortIcon field="fileNumber" /></div>
+                <div className="flex items-center">Takip No <SortIcon field="fileNumber" /></div>
               </th>
-              <th 
-                className="p-3 text-left bg-muted cursor-pointer hover:bg-gray-200 select-none"
-                onClick={() => handleSort("client")}
-              >
-                <div className="flex items-center">Müvekkil <SortIcon field="client" /></div>
-              </th>
-              <th 
-                className="p-3 text-left bg-muted cursor-pointer hover:bg-gray-200 select-none"
-                onClick={() => handleSort("debtor")}
-              >
-                <div className="flex items-center">Borçlu <SortIcon field="debtor" /></div>
-              </th>
-              <th 
-                className="p-3 text-left bg-muted cursor-pointer hover:bg-gray-200 select-none"
-                onClick={() => handleSort("type")}
-              >
-                <div className="flex items-center">Tür <SortIcon field="type" /></div>
-              </th>
-              <th 
-                className="p-3 text-left bg-muted cursor-pointer hover:bg-gray-200 select-none"
-                onClick={() => handleSort("status")}
-              >
-                <div className="flex items-center">Durum <SortIcon field="status" /></div>
-              </th>
-              <th 
-                className="p-3 text-right bg-muted cursor-pointer hover:bg-gray-200 select-none"
-                onClick={() => handleSort("amount")}
-              >
-                <div className="flex items-center justify-end">Tutar <SortIcon field="amount" /></div>
-              </th>
+              {/* 2. TARİH */}
               <th 
                 className="p-3 text-left bg-muted cursor-pointer hover:bg-gray-200 select-none"
                 onClick={() => handleSort("date")}
               >
                 <div className="flex items-center">Tarih <SortIcon field="date" /></div>
               </th>
+              {/* 3. İCRA MERCİİ */}
+              <th className="p-3 text-left bg-muted">
+                <div className="flex items-center">İcra Mercii</div>
+              </th>
+              {/* 4. İCRA DOSYA NO */}
+              <th className="p-3 text-left bg-muted">
+                <div className="flex items-center">İcra Dosya No</div>
+              </th>
+              {/* 5. MÜVEKKİL */}
+              <th 
+                className="p-3 text-left bg-muted cursor-pointer hover:bg-gray-200 select-none"
+                onClick={() => handleSort("client")}
+              >
+                <div className="flex items-center">Müvekkil <SortIcon field="client" /></div>
+              </th>
+              {/* 6. BORÇLU */}
+              <th 
+                className="p-3 text-left bg-muted cursor-pointer hover:bg-gray-200 select-none"
+                onClick={() => handleSort("debtor")}
+              >
+                <div className="flex items-center">Borçlu <SortIcon field="debtor" /></div>
+              </th>
+              {/* 7. TAKİP BİLGİ (Tür + Yol) */}
+              <th 
+                className="p-3 text-left bg-muted cursor-pointer hover:bg-gray-200 select-none"
+                onClick={() => handleSort("type")}
+              >
+                <div className="flex items-center">Takip Bilgi <SortIcon field="type" /></div>
+              </th>
+              {/* 8. FİNANS */}
+              <th 
+                className="p-3 text-right bg-muted cursor-pointer hover:bg-gray-200 select-none"
+                onClick={() => handleSort("amount")}
+              >
+                <div className="flex items-center justify-end">Finans <SortIcon field="amount" /></div>
+              </th>
+              {/* 9. DURUM */}
+              <th 
+                className="p-3 text-left bg-muted cursor-pointer hover:bg-gray-200 select-none"
+                onClick={() => handleSort("status")}
+              >
+                <div className="flex items-center">Durum <SortIcon field="status" /></div>
+              </th>
+              {/* 10. EKİP */}
+              <th className="p-3 text-left bg-muted">
+                <div className="flex items-center">Ekip</div>
+              </th>
+              {/* 11. İŞLEMLER */}
               <th className="p-3 text-center w-24 bg-muted">
                 {selectedCases.length > 0 ? (
                   <div className="flex items-center justify-center gap-1">
@@ -2185,14 +2255,14 @@ export default function CasesPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={9} className="p-8 text-center">
+                <td colSpan={12} className="p-8 text-center">
                   <Loader2 className="h-6 w-6 animate-spin mx-auto mb-2" />
                   <p className="text-muted-foreground">Yükleniyor...</p>
                 </td>
               </tr>
             ) : sortedCases.length === 0 ? (
               <tr>
-                <td colSpan={9} className="p-8 text-center text-muted-foreground">
+                <td colSpan={12} className="p-8 text-center text-muted-foreground">
                   Takip bulunamadı
                 </td>
               </tr>
@@ -2203,6 +2273,7 @@ export default function CasesPage() {
                   onClick={() => router.push(`/cases/${c.id}`)}
                   className={`border-t hover:bg-muted/30 cursor-pointer ${selectedCases.includes(c.id) ? 'bg-primary/5' : ''} ${c.isArchived ? 'opacity-60' : ''}`}
                 >
+                  {/* Checkbox */}
                   <td className="p-3" onClick={(e) => e.stopPropagation()}>
                     <input
                       type="checkbox"
@@ -2211,31 +2282,47 @@ export default function CasesPage() {
                       className="rounded"
                     />
                   </td>
+                  {/* 1. Takip No */}
                   <td className="p-3">
-                    <span className="font-medium text-primary">
-                      {c.fileNumber}
-                    </span>
-                    {c.executionFileNumber && (
-                      <div className="text-xs text-muted-foreground">{c.executionFileNumber}</div>
-                    )}
+                    <span className="font-medium text-muted-foreground">{c.fileNumber}</span>
                     {c.isArchived && (
                       <Badge variant="default" className="ml-1 text-xs">Arşiv</Badge>
                     )}
                   </td>
+                  {/* 2. Tarih */}
+                  <td className="p-3 text-muted-foreground">
+                    {formatDate(c.startDate || c.createdAt)}
+                  </td>
+                  {/* 3. İcra Mercii */}
+                  <td className="p-3 text-sm">
+                    {c.executionOffice?.name || "-"}
+                  </td>
+                  {/* 4. İcra Dosya No */}
+                  <td className="p-3">
+                    <span className="font-medium text-primary">{c.executionFileNumber || "-"}</span>
+                  </td>
+                  {/* 5. Müvekkil */}
                   <td className="p-3">
                     {c.client?.displayName || c.client?.name || "-"}
                   </td>
+                  {/* 6. Borçlu */}
                   <td className="p-3">
                     {c.debtors?.[0]?.debtor?.name || "-"}
-                    {c.debtors?.length > 1 && (
-                      <span className="text-xs text-muted-foreground ml-1">+{c.debtors.length - 1}</span>
+                    {(c.debtors?.length ?? 0) > 1 && (
+                      <span className="text-xs text-muted-foreground ml-1">+{(c.debtors?.length ?? 0) - 1}</span>
                     )}
                   </td>
+                  {/* 7. Takip Bilgi (Tür) */}
                   <td className="p-3">
-                    <Badge variant="default">
+                    <Badge variant="default" className="w-[72px] h-[40px] justify-center items-center text-center leading-tight">
                       {caseTypeLabels[c.type] || c.type}
                     </Badge>
                   </td>
+                  {/* 8. Finans */}
+                  <td className="p-3 text-right font-mono">
+                    {formatCurrency(c.principalAmount, c.currency)}
+                  </td>
+                  {/* 9. Durum */}
                   <td className="p-3">
                     <Badge variant={statusColors[c.caseStatus || c.status] || "default"}>
                       {statusLabels[c.caseStatus || c.status] || c.caseStatus || c.status}
@@ -2245,7 +2332,6 @@ export default function CasesPage() {
                       const activeFilter = allQuickFilters.find(f => f.id === activeQuickFilters[0]);
                       if (!activeFilter?.hasFix || !activeFilter?.fixTarget) return null;
                       
-                      // Bu dosya için eksiklik var mı kontrol et
                       const hasIssue = (() => {
                         switch (activeFilter.id) {
                           case "no-address":
@@ -2280,12 +2366,30 @@ export default function CasesPage() {
                       );
                     })()}
                   </td>
-                  <td className="p-3 text-right font-mono">
-                    {formatCurrency(c.principalAmount, c.currency)}
+                  {/* 10. Ekip */}
+                  <td className="p-3">
+                    {(c.lawyers?.length ?? 0) > 0 ? (
+                      <div className="flex -space-x-1">
+                        {c.lawyers?.slice(0, 3).map((l: any, i: number) => (
+                          <div
+                            key={i}
+                            className="w-6 h-6 rounded-full bg-primary/10 border border-white flex items-center justify-center text-xs font-medium text-primary"
+                            title={l.lawyer?.name || l.name}
+                          >
+                            {(l.lawyer?.name || l.name || "?").charAt(0)}
+                          </div>
+                        ))}
+                        {(c.lawyers?.length ?? 0) > 3 && (
+                          <div className="w-6 h-6 rounded-full bg-muted border border-white flex items-center justify-center text-xs">
+                            +{(c.lawyers?.length ?? 0) - 3}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-muted-foreground text-xs">-</span>
+                    )}
                   </td>
-                  <td className="p-3 text-muted-foreground">
-                    {formatDate(c.startDate || c.createdAt)}
-                  </td>
+                  {/* 10. İşlemler */}
                   <td className="p-3" onClick={(e) => e.stopPropagation()}>
                     <div className="relative">
                       <button

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Users,
   Search,
@@ -35,6 +36,9 @@ type DebtorSortField = "name" | "type" | "identityNo" | "phone" | "caseCount";
 type SortDirection = "asc" | "desc" | null;
 
 export default function DebtorsPage() {
+  const searchParams = useSearchParams();
+  const editDebtorId = searchParams.get("edit");
+  
   const [debtors, setDebtors] = useState<Debtor[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -167,8 +171,14 @@ export default function DebtorsPage() {
     }
   };
 
-  // Sıralanmış liste
+  // Sıralanmış liste - editDebtorId varsa en üste çıkar
   const sortedFiltered = [...filtered].sort((a, b) => {
+    // URL'den gelen edit parametresi varsa o borçluyu en üste al
+    if (editDebtorId) {
+      if (a.id === editDebtorId) return -1;
+      if (b.id === editDebtorId) return 1;
+    }
+    
     if (!sortField || !sortDirection) return 0;
     
     let aValue: any, bValue: any;
@@ -427,8 +437,10 @@ export default function DebtorsPage() {
           <div className="overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
             <table className="w-full">
               <tbody className="divide-y">
-                {paginatedDebtors.map((debtor) => (
-                  <tr key={debtor.id} className="hover:bg-gray-50">
+                {paginatedDebtors.map((debtor) => {
+                  const isHighlighted = debtor.id === editDebtorId;
+                  return (
+                  <tr key={debtor.id} className={`hover:bg-gray-50 ${isHighlighted ? 'bg-yellow-50 ring-2 ring-yellow-400 ring-inset' : ''}`}>
                     <td className="px-4 py-3 w-[30%]">
                       <button
                         onClick={() => handleDebtorClick(debtor)}
@@ -485,7 +497,7 @@ export default function DebtorsPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                )})}
               </tbody>
             </table>
           </div>

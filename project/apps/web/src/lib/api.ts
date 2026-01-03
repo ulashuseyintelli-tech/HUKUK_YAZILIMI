@@ -84,9 +84,10 @@ class ApiClient {
   }
 
   // Cases
-  async getCases(params?: { status?: string; page?: number; limit?: number }) {
+  async getCases(params?: { status?: string; clientId?: string; page?: number; limit?: number }) {
     const query = new URLSearchParams();
     if (params?.status) query.set("status", params.status);
+    if (params?.clientId) query.set("clientId", params.clientId);
     if (params?.page) query.set("page", params.page.toString());
     if (params?.limit) query.set("limit", params.limit.toString());
     return this.request<any>(`/cases?${query}`);
@@ -202,6 +203,60 @@ class ApiClient {
     });
   }
 
+  // Case Debtors (FAZ 1 - Borçlu Modülü)
+  async getCaseDebtors(caseId: string) {
+    return this.request<CaseDebtorsResponse>(`/debtors/case/${caseId}`);
+  }
+
+  async getCaseDebtorDetail(caseId: string, caseDebtorId: string) {
+    return this.request<DebtorDetailDTO>(`/debtors/case/${caseId}/${caseDebtorId}`);
+  }
+
+  async updateDebtorQuickNote(caseId: string, caseDebtorId: string, text: string) {
+    return this.request<{ quickNote: string | null; updatedAt: string }>(
+      `/debtors/case/${caseId}/${caseDebtorId}/note`,
+      {
+        method: "PUT",
+        body: JSON.stringify({ text }),
+      }
+    );
+  }
+
+  // FAZ 2 - Tebligat Yönetimi
+  async updateServiceStatus(
+    caseId: string,
+    caseDebtorId: string,
+    data: UpdateServiceStatusDTO
+  ) {
+    return this.request<DebtorDetailDTO>(
+      `/debtors/case/${caseId}/${caseDebtorId}/service`,
+      {
+        method: "PUT",
+        body: JSON.stringify(data),
+      }
+    );
+  }
+
+  async getServiceHistory(caseId: string, caseDebtorId: string) {
+    return this.request<ServiceHistoryItem[]>(
+      `/debtors/case/${caseId}/${caseDebtorId}/service/history`
+    );
+  }
+
+  async startNewServiceAttempt(
+    caseId: string,
+    caseDebtorId: string,
+    newAddressId?: string
+  ) {
+    return this.request<DebtorDetailDTO>(
+      `/debtors/case/${caseId}/${caseDebtorId}/service/retry`,
+      {
+        method: "POST",
+        body: JSON.stringify({ newAddressId }),
+      }
+    );
+  }
+
   // Tasks
   async getTasks(params?: { status?: string; page?: number; limit?: number }) {
     const query = new URLSearchParams();
@@ -269,6 +324,12 @@ class ApiClient {
   async getStaffMembers(search?: string) {
     const query = search ? `?search=${encodeURIComponent(search)}` : "";
     return this.request<any[]>(`/staff${query}`);
+  }
+
+  // Execution Offices (İcra Daireleri)
+  async getExecutionOffices(city?: string) {
+    const query = city ? `?city=${encodeURIComponent(city)}` : "";
+    return this.request<any[]>(`/execution-offices${query}`);
   }
 
   // Debtors - search için güncelleme
@@ -2656,6 +2717,207 @@ export interface MessageTemplate {
   sortOrder: number;
   createdAt: string;
 }
+
+// ============================================
+// Case Debtor Types (FAZ 1 - Borçlu Modülü)
+// ============================================
+
+export type ServiceStatus = 
+  | "NOT_STARTED" 
+  | "READY" 
+  | "SENT" 
+  | "DELIVERED" 
+  | "RETURNED" 
+  | "MUHTAR" 
+  | "ANNOUNCEMENT" 
+  | "FAILED" 
+  | "UNKNOWN";
+
+export type ServiceReturnReason = 
+  | "ADDRESS_NOT_FOUND" 
+  | "MOVED" 
+  | "REFUSED" 
+  | "DECEASED" 
+  | "COMPANY_CLOSED" 
+  | "UNCLAIMED" 
+  | "OTHER";
+
+export type AssetQueryStatus = "UNKNOWN" | "YES" | "NO" | "PENDING" | "ERROR";
+
+export type DebtorRole = 
+  | "ASIL_BORCLU" 
+  | "MUSTEREK_BORCLU" 
+  | "KEFIL" 
+  | "AVALIST" 
+  | "MIRASCI" 
+  | "TEMSILCI" 
+  | "DIGER";
+
+export type AlertLevel = "NONE" | "INFO" | "WARN" | "DANGER";
+
+export type DebtorIssueCode =
+  | "MISSING_ADDRESS"
+  | "MISSING_TCKN"
+  | "MISSING_VKN"
+  | "NO_CONTACT"
+  | "SERVICE_NOT_STARTED"
+  | "SERVICE_STUCK"
+  | "RETURN_REASON_MISSING"
+  | "DELIVERED_DATE_MISSING"
+  | "SERVICE_FAILED"
+  | "RISK_CONCORDAT"
+  | "RISK_BANKRUPTCY"
+  | "RISK_ADDRESS_SUSPECT"
+  | "STALE_30D"
+  | "NO_ASSET_QUERY";
+
+export interface DebtorIssue {
+  code: DebtorIssueCode;
+  level: AlertLevel;
+  label: string;
+}
+
+export interface DebtorsSummaryDTO {
+  total: number;
+  delivered: number;
+  pending: number;
+  returned: number;
+  danger: number;
+}
+
+export interface DebtorListItemDTO {
+  id: string;
+  caseDebtorId: string;
+  displayName: string;
+  personType: "REAL" | "LEGAL";
+  role: DebtorRole;
+  identityMasked?: string;
+  phoneMasked?: string;
+  addressShort?: string;
+  serviceStatus: ServiceStatus;
+  /** Pre-computed label with date, e.g. "Tebliğ Edildi — 12.01.2026" */
+  serviceLabel: string;
+  /** Tebliğ tarihi - hukuki süreler için kritik */
+  deliveredAt?: string;
+  assets: AssetsDTO;
+  alertCount: number;
+  alertLevel: AlertLevel;
+  issues: DebtorIssue[];
+}
+
+export interface ServiceDTO {
+  status: ServiceStatus;
+  channel?: string;
+  trackingNo?: string;
+  sentAt?: string;
+  deliveredAt?: string;
+  returnedAt?: string;
+  returnReason?: ServiceReturnReason;
+}
+
+export interface AssetsDTO {
+  vehicle: AssetQueryStatus;
+  realEstate: AssetQueryStatus;
+  bank: AssetQueryStatus;
+  sgkWage: AssetQueryStatus;
+  lastQueryAt?: string;
+}
+
+export interface DebtorDetailDTO extends DebtorListItemDTO {
+  emailMasked?: string;
+  service: ServiceDTO;
+  assets: AssetsDTO;
+  riskFlags: string[];
+  staleDays?: number;
+  quickNote?: string;
+  issues: DebtorIssue[];
+}
+
+export interface CaseDebtorsResponse {
+  summary: DebtorsSummaryDTO;
+  items: DebtorListItemDTO[];
+}
+
+// Label maps for UI
+export const ServiceStatusLabels: Record<ServiceStatus, string> = {
+  NOT_STARTED: "Başlatılmadı",
+  READY: "Hazır",
+  SENT: "Gönderildi",
+  DELIVERED: "Tebliğ Edildi",
+  RETURNED: "İade",
+  MUHTAR: "Muhtara Teslim",
+  ANNOUNCEMENT: "İlan Yoluyla",
+  FAILED: "Başarısız",
+  UNKNOWN: "Bilinmiyor",
+};
+
+export const ServiceReturnReasonLabels: Record<ServiceReturnReason, string> = {
+  ADDRESS_NOT_FOUND: "Adres Bulunamadı",
+  MOVED: "Taşınmış",
+  REFUSED: "Reddetti",
+  DECEASED: "Vefat",
+  COMPANY_CLOSED: "Şirket Kapandı",
+  UNCLAIMED: "Alınmadı",
+  OTHER: "Diğer",
+};
+
+export const DebtorRoleLabels: Record<DebtorRole, string> = {
+  ASIL_BORCLU: "Asıl Borçlu",
+  MUSTEREK_BORCLU: "Müşterek Borçlu",
+  KEFIL: "Kefil",
+  AVALIST: "Avalist",
+  MIRASCI: "Mirasçı",
+  TEMSILCI: "Temsilci",
+  DIGER: "Diğer",
+};
+
+// FAZ 2 - Tebligat Yönetimi Types
+export type ServiceChannel = "PHYSICAL" | "UETS" | "KEP" | "UNKNOWN";
+
+export const ServiceChannelLabels: Record<ServiceChannel, string> = {
+  PHYSICAL: "PTT / Fiziksel",
+  UETS: "UETS",
+  KEP: "KEP",
+  UNKNOWN: "Bilinmiyor",
+};
+
+export interface UpdateServiceStatusDTO {
+  status: ServiceStatus;
+  channel?: ServiceChannel;
+  trackingNo?: string;
+  sentAt?: string;
+  deliveredAt?: string;
+  returnedAt?: string;
+  returnReason?: ServiceReturnReason;
+  note?: string;
+  directEntry?: boolean; // Skip state machine validation for manual date entry
+}
+
+export interface ServiceHistoryItem {
+  id: string;
+  fromStatus: ServiceStatus;
+  toStatus: ServiceStatus;
+  channel?: string;
+  trackingNo?: string;
+  actionDate?: string;
+  returnReason?: string;
+  note?: string;
+  createdAt: string;
+  createdBy?: string;
+}
+
+// Valid status transitions for UI validation
+export const ServiceStatusTransitions: Record<ServiceStatus, ServiceStatus[]> = {
+  NOT_STARTED: ["READY", "FAILED"],
+  READY: ["SENT", "FAILED"],
+  SENT: ["DELIVERED", "RETURNED", "MUHTAR", "FAILED"],
+  DELIVERED: [],
+  RETURNED: ["READY", "FAILED"],
+  MUHTAR: ["DELIVERED", "FAILED"],
+  ANNOUNCEMENT: ["DELIVERED", "FAILED"],
+  FAILED: ["READY"],
+  UNKNOWN: ["NOT_STARTED", "READY", "SENT", "DELIVERED", "RETURNED", "MUHTAR", "ANNOUNCEMENT", "FAILED"],
+};
 
 // TypeScript icin ApiClient'a method tanimlari ekleme
 declare module './api' {

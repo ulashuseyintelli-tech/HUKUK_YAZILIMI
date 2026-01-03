@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   Link2,
   ChevronRight,
+  ChevronDown,
   CheckCircle2,
   XCircle,
   Building2,
@@ -32,11 +33,18 @@ import {
   MapPin,
   Users,
   Receipt,
+  Clock,
+  FolderOpen,
+  MessageSquare,
+  PlusCircle,
+  PauseCircle,
+  Search,
 } from "lucide-react";
-import { api } from "@/lib/api";
+import { api, DebtorListItemDTO, DebtorsSummaryDTO, DebtorDetailDTO } from "@/lib/api";
 import { PaymentInstructionModal } from "@/components/payment/PaymentInstructionModal";
 import { ExpenseRequestModal, BalanceWidget, ExpenseRequestList } from "@/components/expense";
 import { SendMessageModal } from "@/components/message/SendMessageModal";
+import { DebtorsSummaryBar, DebtorRow, ServiceStatusBadge, AlertBadge, DebtorDetailDrawer } from "@/components/debtor";
 
 // ============================================
 // TİPLER
@@ -485,6 +493,124 @@ function BlockField({ label, value, editable = false, editMode = false, type = '
 }
 
 // ============================================
+// EXECUTION OFFICE SELECT COMPONENT
+// ============================================
+
+interface ExecutionOfficeSelectProps {
+  value: string;
+  offices: any[];
+  loading: boolean;
+  saving: boolean;
+  onChange: (officeId: string) => void;
+  currentOfficeName?: string;
+}
+
+function ExecutionOfficeSelect({ value, offices, loading, saving, onChange, currentOfficeName }: ExecutionOfficeSelectProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  // Dışarı tıklandığında kapat
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Filtreleme
+  const filteredOffices = offices.filter((office: any) => {
+    const searchLower = search.toLowerCase();
+    return (
+      office.name?.toLowerCase().includes(searchLower) ||
+      office.city?.toLowerCase().includes(searchLower) ||
+      office.district?.toLowerCase().includes(searchLower)
+    );
+  });
+
+  const handleSelect = (officeId: string) => {
+    onChange(officeId);
+    setIsOpen(false);
+    setSearch('');
+  };
+
+  return (
+    <div className="relative" ref={dropdownRef}>
+      {/* Seçili değer veya input */}
+      <div
+        onClick={() => { setIsOpen(true); setTimeout(() => inputRef.current?.focus(), 50); }}
+        className={`w-full border rounded-lg px-3 py-2 text-sm bg-white cursor-pointer flex items-center justify-between ${
+          isOpen ? 'border-purple-400 ring-2 ring-purple-200' : 'border-purple-300 hover:border-purple-400'
+        } ${(saving || loading) ? 'opacity-50 pointer-events-none' : ''}`}
+      >
+        <span className={currentOfficeName ? 'text-gray-900' : 'text-gray-400'}>
+          {loading ? 'Yükleniyor...' : (currentOfficeName || '— Seçiniz —')}
+        </span>
+        <ChevronRight className={`h-4 w-4 text-gray-400 transition-transform ${isOpen ? 'rotate-90' : ''}`} />
+      </div>
+
+      {/* Dropdown */}
+      {isOpen && (
+        <div className="absolute z-50 mt-1 w-full bg-white border border-gray-200 rounded-lg shadow-lg max-h-72 overflow-hidden">
+          {/* Arama */}
+          <div className="p-2 border-b sticky top-0 bg-white">
+            <input
+              ref={inputRef}
+              type="text"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="İcra dairesi ara... (il, ilçe veya ad)"
+              className="w-full border border-gray-300 rounded px-3 py-2 text-sm focus:ring-2 focus:ring-purple-200 focus:border-purple-400"
+              autoFocus
+            />
+          </div>
+
+          {/* Liste */}
+          <div className="max-h-52 overflow-y-auto">
+            {/* Seçimi kaldır seçeneği */}
+            {value && (
+              <div
+                onClick={() => handleSelect('')}
+                className="px-3 py-2 text-sm text-red-600 hover:bg-red-50 cursor-pointer border-b flex items-center gap-2"
+              >
+                <X className="h-3 w-3" /> Seçimi Kaldır
+              </div>
+            )}
+
+            {filteredOffices.length === 0 ? (
+              <div className="px-3 py-4 text-sm text-gray-500 text-center">
+                {search ? 'Sonuç bulunamadı' : 'İcra dairesi yok'}
+              </div>
+            ) : (
+              filteredOffices.map((office: any) => (
+                <div
+                  key={office.id}
+                  onClick={() => handleSelect(office.id)}
+                  className={`px-3 py-2 text-sm cursor-pointer hover:bg-purple-50 ${
+                    office.id === value ? 'bg-purple-100 text-purple-800' : 'text-gray-700'
+                  }`}
+                >
+                  <div className="font-medium">{office.name}</div>
+                  {(office.city || office.district) && (
+                    <div className="text-xs text-gray-500">
+                      {[office.district, office.city].filter(Boolean).join(', ')}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================
 // DRAWER COMPONENT
 // ============================================
 
@@ -573,6 +699,23 @@ export default function CaseDetailPage() {
     role?: string;
   } | null>(null);
   
+  // Client Stats for Work Card
+  const [clientStats, setClientStats] = useState<{
+    activeCases: number;
+    totalCases: number;
+    last30dActions: number;
+    byCurrency: Record<string, { totalClaim: number; totalCollected: number; totalExpense: number; expenseCollected: number }>;
+    totalReceivable: number;
+    totalCollected: number;
+    totalExpense: number;
+    expenseCollected: number;
+    nearExpiryCases: number;
+    pendingNotifications: number;
+    staleCases30d: number;
+    suspendedCases: number;
+  } | null>(null);
+  const [loadingClientStats, setLoadingClientStats] = useState(false);
+  
   // Mesaj Gönder Modal State
   const [messageModalOpen, setMessageModalOpen] = useState(false);
   
@@ -580,8 +723,60 @@ export default function CaseDetailPage() {
   const [teamModalOpen, setTeamModalOpen] = useState(false);
   const [availableLawyers, setAvailableLawyers] = useState<any[]>([]);
   const [availableStaff, setAvailableStaff] = useState<any[]>([]);
+  
+  // Personel Drawer State
+  const [staffDrawerOpen, setStaffDrawerOpen] = useState(false);
+  const [selectedStaff, setSelectedStaff] = useState<{
+    caseStaffId: string;
+    staffId: string;
+    firstName: string;
+    lastName: string;
+    staffType?: string;
+    roleOnCase?: string;
+    phone?: string;
+    email?: string;
+    canSign?: boolean;
+    receiveNotifications?: boolean;
+    permissions?: {
+      canEditCase?: boolean;
+      canGenerateDocs?: boolean;
+      canViewFinance?: boolean;
+      canEditFinance?: boolean;
+      canChangeStatus?: boolean;
+    };
+  } | null>(null);
   const [teamModalTab, setTeamModalTab] = useState<'lawyers' | 'staff'>('lawyers');
   const [addingTeamMember, setAddingTeamMember] = useState(false);
+  
+  // Borçlu Drawer State
+  const [debtorDrawerOpen, setDebtorDrawerOpen] = useState(false);
+  const [selectedDebtor, setSelectedDebtor] = useState<{
+    caseDebtorId: string;
+    debtorId: string;
+    name: string;
+    displayName?: string;
+    tckn?: string;
+    vkn?: string;
+    type?: string;
+    phone?: string;
+    email?: string;
+    address?: string;
+    city?: string;
+    district?: string;
+    role?: string;
+  } | null>(null);
+  
+  // Case Debtors State (FAZ 1 - Borçlu Modülü)
+  const [caseDebtors, setCaseDebtors] = useState<DebtorListItemDTO[]>([]);
+  const [debtorsSummary, setDebtorsSummary] = useState<DebtorsSummaryDTO | null>(null);
+  const [loadingDebtors, setLoadingDebtors] = useState(false);
+  const [selectedDebtorDetail, setSelectedDebtorDetail] = useState<DebtorDetailDTO | null>(null);
+  const [loadingDebtorDetail, setLoadingDebtorDetail] = useState(false);
+  
+  // İcra Dairesi Seçimi State
+  const [executionOffices, setExecutionOffices] = useState<any[]>([]);
+  const [loadingOffices, setLoadingOffices] = useState(false);
+  const [savingOffice, setSavingOffice] = useState(false);
   
   // Fix highlight state
   const [highlightedSection, setHighlightedSection] = useState<string | null>(null);
@@ -640,9 +835,60 @@ export default function CaseDetailPage() {
     }
   }, [params.id]);
 
+  // Fetch case debtors with summary (FAZ 1)
+  const fetchCaseDebtors = useCallback(async () => {
+    if (!params.id) return;
+    try {
+      setLoadingDebtors(true);
+      const response = await api.getCaseDebtors(params.id as string);
+      setCaseDebtors(response.items);
+      setDebtorsSummary(response.summary);
+    } catch (error) {
+      console.error("Borçlular yüklenemedi:", error);
+    } finally {
+      setLoadingDebtors(false);
+    }
+  }, [params.id]);
+
+  // Fetch debtor detail for drawer
+  const fetchDebtorDetail = useCallback(async (caseDebtorId: string) => {
+    if (!params.id) return;
+    try {
+      setLoadingDebtorDetail(true);
+      const detail = await api.getCaseDebtorDetail(params.id as string, caseDebtorId);
+      setSelectedDebtorDetail(detail);
+    } catch (error) {
+      console.error("Borçlu detayı yüklenemedi:", error);
+    } finally {
+      setLoadingDebtorDetail(false);
+    }
+  }, [params.id]);
+
+  // Handle debtor row click
+  const handleDebtorClick = useCallback((debtor: DebtorListItemDTO) => {
+    // Set basic info immediately for drawer header
+    setSelectedDebtor({
+      caseDebtorId: debtor.caseDebtorId,
+      debtorId: debtor.id,
+      name: debtor.displayName,
+      displayName: debtor.displayName,
+      role: debtor.role,
+    });
+    setDebtorDrawerOpen(true);
+    // Fetch full detail
+    fetchDebtorDetail(debtor.caseDebtorId);
+  }, [fetchDebtorDetail]);
+
   useEffect(() => {
     if (params.id) fetchCase();
   }, [params.id, fetchCase]);
+
+  // Fetch debtors when case is loaded
+  useEffect(() => {
+    if (params.id && !loading) {
+      fetchCaseDebtors();
+    }
+  }, [params.id, loading, fetchCaseDebtors]);
 
   const dayCount = useMemo(() => {
     if (!caseData?.caseDate) return 0;
@@ -720,24 +966,105 @@ export default function CaseDetailPage() {
   // Ekip modal açıldığında avukat ve personel listesini yükle
   const loadTeamOptions = async () => {
     try {
-      const [lawyers, staff] = await Promise.all([
+      const [lawyersRes, staffRes] = await Promise.all([
         api.getLawyers(),
         api.getStaffMembers(),
       ]);
       
+      // API response { data: [...] } formatında dönüyor
+      const lawyers = (lawyersRes as any)?.data || lawyersRes || [];
+      const staff = (staffRes as any)?.data || staffRes || [];
+      
       // Zaten dosyada olan avukatları filtrele
       const existingLawyerIds = caseData?.lawyers?.map(l => l.lawyer.id) || [];
-      const filteredLawyers = (lawyers || []).filter((l: any) => !existingLawyerIds.includes(l.id));
+      const filteredLawyers = (Array.isArray(lawyers) ? lawyers : []).filter((l: any) => !existingLawyerIds.includes(l.id));
       setAvailableLawyers(filteredLawyers);
       
       // Zaten dosyada olan personelleri filtrele
       const existingStaffIds = caseData?.staff?.map(s => s.staffMember.id) || [];
-      const filteredStaff = (staff || []).filter((s: any) => !existingStaffIds.includes(s.id));
+      const filteredStaff = (Array.isArray(staff) ? staff : []).filter((s: any) => !existingStaffIds.includes(s.id));
       setAvailableStaff(filteredStaff);
     } catch (error) {
       console.error('Ekip listesi yüklenemedi:', error);
     }
   };
+
+  // Client stats fetch for work card
+  const fetchClientStats = async (clientId: string) => {
+    setLoadingClientStats(true);
+    try {
+      const response = await api.getCases({ clientId, limit: 500 });
+      const cases = response?.data || response || [];
+      
+      // Calculate remaining days for each case
+      const calculateRemaining = (caseDate: string, lastAction?: string) => {
+        const baseDate = lastAction ? new Date(lastAction) : new Date(caseDate);
+        const now = new Date();
+        const diffDays = Math.floor((now.getTime() - baseDate.getTime()) / (1000 * 60 * 60 * 24));
+        return 365 - diffDays;
+      };
+      
+      // Check if case had action in last 30 days
+      const now = new Date();
+      const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+      
+      // Group by currency
+      const byCurrency: Record<string, { totalClaim: number; totalCollected: number; totalExpense: number; expenseCollected: number }> = {};
+      
+      cases.forEach((c: any) => {
+        const currency = c.currency || 'TRY';
+        if (!byCurrency[currency]) {
+          byCurrency[currency] = { totalClaim: 0, totalCollected: 0, totalExpense: 0, expenseCollected: 0 };
+        }
+        byCurrency[currency].totalClaim += Number(c.totalClaim) || Number(c.principalAmount) || 0;
+        byCurrency[currency].totalCollected += Number(c.totalCollected) || 0;
+        byCurrency[currency].totalExpense += Number(c.totalExpense) || 0;
+        byCurrency[currency].expenseCollected += Number(c.expenseCollected) || 0;
+      });
+      
+      const stats = {
+        activeCases: cases.filter((c: any) => c.status === 'ACTIVE').length,
+        totalCases: cases.length,
+        last30dActions: cases.filter((c: any) => {
+          const lastAction = c.lastEnforcementActionAt || c.lastAutoActionAt || c.lastActionDate || c.updatedAt;
+          return lastAction && new Date(lastAction) >= thirtyDaysAgo;
+        }).length,
+        // Finansal veriler para birimine göre gruplu
+        byCurrency,
+        // TRY toplamları (geriye uyumluluk)
+        totalReceivable: byCurrency['TRY']?.totalClaim || 0,
+        totalCollected: byCurrency['TRY']?.totalCollected || 0,
+        totalExpense: byCurrency['TRY']?.totalExpense || 0,
+        expenseCollected: byCurrency['TRY']?.expenseCollected || 0,
+        nearExpiryCases: cases.filter((c: any) => {
+          if (c.status !== 'ACTIVE') return false;
+          const remaining = c.daysUntilPassive ?? calculateRemaining(c.caseDate, c.lastEnforcementActionAt || c.lastAutoActionAt);
+          return remaining > 0 && remaining < 60;
+        }).length,
+        pendingNotifications: cases.filter((c: any) => c.hasPendingNotification).length,
+        staleCases30d: cases.filter((c: any) => {
+          if (c.status !== 'ACTIVE') return false;
+          const lastAction = c.lastActionDate || c.lastEnforcementActionAt || c.lastAutoActionAt || c.updatedAt;
+          return !lastAction || new Date(lastAction) < thirtyDaysAgo;
+        }).length,
+        suspendedCases: cases.filter((c: any) => c.status === 'SUSPENDED').length,
+      };
+      setClientStats(stats);
+    } catch (error) {
+      console.error('Client stats yüklenemedi:', error);
+    } finally {
+      setLoadingClientStats(false);
+    }
+  };
+
+  // Client drawer açıldığında stats fetch et
+  useEffect(() => {
+    if (clientDrawerOpen && selectedClient?.id) {
+      fetchClientStats(selectedClient.id);
+    } else {
+      setClientStats(null);
+    }
+  }, [clientDrawerOpen, selectedClient?.id]);
 
   // Ekip modal açıldığında
   useEffect(() => {
@@ -773,6 +1100,41 @@ export default function CaseDetailPage() {
       alert(error.message || 'Personel eklenemedi');
     } finally {
       setAddingTeamMember(false);
+    }
+  };
+
+  // İcra dairelerini yükle
+  const loadExecutionOffices = async () => {
+    setLoadingOffices(true);
+    try {
+      const res = await api.getExecutionOffices();
+      const offices = (res as any)?.data || res || [];
+      setExecutionOffices(Array.isArray(offices) ? offices : []);
+    } catch (error) {
+      console.error('İcra daireleri yüklenemedi:', error);
+    } finally {
+      setLoadingOffices(false);
+    }
+  };
+
+  // Finance drawer açıldığında icra dairelerini yükle
+  useEffect(() => {
+    if (financeDrawerOpen && executionOffices.length === 0) {
+      loadExecutionOffices();
+    }
+  }, [financeDrawerOpen]);
+
+  // İcra dairesi değiştir
+  const handleExecutionOfficeChange = async (officeId: string) => {
+    if (!caseData) return;
+    setSavingOffice(true);
+    try {
+      await api.patch(`/cases/${caseData.id}`, { executionOfficeId: officeId || null });
+      await fetchCase();
+    } catch (error: any) {
+      alert(error.message || 'İcra dairesi güncellenemedi');
+    } finally {
+      setSavingOffice(false);
     }
   };
 
@@ -855,6 +1217,30 @@ export default function CaseDetailPage() {
     });
     setLawyerDrawerTab('permissions');
     setLawyerDrawerOpen(true);
+  };
+
+  // Personel satırına tıklama
+  const handleStaffClick = (se: NonNullable<CaseDetail['staff']>[0]) => {
+    setSelectedStaff({
+      caseStaffId: se.id,
+      staffId: se.staffMember.id,
+      firstName: se.staffMember.firstName,
+      lastName: se.staffMember.lastName,
+      staffType: se.staffMember.staffType,
+      roleOnCase: se.roleOnCase,
+      phone: se.staffMember.phone,
+      email: se.staffMember.email,
+      canSign: se.canSign,
+      receiveNotifications: (se as any).receiveNotifications ?? true,
+      permissions: (se as any).permissions || {
+        canEditCase: false,
+        canGenerateDocs: true,
+        canViewFinance: true,
+        canEditFinance: false,
+        canChangeStatus: false,
+      },
+    });
+    setStaffDrawerOpen(true);
   };
 
   // Dosya yetkileri kaydet
@@ -1367,7 +1753,11 @@ export default function CaseDetailPage() {
                 )}
                 {/* Adli Personel */}
                 {caseData.staff?.map((se) => (
-                  <div key={se.id} className="px-2 py-1.5 hover:bg-purple-50 cursor-pointer transition-colors group">
+                  <div 
+                    key={se.id} 
+                    className="px-2 py-1.5 hover:bg-purple-50 cursor-pointer transition-colors group"
+                    onClick={() => handleStaffClick(se)}
+                  >
                     <div className="flex items-center justify-between">
                       <div className="min-w-0 flex-1">
                         <p className="font-medium text-[11px] truncate group-hover:text-purple-700">{se.staffMember.firstName} {se.staffMember.lastName}</p>
@@ -1411,7 +1801,9 @@ export default function CaseDetailPage() {
               <div className="divide-y max-h-32 overflow-y-auto">
                 {caseData.caseClients?.length ? caseData.caseClients.map((cc) => {
                   const client = cc.client;
-                  const identityNo = client.type === 'INDIVIDUAL' ? client.tckn : client.vkn;
+                  // type PERSON veya INDIVIDUAL olabilir, COMPANY ve PUBLIC dışındaki her şey şahıs
+                  const isIndividual = client.type !== 'COMPANY' && client.type !== 'PUBLIC';
+                  const identityNo = isIndividual ? client.tckn : client.vkn;
                   const hasContact = client.phone || client.email;
                   const hasAddress = client.address || client.city;
                   return (
@@ -1431,7 +1823,7 @@ export default function CaseDetailPage() {
                           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                             {identityNo && (
                               <span className="text-[9px] text-gray-500">
-                                {client.type === 'INDIVIDUAL' ? 'TC' : 'VKN'}: {identityNo}
+                                {isIndividual ? 'TC' : 'VKN'}: {identityNo}
                               </span>
                             )}
                             {client.phone && (
@@ -1468,22 +1860,74 @@ export default function CaseDetailPage() {
               </div>
             </div>
 
-            {/* Borçlular - Vurgulu */}
+            {/* Borçlular - Yeni Tasarım (FAZ 1) */}
             <div className="bg-red-50/50 border border-red-200 rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)] overflow-hidden">
-              <div className="px-2 py-1 bg-red-100 border-b border-red-200 flex items-center justify-between">
-                <span className="font-semibold text-red-800 text-[11px]">Borçlular</span>
-                <span className="text-[9px] bg-red-600 text-white px-1.5 py-0.5 rounded-full font-bold">{caseData.debtors?.length || 0}</span>
+              <div className="px-2 py-1.5 bg-red-100 border-b border-red-200">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="font-semibold text-red-800 text-[11px]">Borçlular</span>
+                  {debtorsSummary && debtorsSummary.danger > 0 && (
+                    <span className="text-[9px] bg-red-600 text-white px-1.5 py-0.5 rounded-full font-bold">
+                      {debtorsSummary.danger} Riskli
+                    </span>
+                  )}
+                </div>
+                {debtorsSummary && (
+                  <DebtorsSummaryBar summary={debtorsSummary} isLoading={loadingDebtors} />
+                )}
               </div>
-              <div className="divide-y divide-red-100 max-h-24 overflow-y-auto">
-                {caseData.debtors?.length ? caseData.debtors.map((de) => (
-                  <div key={de.id} className="px-2 py-1.5 hover:bg-red-50 border-l-2 border-red-400">
-                    <p className="font-medium text-[11px] text-gray-900">{de.debtor.displayName || de.debtor.name}</p>
-                    <div className="flex items-center gap-2 mt-0.5">
-                      {de.debtor.tckn && <span className="text-[9px] text-gray-500">TCKN: {de.debtor.tckn}</span>}
-                      <span className="text-[8px] bg-red-100 text-red-700 px-1 py-0.5 rounded font-medium">{de.role === 'ASIL_BORCLU' ? 'Asıl' : de.role}</span>
-                    </div>
+              <div className="p-2 space-y-2 max-h-48 overflow-y-auto">
+                {loadingDebtors ? (
+                  <div className="flex items-center justify-center py-4">
+                    <Loader2 className="h-5 w-5 animate-spin text-red-400" />
                   </div>
-                )) : <p className="text-[10px] text-gray-400 text-center py-2">—</p>}
+                ) : caseDebtors.length > 0 ? (
+                  caseDebtors.map((debtor) => (
+                    <DebtorRow
+                      key={debtor.caseDebtorId}
+                      debtor={debtor}
+                      onClick={() => handleDebtorClick(debtor)}
+                    />
+                  ))
+                ) : caseData.debtors?.length ? (
+                  // Fallback to old data if new API not available
+                  caseData.debtors.map((de) => (
+                    <div 
+                      key={de.id} 
+                      className="px-2 py-1.5 hover:bg-red-100 cursor-pointer transition-colors group border-l-2 border-red-400 rounded"
+                      onClick={() => {
+                        setSelectedDebtor({
+                          caseDebtorId: de.id,
+                          debtorId: de.debtor.id,
+                          name: de.debtor.name,
+                          displayName: de.debtor.displayName,
+                          tckn: de.debtor.tckn,
+                          vkn: (de.debtor as any).vkn,
+                          type: (de.debtor as any).type,
+                          phone: (de.debtor as any).phone,
+                          email: (de.debtor as any).email,
+                          address: (de.debtor as any).address,
+                          city: (de.debtor as any).city,
+                          district: (de.debtor as any).district,
+                          role: de.role,
+                        });
+                        setDebtorDrawerOpen(true);
+                      }}
+                    >
+                      <div className="flex items-center justify-between">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-medium text-[11px] text-gray-900 group-hover:text-red-700">{de.debtor.displayName || de.debtor.name}</p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            {de.debtor.tckn && <span className="text-[9px] text-gray-500">TCKN: {de.debtor.tckn}</span>}
+                            <span className="text-[8px] bg-red-100 text-red-700 px-1 py-0.5 rounded font-medium">{de.role === 'ASIL_BORCLU' ? 'Asıl' : de.role}</span>
+                          </div>
+                        </div>
+                        <ChevronRight className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100" />
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <p className="text-[10px] text-gray-400 text-center py-2">—</p>
+                )}
               </div>
             </div>
           </div>
@@ -1924,6 +2368,156 @@ export default function CaseDetailPage() {
         )}
       </Drawer>
 
+      {/* PERSONEL DETAY DRAWER */}
+      <Drawer isOpen={staffDrawerOpen} onClose={() => setStaffDrawerOpen(false)} title={selectedStaff ? `${selectedStaff.firstName} ${selectedStaff.lastName}` : 'Personel Detayı'}>
+        {selectedStaff && (
+          <div className="space-y-4">
+            {/* Personel Bilgileri */}
+            <div className="space-y-3 bg-purple-50 rounded-lg p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 bg-purple-200 rounded-full flex items-center justify-center">
+                  <User className="h-6 w-6 text-purple-700" />
+                </div>
+                <div>
+                  <p className="font-semibold text-gray-900">{selectedStaff.firstName} {selectedStaff.lastName}</p>
+                  <span className="text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
+                    {selectedStaff.staffType || 'Personel'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Dosyadaki Rol */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-semibold text-gray-600 uppercase">Bu Dosyadaki Bilgiler</h4>
+              <div className="bg-gray-50 rounded-lg p-3 space-y-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">Dosyadaki Rol</label>
+                  <select
+                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                    value={selectedStaff.roleOnCase || ''}
+                    onChange={(e) => setSelectedStaff({...selectedStaff, roleOnCase: e.target.value})}
+                  >
+                    <option value="">Belirtilmemiş</option>
+                    <option value="SORUMLU">Sorumlu Personel</option>
+                    <option value="YARDIMCI">Yardımcı Personel</option>
+                    <option value="TAKIPCI">Takipçi</option>
+                  </select>
+                </div>
+                <div className="flex items-center justify-between p-2 bg-purple-50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Edit className="h-4 w-4 text-purple-600" />
+                    <span className="text-sm font-medium text-purple-800">İmza Yetkisi</span>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer">
+                    <input 
+                      type="checkbox" 
+                      checked={selectedStaff.canSign || false}
+                      onChange={(e) => setSelectedStaff({...selectedStaff, canSign: e.target.checked})}
+                      className="sr-only peer" 
+                    />
+                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Dosya Yetkileri */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-semibold text-gray-600 uppercase">Dosya Yetkileri</h4>
+              <div className="space-y-2 bg-gray-50 rounded-lg p-3">
+                {[
+                  { key: 'canEditCase', label: 'Dosyayı düzenleme', icon: Edit },
+                  { key: 'canGenerateDocs', label: 'Evrak oluşturma', icon: FileText },
+                  { key: 'canViewFinance', label: 'Hesap özeti görme', icon: Eye },
+                  { key: 'canEditFinance', label: 'Masraf/harç düzenleme', icon: CreditCard },
+                  { key: 'canChangeStatus', label: 'Statü değiştirme', icon: Settings },
+                ].map(({ key, label, icon: Icon }) => (
+                  <label key={key} className="flex items-center gap-2 cursor-pointer hover:bg-white p-1 rounded">
+                    <input
+                      type="checkbox"
+                      checked={(selectedStaff.permissions as any)?.[key] ?? false}
+                      onChange={(e) => setSelectedStaff({
+                        ...selectedStaff, 
+                        permissions: { ...(selectedStaff.permissions || {}), [key]: e.target.checked }
+                      })}
+                      className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
+                    />
+                    <Icon className="h-4 w-4 text-gray-500" />
+                    <span className="text-sm text-gray-700">{label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Bildirim */}
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div className="flex items-center gap-2">
+                <Bell className="h-4 w-4 text-gray-600" />
+                <span className="text-sm text-gray-700">Bildirim alsın</span>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input 
+                  type="checkbox" 
+                  checked={selectedStaff.receiveNotifications ?? true}
+                  onChange={(e) => setSelectedStaff({...selectedStaff, receiveNotifications: e.target.checked})}
+                  className="sr-only peer" 
+                />
+                <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
+              </label>
+            </div>
+
+            {/* İletişim Bilgileri */}
+            <div className="space-y-3">
+              <h4 className="text-xs font-semibold text-gray-600 uppercase">İletişim</h4>
+              <div className="bg-gray-50 rounded-lg p-3 space-y-2">
+                <div className="flex items-center gap-2">
+                  <Phone className="h-4 w-4 text-gray-400" />
+                  <span className="text-sm">{selectedStaff.phone || '—'}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Mail className="h-4 w-4 text-gray-400" />
+                  <span className="text-sm">{selectedStaff.email || '—'}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Kaydet Butonu */}
+            <button
+              onClick={async () => {
+                if (!caseData || !selectedStaff) return;
+                try {
+                  await api.patch(`/cases/${caseData.id}/staff/${selectedStaff.caseStaffId}`, {
+                    roleOnCase: selectedStaff.roleOnCase,
+                    canSign: selectedStaff.canSign,
+                    permissions: selectedStaff.permissions,
+                    receiveNotifications: selectedStaff.receiveNotifications,
+                  });
+                  await fetchCase();
+                  setStaffDrawerOpen(false);
+                } catch (error) {
+                  console.error('Personel güncelleme hatası:', error);
+                  alert('Personel bilgileri güncellenemedi');
+                }
+              }}
+              className="w-full py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 font-medium text-sm flex items-center justify-center gap-2"
+            >
+              <Save className="h-4 w-4" />
+              Bu dosya için kaydet
+            </button>
+
+            {/* Düzenle Linki */}
+            <Link 
+              href={`/settings/office?tab=staff&edit=${selectedStaff.staffId}`}
+              className="w-full py-2 px-3 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium flex items-center justify-center gap-1"
+            >
+              <Edit className="h-4 w-4" />
+              Genel Bilgileri Düzenle
+            </Link>
+          </div>
+        )}
+      </Drawer>
+
       {/* BANKA & ENTEGRASYON DRAWER */}
       <Drawer isOpen={financeDrawerOpen} onClose={() => setFinanceDrawerOpen(false)} title="Banka & Entegrasyon Detayı">
         <div className="space-y-6">
@@ -1936,7 +2530,15 @@ export default function CaseDetailPage() {
             <div className="space-y-3 bg-purple-50 p-3 rounded-lg border border-purple-200">
               <div>
                 <label className="block text-xs text-gray-500 mb-1">İcra Dairesi</label>
-                <p className="text-sm font-medium">{caseData.executionOffice?.name || '— Seçilmemiş'}</p>
+                <ExecutionOfficeSelect
+                  value={caseData.executionOffice?.id || ''}
+                  offices={executionOffices}
+                  loading={loadingOffices}
+                  saving={savingOffice}
+                  onChange={handleExecutionOfficeChange}
+                  currentOfficeName={caseData.executionOffice?.name}
+                />
+                {savingOffice && <p className="text-xs text-purple-600 mt-1">Kaydediliyor...</p>}
               </div>
               <BlockField 
                 label="Banka Adı" 
@@ -2083,209 +2685,294 @@ export default function CaseDetailPage() {
         />
       )}
 
-      {/* MÜVEKKİL DETAY DRAWER */}
-      <Drawer isOpen={clientDrawerOpen} onClose={() => setClientDrawerOpen(false)} title={selectedClient?.displayName || selectedClient?.name || 'Müvekkil Detayı'}>
+      {/* MÜVEKKİL DETAY DRAWER - Work Card */}
+      <Drawer isOpen={clientDrawerOpen} onClose={() => setClientDrawerOpen(false)} title={selectedClient?.displayName || selectedClient?.name || 'Müvekkil'}>
         {selectedClient && (
           <div className="space-y-4">
-            {/* Müvekkil Tipi Badge */}
-            <div className="flex items-center gap-2">
-              <span className={`text-xs font-medium px-2 py-1 rounded ${
-                selectedClient.type === 'INDIVIDUAL' ? 'bg-blue-100 text-blue-700' :
-                selectedClient.type === 'COMPANY' ? 'bg-purple-100 text-purple-700' :
-                'bg-gray-100 text-gray-700'
-              }`}>
-                {selectedClient.type === 'INDIVIDUAL' ? '👤 Gerçek Kişi' :
-                 selectedClient.type === 'COMPANY' ? '🏢 Tüzel Kişi' :
-                 selectedClient.type === 'PUBLIC' ? '🏛️ Kamu Kurumu' : '📋 Müvekkil'}
-              </span>
-              {selectedClient.role && (
-                <span className="text-xs bg-green-100 text-green-700 px-2 py-1 rounded">
-                  {selectedClient.role === 'ALACAKLI' ? 'Alacaklı' : 
-                   selectedClient.role === 'ORTAK_ALACAKLI' ? 'Ortak Alacaklı' : selectedClient.role}
-                </span>
-              )}
-            </div>
-
-            {/* Kimlik Bilgileri */}
-            <div className="bg-gray-50 rounded-lg p-3 space-y-2">
-              <h4 className="text-xs font-semibold text-gray-600 uppercase flex items-center gap-1">
-                <User className="h-3 w-3" /> Kimlik Bilgileri
-              </h4>
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div>
-                  <span className="text-xs text-gray-500 block">Ad / Ünvan</span>
-                  <span className="font-medium">{selectedClient.displayName || selectedClient.name}</span>
-                </div>
-                {selectedClient.type === 'INDIVIDUAL' ? (
-                  <div>
-                    <span className="text-xs text-gray-500 block">TC Kimlik No</span>
-                    <span className="font-medium font-mono">{selectedClient.tckn || <span className="text-amber-600 italic">Eksik</span>}</span>
-                  </div>
-                ) : (
-                  <>
-                    <div>
-                      <span className="text-xs text-gray-500 block">Vergi Kimlik No</span>
-                      <span className="font-medium font-mono">{selectedClient.vkn || <span className="text-amber-600 italic">Eksik</span>}</span>
-                    </div>
-                    {selectedClient.taxOffice && (
-                      <div className="col-span-2">
-                        <span className="text-xs text-gray-500 block">Vergi Dairesi</span>
-                        <span className="font-medium">{selectedClient.taxOffice}</span>
-                      </div>
+            {/* 1️⃣ HEADER: İsim + Statü + Kimlik */}
+            <div className="pb-3 border-b">
+              <div className="flex items-start justify-between gap-2 mb-2">
+                <div className="flex-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="font-semibold text-gray-900">{selectedClient.displayName || selectedClient.name}</h3>
+                    {/* Müvekkil Statüsü - otomatik hesaplama */}
+                    {clientStats && (
+                      <span className={`text-[10px] font-medium px-2 py-0.5 rounded-full ${
+                        clientStats.staleCases30d > 0 || clientStats.nearExpiryCases > 0 
+                          ? 'bg-red-100 text-red-700' 
+                          : clientStats.activeCases === 0 
+                            ? 'bg-gray-100 text-gray-600'
+                            : 'bg-green-100 text-green-700'
+                      }`}>
+                        {clientStats.staleCases30d > 0 || clientStats.nearExpiryCases > 0 
+                          ? '🔴 Dikkat' 
+                          : clientStats.activeCases === 0 
+                            ? '🟡 Pasif'
+                            : '🟢 Aktif'}
+                      </span>
                     )}
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* İletişim Bilgileri */}
-            <div className="bg-blue-50 rounded-lg p-3 space-y-2">
-              <h4 className="text-xs font-semibold text-blue-700 uppercase flex items-center gap-1">
-                <Phone className="h-3 w-3" /> İletişim
-              </h4>
-              <div className="space-y-2 text-sm">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-xs text-gray-500 block">Telefon</span>
-                    <span className="font-medium">{selectedClient.phone || <span className="text-amber-600 italic">Eksik</span>}</span>
                   </div>
-                  {selectedClient.phone && (
-                    <div className="flex gap-1">
-                      <button 
-                        onClick={() => copyToClipboard(selectedClient.phone!, 'Telefon')}
-                        className="p-1.5 hover:bg-blue-100 rounded"
-                        title="Kopyala"
-                      >
-                        <Copy className="h-3 w-3 text-blue-600" />
-                      </button>
-                      <a 
-                        href={`tel:${selectedClient.phone}`}
-                        className="p-1.5 hover:bg-blue-100 rounded"
-                        title="Ara"
-                      >
-                        <Phone className="h-3 w-3 text-blue-600" />
-                      </a>
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center justify-between">
-                  <div>
-                    <span className="text-xs text-gray-500 block">E-posta</span>
-                    <span className="font-medium">{selectedClient.email || <span className="text-amber-600 italic">Eksik</span>}</span>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                      selectedClient.type !== 'COMPANY' && selectedClient.type !== 'PUBLIC' ? 'bg-blue-50 text-blue-600' :
+                      selectedClient.type === 'COMPANY' ? 'bg-purple-50 text-purple-600' : 'bg-gray-50 text-gray-600'
+                    }`}>
+                      {selectedClient.type !== 'COMPANY' && selectedClient.type !== 'PUBLIC' ? 'Gerçek Kişi' :
+                       selectedClient.type === 'COMPANY' ? 'Tüzel Kişi' : 'Kamu'}
+                    </span>
+                    {selectedClient.role && (
+                      <span className="text-[10px] text-gray-500">• {selectedClient.role === 'ALACAKLI' ? 'Alacaklı' : selectedClient.role}</span>
+                    )}
                   </div>
-                  {selectedClient.email && (
-                    <div className="flex gap-1">
-                      <button 
-                        onClick={() => copyToClipboard(selectedClient.email!, 'E-posta')}
-                        className="p-1.5 hover:bg-blue-100 rounded"
-                        title="Kopyala"
-                      >
-                        <Copy className="h-3 w-3 text-blue-600" />
-                      </button>
-                      <a 
-                        href={`mailto:${selectedClient.email}`}
-                        className="p-1.5 hover:bg-blue-100 rounded"
-                        title="E-posta Gönder"
-                      >
-                        <Mail className="h-3 w-3 text-blue-600" />
-                      </a>
-                    </div>
-                  )}
                 </div>
-              </div>
-            </div>
-
-            {/* Adres Bilgileri */}
-            <div className="bg-gray-50 rounded-lg p-3 space-y-2">
-              <h4 className="text-xs font-semibold text-gray-600 uppercase flex items-center gap-1">
-                <MapPin className="h-3 w-3" /> Adres
-              </h4>
-              {selectedClient.address || selectedClient.city ? (
-                <div className="text-sm">
-                  <p className="font-medium">{selectedClient.address || '—'}</p>
-                  {(selectedClient.district || selectedClient.city) && (
-                    <p className="text-gray-500 text-xs mt-1">
-                      {[selectedClient.district, selectedClient.city].filter(Boolean).join(' / ')}
-                    </p>
-                  )}
-                </div>
-              ) : (
-                <p className="text-sm text-amber-600 italic">Adres bilgisi eksik</p>
-              )}
-            </div>
-
-            {/* Banka Hesapları */}
-            {selectedClient.bankAccounts && selectedClient.bankAccounts.length > 0 && (
-              <div className="bg-green-50 rounded-lg p-3 space-y-2">
-                <h4 className="text-xs font-semibold text-green-700 uppercase flex items-center gap-1">
-                  <CreditCard className="h-3 w-3" /> Banka Hesapları
-                </h4>
-                <div className="space-y-2">
-                  {selectedClient.bankAccounts.map((account) => (
-                    <div key={account.id} className="bg-white rounded p-2 border border-green-200">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium">{account.bankName}</p>
-                          {account.branchName && <p className="text-xs text-gray-500">{account.branchName}</p>}
-                        </div>
-                        {account.isPrimary && (
-                          <span className="text-[8px] bg-green-600 text-white px-1.5 py-0.5 rounded">Birincil</span>
-                        )}
-                      </div>
-                      <div className="flex items-center justify-between mt-1">
-                        <span className="text-xs font-mono text-gray-600">{maskIban(account.iban)}</span>
-                        <button 
-                          onClick={() => copyToClipboard(account.iban, 'IBAN')}
-                          className="p-1 hover:bg-green-100 rounded"
-                          title="IBAN Kopyala"
-                        >
-                          <Copy className="h-3 w-3 text-green-600" />
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* Eksik Bilgi Uyarısı */}
-            {(!selectedClient.tckn && !selectedClient.vkn) || !selectedClient.phone || !selectedClient.address ? (
-              <div className="p-3 bg-amber-50 border border-amber-200 rounded-lg">
-                <p className="text-xs font-medium text-amber-700 mb-1">⚠️ Eksik Bilgiler</p>
-                <ul className="text-xs text-amber-600 space-y-0.5">
-                  {!selectedClient.tckn && !selectedClient.vkn && <li>• Kimlik numarası eksik</li>}
-                  {!selectedClient.phone && <li>• Telefon numarası eksik</li>}
-                  {!selectedClient.email && <li>• E-posta adresi eksik</li>}
-                  {!selectedClient.address && <li>• Adres bilgisi eksik</li>}
-                </ul>
                 <Link 
                   href={`/settings/clients?edit=${selectedClient.id}`}
-                  className="inline-block mt-2 text-xs text-amber-700 underline hover:text-amber-800"
+                  className="p-1.5 hover:bg-gray-100 rounded text-gray-400 hover:text-gray-600"
+                  title="Düzenle"
                 >
-                  Müvekkil bilgilerini düzenle →
+                  <Edit className="h-4 w-4" />
                 </Link>
               </div>
-            ) : null}
-
-            {/* Aksiyon Butonları */}
-            <div className="flex gap-2 pt-2 border-t">
-              <button 
-                onClick={() => {
-                  setMessageModalOpen(true);
-                }}
-                className="flex-1 py-2 px-3 bg-green-600 text-white rounded-lg hover:bg-green-700 text-sm font-medium flex items-center justify-center gap-1"
-              >
-                <Mail className="h-4 w-4" />
-                Mesaj Gönder
-              </button>
-              <Link 
-                href={`/settings/clients?edit=${selectedClient.id}`}
-                className="flex-1 py-2 px-3 border border-gray-300 rounded-lg hover:bg-gray-50 text-sm font-medium flex items-center justify-center gap-1"
-              >
-                <Edit className="h-4 w-4" />
-                Düzenle
-              </Link>
+              <p className="text-xs text-gray-500 font-mono">
+                {selectedClient.type !== 'COMPANY' && selectedClient.type !== 'PUBLIC' 
+                  ? `TCKN: ${selectedClient.tckn || '—'}` 
+                  : `VKN: ${selectedClient.vkn || '—'}`}
+                {selectedClient.phone && <span className="ml-3">📞 {selectedClient.phone}</span>}
+              </p>
             </div>
+
+            {/* DOSYA YOĞUNLUĞU - 3 sütun */}
+            <div className="bg-slate-50 rounded-lg p-3">
+              <h4 className="text-[10px] font-semibold text-slate-600 uppercase tracking-wide mb-2 flex items-center gap-1">
+                <FolderOpen className="h-3 w-3" /> Dosya Yoğunluğu
+              </h4>
+              {loadingClientStats ? (
+                <div className="flex items-center justify-center py-3">
+                  <div className="h-5 w-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : clientStats ? (
+                <div className="grid grid-cols-3 gap-2">
+                  <Link 
+                    href={`/cases?clientId=${selectedClient.id}&status=ACTIVE`}
+                    className="bg-white rounded-lg p-2.5 text-center hover:ring-2 hover:ring-blue-200 transition-all border border-slate-100"
+                  >
+                    <p className="text-2xl font-bold text-blue-600">{clientStats.activeCases}</p>
+                    <p className="text-[10px] text-gray-500">Aktif</p>
+                  </Link>
+                  <Link 
+                    href={`/cases?clientId=${selectedClient.id}`}
+                    className="bg-white rounded-lg p-2.5 text-center hover:ring-2 hover:ring-gray-200 transition-all border border-slate-100"
+                  >
+                    <p className="text-2xl font-bold text-gray-700">{clientStats.totalCases}</p>
+                    <p className="text-[10px] text-gray-500">Toplam</p>
+                  </Link>
+                  <div className="bg-white rounded-lg p-2.5 text-center border border-slate-100">
+                    <p className="text-2xl font-bold text-indigo-600">{clientStats.last30dActions}</p>
+                    <p className="text-[10px] text-gray-500">Son 30g</p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs text-gray-400 text-center py-2">Veri yüklenemedi</p>
+              )}
+            </div>
+
+            {/* FİNANSAL DURUM - Para birimine göre gruplu */}
+            <div className="bg-emerald-50/50 rounded-lg p-3 border border-emerald-100">
+              <h4 className="text-[10px] font-semibold text-emerald-700 uppercase tracking-wide mb-2">💰 Finansal Durum</h4>
+              {loadingClientStats ? (
+                <div className="flex items-center justify-center py-3">
+                  <div className="h-5 w-5 border-2 border-emerald-500 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : clientStats ? (
+                <div className="space-y-3">
+                  {Object.entries(clientStats.byCurrency).map(([currency, data]) => {
+                    const formatCurrency = (val: number) => new Intl.NumberFormat('tr-TR', { 
+                      style: 'currency', 
+                      currency: currency, 
+                      maximumFractionDigits: 0 
+                    }).format(val);
+                    const ratio = data.totalClaim > 0 ? data.totalCollected / data.totalClaim : 0;
+                    
+                    return (
+                      <div key={currency} className="bg-white rounded-lg p-2 border border-emerald-100">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[10px] font-medium text-gray-500">{currency}</span>
+                          {data.totalClaim > 0 && (
+                            <span className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
+                              ratio >= 0.6 ? 'bg-emerald-100 text-emerald-700' :
+                              ratio >= 0.3 ? 'bg-amber-100 text-amber-700' : 'bg-red-100 text-red-700'
+                            }`}>
+                              %{Math.round(ratio * 100)}
+                            </span>
+                          )}
+                        </div>
+                        <div className="grid grid-cols-3 gap-1 text-center">
+                          <div>
+                            <p className="text-xs font-bold text-gray-900">{formatCurrency(data.totalClaim)}</p>
+                            <p className="text-[8px] text-gray-500">Alacak</p>
+                          </div>
+                          <div>
+                            <p className="text-xs font-bold text-emerald-600">{formatCurrency(data.totalCollected)}</p>
+                            <p className="text-[8px] text-gray-500">Tahsil</p>
+                          </div>
+                          <div>
+                            <p className={`text-xs font-bold ${
+                              data.totalExpense === 0 ? 'text-gray-400' :
+                              data.expenseCollected === 0 ? 'text-red-600' :
+                              data.expenseCollected >= data.totalExpense ? 'text-emerald-600' : 'text-amber-600'
+                            }`}>{formatCurrency(data.totalExpense)}</p>
+                            <p className="text-[8px] text-gray-500">Masraf</p>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {Object.keys(clientStats.byCurrency).length === 0 && (
+                    <p className="text-xs text-gray-400 text-center py-2">Finansal veri yok</p>
+                  )}
+                </div>
+              ) : null}
+            </div>
+
+            {/* RİSKLER & UYARILAR - Her zaman görünür */}
+            <div className={`rounded-lg p-3 border ${
+              clientStats && (clientStats.nearExpiryCases > 0 || clientStats.pendingNotifications > 0 || clientStats.staleCases30d > 0)
+                ? 'bg-red-50/50 border-red-200'
+                : 'bg-gray-50 border-gray-100'
+            }`}>
+              <h4 className={`text-[10px] font-semibold uppercase tracking-wide mb-2 ${
+                clientStats && (clientStats.nearExpiryCases > 0 || clientStats.pendingNotifications > 0 || clientStats.staleCases30d > 0)
+                  ? 'text-red-700'
+                  : 'text-gray-500'
+              }`}>⚠️ Riskler & Uyarılar</h4>
+              {loadingClientStats ? (
+                <div className="flex items-center justify-center py-2">
+                  <div className="h-4 w-4 border-2 border-gray-400 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : clientStats ? (
+                <div className="space-y-1.5">
+                  <Link 
+                    href={`/cases?clientId=${selectedClient.id}&filter=expiring`}
+                    className={`flex justify-between items-center p-2 rounded ${
+                      clientStats.nearExpiryCases > 0 ? 'bg-white hover:bg-red-50' : 'bg-white/50'
+                    }`}
+                  >
+                    <span className="text-xs text-gray-600 flex items-center gap-1.5">
+                      <Clock className={`h-3.5 w-3.5 ${clientStats.nearExpiryCases > 0 ? 'text-red-500' : 'text-gray-400'}`} />
+                      Zamanaşımı yaklaşan
+                    </span>
+                    <span className={`text-sm font-bold ${clientStats.nearExpiryCases > 0 ? 'text-red-600' : 'text-gray-400'}`}>
+                      {clientStats.nearExpiryCases}
+                    </span>
+                  </Link>
+                  <Link 
+                    href={`/cases?clientId=${selectedClient.id}&filter=notification`}
+                    className={`flex justify-between items-center p-2 rounded ${
+                      clientStats.pendingNotifications > 0 ? 'bg-white hover:bg-amber-50' : 'bg-white/50'
+                    }`}
+                  >
+                    <span className="text-xs text-gray-600 flex items-center gap-1.5">
+                      <Bell className={`h-3.5 w-3.5 ${clientStats.pendingNotifications > 0 ? 'text-amber-500' : 'text-gray-400'}`} />
+                      Tebligat bekleyen
+                    </span>
+                    <span className={`text-sm font-bold ${clientStats.pendingNotifications > 0 ? 'text-amber-600' : 'text-gray-400'}`}>
+                      {clientStats.pendingNotifications}
+                    </span>
+                  </Link>
+                  <Link 
+                    href={`/cases?clientId=${selectedClient.id}&filter=stale`}
+                    className={`flex justify-between items-center p-2 rounded ${
+                      clientStats.staleCases30d > 0 ? 'bg-white hover:bg-orange-50' : 'bg-white/50'
+                    }`}
+                  >
+                    <span className="text-xs text-gray-600 flex items-center gap-1.5">
+                      <AlertTriangle className={`h-3.5 w-3.5 ${clientStats.staleCases30d > 0 ? 'text-orange-500' : 'text-gray-400'}`} />
+                      30+ gündür işlem yok
+                    </span>
+                    <span className={`text-sm font-bold ${clientStats.staleCases30d > 0 ? 'text-orange-600' : 'text-gray-400'}`}>
+                      {clientStats.staleCases30d}
+                    </span>
+                  </Link>
+                </div>
+              ) : null}
+            </div>
+
+            {/* HIZLI AKSİYONLAR - Masraf ve Yeni Takip vurgulu */}
+            <div className="pt-3 border-t">
+              <h4 className="text-[10px] font-semibold text-gray-500 uppercase tracking-wide mb-2">⚡ Hızlı Aksiyonlar</h4>
+              <div className="grid grid-cols-2 gap-2">
+                {/* Birincil Aksiyonlar */}
+                <button 
+                  onClick={() => {
+                    setExpenseClientId(selectedClient.id);
+                    setExpenseClientName(selectedClient.displayName || selectedClient.name);
+                    setExpenseModalOpen(true);
+                  }}
+                  className="flex items-center justify-center gap-2 p-3 rounded-lg bg-amber-500 hover:bg-amber-600 text-white font-medium text-sm transition-colors"
+                >
+                  <Receipt className="h-4 w-4" />
+                  Masraf Ekle
+                </button>
+                <Link 
+                  href={`/cases/new?clientId=${selectedClient.id}`}
+                  className="flex items-center justify-center gap-2 p-3 rounded-lg bg-indigo-500 hover:bg-indigo-600 text-white font-medium text-sm transition-colors"
+                >
+                  <PlusCircle className="h-4 w-4" />
+                  Yeni Takip
+                </Link>
+                {/* İkincil Aksiyonlar */}
+                <Link 
+                  href={`/cases?clientId=${selectedClient.id}`}
+                  className="flex items-center justify-center gap-2 p-2.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 text-sm transition-colors"
+                >
+                  <FolderOpen className="h-4 w-4 text-blue-500" />
+                  Dosyalar
+                </Link>
+                <button 
+                  onClick={() => setMessageModalOpen(true)}
+                  className="flex items-center justify-center gap-2 p-2.5 rounded-lg border border-gray-200 hover:bg-gray-50 text-gray-700 text-sm transition-colors"
+                >
+                  <MessageSquare className="h-4 w-4 text-green-500" />
+                  Mesaj/Not
+                </button>
+              </div>
+            </div>
+
+            {/* İLETİŞİM - Collapsible */}
+            <details className="group">
+              <summary className="flex items-center justify-between cursor-pointer text-[10px] font-semibold text-gray-500 uppercase py-2 border-t">
+                <span className="flex items-center gap-1">
+                  <Phone className="h-3 w-3" /> İletişim Bilgileri
+                </span>
+                <ChevronDown className="h-3 w-3 group-open:rotate-180 transition-transform" />
+              </summary>
+              <div className="pt-2 space-y-2">
+                {selectedClient.email && (
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-gray-600">{selectedClient.email}</span>
+                    <div className="flex gap-1">
+                      <button onClick={() => copyToClipboard(selectedClient.email!, 'E-posta')} className="p-1 hover:bg-gray-100 rounded">
+                        <Copy className="h-3 w-3 text-gray-400" />
+                      </button>
+                      <a href={`mailto:${selectedClient.email}`} className="p-1 hover:bg-gray-100 rounded">
+                        <Mail className="h-3 w-3 text-gray-400" />
+                      </a>
+                    </div>
+                  </div>
+                )}
+                {selectedClient.address && (
+                  <div className="text-sm text-gray-600">
+                    <p>{selectedClient.address}</p>
+                    {(selectedClient.district || selectedClient.city) && (
+                      <p className="text-xs text-gray-400">{[selectedClient.district, selectedClient.city].filter(Boolean).join(' / ')}</p>
+                    )}
+                  </div>
+                )}
+                {!selectedClient.email && !selectedClient.address && (
+                  <p className="text-xs text-gray-400 italic">İletişim bilgisi eksik</p>
+                )}
+              </div>
+            </details>
           </div>
         )}
       </Drawer>
@@ -2463,6 +3150,24 @@ export default function CaseDetailPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* BORÇLU DETAY DRAWER - Yeni FAZ 2 Drawer */}
+      {caseData && selectedDebtor && (
+        <DebtorDetailDrawer
+          isOpen={debtorDrawerOpen}
+          onClose={() => {
+            setDebtorDrawerOpen(false);
+            setSelectedDebtor(null);
+            setSelectedDebtorDetail(null);
+          }}
+          caseId={caseData.id}
+          caseDebtorId={selectedDebtor.caseDebtorId}
+          onUpdate={() => {
+            fetchCaseDebtors();
+            fetchCase();
+          }}
+        />
       )}
 
     </div>

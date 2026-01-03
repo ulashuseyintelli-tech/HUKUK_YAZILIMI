@@ -29,12 +29,14 @@ export class CaseController {
     @CurrentUser("tenantId") tenantId: string,
     @Query("status") status?: string,
     @Query("expenseRequestStatus") expenseRequestStatus?: string,
+    @Query("clientId") clientId?: string,
     @Query("page") page?: string,
     @Query("limit") limit?: string
   ) {
     return this.caseService.findAll(tenantId, {
       status,
       expenseRequestStatus,
+      clientId,
       page: page ? parseInt(page) : undefined,
       limit: limit ? parseInt(limit) : undefined,
     });

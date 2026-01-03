@@ -115,11 +115,12 @@ export class CaseService {
     }
   }
 
-  async findAll(tenantId: string, params?: { status?: string; expenseRequestStatus?: string; page?: number; limit?: number }) {
-    const { status, expenseRequestStatus, page = 1, limit = 20 } = params || {};
+  async findAll(tenantId: string, params?: { status?: string; expenseRequestStatus?: string; clientId?: string; page?: number; limit?: number }) {
+    const { status, expenseRequestStatus, clientId, page = 1, limit = 20 } = params || {};
 
     const where: any = { tenantId };
     if (status) where.status = status;
+    if (clientId) where.clientId = clientId;
     
     // Masraf talebi durumuna göre filtreleme
     if (expenseRequestStatus) {
@@ -221,6 +222,31 @@ export class CaseService {
           daysUntilPassive = Math.max(0, 365 - daysSinceLastAction); // 1 yıl pasifleşme süresi varsayımı
         }
         
+        // Finansal özet hesapla
+        const [collectionAgg, expenseAgg, claimAgg] = await Promise.all([
+          // Tahsilat toplamı
+          this.prisma.collection.aggregate({
+            where: { caseId: c.id },
+            _sum: { amount: true },
+          }),
+          // Masraf toplamı (tüm masraf talepleri)
+          this.prisma.expenseRequest.aggregate({
+            where: { caseId: c.id },
+            _sum: { totalAmount: true, paidAmount: true },
+          }),
+          // Toplam alacak (ClaimItem'lardan - demandedAmount toplamı)
+          this.prisma.claimItem.aggregate({
+            where: { caseId: c.id },
+            _sum: { demandedAmount: true },
+          }),
+        ]);
+        
+        const totalCollected = Number(collectionAgg._sum?.amount || 0);
+        const totalExpense = Number(expenseAgg._sum?.totalAmount || 0);
+        const expenseCollected = Number(expenseAgg._sum?.paidAmount || 0);
+        // Toplam alacak: ClaimItem varsa oradan, yoksa principalAmount'tan
+        const totalClaim = Number(claimAgg._sum?.demandedAmount || 0) || Number(c.principalAmount || 0);
+        
         // Borçu adresleriyle birlikte döndür
         const debtorsWithAddress = c.debtors.map((d: any) => ({
           ...d,
@@ -237,6 +263,11 @@ export class CaseService {
           lastActionDate: lastActionDate?.toISOString() || null,
           lastCollectionDate: lastCollectionDate?.toISOString() || null,
           daysUntilPassive,
+          // Finansal özet
+          totalClaim,
+          totalCollected,
+          totalExpense,
+          expenseCollected,
           // Masraf talebi durumu
           latestExpenseRequest: c.expenseRequests?.[0] || null,
           expenseRequestStatus: c.expenseRequests?.[0]?.status || null,
@@ -692,7 +723,52 @@ export class CaseService {
           }
         }
 
-        // 6. Tam case'i döndür
+        // 7. Varsayılan stajyer avukatları ekle (isDefaultForNewCases = true)
+        const existingLawyerIds = dto.lawyers?.map(l => l.id).filter(Boolean) || [];
+        const defaultInternLawyers = await tx.lawyer.findMany({
+          where: {
+            tenantId,
+            isDefaultForNewCases: true,
+            isActive: true,
+            id: { notIn: existingLawyerIds as string[] }, // Zaten eklenmişleri hariç tut
+          },
+          select: { id: true, lawyerRank: true },
+        });
+
+        for (const lawyer of defaultInternLawyers) {
+          await tx.caseLawyer.create({
+            data: {
+              caseId: newCase.id,
+              lawyerId: lawyer.id,
+              canSign: false,
+              isResponsible: false,
+              hasSignatureAuthority: false,
+              role: lawyer.lawyerRank === 'INTERN' ? 'INTERN' : 'ASSISTANT',
+            },
+          });
+        }
+
+        // 8. Varsayılan personeli ekle (isDefaultForNewCases = true)
+        const defaultStaffMembers = await tx.staffMember.findMany({
+          where: {
+            tenantId,
+            isDefaultForNewCases: true,
+            isActive: true,
+          },
+          select: { id: true, staffType: true },
+        });
+
+        for (const staff of defaultStaffMembers) {
+          await tx.caseStaff.create({
+            data: {
+              caseId: newCase.id,
+              staffMemberId: staff.id,
+              roleOnCase: staff.staffType || 'PERSONEL',
+            },
+          });
+        }
+
+        // 9. Tam case'i döndür
         const createdCase = await tx.case.findUnique({
           where: { id: newCase.id },
           include: {
@@ -812,18 +888,21 @@ export class CaseService {
   async delete(tenantId: string, id: string) {
     const existing = await this.findOne(tenantId, id);
 
-    await this.prisma.case.delete({
-      where: { id },
-    });
+    // Transaction içinde silme ve audit log (veri bütünlüğü için)
+    await this.prisma.$transaction(async (tx) => {
+      await tx.case.delete({
+        where: { id },
+      });
 
-    // Audit log
-    await this.auditService.log({
-      tenantId,
-      action: 'DELETE',
-      entityType: 'CASE',
-      entityId: id,
-      oldValues: { fileNumber: existing.fileNumber },
-      description: `Takip silindi: ${existing.fileNumber}`,
+      // Audit log - transaction içinde
+      await this.auditService.log({
+        tenantId,
+        action: 'DELETE',
+        entityType: 'CASE',
+        entityId: id,
+        oldValues: { fileNumber: existing.fileNumber },
+        description: `Takip silindi: ${existing.fileNumber}`,
+      });
     });
 
     return { success: true };
@@ -896,6 +975,7 @@ export class CaseService {
       'executionPath',
       'subCategory',
       'notes',
+      'executionOfficeId',
     ];
 
     const data: any = {};
@@ -1049,6 +1129,12 @@ export class CaseService {
       where: { id: caseId, tenantId },
     });
     if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+
+    // Notun bu dosyaya ait olduğunu kontrol et (güvenlik düzeltmesi)
+    const note = await this.prisma.caseLifecycle.findFirst({
+      where: { id: noteId, caseId, action: "NOTE_ADDED" },
+    });
+    if (!note) throw new NotFoundException("Not bulunamadı");
 
     await this.prisma.caseLifecycle.delete({
       where: { id: noteId },
