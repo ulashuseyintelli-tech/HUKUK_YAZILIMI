@@ -3,7 +3,7 @@
 import { DebtorListItemDTO, DebtorRoleLabels, AddressResearchStatus } from "@/lib/api";
 import { ServiceStatusBadge } from "./ServiceStatusBadge";
 import { AlertBadge } from "./AlertBadge";
-import { Building2, User, ChevronRight, FolderSync, Search, CheckCircle2, AlertTriangle } from "lucide-react";
+import { Building2, User, ChevronRight, FolderSync, Search, CheckCircle2, AlertTriangle, MapPin, Mail, Clock } from "lucide-react";
 
 interface DebtorRowProps {
   debtor: DebtorListItemDTO;
@@ -17,17 +17,21 @@ export function DebtorRow({ debtor, onClick }: DebtorRowProps) {
   const getResearchIndicator = (status?: AddressResearchStatus) => {
     switch (status) {
       case 'IN_PROGRESS':
-        return { icon: Search, color: 'text-blue-500', title: 'Adres araştırması devam ediyor' };
+        return { icon: Search, color: 'text-blue-500', bg: 'bg-blue-50', title: 'Adres araştırması devam ediyor' };
       case 'COMPLETED':
-        return { icon: CheckCircle2, color: 'text-green-500', title: 'Adres araştırması tamamlandı' };
+        return { icon: CheckCircle2, color: 'text-green-500', bg: 'bg-green-50', title: 'Adres araştırması tamamlandı' };
       case 'EXHAUSTED':
-        return { icon: AlertTriangle, color: 'text-orange-500', title: 'Adres kaynakları tükendi' };
+        return { icon: AlertTriangle, color: 'text-orange-500', bg: 'bg-orange-50', title: 'Adres kaynakları tükendi' };
       default:
         return null;
     }
   };
 
   const researchIndicator = getResearchIndicator(debtor.researchStatus);
+
+  // Adres sayısı (varsa)
+  const addressCount = (debtor as any).addressCount || 0;
+  const pendingRequests = (debtor as any).pendingRequests || 0;
 
   return (
     <div
@@ -66,15 +70,46 @@ export function DebtorRow({ debtor, onClick }: DebtorRowProps) {
               Farklı Adres
             </span>
           )}
-          {/* Research status indicator */}
-          {researchIndicator && (
-            <span title={researchIndicator.title}>
-              <researchIndicator.icon className={`w-3.5 h-3.5 ${researchIndicator.color}`} />
-            </span>
-          )}
         </div>
         {debtor.addressShort && (
           <div className="text-[10px] text-slate-400 truncate">{debtor.addressShort}</div>
+        )}
+      </div>
+
+      {/* Mini Address Stats */}
+      <div className="flex items-center gap-1.5 flex-shrink-0">
+        {/* Adres sayısı */}
+        <div 
+          className={`flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium ${
+            addressCount > 0 
+              ? 'bg-green-50 text-green-700' 
+              : 'bg-gray-50 text-gray-400'
+          }`}
+          title={`${addressCount} adres bulundu`}
+        >
+          <MapPin className="w-3 h-3" />
+          <span>{addressCount}</span>
+        </div>
+        
+        {/* Bekleyen talepler */}
+        {pendingRequests > 0 && (
+          <div 
+            className="flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] font-medium bg-amber-50 text-amber-700"
+            title={`${pendingRequests} bekleyen talep`}
+          >
+            <Clock className="w-3 h-3" />
+            <span>{pendingRequests}</span>
+          </div>
+        )}
+
+        {/* Research status indicator */}
+        {researchIndicator && (
+          <span 
+            className={`p-1 rounded ${researchIndicator.bg}`}
+            title={researchIndicator.title}
+          >
+            <researchIndicator.icon className={`w-3 h-3 ${researchIndicator.color}`} />
+          </span>
         )}
       </div>
 

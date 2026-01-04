@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -55,7 +55,7 @@ export class StaffService {
     const existing = await this.prisma.staffMember.findFirst({
       where: { id, tenantId },
     });
-    if (!existing) throw new Error('Personel bulunamadı');
+    if (!existing) throw new NotFoundException('Personel bulunamadı');
 
     // Sadece gönderilen alanları güncelle (undefined olanları atla)
     const updateData: any = {};
@@ -87,7 +87,7 @@ export class StaffService {
     const existing = await this.prisma.staffMember.findFirst({
       where: { id, tenantId },
     });
-    if (!existing) throw new Error('Personel bulunamadı');
+    if (!existing) throw new NotFoundException('Personel bulunamadı');
 
     return this.prisma.staffMember.update({
       where: { id },

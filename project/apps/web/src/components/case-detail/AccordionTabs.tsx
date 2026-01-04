@@ -3,8 +3,10 @@
 import { useState } from "react";
 import { 
   FileText, Receipt, Database, History, FolderOpen, MessageSquare, 
-  ChevronDown, Plus, User, Clock, AlertTriangle, ExternalLink 
+  ChevronDown, Plus, User, Clock, AlertTriangle, ExternalLink,
+  ListTodo, Briefcase, Send
 } from "lucide-react";
+import Link from "next/link";
 
 // Types
 interface Note {
@@ -59,6 +61,8 @@ interface Message {
 }
 
 interface AccordionTabsProps {
+  caseId: string;
+  caseData?: any;
   notes?: Note[];
   expenses?: Expense[];
   uyapQueries?: UyapQuery[];
@@ -75,14 +79,16 @@ interface AccordionTabsProps {
   defaultOpen?: string;
 }
 
-// Tab definitions
+// Tab definitions - Wireframe'e göre
 const tabs = [
   { id: "notes", label: "Notlar", icon: FileText },
-  { id: "expenses", label: "Masraflar & Muhasebe", icon: Receipt },
-  { id: "uyap", label: "UYAP & Veri", icon: Database },
-  { id: "logs", label: "Log", icon: History },
-  { id: "related", label: "İlişkili Dosyalar", icon: FolderOpen },
+  { id: "expenses", label: "Masraflar", icon: Receipt },
+  { id: "uyap", label: "UYAP Sorgulama", icon: Database },
+  { id: "tasks", label: "Yapılacak İşler", icon: ListTodo },
+  { id: "related", label: "İlişkili Davalar", icon: FolderOpen },
+  { id: "accounting", label: "Müv. Muhasebe", icon: Briefcase },
   { id: "chat", label: "Müvekkil Chat", icon: MessageSquare },
+  { id: "requests", label: "Müv. Diğer Talepler", icon: Send },
 ];
 
 // Format date
@@ -141,6 +147,8 @@ const statusColors: Record<string, string> = {
 };
 
 export function AccordionTabs({
+  caseId,
+  caseData,
   notes = [],
   expenses = [],
   uyapQueries = [],
@@ -167,9 +175,11 @@ export function AccordionTabs({
     notes: notes.length,
     expenses: expenses.filter(e => e.status === 'UNPAID').length,
     uyap: uyapQueries.filter(q => q.status === 'PENDING').length,
-    logs: 0,
+    tasks: 0,
     related: relatedCases.length,
+    accounting: 0,
     chat: messages.filter(m => !m.isRead).length,
+    requests: 0,
   });
 
   const counts = getCounts();
@@ -341,38 +351,36 @@ export function AccordionTabs({
             </div>
           )}
 
-          {/* Log */}
-          {activeTab === "logs" && (
+          {/* Yapılacak İşler */}
+          {activeTab === "tasks" && (
             <div>
-              <h4 className="text-sm font-medium text-slate-700 mb-3">Sistem Günlüğü</h4>
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="text-sm font-medium text-slate-700">Yapılacak İşler</h4>
+                <button className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700">
+                  <Plus className="w-3 h-3" /> Görev Ekle
+                </button>
+              </div>
               <div className="space-y-2 max-h-[300px] overflow-y-auto">
-                {logs.map((log) => (
-                  <div
-                    key={log.id}
-                    className="p-2 rounded-lg bg-slate-50 flex items-start gap-2"
-                  >
-                    <Clock className="w-3 h-3 text-slate-400 mt-0.5 flex-shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-medium text-slate-700">{log.action}</span>
-                        {log.isAutomatic && (
-                          <span className="px-1 py-0.5 bg-blue-100 text-blue-600 text-[10px] rounded">
-                            Otomatik
-                          </span>
-                        )}
-                      </div>
-                      {log.description && (
-                        <p className="text-xs text-slate-500 mt-0.5">{log.description}</p>
-                      )}
-                      <p className="text-[10px] text-slate-400 mt-1">
-                        {log.user?.name || "Sistem"} • {formatDateTime(log.createdAt)}
-                      </p>
+                <div className="p-3 rounded-lg border border-amber-200 bg-amber-50 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <AlertTriangle className="w-4 h-4 text-amber-600" />
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">Tebligat Takibi</p>
+                      <p className="text-xs text-slate-500">Ödeme emri tebliğ bekleniyor</p>
                     </div>
                   </div>
-                ))}
-                {logs.length === 0 && (
-                  <p className="text-xs text-slate-400 text-center py-4">Henüz log yok</p>
-                )}
+                  <span className="px-2 py-1 bg-amber-100 text-amber-700 rounded text-xs font-medium">Bekliyor</span>
+                </div>
+                <div className="p-3 rounded-lg border border-slate-200 bg-slate-50 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-slate-400" />
+                    <div>
+                      <p className="text-sm font-medium text-slate-700">Yenileme Kontrolü</p>
+                      <p className="text-xs text-slate-500">İİK 78 süresi takibi</p>
+                    </div>
+                  </div>
+                  <span className="px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-xs font-medium">Aktif</span>
+                </div>
               </div>
             </div>
           )}
@@ -405,6 +413,26 @@ export function AccordionTabs({
                 {relatedCases.length === 0 && (
                   <p className="text-xs text-slate-400 text-center py-4">İlişkili dosya yok</p>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* Müvekkil Muhasebe */}
+          {activeTab === "accounting" && (
+            <div>
+              <h4 className="text-sm font-medium text-slate-700 mb-3">Müvekkil Muhasebe</h4>
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200">
+                    <p className="text-xs text-emerald-600 mb-1">Toplam Tahsilat</p>
+                    <p className="text-lg font-bold text-emerald-700">0 ₺</p>
+                  </div>
+                  <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
+                    <p className="text-xs text-amber-600 mb-1">Bekleyen Masraf</p>
+                    <p className="text-lg font-bold text-amber-700">0 ₺</p>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-400 text-center py-2">Detaylı muhasebe bilgisi için müvekkil kartına gidin</p>
               </div>
             </div>
           )}
@@ -446,6 +474,16 @@ export function AccordionTabs({
                 {messages.length === 0 && (
                   <p className="text-xs text-slate-400 text-center py-4">Henüz mesaj yok</p>
                 )}
+              </div>
+            </div>
+          )}
+
+          {/* Müvekkil Diğer Talepler */}
+          {activeTab === "requests" && (
+            <div>
+              <h4 className="text-sm font-medium text-slate-700 mb-3">Müvekkil Diğer Talepler</h4>
+              <div className="space-y-2 max-h-[300px] overflow-y-auto">
+                <p className="text-xs text-slate-400 text-center py-4">Henüz talep yok</p>
               </div>
             </div>
           )}

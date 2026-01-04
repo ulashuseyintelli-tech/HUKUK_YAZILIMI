@@ -336,20 +336,20 @@ export class ValidationGateService implements OnModuleInit {
       let collateral = null;
 
       try {
-        instrument = await (this.prisma as any).caseInstrument?.findFirst({ where: { caseId } });
-      } catch { /* Model henuz yok */ }
+        instrument = await this.prisma.caseInstrument.findFirst({ where: { caseId } });
+      } catch { /* Model sorgusu başarısız */ }
 
       try {
-        lease = await (this.prisma as any).caseLease?.findFirst({ where: { caseId } });
-      } catch { /* Model henuz yok */ }
+        lease = await this.prisma.caseLease.findFirst({ where: { caseId } });
+      } catch { /* Model sorgusu başarısız */ }
 
       try {
-        judgment = await (this.prisma as any).caseJudgment?.findFirst({ where: { caseId } });
-      } catch { /* Model henuz yok */ }
+        judgment = await this.prisma.caseJudgment.findFirst({ where: { caseId } });
+      } catch { /* Model sorgusu başarısız */ }
 
       try {
-        collateral = await (this.prisma as any).caseCollateral?.findFirst({ where: { caseId } });
-      } catch { /* Model henuz yok */ }
+        collateral = await this.prisma.caseCollateral.findFirst({ where: { caseId } });
+      } catch { /* Model sorgusu başarısız */ }
 
       return {
         ...caseData,

@@ -85,10 +85,13 @@ Saygılarımızla`
         <div className="fixed inset-0 bg-black/50" onClick={onClose} />
         <div className="relative bg-white rounded-lg shadow-xl w-full max-w-md mx-4 p-6">
           <div className="text-center">
-            <Mail className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+            <Mail className="w-12 h-12 text-amber-400 mx-auto mb-4" />
             <h3 className="text-lg font-medium text-gray-900 mb-2">Müvekkil Bilgisi Eksik</h3>
             <p className="text-sm text-gray-500 mb-4">
-              Bu dosya için müvekkil bilgisi bulunamadı. Lütfen önce dosyaya müvekkil atayın.
+              Bu dosya için müvekkil bilgisi bulunamadı. Müvekkile mail göndermek için önce dosyaya müvekkil atamanız gerekiyor.
+            </p>
+            <p className="text-xs text-gray-400 mb-4">
+              Dosya detay sayfasında "Taraflar" bölümünden müvekkil ekleyebilirsiniz.
             </p>
             <Button onClick={onClose}>Kapat</Button>
           </div>

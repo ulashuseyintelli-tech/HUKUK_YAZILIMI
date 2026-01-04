@@ -21,6 +21,7 @@ import {
   Calendar,
   Shield,
   AlertTriangle,
+  FileCode,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserSettings } from "@/lib/user-settings";
@@ -29,6 +30,7 @@ const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, disabled: false },
   { name: "Yeni Takip Oluştur", href: "/cases/new", icon: PlusCircle, disabled: false },
   { name: "Eski Takipler", href: "/cases", icon: FolderOpen, disabled: false },
+  { name: "UYAP Export", href: "/uyap-export", icon: FileCode, disabled: false },
   { name: "Raporlar", href: "/reports", icon: BarChart3, disabled: false },
   { name: "Takvim", href: "/calendar", icon: Calendar, disabled: false },
   { name: "AI Tools", href: "/ai-tools", icon: Sparkles, disabled: false },

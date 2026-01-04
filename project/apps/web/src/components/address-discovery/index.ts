@@ -1,4 +1,5 @@
 export { AddressDiscoveryPanel } from './AddressDiscoveryPanel';
+export { AddressResearchWidget } from './AddressResearchWidget';
 export { ResearchStatusCard } from './ResearchStatusCard';
 export { UyapQueryList } from './UyapQueryList';
 export { InstitutionLetterList } from './InstitutionLetterList';

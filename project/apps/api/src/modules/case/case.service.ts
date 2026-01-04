@@ -111,10 +111,97 @@ export class CaseService {
       case CaseSubCategory.NAFAKA:
         return "devam eden aylarla birlikte tahsili talebidir.";
       case CaseSubCategory.DOVIZ:
-        return "fiili ödeme tarihindeki T.C. Merkez Bankası efektif satış kuru üzerinden Türk Lirası karşılığının tahsili talebidir.";
+        // Currency parametresini kullanarak daha spesifik açıklama
+        const currencyName = currency ? this.getCurrencyName(currency) : 'döviz';
+        return `fiili ödeme tarihindeki T.C. Merkez Bankası ${currencyName} efektif satış kuru üzerinden Türk Lirası karşılığının tahsili talebidir.`;
       case CaseSubCategory.GENEL:
       default:
         return "değişen oranlarda yasal faizi ile birlikte tahsili talebidir.";
+    }
+  }
+
+  /**
+   * Currency enum'ını Türkçe isme çevir
+   */
+  private getCurrencyName(currency: Currency): string {
+    const names: Record<Currency, string> = {
+      [Currency.TRY]: 'TL',
+      [Currency.USD]: 'ABD Doları',
+      [Currency.EUR]: 'Euro',
+      [Currency.GBP]: 'İngiliz Sterlini',
+      [Currency.CHF]: 'İsviçre Frangı',
+    };
+    return names[currency] || currency;
+  }
+
+  /**
+   * Lookup ID'lerinin doğru tenant'a ait olduğunu kontrol et
+   * Güvenlik: Başka tenant'ın lookup değerlerinin kullanılmasını engeller
+   */
+  private async validateLookupIds(
+    tenantId: string,
+    lookupIds: {
+      takipTuruId?: string | null;
+      asamaId?: string | null;
+      riskId?: string | null;
+      durumEtiketiId?: string | null;
+      mahiyetTipiId?: string | null;
+      borcluTipiId?: string | null;
+    }
+  ): Promise<void> {
+    const validations: Promise<boolean>[] = [];
+
+    if (lookupIds.takipTuruId) {
+      validations.push(
+        this.prisma.lookupTakipTuru.findFirst({
+          where: { id: lookupIds.takipTuruId, tenantId },
+        }).then(r => !!r)
+      );
+    }
+
+    if (lookupIds.asamaId) {
+      validations.push(
+        this.prisma.lookupAsama.findFirst({
+          where: { id: lookupIds.asamaId, tenantId },
+        }).then(r => !!r)
+      );
+    }
+
+    if (lookupIds.riskId) {
+      validations.push(
+        this.prisma.lookupRisk.findFirst({
+          where: { id: lookupIds.riskId, tenantId },
+        }).then(r => !!r)
+      );
+    }
+
+    if (lookupIds.durumEtiketiId) {
+      validations.push(
+        this.prisma.lookupDurumEtiketi.findFirst({
+          where: { id: lookupIds.durumEtiketiId, tenantId },
+        }).then(r => !!r)
+      );
+    }
+
+    if (lookupIds.mahiyetTipiId) {
+      validations.push(
+        this.prisma.lookupMahiyetTipi.findFirst({
+          where: { id: lookupIds.mahiyetTipiId, tenantId },
+        }).then(r => !!r)
+      );
+    }
+
+    if (lookupIds.borcluTipiId) {
+      validations.push(
+        this.prisma.lookupBorcluTipi.findFirst({
+          where: { id: lookupIds.borcluTipiId, tenantId },
+        }).then(r => !!r)
+      );
+    }
+
+    const results = await Promise.all(validations);
+    if (results.some(r => r === false)) {
+      throw new BadRequestException('Geçersiz lookup ID: Belirtilen değer bu büroya ait değil');
     }
   }
 
@@ -858,6 +945,13 @@ export class CaseService {
       data.startDate = new Date(data.startDate);
     }
 
+    // caseDate için de aynı işlem
+    if (data.caseDate === "" || data.caseDate === null) {
+      data.caseDate = undefined;
+    } else if (data.caseDate) {
+      data.caseDate = new Date(data.caseDate);
+    }
+
     // Boş string'leri temizle
     Object.keys(data).forEach((key) => {
       if (data[key] === "") {
@@ -1020,6 +1114,14 @@ export class CaseService {
       mahiyetTipiId?: string | null;
     },
   ) {
+    // Lookup ID'lerinin bu tenant'a ait olduğunu kontrol et
+    await this.validateLookupIds(tenantId, {
+      riskId: updates.riskId,
+      durumEtiketiId: updates.durumEtiketiId,
+      takipTuruId: updates.takipTuruId,
+      mahiyetTipiId: updates.mahiyetTipiId,
+    });
+
     // Sadece bu tenant'a ait dosyaları güncelle
     const result = await this.prisma.case.updateMany({
       where: {
@@ -1657,5 +1759,347 @@ export class CaseService {
     });
 
     return { success: true };
+  }
+
+  // ==================== ALACAK KALEMLERİ (DUES) ====================
+
+  /**
+   * Dosyanın alacak kalemlerini getir
+   */
+  async getCaseDues(tenantId: string, caseId: string) {
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+    });
+    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+
+    return this.prisma.due.findMany({
+      where: { caseId },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    });
+  }
+
+  /**
+   * Alacak kalemi ekle
+   */
+  async createDue(
+    tenantId: string,
+    caseId: string,
+    data: {
+      type: string;
+      description?: string;
+      amount: number;
+      dueDate: string;
+      currency?: string;
+      interestType?: string;
+      interestRate?: number;
+      interestStartDate?: string;
+      sourceDocumentNo?: string;
+      hasKdv?: boolean;
+      kdvRate?: number;
+      isPrimary?: boolean;
+    }
+  ) {
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+    });
+    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+
+    // Get max sortOrder
+    const maxSort = await this.prisma.due.aggregate({
+      where: { caseId },
+      _max: { sortOrder: true },
+    });
+
+    return this.prisma.due.create({
+      data: {
+        caseId,
+        type: data.type as any,
+        description: data.description,
+        amount: data.amount,
+        dueDate: new Date(data.dueDate),
+        currency: data.currency || "TRY",
+        interestType: data.interestType,
+        interestRate: data.interestRate,
+        interestStartDate: data.interestStartDate ? new Date(data.interestStartDate) : undefined,
+        sourceDocumentNo: data.sourceDocumentNo,
+        hasKdv: data.hasKdv || false,
+        kdvRate: data.kdvRate,
+        isPrimary: data.isPrimary || false,
+        sortOrder: (maxSort._max.sortOrder || 0) + 1,
+      },
+    });
+  }
+
+  /**
+   * Alacak kalemi güncelle
+   */
+  async updateDue(
+    tenantId: string,
+    caseId: string,
+    dueId: string,
+    data: {
+      type?: string;
+      description?: string;
+      amount?: number;
+      dueDate?: string;
+      currency?: string;
+      interestType?: string;
+      interestRate?: number;
+      interestStartDate?: string;
+      interestEndDate?: string;
+      sourceDocumentNo?: string;
+      hasKdv?: boolean;
+      kdvRate?: number;
+      isFinalized?: boolean;
+      finalizationDate?: string;
+      finalizationNote?: string;
+      sortOrder?: number;
+      isPrimary?: boolean;
+    }
+  ) {
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+    });
+    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+
+    const due = await this.prisma.due.findFirst({
+      where: { id: dueId, caseId },
+    });
+    if (!due) throw new NotFoundException("Alacak kalemi bulunamadı");
+
+    return this.prisma.due.update({
+      where: { id: dueId },
+      data: {
+        type: data.type as any,
+        description: data.description,
+        amount: data.amount,
+        dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+        currency: data.currency,
+        interestType: data.interestType,
+        interestRate: data.interestRate,
+        interestStartDate: data.interestStartDate ? new Date(data.interestStartDate) : undefined,
+        interestEndDate: data.interestEndDate ? new Date(data.interestEndDate) : undefined,
+        sourceDocumentNo: data.sourceDocumentNo,
+        hasKdv: data.hasKdv,
+        kdvRate: data.kdvRate,
+        isFinalized: data.isFinalized,
+        finalizationDate: data.finalizationDate ? new Date(data.finalizationDate) : undefined,
+        finalizationNote: data.finalizationNote,
+        sortOrder: data.sortOrder,
+        isPrimary: data.isPrimary,
+      },
+    });
+  }
+
+  /**
+   * Alacak kalemi sil
+   */
+  async deleteDue(tenantId: string, caseId: string, dueId: string) {
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+    });
+    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+
+    const due = await this.prisma.due.findFirst({
+      where: { id: dueId, caseId },
+    });
+    if (!due) throw new NotFoundException("Alacak kalemi bulunamadı");
+
+    await this.prisma.due.delete({ where: { id: dueId } });
+    return { success: true };
+  }
+
+  // ==================== TAHSİLATLAR (COLLECTIONS) ====================
+
+  /**
+   * Dosyanın tahsilatlarını getir
+   */
+  async getCaseCollections(tenantId: string, caseId: string) {
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+    });
+    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+
+    return this.prisma.collection.findMany({
+      where: { caseId, tenantId },
+      orderBy: { date: "desc" },
+      include: {
+        case: { select: { id: true, fileNumber: true } },
+      },
+    });
+  }
+
+  /**
+   * Tahsilat ekle
+   */
+  async createCollection(
+    tenantId: string,
+    caseId: string,
+    data: {
+      caseDebtorId?: string;
+      amount: number;
+      currency?: string;
+      type: string;
+      channel: string;
+      date: string;
+      valueDate?: string;
+      description?: string;
+      receiptNo?: string;
+      bankName?: string;
+      accountNo?: string;
+      notes?: string;
+    }
+  ) {
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+    });
+    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+
+    return this.prisma.collection.create({
+      data: {
+        tenantId,
+        caseId,
+        caseDebtorId: data.caseDebtorId,
+        amount: data.amount,
+        currency: data.currency || "TRY",
+        type: data.type as any,
+        channel: data.channel as any,
+        date: new Date(data.date),
+        valueDate: data.valueDate ? new Date(data.valueDate) : undefined,
+        description: data.description,
+        receiptNo: data.receiptNo,
+        bankName: data.bankName,
+        accountNo: data.accountNo,
+        notes: data.notes,
+        status: "CONFIRMED",
+      },
+    });
+  }
+
+  /**
+   * Tahsilat güncelle
+   */
+  async updateCollection(
+    tenantId: string,
+    caseId: string,
+    collectionId: string,
+    data: {
+      amount?: number;
+      type?: string;
+      channel?: string;
+      date?: string;
+      valueDate?: string;
+      description?: string;
+      receiptNo?: string;
+      bankName?: string;
+      notes?: string;
+      status?: string;
+    }
+  ) {
+    const collection = await this.prisma.collection.findFirst({
+      where: { id: collectionId, caseId, tenantId },
+    });
+    if (!collection) throw new NotFoundException("Tahsilat bulunamadı");
+
+    return this.prisma.collection.update({
+      where: { id: collectionId },
+      data: {
+        amount: data.amount,
+        type: data.type as any,
+        channel: data.channel as any,
+        date: data.date ? new Date(data.date) : undefined,
+        valueDate: data.valueDate ? new Date(data.valueDate) : undefined,
+        description: data.description,
+        receiptNo: data.receiptNo,
+        bankName: data.bankName,
+        notes: data.notes,
+        status: data.status as any,
+      },
+    });
+  }
+
+  /**
+   * Tahsilat iptal et
+   */
+  async cancelCollection(tenantId: string, caseId: string, collectionId: string, reason?: string) {
+    const collection = await this.prisma.collection.findFirst({
+      where: { id: collectionId, caseId, tenantId },
+    });
+    if (!collection) throw new NotFoundException("Tahsilat bulunamadı");
+
+    return this.prisma.collection.update({
+      where: { id: collectionId },
+      data: {
+        status: "CANCELLED",
+        cancelledAt: new Date(),
+        cancelReason: reason,
+      },
+    });
+  }
+
+  /**
+   * Tahsilat sil
+   */
+  async deleteCollection(tenantId: string, caseId: string, collectionId: string) {
+    const collection = await this.prisma.collection.findFirst({
+      where: { id: collectionId, caseId, tenantId },
+    });
+    if (!collection) throw new NotFoundException("Tahsilat bulunamadı");
+
+    await this.prisma.collection.delete({ where: { id: collectionId } });
+    return { success: true };
+  }
+
+  /**
+   * Dosya finans özeti
+   */
+  async getCaseFinanceSummary(tenantId: string, caseId: string) {
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+      select: { id: true, currency: true },
+    });
+    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+
+    const [dues, collections] = await Promise.all([
+      this.prisma.due.findMany({ where: { caseId } }),
+      this.prisma.collection.findMany({ where: { caseId, tenantId, status: "CONFIRMED" } }),
+    ]);
+
+    const totalDues = dues.reduce((sum, d) => sum + Number(d.amount), 0);
+    const totalCollections = collections.reduce((sum, c) => sum + Number(c.amount), 0);
+
+    // Group dues by type
+    const duesByType = dues.reduce((acc, d) => {
+      const existing = acc.find((x) => x.type === d.type);
+      if (existing) {
+        existing.amount += Number(d.amount);
+        existing.count += 1;
+      } else {
+        acc.push({ type: d.type, amount: Number(d.amount), count: 1 });
+      }
+      return acc;
+    }, [] as Array<{ type: string; amount: number; count: number }>);
+
+    // Group collections by channel
+    const collectionsByChannel = collections.reduce((acc, c) => {
+      const existing = acc.find((x) => x.channel === c.channel);
+      if (existing) {
+        existing.amount += Number(c.amount);
+        existing.count += 1;
+      } else {
+        acc.push({ channel: c.channel, amount: Number(c.amount), count: 1 });
+      }
+      return acc;
+    }, [] as Array<{ channel: string; amount: number; count: number }>);
+
+    return {
+      caseId,
+      currency: caseExists.currency || "TRY",
+      totalDues,
+      totalCollections,
+      balance: totalDues - totalCollections,
+      duesByType,
+      collectionsByChannel,
+    };
   }
 }

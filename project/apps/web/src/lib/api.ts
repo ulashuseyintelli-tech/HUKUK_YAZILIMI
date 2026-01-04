@@ -1,5 +1,10 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
+// Debug: Log API URL on client side
+if (typeof window !== "undefined") {
+  console.log("[API] Base URL:", API_URL);
+}
+
 class ApiClient {
   private token: string | null = null;
 
@@ -2236,6 +2241,178 @@ class ApiClient {
       method: 'DELETE',
     });
   }
+
+  // ============================================
+  // UYAP Export API
+  // ============================================
+
+  /**
+   * Tek dosyayı UYAP XML formatında export et
+   */
+  async exportCaseToUyap(caseId: string, includeDocuments = false) {
+    return this.request<UyapExportResult>('/uyap-export/single', {
+      method: 'POST',
+      body: JSON.stringify({ caseId, includeDocuments }),
+    });
+  }
+
+  /**
+   * Tek dosyayı UYAP XML olarak indir
+   */
+  async downloadCaseXml(caseId: string): Promise<Blob> {
+    const token = this.getToken();
+    const response = await fetch(`${API_URL}/api/uyap-export/download/${caseId}`, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.message || 'XML indirme hatası');
+    }
+    return response.blob();
+  }
+
+  /**
+   * Birden fazla dosyayı toplu UYAP XML formatında export et
+   */
+  async exportBatchToUyap(caseIds: string[], batchName?: string, includeDocuments = false) {
+    return this.request<UyapExportResult>('/uyap-export/batch', {
+      method: 'POST',
+      body: JSON.stringify({ caseIds, batchName, includeDocuments }),
+    });
+  }
+
+  /**
+   * Toplu dosyaları UYAP XML olarak indir
+   */
+  async downloadBatchXml(caseIds: string[], batchName?: string): Promise<Blob> {
+    const token = this.getToken();
+    const response = await fetch(`${API_URL}/api/uyap-export/batch/download`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({ caseIds, batchName }),
+    });
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      throw new Error(error.message || 'Toplu XML indirme hatası');
+    }
+    return response.blob();
+  }
+
+  /**
+   * Dosyanın UYAP export için uygun olup olmadığını kontrol et
+   */
+  async validateCaseForUyapExport(caseId: string) {
+    return this.request<UyapValidationResult>(`/uyap-export/validate/${caseId}`);
+  }
+
+  /**
+   * Export edilebilir dosyaları listele
+   */
+  async getExportableCases(limit = 100) {
+    return this.request<UyapExportableCasesResult>(`/uyap-export/exportable?limit=${limit}`);
+  }
+
+  // ============================================
+  // Due (Alacak Kalemi) Methods
+  // ============================================
+
+  /**
+   * Dosyanın alacak kalemlerini getir
+   */
+  async getCaseDues(caseId: string) {
+    return this.request<DueDTO[]>(`/cases/${caseId}/dues`);
+  }
+
+  /**
+   * Alacak kalemi ekle
+   */
+  async createDue(caseId: string, data: CreateDueDTO) {
+    return this.request<DueDTO>(`/cases/${caseId}/dues`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /**
+   * Alacak kalemi güncelle
+   */
+  async updateDue(caseId: string, dueId: string, data: UpdateDueDTO) {
+    return this.request<DueDTO>(`/cases/${caseId}/dues/${dueId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /**
+   * Alacak kalemi sil
+   */
+  async deleteDue(caseId: string, dueId: string) {
+    return this.request<{ success: boolean }>(`/cases/${caseId}/dues/${dueId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  // ============================================
+  // Collection (Tahsilat) Methods
+  // ============================================
+
+  /**
+   * Dosyanın tahsilatlarını getir
+   */
+  async getCaseCollections(caseId: string) {
+    return this.request<CollectionDTO[]>(`/cases/${caseId}/collections`);
+  }
+
+  /**
+   * Tahsilat ekle
+   */
+  async createCollection(caseId: string, data: CreateCollectionDTO) {
+    return this.request<CollectionDTO>(`/cases/${caseId}/collections`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /**
+   * Tahsilat güncelle
+   */
+  async updateCollection(caseId: string, collectionId: string, data: UpdateCollectionDTO) {
+    return this.request<CollectionDTO>(`/cases/${caseId}/collections/${collectionId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /**
+   * Tahsilat iptal et
+   */
+  async cancelCollection(caseId: string, collectionId: string, reason?: string) {
+    return this.request<CollectionDTO>(`/cases/${caseId}/collections/${collectionId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  /**
+   * Tahsilat sil
+   */
+  async deleteCollection(caseId: string, collectionId: string) {
+    return this.request<{ success: boolean }>(`/cases/${caseId}/collections/${collectionId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  /**
+   * Dosya finans özeti
+   */
+  async getCaseFinanceSummary(caseId: string) {
+    return this.request<CaseFinanceSummaryDTO>(`/cases/${caseId}/finance-summary`);
+  }
 }
 
 // ============================================
@@ -3826,4 +4003,217 @@ declare module './api' {
     renderMessageTemplate(id: string, tokens: Record<string, string>): Promise<{ subject?: string; body: string }>;
     seedMessageTemplates(): Promise<{ success: boolean; message: string }>;
   }
+}
+
+// ============================================
+// UYAP Export Types
+// ============================================
+
+export interface UyapExportResult {
+  success: boolean;
+  fileName: string;
+  fileSize: number;
+  caseCount: number;
+  xml?: string;
+  downloadUrl?: string;
+  errors?: string[];
+  warnings?: string[];
+}
+
+export interface UyapValidationResult {
+  isValid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+export interface UyapExportableCasesResult {
+  cases: Array<{
+    id: string;
+    fileNumber: string;
+    clientName: string;
+    debtorCount: number;
+    hasWarnings: boolean;
+  }>;
+  total: number;
+}
+
+// ============================================
+// Due (Alacak Kalemi) Types
+// ============================================
+
+export type DueType = 'PRINCIPAL' | 'INTEREST' | 'PAST_DUE_INTEREST' | 'ATTORNEY_FEE' | 'COURT_FEE' | 'EXECUTION_FEE' | 'OTHER';
+
+export interface DueDTO {
+  id: string;
+  caseId: string;
+  type: DueType;
+  description?: string;
+  amount: number;
+  dueDate: string;
+  currency: string;
+  interestType?: string;
+  interestRate?: number;
+  interestStartDate?: string;
+  interestEndDate?: string;
+  interestDays?: number;
+  sourceDocumentId?: string;
+  sourceDocumentNo?: string;
+  hasKdv: boolean;
+  kdvRate?: number;
+  hasBsmv: boolean;
+  hasKkdf: boolean;
+  requiresFinalization: boolean;
+  isFinalized: boolean;
+  finalizationDate?: string;
+  finalizationNote?: string;
+  sortOrder: number;
+  isPrimary: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateDueDTO {
+  type: DueType;
+  description?: string;
+  amount: number;
+  dueDate: string;
+  currency?: string;
+  interestType?: string;
+  interestRate?: number;
+  interestStartDate?: string;
+  sourceDocumentNo?: string;
+  hasKdv?: boolean;
+  kdvRate?: number;
+  isPrimary?: boolean;
+}
+
+export interface UpdateDueDTO {
+  type?: DueType;
+  description?: string;
+  amount?: number;
+  dueDate?: string;
+  currency?: string;
+  interestType?: string;
+  interestRate?: number;
+  interestStartDate?: string;
+  interestEndDate?: string;
+  sourceDocumentNo?: string;
+  hasKdv?: boolean;
+  kdvRate?: number;
+  isFinalized?: boolean;
+  finalizationDate?: string;
+  finalizationNote?: string;
+  sortOrder?: number;
+  isPrimary?: boolean;
+}
+
+export const DueTypeLabels: Record<DueType, string> = {
+  PRINCIPAL: 'Asıl Alacak',
+  INTEREST: 'İşlemiş Faiz',
+  PAST_DUE_INTEREST: 'Geçmiş Gün Faizi',
+  ATTORNEY_FEE: 'Vekalet Ücreti',
+  COURT_FEE: 'Yargılama Gideri',
+  EXECUTION_FEE: 'İcra Masrafı',
+  OTHER: 'Diğer',
+};
+
+// ============================================
+// Collection (Tahsilat) Types
+// ============================================
+
+export type CollectionType = 'PRINCIPAL' | 'INTEREST' | 'EXPENSE' | 'FEE' | 'PARTIAL' | 'FULL' | 'OTHER';
+export type CollectionChannel = 'NAKIT' | 'BANKA' | 'CEK' | 'SENET' | 'KREDI_KARTI' | 'ICRA_DAIRESI' | 'HACIZ' | 'DIGER';
+export type CollectionStatus = 'PENDING' | 'CONFIRMED' | 'CANCELLED';
+
+export interface CollectionDTO {
+  id: string;
+  tenantId: string;
+  caseId: string;
+  caseDebtorId?: string;
+  amount: number;
+  currency: string;
+  type: CollectionType;
+  channel: CollectionChannel;
+  date: string;
+  valueDate?: string;
+  description?: string;
+  receiptNo?: string;
+  bankName?: string;
+  accountNo?: string;
+  notes?: string;
+  status: CollectionStatus;
+  cancelledAt?: string;
+  cancelReason?: string;
+  createdAt: string;
+  updatedAt: string;
+  debtor?: { id: string; name: string };
+}
+
+export interface CreateCollectionDTO {
+  caseDebtorId?: string;
+  amount: number;
+  currency?: string;
+  type: CollectionType;
+  channel: CollectionChannel;
+  date: string;
+  valueDate?: string;
+  description?: string;
+  receiptNo?: string;
+  bankName?: string;
+  accountNo?: string;
+  notes?: string;
+}
+
+export interface UpdateCollectionDTO {
+  amount?: number;
+  type?: CollectionType;
+  channel?: CollectionChannel;
+  date?: string;
+  valueDate?: string;
+  description?: string;
+  receiptNo?: string;
+  bankName?: string;
+  notes?: string;
+  status?: CollectionStatus;
+}
+
+export const CollectionTypeLabels: Record<CollectionType, string> = {
+  PRINCIPAL: 'Anapara',
+  INTEREST: 'Faiz',
+  EXPENSE: 'Masraf',
+  FEE: 'Ücret',
+  PARTIAL: 'Kısmi Ödeme',
+  FULL: 'Tam Ödeme',
+  OTHER: 'Diğer',
+};
+
+export const CollectionChannelLabels: Record<CollectionChannel, string> = {
+  NAKIT: 'Nakit',
+  BANKA: 'Banka Havalesi',
+  CEK: 'Çek',
+  SENET: 'Senet',
+  KREDI_KARTI: 'Kredi Kartı',
+  ICRA_DAIRESI: 'İcra Dairesinden',
+  HACIZ: 'Haciz Yoluyla',
+  DIGER: 'Diğer',
+};
+
+export const CollectionStatusLabels: Record<CollectionStatus, string> = {
+  PENDING: 'Beklemede',
+  CONFIRMED: 'Onaylandı',
+  CANCELLED: 'İptal Edildi',
+};
+
+// ============================================
+// Finance Summary Types
+// ============================================
+
+export interface CaseFinanceSummaryDTO {
+  caseId: string;
+  currency: string;
+  totalDues: number;
+  totalCollections: number;
+  balance: number;
+  duesByType: Array<{ type: DueType; amount: number; count: number }>;
+  collectionsByChannel: Array<{ channel: CollectionChannel; amount: number; count: number }>;
 }

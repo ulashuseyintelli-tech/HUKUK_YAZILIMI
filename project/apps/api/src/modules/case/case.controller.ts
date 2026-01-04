@@ -337,4 +337,193 @@ export class CaseController {
   ) {
     return this.caseService.removeCaseStaff(tenantId, id, caseStaffId);
   }
+
+  // ==================== ALACAK KALEMLERİ (DUES) ====================
+
+  /**
+   * Dosyanın alacak kalemlerini getir
+   * GET /cases/:id/dues
+   */
+  @Get(":id/dues")
+  async getCaseDues(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string
+  ) {
+    return this.caseService.getCaseDues(tenantId, id);
+  }
+
+  /**
+   * Alacak kalemi ekle
+   * POST /cases/:id/dues
+   */
+  @Post(":id/dues")
+  async createDue(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Body() body: {
+      type: string;
+      description?: string;
+      amount: number;
+      dueDate: string;
+      currency?: string;
+      interestType?: string;
+      interestRate?: number;
+      interestStartDate?: string;
+      sourceDocumentNo?: string;
+      hasKdv?: boolean;
+      kdvRate?: number;
+      isPrimary?: boolean;
+    }
+  ) {
+    return this.caseService.createDue(tenantId, id, body);
+  }
+
+  /**
+   * Alacak kalemi güncelle
+   * PATCH /cases/:id/dues/:dueId
+   */
+  @Patch(":id/dues/:dueId")
+  async updateDue(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Param("dueId") dueId: string,
+    @Body() body: {
+      type?: string;
+      description?: string;
+      amount?: number;
+      dueDate?: string;
+      currency?: string;
+      interestType?: string;
+      interestRate?: number;
+      interestStartDate?: string;
+      interestEndDate?: string;
+      sourceDocumentNo?: string;
+      hasKdv?: boolean;
+      kdvRate?: number;
+      isFinalized?: boolean;
+      finalizationDate?: string;
+      finalizationNote?: string;
+      sortOrder?: number;
+      isPrimary?: boolean;
+    }
+  ) {
+    return this.caseService.updateDue(tenantId, id, dueId, body);
+  }
+
+  /**
+   * Alacak kalemi sil
+   * DELETE /cases/:id/dues/:dueId
+   */
+  @Delete(":id/dues/:dueId")
+  async deleteDue(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Param("dueId") dueId: string
+  ) {
+    return this.caseService.deleteDue(tenantId, id, dueId);
+  }
+
+  // ==================== TAHSİLATLAR (COLLECTIONS) ====================
+
+  /**
+   * Dosyanın tahsilatlarını getir
+   * GET /cases/:id/collections
+   */
+  @Get(":id/collections")
+  async getCaseCollections(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string
+  ) {
+    return this.caseService.getCaseCollections(tenantId, id);
+  }
+
+  /**
+   * Tahsilat ekle
+   * POST /cases/:id/collections
+   */
+  @Post(":id/collections")
+  async createCollection(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Body() body: {
+      caseDebtorId?: string;
+      amount: number;
+      currency?: string;
+      type: string;
+      channel: string;
+      date: string;
+      valueDate?: string;
+      description?: string;
+      receiptNo?: string;
+      bankName?: string;
+      accountNo?: string;
+      notes?: string;
+    }
+  ) {
+    return this.caseService.createCollection(tenantId, id, body);
+  }
+
+  /**
+   * Tahsilat güncelle
+   * PATCH /cases/:id/collections/:collectionId
+   */
+  @Patch(":id/collections/:collectionId")
+  async updateCollection(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Param("collectionId") collectionId: string,
+    @Body() body: {
+      amount?: number;
+      type?: string;
+      channel?: string;
+      date?: string;
+      valueDate?: string;
+      description?: string;
+      receiptNo?: string;
+      bankName?: string;
+      notes?: string;
+      status?: string;
+    }
+  ) {
+    return this.caseService.updateCollection(tenantId, id, collectionId, body);
+  }
+
+  /**
+   * Tahsilat iptal et
+   * POST /cases/:id/collections/:collectionId/cancel
+   */
+  @Post(":id/collections/:collectionId/cancel")
+  async cancelCollection(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Param("collectionId") collectionId: string,
+    @Body() body: { reason?: string }
+  ) {
+    return this.caseService.cancelCollection(tenantId, id, collectionId, body.reason);
+  }
+
+  /**
+   * Tahsilat sil
+   * DELETE /cases/:id/collections/:collectionId
+   */
+  @Delete(":id/collections/:collectionId")
+  async deleteCollection(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Param("collectionId") collectionId: string
+  ) {
+    return this.caseService.deleteCollection(tenantId, id, collectionId);
+  }
+
+  /**
+   * Dosya finans özeti
+   * GET /cases/:id/finance-summary
+   */
+  @Get(":id/finance-summary")
+  async getCaseFinanceSummary(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string
+  ) {
+    return this.caseService.getCaseFinanceSummary(tenantId, id);
+  }
 }

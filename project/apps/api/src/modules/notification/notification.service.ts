@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
   NotificationType,
@@ -58,7 +58,7 @@ export class NotificationService {
       include: { formType: true },
     });
 
-    if (!caseData) throw new Error("Case not found");
+    if (!caseData) throw new NotFoundException("Case not found");
 
     // 10 günlük süre hesapla
     const expiresAt = new Date();
@@ -146,7 +146,7 @@ export class NotificationService {
       where: { id: notificationId },
     });
 
-    if (!notification) throw new Error("Notification not found");
+    if (!notification) throw new NotFoundException("Notification not found");
 
     // Simülasyon: %80 başarılı teslim
     const isDelivered = Math.random() > 0.2;

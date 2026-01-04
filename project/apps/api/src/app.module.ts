@@ -65,6 +65,7 @@ import { CaseBalanceModule } from "./modules/case-balance/case-balance.module";
 import { StageTriggerModule } from "./modules/stage-trigger/stage-trigger.module";
 import { AddressDiscoveryModule } from "./modules/address-discovery/address-discovery.module";
 import { AssetQueryModule } from "./modules/asset-query/asset-query.module";
+import { UyapExportModule } from "./modules/uyap-export/uyap-export.module";
 
 @Module({
   imports: [
@@ -136,6 +137,7 @@ import { AssetQueryModule } from "./modules/asset-query/asset-query.module";
     StageTriggerModule,
     AddressDiscoveryModule,
     AssetQueryModule,
+    UyapExportModule,
   ],
 })
 export class AppModule {}

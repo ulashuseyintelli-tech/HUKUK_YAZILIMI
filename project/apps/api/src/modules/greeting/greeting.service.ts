@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { ClientNotificationService } from "../client-notification/client-notification.service";
 import { Cron, CronExpression } from "@nestjs/schedule";
@@ -236,7 +236,7 @@ export class GreetingService {
       include: { contacts: true },
     });
 
-    if (!client) throw new Error("Müvekkil bulunamadı");
+    if (!client) throw new NotFoundException("Müvekkil bulunamadı");
 
     let specialDay;
     if (specialDayId) {

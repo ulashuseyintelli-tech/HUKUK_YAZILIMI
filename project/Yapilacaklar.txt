@@ -1,311 +1,481 @@
-Direkt mimariye giriyorum. Net, uygulanabilir ve ileride ölçeklenebilir bir kurgu yazıyorum.
+İstediğin şey: Programını “UYAP’a göre eğiteceğin” Sistem Haritası
+
+Aşağıdaki blueprint, “icrabot” tipi otomasyonun omurgasıdır.
+
+Katman 0 — Dosya Beyni (Case Digital Twin)
+
+Her icra dosyasının programında bir “dijital ikizi” olacak:
+
+case_id
+
+uyap_dosya_no / tevzi_no
+
+stage (aşama): Açılış / Tebligat / Kesinleşme / Haciz / Tahsilat / Satış / Kapanış
+
+last_sync_at
+
+next_actions[] (bekleyen işler)
+
+evidence[] (makbuz no, tevdi liste no, mazbata tarihi vs.)
+
+Bu “beyin” olmadan bot kör olur.
+
+Katman 1 — UYAP Connector (Erişim ve Oturum)
+
+İki modlu tasarla:
+
+1A) Kullanıcı Oturumu Üzerinden (senin çubuk senaryon)
+
+Kullanıcı UYAP’ı açar (senin çubukla).
+
+Program “oturum aktif” durumunu algılar.
+
+Bot işlemleri bu oturum içinde yürütür.
+
+1B) Servis/Entegrasyon Üzerinden (mümkünse)
+
+Kurumsal web servis (varsa) ile veri çekme.
+
+Bot sadece “işlem” gerektiğinde kullanıcı oturumuna ihtiyaç duyar.
+
+UYAP’ın intranet/VPN gerçekliği nedeniyle (kitap bunu net söylüyor) mimariyi buna göre kur. 
+
+uyap_bilisim_sistemi_kitabi (1)
+
+Katman 2 — Görev Motoru (Task Orchestrator)
+
+Her şey “görev”e dökülür:
+
+CheckNotificationStatus
+
+FetchEtebligatStatuses
+
+ComputeFinalizationDate
+
+RunAssetQueries
+
+PrepareHacizRequests
+
+SyncSafahatTimeline
+
+Görev motoru şunları yapar:
+
+Kuyruk (queue)
+
+Önceliklendirme
+
+Retry/backoff
+
+“İnsan onayı gerektiren görev” flag’i
+
+Katman 3 — Kurallar Motoru (Rules Engine)
+
+Senin “programımı eğitmek” dediğin şey burada gerçekleşir.
+
+Örnek kural seti:
+
+Eğer stage = Tebligat ve tebligat_sent = true ise → günde 2 kez tebligat durumunu kontrol et
+
+Eğer e-tebligat_delivered_date geldi ise → +5 gün hesabıyla “tebliğ edilmiş sayıldı” tarihini üret ve finalization_candidate = true yap
+(Kitap: e-tebligat, posta kutusuna bırakılmayı takip eden 5. gün sonunda tebliğ edilmiş sayılır ve mazbata otomatik oluşur.) 
+
+uyap_bilisim_sistemi_kitabi (1)
+
+Eğer finalization_candidate = true ve mazbata_missing = true ise → “Mazbata Sorgula” görevini koy
+(Kitapta “Mazbata Sorgula” ile oluşturma anlatılıyor.) 
+
+uyap_bilisim_sistemi_kitabi (1)
+
+Eğer stage = Kesinleşme ise → varlık sorgu görevlerini sıraya diz (SGK, tapu, araç vs. — bunlar UYAP entegrasyonlarıyla zaten UYAP içinde yapılabiliyor mantık olarak) 
+
+uyap_bilisim_sistemi_kitabi (1)
+
+Bu motorun çıktısı: Next Best Action listesi.
+
+Katman 4 — UYAP “Ekran Robotu” (UI Automation Worker)
+
+Burası icrabot’un kas gücü.
+
+Bunu “işlem şablonları” ile kur:
+
+4A) Navigation Map (Menü Yolu Haritası)
+
+Örn:
+
+EtebligatStatusScreen → Tebligat > Hazırlanmış Elektronik Tebligatlar 
+
+uyap_bilisim_sistemi_kitabi (1)
+
+PortalAccess → portal.uyap.gov.tr intranet 
+
+uyap_bilisim_sistemi_kitabi (1)
+
+4B) Screen Parser (Ekrandan veri okuma)
+
+Örn: “Hazırlanmış Elektronik Tebligatlar” ekranı renk kodlarıyla statü verir:
+MAVİ/PEMBE/SARI/GRİ ve alanlar (Tarafa teslim tarihi, okundu, e-tebliğ mazbatası). 
+
+uyap_bilisim_sistemi_kitabi (1)
+
+
+Bot bunu okuyup e_tebligat_status alanına yazar.
+
+4C) Action Runner (Tıklama/işlem)
+
+Örn: “Mazbata Sorgula” butonuna basma senaryosu (mazbata yoksa). 
+
+uyap_bilisim_sistemi_kitabi (1)
+
+Burada güvenlik gereği: otomasyonun “neye tıklayacağı” prensip olarak tanımlanır; ama yetkisiz erişim tekniklerine girmiyoruz.
+
+Katman 5 — Zamanlayıcı (Scheduler)
+
+Tebligat sonrası: 2 saatte bir ilk 24 saat, sonra günde 2 kez
+
+Kesinleşme adayı oluşunca: günde 1 kez
+
+Varlık sorguları: haftada 1 (veya olay tetikli)
+
+Katman 6 — Denetim ve İspat (Audit / Log)
+
+Bu sistemin “mahkemede ayakta kalması” için şart:
+
+Her görev için:
+
+kim tetikledi (kural mı kullanıcı mı)
+
+ne okudu (status snapshot)
+
+ne yaptı (action)
+
+hangi delil çıktı (no/tarih)
+
+hata varsa ekran görüntüsü / log
+
+UYAP zaten loglama ve yetki mantığı üzerinde duruyor; sen de kendi sisteminde daha sıkı tut. 
+
+uyap_bilisim_sistemi_kitabi (1)
+
+Senin verdiğin örnek senaryoyu (uçtan uca) blueprint’e dökeyim
+Senaryo: “Dosya açıldı → tebligat gönderildi → tebliğ kontrol → kesinleşti → varlık sorgu”
+Event 1: Dosya açıldı
+
+stage = Açılış
+
+Task: SyncCaseHeaderFromUYAP
+
+Event 2: Tebligat gönderildi
+
+stage = Tebligat
+
+Task: FetchEtebligatStatuses (Hazırlanmış Elektronik Tebligatlar)
+
+Renk/alan okuma: MAVİ/PEMBE/SARI/GRİ + Tarafa teslim tarihi + mazbata var mı 
+
+uyap_bilisim_sistemi_kitabi (1)
+
+Event 3: Tebliğ edilmiş sayılma hesabı
+
+Eğer Tarafa teslim tarihi varsa:
+
+teblig_date = delivered_date + 5 gün (kitap: 5. gün sonunda) 
+
+uyap_bilisim_sistemi_kitabi (1)
+
+finalization_candidate = true
+
+Event 4: Mazbata yoksa üret
+
+Task: MazbataSorgula (kitap: mazbata sorgula ile oluşturma) 
+
+uyap_bilisim_sistemi_kitabi (1)
+
+Event 5: Kesinleşme
+
+stage = Kesinleşme
+
+Rule: “Kesinleştiyse varlık sorgularını başlat”
+
+Task group: RunAssetQueries (SGK/TAKBİS/araç vs. — UYAP entegrasyon mantığı mevcut; kurumlar arası servis erişimi UYAP içinde). 
+
+uyap_bilisim_sistemi_kitabi (1)
+
+“Eğitilebilir sistem” için en önemli tasarım kararı
+
+Sen bunu “hardcode bot” değil öğrenen/konfigüre edilen bot yapmalısın.
+
+Öğretilebilirlik modeli
+
+Her görev bir “Recipe”:
+
+giriş şartları
+
+UYAP ekran yolu
+
+okunacak alanlar
+
+karar kuralları
+
+yapılacak aksiyon
+
+beklenen çıktı
+
+Bunları JSON/YAML gibi bir “Bot Cookbook” dosyasında tutarsın.
+Yarın UYAP ekranı değişirse: kodu değil recipe’yi güncellersin.
+
+Tamam canım. Aşağıya **UYAP’a göre “eğitilebilir bot sistemi” için modül modül görev listesi + her görev için Recipe (tarif) şablonu** çıkardım. Bu, senin “icrabot” çizgisinde çalışacak otomasyonun **deploy edilebilir blueprint’i**.
+
+> Bu blueprint’in dayandığı gerçekler: UYAP Portal intranet/VPN bağlamı ve UYAP’ta işlem/iz bırakma mantığı (e-imza, kayıt, mazbata, tebligat ekranları vb.). Özellikle e-tebligatın “5. gün tebliğ sayılma + mazbata” akışı ve “Hazırlanmış Elektronik Tebligatlar” ekranının durum bilgileri kitapta net. 
 
 ---
 
-## 1️⃣ **1 ve 2 numaralı alanlar – Üst bant sıkıştırma**
+# 1) Sistem Haritası (Eğitilebilir Bot Omurgası)
 
-**Amaç:** Dikey alan kazanmak, “takip özeti”ni tek nefeste okunur hale getirmek.
+## 1.1 Case Digital Twin (Dosya Dijital İkizi)
 
-### Öneri
+Her dosyada botun çalışması için zorunlu alanlar:
 
-* **1 + 2 tamamen TEK SATIRLIK “Takip Header” olsun**
-* Kart yapısı kalksın, *inline grid* kullanılsın
+* `case_id` (senin sistem id)
+* `uyap_dosya_no` / `uyap_tevzi_no`
+* `stage` (Aşama): `ACILIS | TEBLIGAT | KESINLESME | VARLIK | HACIZ | TAHSILAT | SATIS | KAPANIS`
+* `substage` (Alt aşama)
+* `party[]` (alacaklı/borçlu) + `identity` + `address[]` + `address_type`
+* `events[]` (zaman çizgisi): tebligat gönderildi, tevdi listesi, mazbata oluştu, kesinleşti vs.
+* `evidence[]` (kanıt): tevdi liste no, makbuz no, e-tebliğ mazbatası tarihi, teslim tarihi vs.
+* `last_sync_at`, `next_actions[]`, `errors[]`
 
-**Yeni Header Yapısı (tek satır, 48–56px yükseklik):**
+## 1.2 Task Orchestrator (Görev Motoru)
 
-```
-←  Takip: 2026/3 | DERDEST | Genel Haciz
-Dosya No: 2025/12345 E. | Adana 2. Genel İcra
-UYAP: Bağlı ● | Son İşlem: 22 gün | Kalan: 343 gün
-```
+* Queue + öncelik
+* Retry/backoff
+* “İnsan onayı gerekir” bayrağı
+* Zamanlayıcı (Scheduler) ile tetiklenir
 
-**Teknik:**
+## 1.3 Rules Engine (Eğitim = Kural Seti)
 
-* Satır araları = **0**
-* Card padding = **8px**
-* Border yerine **alt çizgi (1px soft gray)**
+“Dosya şu durumdaysa → şu görevleri sıraya koy” mantığı.
 
-👉 Sonuç: %30 dikey alan kazanılır, göz yormaz.
+Örnek:
 
----
+* `Tebligat gönderildi` → `Tebligat durum kontrolü` görevini planla
+* `e-tebligat teslim edildi` → `tebliğ tarihi hesapla` (+5 gün) 
+* `mazbata yok` → `Mazbata Sorgula` aksiyonunu tetikle 
+* `kesinleşti` → `varlık sorgu batch` tetikle (SGK/TAKBİS/araç vs. UYAP entegrasyon mantığı) 
 
-## 2️⃣ **3 numaralı alan – Takip Türü paneli**
+## 1.4 UYAP UI Worker (Ekran Robotu)
 
-Şu an gereksiz geniş. Bilgi yoğunluğu düşük.
+* Navigation map: UYAP menü yolları
+* Screen parser: tablolardan alan okuma
+* Action runner: buton tıklama / seçim yapma / sorgu çalıştırma
+* Her adım için **audit log** + **kanıt** kaydı
 
-### Öneri
+## 1.5 Audit / Proof (İspat & Log)
 
-* Sağdan **%25 → %16 genişlik**
-* “Takip Türü” **badge + tooltip** haline gelsin
+Her görev:
 
-**Yeni yapı:**
-
-```
-[ Genel Haciz ]
-Alt Tip: Haciz (tooltip)
-```
-
-Detaylar hover veya click ile:
-
-* Yol
-* Alt tip
-* Takip şablonu
-
-👉 Bu alan artık “bilgi tabelası”, panel değil.
-
----
-
-## 3️⃣ **4 numaralı alan – Hesap Özeti**
-
-Doğru tespit: aşağıda olmamalı.
-
-### Yeni Konum
-
-👉 **Sağ üst header’ın içine, Takip Türü’nün altına kombine**
-
-### Yeni “Mini Finans Widget”
-
-```
-Hesap Özeti
-Asıl: 325.000 ₺
-Tahsil: 0 ₺
-Masraf: 0 ₺
-⚠ Açık Bakiye
-```
-
-* Genişlik: 260–280px
-* Renk: nötr, sadece “Açık” kırmızı
-* Tıklanınca → **Ödemeler & Muhasebe tab’ı açılır**
-
-👉 Finans her zaman göz önünde ama yer kaplamıyor.
+* `who/why` (kural mı kullanıcı mı)
+* `where` (UYAP ekran yolu)
+* `what_read` (alan snapshot)
+* `what_did` (aksiyon)
+* `proof` (no/tarih)
+* hata varsa “ekran görüntüsü”/log
 
 ---
 
-## 4️⃣ **Alt Alan – Yeni Ana Mimari (ÇOK KRİTİK KISIM)**
+# 2) Modül Modül Görev Listesi (İcrabot tarzı)
 
-Burayı iki katmanlı düşünelim.
+Aşağıdaki liste senin botunun “yapabildiği işler kataloğu” olacak.
 
----
+## MODÜL A — Senkronizasyon (Dosya/Safahat)
 
-# 🔹 A) 1. Satır – **Operasyonel Alan (HER ZAMAN AÇIK)**
+1. `SyncCaseHeader` (dosya kapak/başlık bilgilerini çek)
+2. `SyncSafahatTimeline` (dosya safahat olaylarını güncelle)
+3. `DetectStageFromSafahat` (safahatten aşama tahmini)
 
-### Sabit 3 kolon
+> “Dosya arama / dosya ayrıntıları / evrak-safahat” mantığı kitapta sistematik bir ekran yaklaşımı olarak anlatılıyor. 
 
-```
-[ Alacak Kalemleri ] | [ Ödemeler ] | [ Yapılacak İşler ]
-```
+## MODÜL B — Tebligat Otomasyonu (En kritik)
 
-#### Alacak Kalemleri
+4. `FetchEtebligatStatuses`
 
-* Asıl
-* Faiz
-* Masraf
-* Toplam
-* (+) hızlı ekle
+   * UYAP: **Tebligat → Hazırlanmış Elektronik Tebligatlar**
+   * Durum okuma: teslim tarihi, okundu, mazbata, renk/durum mantığı 
+5. `ComputeLegalServiceDate`
 
-#### Ödemeler
+   * e-tebligat için: teslim + 5. gün “tebliğ edilmiş sayılma” kuralı 
+6. `MazbataSorgulaIfMissing`
 
-* Tahsilatlar
-* Kısmi / Tam
-* İcra hesabı / Alacaklı
-* Durum ikonları
+   * “Mazbata Sorgula” ile mazbata üretim tetik 
+7. `FetchPhysicalTebligatStatus`
 
-#### Yapılacak İşler
+   * PTT tebligat sorgu / sonuç (kitapta tebligat modülü içindeki sorgu yaklaşımı var) 
+8. `HandleReturnedTebligat` (iade/bila/yeniden tebligat için dosya timeline’a yeni event aç)
 
-* Tebligat
-* Yenileme
-* Haciz
-* Uyarı tarihleri
-* Otomatik görevler
+## MODÜL C — Kesinleşme Takibi
 
-👉 Burası dosyanın “nabzı”.
+9. `DetectFinalizationCandidate` (tebliğ tarihleri + sürelerden “kesinleşebilir” tahmin)
+10. `MarkFinalizedWhenReady` (kullanıcı/onay gerekiyorsa flag)
 
----
+> Burada mevzuat süreleri dosyadan değil, senin kendi kural tabanından gelecek. Ama e-tebligatın 5 gün kuralı ve mazbata bağlantısı kitapta var. 
 
-# 🔹 B) 2. Satır – **Akordeon / Sekmeli Genişleyen Alan**
+## MODÜL D — Varlık Sorgu (Batch)
 
-Varsayılan: **KAPALI**
-Tıklandıkça aşağı doğru açılır (SPA mantığı)
+11. `RunAssetQueriesBatch` (hedef: “icra kabiliyeti” haritası)
 
-### Sekmeler (net ayrım şart)
+* SGK kaydı / işyeri
+* Tapu (TAKBİS)
+* Araç (araç/tedbir/taşıt bilgisi)
+* Banka/hesap/menkul kıymet (UYAP entegrasyonları/kurumlar arası)
 
-1. **Notlar**
+> Kitap UYAP’ın birçok kurumla entegrasyon yaptığını ve bu sayede sorguların mümkün olduğunu genişçe listeliyor. 
 
-   * Avukat notu
-   * Sistem notu
-   * Zaman damgalı
+## MODÜL E — Haciz / Satış / Tahsilat
 
-2. **Masraflar & Müvekkil Muhasebe**
+12. `PrepareHacizRequests` (haciz yazıları / mal-satış işlemleri için “hazırlık”)
+13. `TrackTahsilatReddiyat` (tahsilat/reddiyat hareketlerini dosya timeline’a işle)
+14. `SaleWorkflowMonitor` (satış adımları, ihale, sonuçlandırma)
 
-   * Harçlar
-   * Avanslar
-   * Eksik masraf uyarıları
-   * Otomatik talep geçmişi
-
-3. **UYAP Sorgulama & Veri İşlem**
-
-   * Mernis
-   * SGK
-   * Tapu / Araç
-   * Banka
-   * Log: *kim, ne zaman, ne çekti*
-
-4. **Loglama (SİSTEM GÜNLÜĞÜ)**
-
-   * Kullanıcı
-   * İşlem
-   * Tarih
-   * Otomatik / Manuel
-
-5. **İlişkili Davalar / Dosyalar**
-
-   * Aynı borçlu
-   * Aynı müvekkil
-   * Yan davalar
-   * Çapraz link
-
-6. **Müvekkil Chat**
-
-   * Dosya bazlı chat
-   * Okundu bilgisi
-   * Dosya ekleri
-   * Bildirim entegrasyonu
-
-👉 Bu alan “derinlik” alanı. Açmadan çalışabilmelisin.
+> İcra modülü başlıkları: “Harç ve kasa”, “Haciz/Mal/Satış”, “Tahsilat/Reddiyat”, “Sorgular” şeklinde ayrışıyor. 
 
 ---
 
-## 5️⃣ **Genel Mimari Prensip (Altın Kural)**
+# 3) “Recipe” Şablonu (Eğitilebilir Görev Tarifi)
 
-* **Üst = özet**
-* **Orta = aksiyon**
-* **Alt = derin veri**
-* **Hiçbir şey aynı anda bağırmıyor**
+Aşağıdaki şablonu her görev için dolduracaksın. Kod değil, **konfig**.
+
+```yaml
+recipe_id: "FetchEtebligatStatuses"
+version: 1
+stage_tags: ["TEBLIGAT"]
+trigger:
+  type: "event_or_schedule"
+  when:
+    - "event:TEBLIGAT_SENT"
+    - "schedule:EVERY_6_HOURS"
+preconditions:
+  - "case.uyap_dosya_no != null"
+  - "session.uyap_logged_in == true"
+uyap_nav_path:
+  - "Tebligat"
+  - "Hazırlanmış Elektronik Tebligatlar"
+read:
+  table: "e-tebligat list"
+  fields:
+    - name: "tarafa_teslim_tarihi"
+    - name: "okundu"
+    - name: "e_teblig_mazbatasi_var_mi"
+    - name: "iletim_durumu_renk"
+decisions:
+  - if: "e_teblig_mazbatasi_var_mi == false AND tarafa_teslim_tarihi != null"
+    then_enqueue: ["MazbataSorgulaIfMissing"]
+  - if: "tarafa_teslim_tarihi != null"
+    then_enqueue: ["ComputeLegalServiceDate"]
+actions:
+  - type: "query"
+    button: "Sorgula"
+postconditions:
+  - "case.events += ETEBLIGAT_STATUS_SNAPSHOT"
+proof:
+  store:
+    - "snapshot_hash"
+    - "tarafa_teslim_tarihi"
+audit:
+  level: "high"
+  retain_days: 3650
+```
+
+Bu şablon, senin “programımı uyaba göre eğitmek” dediğin şeyin **bizzat kendisi**.
 
 ---
 
-## 6️⃣ Sonuç
+# 4) Şimdi: En Önemli 8 Görev İçin Hazır Recipe (Direkt kullan)
 
-Bu mimariyle:
+## 4.1 FetchEtebligatStatuses
 
-* %35–40 ekran alanı kazanılır
-* Mobil ve tablet uyumu kolaylaşır
-* Otomasyon, loglama ve muhasebe büyümeye hazır olur
-* Avukat kafası karışmaz, sistem yönetir
+**UYAP ekranı:** Hazırlanmış Elektronik Tebligatlar
+Kitap bu ekranın ne yaptığını, durum takibini ve mazbata mantığını anlatıyor. 
 
-Bir sonraki adımda istersek:
+* Okunacaklar: teslim tarihi, okundu, mazbata var mı, durum
+* Çıktı: dosya timeline’a “e-tebligat snapshot”
 
-* **wireframe**
-* **component bazlı React/Vue breakdown**
-* **yetki bazlı görünürlük matrisi**
-  çıkarırım.
+## 4.2 ComputeLegalServiceDate
 
-Buradan geri dönüş yok, bu kurgu doğru.
-Tamam. **Wireframe’i net şekilde çıkartıyorum.**
-Aşağıdaki yapı **1:1 geliştiriciye verilebilir** seviyede.
+**Kural:** e-tebligat, posta kutusuna bırakılmayı izleyen 5. gün sonunda tebliğ edilmiş sayılır. 
 
----
+* Girdi: `delivered_date`
+* Çıktı: `legal_service_date = delivered_date + 5 gün`
 
-## 🧱 SAYFA WİREFRAME – TAKİP DETAY
+## 4.3 MazbataSorgulaIfMissing
 
----
+Kitap “Mazbata Sorgula” ile mazbata oluşumunu tetikleyebildiğini söylüyor. 
 
-## 🔷 A) ÜST SABİT HEADER (tek satır – sıkıştırılmış)
+* Ön koşul: tebliğ edilmiş sayılma tarihi geldi, mazbata yok
+* Aksiyon: “Mazbata Sorgula”
+* Kanıt: mazbata flag/tarih
 
-```
-← Takip: 2026/3 | DERDEST | Genel Haciz
-Dosya: 2025/12345 E. · Adana 2. Genel İcra · UYAP: Bağlı ●
-Son İşlem: 22 gün | Kalan: 343 gün
-                                   [ Genel Haciz ]
-                                   Hesap Özeti
-                                   Asıl: 325.000 ₺
-                                   Tahsil: 0 ₺
-                                   Masraf: 0 ₺
-                                   ⚠ Açık
-```
+## 4.4 FetchPhysicalTebligatStatus
 
-* Yükseklik: **52px**
-* Card yok, alt border var
-* Sağ blok = Takip Türü + Mini Hesap Özeti (kliklenebilir)
+* Ön koşul: fiziki tebligat var
+* Aksiyon: tebligat sorgu
+* Çıktı: iade/bila/tebliğ timeline event
 
----
+## 4.5 DetectFinalizationCandidate
 
-## 🔷 B) ORTA ANA ALAN – DOSYA TARAFLARI
+* Kural seti: tebliğ + süre
+* Çıktı: `finalization_candidate=true`, “son tarih” hesap
 
-```
-┌──────────── Dosya Ekibi ────────────┐ ┌──────── Müvekkiller ────────┐ ┌────────── Borçlular ──────────┐
-│ Av. Ulaş Hüseyin Telli (Ortak/İmza) │ │ Ali Vural                  │ │ Ege Tekstil A.Ş. ✔ Kesinleşti │
-│ Av. Fatma Uluca Telli (Ortak/İmza) │ │                              │ │ Anadolu Ticaret A.Ş. ⚠ Tebliğ│
-│ Av. Ege Durusoy (Yetkili)           │ │                              │ │ Emre Aydın ⚠ Tebliğ          │
-│ Ahmet Yılmaz (Ofis Katibi)          │ │                              │ │ 5 Borçlu · 4 İşlem Bekliyor  │
-└─────────────────────────────────────┘ └──────────────────────────────┘ └─────────────────────────────────┘
-```
+## 4.6 RunAssetQueriesBatch
 
-* Borçlular kartları **kliklenebilir**
-* Risk, tebliğ, kesinleşme **ikon + renk**
+Kitap UYAP’ın kurum entegrasyonlarıyla veri alışverişi yaptığını listeliyor (TAKBİS, SGK vb.). 
+
+* Trigger: `stage=KESINLESME` veya `finalization_candidate`
+* Çıktı: `asset_profile` (puan + bulgular + tarih)
+
+## 4.7 TrackTahsilatReddiyat
+
+* Trigger: günlük/haftalık
+* Çıktı: tahsilat/reddiyat hareket timeline
+
+## 4.8 PrepareHacizRequests
+
+* Trigger: varlık profili “hacze uygun”
+* Çıktı: “hazır haciz paketi” (insan onayıyla)
 
 ---
 
-## 🔷 C) ALT – 1. SATIR (HER ZAMAN AÇIK / OPERASYON)
+# 5) Çalışma Modu: “Tam otomatik” değil, “Kontrollü otomatik”
 
-```
-┌────────── Alacak Kalemleri ──────────┐ ┌──────────── Ödemeler ────────────┐ ┌───────── Yapılacak İşler ────────┐
-│ Asıl: 325.000 ₺                      │ │ Henüz ödeme yok                  │ │ ⏳ Tebligat                     │
-│ Faiz: —                              │ │ + Tahsilat Ekle                  │ │ ⏳ Yenileme                     │
-│ Masraf: —                            │ │                                  │ │ ⏳ Haciz                        │
-│ Toplam: 325.000 ₺                   │ │                                  │ │ ⏳ Otomatik Görevler            │
-│ [+ Kalem Ekle]                       │ │                                  │ │                                 │
-└──────────────────────────────────────┘ └──────────────────────────────────┘ └─────────────────────────────────┘
-```
+Bu tip sistemlerde en iyi pratik:
 
----
+* **Okuma işleri tam otomatik** (tebligat durum, mazbata, safahat, varlık sorgu raporu)
+* **Yazma/işlem işleri kontrollü**
 
-## 🔷 D) ALT – 2. SATIR (AKORDEON / SEKME – VARSAYILAN KAPALI)
+  * haciz, satış, kritik işlemler = “Onay gerektirir”
+* Her adım audit/log + kanıt
 
-```
-[ Notlar ] [ Masraflar & Müvekkil Muhasebe ] [ UYAP & Veri ] [ Log ] [ İlişkili Dosyalar ] [ Müvekkil Chat ]
-```
-
-### Açıldığında (örnek: Notlar)
-
-```
-┌──────────── Notlar ────────────┐
-│ 03.01.2026 14:32 – Av. U.H.T   │
-│ Tebligat iade bekleniyor       │
-│                                │
-│ [+ Not Ekle]                   │
-└────────────────────────────────┘
-```
+Kitap zaten sistemin denetim, kayıt ve güvenlik yaklaşımını vurguluyor; sen de kendi sisteminde bunu daha sıkı uygula. 
 
 ---
 
-## 🔹 SEKME İÇERİK TANIMLARI (özet)
+# 6) Senin için “Minimum Viable Icrabot” (MVIC) — 2 haftalık hedef
 
-* **Notlar** → serbest metin, zaman damgası
-* **Masraflar & Muhasebe** → harçlar, avanslar, eksik uyarı
-* **UYAP & Veri** → Mernis / SGK / Tapu / Araç + sorgu logu
-* **Log** → kullanıcı, işlem, tarih (immutable)
-* **İlişkili Davalar** → çapraz link
-* **Müvekkil Chat** → dosya bazlı mesajlaşma
+En hızlı değer üreten set:
 
----
+1. `SyncSafahatTimeline`
+2. `FetchEtebligatStatuses`
+3. `ComputeLegalServiceDate`
+4. `MazbataSorgulaIfMissing`
+5. `DetectFinalizationCandidate`
+6. `RunAssetQueriesBatch` (rapor olarak)
 
-## 🧠 ALTIN KURAL (BU YAPIYI GÜÇLÜ KILAN ŞEY)
-
-* Üst: **bilgi**
-* Orta: **taraflar**
-* Alt-1: **aksiyon**
-* Alt-2: **derinlik**
-* Hiçbir şey gereksiz açık değil
-* Her şey 2 tık kuralına uyuyor
+Bunu canlıya aldığında: “Dosya açıldı → bot her şeyi takip ediyor, kesinleşme ve varlık raporu hazır” seviyesine gelirsin.
 
 ---
 
-İstersen bir sonraki adımda:
+İstersen bir sonraki adımda (soru sormadan) şu iki deliverable’ı da çıkarırım:
 
-* **React component tree**
-* **Yetki bazlı görünürlük matrisi**
-* **Mobil kırılım (responsive wireframe)**
-  çıkarırım.
+1. **Recipe Pack v1 (20–30 görev)**: YAML/JSON halinde, isimlendirme standardıyla
+2. **Stage Transition Table**: “hangi event gelince hangi stage’e geçer” matrisi (tam state machine)
 
-Bu mimariyle sistem “güzel” değil, **hakikaten çalışır**.
+Bu ikisiyle “programımı eğiteceğim sistem haritası” kağıttan çıkar, doğrudan ürüne dönüşür.
+

@@ -14,6 +14,9 @@ const STATUS_AUTOMATION_CONFIG: Record<LegalCaseStatus, 'ON' | 'OFF' | 'CONDITIO
   BATAK: 'OFF',
   MAHSUP: 'OFF',
   TEMLIK: 'OFF',
+  AZIL: 'OFF',
+  FERAGAT: 'OFF',
+  SULH: 'OFF',
 };
 
 // Statü açıklamaları
@@ -28,6 +31,9 @@ export const STATUS_DESCRIPTIONS: Record<LegalCaseStatus, string> = {
   BATAK: 'Tahsil imkansız, otomasyon kapalı',
   MAHSUP: 'Mahsup edildi, otomasyon kapalı',
   TEMLIK: 'Temlik edildi, otomasyon kapalı',
+  AZIL: 'Azil - vekalet sona erdi, otomasyon kapalı',
+  FERAGAT: 'Feragat - alacaklı vazgeçti, otomasyon kapalı',
+  SULH: 'Sulh - taraflar anlaştı, otomasyon kapalı',
 };
 
 // Statü grupları (G.33)

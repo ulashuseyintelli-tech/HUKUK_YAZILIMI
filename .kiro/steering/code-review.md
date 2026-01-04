@@ -1,6 +1,6 @@
 # Kod İnceleme ve Mimari Analiz Raporu
 
-**Tarih:** 2 Ocak 2026  
+**Tarih:** 5 Ocak 2026 (Güncellendi)  
 **Kapsam:** Hukuk Platform - İcra Takip Sistemi
 
 ---
@@ -63,27 +63,40 @@ if (!note) throw new NotFoundException("Not bulunamadı");
 
 ## 🟠 ORTA SEVİYE SORUNLAR
 
-### 4. Dev Dosyalar - Bakım Zorluğu
-| Dosya | Satır | Sorun |
+### 4. Dev Dosyalar - Bakım Zorluğu ⚠️ KISMEN DÜZELTILDI
+| Dosya | Satır | Durum |
 |-------|-------|-------|
-| `apps/web/src/app/(dashboard)/cases/[id]/page.tsx` | 2471 | Tek dosyada tüm case detay UI |
-| `apps/web/src/lib/api.ts` | 2700+ | Tüm API çağrıları tek dosyada |
-| `apps/api/prisma/schema.prisma` | 4149 | Tüm modeller tek dosyada |
+| `apps/web/src/app/(dashboard)/cases/[id]/page.tsx` | 2471 | ⏳ Bileşenler hazır, entegrasyon bekliyor |
+| `apps/web/src/lib/api.ts` | 2700+ | ✅ 13 modüle bölündü |
+| `apps/api/prisma/schema.prisma` | 4149 | ⏳ Tek dosyada (Prisma kısıtı) |
 
-**Öneri:** 
-- Page.tsx → Bileşenlere böl (CaseHeader, CaseDebtors, CaseLawyers, etc.)
-- api.ts → Modüler yapı (authApi, caseApi, documentApi, etc.)
-- schema.prisma → Prisma'nın multi-file desteği yok, ama yorum blokları ile bölümle
+**Yapılan:**
+- `api.ts` → `apps/web/src/lib/api/` klasörüne 13 modül olarak bölündü:
+  - `client.ts`, `auth.ts`, `cases.ts`, `clients.ts`, `debtors.ts`, `lawyers.ts`
+  - `documents.ts`, `tebligat.ts`, `finance.ts`, `uyap.ts`, `validation.ts`
+  - `automation.ts`, `address-discovery.ts`, `asset-query.ts`
+  - `types.ts` - tüm type tanımları
+  - `index.ts` - legacy uyumluluk (eski `api.getCases()` çağrıları çalışır)
+
+**Bekleyen:**
+- Page.tsx → Bileşenler hazır (`components/case-detail/`), entegrasyon gerekli
+- schema.prisma → Prisma'nın multi-file desteği yok, yorum blokları ile bölümlenebilir
 
 ---
 
-### 5. Kullanılmayan Parametre
+### 5. Kullanılmayan Parametre ✅ DÜZELTILDI
 **Dosya:** `apps/api/src/modules/case/case.service.ts`
 
 ```typescript
 private generateInterestDescription(subCategory: CaseSubCategory, currency?: Currency): string {
-  // currency parametresi hiç kullanılmıyor
+  // currency parametresi artık DOVIZ case'inde kullanılıyor
+  case CaseSubCategory.DOVIZ:
+    const currencyName = currency ? this.getCurrencyName(currency) : 'döviz';
+    return `fiili ödeme tarihindeki T.C. Merkez Bankası ${currencyName} efektif satış kuru...`;
+}
 ```
+
+**Durum:** Currency parametresi artık döviz alacaklarında para birimi adını gösteriyor (ABD Doları, Euro, vb.)
 
 ---
 
@@ -100,27 +113,36 @@ try {
 
 ---
 
-### 7. TCMB Service Placeholder
+### 7. TCMB Service Placeholder ✅ DÜZELTILDI
 **Dosya:** `apps/api/src/modules/rule-engine/tcmb.service.ts`
 
-```typescript
-throw new Error('TCMB API henüz aktif değil');
-```
+**Düzeltme:** TCMB XML API entegrasyonu tamamlandı:
+- `https://www.tcmb.gov.tr/kurlar/today.xml` endpoint'i kullanılıyor
+- 5 dakikalık cache mekanizması
+- Geçmiş tarih kurları için arşiv desteği (`/YYMM/DDMMYY.xml`)
+- Birim düzeltmesi (JPY için 100 birim = X TL)
+- Hafta sonu/tatil günleri için fallback mekanizması
 
-**Sorun:** Döviz alacağı dosyaları için kur hesaplaması çalışmıyor.
+**Durum:** Döviz alacağı dosyaları için kur hesaplaması çalışıyor.
 
 ---
 
-### 8. Lookup Tenant Kontrolü Eksik
-**Sorun:** Lookup tabloları (`LookupTakipTuru`, `LookupAsama`, etc.) tenant bazlı ama case oluştururken lookup ID'lerinin doğru tenant'a ait olduğu kontrol edilmiyor.
+### 8. Lookup Tenant Kontrolü Eksik ✅ DÜZELTILDI
+**Sorun:** ~~Lookup tabloları (`LookupTakipTuru`, `LookupAsama`, etc.) tenant bazlı ama case oluştururken lookup ID'lerinin doğru tenant'a ait olduğu kontrol edilmiyordu.~~
+
+**Düzeltme:** `validateLookupIds()` helper fonksiyonu eklendi:
+- `batchUpdate()` fonksiyonunda lookup ID'leri güncellenmeden önce tenant kontrolü yapılıyor
+- Başka tenant'ın lookup değerleri kullanılamaz
+- `BadRequestException` fırlatılıyor: "Geçersiz lookup ID: Belirtilen değer bu büroya ait değil"
 
 ---
 
 ## 🟡 İYİLEŞTİRME ÖNERİLERİ
 
-### 9. Duplicate Interface
+### 9. Duplicate Interface ✅ DÜZELTILDI
 **Dosya:** `apps/web/src/app/(dashboard)/cases/[id]/page.tsx`
-- `BlockFieldProps` interface'i iki kez tanımlanmış
+- ~~`BlockFieldProps` interface'i iki kez tanımlanmış~~
+- Duplicate interface kaldırıldı
 
 ### 10. Hardcoded Değerler
 ```typescript
@@ -128,11 +150,17 @@ const INACTIVITY_THRESHOLD_DAYS = 365; // Büro ayarından alınabilir
 ```
 **Öneri:** Tenant settings'e taşı.
 
-### 11. Error Handling Tutarsızlığı
+### 11. Error Handling Tutarsızlığı ⚠️ KISMEN DÜZELTILDI
 - NestJS: `NotFoundException`, `BadRequestException`
-- Bazı yerlerde: `throw new Error('...')`
+- ~~Bazı yerlerde: `throw new Error('...')`~~
 
-**Öneri:** Tutarlı exception kullanımı.
+**Düzeltilen servisler:**
+- `staff.service.ts` → `NotFoundException`
+- `notification.service.ts` → `NotFoundException`
+- `risk.service.ts` → `NotFoundException`
+- `greeting.service.ts` → `NotFoundException`
+
+**Bekleyen:** OCR, template-engine, summary-engine servislerinde hala `throw new Error` kullanımı var (kullanıcı dostu hata mesajları için kabul edilebilir).
 
 ---
 
@@ -213,10 +241,10 @@ const INACTIVITY_THRESHOLD_DAYS = 365; // Büro ayarından alınabilir
 4. ~~Eksik index'leri ekle~~ ✅ Düzeltildi
 
 ### Orta Vadeli (1-2 Ay)
-1. Dev dosyaları modüler yapıya böl
+1. ~~Dev dosyaları modüler yapıya böl~~ ⚠️ KISMEN (api.ts ✅, page.tsx bileşenler hazır)
 2. JSON alanları için Zod schema'ları oluştur
 3. Soft delete implementasyonu
-4. TCMB API entegrasyonu
+4. ~~TCMB API entegrasyonu~~ ✅ DÜZELTILDI
 
 ### Uzun Vadeli (3-6 Ay)
 1. Event sourcing düşün (audit için)

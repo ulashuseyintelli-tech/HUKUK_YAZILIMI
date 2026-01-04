@@ -26,7 +26,7 @@ import { ServiceHistoryTimeline } from "./ServiceHistoryTimeline";
 import { NewDebtorModal } from "./NewDebtorModal";
 import { AddressListSection } from "./AddressListSection";
 import { NotificationChainPanel } from "./NotificationChainPanel";
-import { AddressDiscoveryPanel } from "../address-discovery";
+import { AddressDiscoveryPanel, AddressResearchWidget } from "../address-discovery";
 import { AssetQueryPanel } from "./AssetQueryPanel";
 import { Debtor, DebtorType } from "@/types/debtor";
 
@@ -508,14 +508,14 @@ export function DebtorDetailDrawer({
               {/* Research Tab Content */}
               {activeTab === 'research' && (
                 <div className="p-2.5">
-                  <AddressDiscoveryPanel
+                  <AddressResearchWidget
+                    caseId={caseId}
                     caseDebtorId={caseDebtorId}
                     debtorId={debtor.id}
                     debtorName={debtor.displayName}
-                    caseId={caseId}
+                    debtorType={debtor.personType === "LEGAL" ? "COMPANY" : "INDIVIDUAL"}
                     clientId={clientId}
                     clientEmail={clientEmail}
-                    debtorType={debtor.personType === "LEGAL" ? "COMPANY" : "INDIVIDUAL"}
                     onAddressAdded={fetchDebtor}
                   />
                 </div>

@@ -199,6 +199,9 @@ export enum LegalCaseStatus {
   BATAK = "BATAK",
   MAHSUP = "MAHSUP",
   TEMLIK = "TEMLIK",
+  AZIL = "AZIL",
+  FERAGAT = "FERAGAT",
+  SULH = "SULH",
 }
 
 // Alt Kategori - UYAP Uyumlu
@@ -502,6 +505,10 @@ export class UpdateCaseDto {
   @IsOptional()
   status?: CaseStatus;
 
+  @IsEnum(LegalCaseStatus)
+  @IsOptional()
+  caseStatus?: LegalCaseStatus;
+
   @IsString()
   @IsOptional()
   clientId?: string;
@@ -521,6 +528,10 @@ export class UpdateCaseDto {
   @IsDateString()
   @IsOptional()
   startDate?: string;
+
+  @IsDateString()
+  @IsOptional()
+  caseDate?: string;
 
   @IsString()
   @IsOptional()

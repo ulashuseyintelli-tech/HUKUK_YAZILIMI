@@ -45,6 +45,8 @@ import { PaymentInstructionModal } from "@/components/payment/PaymentInstruction
 import { ExpenseRequestModal, BalanceWidget, ExpenseRequestList } from "@/components/expense";
 import { SendMessageModal } from "@/components/message/SendMessageModal";
 import { DebtorsSummaryBar, DebtorRow, ServiceStatusBadge, AlertBadge, DebtorDetailDrawer } from "@/components/debtor";
+import { UyapExportButton } from "@/components/uyap-export/UyapExportButton";
+import { DueModal, CollectionModal } from "@/components/finance";
 
 // ============================================
 // TİPLER
@@ -317,11 +319,19 @@ const caseTypeShort: Record<string, string> = {
 };
 
 const statusOptions = [
-  { value: 'DERDEST', label: 'Derdest' },
-  { value: 'TAHSILAT', label: 'Tahsilat' },
-  { value: 'KAPALI', label: 'Kapalı' },
-  { value: 'ASKIDA', label: 'Askıda' },
-  { value: 'DURDURULDU', label: 'Durduruldu' },
+  { value: 'DERDEST', label: 'Derdest', color: 'text-blue-600', description: 'Aktif takip' },
+  { value: 'ISLEMDE', label: 'İşlemde', color: 'text-blue-500', description: 'İşlem yapılıyor' },
+  { value: 'DERKENAR', label: 'Derkenar', color: 'text-amber-600', description: 'Beklemede' },
+  { value: 'HITAM', label: 'Hitam', color: 'text-green-600', description: 'Sonuçlandı' },
+  { value: 'INFAZ', label: 'İnfaz', color: 'text-green-700', description: 'İnfaz edildi' },
+  { value: 'MUVEKKILE_IADE', label: 'Müvekkile İade', color: 'text-purple-600', description: 'Müvekkile iade edildi' },
+  { value: 'ACIZ', label: 'Aciz', color: 'text-red-600', description: 'Aciz vesikası' },
+  { value: 'BATAK', label: 'Batak', color: 'text-red-700', description: 'Tahsil imkansız' },
+  { value: 'MAHSUP', label: 'Mahsup', color: 'text-gray-600', description: 'Mahsup edildi' },
+  { value: 'TEMLIK', label: 'Temlik', color: 'text-indigo-600', description: 'Temlik edildi' },
+  { value: 'AZIL', label: 'Azil', color: 'text-orange-600', description: 'Vekalet sona erdi' },
+  { value: 'FERAGAT', label: 'Feragat', color: 'text-gray-500', description: 'Alacaklı vazgeçti' },
+  { value: 'SULH', label: 'Sulh', color: 'text-teal-600', description: 'Taraflar anlaştı' },
 ];
 
 const executionPathOptions = [
@@ -341,19 +351,6 @@ const subCategoryOptions = [
 // ============================================
 // BLOCK FIELD COMPONENT
 // ============================================
-
-interface BlockFieldProps {
-  label: string;
-  value: string | number | undefined;
-  editable?: boolean;
-  editMode?: boolean;
-  type?: 'text' | 'select';
-  options?: { value: string; label: string }[];
-  onChange?: (value: string) => void;
-  onSave?: (value: string) => void;
-  large?: boolean;
-  placeholder?: string;
-}
 
 interface BlockFieldProps {
   label: string;
@@ -778,6 +775,29 @@ export default function CaseDetailPage() {
   const [loadingOffices, setLoadingOffices] = useState(false);
   const [savingOffice, setSavingOffice] = useState(false);
   
+  // Takip Tarihi (caseDate) Düzenleme State
+  const [editingCaseDate, setEditingCaseDate] = useState(false);
+  const [caseDateValue, setCaseDateValue] = useState('');
+  const [savingCaseDate, setSavingCaseDate] = useState(false);
+  
+  // Takip Statüsü (caseStatus) Düzenleme State
+  const [editingCaseStatus, setEditingCaseStatus] = useState(false);
+  const [caseStatusValue, setCaseStatusValue] = useState('');
+  const [savingCaseStatus, setSavingCaseStatus] = useState(false);
+  
+  // Alacak Kalemleri ve Tahsilatlar State
+  const [dues, setDues] = useState<any[]>([]);
+  const [collections, setCollections] = useState<any[]>([]);
+  const [loadingFinance, setLoadingFinance] = useState(false);
+  
+  // Due Modal State
+  const [dueModalOpen, setDueModalOpen] = useState(false);
+  const [editingDue, setEditingDue] = useState<any>(null);
+  
+  // Collection Modal State
+  const [collectionModalOpen, setCollectionModalOpen] = useState(false);
+  const [editingCollection, setEditingCollection] = useState<any>(null);
+  
   // Fix highlight state
   const [highlightedSection, setHighlightedSection] = useState<string | null>(null);
   
@@ -835,6 +855,40 @@ export default function CaseDetailPage() {
     }
   }, [params.id]);
 
+  // Takip tarihi (caseDate) kaydetme
+  const handleSaveCaseDate = useCallback(async () => {
+    if (!caseDateValue || !params.id) return;
+    try {
+      setSavingCaseDate(true);
+      await api.updateCase(params.id as string, { caseDate: caseDateValue });
+      // Veriyi yenile
+      await fetchCase();
+      setEditingCaseDate(false);
+    } catch (error) {
+      console.error("Takip tarihi güncellenemedi:", error);
+      alert("Takip tarihi güncellenirken bir hata oluştu");
+    } finally {
+      setSavingCaseDate(false);
+    }
+  }, [caseDateValue, params.id, fetchCase]);
+
+  // Takip statüsü (caseStatus) kaydetme
+  const handleSaveCaseStatus = useCallback(async () => {
+    if (!caseStatusValue || !params.id) return;
+    try {
+      setSavingCaseStatus(true);
+      await api.updateCase(params.id as string, { caseStatus: caseStatusValue });
+      // Veriyi yenile
+      await fetchCase();
+      setEditingCaseStatus(false);
+    } catch (error) {
+      console.error("Takip statüsü güncellenemedi:", error);
+      alert("Takip statüsü güncellenirken bir hata oluştu");
+    } finally {
+      setSavingCaseStatus(false);
+    }
+  }, [caseStatusValue, params.id, fetchCase]);
+
   // Fetch case debtors with summary (FAZ 1)
   const fetchCaseDebtors = useCallback(async () => {
     if (!params.id) return;
@@ -847,6 +901,24 @@ export default function CaseDetailPage() {
       console.error("Borçlular yüklenemedi:", error);
     } finally {
       setLoadingDebtors(false);
+    }
+  }, [params.id]);
+
+  // Fetch dues and collections
+  const fetchFinanceData = useCallback(async () => {
+    if (!params.id) return;
+    try {
+      setLoadingFinance(true);
+      const [duesRes, collectionsRes] = await Promise.all([
+        api.getCaseDues(params.id as string),
+        api.getCaseCollections(params.id as string),
+      ]);
+      setDues(duesRes || []);
+      setCollections(collectionsRes || []);
+    } catch (error) {
+      console.error("Finans verileri yüklenemedi:", error);
+    } finally {
+      setLoadingFinance(false);
     }
   }, [params.id]);
 
@@ -889,6 +961,13 @@ export default function CaseDetailPage() {
       fetchCaseDebtors();
     }
   }, [params.id, loading, fetchCaseDebtors]);
+
+  // Fetch finance data (dues & collections) when case is loaded
+  useEffect(() => {
+    if (params.id && !loading) {
+      fetchFinanceData();
+    }
+  }, [params.id, loading, fetchFinanceData]);
 
   const dayCount = useMemo(() => {
     if (!caseData?.caseDate) return 0;
@@ -1432,6 +1511,7 @@ export default function CaseDetailPage() {
                 >
                   <CreditCard className="h-4 w-4" /> Ödeme Talimatı
                 </button>
+                <UyapExportButton caseId={caseData.id} fileNumber={caseData.fileNumber} variant="icon" />
                 <button onClick={() => setEditMode(true)} className="p-2 hover:bg-gray-100 rounded" title="Düzenle"><Edit className="h-4 w-4" /></button>
                 <button className="p-2 hover:bg-gray-100 rounded" title="Paylaş"><Share2 className="h-4 w-4" /></button>
                 <button className="p-2 hover:bg-red-50 rounded text-red-600" title="Sil"><Trash2 className="h-4 w-4" /></button>
@@ -1563,10 +1643,48 @@ export default function CaseDetailPage() {
           <div className={`col-span-3 rounded-lg p-2 shadow-[0_1px_2px_rgba(0,0,0,0.04)] ${remainingDays <= 60 ? 'bg-red-50 border border-red-200' : remainingDays <= 180 ? 'bg-yellow-50 border border-yellow-200' : 'bg-[#EDF8F1] border border-[#D7EFE2]'}`}>
             <h4 className="text-[9px] font-semibold text-gray-400 uppercase tracking-wider mb-1.5 border-b pb-1">Takibin Yaşamı</h4>
             <div className="space-y-1">
-              {/* Açılış tarihi - inline */}
+              {/* Açılış tarihi - düzenlenebilir */}
               <div className="flex items-center justify-between text-[11px]">
                 <span className="text-gray-500">Açılış</span>
-                <span className="font-medium">{formatDate(caseData.caseDate)}</span>
+                <div className="flex items-center gap-1">
+                  {editingCaseDate ? (
+                    <div className="flex items-center gap-1">
+                      <input
+                        type="date"
+                        value={caseDateValue}
+                        onChange={(e) => setCaseDateValue(e.target.value)}
+                        className="border border-blue-400 rounded px-1.5 py-0.5 text-[11px] w-28 focus:ring-1 focus:ring-blue-300"
+                        autoFocus
+                      />
+                      <button
+                        onClick={handleSaveCaseDate}
+                        disabled={savingCaseDate}
+                        className="p-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                        title="Kaydet"
+                      >
+                        {savingCaseDate ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                      </button>
+                      <button
+                        onClick={() => { setEditingCaseDate(false); setCaseDateValue(caseData.caseDate?.split('T')[0] || ''); }}
+                        className="p-0.5 bg-gray-200 text-gray-600 rounded hover:bg-gray-300"
+                        title="İptal"
+                      >
+                        <X className="h-3 w-3" />
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <span className="font-medium">{formatDate(caseData.caseDate)}</span>
+                      <button
+                        onClick={() => { setEditingCaseDate(true); setCaseDateValue(caseData.caseDate?.split('T')[0] || ''); }}
+                        className="p-1 bg-purple-50 border border-purple-200 rounded hover:bg-purple-100 hover:border-purple-300 transition-colors"
+                        title="Tarihi Düzenle"
+                      >
+                        <Edit className="h-3 w-3 text-purple-500" />
+                      </button>
+                    </>
+                  )}
+                </div>
               </div>
               
               {/* Geçen / Kalan - inline metrikler */}
@@ -1600,9 +1718,50 @@ export default function CaseDetailPage() {
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-gray-500">Statü</span>
-                  <span className={`font-medium ${caseData.caseStatus === 'DERDEST' ? 'text-blue-600' : 'text-gray-600'}`}>
-                    {caseData.caseStatus}
-                  </span>
+                  <div className="flex items-center gap-1">
+                    {editingCaseStatus ? (
+                      <div className="flex items-center gap-1">
+                        <select
+                          value={caseStatusValue}
+                          onChange={(e) => setCaseStatusValue(e.target.value)}
+                          className="border border-blue-400 rounded px-1.5 py-0.5 text-[10px] w-32 focus:ring-1 focus:ring-blue-300"
+                          autoFocus
+                        >
+                          {statusOptions.map(opt => (
+                            <option key={opt.value} value={opt.value}>{opt.label}</option>
+                          ))}
+                        </select>
+                        <button
+                          onClick={handleSaveCaseStatus}
+                          disabled={savingCaseStatus}
+                          className="p-0.5 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                          title="Kaydet"
+                        >
+                          {savingCaseStatus ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                        </button>
+                        <button
+                          onClick={() => { setEditingCaseStatus(false); setCaseStatusValue(caseData.caseStatus || ''); }}
+                          className="p-0.5 bg-gray-200 text-gray-600 rounded hover:bg-gray-300"
+                          title="İptal"
+                        >
+                          <X className="h-3 w-3" />
+                        </button>
+                      </div>
+                    ) : (
+                      <>
+                        <span className={`font-medium ${statusOptions.find(s => s.value === caseData.caseStatus)?.color || (caseData.caseStatus === 'DERDEST' ? 'text-blue-600' : 'text-gray-600')}`}>
+                          {statusOptions.find(s => s.value === caseData.caseStatus)?.label || caseData.caseStatus}
+                        </span>
+                        <button
+                          onClick={() => { setEditingCaseStatus(true); setCaseStatusValue(caseData.caseStatus || ''); }}
+                          className="p-1 bg-purple-50 border border-purple-200 rounded hover:bg-purple-100 hover:border-purple-300 transition-colors"
+                          title="Statüyü Değiştir"
+                        >
+                          <Edit className="h-3 w-3 text-purple-500" />
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
@@ -1935,49 +2094,149 @@ export default function CaseDetailPage() {
 
         {/* ALT İÇERİK - 2 Panel */}
         <div className="flex-1 overflow-hidden flex gap-3 p-3">
-          {/* SOL - Alacak + Notlar */}
+          {/* SOL - Finans + Notlar */}
           <div className="flex-1 flex flex-col overflow-hidden gap-3">
-            {/* Alacak Kalemleri Bloğu */}
-            <div className="bg-white border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)] p-3 flex-shrink-0">
-              <div className="flex items-center justify-between mb-2">
-                <h3 className="text-[11px] font-semibold text-gray-700">Alacak Kalemleri</h3>
-                <Link href={`/cases/${caseData.id}/edit?tab=claims`} className="text-[10px] text-blue-600 hover:underline">+ Ekle</Link>
-              </div>
-              <div className="border border-[#E5E7EB] rounded-lg overflow-hidden">
-                <table className="w-full text-[11px]">
-                  <thead className="bg-[#F8FAFC]">
-                    <tr>
-                      <th className="text-left p-1.5 font-medium">Açıklama</th>
-                      <th className="text-center p-1.5 font-medium w-20">Vade</th>
-                      <th className="text-right p-1.5 font-medium w-28">Tutar</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white">
-                    {caseData.claimItems?.length ? caseData.claimItems.map((item: any) => (
-                      <tr key={item.id} className="border-t border-[#E5E7EB] hover:bg-gray-50">
-                        <td className="p-1.5">{item.description}</td>
-                        <td className="p-1.5 text-center">{formatDate(item.dueDate || '')}</td>
-                        <td className="p-1.5 text-right font-medium">{Number(item.amount).toLocaleString('tr-TR')} {item.currency || 'TRY'}</td>
-                      </tr>
-                    )) : caseData.instruments?.length ? caseData.instruments.map((inst: any) => (
-                      <tr key={inst.id} className="border-t border-[#E5E7EB] hover:bg-gray-50">
-                        <td className="p-1.5">{inst.instrumentType === 'CEK' ? 'Çek' : 'Senet'} - {inst.serialNo}</td>
-                        <td className="p-1.5 text-center">{formatDate(inst.maturityDate || '')}</td>
-                        <td className="p-1.5 text-right font-medium">{Number(inst.amount).toLocaleString('tr-TR')} TRY</td>
-                      </tr>
-                    )) : (
-                      <tr>
-                        <td colSpan={3} className="p-3 text-center text-gray-400">
-                          {caseData.principalAmount ? (
-                            <div><span className="text-gray-500">Asıl Alacak: </span><span className="font-semibold text-gray-700">{Number(caseData.principalAmount).toLocaleString('tr-TR')} {caseData.currency || 'TRY'}</span></div>
-                          ) : '—'}
-                        </td>
-                      </tr>
+            {/* Finans Paneli - 2 Sütun */}
+            <div className="bg-white border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)] p-3">
+              <div className="flex gap-4">
+                {/* Sol Sütun - Alacak Kalemleri */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-[11px] font-semibold text-gray-700">Alacak Kalemleri</h4>
+                    <button 
+                      className="text-[9px] text-blue-600 hover:text-blue-800 hover:underline"
+                      onClick={() => { setEditingDue(null); setDueModalOpen(true); }}
+                    >
+                      + Düzenle
+                    </button>
+                  </div>
+                  <div className="bg-[#FAFAFB] border border-[#E5E7EB] rounded-lg p-2 min-h-[80px] max-h-[150px] overflow-y-auto">
+                    {loadingFinance ? (
+                      <p className="text-[9px] text-gray-400 text-center py-2">Yükleniyor...</p>
+                    ) : dues.length > 0 ? (
+                      <div className="space-y-1">
+                        {dues.map((due: any) => {
+                          // Type'ı Türkçe'ye çevir
+                          const typeLabels: Record<string, string> = {
+                            PRINCIPAL: 'Asıl Alacak',
+                            INTEREST: 'Faiz',
+                            EXPENSE: 'Masraf',
+                            VEKALET_UCRETI: 'Vekalet Ücreti',
+                            HARC: 'Harç',
+                            TAZMINAT: 'Tazminat',
+                            CEZAI_SART: 'Cezai Şart',
+                            NAFAKA: 'Nafaka',
+                            KIRA: 'Kira Alacağı',
+                            AIDAT: 'Aidat',
+                            KOMISYON: 'Komisyon',
+                            PRIM: 'Prim/İkramiye',
+                            OTHER: 'Diğer',
+                          };
+                          const displayName = due.description || typeLabels[due.type] || due.type;
+                          
+                          return (
+                          <div 
+                            key={due.id} 
+                            className="flex justify-between text-[10px] group hover:bg-blue-50 rounded px-1 -mx-1 py-0.5 cursor-pointer"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingDue(due); setDueModalOpen(true); }}
+                          >
+                            <span className="text-gray-600 truncate max-w-[100px]" title={displayName}>
+                              {displayName}
+                            </span>
+                            <div className="flex items-center gap-1">
+                              <span className="font-medium">{Number(due.amount || 0).toLocaleString('tr-TR')} ₺</span>
+                              <button 
+                                className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600 transition-opacity"
+                                onClick={async (e) => {
+                                  e.stopPropagation();
+                                  e.preventDefault();
+                                  if (confirm('Bu alacak kalemini silmek istediğinize emin misiniz?')) {
+                                    try {
+                                      await api.deleteDue(caseData.id, due.id);
+                                      fetchFinanceData();
+                                    } catch (err) {
+                                      console.error('Silme hatası:', err);
+                                      alert('Silme işlemi başarısız oldu');
+                                    }
+                                  }
+                                }}
+                                title="Sil"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
+                          </div>
+                          );
+                        })}
+                        <div className="flex justify-between pt-1 mt-1 border-t border-dashed text-[10px] font-semibold text-blue-700">
+                          <span>Toplam</span>
+                          <span>{dues.reduce((sum: number, d: any) => sum + Number(d.amount || 0), 0).toLocaleString('tr-TR')} ₺</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-[10px]">
+                          <span className="text-gray-600">Asıl Alacak</span>
+                          <span className="font-medium">{Number(caseData.principalAmount || 0).toLocaleString('tr-TR')} ₺</span>
+                        </div>
+                      </div>
                     )}
-                  </tbody>
-                </table>
+                  </div>
+                </div>
+
+                {/* Sağ Sütun - Ödemeler/Tahsilatlar */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-[11px] font-semibold text-gray-700">Ödemeler</h4>
+                    <button 
+                      className="text-[9px] text-green-600 hover:text-green-800 hover:underline"
+                      onClick={() => { setEditingCollection(null); setCollectionModalOpen(true); }}
+                    >
+                      + Düzenle
+                    </button>
+                  </div>
+                  <div className="bg-[#FAFAFB] border border-[#E5E7EB] rounded-lg p-2 min-h-[80px] max-h-[150px] overflow-y-auto">
+                    {loadingFinance ? (
+                      <p className="text-[9px] text-gray-400 text-center py-2">Yükleniyor...</p>
+                    ) : collections.filter((c: any) => c.status !== 'CANCELLED').length > 0 ? (
+                      <div className="space-y-1">
+                        {collections.filter((c: any) => c.status !== 'CANCELLED').map((col: any) => {
+                          const typeLabels: Record<string, string> = {
+                            TAHSILAT: 'Tahsilat',
+                            FERAGAT: 'Feragat',
+                            MAHSUP: 'Mahsup',
+                            SULH: 'Sulh',
+                            IADE: 'İade',
+                            CASH: 'Nakit',
+                            BANK_TRANSFER: 'Havale',
+                            CHECK: 'Çek',
+                          };
+                          return (
+                          <div 
+                            key={col.id} 
+                            className="flex justify-between text-[10px] group hover:bg-green-50 rounded px-1 -mx-1 py-0.5 cursor-pointer"
+                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingCollection(col); setCollectionModalOpen(true); }}
+                          >
+                            <span className="text-gray-600 truncate max-w-[100px]">
+                              {typeLabels[col.type] || col.type}
+                            </span>
+                            <span className="font-medium text-green-700">+{Number(col.amount || 0).toLocaleString('tr-TR')} ₺</span>
+                          </div>
+                        );
+                        })}
+                        <div className="flex justify-between pt-1 mt-1 border-t border-dashed text-[10px] font-semibold text-green-700">
+                          <span>Toplam</span>
+                          <span>+{collections.filter((c: any) => c.status !== 'CANCELLED').reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0).toLocaleString('tr-TR')} ₺</span>
+                        </div>
+                      </div>
+                    ) : (
+                      <p className="text-[9px] text-gray-400 text-center py-2">Henüz ödeme yok</p>
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
+
             {/* Notlar Bloğu */}
             <div className="flex-1 overflow-hidden flex flex-col bg-white border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)] p-3">
               <h4 className="text-[11px] font-semibold text-gray-700 mb-2">Notlar</h4>
@@ -1994,40 +2253,88 @@ export default function CaseDetailPage() {
               <p className="text-[9px] opacity-80">{formatDate(new Date().toISOString())}</p>
             </div>
             <div className="flex-1 overflow-y-auto p-2 space-y-1.5 text-[11px]">
-              {/* Masraf Bakiyesi Widget */}
-              <div className="mb-2">
-                <BalanceWidget 
-                  caseId={caseData.id} 
-                  onCreateExpenseRequest={() => handleCreateExpenseRequest('UYAP_PRE')}
-                  compact={true}
-                />
+              {/* Alacak Kalemleri */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-[10px] text-gray-500 uppercase font-medium">Alacak Kalemleri</p>
+                  <button 
+                    className="text-[9px] text-blue-600 hover:text-blue-800 flex items-center gap-0.5"
+                    onClick={() => {/* TODO: Add due modal */}}
+                  >
+                    <PlusCircle className="h-3 w-3" /> Ekle
+                  </button>
+                </div>
+                {loadingFinance ? (
+                  <p className="text-[9px] text-gray-400 text-center py-1">Yükleniyor...</p>
+                ) : dues.length > 0 ? (
+                  <div className="space-y-1">
+                    {dues.map((due: any) => (
+                      <div key={due.id} className="flex justify-between text-[10px]">
+                        <span className="text-gray-600 truncate max-w-[140px]">{due.description || due.type}</span>
+                        <span className="font-medium">{Number(due.amount || 0).toLocaleString('tr-TR')} ₺</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between pt-1 border-t border-dashed text-[10px] font-semibold text-blue-700">
+                      <span>Toplam Alacak</span>
+                      <span>{dues.reduce((sum: number, d: any) => sum + Number(d.amount || 0), 0).toLocaleString('tr-TR')} ₺</span>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex justify-between text-[10px]">
+                    <span className="text-gray-600">Asıl Alacak</span>
+                    <span className="font-medium">{Number(caseData.principalAmount || 0).toLocaleString('tr-TR')} ₺</span>
+                  </div>
+                )}
               </div>
 
-              {/* Masraf Talepleri Listesi */}
-              <div className="mb-2 border-t pt-2">
-                <p className="text-[10px] text-gray-500 uppercase mb-1.5">Masraf Talepleri</p>
-                <ExpenseRequestList 
-                  caseId={caseData.id}
-                  onCreateNew={() => handleCreateExpenseRequest()}
-                  onRefresh={fetchCase}
-                  compact={true}
-                />
+              {/* Tahsilatlar */}
+              <div className="border-t pt-2 mt-2">
+                <div className="flex items-center justify-between mb-1.5">
+                  <p className="text-[10px] text-gray-500 uppercase font-medium">Tahsilatlar</p>
+                  <button 
+                    className="text-[9px] text-green-600 hover:text-green-800 flex items-center gap-0.5"
+                    onClick={() => {/* TODO: Add collection modal */}}
+                  >
+                    <PlusCircle className="h-3 w-3" /> Ekle
+                  </button>
+                </div>
+                {loadingFinance ? (
+                  <p className="text-[9px] text-gray-400 text-center py-1">Yükleniyor...</p>
+                ) : collections.length > 0 ? (
+                  <div className="space-y-1">
+                    {collections.filter((c: any) => c.status !== 'CANCELLED').map((col: any) => (
+                      <div key={col.id} className="flex justify-between text-[10px]">
+                        <span className="text-gray-600 truncate max-w-[140px]">
+                          {col.type === 'CASH' ? 'Nakit' : col.type === 'BANK_TRANSFER' ? 'Havale' : col.type === 'CHECK' ? 'Çek' : col.type}
+                          {col.collectionDate && <span className="text-gray-400 ml-1">({new Date(col.collectionDate).toLocaleDateString('tr-TR')})</span>}
+                        </span>
+                        <span className="font-medium text-green-700">+{Number(col.amount || 0).toLocaleString('tr-TR')} ₺</span>
+                      </div>
+                    ))}
+                    <div className="flex justify-between pt-1 border-t border-dashed text-[10px] font-semibold text-green-700">
+                      <span>Toplam Tahsilat</span>
+                      <span>+{collections.filter((c: any) => c.status !== 'CANCELLED').reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0).toLocaleString('tr-TR')} ₺</span>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-[9px] text-gray-400 text-center py-1">Henüz tahsilat yok</p>
+                )}
               </div>
-              
-              <div className="flex justify-between"><span className="text-gray-600">Asıl Alacak</span><span className="font-medium">{Number(caseData.principalAmount || 0).toLocaleString('tr-TR')} ₺</span></div>
-              <hr />
-              <div className="flex justify-between p-1.5 bg-blue-50 rounded font-semibold text-blue-800"><span>Takip Tutarı</span><span>{Number(caseData.principalAmount || 0).toLocaleString('tr-TR')} ₺</span></div>
-              <hr />
-              <div className="space-y-0.5 text-[10px]">
-                <p className="font-medium text-gray-600">İcra Masrafları:</p>
-                <div className="flex justify-between pl-2"><span className="text-gray-500">Başvurma Harcı</span><span>615 ₺</span></div>
-                <div className="flex justify-between pl-2"><span className="text-gray-500">Vekalet Harcı</span><span>88 ₺</span></div>
-                <div className="flex justify-between pl-2"><span className="text-gray-500">Peşin Harç</span><span>{(Number(caseData.principalAmount || 0) * 0.005).toLocaleString('tr-TR')} ₺</span></div>
+
+              {/* Özet */}
+              <div className="border-t pt-2 mt-2">
+                <div className="flex justify-between p-1.5 bg-blue-50 rounded font-semibold text-blue-800 text-[11px]">
+                  <span>Takip Tutarı</span>
+                  <span>{(dues.length > 0 ? dues.reduce((sum: number, d: any) => sum + Number(d.amount || 0), 0) : Number(caseData.principalAmount || 0)).toLocaleString('tr-TR')} ₺</span>
+                </div>
+                <div className="flex justify-between p-1.5 bg-red-50 rounded font-bold text-red-800 text-[11px] mt-1">
+                  <span>Kalan Borç</span>
+                  <span>{(
+                    (dues.length > 0 ? dues.reduce((sum: number, d: any) => sum + Number(d.amount || 0), 0) : Number(caseData.principalAmount || 0)) -
+                    collections.filter((c: any) => c.status !== 'CANCELLED').reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0)
+                  ).toLocaleString('tr-TR')} ₺</span>
+                </div>
               </div>
-              <hr />
-              <div className="flex justify-between"><span className="text-gray-600">Vekalet Ücreti</span><span className="font-medium">{Math.max(Number(caseData.principalAmount || 0) * 0.12, 17000).toLocaleString('tr-TR')} ₺</span></div>
-              <hr />
-              <div className="flex justify-between p-1.5 bg-red-50 rounded font-bold text-red-800"><span>Son Borç</span><span>{(Number(caseData.principalAmount || 0) * 1.5).toLocaleString('tr-TR')} ₺</span></div>
             </div>
           </div>
         </div>
@@ -2998,6 +3305,28 @@ export default function CaseDetailPage() {
         />
       )}
 
+      {/* ALACAK KALEMİ MODAL */}
+      {caseData && (
+        <DueModal
+          isOpen={dueModalOpen}
+          onClose={() => { setDueModalOpen(false); setEditingDue(null); }}
+          caseId={caseData.id}
+          due={editingDue}
+          onSuccess={fetchFinanceData}
+        />
+      )}
+
+      {/* ÖDEME/TAHSİLAT MODAL */}
+      {caseData && (
+        <CollectionModal
+          isOpen={collectionModalOpen}
+          onClose={() => { setCollectionModalOpen(false); setEditingCollection(null); }}
+          caseId={caseData.id}
+          collection={editingCollection}
+          onSuccess={fetchFinanceData}
+        />
+      )}
+
       {/* MESAJ GÖNDER MODAL */}
       {caseData && selectedClient && (
         <SendMessageModal
@@ -3163,6 +3492,8 @@ export default function CaseDetailPage() {
           }}
           caseId={caseData.id}
           caseDebtorId={selectedDebtor.caseDebtorId}
+          clientId={caseData.client?.id || caseData.caseClients?.[0]?.client?.id}
+          clientEmail={caseData.client?.email || caseData.caseClients?.[0]?.client?.email}
           onUpdate={() => {
             fetchCaseDebtors();
             fetchCase();

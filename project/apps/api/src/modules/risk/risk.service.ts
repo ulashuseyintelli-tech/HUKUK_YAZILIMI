@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { WorkflowStage } from "@prisma/client";
 
@@ -42,7 +42,7 @@ export class RiskService {
       },
     });
 
-    if (!caseData) throw new Error("Case not found");
+    if (!caseData) throw new NotFoundException("Case not found");
 
     const factors = this.calculateFactors(caseData);
     const overallScore = this.calculateOverallScore(factors);
