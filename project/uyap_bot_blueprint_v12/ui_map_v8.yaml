@@ -1,0 +1,28 @@
+# ui_map_v8.yaml
+# v8: Ön haciz dosyasına girme ve satış formu anahtarları
+
+ui_map:
+  screens:
+    dosya_arama:
+      nav_path: ["Dosya", "Dosya Arama"]
+      fields:
+        reference_no: "FIELD_REF_NO"
+      actions:
+        sorgula: "BTN_SORGULA"
+
+    dosya_kapak_borc:
+      nav_path: ["Dosya", "Dosya Kapak / Borç Bilgileri"]
+      outputs:
+        amount: "OUT_BORC_TUTARI"
+        case_status: "OUT_DOSYA_DURUM"
+
+    sale_start_form:
+      nav_path: ["Haciz & Mal & Satış İşlemleri", "İhale İşlemleri", "Satış Talebi"]
+      fields:
+        dosya_no: "FIELD_DOSYA_NO"
+        asset_ref: "FIELD_ASSET_REF"
+        reason: "FIELD_REASON"
+      actions:
+        kaydet: "BTN_KAYDET"
+      outputs:
+        sale_request_id: "OUT_SALE_REQ_ID"

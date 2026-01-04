@@ -1,0 +1,46 @@
+# tahsilat_distribution_v9.yaml
+# Tahsilat dağıtım simülatörü (ön haciz/rehin + sıra + masraflar)
+# Amaç: "Bu araç satılırsa bizim dosya ne kadar para görür?" sorusuna hızlı cevap.
+
+inputs:
+  asset_fingerprint: string
+  sale_price_expected: number
+  sale_costs_estimated: number
+  liens:
+    - creditor: string
+      lien_type: [haciz, rehin, tedbir]
+      rank_order: int|null
+      amount_claimed: number|null
+      active_status: [active, inactive, unknown]
+      is_our_lien: bool
+  our_claim_amount: number
+  uncertainty_policy:
+    unknown_amount_fill_ratio: 0.25   # değer mid'in yüzdesi (fallback)
+    unknown_amount_confidence: 0.35
+
+compute:
+  steps:
+    - net_pool = max(0, sale_price_expected - sale_costs_estimated)
+    - order liens by (rank_order asc, lien_type_priority, lien_date asc) where active_status in [active, unknown]
+    - for each lien:
+        claim = amount_claimed
+        if claim is null:
+           claim = sale_price_expected * uncertainty_policy.unknown_amount_fill_ratio
+           mark claim as estimated (low confidence)
+        allocate = min(net_pool, claim)
+        net_pool -= allocate
+        record allocation
+    - our_expected_recovery = allocation for lien where is_our_lien == true
+    - if our lien not explicitly in list:
+        assume our_rank = max_rank+1 and allocate based on remaining pool up to our_claim_amount
+outputs:
+  our_expected_recovery: number
+  allocations:
+    - creditor: string
+      allocated: number
+      claim_used: number
+      estimated: bool
+  residual_pool: number
+  flags:
+    high_uncertainty: bool
+    low_expected_recovery: bool

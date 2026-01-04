@@ -1,0 +1,19 @@
+rules:
+  - rule_id: R_ASSET_FOUND_TRIGGERS_LIENS_AND_VAL
+    when: "fact:AssetFound"
+    then:
+      enqueue:
+        - "FetchPriorLiens_Vehicle"
+        - "EstimateVehicleValue_AI"
+
+  - rule_id: R_LIEN_SNAPSHOT_TRIGGERS_RANK
+    when: "fact:LienSnapshot"
+    then:
+      enqueue:
+        - "ComputeOurLienRank_Vehicle"
+
+  - rule_id: R_VALUATION_TRIGGERS_RISK
+    when: "fact:ValuationEstimate"
+    then:
+      enqueue:
+        - "AnalyzeIK100ParticipationRisk"

@@ -1,0 +1,105 @@
+# recipes_v8_extensions.yaml
+# v8: Ön haciz tutarını UYAP içinden dosya bazlı çıkarma + satış başlatma + avans dekont doğrulama
+
+recipes:
+
+  # ---------- 1) Prior lien amount extraction (authoritative) ----------
+  - recipe_id: FetchPriorLienCaseDetails
+    version: 8
+    scope: debtor
+    stage_tags: [VARLIK, HACIZ]
+    trigger: {type: event, when: ["LienSnapshot"]}
+    preconditions:
+      - "facts.LienSnapshot.reference_no != null"
+      - "session.is_logged_in == true"
+    uyap_nav_path: ["Dosya", "Dosya Arama"]
+    read:
+      fields:
+        - "reference_no"
+    actions:
+      - type: open_case_by_reference
+        reference_no: "{{facts.LienSnapshot.reference_no}}"
+      - type: query
+        input: {section: "Dosya Kapak / Borç Bilgileri"}
+    postconditions:
+      - "emit:AuthoritativeLienAmount"
+    proof: {store: ["timestamp", "reference_no", "snapshot_hash"]}
+    audit: {level: read_only}
+
+  - recipe_id: NormalizeAuthoritativeLienAmount
+    version: 8
+    stage_tags: [VARLIK, HACIZ]
+    trigger: {type: event, when: ["AuthoritativeLienAmount"]}
+    preconditions: ["true"]
+    uyap_nav_path: ["(internal)"]
+    read:
+      fields:
+        - "authoritative.amount"
+        - "authoritative.case_status"
+    actions:
+      - type: compute
+        formula: |
+          if authoritative.case_status in ['KAPALI','TAHSIL_EDILDI']:
+              amount_effective = 0
+              active_status = 'inactive'
+          else:
+              amount_effective = authoritative.amount
+              active_status = 'active'
+          update(LienSnapshot.amount_claimed = amount_effective)
+          update(LienSnapshot.active_status = active_status)
+    postconditions:
+      - "facts.LienSnapshot updated"
+    proof: {store: ["timestamp", "amount_effective", "active_status"]}
+    audit: {level: controlled_write}
+
+  # ---------- 2) Sale start (controlled execution) ----------
+  - recipe_id: StartSale_Vehicle
+    version: 8
+    scope: debtor
+    stage_tags: [SATIS]
+    trigger: {type: manual, when: ["USER_APPROVES_SALE"]}
+    preconditions:
+      - "session.is_logged_in == true"
+      - "locks.LOCK_COST_ACTIONS == false"
+      - "context.post_lien_strategy in ['YAKALAMA_AND_SALE','SALE_IF_NEEDED']"
+    uyap_nav_path: ["Haciz & Mal & Satış İşlemleri", "İhale İşlemleri", "Satış Talebi"]
+    read:
+      fields: ["uyap.sale_form_ready"]
+    actions:
+      - type: fill_form
+        fields:
+          dosya_no: "{{case.uyap_dosya_no}}"
+          asset_ref: "{{context.asset_fingerprint}}"
+          reason: "Haciz sonrası satış talebi"
+      - type: click
+        button: "Kaydet"
+    postconditions:
+      - "case.events += SALE_STARTED"
+    proof: {store: ["timestamp", "uyap.sale_request_id"]}
+    audit: {level: high_impact_write}
+
+  # ---------- 3) Advance receipt verification ----------
+  - recipe_id: VerifyAdvanceReceipt
+    version: 8
+    stage_tags: [HACIZ, SATIS]
+    trigger: {type: event, when: ["PAYMENT_RECEIPT_UPLOADED"]}
+    preconditions:
+      - "payment.receipt_file != null"
+    uyap_nav_path: ["(internal)"]
+    read:
+      fields: ["payment.receipt_file", "payment.expected_amount"]
+    actions:
+      - type: compute
+        formula: |
+          # basit doğrulama: tutar, dosya no, tarih
+          verified = receipt.amount >= payment.expected_amount and receipt.case_no == case.uyap_dosya_no
+          set(payment.verified = verified)
+    decisions:
+      - if: "payment.verified == true"
+        then: {emit: "PAYMENT_CONFIRMED"}
+      - if: "payment.verified == false"
+        then: {enqueue: ["RequireAttorneyDecision"]}
+    postconditions:
+      - "payment.verified != null"
+    proof: {store: ["timestamp", "payment.verified"]}
+    audit: {level: controlled_write}

@@ -1,0 +1,45 @@
+# locks_and_gates_v4.yaml
+# Masraflı / yüksek etkili aksiyonları kilitleyen "gate" mekanizması.
+# Locks açıkken bot sadece read-only çalışır.
+
+locks:
+  - lock_id: LOCK_COST_ACTIONS
+    description: "Masraflı adımlar (avans/ilan/satış vb.) için kilit."
+    opened_by:
+      - "fact:CostRequirement.blocking == true"
+      - "risk.score >= params.risk.block_cost_threshold"
+    released_by:
+      - "event:PAYMENT_CONFIRMED"
+      - "manual:ATTORNEY_OVERRIDE"
+
+  - lock_id: LOCK_EXECUTION_ACTIONS
+    description: "Haciz/satış gibi geri dönüşü zor adımlar için kilit."
+    opened_by:
+      - "risk.score >= params.risk.block_execution_threshold"
+      - "uncertainty.high == true"
+    released_by:
+      - "manual:ATTORNEY_OVERRIDE"
+
+  - lock_id: LOCK_DEBTOR_ACTIONS
+    description: "Borçlu verisi eksik/çelişkiliyse borçlu aksiyonlarını kilitler."
+    opened_by:
+      - "data_quality.debtor_identity_missing == true"
+      - "data_quality.address_missing == true"
+    released_by:
+      - "event:DATA_COMPLETED"
+
+gates:
+  - gate_id: GATE_PLACE_LIEN
+    requires:
+      - "locks.LOCK_EXECUTION_ACTIONS == false"
+      - "locks.LOCK_DEBTOR_ACTIONS == false"
+      - "risk.score < params.risk.block_execution_threshold"
+    on_fail:
+      action: "enqueue:RequireAttorneyDecision"
+
+  - gate_id: GATE_REQUEST_YAKALAMA_AVANSI
+    requires:
+      - "locks.LOCK_COST_ACTIONS == false"
+      - "expected_recovery.expected_net_mid >= params.recovery.min_net_for_cost_actions"
+    on_fail:
+      action: "enqueue:RequireAttorneyDecision"

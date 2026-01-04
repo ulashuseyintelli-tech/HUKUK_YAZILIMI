@@ -1,0 +1,27 @@
+plan:
+  # stage bazlı temel job listeleri
+  stages:
+    ACILIS:
+      recipes:
+        - {recipe_id: EnsureUYAPSession, risk_level: read_only}
+        - {recipe_id: SyncSafahatTimeline, risk_level: read_only}
+
+    TEBLIGAT:
+      recipes:
+        - {recipe_id: EnsureUYAPSession, risk_level: read_only}
+        - {recipe_id: SyncSafahatTimeline, risk_level: read_only}
+        - {recipe_id: FetchPreparedETebligatlar_Debtor, risk_level: read_only}
+
+    KESINLESME:
+      recipes:
+        - {recipe_id: EnsureUYAPSession, risk_level: read_only}
+        - {recipe_id: SyncSafahatTimeline, risk_level: read_only}
+        - {recipe_id: DetectFinalizationCandidate_ByIcraType, risk_level: controlled_write}
+
+    VARLIK:
+      recipes:
+        - {recipe_id: EnsureUYAPSession, risk_level: read_only}
+        - {recipe_id: RunAssetQueries_Debtor, risk_level: read_only}
+
+  # de-dup / cooldown (aynı recipe'i sürekli basma)
+  cooldown_seconds: 900

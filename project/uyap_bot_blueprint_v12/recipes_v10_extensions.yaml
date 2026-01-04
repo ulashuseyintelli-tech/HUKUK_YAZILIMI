@@ -1,0 +1,103 @@
+# recipes_v10_extensions.yaml
+# v10: gerçekleşen dağıtım + uzlaşma + anomali izleme
+
+recipes:
+
+  - recipe_id: ComputeRealDistribution
+    version: 10
+    stage_tags: [TAHSILAT, SATIS]
+    trigger: {type: event, when: ["TAHSILAT_UPDATED", "REDDIYAT_UPDATED", "SALE_COMPLETED"]}
+    preconditions:
+      - "facts.LienSnapshot != empty"
+    uyap_nav_path: ["(internal)"]
+    read:
+      fields:
+        - "tahsilat_entries"
+        - "reddiyat_entries"
+        - "facts.LienSnapshot[*]"
+        - "case.claim_amount"
+    actions:
+      - type: compute
+        formula: |
+          emit("RUN_REAL_DISTRIBUTION")  # tahsilat_real_distribution_v10.yaml
+    postconditions:
+      - "case.events += REAL_DISTRIBUTION_COMPUTED"
+    proof: {store: ["timestamp", "distribution.our_net_received", "distribution.remaining_claim"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: RunAnomalyDetection
+    version: 10
+    stage_tags: [TEBLIGAT, KESINLESME, VARLIK, HACIZ, TAHSILAT, SATIS]
+    trigger: {type: schedule, when: ["EVERY_24_HOURS"]}
+    preconditions: ["params.anomaly.enabled == true"]
+    uyap_nav_path: ["(internal)"]
+    read:
+      fields:
+        - "case.stage"
+        - "case.events"
+        - "distribution.net_in_case"
+        - "distribution.total_collected"
+        - "facts.LienSnapshot[*]"
+        - "case.service_effective_date"
+        - "case.mazbata_exists"
+    actions:
+      - type: compute
+        formula: |
+          emit("RUN_ANOMALY_RULES")  # anomaly_detection_v10.yaml
+    postconditions: ["case.events += ANOMALY_SCAN"]
+    proof: {store: ["timestamp", "anomalies.count"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: ProposeSettlementOffer
+    version: 10
+    scope: debtor
+    stage_tags: [TAHSILAT, VARLIK, HACIZ]
+    trigger: {type: event, when: ["DEBTOR_BEHAVIOR_SCORE_UPDATED", "REAL_DISTRIBUTION_COMPUTED"]}
+    preconditions:
+      - "params.settlement.enabled == true"
+      - "debtor.behavior_score >= params.settlement.min_behavior_score"
+      - "distribution.remaining_claim >= params.settlement.min_remaining_claim"
+      - "locks.LOCK_COST_ACTIONS == false"
+    uyap_nav_path: ["(internal)"]
+    read:
+      fields:
+        - "debtor.behavior_score"
+        - "distribution.remaining_claim"
+    actions:
+      - type: compute
+        formula: |
+          emit("BUILD_SETTLEMENT_PLAN")  # settlement_module_v10.yaml
+      - type: create_task
+        task_type: "SETTLEMENT_OFFER_RECOMMENDED"
+        payload:
+          debtor_id: "{{runtime.debtor_scope_id}}"
+          remaining_claim: "{{distribution.remaining_claim}}"
+          installments: "{{settlement.plan.installments}}"
+          installment_amount: "{{settlement.plan.installment_amount}}"
+    postconditions: ["case.next_actions += SETTLEMENT_OFFER_RECOMMENDED"]
+    proof: {store: ["timestamp", "task_id"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: SendSettlementOffer
+    version: 10
+    scope: debtor
+    stage_tags: [TAHSILAT, VARLIK, HACIZ]
+    trigger: {type: manual, when: ["USER_APPROVES_SETTLEMENT_OFFER"]}
+    preconditions:
+      - "task.SETTLEMENT_OFFER_RECOMMENDED exists"
+      - "client.contact.email != null"
+    uyap_nav_path: ["(communication)"]
+    read: {fields: ["settlement.plan", "distribution.remaining_claim"]}
+    actions:
+      - type: send_comm
+        template_id: "SETTLEMENT_OFFER_TR"
+        channel: "email"
+        variables:
+          case_no: "{{case.uyap_dosya_no}}"
+          debtor_name: "{{debtor.name}}"
+          remaining_claim: "{{distribution.remaining_claim}}"
+          installments: "{{settlement.plan.installments}}"
+          installment_amount: "{{settlement.plan.installment_amount}}"
+    postconditions: ["case.events += SETTLEMENT_OFFER_SENT"]
+    proof: {store: ["timestamp", "comm_id"]}
+    audit: {level: controlled_write}

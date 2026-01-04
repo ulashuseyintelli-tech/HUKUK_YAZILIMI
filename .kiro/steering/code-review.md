@@ -100,16 +100,18 @@ private generateInterestDescription(subCategory: CaseSubCategory, currency?: Cur
 
 ---
 
-### 6. Runtime Model Kontrolü
+### 6. Runtime Model Kontrolü ✅ DÜZELTILDI
 **Dosya:** `apps/api/src/modules/validation-gate/validation-gate.service.ts`
 
 ```typescript
-try {
-  instrument = await (this.prisma as any).caseInstrument?.findFirst({ where: { caseId } });
-} catch { /* Model henuz yok */ }
+// Eski (type safety kaybı):
+instrument = await (this.prisma as any).caseInstrument?.findFirst({ where: { caseId } });
+
+// Yeni (type-safe):
+instrument = await this.prisma.caseInstrument.findFirst({ where: { caseId } });
 ```
 
-**Sorun:** Type safety kaybı, migration sonrası temizlenmeli.
+**Durum:** Modeller Prisma schema'da mevcut, `as any` cast'i kaldırıldı. Type safety sağlandı.
 
 ---
 
@@ -144,11 +146,18 @@ try {
 - ~~`BlockFieldProps` interface'i iki kez tanımlanmış~~
 - Duplicate interface kaldırıldı
 
-### 10. Hardcoded Değerler
+### 10. Hardcoded Değerler ✅ DÜZELTILDI
 ```typescript
 const INACTIVITY_THRESHOLD_DAYS = 365; // Büro ayarından alınabilir
 ```
-**Öneri:** Tenant settings'e taşı.
+
+**Düzeltme:** Tenant settings altyapısı eklendi:
+- `Office` modeline `inactivityThresholdDays` ve `inactivityWarningDays` alanları eklendi
+- `GET /api/office/iik78-settings` endpoint'i eklendi
+- `PUT /api/office/iik78-settings` endpoint'i eklendi
+- Frontend API client'a `officeApi.getIik78Settings()` eklendi
+
+**Durum:** Backend altyapısı hazır. Frontend entegrasyonu için `officeApi.getIik78Settings()` kullanılabilir.
 
 ### 11. Error Handling Tutarsızlığı ⚠️ KISMEN DÜZELTILDI
 - NestJS: `NotFoundException`, `BadRequestException`

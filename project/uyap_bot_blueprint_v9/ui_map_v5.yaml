@@ -1,0 +1,34 @@
+# ui_map_v5.yaml
+# v5: Araç ve haciz/rehin/kısıt listelerini okumak için ekran anahtarları
+# Bu harita gerçek locator bağlamaz; mantıksal anahtar verir.
+
+ui_map:
+  screens:
+    vehicle_results:
+      nav_path: ["Sorgular", "Toplu Entegrasyon Sorgu"]
+      table:
+        rows: "TABLE_VEHICLE_ROWS"
+        columns:
+          plate: "COL_PLATE"
+          make: "COL_MAKE"
+          model: "COL_MODEL"
+          year: "COL_YEAR"
+          vin: "COL_VIN"
+          notes: "COL_NOTES"
+      actions:
+        open_vehicle_detail: "ACT_OPEN_VEHICLE_DETAIL"
+
+    vehicle_liens_and_restrictions:
+      nav_path: ["(Araç ekranı)", "Araç Kısıt/Haciz/Takyidat Bilgileri"]
+      table:
+        rows: "TABLE_LIEN_ROWS"
+        columns:
+          lien_type: "COL_LIEN_TYPE"
+          creditor: "COL_CREDITOR"
+          lien_date: "COL_DATE"
+          rank_order: "COL_RANK"
+          amount_claimed: "COL_AMOUNT"
+          active_status: "COL_ACTIVE"
+          reference_no: "COL_REF"
+      actions:
+        refresh: "BTN_REFRESH"

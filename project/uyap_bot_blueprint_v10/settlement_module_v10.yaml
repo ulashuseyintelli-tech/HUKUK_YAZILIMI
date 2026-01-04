@@ -1,0 +1,32 @@
+# settlement_module_v10.yaml
+# Uzlaşma/Taksit teklifi modülü (karar + iletişim + takip)
+# Amaç: davranış skoru yüksek borçluda tahsilatı hızlandırmak.
+
+params:
+  settlement:
+    enabled: true
+    min_behavior_score: 70
+    min_remaining_claim: 20000
+    default_installments: 6
+    max_installments: 12
+    discount_policy:
+      enabled: true
+      max_discount_rate: 0.08   # %8'e kadar
+      require_attorney_approval: true
+
+compute:
+  eligibility:
+    rules:
+      - if debtor.behavior_class == "PAYMENT_LIKELY" and remaining_claim >= min_remaining_claim: eligible
+      - if debtor.behavior_class == "MIXED" and remaining_claim >= min_remaining_claim*2: eligible
+  plan:
+    formula: |
+      n = default_installments
+      if remaining_claim > 200000: n = min(max_installments, 10)
+      installment_amount = ceil(remaining_claim / n)
+      due_day_of_month = 5
+      return {installments: n, installment_amount: installment_amount, due_day: due_day_of_month}
+
+templates:
+  offer_email_template_id: SETTLEMENT_OFFER_TR
+  reminder_sms_template_id: SETTLEMENT_REMINDER_TR

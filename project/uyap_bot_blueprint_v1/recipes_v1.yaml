@@ -1,0 +1,421 @@
+# recipes_v1.yaml
+# Lima/Meşe UYAP Bot - Recipe Pack v1
+# Bu dosya "konfig"tir. Bot motoru bunu okuyup çalıştırır.
+
+enums:
+  stage: [ACILIS, TEBLIGAT, KESINLESME, VARLIK, HACIZ, TAHSILAT, SATIS, KAPANIS, ASKIDA, HATA]
+  trigger_type: [event, schedule, manual]
+  risk_level: [read_only, controlled_write, high_impact_write]
+
+defaults:
+  audit:
+    retain_days: 3650
+    include_screenshot_on_error: true
+  retry:
+    max_attempts: 4
+    backoff_seconds: [30, 120, 600, 1800]
+  proof_minimum: [timestamp, uyap_nav_path, snapshot_hash]
+
+recipes:
+
+  - recipe_id: EnsureUYAPSession
+    version: 1
+    stage_tags: [ACILIS, TEBLIGAT, KESINLESME, VARLIK, HACIZ, TAHSILAT, SATIS]
+    trigger: {type: schedule, when: ["EVERY_15_MIN"]}
+    preconditions: []
+    uyap_nav_path: ["(session)"]
+    read: {fields: ["session.is_logged_in", "session.user_role"]}
+    decisions:
+      - if: "session.is_logged_in == false"
+        then: {set_flag: "session.required=true", notify: "UYAP oturumu yok"}
+    actions: []
+    postconditions: ["session.health_checked=true"]
+    proof: {store: ["session.is_logged_in", "session.user_role", "timestamp"]}
+    audit: {level: read_only}
+
+  - recipe_id: BindCaseToUYAPNumber
+    version: 1
+    stage_tags: [ACILIS]
+    trigger: {type: event, when: ["CASE_CREATED_LOCAL"]}
+    preconditions: ["case.uyap_dosya_no == null"]
+    uyap_nav_path: ["(user-input or clipboard)"]
+    read: {fields: ["user.provided_uyap_dosya_no"]}
+    decisions:
+      - if: "user.provided_uyap_dosya_no != null"
+        then: {set: "case.uyap_dosya_no=user.provided_uyap_dosya_no"}
+    actions: []
+    postconditions: ["case.uyap_dosya_no != null"]
+    proof: {store: ["case.uyap_dosya_no", "timestamp"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: SyncCaseHeader
+    version: 1
+    stage_tags: [ACILIS, TEBLIGAT, KESINLESME, VARLIK, HACIZ, TAHSILAT, SATIS]
+    trigger: {type: schedule, when: ["EVERY_12_HOURS"]}
+    preconditions: ["session.is_logged_in == true", "case.uyap_dosya_no != null"]
+    uyap_nav_path: ["Dosya", "Dosya Ayrıntı Bilgileri"]
+    read:
+      fields: ["uyap.dosya_no", "uyap.taraflar_summary", "uyap.durum_summary"]
+    actions:
+      - type: query
+        input: {dosya_no: "{{case.uyap_dosya_no}}"}
+    postconditions: ["case.last_sync_at=now()", "case.header_synced=true"]
+    proof: {store: ["uyap.dosya_no", "uyap.durum_summary", "timestamp", "snapshot_hash"]}
+    audit: {level: read_only}
+
+  - recipe_id: SyncEvrakIndex
+    version: 1
+    stage_tags: [ACILIS, TEBLIGAT, KESINLESME, VARLIK, HACIZ, TAHSILAT, SATIS]
+    trigger: {type: schedule, when: ["EVERY_24_HOURS"]}
+    preconditions: ["session.is_logged_in == true", "case.uyap_dosya_no != null"]
+    uyap_nav_path: ["Dosya", "Dosya Ayrıntı Bilgileri"]
+    read:
+      table: "dosya_evrak"
+      fields: ["evrak_turu", "tarih", "id_or_ref"]
+    actions:
+      - type: query
+        input: {dosya_no: "{{case.uyap_dosya_no}}"}
+    postconditions: ["case.evrak_index_updated=true"]
+    proof: {store: ["timestamp", "snapshot_hash"]}
+    audit: {level: read_only}
+
+  - recipe_id: SyncSafahatTimeline
+    version: 1
+    stage_tags: [ACILIS, TEBLIGAT, KESINLESME, VARLIK, HACIZ, TAHSILAT, SATIS]
+    trigger: {type: schedule, when: ["EVERY_6_HOURS"]}
+    preconditions: ["session.is_logged_in == true", "case.uyap_dosya_no != null"]
+    uyap_nav_path: ["(Portal/Modül)", "Safahat Sorgula"]
+    read:
+      table: "safahat"
+      fields: ["tarih", "islem", "aciklama"]
+    actions:
+      - type: query
+        input: {dosya_no: "{{case.uyap_dosya_no}}"}
+    postconditions: ["case.events += safahat_delta"]
+    proof: {store: ["timestamp", "snapshot_hash", "delta_count"]}
+    audit: {level: read_only}
+
+  - recipe_id: InferStageFromSignals
+    version: 1
+    stage_tags: [ACILIS, TEBLIGAT, KESINLESME, VARLIK, HACIZ, TAHSILAT, SATIS, KAPANIS]
+    trigger: {type: schedule, when: ["EVERY_6_HOURS"]}
+    preconditions: ["case.events != empty"]
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["case.events", "case.current_stage"]}
+    decisions:
+      - if: "events.contains('TEBLIGAT_SENT') and not events.contains('SERVICE_EFFECTIVE')"
+        then: {set: "case.stage=TEBLIGAT"}
+      - if: "events.contains('SERVICE_EFFECTIVE') and not events.contains('FINALIZED')"
+        then: {set: "case.stage=KESINLESME"}
+      - if: "events.contains('FINALIZED') and not events.contains('ASSET_PROFILE_READY')"
+        then: {set: "case.stage=VARLIK"}
+      - if: "events.contains('HACIZ_REQUESTED')"
+        then: {set: "case.stage=HACIZ"}
+      - if: "events.contains('TAHSILAT') or events.contains('REDDIYAT')"
+        then: {set: "case.stage=TAHSILAT"}
+      - if: "events.contains('SALE_STARTED')"
+        then: {set: "case.stage=SATIS"}
+      - if: "events.contains('CLOSED')"
+        then: {set: "case.stage=KAPANIS"}
+    actions: []
+    postconditions: ["case.stage in enums.stage"]
+    proof: {store: ["timestamp", "case.stage", "reason_code"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: FetchPreparedETebligatlar
+    version: 1
+    stage_tags: [TEBLIGAT]
+    trigger: {type: schedule, when: ["EVERY_6_HOURS"]}
+    preconditions: ["session.is_logged_in == true", "case.uyap_dosya_no != null"]
+    uyap_nav_path: ["Tebligat", "Hazırlanmış Elektronik Tebligatlar"]
+    read:
+      table: "e_tebligatlar"
+      fields: ["tarafa_teslim_tarihi", "okundu", "e_teblig_mazbatasi_var", "durum_renk_kodu"]
+    actions:
+      - type: query
+        input: {tarih_araligi: "last_30_days", dosya_no: "{{case.uyap_dosya_no}}"}
+    decisions:
+      - if: "any(e_tebligatlar.tarafa_teslim_tarihi != null)"
+        then: {enqueue: ["ComputeServiceEffectiveDate_ETebligat"]}
+      - if: "any(e_tebligatlar.tarafa_teslim_tarihi != null AND e_tebligatlar.e_teblig_mazbatasi_var == false)"
+        then: {enqueue: ["MazbataSorgula_ETebligat"]}
+    postconditions: ["case.events += ETEBLIGAT_SNAPSHOT"]
+    proof: {store: ["timestamp", "snapshot_hash", "tarafa_teslim_tarihi"]}
+    audit: {level: read_only}
+
+  - recipe_id: ComputeServiceEffectiveDate_ETebligat
+    version: 1
+    stage_tags: [TEBLIGAT]
+    trigger: {type: event, when: ["ETEBLIGAT_DELIVERED"]}
+    preconditions: ["case.e_tebligat.delivered_date != null"]
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["case.e_tebligat.delivered_date"]}
+    actions:
+      - type: compute
+        formula: "service_effective_date = delivered_date + params.tebligat.e_tebligat_deemed_days"
+    postconditions: ["case.events += SERVICE_EFFECTIVE_CANDIDATE"]
+    proof: {store: ["timestamp", "service_effective_date"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: MazbataSorgula_ETebligat
+    version: 1
+    stage_tags: [TEBLIGAT]
+    trigger: {type: schedule, when: ["EVERY_12_HOURS"]}
+    preconditions:
+      - "session.is_logged_in == true"
+      - "case.e_tebligat.delivered_date != null"
+      - "case.e_tebligat.mazbata_exists == false"
+      - "now() >= case.e_tebligat.delivered_date + params.tebligat.e_tebligat_deemed_days"
+    uyap_nav_path: ["Tebligat", "Hazırlanmış Elektronik Tebligatlar"]
+    read: {fields: ["uyap.mazbata_status"]}
+    actions:
+      - type: click
+        button: "Mazbata Sorgula"
+    postconditions: ["case.events += MAZBATA_REQUESTED"]
+    proof: {store: ["timestamp", "uyap.mazbata_status"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: FetchPhysicalTebligatStatus
+    version: 1
+    stage_tags: [TEBLIGAT]
+    trigger: {type: schedule, when: ["EVERY_12_HOURS"]}
+    preconditions: ["session.is_logged_in == true", "case.physical_tebligat.exists == true"]
+    uyap_nav_path: ["Tebligat", "Tebligat Arama"]
+    read:
+      table: "tebligat_list"
+      fields: ["gonderi_tipi", "teblig_statusu", "iade_nedeni", "teblig_tarihi"]
+    actions:
+      - type: query
+        input: {dosya_no: "{{case.uyap_dosya_no}}", status_filter: "ALL"}
+    decisions:
+      - if: "any(teblig_statusu in ['IADE','BILA'])"
+        then: {enqueue: ["OpenReTebligatCaseBranch"]}
+    postconditions: ["case.events += PHYSICAL_TEBLIGAT_SNAPSHOT"]
+    proof: {store: ["timestamp", "snapshot_hash"]}
+    audit: {level: read_only}
+
+  - recipe_id: OpenReTebligatCaseBranch
+    version: 1
+    stage_tags: [TEBLIGAT]
+    trigger: {type: event, when: ["TEBLIGAT_RETURNED"]}
+    preconditions: ["case.needs_retebligat == true"]
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["case.return_reason", "case.last_known_addresses"]}
+    actions: []
+    postconditions: ["case.events += RETEBLIGAT_NEEDED"]
+    proof: {store: ["timestamp", "case.return_reason"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: DetectFinalizationCandidate
+    version: 1
+    stage_tags: [KESINLESME, TEBLIGAT]
+    trigger: {type: schedule, when: ["EVERY_24_HOURS"]}
+    preconditions: ["case.events.contains('SERVICE_EFFECTIVE_CANDIDATE')"]
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["case.service_effective_date", "params.kesinlesme.objection_deadline_days"]}
+    actions:
+      - type: compute
+        formula: "finalization_candidate_date = service_effective_date + params.kesinlesme.objection_deadline_days"
+    decisions:
+      - if: "now() >= finalization_candidate_date"
+        then: {set_flag: "case.finalization_candidate=true", enqueue: ["SyncSafahatTimeline"]}
+    postconditions: ["case.finalization_candidate_date != null"]
+    proof: {store: ["timestamp", "finalization_candidate_date"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: MarkFinalized
+    version: 1
+    stage_tags: [KESINLESME]
+    trigger: {type: manual, when: ["USER_CONFIRMS_FINALIZED"]}
+    preconditions: ["case.finalization_candidate == true"]
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["user.confirmation"]}
+    actions: []
+    postconditions: ["case.events += FINALIZED", "case.stage=VARLIK"]
+    proof: {store: ["timestamp", "user.confirmation_ref"]}
+    audit: {level: high_impact_write}
+
+  - recipe_id: RunAssetQueriesBatch
+    version: 1
+    stage_tags: [VARLIK]
+    trigger: {type: schedule, when: ["EVERY_7_DAYS"]}
+    preconditions: ["session.is_logged_in == true", "case.events.contains('FINALIZED')"]
+    uyap_nav_path: ["Sorgular", "Toplu Entegrasyon Sorgu"]
+    read: {fields: ["sgk_result", "takbis_result", "vehicle_result", "other_assets"]}
+    actions:
+      - type: query
+        input: {debtor_ids: "{{case.debtors[*].id}}"}
+    postconditions: ["case.events += ASSET_PROFILE_READY"]
+    proof: {store: ["timestamp", "asset_profile_hash"]}
+    audit: {level: read_only}
+
+  - recipe_id: ScoreAssetProfile
+    version: 1
+    stage_tags: [VARLIK]
+    trigger: {type: event, when: ["ASSET_PROFILE_READY"]}
+    preconditions: ["case.asset_profile != null"]
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["case.asset_profile", "params.varlik.score_threshold_high"]}
+    actions:
+      - type: compute
+        formula: "asset_score = f(asset_profile)"
+    decisions:
+      - if: "asset_score >= params.varlik.score_threshold_high"
+        then: {enqueue: ["ProposeHacizPackage"]}
+      - if: "asset_score < params.varlik.score_threshold_low"
+        then: {set_flag: "case.low_recovery=true"}
+    postconditions: ["case.asset_score != null"]
+    proof: {store: ["timestamp", "asset_score"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: ProposeHacizPackage
+    version: 1
+    stage_tags: [VARLIK]
+    trigger: {type: event, when: ["ASSET_SCORE_HIGH"]}
+    preconditions: ["case.asset_score >= params.varlik.score_threshold_high"]
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["case.asset_profile"]}
+    actions: []
+    postconditions: ["case.next_actions += HACIZ_RECOMMENDED", "case.stage=HACIZ"]
+    proof: {store: ["timestamp"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: PrepareHacizDocuments
+    version: 1
+    stage_tags: [HACIZ]
+    trigger: {type: manual, when: ["USER_APPROVES_HACIZ"]}
+    preconditions: ["session.is_logged_in == true", "case.asset_score >= params.varlik.score_threshold_high"]
+    uyap_nav_path: ["Haciz & Mal & Satış İşlemleri", "Genel Haciz Yazıları"]
+    read: {fields: ["uyap.doc_template_list"]}
+    actions:
+      - type: generate
+        template: "haciz_yazisi"
+        input: {assets: "{{case.asset_profile.assets}}"}
+    postconditions: ["case.events += HACIZ_REQUESTED"]
+    proof: {store: ["timestamp", "generated_doc_id"]}
+    audit: {level: high_impact_write}
+
+  - recipe_id: TrackHacizResults
+    version: 1
+    stage_tags: [HACIZ]
+    trigger: {type: schedule, when: ["EVERY_48_HOURS"]}
+    preconditions: ["session.is_logged_in == true", "case.events.contains('HACIZ_REQUESTED')"]
+    uyap_nav_path: ["Haciz & Mal & Satış İşlemleri", "Haciz İşlemleri"]
+    read:
+      table: "haciz_list"
+      fields: ["haciz_tarihi", "mal_turu", "sonuc", "aciklama"]
+    actions:
+      - type: query
+        input: {dosya_no: "{{case.uyap_dosya_no}}"}
+    postconditions: ["case.events += HACIZ_SNAPSHOT"]
+    proof: {store: ["timestamp", "snapshot_hash"]}
+    audit: {level: read_only}
+
+  - recipe_id: TrackTahsilat
+    version: 1
+    stage_tags: [TAHSILAT, HACIZ, SATIS]
+    trigger: {type: schedule, when: ["EVERY_24_HOURS"]}
+    preconditions: ["session.is_logged_in == true"]
+    uyap_nav_path: ["Harç ve Kasa İşlemleri", "Tahsilat"]
+    read:
+      table: "tahsilat"
+      fields: ["tarih", "tutar", "makbuz_no", "aciklama"]
+    actions:
+      - type: query
+        input: {dosya_no: "{{case.uyap_dosya_no}}"}
+    postconditions: ["case.events += TAHSILAT_DELTA"]
+    proof: {store: ["timestamp", "delta_count"]}
+    audit: {level: read_only}
+
+  - recipe_id: TrackReddiyat
+    version: 1
+    stage_tags: [TAHSILAT]
+    trigger: {type: schedule, when: ["EVERY_24_HOURS"]}
+    preconditions: ["session.is_logged_in == true"]
+    uyap_nav_path: ["Harç ve Kasa İşlemleri", "Reddiyat"]
+    read:
+      table: "reddiyat"
+      fields: ["tarih", "tutar", "makbuz_no", "alici", "aciklama"]
+    actions:
+      - type: query
+        input: {dosya_no: "{{case.uyap_dosya_no}}"}
+    postconditions: ["case.events += REDDIYAT_DELTA"]
+    proof: {store: ["timestamp", "delta_count"]}
+    audit: {level: read_only}
+
+  - recipe_id: StartSaleWorkflow
+    version: 1
+    stage_tags: [SATIS]
+    trigger: {type: manual, when: ["USER_STARTS_SALE"]}
+    preconditions: ["session.is_logged_in == true", "case.events.contains('HACIZ_SNAPSHOT')"]
+    uyap_nav_path: ["Haciz & Mal & Satış İşlemleri", "İhale İşlemleri"]
+    read: {fields: ["uyap.sale_forms"]}
+    actions:
+      - type: create
+        entity: "sale_request"
+        input: {assets: "{{case.sale_assets}}"}
+    postconditions: ["case.events += SALE_STARTED"]
+    proof: {store: ["timestamp", "sale_request_id"]}
+    audit: {level: high_impact_write}
+
+  - recipe_id: MonitorSaleStatus
+    version: 1
+    stage_tags: [SATIS]
+    trigger: {type: schedule, when: ["EVERY_72_HOURS"]}
+    preconditions: ["session.is_logged_in == true", "case.events.contains('SALE_STARTED')"]
+    uyap_nav_path: ["Haciz & Mal & Satış İşlemleri", "İhale İşlemleri"]
+    read:
+      table: "sale_status"
+      fields: ["ihale_tarihi", "durum", "sonuc", "aciklama"]
+    actions:
+      - type: query
+        input: {dosya_no: "{{case.uyap_dosya_no}}"}
+    postconditions: ["case.events += SALE_SNAPSHOT"]
+    proof: {store: ["timestamp", "snapshot_hash"]}
+    audit: {level: read_only}
+
+  - recipe_id: PredictNextMasrafNeeds
+    version: 1
+    stage_tags: [ACILIS, TEBLIGAT, HACIZ, SATIS]
+    trigger: {type: event, when: ["TEBLIGAT_RETURNED", "SALE_STARTED", "HACIZ_REQUESTED"]}
+    preconditions: []
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["case.stage", "case.events"]}
+    actions:
+      - type: compute
+        formula: "masraf_plan = g(stage, events)"
+    postconditions: ["case.next_actions += MASRAF_REQUEST_RECOMMENDED"]
+    proof: {store: ["timestamp", "masraf_plan_hash"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: ConsistencyCheck
+    version: 1
+    stage_tags: [ACILIS, TEBLIGAT, KESINLESME, VARLIK, HACIZ, TAHSILAT, SATIS]
+    trigger: {type: schedule, when: ["EVERY_24_HOURS"]}
+    preconditions: ["case.uyap_dosya_no != null"]
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["case.stage", "case.events", "case.evidence"]}
+    decisions:
+      - if: "case.stage==TEBLIGAT and not events.contains('TEBLIGAT_SENT')"
+        then: {set_flag: "case.inconsistent=true", notify: "Aşama-teyit uyuşmazlığı"}
+      - if: "events.contains('FINALIZED') and case.stage in ['TEBLIGAT','ACILIS']"
+        then: {set: "case.stage=VARLIK"}
+    actions: []
+    postconditions: ["case.consistency_checked=true"]
+    proof: {store: ["timestamp", "case.inconsistent"]}
+    audit: {level: read_only}
+
+  - recipe_id: ErrorQuarantine
+    version: 1
+    stage_tags: [HATA]
+    trigger: {type: event, when: ["TASK_FAILED_HARD"]}
+    preconditions: ["case.last_error != null"]
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["case.last_error"]}
+    actions:
+      - type: set
+        key: "case.stage"
+        value: "ASKIDA"
+    postconditions: ["case.stage=ASKIDA", "case.next_actions += HUMAN_REVIEW"]
+    proof: {store: ["timestamp", "case.last_error_code"]}
+    audit: {level: controlled_write}

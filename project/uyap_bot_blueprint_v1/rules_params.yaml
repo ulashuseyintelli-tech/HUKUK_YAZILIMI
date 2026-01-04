@@ -1,0 +1,28 @@
+# rules_params.yaml
+# Değerler burada. Mevzuat/süre/limit değişirse kod değil burası değişir.
+
+params:
+  tebligat:
+    # Kitapta e-tebligat için "posta kutusuna bırakıldığı günü takip eden 5. gün" tebliğ sayılır.
+    # Bu parametreyi sabit 5 tut, gerekirse ileride güncellersin.
+    e_tebligat_deemed_days: 5
+
+    poll:
+      after_sent_first_24h_minutes: 120
+      after_24h_hours: 12
+
+  kesinlesme:
+    # İcra türüne göre değişir. Şimdilik "konfig" olarak koyuyoruz.
+    # Örn ilamsız takipte itiraz süresi farklı; sen tür bazlı override edebilirsin.
+    objection_deadline_days: 7
+
+  varlik:
+    score_threshold_high: 70
+    score_threshold_low: 20
+    requery_days: 7
+
+  scheduler:
+    sync_header_hours: 12
+    sync_safahat_hours: 6
+    sync_evrak_hours: 24
+    tebligat_status_hours: 6

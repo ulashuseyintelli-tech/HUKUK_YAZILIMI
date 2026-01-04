@@ -1,0 +1,14 @@
+extractors:
+  vehicle_results_to_asset_found:
+    table_key: TABLE_VEHICLE_ROWS
+    fact_type: AssetFound
+    key_fields: ["asset_fingerprint"]
+    when: "plate != ''"
+    map:
+      asset_type: "vehicle"
+      asset_fingerprint: "vehicle:plate:{plate}"
+      attributes:
+        plate: "{plate}"
+        make: "{make}"
+        model: "{model}"
+        year: "{year}"

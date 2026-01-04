@@ -1,0 +1,52 @@
+# tahsilat_real_distribution_v10.yaml
+# Gerçek tahsilat/reddiyat verisine dayanarak dağıtım ve net alacak hesabı
+# Amaç: simülasyon -> gerçekleşen muhasebe.
+
+inputs:
+  case_id: string
+  asset_fingerprint: string|null
+  tahsilat_entries:
+    - date: date
+      amount: number
+      receipt_no: string
+      description: string
+  reddiyat_entries:
+    - date: date
+      amount: number
+      receipt_no: string
+      recipient: string
+      description: string
+  lien_state:
+    - creditor: string
+      rank_order: int|null
+      lien_type: [haciz, rehin, tedbir]
+      amount_claimed: number|null
+      active_status: [active, inactive, unknown]
+      is_our_lien: bool
+  our_claim_amount: number
+
+compute:
+  steps:
+    - total_collected = sum(tahsilat_entries.amount)
+    - total_paid_out = sum(reddiyat_entries.amount)
+    - net_in_case = total_collected - total_paid_out
+    - allocate_net_by_rank:
+        order active liens by rank_order asc (unknown -> after known) then type priority then date
+        distribute net_in_case to liens up to their amount_claimed (unknown -> mark unknown)
+    - our_net_received = allocation for our lien (if exists)
+    - remaining_claim = max(0, our_claim_amount - our_net_received)
+
+outputs:
+  total_collected: number
+  total_paid_out: number
+  net_in_case: number
+  allocations:
+    - creditor: string
+      allocated: number
+      claim_used: number|null
+      estimated: bool
+  our_net_received: number
+  remaining_claim: number
+  flags:
+    negative_net_in_case: bool
+    unknown_claims_present: bool

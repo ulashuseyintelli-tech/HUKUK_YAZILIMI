@@ -1,0 +1,164 @@
+# recipes_v7_extensions.yaml
+# v7: Lien sonrası tahsilat stratejisi + pasif haciz temizliği + ön haciz tutarı çıkarımı (heuristic)
+
+recipes:
+
+  # ---------- 1) Post-lien strategy ----------
+  - recipe_id: DecidePostLienStrategy_Vehicle
+    version: 7
+    scope: debtor
+    stage_tags: [HACIZ, TAHSILAT, SATIS]
+    trigger: {type: event, when: ["HACIZ_PLACED(asset_fingerprint=*)", "LienSnapshot"]}
+    preconditions:
+      - "context.asset_type == 'vehicle'"
+      - "context.asset_fingerprint != null"
+      - "facts.ValuationEstimate != null"
+    uyap_nav_path: ["(internal)"]
+    read:
+      fields:
+        - "facts.ValuationEstimate.value_mid"
+        - "facts.ValuationEstimate.confidence"
+        - "context.participation_risk"
+        - "context.our_rank"
+        - "expected_recovery.expected_net_mid"
+        - "case.claim_amount"
+        - "params.recovery.min_net_for_cost_actions"
+    actions:
+      - type: compute
+        formula: |
+          # Basit strateji seçici
+          strategy = "MONITOR"
+          if context.our_rank == 1 and expected_recovery.expected_net_mid >= params.recovery.min_net_for_cost_actions:
+              strategy = "YAKALAMA_AND_SALE"
+          elif context.our_rank <= 2 and expected_recovery.expected_net_mid >= params.recovery.min_net_for_cost_actions/2:
+              strategy = "SALE_IF_NEEDED"
+          elif context.participation_risk == "HIGH":
+              strategy = "WAIT_OR_NEGOTIATE"
+          set(context.post_lien_strategy = strategy)
+    decisions:
+      - if: "context.post_lien_strategy == 'YAKALAMA_AND_SALE'"
+        then: {enqueue: ["RequestYakalamaAvansi_Communication", "WaitForAdvancePayment"]}
+      - if: "context.post_lien_strategy in ['SALE_IF_NEEDED','YAKALAMA_AND_SALE']"
+        then: {enqueue: ["ProposeSaleStart_Vehicle"]}
+      - if: "context.post_lien_strategy == 'WAIT_OR_NEGOTIATE'"
+        then: {enqueue: ["RequireAttorneyDecision"]}
+    postconditions: ["context.post_lien_strategy != null"]
+    proof: {store: ["timestamp", "context.post_lien_strategy"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: ProposeSaleStart_Vehicle
+    version: 7
+    scope: debtor
+    stage_tags: [SATIS, HACIZ]
+    trigger: {type: event, when: ["POST_LIEN_STRATEGY_READY"]}
+    preconditions:
+      - "context.asset_type == 'vehicle'"
+      - "context.asset_fingerprint != null"
+      - "locks.LOCK_COST_ACTIONS == false"
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["context.post_lien_strategy", "case.sale_policy"]}
+    actions:
+      - type: create_task
+        task_type: "SALE_RECOMMENDED"
+        payload:
+          asset_fingerprint: "{{context.asset_fingerprint}}"
+          strategy: "{{context.post_lien_strategy}}"
+          note: "Satış başlatma önerisi (kontrollü)"
+    postconditions: ["case.next_actions += SALE_RECOMMENDED"]
+    proof: {store: ["timestamp", "task_id"]}
+    audit: {level: controlled_write}
+
+  # ---------- 2) Inactive liens cleanup ----------
+  - recipe_id: DetectInactivePriorLiens_Vehicle
+    version: 7
+    scope: debtor
+    stage_tags: [VARLIK, HACIZ]
+    trigger: {type: schedule, when: ["EVERY_14_DAYS"]}
+    preconditions:
+      - "session.is_logged_in == true"
+      - "context.asset_type == 'vehicle'"
+      - "context.asset_fingerprint != null"
+    uyap_nav_path: ["(Araç ekranı)", "Araç Kısıt/Haciz/Takyidat Bilgileri"]
+    read:
+      table: "vehicle_lien_list"
+      fields: ["creditor", "lien_date", "active_status", "reference_no"]
+    actions:
+      - type: open_asset
+        asset_fingerprint: "{{context.asset_fingerprint}}"
+      - type: query
+        input: {section: "liens_and_restrictions"}
+    decisions:
+      - if: "any(vehicle_lien_list.active_status == 'inactive')"
+        then: {enqueue: ["PruneInactiveLienFacts"]}
+    postconditions: ["context.inactive_lien_scan_at = now()"]
+    proof: {store: ["timestamp", "snapshot_hash"]}
+    audit: {level: read_only}
+
+  - recipe_id: PruneInactiveLienFacts
+    version: 7
+    stage_tags: [VARLIK, HACIZ]
+    trigger: {type: event, when: ["INACTIVE_LIENS_DETECTED"]}
+    preconditions: ["true"]
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["facts.LienSnapshot[*]"]}
+    actions:
+      - type: compute
+        formula: |
+          # inactive görünenleri işaretle (silme değil; audit için pasife çek)
+          for l in liens:
+            if l.active_status == 'inactive':
+              l._status = 'inactive_confirmed'
+    postconditions: ["facts.LienSnapshot updated"]
+    proof: {store: ["timestamp", "inactive_count"]}
+    audit: {level: controlled_write}
+
+  # ---------- 3) Prior lien amount inference (heuristic) ----------
+  - recipe_id: InferPriorLienAmounts_Heuristic
+    version: 7
+    scope: debtor
+    stage_tags: [VARLIK, HACIZ]
+    trigger: {type: event, when: ["LienSnapshot"]}
+    preconditions:
+      - "context.asset_type == 'vehicle'"
+      - "facts.LienSnapshot != empty"
+    uyap_nav_path: ["(internal)"]
+    read:
+      fields:
+        - "facts.LienSnapshot[*].amount_claimed"
+        - "facts.LienSnapshot[*].creditor"
+        - "facts.LienSnapshot[*].lien_type"
+        - "facts.LienSnapshot[*].rank_order"
+        - "facts.ValuationEstimate.value_mid"
+    actions:
+      - type: compute
+        formula: |
+          # Tutar bilinmiyorsa kaba tahmin: değer mid'in %15-%35 bandı / sıra / haciz türüne göre
+          for l in liens:
+            if l.amount_claimed is null:
+              base = facts.ValuationEstimate.value_mid * 0.25
+              if l.rank_order is not null and l.rank_order >= 3: base *= 0.7
+              if l.lien_type == 'rehin': base *= 1.2
+              l.amount_claimed_estimate = round(base, 0)
+              l.amount_claimed_estimate_conf = 0.35
+    decisions:
+      - if: "any(l.amount_claimed_estimate is not null)"
+        then: {enqueue: ["RefreshRiskAndRecovery"] }
+    postconditions: ["facts.LienSnapshot enriched"]
+    proof: {store: ["timestamp", "estimated_amounts_count"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: RefreshRiskAndRecovery
+    version: 7
+    stage_tags: [VARLIK, HACIZ]
+    trigger: {type: event, when: ["LIEN_AMOUNTS_ESTIMATED"]}
+    preconditions: ["true"]
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["facts.LienSnapshot[*]", "facts.ValuationEstimate"]}
+    actions:
+      - type: compute
+        formula: |
+          # decision_rules_v4 içindeki RiskScoring/RecoverySimulator yeniden çalıştırılır (motor seviyesinde)
+          emit("RECOMPUTE_RISK_AND_RECOVERY")
+    postconditions: ["risk/refreshed=true"]
+    proof: {store: ["timestamp"]}
+    audit: {level: controlled_write}

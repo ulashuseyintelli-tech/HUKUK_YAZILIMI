@@ -215,6 +215,22 @@ model Tenant {
   
   // Asset Queries (FAZ 4)
   assetQueries        AssetQuery[]
+  
+  // Icrabot
+  botTasks            BotTask[]
+  
+  // Icrabot v14-v16
+  icrabotBundles      IcrabotBundle[]
+  icrabotJobRuns      IcrabotJobRun[]
+  icrabotEvidence     IcrabotEvidence[]
+  icrabotLocks        IcrabotLock[]
+  icrabotExports      IcrabotEvidenceExport[]
+  
+  // Icrabot v17-v23
+  systemConfigs       SystemConfig[]
+  selectorHealthLogs  SelectorHealthLog[]
+  caseRunLocks        CaseRunLock[]
+  icrabotFacts        IcrabotFact[]
 
   @@index([slug])
   @@index([accountType])
@@ -269,6 +285,9 @@ model User {
   
   // Asset Queries (FAZ 4)
   assetQueriesRequested   AssetQuery[]        @relation("AssetQueryRequester")
+  
+  // Icrabot
+  botTasksApproved        BotTask[]           @relation("BotTaskApprover")
 
   @@unique([tenantId, email])
   @@index([tenantId])
@@ -909,6 +928,20 @@ model Case {
   
   // Address Discovery
   clientInfoRequests  ClientInfoRequest[]
+  
+  // Icrabot
+  botTasks            BotTask[]
+  botEvidence         BotEvidence[]
+  
+  // Icrabot v14-v16
+  icrabotJobRuns      IcrabotJobRun[]
+  icrabotEvidence     IcrabotEvidence[]
+  icrabotLocks        IcrabotLock[]
+  icrabotExports      IcrabotEvidenceExport[]
+  
+  // Icrabot v17-v23
+  caseRunLocks        CaseRunLock[]
+  icrabotFacts        IcrabotFact[]
 
   @@unique([tenantId, fileNumber])
   @@index([tenantId, status])
@@ -1365,6 +1398,10 @@ model Office {
   // Otomatik Tebrik Ayarları
   autoGreetingEnabled     Boolean @default(true)  // Otomatik tebrik sistemi açık/kapalı
   autoGreetingTime        String? @default("09:00") // Tebrik gönderim saati (HH:mm)
+  
+  // İİK 78 Ayarları
+  inactivityThresholdDays Int     @default(365)   // Pasifleşme süresi (gün) - İİK 78
+  inactivityWarningDays   Int     @default(60)    // Uyarı süresi (gün) - kalan gün bu değerin altına düşünce uyarı
   
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -4645,4 +4682,460 @@ enum AssetQueryJobStatus {
   COMPLETED     // Tamamlandı
   FAILED        // Başarısız
   CANCELLED     // İptal edildi
+}
+
+
+// ==================== ICRABOT MODULE ====================
+
+// Bot Görev Durumu
+enum BotTaskStatus {
+  PENDING         // Bekliyor
+  QUEUED          // Kuyruğa alındı
+  RUNNING         // Çalışıyor
+  COMPLETED       // Tamamlandı
+  FAILED          // Başarısız
+  RETRY           // Yeniden deneniyor
+  CANCELLED       // İptal edildi
+  NEEDS_APPROVAL  // Onay bekliyor
+}
+
+// Bot Görev Önceliği
+enum BotTaskPriority {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+}
+
+// Bot Görevi
+model BotTask {
+  id              String          @id @default(cuid())
+  tenantId        String
+  caseId          String
+  
+  // Recipe bilgisi
+  recipeId        String          // Recipe tanımlayıcı
+  
+  // Durum
+  status          BotTaskStatus   @default(PENDING)
+  priority        BotTaskPriority @default(MEDIUM)
+  
+  // Zamanlama
+  scheduledAt     DateTime        @default(now())
+  startedAt       DateTime?
+  completedAt     DateTime?
+  
+  // Retry
+  attemptCount    Int             @default(0)
+  maxAttempts     Int             @default(3)
+  lastError       String?
+  
+  // Girdi/Çıktı
+  inputData       Json?
+  outputData      Json?
+  
+  // Onay
+  requiresApproval Boolean        @default(false)
+  approvedBy      String?
+  approvedAt      DateTime?
+  
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  
+  tenant          Tenant          @relation(fields: [tenantId], references: [id])
+  case            Case            @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  approvedByUser  User?           @relation("BotTaskApprover", fields: [approvedBy], references: [id])
+  
+  // Kanıtlar
+  evidence        BotEvidence[]
+  
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([recipeId])
+  @@index([status])
+  @@index([priority])
+  @@index([scheduledAt])
+}
+
+// Bot Kanıt Kaydı
+model BotEvidence {
+  id              String   @id @default(cuid())
+  tenantId        String?
+  caseId          String
+  taskId          String?
+  
+  // Recipe ve aksiyon
+  recipeId        String
+  action          String   // TEBLIGAT_SENT, ASSET_QUERY_SGK, FINALIZATION_DETECTED, etc.
+  
+  // Tetikleyen
+  triggeredBy     String   @default("AUTO") // AUTO, MANUAL, RULE
+  
+  // Veri snapshot
+  dataSnapshot    Json
+  dataHash        String   // SHA-256 hash (bütünlük için)
+  
+  // Ekran görüntüsü (opsiyonel)
+  screenshotUrl   String?
+  
+  // Zaman damgası
+  timestamp       DateTime @default(now())
+  
+  case            Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  task            BotTask? @relation(fields: [taskId], references: [id], onDelete: SetNull)
+  
+  @@index([caseId])
+  @@index([taskId])
+  @@index([recipeId])
+  @@index([action])
+  @@index([timestamp])
+}
+
+
+// ==================== ICRABOT v14-v16 MODELS ====================
+
+// Bundle Durumu
+enum IcrabotBundleStatus {
+  DRAFT       // Taslak
+  APPROVED    // Onaylandı
+  ACTIVE      // Aktif
+  ARCHIVED    // Arşivlendi
+}
+
+// Bundle Türü
+enum IcrabotBundleType {
+  RECIPE      // Recipe tanımları
+  PARAMS      // Parametre değerleri
+  UIMAP       // UI haritası
+}
+
+// Recipe/Params/UiMap Bundle (v14)
+model IcrabotBundle {
+  id              String              @id @default(cuid())
+  tenantId        String
+  
+  // Bundle bilgileri
+  type            IcrabotBundleType
+  name            String
+  version         Int                 @default(1)
+  status          IcrabotBundleStatus @default(DRAFT)
+  
+  // İçerik
+  content         Json                // YAML/JSON içerik
+  contentHash     String              // SHA-256 hash
+  
+  // Notlar
+  notes           String?
+  
+  // Onay bilgileri
+  approvedAt      DateTime?
+  approvedBy      String?
+  
+  // Aktivasyon bilgileri
+  activatedAt     DateTime?
+  activatedBy     String?
+  
+  // Oluşturan
+  createdBy       String
+  
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  
+  tenant          Tenant              @relation(fields: [tenantId], references: [id])
+  
+  @@index([tenantId])
+  @@index([type])
+  @@index([status])
+  @@index([name, version])
+}
+
+// Job Çalıştırma Durumu
+enum IcrabotJobStatus {
+  QUEUED        // Kuyruğa alındı
+  RUNNING       // Çalışıyor
+  DONE          // Tamamlandı
+  FAILED        // Başarısız
+  QUARANTINED   // Karantinaya alındı
+}
+
+// Job Risk Seviyesi
+enum IcrabotRiskLevel {
+  READ_ONLY     // Sadece okuma
+  LOW           // Düşük risk
+  MEDIUM        // Orta risk
+  HIGH          // Yüksek risk
+  CRITICAL      // Kritik
+}
+
+// Job Çalıştırma Kaydı (v15-v16)
+model IcrabotJobRun {
+  id              String              @id @default(cuid())
+  tenantId        String
+  caseId          String
+  
+  // Job tanımlayıcı
+  jobId           String              @unique
+  recipeId        String
+  recipeVersion   Int                 @default(1)
+  
+  // Durum
+  status          IcrabotJobStatus    @default(QUEUED)
+  riskLevel       IcrabotRiskLevel    @default(READ_ONLY)
+  
+  // Deneme bilgileri
+  attempt         Int                 @default(0)
+  maxAttempts     Int                 @default(4)
+  
+  // Hata bilgileri
+  lastErrorCode   String?
+  lastErrorMessage String?
+  
+  // Zamanlar
+  startedAt       DateTime?
+  finishedAt      DateTime?
+  
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  
+  tenant          Tenant              @relation(fields: [tenantId], references: [id])
+  case            Case                @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  
+  // İlişkiler
+  steps           IcrabotJobStep[]
+  
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([jobId])
+  @@index([recipeId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Job Adımı (v16)
+model IcrabotJobStep {
+  id              String   @id @default(cuid())
+  jobId           String
+  
+  // Adım bilgileri
+  stepNo          Int
+  actionType      String   // open, click, read, fill, query, recipe_meta
+  uyapNavPath     String?  // UYAP navigasyon yolu
+  
+  // Durum
+  status          String   @default("ok") // ok, error, skipped
+  
+  // Kanıt referansı
+  snapshotHash    String?
+  proofRef        String?  // IcrabotEvidence.snapshotId
+  
+  createdAt       DateTime @default(now())
+  
+  job             IcrabotJobRun @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  
+  @@index([jobId])
+  @@index([stepNo])
+  @@index([actionType])
+}
+
+// Kanıt/Snapshot Kaydı (v14-v16)
+model IcrabotEvidence {
+  id              String   @id @default(cuid())
+  tenantId        String
+  caseId          String
+  
+  // Snapshot tanımlayıcı
+  snapshotId      String   @unique
+  snapshotHash    String   // SHA-256 hash
+  
+  // Veri
+  payload         Json
+  
+  // Ekran görüntüsü (opsiyonel)
+  screenshotUrl   String?
+  
+  createdAt       DateTime @default(now())
+  
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  case            Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([snapshotId])
+  @@index([createdAt])
+}
+
+// Kilit Türü
+enum IcrabotLockType {
+  LOCK_EXECUTION_ACTIONS  // İcra işlemleri kilidi
+  LOCK_COST_ACTIONS       // Masraf işlemleri kilidi
+  LOCK_TEBLIGAT           // Tebligat kilidi
+  LOCK_HACIZ              // Haciz kilidi
+  LOCK_SATIS              // Satış kilidi
+  LOCK_MANUAL             // Manuel kilit
+}
+
+// Dosya Kilidi (v15-v16)
+model IcrabotLock {
+  id              String          @id @default(cuid())
+  tenantId        String
+  caseId          String
+  
+  // Kilit bilgileri
+  lockType        IcrabotLockType
+  reason          String?
+  
+  // Durum
+  isOpen          Boolean         @default(true)
+  
+  // Açan/Kapatan
+  openedBy        String?
+  openedAt        DateTime        @default(now())
+  closedBy        String?
+  closedAt        DateTime?
+  
+  // Override
+  overrideRequestedBy String?
+  overrideRequestedAt DateTime?
+  overrideApprovedBy  String?
+  overrideApprovedAt  DateTime?
+  
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  
+  tenant          Tenant          @relation(fields: [tenantId], references: [id])
+  case            Case            @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([lockType])
+  @@index([isOpen])
+}
+
+// Audit Export Kaydı (v14)
+model IcrabotEvidenceExport {
+  id              String   @id @default(cuid())
+  tenantId        String
+  caseId          String
+  
+  // Export bilgileri
+  exportId        String   @unique
+  format          String   @default("zip") // zip, json, pdf
+  
+  // Dosya bilgileri
+  fileUrl         String?
+  fileSize        Int?
+  
+  // İçerik özeti
+  snapshotCount   Int      @default(0)
+  factCount       Int      @default(0)
+  jobCount        Int      @default(0)
+  
+  // Durum
+  status          String   @default("pending") // pending, completed, failed
+  errorMessage    String?
+  
+  // Talep eden
+  requestedBy     String
+  
+  createdAt       DateTime @default(now())
+  completedAt     DateTime?
+  
+  tenant          Tenant   @relation(fields: [tenantId], references: [id])
+  case            Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([exportId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+
+// ==================== ICRABOT v17-v23 MODELS ====================
+
+// System Configuration (v21)
+model SystemConfig {
+  id        String   @id @default(cuid())
+  tenantId  String
+  key       String
+  value     Json
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  
+  @@unique([tenantId, key])
+  @@index([tenantId])
+  @@index([key])
+}
+
+// Selector Health Log (v20)
+model SelectorHealthLog {
+  id           String   @id @default(cuid())
+  tenantId     String
+  selectorKey  String
+  success      Boolean
+  errorMessage String?
+  
+  createdAt    DateTime @default(now())
+  
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  
+  @@index([tenantId])
+  @@index([selectorKey])
+  @@index([success])
+  @@index([createdAt])
+}
+
+// Case Run Lock (v22)
+model CaseRunLock {
+  id         String    @id @default(cuid())
+  tenantId   String
+  caseId     String
+  jobId      String
+  lockType   String    @default("WRITE")
+  
+  isActive   Boolean   @default(true)
+  expiresAt  DateTime
+  releasedAt DateTime?
+  
+  createdAt  DateTime  @default(now())
+  
+  tenant     Tenant    @relation(fields: [tenantId], references: [id])
+  case       Case      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([jobId])
+  @@index([isActive])
+  @@index([expiresAt])
+}
+
+// Icrabot Fact (v22-v23)
+model IcrabotFact {
+  id          String   @id @default(cuid())
+  tenantId    String
+  caseId      String
+  
+  factType    String   // AssetFound, TebligatDelivered, FinalizationDetected, etc.
+  factKey     String   // Unique key for this fact
+  factHash    String   // SHA-256 hash of factType:factKey
+  value       Json     // Fact data
+  
+  snapshotRef String?  // Reference to IcrabotEvidence.snapshotId
+  processed   Boolean  @default(false)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  tenant      Tenant   @relation(fields: [tenantId], references: [id])
+  case        Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  
+  @@unique([tenantId, caseId, factHash])
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([factType])
+  @@index([processed])
+  @@index([createdAt])
 }

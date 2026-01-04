@@ -1,0 +1,22 @@
+rules:
+  - rule_id: R_ASSET_FOUND_VEHICLE_TRIGGERS_LIENS_AND_VAL
+    when: "fact:AssetFound(asset_type=='vehicle')"
+    then:
+      enqueue:
+        - "FetchPriorLiens_Vehicle"
+        - "EstimateVehicleValue_AI"
+      emit: ["ASSET_VEHICLE_DETECTED"]
+
+  - rule_id: R_LIEN_SNAPSHOT_TEDBIR_LOCKS_EXECUTION
+    when: "fact:LienSnapshot(lien_type=='tedbir')"
+    then:
+      open_lock: "LOCK_EXECUTION_ACTIONS"
+      emit: ["EXECUTION_LOCKED_BY_TEDBIR"]
+      set_flag:
+        needs_attorney_review: true
+
+  - rule_id: R_VALUATION_LOW_CONFIDENCE_LOCKS_COST
+    when: "fact:ValuationEstimate(confidence=='0.2')"
+    then:
+      open_lock: "LOCK_COST_ACTIONS"
+      emit: ["LOW_CONFIDENCE_VALUATION"]

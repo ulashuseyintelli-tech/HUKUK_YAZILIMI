@@ -1,0 +1,47 @@
+# decision_rules_v4.yaml
+# Fact -> Task zinciri. Locks/Gates ve Risk/Recovery çıktılarıyla birlikte çalışır.
+
+rules:
+
+  - rule_id: R1_FINALIZED_TRIGGERS_ASSETS
+    when: "fact:CaseFinalized"
+    then:
+      enqueue:
+        - "RunAssetQueries_Debtor"
+
+  - rule_id: R2_ASSET_FOUND_FETCH_LIENS_AND_VALUE
+    when: "fact:AssetFound(asset_type=='vehicle')"
+    then:
+      enqueue:
+        - "FetchPriorLiens_Vehicle"
+        - "AIValuation_Vehicle"
+
+  - rule_id: R3_AFTER_LIENS_AND_VALUATION_SCORE
+    when: "facts: [LienSnapshot, ValuationEstimate]"
+    then:
+      compute:
+        - "expected_recovery = RecoverySimulator"
+        - "risk = RiskScoring"
+      decisions:
+        - if: "risk.score >= params.risk.block_execution_threshold"
+          then: {open_lock: "LOCK_EXECUTION_ACTIONS", enqueue: ["RequireAttorneyDecision"]}
+        - if: "expected_recovery.flags.ok_for_cost_actions == false"
+          then: {open_lock: "LOCK_COST_ACTIONS", enqueue: ["RequireAttorneyDecision"]}
+        - if: "risk.score < params.risk.block_execution_threshold"
+          then: {enqueue: ["ProposeHacizPackage_Debtor"]}
+
+  - rule_id: R4_IF_FIRST_RANK_REQUEST_ADVANCE
+    when: "context: our_rank == 1 AND task:HACIZ_RECOMMENDED"
+    then:
+      enqueue:
+        - "RequestYakalamaAvansi_Communication"
+        - "WaitForAdvancePayment"
+
+  - rule_id: R5_IF_PRIOR_LIENS_PRESENT_DO_IK100_ANALYSIS
+    when: "context: active_prior_liens_count > 0"
+    then:
+      enqueue:
+        - "AnalyzePriorLiensForParticipationRisk"
+      decisions:
+        - if: "participation_risk == 'HIGH'"
+          then: {open_lock: "LOCK_COST_ACTIONS", enqueue: ["RequireAttorneyDecision"]}

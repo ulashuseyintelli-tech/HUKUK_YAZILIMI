@@ -1,0 +1,40 @@
+# job_monitor_schema_v12.yaml
+# Job/Task izleme için veri modeli
+
+tables:
+  job_run:
+    pk: job_id
+    fields:
+      job_id: string
+      case_id: string
+      debtor_id: string|null
+      recipe_id: string
+      recipe_version: int
+      status: [queued, running, waiting, blocked, done, failed, quarantined]
+      risk_level: [read_only, controlled_write, high_impact_write]
+      started_at: datetime
+      finished_at: datetime|null
+      duration_ms: int|null
+      attempt: int
+      max_attempts: int
+      lock_blocked_by: string|null
+      last_error_code: string|null
+      last_error_message: string|null
+
+  job_step:
+    pk: step_id
+    fields:
+      step_id: string
+      job_id: string
+      step_no: int
+      action_type: string
+      uyap_nav_path: string
+      status: [ok, warn, error]
+      snapshot_hash: string|null
+      proof_ref: string|null
+      created_at: datetime
+
+indexes:
+  - job_run(case_id, started_at)
+  - job_run(recipe_id, status)
+  - job_step(job_id, step_no)

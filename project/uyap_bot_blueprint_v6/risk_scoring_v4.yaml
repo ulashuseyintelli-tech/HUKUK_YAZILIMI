@@ -1,0 +1,47 @@
+# risk_scoring_v4.yaml
+# İİK100/ön haciz/ belirsizlik / değer güveni gibi unsurları tek skora çevirir.
+
+params:
+  risk:
+    block_cost_threshold: 70
+    block_execution_threshold: 85
+
+    weights:
+      rank: 0.35
+      prior_claims: 0.20
+      uncertainty: 0.20
+      value_confidence: 0.15
+      lien_activity: 0.10
+
+functions:
+  rank_risk:
+    formula: "min(100, (rank_order-1)*20)"
+
+  prior_claims_risk:
+    formula: |
+      if prior_claims_estimate is null: 60
+      else:
+        ratio = prior_claims_estimate / max(1, value_mid)
+        min(100, ratio*100)
+
+  uncertainty_risk:
+    formula: |
+      score = 0
+      if unknown_amounts_count > 0: score += 30
+      if unknown_activity_count > 0: score += 30
+      if missing_rank_info == true: score += 25
+      min(100, score)
+
+  value_confidence_risk:
+    formula: "min(100, (1-confidence)*100)"
+
+  lien_activity_risk:
+    formula: |
+      if active_prior_liens_count == 0: 10
+      elif active_prior_liens_count <= 2: 40
+      else: 70
+
+score:
+  formula: |
+    R = w.rank*rank_risk + w.prior_claims*prior_claims_risk + w.uncertainty*uncertainty_risk + w.value_confidence*value_confidence_risk + w.lien_activity*lien_activity_risk
+    round(R, 1)

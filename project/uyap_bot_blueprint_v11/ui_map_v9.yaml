@@ -1,0 +1,15 @@
+# ui_map_v9.yaml
+# v9: Satış sonuç ekranında fiyat ve sonuç alanları için ek anahtarlar
+
+ui_map:
+  screens:
+    sale_status_table:
+      nav_path: ["Haciz & Mal & Satış İşlemleri", "İhale İşlemleri"]
+      table:
+        rows: "TABLE_SALE_ROWS"
+        columns:
+          durum: "COL_STATUS"
+          sonuc: "COL_RESULT"
+          sale_price: "COL_PRICE"
+      actions:
+        sorgula: "BTN_SORGULA"

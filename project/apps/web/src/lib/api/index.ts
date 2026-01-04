@@ -22,6 +22,8 @@ export { validationApi } from './validation';
 export { automationApi } from './automation';
 export { addressDiscoveryApi } from './address-discovery';
 export { assetQueryApi } from './asset-query';
+export { icrabotApi } from './icrabot';
+export * as officeApi from './office';
 
 // Re-export types
 export * from './types';
@@ -46,6 +48,7 @@ import { validationApi } from './validation';
 import { automationApi } from './automation';
 import { addressDiscoveryApi } from './address-discovery';
 import { assetQueryApi } from './asset-query';
+import { icrabotApi } from './icrabot';
 
 /**
  * @deprecated Use individual API modules instead (e.g., casesApi, clientsApi)

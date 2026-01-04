@@ -1,0 +1,34 @@
+# ui_map_v2.yaml
+# v2: debtor-scoped filtreleme için tablo satır seçimi anahtarları eklendi
+
+ui_map:
+  screens:
+    hazirlanmis_elektronik_tebligatlar:
+      nav_path: ["Tebligat", "Hazırlanmış Elektronik Tebligatlar"]
+      fields:
+        tarih_araligi_bas: "FIELD_TARIH_BAS"
+        tarih_araligi_bit: "FIELD_TARIH_BIT"
+        muhatap_filter: "FIELD_MUHTAP_FILTER"
+      table:
+        rows: "TABLE_ETEBLIGAT_ROWS"
+        columns:
+          muhatap_id: "COL_MUHTAP_ID"
+          tarafa_teslim_tarihi: "COL_TESLIM_TARIHI"
+          okundu: "COL_OKUNDU"
+          mazbata: "COL_MAZBATA"
+          durum: "COL_DURUM"
+      actions:
+        sorgula: "BTN_SORGULA"
+        select_row_by_muhatap_id: "ACT_SELECT_ROW_BY_MUHTAP_ID"
+        mazbata_sorgula: "BTN_MAZBATA_SORGULA"
+
+    toplu_entegrasyon_sorgu:
+      nav_path: ["Sorgular", "Toplu Entegrasyon Sorgu"]
+      fields:
+        debtor_ids_input: "FIELD_DEBTOR_IDS"
+      actions:
+        sorgula: "BTN_SORGULA"
+      outputs:
+        sgk: "OUT_SGK"
+        tapu: "OUT_TAKBIS"
+        arac: "OUT_ARAC"

@@ -1,0 +1,53 @@
+# ui_map.yaml
+# UYAP ekranlarını botun bulması için "element anahtarları" sözlüğü.
+# Bu dosya RPA/UI worker katmanına gider.
+# NOT: Buraya gerçek selector/koordinat koymak yerine, "mantıksal anahtar" koyuyoruz.
+# Uygulamada (RPA aracı / webdriver / accessibility) bu anahtarlara gerçek locator bağlarsın.
+
+ui_map:
+  screens:
+    dosya_ayrinti_bilgileri:
+      nav_path: ["Dosya", "Dosya Ayrıntı Bilgileri"]
+      fields:
+        dosya_no: "FIELD_DOSYA_NO"
+        durum_summary: "FIELD_DURUM_SUMMARY"
+        taraflar_summary: "FIELD_TARAFLAR_SUMMARY"
+      actions:
+        sorgula: "BTN_SORGULA"
+
+    hazirlanmis_elektronik_tebligatlar:
+      nav_path: ["Tebligat", "Hazırlanmış Elektronik Tebligatlar"]
+      fields:
+        tarih_araligi_bas: "FIELD_TARIH_BAS"
+        tarih_araligi_bit: "FIELD_TARIH_BIT"
+      table:
+        rows: "TABLE_ETEBLIGAT_ROWS"
+        columns:
+          tarafa_teslim_tarihi: "COL_TESLIM_TARIHI"
+          okundu: "COL_OKUNDU"
+          mazbata: "COL_MAZBATA"
+          durum: "COL_DURUM"
+      actions:
+        sorgula: "BTN_SORGULA"
+        mazbata_sorgula: "BTN_MAZBATA_SORGULA"
+
+    tebligat_arama:
+      nav_path: ["Tebligat", "Tebligat Arama"]
+      actions:
+        sorgula: "BTN_SORGULA"
+      table:
+        rows: "TABLE_TEBLIGAT_ROWS"
+        columns:
+          gonderi_tipi: "COL_GONDERI_TIPI"
+          teblig_statusu: "COL_TEBLIG_STATUS"
+          iade_nedeni: "COL_IADE_NEDENI"
+          teblig_tarihi: "COL_TEBLIG_TARIHI"
+
+    toplu_entegrasyon_sorgu:
+      nav_path: ["Sorgular", "Toplu Entegrasyon Sorgu"]
+      actions:
+        sorgula: "BTN_SORGULA"
+      outputs:
+        sgk: "OUT_SGK"
+        tapu: "OUT_TAKBIS"
+        arac: "OUT_ARAC"

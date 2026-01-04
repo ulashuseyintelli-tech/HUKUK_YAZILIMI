@@ -1,0 +1,113 @@
+# task_dag_v3.yaml
+# Görev bağımlılık grafiği (DAG) - otomatik zincir
+#
+# Not:
+# - Orchestrator bu DAG'i kullanarak "next-best-action" kuyruğunu oluşturur.
+# - Her düğüm bir recipe_id ile eşleşir.
+# - Guard = çalışması için gereken koşul; Emits = ürettiği event/flag.
+
+dag:
+  nodes:
+    - id: EnsureUYAPSession
+      type: recipe
+      emits: [SESSION_OK]
+      guard: "true"
+
+    - id: SyncSafahatTimeline
+      type: recipe
+      emits: [SAFAHAT_SYNCED]
+      guard: "SESSION_OK && case.uyap_dosya_no!=null"
+
+    - id: FetchPreparedETebligatlar_Debtor
+      type: recipe
+      emits: [ETEBLIGAT_SNAPSHOT]
+      guard: "case.stage==TEBLIGAT && SESSION_OK && debtor.tebligat_channel in [E_TEBLIGAT, KARMA]"
+
+    - id: FetchPhysicalTebligatStatus_Debtor
+      type: recipe
+      emits: [PHYSICAL_TEBLIGAT_SNAPSHOT]
+      guard: "case.stage==TEBLIGAT && SESSION_OK && debtor.tebligat_channel in [FIZIKI, KARMA]"
+
+    - id: ComputeServiceEffectiveDate_ETebligat_Debtor
+      type: recipe
+      emits: [SERVICE_EFFECTIVE_CANDIDATE]
+      guard: "ETEBLIGAT_SNAPSHOT && debtor.e_delivered_date!=null"
+
+    - id: MazbataSorgula_ETebligat_Debtor
+      type: recipe
+      emits: [MAZBATA_REQUESTED]
+      guard: "SERVICE_EFFECTIVE_CANDIDATE && now()>=debtor.e_delivered_date+params.tebligat.e_tebligat_deemed_days && debtor.mazbata_exists==false"
+
+    - id: DetectFinalizationCandidate_ByIcraType
+      type: recipe
+      emits: [FINALIZATION_CANDIDATE]
+      guard: "case.stage in [TEBLIGAT, KESINLESME] && any(debtor.service_effective_date!=null)"
+
+    - id: MarkFinalized
+      type: recipe
+      emits: [FINALIZED]
+      guard: "FINALIZATION_CANDIDATE && user.confirmed"
+
+    - id: RunAssetQueries_Debtor
+      type: recipe
+      emits: [ASSET_PROFILE_READY]
+      guard: "case.stage==VARLIK && FINALIZED && SESSION_OK"
+
+    - id: ScoreAssetProfile_Debtor
+      type: recipe
+      emits: [ASSET_SCORE]
+      guard: "ASSET_PROFILE_READY"
+
+    - id: ProposeHacizPackage_Debtor
+      type: recipe
+      emits: [HACIZ_RECOMMENDED]
+      guard: "ASSET_SCORE>=params.varlik.score_threshold_high"
+
+    - id: PrepareHacizDocuments
+      type: recipe
+      emits: [HACIZ_REQUESTED]
+      guard: "HACIZ_RECOMMENDED && user.approved"
+
+    - id: TrackTahsilat
+      type: recipe
+      emits: [TAHSILAT_DELTA]
+      guard: "SESSION_OK"
+
+    - id: TrackReddiyat
+      type: recipe
+      emits: [REDDIYAT_DELTA]
+      guard: "SESSION_OK"
+
+  edges:
+    - from: EnsureUYAPSession
+      to: SyncSafahatTimeline
+
+    - from: SyncSafahatTimeline
+      to: FetchPreparedETebligatlar_Debtor
+
+    - from: SyncSafahatTimeline
+      to: FetchPhysicalTebligatStatus_Debtor
+
+    - from: FetchPreparedETebligatlar_Debtor
+      to: ComputeServiceEffectiveDate_ETebligat_Debtor
+
+    - from: ComputeServiceEffectiveDate_ETebligat_Debtor
+      to: MazbataSorgula_ETebligat_Debtor
+
+    - from: MazbataSorgula_ETebligat_Debtor
+      to: DetectFinalizationCandidate_ByIcraType
+
+    - from: DetectFinalizationCandidate_ByIcraType
+      to: MarkFinalized
+
+    - from: MarkFinalized
+      to: RunAssetQueries_Debtor
+
+    - from: RunAssetQueries_Debtor
+      to: ScoreAssetProfile_Debtor
+
+    - from: ScoreAssetProfile_Debtor
+      to: ProposeHacizPackage_Debtor
+
+    - from: ProposeHacizPackage_Debtor
+      to: PrepareHacizDocuments

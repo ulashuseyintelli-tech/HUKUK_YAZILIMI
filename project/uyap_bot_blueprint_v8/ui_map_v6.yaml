@@ -1,0 +1,15 @@
+# ui_map_v6.yaml
+# v6: Araç haciz ekleme formu anahtarları
+
+ui_map:
+  screens:
+    vehicle_haciz_add:
+      nav_path: ["(Araç ekranı)", "Araç Haciz Ekle"]
+      fields:
+        dosya_no: "FIELD_DOSYA_NO"
+        alacak_miktari: "FIELD_ALACAK_MIKTARI"
+        alacakli: "FIELD_ALACAKLI"
+      actions:
+        kaydet: "BTN_KAYDET"
+      outputs:
+        confirmation_ref: "OUT_CONFIRM_REF"

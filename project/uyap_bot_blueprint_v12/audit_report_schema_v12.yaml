@@ -1,0 +1,27 @@
+# audit_report_schema_v12.yaml
+# Audit kanıt paketi şeması (export)
+
+audit_package:
+  header:
+    case_id: string
+    uyap_dosya_no: string
+    generated_at: datetime
+    generated_by: string
+  sections:
+    - name: "events"
+      items: [event_id, ts, type, payload_hash]
+    - name: "facts"
+      items: [fact_type, key, value_hash, snapshot_id]
+    - name: "decisions"
+      items: [rule_id, input_hash, output_hash, ts]
+    - name: "jobs"
+      items: [job_id, recipe_id, status, started_at, finished_at]
+    - name: "evidence"
+      items:
+        - snapshot_id
+        - snapshot_hash
+        - screenshot_path|null
+        - document_refs[]
+  integrity:
+    package_hash: string
+    signature: string|null

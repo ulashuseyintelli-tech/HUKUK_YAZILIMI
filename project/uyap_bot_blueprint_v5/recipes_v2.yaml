@@ -1,0 +1,248 @@
+# recipes_v2.yaml
+# Lima/Meşe UYAP Bot - Recipe Pack v2
+# v2 ekleri:
+# - İcra türüne göre parametre override (ilamsız/ilamlı/kambiyo/kira vb.)
+# - Borçlu bazlı paralel işleme (debtor-scoped tasks)
+
+enums:
+  stage: [ACILIS, TEBLIGAT, KESINLESME, VARLIK, HACIZ, TAHSILAT, SATIS, KAPANIS, ASKIDA, HATA]
+  trigger_type: [event, schedule, manual]
+  risk_level: [read_only, controlled_write, high_impact_write]
+
+conventions:
+  # Aşağıdaki iki alan recipe çalışırken runtime tarafından doldurulur
+  runtime_context:
+    - debtor_scope_id   # tek borçlu çalışması için borçlu id
+    - icra_type         # case.icra_type (ILAMSIZ, ILAMLI, KAMBIYO, KIRA, MTS, DIGER)
+
+defaults:
+  audit:
+    retain_days: 3650
+    include_screenshot_on_error: true
+  retry:
+    max_attempts: 4
+    backoff_seconds: [30, 120, 600, 1800]
+  proof_minimum: [timestamp, uyap_nav_path, snapshot_hash]
+
+# -------------------------
+# DEBTOR PARALLELISM PATTERN
+# -------------------------
+# Orchestrator şunu yapar:
+# - Recipe'de "scope: debtor" varsa, case.debtors listesindeki her borçlu için ayrı job üretir.
+# - scope_id = debtor.id olarak runtime_context.debtor_scope_id set edilir.
+# - Aksiyonlar/sorgular borçlu bazlı filtre uygular.
+#
+# Örnek:
+#   scope: debtor
+#   preconditions: ["debtor.id == runtime.debtor_scope_id"]
+#   actions: debtor_ids: ["{{runtime.debtor_scope_id}}"]
+#
+
+recipes:
+
+  # ---------- A) SESSION / CONTEXT ----------
+  - recipe_id: EnsureUYAPSession
+    version: 2
+    stage_tags: [ACILIS, TEBLIGAT, KESINLESME, VARLIK, HACIZ, TAHSILAT, SATIS]
+    trigger: {type: schedule, when: ["EVERY_15_MIN"]}
+    preconditions: []
+    uyap_nav_path: ["(session)"]
+    read: {fields: ["session.is_logged_in", "session.user_role"]}
+    decisions:
+      - if: "session.is_logged_in == false"
+        then: {set_flag: "session.required=true", notify: "UYAP oturumu yok"}
+    actions: []
+    postconditions: ["session.health_checked=true"]
+    proof: {store: ["session.is_logged_in", "session.user_role", "timestamp"]}
+    audit: {level: read_only}
+
+  # ---------- B) CORE SYNC ----------
+  - recipe_id: SyncSafahatTimeline
+    version: 2
+    stage_tags: [ACILIS, TEBLIGAT, KESINLESME, VARLIK, HACIZ, TAHSILAT, SATIS]
+    trigger: {type: schedule, when: ["EVERY_6_HOURS"]}
+    preconditions: ["session.is_logged_in == true", "case.uyap_dosya_no != null"]
+    uyap_nav_path: ["(Portal/Modül)", "Safahat Sorgula"]
+    read:
+      table: "safahat"
+      fields: ["tarih", "islem", "aciklama"]
+    actions:
+      - type: query
+        input: {dosya_no: "{{case.uyap_dosya_no}}"}
+    postconditions: ["case.events += safahat_delta"]
+    proof: {store: ["timestamp", "snapshot_hash", "delta_count"]}
+    audit: {level: read_only}
+
+  - recipe_id: InferStageFromSignals
+    version: 2
+    stage_tags: [ACILIS, TEBLIGAT, KESINLESME, VARLIK, HACIZ, TAHSILAT, SATIS, KAPANIS]
+    trigger: {type: schedule, when: ["EVERY_6_HOURS"]}
+    preconditions: ["case.events != empty"]
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["case.events", "case.current_stage"]}
+    decisions:
+      - if: "events.contains('TEBLIGAT_SENT') and not events.contains('SERVICE_EFFECTIVE')"
+        then: {set: "case.stage=TEBLIGAT"}
+      - if: "events.contains('SERVICE_EFFECTIVE') and not events.contains('FINALIZED')"
+        then: {set: "case.stage=KESINLESME"}
+      - if: "events.contains('FINALIZED') and not events.contains('ASSET_PROFILE_READY')"
+        then: {set: "case.stage=VARLIK"}
+      - if: "events.contains('HACIZ_REQUESTED')"
+        then: {set: "case.stage=HACIZ"}
+      - if: "events.contains('TAHSILAT') or events.contains('REDDIYAT')"
+        then: {set: "case.stage=TAHSILAT"}
+      - if: "events.contains('SALE_STARTED')"
+        then: {set: "case.stage=SATIS"}
+      - if: "events.contains('CLOSED')"
+        then: {set: "case.stage=KAPANIS"}
+    actions: []
+    postconditions: ["case.stage in enums.stage"]
+    proof: {store: ["timestamp", "case.stage", "reason_code"]}
+    audit: {level: controlled_write}
+
+  # ---------- C) TEBLIGAT (DEBTOR-SCOPED) ----------
+  - recipe_id: FetchPreparedETebligatlar_Debtor
+    version: 2
+    scope: debtor
+    stage_tags: [TEBLIGAT]
+    trigger: {type: schedule, when: ["EVERY_6_HOURS"]}
+    preconditions:
+      - "session.is_logged_in == true"
+      - "case.uyap_dosya_no != null"
+      - "runtime.debtor_scope_id != null"
+    uyap_nav_path: ["Tebligat", "Hazırlanmış Elektronik Tebligatlar"]
+    read:
+      table: "e_tebligatlar"
+      fields: ["tarafa_teslim_tarihi", "okundu", "e_teblig_mazbatasi_var", "durum_renk_kodu", "muhatap_id"]
+      filters:
+        muhatap_id: "{{runtime.debtor_scope_id}}"
+    actions:
+      - type: query
+        input:
+          tarih_araligi: "last_30_days"
+          dosya_no: "{{case.uyap_dosya_no}}"
+          muhatap_id: "{{runtime.debtor_scope_id}}"
+    decisions:
+      - if: "any(e_tebligatlar.tarafa_teslim_tarihi != null)"
+        then: {enqueue: ["ComputeServiceEffectiveDate_ETebligat_Debtor"]}
+      - if: "any(e_tebligatlar.tarafa_teslim_tarihi != null AND e_tebligatlar.e_teblig_mazbatasi_var == false)"
+        then: {enqueue: ["MazbataSorgula_ETebligat_Debtor"]}
+    postconditions: ["case.events += ETEBLIGAT_SNAPSHOT(debtor_id=runtime.debtor_scope_id)"]
+    proof: {store: ["timestamp", "snapshot_hash", "runtime.debtor_scope_id"]}
+    audit: {level: read_only}
+
+  - recipe_id: ComputeServiceEffectiveDate_ETebligat_Debtor
+    version: 2
+    scope: debtor
+    stage_tags: [TEBLIGAT]
+    trigger: {type: event, when: ["ETEBLIGAT_DELIVERED"]}
+    preconditions:
+      - "runtime.debtor_scope_id != null"
+      - "case.e_tebligat[runtime.debtor_scope_id].delivered_date != null"
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["case.icra_type", "case.e_tebligat[runtime.debtor_scope_id].delivered_date"]}
+    actions:
+      - type: compute
+        formula: |
+          deemed_days = params.tebligat.e_tebligat_deemed_days
+          service_effective_date = delivered_date + deemed_days
+    postconditions: ["case.events += SERVICE_EFFECTIVE_CANDIDATE(debtor_id=runtime.debtor_scope_id)"]
+    proof: {store: ["timestamp", "service_effective_date", "runtime.debtor_scope_id"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: MazbataSorgula_ETebligat_Debtor
+    version: 2
+    scope: debtor
+    stage_tags: [TEBLIGAT]
+    trigger: {type: schedule, when: ["EVERY_12_HOURS"]}
+    preconditions:
+      - "session.is_logged_in == true"
+      - "runtime.debtor_scope_id != null"
+      - "case.e_tebligat[runtime.debtor_scope_id].delivered_date != null"
+      - "case.e_tebligat[runtime.debtor_scope_id].mazbata_exists == false"
+      - "now() >= case.e_tebligat[runtime.debtor_scope_id].delivered_date + params.tebligat.e_tebligat_deemed_days"
+    uyap_nav_path: ["Tebligat", "Hazırlanmış Elektronik Tebligatlar"]
+    read: {fields: ["uyap.mazbata_status"]}
+    actions:
+      - type: select_row
+        table: "e_tebligatlar"
+        where: {muhatap_id: "{{runtime.debtor_scope_id}}"}
+      - type: click
+        button: "Mazbata Sorgula"
+    postconditions: ["case.events += MAZBATA_REQUESTED(debtor_id=runtime.debtor_scope_id)"]
+    proof: {store: ["timestamp", "uyap.mazbata_status", "runtime.debtor_scope_id"]}
+    audit: {level: controlled_write}
+
+  # ---------- D) KESINLESME (ICRA-TYPE OVERRIDES) ----------
+  - recipe_id: DetectFinalizationCandidate_ByIcraType
+    version: 2
+    stage_tags: [KESINLESME, TEBLIGAT]
+    trigger: {type: schedule, when: ["EVERY_24_HOURS"]}
+    preconditions: ["case.events.contains('SERVICE_EFFECTIVE_CANDIDATE')"]
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["case.icra_type", "case.service_effective_date"]}
+    actions:
+      - type: compute
+        formula: |
+          deadline = params.kesinlesme.default_objection_deadline_days
+          if params.kesinlesme.overrides[case.icra_type] exists:
+              deadline = params.kesinlesme.overrides[case.icra_type].objection_deadline_days
+          finalization_candidate_date = service_effective_date + deadline
+    decisions:
+      - if: "now() >= finalization_candidate_date"
+        then: {set_flag: "case.finalization_candidate=true", enqueue: ["SyncSafahatTimeline"]}
+    postconditions: ["case.finalization_candidate_date != null"]
+    proof: {store: ["timestamp", "finalization_candidate_date", "case.icra_type"]}
+    audit: {level: controlled_write}
+
+  # ---------- E) VARLIK (DEBTOR-SCOPED BATCH) ----------
+  - recipe_id: RunAssetQueries_Debtor
+    version: 2
+    scope: debtor
+    stage_tags: [VARLIK]
+    trigger: {type: schedule, when: ["EVERY_7_DAYS"]}
+    preconditions:
+      - "session.is_logged_in == true"
+      - "case.events.contains('FINALIZED')"
+      - "runtime.debtor_scope_id != null"
+    uyap_nav_path: ["Sorgular", "Toplu Entegrasyon Sorgu"]
+    read: {fields: ["sgk_result", "takbis_result", "vehicle_result", "other_assets"]}
+    actions:
+      - type: query
+        input: {debtor_ids: ["{{runtime.debtor_scope_id}}"]}
+    postconditions: ["case.events += ASSET_PROFILE_READY(debtor_id=runtime.debtor_scope_id)"]
+    proof: {store: ["timestamp", "asset_profile_hash", "runtime.debtor_scope_id"]}
+    audit: {level: read_only}
+
+  - recipe_id: ScoreAssetProfile_Debtor
+    version: 2
+    scope: debtor
+    stage_tags: [VARLIK]
+    trigger: {type: event, when: ["ASSET_PROFILE_READY"]}
+    preconditions: ["runtime.debtor_scope_id != null", "case.asset_profile[runtime.debtor_scope_id] != null"]
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["case.asset_profile[runtime.debtor_scope_id]", "params.varlik.score_threshold_high", "params.varlik.score_threshold_low"]}
+    actions:
+      - type: compute
+        formula: "asset_score = f(asset_profile)"
+    decisions:
+      - if: "asset_score >= params.varlik.score_threshold_high"
+        then: {enqueue: ["ProposeHacizPackage_Debtor"]}
+      - if: "asset_score < params.varlik.score_threshold_low"
+        then: {set_flag: "case.debtor[runtime.debtor_scope_id].low_recovery=true"}
+    postconditions: ["case.debtor[runtime.debtor_scope_id].asset_score != null"]
+    proof: {store: ["timestamp", "asset_score", "runtime.debtor_scope_id"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: ProposeHacizPackage_Debtor
+    version: 2
+    scope: debtor
+    stage_tags: [VARLIK]
+    trigger: {type: event, when: ["ASSET_SCORE_HIGH"]}
+    preconditions: ["runtime.debtor_scope_id != null"]
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["case.asset_profile[runtime.debtor_scope_id]"]}
+    actions: []
+    postconditions: ["case.next_actions += HACIZ_RECOMMENDED(debtor_id=runtime.debtor_scope_id)", "case.stage=HACIZ"]
+    proof: {store: ["timestamp", "runtime.debtor_scope_id"]}
+    audit: {level: controlled_write}

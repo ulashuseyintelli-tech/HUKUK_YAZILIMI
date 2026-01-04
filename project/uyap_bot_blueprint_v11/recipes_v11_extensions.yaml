@@ -1,0 +1,133 @@
+# recipes_v11_extensions.yaml
+# v11: taksit izleme + haczedilmezlik riski + case fork
+
+recipes:
+
+  - recipe_id: RegisterSettlementAcceptance
+    version: 11
+    scope: debtor
+    stage_tags: [TAHSILAT, VARLIK, HACIZ]
+    trigger: {type: event, when: ["SETTLEMENT_ACCEPTED"]}
+    preconditions: ["params.installment.enabled == true"]
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["settlement.plan", "debtor.id"]}
+    actions:
+      - type: compute
+        formula: "emit('CREATE_INSTALLMENT_SCHEDULE')"  # installment_tracking_v11.yaml
+    postconditions: ["debtor.installment_plan_status = ACTIVE"]
+    proof: {store: ["timestamp", "debtor.id", "plan_id"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: MonitorInstallments
+    version: 11
+    scope: debtor
+    stage_tags: [TAHSILAT]
+    trigger: {type: schedule, when: ["EVERY_24_HOURS"]}
+    preconditions: ["debtor.installment_plan_status == ACTIVE"]
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["installment.schedule", "payment.ledger"]}
+    actions:
+      - type: compute
+        formula: "emit('CHECK_INSTALLMENT_DUE_AND_STATUS')"
+    decisions:
+      - if: "installment.due_in_days == params.installment.reminder_days_before_due"
+        then: {enqueue: ["SendInstallmentReminder"]}
+      - if: "installment.missed == true"
+        then: {emit: "INSTALLMENT_MISSED", enqueue: ["SendInstallmentWarning"]}
+      - if: "installment.plan_breached == true"
+        then: {emit: "PLAN_BREACHED", enqueue: ["ReturnToEnforcement"]}
+    postconditions: ["case.events += INSTALLMENT_STATUS_SNAPSHOT"]
+    proof: {store: ["timestamp", "debtor.id"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: SendInstallmentReminder
+    version: 11
+    scope: debtor
+    stage_tags: [TAHSILAT]
+    trigger: {type: event, when: ["INSTALLMENT_DUE_SOON"]}
+    preconditions: ["client.contact.sms != null"]
+    uyap_nav_path: ["(communication)"]
+    read: {fields: ["installment.next_due", "installment.amount"]}
+    actions:
+      - type: send_comm
+        template_id: "SETTLEMENT_REMINDER_TR"
+        channel: "sms"
+        variables:
+          case_no: "{{case.uyap_dosya_no}}"
+          installment_amount: "{{installment.amount}}"
+          due_date: "{{installment.next_due}}"
+    postconditions: ["case.events += INSTALLMENT_REMINDER_SENT"]
+    proof: {store: ["timestamp", "comm_id"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: SendInstallmentWarning
+    version: 11
+    scope: debtor
+    stage_tags: [TAHSILAT]
+    trigger: {type: event, when: ["INSTALLMENT_MISSED"]}
+    preconditions: ["client.contact.email != null"]
+    uyap_nav_path: ["(communication)"]
+    read: {fields: ["installment.next_due", "installment.amount", "installment.days_past_due"]}
+    actions:
+      - type: send_comm
+        template_id: "HIGH_RISK_WARNING_TR"
+        channel: "email"
+        variables:
+          case_no: "{{case.uyap_dosya_no}}"
+          asset_vehicle_desc: "Taksit planı"
+          risk_score: 70
+    postconditions: ["case.events += INSTALLMENT_WARNING_SENT"]
+    proof: {store: ["timestamp", "comm_id"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: ReturnToEnforcement
+    version: 11
+    scope: debtor
+    stage_tags: [TAHSILAT, HACIZ]
+    trigger: {type: event, when: ["PLAN_BREACHED"]}
+    preconditions: ["true"]
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["debtor.id", "settlement.plan"]}
+    actions:
+      - type: open_lock
+        lock_id: "LOCK_COST_ACTIONS"
+      - type: create_task
+        task_type: "RETURN_TO_ENFORCEMENT"
+        payload:
+          debtor_id: "{{runtime.debtor_scope_id}}"
+          reason: "Taksit planı ihlali"
+    postconditions: ["debtor.installment_plan_status = BREACHED"]
+    proof: {store: ["timestamp", "task_id"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: ComputeExemptionRisk
+    version: 11
+    scope: debtor
+    stage_tags: [VARLIK, HACIZ]
+    trigger: {type: event, when: ["AssetFound", "HACIZ_RECOMMENDED"]}
+    preconditions: ["params.exemption.enabled == true"]
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["context.asset_type", "debtor.profile"]}
+    actions:
+      - type: compute
+        formula: "emit('RUN_EXEMPTION_RISK')"  # haczedilmezlik_risk_v11.yaml
+    decisions:
+      - if: "exemption_risk_score >= params.exemption.risk_threshold_high"
+        then: {enqueue: ["RequireAttorneyDecision"]}
+    postconditions: ["context.exemption_risk_score != null"]
+    proof: {store: ["timestamp", "exemption_risk_score"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: ForkCaseFromMTS
+    version: 11
+    stage_tags: [ACILIS]
+    trigger: {type: event, when: ["MTS_TO_ICRA_CONVERSION"]}
+    preconditions: ["params.fork.enabled == true", "case.icra_type == 'MTS'"]
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["case.id", "case.fields"]}
+    actions:
+      - type: compute
+        formula: "emit('CREATE_CHILD_CASE')"  # case_fork_mts_v11.yaml
+    postconditions: ["case.child_created=true"]
+    proof: {store: ["timestamp", "child_case_id"]}
+    audit: {level: controlled_write}

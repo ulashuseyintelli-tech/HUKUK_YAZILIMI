@@ -1,0 +1,25 @@
+# communications_templates_tr_v10.yaml
+# v10: uzlaşma/taksit teklif şablonları
+
+templates:
+
+  - template_id: SETTLEMENT_OFFER_TR
+    channel: email
+    subject: "Ödeme Planı Teklifi – {{case_no}}"
+    body: |
+      Sayın {{debtor_name}},
+
+      {{case_no}} numaralı dosya kapsamında kalan borç tutarı: {{remaining_claim}} TL.
+
+      Uyuşmazlığın hızlı çözümü için aşağıdaki ödeme planını teklif ediyoruz:
+      - Taksit sayısı: {{installments}}
+      - Aylık taksit: {{installment_amount}} TL
+      - Ödeme günü: Her ayın {{settlement_due_day}}'i
+
+      Kabul etmeniz halinde ödeme planını yazılı olarak teyit etmenizi rica ederiz.
+
+      Saygılarımızla.
+
+  - template_id: SETTLEMENT_REMINDER_TR
+    channel: sms
+    body: "{{case_no}} dosyası ödeme planı hatırlatma: {{installment_amount}} TL taksit için son gün {{due_date}}."

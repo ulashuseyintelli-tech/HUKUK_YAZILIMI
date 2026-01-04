@@ -1,0 +1,46 @@
+# rules_params_v2.yaml
+# v2: icra türü override + debtor paralel işleme parametreleri
+
+params:
+  tebligat:
+    # Kitapta e-tebligat için "posta kutusuna bırakıldığı günü takip eden 5. gün" tebliğ sayılır.
+    e_tebligat_deemed_days: 5
+
+    poll:
+      after_sent_first_24h_minutes: 120
+      after_24h_hours: 12
+
+  kesinlesme:
+    # Default (genel) itiraz süresi - tür bazlı override edilebilir
+    default_objection_deadline_days: 7
+
+    overrides:
+      # Bunlar örnek "konfig"tir. Kendi uygulamana göre netleştirip güncellersin.
+      # Örn: KAMBIYO, KIRA, ILAMSIZ, ILAMLI, MTS, DIGER
+      ILAMSIZ:
+        objection_deadline_days: 7
+      KAMBIYO:
+        objection_deadline_days: 5
+      KIRA:
+        objection_deadline_days: 7
+      ILAMLI:
+        objection_deadline_days: 0
+      MTS:
+        objection_deadline_days: 7
+      DIGER:
+        objection_deadline_days: 7
+
+  varlik:
+    score_threshold_high: 70
+    score_threshold_low: 20
+    requery_days: 7
+
+  parallelism:
+    debtor_concurrency: 3   # aynı anda kaç borçlu işi çalışsın
+    per_case_concurrency: 6 # aynı dosyada aynı anda kaç job
+
+  scheduler:
+    sync_header_hours: 12
+    sync_safahat_hours: 6
+    sync_evrak_hours: 24
+    tebligat_status_hours: 6

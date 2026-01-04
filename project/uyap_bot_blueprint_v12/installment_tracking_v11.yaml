@@ -1,0 +1,39 @@
+# installment_tracking_v11.yaml
+# Uzlaşma kabulü + taksit izleme + gecikme aksiyonu
+
+params:
+  installment:
+    enabled: true
+    grace_days: 3
+    reminder_days_before_due: 2
+    escalation_days_after_due: 7
+
+states:
+  plan_status: [PROPOSED, SENT, ACCEPTED, ACTIVE, BREACHED, COMPLETED, CANCELLED]
+
+events:
+  - SETTLEMENT_ACCEPTED
+  - INSTALLMENT_PAID
+  - INSTALLMENT_MISSED
+  - PLAN_BREACHED
+  - PLAN_COMPLETED
+
+compute:
+  next_due:
+    formula: "compute from plan schedule"
+  breach_rule:
+    formula: |
+      if missed_installments >= 1 and days_past_due > params.installment.escalation_days_after_due:
+         status = BREACHED
+
+actions:
+  on_accept:
+    - "create schedule"
+    - "notify client & debtor"
+  on_due_approaching:
+    - "send reminder"
+  on_missed:
+    - "send warning"
+    - "open_lock:LOCK_COST_ACTIONS"
+  on_breached:
+    - "enqueue:ReturnToEnforcement"

@@ -1,0 +1,31 @@
+# anomaly_detection_v10.yaml
+# Anomali tespiti (safahat/tahsilat/tebligat) - beklenmeyen durumlar için alarm & görev üretimi.
+
+params:
+  anomaly:
+    enabled: true
+    severity_thresholds:
+      low: 40
+      medium: 70
+      high: 85
+
+rules:
+  - anomaly_id: A1_NET_NEGATIVE
+    when: "net_in_case < 0"
+    severity: 90
+    action: ["enqueue:InvestigateAccounting", "notify:CRITICAL"]
+
+  - anomaly_id: A2_TAHSILAT_WITHOUT_LIEN
+    when: "total_collected > 0 and no active liens and stage in ['VARLIK','TEBLIGAT']"
+    severity: 75
+    action: ["enqueue:SyncSafahatTimeline", "notify:MEDIUM"]
+
+  - anomaly_id: A3_NEW_HIGH_PRIORITY_LIEN
+    when: "new lien appears with rank_order == 1 and is_our_lien == false"
+    severity: 80
+    action: ["open_lock:LOCK_EXECUTION_ACTIONS", "enqueue:RequireAttorneyDecision", "notify:HIGH"]
+
+  - anomaly_id: A4_SERVICE_EFFECTIVE_BUT_NO_MAZBATA_LONG
+    when: "service_effective_date exists and mazbata still missing after 3 days"
+    severity: 60
+    action: ["enqueue:MazbataSorgula_ETebligat_Debtor", "notify:LOW"]

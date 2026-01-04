@@ -1,0 +1,10 @@
+# communications_templates_tr_v11.yaml
+# v11: plan uyarıları (opsiyonel genişletme)
+
+templates:
+  - template_id: INSTALLMENT_WARNING_TR
+    channel: email
+    subject: "Taksit Gecikmesi – {{case_no}}"
+    body: |
+      {{case_no}} dosyasında ödeme planı kapsamında beklenen taksit ödemesi vadesi geçmiş görünmektedir.
+      Lütfen en kısa sürede ödeme durumunu bildiriniz.

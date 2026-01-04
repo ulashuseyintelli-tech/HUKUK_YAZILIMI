@@ -1,0 +1,20 @@
+# ui_map_v7.yaml
+# v7: Satış önerisi / satış başlatma akışı için mantıksal anahtarlar (opsiyonel)
+
+ui_map:
+  screens:
+    sale_recommendation_panel:
+      nav_path: ["(internal)", "Sales"]
+      outputs:
+        task_id: "OUT_TASK_ID"
+
+    sale_start_form:
+      nav_path: ["Haciz & Mal & Satış İşlemleri", "İhale İşlemleri", "Satış Talebi"]
+      fields:
+        dosya_no: "FIELD_DOSYA_NO"
+        asset_ref: "FIELD_ASSET_REF"
+        reason: "FIELD_REASON"
+      actions:
+        kaydet: "BTN_KAYDET"
+      outputs:
+        sale_request_id: "OUT_SALE_REQ_ID"

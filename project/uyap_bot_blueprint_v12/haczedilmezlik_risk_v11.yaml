@@ -1,0 +1,35 @@
+# haczedilmezlik_risk_v11.yaml
+# Haczedilmezlik/istisna risk motoru (yüksek seviye)
+# Amaç: Bot haciz önerirken "hukuki risk" uyarısı da üretsin.
+
+params:
+  exemption:
+    enabled: true
+    risk_threshold_high: 80
+
+signals:
+  asset_type: [vehicle, salary, bank_account, household, tools_of_trade, real_estate]
+  debtor_profile:
+    - is_small_trader: bool|null
+    - has_minimum_livelihood_claim: bool|null
+    - salary_only_income: bool|null
+
+rules:
+  - id: EX1_TOOLS_OF_TRADE
+    when: "asset_type == tools_of_trade and debtor_profile.is_small_trader == true"
+    risk: 85
+    note: "Mesleki araç-gereç haczedilmezlik iddiası riski yüksek."
+
+  - id: EX2_SALARY_LIMITS
+    when: "asset_type == salary and debtor_profile.salary_only_income == true"
+    risk: 75
+    note: "Ücret haczinde oran/sınır itirazı riski."
+
+  - id: EX3_HOUSEHOLD_MINIMUM
+    when: "asset_type == household and debtor_profile.has_minimum_livelihood_claim == true"
+    risk: 80
+    note: "Zaruri ev eşyası haczedilmezlik iddiası."
+
+outputs:
+  exemption_risk_score: number
+  exemption_risk_note: string

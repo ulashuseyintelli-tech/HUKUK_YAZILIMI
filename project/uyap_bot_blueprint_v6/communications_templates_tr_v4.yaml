@@ -1,0 +1,42 @@
+# communications_templates_tr_v4.yaml
+# Otomatik iletişim şablonları (TR).
+
+templates:
+
+  - template_id: YAKALAMA_AVANSI_REQUEST_TR
+    channel: email
+    subject: "İcra Dosyası Avans Talebi – {{case.uyap_dosya_no}}"
+    body: |
+      Sayın {{client.name}},
+
+      {{case.uyap_dosya_no}} numaralı icra dosyamızda {{asset.vehicle_desc}} aracı ile ilgili işlemlerin sürdürülmesi için yakalama/işlem avansı gerekmektedir.
+
+      Avans Tutarı: {{cost.amount}} TL
+      Son Ödeme Tarihi: {{cost.due_date}}
+      Ödeme Açıklaması: {{case.uyap_dosya_no}} – Yakalama Avansı
+
+      Ödeme bilgileri:
+      {{payment.instructions}}
+
+      Ödeme yapıldıktan sonra dekontu bu e-posta üzerinden iletmenizi rica ederiz.
+
+      Saygılarımızla,
+      {{lawfirm.signature}}
+
+  - template_id: YAKALAMA_AVANSI_REMINDER_TR
+    channel: sms
+    body: "Hatırlatma: {{case.uyap_dosya_no}} dosyası için {{cost.amount}} TL yakalama avansı son tarih {{cost.due_date}}. Bilgi: {{lawfirm.phone}}"
+
+  - template_id: HIGH_RISK_WARNING_TR
+    channel: email
+    subject: "Risk Uyarısı – {{case.uyap_dosya_no}} / {{asset.vehicle_desc}}"
+    body: |
+      Dosyada tespit edilen ön haciz/rehin bilgileri ve belirsizlikler nedeniyle işlem riski YÜKSEK görünmektedir.
+
+      Tahmini değer (AI): {{valuation.value_mid}} TL (Güven: {{valuation.confidence}})
+      Ön alacak tahmini: {{risk.prior_claims_estimate_or_unknown}}
+      Bizim sıra: {{risk.our_rank}}
+      Risk Skoru: {{risk.score}}/100
+
+      Öneri: Masraflı işlemler için avukat onayı alınmadan ilerlenmemesi.
+      {{lawfirm.signature}}

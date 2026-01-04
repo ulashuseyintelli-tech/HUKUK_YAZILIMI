@@ -1,0 +1,75 @@
+# facts_schema_v4.yaml
+# Botun UYAP'tan çektiği "snapshot"ları programın anlayacağı "fact"lere çevirme şeması.
+# Fact = normalize edilmiş gerçek. Decision engine bununla çalışır.
+
+facts:
+
+  - fact_type: CaseFinalized
+    key_fields: [case_id]
+    fields:
+      case_id: {type: string, required: true}
+      finalized_at: {type: datetime, required: false}
+      source: {type: string, enum: [UYAP, USER], required: true}
+      snapshot_id: {type: string, required: false}
+
+  - fact_type: ServiceEffective
+    key_fields: [case_id, debtor_id, channel, effective_date]
+    fields:
+      case_id: {type: string, required: true}
+      debtor_id: {type: string, required: true}
+      channel: {type: string, enum: [E_TEBLIGAT, FIZIKI], required: true}
+      delivered_at: {type: datetime, required: false}
+      effective_date: {type: datetime, required: true}
+      deemed_days: {type: int, required: false}
+      snapshot_id: {type: string, required: false}
+
+  - fact_type: AssetFound
+    key_fields: [case_id, debtor_id, asset_type, asset_fingerprint]
+    fields:
+      case_id: {type: string, required: true}
+      debtor_id: {type: string, required: true}
+      asset_type: {type: string, enum: [vehicle, real_estate, bank, sgk, other], required: true}
+      asset_fingerprint: {type: string, required: true} # örn: vehicle:plate:34ABC123 veya vin
+      attributes: {type: object, required: true}
+      found_at: {type: datetime, required: true}
+      snapshot_id: {type: string, required: true}
+
+  - fact_type: LienSnapshot
+    key_fields: [case_id, debtor_id, asset_fingerprint, lien_fingerprint]
+    fields:
+      case_id: {type: string, required: true}
+      debtor_id: {type: string, required: true}
+      asset_fingerprint: {type: string, required: true}
+      lien_fingerprint: {type: string, required: true} # creditor+date+type+ref
+      lien_type: {type: string, enum: [haciz, rehin, tedbir], required: true}
+      creditor: {type: string, required: true}
+      lien_date: {type: date, required: true}
+      rank_order: {type: int, required: false}
+      amount_claimed: {type: number, required: false}
+      active_status: {type: string, enum: [active, inactive, unknown], required: true}
+      snapshot_id: {type: string, required: true}
+
+  - fact_type: ValuationEstimate
+    key_fields: [case_id, debtor_id, asset_fingerprint, model_version]
+    fields:
+      case_id: {type: string, required: true}
+      debtor_id: {type: string, required: true}
+      asset_fingerprint: {type: string, required: true}
+      model_version: {type: string, required: true}
+      value_low: {type: number, required: true}
+      value_mid: {type: number, required: true}
+      value_high: {type: number, required: true}
+      confidence: {type: number, required: true} # 0..1
+      factors: {type: object, required: false} # year, segment, liquidity
+      estimated_at: {type: datetime, required: true}
+
+  - fact_type: CostRequirement
+    key_fields: [case_id, debtor_id, cost_type]
+    fields:
+      case_id: {type: string, required: true}
+      debtor_id: {type: string, required: false}
+      cost_type: {type: string, enum: [yakalama_avansi, satis_avansi, yeniden_tebligat, diger], required: true}
+      amount_suggested: {type: number, required: false}
+      due_date: {type: date, required: false}
+      blocking: {type: bool, required: true} # true => task block
+      reason: {type: string, required: true}

@@ -150,4 +150,23 @@ export class OfficeController {
   ) {
     return this.officeService.updateGreetingSettings(tenantId, data);
   }
+
+  // İİK 78 ayarlarını getir (pasifleşme süresi)
+  @Get("iik78-settings")
+  getIik78Settings(@CurrentUser("tenantId") tenantId: string) {
+    return this.officeService.getIik78Settings(tenantId);
+  }
+
+  // İİK 78 ayarlarını güncelle
+  @Put("iik78-settings")
+  updateIik78Settings(
+    @CurrentUser("tenantId") tenantId: string,
+    @Body()
+    data: {
+      inactivityThresholdDays?: number;
+      inactivityWarningDays?: number;
+    }
+  ) {
+    return this.officeService.updateIik78Settings(tenantId, data);
+  }
 }

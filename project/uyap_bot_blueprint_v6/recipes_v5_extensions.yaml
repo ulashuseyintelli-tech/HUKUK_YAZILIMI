@@ -1,0 +1,174 @@
+# recipes_v5_extensions.yaml
+# v5: Vehicle lien fetch + AI valuation recipes (event-driven)
+# Bu dosya v2/v3 recipes ile birlikte yüklenir. Yeni recipe_id'ler decision_rules_v4'te referanslıdır.
+
+recipes:
+
+  - recipe_id: FetchVehicleAssets_Debtor
+    version: 5
+    scope: debtor
+    stage_tags: [VARLIK]
+    trigger: {type: event, when: ["ASSET_QUERY_TRIGGERED", "FINALIZED"]}
+    preconditions:
+      - "session.is_logged_in == true"
+      - "case.uyap_dosya_no != null"
+      - "runtime.debtor_scope_id != null"
+    uyap_nav_path: ["Sorgular", "Toplu Entegrasyon Sorgu"]
+    read:
+      table: "vehicle_results"
+      fields: ["plate", "make", "model", "year", "vin", "registry_notes"]
+    actions:
+      - type: query
+        input: {debtor_ids: ["{{runtime.debtor_scope_id}}"], asset_type: "vehicle"}
+    postconditions:
+      - "emit:AssetFound(vehicle) for each row"
+      - "case.events += VEHICLE_ASSETS_SNAPSHOT(debtor_id=runtime.debtor_scope_id)"
+    proof: {store: ["timestamp", "snapshot_hash", "runtime.debtor_scope_id"]}
+    audit: {level: read_only}
+
+  - recipe_id: FetchPriorLiens_Vehicle
+    version: 5
+    scope: debtor
+    stage_tags: [VARLIK, HACIZ]
+    trigger: {type: event, when: ["AssetFound"]}
+    preconditions:
+      - "session.is_logged_in == true"
+      - "runtime.debtor_scope_id != null"
+      - "context.asset_type == 'vehicle'"
+      - "context.asset_fingerprint != null"
+    uyap_nav_path: ["(Araç ekranı)", "Araç Kısıt/Haciz/Takyidat Bilgileri"]
+    read:
+      table: "vehicle_lien_list"
+      fields:
+        - "lien_type"
+        - "creditor"
+        - "lien_date"
+        - "rank_order"
+        - "amount_claimed"
+        - "active_status"
+        - "reference_no"
+    actions:
+      - type: open_asset
+        asset_fingerprint: "{{context.asset_fingerprint}}"
+      - type: query
+        input: {section: "liens_and_restrictions"}
+    postconditions:
+      - "emit:LienSnapshot for each lien row"
+      - "context.prior_liens_count = count(rows)"
+    proof: {store: ["timestamp", "snapshot_hash", "context.asset_fingerprint"]}
+    audit: {level: read_only}
+
+  - recipe_id: EstimateVehicleValue_AI
+    version: 5
+    scope: debtor
+    stage_tags: [VARLIK, HACIZ]
+    trigger: {type: event, when: ["AssetFound"]}
+    preconditions:
+      - "runtime.debtor_scope_id != null"
+      - "context.asset_type == 'vehicle'"
+      - "context.asset_attributes.plate != null"
+    uyap_nav_path: ["(AI)"]
+    read:
+      fields:
+        - "context.asset_attributes.plate"
+        - "context.asset_attributes.make"
+        - "context.asset_attributes.model"
+        - "context.asset_attributes.year"
+        - "context.asset_attributes.vin"
+        - "context.asset_attributes.km"
+        - "context.asset_attributes.fuel"
+        - "context.asset_attributes.transmission"
+        - "context.asset_attributes.trim"
+        - "context.asset_attributes.condition_note"
+    actions:
+      - type: ai_call
+        model: "OpenAI"
+        prompt_ref: "ai_valuation_prompt_v5.md"
+        input:
+          plate: "{{context.asset_attributes.plate}}"
+          make: "{{context.asset_attributes.make}}"
+          model: "{{context.asset_attributes.model}}"
+          year: "{{context.asset_attributes.year}}"
+          vin: "{{context.asset_attributes.vin}}"
+          km: "{{context.asset_attributes.km}}"
+          fuel: "{{context.asset_attributes.fuel}}"
+          transmission: "{{context.asset_attributes.transmission}}"
+          trim: "{{context.asset_attributes.trim}}"
+          notes: "{{context.asset_attributes.condition_note}}"
+          market: "TR"
+    postconditions:
+      - "emit:ValuationEstimate(model_version='v5')"
+    proof: {store: ["timestamp", "context.asset_fingerprint", "valuation.value_mid", "valuation.confidence"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: RequireAttorneyDecision
+    version: 5
+    stage_tags: [VARLIK, HACIZ, TEBLIGAT, KESINLESME]
+    trigger: {type: event, when: ["LOCK_OPENED", "HIGH_RISK", "LOW_NET_RECOVERY"]}
+    preconditions: []
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["risk.score", "expected_recovery.expected_net_mid"]}
+    actions:
+      - type: create_task
+        task_type: "ATTORNEY_REVIEW"
+        payload:
+          risk_score: "{{risk.score}}"
+          expected_net_mid: "{{expected_recovery.expected_net_mid}}"
+          reason: "{{context.reason}}"
+    postconditions: ["case.next_actions += ATTORNEY_REVIEW"]
+    proof: {store: ["timestamp", "task_id"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: RequestYakalamaAvansi_Communication
+    version: 5
+    stage_tags: [HACIZ]
+    trigger: {type: event, when: ["HACIZ_RECOMMENDED"]}
+    preconditions:
+      - "locks.LOCK_COST_ACTIONS == false"
+      - "context.our_rank == 1"
+    uyap_nav_path: ["(communication)"]
+    read: {fields: ["client.contact", "cost.amount_suggested", "cost.due_date"]}
+    actions:
+      - type: send_comm
+        template_id: "YAKALAMA_AVANSI_REQUEST_TR"
+        channel: "email"
+        variables:
+          case_no: "{{case.uyap_dosya_no}}"
+          client_name: "{{client.name}}"
+          cost_amount: "{{cost.amount_suggested}}"
+          due_date: "{{cost.due_date}}"
+          asset_vehicle_desc: "{{context.vehicle_desc}}"
+    postconditions: ["case.events += AVANS_REQUESTED"]
+    proof: {store: ["timestamp", "comm_id"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: WaitForAdvancePayment
+    version: 5
+    stage_tags: [HACIZ]
+    trigger: {type: event, when: ["AVANS_REQUESTED"]}
+    preconditions: []
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["payment.confirmed"]}
+    actions:
+      - type: block_task_group
+        group: "YAKALAMA"
+        reason: "Avans bekleniyor"
+    postconditions: ["locks.LOCK_COST_ACTIONS = true"]
+    proof: {store: ["timestamp"]}
+    audit: {level: controlled_write}
+
+  - recipe_id: UnblockAfterPayment
+    version: 5
+    stage_tags: [HACIZ]
+    trigger: {type: event, when: ["PAYMENT_CONFIRMED"]}
+    preconditions: ["locks.LOCK_COST_ACTIONS == true"]
+    uyap_nav_path: ["(internal)"]
+    read: {fields: ["payment.receipt_ref"]}
+    actions:
+      - type: release_lock
+        lock_id: "LOCK_COST_ACTIONS"
+      - type: unblock_task_group
+        group: "YAKALAMA"
+    postconditions: ["case.events += AVANS_CONFIRMED"]
+    proof: {store: ["timestamp", "payment.receipt_ref"]}
+    audit: {level: controlled_write}

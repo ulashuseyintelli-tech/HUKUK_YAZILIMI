@@ -1,0 +1,58 @@
+# channel_matrix_v3.yaml
+# Borçlu x Tebligat Kanalı Matrisi + Timeline şablonu
+#
+# Amaç:
+# - Aynı dosyada her borçlu için farklı tebligat kanalı olabilir (e-tebligat / fiziki / karma).
+# - Her borçlu için tek bir "Tebligat Durumu" etiketi, tıkla -> timeline açılır.
+# - Bot, kanal bazında ayrı izleme/yenileme görevleri üretir.
+
+enums:
+  tebligat_channel: [E_TEBLIGAT, FIZIKI, KARMA]
+  tebligat_outcome: [GONDERILDI, KUTUDA, OKUNDU, TEBLIG_SAYILDI, MAZBATA_OLUSTU, IADE, BILA, TEKRAR, IPTAL, HATA]
+  address_type: [MERNIS, ISYERI, SUBE, SOZLESME, BILINMIYOR]
+
+debtor_channel_rules:
+  # borçlu için kanal seçimi (program içi)
+  - when: "debtor.has_uets_address == true"
+    set: "debtor.tebligat_channel = E_TEBLIGAT"
+  - when: "debtor.has_uets_address == false AND debtor.has_physical_address == true"
+    set: "debtor.tebligat_channel = FIZIKI"
+  - when: "debtor.has_uets_address == true AND debtor.requires_physical_copy == true"
+    set: "debtor.tebligat_channel = KARMA"
+
+polling_policy:
+  E_TEBLIGAT:
+    first_24h_minutes: 120
+    after_24h_hours: 6
+    after_teblig_sayildi_hours: 24
+  FIZIKI:
+    after_sent_hours: 24
+    after_first_return_hours: 12
+  KARMA:
+    # iki kanalın da izlenmesi
+    inherit: [E_TEBLIGAT, FIZIKI]
+
+timeline_schema:
+  # her borçlu için timeline entry şablonu
+  entry_fields:
+    - ts
+    - channel
+    - address_type
+    - address_label
+    - uyap_ref
+    - outcome
+    - outcome_detail
+    - next_action_suggested
+
+timeline_outcome_mapping:
+  # e-tebligat ekranından okunan durumlar -> outcome
+  E_TEBLIGAT:
+    delivered_date_present: KUTUDA
+    okundu_true: OKUNDU
+    deemed_served: TEBLIG_SAYILDI
+    mazbata_present: MAZBATA_OLUSTU
+  # fiziki tebligat arama -> outcome
+  FIZIKI:
+    status_teblig_edildi: TEBLIG_SAYILDI
+    status_iade: IADE
+    status_bila: BILA

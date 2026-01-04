@@ -66,6 +66,7 @@ import { StageTriggerModule } from "./modules/stage-trigger/stage-trigger.module
 import { AddressDiscoveryModule } from "./modules/address-discovery/address-discovery.module";
 import { AssetQueryModule } from "./modules/asset-query/asset-query.module";
 import { UyapExportModule } from "./modules/uyap-export/uyap-export.module";
+import { IcrabotModule } from "./modules/icrabot/icrabot.module";
 
 @Module({
   imports: [
@@ -138,6 +139,7 @@ import { UyapExportModule } from "./modules/uyap-export/uyap-export.module";
     AddressDiscoveryModule,
     AssetQueryModule,
     UyapExportModule,
+    IcrabotModule,
   ],
 })
 export class AppModule {}

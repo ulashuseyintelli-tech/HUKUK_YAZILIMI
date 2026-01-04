@@ -1,0 +1,1 @@
+Django>=4.2, djangorestframework>=3.14, PostgreSQL recommended for JSONField.

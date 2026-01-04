@@ -1,0 +1,43 @@
+# recovery_simulator_v4.yaml
+# Beklenen net getiri simülatörü (expected recovery).
+# Bot masraflı aksiyonları bununla frenler.
+
+params:
+  recovery:
+    min_net_for_cost_actions: 25000   # TL örnek eşik; senin piyasana göre güncellersin
+    liquidation_factors:
+      vehicle:
+        default: 0.70
+        luxury: 0.60
+        commercial: 0.75
+      real_estate:
+        default: 0.80
+
+    cost_budgets:
+      yakalama_avansi: 6000
+      satis_avansi: 15000
+      yeniden_tebligat: 1200
+
+compute:
+  inputs:
+    value_low: number
+    value_mid: number
+    value_high: number
+    liquidation_factor: number
+    prior_claims_estimate: number|null
+    estimated_costs: number
+  outputs:
+    expected_net_low: number
+    expected_net_mid: number
+    expected_net_high: number
+    flags: object
+
+formulas:
+  expected_net_low: "max(0, value_low*liquidation_factor - (prior_claims_estimate||0) - estimated_costs)"
+  expected_net_mid: "max(0, value_mid*liquidation_factor - (prior_claims_estimate||0) - estimated_costs)"
+  expected_net_high: "max(0, value_high*liquidation_factor - (prior_claims_estimate||0) - estimated_costs)"
+
+flags:
+  formula: |
+    ok_for_cost_actions = expected_net_mid >= params.recovery.min_net_for_cost_actions
+    {ok_for_cost_actions: ok_for_cost_actions}

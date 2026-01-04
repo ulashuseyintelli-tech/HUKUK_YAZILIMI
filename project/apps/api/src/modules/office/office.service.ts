@@ -275,4 +275,29 @@ export class OfficeService {
       data,
     });
   }
+
+  // İİK 78 ayarlarını getir (pasifleşme süresi)
+  async getIik78Settings(tenantId: string) {
+    const office = await this.getOrCreate(tenantId);
+    return {
+      inactivityThresholdDays: office.inactivityThresholdDays ?? 365,
+      inactivityWarningDays: office.inactivityWarningDays ?? 60,
+    };
+  }
+
+  // İİK 78 ayarlarını güncelle
+  async updateIik78Settings(
+    tenantId: string,
+    data: {
+      inactivityThresholdDays?: number;
+      inactivityWarningDays?: number;
+    }
+  ) {
+    const office = await this.getOrCreate(tenantId);
+
+    return this.prisma.office.update({
+      where: { id: office.id },
+      data,
+    });
+  }
 }

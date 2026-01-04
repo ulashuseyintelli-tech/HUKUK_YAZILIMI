@@ -1,0 +1,56 @@
+# debtor_behavior_score_v9.yaml
+# Borçlu davranış skoru (ödeyebilirlik + uyum + sinyal)
+# Amaç: Hatırlatma/uzlaşma/strateji kararını veriyle vermek.
+
+signals:
+  tebligat:
+    - debtor_opened_etebligat: bool
+    - days_to_open: int|null
+    - returns_count: int
+  payments:
+    - any_payment_made: bool
+    - last_payment_days_ago: int|null
+    - partial_payments_count: int
+  assets:
+    - asset_score: number|null
+    - has_vehicle: bool
+    - has_real_estate: bool
+    - has_sgk_job: bool
+  cooperation:
+    - responded_to_calls: bool|null
+    - provided_documents: bool|null
+
+weights:
+  willingness: 0.35
+  ability: 0.45
+  friction: 0.20
+
+compute:
+  willingness_score:
+    rules:
+      - if debtor_opened_etebligat == true and days_to_open <= 2: +30
+      - if any_payment_made == true: +40
+      - if partial_payments_count >= 2: +10
+      - if returns_count >= 2: -25
+  ability_score:
+    rules:
+      - if has_real_estate: +40
+      - if has_vehicle: +20
+      - if has_sgk_job: +20
+      - if asset_score != null: +min(20, asset_score/5)
+  friction_score:
+    rules:
+      - if returns_count >= 1: +20
+      - if responded_to_calls == false: +20
+      - if provided_documents == false: +10
+
+output:
+  debtor_behavior_score: "clamp(0,100, willingness*w + ability*w - friction*w)"
+  class:
+    - if score >= 70: "PAYMENT_LIKELY"
+    - if score >= 40 and score < 70: "MIXED"
+    - if score < 40: "HARD"
+actions_recommended:
+  PAYMENT_LIKELY: ["offer_installment", "short_reminder_cycle"]
+  MIXED: ["standard_followup", "asset_first"]
+  HARD: ["asset_enforcement", "limit_cost_actions"]

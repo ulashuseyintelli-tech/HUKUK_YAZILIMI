@@ -1,0 +1,97 @@
+# stage_flows_v3.yaml
+# İcra türü bazlı stage akışları (yüksek seviye)
+#
+# Amaç:
+# - Her icra_type için beklenen stage sırası ve zorunlu/opsiyonel adımlar farklı.
+# - Orchestrator bu akışı referans alarak "hangi stage'e geçebilirim?" kararını güçlendirir.
+
+enums:
+  icra_type: [ILAMSIZ, ILAMLI, KAMBIYO, KIRA, MTS, DIGER]
+  stage: [ACILIS, TEBLIGAT, KESINLESME, VARLIK, HACIZ, TAHSILAT, SATIS, KAPANIS]
+
+flows:
+
+  ILAMSIZ:
+    description: "Genel haciz yoluyla ilamsız takip (klasik)."
+    stages:
+      - ACILIS
+      - TEBLIGAT
+      - KESINLESME
+      - VARLIK
+      - HACIZ
+      - TAHSILAT
+      - SATIS
+      - KAPANIS
+    stage_requirements:
+      ACILIS:
+        required_events: ["UYAP_DOSYA_BOUND"]
+      TEBLIGAT:
+        required_events: ["TEBLIGAT_SENT"]
+      KESINLESME:
+        required_events: ["SERVICE_EFFECTIVE_CANDIDATE"]
+      VARLIK:
+        required_events: ["FINALIZED"]
+      HACIZ:
+        optional_events: ["HACIZ_RECOMMENDED"]
+      TAHSILAT:
+        optional_events: ["TAHSILAT", "REDDIYAT"]
+      SATIS:
+        optional_events: ["SALE_STARTED"]
+
+  ILAMLI:
+    description: "İlamlı icra - kesinleşme/itiraz mantığı dosyaya göre farklı; genelde hızlı varlığa geçer."
+    stages:
+      - ACILIS
+      - TEBLIGAT
+      - VARLIK
+      - HACIZ
+      - TAHSILAT
+      - SATIS
+      - KAPANIS
+    stage_requirements:
+      TEBLIGAT:
+        required_events: ["TEBLIGAT_SENT"]
+      VARLIK:
+        # bazı ilamlılarda itiraz süresi beklenmez; parametre ile kontrol edilir
+        gating_rule: "params.kesinlesme.overrides.ILAMLI.objection_deadline_days == 0"
+
+  KAMBIYO:
+    description: "Kambiyo senetlerine mahsus takip - süreler daha kısa."
+    stages:
+      - ACILIS
+      - TEBLIGAT
+      - KESINLESME
+      - VARLIK
+      - HACIZ
+      - TAHSILAT
+      - SATIS
+      - KAPANIS
+
+  KIRA:
+    description: "Kira/tahliye ağırlıklı - satış çoğu zaman yok; tahliye yazıları özel."
+    stages:
+      - ACILIS
+      - TEBLIGAT
+      - KESINLESME
+      - HACIZ
+      - TAHSILAT
+      - KAPANIS
+    notes:
+      - "Tahliye adımı ayrı alt-stage olarak modellenebilir."
+
+  MTS:
+    description: "Merkezi Takip Sistemi - tebligat ve ödeme penceresi kritik."
+    stages:
+      - ACILIS
+      - TEBLIGAT
+      - KESINLESME
+      - VARLIK
+      - HACIZ
+      - TAHSILAT
+      - KAPANIS
+    notes:
+      - "MTS dosyası icraya çevrilince yeni case fork edilebilir."
+
+  DIGER:
+    description: "Özel senaryolar."
+    stages: [ACILIS, TEBLIGAT, KESINLESME, VARLIK, HACIZ, TAHSILAT, SATIS, KAPANIS]

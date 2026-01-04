@@ -1,0 +1,25 @@
+# case_fork_mts_v11.yaml
+# MTS -> icraya çevirme gibi süreçlerde "case fork" yönetimi
+
+params:
+  fork:
+    enabled: true
+
+model:
+  parent_case_id: string
+  child_case_id: string
+  relation_type: [MTS_TO_ICRA, SPLIT_DEBTORS, APPEAL_BRANCH, RETEBLIGAT_BRANCH]
+
+rules:
+  - id: FORK_MTS_TO_ICRA
+    when: "case.icra_type == MTS and event:MTS_TO_ICRA_CONVERSION"
+    then:
+      create_child_case: true
+      relation_type: MTS_TO_ICRA
+      copy_fields:
+        - creditor
+        - debtors
+        - claim_amount
+        - documents_index
+      reset_stages:
+        - child.stage = ACILIS
