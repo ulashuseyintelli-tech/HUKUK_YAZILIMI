@@ -4804,9 +4804,13 @@ enum IcrabotBundleStatus {
 
 // Bundle Türü
 enum IcrabotBundleType {
-  RECIPE      // Recipe tanımları
-  PARAMS      // Parametre değerleri
-  UIMAP       // UI haritası
+  RECIPE          // Recipe tanımları
+  PARAMS          // Parametre değerleri
+  UIMAP           // UI haritası
+  DECISION_RULES  // Decision rules (v24)
+  RISK            // Risk scoring parametreleri (v28)
+  RECOVERY        // Recovery simulation parametreleri (v28)
+  PLAN            // Stage-based planning (v29)
 }
 
 // Recipe/Params/UiMap Bundle (v14)

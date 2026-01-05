@@ -23,6 +23,17 @@ import { DegradedModeService } from './degraded-mode/degraded-mode.service';
 import { CaseLockService } from './case-lock/case-lock.service';
 import { FactExtractorService } from './extractor/fact-extractor.service';
 import { DecisionEngineService } from './extractor/decision-engine.service';
+// v24-v29: Decision Rules Bundle, Predicates, Actions, Compute, Plan
+import { DecisionRulesLoaderService } from './decision/decision-rules-loader.service';
+import { PredicateEvaluatorService } from './decision/predicate-evaluator.service';
+import { ActionExecutorService } from './decision/action-executor.service';
+import { DecisionEngineV2Service } from './decision/decision-engine-v2.service';
+import { ComputeParamsLoaderService } from './compute/compute-params-loader.service';
+import { ComputeModulesService } from './compute/compute-modules.service';
+import { PlanLoaderService } from './plan/plan-loader.service';
+// v30: Adaptive Scheduling, Debtor-Scoped Planning
+import { AdaptiveSchedulerService } from './scheduler/adaptive-scheduler.service';
+import { OrchestratorV30Service } from './scheduler/orchestrator-v30.service';
 
 /**
  * ICRABOT MODULE
@@ -42,6 +53,13 @@ import { DecisionEngineService } from './extractor/decision-engine.service';
  * - v21: SystemConfig model, Table Parser
  * - v22: Case-level concurrency guard, Fact Extractor
  * - v23: Extractor Engine, Decision Engine
+ * - v24: Decision Rules DB Bundle
+ * - v25: Decision Predicates (fact filters)
+ * - v26: Then Actions Executor (enqueue/locks/flags/emit)
+ * - v27: Compute + Decisions (risk/recovery)
+ * - v28: Parametric Compute (risk/recovery bundles)
+ * - v29: Plan Bundle (DAG/Planning DB-backed)
+ * - v30: Debtor-Scoped Planning, Per-Recipe Interval, Adaptive Scheduling
  * 
  * Blueprint Katmanları:
  * - Katman 0: Case Digital Twin (mevcut Case modeli)
@@ -58,6 +76,13 @@ import { DecisionEngineService } from './extractor/decision-engine.service';
  * - Katman 12: Case Lock (CaseLockService)
  * - Katman 13: Fact Extraction (FactExtractorService)
  * - Katman 14: Decision Engine (DecisionEngineService)
+ * - Katman 15: Decision Rules Bundle (DecisionRulesLoaderService) v24
+ * - Katman 16: Predicate Evaluator (PredicateEvaluatorService) v25
+ * - Katman 17: Action Executor (ActionExecutorService) v26
+ * - Katman 18: Compute Modules (ComputeModulesService) v27-v28
+ * - Katman 19: Plan Loader (PlanLoaderService) v29
+ * - Katman 20: Adaptive Scheduler (AdaptiveSchedulerService) v30
+ * - Katman 21: Orchestrator V30 (OrchestratorV30Service) v30
  * 
  * Recipe Modülleri (82 adet):
  * - Session: 1, Sync: 7, Tebligat: 8, Kesinleşme: 3
@@ -86,6 +111,17 @@ import { DecisionEngineService } from './extractor/decision-engine.service';
     CaseLockService,
     FactExtractorService,
     DecisionEngineService,
+    // v24-v29: Decision Rules Bundle, Predicates, Actions, Compute, Plan
+    DecisionRulesLoaderService,
+    PredicateEvaluatorService,
+    ActionExecutorService,
+    DecisionEngineV2Service,
+    ComputeParamsLoaderService,
+    ComputeModulesService,
+    PlanLoaderService,
+    // v30: Adaptive Scheduling, Debtor-Scoped Planning
+    AdaptiveSchedulerService,
+    OrchestratorV30Service,
   ],
   exports: [
     RecipeService,
@@ -107,6 +143,17 @@ import { DecisionEngineService } from './extractor/decision-engine.service';
     CaseLockService,
     FactExtractorService,
     DecisionEngineService,
+    // v24-v29: Decision Rules Bundle, Predicates, Actions, Compute, Plan
+    DecisionRulesLoaderService,
+    PredicateEvaluatorService,
+    ActionExecutorService,
+    DecisionEngineV2Service,
+    ComputeParamsLoaderService,
+    ComputeModulesService,
+    PlanLoaderService,
+    // v30: Adaptive Scheduling, Debtor-Scoped Planning
+    AdaptiveSchedulerService,
+    OrchestratorV30Service,
   ],
 })
 export class IcrabotModule {}

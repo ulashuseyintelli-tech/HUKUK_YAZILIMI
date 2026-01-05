@@ -1,0 +1,10 @@
+params:
+  risk:
+    block_cost_threshold: 70
+    block_execution_threshold: 85
+    weights:
+      rank: 0.35
+      prior_claims: 0.20
+      uncertainty: 0.20
+      value_confidence: 0.15
+      lien_activity: 0.10

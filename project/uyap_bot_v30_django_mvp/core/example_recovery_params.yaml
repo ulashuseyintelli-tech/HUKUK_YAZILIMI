@@ -1,0 +1,7 @@
+params:
+  recovery:
+    min_net_for_cost_actions: 25000
+    cost_budgets:
+      yakalama_avansi: 6000
+      satis_avansi: 15000
+      yeniden_tebligat: 1200

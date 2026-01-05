@@ -1,0 +1,56 @@
+version: v27
+rule_id: post_asset_discovery
+when:
+  all:
+    - fact: "case.status"
+      op: "=="
+      value: "finalized"
+    - fact: "assets.vehicle.found"
+      op: "=="
+      value: true
+
+then:
+  compute:
+    - name: risk
+      run: RiskScoring
+      input:
+        case_id: "{{fact.case.id}}"
+        debtor_id: "{{fact.debtor.id}}"
+    - name: expected_recovery
+      run: RecoverySimulator
+      input:
+        case_id: "{{fact.case.id}}"
+        enforcement_rank: "{{fact.lien.rank}}"
+        vehicle_value_estimate: "{{fact.assets.vehicle.estimated_value}}"
+
+  write:
+    facts:
+      - path: "engine.risk.score"
+        value: "{{compute.risk.score}}"
+      - path: "engine.risk.band"
+        value: "{{compute.risk.band}}"
+      - path: "engine.recovery.p50"
+        value: "{{compute.expected_recovery.p50}}"
+    flags:
+      - key: "HIGH_RISK"
+        value: "get('compute.risk.score') >= 80"
+
+  decisions:
+    - if: "get('compute.risk.score') >= 80"
+      then:
+        - action: open_lock
+          payload:
+            key: "case:{{fact.case.id}}:manual_review"
+            ttl_sec: 86400
+        - action: enqueue
+          payload:
+            queue: manual_review
+            case_id: "{{fact.case.id}}"
+            reason: "High risk score"
+    - if: "get('compute.expected_recovery.p50') >= 50000 and get('compute.risk.score') < 80"
+      then:
+        - action: enqueue
+          payload:
+            queue: advance_request_email
+            case_id: "{{fact.case.id}}"
+            amount: "{{compute.expected_recovery.p50}}"

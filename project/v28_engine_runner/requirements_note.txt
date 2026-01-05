@@ -1,0 +1,1 @@
+Requires: pyyaml (YAML rule loading). Django project should already include engine_v28 app + services.
