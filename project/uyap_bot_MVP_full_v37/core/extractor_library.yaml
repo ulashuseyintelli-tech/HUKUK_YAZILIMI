@@ -1,0 +1,54 @@
+# Extractor Library v36
+
+extractors:
+
+  vehicle_results:
+    - fact_type: AssetFound
+      key_fields: ["asset_fingerprint"]
+      when: "plate != ''"
+      map:
+        asset_type: "vehicle"
+        asset_fingerprint: "vehicle:plate:{plate}"
+        attributes:
+          plate: "{plate}"
+          make: "{make}"
+          model: "{model}"
+          year: "{year}"
+          vin: "{vin}"
+
+  vehicle_liens:
+    - fact_type: LienSnapshot
+      key_fields: ["lien_fingerprint"]
+      when: "creditor != ''"
+      map:
+        asset_fingerprint: "vehicle:plate:{plate}"
+        lien_fingerprint: "{creditor}|{lien_date}|{lien_type}|{reference_no}"
+        lien_type: "{lien_type}"
+        creditor: "{creditor}"
+        lien_date: "{lien_date}"
+        rank_order: "{rank_order}"
+        amount_claimed: "{amount_claimed}"
+        active_status: "{active_status}"
+        reference_no: "{reference_no}"
+
+  etebligat_status:
+    - fact_type: TebligatStatus
+      key_fields: ["debtor_id", "status_key"]
+      when: "status_key != ''"
+      map:
+        channel: "E_TEBLIGAT"
+        debtor_id: "{debtor_id}"
+        status_key: "{status_key}"
+        delivered_at: "{tarafa_teslim_tarihi}"
+        okundu: "{okundu}"
+        mazbata: "{mazbata}"
+
+  tahsilat_entries:
+    - fact_type: TahsilatEntry
+      key_fields: ["receipt_no"]
+      when: "receipt_no != ''"
+      map:
+        date: "{tarih}"
+        amount: "{tutar}"
+        receipt_no: "{receipt_no}"
+        description: "{aciklama}"

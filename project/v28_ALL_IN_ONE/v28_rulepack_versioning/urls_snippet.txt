@@ -1,0 +1,2 @@
+# Add to your root urls.py (example):
+# path("api/", include("engine_v28.rules.urls"))

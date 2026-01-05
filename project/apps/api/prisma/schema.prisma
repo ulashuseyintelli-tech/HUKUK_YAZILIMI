@@ -231,6 +231,16 @@ model Tenant {
   selectorHealthLogs  SelectorHealthLog[]
   caseRunLocks        CaseRunLock[]
   icrabotFacts        IcrabotFact[]
+  
+  // Icrabot v32
+  icrabotRecipePauses IcrabotRecipePause[]
+  
+  // Icrabot v33
+  icrabotUiMapRecordings IcrabotUiMapRecording[]
+  
+  // Icrabot v38
+  icrabotAuditLogs       IcrabotAuditLog[]
+  icrabotApprovalRequests IcrabotApprovalRequest[]
 
   @@index([slug])
   @@index([accountType])
@@ -649,6 +659,7 @@ model Debtor {
   assets                Asset[]
   communications        DebtorCommunication[]
   estateHeirs           EstateHeir[]  // Tereke mirasçıları
+  icrabotJobs           IcrabotJobRun[]  // v30: Debtor-scoped jobs
   
   // Address Discovery
   clientInfoRequests    ClientInfoRequest[]
@@ -942,6 +953,10 @@ model Case {
   // Icrabot v17-v23
   caseRunLocks        CaseRunLock[]
   icrabotFacts        IcrabotFact[]
+  
+  // Icrabot v38
+  icrabotAuditLogs       IcrabotAuditLog[]
+  icrabotApprovalRequests IcrabotApprovalRequest[]
 
   @@unique([tenantId, fileNumber])
   @@index([tenantId, status])
@@ -4811,6 +4826,8 @@ enum IcrabotBundleType {
   RISK            // Risk scoring parametreleri (v28)
   RECOVERY        // Recovery simulation parametreleri (v28)
   PLAN            // Stage-based planning (v29)
+  QUEUE_POLICY    // Queue policy (v31) - concurrency limits, quotas
+  SLA_POLICY      // SLA policy (v32) - age-based priority boost
 }
 
 // Recipe/Params/UiMap Bundle (v14)
@@ -4876,6 +4893,7 @@ model IcrabotJobRun {
   id              String              @id @default(cuid())
   tenantId        String
   caseId          String
+  debtorId        String?             // v30: Debtor-scoped jobs
   
   // Job tanımlayıcı
   jobId           String              @unique
@@ -4885,6 +4903,7 @@ model IcrabotJobRun {
   // Durum
   status          IcrabotJobStatus    @default(QUEUED)
   riskLevel       IcrabotRiskLevel    @default(READ_ONLY)
+  priority        Int                 @default(100)  // v31: Lower = higher priority
   
   // Deneme bilgileri
   attempt         Int                 @default(0)
@@ -4898,20 +4917,27 @@ model IcrabotJobRun {
   startedAt       DateTime?
   finishedAt      DateTime?
   
+  // v38: Job leasing for multi-worker
+  leasedUntil     DateTime?
+  leasedBy        String?
+
   createdAt       DateTime            @default(now())
   updatedAt       DateTime            @updatedAt
   
   tenant          Tenant              @relation(fields: [tenantId], references: [id])
   case            Case                @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  debtor          Debtor?             @relation(fields: [debtorId], references: [id])
   
   // İlişkiler
   steps           IcrabotJobStep[]
   
   @@index([tenantId])
   @@index([caseId])
+  @@index([debtorId])
   @@index([jobId])
   @@index([recipeId])
   @@index([status])
+  @@index([priority])
   @@index([createdAt])
 }
 
@@ -5142,4 +5168,128 @@ model IcrabotFact {
   @@index([factType])
   @@index([processed])
   @@index([createdAt])
+}
+
+// ==================== ICRABOT v32 MODELS ====================
+
+// Recipe Pause (v32) - Ops tarafından recipe'leri pause/unpause etme
+model IcrabotRecipePause {
+  id        String   @id @default(cuid())
+  tenantId  String
+  recipeId  String
+  
+  isPaused  Boolean  @default(false)
+  reason    String?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  
+  @@unique([tenantId, recipeId])
+  @@index([tenantId])
+  @@index([recipeId])
+  @@index([isPaused])
+}
+
+// ==================== ICRABOT v33 MODELS ====================
+
+// UiMap Recording (v33-v35) - Selector kayıt sistemi
+model IcrabotUiMapRecording {
+  id             String   @id @default(cuid())
+  tenantId       String
+  
+  label          String   // Logical key like BTN_SORGULA
+  selector       String   // Primary selector (text=..., css, xpath)
+  alternatives   Json     @default("[]") // v34: Alternative selector candidates
+  stabilityScore Float    @default(0) // v35: Stability score (0..1)
+  selectorKind   String   @default("unknown") // v35: button/field/table/table_column/action
+  meta           Json     @default("{}") // role/text/attrs
+  screenshotPath String?
+  approved       Boolean  @default(false)
+  
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  
+  tenant         Tenant   @relation(fields: [tenantId], references: [id])
+  
+  @@index([tenantId])
+  @@index([label])
+  @@index([approved])
+}
+
+// ============================================================
+// ICRABOT v38 - ENTERPRISE LAYER
+// ============================================================
+
+// Immutable Audit Log with Hash Chain (v38)
+model IcrabotAuditLog {
+  id         String   @id @default(cuid())
+  tenantId   String
+  caseId     String?
+  userId     String
+  
+  action     String   // e.g., JOB_STARTED, APPROVAL_GRANTED, PII_ACCESSED
+  payload    Json     // Full event payload
+  
+  // Hash chain for immutability
+  prevHash   String   // Previous event hash (genesis: 64 zeros)
+  eventHash  String   // SHA-256(prevHash + payload + createdAt)
+  
+  createdAt  DateTime @default(now())
+  
+  tenant     Tenant   @relation(fields: [tenantId], references: [id])
+  case       Case?    @relation(fields: [caseId], references: [id], onDelete: SetNull)
+  
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@index([eventHash])
+}
+
+// Approval Request (v38) - Yüksek etkili aksiyonlar için onay
+model IcrabotApprovalRequest {
+  id                String   @id @default(cuid())
+  tenantId          String
+  caseId            String
+  jobId             String?  // Related job if any
+  
+  requestedByUserId String
+  reason            String
+  status            String   @default("PENDING") // PENDING, APPROVED, REJECTED
+  
+  riskLevel         String?  // HIGH_IMPACT_WRITE, CRITICAL, etc.
+  lockId            String?  // Related lock if any
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  tenant            Tenant   @relation(fields: [tenantId], references: [id])
+  case              Case     @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  
+  decisions         IcrabotApprovalDecision[]
+  
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Approval Decision (v38) - Onay kararları
+model IcrabotApprovalDecision {
+  id                String   @id @default(cuid())
+  approvalRequestId String
+  userId            String
+  
+  decision          String   // APPROVE, REJECT
+  note              String?
+  
+  createdAt         DateTime @default(now())
+  
+  approvalRequest   IcrabotApprovalRequest @relation(fields: [approvalRequestId], references: [id], onDelete: Cascade)
+  
+  @@index([approvalRequestId])
+  @@index([userId])
 }

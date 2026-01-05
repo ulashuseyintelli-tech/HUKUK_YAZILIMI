@@ -1,0 +1,7 @@
+{
+  "event_id": "a1",
+  "type": "CASE_STATUS",
+  "status": "finalized",
+  "debtor_id": "D-2",
+  "lien_rank": 1
+}

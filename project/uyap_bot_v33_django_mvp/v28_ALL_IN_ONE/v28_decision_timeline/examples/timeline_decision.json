@@ -1,0 +1,25 @@
+{
+  "entry_id": "e_4bfe1f7a-8d8a-4e48-9c7b-2b8f2e6b9c2a",
+  "case_id": "C-2026-00091",
+  "ts": "2026-01-05T02:06:02+03:00",
+  "type": "DECISION",
+  "severity": "warn",
+  "title": "Advance request email scheduled",
+  "body": {
+    "if": "recovery.p50 >= 50000 AND risk.score < 80",
+    "because": [
+      "Recovery p50=64.000 ≥ 50.000",
+      "Risk score=73 < 80",
+      "Lien rank=1 (priority)"
+    ],
+    "actions": [
+      {
+        "action_id": "a_1f2d9d4b-0a64-4d7d-8a73-7cbb2d4b2d9b",
+        "type": "enqueue",
+        "queue": "advance_request_email"
+      }
+    ]
+  },
+  "run_id": "r_51b4d6c8-72e2-4b70-9b4a-2d0d8b0f3a11",
+  "source": "engine"
+}

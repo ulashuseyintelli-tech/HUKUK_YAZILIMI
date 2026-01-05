@@ -1,0 +1,8 @@
+backpressure:
+  uyap:
+    max_actions_per_minute: 60
+    max_fail_rate: 0.25
+    cooldown_seconds_on_fail: 900
+  strategy:
+    - if fail_rate > max_fail_rate: enable_degraded_mode
+    - if actions_per_minute > limit: throttle_scheduler

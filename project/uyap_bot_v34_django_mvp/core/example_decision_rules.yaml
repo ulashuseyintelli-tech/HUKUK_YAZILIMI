@@ -1,0 +1,27 @@
+rules:
+  - rule_id: R_ASSET_FOUND_VEHICLE_TRIGGERS_LIENS_AND_VAL
+    when: "fact:AssetFound(asset_type=='vehicle')"
+    then:
+      enqueue:
+        - "FetchPriorLiens_Vehicle"
+        - "EstimateVehicleValue_AI"
+      emit: ["ASSET_VEHICLE_DETECTED"]
+
+  - rule_id: R_AFTER_VALUATION_COMPUTE_RISK_AND_DECIDE
+    when: "fact:ValuationEstimate"
+    then:
+      compute:
+        - "risk = RiskScoring"
+        - "expected_recovery = RecoverySimulator"
+      decisions:
+        - if: "risk.score >= 85"
+          then:
+            open_lock: "LOCK_EXECUTION_ACTIONS"
+            set_flag: {needs_attorney_review: true}
+            emit: ["HIGH_RISK_LOCKED"]
+        - if: "expected_recovery.flags.ok_for_cost_actions == false"
+          then:
+            open_lock: "LOCK_COST_ACTIONS"
+            emit: ["LOW_NET_RECOVERY"]
+      enqueue:
+        - "AnalyzeIK100ParticipationRisk"

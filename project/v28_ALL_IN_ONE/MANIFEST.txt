@@ -1,0 +1,31 @@
+v28 ALL-IN-ONE PACK
+==================
+
+Included zips and extracted contents:
+- v28_decision_timeline_pack.zip: extracted (7 files)
+- v28_django_timeline_outbox_pack.zip: extracted (13 files)
+- v28_engine_runner_pack.zip: extracted (10 files)
+- v28_uyap_ingestion_demo_pack.zip: extracted (11 files)
+- v28_factstore_actions_pack.zip: extracted (8 files)
+- v28_rulepack_versioning_pack.zip: extracted (12 files)
+- v28_engine_db_rules_integration_patch.zip: extracted (6 files)
+- v28_explainability_rollback_pack.zip: extracted (9 files)
+- v28_scenario_test_harness_pack_FIXED.zip: extracted (4 files)
+
+Entry points (typical):
+- Django app: v28_django_timeline/.../engine_v28 (models/views/dispatcher)
+- EngineRunner: v28_engine_runner/.../engine_v28/engine_runner
+- UYAP ingestion demo: v28_uyap_ingestion_demo/.../uyap_ingest_v28
+- FactStore DB + actions: v28_factstore_actions/.../engine_v28/factstore_db + actions
+- RulePack versioning: v28_rulepack_versioning/.../engine_v28/rules
+- DB rules integration: v28_engine_db_rules_integration/.../engine_v28/engine_runner/db_rule_runner.py
+- Explainability + rollback: v28_explainability_rollback/.../engine_v28/explain + rules rollback api
+- Scenario harness (fixed skeleton): v28_scenario_test_harness/.../scenarios
+
+Added pack:
+- v28_policy_gate_action_feedback_pack.zip: extracted
+  Location: v28_policy_feedback/
+
+
+Ops bundle added:
+- v28_ops_bundle/ (policy seed + scenarios_real + deploy strategy)

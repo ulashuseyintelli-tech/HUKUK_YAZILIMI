@@ -1,0 +1,8 @@
+policy:
+  stages:
+    TEBLIGAT:
+      max_age_minutes: 60
+      boost_priority: -10
+    VARLIK:
+      max_age_minutes: 10080  # 7 gün
+      boost_priority: 0

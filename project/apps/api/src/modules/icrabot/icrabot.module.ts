@@ -34,6 +34,42 @@ import { PlanLoaderService } from './plan/plan-loader.service';
 // v30: Adaptive Scheduling, Debtor-Scoped Planning
 import { AdaptiveSchedulerService } from './scheduler/adaptive-scheduler.service';
 import { OrchestratorV30Service } from './scheduler/orchestrator-v30.service';
+// v31: Priority + Queue Policy
+import { QueuePolicyLoaderService } from './scheduler/queue-policy-loader.service';
+import { PriorityDispatcherService } from './scheduler/priority-dispatcher.service';
+// v32: Ops API, Recipe Pause, SLA Boost
+import { RecipePauseService } from './ops/recipe-pause.service';
+import { SlaBoostService } from './ops/sla-boost.service';
+import { OpsController } from './ops/ops.controller';
+// v33-v35: UiMap Recorder, Selector Health, Click Test, Stability Score
+import { UiMapRecorderService } from './recorder/uimap-recorder.service';
+import { SelectorHealthService } from './recorder/selector-health.service';
+import { SelectorScoringService } from './recorder/selector-scoring.service';
+import { RecorderController, HealthController as SelectorHealthController, RecorderTestController } from './recorder/recorder.controller';
+// v36: Case Health, UiMap Validator
+import { CaseHealthService } from './health/case-health.service';
+import { UiMapValidatorService } from './health/uimap-validator.service';
+import { CaseHealthController, UiMapValidateController } from './health/health.controller';
+// v37: MVP Completion - Action List, Risk Report, Weekly Export
+import { ActionListService } from './mvp/action-list.service';
+import { RiskNetReportService } from './mvp/risk-net-report.service';
+import { WeeklyExportService } from './mvp/weekly-export.service';
+import { ActionListController, RiskReportController, WeeklyExportController } from './mvp/mvp.controller';
+// v38: Enterprise Layer - PII, Audit, Approval, Leasing, Backpressure, Plan Limits
+import { PiiMaskingService } from './enterprise/pii-masking.service';
+import { AuditChainService } from './enterprise/audit-chain.service';
+import { ApprovalWorkflowService } from './enterprise/approval-workflow.service';
+import { JobLeasingService } from './enterprise/job-leasing.service';
+import { BackpressureService } from './enterprise/backpressure.service';
+import { PlanLimitsService } from './enterprise/plan-limits.service';
+import {
+  PiiMaskingController,
+  AuditChainController,
+  ApprovalWorkflowController,
+  JobLeasingController,
+  BackpressureController,
+  PlanLimitsController,
+} from './enterprise/enterprise.controller';
 
 /**
  * ICRABOT MODULE
@@ -60,6 +96,14 @@ import { OrchestratorV30Service } from './scheduler/orchestrator-v30.service';
  * - v28: Parametric Compute (risk/recovery bundles)
  * - v29: Plan Bundle (DAG/Planning DB-backed)
  * - v30: Debtor-Scoped Planning, Per-Recipe Interval, Adaptive Scheduling
+ * - v31: Job Priority, Queue Policy (concurrency limits, quotas)
+ * - v32: Ops API, Recipe Pause/Unpause, Cancel Job, SLA Boost
+ * - v33: UiMap Recorder MVP, Selector Health API
+ * - v34: Recorder v2 (multi-selector, auto-section, click-test)
+ * - v35: Recorder v3 (stability score, auto click-test approve, table column)
+ * - v36: Case Health Report, UiMap Validator, Extractor Library
+ * - v37: MVP Completion (Action List, Risk/Net Report, Weekly Export)
+ * - v38: Enterprise Layer (PII Masking, Audit Chain, Approval Workflow, Job Leasing, Backpressure, Plan Limits)
  * 
  * Blueprint Katmanları:
  * - Katman 0: Case Digital Twin (mevcut Case modeli)
@@ -83,6 +127,25 @@ import { OrchestratorV30Service } from './scheduler/orchestrator-v30.service';
  * - Katman 19: Plan Loader (PlanLoaderService) v29
  * - Katman 20: Adaptive Scheduler (AdaptiveSchedulerService) v30
  * - Katman 21: Orchestrator V30 (OrchestratorV30Service) v30
+ * - Katman 22: Queue Policy Loader (QueuePolicyLoaderService) v31
+ * - Katman 23: Priority Dispatcher (PriorityDispatcherService) v31
+ * - Katman 24: Recipe Pause (RecipePauseService) v32
+ * - Katman 25: SLA Boost (SlaBoostService) v32
+ * - Katman 26: Ops Controller (OpsController) v32
+ * - Katman 27: UiMap Recorder (UiMapRecorderService) v33
+ * - Katman 28: Selector Health (SelectorHealthService) v33
+ * - Katman 29: Selector Scoring (SelectorScoringService) v35
+ * - Katman 30: Case Health (CaseHealthService) v36
+ * - Katman 31: UiMap Validator (UiMapValidatorService) v36
+ * - Katman 32: Action List (ActionListService) v37
+ * - Katman 33: Risk Net Report (RiskNetReportService) v37
+ * - Katman 34: Weekly Export (WeeklyExportService) v37
+ * - Katman 35: PII Masking (PiiMaskingService) v38
+ * - Katman 36: Audit Chain (AuditChainService) v38
+ * - Katman 37: Approval Workflow (ApprovalWorkflowService) v38
+ * - Katman 38: Job Leasing (JobLeasingService) v38
+ * - Katman 39: Backpressure (BackpressureService) v38
+ * - Katman 40: Plan Limits (PlanLimitsService) v38
  * 
  * Recipe Modülleri (82 adet):
  * - Session: 1, Sync: 7, Tebligat: 8, Kesinleşme: 3
@@ -90,7 +153,28 @@ import { OrchestratorV30Service } from './scheduler/orchestrator-v30.service';
  */
 @Module({
   imports: [PrismaModule, ScheduleModule.forRoot()],
-  controllers: [IcrabotController, AdminController, BundleController],
+  controllers: [
+    IcrabotController, 
+    AdminController, 
+    BundleController, 
+    OpsController, 
+    RecorderController, 
+    SelectorHealthController, 
+    RecorderTestController, 
+    CaseHealthController, 
+    UiMapValidateController,
+    // v37: MVP Completion
+    ActionListController,
+    RiskReportController,
+    WeeklyExportController,
+    // v38: Enterprise Layer
+    PiiMaskingController,
+    AuditChainController,
+    ApprovalWorkflowController,
+    JobLeasingController,
+    BackpressureController,
+    PlanLimitsController,
+  ],
   providers: [
     RecipeService,
     TaskOrchestratorService,
@@ -122,6 +206,30 @@ import { OrchestratorV30Service } from './scheduler/orchestrator-v30.service';
     // v30: Adaptive Scheduling, Debtor-Scoped Planning
     AdaptiveSchedulerService,
     OrchestratorV30Service,
+    // v31: Priority + Queue Policy
+    QueuePolicyLoaderService,
+    PriorityDispatcherService,
+    // v32: Ops API, Recipe Pause, SLA Boost
+    RecipePauseService,
+    SlaBoostService,
+    // v33-v35: UiMap Recorder, Selector Health, Selector Scoring
+    UiMapRecorderService,
+    SelectorHealthService,
+    SelectorScoringService,
+    // v36: Case Health, UiMap Validator
+    CaseHealthService,
+    UiMapValidatorService,
+    // v37: MVP Completion
+    ActionListService,
+    RiskNetReportService,
+    WeeklyExportService,
+    // v38: Enterprise Layer
+    PiiMaskingService,
+    AuditChainService,
+    ApprovalWorkflowService,
+    JobLeasingService,
+    BackpressureService,
+    PlanLimitsService,
   ],
   exports: [
     RecipeService,
@@ -154,6 +262,30 @@ import { OrchestratorV30Service } from './scheduler/orchestrator-v30.service';
     // v30: Adaptive Scheduling, Debtor-Scoped Planning
     AdaptiveSchedulerService,
     OrchestratorV30Service,
+    // v31: Priority + Queue Policy
+    QueuePolicyLoaderService,
+    PriorityDispatcherService,
+    // v32: Ops API, Recipe Pause, SLA Boost
+    RecipePauseService,
+    SlaBoostService,
+    // v33-v35: UiMap Recorder, Selector Health, Selector Scoring
+    UiMapRecorderService,
+    SelectorHealthService,
+    SelectorScoringService,
+    // v36: Case Health, UiMap Validator
+    CaseHealthService,
+    UiMapValidatorService,
+    // v37: MVP Completion
+    ActionListService,
+    RiskNetReportService,
+    WeeklyExportService,
+    // v38: Enterprise Layer
+    PiiMaskingService,
+    AuditChainService,
+    ApprovalWorkflowService,
+    JobLeasingService,
+    BackpressureService,
+    PlanLimitsService,
   ],
 })
 export class IcrabotModule {}

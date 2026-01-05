@@ -1,0 +1,6 @@
+{
+  "event_id": "k2",
+  "type": "FLAG_SET",
+  "key": "KVKK_HOLD",
+  "value": true
+}

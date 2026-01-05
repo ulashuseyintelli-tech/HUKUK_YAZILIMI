@@ -1,0 +1,22 @@
+rbac:
+  roles:
+    ADMIN:
+      can: ["*"]
+    OPS:
+      can: ["view_jobs", "retry_jobs", "pause_recipes", "queue_dashboard", "view_cases", "export_audit"]
+    LAWYER:
+      can: ["view_cases", "approve_actions", "override_locks", "view_reports", "export_audit"]
+    VIEWER:
+      can: ["view_cases", "view_reports"]
+
+pii_masking:
+  fields:
+    identity_no:
+      mask: "******{last4}"
+      roles_allowed: ["ADMIN","LAWYER"]
+    phone:
+      mask: "***{last2}"
+      roles_allowed: ["ADMIN","OPS","LAWYER"]
+    email:
+      mask: "{first1}***@***"
+      roles_allowed: ["ADMIN","OPS","LAWYER"]

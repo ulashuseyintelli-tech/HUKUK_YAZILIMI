@@ -1,0 +1,6 @@
+{
+  "event_id": "r2",
+  "type": "NOTIFICATION_RETURNED",
+  "reason": "unknown_address",
+  "debtor_id": "D-1"
+}

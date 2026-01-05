@@ -1,0 +1,30 @@
+approval_workflow:
+  # risk_level bazlı zorunlu onay
+  rules:
+    - when_risk_level: "high_impact_write"
+      requires_roles: ["LAWYER","ADMIN"]
+      min_approvals: 1
+
+    - when_lock_id: "LOCK_EXECUTION_ACTIONS"
+      requires_roles: ["LAWYER","ADMIN"]
+      min_approvals: 1
+
+  objects:
+    ApprovalRequest:
+      fields:
+        - id
+        - tenant_id
+        - case_id
+        - job_id
+        - requested_by_user_id
+        - reason
+        - status (PENDING/APPROVED/REJECTED)
+        - created_at
+    ApprovalDecision:
+      fields:
+        - id
+        - approval_request_id
+        - user_id
+        - decision (APPROVE/REJECT)
+        - note
+        - created_at

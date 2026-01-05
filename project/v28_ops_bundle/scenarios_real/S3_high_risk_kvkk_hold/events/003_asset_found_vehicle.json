@@ -1,0 +1,10 @@
+{
+  "event_id": "k3",
+  "type": "ASSET_FOUND_VEHICLE",
+  "debtor_id": "D-3",
+  "lien_rank": 1,
+  "vehicle": {
+    "plate": "06XYZ06",
+    "estimated_value": 450000
+  }
+}

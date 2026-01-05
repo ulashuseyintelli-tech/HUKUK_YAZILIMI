@@ -1,0 +1,10 @@
+plans:
+  FREE:
+    max_cases: 200
+    max_jobs_per_day: 500
+  PRO:
+    max_cases: 5000
+    max_jobs_per_day: 20000
+  ENTERPRISE:
+    max_cases: 200000
+    max_jobs_per_day: 500000

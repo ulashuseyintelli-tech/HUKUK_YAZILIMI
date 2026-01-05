@@ -1,0 +1,30 @@
+{
+  "entry_id": "e_9c3b0b18-1d3f-4d49-8a8f-6b640bb0b1a1",
+  "case_id": "C-2026-00091",
+  "ts": "2026-01-05T02:05:41+03:00",
+  "type": "COMPUTE",
+  "severity": "info",
+  "title": "Risk & Recovery computed",
+  "body": {
+    "compute": {
+      "risk": {
+        "score": 73,
+        "band": "MEDIUM",
+        "model": "risk-v3.2.1"
+      },
+      "recovery": {
+        "expected": 54000,
+        "p50": 64000,
+        "p90": 12000,
+        "eta_days": 110
+      }
+    },
+    "inputs": {
+      "lien_rank": 1,
+      "vehicle_estimate": 850000,
+      "case_status": "finalized"
+    }
+  },
+  "run_id": "r_51b4d6c8-72e2-4b70-9b4a-2d0d8b0f3a11",
+  "source": "engine"
+}

@@ -1,0 +1,8 @@
+{
+  "event_id": "uyap:evt:1",
+  "case_id": "C-2026-00091",
+  "type": "CASE_STATUS",
+  "status": "finalized",
+  "debtor_id": "D-100",
+  "lien_rank": 1
+}

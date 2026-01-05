@@ -1,0 +1,11 @@
+{
+  "event_id": "uyap:evt:2",
+  "case_id": "C-2026-00091",
+  "type": "ASSET_FOUND_VEHICLE",
+  "debtor_id": "D-100",
+  "lien_rank": 1,
+  "vehicle": {
+    "plate": "34ABC123",
+    "estimated_value": 850000
+  }
+}

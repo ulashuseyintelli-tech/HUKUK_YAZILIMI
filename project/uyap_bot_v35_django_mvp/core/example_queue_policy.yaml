@@ -1,0 +1,16 @@
+policy:
+  global_concurrency: 30
+  per_case_concurrency: 8
+  per_case_write_concurrency: 1
+
+  # risk_level bazlı ayrı kotalar
+  risk_queues:
+    high_impact_write:
+      max_running: 1
+      priority_boost: -15
+    controlled_write:
+      max_running: 4
+      priority_boost: -5
+    read_only:
+      max_running: 50
+      priority_boost: 0

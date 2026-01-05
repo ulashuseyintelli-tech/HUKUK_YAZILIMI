@@ -1,0 +1,119 @@
+openapi: 3.0.3
+info:
+  title: v28 Decision Timeline API (Skeleton)
+  version: 0.1.0
+servers:
+  - url: https://your-domain.example
+paths:
+  /cases/{case_id}/timeline:
+    get:
+      summary: Get case timeline entries (paged)
+      parameters:
+        - name: case_id
+          in: path
+          required: true
+          schema: { type: string }
+        - name: cursor
+          in: query
+          required: false
+          schema: { type: string }
+        - name: limit
+          in: query
+          required: false
+          schema: { type: integer, default: 50, minimum: 1, maximum: 200 }
+      responses:
+        '200':
+          description: Timeline page
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  next_cursor: { type: string, nullable: true }
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/TimelineEntry' }
+
+  /engine/runs/{run_id}:
+    get:
+      summary: Get an engine run (compute/decision details)
+      parameters:
+        - name: run_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Engine run
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/EngineRun' }
+
+  /actions/{action_id}:
+    get:
+      summary: Get an outbox action status
+      parameters:
+        - name: action_id
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Action
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/OutboxAction' }
+
+components:
+  schemas:
+    TimelineEntry:
+      type: object
+      required: [entry_id, case_id, ts, type, severity, title, source]
+      properties:
+        entry_id: { type: string, format: uuid }
+        case_id: { type: string }
+        ts: { type: string, format: date-time }
+        type:
+          type: string
+          enum: [UYAP_EVENT, FACT_WRITE, COMPUTE, DECISION, ACTION, OUTCOME, NOTE]
+        severity:
+          type: string
+          enum: [info, warn, critical]
+        title: { type: string }
+        body: { type: object, nullable: true }
+        run_id: { type: string, format: uuid, nullable: true }
+        source:
+          type: string
+          enum: [uyap, engine, user, system]
+
+    EngineRun:
+      type: object
+      required: [run_id, case_id, rule_id, snapshot_hash, status, started_at]
+      properties:
+        run_id: { type: string, format: uuid }
+        case_id: { type: string }
+        rule_id: { type: string }
+        trigger_event_id: { type: string, nullable: true }
+        snapshot_hash: { type: string }
+        status: { type: string, enum: [started, succeeded, failed] }
+        started_at: { type: string, format: date-time }
+        finished_at: { type: string, format: date-time, nullable: true }
+        compute_summary: { type: object, nullable: true }
+        error: { type: object, nullable: true }
+
+    OutboxAction:
+      type: object
+      required: [action_id, case_id, action_type, idempotency_key, payload, status, attempt_count, created_at]
+      properties:
+        action_id: { type: string, format: uuid }
+        run_id: { type: string, format: uuid, nullable: true }
+        case_id: { type: string }
+        action_type: { type: string }
+        idempotency_key: { type: string }
+        payload: { type: object }
+        status: { type: string, enum: [pending, sent, done, failed, dead] }
+        attempt_count: { type: integer }
+        last_error: { type: object, nullable: true }
+        next_retry_at: { type: string, format: date-time, nullable: true }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time, nullable: true }

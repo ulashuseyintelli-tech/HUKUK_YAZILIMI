@@ -1,0 +1,44 @@
+plan:
+  cooldown_seconds: 900
+
+  stages:
+    DEFAULT:
+      recipes:
+        - recipe_id: EnsureUYAPSession
+          risk_level: read_only
+          interval_seconds: 900
+          scope: case
+          priority: 10
+
+    TEBLIGAT:
+      recipes:
+        - recipe_id: SyncSafahatTimeline
+          risk_level: read_only
+          interval_seconds: 21600
+          scope: case
+          priority: 30
+        - recipe_id: FetchPreparedETebligatlar_Debtor
+          risk_level: read_only
+          interval_seconds: 21600
+          scope: debtor
+          priority: 20
+
+    VARLIK:
+      recipes:
+        - recipe_id: RunAssetQueries_Debtor
+          risk_level: read_only
+          interval_seconds: 604800
+          scope: debtor
+          priority: 60
+        - recipe_id: ScoreAssetProfile_Debtor
+          risk_level: controlled_write
+          interval_seconds: 86400
+          scope: debtor
+          priority: 40
+
+  adaptive:
+    enabled: true
+    window_hours: 6
+    min_samples: 10
+    fail_rate_soft: 0.2
+    fail_rate_hard: 0.4

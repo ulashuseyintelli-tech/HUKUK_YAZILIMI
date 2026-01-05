@@ -1,0 +1,6 @@
+{
+  "event_id": "r1",
+  "type": "CASE_STATUS",
+  "status": "initiated",
+  "debtor_id": "D-1"
+}
