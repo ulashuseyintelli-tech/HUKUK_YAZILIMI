@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   Calculator,
   Receipt,
@@ -13,56 +13,77 @@ import {
   AlertCircle,
   RefreshCw,
   Clock,
+  Info,
 } from "lucide-react";
 import { api, TemplateData } from "@/lib/api";
 import { LimitationBanner, LimitationStatus } from "@/components/limitation/LimitationWarningModal";
+import { 
+  resolveInterestType, 
+  getDefaultCommercialStatus,
+  InterestTypeCode,
+  InterestTypeResult,
+  INTEREST_TYPE_LABELS 
+} from "@/lib/interest-type-resolver";
 
 // ============================================================================
 // TAKİP TİPİ KONFİGÜRASYONU
 // ============================================================================
 interface TakipTipiConfig {
   label: string;
+  /** Varsayılan faiz türü - resolveInterestType ile override edilebilir */
   faizTuru: string;
   tazminatOrani: number;
   komisyonOrani: number;
   zorunluAlanlar: string[];
   ekBilgiler: string | null;
   donemsel?: boolean;
+  /** Varsayılan olarak ticari iş mi? */
+  defaultCommercial?: boolean;
+  /** Faiz türü değiştirilebilir mi? (kambiyo için false) */
+  canOverrideInterest?: boolean;
 }
 
 const TAKIP_TIPI_CONFIG: Record<string, TakipTipiConfig> = {
   CEK: {
     label: "Çek",
-    faizTuru: "TICARI",
+    faizTuru: "TICARI_DEGISEN", // TTK gereği zorunlu
     tazminatOrani: 0.10,
     komisyonOrani: 0.003,
     zorunluAlanlar: ["tutar", "vadeTarihi", "cekSeriNo", "bankaVeSube"],
-    ekBilgiler: "cekBilgileri"
+    ekBilgiler: "cekBilgileri",
+    defaultCommercial: true,
+    canOverrideInterest: false, // Kambiyo için değiştirilemez
   },
   SENET: {
     label: "Senet/Bono",
-    faizTuru: "TICARI",
+    faizTuru: "TICARI_DEGISEN", // TTK gereği zorunlu
     tazminatOrani: 0,
     komisyonOrani: 0.003,
     zorunluAlanlar: ["tutar", "vadeTarihi"],
-    ekBilgiler: "senetBilgileri"
+    ekBilgiler: "senetBilgileri",
+    defaultCommercial: true,
+    canOverrideInterest: false, // Kambiyo için değiştirilemez
   },
   KIRA: {
     label: "Kira Alacağı",
-    faizTuru: "YASAL",
+    faizTuru: "YASAL", // Varsayılan yasal, tacir kira ilişkisinde avans faizi seçilebilir
     tazminatOrani: 0,
     komisyonOrani: 0,
     zorunluAlanlar: ["tutar", "vadeTarihi"],
     ekBilgiler: null,
-    donemsel: true
+    donemsel: true,
+    defaultCommercial: false, // Kullanıcı belirler - tacir kira ilişkisinde ticari seçilebilir
+    canOverrideInterest: true, // Tacir kira ilişkisinde avans faizi seçilebilir
   },
   ILAM: {
     label: "İlam Asıl Alacağı",
-    faizTuru: "YASAL",
+    faizTuru: "YASAL", // Varsayılan yasal, ticari iş ise kullanıcı değiştirebilir
     tazminatOrani: 0,
     komisyonOrani: 0,
     zorunluAlanlar: ["tutar", "vadeTarihi"],
-    ekBilgiler: "ilamBilgileri"
+    ekBilgiler: "ilamBilgileri",
+    defaultCommercial: false, // Kullanıcı belirler - ticari iş ise ticari faiz seçilebilir
+    canOverrideInterest: true, // İlamlı takipte faiz türü değiştirilebilir
   },
   // İLAM YAN ALACAK KALEMLERİ
   ILAM_ISLEMIS_FAIZ: {
@@ -71,7 +92,8 @@ const TAKIP_TIPI_CONFIG: Record<string, TakipTipiConfig> = {
     tazminatOrani: 0,
     komisyonOrani: 0,
     zorunluAlanlar: ["tutar"],
-    ekBilgiler: null
+    ekBilgiler: null,
+    canOverrideInterest: false,
   },
   ILAM_YARGILAMA_GIDERI: {
     label: "Yargılama Giderleri",
@@ -79,7 +101,8 @@ const TAKIP_TIPI_CONFIG: Record<string, TakipTipiConfig> = {
     tazminatOrani: 0,
     komisyonOrani: 0,
     zorunluAlanlar: ["tutar"],
-    ekBilgiler: null
+    ekBilgiler: null,
+    canOverrideInterest: true,
   },
   ILAM_VEKALET_UCRETI: {
     label: "Karşı Taraf Vekalet Ücreti",
@@ -87,7 +110,8 @@ const TAKIP_TIPI_CONFIG: Record<string, TakipTipiConfig> = {
     tazminatOrani: 0,
     komisyonOrani: 0,
     zorunluAlanlar: ["tutar"],
-    ekBilgiler: null
+    ekBilgiler: null,
+    canOverrideInterest: true,
   },
   // NAFAKA ÖZEL KALEMLERİ
   NAFAKA_BIRIKIMIS: {
@@ -97,7 +121,9 @@ const TAKIP_TIPI_CONFIG: Record<string, TakipTipiConfig> = {
     komisyonOrani: 0,
     zorunluAlanlar: ["tutar", "vadeTarihi"],
     ekBilgiler: null,
-    donemsel: true
+    donemsel: true,
+    defaultCommercial: false,
+    canOverrideInterest: false, // Nafaka için yasal faiz zorunlu
   },
   NAFAKA_ISLEYECEK: {
     label: "İşleyecek Nafaka",
@@ -106,23 +132,83 @@ const TAKIP_TIPI_CONFIG: Record<string, TakipTipiConfig> = {
     komisyonOrani: 0,
     zorunluAlanlar: ["tutar"],
     ekBilgiler: null,
-    donemsel: true
+    donemsel: true,
+    defaultCommercial: false,
+    canOverrideInterest: false,
   },
   FATURA: {
     label: "Fatura Alacağı",
-    faizTuru: "TICARI",
+    faizTuru: "TICARI_DEGISEN", // Varsayılan ticari, akdi oran varsa değişir
     tazminatOrani: 0,
     komisyonOrani: 0,
     zorunluAlanlar: ["tutar", "vadeTarihi"],
-    ekBilgiler: "faturaBilgileri"
+    ekBilgiler: "faturaBilgileri",
+    defaultCommercial: true,
+    canOverrideInterest: true,
   },
   ASIL_ALACAK: {
     label: "Genel Alacak",
-    faizTuru: "YASAL",
+    faizTuru: "YASAL", // Varsayılan yasal, ticari iş ise kullanıcı değiştirebilir
     tazminatOrani: 0,
     komisyonOrani: 0,
     zorunluAlanlar: ["tutar", "vadeTarihi"],
-    ekBilgiler: null
+    ekBilgiler: null,
+    defaultCommercial: false, // Kullanıcı belirler - İflas Adi dahil
+    canOverrideInterest: true,
+  },
+  // ═══════════════════════════════════════════════════════════════════════════
+  // EK KALEM TÜRLERİ
+  // ═══════════════════════════════════════════════════════════════════════════
+  AIDAT: {
+    label: "Aidat / Site Gideri",
+    faizTuru: "AKDI", // Kat Mülkiyeti Kanunu gereği aylık %5 (yıllık %60) uygulanabilir
+    tazminatOrani: 0,
+    komisyonOrani: 0,
+    zorunluAlanlar: ["tutar", "vadeTarihi"],
+    ekBilgiler: null,
+    donemsel: true,
+    defaultCommercial: false,
+    canOverrideInterest: true, // Yasal faiz de seçilebilir
+  },
+  KREDI: {
+    label: "Kredi Alacağı",
+    faizTuru: "AKDI", // Kredi sözleşmesindeki oran
+    tazminatOrani: 0,
+    komisyonOrani: 0,
+    zorunluAlanlar: ["tutar", "vadeTarihi"],
+    ekBilgiler: null,
+    defaultCommercial: true,
+    canOverrideInterest: true,
+  },
+  BANKA: {
+    label: "Banka Alacağı (İİK 68)",
+    faizTuru: "AKDI", // Genel kredi sözleşmesindeki oran
+    tazminatOrani: 0,
+    komisyonOrani: 0,
+    zorunluAlanlar: ["tutar", "vadeTarihi"],
+    ekBilgiler: null,
+    defaultCommercial: true,
+    canOverrideInterest: true,
+  },
+  IPOTEK: {
+    label: "İpotek Alacağı",
+    faizTuru: "AKDI", // İpotek akit tablosundaki oran
+    tazminatOrani: 0,
+    komisyonOrani: 0,
+    zorunluAlanlar: ["tutar", "vadeTarihi"],
+    ekBilgiler: null,
+    defaultCommercial: true,
+    canOverrideInterest: true,
+  },
+  REHIN: {
+    label: "Rehin Alacağı",
+    faizTuru: "AKDI", // Rehin sözleşmesindeki oran
+    tazminatOrani: 0,
+    komisyonOrani: 0,
+    zorunluAlanlar: ["tutar", "vadeTarihi"],
+    ekBilgiler: null,
+    defaultCommercial: true,
+    canOverrideInterest: true,
   },
 };
 
@@ -148,11 +234,63 @@ const CURRENCY_OPTIONS = [
 ];
 
 const FAIZ_TURU_OPTIONS = [
-  { value: "YOK", label: "Faiz Yok", rate: 0 },
-  { value: "TICARI", label: "Ticari (%48)", rate: 48 },
-  { value: "YASAL", label: "Yasal (%24)", rate: 24 },
-  { value: "BANKA_TL", label: "Banka TL (%50)", rate: 50 },
-  { value: "KAMU_BANKA_TL", label: "Kamu Bankası TL (%45)", rate: 45 },
+  { value: "YOK", label: "Faiz Yok", rate: 0, variable: false },
+  // ═══════════════════════════════════════════════════════════════════════════
+  // TİCARİ FAİZ SEÇENEKLERİ
+  // ═══════════════════════════════════════════════════════════════════════════
+  { 
+    value: "TICARI_DEGISEN", 
+    label: "Ticari - TCMB Avans (Değişen Oran)", 
+    rate: null, // TCMB tablosundan
+    variable: true,
+    description: "TCMB avans faiz oranı tablosuna göre dönemsel hesaplama"
+  },
+  { 
+    value: "TICARI_SABIT", 
+    label: "Ticari - Sabit Oran", 
+    rate: 48, // Varsayılan, kullanıcı değiştirebilir
+    variable: false,
+    description: "Kullanıcının belirlediği sabit oran"
+  },
+  // ═══════════════════════════════════════════════════════════════════════════
+  // YASAL FAİZ (3095 m.1)
+  // Not: Yasal faiz nadiren değişir (2006: %9, 2024: %24)
+  // Ticari temerrüt faizinden farklıdır!
+  // ═══════════════════════════════════════════════════════════════════════════
+  { 
+    value: "YASAL", 
+    label: "Yasal Faiz (%9 / %24)", 
+    rate: null, // Dönemsel: 2006-2024: %9, 2024+: %24
+    variable: true, // Dönemsel değişim var ama TCMB avans gibi sık değil
+    description: "3095 sayılı Kanun m.1 - Adi alacaklar için (2024 öncesi %9, sonrası %24)"
+  },
+  // ═══════════════════════════════════════════════════════════════════════════
+  // MEVDUAT FAİZLERİ (Döviz alacakları için)
+  // ═══════════════════════════════════════════════════════════════════════════
+  { 
+    value: "BANKA_TL", 
+    label: "Mevduat Faizi TL (Bankalar)", 
+    rate: null, 
+    variable: true,
+    description: "Bankalarca uygulanan en yüksek mevduat faizi"
+  },
+  { 
+    value: "KAMU_BANKA_TL", 
+    label: "Mevduat Faizi TL (Kamu Bankaları)", 
+    rate: null, 
+    variable: true,
+    description: "Kamu bankalarınca uygulanan en yüksek mevduat faizi"
+  },
+  // ═══════════════════════════════════════════════════════════════════════════
+  // AKDİ FAİZ
+  // ═══════════════════════════════════════════════════════════════════════════
+  { 
+    value: "AKDI", 
+    label: "Akdi Faiz (Sözleşme)", 
+    rate: null, // Kullanıcı girer
+    variable: false,
+    description: "Sözleşmede belirtilen faiz oranı"
+  },
 ];
 
 // ============================================================================
@@ -248,6 +386,7 @@ interface Props {
   formCode?: string;
   currency?: string;
   takipTuruCode?: string;
+  mahiyetKodu?: string; // Wizard'dan gelen mahiyet kodu (FATURA, KIRA, CEK, SENET, vb.)
   documentSource?: "ILAM" | "KAMBIYO" | "SOZLESME" | "VEKALETNAME" | null;
   onItemsChange?: (items: any[]) => void;
   onPrecautionaryChange?: (data: { karar: IhtiyatiHacizKarari | null; masraflar: IhtiyatiHacizMasrafi[] }) => void;
@@ -264,14 +403,187 @@ interface Props {
 // ============================================================================
 // HELPER FUNCTIONS
 // ============================================================================
-const hesaplaFaiz = (tutar: number, faizTuru: string, baslangic: string, bitis: string): number => {
+
+/**
+ * TCMB AVANS FAİZ ORANLARI (3095 sayılı Kanun m.2/2 - Ticari Temerrüt)
+ * Kaynak: TCMB Reeskont ve Avans Faiz Oranları (Resmi Gazete)
+ * 
+ * ÖNEMLİ: Sadece validFrom kullanılır. Bir sonraki satırın validFrom'u
+ * bu satırın bitiş tarihidir (exclusive).
+ * 
+ * Aralık semantiği: [validFrom, nextValidFrom) - başlangıç dahil, bitiş hariç
+ */
+const TCMB_AVANS_ORANLARI: Array<{ validFrom: string; rate: number }> = [
+  // 2020
+  { validFrom: '2020-01-01', rate: 11.75 },
+  { validFrom: '2020-05-22', rate: 9.25 },
+  { validFrom: '2020-06-13', rate: 8.25 },
+  { validFrom: '2020-09-25', rate: 9.25 },
+  { validFrom: '2020-11-20', rate: 14.25 },
+  { validFrom: '2020-12-25', rate: 17.25 },
+  // 2021
+  { validFrom: '2021-03-19', rate: 19.25 },
+  { validFrom: '2021-09-24', rate: 18.25 },
+  { validFrom: '2021-10-22', rate: 16.25 },
+  { validFrom: '2021-11-19', rate: 15.25 },
+  { validFrom: '2021-12-17', rate: 14.25 },
+  // 2022
+  { validFrom: '2022-08-19', rate: 13.25 },
+  { validFrom: '2022-09-23', rate: 12.25 },
+  { validFrom: '2022-10-21', rate: 10.75 },
+  { validFrom: '2022-11-25', rate: 9.50 },
+  // 2023
+  { validFrom: '2023-06-23', rate: 15.00 },
+  { validFrom: '2023-07-21', rate: 17.50 },
+  { validFrom: '2023-08-25', rate: 25.50 },
+  { validFrom: '2023-09-22', rate: 30.50 },
+  { validFrom: '2023-10-27', rate: 35.50 },
+  { validFrom: '2023-11-24', rate: 40.50 },
+  { validFrom: '2023-12-29', rate: 45.00 },
+  // 2024
+  { validFrom: '2024-01-26', rate: 46.00 },
+  { validFrom: '2024-03-22', rate: 50.00 },
+  { validFrom: '2024-12-28', rate: 49.25 }, // VergiNet doğrulamalı
+  // 2025 (TCMB Resmi - VergiNet/ASMMMO doğrulamalı)
+  { validFrom: '2025-03-08', rate: 44.25 }, // 08.03.2025'ten itibaren
+  { validFrom: '2025-09-17', rate: 42.25 }, // 17.09.2025'ten itibaren
+  { validFrom: '2025-12-20', rate: 39.75 }, // 20.12.2025'ten itibaren
+];
+
+/**
+ * YASAL FAİZ ORANLARI (3095 sayılı Kanun m.1)
+ * Aralık semantiği: [validFrom, nextValidFrom) - başlangıç dahil, bitiş hariç
+ */
+const YASAL_FAIZ_ORANLARI: Array<{ validFrom: string; rate: number }> = [
+  { validFrom: '2006-01-01', rate: 9 },
+  { validFrom: '2024-06-01', rate: 24 },
+];
+
+/**
+ * Segmentli faiz hesaplama (değişen oranlar için)
+ * 
+ * Mimari: Sadece validFrom kullanılır, validTo yok.
+ * Bir sonraki satırın validFrom'u bu satırın bitiş tarihidir.
+ * Aralık: [segmentStart, segmentEnd) - başlangıç dahil, bitiş hariç
+ */
+const hesaplaSegmentliFaiz = (
+  tutar: number, 
+  baslangic: string, 
+  bitis: string,
+  oranlar: Array<{ validFrom: string; rate: number }>
+): { toplam: number; segmentler: Array<{ baslangic: string; bitis: string; gun: number; oran: number; faiz: number }> } => {
+  const startDate = new Date(baslangic);
+  const endDate = new Date(bitis);
+  
+  if (startDate >= endDate || tutar <= 0) {
+    return { toplam: 0, segmentler: [] };
+  }
+  
+  // Oranları tarihe göre sırala
+  const sortedRates = [...oranlar].sort((a, b) => 
+    new Date(a.validFrom).getTime() - new Date(b.validFrom).getTime()
+  );
+  
+  let totalInterest = 0;
+  const segmentler: Array<{ baslangic: string; bitis: string; gun: number; oran: number; faiz: number }> = [];
+  
+  for (let i = 0; i < sortedRates.length; i++) {
+    const currentRate = sortedRates[i];
+    const nextRate = sortedRates[i + 1];
+    
+    const rateStart = new Date(currentRate.validFrom);
+    // Bir sonraki oranın başlangıcı bu oranın bitişi (veya sonsuz)
+    const rateEnd = nextRate ? new Date(nextRate.validFrom) : new Date('2099-12-31');
+    
+    // Bu oran dönemi hesaplama aralığıyla kesişiyor mu?
+    if (endDate <= rateStart || startDate >= rateEnd) continue;
+    
+    // Kesişim aralığını bul [segmentStart, segmentEnd)
+    const segmentStart = startDate > rateStart ? startDate : rateStart;
+    const segmentEnd = endDate < rateEnd ? endDate : rateEnd;
+    
+    // Gün sayısı: bitiş - başlangıç (başlangıç dahil, bitiş hariç)
+    const days = Math.floor((segmentEnd.getTime() - segmentStart.getTime()) / (1000 * 60 * 60 * 24));
+    if (days <= 0) continue;
+    
+    // Faiz hesabı: Anapara × (Yıllık Oran / 100) × Gün / 365
+    const annualRate = currentRate.rate / 100;
+    const segmentInterest = tutar * annualRate * days / 365;
+    totalInterest += segmentInterest;
+    
+    // UI'da bitiş tarihini inclusive göster (1 gün geri)
+    const displayEnd = new Date(segmentEnd);
+    displayEnd.setDate(displayEnd.getDate() - 1);
+    
+    segmentler.push({
+      baslangic: segmentStart.toISOString().split('T')[0],
+      bitis: displayEnd.toISOString().split('T')[0],
+      gun: days,
+      oran: currentRate.rate,
+      faiz: Math.round(segmentInterest * 100) / 100,
+    });
+  }
+  
+  return {
+    toplam: Math.round(totalInterest * 100) / 100,
+    segmentler,
+  };
+};
+
+const hesaplaYasalFaiz = (tutar: number, baslangic: string, bitis: string): number => {
+  return hesaplaSegmentliFaiz(tutar, baslangic, bitis, YASAL_FAIZ_ORANLARI).toplam;
+};
+
+/**
+ * TCMB Avans faizi hesaplama (segmentli)
+ */
+const hesaplaTicariFaiz = (tutar: number, baslangic: string, bitis: string): number => {
+  return hesaplaSegmentliFaiz(tutar, baslangic, bitis, TCMB_AVANS_ORANLARI).toplam;
+};
+
+const hesaplaFaiz = (
+  tutar: number, 
+  faizTuru: string, 
+  baslangic: string, 
+  bitis: string,
+  sabitOran?: number // Sabit oran için kullanıcının girdiği değer
+): number => {
   if (!tutar || !baslangic || !bitis || faizTuru === "YOK") return 0;
+  
   const faizOption = FAIZ_TURU_OPTIONS.find(f => f.value === faizTuru);
-  const rate = faizOption?.rate || 0;
-  if (rate === 0) return 0;
+  if (!faizOption) return 0;
+
   const startDate = new Date(baslangic);
   const endDate = new Date(bitis);
   const days = Math.max(0, Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
+  
+  if (days === 0) return 0;
+
+  // YASAL FAİZ - Dönemsel hesaplama (2006: %9, 2024: %24)
+  if (faizTuru === 'YASAL') {
+    return hesaplaYasalFaiz(tutar, baslangic, bitis);
+  }
+
+  // TİCARİ TEMERRÜT FAİZİ (TCMB Avans) - Segmentli hesaplama
+  if (faizTuru === 'TICARI_DEGISEN') {
+    return hesaplaTicariFaiz(tutar, baslangic, bitis);
+  }
+
+  // Diğer değişen oran türleri için tahmini hesaplama
+  if (faizOption.variable && faizTuru !== 'TICARI_DEGISEN') {
+    const estimatedRates: Record<string, number> = {
+      'BANKA_TL': 45, // Mevduat faizi tahmini
+      'KAMU_BANKA_TL': 42, // Kamu bankası mevduat
+    };
+    const rate = estimatedRates[faizTuru] || 40;
+    const dailyRate = rate / 365 / 100;
+    return Math.round(tutar * dailyRate * days * 100) / 100;
+  }
+
+  // Sabit oran türleri
+  let rate = sabitOran ?? faizOption.rate ?? 0;
+  if (rate === 0) return 0;
+  
   const dailyRate = rate / 365 / 100;
   return Math.round(tutar * dailyRate * days * 100) / 100;
 };
@@ -346,21 +658,57 @@ export function ProfessionalClaimItemForm({
   creditors = [],
   lawyers = [],
   debtors = [],
+  mahiyetKodu,
 }: Props) {
   
   const getDefaultKalemTuru = () => {
-    // Önce takipTuruCode'a göre kontrol et
+    // 1. Önce mahiyetKodu'na göre kontrol et (wizard'dan gelen değer)
+    if (mahiyetKodu) {
+      // Mahiyet kodunu kalem türüne çevir
+      const mahiyetToKalem: Record<string, string> = {
+        'CEK': 'CEK',
+        'SENET': 'SENET',
+        'FATURA': 'FATURA',
+        'KIRA': 'KIRA',
+        'KIRA_FARK': 'KIRA',
+        'AIDAT': 'AIDAT',
+        'NAFAKA': 'NAFAKA',
+        'KREDI': 'KREDI',
+        'KREDI_KARTI': 'KREDI',
+        'BANKA': 'BANKA',
+        'TAZMINAT': 'ILAM',
+        'ICRA_INKAR': 'ILAM',
+        'ISCILIK': 'ILAM',
+        'TAHLIYE': 'KIRA',
+        'IPOTEK': 'IPOTEK', // Artık kendi kalem türü var
+        'REHIN': 'REHIN',   // Artık kendi kalem türü var
+        'PARA': 'ASIL_ALACAK',
+        'DIGER': 'ASIL_ALACAK',
+      };
+      const kalemTuru = mahiyetToKalem[mahiyetKodu];
+      if (kalemTuru && TAKIP_TIPI_CONFIG[kalemTuru]) {
+        return kalemTuru;
+      }
+    }
+    
+    // 2. Sonra takipTuruCode'a göre kontrol et
     if (takipTuruCode === "KAMBIYO_CEK") return "CEK";
     if (takipTuruCode === "KAMBIYO_SENET") return "SENET";
     if (takipTuruCode === "ILAMSIZ_KIRA" || takipTuruCode === "KIRA") return "KIRA";
+    if (takipTuruCode === "ILAMSIZ_TAHLIYE") return "KIRA";
     if (takipTuruCode === "ILAMLI") return "ILAM";
     if (takipTuruCode === "NAFAKA") return "NAFAKA";
-    if (takipTuruCode === "ILAMSIZ_GENEL" || takipTuruCode === "ILAMSIZ_FATURA") return "FATURA";
+    if (takipTuruCode === "ILAMSIZ_FATURA") return "FATURA";
+    if (takipTuruCode === "ILAMSIZ_GENEL") return "ASIL_ALACAK";
+    if (takipTuruCode === "REHIN_TASINIR") return "REHIN";
+    if (takipTuruCode === "REHIN_TASINMAZ") return "IPOTEK";
+    if (takipTuruCode === "IFLAS_ADI") return "ASIL_ALACAK";
+    if (takipTuruCode === "IFLAS_KAMBIYO") return "CEK"; // veya SENET - kullanıcı seçer
     
-    // Sonra documentSource'a göre kontrol et
+    // 3. Sonra documentSource'a göre kontrol et
     if (documentSource === "KAMBIYO") return "CEK";
     if (documentSource === "ILAM") return "ILAM";
-    if (documentSource === "SOZLESME") return "FATURA"; // Sözleşme/Fatura için FATURA döndür
+    if (documentSource === "SOZLESME") return "ASIL_ALACAK";
     
     return "ASIL_ALACAK";
   };
@@ -370,6 +718,13 @@ export function ProfessionalClaimItemForm({
   const [isCalculated, setIsCalculated] = useState(false);
   const [hesapTarihi, setHesapTarihi] = useState<string>(new Date().toISOString().split("T")[0]);
 
+  // Faiz Dökümü Preview State
+  const [faizDokumuVisible, setFaizDokumuVisible] = useState(false);
+  const [faizSegmentleri, setFaizSegmentleri] = useState<{
+    takipOncesi: Array<{ baslangic: string; bitis: string; gun: number; oran: number; faiz: number }>;
+    takipSonrasi: Array<{ baslangic: string; bitis: string; gun: number; oran: number; faiz: number }>;
+  }>({ takipOncesi: [], takipSonrasi: [] });
+
   // Zamanaşımı durumu
   const [limitationStatus, setLimitationStatus] = useState<LimitationStatus | null>(null);
   const [checkingLimitation, setCheckingLimitation] = useState(false);
@@ -378,8 +733,49 @@ export function ProfessionalClaimItemForm({
   // "TAKIP" = Takip tarihi (varsayılan, güvenli), "VADE" = Vade tarihi (riskli ama mümkün)
   const [faizBaslangicTercih, setFaizBaslangicTercih] = useState<"TAKIP" | "VADE">("TAKIP");
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // FAİZ TÜRÜ BELİRLEME STATE'LERİ
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Ticari iş mi? (kullanıcı override edebilir)
+  const [isCommercial, setIsCommercial] = useState<boolean | null>(null);
+  // Sözleşmede belirtilen akdi faiz oranı
+  const [contractInterestRate, setContractInterestRate] = useState<number | null>(null);
+  // Faiz türü belirleme sonucu
+  const [interestTypeResult, setInterestTypeResult] = useState<InterestTypeResult | null>(null);
+
   // İlamlı Takip Yan Alacak Kalemleri
   const [ilamYanAlacaklar, setIlamYanAlacaklar] = useState<IlamYanAlacak[]>([]);
+
+  // Kalem türü değiştiğinde faiz türünü yeniden hesapla
+  useEffect(() => {
+    const config = TAKIP_TIPI_CONFIG[kalem.kalemTuru];
+    
+    // Varsayılan ticari durumunu ayarla (kullanıcı henüz seçmediyse)
+    if (isCommercial === null && config) {
+      setIsCommercial(config.defaultCommercial ?? getDefaultCommercialStatus(kalem.kalemTuru));
+    }
+    
+    // Faiz türünü hesapla
+    const result = resolveInterestType({
+      kalemTuru: kalem.kalemTuru,
+      contractInterestRate,
+      isCommercial,
+      documentSource,
+    });
+    
+    setInterestTypeResult(result);
+    
+    // Faiz türünü kalem'e uygula (sadece değiştirilebilir ise veya ilk yüklemede)
+    if (config?.canOverrideInterest !== false || kalem.takipOncesiFaiz === config?.faizTuru) {
+      setKalem(prev => ({
+        ...prev,
+        takipOncesiFaiz: result.interestType,
+        takipSonrasiFaiz: result.interestType,
+      }));
+    }
+  }, [kalem.kalemTuru, isCommercial, contractInterestRate, documentSource]);
+
+  // takipTuruCode veya documentSource değiştiğinde kalem türünü güncelle
 
   // takipTuruCode veya documentSource değiştiğinde kalem türünü güncelle
   useEffect(() => {
@@ -414,6 +810,36 @@ export function ProfessionalClaimItemForm({
       setIsCalculated(false);
     }
   }, [takipTuruCode, documentSource]);
+
+  // ÇEK: Vade tarihi değiştiğinde ibraz tarihini güncelle
+  // Mantık: Vade tarihi değiştiğinde ibraz tarihini de vade tarihine eşitle
+  // (Kullanıcı daha sonra manuel olarak değiştirebilir)
+  const prevVadeTarihiRef = useRef(kalem.vadeTarihi);
+  useEffect(() => {
+    if (kalem.kalemTuru === "CEK" && kalem.cekBilgileri && kalem.vadeTarihi) {
+      const vadeTarihi = kalem.vadeTarihi;
+      const ibrazTarihi = kalem.cekBilgileri.ibrazTarihi;
+      const prevVadeTarihi = prevVadeTarihiRef.current;
+      
+      // Vade tarihi değiştiyse ibraz tarihini de güncelle
+      // VEYA ibraz tarihi yoksa/vade tarihinden küçükse güncelle
+      const vadeTarihiDegisti = prevVadeTarihi !== vadeTarihi;
+      const ibrazGecersiz = !ibrazTarihi || ibrazTarihi < vadeTarihi;
+      
+      if (vadeTarihiDegisti || ibrazGecersiz) {
+        setKalem(prev => ({
+          ...prev,
+          cekBilgileri: {
+            ...prev.cekBilgileri!,
+            ibrazTarihi: vadeTarihi
+          }
+        }));
+      }
+      
+      // Ref'i güncelle
+      prevVadeTarihiRef.current = vadeTarihi;
+    }
+  }, [kalem.vadeTarihi, kalem.kalemTuru]);
 
   // İhtiyati Haciz State'leri
   const [hasIhtiyatiHaciz, setHasIhtiyatiHaciz] = useState(false);
@@ -488,15 +914,41 @@ export function ProfessionalClaimItemForm({
 
     // 5. Takip Öncesi Faiz
     // İlamsız takiplerde faiz başlangıç tercihi: TAKIP = takip tarihi, VADE = vade tarihi
+    // ÇEK TAKİPLERİNDE: Faiz ibraz tarihinden başlar (vade tarihinden değil)
     const isIlamsizTakip = ["FATURA", "ASIL_ALACAK", "KIRA"].includes(kalem.kalemTuru);
     let takipOncesiFaiz = 0;
+    let takipOncesiSegmentler: Array<{ baslangic: string; bitis: string; gun: number; oran: number; faiz: number }> = [];
+    
+    // Faiz türüne göre oran tablosunu seç
+    const getOranTablosu = (faizTuru: string) => {
+      if (faizTuru === 'TICARI_DEGISEN') return TCMB_AVANS_ORANLARI;
+      if (faizTuru === 'YASAL') return YASAL_FAIZ_ORANLARI;
+      return [];
+    };
     
     if (isIlamsizTakip && faizBaslangicTercih === "TAKIP") {
       // Takip tarihinden başlat - takip öncesi faiz yok
       takipOncesiFaiz = 0;
+    } else if (kalem.kalemTuru === "CEK" && kalem.cekBilgileri?.ibrazTarihi) {
+      // ÇEK: Faiz ibraz tarihinden başlar
+      const oranTablosu = getOranTablosu(kalem.takipOncesiFaiz);
+      if (oranTablosu.length > 0 && (kalem.takipOncesiFaiz === 'TICARI_DEGISEN' || kalem.takipOncesiFaiz === 'YASAL')) {
+        const sonuc = hesaplaSegmentliFaiz(kalem.bakiyeTutar, kalem.cekBilgileri.ibrazTarihi, takipTarihi, oranTablosu);
+        takipOncesiFaiz = sonuc.toplam;
+        takipOncesiSegmentler = sonuc.segmentler;
+      } else {
+        takipOncesiFaiz = hesaplaFaiz(kalem.bakiyeTutar, kalem.takipOncesiFaiz, kalem.cekBilgileri.ibrazTarihi, takipTarihi);
+      }
     } else {
       // Vade tarihinden başlat (veya ilamlı/kambiyo takipleri)
-      takipOncesiFaiz = hesaplaFaiz(kalem.bakiyeTutar, kalem.takipOncesiFaiz, kalem.vadeTarihi, takipTarihi);
+      const oranTablosu = getOranTablosu(kalem.takipOncesiFaiz);
+      if (oranTablosu.length > 0 && (kalem.takipOncesiFaiz === 'TICARI_DEGISEN' || kalem.takipOncesiFaiz === 'YASAL')) {
+        const sonuc = hesaplaSegmentliFaiz(kalem.bakiyeTutar, kalem.vadeTarihi, takipTarihi, oranTablosu);
+        takipOncesiFaiz = sonuc.toplam;
+        takipOncesiSegmentler = sonuc.segmentler;
+      } else {
+        takipOncesiFaiz = hesaplaFaiz(kalem.bakiyeTutar, kalem.takipOncesiFaiz, kalem.vadeTarihi, takipTarihi);
+      }
     }
     
     if (takipOncesiFaiz > 0) {
@@ -545,8 +997,24 @@ export function ProfessionalClaimItemForm({
     satirlar.push({ key: "vekalet_ucreti", label: "Vekalet Ücreti", tutar: vekaletUcreti, bold: true });
 
     // 11. Takip Sonrası Faiz
-    const takipSonrasiFaiz = hesaplaFaiz(kalem.bakiyeTutar, kalem.takipSonrasiFaiz, takipTarihi, hesapTarihi);
+    let takipSonrasiFaiz = 0;
+    let takipSonrasiSegmentler: Array<{ baslangic: string; bitis: string; gun: number; oran: number; faiz: number }> = [];
+    
+    const oranTablosuSonrasi = getOranTablosu(kalem.takipSonrasiFaiz);
+    if (oranTablosuSonrasi.length > 0 && (kalem.takipSonrasiFaiz === 'TICARI_DEGISEN' || kalem.takipSonrasiFaiz === 'YASAL')) {
+      const sonuc = hesaplaSegmentliFaiz(kalem.bakiyeTutar, takipTarihi, hesapTarihi, oranTablosuSonrasi);
+      takipSonrasiFaiz = sonuc.toplam;
+      takipSonrasiSegmentler = sonuc.segmentler;
+    } else {
+      takipSonrasiFaiz = hesaplaFaiz(kalem.bakiyeTutar, kalem.takipSonrasiFaiz, takipTarihi, hesapTarihi);
+    }
     satirlar.push({ key: "takip_sonrasi_faiz", label: "Takip Sonrası Faiz", tutar: takipSonrasiFaiz, bold: true });
+    
+    // Faiz segmentlerini state'e kaydet
+    setFaizSegmentleri({
+      takipOncesi: takipOncesiSegmentler,
+      takipSonrasi: takipSonrasiSegmentler,
+    });
 
     // 12. Toplam Borç
     const toplamBorc = takipTutari + icraMasraflari + ihtiyatiHacizToplam + vekaletUcreti + takipSonrasiFaiz;
@@ -598,7 +1066,7 @@ export function ProfessionalClaimItemForm({
     }, 500);
     
     return () => clearTimeout(timer);
-  }, [kalem.bakiyeTutar, kalem.vadeTarihi, kalem.takipOncesiFaiz, kalem.takipSonrasiFaiz, kalem.kalemTuru, hesapTarihi, kalem.cekBilgileri?.cekSeriNo, kalem.cekBilgileri?.bankaVeSube, faizBaslangicTercih, hesapla]);
+  }, [kalem.bakiyeTutar, kalem.vadeTarihi, kalem.takipOncesiFaiz, kalem.takipSonrasiFaiz, kalem.kalemTuru, hesapTarihi, kalem.cekBilgileri?.cekSeriNo, kalem.cekBilgileri?.bankaVeSube, kalem.cekBilgileri?.ibrazTarihi, faizBaslangicTercih, hesapla]);
 
   // ZAMANAŞIMI KONTROLÜ - vade tarihi değiştiğinde kontrol et
   useEffect(() => {
@@ -717,13 +1185,28 @@ export function ProfessionalClaimItemForm({
                 onChange={(e) => handleKalemTuruChange(e.target.value)}
                 className="w-full border rounded px-1.5 py-0.5 text-xs bg-yellow-50"
               >
-                <option value="CEK">Çek</option>
-                <option value="SENET">Senet / Bono</option>
-                <option value="FATURA">Fatura</option>
-                <option value="KIRA">Kira Alacağı</option>
-                <option value="ILAM">İlam</option>
-                <option value="NAFAKA">Nafaka</option>
-                <option value="ASIL_ALACAK">Genel Alacak</option>
+                <optgroup label="Kambiyo Senetleri">
+                  <option value="CEK">Çek</option>
+                  <option value="SENET">Senet / Bono</option>
+                </optgroup>
+                <optgroup label="İlamsız Alacaklar">
+                  <option value="FATURA">Fatura Alacağı</option>
+                  <option value="KIRA">Kira Alacağı</option>
+                  <option value="AIDAT">Aidat / Site Gideri</option>
+                  <option value="ASIL_ALACAK">Genel Alacak</option>
+                </optgroup>
+                <optgroup label="Banka / Kredi">
+                  <option value="KREDI">Kredi Alacağı</option>
+                  <option value="BANKA">Banka Alacağı (İİK 68)</option>
+                </optgroup>
+                <optgroup label="Rehin / İpotek">
+                  <option value="IPOTEK">İpotek Alacağı</option>
+                  <option value="REHIN">Rehin Alacağı</option>
+                </optgroup>
+                <optgroup label="İlamlı Alacaklar">
+                  <option value="ILAM">İlam</option>
+                  <option value="NAFAKA">Nafaka</option>
+                </optgroup>
               </select>
             </div>
             <div>
@@ -749,7 +1232,12 @@ export function ProfessionalClaimItemForm({
               <input
                 type="date"
                 value={kalem.vadeTarihi}
-                onChange={(e) => setKalem(prev => ({ ...prev, vadeTarihi: e.target.value }))}
+                onChange={(e) => {
+                  const newValue = e.target.value;
+                  if (newValue) {
+                    setKalem(prev => ({ ...prev, vadeTarihi: newValue }));
+                  }
+                }}
                 max="2100-12-31"
                 min="1900-01-01"
                 className={`w-full border rounded px-1.5 py-0.5 text-xs ${
@@ -1026,16 +1514,40 @@ export function ProfessionalClaimItemForm({
             </h3>
             <div className="grid grid-cols-4 gap-1.5">
               <div>
-                <label className="block text-[10px] text-gray-500 mb-0.5">İbraz Tarihi</label>
+                <label className="block text-[10px] text-gray-500 mb-0.5">İbraz Tarihi *</label>
                 <input
                   type="date"
                   value={kalem.cekBilgileri.ibrazTarihi}
-                  onChange={(e) => setKalem(prev => ({
-                    ...prev,
-                    cekBilgileri: { ...prev.cekBilgileri!, ibrazTarihi: e.target.value }
-                  }))}
-                  className="w-full border rounded px-1.5 py-0.5 text-xs"
+                  min={kalem.vadeTarihi} // İbraz tarihi vade tarihinden önce olamaz
+                  onChange={(e) => {
+                    const yeniIbrazTarihi = e.target.value;
+                    // Sadece geçerli bir tarih girildiğinde güncelle (YYYY-MM-DD formatı)
+                    if (yeniIbrazTarihi && yeniIbrazTarihi.length === 10) {
+                      setKalem(prev => ({
+                        ...prev,
+                        cekBilgileri: { ...prev.cekBilgileri!, ibrazTarihi: yeniIbrazTarihi }
+                      }));
+                    }
+                  }}
+                  onBlur={(e) => {
+                    // Blur'da validasyon yap - kullanıcı input'tan çıktığında
+                    const yeniIbrazTarihi = e.target.value;
+                    if (yeniIbrazTarihi && yeniIbrazTarihi < kalem.vadeTarihi) {
+                      alert("İbraz tarihi, keşide (vade) tarihinden önce olamaz!");
+                      // Vade tarihine geri döndür
+                      setKalem(prev => ({
+                        ...prev,
+                        cekBilgileri: { ...prev.cekBilgileri!, ibrazTarihi: prev.vadeTarihi }
+                      }));
+                    }
+                  }}
+                  className="w-full border rounded px-1.5 py-0.5 text-xs bg-blue-50"
                 />
+                {kalem.cekBilgileri.ibrazTarihi !== kalem.vadeTarihi && (
+                  <p className="text-[8px] text-blue-600 mt-0.5">
+                    Faiz ibraz tarihinden hesaplanacak
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-[10px] text-gray-500 mb-0.5">Düzenleme Yeri</label>
@@ -1440,12 +1952,21 @@ export function ProfessionalClaimItemForm({
             {/* Hesap Özeti Satırları */}
             <div className="flex-1 space-y-0 pr-1 text-[10px]">
             {hesapOzeti.map((satir) => {
-              const isBolumBasligi = ["takip_tutari", "icra_masraflari", "ihtiyati_haciz_toplam", "vekalet_ucreti", "takip_sonrasi_faiz", "toplam_borc", "son_borc"].includes(satir.key);
+              // Bölüm başlıkları - üst çizgi ve arka plan ile vurgula
+              const isTakipTutari = satir.key === "takip_tutari";
+              const isIcraMasraflari = satir.key === "icra_masraflari";
+              const isIhtiyatiHaciz = satir.key === "ihtiyati_haciz_toplam";
+              const isToplamBorc = satir.key === "toplam_borc";
+              const isSonBorc = satir.key === "son_borc";
+              const isVekaletUcreti = satir.key === "vekalet_ucreti";
+              const isTakipSonrasiFaiz = satir.key === "takip_sonrasi_faiz";
+              
+              const isBolumBasligi = isTakipTutari || isIcraMasraflari || isIhtiyatiHaciz || isVekaletUcreti || isTakipSonrasiFaiz || isToplamBorc || isSonBorc;
               const isAltBaslik = ["pesin_harc_dahil_tahsil", "pesin_harc_haric_tahsil"].includes(satir.key);
               
               if (satir.key === "tahsil_0") {
                 return (
-                  <div key="tahsil_baslik" className="pt-1 mt-1 border-t border-gray-300">
+                  <div key="tahsil_baslik" className="pt-1.5 mt-1.5 border-t-2 border-gray-400">
                     <p className="text-[10px] font-medium text-gray-500 mb-0.5">Tahsil Harcı Oranlarına Göre Son Borç</p>
                     <div className="flex justify-between py-0 text-gray-500">
                       <span>{satir.label}</span>
@@ -1464,11 +1985,76 @@ export function ProfessionalClaimItemForm({
                 );
               }
 
+              // Takip Tutarı - mavi arka plan
+              if (isTakipTutari) {
+                return (
+                  <div
+                    key={satir.key}
+                    className="flex justify-between py-1 px-1.5 -mx-1.5 mt-1 border-t-2 border-blue-300 bg-blue-50 rounded"
+                  >
+                    <span className="font-semibold text-blue-800">TAKİP TUTARI</span>
+                    <span className="font-bold text-blue-700">{formatCurrency(satir.tutar, kalem.currency)}</span>
+                  </div>
+                );
+              }
+
+              // İcra Masrafları - gri arka plan
+              if (isIcraMasraflari) {
+                return (
+                  <div
+                    key={satir.key}
+                    className="flex justify-between py-1 px-1.5 -mx-1.5 mt-1 border-t border-gray-300 bg-gray-100 rounded"
+                  >
+                    <span className="font-semibold text-gray-700">İCRA MASRAFLARI</span>
+                    <span className="font-semibold text-gray-700">{formatCurrency(satir.tutar, kalem.currency)}</span>
+                  </div>
+                );
+              }
+
+              // İhtiyati Haciz Toplam - turuncu arka plan
+              if (isIhtiyatiHaciz) {
+                return (
+                  <div
+                    key={satir.key}
+                    className="flex justify-between py-1 px-1.5 -mx-1.5 mt-1 border-t border-orange-300 bg-orange-50 rounded"
+                  >
+                    <span className="font-semibold text-orange-700">İHTİYATİ HACİZ MASRAFLARI</span>
+                    <span className="font-semibold text-orange-600">{formatCurrency(satir.tutar, kalem.currency)}</span>
+                  </div>
+                );
+              }
+
+              // Toplam Borç - koyu mavi arka plan
+              if (isToplamBorc) {
+                return (
+                  <div
+                    key={satir.key}
+                    className="flex justify-between py-1.5 px-1.5 -mx-1.5 mt-1.5 border-t-2 border-blue-400 bg-blue-100 rounded"
+                  >
+                    <span className="font-bold text-blue-900">TOPLAM BORÇ</span>
+                    <span className="font-bold text-blue-800">{formatCurrency(satir.tutar, kalem.currency)}</span>
+                  </div>
+                );
+              }
+
+              // Son Borç - yeşil arka plan (en önemli)
+              if (isSonBorc) {
+                return (
+                  <div
+                    key={satir.key}
+                    className="flex justify-between py-2 px-1.5 -mx-1.5 mt-1.5 border-t-2 border-green-400 bg-green-100 rounded"
+                  >
+                    <span className="font-bold text-green-900">SON BORÇ</span>
+                    <span className="font-bold text-lg text-green-700">{formatCurrency(satir.tutar, kalem.currency)}</span>
+                  </div>
+                );
+              }
+
               return (
                 <div
                   key={satir.key}
                   className={`flex justify-between py-0 ${
-                    isBolumBasligi ? "border-t border-gray-200 pt-0.5 mt-0.5" : ""
+                    isVekaletUcreti || isTakipSonrasiFaiz ? "border-t border-gray-200 pt-0.5 mt-0.5" : ""
                   } ${isAltBaslik ? "text-gray-400" : ""}`}
                 >
                   <span className={`${satir.bold ? "font-semibold" : "text-gray-600"}`}>
@@ -1486,6 +2072,81 @@ export function ProfessionalClaimItemForm({
               );
             })}
             </div>
+
+            {/* FAİZ DÖKÜMÜ PREVIEW PANELİ */}
+            {(faizSegmentleri.takipOncesi.length > 0 || faizSegmentleri.takipSonrasi.length > 0) && (
+              <div className="mt-1.5 pt-1.5 border-t">
+                <button
+                  type="button"
+                  onClick={() => setFaizDokumuVisible(!faizDokumuVisible)}
+                  className="w-full flex items-center justify-between px-2 py-1 bg-blue-50 hover:bg-blue-100 rounded text-[10px] text-blue-700 transition-colors"
+                >
+                  <span className="flex items-center gap-1">
+                    <Calculator className="h-3 w-3" />
+                    Faiz Dökümü (Segment Detayı)
+                  </span>
+                  {faizDokumuVisible ? (
+                    <ChevronDown className="h-3 w-3" />
+                  ) : (
+                    <ChevronRight className="h-3 w-3" />
+                  )}
+                </button>
+                
+                {faizDokumuVisible && (
+                  <div className="mt-1.5 space-y-2">
+                    {/* Takip Öncesi Faiz Segmentleri */}
+                    {faizSegmentleri.takipOncesi.length > 0 && (
+                      <div className="bg-gray-50 rounded p-1.5">
+                        <h5 className="text-[9px] font-medium text-gray-600 mb-1">
+                          Takip Öncesi Faiz ({faizSegmentleri.takipOncesi.length} dönem)
+                        </h5>
+                        <div className="space-y-0.5">
+                          {faizSegmentleri.takipOncesi.map((seg, idx) => (
+                            <div key={idx} className="grid grid-cols-4 gap-1 text-[8px] text-gray-600 bg-white px-1 py-0.5 rounded">
+                              <span>{new Date(seg.baslangic).toLocaleDateString('tr-TR')} - {new Date(seg.bitis).toLocaleDateString('tr-TR')}</span>
+                              <span className="text-center">{seg.gun} gün</span>
+                              <span className="text-center text-blue-600">%{seg.oran.toFixed(2)}</span>
+                              <span className="text-right font-medium">{formatCurrency(seg.faiz, kalem.currency)}</span>
+                            </div>
+                          ))}
+                          <div className="flex justify-between text-[9px] font-medium text-gray-700 pt-0.5 border-t mt-0.5">
+                            <span>Toplam:</span>
+                            <span>{formatCurrency(faizSegmentleri.takipOncesi.reduce((t, s) => t + s.faiz, 0), kalem.currency)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    
+                    {/* Takip Sonrası Faiz Segmentleri */}
+                    {faizSegmentleri.takipSonrasi.length > 0 && (
+                      <div className="bg-green-50 rounded p-1.5">
+                        <h5 className="text-[9px] font-medium text-green-700 mb-1">
+                          Takip Sonrası Faiz ({faizSegmentleri.takipSonrasi.length} dönem)
+                        </h5>
+                        <div className="space-y-0.5">
+                          {faizSegmentleri.takipSonrasi.map((seg, idx) => (
+                            <div key={idx} className="grid grid-cols-4 gap-1 text-[8px] text-gray-600 bg-white px-1 py-0.5 rounded">
+                              <span>{new Date(seg.baslangic).toLocaleDateString('tr-TR')} - {new Date(seg.bitis).toLocaleDateString('tr-TR')}</span>
+                              <span className="text-center">{seg.gun} gün</span>
+                              <span className="text-center text-green-600">%{seg.oran.toFixed(2)}</span>
+                              <span className="text-right font-medium">{formatCurrency(seg.faiz, kalem.currency)}</span>
+                            </div>
+                          ))}
+                          <div className="flex justify-between text-[9px] font-medium text-green-800 pt-0.5 border-t mt-0.5">
+                            <span>Toplam:</span>
+                            <span>{formatCurrency(faizSegmentleri.takipSonrasi.reduce((t, s) => t + s.faiz, 0), kalem.currency)}</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    
+                    <p className="text-[8px] text-gray-400 italic">
+                      * Bu döküm frontend preview hesaplamasıdır. Kesin hesaplama için backend API kullanılır.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Kaydet Butonu */}
             <div className="pt-1.5 mt-1.5 border-t bg-white flex-shrink-0">

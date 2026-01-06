@@ -1,1068 +1,128 @@
-İstediğin şey: Programını “UYAP’a göre eğiteceğin” Sistem Haritası
 
-Aşağıdaki blueprint, “icrabot” tipi otomasyonun omurgasıdır.
+her bir takip tipine göre nasıl faiz işletileceğini sana araştırtmıştım ve programı buna göre düzenlemiş olmalısın yanılıyor muyum ? Yapmadıysan bunu internet üzerinde araştırarak sistemini buna göre kurar mısın ? 
 
-Katman 0 — Dosya Beyni (Case Digital Twin)
 
-Her icra dosyasının programında bir “dijital ikizi” olacak:
 
-case_id
+2026-01-06 23:41 (TR)
 
-uyap_dosya_no / tevzi_no
+Yanılmıyorsun: Bunu “kısmen konuşmuştuk”, ama senin ekrandaki sapma şunu gösteriyor: programın faiz motoru takip tipine göre “doğru faiz türü + doğru başlangıç tarihi + doğru oran serisi” üçlüsünü deterministik seçmiyor. Bunu düzeltmenin yolu takip tipi → faiz stratejisi eşlemesini kural tabanlı ve oranı da resmi kaynaktan dönemsel (segmentli) işletmek.
 
-stage (aşama): Açılış / Tebligat / Kesinleşme / Haciz / Tahsilat / Satış / Kapanış
+Aşağıya internetten doğruladığım resmi kaynaklarla (TCMB) “çek/senet/ticari alacak” için oran serisini de koyarak bir Faiz Hesaplama Mimarisi veriyorum.
 
-last_sync_at
+1) Oran kaynağı: “Ticari temerrüt (avans) faizi” resmi tablo
 
-next_actions[] (bekleyen işler)
+3095 m.2/2’deki “ticari işlerde temerrüt faizi” uygulamada TCMB kısa vadeli avans faiz oranı üzerinden isteniyor; oranlar 2025’te değişmiş durumda. Bu değişimler TCMB’nin “Reeskont ve Avans Faiz Oranları” tablosunda açıkça var:
 
-evidence[] (makbuz no, tevdi liste no, mazbata tarihi vs.)
+28.12.2024: avans %49,25
 
-Bu “beyin” olmadan bot kör olur.
+08.03.2025: avans %44,25
 
-Katman 1 — UYAP Connector (Erişim ve Oturum)
+17.09.2025: avans %42,25
 
-İki modlu tasarla:
+20.12.2025: avans %39,75 (TCMB)
 
-1A) Kullanıcı Oturumu Üzerinden (senin çubuk senaryon)
+Demek ki sistem “%39,75”i tüm döneme yayarsa ya da yanlış satırdan okursa, senin gördüğün gibi %44 civarı efektif rakamlar çıkar.
 
-Kullanıcı UYAP’ı açar (senin çubukla).
+2) Takip tipine göre “faiz stratejisi” (kural seti)
 
-Program “oturum aktif” durumunu algılar.
+Buradaki amaç: kullanıcı “takip tipi” seçtiği anda sistem faiz türünü ve faiz başlangıcını otomatik kilitlesin; elle oynanırsa da log + uyarı versin.
 
-Bot işlemleri bu oturum içinde yürütür.
+A) Kambiyo: Çek / Bono / Poliçe (İİK 167 vd.)
 
-1B) Servis/Entegrasyon Üzerinden (mümkünse)
+Faiz türü (default):
 
-Kurumsal web servis (varsa) ile veri çekme.
+Ticari ilişki varsa: 3095/2-2 (TCMB avans) – değişen oran
 
-Bot sadece “işlem” gerektiğinde kullanıcı oturumuna ihtiyaç duyar.
+Ticari değilse: 3095 kanuni/temerrüt (duruma göre)
 
-UYAP’ın intranet/VPN gerçekliği nedeniyle (kitap bunu net söylüyor) mimariyi buna göre kur. 
+Faiz başlangıcı (default):
 
-uyap_bilisim_sistemi_kitabi (1)
+Çek: çoğu uygulamada keşide tarihi / ibraz-temerrüt kurgusu tartışmalı alan; sistem bunu “olay tabanlı” seçmeli: keşide tarihi / ibraz tarihi / ihtar-protesto / takip tarihi seçenekleri ve evrakla destek. (Bu alanı otomatik varsayılanla getir ama değiştirildiğinde “gerekçe alanı” zorunlu yap.)
 
-Katman 2 — Görev Motoru (Task Orchestrator)
+Kural: “Kambiyo takibi” seçiliyse oran serisi TCMB avans tablosundan segmentlenir (tek oran yok). (TCMB)
 
-Her şey “görev”e dökülür:
+B) İlamsız genel haciz (adi alacak)
 
-CheckNotificationStatus
+Faiz türü:
 
-FetchEtebligatStatuses
+Sözleşmede oran varsa: akdi faiz (üst sınır/kamu düzeni kontrolleri ayrı)
 
-ComputeFinalizationDate
+Yoksa ticari işse: 3095/2-2 (TCMB avans)
 
-RunAssetQueries
+Ticari değilse: 3095 kanuni/temerrüt
 
-PrepareHacizRequests
+Başlangıç: temerrüt (ihtar) / sözleşmede vade / fatura vadesi / takip tarihi (hangisi ispatlıysa)
 
-SyncSafahatTimeline
+C) TTK 1530 kapsamı (mal/hizmet tedarikinde geç ödeme)
 
-Görev motoru şunları yapar:
+Bu ayrı bir dünya: oranı TCMB her yıl ilan ediyor.
 
-Kuyruk (queue)
+2025 için TTK 1530 temerrüt faizi: %53,25 (ve asgari giderim tutarı) TCMB tablosunda var. (TCMB)
 
-Önceliklendirme
+Kural: Takip tipi değil, alacak niteliği işaretlenirse devreye girer (“mal/hizmet tedariki geç ödeme”).
 
-Retry/backoff
+Özet: “Takip tipi” sadece bir boyut. Faiz doğru olsun istiyorsan “alacak niteliği” ve “başlangıç olayı” da modele girmeli.
 
-“İnsan onayı gerektiren görev” flag’i
+3) Faiz motoru: Segmentli hesap + TBK 100 mahsup (çekirdeği bu)
 
-Katman 3 — Kurallar Motoru (Rules Engine)
+3.1 Segmentli faiz (değişen oran)
 
-Senin “programımı eğitmek” dediğin şey burada gerçekleşir.
+Timeline kırılımları:
 
-Örnek kural seti:
+başlangıç tarihi
 
-Eğer stage = Tebligat ve tebligat_sent = true ise → günde 2 kez tebligat durumunu kontrol et
+bitiş tarihi (rapor tarihi)
 
-Eğer e-tebligat_delivered_date geldi ise → +5 gün hesabıyla “tebliğ edilmiş sayıldı” tarihini üret ve finalization_candidate = true yap
-(Kitap: e-tebligat, posta kutusuna bırakılmayı takip eden 5. gün sonunda tebliğ edilmiş sayılır ve mazbata otomatik oluşur.) 
+oran değişim tarihleri (TCMB tablo satırları)
 
-uyap_bilisim_sistemi_kitabi (1)
+ödeme tarihleri
 
-Eğer finalization_candidate = true ve mazbata_missing = true ise → “Mazbata Sorgula” görevini koy
-(Kitapta “Mazbata Sorgula” ile oluşturma anlatılıyor.) 
+Her segment: faiz = anapara * oran * gün / 365
 
-uyap_bilisim_sistemi_kitabi (1)
+Oran değişim tarihleri, TCMB tablosundan otomatik çekilir: (TCMB)
 
-Eğer stage = Kesinleşme ise → varlık sorgu görevlerini sıraya diz (SGK, tapu, araç vs. — bunlar UYAP entegrasyonlarıyla zaten UYAP içinde yapılabiliyor mantık olarak) 
+3.2 TBK 100 mahsup (kısmi ödeme geldiğinde)
 
-uyap_bilisim_sistemi_kitabi (1)
+Kısmi ödeme:
 
-Bu motorun çıktısı: Next Best Action listesi.
+işlemiş faiz
 
-Katman 4 — UYAP “Ekran Robotu” (UI Automation Worker)
+masraf
 
-Burası icrabot’un kas gücü.
+fer’iler
 
-Bunu “işlem şablonları” ile kur:
+anapara
 
-4A) Navigation Map (Menü Yolu Haritası)
+Bunu otomatik yapmazsan “faiz niye tutmuyor” şikâyeti bitmez.
 
-Örn:
+4) Uygulanabilir “konfigürasyon” şeması (sisteme koy)
 
-EtebligatStatusScreen → Tebligat > Hazırlanmış Elektronik Tebligatlar 
+Aşağıdaki gibi bir InterestStrategy registry yap:
 
-uyap_bilisim_sistemi_kitabi (1)
+{   "strategies": {     "CAMBIAL_CHECK": {       "default_interest_type": "TCMB_AVANS_3095_2_2",       "start_date_policy": "EVENT_BASED",       "allowed_start_events": ["DRAW_DATE", "PRESENTATION_DATE", "NOTICE_DATE", "FOLLOWUP_DATE"],       "day_count_basis": 365,       "compounding": false,       "rate_series_source": "TCMB_REESKONT_AVANS_TABLE"     },     "GENERAL_ENFORCEMENT": {       "default_interest_type": "AUTO_BY_DEBT_NATURE",       "start_date_policy": "EVENT_BASED",       "allowed_start_events": ["DUE_DATE", "NOTICE_DATE", "DEFAULT_DATE", "FOLLOWUP_DATE"],       "day_count_basis": 365,       "compounding": false     },     "TTK_1530_SUPPLY_DELAY": {       "default_interest_type": "TCMB_TTK1530",       "start_date_policy": "DUE_DATE_OR_30D",       "day_count_basis": 365,       "compounding": false,       "rate_series_source": "TCMB_TTK1530_TABLE"     }   } } 
 
-PortalAccess → portal.uyap.gov.tr intranet 
+TCMB_REESKONT_AVANS_TABLE = TCMB’nin “Reeskont ve Avans Faiz Oranları” sayfasındaki satırlar (2025 değişimleri dahil). (TCMB)
 
-uyap_bilisim_sistemi_kitabi (1)
+TCMB_TTK1530_TABLE = TCMB’nin TTK 1530 tablosu (2025: %53,25; 2026: %43,00). (TCMB)
 
-4B) Screen Parser (Ekrandan veri okuma)
+5) “Hata yakalayan” Policy Gate (senin yaşadığın bug’ı otomatik yakalar)
 
-Örn: “Hazırlanmış Elektronik Tebligatlar” ekranı renk kodlarıyla statü verir:
-MAVİ/PEMBE/SARI/GRİ ve alanlar (Tarafa teslim tarihi, okundu, e-tebliğ mazbatası). 
+Her hesapta şu kontroller STOP vermeli:
 
-uyap_bilisim_sistemi_kitabi (1)
+Oran kapsama kontrolü: Başlangıç–bitiş arası rate series tamamen kapsıyor mu? (yoksa hesaplama kilitlensin)
 
+Tek oran uyarısı: “değişen oran” seçili ama segment sayısı 1 ise → oran serisi çekilemiyor demektir
 
-Bot bunu okuyup e_tebligat_status alanına yazar.
+Sanity band: çıkan faiz, min–max oran bandının dışındaysa kırmızı bayrak (ör. %39,75 yerine %44 efektif çıkması)
 
-4C) Action Runner (Tıklama/işlem)
+6) Senin ekrandaki hatayı düzeltmek için en hızlı teşhis
 
-Örn: “Mazbata Sorgula” butonuna basma senaryosu (mazbata yoksa). 
+Büyük ihtimalle problem şu ikisinden biri:
 
-uyap_bilisim_sistemi_kitabi (1)
+Sistem TCMB avans oranlarını doğru tabloyla segmentlemiyor (tek oran kullanıyor ya da eski satırı çekiyor).
 
-Burada güvenlik gereği: otomasyonun “neye tıklayacağı” prensip olarak tanımlanır; ama yetkisiz erişim tekniklerine girmiyoruz.
+Ya da “çek” takip tipinde faiz başlangıcını yanlış olaydan başlatıp gün sayısını kaçırıyor.
 
-Katman 5 — Zamanlayıcı (Scheduler)
+İlk düzeltme hamlesi: TCMB avans oranlarını turn4view0’daki resmi satırlara birebir bağla (28.12.2024 / 08.03.2025 / 17.09.2025 / 20.12.2025). (TCMB)
 
-Tebligat sonrası: 2 saatte bir ilk 24 saat, sonra günde 2 kez
-
-Kesinleşme adayı oluşunca: günde 1 kez
-
-Varlık sorguları: haftada 1 (veya olay tetikli)
-
-Katman 6 — Denetim ve İspat (Audit / Log)
-
-Bu sistemin “mahkemede ayakta kalması” için şart:
-
-Her görev için:
-
-kim tetikledi (kural mı kullanıcı mı)
-
-ne okudu (status snapshot)
-
-ne yaptı (action)
-
-hangi delil çıktı (no/tarih)
-
-hata varsa ekran görüntüsü / log
-
-UYAP zaten loglama ve yetki mantığı üzerinde duruyor; sen de kendi sisteminde daha sıkı tut. 
-
-uyap_bilisim_sistemi_kitabi (1)
-
-Senin verdiğin örnek senaryoyu (uçtan uca) blueprint’e dökeyim
-Senaryo: “Dosya açıldı → tebligat gönderildi → tebliğ kontrol → kesinleşti → varlık sorgu”
-Event 1: Dosya açıldı
-
-stage = Açılış
-
-Task: SyncCaseHeaderFromUYAP
-
-Event 2: Tebligat gönderildi
-
-stage = Tebligat
-
-Task: FetchEtebligatStatuses (Hazırlanmış Elektronik Tebligatlar)
-
-Renk/alan okuma: MAVİ/PEMBE/SARI/GRİ + Tarafa teslim tarihi + mazbata var mı 
-
-uyap_bilisim_sistemi_kitabi (1)
-
-Event 3: Tebliğ edilmiş sayılma hesabı
-
-Eğer Tarafa teslim tarihi varsa:
-
-teblig_date = delivered_date + 5 gün (kitap: 5. gün sonunda) 
-
-uyap_bilisim_sistemi_kitabi (1)
-
-finalization_candidate = true
-
-Event 4: Mazbata yoksa üret
-
-Task: MazbataSorgula (kitap: mazbata sorgula ile oluşturma) 
-
-uyap_bilisim_sistemi_kitabi (1)
-
-Event 5: Kesinleşme
-
-stage = Kesinleşme
-
-Rule: “Kesinleştiyse varlık sorgularını başlat”
-
-Task group: RunAssetQueries (SGK/TAKBİS/araç vs. — UYAP entegrasyon mantığı mevcut; kurumlar arası servis erişimi UYAP içinde). 
-
-uyap_bilisim_sistemi_kitabi (1)
-
-“Eğitilebilir sistem” için en önemli tasarım kararı
-
-Sen bunu “hardcode bot” değil öğrenen/konfigüre edilen bot yapmalısın.
-
-Öğretilebilirlik modeli
-
-Her görev bir “Recipe”:
-
-giriş şartları
-
-UYAP ekran yolu
-
-okunacak alanlar
-
-karar kuralları
-
-yapılacak aksiyon
-
-beklenen çıktı
-
-Bunları JSON/YAML gibi bir “Bot Cookbook” dosyasında tutarsın.
-Yarın UYAP ekranı değişirse: kodu değil recipe’yi güncellersin.
-
-Tamam canım. Aşağıya **UYAP’a göre “eğitilebilir bot sistemi” için modül modül görev listesi + her görev için Recipe (tarif) şablonu** çıkardım. Bu, senin “icrabot” çizgisinde çalışacak otomasyonun **deploy edilebilir blueprint’i**.
-
-> Bu blueprint’in dayandığı gerçekler: UYAP Portal intranet/VPN bağlamı ve UYAP’ta işlem/iz bırakma mantığı (e-imza, kayıt, mazbata, tebligat ekranları vb.). Özellikle e-tebligatın “5. gün tebliğ sayılma + mazbata” akışı ve “Hazırlanmış Elektronik Tebligatlar” ekranının durum bilgileri kitapta net. 
-
----
-
-# 1) Sistem Haritası (Eğitilebilir Bot Omurgası)
-
-## 1.1 Case Digital Twin (Dosya Dijital İkizi)
-
-Her dosyada botun çalışması için zorunlu alanlar:
-
-* `case_id` (senin sistem id)
-* `uyap_dosya_no` / `uyap_tevzi_no`
-* `stage` (Aşama): `ACILIS | TEBLIGAT | KESINLESME | VARLIK | HACIZ | TAHSILAT | SATIS | KAPANIS`
-* `substage` (Alt aşama)
-* `party[]` (alacaklı/borçlu) + `identity` + `address[]` + `address_type`
-* `events[]` (zaman çizgisi): tebligat gönderildi, tevdi listesi, mazbata oluştu, kesinleşti vs.
-* `evidence[]` (kanıt): tevdi liste no, makbuz no, e-tebliğ mazbatası tarihi, teslim tarihi vs.
-* `last_sync_at`, `next_actions[]`, `errors[]`
-
-## 1.2 Task Orchestrator (Görev Motoru)
-
-* Queue + öncelik
-* Retry/backoff
-* “İnsan onayı gerekir” bayrağı
-* Zamanlayıcı (Scheduler) ile tetiklenir
-
-## 1.3 Rules Engine (Eğitim = Kural Seti)
-
-“Dosya şu durumdaysa → şu görevleri sıraya koy” mantığı.
-
-Örnek:
-
-* `Tebligat gönderildi` → `Tebligat durum kontrolü` görevini planla
-* `e-tebligat teslim edildi` → `tebliğ tarihi hesapla` (+5 gün) 
-* `mazbata yok` → `Mazbata Sorgula` aksiyonunu tetikle 
-* `kesinleşti` → `varlık sorgu batch` tetikle (SGK/TAKBİS/araç vs. UYAP entegrasyon mantığı) 
-
-## 1.4 UYAP UI Worker (Ekran Robotu)
-
-* Navigation map: UYAP menü yolları
-* Screen parser: tablolardan alan okuma
-* Action runner: buton tıklama / seçim yapma / sorgu çalıştırma
-* Her adım için **audit log** + **kanıt** kaydı
-
-## 1.5 Audit / Proof (İspat & Log)
-
-Her görev:
-
-* `who/why` (kural mı kullanıcı mı)
-* `where` (UYAP ekran yolu)
-* `what_read` (alan snapshot)
-* `what_did` (aksiyon)
-* `proof` (no/tarih)
-* hata varsa “ekran görüntüsü”/log
-
----
-
-# 2) Modül Modül Görev Listesi (İcrabot tarzı)
-
-Aşağıdaki liste senin botunun “yapabildiği işler kataloğu” olacak.
-
-## MODÜL A — Senkronizasyon (Dosya/Safahat)
-
-1. `SyncCaseHeader` (dosya kapak/başlık bilgilerini çek)
-2. `SyncSafahatTimeline` (dosya safahat olaylarını güncelle)
-3. `DetectStageFromSafahat` (safahatten aşama tahmini)
-
-> “Dosya arama / dosya ayrıntıları / evrak-safahat” mantığı kitapta sistematik bir ekran yaklaşımı olarak anlatılıyor. 
-
-## MODÜL B — Tebligat Otomasyonu (En kritik)
-
-4. `FetchEtebligatStatuses`
-
-   * UYAP: **Tebligat → Hazırlanmış Elektronik Tebligatlar**
-   * Durum okuma: teslim tarihi, okundu, mazbata, renk/durum mantığı 
-5. `ComputeLegalServiceDate`
-
-   * e-tebligat için: teslim + 5. gün “tebliğ edilmiş sayılma” kuralı 
-6. `MazbataSorgulaIfMissing`
-
-   * “Mazbata Sorgula” ile mazbata üretim tetik 
-7. `FetchPhysicalTebligatStatus`
-
-   * PTT tebligat sorgu / sonuç (kitapta tebligat modülü içindeki sorgu yaklaşımı var) 
-8. `HandleReturnedTebligat` (iade/bila/yeniden tebligat için dosya timeline’a yeni event aç)
-
-## MODÜL C — Kesinleşme Takibi
-
-9. `DetectFinalizationCandidate` (tebliğ tarihleri + sürelerden “kesinleşebilir” tahmin)
-10. `MarkFinalizedWhenReady` (kullanıcı/onay gerekiyorsa flag)
-
-> Burada mevzuat süreleri dosyadan değil, senin kendi kural tabanından gelecek. Ama e-tebligatın 5 gün kuralı ve mazbata bağlantısı kitapta var. 
-
-## MODÜL D — Varlık Sorgu (Batch)
-
-11. `RunAssetQueriesBatch` (hedef: “icra kabiliyeti” haritası)
-
-* SGK kaydı / işyeri
-* Tapu (TAKBİS)
-* Araç (araç/tedbir/taşıt bilgisi)
-* Banka/hesap/menkul kıymet (UYAP entegrasyonları/kurumlar arası)
-
-> Kitap UYAP’ın birçok kurumla entegrasyon yaptığını ve bu sayede sorguların mümkün olduğunu genişçe listeliyor. 
-
-## MODÜL E — Haciz / Satış / Tahsilat
-
-12. `PrepareHacizRequests` (haciz yazıları / mal-satış işlemleri için “hazırlık”)
-13. `TrackTahsilatReddiyat` (tahsilat/reddiyat hareketlerini dosya timeline’a işle)
-14. `SaleWorkflowMonitor` (satış adımları, ihale, sonuçlandırma)
-
-> İcra modülü başlıkları: “Harç ve kasa”, “Haciz/Mal/Satış”, “Tahsilat/Reddiyat”, “Sorgular” şeklinde ayrışıyor. 
-
----
-
-# 3) “Recipe” Şablonu (Eğitilebilir Görev Tarifi)
-
-Aşağıdaki şablonu her görev için dolduracaksın. Kod değil, **konfig**.
-
-```yaml
-recipe_id: "FetchEtebligatStatuses"
-version: 1
-stage_tags: ["TEBLIGAT"]
-trigger:
-  type: "event_or_schedule"
-  when:
-    - "event:TEBLIGAT_SENT"
-    - "schedule:EVERY_6_HOURS"
-preconditions:
-  - "case.uyap_dosya_no != null"
-  - "session.uyap_logged_in == true"
-uyap_nav_path:
-  - "Tebligat"
-  - "Hazırlanmış Elektronik Tebligatlar"
-read:
-  table: "e-tebligat list"
-  fields:
-    - name: "tarafa_teslim_tarihi"
-    - name: "okundu"
-    - name: "e_teblig_mazbatasi_var_mi"
-    - name: "iletim_durumu_renk"
-decisions:
-  - if: "e_teblig_mazbatasi_var_mi == false AND tarafa_teslim_tarihi != null"
-    then_enqueue: ["MazbataSorgulaIfMissing"]
-  - if: "tarafa_teslim_tarihi != null"
-    then_enqueue: ["ComputeLegalServiceDate"]
-actions:
-  - type: "query"
-    button: "Sorgula"
-postconditions:
-  - "case.events += ETEBLIGAT_STATUS_SNAPSHOT"
-proof:
-  store:
-    - "snapshot_hash"
-    - "tarafa_teslim_tarihi"
-audit:
-  level: "high"
-  retain_days: 3650
-```
-
-Bu şablon, senin “programımı uyaba göre eğitmek” dediğin şeyin **bizzat kendisi**.
-
----
-
-# 4) Şimdi: En Önemli 8 Görev İçin Hazır Recipe (Direkt kullan)
-
-## 4.1 FetchEtebligatStatuses
-
-**UYAP ekranı:** Hazırlanmış Elektronik Tebligatlar
-Kitap bu ekranın ne yaptığını, durum takibini ve mazbata mantığını anlatıyor. 
-
-* Okunacaklar: teslim tarihi, okundu, mazbata var mı, durum
-* Çıktı: dosya timeline’a “e-tebligat snapshot”
-
-## 4.2 ComputeLegalServiceDate
-
-**Kural:** e-tebligat, posta kutusuna bırakılmayı izleyen 5. gün sonunda tebliğ edilmiş sayılır. 
-
-* Girdi: `delivered_date`
-* Çıktı: `legal_service_date = delivered_date + 5 gün`
-
-## 4.3 MazbataSorgulaIfMissing
-
-Kitap “Mazbata Sorgula” ile mazbata oluşumunu tetikleyebildiğini söylüyor. 
-
-* Ön koşul: tebliğ edilmiş sayılma tarihi geldi, mazbata yok
-* Aksiyon: “Mazbata Sorgula”
-* Kanıt: mazbata flag/tarih
-
-## 4.4 FetchPhysicalTebligatStatus
-
-* Ön koşul: fiziki tebligat var
-* Aksiyon: tebligat sorgu
-* Çıktı: iade/bila/tebliğ timeline event
-
-## 4.5 DetectFinalizationCandidate
-
-* Kural seti: tebliğ + süre
-* Çıktı: `finalization_candidate=true`, “son tarih” hesap
-
-## 4.6 RunAssetQueriesBatch
-
-Kitap UYAP’ın kurum entegrasyonlarıyla veri alışverişi yaptığını listeliyor (TAKBİS, SGK vb.). 
-
-* Trigger: `stage=KESINLESME` veya `finalization_candidate`
-* Çıktı: `asset_profile` (puan + bulgular + tarih)
-
-## 4.7 TrackTahsilatReddiyat
-
-* Trigger: günlük/haftalık
-* Çıktı: tahsilat/reddiyat hareket timeline
-
-## 4.8 PrepareHacizRequests
-
-* Trigger: varlık profili “hacze uygun”
-* Çıktı: “hazır haciz paketi” (insan onayıyla)
-
----
-
-# 5) Çalışma Modu: “Tam otomatik” değil, “Kontrollü otomatik”
-
-Bu tip sistemlerde en iyi pratik:
-
-* **Okuma işleri tam otomatik** (tebligat durum, mazbata, safahat, varlık sorgu raporu)
-* **Yazma/işlem işleri kontrollü**
-
-  * haciz, satış, kritik işlemler = “Onay gerektirir”
-* Her adım audit/log + kanıt
-
-Kitap zaten sistemin denetim, kayıt ve güvenlik yaklaşımını vurguluyor; sen de kendi sisteminde bunu daha sıkı uygula. 
-
----
-
-# 6) Senin için “Minimum Viable Icrabot” (MVIC) — 2 haftalık hedef
-
-En hızlı değer üreten set:
-
-1. `SyncSafahatTimeline`
-2. `FetchEtebligatStatuses`
-3. `ComputeLegalServiceDate`
-4. `MazbataSorgulaIfMissing`
-5. `DetectFinalizationCandidate`
-6. `RunAssetQueriesBatch` (rapor olarak)
-
-Bunu canlıya aldığında: “Dosya açıldı → bot her şeyi takip ediyor, kesinleşme ve varlık raporu hazır” seviyesine gelirsin.
-
----
-
-İstersen bir sonraki adımda (soru sormadan) şu iki deliverable’ı da çıkarırım:
-
-1. **Recipe Pack v1 (20–30 görev)**: YAML/JSON halinde, isimlendirme standardıyla
-2. **Stage Transition Table**: “hangi event gelince hangi stage’e geçer” matrisi (tam state machine)
-
-Bu ikisiyle “programımı eğiteceğim sistem haritası” kağıttan çıkar, doğrudan ürüne dönüşür.
-
-Tamam canım. Aşağıya iki deliverable’ı **paket** olarak çıkartıyorum:
-
-1. **Recipe Pack v1** (UYAP botunu “eğiteceğin” 28 görev tarifi)
-2. **Stage Transition Table** (tam state machine matrisi)
-
-Bu paket, UYAP’ta özellikle **e-tebligat durum takibi + 5. gün tebliğ sayılma + mazbata** mantığını ve “Hazırlanmış Elektronik Tebligatlar” ekranını çekirdek alır. 
-
----
-
-## 1) Recipe Pack v1 (28 görev) — YAML
-
-> Not: Bu YAML’lar **konfig**. Kod değil. Senin bot motorun (orchestrator + UI worker) bunları okuyup çalıştıracak.
-
-```yaml
-# =========================
-# GLOBAL ENUMS / CONVENTIONS
-# =========================
-enums:
-  stage:
-    - ACILIS
-    - TEBLIGAT
-    - KESINLESME
-    - VARLIK
-    - HACIZ
-    - TAHSILAT
-    - SATIS
-    - KAPANIS
-    - ASKIDA
-    - HATA
-  trigger_type:
-    - event
-    - schedule
-    - manual
-  risk_level:
-    - read_only
-    - controlled_write
-    - high_impact_write
-
-defaults:
-  audit:
-    retain_days: 3650
-    include_screenshot_on_error: true
-  retry:
-    max_attempts: 4
-    backoff_seconds: [30, 120, 600, 1800]
-  proof_minimum:
-    - timestamp
-    - uyap_nav_path
-    - snapshot_hash
-
-# =========================
-# RECIPE PACK v1
-# =========================
-recipes:
-
-  # ---------- A) SESSION / CONTEXT ----------
-  - recipe_id: EnsureUYAPSession
-    version: 1
-    stage_tags: [ACILIS, TEBLIGAT, KESINLESME, VARLIK, HACIZ, TAHSILAT, SATIS]
-    trigger:
-      type: schedule
-      when: ["EVERY_15_MIN"]
-    preconditions: []
-    uyap_nav_path: ["(session)"]
-    read:
-      fields: ["session.is_logged_in", "session.user_role"]
-    decisions:
-      - if: "session.is_logged_in == false"
-        then: { set_flag: "session.required=true", notify: "UYAP oturumu yok" }
-    actions: []
-    postconditions: ["session.health_checked=true"]
-    proof: { store: ["session.is_logged_in", "session.user_role"] }
-    audit: { level: read_only }
-
-  - recipe_id: BindCaseToUYAPNumber
-    version: 1
-    stage_tags: [ACILIS]
-    trigger:
-      type: event
-      when: ["CASE_CREATED_LOCAL"]
-    preconditions: ["case.uyap_dosya_no == null"]
-    uyap_nav_path: ["(user-input or clipboard)"]
-    read: { fields: ["user.provided_uyap_dosya_no"] }
-    decisions:
-      - if: "user.provided_uyap_dosya_no != null"
-        then: { set: "case.uyap_dosya_no=user.provided_uyap_dosya_no" }
-    actions: []
-    postconditions: ["case.uyap_dosya_no != null"]
-    proof: { store: ["case.uyap_dosya_no"] }
-    audit: { level: controlled_write }
-
-  # ---------- B) CORE SYNC ----------
-  - recipe_id: SyncCaseHeader
-    version: 1
-    stage_tags: [ACILIS, TEBLIGAT, KESINLESME, VARLIK, HACIZ, TAHSILAT, SATIS]
-    trigger:
-      type: schedule
-      when: ["EVERY_12_HOURS"]
-    preconditions: ["session.is_logged_in == true", "case.uyap_dosya_no != null"]
-    uyap_nav_path: ["Dosya", "Dosya Ayrıntı Bilgileri"]
-    read:
-      fields:
-        - "uyap.dosya_no"
-        - "uyap.taraflar_summary"
-        - "uyap.durum_summary"
-    actions:
-      - type: query
-        input: { dosya_no: "{{case.uyap_dosya_no}}" }
-    postconditions: ["case.last_sync_at=now()", "case.header_synced=true"]
-    proof: { store: ["uyap.dosya_no", "uyap.durum_summary"] }
-    audit: { level: read_only }
-
-  - recipe_id: SyncEvrakIndex
-    version: 1
-    stage_tags: [ACILIS, TEBLIGAT, KESINLESME, VARLIK, HACIZ, TAHSILAT, SATIS]
-    trigger:
-      type: schedule
-      when: ["EVERY_24_HOURS"]
-    preconditions: ["session.is_logged_in == true", "case.uyap_dosya_no != null"]
-    uyap_nav_path: ["Dosya", "Dosya Ayrıntı Bilgileri"]
-    read:
-      table: "dosya_evrak"
-      fields: ["evrak_turu", "tarih", "id_or_ref"]
-    actions:
-      - type: query
-        input: { dosya_no: "{{case.uyap_dosya_no}}" }
-    postconditions: ["case.evrak_index_updated=true"]
-    proof: { store: ["snapshot_hash"] }
-    audit: { level: read_only }
-
-  - recipe_id: SyncSafahatTimeline
-    version: 1
-    stage_tags: [ACILIS, TEBLIGAT, KESINLESME, VARLIK, HACIZ, TAHSILAT, SATIS]
-    trigger:
-      type: schedule
-      when: ["EVERY_6_HOURS"]
-    preconditions: ["session.is_logged_in == true", "case.uyap_dosya_no != null"]
-    uyap_nav_path: ["(Portal/Modül)", "Safahat Sorgula"]
-    read:
-      table: "safahat"
-      fields: ["tarih", "islem", "aciklama"]
-    actions:
-      - type: query
-        input: { dosya_no: "{{case.uyap_dosya_no}}" }
-    postconditions: ["case.events += safahat_delta"]
-    proof: { store: ["snapshot_hash", "delta_count"] }
-    audit: { level: read_only }
-
-  - recipe_id: InferStageFromSignals
-    version: 1
-    stage_tags: [ACILIS, TEBLIGAT, KESINLESME, VARLIK, HACIZ, TAHSILAT, SATIS, KAPANIS]
-    trigger:
-      type: schedule
-      when: ["EVERY_6_HOURS"]
-    preconditions: ["case.events != empty"]
-    uyap_nav_path: ["(internal)"]
-    read: { fields: ["case.events", "case.current_stage"] }
-    decisions:
-      - if: "events.contains('TEBLIGAT_SENT') and not events.contains('SERVICE_EFFECTIVE')"
-        then: { set: "case.stage=TEBLIGAT" }
-      - if: "events.contains('SERVICE_EFFECTIVE') and not events.contains('FINALIZED')"
-        then: { set: "case.stage=KESINLESME" }
-      - if: "events.contains('FINALIZED') and not events.contains('ASSET_PROFILE_READY')"
-        then: { set: "case.stage=VARLIK" }
-      - if: "events.contains('HACIZ_REQUESTED')"
-        then: { set: "case.stage=HACIZ" }
-      - if: "events.contains('TAHSILAT') or events.contains('REDDIYAT')"
-        then: { set: "case.stage=TAHSILAT" }
-      - if: "events.contains('SALE_STARTED')"
-        then: { set: "case.stage=SATIS" }
-      - if: "events.contains('CLOSED')"
-        then: { set: "case.stage=KAPANIS" }
-    actions: []
-    postconditions: ["case.stage in enums.stage"]
-    proof: { store: ["case.stage", "reason_code"] }
-    audit: { level: controlled_write }
-
-  # ---------- C) TEBLIGAT (E-TEBLIGAT HEAVY) ----------
-  - recipe_id: FetchPreparedETebligatlar
-    version: 1
-    stage_tags: [TEBLIGAT]
-    trigger:
-      type: schedule
-      when: ["EVERY_6_HOURS"]
-    preconditions: ["session.is_logged_in == true", "case.uyap_dosya_no != null"]
-    uyap_nav_path: ["Tebligat", "Hazırlanmış Elektronik Tebligatlar"]
-    read:
-      table: "e_tebligatlar"
-      fields:
-        - "tarafa_teslim_tarihi"
-        - "okundu"
-        - "e_teblig_mazbatasi_var"
-        - "durum_renk_kodu"
-    actions:
-      - type: query
-        input: { tarih_araligi: "last_30_days", dosya_no: "{{case.uyap_dosya_no}}" }
-    decisions:
-      - if: "any(e_tebligatlar.tarafa_teslim_tarihi != null)"
-        then: { enqueue: ["ComputeServiceEffectiveDate_ETebligat"] }
-      - if: "any(e_tebligatlar.tarafa_teslim_tarihi != null AND e_tebligatlar.e_teblig_mazbatasi_var == false)"
-        then: { enqueue: ["MazbataSorgula_ETebligat"] }
-    postconditions: ["case.events += ETEBLIGAT_SNAPSHOT"]
-    proof: { store: ["tarafa_teslim_tarihi", "durum_renk_kodu", "snapshot_hash"] }
-    audit: { level: read_only }
-
-  - recipe_id: ComputeServiceEffectiveDate_ETebligat
-    version: 1
-    stage_tags: [TEBLIGAT]
-    trigger:
-      type: event
-      when: ["ETEBLIGAT_DELIVERED"]
-    preconditions: ["case.e_tebligat.delivered_date != null"]
-    uyap_nav_path: ["(internal)"]
-    read: { fields: ["case.e_tebligat.delivered_date"] }
-    actions:
-      - type: compute
-        formula: "service_effective_date = delivered_date + 5 days"
-    postconditions: ["case.events += SERVICE_EFFECTIVE_CANDIDATE"]
-    proof: { store: ["service_effective_date"] }
-    audit: { level: controlled_write }
-
-  - recipe_id: MazbataSorgula_ETebligat
-    version: 1
-    stage_tags: [TEBLIGAT]
-    trigger:
-      type: schedule
-      when: ["EVERY_12_HOURS"]
-    preconditions:
-      - "session.is_logged_in == true"
-      - "case.e_tebligat.delivered_date != null"
-      - "case.e_tebligat.mazbata_exists == false"
-      - "now() >= case.e_tebligat.delivered_date + 5 days"
-    uyap_nav_path: ["Tebligat", "Hazırlanmış Elektronik Tebligatlar"]
-    read: { fields: ["uyap.mazbata_status"] }
-    actions:
-      - type: click
-        button: "Mazbata Sorgula"
-    postconditions: ["case.events += MAZBATA_REQUESTED"]
-    proof: { store: ["uyap.mazbata_status", "timestamp"] }
-    audit: { level: controlled_write }
-
-  - recipe_id: FetchPhysicalTebligatStatus
-    version: 1
-    stage_tags: [TEBLIGAT]
-    trigger:
-      type: schedule
-      when: ["EVERY_12_HOURS"]
-    preconditions: ["session.is_logged_in == true", "case.physical_tebligat.exists == true"]
-    uyap_nav_path: ["Tebligat", "Tebligat Arama"]
-    read:
-      table: "tebligat_list"
-      fields: ["gonderi_tipi", "teblig_statusu", "iade_nedeni", "teblig_tarihi"]
-    actions:
-      - type: query
-        input: { dosya_no: "{{case.uyap_dosya_no}}", status_filter: "ALL" }
-    decisions:
-      - if: "any(teblig_statusu in ['IADE','BILA'])"
-        then: { enqueue: ["OpenReTebligatCaseBranch"] }
-    postconditions: ["case.events += PHYSICAL_TEBLIGAT_SNAPSHOT"]
-    proof: { store: ["snapshot_hash"] }
-    audit: { level: read_only }
-
-  - recipe_id: OpenReTebligatCaseBranch
-    version: 1
-    stage_tags: [TEBLIGAT]
-    trigger:
-      type: event
-      when: ["TEBLIGAT_RETURNED"]
-    preconditions: ["case.needs_retebligat == true"]
-    uyap_nav_path: ["(internal)"]
-    read: { fields: ["case.return_reason", "case.last_known_addresses"] }
-    actions: []
-    postconditions: ["case.events += RETEBLIGAT_NEEDED"]
-    proof: { store: ["case.return_reason"] }
-    audit: { level: controlled_write }
-
-  # ---------- D) KESINLESME ----------
-  - recipe_id: DetectFinalizationCandidate
-    version: 1
-    stage_tags: [KESINLESME, TEBLIGAT]
-    trigger:
-      type: schedule
-      when: ["EVERY_24_HOURS"]
-    preconditions: ["case.events.contains('SERVICE_EFFECTIVE_CANDIDATE')"]
-    uyap_nav_path: ["(internal)"]
-    read: { fields: ["case.service_effective_date", "case.objection_deadline_days"] }
-    actions:
-      - type: compute
-        formula: "finalization_candidate_date = service_effective_date + objection_deadline_days"
-    decisions:
-      - if: "now() >= finalization_candidate_date"
-        then: { set_flag: "case.finalization_candidate=true", enqueue: ["SyncSafahatTimeline"] }
-    postconditions: ["case.finalization_candidate_date != null"]
-    proof: { store: ["finalization_candidate_date"] }
-    audit: { level: controlled_write }
-
-  - recipe_id: MarkFinalized
-    version: 1
-    stage_tags: [KESINLESME]
-    trigger:
-      type: manual
-      when: ["USER_CONFIRMS_FINALIZED"]
-    preconditions: ["case.finalization_candidate == true"]
-    uyap_nav_path: ["(internal)"]
-    read: { fields: ["user.confirmation"] }
-    actions: []
-    postconditions: ["case.events += FINALIZED", "case.stage=VARLIK"]
-    proof: { store: ["timestamp", "user.confirmation_ref"] }
-    audit: { level: high_impact_write }
-
-  # ---------- E) VARLIK (ASSET QUERIES) ----------
-  - recipe_id: RunAssetQueriesBatch
-    version: 1
-    stage_tags: [VARLIK]
-    trigger:
-      type: schedule
-      when: ["EVERY_7_DAYS"]
-    preconditions: ["session.is_logged_in == true", "case.events.contains('FINALIZED')"]
-    uyap_nav_path: ["Sorgular", "Toplu Entegrasyon Sorgu"]
-    read:
-      fields: ["sgk_result", "takbis_result", "vehicle_result", "other_assets"]
-    actions:
-      - type: query
-        input: { debtor_ids: "{{case.debtors[*].id}}" }
-    postconditions: ["case.events += ASSET_PROFILE_READY"]
-    proof: { store: ["asset_profile_hash", "timestamp"] }
-    audit: { level: read_only }
-
-  - recipe_id: ScoreAssetProfile
-    version: 1
-    stage_tags: [VARLIK]
-    trigger:
-      type: event
-      when: ["ASSET_PROFILE_READY"]
-    preconditions: ["case.asset_profile != null"]
-    uyap_nav_path: ["(internal)"]
-    read: { fields: ["case.asset_profile"] }
-    actions:
-      - type: compute
-        formula: "asset_score = f(asset_profile)"
-    decisions:
-      - if: "asset_score >= 70"
-        then: { enqueue: ["ProposeHacizPackage"] }
-      - if: "asset_score < 20"
-        then: { set_flag: "case.low_recovery=true" }
-    postconditions: ["case.asset_score != null"]
-    proof: { store: ["asset_score"] }
-    audit: { level: controlled_write }
-
-  - recipe_id: ProposeHacizPackage
-    version: 1
-    stage_tags: [VARLIK]
-    trigger:
-      type: event
-      when: ["ASSET_SCORE_HIGH"]
-    preconditions: ["case.asset_score >= 70"]
-    uyap_nav_path: ["(internal)"]
-    read: { fields: ["case.asset_profile"] }
-    actions: []
-    postconditions: ["case.next_actions += HACIZ_RECOMMENDED"]
-    proof: { store: ["timestamp"] }
-    audit: { level: controlled_write }
-
-  # ---------- F) HACIZ ----------
-  - recipe_id: PrepareHacizDocuments
-    version: 1
-    stage_tags: [HACIZ]
-    trigger:
-      type: manual
-      when: ["USER_APPROVES_HACIZ"]
-    preconditions: ["session.is_logged_in == true", "case.asset_score >= 70"]
-    uyap_nav_path: ["Haciz & Mal & Satış İşlemleri", "Genel Haciz Yazıları"]
-    read: { fields: ["uyap.doc_template_list"] }
-    actions:
-      - type: generate
-        template: "haciz_yazisi"
-        input: { assets: "{{case.asset_profile.assets}}" }
-    postconditions: ["case.events += HACIZ_REQUESTED"]
-    proof: { store: ["generated_doc_id"] }
-    audit: { level: high_impact_write }
-
-  - recipe_id: TrackHacizResults
-    version: 1
-    stage_tags: [HACIZ]
-    trigger:
-      type: schedule
-      when: ["EVERY_48_HOURS"]
-    preconditions: ["session.is_logged_in == true", "case.events.contains('HACIZ_REQUESTED')"]
-    uyap_nav_path: ["Haciz & Mal & Satış İşlemleri", "Haciz İşlemleri"]
-    read:
-      table: "haciz_list"
-      fields: ["haciz_tarihi", "mal_turu", "sonuc", "aciklama"]
-    actions:
-      - type: query
-        input: { dosya_no: "{{case.uyap_dosya_no}}" }
-    postconditions: ["case.events += HACIZ_SNAPSHOT"]
-    proof: { store: ["snapshot_hash"] }
-    audit: { level: read_only }
-
-  # ---------- G) TAHSILAT / REDDIYAT ----------
-  - recipe_id: TrackTahsilat
-    version: 1
-    stage_tags: [TAHSILAT, HACIZ, SATIS]
-    trigger:
-      type: schedule
-      when: ["EVERY_24_HOURS"]
-    preconditions: ["session.is_logged_in == true"]
-    uyap_nav_path: ["Harç ve Kasa İşlemleri", "Tahsilat"]
-    read:
-      table: "tahsilat"
-      fields: ["tarih", "tutar", "makbuz_no", "aciklama"]
-    actions:
-      - type: query
-        input: { dosya_no: "{{case.uyap_dosya_no}}" }
-    postconditions: ["case.events += TAHSILAT_DELTA"]
-    proof: { store: ["delta_count"] }
-    audit: { level: read_only }
-
-  - recipe_id: TrackReddiyat
-    version: 1
-    stage_tags: [TAHSILAT]
-    trigger:
-      type: schedule
-      when: ["EVERY_24_HOURS"]
-    preconditions: ["session.is_logged_in == true"]
-    uyap_nav_path: ["Harç ve Kasa İşlemleri", "Reddiyat"]
-    read:
-      table: "reddiyat"
-      fields: ["tarih", "tutar", "makbuz_no", "alici", "aciklama"]
-    actions:
-      - type: query
-        input: { dosya_no: "{{case.uyap_dosya_no}}" }
-    postconditions: ["case.events += REDDIYAT_DELTA"]
-    proof: { store: ["delta_count"] }
-    audit: { level: read_only }
-
-  # ---------- H) SATIS ----------
-  - recipe_id: StartSaleWorkflow
-    version: 1
-    stage_tags: [SATIS]
-    trigger:
-      type: manual
-      when: ["USER_STARTS_SALE"]
-    preconditions: ["session.is_logged_in == true", "case.events.contains('HACIZ_SNAPSHOT')"]
-    uyap_nav_path: ["Haciz & Mal & Satış İşlemleri", "İhale İşlemleri"]
-    read: { fields: ["uyap.sale_forms"] }
-    actions:
-      - type: create
-        entity: "sale_request"
-        input: { assets: "{{case.sale_assets}}" }
-    postconditions: ["case.events += SALE_STARTED"]
-    proof: { store: ["sale_request_id"] }
-    audit: { level: high_impact_write }
-
-  - recipe_id: MonitorSaleStatus
-    version: 1
-    stage_tags: [SATIS]
-    trigger:
-      type: schedule
-      when: ["EVERY_72_HOURS"]
-    preconditions: ["session.is_logged_in == true", "case.events.contains('SALE_STARTED')"]
-    uyap_nav_path: ["Haciz & Mal & Satış İşlemleri", "İhale İşlemleri"]
-    read:
-      table: "sale_status"
-      fields: ["ihale_tarihi", "durum", "sonuc", "aciklama"]
-    actions:
-      - type: query
-        input: { dosya_no: "{{case.uyap_dosya_no}}" }
-    postconditions: ["case.events += SALE_SNAPSHOT"]
-    proof: { store: ["snapshot_hash"] }
-    audit: { level: read_only }
-
-  # ---------- I) MASRAF / HARÇ OTOMASYONU (LOCAL, UYAP DRIVEN) ----------
-  - recipe_id: PredictNextMasrafNeeds
-    version: 1
-    stage_tags: [ACILIS, TEBLIGAT, HACIZ, SATIS]
-    trigger:
-      type: event
-      when: ["TEBLIGAT_RETURNED", "SALE_STARTED", "HACIZ_REQUESTED"]
-    preconditions: []
-    uyap_nav_path: ["(internal)"]
-    read: { fields: ["case.stage", "case.events"] }
-    actions:
-      - type: compute
-        formula: "masraf_plan = g(stage, events)"
-    postconditions: ["case.next_actions += MASRAF_REQUEST_RECOMMENDED"]
-    proof: { store: ["masraf_plan_hash"] }
-    audit: { level: controlled_write }
-
-  # ---------- J) QUALITY / SAFETY ----------
-  - recipe_id: ConsistencyCheck
-    version: 1
-    stage_tags: [ACILIS, TEBLIGAT, KESINLESME, VARLIK, HACIZ, TAHSILAT, SATIS]
-    trigger:
-      type: schedule
-      when: ["EVERY_24_HOURS"]
-    preconditions: ["case.uyap_dosya_no != null"]
-    uyap_nav_path: ["(internal)"]
-    read: { fields: ["case.stage", "case.events", "case.evidence"] }
-    decisions:
-      - if: "case.stage==TEBLIGAT and not events.contains('TEBLIGAT_SENT')"
-        then: { set_flag: "case.inconsistent=true", notify: "Aşama-teyit uyuşmazlığı" }
-      - if: "events.contains('FINALIZED') and case.stage in [TEBLIGAT, ACILIS]"
-        then: { set: "case.stage=VARLIK" }
-    actions: []
-    postconditions: ["case.consistency_checked=true"]
-    proof: { store: ["timestamp", "case.inconsistent"] }
-    audit: { level: read_only }
-
-  - recipe_id: ErrorQuarantine
-    version: 1
-    stage_tags: [HATA]
-    trigger:
-      type: event
-      when: ["TASK_FAILED_HARD"]
-    preconditions: ["case.last_error != null"]
-    uyap_nav_path: ["(internal)"]
-    read: { fields: ["case.last_error"] }
-    actions:
-      - type: set
-        key: "case.stage"
-        value: "ASKIDA"
-    postconditions: ["case.stage=ASKIDA", "case.next_actions += HUMAN_REVIEW"]
-    proof: { store: ["case.last_error_code"] }
-    audit: { level: controlled_write }
-```
-
-Bu recipe pack’in “dayandığı çekirdek” şunlar: **Hazırlanmış Elektronik Tebligatlar ekranından durum okuma, teslim tarihi, mazbata, 5 gün kuralı, mazbata sorgula**. Hepsi kitapta anlatıldığı için sağlam zemin. 
-
----
-
-## 2) Stage Transition Table (State Machine Matrisi)
-
-Aşağıdaki matris “hangi event gelince stage nasıl değişir?” sorusunun cevabı. Bunu doğrudan `InferStageFromSignals` kural setine de gömebilirsin.
-
-| Event (teticik)               | Ön koşul                   | Yeni Stage   | Not                             |
-| ----------------------------- | -------------------------- | ------------ | ------------------------------- |
-| `CASE_CREATED_LOCAL`          | yerel dosya açıldı         | `ACILIS`     | UYAP no henüz yok               |
-| `UYAP_DOSYA_BOUND`            | uyap dosya no girildi      | `ACILIS`     | senkron başlar                  |
-| `TEBLIGAT_SENT`               | tebligat hazırlandı/çıktı  | `TEBLIGAT`   | izleme başlar                   |
-| `ETEBLIGAT_DELIVERED`         | tarafa teslim tarihi geldi | `TEBLIGAT`   | “tebliğ sayılma” hesabı çalışır |
-| `SERVICE_EFFECTIVE_CANDIDATE` | teslim+5 hesaplandı        | `KESINLESME` | itiraz süresi takibi            |
-| `FINALIZED`                   | itiraz süresi geçti/teyit  | `VARLIK`     | varlık batch tetik              |
-| `ASSET_PROFILE_READY`         | sorgu sonuçlandı           | `VARLIK`     | skorlanır                       |
-| `ASSET_SCORE_HIGH`            | skor ≥ eşik                | `HACIZ`      | onayla→haciz                    |
-| `HACIZ_REQUESTED`             | haciz dokümanı gönderildi  | `HACIZ`      | haciz sonucu izlenir            |
-| `TAHSILAT`                    | tahsilat görüldü           | `TAHSILAT`   | para akışı                      |
-| `REDDIYAT`                    | reddiyat görüldü           | `TAHSILAT`   | para akışı                      |
-| `SALE_STARTED`                | satış/ihale açıldı         | `SATIS`      | ihale izleme                    |
-| `CLOSED`                      | dosya kapandı              | `KAPANIS`    | arşiv                           |
-| `TEBLIGAT_RETURNED`           | iade/bila                  | `TEBLIGAT`   | retebligat branch               |
-| `TASK_FAILED_HARD`            | kritik hata                | `ASKIDA`     | insan incelemesi                |
-
-Bu model, özellikle e-tebligatın “5 gün sonra tebliğ sayılma + mazbata” bağını merkez alıyor. 
-
----
-
-## 3) “Eğitim” pratikte nasıl yapılacak?
-
-Senin botu eğitmen demek şu demek:
-
-* Her yeni ihtiyaç = **yeni recipe** (veya mevcut recipe’ye yeni “decision”)
-* UYAP ekranı değişti = **uyap_nav_path / read.fields** güncellenir
-* Hukuki süre/iş kuralı değişti = **rules engine parametreleri** güncellenir
-
----
-
-## 4) MVIC (Minimum Viable Icrabot) — bu paketten hangi 8’iyle başlarsın?
-
-1. `EnsureUYAPSession`
-2. `BindCaseToUYAPNumber`
-3. `SyncCaseHeader`
-4. `SyncSafahatTimeline`
-5. `FetchPreparedETebligatlar`
-6. `ComputeServiceEffectiveDate_ETebligat`
-7. `MazbataSorgula_ETebligat`
-8. `RunAssetQueriesBatch`
-
-Bu setle “dosya açıldı → tebligat izleme → kesinleşme adayı → varlık raporu” otomatik akar.
-
----
-
-İstersen bir sonraki adımda ben bunu daha da “ürün dosyasına” çeviririm:
-
-* YAML’ları tek bir `recipes_v1.yaml` dosyası düzeninde,
-* yanında `rules_params.yaml` (süreler/eşikler),
-* bir de `ui_map.yaml` (ekran element anahtarları) şeklinde 3 dosya halinde çıkarıp sana tam paket mantığında sunarım.
+İstersen bunu “şu alan %44,25’i tüm döneme yayıyor” ya da “start_date event yanlış map” diye nokta atışı söylerim ve yukarıdaki registry + policy gate’i senin mimarinin içine oturturum.

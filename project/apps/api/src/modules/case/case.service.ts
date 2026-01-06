@@ -5,6 +5,7 @@ import { Prisma, LegalCaseStatus } from "@prisma/client";
 import { isInitialStatus } from "../case-status/case-status.service";
 import { AuditService } from "../audit/audit.service";
 import { ClientInfoRequestService } from "../address-discovery/client-info-request.service";
+import { InterestEngineService } from "../interest-engine/interest-engine.service";
 
 @Injectable()
 export class CaseService {
@@ -15,6 +16,8 @@ export class CaseService {
     private auditService: AuditService,
     @Inject(forwardRef(() => ClientInfoRequestService))
     private clientInfoRequestService: ClientInfoRequestService,
+    @Inject(forwardRef(() => InterestEngineService))
+    private interestEngineService: InterestEngineService,
   ) {}
 
   /**
@@ -1955,7 +1958,7 @@ export class CaseService {
     });
     if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
 
-    return this.prisma.collection.create({
+    const collection = await this.prisma.collection.create({
       data: {
         tenantId,
         caseId,
@@ -1974,6 +1977,18 @@ export class CaseService {
         status: "CONFIRMED",
       },
     });
+
+    // Tahsilat sonrası faiz hesaplamasını yeniden tetikle
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      await this.interestEngineService.recalculateForCase(caseId, today, tenantId);
+      this.logger.debug(`Interest recalculated after collection for case ${caseId}`);
+    } catch (error) {
+      // Faiz hesaplama hatası tahsilat kaydını engellemez
+      this.logger.warn(`Failed to recalculate interest after collection: ${error.message}`);
+    }
+
+    return collection;
   }
 
   /**
@@ -2001,7 +2016,7 @@ export class CaseService {
     });
     if (!collection) throw new NotFoundException("Tahsilat bulunamadı");
 
-    return this.prisma.collection.update({
+    const updated = await this.prisma.collection.update({
       where: { id: collectionId },
       data: {
         amount: data.amount,
@@ -2016,6 +2031,17 @@ export class CaseService {
         status: data.status as any,
       },
     });
+
+    // Tahsilat güncellendikten sonra faiz hesaplamasını yeniden tetikle
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      await this.interestEngineService.recalculateForCase(caseId, today, tenantId);
+      this.logger.debug(`Interest recalculated after collection update for case ${caseId}`);
+    } catch (error) {
+      this.logger.warn(`Failed to recalculate interest after collection update: ${error.message}`);
+    }
+
+    return updated;
   }
 
   /**
@@ -2047,6 +2073,16 @@ export class CaseService {
     if (!collection) throw new NotFoundException("Tahsilat bulunamadı");
 
     await this.prisma.collection.delete({ where: { id: collectionId } });
+
+    // Tahsilat silindikten sonra faiz hesaplamasını yeniden tetikle
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      await this.interestEngineService.recalculateForCase(caseId, today, tenantId);
+      this.logger.debug(`Interest recalculated after collection delete for case ${caseId}`);
+    } catch (error) {
+      this.logger.warn(`Failed to recalculate interest after collection delete: ${error.message}`);
+    }
+
     return { success: true };
   }
 

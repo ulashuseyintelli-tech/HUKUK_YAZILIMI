@@ -46,7 +46,8 @@ import { ExpenseRequestModal, BalanceWidget, ExpenseRequestList } from "@/compon
 import { SendMessageModal } from "@/components/message/SendMessageModal";
 import { DebtorsSummaryBar, DebtorRow, ServiceStatusBadge, AlertBadge, DebtorDetailDrawer } from "@/components/debtor";
 import { UyapExportButton } from "@/components/uyap-export/UyapExportButton";
-import { DueModal, CollectionModal } from "@/components/finance";
+import { DueModal, CollectionModal, HesapOzetiPanel } from "@/components/finance";
+import { FaizDokumuPanel } from "@/components/interest";
 
 // ============================================
 // TİPLER
@@ -1450,7 +1451,7 @@ export default function CaseDetailPage() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-[#F1F3F6] overflow-hidden">
+    <div className="min-h-screen flex flex-col bg-[#F1F3F6]">
       
       {/* FIX MODE BANNER - Eksiklik giderme modunda göster */}
       {fixParam && fromFilter && (
@@ -1817,7 +1818,7 @@ export default function CaseDetailPage() {
       </div>
 
       {/* ANA İÇERİK */}
-      <div className="flex-1 overflow-hidden flex flex-col bg-[#F1F3F6]">
+      <div className="flex-1 flex flex-col bg-[#F1F3F6]">
         
         {/* DOSYA TARAFLARI - Yatay 3 Sütun */}
         <div className="mx-3 mt-3 bg-[#EDF8F1] border border-[#D7EFE2] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)] px-3 py-2 flex-shrink-0">
@@ -2093,7 +2094,7 @@ export default function CaseDetailPage() {
         </div>
 
         {/* ALT İÇERİK - 2 Panel */}
-        <div className="flex-1 overflow-hidden flex gap-3 p-3">
+        <div className="flex gap-3 p-3 min-h-[900px]">
           {/* SOL - Finans + Notlar */}
           <div className="flex-1 flex flex-col overflow-hidden gap-3">
             {/* Finans Paneli - 2 Sütun */}
@@ -2140,11 +2141,11 @@ export default function CaseDetailPage() {
                             className="flex justify-between text-[10px] group hover:bg-blue-50 rounded px-1 -mx-1 py-0.5 cursor-pointer"
                             onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingDue(due); setDueModalOpen(true); }}
                           >
-                            <span className="text-gray-600 truncate max-w-[100px]" title={displayName}>
+                            <span className="text-gray-600 truncate flex-1" title={displayName}>
                               {displayName}
                             </span>
                             <div className="flex items-center gap-1">
-                              <span className="font-medium">{Number(due.amount || 0).toLocaleString('tr-TR')} ₺</span>
+                              <span className="font-medium text-right min-w-[90px]">{Number(due.amount || 0).toLocaleString('tr-TR')} ₺</span>
                               <button 
                                 className="opacity-0 group-hover:opacity-100 text-gray-400 hover:text-red-600 transition-opacity"
                                 onClick={async (e) => {
@@ -2170,7 +2171,10 @@ export default function CaseDetailPage() {
                         })}
                         <div className="flex justify-between pt-1 mt-1 border-t border-dashed text-[10px] font-semibold text-blue-700">
                           <span>Toplam</span>
-                          <span>{dues.reduce((sum: number, d: any) => sum + Number(d.amount || 0), 0).toLocaleString('tr-TR')} ₺</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-right min-w-[90px]">{dues.reduce((sum: number, d: any) => sum + Number(d.amount || 0), 0).toLocaleString('tr-TR')} ₺</span>
+                            <span className="w-3"></span>
+                          </div>
                         </div>
                       </div>
                     ) : (
@@ -2211,23 +2215,23 @@ export default function CaseDetailPage() {
                             BANK_TRANSFER: 'Havale',
                             CHECK: 'Çek',
                           };
+                          const colDate = col.date ? new Date(col.date).toLocaleDateString('tr-TR') : '';
                           return (
                           <div 
                             key={col.id} 
-                            className="flex justify-between text-[10px] group hover:bg-green-50 rounded px-1 -mx-1 py-0.5 cursor-pointer"
+                            className="flex justify-between items-center text-[10px] group hover:bg-green-50 rounded px-1 -mx-1 py-0.5 cursor-pointer"
                             onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingCollection(col); setCollectionModalOpen(true); }}
                           >
-                            <span className="text-gray-600 truncate max-w-[100px]">
-                              {typeLabels[col.type] || col.type}
-                            </span>
-                            <span className="font-medium text-green-700">+{Number(col.amount || 0).toLocaleString('tr-TR')} ₺</span>
+                            <div className="flex flex-col min-w-0">
+                              <span className="text-gray-600 truncate">
+                                {typeLabels[col.type] || col.type}
+                              </span>
+                              <span className="text-[9px] text-gray-400">{colDate}</span>
+                            </div>
+                            <span className="font-medium text-green-700 flex-shrink-0">+{Number(col.amount || 0).toLocaleString('tr-TR')} ₺</span>
                           </div>
                         );
                         })}
-                        <div className="flex justify-between pt-1 mt-1 border-t border-dashed text-[10px] font-semibold text-green-700">
-                          <span>Toplam</span>
-                          <span>+{collections.filter((c: any) => c.status !== 'CANCELLED').reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0).toLocaleString('tr-TR')} ₺</span>
-                        </div>
                       </div>
                     ) : (
                       <p className="text-[9px] text-gray-400 text-center py-2">Henüz ödeme yok</p>
@@ -2247,95 +2251,30 @@ export default function CaseDetailPage() {
           </div>
 
           {/* SAĞ - Hesap Özeti */}
-          <div className="w-72 bg-white border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)] flex flex-col overflow-hidden flex-shrink-0">
-            <div className="px-2 py-1.5 bg-blue-600 text-white">
-              <h3 className="text-[11px] font-semibold">Hesap Özeti</h3>
-              <p className="text-[9px] opacity-80">{formatDate(new Date().toISOString())}</p>
-            </div>
-            <div className="flex-1 overflow-y-auto p-2 space-y-1.5 text-[11px]">
-              {/* Alacak Kalemleri */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-[10px] text-gray-500 uppercase font-medium">Alacak Kalemleri</p>
-                  <button 
-                    className="text-[9px] text-blue-600 hover:text-blue-800 flex items-center gap-0.5"
-                    onClick={() => {/* TODO: Add due modal */}}
-                  >
-                    <PlusCircle className="h-3 w-3" /> Ekle
-                  </button>
-                </div>
-                {loadingFinance ? (
-                  <p className="text-[9px] text-gray-400 text-center py-1">Yükleniyor...</p>
-                ) : dues.length > 0 ? (
-                  <div className="space-y-1">
-                    {dues.map((due: any) => (
-                      <div key={due.id} className="flex justify-between text-[10px]">
-                        <span className="text-gray-600 truncate max-w-[140px]">{due.description || due.type}</span>
-                        <span className="font-medium">{Number(due.amount || 0).toLocaleString('tr-TR')} ₺</span>
-                      </div>
-                    ))}
-                    <div className="flex justify-between pt-1 border-t border-dashed text-[10px] font-semibold text-blue-700">
-                      <span>Toplam Alacak</span>
-                      <span>{dues.reduce((sum: number, d: any) => sum + Number(d.amount || 0), 0).toLocaleString('tr-TR')} ₺</span>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex justify-between text-[10px]">
-                    <span className="text-gray-600">Asıl Alacak</span>
-                    <span className="font-medium">{Number(caseData.principalAmount || 0).toLocaleString('tr-TR')} ₺</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Tahsilatlar */}
-              <div className="border-t pt-2 mt-2">
-                <div className="flex items-center justify-between mb-1.5">
-                  <p className="text-[10px] text-gray-500 uppercase font-medium">Tahsilatlar</p>
-                  <button 
-                    className="text-[9px] text-green-600 hover:text-green-800 flex items-center gap-0.5"
-                    onClick={() => {/* TODO: Add collection modal */}}
-                  >
-                    <PlusCircle className="h-3 w-3" /> Ekle
-                  </button>
-                </div>
-                {loadingFinance ? (
-                  <p className="text-[9px] text-gray-400 text-center py-1">Yükleniyor...</p>
-                ) : collections.length > 0 ? (
-                  <div className="space-y-1">
-                    {collections.filter((c: any) => c.status !== 'CANCELLED').map((col: any) => (
-                      <div key={col.id} className="flex justify-between text-[10px]">
-                        <span className="text-gray-600 truncate max-w-[140px]">
-                          {col.type === 'CASH' ? 'Nakit' : col.type === 'BANK_TRANSFER' ? 'Havale' : col.type === 'CHECK' ? 'Çek' : col.type}
-                          {col.collectionDate && <span className="text-gray-400 ml-1">({new Date(col.collectionDate).toLocaleDateString('tr-TR')})</span>}
-                        </span>
-                        <span className="font-medium text-green-700">+{Number(col.amount || 0).toLocaleString('tr-TR')} ₺</span>
-                      </div>
-                    ))}
-                    <div className="flex justify-between pt-1 border-t border-dashed text-[10px] font-semibold text-green-700">
-                      <span>Toplam Tahsilat</span>
-                      <span>+{collections.filter((c: any) => c.status !== 'CANCELLED').reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0).toLocaleString('tr-TR')} ₺</span>
-                    </div>
-                  </div>
-                ) : (
-                  <p className="text-[9px] text-gray-400 text-center py-1">Henüz tahsilat yok</p>
-                )}
-              </div>
-
-              {/* Özet */}
-              <div className="border-t pt-2 mt-2">
-                <div className="flex justify-between p-1.5 bg-blue-50 rounded font-semibold text-blue-800 text-[11px]">
-                  <span>Takip Tutarı</span>
-                  <span>{(dues.length > 0 ? dues.reduce((sum: number, d: any) => sum + Number(d.amount || 0), 0) : Number(caseData.principalAmount || 0)).toLocaleString('tr-TR')} ₺</span>
-                </div>
-                <div className="flex justify-between p-1.5 bg-red-50 rounded font-bold text-red-800 text-[11px] mt-1">
-                  <span>Kalan Borç</span>
-                  <span>{(
-                    (dues.length > 0 ? dues.reduce((sum: number, d: any) => sum + Number(d.amount || 0), 0) : Number(caseData.principalAmount || 0)) -
-                    collections.filter((c: any) => c.status !== 'CANCELLED').reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0)
-                  ).toLocaleString('tr-TR')} ₺</span>
-                </div>
-              </div>
-            </div>
+          <div className="w-80 flex-shrink-0 sticky top-4">
+            <HesapOzetiPanel
+              caseId={caseData.id}
+              caseDate={caseData.caseDate}
+              caseType={caseData.type}
+              principalAmount={caseData.principalAmount}
+              currency={caseData.currency}
+              debtorCount={caseData.debtors?.length || 1}
+              instruments={caseData.instruments}
+              dues={dues}
+              collections={collections}
+              loading={loadingFinance}
+              onRefresh={() => {
+                // Finans verilerini yeniden yükle
+                setLoadingFinance(true);
+                Promise.all([
+                  api.get(`/cases/${caseData.id}/dues`),
+                  api.get(`/cases/${caseData.id}/collections`)
+                ]).then(([duesRes, colRes]) => {
+                  setDues(duesRes.data || []);
+                  setCollections(colRes.data || []);
+                }).finally(() => setLoadingFinance(false));
+              }}
+            />
           </div>
         </div>
       </div>

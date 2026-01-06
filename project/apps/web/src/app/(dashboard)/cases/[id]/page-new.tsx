@@ -686,103 +686,115 @@ export default function CaseDetailPageNew() {
             </div>
           </div>
           
-          <div className="flex-1 overflow-y-auto p-3 space-y-2 text-xs">
+          <div className="flex-1 overflow-y-auto p-3 space-y-1 text-xs">
             {hesapOzeti ? (
               <>
-                {/* Asıl Alacak */}
-                <div className="flex justify-between">
-                  <span>Senet/Çek Tutarı</span>
-                  <span className="font-medium">{formatMoney(hesapOzeti.asilAlacak, hesapOzeti.currency)}</span>
+                {/* ═══════════ ALACAK KALEMLERİ ═══════════ */}
+                <div className="space-y-0.5">
+                  <div className="flex justify-between py-0.5">
+                    <span className="text-gray-600">Senet/Çek Tutarı</span>
+                    <span className="font-medium">{formatMoney(hesapOzeti.asilAlacak, hesapOzeti.currency)}</span>
+                  </div>
+                  
+                  {/* Takip Öncesi Faiz */}
+                  {hesapOzeti.takipOncesiFaiz > 0 && (
+                    <div className="flex justify-between py-0.5 text-blue-600">
+                      <span>Takip Öncesi Faiz</span>
+                      <span className="font-medium">+{formatMoney(hesapOzeti.takipOncesiFaiz, hesapOzeti.currency)}</span>
+                    </div>
+                  )}
                 </div>
                 
-                {/* Takip Öncesi Faiz */}
-                <div className="flex justify-between text-blue-600">
-                  <span>Takip Öncesi Faiz</span>
-                  <span className="font-medium">+{formatMoney(hesapOzeti.takipOncesiFaiz, hesapOzeti.currency)}</span>
+                {/* ═══════════ TAKİP TUTARI ═══════════ */}
+                <div className="flex justify-between py-1.5 px-2 -mx-2 mt-1.5 border-t-2 border-blue-300 bg-blue-50 rounded">
+                  <span className="font-semibold text-blue-800">TAKİP TUTARI</span>
+                  <span className="font-bold text-blue-700">{formatMoney(hesapOzeti.takipTutari, hesapOzeti.currency)}</span>
                 </div>
                 
-                {/* Takip Tutarı */}
-                <div className="flex justify-between p-2 bg-blue-100 rounded font-semibold text-blue-800">
-                  <span>Takip Tutarı</span>
-                  <span>{formatMoney(hesapOzeti.takipTutari, hesapOzeti.currency)}</span>
-                </div>
-                
-                <hr className="my-2" />
-                
-                {/* İcra Masrafları */}
-                <div className="space-y-1 text-[11px]">
-                  <p className="font-medium text-gray-600">İcra Masrafları:</p>
-                  <div className="flex justify-between pl-2">
+                {/* ═══════════ İCRA MASRAFLARI ═══════════ */}
+                <div className="space-y-0.5 mt-2">
+                  <div className="flex justify-between py-0.5 pl-2">
                     <span className="text-gray-500">Başvurma Harcı</span>
                     <span>{formatMoney(hesapOzeti.icraMasraflari.basvurmaHarci, 'TRY')}</span>
                   </div>
-                  <div className="flex justify-between pl-2">
+                  <div className="flex justify-between py-0.5 pl-2">
                     <span className="text-gray-500">Vekalet Harcı</span>
                     <span>{formatMoney(hesapOzeti.icraMasraflari.vekaletHarci, 'TRY')}</span>
                   </div>
-                  <div className="flex justify-between pl-2">
+                  <div className="flex justify-between py-0.5 pl-2">
                     <span className="text-gray-500">Peşin Harç</span>
                     <span>{formatMoney(hesapOzeti.icraMasraflari.pesinHarc, 'TRY')}</span>
                   </div>
-                  <div className="flex justify-between pl-2">
+                  <div className="flex justify-between py-0.5 pl-2">
                     <span className="text-gray-500">Dosya Gideri</span>
                     <span>{formatMoney(hesapOzeti.icraMasraflari.dosyaGideri, 'TRY')}</span>
                   </div>
-                  <div className="flex justify-between pl-2">
+                  <div className="flex justify-between py-0.5 pl-2">
                     <span className="text-gray-500">Tebligat Gideri</span>
                     <span>{formatMoney(hesapOzeti.icraMasraflari.tebligatGideri, 'TRY')}</span>
                   </div>
-                  <div className="flex justify-between pl-2">
+                  <div className="flex justify-between py-0.5 pl-2">
                     <span className="text-gray-500">Vekalet Pulu</span>
                     <span>{formatMoney(hesapOzeti.icraMasraflari.vekaletPulu, 'TRY')}</span>
                   </div>
-                  <div className="flex justify-between font-medium pt-1 border-t">
-                    <span>İcra Masrafları Toplamı</span>
-                    <span>{formatMoney(hesapOzeti.icraMasraflari.toplam, 'TRY')}</span>
+                </div>
+                
+                {/* İcra Masrafları Toplamı */}
+                <div className="flex justify-between py-1.5 px-2 -mx-2 mt-1 border-t border-gray-300 bg-gray-100 rounded">
+                  <span className="font-semibold text-gray-700">İCRA MASRAFLARI</span>
+                  <span className="font-semibold text-gray-700">{formatMoney(hesapOzeti.icraMasraflari.toplam, 'TRY')}</span>
+                </div>
+                
+                {/* ═══════════ DİĞER KALEMLER ═══════════ */}
+                <div className="space-y-0.5 mt-2">
+                  {/* Vekalet Ücreti */}
+                  <div className="flex justify-between py-0.5 border-t border-gray-200 pt-1">
+                    <span className="text-gray-600">Vekalet Ücreti</span>
+                    <span className="font-medium">{formatMoney(hesapOzeti.vekaletUcreti, 'TRY')}</span>
                   </div>
-                </div>
-                
-                <hr className="my-2" />
-                
-                {/* Vekalet Ücreti */}
-                <div className="flex justify-between">
-                  <span>Vekalet Ücreti</span>
-                  <span className="font-medium">{formatMoney(hesapOzeti.vekaletUcreti, 'TRY')}</span>
-                </div>
-                
-                {/* Masraflar */}
-                <div className="flex justify-between">
-                  <span>Masraflar</span>
-                  <span className="font-medium">{formatMoney(hesapOzeti.masraflar, 'TRY')}</span>
-                </div>
-                
-                {/* Takip Sonrası Faiz */}
-                <div className="flex justify-between text-orange-600">
-                  <span>Takip Sonrası Faiz</span>
-                  <span className="font-medium">+{formatMoney(hesapOzeti.takipSonrasiFaiz, hesapOzeti.currency)}</span>
-                </div>
-                
-                <hr className="my-2" />
-                
-                {/* Son Borç Tutarı */}
-                <div className="flex justify-between p-2 bg-green-100 rounded font-bold text-green-800">
-                  <span>Son Borç Tutarı</span>
-                  <span>{formatMoney(hesapOzeti.sonBorcTutari, hesapOzeti.currency)}</span>
-                </div>
-                
-                <hr className="my-2" />
-                
-                {/* Tahsil Harcı Oranları */}
-                <div className="space-y-1 text-[11px]">
-                  <p className="font-medium text-gray-600">Tahsil Harcı Oranlarına Göre:</p>
-                  {hesapOzeti.tahsilHarclari.map((th, idx) => (
-                    <div key={idx} className="flex justify-between pl-2">
-                      <span className="text-gray-500">%{th.oran.toFixed(2)}</span>
-                      <span className={idx === hesapOzeti.tahsilHarclari.length - 1 ? 'font-semibold text-red-600' : ''}>
-                        {formatMoney(th.tutar, hesapOzeti.currency)}
-                      </span>
+                  
+                  {/* Masraflar */}
+                  {hesapOzeti.masraflar > 0 && (
+                    <div className="flex justify-between py-0.5">
+                      <span className="text-gray-600">Masraflar</span>
+                      <span className="font-medium">{formatMoney(hesapOzeti.masraflar, 'TRY')}</span>
                     </div>
-                  ))}
+                  )}
+                  
+                  {/* Takip Sonrası Faiz */}
+                  {hesapOzeti.takipSonrasiFaiz > 0 && (
+                    <div className="flex justify-between py-0.5 border-t border-gray-200 pt-1 text-orange-600">
+                      <span>Takip Sonrası Faiz</span>
+                      <span className="font-medium">+{formatMoney(hesapOzeti.takipSonrasiFaiz, hesapOzeti.currency)}</span>
+                    </div>
+                  )}
+                </div>
+                
+                {/* ═══════════ TOPLAM BORÇ ═══════════ */}
+                <div className="flex justify-between py-1.5 px-2 -mx-2 mt-2 border-t-2 border-blue-400 bg-blue-100 rounded">
+                  <span className="font-bold text-blue-900">TOPLAM BORÇ</span>
+                  <span className="font-bold text-blue-800">{formatMoney(hesapOzeti.sonBorcTutari, hesapOzeti.currency)}</span>
+                </div>
+                
+                {/* ═══════════ SON BORÇ ═══════════ */}
+                <div className="flex justify-between py-2 px-2 -mx-2 mt-1.5 border-t-2 border-green-400 bg-green-100 rounded">
+                  <span className="font-bold text-green-900">SON BORÇ</span>
+                  <span className="font-bold text-lg text-green-700">{formatMoney(hesapOzeti.sonBorcTutari, hesapOzeti.currency)}</span>
+                </div>
+                
+                {/* ═══════════ TAHSİL HARCI ORANLARI ═══════════ */}
+                <div className="mt-3 pt-2 border-t-2 border-gray-400">
+                  <p className="text-[10px] font-medium text-gray-500 mb-1">Tahsil Harcı Oranlarına Göre Son Borç</p>
+                  <div className="space-y-0.5">
+                    {hesapOzeti.tahsilHarclari.map((th, idx) => (
+                      <div key={idx} className="flex justify-between py-0.5 text-gray-500">
+                        <span>%{th.oran.toFixed(2)}</span>
+                        <span className={idx === hesapOzeti.tahsilHarclari.length - 1 ? 'font-semibold text-red-600' : ''}>
+                          {formatMoney(th.tutar, hesapOzeti.currency)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </>
             ) : (

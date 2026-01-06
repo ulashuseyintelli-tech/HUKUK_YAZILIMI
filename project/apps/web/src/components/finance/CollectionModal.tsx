@@ -13,11 +13,14 @@ const COLLECTION_TYPES = [
 ];
 
 const COLLECTION_CHANNELS = [
-  { value: "CASH", label: "Nakit" },
-  { value: "BANK_TRANSFER", label: "Havale/EFT" },
-  { value: "CHECK", label: "Çek" },
-  { value: "CREDIT_CARD", label: "Kredi Kartı" },
-  { value: "OTHER", label: "Diğer" },
+  { value: "NAKIT", label: "Nakit" },
+  { value: "BANKA", label: "Havale/EFT" },
+  { value: "CEK", label: "Çek" },
+  { value: "SENET", label: "Senet" },
+  { value: "KREDI_KARTI", label: "Kredi Kartı" },
+  { value: "ICRA_DAIRESI", label: "İcra Dairesinden" },
+  { value: "HACIZ", label: "Haciz Yoluyla" },
+  { value: "DIGER", label: "Diğer" },
 ];
 
 interface CollectionModalProps {
@@ -33,7 +36,7 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
   const [deleting, setDeleting] = useState(false);
   const [form, setForm] = useState({
     type: "TAHSILAT",
-    channel: "BANK_TRANSFER",
+    channel: "BANKA",
     description: "",
     amount: "",
     date: new Date().toISOString().split("T")[0],
@@ -44,7 +47,7 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
     if (collection) {
       setForm({
         type: collection.type || "TAHSILAT",
-        channel: collection.channel || "BANK_TRANSFER",
+        channel: collection.channel || "BANKA",
         description: collection.description || "",
         amount: collection.amount?.toString() || "",
         date: collection.date 
@@ -55,7 +58,7 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
     } else {
       setForm({
         type: "TAHSILAT",
-        channel: "BANK_TRANSFER",
+        channel: "BANKA",
         description: "",
         amount: "",
         date: new Date().toISOString().split("T")[0],
@@ -214,7 +217,8 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
                 type="date"
                 value={form.date}
                 onChange={(e) => setForm({ ...form, date: e.target.value })}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500 cursor-pointer"
+                style={{ colorScheme: 'light' }}
               />
             </div>
           </div>

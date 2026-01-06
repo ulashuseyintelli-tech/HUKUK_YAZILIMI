@@ -1398,3 +1398,203 @@ GET    /icrabot/enterprise/plan/has-feature               # Feature var mı?
 | LAWYER | Full | HIGH_IMPACT_WRITE, LOCK_EXECUTION_ACTIONS |
 | OPS | Phone, Email | None |
 | VIEWER | None | None |
+
+
+## v28 Engine Module (UYAP Event Ingestion + Rule Engine)
+
+v28 Engine, Python v28_ALL_IN_ONE paketinden port edilmiş UYAP event işleme ve kural motoru sistemidir.
+
+### Bileşenler
+
+| Servis | Açıklama |
+|--------|----------|
+| `FactStoreService` | Dosya bazlı fact/flag depolama |
+| `TimelineService` | Olay kaydı (UYAP_EVENT, COMPUTE, DECISION, ACTION, OUTCOME) |
+| `OutboxService` | Action queue (idempotent dispatch) |
+| `ExpressionEvaluatorService` | Kural ifade değerlendirme |
+| `ComputeRegistryService` | Hesaplama motorları (RiskScoring, RecoverySimulator, etc.) |
+| `EngineRunnerService` | Ana kural motoru |
+| `RuleLoaderService` | Kural yükleme (DB + cache) |
+| `UyapEventIngestService` | UYAP event normalizer |
+| `ActionHandlerService` | Action dispatch (open_lock, enqueue, send_email, etc.) |
+
+### API Endpoints
+
+```
+# UYAP Event Ingestion
+POST   /api/icrabot/v28/events              # Tek event işle
+POST   /api/icrabot/v28/events/batch        # Batch event işle
+
+# FactStore
+GET    /api/icrabot/v28/facts/:caseId       # Fact snapshot
+GET    /api/icrabot/v28/facts/:caseId/fact/:key
+GET    /api/icrabot/v28/facts/:caseId/flag/:key
+GET    /api/icrabot/v28/facts/:caseId/audit
+
+# Timeline
+GET    /api/icrabot/v28/timeline/:caseId
+GET    /api/icrabot/v28/timeline/:caseId/stats
+GET    /api/icrabot/v28/timeline/:caseId/summary
+GET    /api/icrabot/v28/timeline/run/:runId
+
+# Outbox
+GET    /api/icrabot/v28/outbox/stats
+GET    /api/icrabot/v28/outbox/pending
+GET    /api/icrabot/v28/outbox/dead-letter
+GET    /api/icrabot/v28/outbox/case/:caseId
+POST   /api/icrabot/v28/outbox/process
+POST   /api/icrabot/v28/outbox/:actionId/retry
+
+# Rules
+GET    /api/icrabot/v28/rules/active
+POST   /api/icrabot/v28/rules/reload
+POST   /api/icrabot/v28/rules
+
+# Compute
+GET    /api/icrabot/v28/compute/engines
+POST   /api/icrabot/v28/compute/:engineName
+```
+
+### UYAP Event Types
+
+| Event Type | Normalized Facts | Flags |
+|------------|------------------|-------|
+| `ASSET_FOUND_VEHICLE` | assets.vehicle.* | HAS_VEHICLE_ASSET |
+| `ASSET_FOUND_REAL_ESTATE` | assets.real_estate.* | HAS_REAL_ESTATE_ASSET |
+| `ASSET_FOUND_BANK_ACCOUNT` | assets.bank.* | HAS_BANK_ASSET |
+| `ASSET_FOUND_SALARY` | assets.salary.* | HAS_SALARY_ASSET |
+| `CASE_STATUS` | case.status | CASE_FINALIZED, CASE_CLOSED |
+| `TEBLIGAT_DELIVERED` | tebligat.* | TEBLIGAT_COMPLETED |
+| `TEBLIGAT_FAILED` | tebligat.* | TEBLIGAT_FAILED |
+| `HACIZ_PLACED` | haciz.* | HACIZ_ACTIVE |
+| `HACIZ_LIFTED` | haciz.* | HACIZ_ACTIVE=false |
+| `PAYMENT_RECEIVED` | payment.* | - |
+| `SAFAHAT_UPDATE` | safahat.* | - |
+| `OBJECTION_FILED` | objection.* | HAS_OBJECTION |
+| `LAWSUIT_FILED` | lawsuit.* | HAS_RELATED_LAWSUIT |
+| `SALE_SCHEDULED` | sale.* | SALE_PENDING |
+| `SALE_COMPLETED` | sale.* | SALE_COMPLETED |
+
+### Compute Engines
+
+| Engine | Input | Output |
+|--------|-------|--------|
+| `RiskScoring` | caseId, debtorId | score, band, factors |
+| `RecoverySimulator` | caseId, enforcementRank, vehicleValueEstimate | expected, p50, p90, etaDays |
+| `LienRankCalculator` | caseId, assetId, assetType | rank, totalLiens, priorDebt, isFirstRank |
+| `AssetValuation` | assetType, assetDetails | estimatedValue, confidence, method |
+| `DebtorBehaviorScore` | debtorId, caseId | score, category, recommendation |
+| `SettlementCalculator` | totalDebt, riskScore, debtorBehavior | settlementAmount, discountRate, installmentOptions |
+
+### Rule Format (YAML)
+
+```yaml
+version: v28
+rule_id: post_asset_discovery_vehicle
+when:
+  all:
+    - fact: "case.status"
+      op: "=="
+      value: "finalized"
+    - fact: "assets.vehicle.found"
+      op: "=="
+      value: true
+
+then:
+  compute:
+    - name: risk
+      run: RiskScoring
+      input:
+        case_id: "{{fact.case.id}}"
+        debtor_id: "{{fact.debtor.id}}"
+    - name: expected_recovery
+      run: RecoverySimulator
+      input:
+        case_id: "{{fact.case.id}}"
+        vehicle_value_estimate: "{{fact.assets.vehicle.estimated_value}}"
+
+  write:
+    facts:
+      - path: "engine.risk.score"
+        value: "{{compute.risk.score}}"
+      - path: "engine.risk.band"
+        value: "{{compute.risk.band}}"
+    flags:
+      - key: "HIGH_RISK"
+        value: "get('compute.risk.score') >= 80"
+
+  decisions:
+    - if: "get('compute.risk.score') >= 80"
+      then:
+        - action: open_lock
+          payload:
+            key: "case:{{fact.case.id}}:manual_review"
+            ttl_sec: 86400
+        - action: enqueue
+          payload:
+            queue: manual_review
+            case_id: "{{fact.case.id}}"
+            reason: "High risk score"
+```
+
+### Action Types
+
+| Action | Payload | Description |
+|--------|---------|-------------|
+| `open_lock` | key, ttl_sec | Distributed lock açma |
+| `enqueue` | queue, ... | Queue'ya iş ekleme |
+| `send_email` | to, subject, body | Email gönderme |
+| `send_sms` | phone, message | SMS gönderme |
+| `send_notification` | type, recipient, title, message | In-app bildirim |
+| `uyap_submit` | document_type, document_id | UYAP'a belge gönderme |
+| `update_case_status` | status, reason | Dosya durumu güncelleme |
+| `create_task` | title, description, dueDate, assignee, priority | Görev oluşturma |
+
+### Prisma Models (v28 Engine)
+
+| Model | Açıklama |
+|-------|----------|
+| `IcrabotCaseFact` | Dosya bazlı fact değerleri |
+| `IcrabotCaseFlag` | Dosya bazlı boolean flag'ler |
+| `IcrabotFactAudit` | Fact/Flag değişiklik geçmişi |
+| `IcrabotEngineRun` | Kural çalıştırma kaydı |
+| `IcrabotTimelineEntry` | Olay kaydı |
+| `IcrabotOutboxAction` | Action queue |
+| `IcrabotRulePack` | Kural paketi |
+| `IcrabotRule` | Kural tanımı |
+| `IcrabotRuleRevision` | Kural versiyonu |
+| `IcrabotQueueItem` | DB-based queue |
+| `IcrabotEmailLog` | Email gönderim kaydı |
+| `IcrabotSmsLog` | SMS gönderim kaydı |
+| `IcrabotNotification` | In-app bildirim |
+| `IcrabotUyapSubmission` | UYAP belge gönderim kaydı |
+| `IcrabotTask` | Bot tarafından oluşturulan görevler |
+
+### Kullanım Örneği
+
+```typescript
+// UYAP event işleme
+const result = await uyapEventIngestService.ingestEvent({
+  event_id: 'evt_123',
+  case_id: 'case_456',
+  type: 'ASSET_FOUND_VEHICLE',
+  vehicle: {
+    plate: '34ABC123',
+    estimated_value: 500000,
+    brand: 'BMW',
+    model: '320i',
+    year: 2020,
+  },
+});
+
+// Sonuç
+// {
+//   caseId: 'case_456',
+//   eventId: 'evt_123',
+//   factsWritten: 6,
+//   flagsWritten: 1,
+//   rulesMatched: [
+//     { runId: 'run_789', matched: true, actionsCreated: 2 }
+//   ]
+// }
+```

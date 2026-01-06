@@ -24,6 +24,8 @@ export { addressDiscoveryApi } from './address-discovery';
 export { assetQueryApi } from './asset-query';
 export { icrabotApi } from './icrabot';
 export * as officeApi from './office';
+export { interestEngineApi } from './interest-engine';
+export * from './interest-engine';
 
 // Re-export types
 export * from './types';

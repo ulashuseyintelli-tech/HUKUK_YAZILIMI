@@ -1,5 +1,6 @@
 import { Controller, Get, Post, Param, Body, Query } from '@nestjs/common';
 import { ValidationGateService, GateId, GateValidationResult } from './validation-gate.service';
+import { validateBankClaim, isBankClaim, getBankClaimInterestRules, BankClaimValidation } from './rules/bank-claim.rules';
 
 // MasterValidations tipini export et
 export interface MasterValidationsResponse {
@@ -138,6 +139,71 @@ export class ValidationGateController {
     return {
       createTask: this.validationGateService.shouldCreateAddressTask(),
       suggestions: this.validationGateService.getAddressSuggestions(),
+    };
+  }
+
+  /**
+   * Banka alacağı mı kontrol et
+   * GET /api/validation-gate/is-bank-claim?mahiyetCode=BANKA
+   */
+  @Get('is-bank-claim')
+  checkIsBankClaim(@Query('mahiyetCode') mahiyetCode: string) {
+    return {
+      mahiyetCode,
+      isBankClaim: isBankClaim(mahiyetCode),
+    };
+  }
+
+  /**
+   * Banka alacağı validasyonu
+   * POST /api/validation-gate/bank-claim-validation
+   */
+  @Post('bank-claim-validation')
+  validateBankClaimEndpoint(@Body() params: {
+    mahiyetCode: string;
+    hasKrediSozlesmesi?: boolean;
+    hasHesapOzeti?: boolean;
+    hesapOzetiTebligEdildiMi?: boolean;
+    hesapOzetiItirazSuresiGectiMi?: boolean;
+    hasTemerrut?: boolean;
+    hasKefaletname?: boolean;
+    borcluItirazEttiMi?: boolean;
+    itirazTuru?: 'BORCA' | 'IMZAYA' | null;
+  }): BankClaimValidation {
+    if (!isBankClaim(params.mahiyetCode)) {
+      return {
+        isBankClaim: false,
+        warnings: [],
+        risks: [],
+        requiredDocuments: [],
+        iik68Status: {
+          hasValidDocuments: false,
+          documentTypes: [],
+          canRequestRemoval: false,
+          removalRiskLevel: 'LOW',
+        },
+      };
+    }
+    return validateBankClaim(params);
+  }
+
+  /**
+   * Banka alacağı faiz kuralları
+   * GET /api/validation-gate/bank-claim-interest-rules?mahiyetCode=BANKA
+   */
+  @Get('bank-claim-interest-rules')
+  getBankClaimInterestRulesEndpoint(@Query('mahiyetCode') mahiyetCode: string) {
+    if (!isBankClaim(mahiyetCode)) {
+      return {
+        mahiyetCode,
+        isBankClaim: false,
+        rules: null,
+      };
+    }
+    return {
+      mahiyetCode,
+      isBankClaim: true,
+      rules: getBankClaimInterestRules(mahiyetCode),
     };
   }
 }

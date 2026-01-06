@@ -14,6 +14,7 @@ interface IlamsizWizardResult {
   uyapCode: string;
   mahiyetType?: MahiyetType;
   mahiyetCode?: string;
+  takipTuruCode?: string;
 }
 
 interface IlamsizWizardProps {
@@ -28,12 +29,14 @@ interface IlamsizWizardProps {
 
 type Step = 1 | 2 | 3 | 4;
 
+// Mahiyet kodları veritabanındaki LookupMahiyetTipi tablosuyla eşleşmeli
+// Mevcut kodlar: PARA, KIRA, AIDAT, KREDI, NAFAKA, KIRA_FARK, FATURA, CEK, SENET, TAZMINAT, ICRA_INKAR, ISCILIK, DIGER
 const MAHIYET_OPTIONS = [
   { type: "FATURA" as MahiyetType, code: "FATURA", label: "Fatura Alacağı", icon: "🧾", desc: "Mal veya hizmet faturası" },
-  { type: "SOZLESME" as MahiyetType, code: "SOZLESME", label: "Sözleşme Alacağı", icon: "📝", desc: "Sözleşmeye dayalı alacak" },
-  { type: "CARI_HESAP" as MahiyetType, code: "CARI_HESAP", label: "Cari Hesap", icon: "📊", desc: "Cari hesap bakiyesi" },
+  { type: "SOZLESME" as MahiyetType, code: "PARA", label: "Sözleşme Alacağı", icon: "📝", desc: "Sözleşmeye dayalı alacak" }, // PARA kodu kullanılıyor
+  { type: "CARI_HESAP" as MahiyetType, code: "FATURA", label: "Cari Hesap", icon: "📊", desc: "Cari hesap bakiyesi" }, // FATURA kodu kullanılıyor
   { type: "AIDAT" as MahiyetType, code: "AIDAT", label: "Aidat Alacağı", icon: "🏢", desc: "Site/apartman aidatı" },
-  { type: "HIZMET" as MahiyetType, code: "HIZMET", label: "Hizmet Bedeli", icon: "🔧", desc: "Hizmet karşılığı alacak" },
+  { type: "HIZMET" as MahiyetType, code: "PARA", label: "Hizmet Bedeli", icon: "🔧", desc: "Hizmet karşılığı alacak" }, // PARA kodu kullanılıyor
   { type: "DIGER" as MahiyetType, code: "DIGER", label: "Diğer Alacak", icon: "📋", desc: "Diğer ilamsız alacaklar" },
 ];
 
@@ -91,6 +94,8 @@ export function IlamsizWizard({ onComplete, onSkip, onBack, initialStep = 1, onS
         formTitle: "İlamsız İpotek Takibi",
         explanation: "İpotek akit tablosuna dayalı (ilamsız) ipotek alacağının tahsili için uygundur.",
         uyapCode: "152",
+        mahiyetCode: "IPOTEK",
+        takipTuruCode: "REHIN_TASINMAZ",
       });
     } else if (kategoriId === "TASINIR_REHNI") {
       // Taşınır Rehni - direkt sonuç
@@ -100,6 +105,8 @@ export function IlamsizWizard({ onComplete, onSkip, onBack, initialStep = 1, onS
         formTitle: "Taşınır Rehni Takibi",
         explanation: "Taşınır rehni (ticari işletme rehni, araç rehni vb.) alacağının tahsili için uygundur.",
         uyapCode: "50",
+        mahiyetCode: "REHIN",
+        takipTuruCode: "REHIN_TASINIR",
       });
     } else if (kategoriId === "IFLAS_ADI") {
       // İflas Adi Takip - direkt sonuç
@@ -109,19 +116,13 @@ export function IlamsizWizard({ onComplete, onSkip, onBack, initialStep = 1, onS
         formTitle: "İflas Adi Takip",
         explanation: "Tacir borçluya karşı adi alacak (fatura, sözleşme vb.) için iflas yoluyla takip.",
         uyapCode: "153",
+        mahiyetCode: "PARA",
+        takipTuruCode: "IFLAS_ADI",
       });
     }
   };
 
-  // Soru 1: Alacak türü (eski mantık - artık kullanılmıyor)
-  const handleAlacakTuru = (isKira: boolean) => {
-    setAnswers({ ...answers, isKira });
-    if (isKira) {
-      setStep(2); // Kira alacağı mı tahliye mi?
-    } else {
-      setStep(3); // Mahiyet seçimi
-    }
-  };
+
 
   // Soru 2: Kira alacağı mı tahliye mi?
   const handleKiraTypeAnswer = (kiraType: "ALACAK" | "TAHLIYE") => {
@@ -135,7 +136,8 @@ export function IlamsizWizard({ onComplete, onSkip, onBack, initialStep = 1, onS
         explanation: "Kira sözleşmesine dayalı birikmiş kira alacaklarınızın tahsili için kira alacağı takibi uygundur.",
         uyapCode: "51",
         mahiyetType: "SOZLESME",
-        mahiyetCode: "KIRA",
+        mahiyetCode: "KIRA", // Veritabanındaki KIRA kodu
+        takipTuruCode: "ILAMSIZ_KIRA",
       });
     } else {
       onComplete({
@@ -145,7 +147,8 @@ export function IlamsizWizard({ onComplete, onSkip, onBack, initialStep = 1, onS
         explanation: "Kira süresi sona ermiş veya sözleşmeye aykırılık nedeniyle kiracının tahliyesi için tahliye takibi uygundur.",
         uyapCode: "56",
         mahiyetType: "SOZLESME",
-        mahiyetCode: "TAHLIYE",
+        mahiyetCode: "TAHLIYE", // Veritabanındaki TAHLIYE kodu
+        takipTuruCode: "ILAMSIZ_TAHLIYE",
       });
     }
   };
@@ -160,6 +163,7 @@ export function IlamsizWizard({ onComplete, onSkip, onBack, initialStep = 1, onS
       uyapCode: "49",
       mahiyetType: mahiyet.type,
       mahiyetCode: mahiyet.code,
+      takipTuruCode: "ILAMSIZ_GENEL",
     });
   };
 
@@ -172,8 +176,6 @@ export function IlamsizWizard({ onComplete, onSkip, onBack, initialStep = 1, onS
       setStep(1);
     }
   };
-
-  const totalSteps = answers.isKira === false ? 2 : 2;
 
   return (
     <div className="bg-white rounded-xl border p-4 mb-4">

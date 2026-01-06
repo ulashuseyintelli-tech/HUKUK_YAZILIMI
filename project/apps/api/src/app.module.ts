@@ -66,6 +66,8 @@ import { StageTriggerModule } from "./modules/stage-trigger/stage-trigger.module
 import { AddressDiscoveryModule } from "./modules/address-discovery/address-discovery.module";
 import { AssetQueryModule } from "./modules/asset-query/asset-query.module";
 import { UyapExportModule } from "./modules/uyap-export/uyap-export.module";
+import { V28EngineModule } from "./modules/icrabot/v28-engine/v28-engine.module";
+import { InterestEngineModule } from "./modules/interest-engine/interest-engine.module";
 // TODO: IcrabotModule geçici olarak devre dışı - Prisma client regenerate gerekli
 // import { IcrabotModule } from "./modules/icrabot/icrabot.module";
 
@@ -140,6 +142,8 @@ import { UyapExportModule } from "./modules/uyap-export/uyap-export.module";
     AddressDiscoveryModule,
     AssetQueryModule,
     UyapExportModule,
+    V28EngineModule,
+    InterestEngineModule,
     // IcrabotModule, // TODO: Prisma client regenerate sonrası aktif et
   ],
 })

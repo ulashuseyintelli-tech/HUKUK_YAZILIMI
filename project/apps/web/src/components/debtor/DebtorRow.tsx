@@ -3,7 +3,7 @@
 import { DebtorListItemDTO, DebtorRoleLabels, AddressResearchStatus } from "@/lib/api";
 import { ServiceStatusBadge } from "./ServiceStatusBadge";
 import { AlertBadge } from "./AlertBadge";
-import { Building2, User, ChevronRight, FolderSync, Search, CheckCircle2, AlertTriangle, MapPin, Mail, Clock } from "lucide-react";
+import { Building2, User, ChevronRight, FolderSync, Search, CheckCircle2, AlertTriangle, MapPin, Clock } from "lucide-react";
 
 interface DebtorRowProps {
   debtor: DebtorListItemDTO;
@@ -55,9 +55,9 @@ export function DebtorRow({ debtor, onClick }: DebtorRowProps) {
 
       {/* Name + Role */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-1.5">
-          <span className="font-medium text-[13px] text-slate-900 truncate">{debtor.displayName}</span>
-          <span className="flex-shrink-0 px-1.5 py-0.5 text-[9px] font-medium rounded bg-slate-100 text-slate-500">
+        <div className="flex items-center gap-1.5 flex-wrap">
+          <span className="font-medium text-[13px] text-slate-900 break-words">{debtor.displayName}</span>
+          <span className="flex-shrink-0 px-2 py-0.5 text-[9px] font-medium rounded bg-slate-100 text-slate-500 whitespace-nowrap">
             {DebtorRoleLabels[debtor.role] || debtor.role}
           </span>
           {/* Cross-file address indicator */}

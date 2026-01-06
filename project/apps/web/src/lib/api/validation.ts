@@ -4,6 +4,63 @@
 
 import { apiClient } from './client';
 
+// Banka alacağı tipleri
+export interface BankClaimWarning {
+  code: string;
+  severity: 'INFO' | 'WARNING' | 'CRITICAL';
+  message: string;
+  suggestion?: string;
+}
+
+export interface BankClaimRisk {
+  code: string;
+  description: string;
+  probability: 'LOW' | 'MEDIUM' | 'HIGH';
+  impact: string;
+}
+
+export interface RequiredDocument {
+  code: string;
+  name: string;
+  description: string;
+  isPresent: boolean;
+  isMandatory: boolean;
+}
+
+export interface IIK68Status {
+  hasValidDocuments: boolean;
+  documentTypes: string[];
+  canRequestRemoval: boolean;
+  removalRiskLevel: 'LOW' | 'MEDIUM' | 'HIGH';
+}
+
+export interface BankClaimValidation {
+  isBankClaim: boolean;
+  warnings: BankClaimWarning[];
+  risks: BankClaimRisk[];
+  requiredDocuments: RequiredDocument[];
+  iik68Status: IIK68Status;
+}
+
+export interface BankClaimValidationParams {
+  mahiyetCode: string;
+  hasKrediSozlesmesi?: boolean;
+  hasHesapOzeti?: boolean;
+  hesapOzetiTebligEdildiMi?: boolean;
+  hesapOzetiItirazSuresiGectiMi?: boolean;
+  hasTemerrut?: boolean;
+  hasKefaletname?: boolean;
+  borcluItirazEttiMi?: boolean;
+  itirazTuru?: 'BORCA' | 'IMZAYA' | null;
+}
+
+export interface BankClaimInterestRules {
+  defaultInterestType: string;
+  canUseBSMV: boolean;
+  canUseKKDF: boolean;
+  notes: string[];
+}
+
 export const validationApi = {
   // Validation Gate
   async getValidationStatus(caseId: string) {
@@ -25,6 +82,32 @@ export const validationApi = {
       method: 'POST',
       body: JSON.stringify({ ruleId, reason }),
     });
+  },
+
+  // Banka Alacağı Kontrolleri (İİK 68)
+  async isBankClaim(mahiyetCode: string): Promise<{ mahiyetCode: string; isBankClaim: boolean }> {
+    return apiClient.request<{ mahiyetCode: string; isBankClaim: boolean }>(
+      `/validation-gate/is-bank-claim?mahiyetCode=${encodeURIComponent(mahiyetCode)}`
+    );
+  },
+
+  async validateBankClaim(params: BankClaimValidationParams): Promise<BankClaimValidation> {
+    return apiClient.request<BankClaimValidation>('/validation-gate/bank-claim-validation', {
+      method: 'POST',
+      body: JSON.stringify(params),
+    });
+  },
+
+  async getBankClaimInterestRules(mahiyetCode: string): Promise<{
+    mahiyetCode: string;
+    isBankClaim: boolean;
+    rules: BankClaimInterestRules | null;
+  }> {
+    return apiClient.request<{
+      mahiyetCode: string;
+      isBankClaim: boolean;
+      rules: BankClaimInterestRules | null;
+    }>(`/validation-gate/bank-claim-interest-rules?mahiyetCode=${encodeURIComponent(mahiyetCode)}`);
   },
 
   // Case Instruments (Çek/Senet)

@@ -110,10 +110,12 @@ const KALEM_TURU_LABELS: Record<string, string> = {
 };
 
 // Faiz oranları (2024 güncel)
+// NOT: YASAL faiz dönemsel hesaplanmalı (2006-2024: %9, 2024+: %24)
+// Bu sabitler sadece referans içindir, gerçek hesaplama backend'de yapılır
 const FAIZ_ORANLARI: Record<string, number> = {
   TICARI: 48,
   TICARI_2007_ONCESI: 57,
-  YASAL: 24,
+  YASAL: 24, // 2024 sonrası oran, 2024 öncesi %9
   BANKA_TL: 50,
   KAMU_BANKA_TL: 45,
   KAMU_BANKA_USD: 5,
@@ -160,7 +162,7 @@ interface Lawyer {
 interface Party { id?: string; type: "INDIVIDUAL" | "COMPANY"; name: string; identityNo?: string; taxOffice?: string; phone?: string; email?: string; address?: string; isNew?: boolean; }
 interface ExecutionOffice { id: string; name: string; city: string; district?: string; uyapCode?: string; taxNumber?: string; bankName?: string; branchName?: string; iban?: string; }
 interface DueItem { 
-  type: "PRINCIPAL" | "INTEREST" | "EXPENSE" | "OTHER"; 
+  type: "PRINCIPAL" | "INTEREST" | "EXPENSE" | "VEKALET_UCRETI" | "HARC" | "TAZMINAT" | "CEZAI_SART" | "NAFAKA" | "KIRA" | "AIDAT" | "KOMISYON" | "PRIM" | "OTHER"; 
   description: string; 
   amount: string; 
   dueDate: string;
@@ -361,6 +363,7 @@ export default function NewCasePage() {
     if (caseData.mahiyetTipiId) return; // Mahiyet tipi zaten seçilmiş
     
     // Document source'a göre varsayılan mahiyet tipini belirle
+    // Veritabanındaki mahiyet kodları: PARA, KIRA, AIDAT, KREDI, NAFAKA, KIRA_FARK, FATURA, CEK, SENET, TAZMINAT, ICRA_INKAR, ISCILIK, DIGER
     let mahiyetCode: string | null = null;
     let takipTuruCode: string | null = null;
     
@@ -372,7 +375,9 @@ export default function NewCasePage() {
       mahiyetCode = caseData.subCategory === "CEK" ? "CEK" : "SENET";
       takipTuruCode = caseData.subCategory === "CEK" ? "KAMBIYO_CEK" : "KAMBIYO_SENET";
     } else if (documentSource === "SOZLESME") {
-      mahiyetCode = "FATURA";
+      // Sözleşme/Fatura/Diğer için varsayılan olarak PARA (Genel Para Alacağı) kullan
+      // Kullanıcı wizard'dan farklı bir mahiyet seçerse o kullanılır (FATURA, AIDAT vb.)
+      mahiyetCode = "PARA";
       takipTuruCode = "ILAMSIZ_GENEL";
     }
     
@@ -735,16 +740,23 @@ export default function NewCasePage() {
       
       if (selectedTakipTuru) {
         // Takip türüne göre mahiyet kodunu otomatik ayarla
-        // KAMBIYO_CEK -> CEK, KAMBIYO_SENET -> SENET, vb.
+        // Veritabanındaki mahiyet kodları: PARA, KIRA, AIDAT, KREDI, NAFAKA, KIRA_FARK, FATURA, CEK, SENET, TAZMINAT, ICRA_INKAR, ISCILIK, TAHLIYE, DIGER
         const takipTuruMahiyetMap: Record<string, string> = {
           KAMBIYO_CEK: "CEK",
           KAMBIYO_SENET: "SENET",
           ILAMSIZ_KAMBIYO: "SENET",
           ILAMSIZ_GENEL: "PARA",
           ILAMSIZ_KIRA: "KIRA",
+          ILAMSIZ_TAHLIYE: "TAHLIYE",
+          ILAMSIZ_FATURA: "FATURA",
           ILAMLI: "TAZMINAT",
           NAFAKA: "NAFAKA",
           KIRA: "KIRA",
+          TAHLIYE: "TAHLIYE",
+          REHIN_TASINIR: "REHIN",
+          REHIN_TASINMAZ: "IPOTEK",
+          IFLAS_ADI: "PARA",
+          IFLAS_KAMBIYO: "SENET",
         };
         
         const mahiyetKodu = takipTuruMahiyetMap[selectedTakipTuru.code];
@@ -1098,7 +1110,47 @@ export default function NewCasePage() {
                 setWizardResult(null); if (selectedForm) setCurrentStep(1);
               }} onRestart={() => { setWizardResult(null); setShowWizard(true); }} />
             ) : showWizard && documentSource === "ILAM" ? (
-              <CaseWizard onComplete={(result) => { setWizardResult(result); setShowWizard(false); }} onSkip={() => setShowWizard(false)} />
+              <CaseWizard onComplete={(result) => { 
+                // İlamlı takiplerde öneri sayfasını atla, direkt Takip Bilgileri'ne geç
+                const ilamliForm = formMetadata.find(f => f.code === "FORM_2_3_4_5");
+                if (ilamliForm) setSelectedForm(ilamliForm);
+                
+                // İlamlı takip türüne göre mahiyet kodu belirle
+                const ilamliMahiyetMap: Record<string, string> = {
+                  PARA_ALACAGI: "TAZMINAT",
+                  NAFAKA: "NAFAKA",
+                  IPOTEK: "IPOTEK",
+                  TASINIR_REHNI: "REHIN",
+                  TASINIR: "DIGER",      // Taşınır teslimi - para alacağı değil
+                  TASINMAZ: "DIGER",     // Taşınmaz teslimi - para alacağı değil
+                  TAHLIYE: "TAHLIYE",
+                  IS_YAPILMASI: "DIGER", // İşin yapılması - para alacağı değil
+                  IRTIFAK: "DIGER",      // İrtifak hakkı - para alacağı değil
+                  TEMINAT: "PARA",       // Teminat alacağı
+                };
+                
+                const mahiyetKodu = result.ilamliTakipType 
+                  ? ilamliMahiyetMap[result.ilamliTakipType] || "TAZMINAT"
+                  : "TAZMINAT";
+                
+                // Takip türü ve mahiyet ayarla
+                const takipTuru = lookups.takipTuru.find(t => t.code === "ILAMLI");
+                const mahiyet = lookups.mahiyetTipi.find(m => m.code === mahiyetKodu);
+                
+                setCaseData(prev => ({ 
+                  ...prev, 
+                  subCategory: result.subCategory, 
+                  currency: result.currency as any, 
+                  interestType: result.interestRateType === "DEGISKEN" ? "YASAL" : "SABIT", 
+                  interestDescription: result.interestDescription,
+                  takipTuruId: takipTuru?.id || prev.takipTuruId,
+                  mahiyetTipiId: mahiyet?.id || prev.mahiyetTipiId,
+                  mahiyetKodu: mahiyetKodu,
+                }));
+                
+                setShowWizard(false); 
+                setCurrentStep(1); // Direkt Takip Bilgileri adımına geç
+              }} onSkip={() => setShowWizard(false)} />
             ) : showWizard && documentSource === "KAMBIYO" ? (
               <KambiyoWizard 
                 onComplete={(result) => { 
@@ -1175,10 +1227,29 @@ export default function NewCasePage() {
                 onComplete={(result) => { 
                   const ilamsizForm = formMetadata.find(f => f.code === result.suggestedFormCode); 
                   if (ilamsizForm) setSelectedForm(ilamsizForm); 
+                  
+                  // Mahiyet ve Takip Türü ayarla
+                  const updates: Partial<typeof caseData> = {};
+                  
                   if (result.mahiyetCode) {
                     const mahiyet = lookups.mahiyetTipi.find(m => m.code === result.mahiyetCode);
-                    setCaseData(prev => ({ ...prev, mahiyetTipiId: mahiyet?.id || prev.mahiyetTipiId, mahiyetKodu: result.mahiyetCode || prev.mahiyetKodu }));
+                    if (mahiyet) {
+                      updates.mahiyetTipiId = mahiyet.id;
+                      updates.mahiyetKodu = result.mahiyetCode;
+                    }
                   }
+                  
+                  if (result.takipTuruCode) {
+                    const takipTuru = lookups.takipTuru.find(t => t.code === result.takipTuruCode);
+                    if (takipTuru) {
+                      updates.takipTuruId = takipTuru.id;
+                    }
+                  }
+                  
+                  if (Object.keys(updates).length > 0) {
+                    setCaseData(prev => ({ ...prev, ...updates }));
+                  }
+                  
                   setShowWizard(false); 
                   setCurrentStep(1); 
                 }} 
@@ -1574,6 +1645,7 @@ export default function NewCasePage() {
               formCode={selectedForm?.code}
               currency={caseData.currency || "TRY"}
               takipTuruCode={lookups.takipTuru.find(t => t.id === caseData.takipTuruId)?.code}
+              mahiyetKodu={caseData.mahiyetKodu}
               documentSource={documentSource}
               borcluSayisi={caseDebtors.length || 1}
               fileNumber={caseData.fileNumber}
@@ -1605,21 +1677,83 @@ export default function NewCasePage() {
                 };
               })}
               onItemsChange={(items) => {
-                // Yeni formattan dues formatına dönüştür
-                if (items.length > 0 && items[0].hesapOzeti) {
-                  // Yeni format - hesap özeti var
+                // Alacak kalemlerini Due formatına dönüştür
+                // NOT: Sadece ANA KALEMLER Due tablosuna kaydedilir
+                // Hesap özetindeki türetilmiş kalemler (faiz, tazminat, harçlar) kaydedilmez
+                if (items.length > 0) {
                   const item = items[0];
-                  const newDues = [{
-                    type: "PRINCIPAL" as const,
-                    description: item.aciklama || "Asıl Alacak",
-                    amount: (item.bakiyeTutar || item.toplamTutar || 0).toString(),
-                    dueDate: item.vadeTarihi,
-                    interestType: item.takipOncesiFaiz as any,
-                    interestRate: 0,
-                    interestAmount: 0,
-                    interestStartDate: item.vadeTarihi,
-                    interestEndDate: caseData.startDate,
-                  }];
+                  const newDues: typeof dues = [];
+                  
+                  // 1. Ana Alacak Kalemi (Çek Bedeli, Senet Bedeli, İlam Asıl Alacağı vs.)
+                  const kalemTuru = item.kalemTuru as string;
+                  let anaKalemLabel = 'Asıl Alacak';
+                  
+                  if (kalemTuru === 'CEK') anaKalemLabel = 'Çek Bedeli';
+                  else if (kalemTuru === 'SENET') anaKalemLabel = 'Senet Bedeli';
+                  else if (kalemTuru === 'ILAM') anaKalemLabel = 'İlam Asıl Alacağı';
+                  else if (kalemTuru === 'FATURA') anaKalemLabel = 'Fatura Alacağı';
+                  else if (kalemTuru === 'KIRA') anaKalemLabel = 'Kira Alacağı';
+                  else if (kalemTuru === 'NAFAKA') anaKalemLabel = 'Nafaka Alacağı';
+                  
+                  // Ana alacak kalemi
+                  if (item.bakiyeTutar && item.bakiyeTutar > 0) {
+                    newDues.push({
+                      type: 'PRINCIPAL',
+                      description: anaKalemLabel,
+                      amount: item.bakiyeTutar.toString(),
+                      dueDate: item.vadeTarihi || caseData.startDate,
+                      interestType: item.takipOncesiFaiz || 'YASAL',
+                      interestRate: 0,
+                      interestAmount: 0,
+                      interestStartDate: kalemTuru === 'CEK' && item.cekBilgileri?.ibrazTarihi 
+                        ? item.cekBilgileri.ibrazTarihi 
+                        : item.vadeTarihi,
+                      interestEndDate: caseData.startDate,
+                    });
+                  }
+                  
+                  // 2. İlamlı Takip Yan Alacakları (bunlar ilamda hükmedilen kalemler, hesaplanan değil)
+                  if (item.ilamYanAlacaklar && Array.isArray(item.ilamYanAlacaklar)) {
+                    item.ilamYanAlacaklar.forEach((yan: { tur: string; tutar: number; aciklama: string }) => {
+                      if (yan.tutar > 0) {
+                        let yanDueType: DueItem['type'] = 'PRINCIPAL';
+                        let yanLabel = yan.aciklama;
+                        
+                        if (yan.tur === 'ILAM_YARGILAMA_GIDERI') {
+                          yanDueType = 'EXPENSE';
+                          yanLabel = 'Yargılama Giderleri';
+                        } else if (yan.tur === 'ILAM_VEKALET_UCRETI') {
+                          yanDueType = 'VEKALET_UCRETI';
+                          yanLabel = 'Karşı Taraf Vekalet Ücreti';
+                        } else if (yan.tur === 'ILAM_ISLEMIS_FAIZ') {
+                          yanDueType = 'INTEREST';
+                          yanLabel = 'İşlemiş Faiz (Dava-İlam Arası)';
+                        }
+                        
+                        newDues.push({
+                          type: yanDueType,
+                          description: yanLabel,
+                          amount: yan.tutar.toString(),
+                          dueDate: item.vadeTarihi || caseData.startDate,
+                          interestType: yanDueType === 'INTEREST' ? undefined : 'YASAL',
+                          interestRate: 0,
+                          interestAmount: 0,
+                          interestStartDate: item.vadeTarihi,
+                          interestEndDate: caseData.startDate,
+                        });
+                      }
+                    });
+                  }
+                  
+                  // principalAmount'u güncelle (asıl alacak toplamı)
+                  const principalTotal = newDues
+                    .filter(d => d.type === 'PRINCIPAL')
+                    .reduce((sum, d) => sum + parseFloat(d.amount || '0'), 0);
+                  
+                  if (principalTotal > 0) {
+                    setCaseData(prev => ({ ...prev, principalAmount: principalTotal }));
+                  }
+                  
                   setDues(newDues);
                 }
               }}
@@ -3758,8 +3892,9 @@ function DuesStep({
   });
 
   // Faiz oranları (2024 yılı için)
+  // NOT: YASAL faiz dönemsel hesaplanmalı (2006-2024: %9, 2024+: %24)
   const interestRates = {
-    YASAL: 24, // Yasal faiz %24
+    YASAL: 24, // 2024 sonrası oran, 2024 öncesi %9 - dönemsel hesaplama gerekli
     TICARI: 48, // Ticari faiz (avans faizi x 1.5) yaklaşık
     AVANS: 32, // Avans faizi (TCMB reeskont)
     TEMERRUT: 24, // Temerrüt faizi (yasal faiz ile aynı)

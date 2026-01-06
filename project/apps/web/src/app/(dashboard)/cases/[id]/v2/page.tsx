@@ -372,87 +372,101 @@ export default function CaseDetailV2Page() {
         </div>
 
         {/* RIGHT: Hesap Özeti */}
-        <div className="col-span-5 bg-white rounded-lg border border-slate-200 p-4">
-          <div className="flex items-center justify-between mb-3">
-            <div className="text-xs text-red-600 font-medium">₺ Hesap Özeti</div>
-            <div className="text-xs text-slate-400">
-              {formatDate(caseData.caseDate)} → Hesap: {formatDate(new Date().toISOString())}
+        <div className="col-span-5 bg-white rounded-lg border border-slate-200 overflow-hidden">
+          <div className="px-4 py-2 bg-blue-600 text-white">
+            <div className="flex items-center justify-between">
+              <div className="text-xs font-semibold">Hesap Özeti</div>
+              <div className="text-[10px] opacity-80">
+                {formatDate(caseData.caseDate)} → Hesap: {formatDate(new Date().toISOString())}
+              </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-x-6 gap-y-1 text-xs">
-            <div className="flex justify-between">
-              <span className="text-slate-500">Genel Alacak</span>
-              <span className="font-medium">{formatCurrency(finance.genelAlacak)}</span>
+          <div className="p-4 space-y-1 text-xs">
+            {/* ═══════════ ALACAK KALEMLERİ ═══════════ */}
+            <div className="space-y-0.5">
+              <p className="text-[10px] text-slate-500 uppercase font-medium mb-1">Alacak Kalemleri</p>
+              <div className="flex justify-between py-0.5">
+                <span className="text-slate-600">Genel Alacak</span>
+                <span className="font-medium">{formatCurrency(finance.genelAlacak)}</span>
+              </div>
             </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">İcra Masrafları =</span>
-              <span className="font-medium">{formatCurrency(finance.icraMasraflari)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500 pl-2">Takip Tutarı =</span>
-              <span className="text-red-600">{formatCurrency(finance.takipTutari)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500 pl-2">Peşin Harç Dahil Tahsil Harcı</span>
-              <span>{formatCurrency(finance.pesinHarcDahilTahsilHarci)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500 pl-2">Başvuru Harcı</span>
-              <span>{formatCurrency(finance.basvuruHarci)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500 pl-2">Peşin Harç Hariç Tahsil Harcı</span>
-              <span>{formatCurrency(finance.pesinHarcHaricTahsilHarci)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500 pl-2">Vekalet Harcı</span>
-              <span>{formatCurrency(finance.vekaletHarci)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Vekalet Ücreti =</span>
-              <span className="font-medium">{formatCurrency(finance.vekaletUcreti)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500 pl-2">Peşin Harç</span>
-              <span>{formatCurrency(finance.pesinHarc)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500">Takip Sonrası Faiz =</span>
-              <span className="text-red-600">{formatCurrency(finance.takipSonrasiFaiz)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500 pl-2">Düşük Harç</span>
-              <span>{formatCurrency(finance.dusukHarc)}</span>
-            </div>
-            <div className="flex justify-between border-t border-slate-200 pt-1 mt-1">
-              <span className="text-slate-700 font-medium">Toplam Borç Tutarı</span>
-              <span className="text-red-600 font-semibold">{formatCurrency(finance.toplamBorcTutari)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500 pl-2">Tebligat Ücreti ({debtors.length} borçlu)</span>
-              <span>{formatCurrency(finance.tebligatUcreti)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-700 font-medium">Son Borç Tutarı</span>
-              <span className="text-red-600 font-bold">{formatCurrency(finance.sonBorcTutari)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-slate-500 pl-2">Vekalet Pulu</span>
-              <span>{formatCurrency(finance.vekaletPulu)}</span>
-            </div>
-          </div>
 
-          {/* Tahsil Harcı Oranlarına Göre Son Borç tablosu */}
-          <div className="mt-3 pt-3 border-t border-slate-100">
-            <div className="text-[10px] text-slate-500 mb-1">Tahsil Harcı Oranlarına Göre Son Borç</div>
-            <div className="grid grid-cols-4 gap-2 text-[10px]">
-              {[2.27, 4.55, 9.10, 1.98].map((rate, i) => (
-                <div key={i} className="text-center">
-                  <div className="text-slate-400">%{rate}</div>
-                  <div className="font-medium">{formatCurrency(finance.sonBorcTutari * (1 + rate/100))}</div>
-                </div>
-              ))}
+            {/* ═══════════ TAKİP TUTARI ═══════════ */}
+            <div className="flex justify-between py-1.5 px-2 -mx-2 mt-1.5 border-t-2 border-blue-300 bg-blue-50 rounded">
+              <span className="font-semibold text-blue-800">TAKİP TUTARI</span>
+              <span className="font-bold text-blue-700">{formatCurrency(finance.takipTutari)}</span>
+            </div>
+
+            {/* ═══════════ İCRA MASRAFLARI ═══════════ */}
+            <div className="space-y-0.5 mt-2">
+              <div className="flex justify-between py-0.5 pl-2">
+                <span className="text-slate-500">Başvuru Harcı</span>
+                <span>{formatCurrency(finance.basvuruHarci)}</span>
+              </div>
+              <div className="flex justify-between py-0.5 pl-2">
+                <span className="text-slate-500">Vekalet Harcı</span>
+                <span>{formatCurrency(finance.vekaletHarci)}</span>
+              </div>
+              <div className="flex justify-between py-0.5 pl-2">
+                <span className="text-slate-500">Peşin Harç</span>
+                <span>{formatCurrency(finance.pesinHarc)}</span>
+              </div>
+              <div className="flex justify-between py-0.5 pl-2">
+                <span className="text-slate-500">Düşük Harç</span>
+                <span>{formatCurrency(finance.dusukHarc)}</span>
+              </div>
+              <div className="flex justify-between py-0.5 pl-2">
+                <span className="text-slate-500">Tebligat Ücreti ({debtors.length} borçlu)</span>
+                <span>{formatCurrency(finance.tebligatUcreti)}</span>
+              </div>
+              <div className="flex justify-between py-0.5 pl-2">
+                <span className="text-slate-500">Vekalet Pulu</span>
+                <span>{formatCurrency(finance.vekaletPulu)}</span>
+              </div>
+            </div>
+
+            {/* İcra Masrafları Toplamı */}
+            <div className="flex justify-between py-1.5 px-2 -mx-2 mt-1 border-t border-slate-300 bg-slate-100 rounded">
+              <span className="font-semibold text-slate-700">İCRA MASRAFLARI</span>
+              <span className="font-semibold text-slate-700">{formatCurrency(finance.icraMasraflari)}</span>
+            </div>
+
+            {/* ═══════════ DİĞER KALEMLER ═══════════ */}
+            <div className="space-y-0.5 mt-2">
+              <div className="flex justify-between py-0.5 border-t border-slate-200 pt-1">
+                <span className="text-slate-600">Vekalet Ücreti</span>
+                <span className="font-medium">{formatCurrency(finance.vekaletUcreti)}</span>
+              </div>
+              <div className="flex justify-between py-0.5 text-orange-600">
+                <span>Takip Sonrası Faiz</span>
+                <span className="font-medium">+{formatCurrency(finance.takipSonrasiFaiz)}</span>
+              </div>
+            </div>
+
+            {/* ═══════════ TOPLAM BORÇ ═══════════ */}
+            <div className="flex justify-between py-1.5 px-2 -mx-2 mt-2 border-t-2 border-blue-400 bg-blue-100 rounded">
+              <span className="font-bold text-blue-900">TOPLAM BORÇ</span>
+              <span className="font-bold text-blue-800">{formatCurrency(finance.toplamBorcTutari)}</span>
+            </div>
+
+            {/* ═══════════ SON BORÇ ═══════════ */}
+            <div className="flex justify-between py-2 px-2 -mx-2 mt-2 border-t-2 border-green-400 bg-green-100 rounded">
+              <span className="font-bold text-green-900">SON BORÇ</span>
+              <span className="font-bold text-lg text-green-700">{formatCurrency(finance.sonBorcTutari)}</span>
+            </div>
+
+            {/* ═══════════ TAHSİL ORANLARI ═══════════ */}
+            <div className="mt-3 pt-3 border-t-2 border-slate-400">
+              <div className="text-[10px] text-slate-500 font-medium mb-1">Tahsil Harcı Oranlarına Göre Son Borç</div>
+              <div className="grid grid-cols-5 gap-2 text-[10px]">
+                {[0, 2.27, 4.55, 9.10, 11.38].map((rate, i) => (
+                  <div key={i} className="text-center">
+                    <div className="text-slate-400">%{rate}</div>
+                    <div className="font-medium text-slate-600">{formatCurrency(finance.sonBorcTutari * (1 + rate/100))}</div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         </div>
