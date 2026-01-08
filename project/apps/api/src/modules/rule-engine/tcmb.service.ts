@@ -328,7 +328,7 @@ export class TcmbService {
    * Hafta sonu/tatil günlerinde bir önceki iş gününü dener
    */
   async getHistoricalRate(currency: string, date: Date, maxRetries = 5): Promise<TcmbExchangeRate> {
-    let currentDate = new Date(date);
+    const currentDate = new Date(date);
     let retries = 0;
 
     while (retries < maxRetries) {

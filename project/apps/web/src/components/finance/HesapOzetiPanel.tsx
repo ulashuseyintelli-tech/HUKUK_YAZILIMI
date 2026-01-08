@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useRef, useEffect } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   Calculator,
   Receipt,
@@ -62,6 +62,7 @@ interface Due {
 interface Collection {
   id: string;
   amount: number;
+  date?: string; // Tahsilat tarihi - FAİZ HESABINDA KRİTİK
   status?: string;
 }
 
@@ -236,7 +237,7 @@ export function HesapOzetiPanel({
   error,
   className = "",
 }: Props) {
-  const [hesapTarihi, setHesapTarihi] = useState(calculationDate || new Date().toISOString().split("T")[0]);
+  const [hesapTarihi, setHesapTarihi] = useState(() => calculationDate || new Date().toISOString().split("T")[0]);
   const [faizDokumuVisible, setFaizDokumuVisible] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   
@@ -249,6 +250,14 @@ export function HesapOzetiPanel({
     }
   }, [calculationDate]);
   
+  // Tarih değişikliğini handle et
+  const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newDate = e.target.value;
+    if (newDate) {
+      setHesapTarihi(newDate);
+    }
+  };
+  
   // Hesap değiştiğinde scroll'u en üste al
   useEffect(() => {
     if (scrollRef.current) {
@@ -256,8 +265,8 @@ export function HesapOzetiPanel({
     }
   }, [caseDate, principalAmount, instruments]);
   
-  // Ana hesaplama
-  const hesap = useMemo(() => {
+  // Ana hesaplama - her render'da hesaplanacak
+  const hesap = (() => {
     // 1. Asıl alacak ve kalem türü belirleme
     let asilAlacak = 0;
     let kalemTuru = 'ASIL_ALACAK';
@@ -341,9 +350,133 @@ export function HesapOzetiPanel({
     // 7. Vekalet ücreti
     const vekaletUcreti = Math.round(hesaplaVekaletUcreti(takipTutari) * 100) / 100;
     
-    // 8. Takip sonrası faiz
-    const sonrasiFaizSonuc = hesaplaSegmentliFaiz(asilAlacak, takipTarihi, hesapTarihi, oranTablosu);
-    const takipSonrasiFaiz = sonrasiFaizSonuc.toplam;
+    // 8. Takip sonrası faiz - TBK m.100 MAHSUP SIRASI İLE HESAPLA
+    // Kural: Tahsilat önce yan borçlara (masraf, harç, vekalet, faiz) gider
+    // Anaparaya dokunmadıkça faiz matrahı değişmez
+    // Anaparaya temas ettiği gün itibarıyla faiz matrahı düşer
+    
+    // Aktif tahsilatları tarihe göre sırala
+    // Tarihi olmayan tahsilatlar için hesap tarihini kullan
+    const aktiveTahsilatlar = collections
+      .filter(c => c.status !== 'CANCELLED')
+      .map(c => ({
+        ...c,
+        tarih: c.date ? new Date(c.date).toISOString().split('T')[0] : hesapTarihi,
+        tutar: toNumber(c.amount)
+      }))
+      .sort((a, b) => new Date(a.tarih).getTime() - new Date(b.tarih).getTime());
+    
+    // Faiz hesaplama değişkenleri
+    let takipSonrasiFaiz = 0;
+    let kalanAnapara = asilAlacak;
+    const faizSegmentleriSonrasi: FaizSegment[] = [];
+    
+    // Yan borçlar havuzu (tahsilat anında hesaplanacak)
+    let kalanMasrafHarc = icraMasraflari; // Masraf + Harçlar
+    let kalanVekalet = vekaletUcreti;
+    let kalanIslemişFaiz = 0; // Her tahsilat anında o güne kadar işlemiş faiz
+    
+    // Mahsup detayları
+    const mahsupDetaylari: Array<{
+      tarih: string;
+      tahsilatTutar: number;
+      mahsupMasraf: number;
+      mahsupVekalet: number;
+      mahsupFaiz: number;
+      mahsupAnapara: number;
+      kalanAnapara: number;
+    }> = [];
+    
+    // Tahsilatları filtrele: sadece takip tarihinden sonra ve hesap tarihinden önce olanlar
+    const gecerliTahsilatlar = aktiveTahsilatlar.filter(t => {
+      // Tahsilat tarihi takip tarihinden önce olamaz
+      if (t.tarih < takipTarihi) return false;
+      // Tahsilat tarihi hesap tarihinden sonra olamaz
+      if (t.tarih > hesapTarihi) return false;
+      return true;
+    });
+    
+    // Tahsilat varsa TBK m.100 ile hesapla, yoksa direkt hesapla
+    if (gecerliTahsilatlar.length > 0) {
+      // Tahsilat var - segment segment hesapla
+      let sonFaizTarihi = takipTarihi;
+      
+      for (const tahsilat of gecerliTahsilatlar) {
+        if (tahsilat.tutar <= 0) continue;
+        
+        // 1. Bu tahsilata kadar işlemiş faizi hesapla (mevcut anapara üzerinden)
+        if (sonFaizTarihi < tahsilat.tarih && kalanAnapara > 0) {
+          const faizBuTarihe = hesaplaSegmentliFaiz(kalanAnapara, sonFaizTarihi, tahsilat.tarih, oranTablosu);
+          kalanIslemişFaiz += faizBuTarihe.toplam;
+          takipSonrasiFaiz += faizBuTarihe.toplam;
+          faizSegmentleriSonrasi.push(...faizBuTarihe.segmentler);
+        }
+        
+        // 2. Tahsilatı TBK m.100 sırasıyla mahsup et
+        let kalanTahsilat = tahsilat.tutar;
+        let mahsupMasraf = 0, mahsupVekalet = 0, mahsupFaiz = 0, mahsupAnapara = 0;
+        
+        // 2a. Önce masraf/harçlara
+        if (kalanTahsilat > 0 && kalanMasrafHarc > 0) {
+          mahsupMasraf = Math.min(kalanTahsilat, kalanMasrafHarc);
+          kalanMasrafHarc -= mahsupMasraf;
+          kalanTahsilat -= mahsupMasraf;
+        }
+        
+        // 2b. Sonra vekalet ücretine
+        if (kalanTahsilat > 0 && kalanVekalet > 0) {
+          mahsupVekalet = Math.min(kalanTahsilat, kalanVekalet);
+          kalanVekalet -= mahsupVekalet;
+          kalanTahsilat -= mahsupVekalet;
+        }
+        
+        // 2c. Sonra işlemiş faize
+        if (kalanTahsilat > 0 && kalanIslemişFaiz > 0) {
+          mahsupFaiz = Math.min(kalanTahsilat, kalanIslemişFaiz);
+          kalanIslemişFaiz -= mahsupFaiz;
+          kalanTahsilat -= mahsupFaiz;
+        }
+        
+        // 2d. En son anaparaya - SADECE BU FAİZ MATRAHINI ETKİLER
+        if (kalanTahsilat > 0 && kalanAnapara > 0) {
+          mahsupAnapara = Math.min(kalanTahsilat, kalanAnapara);
+          kalanAnapara -= mahsupAnapara;
+          kalanTahsilat -= mahsupAnapara;
+        }
+        
+        // Mahsup detayını kaydet
+        mahsupDetaylari.push({
+          tarih: tahsilat.tarih,
+          tahsilatTutar: tahsilat.tutar,
+          mahsupMasraf,
+          mahsupVekalet,
+          mahsupFaiz,
+          mahsupAnapara,
+          kalanAnapara,
+        });
+        
+        // Faiz başlangıç tarihini güncelle
+        sonFaizTarihi = tahsilat.tarih;
+      }
+      
+      // Kalan anapara için hesap tarihine kadar faiz hesapla
+      if (kalanAnapara > 0 && sonFaizTarihi < hesapTarihi) {
+        const kalanSegmentSonuc = hesaplaSegmentliFaiz(kalanAnapara, sonFaizTarihi, hesapTarihi, oranTablosu);
+        takipSonrasiFaiz += kalanSegmentSonuc.toplam;
+        faizSegmentleriSonrasi.push(...kalanSegmentSonuc.segmentler);
+      }
+    } else {
+      // Tahsilat yok - direkt hesap tarihine kadar hesapla
+      const sonrasiFaizSonuc = hesaplaSegmentliFaiz(asilAlacak, takipTarihi, hesapTarihi, oranTablosu);
+      takipSonrasiFaiz = sonrasiFaizSonuc.toplam;
+      faizSegmentleriSonrasi.push(...sonrasiFaizSonuc.segmentler);
+    }
+    
+    takipSonrasiFaiz = Math.round(takipSonrasiFaiz * 100) / 100;
+    
+    // Geçersiz tahsilatları tespit et (takip tarihinden önce olanlar)
+    const takipOncesiTahsilatlar = aktiveTahsilatlar.filter(t => t.tarih < takipTarihi);
+    const gelecekTahsilatlar = aktiveTahsilatlar.filter(t => t.tarih > hesapTarihi);
     
     // 9. Toplam borç
     const toplamBorc = takipTutari + icraMasraflari + vekaletUcreti + takipSonrasiFaiz;
@@ -351,10 +484,8 @@ export function HesapOzetiPanel({
     // 10. Son borç (tahsil harcı dahil)
     const sonBorc = toplamBorc + pesinHarcHaricTahsilHarci;
     
-    // 11. Tahsilat düşümü
-    const toplamTahsilat = collections
-      .filter(c => c.status !== 'CANCELLED')
-      .reduce((sum, c) => sum + toNumber(c.amount), 0);
+    // 11. Tahsilat düşümü - sadece geçerli tahsilatlar (takip tarihi ile hesap tarihi arasında)
+    const toplamTahsilat = gecerliTahsilatlar.reduce((sum, c) => sum + c.tutar, 0);
     
     // 12. Tahsil oranlarına göre son borç
     const tahsilOranlari = [
@@ -390,13 +521,17 @@ export function HesapOzetiPanel({
       sonBorc,
       toplamTahsilat,
       kalanBorc: sonBorc - toplamTahsilat,
+      kalanAnapara, // TBK m.100 sonrası kalan anapara
+      mahsupDetaylari, // Her tahsilatın mahsup dağılımı
+      takipOncesiTahsilatlar, // Takip tarihinden önce girilen tahsilatlar (hatalı)
+      gelecekTahsilatlar, // Hesap tarihinden sonraki tahsilatlar
       tahsilOranlari,
       faizSegmentleri: {
         takipOncesi: oncesiFaizSonuc.segmentler,
-        takipSonrasi: sonrasiFaizSonuc.segmentler,
+        takipSonrasi: faizSegmentleriSonrasi,
       },
     };
-  }, [instruments, caseType, dues, claimItems, principalAmount, takipTarihi, hesapTarihi, debtorCount, collections]);
+  })();
 
   // Loading state
   if (loading) {
@@ -450,12 +585,7 @@ export function HesapOzetiPanel({
           <input
             type="date"
             value={hesapTarihi}
-            onChange={(e) => {
-              const newDate = e.target.value;
-              if (newDate) {
-                setHesapTarihi(newDate);
-              }
-            }}
+            onChange={handleDateChange}
             className="border rounded px-2 py-1 text-xs w-32 cursor-pointer"
             style={{ colorScheme: 'light' }}
           />
@@ -539,10 +669,66 @@ export function HesapOzetiPanel({
               <span className="text-gray-600">Tahsilat Düşümü</span>
               <span className="text-red-600 font-medium">- {formatTL(hesap.toplamTahsilat)}</span>
             </div>
+            
+            {/* TBK m.100 Mahsup Detayları */}
+            {hesap.mahsupDetaylari && hesap.mahsupDetaylari.length > 0 && (
+              <div className="mt-2 p-2 bg-purple-50 border border-purple-200 rounded">
+                <p className="text-[10px] font-medium text-purple-700 mb-1">TBK m.100 Mahsup Dağılımı</p>
+                {hesap.mahsupDetaylari.map((m, i) => (
+                  <div key={i} className="text-[9px] text-purple-600 border-b border-purple-100 pb-1 mb-1 last:border-0 last:pb-0 last:mb-0">
+                    <div className="font-medium">{formatDate(m.tarih)} - {formatTL(m.tahsilatTutar)}</div>
+                    <div className="grid grid-cols-2 gap-x-2 mt-0.5 text-purple-500">
+                      {m.mahsupMasraf > 0 && <span>Masraf: {formatTL(m.mahsupMasraf)}</span>}
+                      {m.mahsupVekalet > 0 && <span>Vekalet: {formatTL(m.mahsupVekalet)}</span>}
+                      {m.mahsupFaiz > 0 && <span>Faiz: {formatTL(m.mahsupFaiz)}</span>}
+                      {m.mahsupAnapara > 0 && <span className="font-medium text-purple-700">Anapara: {formatTL(m.mahsupAnapara)}</span>}
+                    </div>
+                    <div className="text-[8px] text-purple-400 mt-0.5">Kalan Anapara: {formatTL(m.kalanAnapara)}</div>
+                  </div>
+                ))}
+                {hesap.kalanAnapara < hesap.asilAlacak && (
+                  <div className="mt-1 pt-1 border-t border-purple-200 text-[9px] font-medium text-purple-700">
+                    Faiz Matrahı: {formatTL(hesap.asilAlacak)} → {formatTL(hesap.kalanAnapara)}
+                  </div>
+                )}
+              </div>
+            )}
+            
             <div className="flex justify-between py-1.5 px-2 -mx-2 mt-1 border-t border-orange-300 bg-orange-50 rounded">
               <span className="font-bold text-orange-900">KALAN BORÇ</span>
               <span className="font-bold text-orange-700">{formatTL(hesap.kalanBorc)}</span>
             </div>
+          </div>
+        )}
+        
+        {/* Takip tarihinden önceki tahsilatlar uyarısı (HATA) */}
+        {hesap.takipOncesiTahsilatlar && hesap.takipOncesiTahsilatlar.length > 0 && (
+          <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded text-[10px] text-red-800">
+            <div className="flex items-center gap-1">
+              <AlertCircle className="h-3 w-3" />
+              <span className="font-medium">⚠️ Takip tarihinden önceki tahsilatlar:</span>
+            </div>
+            {hesap.takipOncesiTahsilatlar.map((t: any, i: number) => (
+              <div key={i} className="ml-4 mt-0.5">
+                {formatDate(t.tarih)} - {formatTL(t.tutar)} (hesaba katılmadı - tarih hatalı!)
+              </div>
+            ))}
+            <p className="mt-1 text-[9px] text-red-600">Tahsilat tarihi takip tarihinden ({formatDate(takipTarihi)}) önce olamaz.</p>
+          </div>
+        )}
+        
+        {/* Hesap tarihinden sonraki tahsilatlar uyarısı */}
+        {hesap.gelecekTahsilatlar && hesap.gelecekTahsilatlar.length > 0 && (
+          <div className="mt-2 p-2 bg-yellow-50 border border-yellow-200 rounded text-[10px] text-yellow-800">
+            <div className="flex items-center gap-1">
+              <AlertCircle className="h-3 w-3" />
+              <span className="font-medium">Hesap tarihinden sonraki tahsilatlar:</span>
+            </div>
+            {hesap.gelecekTahsilatlar.map((t: any, i: number) => (
+              <div key={i} className="ml-4 mt-0.5">
+                {formatDate(t.tarih)} - {formatTL(t.tutar)} (hesaba katılmadı)
+              </div>
+            ))}
           </div>
         )}
         

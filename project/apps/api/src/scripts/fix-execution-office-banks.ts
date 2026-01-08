@@ -31,7 +31,7 @@ async function main() {
   for (const office of offices) {
     // IBAN'dan banka belirle
     let bankName = '';
-    let branchName = office.branchName || '';
+    const branchName = office.branchName || '';
     
     if (office.iban) {
       // TR ile başlayan IBAN'lar

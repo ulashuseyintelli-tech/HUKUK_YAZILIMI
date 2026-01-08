@@ -57,7 +57,7 @@ export function SearchHistoryPanel() {
     }
   };
 
-  const useSearch = (query: string) => {
+  const executeSearch = (query: string) => {
     alert(`Arama yapılıyor: ${query}`);
   };
 
@@ -87,7 +87,7 @@ export function SearchHistoryPanel() {
           <h4 className="text-sm font-medium text-blue-800 mb-2 flex items-center gap-1"><TrendingUp className="h-4 w-4" />Sık Kullanılan</h4>
           <div className="flex flex-wrap gap-2">
             {frequentSearches.map((s) => (
-              <button key={s.id} onClick={() => useSearch(s.query)} className="px-3 py-1.5 bg-white rounded-full text-sm hover:bg-blue-100 border border-blue-200">
+              <button key={s.id} onClick={() => executeSearch(s.query)} className="px-3 py-1.5 bg-white rounded-full text-sm hover:bg-blue-100 border border-blue-200">
                 {s.query}
               </button>
             ))}
@@ -115,7 +115,7 @@ export function SearchHistoryPanel() {
         <div className="space-y-2">
           {filtered.map((item) => (
             <div key={item.id} className="flex items-center gap-3 p-3 bg-white border rounded-lg hover:shadow-sm">
-              <button onClick={() => useSearch(item.query)} className="flex-1 text-left">
+              <button onClick={() => executeSearch(item.query)} className="flex-1 text-left">
                 <p className="font-medium text-sm">{item.query}</p>
                 <div className="flex items-center gap-3 text-xs text-gray-400 mt-1">
                   <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{formatTime(item.timestamp)}</span>

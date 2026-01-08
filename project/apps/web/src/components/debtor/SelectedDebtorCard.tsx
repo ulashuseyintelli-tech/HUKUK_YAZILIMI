@@ -33,13 +33,13 @@ interface SelectedDebtorCardProps {
 export function SelectedDebtorCard({ caseDebtor, onUpdate, onRemove, onEdit }: SelectedDebtorCardProps) {
   const [showDetails, setShowDetails] = useState(false);
   const { debtor } = caseDebtor;
-  if (!debtor) return null;
-
-  const addresses = debtor.debtorAddresses || [];
-  const isElectronicRequired = isElectronicNotificationRequired(debtor);
-  const isEstate = debtor.type === DebtorType.ESTATE;
+  
+  const addresses = debtor?.debtorAddresses || [];
+  const isElectronicRequired = debtor ? isElectronicNotificationRequired(debtor) : false;
+  const isEstate = debtor?.type === DebtorType.ESTATE;
   
   useEffect(() => {
+    if (!debtor) return;
     if (!caseDebtor.tebligatLegalMethod && !isEstate) {
       const defaultMethod = getDefaultLegalMethod(debtor);
       onUpdate({ 
@@ -48,7 +48,9 @@ export function SelectedDebtorCard({ caseDebtor, onUpdate, onRemove, onEdit }: S
         isElectronicRequired,
       });
     }
-  }, [debtor.id]);
+  }, [debtor?.id, caseDebtor.tebligatLegalMethod, isEstate, isElectronicRequired, onUpdate]);
+  
+  if (!debtor) return null;
 
   const currentLegalMethod = caseDebtor.tebligatLegalMethod || getDefaultLegalMethod(debtor);
   const currentDeliveryType = caseDebtor.tebligatDeliveryType || TebligatDeliveryType.NORMAL;

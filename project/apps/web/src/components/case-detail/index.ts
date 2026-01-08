@@ -5,3 +5,4 @@ export { MiniFinanceWidget } from "./MiniFinanceWidget";
 export { CasePartiesSection } from "./CasePartiesSection";
 export { OperationalRow } from "./OperationalRow";
 export { AccordionTabs } from "./AccordionTabs";
+export { OperationDeck } from "./OperationDeck";

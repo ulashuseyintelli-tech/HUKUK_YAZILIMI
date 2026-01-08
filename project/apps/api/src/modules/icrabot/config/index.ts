@@ -69,3 +69,6 @@ export * from './audit-report.config';
 
 // v12: Ops Runbook
 export * from './ops-runbook.config';
+
+// v13: Workflow Catalog (icra_workflow_catalog_v2.json'dan türetilmiş)
+export * from './workflow-catalog.config';

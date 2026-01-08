@@ -871,7 +871,7 @@ JSON formatında yanıt ver:
       const metadata = await sharp(buffer).metadata();
       this.logger.log(`Orijinal boyut: ${metadata.width}x${metadata.height}`);
       
-      let processedBuffer = await sharp(buffer)
+      const processedBuffer = await sharp(buffer)
         // 1. Gri tonlamaya çevir (OCR için daha iyi)
         .grayscale()
         // 2. Kontrastı artır

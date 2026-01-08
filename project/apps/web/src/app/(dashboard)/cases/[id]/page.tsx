@@ -48,6 +48,7 @@ import { DebtorsSummaryBar, DebtorRow, ServiceStatusBadge, AlertBadge, DebtorDet
 import { UyapExportButton } from "@/components/uyap-export/UyapExportButton";
 import { DueModal, CollectionModal, HesapOzetiPanel } from "@/components/finance";
 import { FaizDokumuPanel } from "@/components/interest";
+import { OperationDeck } from "@/components/case-detail";
 
 // ============================================
 // TİPLER
@@ -2141,9 +2142,16 @@ export default function CaseDetailPage() {
                             className="flex justify-between text-[10px] group hover:bg-blue-50 rounded px-1 -mx-1 py-0.5 cursor-pointer"
                             onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingDue(due); setDueModalOpen(true); }}
                           >
-                            <span className="text-gray-600 truncate flex-1" title={displayName}>
-                              {displayName}
-                            </span>
+                            <div className="flex flex-col min-w-0 flex-1">
+                              <span className="text-gray-600 truncate" title={displayName}>
+                                {displayName}
+                              </span>
+                              {due.dueDate && (
+                                <span className="text-[9px] text-gray-400">
+                                  Vade: {new Date(due.dueDate).toLocaleDateString('tr-TR')}
+                                </span>
+                              )}
+                            </div>
                             <div className="flex items-center gap-1">
                               <span className="font-medium text-right min-w-[90px]">{Number(due.amount || 0).toLocaleString('tr-TR')} ₺</span>
                               <button 
@@ -2219,16 +2227,37 @@ export default function CaseDetailPage() {
                           return (
                           <div 
                             key={col.id} 
-                            className="flex justify-between items-center text-[10px] group hover:bg-green-50 rounded px-1 -mx-1 py-0.5 cursor-pointer"
-                            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingCollection(col); setCollectionModalOpen(true); }}
+                            className="flex justify-between items-center text-[10px] group hover:bg-green-50 rounded px-1 -mx-1 py-0.5"
                           >
-                            <div className="flex flex-col min-w-0">
+                            <div 
+                              className="flex flex-col min-w-0 flex-1 cursor-pointer"
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setEditingCollection(col); setCollectionModalOpen(true); }}
+                            >
                               <span className="text-gray-600 truncate">
                                 {typeLabels[col.type] || col.type}
                               </span>
                               <span className="text-[9px] text-gray-400">{colDate}</span>
                             </div>
-                            <span className="font-medium text-green-700 flex-shrink-0">+{Number(col.amount || 0).toLocaleString('tr-TR')} ₺</span>
+                            <div className="flex items-center gap-1">
+                              <span className="font-medium text-green-700 flex-shrink-0">+{Number(col.amount || 0).toLocaleString('tr-TR')} ₺</span>
+                              <button
+                                onClick={async (e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  if (!confirm('Bu tahsilatı silmek istediğinize emin misiniz?')) return;
+                                  try {
+                                    await api.deleteCollection(caseData.id, col.id);
+                                    fetchFinanceData();
+                                  } catch (err: any) {
+                                    alert(`Silme hatası: ${err?.message || 'Bilinmeyen hata'}`);
+                                  }
+                                }}
+                                className="opacity-0 group-hover:opacity-100 p-0.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-opacity"
+                                title="Sil"
+                              >
+                                <Trash2 className="h-3 w-3" />
+                              </button>
+                            </div>
                           </div>
                         );
                         })}
@@ -2241,12 +2270,46 @@ export default function CaseDetailPage() {
               </div>
             </div>
 
-            {/* Notlar Bloğu */}
-            <div className="flex-1 overflow-hidden flex flex-col bg-white border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)] p-3">
-              <h4 className="text-[11px] font-semibold text-gray-700 mb-2">Notlar</h4>
-              <div className="flex-1 overflow-y-auto bg-[#FAFAFB] border border-[#E5E7EB] rounded-lg p-2">
-                <p className="text-[10px] text-gray-400 text-center py-2">Henüz not eklenmemiş</p>
-              </div>
+            {/* Operasyon Masası - Accordion Paneller */}
+            <div className="flex-1 overflow-hidden flex flex-col bg-white border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
+              <OperationDeck
+                caseId={caseData.id}
+                notes={[]}
+                tasks={[
+                  // Örnek sistem önerisi - gerçek veriler API'den gelecek
+                  ...(caseData.workflowStage === 'ODEME_EMRI' ? [{
+                    id: 'sys-1',
+                    title: 'Tebligat sonucunu kontrol et',
+                    description: 'Ödeme emri tebliğ edildi mi?',
+                    source: 'SISTEM' as const,
+                    basis: 'İİK m.60',
+                    status: 'BEKLIYOR' as const,
+                    category: 'SONRAKI_HAMLE' as const,
+                    priority: 'HIGH' as const,
+                  }] : []),
+                ]}
+                financeItems={[
+                  ...collections.filter((c: any) => c.status !== 'CANCELLED').map((c: any) => ({
+                    id: c.id,
+                    type: 'TAHSILAT' as const,
+                    amount: Number(c.amount || 0),
+                    date: c.date || c.createdAt,
+                    description: c.description || 'Tahsilat',
+                  })),
+                ]}
+                uyapQueries={[]}
+                relatedCases={[]}
+                clientBalance={0}
+                onOpenChat={() => setMessageModalOpen(true)}
+                onAddNote={() => {
+                  // Not ekleme modalı açılacak
+                  console.log('Not ekle');
+                }}
+                onAddTask={() => {
+                  // Görev ekleme modalı açılacak
+                  console.log('Görev ekle');
+                }}
+              />
             </div>
           </div>
 
@@ -2267,11 +2330,11 @@ export default function CaseDetailPage() {
                 // Finans verilerini yeniden yükle
                 setLoadingFinance(true);
                 Promise.all([
-                  api.get(`/cases/${caseData.id}/dues`),
-                  api.get(`/cases/${caseData.id}/collections`)
+                  api.getCaseDues(caseData.id),
+                  api.getCaseCollections(caseData.id)
                 ]).then(([duesRes, colRes]) => {
-                  setDues(duesRes.data || []);
-                  setCollections(colRes.data || []);
+                  setDues(duesRes || []);
+                  setCollections(colRes || []);
                 }).finally(() => setLoadingFinance(false));
               }}
             />

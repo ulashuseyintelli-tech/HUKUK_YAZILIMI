@@ -521,7 +521,7 @@ export class InterestEngineService {
     );
 
     // Calculate each segment
-    let currentPrincipal = item.amount;
+    const currentPrincipal = item.amount;
 
     for (let i = 0; i < timeline.length - 1; i++) {
       const periodStart = timeline[i];

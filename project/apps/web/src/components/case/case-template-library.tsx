@@ -63,7 +63,7 @@ export function CaseTemplateLibrary() {
 
   const toggleFavorite = (id: string) => saveTemplates(templates.map(t => t.id === id ? { ...t, isFavorite: !t.isFavorite } : t));
   const deleteTemplate = (id: string) => saveTemplates(templates.filter(t => t.id !== id));
-  const useTemplate = (t: CaseTemplate) => {
+  const applyTemplate = (t: CaseTemplate) => {
     saveTemplates(templates.map(tt => tt.id === t.id ? { ...tt, usageCount: tt.usageCount + 1 } : tt));
     alert(`"${t.name}" şablonu kullanıldı. Yeni takip sayfasına yönlendiriliyorsunuz...`);
   };
@@ -143,7 +143,7 @@ export function CaseTemplateLibrary() {
                 <span className="text-xs text-gray-400 ml-auto">{t.usageCount} kullanım</span>
               </div>
               <div className="flex items-center gap-2">
-                <button onClick={() => useTemplate(t)} className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
+                <button onClick={() => applyTemplate(t)} className="flex-1 flex items-center justify-center gap-1 px-3 py-1.5 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
                   <Download className="h-4 w-4" />Kullan
                 </button>
                 <button onClick={() => setPreview(t)} className="p-1.5 border rounded-lg hover:bg-gray-50"><Eye className="h-4 w-4 text-gray-500" /></button>

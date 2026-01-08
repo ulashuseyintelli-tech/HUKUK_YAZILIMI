@@ -260,7 +260,7 @@ export class ExpressionEvaluatorService {
    */
   private splitBool(expr: string): { mode: 'and' | 'or' | 'atom'; parts: string[] } {
     // Normalize operators
-    let e = expr
+    const e = expr
       .replace(/AND/g, 'and')
       .replace(/OR/g, 'or')
       .replace(/&&/g, 'and')

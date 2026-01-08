@@ -1,11 +1,11 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   Zap, Plus, FileText, Users, Calendar, 
-  ClipboardList, Search, Settings, X,
-  Building2, BarChart3, Bell, Database, Loader2
+  ClipboardList, Settings, X,
+  Building2, BarChart3, Bell, Database, Loader2, GripVertical
 } from 'lucide-react';
 
 const QUICK_ACTIONS = [
@@ -26,6 +26,80 @@ export function QuickActions() {
   const [seeding, setSeeding] = useState(false);
   const [seedResult, setSeedResult] = useState<any>(null);
   const router = useRouter();
+
+  // Draggable FAB state
+  const [position, setPosition] = useState({ x: 24, y: 24 }); // right: 24px, bottom: 24px
+  const [isDragging, setIsDragging] = useState(false);
+  const dragRef = useRef<{ startX: number; startY: number; startPosX: number; startPosY: number } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  // Load saved position from localStorage
+  useEffect(() => {
+    const saved = localStorage.getItem('fab-position');
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        setPosition(parsed);
+      } catch {}
+    }
+  }, []);
+
+  // Save position to localStorage
+  const savePosition = (pos: { x: number; y: number }) => {
+    localStorage.setItem('fab-position', JSON.stringify(pos));
+  };
+
+  // Mouse/Touch handlers for dragging
+  const handleDragStart = (e: React.MouseEvent | React.TouchEvent) => {
+    e.preventDefault();
+    const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+    const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+    
+    setIsDragging(true);
+    dragRef.current = {
+      startX: clientX,
+      startY: clientY,
+      startPosX: position.x,
+      startPosY: position.y,
+    };
+  };
+
+  useEffect(() => {
+    if (!isDragging) return;
+
+    const handleMove = (e: MouseEvent | TouchEvent) => {
+      if (!dragRef.current) return;
+      
+      const clientX = 'touches' in e ? e.touches[0].clientX : e.clientX;
+      const clientY = 'touches' in e ? e.touches[0].clientY : e.clientY;
+      
+      const deltaX = dragRef.current.startX - clientX;
+      const deltaY = dragRef.current.startY - clientY;
+      
+      const newX = Math.max(8, Math.min(window.innerWidth - 64, dragRef.current.startPosX + deltaX));
+      const newY = Math.max(8, Math.min(window.innerHeight - 64, dragRef.current.startPosY + deltaY));
+      
+      setPosition({ x: newX, y: newY });
+    };
+
+    const handleEnd = () => {
+      setIsDragging(false);
+      savePosition(position);
+      dragRef.current = null;
+    };
+
+    document.addEventListener('mousemove', handleMove);
+    document.addEventListener('mouseup', handleEnd);
+    document.addEventListener('touchmove', handleMove);
+    document.addEventListener('touchend', handleEnd);
+
+    return () => {
+      document.removeEventListener('mousemove', handleMove);
+      document.removeEventListener('mouseup', handleEnd);
+      document.removeEventListener('touchmove', handleMove);
+      document.removeEventListener('touchend', handleEnd);
+    };
+  }, [isDragging, position]);
 
   const handleSeedData = async () => {
     setSeeding(true);
@@ -69,14 +143,35 @@ export function QuickActions() {
 
   return (
     <>
-      {/* Floating Action Button */}
-      <button
-        onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 z-40 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 flex items-center justify-center transition-transform hover:scale-110"
-        title="Hızlı İşlemler"
+      {/* Floating Action Button - Draggable */}
+      <div
+        ref={buttonRef as any}
+        className="fixed z-[9999] flex items-center gap-1"
+        style={{ 
+          right: `${position.x}px`, 
+          bottom: `${position.y}px`,
+          cursor: isDragging ? 'grabbing' : 'default',
+        }}
       >
-        <Zap className="h-6 w-6" />
-      </button>
+        {/* Drag Handle */}
+        <button
+          onMouseDown={handleDragStart}
+          onTouchStart={handleDragStart}
+          className={`w-6 h-14 bg-gray-400/80 hover:bg-gray-500 text-white rounded-l-full flex items-center justify-center transition-all ${isDragging ? 'bg-gray-600' : ''}`}
+          title="Sürükle"
+          style={{ cursor: isDragging ? 'grabbing' : 'grab' }}
+        >
+          <GripVertical className="h-4 w-4" />
+        </button>
+        {/* Main Button */}
+        <button
+          onClick={() => !isDragging && setIsOpen(true)}
+          className="w-14 h-14 bg-blue-600 text-white rounded-r-full shadow-xl hover:bg-blue-700 flex items-center justify-center transition-all hover:scale-105 hover:shadow-2xl"
+          title="Hızlı İşlemler"
+        >
+          <Zap className="h-6 w-6" />
+        </button>
+      </div>
 
       {/* Modal */}
       {isOpen && (
