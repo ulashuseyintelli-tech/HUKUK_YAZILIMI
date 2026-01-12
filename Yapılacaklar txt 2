@@ -1,155 +1,296 @@
-Notu net okudum. Mesele **“icra takip dosyalarında borçlunun güncel adresini sistematik, hukuka uygun ve verimli biçimde bulmak”**. Lafı dolandırmadan, doğrudan çalışır bir çerçeve çiziyorum.
+Tamam. MERNİS’e geçmeden önce “**müvekkil + evrak adresi**” katmanını kurmak daha doğru; çünkü pratikte ilk adres kaynağın burası. Bu yüzden akışı şu sıraya koyuyoruz:
+
+1. **Evraktan gelen adres kaydı**
+2. **Müvekkile otomatik adres talebi (email/whatsapp)**
+3. **Cevap yoksa 3 günde bir hatırlatma**
+4. **Olumsuz cevap olsa bile dosya derdestken yılda 1 tekrar talep**
+5. Sonra ancak **UYAP/MERNİS** doğrulama
+
+Aşağıda bunu görev mimarisi + kurallarıyla netleştiriyorum.
 
 ---
 
-## 1️⃣ Kaynak Hiyerarşisi (rastgele değil, sıralı gideceksin) ( sanırım kiro bunu yaptı)
+## A) Adres kayıt tipleri (bu aşamada)
 
-Adres arama **hiyerarşik** olmalı. Her kaynak bir öncekini teyit eder ya da çürütür.
+`debtor_address.address_type` için minimum:
 
-### 1. Müvekkilden gelen bilgiler ( müvekkile bununla alakalı otomaitk mail gönderilmeli gönderilecek mail içeriğinde otomatik icraya konulmuş borçlunun bilgisi mail içeriği olarak da
- Sayın Müvekkilimiz,
+* `DECLARED_DOCUMENT` (borç evrakı üzerindeki adres)
+* `DECLARED_CLIENT` (müvekkilin verdiği adres)
+* (sonra ekleyeceğiz) `MERNIS_RESIDENCE`
 
-Tarafınız adına başlatılan icra dosyasında yer alan borçlulara ilişkin **elinizde bulunan adres, telefon, e-posta ve diğer iletişim bilgilerini** tarafımıza iletmenizi rica ederiz.
+Her kayıtta mutlaka:
 
-Bu bilgiler, tebligat işlemlerinin sağlıklı yürütülmesi için gereklidir.
-
-Bilgilerinizi bu e-postaya yanıt olarak iletebilirsiniz.
-
-Saygılarımızla,
-[Av. Ad Soyad]
-[Hukuk Bürosu]
-)
-
-* Sözleşme adresi
-* Fatura / sevk adresi
-* E-posta, telefon, WhatsApp
-  ⚠️ **Uyarı:** Bunlar “beyan”dır, tek başına güvenilmez. Ama ilk tetikleyici.
-
-### 2. UYAP / MERNİS ( uyaptan otomatik çekme ) 
-
-* **MERNİS yerleşim yeri adresi** = hukuken en güçlü adres
-* UYAP’ta daha önceki dosyalarda kullanılan adresler
-  📌 Sistem mutlaka şunu sormalı:
-
-> “Bu adres MERNİS mi, beyan mı, eski dosya adresi mi?”
-
-### 3. Resmî Kurum Sorguları (otomasyona çok uygun)
-
-* SGK → işyeri adresi
-* Vergi Dairesi → yoklama / iş adresi
-* Ticaret Sicili (tüzel kişilerde)
-* Tapu / Araç tescil (dolaylı adres teyidi)
-
-⚠️ Sosyal medya **adres kaynağı değil**, sadece **ipucu** olabilir. Hukuki dayanak yok.
+* `source` = `DOCUMENT_SCAN | MANUAL_ENTRY | CLIENT_REPLY`
+* `evidence_id` (borç evrakı id / mesaj id)
+* `retrieved_at`
+* `confidence` (document=orta, client=orta/yüksek)
 
 ---
 
-## 2️⃣ Sosyal Medya: Yap ya da Yapma?
+## B) 1) Borç evrakından adres kaydı oluşturma
 
-**Yap ama KAYIT ALTINA ALMA.**
+### Trigger
 
-* Sosyal medya = keşif aracı
-* Dosyaya “adres budur” diye girilmez
-* Ama “X ilçede ikamet ediyor olabilir” şeklinde **içsel not** olur
+* Borç evrakı sisteme girildiğinde (manuel giriş veya tarama/okuma sonrası)
 
-Yani:
+### İş
 
-> sosyal medya = dedektif
-> tebligat = noter
+* Evrak üzerinde bulunan adres alanı(ları) `debtor_address` tablosuna kaydedilir.
+* `address_type = DECLARED_DOCUMENT`
+* `source = DOCUMENT_SCAN` (OCR/AI ile) veya `MANUAL_ENTRY`
+* Not/Audit: “Borç evrakından alındı”
 
----
-
-## 3️⃣ Tebligat Stratejisi (en çok hata burada)
-
-Adres bulmak yetmez, **nasıl tebliğ edeceğin** kritik.
-
-Adres tipi net olmalı:
-
-* 🏠 MERNİS adresi
-* 🏢 İş yeri adresi
-* 📍 Şube / geçici adres
-* ❌ Bilinmeyen adres
-
-Sistem şu aklı yürütmeyi yapmalı:
-
-* MERNİS var → **oraya çık**
-* İade geldi → **TK 21/2 mi olur, yeniden mi?**
-* İşyeri adresi varsa → **ayrı tebligat opsiyonu**
+> Kritik: Bu kayıt “MERNİS” yerine geçmez. Ama tebligatta **bilinen adres** olarak değerlidir.
 
 ---
 
-## 4️⃣ Kurumlara Yazı: Ne zaman?
+## C) 2) Müvekkile sor kurgusu (bunu tetikliyoruz)
 
-Her dosyada otomatik yazı **saçmalık**.
+Bunu tek task değil, 2 aşamalı yap.
 
-Şu eşik olmalı:
+### Task Type 1 — `CLIENT_CONTACT_VALIDATE`
 
-* En az **2 başarısız tebligat**
-* MERNİS + işyeri uyumsuzluğu
-* Dosya tutarı belli bir eşiğin üstünde
+Amaç: Müvekkilin iletişim kanalını garantiye almak.
 
-O zaman:
+**Kural**
 
-* SGK
-* Vergi Dairesi
-* Belediye (nüfus/imar dolaylı veriler)
-UYAP’ta görünen adreslerle yetinmeyelim, borçluyu gerçekten bulalım”
+* Müvekkilde **email yoksa** ve **whatsapp yoksa**:
 
-ise aktif kullanman gereken çekirdek talepler şunlar:
+  * Dosya sorumlusuna görev: “Müvekkil iletişim bilgilerini tamamla (email/whatsapp)”
+  * `due_at = now + 1 gün`
+  * Bu tamamlanmadan “adres talebi” otomatik gönderilemez.
 
-AA (nüfus + aile + adres)
+* İkisinden **en az biri varsa** bu görev “DONE”.
 
-ab (SGK)
+### Task Type 2 — `CLIENT_REQUEST_DEBTOR_ADDRESSES`
 
-af (ticaret odası)
+Amaç: Müvekkile otomatik mesaj atmak.
 
-Aj (vergi dairesi)
+**Kural (kanal seçimi)**
 
-AL (gümrük – varsa)
+* Sadece email varsa → email gönder
+* Sadece whatsapp varsa → whatsapp gönder
+* İkisi de varsa → **ikisine de gönder** (senin dediğin gibi)
 
-ar (GSM operatörleri)
+**Mesaj içeriği (kısa, net)**
 
-ah / an / ap (ortaklar + aile üzerinden yayılım)
+* Borçlu adı/TC (varsa)
+* Dosya referansı
+* “Elinizdeki tebligata yarar adresleri, telefon/e-posta, işyeri adresi, bilinen son adres vb. paylaşın”
+* “3 gün içinde dönüş rica ederiz”
 
-Bunlar birlikte kullanıldığında adres saklayan borçlu kalmaz.
-Bu artık klasik icra değil, borçlu istihbaratıdır.
+**State**
 
-İstersen bir sonraki adımda şunu da yapabiliriz:
-
-Bu talepleri UYAP ekran akışına göre sıralayıp
-
-“Adres bulunamazsa → otomatik olarak bir üst sorguya geç” mantığında
----
-
-## 5️⃣ Sistem Mimarisine Dönüştürelim (asıl mesele bu)
-
-Borçlu kartında şu alanlar **zorunlu** olmalı:
-
-**Adresler sekmesi**
-
-* Adres
-* Kaynak (MERNİS / müvekkil / SGK / eski dosya)
-* Güven seviyesi (yüksek – orta – düşük)
-* Son doğrulama tarihi
-* Tebligat durumu (çıktı / iade / tebliğ / bila)
-
-**Akıllı uyarılar**
-
-* “Bu borçluda MERNİS adresi yok”
-* “Son tebligat iade – yeni adres aranmalı”
-* “Aynı borçluya ait başka dosyada farklı adres var”
+* Gönderim sonrası `status = WAITING_EXTERNAL`, `due_at = now + 3 gün`
 
 ---
 
-## 6️⃣ Net Gerçek (yumuşatmadan)
+## D) 3) Cevap yoksa: 3 günde bir hatırlatma
 
-* Adres bulma işi **tek seferlik değil**, süreçtir
-* En büyük hata: “adres var zannedip” kör tebligat çıkmak
-* En verimli yol: **veri + otomasyon + hukuk bilinci**
+Bunu ayrı bir “Reminder” job olarak değil, aynı task içinde standart SLA olarak kurgula.
 
-İstersen bir sonraki adımda:
+### SLA motoru
 
-* bunu **ekran akışına** (UI/UX),
-* ya da **tam otomatik adres araştırma modülüne**
-  dönüştürelim.
-  Bu nottan çok daha ileri bir şeye evrilebilir.
+* `CLIENT_REQUEST_DEBTOR_ADDRESSES` task’ı `WAITING_EXTERNAL` ise:
+
+  * `due_at` geldiğinde kontrol et: cevap var mı?
+  * yoksa:
+
+    * **Hatırlatma gönder**
+    * `attempt_count += 1`
+    * `due_at = now + 3 gün`
+  * (opsiyonel tavan) 3. hatırlatmadan sonra “dosya sorumlusuna ara” görevi aç
+
+> Sen “3 günde bir hatırlatılmalı” dedin. Bu tam olarak bu.
+
+---
+
+## E) 4) Cevap geldi ama olumsuzsa: yılda 1 tekrar
+
+Burada kritik ayrım:
+
+* Cevap **olumlu** (adres verdi) → adres kayıtlarını yaz, task kapanır, yıllık tekrar **gerekli değil** (ama istersen “dosya derdestse yılda 1 doğrulama” yine yaparsın)
+* Cevap **olumsuz** (adres yok) → task kapanır ama dosya açık kaldığı sürece yeni bir periyodik görev üretir
+
+### Periyodik görev
+
+* Task Type: `CLIENT_ANNUAL_ADDRESS_REFRESH`
+* Kural: Dosya `DERDEST` olduğu sürece `every 12 months`
+* Kanal: kayıtlı olan tüm kanallar
+* Cevap gelirse adresleri güncelle, gelmezse 3 günde bir hatırlatma aynı mantık
+
+> Bu yaklaşım “olumsuz cevap aldıktan sonra yıllarca kimse bakmadı” problemini öldürür.
+
+---
+
+## F) Sistem kayıtları: “yapıldı” notu otomatik düşsün
+
+Senin istediğin gibi:
+
+* Her otomatik aksiyon bir `audit_log` kaydı üretir:
+
+  * “Borç evrakından adres kaydı oluşturuldu”
+  * “Müvekkile adres talebi WhatsApp/E-mail ile gönderildi”
+  * “3 gün hatırlatma gönderildi (1/2/3)”
+  * “Müvekkil olumsuz yanıt verdi → yıllık refresh planlandı”
+
+Notlar panelinde sadece özet göster, gerçek kayıt audit’te dursun.
+
+---
+
+## Bu akışta MERNİS ne zaman devreye girer?
+
+Basit kural:
+
+* **Müvekkilden/evraktan adres yoksa** → hemen UYAP/MERNİS çekimine geç
+* **Adres varsa bile** → en geç tebligat öncesi “MERNİS doğrulama” çalıştır (çünkü adres değişmiş olabilir)
+
+---
+
+İstersen bir sonraki adımda bunu “task_type listesi + tetikleyici tablosu” olarak tek sayfaya indirip, doğrudan kod tarafındaki `TaskRunner` kurallarına çevirelim. Bu haliyle artık sistem “müvekkile sor”u gerçekten motor seviyesinde tetikleyebilecek durumda.
+**[10.01.2026 00:00]**
+Tamam. Aşağıya “tek sayfa motor kuralı” şeklinde döküyorum: **task_type listesi + tetikleyiciler + SLA + sonuç aksiyonları**. Bunu direkt `TaskRunner`’a gömersin.
+
+---
+
+## Task Types (adres akışı – şahıs borçlu)
+
+### 1) `DOC_EXTRACT_DEBTOR_ADDRESSES`
+
+**Amaç:** Borç evrakından (manuel/OCR) adresleri borçluya yazmak.
+**Input:** `evidence_id (borç_evrakı_id)`, `debtor_id`, `address_text[]`
+**Output:** `debtor_address` kayıtları (`address_type=DECLARED_DOCUMENT`, `source=DOCUMENT_SCAN|MANUAL_ENTRY`)
+**Kapanış:** her zaman `DONE`
+
+---
+
+### 2) `CLIENT_CONTACT_VALIDATE`
+
+**Amaç:** Müvekkilde email/whatsapp yoksa tamamlatmak.
+**Output:** `task` veya `DONE`
+
+---
+
+### 3) `CLIENT_REQUEST_DEBTOR_ADDRESSES`
+
+**Amaç:** Müvekkile borçlu adres talebi mesajını otomatik atmak (email/whatsapp).
+**Output:** `communication` kaydı + `debtor_address` (cevap gelirse)
+**SLA:** 3 günde bir hatırlatma
+
+---
+
+### 4) `CLIENT_REMIND_DEBTOR_ADDRESSES`
+
+**Amaç:** Cevap yoksa 3 günde bir hatırlatmayı otomatik yapmak.
+
+> İstersen bunu ayrı task yerine `CLIENT_REQUEST_DEBTOR_ADDRESSES` içinde “SLA tick” olarak da çalıştırabilirsin. Motor basitliği için burada ayrı tanımlıyorum.
+
+---
+
+### 5) `CLIENT_ANNUAL_ADDRESS_REFRESH`
+
+**Amaç:** Müvekkil “adres yok” dediyse veya dosya uzadıysa yılda 1 tekrar adres istemek.
+**SLA:** yine 3 günde bir hatırlatma
+
+---
+
+### 6) (Sonraki aşama) `UYAP_PULL_MERNIS`
+
+Şimdilik listede dursun ama bu sprintte devreye sokmayacağız.
+
+---
+
+## Tetikleyici Kurallar Tablosu (event → task)
+
+| Event (Olay)                                       | Koşul                                      | Açılacak Task                          | Not                                              |
+| -------------------------------------------------- | ------------------------------------------ | -------------------------------------- | ------------------------------------------------ |
+| `EVIDENCE_UPLOADED` (borç evrakı eklendi)          | evrakta adres alanı girildi/çıktı üretildi | `DOC_EXTRACT_DEBTOR_ADDRESSES`         | adresler “belirtilen/bildirilen adres” olur      |
+| `DEBTOR_CREATED` (şahıs borçlu)                    | her durumda                                | `CLIENT_CONTACT_VALIDATE`              | ilk kapı bu                                      |
+| `CLIENT_CONTACT_VALIDATE.DONE`                     | email/whatsapp en az biri var              | `CLIENT_REQUEST_DEBTOR_ADDRESSES`      | kanala göre 1 veya 2 mesaj                       |
+| `CLIENT_CONTACT_VALIDATE.OPEN`                     | email yok AND whatsapp yok                 | görev dosya sorumlusuna atanır         | “müvekkil iletişim bilgisi tamamla”              |
+| `DOC_EXTRACT_DEBTOR_ADDRESSES.DONE`                | (opsiyonel) her durumda                    | `CLIENT_REQUEST_DEBTOR_ADDRESSES`      | evrak adresi olsa bile müvekkilden teyit isteriz |
+| `CLIENT_REQUEST_DEBTOR_ADDRESSES.WAITING_EXTERNAL` | `due_at` geldi ve cevap yok                | `CLIENT_REMIND_DEBTOR_ADDRESSES`       | 3 günde bir                                      |
+| `CLIENT_REQUEST_DEBTOR_ADDRESSES`                  | cevap geldi (olumlu)                       | adresleri yaz, task `DONE`             | kanıt = iletişim cevabı                          |
+| `CLIENT_REQUEST_DEBTOR_ADDRESSES`                  | cevap geldi (olumsuz)                      | `CLIENT_ANNUAL_ADDRESS_REFRESH` planla | dosya derdestse                                  |
+| `CASE_STATUS_CHANGED`                              | dosya `DERDEST`                            | yıllık task aktif kalsın               | dosya kapanınca pasif                            |
+
+---
+
+## SLA / Retry Politikası (3 dönüş döngüsü)
+
+Her “dış cevap bekleyen” task için standart:
+
+* `WAITING_EXTERNAL` durumunda `due_at = now + 3 gün`
+* `due_at` geldi:
+
+  * cevap yoksa → hatırlatma gönder → `attempt_count += 1` → `due_at = now + 3 gün`
+  * cevap varsa → `DONE`
+* **Opsiyonel tavan:** `attempt_count >= 3` olursa:
+
+  * ekstra task: `ASSIGN_MANUAL_CALL_CLIENT` (telefonla ara)
+  * ve yine beklemeye devam et veya “failed-soft” yap (senin tercihine göre)
+
+> Sen “3 günde bir hatırlatılmalı” dedin; bu mekanizma onu birebir sağlar.
+
+---
+
+## Kanal Kuralları (email / whatsapp)
+
+`CLIENT_REQUEST_DEBTOR_ADDRESSES` çalışırken:
+
+* email var, whatsapp yok → **email**
+* whatsapp var, email yok → **whatsapp**
+* ikisi de var → **ikisine de gönder**
+* ikisi de yok → bu task hiç açılmaz; `CLIENT_CONTACT_VALIDATE` kapanmadan zincir ilerlemez
+
+---
+
+## Adres Yazma Kuralları (tekleşme + kaynak)
+
+Mesajdan veya evraktan gelen her adres için:
+
+* `debtor_address.address_type`
+
+  * evrak: `DECLARED_DOCUMENT`
+  * müvekkil: `DECLARED_CLIENT`
+* `source`
+
+  * evrak: `DOCUMENT_SCAN` veya `MANUAL_ENTRY`
+  * müvekkil: `CLIENT_REPLY_EMAIL` / `CLIENT_REPLY_WHATSAPP`
+* `hash(normalize(address_text))` ile tekrarları engelle
+* Aynı hash varsa sadece `retrieved_at` güncelle
+
+---
+
+## Yıllık Refresh Kuralı (dosya derdestse)
+
+`CLIENT_ANNUAL_ADDRESS_REFRESH`:
+
+* `next_run_at = last_run_at + 365 gün`
+* Dosya hâlâ `DERDEST` ise çalıştır:
+
+  * aynı “kanal kuralları” ile mesaj at
+  * SLA = 3 günde bir hatırlatma
+* Dosya kapandıysa: task disable/close
+
+---
+
+## UI’de “Yapıldı” işaretleme (otomatik)
+
+Her otomatik aksiyon için Audit Log satırı üret:
+
+* “Evraktan adres kaydı oluşturuldu”
+* “Müvekkile adres talebi gönderildi (Email/WhatsApp)”
+* “Hatırlatma #n gönderildi”
+* “Müvekkil olumsuz yanıtladı → yıllık talep planlandı”
+* “Müvekkil adres verdi → X yeni adres işlendi”
+
+Notlar panelinde “yapıldı” gibi görünür; gerçek kayıt audit’te durur.
+
+---
+
+Bu düzenle ilk sprintte şu üç şeyi canlıya alırsın:
+
+1. **Evrak adresi kaydı**, 2) **Müvekkile otomatik talep (kanal kuralı)**, 3) **3 günde bir hatırlatma + olumsuzsa yıllık refresh**.
+
+Sonraki sprintte bunun altına `UYAP_PULL_MERNIS`’i aynı motor kalıbıyla takarız; zincire de “müvekkilden/evraktan adres yoksa hemen UYAP” kuralını ekleriz.

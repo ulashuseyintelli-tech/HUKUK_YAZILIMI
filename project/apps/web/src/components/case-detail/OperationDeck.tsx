@@ -4,15 +4,50 @@ import { useState } from "react";
 import {
   FileText, ListTodo, Receipt, Database, FolderOpen, MessageSquare,
   ChevronDown, Plus, AlertTriangle, Clock, Zap, User, Check, X,
-  ArrowRight, Calendar, Tag, ExternalLink
+  ArrowRight, Calendar, Tag, ExternalLink, MapPin, Loader2,
+  Scale, Users, Wallet, Send, FileCheck, HourglassIcon, DollarSign
 } from "lucide-react";
 
 // ============================================================================
 // TYPES
 // ============================================================================
 
-type PanelId = "notes" | "tasks" | "finance" | "uyap" | "related" | null;
+type PanelId = "tasks" | "finance" | "uyap" | "related" | "icra-notes" | "client-requests" | "accounting" | null;
 
+// İcra Notu (iç - hukuki strateji)
+interface IcraNote {
+  id: string;
+  content: string;
+  createdAt: string;
+  createdBy?: { name: string };
+  isEdited?: boolean;
+  editedAt?: string;
+}
+
+// Müvekkil Talebi
+interface ClientRequest {
+  id: string;
+  type: "BILGILENDIRME" | "MASRAF_TALEBI" | "EVRAK_TALEBI" | "ONAY_BEKLEYEN";
+  content: string;
+  amount?: number; // Masraf talebi için
+  status: "BEKLIYOR" | "TAMAMLANDI" | "IPTAL";
+  createdAt: string;
+  createdBy?: { name: string };
+  completedAt?: string;
+  responseNote?: string;
+}
+
+// Muhasebe Kaydı
+interface AccountingRecord {
+  id: string;
+  type: "MASRAF_TALEBI_GONDERILDI" | "ODEME_BEKLENIYOR" | "ODEME_ALINDI" | "MAHSUP" | "IADE";
+  description: string;
+  amount?: number;
+  createdAt: string;
+  relatedRequestId?: string; // İlişkili talep
+}
+
+// Eski Note tipi (geriye uyumluluk)
 interface Note {
   id: string;
   content: string;
@@ -26,11 +61,12 @@ interface Task {
   title: string;
   description?: string;
   source: "SISTEM" | "MANUEL";
-  basis?: string; // Kanun maddesi veya UYAP olayı
+  basis?: string; // Kanun maddesi veya UYAP olayı (taskType)
   status: "BEKLIYOR" | "YAPILDI" | "IPTAL";
   dueDate?: string;
   priority?: "HIGH" | "MEDIUM" | "LOW";
   category?: "SONRAKI_HAMLE" | "SURE_BAGLI" | "RISK";
+  taskType?: string; // Backend task type (CLIENT_REQUEST_DEBTOR_ADDRESSES vb.)
 }
 
 interface FinanceItem {
@@ -63,17 +99,26 @@ interface RelatedCase {
 
 interface OperationDeckProps {
   caseId: string;
-  notes?: Note[];
+  notes?: Note[]; // Geriye uyumluluk
+  icraNotlar?: IcraNote[];
+  muvekkilTalepleri?: ClientRequest[];
+  muhasebeKayitlari?: AccountingRecord[];
   tasks?: Task[];
   financeItems?: FinanceItem[];
   uyapQueries?: UyapQuery[];
   relatedCases?: RelatedCase[];
   clientBalance?: number;
   onAddNote?: () => void;
+  onAddIcraNote?: () => void;
+  onAddClientRequest?: (type: ClientRequest['type']) => void;
+  onCompleteRequest?: (requestId: string) => void;
   onAddTask?: () => void;
   onOpenChat?: () => void;
   onTaskAction?: (taskId: string, action: "complete" | "cancel") => void;
+  onConfirmReceived?: (taskId: string) => void; // "Zaten aldık" butonu için
   onRunQuery?: (queryType: string) => void;
+  onTriggerAddressWorkflow?: () => void;
+  addressWorkflowLoading?: boolean;
 }
 
 // ============================================================================
@@ -85,7 +130,9 @@ const panels = [
   { id: "finance" as PanelId, label: "Finans", icon: Receipt, color: "text-emerald-600", bg: "bg-emerald-50" },
   { id: "uyap" as PanelId, label: "UYAP Sorgu", icon: Database, color: "text-blue-600", bg: "bg-blue-50" },
   { id: "related" as PanelId, label: "İlişkili", icon: FolderOpen, color: "text-purple-600", bg: "bg-purple-50" },
-  { id: "notes" as PanelId, label: "Notlar", icon: FileText, color: "text-slate-600", bg: "bg-slate-50" },
+  { id: "icra-notes" as PanelId, label: "İcra Notları", icon: Scale, color: "text-slate-600", bg: "bg-slate-50" },
+  { id: "client-requests" as PanelId, label: "Müvekkil Talepleri", icon: Users, color: "text-indigo-600", bg: "bg-indigo-50" },
+  { id: "accounting" as PanelId, label: "Muhasebe", icon: Wallet, color: "text-teal-600", bg: "bg-teal-50" },
 ];
 
 // ============================================================================
@@ -135,16 +182,25 @@ const queryTypeLabels: Record<string, string> = {
 export function OperationDeck({
   caseId,
   notes = [],
+  icraNotlar = [],
+  muvekkilTalepleri = [],
+  muhasebeKayitlari = [],
   tasks = [],
   financeItems = [],
   uyapQueries = [],
   relatedCases = [],
   clientBalance = 0,
   onAddNote,
+  onAddIcraNote,
+  onAddClientRequest,
+  onCompleteRequest,
   onAddTask,
   onOpenChat,
   onTaskAction,
+  onConfirmReceived,
   onRunQuery,
+  onTriggerAddressWorkflow,
+  addressWorkflowLoading = false,
 }: OperationDeckProps) {
   const [activePanel, setActivePanel] = useState<PanelId>(null);
 
@@ -156,6 +212,7 @@ export function OperationDeck({
   const pendingTasks = tasks.filter(t => t.status === "BEKLIYOR").length;
   const highPriorityTasks = tasks.filter(t => t.priority === "HIGH" && t.status === "BEKLIYOR").length;
   const pendingQueries = uyapQueries.filter(q => q.status === "BEKLIYOR").length;
+  const pendingRequests = muvekkilTalepleri.filter(r => r.status === "BEKLIYOR").length;
 
   // Group tasks by category
   const nextMove = tasks.find(t => t.category === "SONRAKI_HAMLE" && t.status === "BEKLIYOR");
@@ -172,8 +229,11 @@ export function OperationDeck({
           const count = panel.id === "tasks" ? pendingTasks : 
                         panel.id === "uyap" ? pendingQueries :
                         panel.id === "related" ? relatedCases.length :
-                        panel.id === "notes" ? notes.length : 0;
-          const hasUrgent = panel.id === "tasks" && highPriorityTasks > 0;
+                        panel.id === "icra-notes" ? icraNotlar.length :
+                        panel.id === "client-requests" ? muvekkilTalepleri.length :
+                        panel.id === "accounting" ? muhasebeKayitlari.length : 0;
+          const hasUrgent = (panel.id === "tasks" && highPriorityTasks > 0) || 
+                           (panel.id === "client-requests" && pendingRequests > 0);
 
           return (
             <button
@@ -275,6 +335,16 @@ export function OperationDeck({
                           <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${priorityColors[task.priority || "LOW"]}`}>
                             {task.priority === "HIGH" ? "Acil" : task.priority === "MEDIUM" ? "Normal" : "Düşük"}
                           </span>
+                          {/* "Zaten aldık" butonu - sadece adres talebi görevleri için */}
+                          {(task.basis === 'CLIENT_REQUEST_DEBTOR_ADDRESSES' || task.taskType === 'CLIENT_REQUEST_DEBTOR_ADDRESSES') && onConfirmReceived && (
+                            <button 
+                              onClick={() => onConfirmReceived(task.id)} 
+                              className="px-2 py-1 text-[10px] bg-purple-100 text-purple-700 rounded hover:bg-purple-200"
+                              title="Adresler zaten alındı"
+                            >
+                              Zaten aldık
+                            </button>
+                          )}
                           <button onClick={() => onTaskAction?.(task.id, "complete")} className="p-1 hover:bg-emerald-100 rounded">
                             <Check className="w-4 h-4 text-emerald-600" />
                           </button>
@@ -321,6 +391,29 @@ export function OperationDeck({
                   className="w-full flex items-center justify-center gap-1 py-2 border border-dashed border-slate-300 rounded-lg text-xs text-slate-500 hover:border-slate-400 hover:text-slate-600"
                 >
                   <Plus className="w-3 h-3" /> Manuel Görev Ekle
+                </button>
+              )}
+
+              {/* Adres İş Akışını Başlat */}
+              {onTriggerAddressWorkflow && (
+                <button
+                  onClick={onTriggerAddressWorkflow}
+                  disabled={addressWorkflowLoading}
+                  className={`w-full flex items-center justify-center gap-1 py-2 bg-purple-50 border border-purple-200 rounded-lg text-xs text-purple-700 font-medium ${
+                    addressWorkflowLoading 
+                      ? 'opacity-50 cursor-not-allowed' 
+                      : 'hover:bg-purple-100 hover:border-purple-300'
+                  }`}
+                >
+                  {addressWorkflowLoading ? (
+                    <>
+                      <Loader2 className="w-3 h-3 animate-spin" /> İşleniyor...
+                    </>
+                  ) : (
+                    <>
+                      <MapPin className="w-3 h-3" /> Adres İş Akışını Başlat
+                    </>
+                  )}
                 </button>
               )}
             </div>
@@ -483,47 +576,187 @@ export function OperationDeck({
           )}
 
           {/* ═══════════════════════════════════════════════════════════════════
-              NOTLAR PANELİ
+              İCRA NOTLARI PANELİ (İç - Hukuki Strateji)
           ═══════════════════════════════════════════════════════════════════ */}
-          {activePanel === "notes" && (
+          {activePanel === "icra-notes" && (
             <div className="p-4">
+              <div className="mb-3 p-2 bg-slate-100 rounded-lg">
+                <p className="text-[10px] text-slate-500 uppercase tracking-wide flex items-center gap-1">
+                  <Scale className="w-3 h-3" />
+                  Hukuki strateji ve değerlendirme notları • Müvekkile görünmez
+                </p>
+              </div>
               <div className="space-y-2 max-h-[250px] overflow-y-auto">
-                {notes.map(note => (
+                {icraNotlar.map(note => (
                   <div key={note.id} className="p-3 rounded-lg border border-slate-200 bg-white">
                     <div className="flex items-center gap-2 mb-1">
                       <User className="w-3 h-3 text-slate-400" />
-                      <span className="text-xs text-slate-500">{note.createdBy?.name || "Sistem"}</span>
+                      <span className="text-xs text-slate-500">{note.createdBy?.name || "Avukat"}</span>
                       <span className="text-[10px] text-slate-400">{formatDateTime(note.createdAt)}</span>
-                      {note.type && (
-                        <span className={`ml-auto px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                          note.type === "AVUKAT" ? "bg-blue-100 text-blue-700" :
-                          note.type === "MUVEKKIL" ? "bg-purple-100 text-purple-700" :
-                          "bg-slate-100 text-slate-600"
-                        }`}>
-                          {note.type === "AVUKAT" ? "Avukat" : note.type === "MUVEKKIL" ? "Müvekkil" : "Sistem"}
-                        </span>
+                      {note.isEdited && (
+                        <span className="text-[10px] text-amber-500 italic">düzenlendi</span>
                       )}
                     </div>
                     <p className="text-sm text-slate-700 whitespace-pre-wrap">{note.content}</p>
                   </div>
                 ))}
-                {notes.length === 0 && (
+                {icraNotlar.length === 0 && (
                   <div className="text-center py-6 text-slate-400">
-                    <FileText className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">Henüz not eklenmemiş</p>
+                    <Scale className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">Henüz icra notu eklenmemiş</p>
                   </div>
                 )}
               </div>
 
-              {/* Not Ekle */}
-              {onAddNote && (
+              {/* İcra Notu Ekle */}
+              {onAddIcraNote && (
                 <button
-                  onClick={onAddNote}
+                  onClick={onAddIcraNote}
                   className="w-full mt-3 flex items-center justify-center gap-1 py-2 border border-dashed border-slate-300 rounded-lg text-xs text-slate-500 hover:border-slate-400 hover:text-slate-600"
                 >
-                  <Plus className="w-3 h-3" /> Not Ekle
+                  <Plus className="w-3 h-3" /> İcra Notu Ekle
                 </button>
               )}
+            </div>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════════
+              MÜVEKKİL TALEPLERİ PANELİ
+          ═══════════════════════════════════════════════════════════════════ */}
+          {activePanel === "client-requests" && (
+            <div className="p-4">
+              <div className="mb-3 p-2 bg-indigo-50 rounded-lg">
+                <p className="text-[10px] text-indigo-600 uppercase tracking-wide flex items-center gap-1">
+                  <Users className="w-3 h-3" />
+                  Müvekkil iletişimi ve talepler • Müvekkil portalında görünür
+                </p>
+              </div>
+
+              {/* Hızlı Talep Butonları */}
+              {onAddClientRequest && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                  <button
+                    onClick={() => onAddClientRequest("MASRAF_TALEBI")}
+                    className="flex items-center gap-1 px-2 py-1 bg-amber-50 border border-amber-200 rounded text-xs text-amber-700 hover:bg-amber-100"
+                  >
+                    <DollarSign className="w-3 h-3" /> Masraf Talebi
+                  </button>
+                  <button
+                    onClick={() => onAddClientRequest("EVRAK_TALEBI")}
+                    className="flex items-center gap-1 px-2 py-1 bg-blue-50 border border-blue-200 rounded text-xs text-blue-700 hover:bg-blue-100"
+                  >
+                    <FileCheck className="w-3 h-3" /> Evrak Talebi
+                  </button>
+                  <button
+                    onClick={() => onAddClientRequest("BILGILENDIRME")}
+                    className="flex items-center gap-1 px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs text-slate-700 hover:bg-slate-100"
+                  >
+                    <Send className="w-3 h-3" /> Bilgilendirme
+                  </button>
+                </div>
+              )}
+
+              <div className="space-y-2 max-h-[200px] overflow-y-auto">
+                {muvekkilTalepleri.map(request => (
+                  <div key={request.id} className={`p-3 rounded-lg border ${
+                    request.status === "BEKLIYOR" 
+                      ? "border-amber-200 bg-amber-50/50" 
+                      : request.status === "TAMAMLANDI"
+                        ? "border-emerald-200 bg-emerald-50/50"
+                        : "border-slate-200 bg-slate-50"
+                  }`}>
+                    <div className="flex items-center gap-2 mb-1">
+                      {request.type === "MASRAF_TALEBI" && <DollarSign className="w-3 h-3 text-amber-600" />}
+                      {request.type === "EVRAK_TALEBI" && <FileCheck className="w-3 h-3 text-blue-600" />}
+                      {request.type === "BILGILENDIRME" && <Send className="w-3 h-3 text-slate-600" />}
+                      {request.type === "ONAY_BEKLEYEN" && <HourglassIcon className="w-3 h-3 text-purple-600" />}
+                      <span className="text-xs font-medium text-slate-700">
+                        {request.type === "MASRAF_TALEBI" ? "Masraf Talebi" :
+                         request.type === "EVRAK_TALEBI" ? "Evrak Talebi" :
+                         request.type === "BILGILENDIRME" ? "Bilgilendirme" : "Onay Bekleyen"}
+                      </span>
+                      <span className="text-[10px] text-slate-400">{formatDateTime(request.createdAt)}</span>
+                      <span className={`ml-auto px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                        request.status === "BEKLIYOR" ? "bg-amber-100 text-amber-700" :
+                        request.status === "TAMAMLANDI" ? "bg-emerald-100 text-emerald-700" :
+                        "bg-slate-100 text-slate-500"
+                      }`}>
+                        {request.status === "BEKLIYOR" ? "Bekliyor" : 
+                         request.status === "TAMAMLANDI" ? "Tamamlandı" : "İptal"}
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-700">{request.content}</p>
+                    {request.amount && (
+                      <p className="text-sm font-semibold text-amber-700 mt-1">
+                        {request.amount.toLocaleString("tr-TR")} ₺
+                      </p>
+                    )}
+                    {request.status === "BEKLIYOR" && onCompleteRequest && (
+                      <button
+                        onClick={() => onCompleteRequest(request.id)}
+                        className="mt-2 flex items-center gap-1 px-2 py-1 bg-emerald-100 text-emerald-700 rounded text-xs hover:bg-emerald-200"
+                      >
+                        <Check className="w-3 h-3" /> Tamamlandı
+                      </button>
+                    )}
+                  </div>
+                ))}
+                {muvekkilTalepleri.length === 0 && (
+                  <div className="text-center py-6 text-slate-400">
+                    <Users className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">Henüz talep yok</p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════════
+              MUHASEBE KAYITLARI PANELİ
+          ═══════════════════════════════════════════════════════════════════ */}
+          {activePanel === "accounting" && (
+            <div className="p-4">
+              <div className="mb-3 p-2 bg-teal-50 rounded-lg">
+                <p className="text-[10px] text-teal-600 uppercase tracking-wide flex items-center gap-1">
+                  <Wallet className="w-3 h-3" />
+                  Parasal olayların kaydı • Sadece muhasebe ve yetkili görür
+                </p>
+              </div>
+              <div className="space-y-2 max-h-[250px] overflow-y-auto">
+                {muhasebeKayitlari.map(record => (
+                  <div key={record.id} className="p-3 rounded-lg border border-slate-200 bg-white">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Wallet className="w-3 h-3 text-teal-500" />
+                      <span className="text-[10px] text-slate-400">{formatDateTime(record.createdAt)}</span>
+                      <span className={`ml-auto px-1.5 py-0.5 rounded text-[10px] font-medium ${
+                        record.type === "ODEME_ALINDI" ? "bg-emerald-100 text-emerald-700" :
+                        record.type === "ODEME_BEKLENIYOR" ? "bg-amber-100 text-amber-700" :
+                        record.type === "MASRAF_TALEBI_GONDERILDI" ? "bg-blue-100 text-blue-700" :
+                        "bg-slate-100 text-slate-600"
+                      }`}>
+                        {record.type === "MASRAF_TALEBI_GONDERILDI" ? "Talep Gönderildi" :
+                         record.type === "ODEME_BEKLENIYOR" ? "Ödeme Bekleniyor" :
+                         record.type === "ODEME_ALINDI" ? "Ödeme Alındı" :
+                         record.type === "MAHSUP" ? "Mahsup" : "İade"}
+                      </span>
+                    </div>
+                    <p className="text-sm text-slate-700">{record.description}</p>
+                    {record.amount && (
+                      <p className={`text-sm font-semibold mt-1 ${
+                        record.type === "ODEME_ALINDI" ? "text-emerald-600" : "text-slate-700"
+                      }`}>
+                        {record.type === "ODEME_ALINDI" ? "+" : ""}{record.amount.toLocaleString("tr-TR")} ₺
+                      </p>
+                    )}
+                  </div>
+                ))}
+                {muhasebeKayitlari.length === 0 && (
+                  <div className="text-center py-6 text-slate-400">
+                    <Wallet className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm">Henüz muhasebe kaydı yok</p>
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>

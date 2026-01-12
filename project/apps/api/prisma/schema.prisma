@@ -242,6 +242,11 @@ model Tenant {
   icrabotAuditLogs        IcrabotAuditLog[]
   icrabotApprovalRequests IcrabotApprovalRequest[]
 
+  // Address Task System
+  addressTasks       AddressTask[]
+  addressAuditLogs   AddressAuditLog[]
+  addressOutboxEvents AddressOutboxEvent[]
+
   @@index([slug])
   @@index([accountType])
 }
@@ -649,6 +654,9 @@ model Debtor {
   // Eski alan (geriye uyumluluk)
   addresses Json?
 
+  // Address Intake Mode (Task bypass için)
+  addressIntakeMode AddressIntakeMode @default(UNKNOWN)
+
   // Timestamps
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -663,6 +671,9 @@ model Debtor {
 
   // Address Discovery
   clientInfoRequests ClientInfoRequest[]
+
+  // Address Task System
+  addressTasks AddressTask[]
 
   @@index([tenantId])
   @@index([tenantId, identityNo])
@@ -717,6 +728,7 @@ model DebtorAddress {
   postalCode String?
   country    String  @default("Türkiye")
   fullText   String? // Computed: tam adres metni
+  rawAddress String? // Orijinal adres metni (normalizasyon öncesi)
 
   // Hukuki Bilgiler
   legalPriority LegalPriority @default(MEDIUM)
@@ -744,6 +756,35 @@ model DebtorAddress {
   // Güven Skoru (Address Discovery)
   confidenceScore Int? // 0-100 arası güven skoru
 
+  // ==================== ADDRESS TASK SYSTEM FIELDS ====================
+  // Adres Kategorisi (Genişletilmiş)
+  addressCategory AddressCategory? // DECLARED_DOCUMENT, DECLARED_CLIENT, MERNIS_RESIDENCE, etc.
+  
+  // Kaynak Detayı
+  sourceDetail AddressSourceDetail? // DOCUMENT_SCAN, CLIENT_REPLY_EMAIL, etc.
+  
+  // Kanıt Referansı
+  evidenceId String? // Kaynak evrak/mesaj/sorgu ID
+  evidenceType EvidenceType? // DOCUMENT, COMMUNICATION, UYAP_QUERY
+  
+  // Güven Seviyesi
+  confidenceLevel ConfidenceLevel? @default(MEDIUM) // LOW, MEDIUM, HIGH
+  
+  // Adres Hash (Tekrar kontrolü için)
+  addressHash String? // SHA-256 hash of normalized address
+  
+  // Öncelik Skoru (0-100)
+  priorityScore Int? // Hesaplanmış öncelik skoru
+  
+  // Tebligata Yarar Adres
+  isCurrentCandidate Boolean @default(false) // En yüksek öncelikli adres
+  
+  // Aktiflik Durumu
+  isCurrent Boolean @default(true) // false = arşivlenmiş/pasif
+  
+  // Alınma Tarihi
+  retrievedAt DateTime? // Adresin alındığı tarih
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -755,9 +796,14 @@ model DebtorAddress {
   caseDebtors    CaseDebtor[]
   serviceHistory ServiceHistory[]
 
+  @@unique([debtorId, addressHash], name: "debtor_address_hash_unique")
   @@index([debtorId])
   @@index([type])
   @@index([verified])
+  @@index([addressCategory])
+  @@index([isCurrent])
+  @@index([isCurrentCandidate])
+  @@index([priorityScore])
 }
 
 // ==================== CASE (TAKİP) - GENİŞLETİLMİŞ ====================
@@ -959,6 +1005,10 @@ model Case {
 
   // Interest Engine
   interestCalculationLogs InterestCalculationLog[]
+
+  // Address Task System
+  addressTasks     AddressTask[]
+  addressAuditLogs AddressAuditLog[]
 
   @@unique([tenantId, fileNumber])
   @@index([tenantId, status])
@@ -2224,6 +2274,13 @@ enum DebtorType {
   COMPANY // Tüzel Kişi / Şirket
   PUBLIC_INSTITUTION // Kamu Kurumu
   ESTATE // Tereke (Miras Ortaklığı)
+}
+
+// Adres Alım Modu - Task bypass için
+enum AddressIntakeMode {
+  CLIENT_CONFIRMED // Müvekkil teyitli adresler
+  UNKNOWN // Kaynak belirsiz
+  NEEDS_CLIENT_REQUEST // Müvekkile sorulması gerekiyor
 }
 
 // Borçlu Rolü - Dosya bazında borçlunun hukuki rolü
@@ -3918,8 +3975,12 @@ model AddressMissingTask {
 
 enum AddressTaskStatus {
   PENDING // Bekliyor
-  IN_PROGRESS // Araştırılıyor
-  RESOLVED // Çözüldü
+  IN_PROGRESS // Araştırılıyor/İşleniyor
+  WAITING_EXTERNAL // Dış cevap bekleniyor
+  OVERDUE // Süresi geçmiş
+  RESOLVED // Çözüldü (eski: DONE)
+  DONE // Tamamlandı
+  FAILED // Başarısız
   CANCELLED // İptal
 }
 
@@ -5678,4 +5739,248 @@ model InterestSegmentLog {
 
   @@index([calculationLogId])
   @@map("interest_segment_log")
+}
+
+
+// ==================== ADDRESS TASK SYSTEM ====================
+// Borçlu adres yönetimi görev sistemi
+
+// Adres Görevi Türü
+enum AddressTaskType {
+  DOC_EXTRACT_DEBTOR_ADDRESSES // Evraktan adres çıkarma
+  CLIENT_CONTACT_VALIDATE // Müvekkil iletişim doğrulama
+  CLIENT_REQUEST_DEBTOR_ADDRESSES // Müvekkile adres talebi
+  CLIENT_REMIND_DEBTOR_ADDRESSES // Hatırlatma
+  CLIENT_ANNUAL_ADDRESS_REFRESH // Yıllık tekrar
+  ASSIGN_MANUAL_CALL_CLIENT // Manuel arama görevi
+  MANUAL_CLIENT_FOLLOWUP // Manuel takip görevi
+  UYAP_PULL_MERNIS // MERNİS sorgusu (sonraki faz)
+  UYAP_PULL_SGK // SGK sorgusu (sonraki faz)
+}
+
+// Adres Görevi Sonuç Türü
+enum AddressTaskResultType {
+  POSITIVE // Olumlu cevap (adres geldi)
+  NEGATIVE // Olumsuz cevap (adres yok)
+  NO_RESPONSE // Cevap gelmedi
+  PARTIAL // Kısmi cevap
+}
+
+// Adres Görevi İptal Nedeni
+enum AddressTaskCancellationReason {
+  CASE_CLOSED // Dosya kapandı
+  MANUAL_CANCEL // Manuel iptal
+  DUPLICATE_TASK // Tekrar görev
+  SUPERSEDED // Başka görev tarafından geçersiz kılındı
+}
+
+// Adres Görevi Hata Nedeni
+enum AddressTaskFailureReason {
+  UYAP_UNAVAILABLE // UYAP erişilemez
+  NO_CONTACT_INFO // İletişim bilgisi yok
+  CLIENT_NO_RESPONSE // Müvekkil cevap vermedi
+  EMAIL_BOUNCE // Email geri döndü
+  WHATSAPP_UNDELIVERED // WhatsApp iletilemedi
+  INVALID_ADDRESS // Geçersiz adres
+  SYSTEM_ERROR // Sistem hatası
+  SLA_EXCEEDED // SLA aşıldı
+}
+
+// Manuel Görev Kapatma Nedeni
+enum ManualTaskResolution {
+  CLIENT_RESPONDED // Müvekkil cevapladı
+  CONTACT_UPDATED // İletişim bilgisi güncellendi
+  ADDRESS_UPDATED // Adres manuel güncellendi
+  NO_ADDRESS_AVAILABLE // Müvekkil adres bilmiyor
+  CLIENT_UNREACHABLE // Müvekkile ulaşılamıyor
+  OTHER // Diğer
+}
+
+// Adres Kategorisi (Genişletilmiş)
+enum AddressCategory {
+  DECLARED_DOCUMENT // Borç evrakından
+  DECLARED_CLIENT // Müvekkilden
+  MERNIS_RESIDENCE // MERNİS yerleşim yeri
+  SGK_ADDRESS // SGK adresi
+  TICARET_SICIL // Ticaret Sicili
+  VERGI_DAIRESI // Vergi Dairesi
+  GSM_OPERATOR // GSM operatörü
+}
+
+// Adres Kaynak Detayı
+enum AddressSourceDetail {
+  DOCUMENT_SCAN // OCR/AI tarama
+  MANUAL_ENTRY // Manuel giriş
+  CLIENT_REPLY_EMAIL // Müvekkil email cevabı
+  CLIENT_REPLY_WHATSAPP // Müvekkil WhatsApp cevabı
+  UYAP_MERNIS // UYAP MERNİS sorgusu
+  UYAP_SGK // UYAP SGK sorgusu
+  UYAP_TICARET // UYAP Ticaret Odası sorgusu
+  INSTITUTION_LETTER // Kurum yazısı
+}
+
+// Güven Seviyesi
+enum ConfidenceLevel {
+  LOW // Düşük güven (40 puan)
+  MEDIUM // Orta güven (60 puan)
+  HIGH // Yüksek güven (80+ puan)
+}
+
+// Kanıt Türü
+enum EvidenceType {
+  DOCUMENT // Belge
+  COMMUNICATION // İletişim (email/whatsapp)
+  UYAP_QUERY // UYAP sorgusu
+}
+
+// Adres Görevi Modeli
+model AddressTask {
+  id       String @id @default(cuid())
+  tenantId String
+  caseId   String
+  debtorId String
+
+  // Task Type & Dedupe
+  taskType AddressTaskType
+  scopeKey String? // Scope identifier for dedupe (e.g., "annual_2024")
+  dedupeKey String? // Computed: {taskType}:{caseId}:{debtorId}:{scopeKey}
+
+  // Status & SLA
+  status AddressTaskStatus @default(PENDING)
+  dueAt DateTime?
+  attemptCount Int @default(0)
+  maxAttempts Int @default(3)
+
+  // Assignment
+  assignedToId String?
+
+  // Communication
+  channelUsed String? // EMAIL, WHATSAPP, BOTH
+  correlationId String? // Message correlation ID
+  messageIds Json? // Array of sent message IDs
+
+  // Result
+  resultType AddressTaskResultType?
+  resultData Json? // Gelen adresler vb.
+  failureReason AddressTaskFailureReason?
+  failureDetails String?
+  cancellationReason AddressTaskCancellationReason?
+
+  // Manual Task Resolution
+  resolution ManualTaskResolution?
+  resolutionNotes String?
+
+  // Scheduling (Annual refresh için)
+  nextRunAt DateTime?
+  lastRunAt DateTime?
+
+  // Meta
+  title String?
+  description String?
+  notes String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  completedAt DateTime?
+
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  debtor Debtor @relation(fields: [debtorId], references: [id], onDelete: Cascade)
+
+  @@unique([caseId, debtorId, taskType, scopeKey], name: "address_task_dedupe_key")
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([debtorId])
+  @@index([status])
+  @@index([taskType])
+  @@index([dueAt])
+  @@index([assignedToId])
+  @@index([nextRunAt])
+}
+
+// Adres Kanıt Referansı (Evidence Reference)
+model AddressEvidenceRef {
+  id String @id @default(cuid())
+  debtorAddressId String
+  
+  // Evidence Type
+  evidenceType EvidenceType
+  
+  // Reference IDs (exactly one should be set)
+  documentId String? // CaseDocument reference
+  communicationId String? // ClientNotification or email/whatsapp message ID
+  uyapQueryId String? // UyapQuery reference
+  
+  // Meta
+  createdAt DateTime @default(now())
+  
+  @@index([debtorAddressId])
+  @@index([documentId])
+  @@index([communicationId])
+  @@index([uyapQueryId])
+}
+
+// Adres Audit Log (Address-specific actions)
+model AddressAuditLog {
+  id String @id @default(cuid())
+  tenantId String
+  caseId String
+  debtorId String?
+  addressTaskId String?
+  debtorAddressId String?
+  
+  // Action
+  action String // ADDRESS_EXTRACTED, REQUEST_SENT, REMINDER_SENT, RESPONSE_RECEIVED, etc.
+  
+  // Details
+  details Json?
+  
+  // Display
+  showInNotes Boolean @default(false) // Notlar panelinde göster
+  noteText String? // Notlar paneli için metin
+  
+  // User
+  userId String?
+  
+  createdAt DateTime @default(now())
+  
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([debtorId])
+  @@index([addressTaskId])
+  @@index([action])
+  @@index([showInNotes])
+  @@index([createdAt])
+}
+
+// Outbox Event (Event güvenilirliği için)
+model AddressOutboxEvent {
+  id String @id @default(cuid())
+  tenantId String
+  
+  // Event
+  eventType String // EVIDENCE_UPLOADED, DEBTOR_CREATED, CASE_STATUS_CHANGED, etc.
+  payload Json
+  
+  // Status
+  status String @default("PENDING") // PENDING, PROCESSING, PROCESSED, FAILED
+  attemptCount Int @default(0)
+  lastError String?
+  
+  // Timestamps
+  createdAt DateTime @default(now())
+  processedAt DateTime?
+  
+  // Relations
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  
+  @@index([tenantId])
+  @@index([eventType])
+  @@index([status])
+  @@index([createdAt])
 }

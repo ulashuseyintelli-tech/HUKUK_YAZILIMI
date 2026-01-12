@@ -41,6 +41,7 @@ import {
   Search,
 } from "lucide-react";
 import { api, DebtorListItemDTO, DebtorsSummaryDTO, DebtorDetailDTO } from "@/lib/api";
+import { useAuth } from "@/lib/auth-context";
 import { PaymentInstructionModal } from "@/components/payment/PaymentInstructionModal";
 import { ExpenseRequestModal, BalanceWidget, ExpenseRequestList } from "@/components/expense";
 import { SendMessageModal } from "@/components/message/SendMessageModal";
@@ -643,6 +644,7 @@ function Drawer({ isOpen, onClose, title, children }: DrawerProps) {
 export default function CaseDetailPage() {
   const params = useParams();
   const searchParams = useSearchParams();
+  const { user } = useAuth();
   const fixParam = searchParams.get('fix');
   const fromFilter = searchParams.get('fromFilter');
   
@@ -796,9 +798,17 @@ export default function CaseDetailPage() {
   const [dueModalOpen, setDueModalOpen] = useState(false);
   const [editingDue, setEditingDue] = useState<any>(null);
   
+  // Address Workflow Loading State
+  const [addressWorkflowLoading, setAddressWorkflowLoading] = useState(false);
+  
   // Collection Modal State
   const [collectionModalOpen, setCollectionModalOpen] = useState(false);
   const [editingCollection, setEditingCollection] = useState<any>(null);
+  
+  // Address Task State (Yapılacaklar ve Notlar için)
+  const [addressTasks, setAddressTasks] = useState<any[]>([]);
+  const [addressNotes, setAddressNotes] = useState<any[]>([]);
+  const [loadingAddressTasks, setLoadingAddressTasks] = useState(false);
   
   // Fix highlight state
   const [highlightedSection, setHighlightedSection] = useState<string | null>(null);
@@ -848,6 +858,8 @@ export default function CaseDetailPage() {
     try {
       setLoading(true);
       const data = await api.getCase(params.id as string);
+      console.log('[CaseDetail] API response:', data);
+      console.log('[CaseDetail] claimItems:', data?.claimItems);
       setCaseData(data);
       setEditedData({});
     } catch (error) {
@@ -924,6 +936,40 @@ export default function CaseDetailPage() {
     }
   }, [params.id]);
 
+  // Fetch address tasks and notes for OperationDeck
+  const fetchAddressTasksAndNotes = useCallback(async () => {
+    if (!params.id) return;
+    try {
+      setLoadingAddressTasks(true);
+      const [tasksRes, notesRes] = await Promise.all([
+        api.getAddressTasksForCase(params.id as string),
+        api.getAddressNotesForCase(params.id as string),
+      ]);
+      
+      // AddressTask'ları OperationDeck formatına dönüştür
+      const formattedTasks = (tasksRes?.tasks || []).map((task: any) => ({
+        id: task.id,
+        title: task.title || task.taskType,
+        description: task.description,
+        source: 'SISTEM' as const,
+        basis: task.taskType,
+        taskType: task.taskType, // Backend task type
+        status: task.status === 'DONE' || task.status === 'RESOLVED' ? 'YAPILDI' as const :
+                task.status === 'CANCELLED' || task.status === 'FAILED' ? 'IPTAL' as const : 'BEKLIYOR' as const,
+        dueDate: task.dueAt,
+        priority: task.status === 'OVERDUE' ? 'HIGH' as const : 'MEDIUM' as const,
+        category: 'SURE_BAGLI' as const,
+      }));
+      
+      setAddressTasks(formattedTasks);
+      setAddressNotes(notesRes?.notes || []);
+    } catch (error) {
+      console.error("Adres görevleri yüklenemedi:", error);
+    } finally {
+      setLoadingAddressTasks(false);
+    }
+  }, [params.id]);
+
   // Fetch debtor detail for drawer
   const fetchDebtorDetail = useCallback(async (caseDebtorId: string) => {
     if (!params.id) return;
@@ -970,6 +1016,13 @@ export default function CaseDetailPage() {
       fetchFinanceData();
     }
   }, [params.id, loading, fetchFinanceData]);
+
+  // Fetch address tasks and notes when case is loaded
+  useEffect(() => {
+    if (params.id && !loading) {
+      fetchAddressTasksAndNotes();
+    }
+  }, [params.id, loading, fetchAddressTasksAndNotes]);
 
   const dayCount = useMemo(() => {
     if (!caseData?.caseDate) return 0;
@@ -2151,6 +2204,16 @@ export default function CaseDetailPage() {
                                   Vade: {new Date(due.dueDate).toLocaleDateString('tr-TR')}
                                 </span>
                               )}
+                              {/* Faiz türü bilgisi - sadece PRINCIPAL için göster */}
+                              {due.type === 'PRINCIPAL' && (
+                                <span className="text-[9px] text-purple-500 italic">
+                                  Faiz: {due.interestType === 'YASAL' ? 'Yasal Faiz' : 
+                                         due.interestType === 'TICARI_DEGISEN' ? 'Ticari (TCMB Avans)' :
+                                         due.interestType === 'TICARI_SABIT' ? 'Ticari (Sabit)' :
+                                         due.interestType ? due.interestType :
+                                         (caseData.type === 'CHECK' || caseData.type === 'BOND') ? 'Ticari (TCMB Avans)' : 'Yasal Faiz'}
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center gap-1">
                               <span className="font-medium text-right min-w-[90px]">{Number(due.amount || 0).toLocaleString('tr-TR')} ₺</span>
@@ -2212,7 +2275,10 @@ export default function CaseDetailPage() {
                       <p className="text-[9px] text-gray-400 text-center py-2">Yükleniyor...</p>
                     ) : collections.filter((c: any) => c.status !== 'CANCELLED').length > 0 ? (
                       <div className="space-y-1">
-                        {collections.filter((c: any) => c.status !== 'CANCELLED').map((col: any) => {
+                        {collections
+                          .filter((c: any) => c.status !== 'CANCELLED')
+                          .sort((a: any, b: any) => new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime())
+                          .map((col: any) => {
                           const typeLabels: Record<string, string> = {
                             TAHSILAT: 'Tahsilat',
                             FERAGAT: 'Feragat',
@@ -2274,9 +2340,30 @@ export default function CaseDetailPage() {
             <div className="flex-1 overflow-hidden flex flex-col bg-white border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
               <OperationDeck
                 caseId={caseData.id}
-                notes={[]}
+                // Müvekkil Talepleri - AddressAuditLog'dan CLIENT_NOTIFICATION_SENT olanlar
+                muvekkilTalepleri={addressNotes
+                  .filter((note: any) => note.action === 'CLIENT_NOTIFICATION_SENT' || note.action === 'ADDRESS_WORKFLOW_TRIGGERED')
+                  .map((note: any) => ({
+                    id: note.id,
+                    type: 'EVRAK_TALEBI' as const, // Adres bilgisi talebi
+                    content: note.content || 'Müvekkile adres bilgisi talebi gönderildi',
+                    status: 'BEKLIYOR' as const, // Henüz yanıt gelmedi
+                    createdAt: note.createdAt,
+                    createdBy: note.createdBy,
+                  }))}
+                // İcra Notları - Diğer sistem notları
+                icraNotlar={addressNotes
+                  .filter((note: any) => note.action !== 'CLIENT_NOTIFICATION_SENT' && note.action !== 'ADDRESS_WORKFLOW_TRIGGERED')
+                  .map((note: any) => ({
+                    id: note.id,
+                    content: note.content,
+                    createdAt: note.createdAt,
+                    createdBy: note.createdBy,
+                  }))}
                 tasks={[
-                  // Örnek sistem önerisi - gerçek veriler API'den gelecek
+                  // Adres görevleri (API'den)
+                  ...addressTasks,
+                  // Örnek sistem önerisi - workflowStage'e göre
                   ...(caseData.workflowStage === 'ODEME_EMRI' ? [{
                     id: 'sys-1',
                     title: 'Tebligat sonucunu kontrol et',
@@ -2309,6 +2396,65 @@ export default function CaseDetailPage() {
                   // Görev ekleme modalı açılacak
                   console.log('Görev ekle');
                 }}
+                onTaskAction={async (taskId, action) => {
+                  // Görev tamamla veya iptal et
+                  try {
+                    if (action === 'complete') {
+                      await api.completeAddressTask(taskId, { resultType: 'POSITIVE' });
+                    } else {
+                      await api.cancelAddressTask(taskId, 'USER_CANCELLED');
+                    }
+                    // Görevleri yenile
+                    fetchAddressTasksAndNotes();
+                  } catch (error) {
+                    console.error('Görev işlemi başarısız:', error);
+                  }
+                }}
+                onConfirmReceived={async (taskId) => {
+                  // "Zaten aldık" - Adresler zaten alınmış, görevi kapat
+                  try {
+                    await api.confirmAddressTaskReceived(taskId, user?.id);
+                    // Görevleri yenile
+                    fetchAddressTasksAndNotes();
+                    alert('Görev tamamlandı - adresler zaten alınmış olarak işaretlendi');
+                  } catch (error) {
+                    console.error('Görev tamamlama başarısız:', error);
+                    alert('Görev tamamlanırken bir hata oluştu');
+                  }
+                }}
+                onTriggerAddressWorkflow={async () => {
+                  // Adres iş akışını başlat
+                  if (addressWorkflowLoading) return; // Çift tıklama koruması
+                  
+                  try {
+                    setAddressWorkflowLoading(true);
+                    // tenantId'yi user context'inden al
+                    const tenantId = user?.tenantId;
+                    if (!tenantId) {
+                      alert('Kullanıcı bilgisi bulunamadı');
+                      return;
+                    }
+                    const result = await api.triggerAddressWorkflow(caseData.id, tenantId);
+                    console.log('Adres iş akışı başlatıldı:', result);
+                    
+                    // Duplicate kontrolü
+                    if (result.skippedDuplicate) {
+                      alert('Son 5 dakika içinde zaten e-posta gönderilmiş. Lütfen bekleyin.');
+                      return;
+                    }
+                    
+                    alert(`Adres iş akışı başlatıldı: ${result.tasksCreated} görev oluşturuldu`);
+                    
+                    // Görevleri ve notları yenile
+                    fetchAddressTasksAndNotes();
+                  } catch (error) {
+                    console.error('Adres iş akışı başlatılamadı:', error);
+                    alert('Adres iş akışı başlatılırken bir hata oluştu');
+                  } finally {
+                    setAddressWorkflowLoading(false);
+                  }
+                }}
+                addressWorkflowLoading={addressWorkflowLoading}
               />
             </div>
           </div>
@@ -2323,6 +2469,7 @@ export default function CaseDetailPage() {
               currency={caseData.currency}
               debtorCount={caseData.debtors?.length || 1}
               instruments={caseData.instruments}
+              claimItems={caseData.claimItems}
               dues={dues}
               collections={collections}
               loading={loadingFinance}

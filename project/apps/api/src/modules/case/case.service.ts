@@ -454,6 +454,7 @@ export class CaseService {
         tasks: { orderBy: { createdAt: "desc" }, take: 10 },
         collections: { orderBy: { date: "desc" } },
         dues: true,
+        claimItems: { orderBy: { sortOrder: "asc" } },
         lifecycleEvents: { orderBy: { createdAt: "desc" }, take: 20 },
         statusHistory: { 
           orderBy: { createdAt: "desc" }, 

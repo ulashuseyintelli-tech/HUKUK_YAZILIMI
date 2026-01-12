@@ -2413,6 +2413,94 @@ class ApiClient {
   async getCaseFinanceSummary(caseId: string) {
     return this.request<CaseFinanceSummaryDTO>(`/cases/${caseId}/finance-summary`);
   }
+
+  // ============================================
+  // Address Task API
+  // ============================================
+
+  /**
+   * Dosya için bekleyen adres görevlerini getir
+   */
+  async getAddressTasksForCase(caseId: string) {
+    return this.request<{ tasks: AddressTaskDTO[] }>(`/address-tasks/case/${caseId}`);
+  }
+
+  /**
+   * Dosya için tüm adres görevlerini getir
+   */
+  async getAllAddressTasksForCase(caseId: string) {
+    return this.request<{ tasks: AddressTaskDTO[] }>(`/address-tasks/case/${caseId}/all`);
+  }
+
+  /**
+   * Dosya için notları getir (audit log'lardan)
+   */
+  async getAddressNotesForCase(caseId: string) {
+    return this.request<{ notes: AddressNoteDTO[] }>(`/address-tasks/case/${caseId}/notes`);
+  }
+
+  /**
+   * Adres iş akışını başlat (takip yenilendiğinde)
+   */
+  async triggerAddressWorkflow(caseId: string, tenantId: string) {
+    return this.request<{ tasksCreated: number; debtorsProcessed: number; notificationSent: boolean; skippedDuplicate?: boolean }>(
+      `/address-tasks/case/${caseId}/trigger-address-workflow`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ tenantId }),
+      }
+    );
+  }
+
+  /**
+   * Adres görevini tamamla
+   */
+  async completeAddressTask(taskId: string, data: CompleteAddressTaskDTO) {
+    return this.request<{ task: AddressTaskDTO }>(`/address-tasks/${taskId}/complete`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  /**
+   * Adres görevini iptal et
+   */
+  async cancelAddressTask(taskId: string, reason: string) {
+    return this.request<{ task: AddressTaskDTO }>(`/address-tasks/${taskId}/cancel`, {
+      method: 'POST',
+      body: JSON.stringify({ reason }),
+    });
+  }
+
+  /**
+   * "Zaten aldık" - Görevi operatör olarak tamamla
+   */
+  async confirmAddressTaskReceived(taskId: string, operatorId?: string) {
+    return this.request<{ task: AddressTaskDTO }>(`/address-tasks/${taskId}/confirm-received`, {
+      method: 'POST',
+      body: JSON.stringify({ operatorId }),
+    });
+  }
+
+  /**
+   * Borçlunun yararlı adresi var mı kontrol et
+   */
+  async hasUsefulAddresses(debtorId: string) {
+    return this.request<{ hasUsefulAddresses: boolean }>(`/address-tasks/debtor/${debtorId}/has-useful-addresses`);
+  }
+
+  /**
+   * Adres geldiğinde görevleri otomatik tamamla
+   */
+  async notifyAddressReceived(caseId: string, debtorId: string, tenantId: string, source: 'CLIENT_REPLY' | 'CLIENT_CONFIRMED_UI' | 'MANUAL_ENTRY') {
+    return this.request<{ tasksCompleted: number; tasksCancelled: number }>(
+      `/address-tasks/case/${caseId}/debtor/${debtorId}/address-received`,
+      {
+        method: 'POST',
+        body: JSON.stringify({ tenantId, source }),
+      }
+    );
+  }
 }
 
 // ============================================
@@ -3168,6 +3256,66 @@ export interface PaymentInstructionResult {
 
 // Singleton export
 export const api = new ApiClient();
+
+// ============================================
+// Address Task Types
+// ============================================
+
+export type AddressTaskType =
+  | 'DOC_EXTRACT_DEBTOR_ADDRESSES'
+  | 'CLIENT_CONTACT_VALIDATE'
+  | 'CLIENT_REQUEST_DEBTOR_ADDRESSES'
+  | 'CLIENT_REMIND_DEBTOR_ADDRESSES'
+  | 'CLIENT_ANNUAL_ADDRESS_REFRESH'
+  | 'ASSIGN_MANUAL_CALL_CLIENT'
+  | 'MANUAL_CLIENT_FOLLOWUP'
+  | 'UYAP_PULL_MERNIS'
+  | 'UYAP_PULL_SGK';
+
+export type AddressTaskStatus =
+  | 'PENDING'
+  | 'IN_PROGRESS'
+  | 'WAITING_EXTERNAL'
+  | 'OVERDUE'
+  | 'RESOLVED'
+  | 'DONE'
+  | 'FAILED'
+  | 'CANCELLED';
+
+export interface AddressTaskDTO {
+  id: string;
+  tenantId: string;
+  caseId: string;
+  debtorId: string;
+  taskType: AddressTaskType;
+  status: AddressTaskStatus;
+  title?: string;
+  description?: string;
+  dueAt?: string;
+  attemptCount: number;
+  maxAttempts: number;
+  resultType?: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
+export interface AddressNoteDTO {
+  id: string;
+  content: string;
+  createdAt: string;
+  createdBy: { name: string };
+  type: 'SISTEM' | 'AVUKAT' | 'MUVEKKIL';
+  action?: string;
+  details?: Record<string, any>;
+}
+
+export interface CompleteAddressTaskDTO {
+  resultType: 'POSITIVE' | 'NEGATIVE' | 'PARTIAL' | 'TIMEOUT' | 'MANUAL_OVERRIDE';
+  resultData?: Record<string, any>;
+  resolution?: string;
+  resolutionNotes?: string;
+}
 
 // ============================================
 // Expense Request Types

@@ -1,0 +1,899 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '../../prisma/prisma.service';
+import { ClientNotificationService } from '../client-notification/client-notification.service';
+import {
+  AddressTask,
+  AddressTaskType,
+  AddressTaskStatus,
+  AddressTaskResultType,
+  AddressTaskFailureReason,
+  AddressTaskCancellationReason,
+  ManualTaskResolution,
+  Prisma,
+} from '@prisma/client';
+import {
+  calculateClientResponseDueAt,
+  calculateManualTaskDueAt,
+  calculateAnnualRefreshAt,
+} from './utils';
+
+export interface CreateTaskParams {
+  tenantId: string;
+  caseId: string;
+  debtorId: string;
+  taskType: AddressTaskType;
+  scopeKey?: string;
+  title?: string;
+  description?: string;
+  assignedToId?: string;
+  dueAt?: Date;
+  sendNotification?: boolean; // Müvekkile bildirim gönder
+}
+
+export interface CompleteTaskParams {
+  resultType: AddressTaskResultType;
+  resultData?: any;
+  resolution?: ManualTaskResolution;
+  resolutionNotes?: string;
+}
+
+@Injectable()
+export class AddressTaskService {
+  private readonly logger = new Logger(AddressTaskService.name);
+
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly clientNotificationService: ClientNotificationService,
+  ) {}
+
+  /**
+   * Yeni görev oluştur (idempotent)
+   * Aynı dedupe key ile görev varsa ve terminal durumda değilse, mevcut görevi döndürür
+   */
+  async createTask(params: CreateTaskParams): Promise<AddressTask | null> {
+    const { tenantId, caseId, debtorId, taskType, scopeKey, title, description, assignedToId, dueAt } = params;
+
+    // Dedupe key kontrolü
+    const existingTask = await this.prisma.addressTask.findFirst({
+      where: {
+        caseId,
+        debtorId,
+        taskType,
+        scopeKey: scopeKey || null,
+        status: {
+          notIn: ['DONE', 'CANCELLED', 'FAILED', 'RESOLVED'],
+        },
+      },
+    });
+
+    if (existingTask) {
+      this.logger.log(`Task already exists: ${existingTask.id} (${taskType})`);
+      
+      // Audit log - duplicate task skipped
+      await this.logAuditEvent(tenantId, caseId, debtorId, 'DUPLICATE_TASK_SKIPPED', {
+        existingTaskId: existingTask.id,
+        taskType,
+      });
+      
+      return null;
+    }
+
+    // Varsayılan due date hesapla
+    let calculatedDueAt = dueAt;
+    if (!calculatedDueAt) {
+      switch (taskType) {
+        case 'CLIENT_REQUEST_DEBTOR_ADDRESSES':
+        case 'CLIENT_REMIND_DEBTOR_ADDRESSES':
+          calculatedDueAt = calculateClientResponseDueAt();
+          break;
+        case 'ASSIGN_MANUAL_CALL_CLIENT':
+        case 'MANUAL_CLIENT_FOLLOWUP':
+        case 'CLIENT_CONTACT_VALIDATE':
+          calculatedDueAt = calculateManualTaskDueAt();
+          break;
+        case 'CLIENT_ANNUAL_ADDRESS_REFRESH':
+          calculatedDueAt = calculateAnnualRefreshAt();
+          break;
+        default:
+          calculatedDueAt = calculateManualTaskDueAt();
+      }
+    }
+
+    // Varsayılan title
+    const taskTitle = title || this.getDefaultTitle(taskType);
+
+    const task = await this.prisma.addressTask.create({
+      data: {
+        tenantId,
+        caseId,
+        debtorId,
+        taskType,
+        scopeKey,
+        title: taskTitle,
+        description,
+        assignedToId,
+        dueAt: calculatedDueAt,
+        status: 'PENDING',
+        attemptCount: 0,
+        maxAttempts: 3,
+      },
+    });
+
+    this.logger.log(`Task created: ${task.id} (${taskType})`);
+
+    // Audit log
+    await this.logAuditEvent(tenantId, caseId, debtorId, 'TASK_CREATED', {
+      taskId: task.id,
+      taskType,
+      dueAt: calculatedDueAt,
+    }, true, `Yeni görev oluşturuldu: ${taskTitle}`);
+
+    return task;
+  }
+
+  /**
+   * Görev durumunu güncelle
+   */
+  async updateTaskStatus(
+    taskId: string,
+    status: AddressTaskStatus,
+    additionalData?: {
+      resultType?: AddressTaskResultType;
+      resultData?: any;
+      resolution?: ManualTaskResolution;
+      resolutionNotes?: string;
+      channelUsed?: string;
+      lastRunAt?: Date;
+      nextRunAt?: Date;
+    },
+  ): Promise<AddressTask> {
+    const task = await this.prisma.addressTask.update({
+      where: { id: taskId },
+      data: {
+        status,
+        ...additionalData,
+        updatedAt: new Date(),
+        ...(status === 'DONE' || status === 'RESOLVED' ? { completedAt: new Date() } : {}),
+      },
+    });
+
+    this.logger.log(`Task status updated: ${taskId} -> ${status}`);
+
+    // Audit log
+    await this.logAuditEvent(
+      task.tenantId,
+      task.caseId,
+      task.debtorId,
+      'TASK_STATUS_CHANGED',
+      { taskId, newStatus: status },
+      true,
+      `Görev durumu güncellendi: ${status}`,
+    );
+
+    return task;
+  }
+
+  /**
+   * Görevi tamamla
+   */
+  async completeTask(taskId: string, params: CompleteTaskParams): Promise<AddressTask> {
+    const { resultType, resultData, resolution, resolutionNotes } = params;
+
+    const task = await this.prisma.addressTask.update({
+      where: { id: taskId },
+      data: {
+        status: 'DONE',
+        resultType,
+        resultData: resultData ? JSON.parse(JSON.stringify(resultData)) : undefined,
+        resolution,
+        resolutionNotes,
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+
+    this.logger.log(`Task completed: ${taskId} (${resultType})`);
+
+    // Audit log
+    const noteText = resultType === 'POSITIVE'
+      ? 'Görev tamamlandı - olumlu sonuç'
+      : resultType === 'NEGATIVE'
+        ? 'Görev tamamlandı - olumsuz sonuç'
+        : 'Görev tamamlandı';
+
+    await this.logAuditEvent(
+      task.tenantId,
+      task.caseId,
+      task.debtorId,
+      'TASK_COMPLETED',
+      { taskId, resultType, resolution },
+      true,
+      noteText,
+    );
+
+    return task;
+  }
+
+  /**
+   * Görevi iptal et
+   */
+  async cancelTask(
+    taskId: string,
+    reason: AddressTaskCancellationReason,
+  ): Promise<AddressTask> {
+    const task = await this.prisma.addressTask.update({
+      where: { id: taskId },
+      data: {
+        status: 'CANCELLED',
+        cancellationReason: reason,
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+
+    this.logger.log(`Task cancelled: ${taskId} (${reason})`);
+
+    // Audit log
+    await this.logAuditEvent(
+      task.tenantId,
+      task.caseId,
+      task.debtorId,
+      'TASK_CANCELLED',
+      { taskId, reason },
+      true,
+      `Görev iptal edildi: ${reason}`,
+    );
+
+    return task;
+  }
+
+  /**
+   * Görevi başarısız olarak işaretle
+   */
+  async failTask(
+    taskId: string,
+    reason: AddressTaskFailureReason,
+    details?: string,
+  ): Promise<AddressTask> {
+    const task = await this.prisma.addressTask.update({
+      where: { id: taskId },
+      data: {
+        status: 'FAILED',
+        failureReason: reason,
+        failureDetails: details,
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+
+    this.logger.log(`Task failed: ${taskId} (${reason})`);
+
+    // Audit log
+    await this.logAuditEvent(
+      task.tenantId,
+      task.caseId,
+      task.debtorId,
+      'TASK_FAILED',
+      { taskId, reason, details },
+      true,
+      `Görev başarısız: ${reason}`,
+    );
+
+    return task;
+  }
+
+  /**
+   * Hatırlatma gönder ve attempt count artır
+   */
+  async incrementAttempt(taskId: string): Promise<AddressTask> {
+    const task = await this.prisma.addressTask.findUnique({
+      where: { id: taskId },
+    });
+
+    if (!task) {
+      throw new Error(`Task not found: ${taskId}`);
+    }
+
+    const newAttemptCount = task.attemptCount + 1;
+    const newDueAt = calculateClientResponseDueAt();
+
+    const updatedTask = await this.prisma.addressTask.update({
+      where: { id: taskId },
+      data: {
+        attemptCount: newAttemptCount,
+        dueAt: newDueAt,
+        lastRunAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+
+    this.logger.log(`Task attempt incremented: ${taskId} (${newAttemptCount}/${task.maxAttempts})`);
+
+    // Audit log
+    await this.logAuditEvent(
+      task.tenantId,
+      task.caseId,
+      task.debtorId,
+      'REMINDER_SENT',
+      { taskId, attemptCount: newAttemptCount, maxAttempts: task.maxAttempts },
+      true,
+      `Hatırlatma #${newAttemptCount} gönderildi`,
+    );
+
+    return updatedTask;
+  }
+
+  /**
+   * Süresi geçmiş görevleri bul
+   */
+  async findOverdueTasks(tenantId?: string): Promise<AddressTask[]> {
+    const now = new Date();
+
+    return this.prisma.addressTask.findMany({
+      where: {
+        ...(tenantId ? { tenantId } : {}),
+        status: 'WAITING_EXTERNAL',
+        dueAt: { lt: now },
+        attemptCount: { lt: 3 }, // maxAttempts'ten küçük
+      },
+      orderBy: { dueAt: 'asc' },
+    });
+  }
+
+  /**
+   * Maksimum denemeye ulaşmış görevleri bul
+   */
+  async findTasksAtMaxAttempts(tenantId?: string): Promise<AddressTask[]> {
+    return this.prisma.addressTask.findMany({
+      where: {
+        ...(tenantId ? { tenantId } : {}),
+        status: 'WAITING_EXTERNAL',
+        attemptCount: { gte: 3 },
+      },
+    });
+  }
+
+  /**
+   * Dosya için bekleyen görevleri getir
+   */
+  async getPendingTasksForCase(caseId: string): Promise<AddressTask[]> {
+    return this.prisma.addressTask.findMany({
+      where: {
+        caseId,
+        status: {
+          in: ['PENDING', 'IN_PROGRESS', 'WAITING_EXTERNAL', 'OVERDUE'],
+        },
+      },
+      orderBy: { dueAt: 'asc' },
+    });
+  }
+
+  /**
+   * Dosya için tüm görevleri getir (tamamlananlar dahil)
+   */
+  async getAllTasksForCase(caseId: string): Promise<AddressTask[]> {
+    return this.prisma.addressTask.findMany({
+      where: { caseId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Dosya için notları getir (audit log'lardan showInNotes=true olanlar)
+   */
+  async getNotesForCase(caseId: string): Promise<any[]> {
+    const logs = await this.prisma.addressAuditLog.findMany({
+      where: {
+        caseId,
+        showInNotes: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 50, // Son 50 not
+    });
+
+    return logs.map((log) => ({
+      id: log.id,
+      content: log.noteText || log.action,
+      createdAt: log.createdAt.toISOString(),
+      createdBy: { name: 'Sistem' },
+      type: 'SISTEM' as const,
+      action: log.action,
+      details: log.details,
+    }));
+  }
+
+  /**
+   * Borçlu için görevleri getir
+   */
+  async getTasksByDebtor(debtorId: string): Promise<AddressTask[]> {
+    return this.prisma.addressTask.findMany({
+      where: { debtorId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Dosya yenilendiğinde adres iş akışını başlat
+   * Her borçlu için CLIENT_REQUEST_DEBTOR_ADDRESSES görevi oluşturur
+   * Müvekkile otomatik bildirim gönderir
+   */
+  async triggerAddressWorkflowForCase(
+    tenantId: string,
+    caseId: string,
+    sendNotification: boolean = true,
+  ): Promise<{ tasksCreated: number; debtorsProcessed: number; notificationSent: boolean; skippedDuplicate?: boolean }> {
+    // Son 5 dakika içinde aynı dosya için e-posta gönderilmiş mi kontrol et
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const recentNotification = await this.prisma.addressAuditLog.findFirst({
+      where: {
+        caseId,
+        action: 'CLIENT_NOTIFICATION_SENT',
+        createdAt: { gte: fiveMinutesAgo },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (recentNotification) {
+      this.logger.warn(`Son 5 dakika içinde bu dosya için e-posta gönderilmiş, atlanıyor: ${caseId}`);
+      return {
+        tasksCreated: 0,
+        debtorsProcessed: 0,
+        notificationSent: false,
+        skippedDuplicate: true,
+      };
+    }
+
+    // Dosya bilgilerini al (müvekkil dahil)
+    const caseData = await this.prisma.case.findUnique({
+      where: { id: caseId },
+      include: {
+        caseClients: {
+          include: {
+            client: {
+              select: {
+                id: true,
+                displayName: true,
+                email: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!caseData) {
+      throw new Error(`Case not found: ${caseId}`);
+    }
+
+    // Dosyadaki borçluları al
+    const caseDebtors = await this.prisma.caseDebtor.findMany({
+      where: { caseId },
+      include: {
+        debtor: {
+          select: {
+            id: true,
+            name: true,
+            type: true,
+          },
+        },
+      },
+    });
+
+    let tasksCreated = 0;
+    let tasksSkipped = 0;
+    const debtorNames: string[] = [];
+    const skippedDebtorNames: string[] = [];
+
+    for (const cd of caseDebtors) {
+      // Bypass kontrolü - müvekkil teyitli adres varsa görev oluşturma
+      const bypassCheck = await this.shouldBypassAddressRequest(cd.debtorId);
+      if (bypassCheck.bypass) {
+        this.logger.log(`Skipping address request for ${cd.debtor.name}: ${bypassCheck.reason}`);
+        skippedDebtorNames.push(cd.debtor.name);
+        tasksSkipped++;
+        continue;
+      }
+
+      // Sadece şahıs borçlular için müvekkile sor görevi oluştur
+      // Şirketler için farklı bir akış olabilir (Ticaret Sicil sorgusu vb.)
+      const taskType: AddressTaskType =
+        cd.debtor.type === 'INDIVIDUAL'
+          ? 'CLIENT_REQUEST_DEBTOR_ADDRESSES'
+          : 'CLIENT_REQUEST_DEBTOR_ADDRESSES'; // Şirketler için de aynı şimdilik
+
+      const task = await this.createTask({
+        tenantId,
+        caseId,
+        debtorId: cd.debtorId,
+        taskType,
+        title: `${cd.debtor.name} için adres bilgisi iste`,
+        description: `Müvekkilden ${cd.debtor.name} için güncel adres bilgisi talep edilecek`,
+      });
+
+      if (task) {
+        tasksCreated++;
+        debtorNames.push(cd.debtor.name);
+      }
+    }
+
+    // Bypass edilen borçlular için audit log
+    if (tasksSkipped > 0) {
+      await this.logAuditEvent(
+        tenantId,
+        caseId,
+        null,
+        'ADDRESS_REQUEST_BYPASSED',
+        { skippedCount: tasksSkipped, skippedDebtors: skippedDebtorNames },
+        true,
+        `${tasksSkipped} borçlu için adres talebi atlandı (müvekkil teyitli adres mevcut)`,
+      );
+    }
+
+    // Müvekkile bildirim gönder
+    let notificationSent = false;
+    if (sendNotification && tasksCreated > 0 && caseData.caseClients?.length > 0) {
+      const primaryClient = caseData.caseClients[0]?.client;
+      
+      if (primaryClient?.id) {
+        try {
+          // E-posta içeriği oluştur (Profesyonel format)
+          const debtorList = debtorNames.map(name => `<li><strong>${name}</strong></li>`).join('');
+          const emailBody = `
+            <p>Sayın ${primaryClient.displayName || 'Müvekkilimiz'},</p>
+            
+            <p><strong>${caseData.fileNumber}</strong> numaralı dosyanız kapsamında aşağıda bilgileri yer alan borçlulara ait güncel iletişim ve adres bilgilerinin tarafımıza iletilmesi gerekmektedir:</p>
+            
+            <ul style="margin: 15px 0;">${debtorList}</ul>
+            
+            <p>Lütfen her bir borçlu için mümkün olan tüm bilgileri aşağıdaki kapsamda bizimle paylaşınız:</p>
+            
+            <ul style="margin: 15px 0;">
+              <li>Ev adresi</li>
+              <li>İş adresi</li>
+              <li>Şube / depo / üretim tesisi gibi fiili kullanım adresleri</li>
+              <li>Telefon numaraları (sabit / GSM)</li>
+              <li>E-posta adresleri</li>
+              <li>Bildiğiniz başkaca adres veya iletişim bilgileri</li>
+            </ul>
+            
+            <p>Bu bilgiler, tebligat işlemlerinin usulüne uygun ve gecikmeksizin yürütülebilmesi açısından kritik öneme sahiptir. Eksik veya hatalı bilgi, dosya sürecinde gecikmelere ve ek masraflara yol açabilecektir.</p>
+            
+            <p><strong>Yanıt süresi:</strong> Bu e-postanın tarafınıza ulaşmasından itibaren <strong>3 gün</strong>.</p>
+            
+            <p>Bilgi paylaşımı veya sorularınız için bizimle iletişime geçebilirsiniz.</p>
+            
+            <p>Saygılarımızla</p>
+          `;
+
+          await this.clientNotificationService.sendEmail(tenantId, 'system', {
+            clientId: primaryClient.id,
+            caseId: caseId,
+            type: 'ADRES_TALEBI',
+            subject: `${caseData.fileNumber} - Borçlu Adres Bilgisi Talebi`,
+            body: emailBody,
+          });
+
+          notificationSent = true;
+          this.logger.log(`Müvekkile adres talebi e-postası gönderildi: ${primaryClient.displayName}`);
+
+          // Audit log - bildirim gönderildi
+          await this.logAuditEvent(
+            tenantId,
+            caseId,
+            null,
+            'CLIENT_NOTIFICATION_SENT',
+            {
+              channel: 'EMAIL',
+              clientId: primaryClient.id,
+              debtorCount: debtorNames.length,
+            },
+            true,
+            `Müvekkile adres talebi e-postası gönderildi (${debtorNames.length} borçlu için)`,
+          );
+        } catch (error: any) {
+          this.logger.warn(`Müvekkile e-posta gönderilemedi: ${error.message}`);
+          // E-posta gönderilemese bile görevler oluşturuldu, hata fırlatma
+          await this.logAuditEvent(
+            tenantId,
+            caseId,
+            null,
+            'CLIENT_NOTIFICATION_FAILED',
+            {
+              channel: 'EMAIL',
+              error: error.message,
+            },
+            true,
+            `Müvekkile e-posta gönderilemedi: ${error.message}`,
+          );
+        }
+      }
+    }
+
+    // Genel audit log
+    await this.logAuditEvent(
+      tenantId,
+      caseId,
+      null,
+      'ADDRESS_WORKFLOW_TRIGGERED',
+      {
+        debtorsProcessed: caseDebtors.length,
+        tasksCreated,
+        notificationSent,
+      },
+      true,
+      `Adres iş akışı başlatıldı: ${caseDebtors.length} borçlu için ${tasksCreated} görev oluşturuldu`,
+    );
+
+    return {
+      tasksCreated,
+      debtorsProcessed: caseDebtors.length,
+      notificationSent,
+    };
+  }
+
+  /**
+   * Dosya kapandığında tüm bekleyen görevleri iptal et
+   */
+  async cancelAllPendingTasksForCase(caseId: string): Promise<number> {
+    const result = await this.prisma.addressTask.updateMany({
+      where: {
+        caseId,
+        status: {
+          in: ['PENDING', 'IN_PROGRESS', 'WAITING_EXTERNAL'],
+        },
+      },
+      data: {
+        status: 'CANCELLED',
+        cancellationReason: 'CASE_CLOSED',
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+
+    this.logger.log(`Cancelled ${result.count} tasks for case ${caseId}`);
+
+    return result.count;
+  }
+
+  /**
+   * Varsayılan görev başlığı
+   */
+  private getDefaultTitle(taskType: AddressTaskType): string {
+    const titles: Record<AddressTaskType, string> = {
+      DOC_EXTRACT_DEBTOR_ADDRESSES: 'Evraktan adres çıkar',
+      CLIENT_CONTACT_VALIDATE: 'Müvekkil iletişim bilgilerini doğrula',
+      CLIENT_REQUEST_DEBTOR_ADDRESSES: 'Müvekkile adres talebi gönder',
+      CLIENT_REMIND_DEBTOR_ADDRESSES: 'Müvekkile hatırlatma gönder',
+      CLIENT_ANNUAL_ADDRESS_REFRESH: 'Yıllık adres talebi',
+      ASSIGN_MANUAL_CALL_CLIENT: 'Müvekkili telefonla ara',
+      MANUAL_CLIENT_FOLLOWUP: 'Müvekkil takibi',
+      UYAP_PULL_MERNIS: 'MERNİS sorgusu yap',
+      UYAP_PULL_SGK: 'SGK sorgusu yap',
+    };
+
+    return titles[taskType] || 'Adres görevi';
+  }
+
+  /**
+   * Audit log kaydı oluştur
+   */
+  private async logAuditEvent(
+    tenantId: string,
+    caseId: string,
+    debtorId: string | null,
+    action: string,
+    details: Record<string, any>,
+    showInNotes: boolean = false,
+    noteText?: string,
+  ): Promise<void> {
+    try {
+      await this.prisma.addressAuditLog.create({
+        data: {
+          tenantId,
+          caseId,
+          debtorId,
+          action,
+          details: details as Prisma.JsonObject,
+          showInNotes,
+          noteText,
+        },
+      });
+    } catch (error) {
+      this.logger.error(`Failed to create audit log: ${error}`);
+    }
+  }
+
+  // ============================================================================
+  // TASK BYPASS & AUTO-COMPLETION RULES
+  // ============================================================================
+
+  /**
+   * Borçlunun "yararlı adresi" var mı kontrol et
+   * Yararlı adres: DECLARED_CLIENT, DECLARED_DOCUMENT veya MERNIS_RESIDENCE
+   * isCurrent = true ve confidenceLevel >= MEDIUM
+   */
+  async hasUsefulAddresses(debtorId: string): Promise<boolean> {
+    const usefulAddressCount = await this.prisma.debtorAddress.count({
+      where: {
+        debtorId,
+        isCurrent: true,
+        addressCategory: {
+          in: ['DECLARED_CLIENT', 'DECLARED_DOCUMENT', 'MERNIS_RESIDENCE'],
+        },
+        confidenceLevel: {
+          in: ['MEDIUM', 'HIGH'],
+        },
+      },
+    });
+
+    return usefulAddressCount > 0;
+  }
+
+  /**
+   * Adres talebi bypass edilmeli mi kontrol et
+   * Bypass koşulları:
+   * 1. Debtor'un addressIntakeMode = CLIENT_CONFIRMED
+   * 2. VE yararlı adresi var
+   */
+  async shouldBypassAddressRequest(debtorId: string): Promise<{ bypass: boolean; reason?: string }> {
+    const debtor = await this.prisma.debtor.findUnique({
+      where: { id: debtorId },
+      select: { addressIntakeMode: true, name: true },
+    });
+
+    if (!debtor) {
+      return { bypass: false, reason: 'Debtor not found' };
+    }
+
+    // CLIENT_CONFIRMED ise ve yararlı adres varsa bypass
+    if (debtor.addressIntakeMode === 'CLIENT_CONFIRMED') {
+      const hasUseful = await this.hasUsefulAddresses(debtorId);
+      if (hasUseful) {
+        return { 
+          bypass: true, 
+          reason: `${debtor.name} için adresler müvekkil teyitli - otomatik talep atlandı` 
+        };
+      }
+    }
+
+    return { bypass: false };
+  }
+
+  /**
+   * Adres geldiğinde açık görevleri otomatik tamamla
+   * - CLIENT_REQUEST_DEBTOR_ADDRESSES → DONE
+   * - CLIENT_REMIND_DEBTOR_ADDRESSES → CANCELLED
+   */
+  async autoCompleteOnAddressReceived(
+    tenantId: string,
+    caseId: string,
+    debtorId: string,
+    source: 'CLIENT_REPLY' | 'CLIENT_CONFIRMED_UI' | 'MANUAL_ENTRY',
+  ): Promise<{ tasksCompleted: number; tasksCancelled: number }> {
+    let tasksCompleted = 0;
+    let tasksCancelled = 0;
+
+    // Açık CLIENT_REQUEST_DEBTOR_ADDRESSES görevini bul ve tamamla
+    const requestTask = await this.prisma.addressTask.findFirst({
+      where: {
+        caseId,
+        debtorId,
+        taskType: 'CLIENT_REQUEST_DEBTOR_ADDRESSES',
+        status: {
+          in: ['PENDING', 'IN_PROGRESS', 'WAITING_EXTERNAL'],
+        },
+      },
+    });
+
+    if (requestTask) {
+      await this.prisma.addressTask.update({
+        where: { id: requestTask.id },
+        data: {
+          status: 'DONE',
+          resultType: 'POSITIVE',
+          resultData: { doneReason: 'ADDRESSES_RECEIVED', source } as Prisma.JsonObject,
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+      tasksCompleted++;
+
+      this.logger.log(`Auto-completed task ${requestTask.id} - addresses received from ${source}`);
+    }
+
+    // Açık hatırlatma görevlerini iptal et
+    const reminderResult = await this.prisma.addressTask.updateMany({
+      where: {
+        caseId,
+        debtorId,
+        taskType: 'CLIENT_REMIND_DEBTOR_ADDRESSES',
+        status: {
+          in: ['PENDING', 'IN_PROGRESS', 'WAITING_EXTERNAL'],
+        },
+      },
+      data: {
+        status: 'CANCELLED',
+        cancellationReason: 'SUPERSEDED',
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+    tasksCancelled = reminderResult.count;
+
+    // Audit log
+    if (tasksCompleted > 0 || tasksCancelled > 0) {
+      await this.logAuditEvent(
+        tenantId,
+        caseId,
+        debtorId,
+        'TASKS_AUTO_COMPLETED',
+        { tasksCompleted, tasksCancelled, source },
+        true,
+        `Adres bilgileri alındı - ${tasksCompleted} görev tamamlandı, ${tasksCancelled} hatırlatma iptal edildi`,
+      );
+    }
+
+    return { tasksCompleted, tasksCancelled };
+  }
+
+  /**
+   * Operatör tarafından "Zaten aldık" ile görevi tamamla
+   */
+  async confirmReceivedByOperator(
+    taskId: string,
+    operatorId?: string,
+  ): Promise<AddressTask> {
+    const task = await this.prisma.addressTask.findUnique({
+      where: { id: taskId },
+    });
+
+    if (!task) {
+      throw new Error(`Task not found: ${taskId}`);
+    }
+
+    // Görevi tamamla
+    const updatedTask = await this.prisma.addressTask.update({
+      where: { id: taskId },
+      data: {
+        status: 'DONE',
+        resultType: 'POSITIVE',
+        resultData: { doneReason: 'CONFIRMED_BY_OPERATOR', operatorId } as Prisma.JsonObject,
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+
+    // Aynı borçlu için açık hatırlatma görevlerini iptal et
+    await this.prisma.addressTask.updateMany({
+      where: {
+        caseId: task.caseId,
+        debtorId: task.debtorId,
+        taskType: 'CLIENT_REMIND_DEBTOR_ADDRESSES',
+        status: {
+          in: ['PENDING', 'IN_PROGRESS', 'WAITING_EXTERNAL'],
+        },
+      },
+      data: {
+        status: 'CANCELLED',
+        cancellationReason: 'SUPERSEDED',
+        completedAt: new Date(),
+        updatedAt: new Date(),
+      },
+    });
+
+    // Audit log
+    await this.logAuditEvent(
+      task.tenantId,
+      task.caseId,
+      task.debtorId,
+      'TASK_CONFIRMED_BY_OPERATOR',
+      { taskId, operatorId },
+      true,
+      'Görev operatör tarafından tamamlandı - adresler zaten alınmış',
+    );
+
+    this.logger.log(`Task ${taskId} confirmed by operator ${operatorId}`);
+
+    return updatedTask;
+  }
+}

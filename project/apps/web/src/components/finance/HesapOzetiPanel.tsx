@@ -203,20 +203,42 @@ const hesaplaSegmentliFaiz = (
 };
 
 const hesaplaVekaletUcreti = (takipTutari: number): number => {
-  const tarifeler = [
-    { min: 0, max: 55000, fixed: 11000, rate: 0 },
-    { min: 55000, max: 130000, fixed: 11000, rate: 0.14 },
-    { min: 130000, max: 390000, fixed: 21500, rate: 0.12 },
-    { min: 390000, max: 780000, fixed: 52700, rate: 0.08 },
-    { min: 780000, max: 1950000, fixed: 83900, rate: 0.04 },
-    { min: 1950000, max: Infinity, fixed: 130700, rate: 0.01 },
+  // 2025/2026 Avukatlık Asgari Ücret Tarifesi - Nispi Vekalet Ücreti
+  // Kaynak: Türkiye Barolar Birliği Avukatlık Asgari Ücret Tarifesi
+  // İcra takiplerinde maktu ücret: 9.000 TL (asgari)
+  
+  const MAKTU_ICRA_UCRETI = 9000; // İcra Dairelerinde yapılan takipler için asgari
+  
+  // Nispi tarife dilimleri (kümülatif hesaplama)
+  const dilimler = [
+    { limit: 600000, oran: 0.16 },      // İlk 600.000 TL için %16
+    { limit: 1200000, oran: 0.15 },     // Sonra gelen 600.000 TL için %15
+    { limit: 2400000, oran: 0.14 },     // Sonra gelen 1.200.000 TL için %14
+    { limit: 3600000, oran: 0.13 },     // Sonra gelen 1.200.000 TL için %13
+    { limit: 5400000, oran: 0.11 },     // Sonra gelen 1.800.000 TL için %11
+    { limit: 7800000, oran: 0.08 },     // Sonra gelen 2.400.000 TL için %8
+    { limit: 10800000, oran: 0.05 },    // Sonra gelen 3.000.000 TL için %5
+    { limit: 14400000, oran: 0.03 },    // Sonra gelen 3.600.000 TL için %3
+    { limit: 18600000, oran: 0.02 },    // Sonra gelen 4.200.000 TL için %2
+    { limit: Infinity, oran: 0.01 },    // 18.600.000 TL üzeri için %1
   ];
-  for (const t of tarifeler) {
-    if (takipTutari <= t.max) {
-      return Math.max(t.fixed + ((takipTutari - t.min) * t.rate), 11000);
-    }
+  
+  let toplam = 0;
+  let kalanTutar = takipTutari;
+  let oncekiLimit = 0;
+  
+  for (const dilim of dilimler) {
+    if (kalanTutar <= 0) break;
+    
+    const dilimGenisligi = dilim.limit - oncekiLimit;
+    const buDilimdekiTutar = Math.min(kalanTutar, dilimGenisligi);
+    toplam += buDilimdekiTutar * dilim.oran;
+    kalanTutar -= buDilimdekiTutar;
+    oncekiLimit = dilim.limit;
   }
-  return 130700 + ((takipTutari - 1950000) * 0.01);
+  
+  // Asgari maktu ücretin altına düşemez
+  return Math.max(toplam, MAKTU_ICRA_UCRETI);
 };
 
 // ============================================================================
@@ -267,6 +289,13 @@ export function HesapOzetiPanel({
   
   // Ana hesaplama - her render'da hesaplanacak
   const hesap = (() => {
+    // DEBUG: Gelen verileri kontrol et
+    console.log('[HesapOzeti] claimItems:', claimItems);
+    console.log('[HesapOzeti] instruments:', instruments);
+    console.log('[HesapOzeti] dues:', dues);
+    console.log('[HesapOzeti] principalAmount:', principalAmount);
+    console.log('[HesapOzeti] caseDate (takipTarihi):', caseDate);
+    
     // 1. Asıl alacak ve kalem türü belirleme
     let asilAlacak = 0;
     let kalemTuru = 'ASIL_ALACAK';
@@ -285,7 +314,16 @@ export function HesapOzetiPanel({
       ibrazTarihi = instrument.presentmentDate?.split('T')[0] || vadeTarihi;
       faizTuru = 'TICARI_DEGISEN'; // Çek/Senet için TCMB Avans
     }
-    // Öncelik 2: caseType'dan belirle
+    // Öncelik 2: ClaimItems'dan al (alacak kalemleri - vade tarihi burada)
+    else if (claimItems && claimItems.length > 0) {
+      const item = claimItems[0];
+      asilAlacak = toNumber(item.bakiyeTutar) || toNumber(item.amount) || toNumber(principalAmount) || 0;
+      kalemTuru = item.kalemTuru || item.itemType || item.type || 'ASIL_ALACAK';
+      vadeTarihi = item.vadeTarihi || item.dueDate || item.interestStartDate?.split('T')[0] || takipTarihi;
+      ibrazTarihi = item.cekBilgileri?.ibrazTarihi || item.ibrazTarihi || vadeTarihi;
+      faizTuru = item.takipOncesiFaiz || item.interestType || 'TICARI_DEGISEN';
+    }
+    // Öncelik 3: caseType'dan belirle
     else if (caseType === 'CHECK') {
       kalemTuru = 'CEK';
       asilAlacak = toNumber(principalAmount) || 0;
@@ -296,22 +334,27 @@ export function HesapOzetiPanel({
       asilAlacak = toNumber(principalAmount) || 0;
       faizTuru = 'TICARI_DEGISEN';
     }
-    // Öncelik 3: Dues'dan al
+    // Öncelik 4: Dues'dan al
     else if (dues.length > 0) {
       const principalDues = dues.filter(d => ['PRINCIPAL', 'ASIL_ALACAK', 'CEK', 'SENET'].includes(d.type));
       asilAlacak = principalDues.reduce((sum, d) => sum + toNumber(d.amount), 0);
+      // Vade tarihini ilk principal due'dan al
+      const firstPrincipal = principalDues[0];
+      if (firstPrincipal?.dueDate) {
+        vadeTarihi = new Date(firstPrincipal.dueDate).toISOString().split('T')[0];
+      }
+      // Faiz türünü due'dan veya takip tipinden belirle
+      if (firstPrincipal?.interestType) {
+        faizTuru = firstPrincipal.interestType;
+      } else {
+        // Takip tipine göre default faiz türü
+        // CHECK, BOND = Ticari (TCMB Avans)
+        // Diğerleri = Yasal Faiz
+        faizTuru = (caseType === 'CHECK' || caseType === 'BOND') ? 'TICARI_DEGISEN' : 'YASAL';
+      }
       if (asilAlacak === 0) {
         asilAlacak = toNumber(principalAmount) || 0;
       }
-    } 
-    // Öncelik 4: ClaimItems'dan al (wizard'dan gelen veri)
-    else if (claimItems.length > 0) {
-      const item = claimItems[0];
-      asilAlacak = toNumber(item.bakiyeTutar) || toNumber(item.amount) || 0;
-      kalemTuru = item.kalemTuru || item.type || 'ASIL_ALACAK';
-      vadeTarihi = item.vadeTarihi || item.dueDate || takipTarihi;
-      ibrazTarihi = item.cekBilgileri?.ibrazTarihi || item.ibrazTarihi || vadeTarihi;
-      faizTuru = item.takipOncesiFaiz || item.interestType || 'TICARI_DEGISEN';
     }
     // Fallback
     else if (principalAmount) {
@@ -372,9 +415,12 @@ export function HesapOzetiPanel({
     const faizSegmentleriSonrasi: FaizSegment[] = [];
     
     // Yan borçlar havuzu (tahsilat anında hesaplanacak)
+    // TBK m.100 sırası: Masraf → Faiz → Anapara
+    // İcra hukukunda: Masraf/Harç → Vekalet → Takip Öncesi Faiz → Takip Sonrası Faiz → Anapara
     let kalanMasrafHarc = icraMasraflari; // Masraf + Harçlar
     let kalanVekalet = vekaletUcreti;
-    let kalanIslemişFaiz = 0; // Her tahsilat anında o güne kadar işlemiş faiz
+    let kalanTakipOncesiFaiz = takipOncesiFaiz; // ⭐ Takip öncesi faiz de yan borç!
+    let kalanIslemişFaiz = 0; // Her tahsilat anında o güne kadar işlemiş takip sonrası faiz
     
     // Mahsup detayları
     const mahsupDetaylari: Array<{
@@ -382,6 +428,7 @@ export function HesapOzetiPanel({
       tahsilatTutar: number;
       mahsupMasraf: number;
       mahsupVekalet: number;
+      mahsupTakipOncesiFaiz: number;
       mahsupFaiz: number;
       mahsupAnapara: number;
       kalanAnapara: number;
@@ -413,8 +460,9 @@ export function HesapOzetiPanel({
         }
         
         // 2. Tahsilatı TBK m.100 sırasıyla mahsup et
+        // Sıra: Masraf/Harç → Vekalet → Takip Öncesi Faiz → Takip Sonrası Faiz → Anapara
         let kalanTahsilat = tahsilat.tutar;
-        let mahsupMasraf = 0, mahsupVekalet = 0, mahsupFaiz = 0, mahsupAnapara = 0;
+        let mahsupMasraf = 0, mahsupVekalet = 0, mahsupTakipOncesiFaiz = 0, mahsupFaiz = 0, mahsupAnapara = 0;
         
         // 2a. Önce masraf/harçlara
         if (kalanTahsilat > 0 && kalanMasrafHarc > 0) {
@@ -430,14 +478,21 @@ export function HesapOzetiPanel({
           kalanTahsilat -= mahsupVekalet;
         }
         
-        // 2c. Sonra işlemiş faize
+        // 2c. Takip öncesi faize
+        if (kalanTahsilat > 0 && kalanTakipOncesiFaiz > 0) {
+          mahsupTakipOncesiFaiz = Math.min(kalanTahsilat, kalanTakipOncesiFaiz);
+          kalanTakipOncesiFaiz -= mahsupTakipOncesiFaiz;
+          kalanTahsilat -= mahsupTakipOncesiFaiz;
+        }
+        
+        // 2d. Sonra takip sonrası işlemiş faize
         if (kalanTahsilat > 0 && kalanIslemişFaiz > 0) {
           mahsupFaiz = Math.min(kalanTahsilat, kalanIslemişFaiz);
           kalanIslemişFaiz -= mahsupFaiz;
           kalanTahsilat -= mahsupFaiz;
         }
         
-        // 2d. En son anaparaya - SADECE BU FAİZ MATRAHINI ETKİLER
+        // 2e. En son anaparaya - SADECE BU FAİZ MATRAHINI ETKİLER
         if (kalanTahsilat > 0 && kalanAnapara > 0) {
           mahsupAnapara = Math.min(kalanTahsilat, kalanAnapara);
           kalanAnapara -= mahsupAnapara;
@@ -450,6 +505,7 @@ export function HesapOzetiPanel({
           tahsilatTutar: tahsilat.tutar,
           mahsupMasraf,
           mahsupVekalet,
+          mahsupTakipOncesiFaiz,
           mahsupFaiz,
           mahsupAnapara,
           kalanAnapara,
@@ -680,7 +736,8 @@ export function HesapOzetiPanel({
                     <div className="grid grid-cols-2 gap-x-2 mt-0.5 text-purple-500">
                       {m.mahsupMasraf > 0 && <span>Masraf: {formatTL(m.mahsupMasraf)}</span>}
                       {m.mahsupVekalet > 0 && <span>Vekalet: {formatTL(m.mahsupVekalet)}</span>}
-                      {m.mahsupFaiz > 0 && <span>Faiz: {formatTL(m.mahsupFaiz)}</span>}
+                      {m.mahsupTakipOncesiFaiz > 0 && <span>T.Ö.Faiz: {formatTL(m.mahsupTakipOncesiFaiz)}</span>}
+                      {m.mahsupFaiz > 0 && <span>T.S.Faiz: {formatTL(m.mahsupFaiz)}</span>}
                       {m.mahsupAnapara > 0 && <span className="font-medium text-purple-700">Anapara: {formatTL(m.mahsupAnapara)}</span>}
                     </div>
                     <div className="text-[8px] text-purple-400 mt-0.5">Kalan Anapara: {formatTL(m.kalanAnapara)}</div>

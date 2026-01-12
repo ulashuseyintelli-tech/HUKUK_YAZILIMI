@@ -20,6 +20,13 @@ const DUE_TYPES = [
   { value: "OTHER", label: "Diğer" },
 ];
 
+const INTEREST_TYPES = [
+  { value: "YASAL", label: "Yasal Faiz (%24)" },
+  { value: "TICARI_DEGISEN", label: "Ticari Faiz - TCMB Avans (Değişken)" },
+  { value: "TICARI_SABIT", label: "Ticari Faiz - Sabit Oran" },
+  { value: "OZEL", label: "Özel Oran (Sözleşme)" },
+];
+
 interface DueModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -37,6 +44,7 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess }: DueModalPr
     amount: "",
     dueDate: new Date().toISOString().split("T")[0],
     currency: "TRY",
+    interestType: "YASAL", // Default: Yasal Faiz
   });
 
   useEffect(() => {
@@ -47,6 +55,7 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess }: DueModalPr
         amount: due.amount?.toString() || "",
         dueDate: due.dueDate ? new Date(due.dueDate).toISOString().split("T")[0] : new Date().toISOString().split("T")[0],
         currency: due.currency || "TRY",
+        interestType: due.interestType || "YASAL",
       });
     } else {
       setForm({
@@ -55,6 +64,7 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess }: DueModalPr
         amount: "",
         dueDate: new Date().toISOString().split("T")[0],
         currency: "TRY",
+        interestType: "YASAL",
       });
     }
   }, [due, isOpen]);
@@ -71,6 +81,7 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess }: DueModalPr
         amount: parseFloat(form.amount),
         dueDate: form.dueDate,
         currency: form.currency,
+        interestType: form.type === 'PRINCIPAL' ? form.interestType : undefined,
       };
 
       if (due?.id) {
@@ -198,6 +209,31 @@ export function DueModal({ isOpen, onClose, caseId, due, onSuccess }: DueModalPr
               className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
             />
           </div>
+
+          {/* Faiz Türü - Sadece Ana Para için göster */}
+          {form.type === 'PRINCIPAL' && (
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">
+                Faiz Türü
+                <span className="text-gray-400 font-normal ml-1">(Takip öncesi/sonrası faiz hesabında kullanılır)</span>
+              </label>
+              <select
+                value={form.interestType}
+                onChange={(e) => setForm({ ...form, interestType: e.target.value })}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                {INTEREST_TYPES.map((t) => (
+                  <option key={t.value} value={t.value}>{t.label}</option>
+                ))}
+              </select>
+              <p className="text-[10px] text-gray-400 mt-1">
+                {form.interestType === 'YASAL' && 'Genel haciz takiplerinde varsayılan faiz türü'}
+                {form.interestType === 'TICARI_DEGISEN' && 'Çek/Senet takiplerinde ve ticari ilişkilerde kullanılır'}
+                {form.interestType === 'TICARI_SABIT' && 'Sözleşmede belirlenmiş sabit ticari faiz oranı'}
+                {form.interestType === 'OZEL' && 'Sözleşmede belirlenmiş özel faiz oranı'}
+              </p>
+            </div>
+          )}
 
           <div className="flex justify-end gap-2 pt-2">
             <button

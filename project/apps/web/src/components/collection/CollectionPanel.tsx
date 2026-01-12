@@ -322,7 +322,7 @@ export function CollectionPanel({ caseId }: CollectionPanelProps) {
           </div>
         ) : (
           <div className="space-y-3">
-            {collections.map((col) => (
+            {[...collections].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).map((col) => (
               <div key={col.id} className="p-4 border rounded-lg hover:border-emerald-200 transition-colors">
                 <div className="flex items-start justify-between">
                   <div className="flex items-start gap-3">
