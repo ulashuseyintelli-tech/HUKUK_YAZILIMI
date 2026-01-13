@@ -1848,10 +1848,18 @@ enum ExpenseRequestStatus {
   PENDING // Oluşturuldu, henüz gönderilmedi
   SENT // Müvekkile gönderildi
   REMINDED // Hatırlatma gönderildi
+  PARTIAL // Kısmi ödeme alındı
   RECEIVED // Dekont/ödeme alındı
+  PAID // Tam ödeme alındı
   LAWYER_PAID // Avukat karşıladı - müvekkilden tahsil edilecek
   OVERDUE // Süresi geçti
   CANCELLED // İptal edildi
+}
+
+// Masraf Gate Tipi - UYAP kilidi için
+enum ExpenseGateType {
+  BLOCKING // Ödenmeden UYAP kilitli
+  NON_BLOCKING // Ödenmese de devam edilebilir
 }
 
 // Mahsup Türü
@@ -2936,11 +2944,29 @@ model ExpenseRequest {
   // Paket Bilgisi (otomatik oluşturma için)
   packageCode String? // UYAP_PRE, RE_TEBLIGAT, HACIZ (null = manuel)
 
+  // YENİ: Gate tipi - UYAP kilidi için
+  gateType ExpenseGateType @default(BLOCKING)
+
+  // YENİ: Aşama kodu (hangi aşamada oluşturuldu)
+  stageCode String? // OPENING, RE_NOTIFICATION, SEIZURE, SALE
+
+  // YENİ: Kısmi ödeme takibi
+  paidTotal Decimal @default(0) @db.Decimal(15, 2)
+
+  // YENİ: İlişkili görev ID
+  taskId String?
+
   // Masraf Kalemleri (eski format - geriye uyumluluk)
   items Json? // [{type: string, description: string, amount: number}]
 
   // Yeni format - ayrı tablo
   requestItems ExpenseRequestItem[]
+
+  // YENİ: Ödeme kayıtları
+  payments ExpensePayment[]
+
+  // YENİ: Audit log
+  auditLogs ExpenseAuditLog[]
 
   // Tutarlar
   totalSuggested Decimal? @db.Decimal(15, 2) // Sistem önerisi
@@ -3034,6 +3060,47 @@ model ExpenseRequestItem {
 
   @@index([expenseRequestId])
   @@index([itemCode])
+}
+
+// Masraf Ödeme Kayıtları
+model ExpensePayment {
+  id               String         @id @default(cuid())
+  expenseRequestId String
+  expenseRequest   ExpenseRequest @relation(fields: [expenseRequestId], references: [id], onDelete: Cascade)
+
+  // Ödeme Bilgileri
+  amount      Decimal  @db.Decimal(15, 2)
+  paymentDate DateTime
+  method      String // BANK_TRANSFER, CASH, VIRTUAL_POS
+  reference   String? // Dekont no, referans kodu
+  notes       String?
+
+  // Eşleştirme Bilgisi
+  matchedBy   String? // AUTO, MANUAL
+  matchedById String? // Eşleştiren kullanıcı ID
+
+  createdAt DateTime @default(now())
+
+  @@index([expenseRequestId])
+  @@index([paymentDate])
+}
+
+// Masraf Audit Log
+model ExpenseAuditLog {
+  id               String         @id @default(cuid())
+  expenseRequestId String
+  expenseRequest   ExpenseRequest @relation(fields: [expenseRequestId], references: [id], onDelete: Cascade)
+
+  // Log Bilgileri
+  action  String // CREATED, ITEM_ADDED, ITEM_UPDATED, SENT, PAYMENT_RECORDED, STATUS_CHANGED, OVERRIDE
+  details Json? // Detay bilgisi (eski değer, yeni değer vb.)
+  userId  String? // İşlemi yapan kullanıcı
+
+  createdAt DateTime @default(now())
+
+  @@index([expenseRequestId])
+  @@index([action])
+  @@index([createdAt])
 }
 
 // Mesaj Şablonları (E-posta, SMS, WhatsApp)
@@ -5983,4 +6050,67 @@ model AddressOutboxEvent {
   @@index([eventType])
   @@index([status])
   @@index([createdAt])
+}
+
+// ==================== DOKÜMAN ARTİFAKT SİSTEMİ ====================
+
+// Doküman Artifact - Üretilen belgelerin cache/versiyonlama sistemi
+model DocumentArtifact {
+  id       String @id @default(cuid())
+  tenantId String
+  caseId   String
+  case     Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  // Belge Türü
+  documentType String // TAKIP_TALEBI, ODEME_EMRI, ICRA_EMRI, HACIZ_TUTANAGI, etc.
+  format       DocumentFormat // DOCX, PDF, XML, UDF
+
+  // Versiyon Bilgileri
+  templateVersion String // Şablon versiyonu (v1, v2, etc.)
+  dataHash        String // Takip verisinin SHA-256 hash'i (cache key)
+
+  // Durum
+  status DocumentArtifactStatus @default(GENERATING)
+
+  // Dosya Bilgileri
+  filePath    String? // Storage path (local veya S3)
+  fileSize    Int? // Byte cinsinden
+  fileName    String? // Orijinal dosya adı
+  contentHash String? // Dosya içeriğinin hash'i (integrity check)
+
+  // Hata Bilgisi
+  errorMessage String?
+
+  // Meta
+  generatedAt DateTime? // Üretim tamamlanma zamanı
+  expiresAt   DateTime? // Cache geçerlilik süresi (opsiyonel)
+
+  // Oluşturan
+  createdById String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([caseId, documentType, format, templateVersion, dataHash], name: "document_artifact_cache_key")
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([documentType])
+  @@index([format])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum DocumentFormat {
+  DOCX
+  PDF
+  XML
+  UDF
+  TXT
+}
+
+enum DocumentArtifactStatus {
+  GENERATING // Üretiliyor
+  READY // Hazır
+  FAILED // Hata
+  EXPIRED // Süresi dolmuş
 }

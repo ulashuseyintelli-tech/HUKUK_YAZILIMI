@@ -265,8 +265,19 @@ export class DebtorService {
     // Compute name and identityNo
     const { name, identityNo } = this.computeNameAndIdentity(dto);
 
-    // Extract addresses and estateHeirs from dto
-    const { addresses, estateHeirs, ...debtorData } = dto;
+    // Extract addresses, estateHeirs, and clientConfirmed from dto
+    const { addresses, estateHeirs, clientConfirmed, ...debtorData } = dto;
+
+    // Determine addressIntakeMode based on clientConfirmed and addresses
+    let addressIntakeMode: 'CLIENT_CONFIRMED' | 'UNKNOWN' | 'NEEDS_CLIENT_REQUEST' = 'UNKNOWN';
+    const hasAddresses = addresses && addresses.length > 0;
+    
+    if (hasAddresses && clientConfirmed) {
+      addressIntakeMode = 'CLIENT_CONFIRMED';
+    } else if (!hasAddresses) {
+      addressIntakeMode = 'NEEDS_CLIENT_REQUEST';
+    }
+    // else: hasAddresses but not confirmed → UNKNOWN (default)
 
     // Create debtor with addresses and estate heirs
     const debtor = await this.prisma.debtor.create({
@@ -275,11 +286,14 @@ export class DebtorService {
         ...debtorData,
         name,
         identityNo,
+        addressIntakeMode,
         debtorAddresses: addresses?.length
           ? {
               create: addresses.map((addr, index) => ({
                 ...addr,
                 isPrimary: addr.isPrimary ?? index === 0,
+                // If clientConfirmed, set addressCategory to DECLARED_CLIENT
+                ...(clientConfirmed ? { addressCategory: 'DECLARED_CLIENT' } : {}),
               })),
             }
           : undefined,

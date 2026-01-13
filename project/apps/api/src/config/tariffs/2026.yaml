@@ -1,0 +1,197 @@
+# ============================================
+# 2026 YILI TARİFE TABLOSU
+# İcra Takibi Harç ve Masrafları
+# ============================================
+
+version: 1
+year: 2026
+effective_date: "2026-01-01"
+
+# --------------------------------------------
+# SABİT HARÇLAR
+# --------------------------------------------
+fixed_fees:
+  # Başvurma Harcı (tüm takiplerde)
+  application_fee:
+    amount: 738.50
+    label: "Başvurma Harcı"
+    item_type: FEE
+    applies_to: ["ILAMSIZ", "ILAMLI", "KAMBIYO", "KIRA", "TAHLIYE", "REHIN", "IFLAS"]
+    
+  # Vekalet Suret Harcı
+  poa_copy_fee:
+    amount: 105.00
+    label: "Vekalet Suret Harcı"
+    item_type: FEE
+    applies_to: ["ILAMSIZ", "ILAMLI", "KAMBIYO", "KIRA", "TAHLIYE", "REHIN", "IFLAS"]
+    
+  # Vekalet Pulu / Baro Pulu
+  bar_stamp_fee:
+    amount: 165.60
+    label: "Vekalet Pulu"
+    item_type: STAMP
+    applies_to: ["ILAMSIZ", "ILAMLI", "KAMBIYO", "KIRA", "TAHLIYE", "REHIN", "IFLAS"]
+
+  # Dosya Gideri
+  file_expense:
+    amount: 50.00
+    label: "Dosya Gideri"
+    item_type: EXPENSE
+    applies_to: ["ILAMSIZ", "ILAMLI", "KAMBIYO", "KIRA", "TAHLIYE", "REHIN", "IFLAS"]
+
+# --------------------------------------------
+# NİSPİ HARÇLAR
+# --------------------------------------------
+rate_fees:
+  # İlamsız Peşin Harç (binde 5)
+  ilamsiz_pesin_harc:
+    rate: 0.005
+    label: "Peşin Harç"
+    item_type: FEE
+    base: "principal_plus_interest"
+    applies_to: ["ILAMSIZ", "KIRA"]
+    min_amount: 120.00
+    max_amount: null
+    
+  # Kambiyo Peşin Harç (binde 5)
+  kambiyo_pesin_harc:
+    rate: 0.005
+    label: "Peşin Harç"
+    item_type: FEE
+    base: "principal_plus_interest"
+    applies_to: ["KAMBIYO"]
+    min_amount: 120.00
+    max_amount: null
+
+# --------------------------------------------
+# TEBLİGAT ÜCRETLERİ
+# --------------------------------------------
+postage:
+  UETS:
+    amount: 18.00
+    label: "UETS Tebligat"
+    description: "Elektronik tebligat (KEP/UETS)"
+    
+  NORMAL:
+    amount: 252.00
+    label: "Normal Tebligat"
+    description: "PTT normal tebligat"
+    
+  FAST:
+    amount: 504.00
+    label: "Hızlı Tebligat"
+    description: "PTT hızlı tebligat"
+    
+  PUBLIC_ANNOUNCEMENT:
+    amount: null
+    label: "İlanen Tebligat"
+    description: "Gazete ilanı ile tebligat"
+    formula: "ilan_satir_sayisi * satir_ucreti"
+
+# --------------------------------------------
+# HACİZ MASRAFLARI
+# --------------------------------------------
+seizure_fees:
+  haciz_harci:
+    rate: 0.0044
+    label: "Haciz Harcı"
+    item_type: FEE
+    base: "principal"
+    min_amount: 100.00
+    
+  haciz_yolluk:
+    amount: 350.00
+    label: "Haciz Yolluk"
+    item_type: EXPENSE
+    
+  haciz_muhafaza:
+    amount: 500.00
+    label: "Muhafaza Gideri"
+    item_type: EXPENSE
+
+# --------------------------------------------
+# SATIŞ MASRAFLARI
+# --------------------------------------------
+sale_fees:
+  satis_harci:
+    rate: 0.0113
+    label: "Satış Harcı"
+    item_type: FEE
+    base: "sale_amount"
+    
+  ilan_gideri:
+    amount: 2500.00
+    label: "İlan Gideri"
+    item_type: EXPENSE
+    description: "Ortalama gazete ilan ücreti"
+
+# --------------------------------------------
+# FAİZ ORANLARI (Yıllık %)
+# --------------------------------------------
+interest_rates:
+  TRY:
+    YASAL:
+      - start_date: "2025-07-01"
+        rate: 24
+      - start_date: "2026-01-01"
+        rate: 24
+    TICARI:
+      - start_date: "2025-07-01"
+        rate: 48
+      - start_date: "2026-01-01"
+        rate: 48
+    AVANS:
+      - start_date: "2025-07-01"
+        rate: 32
+      - start_date: "2026-01-01"
+        rate: 32
+        
+  USD:
+    YASAL:
+      - start_date: "2026-01-01"
+        rate: 9
+    TICARI:
+      - start_date: "2026-01-01"
+        rate: 12
+        
+  EUR:
+    YASAL:
+      - start_date: "2026-01-01"
+        rate: 9
+    TICARI:
+      - start_date: "2026-01-01"
+        rate: 12
+
+# --------------------------------------------
+# AVUKATLIK ASGARİ ÜCRET TARİFESİ 2026
+# İcra ve İflas Takipleri
+# --------------------------------------------
+attorney_fees:
+  icra_takip:
+    tiers:
+      - min: 0
+        max: 66000
+        fixed: 13200
+        rate: 0
+      - min: 66000
+        max: 156000
+        fixed: 13200
+        rate: 0.14
+      - min: 156000
+        max: 468000
+        fixed: 25800
+        rate: 0.12
+      - min: 468000
+        max: 936000
+        fixed: 63240
+        rate: 0.08
+      - min: 936000
+        max: 2340000
+        fixed: 100680
+        rate: 0.04
+      - min: 2340000
+        max: null
+        fixed: 156840
+        rate: 0.01
+    minimum: 13200
+    description: "2026 Avukatlık Asgari Ücret Tarifesi - İcra Takipleri"

@@ -140,6 +140,7 @@ export class AddressDiscoveryService {
       ...research,
       debtor: caseDebtor!.debtor,
       case: caseDebtor!.case,
+      uyapQueries: caseDebtor!.uyapQueries, // Include for suggestNextAction
       statistics: {
         totalAddresses: caseDebtor!.debtor.debtorAddresses.length,
         verifiedAddresses: caseDebtor!.debtor.debtorAddresses.filter(a => a.verified).length,

@@ -896,4 +896,229 @@ export class AddressTaskService {
 
     return updatedTask;
   }
+
+  // ============================================================================
+  // COMMUNICATION CHANNEL SELECTION (Task 7)
+  // ============================================================================
+
+  /**
+   * Müvekkilin iletişim kanallarını belirle
+   * @returns Kullanılabilir kanallar ve tercih edilen kanal
+   */
+  async getClientContactChannels(clientId: string): Promise<{
+    hasEmail: boolean;
+    hasWhatsApp: boolean;
+    hasSms: boolean;
+    preferredChannel: 'EMAIL' | 'WHATSAPP' | 'SMS' | 'BOTH' | 'NONE';
+    email?: string;
+    phone?: string;
+  }> {
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+      include: {
+        contacts: true,
+      },
+    });
+
+    if (!client) {
+      return {
+        hasEmail: false,
+        hasWhatsApp: false,
+        hasSms: false,
+        preferredChannel: 'NONE',
+      };
+    }
+
+    // E-posta kontrolü
+    const emailContact = client.contacts?.find(c => c.type === 'EMAIL' && c.isPrimary) 
+      || client.contacts?.find(c => c.type === 'EMAIL');
+    const email = emailContact?.value || client.email;
+    const hasEmail = !!email;
+
+    // Telefon kontrolü (WhatsApp ve SMS için)
+    const phoneContact = client.contacts?.find(c => c.type === 'MOBILE' && c.isPrimary)
+      || client.contacts?.find(c => c.type === 'MOBILE');
+    const phone = phoneContact?.value || client.phone;
+    const hasPhone = !!phone;
+
+    // WhatsApp kontrolü - telefon varsa WhatsApp da var kabul ediyoruz
+    // Gerçek implementasyonda WhatsApp Business API entegrasyonu gerekir
+    const hasWhatsApp = hasPhone;
+    const hasSms = hasPhone;
+
+    // Tercih edilen kanal belirleme
+    let preferredChannel: 'EMAIL' | 'WHATSAPP' | 'SMS' | 'BOTH' | 'NONE' = 'NONE';
+    
+    if (hasEmail && hasWhatsApp) {
+      preferredChannel = 'BOTH';
+    } else if (hasEmail) {
+      preferredChannel = 'EMAIL';
+    } else if (hasWhatsApp) {
+      preferredChannel = 'WHATSAPP';
+    } else if (hasSms) {
+      preferredChannel = 'SMS';
+    }
+
+    return {
+      hasEmail,
+      hasWhatsApp,
+      hasSms,
+      preferredChannel,
+      email: email || undefined,
+      phone: phone || undefined,
+    };
+  }
+
+  /**
+   * Kanal seçim mantığı
+   * - Sadece email varsa → EMAIL
+   * - Sadece whatsapp varsa → WHATSAPP
+   * - İkisi de varsa → BOTH (önce email, sonra whatsapp)
+   */
+  selectCommunicationChannel(channels: {
+    hasEmail: boolean;
+    hasWhatsApp: boolean;
+    hasSms: boolean;
+  }): 'EMAIL' | 'WHATSAPP' | 'SMS' | 'BOTH' | 'NONE' {
+    const { hasEmail, hasWhatsApp, hasSms } = channels;
+
+    if (hasEmail && hasWhatsApp) {
+      return 'BOTH';
+    } else if (hasEmail) {
+      return 'EMAIL';
+    } else if (hasWhatsApp) {
+      return 'WHATSAPP';
+    } else if (hasSms) {
+      return 'SMS';
+    }
+    
+    return 'NONE';
+  }
+
+  /**
+   * Adres talebi mesajı gönder
+   * Seçilen kanala göre e-posta ve/veya WhatsApp gönderir
+   */
+  async sendAddressRequest(
+    tenantId: string,
+    taskId: string,
+    clientId: string,
+    debtorNames: string[],
+    caseFileNumber: string,
+  ): Promise<{ success: boolean; channelUsed: string; error?: string }> {
+    const channels = await this.getClientContactChannels(clientId);
+    const selectedChannel = this.selectCommunicationChannel(channels);
+
+    if (selectedChannel === 'NONE') {
+      return {
+        success: false,
+        channelUsed: 'NONE',
+        error: 'Müvekkilin iletişim bilgisi bulunamadı',
+      };
+    }
+
+    try {
+      // E-posta gönder
+      if (selectedChannel === 'EMAIL' || selectedChannel === 'BOTH') {
+        const debtorList = debtorNames.map(name => `<li><strong>${name}</strong></li>`).join('');
+        const emailBody = `
+          <p>Sayın Müvekkilimiz,</p>
+          <p><strong>${caseFileNumber}</strong> numaralı dosyanız kapsamında aşağıdaki borçlulara ait güncel adres bilgilerinin tarafımıza iletilmesi gerekmektedir:</p>
+          <ul>${debtorList}</ul>
+          <p><strong>Yanıt süresi:</strong> 3 gün</p>
+          <p>Saygılarımızla</p>
+        `;
+
+        await this.clientNotificationService.sendEmail(tenantId, 'system', {
+          clientId,
+          type: 'ADRES_TALEBI',
+          subject: `${caseFileNumber} - Borçlu Adres Bilgisi Talebi`,
+          body: emailBody,
+        });
+      }
+
+      // WhatsApp gönder (şimdilik simüle - gerçek implementasyon için WhatsApp Business API gerekir)
+      if (selectedChannel === 'WHATSAPP' || selectedChannel === 'BOTH') {
+        // TODO: WhatsApp Business API entegrasyonu
+        this.logger.log(`WhatsApp mesajı gönderilecek: ${channels.phone}`);
+      }
+
+      // Task'ı güncelle - channelUsed kaydet
+      await this.prisma.addressTask.update({
+        where: { id: taskId },
+        data: {
+          channelUsed: selectedChannel,
+          status: 'WAITING_EXTERNAL',
+          lastRunAt: new Date(),
+        },
+      });
+
+      return {
+        success: true,
+        channelUsed: selectedChannel,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        channelUsed: selectedChannel,
+        error: error.message,
+      };
+    }
+  }
+
+  /**
+   * Hatırlatma mesajı gönder
+   */
+  async sendReminder(
+    tenantId: string,
+    taskId: string,
+    clientId: string,
+    debtorNames: string[],
+    caseFileNumber: string,
+    attemptNumber: number,
+  ): Promise<{ success: boolean; channelUsed: string; error?: string }> {
+    const channels = await this.getClientContactChannels(clientId);
+    const selectedChannel = this.selectCommunicationChannel(channels);
+
+    if (selectedChannel === 'NONE') {
+      return {
+        success: false,
+        channelUsed: 'NONE',
+        error: 'Müvekkilin iletişim bilgisi bulunamadı',
+      };
+    }
+
+    try {
+      // E-posta hatırlatması gönder
+      if (selectedChannel === 'EMAIL' || selectedChannel === 'BOTH') {
+        const debtorList = debtorNames.map(name => `<li><strong>${name}</strong></li>`).join('');
+        const emailBody = `
+          <p>Sayın Müvekkilimiz,</p>
+          <p><strong>HATIRLATMA (${attemptNumber}. bildirim)</strong></p>
+          <p><strong>${caseFileNumber}</strong> numaralı dosyanız için daha önce talep ettiğimiz borçlu adres bilgilerini henüz almadık:</p>
+          <ul>${debtorList}</ul>
+          <p>Lütfen en kısa sürede bilgileri iletiniz.</p>
+          <p>Saygılarımızla</p>
+        `;
+
+        await this.clientNotificationService.sendEmail(tenantId, 'system', {
+          clientId,
+          type: 'ADRES_HATIRLATMA',
+          subject: `HATIRLATMA: ${caseFileNumber} - Borçlu Adres Bilgisi`,
+          body: emailBody,
+        });
+      }
+
+      return {
+        success: true,
+        channelUsed: selectedChannel,
+      };
+    } catch (error: any) {
+      return {
+        success: false,
+        channelUsed: selectedChannel,
+        error: error.message,
+      };
+    }
+  }
 }

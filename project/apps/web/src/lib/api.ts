@@ -41,17 +41,29 @@ class ApiClient {
       ...options.headers,
     };
 
-    const response = await fetch(`${API_URL}/api${endpoint}`, {
-      ...options,
-      headers,
-    });
+    try {
+      const response = await fetch(`${API_URL}/api${endpoint}`, {
+        ...options,
+        headers,
+      });
 
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || "Bir hata oluştu");
+      if (!response.ok) {
+        const error = await response.json().catch(() => ({}));
+        throw new Error(error.message || "Bir hata oluştu");
+      }
+
+      return response.json();
+    } catch (err: any) {
+      // Network hatası - API'ye bağlanılamıyor
+      if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
+        throw new Error('API sunucusuna bağlanılamıyor. Lütfen API\'nin çalıştığından emin olun (http://localhost:8080). Terminalde "pnpm run dev" komutunu çalıştırın.');
+      }
+      // ERR_CONNECTION_REFUSED
+      if (err.message?.includes('ERR_CONNECTION_REFUSED') || err.message?.includes('ECONNREFUSED')) {
+        throw new Error('API sunucusu yanıt vermiyor. Lütfen API\'yi yeniden başlatın.');
+      }
+      throw err;
     }
-
-    return response.json();
   }
 
   // Auth
@@ -1830,6 +1842,187 @@ class ApiClient {
     return this.request<any>(`/expense-requests/${id}/receive`, {
       method: 'POST',
       body: JSON.stringify({ paidAmount, receiptDocId }),
+    });
+  }
+
+  // ============================================
+  // NEW Expense Request API Methods
+  // ============================================
+
+  /**
+   * Otomatik açılış masraf seti oluştur
+   */
+  async createOpeningExpenses(caseId: string) {
+    return this.request<any>(`/expense-requests/case/${caseId}/opening`, {
+      method: 'POST',
+    });
+  }
+
+  /**
+   * Aşama bazlı masraf seti oluştur
+   */
+  async createStageExpenses(caseId: string, stageCode: string) {
+    return this.request<any>(`/expense-requests/case/${caseId}/stage/${stageCode}`, {
+      method: 'POST',
+    });
+  }
+
+  /**
+   * Masraf talebi kesinleştir ve gönder
+   */
+  async finalizeExpenseRequest(id: string, channel: string = 'EMAIL') {
+    return this.request<any>(`/expense-requests/${id}/finalize`, {
+      method: 'POST',
+      body: JSON.stringify({ channel }),
+    });
+  }
+
+  /**
+   * Ödeme kaydet
+   */
+  async recordExpensePayment(id: string, payment: { amount: number; paymentDate: string; method: string; reference?: string; notes?: string }) {
+    return this.request<any>(`/expense-requests/${id}/payment`, {
+      method: 'POST',
+      body: JSON.stringify(payment),
+    });
+  }
+
+  /**
+   * Dosya masraf özeti
+   */
+  async getExpenseSummary(caseId: string) {
+    return this.request<{
+      totalRequested: number;
+      totalPaid: number;
+      totalPending: number;
+      requestCount: number;
+      paidCount: number;
+      pendingCount: number;
+      blockingUnpaid: number;
+    }>(`/expense-requests/case/${caseId}/summary`);
+  }
+
+  /**
+   * Dosya masrafları detaylı
+   */
+  async getExpenseDetails(caseId: string) {
+    return this.request<any[]>(`/expense-requests/case/${caseId}/details`);
+  }
+
+  /**
+   * Gate durumu kontrol et
+   */
+  async checkExpenseGate(caseId: string) {
+    return this.request<{
+      isBlocked: boolean;
+      blockingExpenses: any[];
+      totalPending: number;
+      message?: string;
+    }>(`/expense-requests/case/${caseId}/gate-status`);
+  }
+
+  /**
+   * UYAP işlem izni kontrol et
+   */
+  async canPerformUyapAction(caseId: string, actionType: string) {
+    return this.request<{ canPerform: boolean; actionType: string }>(`/expense-requests/case/${caseId}/can-perform/${actionType}`);
+  }
+
+  /**
+   * Gate özeti
+   */
+  async getGateSummary(caseId: string) {
+    return this.request<any>(`/expense-requests/case/${caseId}/gate-summary`);
+  }
+
+  /**
+   * E-posta gönder
+   */
+  async sendExpenseEmail(id: string) {
+    return this.request<any>(`/expense-requests/${id}/send-email`, {
+      method: 'POST',
+    });
+  }
+
+  /**
+   * Hatırlatma gönder
+   */
+  async sendExpenseReminder(id: string) {
+    return this.request<any>(`/expense-requests/${id}/send-reminder`, {
+      method: 'POST',
+    });
+  }
+
+  /**
+   * Vadesi yaklaşan masraf taleplerini getir
+   */
+  async getDueExpenseReminders(days: number = 2) {
+    return this.request<any[]>(`/expense-requests/due-reminders?days=${days}`);
+  }
+
+  /**
+   * Gecikme görevi oluştur
+   */
+  async createExpenseOverdueTask(id: string) {
+    return this.request<any>(`/expense-requests/${id}/create-overdue-task`, {
+      method: 'POST',
+    });
+  }
+
+  /**
+   * Tek masraf için 3 görünüm
+   */
+  async getExpenseThreeView(id: string) {
+    return this.request<{
+      task: any;
+      finance: any;
+      clientRequest: any;
+    }>(`/expense-requests/${id}/three-view`);
+  }
+
+  /**
+   * Dosya için tüm masrafların 3 görünümü
+   */
+  async getExpenseThreeViewForCase(caseId: string) {
+    return this.request<Array<{
+      task: any;
+      finance: any;
+      clientRequest: any;
+    }>>(`/expense-requests/case/${caseId}/three-view`);
+  }
+
+  /**
+   * Yapılacaklar paneli için bekleyen masraf task'ları
+   */
+  async getPendingExpenseTasks() {
+    return this.request<any[]>(`/expense-requests/pending-tasks`);
+  }
+
+  /**
+   * Finans paneli için dosya masrafları
+   */
+  async getExpenseFinanceItems(caseId: string) {
+    return this.request<any[]>(`/expense-requests/case/${caseId}/finance-items`);
+  }
+
+  /**
+   * Müvekkil Talepleri paneli için masraf talepleri
+   */
+  async getClientExpenseRequests(clientId: string) {
+    return this.request<any[]>(`/expense-requests/client/${clientId}/requests`);
+  }
+
+  /**
+   * Masraf hesaplama önizleme
+   */
+  async calculateExpensePreview(data: { principalAmount: number; caseType?: string; stageCode?: string }) {
+    return this.request<{
+      stageCode: string;
+      items: Array<{ itemCode: string; label: string; suggestedAmount: number }>;
+      total: number;
+    }>(`/expense-requests/calculate-preview`, {
+      method: 'POST',
+      body: JSON.stringify(data),
     });
   }
 

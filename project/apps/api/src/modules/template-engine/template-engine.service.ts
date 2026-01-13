@@ -24,6 +24,7 @@ export interface TemplateData {
     name: string; 
     identityNo?: string; 
     taxNo?: string; 
+    taxOffice?: string;
     address?: string;
     city?: string;
     district?: string;
@@ -44,6 +45,7 @@ export interface TemplateData {
     name: string; 
     identityNo?: string; 
     taxNo?: string; 
+    taxOffice?: string;
     address?: string; 
     role?: string;
     city?: string;
@@ -713,6 +715,12 @@ export class TemplateEngineService {
       content = content.replace(/\{\{#if creditor\.identityNo\}\}([\s\S]*?)\{\{\/if\}\}/g, '$1');
     } else {
       content = content.replace(/\{\{#if creditor\.identityNo\}\}[\s\S]*?\{\{\/if\}\}/g, '');
+    }
+    // creditor.taxNo kontrolü
+    if (data.creditors.length > 0 && data.creditors[0].taxNo) {
+      content = content.replace(/\{\{#if creditor\.taxNo\}\}([\s\S]*?)\{\{\/if\}\}/g, '$1');
+    } else {
+      content = content.replace(/\{\{#if creditor\.taxNo\}\}[\s\S]*?\{\{\/if\}\}/g, '');
     }
     if (data.lawyers.length > 0 && data.lawyers[0].name) {
       content = content.replace(/\{\{#if lawyer\.name\}\}([\s\S]*?)\{\{\/if\}\}/g, '$1');
@@ -1464,16 +1472,16 @@ Borclu: ............................    Yediemin: ..............................
    * Takip Talebi'ni PDF olarak oluştur
    */
   async generateTakipTalebiPdf(data: TemplateData): Promise<Buffer> {
-    const doc = this.generateTakipTalebi(data);
-    return this.textToPdf(doc.content, doc.title);
+    // Resmi formatlı PDF belgesi oluştur
+    return this.generateTakipTalebiPdfFormatted(data);
   }
 
   /**
    * Takip Talebi'ni Word (DOCX) olarak oluştur
    */
   async generateTakipTalebiWord(data: TemplateData): Promise<Buffer> {
-    const doc = this.generateTakipTalebi(data);
-    return this.textToWord(doc.content, doc.title);
+    // Resmi formatlı Word belgesi oluştur
+    return this.generateTakipTalebiWordFormatted(data);
   }
 
   /**
@@ -1560,6 +1568,197 @@ Borclu: ............................    Yediemin: ..............................
       documentTypeMap[documentType] || 'TAKIP_TALEBI',
       documentCodeMap[documentType] || 'ORNEK_1'
     );
+  }
+
+  // ============================================
+  // XML EXPORT METODLARI
+  // ============================================
+
+  /**
+   * Takip Talebi'ni XML formatında oluştur
+   */
+  generateTakipTalebiXml(data: TemplateData): string {
+    return this.createXmlDocument(data, 'TAKIP_TALEBI', 'ORNEK_1');
+  }
+
+  /**
+   * Case ID'den XML oluştur
+   */
+  async generateXmlFromCase(caseId: string, documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri'): Promise<string> {
+    const caseData = await this.getCaseData(caseId);
+    
+    const documentCodeMap: Record<string, string> = {
+      'takip-talebi': 'ORNEK_1',
+      'odeme-emri': 'ORNEK_7',
+      'icra-emri': 'ORNEK_4',
+    };
+    
+    const documentTypeMap: Record<string, string> = {
+      'takip-talebi': 'TAKIP_TALEBI',
+      'odeme-emri': 'ODEME_EMRI',
+      'icra-emri': 'ICRA_EMRI',
+    };
+    
+    return this.createXmlDocument(
+      caseData, 
+      documentTypeMap[documentType] || 'TAKIP_TALEBI',
+      documentCodeMap[documentType] || 'ORNEK_1'
+    );
+  }
+
+  /**
+   * XML belgesi oluştur - UYAP uyumlu format
+   */
+  private createXmlDocument(data: TemplateData, documentType: string, documentCode: string): string {
+    const escapeXml = (str: string | undefined | null): string => {
+      if (!str) return '';
+      return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&apos;');
+    };
+
+    const creditor = data.creditors[0] || { name: '', address: '', identityNo: '', taxNo: '' };
+    const lawyer = data.lawyers[0] || { name: '', barNumber: '', barCity: '', address: '' };
+
+    let xml = `<?xml version="1.0" encoding="UTF-8"?>
+<TakipTalebi version="1.0" documentType="${documentType}" documentCode="${documentCode}">
+  <Metadata>
+    <FileNumber>${escapeXml(data.fileNumber)}</FileNumber>
+    <FilingDate>${escapeXml(data.filingDate)}</FilingDate>
+    <CaseType>${escapeXml(data.caseType)}</CaseType>
+    <SubCategory>${escapeXml(data.subCategory)}</SubCategory>
+    <ExecutionPath>${escapeXml(data.executionPath)}</ExecutionPath>
+    <CreatedAt>${new Date().toISOString()}</CreatedAt>
+  </Metadata>
+  
+  <ExecutionOffice>
+    <Name>${escapeXml(data.executionOffice.name)}</Name>
+    <City>${escapeXml(data.executionOffice.city)}</City>
+    <UyapCode>${escapeXml(data.executionOffice.uyapCode)}</UyapCode>
+  </ExecutionOffice>
+  
+  <Creditors>`;
+
+    for (const c of data.creditors) {
+      xml += `
+    <Creditor type="${c.type}">
+      <Name>${escapeXml(c.name)}</Name>
+      <IdentityNo>${escapeXml(c.identityNo)}</IdentityNo>
+      <TaxNo>${escapeXml(c.taxNo)}</TaxNo>
+      <Address>${escapeXml(c.address)}</Address>
+      <City>${escapeXml(c.city)}</City>
+      <District>${escapeXml(c.district)}</District>
+    </Creditor>`;
+    }
+
+    xml += `
+  </Creditors>
+  
+  <Lawyers>`;
+
+    for (const l of data.lawyers) {
+      xml += `
+    <Lawyer>
+      <Name>${escapeXml(l.name)}</Name>
+      <BarNumber>${escapeXml(l.barNumber)}</BarNumber>
+      <BarCity>${escapeXml(l.barCity)}</BarCity>
+      <Address>${escapeXml(l.address)}</Address>
+      <Phone>${escapeXml(l.phone)}</Phone>
+      <IBAN>${escapeXml(l.iban)}</IBAN>
+    </Lawyer>`;
+    }
+
+    xml += `
+  </Lawyers>
+  
+  <Debtors>`;
+
+    for (const d of data.debtors) {
+      xml += `
+    <Debtor type="${d.type}" role="${escapeXml(d.role)}">
+      <Name>${escapeXml(d.name)}</Name>
+      <IdentityNo>${escapeXml(d.identityNo)}</IdentityNo>
+      <TaxNo>${escapeXml(d.taxNo)}</TaxNo>
+      <Address>${escapeXml(d.address)}</Address>
+      <City>${escapeXml(d.city)}</City>
+      <District>${escapeXml(d.district)}</District>
+    </Debtor>`;
+    }
+
+    xml += `
+  </Debtors>
+  
+  <ClaimItems>`;
+
+    for (const item of data.claimItems) {
+      xml += `
+    <ClaimItem>
+      <Type>${escapeXml(item.type)}</Type>
+      <Description>${escapeXml(item.description)}</Description>
+      <Amount>${item.amount}</Amount>
+      <Currency>${escapeXml(item.currency)}</Currency>
+      <DueDate>${escapeXml(item.dueDate)}</DueDate>
+      <InterestType>${escapeXml(item.interestType)}</InterestType>
+    </ClaimItem>`;
+    }
+
+    xml += `
+  </ClaimItems>
+  
+  <Totals>
+    <Principal>${data.totals.principal}</Principal>
+    <Interest>${data.totals.interest}</Interest>
+    <Fees>${data.totals.fees}</Fees>
+    <Total>${data.totals.total}</Total>
+    <Currency>${escapeXml(data.totals.currency)}</Currency>
+  </Totals>
+  
+  <InterestInfo>
+    <Type>${escapeXml(data.interestInfo.type)}</Type>
+    <Rate>${data.interestInfo.rate || 0}</Rate>
+    <Description>${escapeXml(data.interestInfo.description)}</Description>
+    <VariableRate>${data.interestInfo.variableRate}</VariableRate>
+  </InterestInfo>`;
+
+    // Çek/Senet bilgisi varsa ekle
+    if (data.instrumentInfo) {
+      xml += `
+  
+  <InstrumentInfo type="${escapeXml(data.instrumentInfo.type)}">
+    <SerialNo>${escapeXml(data.instrumentInfo.serialNo)}</SerialNo>
+    <InstrumentNo>${escapeXml(data.instrumentInfo.instrumentNo)}</InstrumentNo>
+    <IssueDate>${escapeXml(data.instrumentInfo.issueDate)}</IssueDate>
+    <DueDate>${escapeXml(data.instrumentInfo.dueDate)}</DueDate>
+    <PresentationDate>${escapeXml(data.instrumentInfo.presentationDate)}</PresentationDate>
+    <BankName>${escapeXml(data.instrumentInfo.bankName)}</BankName>
+    <BranchName>${escapeXml(data.instrumentInfo.branchName)}</BranchName>
+    <Amount>${escapeXml(data.instrumentInfo.amount)}</Amount>
+    <Currency>${escapeXml(data.instrumentInfo.currency)}</Currency>
+    <DrawerName>${escapeXml(data.instrumentInfo.drawerName)}</DrawerName>
+    <IssuePlace>${escapeXml(data.instrumentInfo.issuePlace)}</IssuePlace>
+  </InstrumentInfo>`;
+    }
+
+    // İlam bilgisi varsa ekle
+    if (data.courtInfo) {
+      xml += `
+  
+  <CourtInfo>
+    <CourtName>${escapeXml(data.courtInfo.name)}</CourtName>
+    <CaseNumber>${escapeXml(data.courtInfo.caseNumber)}</CaseNumber>
+    <DecisionNumber>${escapeXml(data.courtInfo.decisionNumber)}</DecisionNumber>
+    <DecisionDate>${escapeXml(data.courtInfo.decisionDate)}</DecisionDate>
+    <Summary>${escapeXml(data.courtInfo.summary)}</Summary>
+  </CourtInfo>`;
+    }
+
+    xml += `
+</TakipTalebi>`;
+
+    return xml;
   }
 
   /**
@@ -1924,15 +2123,16 @@ Borclu: ............................    Yediemin: ..............................
    */
   private async generateTakipTalebiWordFormatted(data: TemplateData): Promise<Buffer> {
     // Alacaklı bilgisi - tam format
-    const creditor = data.creditors[0] || { name: '', address: '', identityNo: '', taxNo: '', city: '', district: '' };
+    const creditor = data.creditors[0] || { name: '', address: '', identityNo: '', taxNo: '', taxOffice: '', city: '', district: '' };
     
     // Avukat bilgisi - tam iletişim bilgileri
     const lawyer = data.lawyers[0] || { name: '', address: '', phone: '', fax: '', bankName: '', branchName: '', iban: '', barNumber: '', barCity: '' };
     
-    // Alacaklı metni oluştur - BESA GIDA formatında
+    // Alacaklı metni oluştur - UYAP formatında
     let creditorText = `${creditor.name}`;
     if (creditor.taxNo) {
-      creditorText += ` (Vergi Dairesi: ${creditor.district || '...'} Vergi Numarası: ${creditor.taxNo})`;
+      const vergiDairesi = creditor.taxOffice || creditor.district || '...';
+      creditorText += ` (Vergi Dairesi: ${vergiDairesi} Vergi Numarası: ${creditor.taxNo})`;
     } else if (creditor.identityNo) {
       creditorText += ` (T.C. Kimlik No: ${creditor.identityNo})`;
     }
@@ -1944,7 +2144,7 @@ Borclu: ............................    Yediemin: ..............................
     
     // Avukat bilgisi ekle - tam format
     if (lawyer.name) {
-      creditorText += `\n\n${lawyer.name}`;
+      creditorText += `\n\nAv.${lawyer.name}`;
       // Avukat adresi
       if (lawyer.address) {
         creditorText += `\n${lawyer.address}`;
@@ -1966,11 +2166,12 @@ Borclu: ............................    Yediemin: ..............................
       }
     }
     
-    // Borçlu bilgileri - tam format
-    const debtorLines = data.debtors.map(d => {
-      let line = `${d.name}`;
+    // Borçlu bilgileri - tam format (numaralı liste)
+    const debtorLines = data.debtors.map((d, index) => {
+      let line = `${index + 1}-${d.name}`;
       if (d.taxNo) {
-        line += ` (Vergi Dairesi: ${d.district || '...'} Vergi No: ${d.taxNo})`;
+        const vergiDairesi = d.taxOffice || d.district || '...';
+        line += ` (Vergi Dairesi: ${vergiDairesi} Vergi No: ${d.taxNo})`;
       } else if (d.identityNo) {
         line += ` (T.C. Kimlik No: ${d.identityNo})`;
       }

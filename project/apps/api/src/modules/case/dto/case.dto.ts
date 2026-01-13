@@ -491,6 +491,11 @@ export class CreateCaseDto {
   @IsString()
   @IsOptional()
   muvekkilNotu?: string;
+
+  // Masraf mail gönderimi
+  @IsBoolean()
+  @IsOptional()
+  sendExpenseEmail?: boolean;
 }
 
 export class UpdateCaseDto {

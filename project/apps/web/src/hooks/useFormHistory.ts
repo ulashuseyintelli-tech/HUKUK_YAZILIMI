@@ -1,16 +1,23 @@
-"use client";
+'use client';
 
-import { useState, useEffect, useCallback } from "react";
-import { FormUsageHistory } from "@/types/form-metadata";
+import { useState, useEffect, useCallback } from 'react';
+import { FormUsageHistory } from '@/types/form-metadata';
 
-const STORAGE_KEY = "form_usage_history";
+const STORAGE_KEY = 'form-usage-history';
 const MAX_RECENT_FORMS = 5;
 
-export function useFormHistory() {
-  const [history, setHistory] = useState<FormUsageHistory[]>([]);
-  const [isLoaded, setIsLoaded] = useState(false);
+interface UseFormHistoryReturn {
+  history: FormUsageHistory[];
+  frequentForms: FormUsageHistory[];
+  recentForms: FormUsageHistory[];
+  recordUsage: (formCode: string) => void;
+  clearHistory: () => void;
+}
 
-  // Load history from localStorage on mount
+export function useFormHistory(): UseFormHistoryReturn {
+  const [history, setHistory] = useState<FormUsageHistory[]>([]);
+
+  // Load from localStorage on mount
   useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
@@ -18,92 +25,60 @@ export function useFormHistory() {
         setHistory(JSON.parse(stored));
       }
     } catch (error) {
-      console.error("Failed to load form history:", error);
+      console.error('Failed to load form history:', error);
     }
-    setIsLoaded(true);
   }, []);
 
-  // Save history to localStorage
-  const saveHistory = useCallback((newHistory: FormUsageHistory[]) => {
+  // Save to localStorage when history changes
+  useEffect(() => {
     try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(newHistory));
-      setHistory(newHistory);
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(history));
     } catch (error) {
-      console.error("Failed to save form history:", error);
+      console.error('Failed to save form history:', error);
     }
-  }, []);
+  }, [history]);
 
   // Record form usage
-  const recordUsage = useCallback(
-    (formCode: string) => {
+  const recordUsage = useCallback((formCode: string) => {
+    setHistory((prev) => {
+      const existing = prev.find((h) => h.formCode === formCode);
       const now = new Date().toISOString();
-      const existingIndex = history.findIndex((h) => h.formCode === formCode);
 
-      let newHistory: FormUsageHistory[];
-
-      if (existingIndex >= 0) {
+      if (existing) {
         // Update existing entry
-        newHistory = [...history];
-        newHistory[existingIndex] = {
-          ...newHistory[existingIndex],
-          usageCount: newHistory[existingIndex].usageCount + 1,
-          lastUsedAt: now,
-        };
+        return prev.map((h) =>
+          h.formCode === formCode
+            ? { ...h, usageCount: h.usageCount + 1, lastUsedAt: now }
+            : h
+        );
       } else {
         // Add new entry
-        newHistory = [
-          ...history,
-          {
-            formCode,
-            usageCount: 1,
-            lastUsedAt: now,
-          },
-        ];
+        return [...prev, { formCode, usageCount: 1, lastUsedAt: now }];
       }
-
-      saveHistory(newHistory);
-    },
-    [history, saveHistory]
-  );
-
-  // Get recent forms (sorted by last used)
-  const getRecentForms = useCallback((): FormUsageHistory[] => {
-    return [...history]
-      .sort((a, b) => new Date(b.lastUsedAt).getTime() - new Date(a.lastUsedAt).getTime())
-      .slice(0, MAX_RECENT_FORMS);
-  }, [history]);
-
-  // Get most used forms (sorted by usage count)
-  const getMostUsedForms = useCallback((): FormUsageHistory[] => {
-    return [...history].sort((a, b) => b.usageCount - a.usageCount).slice(0, MAX_RECENT_FORMS);
-  }, [history]);
-
-  // Get usage count for a specific form
-  const getUsageCount = useCallback(
-    (formCode: string): number => {
-      const entry = history.find((h) => h.formCode === formCode);
-      return entry?.usageCount || 0;
-    },
-    [history]
-  );
-
-  // Clear history
-  const clearHistory = useCallback(() => {
-    try {
-      localStorage.removeItem(STORAGE_KEY);
-      setHistory([]);
-    } catch (error) {
-      console.error("Failed to clear form history:", error);
-    }
+    });
   }, []);
+
+  // Clear all history
+  const clearHistory = useCallback(() => {
+    setHistory([]);
+    localStorage.removeItem(STORAGE_KEY);
+  }, []);
+
+  // Get frequent forms (sorted by usage count, top 3)
+  const frequentForms = [...history]
+    .sort((a, b) => b.usageCount - a.usageCount)
+    .slice(0, 3);
+
+  // Get recent forms (sorted by last used, top 5)
+  const recentForms = [...history]
+    .sort((a, b) => new Date(b.lastUsedAt).getTime() - new Date(a.lastUsedAt).getTime())
+    .slice(0, MAX_RECENT_FORMS);
 
   return {
     history,
-    isLoaded,
+    frequentForms,
+    recentForms,
     recordUsage,
-    getRecentForms,
-    getMostUsedForms,
-    getUsageCount,
     clearHistory,
   };
 }

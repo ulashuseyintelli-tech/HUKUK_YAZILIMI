@@ -22,7 +22,14 @@ export default function LoginPage() {
     try {
       await login(email, password);
     } catch (err: any) {
-      setError(err.message || "Giriş başarısız. Lütfen bilgilerinizi kontrol edin.");
+      // API bağlantı hatası için özel mesaj
+      if (err.message?.includes('API sunucusuna bağlanılamıyor') || err.message?.includes('Failed to fetch')) {
+        setError("API sunucusuna bağlanılamıyor. Lütfen API'nin çalıştığından emin olun. Terminalde 'pnpm run dev' komutunu çalıştırın.");
+      } else if (err.message?.includes('API sunucusu yanıt vermiyor')) {
+        setError("API sunucusu yanıt vermiyor. Lütfen API'yi yeniden başlatın.");
+      } else {
+        setError(err.message || "Giriş başarısız. Lütfen bilgilerinizi kontrol edin.");
+      }
     } finally {
       setIsLoading(false);
     }

@@ -810,6 +810,14 @@ export default function CaseDetailPage() {
   const [addressNotes, setAddressNotes] = useState<any[]>([]);
   const [loadingAddressTasks, setLoadingAddressTasks] = useState(false);
   
+  // Expense Three-View State (OperationDeck entegrasyonu)
+  const [expenseThreeViewData, setExpenseThreeViewData] = useState<Array<{
+    task: any;
+    finance: any;
+    clientRequest: any;
+  }>>([]);
+  const [loadingExpenseData, setLoadingExpenseData] = useState(false);
+  
   // Fix highlight state
   const [highlightedSection, setHighlightedSection] = useState<string | null>(null);
   
@@ -970,6 +978,21 @@ export default function CaseDetailPage() {
     }
   }, [params.id]);
 
+  // Fetch expense three-view data for OperationDeck
+  const fetchExpenseThreeViewData = useCallback(async () => {
+    if (!params.id) return;
+    try {
+      setLoadingExpenseData(true);
+      const data = await api.getExpenseThreeViewForCase(params.id as string);
+      setExpenseThreeViewData(data || []);
+    } catch (error) {
+      console.error("Masraf verileri yüklenemedi:", error);
+      setExpenseThreeViewData([]);
+    } finally {
+      setLoadingExpenseData(false);
+    }
+  }, [params.id]);
+
   // Fetch debtor detail for drawer
   const fetchDebtorDetail = useCallback(async (caseDebtorId: string) => {
     if (!params.id) return;
@@ -1023,6 +1046,13 @@ export default function CaseDetailPage() {
       fetchAddressTasksAndNotes();
     }
   }, [params.id, loading, fetchAddressTasksAndNotes]);
+
+  // Fetch expense three-view data when case is loaded
+  useEffect(() => {
+    if (params.id && !loading) {
+      fetchExpenseThreeViewData();
+    }
+  }, [params.id, loading, fetchExpenseThreeViewData]);
 
   const dayCount = useMemo(() => {
     if (!caseData?.caseDate) return 0;
@@ -2340,17 +2370,29 @@ export default function CaseDetailPage() {
             <div className="flex-1 overflow-hidden flex flex-col bg-white border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
               <OperationDeck
                 caseId={caseData.id}
-                // Müvekkil Talepleri - AddressAuditLog'dan CLIENT_NOTIFICATION_SENT olanlar
-                muvekkilTalepleri={addressNotes
-                  .filter((note: any) => note.action === 'CLIENT_NOTIFICATION_SENT' || note.action === 'ADDRESS_WORKFLOW_TRIGGERED')
-                  .map((note: any) => ({
-                    id: note.id,
-                    type: 'EVRAK_TALEBI' as const, // Adres bilgisi talebi
-                    content: note.content || 'Müvekkile adres bilgisi talebi gönderildi',
-                    status: 'BEKLIYOR' as const, // Henüz yanıt gelmedi
-                    createdAt: note.createdAt,
-                    createdBy: note.createdBy,
-                  }))}
+                // Müvekkil Talepleri - AddressAuditLog + Expense Requests
+                muvekkilTalepleri={[
+                  // Adres talepleri
+                  ...addressNotes
+                    .filter((note: any) => note.action === 'CLIENT_NOTIFICATION_SENT' || note.action === 'ADDRESS_WORKFLOW_TRIGGERED')
+                    .map((note: any) => ({
+                      id: note.id,
+                      type: 'EVRAK_TALEBI' as const,
+                      content: note.content || 'Müvekkile adres bilgisi talebi gönderildi',
+                      status: 'BEKLIYOR' as const,
+                      createdAt: note.createdAt,
+                      createdBy: note.createdBy,
+                    })),
+                  // Masraf talepleri (expense three-view'dan)
+                  ...expenseThreeViewData.map((item) => ({
+                    id: item.clientRequest.id,
+                    type: 'MASRAF_TALEBI' as const,
+                    content: item.clientRequest.content,
+                    amount: item.clientRequest.amount,
+                    status: item.clientRequest.status === 'TAMAMLANDI' ? 'TAMAMLANDI' as const : 'BEKLIYOR' as const,
+                    createdAt: item.clientRequest.createdAt,
+                  })),
+                ]}
                 // İcra Notları - Diğer sistem notları
                 icraNotlar={addressNotes
                   .filter((note: any) => note.action !== 'CLIENT_NOTIFICATION_SENT' && note.action !== 'ADDRESS_WORKFLOW_TRIGGERED')
@@ -2363,6 +2405,21 @@ export default function CaseDetailPage() {
                 tasks={[
                   // Adres görevleri (API'den)
                   ...addressTasks,
+                  // Masraf görevleri (expense three-view'dan)
+                  ...expenseThreeViewData
+                    .filter((item) => item.task.status !== 'YAPILDI')
+                    .map((item) => ({
+                      id: item.task.id,
+                      title: item.task.title,
+                      description: item.task.description,
+                      source: 'SISTEM' as const,
+                      basis: 'MASRAF_TALEBI',
+                      taskType: 'EXPENSE_REQUEST',
+                      status: item.task.status,
+                      dueDate: item.task.dueDate,
+                      priority: item.task.priority,
+                      category: 'SURE_BAGLI' as const,
+                    })),
                   // Örnek sistem önerisi - workflowStage'e göre
                   ...(caseData.workflowStage === 'ODEME_EMRI' ? [{
                     id: 'sys-1',
@@ -2376,12 +2433,25 @@ export default function CaseDetailPage() {
                   }] : []),
                 ]}
                 financeItems={[
+                  // Tahsilatlar
                   ...collections.filter((c: any) => c.status !== 'CANCELLED').map((c: any) => ({
                     id: c.id,
                     type: 'TAHSILAT' as const,
                     amount: Number(c.amount || 0),
                     date: c.date || c.createdAt,
                     description: c.description || 'Tahsilat',
+                  })),
+                  // Masraf talepleri (expense three-view'dan)
+                  ...expenseThreeViewData.map((item) => ({
+                    id: item.finance.id,
+                    type: 'MASRAF_TALEP' as const,
+                    amount: item.finance.totalAmount,
+                    date: item.finance.date,
+                    description: item.finance.description,
+                    status: item.finance.status,
+                    paidAmount: item.finance.paidAmount,
+                    remainingAmount: item.finance.remainingAmount,
+                    items: item.finance.items,
                   })),
                 ]}
                 uyapQueries={[]}

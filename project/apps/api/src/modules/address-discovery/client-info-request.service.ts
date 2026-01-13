@@ -121,6 +121,47 @@ export class ClientInfoRequestService {
       this.logger.warn(`E-posta gönderilemedi: ${emailResult.errorMessage}`);
     } else {
       this.logger.log(`Müvekkil bilgi talebi gönderildi: ${emailTo}`);
+      
+      // Müvekkil Bildirimleri'ne kayıt ekle
+      try {
+        const now = new Date();
+        
+        await this.prisma.clientNotification.create({
+          data: {
+            tenantId,
+            clientId: dto.clientId,
+            caseId: dto.caseId,
+            channel: 'EMAIL',
+            type: 'ADRES_TALEP',
+            subject: emailSubject,
+            body: `📬 Adres bilgisi talep e-postası gönderildi.\n\nBorçlu: ${debtor?.name || 'Belirtilmemiş'}\nAlıcı: ${emailTo}`,
+            status: 'SENT',
+            sentAt: now,
+            sentById: 'system',
+          },
+        });
+        
+        // AddressAuditLog'a da kayıt ekle (UI'da görünmesi için)
+        await this.prisma.addressAuditLog.create({
+          data: {
+            tenantId,
+            caseId: dto.caseId,
+            debtorId: dto.debtorId,
+            action: 'CLIENT_NOTIFICATION_SENT',
+            details: {
+              emailTo,
+              debtorName: debtor?.name,
+              clientName: client.displayName,
+            },
+            showInNotes: true,
+            noteText: `📬 Müvekkile adres bilgisi talebi gönderildi\nBorçlu: ${debtor?.name || 'Belirtilmemiş'}\nAlıcı: ${emailTo}`,
+          },
+        });
+        
+        this.logger.log(`Müvekkil bildirimi oluşturuldu: ${dto.clientId}`);
+      } catch (notifError: any) {
+        this.logger.error(`Müvekkil bildirimi oluşturulamadı: ${notifError.message}`);
+      }
     }
 
     return {

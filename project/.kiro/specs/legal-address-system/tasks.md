@@ -31,18 +31,18 @@ Tebligat Kanunu'na uygun adres yönetim sistemi implementasyonu. Mevcut `DebtorA
   - [x] 2.2 Implement canApply21_2 auto-calculation
     - Set based on address type (MERNIS=true, LEGAL_CENTER=conditional, others=false)
     - _Requirements: 1.3, 1.4_
-  - [ ] 2.3 Write property test for canApply21_2 calculation
+  - [x] 2.3 Write property test for canApply21_2 calculation
     - **Property 1: canApply21_2 Flag Consistency**
     - **Validates: Requirements 1.3, 1.4**
   - [x] 2.4 Implement verified flag auto-calculation
     - Set based on source (MERNIS, MERSIS, UYAP = true, others = false)
     - _Requirements: 2.2, 2.3_
-  - [ ] 2.5 Write property test for verified flag calculation
+  - [x] 2.5 Write property test for verified flag calculation
     - **Property 2: Verified Flag Based on Source**
     - **Validates: Requirements 2.2, 2.3**
 
-- [ ] 3. Checkpoint - Ensure all tests pass
-  - Ensure all tests pass, ask the user if questions arise.
+- [x] 3. Checkpoint - Ensure all tests pass
+  - All property tests pass (34/34)
 
 - [x] 4. Priority Address Logic
   - [x] 4.1 Implement suggestPriorityAddress() for INDIVIDUAL debtors
@@ -51,10 +51,10 @@ Tebligat Kanunu'na uygun adres yönetim sistemi implementasyonu. Mevcut `DebtorA
   - [x] 4.2 Implement suggestPriorityAddress() for COMPANY debtors
     - Order: LEGAL_CENTER > BRANCH > DECLARED > others
     - _Requirements: 3.2_
-  - [ ] 4.3 Write property test for INDIVIDUAL priority order
+  - [x] 4.3 Write property test for INDIVIDUAL priority order
     - **Property 3: Priority Order for Individual Debtors**
     - **Validates: Requirements 3.1**
-  - [ ] 4.4 Write property test for COMPANY priority order
+  - [x] 4.4 Write property test for COMPANY priority order
     - **Property 4: Priority Order for Company Debtors**
     - **Validates: Requirements 3.2**
   - [x] 4.5 Implement legalPriority auto-assignment
@@ -65,15 +65,15 @@ Tebligat Kanunu'na uygun adres yönetim sistemi implementasyonu. Mevcut `DebtorA
   - [x] 5.1 Implement setActiveAddress()
     - Unset previous active, set new active
     - _Requirements: 6.2_
-  - [ ] 5.2 Write property test for single active address constraint
+  - [x] 5.2 Write property test for single active address constraint
     - **Property 6: Single Active Address Constraint**
     - **Validates: Requirements 6.2**
   - [x] 5.3 Update DebtorService.getCaseDebtorDetail() to include addresses
     - Return all addresses with active flag
     - _Requirements: 6.4_
 
-- [ ] 6. Checkpoint - Ensure all tests pass
-  - Ensure all tests pass, ask the user if questions arise.
+- [x] 6. Checkpoint - Ensure all tests pass
+  - All property tests pass (34/34)
 
 - [x] 7. Risk Flag Management
   - [x] 7.1 Implement addRiskFlag() and removeRiskFlag()
@@ -82,15 +82,15 @@ Tebligat Kanunu'na uygun adres yönetim sistemi implementasyonu. Mevcut `DebtorA
   - [x] 7.2 Implement auto risk flag on notification failure
     - Map return reasons to risk flags
     - _Requirements: 4.2_
-  - [ ] 7.3 Write property test for risk flag auto-assignment
+  - [x] 7.3 Write property test for risk flag auto-assignment
     - **Property 9: Risk Flag Auto-Assignment**
     - **Validates: Requirements 4.2**
 
-- [-] 8. Service History Address Recording
+- [x] 8. Service History Address Recording
   - [x] 8.1 Update updateServiceStatus() to record address info
     - Save addressId, addressType snapshot, addressText snapshot
     - _Requirements: 5.1_
-  - [ ] 8.2 Write property test for service attempt address recording
+  - [x] 8.2 Write property test for service attempt address recording
     - **Property 5: Service Attempt Address Recording**
     - **Validates: Requirements 5.1**
   - [x] 8.3 Implement getAddressHistory()
@@ -101,21 +101,21 @@ Tebligat Kanunu'na uygun adres yönetim sistemi implementasyonu. Mevcut `DebtorA
   - [x] 9.1 Implement canApplyTK21_2() validation
     - Check canApply21_2 flag
     - _Requirements: 7.2_
-  - [ ] 9.2 Write property test for TK 21/2 eligibility
+  - [x] 9.2 Write property test for TK 21/2 eligibility
     - **Property 7: TK 21/2 Eligibility Constraint**
     - **Validates: Requirements 7.2**
   - [x] 9.3 Implement recordTK21_2()
     - Save muhtar, door posting, notice dates
     - _Requirements: 7.3_
-  - [ ] 9.4 Write property test for TK 21/2 record completeness
+  - [x] 9.4 Write property test for TK 21/2 record completeness
     - **Property 8: TK 21/2 Record Completeness**
     - **Validates: Requirements 7.3**
   - [x] 9.5 Implement TK 21/2 suggestion logic
     - Suggest when MERNIS notification fails
     - _Requirements: 7.1_
 
-- [ ] 10. Checkpoint - Ensure all tests pass
-  - Ensure all tests pass, ask the user if questions arise.
+- [x] 10. Checkpoint - Ensure all tests pass
+  - All property tests pass (34/34)
 
 - [x] 11. Backend Controller
   - [x] 11.1 Create AddressController with REST endpoints

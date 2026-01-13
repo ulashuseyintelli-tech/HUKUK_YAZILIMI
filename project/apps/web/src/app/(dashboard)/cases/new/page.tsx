@@ -179,7 +179,7 @@ interface Lookups { takipTuru: TakipTuruItem[]; asama: LookupItem[]; risk: Looku
 
 export default function NewCasePage() {
   const router = useRouter();
-  const { recordUsage, getRecentForms } = useFormHistory();
+  const { recordUsage, recentForms, frequentForms } = useFormHistory();
   const { settings, loaded: settingsLoaded } = useUserSettings();
   const { errors: validationErrors, warnings: validationWarnings, validateCaseCreation, clearValidation, hasErrors: hasValidationErrors } = usePreSubmitValidation();
   const { checkLimitation, result: limitationResult, logRisk } = useLimitationCheck();
@@ -248,6 +248,10 @@ export default function NewCasePage() {
   
   // Vekalet kontrolü state'leri
   const [poaWarnings, setPoaWarnings] = useState<{ clientId: string; clientName: string; lawyerId: string; lawyerName: string; message: string; }[]>([]);
+  
+  // Masraf mail onay modalı
+  const [showExpenseConfirmModal, setShowExpenseConfirmModal] = useState(false);
+  const [pendingSubmit, setPendingSubmit] = useState(false);
   const [checkingPoa, setCheckingPoa] = useState(false);
   const [users, setUsers] = useState<{ id: string; name: string; surname: string; }[]>([]);
   const [draftLoaded, setDraftLoaded] = useState(false);
@@ -907,7 +911,18 @@ export default function NewCasePage() {
   };
 
   const mapCategoryToCaseType = (category: string | undefined): string => {
-    const mapping: Record<string, string> = { GENEL_ICRA: "GENERAL_EXECUTION", KAMBIYO: "CHECK", IPOTEK_REHIN: "MORTGAGE", IFLAS: "BANKRUPTCY", KIRA: "RENTAL" };
+    // KAMBIYO kategorisi için subCategory'ye göre CHECK veya BOND belirle
+    if (category === "KAMBIYO") {
+      // subCategory: CEK -> CHECK, SENET -> BOND
+      if (caseData.subCategory === "CEK") return "CHECK";
+      if (caseData.subCategory === "SENET") return "BOND";
+      // Varsayılan: dues'dan belirle
+      const firstDue = dues[0];
+      if (firstDue?.description?.toLowerCase().includes("çek")) return "CHECK";
+      if (firstDue?.description?.toLowerCase().includes("senet") || firstDue?.description?.toLowerCase().includes("bono")) return "BOND";
+      return "CHECK"; // Varsayılan
+    }
+    const mapping: Record<string, string> = { GENEL_ICRA: "GENERAL_EXECUTION", IPOTEK_REHIN: "MORTGAGE", IFLAS: "BANKRUPTCY", KIRA: "RENTAL" };
     return mapping[category || ""] || "GENERAL_EXECUTION";
   };
 
@@ -923,7 +938,8 @@ export default function NewCasePage() {
     }
   };
 
-  const handleSubmit = async () => {
+  // Takip oluştur butonuna basınca - önce validasyon, sonra modal
+  const handleSubmitClick = () => {
     setError(""); 
     
     // Backend'e gönderilecek subCategory değerini hesapla
@@ -953,7 +969,24 @@ export default function NewCasePage() {
       setShowValidationPanel(true);
     }
 
+    // Müvekkil seçilmişse masraf mail modalını göster
+    const hasClient = creditors.some(c => c.name);
+    if (hasClient) {
+      setShowExpenseConfirmModal(true);
+    } else {
+      // Müvekkil yoksa direkt oluştur
+      doCreateCase(false);
+    }
+  };
+
+  // Gerçek takip oluşturma fonksiyonu
+  const doCreateCase = async (sendExpenseEmail: boolean) => {
+    setShowExpenseConfirmModal(false);
     setLoading(true);
+    
+    // Backend'e gönderilecek subCategory değerini hesapla
+    const backendSubCategory = mapSubCategoryToBackend(caseData.subCategory);
+    
     try {
       const response = await api.createCase({
         fileNumber: caseData.fileNumber, executionFileNumber: caseData.executionFileNumber || undefined,
@@ -971,6 +1004,8 @@ export default function NewCasePage() {
         durumEtiketiId: caseData.durumEtiketiId || undefined, mahiyetTipiId: caseData.mahiyetTipiId || undefined,
         mahiyetKodu: caseData.mahiyetKodu || undefined, sorumluPersonelId: caseData.sorumluPersonelId || undefined,
         dahiliNot: caseData.dahiliNot || undefined, muvekkilNotu: caseData.muvekkilNotu || undefined,
+        // Masraf mail gönderimi seçeneği
+        sendExpenseEmail: sendExpenseEmail,
         lawyers: lawyers.filter(l => l.name && l.surname).map(l => ({ 
           id: l.isNew ? undefined : l.id, 
           name: l.name, 
@@ -1018,7 +1053,7 @@ export default function NewCasePage() {
   };
 
   const filteredForms = filterFormsByCategory(categoryFilter === "ALL" ? null : categoryFilter);
-  const recentHistory = getRecentForms();
+  const recentHistory = recentForms;
 
   return (
     <div className="flex flex-col" style={{ height: 'calc(100vh - 120px)' }}>
@@ -1639,7 +1674,7 @@ export default function NewCasePage() {
         )}
 
         {currentStep === 5 && (
-          <div className="h-full overflow-y-auto">
+          <div className="min-h-[600px]">
             <ProfessionalClaimItemForm
               caseType={selectedForm?.category}
               formCode={selectedForm?.code}
@@ -1800,7 +1835,7 @@ export default function NewCasePage() {
             {currentStep < steps.length - 1 ? (
               <button type="button" onClick={nextStep} className="inline-flex items-center justify-center gap-2 px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 order-1 sm:order-2">İleri <ArrowRight className="h-4 w-4" /></button>
             ) : (
-              <button type="button" onClick={handleSubmit} disabled={loading} className="inline-flex items-center justify-center gap-2 px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 order-1 sm:order-2">{loading && <Loader2 className="h-4 w-4 animate-spin" />}{loading ? "Oluşturuluyor..." : "Takibi Oluştur"}</button>
+              <button type="button" onClick={handleSubmitClick} disabled={loading} className="inline-flex items-center justify-center gap-2 px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 order-1 sm:order-2">{loading && <Loader2 className="h-4 w-4 animate-spin" />}{loading ? "Oluşturuluyor..." : "Takibi Oluştur"}</button>
             )}
           </div>
         )}
@@ -1830,6 +1865,58 @@ export default function NewCasePage() {
           onClose={() => setShowNewClientModal(false)}
           saving={savingClient}
         />
+      )}
+
+      {/* Masraf Mail Onay Modalı */}
+      {showExpenseConfirmModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-2 bg-blue-100 rounded-full">
+                  <Mail className="h-6 w-6 text-blue-600" />
+                </div>
+                <h3 className="text-lg font-semibold">Masraf Talebi Gönderimi</h3>
+              </div>
+              
+              <p className="text-gray-600 mb-6">
+                Takip oluşturulacak ve açılış masrafları hesaplanacak. Müvekkile masraf talebi e-postası göndermek ister misiniz?
+              </p>
+              
+              <div className="flex flex-col gap-2">
+                <button
+                  type="button"
+                  onClick={() => doCreateCase(true)}
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 font-medium"
+                >
+                  {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+                  <Mail className="h-4 w-4" />
+                  Oluştur ve Masraf Maili Gönder
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={() => doCreateCase(false)}
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 disabled:opacity-50"
+                >
+                  {loading && <Loader2 className="h-4 w-4 animate-spin" />}
+                  Sadece Oluştur (Mail Sonra)
+                </button>
+                
+                <button
+                  type="button"
+                  onClick={() => setShowExpenseConfirmModal(false)}
+                  disabled={loading}
+                  className="w-full px-4 py-2 text-gray-500 hover:text-gray-700 text-sm"
+                >
+                  İptal
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>
@@ -3095,7 +3182,15 @@ function ClientDetailModal({ client, onClose }: { client: any; onClose: () => vo
               </svg>
             </div>
             <div>
-              <h3 className="font-semibold">{client.name || client.displayName}</h3>
+              <h3 className="font-semibold">
+                {editing 
+                  ? (isPerson 
+                      ? `${form.firstName || ''} ${form.lastName || ''}`.trim() || client.name 
+                      : form.companyName || form.name || client.name)
+                  : (isPerson 
+                      ? `${client.firstName || ''} ${client.lastName || ''}`.trim() || client.name || client.displayName
+                      : client.companyName || client.name || client.displayName)}
+              </h3>
               <p className="text-xs text-muted-foreground">{typeLabels[client.type] || client.type}</p>
             </div>
           </div>
@@ -4885,9 +4980,117 @@ function DuesStep({
                   a.click();
                   URL.revokeObjectURL(url);
                 }}
+                className="px-4 py-2 bg-gray-600 text-white rounded-lg hover:bg-gray-700 flex items-center gap-2"
+              >
+                <ArrowRight className="h-4 w-4" /> TXT İndir
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const token = localStorage.getItem("token");
+                    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/template-engine/takip-talebi/word`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                      body: JSON.stringify({
+                        fileNumber: caseData.fileNumber,
+                        creditors: creditors.filter(c => c.name),
+                        debtors: caseDebtors,
+                        dues: dues.filter(d => d.amount && parseFloat(d.amount) > 0),
+                        executionOffice: selectedOffice,
+                        lawyers: lawyers.filter(l => l.name && l.surname),
+                        caseDate: caseData.startDate,
+                        currency: caseData.currency,
+                      }),
+                    });
+                    if (!response.ok) throw new Error('Word oluşturulamadı');
+                    const blob = await response.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `takip-talebi-${caseData.fileNumber || 'belge'}.docx`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  } catch (err) {
+                    console.error('Word indirme hatası:', err);
+                    alert('Word dosyası oluşturulamadı');
+                  }
+                }}
                 className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 flex items-center gap-2"
               >
-                <ArrowRight className="h-4 w-4" /> İndir
+                <FileCheck className="h-4 w-4" /> Word İndir
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const token = localStorage.getItem("token");
+                    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/template-engine/takip-talebi/pdf`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                      body: JSON.stringify({
+                        fileNumber: caseData.fileNumber,
+                        creditors: creditors.filter(c => c.name),
+                        debtors: caseDebtors,
+                        dues: dues.filter(d => d.amount && parseFloat(d.amount) > 0),
+                        executionOffice: selectedOffice,
+                        lawyers: lawyers.filter(l => l.name && l.surname),
+                        caseDate: caseData.startDate,
+                        currency: caseData.currency,
+                      }),
+                    });
+                    if (!response.ok) throw new Error('PDF oluşturulamadı');
+                    const blob = await response.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `takip-talebi-${caseData.fileNumber || 'belge'}.pdf`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  } catch (err) {
+                    console.error('PDF indirme hatası:', err);
+                    alert('PDF dosyası oluşturulamadı');
+                  }
+                }}
+                className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 flex items-center gap-2"
+              >
+                <FileCheck className="h-4 w-4" /> PDF İndir
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  try {
+                    const token = localStorage.getItem("token");
+                    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/template-engine/takip-talebi/xml`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                      body: JSON.stringify({
+                        fileNumber: caseData.fileNumber,
+                        creditors: creditors.filter(c => c.name),
+                        debtors: caseDebtors,
+                        dues: dues.filter(d => d.amount && parseFloat(d.amount) > 0),
+                        executionOffice: selectedOffice,
+                        lawyers: lawyers.filter(l => l.name && l.surname),
+                        caseDate: caseData.startDate,
+                        currency: caseData.currency,
+                      }),
+                    });
+                    if (!response.ok) throw new Error('XML oluşturulamadı');
+                    const blob = await response.blob();
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `takip-talebi-${caseData.fileNumber || 'belge'}.xml`;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                  } catch (err) {
+                    console.error('XML indirme hatası:', err);
+                    alert('XML dosyası oluşturulamadı');
+                  }
+                }}
+                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 flex items-center gap-2"
+              >
+                <FileCheck className="h-4 w-4" /> XML İndir
               </button>
             </div>
           </div>

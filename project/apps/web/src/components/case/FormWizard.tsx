@@ -1,188 +1,187 @@
-"use client";
+'use client';
 
-import { useState } from "react";
-import { ArrowRight, SkipForward, Sparkles, Check, Settings } from "lucide-react";
-import { WizardState, WizardAnswers, wizardQuestions, initialWizardState } from "@/types/wizard";
-import { FormMetadata } from "@/types/form-metadata";
-import { formMetadata } from "@/config/form-metadata";
-import { saveUserSettings } from "@/lib/user-settings";
-import Link from "next/link";
+import { useState, useCallback } from 'react';
+import { 
+  ChevronLeft, 
+  ChevronRight, 
+  Gavel, 
+  FileText, 
+  Receipt, 
+  Building, 
+  Home,
+  Sparkles,
+  SkipForward,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { 
+  wizardQuestions, 
+  WizardAnswer, 
+  getRecommendedFormCode,
+} from '@/types/wizard';
 
 interface FormWizardProps {
-  onComplete: (recommendedForm: FormMetadata | null, answers: WizardAnswers) => void;
+  onComplete: (recommendedFormCode: string) => void;
   onSkip: () => void;
 }
 
-export function getRecommendedForm(answers: WizardAnswers): FormMetadata | null {
-  const { hasJudgment, isKambiyo, hasMortgage, isRental } = answers;
-
-  // Tüm sorular cevaplanmamışsa null döndür
-  if (hasJudgment === null || isKambiyo === null || hasMortgage === null || isRental === null) {
-    return null;
-  }
-
-  // Filtreleme mantığı - öncelik sırasına göre
-  let candidates = [...formMetadata];
-
-  // 1. Kira ile ilgili mi?
-  if (isRental) {
-    candidates = candidates.filter((f) => f.isRental);
-    // Kira alacağı veya tahliye - en yaygın Form 13
-    return candidates.find((f) => f.code === "FORM_13") || candidates[0] || null;
-  }
-
-  // 2. Kambiyo senedi var mı?
-  if (isKambiyo) {
-    candidates = candidates.filter((f) => f.isKambiyo);
-    // En yaygın kambiyo takibi Form 10
-    return candidates.find((f) => f.code === "FORM_10") || candidates[0] || null;
-  }
-
-  // 3. İpotek/rehin var mı?
-  if (hasMortgage) {
-    candidates = candidates.filter((f) => f.needsMortgage);
-    // İlam durumuna göre filtrele
-    if (hasJudgment) {
-      return candidates.find((f) => f.hasJudgment) || candidates[0] || null;
-    } else {
-      return candidates.find((f) => !f.hasJudgment) || candidates[0] || null;
-    }
-  }
-
-  // 4. İlam var mı?
-  if (hasJudgment) {
-    candidates = candidates.filter((f) => f.hasJudgment && !f.needsMortgage);
-    return candidates.find((f) => f.code === "FORM_2_3_4_5") || candidates[0] || null;
-  }
-
-  // 5. Hiçbiri değilse - İlamsız İcra (Form 7)
-  return formMetadata.find((f) => f.code === "FORM_7") || null;
-}
-
-export function filterFormsByAnswers(answers: WizardAnswers): FormMetadata[] {
-  const { hasJudgment, isKambiyo, hasMortgage, isRental } = answers;
-
-  return formMetadata.filter((form) => {
-    // Eğer soru cevaplanmamışsa, o kriteri atla
-    if (hasJudgment !== null && form.hasJudgment !== hasJudgment) return false;
-    if (isKambiyo !== null && form.isKambiyo !== isKambiyo) return false;
-    if (hasMortgage !== null && form.needsMortgage !== hasMortgage) return false;
-    if (isRental !== null && form.isRental !== isRental) return false;
-    return true;
-  });
-}
+const iconMap: Record<string, React.ComponentType<{ className?: string }>> = {
+  Gavel,
+  FileText,
+  Receipt,
+  Building,
+  Home,
+};
 
 export function FormWizard({ onComplete, onSkip }: FormWizardProps) {
-  const [state, setState] = useState<WizardState>(initialWizardState);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [answers, setAnswers] = useState<WizardAnswer>({
+    hasJudgment: null,
+    hasKambiyo: null,
+    hasMortgage: null,
+    isRental: null,
+  });
 
-  const currentQuestion = wizardQuestions[state.currentStep];
-  const isLastStep = state.currentStep === wizardQuestions.length - 1;
+  const currentQuestion = wizardQuestions[currentStep];
+  const isLastStep = currentStep === wizardQuestions.length - 1;
+  const canGoBack = currentStep > 0;
 
-  const handleAnswer = (value: boolean) => {
-    const newAnswers = { ...state.answers, [currentQuestion.id]: value };
+  const handleAnswer = useCallback((value: string) => {
+    const questionId = currentQuestion.id as keyof WizardAnswer;
+    const boolValue = value === 'yes';
 
+    setAnswers((prev) => ({
+      ...prev,
+      [questionId]: boolValue,
+    }));
+
+    // Otomatik ilerleme
     if (isLastStep) {
-      // Son soru - tamamla
-      const recommended = getRecommendedForm(newAnswers);
-      setState((prev) => ({ ...prev, answers: newAnswers, isComplete: true }));
-      onComplete(recommended, newAnswers);
+      // Son soruysa, önerilen formu hesapla ve tamamla
+      const newAnswers = { ...answers, [questionId]: boolValue };
+      const recommendedCode = getRecommendedFormCode(newAnswers);
+      onComplete(recommendedCode);
     } else {
       // Sonraki soruya geç
-      setState((prev) => ({
-        ...prev,
-        answers: newAnswers,
-        currentStep: prev.currentStep + 1,
-      }));
+      setCurrentStep((prev) => prev + 1);
     }
+  }, [currentQuestion, isLastStep, answers, onComplete]);
+
+  const handleBack = useCallback(() => {
+    if (canGoBack) {
+      setCurrentStep((prev) => prev - 1);
+    }
+  }, [canGoBack]);
+
+  const getAnswerForQuestion = (questionId: string): string | null => {
+    const value = answers[questionId as keyof WizardAnswer];
+    if (value === null) return null;
+    return value ? 'yes' : 'no';
   };
 
-  const answeredCount = Object.values(state.answers).filter((v) => v !== null).length;
-
   return (
-    <div className="bg-gradient-to-br from-blue-50 to-indigo-50 rounded-xl border border-blue-200 p-6">
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-2">
-          <Sparkles className="h-5 w-5 text-blue-600" />
-          <h3 className="font-semibold text-blue-900">Akıllı Form Sihirbazı</h3>
-        </div>
-        <button
-          onClick={onSkip}
-          className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1"
-        >
-          <SkipForward className="h-4 w-4" />
-          Sihirbazı Atla
-        </button>
-      </div>
-
-      {/* Progress */}
-      <div className="flex gap-2 mb-6">
-        {wizardQuestions.map((_, index) => (
-          <div
-            key={index}
-            className={`h-1.5 flex-1 rounded-full transition-colors ${
-              index < state.currentStep
-                ? "bg-blue-600"
-                : index === state.currentStep
-                ? "bg-blue-400"
-                : "bg-blue-200"
-            }`}
-          />
-        ))}
-      </div>
-
-      {/* Question */}
-      <div className="mb-6">
-        <p className="text-sm text-blue-600 mb-1">
-          Soru {state.currentStep + 1} / {wizardQuestions.length}
-        </p>
-        <h4 className="text-lg font-medium text-gray-900 mb-2">{currentQuestion.question}</h4>
-        <p className="text-sm text-gray-600">{currentQuestion.description}</p>
-      </div>
-
-      {/* Options */}
-      <div className="grid grid-cols-2 gap-3">
-        {currentQuestion.options.map((option) => (
-          <button
-            key={String(option.value)}
-            onClick={() => handleAnswer(option.value)}
-            className="p-4 border-2 border-blue-200 rounded-lg text-left hover:border-blue-500 hover:bg-white transition-colors group"
+    <div className="border rounded-lg bg-gradient-to-br from-primary/5 to-transparent border-primary/20">
+      <div className="px-4 py-4 border-b">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-5 w-5 text-primary" />
+            <h3 className="text-lg font-semibold">Takip Türü Sihirbazı</h3>
+          </div>
+          <button 
+            type="button"
+            onClick={onSkip} 
+            className="inline-flex items-center text-sm text-gray-500 hover:text-gray-700"
           >
-            <div className="flex items-center justify-between">
-              <span className="font-medium text-gray-900">{option.label}</span>
-              <ArrowRight className="h-4 w-4 text-blue-400 group-hover:text-blue-600 transition-colors" />
-            </div>
+            <SkipForward className="h-4 w-4 mr-1" />
+            Atla
           </button>
-        ))}
+        </div>
+        
+        {/* Progress indicator */}
+        <div className="flex gap-1 mt-4">
+          {wizardQuestions.map((_, index) => (
+            <div
+              key={index}
+              className={cn(
+                'h-1.5 flex-1 rounded-full transition-colors',
+                index < currentStep
+                  ? 'bg-primary'
+                  : index === currentStep
+                  ? 'bg-primary/60'
+                  : 'bg-gray-200'
+              )}
+            />
+          ))}
+        </div>
       </div>
 
-      {/* Answered summary */}
-      {answeredCount > 0 && (
-        <div className="mt-4 pt-4 border-t border-blue-200">
-          <p className="text-xs text-blue-600 flex items-center gap-1">
-            <Check className="h-3 w-3" />
-            {answeredCount} soru cevaplandı
-          </p>
+      <div className="p-4 space-y-6">
+        {/* Question */}
+        <div className="space-y-2">
+          <span className="inline-block px-2 py-0.5 text-xs font-medium rounded-full border bg-white text-gray-600 mb-2">
+            Soru {currentStep + 1} / {wizardQuestions.length}
+          </span>
+          <h3 className="text-xl font-semibold">{currentQuestion.question}</h3>
         </div>
-      )}
 
-      {/* Don't show again option */}
-      <div className="mt-4 pt-4 border-t border-blue-200 flex items-center justify-between">
-        <button
-          onClick={() => {
-            saveUserSettings({ showWizardOnNewCase: false });
-            onSkip();
-          }}
-          className="text-xs text-gray-500 hover:text-gray-700"
-        >
-          Bir daha gösterme
-        </button>
-        <Link 
-          href="/settings" 
-          className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1"
-        >
-          <Settings className="h-3 w-3" />
-          Ayarlar
-        </Link>
+        {/* Options */}
+        <div className="grid gap-3">
+          {currentQuestion.options.map((option) => {
+            const Icon = option.icon ? iconMap[option.icon] : FileText;
+            const isSelected = getAnswerForQuestion(currentQuestion.id) === option.value;
+
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => handleAnswer(option.value)}
+                className={cn(
+                  'flex items-start gap-4 p-4 rounded-lg border-2 text-left transition-all',
+                  'hover:border-primary/50 hover:bg-primary/5',
+                  isSelected
+                    ? 'border-primary bg-primary/10'
+                    : 'border-gray-200 bg-white'
+                )}
+              >
+                <div className={cn(
+                  'p-2 rounded-lg',
+                  isSelected ? 'bg-primary text-white' : 'bg-gray-100'
+                )}>
+                  <Icon className="h-5 w-5" />
+                </div>
+                <div className="flex-1">
+                  <div className="font-medium">{option.label}</div>
+                  {option.description && (
+                    <div className="text-sm text-gray-500 mt-1">
+                      {option.description}
+                    </div>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Navigation */}
+        <div className="flex justify-between pt-4">
+          <button
+            type="button"
+            onClick={handleBack}
+            disabled={!canGoBack}
+            className={cn(
+              "inline-flex items-center gap-1 px-3 py-1.5 text-sm font-medium rounded-md border",
+              canGoBack 
+                ? "bg-white text-gray-700 border-gray-300 hover:bg-gray-50"
+                : "bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed"
+            )}
+          >
+            <ChevronLeft className="h-4 w-4" />
+            Geri
+          </button>
+
+          <div className="text-sm text-gray-500">
+            {currentStep + 1} / {wizardQuestions.length}
+          </div>
+        </div>
       </div>
     </div>
   );

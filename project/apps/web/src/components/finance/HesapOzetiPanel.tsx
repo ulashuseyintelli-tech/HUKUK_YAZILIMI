@@ -25,6 +25,7 @@ interface FaizSegment {
 interface ClaimItem {
   id?: string;
   type?: string;
+  itemType?: string;
   kalemTuru?: string;
   amount?: number;
   bakiyeTutar?: number;
@@ -32,6 +33,7 @@ interface ClaimItem {
   dueDate?: string;
   vadeTarihi?: string;
   interestType?: string;
+  interestStartDate?: string;
   takipOncesiFaiz?: string;
   takipSonrasiFaiz?: string;
   ibrazTarihi?: string;
@@ -57,6 +59,10 @@ interface Due {
   type: string;
   amount: number;
   description?: string;
+  dueDate?: string; // Vade tarihi - FAİZ HESABINDA KRİTİK
+  presentmentDate?: string; // İbraz tarihi (çek için)
+  interestType?: string; // YASAL, TICARI, AVANS, TEMERRUT, OZEL
+  interestStartDate?: string; // Faiz başlangıç tarihi
 }
 
 interface Collection {
@@ -295,6 +301,7 @@ export function HesapOzetiPanel({
     console.log('[HesapOzeti] dues:', dues);
     console.log('[HesapOzeti] principalAmount:', principalAmount);
     console.log('[HesapOzeti] caseDate (takipTarihi):', caseDate);
+    console.log('[HesapOzeti] caseType:', caseType);
     
     // 1. Asıl alacak ve kalem türü belirleme
     let asilAlacak = 0;
@@ -303,8 +310,49 @@ export function HesapOzetiPanel({
     let ibrazTarihi = takipTarihi;
     let faizTuru = 'TICARI_DEGISEN';
     
-    // Öncelik 1: Instruments (Çek/Senet) - en güvenilir kaynak
-    if (instruments && instruments.length > 0) {
+    // caseType'dan kalem türünü belirle (öncelikli)
+    // CHECK = Çek takibi, BOND = Senet takibi
+    if (caseType === 'CHECK') {
+      kalemTuru = 'CEK';
+      faizTuru = 'TICARI_DEGISEN';
+    } else if (caseType === 'BOND') {
+      kalemTuru = 'SENET';
+      faizTuru = 'TICARI_DEGISEN';
+    }
+    
+    // ÖNCELİK 1: DUES - Alacak Kalemleri tablosundan (en güncel ve güvenilir kaynak)
+    // Kullanıcı UI'dan vade tarihini buraya giriyor
+    const principalDues = dues.filter(d => ['PRINCIPAL', 'ASIL_ALACAK', 'CEK', 'SENET', 'CHECK', 'BOND'].includes(d.type));
+    if (principalDues.length > 0) {
+      const firstPrincipal = principalDues[0];
+      asilAlacak = principalDues.reduce((sum, d) => sum + toNumber(d.amount), 0);
+      
+      // Kalem türünü due type'dan al (eğer caseType'dan belirlenmemişse)
+      if (kalemTuru === 'ASIL_ALACAK') {
+        kalemTuru = firstPrincipal.type === 'CEK' || firstPrincipal.type === 'CHECK' ? 'CEK' :
+                    firstPrincipal.type === 'SENET' || firstPrincipal.type === 'BOND' ? 'SENET' : 'ASIL_ALACAK';
+      }
+      
+      // Vade tarihini due'dan al
+      if (firstPrincipal.dueDate) {
+        vadeTarihi = new Date(firstPrincipal.dueDate).toISOString().split('T')[0];
+      }
+      // İbraz tarihi (çek için)
+      if (firstPrincipal.presentmentDate) {
+        ibrazTarihi = new Date(firstPrincipal.presentmentDate).toISOString().split('T')[0];
+      } else {
+        ibrazTarihi = vadeTarihi;
+      }
+      // Faiz türü
+      if (firstPrincipal.interestType) {
+        faizTuru = firstPrincipal.interestType;
+      } else if (kalemTuru === 'CEK' || kalemTuru === 'SENET') {
+        faizTuru = 'TICARI_DEGISEN';
+      }
+      console.log('[HesapOzeti] Dues\'dan alındı - vadeTarihi:', vadeTarihi, 'kalemTuru:', kalemTuru);
+    }
+    // Öncelik 2: Instruments (Çek/Senet) - CaseInstrument tablosundan
+    else if (instruments && instruments.length > 0) {
       const instrument = instruments[0];
       asilAlacak = toNumber(instrument.amount) || toNumber(principalAmount) || 0;
       kalemTuru = instrument.instrumentType === 'CEK' ? 'CEK' : 
@@ -313,8 +361,9 @@ export function HesapOzetiPanel({
       vadeTarihi = instrument.maturityDate?.split('T')[0] || takipTarihi;
       ibrazTarihi = instrument.presentmentDate?.split('T')[0] || vadeTarihi;
       faizTuru = 'TICARI_DEGISEN'; // Çek/Senet için TCMB Avans
+      console.log('[HesapOzeti] Instruments\'dan alındı - vadeTarihi:', vadeTarihi);
     }
-    // Öncelik 2: ClaimItems'dan al (alacak kalemleri - vade tarihi burada)
+    // Öncelik 3: ClaimItems'dan al (eski format)
     else if (claimItems && claimItems.length > 0) {
       const item = claimItems[0];
       asilAlacak = toNumber(item.bakiyeTutar) || toNumber(item.amount) || toNumber(principalAmount) || 0;
@@ -322,8 +371,9 @@ export function HesapOzetiPanel({
       vadeTarihi = item.vadeTarihi || item.dueDate || item.interestStartDate?.split('T')[0] || takipTarihi;
       ibrazTarihi = item.cekBilgileri?.ibrazTarihi || item.ibrazTarihi || vadeTarihi;
       faizTuru = item.takipOncesiFaiz || item.interestType || 'TICARI_DEGISEN';
+      console.log('[HesapOzeti] ClaimItems\'dan alındı - vadeTarihi:', vadeTarihi);
     }
-    // Öncelik 3: caseType'dan belirle
+    // Öncelik 4: caseType'dan belirle (sadece tutar ve tür)
     else if (caseType === 'CHECK') {
       kalemTuru = 'CEK';
       asilAlacak = toNumber(principalAmount) || 0;
@@ -334,32 +384,12 @@ export function HesapOzetiPanel({
       asilAlacak = toNumber(principalAmount) || 0;
       faizTuru = 'TICARI_DEGISEN';
     }
-    // Öncelik 4: Dues'dan al
-    else if (dues.length > 0) {
-      const principalDues = dues.filter(d => ['PRINCIPAL', 'ASIL_ALACAK', 'CEK', 'SENET'].includes(d.type));
-      asilAlacak = principalDues.reduce((sum, d) => sum + toNumber(d.amount), 0);
-      // Vade tarihini ilk principal due'dan al
-      const firstPrincipal = principalDues[0];
-      if (firstPrincipal?.dueDate) {
-        vadeTarihi = new Date(firstPrincipal.dueDate).toISOString().split('T')[0];
-      }
-      // Faiz türünü due'dan veya takip tipinden belirle
-      if (firstPrincipal?.interestType) {
-        faizTuru = firstPrincipal.interestType;
-      } else {
-        // Takip tipine göre default faiz türü
-        // CHECK, BOND = Ticari (TCMB Avans)
-        // Diğerleri = Yasal Faiz
-        faizTuru = (caseType === 'CHECK' || caseType === 'BOND') ? 'TICARI_DEGISEN' : 'YASAL';
-      }
-      if (asilAlacak === 0) {
-        asilAlacak = toNumber(principalAmount) || 0;
-      }
-    }
     // Fallback
     else if (principalAmount) {
       asilAlacak = toNumber(principalAmount);
     }
+    
+    console.log('[HesapOzeti] Final - vadeTarihi:', vadeTarihi, 'takipTarihi:', takipTarihi, 'asilAlacak:', asilAlacak);
     
     if (asilAlacak <= 0) return null;
     
@@ -377,13 +407,13 @@ export function HesapOzetiPanel({
     // 4. Takip tutarı
     const takipTutari = asilAlacak + tazminat + komisyon + takipOncesiFaiz;
     
-    // 5. İcra masrafları
-    const basvurmaHarci = 615.40;
-    const vekaletHarci = 87.50;
-    const pesinHarc = Math.round(takipTutari * 0.005 * 100) / 100;
-    const dosyaGideri = 2.00;
-    const tebligatGideri = 15.00 * debtorCount;
-    const vekaletPulu = 138.00;
+    // 5. İcra masrafları (2026 Tarifesi)
+    const basvurmaHarci = 738.50;
+    const vekaletHarci = 105.00;
+    const pesinHarc = Math.max(Math.round(takipTutari * 0.005 * 100) / 100, 120); // min 120 TL
+    const dosyaGideri = 50.00;
+    const tebligatGideri = 252.00 * debtorCount; // Normal tebligat
+    const vekaletPulu = 165.60;
     const icraMasraflari = basvurmaHarci + vekaletHarci + pesinHarc + dosyaGideri + tebligatGideri + vekaletPulu;
     
     // 6. Tahsil harçları

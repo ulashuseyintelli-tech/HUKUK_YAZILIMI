@@ -8,6 +8,14 @@ import {
   DecisionType,
 } from "@prisma/client";
 import { RuleEngine, RuleContext, RuleResult } from "./rule-engine.service";
+import { ExpenseRequestService } from "../expense-request/expense-request.service";
+
+// Workflow stage to expense stage code mapping
+const STAGE_TO_EXPENSE_CODE: Partial<Record<WorkflowStage, string>> = {
+  [WorkflowStage.ENFORCEMENT]: 'RE_NOTIFICATION', // Kesinleşme sonrası yeniden tebligat gerekebilir
+  [WorkflowStage.SEIZURE]: 'SEIZURE', // Haciz aşaması
+  [WorkflowStage.SALE_REQUEST]: 'SALE', // Satış aşaması
+};
 
 @Injectable()
 export class WorkflowEngine {
@@ -15,7 +23,8 @@ export class WorkflowEngine {
 
   constructor(
     private prisma: PrismaService,
-    private ruleEngine: RuleEngine
+    private ruleEngine: RuleEngine,
+    private expenseRequestService: ExpenseRequestService,
   ) {}
 
   // Dosya için bağlam oluştur
@@ -164,6 +173,12 @@ export class WorkflowEngine {
     reason: string,
     triggerType: TriggerType = TriggerType.AUTO
   ): Promise<void> {
+    // Get case data for tenant info
+    const caseData = await this.prisma.case.findUnique({
+      where: { id: caseId },
+      select: { tenantId: true, clientId: true },
+    });
+
     await this.prisma.$transaction([
       this.prisma.case.update({
         where: { id: caseId },
@@ -181,6 +196,20 @@ export class WorkflowEngine {
     ]);
 
     this.logger.log(`Case ${caseId} stage updated to ${newStage}`);
+
+    // Aşama değişikliğinde otomatik masraf seti oluştur (arka planda)
+    const expenseStageCode = STAGE_TO_EXPENSE_CODE[newStage];
+    if (expenseStageCode && caseData?.tenantId && caseData?.clientId) {
+      this.expenseRequestService
+        .createStageExpenseSet(caseId, expenseStageCode, caseData.tenantId, 'system')
+        .then(() => {
+          this.logger.log(`Otomatik ${expenseStageCode} masrafları oluşturuldu: ${caseId}`);
+        })
+        .catch((err) => {
+          // Zaten varsa veya başka hata olursa sessizce devam et
+          this.logger.warn(`Otomatik masraf seti oluşturulamadı (${expenseStageCode}): ${err.message}`);
+        });
+    }
   }
 
   // İcra işlemi oluştur

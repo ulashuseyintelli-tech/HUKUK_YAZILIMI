@@ -1,68 +1,254 @@
 import { Controller, Get, Post, Body, Param, UseGuards, Res, Query } from '@nestjs/common';
 import { Response } from 'express';
+import { IsString, IsOptional, IsArray, IsObject, ValidateNested, IsNumber, IsBoolean } from 'class-validator';
+import { Type } from 'class-transformer';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TemplateEngineService, TemplateData, GeneratedDocument, UdfDocument } from './template-engine.service';
 
-// DTO'lar
+// Nested DTO'lar
+class ExecutionOfficeDto {
+  @IsString()
+  name: string;
+
+  @IsString()
+  city: string;
+
+  @IsOptional()
+  @IsString()
+  uyapCode?: string;
+}
+
+class CreditorDto {
+  @IsString()
+  type: string;
+
+  @IsString()
+  name: string;
+
+  @IsOptional()
+  @IsString()
+  identityNo?: string;
+
+  @IsOptional()
+  @IsString()
+  taxNo?: string;
+
+  @IsOptional()
+  @IsString()
+  taxOffice?: string;
+
+  @IsOptional()
+  @IsString()
+  address?: string;
+
+  @IsOptional()
+  @IsString()
+  city?: string;
+
+  @IsOptional()
+  @IsString()
+  district?: string;
+}
+
+class LawyerDto {
+  @IsString()
+  name: string;
+
+  @IsString()
+  barNumber: string;
+
+  @IsString()
+  barCity: string;
+
+  @IsOptional()
+  @IsString()
+  address?: string;
+
+  @IsOptional()
+  @IsString()
+  phone?: string;
+
+  @IsOptional()
+  @IsString()
+  fax?: string;
+
+  @IsOptional()
+  @IsString()
+  bankName?: string;
+
+  @IsOptional()
+  @IsString()
+  branchName?: string;
+
+  @IsOptional()
+  @IsString()
+  iban?: string;
+}
+
+class DebtorDto {
+  @IsString()
+  type: string;
+
+  @IsString()
+  name: string;
+
+  @IsOptional()
+  @IsString()
+  identityNo?: string;
+
+  @IsOptional()
+  @IsString()
+  taxNo?: string;
+
+  @IsOptional()
+  @IsString()
+  taxOffice?: string;
+
+  @IsOptional()
+  @IsString()
+  address?: string;
+
+  @IsOptional()
+  @IsString()
+  city?: string;
+
+  @IsOptional()
+  @IsString()
+  district?: string;
+
+  @IsOptional()
+  @IsString()
+  role?: string;
+}
+
+class ClaimItemDto {
+  @IsString()
+  type: string;
+
+  @IsString()
+  description: string;
+
+  @IsNumber()
+  amount: number;
+
+  @IsString()
+  currency: string;
+
+  @IsOptional()
+  @IsString()
+  dueDate?: string;
+}
+
+class TotalsDto {
+  @IsNumber()
+  principal: number;
+
+  @IsNumber()
+  interest: number;
+
+  @IsNumber()
+  fees: number;
+
+  @IsNumber()
+  total: number;
+
+  @IsString()
+  currency: string;
+}
+
+class InterestInfoDto {
+  @IsString()
+  type: string;
+
+  @IsOptional()
+  @IsNumber()
+  rate?: number;
+
+  @IsString()
+  description: string;
+
+  @IsBoolean()
+  variableRate: boolean;
+}
+
+class SourceDocumentDto {
+  @IsString()
+  type: string;
+
+  @IsOptional()
+  @IsString()
+  number?: string;
+
+  @IsOptional()
+  @IsString()
+  date?: string;
+
+  @IsOptional()
+  @IsString()
+  bank?: string;
+
+  @IsOptional()
+  @IsString()
+  branch?: string;
+}
+
+// Ana DTO
 export class GenerateTakipTalebiDto {
+  @IsString()
   fileNumber: string;
+
+  @IsString()
   filingDate: string;
-  executionOffice: {
-    name: string;
-    city: string;
-    uyapCode?: string;
-  };
-  creditors: Array<{
-    type: 'INDIVIDUAL' | 'COMPANY';
-    name: string;
-    identityNo?: string;
-    taxNo?: string;
-    address?: string;
-  }>;
-  lawyers: Array<{
-    name: string;
-    barNumber: string;
-    barCity: string;
-    address?: string;
-  }>;
-  debtors: Array<{
-    type: 'INDIVIDUAL' | 'COMPANY';
-    name: string;
-    identityNo?: string;
-    taxNo?: string;
-    address?: string;
-    role?: string;
-  }>;
-  claimItems: Array<{
-    type: string;
-    description: string;
-    amount: number;
-    currency: string;
-    dueDate?: string;
-  }>;
-  totals: {
-    principal: number;
-    interest: number;
-    fees: number;
-    total: number;
-    currency: string;
-  };
-  interestInfo: {
-    type: 'YASAL' | 'TICARI' | 'CUSTOM';
-    rate?: number;
-    description: string;
-    variableRate: boolean;
-  };
+
+  @IsObject()
+  @ValidateNested()
+  @Type(() => ExecutionOfficeDto)
+  executionOffice: ExecutionOfficeDto;
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreditorDto)
+  creditors: CreditorDto[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => LawyerDto)
+  lawyers: LawyerDto[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => DebtorDto)
+  debtors: DebtorDto[];
+
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ClaimItemDto)
+  claimItems: ClaimItemDto[];
+
+  @IsObject()
+  @ValidateNested()
+  @Type(() => TotalsDto)
+  totals: TotalsDto;
+
+  @IsObject()
+  @ValidateNested()
+  @Type(() => InterestInfoDto)
+  interestInfo: InterestInfoDto;
+
+  @IsString()
   caseType: string;
+
+  @IsString()
   subCategory: string;
+
+  @IsString()
   executionPath: string;
-  sourceDocument?: {
-    type: string;
-    number?: string;
-    date?: string;
-    bank?: string;
-    branch?: string;
-  };
+
+  @IsOptional()
+  @IsObject()
+  @ValidateNested()
+  @Type(() => SourceDocumentDto)
+  sourceDocument?: SourceDocumentDto;
 }
 
 @Controller('template-engine')
@@ -170,11 +356,17 @@ export class TemplateEngineController {
    */
   @Post('takip-talebi/pdf')
   async downloadTakipTalebiPdf(@Body() dto: GenerateTakipTalebiDto, @Res() res: Response): Promise<void> {
-    const pdfBuffer = await this.templateEngineService.generateTakipTalebiPdf(dto as TemplateData);
-    
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="takip-talebi-${dto.fileNumber || 'belge'}.pdf"`);
-    res.send(pdfBuffer);
+    try {
+      console.log('[TemplateEngine] PDF oluşturuluyor:', dto.fileNumber);
+      const pdfBuffer = await this.templateEngineService.generateTakipTalebiPdf(dto as TemplateData);
+      
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="takip-talebi-${dto.fileNumber || 'belge'}.pdf"`);
+      res.send(pdfBuffer);
+    } catch (error: any) {
+      console.error('[TemplateEngine] PDF oluşturma hatası:', error);
+      res.status(500).json({ message: error.message || 'PDF oluşturulamadı' });
+    }
   }
 
   /**
@@ -202,11 +394,18 @@ export class TemplateEngineController {
    */
   @Post('takip-talebi/word')
   async downloadTakipTalebiWord(@Body() dto: GenerateTakipTalebiDto, @Res() res: Response): Promise<void> {
-    const wordBuffer = await this.templateEngineService.generateTakipTalebiWord(dto as TemplateData);
-    
-    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-    res.setHeader('Content-Disposition', `attachment; filename="takip-talebi-${dto.fileNumber || 'belge'}.docx"`);
-    res.send(wordBuffer);
+    try {
+      console.log('[TemplateEngine] Word oluşturuluyor:', dto.fileNumber);
+      console.log('[TemplateEngine] Gelen veri:', JSON.stringify(dto, null, 2));
+      const wordBuffer = await this.templateEngineService.generateTakipTalebiWord(dto as TemplateData);
+      
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+      res.setHeader('Content-Disposition', `attachment; filename="takip-talebi-${dto.fileNumber || 'belge'}.docx"`);
+      res.send(wordBuffer);
+    } catch (error: any) {
+      console.error('[TemplateEngine] Word oluşturma hatası:', error);
+      res.status(500).json({ message: error.message || 'Word oluşturulamadı' });
+    }
   }
 
   /**
@@ -262,6 +461,44 @@ export class TemplateEngineController {
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', `attachment; filename="${documentType}-${caseId}.udf"`);
     res.send(JSON.stringify(udfDocument, null, 2));
+  }
+
+  // ============================================
+  // XML EXPORT ENDPOINT'LERİ
+  // ============================================
+
+  /**
+   * Takip Talebi XML indir - JSON data ile
+   */
+  @Post('takip-talebi/xml')
+  async downloadTakipTalebiXml(@Body() dto: GenerateTakipTalebiDto, @Res() res: Response): Promise<void> {
+    try {
+      console.log('[TemplateEngine] XML oluşturuluyor:', dto.fileNumber);
+      const xmlContent = this.templateEngineService.generateTakipTalebiXml(dto as any);
+      
+      res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="takip-talebi-${dto.fileNumber || 'belge'}.xml"`);
+      res.send(xmlContent);
+    } catch (error: any) {
+      console.error('[TemplateEngine] XML oluşturma hatası:', error);
+      res.status(500).json({ message: error.message || 'XML oluşturulamadı' });
+    }
+  }
+
+  /**
+   * Takip Talebi XML indir - Case ID ile
+   */
+  @Get('case/:caseId/xml')
+  async downloadXmlFromCase(
+    @Param('caseId') caseId: string,
+    @Query('type') documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi',
+    @Res() res: Response
+  ): Promise<void> {
+    const xmlContent = await this.templateEngineService.generateXmlFromCase(caseId, documentType);
+    
+    res.setHeader('Content-Type', 'application/xml; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${documentType}-${caseId}.xml"`);
+    res.send(xmlContent);
   }
 
   // ============================================

@@ -1167,7 +1167,7 @@ export function ProfessionalClaimItemForm({
   // RENDER
   // ============================================================================
   return (
-    <div className="h-full flex gap-2">
+    <div className="min-h-[550px] flex gap-2">
       {/* SOL PANEL - Alacak Kalemi Formu */}
       <div className="flex-1 space-y-1.5">
         {/* Alacak Bilgileri */}
@@ -1911,7 +1911,7 @@ export function ProfessionalClaimItemForm({
       </div>
 
       {/* SAĞ PANEL - Hesap Özeti */}
-      <div className="w-72 border-l pl-2 flex flex-col">
+      <div className="w-72 border-l pl-2 flex flex-col min-h-[520px]">
         <div className="bg-white pb-1">
           <div className="flex items-center justify-between mb-0.5">
             <h3 className="font-medium text-xs flex items-center gap-1">
@@ -2148,8 +2148,8 @@ export function ProfessionalClaimItemForm({
               </div>
             )}
 
-            {/* Kaydet Butonu */}
-            <div className="pt-1.5 mt-1.5 border-t bg-white flex-shrink-0">
+            {/* Kaydet ve İndirme Butonları */}
+            <div className="pt-1.5 mt-1.5 border-t bg-white flex-shrink-0 space-y-1.5">
               <button
                 type="button"
                 onClick={() => {
@@ -2167,6 +2167,430 @@ export function ProfessionalClaimItemForm({
                 <FileText className="h-3 w-3" />
                 Kaydet
               </button>
+              
+              {/* Takip Talebi İndirme Butonları */}
+              {isCalculated && hesapOzeti.length > 0 && (
+                <div className="flex gap-1">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const token = localStorage.getItem("token");
+                        if (!token) {
+                          alert('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
+                          return;
+                        }
+                        
+                        // Creditors verisini düzgün formatla - type'a göre TC veya VKN
+                        const formattedCreditors = (creditors || []).map((c: any) => {
+                          const isCompany = c.type === 'COMPANY' || c.type === 'TUZEL';
+                          return {
+                            type: isCompany ? 'COMPANY' : 'INDIVIDUAL',
+                            name: isCompany 
+                              ? (c.companyName || c.name || c.displayName || '')
+                              : (`${c.firstName || ''} ${c.lastName || ''}`.trim() || c.name || ''),
+                            // Şahıs için TC, Kurum için VKN
+                            identityNo: !isCompany ? (c.tckn || c.identityNo || '') : '',
+                            taxNo: isCompany ? (c.vkn || c.taxNo || '') : '',
+                            taxOffice: isCompany ? (c.taxOffice || c.vergiDairesi || '') : '',
+                            address: c.address || '',
+                            city: c.city || '',
+                            district: c.district || '',
+                          };
+                        });
+                        
+                        // Lawyers verisini düzgün formatla
+                        const formattedLawyers = (lawyers || []).map((l: any) => ({
+                          name: l.name || `${l.firstName || ''} ${l.lastName || ''}`.trim(),
+                          barNumber: l.barNumber || l.baroSicilNo || '',
+                          barCity: l.barCity || l.baroIl || '',
+                          address: l.address || '',
+                          phone: l.phone || '',
+                          fax: l.fax || '',
+                          bankName: l.bankName || '',
+                          branchName: l.branchName || '',
+                          iban: l.iban || '',
+                        }));
+                        
+                        // Debtors verisini düzgün formatla - type'a göre TC veya VKN
+                        const formattedDebtors = (debtors || []).map((d: any) => {
+                          const isCompany = d.type === 'COMPANY' || d.type === 'TUZEL';
+                          return {
+                            type: isCompany ? 'COMPANY' : 'INDIVIDUAL',
+                            name: isCompany 
+                              ? (d.companyName || d.name || d.displayName || '')
+                              : (`${d.firstName || ''} ${d.lastName || ''}`.trim() || d.name || ''),
+                            // Şahıs için TC, Kurum için VKN
+                            identityNo: !isCompany ? (d.tckn || d.identityNo || '') : '',
+                            taxNo: isCompany ? (d.vkn || d.taxNo || '') : '',
+                            taxOffice: isCompany ? (d.taxOffice || d.vergiDairesi || '') : '',
+                            address: d.address || '',
+                            city: d.city || '',
+                            district: d.district || '',
+                            role: d.role || 'Borçlu',
+                          };
+                        });
+                        
+                        // HesapOzeti'nden claimItems oluştur
+                        const claimItems: any[] = [];
+                        
+                        // Asıl alacak
+                        const asilAlacak = hesapOzeti.find(h => h.key === 'asil_alacak');
+                        if (asilAlacak && asilAlacak.tutar > 0) {
+                          const kalemLabel = kalem.kalemTuru === 'CEK' ? 'Çek alacağı' : 
+                                            kalem.kalemTuru === 'SENET' ? 'Senet alacağı' : 
+                                            kalem.kalemTuru === 'KIRA' ? 'Kira alacağı' :
+                                            kalem.kalemTuru === 'FATURA' ? 'Fatura alacağı' :
+                                            kalem.kalemTuru === 'ILAM' ? 'İlam alacağı' :
+                                            kalem.aciklama || 'Asıl Alacak';
+                          claimItems.push({
+                            type: 'PRINCIPAL',
+                            description: kalemLabel,
+                            amount: asilAlacak.tutar,
+                            currency: kalem.currency || 'TRY',
+                            dueDate: kalem.vadeTarihi,
+                          });
+                        }
+                        
+                        // Takip öncesi faiz
+                        const takipOncesiFaiz = hesapOzeti.find(h => h.key === 'takip_oncesi_faiz');
+                        if (takipOncesiFaiz && takipOncesiFaiz.tutar > 0) {
+                          const faizTuruLabel = kalem.kalemTuru === 'CEK' || kalem.kalemTuru === 'SENET' ? 'TİCARİ' : 'YASAL';
+                          claimItems.push({
+                            type: 'INTEREST',
+                            description: `İşlemiş Faiz (${faizTuruLabel})`,
+                            amount: takipOncesiFaiz.tutar,
+                            currency: kalem.currency || 'TRY',
+                          });
+                        }
+                        
+                        // Çek tazminatı (%10) - sadece çek için
+                        const tazminat = hesapOzeti.find(h => h.key === 'tazminat');
+                        if (tazminat && tazminat.tutar > 0 && kalem.kalemTuru === 'CEK') {
+                          claimItems.push({
+                            type: 'COMPENSATION',
+                            description: 'Karşılıksız Çek Tazminatı alacağı',
+                            amount: tazminat.tutar,
+                            currency: kalem.currency || 'TRY',
+                            dueDate: kalem.vadeTarihi,
+                          });
+                        }
+                        
+                        // Komisyon - çek ve senet için
+                        const komisyon = hesapOzeti.find(h => h.key === 'komisyon');
+                        if (komisyon && komisyon.tutar > 0) {
+                          claimItems.push({
+                            type: 'COMMISSION',
+                            description: 'Komisyon alacağı',
+                            amount: komisyon.tutar,
+                            currency: kalem.currency || 'TRY',
+                            dueDate: kalem.vadeTarihi,
+                          });
+                        }
+                        
+                        // İlamlı takip yan alacakları
+                        if (kalem.kalemTuru === 'ILAM') {
+                          hesapOzeti.filter(h => h.key.startsWith('yan_alacak_')).forEach(yan => {
+                            if (yan.tutar > 0) {
+                              claimItems.push({
+                                type: 'EXPENSE',
+                                description: yan.label,
+                                amount: yan.tutar,
+                                currency: kalem.currency || 'TRY',
+                              });
+                            }
+                          });
+                        }
+                        
+                        // Toplam
+                        const takipTutari = hesapOzeti.find(h => h.key === 'takip_tutari');
+                        const totalAmount = takipTutari?.tutar || claimItems.reduce((sum, item) => sum + item.amount, 0);
+                        
+                        // Faiz türü belirleme - takip tipine göre
+                        const faizTuru = kalem.kalemTuru === 'CEK' || kalem.kalemTuru === 'SENET' ? 'TICARI' : 'YASAL';
+                        const faizOrani = kalem.kalemTuru === 'CEK' || kalem.kalemTuru === 'SENET' ? 39.75 : 24.00;
+                        
+                        const templateData = {
+                          fileNumber: fileNumber || '',
+                          filingDate: takipTarihi,
+                          executionOffice: executionOffice || { name: '', city: '' },
+                          creditors: formattedCreditors,
+                          lawyers: formattedLawyers,
+                          debtors: formattedDebtors,
+                          claimItems: claimItems,
+                          totals: {
+                            principal: asilAlacak?.tutar || kalem.bakiyeTutar || 0,
+                            interest: takipOncesiFaiz?.tutar || 0,
+                            fees: (tazminat?.tutar || 0) + (komisyon?.tutar || 0),
+                            total: totalAmount,
+                            currency: kalem.currency || 'TRY',
+                          },
+                          interestInfo: {
+                            type: faizTuru,
+                            rate: faizOrani,
+                            description: `YILLIK %${faizOrani.toFixed(2).replace('.', ',')} (${faizTuru === 'TICARI' ? 'TİCARİ' : 'YASAL'}) değişen oranlarda`,
+                            variableRate: true,
+                          },
+                          caseType: _caseType || 'ILAMSIZ',
+                          subCategory: kalem.kalemTuru || 'GENEL',
+                          executionPath: 'HACIZ',
+                        };
+                        
+                        console.log('[Word] İstek gönderiliyor:', templateData);
+                        
+                        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/template-engine/takip-talebi/word`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                          body: JSON.stringify(templateData),
+                        });
+                        
+                        console.log('[Word] Response status:', response.status);
+                        
+                        if (!response.ok) {
+                          const errorText = await response.text();
+                          console.error('[Word] Hata:', errorText);
+                          throw new Error(`Word oluşturulamadı: ${response.status} - ${errorText}`);
+                        }
+                        
+                        const blob = await response.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `takip-talebi-${fileNumber || 'belge'}.docx`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      } catch (err: any) {
+                        console.error('Word indirme hatası:', err);
+                        alert(`Word dosyası oluşturulamadı: ${err.message}`);
+                      }
+                    }}
+                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-blue-600 text-white rounded hover:bg-blue-700 text-[10px]"
+                  >
+                    <FileText className="h-3 w-3" />
+                    Word
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const token = localStorage.getItem("token");
+                        if (!token) {
+                          alert('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
+                          return;
+                        }
+                        
+                        // Creditors verisini düzgün formatla
+                        const formattedCreditors = (creditors || []).map((c: any) => ({
+                          type: c.type || 'COMPANY',
+                          name: c.companyName || c.name || c.displayName || '',
+                          identityNo: c.tckn || c.identityNo || '',
+                          taxNo: c.vkn || c.taxNo || '',
+                          address: c.address || '',
+                          city: c.city || '',
+                          district: c.district || '',
+                        }));
+                        
+                        // Lawyers verisini düzgün formatla
+                        const formattedLawyers = (lawyers || []).map((l: any) => ({
+                          name: l.name || `${l.firstName || ''} ${l.lastName || ''}`.trim(),
+                          barNumber: l.barNumber || l.baroSicilNo || '',
+                          barCity: l.barCity || l.baroIl || '',
+                          address: l.address || '',
+                          phone: l.phone || '',
+                          fax: l.fax || '',
+                          bankName: l.bankName || '',
+                          branchName: l.branchName || '',
+                          iban: l.iban || '',
+                        }));
+                        
+                        // Debtors verisini düzgün formatla
+                        const formattedDebtors = (debtors || []).map((d: any) => ({
+                          type: d.type || 'COMPANY',
+                          name: d.companyName || d.name || d.displayName || `${d.firstName || ''} ${d.lastName || ''}`.trim(),
+                          identityNo: d.tckn || d.identityNo || '',
+                          taxNo: d.vkn || d.taxNo || '',
+                          address: d.address || '',
+                          city: d.city || '',
+                          district: d.district || '',
+                          role: d.role || 'Borçlu',
+                        }));
+                        
+                        const templateData = {
+                          fileNumber: fileNumber || '',
+                          filingDate: takipTarihi,
+                          executionOffice: executionOffice || { name: '', city: '' },
+                          creditors: formattedCreditors,
+                          lawyers: formattedLawyers,
+                          debtors: formattedDebtors,
+                          claimItems: [{
+                            type: kalem.kalemTuru || 'PRINCIPAL',
+                            description: kalem.aciklama || 'Asıl Alacak',
+                            amount: kalem.bakiyeTutar || 0,
+                            currency: kalem.currency || 'TRY',
+                            dueDate: kalem.vadeTarihi,
+                          }],
+                          totals: {
+                            principal: kalem.bakiyeTutar || 0,
+                            interest: hesapOzeti.find(h => h.key === 'takip_oncesi_faiz')?.tutar || 0,
+                            fees: hesapOzeti.find(h => h.key === 'icra_masraflari')?.tutar || 0,
+                            total: hesapOzeti.find(h => h.key === 'son_borc')?.tutar || 0,
+                            currency: kalem.currency || 'TRY',
+                          },
+                          interestInfo: {
+                            type: 'YASAL',
+                            description: 'Değişen oranlarda faiz',
+                            variableRate: true,
+                          },
+                          caseType: _caseType || 'ILAMSIZ',
+                          subCategory: kalem.kalemTuru || 'GENEL',
+                          executionPath: 'HACIZ',
+                        };
+                        
+                        console.log('[PDF] İstek gönderiliyor:', templateData);
+                        
+                        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/template-engine/takip-talebi/pdf`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                          body: JSON.stringify(templateData),
+                        });
+                        
+                        console.log('[PDF] Response status:', response.status);
+                        
+                        if (!response.ok) {
+                          const errorText = await response.text();
+                          console.error('[PDF] Hata:', errorText);
+                          throw new Error(`PDF oluşturulamadı: ${response.status} - ${errorText}`);
+                        }
+                        
+                        const blob = await response.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `takip-talebi-${fileNumber || 'belge'}.pdf`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      } catch (err: any) {
+                        console.error('PDF indirme hatası:', err);
+                        alert(`PDF dosyası oluşturulamadı: ${err.message}`);
+                      }
+                    }}
+                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-red-600 text-white rounded hover:bg-red-700 text-[10px]"
+                  >
+                    <FileText className="h-3 w-3" />
+                    PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      try {
+                        const token = localStorage.getItem("token");
+                        if (!token) {
+                          alert('Oturum süresi dolmuş. Lütfen tekrar giriş yapın.');
+                          return;
+                        }
+                        
+                        // Creditors verisini düzgün formatla
+                        const formattedCreditors = (creditors || []).map((c: any) => ({
+                          type: c.type || 'COMPANY',
+                          name: c.companyName || c.name || c.displayName || '',
+                          identityNo: c.tckn || c.identityNo || '',
+                          taxNo: c.vkn || c.taxNo || '',
+                          address: c.address || '',
+                          city: c.city || '',
+                          district: c.district || '',
+                        }));
+                        
+                        // Lawyers verisini düzgün formatla
+                        const formattedLawyers = (lawyers || []).map((l: any) => ({
+                          name: l.name || `${l.firstName || ''} ${l.lastName || ''}`.trim(),
+                          barNumber: l.barNumber || l.baroSicilNo || '',
+                          barCity: l.barCity || l.baroIl || '',
+                          address: l.address || '',
+                          phone: l.phone || '',
+                          fax: l.fax || '',
+                          bankName: l.bankName || '',
+                          branchName: l.branchName || '',
+                          iban: l.iban || '',
+                        }));
+                        
+                        // Debtors verisini düzgün formatla
+                        const formattedDebtors = (debtors || []).map((d: any) => ({
+                          type: d.type || 'COMPANY',
+                          name: d.companyName || d.name || d.displayName || `${d.firstName || ''} ${d.lastName || ''}`.trim(),
+                          identityNo: d.tckn || d.identityNo || '',
+                          taxNo: d.vkn || d.taxNo || '',
+                          address: d.address || '',
+                          city: d.city || '',
+                          district: d.district || '',
+                          role: d.role || 'Borçlu',
+                        }));
+                        
+                        const templateData = {
+                          fileNumber: fileNumber || '',
+                          filingDate: takipTarihi,
+                          executionOffice: executionOffice || { name: '', city: '' },
+                          creditors: formattedCreditors,
+                          lawyers: formattedLawyers,
+                          debtors: formattedDebtors,
+                          claimItems: [{
+                            type: kalem.kalemTuru || 'PRINCIPAL',
+                            description: kalem.aciklama || 'Asıl Alacak',
+                            amount: kalem.bakiyeTutar || 0,
+                            currency: kalem.currency || 'TRY',
+                            dueDate: kalem.vadeTarihi,
+                          }],
+                          totals: {
+                            principal: kalem.bakiyeTutar || 0,
+                            interest: hesapOzeti.find(h => h.key === 'takip_oncesi_faiz')?.tutar || 0,
+                            fees: hesapOzeti.find(h => h.key === 'icra_masraflari')?.tutar || 0,
+                            total: hesapOzeti.find(h => h.key === 'son_borc')?.tutar || 0,
+                            currency: kalem.currency || 'TRY',
+                          },
+                          interestInfo: {
+                            type: 'YASAL',
+                            description: 'Değişen oranlarda faiz',
+                            variableRate: true,
+                          },
+                          caseType: _caseType || 'ILAMSIZ',
+                          subCategory: kalem.kalemTuru || 'GENEL',
+                          executionPath: 'HACIZ',
+                        };
+                        
+                        console.log('[XML] İstek gönderiliyor:', templateData);
+                        
+                        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/template-engine/takip-talebi/xml`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+                          body: JSON.stringify(templateData),
+                        });
+                        
+                        console.log('[XML] Response status:', response.status);
+                        
+                        if (!response.ok) {
+                          const errorText = await response.text();
+                          console.error('[XML] Hata:', errorText);
+                          throw new Error(`XML oluşturulamadı: ${response.status} - ${errorText}`);
+                        }
+                        
+                        const blob = await response.blob();
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url;
+                        a.download = `takip-talebi-${fileNumber || 'belge'}.xml`;
+                        a.click();
+                        URL.revokeObjectURL(url);
+                      } catch (err: any) {
+                        console.error('XML indirme hatası:', err);
+                        alert(`XML dosyası oluşturulamadı: ${err.message}`);
+                      }
+                    }}
+                    className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 bg-green-600 text-white rounded hover:bg-green-700 text-[10px]"
+                  >
+                    <FileText className="h-3 w-3" />
+                    XML
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         )}

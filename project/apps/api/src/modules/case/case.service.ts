@@ -6,6 +6,7 @@ import { isInitialStatus } from "../case-status/case-status.service";
 import { AuditService } from "../audit/audit.service";
 import { ClientInfoRequestService } from "../address-discovery/client-info-request.service";
 import { InterestEngineService } from "../interest-engine/interest-engine.service";
+import { ExpenseRequestService } from "../expense-request/expense-request.service";
 
 @Injectable()
 export class CaseService {
@@ -18,6 +19,8 @@ export class CaseService {
     private clientInfoRequestService: ClientInfoRequestService,
     @Inject(forwardRef(() => InterestEngineService))
     private interestEngineService: InterestEngineService,
+    @Inject(forwardRef(() => ExpenseRequestService))
+    private expenseRequestService: ExpenseRequestService,
   ) {}
 
   /**
@@ -922,6 +925,31 @@ export class CaseService {
           .catch((err) => {
             this.logger.warn(`Otomatik bilgi talebi gönderilemedi: ${err.message}`);
           });
+
+        // Otomatik açılış masraf seti oluştur (arka planda)
+        // Case oluşturulduğunda OPENING masrafları otomatik oluşturulur
+        if (result.case.clientId) {
+          const shouldSendEmail = dto.sendExpenseEmail === true;
+          
+          this.expenseRequestService
+            .createOpeningExpenseSet(result.case.id, tenantId, 'system')
+            .then(async (expenseResult) => {
+              this.logger.log(`Otomatik açılış masrafları oluşturuldu: ${result.case!.fileNumber}`);
+              
+              // Masraf oluşturulduysa ve kullanıcı mail gönderilmesini istediyse
+              if (expenseResult?.id && shouldSendEmail) {
+                try {
+                  await this.expenseRequestService.sendExpenseEmail(tenantId, expenseResult.id, 'system');
+                  this.logger.log(`Masraf talebi maili gönderildi: ${result.case!.fileNumber}`);
+                } catch (emailErr: any) {
+                  this.logger.warn(`Masraf maili gönderilemedi: ${emailErr.message}`);
+                }
+              }
+            })
+            .catch((err) => {
+              this.logger.warn(`Otomatik masraf seti oluşturulamadı: ${err.message}`);
+            });
+        }
       }
 
       return {
@@ -1038,31 +1066,31 @@ export class CaseService {
   async getNextFileNumber(tenantId: string): Promise<string> {
     const currentYear = new Date().getFullYear();
     
-    // Bu yıla ait en son dosya numarasını bul
-    const lastCase = await this.prisma.case.findFirst({
+    // Bu yıla ait tüm dosya numaralarını bul ve en büyük numarayı hesapla
+    const casesThisYear = await this.prisma.case.findMany({
       where: {
         tenantId,
         fileNumber: {
           startsWith: `${currentYear}/`,
         },
       },
-      orderBy: { fileNumber: 'desc' },
       select: { fileNumber: true },
     });
 
-    let nextNumber = 1;
-    if (lastCase?.fileNumber) {
-      // Format: 2025/1234
-      const parts = lastCase.fileNumber.split('/');
-      if (parts.length === 2) {
-        const lastNumber = parseInt(parts[1], 10);
-        if (!isNaN(lastNumber)) {
-          nextNumber = lastNumber + 1;
+    let maxNumber = 0;
+    for (const c of casesThisYear) {
+      if (c.fileNumber) {
+        const parts = c.fileNumber.split('/');
+        if (parts.length === 2) {
+          const num = parseInt(parts[1], 10);
+          if (!isNaN(num) && num > maxNumber) {
+            maxNumber = num;
+          }
         }
       }
     }
 
-    return `${currentYear}/${nextNumber}`;
+    return `${currentYear}/${maxNumber + 1}`;
   }
 
   // Dosya flag'lerini güncelle (K.47-50)

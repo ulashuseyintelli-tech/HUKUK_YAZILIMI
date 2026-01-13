@@ -290,6 +290,11 @@ export class CreateDebtorDto {
   @Type(() => CreateDebtorAddressDto)
   @IsOptional()
   addresses?: CreateDebtorAddressDto[];
+
+  // === ADDRESS INTAKE MODE ===
+  @IsBoolean()
+  @IsOptional()
+  clientConfirmed?: boolean; // Adresler müvekkilden alındı mı?
 }
 
 export class UpdateDebtorDto {

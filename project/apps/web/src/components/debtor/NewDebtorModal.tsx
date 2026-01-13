@@ -83,6 +83,9 @@ export function NewDebtorModal({ initialType, editDebtor, onSave, onClose }: New
   const [email, setEmail] = useState(editDebtor?.email || "");
   const [kepAddress, setKepAddress] = useState(editDebtor?.kepAddress || "");
 
+  // Client confirmation for address (bypass address request task)
+  const [clientConfirmed, setClientConfirmed] = useState(false);
+
   // Address
   const [addresses, setAddresses] = useState<Partial<DebtorAddress>[]>(
     editDebtor?.debtorAddresses?.length 
@@ -169,6 +172,7 @@ export function NewDebtorModal({ initialType, editDebtor, onSave, onClose }: New
         email: email || undefined,
         kepAddress: kepAddress || undefined,
         addresses: validAddresses,
+        clientConfirmed: clientConfirmed && validAddresses.length > 0, // Only if addresses exist
       };
 
       if (type === DebtorType.INDIVIDUAL) {
@@ -627,6 +631,30 @@ export function NewDebtorModal({ initialType, editDebtor, onSave, onClose }: New
               ))}
             </div>
           </div>
+          )}
+
+          {/* Client Confirmation Checkbox - Tereke hariç */}
+          {type !== DebtorType.ESTATE && addresses.some(a => a.street && a.city) && (
+            <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <label className="flex items-start gap-2 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={clientConfirmed}
+                  onChange={(e) => setClientConfirmed(e.target.checked)}
+                  className="mt-0.5 rounded border-blue-300 text-blue-600 focus:ring-blue-500"
+                />
+                <div>
+                  <span className="text-sm font-medium text-blue-800">
+                    Bu adres(ler) müvekkilden alındı (teyitli)
+                  </span>
+                  {clientConfirmed && (
+                    <p className="text-xs text-blue-600 mt-1">
+                      ℹ️ Müvekkile otomatik adres talebi gönderilmeyecek
+                    </p>
+                  )}
+                </div>
+              </label>
+            </div>
           )}
 
           {/* Footer */}

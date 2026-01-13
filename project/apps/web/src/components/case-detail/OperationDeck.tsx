@@ -76,6 +76,10 @@ interface FinanceItem {
   date: string;
   description?: string;
   status?: string;
+  // Expense-specific fields
+  paidAmount?: number;
+  remainingAmount?: number;
+  items?: Array<{ code: string; label: string; suggestedAmount?: number; finalAmount: number; wasOverridden?: boolean }>;
 }
 
 interface UyapQuery {
@@ -426,7 +430,7 @@ export function OperationDeck({
           {activePanel === "finance" && (
             <div className="p-4 space-y-4">
               {/* Özet Kartları */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-4 gap-3">
                 <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200">
                   <p className="text-[10px] text-emerald-600 uppercase tracking-wide">Tahsilat</p>
                   <p className="text-lg font-bold text-emerald-700">
@@ -440,23 +444,83 @@ export function OperationDeck({
                   </p>
                 </div>
                 <div className="p-3 rounded-lg bg-amber-50 border border-amber-200">
-                  <p className="text-[10px] text-amber-600 uppercase tracking-wide">Müvekkil Bakiye</p>
+                  <p className="text-[10px] text-amber-600 uppercase tracking-wide">Masraf Talebi</p>
+                  <p className="text-lg font-bold text-amber-700">
+                    {formatTL(financeItems.filter(f => f.type === "MASRAF_TALEP").reduce((s, f) => s + f.amount, 0))}
+                  </p>
+                  <p className="text-[9px] text-amber-500">
+                    Ödenen: {formatTL(financeItems.filter(f => f.type === "MASRAF_TALEP").reduce((s, f) => s + (f.paidAmount || 0), 0))}
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                  <p className="text-[10px] text-slate-600 uppercase tracking-wide">Müvekkil Bakiye</p>
                   <p className={`text-lg font-bold ${clientBalance >= 0 ? "text-emerald-700" : "text-red-700"}`}>
                     {formatTL(clientBalance)}
                   </p>
                 </div>
               </div>
 
-              {/* Son İşlemler */}
+              {/* Masraf Talepleri (Expense Requests) */}
+              {financeItems.filter(f => f.type === "MASRAF_TALEP").length > 0 && (
+                <div>
+                  <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Masraf Talepleri</p>
+                  <div className="space-y-2 max-h-[150px] overflow-y-auto">
+                    {financeItems.filter(f => f.type === "MASRAF_TALEP").map(item => (
+                      <div key={item.id} className={`p-3 rounded-lg border ${
+                        item.status === 'PAID' ? 'border-emerald-200 bg-emerald-50/50' :
+                        item.status === 'PARTIAL' ? 'border-amber-200 bg-amber-50/50' :
+                        'border-slate-200 bg-white'
+                      }`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-sm font-medium text-slate-700">{item.description}</span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-medium ${
+                            item.status === 'PAID' ? 'bg-emerald-100 text-emerald-700' :
+                            item.status === 'PARTIAL' ? 'bg-amber-100 text-amber-700' :
+                            'bg-slate-100 text-slate-600'
+                          }`}>
+                            {item.status === 'PAID' ? 'Ödendi' : item.status === 'PARTIAL' ? 'Kısmi' : 'Bekliyor'}
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-500">{formatDate(item.date)}</span>
+                          <div className="text-right">
+                            <span className="font-semibold text-slate-700">{formatTL(item.amount)}</span>
+                            {item.paidAmount !== undefined && item.paidAmount > 0 && item.paidAmount < item.amount && (
+                              <span className="text-emerald-600 ml-2">({formatTL(item.paidAmount)} ödendi)</span>
+                            )}
+                          </div>
+                        </div>
+                        {/* Kalem detayları */}
+                        {item.items && item.items.length > 0 && (
+                          <div className="mt-2 pt-2 border-t border-slate-100">
+                            <div className="space-y-1">
+                              {item.items.slice(0, 3).map((subItem, idx) => (
+                                <div key={idx} className="flex justify-between text-[10px] text-slate-500">
+                                  <span>{subItem.label}</span>
+                                  <span>{formatTL(subItem.finalAmount)}</span>
+                                </div>
+                              ))}
+                              {item.items.length > 3 && (
+                                <p className="text-[10px] text-slate-400 italic">+{item.items.length - 3} kalem daha</p>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Son İşlemler (Tahsilatlar) */}
               <div>
                 <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide mb-2">Son İşlemler</p>
                 <div className="space-y-1 max-h-[200px] overflow-y-auto">
-                  {financeItems.slice(0, 10).map(item => (
+                  {financeItems.filter(f => f.type !== "MASRAF_TALEP").slice(0, 10).map(item => (
                     <div key={item.id} className="flex items-center justify-between py-2 px-3 rounded bg-slate-50 text-sm">
                       <div className="flex items-center gap-2">
                         <span className={`w-2 h-2 rounded-full ${
-                          item.type === "TAHSILAT" ? "bg-emerald-500" : 
-                          item.type === "MASRAF_YAPILAN" ? "bg-red-500" : "bg-amber-500"
+                          item.type === "TAHSILAT" ? "bg-emerald-500" : "bg-red-500"
                         }`} />
                         <span className="text-slate-700">{item.description || item.type}</span>
                       </div>
@@ -470,7 +534,7 @@ export function OperationDeck({
                       </div>
                     </div>
                   ))}
-                  {financeItems.length === 0 && (
+                  {financeItems.filter(f => f.type !== "MASRAF_TALEP").length === 0 && (
                     <p className="text-center py-4 text-slate-400 text-sm">Henüz işlem yok</p>
                   )}
                 </div>

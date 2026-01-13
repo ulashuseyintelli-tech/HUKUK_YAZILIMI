@@ -23,6 +23,28 @@ function getDefaultLegalMethod(debtor: Debtor): TebligatLegalMethod {
   return TebligatLegalMethod.POSTAL;
 }
 
+// Yararlı adres var mı? (Task bypass için)
+function hasUsefulAddresses(debtor: Debtor): boolean {
+  const addresses = debtor?.debtorAddresses || [];
+  if (addresses.length === 0) return false;
+  
+  // Yararlı adres kategorileri
+  const usefulCategories = ['DECLARED_CLIENT', 'DECLARED_DOCUMENT', 'MERNIS_RESIDENCE'];
+  // Yararlı güven seviyeleri
+  const usefulConfidenceLevels = ['MEDIUM', 'MEDIUM_HIGH', 'HIGH'];
+  
+  return addresses.some(addr => {
+    // Güncel adres mi?
+    const isCurrent = addr.isCurrent !== false; // undefined veya true ise güncel
+    // Yararlı kategori mi?
+    const hasUsefulCategory = !addr.addressCategory || usefulCategories.includes(addr.addressCategory);
+    // Yararlı güven seviyesi mi?
+    const hasUsefulConfidence = !addr.confidenceLevel || usefulConfidenceLevels.includes(addr.confidenceLevel);
+    
+    return isCurrent && hasUsefulCategory && hasUsefulConfidence;
+  });
+}
+
 interface SelectedDebtorCardProps {
   caseDebtor: CaseDebtor;
   onUpdate: (updates: Partial<CaseDebtor>) => void;
@@ -37,6 +59,7 @@ export function SelectedDebtorCard({ caseDebtor, onUpdate, onRemove, onEdit }: S
   const addresses = debtor?.debtorAddresses || [];
   const isElectronicRequired = debtor ? isElectronicNotificationRequired(debtor) : false;
   const isEstate = debtor?.type === DebtorType.ESTATE;
+  const hasUseful = debtor ? hasUsefulAddresses(debtor) : false;
   
   useEffect(() => {
     if (!debtor) return;
@@ -77,6 +100,17 @@ export function SelectedDebtorCard({ caseDebtor, onUpdate, onRemove, onEdit }: S
         {isEstate && <Scroll className="h-4 w-4 text-amber-500" />}
         <span className="font-medium text-sm">{debtor.name}</span>
         {debtor.identityNo && <span className="text-xs text-gray-500">({debtor.identityNo})</span>}
+        {/* Yararlı adres indicator */}
+        {hasUseful && (
+          <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[10px] font-medium" title="Yararlı adres mevcut">
+            <CheckCircle className="h-3 w-3" /> Adres ✓
+          </span>
+        )}
+        {!hasUseful && !isEstate && addresses.length === 0 && (
+          <span className="flex items-center gap-0.5 px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[10px] font-medium" title="Adres bilgisi yok">
+            <AlertCircle className="h-3 w-3" /> Adres yok
+          </span>
+        )}
         <span className="ml-auto text-gray-400">
           {showDetails ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
         </span>
