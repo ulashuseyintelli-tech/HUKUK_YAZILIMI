@@ -3,6 +3,9 @@ import { Response } from 'express';
 import { UyapService } from './uyap.service';
 import { UyapXmlService } from './uyap-xml.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+// CPE Integration - Phase 3
+import { CpeRequired, ScopeResolvers } from '@/modules/policy-engine';
+import { ActionCode } from '@/modules/policy-engine/types/action-code.enum';
 
 @Controller('uyap')
 @UseGuards(JwtAuthGuard)
@@ -162,8 +165,11 @@ export class UyapController {
 
   /**
    * Haciz talebi gönder
+   * 
+   * @CpeRequired - Haciz talebi HIGH risk aksiyon
    */
   @Post('haciz')
+  @CpeRequired(ActionCode.TRIGGER_HACIZ, ScopeResolvers.fromBody)
   async pushHacizRequest(@Body() body: any, @Req() req: any) {
     const tenantId = req.user?.tenantId;
     return this.uyapService.pushHacizRequest({
@@ -286,8 +292,11 @@ export class UyapController {
   /**
    * UYAP'a e-Takip XML gönder (STUB)
    * POST /uyap/xml/submit/:caseId
+   * 
+   * @CpeRequired - UYAP gönderimi HIGH risk aksiyon
    */
   @Post('xml/submit/:caseId')
+  @CpeRequired(ActionCode.UYAP_SEND)
   async submitXmlToUyap(
     @Param('caseId') caseId: string,
     @Req() req: any,

@@ -1,17 +1,39 @@
-import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
+import { Injectable, OnModuleInit, Logger, Inject, Optional } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 
-// Gate tipleri
+// Shared contracts
+import type {
+  GateCode,
+  GateResult,
+  GateValidationResult as SharedGateValidationResult,
+  ValidationError as SharedValidationError,
+  GateSeverity,
+} from '@shared/types';
+
+/**
+ * @deprecated Use policy-engine/gate-checker instead
+ * 
+ * Bu servis artık sadece adapter görevi görüyor.
+ * Yeni kod için: import { GateCheckerService } from '@/modules/policy-engine'
+ * 
+ * Migration planı:
+ * 1. Tüm validateGate() çağrıları policy-engine'e taşınacak
+ * 2. Bu modül Phase 3 sonunda silinecek
+ * 
+ * @see ARCHITECTURE.md - Source of Truth Matrix
+ */
+
+// Gate tipleri - artık shared types'dan geliyor
 export type GateId = 
   | 'GATE_1_CASE_CREATION'
   | 'GATE_2_ORNEK1_GENERATION'
   | 'GATE_3_SERVICE_OF_PROCESS'
   | 'GATE_4_UYAP_INTEGRATION';
 
-// Validasyon sonucu
+// Local types (backward compatibility için)
 export interface ValidationError {
   id: string;
   path: string;
@@ -76,11 +98,21 @@ interface MasterValidations {
 export class ValidationGateService implements OnModuleInit {
   private readonly logger = new Logger(ValidationGateService.name);
   private rules: MasterValidations | null = null;
+  private deprecationWarned = false;
 
   constructor(private prisma: PrismaService) {}
 
   async onModuleInit() {
     await this.loadRules();
+    
+    // Deprecation warning (sadece bir kez)
+    if (!this.deprecationWarned && process.env.NODE_ENV !== 'test') {
+      this.logger.warn(
+        '⚠️ ValidationGateService is DEPRECATED. Use policy-engine/gate-checker instead. ' +
+        'See ARCHITECTURE.md for migration guide.'
+      );
+      this.deprecationWarned = true;
+    }
   }
 
   // YAML kurallarini yukle

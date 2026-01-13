@@ -679,4 +679,75 @@ export class TemplateEngineController {
     res.setHeader('Content-Disposition', `attachment; filename="dolandiricilik-suc-duyurusu-${caseId}.docx"`);
     res.send(wordBuffer);
   }
+
+  // ============================================
+  // MERKEZİ DOKÜMAN ÜRETİM ENDPOINT'LERİ
+  // ============================================
+
+  /**
+   * Case ID bazlı doküman üret - Eski Takipler ve Yeni Takip ekranlarından çağrılabilir
+   * POST /template-engine/cases/:caseId/documents/:format
+   */
+  @Post('cases/:caseId/documents/:format')
+  async generateDocumentFromCase(
+    @Param('caseId') caseId: string,
+    @Param('format') format: 'docx' | 'pdf' | 'xml',
+    @Query('type') documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi',
+    @Res() res: Response
+  ): Promise<void> {
+    try {
+      const formatUpper = format.toUpperCase() as 'DOCX' | 'PDF' | 'XML';
+      const result = await this.templateEngineService.generateDocumentFromCase(caseId, formatUpper, documentType);
+      
+      const mimeTypes: Record<string, string> = {
+        DOCX: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        PDF: 'application/pdf',
+        XML: 'application/xml',
+      };
+      
+      const extensions: Record<string, string> = {
+        DOCX: 'docx',
+        PDF: 'pdf',
+        XML: 'xml',
+      };
+      
+      res.setHeader('Content-Type', mimeTypes[formatUpper]);
+      res.setHeader('Content-Disposition', `attachment; filename="${documentType}-${caseId}.${extensions[formatUpper]}"`);
+      res.setHeader('X-From-Cache', result.fromCache ? 'true' : 'false');
+      res.send(result.buffer);
+    } catch (error: any) {
+      console.error('[TemplateEngine] Document generation error:', error);
+      res.status(500).json({ message: error.message || 'Doküman oluşturulamadı' });
+    }
+  }
+
+  /**
+   * Case'e ait mevcut doküman artifact'larını listele
+   * GET /template-engine/cases/:caseId/documents
+   */
+  @Get('cases/:caseId/documents')
+  async listDocumentArtifacts(@Param('caseId') caseId: string): Promise<any[]> {
+    return this.templateEngineService.listDocumentArtifacts(caseId);
+  }
+
+  /**
+   * Artifact indir
+   * GET /template-engine/documents/:artifactId/download
+   */
+  @Get('documents/:artifactId/download')
+  async downloadArtifact(
+    @Param('artifactId') artifactId: string,
+    @Res() res: Response
+  ): Promise<void> {
+    const result = await this.templateEngineService.downloadArtifact(artifactId);
+    
+    if (!result) {
+      res.status(404).json({ message: 'Doküman bulunamadı' });
+      return;
+    }
+    
+    res.setHeader('Content-Type', result.mimeType);
+    res.setHeader('Content-Disposition', `attachment; filename="${result.fileName}"`);
+    res.send(result.buffer);
+  }
 }

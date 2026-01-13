@@ -1010,6 +1010,13 @@ model Case {
   addressTasks     AddressTask[]
   addressAuditLogs AddressAuditLog[]
 
+  // Document Artifact System
+  documentArtifacts DocumentArtifact[]
+
+  // CPE (Case Policy Engine)
+  cpeDecisionLogs    CpeDecisionLog[]    @relation("CpeDecisionLogs")
+  cpeExecutionRecords CpeExecutionRecord[] @relation("CpeExecutionRecords")
+
   @@unique([tenantId, fileNumber])
   @@index([tenantId, status])
   @@index([tenantId, caseStatus])
@@ -6113,4 +6120,81 @@ enum DocumentArtifactStatus {
   READY // Hazır
   FAILED // Hata
   EXPIRED // Süresi dolmuş
+}
+
+// ==================== CPE (Case Policy Engine) MODELS ====================
+
+// CPE Decision Log - Her karar için detaylı log
+model CpeDecisionLog {
+  id              String   @id @default(cuid())
+  caseId          String
+  actionCode      String   // ActionCode enum value
+  scope           String   // Scope enum value (CASE, DEBTOR, ASSET, EXPENSE)
+  contextJson     Json?    // { debtorId?, assetId?, expenseId?, metadata? }
+  
+  allowed         Boolean
+  code            String   // DecisionCode enum value
+  reason          String   // Türkçe açıklama
+  
+  factsUsedKeys   String[] // Kullanılan fact key'leri (değerler değil, KVKK)
+  factsSnapshotHash String? // Fact snapshot hash (debugging için)
+  stateSnapshot   Json?    // { scope, currentState, contextId, version }
+  
+  gateCode        String?  // Bloklayan gate kodu (varsa)
+  gateSeverity    String?  // HARD veya SOFT
+  
+  warnings        Json?    // Soft gate uyarıları
+  
+  traceId         String?  // Distributed tracing ID
+  ruleVersion     String?  // Compiled rules version hash
+  
+  createdAt       DateTime @default(now())
+
+  case Case @relation("CpeDecisionLogs", fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([actionCode])
+  @@index([allowed])
+  @@index([code])
+  @@index([createdAt])
+  @@index([traceId])
+}
+
+// CPE Execution Record - Aksiyon yürütme kaydı (idempotency için)
+model CpeExecutionRecord {
+  id              String   @id @default(cuid())
+  executionId     String   @unique // UUID - idempotency key
+  caseId          String
+  actionCode      String
+  contextJson     Json?
+  
+  startedAt       DateTime @default(now())
+  finishedAt      DateTime?
+  
+  status          CpeExecutionStatus @default(PENDING)
+  errorCode       String?
+  errorMessage    String?
+  
+  stateBeforeHash String?  // State hash before execution
+  stateAfterHash  String?  // State hash after execution
+  
+  ruleVersion     String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  case Case @relation("CpeExecutionRecords", fields: [caseId], references: [id], onDelete: Cascade)
+
+  @@index([caseId])
+  @@index([executionId])
+  @@index([actionCode])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum CpeExecutionStatus {
+  PENDING   // Başlatıldı
+  SUCCESS   // Başarılı
+  FAILED    // Hata
+  NOOP      // Duplicate executionId - no operation
 }

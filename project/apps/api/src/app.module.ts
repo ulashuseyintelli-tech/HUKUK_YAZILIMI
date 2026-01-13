@@ -69,6 +69,7 @@ import { UyapExportModule } from "./modules/uyap-export/uyap-export.module";
 import { V28EngineModule } from "./modules/icrabot/v28-engine/v28-engine.module";
 import { InterestEngineModule } from "./modules/interest-engine/interest-engine.module";
 import { AddressTaskModule } from "./modules/address-task/address-task.module";
+import { PolicyEngineModule } from "./modules/policy-engine/policy-engine.module";
 // TODO: IcrabotModule geçici olarak devre dışı - Prisma client regenerate gerekli
 // import { IcrabotModule } from "./modules/icrabot/icrabot.module";
 
@@ -146,6 +147,7 @@ import { AddressTaskModule } from "./modules/address-task/address-task.module";
     V28EngineModule,
     InterestEngineModule,
     AddressTaskModule,
+    PolicyEngineModule,
     // IcrabotModule, // TODO: Prisma client regenerate sonrası aktif et
   ],
 })

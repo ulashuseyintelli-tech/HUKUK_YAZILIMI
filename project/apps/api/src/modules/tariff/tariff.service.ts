@@ -2,6 +2,20 @@ import { Injectable, Logger } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import type { ITariffRepository, Tariff as SharedTariff } from '@shared/types';
+
+/**
+ * Tariff Service
+ * 
+ * Sorumluluklar:
+ * - YAML tarife dosyalarını yönetme (CRUD)
+ * - Tarife verisi sağlama (ITariffRepository)
+ * - Admin işlemleri
+ * 
+ * NOT: Masraf hesaplama bu modülün sorumluluğunda DEĞİL.
+ * @see fee-engine - Masraf hesaplama için tek kaynak
+ * @see ARCHITECTURE.md - Source of Truth Matrix
+ */
 
 export interface TariffData {
   version: number;
@@ -24,7 +38,7 @@ export interface TariffSummary {
 }
 
 @Injectable()
-export class TariffService {
+export class TariffService implements ITariffRepository {
   private readonly logger = new Logger(TariffService.name);
   private readonly configPath: string;
   private tariffs: Map<number, TariffData> = new Map();
@@ -33,6 +47,83 @@ export class TariffService {
     this.configPath = path.join(process.cwd(), 'src/config/tariffs');
     this.loadAllTariffs();
   }
+
+  // ============================================
+  // ITariffRepository Implementation
+  // ============================================
+
+  /**
+   * Shared Tariff formatına dönüştür
+   */
+  private toSharedFormat(data: TariffData): SharedTariff {
+    return {
+      version: data.version,
+      year: data.year,
+      effectiveDate: data.effective_date,
+      fixedFees: Object.fromEntries(
+        Object.entries(data.fixed_fees).map(([k, v]) => [k, {
+          amount: v.amount,
+          label: v.label,
+          itemType: v.item_type,
+          appliesTo: v.applies_to,
+        }])
+      ),
+      rateFees: Object.fromEntries(
+        Object.entries(data.rate_fees).map(([k, v]) => [k, {
+          rate: v.rate,
+          label: v.label,
+          itemType: v.item_type,
+          base: v.base,
+          appliesTo: v.applies_to,
+          minAmount: v.min_amount,
+        }])
+      ),
+      postage: Object.fromEntries(
+        Object.entries(data.postage).map(([k, v]) => [k, {
+          amount: v.amount,
+          label: v.label,
+          description: v.description,
+        }])
+      ),
+      interestRates: Object.fromEntries(
+        Object.entries(data.interest_rates).map(([currency, types]) => [
+          currency,
+          Object.fromEntries(
+            Object.entries(types).map(([type, rates]) => [
+              type,
+              rates.map(r => ({ startDate: r.start_date, rate: r.rate }))
+            ])
+          )
+        ])
+      ),
+      penalties: Object.fromEntries(
+        Object.entries(data.penalties).map(([k, v]) => [k, {
+          defaultRate: v.default_rate,
+          maxRate: v.max_rate,
+          label: v.label,
+        }])
+      ),
+    };
+  }
+
+  getTariff(year: number): SharedTariff | null {
+    const data = this.tariffs.get(year);
+    return data ? this.toSharedFormat(data) : null;
+  }
+
+  getActiveTariff(): SharedTariff | null {
+    const currentYear = new Date().getFullYear();
+    const data = this.tariffs.get(currentYear) || this.tariffs.get(currentYear - 1);
+    return data ? this.toSharedFormat(data) : null;
+  }
+
+  getAvailableYears(): number[] {
+    return Array.from(this.tariffs.keys()).sort((a, b) => b - a);
+  }
+
+  // ============================================
+  // Internal Methods
+  // ============================================
 
   // Tum tarifeleri yukle
   private loadAllTariffs(): void {

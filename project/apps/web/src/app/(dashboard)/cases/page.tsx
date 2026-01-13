@@ -1422,6 +1422,49 @@ export default function CasesPage() {
     }
   };
 
+  // Doküman indirme fonksiyonu - Eski Takipler için
+  const handleDownloadDocument = async (caseId: string, format: 'docx' | 'pdf' | 'xml') => {
+    const processingKey = `${caseId}-${format}`;
+    try {
+      setProcessingIds(prev => [...prev, processingKey]);
+      
+      // Doğrudan fetch kullan (blob response için)
+      const token = localStorage.getItem('token');
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/template-engine/cases/${caseId}/documents/${format}?type=takip-talebi`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({}),
+        }
+      );
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Doküman oluşturulamadı');
+      }
+      
+      // Dosyayı indir
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `takip-talebi-${caseId}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error: any) {
+      console.error('Doküman indirme hatası:', error);
+      alert(error.message || 'Doküman indirilemedi');
+    } finally {
+      setProcessingIds(prev => prev.filter(id => id !== processingKey));
+    }
+  };
+
   const handleBulkExport = async (format: 'excel' | 'pdf') => {
     if (selectedCases.length === 0) {
       alert('Lütfen en az bir takip seçin');
@@ -2399,7 +2442,7 @@ export default function CasesPage() {
                         <MoreHorizontal className="h-4 w-4" />
                       </button>
                       {actionMenuOpen === c.id && (
-                        <div className="absolute right-0 top-full mt-1 w-48 bg-white border rounded-lg shadow-lg z-10">
+                        <div className="absolute right-0 top-full mt-1 w-56 bg-white border rounded-lg shadow-lg z-10">
                           <Link
                             href={`/cases/${c.id}`}
                             className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-muted"
@@ -2420,6 +2463,35 @@ export default function CasesPage() {
                           >
                             <Copy className="h-4 w-4" />
                             Kopyala
+                          </button>
+                          <hr className="my-1" />
+                          {/* Doküman İndirme Butonları */}
+                          <div className="px-3 py-1.5 text-xs text-muted-foreground font-medium">
+                            Takip Talebi İndir
+                          </div>
+                          <button
+                            onClick={() => { handleDownloadDocument(c.id, 'docx'); setActionMenuOpen(null); }}
+                            disabled={processingIds.includes(`${c.id}-docx`)}
+                            className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-blue-50 w-full text-left text-blue-600"
+                          >
+                            <FileText className="h-4 w-4" />
+                            {processingIds.includes(`${c.id}-docx`) ? 'İndiriliyor...' : 'Word (.docx)'}
+                          </button>
+                          <button
+                            onClick={() => { handleDownloadDocument(c.id, 'pdf'); setActionMenuOpen(null); }}
+                            disabled={processingIds.includes(`${c.id}-pdf`)}
+                            className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-red-50 w-full text-left text-red-600"
+                          >
+                            <FileText className="h-4 w-4" />
+                            {processingIds.includes(`${c.id}-pdf`) ? 'İndiriliyor...' : 'PDF (.pdf)'}
+                          </button>
+                          <button
+                            onClick={() => { handleDownloadDocument(c.id, 'xml'); setActionMenuOpen(null); }}
+                            disabled={processingIds.includes(`${c.id}-xml`)}
+                            className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-green-50 w-full text-left text-green-600"
+                          >
+                            <FileText className="h-4 w-4" />
+                            {processingIds.includes(`${c.id}-xml`) ? 'İndiriliyor...' : 'XML (.xml)'}
                           </button>
                           <hr className="my-1" />
                           <button

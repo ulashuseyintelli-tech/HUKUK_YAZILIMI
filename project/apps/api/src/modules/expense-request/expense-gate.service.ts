@@ -15,11 +15,40 @@ export interface GateCheckResult {
   message?: string;
 }
 
+/**
+ * CPE Adapter Interface
+ * Opsiyonel CPE entegrasyonu için
+ */
+export interface CpeAdapter {
+  canPerformAction(caseId: string, actionCode: string, context?: any): Promise<{
+    allowed: boolean;
+    code?: string;
+    reason?: string;
+  }>;
+}
+
 @Injectable()
 export class ExpenseGateService {
   private readonly logger = new Logger(ExpenseGateService.name);
+  
+  /**
+   * CPE Adapter - opsiyonel, inject edilirse kullanılır
+   * Feature flag ile kontrol edilir
+   */
+  private cpeAdapter?: CpeAdapter;
+  private useCpe = false; // Feature flag
 
   constructor(private prisma: PrismaService) {}
+
+  /**
+   * CPE Adapter'ı set et (opsiyonel)
+   * PolicyEngineModule'dan inject edilir
+   */
+  setCpeAdapter(adapter: CpeAdapter, enabled: boolean = true): void {
+    this.cpeAdapter = adapter;
+    this.useCpe = enabled;
+    this.logger.log(`CPE adapter ${enabled ? 'enabled' : 'disabled'}`);
+  }
 
   /**
    * Gate kontrolü - BLOCKING expense'ler ödenmemiş mi?
@@ -67,8 +96,33 @@ export class ExpenseGateService {
 
   /**
    * UYAP işlemleri kilitli mi?
+   * 
+   * @deprecated CPE kullanımına geçilecek - canPerformUyapAction kullanın
    */
   async isUyapBlocked(caseId: string): Promise<boolean> {
+    // CPE aktifse, CPE'den kontrol et
+    if (this.useCpe && this.cpeAdapter) {
+      const decision = await this.cpeAdapter.canPerformAction(caseId, 'UYAP_SEND');
+      const legacyResult = await this.isUyapBlockedLegacy(caseId);
+      
+      // Discrepancy logging
+      if (decision.allowed !== !legacyResult) {
+        this.logger.warn(
+          `CPE/Legacy discrepancy for case ${caseId}: CPE=${decision.allowed}, Legacy=${!legacyResult}`,
+          { cpeCode: decision.code, cpeReason: decision.reason }
+        );
+      }
+      
+      return !decision.allowed;
+    }
+    
+    return this.isUyapBlockedLegacy(caseId);
+  }
+
+  /**
+   * Legacy UYAP block kontrolü
+   */
+  private async isUyapBlockedLegacy(caseId: string): Promise<boolean> {
     const count = await this.prisma.expenseRequest.count({
       where: {
         caseId,
@@ -82,6 +136,7 @@ export class ExpenseGateService {
 
   /**
    * Belirli bir UYAP işlemi yapılabilir mi?
+   * CPE entegrasyonu ile çalışır
    */
   async canPerformUyapAction(caseId: string, actionType: string): Promise<boolean> {
     // Bazı işlemler gate'den muaf olabilir (örn: dosya görüntüleme)
@@ -91,7 +146,41 @@ export class ExpenseGateService {
       return true;
     }
 
-    const isBlocked = await this.isUyapBlocked(caseId);
+    // CPE aktifse, CPE'den kontrol et
+    if (this.useCpe && this.cpeAdapter) {
+      // ActionType'ı CPE ActionCode'a map et
+      const actionCodeMap: Record<string, string> = {
+        'SEND': 'UYAP_SEND',
+        'SUBMIT': 'UYAP_SEND',
+        'NOTIFICATION': 'SEND_NOTIFICATION',
+        'HACIZ': 'TRIGGER_HACIZ',
+        'ENFORCEMENT': 'TRIGGER_HACIZ',
+      };
+      
+      const actionCode = actionCodeMap[actionType.toUpperCase()] || 'UYAP_SEND';
+      const decision = await this.cpeAdapter.canPerformAction(caseId, actionCode);
+      
+      // Legacy kontrolü de yap ve karşılaştır
+      const legacyResult = await this.canPerformUyapActionLegacy(caseId, actionType);
+      
+      if (decision.allowed !== legacyResult) {
+        this.logger.warn(
+          `CPE/Legacy discrepancy for ${actionType} on case ${caseId}: CPE=${decision.allowed}, Legacy=${legacyResult}`,
+          { cpeCode: decision.code, cpeReason: decision.reason }
+        );
+      }
+      
+      return decision.allowed;
+    }
+
+    return this.canPerformUyapActionLegacy(caseId, actionType);
+  }
+
+  /**
+   * Legacy UYAP action kontrolü
+   */
+  private async canPerformUyapActionLegacy(caseId: string, actionType: string): Promise<boolean> {
+    const isBlocked = await this.isUyapBlockedLegacy(caseId);
     return !isBlocked;
   }
 

@@ -12,6 +12,10 @@
  * - Kullanıcı override edebilir
  */
 
+// ═══════════════════════════════════════════════════════════════════════════
+// UI INTEREST TYPE (Web tarafı için kullanıcı dostu isimler)
+// ═══════════════════════════════════════════════════════════════════════════
+
 export type InterestTypeCode = 
   | 'YOK'
   | 'YASAL'
@@ -20,6 +24,75 @@ export type InterestTypeCode =
   | 'AKDI'
   | 'BANKA_TL'
   | 'KAMU_BANKA_TL';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// API INTEREST TYPE (Backend InterestTypeCode enum değerleri)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export type ApiInterestTypeCode =
+  | 'LEGAL_3095'
+  | 'COMMERCIAL_AVANS_3095_2_2'
+  | 'COMMERCIAL_FIXED'
+  | 'TTK_1530'
+  | 'CONTRACTUAL'
+  | 'MEVDUAT_TL_BANKALARCA'
+  | 'MEVDUAT_USD_BANKALARCA'
+  | 'MEVDUAT_EUR_BANKALARCA'
+  | 'MEVDUAT_TL_KAMU'
+  | 'MEVDUAT_USD_KAMU'
+  | 'MEVDUAT_EUR_KAMU';
+
+// ═══════════════════════════════════════════════════════════════════════════
+// UI → API MAPPING (Request gönderirken kullan)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const UI_TO_API_MAP: Record<InterestTypeCode, ApiInterestTypeCode | null> = {
+  'YOK': null,
+  'YASAL': 'LEGAL_3095',
+  'TICARI_DEGISEN': 'COMMERCIAL_AVANS_3095_2_2',
+  'TICARI_SABIT': 'COMMERCIAL_FIXED',
+  'AKDI': 'CONTRACTUAL',
+  'BANKA_TL': 'MEVDUAT_TL_BANKALARCA',
+  'KAMU_BANKA_TL': 'MEVDUAT_TL_KAMU',
+};
+
+/**
+ * UI faiz türünü API faiz türüne çevir
+ * API'ye request gönderirken kullan
+ */
+export function mapUiToApiInterestType(uiType: InterestTypeCode): ApiInterestTypeCode | null {
+  return UI_TO_API_MAP[uiType] ?? null;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// API → UI MAPPING (Response alırken kullan)
+// ═══════════════════════════════════════════════════════════════════════════
+
+const API_TO_UI_MAP: Record<ApiInterestTypeCode, InterestTypeCode> = {
+  'LEGAL_3095': 'YASAL',
+  'COMMERCIAL_AVANS_3095_2_2': 'TICARI_DEGISEN',
+  'COMMERCIAL_FIXED': 'TICARI_SABIT',
+  'TTK_1530': 'TICARI_DEGISEN', // TTK 1530 de ticari değişen olarak göster
+  'CONTRACTUAL': 'AKDI',
+  'MEVDUAT_TL_BANKALARCA': 'BANKA_TL',
+  'MEVDUAT_USD_BANKALARCA': 'BANKA_TL',
+  'MEVDUAT_EUR_BANKALARCA': 'BANKA_TL',
+  'MEVDUAT_TL_KAMU': 'KAMU_BANKA_TL',
+  'MEVDUAT_USD_KAMU': 'KAMU_BANKA_TL',
+  'MEVDUAT_EUR_KAMU': 'KAMU_BANKA_TL',
+};
+
+/**
+ * API faiz türünü UI faiz türüne çevir
+ * API'den response alırken kullan
+ */
+export function mapApiToUiInterestType(apiType: ApiInterestTypeCode | string): InterestTypeCode {
+  return API_TO_UI_MAP[apiType as ApiInterestTypeCode] ?? 'YASAL';
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// INTEREST TYPE RESOLVER (Mevcut mantık)
+// ═══════════════════════════════════════════════════════════════════════════
 
 export interface InterestTypeInput {
   /** Alacak kalem türü (CEK, SENET, FATURA, KIRA, vb.) */

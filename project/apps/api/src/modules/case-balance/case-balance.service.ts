@@ -1,5 +1,20 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+
+/**
+ * Case Balance Service (Masraf Avansı Ledger)
+ * 
+ * Bu servis dosya bazlı masraf avansı takibi yapar:
+ * - credit(): Müvekkilden avans alındı
+ * - debit(): Masraf harcandı
+ * - adjust(): Manuel düzeltme
+ * 
+ * NOT: Bu "alacak bakiyesi" DEĞİL, "masraf avansı bakiyesi"dir.
+ * Alacak hesaplaması için interest-engine kullanın.
+ * 
+ * @alias AdvanceLedgerService (gelecekte rename edilecek)
+ * @see ARCHITECTURE.md - Source of Truth Matrix
+ */
 
 // Migration sonrası @prisma/client'tan import edilecek
 // import { BalanceLedgerType } from '@prisma/client';
@@ -24,8 +39,13 @@ export interface DebitBalanceDto {
   description?: string;
 }
 
+/**
+ * @alias AdvanceLedgerService
+ */
 @Injectable()
 export class CaseBalanceService {
+  private readonly logger = new Logger(CaseBalanceService.name);
+
   constructor(private prisma: PrismaService) {}
 
   /**

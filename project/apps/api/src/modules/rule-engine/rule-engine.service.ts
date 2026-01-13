@@ -2,7 +2,23 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 /**
+ * @deprecated Bu servis CPE RuleEngine'e taşındı.
+ * 
+ * ⛔ BU MODÜLÜ KULLANMAYIN ⛔
+ * 
+ * Yeni kod için: import { RuleEngineService } from '@/modules/policy-engine/rule-engine'
+ * Faiz hesaplama için: import { InterestEngineService } from '@/modules/interest-engine'
+ * 
+ * Migration durumu: Phase 3 sonunda SİLİNECEK
+ * 
+ * @see ARCHITECTURE.md - Source of Truth Matrix
+ * @see policy-engine/rule-engine/ - Yeni implementasyon
+ */
+
+/**
  * Rule Engine Servisi
+ * 
+ * @deprecated CPE RuleEngine kullanın
  * 
  * İlamlı takip alt kategorilerine göre özel davranışlar:
  * - NAFAKA: Aylık alacak hesaplama, dönem takibi
@@ -287,8 +303,15 @@ export class RuleEngineService {
   // ============================================
 
   /**
-   * Yasal faiz hesapla
-   * 2024 yılı için yasal faiz oranı: %24 (yıllık)
+   * @deprecated Use interest-engine/InterestEngineService instead
+   * 
+   * Bu metod artık kullanılmamalı. Faiz hesaplama için:
+   * ```typescript
+   * import { InterestEngineService } from '@/modules/interest-engine';
+   * const result = await interestEngine.calculate(request);
+   * ```
+   * 
+   * @see ARCHITECTURE.md - Source of Truth Matrix
    */
   calculateLegalInterest(
     principal: number,
@@ -296,6 +319,11 @@ export class RuleEngineService {
     endDate?: Date,
     rate?: number
   ): InterestCalculation {
+    // Deprecation warning
+    this.logger.warn(
+      '⚠️ rule-engine.calculateLegalInterest() is DEPRECATED. Use interest-engine instead.'
+    );
+
     const end = endDate || new Date();
     const days = Math.floor(
       (end.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)

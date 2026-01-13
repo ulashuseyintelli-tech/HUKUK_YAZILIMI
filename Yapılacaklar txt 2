@@ -1,296 +1,393 @@
-Tamam. MERNİS’e geçmeden önce “**müvekkil + evrak adresi**” katmanını kurmak daha doğru; çünkü pratikte ilk adres kaynağın burası. Bu yüzden akışı şu sıraya koyuyoruz:
-
-1. **Evraktan gelen adres kaydı**
-2. **Müvekkile otomatik adres talebi (email/whatsapp)**
-3. **Cevap yoksa 3 günde bir hatırlatma**
-4. **Olumsuz cevap olsa bile dosya derdestken yılda 1 tekrar talep**
-5. Sonra ancak **UYAP/MERNİS** doğrulama
-
-Aşağıda bunu görev mimarisi + kurallarıyla netleştiriyorum.
+Tamam. Senin eleştirilerin “doğru teşhis + doğru yön + doğru detay” seti. Ben de üstüne birkaç sert netlik ekleyeyim ve **CPE’yi spec’e dökeyim.** Aşağıdaki içerik doğrudan `.kiro/specs/case-policy-engine/` altına konulacak şekilde yazıldı.
 
 ---
 
-## A) Adres kayıt tipleri (bu aşamada)
+# 0) Net hüküm: Sorun “mimari yok” değil, **mimari uygulanmıyor**
 
-`debtor_address.address_type` için minimum:
+Blueprint’leriniz var ama **çalışan kodun hakemi değiller**. Hakem şu an:
 
-* `DECLARED_DOCUMENT` (borç evrakı üzerindeki adres)
-* `DECLARED_CLIENT` (müvekkilin verdiği adres)
-* (sonra ekleyeceğiz) `MERNIS_RESIDENCE`
+* `expense-gate.service.ts`
+* `stage-trigger.service.ts`
+* iki farklı `rule-engine.service.ts`
+* controller içi if’ler
+* frontend “ben böyle gösteriyorum” kararları
 
-Her kayıtta mutlaka:
+Sonuç: **çok-kafalı karar sistemi**. Bu, en pahalı bug sınıfıdır: “çalışıyor gibi yapar ama güvenilmez”.
 
-* `source` = `DOCUMENT_SCAN | MANUAL_ENTRY | CLIENT_REPLY`
-* `evidence_id` (borç evrakı id / mesaj id)
-* `retrieved_at`
-* `confidence` (document=orta, client=orta/yüksek)
+Senin CPE önerin doğru: **tek soru noktası** + **fact/state/gate/rule** ayrımı.
+Ben burada sadece bir noktayı daha “çivileyeyim”:
 
----
+> YAML’lar **kaynak** olacak, ama runtime’da “string interpret” ile değil, **derlenmiş (compiled) rule/state** olarak koşacak.
 
-## B) 1) Borç evrakından adres kaydı oluşturma
-
-### Trigger
-
-* Borç evrakı sisteme girildiğinde (manuel giriş veya tarama/okuma sonrası)
-
-### İş
-
-* Evrak üzerinde bulunan adres alanı(ları) `debtor_address` tablosuna kaydedilir.
-* `address_type = DECLARED_DOCUMENT`
-* `source = DOCUMENT_SCAN` (OCR/AI ile) veya `MANUAL_ENTRY`
-* Not/Audit: “Borç evrakından alındı”
-
-> Kritik: Bu kayıt “MERNİS” yerine geçmez. Ama tebligatta **bilinen adres** olarak değerlidir.
+Yoksa YAML “doküman” olmaktan “runtime config”e evrilip prod’da sürpriz üretir. (özellikle hukuk otomasyonunda bu kumardır)
 
 ---
 
-## C) 2) Müvekkile sor kurgusu (bunu tetikliyoruz)
+# 1) Spec: `.kiro/specs/case-policy-engine/requirements.md`
 
-Bunu tek task değil, 2 aşamalı yap.
+```md
+# Case Policy Engine (CPE) - Requirements
 
-### Task Type 1 — `CLIENT_CONTACT_VALIDATE`
+## Amaç
+Icra takip sisteminde karar mekanizmasını tekilleştirmek:
+- Her aksiyon için tek otorite: `canPerformAction(caseId, actionCode, context)`
+- Her aksiyon önerisi için tek otorite: `getNextActions(caseId, scope?)`
+- Tüm kararların gerekçeli kayıt altına alınması: DecisionLog
 
-Amaç: Müvekkilin iletişim kanalını garantiye almak.
+## Problemler (Mevcut)
+1) Aynı karar farklı servislerde tekrar tekrar hesaplanıyor.
+2) Blueprint YAML’lar (decision_rules_v4.yaml, stage_flows_v3.yaml, locks_and_gates_v4.yaml) runtime’da kullanılmıyor.
+3) DecisionLog tablosu var ama aktif değil; “neden” yok.
+4) Case seviyesinde değil; debtor/asset/expense gibi alt varlıklarda ayrı durumlar var.
 
-**Kural**
+## Kapsam
+### Kapsam içi
+- Fact Store (IcrabotFact tablosu üzerinden)
+- Hierarchical State Machine (case, debtor, asset, expense scope)
+- Gate Checker (locks_and_gates_v4.yaml tabanlı)
+- Rule Engine (decision_rules_v4.yaml tabanlı) -> next actions önerisi
+- Action Queue entegrasyonu (BotTask)
+- DecisionLog yazımı (tüm allow/deny + rationale)
+- Mevcut dağınık gate/rule kontrollerinin CPE’ye taşınması
 
-* Müvekkilde **email yoksa** ve **whatsapp yoksa**:
+### Kapsam dışı (ilk sürüm)
+- Tam otomatik “self-healing” data correction
+- UYAP entegrasyonu detayları (CPE sadece izin/öneri verir)
+- UI revamp (UI sadece CPE’den gelen karar ve öneriyi gösterir)
 
-  * Dosya sorumlusuna görev: “Müvekkil iletişim bilgilerini tamamla (email/whatsapp)”
-  * `due_at = now + 1 gün`
-  * Bu tamamlanmadan “adres talebi” otomatik gönderilemez.
+## Temel İlkeler (Golden Rules)
+1) UI karar vermez. Controller karar vermez. Job karar vermez.
+2) Her aksiyon önce CPE’ye sorulur.
+3) Her karar DecisionLog’a yazılır (deny dahil).
+4) Facts değişince kararlar deterministik şekilde güncellenir.
 
-* İkisinden **en az biri varsa** bu görev “DONE”.
+## Terminoloji
+- Scope: Kararın bağlandığı seviye (CASE | DEBTOR | ASSET | EXPENSE)
+- Context: { debtorId?, assetId?, expenseId? }
+- Fact: “gerçek” (boolean/date/number/string) - hesaplanmış veya kaynaktan alınmış
+- State: Bir scope için mevcut aşama
+- Gate: Aksiyonu bloke eden koşul (kilit/masraf/eksik veri vb.)
+- Rule: Facts + State üzerinden öneri çıkaran kural
 
-### Task Type 2 — `CLIENT_REQUEST_DEBTOR_ADDRESSES`
+## API Gereksinimleri
+### canPerformAction
+Input:
+- caseId: string
+- actionCode: string
+- context?: { debtorId?: string; assetId?: string; expenseId?: string; assetType?: string }
 
-Amaç: Müvekkile otomatik mesaj atmak.
+Output (PolicyDecision):
+- allowed: boolean
+- reason: string (insan-okur)
+- code: string (makine-okur: GATE_BLOCKED / INVALID_TRANSITION / OK vb.)
+- blockedBy?: { gateCode: string }
+- state?: { scope, currentState }
+- factsUsed?: string[] (isteğe bağlı, debug/izlenebilirlik)
+- decisionId?: string (DecisionLog id)
 
-**Kural (kanal seçimi)**
+### getNextActions
+Input:
+- caseId
+- scope?: CASE|DEBTOR|ASSET
+- context?: ids
 
-* Sadece email varsa → email gönder
-* Sadece whatsapp varsa → whatsapp gönder
-* İkisi de varsa → **ikisine de gönder** (senin dediğin gibi)
+Output:
+- RecommendedAction[]: { actionCode, priority, reason, scope, context }
 
-**Mesaj içeriği (kısa, net)**
+## Non-Functional Requirements
+- Performans: canPerformAction p95 < 150ms (cache ile)
+- İzlenebilirlik: DecisionLog + traceId
+- Test edilebilirlik: YAML -> compiled rules için unit test + harness
+- Güvenlik: DecisionLog KVKK uyumlu (kişisel veri maskeleme)
+- Determinizm: Aynı facts/state ile aynı karar
 
-* Borçlu adı/TC (varsa)
-* Dosya referansı
-* “Elinizdeki tebligata yarar adresleri, telefon/e-posta, işyeri adresi, bilinen son adres vb. paylaşın”
-* “3 gün içinde dönüş rica ederiz”
-
-**State**
-
-* Gönderim sonrası `status = WAITING_EXTERNAL`, `due_at = now + 3 gün`
-
----
-
-## D) 3) Cevap yoksa: 3 günde bir hatırlatma
-
-Bunu ayrı bir “Reminder” job olarak değil, aynı task içinde standart SLA olarak kurgula.
-
-### SLA motoru
-
-* `CLIENT_REQUEST_DEBTOR_ADDRESSES` task’ı `WAITING_EXTERNAL` ise:
-
-  * `due_at` geldiğinde kontrol et: cevap var mı?
-  * yoksa:
-
-    * **Hatırlatma gönder**
-    * `attempt_count += 1`
-    * `due_at = now + 3 gün`
-  * (opsiyonel tavan) 3. hatırlatmadan sonra “dosya sorumlusuna ara” görevi aç
-
-> Sen “3 günde bir hatırlatılmalı” dedin. Bu tam olarak bu.
-
----
-
-## E) 4) Cevap geldi ama olumsuzsa: yılda 1 tekrar
-
-Burada kritik ayrım:
-
-* Cevap **olumlu** (adres verdi) → adres kayıtlarını yaz, task kapanır, yıllık tekrar **gerekli değil** (ama istersen “dosya derdestse yılda 1 doğrulama” yine yaparsın)
-* Cevap **olumsuz** (adres yok) → task kapanır ama dosya açık kaldığı sürece yeni bir periyodik görev üretir
-
-### Periyodik görev
-
-* Task Type: `CLIENT_ANNUAL_ADDRESS_REFRESH`
-* Kural: Dosya `DERDEST` olduğu sürece `every 12 months`
-* Kanal: kayıtlı olan tüm kanallar
-* Cevap gelirse adresleri güncelle, gelmezse 3 günde bir hatırlatma aynı mantık
-
-> Bu yaklaşım “olumsuz cevap aldıktan sonra yıllarca kimse bakmadı” problemini öldürür.
-
----
-
-## F) Sistem kayıtları: “yapıldı” notu otomatik düşsün
-
-Senin istediğin gibi:
-
-* Her otomatik aksiyon bir `audit_log` kaydı üretir:
-
-  * “Borç evrakından adres kaydı oluşturuldu”
-  * “Müvekkile adres talebi WhatsApp/E-mail ile gönderildi”
-  * “3 gün hatırlatma gönderildi (1/2/3)”
-  * “Müvekkil olumsuz yanıt verdi → yıllık refresh planlandı”
-
-Notlar panelinde sadece özet göster, gerçek kayıt audit’te dursun.
+## Kabul Kriterleri
+1) Sistemdeki kritik aksiyonlar (UYAP_SEND, REQUEST_EXPENSE, SEND_DEBTOR_MSG, ASSET_QUERY, HACIZ_TRIGGER vb.) artık CPE olmadan çalışmaz.
+2) Eski gate servisleri “pasif” edilir veya sadece adapter olarak kalır.
+3) DecisionLog her karar için doluyor; UI karar gerekçesini gösterebiliyor.
+4) stage_flows + decision_rules + locks_and_gates YAML’ları gerçek karar akışını belirliyor.
+```
 
 ---
 
-## Bu akışta MERNİS ne zaman devreye girer?
+# 2) Spec: `.kiro/specs/case-policy-engine/design.md`
 
-Basit kural:
+```md
+# Case Policy Engine (CPE) - Design
 
-* **Müvekkilden/evraktan adres yoksa** → hemen UYAP/MERNİS çekimine geç
-* **Adres varsa bile** → en geç tebligat öncesi “MERNİS doğrulama” çalıştır (çünkü adres değişmiş olabilir)
+## Yüksek Seviye Mimari
+CPE tek entry-point sağlar:
+- canPerformAction(...)
+- getNextActions(...)
+
+### Bileşenler
+1) FactStore
+2) StateMachine (Hierarchical)
+3) GateChecker
+4) RuleEngine (Next Actions)
+5) ActionQueue adapter (BotTask)
+6) DecisionLogger
+
+## 1) FactStore Tasarımı
+### Kaynak
+- IcrabotFact tablosu (mevcut)
+- Gerekirse computed facts: derive layer (kod) -> FactStore’a yazılabilir veya ephemeral kullanılabilir
+
+### Fact Tipleri
+- boolean, number, string, date, json
+
+### Fact Key Standardı
+- case.<key>
+- debtor.<debtorId>.<key>
+- asset.<assetId>.<key>
+- expense.<expenseId>.<key>
+
+Örnek:
+- case.has_power_of_attorney = true
+- debtor.123.notification_delivered = false
+- asset.999.type = "VEHICLE"
+- expense.opening.paid = true
+
+### Cache
+- caseId bazında kısa TTL (ör. 10-30 sn)
+- write-through: fact değişince cache invalidate
+
+## 2) Hierarchical State Machine
+### Neden?
+Senin dediğin gibi: “tek state” yetmez. Her scope’un kendi state’i var:
+- CASE: dosyanın makro aşaması
+- DEBTOR: tebligat/itiraz/ödeme bazlı durum
+- ASSET: sorgu/haciz/satış bazlı durum
+- EXPENSE: talep/ödeme/bekleme durum
+
+### Model
+StateMachine şu fonksiyonları sağlar:
+- getCurrentState(caseId, scope, context)
+- canTransition(currentState, actionCode)
+- applyTransition(currentState, actionCode) -> newState (opsiyonel, action executed sonrası)
+
+### YAML -> Compiled
+stage_flows_v3.yaml parse edilir.
+**Ama runtime’da “free-form” değil.**
+- Build-time compile: YAML -> JSON AST -> TS map
+- Validasyon: unreachable state / dead-end / missing action mapping testleri
+
+### Transition Rule
+Transition kontrolü GateChecker’dan SONRA yapılır.
+Gate geçmezse state transition hiç konuşulmaz.
+
+## 3) GateChecker
+### Kaynak
+locks_and_gates_v4.yaml
+
+GateChecker:
+- checkGates(caseId, actionCode, facts, context) -> GateResult
+
+GateResult:
+- blocked: boolean
+- gateCode?: string
+- reason: string
+- severity: HARD | SOFT
+
+HARD: aksiyon kesin bloke
+SOFT: aksiyon yapılabilir ama uyarı üretir (UI’da gösterilir)
+
+Örnek Gate:
+- "EXPENSE_REQUIRED_FOR_UYAP_SEND"
+  - if: !fact(expense.opening.paid)
+  - block: HARD
+  - reason: "UYAP'a gönderim için açılış masrafı ödenmeli."
+
+## 4) RuleEngine (Next Actions)
+### Kaynak
+decision_rules_v4.yaml
+
+Amaç:
+- otomatik iş başlatmak değil,
+- öneri / tetiklenebilir aksiyon üretmek.
+
+Rule çıktısı:
+- actionCode
+- priority (1..100)
+- scope + context (case/debtor/asset)
+- reason (insan-okur)
+
+Rule koşulları facts + state + “time since last action” gibi derived metrics kullanabilir.
+Derived metric’ler FactStore’dan değil, “ComputedContext” katmanından gelir.
+
+## 5) DecisionLog Tasarımı
+DecisionLog her çağrıda yazılır:
+- allow + deny + soft-warn dahil
+
+Alanlar:
+- id
+- caseId
+- actionCode
+- scope + context ids
+- allowed
+- code (OK/GATE_BLOCKED/INVALID_TRANSITION/...)
+- reason (kısa)
+- factsSnapshotHash (büyük snapshot yerine hash)
+- factsUsed (key list)
+- stateSnapshot (current state)
+- gateCode (varsa)
+- traceId
+- createdAt
+
+KVKK:
+- factsSnapshot veya raw data log’lanmaz (opsiyonel debug mod harici)
+- kişisel veri içeren fact value log’lanmaz, sadece key log’lanır
+
+## 6) Tek Soru Noktası Akışı
+canPerformAction:
+1) facts = FactStore.getFacts(caseId, context)
+2) state = StateMachine.getCurrentState(caseId, context)
+3) gates = GateChecker.checkGates(...)
+   - blocked ise DecisionLog(deny) ve return
+4) transitionAllowed = StateMachine.canTransition(state, actionCode)
+   - değilse DecisionLog(deny) ve return
+5) DecisionLog(allow) ve return
+
+getNextActions:
+1) facts + state + computedMetrics
+2) RuleEngine.evaluate(...)
+3) Her öneri için GateChecker pre-check yapılabilir (opsiyonel)
+4) Sıralama (priority + recency + scope)
+
+## 7) Entegrasyon Stratejisi (Strangler Pattern)
+Mevcut servisler bir gecede silinmez.
+- expense-gate.service.ts -> CPE adapter çağırır (deprecate)
+- stage-trigger.service.ts -> getNextActions kullanır
+- rule-engine.service.ts (ikisi de) -> RuleEngine’e taşınır, eskileri “thin wrapper” olur
+Sonra wrapper’lar kaldırılır.
+
+## 8) Test Harness
+- YAML compile testleri
+- canPerformAction senaryo testleri (fixture facts + state)
+- “golden scenarios”: gerçek dosya snapshot’ları ile regresyon testi
+- DecisionLog assertion: her deny/allow loglandı mı
+
+## 9) Hata Modları ve Güvenli Varsayılanlar
+- YAML parse/compile hatası -> deploy fail (prod’da runtime crash değil)
+- Fact missing:
+  - GateChecker “missing fact”i HARD block yapabilir (yüksek riskli aksiyonlarda)
+  - düşük riskli aksiyonlarda SOFT warn
+```
 
 ---
 
-İstersen bir sonraki adımda bunu “task_type listesi + tetikleyici tablosu” olarak tek sayfaya indirip, doğrudan kod tarafındaki `TaskRunner` kurallarına çevirelim. Bu haliyle artık sistem “müvekkile sor”u gerçekten motor seviyesinde tetikleyebilecek durumda.
-**[10.01.2026 00:00]**
-Tamam. Aşağıya “tek sayfa motor kuralı” şeklinde döküyorum: **task_type listesi + tetikleyiciler + SLA + sonuç aksiyonları**. Bunu direkt `TaskRunner`’a gömersin.
+# 3) Spec: `.kiro/specs/case-policy-engine/tasks.md`
+
+```md
+# Case Policy Engine (CPE) - Tasks
+
+## Faz 0: Hazırlık (1-2 gün)
+- [ ] Repo’da tek bir CPE modülü yeri belirle: src/policy/cpe/
+- [ ] actionCode katalogu çıkar (enum): UYAP_SEND, REQUEST_EXPENSE, SEND_DEBTOR_MSG, QUERY_ASSETS, TRIGGER_HACIZ, ...
+- [ ] Scope enum + Context tipleri
+- [ ] Mevcut gate/rule servislerinin çağrıldığı yerleri listele (grep)
+
+## Faz 1: Temel Altyapı
+### 1.1 CPE iskeleti
+- [ ] CasePolicyEngine servisi oluştur
+- [ ] PolicyDecision DTO + error codes
+- [ ] traceId geçişi (request scoped)
+
+### 1.2 FactStore
+- [ ] IcrabotFact repository adapter
+- [ ] getFacts(caseId, context) -> normalized map
+- [ ] cache + invalidate mekanizması
+
+### 1.3 Hierarchical State Machine (v1)
+- [ ] stage_flows_v3.yaml parser
+- [ ] compile step: YAML -> AST -> runtime map
+- [ ] getCurrentState(...) (DB’den veya fact üzerinden)
+- [ ] canTransition(...) (map üzerinden)
+
+### 1.4 GateChecker (v1)
+- [ ] locks_and_gates_v4.yaml parser + compile
+- [ ] checkGates(...) implement
+- [ ] HARD/SOFT ayrımı
+
+### 1.5 DecisionLogger (aktif)
+- [ ] DecisionLog yazımı (deny dahil)
+- [ ] KVKK maskeleme
+
+### 1.6 İlk entegrasyon
+- [ ] 3 kritik aksiyon controller’ı CPE’ye bağla:
+  - UYAP_SEND
+  - REQUEST_EXPENSE
+  - SEND_DEBTOR_MSG
+- [ ] Eski kontrol var ise kaldır / bypass etme
+
+## Faz 2: Kural Motoru ve Next Actions
+### 2.1 RuleEngine
+- [ ] decision_rules_v4.yaml compile
+- [ ] evaluate(caseId, scope, context) -> recommendations
+- [ ] computedMetrics katmanı (daysSinceLastAction, lastActionCode, ...)
+
+### 2.2 getNextActions endpoint
+- [ ] GET /cases/:id/next-actions (scope/context param)
+- [ ] UI/Backend kullanım örnekleri
+
+### 2.3 BotTask entegrasyonu (opsiyonel)
+- [ ] RuleEngine önerilerini BotTask’a “draft” olarak yazma (flag ile)
+- [ ] manuel onay ile çalıştırma
+
+## Faz 3: Strangler - Dağınık servisleri emekli etme
+- [ ] expense-gate.service.ts -> CPE adapter’a dönüştür
+- [ ] stage-trigger.service.ts -> getNextActions’a geç
+- [ ] rule-engine.service.ts (iki tane) -> tek RuleEngine altında birleştir
+- [ ] controller içi if’leri kaldır (CPE dışı karar yasak)
+
+## Faz 4: Test ve Regresyon
+- [ ] YAML compile test suite
+- [ ] Golden scenario fixtures (gerçek dosya snapshot)
+- [ ] Deny/allow kararlarının DecisionLog doğrulaması
+- [ ] Performans testi (p95 < 150ms)
+
+## Çıkış Kriterleri
+- [ ] CPE olmadan kritik aksiyon çalışmıyor (enforced)
+- [ ] DecisionLog doluyor ve UI reason gösteriyor
+- [ ] Eski gate/rule servisleri ya kaldırıldı ya da ince wrapper olarak kaldı
+```
 
 ---
 
-## Task Types (adres akışı – şahıs borçlu)
+# 4) Üstüne bonus: “Nerede yaşayacak?” sorusunun cevabı
 
-### 1) `DOC_EXTRACT_DEBTOR_ADDRESSES`
+Senin en kritik sorularından biri buydu:
 
-**Amaç:** Borç evrakından (manuel/OCR) adresleri borçluya yazmak.
-**Input:** `evidence_id (borç_evrakı_id)`, `debtor_id`, `address_text[]`
-**Output:** `debtor_address` kayıtları (`address_type=DECLARED_DOCUMENT`, `source=DOCUMENT_SCAN|MANUAL_ENTRY`)
-**Kapanış:** her zaman `DONE`
+> “Tebligat edilmeden kesinleşme olmaz kuralı nerede yaşayacak?”
 
----
+Benim cevabım net:
 
-### 2) `CLIENT_CONTACT_VALIDATE`
+* **Gate** ise: `locks_and_gates_v4.yaml` (HARD block)
+* **State transition** ise: `stage_flows_v3.yaml` (invalid transition)
+* **Öneri** ise: `decision_rules_v4.yaml` (next action)
 
-**Amaç:** Müvekkilde email/whatsapp yoksa tamamlatmak.
-**Output:** `task` veya `DONE`
+Aynı cümle üç farklı şeye dönüşebilir ama *rolü farklı*:
 
----
+* “Kesinleşme aksiyonu”na basıyorsan → Gate/Transition
+* “Sıradaki öneri” üretiyorsan → RuleEngine
 
-### 3) `CLIENT_REQUEST_DEBTOR_ADDRESSES`
-
-**Amaç:** Müvekkile borçlu adres talebi mesajını otomatik atmak (email/whatsapp).
-**Output:** `communication` kaydı + `debtor_address` (cevap gelirse)
-**SLA:** 3 günde bir hatırlatma
+Bu ayrımı korursan sistem taş gibi olur.
 
 ---
 
-### 4) `CLIENT_REMIND_DEBTOR_ADDRESSES`
+# 5) Bir tek “acımayan gerçek”
 
-**Amaç:** Cevap yoksa 3 günde bir hatırlatmayı otomatik yapmak.
-
-> İstersen bunu ayrı task yerine `CLIENT_REQUEST_DEBTOR_ADDRESSES` içinde “SLA tick” olarak da çalıştırabilirsin. Motor basitliği için burada ayrı tanımlıyorum.
-
----
-
-### 5) `CLIENT_ANNUAL_ADDRESS_REFRESH`
-
-**Amaç:** Müvekkil “adres yok” dediyse veya dosya uzadıysa yılda 1 tekrar adres istemek.
-**SLA:** yine 3 günde bir hatırlatma
+Bu CPE’ye geçiş, “kod yazalım bitsin” işi değil; **otoriteyi tekleştirme** operasyonu.
+En çok acıyacak yer: eski servislerdeki “gizli business logic”lerin ortaya çıkarılması.
+Ama bu acı çekilmezse, ileride üretimde daha büyüğünü çekeceksiniz.
 
 ---
 
-### 6) (Sonraki aşama) `UYAP_PULL_MERNIS`
+İstersen bir sonraki adımda (soru sormadan direkt ilerleyerek) ben sana **ilk 10 actionCode** için:
 
-Şimdilik listede dursun ama bu sprintte devreye sokmayacağız.
+* hangi scope’ta çalışır,
+* hangi gate’lere tabidir,
+* hangi state transition’ı tetikler,
+* hangi decision rule ile önerilir
 
----
-
-## Tetikleyici Kurallar Tablosu (event → task)
-
-| Event (Olay)                                       | Koşul                                      | Açılacak Task                          | Not                                              |
-| -------------------------------------------------- | ------------------------------------------ | -------------------------------------- | ------------------------------------------------ |
-| `EVIDENCE_UPLOADED` (borç evrakı eklendi)          | evrakta adres alanı girildi/çıktı üretildi | `DOC_EXTRACT_DEBTOR_ADDRESSES`         | adresler “belirtilen/bildirilen adres” olur      |
-| `DEBTOR_CREATED` (şahıs borçlu)                    | her durumda                                | `CLIENT_CONTACT_VALIDATE`              | ilk kapı bu                                      |
-| `CLIENT_CONTACT_VALIDATE.DONE`                     | email/whatsapp en az biri var              | `CLIENT_REQUEST_DEBTOR_ADDRESSES`      | kanala göre 1 veya 2 mesaj                       |
-| `CLIENT_CONTACT_VALIDATE.OPEN`                     | email yok AND whatsapp yok                 | görev dosya sorumlusuna atanır         | “müvekkil iletişim bilgisi tamamla”              |
-| `DOC_EXTRACT_DEBTOR_ADDRESSES.DONE`                | (opsiyonel) her durumda                    | `CLIENT_REQUEST_DEBTOR_ADDRESSES`      | evrak adresi olsa bile müvekkilden teyit isteriz |
-| `CLIENT_REQUEST_DEBTOR_ADDRESSES.WAITING_EXTERNAL` | `due_at` geldi ve cevap yok                | `CLIENT_REMIND_DEBTOR_ADDRESSES`       | 3 günde bir                                      |
-| `CLIENT_REQUEST_DEBTOR_ADDRESSES`                  | cevap geldi (olumlu)                       | adresleri yaz, task `DONE`             | kanıt = iletişim cevabı                          |
-| `CLIENT_REQUEST_DEBTOR_ADDRESSES`                  | cevap geldi (olumsuz)                      | `CLIENT_ANNUAL_ADDRESS_REFRESH` planla | dosya derdestse                                  |
-| `CASE_STATUS_CHANGED`                              | dosya `DERDEST`                            | yıllık task aktif kalsın               | dosya kapanınca pasif                            |
-
----
-
-## SLA / Retry Politikası (3 dönüş döngüsü)
-
-Her “dış cevap bekleyen” task için standart:
-
-* `WAITING_EXTERNAL` durumunda `due_at = now + 3 gün`
-* `due_at` geldi:
-
-  * cevap yoksa → hatırlatma gönder → `attempt_count += 1` → `due_at = now + 3 gün`
-  * cevap varsa → `DONE`
-* **Opsiyonel tavan:** `attempt_count >= 3` olursa:
-
-  * ekstra task: `ASSIGN_MANUAL_CALL_CLIENT` (telefonla ara)
-  * ve yine beklemeye devam et veya “failed-soft” yap (senin tercihine göre)
-
-> Sen “3 günde bir hatırlatılmalı” dedin; bu mekanizma onu birebir sağlar.
-
----
-
-## Kanal Kuralları (email / whatsapp)
-
-`CLIENT_REQUEST_DEBTOR_ADDRESSES` çalışırken:
-
-* email var, whatsapp yok → **email**
-* whatsapp var, email yok → **whatsapp**
-* ikisi de var → **ikisine de gönder**
-* ikisi de yok → bu task hiç açılmaz; `CLIENT_CONTACT_VALIDATE` kapanmadan zincir ilerlemez
-
----
-
-## Adres Yazma Kuralları (tekleşme + kaynak)
-
-Mesajdan veya evraktan gelen her adres için:
-
-* `debtor_address.address_type`
-
-  * evrak: `DECLARED_DOCUMENT`
-  * müvekkil: `DECLARED_CLIENT`
-* `source`
-
-  * evrak: `DOCUMENT_SCAN` veya `MANUAL_ENTRY`
-  * müvekkil: `CLIENT_REPLY_EMAIL` / `CLIENT_REPLY_WHATSAPP`
-* `hash(normalize(address_text))` ile tekrarları engelle
-* Aynı hash varsa sadece `retrieved_at` güncelle
-
----
-
-## Yıllık Refresh Kuralı (dosya derdestse)
-
-`CLIENT_ANNUAL_ADDRESS_REFRESH`:
-
-* `next_run_at = last_run_at + 365 gün`
-* Dosya hâlâ `DERDEST` ise çalıştır:
-
-  * aynı “kanal kuralları” ile mesaj at
-  * SLA = 3 günde bir hatırlatma
-* Dosya kapandıysa: task disable/close
-
----
-
-## UI’de “Yapıldı” işaretleme (otomatik)
-
-Her otomatik aksiyon için Audit Log satırı üret:
-
-* “Evraktan adres kaydı oluşturuldu”
-* “Müvekkile adres talebi gönderildi (Email/WhatsApp)”
-* “Hatırlatma #n gönderildi”
-* “Müvekkil olumsuz yanıtladı → yıllık talep planlandı”
-* “Müvekkil adres verdi → X yeni adres işlendi”
-
-Notlar panelinde “yapıldı” gibi görünür; gerçek kayıt audit’te durur.
-
----
-
-Bu düzenle ilk sprintte şu üç şeyi canlıya alırsın:
-
-1. **Evrak adresi kaydı**, 2) **Müvekkile otomatik talep (kanal kuralı)**, 3) **3 günde bir hatırlatma + olumsuzsa yıllık refresh**.
-
-Sonraki sprintte bunun altına `UYAP_PULL_MERNIS`’i aynı motor kalıbıyla takarız; zincire de “müvekkilden/evraktan adres yoksa hemen UYAP” kuralını ekleriz.
+bunu bir “Action Contract Catalog” olarak çıkarayım. Bu katalog, migration’ın haritasıdır.

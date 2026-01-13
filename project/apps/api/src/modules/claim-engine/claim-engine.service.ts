@@ -3,6 +3,22 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 
+// Shared contracts
+import type { InterestTypeCode } from '@shared/types';
+
+/**
+ * Claim Engine Service
+ * 
+ * Sorumluluklar:
+ * - Document classification (OCR'dan belge türü)
+ * - Case routing (takip türü belirleme)
+ * - Claim item generation (alacak kalemi şablonu)
+ * 
+ * NOT: Faiz hesaplama ve oran okuma bu modülün sorumluluğunda DEĞİL.
+ * @see interest-engine - Faiz hesaplama için tek kaynak
+ * @see ARCHITECTURE.md - Source of Truth Matrix
+ */
+
 // Kural tipleri
 export interface DocumentClassificationHint {
   any_of: string[];
@@ -369,8 +385,25 @@ export class ClaimEngineService implements OnModuleInit {
     return this.rules.interest_rules[ruleName] || null;
   }
 
-  // Para birimi ve tarih için faiz oranını getir
+  /**
+   * @deprecated Use interest-engine/RateProviderService instead
+   * 
+   * Bu metod artık kullanılmamalı. Faiz oranları için:
+   * ```typescript
+   * import { RateProviderService } from '@/modules/interest-engine';
+   * const rate = await rateProvider.getRate(interestTypeCode, date, currency);
+   * ```
+   * 
+   * @see ARCHITECTURE.md - Source of Truth Matrix
+   */
   getInterestRate(currency: string, interestType: string, date: Date): number | null {
+    // Deprecation warning (dev only)
+    if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
+      this.logger.warn(
+        `⚠️ claim-engine.getInterestRate() is DEPRECATED. Use interest-engine/RateProviderService instead.`
+      );
+    }
+
     if (!this.rules) return null;
 
     const currencyRates = this.rules.interest_rate_table[currency];

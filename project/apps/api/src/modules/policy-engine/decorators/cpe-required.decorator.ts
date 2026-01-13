@@ -1,0 +1,116 @@
+/**
+ * @CpeRequired Decorator
+ * 
+ * Controller endpoint'lerine CPE kontrolü ekler.
+ * Aksiyon yapılmadan önce CPE.canPerformAction çağrılmasını zorunlu kılar.
+ * 
+ * Usage:
+ * @CpeRequired(ActionCode.UYAP_SEND)
+ * @CpeRequired(ActionCode.TRIGGER_HACIZ, (req) => ({ debtorId: req.params.debtorId }))
+ * 
+ * @see design.md - @CpeRequired Decorator and Interceptor
+ */
+
+import { SetMetadata, applyDecorators } from '@nestjs/common';
+import { ActionCode } from '../types/action-code.enum';
+import { ActionContext } from '../types/policy-decision.interface';
+
+/**
+ * Scope resolver function type
+ * Request'ten ActionContext çıkarır
+ */
+export type ScopeResolverFn = (req: any) => ActionContext | undefined;
+
+/**
+ * Metadata keys
+ */
+export const CPE_ACTION_CODE_KEY = 'cpe:actionCode';
+export const CPE_SCOPE_RESOLVER_KEY = 'cpe:scopeResolver';
+export const CPE_CASE_ID_RESOLVER_KEY = 'cpe:caseIdResolver';
+
+/**
+ * Case ID resolver function type
+ * Request'ten caseId çıkarır
+ */
+export type CaseIdResolverFn = (req: any) => string;
+
+/**
+ * Default case ID resolver
+ * req.params.caseId veya req.body.caseId'den alır
+ */
+export const defaultCaseIdResolver: CaseIdResolverFn = (req: any): string => {
+  return req.params?.caseId || req.body?.caseId || req.query?.caseId;
+};
+
+/**
+ * @CpeRequired Decorator
+ * 
+ * @param actionCode - Kontrol edilecek aksiyon kodu
+ * @param scopeResolver - Opsiyonel scope resolver (debtorId, assetId çıkarmak için)
+ * @param caseIdResolver - Opsiyonel case ID resolver (varsayılan: params/body'den)
+ */
+export function CpeRequired(
+  actionCode: ActionCode,
+  scopeResolver?: ScopeResolverFn,
+  caseIdResolver?: CaseIdResolverFn,
+) {
+  return applyDecorators(
+    SetMetadata(CPE_ACTION_CODE_KEY, actionCode),
+    SetMetadata(CPE_SCOPE_RESOLVER_KEY, scopeResolver),
+    SetMetadata(CPE_CASE_ID_RESOLVER_KEY, caseIdResolver || defaultCaseIdResolver),
+  );
+}
+
+/**
+ * Common scope resolvers
+ */
+export const ScopeResolvers = {
+  /**
+   * Debtor scope - debtorId from params
+   */
+  fromDebtorParam: (req: any): ActionContext | undefined => {
+    const debtorId = req.params?.debtorId;
+    return debtorId ? { debtorId } : undefined;
+  },
+
+  /**
+   * Asset scope - assetId from params
+   */
+  fromAssetParam: (req: any): ActionContext | undefined => {
+    const assetId = req.params?.assetId;
+    return assetId ? { assetId } : undefined;
+  },
+
+  /**
+   * Expense scope - expenseId from params
+   */
+  fromExpenseParam: (req: any): ActionContext | undefined => {
+    const expenseId = req.params?.expenseId;
+    return expenseId ? { expenseId } : undefined;
+  },
+
+  /**
+   * From body - debtorId, assetId, expenseId from request body
+   */
+  fromBody: (req: any): ActionContext | undefined => {
+    const { debtorId, assetId, expenseId } = req.body || {};
+    if (debtorId || assetId || expenseId) {
+      return { debtorId, assetId, expenseId };
+    }
+    return undefined;
+  },
+
+  /**
+   * Combined - try params first, then body
+   */
+  combined: (req: any): ActionContext | undefined => {
+    const debtorId = req.params?.debtorId || req.body?.debtorId;
+    const assetId = req.params?.assetId || req.body?.assetId;
+    const expenseId = req.params?.expenseId || req.body?.expenseId;
+    
+    if (debtorId || assetId || expenseId) {
+      return { debtorId, assetId, expenseId };
+    }
+    return undefined;
+  },
+};

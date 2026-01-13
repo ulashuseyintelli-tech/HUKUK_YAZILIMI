@@ -798,6 +798,9 @@ export default function CaseDetailPage() {
   const [dueModalOpen, setDueModalOpen] = useState(false);
   const [editingDue, setEditingDue] = useState<any>(null);
   
+  // Doküman İndirme State
+  const [downloadingDoc, setDownloadingDoc] = useState<'docx' | 'pdf' | 'xml' | null>(null);
+  
   // Address Workflow Loading State
   const [addressWorkflowLoading, setAddressWorkflowLoading] = useState(false);
   
@@ -1125,6 +1128,49 @@ export default function CaseDetailPage() {
   const handleCancel = () => {
     setEditedData({});
     setEditMode(false);
+  };
+
+  // Doküman indirme fonksiyonu
+  const handleDownloadDocument = async (format: 'docx' | 'pdf' | 'xml') => {
+    if (!caseData?.id) return;
+    try {
+      setDownloadingDoc(format);
+      
+      // Doğrudan fetch kullan (blob response için)
+      const token = localStorage.getItem('token');
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/template-engine/cases/${caseData.id}/documents/${format}?type=takip-talebi`,
+        {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({}),
+        }
+      );
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Doküman oluşturulamadı');
+      }
+      
+      // Dosyayı indir
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `takip-talebi-${caseData.fileNumber}.${format}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (error: any) {
+      console.error('Doküman indirme hatası:', error);
+      alert(error.message || 'Doküman indirilemedi');
+    } finally {
+      setDownloadingDoc(null);
+    }
   };
 
   // Ekip modal açıldığında avukat ve personel listesini yükle
@@ -1595,6 +1641,31 @@ export default function CaseDetailPage() {
                   title="Ödeme Talimatı"
                 >
                   <CreditCard className="h-4 w-4" /> Ödeme Talimatı
+                </button>
+                {/* Doküman İndirme Butonları */}
+                <button 
+                  onClick={() => handleDownloadDocument('docx')} 
+                  disabled={downloadingDoc === 'docx'}
+                  className="p-2 hover:bg-blue-50 rounded text-blue-600" 
+                  title="Word İndir"
+                >
+                  {downloadingDoc === 'docx' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                </button>
+                <button 
+                  onClick={() => handleDownloadDocument('pdf')} 
+                  disabled={downloadingDoc === 'pdf'}
+                  className="p-2 hover:bg-red-50 rounded text-red-600" 
+                  title="PDF İndir"
+                >
+                  {downloadingDoc === 'pdf' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+                </button>
+                <button 
+                  onClick={() => handleDownloadDocument('xml')} 
+                  disabled={downloadingDoc === 'xml'}
+                  className="p-2 hover:bg-green-50 rounded text-green-700" 
+                  title="XML İndir"
+                >
+                  {downloadingDoc === 'xml' ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
                 </button>
                 <UyapExportButton caseId={caseData.id} fileNumber={caseData.fileNumber} variant="icon" />
                 <button onClick={() => setEditMode(true)} className="p-2 hover:bg-gray-100 rounded" title="Düzenle"><Edit className="h-4 w-4" /></button>

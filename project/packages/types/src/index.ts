@@ -1,5 +1,9 @@
 // ==================== ENUMS ====================
 
+export * from './interest';
+export * from './policy';
+export * from './fee';
+
 export enum Plan {
   FREE = "FREE",
   PRO = "PRO",

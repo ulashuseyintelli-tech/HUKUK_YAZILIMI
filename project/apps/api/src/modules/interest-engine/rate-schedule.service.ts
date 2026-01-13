@@ -1,3 +1,14 @@
+/**
+ * @deprecated Use RateProviderService instead.
+ * 
+ * Bu servis geriye dönük uyumluluk için korunuyor.
+ * Yeni kod RateProviderService kullanmalı.
+ * 
+ * Migration path:
+ * - getRatesForPeriod() → RateProviderService.getRatesForPeriod()
+ * - getCurrentRate() → RateProviderService.getRateAtDate()
+ * - addRate() → RateProviderService.addRateToPrisma()
+ */
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { createHash } from 'crypto';
@@ -8,11 +19,18 @@ import {
   RateQueryResult,
 } from './types';
 
+/**
+ * @deprecated Use RateProviderService instead.
+ */
 @Injectable()
 export class RateScheduleService {
   private readonly logger = new Logger(RateScheduleService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) {
+    this.logger.warn(
+      'RateScheduleService is deprecated. Use RateProviderService instead.',
+    );
+  }
 
   /**
    * Get rates for a specific period

@@ -27,13 +27,95 @@ export interface TriggerStageResult {
   blockReason?: string;
 }
 
+/**
+ * CPE Adapter Interface
+ * Opsiyonel CPE entegrasyonu için
+ */
+export interface CpeAdapter {
+  getNextActions(caseId: string, context?: any): Promise<Array<{
+    actionCode: string;
+    priority: number;
+    reason: string;
+    deadline?: Date;
+  }>>;
+  canPerformAction(caseId: string, actionCode: string, context?: any): Promise<{
+    allowed: boolean;
+    code?: string;
+    reason?: string;
+  }>;
+}
+
 @Injectable()
 export class StageTriggerService {
+  /**
+   * CPE Adapter - opsiyonel, inject edilirse kullanılır
+   */
+  private cpeAdapter?: CpeAdapter;
+  private useCpe = false; // Feature flag
+
   constructor(
     private prisma: PrismaService,
     private costPackageService: CostPackageService,
     private caseBalanceService: CaseBalanceService,
   ) {}
+
+  /**
+   * CPE Adapter'ı set et (opsiyonel)
+   */
+  setCpeAdapter(adapter: CpeAdapter, enabled: boolean = true): void {
+    this.cpeAdapter = adapter;
+    this.useCpe = enabled;
+  }
+
+  /**
+   * CPE'den sonraki aksiyonları al
+   * getNextActions kullanarak öneriler sunar
+   */
+  async getRecommendedActions(
+    tenantId: string,
+    caseId: string,
+  ): Promise<TriggerStageResult> {
+    if (!this.useCpe || !this.cpeAdapter) {
+      return {
+        action: 'SUGGEST_ONLY',
+        suggestion: {
+          title: 'CPE aktif değil',
+          description: 'Öneri sistemi için CPE etkinleştirilmeli.',
+        },
+      };
+    }
+
+    const recommendations = await this.cpeAdapter.getNextActions(caseId);
+    
+    if (recommendations.length === 0) {
+      return {
+        action: 'SUGGEST_ONLY',
+        suggestion: {
+          title: 'Bekleyen işlem yok',
+          description: 'Şu an için önerilen bir aksiyon bulunmuyor.',
+        },
+      };
+    }
+
+    const topRecommendation = recommendations[0];
+    
+    // ActionCode'a göre UI action'a map et
+    const actionMap: Record<string, TriggerStageResult['action']> = {
+      'UYAP_SEND': 'READY',
+      'SEND_NOTIFICATION': 'READY',
+      'TRIGGER_HACIZ': 'READY',
+      'REQUEST_EXPENSE': 'OPEN_EXPENSE_MODAL',
+      'APPROVE_EXPENSE': 'OPEN_EXPENSE_MODAL',
+    };
+
+    return {
+      action: actionMap[topRecommendation.actionCode] || 'SUGGEST_ONLY',
+      suggestion: {
+        title: `Önerilen: ${topRecommendation.actionCode}`,
+        description: topRecommendation.reason,
+      },
+    };
+  }
 
   /**
    * Stage event tetikle

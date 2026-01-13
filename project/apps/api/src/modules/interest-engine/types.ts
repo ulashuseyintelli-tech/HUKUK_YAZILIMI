@@ -1,45 +1,21 @@
+/**
+ * @deprecated Bu dosya deprecated. Lütfen şunları kullanın:
+ * - InterestTypeCode → '../types/domain.types'
+ * - RateSourceType → '../rates/rate-entry.entity'
+ * - Diğer tipler → '../types/calculation.types' veya '../types/domain.types'
+ */
+
 import { Decimal } from '@prisma/client/runtime/library';
 
 // ============================================================================
-// ENUMS
+// DEPRECATED - Eski enum'lar, yeni dosyalardan import edin
 // ============================================================================
 
-export enum InterestTypeCode {
-  // ═══════════════════════════════════════════════════════════════════════════
-  // YASAL FAİZ (3095 sayılı Kanun m.1)
-  // Not: Nadiren değişir - 2006-2024: %9, 2024+: %24
-  // ═══════════════════════════════════════════════════════════════════════════
-  LEGAL_3095 = 'LEGAL_3095', // Yasal faiz - adi alacaklar için
-  
-  // ═══════════════════════════════════════════════════════════════════════════
-  // TİCARİ TEMERRÜT FAİZİ (3095 sayılı Kanun m.2/2)
-  // Not: TCMB avans oranına bağlı, sık değişir
-  // ═══════════════════════════════════════════════════════════════════════════
-  COMMERCIAL_AVANS_3095_2_2 = 'COMMERCIAL_AVANS_3095_2_2', // Ticari temerrüt (TCMB Avans) - değişen oran
-  COMMERCIAL_FIXED = 'COMMERCIAL_FIXED', // Ticari (Sabit) - kullanıcının girdiği sabit oran
-  
-  // ═══════════════════════════════════════════════════════════════════════════
-  // DİĞER FAİZ TÜRLERİ
-  // ═══════════════════════════════════════════════════════════════════════════
-  TTK_1530 = 'TTK_1530', // Geç ödeme faizi - TTK 1530 (yıllık sabit)
-  CONTRACTUAL = 'CONTRACTUAL', // Sözleşmesel faiz (akdi faiz)
-  
-  // ═══════════════════════════════════════════════════════════════════════════
-  // MEVDUAT FAİZLERİ (3095 m.2/3 - Döviz alacakları için)
-  // ═══════════════════════════════════════════════════════════════════════════
-  MEVDUAT_TL_BANKALARCA = 'MEVDUAT_TL_BANKALARCA',
-  MEVDUAT_USD_BANKALARCA = 'MEVDUAT_USD_BANKALARCA',
-  MEVDUAT_EUR_BANKALARCA = 'MEVDUAT_EUR_BANKALARCA',
-  MEVDUAT_TL_KAMU = 'MEVDUAT_TL_KAMU',
-  MEVDUAT_USD_KAMU = 'MEVDUAT_USD_KAMU',
-  MEVDUAT_EUR_KAMU = 'MEVDUAT_EUR_KAMU',
-}
+/** @deprecated Use InterestTypeCode from '../types/domain.types' */
+export { InterestTypeCode } from './types/domain.types';
 
-export enum RateSourceType {
-  TCMB = 'TCMB',
-  RESMI_GAZETE = 'RESMI_GAZETE',
-  CONTRACT = 'CONTRACT',
-}
+/** @deprecated Use RateSourceType from '../rates/rate-entry.entity' */
+export { RateSourceType } from './rates/rate-entry.entity';
 
 export type Currency = 'TRY' | 'USD' | 'EUR' | 'GBP' | 'CHF';
 

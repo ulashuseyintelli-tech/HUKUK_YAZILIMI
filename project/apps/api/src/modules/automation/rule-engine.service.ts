@@ -1,6 +1,18 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Inject, Optional } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { WorkflowStage, EnforcementType } from "@prisma/client";
+
+// Forward reference to avoid circular dependency
+let deprecatedTracker: any = null;
+
+/**
+ * @deprecated Bu servis CPE RuleEngine'e taşındı.
+ * Yeni kod için: import { RuleEngineService } from '@/modules/policy-engine'
+ * 
+ * Migration: Phase 3 sonunda silinecek
+ * Silme Kriteri: 7 gün ardışık 0 usage
+ * @see HUKUK_YAZILIMI/project/apps/api/src/modules/policy-engine/rule-engine/
+ */
 
 export interface RuleContext {
   caseId: string;
@@ -22,11 +34,35 @@ export interface RuleResult {
   priority: number;
 }
 
+/**
+ * @deprecated Bu servis CPE RuleEngine'e taşındı.
+ * Yeni kod için: import { RuleEngineService } from '@/modules/policy-engine'
+ */
 @Injectable()
 export class RuleEngine {
   private readonly logger = new Logger(RuleEngine.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) {
+    this.logger.warn('⚠️ DEPRECATED: RuleEngine (automation) kullanılıyor. CPE RuleEngine\'e geçin.');
+    
+    // Track usage for removal criteria
+    this.trackUsage('constructor');
+  }
+
+  private trackUsage(methodName: string): void {
+    // Lazy load tracker to avoid circular dependency
+    if (!deprecatedTracker) {
+      try {
+        const { DeprecatedUsageTrackerService } = require('../policy-engine/deprecated-usage-tracker.service');
+        // Note: This won't work without DI, but the warning log is sufficient
+      } catch {
+        // Tracker not available, just log
+      }
+    }
+    
+    // Log for manual tracking
+    this.logger.debug(`DEPRECATED_USAGE: RuleEngine (automation).${methodName}()`);
+  }
 
   // Ana kural değerlendirme fonksiyonu
   async evaluateRules(context: RuleContext): Promise<RuleResult[]> {

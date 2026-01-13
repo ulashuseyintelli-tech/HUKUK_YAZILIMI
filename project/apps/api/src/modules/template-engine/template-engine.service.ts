@@ -2962,4 +2962,141 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
     const doc = await this.generateDolandiricilikSucDuyurusuFromCase(caseId);
     return this.textToWord(doc.content, doc.title);
   }
+
+  // ==================== MERKEZI DOKÜMAN ÜRETİM SERVİSİ ====================
+
+  /**
+   * Case ID bazlı doküman üretimi - Eski Takipler ve Yeni Takip ekranlarından çağrılabilir
+   * Cache sistemi ile aynı veri için tekrar üretim yapılmaz
+   */
+  async generateDocumentFromCase(
+    caseId: string,
+    format: 'DOCX' | 'PDF' | 'XML',
+    documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi',
+    templateVersion: string = 'v1'
+  ): Promise<{ buffer: Buffer; artifact?: any; fromCache: boolean }> {
+    // 1. Case verisini çek
+    const caseData = await this.getCaseData(caseId);
+    
+    // 2. Veri hash'i oluştur (cache key için)
+    const dataHash = this.generateDataHash(caseData);
+    
+    // 3. Cache'de var mı kontrol et (tablo yoksa atla)
+    try {
+      const existingArtifact = await (this.prisma as any).documentArtifact?.findFirst({
+        where: {
+          caseId,
+          documentType: documentType.toUpperCase().replace(/-/g, '_'),
+          format,
+          templateVersion,
+          dataHash,
+          status: 'READY',
+        },
+      });
+      
+      if (existingArtifact && existingArtifact.filePath) {
+        // Cache'den döndür
+        this.logger.log(`[DocumentGeneration] Cache hit: ${caseId}/${documentType}/${format}`);
+        try {
+          const fs = await import('fs/promises');
+          const buffer = await fs.readFile(existingArtifact.filePath);
+          return { buffer, artifact: existingArtifact, fromCache: true };
+        } catch (err) {
+          // Dosya bulunamadı, yeniden üret
+          this.logger.warn(`[DocumentGeneration] Cache file not found, regenerating: ${existingArtifact.filePath}`);
+        }
+      }
+    } catch (cacheError) {
+      // Cache tablosu yoksa veya hata varsa devam et
+      this.logger.warn(`[DocumentGeneration] Cache check skipped (table may not exist): ${cacheError}`);
+    }
+    
+    // 4. Yeni doküman üret
+    this.logger.log(`[DocumentGeneration] Generating: ${caseId}/${documentType}/${format}`);
+    
+    let buffer: Buffer;
+    
+    switch (format) {
+      case 'DOCX':
+        buffer = await this.generateWordFromCase(caseId, documentType);
+        break;
+      case 'PDF':
+        buffer = await this.generatePdfFromCase(caseId, documentType);
+        break;
+      case 'XML':
+        const xmlContent = await this.generateXmlFromCase(caseId, documentType);
+        buffer = Buffer.from(xmlContent, 'utf-8');
+        break;
+      default:
+        throw new Error(`Desteklenmeyen format: ${format}`);
+    }
+    
+    // 5. Artifact kaydı oluştur (opsiyonel - dosya sistemi kullanılıyorsa)
+    // Not: Şimdilik dosya sistemine kaydetmiyoruz, sadece buffer döndürüyoruz
+    // İleride S3 veya local storage entegrasyonu eklenebilir
+    
+    return { buffer, fromCache: false };
+  }
+
+  /**
+   * Veri hash'i oluştur - cache key için
+   */
+  private generateDataHash(data: TemplateData): string {
+    const crypto = require('crypto');
+    const relevantData = {
+      creditors: data.creditors,
+      debtors: data.debtors,
+      claimItems: data.claimItems,
+      totals: data.totals,
+      executionOffice: data.executionOffice,
+      caseType: data.caseType,
+      subCategory: data.subCategory,
+    };
+    return crypto.createHash('sha256').update(JSON.stringify(relevantData)).digest('hex').substring(0, 16);
+  }
+
+  /**
+   * Mevcut artifact'ları listele
+   */
+  async listDocumentArtifacts(caseId: string): Promise<any[]> {
+    return (this.prisma as any).documentArtifact.findMany({
+      where: { caseId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Artifact'ı indir
+   */
+  async downloadArtifact(artifactId: string): Promise<{ buffer: Buffer; fileName: string; mimeType: string } | null> {
+    const artifact = await (this.prisma as any).documentArtifact.findUnique({
+      where: { id: artifactId },
+    });
+    
+    if (!artifact || artifact.status !== 'READY' || !artifact.filePath) {
+      return null;
+    }
+    
+    try {
+      const fs = await import('fs/promises');
+      const buffer = await fs.readFile(artifact.filePath);
+      
+      const mimeTypes: Record<string, string> = {
+        DOCX: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        PDF: 'application/pdf',
+        XML: 'application/xml',
+        UDF: 'application/json',
+        TXT: 'text/plain',
+      };
+      
+      return {
+        buffer,
+        fileName: artifact.fileName || `document.${artifact.format.toLowerCase()}`,
+        mimeType: mimeTypes[artifact.format] || 'application/octet-stream',
+      };
+    } catch (err) {
+      this.logger.error(`[DocumentGeneration] Failed to read artifact file: ${artifact.filePath}`, err);
+      return null;
+    }
+  }
 }
