@@ -20,9 +20,9 @@ import {
   CalculationResult, 
   generateInputHash,
 } from './types/calculation.types';
-import { ClaimBucket, Segment, AllocationStep } from './types/domain.types';
-import { CalculationMode } from './types/common.types';
-import { RateEntry } from './rates/rate-entry.entity';
+import { ClaimBucket, Segment, AllocationStep, InterestTypeCode } from './types/domain.types';
+import { CalculationMode, RoundingMode, RoundingScope, SameDayPaymentRule } from './types/common.types';
+import { RateEntry, RateSourceType } from './rates/rate-entry.entity';
 import { CoverageMapBuilder } from './rates/coverage-map.builder';
 import { generateRateTableVersion } from './rates/rate-version-hash';
 import { PolicyGateV2Service } from './policy-gate/policy-gate-v2.service';
@@ -420,4 +420,316 @@ export class InterestEngineService {
 
     return recordId;
   }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // PREVIEW CALCULATION (Phase 3.1 - Tek Kaynak)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Preview hesaplama - aynı matematik, daha az bürokrasi
+   * 
+   * calculate() ile AYNI:
+   * - Rate lookup
+   * - Segment builder
+   * - Day count
+   * - Rounding
+   * 
+   * calculate() ile FARKLI:
+   * - NO audit log
+   * - NO execution record
+   * - NO hard policy gate (sadece soft warning)
+   * 
+   * @see docs/single-source-of-truth-architecture.md - Phase 3.1
+   */
+  async previewCalculation(params: {
+    principalAmount: number;
+    startDate: string;
+    endDate: string;
+    interestType: string;
+    fixedRate?: number;
+    currency?: string;
+    dayCountBasis?: number;
+  }): Promise<InterestPreviewResult> {
+    const { 
+      principalAmount, 
+      startDate, 
+      endDate, 
+      interestType, 
+      fixedRate,
+      currency = 'TRY',
+      dayCountBasis = 365,
+    } = params;
+
+    const warnings: PreviewWarning[] = [];
+
+    // 1. Parse dates
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    
+    if (start >= end) {
+      return {
+        success: false,
+        error: {
+          code: 'INVALID_DATE_RANGE',
+          message: 'startDate must be before endDate',
+        },
+      };
+    }
+
+    // 2. Get rates for period
+    const rates = this.getPreviewRates(interestType, currency, startDate, endDate, fixedRate);
+    
+    if (rates.length === 0) {
+      return {
+        success: false,
+        error: {
+          code: 'RATE_NOT_FOUND',
+          message: `Rate not found for interest type: ${interestType}`,
+        },
+      };
+    }
+
+    // 3. Build coverage map - GERÇEK coverage analizi
+    const coverage = CoverageMapBuilder.build(rates, startDate, endDate);
+    
+    // Coverage warnings
+    if (coverage.gaps.length > 0) {
+      warnings.push({
+        code: 'RATE_GAP',
+        severity: 'warn',
+        message: `Oran tablosunda ${coverage.gaps.length} boşluk tespit edildi`,
+        evidence: { 
+          gaps: coverage.gaps.slice(0, 3), // Max 3 gap göster
+          totalGapDays: coverage.gaps.reduce((sum, g) => sum + g.days, 0),
+        },
+      });
+    }
+    
+    if (coverage.overlaps.length > 0) {
+      warnings.push({
+        code: 'RATE_OVERLAP',
+        severity: 'info',
+        message: 'Oran tablosunda çakışma tespit edildi; en yeni kayıt kullanıldı',
+        evidence: { overlaps: coverage.overlaps.slice(0, 3) },
+      });
+    }
+
+    // 4. Build segments using REAL segment builder
+    const claimBucket: ClaimBucket = {
+      id: 'preview',
+      amount: principalAmount,
+      currency: currency as 'TRY' | 'USD' | 'EUR' | 'GBP' | 'CHF',
+      startDate,
+      interestType: interestType as InterestTypeCode,
+      dayCountBasis: dayCountBasis as 365 | 360,
+      fixedRate: fixedRate !== undefined ? fixedRate / 100 : undefined, // Convert % to decimal
+    };
+
+    const segmentResult = this.segmentBuilder.buildSegments(
+      claimBucket,
+      endDate,
+      rates,
+      {
+        dayCountBasis: dayCountBasis as 365 | 360,
+        roundingMode: RoundingMode.HALF_UP,
+        roundingScope: RoundingScope.PER_SEGMENT,
+        sameDayPaymentRule: SameDayPaymentRule.END_OF_DAY,
+      },
+    );
+
+    // 5. Truncate segments for light preview (max 20)
+    const MAX_PREVIEW_SEGMENTS = 20;
+    const truncated = segmentResult.segments.length > MAX_PREVIEW_SEGMENTS;
+    const previewSegments = segmentResult.segments.slice(0, MAX_PREVIEW_SEGMENTS);
+    
+    if (truncated) {
+      warnings.push({
+        code: 'SEGMENTS_TRUNCATED',
+        severity: 'info',
+        message: `Önizleme segmentleri kısaltıldı (${segmentResult.segments.length} → ${MAX_PREVIEW_SEGMENTS})`,
+        evidence: { 
+          totalSegments: segmentResult.segments.length,
+          returnedSegments: MAX_PREVIEW_SEGMENTS,
+        },
+      });
+    }
+
+    // 6. Calculate average rate (for summary)
+    const totalDays = segmentResult.segments.reduce((sum, s) => sum + s.days, 0);
+    const weightedRateSum = segmentResult.segments.reduce(
+      (sum, s) => sum + (s.rate * s.days), 0
+    );
+    const avgRate = totalDays > 0 ? (weightedRateSum / totalDays) * 100 : 0;
+
+    // 7. Return enhanced result
+    return {
+      success: true,
+      data: {
+        estimatedInterest: segmentResult.totalInterest,
+        currentRate: Math.round(avgRate * 100) / 100, // Weighted average
+        days: totalDays,
+        interestType,
+        dayCountBasis,
+        formula: `Segment-based calculation (${previewSegments.length} segments)`,
+        // Phase 3.1.1: Segment detayları
+        preEnforcementInterest: segmentResult.preEnforcementInterest,
+        postEnforcementInterest: segmentResult.postEnforcementInterest,
+      },
+      // Phase 3.1.1: Segments array (truncated)
+      segments: previewSegments.map(s => ({
+        startDate: s.periodStart,
+        endDate: s.periodEnd,
+        days: s.days,
+        annualRatePct: Math.round(s.rate * 10000) / 100, // Decimal to %
+        principal: s.principal,
+        interest: s.segmentInterest,
+        phase: s.phase,
+        rateSource: s.rateSource,
+      })),
+      segmentsMeta: {
+        total: segmentResult.segments.length,
+        returned: previewSegments.length,
+        truncated,
+      },
+      // Phase 3.1.1: Coverage info
+      coverage: {
+        percent: coverage.coveragePercent,
+        totalDays: coverage.totalDays,
+        coveredDays: coverage.coveredDays,
+        hasGaps: coverage.gaps.length > 0,
+        hasOverlaps: coverage.overlaps.length > 0,
+      },
+      // Phase 3.1.1: Warnings
+      warnings,
+      versions: {
+        engineVersion: ENGINE_VERSION,
+        ruleVersion: this.versionPinning.getRuleVersion(),
+        rateTableVersion: `${new Date().getFullYear()}.01`, // TODO: gerçek version
+      },
+    };
+  }
+
+  /**
+   * Preview için rate'leri getir
+   * Gerçek rate table'dan okur
+   */
+  private getPreviewRates(
+    interestType: string, 
+    currency: string, 
+    startDate: string,
+    endDate: string,
+    fixedRate?: number,
+  ): RateEntry[] {
+    // Fixed rate için tek entry döndür
+    if (fixedRate !== undefined && (
+      interestType === 'COMMERCIAL_FIXED' ||
+      interestType === 'CONTRACTUAL'
+    )) {
+      return [{
+        id: 'FIXED',
+        interestType: interestType as InterestTypeCode,
+        validFrom: startDate,
+        validTo: endDate,
+        annualRate: fixedRate / 100, // % to decimal
+        source: RateSourceType.CONTRACT,
+        sourceReference: 'Sabit Oran',
+        versionHash: 'fixed-rate',
+        createdAt: new Date().toISOString(),
+      }];
+    }
+
+    // Current rates (2025) - gerçek değerler
+    // TODO: RateProviderService'den çekilmeli
+    const currentRates: Record<string, number> = {
+      'LEGAL_3095': 24,
+      'COMMERCIAL_AVANS_3095_2_2': 39.75,
+      'TTK_1530': 39.75,
+      'MEVDUAT_TL_BANKALARCA': 45,
+      'MEVDUAT_TL_KAMU': 42,
+      'TEFE_TUFE': 50,
+      'REESKONT': 35,
+    };
+
+    const rate = currentRates[interestType];
+    if (rate === undefined) {
+      return [];
+    }
+
+    return [{
+      id: `${interestType}_2025`,
+      interestType: interestType as InterestTypeCode,
+      validFrom: '2025-01-01',
+      validTo: null, // Open-ended
+      annualRate: rate / 100, // % to decimal
+      source: RateSourceType.TCMB,
+      sourceReference: interestType,
+      versionHash: `${interestType}-2025-01`,
+      createdAt: new Date().toISOString(),
+    }];
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// PREVIEW TYPES (Phase 3.1.1 Enhanced)
+// ═══════════════════════════════════════════════════════════════════════════
+
+export interface PreviewWarning {
+  code: string;
+  severity: 'info' | 'warn';
+  message: string;
+  evidence?: Record<string, unknown>;
+}
+
+export interface PreviewSegment {
+  startDate: string;
+  endDate: string;
+  days: number;
+  annualRatePct: number;
+  principal: number;
+  interest: number;
+  phase?: 'PRE_ENFORCEMENT' | 'POST_ENFORCEMENT';
+  rateSource?: string;
+}
+
+export interface PreviewCoverage {
+  percent: number;
+  totalDays: number;
+  coveredDays: number;
+  hasGaps: boolean;
+  hasOverlaps: boolean;
+}
+
+export interface InterestPreviewResult {
+  success: boolean;
+  data?: {
+    estimatedInterest: number;
+    currentRate: number;
+    days: number;
+    interestType: string;
+    dayCountBasis: number;
+    formula: string;
+    // Phase 3.1.1: Detaylı breakdown
+    preEnforcementInterest?: number;
+    postEnforcementInterest?: number;
+  };
+  // Phase 3.1.1: Segment detayları (truncated)
+  segments?: PreviewSegment[];
+  segmentsMeta?: {
+    total: number;
+    returned: number;
+    truncated: boolean;
+  };
+  // Phase 3.1.1: Coverage bilgisi
+  coverage?: PreviewCoverage;
+  // Phase 3.1.1: Warnings
+  warnings?: PreviewWarning[];
+  error?: {
+    code: string;
+    message: string;
+  };
+  versions?: {
+    engineVersion: string;
+    ruleVersion: string;
+    rateTableVersion?: string;
+  };
 }

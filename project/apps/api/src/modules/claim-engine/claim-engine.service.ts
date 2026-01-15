@@ -394,35 +394,21 @@ export class ClaimEngineService implements OnModuleInit {
    * const rate = await rateProvider.getRate(interestTypeCode, date, currency);
    * ```
    * 
+   * NOT: Bu metod artık YAML'dan oran okumaz. Sadece null döner.
+   * Tüm oran okumaları interest-engine üzerinden yapılmalıdır.
+   * 
    * @see ARCHITECTURE.md - Source of Truth Matrix
+   * @returns null - Her zaman null döner, interest-engine kullanın
    */
   getInterestRate(currency: string, interestType: string, date: Date): number | null {
-    // Deprecation warning (dev only)
-    if (process.env.NODE_ENV !== 'production' && process.env.NODE_ENV !== 'test') {
-      this.logger.warn(
-        `⚠️ claim-engine.getInterestRate() is DEPRECATED. Use interest-engine/RateProviderService instead.`
-      );
-    }
+    // Deprecation warning (always log)
+    this.logger.warn(
+      `⛔ claim-engine.getInterestRate() is REMOVED. Use interest-engine/RateProviderService instead. ` +
+      `Called with: currency=${currency}, type=${interestType}, date=${date.toISOString()}`
+    );
 
-    if (!this.rules) return null;
-
-    const currencyRates = this.rules.interest_rate_table[currency];
-    if (!currencyRates) return null;
-
-    const typeRates = currencyRates[interestType];
-    if (!typeRates || typeRates.length === 0) return null;
-
-    // Tarihe göre uygun oranı bul
-    const dateStr = date.toISOString().split('T')[0];
-    let applicableRate: number | null = null;
-
-    for (const rateEntry of typeRates) {
-      if (rateEntry.start_date <= dateStr) {
-        applicableRate = rateEntry.rate;
-      }
-    }
-
-    return applicableRate;
+    // Artık YAML'dan okumuyoruz - tek kaynak interest-engine
+    return null;
   }
 
 

@@ -11,6 +11,7 @@
     "build": "turbo run build",
     "lint": "turbo run lint",
     "type-check": "turbo run type-check",
+    "check:single-source": "node scripts/check-single-source.js",
     "db:generate": "turbo run db:generate",
     "db:push": "turbo run db:push",
     "db:studio": "pnpm --filter @hukuk/api db:studio",

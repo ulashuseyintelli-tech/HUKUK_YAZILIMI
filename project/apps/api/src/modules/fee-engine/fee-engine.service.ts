@@ -402,4 +402,166 @@ export class FeeEngineService implements OnModuleInit {
   calculateTotalFees(items: GeneratedFeeItem[]): number {
     return items.reduce((sum, item) => sum + item.amount, 0);
   }
+
+  // ============================================
+  // PREVIEW CALCULATION (Phase 3.1 - Tek Kaynak)
+  // ============================================
+
+  /**
+   * Preview hesaplama - aynı matematik, daha az bürokrasi
+   * 
+   * calculateOpeningFees() ile AYNI:
+   * - Tariff lookup
+   * - Fee calculation
+   * - Breakdown
+   * 
+   * calculateOpeningFees() ile FARKLI:
+   * - NO audit log
+   * - Simplified response format
+   * 
+   * @see docs/single-source-of-truth-architecture.md - Phase 3.1
+   */
+  previewCalculation(params: {
+    principalAmount: number;
+    accruedInterest?: number;
+    caseType?: string;
+    debtorCount?: number;
+    postageType?: string;
+    tariffYear?: number;
+  }): FeePreviewResult {
+    const {
+      principalAmount,
+      accruedInterest = 0,
+      caseType = 'ILAMSIZ',
+      debtorCount = 1,
+      postageType = 'NORMAL',
+      tariffYear,
+    } = params;
+
+    // 1. Get tariff
+    const tariff = this.getTariff(tariffYear);
+    if (!tariff) {
+      return {
+        success: false,
+        error: {
+          code: 'TARIFF_NOT_FOUND',
+          message: `Tariff not found for year: ${tariffYear || this.currentYear}`,
+        },
+      };
+    }
+
+    // 2. Calculate fees using real engine
+    const feeItems = this.calculateOpeningFees(
+      caseType,
+      principalAmount,
+      accruedInterest,
+      debtorCount,
+      postageType,
+      tariffYear,
+    );
+
+    // 3. Build breakdown
+    const breakdown = this.buildPreviewBreakdown(feeItems);
+
+    // 4. Calculate attorney fee
+    const estimatedAttorneyFee = this.calculateAttorneyFeePreview(
+      principalAmount + accruedInterest
+    );
+
+    // 5. Total fees
+    const estimatedFees = this.calculateTotalFees(feeItems);
+
+    return {
+      success: true,
+      data: {
+        estimatedFees,
+        estimatedAttorneyFee,
+        tariffYear: tariff.year,
+        breakdown,
+        itemCount: feeItems.length,
+      },
+      versions: {
+        tariffVersion: `${tariff.year}.${tariff.version}`,
+        tariffYear: tariff.year,
+      },
+    };
+  }
+
+  /**
+   * Preview için breakdown oluştur
+   */
+  private buildPreviewBreakdown(items: GeneratedFeeItem[]): FeePreviewBreakdown {
+    const findAmount = (code: string): number => {
+      const item = items.find(i => i.tariffCode === code);
+      return item?.amount || 0;
+    };
+
+    return {
+      basvurmaHarci: findAmount('application_fee'),
+      vekaletHarci: findAmount('poa_copy_fee'),
+      pesinHarc: findAmount('ilamsiz_pesin_harc') || findAmount('kambiyo_pesin_harc'),
+      dosyaGideri: 50.00, // Sabit dosya gideri
+      tebligatGideri: findAmount('NORMAL') || findAmount('UETS') || findAmount('FAST'),
+      vekaletPulu: findAmount('bar_stamp_fee'),
+    };
+  }
+
+  /**
+   * Vekalet ücreti hesaplama (2025 tarife)
+   * GERÇEK tarife değerleri
+   */
+  private calculateAttorneyFeePreview(takipTutari: number): number {
+    // 2025 Avukatlık Asgari Ücret Tarifesi - İcra Takipleri
+    const tarifeler = [
+      { min: 0, max: 55000, fixed: 11000, rate: 0 },
+      { min: 55000, max: 130000, fixed: 11000, rate: 0.14 },
+      { min: 130000, max: 390000, fixed: 21500, rate: 0.12 },
+      { min: 390000, max: 780000, fixed: 52700, rate: 0.08 },
+      { min: 780000, max: 1950000, fixed: 83900, rate: 0.04 },
+      { min: 1950000, max: Infinity, fixed: 130700, rate: 0.01 },
+    ];
+    const minimum = 11000;
+
+    for (const tarife of tarifeler) {
+      if (takipTutari <= tarife.max) {
+        const ucret = tarife.fixed + ((takipTutari - tarife.min) * tarife.rate);
+        return Math.max(ucret, minimum);
+      }
+    }
+
+    const sonTarife = tarifeler[tarifeler.length - 1];
+    return sonTarife.fixed + ((takipTutari - sonTarife.min) * sonTarife.rate);
+  }
+}
+
+// ============================================
+// PREVIEW RESULT TYPES
+// ============================================
+
+export interface FeePreviewBreakdown {
+  basvurmaHarci: number;
+  vekaletHarci: number;
+  pesinHarc: number;
+  dosyaGideri: number;
+  tebligatGideri: number;
+  vekaletPulu: number;
+}
+
+export interface FeePreviewResult {
+  success: boolean;
+  data?: {
+    estimatedFees: number;
+    estimatedAttorneyFee: number;
+    tariffYear: number;
+    breakdown: FeePreviewBreakdown;
+    itemCount: number;
+  };
+  error?: {
+    code: string;
+    message: string;
+  };
+  versions?: {
+    tariffVersion: string;
+    tariffYear: number;
+  };
 }

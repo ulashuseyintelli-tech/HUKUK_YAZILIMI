@@ -1,5 +1,18 @@
 /**
  * Validation API - Validation gate and case detail endpoints
+ * 
+ * ⚠️ DEPRECATION NOTICE:
+ * validation-gate endpoint'leri deprecated. Yeni kod için policy-engine kullanın:
+ * 
+ * ```typescript
+ * import { policyEngineApi } from './policy-engine';
+ * 
+ * // Eski: validationApi.validateCase(caseId)
+ * // Yeni: policyEngineApi.checkAllGates(caseId)
+ * ```
+ * 
+ * @see ARCHITECTURE.md - Source of Truth Matrix
+ * @see policy-engine.ts - Yeni API client
  */
 
 import { apiClient } from './client';
@@ -62,29 +75,61 @@ export interface BankClaimInterestRules {
 }
 
 export const validationApi = {
-  // Validation Gate
+  // ==================== DEPRECATED - Redirected to policy-engine ====================
+  
+  /**
+   * @deprecated Use policyEngineApi.checkAllGates(caseId) instead
+   * Bu fonksiyon artık policyEngineApi'ye yönlendiriyor
+   */
   async getValidationStatus(caseId: string) {
-    return apiClient.request<any>(`/validation-gate/case/${caseId}`);
+    console.warn('⚠️ validationApi.getValidationStatus() is DEPRECATED. Use policyEngineApi.checkAllGates()');
+    const { policyEngineApi } = await import('./policy-engine');
+    return policyEngineApi.checkAllGates(caseId);
   },
 
+  /**
+   * @deprecated Use policyEngineApi.checkAllGates(caseId) instead
+   * Bu fonksiyon artık policyEngineApi'ye yönlendiriyor
+   */
   async validateCase(caseId: string) {
-    return apiClient.request<any>(`/validation-gate/case/${caseId}/validate`, {
-      method: 'POST',
-    });
+    console.warn('⚠️ validationApi.validateCase() is DEPRECATED. Use policyEngineApi.checkAllGates()');
+    const { policyEngineApi } = await import('./policy-engine');
+    return policyEngineApi.checkAllGates(caseId);
   },
 
-  async getValidationRules() {
-    return apiClient.request<any>('/validation-gate/rules');
+  /**
+   * @deprecated Use policyEngineApi.getAvailableActions(caseId) for action rules
+   * 
+   * ⚠️ HARD FAIL: Bu fonksiyon artık desteklenmiyor.
+   * Boş array döndürmek sessiz drift üretir - bunun yerine hata fırlatıyoruz.
+   * 
+   * @see docs/single-source-of-truth-architecture.md
+   */
+  async getValidationRules(): Promise<never> {
+    console.error('❌ validationApi.getValidationRules() is DEPRECATED and will throw');
+    
+    // Telemetry: hangi sayfa çağırdı?
+    const stack = new Error().stack;
+    console.error('[DEPRECATED_USAGE] getValidationRules called from:', stack);
+    
+    throw new Error(
+      'DEPRECATED: validationApi.getValidationRules() artık desteklenmiyor. ' +
+      'policyEngineApi.getAvailableActions(caseId) kullanın.'
+    );
   },
 
-  async overrideValidation(caseId: string, ruleId: string, reason: string) {
-    return apiClient.request<any>(`/validation-gate/case/${caseId}/override`, {
-      method: 'POST',
-      body: JSON.stringify({ ruleId, reason }),
-    });
+  /**
+   * @deprecated Validation override artık desteklenmiyor - CPE gate'leri kullanın
+   */
+  async overrideValidation(_caseId: string, _ruleId: string, _reason: string): Promise<never> {
+    console.error('❌ validationApi.overrideValidation() is DEPRECATED and will throw');
+    throw new Error(
+      'DEPRECATED: Validation override artık desteklenmiyor. ' +
+      'CPE gate\'leri kullanın.'
+    );
   },
 
-  // Banka Alacağı Kontrolleri (İİK 68)
+  // ==================== BANK CLAIM (still active) ====================
   async isBankClaim(mahiyetCode: string): Promise<{ mahiyetCode: string; isBankClaim: boolean }> {
     return apiClient.request<{ mahiyetCode: string; isBankClaim: boolean }>(
       `/validation-gate/is-bank-claim?mahiyetCode=${encodeURIComponent(mahiyetCode)}`

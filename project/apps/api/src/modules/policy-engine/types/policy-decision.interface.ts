@@ -100,6 +100,12 @@ export interface ActionContext {
   /** Masraf ID (EXPENSE scope için) */
   expenseId?: string;
   
+  /** Kullanıcı ID (audit için) */
+  userId?: string;
+  
+  /** Kaynak (automation, manual, etc.) */
+  source?: string;
+  
   /** Ek metadata */
   metadata?: Record<string, unknown>;
   

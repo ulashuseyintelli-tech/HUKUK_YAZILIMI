@@ -87,11 +87,14 @@ export class ClaimItemController {
     return { success: true, data };
   }
 
-  // Faiz hesapla
+  /**
+   * @deprecated Use /api/interest-engine/calculate instead
+   * Bu endpoint geriye uyumluluk için korunuyor.
+   */
   @Post('calculate-interest')
   async calculateInterest(@Body() dto: CalculateInterestDto) {
     const data = await this.service.calculateInterest(dto);
-    return { success: true, data };
+    return { success: true, data, _deprecated: 'Use /api/interest-engine/calculate for accurate calculations' };
   }
 
   // Dosyanın alacak özetini getir

@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { FeeEngineService, GeneratedFeeItem } from './fee-engine.service';
+import { FeeEngineService } from './fee-engine.service';
+import type { GeneratedFeeItem } from '@shared/types';
 
 interface CalculateFeesDto {
   caseType: string;
@@ -11,10 +12,148 @@ interface CalculateFeesDto {
   tariffYear?: number;
 }
 
+/**
+ * Preview Request DTO - Lightweight hesaplama için
+ * Audit log tutulmaz, cache'lenir
+ */
+interface FeePreviewDto {
+  principalAmount: number;
+  caseType?: string;
+  debtorCount?: number;
+}
+
+interface FeePreviewResponse {
+  success: boolean;
+  data?: {
+    estimatedFees: number;
+    estimatedAttorneyFee: number;
+    tariffYear: number;
+    breakdown: {
+      basvurmaHarci: number;
+      vekaletHarci: number;
+      pesinHarc: number;
+      dosyaGideri: number;
+      tebligatGideri: number;
+      vekaletPulu: number;
+    };
+  };
+  error?: {
+    code: 'INVALID_INPUT' | 'SERVICE_UNAVAILABLE';
+    message: string;
+  };
+  cached: boolean;
+  cacheExpiry?: string;
+}
+
 @Controller('fee-engine')
 @UseGuards(JwtAuthGuard)
 export class FeeEngineController {
   constructor(private readonly feeEngineService: FeeEngineService) {}
+
+  /**
+   * POST /fee-engine/preview
+   * 
+   * Lightweight preview endpoint - NO audit log, cached
+   * Frontend form preview için kullanılır
+   * 
+   * @see docs/single-source-of-truth-architecture.md
+   */
+  @Post('preview')
+  preview(@Body() dto: FeePreviewDto): FeePreviewResponse {
+    try {
+      // Validate input
+      if (!dto.principalAmount || dto.principalAmount <= 0) {
+        return {
+          success: false,
+          error: {
+            code: 'INVALID_INPUT',
+            message: 'principalAmount must be greater than 0',
+          },
+          cached: false,
+        };
+      }
+
+      const debtorCount = dto.debtorCount || 1;
+      const caseType = dto.caseType || 'ILAMSIZ_GENEL';
+      const tariffYear = this.feeEngineService.getCurrentTariffYear();
+
+      // Calculate fees
+      const items = this.feeEngineService.calculateOpeningFees(
+        caseType,
+        dto.principalAmount,
+        0,
+        debtorCount,
+        'NORMAL',
+        tariffYear,
+      );
+
+      const estimatedFees = this.feeEngineService.calculateTotalFees(items);
+
+      // Calculate attorney fee
+      const estimatedAttorneyFee = this.calculateAttorneyFeePreview(dto.principalAmount);
+
+      // Extract breakdown
+      const breakdown = {
+        basvurmaHarci: items.find(i => i.type === 'BASVURMA_HARCI' || i.tariffCode === 'BASVURMA_HARCI')?.amount || 0,
+        vekaletHarci: items.find(i => i.type === 'VEKALET_HARCI' || i.tariffCode === 'VEKALET_HARCI')?.amount || 0,
+        pesinHarc: items.find(i => i.type === 'PESIN_HARC' || i.tariffCode === 'PESIN_HARC')?.amount || 0,
+        dosyaGideri: items.find(i => i.type === 'DOSYA_GIDERI' || i.tariffCode === 'DOSYA_GIDERI')?.amount || 0,
+        tebligatGideri: items.find(i => i.type === 'TEBLIGAT_GIDERI' || i.tariffCode === 'TEBLIGAT_GIDERI')?.amount || 0,
+        vekaletPulu: items.find(i => i.type === 'VEKALET_PULU' || i.tariffCode === 'VEKALET_PULU')?.amount || 0,
+      };
+
+      // Cache expiry: 5 minutes
+      const cacheExpiry = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
+      return {
+        success: true,
+        data: {
+          estimatedFees,
+          estimatedAttorneyFee,
+          tariffYear,
+          breakdown,
+        },
+        cached: false, // TODO: Implement caching
+        cacheExpiry,
+      };
+    } catch (error) {
+      console.error('[FeeEngine] Preview error:', error);
+      return {
+        success: false,
+        error: {
+          code: 'SERVICE_UNAVAILABLE',
+          message: 'Fee calculation service is temporarily unavailable',
+        },
+        cached: false,
+      };
+    }
+  }
+
+  /**
+   * Calculate attorney fee for preview
+   * Based on 2025 tariff
+   */
+  private calculateAttorneyFeePreview(takipTutari: number): number {
+    const tarifeler = [
+      { min: 0, max: 55000, fixed: 11000, rate: 0 },
+      { min: 55000, max: 130000, fixed: 11000, rate: 0.14 },
+      { min: 130000, max: 390000, fixed: 21500, rate: 0.12 },
+      { min: 390000, max: 780000, fixed: 52700, rate: 0.08 },
+      { min: 780000, max: 1950000, fixed: 83900, rate: 0.04 },
+      { min: 1950000, max: Infinity, fixed: 130700, rate: 0.01 },
+    ];
+    const minimum = 11000;
+    
+    for (const tarife of tarifeler) {
+      if (takipTutari <= tarife.max) {
+        const ucret = tarife.fixed + ((takipTutari - tarife.min) * tarife.rate);
+        return Math.max(ucret, minimum);
+      }
+    }
+    
+    const sonTarife = tarifeler[tarifeler.length - 1];
+    return sonTarife.fixed + ((takipTutari - sonTarife.min) * sonTarife.rate);
+  }
 
   /**
    * Açılış masraflarını hesapla

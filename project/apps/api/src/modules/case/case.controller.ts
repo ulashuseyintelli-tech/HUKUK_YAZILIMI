@@ -526,4 +526,25 @@ export class CaseController {
   ) {
     return this.caseService.getCaseFinanceSummary(tenantId, id);
   }
+
+  /**
+   * Hesap özeti (computed values from engines)
+   * GET /cases/:id/calculation-summary
+   * 
+   * TEK KAYNAK PRENSİBİ:
+   * - Faiz hesabı: interest-engine
+   * - Masraf/harç: fee-engine
+   * - Vekalet ücreti: fee-engine/attorney-fee
+   * 
+   * @see ARCHITECTURE.md - Source of Truth Matrix
+   */
+  @Get(":id/calculation-summary")
+  async getCalculationSummary(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Query("date") date?: string
+  ) {
+    const calculationDate = date || new Date().toISOString().split('T')[0];
+    return this.caseService.getCalculationSummary(tenantId, id, calculationDate);
+  }
 }

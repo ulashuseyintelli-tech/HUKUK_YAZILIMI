@@ -1,7 +1,18 @@
 'use client';
 
+/**
+ * Interest Calculator Component
+ * 
+ * ⚠️ REFACTORED: Artık backend API kullanıyor
+ * Frontend'de hesaplama YASAK - tüm hesaplamalar backend'den gelir.
+ * 
+ * @see ARCHITECTURE.md - Source of Truth Matrix
+ * @see interest-engine/interest-engine.service.ts
+ */
+
 import { useState } from 'react';
-import { Calculator, Calendar, TrendingUp, Download, RefreshCw } from 'lucide-react';
+import { Calculator, Calendar, TrendingUp, Download, RefreshCw, AlertCircle } from 'lucide-react';
+import { apiClient } from '@/lib/api/client';
 
 interface InterestPeriod {
   startDate: string;
@@ -15,97 +26,86 @@ interface InterestPeriod {
 interface InterestCalculatorProps {
   initialPrincipal?: number;
   initialDate?: string;
+  caseId?: string;
 }
 
-const LEGAL_RATES: Record<string, number> = {
-  '2024-H2': 24,
-  '2024-H1': 24,
-  '2023-H2': 24,
-  '2023-H1': 18.25,
-  '2022-H2': 15.75,
-  '2022-H1': 9,
-};
+interface InterestCalculationResult {
+  segments: Array<{
+    periodStart: string;
+    periodEnd: string;
+    days: number;
+    rate: number;
+    segmentInterest: number;
+  }>;
+  totalInterest: number;
+  principal: number;
+  totalDue: number;
+}
 
-const COMMERCIAL_RATES: Record<string, number> = {
-  '2024-H2': 54,
-  '2024-H1': 54,
-  '2023-H2': 54,
-  '2023-H1': 43.25,
-  '2022-H2': 40.75,
-  '2022-H1': 34,
-};
-
-export function InterestCalculator({ initialPrincipal = 0, initialDate }: InterestCalculatorProps) {
+export function InterestCalculator({ initialPrincipal = 0, initialDate, caseId }: InterestCalculatorProps) {
   const [principal, setPrincipal] = useState(initialPrincipal);
   const [startDate, setStartDate] = useState(initialDate || '');
   const [endDate, setEndDate] = useState(new Date().toISOString().split('T')[0]);
-  const [interestType, setInterestType] = useState<'legal' | 'commercial'>('legal');
+  const [interestType, setInterestType] = useState<'LEGAL_3095' | 'COMMERCIAL_AVANS_3095_2_2'>('LEGAL_3095');
   const [customRate, setCustomRate] = useState<number | null>(null);
   const [periods, setPeriods] = useState<InterestPeriod[]>([]);
   const [totalInterest, setTotalInterest] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const getRateForPeriod = (date: Date): number => {
-    if (customRate !== null) return customRate;
-    
-    const year = date.getFullYear();
-    const half = date.getMonth() < 6 ? 'H1' : 'H2';
-    const key = `${year}-${half}`;
-    
-    const rates = interestType === 'legal' ? LEGAL_RATES : COMMERCIAL_RATES;
-    return rates[key] || (interestType === 'legal' ? 24 : 54);
-  };
-
-  const calculateInterest = () => {
+  const calculateInterest = async () => {
     if (!principal || !startDate || !endDate) return;
 
     const start = new Date(startDate);
     const end = new Date(endDate);
     
     if (start >= end) {
-      alert('Bitiş tarihi başlangıç tarihinden sonra olmalıdır');
+      setError('Bitiş tarihi başlangıç tarihinden sonra olmalıdır');
       return;
     }
 
-    const calculatedPeriods: InterestPeriod[] = [];
-    let currentDate = new Date(start);
-    let cumulative = 0;
+    setLoading(true);
+    setError(null);
 
-    while (currentDate < end) {
-      const periodStart = new Date(currentDate);
-      const year = currentDate.getFullYear();
-      const month = currentDate.getMonth();
-      
-      // Period end is either end of half-year or end date
-      let periodEnd: Date;
-      if (month < 6) {
-        periodEnd = new Date(year, 6, 1);
-      } else {
-        periodEnd = new Date(year + 1, 0, 1);
-      }
-      
-      if (periodEnd > end) {
-        periodEnd = new Date(end);
-      }
-
-      const days = Math.ceil((periodEnd.getTime() - periodStart.getTime()) / (1000 * 60 * 60 * 24));
-      const rate = getRateForPeriod(periodStart);
-      const interest = (principal * rate * days) / (365 * 100);
-      cumulative += interest;
-
-      calculatedPeriods.push({
-        startDate: periodStart.toISOString().split('T')[0],
-        endDate: periodEnd.toISOString().split('T')[0],
-        days,
-        rate,
-        interest: Math.round(interest * 100) / 100,
-        cumulative: Math.round(cumulative * 100) / 100,
+    try {
+      // Backend API'den hesaplama al
+      const response = await apiClient.post<InterestCalculationResult>('/interest-engine/calculate', {
+        principalItems: [{
+          id: 'temp-calc',
+          amount: principal,
+          currency: 'TRY',
+          startDate: startDate,
+          interestType: customRate !== null ? 'CONTRACTUAL' : interestType,
+          fixedRate: customRate !== null ? customRate / 100 : undefined,
+        }],
+        asOfDate: endDate,
+        caseId: caseId || 'preview',
       });
 
-      currentDate = periodEnd;
-    }
+      const result = response.data;
+      
+      // Segment'leri UI formatına dönüştür
+      let cumulative = 0;
+      const calculatedPeriods: InterestPeriod[] = result.segments.map(seg => {
+        cumulative += seg.segmentInterest;
+        return {
+          startDate: seg.periodStart,
+          endDate: seg.periodEnd,
+          days: seg.days,
+          rate: seg.rate * 100, // Backend decimal döner, UI yüzde gösterir
+          interest: Math.round(seg.segmentInterest * 100) / 100,
+          cumulative: Math.round(cumulative * 100) / 100,
+        };
+      });
 
-    setPeriods(calculatedPeriods);
-    setTotalInterest(Math.round(cumulative * 100) / 100);
+      setPeriods(calculatedPeriods);
+      setTotalInterest(Math.round(result.totalInterest * 100) / 100);
+    } catch (err: any) {
+      console.error('[InterestCalculator] API Error:', err);
+      setError(err.response?.data?.message || 'Faiz hesaplanamadı');
+    } finally {
+      setLoading(false);
+    }
   };
 
   const formatCurrency = (amount: number) => {
@@ -137,6 +137,7 @@ export function InterestCalculator({ initialPrincipal = 0, initialDate }: Intere
     setCustomRate(null);
     setPeriods([]);
     setTotalInterest(0);
+    setError(null);
   };
 
   return (
@@ -184,8 +185,8 @@ export function InterestCalculator({ initialPrincipal = 0, initialDate }: Intere
               onChange={(e) => setInterestType(e.target.value as any)}
               className="w-full border rounded-lg px-3 py-2"
             >
-              <option value="legal">Yasal Faiz</option>
-              <option value="commercial">Ticari Faiz</option>
+              <option value="LEGAL_3095">Yasal Faiz (3095)</option>
+              <option value="COMMERCIAL_AVANS_3095_2_2">Ticari Faiz (Avans)</option>
             </select>
           </div>
         </div>
@@ -212,14 +213,25 @@ export function InterestCalculator({ initialPrincipal = 0, initialDate }: Intere
           )}
         </div>
 
+        {error && (
+          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2 text-red-700">
+            <AlertCircle className="h-4 w-4" />
+            <span className="text-sm">{error}</span>
+          </div>
+        )}
+
         <div className="flex items-center gap-2 mt-4">
           <button
             onClick={calculateInterest}
-            disabled={!principal || !startDate || !endDate}
+            disabled={!principal || !startDate || !endDate || loading}
             className="flex-1 flex items-center justify-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
           >
-            <TrendingUp className="h-4 w-4" />
-            Hesapla
+            {loading ? (
+              <RefreshCw className="h-4 w-4 animate-spin" />
+            ) : (
+              <TrendingUp className="h-4 w-4" />
+            )}
+            {loading ? 'Hesaplanıyor...' : 'Hesapla'}
           </button>
           <button
             onClick={handleReset}
@@ -270,7 +282,7 @@ export function InterestCalculator({ initialPrincipal = 0, initialDate }: Intere
                       <span>{period.endDate}</span>
                     </td>
                     <td className="px-4 py-2 text-right">{period.days}</td>
-                    <td className="px-4 py-2 text-right">{period.rate}</td>
+                    <td className="px-4 py-2 text-right">{period.rate.toFixed(2)}</td>
                     <td className="px-4 py-2 text-right">{formatCurrency(period.interest)}</td>
                     <td className="px-4 py-2 text-right font-medium">{formatCurrency(period.cumulative)}</td>
                   </tr>
@@ -293,16 +305,15 @@ export function InterestCalculator({ initialPrincipal = 0, initialDate }: Intere
       )}
 
       {/* Rate Info */}
-      <div className="bg-gray-50 rounded-lg p-4">
-        <h4 className="font-medium mb-2 text-sm">Güncel Faiz Oranları</h4>
-        <div className="grid grid-cols-2 gap-4 text-sm">
-          <div>
-            <p className="text-gray-500">Yasal Faiz (2024)</p>
-            <p className="font-medium">%24</p>
-          </div>
-          <div>
-            <p className="text-gray-500">Ticari Faiz (2024)</p>
-            <p className="font-medium">%54</p>
+      <div className="bg-blue-50 rounded-lg p-4 border border-blue-200">
+        <div className="flex items-start gap-2">
+          <AlertCircle className="h-4 w-4 text-blue-600 mt-0.5" />
+          <div className="text-sm text-blue-800">
+            <p className="font-medium">Faiz Hesaplama Bilgisi</p>
+            <p className="mt-1 text-blue-700">
+              Tüm faiz hesaplamaları backend interest-engine tarafından yapılmaktadır.
+              Güncel TCMB oranları otomatik olarak uygulanır.
+            </p>
           </div>
         </div>
       </div>

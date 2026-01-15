@@ -405,187 +405,129 @@ interface Props {
 // ============================================================================
 
 /**
- * TCMB AVANS FAİZ ORANLARI (3095 sayılı Kanun m.2/2 - Ticari Temerrüt)
- * Kaynak: TCMB Reeskont ve Avans Faiz Oranları (Resmi Gazete)
+ * ⚠️ TEK KAYNAK PRENSİBİ - LOKAL HESAPLAMA KALDIRILDI
  * 
- * ÖNEMLİ: Sadece validFrom kullanılır. Bir sonraki satırın validFrom'u
- * bu satırın bitiş tarihidir (exclusive).
+ * Tüm faiz ve masraf hesaplamaları artık backend API'lerinden yapılmaktadır:
+ * - Faiz hesabı: interest-engine API (preview endpoint)
+ * - Masraf/harç: fee-engine API (preview endpoint)
+ * - Vekalet ücreti: fee-engine/attorney-fee API
  * 
- * Aralık semantiği: [validFrom, nextValidFrom) - başlangıç dahil, bitiş hariç
+ * API erişilemezse → "Hesaplanamadı" gösterilir, TAHMİN YAPILMAZ.
+ * 
+ * @see ARCHITECTURE.md - Source of Truth Matrix
+ * @see docs/single-source-of-truth-architecture.md
+ * @see lib/api/interest-engine.ts
+ * @see lib/api/fee-engine.ts
  */
-const TCMB_AVANS_ORANLARI: Array<{ validFrom: string; rate: number }> = [
-  // 2020
-  { validFrom: '2020-01-01', rate: 11.75 },
-  { validFrom: '2020-05-22', rate: 9.25 },
-  { validFrom: '2020-06-13', rate: 8.25 },
-  { validFrom: '2020-09-25', rate: 9.25 },
-  { validFrom: '2020-11-20', rate: 14.25 },
-  { validFrom: '2020-12-25', rate: 17.25 },
-  // 2021
-  { validFrom: '2021-03-19', rate: 19.25 },
-  { validFrom: '2021-09-24', rate: 18.25 },
-  { validFrom: '2021-10-22', rate: 16.25 },
-  { validFrom: '2021-11-19', rate: 15.25 },
-  { validFrom: '2021-12-17', rate: 14.25 },
-  // 2022
-  { validFrom: '2022-08-19', rate: 13.25 },
-  { validFrom: '2022-09-23', rate: 12.25 },
-  { validFrom: '2022-10-21', rate: 10.75 },
-  { validFrom: '2022-11-25', rate: 9.50 },
-  // 2023
-  { validFrom: '2023-06-23', rate: 15.00 },
-  { validFrom: '2023-07-21', rate: 17.50 },
-  { validFrom: '2023-08-25', rate: 25.50 },
-  { validFrom: '2023-09-22', rate: 30.50 },
-  { validFrom: '2023-10-27', rate: 35.50 },
-  { validFrom: '2023-11-24', rate: 40.50 },
-  { validFrom: '2023-12-29', rate: 45.00 },
-  // 2024
-  { validFrom: '2024-01-26', rate: 46.00 },
-  { validFrom: '2024-03-22', rate: 50.00 },
-  { validFrom: '2024-12-28', rate: 49.25 }, // VergiNet doğrulamalı
-  // 2025 (TCMB Resmi - VergiNet/ASMMMO doğrulamalı)
-  { validFrom: '2025-03-08', rate: 44.25 }, // 08.03.2025'ten itibaren
-  { validFrom: '2025-09-17', rate: 42.25 }, // 17.09.2025'ten itibaren
-  { validFrom: '2025-12-20', rate: 39.75 }, // 20.12.2025'ten itibaren
-];
+
+import { interestEngineApi, InterestTypeCode as EngineInterestTypeCode, InterestPreviewResponse } from '@/lib/api/interest-engine';
+import { feeEngineApi, FeePreviewResponse } from '@/lib/api/fee-engine';
+import { assertNoMockInProduction } from '@/lib/config/feature-flags';
 
 /**
- * YASAL FAİZ ORANLARI (3095 sayılı Kanun m.1)
- * Aralık semantiği: [validFrom, nextValidFrom) - başlangıç dahil, bitiş hariç
+ * Backend API'den faiz preview hesaplama (TEK KAYNAK)
+ * 
+ * API erişilemezse { success: false } döner - TAHMİN YAPILMAZ.
  */
-const YASAL_FAIZ_ORANLARI: Array<{ validFrom: string; rate: number }> = [
-  { validFrom: '2006-01-01', rate: 9 },
-  { validFrom: '2024-06-01', rate: 24 },
-];
+const hesaplaFaizFromBackend = async (
+  tutar: number,
+  faizTuru: string,
+  baslangic: string,
+  bitis: string,
+  sabitOran?: number
+): Promise<InterestPreviewResponse> => {
+  if (!tutar || !baslangic || !bitis || faizTuru === "YOK") {
+    return { 
+      success: true, 
+      data: { estimatedInterest: 0, currentRate: 0, days: 0, interestType: EngineInterestTypeCode.LEGAL_3095 },
+      cached: false 
+    };
+  }
+
+  // Faiz türünü backend enum'una çevir
+  const interestType = faizTuruToEngineType(faizTuru);
+  
+  return interestEngineApi.preview({
+    principalAmount: tutar,
+    currency: 'TRY',
+    interestType,
+    startDate: baslangic,
+    endDate: bitis,
+    fixedRate: sabitOran,
+  });
+};
 
 /**
- * Segmentli faiz hesaplama (değişen oranlar için)
+ * Faiz türünü backend InterestTypeCode'a çevir
+ */
+const faizTuruToEngineType = (faizTuru: string): EngineInterestTypeCode => {
+  const mapping: Record<string, EngineInterestTypeCode> = {
+    'YASAL': EngineInterestTypeCode.LEGAL_3095,
+    'TICARI_DEGISEN': EngineInterestTypeCode.COMMERCIAL_AVANS_3095_2_2,
+    'TICARI_SABIT': EngineInterestTypeCode.COMMERCIAL_FIXED,
+    'OZEL': EngineInterestTypeCode.CONTRACTUAL,
+    'BANKA_TL': EngineInterestTypeCode.MEVDUAT_TL_BANKALARCA,
+    'KAMU_BANKA_TL': EngineInterestTypeCode.MEVDUAT_TL_KAMU,
+  };
+  return mapping[faizTuru] || EngineInterestTypeCode.LEGAL_3095;
+};
+
+/**
+ * Backend API'den masraf preview hesaplama (TEK KAYNAK)
  * 
- * Mimari: Sadece validFrom kullanılır, validTo yok.
- * Bir sonraki satırın validFrom'u bu satırın bitiş tarihidir.
- * Aralık: [segmentStart, segmentEnd) - başlangıç dahil, bitiş hariç
+ * API erişilemezse { success: false } döner - TAHMİN YAPILMAZ.
+ */
+const hesaplaMasrafFromBackend = async (
+  principalAmount: number,
+  caseType: string,
+  debtorCount: number
+): Promise<FeePreviewResponse> => {
+  if (!principalAmount || principalAmount <= 0) {
+    return { success: false, error: { code: 'INVALID_INPUT', message: 'Invalid principal amount' }, cached: false };
+  }
+
+  return feeEngineApi.preview({
+    principalAmount,
+    caseType,
+    debtorCount,
+  });
+};
+
+/**
+ * Senkron faiz hesaplama - KALDIRILDI
+ * 
+ * ⚠️ Bu fonksiyon artık sadece "hesaplanamadı" durumu için placeholder.
+ * Gerçek hesaplama için hesaplaFaizFromBackend() kullanın.
+ */
+const hesaplaFaiz = (
+  _tutar: number, 
+  _faizTuru: string, 
+  _baslangic: string, 
+  _bitis: string,
+  _sabitOran?: number
+): number => {
+  // Production'da mock hesaplama yasak
+  assertNoMockInProduction('hesaplaFaiz');
+  
+  // Development'ta bile artık 0 döndürüyoruz - backend kullanılmalı
+  console.warn('⚠️ hesaplaFaiz() çağrıldı - backend API kullanılmalı');
+  return 0;
+};
+
+/**
+ * Segmentli faiz hesaplama - KALDIRILDI
+ * 
+ * ⚠️ Bu fonksiyon artık sadece "hesaplanamadı" durumu için placeholder.
  */
 const hesaplaSegmentliFaiz = (
-  tutar: number, 
-  baslangic: string, 
-  bitis: string,
-  oranlar: Array<{ validFrom: string; rate: number }>
+  _tutar: number, 
+  _baslangic: string, 
+  _bitis: string,
+  _oranlar: Array<{ validFrom: string; rate: number }>
 ): { toplam: number; segmentler: Array<{ baslangic: string; bitis: string; gun: number; oran: number; faiz: number }> } => {
-  const startDate = new Date(baslangic);
-  const endDate = new Date(bitis);
-  
-  if (startDate >= endDate || tutar <= 0) {
-    return { toplam: 0, segmentler: [] };
-  }
-  
-  // Oranları tarihe göre sırala
-  const sortedRates = [...oranlar].sort((a, b) => 
-    new Date(a.validFrom).getTime() - new Date(b.validFrom).getTime()
-  );
-  
-  let totalInterest = 0;
-  const segmentler: Array<{ baslangic: string; bitis: string; gun: number; oran: number; faiz: number }> = [];
-  
-  for (let i = 0; i < sortedRates.length; i++) {
-    const currentRate = sortedRates[i];
-    const nextRate = sortedRates[i + 1];
-    
-    const rateStart = new Date(currentRate.validFrom);
-    // Bir sonraki oranın başlangıcı bu oranın bitişi (veya sonsuz)
-    const rateEnd = nextRate ? new Date(nextRate.validFrom) : new Date('2099-12-31');
-    
-    // Bu oran dönemi hesaplama aralığıyla kesişiyor mu?
-    if (endDate <= rateStart || startDate >= rateEnd) continue;
-    
-    // Kesişim aralığını bul [segmentStart, segmentEnd)
-    const segmentStart = startDate > rateStart ? startDate : rateStart;
-    const segmentEnd = endDate < rateEnd ? endDate : rateEnd;
-    
-    // Gün sayısı: bitiş - başlangıç (başlangıç dahil, bitiş hariç)
-    const days = Math.floor((segmentEnd.getTime() - segmentStart.getTime()) / (1000 * 60 * 60 * 24));
-    if (days <= 0) continue;
-    
-    // Faiz hesabı: Anapara × (Yıllık Oran / 100) × Gün / 365
-    const annualRate = currentRate.rate / 100;
-    const segmentInterest = tutar * annualRate * days / 365;
-    totalInterest += segmentInterest;
-    
-    // UI'da bitiş tarihini inclusive göster (1 gün geri)
-    const displayEnd = new Date(segmentEnd);
-    displayEnd.setDate(displayEnd.getDate() - 1);
-    
-    segmentler.push({
-      baslangic: segmentStart.toISOString().split('T')[0],
-      bitis: displayEnd.toISOString().split('T')[0],
-      gun: days,
-      oran: currentRate.rate,
-      faiz: Math.round(segmentInterest * 100) / 100,
-    });
-  }
-  
-  return {
-    toplam: Math.round(totalInterest * 100) / 100,
-    segmentler,
-  };
-};
-
-const hesaplaYasalFaiz = (tutar: number, baslangic: string, bitis: string): number => {
-  return hesaplaSegmentliFaiz(tutar, baslangic, bitis, YASAL_FAIZ_ORANLARI).toplam;
-};
-
-/**
- * TCMB Avans faizi hesaplama (segmentli)
- */
-const hesaplaTicariFaiz = (tutar: number, baslangic: string, bitis: string): number => {
-  return hesaplaSegmentliFaiz(tutar, baslangic, bitis, TCMB_AVANS_ORANLARI).toplam;
-};
-
-const hesaplaFaiz = (
-  tutar: number, 
-  faizTuru: string, 
-  baslangic: string, 
-  bitis: string,
-  sabitOran?: number // Sabit oran için kullanıcının girdiği değer
-): number => {
-  if (!tutar || !baslangic || !bitis || faizTuru === "YOK") return 0;
-  
-  const faizOption = FAIZ_TURU_OPTIONS.find(f => f.value === faizTuru);
-  if (!faizOption) return 0;
-
-  const startDate = new Date(baslangic);
-  const endDate = new Date(bitis);
-  const days = Math.max(0, Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)));
-  
-  if (days === 0) return 0;
-
-  // YASAL FAİZ - Dönemsel hesaplama (2006: %9, 2024: %24)
-  if (faizTuru === 'YASAL') {
-    return hesaplaYasalFaiz(tutar, baslangic, bitis);
-  }
-
-  // TİCARİ TEMERRÜT FAİZİ (TCMB Avans) - Segmentli hesaplama
-  if (faizTuru === 'TICARI_DEGISEN') {
-    return hesaplaTicariFaiz(tutar, baslangic, bitis);
-  }
-
-  // Diğer değişen oran türleri için tahmini hesaplama
-  if (faizOption.variable && faizTuru !== 'TICARI_DEGISEN') {
-    const estimatedRates: Record<string, number> = {
-      'BANKA_TL': 45, // Mevduat faizi tahmini
-      'KAMU_BANKA_TL': 42, // Kamu bankası mevduat
-    };
-    const rate = estimatedRates[faizTuru] || 40;
-    const dailyRate = rate / 365 / 100;
-    return Math.round(tutar * dailyRate * days * 100) / 100;
-  }
-
-  // Sabit oran türleri
-  let rate = sabitOran ?? faizOption.rate ?? 0;
-  if (rate === 0) return 0;
-  
-  const dailyRate = rate / 365 / 100;
-  return Math.round(tutar * dailyRate * days * 100) / 100;
+  assertNoMockInProduction('hesaplaSegmentliFaiz');
+  console.warn('⚠️ hesaplaSegmentliFaiz() çağrıldı - backend API kullanılmalı');
+  return { toplam: 0, segmentler: [] };
 };
 
 const formatCurrency = (amount: number, curr = "TRY") => {
@@ -593,25 +535,21 @@ const formatCurrency = (amount: number, curr = "TRY") => {
   return `${amount.toLocaleString("tr-TR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ${symbol}`;
 };
 
-const hesaplaVekaletUcreti = (takipTutari: number): number => {
-  const tarifeler = [
-    { min: 0, max: 55000, fixed: 11000, rate: 0 },
-    { min: 55000, max: 130000, fixed: 11000, rate: 0.14 },
-    { min: 130000, max: 390000, fixed: 21500, rate: 0.12 },
-    { min: 390000, max: 780000, fixed: 52700, rate: 0.08 },
-    { min: 780000, max: 1950000, fixed: 83900, rate: 0.04 },
-    { min: 1950000, max: Infinity, fixed: 130700, rate: 0.01 },
-  ];
-  const minimum = 11000;
-  for (const tarife of tarifeler) {
-    if (takipTutari <= tarife.max) {
-      const ucret = tarife.fixed + ((takipTutari - tarife.min) * tarife.rate);
-      return Math.max(ucret, minimum);
-    }
-  }
-  const sonTarife = tarifeler[tarifeler.length - 1];
-  return sonTarife.fixed + ((takipTutari - sonTarife.min) * sonTarife.rate);
+/**
+ * Senkron vekalet ücreti hesaplama - KALDIRILDI
+ * 
+ * ⚠️ Bu fonksiyon artık sadece "hesaplanamadı" durumu için placeholder.
+ * Gerçek hesaplama için feeEngineApi.preview() kullanın.
+ */
+const hesaplaVekaletUcreti = (_takipTutari: number): number => {
+  assertNoMockInProduction('hesaplaVekaletUcreti');
+  console.warn('⚠️ hesaplaVekaletUcreti() çağrıldı - backend API kullanılmalı');
+  return 0;
 };
+
+// Eski sabit tablolar TAMAMEN KALDIRILDI - backend API kullanılıyor
+const TCMB_AVANS_ORANLARI: Array<{ validFrom: string; rate: number }> = [];
+const YASAL_FAIZ_ORANLARI: Array<{ validFrom: string; rate: number }> = [];
 
 const createEmptyKalem = (kalemTuru: string, currency = "TRY"): AlacakKalemi => {
   const config = TAKIP_TIPI_CONFIG[kalemTuru] || TAKIP_TIPI_CONFIG.ASIL_ALACAK;
@@ -868,8 +806,8 @@ export function ProfessionalClaimItemForm({
     return { valid: eksikAlanlar.length === 0, eksikAlanlar };
   }, [kalem]);
 
-  // Hesap özetini hesapla
-  const hesapla = useCallback(() => {
+  // Hesap özetini hesapla - ASYNC (Backend API kullanır)
+  const hesapla = useCallback(async () => {
     console.log('[ProfessionalClaimItemForm] hesapla() başladı');
     const validation = checkZorunluAlanlar();
     console.log('[ProfessionalClaimItemForm] Zorunlu alan kontrolü:', validation);
@@ -912,46 +850,39 @@ export function ProfessionalClaimItemForm({
       satirlar.push({ key: "komisyon", label: "Komisyon", tutar: komisyon });
     }
 
-    // 5. Takip Öncesi Faiz
-    // İlamsız takiplerde faiz başlangıç tercihi: TAKIP = takip tarihi, VADE = vade tarihi
-    // ÇEK TAKİPLERİNDE: Faiz ibraz tarihinden başlar (vade tarihinden değil)
+    // 5. Takip Öncesi Faiz - BACKEND API KULLANIMI
     const isIlamsizTakip = ["FATURA", "ASIL_ALACAK", "KIRA"].includes(kalem.kalemTuru);
     let takipOncesiFaiz = 0;
-    let takipOncesiSegmentler: Array<{ baslangic: string; bitis: string; gun: number; oran: number; faiz: number }> = [];
-    
-    // Faiz türüne göre oran tablosunu seç
-    const getOranTablosu = (faizTuru: string) => {
-      if (faizTuru === 'TICARI_DEGISEN') return TCMB_AVANS_ORANLARI;
-      if (faizTuru === 'YASAL') return YASAL_FAIZ_ORANLARI;
-      return [];
-    };
+    let takipOncesiUnavailable = false;
     
     if (isIlamsizTakip && faizBaslangicTercih === "TAKIP") {
       // Takip tarihinden başlat - takip öncesi faiz yok
       takipOncesiFaiz = 0;
-    } else if (kalem.kalemTuru === "CEK" && kalem.cekBilgileri?.ibrazTarihi) {
-      // ÇEK: Faiz ibraz tarihinden başlar
-      const oranTablosu = getOranTablosu(kalem.takipOncesiFaiz);
-      if (oranTablosu.length > 0 && (kalem.takipOncesiFaiz === 'TICARI_DEGISEN' || kalem.takipOncesiFaiz === 'YASAL')) {
-        const sonuc = hesaplaSegmentliFaiz(kalem.bakiyeTutar, kalem.cekBilgileri.ibrazTarihi, takipTarihi, oranTablosu);
-        takipOncesiFaiz = sonuc.toplam;
-        takipOncesiSegmentler = sonuc.segmentler;
+    } else if (kalem.takipOncesiFaiz !== "YOK") {
+      // Backend API'den faiz hesapla
+      const faizBaslangic = kalem.kalemTuru === "CEK" && kalem.cekBilgileri?.ibrazTarihi 
+        ? kalem.cekBilgileri.ibrazTarihi 
+        : kalem.vadeTarihi;
+      
+      const result = await hesaplaFaizFromBackend(
+        kalem.bakiyeTutar,
+        kalem.takipOncesiFaiz,
+        faizBaslangic,
+        takipTarihi
+      );
+      
+      if (result.success && result.data) {
+        takipOncesiFaiz = result.data.estimatedInterest;
       } else {
-        takipOncesiFaiz = hesaplaFaiz(kalem.bakiyeTutar, kalem.takipOncesiFaiz, kalem.cekBilgileri.ibrazTarihi, takipTarihi);
-      }
-    } else {
-      // Vade tarihinden başlat (veya ilamlı/kambiyo takipleri)
-      const oranTablosu = getOranTablosu(kalem.takipOncesiFaiz);
-      if (oranTablosu.length > 0 && (kalem.takipOncesiFaiz === 'TICARI_DEGISEN' || kalem.takipOncesiFaiz === 'YASAL')) {
-        const sonuc = hesaplaSegmentliFaiz(kalem.bakiyeTutar, kalem.vadeTarihi, takipTarihi, oranTablosu);
-        takipOncesiFaiz = sonuc.toplam;
-        takipOncesiSegmentler = sonuc.segmentler;
-      } else {
-        takipOncesiFaiz = hesaplaFaiz(kalem.bakiyeTutar, kalem.takipOncesiFaiz, kalem.vadeTarihi, takipTarihi);
+        // API erişilemez - UNAVAILABLE state
+        takipOncesiUnavailable = true;
+        console.warn('[hesapla] Takip öncesi faiz hesaplanamadı - API erişilemez');
       }
     }
     
-    if (takipOncesiFaiz > 0) {
+    if (takipOncesiUnavailable) {
+      satirlar.push({ key: "takip_oncesi_faiz", label: "Takip Öncesi Faiz (Hesaplanamadı)", tutar: 0, color: "red" });
+    } else if (takipOncesiFaiz > 0) {
       satirlar.push({ key: "takip_oncesi_faiz", label: "Takip Öncesi Faiz", tutar: takipOncesiFaiz });
     }
 
@@ -959,22 +890,32 @@ export function ProfessionalClaimItemForm({
     const takipTutari = kalem.bakiyeTutar + yanAlacakToplam + tazminat + komisyon + takipOncesiFaiz;
     satirlar.push({ key: "takip_tutari", label: "Takip Tutarı", tutar: takipTutari, bold: true, color: "blue" });
 
-    // 7. İcra Masrafları
-    const basvurmaHarci = 615.40;
-    const vekaletHarci = 87.50;
-    const pesinHarc = takipTutari * 0.005;
-    const dosyaGideri = 2.00;
-    const tebligatGideri = 15.00 * borcluSayisi;
-    const vekaletPulu = 138.00;
-    const icraMasraflari = basvurmaHarci + vekaletHarci + pesinHarc + dosyaGideri + tebligatGideri + vekaletPulu;
-
-    satirlar.push({ key: "basvurma_harci", label: "Başvurma Harcı", tutar: basvurmaHarci });
-    satirlar.push({ key: "vekalet_harci", label: "Vekalet Harcı", tutar: vekaletHarci });
-    satirlar.push({ key: "pesin_harc", label: "Peşin Harç", tutar: pesinHarc });
-    satirlar.push({ key: "dosya_gideri", label: "Dosya Gideri", tutar: dosyaGideri });
-    satirlar.push({ key: "tebligat_gideri", label: `Tebligat Gideri (${borcluSayisi} borçlu)`, tutar: tebligatGideri });
-    satirlar.push({ key: "vekalet_pulu", label: "Vekalet Pulu", tutar: vekaletPulu });
-    satirlar.push({ key: "icra_masraflari", label: "İcra Masrafları", tutar: icraMasraflari, bold: true });
+    // 7. İcra Masrafları - BACKEND API KULLANIMI
+    let icraMasraflari = 0;
+    let masrafUnavailable = false;
+    
+    const masrafResult = await hesaplaMasrafFromBackend(
+      takipTutari,
+      kalem.kalemTuru,
+      borcluSayisi
+    );
+    
+    if (masrafResult.success && masrafResult.data) {
+      const m = masrafResult.data;
+      satirlar.push({ key: "basvurma_harci", label: "Başvurma Harcı", tutar: m.breakdown.basvurmaHarci });
+      satirlar.push({ key: "vekalet_harci", label: "Vekalet Harcı", tutar: m.breakdown.vekaletHarci });
+      satirlar.push({ key: "pesin_harc", label: "Peşin Harç", tutar: m.breakdown.pesinHarc });
+      satirlar.push({ key: "dosya_gideri", label: "Dosya Gideri", tutar: m.breakdown.dosyaGideri });
+      satirlar.push({ key: "tebligat_gideri", label: `Tebligat Gideri (${borcluSayisi} borçlu)`, tutar: m.breakdown.tebligatGideri });
+      satirlar.push({ key: "vekalet_pulu", label: "Vekalet Pulu", tutar: m.breakdown.vekaletPulu });
+      icraMasraflari = m.estimatedFees;
+      satirlar.push({ key: "icra_masraflari", label: "İcra Masrafları", tutar: icraMasraflari, bold: true });
+    } else {
+      // API erişilemez - fallback değerler (sadece development'ta)
+      masrafUnavailable = true;
+      console.warn('[hesapla] Masraf hesaplanamadı - API erişilemez');
+      satirlar.push({ key: "icra_masraflari", label: "İcra Masrafları (Hesaplanamadı)", tutar: 0, color: "red" });
+    }
 
     // 8. İhtiyati Haciz Masrafları
     let ihtiyatiHacizToplam = 0;
@@ -987,33 +928,51 @@ export function ProfessionalClaimItemForm({
     }
 
     // 9. Tahsil Harçları
+    const pesinHarc = masrafResult.success && masrafResult.data ? masrafResult.data.breakdown.pesinHarc : 0;
     const pesinHarcDahilTahsilHarci = (takipTutari + icraMasraflari + ihtiyatiHacizToplam) * 0.0455;
     const pesinHarcHaricTahsilHarci = (takipTutari + icraMasraflari + ihtiyatiHacizToplam - pesinHarc) * 0.0455;
     satirlar.push({ key: "pesin_harc_dahil_tahsil", label: "Peşin Harç Dahil Tahsil Harcı", tutar: pesinHarcDahilTahsilHarci });
     satirlar.push({ key: "pesin_harc_haric_tahsil", label: "Peşin Harç Hariç Tahsil Harcı", tutar: pesinHarcHaricTahsilHarci });
 
-    // 10. Vekalet Ücreti
-    const vekaletUcreti = hesaplaVekaletUcreti(takipTutari);
-    satirlar.push({ key: "vekalet_ucreti", label: "Vekalet Ücreti", tutar: vekaletUcreti, bold: true });
-
-    // 11. Takip Sonrası Faiz
-    let takipSonrasiFaiz = 0;
-    let takipSonrasiSegmentler: Array<{ baslangic: string; bitis: string; gun: number; oran: number; faiz: number }> = [];
-    
-    const oranTablosuSonrasi = getOranTablosu(kalem.takipSonrasiFaiz);
-    if (oranTablosuSonrasi.length > 0 && (kalem.takipSonrasiFaiz === 'TICARI_DEGISEN' || kalem.takipSonrasiFaiz === 'YASAL')) {
-      const sonuc = hesaplaSegmentliFaiz(kalem.bakiyeTutar, takipTarihi, hesapTarihi, oranTablosuSonrasi);
-      takipSonrasiFaiz = sonuc.toplam;
-      takipSonrasiSegmentler = sonuc.segmentler;
+    // 10. Vekalet Ücreti - BACKEND API KULLANIMI
+    let vekaletUcreti = 0;
+    if (masrafResult.success && masrafResult.data) {
+      vekaletUcreti = masrafResult.data.estimatedAttorneyFee;
+      satirlar.push({ key: "vekalet_ucreti", label: "Vekalet Ücreti", tutar: vekaletUcreti, bold: true });
     } else {
-      takipSonrasiFaiz = hesaplaFaiz(kalem.bakiyeTutar, kalem.takipSonrasiFaiz, takipTarihi, hesapTarihi);
+      satirlar.push({ key: "vekalet_ucreti", label: "Vekalet Ücreti (Hesaplanamadı)", tutar: 0, color: "red", bold: true });
     }
-    satirlar.push({ key: "takip_sonrasi_faiz", label: "Takip Sonrası Faiz", tutar: takipSonrasiFaiz, bold: true });
+
+    // 11. Takip Sonrası Faiz - BACKEND API KULLANIMI
+    let takipSonrasiFaiz = 0;
+    let takipSonrasiUnavailable = false;
     
-    // Faiz segmentlerini state'e kaydet
+    if (kalem.takipSonrasiFaiz !== "YOK") {
+      const result = await hesaplaFaizFromBackend(
+        kalem.bakiyeTutar,
+        kalem.takipSonrasiFaiz,
+        takipTarihi,
+        hesapTarihi
+      );
+      
+      if (result.success && result.data) {
+        takipSonrasiFaiz = result.data.estimatedInterest;
+      } else {
+        takipSonrasiUnavailable = true;
+        console.warn('[hesapla] Takip sonrası faiz hesaplanamadı - API erişilemez');
+      }
+    }
+    
+    if (takipSonrasiUnavailable) {
+      satirlar.push({ key: "takip_sonrasi_faiz", label: "Takip Sonrası Faiz (Hesaplanamadı)", tutar: 0, color: "red", bold: true });
+    } else {
+      satirlar.push({ key: "takip_sonrasi_faiz", label: "Takip Sonrası Faiz", tutar: takipSonrasiFaiz, bold: true });
+    }
+    
+    // Faiz segmentlerini temizle (artık backend'den segment detayı gelmediği için)
     setFaizSegmentleri({
-      takipOncesi: takipOncesiSegmentler,
-      takipSonrasi: takipSonrasiSegmentler,
+      takipOncesi: [],
+      takipSonrasi: [],
     });
 
     // 12. Toplam Borç

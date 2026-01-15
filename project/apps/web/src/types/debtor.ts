@@ -87,6 +87,12 @@ export interface DebtorAddress {
   country?: string;
   isPrimary: boolean;
   isMernis: boolean;
+  /** Güncel adres mi? */
+  isCurrent?: boolean;
+  /** Adres kategorisi (DECLARED_CLIENT, DECLARED_DOCUMENT, MERNIS_RESIDENCE, etc.) */
+  addressCategory?: string;
+  /** Güven seviyesi (LOW, MEDIUM, MEDIUM_HIGH, HIGH) */
+  confidenceLevel?: string;
 }
 
 export interface Debtor {

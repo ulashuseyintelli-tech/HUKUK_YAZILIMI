@@ -29,6 +29,9 @@ export interface WizardAnswer {
   isRental: boolean | null;         // Kira alacağı mı?
 }
 
+// Backward compatibility alias
+export type WizardAnswers = WizardAnswer;
+
 // Wizard soruları konfigürasyonu
 export const wizardQuestions: WizardQuestion[] = [
   {

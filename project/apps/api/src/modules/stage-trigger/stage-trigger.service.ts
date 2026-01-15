@@ -1,7 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger, Inject, Optional } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CostPackageService } from '@/modules/cost-package/cost-package.service';
 import { CaseBalanceService } from '@/modules/case-balance/case-balance.service';
+import { CasePolicyEngine } from '@/modules/policy-engine/case-policy-engine.service';
+import { ActionCode } from '@/modules/policy-engine/types/action-code.enum';
 
 export interface TriggerStageParams {
   eventCode: string;
@@ -25,11 +27,13 @@ export interface TriggerStageResult {
     packageCode?: string;
   };
   blockReason?: string;
+  /** CPE decision trace ID for audit */
+  cpeTraceId?: string;
 }
 
 /**
  * CPE Adapter Interface
- * Opsiyonel CPE entegrasyonu için
+ * @deprecated Use CasePolicyEngine directly instead
  */
 export interface CpeAdapter {
   getNextActions(caseId: string, context?: any): Promise<Array<{
@@ -45,24 +49,49 @@ export interface CpeAdapter {
   }>;
 }
 
+/**
+ * Event code → ActionCode mapping
+ */
+const EVENT_TO_ACTION_MAP: Record<string, ActionCode> = {
+  'EVT_UYAP_SEND_CLICKED': ActionCode.UYAP_SEND,
+  'EVT_TEBLIGAT_SEND': ActionCode.SEND_NOTIFICATION,
+  'EVT_HACIZ_TRIGGER': ActionCode.TRIGGER_HACIZ,
+  'EVT_EXPENSE_REQUEST': ActionCode.REQUEST_EXPENSE,
+  'EVT_EXPENSE_APPROVE': ActionCode.APPROVE_EXPENSE,
+  'EVT_PAYMENT_RECORD': ActionCode.RECORD_PAYMENT,
+  'EVT_CASE_CLOSE': ActionCode.CLOSE_CASE,
+};
+
 @Injectable()
 export class StageTriggerService {
+  private readonly logger = new Logger(StageTriggerService.name);
+
   /**
-   * CPE Adapter - opsiyonel, inject edilirse kullanılır
+   * @deprecated Use CasePolicyEngine directly
    */
   private cpeAdapter?: CpeAdapter;
-  private useCpe = false; // Feature flag
+  private useCpe = true; // Feature flag - artık varsayılan olarak açık
 
   constructor(
     private prisma: PrismaService,
     private costPackageService: CostPackageService,
     private caseBalanceService: CaseBalanceService,
-  ) {}
+    @Optional() @Inject(CasePolicyEngine) private casePolicyEngine?: CasePolicyEngine,
+  ) {
+    if (this.casePolicyEngine) {
+      this.logger.log('StageTriggerService: CasePolicyEngine entegrasyonu aktif');
+    } else {
+      this.logger.warn('StageTriggerService: CasePolicyEngine inject edilemedi, fallback moda geçiliyor');
+      this.useCpe = false;
+    }
+  }
 
   /**
+   * @deprecated Use CasePolicyEngine directly
    * CPE Adapter'ı set et (opsiyonel)
    */
   setCpeAdapter(adapter: CpeAdapter, enabled: boolean = true): void {
+    this.logger.warn('setCpeAdapter is deprecated. Use CasePolicyEngine injection instead.');
     this.cpeAdapter = adapter;
     this.useCpe = enabled;
   }
@@ -75,6 +104,47 @@ export class StageTriggerService {
     tenantId: string,
     caseId: string,
   ): Promise<TriggerStageResult> {
+    // CasePolicyEngine varsa onu kullan
+    if (this.casePolicyEngine) {
+      try {
+        const recommendations = await this.casePolicyEngine.getNextActions(caseId);
+        
+        if (recommendations.length === 0) {
+          return {
+            action: 'SUGGEST_ONLY',
+            suggestion: {
+              title: 'Bekleyen işlem yok',
+              description: 'Şu an için önerilen bir aksiyon bulunmuyor.',
+            },
+          };
+        }
+
+        const topRecommendation = recommendations[0];
+        
+        // ActionCode'a göre UI action'a map et
+        const actionMap: Record<string, TriggerStageResult['action']> = {
+          [ActionCode.UYAP_SEND]: 'READY',
+          [ActionCode.SEND_NOTIFICATION]: 'READY',
+          [ActionCode.TRIGGER_HACIZ]: 'READY',
+          [ActionCode.REQUEST_EXPENSE]: 'OPEN_EXPENSE_MODAL',
+          [ActionCode.APPROVE_EXPENSE]: 'OPEN_EXPENSE_MODAL',
+          [ActionCode.RECORD_PAYMENT]: 'READY',
+        };
+
+        return {
+          action: actionMap[topRecommendation.actionCode] || 'SUGGEST_ONLY',
+          suggestion: {
+            title: `Önerilen: ${topRecommendation.actionCode}`,
+            description: topRecommendation.reason,
+          },
+        };
+      } catch (error) {
+        this.logger.error('CPE getNextActions hatası:', error);
+        // Fallback to legacy behavior
+      }
+    }
+
+    // Legacy fallback (deprecated adapter)
     if (!this.useCpe || !this.cpeAdapter) {
       return {
         action: 'SUGGEST_ONLY',
@@ -119,6 +189,7 @@ export class StageTriggerService {
 
   /**
    * Stage event tetikle
+   * CPE gate kontrolü ile
    */
   async triggerStage(
     tenantId: string,
@@ -139,6 +210,40 @@ export class StageTriggerService {
 
     if (!caseData) {
       throw new NotFoundException('Takip bulunamadı');
+    }
+
+    // Event code'u ActionCode'a çevir
+    const actionCode = EVENT_TO_ACTION_MAP[eventCode];
+
+    // CPE gate kontrolü (varsa)
+    if (this.casePolicyEngine && actionCode) {
+      try {
+        const decision = await this.casePolicyEngine.canPerformAction(caseId, actionCode, {
+          userId,
+          debtorId: eventParams?.debtorCount ? undefined : caseData.debtors[0]?.id,
+        });
+
+        if (!decision.allowed) {
+          this.logger.warn(`CPE blocked action ${actionCode} for case ${caseId}: ${decision.reason}`);
+          return {
+            action: 'BLOCKED',
+            blockReason: decision.reason,
+            cpeTraceId: decision.traceId,
+            suggestion: {
+              title: 'İşlem engellenmiş',
+              description: decision.reason,
+            },
+          };
+        }
+
+        // Soft warnings varsa logla
+        if (decision.warnings && decision.warnings.length > 0) {
+          this.logger.warn(`CPE warnings for ${actionCode}:`, decision.warnings);
+        }
+      } catch (error) {
+        this.logger.error('CPE canPerformAction hatası:', error);
+        // Fail-open: CPE hatası durumunda devam et ama logla
+      }
     }
 
     // Event koduna göre işlem yap

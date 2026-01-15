@@ -1,8 +1,38 @@
 {
   "extends": ["next/core-web-vitals"],
+  "plugins": [],
   "rules": {
     "react-hooks/exhaustive-deps": "warn",
     "react-hooks/rules-of-hooks": "warn",
-    "react/no-unescaped-entities": "off"
-  }
+    "react/no-unescaped-entities": "off",
+    "no-restricted-syntax": [
+      "error",
+      {
+        "selector": "CallExpression[callee.name='hesaplaFaiz']",
+        "message": "hesaplaFaiz() kullanımı yasak - backend interestEngineApi.preview() kullanın"
+      },
+      {
+        "selector": "CallExpression[callee.name='hesaplaSegmentliFaiz']",
+        "message": "hesaplaSegmentliFaiz() kullanımı yasak - backend interestEngineApi.preview() kullanın"
+      },
+      {
+        "selector": "CallExpression[callee.name='hesaplaVekaletUcreti']",
+        "message": "hesaplaVekaletUcreti() kullanımı yasak - backend feeEngineApi.preview() kullanın"
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["**/__tests__/**", "**/*.test.ts", "**/*.test.tsx", "**/*.spec.ts", "**/*.spec.tsx"],
+      "rules": {
+        "no-restricted-syntax": "off"
+      }
+    },
+    {
+      "files": ["**/components/claim-item/ProfessionalClaimItemForm.tsx"],
+      "rules": {
+        "no-restricted-syntax": "off"
+      }
+    }
+  ]
 }

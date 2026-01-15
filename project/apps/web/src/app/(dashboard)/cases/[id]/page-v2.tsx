@@ -268,33 +268,37 @@ export default function CaseDetailPageV2() {
 
         {/* ─────────────────────────────────────────────────────────────────
             SAĞ KOLON (3/12) - HESAP ÖZETİ (Meşe sağ panel)
+            ⚠️ NOT: Bu değerler MOCK/PREVIEW amaçlıdır.
+            Gerçek hesaplama için interest-engine ve fee-engine API'lerini kullanın.
+            @see ARCHITECTURE.md - Source of Truth Matrix
         ───────────────────────────────────────────────────────────────── */}
         <div className="col-span-3 flex flex-col gap-2 overflow-hidden">
           <div className="bg-white rounded border overflow-hidden flex-1 flex flex-col">
             <div className="px-2 py-1.5 bg-blue-600 text-white">
-              <div className="text-[10px] font-semibold">Hesap Özeti</div>
+              <div className="text-[10px] font-semibold">Hesap Özeti <span className="opacity-60">(Önizleme)</span></div>
               <div className="text-[9px] opacity-80">{fmtDate(new Date().toISOString())}</div>
             </div>
+            {/* ⚠️ MOCK DATA - Gerçek hesaplama için /interest-engine/calculate endpoint'i kullanılmalı */}
             <div className="p-2 space-y-1 text-[11px] flex-1 overflow-y-auto">
-              <div className="flex justify-between"><span className="text-slate-500">Sanal</span><span className="font-medium">{fmt(principal)}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Takip Öncesi Faiz</span><span>{fmt(0)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Asıl Alacak</span><span className="font-medium">{fmt(principal)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Takip Öncesi Faiz</span><span className="text-slate-400 italic">API'den alınacak</span></div>
               <hr className="my-1" />
               <div className="flex justify-between font-semibold text-blue-700"><span>Takip Tutarı</span><span>{fmt(principal)}</span></div>
               <hr className="my-1" />
-              <div className="text-[10px] text-slate-500 font-medium">İcra Masrafları:</div>
-              <div className="flex justify-between pl-2"><span className="text-slate-400">Başvurma Harcı</span><span>615 ₺</span></div>
-              <div className="flex justify-between pl-2"><span className="text-slate-400">Vekalet Harcı</span><span>88 ₺</span></div>
-              <div className="flex justify-between pl-2"><span className="text-slate-400">Peşin Harç</span><span>{fmt(principal * 0.005)}</span></div>
+              <div className="text-[10px] text-slate-500 font-medium">İcra Masrafları: <span className="text-amber-600">(tahmini)</span></div>
+              <div className="flex justify-between pl-2"><span className="text-slate-400">Başvurma Harcı</span><span>738 ₺</span></div>
+              <div className="flex justify-between pl-2"><span className="text-slate-400">Vekalet Harcı</span><span>105 ₺</span></div>
+              <div className="flex justify-between pl-2"><span className="text-slate-400">Peşin Harç</span><span className="text-slate-400 italic">fee-engine</span></div>
               <hr className="my-1" />
-              <div className="flex justify-between"><span className="text-slate-500">Vekalet Ücreti</span><span className="font-medium">{fmt(Math.max(principal * 0.12, 17000))}</span></div>
-              <div className="flex justify-between"><span className="text-slate-500">Takip Sonrası Faiz</span><span>{fmt(0)}</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Vekalet Ücreti</span><span className="text-slate-400 italic">fee-engine</span></div>
+              <div className="flex justify-between"><span className="text-slate-500">Takip Sonrası Faiz</span><span className="text-slate-400 italic">interest-engine</span></div>
               <hr className="my-1" />
-              <div className="flex justify-between p-1 bg-blue-50 rounded font-bold text-blue-800">
-                <span>Toplam Borç</span><span>{fmt(principal * 1.15)}</span>
+              <div className="flex justify-between p-1 bg-amber-50 rounded font-bold text-amber-700 border border-amber-200">
+                <span>Toplam Borç</span><span className="text-xs">Hesapla →</span>
               </div>
               <hr className="my-1" />
-              <div className="flex justify-between p-1 bg-red-50 rounded font-bold text-red-700">
-                <span>Son Borç</span><span>{fmt(principal * 1.15)}</span>
+              <div className="flex justify-between p-1 bg-slate-100 rounded text-slate-500 text-[10px]">
+                <span>⚠️ Kesin hesap için "Hesapla" butonunu kullanın</span>
               </div>
             </div>
           </div>

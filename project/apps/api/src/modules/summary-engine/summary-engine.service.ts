@@ -1,9 +1,17 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, Optional } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { Decimal } from '@prisma/client/runtime/library';
+
+// TBK 100 Allocator - TEK KAYNAK
+import { 
+  TBK100AllocatorService, 
+  DebtState, 
+  DEFAULT_ANCILLARY_PRIORITY,
+} from '../interest-engine/allocation/tbk100-allocator.service';
+import { AncillaryType } from '../interest-engine/types/domain.types';
 
 // ============================================================
 // TYPES
@@ -15,6 +23,7 @@ interface SummaryRules {
   policies: {
     use_demanded_amount_for_summary: boolean;
     use_collected_amount_for_balance: boolean;
+    /** @deprecated Use TBK100AllocatorService instead - this field is ignored */
     allocation_order: string[];
     bad_check_compensation: {
       default_on: boolean;
@@ -34,6 +43,7 @@ interface SummaryRules {
     enabled: boolean;
     on_payment: {
       entryType: string;
+      /** @deprecated Use TBK100AllocatorService instead */
       apply_order_policy: string;
       allocate_to: Record<string, string[]>;
     };
@@ -160,10 +170,21 @@ export class SummaryEngineService implements OnModuleInit {
   private readonly logger = new Logger(SummaryEngineService.name);
   private rules: SummaryRules | null = null;
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional() private readonly tbk100Allocator?: TBK100AllocatorService,
+  ) {}
 
   async onModuleInit() {
     await this.loadRules();
+    
+    // TBK 100 allocator uyarısı
+    if (!this.tbk100Allocator) {
+      this.logger.warn(
+        '⚠️ TBK100AllocatorService not injected. recordPayment will use legacy allocation. ' +
+        'Add InterestEngineModule to imports for correct TBK 100 allocation.'
+      );
+    }
   }
 
   /**
@@ -450,7 +471,28 @@ export class SummaryEngineService implements OnModuleInit {
   }
 
   /**
+   * ClaimItem tipini AncillaryType'a map et
+   */
+  private mapItemTypeToAncillary(itemType: string): AncillaryType | null {
+    const mapping: Record<string, AncillaryType> = {
+      'FEE': AncillaryType.HARC,
+      'EXPENSE': AncillaryType.TEBLIGAT_MASRAFI,
+      'ATTORNEY_FEE': AncillaryType.VEKALET_UCRETI,
+      'CHECK_PENALTY': AncillaryType.CEK_TAZMINATI,
+      'PENALTY': AncillaryType.CEK_TAZMINATI,
+      'COMMISSION': AncillaryType.KOMISYON,
+      'OTHER': AncillaryType.DIGER,
+    };
+    return mapping[itemType] || null;
+  }
+
+  /**
    * Tahsilat kaydet ve TBK 100'e göre dağıt
+   * 
+   * TBK 100 HARD RULE (interest-engine/TBK100AllocatorService):
+   * Sıra: FAİZ → MASRAF → FER'İ → ANAPARA
+   * 
+   * @see ARCHITECTURE.md - Source of Truth Matrix
    */
   async recordPayment(
     tenantId: string,
@@ -482,33 +524,16 @@ export class SummaryEngineService implements OnModuleInit {
       throw new Error('Dosya bulunamadı');
     }
 
-    // TBK 100 sırasına göre kalemleri sırala
-    const allocationOrder = this.rules.policies.allocation_order;
-    const sortedItems = [...caseRecord.claimItems].sort((a, b) => {
-      const orderA = allocationOrder.indexOf(a.itemType);
-      const orderB = allocationOrder.indexOf(b.itemType);
-      return (orderA === -1 ? 999 : orderA) - (orderB === -1 ? 999 : orderB);
-    });
+    const items = caseRecord.claimItems;
+    let allocations: Array<{ claimItemId: string; amount: number; allocationOrder: number }> = [];
 
-    // Dağıtım hesapla
-    let remainingAmount = amount;
-    const allocations: Array<{ claimItemId: string; amount: number; allocationOrder: number }> = [];
-
-    for (let i = 0; i < sortedItems.length && remainingAmount > 0; i++) {
-      const item = sortedItems[i];
-      const demandedAmount = this.toNumber(item.demandedAmount) || this.toNumber(item.amount);
-      const collectedAmount = this.toNumber(item.collectedAmount) || 0;
-      const remaining = demandedAmount - collectedAmount;
-
-      if (remaining > 0) {
-        const allocationAmount = Math.min(remaining, remainingAmount);
-        allocations.push({
-          claimItemId: item.id,
-          amount: allocationAmount,
-          allocationOrder: i + 1,
-        });
-        remainingAmount -= allocationAmount;
-      }
+    // TBK 100 Allocator varsa kullan (TEK KAYNAK)
+    if (this.tbk100Allocator) {
+      allocations = this.allocateWithTBK100(items, amount);
+    } else {
+      // Legacy fallback (deprecated)
+      this.logger.warn('⚠️ Using legacy allocation order. Inject TBK100AllocatorService for correct TBK 100.');
+      allocations = this.allocateLegacy(items, amount);
     }
 
     // Transaction ile kaydet
@@ -556,6 +581,144 @@ export class SummaryEngineService implements OnModuleInit {
       ledgerEntry: result,
       allocations: result.allocations,
     };
+  }
+
+  /**
+   * TBK 100 Allocator ile dağıtım (TEK KAYNAK)
+   * Sıra: FAİZ → MASRAF → FER'İ → ANAPARA
+   */
+  private allocateWithTBK100(
+    items: any[],
+    paymentAmount: number,
+  ): Array<{ claimItemId: string; amount: number; allocationOrder: number }> {
+    // DebtState oluştur
+    let principal = 0;
+    let accruedInterest = 0;
+    const costs = new Map<AncillaryType, number>();
+    const ancillaries = new Map<AncillaryType, number>();
+    
+    // Item ID'lerini kategoriye göre grupla
+    const itemsByCategory = new Map<string, { id: string; remaining: number }[]>();
+
+    for (const item of items) {
+      const demandedAmount = this.toNumber(item.demandedAmount) || this.toNumber(item.amount);
+      const collectedAmount = this.toNumber(item.collectedAmount) || 0;
+      const remaining = Math.max(0, demandedAmount - collectedAmount);
+
+      if (remaining <= 0) continue;
+
+      const itemType = item.itemType;
+      
+      // Kategoriye göre grupla
+      if (!itemsByCategory.has(itemType)) {
+        itemsByCategory.set(itemType, []);
+      }
+      itemsByCategory.get(itemType)!.push({ id: item.id, remaining });
+
+      // DebtState'e ekle
+      if (itemType === 'PRINCIPAL') {
+        principal += remaining;
+      } else if (['INTEREST', 'PRE_INTEREST', 'POST_INTEREST'].includes(itemType)) {
+        accruedInterest += remaining;
+      } else {
+        const ancType = this.mapItemTypeToAncillary(itemType);
+        if (ancType) {
+          // Masraf mı fer'i mi?
+          if (['FEE', 'EXPENSE'].includes(itemType)) {
+            costs.set(ancType, (costs.get(ancType) || 0) + remaining);
+          } else {
+            ancillaries.set(ancType, (ancillaries.get(ancType) || 0) + remaining);
+          }
+        }
+      }
+    }
+
+    const debtState: DebtState = { principal, accruedInterest, costs, ancillaries };
+
+    // TBK 100 Allocator ile dağıt
+    const result = this.tbk100Allocator!.allocate(paymentAmount, debtState);
+
+    // Allocation sonuçlarını ClaimItem bazına dönüştür
+    const allocations: Array<{ claimItemId: string; amount: number; allocationOrder: number }> = [];
+    let orderIndex = 1;
+
+    // TBK 100 sırasına göre: FAİZ → MASRAF/FER'İ → ANAPARA
+    const tbk100Order = ['INTEREST', 'PRE_INTEREST', 'POST_INTEREST', 'FEE', 'EXPENSE', 'ATTORNEY_FEE', 'CHECK_PENALTY', 'PENALTY', 'COMMISSION', 'OTHER', 'PRINCIPAL'];
+
+    for (const category of tbk100Order) {
+      const categoryItems = itemsByCategory.get(category) || [];
+      
+      // Bu kategoriye ne kadar ayrıldı?
+      let categoryAllocation = 0;
+      for (const alloc of result.allocations) {
+        if (alloc.category === 'INTEREST' && ['INTEREST', 'PRE_INTEREST', 'POST_INTEREST'].includes(category)) {
+          categoryAllocation = alloc.amountAllocated;
+          break;
+        } else if (alloc.category === 'PRINCIPAL' && category === 'PRINCIPAL') {
+          categoryAllocation = alloc.amountAllocated;
+          break;
+        } else if (alloc.category === this.mapItemTypeToAncillary(category)) {
+          categoryAllocation += alloc.amountAllocated;
+        }
+      }
+
+      // Kategori içindeki item'lara dağıt (FIFO)
+      let remainingCategoryAlloc = categoryAllocation;
+      for (const item of categoryItems) {
+        if (remainingCategoryAlloc <= 0) break;
+        
+        const allocAmount = Math.min(item.remaining, remainingCategoryAlloc);
+        if (allocAmount > 0) {
+          allocations.push({
+            claimItemId: item.id,
+            amount: allocAmount,
+            allocationOrder: orderIndex++,
+          });
+          remainingCategoryAlloc -= allocAmount;
+        }
+      }
+    }
+
+    return allocations;
+  }
+
+  /**
+   * @deprecated Legacy allocation - YAML'dan sıra okur
+   * TBK 100'e uygun DEĞİL, sadece geriye uyumluluk için
+   */
+  private allocateLegacy(
+    items: any[],
+    paymentAmount: number,
+  ): Array<{ claimItemId: string; amount: number; allocationOrder: number }> {
+    // Eski YAML sırasını kullan (YANLIŞ ama geriye uyumlu)
+    const allocationOrder = this.rules?.policies.allocation_order || [];
+    const sortedItems = [...items].sort((a, b) => {
+      const orderA = allocationOrder.indexOf(a.itemType);
+      const orderB = allocationOrder.indexOf(b.itemType);
+      return (orderA === -1 ? 999 : orderA) - (orderB === -1 ? 999 : orderB);
+    });
+
+    let remainingAmount = paymentAmount;
+    const allocations: Array<{ claimItemId: string; amount: number; allocationOrder: number }> = [];
+
+    for (let i = 0; i < sortedItems.length && remainingAmount > 0; i++) {
+      const item = sortedItems[i];
+      const demandedAmount = this.toNumber(item.demandedAmount) || this.toNumber(item.amount);
+      const collectedAmount = this.toNumber(item.collectedAmount) || 0;
+      const remaining = demandedAmount - collectedAmount;
+
+      if (remaining > 0) {
+        const allocationAmount = Math.min(remaining, remainingAmount);
+        allocations.push({
+          claimItemId: item.id,
+          amount: allocationAmount,
+          allocationOrder: i + 1,
+        });
+        remainingAmount -= allocationAmount;
+      }
+    }
+
+    return allocations;
   }
 
   /**

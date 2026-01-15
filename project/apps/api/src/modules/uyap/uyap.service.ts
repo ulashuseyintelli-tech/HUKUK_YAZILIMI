@@ -1,6 +1,8 @@
-import { Injectable, Logger, BadRequestException, Inject, forwardRef } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, Inject, forwardRef, Optional } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { PoaService } from '../poa/poa.service';
+import { CasePolicyEngine } from '../policy-engine/case-policy-engine.service';
+import { ActionCode } from '../policy-engine/types/action-code.enum';
 
 /**
  * UYAP Entegrasyon Servisi
@@ -11,6 +13,11 @@ import { PoaService } from '../poa/poa.service';
  * 
  * UYAP Entegrasyonu SOAP/WebService tabanlıdır.
  * Tüm işlemler UyapRequestLog tablosuna kaydedilir.
+ * 
+ * Policy Engine Entegrasyonu:
+ * - Tüm UYAP işlemleri CPE gate kontrolünden geçer
+ * - HIGH risk aksiyonlar için CPE onayı zorunludur
+ * @see ARCHITECTURE.md
  */
 
 export interface UyapResponse<T = any> {
@@ -20,6 +27,8 @@ export interface UyapResponse<T = any> {
   errorMessage?: string;
   evkNo?: string; // Evrak Kayıt Numarası
   requestId: string;
+  /** CPE decision trace ID for audit */
+  cpeTraceId?: string;
 }
 
 export interface PaymentOrderRequest {
@@ -43,6 +52,7 @@ export interface PaymentOrderRequest {
   interestType?: string;
   interestStartDate?: Date;
   skipPoaCheck?: boolean; // Test için vekalet kontrolünü atla
+  skipCpeCheck?: boolean; // Test için CPE kontrolünü atla
 }
 
 export interface TebligatStatus {
@@ -61,6 +71,7 @@ export interface HacizRequest {
   lawyerId?: string; // Vekalet kontrolü için
   tenantId?: string; // Vekalet kontrolü için
   skipPoaCheck?: boolean; // Test için vekalet kontrolünü atla
+  skipCpeCheck?: boolean; // Test için CPE kontrolünü atla
 }
 
 export interface PoaValidationResult {
@@ -78,6 +89,8 @@ export class UyapService {
     private prisma: PrismaService,
     @Inject(forwardRef(() => PoaService))
     private poaService: PoaService,
+    @Optional() @Inject(forwardRef(() => CasePolicyEngine))
+    private casePolicyEngine?: CasePolicyEngine,
   ) {}
 
   /**
@@ -162,8 +175,50 @@ export class UyapService {
   /**
    * UYAP'a ödeme emri gönder
    * Şimdilik stub - gerçek implementasyon UYAP API açıldığında yapılacak
+   * 
+   * CPE Gate Kontrolü: UYAP_SEND aksiyonu için policy-engine onayı gerekir
    */
   async sendPaymentOrder(request: PaymentOrderRequest): Promise<UyapResponse> {
+    let cpeTraceId: string | undefined;
+
+    // CPE Gate kontrolü (HIGH risk aksiyon)
+    if (!request.skipCpeCheck && this.casePolicyEngine) {
+      try {
+        const decision = await this.casePolicyEngine.canPerformAction(
+          request.caseId,
+          ActionCode.UYAP_SEND,
+          {
+            debtorId: request.debtor.identityNo,
+            userId: request.lawyerId,
+          },
+        );
+
+        cpeTraceId = decision.traceId;
+
+        if (!decision.allowed) {
+          this.logger.error(`UYAP işlemi CPE tarafından engellendi: ${decision.reason}`);
+          throw new BadRequestException({
+            code: 'CPE_GATE_BLOCKED',
+            message: `UYAP işlemi yapılamaz: ${decision.reason}`,
+            details: 'Policy engine bu işleme izin vermiyor',
+            cpeTraceId,
+            cpeCode: decision.code,
+          });
+        }
+
+        // Soft warnings varsa logla
+        if (decision.warnings && decision.warnings.length > 0) {
+          this.logger.warn(`CPE warnings for UYAP_SEND:`, decision.warnings);
+        }
+      } catch (error: any) {
+        if (error.response?.code === 'CPE_GATE_BLOCKED') {
+          throw error;
+        }
+        // CPE hatası durumunda fail-open (logla ama devam et)
+        this.logger.error('CPE kontrolü başarısız, devam ediliyor:', error);
+      }
+    }
+
     // Vekalet kontrolü
     if (!request.skipPoaCheck && request.creditor.id && request.lawyerId && request.tenantId) {
       const poaValidation = await this.validatePowerOfAttorney(
@@ -193,6 +248,7 @@ export class UyapService {
         success: true,
         requestId,
         evkNo: `EVK-${Date.now()}`,
+        cpeTraceId,
         data: {
           message: 'Ödeme emri kuyruğa alındı (STUB)',
           estimatedDelivery: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
@@ -205,6 +261,7 @@ export class UyapService {
       const errorResponse: UyapResponse = {
         success: false,
         requestId,
+        cpeTraceId,
         errorCode: 'UYAP_CONNECTION_ERROR',
         errorMessage: error.message || 'UYAP bağlantı hatası',
       };
@@ -252,8 +309,55 @@ export class UyapService {
   /**
    * Haciz talebi gönder
    * Banka, araç, taşınmaz veya maaş haczi
+   * 
+   * CPE Gate Kontrolü: TRIGGER_HACIZ aksiyonu için policy-engine onayı gerekir (HIGH risk)
    */
   async pushHacizRequest(request: HacizRequest): Promise<UyapResponse> {
+    let cpeTraceId: string | undefined;
+
+    // CPE Gate kontrolü (HIGH risk aksiyon)
+    if (!request.skipCpeCheck && this.casePolicyEngine) {
+      try {
+        const decision = await this.casePolicyEngine.canPerformAction(
+          request.caseId,
+          ActionCode.TRIGGER_HACIZ,
+          {
+            assetId: request.targetDetails?.assetId,
+            userId: request.lawyerId,
+          },
+        );
+
+        cpeTraceId = decision.traceId;
+
+        if (!decision.allowed) {
+          this.logger.error(`Haciz işlemi CPE tarafından engellendi: ${decision.reason}`);
+          throw new BadRequestException({
+            code: 'CPE_GATE_BLOCKED',
+            message: `Haciz talebi yapılamaz: ${decision.reason}`,
+            details: 'Policy engine bu işleme izin vermiyor',
+            cpeTraceId,
+            cpeCode: decision.code,
+          });
+        }
+
+        // Soft warnings varsa logla
+        if (decision.warnings && decision.warnings.length > 0) {
+          this.logger.warn(`CPE warnings for TRIGGER_HACIZ:`, decision.warnings);
+        }
+      } catch (error: any) {
+        if (error.response?.code === 'CPE_GATE_BLOCKED') {
+          throw error;
+        }
+        // CPE hatası durumunda fail-closed (haciz yüksek riskli)
+        this.logger.error('CPE kontrolü başarısız, haciz engelleniyor:', error);
+        throw new BadRequestException({
+          code: 'CPE_CHECK_FAILED',
+          message: 'Haciz talebi yapılamaz: Güvenlik kontrolü başarısız',
+          details: 'Policy engine kontrolü yapılamadı, güvenlik nedeniyle işlem engellendi',
+        });
+      }
+    }
+
     // Vekalet kontrolü
     if (!request.skipPoaCheck && request.clientId && request.lawyerId && request.tenantId) {
       const poaValidation = await this.validatePowerOfAttorney(
@@ -281,6 +385,7 @@ export class UyapService {
       const response: UyapResponse = {
         success: true,
         requestId,
+        cpeTraceId,
         evkNo: `HCZ-${Date.now()}`,
         data: {
           message: `${request.targetType} haciz talebi kuyruğa alındı (STUB)`,

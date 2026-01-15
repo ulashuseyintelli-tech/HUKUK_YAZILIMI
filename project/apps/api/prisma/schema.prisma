@@ -7,6 +7,29 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                        BOUNDED CONTEXT / DOMAIN OWNERSHIP                     ║
+// ╠══════════════════════════════════════════════════════════════════════════════╣
+// ║  Bu şema aşağıdaki domain'lere ayrılmıştır. Her domain'in tek bir "source    ║
+// ║  of truth" modülü vardır. Detaylar için: ARCHITECTURE.md                     ║
+// ╠══════════════════════════════════════════════════════════════════════════════╣
+// ║  DOMAIN              │ OWNER MODULE        │ TABLES                          ║
+// ╠══════════════════════════════════════════════════════════════════════════════╣
+// ║  Interest/Rate       │ interest-engine     │ (external rate tables)          ║
+// ║  Policy/Gate         │ policy-engine       │ ValidationResult, DecisionLog   ║
+// ║  Fee Calculation     │ fee-engine          │ (computed, no persistence)      ║
+// ║  Tariff/YAML         │ tariff              │ (YAML files, no DB)             ║
+// ║  Expense Ledger      │ case-balance        │ CaseBalance*, ExpenseRequest    ║
+// ║  Case Management     │ case                │ Case, CaseDebtor, CaseClient    ║
+// ║  Debtor              │ debtor              │ Debtor, DebtorAddress, Asset    ║
+// ║  Client              │ client              │ Client, ClientContact, POA      ║
+// ║  Claim Items         │ claim-item          │ ClaimItem, Due, LedgerEntry     ║
+// ║  Tebligat            │ tebligat            │ Tebligat, ServiceHistory        ║
+// ║  Address Discovery   │ address-discovery   │ AddressResearch, UyapQuery      ║
+// ║  Address Task        │ address-task        │ AddressTask, AddressAuditLog    ║
+// ║  Icrabot             │ icrabot/*           │ BotTask, IcrabotBundle, etc.    ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
 // ==================== LOOKUP TABLOLARI ====================
 
 model LookupTakipTuru {

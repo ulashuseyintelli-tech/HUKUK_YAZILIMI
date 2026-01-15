@@ -254,37 +254,21 @@ export default function CaseDetailPageNew() {
       setHesapOzeti(response.data);
     } catch (error) {
       console.error("Hesap özeti yüklenemedi:", error);
-      // Mock data for now
-      if (caseData) {
-        const principal = Number(caseData.principalAmount) || 0;
-        setHesapOzeti({
-          hesapTarihi: new Date().toISOString(),
-          asilAlacak: principal,
-          takipOncesiFaiz: principal * 0.24 * 0.5, // 6 aylık faiz tahmini
-          takipTutari: principal * 1.12,
-          icraMasraflari: {
-            basvurmaHarci: 615.40,
-            vekaletHarci: 87.50,
-            pesinHarc: principal * 0.005,
-            dosyaGideri: 2.00,
-            tebligatGideri: 15.00 * (caseData.debtors?.length || 1),
-            vekaletPulu: 138.00,
-            toplam: 615.40 + 87.50 + (principal * 0.005) + 2.00 + 15.00 + 138.00,
-          },
-          vekaletUcreti: Math.max(principal * 0.12, 17000),
-          masraflar: 311.80,
-          takipSonrasiFaiz: principal * 0.24 * 0.25,
-          sonBorcTutari: principal * 1.5,
-          tahsilHarclari: [
-            { oran: 0, tutar: principal * 1.5 },
-            { oran: 2.27, tutar: principal * 1.5 * 1.0227 },
-            { oran: 4.55, tutar: principal * 1.5 * 1.0455 },
-            { oran: 9.10, tutar: principal * 1.5 * 1.091 },
-            { oran: 11.38, tutar: principal * 1.5 * 1.1138 },
-          ],
-          currency: caseData.currency || 'TRY',
-        });
+      
+      // ❌ MOCK DATA KALDIRILDI - Tek Kaynak Prensibi
+      // API erişilemezse null set et, UI "Hesaplanamadı" gösterecek
+      // @see docs/single-source-of-truth-architecture.md
+      
+      // Production'da mock kullanımı YASAK
+      if (process.env.NODE_ENV === 'production') {
+        console.error('[fetchHesapOzeti] API unavailable in production - no mock fallback');
+        setHesapOzeti(null);
+        return;
       }
+      
+      // Development'ta da artık mock kullanmıyoruz
+      console.warn('[fetchHesapOzeti] API unavailable - hesap özeti gösterilemeyecek');
+      setHesapOzeti(null);
     }
   }, [params.id, caseData]);
 

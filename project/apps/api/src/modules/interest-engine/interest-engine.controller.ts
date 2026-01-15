@@ -2,6 +2,7 @@
  * Task 17.4 - Interest Engine Controller
  * 
  * POST /interest-engine/calculate
+ * POST /interest-engine/preview  ← YENİ: Lightweight preview (no audit)
  * GET /interest-engine/records/:id
  * GET /interest-engine/trace/:id
  */
@@ -25,6 +26,7 @@ import { InterestEngineMetricsService } from './metrics/interest-engine-metrics.
 import { CalculationRequest, CalculationResult } from './types/calculation.types';
 import { RateEntry } from './rates/rate-entry.entity';
 import { CalculationMode } from './types/common.types';
+import { InterestTypeCode } from './types/domain.types';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DTOs
@@ -49,6 +51,36 @@ export interface CalculateResponseDto {
     durationMs: number;
     segmentCount: number;
   };
+}
+
+/**
+ * Preview Request DTO - Lightweight hesaplama için
+ * Audit log tutulmaz, cache'lenir
+ */
+export interface PreviewRequestDto {
+  principalAmount: number;
+  currency?: string;
+  interestType: InterestTypeCode;
+  startDate: string;
+  endDate: string;
+  fixedRate?: number;
+  tenantId?: string;
+}
+
+export interface PreviewResponseDto {
+  success: boolean;
+  data?: {
+    estimatedInterest: number;
+    currentRate: number;
+    days: number;
+    interestType: InterestTypeCode;
+  };
+  error?: {
+    code: 'RATE_NOT_FOUND' | 'SERVICE_UNAVAILABLE' | 'INVALID_INPUT' | 'INVALID_DATE_RANGE';
+    message: string;
+  };
+  cached: boolean;
+  cacheExpiry?: string;
 }
 
 export interface RecordQueryDto {
@@ -152,6 +184,129 @@ export class InterestEngineController {
         },
       };
     }
+  }
+
+  /**
+   * POST /interest-engine/preview
+   * 
+   * Lightweight preview endpoint - NO audit log, cached
+   * Frontend form preview için kullanılır
+   * 
+   * @see docs/single-source-of-truth-architecture.md
+   */
+  @Post('preview')
+  @HttpCode(HttpStatus.OK)
+  async preview(@Body() dto: PreviewRequestDto): Promise<PreviewResponseDto> {
+    try {
+      // Validate input
+      if (!dto.principalAmount || dto.principalAmount <= 0) {
+        return {
+          success: false,
+          error: {
+            code: 'INVALID_INPUT',
+            message: 'principalAmount must be greater than 0',
+          },
+          cached: false,
+        };
+      }
+
+      if (!dto.startDate || !dto.endDate) {
+        return {
+          success: false,
+          error: {
+            code: 'INVALID_INPUT',
+            message: 'startDate and endDate are required',
+          },
+          cached: false,
+        };
+      }
+
+      const startDate = new Date(dto.startDate);
+      const endDate = new Date(dto.endDate);
+
+      if (startDate >= endDate) {
+        return {
+          success: false,
+          error: {
+            code: 'INVALID_DATE_RANGE',
+            message: 'startDate must be before endDate',
+          },
+          cached: false,
+        };
+      }
+
+      // Calculate days
+      const days = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+
+      // Get current rate based on interest type
+      // TODO: Implement proper rate lookup from RateProviderService
+      const currentRate = this.getPreviewRate(dto.interestType, dto.fixedRate);
+
+      if (currentRate === null) {
+        return {
+          success: false,
+          error: {
+            code: 'RATE_NOT_FOUND',
+            message: `Rate not found for interest type: ${dto.interestType}`,
+          },
+          cached: false,
+        };
+      }
+
+      // Simple interest calculation (preview only - not for legal use)
+      const annualRate = currentRate / 100;
+      const estimatedInterest = Math.round(dto.principalAmount * annualRate * days / 365 * 100) / 100;
+
+      // Cache expiry: 5 minutes
+      const cacheExpiry = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+
+      return {
+        success: true,
+        data: {
+          estimatedInterest,
+          currentRate,
+          days,
+          interestType: dto.interestType,
+        },
+        cached: false, // TODO: Implement caching
+        cacheExpiry,
+      };
+    } catch (error) {
+      console.error('[InterestEngine] Preview error:', error);
+      return {
+        success: false,
+        error: {
+          code: 'SERVICE_UNAVAILABLE',
+          message: 'Interest calculation service is temporarily unavailable',
+        },
+        cached: false,
+      };
+    }
+  }
+
+  /**
+   * Get preview rate for interest type
+   * Simplified rate lookup for preview purposes
+   */
+  private getPreviewRate(interestType: InterestTypeCode, fixedRate?: number): number | null {
+    // Fixed rate types
+    if (fixedRate !== undefined && (
+      interestType === InterestTypeCode.COMMERCIAL_FIXED ||
+      interestType === InterestTypeCode.CONTRACTUAL
+    )) {
+      return fixedRate;
+    }
+
+    // Current rates (2025 Q1) - should be fetched from DB in production
+    const currentRates: Partial<Record<InterestTypeCode, number>> = {
+      [InterestTypeCode.LEGAL_3095]: 24, // Yasal faiz (2024+)
+      [InterestTypeCode.COMMERCIAL_AVANS_3095_2_2]: 39.75, // TCMB Avans (2025-12-20)
+      [InterestTypeCode.TTK_1530]: 39.75, // TTK 1530 = TCMB Avans
+      [InterestTypeCode.MEVDUAT_TL_BANKALARCA]: 45, // Tahmini
+      [InterestTypeCode.MEVDUAT_TL_KAMU]: 42, // Tahmini
+    };
+
+    return currentRates[interestType] ?? null;
   }
 
   /**

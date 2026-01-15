@@ -101,6 +101,9 @@ export enum ActionCode {
   
   /** Tahsilat kaydı - MEDIUM risk */
   RECORD_COLLECTION = 'RECORD_COLLECTION',
+  
+  /** Ödeme kaydı - LOW risk */
+  RECORD_PAYMENT = 'RECORD_PAYMENT',
 
   // ============================================
   // Special Case Type Actions
@@ -159,6 +162,7 @@ export const ACTION_RISK_LEVELS: Record<ActionCode, RiskLevel> = {
   [ActionCode.RECORD_EXPENSE_PAYMENT]: RiskLevel.LOW,
   [ActionCode.ADD_NAFAKA_PERIOD]: RiskLevel.LOW,
   [ActionCode.UPDATE_EXCHANGE_RATE]: RiskLevel.LOW,
+  [ActionCode.RECORD_PAYMENT]: RiskLevel.LOW,
 };
 
 /**

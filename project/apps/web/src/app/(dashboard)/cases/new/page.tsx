@@ -717,8 +717,9 @@ export default function NewCasePage() {
     }
   }, [creditors, lawyers, currentStep]);
 
-  const handleWizardComplete = (recommended: FormMetadata | null, answers: WizardAnswers) => {
-    setWizardAnswers(answers); setRecommendedForm(recommended); setShowWizard(false);
+  const handleWizardComplete = (recommendedFormCode: string) => {
+    const recommended = formMetadata.find(f => f.code === recommendedFormCode) || null;
+    setRecommendedForm(recommended); setShowWizard(false);
     if (recommended) setSelectedForm(recommended);
   };
 
@@ -1053,7 +1054,6 @@ export default function NewCasePage() {
   };
 
   const filteredForms = filterFormsByCategory(categoryFilter === "ALL" ? null : categoryFilter);
-  const recentHistory = recentForms;
 
   return (
     <div className="flex flex-col" style={{ height: 'calc(100vh - 120px)' }}>
@@ -1313,8 +1313,8 @@ export default function NewCasePage() {
                   </div>
                 )}
                 {recommendedForm && <div className="mb-6 p-4 bg-yellow-50 border border-yellow-200 rounded-lg"><p className="text-sm text-yellow-800 mb-2 font-medium">🎯 Sihirbaz Önerisi</p><FormCard form={recommendedForm} isSelected={selectedForm?.code === recommendedForm.code} isRecommended onSelect={handleFormSelect} onInfoClick={setDetailModalForm} /></div>}
-                <FrequentForms onSelect={handleFormSelect} />
-                {recentHistory.length > 0 && <RecentForms recentHistory={recentHistory} onSelect={handleFormSelect} />}
+                <FrequentForms frequentForms={frequentForms} onSelectForm={(code) => { const form = formMetadata.find(f => f.code === code); if (form) handleFormSelect(form); }} selectedFormCode={selectedForm?.code} />
+                {recentForms.length > 0 && <RecentForms recentForms={recentForms} onSelectForm={(code) => { const form = formMetadata.find(f => f.code === code); if (form) handleFormSelect(form); }} selectedFormCode={selectedForm?.code} />}
                 <div className="mb-4"><CategoryFilter selectedCategory={categoryFilter} onCategoryChange={setCategoryFilter} /></div>
                 <div className="space-y-3">{filteredForms.filter(f => f.code !== recommendedForm?.code).map(form => <FormCard key={form.code} form={form} isSelected={selectedForm?.code === form.code} onSelect={handleFormSelect} onInfoClick={setDetailModalForm} />)}</div>
               </>
@@ -3948,6 +3948,10 @@ function DuesStep({
   getTotalDues,
   extractedData,
   wizardData,
+  creditors,
+  caseDebtors,
+  selectedOffice,
+  lawyers,
 }: {
   dues: DueItem[];
   caseData: any;
@@ -3957,6 +3961,10 @@ function DuesStep({
   getTotalDues: () => number;
   extractedData?: Record<string, any>;
   wizardData?: Record<string, any>;
+  creditors: Array<{ name: string; [key: string]: any }>;
+  caseDebtors: any[];
+  selectedOffice: any;
+  lawyers: Array<{ name: string; surname: string; [key: string]: any }>;
 }) {
   const [showInterestPanel, setShowInterestPanel] = useState(false);
   const [showPeriodSelector, setShowPeriodSelector] = useState(false);
@@ -4009,7 +4017,15 @@ function DuesStep({
   // Çek tazminatı kalemi var mı kontrol et
   const hasCekTazminati = dues.some(d => d.description?.includes("Çek Tazminatı") || d.description?.includes("tazminat"));
   
-  // Otomatik faiz hesaplama fonksiyonu
+  /**
+   * Otomatik faiz hesaplama fonksiyonu - BACKEND API KULLANIMI
+   * 
+   * Backend interest-engine preview endpoint'ini kullanır.
+   * API erişilemezse null döner - TAHMİN YAPILMAZ.
+   * 
+   * @see docs/single-source-of-truth-architecture.md
+   * @see lib/api/interest-engine.ts
+   */
   const calculateAutoInterest = async (principal: number, dueDate: string, interestType: "YASAL" | "TICARI") => {
     const today = new Date();
     const due = new Date(dueDate);
@@ -4020,17 +4036,40 @@ function DuesStep({
     const days = Math.floor((today.getTime() - due.getTime()) / (1000 * 60 * 60 * 24));
     if (days <= 0) return null;
     
-    const rate = interestType === "TICARI" ? interestRates.TICARI : interestRates.YASAL;
-    const dailyRate = rate / 365 / 100;
-    const interest = principal * dailyRate * days;
-    
-    return {
-      interest: Math.round(interest * 100) / 100,
-      days,
-      rate,
-      startDate: dueDate,
-      endDate: today.toISOString().split("T")[0],
-    };
+    try {
+      // Backend preview API'den hesaplama al
+      const { interestEngineApi, InterestTypeCode } = await import('@/lib/api/interest-engine');
+      
+      const engineType = interestType === "TICARI" 
+        ? InterestTypeCode.COMMERCIAL_AVANS_3095_2_2 
+        : InterestTypeCode.LEGAL_3095;
+      
+      const result = await interestEngineApi.preview({
+        principalAmount: principal,
+        currency: 'TRY',
+        interestType: engineType,
+        startDate: dueDate,
+        endDate: today.toISOString().split("T")[0],
+      });
+      
+      if (!result.success || !result.data) {
+        console.warn('[calculateAutoInterest] Backend preview failed:', result.error);
+        // API erişilemezse null döner - TAHMİN YAPILMAZ
+        return null;
+      }
+      
+      return {
+        interest: result.data.estimatedInterest,
+        days: result.data.days,
+        rate: result.data.currentRate,
+        startDate: dueDate,
+        endDate: today.toISOString().split("T")[0],
+      };
+    } catch (error) {
+      console.error('[calculateAutoInterest] API error:', error);
+      // API erişilemezse null döner - TAHMİN YAPILMAZ
+      return null;
+    }
   };
 
   // Ana para değiştiğinde çek tazminatını ve faizi otomatik hesapla/güncelle

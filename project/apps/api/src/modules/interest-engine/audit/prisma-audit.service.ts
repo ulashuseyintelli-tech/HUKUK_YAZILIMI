@@ -73,8 +73,8 @@ export class PrismaAuditService {
         tenantId: input.tenantId,
         caseId: input.caseId,
         asOfDate: new Date(),
-        requestJson: input.request,
-        resultJson: {},
+        requestJson: input.request as any,
+        resultJson: {} as any,
         totalInterest: new Decimal(0),
         totalDue: new Decimal(0),
         rateHashes: [],
@@ -91,14 +91,14 @@ export class PrismaAuditService {
   async writeSegments(runId: string, segments: Segment[]): Promise<void> {
     const segmentData = segments.map(s => ({
       calculationLogId: runId,
-      principalItemId: s.claimId,
+      principalItemId: s.claimBucketId,
       periodStart: new Date(s.periodStart),
       periodEnd: new Date(s.periodEnd),
       days: s.days,
       rate: new Decimal(s.rate),
-      rateId: s.rateSource || 'unknown',
+      rateId: s.rateId || 'unknown',
       principal: new Decimal(s.principal),
-      segmentInterest: new Decimal(s.interest),
+      segmentInterest: new Decimal(s.segmentInterest),
     }));
 
     await this.prisma.interestSegmentLog.createMany({
@@ -116,7 +116,7 @@ export class PrismaAuditService {
         totalInterest: new Decimal(input.totalInterest),
         totalDue: new Decimal(input.totalDue),
         rateHashes: input.rateHashes,
-        resultJson,
+        resultJson: resultJson as any,
         flaggedForReview: input.flaggedForReview ?? false,
         reviewReason: input.reviewReason,
       },
@@ -157,15 +157,15 @@ export class PrismaAuditService {
     });
 
     return segments.map(s => ({
-      id: s.id,
-      claimId: s.principalItemId,
+      claimBucketId: s.principalItemId,
       periodStart: s.periodStart.toISOString().split('T')[0],
       periodEnd: s.periodEnd.toISOString().split('T')[0],
       days: s.days,
       rate: s.rate.toNumber(),
+      rateId: s.rateId,
       rateSource: s.rateId,
       principal: s.principal.toNumber(),
-      interest: s.segmentInterest.toNumber(),
+      segmentInterest: s.segmentInterest.toNumber(),
     }));
   }
 

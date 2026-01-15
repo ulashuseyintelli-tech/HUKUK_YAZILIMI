@@ -106,15 +106,50 @@ export class TariffService implements ITariffRepository {
     };
   }
 
+  /**
+   * ITariffRepository: Get tariff by year (returns SharedTariff for interface compliance)
+   */
   getTariff(year: number): SharedTariff | null {
     const data = this.tariffs.get(year);
     return data ? this.toSharedFormat(data) : null;
   }
 
+  /**
+   * Get raw tariff data (internal use)
+   */
+  getTariffData(year: number): TariffData | null {
+    return this.tariffs.get(year) || null;
+  }
+
+  /**
+   * ITariffRepository: Get tariff in shared format (alias)
+   */
+  getSharedTariff(year: number): SharedTariff | null {
+    return this.getTariff(year);
+  }
+
+  /**
+   * ITariffRepository: Get active tariff (returns SharedTariff for interface compliance)
+   */
   getActiveTariff(): SharedTariff | null {
     const currentYear = new Date().getFullYear();
     const data = this.tariffs.get(currentYear) || this.tariffs.get(currentYear - 1);
     return data ? this.toSharedFormat(data) : null;
+  }
+
+  /**
+   * Get active raw tariff data (internal use)
+   */
+  getActiveTariffData(): TariffData | null {
+    const currentYear = new Date().getFullYear();
+    return this.tariffs.get(currentYear) || this.tariffs.get(currentYear - 1) || null;
+  }
+
+  /**
+   * ITariffRepository: Get active tariff in shared format (alias)
+   */
+  getActiveSharedTariff(): SharedTariff | null {
+    return this.getActiveTariff();
   }
 
   getAvailableYears(): number[] {
@@ -158,17 +193,6 @@ export class TariffService implements ITariffRepository {
       postageTypesCount: Object.keys(tariff.postage || {}).length,
       isActive: year === currentYear,
     })).sort((a, b) => b.year - a.year);
-  }
-
-  // Belirli yilin tarifesini getir
-  getTariff(year: number): TariffData | null {
-    return this.tariffs.get(year) || null;
-  }
-
-  // Aktif tarifeyi getir (guncel yil)
-  getActiveTariff(): TariffData | null {
-    const currentYear = new Date().getFullYear();
-    return this.tariffs.get(currentYear) || this.tariffs.get(currentYear - 1) || null;
   }
 
   // Yeni tarife olustur/guncelle
@@ -280,6 +304,6 @@ export class TariffService implements ITariffRepository {
 
   // Tarifeyi JSON olarak export et
   exportToJSON(year: number): TariffData | null {
-    return this.getTariff(year);
+    return this.getTariffData(year);
   }
 }

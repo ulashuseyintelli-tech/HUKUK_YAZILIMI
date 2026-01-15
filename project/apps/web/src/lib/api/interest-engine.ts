@@ -164,11 +164,65 @@ export interface InterestAuditLog {
   createdBy?: string;
 }
 
+// ============================================
+// PREVIEW TYPES (Lightweight, no audit)
+// ============================================
+
+export interface InterestPreviewRequest {
+  principalAmount: number;
+  currency?: string;
+  interestType: InterestTypeCode;
+  startDate: string;
+  endDate: string;
+  fixedRate?: number;
+}
+
+export interface InterestPreviewResponse {
+  success: boolean;
+  data?: {
+    estimatedInterest: number;
+    currentRate: number;
+    days: number;
+    interestType: InterestTypeCode;
+  };
+  error?: {
+    code: 'RATE_NOT_FOUND' | 'SERVICE_UNAVAILABLE' | 'INVALID_INPUT' | 'INVALID_DATE_RANGE';
+    message: string;
+  };
+  cached: boolean;
+  cacheExpiry?: string;
+}
+
 // ============================================================================
 // API FUNCTIONS
 // ============================================================================
 
 export const interestEngineApi = {
+  /**
+   * Preview interest calculation (lightweight, no audit)
+   * 
+   * Frontend form preview için kullanılır.
+   * API erişilemezse { success: false } döner - TAHMİN YAPILMAZ.
+   * 
+   * @see docs/single-source-of-truth-architecture.md
+   */
+  preview: async (request: InterestPreviewRequest): Promise<InterestPreviewResponse> => {
+    try {
+      const response = await apiClient.post('/interest-engine/preview', request);
+      return response.data;
+    } catch (error) {
+      console.error('[interestEngineApi.preview] Error:', error);
+      return {
+        success: false,
+        error: {
+          code: 'SERVICE_UNAVAILABLE',
+          message: 'Faiz hesaplama servisi şu an erişilemiyor',
+        },
+        cached: false,
+      };
+    }
+  },
+
   /**
    * Calculate interest for given principal items
    */

@@ -9,7 +9,7 @@
 import { Injectable, Optional } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { InterestTypeCode } from '../types/domain.types';
-import { generateRateVersionHash } from './rate-version-hash';
+import { generateRateEntryHash, generateRateTableVersion } from './rate-version-hash';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // TYPES
@@ -267,7 +267,7 @@ export class RateProviderService {
       };
     }
 
-    const hash = generateRateVersionHash(relevantRates);
+    const hash = generateRateTableVersion(relevantRates as any);
     const latestPublishedAt = relevantRates
       .map((r) => r.publishedAt)
       .sort()
@@ -308,7 +308,12 @@ export class RateProviderService {
       throw new Error('Prisma not available');
     }
 
-    const versionHash = generateRateVersionHash([{ ...rate, id: 'temp', sourceId: '', sourceName: rate.sourceName, publishedAt: '' }]);
+    const versionHash = generateRateEntryHash({ 
+      interestType: rate.interestType, 
+      validFrom: rate.validFrom, 
+      annualRate: rate.annualRate, 
+      source: rate.sourceName 
+    });
 
     const created = await this.prisma.rateSchedule.create({
       data: {

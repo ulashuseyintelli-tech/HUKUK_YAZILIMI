@@ -20,7 +20,8 @@ import { CaseStatusModule } from "./modules/case-status/case-status.module";
 import { ExecutionOfficeModule } from "./modules/execution-office/execution-office.module";
 import { UyapModule } from "./modules/uyap/uyap.module";
 import { SchedulerModule } from "./modules/scheduler/scheduler.module";
-import { RuleEngineModule } from "./modules/rule-engine/rule-engine.module";
+// @deprecated RuleEngineModule removed - use PolicyEngineModule instead
+// import { RuleEngineModule } from "./modules/rule-engine/rule-engine.module";
 import { OcrModule } from "./modules/ocr/ocr.module";
 import { LookupModule } from "./modules/lookup/lookup.module";
 import { GroupModule } from "./modules/group/group.module";
@@ -46,6 +47,8 @@ import { TemplateEngineModule } from "./modules/template-engine/template-engine.
 import { ExchangeRateModule } from "./modules/exchange-rate/exchange-rate.module";
 import { TariffModule } from "./modules/tariff/tariff.module";
 import { PdfModule } from "./modules/pdf/pdf.module";
+// @deprecated ValidationGateModule - use PolicyEngineModule/gate-checker instead
+// Keeping import for backward compatibility, will be removed in Phase 4
 import { ValidationGateModule } from "./modules/validation-gate/validation-gate.module";
 import { CaseInstrumentModule } from "./modules/case-instrument/case-instrument.module";
 import { CaseLeaseModule } from "./modules/case-lease/case-lease.module";
@@ -70,6 +73,7 @@ import { V28EngineModule } from "./modules/icrabot/v28-engine/v28-engine.module"
 import { InterestEngineModule } from "./modules/interest-engine/interest-engine.module";
 import { AddressTaskModule } from "./modules/address-task/address-task.module";
 import { PolicyEngineModule } from "./modules/policy-engine/policy-engine.module";
+import { CalcPreviewModule } from "./modules/calc-preview/calc-preview.module";
 // TODO: IcrabotModule geçici olarak devre dışı - Prisma client regenerate gerekli
 // import { IcrabotModule } from "./modules/icrabot/icrabot.module";
 
@@ -98,7 +102,7 @@ import { PolicyEngineModule } from "./modules/policy-engine/policy-engine.module
     ExecutionOfficeModule,
     UyapModule,
     SchedulerModule,
-    RuleEngineModule,
+    // RuleEngineModule, // @deprecated - removed, use PolicyEngineModule
     OcrModule,
     LookupModule,
     GroupModule,
@@ -124,7 +128,7 @@ import { PolicyEngineModule } from "./modules/policy-engine/policy-engine.module
     ExchangeRateModule,
     TariffModule,
     PdfModule,
-    ValidationGateModule,
+    ValidationGateModule, // @deprecated - use PolicyEngineModule/gate-checker
     CaseInstrumentModule,
     CaseLeaseModule,
     CaseJudgmentModule,
@@ -148,6 +152,7 @@ import { PolicyEngineModule } from "./modules/policy-engine/policy-engine.module
     InterestEngineModule,
     AddressTaskModule,
     PolicyEngineModule,
+    CalcPreviewModule,
     // IcrabotModule, // TODO: Prisma client regenerate sonrası aktif et
   ],
 })

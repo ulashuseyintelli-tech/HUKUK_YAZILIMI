@@ -10,7 +10,13 @@
  * - CEK, SENET, FATURA, CARI_HESAP → varsayılan ticari
  * - KIRA, NAFAKA, AIDAT → varsayılan ticari değil
  * - Kullanıcı override edebilir
+ * 
+ * @see packages/types/src/interest.ts - API InterestTypeCode enum
+ * @see ARCHITECTURE.md - Source of Truth Matrix
  */
+
+// Import API types from shared package
+import { InterestTypeCode as ApiInterestTypeCodeEnum } from '@shared/types';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // UI INTEREST TYPE (Web tarafı için kullanıcı dostu isimler)
@@ -27,20 +33,13 @@ export type InterestTypeCode =
 
 // ═══════════════════════════════════════════════════════════════════════════
 // API INTEREST TYPE (Backend InterestTypeCode enum değerleri)
+// Re-export from shared types for convenience
 // ═══════════════════════════════════════════════════════════════════════════
 
-export type ApiInterestTypeCode =
-  | 'LEGAL_3095'
-  | 'COMMERCIAL_AVANS_3095_2_2'
-  | 'COMMERCIAL_FIXED'
-  | 'TTK_1530'
-  | 'CONTRACTUAL'
-  | 'MEVDUAT_TL_BANKALARCA'
-  | 'MEVDUAT_USD_BANKALARCA'
-  | 'MEVDUAT_EUR_BANKALARCA'
-  | 'MEVDUAT_TL_KAMU'
-  | 'MEVDUAT_USD_KAMU'
-  | 'MEVDUAT_EUR_KAMU';
+export type ApiInterestTypeCode = `${ApiInterestTypeCodeEnum}`;
+
+// Also export the enum itself for direct usage
+export { InterestTypeCode as ApiInterestTypeCodeEnum } from '@shared/types';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // UI → API MAPPING (Request gönderirken kullan)

@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { TariffService } from '@/modules/tariff/tariff.service';
 import { Decimal } from '@prisma/client/runtime/library';
+import type { Tariff } from '@shared/types';
 
 export interface CaseData {
   principalAmount: number;
@@ -70,8 +71,8 @@ export class ExpenseCalculatorService {
    * Başvurma Harcı hesapla (sabit tutar)
    */
   calculateBasvurmaHarci(principalAmount: number): Decimal {
-    const tariff = this.tariffService.getActiveTariff();
-    const fee = tariff?.fixed_fees?.application_fee?.amount || 738.50;
+    const tariff = this.tariffService.getActiveSharedTariff();
+    const fee = tariff?.fixedFees?.application_fee?.amount || 738.50;
     return new Decimal(fee);
   }
 
@@ -79,10 +80,10 @@ export class ExpenseCalculatorService {
    * Peşin Harç hesapla (binde 5)
    */
   calculatePesinHarc(principalAmount: number, interestAmount: number = 0): Decimal {
-    const tariff = this.tariffService.getActiveTariff();
-    const rateFee = tariff?.rate_fees?.ilamsiz_pesin_harc;
+    const tariff = this.tariffService.getActiveSharedTariff();
+    const rateFee = tariff?.rateFees?.ilamsiz_pesin_harc;
     const rate = rateFee?.rate || 0.005;
-    const minAmount = rateFee?.min_amount || 120;
+    const minAmount = rateFee?.minAmount || 120;
 
     const base = principalAmount + interestAmount;
     const calculated = base * rate;
@@ -94,8 +95,8 @@ export class ExpenseCalculatorService {
    * Vekalet Harcı hesapla (sabit tutar)
    */
   calculateVekaletHarci(): Decimal {
-    const tariff = this.tariffService.getActiveTariff();
-    const fee = tariff?.fixed_fees?.poa_copy_fee?.amount || 105.00;
+    const tariff = this.tariffService.getActiveSharedTariff();
+    const fee = tariff?.fixedFees?.poa_copy_fee?.amount || 105.00;
     return new Decimal(fee);
   }
 
@@ -103,7 +104,7 @@ export class ExpenseCalculatorService {
    * Tebligat Gideri hesapla (adet bazlı)
    */
   calculateTebligatGideri(count: number = 1, type: 'NORMAL' | 'UETS' | 'FAST' = 'NORMAL'): Decimal {
-    const tariff = this.tariffService.getActiveTariff();
+    const tariff = this.tariffService.getActiveSharedTariff();
     const postage = tariff?.postage?.[type];
     const unitAmount = postage?.amount || 252.00;
     return new Decimal(unitAmount * count);
@@ -113,8 +114,8 @@ export class ExpenseCalculatorService {
    * Dosya Gideri hesapla (sabit tutar)
    */
   calculateDosyaGideri(): Decimal {
-    const tariff = this.tariffService.getActiveTariff();
-    const fee = tariff?.fixed_fees?.file_expense?.amount || 50.00;
+    const tariff = this.tariffService.getActiveSharedTariff();
+    const fee = tariff?.fixedFees?.file_expense?.amount || 50.00;
     return new Decimal(fee);
   }
 
@@ -122,8 +123,8 @@ export class ExpenseCalculatorService {
    * Vekalet Pulu hesapla (sabit tutar)
    */
   calculateVekaletPulu(): Decimal {
-    const tariff = this.tariffService.getActiveTariff();
-    const fee = tariff?.fixed_fees?.bar_stamp_fee?.amount || 165.60;
+    const tariff = this.tariffService.getActiveSharedTariff();
+    const fee = tariff?.fixedFees?.bar_stamp_fee?.amount || 165.60;
     return new Decimal(fee);
   }
 
@@ -131,7 +132,7 @@ export class ExpenseCalculatorService {
    * Haciz Harcı hesapla (nispi)
    */
   calculateHacizHarci(principalAmount: number): Decimal {
-    const tariff = this.tariffService.getActiveTariff();
+    const tariff = this.tariffService.getActiveSharedTariff();
     const seizureFee = (tariff as any)?.seizure_fees?.haciz_harci;
     const rate = seizureFee?.rate || 0.0044;
     const minAmount = seizureFee?.min_amount || 100;
@@ -144,7 +145,7 @@ export class ExpenseCalculatorService {
    * Haciz Yolluk hesapla (sabit tutar)
    */
   calculateHacizYolluk(): Decimal {
-    const tariff = this.tariffService.getActiveTariff();
+    const tariff = this.tariffService.getActiveSharedTariff();
     const fee = (tariff as any)?.seizure_fees?.haciz_yolluk?.amount || 350.00;
     return new Decimal(fee);
   }
@@ -153,7 +154,7 @@ export class ExpenseCalculatorService {
    * İlan Gideri hesapla (sabit tutar - ortalama)
    */
   calculateIlanGideri(): Decimal {
-    const tariff = this.tariffService.getActiveTariff();
+    const tariff = this.tariffService.getActiveSharedTariff();
     const fee = (tariff as any)?.sale_fees?.ilan_gideri?.amount || 2500.00;
     return new Decimal(fee);
   }
@@ -162,7 +163,7 @@ export class ExpenseCalculatorService {
    * Satış Harcı hesapla (nispi)
    */
   calculateSatisHarci(saleAmount: number): Decimal {
-    const tariff = this.tariffService.getActiveTariff();
+    const tariff = this.tariffService.getActiveSharedTariff();
     const saleFee = (tariff as any)?.sale_fees?.satis_harci;
     const rate = saleFee?.rate || 0.0113;
 

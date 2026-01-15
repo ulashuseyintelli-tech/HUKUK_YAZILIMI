@@ -340,81 +340,44 @@ export class ClaimItemService {
   }
 
   // ==================== FAİZ HESAPLAMA ====================
+  // ⚠️ HESAP YASAĞI: Bu modül faiz hesabı YAPMAZ
+  // Tüm faiz hesaplamaları interest-engine üzerinden yapılmalı
+  // @see ARCHITECTURE.md - Source of Truth Matrix
 
-  // Faiz hesapla
-  async calculateInterest(dto: CalculateInterestDto): Promise<InterestCalculationResult> {
-    const startDate = new Date(dto.startDate);
-    const endDate = dto.endDate ? new Date(dto.endDate) : new Date();
-    
-    // Gün sayısı
-    const days = Math.max(0, Math.floor(
-      (endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)
-    ));
-
-    // Faiz oranını belirle
-    let rate = dto.customRate;
-    if (!rate) {
-      rate = await this.getInterestRate(dto.interestType, dto.currency || 'TRY', startDate);
-    }
-
-    // Faiz hesapla (basit faiz formülü)
-    const calculatedInterest = (dto.principalAmount * rate * days) / (365 * 100);
-
-    return {
-      principalAmount: dto.principalAmount,
-      interestType: dto.interestType,
-      rate,
-      startDate: startDate.toISOString(),
-      endDate: endDate.toISOString(),
-      days,
-      calculatedInterest: Math.round(calculatedInterest * 100) / 100,
-      currency: dto.currency || 'TRY',
-    };
+  /**
+   * @deprecated KALDIRILDI - interest-engine kullanın
+   * 
+   * Bu metod artık hesap YAPMAZ, sadece hata fırlatır.
+   * Doğru kullanım:
+   * ```typescript
+   * import { InterestEngineService } from '@/modules/interest-engine';
+   * const result = await interestEngine.calculate({
+   *   caseId,
+   *   asOfDate: new Date().toISOString(),
+   * });
+   * ```
+   * 
+   * @throws Error - Her zaman hata fırlatır
+   * @see ARCHITECTURE.md - Source of Truth Matrix
+   */
+  async calculateInterest(_dto: CalculateInterestDto): Promise<InterestCalculationResult> {
+    throw new Error(
+      '🚫 claim-item.calculateInterest() KALDIRILDI. ' +
+      'Faiz hesabı için interest-engine kullanın: interestEngine.calculate(request). ' +
+      '@see ARCHITECTURE.md'
+    );
   }
 
-  // Faiz oranını getir (veritabanından veya varsayılan)
-  private async getInterestRate(type: InterestType, currency: string, date: Date): Promise<number> {
-    // Önce veritabanından dene
-    const dbRate = await (this.prisma as any).interestRate?.findFirst({
-      where: {
-        interestType: type,
-        currency,
-        startDate: { lte: date },
-        OR: [
-          { endDate: null },
-          { endDate: { gte: date } },
-        ],
-      },
-      orderBy: { startDate: 'desc' },
-    });
-
-    if (dbRate) {
-      return Number(dbRate.rate);
-    }
-
-    // Varsayılan oranlar (2024 güncel)
-    const defaultRates: Record<string, Record<string, number>> = {
-      TRY: {
-        YASAL: 24,    // Yasal faiz
-        TICARI: 48,   // Ticari faiz (avans)
-        AVANS: 48,    // Avans faizi
-        OZEL: 24,     // Özel (varsayılan yasal)
-      },
-      USD: {
-        YASAL: 9,
-        TICARI: 12,
-        AVANS: 12,
-        OZEL: 9,
-      },
-      EUR: {
-        YASAL: 9,
-        TICARI: 12,
-        AVANS: 12,
-        OZEL: 9,
-      },
-    };
-
-    return defaultRates[currency]?.[type] || defaultRates['TRY'][type] || 24;
+  /**
+   * @deprecated KALDIRILDI - interest-engine/RateProviderService kullanın
+   * @throws Error - Her zaman hata fırlatır
+   */
+  private async getInterestRate(_type: InterestType, _currency: string, _date: Date): Promise<number> {
+    throw new Error(
+      '🚫 claim-item.getInterestRate() KALDIRILDI. ' +
+      'Faiz oranı için RateProviderService kullanın. ' +
+      '@see ARCHITECTURE.md'
+    );
   }
 
 
@@ -546,57 +509,26 @@ export class ClaimItemService {
   // ==================== TOPLU İŞLEMLER ====================
 
   // Dosyaya faiz kalemi ekle (otomatik hesaplamalı)
+  /**
+   * @deprecated Faiz kalemi ekleme interest-engine üzerinden yapılmalı
+   * 
+   * Bu metod artık hesap YAPMAZ. Faiz kalemi eklemek için:
+   * 1. interest-engine.calculate() ile faiz hesaplayın
+   * 2. Sonucu claim-item olarak kaydedin
+   * 
+   * @throws Error - Her zaman hata fırlatır
+   */
   async addInterestItem(
-    tenantId: string,
-    caseId: string,
-    interestType: InterestType,
-    isPreInterest: boolean = true,
+    _tenantId: string,
+    _caseId: string,
+    _interestType: InterestType,
+    _isPreInterest: boolean = true,
   ) {
-    // Dosyanın ana para toplamını al
-    const items = await (this.prisma as any).claimItem.findMany({
-      where: { tenantId, caseId, itemType: 'PRINCIPAL', status: 'ACTIVE' },
-    });
-
-    const principalAmount = items.reduce((sum: number, item: any) => sum + Number(item.amount || 0), 0);
-    if (principalAmount <= 0) {
-      throw new BadRequestException('Ana para bulunamadı');
-    }
-
-    // Dosya bilgilerini al
-    const caseData = await this.prisma.case.findFirst({
-      where: { id: caseId, tenantId },
-    });
-
-    // Faiz başlangıç tarihi
-    const startDate = caseData?.interestStartDate || caseData?.caseDate || new Date();
-    const currency = caseData?.currency || 'TRY';
-
-    // Faiz hesapla
-    const interestResult = await this.calculateInterest({
-      principalAmount,
-      interestType,
-      startDate: startDate.toISOString(),
-      currency,
-    });
-
-    // Faiz kalemi oluştur
-    return (this.prisma as any).claimItem.create({
-      data: {
-        tenantId,
-        caseId,
-        itemType: isPreInterest ? 'PRE_INTEREST' : 'POST_INTEREST',
-        amount: interestResult.calculatedInterest,
-        currency,
-        interestType,
-        interestRate: interestResult.rate,
-        interestStartDate: new Date(interestResult.startDate),
-        interestEndDate: new Date(interestResult.endDate),
-        description: `${isPreInterest ? 'Takip öncesi' : 'Takip sonrası'} ${interestType} faiz`,
-        isCalculated: true,
-        calculatedAt: new Date(),
-        sortOrder: isPreInterest ? 10 : 20,
-      },
-    });
+    throw new Error(
+      '🚫 claim-item.addInterestItem() KALDIRILDI. ' +
+      'Faiz kalemi eklemek için interest-engine.calculate() kullanın, ' +
+      'sonucu claim-item olarak kaydedin. @see ARCHITECTURE.md'
+    );
   }
 
   // Masraf kalemi ekle
@@ -663,29 +595,16 @@ export class ClaimItemService {
   }
 
   // Tüm faizleri yeniden hesapla
-  async recalculateAllInterest(tenantId: string, caseId: string) {
-    // Mevcut faiz kalemlerini sil
-    await (this.prisma as any).claimItem.deleteMany({
-      where: {
-        tenantId,
-        caseId,
-        itemType: { in: ['INTEREST', 'PRE_INTEREST', 'POST_INTEREST'] },
-        isCalculated: true,
-      },
-    });
-
-    // Dosya bilgilerini al
-    const caseData = await this.prisma.case.findFirst({
-      where: { id: caseId, tenantId },
-    });
-
-    if (!caseData) {
-      throw new NotFoundException('Dosya bulunamadı');
-    }
-
-    // Yeni faiz kalemi ekle
-    const interestType = (caseData.interestType as InterestType) || InterestType.YASAL;
-    return this.addInterestItem(tenantId, caseId, interestType, true);
+  /**
+   * @deprecated Faiz yeniden hesaplama interest-engine üzerinden yapılmalı
+   * @throws Error - Her zaman hata fırlatır
+   */
+  async recalculateAllInterest(_tenantId: string, _caseId: string) {
+    throw new Error(
+      '🚫 claim-item.recalculateAllInterest() KALDIRILDI. ' +
+      'Faiz yeniden hesaplama için interest-engine.calculate() kullanın. ' +
+      '@see ARCHITECTURE.md'
+    );
   }
 
   // ==================== CLAIM ENGINE ENTEGRASYONU ====================
@@ -791,19 +710,19 @@ export class ClaimItemService {
   }
 
   // Faiz oranını kural motorundan al
+  /**
+   * @deprecated Faiz oranı için interest-engine/RateProviderService kullanın
+   * @throws Error - Her zaman hata fırlatır
+   */
   async getInterestRateFromEngine(
-    currency: string,
-    interestType: string,
-    date?: Date,
+    _currency: string,
+    _interestType: string,
+    _date?: Date,
   ): Promise<number | null> {
-    if (!this.claimEngineService) {
-      return null;
-    }
-
-    return this.claimEngineService.getInterestRate(
-      currency,
-      interestType,
-      date || new Date(),
+    throw new Error(
+      '🚫 claim-item.getInterestRateFromEngine() KALDIRILDI. ' +
+      'Faiz oranı için RateProviderService kullanın. ' +
+      '@see ARCHITECTURE.md'
     );
   }
 

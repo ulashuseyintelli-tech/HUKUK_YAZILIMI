@@ -2604,27 +2604,7 @@ export default function CaseDetailPage() {
           <div className="w-80 flex-shrink-0 sticky top-4">
             <HesapOzetiPanel
               caseId={caseData.id}
-              caseDate={caseData.caseDate}
-              caseType={caseData.type}
-              principalAmount={caseData.principalAmount}
-              currency={caseData.currency}
               debtorCount={caseData.debtors?.length || 1}
-              instruments={caseData.instruments}
-              claimItems={caseData.claimItems}
-              dues={dues}
-              collections={collections}
-              loading={loadingFinance}
-              onRefresh={() => {
-                // Finans verilerini yeniden yükle
-                setLoadingFinance(true);
-                Promise.all([
-                  api.getCaseDues(caseData.id),
-                  api.getCaseCollections(caseData.id)
-                ]).then(([duesRes, colRes]) => {
-                  setDues(duesRes || []);
-                  setCollections(colRes || []);
-                }).finally(() => setLoadingFinance(false));
-              }}
             />
           </div>
         </div>

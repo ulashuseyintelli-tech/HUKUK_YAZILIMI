@@ -6,6 +6,8 @@
  */
 
 import { Decimal } from '@prisma/client/runtime/library';
+import { InterestTypeCode as DomainInterestTypeCode } from './types/domain.types';
+import { RateSourceType as EntityRateSourceType } from './rates/rate-entry.entity';
 
 // ============================================================================
 // DEPRECATED - Eski enum'lar, yeni dosyalardan import edin
@@ -25,11 +27,11 @@ export type Currency = 'TRY' | 'USD' | 'EUR' | 'GBP' | 'CHF';
 
 export interface RateEntry {
   id: string;
-  interestType: InterestTypeCode;
+  interestType: DomainInterestTypeCode;
   validFrom: string; // ISO date
   validTo?: string | null; // ISO date, null = current
   annualRate: number; // Decimal, e.g., 0.3975 for 39.75%
-  source: RateSourceType;
+  source: EntityRateSourceType;
   sourceReference?: string; // e.g., "TCMB 20.12.2025"
   versionHash: string;
   createdAt: string;
@@ -51,7 +53,7 @@ export interface PrincipalItem {
   amount: number;
   currency: Currency;
   startDate: string; // Interest start date
-  interestType: InterestTypeCode;
+  interestType: DomainInterestTypeCode;
   dayCountBasis?: 365 | 360; // Default: 365
   compounding?: boolean; // Default: false (simple interest)
   description?: string;

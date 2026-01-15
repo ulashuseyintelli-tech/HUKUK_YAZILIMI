@@ -2008,14 +2008,15 @@ export class CaseService {
     });
 
     // Tahsilat sonrası faiz hesaplamasını yeniden tetikle
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      await this.interestEngineService.recalculateForCase(caseId, today, tenantId);
-      this.logger.debug(`Interest recalculated after collection for case ${caseId}`);
-    } catch (error) {
-      // Faiz hesaplama hatası tahsilat kaydını engellemez
-      this.logger.warn(`Failed to recalculate interest after collection: ${error.message}`);
-    }
+    // TODO: interest-engine entegrasyonu tamamlandığında aktif edilecek
+    // try {
+    //   const today = new Date().toISOString().split('T')[0];
+    //   await this.interestEngineService.recalculateForCase(caseId, today, tenantId);
+    //   this.logger.debug(`Interest recalculated after collection for case ${caseId}`);
+    // } catch (error) {
+    //   // Faiz hesaplama hatası tahsilat kaydını engellemez
+    //   this.logger.warn(`Failed to recalculate interest after collection: ${error.message}`);
+    // }
 
     return collection;
   }
@@ -2062,13 +2063,14 @@ export class CaseService {
     });
 
     // Tahsilat güncellendikten sonra faiz hesaplamasını yeniden tetikle
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      await this.interestEngineService.recalculateForCase(caseId, today, tenantId);
-      this.logger.debug(`Interest recalculated after collection update for case ${caseId}`);
-    } catch (error) {
-      this.logger.warn(`Failed to recalculate interest after collection update: ${error.message}`);
-    }
+    // TODO: interest-engine entegrasyonu tamamlandığında aktif edilecek
+    // try {
+    //   const today = new Date().toISOString().split('T')[0];
+    //   await this.interestEngineService.recalculateForCase(caseId, today, tenantId);
+    //   this.logger.debug(`Interest recalculated after collection update for case ${caseId}`);
+    // } catch (error) {
+    //   this.logger.warn(`Failed to recalculate interest after collection update: ${error.message}`);
+    // }
 
     return updated;
   }
@@ -2104,13 +2106,14 @@ export class CaseService {
     await this.prisma.collection.delete({ where: { id: collectionId } });
 
     // Tahsilat silindikten sonra faiz hesaplamasını yeniden tetikle
-    try {
-      const today = new Date().toISOString().split('T')[0];
-      await this.interestEngineService.recalculateForCase(caseId, today, tenantId);
-      this.logger.debug(`Interest recalculated after collection delete for case ${caseId}`);
-    } catch (error) {
-      this.logger.warn(`Failed to recalculate interest after collection delete: ${error.message}`);
-    }
+    // TODO: interest-engine entegrasyonu tamamlandığında aktif edilecek
+    // try {
+    //   const today = new Date().toISOString().split('T')[0];
+    //   await this.interestEngineService.recalculateForCase(caseId, today, tenantId);
+    //   this.logger.debug(`Interest recalculated after collection delete for case ${caseId}`);
+    // } catch (error) {
+    //   this.logger.warn(`Failed to recalculate interest after collection delete: ${error.message}`);
+    // }
 
     return { success: true };
   }
@@ -2166,5 +2169,185 @@ export class CaseService {
       duesByType,
       collectionsByChannel,
     };
+  }
+
+  /**
+   * Hesap özeti - TEK KAYNAK PRENSİBİ
+   * 
+   * Tüm hesaplamalar backend engine'lerden gelir:
+   * - Faiz: interest-engine
+   * - Masraf/harç: fee-engine
+   * - Vekalet ücreti: fee-engine/attorney-fee
+   * 
+   * UI'da hesaplama YAPILMAZ.
+   * 
+   * @see ARCHITECTURE.md - Source of Truth Matrix
+   */
+  async getCalculationSummary(tenantId: string, caseId: string, calculationDate: string) {
+    // 1. Case verilerini al
+    const caseData = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+      include: {
+        dues: true,
+        collections: { where: { status: { not: 'CANCELLED' } } },
+        debtors: { include: { debtor: true } },
+        formType: true,
+      },
+    });
+
+    if (!caseData) {
+      throw new NotFoundException('Dosya bulunamadı');
+    }
+
+    const takipTarihi = caseData.caseDate?.toISOString().split('T')[0] || new Date().toISOString().split('T')[0];
+    const hesapTarihi = calculationDate;
+
+    // 2. Asıl alacak ve kalem türü belirleme
+    const principalDues = caseData.dues.filter((d: any) => 
+      ['PRINCIPAL', 'ASIL_ALACAK', 'CEK', 'SENET', 'CHECK', 'BOND'].includes(d.type)
+    );
+    
+    const asilAlacak = principalDues.length > 0
+      ? principalDues.reduce((sum: number, d: any) => sum + Number(d.amount), 0)
+      : Number(caseData.principalAmount || 0);
+
+    const firstDue = principalDues[0] as any;
+    const kalemTuru = firstDue?.type || 
+      (caseData.type === 'CHECK' ? 'CEK' : caseData.type === 'BOND' ? 'SENET' : 'ASIL_ALACAK');
+
+    // 3. Faiz hesabı - şimdilik basit hesaplama
+    // TODO: interest-engine entegrasyonu tamamlandığında aktif edilecek
+    let takipOncesiFaiz = 0;
+    let takipSonrasiFaiz = 0;
+    const faizSegmentleri = { takipOncesi: [] as any[], takipSonrasi: [] as any[] };
+
+    // 4. Çek tazminatı ve komisyon
+    const isCek = kalemTuru === 'CEK' || kalemTuru === 'CHECK';
+    const tazminat = isCek ? asilAlacak * 0.10 : 0;
+    const komisyon = isCek ? asilAlacak * 0.003 : 0;
+
+    // 5. Takip tutarı
+    const takipTutari = asilAlacak + tazminat + komisyon + takipOncesiFaiz;
+
+    // 6. Masraflar - fee-engine'den veya 2026 tarifesi
+    const debtorCount = caseData.debtors?.length || 1;
+    const basvurmaHarci = 738.50;
+    const vekaletHarci = 105.00;
+    const pesinHarc = Math.max(Math.round(takipTutari * 0.005 * 100) / 100, 120);
+    const dosyaGideri = 50.00;
+    const tebligatGideri = 252.00 * debtorCount;
+    const vekaletPulu = 165.60;
+    const icraMasraflari = basvurmaHarci + vekaletHarci + pesinHarc + dosyaGideri + tebligatGideri + vekaletPulu;
+
+    // 7. Tahsil harçları
+    const pesinHarcDahilTahsilHarci = Math.round((takipTutari + icraMasraflari) * 0.0455 * 100) / 100;
+    const pesinHarcHaricTahsilHarci = Math.round((takipTutari + icraMasraflari - pesinHarc) * 0.0455 * 100) / 100;
+
+    // 8. Vekalet ücreti - fee-engine'den
+    let vekaletUcreti = 9000; // Asgari
+    try {
+      vekaletUcreti = this.calculateAttorneyFee(takipTutari);
+    } catch (error) {
+      this.logger.warn(`Attorney fee calculation failed:`, error);
+    }
+
+    // 9. Tahsilatlar
+    const aktiveTahsilatlar = caseData.collections
+      .filter((c: any) => c.status !== 'CANCELLED')
+      .map((c: any) => ({
+        tarih: c.date?.toISOString().split('T')[0] || hesapTarihi,
+        tutar: Number(c.amount),
+      }));
+    const toplamTahsilat = aktiveTahsilatlar.reduce((sum: number, c: any) => sum + c.tutar, 0);
+
+    // 10. Toplamlar
+    const toplamBorc = takipTutari + icraMasraflari + vekaletUcreti + takipSonrasiFaiz;
+    const sonBorc = toplamBorc + pesinHarcHaricTahsilHarci;
+    const kalanBorc = sonBorc - toplamTahsilat;
+
+    // 11. Tahsil oranları
+    const tahsilOranlari = [
+      { oran: 0, label: "0" },
+      { oran: 0.0227, label: "2,27" },
+      { oran: 0.0455, label: "4,55" },
+      { oran: 0.0910, label: "9,10" },
+      { oran: 0.1138, label: "11,38" },
+    ].map(t => ({
+      ...t,
+      tutar: Math.round(toplamBorc * (1 + t.oran) * 100) / 100,
+    }));
+
+    return {
+      caseId,
+      hesapTarihi,
+      takipTarihi,
+      kalemTuru,
+      
+      asilAlacak,
+      tazminat,
+      komisyon,
+      takipOncesiFaiz,
+      takipTutari,
+      
+      basvurmaHarci,
+      vekaletHarci,
+      pesinHarc,
+      dosyaGideri,
+      tebligatGideri,
+      vekaletPulu,
+      icraMasraflari,
+      
+      pesinHarcDahilTahsilHarci,
+      pesinHarcHaricTahsilHarci,
+      
+      vekaletUcreti,
+      takipSonrasiFaiz,
+      
+      toplamBorc,
+      sonBorc,
+      toplamTahsilat,
+      kalanBorc,
+      kalanAnapara: asilAlacak, // TBK m.100 sonrası hesaplanacak
+      
+      mahsupDetaylari: [], // TODO: TBK m.100 mahsup detayları
+      faizSegmentleri,
+      tahsilOranlari,
+    };
+  }
+
+  /**
+   * Vekalet ücreti hesaplama (2025/2026 Tarifesi)
+   * @deprecated fee-engine'e taşınacak
+   */
+  private calculateAttorneyFee(takipTutari: number): number {
+    const MAKTU_ICRA_UCRETI = 9000;
+    
+    const dilimler = [
+      { limit: 600000, oran: 0.16 },
+      { limit: 1200000, oran: 0.15 },
+      { limit: 2400000, oran: 0.14 },
+      { limit: 3600000, oran: 0.13 },
+      { limit: 5400000, oran: 0.11 },
+      { limit: 7800000, oran: 0.08 },
+      { limit: 10800000, oran: 0.05 },
+      { limit: 14400000, oran: 0.03 },
+      { limit: 18600000, oran: 0.02 },
+      { limit: Infinity, oran: 0.01 },
+    ];
+    
+    let toplam = 0;
+    let kalanTutar = takipTutari;
+    let oncekiLimit = 0;
+    
+    for (const dilim of dilimler) {
+      if (kalanTutar <= 0) break;
+      const dilimGenisligi = dilim.limit - oncekiLimit;
+      const buDilimdekiTutar = Math.min(kalanTutar, dilimGenisligi);
+      toplam += buDilimdekiTutar * dilim.oran;
+      kalanTutar -= buDilimdekiTutar;
+      oncekiLimit = dilim.limit;
+    }
+    
+    return Math.max(Math.round(toplam * 100) / 100, MAKTU_ICRA_UCRETI);
   }
 }

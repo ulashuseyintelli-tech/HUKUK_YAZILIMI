@@ -1,4 +1,4 @@
-import { Injectable, Logger } from "@nestjs/common";
+import { Injectable, Logger, Optional, Inject, forwardRef } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import {
   WorkflowStage,
@@ -9,6 +9,8 @@ import {
 } from "@prisma/client";
 import { RuleEngine, RuleContext, RuleResult } from "./rule-engine.service";
 import { ExpenseRequestService } from "../expense-request/expense-request.service";
+import { CasePolicyEngine } from "../policy-engine/case-policy-engine.service";
+import { ActionCode } from "../policy-engine/types/action-code.enum";
 
 // Workflow stage to expense stage code mapping
 const STAGE_TO_EXPENSE_CODE: Partial<Record<WorkflowStage, string>> = {
@@ -17,6 +19,25 @@ const STAGE_TO_EXPENSE_CODE: Partial<Record<WorkflowStage, string>> = {
   [WorkflowStage.SALE_REQUEST]: 'SALE', // Satış aşaması
 };
 
+// Rule action to ActionCode mapping for CPE gate checks
+const ACTION_TO_CPE_CODE: Record<string, ActionCode> = {
+  'REQUEST_ENFORCEMENT': ActionCode.TRIGGER_HACIZ,
+  'BANK_INQUIRY': ActionCode.UYAP_SEND,
+  'SALE_REQUEST': ActionCode.UYAP_SEND,
+  'EVICTION_REQUEST': ActionCode.UYAP_SEND,
+  'CLOSE_CASE': ActionCode.CLOSE_CASE,
+};
+
+/**
+ * Workflow Engine - Otomatik iş akışı motoru
+ * 
+ * CPE Entegrasyonu:
+ * - Tüm otomatik aksiyonlar CPE gate kontrolünden geçer
+ * - HIGH risk aksiyonlar için CPE onayı zorunludur
+ * - CPE kararları DecisionLog'a kaydedilir
+ * 
+ * @see ARCHITECTURE.md
+ */
 @Injectable()
 export class WorkflowEngine {
   private readonly logger = new Logger(WorkflowEngine.name);
@@ -25,7 +46,15 @@ export class WorkflowEngine {
     private prisma: PrismaService,
     private ruleEngine: RuleEngine,
     private expenseRequestService: ExpenseRequestService,
-  ) {}
+    @Optional() @Inject(forwardRef(() => CasePolicyEngine))
+    private casePolicyEngine?: CasePolicyEngine,
+  ) {
+    if (this.casePolicyEngine) {
+      this.logger.log('WorkflowEngine: CasePolicyEngine entegrasyonu aktif');
+    } else {
+      this.logger.warn('WorkflowEngine: CasePolicyEngine inject edilemedi, fallback moda geçiliyor');
+    }
+  }
 
   // Dosya için bağlam oluştur
   async buildContext(caseId: string): Promise<RuleContext> {
@@ -134,6 +163,54 @@ export class WorkflowEngine {
   ): Promise<void> {
     this.logger.log(`Executing rule for case ${caseId}: ${rule.action}`);
 
+    // CPE Gate kontrolü (varsa)
+    const cpeActionCode = ACTION_TO_CPE_CODE[rule.action];
+    let cpeTraceId: string | undefined;
+    
+    if (this.casePolicyEngine && cpeActionCode) {
+      try {
+        const decision = await this.casePolicyEngine.canPerformAction(
+          caseId,
+          cpeActionCode,
+          { source: 'AUTOMATION' },
+        );
+
+        cpeTraceId = decision.traceId;
+
+        if (!decision.allowed) {
+          this.logger.warn(`CPE blocked automation action ${rule.action} for case ${caseId}: ${decision.reason}`);
+          
+          // Karar logu oluştur (engellendi)
+          await this.prisma.decisionLog.create({
+            data: {
+              caseId,
+              decisionType: DecisionType.NEXT_ACTION,
+              decision: `BLOCKED: ${rule.action}`,
+              reasoning: `CPE engelledi: ${decision.reason}`,
+              inputData: { ...context, cpeTraceId, cpeCode: decision.code } as any,
+              isAutomatic: true,
+            },
+          });
+          
+          return; // Aksiyonu uygulama
+        }
+
+        // Soft warnings varsa logla
+        if (decision.warnings && decision.warnings.length > 0) {
+          this.logger.warn(`CPE warnings for automation ${rule.action}:`, decision.warnings);
+        }
+      } catch (error) {
+        this.logger.error('CPE kontrolü başarısız:', error);
+        // Fail-open for LOW risk, fail-closed for HIGH risk
+        const isHighRisk = ['REQUEST_ENFORCEMENT', 'SALE_REQUEST'].includes(rule.action);
+        if (isHighRisk) {
+          this.logger.error(`HIGH risk action ${rule.action} blocked due to CPE error`);
+          return;
+        }
+        // LOW risk: devam et ama logla
+      }
+    }
+
     // Karar logu oluştur
     await this.prisma.decisionLog.create({
       data: {
@@ -141,7 +218,7 @@ export class WorkflowEngine {
         decisionType: this.mapActionToDecisionType(rule.action),
         decision: rule.action,
         reasoning: rule.reason,
-        inputData: context as any,
+        inputData: { ...context, cpeTraceId } as any,
         isAutomatic: true,
       },
     });

@@ -2,6 +2,7 @@ import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards } from '@nes
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { TariffService, TariffData, TariffSummary } from './tariff.service';
 import { GazetteWatcherService, GazetteNotification } from './gazette-watcher.service';
+import type { Tariff as SharedTariff } from '@shared/types';
 
 @Controller('tariffs')
 @UseGuards(JwtAuthGuard)
@@ -19,7 +20,7 @@ export class TariffController {
 
   // Aktif tarifeyi getir
   @Get('active')
-  getActiveTariff(): TariffData | { error: string } {
+  getActiveTariff(): SharedTariff | null | { error: string } {
     const tariff = this.tariffService.getActiveTariff();
     if (!tariff) {
       return { error: 'Aktif tarife bulunamadi' };
@@ -29,7 +30,7 @@ export class TariffController {
 
   // Belirli yilin tarifesini getir
   @Get(':year')
-  getTariff(@Param('year') year: string): TariffData | { error: string } {
+  getTariff(@Param('year') year: string): SharedTariff | null | { error: string } {
     const tariff = this.tariffService.getTariff(parseInt(year));
     if (!tariff) {
       return { error: `${year} yili tarifesi bulunamadi` };
@@ -72,8 +73,8 @@ export class TariffController {
 
   // JSON olarak export et
   @Get(':year/export')
-  exportTariff(@Param('year') year: string): TariffData | { error: string } {
-    const tariff = this.tariffService.exportToJSON(parseInt(year));
+  exportTariff(@Param('year') year: string): TariffData | null | { error: string } {
+    const tariff = this.tariffService.getTariffData(parseInt(year));
     if (!tariff) {
       return { error: `${year} yili tarifesi bulunamadi` };
     }

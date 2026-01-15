@@ -1,8 +1,12 @@
 import { describe, it, expect } from 'vitest';
 import * as fc from 'fast-check';
-import { getRecommendedForm, filterFormsByAnswers } from '@/components/case/FormWizard';
+import { 
+  getRecommendedFormCode, 
+  filterFormsByWizardAnswers,
+  WizardAnswer,
+} from '@/types/wizard';
 import { formMetadata } from '@/config/form-metadata';
-import { WizardAnswers } from '@/types/wizard';
+import { FormMetadata } from '@/types/form-metadata';
 
 /**
  * Feature: smart-form-wizard, Property 1-4: Wizard Answer Filtering
@@ -12,21 +16,40 @@ describe('Wizard Filtering Logic', () => {
   // Helper to create answers
   const createAnswers = (
     hasJudgment: boolean | null,
-    isKambiyo: boolean | null,
+    hasKambiyo: boolean | null,
     hasMortgage: boolean | null,
     isRental: boolean | null
-  ): WizardAnswers => ({ hasJudgment, isKambiyo, hasMortgage, isRental });
+  ): WizardAnswer => ({ hasJudgment, hasKambiyo, hasMortgage, isRental });
+
+  // Helper to filter forms
+  const filterFormsByAnswers = (answers: WizardAnswer): FormMetadata[] => {
+    const codes = filterFormsByWizardAnswers(formMetadata, answers);
+    return formMetadata.filter((f) => codes.includes(f.code));
+  };
+
+  // Helper to get recommended form
+  const getRecommendedForm = (answers: WizardAnswer): FormMetadata | null => {
+    // Check if all answers are provided
+    if (
+      answers.hasJudgment === null ||
+      answers.hasKambiyo === null ||
+      answers.hasMortgage === null ||
+      answers.isRental === null
+    ) {
+      return null;
+    }
+    const code = getRecommendedFormCode(answers);
+    return formMetadata.find((f) => f.code === code) || null;
+  };
 
   /**
    * Property 1: Wizard Answer Filtering - Judgment
-   * For any wizard state where hasJudgment is answered, filtering the form list
-   * should return only forms where the hasJudgment metadata matches the answer.
    */
   describe('Property 1: Judgment Filtering', () => {
     it('should filter forms by hasJudgment when answered true', () => {
       const answers = createAnswers(true, null, null, null);
       const filtered = filterFormsByAnswers(answers);
-      filtered.forEach((form) => {
+      filtered.forEach((form: FormMetadata) => {
         expect(form.hasJudgment).toBe(true);
       });
     });
@@ -34,7 +57,7 @@ describe('Wizard Filtering Logic', () => {
     it('should filter forms by hasJudgment when answered false', () => {
       const answers = createAnswers(false, null, null, null);
       const filtered = filterFormsByAnswers(answers);
-      filtered.forEach((form) => {
+      filtered.forEach((form: FormMetadata) => {
         expect(form.hasJudgment).toBe(false);
       });
     });
@@ -44,7 +67,7 @@ describe('Wizard Filtering Logic', () => {
         fc.property(fc.boolean(), (hasJudgment) => {
           const answers = createAnswers(hasJudgment, null, null, null);
           const filtered = filterFormsByAnswers(answers);
-          return filtered.every((form) => form.hasJudgment === hasJudgment);
+          return filtered.every((form: FormMetadata) => form.hasJudgment === hasJudgment);
         }),
         { numRuns: 100 }
       );
@@ -53,14 +76,12 @@ describe('Wizard Filtering Logic', () => {
 
   /**
    * Property 2: Wizard Answer Filtering - Kambiyo
-   * For any wizard state where isKambiyo is answered, filtering the form list
-   * should return only forms where the isKambiyo metadata matches the answer.
    */
   describe('Property 2: Kambiyo Filtering', () => {
     it('should filter forms by isKambiyo when answered true', () => {
       const answers = createAnswers(null, true, null, null);
       const filtered = filterFormsByAnswers(answers);
-      filtered.forEach((form) => {
+      filtered.forEach((form: FormMetadata) => {
         expect(form.isKambiyo).toBe(true);
       });
     });
@@ -68,7 +89,7 @@ describe('Wizard Filtering Logic', () => {
     it('should filter forms by isKambiyo when answered false', () => {
       const answers = createAnswers(null, false, null, null);
       const filtered = filterFormsByAnswers(answers);
-      filtered.forEach((form) => {
+      filtered.forEach((form: FormMetadata) => {
         expect(form.isKambiyo).toBe(false);
       });
     });
@@ -78,7 +99,7 @@ describe('Wizard Filtering Logic', () => {
         fc.property(fc.boolean(), (isKambiyo) => {
           const answers = createAnswers(null, isKambiyo, null, null);
           const filtered = filterFormsByAnswers(answers);
-          return filtered.every((form) => form.isKambiyo === isKambiyo);
+          return filtered.every((form: FormMetadata) => form.isKambiyo === isKambiyo);
         }),
         { numRuns: 100 }
       );
@@ -87,14 +108,12 @@ describe('Wizard Filtering Logic', () => {
 
   /**
    * Property 3: Wizard Answer Filtering - Mortgage
-   * For any wizard state where hasMortgage is answered, filtering the form list
-   * should return only forms where the needsMortgage metadata matches the answer.
    */
   describe('Property 3: Mortgage Filtering', () => {
     it('should filter forms by needsMortgage when answered true', () => {
       const answers = createAnswers(null, null, true, null);
       const filtered = filterFormsByAnswers(answers);
-      filtered.forEach((form) => {
+      filtered.forEach((form: FormMetadata) => {
         expect(form.needsMortgage).toBe(true);
       });
     });
@@ -102,7 +121,7 @@ describe('Wizard Filtering Logic', () => {
     it('should filter forms by needsMortgage when answered false', () => {
       const answers = createAnswers(null, null, false, null);
       const filtered = filterFormsByAnswers(answers);
-      filtered.forEach((form) => {
+      filtered.forEach((form: FormMetadata) => {
         expect(form.needsMortgage).toBe(false);
       });
     });
@@ -112,7 +131,7 @@ describe('Wizard Filtering Logic', () => {
         fc.property(fc.boolean(), (hasMortgage) => {
           const answers = createAnswers(null, null, hasMortgage, null);
           const filtered = filterFormsByAnswers(answers);
-          return filtered.every((form) => form.needsMortgage === hasMortgage);
+          return filtered.every((form: FormMetadata) => form.needsMortgage === hasMortgage);
         }),
         { numRuns: 100 }
       );
@@ -121,14 +140,12 @@ describe('Wizard Filtering Logic', () => {
 
   /**
    * Property 4: Wizard Answer Filtering - Rental
-   * For any wizard state where isRental is answered, filtering the form list
-   * should return only forms where the isRental metadata matches the answer.
    */
   describe('Property 4: Rental Filtering', () => {
     it('should filter forms by isRental when answered true', () => {
       const answers = createAnswers(null, null, null, true);
       const filtered = filterFormsByAnswers(answers);
-      filtered.forEach((form) => {
+      filtered.forEach((form: FormMetadata) => {
         expect(form.isRental).toBe(true);
       });
     });
@@ -136,7 +153,7 @@ describe('Wizard Filtering Logic', () => {
     it('should filter forms by isRental when answered false', () => {
       const answers = createAnswers(null, null, null, false);
       const filtered = filterFormsByAnswers(answers);
-      filtered.forEach((form) => {
+      filtered.forEach((form: FormMetadata) => {
         expect(form.isRental).toBe(false);
       });
     });
@@ -146,7 +163,7 @@ describe('Wizard Filtering Logic', () => {
         fc.property(fc.boolean(), (isRental) => {
           const answers = createAnswers(null, null, null, isRental);
           const filtered = filterFormsByAnswers(answers);
-          return filtered.every((form) => form.isRental === isRental);
+          return filtered.every((form: FormMetadata) => form.isRental === isRental);
         }),
         { numRuns: 100 }
       );
@@ -174,7 +191,7 @@ describe('Wizard Filtering Logic', () => {
             const answers = createAnswers(hasJudgment, isKambiyo, hasMortgage, isRental);
             const filtered = filterFormsByAnswers(answers);
             return filtered.every(
-              (form) =>
+              (form: FormMetadata) =>
                 form.hasJudgment === hasJudgment &&
                 form.isKambiyo === isKambiyo &&
                 form.needsMortgage === hasMortgage &&

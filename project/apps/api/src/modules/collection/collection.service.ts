@@ -254,6 +254,13 @@ export class CollectionService {
 
   /**
    * Kapak hesabı (dosya borç özeti) hesapla
+   * 
+   * ⚠️ HESAP YASAĞI: Bu metod faiz hesabı YAPMAZ
+   * Faiz değeri DB'deki calculatedInterest alanından okunur.
+   * Bu alan interest-engine tarafından güncellenir.
+   * 
+   * @see ARCHITECTURE.md - Source of Truth Matrix
+   * @see interest-engine/interest-engine.service.ts
    */
   async calculateCover(
     tenantId: string,
@@ -275,14 +282,10 @@ export class CollectionService {
     const principalAmount = Number(caseData.principalAmount) || 0;
     const principalCurrency = caseData.currency || "TRY";
 
-    // Faiz hesapla (basit hesaplama - gerçek sistemde rule-engine kullanılmalı)
-    let interestAmount = 0;
-    if (caseData.interestRate && caseData.interestStartDate) {
-      const startDate = new Date(caseData.interestStartDate);
-      const days = Math.floor((calcDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-      const rate = Number(caseData.interestRate) / 100;
-      interestAmount = principalAmount * rate * (days / 365);
-    }
+    // ⚠️ FAİZ: DB'den oku - hesaplama YASAK
+    // Bu değer interest-engine tarafından güncellenir.
+    // Güncel faiz için: POST /interest-engine/calculate
+    const interestAmount = Number((caseData as any).calculatedInterest) || 0;
 
     // Masraflar (şimdilik sabit değerler - gerçek sistemde expense tablosundan)
     const expenseAmount = 0;

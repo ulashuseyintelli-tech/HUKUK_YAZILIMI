@@ -90,9 +90,11 @@ export enum RateSourceType {
 // CURRENCY - Para Birimi
 // ═══════════════════════════════════════════════════════════════════════════
 
-export type Currency = 'TRY' | 'USD' | 'EUR' | 'GBP' | 'CHF';
+// Currency ve CurrencyLabels money.ts'den import edilmeli
+// Burada sadece interest-engine'e özgü genişletilmiş currency tipi tanımlıyoruz
+export type InterestCurrency = 'TRY' | 'USD' | 'EUR' | 'GBP' | 'CHF';
 
-export const CurrencyLabels: Record<Currency, string> = {
+export const InterestCurrencyLabels: Record<InterestCurrency, string> = {
   TRY: 'Türk Lirası',
   USD: 'Amerikan Doları',
   EUR: 'Euro',

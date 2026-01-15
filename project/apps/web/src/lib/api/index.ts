@@ -27,6 +27,42 @@ export * as officeApi from './office';
 export { interestEngineApi } from './interest-engine';
 export * from './interest-engine';
 
+// Core Engine API Clients (TEK KAYNAK)
+export { feeEngineApi, formatFee } from './fee-engine';
+export type { FeeComputeRequest, FeeComputeResult, GeneratedFeeItem, AttorneyFeeResult, TariffInfo } from './fee-engine';
+
+export { policyEngineApi, getGateMessage, getGateSeverityColor, getActionLabel } from './policy-engine';
+export type { 
+  ActionCode, 
+  GateCode, 
+  GateSeverity, 
+  GateResult, 
+  PolicyEvaluateRequest, 
+  PolicyEvaluateResult, 
+  AvailableActionsResult,
+  DecisionLogEntry 
+} from './policy-engine';
+
+// Limitation Engine API Client
+export * as limitationEngineApi from './limitation-engine';
+export {
+  checkLimitation,
+  recommendEnforcement,
+  getAllRules as getLimitationRules,
+  getWarningLevels,
+  getWarningColor,
+  getWarningColorClass,
+  formatDaysLeft,
+} from './limitation-engine';
+export type {
+  WarningLevel,
+  LimitationRule,
+  LimitationCheckRequest,
+  LimitationCheckResult,
+  EnforcementRecommendation,
+  WarningLevelInfo,
+} from './limitation-engine';
+
 // Re-export types
 export * from './types';
 
@@ -143,8 +179,13 @@ export const api = {
   exportCase: uyapApi.exportCase,
   validateForExport: uyapApi.validateForExport,
 
-  // Validation
-  getValidationStatus: validationApi.getValidationStatus,
+  // Validation - deprecated fonksiyonlar policyEngineApi'ye yönlendirildi
+  /** @deprecated Use policyEngineApi.checkAllGates() instead */
+  getValidationStatus: async (caseId: string) => {
+    console.warn('⚠️ api.getValidationStatus() is DEPRECATED. Use policyEngineApi.checkAllGates()');
+    const { policyEngineApi } = await import('./policy-engine');
+    return policyEngineApi.checkAllGates(caseId);
+  },
   getCaseInstruments: validationApi.getCaseInstruments,
   getCaseLease: validationApi.getCaseLease,
   getCaseJudgment: validationApi.getCaseJudgment,

@@ -761,58 +761,31 @@ export class SchedulerService {
   /**
    * Her gün gece 02:00'de çalışır
    * Faiz tutarlarını günceller
+   * 
+   * @deprecated Bu cron job devre dışı bırakıldı.
+   * Faiz hesaplaması interest-engine üzerinden yapılmalıdır.
+   * 
+   * Doğru yaklaşım:
+   * 1. interest-engine.calculate() çağrısı yapılır
+   * 2. Sonuç DB'ye projection olarak yazılır
+   * 3. UI/API bu projection'ı okur
+   * 
+   * Bu job aktif edilecekse interest-engine entegrasyonu yapılmalı.
+   * @see ARCHITECTURE.md - Source of Truth Matrix
+   * @see interest-engine/interest-engine.service.ts
    */
-  @Cron('0 2 * * *') // Her gün saat 02:00
+  // @Cron('0 2 * * *') // DEVRE DIŞI - interest-engine kullanılmalı
   async updateInterestAmounts() {
-    this.logger.log('⏰ Faiz güncelleme başladı...');
-
-    try {
-      // Aktif dosyaları al
-      const activeCases = await this.db.case.findMany({
-        where: {
-          caseStatus: { in: ['DERDEST', 'ISLEMDE'] },
-          interestRate: { gt: 0 },
-          interestStartDate: { not: null },
-        },
-        select: {
-          id: true,
-          fileNumber: true,
-          principalAmount: true,
-          interestRate: true,
-          interestStartDate: true,
-          calculatedInterest: true,
-        },
-      });
-
-      this.logger.log(`📋 ${activeCases.length} dosya için faiz hesaplanacak`);
-
-      let updatedCount = 0;
-      const today = new Date();
-
-      for (const caseData of activeCases) {
-        const startDate = new Date(caseData.interestStartDate);
-        const days = Math.floor((today.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
-        
-        if (days <= 0) continue;
-
-        const principal = Number(caseData.principalAmount || 0);
-        const rate = Number(caseData.interestRate || 0);
-        const newInterest = Math.round((principal * rate * days) / (365 * 100) * 100) / 100;
-
-        // Sadece değişiklik varsa güncelle
-        const currentInterest = Number(caseData.calculatedInterest || 0);
-        if (Math.abs(newInterest - currentInterest) > 0.01) {
-          await this.db.case.update({
-            where: { id: caseData.id },
-            data: { calculatedInterest: newInterest },
-          });
-          updatedCount++;
-        }
-      }
-
-      this.logger.log(`✅ ${updatedCount} dosyada faiz güncellendi`);
-    } catch (error) {
-      this.logger.error('Faiz güncelleme hatası:', error);
-    }
+    this.logger.warn('⚠️ updateInterestAmounts() DEPRECATED - interest-engine kullanın');
+    
+    // Bu metod artık hesaplama yapmıyor.
+    // Faiz hesabı için interest-engine.calculate() kullanılmalı.
+    // 
+    // Eski kod referans için yorum olarak bırakıldı:
+    // const newInterest = (principal * rate * days) / (365 * 100)
+    // Bu formül interest-engine/segments/interest-formula.ts'de tek kaynak olarak yaşıyor.
+    
+    this.logger.log('ℹ️ Faiz güncellemesi için interest-engine projection job\'ı implemente edilmeli');
+    return { message: 'DEPRECATED - Use interest-engine', updatedCount: 0 };
   }
 }
