@@ -18,19 +18,19 @@ import { Injectable, Logger } from '@nestjs/common';
 // ============================================================================
 
 export interface MetricLabels {
-  tenant?: string;
-  endpoint?: string;
-  status?: 'success' | 'partial' | 'unavailable' | 'error';
-  errorDomain?: 'interest' | 'fee' | 'policy' | 'validation' | 'network' | 'unknown';
-  errorCode?: string;
-  fallback?: 'true' | 'false';
-  cached?: 'true' | 'false';
+  tenant?: string | undefined;
+  endpoint?: string | undefined;
+  status?: 'success' | 'partial' | 'unavailable' | 'error' | undefined;
+  errorDomain?: 'interest' | 'fee' | 'policy' | 'validation' | 'network' | 'unknown' | undefined;
+  errorCode?: string | undefined;
+  fallback?: 'true' | 'false' | undefined;
+  cached?: 'true' | 'false' | undefined;
   // Phase 3.1.2 etiketleri (gelecek için hazır)
-  coverageStatus?: 'full' | 'partial' | 'none';
-  hasGaps?: 'true' | 'false';
-  hasOverlaps?: 'true' | 'false';
-  segmentsTruncated?: 'true' | 'false';
-  highFeeRatio?: 'true' | 'false';
+  coverageStatus?: 'full' | 'partial' | 'none' | undefined;
+  hasGaps?: 'true' | 'false' | undefined;
+  hasOverlaps?: 'true' | 'false' | undefined;
+  segmentsTruncated?: 'true' | 'false' | undefined;
+  highFeeRatio?: 'true' | 'false' | undefined;
 }
 
 export interface LatencyBucket {

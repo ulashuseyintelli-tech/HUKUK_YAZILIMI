@@ -1,0 +1,83 @@
+# SLO Breach Playbook
+# Phase 7B - Sprint 1
+#
+# SLO ihlali (p95 latency yüksek) tespit edildiğinde çalışacak playbook.
+# Sprint 1'de dry-run only - gerçek auto-action yok.
+
+id: slo-breach
+version: "1.0.0"
+name: "SLO İhlali Playbook"
+description: "p95 latency SLO eşiğini aştığında bildirim gönderir ve escalation planlar."
+
+match:
+  incidentType: SLO_BREACH
+  severity:
+    - WARNING
+    - CRITICAL
+  tenantScope: "*"
+
+priority: 95
+
+# Sprint 1: dry-run only
+dryRun: true
+
+actions:
+  # 1. Bildirim gönder
+  - id: notify-ops
+    type: notification
+    channel: console
+    template: slo_breach_alert
+
+  # 2. Timeout artır (dry-run'da çalışmaz)
+  - id: increase-timeout
+    type: auto_action
+    action: increase_timeout
+    params:
+      dependency: rate_provider
+      multiplier: 1.5
+    safetyPolicy:
+      maxMultiplier: 2
+      allowedRoles:
+        - internal-ops
+        - system
+      cooldownMs: 600000
+    lease:
+      durationMs: 600000
+      autoRollback: true
+      rollbackAction: restore_timeout
+
+  # 3. Cache TTL uzat (dry-run'da çalışmaz)
+  - id: extend-cache-ttl
+    type: auto_action
+    action: extend_cache_ttl
+    params:
+      namespace: rate_provider
+      multiplier: 2
+    safetyPolicy:
+      maxTtlMs: 300000
+      maxMultiplier: 3
+      allowedNamespaces:
+        - rate_provider
+        - tariff_provider
+      allowedRoles:
+        - internal-ops
+        - system
+      cooldownMs: 600000
+    lease:
+      durationMs: 900000
+      autoRollback: true
+      rollbackAction: restore_cache_ttl
+
+  # 4. 20 dakika sonra CRITICAL'a escalate
+  - id: escalate-if-ongoing
+    type: escalation
+    delayMs: 1200000
+    toSeverity: CRITICAL
+    maxEscalations: 2
+
+  # 5. İnsan müdahalesi
+  - id: human-review
+    type: human_action
+    assigneeRole: internal-ops
+    slaMs: 2700000
+    description: "Yavaş sorguları ve bağımlılık gecikmelerini inceleyin. Cache hit oranını kontrol edin."

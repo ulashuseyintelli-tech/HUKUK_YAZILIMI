@@ -184,7 +184,7 @@ export class CalcPreviewRateLimitService {
     capacity: number;
     refillRate: number;
     blocked: boolean;
-    blockedUntil?: string;
+    blockedUntil?: string | undefined;
   } {
     const bucket = this.getOrCreateBucket(tenantId);
     this.refillBucket(bucket);

@@ -71,9 +71,9 @@ export interface CircuitStatus {
   successes: number;
   halfOpenTrials: number;      // HALF_OPEN'da kaç deneme yapıldı
   halfOpenFailures: number;    // HALF_OPEN'da kaç hata oldu
-  lastFailure?: string;
-  lastSuccess?: string;
-  nextRetryAt?: string;
+  lastFailure?: string | undefined;
+  lastSuccess?: string | undefined;
+  nextRetryAt?: string | undefined;
   config: CircuitBreakerConfig;
 }
 
@@ -167,9 +167,9 @@ interface CircuitRecord {
   successes: number;  // Only counted in HALF_OPEN
   halfOpenTrials: number;    // Trial count in HALF_OPEN
   halfOpenFailures: number;  // Failure count in HALF_OPEN
-  lastFailure?: number;
-  lastSuccess?: number;
-  openedAt?: number;
+  lastFailure?: number | undefined;
+  lastSuccess?: number | undefined;
+  openedAt?: number | undefined;
   config: CircuitBreakerConfig;
 }
 

@@ -1,0 +1,236 @@
+# Phase 5.5 - Load Test CI Workflow
+#
+# Nightly load tests + manual trigger
+#
+# @see apps/api/src/modules/calc-preview/load-test/README.md
+
+name: Load Tests
+
+on:
+  schedule:
+    # Nightly at 2 AM UTC
+    - cron: '0 2 * * *'
+  
+  workflow_dispatch:
+    inputs:
+      test_type:
+        description: 'Test type to run'
+        required: true
+        default: 'soak'
+        type: choice
+        options:
+          - soak
+          - burst
+          - chaos
+          - stress
+          - all
+      
+      duration_override:
+        description: 'Duration override (e.g., 10m, 1h)'
+        required: false
+        type: string
+      
+      rps_override:
+        description: 'RPS override'
+        required: false
+        type: number
+
+env:
+  NODE_VERSION: '20'
+  K6_VERSION: 'v0.49.0'
+
+jobs:
+  # ============================================================================
+  # SETUP
+  # ============================================================================
+  setup:
+    runs-on: ubuntu-latest
+    outputs:
+      tests: ${{ steps.determine-tests.outputs.tests }}
+    steps:
+      - name: Determine tests to run
+        id: determine-tests
+        run: |
+          if [ "${{ github.event_name }}" == "schedule" ]; then
+            # Nightly: run soak test only
+            echo 'tests=["soak"]' >> $GITHUB_OUTPUT
+          elif [ "${{ inputs.test_type }}" == "all" ]; then
+            echo 'tests=["soak","burst","chaos"]' >> $GITHUB_OUTPUT
+          else
+            echo 'tests=["${{ inputs.test_type }}"]' >> $GITHUB_OUTPUT
+          fi
+
+  # ============================================================================
+  # LOAD TEST
+  # ============================================================================
+  load-test:
+    needs: setup
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        test: ${{ fromJson(needs.setup.outputs.tests) }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'pnpm'
+      
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+      
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      
+      - name: Setup k6
+        uses: grafana/setup-k6-action@v1
+        with:
+          k6-version: ${{ env.K6_VERSION }}
+      
+      - name: Build API
+        run: pnpm --filter api build
+      
+      - name: Start API (test mode)
+        run: |
+          cd apps/api
+          NODE_ENV=test ENABLE_CHAOS_ENDPOINTS=true npm run start &
+          echo "Waiting for API to start..."
+          sleep 30
+          
+          # Health check
+          for i in {1..10}; do
+            if curl -s http://localhost:3001/health > /dev/null; then
+              echo "API is ready"
+              break
+            fi
+            echo "Waiting... ($i/10)"
+            sleep 5
+          done
+      
+      - name: Run ${{ matrix.test }} test
+        id: run-test
+        run: |
+          cd apps/api/src/modules/calc-preview/load-test/k6
+          
+          # Create artifacts directory
+          mkdir -p artifacts
+          
+          # Run test
+          k6 run \
+            --out json=artifacts/${{ matrix.test }}-results.json \
+            ${{ matrix.test }}-test.js
+          
+          # Check exit code
+          echo "exit_code=$?" >> $GITHUB_OUTPUT
+      
+      - name: Generate HTML report
+        if: always()
+        run: |
+          cd apps/api/src/modules/calc-preview/load-test/k6
+          
+          # Simple HTML generation from JSON
+          if [ -f "artifacts/${{ matrix.test }}-results.json" ]; then
+            echo "Results file exists"
+          fi
+      
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-test-${{ matrix.test }}-results
+          path: |
+            apps/api/src/modules/calc-preview/load-test/k6/artifacts/
+          retention-days: 30
+      
+      - name: Check thresholds
+        if: steps.run-test.outputs.exit_code != '0'
+        run: |
+          echo "::error::Load test ${{ matrix.test }} failed threshold checks"
+          exit 1
+
+  # ============================================================================
+  # SUMMARY
+  # ============================================================================
+  summary:
+    needs: load-test
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: results
+      
+      - name: Generate summary
+        run: |
+          echo "# Load Test Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Test | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          
+          for dir in results/load-test-*; do
+            if [ -d "$dir" ]; then
+              test_name=$(basename "$dir" | sed 's/load-test-//' | sed 's/-results//')
+              
+              # Check if summary file exists
+              if [ -f "$dir/artifacts/${test_name}-test-summary.json" ]; then
+                status=$(jq -r '.status' "$dir/artifacts/${test_name}-test-summary.json")
+                if [ "$status" == "PASSED" ]; then
+                  echo "| $test_name | ✅ PASSED |" >> $GITHUB_STEP_SUMMARY
+                else
+                  echo "| $test_name | ❌ FAILED |" >> $GITHUB_STEP_SUMMARY
+                fi
+              else
+                echo "| $test_name | ⚠️ No results |" >> $GITHUB_STEP_SUMMARY
+              fi
+            fi
+          done
+      
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::warning::One or more load tests failed. Check artifacts for details."
+          # TODO: Add Slack/Teams notification
+
+  # ============================================================================
+  # CLEANUP
+  # ============================================================================
+  cleanup:
+    needs: [load-test, summary]
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Cleanup old artifacts
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            
+            // Get artifacts older than 7 days
+            const artifacts = await github.rest.actions.listArtifactsForRepo({
+              owner,
+              repo,
+              per_page: 100,
+            });
+            
+            const cutoff = new Date();
+            cutoff.setDate(cutoff.getDate() - 7);
+            
+            for (const artifact of artifacts.data.artifacts) {
+              if (artifact.name.startsWith('load-test-') && 
+                  new Date(artifact.created_at) < cutoff) {
+                console.log(`Deleting old artifact: ${artifact.name}`);
+                await github.rest.actions.deleteArtifact({
+                  owner,
+                  repo,
+                  artifact_id: artifact.id,
+                });
+              }
+            }

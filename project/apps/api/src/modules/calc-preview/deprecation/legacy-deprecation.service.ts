@@ -49,8 +49,19 @@ export interface ShadowCompareResult {
   legacyResult: unknown;
   unifiedResult: unknown;
   match: boolean;
-  diff?: string[];
+  diff?: ShadowDiff[];
   timestamp: string;
+}
+
+/**
+ * Shadow diff with severity (gürültü vs gerçek regresyon)
+ */
+export interface ShadowDiff {
+  path: string;
+  legacyValue: unknown;
+  unifiedValue: unknown;
+  severity: 'NOISE' | 'MINOR' | 'MAJOR' | 'CRITICAL';
+  category: 'ROUNDING' | 'ORDERING' | 'FORMAT' | 'VALUE' | 'MISSING' | 'POLICY';
 }
 
 // ============================================================================
@@ -223,6 +234,7 @@ export class LegacyDeprecationService {
 
   /**
    * Record shadow compare result
+   * Normalized diff with severity classification
    */
   recordShadowCompare(params: {
     endpoint: string;
@@ -230,8 +242,8 @@ export class LegacyDeprecationService {
     legacyResult: unknown;
     unifiedResult: unknown;
   }): ShadowCompareResult {
-    const match = this.deepEqual(params.legacyResult, params.unifiedResult);
-    const diff = match ? undefined : this.findDiff(params.legacyResult, params.unifiedResult);
+    const diffs = this.findDiffWithSeverity(params.legacyResult, params.unifiedResult);
+    const match = diffs.length === 0 || diffs.every(d => d.severity === 'NOISE');
     
     const result: ShadowCompareResult = {
       endpoint: params.endpoint,
@@ -239,7 +251,7 @@ export class LegacyDeprecationService {
       legacyResult: params.legacyResult,
       unifiedResult: params.unifiedResult,
       match,
-      diff,
+      diff: diffs.length > 0 ? diffs : undefined,
       timestamp: new Date().toISOString(),
     };
     
@@ -250,10 +262,24 @@ export class LegacyDeprecationService {
       this.shadowResults = this.shadowResults.slice(-this.MAX_SHADOW_RESULTS / 2);
     }
     
-    if (!match) {
-      this.logger.warn(`[Deprecation] Shadow compare MISMATCH: ${params.endpoint}`, {
+    // Log based on severity
+    const criticalDiffs = diffs.filter(d => d.severity === 'CRITICAL');
+    const majorDiffs = diffs.filter(d => d.severity === 'MAJOR');
+    
+    if (criticalDiffs.length > 0) {
+      this.logger.error(`[Deprecation] Shadow compare CRITICAL MISMATCH: ${params.endpoint}`, {
         requestHash: params.requestHash,
-        diff,
+        criticalDiffs,
+      });
+    } else if (majorDiffs.length > 0) {
+      this.logger.warn(`[Deprecation] Shadow compare MAJOR MISMATCH: ${params.endpoint}`, {
+        requestHash: params.requestHash,
+        majorDiffs,
+      });
+    } else if (!match) {
+      this.logger.debug(`[Deprecation] Shadow compare minor diff: ${params.endpoint}`, {
+        requestHash: params.requestHash,
+        diffCount: diffs.length,
       });
     }
     
@@ -261,13 +287,15 @@ export class LegacyDeprecationService {
   }
 
   /**
-   * Get shadow compare stats
+   * Get shadow compare stats with severity breakdown
    */
   getShadowStats(endpoint?: string): {
     total: number;
     matches: number;
     mismatches: number;
     matchRate: number;
+    bySeverity: Record<string, number>;
+    byCategory: Record<string, number>;
     recentMismatches: ShadowCompareResult[];
   } {
     const filtered = endpoint 
@@ -277,11 +305,26 @@ export class LegacyDeprecationService {
     const matches = filtered.filter(r => r.match).length;
     const mismatches = filtered.filter(r => !r.match);
     
+    // Aggregate by severity and category
+    const bySeverity: Record<string, number> = {};
+    const byCategory: Record<string, number> = {};
+    
+    for (const result of filtered) {
+      if (result.diff) {
+        for (const d of result.diff) {
+          bySeverity[d.severity] = (bySeverity[d.severity] || 0) + 1;
+          byCategory[d.category] = (byCategory[d.category] || 0) + 1;
+        }
+      }
+    }
+    
     return {
       total: filtered.length,
       matches,
       mismatches: mismatches.length,
       matchRate: filtered.length > 0 ? matches / filtered.length : 1,
+      bySeverity,
+      byCategory,
       recentMismatches: mismatches.slice(-10),
     };
   }
@@ -390,21 +433,135 @@ export class LegacyDeprecationService {
     return false;
   }
 
-  private findDiff(a: unknown, b: unknown, path: string = ''): string[] {
-    const diffs: string[] = [];
+  /**
+   * Find diffs with severity classification
+   * Separates noise (rounding, ordering) from real regressions
+   */
+  private findDiffWithSeverity(a: unknown, b: unknown, path: string = ''): ShadowDiff[] {
+    const diffs: ShadowDiff[] = [];
     
     if (typeof a !== typeof b) {
-      diffs.push(`${path}: type mismatch (${typeof a} vs ${typeof b})`);
+      diffs.push({
+        path,
+        legacyValue: a,
+        unifiedValue: b,
+        severity: 'MAJOR',
+        category: 'VALUE',
+      });
       return diffs;
     }
     
     if (a === null || b === null) {
       if (a !== b) {
-        diffs.push(`${path}: ${a} vs ${b}`);
+        diffs.push({
+          path,
+          legacyValue: a,
+          unifiedValue: b,
+          severity: 'MAJOR',
+          category: 'VALUE',
+        });
       }
       return diffs;
     }
     
+    // Number comparison with rounding tolerance
+    if (typeof a === 'number' && typeof b === 'number') {
+      if (a !== b) {
+        const diff = Math.abs(a - b);
+        const relDiff = Math.abs(a) > 0 ? diff / Math.abs(a) : diff;
+        
+        // Classify severity based on difference
+        let severity: ShadowDiff['severity'];
+        let category: ShadowDiff['category'];
+        
+        if (diff < 0.01) {
+          // Sub-cent difference → noise (rounding)
+          severity = 'NOISE';
+          category = 'ROUNDING';
+        } else if (relDiff < 0.001) {
+          // < 0.1% relative difference → minor
+          severity = 'MINOR';
+          category = 'ROUNDING';
+        } else if (relDiff < 0.01) {
+          // < 1% relative difference → major
+          severity = 'MAJOR';
+          category = 'VALUE';
+        } else {
+          // > 1% relative difference → critical
+          severity = 'CRITICAL';
+          category = 'VALUE';
+        }
+        
+        diffs.push({ path, legacyValue: a, unifiedValue: b, severity, category });
+      }
+      return diffs;
+    }
+    
+    // String comparison
+    if (typeof a === 'string' && typeof b === 'string') {
+      if (a !== b) {
+        // Check if it's just formatting difference
+        const aNorm = a.toLowerCase().trim();
+        const bNorm = b.toLowerCase().trim();
+        
+        if (aNorm === bNorm) {
+          diffs.push({
+            path,
+            legacyValue: a,
+            unifiedValue: b,
+            severity: 'NOISE',
+            category: 'FORMAT',
+          });
+        } else {
+          diffs.push({
+            path,
+            legacyValue: a,
+            unifiedValue: b,
+            severity: 'MAJOR',
+            category: 'VALUE',
+          });
+        }
+      }
+      return diffs;
+    }
+    
+    // Array comparison
+    if (Array.isArray(a) && Array.isArray(b)) {
+      if (a.length !== b.length) {
+        diffs.push({
+          path,
+          legacyValue: `length: ${a.length}`,
+          unifiedValue: `length: ${b.length}`,
+          severity: 'MAJOR',
+          category: 'VALUE',
+        });
+      }
+      
+      // Check if same elements but different order
+      const aStr = JSON.stringify([...a].sort());
+      const bStr = JSON.stringify([...b].sort());
+      
+      if (aStr === bStr && JSON.stringify(a) !== JSON.stringify(b)) {
+        diffs.push({
+          path,
+          legacyValue: 'order differs',
+          unifiedValue: 'order differs',
+          severity: 'NOISE',
+          category: 'ORDERING',
+        });
+        return diffs;
+      }
+      
+      // Element-by-element comparison
+      const maxLen = Math.max(a.length, b.length);
+      for (let i = 0; i < maxLen; i++) {
+        diffs.push(...this.findDiffWithSeverity(a[i], b[i], `${path}[${i}]`));
+      }
+      
+      return diffs;
+    }
+    
+    // Object comparison
     if (typeof a === 'object' && typeof b === 'object') {
       const aObj = a as Record<string, unknown>;
       const bObj = b as Record<string, unknown>;
@@ -414,11 +571,28 @@ export class LegacyDeprecationService {
         const newPath = path ? `${path}.${key}` : key;
         
         if (!(key in aObj)) {
-          diffs.push(`${newPath}: missing in legacy`);
+          // Check if it's a policy-related field
+          const isPolicyField = ['policy', 'gate', 'warning', 'softWarning'].some(
+            p => key.toLowerCase().includes(p)
+          );
+          
+          diffs.push({
+            path: newPath,
+            legacyValue: undefined,
+            unifiedValue: bObj[key],
+            severity: isPolicyField ? 'CRITICAL' : 'MINOR',
+            category: isPolicyField ? 'POLICY' : 'MISSING',
+          });
         } else if (!(key in bObj)) {
-          diffs.push(`${newPath}: missing in unified`);
+          diffs.push({
+            path: newPath,
+            legacyValue: aObj[key],
+            unifiedValue: undefined,
+            severity: 'MINOR',
+            category: 'MISSING',
+          });
         } else {
-          diffs.push(...this.findDiff(aObj[key], bObj[key], newPath));
+          diffs.push(...this.findDiffWithSeverity(aObj[key], bObj[key], newPath));
         }
       }
       
@@ -426,10 +600,22 @@ export class LegacyDeprecationService {
     }
     
     if (a !== b) {
-      diffs.push(`${path}: ${JSON.stringify(a)} vs ${JSON.stringify(b)}`);
+      diffs.push({
+        path,
+        legacyValue: a,
+        unifiedValue: b,
+        severity: 'MAJOR',
+        category: 'VALUE',
+      });
     }
     
     return diffs;
+  }
+
+  private findDiff(a: unknown, b: unknown, path: string = ''): string[] {
+    // Legacy method - convert to string array for backward compatibility
+    const diffs = this.findDiffWithSeverity(a, b, path);
+    return diffs.map(d => `${d.path}: ${JSON.stringify(d.legacyValue)} vs ${JSON.stringify(d.unifiedValue)} [${d.severity}]`);
   }
 
   private cleanup(): void {

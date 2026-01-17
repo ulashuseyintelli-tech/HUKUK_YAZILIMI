@@ -1,0 +1,21 @@
+{
+  "description": "Valid BLOCK outcome with blocking reasons",
+  "softCheckResult": {
+    "outcome": "BLOCK",
+    "reasons": [
+      {
+        "code": "GATE_CASE_CLOSED",
+        "message": "Dosya kapalı, işlem yapılamaz",
+        "severity": "ERROR",
+        "gateCode": "CASE_CLOSED"
+      }
+    ],
+    "gatesChecked": ["GATE_CASE_CLOSED"],
+    "policyVersion": "2026.1.0",
+    "checkedAt": "2026-01-16T10:00:00Z"
+  },
+  "expectedResult": {
+    "schemaValid": true,
+    "semanticValid": true
+  }
+}

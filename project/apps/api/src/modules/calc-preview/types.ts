@@ -5,9 +5,11 @@
  * Tek request, tek response, tek versiyon seti.
  * 
  * @see docs/single-source-of-truth-architecture.md - Phase 3
+ * @see docs/single-source-of-truth-architecture.md - Phase 6A (Explainable Policy)
  */
 
 import { InterestTypeCode } from '../interest-engine/types/domain.types';
+import { PolicyExplanation } from './explanation/explanation.types';
 
 // ============================================================================
 // REQUEST
@@ -92,6 +94,8 @@ export interface FeePreviewData {
 /**
  * Policy preview - soft gate kontrolü
  * Blocking değil, sadece uyarı
+ * 
+ * Phase 6A: explanations field eklendi
  */
 export interface PolicyPreviewData {
   /** Geçen gate'ler */
@@ -100,6 +104,16 @@ export interface PolicyPreviewData {
   softWarnings: PolicySoftWarning[];
   /** Policy engine version */
   policyVersion: string;
+  
+  // Phase 6A: Explainable Policy Preview
+  /** 
+   * Human-readable explanations for policy outcome.
+   * Always present (never null/undefined).
+   * Empty array if PASS, populated if WARN/BLOCK.
+   * 
+   * @invariant outcome === 'BLOCK' → explanations.length > 0
+   */
+  explanations: PolicyExplanation[];
 }
 
 export interface PolicySoftWarning {
@@ -180,4 +194,8 @@ export interface CalcPreviewResponse {
   // Trace
   requestHash: string;
   timestamp: string;
+  
+  // Phase 6A: Explanation degraded flag
+  /** True if ExplanationService failed and fallback explanation used */
+  explanationsDegraded?: boolean;
 }

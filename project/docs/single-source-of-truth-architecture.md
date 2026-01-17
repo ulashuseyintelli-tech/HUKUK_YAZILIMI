@@ -1,7 +1,7 @@
 # Tek Kaynak Prensibi (Single Source of Truth) - Mimari Dokümanı
 
-> **Durum:** ✅ FAZ 4 TAMAMLANDI (Operasyonel Olgunluk)  
-> **Son Güncelleme:** 2026-01-15  
+> **Durum:** ✅ FAZ 5 TAMAMLANDI (Güvenilirlik + Kanıt + Yönetişim)  
+> **Son Güncelleme:** 2026-01-16  
 > **Hedef:** Frontend'de SIFIR lokal para hesaplaması
 
 ---
@@ -595,6 +595,40 @@ interface CalcPreviewResponse {
 │  ✅ Engine warnings UI'a aktarılıyor                           │
 │  ✅ preEnforcementInterest / postEnforcementInterest ayrımı    │
 │                                                                 │
+│  ═══════════════ PHASE 5.1 METRİKLERİ ═══════════════          │
+│                                                                 │
+│  ✅ TraceBundle her request için üretiliyor                    │
+│  ✅ Sampling: 1% default, force on critical conditions         │
+│  ✅ X-Trace-Id header her response'ta                          │
+│  ✅ PII/KVKK compliant (no raw debtor data)                    │
+│  ✅ Dependency call tracking with evidence                     │
+│  ✅ Trace endpoints: get, download, recent, stats              │
+│                                                                 │
+│  ═══════════════ PHASE 5.2 METRİKLERİ ═══════════════          │
+│                                                                 │
+│  ✅ Golden scenarios: 3+ senaryo tanımlı                       │
+│  ✅ Regression runner: compare + assert + report               │
+│  ✅ Diff classification: NOISE/MINOR/MAJOR/CRITICAL            │
+│  ✅ JUnit XML + JSON rapor üretimi                             │
+│  ✅ Baseline update mekanizması                                │
+│                                                                 │
+│  ═══════════════ PHASE 5.3 METRİKLERİ ═══════════════          │
+│                                                                 │
+│  ✅ FaultInjector: 7 fault mode destekli                       │
+│  ✅ Chaos scenarios: 3+ senaryo tanımlı                        │
+│  ✅ Test-only endpoints (prod'da disabled)                     │
+│  ✅ Breaker/fallback/evidence doğrulama                        │
+│  ✅ ChaosModule.forRoot() - prod'da sıfır saldırı yüzeyi       │
+│                                                                 │
+│  ═══════════════ OPERASYONEL HİJYEN ═══════════════            │
+│                                                                 │
+│  ✅ Trace RBAC: tenant-admin vs internal-ops                   │
+│  ✅ Trace Retention: 7-30 gün, severity-based                  │
+│  ✅ Access Audit: kim hangi trace'i çekti                      │
+│  ✅ Download Rate Limit: 100/hour per user                     │
+│  ✅ Baseline Governance: CODEOWNERS + expiry + audit           │
+│  ✅ known-diffs şişme alarmı (max 10)                          │
+│                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -680,7 +714,7 @@ interface CalcPreviewResponse {
 - `apps/api/src/modules/calc-preview/calc-preview.controller.ts` (guard + endpoints)
 - `apps/api/src/modules/calc-preview/calc-preview.module.ts` (providers)
 
-### 4.3 Circuit Breaker ✅ TAMAMLANDI
+### 4.3 Circuit Breaker ✅ TAMAMLANDI (+ HALF_OPEN Guardrails)
 
 **Uygulanan çözüm:**
 
@@ -707,14 +741,35 @@ interface CalcPreviewResponse {
       └──(successes >= threshold)── HALF_OPEN
    ```
 
-4. **Circuit Breaker Endpoints**
-   - `GET /calc/circuit-breaker/status?dependency=xxx` - Single status
-   - `GET /calc/circuit-breaker/all` - All statuses (ops dashboard)
+4. **HALF_OPEN Guardrails (Flapping Önleme)**
+   - `halfOpenTrialLimit`: Max deneme sayısı (1 değil, 3-5)
+   - `halfOpenFailureThreshold`: Kaç hata sonra re-open
+   - Trial limit aşılırsa → otomatik re-open
+   - Flappy dependency seni delirtmez
 
-5. **Integration**
-   - CalcPreviewService checks circuit before engine calls
-   - Failures recorded automatically
-   - Graceful degradation: CIRCUIT_OPEN error instead of timeout
+5. **Domain-Level Success Validation**
+   - HTTP 200 yetmez, response içeriği de valid olmalı
+   - `recordDomainSuccess(dependency, result, validator)`
+   - Validator: `{ valid: boolean, reason?: string }`
+   - Empty coverage, invalid response → domain failure
+
+6. **Deterministic Fallback with Evidence**
+   ```typescript
+   interface FallbackResult<T> {
+     value: T;
+     source: 'CACHED_STALE' | 'DEFAULT' | 'UNAVAILABLE';
+     evidence: {
+       circuitState: CircuitState;
+       dependency: DependencyName;
+       reason: string;
+       timestamp: string;
+     };
+   }
+   ```
+
+7. **Circuit Breaker Endpoints**
+   - `GET /calc/circuit-breaker/status?dependency=xxx` - Single status (halfOpenTrials dahil)
+   - `GET /calc/circuit-breaker/all` - All statuses (ops dashboard)
 
 **Dosyalar:**
 - `apps/api/src/modules/calc-preview/circuit-breaker/calc-preview-circuit-breaker.service.ts`
@@ -722,7 +777,7 @@ interface CalcPreviewResponse {
 - `apps/api/src/modules/calc-preview/calc-preview.controller.ts` (endpoints)
 - `apps/api/src/modules/calc-preview/calc-preview.module.ts` (providers)
 
-### 4.4 Redis/Distributed Cache ✅ TAMAMLANDI (In-Memory Phase)
+### 4.4 Redis/Distributed Cache ✅ TAMAMLANDI (In-Memory Phase + Guardrails)
 
 **Uygulanan çözüm:**
 
@@ -743,15 +798,28 @@ interface CalcPreviewResponse {
    policy_softcheck:  TTL 5m,  maxSize 200,  stale HAYIR (riskli)
    ```
 
-3. **Cache Endpoints**
-   - `GET /calc/cache/stats` - All namespaces
-   - `GET /calc/cache/stats?namespace=rate_provider` - Single namespace
+3. **Guardrail 1: Key Fingerprint Schemas**
+   - `RateProviderKeyParams`: tenantId + rateType + startDate + endDate + currency + jurisdiction
+   - `TariffProviderKeyParams`: tenantId + tariffCode + asOfDate + jurisdiction
+   - `PolicySoftCheckKeyParams`: tenantId + policyVersion + requestFingerprint
+   - `CoverageMapKeyParams`: tenantId + rateType + startDate + endDate + currency
+   - Her parametre key'e girer, eksik parametre = yanlış cache
 
-4. **Observability**
-   - Hit/miss tracking
-   - Average load time
-   - Eviction count
-   - Negative entry count
+4. **Guardrail 2: Version Source-of-Truth**
+   - `versionRegistry`: tek mekanizmadan version üretimi
+   - `getCurrentVersion(namespace)`: tek kaynak
+   - `updateVersion(namespace, newVersion)`: otomatik invalidation
+   - `getAllVersions()`: tüm namespace'lerin versiyonları
+
+5. **Guardrail 3: Stale Labeling**
+   - `staleHits`: stale hit sayısı (metrics'e)
+   - `staleServedTotal`: toplam stale servis sayısı
+   - `staleServedCount`: entry başına stale servis sayısı
+   - Her stale hit loglanır ve metrics'e işaretlenir
+
+6. **Cache Endpoints**
+   - `GET /calc/cache/stats` - All namespaces (stale metrics dahil)
+   - `GET /calc/cache/stats?namespace=rate_provider` - Single namespace
 
 **Dosyalar:**
 - `apps/api/src/modules/calc-preview/cache/versioned-cache.service.ts`
@@ -764,7 +832,7 @@ interface CalcPreviewResponse {
 - [ ] LRU eviction (FIFO değil)
 - [ ] Cache invalidation on deploy
 
-### 4.5 Legacy Endpoint Deprecation ✅ TAMAMLANDI
+### 4.5 Legacy Endpoint Deprecation ✅ TAMAMLANDI (+ Shadow Compare Guardrails)
 
 **Uygulanan çözüm:**
 
@@ -788,20 +856,32 @@ interface CalcPreviewResponse {
    Link: </calc/preview/light>; rel="successor-version"
    ```
 
-4. **LegacyDeprecationInterceptor**
-   - Adds deprecation headers to responses
-   - Records traffic to deprecated endpoints
-   - Handles 410 Gone / 301 Redirect based on status
+4. **Shadow Compare with Severity Classification**
+   ```typescript
+   interface ShadowDiff {
+     path: string;
+     legacyValue: unknown;
+     unifiedValue: unknown;
+     severity: 'NOISE' | 'MINOR' | 'MAJOR' | 'CRITICAL';
+     category: 'ROUNDING' | 'ORDERING' | 'FORMAT' | 'VALUE' | 'MISSING' | 'POLICY';
+   }
+   ```
+   
+   - **NOISE**: Sub-cent rounding, array ordering, format differences → gürültü, alarm yok
+   - **MINOR**: < 0.1% relative difference, missing non-critical fields
+   - **MAJOR**: 0.1-1% difference, type mismatches
+   - **CRITICAL**: > 1% difference, policy gate differences → gerçek regresyon
 
-5. **Deprecation Endpoints**
+5. **Normalized Diff Logic**
+   - Number comparison: rounding tolerance (< 0.01 = noise)
+   - String comparison: case/trim normalization
+   - Array comparison: ordering vs content difference
+   - Policy fields: otomatik CRITICAL severity
+
+6. **Deprecation Endpoints**
    - `GET /calc/deprecation/traffic` - Traffic stats
-   - `GET /calc/deprecation/shadow` - Shadow compare stats
+   - `GET /calc/deprecation/shadow` - Shadow compare stats (bySeverity, byCategory dahil)
    - `GET /calc/deprecation/kill-switches` - Kill switch statuses
-
-6. **Shadow Compare**
-   - Legacy vs Unified sonuçlarını karşılaştır
-   - Mismatch'leri logla
-   - Match rate tracking
 
 7. **Kill Switch**
    - Emergency revert to legacy
@@ -815,30 +895,481 @@ interface CalcPreviewResponse {
 
 ---
 
-## 9. Phase 5 Yol Haritası (Tam Entegrasyon)
+## 9. Phase 5 Yol Haritası (Güvenilirlik + Kanıt)
 
-### 5.1 PolicyEngineService.softCheck()
+> **Hedef:** Sistemin "ürün"e dönüşmesi için kanıt üretme ve regresyon disiplini
+
+### 5.1 Evidence/Trace Export ✅ TAMAMLANDI
+
+> **"Truth artifact - log değil, kanıt."**
+
+**Uygulanan çözüm:**
+
+1. **TraceBundle Schema**
+   ```typescript
+   interface TraceBundle {
+     meta: TraceMeta;           // traceId, requestId, tenantId, endpoint, timing, version
+     input: TraceInput;         // PII-free fingerprint + normalizedSummary
+     cache: TraceCacheInfo;     // hits, misses, staleServed, byNamespace
+     circuitBreaker: TraceCircuitBreakerInfo;  // byDependency, events
+     rateLimit: TraceRateLimitInfo;  // applied, bucket, remaining
+     dependencies: TraceDependencyCall[];  // name, callId, duration, outcome, evidence
+     policy: TracePolicyInfo;   // softCheck outcome + reasons
+     warnings: TraceWarning[];  // code, severity, message
+     result: TraceResult;       // status (OK|DEGRADED|UNAVAILABLE), totals
+     shadowCompare?: TraceShadowCompare;  // severity, category, diffSummary
+   }
+   ```
+
+2. **TraceContext (Request-Scoped)**
+   - Per-request trace data collection
+   - Methods: `setInput()`, `recordCacheHit()`, `recordCircuitState()`, `startDependencyCall()`, `setResult()`, `finalize()`
+   - PII/KVKK compliant: No raw debtor name, TCKN, address, phone, email
+
+3. **TraceStorageService**
+   - In-memory ring buffer (1000 traces)
+   - Sampling policy: 1% default, force on fallback/critical/circuit-open/degraded
+   - Query methods: `get(traceId)`, `query(params)`, `getRecent(limit)`
+   - Stats: totalStored, producedTotal, persistedTotal, sampledOutTotal
+
+4. **TraceCollectorService**
+   - `traceDependencyCall()` wrapper with domain validation
+   - `recordSkippedCall()` for circuit-open cases
+   - `finalizeAndStore()` with sampling
+
+5. **TraceInterceptor**
+   - Adds `X-Trace-Id` header to response
+   - Attaches TraceContext to request
+   - Finalizes and stores trace on response/error
+   - Force trace via `X-Force-Trace: true` header
+
+6. **Trace Endpoints**
+   - `GET /calc/trace/:traceId` - Get specific trace (trusted/internal-ops)
+   - `GET /calc/trace/:traceId/download` - Download as JSON file
+   - `GET /calc/trace/recent?tenantId=...&severity=...&status=...` - Query traces
+   - `GET /calc/trace/stats` - Storage stats
+
+7. **CalcPreviewService Integration**
+   - TraceContext initialized at request start
+   - Input set with PII-free summary
+   - Dependency calls tracked with outcome + evidence
+   - Cache hits/misses recorded
+   - Circuit breaker states recorded
+   - Policy info recorded
+   - Result set at end
+   - Warnings propagated to trace
+
+**Sampling Policy:**
+```typescript
+const DEFAULT_SAMPLING_POLICY = {
+  defaultRate: 0.01,  // 1%
+  forceOn: {
+    fallbackOutcome: true,
+    criticalShadowDiff: true,
+    circuitOpen: true,
+    degradedResult: true,
+  },
+  forceHeader: 'X-Force-Trace',
+};
+```
+
+**Kullanım alanları:**
+- Debug: "Bu hesap niye böyle çıktı?"
+- Müşteri itirazı: "Kanıt göster"
+- Regression: "Önceki sonuçla karşılaştır"
+- Ops: "Hangi dependency yavaş?"
+
+**Dosyalar:**
+- `apps/api/src/modules/calc-preview/trace/trace.types.ts` - TraceBundle schema
+- `apps/api/src/modules/calc-preview/trace/trace-context.ts` - Request-scoped container
+- `apps/api/src/modules/calc-preview/trace/trace-storage.service.ts` - Ring buffer storage
+- `apps/api/src/modules/calc-preview/trace/trace-collector.service.ts` - Collection wrapper
+- `apps/api/src/modules/calc-preview/trace/trace.interceptor.ts` - NestJS interceptor
+- `apps/api/src/modules/calc-preview/calc-preview.service.ts` - Trace integration
+- `apps/api/src/modules/calc-preview/calc-preview.controller.ts` - Trace endpoints
+- `apps/api/src/modules/calc-preview/calc-preview.module.ts` - Trace providers
+
+### 5.2 Golden Scenarios + Regression Gate ✅ TAMAMLANDI
+
+> **"Tek kaynak yemini"** - Her release'te otomatik doğrulama
+
+**Uygulanan çözüm:**
+
+1. **Scenario Format**
+   ```typescript
+   interface GoldenScenario {
+     id: string;
+     name: string;
+     request: { tenantId: string; payload: CalcPreviewRequest };
+     expect: {
+       status: 'OK' | 'DEGRADED' | 'UNAVAILABLE';
+       tolerances: { moneyAbs: number; moneyRel: number };
+       must: Record<string, unknown>;
+       forbid: Record<string, unknown[]>;
+       traceAssertions: TraceAssertions;
+     };
+   }
+   ```
+
+2. **Baseline Yaklaşımı**
+   - Snapshot baseline: `expected.result.json`, `expected.trace.json`
+   - Kural bazlı assert: `must`, `forbid`, `traceAssertions`
+   - İkisi birlikte çalışır
+
+3. **Compare Stratejisi**
+   - Parasal alanlarda abs <= 0.01 tolerans
+   - Tarih string normalizasyonu
+   - Ordering bağımsız karşılaştırma
+   - Policy alanları değiştiyse otomatik CRITICAL
+
+4. **Diff Severity Classification**
+   - `NOISE`: Sub-cent rounding, ordering → pass
+   - `MINOR`: < 0.1% fark → warn
+   - `MAJOR`: 0.1-1% fark → fail on main
+   - `CRITICAL`: > 1% fark, policy gate → always fail
+
+5. **Reporters**
+   - Console: Renkli, severity bazlı özet
+   - JUnit XML: CI/CD entegrasyonu
+   - JSON: Detaylı rapor
+
+6. **İlk 3 Golden Scenario**
+   - `001-basic-tcmb-avans`: Temel TCMB avans hesaplaması
+   - `002-multi-segment-rate-change`: Oran değişimi, multi-segment
+   - `003-high-fee-ratio-warning`: Düşük anapara, policy warning
+
+**Dosyalar:**
+- `apps/api/src/modules/calc-preview/regression/runner/regression.types.ts`
+- `apps/api/src/modules/calc-preview/regression/runner/regression-runner.ts`
+- `apps/api/src/modules/calc-preview/regression/runner/compare/diff-classifier.ts`
+- `apps/api/src/modules/calc-preview/regression/runner/compare/compare-result.ts`
+- `apps/api/src/modules/calc-preview/regression/runner/compare/compare-trace.ts`
+- `apps/api/src/modules/calc-preview/regression/runner/normalizers/normalize-result.ts`
+- `apps/api/src/modules/calc-preview/regression/runner/normalizers/normalize-trace.ts`
+- `apps/api/src/modules/calc-preview/regression/runner/reporters/console-reporter.ts`
+- `apps/api/src/modules/calc-preview/regression/runner/reporters/junit-reporter.ts`
+- `apps/api/src/modules/calc-preview/regression/scenarios/*.json`
+- `apps/api/src/modules/calc-preview/regression/allowlists/*.json`
+
+### 5.3 Chaos / Fault Injection ✅ TAMAMLANDI
+
+> **"Dayanıklılık ayini"** - Circuit breaker, cache, fallback gerçekten çalışıyor mu?
+
+**Uygulanan çözüm:**
+
+1. **FaultInjectorService**
+   - Dependency bazlı fault injection
+   - Fault modları: DELAY, TIMEOUT, ERROR_500, ERROR_503, INVALID_RESPONSE, PARTIAL_DATA, EMPTY_RESPONSE
+   - Probability ve duration desteği
+   - Auto-cleanup (expired injections)
+
+2. **Chaos Controller (Test-only)**
+   - `POST /calc/chaos/inject` - Fault injection başlat
+   - `DELETE /calc/chaos/inject/:id` - Injection kaldır
+   - `POST /calc/chaos/clear` - Tüm injection'ları temizle
+   - `GET /calc/chaos/status` - Aktif injection'ları listele
+   - ⚠️ `ENABLE_CHAOS_ENDPOINTS=true` gerekli
+
+3. **Chaos Scenario Format**
+   ```typescript
+   interface ChaosScenario {
+     id: string;
+     name: string;
+     inject: FaultInjectionConfig;
+     request?: { tenantId: string; payload: Record<string, unknown> };
+     expect: {
+       'result.status'?: 'OK' | 'DEGRADED' | 'UNAVAILABLE';
+       dependencies?: Record<string, { outcome: DependencyOutcome }>;
+       breaker?: Record<string, { state: CircuitState }>;
+       trace?: { mustContainEvidence?: boolean; maxDurationMs?: number };
+     };
+   }
+   ```
+
+4. **İlk 3 Chaos Scenario**
+   - `C01-rate-provider-timeout`: Timeout → breaker OPEN → fallback evidence
+   - `C02-interest-engine-500`: 500 error → PARTIAL status → fee hesaplanmalı
+   - `C03-fee-engine-latency-spike`: Delay → yavaş ama başarılı
+
+5. **Güvenlik**
+   - Production'da devre dışı (`ENABLE_CHAOS_ENDPOINTS=false`)
+   - ForbiddenException if disabled
+
+**Dosyalar:**
+- `apps/api/src/modules/calc-preview/chaos/chaos.types.ts`
+- `apps/api/src/modules/calc-preview/chaos/fault-injector.service.ts`
+- `apps/api/src/modules/calc-preview/chaos/chaos.controller.ts`
+- `apps/api/src/modules/calc-preview/chaos/scenarios/*.json`
+
+### 5.4 Operasyonel Hijyen + Yönetişim ✅ TAMAMLANDI
+
+> **"Production'da yıllarca sorunsuz yaşasın"**
+
+**1. Chaos Modülünün Prod'dan Fiziken Sökülmesi**
+
+```typescript
+// ChaosModule.forRoot() - Production'da sıfır saldırı yüzeyi
+@Module({})
+export class ChaosModule {
+  static forRoot(): DynamicModule {
+    if (IS_PRODUCTION) {
+      return { module: ChaosModule, controllers: [], providers: [], exports: [] };
+    }
+    // ... test ortamında full modül
+  }
+}
+```
+
+- ENV flag yetmez → prod build'de module hiç compile/import edilmesin
+- Route'lar register edilmesin (sıfır saldırı yüzeyi)
+- `ChaosModule.forTesting()` - test ortamı için her zaman aktif
+
+**2. Trace RBAC + Retention**
+
+```typescript
+// TraceAccessService - Roller
+type TraceAccessRole = 'tenant-admin' | 'internal-ops' | 'system' | 'anonymous';
+
+// Kurallar:
+// - tenant-admin: Sadece kendi tenant'ının trace'lerine erişebilir
+// - internal-ops: Tüm trace'lere erişebilir
+// - anonymous: Erişim YASAK
+
+// TraceRetentionService - Retention
+const DEFAULT_RETENTION = {
+  defaultRetentionMs: 7 * 24 * 60 * 60 * 1000,  // 7 gün
+  severityRetention: {
+    CRITICAL: 30 * 24 * 60 * 60 * 1000,  // 30 gün
+    MAJOR: 14 * 24 * 60 * 60 * 1000,     // 14 gün
+    MINOR: 7 * 24 * 60 * 60 * 1000,      // 7 gün
+    NOISE: 1 * 24 * 60 * 60 * 1000,      // 1 gün
+  },
+  maxTracesPerTenant: 5000,
+};
+```
+
+- Tenant isolation
+- RBAC (tenant-admin vs internal-ops)
+- Retention (7-30 gün, severity-based)
+- Export before delete (CRITICAL traces)
+- Download rate limit (100/hour per user)
+- Download size limit (10MB)
+- Access audit log (kim hangi trace'i çekti)
+
+**3. Baseline Governance**
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    BASELINE GOVERNANCE                          │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│  ✅ Baseline update sadece release branch + CODEOWNERS onayı   │
+│  ✅ Allowlist değişiklikleri audit'li (kim, neden, hangi PR)   │
+│  ✅ known-diffs şişerse alarm (max 10 item)                    │
+│  ✅ Her known-diff için expiry date ZORUNLU (max 30 gün)       │
+│  ✅ Expired diff'ler otomatik fail                             │
+│  ✅ Orphaned baseline kontrolü                                 │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+- `check-governance.ts` - CI'da çalışan governance kontrolleri
+- `GOVERNANCE.md` - Kurallar ve sorumluluklar dokümantasyonu
+- CODEOWNERS entegrasyonu
+
+**Dosyalar:**
+- `apps/api/src/modules/calc-preview/chaos/chaos.module.ts` - Prod exclusion
+- `apps/api/src/modules/calc-preview/trace/trace-access.service.ts` - RBAC
+- `apps/api/src/modules/calc-preview/trace/trace-retention.service.ts` - Retention
+- `apps/api/src/modules/calc-preview/regression/GOVERNANCE.md` - Kurallar
+- `apps/api/src/modules/calc-preview/regression/scripts/check-governance.ts` - CI checks
+
+### 5.5 Gelecek İyileştirmeler (Backlog)
+
+10-20 "golden scenario" ile her release'te preview orchestration output'u karşılaştır:
+
+```typescript
+interface GoldenScenario {
+  id: string;
+  name: string;
+  input: CalcPreviewRequest;
+  expectedOutput: {
+    status: CalcPreviewStatus;
+    interestRange: { min: number; max: number };
+    feeRange: { min: number; max: number };
+    warnings: string[];
+  };
+  tolerance: {
+    interestPercent: number;  // e.g., 0.01 = 1%
+    feePercent: number;
+  };
+}
+```
+
+**CI/CD entegrasyonu:**
+- Her PR'da golden scenarios çalıştır
+- Tolerance dışı sonuç → build fail
+- "Tek kaynak" prensibinin yemin töreni
+
+### 5.3 Chaos / Fault Injection (Mini)
+
+Circuit breaker'ı gerçekten test etmeden güvenmek, paraşütü paketini açmadan uçaktan atlamak gibidir:
+
+```typescript
+interface FaultInjectionConfig {
+  dependency: DependencyName;
+  faultType: 'TIMEOUT' | 'ERROR_500' | 'LATENCY_SPIKE' | 'EMPTY_RESPONSE';
+  duration: number;  // ms
+  probability: number;  // 0-1
+}
+```
+
+**Test senaryoları:**
+- `rate_provider` timeout simülasyonu
+- `tariff_provider` 500 error
+- `interest_engine` latency spike (3x normal)
+
+**Beklenen davranış:**
+- Sistem "ölmeden" degrade etmeli
+- Metrics/alerts çalışmalı
+- Fallback evidence üretmeli
+
+### 5.5 Load / Soak Test ✅ TAMAMLANDI
+
+> "Ferrari'yi dyno'ya sokmadan otoyola çıkma"
+
+**Amaç:** Phase 5'in "mezar taşı" - sistemin sadece doğru değil, uzun süre doğru kalabileceğini kanıtlamak.
+
+**Uygulanan çözüm:**
+
+1. **k6 Test Suite**
+   - `soak-test.js`: 1 saat sabit yük (10 RPS)
+   - `burst-test.js`: Rate limit + burst capacity testi
+   - `chaos-soak-test.js`: Fault injection ile dayanıklılık
+   - `stress-test.js`: Kırılma noktası tespiti
+
+2. **SLO Thresholds**
+   ```
+   Soak:   p95 < 200ms, p99 < 500ms, success > 99%, memory growth < 20%
+   Burst:  p95 < 300ms, p99 < 1000ms, success > 95%, rate limited < 20%
+   Chaos:  p95 < 500ms, p99 < 2000ms, success > 90%, fallback < 15%
+   Stress: p95 < 1000ms, p99 < 3000ms, success > 80%
+   ```
+
+3. **Memory Leak Detection**
+   - Her 1 dakikada heap snapshot
+   - Start vs End karşılaştırması
+   - Growth > 20% → WARNING
+   - Growth > 50% → FAIL
+
+4. **Breaker Flapping Detection**
+   - 5 dakika içinde 4+ state change → FLAP event
+   - Flaps/hour > threshold → FAIL
+
+5. **CI Integration**
+   - Nightly soak test (2 AM UTC)
+   - Manual trigger (soak/burst/chaos/stress)
+   - Artifact upload (30 gün retention)
+   - Summary report (GitHub Actions)
+
+**Dosyalar:**
+- `apps/api/src/modules/calc-preview/load-test/load-test.types.ts`
+- `apps/api/src/modules/calc-preview/load-test/load-test-runner.ts`
+- `apps/api/src/modules/calc-preview/load-test/load-test-reporter.ts`
+- `apps/api/src/modules/calc-preview/load-test/k6/soak-test.js`
+- `apps/api/src/modules/calc-preview/load-test/k6/burst-test.js`
+- `apps/api/src/modules/calc-preview/load-test/k6/chaos-soak-test.js`
+- `.github/workflows/load-test.yml`
+
+**Çalıştırma:**
+```bash
+# Lokal
+k6 run apps/api/src/modules/calc-preview/load-test/k6/soak-test.js
+
+# CI
+gh workflow run load-test.yml -f test_type=soak
+```
+
+---
+
+### 5.6 Contract Tests ✅ TAMAMLANDI
+
+> "Provider response'ları bilinçsizce değiştirilemez."
+
+**Amaç:**
+- Breaking change → CI fail
+- Non-breaking change → allowlist/versiyon bump ile kontrollü geçiş
+- Sadece JSON shape değil, domain semantiği de korunur
+
+**Uygulanan çözüm:**
+
+1. **2 Katmanlı Sözleşme**
+   - Katman A: JSON Schema (Zod) - shape validation
+   - Katman B: Semantic Contract - domain invariants
+
+2. **Rate Provider Contract**
+   - Schema: RateEntry, CoverageInfo, RatesForPeriodResponse
+   - Semantic: DATE_ORDER, OVERLAP_DETECTED, SILENT_GAP, INVALID_CURRENCY
+   - Fixtures: ok-minimal, ok-multi-segment, bad-overlap, bad-gap-silent
+
+3. **Tariff Provider Contract**
+   - Schema: FeeItem, FeeCalculationResult, FeePreviewResponse
+   - Semantic: NEGATIVE_AMOUNT, TOTAL_MISMATCH, MIXED_CURRENCIES, EMPTY_VERSION
+   - Fixtures: ok-minimal, ok-full-breakdown, bad-negative-amount, bad-total-mismatch
+
+4. **Policy Engine Contract**
+   - Schema: PolicyReason, PolicySoftCheckResult
+   - Semantic: BLOCK_WITHOUT_REASONS, PASS_WITH_ERRORS, UNKNOWN_REASON_CODE
+   - Fixtures: ok-pass, ok-warn, ok-block, bad-block-no-reasons, bad-pass-with-errors
+
+5. **CI Integration**
+   - PR'da zorunlu contract tests
+   - Schema değişikliği uyarısı
+   - Live smoke test (staging varsa)
+
+**Dosyalar:**
+- `apps/api/src/modules/calc-preview/contracts/providers/rate-provider/`
+- `apps/api/src/modules/calc-preview/contracts/providers/tariff-provider/`
+- `apps/api/src/modules/calc-preview/contracts/providers/policy-engine/`
+- `.github/workflows/contract-tests.yml`
+
+**Çalıştırma:**
+```bash
+pnpm --filter api test -- --testPathPattern='contracts/providers'
+```
+
+---
+
+### 5.7 Gelecek İyileştirmeler (Backlog)
+
+**Contract Tests v2 (İleri Seviye)**
+- [ ] Schema'yı DTO'dan otomatik üretme
+- [ ] X-Contract-Version header desteği
+- [ ] Live smoke tests (staging)
+
+**PolicyEngineService.softCheck() (Tam Entegrasyon)**
 - [ ] Gerçek policy engine entegrasyonu
 - [ ] Hardcoded gate'lerden kurtulma
 - [ ] Policy version tracking
 
-### 5.2 TBK100 Allocation Preview
+**TBK100 Allocation Preview**
 - [ ] Ödeme mahsubu preview'da
 - [ ] "Tahsilat girince faiz niye değişti" sorusunun cevabı
 - [ ] paymentPreview[] response'a ekleme
 
-### 5.3 bigint Migration (Uzun vadeli)
+**bigint Migration (Uzun vadeli)**
 - [ ] Float TL → bigint kuruş
 - [ ] Tüm sistemde migration
 - [ ] Backward compatibility
 
-### 5.4 Preview Audit Log (Opsiyonel)
-- [ ] Compliance için preview kayıtları
-- [ ] Retention policy
+**Release Reliability Gate**
+- [ ] SLO: success rate / p95 / fallback / stale ratio eşikleri
+- [ ] CRITICAL shadow diff = 0
+- [ ] breaker OPEN spike = fail (ya da manual approval)
 
 ---
 
-## 8. Referanslar
+## 10. Referanslar
 
 - `ARCHITECTURE.md` - Source of Truth Matrix
 - `lib/api/interest-engine.ts` - Interest Engine API Client
@@ -849,3 +1380,216 @@ interface CalcPreviewResponse {
 - `hooks/usePreviewCoordinator.ts` - Preview Coordinator Hook (Unified + Fallback)
 - `components/preview/PreviewStatusBanner.tsx` - Preview Status UI
 - `apps/api/src/modules/calc-preview/` - Unified Preview Backend Module
+- `apps/api/src/modules/calc-preview/trace/` - Trace Bundle System (Phase 5.1)
+- `apps/api/src/modules/calc-preview/regression/` - Golden Scenarios + Regression Gate (Phase 5.2)
+- `apps/api/src/modules/calc-preview/chaos/` - Chaos / Fault Injection (Phase 5.3)
+- `apps/api/src/modules/calc-preview/regression/GOVERNANCE.md` - Baseline Governance (Phase 5.4)
+- `apps/api/src/modules/calc-preview/load-test/` - Load/Soak Test Suite (Phase 5.5)
+- `apps/api/src/modules/calc-preview/contracts/` - Contract Tests (Phase 5.6)
+- `.github/workflows/load-test.yml` - Load Test CI Workflow
+- `.github/workflows/contract-tests.yml` - Contract Tests CI Workflow
+- `apps/api/src/modules/calc-preview/sweep/` - Compile/Lint/Integration Sweep (Phase 5.7)
+- `.github/workflows/sweep.yml` - Sweep CI Workflow
+
+---
+
+## 11. Phase 5.7 - Compile/Lint/Integration Sweep ✅ TAMAMLANDI
+
+> "Kullanılmayan kod yok, çakışan env flag yok, prod build'de test/chaos/debug kalıntısı yok."
+
+### 11.1 TypeScript Strict Mode
+
+`tsconfig.json` güncellemeleri:
+```json
+{
+  "compilerOptions": {
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true
+  }
+}
+```
+
+### 11.2 Environment Flags Registry
+
+Tüm env flag'lerin merkezi kaydı (`sweep/env-flags.ts`):
+- `ENV_FLAG_REGISTRY` - Tüm flag'ler metadata ile
+- `loadEnvConfig()` - Type-safe config loading
+- `validateEnvConfig()` - Production validation
+- `generateEnvFlagTable()` - Markdown documentation
+
+**Kurallar:**
+- Test-only flag → prod build'de yok
+- Aynı anlamda iki flag → birleştir
+- Default davranış açıkça tanımlı
+
+### 11.3 Module Boundary Sweep
+
+Import grafiği analizi (`sweep/module-boundary-sweep.ts`):
+- `NO_UPWARD_IMPORTS`: Internal modules → parent import edemez
+- `NO_CROSS_PROVIDER_IMPORTS`: Provider'lar birbirini göremez
+- `NO_CHAOS_IN_PROD`: Chaos module prod code'da import edilemez
+- `NO_REGRESSION_IN_PROD`: Regression module prod code'da import edilemez
+
+### 11.4 Build Artifact Sweep
+
+Prod build temizlik kontrolü (`sweep/build-artifact-sweep.ts`):
+- chaos/ klasörü yok
+- regression/ klasörü yok
+- .spec.js dosyaları yok
+- FaultInjectorService referansı yok
+- Source map'ler kapalı
+
+### 11.5 Integration Sweep Tests
+
+3 kritik akış testi (`sweep/integration-sweep.spec.ts`):
+1. **Happy Path**: cache hit, breaker CLOSED
+2. **Degraded Path**: rate_provider down, fallback
+3. **Policy Block**: softCheck BLOCK
+
+### 11.6 Production Build Config
+
+`tsconfig.prod.json` - chaos/regression/test exclude:
+```json
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "sourceMap": false
+  },
+  "exclude": [
+    "src/**/*.spec.ts",
+    "src/**/*.test.ts",
+    "src/**/chaos/**",
+    "src/**/regression/**",
+    "src/**/load-test/**",
+    "src/**/contracts/**"
+  ]
+}
+```
+
+### 11.7 CI Workflow
+
+`.github/workflows/sweep.yml`:
+- `typescript-strict`: TypeScript compile check
+- `eslint-architecture`: ESLint architectural rules
+- `module-boundary`: Import graph analysis
+- `build-artifact`: Prod build cleanliness
+- `env-flag-validation`: Env flag usage check
+- `integration-sweep`: 3 flow integration tests
+
+### 11.8 Çıkış Kriterleri
+
+- [x] `npm run build` → warning = 0
+- [x] `npm run lint` → error = 0
+- [x] CI full pipeline → yeşil
+- [x] Prod build'de chaos/regression/test yok
+- [x] Env flag tablosu dokümante
+
+---
+
+## 12. Phase 5 Özet
+
+```
+Phase 5.1 ✅ Trace Bundle (kanıt üretimi)
+Phase 5.2 ✅ Golden Scenarios (tek kaynak yemini)
+Phase 5.3 ✅ Chaos/Fault Injection (dayanıklılık ayini)
+Phase 5.4 ✅ Operasyonel Hijyen (yönetişim + güvenlik)
+Phase 5.5 ✅ Load/Soak Test (dayanıklılık kanıtı)
+Phase 5.6 ✅ Contract Tests (provider schema koruması)
+Phase 5.7 ✅ Compile/Lint/Integration Sweep (temizlik)
+```
+
+**Sonuç:**
+> "Bu platforma feature eklemek güvenli. Çünkü yanlışlıkla eski bir şeyi bozamam."
+
+Phase 6 (ürün genişletme) artık güvenli.
+
+
+---
+
+## Phase 6A: Explainable Policy Preview ✅ BAŞLADI
+
+> "Yeni feature = yeni invariant + yeni kanıt"
+
+**Amaç:** Policy kararlarının (PASS/WARN/BLOCK) arkasındaki gerekçeleri kullanıcıya açıklamak.
+
+### 6A.1 Core Invariant
+
+```
+BLOCK → explanations.length > 0
+```
+
+Her BLOCK kararının en az bir açıklaması OLMALIDIR. Bu invariant runtime'da zorlanır.
+
+### 6A.2 Mimari
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                         CalcPreviewService                                   │
+│                                                                              │
+│  PolicyEngine.softCheck() ──► PolicySoftCheckResult                         │
+│                                    │                                         │
+│                                    ▼                                         │
+│                          ExplanationService.explain()                        │
+│                                    │                                         │
+│                                    ▼                                         │
+│                          PolicyExplanation[]                                 │
+│                                    │                                         │
+│                                    ▼                                         │
+│                          CalcPreviewResponse.policy.explanations             │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+### 6A.3 Bileşenler
+
+| Bileşen | Sorumluluk |
+|---------|------------|
+| `ExplanationService` | Reason code → human-readable açıklama |
+| `ReasonCodeRegistry` | Static mapping (MVP: 10 kod) |
+| `PolicyExplanation` | UX contract interface |
+
+### 6A.4 Trace Event
+
+```typescript
+interface PolicyExplanationGeneratedEvent {
+  eventType: 'POLICY_EXPLANATION_GENERATED';
+  timestamp: string;
+  policyOutcome: 'PASS' | 'WARN' | 'BLOCK';
+  explanationCount: number;
+  reasonCodes: string[];  // PII-free
+  severityCounts: { error: number; warning: number; info: number };
+  fallbackUsed: boolean;
+}
+```
+
+### 6A.5 Degraded Mode
+
+ExplanationService başarısız olursa:
+- Policy outcome korunur (PASS/WARN/BLOCK)
+- `explanationsDegraded: true` flag'i eklenir
+- Fallback explanation döner
+
+### 6A.6 Dosyalar
+
+```
+calc-preview/
+├── explanation/
+│   ├── explanation.types.ts      # Core types
+│   ├── explanation.service.ts    # Main service
+│   ├── reason-code-registry.ts   # MVP codes
+│   └── index.ts                  # Exports
+├── types.ts                      # Updated with PolicyExplanation
+└── calc-preview.service.ts       # Integration
+```
+
+### 6A.7 Contract Updates
+
+- `PolicyExplanationSchema` added to policy-engine contract
+- Semantic validation: `validateBlockHasExplanations()`
+- Semantic validation: `validateExplanationsSeverityOrder()`
+
+---
+
+**Phase 6A Durumu:** ✅ Core implementation complete, tests pending

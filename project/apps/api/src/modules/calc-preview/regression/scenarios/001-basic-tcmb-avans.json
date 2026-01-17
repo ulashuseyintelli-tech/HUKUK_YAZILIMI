@@ -1,0 +1,46 @@
+{
+  "id": "001",
+  "name": "basic-tcmb-avans",
+  "description": "Temel TCMB avans faizi hesaplaması - tek segment, standart durum",
+  "tags": ["tcmb", "avans", "basic"],
+  
+  "request": {
+    "tenantId": "t_demo",
+    "payload": {
+      "principalAmount": 100000,
+      "currency": "TRY",
+      "interestType": "TCMB_AVANS",
+      "startDate": "2025-01-01",
+      "endDate": "2025-06-30",
+      "caseType": "ILAMSIZ",
+      "debtorCount": 1
+    }
+  },
+  
+  "expect": {
+    "status": "OK",
+    "tolerances": {
+      "moneyAbs": 0.01,
+      "moneyRel": 0.000001
+    },
+    "must": {
+      "success": true,
+      "status": "FULL",
+      "interest.estimatedInterest": "number",
+      "interest.currentRate": "number",
+      "interest.days": "number",
+      "fee.estimatedFees": "number",
+      "versions.engineVersion": "string"
+    },
+    "forbid": {
+      "status": ["UNAVAILABLE"],
+      "result.status": ["UNAVAILABLE"]
+    },
+    "traceAssertions": {
+      "noPII": true,
+      "maxDurationMs": 1500,
+      "breakerNeverOpen": ["interest_engine", "fee_engine"],
+      "noFallback": true
+    }
+  }
+}

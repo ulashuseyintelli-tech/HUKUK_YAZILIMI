@@ -15,10 +15,24 @@
  * - Fallback rate monitoring
  * - Dependency latency
  * 
- * @see docs/single-source-of-truth-architecture.md - Phase 4
+ * Phase 5.1: Trace Bundle
+ * - TraceContext per request
+ * - Dependency call tracking
+ * - Cache hit/miss tracking
+ * - Circuit breaker state tracking
+ * - Evidence collection
+ * 
+ * Phase 6A: Explainable Policy Preview
+ * - ExplanationService integration
+ * - Policy explanations in response
+ * 
+ * @see docs/single-source-of-truth-architecture.md - Phase 5
+ * @see .kiro/specs/explainable-policy-preview - Phase 6A
  */
 
-import { Injectable, Logger, Optional } from '@nestjs/common';
+import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
+import { REQUEST } from '@nestjs/core';
+import { Request } from 'express';
 import { createHash } from 'crypto';
 import {
   CalcPreviewRequest,
@@ -37,6 +51,8 @@ import { InterestEngineService } from '../interest-engine/interest-engine.servic
 import { FeeEngineService } from '../fee-engine/fee-engine.service';
 import { CalcPreviewMetricsService } from './metrics/calc-preview-metrics.service';
 import { CalcPreviewCircuitBreakerService } from './circuit-breaker';
+import { TraceCollectorService, TraceContext, RequestWithTrace } from './trace';
+import { ExplanationService } from './explanation';
 
 // ============================================================================
 // VERSION CONSTANTS - Tek kaynak
@@ -67,6 +83,9 @@ export class CalcPreviewService {
     private readonly feeEngine: FeeEngineService,
     @Optional() private readonly metrics?: CalcPreviewMetricsService,
     @Optional() private readonly circuitBreaker?: CalcPreviewCircuitBreakerService,
+    @Optional() private readonly traceCollector?: TraceCollectorService,
+    @Optional() private readonly explanationService?: ExplanationService,
+    @Optional() @Inject(REQUEST) private readonly request?: Request,
   ) {}
 
   /**
@@ -77,6 +96,7 @@ export class CalcPreviewService {
    * 
    * ⚠️ Phase 3.1: Artık GERÇEK engine'leri kullanıyor
    * ⚠️ Phase 4.1: Metrics tracking
+   * ⚠️ Phase 5.1: Trace bundle collection
    */
   async preview(request: CalcPreviewRequest): Promise<CalcPreviewResponse> {
     const startTime = Date.now();
@@ -84,9 +104,38 @@ export class CalcPreviewService {
     const requestHash = this.generateRequestHash(request);
     const timestamp = new Date().toISOString();
     
+    // Phase 5.1: Get trace context from request (set by TraceInterceptor)
+    const traceContext = this.getTraceContext();
+    
+    // Phase 5.1: Set input (PII-free)
+    if (traceContext) {
+      traceContext.setInput({
+        principalAmount: request.principalAmount,
+        currency: request.currency || 'TRY',
+        interestType: request.interestType,
+        startDate: request.startDate,
+        endDate: request.endDate,
+        caseType: request.caseType,
+        debtorCount: request.debtorCount,
+        skipInterest: request.skipInterest,
+        skipFee: request.skipFee,
+        skipPolicy: request.skipPolicy,
+      });
+    }
+    
     // Validation first
     const validationErrors = this.validateRequest(request);
     if (validationErrors.length > 0) {
+      // Phase 5.1: Record validation failure
+      if (traceContext) {
+        traceContext.setResult({ status: 'UNAVAILABLE' });
+        traceContext.addWarning({
+          code: 'VALIDATION_FAILED',
+          severity: 'ERROR',
+          message: validationErrors.map(e => e.code).join(', '),
+        });
+      }
+      
       return {
         success: false,
         status: 'UNAVAILABLE',
@@ -113,6 +162,19 @@ export class CalcPreviewService {
       const cacheHitDuration = Date.now() - startTime;
       this.logger.debug(`[CalcPreview] Cache hit: ${cacheKey}`);
       
+      // Phase 5.1: Record cache hit
+      if (traceContext) {
+        traceContext.recordCacheHit('rate_provider', false, versions.rateTableVersion);
+        traceContext.setResult({ 
+          status: cached.status === 'FULL' ? 'OK' : cached.status === 'PARTIAL' ? 'DEGRADED' : 'UNAVAILABLE',
+          totals: cached.interest || cached.fee ? {
+            interest: cached.interest?.estimatedInterest,
+            fees: cached.fee?.estimatedFees,
+            total: (cached.interest?.estimatedInterest || 0) + (cached.fee?.estimatedFees || 0),
+          } : undefined,
+        });
+      }
+      
       // Phase 4.1: Record cache hit metrics
       if (this.metrics) {
         this.metrics.recordRequest({
@@ -136,6 +198,11 @@ export class CalcPreviewService {
       };
     }
     
+    // Phase 5.1: Record cache miss
+    if (traceContext) {
+      traceContext.recordCacheMiss('rate_provider');
+    }
+    
     const errors: CalcPreviewError[] = [];
     const warnings: CalcPreviewWarning[] = [];
     
@@ -148,11 +215,22 @@ export class CalcPreviewService {
     let feeVersions: { tariffVersion: string; tariffYear: number } | undefined;
     
     // ========================================================================
-    // INTEREST HESAPLAMA - GERÇEK ENGINE (Phase 3.1.1 Enhanced + Circuit Breaker)
+    // INTEREST HESAPLAMA - GERÇEK ENGINE (Phase 3.1.1 Enhanced + Circuit Breaker + Trace)
     // ========================================================================
     if (!request.skipInterest) {
       // Phase 4.3: Check circuit breaker
       const circuitAllowed = this.circuitBreaker?.isCallAllowed('interest_engine') ?? true;
+      
+      // Phase 5.1: Record circuit breaker state
+      if (traceContext && this.circuitBreaker) {
+        const cbStatus = this.circuitBreaker.getStatus('interest_engine');
+        traceContext.recordCircuitState('interest_engine', {
+          state: cbStatus.state,
+          openedAt: cbStatus.nextRetryAt,
+          halfOpenTrials: cbStatus.halfOpenTrials,
+          halfOpenFailures: cbStatus.halfOpenFailures,
+        });
+      }
       
       if (!circuitAllowed) {
         this.logger.warn('[CalcPreview] Interest engine circuit OPEN - skipping');
@@ -161,7 +239,15 @@ export class CalcPreviewService {
           code: 'CIRCUIT_OPEN',
           message: 'Faiz hesaplama servisi geçici olarak erişilemiyor',
         });
+        
+        // Phase 5.1: Record skipped call
+        if (traceContext && this.traceCollector) {
+          this.traceCollector.recordSkippedCall(traceContext, 'interest_engine', 'Circuit breaker OPEN');
+        }
       } else {
+        // Phase 5.1: Track dependency call
+        const depTracker = traceContext?.startDependencyCall('interest_engine');
+        
         try {
           const interestStart = Date.now();
           const result = await this.interestEngine.previewCalculation({
@@ -203,6 +289,9 @@ export class CalcPreviewService {
             };
             interestVersions = result.versions;
             
+            // Phase 5.1: Complete dependency call - SUCCESS
+            depTracker?.complete('SUCCESS', true);
+            
             // Phase 3.1.1: Engine warnings'ı genel warnings'a ekle
             if (result.warnings && result.warnings.length > 0) {
               result.warnings.forEach(w => {
@@ -221,10 +310,24 @@ export class CalcPreviewService {
               code: result.error.code,
               message: result.error.message,
             });
+            
+            // Phase 5.1: Complete dependency call - FALLBACK (domain invalid)
+            depTracker?.complete('FALLBACK', false, {
+              source: 'UNAVAILABLE',
+              circuitState: 'CLOSED',
+              reason: result.error.code,
+            });
           }
         } catch (error) {
           // Phase 4.3: Record failure
           this.circuitBreaker?.recordFailure('interest_engine', error as Error);
+          
+          // Phase 5.1: Complete dependency call - ERROR
+          depTracker?.complete('ERROR', false, {
+            source: 'UNAVAILABLE',
+            circuitState: 'CLOSED',
+            reason: (error as Error).message,
+          });
           
           this.logger.error('[CalcPreview] Interest engine exception:', error);
           errors.push({
@@ -237,11 +340,22 @@ export class CalcPreviewService {
     }
     
     // ========================================================================
-    // FEE HESAPLAMA - GERÇEK ENGINE (+ Circuit Breaker)
+    // FEE HESAPLAMA - GERÇEK ENGINE (+ Circuit Breaker + Trace)
     // ========================================================================
     if (!request.skipFee) {
       // Phase 4.3: Check circuit breaker
       const circuitAllowed = this.circuitBreaker?.isCallAllowed('fee_engine') ?? true;
+      
+      // Phase 5.1: Record circuit breaker state
+      if (traceContext && this.circuitBreaker) {
+        const cbStatus = this.circuitBreaker.getStatus('fee_engine');
+        traceContext.recordCircuitState('fee_engine', {
+          state: cbStatus.state,
+          openedAt: cbStatus.nextRetryAt,
+          halfOpenTrials: cbStatus.halfOpenTrials,
+          halfOpenFailures: cbStatus.halfOpenFailures,
+        });
+      }
       
       if (!circuitAllowed) {
         this.logger.warn('[CalcPreview] Fee engine circuit OPEN - skipping');
@@ -250,7 +364,15 @@ export class CalcPreviewService {
           code: 'CIRCUIT_OPEN',
           message: 'Masraf hesaplama servisi geçici olarak erişilemiyor',
         });
+        
+        // Phase 5.1: Record skipped call
+        if (traceContext && this.traceCollector) {
+          this.traceCollector.recordSkippedCall(traceContext, 'fee_engine', 'Circuit breaker OPEN');
+        }
       } else {
+        // Phase 5.1: Track dependency call
+        const depTracker = traceContext?.startDependencyCall('fee_engine');
+        
         try {
           const feeStart = Date.now();
           const result = this.feeEngine.previewCalculation({
@@ -281,6 +403,9 @@ export class CalcPreviewService {
               breakdown: result.data.breakdown,
             };
             feeVersions = result.versions;
+            
+            // Phase 5.1: Complete dependency call - SUCCESS
+            depTracker?.complete('SUCCESS', true);
           } else if (result.error) {
             this.logger.warn(`[CalcPreview] Fee engine error: ${result.error.code}`);
             errors.push({
@@ -288,10 +413,24 @@ export class CalcPreviewService {
               code: result.error.code,
               message: result.error.message,
             });
+            
+            // Phase 5.1: Complete dependency call - FALLBACK
+            depTracker?.complete('FALLBACK', false, {
+              source: 'UNAVAILABLE',
+              circuitState: 'CLOSED',
+              reason: result.error.code,
+            });
           }
         } catch (error) {
           // Phase 4.3: Record failure
           this.circuitBreaker?.recordFailure('fee_engine', error as Error);
+          
+          // Phase 5.1: Complete dependency call - ERROR
+          depTracker?.complete('ERROR', false, {
+            source: 'UNAVAILABLE',
+            circuitState: 'CLOSED',
+            reason: (error as Error).message,
+          });
           
           this.logger.error('[CalcPreview] Fee engine exception:', error);
           errors.push({
@@ -304,11 +443,39 @@ export class CalcPreviewService {
     }
     
     // ========================================================================
-    // POLICY PREVIEW (soft gates)
+    // POLICY PREVIEW (soft gates + Trace + Phase 6A Explanations)
     // ========================================================================
+    let explanationsDegraded = false;
+    
     if (!request.skipPolicy) {
+      // Phase 5.1: Track policy call
+      const depTracker = traceContext?.startDependencyCall('policy_engine');
+      
       try {
-        policyData = this.calculatePolicyPreview(request, interestData, feeData);
+        const policyResult = this.calculatePolicyPreview(request, interestData, feeData);
+        policyData = policyResult;
+        
+        // Phase 6A: Track if explanations are degraded
+        // Check if any explanation has EXPLANATION_SERVICE_UNAVAILABLE code
+        explanationsDegraded = policyResult.explanations.some(
+          e => e.reasonCode === 'EXPLANATION_SERVICE_UNAVAILABLE'
+        );
+        
+        // Phase 5.1: Record policy info
+        if (traceContext) {
+          traceContext.recordPolicy({
+            softCheck: {
+              outcome: policyData.softWarnings.length > 0 ? 'WARN' : 'PASS',
+              reasons: policyData.softWarnings.map(sw => ({
+                code: sw.gateCode,
+                severity: sw.severity === 'warning' ? 'warning' : 'info',
+              })),
+            },
+          });
+        }
+        
+        // Phase 5.1: Complete dependency call - SUCCESS
+        depTracker?.complete('SUCCESS', true);
         
         // Policy soft warnings'ı genel warnings'a ekle
         if (policyData.softWarnings.length > 0) {
@@ -322,6 +489,9 @@ export class CalcPreviewService {
           });
         }
       } catch (error) {
+        // Phase 5.1: Complete dependency call - ERROR
+        depTracker?.complete('ERROR', false);
+        
         this.logger.error('[CalcPreview] Policy error:', error);
         warnings.push({
           domain: 'policy',
@@ -359,6 +529,29 @@ export class CalcPreviewService {
     const durationMs = Date.now() - startTime;
     this.logger.log(`[CalcPreview] Completed in ${durationMs}ms, status: ${status}`);
     
+    // Phase 5.1: Set final result in trace
+    if (traceContext) {
+      const traceStatus = status === 'FULL' ? 'OK' : status === 'PARTIAL' ? 'DEGRADED' : 'UNAVAILABLE';
+      traceContext.setResult({
+        status: traceStatus,
+        totals: {
+          interest: interestData?.estimatedInterest,
+          fees: feeData?.estimatedFees,
+          total: (interestData?.estimatedInterest || 0) + (feeData?.estimatedFees || 0),
+        },
+        breakdownTruncated: interestData?.segmentsMeta?.truncated,
+      });
+      
+      // Add warnings to trace
+      warnings.forEach(w => {
+        traceContext.addWarning({
+          code: w.code,
+          severity: w.severity === 'warning' ? 'WARN' : 'INFO',
+          message: w.message,
+        });
+      });
+    }
+    
     const response: CalcPreviewResponse = {
       success: status !== 'UNAVAILABLE',
       status,
@@ -374,6 +567,8 @@ export class CalcPreviewService {
       cacheExpiry: new Date(Date.now() + this.CACHE_TTL_MS).toISOString(),
       requestHash,
       timestamp,
+      // Phase 6A: Explanation degraded flag
+      explanationsDegraded,
     };
     
     // ========================================================================
@@ -525,6 +720,8 @@ export class CalcPreviewService {
   /**
    * Policy preview - soft gate kontrolü
    * Blocking değil, sadece uyarı verir
+   * 
+   * Phase 6A: ExplanationService entegrasyonu
    */
   private calculatePolicyPreview(
     request: CalcPreviewRequest,
@@ -586,11 +783,42 @@ export class CalcPreviewService {
       }
     }
     
+    // Phase 6A: Generate explanations using ExplanationService
+    const outcome = softWarnings.length > 0 ? 'WARN' : 'PASS';
+    const explanationResult = this.generateExplanations(outcome, softWarnings);
+    
     return {
       passedGates,
       softWarnings,
       policyVersion: POLICY_VERSION,
+      explanations: explanationResult.explanations,
     };
+  }
+
+  /**
+   * Phase 6A: Generate explanations from soft warnings
+   * Uses ExplanationService if available, otherwise returns empty array
+   */
+  private generateExplanations(
+    outcome: 'PASS' | 'WARN' | 'BLOCK',
+    softWarnings: PolicySoftWarning[],
+  ): { explanations: import('./explanation').PolicyExplanation[]; degraded: boolean } {
+    if (!this.explanationService) {
+      // ExplanationService not available - return empty explanations
+      return { explanations: [], degraded: false };
+    }
+
+    // Convert soft warnings to PolicyReason format for ExplanationService
+    const reasons = softWarnings.map(sw => ({
+      code: sw.gateCode,
+      message: sw.message,
+      severity: sw.severity === 'warning' ? 'WARNING' : 'INFO',
+    }));
+
+    return this.explanationService.explain({
+      outcome,
+      reasons,
+    });
   }
 
   /**
@@ -783,5 +1011,17 @@ export class CalcPreviewService {
     });
     
     return createHash('md5').update(normalized).digest('hex').substring(0, 12);
+  }
+
+  // ============================================================================
+  // TRACE HELPERS (Phase 5.1)
+  // ============================================================================
+
+  /**
+   * Get trace context from request (set by TraceInterceptor)
+   */
+  private getTraceContext(): TraceContext | undefined {
+    if (!this.request) return undefined;
+    return (this.request as RequestWithTrace).traceContext;
   }
 }

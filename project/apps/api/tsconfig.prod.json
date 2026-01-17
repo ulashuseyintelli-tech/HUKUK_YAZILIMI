@@ -1,0 +1,44 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "sourceMap": false,
+    "removeComments": true
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    
+    // Phase 5.7 - Test/Chaos/Regression exclusions
+    "src/**/*.spec.ts",
+    "src/**/*.test.ts",
+    "src/**/__test__/**",
+    "src/**/__tests__/**",
+    "src/**/chaos/**",
+    "src/**/regression/**",
+    "src/**/load-test/**",
+    "src/**/contracts/**",
+    
+    // Legacy exclusions
+    "src/modules/icrabot/admin/**/*",
+    "src/modules/icrabot/bundle/**/*",
+    "src/modules/icrabot/compute/**/*",
+    "src/modules/icrabot/config/**/*",
+    "src/modules/icrabot/decision/**/*",
+    "src/modules/icrabot/degraded-mode/**/*",
+    "src/modules/icrabot/enterprise/**/*",
+    "src/modules/icrabot/export/**/*",
+    "src/modules/icrabot/extractor/**/*",
+    "src/modules/icrabot/health/**/*",
+    "src/modules/icrabot/mvp/**/*",
+    "src/modules/icrabot/ops/**/*",
+    "src/modules/icrabot/plan/**/*",
+    "src/modules/icrabot/recorder/**/*",
+    "src/modules/icrabot/recipes/**/*",
+    "src/modules/icrabot/runner/**/*",
+    "src/modules/icrabot/scheduler/**/*",
+    "src/modules/icrabot/types/**/*",
+    "src/modules/icrabot/ui-worker/**/*",
+    "src/modules/icrabot/case-lock/**/*",
+    "src/modules/icrabot/*.ts"
+  ]
+}

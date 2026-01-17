@@ -1,0 +1,29 @@
+{
+  "description": "Valid WARN outcome with warning reasons",
+  "softCheckResult": {
+    "outcome": "WARN",
+    "reasons": [
+      {
+        "code": "POLICY_HIGH_AMOUNT",
+        "message": "Alacak tutarı yüksek, dikkatli ilerleyin",
+        "severity": "WARNING",
+        "context": {
+          "amount": 1000000,
+          "threshold": 500000
+        }
+      },
+      {
+        "code": "INFO_FIRST_CALCULATION",
+        "message": "Bu dosya için ilk hesaplama",
+        "severity": "INFO"
+      }
+    ],
+    "gatesChecked": ["GATE_CASE_CLOSED", "GATE_UNPAID_EXPENSE", "GATE_NO_POWER_OF_ATTORNEY"],
+    "policyVersion": "2026.1.0",
+    "checkedAt": "2026-01-16T10:00:00Z"
+  },
+  "expectedResult": {
+    "schemaValid": true,
+    "semanticValid": true
+  }
+}

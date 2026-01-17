@@ -1,0 +1,14 @@
+{
+  "description": "Valid PASS outcome with no blocking reasons",
+  "softCheckResult": {
+    "outcome": "PASS",
+    "reasons": [],
+    "gatesChecked": ["GATE_CASE_CLOSED", "GATE_UNPAID_EXPENSE"],
+    "policyVersion": "2026.1.0",
+    "checkedAt": "2026-01-16T10:00:00Z"
+  },
+  "expectedResult": {
+    "schemaValid": true,
+    "semanticValid": true
+  }
+}

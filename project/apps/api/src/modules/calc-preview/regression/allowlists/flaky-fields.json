@@ -1,0 +1,74 @@
+{
+  "description": "Karşılaştırmadan çıkarılacak veya normalize edilecek alanlar",
+  "version": "1.0.0",
+  "updatedAt": "2026-01-16",
+  
+  "flakyFields": [
+    {
+      "path": "timestamp",
+      "reason": "Her request'te farklı",
+      "action": "ignore"
+    },
+    {
+      "path": "requestHash",
+      "reason": "Request'e bağlı, karşılaştırma için gereksiz",
+      "action": "ignore"
+    },
+    {
+      "path": "cacheKey",
+      "reason": "Version'a bağlı, değişebilir",
+      "action": "ignore"
+    },
+    {
+      "path": "cacheExpiry",
+      "reason": "Zamana bağlı",
+      "action": "ignore"
+    },
+    {
+      "path": "meta.traceId",
+      "reason": "Her request'te farklı UUID",
+      "action": "ignore"
+    },
+    {
+      "path": "meta.requestId",
+      "reason": "Her request'te farklı",
+      "action": "ignore"
+    },
+    {
+      "path": "meta.startedAt",
+      "reason": "Zamana bağlı",
+      "action": "ignore"
+    },
+    {
+      "path": "meta.finishedAt",
+      "reason": "Zamana bağlı",
+      "action": "ignore"
+    },
+    {
+      "path": "meta.durationMs",
+      "reason": "Performansa bağlı, değişken",
+      "action": "ignore"
+    },
+    {
+      "path": "dependencies.*.callId",
+      "reason": "Her call'da farklı UUID",
+      "action": "ignore"
+    },
+    {
+      "path": "dependencies.*.startedAt",
+      "reason": "Zamana bağlı",
+      "action": "ignore"
+    },
+    {
+      "path": "dependencies.*.durationMs",
+      "reason": "Performansa bağlı",
+      "action": "ignore"
+    }
+  ],
+  
+  "notes": [
+    "ignore: Alan karşılaştırmadan tamamen çıkarılır",
+    "normalize: Alan normalize edildikten sonra karşılaştırılır",
+    "Wildcard (*) desteklenir: dependencies.*.callId"
+  ]
+}

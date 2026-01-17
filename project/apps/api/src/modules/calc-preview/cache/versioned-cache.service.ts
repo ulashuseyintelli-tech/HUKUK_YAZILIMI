@@ -47,7 +47,7 @@ export interface CacheEntry<T> {
   createdAt: number;
   expiresAt: number;
   isNegative: boolean;
-  loadTimeMs?: number;
+  loadTimeMs?: number | undefined;
   keyFingerprint: string;  // Guardrail 1: tam key fingerprint
   staleServedCount: number; // Guardrail 3: stale servis sayısı
 }
@@ -307,7 +307,7 @@ export class VersionedCacheService {
     namespace: CacheNamespace,
     key: string,
     version: string,
-  ): { hit: boolean; value?: T; stale?: boolean; keyFingerprint?: string } {
+  ): { hit: boolean; value?: T | undefined; stale?: boolean | undefined; keyFingerprint?: string | undefined } {
     const cache = this.caches.get(namespace);
     const stats = this.stats.get(namespace);
     

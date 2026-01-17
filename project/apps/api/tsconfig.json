@@ -17,6 +17,12 @@
     "strictBindCallApply": true,
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": true,
+    
+    // Phase 5.7 - Strict mode additions
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
     "paths": {
       "@/*": ["src/*"],
       "@shared/types": ["../../packages/types/src"],

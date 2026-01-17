@@ -1,0 +1,43 @@
+{
+  "id": "C01",
+  "name": "rate-provider-timeout-opens-breaker",
+  "description": "Rate provider timeout - circuit breaker OPEN'a geçmeli, fallback evidence üretmeli",
+  "tags": ["timeout", "breaker", "rate_provider"],
+  
+  "inject": {
+    "dependency": "rate_provider",
+    "mode": "TIMEOUT",
+    "timeoutMs": 10000,
+    "durationMs": 60000
+  },
+  
+  "request": {
+    "tenantId": "t_chaos_test",
+    "payload": {
+      "principalAmount": 50000,
+      "currency": "TRY",
+      "interestType": "TCMB_AVANS",
+      "startDate": "2025-01-01",
+      "endDate": "2025-03-01",
+      "caseType": "ILAMSIZ",
+      "debtorCount": 1
+    }
+  },
+  
+  "expect": {
+    "result.status": "DEGRADED",
+    "dependencies": {
+      "rate_provider": { "outcome": "FALLBACK" }
+    },
+    "breaker": {
+      "rate_provider": { "state": "OPEN" }
+    },
+    "trace": {
+      "mustContainEvidence": true,
+      "maxDurationMs": 15000
+    },
+    "uxGuidance": {
+      "recommendedAction": "PROCEED"
+    }
+  }
+}

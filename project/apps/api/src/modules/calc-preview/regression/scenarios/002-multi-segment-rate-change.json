@@ -1,0 +1,43 @@
+{
+  "id": "002",
+  "name": "multi-segment-rate-change",
+  "description": "TCMB oran değişimi olan dönem - birden fazla segment",
+  "tags": ["tcmb", "multi-segment", "rate-change"],
+  
+  "request": {
+    "tenantId": "t_demo",
+    "payload": {
+      "principalAmount": 250000,
+      "currency": "TRY",
+      "interestType": "TCMB_AVANS",
+      "startDate": "2024-01-01",
+      "endDate": "2025-01-15",
+      "caseType": "ILAMSIZ",
+      "debtorCount": 1
+    }
+  },
+  
+  "expect": {
+    "status": "OK",
+    "tolerances": {
+      "moneyAbs": 0.01,
+      "moneyRel": 0.000001
+    },
+    "must": {
+      "success": true,
+      "status": "FULL",
+      "interest.estimatedInterest": "number",
+      "interest.segments": "object"
+    },
+    "forbid": {
+      "status": ["UNAVAILABLE"],
+      "interest.coverage.hasGaps": [true]
+    },
+    "traceAssertions": {
+      "noPII": true,
+      "maxDurationMs": 2000,
+      "breakerNeverOpen": ["interest_engine", "fee_engine", "rate_provider"],
+      "noFallback": true
+    }
+  }
+}

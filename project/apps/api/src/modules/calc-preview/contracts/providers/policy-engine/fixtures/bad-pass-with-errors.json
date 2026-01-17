@@ -1,0 +1,22 @@
+{
+  "description": "Invalid: PASS outcome with ERROR severity reasons",
+  "softCheckResult": {
+    "outcome": "PASS",
+    "reasons": [
+      {
+        "code": "GATE_UNPAID_EXPENSE",
+        "message": "Ödenmemiş masraf var",
+        "severity": "ERROR"
+      }
+    ],
+    "gatesChecked": ["GATE_UNPAID_EXPENSE"],
+    "policyVersion": "2026.1.0",
+    "checkedAt": "2026-01-16T10:00:00Z"
+  },
+  "expectedResult": {
+    "schemaValid": true,
+    "semanticValid": false,
+    "expectedViolations": ["PASS_WITH_ERRORS"]
+  },
+  "note": "PASS should not have ERROR/CRITICAL reasons - inconsistent state"
+}

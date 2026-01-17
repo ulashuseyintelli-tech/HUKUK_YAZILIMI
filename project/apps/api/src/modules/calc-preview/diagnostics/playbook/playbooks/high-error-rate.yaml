@@ -1,0 +1,63 @@
+# High Error Rate Playbook
+# Phase 7B - Sprint 1
+#
+# Yüksek hata oranı tespit edildiğinde çalışacak playbook.
+# Sprint 1'de dry-run only - gerçek auto-action yok.
+
+id: high-error-rate
+version: "1.0.0"
+name: "Yüksek Hata Oranı Playbook"
+description: "Başarı oranı düştüğünde bildirim gönderir ve escalation planlar."
+
+match:
+  incidentType: HIGH_ERROR_RATE
+  severity:
+    - WARNING
+    - CRITICAL
+  tenantScope: "*"
+
+priority: 90
+
+# Sprint 1: dry-run only
+dryRun: true
+
+actions:
+  # 1. Bildirim gönder
+  - id: notify-ops
+    type: notification
+    channel: console
+    template: error_rate_alert
+
+  # 2. Stale serve aktif et (dry-run'da çalışmaz)
+  - id: enable-stale-serve
+    type: auto_action
+    action: enable_stale_serve
+    params:
+      namespace: rate_provider
+      enabled: true
+    safetyPolicy:
+      allowedNamespaces:
+        - rate_provider
+        - tariff_provider
+      allowedRoles:
+        - internal-ops
+        - system
+      cooldownMs: 600000
+    lease:
+      durationMs: 600000
+      autoRollback: true
+      rollbackAction: disable_stale_serve
+
+  # 3. 15 dakika sonra CRITICAL'a escalate
+  - id: escalate-if-ongoing
+    type: escalation
+    delayMs: 900000
+    toSeverity: CRITICAL
+    maxEscalations: 2
+
+  # 4. İnsan müdahalesi
+  - id: human-review
+    type: human_action
+    assigneeRole: internal-ops
+    slaMs: 1800000
+    description: "Hata loglarını inceleyin. En sık görülen hata tiplerini belirleyin ve kök nedeni araştırın."

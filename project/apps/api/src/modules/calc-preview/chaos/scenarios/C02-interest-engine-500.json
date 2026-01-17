@@ -1,0 +1,37 @@
+{
+  "id": "C02",
+  "name": "interest-engine-500-error",
+  "description": "Interest engine 500 hatası - PARTIAL status, fee hesaplanmalı",
+  "tags": ["error", "partial", "interest_engine"],
+  
+  "inject": {
+    "dependency": "interest_engine",
+    "mode": "ERROR_500",
+    "errorMessage": "Internal server error simulation",
+    "durationMs": 60000
+  },
+  
+  "request": {
+    "tenantId": "t_chaos_test",
+    "payload": {
+      "principalAmount": 100000,
+      "currency": "TRY",
+      "interestType": "LEGAL_3095",
+      "startDate": "2025-01-01",
+      "endDate": "2025-06-01",
+      "caseType": "ILAMSIZ",
+      "debtorCount": 1
+    }
+  },
+  
+  "expect": {
+    "result.status": "DEGRADED",
+    "dependencies": {
+      "interest_engine": { "outcome": "ERROR" },
+      "fee_engine": { "outcome": "SUCCESS" }
+    },
+    "trace": {
+      "mustContainEvidence": true
+    }
+  }
+}

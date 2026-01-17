@@ -25,7 +25,22 @@
  * - LegacyDeprecationService
  * - LegacyDeprecationInterceptor
  * 
- * @see docs/single-source-of-truth-architecture.md - Phase 4
+ * Phase 5.1: Trace Bundle
+ * - TraceContext (request-scoped)
+ * - TraceStorageService
+ * - TraceCollectorService
+ * - TraceInterceptor
+ * 
+ * Phase 6A: Explainable Policy Preview
+ * - ExplanationService
+ * - ReasonCodeRegistry
+ * 
+ * Phase 7A: Self-serve Diagnostics
+ * - DiagnosticsModule
+ * 
+ * @see docs/single-source-of-truth-architecture.md - Phase 5
+ * @see .kiro/specs/explainable-policy-preview - Phase 6A
+ * @see .kiro/specs/self-serve-diagnostics - Phase 7A
  */
 
 import { Module } from '@nestjs/common';
@@ -36,6 +51,9 @@ import { CalcPreviewRateLimitService, CalcPreviewRateLimitGuard } from './rate-l
 import { CalcPreviewCircuitBreakerService } from './circuit-breaker';
 import { VersionedCacheService } from './cache';
 import { LegacyDeprecationService, LegacyDeprecationInterceptor } from './deprecation';
+import { TraceContext, TraceStorageService, TraceCollectorService, TraceInterceptor } from './trace';
+import { ExplanationService, ReasonCodeRegistry } from './explanation';
+import { DiagnosticsModule } from './diagnostics';
 import { InterestEngineModule } from '../interest-engine/interest-engine.module';
 import { FeeEngineModule } from '../fee-engine/fee-engine.module';
 
@@ -43,6 +61,7 @@ import { FeeEngineModule } from '../fee-engine/fee-engine.module';
   imports: [
     InterestEngineModule,
     FeeEngineModule,
+    DiagnosticsModule,
   ],
   controllers: [CalcPreviewController],
   providers: [
@@ -54,6 +73,14 @@ import { FeeEngineModule } from '../fee-engine/fee-engine.module';
     VersionedCacheService,
     LegacyDeprecationService,
     LegacyDeprecationInterceptor,
+    // Phase 5.1: Trace
+    TraceContext,
+    TraceStorageService,
+    TraceCollectorService,
+    TraceInterceptor,
+    // Phase 6A: Explanation
+    ExplanationService,
+    ReasonCodeRegistry,
   ],
   exports: [
     CalcPreviewService,
@@ -62,6 +89,14 @@ import { FeeEngineModule } from '../fee-engine/fee-engine.module';
     CalcPreviewCircuitBreakerService,
     VersionedCacheService,
     LegacyDeprecationService,
+    // Phase 5.1: Trace
+    TraceStorageService,
+    TraceCollectorService,
+    // Phase 6A: Explanation
+    ExplanationService,
+    ReasonCodeRegistry,
+    // Phase 7A: Diagnostics
+    DiagnosticsModule,
   ],
 })
 export class CalcPreviewModule {}

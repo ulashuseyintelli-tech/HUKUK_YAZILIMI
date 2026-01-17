@@ -1,0 +1,17 @@
+{
+  "description": "Parasal ve yüzdesel toleranslar",
+  "version": "1.0.0",
+  "updatedAt": "2026-01-16",
+  
+  "tolerances": {
+    "moneyAbsolute": 0.01,
+    "moneyRelative": 0.000001,
+    "percentAbsolute": 0.01
+  },
+  
+  "notes": [
+    "moneyAbsolute: 1 kuruş tolerans (0.01 TRY)",
+    "moneyRelative: 0.0001% göreli tolerans",
+    "percentAbsolute: 0.01% mutlak tolerans (faiz oranları için)"
+  ]
+}

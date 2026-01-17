@@ -1,0 +1,14 @@
+{
+  "description": "Bilinen ve kabul edilen farklar",
+  "version": "1.0.0",
+  "updatedAt": "2026-01-16",
+  
+  "knownDiffs": [
+  ],
+  
+  "notes": [
+    "Bu dosya geçici olarak kabul edilen farkları içerir",
+    "Her diff için bir expiry date belirlenmelidir",
+    "Expired diff'ler otomatik olarak fail olur"
+  ]
+}

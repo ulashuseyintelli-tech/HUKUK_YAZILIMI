@@ -1,0 +1,37 @@
+{
+  "id": "C03",
+  "name": "fee-engine-latency-spike",
+  "description": "Fee engine yavaşlama - timeout olmadan tamamlanmalı ama yavaş",
+  "tags": ["latency", "delay", "fee_engine"],
+  
+  "inject": {
+    "dependency": "fee_engine",
+    "mode": "DELAY",
+    "delayMs": 2000,
+    "durationMs": 60000
+  },
+  
+  "request": {
+    "tenantId": "t_chaos_test",
+    "payload": {
+      "principalAmount": 75000,
+      "currency": "TRY",
+      "interestType": "TCMB_AVANS",
+      "startDate": "2025-01-01",
+      "endDate": "2025-04-01",
+      "caseType": "ILAMSIZ",
+      "debtorCount": 2
+    }
+  },
+  
+  "expect": {
+    "result.status": "OK",
+    "dependencies": {
+      "interest_engine": { "outcome": "SUCCESS" },
+      "fee_engine": { "outcome": "SUCCESS" }
+    },
+    "trace": {
+      "maxDurationMs": 5000
+    }
+  }
+}

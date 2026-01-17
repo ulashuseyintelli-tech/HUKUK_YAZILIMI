@@ -1,0 +1,90 @@
+name: SDK Tests
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'packages/calc-preview-sdk/**'
+      - '.github/workflows/sdk-test.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'packages/calc-preview-sdk/**'
+      - '.github/workflows/sdk-test.yml'
+
+jobs:
+  test:
+    name: SDK Unit Tests
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Get pnpm store directory
+        shell: bash
+        run: |
+          echo "STORE_PATH=$(pnpm store path --silent)" >> $GITHUB_ENV
+
+      - name: Setup pnpm cache
+        uses: actions/cache@v3
+        with:
+          path: ${{ env.STORE_PATH }}
+          key: ${{ runner.os }}-pnpm-store-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-store-
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Type check
+        working-directory: packages/calc-preview-sdk
+        run: pnpm typecheck
+
+      - name: Run tests
+        working-directory: packages/calc-preview-sdk
+        run: pnpm test
+
+      - name: Build
+        working-directory: packages/calc-preview-sdk
+        run: pnpm build
+
+  golden-scenarios:
+    name: Golden Scenario Tests
+    runs-on: ubuntu-latest
+    needs: test
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Run golden scenarios
+        working-directory: packages/calc-preview-sdk
+        run: pnpm test -- --reporter=verbose src/__tests__/golden-scenarios.spec.ts
+
+      - name: Run retry handler tests
+        working-directory: packages/calc-preview-sdk
+        run: pnpm test -- --reporter=verbose src/__tests__/retry-handler.spec.ts

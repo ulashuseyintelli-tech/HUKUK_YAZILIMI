@@ -1,0 +1,76 @@
+# Circuit Breaker Open Playbook
+# Phase 7B - Sprint 1
+#
+# Devre kesici açıldığında çalışacak playbook.
+# Sprint 1'de dry-run only - gerçek auto-action yok.
+
+id: circuit-breaker-open
+version: "1.0.0"
+name: "Devre Kesici Açık Playbook"
+description: "Circuit breaker açıldığında bildirim gönderir ve escalation planlar."
+
+match:
+  incidentType: CIRCUIT_BREAKER_OPEN
+  severity:
+    - WARNING
+    - CRITICAL
+  tenantScope: "*"
+
+# When clause: sadece kritik bağımlılıklar için
+when:
+  - field: evidence.breakerName
+    operator: in
+    values:
+      - rate_provider
+      - tariff_provider
+      - policy_engine
+      - interest_engine
+      - fee_engine
+
+priority: 100
+
+# Sprint 1: dry-run only
+dryRun: true
+
+actions:
+  # 1. Bildirim gönder
+  - id: notify-ops
+    type: notification
+    channel: console
+    template: circuit_breaker_alert
+
+  # 2. Cache TTL uzat (dry-run'da çalışmaz)
+  - id: extend-cache-ttl
+    type: auto_action
+    action: extend_cache_ttl
+    params:
+      namespace: rate_provider
+      multiplier: 2
+    safetyPolicy:
+      maxTtlMs: 300000
+      maxMultiplier: 3
+      allowedNamespaces:
+        - rate_provider
+        - tariff_provider
+      allowedRoles:
+        - internal-ops
+        - system
+      cooldownMs: 600000
+    lease:
+      durationMs: 900000
+      autoRollback: true
+      rollbackAction: restore_cache_ttl
+
+  # 3. 30 dakika sonra CRITICAL'a escalate
+  - id: escalate-if-ongoing
+    type: escalation
+    delayMs: 1800000
+    toSeverity: CRITICAL
+    maxEscalations: 2
+
+  # 4. İnsan müdahalesi gerektiren görev
+  - id: human-review
+    type: human_action
+    assigneeRole: internal-ops
+    slaMs: 3600000
+    description: "Bağımlılık servisinin durumunu kontrol edin. Servis düzeldiğinde devre kesici otomatik kapanacaktır."

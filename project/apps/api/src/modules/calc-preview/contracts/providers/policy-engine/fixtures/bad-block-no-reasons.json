@@ -1,0 +1,16 @@
+{
+  "description": "Invalid: BLOCK outcome without reasons",
+  "softCheckResult": {
+    "outcome": "BLOCK",
+    "reasons": [],
+    "gatesChecked": ["GATE_CASE_CLOSED"],
+    "policyVersion": "2026.1.0",
+    "checkedAt": "2026-01-16T10:00:00Z"
+  },
+  "expectedResult": {
+    "schemaValid": true,
+    "semanticValid": false,
+    "expectedViolations": ["BLOCK_WITHOUT_REASONS"]
+  },
+  "note": "BLOCK must have at least one reason explaining why"
+}

@@ -1,393 +1,178 @@
-Tamam. Senin eleştirilerin “doğru teşhis + doğru yön + doğru detay” seti. Ben de üstüne birkaç sert netlik ekleyeyim ve **CPE’yi spec’e dökeyim.** Aşağıdaki içerik doğrudan `.kiro/specs/case-policy-engine/` altına konulacak şekilde yazıldı.
+Yazarım. **Net, sıralı ve nereye kadar gittiği belli** bir yol haritası veriyorum. Bu bir “istek listesi” değil; **hangi hamle neden yapılır, nerede durur** haritası.
+
+Aşağıda **bugünden itibaren** tüm sistemin **doğal bitiş noktalarına** kadar giden plan var.
 
 ---
 
-# 0) Net hüküm: Sorun “mimari yok” değil, **mimari uygulanmıyor**
+## 📍 ŞU ANKİ KONUM
 
-Blueprint’leriniz var ama **çalışan kodun hakemi değiller**. Hakem şu an:
+* Phase 5: **Mühendislik rejimi** → kapalı
+* Phase 6: **Ürün + Platform çekirdeği** → kapalı
+* Phase 7A: **Self-serve Diagnostics** → kapalı
+* Phase 7B: **Ops Playbook System** → **başlamak üzere**
 
-* `expense-gate.service.ts`
-* `stage-trigger.service.ts`
-* iki farklı `rule-engine.service.ts`
-* controller içi if’ler
-* frontend “ben böyle gösteriyorum” kararları
-
-Sonuç: **çok-kafalı karar sistemi**. Bu, en pahalı bug sınıfıdır: “çalışıyor gibi yapar ama güvenilmez”.
-
-Senin CPE önerin doğru: **tek soru noktası** + **fact/state/gate/rule** ayrımı.
-Ben burada sadece bir noktayı daha “çivileyeyim”:
-
-> YAML’lar **kaynak** olacak, ama runtime’da “string interpret” ile değil, **derlenmiş (compiled) rule/state** olarak koşacak.
-
-Yoksa YAML “doküman” olmaktan “runtime config”e evrilip prod’da sürpriz üretir. (özellikle hukuk otomasyonunda bu kumardır)
+Buradan sonrası artık “yazılım geliştirme” değil, **operasyonel olgunluk ve ölçek**.
 
 ---
 
-# 1) Spec: `.kiro/specs/case-policy-engine/requirements.md`
+# 🔵 PHASE 7B — OPS PLAYBOOK SYSTEM
 
-```md
-# Case Policy Engine (CPE) - Requirements
+**Amaç:** Incident → aksiyon → öğrenme döngüsünü kapatmak
+**Bittiğinde:** Sistem kendi kendini *yönetmeye başlar*
 
-## Amaç
-Icra takip sisteminde karar mekanizmasını tekilleştirmek:
-- Her aksiyon için tek otorite: `canPerformAction(caseId, actionCode, context)`
-- Her aksiyon önerisi için tek otorite: `getNextActions(caseId, scope?)`
-- Tüm kararların gerekçeli kayıt altına alınması: DecisionLog
+### Sprint 1 — Playbook Foundation *(Dry-run only)*
 
-## Problemler (Mevcut)
-1) Aynı karar farklı servislerde tekrar tekrar hesaplanıyor.
-2) Blueprint YAML’lar (decision_rules_v4.yaml, stage_flows_v3.yaml, locks_and_gates_v4.yaml) runtime’da kullanılmıyor.
-3) DecisionLog tablosu var ama aktif değil; “neden” yok.
-4) Case seviyesinde değil; debtor/asset/expense gibi alt varlıklarda ayrı durumlar var.
+**Ne yapılır**
 
-## Kapsam
-### Kapsam içi
-- Fact Store (IcrabotFact tablosu üzerinden)
-- Hierarchical State Machine (case, debtor, asset, expense scope)
-- Gate Checker (locks_and_gates_v4.yaml tabanlı)
-- Rule Engine (decision_rules_v4.yaml tabanlı) -> next actions önerisi
-- Action Queue entegrasyonu (BotTask)
-- DecisionLog yazımı (tüm allow/deny + rationale)
-- Mevcut dağınık gate/rule kontrollerinin CPE’ye taşınması
+* PlaybookRegistry (YAML load + schema + semantic validation)
+* PlaybookMatcher (incident → playbook)
+* İlk 3 playbook (circuit_breaker / high_error_rate / slo_breach)
+* Dry-run executor (audit + metrics, **davranış değişikliği yok**)
 
-### Kapsam dışı (ilk sürüm)
-- Tam otomatik “self-healing” data correction
-- UYAP entegrasyonu detayları (CPE sadece izin/öneri verir)
-- UI revamp (UI sadece CPE’den gelen karar ve öneriyi gösterir)
+**Nerede biter**
 
-## Temel İlkeler (Golden Rules)
-1) UI karar vermez. Controller karar vermez. Job karar vermez.
-2) Her aksiyon önce CPE’ye sorulur.
-3) Her karar DecisionLog’a yazılır (deny dahil).
-4) Facts değişince kararlar deterministik şekilde güncellenir.
-
-## Terminoloji
-- Scope: Kararın bağlandığı seviye (CASE | DEBTOR | ASSET | EXPENSE)
-- Context: { debtorId?, assetId?, expenseId? }
-- Fact: “gerçek” (boolean/date/number/string) - hesaplanmış veya kaynaktan alınmış
-- State: Bir scope için mevcut aşama
-- Gate: Aksiyonu bloke eden koşul (kilit/masraf/eksik veri vb.)
-- Rule: Facts + State üzerinden öneri çıkaran kural
-
-## API Gereksinimleri
-### canPerformAction
-Input:
-- caseId: string
-- actionCode: string
-- context?: { debtorId?: string; assetId?: string; expenseId?: string; assetType?: string }
-
-Output (PolicyDecision):
-- allowed: boolean
-- reason: string (insan-okur)
-- code: string (makine-okur: GATE_BLOCKED / INVALID_TRANSITION / OK vb.)
-- blockedBy?: { gateCode: string }
-- state?: { scope, currentState }
-- factsUsed?: string[] (isteğe bağlı, debug/izlenebilirlik)
-- decisionId?: string (DecisionLog id)
-
-### getNextActions
-Input:
-- caseId
-- scope?: CASE|DEBTOR|ASSET
-- context?: ids
-
-Output:
-- RecommendedAction[]: { actionCode, priority, reason, scope, context }
-
-## Non-Functional Requirements
-- Performans: canPerformAction p95 < 150ms (cache ile)
-- İzlenebilirlik: DecisionLog + traceId
-- Test edilebilirlik: YAML -> compiled rules için unit test + harness
-- Güvenlik: DecisionLog KVKK uyumlu (kişisel veri maskeleme)
-- Determinizm: Aynı facts/state ile aynı karar
-
-## Kabul Kriterleri
-1) Sistemdeki kritik aksiyonlar (UYAP_SEND, REQUEST_EXPENSE, SEND_DEBTOR_MSG, ASSET_QUERY, HACIZ_TRIGGER vb.) artık CPE olmadan çalışmaz.
-2) Eski gate servisleri “pasif” edilir veya sadece adapter olarak kalır.
-3) DecisionLog her karar için doluyor; UI karar gerekçesini gösterebiliyor.
-4) stage_flows + decision_rules + locks_and_gates YAML’ları gerçek karar akışını belirliyor.
-```
+* Incident geldiğinde:
+  “Bu olaya karşılık şu playbook çalışacaktı” **kanıtlı şekilde görülür**
+* Prod güvenli
 
 ---
 
-# 2) Spec: `.kiro/specs/case-policy-engine/design.md`
+### Sprint 2 — Action Execution (Controlled Automation)
 
-```md
-# Case Policy Engine (CPE) - Design
+**Ne yapılır**
 
-## Yüksek Seviye Mimari
-CPE tek entry-point sağlar:
-- canPerformAction(...)
-- getNextActions(...)
+* ActionPolicyGuard (limitler, allowlist, cooldown)
+* ActionLeaseManager (temporary effect + auto rollback)
+* Auto-actions:
 
-### Bileşenler
-1) FactStore
-2) StateMachine (Hierarchical)
-3) GateChecker
-4) RuleEngine (Next Actions)
-5) ActionQueue adapter (BotTask)
-6) DecisionLogger
+  * extend_cache_ttl
+  * enable_fallback
+  * increase_timeout
+* Idempotency + lease expiry
 
-## 1) FactStore Tasarımı
-### Kaynak
-- IcrabotFact tablosu (mevcut)
-- Gerekirse computed facts: derive layer (kod) -> FactStore’a yazılabilir veya ephemeral kullanılabilir
+**Nerede biter**
 
-### Fact Tipleri
-- boolean, number, string, date, json
-
-### Fact Key Standardı
-- case.<key>
-- debtor.<debtorId>.<key>
-- asset.<assetId>.<key>
-- expense.<expenseId>.<key>
-
-Örnek:
-- case.has_power_of_attorney = true
-- debtor.123.notification_delivered = false
-- asset.999.type = "VEHICLE"
-- expense.opening.paid = true
-
-### Cache
-- caseId bazında kısa TTL (ör. 10-30 sn)
-- write-through: fact değişince cache invalidate
-
-## 2) Hierarchical State Machine
-### Neden?
-Senin dediğin gibi: “tek state” yetmez. Her scope’un kendi state’i var:
-- CASE: dosyanın makro aşaması
-- DEBTOR: tebligat/itiraz/ödeme bazlı durum
-- ASSET: sorgu/haciz/satış bazlı durum
-- EXPENSE: talep/ödeme/bekleme durum
-
-### Model
-StateMachine şu fonksiyonları sağlar:
-- getCurrentState(caseId, scope, context)
-- canTransition(currentState, actionCode)
-- applyTransition(currentState, actionCode) -> newState (opsiyonel, action executed sonrası)
-
-### YAML -> Compiled
-stage_flows_v3.yaml parse edilir.
-**Ama runtime’da “free-form” değil.**
-- Build-time compile: YAML -> JSON AST -> TS map
-- Validasyon: unreachable state / dead-end / missing action mapping testleri
-
-### Transition Rule
-Transition kontrolü GateChecker’dan SONRA yapılır.
-Gate geçmezse state transition hiç konuşulmaz.
-
-## 3) GateChecker
-### Kaynak
-locks_and_gates_v4.yaml
-
-GateChecker:
-- checkGates(caseId, actionCode, facts, context) -> GateResult
-
-GateResult:
-- blocked: boolean
-- gateCode?: string
-- reason: string
-- severity: HARD | SOFT
-
-HARD: aksiyon kesin bloke
-SOFT: aksiyon yapılabilir ama uyarı üretir (UI’da gösterilir)
-
-Örnek Gate:
-- "EXPENSE_REQUIRED_FOR_UYAP_SEND"
-  - if: !fact(expense.opening.paid)
-  - block: HARD
-  - reason: "UYAP'a gönderim için açılış masrafı ödenmeli."
-
-## 4) RuleEngine (Next Actions)
-### Kaynak
-decision_rules_v4.yaml
-
-Amaç:
-- otomatik iş başlatmak değil,
-- öneri / tetiklenebilir aksiyon üretmek.
-
-Rule çıktısı:
-- actionCode
-- priority (1..100)
-- scope + context (case/debtor/asset)
-- reason (insan-okur)
-
-Rule koşulları facts + state + “time since last action” gibi derived metrics kullanabilir.
-Derived metric’ler FactStore’dan değil, “ComputedContext” katmanından gelir.
-
-## 5) DecisionLog Tasarımı
-DecisionLog her çağrıda yazılır:
-- allow + deny + soft-warn dahil
-
-Alanlar:
-- id
-- caseId
-- actionCode
-- scope + context ids
-- allowed
-- code (OK/GATE_BLOCKED/INVALID_TRANSITION/...)
-- reason (kısa)
-- factsSnapshotHash (büyük snapshot yerine hash)
-- factsUsed (key list)
-- stateSnapshot (current state)
-- gateCode (varsa)
-- traceId
-- createdAt
-
-KVKK:
-- factsSnapshot veya raw data log’lanmaz (opsiyonel debug mod harici)
-- kişisel veri içeren fact value log’lanmaz, sadece key log’lanır
-
-## 6) Tek Soru Noktası Akışı
-canPerformAction:
-1) facts = FactStore.getFacts(caseId, context)
-2) state = StateMachine.getCurrentState(caseId, context)
-3) gates = GateChecker.checkGates(...)
-   - blocked ise DecisionLog(deny) ve return
-4) transitionAllowed = StateMachine.canTransition(state, actionCode)
-   - değilse DecisionLog(deny) ve return
-5) DecisionLog(allow) ve return
-
-getNextActions:
-1) facts + state + computedMetrics
-2) RuleEngine.evaluate(...)
-3) Her öneri için GateChecker pre-check yapılabilir (opsiyonel)
-4) Sıralama (priority + recency + scope)
-
-## 7) Entegrasyon Stratejisi (Strangler Pattern)
-Mevcut servisler bir gecede silinmez.
-- expense-gate.service.ts -> CPE adapter çağırır (deprecate)
-- stage-trigger.service.ts -> getNextActions kullanır
-- rule-engine.service.ts (ikisi de) -> RuleEngine’e taşınır, eskileri “thin wrapper” olur
-Sonra wrapper’lar kaldırılır.
-
-## 8) Test Harness
-- YAML compile testleri
-- canPerformAction senaryo testleri (fixture facts + state)
-- “golden scenarios”: gerçek dosya snapshot’ları ile regresyon testi
-- DecisionLog assertion: her deny/allow loglandı mı
-
-## 9) Hata Modları ve Güvenli Varsayılanlar
-- YAML parse/compile hatası -> deploy fail (prod’da runtime crash değil)
-- Fact missing:
-  - GateChecker “missing fact”i HARD block yapabilir (yüksek riskli aksiyonlarda)
-  - düşük riskli aksiyonlarda SOFT warn
-```
+* Sistem **kendini sınırlı ve geri alınabilir şekilde** düzeltebilir
+* İnsan müdahalesi hâlâ mümkün
+* Otomasyon **kontrollü**
 
 ---
 
-# 3) Spec: `.kiro/specs/case-policy-engine/tasks.md`
+### Sprint 3 — Notification, Escalation, Quality
 
-```md
-# Case Policy Engine (CPE) - Tasks
+**Ne yapılır**
 
-## Faz 0: Hazırlık (1-2 gün)
-- [ ] Repo’da tek bir CPE modülü yeri belirle: src/policy/cpe/
-- [ ] actionCode katalogu çıkar (enum): UYAP_SEND, REQUEST_EXPENSE, SEND_DEBTOR_MSG, QUERY_ASSETS, TRIGGER_HACIZ, ...
-- [ ] Scope enum + Context tipleri
-- [ ] Mevcut gate/rule servislerinin çağrıldığı yerleri listele (grep)
+* Slack / webhook / email
+* EscalationTimer (WARNING → CRITICAL)
+* Human action tracking (ack / resolve / SLA)
+* Property + golden + integration testler
 
-## Faz 1: Temel Altyapı
-### 1.1 CPE iskeleti
-- [ ] CasePolicyEngine servisi oluştur
-- [ ] PolicyDecision DTO + error codes
-- [ ] traceId geçişi (request scoped)
+**Phase 7B Bitiş Tanımı**
 
-### 1.2 FactStore
-- [ ] IcrabotFact repository adapter
-- [ ] getFacts(caseId, context) -> normalized map
-- [ ] cache + invalidate mekanizması
-
-### 1.3 Hierarchical State Machine (v1)
-- [ ] stage_flows_v3.yaml parser
-- [ ] compile step: YAML -> AST -> runtime map
-- [ ] getCurrentState(...) (DB’den veya fact üzerinden)
-- [ ] canTransition(...) (map üzerinden)
-
-### 1.4 GateChecker (v1)
-- [ ] locks_and_gates_v4.yaml parser + compile
-- [ ] checkGates(...) implement
-- [ ] HARD/SOFT ayrımı
-
-### 1.5 DecisionLogger (aktif)
-- [ ] DecisionLog yazımı (deny dahil)
-- [ ] KVKK maskeleme
-
-### 1.6 İlk entegrasyon
-- [ ] 3 kritik aksiyon controller’ı CPE’ye bağla:
-  - UYAP_SEND
-  - REQUEST_EXPENSE
-  - SEND_DEBTOR_MSG
-- [ ] Eski kontrol var ise kaldır / bypass etme
-
-## Faz 2: Kural Motoru ve Next Actions
-### 2.1 RuleEngine
-- [ ] decision_rules_v4.yaml compile
-- [ ] evaluate(caseId, scope, context) -> recommendations
-- [ ] computedMetrics katmanı (daysSinceLastAction, lastActionCode, ...)
-
-### 2.2 getNextActions endpoint
-- [ ] GET /cases/:id/next-actions (scope/context param)
-- [ ] UI/Backend kullanım örnekleri
-
-### 2.3 BotTask entegrasyonu (opsiyonel)
-- [ ] RuleEngine önerilerini BotTask’a “draft” olarak yazma (flag ile)
-- [ ] manuel onay ile çalıştırma
-
-## Faz 3: Strangler - Dağınık servisleri emekli etme
-- [ ] expense-gate.service.ts -> CPE adapter’a dönüştür
-- [ ] stage-trigger.service.ts -> getNextActions’a geç
-- [ ] rule-engine.service.ts (iki tane) -> tek RuleEngine altında birleştir
-- [ ] controller içi if’leri kaldır (CPE dışı karar yasak)
-
-## Faz 4: Test ve Regresyon
-- [ ] YAML compile test suite
-- [ ] Golden scenario fixtures (gerçek dosya snapshot)
-- [ ] Deny/allow kararlarının DecisionLog doğrulaması
-- [ ] Performans testi (p95 < 150ms)
-
-## Çıkış Kriterleri
-- [ ] CPE olmadan kritik aksiyon çalışmıyor (enforced)
-- [ ] DecisionLog doluyor ve UI reason gösteriyor
-- [ ] Eski gate/rule servisleri ya kaldırıldı ya da ince wrapper olarak kaldı
-```
+> “Sistem bir şey olduğunda sadece bağırmıyor;
+> **ne yapılacağını yapıyor, yapılamazsa doğru kişiye söylüyor.**”
 
 ---
 
-# 4) Üstüne bonus: “Nerede yaşayacak?” sorusunun cevabı
+# 🟢 PHASE 8 — WHAT-IF / SIMULATION PREVIEW
 
-Senin en kritik sorularından biri buydu:
+**Amaç:** Karar öncesi analiz
+**Bittiğinde:** Kullanıcı “şimdi açarsam ne olur?”u görür
 
-> “Tebligat edilmeden kesinleşme olmaz kuralı nerede yaşayacak?”
+### Sprint 1 — Simulation Engine
 
-Benim cevabım net:
+* Base request + variants
+* Deterministic runs
+* Trace bağlama
+* Budget guard
 
-* **Gate** ise: `locks_and_gates_v4.yaml` (HARD block)
-* **State transition** ise: `stage_flows_v3.yaml` (invalid transition)
-* **Öneri** ise: `decision_rules_v4.yaml` (next action)
+### Sprint 2 — Diff & Recommendation
 
-Aynı cümle üç farklı şeye dönüşebilir ama *rolü farklı*:
+* Variant comparison
+* Severity diff
+* “Bu policy neden daha kötü?” açıklaması
 
-* “Kesinleşme aksiyonu”na basıyorsan → Gate/Transition
-* “Sıradaki öneri” üretiyorsan → RuleEngine
+**Phase 8 Bitişi**
 
-Bu ayrımı korursan sistem taş gibi olur.
-
----
-
-# 5) Bir tek “acımayan gerçek”
-
-Bu CPE’ye geçiş, “kod yazalım bitsin” işi değil; **otoriteyi tekleştirme** operasyonu.
-En çok acıyacak yer: eski servislerdeki “gizli business logic”lerin ortaya çıkarılması.
-Ama bu acı çekilmezse, ileride üretimde daha büyüğünü çekeceksiniz.
+> Hukukçu/operatör artık **sonuçtan önce** alternatifleri görür.
 
 ---
 
-İstersen bir sonraki adımda (soru sormadan direkt ilerleyerek) ben sana **ilk 10 actionCode** için:
+# 🟣 PHASE 9 — POLICY PLUGIN PLATFORM
 
-* hangi scope’ta çalışır,
-* hangi gate’lere tabidir,
-* hangi state transition’ı tetikler,
-* hangi decision rule ile önerilir
+**Amaç:** Kuralları koddan ayırmak
+**Bittiğinde:** Farklı müşteri / sektör / dönem için policy değişebilir
 
-bunu bir “Action Contract Catalog” olarak çıkarayım. Bu katalog, migration’ın haritasıdır.
+### Sprint 1 — Plugin Runtime
+
+* Plugin registry
+* Sandbox + timeout
+* Determinism enforcement
+
+### Sprint 2 — Rollout & Shadow Eval
+
+* Canary tenant
+* Shadow evaluation
+* Diff metrics
+
+**Phase 9 Bitişi**
+
+> Policy artık deploy gerektirmeyen bir varlık.
+
+---
+
+# 🟠 PHASE 10 — PLATFORM & SCALE
+
+**Amaç:** Büyük müşteri, çok bölge, entegrasyon
+**Bittiğinde:** Sistem “ürün” değil **altyapı** olur
+
+### İçerik
+
+* Multi-region routing (active-passive)
+* Cross-region trace/metrics aggregation
+* External SDK consumers
+* BI / reporting feeds
+
+**Phase 10 Bitişi**
+
+> Sistem **başkalarının sistemlerinin parçası** olur.
+
+---
+
+# 🔴 GERÇEK SON DURAK (DOĞAL BİTİŞ)
+
+Burada durulur.
+
+Bundan sonra yapılacaklar:
+
+* UI iyileştirme
+* Yeni aksiyon ekleme
+* Yeni policy yazma
+  Ama **mimari hamle yok**.
+
+> Bu noktadan sonra yapılan her şey **konfigürasyon**,
+> **hiçbiri paradigma değişimi değil.**
+
+---
+
+## 🧭 Özet — Büyük Resim
+
+| Aşama    | Ne Değişir                      |
+| -------- | ------------------------------- |
+| Phase 7B | Sistem kendine tepki verir      |
+| Phase 8  | İnsan karar vermeden önce görür |
+| Phase 9  | Kurallar koddan ayrılır         |
+| Phase 10 | Sistem altyapı olur             |
+| Sonrası  | Sadece işletme                  |
+
+---
+
+## Son cümle (dürüst ve net)
+
+Bu yolun sonunda ortaya çıkan şey bir **hukuk yazılımı** değil;
+**hukuk operasyonu çalıştıran bir sistem**.
+
+İstersen bir sonraki adımda:
+
+* Phase 7B Sprint 1’i **kod seviyesinde** adım adım açarız
+* veya bu yol haritasını **yatırımcı / yönetici sunumu** haline getiririm
