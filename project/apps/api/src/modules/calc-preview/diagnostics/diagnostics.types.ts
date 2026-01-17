@@ -546,3 +546,139 @@ export function isValidIncidentType(value: string): value is IncidentType {
 export function isValidIncidentSeverity(value: string): value is IncidentSeverity {
   return ['WARNING', 'CRITICAL'].includes(value);
 }
+
+
+// ============================================================================
+// PHASE 8: EVIDENCE TYPES (What-if Simulation)
+// ============================================================================
+
+/**
+ * Metric types for evidence collection
+ * 
+ * Phase 8 - Sprint 1A
+ * 
+ * @see .kiro/specs/whatif-simulation/design.md
+ */
+export type EvidenceMetricType =
+  | 'error_rate'
+  | 'latency_p95'
+  | 'latency_p99'
+  | 'saturation_cpu'
+  | 'queue_depth'
+  | 'slo_burn_rate';
+
+/**
+ * Critical metrics that affect confidence evaluation
+ */
+export const CRITICAL_EVIDENCE_METRICS: EvidenceMetricType[] = [
+  'error_rate',
+  'slo_burn_rate',
+  'latency_p99',
+];
+
+/**
+ * Evidence flag types
+ */
+export type EvidenceFlag = 'LOW_CONFIDENCE' | 'STALE_DATA' | 'STALE_EVIDENCE';
+
+/**
+ * Evidence point - single metric measurement
+ * 
+ * Her metric için:
+ * - value: ölçülen değer
+ * - confidence: 0..1 arası güven skoru
+ * - freshnessSec: verinin yaşı (saniye)
+ */
+export interface EvidencePoint {
+  metric: EvidenceMetricType;
+  value: number;
+  unit: string; // '%', 'ms', 'count', 'ratio'
+  windowSec: number;
+  confidence: number; // 0..1
+  freshnessSec: number;
+  source: 'prometheus' | 'app_metrics' | 'synthetic';
+  timestamp: string; // ISO
+}
+
+/**
+ * Evidence snapshot - belirli anda alınmış metrik kanıt seti
+ * 
+ * Snapshot-age kuralları (hard):
+ * - snapshotAgeSec > 60 ⇒ STALE_EVIDENCE
+ * - freshnessSec > 120 olan point varsa ⇒ STALE_DATA
+ * - confidence < 0.5 olan kritik metric varsa ⇒ LOW_CONFIDENCE
+ */
+export interface EvidenceSnapshot {
+  snapshotId: string;
+  tenantId: string;
+  incidentId: string;
+  capturedAt: string; // ISO
+  points: EvidencePoint[];
+  promoted?: boolean;
+  derived?: {
+    trend?: 'increasing' | 'decreasing' | 'stable';
+    variance?: number;
+  };
+}
+
+/**
+ * Evidence gate evaluation result
+ * 
+ * Gate hiyerarşisi: EvidenceGate → PolicyGuard → Executor
+ * EvidenceGate fail ⇒ downstream gate'ler çalışmaz
+ */
+export interface EvidenceGateResult {
+  flags: EvidenceFlag[];
+  allowAutoEscalation: boolean;
+  allowPromote: boolean;
+  blockedReason?: string;
+  blockedFlags?: EvidenceFlag[];
+  snapshotAgeSec: number;
+  pointLevelFlags: Array<{
+    metric: EvidenceMetricType;
+    flags: EvidenceFlag[];
+  }>;
+}
+
+/**
+ * Evidence thresholds configuration
+ */
+export const EVIDENCE_THRESHOLDS = {
+  /** Snapshot age threshold for STALE_EVIDENCE flag (seconds) */
+  STALE_EVIDENCE_THRESHOLD_SEC: 60,
+  
+  /** Point freshness threshold for STALE_DATA flag (seconds) */
+  STALE_DATA_THRESHOLD_SEC: 120,
+  
+  /** Confidence threshold for LOW_CONFIDENCE flag */
+  LOW_CONFIDENCE_THRESHOLD: 0.5,
+} as const;
+
+/**
+ * Type guard for EvidenceMetricType
+ */
+export function isValidEvidenceMetricType(value: string): value is EvidenceMetricType {
+  return [
+    'error_rate',
+    'latency_p95',
+    'latency_p99',
+    'saturation_cpu',
+    'queue_depth',
+    'slo_burn_rate',
+  ].includes(value);
+}
+
+/**
+ * Type guard for EvidenceFlag
+ */
+export function isValidEvidenceFlag(value: string): value is EvidenceFlag {
+  return ['LOW_CONFIDENCE', 'STALE_DATA', 'STALE_EVIDENCE'].includes(value);
+}
+
+/**
+ * Canonical sort for EvidenceSnapshot points
+ * Ensures deterministic ordering for comparison
+ */
+export function sortEvidencePoints(points: EvidencePoint[]): EvidencePoint[] {
+  return [...points].sort((a, b) => a.metric.localeCompare(b.metric));
+}

@@ -18,12 +18,10 @@
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import {
   EscalationTimer,
-  EscalationTimerStatus,
   EscalationAction,
 } from './playbook.types';
 import { IncidentSeverity } from '../diagnostics.types';
 import { PlaybookMetricsService } from './playbook-metrics.service';
-import { PlaybookAuditService } from './playbook-audit.service';
 import { NotificationService } from './notification.service';
 
 // ============================================================================
@@ -77,7 +75,6 @@ export class EscalationService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly metrics: PlaybookMetricsService,
-    private readonly audit: PlaybookAuditService,
     private readonly notifications: NotificationService,
   ) {}
 

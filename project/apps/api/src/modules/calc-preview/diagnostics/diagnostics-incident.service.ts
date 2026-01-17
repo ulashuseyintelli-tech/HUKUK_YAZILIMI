@@ -152,6 +152,13 @@ export class DiagnosticsIncidentService {
   }
 
   /**
+   * Get incident by ID
+   */
+  getIncident(incidentId: string): DiagnosticsIncident | undefined {
+    return this.incidents.get(incidentId);
+  }
+
+  /**
    * Resolve an incident
    */
   resolveIncident(incidentId: string): boolean {

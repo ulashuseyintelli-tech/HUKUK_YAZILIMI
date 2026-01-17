@@ -406,7 +406,7 @@ export interface ExecutionOptions {
   triggeredBy: 'auto' | 'manual';
   
   /** User ID (for manual triggers) */
-  userId?: string;
+  userId?: string | undefined;
 }
 
 export interface ExecutionResult {
@@ -522,7 +522,7 @@ export interface LeaseAuditEntry {
   revokedBy?: string;
 }
 
-export type LeaseAuditEvent = 'CREATED' | 'EXPIRED' | 'REVOKED' | 'ROLLED_BACK';
+export type LeaseAuditEvent = 'CREATED' | 'EXPIRED' | 'REVOKED' | 'ROLLED_BACK' | 'EXTENDED';
 
 // ============================================================================
 // ESCALATION TYPES

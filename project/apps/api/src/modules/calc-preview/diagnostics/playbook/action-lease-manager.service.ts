@@ -27,6 +27,9 @@ import {
 } from './playbook.types';
 import { DiagnosticsIncident } from '../diagnostics.types';
 
+// Extended lease audit event type
+type LeaseAuditEventExtended = LeaseAuditEvent | 'EXTENDED';
+
 // ============================================================================
 // ROLLBACK RESULT TYPES
 // ============================================================================
@@ -43,6 +46,14 @@ export interface RevokeResult {
   success: boolean;
   leaseId: string;
   rollbackResult?: RollbackResult;
+  error?: string;
+  auditId?: string;
+}
+
+export interface ExtendResult {
+  success: boolean;
+  leaseId: string;
+  newExpiresAt?: string;
   error?: string;
 }
 
@@ -246,10 +257,13 @@ export class ActionLeaseManager implements OnModuleInit, OnModuleDestroy {
       });
     }
     
+    const auditEntry = this.auditLog[this.auditLog.length - 1];
+    
     const result: RevokeResult = {
       success: rollbackResult.success,
       leaseId,
       rollbackResult,
+      auditId: auditEntry?.id,
     };
     
     if (rollbackResult.error) {
@@ -257,6 +271,61 @@ export class ActionLeaseManager implements OnModuleInit, OnModuleDestroy {
     }
     
     return result;
+  }
+
+  /**
+   * Extend a lease duration
+   */
+  async extendLease(leaseId: string, durationMs: number): Promise<ExtendResult> {
+    const lease = this.leases.get(leaseId);
+    
+    if (!lease) {
+      return {
+        success: false,
+        leaseId,
+        error: 'Lease not found',
+      };
+    }
+    
+    if (lease.status !== 'ACTIVE') {
+      return {
+        success: false,
+        leaseId,
+        error: `Lease is not active (status: ${lease.status})`,
+      };
+    }
+    
+    // Validate extension duration
+    const currentExpiry = new Date(lease.expiresAt).getTime();
+    const newExpiry = currentExpiry + durationMs;
+    const totalDuration = newExpiry - new Date(lease.createdAt).getTime();
+    
+    if (totalDuration > LEASE_CONSTRAINTS.MAX_DURATION_MS) {
+      return {
+        success: false,
+        leaseId,
+        error: `Extended duration ${totalDuration}ms would exceed maximum ${LEASE_CONSTRAINTS.MAX_DURATION_MS}ms`,
+      };
+    }
+    
+    // Update expiry
+    lease.expiresAt = new Date(newExpiry).toISOString();
+    
+    // Audit log
+    this.logLeaseEvent(lease, 'EXTENDED');
+    
+    this.logger.log('[LeaseManager] Lease extended', {
+      leaseId,
+      actionType: lease.actionType,
+      newExpiresAt: lease.expiresAt,
+      extensionMs: durationMs,
+    });
+    
+    return {
+      success: true,
+      leaseId,
+      newExpiresAt: lease.expiresAt,
+    };
   }
 
   /**
@@ -430,7 +499,7 @@ export class ActionLeaseManager implements OnModuleInit, OnModuleDestroy {
    */
   private logLeaseEvent(
     lease: Lease,
-    event: LeaseAuditEvent,
+    event: LeaseAuditEventExtended,
     revokedBy?: string,
   ): void {
     const entry: LeaseAuditEntry = {

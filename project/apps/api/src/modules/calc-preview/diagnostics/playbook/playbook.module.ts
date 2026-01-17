@@ -19,11 +19,18 @@ import { PlaybookAuditService } from './playbook-audit.service';
 import { PlaybookMetricsService } from './playbook-metrics.service';
 import { NotificationService } from './notification.service';
 import { EscalationService } from './escalation.service';
+import { PlaybookService } from './playbook.service';
+import { PlaybookController, LeaseController, IncidentController } from './playbook.controller';
 import { CalcPreviewModule } from '../../calc-preview.module';
 
 @Module({
   imports: [
     forwardRef(() => CalcPreviewModule),
+  ],
+  controllers: [
+    PlaybookController,
+    LeaseController,
+    IncidentController,
   ],
   providers: [
     // Sprint 1
@@ -39,6 +46,7 @@ import { CalcPreviewModule } from '../../calc-preview.module';
     // Sprint 3
     NotificationService,
     EscalationService,
+    PlaybookService,
   ],
   exports: [
     // Sprint 1
@@ -54,6 +62,7 @@ import { CalcPreviewModule } from '../../calc-preview.module';
     // Sprint 3
     NotificationService,
     EscalationService,
+    PlaybookService,
   ],
 })
 export class PlaybookModule {}

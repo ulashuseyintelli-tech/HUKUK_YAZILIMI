@@ -350,6 +350,7 @@ export class PlaybookAuditService {
       EXPIRED: 0,
       REVOKED: 0,
       ROLLED_BACK: 0,
+      EXTENDED: 0,
     };
     
     for (const entry of this.leaseLogs) {

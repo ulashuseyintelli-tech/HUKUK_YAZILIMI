@@ -6,6 +6,7 @@
 
 // Types
 export * from './playbook.types';
+export * from './playbook-controller.types';
 
 // Sprint 1 Services
 export { PlaybookYAMLValidator, PlaybookSchema } from './playbook-yaml-validator.service';
@@ -14,7 +15,7 @@ export { PlaybookMatcher } from './playbook-matcher.service';
 
 // Sprint 2 Services
 export { ActionPolicyGuard } from './action-policy-guard.service';
-export { ActionLeaseManager } from './action-lease-manager.service';
+export { ActionLeaseManager, ExtendResult, RevokeResult, RollbackResult } from './action-lease-manager.service';
 export { ActionExecutor } from './action-executor.service';
 export { PlaybookAuditService } from './playbook-audit.service';
 export { PlaybookMetricsService } from './playbook-metrics.service';
@@ -22,6 +23,10 @@ export { PlaybookMetricsService } from './playbook-metrics.service';
 // Sprint 3 Services
 export { NotificationService, NotificationResult, DeliveryAttempt } from './notification.service';
 export { EscalationService, EscalationResult, EscalationStats } from './escalation.service';
+export { PlaybookService } from './playbook.service';
+
+// Controllers
+export { PlaybookController, LeaseController, IncidentController } from './playbook.controller';
 
 // Module
 export { PlaybookModule } from './playbook.module';

@@ -115,7 +115,7 @@ export class ActionExecutor {
     private readonly policyGuard: ActionPolicyGuard,
     private readonly leaseManager: ActionLeaseManager,
     private readonly circuitBreaker: CalcPreviewCircuitBreakerService,
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    // @ts-expect-error Reserved for future cache operations
     private readonly _cache: VersionedCacheService,
   ) {
     // Register rollback handler with lease manager

@@ -1,0 +1,235 @@
+/**
+ * LEGAL_HOLD Retention Tests
+ * 
+ * Phase 8 - Sprint 2A
+ * 
+ * Tests for LEGAL_HOLD retention policy.
+ * Key guarantee: LEGAL_HOLD snapshots are NEVER deleted by deleteExpired()
+ */
+
+import { InMemorySnapshotStore } from '../../evidence/snapshot-store.service';
+import { MockClockService } from '../../evidence/clock.service';
+import { EvidenceSnapshot } from '../../diagnostics.types';
+
+describe('LEGAL_HOLD Retention', () => {
+  let store: InMemorySnapshotStore;
+  let clock: MockClockService;
+
+  const baseTime = new Date('2026-01-17T12:00:00Z');
+
+  beforeEach(() => {
+    clock = new MockClockService(baseTime);
+    store = new InMemorySnapshotStore(clock);
+  });
+
+  function createSnapshot(id: string): EvidenceSnapshot {
+    return {
+      snapshotId: id,
+      tenantId: 'tenant-001',
+      incidentId: 'incident-001',
+      capturedAt: baseTime.toISOString(),
+      points: [
+        {
+          metric: 'error_rate',
+          value: 0.05,
+          unit: '%',
+          windowSec: 300,
+          confidence: 0.9,
+          freshnessSec: 30,
+          source: 'prometheus',
+          timestamp: baseTime.toISOString(),
+        },
+      ],
+    };
+  }
+
+  describe('setRetentionPolicy', () => {
+    it('should set LEGAL_HOLD policy', async () => {
+      await store.save(createSnapshot('legal-001'));
+      await store.setRetentionPolicy('legal-001', 'LEGAL_HOLD');
+
+      const snapshot = await store.get('legal-001');
+      expect(snapshot?.retentionPolicy).toBe('LEGAL_HOLD');
+      expect(snapshot?.expiresAt).toBeNull();
+    });
+
+    it('should allow changing from STANDARD to LEGAL_HOLD', async () => {
+      await store.save(createSnapshot('legal-002'));
+      
+      let snapshot = await store.get('legal-002');
+      expect(snapshot?.retentionPolicy).toBe('STANDARD');
+      expect(snapshot?.expiresAt).not.toBeNull();
+
+      await store.setRetentionPolicy('legal-002', 'LEGAL_HOLD');
+      
+      snapshot = await store.get('legal-002');
+      expect(snapshot?.retentionPolicy).toBe('LEGAL_HOLD');
+      expect(snapshot?.expiresAt).toBeNull();
+    });
+
+    it('should REJECT changing from LEGAL_HOLD to STANDARD (downgrade forbidden)', async () => {
+      await store.save(createSnapshot('legal-003'));
+      await store.setRetentionPolicy('legal-003', 'LEGAL_HOLD');
+      
+      let snapshot = await store.get('legal-003');
+      expect(snapshot?.expiresAt).toBeNull();
+
+      // Attempt downgrade - should be rejected
+      const result = await store.setRetentionPolicy('legal-003', 'STANDARD');
+      
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('RETENTION_DOWNGRADE_FORBIDDEN');
+      
+      // Policy should remain LEGAL_HOLD
+      snapshot = await store.get('legal-003');
+      expect(snapshot?.retentionPolicy).toBe('LEGAL_HOLD');
+      expect(snapshot?.expiresAt).toBeNull();
+    });
+
+    it('should REJECT changing from LEGAL_HOLD to PROMOTED (downgrade forbidden)', async () => {
+      await store.save(createSnapshot('legal-004'));
+      await store.setRetentionPolicy('legal-004', 'LEGAL_HOLD');
+
+      const result = await store.setRetentionPolicy('legal-004', 'PROMOTED');
+      
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('RETENTION_DOWNGRADE_FORBIDDEN');
+      
+      const snapshot = await store.get('legal-004');
+      expect(snapshot?.retentionPolicy).toBe('LEGAL_HOLD');
+    });
+  });
+
+  describe('deleteExpired with LEGAL_HOLD', () => {
+    it('should NOT delete LEGAL_HOLD snapshots even after expiry time', async () => {
+      // Save and set to LEGAL_HOLD
+      await store.save(createSnapshot('legal-never-delete'));
+      await store.setRetentionPolicy('legal-never-delete', 'LEGAL_HOLD');
+
+      // Advance time way past normal expiry (1 year)
+      clock.advanceSeconds(365 * 24 * 60 * 60);
+
+      // Delete expired
+      const deletedCount = await store.deleteExpired();
+
+      // Should not delete LEGAL_HOLD
+      expect(deletedCount).toBe(0);
+
+      // Should still be accessible
+      const snapshot = await store.get('legal-never-delete');
+      expect(snapshot).not.toBeNull();
+      expect(snapshot?.snapshotId).toBe('legal-never-delete');
+    });
+
+    it('should delete STANDARD but not LEGAL_HOLD in same batch', async () => {
+      // Save multiple snapshots
+      await store.save(createSnapshot('standard-001'));
+      await store.save(createSnapshot('standard-002'));
+      await store.save(createSnapshot('legal-001'));
+      await store.setRetentionPolicy('legal-001', 'LEGAL_HOLD');
+
+      // Advance past STANDARD expiry (72h + buffer)
+      clock.advanceSeconds(73 * 60 * 60);
+
+      // Delete expired
+      const deletedCount = await store.deleteExpired();
+
+      // Should delete 2 STANDARD, keep 1 LEGAL_HOLD
+      expect(deletedCount).toBe(2);
+
+      // LEGAL_HOLD should still exist
+      const legalSnapshot = await store.get('legal-001');
+      expect(legalSnapshot).not.toBeNull();
+
+      // STANDARD should be gone
+      const standard1 = await store.get('standard-001');
+      const standard2 = await store.get('standard-002');
+      expect(standard1).toBeNull();
+      expect(standard2).toBeNull();
+    });
+
+    it('should handle mixed STANDARD, PROMOTED, and LEGAL_HOLD', async () => {
+      await store.save(createSnapshot('standard-001'));
+      await store.save(createSnapshot('promoted-001'));
+      await store.save(createSnapshot('legal-001'));
+
+      await store.markPromoted('promoted-001');
+      await store.setRetentionPolicy('legal-001', 'LEGAL_HOLD');
+
+      // Advance past STANDARD expiry but not PROMOTED
+      clock.advanceSeconds(73 * 60 * 60);
+
+      let deletedCount = await store.deleteExpired();
+      expect(deletedCount).toBe(1); // Only STANDARD
+
+      // Advance past PROMOTED expiry
+      clock.advanceSeconds(100 * 60 * 60);
+
+      deletedCount = await store.deleteExpired();
+      expect(deletedCount).toBe(1); // Only PROMOTED
+
+      // LEGAL_HOLD still exists
+      const legalSnapshot = await store.get('legal-001');
+      expect(legalSnapshot).not.toBeNull();
+    });
+  });
+
+  describe('getStats with LEGAL_HOLD', () => {
+    it('should count LEGAL_HOLD snapshots', async () => {
+      await store.save(createSnapshot('standard-001'));
+      await store.save(createSnapshot('legal-001'));
+      await store.save(createSnapshot('legal-002'));
+
+      await store.setRetentionPolicy('legal-001', 'LEGAL_HOLD');
+      await store.setRetentionPolicy('legal-002', 'LEGAL_HOLD');
+
+      const stats = await store.getStats();
+
+      expect(stats.totalCount).toBe(3);
+      expect(stats.legalHoldCount).toBe(2);
+    });
+
+    it('should not count LEGAL_HOLD as expired', async () => {
+      await store.save(createSnapshot('legal-001'));
+      await store.setRetentionPolicy('legal-001', 'LEGAL_HOLD');
+
+      // Advance way past normal expiry
+      clock.advanceSeconds(365 * 24 * 60 * 60);
+
+      const stats = await store.getStats();
+
+      expect(stats.expiredCount).toBe(0);
+      expect(stats.legalHoldCount).toBe(1);
+    });
+  });
+
+  describe('listByIncident with LEGAL_HOLD', () => {
+    it('should include LEGAL_HOLD snapshots regardless of time', async () => {
+      await store.save(createSnapshot('legal-001'));
+      await store.setRetentionPolicy('legal-001', 'LEGAL_HOLD');
+
+      // Advance way past normal expiry
+      clock.advanceSeconds(365 * 24 * 60 * 60);
+
+      const snapshots = await store.listByIncident('incident-001');
+
+      expect(snapshots.length).toBe(1);
+      expect(snapshots[0].snapshotId).toBe('legal-001');
+    });
+  });
+
+  describe('get with LEGAL_HOLD', () => {
+    it('should return LEGAL_HOLD snapshot regardless of time', async () => {
+      await store.save(createSnapshot('legal-001'));
+      await store.setRetentionPolicy('legal-001', 'LEGAL_HOLD');
+
+      // Advance 10 years
+      clock.advanceSeconds(10 * 365 * 24 * 60 * 60);
+
+      const snapshot = await store.get('legal-001');
+
+      expect(snapshot).not.toBeNull();
+      expect(snapshot?.snapshotId).toBe('legal-001');
+    });
+  });
+});
