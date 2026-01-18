@@ -17,6 +17,7 @@ import { canonicalStringify, canonicalHash } from './determinism';
 import { ISnapshotStore, StoredSnapshot } from '../evidence/snapshot-store.types';
 import { IIncidentStore, Incident } from './incident.types';
 import { IClock } from '../evidence/clock.service';
+import { EvidenceChain } from './simulation.types';
 import {
   EvidenceBundle,
   EvidenceBundlePayload,
@@ -172,23 +173,24 @@ export class EvidenceBundleService {
     };
 
     // Build evidence chain (simplified - would come from simulation output)
-    const evidenceChain = {
+    const evidenceChain: EvidenceChain = {
       baselineSnapshotId: baselineSnapshot.snapshotId,
       currentSnapshotId: currentSnapshot.snapshotId,
       driftResult: {
         driftScore: lastRun.driftScore,
-        blocked: lastRun.driftBlocked,
-        metricDrifts: [],
+        shouldBlock: lastRun.driftBlocked,
+        noComparableMetrics: driftExplainability.commonMetrics.length === 0,
+        commonMetrics: [],
         missingInBaseline: [],
         missingInCurrent: [],
-        commonMetrics: driftExplainability.commonMetrics,
         topContributors: [],
       },
       gateResult: {
-        snapshotId: currentSnapshot.snapshotId,
         flags: lastRun.evidenceStatus === 'FAILED' ? ['STALE_EVIDENCE' as const] : [],
         allowAutoEscalation: lastRun.evidenceStatus === 'PASSED',
         allowPromote: lastRun.evidenceStatus === 'PASSED',
+        snapshotAgeSec: 0,
+        pointLevelFlags: [],
       },
       verdict: lastRun.verdict,
       verdictReason: lastRun.evidenceGateReason,

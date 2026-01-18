@@ -49,7 +49,7 @@ export interface IncidentRunSummary {
   /** Evidence gate status */
   evidenceStatus: EvidenceStatus;
   /** Evidence gate failure reason (if FAILED) */
-  evidenceGateReason?: string;
+  evidenceGateReason?: string | undefined;
   /** Was the run blocked due to drift? */
   driftBlocked: boolean;
   /** Baseline snapshot ID used */

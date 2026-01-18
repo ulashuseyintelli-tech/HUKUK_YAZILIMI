@@ -12,7 +12,7 @@
  * @see .kiro/specs/whatif-simulation/design.md
  */
 
-import { EvidenceChain, EvidenceVerdict } from './simulation.types';
+import { EvidenceChain } from './simulation.types';
 import { StoredSnapshot } from '../evidence/snapshot-store.types';
 import { RetentionPolicy } from '../evidence/retention-policy';
 import { MetricDrift } from '../evidence/drift-utils';

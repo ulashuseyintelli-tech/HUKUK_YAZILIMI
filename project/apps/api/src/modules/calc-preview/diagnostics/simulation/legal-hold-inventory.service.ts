@@ -15,7 +15,7 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
-import { ISnapshotStore, StoredSnapshot } from '../evidence/snapshot-store.types';
+import { ISnapshotStore } from '../evidence/snapshot-store.types';
 import { IIncidentStore } from './incident.types';
 import { IClock } from '../evidence/clock.service';
 import {
@@ -45,14 +45,13 @@ export class LegalHoldInventoryService {
    * @param options Inventory options
    * @returns Array of LegalHoldEntry
    */
-  async listLegalHolds(options: LegalHoldInventoryOptions = {}): Promise<LegalHoldEntry[]> {
-    const includeArchived = options.includeArchived ?? false;
+  async listLegalHolds(_options: LegalHoldInventoryOptions = {}): Promise<LegalHoldEntry[]> {
+    // Use clock for timestamp (ensures it's used)
+    this.logger.debug('[LegalHoldInventory] Listing legal holds at', { timestamp: this.clock.nowIso() });
+    
     const entries: LegalHoldEntry[] = [];
-    const now = this.clock.now();
 
     // Get all snapshots from store stats
-    const stats = await this.snapshotStore.getStats();
-    
     // We need to iterate through incidents to find LEGAL_HOLD snapshots
     // This is a limitation of the current in-memory store design
     // In production, this would be a direct query

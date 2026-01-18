@@ -212,15 +212,66 @@ Sprint 2 üç ana parçadan oluşur:
 #### 26. IClock Interface Compatibility
 - [x] 26.1 ClockService updated with setFakeTime/advanceHours for testing
 - [x] 26.2 MockClockService updated for IClock compatibility
-- [x] 26.3 All services accept IClock | ClockService for flexibility
+- [x] 26.3 All services accept IClock only (NOT IClock | ClockService union)
 
-#### 27. SimulationStore (Sprint 3)
-- [ ] 27.1 ISimulationStore interface tanımla
-- [ ] 27.2 SimulationStatus enum (PENDING, RUNNING, COMPLETED, FAILED, TIMEOUT)
-- [ ] 27.3 save(result) implement et
-- [ ] 27.4 get(simulationId) implement et
-- [ ] 27.5 listByTenant(tenantId, options) implement et
-- [ ] 27.6 updateStatus(simulationId, status) implement et
+### Sprint 2E — Evidence Bundle Export + Run Summary + Legal Hold Inventory ✅
+
+#### 27. IClock Refactor
+- [x] 27.1 All services accept IClock interface only
+- [x] 27.2 ClockService implements IClock
+- [x] 27.3 MockClockService implements IClock
+- [x] 27.4 No union types (IClock | ClockService) in constructors
+
+#### 28. IncidentRunSummary Model
+- [x] 28.1 IncidentRunSummary interface (runId, verdict, driftScore, evidenceStatus)
+- [x] 28.2 evidenceGateReason?: string (for BLOCK_EVIDENCE reason)
+- [x] 28.3 driftBlocked: boolean (was run blocked due to drift?)
+- [x] 28.4 baselineSnapshotId, currentSnapshotId, runAt fields
+- [x] 28.5 Incident entity: lastRun?: IncidentRunSummary
+- [x] 28.6 Incident entity: runCount: number
+- [x] 28.7 InMemoryIncidentStore.recordRun() method
+
+#### 29. Evidence Bundle Types
+- [x] 29.1 EvidenceBundlePayload (content that is hashed)
+- [x] 29.2 EvidenceBundleMeta (NOT included in contentHash)
+- [x] 29.3 EvidenceBundle, DriftExplainability, RetentionState
+- [x] 29.4 contentHash rule: hash computed from payload only
+
+#### 30. EvidenceBundleService
+- [x] 30.1 exportBundle() - exports bundle with canonical hash
+- [x] 30.2 verifyIntegrity() - verifies contentHash matches payload
+- [x] 30.3 getCanonicalPayload() - returns deterministic JSON string
+- [x] 30.4 Uses canonicalHash() from determinism.ts (single source)
+
+#### 31. Legal Hold Inventory Types
+- [x] 31.1 LegalHoldEntry, LegalHoldStats interfaces
+- [x] 31.2 ArchiveLegalHoldResult interface
+- [x] 31.3 DEFAULT_LEGAL_HOLD_THRESHOLD = 5
+
+#### 32. LegalHoldInventoryService
+- [x] 32.1 listLegalHolds() - list all LEGAL_HOLD snapshots
+- [x] 32.2 getStats() - get legal hold statistics
+- [x] 32.3 archiveLegalHold() - archive a LEGAL_HOLD snapshot
+- [x] 32.4 Baseline snapshots cannot be archived (400 error)
+- [x] 32.5 Archive sets archived=true flag, does NOT change policy
+- [x] 32.6 getIncidentLegalHoldCount() - count per incident
+- [x] 32.7 isIncidentExceedingThreshold() - threshold check
+
+#### 33. Tests (Sprint 2E) — 143 simulation + 169 evidence = 312 total
+- [x] 33.1 evidence-bundle.spec.ts: 22 tests
+- [x] 33.2 legal-hold-inventory.spec.ts: 21 tests
+- [x] 33.3 incident-store.spec.ts: 22 tests (updated with runCount, recordRun)
+- [x] 33.4 contentHash stability test (same content = same hash regardless of exportedAt/exportedBy)
+- [x] 33.5 verifyIntegrity test (tampered payload detection)
+- [x] 33.6 Anti-regression test: baseline protect → cleanup → baseline still exists
+
+#### 34. SimulationStore (Sprint 3)
+- [ ] 34.1 ISimulationStore interface tanımla
+- [ ] 34.2 SimulationStatus enum (PENDING, RUNNING, COMPLETED, FAILED, TIMEOUT)
+- [ ] 34.3 save(result) implement et
+- [ ] 34.4 get(simulationId) implement et
+- [ ] 34.5 listByTenant(tenantId, options) implement et
+- [ ] 34.6 updateStatus(simulationId, status) implement et
 
 ---
 
@@ -328,6 +379,13 @@ Sprint 2 üç ana parçadan oluşur:
 - [x] Baseline selection priority: PROMOTED > STANDARD (Sprint 2D)
 - [x] "Baseline deleted" scenario prevention (Sprint 2D)
 - [x] IClock interface for testability (Sprint 2D)
+- [x] IClock only in constructors, no union types (Sprint 2E)
+- [x] IncidentRunSummary with evidenceGateReason + driftBlocked (Sprint 2E)
+- [x] Evidence bundle contentHash from payload only (Sprint 2E)
+- [x] canonicalHash from determinism.ts - single source (Sprint 2E)
+- [x] LEGAL_HOLD archive: baseline cannot be archived (Sprint 2E)
+- [x] LEGAL_HOLD archive: sets flag, does NOT change policy (Sprint 2E)
+- [x] Anti-regression: baseline protect → cleanup → baseline exists (Sprint 2E)
 - [ ] De-escalation ve autoResolve opsiyonlu ama spesifik
 - [ ] CounterfactualPolicyConfig hard-coded değil, config'li
 - [ ] Simulation compute timeout + partial results

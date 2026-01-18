@@ -394,6 +394,30 @@ export class InMemorySnapshotStore implements ISnapshotStore {
   }
 
   /**
+   * List all snapshots (for legal hold inventory)
+   */
+  async listAll(): Promise<StoredSnapshot[]> {
+    const now = this.clock.now();
+    const results: StoredSnapshot[] = [];
+
+    for (const stored of this.store.values()) {
+      // Include non-expired snapshots
+      if (!isExpired(stored.expiresAt, stored.retentionPolicy, now)) {
+        results.push(stored);
+      }
+    }
+
+    // Sort by createdAt DESC (newest first)
+    results.sort((a, b) => {
+      const aTime = new Date(a.createdAt).getTime();
+      const bTime = new Date(b.createdAt).getTime();
+      return bTime - aTime;
+    });
+
+    return results;
+  }
+
+  /**
    * Clear all snapshots (for testing)
    */
   clear(): void {

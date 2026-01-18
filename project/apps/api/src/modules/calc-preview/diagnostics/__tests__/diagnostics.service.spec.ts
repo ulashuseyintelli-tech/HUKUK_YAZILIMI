@@ -11,20 +11,48 @@
 
 import { DiagnosticsService } from '../diagnostics.service';
 import { DiagnosticsAggregatorService } from '../diagnostics-aggregator.service';
-import { DIAGNOSTICS_SLO } from '../diagnostics.types';
+import { DiagnosticsRedactionService } from '../diagnostics-redaction.service';
+import { DiagnosticsAuditService } from '../diagnostics-audit.service';
+import { DiagnosticsIncidentService } from '../diagnostics-incident.service';
 
 describe('DiagnosticsService', () => {
   let service: DiagnosticsService;
   let mockAggregator: jest.Mocked<DiagnosticsAggregatorService>;
+  let mockRedaction: jest.Mocked<DiagnosticsRedactionService>;
+  let mockAudit: jest.Mocked<DiagnosticsAuditService>;
+  let mockIncidentService: jest.Mocked<DiagnosticsIncidentService>;
 
   beforeEach(() => {
     mockAggregator = {
       getHealthData: jest.fn(),
       getSLOStatus: jest.fn(),
       getMetricsData: jest.fn(),
+      queryTraces: jest.fn(),
+      checkTraceAccess: jest.fn(),
+      getTrace: jest.fn(),
+      buildDetectionContext: jest.fn(),
     } as any;
 
-    service = new DiagnosticsService(mockAggregator);
+    mockRedaction = {
+      redact: jest.fn((trace) => trace),
+    } as any;
+
+    mockAudit = {
+      logTraceListAccess: jest.fn(),
+      logTraceDetailAccess: jest.fn(),
+    } as any;
+
+    mockIncidentService = {
+      detectIncidents: jest.fn(),
+      getRecentIncidents: jest.fn().mockReturnValue([]),
+    } as any;
+
+    service = new DiagnosticsService(
+      mockAggregator,
+      mockRedaction,
+      mockAudit,
+      mockIncidentService,
+    );
   });
 
   describe('getHealth', () => {

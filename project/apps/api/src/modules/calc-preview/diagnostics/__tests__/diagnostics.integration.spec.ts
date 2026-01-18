@@ -387,34 +387,27 @@ describe('Diagnostics Integration Tests', () => {
 
   describe('Audit Logging Integration', () => {
     it('should log trace list access', async () => {
+      const ctx = createTenantContext();
       const since = new Date(Date.now() - 3600000).toISOString();
-      await controller.getTraces(
-        createTenantContext(),
-        since
-      );
+      await controller.getTraces(ctx, since);
 
+      // Audit service is called with (ctx, query, allowed) signature
       expect(audit.logTraceListAccess).toHaveBeenCalledWith(
-        expect.objectContaining({
-          tenantId: 'tenant-001',
-          action: 'LIST',
-          allowed: true,
-        })
+        ctx,
+        expect.objectContaining({ since }),
+        true
       );
     });
 
     it('should log trace detail access', async () => {
-      await controller.getTraceDetail(
-        createTenantContext(),
-        'trace-001'
-      );
+      const ctx = createTenantContext();
+      await controller.getTraceDetail(ctx, 'trace-001');
 
+      // Audit service is called with (ctx, traceId, allowed) signature
       expect(audit.logTraceDetailAccess).toHaveBeenCalledWith(
-        expect.objectContaining({
-          tenantId: 'tenant-001',
-          traceId: 'trace-001',
-          action: 'DETAIL',
-          allowed: true,
-        })
+        ctx,
+        'trace-001',
+        true
       );
     });
   });

@@ -1,4 +1,4 @@
-import { Module } from "@nestjs/common";
+import { Module, Logger, Type } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { ScheduleModule } from "@nestjs/schedule";
 import { PrismaModule } from "./prisma/prisma.module";
@@ -77,6 +77,45 @@ import { CalcPreviewModule } from "./modules/calc-preview/calc-preview.module";
 // TODO: IcrabotModule geçici olarak devre dışı - Prisma client regenerate gerekli
 // import { IcrabotModule } from "./modules/icrabot/icrabot.module";
 
+// ============================================================================
+// Simulation API - Conditional Import (Sprint 2F)
+// ============================================================================
+// Two-level feature control:
+// - SIMULATION_API_ENABLED: Deployment level - module not loaded if false (no routes)
+// - SIMULATION_ENABLED: Runtime level - 503 for mutations when false (reads work)
+//
+// Known Limitations (MVP):
+// - SimulationRunStoreService: In-memory storage, data lost on restart
+// - BundleStore: In-memory storage, not suitable for multi-instance deployment
+// - RateLimitStore: In-memory, should migrate to Redis for production
+// ============================================================================
+import { SimulationApiModule } from "./modules/calc-preview/diagnostics/simulation-api";
+
+const logger = new Logger("AppModule");
+
+/**
+ * Check if Simulation API should be enabled at deployment level
+ */
+function isSimulationApiEnabled(): boolean {
+  return process.env.SIMULATION_API_ENABLED !== "false";
+}
+
+/**
+ * Build conditional imports based on environment
+ */
+function getConditionalImports(): Type<unknown>[] {
+  const conditionalImports: Type<unknown>[] = [];
+
+  if (isSimulationApiEnabled()) {
+    conditionalImports.push(SimulationApiModule);
+    logger.log("Simulation API enabled (deployment level)");
+  } else {
+    logger.log("Simulation API disabled (deployment level) - no routes exposed");
+  }
+
+  return conditionalImports;
+}
+
 @Module({
   imports: [
     ConfigModule.forRoot({
@@ -154,6 +193,8 @@ import { CalcPreviewModule } from "./modules/calc-preview/calc-preview.module";
     PolicyEngineModule,
     CalcPreviewModule,
     // IcrabotModule, // TODO: Prisma client regenerate sonrası aktif et
+    // Conditional imports (Sprint 2F)
+    ...getConditionalImports(),
   ],
 })
 export class AppModule {}

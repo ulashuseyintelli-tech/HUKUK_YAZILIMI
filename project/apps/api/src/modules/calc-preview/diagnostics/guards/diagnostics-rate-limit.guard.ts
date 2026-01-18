@@ -32,6 +32,7 @@ import { Request } from 'express';
 import { DIAGNOSTICS_RATE_LIMITS } from '../diagnostics.types';
 import { buildScopedKey } from '../../region/scoped-key';
 import { DEFAULT_REGION } from '../../region/region.constants';
+import { IClock } from '../evidence/clock.service';
 
 // ============================================================================
 // BUCKET TYPES
@@ -64,6 +65,23 @@ interface CombinedBucket {
 // RATE LIMIT GUARD
 // ============================================================================
 
+/**
+ * Default clock implementation using Date.now()
+ */
+const defaultClock: IClock = {
+  now: () => new Date(),
+  nowMs: () => Date.now(),
+  nowIso: () => new Date().toISOString(),
+  ageInSeconds: (timestamp: string | Date) => {
+    const then = typeof timestamp === 'string' ? new Date(timestamp) : timestamp;
+    return Math.floor((Date.now() - then.getTime()) / 1000);
+  },
+  isOlderThan: (timestamp: string | Date, thresholdSec: number) => {
+    const then = typeof timestamp === 'string' ? new Date(timestamp) : timestamp;
+    return Math.floor((Date.now() - then.getTime()) / 1000) > thresholdSec;
+  },
+};
+
 @Injectable()
 export class DiagnosticsRateLimitGuard implements CanActivate {
   private readonly logger = new Logger(DiagnosticsRateLimitGuard.name);
@@ -77,10 +95,16 @@ export class DiagnosticsRateLimitGuard implements CanActivate {
   private readonly BURST_LIMIT = DIAGNOSTICS_RATE_LIMITS.BURST_LIMIT;           // 10/sec
   private readonly BURST_WINDOW_MS = DIAGNOSTICS_RATE_LIMITS.BURST_WINDOW_MS;   // 1000ms
   private readonly REFILL_INTERVAL_MS = 60 * 1000; // 1 minute
+  
+  // Injected clock for testability
+  private clock: IClock;
 
-  constructor() {
-    // Cleanup interval
-    setInterval(() => this.cleanup(), 60 * 1000);
+  constructor(clock?: IClock) {
+    this.clock = clock || defaultClock;
+    // Cleanup interval (only in production, not in tests)
+    if (!clock) {
+      setInterval(() => this.cleanup(), 60 * 1000);
+    }
   }
 
   canActivate(context: ExecutionContext): boolean {
@@ -97,7 +121,7 @@ export class DiagnosticsRateLimitGuard implements CanActivate {
     });
     
     const bucket = this.getOrCreateBucket(bucketKey, endpointType);
-    const now = Date.now();
+    const now = this.clock.nowMs();
     
     // =========================================================================
     // CHECK 1: Burst limit (10 req/sec) - MUST PASS
@@ -225,7 +249,7 @@ export class DiagnosticsRateLimitGuard implements CanActivate {
       bucket = {
         minute: {
           tokens: limit,
-          lastRefill: Date.now(),
+          lastRefill: this.clock.nowMs(),
         },
         burst: {
           requests: [],
@@ -293,7 +317,7 @@ export class DiagnosticsRateLimitGuard implements CanActivate {
    * Cleanup old buckets and burst timestamps
    */
   private cleanup(): void {
-    const now = Date.now();
+    const now = this.clock.nowMs();
     const maxAge = 10 * 60 * 1000; // 10 minutes
     
     for (const [key, bucket] of this.buckets.entries()) {
@@ -337,7 +361,7 @@ export class DiagnosticsRateLimitGuard implements CanActivate {
       ? this.TRACE_DETAIL_LIMIT 
       : this.GENERAL_LIMIT;
     
-    const now = Date.now();
+    const now = this.clock.nowMs();
     const burstRemaining = this.BURST_LIMIT - this.countRecentBurstRequests(bucket.burst, now);
     
     return {
@@ -345,5 +369,12 @@ export class DiagnosticsRateLimitGuard implements CanActivate {
       limit,
       burstRemaining,
     };
+  }
+  
+  /**
+   * Set clock (for testing)
+   */
+  setClock(clock: IClock): void {
+    this.clock = clock;
   }
 }

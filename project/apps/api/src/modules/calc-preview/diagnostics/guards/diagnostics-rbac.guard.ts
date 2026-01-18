@@ -71,21 +71,22 @@ export class DiagnosticsRBACGuard implements CanActivate {
       throw new ForbiddenException('Invalid role for diagnostics access');
     }
     
-    // 4. Resolve effective tenantScope based on role
-    const effectiveTenantScope = this.resolveEffectiveTenantScope(ctx, request);
-    
-    // 5. tenant-admin: CANNOT select different tenant
+    // 4. tenant-admin: Check for override attempt BEFORE resolving scope
     if (ctx.role === 'tenant-admin') {
-      if (effectiveTenantScope !== ctx.tenantId) {
+      const requestedTenantId = this.extractRequestedTenantId(request);
+      if (requestedTenantId && requestedTenantId !== ctx.tenantId) {
         this.logger.warn('[RBAC] Cross-tenant access denied for tenant-admin', {
           userId: ctx.userId,
           ownTenant: ctx.tenantId,
-          requestedTenant: effectiveTenantScope,
+          requestedTenant: requestedTenantId,
           path: request.path,
         });
         throw new ForbiddenException('Access denied: tenant-admin cannot access other tenant data');
       }
     }
+    
+    // 5. Resolve effective tenantScope based on role
+    const effectiveTenantScope = this.resolveEffectiveTenantScope(ctx, request);
     
     // 6. Update context with effective tenant scope
     ctx.tenantId = effectiveTenantScope;
