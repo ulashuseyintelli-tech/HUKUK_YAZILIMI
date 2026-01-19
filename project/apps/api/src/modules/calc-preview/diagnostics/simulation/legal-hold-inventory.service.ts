@@ -2,6 +2,7 @@
  * Legal Hold Inventory Service
  * 
  * Phase 8 - Sprint 2E
+ * Phase 9B.5 - Migrated to ISnapshotStore interface
  * 
  * Manages LEGAL_HOLD snapshot inventory.
  * Provides visibility and alerts for LEGAL_HOLD accumulation.
@@ -12,10 +13,14 @@
  * - LEGAL_HOLD policy is never downgraded
  * 
  * @see .kiro/specs/whatif-simulation/design.md
+ * @see .kiro/specs/phase-9b-postgresql-migration/PHASE-9B-LOCK.md
  */
 
-import { Injectable, Logger } from '@nestjs/common';
-import { ISnapshotStore } from '../evidence/snapshot-store.types';
+import { Injectable, Logger, Inject } from '@nestjs/common';
+import { 
+  ISnapshotStore, 
+  SNAPSHOT_STORE,
+} from '../persistence/snapshot-store.interface';
 import { IIncidentStore } from './incident.types';
 import { IClock } from '../evidence/clock.service';
 import {
@@ -35,29 +40,56 @@ export class LegalHoldInventoryService {
 
   constructor(
     private readonly clock: IClock,
+    @Inject(SNAPSHOT_STORE)
     private readonly snapshotStore: ISnapshotStore,
     private readonly incidentStore: IIncidentStore,
   ) {}
 
   /**
+   * Validate tenantId is provided
+   * 
+   * @throws Error if tenantId is missing
+   */
+  private validateTenantId(tenantId: string): void {
+    if (!tenantId) {
+      throw new Error('tenantId is required for legal hold operations');
+    }
+  }
+
+  /**
    * List all LEGAL_HOLD snapshots
    * 
+   * @param tenantId Tenant ID (required for tenant isolation)
    * @param options Inventory options
    * @returns Array of LegalHoldEntry
    */
-  async listLegalHolds(_options: LegalHoldInventoryOptions = {}): Promise<LegalHoldEntry[]> {
-    // Use clock for timestamp (ensures it's used)
+  async listLegalHolds(tenantId: string, _options: LegalHoldInventoryOptions = {}): Promise<LegalHoldEntry[]> {
+    this.validateTenantId(tenantId);
+    
+    const now = this.clock.now();
     this.logger.debug('[LegalHoldInventory] Listing legal holds at', { timestamp: this.clock.nowIso() });
     
-    const entries: LegalHoldEntry[] = [];
-
-    // Get all snapshots from store stats
-    // We need to iterate through incidents to find LEGAL_HOLD snapshots
-    // This is a limitation of the current in-memory store design
-    // In production, this would be a direct query
+    const legalHoldSnapshots = await this.snapshotStore.findWithLegalHold(tenantId);
     
-    // For now, we'll use a workaround by checking known incidents
-    // This is not ideal but works for the current implementation
+    // Get all incidents to check baseline status
+    const entries: LegalHoldEntry[] = [];
+    
+    for (const s of legalHoldSnapshots) {
+      const incident = await this.incidentStore.get(s.incidentId);
+      const isBaseline = incident?.baselineSnapshotId === s.snapshotId;
+      const createdAt = new Date(s.createdAt);
+      const ageDays = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24);
+      
+      entries.push({
+        snapshotId: s.snapshotId,
+        incidentId: s.incidentId,
+        tenantId: s.tenantId,
+        appliedAt: s.createdAt, // Use createdAt as appliedAt (LEGAL_HOLD applied at creation or shortly after)
+        ageDays: Math.floor(ageDays),
+        isBaseline,
+        archived: this.archivedSnapshots.has(s.snapshotId),
+      });
+    }
     
     return entries;
   }
@@ -65,19 +97,22 @@ export class LegalHoldInventoryService {
   /**
    * Get legal hold statistics
    * 
+   * @param tenantId Tenant ID (required for tenant isolation)
    * @param options Inventory options
    * @returns LegalHoldStats
    */
-  async getStats(options: LegalHoldInventoryOptions = {}): Promise<LegalHoldStats> {
+  async getStats(tenantId: string, options: LegalHoldInventoryOptions = {}): Promise<LegalHoldStats> {
+    this.validateTenantId(tenantId);
+    
     const threshold = options.alertThreshold ?? DEFAULT_LEGAL_HOLD_THRESHOLD;
-    const storeStats = await this.snapshotStore.getStats();
+    const storeStats = await this.snapshotStore.getLegalHoldStats(tenantId);
 
     // Build stats from store
     const stats: LegalHoldStats = {
-      totalCount: storeStats.legalHoldCount,
-      byIncident: {},
-      oldestHoldAt: null,
-      averageAgeDays: 0,
+      totalCount: storeStats.totalCount,
+      byIncident: storeStats.byIncidentCount,
+      oldestHoldAt: storeStats.oldestHoldAt,
+      averageAgeDays: storeStats.averageAgeDays,
       incidentsExceedingThreshold: [],
     };
 
@@ -104,7 +139,7 @@ export class LegalHoldInventoryService {
    */
   async archiveLegalHold(snapshotId: string): Promise<ArchiveLegalHoldResult> {
     // Get snapshot
-    const snapshot = await this.snapshotStore.get(snapshotId);
+    const snapshot = await this.snapshotStore.findById(snapshotId);
     
     if (!snapshot) {
       return {
@@ -171,20 +206,32 @@ export class LegalHoldInventoryService {
 
   /**
    * Get count of LEGAL_HOLD snapshots for an incident
+   * 
+   * @param tenantId Tenant ID (required for tenant isolation)
+   * @param incidentId Incident ID
    */
-  async getIncidentLegalHoldCount(incidentId: string): Promise<number> {
-    const snapshots = await this.snapshotStore.listByIncident(incidentId);
+  async getIncidentLegalHoldCount(tenantId: string, incidentId: string): Promise<number> {
+    this.validateTenantId(tenantId);
+    
+    const snapshots = await this.snapshotStore.findByIncidentId(tenantId, incidentId);
     return snapshots.filter(s => s.retentionPolicy === 'LEGAL_HOLD').length;
   }
 
   /**
    * Check if incident exceeds LEGAL_HOLD threshold
+   * 
+   * @param tenantId Tenant ID (required for tenant isolation)
+   * @param incidentId Incident ID
+   * @param threshold Custom threshold (default: DEFAULT_LEGAL_HOLD_THRESHOLD)
    */
   async isIncidentExceedingThreshold(
+    tenantId: string,
     incidentId: string,
     threshold: number = DEFAULT_LEGAL_HOLD_THRESHOLD,
   ): Promise<boolean> {
-    const count = await this.getIncidentLegalHoldCount(incidentId);
+    this.validateTenantId(tenantId);
+    
+    const count = await this.getIncidentLegalHoldCount(tenantId, incidentId);
     return count > threshold;
   }
 

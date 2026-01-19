@@ -2,6 +2,7 @@
  * Simulation Rate Limit Guard - Property & Unit Tests
  * 
  * Sprint 2F - Tasks 3.2, 3.3, 3.4, 3.5
+ * Phase 9A - Task 10.1 (Test compatibility verification)
  * 
  * Property Tests:
  * - Property 4: Concurrent Limit Enforcement
@@ -16,6 +17,7 @@ import * as fc from 'fast-check';
 import { SimulationRateLimitGuard } from '../guards/simulation-rate-limit.guard';
 import { MockClockService } from '../../evidence/clock.service';
 import { SIMULATION_RATE_LIMITS } from '../simulation-rate-limit.constants';
+import { InMemoryRateLimitStore } from '../redis/in-memory-rate-limit-store';
 
 describe('SimulationRateLimitGuard', () => {
   let guard: SimulationRateLimitGuard;
@@ -23,11 +25,12 @@ describe('SimulationRateLimitGuard', () => {
 
   beforeEach(() => {
     clock = new MockClockService(new Date('2024-01-15T10:00:00Z'));
-    guard = new SimulationRateLimitGuard(clock);
+    // Pass undefined for store (will use internal in-memory), clock as second param
+    guard = new SimulationRateLimitGuard(undefined, clock);
   });
 
-  afterEach(() => {
-    guard.reset();
+  afterEach(async () => {
+    await guard.reset();
   });
 
   // ============================================================================
@@ -48,19 +51,19 @@ describe('SimulationRateLimitGuard', () => {
       }
 
       // Verify concurrent count is 5
-      const state = guard.getState(tenantId);
+      const state = await guard.getState(tenantId);
       expect(state.concurrent).toBe(5);
     });
 
     it('should reject 6th concurrent simulation', async () => {
-      fc.assert(
+      await fc.assert(
         fc.asyncProperty(
           fc.array(fc.uuid(), { minLength: 6, maxLength: 6 })
             .filter(ids => new Set(ids).size === 6), // Ensure unique runIds
           async (runIds) => {
             // Create fresh guard and clock for each property test iteration
             const testClock = new MockClockService(new Date('2024-01-15T10:00:00Z'));
-            const testGuard = new SimulationRateLimitGuard(testClock);
+            const testGuard = new SimulationRateLimitGuard(undefined, testClock);
             const tenantId = 'tenant-prop4';
 
             // Acquire 5 tokens with different incidents
@@ -144,14 +147,14 @@ describe('SimulationRateLimitGuard', () => {
     });
 
     it('should track per-incident limits independently', async () => {
-      fc.assert(
+      await fc.assert(
         fc.asyncProperty(
           fc.array(fc.uuid(), { minLength: 3, maxLength: 3 })
             .filter(ids => new Set(ids).size === 3), // Ensure unique incident IDs
           async (incidentIds) => {
             // Create fresh guard and clock for each property test iteration
             const testClock = new MockClockService(new Date('2024-01-15T10:00:00Z'));
-            const testGuard = new SimulationRateLimitGuard(testClock);
+            const testGuard = new SimulationRateLimitGuard(undefined, testClock);
             const tenantId = 'tenant-independent';
 
             // Each incident can have 1 simulation
@@ -181,7 +184,7 @@ describe('SimulationRateLimitGuard', () => {
     it('should reject 101st request on same UTC day', async () => {
       // Reset to start of day to have room for 100 requests
       clock.setTime(new Date('2024-01-15T00:00:00Z'));
-      guard.reset();
+      await guard.reset();
       
       const tenantId = 'tenant-daily-test';
 
@@ -204,7 +207,7 @@ describe('SimulationRateLimitGuard', () => {
     it('should reset daily counter at UTC midnight', async () => {
       // Start near end of day
       clock.setTime(new Date('2024-01-15T23:00:00Z'));
-      guard.reset();
+      await guard.reset();
       
       const tenantId = 'tenant-midnight-test';
 
@@ -240,7 +243,7 @@ describe('SimulationRateLimitGuard', () => {
       }
 
       // Tenant 2 should still have full quota
-      const state2 = guard.getState(tenant2);
+      const state2 = await guard.getState(tenant2);
       expect(state2.daily).toBe(0);
 
       // Tenant 2 can use their quota
@@ -256,7 +259,7 @@ describe('SimulationRateLimitGuard', () => {
 
   describe('Feature: simulation-api-2f, Property 7: Token Acquire/Release Round-Trip', () => {
     it('concurrent count increases by 1 on acquire and decreases by 1 on release', async () => {
-      fc.assert(
+      await fc.assert(
         fc.asyncProperty(
           fc.record({
             tenantId: fc.uuid(),
@@ -266,23 +269,23 @@ describe('SimulationRateLimitGuard', () => {
           async ({ tenantId, incidentId, runId }) => {
             // Create fresh guard and clock for each property test iteration
             const testClock = new MockClockService(new Date('2024-01-15T10:00:00Z'));
-            const testGuard = new SimulationRateLimitGuard(testClock);
+            const testGuard = new SimulationRateLimitGuard(undefined, testClock);
 
             // Initial state
-            const before = testGuard.getState(tenantId);
+            const before = await testGuard.getState(tenantId);
             expect(before.concurrent).toBe(0);
 
             // Acquire
             const result = await testGuard.acquireToken(tenantId, incidentId, runId);
             expect(result.acquired).toBe(true);
 
-            const during = testGuard.getState(tenantId);
+            const during = await testGuard.getState(tenantId);
             expect(during.concurrent).toBe(1);
 
             // Release
             await testGuard.releaseToken(tenantId, incidentId, runId);
 
-            const after = testGuard.getState(tenantId);
+            const after = await testGuard.getState(tenantId);
             expect(after.concurrent).toBe(0);
           },
         ),
@@ -302,7 +305,7 @@ describe('SimulationRateLimitGuard', () => {
       await guard.releaseToken(tenantId, incidentId, runId);
       await guard.releaseToken(tenantId, incidentId, runId);
 
-      const state = guard.getState(tenantId);
+      const state = await guard.getState(tenantId);
       expect(state.concurrent).toBe(0);
       expect(state.concurrent).toBeGreaterThanOrEqual(0);
     });
@@ -315,17 +318,17 @@ describe('SimulationRateLimitGuard', () => {
       await guard.acquireToken(tenantId, 'inc-2', 'run-2');
       await guard.acquireToken(tenantId, 'inc-3', 'run-3');
 
-      expect(guard.getState(tenantId).concurrent).toBe(3);
+      expect((await guard.getState(tenantId)).concurrent).toBe(3);
 
       // Release middle one
       await guard.releaseToken(tenantId, 'inc-2', 'run-2');
 
-      expect(guard.getState(tenantId).concurrent).toBe(2);
+      expect((await guard.getState(tenantId)).concurrent).toBe(2);
 
       // Release first
       await guard.releaseToken(tenantId, 'inc-1', 'run-1');
 
-      expect(guard.getState(tenantId).concurrent).toBe(1);
+      expect((await guard.getState(tenantId)).concurrent).toBe(1);
     });
   });
 
@@ -400,7 +403,7 @@ describe('SimulationRateLimitGuard', () => {
       }
 
       // Should have used 10 of daily quota
-      const state = guard.getState(tenantId);
+      const state = await guard.getState(tenantId);
       expect(state.daily).toBe(10);
       expect(state.concurrent).toBe(0);
     });
@@ -416,7 +419,7 @@ describe('SimulationRateLimitGuard', () => {
 
       // Each tenant should have 2 concurrent
       for (const tenantId of tenants) {
-        const state = guard.getState(tenantId);
+        const state = await guard.getState(tenantId);
         expect(state.concurrent).toBe(2);
         expect(state.daily).toBe(2);
       }
@@ -424,9 +427,38 @@ describe('SimulationRateLimitGuard', () => {
       // Release from one tenant doesn't affect others
       await guard.releaseToken('tenant-a', 'inc-1', 'run-1');
 
-      expect(guard.getState('tenant-a').concurrent).toBe(1);
-      expect(guard.getState('tenant-b').concurrent).toBe(2);
-      expect(guard.getState('tenant-c').concurrent).toBe(2);
+      expect((await guard.getState('tenant-a')).concurrent).toBe(1);
+      expect((await guard.getState('tenant-b')).concurrent).toBe(2);
+      expect((await guard.getState('tenant-c')).concurrent).toBe(2);
+    });
+  });
+
+  // ============================================================================
+  // Phase 9A: IRateLimitStore Integration Tests
+  // **Validates: Requirements 8.1, 8.3**
+  // ============================================================================
+
+  describe('Phase 9A: IRateLimitStore Integration', () => {
+    it('should work with injected InMemoryRateLimitStore', async () => {
+      const testClock = new MockClockService(new Date('2024-01-15T10:00:00Z'));
+      const store = new InMemoryRateLimitStore(testClock);
+      const testGuard = new SimulationRateLimitGuard(store, testClock);
+
+      const result = await testGuard.acquireToken('tenant-1', 'inc-1', 'run-1');
+      expect(result.acquired).toBe(true);
+
+      const state = await testGuard.getState('tenant-1');
+      expect(state.concurrent).toBe(1);
+    });
+
+    it('should expose underlying store for testing', async () => {
+      const store = guard.getStore();
+      expect(store).toBeDefined();
+      
+      // Store should implement IRateLimitStore
+      expect(typeof store.incrementIncidentCounter).toBe('function');
+      expect(typeof store.getConcurrentCount).toBe('function');
+      expect(typeof store.acquireIncidentLock).toBe('function');
     });
   });
 });

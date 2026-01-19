@@ -1,4 +1,4 @@
-module.exports = {
+﻿module.exports = {
   moduleFileExtensions: ['js', 'json', 'ts'],
   rootDir: 'src',
   setupFilesAfterEnv: ['<rootDir>/../jest.setup.ts'],
@@ -10,6 +10,6 @@ module.exports = {
   coverageDirectory: '../coverage',
   testEnvironment: 'node',
   moduleNameMapper: {
-    '^@/(.*)$': '<rootDir>/$1',
+    '^@/(.*)$': '<rootDir>/',
   },
 };

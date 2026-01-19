@@ -2,22 +2,26 @@
  * Evidence Bundle Controller Tests
  * 
  * Sprint 2F - Task 8.4-8.5
+ * Phase 9B.5 - Updated to use MockSnapshotStore
  * 
  * Unit tests and property tests for evidence bundle controller.
  * 
  * RED LINE #5: Bundle verify mismatch returns 200 + ok:false
  * 
  * @see .kiro/specs/simulation-api-2f/design.md
+ * @see .kiro/specs/phase-9b-postgresql-migration/PHASE-9B-LOCK.md
  */
 
 import * as fc from 'fast-check';
 import { EvidenceBundleController } from '../evidence-bundle.controller';
 import { EvidenceBundleService } from '../../simulation/evidence-bundle.service';
 import { InMemoryIncidentStore } from '../../simulation/incident-store.service';
-import { InMemorySnapshotStore } from '../../evidence/snapshot-store.service';
+import { MockSnapshotStore } from './mock-snapshot-store';
+import { ISnapshotStore, SNAPSHOT_STORE } from '../../persistence/snapshot-store.interface';
 import { IClock } from '../../evidence/clock.service';
 import { SimulationTenantContext } from '../guards/simulation-rbac.guard';
 import { IncidentNotFoundException, BundleNotFoundException } from '../simulation-error.types';
+import { canonicalHash } from '../../simulation/determinism';
 
 // ============================================================================
 // Mock Clock
@@ -68,13 +72,17 @@ function createTestContext(): {
   clock: MockClock;
   controller: EvidenceBundleController;
   incidentStore: InMemoryIncidentStore;
-  snapshotStore: InMemorySnapshotStore;
+  snapshotStore: MockSnapshotStore;
   bundleService: EvidenceBundleService;
 } {
   const clock = new MockClock();
-  const snapshotStore = new InMemorySnapshotStore(clock);
+  const snapshotStore = new MockSnapshotStore(clock);
   const incidentStore = new InMemoryIncidentStore(clock);
-  const bundleService = new EvidenceBundleService(clock, incidentStore, snapshotStore);
+  
+  // Create EvidenceBundleService with mock - need to inject via Reflect
+  const bundleService = new EvidenceBundleService(clock, incidentStore, snapshotStore as unknown as ISnapshotStore);
+  // Override the injected store
+  (bundleService as any).snapshotStore = snapshotStore;
 
   const controller = new EvidenceBundleController(bundleService, incidentStore);
 
@@ -91,7 +99,7 @@ function createTenantContext(tenantId: string, role: 'tenant-admin' | 'internal-
 
 async function createTestIncidentWithRun(
   incidentStore: InMemoryIncidentStore,
-  snapshotStore: InMemorySnapshotStore,
+  snapshotStore: MockSnapshotStore,
   incidentId: string,
   tenantId: string,
 ): Promise<{ runId: string; baselineSnapshotId: string; currentSnapshotId: string }> {
@@ -103,47 +111,44 @@ async function createTestIncidentWithRun(
     severity: 'MEDIUM',
   });
 
-  // Create snapshots
+  // Create snapshots using new interface
   const baselineSnapshotId = `snap-baseline-${incidentId}`;
   const currentSnapshotId = `snap-current-${incidentId}`;
   const now = new Date().toISOString();
 
-  await snapshotStore.save({
+  // Create baseline snapshot
+  const baselineCalcResult = { latency_p95: 100 };
+  const baselineCalcResultNorm = { latency_p95: '100' };
+  const baselineCalcHash = canonicalHash(baselineCalcResultNorm);
+
+  await snapshotStore.createSnapshot({
     snapshotId: baselineSnapshotId,
     incidentId,
     tenantId,
-    capturedAt: now,
-    points: [
-      { 
-        metric: 'latency_p95', 
-        value: 100, 
-        unit: 'ms', 
-        confidence: 0.95,
-        windowSec: 60,
-        freshnessSec: 10,
-        source: 'prometheus',
-        timestamp: now,
-      },
-    ],
+    snapshotKind: 'BASELINE',
+    verdict: 'PROCEED',
+    driftScore: 0,
+    calcResult: baselineCalcResult,
+    calcResultNorm: baselineCalcResultNorm,
+    calcHash: baselineCalcHash,
+    isBaseline: true,
   });
 
-  await snapshotStore.save({
+  // Create current snapshot
+  const currentCalcResult = { latency_p95: 110 };
+  const currentCalcResultNorm = { latency_p95: '110' };
+  const currentCalcHash = canonicalHash(currentCalcResultNorm);
+
+  await snapshotStore.createSnapshot({
     snapshotId: currentSnapshotId,
     incidentId,
     tenantId,
-    capturedAt: now,
-    points: [
-      { 
-        metric: 'latency_p95', 
-        value: 110, 
-        unit: 'ms', 
-        confidence: 0.95,
-        windowSec: 60,
-        freshnessSec: 10,
-        source: 'prometheus',
-        timestamp: now,
-      },
-    ],
+    snapshotKind: 'CURRENT',
+    verdict: 'PROCEED',
+    driftScore: 0.05,
+    calcResult: currentCalcResult,
+    calcResultNorm: currentCalcResultNorm,
+    calcHash: currentCalcHash,
   });
 
   // Set baseline

@@ -3,11 +3,19 @@
  * 
  * Phase 8 - Sprint 2C
  * 
- * SnapshotStore interface ve ilgili tipler.
+ * @deprecated Phase 9B.5 - Use ISnapshotStore from persistence/snapshot-store.interface.ts
+ * This file is kept for backward compatibility with InMemorySnapshotStore.
+ * New code should use the Truth Layer interface.
+ * 
+ * Migration path:
+ * - ISnapshotStore → persistence/snapshot-store.interface.ts
+ * - StoredSnapshot → SimulationSnapshot (with extractPoints projection)
+ * - points[] → extractPoints(calcResult) from calc-result-projection.ts
  * 
  * NOTE: RetentionPolicy is imported from retention-policy.ts (SINGLE SOURCE OF TRUTH)
  * 
  * @see .kiro/specs/whatif-simulation/design.md
+ * @see .kiro/specs/phase-9b-postgresql-migration/PHASE-9B-LOCK.md
  */
 
 import { EvidenceSnapshot } from '../diagnostics.types';
@@ -94,6 +102,14 @@ export interface SetRetentionPolicyResult extends PolicyTransitionResult {
 
 /**
  * SnapshotStore interface
+ * 
+ * @deprecated Phase 9B.5 - Use ISnapshotStore from persistence/snapshot-store.interface.ts
+ * This interface is kept for backward compatibility with InMemorySnapshotStore.
+ * 
+ * Migration:
+ * - Inject SNAPSHOT_STORE token instead of direct InMemorySnapshotStore
+ * - Use SimulationSnapshot instead of StoredSnapshot
+ * - Use extractPoints(calcResult) instead of snapshot.points[]
  * 
  * Abstraction for snapshot persistence.
  * Sprint 1B: InMemory implementation

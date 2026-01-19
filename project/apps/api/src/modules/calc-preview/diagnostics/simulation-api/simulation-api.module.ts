@@ -2,10 +2,15 @@
  * Simulation API Module
  * 
  * Sprint 2F - Task 11.1
+ * Phase 9B.5 - Migrated to ISnapshotStore interface
  * 
  * Registers all simulation API controllers and guards.
  * 
+ * LOCKED: InMemorySnapshotStore is FORBIDDEN in prod paths.
+ * All snapshot operations go through SNAPSHOT_STORE token → PostgreSQL.
+ * 
  * @see .kiro/specs/simulation-api-2f/design.md
+ * @see .kiro/specs/phase-9b-postgresql-migration/PHASE-9B-LOCK.md
  */
 
 import { Module } from '@nestjs/common';
@@ -22,7 +27,13 @@ import { SimulationRateLimitGuard } from './guards/simulation-rate-limit.guard';
 
 // Services
 import { SimulationFeatureFlagService } from './simulation-feature-flag.service';
-import { SimulationRunStoreService } from './simulation-run-store.service';
+import { SimulationRunStoreService, SIMULATION_RUN_REPOSITORY } from './simulation-run-store.service';
+
+// Persistence - Phase 9B.5 Truth Layer
+import { TruthLayerModule } from '../persistence/truth-layer.module';
+import { SNAPSHOT_STORE } from '../persistence/snapshot-store.interface';
+import { PrismaSimulationRunRepository } from '../persistence/prisma-simulation-run.repository';
+import { PrismaService } from '../../../../prisma/prisma.service';
 
 // Existing services from simulation module
 import { SimulationEngineService } from '../simulation/simulation-engine.service';
@@ -30,9 +41,9 @@ import { InMemoryIncidentStore } from '../simulation/incident-store.service';
 import { BaselineResolverService } from '../simulation/baseline-resolver.service';
 import { EvidenceBundleService } from '../simulation/evidence-bundle.service';
 import { LegalHoldInventoryService } from '../simulation/legal-hold-inventory.service';
+import { SnapshotQueryService } from '../simulation/snapshot-query.service';
 
 // Evidence services
-import { InMemorySnapshotStore } from '../evidence/snapshot-store.service';
 import { EvidenceGateService } from '../evidence/evidence-gate.service';
 import { ClockService, IClock } from '../evidence/clock.service';
 
@@ -59,12 +70,21 @@ class SimulationClockAdapter implements ISimulationClock {
 }
 
 @Module({
+  imports: [
+    // Phase 9B.5: Import TruthLayerModule for SNAPSHOT_STORE token
+    // This provides PostgreSQL-backed snapshot storage
+    // InMemorySnapshotStore is FORBIDDEN in prod paths
+    TruthLayerModule,
+  ],
   controllers: [
     SimulationController,
     EvidenceBundleController,
     LegalHoldController,
   ],
   providers: [
+    // Prisma Service
+    PrismaService,
+    
     // Clock
     {
       provide: 'IClock',
@@ -98,23 +118,26 @@ class SimulationClockAdapter implements ISimulationClock {
     SimulationRBACGuard,
     {
       provide: SimulationRateLimitGuard,
-      useFactory: (clock: IClock) => new SimulationRateLimitGuard(clock),
+      useFactory: (clock: IClock) => new SimulationRateLimitGuard(undefined, clock),
       inject: ['IClock'],
     },
     
-    // Run Store
+    // Simulation Run Repository (Phase 9B)
+    PrismaSimulationRunRepository,
+    {
+      provide: SIMULATION_RUN_REPOSITORY,
+      useExisting: PrismaSimulationRunRepository,
+    },
+    
+    // Run Store (Phase 9B - uses repository)
     {
       provide: SimulationRunStoreService,
-      useFactory: (clock: IClock) => new SimulationRunStoreService(clock),
-      inject: ['IClock'],
+      useFactory: (repo: PrismaSimulationRunRepository) => new SimulationRunStoreService(repo),
+      inject: [PrismaSimulationRunRepository],
     },
     
-    // Snapshot Store
-    {
-      provide: InMemorySnapshotStore,
-      useFactory: (clock: IClock) => new InMemorySnapshotStore(clock),
-      inject: ['IClock'],
-    },
+    // Phase 9B.5: SNAPSHOT_STORE is provided by TruthLayerModule
+    // InMemorySnapshotStore is REMOVED from prod wiring
     
     // Evidence Gate
     EvidenceGateService,
@@ -134,29 +157,18 @@ class SimulationClockAdapter implements ISimulationClock {
       inject: ['IClock'],
     },
     
-    // Baseline Resolver
-    {
-      provide: BaselineResolverService,
-      useFactory: (clock: IClock, snapshotStore: InMemorySnapshotStore, incidentStore: InMemoryIncidentStore) =>
-        new BaselineResolverService(clock, snapshotStore, incidentStore),
-      inject: ['IClock', InMemorySnapshotStore, InMemoryIncidentStore],
-    },
+    // Phase 9B.5: BaselineResolverService now uses SNAPSHOT_STORE token
+    BaselineResolverService,
     
-    // Evidence Bundle Service
-    {
-      provide: EvidenceBundleService,
-      useFactory: (clock: IClock, incidentStore: InMemoryIncidentStore, snapshotStore: InMemorySnapshotStore) =>
-        new EvidenceBundleService(clock, incidentStore, snapshotStore),
-      inject: ['IClock', InMemoryIncidentStore, InMemorySnapshotStore],
-    },
+    // Phase 9B.5: SnapshotQueryService - Query Facade for controllers
+    // Controllers use this instead of direct store access
+    SnapshotQueryService,
     
-    // Legal Hold Inventory Service
-    {
-      provide: LegalHoldInventoryService,
-      useFactory: (clock: IClock, snapshotStore: InMemorySnapshotStore, incidentStore: InMemoryIncidentStore) =>
-        new LegalHoldInventoryService(clock, snapshotStore, incidentStore),
-      inject: ['IClock', InMemorySnapshotStore, InMemoryIncidentStore],
-    },
+    // Phase 9B.5: EvidenceBundleService now uses SNAPSHOT_STORE token
+    EvidenceBundleService,
+    
+    // Phase 9B.5: LegalHoldInventoryService now uses SNAPSHOT_STORE token
+    LegalHoldInventoryService,
   ],
   exports: [
     SimulationController,
@@ -167,6 +179,8 @@ class SimulationClockAdapter implements ISimulationClock {
     SimulationRateLimitGuard,
     SimulationRunStoreService,
     'IClock',
+    // Phase 9B.5: Export SNAPSHOT_STORE for consumers
+    SNAPSHOT_STORE,
   ],
 })
 export class SimulationApiModule {}

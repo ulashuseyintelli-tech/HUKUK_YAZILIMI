@@ -6221,3 +6221,94 @@ enum CpeExecutionStatus {
   FAILED    // Hata
   NOOP      // Duplicate executionId - no operation
 }
+
+
+// ==================== PHASE 9B: TRUTH LAYER ====================
+// Simulation runs and snapshots for diagnostics system
+// Truth Layer Contract v1.0.0 - 2026-01-18
+// NO FALLBACK: DB down = system down
+
+// Simulation Run Status
+enum SimulationRunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+}
+
+// Simulation Snapshot Kind
+enum SimulationSnapshotKind {
+  BASELINE
+  CURRENT
+  OTHER
+}
+
+// Simulation Run - execution metadata
+// Immutable fields: runId, tenantId, incidentId, scenarioId, seed, simulationVersion, engineVersion, startedAt
+// Mutable fields: status, finishedAt, currentSnapshotId, baselineSnapshotId, errorCode, errorMessage
+model SimulationRun {
+  runId              String              @id @map("run_id")
+  tenantId           String              @map("tenant_id")
+  incidentId         String              @map("incident_id") // No FK - Incident not in Prisma yet
+
+  scenarioId         String              @map("scenario_id")
+  seed               Int                 @map("seed")
+  simulationVersion  String              @map("simulation_version")
+  engineVersion      String?             @map("engine_version")
+
+  status             SimulationRunStatus @default(PENDING) @map("status")
+
+  startedAt          DateTime            @default(now()) @map("started_at") @db.Timestamptz(6)
+  finishedAt         DateTime?           @map("finished_at") @db.Timestamptz(6)
+
+  // Snapshot links (no FK constraint for now - avoid circular migration issues)
+  currentSnapshotId  String?             @map("current_snapshot_id")
+  baselineSnapshotId String?             @map("baseline_snapshot_id")
+
+  // Error info (for FAILED status)
+  errorCode          String?             @map("error_code")
+  errorMessage       String?             @map("error_message")
+
+  // Reverse relation for snapshots
+  snapshots          SimulationSnapshot[]
+
+  @@index([tenantId, incidentId], map: "ix_sim_runs_tenant_incident")
+  @@index([tenantId, status], map: "ix_sim_runs_tenant_status")
+  @@index([incidentId, startedAt(sort: Desc)], map: "ix_sim_runs_incident_started")
+  @@map("simulation_runs")
+}
+
+// Simulation Snapshot - calculation result (INSERT-ONLY)
+// All fields immutable except: isBaseline (upgrade only), retentionPolicy (upgrade only), expiresAt
+model SimulationSnapshot {
+  snapshotId      String                  @id @map("snapshot_id")
+  tenantId        String                  @map("tenant_id")
+  incidentId      String                  @map("incident_id") // No FK - Incident not in Prisma yet
+
+  // Run link (optional FK)
+  runId           String?                 @map("run_id")
+  run             SimulationRun?          @relation(fields: [runId], references: [runId], onDelete: SetNull)
+
+  snapshotKind    SimulationSnapshotKind  @map("snapshot_kind")
+  isBaseline      Boolean                 @default(false) @map("is_baseline")
+
+  verdict         String                  @map("verdict") // PROCEED, BLOCK_DRIFT, BLOCK_EVIDENCE, BLOCK_POLICY
+  driftScore      Decimal                 @map("drift_score") @db.Decimal(10, 6)
+
+  // Calculation results
+  calcResult      Json                    @map("calc_result") // Raw result (debug/audit)
+  calcResultNorm  Json                    @map("calc_result_norm") // Normalized for hash
+  calcHash        String                  @map("calc_hash") // SHA256(canonicalStringify(calcResultNorm))
+
+  // Retention (upgrade-only)
+  retentionPolicy String?                 @default("STANDARD") @map("retention_policy") // STANDARD, PROMOTED, LEGAL_HOLD
+  expiresAt       DateTime?               @map("expires_at") @db.Timestamptz(6)
+
+  createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  @@index([tenantId, incidentId, createdAt(sort: Desc)], map: "ix_sim_snap_tenant_incident_created")
+  @@index([tenantId, runId], map: "ix_sim_snap_tenant_run")
+  @@index([tenantId, isBaseline], map: "ix_sim_snap_tenant_isbaseline")
+  @@index([expiresAt], map: "ix_sim_snap_expires")
+  @@map("simulation_snapshots")
+}

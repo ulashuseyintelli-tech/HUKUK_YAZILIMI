@@ -1,119 +1,193 @@
-Yazarım. **Net, sıralı ve nereye kadar gittiği belli** bir yol haritası veriyorum. Bu bir “istek listesi” değil; **hangi hamle neden yapılır, nerede durur** haritası.
+# HUKUK YAZILIMI — YOL HARİTASI
 
-Aşağıda **bugünden itibaren** tüm sistemin **doğal bitiş noktalarına** kadar giden plan var.
+**Son Güncelleme:** 2026-01-18  
+**Durum:** Phase 9B LOCKED, Phase 9B.5 sırada
 
 ---
 
 ## 📍 ŞU ANKİ KONUM
 
-* Phase 5: **Mühendislik rejimi** → kapalı
-* Phase 6: **Ürün + Platform çekirdeği** → kapalı
-* Phase 7A: **Self-serve Diagnostics** → kapalı
-* Phase 7B: **Ops Playbook System** → **başlamak üzere**
+| Faz | Durum | Test Sayısı |
+|-----|-------|-------------|
+| Phase 5: Mühendislik rejimi | ✅ KAPALI | - |
+| Phase 6: Ürün + Platform çekirdeği | ✅ KAPALI | - |
+| Phase 7A: Self-serve Diagnostics | ✅ KAPALI | - |
+| Phase 7B: Ops Playbook System | ✅ KAPALI | 135 test |
+| Phase 8 Sprint 2E: What-if Simulation | ✅ TAMAMLANDI | 312 test |
+| Phase 9A: Redis Migration | ✅ KİLİTLİ | - |
+| Phase 9B: PostgreSQL Migration | ✅ KİLİTLİ | 288 test (33 integration + 255 simulation) |
 
-Buradan sonrası artık “yazılım geliştirme” değil, **operasyonel olgunluk ve ölçek**.
-
----
-
-# 🔵 PHASE 7B — OPS PLAYBOOK SYSTEM
-
-**Amaç:** Incident → aksiyon → öğrenme döngüsünü kapatmak
-**Bittiğinde:** Sistem kendi kendini *yönetmeye başlar*
-
-### Sprint 1 — Playbook Foundation *(Dry-run only)*
-
-**Ne yapılır**
-
-* PlaybookRegistry (YAML load + schema + semantic validation)
-* PlaybookMatcher (incident → playbook)
-* İlk 3 playbook (circuit_breaker / high_error_rate / slo_breach)
-* Dry-run executor (audit + metrics, **davranış değişikliği yok**)
-
-**Nerede biter**
-
-* Incident geldiğinde:
-  “Bu olaya karşılık şu playbook çalışacaktı” **kanıtlı şekilde görülür**
-* Prod güvenli
+Buradan sonrası artık "yazılım geliştirme" değil, **operasyonel olgunluk ve ölçek**.
 
 ---
 
-### Sprint 2 — Action Execution (Controlled Automation)
+## 🔒 PHASE 9B — TRUTH LAYER (LOCKED)
 
-**Ne yapılır**
+**Durum:** COMPLETE & LOCKED  
+**Kilitlenme Tarihi:** 2026-01-18
 
-* ActionPolicyGuard (limitler, allowlist, cooldown)
-* ActionLeaseManager (temporary effect + auto rollback)
-* Auto-actions:
+### Tamamlanan İşler
 
-  * extend_cache_ttl
-  * enable_fallback
-  * increase_timeout
-* Idempotency + lease expiry
+- ✅ Prisma schema (SimulationRun, SimulationSnapshot)
+- ✅ Partial unique index (single baseline per incident)
+- ✅ Repository interfaces (ISimulationRunRepository, ISnapshotRepository)
+- ✅ Prisma repository implementations
+- ✅ 33 integration test (all Truth Layer invariants)
+- ✅ SimulationRunStoreService → PostgreSQL
+- ✅ SnapshotStoreService (NEW) → PostgreSQL
+- ✅ TruthLayerModule (fail-fast startup)
+- ✅ PHASE-9B-LOCK.md
 
-**Nerede biter**
+### Kilitli Kurallar
 
-* Sistem **kendini sınırlı ve geri alınabilir şekilde** düzeltebilir
-* İnsan müdahalesi hâlâ mümkün
-* Otomasyon **kontrollü**
+| Kural | Açıklama |
+|-------|----------|
+| Schema değişikliği | ❌ YASAK (column remove, type change) |
+| Repository contract | ❌ YASAK (method signature change) |
+| Invariant gevşetme | ❌ YASAK |
+| In-memory fallback | ❌ YASAK |
+| Hash hesaplama | SADECE determinism.ts |
 
----
+### İzin Verilen Değişiklikler
 
-### Sprint 3 — Notification, Escalation, Quality
-
-**Ne yapılır**
-
-* Slack / webhook / email
-* EscalationTimer (WARNING → CRITICAL)
-* Human action tracking (ack / resolve / SLA)
-* Property + golden + integration testler
-
-**Phase 7B Bitiş Tanımı**
-
-> “Sistem bir şey olduğunda sadece bağırmıyor;
-> **ne yapılacağını yapıyor, yapılamazsa doğru kişiye söylüyor.**”
-
----
-
-# 🟢 PHASE 8 — WHAT-IF / SIMULATION PREVIEW
-
-**Amaç:** Karar öncesi analiz
-**Bittiğinde:** Kullanıcı “şimdi açarsam ne olur?”u görür
-
-### Sprint 1 — Simulation Engine
-
-* Base request + variants
-* Deterministic runs
-* Trace bağlama
-* Budget guard
-
-### Sprint 2 — Diff & Recommendation
-
-* Variant comparison
-* Severity diff
-* “Bu policy neden daha kötü?” açıklaması
-
-**Phase 8 Bitişi**
-
-> Hukukçu/operatör artık **sonuçtan önce** alternatifleri görür.
+- ✅ Non-unique index ekleme
+- ✅ Bug fix (invariant değiştirmeden)
+- ✅ Metric ekleme
+- ✅ Log iyileştirme
 
 ---
 
-# 🟣 PHASE 9 — POLICY PLUGIN PLATFORM
+## 🔵 PHASE 9B.5 — SNAPSHOT STORE INTERFACE CUTOVER (Recommended pre-9C)
 
-**Amaç:** Kuralları koddan ayırmak
+**Amaç:** InMemorySnapshotStore bağımlılıklarını temizle, 9C'yi tek hedefe odakla  
+**Durum:** SIRADA
+
+### Neden Gerekli?
+
+Phase 9C'ye geçmeden önce plumbing'i bitirmek gerekiyor. Aksi halde 9C "iki büyük değişim birden" olur ve risk katlanır.
+
+### Yapılacaklar
+
+- [ ] 1. ISnapshotStore interface'i oluştur (veya mevcut olanı genişlet)
+- [ ] 2. SnapshotStoreService'i ISnapshotStore implement etsin
+- [ ] 3. Tüm tüketicileri interface'e geçir:
+  - [ ] BaselineResolverService
+  - [ ] EvidenceBundleService
+  - [ ] LegalHoldInventoryService
+  - [ ] LegalHoldController
+  - [ ] simulation-api.module.ts (DI wiring)
+- [ ] 4. InMemorySnapshotStore'u sadece test/shadow-compare için tut
+- [ ] 5. Shadow-compare metrics ekle (drift/hash/latency)
+- [ ] 6. Prod path'lerde InMemorySnapshotStore injection yasak (test hariç)
+
+### Kilitlenecek Kurallar (9B.5 Bitişinde)
+
+| Kural | Açıklama |
+|-------|----------|
+| Prod InMemorySnapshotStore | ❌ YASAK |
+| Shadow-compare kararları | DB'den gelir, in-memory sadece karşılaştırma |
+
+### Etkilenen Dosyalar
+
+```
+simulation-api.module.ts          → DI wiring güncelle
+baseline-resolver.service.ts      → ISnapshotStore inject
+evidence-bundle.service.ts        → ISnapshotStore inject
+legal-hold-inventory.service.ts   → ISnapshotStore inject
+legal-hold.controller.ts          → ISnapshotStore inject
+snapshot-store.service.ts         → ISnapshotStore implement
+```
+
+---
+
+## � PHASE 9C l— EVIDENCE BUNDLE → S3/MinIO (Main)
+
+**Amaç:** Evidence bundle'ları object storage'a taşı  
+**Durum:** Phase 9B.5 sonrası
+
+### Asıl Hedef
+
+Evidence Bundle storage'ı S3/MinIO'ya migrate etmek. **Bu, InMemorySnapshotStore migration'ından AYRI bir iş.**
+
+### Yapılacaklar
+
+- [ ] 1. S3 infrastructure setup
+  - [ ] @aws-sdk/client-s3 dependency
+  - [ ] S3Config module
+  - [ ] MinIO for local/CI testing
+
+- [ ] 2. IBundleRepository interface
+  - [ ] Extract from current implementation
+  - [ ] InMemoryBundleRepository adapter
+
+- [ ] 3. S3BundleRepository implementation
+  - [ ] save() with PutObject + multipart for >5MB
+  - [ ] findById() with HeadObject
+  - [ ] getContent() with GetObject
+  - [ ] generatePresignedUrl()
+  - [ ] verify() with hash comparison
+
+- [ ] 4. Retry queue (bounded)
+  - [ ] Max 100 items
+  - [ ] Exponential backoff (1s, 2s, 4s)
+  - [ ] Background worker
+
+- [ ] 5. Retention management
+  - [ ] S3 lifecycle rules
+  - [ ] Legal hold via S3 Object Lock
+  - [ ] Sync with snapshot legal hold status
+
+- [ ] 6. Metrics & observability
+  - [ ] Latency histogram
+  - [ ] Error counters
+  - [ ] Storage size per tenant
+
+- [ ] 7. Integration & testing
+  - [ ] Wire up EvidenceBundleService
+  - [ ] Feature flag for S3 vs in-memory
+  - [ ] MinIO CI configuration
+
+### Bağımlılıklar
+
+- Phase 9B.5 COMPLETE (InMemorySnapshotStore temizliği)
+- Snapshot data → PostgreSQL (Phase 9B)
+- Legal hold status → PostgreSQL (Phase 9B)
+
+---
+
+## 🟡 PHASE 8 SPRINT 3 — API + Rate Limiting + ScenarioRanker + Promote
+
+**Amaç:** Simulation API'yi tamamla  
+**Durum:** Phase 9B.5/9C ile paralel yapılabilir
+
+### Yapılacaklar
+
+- [ ] POST /v1/simulations controller
+- [ ] GET /v1/simulations/{id} controller
+- [ ] Simulation rate limiting (concurrent max 3, daily max 100)
+- [ ] ScenarioRanker service (riskScore + expectedImpact)
+- [ ] Condition-based escalation + de-escalation
+- [ ] PromoteService + drift guard
+- [ ] Audit events wiring
+
+---
+
+## 🟣 PHASE 9 — POLICY PLUGIN PLATFORM
+
+**Amaç:** Kuralları koddan ayırmak  
 **Bittiğinde:** Farklı müşteri / sektör / dönem için policy değişebilir
 
 ### Sprint 1 — Plugin Runtime
 
-* Plugin registry
-* Sandbox + timeout
-* Determinism enforcement
+- Plugin registry
+- Sandbox + timeout
+- Determinism enforcement
 
 ### Sprint 2 — Rollout & Shadow Eval
 
-* Canary tenant
-* Shadow evaluation
-* Diff metrics
+- Canary tenant
+- Shadow evaluation
+- Diff metrics
 
 **Phase 9 Bitişi**
 
@@ -121,17 +195,17 @@ Buradan sonrası artık “yazılım geliştirme” değil, **operasyonel olgunl
 
 ---
 
-# 🟠 PHASE 10 — PLATFORM & SCALE
+## 🟠 PHASE 10 — PLATFORM & SCALE
 
-**Amaç:** Büyük müşteri, çok bölge, entegrasyon
-**Bittiğinde:** Sistem “ürün” değil **altyapı** olur
+**Amaç:** Büyük müşteri, çok bölge, entegrasyon  
+**Bittiğinde:** Sistem "ürün" değil **altyapı** olur
 
 ### İçerik
 
-* Multi-region routing (active-passive)
-* Cross-region trace/metrics aggregation
-* External SDK consumers
-* BI / reporting feeds
+- Multi-region routing (active-passive)
+- Cross-region trace/metrics aggregation
+- External SDK consumers
+- BI / reporting feeds
 
 **Phase 10 Bitişi**
 
@@ -139,16 +213,17 @@ Buradan sonrası artık “yazılım geliştirme” değil, **operasyonel olgunl
 
 ---
 
-# 🔴 GERÇEK SON DURAK (DOĞAL BİTİŞ)
+## 🔴 GERÇEK SON DURAK (DOĞAL BİTİŞ)
 
 Burada durulur.
 
 Bundan sonra yapılacaklar:
 
-* UI iyileştirme
-* Yeni aksiyon ekleme
-* Yeni policy yazma
-  Ama **mimari hamle yok**.
+- UI iyileştirme
+- Yeni aksiyon ekleme
+- Yeni policy yazma
+
+Ama **mimari hamle yok**.
 
 > Bu noktadan sonra yapılan her şey **konfigürasyon**,
 > **hiçbiri paradigma değişimi değil.**
@@ -157,13 +232,119 @@ Bundan sonra yapılacaklar:
 
 ## 🧭 Özet — Büyük Resim
 
-| Aşama    | Ne Değişir                      |
-| -------- | ------------------------------- |
-| Phase 7B | Sistem kendine tepki verir      |
-| Phase 8  | İnsan karar vermeden önce görür |
-| Phase 9  | Kurallar koddan ayrılır         |
-| Phase 10 | Sistem altyapı olur             |
-| Sonrası  | Sadece işletme                  |
+| Aşama | Ne Değişir | Durum |
+|-------|------------|-------|
+| Phase 7B | Sistem kendine tepki verir | ✅ KAPALI |
+| Phase 8 Sprint 2E | İnsan karar vermeden önce görür | ✅ TAMAMLANDI |
+| Phase 9A | Rate limiting Redis'e taşındı | ✅ KİLİTLİ |
+| Phase 9B | Truth Layer PostgreSQL'e taşındı | ✅ KİLİTLİ |
+| Phase 9B.5 | InMemorySnapshotStore temizliği | 🔵 SIRADA |
+| Phase 9C | Evidence Bundle → S3/MinIO | ⏳ 9B.5 sonrası |
+| Phase 8 Sprint 3 | Simulation API tamamlama | ⏳ Paralel |
+| Phase 9 | Kurallar koddan ayrılır | ⏳ |
+| Phase 10 | Sistem altyapı olur | ⏳ |
+| Sonrası | Sadece işletme | - |
+
+---
+
+## 📐 MİMARİ DİYAGRAM — PHASE 9B TRUTH LAYER
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           PHASE 9B - TRUTH LAYER                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                        TruthLayerModule                              │   │
+│  │  onModuleInit: SELECT 1 (fail-fast)                                 │   │
+│  │  NO in-memory fallback                                              │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                    │                                        │
+│           ┌────────────────────────┴────────────────────────┐              │
+│           ▼                                                  ▼              │
+│  ┌─────────────────────────┐                    ┌─────────────────────────┐│
+│  │ SimulationRunStoreService│                    │  SnapshotStoreService   ││
+│  │ (Thin Orchestration)     │                    │  (Thin Orchestration)   ││
+│  │ - Metrics emission       │                    │  - calcHash validation  ││
+│  │ - Logging                │                    │  - Metrics emission     ││
+│  │ - Legacy interface       │                    │  - Logging              ││
+│  └───────────┬──────────────┘                    └───────────┬─────────────┘│
+│              │                                               │              │
+│              ▼                                               ▼              │
+│  ┌─────────────────────────┐                    ┌─────────────────────────┐│
+│  │ISimulationRunRepository │                    │   ISnapshotRepository   ││
+│  │ (Interface)             │                    │   (Interface)           ││
+│  └───────────┬──────────────┘                    └───────────┬─────────────┘│
+│              │                                               │              │
+│              ▼                                               ▼              │
+│  ┌─────────────────────────┐                    ┌─────────────────────────┐│
+│  │PrismaSimulationRunRepo  │                    │  PrismaSnapshotRepo     ││
+│  │ - Immutable field check │                    │  - INSERT-ONLY          ││
+│  │ - Status monotonicity   │                    │  - Baseline uniqueness  ││
+│  │ - Incident mismatch     │                    │  - Retention upgrade    ││
+│  └───────────┬──────────────┘                    └───────────┬─────────────┘│
+│              │                                               │              │
+│              └───────────────────┬───────────────────────────┘              │
+│                                  ▼                                          │
+│                    ┌─────────────────────────┐                              │
+│                    │      PostgreSQL         │                              │
+│                    │  simulation_runs        │                              │
+│                    │  simulation_snapshots   │                              │
+│                    │  (partial unique index) │                              │
+│                    └─────────────────────────┘                              │
+│                                                                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                   PHASE 9B.5'TE MİGRATE EDİLECEK                            │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                    InMemorySnapshotStore                             │   │
+│  │  (Hâlâ kullanılıyor - ISnapshotStore interface)                     │   │
+│  │                                                                      │   │
+│  │  Kullanan servisler:                                                │   │
+│  │  - BaselineResolverService                                          │   │
+│  │  - EvidenceBundleService                                            │   │
+│  │  - LegalHoldInventoryService                                        │   │
+│  │  - LegalHoldController                                              │   │
+│  │  - simulation-api.module.ts (DI wiring)                             │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                   PHASE 9C'DE MİGRATE EDİLECEK                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│  ┌─────────────────────────────────────────────────────────────────────┐   │
+│  │                    Evidence Bundle Storage                           │   │
+│  │  (Phase 9C asıl hedef - S3/MinIO)                                   │   │
+│  └─────────────────────────────────────────────────────────────────────┘   │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           HASH CALCULATION RULE                             │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                             │
+│   determinism.ts (SINGLE SOURCE OF TRUTH)                                  │
+│        │                                                                    │
+│        ▼                                                                    │
+│   canonicalHash(calcResultNorm)                                            │
+│        │                                                                    │
+│        ▼                                                                    │
+│   SHA256(canonicalStringify(calcResultNorm))                               │
+│        │                                                                    │
+│        ▼                                                                    │
+│   SnapshotStoreService.createSnapshot({ calcHash: "..." })                 │
+│        │                                                                    │
+│        ▼                                                                    │
+│   VALIDATION: /^[a-f0-9]{64}$/i                                            │
+│                                                                             │
+│   ❌ FORBIDDEN:                                                             │
+│   - Store services calculating hash                                        │
+│   - Repositories calculating hash                                          │
+│   - Any other location calculating hash                                    │
+│                                                                             │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
 
 ---
 
@@ -172,7 +353,3 @@ Bundan sonra yapılacaklar:
 Bu yolun sonunda ortaya çıkan şey bir **hukuk yazılımı** değil;
 **hukuk operasyonu çalıştıran bir sistem**.
 
-İstersen bir sonraki adımda:
-
-* Phase 7B Sprint 1’i **kod seviyesinde** adım adım açarız
-* veya bu yol haritasını **yatırımcı / yönetici sunumu** haline getiririm

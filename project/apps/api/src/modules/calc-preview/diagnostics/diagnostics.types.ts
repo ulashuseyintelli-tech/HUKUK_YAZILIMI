@@ -622,6 +622,45 @@ export interface EvidenceSnapshot {
 }
 
 /**
+ * EvidenceSnapshotView - Read-only projection for SimulationEngine
+ * 
+ * ⚠️ VIEW ONLY - NOT PERSISTABLE
+ * 
+ * This is a read-only projection created from SimulationSnapshot.
+ * Do NOT persist this object - it lacks derived fields.
+ * 
+ * Use cases:
+ * - SimulationEngine input (baseline/current comparison)
+ * - Controller response (read-only view)
+ * 
+ * NOT for:
+ * - Database persistence
+ * - Store operations
+ * - Audit trail (use SimulationSnapshot instead)
+ * 
+ * Mapped fields:
+ * - snapshotId, tenantId, incidentId: direct copy from SimulationSnapshot
+ * - capturedAt: from calcResult.capturedAt or fallback to createdAt
+ * - points: extracted via projection (single source of truth = calcResult)
+ * - promoted: derived from retentionPolicy (PROMOTED | LEGAL_HOLD)
+ * 
+ * NOT mapped (intentionally omitted):
+ * - derived.trend, derived.variance: calculated by SimulationEngine at runtime
+ * 
+ * @see snapshot-query.service.ts toEvidenceSnapshot()
+ * @see calc-result-projection.ts extractPoints()
+ */
+export interface EvidenceSnapshotView {
+  snapshotId: string;
+  tenantId: string;
+  incidentId: string;
+  capturedAt: string; // ISO
+  points: EvidencePoint[];
+  promoted: boolean;
+  // NOTE: 'derived' is intentionally omitted - this is a VIEW, not persistable entity
+}
+
+/**
  * Evidence gate evaluation result
  * 
  * Gate hiyerarşisi: EvidenceGate → PolicyGuard → Executor

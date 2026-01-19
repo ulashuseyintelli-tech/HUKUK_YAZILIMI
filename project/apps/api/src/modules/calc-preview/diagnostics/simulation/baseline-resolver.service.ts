@@ -2,6 +2,7 @@
  * Baseline Resolver Service
  * 
  * Phase 8 - Sprint 2D
+ * Phase 9B.5 - Migrated to ISnapshotStore interface
  * 
  * Resolves baseline snapshot for drift comparison.
  * Applies LEGAL_HOLD protection to prevent "baseline deleted" scenario.
@@ -11,10 +12,15 @@
  * 2. Latest STANDARD snapshot (fallback)
  * 
  * @see .kiro/specs/whatif-simulation/design.md
+ * @see .kiro/specs/phase-9b-postgresql-migration/PHASE-9B-LOCK.md
  */
 
-import { Injectable, Logger } from '@nestjs/common';
-import { ISnapshotStore, StoredSnapshot } from '../evidence/snapshot-store.types';
+import { Injectable, Logger, Inject } from '@nestjs/common';
+import { 
+  ISnapshotStore, 
+  SimulationSnapshot,
+  SNAPSHOT_STORE,
+} from '../persistence/snapshot-store.interface';
 import { 
   BaselineSelectionResult, 
   BaselineProtectionResult,
@@ -24,7 +30,10 @@ import {
 export class BaselineResolverService {
   private readonly logger = new Logger(BaselineResolverService.name);
 
-  constructor(private readonly snapshotStore: ISnapshotStore) {}
+  constructor(
+    @Inject(SNAPSHOT_STORE)
+    private readonly snapshotStore: ISnapshotStore,
+  ) {}
 
   /**
    * Select baseline snapshot for incident
@@ -33,14 +42,16 @@ export class BaselineResolverService {
    * 1. Last PROMOTED snapshot (most reliable, explicitly approved)
    * 2. Latest STANDARD snapshot (fallback)
    * 
+   * @param tenantId Tenant ID (required for tenant isolation)
    * @param incidentId Incident ID
    * @returns BaselineSelectionResult
    */
-  async selectBaseline(incidentId: string): Promise<BaselineSelectionResult> {
-    const snapshots = await this.snapshotStore.listByIncident(incidentId);
+  async selectBaseline(tenantId: string, incidentId: string): Promise<BaselineSelectionResult> {
+    const snapshots = await this.snapshotStore.findByIncidentId(tenantId, incidentId);
 
     if (snapshots.length === 0) {
       this.logger.debug('[BaselineResolver] No snapshots found for incident', {
+        tenantId,
         incidentId,
       });
       return {
@@ -50,15 +61,16 @@ export class BaselineResolverService {
       };
     }
 
-    // Priority 1: Last PROMOTED snapshot
+    // Priority 1: Last PROMOTED snapshot (or LEGAL_HOLD which is higher)
     const promotedSnapshots = snapshots.filter(
       (s) => s.retentionPolicy === 'PROMOTED' || s.retentionPolicy === 'LEGAL_HOLD'
     );
     
     if (promotedSnapshots.length > 0) {
-      // Already sorted by capturedAt DESC, so first is latest
+      // Already sorted by createdAt DESC, so first is latest
       const baseline = promotedSnapshots[0];
       this.logger.debug('[BaselineResolver] Selected PROMOTED baseline', {
+        tenantId,
         incidentId,
         snapshotId: baseline.snapshotId,
         policy: baseline.retentionPolicy,
@@ -79,6 +91,7 @@ export class BaselineResolverService {
     if (standardSnapshots.length > 0) {
       const baseline = standardSnapshots[0];
       this.logger.debug('[BaselineResolver] Selected STANDARD baseline (fallback)', {
+        tenantId,
         incidentId,
         snapshotId: baseline.snapshotId,
       });
@@ -134,11 +147,16 @@ export class BaselineResolverService {
       });
     }
 
-    return {
+    const protectionResult: BaselineProtectionResult = {
       success: true,
       changed: result.changed,
-      previousPolicy: result.previousPolicy,
     };
+    
+    if (result.previousPolicy !== undefined) {
+      protectionResult.previousPolicy = result.previousPolicy;
+    }
+    
+    return protectionResult;
   }
 
   /**
@@ -148,14 +166,15 @@ export class BaselineResolverService {
    * 1. Select baseline (PROMOTED > STANDARD)
    * 2. Apply LEGAL_HOLD protection
    * 
+   * @param tenantId Tenant ID (required for tenant isolation)
    * @param incidentId Incident ID
    * @returns Combined result
    */
-  async selectAndProtectBaseline(incidentId: string): Promise<{
+  async selectAndProtectBaseline(tenantId: string, incidentId: string): Promise<{
     selection: BaselineSelectionResult;
     protection: BaselineProtectionResult | null;
   }> {
-    const selection = await this.selectBaseline(incidentId);
+    const selection = await this.selectBaseline(tenantId, incidentId);
 
     if (!selection.snapshotId) {
       return {
@@ -177,17 +196,18 @@ export class BaselineResolverService {
    * 
    * Returns the actual snapshot data, not just the ID.
    * 
+   * @param tenantId Tenant ID (required for tenant isolation)
    * @param incidentId Incident ID
-   * @returns StoredSnapshot or null
+   * @returns SimulationSnapshot or null
    */
-  async getBaseline(incidentId: string): Promise<StoredSnapshot | null> {
-    const selection = await this.selectBaseline(incidentId);
+  async getBaseline(tenantId: string, incidentId: string): Promise<SimulationSnapshot | null> {
+    const selection = await this.selectBaseline(tenantId, incidentId);
     
     if (!selection.snapshotId) {
       return null;
     }
 
-    return this.snapshotStore.get(selection.snapshotId);
+    return this.snapshotStore.findById(selection.snapshotId);
   }
 
   /**
@@ -199,9 +219,9 @@ export class BaselineResolverService {
   async isBaselineProtected(snapshotId: string): Promise<{
     exists: boolean;
     protected: boolean;
-    policy?: string;
+    policy?: string | undefined;
   }> {
-    const snapshot = await this.snapshotStore.get(snapshotId);
+    const snapshot = await this.snapshotStore.findById(snapshotId);
 
     if (!snapshot) {
       return { exists: false, protected: false };

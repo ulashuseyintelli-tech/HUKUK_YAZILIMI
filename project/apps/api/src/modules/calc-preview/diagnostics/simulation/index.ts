@@ -2,6 +2,7 @@
  * Simulation Module Exports
  * 
  * Phase 8 - Sprint 2E
+ * Phase 9B.5 - CalcResult projection utilities
  */
 
 // Types
@@ -12,6 +13,9 @@ export * from './legal-hold-inventory.types';
 
 // Determinism utilities
 export * from './determinism';
+
+// CalcResult projection (Phase 9B.5 - Single Source of Truth)
+export * from './calc-result-projection';
 
 // Clock
 export * from './simulation-clock.service';
@@ -33,3 +37,6 @@ export * from './evidence-bundle.service';
 
 // Legal Hold Inventory (Sprint 2E)
 export * from './legal-hold-inventory.service';
+
+// Snapshot Query Service (Phase 9B.5 - Query Facade)
+export * from './snapshot-query.service';

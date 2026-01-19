@@ -2,6 +2,7 @@
  * Evidence Bundle Service Tests
  * 
  * Phase 8 - Sprint 2E
+ * Phase 9B.5 - Updated to use MockSnapshotStore and extractPoints projection
  * 
  * Tests for evidence bundle export and integrity verification.
  * 
@@ -9,61 +10,78 @@
  * - contentHash is computed from payload only (not metadata)
  * - Same content = same hash regardless of exportedAt/exportedBy
  * - Uses canonicalHash from determinism.ts (single source)
+ * - points[] is extracted from calcResult via projection (not stored separately)
+ * 
+ * @see .kiro/specs/phase-9b-postgresql-migration/PHASE-9B-LOCK.md
  */
 
 import { EvidenceBundleService } from '../evidence-bundle.service';
 import { InMemoryIncidentStore } from '../incident-store.service';
-import { InMemorySnapshotStore } from '../../evidence/snapshot-store.service';
+import { MockSnapshotStore } from '../../simulation-api/__tests__/mock-snapshot-store';
 import { ClockService } from '../../evidence/clock.service';
-import { canonicalHash } from '../determinism';
+import { canonicalHash, canonicalStringify } from '../determinism';
 import { EvidenceBundle, BUNDLE_FORMAT_VERSION } from '../evidence-bundle.types';
 import { IncidentRunSummary } from '../incident.types';
-import { EvidenceSnapshot } from '../../diagnostics.types';
+import { CreateSnapshotInput } from '../../persistence/snapshot-store.interface';
 import { AuditActor } from '../../evidence/snapshot-audit.types';
 
 describe('EvidenceBundleService', () => {
   let service: EvidenceBundleService;
   let incidentStore: InMemoryIncidentStore;
-  let snapshotStore: InMemorySnapshotStore;
+  let snapshotStore: MockSnapshotStore;
   let clock: ClockService;
+
+  const TENANT_ID = 'tenant-001';
 
   beforeEach(() => {
     clock = new ClockService();
     clock.setFakeTime(new Date('2025-01-15T10:00:00Z'));
     incidentStore = new InMemoryIncidentStore(clock);
-    snapshotStore = new InMemorySnapshotStore(clock);
+    snapshotStore = new MockSnapshotStore(clock);
     service = new EvidenceBundleService(clock, incidentStore, snapshotStore);
   });
 
-  // Helper to create test snapshot
-  const createSnapshot = (id: string, incidentId: string): EvidenceSnapshot => ({
-    snapshotId: id,
-    tenantId: 'tenant-001',
-    incidentId,
-    capturedAt: clock.nowIso(),
-    points: [
-      { metric: 'error_rate', value: 0.02, unit: 'ratio', windowSec: 300, confidence: 0.95, freshnessSec: 30, source: 'prometheus', timestamp: clock.nowIso() },
-      { metric: 'latency_p99', value: 150, unit: 'ms', windowSec: 300, confidence: 0.90, freshnessSec: 30, source: 'prometheus', timestamp: clock.nowIso() },
-    ],
-  });
+  // Helper to create test snapshot input
+  const createSnapshotInput = (id: string, incidentId: string, errorRateValue = 0.02): CreateSnapshotInput => {
+    const calcResult = {
+      points: [
+        { metric: 'error_rate' as const, value: errorRateValue, unit: 'ratio', windowSec: 300, confidence: 0.95, freshnessSec: 30, source: 'prometheus' as const, timestamp: clock.nowIso() },
+        { metric: 'latency_p99' as const, value: 150, unit: 'ms', windowSec: 300, confidence: 0.90, freshnessSec: 30, source: 'prometheus' as const, timestamp: clock.nowIso() },
+      ],
+    };
+    const calcResultNorm = JSON.parse(canonicalStringify(calcResult));
+    const calcHash = canonicalHash(calcResultNorm);
+
+    return {
+      snapshotId: id,
+      tenantId: TENANT_ID,
+      incidentId,
+      snapshotKind: 'CURRENT',
+      verdict: 'PROCEED',
+      driftScore: 0.05,
+      calcResult,
+      calcResultNorm,
+      calcHash,
+    };
+  };
 
   // Helper to setup incident with run data
   const setupIncidentWithRun = async () => {
     // Create incident
     await incidentStore.create({
       incidentId: 'inc-001',
-      tenantId: 'tenant-001',
+      tenantId: TENANT_ID,
       title: 'Test Incident',
       severity: 'HIGH',
     });
 
     // Create snapshots
-    const baselineSnapshot = createSnapshot('snap-baseline', 'inc-001');
-    const currentSnapshot = createSnapshot('snap-current', 'inc-001');
+    const baselineInput = createSnapshotInput('snap-baseline', 'inc-001');
+    const currentInput = createSnapshotInput('snap-current', 'inc-001');
     
-    await snapshotStore.save(baselineSnapshot);
+    await snapshotStore.createSnapshot(baselineInput);
     clock.advanceHours(1);
-    await snapshotStore.save(currentSnapshot);
+    await snapshotStore.createSnapshot(currentInput);
 
     // Set baseline
     await incidentStore.setBaseline('inc-001', 'snap-baseline');
@@ -81,7 +99,7 @@ describe('EvidenceBundleService', () => {
     };
     await incidentStore.recordRun('inc-001', summary);
 
-    return { baselineSnapshot, currentSnapshot, summary };
+    return { baselineInput, currentInput, summary };
   };
 
   describe('exportBundle', () => {
@@ -107,7 +125,18 @@ describe('EvidenceBundleService', () => {
       expect(result.bundle?.payload.currentSnapshot.snapshotId).toBe('snap-current');
     });
 
-    it('should include drift explainability', async () => {
+    it('should extract points from calcResult via projection', async () => {
+      await setupIncidentWithRun();
+
+      const result = await service.exportBundle('inc-001');
+
+      // Points should be extracted from calcResult
+      expect(result.bundle?.payload.baselineSnapshot.points).toHaveLength(2);
+      expect(result.bundle?.payload.currentSnapshot.points).toHaveLength(2);
+      expect(result.bundle?.payload.baselineSnapshot.points[0].metric).toBe('error_rate');
+    });
+
+    it('should include drift explainability with common metrics', async () => {
       await setupIncidentWithRun();
 
       const result = await service.exportBundle('inc-001');
@@ -116,6 +145,7 @@ describe('EvidenceBundleService', () => {
       expect(result.bundle?.payload.driftExplainability.driftScore).toBe(0.05);
       expect(result.bundle?.payload.driftExplainability.driftBlocked).toBe(false);
       expect(result.bundle?.payload.driftExplainability.commonMetrics).toContain('error_rate');
+      expect(result.bundle?.payload.driftExplainability.commonMetrics).toContain('latency_p99');
     });
 
     it('should include retention state', async () => {
@@ -137,7 +167,7 @@ describe('EvidenceBundleService', () => {
     it('should return error when no run data', async () => {
       await incidentStore.create({
         incidentId: 'inc-no-run',
-        tenantId: 'tenant-001',
+        tenantId: TENANT_ID,
         title: 'No Run',
         severity: 'LOW',
       });
@@ -217,14 +247,14 @@ describe('EvidenceBundleService', () => {
       // Setup second incident with different data
       await incidentStore.create({
         incidentId: 'inc-002',
-        tenantId: 'tenant-001',
+        tenantId: TENANT_ID,
         title: 'Different Incident',
         severity: 'LOW',
       });
 
-      const differentSnapshot = createSnapshot('snap-different', 'inc-002');
-      differentSnapshot.points[0].value = 0.99; // Different value
-      await snapshotStore.save(differentSnapshot);
+      // Create snapshot with different error_rate value
+      const differentInput = createSnapshotInput('snap-different', 'inc-002', 0.99);
+      await snapshotStore.createSnapshot(differentInput);
       await incidentStore.setBaseline('inc-002', 'snap-different');
 
       const summary2: IncidentRunSummary = {
@@ -356,7 +386,7 @@ describe('EvidenceBundleService', () => {
     it('should handle missing snapshot gracefully', async () => {
       await incidentStore.create({
         incidentId: 'inc-missing-snap',
-        tenantId: 'tenant-001',
+        tenantId: TENANT_ID,
         title: 'Missing Snapshot',
         severity: 'LOW',
       });
@@ -394,15 +424,15 @@ describe('EvidenceBundleService', () => {
     it('should handle BLOCK_EVIDENCE verdict', async () => {
       await incidentStore.create({
         incidentId: 'inc-blocked',
-        tenantId: 'tenant-001',
+        tenantId: TENANT_ID,
         title: 'Blocked Incident',
         severity: 'HIGH',
       });
 
-      const baselineSnapshot = createSnapshot('snap-blocked-baseline', 'inc-blocked');
-      const currentSnapshot = createSnapshot('snap-blocked-current', 'inc-blocked');
-      await snapshotStore.save(baselineSnapshot);
-      await snapshotStore.save(currentSnapshot);
+      const baselineInput = createSnapshotInput('snap-blocked-baseline', 'inc-blocked');
+      const currentInput = createSnapshotInput('snap-blocked-current', 'inc-blocked');
+      await snapshotStore.createSnapshot(baselineInput);
+      await snapshotStore.createSnapshot(currentInput);
       await incidentStore.setBaseline('inc-blocked', 'snap-blocked-baseline');
 
       const summary: IncidentRunSummary = {
@@ -423,6 +453,49 @@ describe('EvidenceBundleService', () => {
       expect(result.success).toBe(true);
       expect(result.bundle?.payload.evidenceChain.verdict).toBe('BLOCK_EVIDENCE');
       expect(result.bundle?.payload.evidenceChain.verdictReason).toBe('STALE_EVIDENCE');
+    });
+
+    it('should handle empty calcResult gracefully', async () => {
+      await incidentStore.create({
+        incidentId: 'inc-empty',
+        tenantId: TENANT_ID,
+        title: 'Empty CalcResult',
+        severity: 'LOW',
+      });
+
+      // Create snapshot with empty calcResult (no points)
+      const emptyInput: CreateSnapshotInput = {
+        snapshotId: 'snap-empty',
+        tenantId: TENANT_ID,
+        incidentId: 'inc-empty',
+        snapshotKind: 'CURRENT',
+        verdict: 'PROCEED',
+        driftScore: 0,
+        calcResult: {}, // Empty - no points
+        calcResultNorm: {},
+        calcHash: canonicalHash({}),
+      };
+      await snapshotStore.createSnapshot(emptyInput);
+      await incidentStore.setBaseline('inc-empty', 'snap-empty');
+
+      const summary: IncidentRunSummary = {
+        runId: 'run-empty',
+        verdict: 'PROCEED',
+        driftScore: 0,
+        evidenceStatus: 'PASSED',
+        driftBlocked: false,
+        baselineSnapshotId: 'snap-empty',
+        currentSnapshotId: 'snap-empty',
+        runAt: clock.nowIso(),
+      };
+      await incidentStore.recordRun('inc-empty', summary);
+
+      const result = await service.exportBundle('inc-empty');
+
+      expect(result.success).toBe(true);
+      // Points should be empty array when calcResult has no points
+      expect(result.bundle?.payload.baselineSnapshot.points).toEqual([]);
+      expect(result.bundle?.payload.driftExplainability.commonMetrics).toEqual([]);
     });
   });
 });

@@ -2,10 +2,12 @@
  * Simulation Controller Tests
  * 
  * Sprint 2F - Task 6.5-6.6
+ * Phase 9B.5 - Migrated to MockSnapshotStore and SnapshotQueryService
  * 
  * Unit tests and property tests for simulation controller endpoints.
  * 
  * @see .kiro/specs/simulation-api-2f/design.md
+ * @see .kiro/specs/phase-9b-postgresql-migration/PHASE-9B-LOCK.md
  */
 
 import * as fc from 'fast-check';
@@ -15,12 +17,22 @@ import { SimulationRunStoreService } from '../simulation-run-store.service';
 import { SimulationEngineService } from '../../simulation/simulation-engine.service';
 import { InMemoryIncidentStore } from '../../simulation/incident-store.service';
 import { BaselineResolverService } from '../../simulation/baseline-resolver.service';
-import { InMemorySnapshotStore } from '../../evidence/snapshot-store.service';
+import { SnapshotQueryService } from '../../simulation/snapshot-query.service';
+import { MockSnapshotStore } from './mock-snapshot-store';
 import { EvidenceGateService } from '../../evidence/evidence-gate.service';
 import { IClock } from '../../evidence/clock.service';
 import { ISimulationClock } from '../../simulation/simulation.types';
 import { SimulationTenantContext } from '../guards/simulation-rbac.guard';
 import { IncidentNotFoundException, RunNotFoundException } from '../simulation-error.types';
+import { canonicalHash, canonicalStringify } from '../../simulation/determinism';
+import {
+  ISimulationRunRepository,
+  SimulationRun,
+  SimulationRunInput,
+  SimulationRunStatus,
+  PaginatedRunsResult,
+  ListRunsOptions,
+} from '../../persistence/simulation-run-repository.interface';
 
 // ============================================================================
 // Mock Clock
@@ -85,6 +97,122 @@ class MockSimulationClock implements ISimulationClock {
 }
 
 // ============================================================================
+// Mock Repository (In-Memory for Tests)
+// ============================================================================
+
+class MockSimulationRunRepository implements ISimulationRunRepository {
+  private readonly store = new Map<string, SimulationRun>();
+  private readonly byIncident = new Map<string, string[]>();
+
+  async upsert(input: SimulationRunInput): Promise<SimulationRun> {
+    const run: SimulationRun = {
+      runId: input.runId,
+      tenantId: input.tenantId,
+      incidentId: input.incidentId,
+      scenarioId: input.scenarioId,
+      seed: input.seed,
+      simulationVersion: input.simulationVersion,
+      engineVersion: input.engineVersion,
+      status: input.status,
+      startedAt: input.startedAt,
+      finishedAt: input.finishedAt,
+      errorCode: input.errorCode,
+      errorMessage: input.errorMessage,
+    };
+    
+    this.store.set(run.runId, run);
+    
+    // Update incident index
+    const incidentRuns = this.byIncident.get(run.incidentId) || [];
+    if (!incidentRuns.includes(run.runId)) {
+      incidentRuns.unshift(run.runId);
+      this.byIncident.set(run.incidentId, incidentRuns);
+    }
+    
+    return run;
+  }
+
+  async updateStatus(
+    runId: string,
+    status: SimulationRunStatus,
+    finishedAt?: string | undefined,
+  ): Promise<void> {
+    const run = this.store.get(runId);
+    if (run) {
+      run.status = status;
+      if (finishedAt) run.finishedAt = finishedAt;
+    }
+  }
+
+  async setCurrentSnapshot(runId: string, snapshotId: string): Promise<void> {
+    const run = this.store.get(runId);
+    if (run) {
+      run.currentSnapshotId = snapshotId;
+    }
+  }
+
+  async setBaselineSnapshot(runId: string, snapshotId: string): Promise<void> {
+    const run = this.store.get(runId);
+    if (run) {
+      run.baselineSnapshotId = snapshotId;
+    }
+  }
+
+  async findById(runId: string): Promise<SimulationRun | null> {
+    return this.store.get(runId) || null;
+  }
+
+  async findByIncidentId(
+    incidentId: string,
+    options?: ListRunsOptions | undefined,
+  ): Promise<PaginatedRunsResult> {
+    const limit = options?.limit ?? 20;
+    const runIds = this.byIncident.get(incidentId) || [];
+    
+    let startIndex = 0;
+    if (options?.cursor) {
+      const cursorIndex = runIds.indexOf(options.cursor);
+      if (cursorIndex >= 0) startIndex = cursorIndex + 1;
+    }
+    
+    const pageRunIds = runIds.slice(startIndex, startIndex + limit);
+    const runs: SimulationRun[] = [];
+    
+    for (const runId of pageRunIds) {
+      const run = this.store.get(runId);
+      if (run) runs.push(run);
+    }
+    
+    const hasMore = startIndex + limit < runIds.length;
+    
+    return {
+      runs,
+      nextCursor: hasMore ? pageRunIds[pageRunIds.length - 1] : undefined,
+      hasMore,
+    };
+  }
+
+  async findLatestByIncidentId(incidentId: string): Promise<SimulationRun | null> {
+    const runIds = this.byIncident.get(incidentId) || [];
+    if (runIds.length === 0) return null;
+    return this.store.get(runIds[0]) || null;
+  }
+
+  async countByIncidentId(incidentId: string): Promise<number> {
+    return (this.byIncident.get(incidentId) || []).length;
+  }
+
+  async countByTenantId(_tenantId: string, _date?: string | undefined): Promise<number> {
+    return 0;
+  }
+
+  clear(): void {
+    this.store.clear();
+    this.byIncident.clear();
+  }
+}
+
+// ============================================================================
 // Test Helpers
 // ============================================================================
 
@@ -93,30 +221,33 @@ function createTestContext(): {
   controller: SimulationController;
   incidentStore: InMemoryIncidentStore;
   runStore: SimulationRunStoreService;
-  snapshotStore: InMemorySnapshotStore;
+  snapshotStore: MockSnapshotStore;
+  snapshotQuery: SnapshotQueryService;
   rateLimitGuard: SimulationRateLimitGuard;
+  mockRepo: MockSimulationRunRepository;
 } {
   const clock = new MockClock();
   const simulationClock = new MockSimulationClock(clock);
-  const snapshotStore = new InMemorySnapshotStore(clock);
+  const snapshotStore = new MockSnapshotStore(clock);
   const incidentStore = new InMemoryIncidentStore(clock);
-  const runStore = new SimulationRunStoreService(clock);
+  const mockRepo = new MockSimulationRunRepository();
+  const runStore = new SimulationRunStoreService(mockRepo);
   const evidenceGate = new EvidenceGateService(clock);
   const simulationEngine = new SimulationEngineService(simulationClock, evidenceGate);
   const baselineResolver = new BaselineResolverService(snapshotStore);
-  const rateLimitGuard = new SimulationRateLimitGuard(clock);
+  const snapshotQuery = new SnapshotQueryService(snapshotStore, baselineResolver);
+  const rateLimitGuard = new SimulationRateLimitGuard(undefined, clock);
 
   const controller = new SimulationController(
     clock,
     simulationEngine,
     incidentStore,
     runStore,
-    baselineResolver,
-    snapshotStore,
+    snapshotQuery,
     rateLimitGuard,
   );
 
-  return { clock, controller, incidentStore, runStore, snapshotStore, rateLimitGuard };
+  return { clock, controller, incidentStore, runStore, snapshotStore, snapshotQuery, rateLimitGuard, mockRepo };
 }
 
 function createTenantContext(tenantId: string, role: 'tenant-admin' | 'internal-ops' = 'tenant-admin'): SimulationTenantContext {
@@ -141,39 +272,51 @@ async function createTestIncident(
 }
 
 async function createTestSnapshot(
-  snapshotStore: InMemorySnapshotStore,
+  snapshotStore: MockSnapshotStore,
   snapshotId: string,
   incidentId: string,
   tenantId: string,
 ): Promise<void> {
   const now = new Date().toISOString();
-  await snapshotStore.save({
+  const points = [
+    { 
+      metric: 'latency_p95', 
+      value: 100, 
+      unit: 'ms', 
+      confidence: 0.95,
+      windowSec: 60,
+      freshnessSec: 10,
+      source: 'prometheus',
+      timestamp: now,
+    },
+    { 
+      metric: 'error_rate', 
+      value: 0.01, 
+      unit: 'ratio', 
+      confidence: 0.9,
+      windowSec: 60,
+      freshnessSec: 10,
+      source: 'prometheus',
+      timestamp: now,
+    },
+  ];
+  
+  const calcResult = { points, capturedAt: now };
+  const calcResultNorm = canonicalStringify(calcResult);
+  const calcHash = canonicalHash(calcResult);
+  
+  await snapshotStore.createSnapshot({
     snapshotId,
-    incidentId,
     tenantId,
-    capturedAt: now,
-    points: [
-      { 
-        metric: 'latency_p95', 
-        value: 100, 
-        unit: 'ms', 
-        confidence: 0.95,
-        windowSec: 60,
-        freshnessSec: 10,
-        source: 'prometheus',
-        timestamp: now,
-      },
-      { 
-        metric: 'error_rate', 
-        value: 0.01, 
-        unit: 'ratio', 
-        confidence: 0.9,
-        windowSec: 60,
-        freshnessSec: 10,
-        source: 'prometheus',
-        timestamp: now,
-      },
-    ],
+    incidentId,
+    snapshotKind: 'BASELINE',
+    isBaseline: true,
+    verdict: 'PROCEED',
+    driftScore: 0,
+    calcResult,
+    calcResultNorm,
+    calcHash,
+    retentionPolicy: 'STANDARD',
   });
 }
 

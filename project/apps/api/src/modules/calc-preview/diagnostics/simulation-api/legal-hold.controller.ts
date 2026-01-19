@@ -2,6 +2,7 @@
  * Legal Hold Controller
  * 
  * Sprint 2F - Task 9.1-9.3
+ * Phase 9B.5 - Migrated to ISnapshotStore interface
  * 
  * REST endpoints for legal hold management:
  * - GET /legal-holds
@@ -11,6 +12,7 @@
  * RED LINE: Baseline snapshots cannot be archived (409)
  * 
  * @see .kiro/specs/simulation-api-2f/design.md
+ * @see .kiro/specs/phase-9b-postgresql-migration/PHASE-9B-LOCK.md
  */
 
 import {
@@ -21,13 +23,16 @@ import {
   Query,
   UseGuards,
   Logger,
+  Inject,
 } from '@nestjs/common';
 import { SimulationFeatureFlagGuard } from './guards/simulation-feature-flag.guard';
 import { SimulationRBACGuard, SimulationTenant, SimulationTenantContext } from './guards/simulation-rbac.guard';
 import { LegalHoldInventoryService } from '../simulation/legal-hold-inventory.service';
-import { InMemorySnapshotStore } from '../evidence/snapshot-store.service';
+import { 
+  ISnapshotStore, 
+  SNAPSHOT_STORE,
+} from '../persistence/snapshot-store.interface';
 import { InMemoryIncidentStore } from '../simulation/incident-store.service';
-import { IClock } from '../evidence/clock.service';
 import {
   LegalHoldEntryDto,
   LegalHoldListResponseDto,
@@ -48,9 +53,9 @@ export class LegalHoldController {
   private readonly logger = new Logger(LegalHoldController.name);
 
   constructor(
-    private readonly clock: IClock,
     private readonly legalHoldService: LegalHoldInventoryService,
-    private readonly snapshotStore: InMemorySnapshotStore,
+    @Inject(SNAPSHOT_STORE)
+    private readonly snapshotStore: ISnapshotStore,
     private readonly incidentStore: InMemoryIncidentStore,
   ) {}
 
@@ -87,27 +92,24 @@ export class LegalHoldController {
     });
 
     // Determine effective tenant filter
-    let effectiveTenantId: string | undefined;
+    let effectiveTenantId: string;
     
     if (ctx?.role === 'tenant-admin') {
       // tenant-admin: ALWAYS filter by own tenant (ignore query param)
       effectiveTenantId = ctx.tenantId;
-    } else if (ctx?.role === 'internal-ops') {
+    } else if (ctx?.role === 'internal-ops' && tenantId) {
       // internal-ops: can use tenantId query param
       effectiveTenantId = tenantId;
+    } else {
+      // Default to context tenant
+      effectiveTenantId = ctx?.tenantId ?? 'unknown';
     }
 
-    // Get all LEGAL_HOLD snapshots
-    const allSnapshots = await this.snapshotStore.listAll();
-    const legalHoldSnapshots = allSnapshots.filter(s => s.retentionPolicy === 'LEGAL_HOLD');
+    // Get LEGAL_HOLD snapshots for tenant
+    const legalHoldSnapshots = await this.snapshotStore.findWithLegalHold(effectiveTenantId);
 
-    // Apply filters
+    // Apply incident filter if provided
     let filteredSnapshots = legalHoldSnapshots;
-
-    if (effectiveTenantId) {
-      filteredSnapshots = filteredSnapshots.filter(s => s.tenantId === effectiveTenantId);
-    }
-
     if (incidentId) {
       filteredSnapshots = filteredSnapshots.filter(s => s.incidentId === incidentId);
     }
@@ -118,7 +120,7 @@ export class LegalHoldController {
       incidentId: s.incidentId,
       tenantId: s.tenantId,
       createdAt: s.createdAt,
-      reason: 'LEGAL_HOLD', // Could be enhanced with actual reason
+      reason: s.legalHoldReason || 'LEGAL_HOLD',
       archived: this.legalHoldService.isArchived(s.snapshotId),
     }));
 
@@ -156,7 +158,7 @@ export class LegalHoldController {
     });
 
     // 1. Get snapshot
-    const snapshot = await this.snapshotStore.get(snapshotId);
+    const snapshot = await this.snapshotStore.findById(snapshotId);
     if (!snapshot) {
       throw new HttpException(
         {
@@ -240,45 +242,17 @@ export class LegalHoldController {
       role: ctx?.role,
     });
 
-    // Get all LEGAL_HOLD snapshots
-    const allSnapshots = await this.snapshotStore.listAll();
-    let legalHoldSnapshots = allSnapshots.filter(s => s.retentionPolicy === 'LEGAL_HOLD');
+    // Determine effective tenant
+    const effectiveTenantId = ctx?.tenantId ?? 'unknown';
 
-    // Filter by tenant for tenant-admin
-    if (ctx?.role === 'tenant-admin') {
-      legalHoldSnapshots = legalHoldSnapshots.filter(s => s.tenantId === ctx.tenantId);
-    }
-
-    // Calculate stats
-    const totalCount = legalHoldSnapshots.length;
-    const byIncidentCount: Record<string, number> = {};
-    let oldestHoldAt: string | null = null;
-    let totalAgeDays = 0;
-
-    const now = this.clock.now();
-
-    for (const snapshot of legalHoldSnapshots) {
-      // Count by incident
-      byIncidentCount[snapshot.incidentId] = (byIncidentCount[snapshot.incidentId] || 0) + 1;
-
-      // Track oldest
-      if (!oldestHoldAt || snapshot.createdAt < oldestHoldAt) {
-        oldestHoldAt = snapshot.createdAt;
-      }
-
-      // Calculate age
-      const createdAt = new Date(snapshot.createdAt);
-      const ageDays = (now.getTime() - createdAt.getTime()) / (1000 * 60 * 60 * 24);
-      totalAgeDays += ageDays;
-    }
-
-    const averageAgeDays = totalCount > 0 ? totalAgeDays / totalCount : 0;
+    // Get stats from store
+    const stats = await this.snapshotStore.getLegalHoldStats(effectiveTenantId);
 
     return {
-      totalCount,
-      byIncidentCount,
-      oldestHoldAt,
-      averageAgeDays: Math.round(averageAgeDays * 100) / 100, // 2 decimal places
+      totalCount: stats.totalCount,
+      byIncidentCount: stats.byIncidentCount,
+      oldestHoldAt: stats.oldestHoldAt,
+      averageAgeDays: Math.round(stats.averageAgeDays * 100) / 100, // 2 decimal places
     };
   }
 }

@@ -2,19 +2,29 @@
  * Evidence Bundle Service
  * 
  * Phase 8 - Sprint 2E
+ * Phase 9B.5 - Migrated to ISnapshotStore interface
+ * Phase 9B.5+ - Uses extractPoints projection (calcResult is single source of truth)
  * 
  * Exports evidence bundles for audit trail and traceability.
  * 
  * RULE: contentHash is computed from payload only (not metadata)
  * This ensures same content = same hash regardless of export time/actor.
  * 
+ * RULE: points[] is derived from calcResult via extractPoints()
+ * Do NOT store points[] separately - calcResult is the single source of truth.
+ * 
  * @see .kiro/specs/whatif-simulation/design.md
+ * @see .kiro/specs/phase-9b-postgresql-migration/PHASE-9B-LOCK.md
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Inject } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { canonicalStringify, canonicalHash } from './determinism';
-import { ISnapshotStore, StoredSnapshot } from '../evidence/snapshot-store.types';
+import { 
+  ISnapshotStore, 
+  SimulationSnapshot,
+  SNAPSHOT_STORE,
+} from '../persistence/snapshot-store.interface';
 import { IIncidentStore, Incident } from './incident.types';
 import { IClock } from '../evidence/clock.service';
 import { EvidenceChain } from './simulation.types';
@@ -28,6 +38,7 @@ import {
   ExportBundleResult,
   BUNDLE_FORMAT_VERSION,
 } from './evidence-bundle.types';
+import { extractPoints } from './calc-result-projection';
 
 @Injectable()
 export class EvidenceBundleService {
@@ -36,6 +47,7 @@ export class EvidenceBundleService {
   constructor(
     private readonly clock: IClock,
     private readonly incidentStore: IIncidentStore,
+    @Inject(SNAPSHOT_STORE)
     private readonly snapshotStore: ISnapshotStore,
   ) {}
 
@@ -83,9 +95,9 @@ export class EvidenceBundleService {
       };
     }
 
-    // Get snapshots
-    const baselineSnapshot = await this.snapshotStore.get(lastRun.baselineSnapshotId);
-    const currentSnapshot = await this.snapshotStore.get(lastRun.currentSnapshotId);
+    // Get snapshots using new interface
+    const baselineSnapshot = await this.snapshotStore.findById(lastRun.baselineSnapshotId);
+    const currentSnapshot = await this.snapshotStore.findById(lastRun.currentSnapshotId);
 
     if (!baselineSnapshot || !currentSnapshot) {
       return {
@@ -151,15 +163,28 @@ export class EvidenceBundleService {
   private buildPayload(
     incident: Incident,
     lastRun: NonNullable<Incident['lastRun']>,
-    baselineSnapshot: StoredSnapshot,
-    currentSnapshot: StoredSnapshot,
+    baselineSnapshot: SimulationSnapshot,
+    currentSnapshot: SimulationSnapshot,
   ): EvidenceBundlePayload {
+    // Extract points from calcResult (single source of truth)
+    const baselinePoints = extractPoints(baselineSnapshot.calcResult);
+    const currentPoints = extractPoints(currentSnapshot.calcResult);
+    
+    // Get metric names for explainability
+    const baselineMetrics = new Set(baselinePoints.points.map(p => p.metric));
+    const currentMetrics = new Set(currentPoints.points.map(p => p.metric));
+    
+    // Calculate common/missing metrics
+    const commonMetrics = [...baselineMetrics].filter(m => currentMetrics.has(m));
+    const missingInBaseline = [...currentMetrics].filter(m => !baselineMetrics.has(m));
+    const missingInCurrent = [...baselineMetrics].filter(m => !currentMetrics.has(m));
+
     // Build drift explainability
     const driftExplainability: DriftExplainability = {
       topContributors: [], // Would come from simulation output
-      missingInBaseline: [],
-      missingInCurrent: [],
-      commonMetrics: this.extractCommonMetrics(baselineSnapshot, currentSnapshot),
+      missingInBaseline,
+      missingInCurrent,
+      commonMetrics,
       driftScore: lastRun.driftScore,
       driftBlocked: lastRun.driftBlocked,
     };
@@ -179,10 +204,10 @@ export class EvidenceBundleService {
       driftResult: {
         driftScore: lastRun.driftScore,
         shouldBlock: lastRun.driftBlocked,
-        noComparableMetrics: driftExplainability.commonMetrics.length === 0,
+        noComparableMetrics: commonMetrics.length === 0,
         commonMetrics: [],
-        missingInBaseline: [],
-        missingInCurrent: [],
+        missingInBaseline,
+        missingInCurrent,
         topContributors: [],
       },
       gateResult: {
@@ -196,31 +221,40 @@ export class EvidenceBundleService {
       verdictReason: lastRun.evidenceGateReason,
     };
 
+    // Convert SimulationSnapshot to bundle format (compatible with StoredSnapshot)
+    // points[] is extracted from calcResult via projection
+    const baselineForBundle = {
+      snapshotId: baselineSnapshot.snapshotId,
+      tenantId: baselineSnapshot.tenantId,
+      incidentId: baselineSnapshot.incidentId,
+      capturedAt: baselineSnapshot.createdAt,
+      points: baselinePoints.points,
+      createdAt: baselineSnapshot.createdAt,
+      expiresAt: baselineSnapshot.expiresAt ?? null,
+      retentionPolicy: baselineSnapshot.retentionPolicy,
+      promoted: baselineSnapshot.retentionPolicy === 'PROMOTED' || baselineSnapshot.retentionPolicy === 'LEGAL_HOLD',
+    };
+
+    const currentForBundle = {
+      snapshotId: currentSnapshot.snapshotId,
+      tenantId: currentSnapshot.tenantId,
+      incidentId: currentSnapshot.incidentId,
+      capturedAt: currentSnapshot.createdAt,
+      points: currentPoints.points,
+      createdAt: currentSnapshot.createdAt,
+      expiresAt: currentSnapshot.expiresAt ?? null,
+      retentionPolicy: currentSnapshot.retentionPolicy,
+      promoted: currentSnapshot.retentionPolicy === 'PROMOTED' || currentSnapshot.retentionPolicy === 'LEGAL_HOLD',
+    };
+
     return {
       incidentId: incident.incidentId,
       runId: lastRun.runId,
       evidenceChain,
-      baselineSnapshot,
-      currentSnapshot,
+      baselineSnapshot: baselineForBundle,
+      currentSnapshot: currentForBundle,
       driftExplainability,
       retentionState,
     };
-  }
-
-  private extractCommonMetrics(
-    baseline: StoredSnapshot,
-    current: StoredSnapshot,
-  ): string[] {
-    const baselineMetrics = new Set(baseline.points.map(p => p.metric));
-    const currentMetrics = new Set(current.points.map(p => p.metric));
-    
-    const common: string[] = [];
-    for (const metric of baselineMetrics) {
-      if (currentMetrics.has(metric)) {
-        common.push(metric);
-      }
-    }
-    
-    return common.sort();
   }
 }

@@ -2,6 +2,7 @@
  * Simulation Controller
  * 
  * Sprint 2F - Task 6.1-6.4
+ * Phase 9B.5 - Migrated to SnapshotQueryService (no direct store access)
  * 
  * REST endpoints for simulation API:
  * - POST /incidents/:id/simulate
@@ -14,7 +15,13 @@
  * 2. SimulationRBACGuard - 403 for wrong tenant
  * 3. SimulationRateLimitGuard - 429 for rate limit exceeded
  * 
+ * ARCHITECTURAL RULE:
+ * - Controller does NOT inject ISnapshotStore directly
+ * - All snapshot queries go through SnapshotQueryService
+ * - This prevents bypass and ensures tenantId enforcement
+ * 
  * @see .kiro/specs/simulation-api-2f/design.md
+ * @see .kiro/specs/phase-9b-postgresql-migration/PHASE-9B-LOCK.md
  */
 
 import {
@@ -33,8 +40,7 @@ import { SimulationRateLimitGuard } from './guards/simulation-rate-limit.guard';
 import { SimulationEngineService } from '../simulation/simulation-engine.service';
 import { InMemoryIncidentStore } from '../simulation/incident-store.service';
 import { SimulationRunStoreService, StoredRun } from './simulation-run-store.service';
-import { BaselineResolverService } from '../simulation/baseline-resolver.service';
-import { InMemorySnapshotStore } from '../evidence/snapshot-store.service';
+import { SnapshotQueryService } from '../simulation/snapshot-query.service';
 import { IClock } from '../evidence/clock.service';
 import {
   SimulateRequestDto,
@@ -66,8 +72,7 @@ export class SimulationController {
     private readonly simulationEngine: SimulationEngineService,
     private readonly incidentStore: InMemoryIncidentStore,
     private readonly runStore: SimulationRunStoreService,
-    private readonly baselineResolver: BaselineResolverService,
-    private readonly snapshotStore: InMemorySnapshotStore,
+    private readonly snapshotQuery: SnapshotQueryService,
     private readonly rateLimitGuard: SimulationRateLimitGuard,
   ) {}
 
@@ -133,9 +138,9 @@ export class SimulationController {
     }
 
     try {
-      // 5. Resolve baseline
-      const baselineResult = await this.baselineResolver.selectBaseline(incidentId);
-      if (!baselineResult.snapshotId) {
+      // 5. Get baseline snapshot via SnapshotQueryService
+      const baselineResult = await this.snapshotQuery.getBaselineSnapshot(ctx.tenantId, incidentId);
+      if (!baselineResult.evidenceSnapshot) {
         // No baseline available - create a minimal response
         const storedRun = await this.createFailedRun(
           runId,
@@ -143,7 +148,7 @@ export class SimulationController {
           ctx.tenantId,
           scenarioId,
           seed,
-          'No baseline snapshot available',
+          baselineResult.reason || 'No baseline snapshot available',
         );
 
         return {
@@ -156,17 +161,13 @@ export class SimulationController {
         };
       }
 
-      // 6. Get baseline snapshot
-      const baselineSnapshot = await this.snapshotStore.get(baselineResult.snapshotId);
-      if (!baselineSnapshot) {
-        throw new Error(`Baseline snapshot ${baselineResult.snapshotId} not found`);
-      }
+      const baselineSnapshot = baselineResult.evidenceSnapshot;
 
-      // 7. Get current snapshot (latest for incident)
-      const currentSnapshots = await this.snapshotStore.listByIncident(incidentId);
-      const currentSnapshot = currentSnapshots[0] || baselineSnapshot;
+      // 6. Get current snapshot (latest for incident) via SnapshotQueryService
+      const currentResult = await this.snapshotQuery.getLatestSnapshot(ctx.tenantId, incidentId);
+      const currentSnapshot = currentResult.evidenceSnapshot || baselineSnapshot;
 
-      // 8. Run simulation
+      // 7. Run simulation
       const output = await this.simulationEngine.simulate({
         incidentId,
         tenantId: ctx.tenantId,
@@ -176,7 +177,7 @@ export class SimulationController {
         currentSnapshot,
       });
 
-      // 9. Store run result
+      // 8. Store run result
       const storedRun: StoredRun = {
         runId: output.runId,
         incidentId,
@@ -196,7 +197,7 @@ export class SimulationController {
 
       await this.runStore.save(storedRun);
 
-      // 10. Record run in incident
+      // 9. Record run in incident
       await this.incidentStore.recordRun(incidentId, {
         runId: output.runId,
         verdict: output.evidenceChain.verdict,

@@ -2,6 +2,7 @@
  * Simulation Rate Limit Guard
  * 
  * Sprint 2F - Task 3.1
+ * Phase 9A - Task 9.1 (IRateLimitStore integration)
  * 
  * RED LINE #2: Rate-limit determinism + singular behavior
  * - per-incident: INCR + TTL=60s; >1 => 429
@@ -17,6 +18,10 @@
  * RED LINE #3: "already running" 409 must work correctly
  * - Same incident concurrent simulate calls use lock/flag
  * - Single winner, others get 409
+ * 
+ * Phase 9A: Now supports IRateLimitStore for Redis backend
+ * - Inject store via constructor for Redis/failover support
+ * - Falls back to internal in-memory store if not provided
  */
 
 import {
@@ -24,12 +29,13 @@ import {
   CanActivate,
   ExecutionContext,
   Logger,
+  Inject,
+  Optional,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { IClock } from '../../evidence/clock.service';
 import {
   SIMULATION_RATE_LIMITS,
-  SIMULATION_RATE_LIMIT_KEYS,
   getUtcDateString,
   RateLimitType,
 } from '../simulation-rate-limit.constants';
@@ -37,6 +43,8 @@ import {
   TooManySimulationsException,
 } from '../simulation-error.types';
 import { ISimulationClock } from '../../simulation/simulation.types';
+import { IRateLimitStore } from '../redis/rate-limit-store.interface';
+import { InMemoryRateLimitStore } from '../redis/in-memory-rate-limit-store';
 
 // ============================================================================
 // Types
@@ -44,9 +52,9 @@ import { ISimulationClock } from '../../simulation/simulation.types';
 
 export interface AcquireResult {
   acquired: boolean;
-  reason?: RateLimitType | 'ALREADY_RUNNING';
-  retryAfterSec?: number;
-  runId?: string;
+  reason?: RateLimitType | 'ALREADY_RUNNING' | undefined;
+  retryAfterSec?: number | undefined;
+  runId?: string | undefined;
 }
 
 export interface SimulationRateLimitRequest extends Request {
@@ -63,21 +71,10 @@ export interface SimulationRateLimitRequest extends Request {
 }
 
 // ============================================================================
-// In-Memory Store (Redis-compatible interface for MVP)
+// Injection Token
 // ============================================================================
 
-interface InMemoryStore {
-  // Per-incident counters with TTL
-  incidentCounters: Map<string, { count: number; expiresAt: number }>;
-  // Concurrent run sets per tenant
-  concurrentSets: Map<string, Set<string>>;
-  // Daily counters per tenant
-  dailyCounters: Map<string, number>;
-  // Incident locks for 409 ALREADY_RUNNING
-  incidentLocks: Map<string, { runId: string; expiresAt: number }>;
-  // Run leases for crash recovery
-  runLeases: Map<string, number>; // runId -> expiresAt
-}
+export const RATE_LIMIT_STORE = Symbol('RATE_LIMIT_STORE');
 
 // ============================================================================
 // Guard Implementation
@@ -86,18 +83,16 @@ interface InMemoryStore {
 @Injectable()
 export class SimulationRateLimitGuard implements CanActivate {
   private readonly logger = new Logger(SimulationRateLimitGuard.name);
-  private readonly store: InMemoryStore;
+  private readonly store: IRateLimitStore;
   private clock: IClock;
 
-  constructor(clock?: IClock) {
+  constructor(
+    @Optional() @Inject(RATE_LIMIT_STORE) injectedStore?: IRateLimitStore,
+    @Optional() clock?: IClock,
+  ) {
     this.clock = clock || this.createDefaultClock();
-    this.store = {
-      incidentCounters: new Map(),
-      concurrentSets: new Map(),
-      dailyCounters: new Map(),
-      incidentLocks: new Map(),
-      runLeases: new Map(),
-    };
+    // Use injected store (Redis/Failover) or create internal in-memory store
+    this.store = injectedStore || new InMemoryRateLimitStore(this.clock);
   }
 
   private createDefaultClock(): IClock {
@@ -119,7 +114,7 @@ export class SimulationRateLimitGuard implements CanActivate {
   /**
    * Guard entry point - checks rate limits before allowing request
    */
-  canActivate(context: ExecutionContext): boolean {
+  async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<SimulationRateLimitRequest>();
     
     // Only apply to POST /simulate endpoints
@@ -134,12 +129,9 @@ export class SimulationRateLimitGuard implements CanActivate {
       return true; // Let controller handle missing params
     }
 
-    // Cleanup expired entries
-    this.cleanupExpired();
-
     // Check order: concurrent → incident → daily
     // 1. Concurrent limit
-    const concurrentCount = this.getConcurrentCount(tenantId);
+    const concurrentCount = await this.store.getConcurrentCount(tenantId);
     if (concurrentCount >= SIMULATION_RATE_LIMITS.perTenantConcurrent) {
       this.logger.warn('[SimulationRateLimit] Concurrent limit exceeded', {
         tenantId,
@@ -150,9 +142,10 @@ export class SimulationRateLimitGuard implements CanActivate {
     }
 
     // 2. Per-incident minute limit
-    const incidentCount = this.getIncidentCount(tenantId, incidentId);
+    const incidentResult = await this.store.getIncidentCounter(tenantId, incidentId);
+    const incidentCount = incidentResult?.count ?? 0;
     if (incidentCount >= SIMULATION_RATE_LIMITS.perIncident) {
-      const retryAfter = this.getIncidentRetryAfter(tenantId, incidentId);
+      const retryAfter = incidentResult?.ttlRemaining ?? SIMULATION_RATE_LIMITS.perIncidentTtlSec;
       this.logger.warn('[SimulationRateLimit] Per-incident limit exceeded', {
         tenantId,
         incidentId,
@@ -162,7 +155,8 @@ export class SimulationRateLimitGuard implements CanActivate {
     }
 
     // 3. Daily limit
-    const dailyCount = this.getDailyCount(tenantId);
+    const utcDate = this.getUtcDateString();
+    const dailyCount = await this.store.getDailyCounter(tenantId, utcDate);
     if (dailyCount >= SIMULATION_RATE_LIMITS.daily) {
       this.logger.warn('[SimulationRateLimit] Daily limit exceeded', {
         tenantId,
@@ -186,11 +180,8 @@ export class SimulationRateLimitGuard implements CanActivate {
     incidentId: string,
     runId: string,
   ): Promise<AcquireResult> {
-    this.cleanupExpired();
-    const now = this.clock.nowMs();
-
     // 1. Check concurrent limit (SCARD)
-    const concurrentCount = this.getConcurrentCount(tenantId);
+    const concurrentCount = await this.store.getConcurrentCount(tenantId);
     if (concurrentCount >= SIMULATION_RATE_LIMITS.perTenantConcurrent) {
       return {
         acquired: false,
@@ -199,20 +190,28 @@ export class SimulationRateLimitGuard implements CanActivate {
     }
 
     // 2. Check incident lock (409 ALREADY_RUNNING)
-    const lockKey = SIMULATION_RATE_LIMIT_KEYS.incidentLock(tenantId, incidentId);
-    const existingLock = this.store.incidentLocks.get(lockKey);
-    if (existingLock && existingLock.expiresAt > now) {
+    const lockResult = await this.store.acquireIncidentLock(
+      tenantId,
+      incidentId,
+      runId,
+      Math.ceil(SIMULATION_RATE_LIMITS.leaseTtlMs / 1000),
+    );
+    
+    if (!lockResult.acquired) {
       return {
         acquired: false,
         reason: 'ALREADY_RUNNING',
-        runId: existingLock.runId,
+        runId: lockResult.existingRunId,
       };
     }
 
     // 3. Check per-incident minute limit
-    const incidentCount = this.getIncidentCount(tenantId, incidentId);
+    const incidentResult = await this.store.getIncidentCounter(tenantId, incidentId);
+    const incidentCount = incidentResult?.count ?? 0;
     if (incidentCount >= SIMULATION_RATE_LIMITS.perIncident) {
-      const retryAfter = this.getIncidentRetryAfter(tenantId, incidentId);
+      // Release the lock we just acquired
+      await this.store.releaseIncidentLock(tenantId, incidentId, runId);
+      const retryAfter = incidentResult?.ttlRemaining ?? SIMULATION_RATE_LIMITS.perIncidentTtlSec;
       return {
         acquired: false,
         reason: 'incident',
@@ -221,8 +220,11 @@ export class SimulationRateLimitGuard implements CanActivate {
     }
 
     // 4. Check daily limit
-    const dailyCount = this.getDailyCount(tenantId);
+    const utcDate = this.getUtcDateString();
+    const dailyCount = await this.store.getDailyCounter(tenantId, utcDate);
     if (dailyCount >= SIMULATION_RATE_LIMITS.daily) {
+      // Release the lock we just acquired
+      await this.store.releaseIncidentLock(tenantId, incidentId, runId);
       return {
         acquired: false,
         reason: 'daily',
@@ -231,34 +233,21 @@ export class SimulationRateLimitGuard implements CanActivate {
 
     // All checks passed - acquire tokens atomically
     // a. Add to concurrent set
-    const concurrentKey = SIMULATION_RATE_LIMIT_KEYS.perTenantConcurrent(tenantId);
-    if (!this.store.concurrentSets.has(concurrentKey)) {
-      this.store.concurrentSets.set(concurrentKey, new Set());
-    }
-    this.store.concurrentSets.get(concurrentKey)!.add(runId);
+    await this.store.addToConcurrentSet(
+      tenantId,
+      runId,
+      Math.ceil(SIMULATION_RATE_LIMITS.leaseTtlMs / 1000),
+    );
 
     // b. Increment incident counter with TTL
-    const incidentKey = SIMULATION_RATE_LIMIT_KEYS.perIncident(tenantId, incidentId);
-    const ttlMs = SIMULATION_RATE_LIMITS.perIncidentTtlSec * 1000;
-    this.store.incidentCounters.set(incidentKey, {
-      count: incidentCount + 1,
-      expiresAt: now + ttlMs,
-    });
+    await this.store.incrementIncidentCounter(
+      tenantId,
+      incidentId,
+      SIMULATION_RATE_LIMITS.perIncidentTtlSec,
+    );
 
     // c. Increment daily counter
-    const dailyKey = this.getDailyKey(tenantId);
-    this.store.dailyCounters.set(dailyKey, dailyCount + 1);
-
-    // d. Set incident lock
-    const leaseTtlMs = SIMULATION_RATE_LIMITS.leaseTtlMs;
-    this.store.incidentLocks.set(lockKey, {
-      runId,
-      expiresAt: now + leaseTtlMs,
-    });
-
-    // e. Set run lease
-    const leaseKey = SIMULATION_RATE_LIMIT_KEYS.runLease(runId);
-    this.store.runLeases.set(leaseKey, now + leaseTtlMs);
+    await this.store.incrementDailyCounter(tenantId, utcDate);
 
     this.logger.debug('[SimulationRateLimit] Token acquired', {
       tenantId,
@@ -280,22 +269,10 @@ export class SimulationRateLimitGuard implements CanActivate {
    */
   async releaseToken(tenantId: string, incidentId: string, runId: string): Promise<void> {
     // Remove from concurrent set
-    const concurrentKey = SIMULATION_RATE_LIMIT_KEYS.perTenantConcurrent(tenantId);
-    const concurrentSet = this.store.concurrentSets.get(concurrentKey);
-    if (concurrentSet) {
-      concurrentSet.delete(runId);
-    }
+    await this.store.removeFromConcurrentSet(tenantId, runId);
 
     // Remove incident lock
-    const lockKey = SIMULATION_RATE_LIMIT_KEYS.incidentLock(tenantId, incidentId);
-    const lock = this.store.incidentLocks.get(lockKey);
-    if (lock && lock.runId === runId) {
-      this.store.incidentLocks.delete(lockKey);
-    }
-
-    // Remove run lease
-    const leaseKey = SIMULATION_RATE_LIMIT_KEYS.runLease(runId);
-    this.store.runLeases.delete(leaseKey);
+    await this.store.releaseIncidentLock(tenantId, incidentId, runId);
 
     this.logger.debug('[SimulationRateLimit] Token released', {
       tenantId,
@@ -308,74 +285,14 @@ export class SimulationRateLimitGuard implements CanActivate {
   // Private Helpers
   // ============================================================================
 
-  private getConcurrentCount(tenantId: string): number {
-    const key = SIMULATION_RATE_LIMIT_KEYS.perTenantConcurrent(tenantId);
-    const set = this.store.concurrentSets.get(key);
-    return set ? set.size : 0;
-  }
-
-  private getIncidentCount(tenantId: string, incidentId: string): number {
-    const key = SIMULATION_RATE_LIMIT_KEYS.perIncident(tenantId, incidentId);
-    const entry = this.store.incidentCounters.get(key);
-    if (!entry) return 0;
-    
-    const now = this.clock.nowMs();
-    if (entry.expiresAt <= now) {
-      this.store.incidentCounters.delete(key);
-      return 0;
-    }
-    return entry.count;
-  }
-
-  private getIncidentRetryAfter(tenantId: string, incidentId: string): number {
-    const key = SIMULATION_RATE_LIMIT_KEYS.perIncident(tenantId, incidentId);
-    const entry = this.store.incidentCounters.get(key);
-    if (!entry) return 0;
-    
-    const now = this.clock.nowMs();
-    const remainingMs = entry.expiresAt - now;
-    return Math.max(0, Math.ceil(remainingMs / 1000));
-  }
-
-  private getDailyCount(tenantId: string): number {
-    const key = this.getDailyKey(tenantId);
-    return this.store.dailyCounters.get(key) || 0;
-  }
-
-  private getDailyKey(tenantId: string): string {
+  private getUtcDateString(): string {
     // Create ISimulationClock adapter from IClock
     const simulationClock: ISimulationClock = {
       now: () => this.clock.now(),
       advanceSeconds: () => {}, // Not used for key generation
       reset: () => {}, // Not used for key generation
     };
-    const utcDate = getUtcDateString(simulationClock);
-    return SIMULATION_RATE_LIMIT_KEYS.daily(tenantId, utcDate);
-  }
-
-  private cleanupExpired(): void {
-    const now = this.clock.nowMs();
-
-    // Cleanup expired incident counters
-    for (const [key, entry] of this.store.incidentCounters.entries()) {
-      if (entry.expiresAt <= now) {
-        this.store.incidentCounters.delete(key);
-      }
-    }
-
-    // Cleanup expired incident locks
-    for (const [key, lock] of this.store.incidentLocks.entries()) {
-      if (lock.expiresAt <= now) {
-        this.store.incidentLocks.delete(key);
-      }
-    }
-
-    // Cleanup expired run leases
-    for (const [key, expiresAt] of this.store.runLeases.entries()) {
-      if (expiresAt <= now) {
-        this.store.runLeases.delete(key);
-      }
-    }
+    return getUtcDateString(simulationClock);
   }
 
   private extractTenantId(request: SimulationRateLimitRequest): string | undefined {
@@ -396,12 +313,8 @@ export class SimulationRateLimitGuard implements CanActivate {
   /**
    * Reset all state (for testing)
    */
-  reset(): void {
-    this.store.incidentCounters.clear();
-    this.store.concurrentSets.clear();
-    this.store.dailyCounters.clear();
-    this.store.incidentLocks.clear();
-    this.store.runLeases.clear();
+  async reset(): Promise<void> {
+    await this.store.reset();
   }
 
   /**
@@ -412,23 +325,23 @@ export class SimulationRateLimitGuard implements CanActivate {
   }
 
   /**
+   * Get the underlying store (for testing/debugging)
+   */
+  getStore(): IRateLimitStore {
+    return this.store;
+  }
+
+  /**
    * Get current state (for testing/debugging)
    */
-  getState(tenantId: string): {
+  async getState(tenantId: string): Promise<{
     concurrent: number;
     daily: number;
-    incidentCounts: Map<string, number>;
-  } {
-    const concurrent = this.getConcurrentCount(tenantId);
-    const daily = this.getDailyCount(tenantId);
-    
-    const incidentCounts = new Map<string, number>();
-    for (const [key, entry] of this.store.incidentCounters.entries()) {
-      if (key.includes(tenantId) && entry.expiresAt > this.clock.nowMs()) {
-        incidentCounts.set(key, entry.count);
-      }
-    }
+  }> {
+    const concurrent = await this.store.getConcurrentCount(tenantId);
+    const utcDate = this.getUtcDateString();
+    const daily = await this.store.getDailyCounter(tenantId, utcDate);
 
-    return { concurrent, daily, incidentCounts };
+    return { concurrent, daily };
   }
 }
