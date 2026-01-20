@@ -566,6 +566,36 @@ Total: 14 tests passing
 | Baseline protection | Baseline snapshots cannot be archived |
 | Tenant isolation | Archive respects tenant boundaries |
 
+### ⚠️ BREAKING BEHAVIOR CHANGE (Phase 10)
+
+**PROMOTED snapshots are now protected (dokunulmazlar):**
+
+| Before Phase 10 | After Phase 10 |
+|-----------------|----------------|
+| PROMOTED deleted after 168h | PROMOTED **never** deleted |
+| Only LEGAL_HOLD protected | LEGAL_HOLD + PROMOTED + baseline protected |
+
+**Impact:**
+- Disk usage may grow over time
+- Phase 11 should add capacity metrics and retention economics
+- Cleanup job now returns `protectedBy.promoted` count
+
+**Rationale:**
+- PROMOTED = user explicitly marked as "important"
+- Deleting user-marked snapshots is unexpected behavior
+- Aligns with legal hold semantics (explicit > implicit)
+
+### ⚠️ TODO: SnapshotCleanupService Migration
+
+The legacy `SnapshotCleanupService` in `evidence/snapshot-cleanup.service.ts` uses:
+- `ILegacySnapshotStore` (old interface)
+- `deleteExpired()` without tenantId
+
+**Phase 11 action required:**
+- Migrate to `ISnapshotStore` with `deleteExpired(tenantId)`
+- Add tenant iteration logic (get all tenants, loop)
+- Or deprecate in favor of new cleanup job
+
 ### Files Modified (Phase 10)
 
 - `prisma/schema.prisma` - Added archived fields
@@ -598,3 +628,86 @@ chore(phase-10): archived state persistence + cleanup job hardening (131 tests)
 - Tenant isolation on cleanup
 - 14 new Phase 10 lock tests
 ```
+
+
+---
+
+## Phase 11 Entry Framework
+
+### Priority Order
+
+| Priority | Item | Rationale |
+|----------|------|-----------|
+| 1 | **Cleanup Job Migration** | `deleteExpired(tenantId)` implemented but no production caller |
+| 2 | **Cleanup Observability** | Metrics meaningless without working job |
+| 3 | **Retention Economics** | PROMOTED never deleted → disk growth management |
+| 4 | **Admin Surface** | Audit log export/dashboard |
+
+### Phase 11.1 — Cleanup Job Migration (Recommended First)
+
+**Current State:**
+- `SnapshotCleanupService` uses `ILegacySnapshotStore.deleteExpired()` (no tenantId)
+- New `ISnapshotStore.deleteExpired(tenantId)` implemented but unused in production
+
+**Required Work:**
+1. Create tenant iteration service (get all active tenants)
+2. New cleanup job that loops tenants and calls `deleteExpired(tenantId)`
+3. Deprecate or remove `SnapshotCleanupService`
+4. Add cleanup metrics (deleted, protected, duration per tenant)
+
+**Test Lock:**
+- Cleanup job MUST NOT run without valid tenantId
+- Cleanup job MUST log protected counts
+
+### Phase 11.2 — Cleanup Observability
+
+**Metrics to Add:**
+- `snapshot_cleanup_deleted_total{tenant}` - Counter
+- `snapshot_cleanup_protected_total{tenant,reason}` - Counter (reason: legal_hold, promoted, baseline)
+- `snapshot_cleanup_duration_seconds{tenant}` - Histogram
+- `snapshot_storage_bytes{tenant,policy}` - Gauge
+
+### Phase 11.3 — Retention Economics
+
+**PROMOTED Capacity Management:**
+- PROMOTED never deleted → unbounded growth possible
+- Add `promoted_snapshot_count{tenant}` metric
+- Consider: PROMOTED → LEGAL_HOLD auto-upgrade after N days?
+- Consider: Admin alert when PROMOTED count exceeds threshold
+
+### Architecture Diagram (Post Phase 10)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        Snapshot Lifecycle                           │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  CREATE ──► STANDARD ──┬──► PROMOTED ──┬──► LEGAL_HOLD             │
+│              (72h TTL)  │    (∞ TTL)    │    (∞ TTL)                │
+│                         │               │                           │
+│                         │               └──► ARCHIVED (soft-hide)   │
+│                         │                    (still LEGAL_HOLD)     │
+│                         │                                           │
+│  ┌─────────────────────┴───────────────────────────────────────┐   │
+│  │                    CLEANUP JOB                               │   │
+│  │  deleteExpired(tenantId) → only STANDARD non-baseline       │   │
+│  │                                                              │   │
+│  │  DOKUNULMAZLAR (never deleted):                             │   │
+│  │  ├─ LEGAL_HOLD (no expiresAt)                               │   │
+│  │  ├─ PROMOTED (Phase 10 change)                              │   │
+│  │  └─ isBaseline = true                                       │   │
+│  └──────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Test Matrix (Phase 10 Complete)
+
+| Test Suite | Count | Status |
+|------------|-------|--------|
+| phase-10-locks.spec.ts | 14 | ✅ |
+| legal-hold-inventory.spec.ts | 40 | ✅ |
+| legal-hold.controller.spec.ts | 37 | ✅ |
+| legal-hold.spec.ts | 13 | ✅ |
+| promotion-workflow.spec.ts | 21 | ✅ |
+| **Total** | **125** | ✅ |
