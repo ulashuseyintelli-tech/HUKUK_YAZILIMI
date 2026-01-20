@@ -67,13 +67,13 @@ describe('Promotion Workflow', () => {
 
   describe('promoteToBaseline', () => {
     it('should throw error when snapshot not found', async () => {
-      await expect(store.promoteToBaseline('non-existent')).rejects.toThrow('not found');
+      await expect(store.promoteToBaseline(TENANT_ID, 'non-existent')).rejects.toThrow('not found');
     });
 
     it('should promote snapshot to baseline', async () => {
       await createSnapshot('snap-001');
 
-      await store.promoteToBaseline('snap-001');
+      await store.promoteToBaseline(TENANT_ID, 'snap-001');
 
       const stored = await store.findById('snap-001');
       expect(stored?.isBaseline).toBe(true);
@@ -82,8 +82,8 @@ describe('Promotion Workflow', () => {
     it('should be idempotent - second call does not throw', async () => {
       await createSnapshot('snap-001');
 
-      await store.promoteToBaseline('snap-001');
-      await store.promoteToBaseline('snap-001'); // Should not throw
+      await store.promoteToBaseline(TENANT_ID, 'snap-001');
+      await store.promoteToBaseline(TENANT_ID, 'snap-001'); // Should not throw
 
       const stored = await store.findById('snap-001');
       expect(stored?.isBaseline).toBe(true);
@@ -96,7 +96,7 @@ describe('Promotion Workflow', () => {
 
   describe('applyLegalHold', () => {
     it('should return error when snapshot not found', async () => {
-      const result = await store.applyLegalHold('non-existent');
+      const result = await store.applyLegalHold(TENANT_ID, 'non-existent');
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('SNAPSHOT_NOT_FOUND');
@@ -105,7 +105,7 @@ describe('Promotion Workflow', () => {
     it('should apply LEGAL_HOLD to STANDARD snapshot', async () => {
       await createSnapshot('snap-001');
 
-      const result = await store.applyLegalHold('snap-001');
+      const result = await store.applyLegalHold(TENANT_ID, 'snap-001');
 
       expect(result.success).toBe(true);
       expect(result.changed).toBe(true);
@@ -119,9 +119,9 @@ describe('Promotion Workflow', () => {
 
     it('should apply LEGAL_HOLD to PROMOTED snapshot', async () => {
       await createSnapshot('snap-001');
-      await store.setRetentionPolicy('snap-001', 'PROMOTED');
+      await store.setRetentionPolicy(TENANT_ID, 'snap-001', 'PROMOTED');
 
-      const result = await store.applyLegalHold('snap-001');
+      const result = await store.applyLegalHold(TENANT_ID, 'snap-001');
 
       expect(result.success).toBe(true);
       expect(result.changed).toBe(true);
@@ -132,8 +132,8 @@ describe('Promotion Workflow', () => {
     it('should be idempotent - second call returns changed=false', async () => {
       await createSnapshot('snap-001');
 
-      const result1 = await store.applyLegalHold('snap-001');
-      const result2 = await store.applyLegalHold('snap-001');
+      const result1 = await store.applyLegalHold(TENANT_ID, 'snap-001');
+      const result2 = await store.applyLegalHold(TENANT_ID, 'snap-001');
 
       expect(result1.changed).toBe(true);
       expect(result2.changed).toBe(false);
@@ -146,7 +146,7 @@ describe('Promotion Workflow', () => {
 
   describe('setRetentionPolicy', () => {
     it('should return error when snapshot not found', async () => {
-      const result = await store.setRetentionPolicy('non-existent', 'PROMOTED');
+      const result = await store.setRetentionPolicy(TENANT_ID, 'non-existent', 'PROMOTED');
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('SNAPSHOT_NOT_FOUND');
@@ -156,7 +156,7 @@ describe('Promotion Workflow', () => {
       it('should allow STANDARD → PROMOTED', async () => {
         await createSnapshot('snap-001');
 
-        const result = await store.setRetentionPolicy('snap-001', 'PROMOTED');
+        const result = await store.setRetentionPolicy(TENANT_ID, 'snap-001', 'PROMOTED');
 
         expect(result.success).toBe(true);
         expect(result.changed).toBe(true);
@@ -167,7 +167,7 @@ describe('Promotion Workflow', () => {
       it('should allow STANDARD → LEGAL_HOLD', async () => {
         await createSnapshot('snap-001');
 
-        const result = await store.setRetentionPolicy('snap-001', 'LEGAL_HOLD');
+        const result = await store.setRetentionPolicy(TENANT_ID, 'snap-001', 'LEGAL_HOLD');
 
         expect(result.success).toBe(true);
         expect(result.changed).toBe(true);
@@ -179,9 +179,9 @@ describe('Promotion Workflow', () => {
 
       it('should allow PROMOTED → LEGAL_HOLD', async () => {
         await createSnapshot('snap-001');
-        await store.setRetentionPolicy('snap-001', 'PROMOTED');
+        await store.setRetentionPolicy(TENANT_ID, 'snap-001', 'PROMOTED');
 
-        const result = await store.setRetentionPolicy('snap-001', 'LEGAL_HOLD');
+        const result = await store.setRetentionPolicy(TENANT_ID, 'snap-001', 'LEGAL_HOLD');
 
         expect(result.success).toBe(true);
         expect(result.changed).toBe(true);
@@ -194,7 +194,7 @@ describe('Promotion Workflow', () => {
       it('should return changed=false for same policy', async () => {
         await createSnapshot('snap-001');
 
-        const result = await store.setRetentionPolicy('snap-001', 'STANDARD');
+        const result = await store.setRetentionPolicy(TENANT_ID, 'snap-001', 'STANDARD');
 
         expect(result.success).toBe(true);
         expect(result.changed).toBe(false);
@@ -204,9 +204,9 @@ describe('Promotion Workflow', () => {
     describe('downgrades (FORBIDDEN)', () => {
       it('should reject PROMOTED → STANDARD', async () => {
         await createSnapshot('snap-001');
-        await store.setRetentionPolicy('snap-001', 'PROMOTED');
+        await store.setRetentionPolicy(TENANT_ID, 'snap-001', 'PROMOTED');
 
-        const result = await store.setRetentionPolicy('snap-001', 'STANDARD');
+        const result = await store.setRetentionPolicy(TENANT_ID, 'snap-001', 'STANDARD');
 
         expect(result.success).toBe(false);
         expect(result.error).toBe('RETENTION_DOWNGRADE_FORBIDDEN');
@@ -219,9 +219,9 @@ describe('Promotion Workflow', () => {
 
       it('should reject LEGAL_HOLD → STANDARD', async () => {
         await createSnapshot('snap-001');
-        await store.applyLegalHold('snap-001');
+        await store.applyLegalHold(TENANT_ID, 'snap-001');
 
-        const result = await store.setRetentionPolicy('snap-001', 'STANDARD');
+        const result = await store.setRetentionPolicy(TENANT_ID, 'snap-001', 'STANDARD');
 
         expect(result.success).toBe(false);
         expect(result.error).toBe('RETENTION_DOWNGRADE_FORBIDDEN');
@@ -229,9 +229,9 @@ describe('Promotion Workflow', () => {
 
       it('should reject LEGAL_HOLD → PROMOTED', async () => {
         await createSnapshot('snap-001');
-        await store.applyLegalHold('snap-001');
+        await store.applyLegalHold(TENANT_ID, 'snap-001');
 
-        const result = await store.setRetentionPolicy('snap-001', 'PROMOTED');
+        const result = await store.setRetentionPolicy(TENANT_ID, 'snap-001', 'PROMOTED');
 
         expect(result.success).toBe(false);
         expect(result.error).toBe('RETENTION_DOWNGRADE_FORBIDDEN');
@@ -254,40 +254,44 @@ describe('Promotion Workflow', () => {
       
       // At 73h from creation - should be expired (deleteExpired removes it)
       clock.advanceHours(2);
-      const deleted = await store.deleteExpired();
-      expect(deleted).toBe(1);
+      const result = await store.deleteExpired(TENANT_ID);
+      expect(result.deletedCount).toBe(1);
       
       stored = await store.findById('snap-001');
       expect(stored).toBeNull();
     });
 
-    it('should delete PROMOTED snapshot after 168h from createdAt', async () => {
+    it('should NOT delete PROMOTED snapshot (Phase 10 - dokunulmazlar)', async () => {
       await createSnapshot('snap-001');
-      await store.setRetentionPolicy('snap-001', 'PROMOTED');
+      await store.setRetentionPolicy(TENANT_ID, 'snap-001', 'PROMOTED');
       
       // At 167h from creation - should still exist
       clock.advanceHours(167);
       let stored = await store.findById('snap-001');
       expect(stored).not.toBeNull();
       
-      // At 169h from creation - should be expired
+      // At 169h from creation - Phase 10: PROMOTED is protected (dokunulmazlar)
       clock.advanceHours(2);
-      const deleted = await store.deleteExpired();
-      expect(deleted).toBe(1);
+      const result = await store.deleteExpired(TENANT_ID);
+      // Phase 10 change: PROMOTED is never deleted
+      expect(result.deletedCount).toBe(0);
+      expect(result.protectedBy.promoted).toBe(1);
       
+      // PROMOTED snapshot still exists
       stored = await store.findById('snap-001');
-      expect(stored).toBeNull();
+      expect(stored).not.toBeNull();
+      expect(stored?.retentionPolicy).toBe('PROMOTED');
     });
 
     it('should NEVER delete LEGAL_HOLD snapshot', async () => {
       await createSnapshot('snap-001');
-      await store.applyLegalHold('snap-001');
+      await store.applyLegalHold(TENANT_ID, 'snap-001');
       
       // Advance 1 year
       clock.advanceHours(365 * 24);
       
-      const deleted = await store.deleteExpired();
-      expect(deleted).toBe(0);
+      const result = await store.deleteExpired(TENANT_ID);
+      expect(result.deletedCount).toBe(0);
       
       const stored = await store.findById('snap-001');
       expect(stored).not.toBeNull();

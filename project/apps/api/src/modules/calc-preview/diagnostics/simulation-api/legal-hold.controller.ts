@@ -239,7 +239,13 @@ export class LegalHoldController {
     }
 
     // Call service (handles tenant verification internally)
-    const result = await this.legalHoldService.archiveLegalHold(effectiveTenantId, snapshotId);
+    // Phase 10: Pass actor (userId) and reason for audit trail
+    const result = await this.legalHoldService.archiveLegalHold(
+      effectiveTenantId, 
+      snapshotId,
+      ctx.userId, // actor for audit
+      undefined,  // reason (could be added as request body param)
+    );
 
     // Map service errors to HTTP errors
     if (!result.success) {
@@ -287,11 +293,13 @@ export class LegalHoldController {
       snapshotId,
       changed: result.changed,
       tenantId: effectiveTenantId,
+      archivedAt: result.archivedAt,
     });
 
     return {
       archived: true,
       changed: result.changed,
+      archivedAt: result.archivedAt, // Phase 10: Include timestamp
     };
   }
 

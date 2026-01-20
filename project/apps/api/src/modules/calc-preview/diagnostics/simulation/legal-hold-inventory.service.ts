@@ -5,6 +5,7 @@
  * Phase 9B.5 - Migrated to ISnapshotStore interface
  * Phase 9B.6 - Tenant-aware mutations + two-method list pattern
  * Phase 9B.6-LOCK - Uses centralized snapshot-ordering.ts comparators
+ * Phase 10 - DB-backed archive state (durable, multi-instance safe)
  * 
  * Manages LEGAL_HOLD snapshot inventory.
  * Provides visibility and alerts for LEGAL_HOLD accumulation.
@@ -15,12 +16,12 @@
  * - LEGAL_HOLD policy is never downgraded
  * - All public methods require tenantId (tenant isolation)
  * 
- * ARCHIVED STATE WARNING:
- * - archivedSnapshots is IN-MEMORY only (not durable)
- * - Multi-instance deployments will have inconsistent archive state
- * - This is acceptable for MVP; production should use DB flag
- * - Metrics: legal_hold.archive.in_memory counter tracks this
- * - TODO(Phase-10): Persist archived state to database
+ * ARCHIVE SEMANTICS (Phase 10):
+ * - Archive = soft-hide (DB flag: archivedAt)
+ * - Legal hold state preserved (retentionPolicy stays LEGAL_HOLD)
+ * - Archived snapshots excluded from listLegalHolds by default
+ * - Archive is one-way (cannot unarchive)
+ * - Durable across restarts and multi-instance deployments
  * 
  * @see .kiro/specs/whatif-simulation/design.md
  * @see .kiro/specs/phase-9b-postgresql-migration/PHASE-9B-LOCK.md
@@ -31,6 +32,7 @@ import { Injectable, Logger, Inject } from '@nestjs/common';
 import { 
   ISnapshotStore, 
   SNAPSHOT_STORE,
+  SimulationSnapshot,
 } from '../persistence/snapshot-store.interface';
 import { IIncidentStore } from './incident.types';
 import { IClock } from '../evidence/clock.service';
@@ -46,15 +48,6 @@ import { sortForDisplay } from './snapshot-ordering';
 @Injectable()
 export class LegalHoldInventoryService {
   private readonly logger = new Logger(LegalHoldInventoryService.name);
-  
-  /**
-   * Track archived snapshots
-   * 
-   * WARNING: This is IN-MEMORY only, not durable across restarts.
-   * In multi-instance deployments, archive state will be inconsistent.
-   * Production should migrate to a DB-backed archived flag.
-   */
-  private readonly archivedSnapshots: Set<string> = new Set();
 
   constructor(
     private readonly clock: IClock,
@@ -62,8 +55,8 @@ export class LegalHoldInventoryService {
     private readonly snapshotStore: ISnapshotStore,
     private readonly incidentStore: IIncidentStore,
   ) {
-    // Log warning about in-memory archive state
-    this.logger.warn('[LegalHoldInventory] Archive state is IN-MEMORY only (not durable)');
+    // Phase 10: Archive state is now DB-backed (durable)
+    this.logger.log('[LegalHoldInventory] Archive state is DB-backed (Phase 10)');
   }
 
   /**
@@ -80,12 +73,7 @@ export class LegalHoldInventoryService {
   /**
    * Build LegalHoldEntry from snapshot
    */
-  private async buildEntry(s: { 
-    snapshotId: string; 
-    incidentId: string; 
-    tenantId: string; 
-    createdAt: string;
-  }): Promise<LegalHoldEntry> {
+  private async buildEntry(s: SimulationSnapshot): Promise<LegalHoldEntry> {
     const now = this.clock.now();
     const incident = await this.incidentStore.get(s.incidentId);
     const isBaseline = incident?.baselineSnapshotId === s.snapshotId;
@@ -99,7 +87,10 @@ export class LegalHoldInventoryService {
       appliedAt: s.createdAt,
       ageDays: Math.floor(ageDays),
       isBaseline,
-      archived: this.archivedSnapshots.has(s.snapshotId),
+      archived: !!s.archivedAt, // Phase 10: Read from DB
+      archivedAt: s.archivedAt,
+      archivedBy: s.archivedBy,
+      archivedReason: s.archivedReason,
     };
   }
 
@@ -132,8 +123,11 @@ export class LegalHoldInventoryService {
    * Use this for tenant-wide inventory views.
    * Results are sorted deterministically: createdAt DESC, snapshotId ASC
    * 
+   * Phase 10: By default, excludes archived snapshots.
+   * Archived snapshots are soft-hidden but still exist in DB.
+   * 
    * @param tenantId Tenant ID (required for tenant isolation)
-   * @returns Array of LegalHoldEntry (sorted)
+   * @returns Array of LegalHoldEntry (sorted, non-archived only)
    */
   async listLegalHolds(tenantId: string): Promise<LegalHoldEntry[]> {
     this.validateTenantId(tenantId);
@@ -143,10 +137,14 @@ export class LegalHoldInventoryService {
       timestamp: this.clock.nowIso(),
     });
     
+    // Phase 10: findWithLegalHold excludes archived by default
     const legalHoldSnapshots = await this.snapshotStore.findWithLegalHold(tenantId);
     
+    // Filter out archived snapshots (double-check in case store doesn't filter)
+    const nonArchivedSnapshots = legalHoldSnapshots.filter(s => !s.archivedAt);
+    
     const entries: LegalHoldEntry[] = [];
-    for (const s of legalHoldSnapshots) {
+    for (const s of nonArchivedSnapshots) {
       entries.push(await this.buildEntry(s));
     }
     
@@ -159,6 +157,8 @@ export class LegalHoldInventoryService {
    * Use this for incident-scoped views.
    * Results are sorted deterministically: createdAt DESC, snapshotId ASC
    * 
+   * Phase 10: By default, excludes archived snapshots.
+   * 
    * WHY SEPARATE METHOD?
    * - Prevents "incidentId forgotten" bugs (silent tenant-wide query)
    * - Clear intent in audit logs
@@ -166,7 +166,7 @@ export class LegalHoldInventoryService {
    * 
    * @param tenantId Tenant ID (required for tenant isolation)
    * @param incidentId Incident ID (required)
-   * @returns Array of LegalHoldEntry (sorted)
+   * @returns Array of LegalHoldEntry (sorted, non-archived only)
    */
   async listLegalHoldsByIncident(tenantId: string, incidentId: string): Promise<LegalHoldEntry[]> {
     this.validateTenantId(tenantId);
@@ -181,9 +181,11 @@ export class LegalHoldInventoryService {
       timestamp: this.clock.nowIso(),
     });
     
-    // Get all snapshots for incident, filter to LEGAL_HOLD
+    // Get all snapshots for incident, filter to LEGAL_HOLD and non-archived
     const snapshots = await this.snapshotStore.findByIncidentId(tenantId, incidentId);
-    const legalHoldSnapshots = snapshots.filter(s => s.retentionPolicy === 'LEGAL_HOLD');
+    const legalHoldSnapshots = snapshots.filter(
+      s => s.retentionPolicy === 'LEGAL_HOLD' && !s.archivedAt
+    );
     
     const entries: LegalHoldEntry[] = [];
     for (const s of legalHoldSnapshots) {
@@ -232,22 +234,24 @@ export class LegalHoldInventoryService {
   }
 
   // ============================================================================
-  // Archive Operations
+  // Archive Operations (Phase 10 - DB-backed)
   // ============================================================================
 
   /**
    * Archive a LEGAL_HOLD snapshot
+   * 
+   * Phase 10: Archive state is now persisted to database.
    * 
    * RULES:
    * - Only LEGAL_HOLD snapshots can be archived (NOT_LEGAL_HOLD error)
    * - Baseline snapshots cannot be archived (IS_BASELINE error)
    * - Archive sets archived=true flag, does NOT change retention policy
    * - Idempotent: archiving already archived snapshot is no-op
+   * - Archive is one-way (cannot unarchive)
    * 
    * TENANT ISOLATION:
-   * - findById returns snapshot with tenantId for verification
+   * - Store enforces tenant isolation
    * - Tenant mismatch returns NOT_FOUND (no information leakage)
-   * - Mismatch is logged internally for security metrics
    * 
    * BASELINE CHECK:
    * - Baseline is determined by incident.baselineSnapshotId (not retentionPolicy)
@@ -255,12 +259,19 @@ export class LegalHoldInventoryService {
    * 
    * @param tenantId Tenant ID (required for tenant isolation)
    * @param snapshotId Snapshot ID to archive
+   * @param actor Actor performing the archive (opsUserId or system)
+   * @param reason Optional reason for archiving
    * @returns ArchiveLegalHoldResult
    */
-  async archiveLegalHold(tenantId: string, snapshotId: string): Promise<ArchiveLegalHoldResult> {
+  async archiveLegalHold(
+    tenantId: string, 
+    snapshotId: string,
+    actor?: string,
+    reason?: string,
+  ): Promise<ArchiveLegalHoldResult> {
     this.validateTenantId(tenantId);
     
-    // Get snapshot (findById is globally unique, returns tenantId for verification)
+    // Get snapshot for baseline check (store handles tenant isolation)
     const snapshot = await this.snapshotStore.findById(snapshotId);
     
     if (!snapshot) {
@@ -273,7 +284,6 @@ export class LegalHoldInventoryService {
     }
 
     // TENANT ISOLATION: Verify tenant match
-    // Return NOT_FOUND for mismatch (no information leakage about other tenants)
     if (snapshot.tenantId !== tenantId) {
       this.logger.warn('[LegalHoldInventory] Tenant mismatch on archive attempt (returning NOT_FOUND)', {
         requestedTenantId: tenantId,
@@ -288,17 +298,8 @@ export class LegalHoldInventoryService {
       };
     }
 
-    // Check if LEGAL_HOLD (only LEGAL_HOLD can be archived)
-    if (snapshot.retentionPolicy !== 'LEGAL_HOLD') {
-      return {
-        success: false,
-        changed: false,
-        error: 'NOT_LEGAL_HOLD',
-        errorMessage: `Snapshot ${snapshotId} is not LEGAL_HOLD (current: ${snapshot.retentionPolicy})`,
-      };
-    }
-
     // Check if baseline (baseline is determined by incident.baselineSnapshotId)
+    // This check is done here because store doesn't know about incident baseline
     const incident = await this.incidentStore.get(snapshot.incidentId);
     if (incident?.baselineSnapshotId === snapshotId) {
       this.logger.warn('[LegalHoldInventory] Cannot archive baseline snapshot', {
@@ -314,36 +315,61 @@ export class LegalHoldInventoryService {
       };
     }
 
-    // Check if already archived (idempotent)
-    if (this.archivedSnapshots.has(snapshotId)) {
+    // Phase 10: Delegate to store for DB persistence
+    const result = await this.snapshotStore.markArchived(tenantId, snapshotId, {
+      archivedBy: actor ?? 'system',
+      reason,
+    });
+
+    if (!result.success) {
+      // Map store errors to service errors
+      if (result.error === 'NOT_LEGAL_HOLD') {
+        return {
+          success: false,
+          changed: false,
+          error: 'NOT_LEGAL_HOLD',
+          errorMessage: `Snapshot ${snapshotId} is not LEGAL_HOLD`,
+        };
+      }
+      if (result.error === 'IS_BASELINE') {
+        return {
+          success: false,
+          changed: false,
+          error: 'IS_BASELINE',
+          errorMessage: `Cannot archive baseline snapshot ${snapshotId}`,
+        };
+      }
       return {
-        success: true,
+        success: false,
         changed: false,
+        error: result.error as any,
+        errorMessage: `Failed to archive snapshot ${snapshotId}`,
       };
     }
 
-    // Archive (in-memory - see WARNING in class doc)
-    this.archivedSnapshots.add(snapshotId);
-
-    this.logger.debug('[LegalHoldInventory] Snapshot archived (in-memory)', {
+    this.logger.debug('[LegalHoldInventory] Snapshot archived (DB-backed)', {
       tenantId,
       snapshotId,
       incidentId: snapshot.incidentId,
+      archivedAt: result.archivedAt,
+      archivedBy: actor,
     });
 
     return {
       success: true,
-      changed: true,
+      changed: result.changed,
+      archivedAt: result.archivedAt,
     };
   }
 
   /**
    * Check if snapshot is archived
    * 
-   * NOTE: Archive state is in-memory only.
+   * Phase 10: Reads from DB via store.
    */
-  isArchived(snapshotId: string): boolean {
-    return this.archivedSnapshots.has(snapshotId);
+  async isArchived(snapshotId: string): Promise<boolean> {
+    const snapshot = await this.snapshotStore.findById(snapshotId);
+    return !!snapshot?.archivedAt;
   }
 
   // ============================================================================
@@ -381,21 +407,4 @@ export class LegalHoldInventoryService {
     return count > threshold;
   }
 
-  // ============================================================================
-  // Test Helpers
-  // ============================================================================
-
-  /**
-   * Clear archived set (for testing)
-   */
-  clearArchived(): void {
-    this.archivedSnapshots.clear();
-  }
-
-  /**
-   * Get archived count (for testing/metrics)
-   */
-  getArchivedCount(): number {
-    return this.archivedSnapshots.size;
-  }
 }

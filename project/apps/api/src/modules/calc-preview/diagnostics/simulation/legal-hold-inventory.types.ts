@@ -11,6 +11,8 @@
 
 /**
  * Legal hold entry
+ * 
+ * Phase 10: Added archive metadata fields (archivedAt, archivedBy, archivedReason)
  */
 export interface LegalHoldEntry {
   /** Snapshot ID */
@@ -27,6 +29,12 @@ export interface LegalHoldEntry {
   isBaseline: boolean;
   /** Whether this snapshot is archived */
   archived: boolean;
+  /** When snapshot was archived (Phase 10 - DB-backed) */
+  archivedAt?: string | undefined;
+  /** Who archived the snapshot (Phase 10 - DB-backed) */
+  archivedBy?: string | undefined;
+  /** Reason for archiving (Phase 10 - DB-backed) */
+  archivedReason?: string | undefined;
 }
 
 /**
@@ -57,12 +65,16 @@ export interface LegalHoldInventoryOptions {
 
 /**
  * Archive legal hold result
+ * 
+ * Phase 10: Added archivedAt field for DB-backed archive state
  */
 export interface ArchiveLegalHoldResult {
   /** Whether archive succeeded */
   success: boolean;
   /** Whether snapshot was actually archived (false if already archived) */
   changed: boolean;
+  /** When snapshot was archived (ISO 8601) - Phase 10 */
+  archivedAt?: string | undefined;
   /** Error code if failed */
   error?: 'SNAPSHOT_NOT_FOUND' | 'NOT_LEGAL_HOLD' | 'IS_BASELINE';
   /** Error message */

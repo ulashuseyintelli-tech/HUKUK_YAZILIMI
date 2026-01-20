@@ -125,10 +125,10 @@ describe('LEGAL_HOLD Retention', () => {
       clock.advanceSeconds(365 * 24 * 60 * 60);
 
       // Delete expired
-      const deletedCount = await store.deleteExpired();
+      const result = await store.deleteExpired(TENANT_ID);
 
       // Should not delete LEGAL_HOLD
-      expect(deletedCount).toBe(0);
+      expect(result.deletedCount).toBe(0);
 
       // Should still be accessible
       const snapshot = await store.findById('legal-never-delete');
@@ -147,10 +147,10 @@ describe('LEGAL_HOLD Retention', () => {
       clock.advanceSeconds(73 * 60 * 60);
 
       // Delete expired
-      const deletedCount = await store.deleteExpired();
+      const result = await store.deleteExpired(TENANT_ID);
 
       // Should delete 2 STANDARD, keep 1 LEGAL_HOLD
-      expect(deletedCount).toBe(2);
+      expect(result.deletedCount).toBe(2);
 
       // LEGAL_HOLD should still exist
       const legalSnapshot = await store.findById('legal-001');
@@ -174,16 +174,22 @@ describe('LEGAL_HOLD Retention', () => {
       // Advance past STANDARD expiry but not PROMOTED
       clock.advanceSeconds(73 * 60 * 60);
 
-      let deletedCount = await store.deleteExpired();
-      expect(deletedCount).toBe(1); // Only STANDARD
+      let result = await store.deleteExpired(TENANT_ID);
+      expect(result.deletedCount).toBe(1); // Only STANDARD
 
-      // Advance past PROMOTED expiry
+      // Advance past PROMOTED expiry (168h total)
+      // Phase 10: PROMOTED is now protected (dokunulmazlar) - never deleted
       clock.advanceSeconds(100 * 60 * 60);
 
-      deletedCount = await store.deleteExpired();
-      expect(deletedCount).toBe(1); // Only PROMOTED
+      result = await store.deleteExpired(TENANT_ID);
+      // Phase 10 change: PROMOTED is protected, so 0 deleted
+      expect(result.deletedCount).toBe(0);
+      expect(result.protectedBy.promoted).toBe(1);
 
-      // LEGAL_HOLD still exists
+      // Both PROMOTED and LEGAL_HOLD still exist
+      const promotedSnapshot = await store.findById('promoted-001');
+      expect(promotedSnapshot).not.toBeNull();
+      
       const legalSnapshot = await store.findById('legal-001');
       expect(legalSnapshot).not.toBeNull();
     });

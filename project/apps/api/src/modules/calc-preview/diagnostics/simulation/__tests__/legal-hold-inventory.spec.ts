@@ -128,7 +128,8 @@ describe('LegalHoldInventoryService', () => {
 
       expect(result.success).toBe(true);
       expect(result.changed).toBe(true);
-      expect(service.isArchived('snap-001')).toBe(true);
+      expect(result.archivedAt).toBeDefined(); // Phase 10: archivedAt returned
+      expect(await service.isArchived('snap-001')).toBe(true);
     });
 
     it('should be idempotent - archiving already archived snapshot is no-op', async () => {
@@ -193,7 +194,7 @@ describe('LegalHoldInventoryService', () => {
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('NOT_LEGAL_HOLD');
-      expect(result.errorMessage).toContain('STANDARD');
+      expect(result.errorMessage).toContain('not LEGAL_HOLD');
     });
 
     it('should return error when trying to archive baseline snapshot', async () => {
@@ -264,12 +265,22 @@ describe('LegalHoldInventoryService', () => {
   });
 
   // ============================================================================
-  // isArchived Tests
+  // isArchived Tests (Phase 10 - async, DB-backed)
   // ============================================================================
 
   describe('isArchived', () => {
     it('should return false for non-archived snapshot', async () => {
-      expect(service.isArchived('snap-001')).toBe(false);
+      await incidentStore.create({
+        incidentId: 'inc-001',
+        tenantId: TENANT_ID,
+        title: 'Test',
+        severity: 'LOW',
+      });
+
+      await createSnapshot('snap-001', 'inc-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-001');
+
+      expect(await service.isArchived('snap-001')).toBe(false);
     });
 
     it('should return true for archived snapshot', async () => {
@@ -284,7 +295,11 @@ describe('LegalHoldInventoryService', () => {
       await snapshotStore.applyLegalHold(TENANT_ID, 'snap-001');
       await service.archiveLegalHold(TENANT_ID, 'snap-001');
 
-      expect(service.isArchived('snap-001')).toBe(true);
+      expect(await service.isArchived('snap-001')).toBe(true);
+    });
+
+    it('should return false for non-existent snapshot', async () => {
+      expect(await service.isArchived('non-existent')).toBe(false);
     });
   });
 
@@ -394,7 +409,7 @@ describe('LegalHoldInventoryService', () => {
       expect(entries.map(e => e.incidentId).sort()).toEqual(['inc-001', 'inc-002']);
     });
 
-    it('should mark archived snapshots correctly', async () => {
+    it('should exclude archived snapshots from list (Phase 10)', async () => {
       await incidentStore.create({
         incidentId: 'inc-001',
         tenantId: TENANT_ID,
@@ -404,11 +419,20 @@ describe('LegalHoldInventoryService', () => {
 
       await createSnapshot('snap-001', 'inc-001');
       await snapshotStore.applyLegalHold(TENANT_ID, 'snap-001');
+      
+      clock.advanceHours(1);
+      await createSnapshot('snap-002', 'inc-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-002');
+      
+      // Archive one snapshot
       await service.archiveLegalHold(TENANT_ID, 'snap-001');
 
       const entries = await service.listLegalHolds(TENANT_ID);
       
-      expect(entries[0].archived).toBe(true);
+      // Only non-archived snapshot should be in list
+      expect(entries).toHaveLength(1);
+      expect(entries[0].snapshotId).toBe('snap-002');
+      expect(entries[0].archived).toBe(false);
     });
   });
 
@@ -718,37 +742,6 @@ describe('LegalHoldInventoryService', () => {
   });
 
   // ============================================================================
-  // clearArchived Tests
-  // ============================================================================
-
-  describe('clearArchived', () => {
-    it('should clear all archived snapshots', async () => {
-      await incidentStore.create({
-        incidentId: 'inc-001',
-        tenantId: TENANT_ID,
-        title: 'Test',
-        severity: 'LOW',
-      });
-
-      await createSnapshot('snap-001', 'inc-001');
-      await createSnapshot('snap-002', 'inc-001');
-      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-001');
-      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-002');
-
-      await service.archiveLegalHold(TENANT_ID, 'snap-001');
-      await service.archiveLegalHold(TENANT_ID, 'snap-002');
-
-      expect(service.isArchived('snap-001')).toBe(true);
-      expect(service.isArchived('snap-002')).toBe(true);
-
-      service.clearArchived();
-
-      expect(service.isArchived('snap-001')).toBe(false);
-      expect(service.isArchived('snap-002')).toBe(false);
-    });
-  });
-
-  // ============================================================================
   // Anti-regression: baseline protect → cleanup → baseline still exists
   // NOTE: deleteExpired is a test helper, not part of ISnapshotStore interface
   // ============================================================================
@@ -773,13 +766,13 @@ describe('LegalHoldInventoryService', () => {
       clock.advanceHours(200); // Way past 72h STANDARD TTL
 
       // Run cleanup (test helper method)
-      const deleted = await snapshotStore.deleteExpired();
+      const result = await snapshotStore.deleteExpired(TENANT_ID);
 
       // Baseline should still exist (LEGAL_HOLD never expires)
       const baseline = await snapshotStore.findById('snap-baseline');
       expect(baseline).not.toBeNull();
       expect(baseline?.retentionPolicy).toBe('LEGAL_HOLD');
-      expect(deleted).toBe(0);
+      expect(result.deletedCount).toBe(0);
     });
 
     it('should delete non-protected snapshots but keep baseline', async () => {
@@ -804,7 +797,7 @@ describe('LegalHoldInventoryService', () => {
       clock.advanceHours(100);
 
       // Run cleanup (test helper method)
-      const deleted = await snapshotStore.deleteExpired();
+      const result = await snapshotStore.deleteExpired(TENANT_ID);
 
       // Baseline should still exist
       const baseline = await snapshotStore.findById('snap-baseline');
@@ -813,7 +806,7 @@ describe('LegalHoldInventoryService', () => {
       // Other snapshot should be deleted
       const other = await snapshotStore.findById('snap-other');
       expect(other).toBeNull();
-      expect(deleted).toBe(1);
+      expect(result.deletedCount).toBe(1);
     });
   });
 });

@@ -45,6 +45,7 @@ export type EvidenceVerdict = 'PROCEED' | 'BLOCK_DRIFT' | 'BLOCK_EVIDENCE' | 'BL
  * - legalHoldReason: can be set when legalHold = true
  * - retentionPolicy: STANDARD → PROMOTED → LEGAL_HOLD (upgrade only)
  * - expiresAt: recalculated on policy change
+ * - archivedAt/archivedBy/archivedReason: set once (archive is one-way)
  */
 export interface Snapshot {
   // Primary key
@@ -79,6 +80,12 @@ export interface Snapshot {
   // Retention
   retentionPolicy: RetentionPolicy;
   expiresAt?: string | undefined; // ISO 8601, null for LEGAL_HOLD
+  
+  // Archive state (Phase 10)
+  // Archive = soft-hide, does NOT change retentionPolicy
+  archivedAt?: string | undefined; // ISO 8601, null if not archived
+  archivedBy?: string | undefined; // opsUserId or actor
+  archivedReason?: string | undefined; // Optional reason
   
   // Timestamp
   createdAt: string; // ISO 8601
@@ -130,6 +137,24 @@ export interface SetRetentionPolicyResult {
 }
 
 /**
+ * Input for marking snapshot as archived
+ */
+export interface MarkArchivedInput {
+  archivedBy: string; // opsUserId or actor
+  reason?: string | undefined; // Optional reason
+}
+
+/**
+ * Result of markArchived operation
+ */
+export interface MarkArchivedResult {
+  success: boolean;
+  changed: boolean;
+  archivedAt?: string | undefined; // ISO 8601
+  error?: 'SNAPSHOT_NOT_FOUND' | 'NOT_LEGAL_HOLD' | 'IS_BASELINE' | undefined;
+}
+
+/**
  * Legal hold statistics
  */
 export interface LegalHoldStats {
@@ -137,6 +162,22 @@ export interface LegalHoldStats {
   byIncidentCount: Record<string, number>;
   oldestHoldAt: string | null;
   averageAgeDays: number;
+}
+
+/**
+ * Result of deleteExpired operation (Phase 10)
+ */
+export interface DeleteExpiredResult {
+  /** Number of snapshots deleted */
+  deletedCount: number;
+  /** Number of snapshots protected (not deleted due to policy/baseline) */
+  protectedCount: number;
+  /** Breakdown of protected snapshots by reason */
+  protectedBy: {
+    legalHold: number;
+    promoted: number;
+    baseline: number;
+  };
 }
 
 // ============================================================================
@@ -248,6 +289,31 @@ export interface ISnapshotRepository {
     policy: RetentionPolicy,
   ): Promise<SetRetentionPolicyResult>;
   
+  /**
+   * Mark snapshot as archived (Phase 10)
+   * 
+   * Archive = soft-hide, does NOT change retentionPolicy.
+   * Legal hold status is preserved.
+   * 
+   * Behavior:
+   * - Snapshot not found → error: SNAPSHOT_NOT_FOUND
+   * - Not LEGAL_HOLD → error: NOT_LEGAL_HOLD (only legal holds can be archived)
+   * - Is baseline → error: IS_BASELINE (baseline cannot be archived)
+   * - Already archived → success, changed=false (idempotent)
+   * - Success → archivedAt set, archivedBy set
+   * 
+   * INVARIANT: Archive is one-way. Once archived, cannot be unarchived.
+   * 
+   * @param snapshotId Snapshot ID
+   * @param input Archive metadata (archivedBy, reason)
+   * @returns Result with success/changed/error
+   * @throws DatabaseUnavailableError if DB connection failed
+   */
+  markArchived(
+    snapshotId: string,
+    input: MarkArchivedInput,
+  ): Promise<MarkArchivedResult>;
+  
   // ==========================================================================
   // Query
   // ==========================================================================
@@ -293,11 +359,18 @@ export interface ISnapshotRepository {
   /**
    * Find snapshots with legal hold
    * 
+   * By default, excludes archived snapshots (includeArchived=false).
+   * 
    * @param tenantId Optional tenant filter
+   * @param options Query options
+   * @param options.includeArchived Include archived snapshots (default: false)
    * @returns Array of snapshots with legalHold=true
    * @throws DatabaseUnavailableError if DB connection failed
    */
-  findWithLegalHold(tenantId?: string | undefined): Promise<Snapshot[]>;
+  findWithLegalHold(
+    tenantId?: string | undefined,
+    options?: { includeArchived?: boolean | undefined } | undefined,
+  ): Promise<Snapshot[]>;
   
   // ==========================================================================
   // Statistics
@@ -311,4 +384,29 @@ export interface ISnapshotRepository {
    * @throws DatabaseUnavailableError if DB connection failed
    */
   getLegalHoldStats(tenantId?: string | undefined): Promise<LegalHoldStats>;
+  
+  // ==========================================================================
+  // Cleanup (Phase 10 - Hardened)
+  // ==========================================================================
+  
+  /**
+   * Delete expired snapshots for a tenant (Phase 10 - Hardened)
+   * 
+   * DOKUNULMAZLAR (Untouchables) - NEVER deleted:
+   * - retentionPolicy = 'LEGAL_HOLD' → never delete
+   * - retentionPolicy = 'PROMOTED' → never delete
+   * - isBaseline = true → never delete
+   * 
+   * DELETE CRITERIA (all must be true):
+   * - expiresAt < now
+   * - retentionPolicy = 'STANDARD'
+   * - isBaseline = false
+   * 
+   * TENANT ISOLATION: Only deletes snapshots for specified tenant.
+   * 
+   * @param tenantId Tenant ID (required for isolation)
+   * @returns Result with deleted count and protected count
+   * @throws DatabaseUnavailableError if DB connection failed
+   */
+  deleteExpired(tenantId: string): Promise<DeleteExpiredResult>;
 }

@@ -91,6 +91,12 @@ export interface SimulationSnapshot {
   retentionPolicy: RetentionPolicy;
   expiresAt?: string | undefined;
   
+  // Archive state (Phase 10)
+  // Archive = soft-hide, does NOT change retentionPolicy
+  archivedAt?: string | undefined;
+  archivedBy?: string | undefined;
+  archivedReason?: string | undefined;
+  
   // Timestamp
   createdAt: string;
 }
@@ -160,6 +166,24 @@ export interface SetRetentionPolicyResult {
 }
 
 /**
+ * Input for marking snapshot as archived
+ */
+export interface MarkArchivedInput {
+  archivedBy: string; // opsUserId or actor
+  reason?: string | undefined; // Optional reason
+}
+
+/**
+ * Result of markArchived operation
+ */
+export interface MarkArchivedResult {
+  success: boolean;
+  changed: boolean;
+  archivedAt?: string | undefined; // ISO 8601
+  error?: 'SNAPSHOT_NOT_FOUND' | 'NOT_LEGAL_HOLD' | 'IS_BASELINE' | undefined;
+}
+
+/**
  * Legal hold statistics
  */
 export interface LegalHoldStats {
@@ -167,6 +191,22 @@ export interface LegalHoldStats {
   byIncidentCount: Record<string, number>;
   oldestHoldAt: string | null;
   averageAgeDays: number;
+}
+
+/**
+ * Result of deleteExpired operation (Phase 10)
+ */
+export interface DeleteExpiredResult {
+  /** Number of snapshots deleted */
+  deletedCount: number;
+  /** Number of snapshots protected (not deleted due to policy/baseline) */
+  protectedCount: number;
+  /** Breakdown of protected snapshots by reason */
+  protectedBy: {
+    legalHold: number;
+    promoted: number;
+    baseline: number;
+  };
 }
 
 // ============================================================================
@@ -290,6 +330,32 @@ export interface ISnapshotStore {
     policy: RetentionPolicy,
   ): Promise<SetRetentionPolicyResult>;
   
+  /**
+   * Mark snapshot as archived (Phase 10)
+   * 
+   * Archive = soft-hide, does NOT change retentionPolicy.
+   * Legal hold status is preserved.
+   * 
+   * RULES:
+   * - Only LEGAL_HOLD snapshots can be archived
+   * - Baseline snapshots cannot be archived
+   * - Archive is one-way (cannot unarchive)
+   * - Idempotent - no error if already archived
+   * 
+   * TENANT ISOLATION: Returns SNAPSHOT_NOT_FOUND if tenant mismatch.
+   * This prevents information leakage about other tenants' snapshots.
+   * 
+   * @param tenantId Tenant ID (required for isolation)
+   * @param snapshotId Snapshot ID
+   * @param input Archive metadata (archivedBy, reason)
+   * @returns Result with success/changed/error
+   */
+  markArchived(
+    tenantId: string,
+    snapshotId: string,
+    input: MarkArchivedInput,
+  ): Promise<MarkArchivedResult>;
+  
   // ==========================================================================
   // Queries (Tenant-Aware)
   // ==========================================================================
@@ -344,4 +410,28 @@ export interface ISnapshotStore {
    * @returns Legal hold stats
    */
   getLegalHoldStats(tenantId: string): Promise<LegalHoldStats>;
+  
+  // ==========================================================================
+  // Cleanup (Phase 10 - Hardened)
+  // ==========================================================================
+  
+  /**
+   * Delete expired snapshots for a tenant (Phase 10 - Hardened)
+   * 
+   * DOKUNULMAZLAR (Untouchables) - NEVER deleted:
+   * - retentionPolicy = 'LEGAL_HOLD' → never delete
+   * - retentionPolicy = 'PROMOTED' → never delete
+   * - isBaseline = true → never delete
+   * 
+   * DELETE CRITERIA (all must be true):
+   * - expiresAt < now
+   * - retentionPolicy = 'STANDARD'
+   * - isBaseline = false
+   * 
+   * TENANT ISOLATION: Only deletes snapshots for specified tenant.
+   * 
+   * @param tenantId Tenant ID (required for isolation)
+   * @returns Result with deleted count and protected count
+   */
+  deleteExpired(tenantId: string): Promise<DeleteExpiredResult>;
 }

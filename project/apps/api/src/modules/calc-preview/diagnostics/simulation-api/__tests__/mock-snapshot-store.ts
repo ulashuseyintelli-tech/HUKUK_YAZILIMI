@@ -16,6 +16,9 @@ import {
   ApplyLegalHoldResult,
   SetRetentionPolicyResult,
   LegalHoldStats,
+  MarkArchivedInput,
+  MarkArchivedResult,
+  DeleteExpiredResult,
 } from '../../persistence/snapshot-store.interface';
 import { RetentionPolicy, isTransitionAllowed } from '../../evidence/retention-policy';
 import { IClock } from '../../evidence/clock.service';
@@ -247,11 +250,77 @@ export class MockSnapshotStore implements ISnapshotStore {
     
     const results: SimulationSnapshot[] = [];
     for (const snapshot of this.snapshots.values()) {
-      if (snapshot.tenantId === tenantId && snapshot.legalHold) {
+      // Phase 10: Exclude archived snapshots by default
+      if (snapshot.tenantId === tenantId && snapshot.legalHold && !snapshot.archivedAt) {
         results.push(snapshot);
       }
     }
     return results;
+  }
+
+  async markArchived(
+    tenantId: string,
+    snapshotId: string,
+    input: MarkArchivedInput,
+  ): Promise<MarkArchivedResult> {
+    this.validateTenantId(tenantId, 'markArchived');
+    
+    const snapshot = this.snapshots.get(snapshotId);
+    if (!snapshot) {
+      return {
+        success: false,
+        changed: false,
+        error: 'SNAPSHOT_NOT_FOUND',
+      };
+    }
+
+    // Tenant isolation: treat mismatch as not found (security)
+    if (snapshot.tenantId !== tenantId) {
+      return {
+        success: false,
+        changed: false,
+        error: 'SNAPSHOT_NOT_FOUND',
+      };
+    }
+
+    // Only LEGAL_HOLD snapshots can be archived
+    if (snapshot.retentionPolicy !== 'LEGAL_HOLD') {
+      return {
+        success: false,
+        changed: false,
+        error: 'NOT_LEGAL_HOLD',
+      };
+    }
+
+    // Baseline snapshots cannot be archived
+    if (snapshot.isBaseline) {
+      return {
+        success: false,
+        changed: false,
+        error: 'IS_BASELINE',
+      };
+    }
+
+    // Idempotent: already archived
+    if (snapshot.archivedAt) {
+      return {
+        success: true,
+        changed: false,
+        archivedAt: snapshot.archivedAt,
+      };
+    }
+
+    // Archive the snapshot
+    const archivedAt = this.clock.nowIso();
+    snapshot.archivedAt = archivedAt;
+    snapshot.archivedBy = input.archivedBy;
+    snapshot.archivedReason = input.reason;
+
+    return {
+      success: true,
+      changed: true,
+      archivedAt,
+    };
   }
 
   async getLegalHoldStats(tenantId: string): Promise<LegalHoldStats> {
@@ -308,23 +377,59 @@ export class MockSnapshotStore implements ISnapshotStore {
   }
 
   /**
-   * Delete expired snapshots (for testing cleanup behavior)
+   * Delete expired snapshots (Phase 10 - Hardened)
+   * 
+   * DOKUNULMAZLAR (Untouchables) - NEVER deleted:
+   * - retentionPolicy = 'LEGAL_HOLD' → never delete
+   * - retentionPolicy = 'PROMOTED' → never delete
+   * - isBaseline = true → never delete
    */
-  async deleteExpired(): Promise<number> {
+  async deleteExpired(tenantId: string): Promise<DeleteExpiredResult> {
+    this.validateTenantId(tenantId, 'deleteExpired');
+    
     const now = this.clock.now();
-    let deleted = 0;
+    let deletedCount = 0;
+    const protectedBy = {
+      legalHold: 0,
+      promoted: 0,
+      baseline: 0,
+    };
 
     for (const [id, snapshot] of this.snapshots.entries()) {
+      // Tenant isolation
+      if (snapshot.tenantId !== tenantId) {
+        continue;
+      }
+      
+      // Check if expired
+      if (!snapshot.expiresAt || new Date(snapshot.expiresAt) >= now) {
+        continue;
+      }
+      
+      // DOKUNULMAZLAR - never delete
       if (snapshot.retentionPolicy === 'LEGAL_HOLD') {
-        continue; // Never delete LEGAL_HOLD
+        protectedBy.legalHold++;
+        continue;
       }
-      if (snapshot.expiresAt && new Date(snapshot.expiresAt) < now) {
-        this.snapshots.delete(id);
-        deleted++;
+      if (snapshot.retentionPolicy === 'PROMOTED') {
+        protectedBy.promoted++;
+        continue;
       }
+      if (snapshot.isBaseline) {
+        protectedBy.baseline++;
+        continue;
+      }
+      
+      // Safe to delete - STANDARD, non-baseline, expired
+      this.snapshots.delete(id);
+      deletedCount++;
     }
 
-    return deleted;
+    return {
+      deletedCount,
+      protectedCount: protectedBy.legalHold + protectedBy.promoted + protectedBy.baseline,
+      protectedBy,
+    };
   }
 
   private calculateExpiresAt(policy: RetentionPolicy, createdAt: string): string | undefined {

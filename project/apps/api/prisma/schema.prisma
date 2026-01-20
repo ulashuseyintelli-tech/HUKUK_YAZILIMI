@@ -6279,7 +6279,7 @@ model SimulationRun {
 }
 
 // Simulation Snapshot - calculation result (INSERT-ONLY)
-// All fields immutable except: isBaseline (upgrade only), retentionPolicy (upgrade only), expiresAt
+// All fields immutable except: isBaseline (upgrade only), retentionPolicy (upgrade only), expiresAt, archived*
 model SimulationSnapshot {
   snapshotId      String                  @id @map("snapshot_id")
   tenantId        String                  @map("tenant_id")
@@ -6304,11 +6304,18 @@ model SimulationSnapshot {
   retentionPolicy String?                 @default("STANDARD") @map("retention_policy") // STANDARD, PROMOTED, LEGAL_HOLD
   expiresAt       DateTime?               @map("expires_at") @db.Timestamptz(6)
 
+  // Archive state (Phase 10 - soft-hide, does NOT change retentionPolicy)
+  // Archive = visibility flag only, legal hold status preserved
+  archivedAt      DateTime?               @map("archived_at") @db.Timestamptz(6)
+  archivedBy      String?                 @map("archived_by") // opsUserId or actor
+  archivedReason  String?                 @map("archived_reason") // Optional reason
+
   createdAt       DateTime                @default(now()) @map("created_at") @db.Timestamptz(6)
 
   @@index([tenantId, incidentId, createdAt(sort: Desc)], map: "ix_sim_snap_tenant_incident_created")
   @@index([tenantId, runId], map: "ix_sim_snap_tenant_run")
   @@index([tenantId, isBaseline], map: "ix_sim_snap_tenant_isbaseline")
   @@index([expiresAt], map: "ix_sim_snap_expires")
+  @@index([tenantId, retentionPolicy, archivedAt], map: "ix_sim_snap_tenant_policy_archived") // Phase 10: legal hold list query
   @@map("simulation_snapshots")
 }

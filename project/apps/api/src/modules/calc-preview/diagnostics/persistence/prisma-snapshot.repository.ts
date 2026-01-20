@@ -29,6 +29,9 @@ import {
   ApplyLegalHoldResult,
   SetRetentionPolicyResult,
   LegalHoldStats,
+  MarkArchivedInput,
+  MarkArchivedResult,
+  DeleteExpiredResult,
 } from './snapshot-repository.interface';
 import {
   EntityNotFoundError,
@@ -339,14 +342,24 @@ export class PrismaSnapshotRepository implements ISnapshotRepository {
     }
   }
 
-  async findWithLegalHold(tenantId?: string | undefined): Promise<Snapshot[]> {
+  async findWithLegalHold(
+    tenantId?: string | undefined,
+    options?: { includeArchived?: boolean | undefined } | undefined,
+  ): Promise<Snapshot[]> {
     try {
+      const includeArchived = options?.includeArchived ?? false;
+      
       const where: Prisma.SimulationSnapshotWhereInput = {
         retentionPolicy: 'LEGAL_HOLD',
       };
 
       if (tenantId) {
         where.tenantId = tenantId;
+      }
+
+      // By default, exclude archived snapshots
+      if (!includeArchived) {
+        where.archivedAt = null;
       }
 
       const snapshots = await this.prisma.simulationSnapshot.findMany({
@@ -357,6 +370,74 @@ export class PrismaSnapshotRepository implements ISnapshotRepository {
       return snapshots.map((s) => this.mapToEntity(s));
     } catch (error) {
       throw this.handlePrismaError(error, 'findWithLegalHold');
+    }
+  }
+
+  // ==========================================================================
+  // Archive Operations (Phase 10)
+  // ==========================================================================
+
+  async markArchived(
+    snapshotId: string,
+    input: MarkArchivedInput,
+  ): Promise<MarkArchivedResult> {
+    try {
+      const snapshot = await this.prisma.simulationSnapshot.findUnique({
+        where: { snapshotId },
+        select: { 
+          retentionPolicy: true, 
+          isBaseline: true,
+          archivedAt: true,
+        },
+      });
+
+      if (!snapshot) {
+        return { success: false, changed: false, error: 'SNAPSHOT_NOT_FOUND' };
+      }
+
+      // Only LEGAL_HOLD snapshots can be archived
+      if (snapshot.retentionPolicy !== 'LEGAL_HOLD') {
+        return { success: false, changed: false, error: 'NOT_LEGAL_HOLD' };
+      }
+
+      // Baseline snapshots cannot be archived
+      if (snapshot.isBaseline) {
+        return { success: false, changed: false, error: 'IS_BASELINE' };
+      }
+
+      // Already archived - idempotent
+      if (snapshot.archivedAt) {
+        return { 
+          success: true, 
+          changed: false,
+          archivedAt: snapshot.archivedAt.toISOString(),
+        };
+      }
+
+      // Archive the snapshot
+      const now = new Date();
+      await this.prisma.simulationSnapshot.update({
+        where: { snapshotId },
+        data: {
+          archivedAt: now,
+          archivedBy: input.archivedBy,
+          archivedReason: input.reason ?? null,
+        },
+      });
+
+      this.logger.debug('[PrismaSnapshotRepository] Snapshot archived', {
+        snapshotId,
+        archivedBy: input.archivedBy,
+        archivedAt: now.toISOString(),
+      });
+
+      return { 
+        success: true, 
+        changed: true,
+        archivedAt: now.toISOString(),
+      };
+    } catch (error) {
+      throw this.handlePrismaError(error, 'markArchived');
     }
   }
 
@@ -420,6 +501,91 @@ export class PrismaSnapshotRepository implements ISnapshotRepository {
   }
 
   // ==========================================================================
+  // Cleanup (Phase 10 - Hardened)
+  // ==========================================================================
+
+  /**
+   * Delete expired snapshots for a tenant (Phase 10 - Hardened)
+   * 
+   * DOKUNULMAZLAR (Untouchables) - NEVER deleted:
+   * - retentionPolicy = 'LEGAL_HOLD' → never delete
+   * - retentionPolicy = 'PROMOTED' → never delete
+   * - isBaseline = true → never delete
+   * 
+   * DELETE CRITERIA (all must be true):
+   * - expiresAt < now
+   * - retentionPolicy = 'STANDARD'
+   * - isBaseline = false
+   * 
+   * TENANT ISOLATION: Only deletes snapshots for specified tenant.
+   */
+  async deleteExpired(tenantId: string): Promise<DeleteExpiredResult> {
+    try {
+      const now = new Date();
+      
+      // First, count protected snapshots (for metrics)
+      const protectedSnapshots = await this.prisma.simulationSnapshot.findMany({
+        where: {
+          tenantId,
+          expiresAt: { lt: now },
+          OR: [
+            { retentionPolicy: 'LEGAL_HOLD' },
+            { retentionPolicy: 'PROMOTED' },
+            { isBaseline: true },
+          ],
+        },
+        select: {
+          retentionPolicy: true,
+          isBaseline: true,
+        },
+      });
+      
+      // Count protected by reason
+      const protectedBy = {
+        legalHold: 0,
+        promoted: 0,
+        baseline: 0,
+      };
+      
+      for (const snap of protectedSnapshots) {
+        if (snap.retentionPolicy === 'LEGAL_HOLD') {
+          protectedBy.legalHold++;
+        } else if (snap.retentionPolicy === 'PROMOTED') {
+          protectedBy.promoted++;
+        } else if (snap.isBaseline) {
+          protectedBy.baseline++;
+        }
+      }
+      
+      // Delete only STANDARD, non-baseline, expired snapshots
+      // This WHERE clause is the "dokunulmazlar" guard - mathematically impossible to delete protected
+      const deleteResult = await this.prisma.simulationSnapshot.deleteMany({
+        where: {
+          tenantId,
+          expiresAt: { lt: now },
+          retentionPolicy: 'STANDARD', // ONLY STANDARD - LEGAL_HOLD and PROMOTED are protected
+          isBaseline: false, // ONLY non-baseline - baselines are protected
+        },
+      });
+      
+      this.logger.debug('[PrismaSnapshotRepository] deleteExpired completed', {
+        tenantId,
+        deletedCount: deleteResult.count,
+        protectedCount: protectedSnapshots.length,
+        protectedBy,
+      });
+      
+      return {
+        deletedCount: deleteResult.count,
+        protectedCount: protectedSnapshots.length,
+        protectedBy,
+      };
+    } catch (error) {
+      throw this.handlePrismaError(error, 'deleteExpired');
+    }
+  }
+
+  // ==========================================================================
   // Private Helpers
   // ==========================================================================
 
@@ -437,6 +603,9 @@ export class PrismaSnapshotRepository implements ISnapshotRepository {
     calcHash: string;
     retentionPolicy: string | null;
     expiresAt: Date | null;
+    archivedAt: Date | null;
+    archivedBy: string | null;
+    archivedReason: string | null;
     createdAt: Date;
   }): Snapshot {
     return {
@@ -455,6 +624,9 @@ export class PrismaSnapshotRepository implements ISnapshotRepository {
       legalHoldReason: undefined, // Not in current schema
       retentionPolicy: (row.retentionPolicy ?? 'STANDARD') as RetentionPolicy,
       expiresAt: row.expiresAt?.toISOString(),
+      archivedAt: row.archivedAt?.toISOString(),
+      archivedBy: row.archivedBy ?? undefined,
+      archivedReason: row.archivedReason ?? undefined,
       createdAt: row.createdAt.toISOString(),
     };
   }

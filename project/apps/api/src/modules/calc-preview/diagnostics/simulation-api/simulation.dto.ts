@@ -182,6 +182,8 @@ export interface ArchiveResponseDto {
   archived: boolean;
   /** Whether state changed (false if already archived) */
   changed: boolean;
+  /** When snapshot was archived (ISO 8601) - Phase 10 */
+  archivedAt?: string | undefined;
 }
 
 export interface LegalHoldStatsResponseDto {

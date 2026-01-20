@@ -32,6 +32,8 @@ import {
   ApplyLegalHoldResult as RepoApplyLegalHoldResult,
   SetRetentionPolicyResult as RepoSetRetentionPolicyResult,
   LegalHoldStats as RepoLegalHoldStats,
+  MarkArchivedInput as RepoMarkArchivedInput,
+  MarkArchivedResult as RepoMarkArchivedResult,
 } from './snapshot-repository.interface';
 import {
   ISnapshotStore,
@@ -42,6 +44,9 @@ import {
   LegalHoldStats,
   SnapshotKind,
   EvidenceVerdict,
+  MarkArchivedInput,
+  MarkArchivedResult,
+  DeleteExpiredResult,
 } from './snapshot-store.interface';
 import { RetentionPolicy } from '../evidence/retention-policy';
 
@@ -338,6 +343,77 @@ export class SnapshotStoreService implements ISnapshotStore {
     }
   }
 
+  /**
+   * Mark snapshot as archived (Phase 10)
+   * 
+   * Archive = soft-hide, does NOT change retentionPolicy.
+   * Legal hold status is preserved.
+   * 
+   * RULES:
+   * - Only LEGAL_HOLD snapshots can be archived
+   * - Baseline snapshots cannot be archived
+   * - Archive is one-way (cannot unarchive)
+   * - Idempotent - no error if already archived
+   * 
+   * TENANT ISOLATION: Returns SNAPSHOT_NOT_FOUND if tenant mismatch.
+   * 
+   * @param tenantId Tenant ID (required for isolation)
+   * @param snapshotId Snapshot ID
+   * @param input Archive metadata (archivedBy, reason)
+   */
+  async markArchived(
+    tenantId: string,
+    snapshotId: string,
+    input: MarkArchivedInput,
+  ): Promise<MarkArchivedResult> {
+    const start = Date.now();
+    
+    try {
+      // Verify tenant before mutation
+      const snapshot = await this.repository.findById(snapshotId);
+      if (!snapshot || snapshot.tenantId !== tenantId) {
+        return {
+          success: false,
+          changed: false,
+          error: 'SNAPSHOT_NOT_FOUND',
+        };
+      }
+      
+      const repoInput: RepoMarkArchivedInput = {
+        archivedBy: input.archivedBy,
+        reason: input.reason,
+      };
+      
+      const result = await this.repository.markArchived(snapshotId, repoInput);
+      
+      if (result.success && result.changed) {
+        this.metrics.increment('truth_layer_snapshot_archived', {
+          tenantId,
+        });
+      }
+      this.metrics.timing('truth_layer_archive_latency_ms', Date.now() - start);
+      
+      this.logger.debug('[SnapshotStore] Snapshot archived', {
+        tenantId,
+        snapshotId,
+        changed: result.changed,
+        archivedBy: input.archivedBy,
+      });
+      
+      return {
+        success: result.success,
+        changed: result.changed,
+        archivedAt: result.archivedAt,
+        error: result.error,
+      };
+    } catch (error) {
+      this.metrics.increment('truth_layer_archive_error', {
+        error: error instanceof Error ? error.name : 'unknown',
+      });
+      throw error;
+    }
+  }
+
   // ==========================================================================
   // Queries (Tenant-Aware)
   // ==========================================================================
@@ -396,6 +472,66 @@ export class SnapshotStoreService implements ISnapshotStore {
   async getLegalHoldStats(tenantId: string): Promise<LegalHoldStats> {
     const stats = await this.repository.getLegalHoldStats(tenantId);
     return this.mapLegalHoldStats(stats);
+  }
+
+  // ==========================================================================
+  // Cleanup (Phase 10 - Hardened)
+  // ==========================================================================
+
+  /**
+   * Delete expired snapshots for a tenant (Phase 10 - Hardened)
+   * 
+   * DOKUNULMAZLAR (Untouchables) - NEVER deleted:
+   * - retentionPolicy = 'LEGAL_HOLD' → never delete
+   * - retentionPolicy = 'PROMOTED' → never delete
+   * - isBaseline = true → never delete
+   * 
+   * DELETE CRITERIA (all must be true):
+   * - expiresAt < now
+   * - retentionPolicy = 'STANDARD'
+   * - isBaseline = false
+   * 
+   * TENANT ISOLATION: Only deletes snapshots for specified tenant.
+   * 
+   * @param tenantId Tenant ID (required for isolation)
+   * @returns Result with deleted count and protected count
+   */
+  async deleteExpired(tenantId: string): Promise<DeleteExpiredResult> {
+    const start = Date.now();
+    
+    try {
+      const result = await this.repository.deleteExpired(tenantId);
+      
+      if (result.deletedCount > 0) {
+        this.metrics.increment('truth_layer_snapshots_deleted', {
+          tenantId,
+          count: String(result.deletedCount),
+        });
+      }
+      
+      if (result.protectedCount > 0) {
+        this.logger.debug('[SnapshotStore] Protected snapshots during cleanup', {
+          tenantId,
+          protectedCount: result.protectedCount,
+          protectedBy: result.protectedBy,
+        });
+      }
+      
+      this.metrics.timing('truth_layer_cleanup_latency_ms', Date.now() - start);
+      
+      this.logger.debug('[SnapshotStore] Cleanup completed', {
+        tenantId,
+        deletedCount: result.deletedCount,
+        protectedCount: result.protectedCount,
+      });
+      
+      return result;
+    } catch (error) {
+      this.metrics.increment('truth_layer_cleanup_error', {
+        error: error instanceof Error ? error.name : 'unknown',
+      });
+      throw error;
+    }
   }
 
   // ==========================================================================
@@ -469,6 +605,9 @@ export class SnapshotStoreService implements ISnapshotStore {
       legalHoldReason: snapshot.legalHoldReason,
       retentionPolicy: snapshot.retentionPolicy,
       expiresAt: snapshot.expiresAt,
+      archivedAt: snapshot.archivedAt,
+      archivedBy: snapshot.archivedBy,
+      archivedReason: snapshot.archivedReason,
       createdAt: snapshot.createdAt,
     };
   }
