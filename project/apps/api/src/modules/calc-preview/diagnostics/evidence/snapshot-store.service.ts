@@ -21,7 +21,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { EvidenceSnapshot } from '../diagnostics.types';
 import {
-  ISnapshotStore,
+  ILegacySnapshotStore,
   StoredSnapshot,
   SnapshotRetentionConfig,
   MarkPromotedResult,
@@ -44,7 +44,7 @@ import {
 import { IClock } from './clock.service';
 
 @Injectable()
-export class InMemorySnapshotStore implements ISnapshotStore {
+export class InMemorySnapshotStore implements ILegacySnapshotStore {
   private readonly logger = new Logger(InMemorySnapshotStore.name);
   private readonly store: Map<string, StoredSnapshot> = new Map();
   private readonly auditEmitter: ISnapshotAuditEmitter;

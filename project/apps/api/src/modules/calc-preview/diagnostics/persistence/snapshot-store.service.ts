@@ -167,19 +167,30 @@ export class SnapshotStoreService implements ISnapshotStore {
    * 
    * Idempotent - no error if already baseline.
    * 
-   * @throws EntityNotFoundError if snapshot not found
+   * TENANT ISOLATION: Returns void (not found) if tenant mismatch.
+   * 
+   * @param tenantId Tenant ID (required for isolation)
+   * @param snapshotId Snapshot ID
+   * @throws EntityNotFoundError if snapshot not found OR tenant mismatch
    * @throws BaselineAlreadyExistsError if another baseline exists
    */
-  async promoteToBaseline(snapshotId: string): Promise<void> {
+  async promoteToBaseline(tenantId: string, snapshotId: string): Promise<void> {
     const start = Date.now();
     
     try {
+      // Verify tenant before mutation
+      const snapshot = await this.repository.findById(snapshotId);
+      if (!snapshot || snapshot.tenantId !== tenantId) {
+        throw new Error(`Snapshot ${snapshotId} not found`);
+      }
+      
       await this.repository.markAsBaseline(snapshotId);
       
       this.metrics.increment('truth_layer_snapshot_promoted');
       this.metrics.timing('truth_layer_promote_latency_ms', Date.now() - start);
       
       this.logger.debug('[SnapshotStore] Snapshot promoted to baseline', {
+        tenantId,
         snapshotId,
       });
     } catch (error) {
@@ -225,14 +236,31 @@ export class SnapshotStoreService implements ISnapshotStore {
    * Apply legal hold to snapshot
    * 
    * Idempotent - no error if already has legal hold.
+   * 
+   * TENANT ISOLATION: Returns SNAPSHOT_NOT_FOUND if tenant mismatch.
+   * 
+   * @param tenantId Tenant ID (required for isolation)
+   * @param snapshotId Snapshot ID
+   * @param reason Optional reason for legal hold
    */
   async applyLegalHold(
+    tenantId: string,
     snapshotId: string,
     reason?: string | undefined,
   ): Promise<ApplyLegalHoldResult> {
     const start = Date.now();
     
     try {
+      // Verify tenant before mutation
+      const snapshot = await this.repository.findById(snapshotId);
+      if (!snapshot || snapshot.tenantId !== tenantId) {
+        return {
+          success: false,
+          changed: false,
+          error: 'SNAPSHOT_NOT_FOUND',
+        };
+      }
+      
       const result = await this.repository.applyLegalHold(snapshotId, reason);
       
       if (result.success && result.changed) {
@@ -241,6 +269,7 @@ export class SnapshotStoreService implements ISnapshotStore {
       this.metrics.timing('truth_layer_legal_hold_latency_ms', Date.now() - start);
       
       this.logger.debug('[SnapshotStore] Legal hold applied', {
+        tenantId,
         snapshotId,
         changed: result.changed,
       });
@@ -258,14 +287,31 @@ export class SnapshotStoreService implements ISnapshotStore {
    * Set retention policy for snapshot
    * 
    * Upgrade-only: STANDARD → PROMOTED → LEGAL_HOLD
+   * 
+   * TENANT ISOLATION: Returns SNAPSHOT_NOT_FOUND if tenant mismatch.
+   * 
+   * @param tenantId Tenant ID (required for isolation)
+   * @param snapshotId Snapshot ID
+   * @param policy New retention policy
    */
   async setRetentionPolicy(
+    tenantId: string,
     snapshotId: string,
     policy: RetentionPolicy,
   ): Promise<SetRetentionPolicyResult> {
     const start = Date.now();
     
     try {
+      // Verify tenant before mutation
+      const snapshot = await this.repository.findById(snapshotId);
+      if (!snapshot || snapshot.tenantId !== tenantId) {
+        return {
+          success: false,
+          changed: false,
+          error: 'SNAPSHOT_NOT_FOUND',
+        };
+      }
+      
       const result = await this.repository.setRetentionPolicy(snapshotId, policy);
       
       if (result.success && result.changed) {
@@ -277,6 +323,7 @@ export class SnapshotStoreService implements ISnapshotStore {
       this.metrics.timing('truth_layer_retention_policy_latency_ms', Date.now() - start);
       
       this.logger.debug('[SnapshotStore] Retention policy set', {
+        tenantId,
         snapshotId,
         policy,
         changed: result.changed,

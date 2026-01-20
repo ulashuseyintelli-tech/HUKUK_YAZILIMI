@@ -231,9 +231,10 @@ export class JtiAnomalyDetectorService {
 
   /**
    * Emit anomaly metric for alerting
+   * Also emits audit event for post-mortem analysis
    */
   private emitAnomalyMetric(anomaly: DetectedAnomaly): void {
-    // In production, this would emit to Prometheus/CloudWatch/etc.
+    // Metric for alerting
     this.logger.warn('METRIC: break_glass_jti_anomaly_detected', {
       metric: 'break_glass_jti_anomaly_detected',
       labels: {
@@ -244,5 +245,35 @@ export class JtiAnomalyDetectorService {
       timestamp: anomaly.detectedAt,
       details: anomaly.details,
     });
+    
+    // Audit event for post-mortem (structured log that can be ingested)
+    this.logger.warn('AUDIT_EVENT: BREAK_GLASS_JTI_ANOMALY_DETECTED', {
+      eventType: 'BREAK_GLASS_JTI_ANOMALY_DETECTED',
+      eventId: `anomaly-${anomaly.jti}-${Date.now()}`,
+      anomalyType: anomaly.type,
+      jti: anomaly.jti,
+      grantId: anomaly.grantId,
+      details: anomaly.details,
+      severity: anomaly.type === 'MULTI_ACTOR' ? 'HIGH' : 'MEDIUM',
+      timestamp: anomaly.detectedAt,
+      // This event should be linked to grant audit trail
+      recommendation: this.getAnomalyRecommendation(anomaly.type),
+    });
+  }
+
+  /**
+   * Get recommendation for anomaly type
+   */
+  private getAnomalyRecommendation(type: AnomalyType): string {
+    switch (type) {
+      case 'HIGH_USAGE':
+        return 'Review grant usage patterns. Consider if automation is appropriate or if token is being shared.';
+      case 'MULTI_ACTOR':
+        return 'CRITICAL: Same token used by multiple actors. Investigate potential token sharing or compromise.';
+      case 'RAPID_BURST':
+        return 'Unusual burst pattern detected. May indicate automated abuse.';
+      default:
+        return 'Review grant audit trail for suspicious activity.';
+    }
   }
 }

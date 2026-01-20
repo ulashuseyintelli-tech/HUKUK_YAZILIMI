@@ -20,6 +20,8 @@ import {
   BreakGlassTokenClaims,
   MAX_AUTHORIZED_ACTORS,
   RevocationReason,
+  validateRevocationDescription,
+  MAX_REVOCATION_DESCRIPTION_LENGTH,
 } from '../../break-glass.types';
 import { BreakGlassConfigService } from '../../break-glass.config';
 
@@ -361,7 +363,8 @@ export class BreakGlassGrantService {
    * @param grantId - Grant to revoke
    * @param revokedBy - Actor ID who is revoking (or 'system' for auto-revoke)
    * @param reason - Revocation reason category
-   * @param description - Optional description (max 500 chars)
+   * @param description - Optional description (max 200 chars, NO PII)
+   * @throws InvalidRevocationDescriptionException if description contains PII
    */
   async revoke(
     grantId: string,
@@ -373,6 +376,14 @@ export class BreakGlassGrantService {
     
     if (!grant) {
       throw new GrantNotFoundException(grantId);
+    }
+
+    // Validate description for PII safety
+    if (description) {
+      const validation = validateRevocationDescription(description);
+      if (!validation.valid) {
+        throw new InvalidRevocationDescriptionException(validation.errors);
+      }
     }
 
     const now = new Date().toISOString();
@@ -389,7 +400,7 @@ export class BreakGlassGrantService {
     };
     
     if (description) {
-      grant.revocation.description = description.substring(0, 500);
+      grant.revocation.description = description.substring(0, MAX_REVOCATION_DESCRIPTION_LENGTH);
     }
 
     await this.grantRepository.update(grant);
@@ -572,5 +583,18 @@ export class RenewalCapExceededException extends Error {
   constructor(grantId: string, maxRenewals: number) {
     super(`Grant ${grantId} has exceeded maximum renewals (${maxRenewals})`);
     this.name = 'RenewalCapExceededException';
+  }
+}
+
+/**
+ * Invalid revocation description exception (PII detected or too long)
+ */
+export class InvalidRevocationDescriptionException extends Error {
+  public readonly errors: string[];
+  
+  constructor(errors: string[]) {
+    super(`Invalid revocation description: ${errors.join(', ')}`);
+    this.name = 'InvalidRevocationDescriptionException';
+    this.errors = errors;
   }
 }

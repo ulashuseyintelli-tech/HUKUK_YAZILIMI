@@ -75,11 +75,19 @@ export class MockSnapshotStore implements ISnapshotStore {
     return snapshot;
   }
 
-  async promoteToBaseline(snapshotId: string): Promise<void> {
+  async promoteToBaseline(tenantId: string, snapshotId: string): Promise<void> {
+    this.validateTenantId(tenantId, 'promoteToBaseline');
+    
     const snapshot = this.snapshots.get(snapshotId);
     if (!snapshot) {
       throw new Error(`Snapshot ${snapshotId} not found`);
     }
+    
+    // Tenant isolation: treat mismatch as not found (security)
+    if (snapshot.tenantId !== tenantId) {
+      throw new Error(`Snapshot ${snapshotId} not found`);
+    }
+    
     snapshot.isBaseline = true;
   }
 
@@ -97,11 +105,23 @@ export class MockSnapshotStore implements ISnapshotStore {
   }
 
   async applyLegalHold(
+    tenantId: string,
     snapshotId: string,
     reason?: string | undefined,
   ): Promise<ApplyLegalHoldResult> {
+    this.validateTenantId(tenantId, 'applyLegalHold');
+    
     const snapshot = this.snapshots.get(snapshotId);
     if (!snapshot) {
+      return {
+        success: false,
+        changed: false,
+        error: 'SNAPSHOT_NOT_FOUND',
+      };
+    }
+
+    // Tenant isolation: treat mismatch as not found (security)
+    if (snapshot.tenantId !== tenantId) {
       return {
         success: false,
         changed: false,
@@ -133,11 +153,23 @@ export class MockSnapshotStore implements ISnapshotStore {
   }
 
   async setRetentionPolicy(
+    tenantId: string,
     snapshotId: string,
     policy: RetentionPolicy,
   ): Promise<SetRetentionPolicyResult> {
+    this.validateTenantId(tenantId, 'setRetentionPolicy');
+    
     const snapshot = this.snapshots.get(snapshotId);
     if (!snapshot) {
+      return {
+        success: false,
+        changed: false,
+        error: 'SNAPSHOT_NOT_FOUND',
+      };
+    }
+
+    // Tenant isolation: treat mismatch as not found (security)
+    if (snapshot.tenantId !== tenantId) {
       return {
         success: false,
         changed: false,

@@ -254,16 +254,16 @@ Before Phase 9C, the following cleanup is REQUIRED:
 
 ### Tasks
 
-1. **Create/extend ISnapshotStore interface**
-2. **Make SnapshotStoreService implement ISnapshotStore**
-3. **Migrate all consumers to interface:**
+1. **Create/extend ISnapshotStore interface** ✅ DONE
+2. **Make SnapshotStoreService implement ISnapshotStore** ✅ DONE
+3. **Migrate all consumers to interface:** ✅ DONE
    - BaselineResolverService
    - EvidenceBundleService
    - LegalHoldInventoryService
    - LegalHoldController
    - simulation-api.module.ts (DI wiring)
-4. **Keep InMemorySnapshotStore for tests/shadow-compare only**
-5. **Add shadow-compare metrics (drift/hash/latency)**
+4. **Keep InMemorySnapshotStore for tests/shadow-compare only** ✅ DONE
+5. **Add shadow-compare metrics (drift/hash/latency)** ⏳ DEFERRED (Phase 9C)
 
 ### Lock Rules (After 9B.5)
 
@@ -271,6 +271,117 @@ Before Phase 9C, the following cleanup is REQUIRED:
 |------|-------------|
 | Prod InMemorySnapshotStore | ❌ FORBIDDEN (test only) |
 | Shadow-compare decisions | DB is source of truth, in-memory for comparison only |
+
+---
+
+## Phase 9B.6 — Migration Lock (Kapanış Kilitleri)
+
+**Status**: ✅ COMPLETE  
+**Completed At**: 2026-01-20  
+**Test Count**: 299 tests passing
+
+### Implemented Locks
+
+| # | Lock | Status | Evidence |
+|---|------|--------|----------|
+| 1 | Snapshot ordering centralization | ✅ DONE | `snapshot-ordering.ts` - `compareForBaseline()`, `compareForDisplay()` |
+| 2 | Prisma tenant isolation test | ✅ DONE | `prisma-repositories.integration.spec.ts` - cross-tenant sızıntı testleri |
+| 3 | extractPoints CI guard | ✅ DONE | `extract-points-guard.spec.ts` - `.points` erişim kontrolü |
+| 4 | NOT_FOUND response standardization | ✅ DONE | `simulation-error.types.ts` - SNAPSHOT_NOT_FOUND eklendi |
+| 5 | Internal-ops audit log | ✅ DONE | `evidence-bundle.controller.ts` - structured audit logging |
+| 6 | archivedSnapshots teknik borç | ✅ DONE | TODO(Phase-10) etiketi eklendi |
+| 7 | PHASE-9B-LOCK.md güncelleme | ✅ DONE | Bu dosya |
+| 8 | Kapanış commit | ⏳ PENDING | `chore(phase-9b.5): lock tenant isolation, ordering, and error contracts (299 tests)` |
+
+### Lock Details
+
+#### Lock 1: Snapshot Ordering (`snapshot-ordering.ts`)
+
+Centralized comparator functions for deterministic snapshot ordering:
+
+```typescript
+// Baseline selection: LEGAL_HOLD > PROMOTED > STANDARD, then date DESC, then ID ASC
+compareForBaseline(a, b): number
+
+// Display ordering: date DESC, then ID ASC
+compareForDisplay(a, b): number
+
+// Helpers
+sortForBaseline(snapshots): T[]
+sortForDisplay(snapshots): T[]
+selectBestBaseline(snapshots): T | null
+```
+
+**Consumers:**
+- `BaselineResolverService` - uses `selectBestBaseline()`
+- `LegalHoldInventoryService` - uses `sortForDisplay()`
+
+#### Lock 2: Tenant Isolation Tests
+
+Integration tests verifying cross-tenant isolation:
+
+```typescript
+// Same incidentId, different tenants → no leakage
+describe('tenant isolation behavior', () => {
+  it('findByIncidentId returns only tenant A snapshots')
+  it('findBaseline returns only tenant A baseline')
+  it('findWithLegalHold returns only tenant A legal holds')
+})
+```
+
+#### Lock 3: extractPoints CI Guard
+
+Test that catches direct `.points` access in production code:
+
+```typescript
+// Allowlist: calc-result-projection.ts, snapshot-ordering.ts, test files
+// Pattern: \.points\b
+// Forbidden: snapshot.points, result.points (use extractPoints() instead)
+```
+
+#### Lock 4: Error Code Contract
+
+Stable error codes (API contract - DO NOT CHANGE):
+
+| Code | HTTP | Description |
+|------|------|-------------|
+| SIMULATION_DISABLED | 503 | Feature flag off |
+| INCIDENT_NOT_FOUND | 404 | Incident doesn't exist or tenant mismatch |
+| SNAPSHOT_NOT_FOUND | 404 | Snapshot doesn't exist or tenant mismatch |
+| RUN_NOT_FOUND | 404 | Simulation run doesn't exist |
+| BUNDLE_NOT_FOUND | 404 | Evidence bundle doesn't exist |
+| FORBIDDEN_TENANT_SCOPE | 403 | Cross-tenant access denied |
+| SIMULATION_ALREADY_RUNNING | 409 | Concurrent simulation conflict |
+| TOO_MANY_SIMULATIONS | 429 | Rate limit exceeded |
+| CANNOT_ARCHIVE_BASELINE | 409 | Baseline protection |
+
+#### Lock 5: Internal-Ops Audit
+
+All internal-ops actions logged with structured fields:
+
+```typescript
+interface InternalOpsAuditEntry {
+  event: 'internal_ops_access';
+  opsUserId: string;
+  targetTenantId: string;
+  incidentId: string;
+  runId?: string;
+  bundleId?: string;
+  action: 'export_bundle' | 'get_bundle' | 'verify_bundle';
+  timestamp: string;
+  success: boolean;
+  errorCode?: string;
+}
+```
+
+#### Lock 6: archivedSnapshots Technical Debt
+
+```typescript
+// TODO(Phase-10): Persist archived state to database
+// Current: In-memory only (not durable across restarts)
+// Risk: Multi-instance deployments have inconsistent archive state
+// Tracking: PHASE-9B-LOCK.md (this file)
+```
 
 ---
 
@@ -321,7 +432,7 @@ If Phase 9B needs rollback:
 
 **Test Results**:
 - Integration tests: 33 passed (all Truth Layer invariants)
-- Simulation tests: 255 passed (16 suites)
+- Simulation tests: 299 passed (all suites)
 - TypeScript compilation: No errors in Phase 9B files
 
 **Files Created/Modified**:
@@ -338,7 +449,20 @@ If Phase 9B needs rollback:
 - `prisma/schema.prisma` - Added models
 - `prisma/migrations/20260118000000_phase_9b_truth_layer/` - Migration
 
+**Phase 9B.5 Files (Consumer Migration)**:
+- `persistence/snapshot-store.interface.ts` - ISnapshotStore interface
+- `simulation/baseline-resolver.service.ts` - Tenant-aware, uses ISnapshotStore
+- `simulation/legal-hold-inventory.service.ts` - Tenant-aware, uses ISnapshotStore
+- `simulation/evidence-bundle.service.ts` - Tenant-aware, uses ISnapshotStore
+- `simulation-api/legal-hold.controller.ts` - Tenant-aware HTTP layer
+- `simulation-api/evidence-bundle.controller.ts` - Internal-ops audit logging
+
+**Phase 9B.6 Files (Migration Lock)**:
+- `simulation/snapshot-ordering.ts` - Centralized comparators
+- `simulation/__tests__/extract-points-guard.spec.ts` - CI guard test
+- `persistence/__tests__/prisma-repositories.integration.spec.ts` - Tenant isolation tests
+- `simulation-api/simulation-error.types.ts` - SNAPSHOT_NOT_FOUND error code
+
 **Remaining Work for Phase 9C**:
-- Migrate InMemorySnapshotStore usage to SnapshotStoreService
-- Add shadow-compare metrics (optional)
 - Object storage integration
+- Shadow-compare metrics (optional)

@@ -1,18 +1,29 @@
 /**
- * Snapshot Store Types
+ * Snapshot Store Types (LEGACY)
  * 
  * Phase 8 - Sprint 2C
  * 
- * @deprecated Phase 9B.5 - Use ISnapshotStore from persistence/snapshot-store.interface.ts
- * This file is kept for backward compatibility with InMemorySnapshotStore.
- * New code should use the Truth Layer interface.
+ * @deprecated Phase 9B.5 - MIGRATION COMPLETE
+ * 
+ * ⚠️  DO NOT USE ISnapshotStore FROM THIS FILE  ⚠️
+ * 
+ * Use ISnapshotStore from persistence/snapshot-store.interface.ts instead.
+ * This file exports ILegacySnapshotStore for backward compatibility ONLY.
+ * 
+ * COMPILE-TIME ENFORCEMENT:
+ * - ISnapshotStore is renamed to ILegacySnapshotStore
+ * - Importing ISnapshotStore from this file will cause compile error
+ * - This forces migration to the Truth Layer interface
  * 
  * Migration path:
  * - ISnapshotStore → persistence/snapshot-store.interface.ts
  * - StoredSnapshot → SimulationSnapshot (with extractPoints projection)
  * - points[] → extractPoints(calcResult) from calc-result-projection.ts
  * 
- * NOTE: RetentionPolicy is imported from retention-policy.ts (SINGLE SOURCE OF TRUTH)
+ * SINGLE SOURCE OF TRUTH:
+ * - calcResult is authoritative for calculation data
+ * - points[] is NEVER stored separately
+ * - Use extractPoints(calcResult) to get points
  * 
  * @see .kiro/specs/whatif-simulation/design.md
  * @see .kiro/specs/phase-9b-postgresql-migration/PHASE-9B-LOCK.md
@@ -23,6 +34,19 @@ import { RetentionPolicy, PolicyTransitionResult } from './retention-policy';
 
 // Re-export for convenience
 export { RetentionPolicy, PolicyTransitionResult } from './retention-policy';
+
+// ============================================================================
+// COMPILE-TIME ENFORCEMENT: ISnapshotStore is REMOVED from this file
+// ============================================================================
+// 
+// If you see a compile error like:
+//   "Module has no exported member 'ISnapshotStore'"
+// 
+// FIX: Change your import to:
+//   import { ISnapshotStore, SNAPSHOT_STORE } from '../persistence/snapshot-store.interface';
+// 
+// The new interface requires tenantId on all queries (security barrier).
+// ============================================================================
 
 /**
  * Stored snapshot with persistence metadata
@@ -101,22 +125,28 @@ export interface SetRetentionPolicyResult extends PolicyTransitionResult {
 }
 
 /**
- * SnapshotStore interface
+ * SnapshotStore interface (LEGACY)
  * 
- * @deprecated Phase 9B.5 - Use ISnapshotStore from persistence/snapshot-store.interface.ts
- * This interface is kept for backward compatibility with InMemorySnapshotStore.
+ * @deprecated Phase 9B.5 - RENAMED TO ILegacySnapshotStore
+ * 
+ * ⚠️  DO NOT USE - Use ISnapshotStore from persistence/snapshot-store.interface.ts  ⚠️
+ * 
+ * This interface is renamed to ILegacySnapshotStore to force compile-time errors
+ * when importing from this file. This ensures all consumers migrate to the
+ * Truth Layer interface.
  * 
  * Migration:
  * - Inject SNAPSHOT_STORE token instead of direct InMemorySnapshotStore
  * - Use SimulationSnapshot instead of StoredSnapshot
  * - Use extractPoints(calcResult) instead of snapshot.points[]
+ * - All queries require tenantId (security barrier)
  * 
  * Abstraction for snapshot persistence.
  * Sprint 1B: InMemory implementation
  * Sprint 2C: Enhanced with policy transition semantics
- * Future: DB/Redis adapter
+ * Phase 9B.5: Replaced by Truth Layer
  */
-export interface ISnapshotStore {
+export interface ILegacySnapshotStore {
   /**
    * Save snapshot to store
    * @returns snapshotId

@@ -106,7 +106,7 @@ describe('EvidenceBundleService', () => {
     it('should export bundle successfully', async () => {
       await setupIncidentWithRun();
 
-      const result = await service.exportBundle('inc-001');
+      const result = await service.exportBundle(TENANT_ID, 'inc-001');
 
       expect(result.success).toBe(true);
       expect(result.bundle).toBeDefined();
@@ -119,7 +119,7 @@ describe('EvidenceBundleService', () => {
     it('should include baseline and current snapshots', async () => {
       await setupIncidentWithRun();
 
-      const result = await service.exportBundle('inc-001');
+      const result = await service.exportBundle(TENANT_ID, 'inc-001');
 
       expect(result.bundle?.payload.baselineSnapshot.snapshotId).toBe('snap-baseline');
       expect(result.bundle?.payload.currentSnapshot.snapshotId).toBe('snap-current');
@@ -128,7 +128,7 @@ describe('EvidenceBundleService', () => {
     it('should extract points from calcResult via projection', async () => {
       await setupIncidentWithRun();
 
-      const result = await service.exportBundle('inc-001');
+      const result = await service.exportBundle(TENANT_ID, 'inc-001');
 
       // Points should be extracted from calcResult
       expect(result.bundle?.payload.baselineSnapshot.points).toHaveLength(2);
@@ -139,7 +139,7 @@ describe('EvidenceBundleService', () => {
     it('should include drift explainability with common metrics', async () => {
       await setupIncidentWithRun();
 
-      const result = await service.exportBundle('inc-001');
+      const result = await service.exportBundle(TENANT_ID, 'inc-001');
 
       expect(result.bundle?.payload.driftExplainability).toBeDefined();
       expect(result.bundle?.payload.driftExplainability.driftScore).toBe(0.05);
@@ -151,14 +151,14 @@ describe('EvidenceBundleService', () => {
     it('should include retention state', async () => {
       await setupIncidentWithRun();
 
-      const result = await service.exportBundle('inc-001');
+      const result = await service.exportBundle(TENANT_ID, 'inc-001');
 
       expect(result.bundle?.payload.retentionState).toBeDefined();
       expect(result.bundle?.payload.retentionState.baselinePolicy).toBe('STANDARD');
     });
 
     it('should return error for non-existent incident', async () => {
-      const result = await service.exportBundle('non-existent');
+      const result = await service.exportBundle(TENANT_ID, 'non-existent');
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('INCIDENT_NOT_FOUND');
@@ -172,7 +172,7 @@ describe('EvidenceBundleService', () => {
         severity: 'LOW',
       });
 
-      const result = await service.exportBundle('inc-no-run');
+      const result = await service.exportBundle(TENANT_ID, 'inc-no-run');
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('NO_RUN_DATA');
@@ -181,7 +181,7 @@ describe('EvidenceBundleService', () => {
     it('should return error when runId does not match', async () => {
       await setupIncidentWithRun();
 
-      const result = await service.exportBundle('inc-001', 'wrong-run-id');
+      const result = await service.exportBundle(TENANT_ID, 'inc-001', 'wrong-run-id');
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('NO_RUN_DATA');
@@ -190,7 +190,7 @@ describe('EvidenceBundleService', () => {
     it('should use actor from options', async () => {
       await setupIncidentWithRun();
 
-      const result = await service.exportBundle('inc-001', undefined, { actor: 'user' as AuditActor });
+      const result = await service.exportBundle(TENANT_ID, 'inc-001', undefined, { actor: 'user' as AuditActor });
 
       expect(result.bundle?.meta.exportedBy).toBe('user');
     });
@@ -198,9 +198,28 @@ describe('EvidenceBundleService', () => {
     it('should default actor to system', async () => {
       await setupIncidentWithRun();
 
-      const result = await service.exportBundle('inc-001');
+      const result = await service.exportBundle(TENANT_ID, 'inc-001');
 
       expect(result.bundle?.meta.exportedBy).toBe('system');
+    });
+
+    // TENANT ISOLATION TESTS
+    it('should return INCIDENT_NOT_FOUND for tenant mismatch (no information leakage)', async () => {
+      await setupIncidentWithRun();
+
+      // Try to export with wrong tenant
+      const result = await service.exportBundle('wrong-tenant', 'inc-001');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('INCIDENT_NOT_FOUND');
+      // Error message should NOT reveal that incident exists for another tenant
+      expect(result.errorMessage).toBe('Incident inc-001 not found');
+    });
+
+    it('should throw error for empty tenantId', async () => {
+      await setupIncidentWithRun();
+
+      await expect(service.exportBundle('', 'inc-001')).rejects.toThrow('tenantId is required');
     });
   });
 
@@ -209,14 +228,14 @@ describe('EvidenceBundleService', () => {
       await setupIncidentWithRun();
 
       // Export at time T1
-      const result1 = await service.exportBundle('inc-001');
+      const result1 = await service.exportBundle(TENANT_ID, 'inc-001');
       const hash1 = result1.bundle?.contentHash;
 
       // Advance time
       clock.advanceHours(1);
 
       // Export at time T2
-      const result2 = await service.exportBundle('inc-001');
+      const result2 = await service.exportBundle(TENANT_ID, 'inc-001');
       const hash2 = result2.bundle?.contentHash;
 
       // Hash should be same (exportedAt is NOT in payload)
@@ -227,11 +246,11 @@ describe('EvidenceBundleService', () => {
       await setupIncidentWithRun();
 
       // Export by user A
-      const result1 = await service.exportBundle('inc-001', undefined, { actor: 'user' as AuditActor });
+      const result1 = await service.exportBundle(TENANT_ID, 'inc-001', undefined, { actor: 'user' as AuditActor });
       const hash1 = result1.bundle?.contentHash;
 
       // Export by user B (service actor)
-      const result2 = await service.exportBundle('inc-001', undefined, { actor: 'service' as AuditActor });
+      const result2 = await service.exportBundle(TENANT_ID, 'inc-001', undefined, { actor: 'service' as AuditActor });
       const hash2 = result2.bundle?.contentHash;
 
       // Hash should be same (exportedBy is NOT in payload)
@@ -241,7 +260,7 @@ describe('EvidenceBundleService', () => {
     it('should produce different hash for different content', async () => {
       // Setup first incident
       await setupIncidentWithRun();
-      const result1 = await service.exportBundle('inc-001');
+      const result1 = await service.exportBundle(TENANT_ID, 'inc-001');
       const hash1 = result1.bundle?.contentHash;
 
       // Setup second incident with different data
@@ -269,7 +288,7 @@ describe('EvidenceBundleService', () => {
       };
       await incidentStore.recordRun('inc-002', summary2);
 
-      const result2 = await service.exportBundle('inc-002');
+      const result2 = await service.exportBundle(TENANT_ID, 'inc-002');
       const hash2 = result2.bundle?.contentHash;
 
       // Hash should be different
@@ -279,7 +298,7 @@ describe('EvidenceBundleService', () => {
     it('should use canonicalHash from determinism.ts', async () => {
       await setupIncidentWithRun();
 
-      const result = await service.exportBundle('inc-001');
+      const result = await service.exportBundle(TENANT_ID, 'inc-001');
       const bundle = result.bundle!;
 
       // Manually compute hash using same function
@@ -293,7 +312,7 @@ describe('EvidenceBundleService', () => {
     it('should return true for valid bundle', async () => {
       await setupIncidentWithRun();
 
-      const result = await service.exportBundle('inc-001');
+      const result = await service.exportBundle(TENANT_ID, 'inc-001');
       const bundle = result.bundle!;
 
       expect(service.verifyIntegrity(bundle)).toBe(true);
@@ -302,7 +321,7 @@ describe('EvidenceBundleService', () => {
     it('should return false for tampered payload', async () => {
       await setupIncidentWithRun();
 
-      const result = await service.exportBundle('inc-001');
+      const result = await service.exportBundle(TENANT_ID, 'inc-001');
       const bundle = result.bundle!;
 
       // Tamper with payload
@@ -314,7 +333,7 @@ describe('EvidenceBundleService', () => {
     it('should return false for tampered contentHash', async () => {
       await setupIncidentWithRun();
 
-      const result = await service.exportBundle('inc-001');
+      const result = await service.exportBundle(TENANT_ID, 'inc-001');
       const bundle = result.bundle!;
 
       // Tamper with hash
@@ -326,7 +345,7 @@ describe('EvidenceBundleService', () => {
     it('should return true even if metadata changed (metadata not in hash)', async () => {
       await setupIncidentWithRun();
 
-      const result = await service.exportBundle('inc-001');
+      const result = await service.exportBundle(TENANT_ID, 'inc-001');
       const bundle = result.bundle!;
 
       // Change metadata (should not affect integrity)
@@ -343,7 +362,7 @@ describe('EvidenceBundleService', () => {
     it('should return deterministic JSON string', async () => {
       await setupIncidentWithRun();
 
-      const result = await service.exportBundle('inc-001');
+      const result = await service.exportBundle(TENANT_ID, 'inc-001');
       const bundle = result.bundle!;
 
       const canonical1 = service.getCanonicalPayload(bundle);
@@ -356,7 +375,7 @@ describe('EvidenceBundleService', () => {
     it('should produce same string for same payload regardless of key order', async () => {
       await setupIncidentWithRun();
 
-      const result = await service.exportBundle('inc-001');
+      const result = await service.exportBundle(TENANT_ID, 'inc-001');
       const bundle = result.bundle!;
 
       // Create a copy with different key order
@@ -403,7 +422,7 @@ describe('EvidenceBundleService', () => {
       };
       await incidentStore.recordRun('inc-missing-snap', summary);
 
-      const result = await service.exportBundle('inc-missing-snap');
+      const result = await service.exportBundle(TENANT_ID, 'inc-missing-snap');
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('SNAPSHOT_NOT_FOUND');
@@ -413,9 +432,9 @@ describe('EvidenceBundleService', () => {
       await setupIncidentWithRun();
 
       // Apply LEGAL_HOLD to baseline
-      await snapshotStore.applyLegalHold('snap-baseline');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-baseline');
 
-      const result = await service.exportBundle('inc-001');
+      const result = await service.exportBundle(TENANT_ID, 'inc-001');
 
       expect(result.bundle?.payload.retentionState.baselinePolicy).toBe('LEGAL_HOLD');
       expect(result.bundle?.payload.retentionState.baselineProtected).toBe(true);
@@ -448,7 +467,7 @@ describe('EvidenceBundleService', () => {
       };
       await incidentStore.recordRun('inc-blocked', summary);
 
-      const result = await service.exportBundle('inc-blocked');
+      const result = await service.exportBundle(TENANT_ID, 'inc-blocked');
 
       expect(result.success).toBe(true);
       expect(result.bundle?.payload.evidenceChain.verdict).toBe('BLOCK_EVIDENCE');
@@ -490,7 +509,7 @@ describe('EvidenceBundleService', () => {
       };
       await incidentStore.recordRun('inc-empty', summary);
 
-      const result = await service.exportBundle('inc-empty');
+      const result = await service.exportBundle(TENANT_ID, 'inc-empty');
 
       expect(result.success).toBe(true);
       // Points should be empty array when calcResult has no points

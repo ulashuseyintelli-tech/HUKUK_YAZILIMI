@@ -8,7 +8,9 @@ Cross-tenant break-glass access sistemi, internal-ops personelinin kontrollü ve
 
 > **Cross-tenant erişim ancak: VPN + internal_ops + ACTIVE grant + actor-bound token + append-only audit ile mümkün.**
 
-Bu tek cümle, sistemin güvenlik iddiasını özetler ve hem teknik hem hukuki savunmada referans noktasıdır.
+> **Audit subsystem DEGRADED olduğunda break-glass endpoints 503 ile kapanır (controlled shutdown).**
+
+Bu iki cümle, sistemin güvenlik iddiasını özetler ve hem teknik hem hukuki savunmada referans noktasıdır.
 
 ## Authority Model
 
@@ -97,9 +99,25 @@ REQUEST → GRANT → ACCESS → REVOKE
 
 ```
 Audit write fail → 500 (fail-closed)
+3 consecutive failures → DEGRADED mode
 ```
 
 Audit yazılamazsa işlem başarısız olur. Bu kasıtlı: audit olmadan erişim güvenlik iddiasını çökertiyor.
+
+### DEGRADED Mode Behavior
+
+DEGRADED modunda endpoint davranışları:
+
+| Endpoint Type | Behavior | Reason |
+|---------------|----------|--------|
+| Management (request/approve/renew/revoke) | 503 | Audit required |
+| Cross-tenant read | 503 | Audit required |
+| Status/audit trail (GET) | 200 + `auditDegraded: true` | Ops visibility |
+
+Recovery:
+- **Auto-recovery**: 3 consecutive successful audit writes → HEALTHY
+- **Manual reset**: `POST /break-glass/admin/reset` by ops
+- Recommended: Manual reset after confirming audit store health
 
 ## Revocation Audit
 
@@ -109,6 +127,7 @@ Grant iptal edildiğinde ek bilgiler kaydedilir:
 |-------|-------------|
 | `revokedBy` | İptal eden actor ID |
 | `revocationReason` | İptal nedeni enum |
+| `description` | Opsiyonel açıklama (max 200 char, NO PII) |
 | `revokedAt` | İptal zamanı |
 
 **Revocation Reasons:**
@@ -116,6 +135,13 @@ Grant iptal edildiğinde ek bilgiler kaydedilir:
 - `expiry`: Süre dolumu
 - `circuit_breaker`: Circuit breaker tetiklendi
 - `security_incident`: Güvenlik olayı
+
+**Description PII Safety:**
+- Max 200 karakter
+- TCKN (11 haneli numara) yasak
+- Telefon numarası yasak
+- Email adresi yasak
+- Validation: `validateRevocationDescription()` fonksiyonu ile kontrol edilir
 
 ## Token Structure
 
@@ -271,5 +297,60 @@ POST /break-glass/grants/{grantId}/revoke
 
 ## Changelog
 
+- **v1.2**: Added DEGRADED mode behavior table, PII validation for revocation description, auto-recovery with 3 consecutive successes, manual reset capability
 - **v1.1**: Added jti claim for replay detection, JtiAnomalyDetectorService
 - **v1.0**: Initial security architecture with authority model, revocation audit, controlled shutdown
+
+---
+
+## Architecture Diagram
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                      BREAK-GLASS SECURITY LAYER v1.2                        │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  ENTRY GATES (Defense in Depth)                                             │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌──────────┐      │
+│  │   VPN    │→ │internal_ │→ │  ACTIVE  │→ │  actor-  │→ │  audit   │      │
+│  │  only    │  │   ops    │  │  grant   │  │  bound   │  │ HEALTHY  │      │
+│  └──────────┘  └──────────┘  └──────────┘  └──────────┘  └──────────┘      │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  AUTHORITY MODEL                                                            │
+│  ┌─────────────────────────────────┐  ┌─────────────────────────────────┐  │
+│  │       ACCESS AUTHORITY          │  │      RENEWAL AUTHORITY          │  │
+│  │   exp valid + grant ACTIVE      │  │      renewalsLeft > 0           │  │
+│  └─────────────────────────────────┘  └─────────────────────────────────┘  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  CIRCUIT BREAKER                                                            │
+│  ┌──────────┐  ┌──────────┐  ┌──────────┐                                  │
+│  │  CLOSED  │⇄ │   OPEN   │→ │HALF_OPEN │                                  │
+│  │ (normal) │  │ (block)  │  │ (probe)  │                                  │
+│  └──────────┘  └──────────┘  └──────────┘                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  AUDIT LAYER (append-only, fail-safe)                                       │
+│  ┌───────────────────────────────────────────────────────────────────────┐ │
+│  │  REQUEST → GRANT → ACCESS → REVOKE                                    │ │
+│  │                                                                       │ │
+│  │  Health States:                                                       │ │
+│  │  ┌─────────┐  3 failures  ┌──────────┐  3 successes  ┌─────────┐     │ │
+│  │  │ HEALTHY │ ──────────→  │ DEGRADED │ ───────────→  │ HEALTHY │     │ │
+│  │  └─────────┘              └──────────┘  or manual    └─────────┘     │ │
+│  │                                ↓                                      │ │
+│  │                           503 on all                                  │ │
+│  │                        management ops                                 │ │
+│  └───────────────────────────────────────────────────────────────────────┘ │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  JTI ANOMALY DETECTION (observability only)                                 │
+│  ┌───────────────────────────────────────────────────────────────────────┐ │
+│  │  HIGH_USAGE: >100 uses/5min → metric + audit event                    │ │
+│  │  MULTI_ACTOR: 3+ actors same jti → metric + audit event (HIGH sev)    │ │
+│  └───────────────────────────────────────────────────────────────────────┘ │
+├─────────────────────────────────────────────────────────────────────────────┤
+│  REVOCATION AUDIT                                                           │
+│  ┌───────────────────────────────────────────────────────────────────────┐ │
+│  │  revokedBy | reason | description (max 200, NO PII) | revokedAt       │ │
+│  │  reasons: manual | expiry | circuit_breaker | security_incident       │ │
+│  │  PII validation: TCKN, phone, email patterns blocked                  │ │
+│  └───────────────────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────────────────────┘
+```

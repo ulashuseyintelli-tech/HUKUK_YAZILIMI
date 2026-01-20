@@ -4,6 +4,7 @@
  * Phase 8 - Sprint 2E
  * Phase 9B.5 - Migrated to ISnapshotStore interface
  * Phase 9B.5+ - Uses extractPoints projection (calcResult is single source of truth)
+ * Phase 9B.6 - Step 5: Tenant-aware export with verification
  * 
  * Exports evidence bundles for audit trail and traceability.
  * 
@@ -12,6 +13,10 @@
  * 
  * RULE: points[] is derived from calcResult via extractPoints()
  * Do NOT store points[] separately - calcResult is the single source of truth.
+ * 
+ * TENANT ISOLATION:
+ * - exportBundle requires tenantId for verification
+ * - Tenant mismatch returns INCIDENT_NOT_FOUND (no information leakage)
  * 
  * @see .kiro/specs/whatif-simulation/design.md
  * @see .kiro/specs/phase-9b-postgresql-migration/PHASE-9B-LOCK.md
@@ -52,23 +57,57 @@ export class EvidenceBundleService {
   ) {}
 
   /**
+   * Validate tenantId is provided
+   * 
+   * @throws Error if tenantId is missing or empty
+   */
+  private validateTenantId(tenantId: string): void {
+    if (!tenantId) {
+      throw new Error('tenantId is required for evidence bundle operations');
+    }
+  }
+
+  /**
    * Export evidence bundle for an incident run
    * 
+   * TENANT ISOLATION:
+   * - tenantId is required for verification
+   * - Tenant mismatch returns INCIDENT_NOT_FOUND (no information leakage)
+   * 
+   * @param tenantId Tenant ID (required for tenant isolation)
    * @param incidentId Incident ID
    * @param runId Run ID (optional, uses lastRun if not specified)
    * @param options Export options
    * @returns ExportBundleResult
    */
   async exportBundle(
+    tenantId: string,
     incidentId: string,
     runId?: string,
     options: ExportBundleOptions = {},
   ): Promise<ExportBundleResult> {
+    this.validateTenantId(tenantId);
+    
     const actor = options.actor || 'system';
 
     // Get incident
     const incident = await this.incidentStore.get(incidentId);
     if (!incident) {
+      return {
+        success: false,
+        error: 'INCIDENT_NOT_FOUND',
+        errorMessage: `Incident ${incidentId} not found`,
+      };
+    }
+
+    // TENANT ISOLATION: Verify tenant match
+    // Return INCIDENT_NOT_FOUND for mismatch (no information leakage)
+    if (incident.tenantId !== tenantId) {
+      this.logger.warn('[EvidenceBundle] Tenant mismatch on export attempt (returning INCIDENT_NOT_FOUND)', {
+        requestedTenantId: tenantId,
+        incidentTenantId: incident.tenantId,
+        incidentId,
+      });
       return {
         success: false,
         error: 'INCIDENT_NOT_FOUND',

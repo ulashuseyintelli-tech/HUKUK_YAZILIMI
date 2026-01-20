@@ -14,7 +14,7 @@
  */
 
 import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
-import { ISnapshotStore } from './snapshot-store.types';
+import { ILegacySnapshotStore } from './snapshot-store.types';
 
 export interface CleanupConfig {
   /** Cleanup interval in milliseconds (default: 10 minutes) */
@@ -43,7 +43,7 @@ export class SnapshotCleanupService implements OnModuleInit, OnModuleDestroy {
   private totalDeletedCount = 0;
 
   constructor(
-    private readonly snapshotStore: ISnapshotStore,
+    private readonly snapshotStore: ILegacySnapshotStore,
     config?: Partial<CleanupConfig>,
   ) {
     this.config = { ...DEFAULT_CLEANUP_CONFIG, ...config };

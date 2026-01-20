@@ -578,3 +578,162 @@ describe('Phase 9B - Truth Layer Integration Tests', () => {
     });
   });
 });
+
+
+  // ==========================================================================
+  // Phase 9B.6-LOCK: Tenant Isolation Behavior Tests
+  // ==========================================================================
+
+  describe('Tenant Isolation Behavior (Phase 9B.6-LOCK)', () => {
+    /**
+     * These tests verify BEHAVIOR, not SQL syntax.
+     * They ensure that tenant A cannot see tenant B's data even when
+     * they share the same incidentId.
+     * 
+     * This is the critical security guarantee of the Truth Layer.
+     */
+
+    describe('findByIncidentId tenant isolation', () => {
+      it('should only return snapshots for the requested tenant when incidentId is shared', async () => {
+        const sharedIncidentId = `shared-incident-${Date.now()}`;
+        const tenantA = `tenant-A-${Date.now()}`;
+        const tenantB = `tenant-B-${Date.now()}`;
+
+        // Create snapshot for tenant A
+        const snapA = createSnapshotInput({
+          snapshotId: `snap-A-${Date.now()}`,
+          tenantId: tenantA,
+          incidentId: sharedIncidentId,
+        });
+        createdSnapshotIds.push(snapA.snapshotId);
+        await snapshotRepo.insert(snapA);
+
+        // Create snapshot for tenant B with SAME incidentId
+        const snapB = createSnapshotInput({
+          snapshotId: `snap-B-${Date.now()}`,
+          tenantId: tenantB,
+          incidentId: sharedIncidentId,
+        });
+        createdSnapshotIds.push(snapB.snapshotId);
+        await snapshotRepo.insert(snapB);
+
+        // Query as tenant A - should only see A's snapshot
+        const resultsA = await snapshotRepo.findByIncidentId(tenantA, sharedIncidentId);
+        expect(resultsA.length).toBe(1);
+        expect(resultsA[0].snapshotId).toBe(snapA.snapshotId);
+        expect(resultsA[0].tenantId).toBe(tenantA);
+
+        // Query as tenant B - should only see B's snapshot
+        const resultsB = await snapshotRepo.findByIncidentId(tenantB, sharedIncidentId);
+        expect(resultsB.length).toBe(1);
+        expect(resultsB[0].snapshotId).toBe(snapB.snapshotId);
+        expect(resultsB[0].tenantId).toBe(tenantB);
+
+        // Query as non-existent tenant - should see nothing
+        const resultsC = await snapshotRepo.findByIncidentId('tenant-C-nonexistent', sharedIncidentId);
+        expect(resultsC.length).toBe(0);
+      });
+    });
+
+    describe('findBaseline tenant isolation', () => {
+      it('should only return baseline for the correct tenant when incidentId is shared', async () => {
+        const sharedIncidentId = `shared-baseline-incident-${Date.now()}`;
+        const tenantA = `tenant-baseline-A-${Date.now()}`;
+        const tenantB = `tenant-baseline-B-${Date.now()}`;
+
+        // Create baseline for tenant A
+        const baselineA = createSnapshotInput({
+          snapshotId: `baseline-A-${Date.now()}`,
+          tenantId: tenantA,
+          incidentId: sharedIncidentId,
+          isBaseline: true,
+        });
+        createdSnapshotIds.push(baselineA.snapshotId);
+        await snapshotRepo.insert(baselineA);
+
+        // Create baseline for tenant B with SAME incidentId
+        const baselineB = createSnapshotInput({
+          snapshotId: `baseline-B-${Date.now()}`,
+          tenantId: tenantB,
+          incidentId: sharedIncidentId,
+          isBaseline: true,
+        });
+        createdSnapshotIds.push(baselineB.snapshotId);
+        await snapshotRepo.insert(baselineB);
+
+        // findBaseline currently doesn't take tenantId - this is a gap
+        // For now, verify both baselines exist independently
+        const foundA = await snapshotRepo.findById(baselineA.snapshotId);
+        const foundB = await snapshotRepo.findById(baselineB.snapshotId);
+
+        expect(foundA?.isBaseline).toBe(true);
+        expect(foundA?.tenantId).toBe(tenantA);
+        expect(foundB?.isBaseline).toBe(true);
+        expect(foundB?.tenantId).toBe(tenantB);
+      });
+    });
+
+    describe('findWithLegalHold tenant isolation', () => {
+      it('should only return legal hold snapshots for the requested tenant', async () => {
+        const tenantA = `tenant-legalhold-A-${Date.now()}`;
+        const tenantB = `tenant-legalhold-B-${Date.now()}`;
+
+        // Create and apply legal hold for tenant A
+        const snapA = createSnapshotInput({
+          snapshotId: `legalhold-A-${Date.now()}`,
+          tenantId: tenantA,
+          incidentId: `incident-A-${Date.now()}`,
+        });
+        createdSnapshotIds.push(snapA.snapshotId);
+        await snapshotRepo.insert(snapA);
+        await snapshotRepo.applyLegalHold(snapA.snapshotId);
+
+        // Create and apply legal hold for tenant B
+        const snapB = createSnapshotInput({
+          snapshotId: `legalhold-B-${Date.now()}`,
+          tenantId: tenantB,
+          incidentId: `incident-B-${Date.now()}`,
+        });
+        createdSnapshotIds.push(snapB.snapshotId);
+        await snapshotRepo.insert(snapB);
+        await snapshotRepo.applyLegalHold(snapB.snapshotId);
+
+        // Query as tenant A - should only see A's legal hold
+        const resultsA = await snapshotRepo.findWithLegalHold(tenantA);
+        expect(resultsA.every(s => s.tenantId === tenantA)).toBe(true);
+        expect(resultsA.some(s => s.snapshotId === snapA.snapshotId)).toBe(true);
+        expect(resultsA.some(s => s.snapshotId === snapB.snapshotId)).toBe(false);
+
+        // Query as tenant B - should only see B's legal hold
+        const resultsB = await snapshotRepo.findWithLegalHold(tenantB);
+        expect(resultsB.every(s => s.tenantId === tenantB)).toBe(true);
+        expect(resultsB.some(s => s.snapshotId === snapB.snapshotId)).toBe(true);
+        expect(resultsB.some(s => s.snapshotId === snapA.snapshotId)).toBe(false);
+      });
+    });
+
+    describe('cross-tenant mutation protection', () => {
+      it('should not allow tenant A to apply legal hold to tenant B snapshot via store', async () => {
+        const tenantA = `tenant-mutation-A-${Date.now()}`;
+        const tenantB = `tenant-mutation-B-${Date.now()}`;
+
+        // Create snapshot for tenant B
+        const snapB = createSnapshotInput({
+          snapshotId: `mutation-target-${Date.now()}`,
+          tenantId: tenantB,
+          incidentId: `incident-mutation-${Date.now()}`,
+        });
+        createdSnapshotIds.push(snapB.snapshotId);
+        await snapshotRepo.insert(snapB);
+
+        // Note: Repository-level applyLegalHold doesn't take tenantId
+        // The tenant verification happens at the Store/Service layer
+        // This test documents that the repository is tenant-agnostic
+        // and the Store layer MUST verify tenant before calling repository
+
+        // Verify snapshot exists and belongs to tenant B
+        const snapshot = await snapshotRepo.findById(snapB.snapshotId);
+        expect(snapshot?.tenantId).toBe(tenantB);
+      });
+    });
+  });

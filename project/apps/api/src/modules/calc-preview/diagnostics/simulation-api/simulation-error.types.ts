@@ -2,18 +2,47 @@
  * Simulation Error Types
  * 
  * Sprint 2F - Consistent error responses for simulation API
+ * Phase 9B.6 - Stable error code enum (API contract)
+ * 
+ * ERROR CODE CONTRACT:
+ * The `code` field in error responses is a STABLE API CONTRACT.
+ * Clients MAY branch on these codes. Do NOT change existing codes.
+ * 
+ * Adding new codes: ✅ ALLOWED
+ * Changing existing codes: ❌ FORBIDDEN (breaking change)
+ * Removing codes: ❌ FORBIDDEN (breaking change)
+ * 
+ * @see .kiro/specs/phase-9b-postgresql-migration/PHASE-9B-LOCK.md
  */
 
 import { HttpException, HttpStatus } from '@nestjs/common';
 import { RateLimitType } from './simulation-rate-limit.constants';
 
 // ============================================================================
-// Error Codes
+// Error Codes (STABLE API CONTRACT - DO NOT CHANGE EXISTING CODES)
 // ============================================================================
 
+/**
+ * Stable error codes for simulation API
+ * 
+ * These codes are part of the API contract. Clients may branch on them.
+ * 
+ * | Code | HTTP Status | Description |
+ * |------|-------------|-------------|
+ * | SIMULATION_DISABLED | 503 | Feature flag off |
+ * | INCIDENT_NOT_FOUND | 404 | Incident doesn't exist or tenant mismatch |
+ * | SNAPSHOT_NOT_FOUND | 404 | Snapshot doesn't exist or tenant mismatch |
+ * | RUN_NOT_FOUND | 404 | Simulation run doesn't exist |
+ * | BUNDLE_NOT_FOUND | 404 | Evidence bundle doesn't exist |
+ * | FORBIDDEN_TENANT_SCOPE | 403 | Cross-tenant access denied |
+ * | SIMULATION_ALREADY_RUNNING | 409 | Concurrent simulation conflict |
+ * | TOO_MANY_SIMULATIONS | 429 | Rate limit exceeded |
+ * | CANNOT_ARCHIVE_BASELINE | 409 | Baseline protection |
+ */
 export type SimulationErrorCode =
   | 'SIMULATION_DISABLED'
   | 'INCIDENT_NOT_FOUND'
+  | 'SNAPSHOT_NOT_FOUND'
   | 'RUN_NOT_FOUND'
   | 'BUNDLE_NOT_FOUND'
   | 'FORBIDDEN_TENANT_SCOPE'
@@ -77,6 +106,15 @@ export function createBundleNotFoundError(bundleId: string): SimulationErrorResp
     error: 'Not Found',
     message: `Bundle ${bundleId} not found`,
     details: { errorCode: 'BUNDLE_NOT_FOUND', bundleId },
+  };
+}
+
+export function createSnapshotNotFoundError(snapshotId: string): SimulationErrorResponse {
+  return {
+    statusCode: HttpStatus.NOT_FOUND,
+    error: 'Not Found',
+    message: `Snapshot ${snapshotId} not found`,
+    details: { errorCode: 'SNAPSHOT_NOT_FOUND', snapshotId },
   };
 }
 
@@ -178,5 +216,11 @@ export class TooManySimulationsException extends HttpException {
 export class CannotArchiveBaselineException extends HttpException {
   constructor(snapshotId: string) {
     super(createCannotArchiveBaselineError(snapshotId), HttpStatus.CONFLICT);
+  }
+}
+
+export class SnapshotNotFoundException extends HttpException {
+  constructor(snapshotId: string) {
+    super(createSnapshotNotFoundError(snapshotId), HttpStatus.NOT_FOUND);
   }
 }

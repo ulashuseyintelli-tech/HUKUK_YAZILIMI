@@ -98,6 +98,12 @@ describe('LegalHoldInventoryService', () => {
         service.listLegalHolds(''),
       ).rejects.toThrow('tenantId is required');
     });
+
+    it('should throw error when tenantId is empty for archiveLegalHold', async () => {
+      await expect(
+        service.archiveLegalHold('', 'snap-001'),
+      ).rejects.toThrow('tenantId is required');
+    });
   });
 
   // ============================================================================
@@ -115,10 +121,10 @@ describe('LegalHoldInventoryService', () => {
       });
 
       await createSnapshot('snap-001', 'inc-001');
-      await snapshotStore.applyLegalHold('snap-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-001');
 
       // Archive
-      const result = await service.archiveLegalHold('snap-001');
+      const result = await service.archiveLegalHold(TENANT_ID, 'snap-001');
 
       expect(result.success).toBe(true);
       expect(result.changed).toBe(true);
@@ -134,11 +140,11 @@ describe('LegalHoldInventoryService', () => {
       });
 
       await createSnapshot('snap-001', 'inc-001');
-      await snapshotStore.applyLegalHold('snap-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-001');
 
       // Archive twice
-      const result1 = await service.archiveLegalHold('snap-001');
-      const result2 = await service.archiveLegalHold('snap-001');
+      const result1 = await service.archiveLegalHold(TENANT_ID, 'snap-001');
+      const result2 = await service.archiveLegalHold(TENANT_ID, 'snap-001');
 
       expect(result1.success).toBe(true);
       expect(result1.changed).toBe(true);
@@ -155,10 +161,10 @@ describe('LegalHoldInventoryService', () => {
       });
 
       await createSnapshot('snap-001', 'inc-001');
-      await snapshotStore.applyLegalHold('snap-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-001');
 
       // Archive
-      await service.archiveLegalHold('snap-001');
+      await service.archiveLegalHold(TENANT_ID, 'snap-001');
 
       // Policy should still be LEGAL_HOLD
       const stored = await snapshotStore.findById('snap-001');
@@ -166,7 +172,7 @@ describe('LegalHoldInventoryService', () => {
     });
 
     it('should return error for non-existent snapshot', async () => {
-      const result = await service.archiveLegalHold('non-existent');
+      const result = await service.archiveLegalHold(TENANT_ID, 'non-existent');
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('SNAPSHOT_NOT_FOUND');
@@ -183,7 +189,7 @@ describe('LegalHoldInventoryService', () => {
       await createSnapshot('snap-standard', 'inc-001');
       // NOT applying LEGAL_HOLD
 
-      const result = await service.archiveLegalHold('snap-standard');
+      const result = await service.archiveLegalHold(TENANT_ID, 'snap-standard');
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('NOT_LEGAL_HOLD');
@@ -199,13 +205,13 @@ describe('LegalHoldInventoryService', () => {
       });
 
       await createSnapshot('snap-baseline', 'inc-001');
-      await snapshotStore.applyLegalHold('snap-baseline');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-baseline');
 
       // Set as baseline
       await incidentStore.setBaseline('inc-001', 'snap-baseline');
 
       // Try to archive baseline
-      const result = await service.archiveLegalHold('snap-baseline');
+      const result = await service.archiveLegalHold(TENANT_ID, 'snap-baseline');
 
       expect(result.success).toBe(false);
       expect(result.error).toBe('IS_BASELINE');
@@ -222,19 +228,38 @@ describe('LegalHoldInventoryService', () => {
 
       // Create baseline
       await createSnapshot('snap-baseline', 'inc-001');
-      await snapshotStore.applyLegalHold('snap-baseline');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-baseline');
       await incidentStore.setBaseline('inc-001', 'snap-baseline');
 
       // Create another LEGAL_HOLD snapshot (not baseline)
       clock.advanceHours(1);
       await createSnapshot('snap-other', 'inc-001');
-      await snapshotStore.applyLegalHold('snap-other');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-other');
 
       // Archive non-baseline should succeed
-      const result = await service.archiveLegalHold('snap-other');
+      const result = await service.archiveLegalHold(TENANT_ID, 'snap-other');
 
       expect(result.success).toBe(true);
       expect(result.changed).toBe(true);
+    });
+
+    it('should return NOT_FOUND for tenant mismatch (no information leakage)', async () => {
+      await incidentStore.create({
+        incidentId: 'inc-001',
+        tenantId: TENANT_ID,
+        title: 'Test',
+        severity: 'LOW',
+      });
+
+      await createSnapshot('snap-001', 'inc-001', TENANT_ID);
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-001');
+
+      // Try to archive with different tenant
+      const result = await service.archiveLegalHold('other-tenant', 'snap-001');
+
+      expect(result.success).toBe(false);
+      expect(result.error).toBe('SNAPSHOT_NOT_FOUND'); // NOT TENANT_MISMATCH
+      expect(result.errorMessage).toContain('not found');
     });
   });
 
@@ -256,10 +281,242 @@ describe('LegalHoldInventoryService', () => {
       });
 
       await createSnapshot('snap-001', 'inc-001');
-      await snapshotStore.applyLegalHold('snap-001');
-      await service.archiveLegalHold('snap-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-001');
+      await service.archiveLegalHold(TENANT_ID, 'snap-001');
 
       expect(service.isArchived('snap-001')).toBe(true);
+    });
+  });
+
+  // ============================================================================
+  // listLegalHolds Tests (tenant-wide, deterministic ordering)
+  // ============================================================================
+
+  describe('listLegalHolds (tenant-wide)', () => {
+    it('should return legal holds sorted by createdAt DESC, snapshotId ASC', async () => {
+      await incidentStore.create({
+        incidentId: 'inc-001',
+        tenantId: TENANT_ID,
+        title: 'Test',
+        severity: 'LOW',
+      });
+
+      // Create snapshots at different times
+      await createSnapshot('snap-003', 'inc-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-003');
+      
+      clock.advanceHours(1);
+      await createSnapshot('snap-001', 'inc-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-001');
+      
+      clock.advanceHours(1);
+      await createSnapshot('snap-002', 'inc-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-002');
+
+      const entries = await service.listLegalHolds(TENANT_ID);
+
+      // Should be sorted by createdAt DESC (newest first)
+      expect(entries[0].snapshotId).toBe('snap-002'); // newest
+      expect(entries[1].snapshotId).toBe('snap-001');
+      expect(entries[2].snapshotId).toBe('snap-003'); // oldest
+    });
+
+    it('should use snapshotId as tie-breaker when createdAt is same', async () => {
+      await incidentStore.create({
+        incidentId: 'inc-001',
+        tenantId: TENANT_ID,
+        title: 'Test',
+        severity: 'LOW',
+      });
+
+      // Create snapshots at same time (no clock advance)
+      await createSnapshot('snap-c', 'inc-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-c');
+      await createSnapshot('snap-a', 'inc-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-a');
+      await createSnapshot('snap-b', 'inc-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-b');
+
+      const entries = await service.listLegalHolds(TENANT_ID);
+
+      // Same createdAt → sorted by snapshotId ASC
+      expect(entries[0].snapshotId).toBe('snap-a');
+      expect(entries[1].snapshotId).toBe('snap-b');
+      expect(entries[2].snapshotId).toBe('snap-c');
+    });
+
+    it('should not include snapshots from different tenant', async () => {
+      await incidentStore.create({
+        incidentId: 'inc-001',
+        tenantId: TENANT_ID,
+        title: 'Test',
+        severity: 'LOW',
+      });
+
+      // Create snapshot for different tenant
+      await createSnapshot('snap-other', 'inc-001', 'other-tenant');
+      await snapshotStore.applyLegalHold('other-tenant', 'snap-other');
+
+      // Create snapshot for our tenant
+      await createSnapshot('snap-001', 'inc-001', TENANT_ID);
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-001');
+
+      const entries = await service.listLegalHolds(TENANT_ID);
+      
+      expect(entries).toHaveLength(1);
+      expect(entries[0].snapshotId).toBe('snap-001');
+    });
+
+    it('should include legal holds from all incidents (tenant-wide)', async () => {
+      // Create two incidents
+      await incidentStore.create({
+        incidentId: 'inc-001',
+        tenantId: TENANT_ID,
+        title: 'Test 1',
+        severity: 'LOW',
+      });
+      await incidentStore.create({
+        incidentId: 'inc-002',
+        tenantId: TENANT_ID,
+        title: 'Test 2',
+        severity: 'LOW',
+      });
+
+      // Create snapshots for both incidents
+      await createSnapshot('snap-001', 'inc-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-001');
+      await createSnapshot('snap-002', 'inc-002');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-002');
+
+      const entries = await service.listLegalHolds(TENANT_ID);
+      
+      expect(entries).toHaveLength(2);
+      expect(entries.map(e => e.incidentId).sort()).toEqual(['inc-001', 'inc-002']);
+    });
+
+    it('should mark archived snapshots correctly', async () => {
+      await incidentStore.create({
+        incidentId: 'inc-001',
+        tenantId: TENANT_ID,
+        title: 'Test',
+        severity: 'LOW',
+      });
+
+      await createSnapshot('snap-001', 'inc-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-001');
+      await service.archiveLegalHold(TENANT_ID, 'snap-001');
+
+      const entries = await service.listLegalHolds(TENANT_ID);
+      
+      expect(entries[0].archived).toBe(true);
+    });
+  });
+
+  // ============================================================================
+  // listLegalHoldsByIncident Tests (incident-scoped)
+  // ============================================================================
+
+  describe('listLegalHoldsByIncident (incident-scoped)', () => {
+    it('should throw error when incidentId is empty', async () => {
+      await expect(
+        service.listLegalHoldsByIncident(TENANT_ID, ''),
+      ).rejects.toThrow('incidentId is required');
+    });
+
+    it('should throw error when tenantId is empty', async () => {
+      await expect(
+        service.listLegalHoldsByIncident('', 'inc-001'),
+      ).rejects.toThrow('tenantId is required');
+    });
+
+    it('should return only legal holds for specified incident', async () => {
+      // Create two incidents
+      await incidentStore.create({
+        incidentId: 'inc-001',
+        tenantId: TENANT_ID,
+        title: 'Test 1',
+        severity: 'LOW',
+      });
+      await incidentStore.create({
+        incidentId: 'inc-002',
+        tenantId: TENANT_ID,
+        title: 'Test 2',
+        severity: 'LOW',
+      });
+
+      // Create snapshots for both incidents
+      await createSnapshot('snap-001', 'inc-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-001');
+      await createSnapshot('snap-002', 'inc-002');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-002');
+
+      // Query for inc-001 only
+      const entries = await service.listLegalHoldsByIncident(TENANT_ID, 'inc-001');
+      
+      expect(entries).toHaveLength(1);
+      expect(entries[0].snapshotId).toBe('snap-001');
+      expect(entries[0].incidentId).toBe('inc-001');
+    });
+
+    it('should return empty array for incident with no legal holds', async () => {
+      await incidentStore.create({
+        incidentId: 'inc-001',
+        tenantId: TENANT_ID,
+        title: 'Test',
+        severity: 'LOW',
+      });
+
+      // Create snapshot but don't apply LEGAL_HOLD
+      await createSnapshot('snap-001', 'inc-001');
+
+      const entries = await service.listLegalHoldsByIncident(TENANT_ID, 'inc-001');
+      
+      expect(entries).toHaveLength(0);
+    });
+
+    it('should be sorted deterministically (createdAt DESC, snapshotId ASC)', async () => {
+      await incidentStore.create({
+        incidentId: 'inc-001',
+        tenantId: TENANT_ID,
+        title: 'Test',
+        severity: 'LOW',
+      });
+
+      // Create snapshots at different times
+      await createSnapshot('snap-003', 'inc-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-003');
+      
+      clock.advanceHours(1);
+      await createSnapshot('snap-001', 'inc-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-001');
+
+      const entries = await service.listLegalHoldsByIncident(TENANT_ID, 'inc-001');
+
+      // Should be sorted by createdAt DESC
+      expect(entries[0].snapshotId).toBe('snap-001'); // newer
+      expect(entries[1].snapshotId).toBe('snap-003'); // older
+    });
+
+    it('should not include snapshots from different tenant', async () => {
+      await incidentStore.create({
+        incidentId: 'inc-001',
+        tenantId: TENANT_ID,
+        title: 'Test',
+        severity: 'LOW',
+      });
+
+      // Create snapshot for different tenant with same incidentId
+      await createSnapshot('snap-other', 'inc-001', 'other-tenant');
+      await snapshotStore.applyLegalHold('other-tenant', 'snap-other');
+
+      // Create snapshot for our tenant
+      await createSnapshot('snap-001', 'inc-001', TENANT_ID);
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-001');
+
+      const entries = await service.listLegalHoldsByIncident(TENANT_ID, 'inc-001');
+      
+      expect(entries).toHaveLength(1);
+      expect(entries[0].snapshotId).toBe('snap-001');
     });
   });
 
@@ -296,8 +553,8 @@ describe('LegalHoldInventoryService', () => {
       await createSnapshot('snap-002', 'inc-001');
       await createSnapshot('snap-003', 'inc-001');
 
-      await snapshotStore.applyLegalHold('snap-001');
-      await snapshotStore.applyLegalHold('snap-002');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-002');
       // snap-003 stays STANDARD
 
       const count = await service.getIncidentLegalHoldCount(TENANT_ID, 'inc-001');
@@ -319,11 +576,11 @@ describe('LegalHoldInventoryService', () => {
 
       // Create snapshot for different tenant
       await createSnapshot('snap-other-tenant', 'inc-001', 'other-tenant');
-      await snapshotStore.applyLegalHold('snap-other-tenant');
+      await snapshotStore.applyLegalHold('other-tenant', 'snap-other-tenant');
 
       // Create snapshot for our tenant
       await createSnapshot('snap-001', 'inc-001', TENANT_ID);
-      await snapshotStore.applyLegalHold('snap-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-001');
 
       const count = await service.getIncidentLegalHoldCount(TENANT_ID, 'inc-001');
       expect(count).toBe(1); // Only our tenant's snapshot
@@ -346,7 +603,7 @@ describe('LegalHoldInventoryService', () => {
       // Create 3 LEGAL_HOLD snapshots (below default threshold of 5)
       for (let i = 1; i <= 3; i++) {
         await createSnapshot(`snap-00${i}`, 'inc-001');
-        await snapshotStore.applyLegalHold(`snap-00${i}`);
+        await snapshotStore.applyLegalHold(TENANT_ID, `snap-00${i}`);
       }
 
       const exceeds = await service.isIncidentExceedingThreshold(TENANT_ID, 'inc-001');
@@ -364,7 +621,7 @@ describe('LegalHoldInventoryService', () => {
       // Create exactly 5 LEGAL_HOLD snapshots (at default threshold)
       for (let i = 1; i <= DEFAULT_LEGAL_HOLD_THRESHOLD; i++) {
         await createSnapshot(`snap-00${i}`, 'inc-001');
-        await snapshotStore.applyLegalHold(`snap-00${i}`);
+        await snapshotStore.applyLegalHold(TENANT_ID, `snap-00${i}`);
       }
 
       const exceeds = await service.isIncidentExceedingThreshold(TENANT_ID, 'inc-001');
@@ -382,7 +639,7 @@ describe('LegalHoldInventoryService', () => {
       // Create 6 LEGAL_HOLD snapshots (above default threshold of 5)
       for (let i = 1; i <= DEFAULT_LEGAL_HOLD_THRESHOLD + 1; i++) {
         await createSnapshot(`snap-00${i}`, 'inc-001');
-        await snapshotStore.applyLegalHold(`snap-00${i}`);
+        await snapshotStore.applyLegalHold(TENANT_ID, `snap-00${i}`);
       }
 
       const exceeds = await service.isIncidentExceedingThreshold(TENANT_ID, 'inc-001');
@@ -400,7 +657,7 @@ describe('LegalHoldInventoryService', () => {
       // Create 3 LEGAL_HOLD snapshots
       for (let i = 1; i <= 3; i++) {
         await createSnapshot(`snap-00${i}`, 'inc-001');
-        await snapshotStore.applyLegalHold(`snap-00${i}`);
+        await snapshotStore.applyLegalHold(TENANT_ID, `snap-00${i}`);
       }
 
       // With threshold of 2, should exceed
@@ -424,8 +681,8 @@ describe('LegalHoldInventoryService', () => {
 
       await createSnapshot('snap-001', 'inc-001');
       await createSnapshot('snap-002', 'inc-001');
-      await snapshotStore.applyLegalHold('snap-001');
-      await snapshotStore.applyLegalHold('snap-002');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-002');
 
       const stats = await service.getStats(TENANT_ID);
 
@@ -449,11 +706,11 @@ describe('LegalHoldInventoryService', () => {
 
       // Create snapshot for different tenant
       await createSnapshot('snap-other', 'inc-001', 'other-tenant');
-      await snapshotStore.applyLegalHold('snap-other');
+      await snapshotStore.applyLegalHold('other-tenant', 'snap-other');
 
       // Create snapshot for our tenant
       await createSnapshot('snap-001', 'inc-001', TENANT_ID);
-      await snapshotStore.applyLegalHold('snap-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-001');
 
       const stats = await service.getStats(TENANT_ID);
       expect(stats.totalCount).toBe(1); // Only our tenant's snapshot
@@ -475,11 +732,11 @@ describe('LegalHoldInventoryService', () => {
 
       await createSnapshot('snap-001', 'inc-001');
       await createSnapshot('snap-002', 'inc-001');
-      await snapshotStore.applyLegalHold('snap-001');
-      await snapshotStore.applyLegalHold('snap-002');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-002');
 
-      await service.archiveLegalHold('snap-001');
-      await service.archiveLegalHold('snap-002');
+      await service.archiveLegalHold(TENANT_ID, 'snap-001');
+      await service.archiveLegalHold(TENANT_ID, 'snap-002');
 
       expect(service.isArchived('snap-001')).toBe(true);
       expect(service.isArchived('snap-002')).toBe(true);
@@ -509,7 +766,7 @@ describe('LegalHoldInventoryService', () => {
       await createSnapshot('snap-baseline', 'inc-001');
 
       // Protect baseline with LEGAL_HOLD
-      await snapshotStore.applyLegalHold('snap-baseline');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-baseline');
       await incidentStore.setBaseline('inc-001', 'snap-baseline');
 
       // Advance time past TTL
@@ -535,7 +792,7 @@ describe('LegalHoldInventoryService', () => {
 
       // Create baseline snapshot (protected)
       await createSnapshot('snap-baseline', 'inc-001');
-      await snapshotStore.applyLegalHold('snap-baseline');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-baseline');
       await incidentStore.setBaseline('inc-001', 'snap-baseline');
 
       // Create non-protected snapshot

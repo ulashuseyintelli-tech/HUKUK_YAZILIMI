@@ -17,7 +17,7 @@ import { EvidenceBundleController } from '../evidence-bundle.controller';
 import { EvidenceBundleService } from '../../simulation/evidence-bundle.service';
 import { InMemoryIncidentStore } from '../../simulation/incident-store.service';
 import { MockSnapshotStore } from './mock-snapshot-store';
-import { ISnapshotStore, SNAPSHOT_STORE } from '../../persistence/snapshot-store.interface';
+import { ISnapshotStore } from '../../persistence/snapshot-store.interface';
 import { IClock } from '../../evidence/clock.service';
 import { SimulationTenantContext } from '../guards/simulation-rbac.guard';
 import { IncidentNotFoundException, BundleNotFoundException } from '../simulation-error.types';

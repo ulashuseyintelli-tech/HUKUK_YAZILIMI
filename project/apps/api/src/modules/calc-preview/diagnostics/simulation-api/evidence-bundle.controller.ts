@@ -2,6 +2,7 @@
  * Evidence Bundle Controller
  * 
  * Sprint 2F - Task 8.1-8.3
+ * Phase 9B.6 - Internal-ops audit logging
  * 
  * REST endpoints for evidence bundle management:
  * - POST /incidents/:id/runs/:runId/export-bundle
@@ -10,7 +11,16 @@
  * 
  * RED LINE #5: Bundle verify mismatch returns 200 + ok:false
  * 
+ * INTERNAL-OPS AUDIT:
+ * All internal-ops actions are logged with structured audit fields:
+ * - opsUserId: The internal operator's user ID
+ * - targetTenantId: The tenant being accessed (resolved from incident)
+ * - incidentId: The incident being accessed
+ * - runId: The simulation run (if applicable)
+ * - action: The operation performed
+ * 
  * @see .kiro/specs/simulation-api-2f/design.md
+ * @see .kiro/specs/phase-9b-postgresql-migration/PHASE-9B-LOCK.md
  */
 
 import {
@@ -37,6 +47,23 @@ import {
   BundleNotFoundException,
 } from './simulation-error.types';
 import { EvidenceBundle } from '../simulation/evidence-bundle.types';
+
+// ============================================================================
+// Internal-Ops Audit Types
+// ============================================================================
+
+interface InternalOpsAuditEntry {
+  event: 'internal_ops_access';
+  opsUserId: string;
+  targetTenantId: string;
+  incidentId: string;
+  runId?: string;
+  bundleId?: string;
+  action: 'export_bundle' | 'get_bundle' | 'verify_bundle';
+  timestamp: string;
+  success: boolean;
+  errorCode?: string;
+}
 
 // ============================================================================
 // In-Memory Bundle Store
@@ -73,6 +100,29 @@ export class EvidenceBundleController {
   ) {}
 
   // ============================================================================
+  // Internal-Ops Audit Logging
+  // ============================================================================
+
+  /**
+   * Log internal-ops access for audit trail
+   * 
+   * All internal-ops actions MUST be logged with:
+   * - opsUserId: Who performed the action
+   * - targetTenantId: Which tenant's data was accessed
+   * - incidentId/runId: What was accessed
+   * - action: What operation was performed
+   * 
+   * This is CRITICAL for security audits and compliance.
+   */
+  private logInternalOpsAudit(entry: InternalOpsAuditEntry): void {
+    // Use structured logging for easy parsing/alerting
+    this.logger.log({
+      message: `[INTERNAL-OPS-AUDIT] ${entry.action}`,
+      ...entry,
+    });
+  }
+
+  // ============================================================================
   // POST /incidents/:id/runs/:runId/export-bundle
   // ============================================================================
 
@@ -80,6 +130,10 @@ export class EvidenceBundleController {
    * Export evidence bundle for a simulation run
    * 
    * Guards: FeatureFlag (503), RBAC (403)
+   * 
+   * TENANT ISOLATION:
+   * - tenant-admin: Uses ctx.tenantId (incident tenant verified in service)
+   * - internal-ops: Can export any tenant's bundle (incident tenant used)
    * 
    * @param incidentId Incident ID
    * @param runId Run ID
@@ -98,20 +152,50 @@ export class EvidenceBundleController {
       runId,
       tenantId: ctx.tenantId,
       userId: ctx.userId,
+      role: ctx.role,
     });
 
-    // 1. Verify incident exists and tenant access
-    const incident = await this.incidentStore.get(incidentId);
-    if (!incident) {
-      throw new IncidentNotFoundException(incidentId);
+    // Determine effective tenant for export
+    let effectiveTenantId: string;
+
+    if (ctx.role === 'internal-ops') {
+      // internal-ops: Get incident first to determine its tenant
+      const incident = await this.incidentStore.get(incidentId);
+      if (!incident) {
+        // Log failed internal-ops access attempt
+        this.logInternalOpsAudit({
+          event: 'internal_ops_access',
+          opsUserId: ctx.userId,
+          targetTenantId: 'UNKNOWN',
+          incidentId,
+          runId,
+          action: 'export_bundle',
+          timestamp: new Date().toISOString(),
+          success: false,
+          errorCode: 'INCIDENT_NOT_FOUND',
+        });
+        throw new IncidentNotFoundException(incidentId);
+      }
+      effectiveTenantId = incident.tenantId;
+
+      // AUDIT: Log internal-ops cross-tenant access
+      this.logInternalOpsAudit({
+        event: 'internal_ops_access',
+        opsUserId: ctx.userId,
+        targetTenantId: effectiveTenantId,
+        incidentId,
+        runId,
+        action: 'export_bundle',
+        timestamp: new Date().toISOString(),
+        success: true, // Will be updated if export fails
+      });
+    } else {
+      // tenant-admin: Use own tenant (service will verify)
+      effectiveTenantId = ctx.tenantId;
     }
 
-    if (incident.tenantId !== ctx.tenantId && ctx.role !== 'internal-ops') {
-      throw new IncidentNotFoundException(incidentId);
-    }
-
-    // 2. Export bundle
-    const result = await this.bundleService.exportBundle(incidentId, runId, {
+    // Export bundle (tenant-aware)
+    const result = await this.bundleService.exportBundle(effectiveTenantId, incidentId, runId, {
       actor: 'user', // User-initiated export
     });
 
@@ -125,7 +209,7 @@ export class EvidenceBundleController {
       throw new Error(result.errorMessage || 'Failed to export bundle');
     }
 
-    // 3. Store bundle for retrieval
+    // Store bundle for retrieval
     this.bundleStore.save(result.bundle!);
 
     this.logger.debug('[EvidenceBundleController] Bundle exported', {
@@ -175,6 +259,19 @@ export class EvidenceBundleController {
       if (!incident || incident.tenantId !== ctx.tenantId) {
         throw new BundleNotFoundException(bundleId);
       }
+    } else if (ctx && ctx.role === 'internal-ops') {
+      // AUDIT: Log internal-ops bundle access
+      const incident = await this.incidentStore.get(bundle.payload.incidentId);
+      this.logInternalOpsAudit({
+        event: 'internal_ops_access',
+        opsUserId: ctx.userId,
+        targetTenantId: incident?.tenantId || 'UNKNOWN',
+        incidentId: bundle.payload.incidentId,
+        bundleId,
+        action: 'get_bundle',
+        timestamp: new Date().toISOString(),
+        success: true,
+      });
     }
 
     return {

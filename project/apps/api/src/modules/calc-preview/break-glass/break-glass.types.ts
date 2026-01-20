@@ -96,6 +96,11 @@ export type RevocationReason =
  * Revocation audit details
  * 
  * Captures who revoked, why, and when for forensics.
+ * 
+ * KVKK/PII Safety:
+ * - description is max 200 chars
+ * - description MUST NOT contain PII (validated before storage)
+ * - Use predefined reason codes when possible
  */
 export interface RevocationAudit {
   /** Who revoked the grant (actor ID or 'system' for auto-revoke) */
@@ -104,11 +109,55 @@ export interface RevocationAudit {
   /** Reason category */
   reason: RevocationReason;
   
-  /** Optional description (max 500 chars) */
+  /** 
+   * Optional description (max 200 chars, NO PII allowed)
+   * Validated by validateRevocationDescription()
+   */
   description?: string;
   
   /** Revocation timestamp */
   revokedAt: string;
+}
+
+/**
+ * PII patterns for description validation
+ */
+const PII_PATTERNS = {
+  TCKN: /\b\d{11}\b/,
+  PHONE: /\+?90?\s*\d{3}\s*\d{3}\s*\d{2}\s*\d{2}/,
+  EMAIL: /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/,
+};
+
+/**
+ * Max description length for revocation audit
+ */
+export const MAX_REVOCATION_DESCRIPTION_LENGTH = 200;
+
+/**
+ * Validate revocation description for PII safety
+ * 
+ * @returns { valid: boolean, errors: string[] }
+ */
+export function validateRevocationDescription(description: string): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  
+  // Length check
+  if (description.length > MAX_REVOCATION_DESCRIPTION_LENGTH) {
+    errors.push(`Description must be at most ${MAX_REVOCATION_DESCRIPTION_LENGTH} characters`);
+  }
+  
+  // PII checks
+  if (PII_PATTERNS.TCKN.test(description)) {
+    errors.push('Description must not contain TCKN (11-digit number)');
+  }
+  if (PII_PATTERNS.PHONE.test(description)) {
+    errors.push('Description must not contain phone numbers');
+  }
+  if (PII_PATTERNS.EMAIL.test(description)) {
+    errors.push('Description must not contain email addresses');
+  }
+  
+  return { valid: errors.length === 0, errors };
 }
 
 /**

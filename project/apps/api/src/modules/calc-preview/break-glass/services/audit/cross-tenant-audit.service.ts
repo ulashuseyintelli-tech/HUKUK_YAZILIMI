@@ -41,12 +41,16 @@ export interface AuditMetrics {
   totalFailed: number;
   /** Consecutive failures (resets on success) */
   consecutiveFailures: number;
+  /** Consecutive successes after DEGRADED (for auto-recovery) */
+  consecutiveSuccesses: number;
   /** Last failure timestamp */
   lastFailureAt?: string;
   /** Last success timestamp */
   lastSuccessAt?: string;
   /** Current health status */
   status: AuditHealthStatus;
+  /** Whether manual reset is required (true when DEGRADED) */
+  manualResetRequired: boolean;
 }
 
 /**
@@ -57,11 +61,14 @@ export interface AuditFailureConfig {
   maxConsecutiveFailures: number;
   /** Window in ms for failure rate calculation */
   failureWindowMs: number;
+  /** Consecutive successes required for auto-recovery (0 = manual only) */
+  autoRecoverySuccessThreshold: number;
 }
 
 const DEFAULT_FAILURE_CONFIG: AuditFailureConfig = {
   maxConsecutiveFailures: 3,
   failureWindowMs: 60_000, // 1 minute
+  autoRecoverySuccessThreshold: 3, // 3 consecutive successes to auto-recover
 };
 
 /**
@@ -136,7 +143,9 @@ export class CrossTenantAuditService {
     totalEmitted: 0,
     totalFailed: 0,
     consecutiveFailures: 0,
+    consecutiveSuccesses: 0,
     status: 'HEALTHY',
+    manualResetRequired: false,
   };
   
   /** Failure configuration */
@@ -171,6 +180,40 @@ export class CrossTenantAuditService {
    */
   isHealthy(): boolean {
     return this.metrics.status === 'HEALTHY';
+  }
+
+  /**
+   * Manual reset from DEGRADED to HEALTHY
+   * 
+   * Should be called by ops after audit store is confirmed healthy.
+   * Emits metric for tracking.
+   */
+  manualReset(operatorId: string): void {
+    if (this.metrics.status !== 'DEGRADED') {
+      this.logger.warn('Manual reset called but status is not DEGRADED', {
+        currentStatus: this.metrics.status,
+        operatorId,
+      });
+      return;
+    }
+
+    this.logger.log('Manual reset: DEGRADED → HEALTHY', {
+      operatorId,
+      previousFailures: this.metrics.consecutiveFailures,
+    });
+
+    this.metrics.status = 'HEALTHY';
+    this.metrics.consecutiveFailures = 0;
+    this.metrics.consecutiveSuccesses = 0;
+    this.metrics.manualResetRequired = false;
+
+    // Emit metric for tracking
+    this.logger.warn('METRIC: break_glass_audit_manual_reset', {
+      metric: 'break_glass_audit_manual_reset',
+      labels: { operator_id: operatorId },
+      value: 1,
+      timestamp: new Date().toISOString(),
+    });
   }
 
   /**
@@ -346,21 +389,48 @@ export class CrossTenantAuditService {
    * - Tracks consecutive failures
    * - Emits AUDIT_WRITE_FAILED metric on failure
    * - Transitions to DEGRADED mode after threshold
+   * - Recovery requires either manual reset OR N consecutive successes
    * - Re-throws error for caller to handle (fail-closed)
    */
   private async emit(event: CrossTenantAuditEvent): Promise<void> {
     try {
       await this.repository.append(event);
       
-      // Success - reset consecutive failures
+      // Success - update metrics
       this.metrics.totalEmitted++;
       this.metrics.consecutiveFailures = 0;
       this.metrics.lastSuccessAt = new Date().toISOString();
       
-      // Recover from DEGRADED if we were in it
+      // Track consecutive successes for auto-recovery
       if (this.metrics.status === 'DEGRADED') {
-        this.logger.log('Audit system recovered from DEGRADED state');
-        this.metrics.status = 'HEALTHY';
+        this.metrics.consecutiveSuccesses++;
+        
+        // Check for auto-recovery (if enabled)
+        const threshold = this.failureConfig.autoRecoverySuccessThreshold;
+        if (threshold > 0 && this.metrics.consecutiveSuccesses >= threshold) {
+          this.logger.log('Audit system auto-recovered from DEGRADED state', {
+            consecutiveSuccesses: this.metrics.consecutiveSuccesses,
+            threshold,
+          });
+          this.metrics.status = 'HEALTHY';
+          this.metrics.consecutiveSuccesses = 0;
+          this.metrics.manualResetRequired = false;
+          
+          // Emit recovery metric
+          this.logger.warn('METRIC: break_glass_audit_auto_recovered', {
+            metric: 'break_glass_audit_auto_recovered',
+            value: 1,
+            timestamp: new Date().toISOString(),
+          });
+        } else {
+          this.logger.debug('DEGRADED: success recorded, waiting for threshold', {
+            consecutiveSuccesses: this.metrics.consecutiveSuccesses,
+            threshold,
+            manualResetRequired: this.metrics.manualResetRequired,
+          });
+        }
+      } else {
+        this.metrics.consecutiveSuccesses = 0;
       }
       
       this.logger.log(`Audit event emitted: ${event.eventType}`, {
@@ -374,6 +444,7 @@ export class CrossTenantAuditService {
       // Track failure
       this.metrics.totalFailed++;
       this.metrics.consecutiveFailures++;
+      this.metrics.consecutiveSuccesses = 0; // Reset success counter
       this.metrics.lastFailureAt = new Date().toISOString();
       
       // Emit metric for alerting
@@ -387,6 +458,7 @@ export class CrossTenantAuditService {
             threshold: this.failureConfig.maxConsecutiveFailures,
           });
           this.metrics.status = 'DEGRADED';
+          this.metrics.manualResetRequired = true;
         }
       }
       

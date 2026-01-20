@@ -18,7 +18,14 @@
  * - No hash calculation in store
  * - tenantId required on all queries (security barrier)
  * 
+ * SINGLE SOURCE OF TRUTH - POINTS:
+ * - calcResult is authoritative for calculation data
+ * - points[] is NEVER stored as a separate field on SimulationSnapshot
+ * - Use extractPoints(calcResult) from calc-result-projection.ts to get points
+ * - This prevents drift between calcResult and points
+ * 
  * @see .kiro/specs/phase-9b-postgresql-migration/PHASE-9B-LOCK.md
+ * @see simulation/calc-result-projection.ts
  */
 
 import { RetentionPolicy } from '../evidence/retention-policy';
@@ -47,6 +54,14 @@ export type EvidenceVerdict = 'PROCEED' | 'BLOCK_DRIFT' | 'BLOCK_EVIDENCE' | 'BL
  * Simulation snapshot entity (consumer view)
  * 
  * This is what consumers see. Internal DB fields are hidden.
+ * 
+ * IMPORTANT - POINTS:
+ * - There is NO points[] field on this interface
+ * - calcResult is the SINGLE SOURCE OF TRUTH for calculation data
+ * - Use extractPoints(calcResult) from calc-result-projection.ts to get points
+ * - This design prevents drift between calcResult and points
+ * 
+ * @see simulation/calc-result-projection.ts
  */
 export interface SimulationSnapshot {
   // Identity
@@ -214,11 +229,15 @@ export interface ISnapshotStore {
    * 
    * Idempotent - no error if already baseline.
    * 
+   * TENANT ISOLATION: Returns void (not found) if tenant mismatch.
+   * This prevents information leakage about other tenants' snapshots.
+   * 
+   * @param tenantId Tenant ID (required for isolation)
    * @param snapshotId Snapshot ID
-   * @throws EntityNotFoundError if snapshot not found
+   * @throws EntityNotFoundError if snapshot not found OR tenant mismatch
    * @throws BaselineAlreadyExistsError if another baseline exists
    */
-  promoteToBaseline(snapshotId: string): Promise<void>;
+  promoteToBaseline(tenantId: string, snapshotId: string): Promise<void>;
   
   /**
    * Find baseline snapshot for tenant+incident
@@ -230,7 +249,7 @@ export interface ISnapshotStore {
   findBaseline(tenantId: string, incidentId: string): Promise<SimulationSnapshot | null>;
   
   // ==========================================================================
-  // Legal Hold & Retention (Upgrade-Only)
+  // Legal Hold & Retention (Upgrade-Only, Tenant-Aware)
   // ==========================================================================
   
   /**
@@ -238,11 +257,16 @@ export interface ISnapshotStore {
    * 
    * Idempotent - no error if already has legal hold.
    * 
+   * TENANT ISOLATION: Returns SNAPSHOT_NOT_FOUND if tenant mismatch.
+   * This prevents information leakage about other tenants' snapshots.
+   * 
+   * @param tenantId Tenant ID (required for isolation)
    * @param snapshotId Snapshot ID
    * @param reason Optional reason for legal hold
    * @returns Result with success/changed/error
    */
   applyLegalHold(
+    tenantId: string,
     snapshotId: string,
     reason?: string | undefined,
   ): Promise<ApplyLegalHoldResult>;
@@ -252,11 +276,16 @@ export interface ISnapshotStore {
    * 
    * Upgrade-only: STANDARD → PROMOTED → LEGAL_HOLD
    * 
+   * TENANT ISOLATION: Returns SNAPSHOT_NOT_FOUND if tenant mismatch.
+   * This prevents information leakage about other tenants' snapshots.
+   * 
+   * @param tenantId Tenant ID (required for isolation)
    * @param snapshotId Snapshot ID
    * @param policy New retention policy
    * @returns Result with success/changed/error
    */
   setRetentionPolicy(
+    tenantId: string,
     snapshotId: string,
     policy: RetentionPolicy,
   ): Promise<SetRetentionPolicyResult>;

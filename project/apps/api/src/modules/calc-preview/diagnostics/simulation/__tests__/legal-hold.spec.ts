@@ -61,7 +61,7 @@ describe('LEGAL_HOLD Retention', () => {
   describe('setRetentionPolicy', () => {
     it('should set LEGAL_HOLD policy', async () => {
       await createSnapshot('legal-001');
-      await store.setRetentionPolicy('legal-001', 'LEGAL_HOLD');
+      await store.setRetentionPolicy(TENANT_ID, 'legal-001', 'LEGAL_HOLD');
 
       const snapshot = await store.findById('legal-001');
       expect(snapshot?.retentionPolicy).toBe('LEGAL_HOLD');
@@ -75,7 +75,7 @@ describe('LEGAL_HOLD Retention', () => {
       expect(snapshot?.retentionPolicy).toBe('STANDARD');
       expect(snapshot?.expiresAt).toBeDefined();
 
-      await store.setRetentionPolicy('legal-002', 'LEGAL_HOLD');
+      await store.setRetentionPolicy(TENANT_ID, 'legal-002', 'LEGAL_HOLD');
       
       snapshot = await store.findById('legal-002');
       expect(snapshot?.retentionPolicy).toBe('LEGAL_HOLD');
@@ -84,13 +84,13 @@ describe('LEGAL_HOLD Retention', () => {
 
     it('should REJECT changing from LEGAL_HOLD to STANDARD (downgrade forbidden)', async () => {
       await createSnapshot('legal-003');
-      await store.setRetentionPolicy('legal-003', 'LEGAL_HOLD');
+      await store.setRetentionPolicy(TENANT_ID, 'legal-003', 'LEGAL_HOLD');
       
       let snapshot = await store.findById('legal-003');
       expect(snapshot?.expiresAt).toBeUndefined();
 
       // Attempt downgrade - should be rejected
-      const result = await store.setRetentionPolicy('legal-003', 'STANDARD');
+      const result = await store.setRetentionPolicy(TENANT_ID, 'legal-003', 'STANDARD');
       
       expect(result.success).toBe(false);
       expect(result.error).toBe('RETENTION_DOWNGRADE_FORBIDDEN');
@@ -103,9 +103,9 @@ describe('LEGAL_HOLD Retention', () => {
 
     it('should REJECT changing from LEGAL_HOLD to PROMOTED (downgrade forbidden)', async () => {
       await createSnapshot('legal-004');
-      await store.setRetentionPolicy('legal-004', 'LEGAL_HOLD');
+      await store.setRetentionPolicy(TENANT_ID, 'legal-004', 'LEGAL_HOLD');
 
-      const result = await store.setRetentionPolicy('legal-004', 'PROMOTED');
+      const result = await store.setRetentionPolicy(TENANT_ID, 'legal-004', 'PROMOTED');
       
       expect(result.success).toBe(false);
       expect(result.error).toBe('RETENTION_DOWNGRADE_FORBIDDEN');
@@ -119,7 +119,7 @@ describe('LEGAL_HOLD Retention', () => {
     it('should NOT delete LEGAL_HOLD snapshots even after expiry time', async () => {
       // Save and set to LEGAL_HOLD
       await createSnapshot('legal-never-delete');
-      await store.setRetentionPolicy('legal-never-delete', 'LEGAL_HOLD');
+      await store.setRetentionPolicy(TENANT_ID, 'legal-never-delete', 'LEGAL_HOLD');
 
       // Advance time way past normal expiry (1 year)
       clock.advanceSeconds(365 * 24 * 60 * 60);
@@ -141,7 +141,7 @@ describe('LEGAL_HOLD Retention', () => {
       await createSnapshot('standard-001');
       await createSnapshot('standard-002');
       await createSnapshot('legal-001');
-      await store.setRetentionPolicy('legal-001', 'LEGAL_HOLD');
+      await store.setRetentionPolicy(TENANT_ID, 'legal-001', 'LEGAL_HOLD');
 
       // Advance past STANDARD expiry (72h + buffer)
       clock.advanceSeconds(73 * 60 * 60);
@@ -168,8 +168,8 @@ describe('LEGAL_HOLD Retention', () => {
       await createSnapshot('promoted-001');
       await createSnapshot('legal-001');
 
-      await store.setRetentionPolicy('promoted-001', 'PROMOTED');
-      await store.setRetentionPolicy('legal-001', 'LEGAL_HOLD');
+      await store.setRetentionPolicy(TENANT_ID, 'promoted-001', 'PROMOTED');
+      await store.setRetentionPolicy(TENANT_ID, 'legal-001', 'LEGAL_HOLD');
 
       // Advance past STANDARD expiry but not PROMOTED
       clock.advanceSeconds(73 * 60 * 60);
@@ -195,8 +195,8 @@ describe('LEGAL_HOLD Retention', () => {
       await createSnapshot('legal-001');
       await createSnapshot('legal-002');
 
-      await store.setRetentionPolicy('legal-001', 'LEGAL_HOLD');
-      await store.setRetentionPolicy('legal-002', 'LEGAL_HOLD');
+      await store.setRetentionPolicy(TENANT_ID, 'legal-001', 'LEGAL_HOLD');
+      await store.setRetentionPolicy(TENANT_ID, 'legal-002', 'LEGAL_HOLD');
 
       const stats = await store.getLegalHoldStats(TENANT_ID);
 
@@ -215,7 +215,7 @@ describe('LEGAL_HOLD Retention', () => {
   describe('findByIncidentId with LEGAL_HOLD', () => {
     it('should include LEGAL_HOLD snapshots regardless of time', async () => {
       await createSnapshot('legal-001');
-      await store.setRetentionPolicy('legal-001', 'LEGAL_HOLD');
+      await store.setRetentionPolicy(TENANT_ID, 'legal-001', 'LEGAL_HOLD');
 
       // Advance way past normal expiry
       clock.advanceSeconds(365 * 24 * 60 * 60);
@@ -230,7 +230,7 @@ describe('LEGAL_HOLD Retention', () => {
   describe('findById with LEGAL_HOLD', () => {
     it('should return LEGAL_HOLD snapshot regardless of time', async () => {
       await createSnapshot('legal-001');
-      await store.setRetentionPolicy('legal-001', 'LEGAL_HOLD');
+      await store.setRetentionPolicy(TENANT_ID, 'legal-001', 'LEGAL_HOLD');
 
       // Advance 10 years
       clock.advanceSeconds(10 * 365 * 24 * 60 * 60);

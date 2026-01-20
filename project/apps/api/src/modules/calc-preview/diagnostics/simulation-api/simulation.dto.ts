@@ -149,19 +149,25 @@ export interface VerifyBundleResponseDto {
 // Legal Hold Endpoint DTOs
 // ============================================================================
 
+/**
+ * Legal Hold Entry DTO
+ * 
+ * Minimal response - no calcResult, no tenantId (caller already knows their tenant).
+ * isBaseline included for UI to show "cannot archive" state.
+ */
 export interface LegalHoldEntryDto {
   /** Snapshot ID */
   snapshotId: string;
   /** Incident ID */
   incidentId: string;
-  /** Tenant ID */
-  tenantId: string;
   /** Creation timestamp (ISO 8601) */
   createdAt: string;
   /** Hold reason */
   reason: string;
   /** Whether archived */
   archived: boolean;
+  /** Whether this is the baseline snapshot (cannot be archived) */
+  isBaseline: boolean;
 }
 
 export interface LegalHoldListResponseDto {

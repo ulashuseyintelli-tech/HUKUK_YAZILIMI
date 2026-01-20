@@ -3,16 +3,27 @@
  * 
  * Sprint 2F - Task 9.4-9.5
  * Phase 9B.5 - Updated to use MockSnapshotStore
+ * Phase 9B.6 - Step 4: Tenant-aware wiring + HTTP error mapping tests
  * 
  * Unit tests and property tests for legal hold controller.
  * 
  * RED LINE: Baseline snapshots cannot be archived (409)
+ * 
+ * STEP 4 TESTS:
+ * - internal-ops without tenantId query → 400
+ * - tenant mismatch archive → 404 (no leakage)
+ * - NOT_LEGAL_HOLD archive attempt → 400
+ * - list with incidentId uses listLegalHoldsByIncident
+ * - list without incidentId uses listLegalHolds
+ * - deterministic order in list response
+ * - tenant-admin tenantId query ignored (logged)
  * 
  * @see .kiro/specs/simulation-api-2f/design.md
  * @see .kiro/specs/phase-9b-postgresql-migration/PHASE-9B-LOCK.md
  */
 
 import * as fc from 'fast-check';
+import { HttpException, HttpStatus } from '@nestjs/common';
 import { LegalHoldController } from '../legal-hold.controller';
 import { LegalHoldInventoryService } from '../../simulation/legal-hold-inventory.service';
 import { InMemoryIncidentStore } from '../../simulation/incident-store.service';
@@ -91,7 +102,6 @@ function createTestContext(): {
   const controller = new LegalHoldController(
     legalHoldService,
     snapshotStore as unknown as ISnapshotStore,
-    incidentStore,
   );
 
   return { clock, controller, incidentStore, snapshotStore, legalHoldService };
@@ -128,7 +138,7 @@ async function createLegalHoldSnapshot(
   });
 
   // Apply legal hold
-  await snapshotStore.applyLegalHold(snapshotId);
+  await snapshotStore.applyLegalHold(tenantId, snapshotId);
 }
 
 async function createTestIncident(
@@ -180,10 +190,12 @@ describe('LegalHoldController', () => {
 
       // Should only see tenant-1's holds
       expect(result.holds.length).toBe(1);
-      expect(result.holds[0].tenantId).toBe('tenant-1');
+      expect(result.holds[0].snapshotId).toBe('snap-1');
+      // tenantId should NOT be in response (Step 4 change)
+      expect((result.holds[0] as any).tenantId).toBeUndefined();
     });
 
-    it('should ignore tenantId query param for tenant-admin', async () => {
+    it('should ignore tenantId query param for tenant-admin (security)', async () => {
       const { controller, snapshotStore, incidentStore } = createTestContext();
       
       await createTestIncident(incidentStore, 'inc-1', 'tenant-1');
@@ -198,30 +210,30 @@ describe('LegalHoldController', () => {
 
       // Should still only see tenant-1's holds (query param ignored)
       expect(result.holds.length).toBe(1);
-      expect(result.holds[0].tenantId).toBe('tenant-1');
+      expect(result.holds[0].snapshotId).toBe('snap-1');
     });
 
-    // TODO: Step 4 - internal-ops cross-tenant access needs architectural decision
-    // Current implementation requires tenantId for all queries (tenant isolation)
-    // This test expects internal-ops to see ALL tenants without specifying tenantId
-    // Decision needed: Should internal-ops bypass tenant isolation?
-    it.skip('should allow internal-ops to see all tenants', async () => {
-      const { controller, snapshotStore, incidentStore } = createTestContext();
-      
-      await createTestIncident(incidentStore, 'inc-1', 'tenant-1');
-      await createTestIncident(incidentStore, 'inc-2', 'tenant-2');
-      await createLegalHoldSnapshot(snapshotStore, 'snap-1', 'inc-1', 'tenant-1');
-      await createLegalHoldSnapshot(snapshotStore, 'snap-2', 'inc-2', 'tenant-2');
+    it('should require tenantId query param for internal-ops (400 if missing)', async () => {
+      const { controller } = createTestContext();
+      const ctx = createTenantContext('ops-tenant', 'internal-ops');
 
-      const ctx = createTenantContext('tenant-ops', 'internal-ops');
+      // internal-ops without tenantId query → 400
+      await expect(
+        controller.listLegalHolds(undefined, undefined, ctx),
+      ).rejects.toThrow(HttpException);
 
-      const result = await controller.listLegalHolds(undefined, undefined, ctx);
-
-      // Should see all holds
-      expect(result.holds.length).toBe(2);
+      try {
+        await controller.listLegalHolds(undefined, undefined, ctx);
+      } catch (e) {
+        expect(e).toBeInstanceOf(HttpException);
+        expect((e as HttpException).getStatus()).toBe(HttpStatus.BAD_REQUEST);
+        expect((e as HttpException).getResponse()).toMatchObject({
+          message: expect.stringContaining('tenantId query parameter is required'),
+        });
+      }
     });
 
-    it('should allow internal-ops to filter by tenantId', async () => {
+    it('should allow internal-ops to filter by tenantId query', async () => {
       const { controller, snapshotStore, incidentStore } = createTestContext();
       
       await createTestIncident(incidentStore, 'inc-1', 'tenant-1');
@@ -235,10 +247,10 @@ describe('LegalHoldController', () => {
 
       // Should only see tenant-2's holds
       expect(result.holds.length).toBe(1);
-      expect(result.holds[0].tenantId).toBe('tenant-2');
+      expect(result.holds[0].snapshotId).toBe('snap-2');
     });
 
-    it('should filter by incidentId', async () => {
+    it('should filter by incidentId using listLegalHoldsByIncident', async () => {
       const { controller, snapshotStore, incidentStore } = createTestContext();
       
       await createTestIncident(incidentStore, 'inc-1', 'tenant-1');
@@ -253,6 +265,46 @@ describe('LegalHoldController', () => {
       expect(result.holds.length).toBe(1);
       expect(result.holds[0].incidentId).toBe('inc-1');
     });
+
+    it('should include isBaseline in response', async () => {
+      const { controller, snapshotStore, incidentStore } = createTestContext();
+      
+      await createLegalHoldSnapshot(snapshotStore, 'snap-baseline', 'inc-1', 'tenant-1');
+      await createLegalHoldSnapshot(snapshotStore, 'snap-other', 'inc-1', 'tenant-1');
+      await createTestIncident(incidentStore, 'inc-1', 'tenant-1', 'snap-baseline');
+
+      const ctx = createTenantContext('tenant-1');
+
+      const result = await controller.listLegalHolds(undefined, undefined, ctx);
+
+      const baselineHold = result.holds.find(h => h.snapshotId === 'snap-baseline');
+      const otherHold = result.holds.find(h => h.snapshotId === 'snap-other');
+
+      expect(baselineHold?.isBaseline).toBe(true);
+      expect(otherHold?.isBaseline).toBe(false);
+    });
+
+    it('should return deterministic order (createdAt DESC, snapshotId ASC)', async () => {
+      const { controller, snapshotStore, incidentStore, clock } = createTestContext();
+      
+      await createTestIncident(incidentStore, 'inc-1', 'tenant-1');
+
+      // Create snapshots at different times
+      await createLegalHoldSnapshot(snapshotStore, 'snap-c', 'inc-1', 'tenant-1');
+      clock.advanceDays(1);
+      await createLegalHoldSnapshot(snapshotStore, 'snap-a', 'inc-1', 'tenant-1');
+      clock.advanceDays(1);
+      await createLegalHoldSnapshot(snapshotStore, 'snap-b', 'inc-1', 'tenant-1');
+
+      const ctx = createTenantContext('tenant-1');
+
+      const result = await controller.listLegalHolds(undefined, undefined, ctx);
+
+      // Should be sorted by createdAt DESC (newest first)
+      expect(result.holds[0].snapshotId).toBe('snap-b'); // newest
+      expect(result.holds[1].snapshotId).toBe('snap-a');
+      expect(result.holds[2].snapshotId).toBe('snap-c'); // oldest
+    });
   });
 
   describe('POST /legal-holds/:snapshotId/archive', () => {
@@ -262,10 +314,16 @@ describe('LegalHoldController', () => {
 
       await expect(
         controller.archiveLegalHold('non-existent', ctx),
-      ).rejects.toThrow();
+      ).rejects.toThrow(HttpException);
+
+      try {
+        await controller.archiveLegalHold('non-existent', ctx);
+      } catch (e) {
+        expect((e as HttpException).getStatus()).toBe(HttpStatus.NOT_FOUND);
+      }
     });
 
-    it('should return 404 for wrong tenant (tenant-admin)', async () => {
+    it('should return 404 for wrong tenant (tenant-admin) - no leakage', async () => {
       const { controller, snapshotStore, incidentStore } = createTestContext();
       
       await createTestIncident(incidentStore, 'inc-1', 'tenant-1');
@@ -275,7 +333,55 @@ describe('LegalHoldController', () => {
 
       await expect(
         controller.archiveLegalHold('snap-1', ctx),
-      ).rejects.toThrow();
+      ).rejects.toThrow(HttpException);
+
+      try {
+        await controller.archiveLegalHold('snap-1', ctx);
+      } catch (e) {
+        expect((e as HttpException).getStatus()).toBe(HttpStatus.NOT_FOUND);
+        // Message should NOT reveal that snapshot exists for another tenant
+        expect((e as HttpException).getResponse()).toMatchObject({
+          message: expect.stringContaining('not found'),
+        });
+      }
+    });
+
+    it('should return 400 for NOT_LEGAL_HOLD snapshot', async () => {
+      const { controller, snapshotStore, incidentStore } = createTestContext();
+      
+      await createTestIncident(incidentStore, 'inc-1', 'tenant-1');
+      
+      // Create snapshot WITHOUT legal hold
+      const calcResult = { latency_p95: 100 };
+      const calcResultNorm = { latency_p95: '100' };
+      const calcHash = canonicalHash(calcResultNorm);
+      await snapshotStore.createSnapshot({
+        snapshotId: 'snap-standard',
+        incidentId: 'inc-1',
+        tenantId: 'tenant-1',
+        snapshotKind: 'CURRENT',
+        verdict: 'PROCEED',
+        driftScore: 0,
+        calcResult,
+        calcResultNorm,
+        calcHash,
+      });
+      // NOT applying legal hold
+
+      const ctx = createTenantContext('tenant-1');
+
+      await expect(
+        controller.archiveLegalHold('snap-standard', ctx),
+      ).rejects.toThrow(HttpException);
+
+      try {
+        await controller.archiveLegalHold('snap-standard', ctx);
+      } catch (e) {
+        expect((e as HttpException).getStatus()).toBe(HttpStatus.BAD_REQUEST);
+        expect((e as HttpException).getResponse()).toMatchObject({
+          message: expect.stringContaining('not LEGAL_HOLD'),
+        });
+      }
     });
 
     it('should return 409 for baseline snapshot (RED LINE)', async () => {
@@ -326,6 +432,21 @@ describe('LegalHoldController', () => {
       expect(result2.archived).toBe(true);
       expect(result2.changed).toBe(false); // Already archived
     });
+
+    it('should allow internal-ops to archive any tenant snapshot', async () => {
+      const { controller, snapshotStore, incidentStore } = createTestContext();
+      
+      await createLegalHoldSnapshot(snapshotStore, 'snap-1', 'inc-1', 'tenant-1');
+      await createTestIncident(incidentStore, 'inc-1', 'tenant-1');
+
+      const ctx = createTenantContext('ops-tenant', 'internal-ops');
+
+      // internal-ops can archive any tenant's snapshot
+      const result = await controller.archiveLegalHold('snap-1', ctx);
+
+      expect(result.archived).toBe(true);
+      expect(result.changed).toBe(true);
+    });
   });
 
   describe('GET /legal-holds/stats', () => {
@@ -333,12 +454,27 @@ describe('LegalHoldController', () => {
       const { controller } = createTestContext();
       const ctx = createTenantContext('tenant-1');
 
-      const result = await controller.getStats(ctx);
+      const result = await controller.getStats(undefined, ctx);
 
       expect(result.totalCount).toBe(0);
       expect(result.byIncidentCount).toEqual({});
       expect(result.oldestHoldAt).toBeNull();
       expect(result.averageAgeDays).toBe(0);
+    });
+
+    it('should require tenantId query param for internal-ops', async () => {
+      const { controller } = createTestContext();
+      const ctx = createTenantContext('ops-tenant', 'internal-ops');
+
+      await expect(
+        controller.getStats(undefined, ctx),
+      ).rejects.toThrow(HttpException);
+
+      try {
+        await controller.getStats(undefined, ctx);
+      } catch (e) {
+        expect((e as HttpException).getStatus()).toBe(HttpStatus.BAD_REQUEST);
+      }
     });
 
     it('should calculate stats correctly', async () => {
@@ -355,7 +491,7 @@ describe('LegalHoldController', () => {
 
       const ctx = createTenantContext('tenant-1');
 
-      const result = await controller.getStats(ctx);
+      const result = await controller.getStats(undefined, ctx);
 
       expect(result.totalCount).toBe(3);
       expect(result.byIncidentCount['inc-1']).toBe(2);
@@ -374,7 +510,7 @@ describe('LegalHoldController', () => {
 
       const ctx = createTenantContext('tenant-1');
 
-      const result = await controller.getStats(ctx);
+      const result = await controller.getStats(undefined, ctx);
 
       // Should only count tenant-1's holds
       expect(result.totalCount).toBe(1);
@@ -476,13 +612,72 @@ describe('Feature: simulation-api-2f, Property: Tenant Isolation in Legal Holds'
             const result = await controller.listLegalHolds(undefined, undefined, ctx);
 
             // Property: all returned holds belong to the requesting tenant
-            for (const hold of result.holds) {
-              expect(hold.tenantId).toBe(tenantId);
-            }
+            // Note: tenantId is no longer in DTO, so we verify by count
+            expect(result.holds.length).toBe(1);
           }
         },
       ),
       { numRuns: 20 },
+    );
+  });
+});
+
+describe('Feature: Step 4, Property: internal-ops requires tenantId', () => {
+  it('internal-ops without tenantId always returns 400', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.uuid(),
+        async (opsTenantSuffix) => {
+          const { controller } = createTestContext();
+          const ctx = createTenantContext(`ops-${opsTenantSuffix.slice(0, 8)}`, 'internal-ops');
+
+          // Property: internal-ops without tenantId ALWAYS throws 400
+          try {
+            await controller.listLegalHolds(undefined, undefined, ctx);
+            // Should not reach here
+            expect(true).toBe(false);
+          } catch (e) {
+            expect(e).toBeInstanceOf(HttpException);
+            expect((e as HttpException).getStatus()).toBe(HttpStatus.BAD_REQUEST);
+          }
+        },
+      ),
+      { numRuns: 20 },
+    );
+  });
+});
+
+describe('Feature: Step 4, Property: Tenant mismatch returns 404 (no leakage)', () => {
+  it('tenant mismatch on archive always returns 404', async () => {
+    await fc.assert(
+      fc.asyncProperty(
+        fc.uuid(),
+        fc.uuid(),
+        async (tenant1Suffix, tenant2Suffix) => {
+          // Ensure different tenants
+          const tenantId1 = `tenant-${tenant1Suffix.slice(0, 8)}`;
+          const tenantId2 = `tenant-${tenant2Suffix.slice(0, 8)}-other`;
+          
+          const { controller, snapshotStore, incidentStore } = createTestContext();
+          
+          // Create snapshot for tenant1
+          await createTestIncident(incidentStore, 'inc-1', tenantId1);
+          await createLegalHoldSnapshot(snapshotStore, 'snap-1', 'inc-1', tenantId1);
+
+          // Try to archive as tenant2
+          const ctx = createTenantContext(tenantId2);
+
+          // Property: tenant mismatch ALWAYS returns 404 (not 403 or other)
+          try {
+            await controller.archiveLegalHold('snap-1', ctx);
+            expect(true).toBe(false); // Should not reach here
+          } catch (e) {
+            expect(e).toBeInstanceOf(HttpException);
+            expect((e as HttpException).getStatus()).toBe(HttpStatus.NOT_FOUND);
+          }
+        },
+      ),
+      { numRuns: 30 },
     );
   });
 });

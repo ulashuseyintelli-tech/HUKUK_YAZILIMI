@@ -277,7 +277,7 @@ describe('SnapshotQueryService', () => {
 
     it('should set promoted=true for LEGAL_HOLD policy', async () => {
       await createTestSnapshot('snap-001', 'incident-001', TENANT_ID);
-      await snapshotStore.applyLegalHold('snap-001');
+      await snapshotStore.applyLegalHold(TENANT_ID, 'snap-001');
 
       const result = await queryService.getBaselineSnapshot(TENANT_ID, 'incident-001');
 
