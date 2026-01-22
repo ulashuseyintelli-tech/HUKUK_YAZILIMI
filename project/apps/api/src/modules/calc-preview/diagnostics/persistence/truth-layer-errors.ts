@@ -272,6 +272,18 @@ export class DatabaseUnavailableError extends Error {
   }
 }
 
+/**
+ * Thrown when startup configuration is invalid.
+ * 
+ * Phase 9B.5 - Task 2: Production Safety Gate
+ * 
+ * This error prevents the application from starting with dangerous configuration.
+ * Example: InMemory backend in production environment.
+ * 
+ * @see snapshot-store-backend.ts
+ */
+export { StartupConfigurationError } from './snapshot-store-backend';
+
 // ============================================================================
 // Type Guards
 // ============================================================================

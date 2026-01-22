@@ -11,6 +11,9 @@
  * - NO in-memory fallback - DB down = system down
  * - All invariants enforced in repository layer
  * - Prod path uses SNAPSHOT_STORE token (InMemorySnapshotStore FORBIDDEN)
+ * - Production Safety Gate: inmemory + production/staging = HARD FAIL
+ * 
+ * @see snapshot-store-backend.ts for production safety gate implementation
  */
 
 import { Module, OnModuleInit, Logger } from '@nestjs/common';
@@ -35,6 +38,33 @@ import { SNAPSHOT_STORE } from './snapshot-store.interface';
 
 // Errors
 import { DatabaseUnavailableError } from './truth-layer-errors';
+
+// Production Safety Gate (Phase 9B.5 - Task 2)
+import {
+  resolveSnapshotStoreBackend,
+  getBackendLogMessage,
+  SnapshotStoreBackend,
+  AppEnvironment,
+} from './snapshot-store-backend';
+
+// ============================================================================
+// Production Safety Gate - Boot-time Enforcement
+// ============================================================================
+
+/**
+ * Resolve backend at module load time.
+ * 
+ * CRITICAL: This runs BEFORE module instantiation.
+ * If configuration is invalid, the application will NOT start.
+ * 
+ * This is the PRIMARY gate - InMemory is FORBIDDEN in production/staging.
+ */
+const RESOLVED_BACKEND: SnapshotStoreBackend = resolveSnapshotStoreBackend(process.env);
+const RESOLVED_APP_ENV: AppEnvironment = (process.env.APP_ENV?.toLowerCase() || 'development') as AppEnvironment;
+
+// Log at module load time (before DI)
+const bootLogger = new Logger('TruthLayerModule:Boot');
+bootLogger.log(getBackendLogMessage(RESOLVED_BACKEND, RESOLVED_APP_ENV));
 
 // ============================================================================
 // Module Configuration
@@ -66,6 +96,7 @@ import { DatabaseUnavailableError } from './truth-layer-errors';
     // Phase 9B.5: SNAPSHOT_STORE token → SnapshotStoreService (PostgreSQL)
     // This is the ONLY token that consumers should inject
     // InMemorySnapshotStore is FORBIDDEN in prod paths
+    // Production Safety Gate ensures this at boot time
     {
       provide: SNAPSHOT_STORE,
       useExisting: SnapshotStoreService,
@@ -94,15 +125,33 @@ export class TruthLayerModule implements OnModuleInit {
    * 
    * LOCKED: If PostgreSQL is unavailable, the application MUST NOT start.
    * There is NO in-memory fallback for the Truth Layer.
+   * 
+   * Production Safety Gate has already validated backend selection at boot time.
    */
   async onModuleInit(): Promise<void> {
-    this.logger.log('[TruthLayerModule] Initializing - checking PostgreSQL connection...');
+    // Log resolved backend configuration
+    this.logger.log(
+      `[TruthLayerModule] Initializing with backend=${RESOLVED_BACKEND} (APP_ENV=${RESOLVED_APP_ENV})`,
+    );
+    
+    // Skip DB check if using inmemory (only allowed in dev/test)
+    if (RESOLVED_BACKEND === 'inmemory') {
+      this.logger.warn(
+        '[TruthLayerModule] Using InMemory backend - data will NOT persist across restarts!',
+      );
+      return;
+    }
+    
+    this.logger.log('[TruthLayerModule] Checking PostgreSQL connection...');
     
     try {
       // Simple health check query
       await this.prisma.$queryRaw`SELECT 1`;
       
       this.logger.log('[TruthLayerModule] PostgreSQL connection verified ✓');
+      this.logger.log(
+        `[TruthLayerModule] ✓ ${getBackendLogMessage(RESOLVED_BACKEND, RESOLVED_APP_ENV)}`,
+      );
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       

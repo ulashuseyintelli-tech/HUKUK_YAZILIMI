@@ -33,7 +33,6 @@ import {
   SetRetentionPolicyResult as RepoSetRetentionPolicyResult,
   LegalHoldStats as RepoLegalHoldStats,
   MarkArchivedInput as RepoMarkArchivedInput,
-  MarkArchivedResult as RepoMarkArchivedResult,
 } from './snapshot-repository.interface';
 import {
   ISnapshotStore,
@@ -55,6 +54,23 @@ import { RetentionPolicy } from '../evidence/retention-policy';
 // ============================================================================
 
 export const SNAPSHOT_REPOSITORY = Symbol('SNAPSHOT_REPOSITORY');
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+/**
+ * Sentinel value for NULL runId in unique constraint.
+ * 
+ * Phase 9B.5 Task 3: Idempotency
+ * 
+ * PostgreSQL treats NULL != NULL, so COALESCE(run_id, '__NO_RUN__') is used
+ * in the unique index to handle NULL runId correctly.
+ * 
+ * This value MUST NOT be used as an actual runId.
+ * Validation rejects this value at input boundary.
+ */
+export const NULL_RUN_SENTINEL = '__NO_RUN__';
 
 // ============================================================================
 // Validation Error
@@ -539,6 +555,14 @@ export class SnapshotStoreService implements ISnapshotStore {
   // ==========================================================================
 
   private validateInput(input: CreateSnapshotInput): void {
+    // Sentinel validation (defense-in-depth for idempotency index)
+    if (input.runId === NULL_RUN_SENTINEL) {
+      throw new SnapshotValidationError(
+        'runId',
+        `runId cannot be the sentinel value '${NULL_RUN_SENTINEL}'. This value is reserved for internal use.`,
+      );
+    }
+    
     // calcHash is REQUIRED - must be calculated in determinism.ts
     if (!input.calcHash || input.calcHash.trim() === '') {
       throw new SnapshotValidationError(

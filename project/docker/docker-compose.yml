@@ -45,7 +45,28 @@ services:
     volumes:
       - meilisearch_data:/meili_data
 
+  # MinIO for object storage (Phase 9C)
+  minio:
+    image: minio/minio:latest
+    container_name: hukuk-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Console
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
 volumes:
   postgres_data:
   redis_data:
   meilisearch_data:
+  minio_data:

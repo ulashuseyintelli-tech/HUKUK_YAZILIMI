@@ -1,7 +1,7 @@
 # HUKUK YAZILIMI — YOL HARİTASI
 
-**Son Güncelleme:** 2026-01-18  
-**Durum:** Phase 9B LOCKED, Phase 9B.5 sırada
+**Son Güncelleme:** 2026-01-23  
+**Durum:** Phase 9B.5 LOCKED, Phase 9C %12 tamamlandı, Phase 11 LOCKED
 
 ---
 
@@ -15,7 +15,10 @@
 | Phase 7B: Ops Playbook System | ✅ KAPALI | 135 test |
 | Phase 8 Sprint 2E: What-if Simulation | ✅ TAMAMLANDI | 312 test |
 | Phase 9A: Redis Migration | ✅ KİLİTLİ | - |
-| Phase 9B: PostgreSQL Migration | ✅ KİLİTLİ | 288 test (33 integration + 255 simulation) |
+| Phase 9B: PostgreSQL Migration | ✅ KİLİTLİ | 288 test |
+| Phase 9B.5: Snapshot Store Cutover | ✅ KİLİTLİ | 6 integration test |
+| Phase 11: Cleanup Orchestration | ✅ KİLİTLİ | - |
+| Phase 9C: Object Storage Migration | 🔵 %12 | 23 test (Task 0) |
 
 Buradan sonrası artık "yazılım geliştirme" değil, **operasyonel olgunluk ve ölçek**.
 
@@ -57,108 +60,116 @@ Buradan sonrası artık "yazılım geliştirme" değil, **operasyonel olgunluk v
 
 ---
 
-## 🔵 PHASE 9B.5 — SNAPSHOT STORE INTERFACE CUTOVER (Recommended pre-9C)
+## 🔒 PHASE 9B.5 — SNAPSHOT STORE INTERFACE CUTOVER (LOCKED)
 
 **Amaç:** InMemorySnapshotStore bağımlılıklarını temizle, 9C'yi tek hedefe odakla  
-**Durum:** SIRADA
+**Durum:** ✅ KİLİTLİ (2026-01-23)
+**Test:** 6 integration test (PostgreSQL 16-alpine)
 
-### Neden Gerekli?
+### Tamamlanan İşler
 
-Phase 9C'ye geçmeden önce plumbing'i bitirmek gerekiyor. Aksi halde 9C "iki büyük değişim birden" olur ve risk katlanır.
+- ✅ ISnapshotStore interface (SNAPSHOT_STORE token)
+- ✅ SnapshotStoreService → ISnapshotStore implement
+- ✅ Tüm tüketiciler interface'e geçirildi
+- ✅ Production Safety Gate (inmemory + prod = HARD FAIL)
+- ✅ DB-level enforced idempotency (calcHash UNIQUE constraint)
+- ✅ 6 integration test (all passing)
+- ✅ PHASE-9B5-LOCK.md
 
-### Yapılacaklar
-
-- [ ] 1. ISnapshotStore interface'i oluştur (veya mevcut olanı genişlet)
-- [ ] 2. SnapshotStoreService'i ISnapshotStore implement etsin
-- [ ] 3. Tüm tüketicileri interface'e geçir:
-  - [ ] BaselineResolverService
-  - [ ] EvidenceBundleService
-  - [ ] LegalHoldInventoryService
-  - [ ] LegalHoldController
-  - [ ] simulation-api.module.ts (DI wiring)
-- [ ] 4. InMemorySnapshotStore'u sadece test/shadow-compare için tut
-- [ ] 5. Shadow-compare metrics ekle (drift/hash/latency)
-- [ ] 6. Prod path'lerde InMemorySnapshotStore injection yasak (test hariç)
-
-### Kilitlenecek Kurallar (9B.5 Bitişinde)
+### Kilitli Kurallar
 
 | Kural | Açıklama |
 |-------|----------|
-| Prod InMemorySnapshotStore | ❌ YASAK |
-| Shadow-compare kararları | DB'den gelir, in-memory sadece karşılaştırma |
-
-### Etkilenen Dosyalar
-
-```
-simulation-api.module.ts          → DI wiring güncelle
-baseline-resolver.service.ts      → ISnapshotStore inject
-evidence-bundle.service.ts        → ISnapshotStore inject
-legal-hold-inventory.service.ts   → ISnapshotStore inject
-legal-hold.controller.ts          → ISnapshotStore inject
-snapshot-store.service.ts         → ISnapshotStore implement
-```
+| Prod InMemorySnapshotStore | ❌ YASAK (boot-time fail) |
+| calcHash uniqueness | DB constraint ile zorlanıyor |
+| SNAPSHOT_STORE token | Tek injection noktası |
 
 ---
 
-## � PHASE 9C l— EVIDENCE BUNDLE → S3/MinIO (Main)
+## 🔒 PHASE 11 — CLEANUP ORCHESTRATION (LOCKED)
+
+**Amaç:** Snapshot temizleme otomasyonu  
+**Durum:** ✅ KİLİTLİ
+
+### Tamamlanan İşler
+
+- ✅ SnapshotCleanupOrchestratorService
+- ✅ Distributed lock (Redis-based)
+- ✅ CleanupFailureState tracking (Prisma)
+- ✅ Legal hold protection
+- ✅ Tenant-aware cleanup
+
+---
+
+## 🔵 PHASE 9C — EVIDENCE BUNDLE → S3/MinIO (IN PROGRESS)
 
 **Amaç:** Evidence bundle'ları object storage'a taşı  
-**Durum:** Phase 9B.5 sonrası
+**Durum:** %12 tamamlandı (Task 0 DONE)
+**Test:** 23 test (feature flag tests)
 
-### Asıl Hedef
+### İlerleme Durumu
 
-Evidence Bundle storage'ı S3/MinIO'ya migrate etmek. **Bu, InMemorySnapshotStore migration'ından AYRI bir iş.**
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  PHASE 9C PROGRESS                                              │
+├─────────────────────────────────────────────────────────────────┤
+│  ████░░░░░░░░░░░░░░░░░░░░░░░░░░░░  12%                         │
+│                                                                 │
+│  Tamamlanan: ~4 saat / 34 saat                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-### Yapılacaklar
+### Tamamlanan İşler (Task 0)
 
-- [ ] 1. S3 infrastructure setup
-  - [ ] @aws-sdk/client-s3 dependency
-  - [ ] S3Config module
-  - [ ] MinIO for local/CI testing
+- [x] Feature flag: `EVIDENCE_BUNDLE_S3_ENABLED`
+- [x] Config validation (Zod schema)
+- [x] `IObjectStoreClient` interface
+- [x] `MinioObjectStoreClient` (AWS SDK v3)
+- [x] `EvidenceBundleModule` (conditional loading)
+- [x] DI tokens
+- [x] Prisma schema: `EvidenceBundlePointer` model
+- [x] 23 feature flag tests
 
-- [ ] 2. IBundleRepository interface
-  - [ ] Extract from current implementation
-  - [ ] InMemoryBundleRepository adapter
+### Kalan İşler
 
-- [ ] 3. S3BundleRepository implementation
-  - [ ] save() with PutObject + multipart for >5MB
-  - [ ] findById() with HeadObject
-  - [ ] getContent() with GetObject
-  - [ ] generatePresignedUrl()
-  - [ ] verify() with hash comparison
+| Task | Açıklama | Tahmini |
+|------|----------|---------|
+| 1 | Object Model (key builders) | 2h |
+| 2 | DB Migration | 0.5h |
+| 2.5 | BundleSealJob (async trigger) | 3h |
+| 3 | Write Flow (2-phase seal) | 6h |
+| 4 | Verification Path (hash chain) | 4h |
+| 5 | Reconciliation Job | 4h |
+| 6 | Retention & Legal Hold | 2h |
+| 7 | Observability | 3h |
+| 8 | Integration Tests (9 test) | 5h |
 
-- [ ] 4. Retry queue (bounded)
-  - [ ] Max 100 items
-  - [ ] Exponential backoff (1s, 2s, 4s)
-  - [ ] Background worker
+### Oluşturulan Dosyalar
 
-- [ ] 5. Retention management
-  - [ ] S3 lifecycle rules
-  - [ ] Legal hold via S3 Object Lock
-  - [ ] Sync with snapshot legal hold status
-
-- [ ] 6. Metrics & observability
-  - [ ] Latency histogram
-  - [ ] Error counters
-  - [ ] Storage size per tenant
-
-- [ ] 7. Integration & testing
-  - [ ] Wire up EvidenceBundleService
-  - [ ] Feature flag for S3 vs in-memory
-  - [ ] MinIO CI configuration
+```
+object-store/
+├── object-store.config.ts          # Zod validation, feature flag
+├── object-store.interface.ts       # IObjectStoreClient interface
+├── minio-object-store.client.ts    # AWS SDK v3 implementation
+├── evidence-bundle.module.ts       # NestJS conditional module
+├── evidence-bundle.tokens.ts       # DI tokens
+├── index.ts                        # Public exports
+└── __tests__/
+    └── evidence-bundle.feature-flag.spec.ts  # 23 tests
+```
 
 ### Bağımlılıklar
 
-- Phase 9B.5 COMPLETE (InMemorySnapshotStore temizliği)
-- Snapshot data → PostgreSQL (Phase 9B)
-- Legal hold status → PostgreSQL (Phase 9B)
+- ✅ Phase 9B.5 COMPLETE (InMemorySnapshotStore temizliği)
+- ✅ Snapshot data → PostgreSQL (Phase 9B)
+- ✅ Legal hold status → PostgreSQL (Phase 9B)
 
 ---
 
 ## 🟡 PHASE 8 SPRINT 3 — API + Rate Limiting + ScenarioRanker + Promote
 
 **Amaç:** Simulation API'yi tamamla  
-**Durum:** Phase 9B.5/9C ile paralel yapılabilir
+**Durum:** Phase 9C ile paralel yapılabilir
 
 ### Yapılacaklar
 
@@ -238,8 +249,9 @@ Ama **mimari hamle yok**.
 | Phase 8 Sprint 2E | İnsan karar vermeden önce görür | ✅ TAMAMLANDI |
 | Phase 9A | Rate limiting Redis'e taşındı | ✅ KİLİTLİ |
 | Phase 9B | Truth Layer PostgreSQL'e taşındı | ✅ KİLİTLİ |
-| Phase 9B.5 | InMemorySnapshotStore temizliği | 🔵 SIRADA |
-| Phase 9C | Evidence Bundle → S3/MinIO | ⏳ 9B.5 sonrası |
+| Phase 9B.5 | InMemorySnapshotStore temizliği | ✅ KİLİTLİ |
+| Phase 11 | Cleanup Orchestration | ✅ KİLİTLİ |
+| Phase 9C | Evidence Bundle → S3/MinIO | 🔵 %12 |
 | Phase 8 Sprint 3 | Simulation API tamamlama | ⏳ Paralel |
 | Phase 9 | Kurallar koddan ayrılır | ⏳ |
 | Phase 10 | Sistem altyapı olur | ⏳ |

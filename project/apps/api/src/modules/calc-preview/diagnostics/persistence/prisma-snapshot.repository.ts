@@ -79,6 +79,24 @@ export class PrismaSnapshotRepository implements ISnapshotRepository {
   // Create (INSERT-ONLY)
   // ==========================================================================
 
+  /**
+   * Insert new snapshot with idempotency handling
+   * 
+   * Phase 9B.5 Task 3: Dual-layer idempotency
+   * 
+   * Layer 1: PK (snapshotId) - caller retry safety
+   * Layer 2: Content-based unique index (tenant, incident, runId, calcHash)
+   * 
+   * On P2002 (unique violation):
+   * - PK conflict → fetch by snapshotId, return existing
+   * - Content index conflict → fetch by content key, return existing
+   * - Baseline index conflict → throw BaselineAlreadyExistsError
+   * 
+   * @param snapshot Snapshot data
+   * @returns Created or existing snapshot (idempotent)
+   * @throws BaselineAlreadyExistsError if isBaseline=true and baseline exists
+   * @throws DatabaseUnavailableError if DB connection failed
+   */
   async insert(snapshot: SnapshotInput): Promise<Snapshot> {
     try {
       const now = new Date();
@@ -106,23 +124,148 @@ export class PrismaSnapshotRepository implements ISnapshotRepository {
 
       return this.mapToEntity(created);
     } catch (error) {
-      // Check for unique constraint violation (baseline already exists)
-      if (error instanceof Prisma.PrismaClientKnownRequestError) {
-        if (error.code === 'P2002') {
-          // Unique constraint violation
-          // For partial unique index on (tenant_id, incident_id) WHERE is_baseline = true
-          // This happens when trying to insert a second baseline for same incident
-          if (snapshot.isBaseline) {
-            throw new BaselineAlreadyExistsError(
-              snapshot.incidentId,
-              'existing', // We don't know the existing ID without another query
-              snapshot.snapshotId,
-            );
-          }
-        }
+      // Handle unique constraint violations (P2002)
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+        return this.handleP2002Conflict(snapshot, error);
       }
       throw this.handlePrismaError(error, 'insert');
     }
+  }
+
+  /**
+   * Handle P2002 unique constraint violation
+   * 
+   * Phase 9B.5 Task 3: Idempotency recovery
+   * 
+   * Determines which constraint was violated and fetches existing snapshot.
+   * 
+   * @param snapshot Original input
+   * @param error Prisma P2002 error
+   * @returns Existing snapshot (idempotent return)
+   * @throws BaselineAlreadyExistsError if baseline constraint violated
+   * @throws DatabaseUnavailableError if fetch fails or impossible state
+   */
+  private async handleP2002Conflict(
+    snapshot: SnapshotInput,
+    error: Prisma.PrismaClientKnownRequestError,
+  ): Promise<Snapshot> {
+    // Extract constraint target from error metadata
+    const target = (error.meta?.target as string[]) ?? [];
+    const targetStr = target.join(',').toLowerCase();
+    
+    this.logger.debug('[PrismaSnapshotRepository] P2002 conflict detected', {
+      snapshotId: snapshot.snapshotId,
+      target: targetStr,
+      incidentId: snapshot.incidentId,
+    });
+
+    // Case 1: Primary key conflict (snapshotId)
+    // This happens when caller retries with same snapshotId
+    if (targetStr.includes('snapshot_id') || targetStr.includes('primary')) {
+      const existing = await this.prisma.simulationSnapshot.findUnique({
+        where: { snapshotId: snapshot.snapshotId },
+      });
+      
+      if (existing) {
+        this.logger.debug('[PrismaSnapshotRepository] Returning existing snapshot (PK conflict)', {
+          snapshotId: snapshot.snapshotId,
+        });
+        return this.mapToEntity(existing);
+      }
+    }
+
+    // Case 2: Content-based idempotency index conflict
+    // uq_sim_snap_idempotency ON (tenant_id, incident_id, COALESCE(run_id, '__NO_RUN__'), calc_hash)
+    // Note: PostgreSQL may return column names instead of index name in target
+    if (targetStr.includes('uq_sim_snap_idempotency') || 
+        targetStr.includes('idempotency') ||
+        targetStr.includes('coalesce') ||
+        (targetStr.includes('tenant_id') && targetStr.includes('incident_id') && targetStr.includes('calc_hash'))) {
+      const existing = await this.prisma.simulationSnapshot.findFirst({
+        where: {
+          tenantId: snapshot.tenantId,
+          incidentId: snapshot.incidentId,
+          runId: snapshot.runId ?? null,
+          calcHash: snapshot.calcHash,
+        },
+      });
+      
+      if (existing) {
+        this.logger.debug('[PrismaSnapshotRepository] Returning existing snapshot (content conflict)', {
+          existingSnapshotId: existing.snapshotId,
+          requestedSnapshotId: snapshot.snapshotId,
+          calcHash: snapshot.calcHash.substring(0, 8) + '...',
+        });
+        return this.mapToEntity(existing);
+      }
+    }
+
+    // Case 3: Baseline unique constraint
+    // Partial unique index on (tenant_id, incident_id) WHERE is_baseline = true
+    if (snapshot.isBaseline && (targetStr.includes('baseline') || targetStr === '')) {
+      // Try to find existing baseline
+      const existingBaseline = await this.prisma.simulationSnapshot.findFirst({
+        where: {
+          tenantId: snapshot.tenantId,
+          incidentId: snapshot.incidentId,
+          isBaseline: true,
+        },
+        select: { snapshotId: true },
+      });
+      
+      throw new BaselineAlreadyExistsError(
+        snapshot.incidentId,
+        existingBaseline?.snapshotId ?? 'unknown',
+        snapshot.snapshotId,
+      );
+    }
+
+    // Case 4: Fallback - try content-based fetch if target is empty or unknown
+    // Some Prisma versions don't populate target for expression-based indexes
+    if (target.length === 0 || !targetStr) {
+      // First try PK
+      const byPk = await this.prisma.simulationSnapshot.findUnique({
+        where: { snapshotId: snapshot.snapshotId },
+      });
+      if (byPk) {
+        this.logger.debug('[PrismaSnapshotRepository] Returning existing snapshot (fallback PK)', {
+          snapshotId: snapshot.snapshotId,
+        });
+        return this.mapToEntity(byPk);
+      }
+      
+      // Then try content key
+      const byContent = await this.prisma.simulationSnapshot.findFirst({
+        where: {
+          tenantId: snapshot.tenantId,
+          incidentId: snapshot.incidentId,
+          runId: snapshot.runId ?? null,
+          calcHash: snapshot.calcHash,
+        },
+      });
+      if (byContent) {
+        this.logger.debug('[PrismaSnapshotRepository] Returning existing snapshot (fallback content)', {
+          existingSnapshotId: byContent.snapshotId,
+          requestedSnapshotId: snapshot.snapshotId,
+        });
+        return this.mapToEntity(byContent);
+      }
+    }
+
+    // Impossible state: P2002 but no existing record found
+    // This should never happen - log as anomaly and throw
+    this.logger.error('[PrismaSnapshotRepository] P2002 but no existing record found - anomaly', {
+      snapshotId: snapshot.snapshotId,
+      target: targetStr,
+      tenantId: snapshot.tenantId,
+      incidentId: snapshot.incidentId,
+      calcHash: snapshot.calcHash.substring(0, 8) + '...',
+    });
+    
+    throw new DatabaseUnavailableError(
+      `P2002 conflict but existing record not found. This is an anomaly. ` +
+      `snapshotId=${snapshot.snapshotId}, target=${targetStr}`,
+    );
   }
 
   // ==========================================================================
@@ -501,28 +644,109 @@ export class PrismaSnapshotRepository implements ISnapshotRepository {
   }
 
   // ==========================================================================
-  // Cleanup (Phase 10 - Hardened)
+  // Tenant Discovery (Phase 11 - Cleanup Orchestration)
   // ==========================================================================
 
   /**
-   * Delete expired snapshots for a tenant (Phase 10 - Hardened)
+   * List distinct tenant IDs from snapshots table (Phase 11)
+   * 
+   * Source of truth for tenant discovery in cleanup orchestration.
+   * Returns tenants in deterministic order (ASC) for predictable behavior.
+   * 
+   * IMPORTANT: This is the ONLY source for tenant discovery in cleanup.
+   * Do NOT use IncidentStore or any other source.
+   */
+  async listDistinctTenantIds(): Promise<string[]> {
+    try {
+      // Use raw query for DISTINCT with ORDER BY
+      // Prisma's findMany with distinct doesn't guarantee order
+      const result = await this.prisma.$queryRaw<{ tenant_id: string }[]>`
+        SELECT DISTINCT tenant_id
+        FROM simulation_snapshots
+        ORDER BY tenant_id ASC
+      `;
+      
+      return result.map(row => row.tenant_id);
+    } catch (error) {
+      throw this.handlePrismaError(error, 'listDistinctTenantIds');
+    }
+  }
+
+  // ==========================================================================
+  // Cleanup (Phase 11 - Single Source of Truth)
+  // ==========================================================================
+
+  /**
+   * Build deletable WHERE clause - SINGLE SOURCE OF TRUTH
+   * 
+   * Phase 11 - DRY principle: This function is the ONLY place where
+   * deletable criteria are defined. Both deleteExpired() and countDeletable()
+   * MUST use this function.
    * 
    * DOKUNULMAZLAR (Untouchables) - NEVER deleted:
    * - retentionPolicy = 'LEGAL_HOLD' → never delete
    * - retentionPolicy = 'PROMOTED' → never delete
    * - isBaseline = true → never delete
+   * - archivedAt IS NOT NULL → archived snapshots are hidden, not deleted
    * 
    * DELETE CRITERIA (all must be true):
-   * - expiresAt < now
-   * - retentionPolicy = 'STANDARD'
-   * - isBaseline = false
+   * - tenantId = tenantId (tenant isolation)
+   * - expiresAt < now (expired)
+   * - retentionPolicy = 'STANDARD' (not promoted/legal_hold)
+   * - isBaseline = false (not baseline)
+   * - archivedAt IS NULL (not archived - archive is "hide", not "delete")
+   * 
+   * @param tenantId Tenant ID for isolation
+   * @param now Current timestamp for expiry check
+   * @returns Prisma WHERE clause object
+   */
+  buildDeletableWhere(tenantId: string, now: Date): Prisma.SimulationSnapshotWhereInput {
+    return {
+      tenantId,
+      expiresAt: { lt: now },
+      retentionPolicy: 'STANDARD', // ONLY STANDARD - LEGAL_HOLD and PROMOTED are protected
+      isBaseline: false, // ONLY non-baseline - baselines are protected
+      archivedAt: null, // ONLY non-archived - archived snapshots are hidden, not deleted
+    };
+  }
+
+  /**
+   * Count deletable snapshots for a tenant (Phase 11 - Dry Run Support)
+   * 
+   * Uses buildDeletableWhere() for single source of truth.
+   * This method is used for dry-run mode in cleanup orchestration.
+   * 
+   * @param tenantId Tenant ID
+   * @param now Optional timestamp (defaults to new Date())
+   * @returns Count of snapshots that would be deleted
+   */
+  async countDeletable(tenantId: string, now: Date = new Date()): Promise<number> {
+    try {
+      const where = this.buildDeletableWhere(tenantId, now);
+      return await this.prisma.simulationSnapshot.count({ where });
+    } catch (error) {
+      throw this.handlePrismaError(error, 'countDeletable');
+    }
+  }
+
+  /**
+   * Delete expired snapshots for a tenant (Phase 11 - Refactored)
+   * 
+   * Uses buildDeletableWhere() for single source of truth.
+   * 
+   * DOKUNULMAZLAR (Untouchables) - NEVER deleted:
+   * - retentionPolicy = 'LEGAL_HOLD' → never delete
+   * - retentionPolicy = 'PROMOTED' → never delete
+   * - isBaseline = true → never delete
+   * - archivedAt IS NOT NULL → archived snapshots are hidden, not deleted
    * 
    * TENANT ISOLATION: Only deletes snapshots for specified tenant.
+   * 
+   * @param tenantId Tenant ID
+   * @param now Optional timestamp (defaults to new Date())
    */
-  async deleteExpired(tenantId: string): Promise<DeleteExpiredResult> {
+  async deleteExpired(tenantId: string, now: Date = new Date()): Promise<DeleteExpiredResult> {
     try {
-      const now = new Date();
-      
       // First, count protected snapshots (for metrics)
       const protectedSnapshots = await this.prisma.simulationSnapshot.findMany({
         where: {
@@ -532,11 +756,13 @@ export class PrismaSnapshotRepository implements ISnapshotRepository {
             { retentionPolicy: 'LEGAL_HOLD' },
             { retentionPolicy: 'PROMOTED' },
             { isBaseline: true },
+            { archivedAt: { not: null } }, // Archived snapshots are also protected
           ],
         },
         select: {
           retentionPolicy: true,
           isBaseline: true,
+          archivedAt: true,
         },
       });
       
@@ -555,18 +781,13 @@ export class PrismaSnapshotRepository implements ISnapshotRepository {
         } else if (snap.isBaseline) {
           protectedBy.baseline++;
         }
+        // Note: archived snapshots with STANDARD policy are counted but not in protectedBy breakdown
+        // They are implicitly protected by archivedAt: null in buildDeletableWhere
       }
       
-      // Delete only STANDARD, non-baseline, expired snapshots
-      // This WHERE clause is the "dokunulmazlar" guard - mathematically impossible to delete protected
-      const deleteResult = await this.prisma.simulationSnapshot.deleteMany({
-        where: {
-          tenantId,
-          expiresAt: { lt: now },
-          retentionPolicy: 'STANDARD', // ONLY STANDARD - LEGAL_HOLD and PROMOTED are protected
-          isBaseline: false, // ONLY non-baseline - baselines are protected
-        },
-      });
+      // Delete using single source of truth WHERE clause
+      const where = this.buildDeletableWhere(tenantId, now);
+      const deleteResult = await this.prisma.simulationSnapshot.deleteMany({ where });
       
       this.logger.debug('[PrismaSnapshotRepository] deleteExpired completed', {
         tenantId,

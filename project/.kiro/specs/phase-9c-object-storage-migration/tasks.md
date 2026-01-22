@@ -4,9 +4,26 @@
 
 This sprint migrates the Infrastructure Layer (evidence bundles) from in-memory storage to S3/MinIO object storage. The implementation preserves the existing interface while adding S3 as the primary backend with a bounded retry queue for resilience.
 
+## Current Status
+
+**Task 0: Foundation Gates - COMPLETE ✓**
+
+See `PHASE-9C-IMPLEMENTATION-CHECKLIST.md` for detailed checklist.
+
 ## Tasks
 
-- [ ] 1. Set up S3 infrastructure
+- [x] 0. Foundation Gates (Task 0)
+  - [x] 0.1 Feature flag: `EVIDENCE_BUNDLE_S3_ENABLED`
+  - [x] 0.2 Config validation with Zod schema
+  - [x] 0.3 IObjectStoreClient interface
+  - [x] 0.4 MinioObjectStoreClient implementation (AWS SDK v3)
+  - [x] 0.5 EvidenceBundleModule with conditional loading
+  - [x] 0.6 DI tokens (OBJECT_STORE_CLIENT, etc.)
+  - [x] 0.7 Prisma schema: EvidenceBundlePointer model
+  - [x] 0.8 Feature flag tests (23 tests passing)
+  - _Files: object-store/*.ts, prisma/schema.prisma_
+
+- [ ] 1. Object Model ve Keyspace
   - [ ] 1.1 Add S3 dependencies
     - Add `@aws-sdk/client-s3` package
     - Add `@aws-sdk/s3-request-presigner` for presigned URLs

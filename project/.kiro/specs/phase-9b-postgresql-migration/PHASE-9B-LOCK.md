@@ -711,3 +711,5 @@ chore(phase-10): archived state persistence + cleanup job hardening (131 tests)
 | legal-hold.spec.ts | 13 | ✅ |
 | promotion-workflow.spec.ts | 21 | ✅ |
 | **Total** | **125** | ✅ |
+
+> **Note:** Previous commit message incorrectly stated "131 tests" - actual count is 125.

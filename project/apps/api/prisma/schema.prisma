@@ -6319,3 +6319,89 @@ model SimulationSnapshot {
   @@index([tenantId, retentionPolicy, archivedAt], map: "ix_sim_snap_tenant_policy_archived") // Phase 10: legal hold list query
   @@map("simulation_snapshots")
 }
+
+
+// ==================== CLEANUP ORCHESTRATION ====================
+
+// Cleanup Failure State - tracks consecutive failures per tenant
+// Phase 11 - Snapshot Cleanup Orchestration
+model CleanupFailureState {
+  id                  String    @id @default(cuid())
+  tenantId            String    @unique @map("tenant_id") // One record per tenant
+  consecutiveFailures Int       @default(0) @map("consecutive_failures")
+  lastFailedAt        DateTime? @map("last_failed_at") @db.Timestamptz(6)
+  lastErrorCode       String?   @map("last_error_code")
+  createdAt           DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@index([tenantId], map: "ix_cleanup_failure_tenant")
+  @@index([consecutiveFailures], map: "ix_cleanup_failure_count")
+  @@map("cleanup_failure_state")
+}
+
+
+// ==================== EVIDENCE BUNDLE STORAGE (Phase 9C) ====================
+
+// Bundle State Machine
+// CRITICAL INVARIANT: SEALED is TERMINAL - no transitions out of SEALED
+enum BundleState {
+  DRAFT     // Items being uploaded, manifest not yet written
+  SEALED    // Manifest written, bundle is immutable (TERMINAL STATE)
+  FAILED    // Seal failed after retries, needs investigation
+  ORPHANED  // S3 objects exist but DB pointer missing (reconciliation detected)
+}
+
+// Evidence Bundle Pointer - links snapshot to S3 bundle
+// Phase 9C - Object Storage Migration
+// 
+// INVARIANTS:
+// 1. snapshotId is UNIQUE - one bundle per snapshot
+// 2. SEALED state is TERMINAL - no transitions out
+// 3. FAILED → DRAFT only via retry policy with sealAttemptCount++
+// 4. manifestKey is write-once (same key = same content)
+model EvidenceBundlePointer {
+  id                  String      @id @default(cuid())
+  
+  // Foreign key to snapshot (1:1)
+  snapshotId          String      @unique @map("snapshot_id")
+  
+  // Tenant isolation
+  tenantId            String      @map("tenant_id")
+  incidentId          String      @map("incident_id")
+  
+  // S3 location
+  bucket              String
+  manifestKey         String      @map("manifest_key")
+  
+  // Integrity - hash chain
+  manifestSha256      String      @map("manifest_sha256")
+  bundleContentHash   String      @map("bundle_content_hash") // SHA256(concat all item sha256s)
+  
+  // S3 metadata (write-once verification)
+  etag                String?
+  versionId           String?     @map("version_id")
+  
+  // Size tracking
+  totalSizeBytes      BigInt      @map("total_size_bytes")
+  itemCount           Int         @map("item_count")
+  
+  // State machine
+  state               BundleState @default(DRAFT)
+  
+  // Forensic/debug fields (REQUIRED for production debugging)
+  sealAttemptCount    Int         @default(0) @map("seal_attempt_count")
+  lastSealAttemptAt   DateTime?   @map("last_seal_attempt_at") @db.Timestamptz(6)
+  lastErrorCode       String?     @map("last_error_code")
+  lastErrorDetail     String?     @map("last_error_detail")
+  
+  // Timestamps
+  createdAt           DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  sealedAt            DateTime?   @map("sealed_at") @db.Timestamptz(6)
+  
+  // Indexes for common queries
+  @@index([tenantId], map: "ix_bundle_ptr_tenant")
+  @@index([manifestSha256], map: "ix_bundle_ptr_manifest_hash")
+  @@index([state, createdAt], map: "ix_bundle_ptr_state_created") // Reconciliation query
+  @@index([tenantId, incidentId], map: "ix_bundle_ptr_tenant_incident")
+  @@map("evidence_bundle_pointers")
+}

@@ -386,27 +386,84 @@ export interface ISnapshotRepository {
   getLegalHoldStats(tenantId?: string | undefined): Promise<LegalHoldStats>;
   
   // ==========================================================================
-  // Cleanup (Phase 10 - Hardened)
+  // Tenant Discovery (Phase 11 - Cleanup Orchestration)
   // ==========================================================================
   
   /**
-   * Delete expired snapshots for a tenant (Phase 10 - Hardened)
+   * List distinct tenant IDs from snapshots table
+   * 
+   * Phase 11 - Cleanup Orchestration
+   * 
+   * Source of truth for tenant discovery. Returns all tenants that have
+   * at least one snapshot in the database.
+   * 
+   * IMPORTANT: This is the ONLY source for tenant discovery in cleanup.
+   * Do NOT use IncidentStore or any other source.
+   * 
+   * @returns Array of tenant IDs in ascending order (ORDER BY tenantId ASC)
+   * @throws DatabaseUnavailableError if DB connection failed
+   */
+  listDistinctTenantIds(): Promise<string[]>;
+  
+  // ==========================================================================
+  // Cleanup (Phase 11 - Single Source of Truth)
+  // ==========================================================================
+  
+  /**
+   * Build deletable WHERE clause - SINGLE SOURCE OF TRUTH
+   * 
+   * Phase 11 - DRY principle: This function is the ONLY place where
+   * deletable criteria are defined. Both deleteExpired() and countDeletable()
+   * MUST use this function.
+   * 
+   * DOKUNULMAZLAR (Untouchables) - NEVER included:
+   * - retentionPolicy = 'LEGAL_HOLD' → never delete
+   * - retentionPolicy = 'PROMOTED' → never delete
+   * - isBaseline = true → never delete
+   * - archivedAt IS NOT NULL → archived snapshots are hidden, not deleted
+   * 
+   * @param tenantId Tenant ID for isolation
+   * @param now Current timestamp for expiry check
+   * @returns Prisma WHERE clause object (or equivalent for other implementations)
+   */
+  buildDeletableWhere(tenantId: string, now: Date): unknown;
+  
+  /**
+   * Count deletable snapshots for a tenant (Phase 11 - Dry Run Support)
+   * 
+   * Uses buildDeletableWhere() for single source of truth.
+   * This method is used for dry-run mode in cleanup orchestration.
+   * 
+   * @param tenantId Tenant ID
+   * @param now Optional timestamp (defaults to new Date())
+   * @returns Count of snapshots that would be deleted
+   * @throws DatabaseUnavailableError if DB connection failed
+   */
+  countDeletable(tenantId: string, now?: Date): Promise<number>;
+  
+  /**
+   * Delete expired snapshots for a tenant (Phase 11 - Refactored)
+   * 
+   * Uses buildDeletableWhere() for single source of truth.
    * 
    * DOKUNULMAZLAR (Untouchables) - NEVER deleted:
    * - retentionPolicy = 'LEGAL_HOLD' → never delete
    * - retentionPolicy = 'PROMOTED' → never delete
    * - isBaseline = true → never delete
+   * - archivedAt IS NOT NULL → archived snapshots are hidden, not deleted
    * 
    * DELETE CRITERIA (all must be true):
    * - expiresAt < now
    * - retentionPolicy = 'STANDARD'
    * - isBaseline = false
+   * - archivedAt IS NULL
    * 
    * TENANT ISOLATION: Only deletes snapshots for specified tenant.
    * 
    * @param tenantId Tenant ID (required for isolation)
+   * @param now Optional timestamp (defaults to new Date())
    * @returns Result with deleted count and protected count
    * @throws DatabaseUnavailableError if DB connection failed
    */
-  deleteExpired(tenantId: string): Promise<DeleteExpiredResult>;
+  deleteExpired(tenantId: string, now?: Date): Promise<DeleteExpiredResult>;
 }
