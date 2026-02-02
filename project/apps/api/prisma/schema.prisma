@@ -6405,3 +6405,94 @@ model EvidenceBundlePointer {
   @@index([tenantId, incidentId], map: "ix_bundle_ptr_tenant_incident")
   @@map("evidence_bundle_pointers")
 }
+
+
+// ==================== EVIDENCE BUNDLE SYSTEM (Phase 9C Task 2) ====================
+// Legal-grade evidence bundle for incident audit trail
+// 
+// ARCHITECTURE:
+// - EvidenceBundle: Logical container for evidence objects (OPEN -> SEALED state machine)
+// - EvidenceObject: Metadata for S3/MinIO objects (immutable once bundle is SEALED)
+// - BundleSealEvent: Audit log for seal operations (idempotent by bundle_id + run_id)
+//
+// DB INVARIANTS (enforced by triggers in migration.sql):
+// 1. SEALED bundle cannot accept new objects (write-once semantics)
+// 2. Only one OPEN bundle per tenant+incident (partial unique index)
+// 3. tenant_id in EvidenceObject must match bundle's tenant_id
+// 4. BundleSealEvent can only be created for SEALED bundles
+//
+// ERROR CODES (for application layer mapping):
+// - 45000: sealed_bundle_write_forbidden -> 409 WriteOnceViolation
+// - 45001: tenant_mismatch -> 403 TenantMismatchError
+// - 45002: seal_event_requires_sealed_bundle -> 409 InvalidStateTransition
+// - 23503: bundle_not_found -> 404 BundleNotFoundError
+
+// Bundle State (OPEN -> SEALED is one-way, no rollback)
+enum EvidenceBundleState {
+  OPEN    // Accepting new objects
+  SEALED  // Immutable, no new objects allowed (TERMINAL)
+}
+
+// Evidence Bundle - Logical container for evidence objects
+model EvidenceBundle {
+  id          String              @id @default(dbgenerated("gen_random_uuid()")) @map("bundle_id") @db.Uuid
+  tenantId    String              @map("tenant_id") @db.VarChar(64)
+  incidentId  String              @map("incident_id") @db.VarChar(128)
+  state       EvidenceBundleState @default(OPEN)
+  sealedHash  String?             @map("sealed_hash") @db.VarChar(128)
+  createdAt   DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  sealedAt    DateTime?           @map("sealed_at") @db.Timestamptz(6)
+
+  // Relations
+  objects    EvidenceObject[]
+  sealEvents BundleSealEvent[]
+
+  // Indexes defined in migration.sql:
+  // - idx_evidence_bundles_one_open: UNIQUE(tenant_id, incident_id) WHERE state = 'OPEN'
+  // - idx_evidence_bundles_tenant_incident: (tenant_id, incident_id)
+  // - idx_evidence_bundles_state: (state)
+
+  @@index([tenantId, incidentId], map: "idx_evidence_bundles_tenant_incident")
+  @@index([state], map: "idx_evidence_bundles_state")
+  @@map("evidence_bundles")
+}
+
+// Evidence Object - Metadata for S3/MinIO objects
+model EvidenceObject {
+  bundleId    String   @map("bundle_id") @db.Uuid
+  objectKey   String   @map("object_key") @db.VarChar(512)
+  tenantId    String   @map("tenant_id") @db.VarChar(64)
+  etag        String   @db.VarChar(64)
+  versionId   String?  @map("version_id") @db.VarChar(128)
+  contentType String   @map("content_type") @db.VarChar(128)
+  sizeBytes   BigInt   @map("size_bytes")
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relations
+  bundle EvidenceBundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+
+  // Composite PK
+  @@id([bundleId, objectKey], map: "evidence_objects_pk")
+  @@index([tenantId, createdAt], map: "idx_evidence_objects_tenant_created")
+  @@index([bundleId], map: "idx_evidence_objects_bundle")
+  @@map("evidence_objects")
+}
+
+// Bundle Seal Event - Audit log for seal operations
+model BundleSealEvent {
+  id             String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  bundleId       String   @map("bundle_id") @db.Uuid
+  runId          String   @map("run_id") @db.VarChar(128)
+  hash           String   @db.VarChar(128)
+  objectCount    Int      @map("object_count")
+  totalSizeBytes BigInt   @map("total_size_bytes")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Relations
+  bundle EvidenceBundle @relation(fields: [bundleId], references: [id], onDelete: Cascade)
+
+  // Idempotency constraint
+  @@unique([bundleId, runId], map: "bundle_seal_events_idempotency_uniq")
+  @@index([bundleId, createdAt], map: "idx_bundle_seal_events_bundle_created")
+  @@map("bundle_seal_events")
+}

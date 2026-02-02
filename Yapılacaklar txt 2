@@ -1,7 +1,7 @@
 # HUKUK YAZILIMI — YOL HARİTASI
 
 **Son Güncelleme:** 2026-01-23  
-**Durum:** Phase 9B.5 LOCKED, Phase 9C %12 tamamlandı, Phase 11 LOCKED
+**Durum:** Phase 9B.5 LOCKED, Phase 9C %18 tamamlandı (Task 0 + Task 1 DONE), Phase 11 LOCKED
 
 ---
 
@@ -18,7 +18,7 @@
 | Phase 9B: PostgreSQL Migration | ✅ KİLİTLİ | 288 test |
 | Phase 9B.5: Snapshot Store Cutover | ✅ KİLİTLİ | 6 integration test |
 | Phase 11: Cleanup Orchestration | ✅ KİLİTLİ | - |
-| Phase 9C: Object Storage Migration | 🔵 %12 | 23 test (Task 0) |
+| Phase 9C: Object Storage Migration | 🔵 %18 | 108 test (Task 0 + Task 1) |
 
 Buradan sonrası artık "yazılım geliştirme" değil, **operasyonel olgunluk ve ölçek**.
 
@@ -104,8 +104,8 @@ Buradan sonrası artık "yazılım geliştirme" değil, **operasyonel olgunluk v
 ## 🔵 PHASE 9C — EVIDENCE BUNDLE → S3/MinIO (IN PROGRESS)
 
 **Amaç:** Evidence bundle'ları object storage'a taşı  
-**Durum:** %12 tamamlandı (Task 0 DONE)
-**Test:** 23 test (feature flag tests)
+**Durum:** %18 tamamlandı (Task 0 + Task 1 DONE)
+**Test:** 108 test (23 feature flag + 69 keyspace + 16 write-once)
 
 ### İlerleme Durumu
 
@@ -113,14 +113,15 @@ Buradan sonrası artık "yazılım geliştirme" değil, **operasyonel olgunluk v
 ┌─────────────────────────────────────────────────────────────────┐
 │  PHASE 9C PROGRESS                                              │
 ├─────────────────────────────────────────────────────────────────┤
-│  ████░░░░░░░░░░░░░░░░░░░░░░░░░░░░  12%                         │
+│  ██████░░░░░░░░░░░░░░░░░░░░░░░░░░  18%                         │
 │                                                                 │
-│  Tamamlanan: ~4 saat / 34 saat                                  │
+│  Tamamlanan: ~6 saat / 34 saat                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Tamamlanan İşler (Task 0)
+### Tamamlanan İşler (Task 0 + Task 1)
 
+**Task 0 - Foundation Gates:**
 - [x] Feature flag: `EVIDENCE_BUNDLE_S3_ENABLED`
 - [x] Config validation (Zod schema)
 - [x] `IObjectStoreClient` interface
@@ -130,11 +131,19 @@ Buradan sonrası artık "yazılım geliştirme" değil, **operasyonel olgunluk v
 - [x] Prisma schema: `EvidenceBundlePointer` model
 - [x] 23 feature flag tests
 
+**Task 1 - Object Model & Keyspace:**
+- [x] Key builders: `buildManifestKey()`, `buildItemKey()`, `buildBundleRootKey()`
+- [x] Path traversal protection: `..`, `//`, `/`, `\`, `%2f`, `%5c`, null byte reject
+- [x] Segment validation: alphanumeric + hyphen + underscore only
+- [x] `putWriteOnce()` with If-None-Match + HEAD verification
+- [x] Error types: `WriteOnceViolationError`, `InvalidObjectKeyError`
+- [x] 69 keyspace tests
+- [x] 16 write-once tests
+
 ### Kalan İşler
 
 | Task | Açıklama | Tahmini |
 |------|----------|---------|
-| 1 | Object Model (key builders) | 2h |
 | 2 | DB Migration | 0.5h |
 | 2.5 | BundleSealJob (async trigger) | 3h |
 | 3 | Write Flow (2-phase seal) | 6h |
@@ -149,13 +158,17 @@ Buradan sonrası artık "yazılım geliştirme" değil, **operasyonel olgunluk v
 ```
 object-store/
 ├── object-store.config.ts          # Zod validation, feature flag
-├── object-store.interface.ts       # IObjectStoreClient interface
-├── minio-object-store.client.ts    # AWS SDK v3 implementation
+├── object-store.interface.ts       # IObjectStoreClient + putWriteOnce + error types
+├── minio-object-store.client.ts    # AWS SDK v3 + putWriteOnce implementation
 ├── evidence-bundle.module.ts       # NestJS conditional module
 ├── evidence-bundle.tokens.ts       # DI tokens
+├── evidence-bundle.keys.ts         # Key builders + validation (Task 1)
 ├── index.ts                        # Public exports
 └── __tests__/
-    └── evidence-bundle.feature-flag.spec.ts  # 23 tests
+    ├── evidence-bundle.feature-flag.spec.ts  # 23 tests
+    ├── evidence-bundle.keyspace.spec.ts      # 69 tests (Task 1)
+    ├── object-store.write-once.spec.ts       # 16 tests (Task 1)
+    └── object-store.write-once.integration.spec.ts  # MinIO integration
 ```
 
 ### Bağımlılıklar
@@ -251,7 +264,7 @@ Ama **mimari hamle yok**.
 | Phase 9B | Truth Layer PostgreSQL'e taşındı | ✅ KİLİTLİ |
 | Phase 9B.5 | InMemorySnapshotStore temizliği | ✅ KİLİTLİ |
 | Phase 11 | Cleanup Orchestration | ✅ KİLİTLİ |
-| Phase 9C | Evidence Bundle → S3/MinIO | 🔵 %12 |
+| Phase 9C | Evidence Bundle → S3/MinIO | 🔵 %18 |
 | Phase 8 Sprint 3 | Simulation API tamamlama | ⏳ Paralel |
 | Phase 9 | Kurallar koddan ayrılır | ⏳ |
 | Phase 10 | Sistem altyapı olur | ⏳ |

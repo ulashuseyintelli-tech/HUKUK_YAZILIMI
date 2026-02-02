@@ -165,6 +165,10 @@ export class NullObjectStoreClient implements IObjectStoreClient {
     this.throwDisabled();
   }
 
+  async putWriteOnce(): Promise<never> {
+    this.throwDisabled();
+  }
+
   async headObject(): Promise<never> {
     this.throwDisabled();
   }

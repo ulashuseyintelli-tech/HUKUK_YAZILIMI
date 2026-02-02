@@ -139,7 +139,7 @@ export interface PutWriteOnceResult extends PutObjectResult {
   /** HEAD response data for forensics */
   headVerification: {
     etag: string;
-    versionId?: string;
+    versionId: string | undefined;
     size: number;
     lastModified: Date;
   };

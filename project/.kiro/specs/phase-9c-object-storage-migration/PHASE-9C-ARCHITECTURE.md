@@ -471,19 +471,42 @@ evidence_bundle_orphan_detected_total  // S3 object without DB pointer
 
 ## 10. Task Breakdown (P0)
 
-| # | Task | Acceptance Criteria | Est |
-|---|------|---------------------|-----|
-| 1 | Manifest v1 schema + types | TypeScript interfaces, Zod validation | 2h |
-| 2 | Canonical JSON serializer | Deterministic output, test with known inputs | 2h |
-| 3 | IObjectStoreClient interface | Interface + MinIO implementation | 4h |
-| 4 | BundleWriter service | Upload flow, idempotency, retry | 6h |
-| 5 | EvidenceBundlePointer Prisma model | Migration, repository | 2h |
-| 6 | Hash chain verification | Verify manifest ↔ snapshot integrity | 3h |
-| 7 | S3 tagging for retention | Tag on upload, lifecycle doc | 2h |
-| 8 | Integration tests (MinIO docker) | Upload, head, verify, idempotency | 4h |
-| 9 | Metrics + alerts | Prometheus metrics, alert rules | 2h |
+| # | Task | Acceptance Criteria | Est | Status |
+|---|------|---------------------|-----|--------|
+| 1 | Write-Once + Keyspace Hardening | Immutable objects, key validation | 4h | ✅ DONE |
+| **2** | **DB Migration (Evidence Bundle Schema)** | 3 tables, constraints, trigger | 4h | **NEXT** |
+| 2.5 | BundleSealJob | Seal transaction, idempotency | 4h | Blocked by Task 2 |
+| 3 | IObjectStoreClient interface | Interface + MinIO implementation | 4h | ✅ DONE |
+| 4 | BundleWriter service | Upload flow, idempotency, retry | 6h | |
+| 5 | EvidenceBundlePointer Prisma model | Migration, repository | 2h | |
+| 6 | Hash chain verification | Verify manifest ↔ snapshot integrity | 3h | |
+| 7 | S3 tagging for retention | Tag on upload, lifecycle doc | 2h | |
+| 8 | Integration tests (MinIO docker) | Upload, head, verify, idempotency | 4h | |
+| 9 | Metrics + alerts | Prometheus metrics, alert rules | 2h | |
 
-**Total:** ~27h
+**Task 2 Spec:** `.kiro/specs/phase-9c-task2-db-migration/`
+
+**Total:** ~35h
+
+### Task 2 - DB Migration (Critical Path)
+
+Task 2 establishes PostgreSQL schema for Evidence Bundle state management:
+
+**Tables:**
+- `evidence_bundles` - Bundle state (OPEN/SEALED), hash, timestamps
+- `evidence_objects` - Object metadata (key, etag, size, content_type)
+- `bundle_seal_events` - Seal audit trail (run_id, hash, counts)
+
+**Key Constraints:**
+- Partial unique index: 1 OPEN bundle per tenant+incident
+- CHECK constraints: state ↔ sealed_hash/sealed_at invariant
+- DB trigger: Block INSERT on sealed bundle
+
+**Dual Seal Mode:**
+- Worker: `FOR UPDATE SKIP LOCKED`
+- API: `FOR UPDATE NOWAIT`
+
+See full spec: `.kiro/specs/phase-9c-task2-db-migration/`
 
 ---
 

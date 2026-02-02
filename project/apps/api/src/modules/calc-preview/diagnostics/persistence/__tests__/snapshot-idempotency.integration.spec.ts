@@ -1,21 +1,8 @@
-﻿/**
- * Snapshot Idempotency Integration Tests
- * Phase 9B.5 Task 3: Unique Constraint (Idempotency)
- * 
- * IMPORTANT: These tests require a real PostgreSQL database.
- * Run with: RUN_INTEGRATION_TESTS=true npm test
- */
-
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '../../../../../prisma/prisma.service';
 import { PrismaSnapshotRepository } from '../prisma-snapshot.repository';
 import { SnapshotInput, SnapshotKind, EvidenceVerdict } from '../snapshot-repository.interface';
 import { randomUUID } from 'crypto';
-
-// Skip if not in integration test environment
-const describeIntegration = process.env.RUN_INTEGRATION_TESTS === 'true' 
-  ? describe 
-  : describe.skip;
 
 function generateTestHash(): string {
   const chars = 'abcdef0123456789';
@@ -26,12 +13,11 @@ function generateTestHash(): string {
   return hash;
 }
 
-// Note: runId is undefined to avoid FK constraint (no SimulationRun created)
 const createTestInput = (overrides: Partial<SnapshotInput> = {}): SnapshotInput => ({
   snapshotId: randomUUID(),
-  tenantId: 'tenant-' + randomUUID().substring(0, 8),
-  incidentId: 'incident-' + randomUUID().substring(0, 8),
-  runId: undefined, // No FK reference
+  tenantId: `tenant-${randomUUID().substring(0, 8)}`,
+  incidentId: `incident-${randomUUID().substring(0, 8)}`,
+  runId: randomUUID(),
   snapshotKind: 'CURRENT' as SnapshotKind,
   verdict: 'PROCEED' as EvidenceVerdict,
   driftScore: 0.05,
@@ -43,7 +29,7 @@ const createTestInput = (overrides: Partial<SnapshotInput> = {}): SnapshotInput 
   ...overrides,
 });
 
-describeIntegration('Snapshot Idempotency Integration Tests', () => {
+describe('Snapshot Idempotency Integration Tests', () => {
   let module: TestingModule;
   let repository: PrismaSnapshotRepository;
   let prisma: PrismaService;
@@ -82,7 +68,7 @@ describeIntegration('Snapshot Idempotency Integration Tests', () => {
     const baseInput = createTestInput();
     const firstInput = { ...baseInput, snapshotId: randomUUID() };
     const secondInput = { ...baseInput, snapshotId: randomUUID() };
-    await repository.insert(firstInput);
+    const first = await repository.insert(firstInput);
     const second = await repository.insert(secondInput);
     expect(second.snapshotId).toBe(firstInput.snapshotId);
     const count = await prisma.simulationSnapshot.count({
@@ -91,7 +77,7 @@ describeIntegration('Snapshot Idempotency Integration Tests', () => {
     expect(count).toBe(1);
   });
 
-  it('allows different hash for same tenant/incident', async () => {
+  it('allows different hash for same tenant/incident/run', async () => {
     const baseInput = createTestInput();
     const firstInput = { ...baseInput, snapshotId: randomUUID(), calcHash: generateTestHash() };
     const secondInput = { ...baseInput, snapshotId: randomUUID(), calcHash: generateTestHash() };
@@ -105,19 +91,20 @@ describeIntegration('Snapshot Idempotency Integration Tests', () => {
 
   it('allows same content for different tenants', async () => {
     const sharedContent = {
-      incidentId: 'incident-' + randomUUID().substring(0, 8),
+      incidentId: `incident-${randomUUID().substring(0, 8)}`,
+      runId: randomUUID(),
       calcHash: generateTestHash(),
       calcResult: { total: 1000 },
       calcResultNorm: { total: '1000' },
     };
     const tenant1Input = createTestInput({
       ...sharedContent,
-      tenantId: 'tenant-' + randomUUID().substring(0, 8),
+      tenantId: `tenant-${randomUUID().substring(0, 8)}`,
       snapshotId: randomUUID(),
     });
     const tenant2Input = createTestInput({
       ...sharedContent,
-      tenantId: 'tenant-' + randomUUID().substring(0, 8),
+      tenantId: `tenant-${randomUUID().substring(0, 8)}`,
       snapshotId: randomUUID(),
     });
     const first = await repository.insert(tenant1Input);
@@ -126,7 +113,7 @@ describeIntegration('Snapshot Idempotency Integration Tests', () => {
   });
 
   it('NULL runId idempotency via COALESCE sentinel', async () => {
-    const baseInput = createTestInput(); // runId is already undefined
+    const baseInput = createTestInput({ runId: undefined });
     const firstInput = { ...baseInput, snapshotId: randomUUID() };
     const secondInput = { ...baseInput, snapshotId: randomUUID() };
     const first = await repository.insert(firstInput);
@@ -136,6 +123,18 @@ describeIntegration('Snapshot Idempotency Integration Tests', () => {
       where: { tenantId: baseInput.tenantId, incidentId: baseInput.incidentId, runId: null },
     });
     expect(count).toBe(1);
+  });
+
+  it('allows NULL and non-NULL runId for same content', async () => {
+    const baseInput = createTestInput();
+    const withRunId = { ...baseInput, snapshotId: randomUUID() };
+    const withoutRunId = { ...baseInput, snapshotId: randomUUID(), runId: undefined };
+    await repository.insert(withRunId);
+    await repository.insert(withoutRunId);
+    const count = await prisma.simulationSnapshot.count({
+      where: { tenantId: baseInput.tenantId, incidentId: baseInput.incidentId },
+    });
+    expect(count).toBe(2);
   });
 
   it('concurrent inserts - single row created', async () => {

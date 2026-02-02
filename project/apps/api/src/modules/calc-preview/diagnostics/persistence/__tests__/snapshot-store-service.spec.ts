@@ -1,4 +1,4 @@
-﻿/**
+/**
  * Snapshot Store Service Unit Tests
  * 
  * Phase 9B.5 Task 3: Sentinel Validation Tests

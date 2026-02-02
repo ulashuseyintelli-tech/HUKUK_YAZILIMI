@@ -162,6 +162,92 @@ export class MinioObjectStoreClient implements IObjectStoreClient {
     }
   }
 
+  /**
+   * Upload object with write-once guarantee
+   * 
+   * Enforces write-once semantics:
+   * 1. PUT with If-None-Match: * header (412 if exists)
+   * 2. HEAD verification after PUT (fallback guard)
+   * 3. ETag/VersionId consistency check
+   * 
+   * @param input Upload parameters
+   * @returns Upload result with HEAD verification
+   * @throws ObjectAlreadyExistsError if object exists (412)
+   * @throws WriteOnceViolationError if HEAD verification fails
+   */
+  async putWriteOnce(input: Omit<PutObjectInput, 'ifNoneMatch'>): Promise<PutWriteOnceResult> {
+    const { key } = input;
+    
+    // Step 1: PUT with If-None-Match: * (forced)
+    const putResult = await this.putObject({
+      ...input,
+      ifNoneMatch: true,
+    });
+    
+    this.logger.debug(`[MinioObjectStoreClient] putWriteOnce: PUT succeeded for ${key}`, {
+      etag: putResult.etag,
+      versionId: putResult.versionId,
+    });
+    
+    // Step 2: HEAD verification (fallback guard - MANDATORY)
+    const headResult = await this.headObject(key);
+    
+    // Guard: Object must exist after PUT
+    if (!headResult.exists) {
+      this.logger.error(`[MinioObjectStoreClient] putWriteOnce: HEAD_AFTER_PUT_NOT_FOUND for ${key}`);
+      throw new WriteOnceViolationError(key, 'HEAD_AFTER_PUT_NOT_FOUND');
+    }
+    
+    // Guard: HEAD must return etag
+    if (!headResult.etag || headResult.etag === '') {
+      this.logger.error(`[MinioObjectStoreClient] putWriteOnce: HEAD_ETAG_MISSING for ${key}`);
+      throw new WriteOnceViolationError(key, 'HEAD_ETAG_MISSING', {
+        expectedEtag: putResult.etag,
+        actualEtag: headResult.etag,
+      });
+    }
+    
+    // Guard: ETag must match
+    if (headResult.etag !== putResult.etag) {
+      this.logger.error(`[MinioObjectStoreClient] putWriteOnce: ETAG_MISMATCH_AFTER_PUT for ${key}`, {
+        putEtag: putResult.etag,
+        headEtag: headResult.etag,
+      });
+      throw new WriteOnceViolationError(key, 'ETAG_MISMATCH_AFTER_PUT', {
+        expectedEtag: putResult.etag,
+        actualEtag: headResult.etag,
+      });
+    }
+    
+    // Guard: VersionId must match (if versioning enabled)
+    if (putResult.versionId !== undefined && headResult.versionId !== undefined) {
+      if (putResult.versionId !== headResult.versionId) {
+        this.logger.error(`[MinioObjectStoreClient] putWriteOnce: VERSION_ID_MISMATCH_AFTER_PUT for ${key}`, {
+          putVersionId: putResult.versionId,
+          headVersionId: headResult.versionId,
+        });
+        throw new WriteOnceViolationError(key, 'VERSION_ID_MISMATCH_AFTER_PUT', {
+          expectedVersionId: putResult.versionId,
+          actualVersionId: headResult.versionId,
+        });
+      }
+    }
+    
+    this.logger.debug(`[MinioObjectStoreClient] putWriteOnce: HEAD verification passed for ${key}`);
+    
+    return {
+      etag: putResult.etag,
+      versionId: putResult.versionId,
+      verified: true,
+      headVerification: {
+        etag: headResult.etag,
+        versionId: headResult.versionId,
+        size: headResult.size,
+        lastModified: headResult.lastModified,
+      },
+    };
+  }
+
   async putObjectTagging(key: string, tags: Record<string, string>): Promise<void> {
     const s3 = await this.ensureInitialized();
     const { PutObjectTaggingCommand } = await getS3Module();
