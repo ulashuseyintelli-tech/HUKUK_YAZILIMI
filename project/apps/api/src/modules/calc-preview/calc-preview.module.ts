@@ -52,10 +52,13 @@ import { CalcPreviewCircuitBreakerService } from './circuit-breaker';
 import { VersionedCacheService } from './cache';
 import { LegacyDeprecationService, LegacyDeprecationInterceptor } from './deprecation';
 import { TraceContext, TraceStorageService, TraceCollectorService, TraceInterceptor } from './trace';
+import { TraceAccessService } from './trace/trace-access.service';
 import { ExplanationService, ReasonCodeRegistry } from './explanation';
 import { DiagnosticsModule } from './diagnostics';
 import { InterestEngineModule } from '../interest-engine/interest-engine.module';
 import { FeeEngineModule } from '../fee-engine/fee-engine.module';
+import { ManifestAdminAuthGuard } from './diagnostics/object-store/manifest-retry/guards/manifest-admin-auth.guard';
+import { ManifestAdminRateLimiter, ManifestAdminRateLimitGuard } from './diagnostics/object-store/manifest-retry/guards/manifest-admin-rate-limiter.service';
 
 @Module({
   imports: [
@@ -78,6 +81,11 @@ import { FeeEngineModule } from '../fee-engine/fee-engine.module';
     TraceStorageService,
     TraceCollectorService,
     TraceInterceptor,
+    TraceAccessService,
+    // PR-1: Ops guards for trace/metrics endpoints
+    ManifestAdminAuthGuard,
+    ManifestAdminRateLimiter,
+    ManifestAdminRateLimitGuard,
     // Phase 6A: Explanation
     ExplanationService,
     ReasonCodeRegistry,

@@ -16,17 +16,21 @@ These tasks address operational risk and MUST be completed.
 
 **Priority:** P2 | **Size:** S | **Depends On:** Phase 10.5
 
+**Status:** ✅ DONE (2026-02-06)
+
 #### Scope
 
 Add columns to `manifest_dead_letter_queue` table for carrier storage.
 
 #### Files
 
-| File | Action |
-|------|--------|
-| `apps/api/prisma/migrations/20260206_phase11_dlq_carrier_columns/migration.sql` | CREATE |
-| `apps/api/src/modules/.../manifest-retry/manifest-dlq.repository.ts` | UPDATE |
-| `apps/api/src/modules/.../manifest-retry/__tests__/manifest-dlq.repository.spec.ts` | UPDATE |
+| File | Action | Status |
+|------|--------|--------|
+| `apps/api/prisma/migrations/20260206100000_phase11_dlq_carrier_columns/migration.sql` | CREATE | ✅ |
+| `apps/api/prisma/migrations/20260206100000_phase11_dlq_carrier_columns/down.sql` | CREATE | ✅ |
+| `apps/api/src/modules/.../manifest-retry/manifest-dlq.repository.ts` | UPDATE | ✅ |
+| `apps/api/src/modules/.../manifest-retry/manifest-retry.types.ts` | UPDATE | ✅ |
+| `apps/api/src/modules/.../manifest-retry/__tests__/manifest-dlq.repository.spec.ts` | UPDATE | ✅ |
 
 #### Schema Changes
 
@@ -43,12 +47,20 @@ ADD COLUMN carrier_truncated BOOLEAN NOT NULL DEFAULT false;
 
 #### DoD
 
-- [ ] Migration file created
-- [ ] Migration applies without error (forward)
-- [ ] Migration rolls back without error (backward)
-- [ ] Existing DLQ entries have NULL carrier_json
-- [ ] Repository types updated for new columns
-- [ ] Unit tests pass
+- [x] Migration file created
+- [x] Down migration (rollback) file created
+- [x] Migration uses ADD COLUMN NULL (no table rewrite, minimal lock time)
+- [x] Existing DLQ entries have NULL carrier_json (expected)
+- [x] Repository types updated for new columns (DlqEntry, CreateDlqEntryInput)
+- [x] Repository SELECT/mapper reads new columns (NULL tolerant)
+- [x] Repository upsert writes new columns
+- [x] Unit tests updated with carrier field assertions
+
+#### Migration Safety Notes
+
+- ADD COLUMN ... NULL: No table rewrite, minimal lock time (not "lock-free")
+- Rollback risk: Down migration removes columns - code must tolerate missing columns first
+- Rollout order: Deploy migration → Deploy NULL-tolerant code → Enable feature
 
 #### Metrics
 

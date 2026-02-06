@@ -232,3 +232,23 @@ Non-breaking changes include:
 - Adding new error types
 - Adding new methods
 - Performance improvements
+
+## Changelog
+
+### PR-1 (2026-02-06) — Security Hardening
+
+**BREAKING: `/calc/trace/*` endpoints now require internal ops auth.**
+
+All trace endpoints (`getTrace`, `listRecent`, `getSummary`, download) now
+require `break-glass` feature flag to be enabled AND the caller's JWT to
+carry the `ops_admin` role. Without this, the API returns 401 or 403.
+
+**Impact on SDK users:**
+- `TraceClient` sends `Authorization: Bearer <token>` from `config.bearerToken`.
+- If the token's JWT does not include `ops_admin` role → `SdkAuthError` (401/403).
+- `PreviewClient` is NOT affected — `POST /calc/preview/light` remains public.
+
+**Migration:**
+- Ensure `bearerToken` is a JWT with `ops_admin` role for trace access.
+- Or use `apiKey` auth if the API gateway maps it to an ops-level identity.
+- Handle `SdkAuthError` gracefully for trace operations.

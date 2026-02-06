@@ -2,18 +2,21 @@
  * Manifest Admin Auth Guard
  * 
  * Phase 10.2 - Task 4.1
+ * PR-1: Refactored to delegate to shared internal_ops_policy.
  * 
  * Authorization guard for manifest retry admin endpoints.
  * 
- * GATES:
+ * GATES (delegated to evaluateInternalOpsPolicy):
  * 1. Break-glass check: Feature flag must be enabled
- * 2. Role check: User must have ops_admin role
+ * 2. Auth check: User must be present
+ * 3. Role check: User must hold an INTERNAL_OPS_ROLES entry
  * 
  * RESPONSES:
  * - 403 Forbidden: Break-glass closed (BREAK_GLASS_CLOSED)
  * - 401 Unauthorized: Missing or invalid auth
- * - 403 Forbidden: Missing ops_admin role
+ * - 403 Forbidden: Missing required role (INSUFFICIENT_ROLE)
  * 
+ * @see guards/internal-ops-policy.ts — single source of truth for role list
  * @see .kiro/specs/phase-10-2-production-hardening/design.md
  */
 
@@ -23,24 +26,26 @@ import {
   ExecutionContext,
   ForbiddenException,
   UnauthorizedException,
-  Logger,
 } from '@nestjs/common';
 import { Request } from 'express';
+import {
+  evaluateInternalOpsPolicy,
+  IBreakGlassFlag,
+  EnvBreakGlassFlag,
+  BREAK_GLASS_FLAG_ENV,
+} from '../../../../guards/internal-ops-policy';
 
 // ============================================================================
-// Types
+// Types (kept for backward compat — consumers import from here)
 // ============================================================================
 
 export interface ManifestAdminAuthConfig {
   /** Feature flag name for break-glass */
   breakGlassFeatureFlag: string;
-  /** Required role for admin access */
-  requiredRole: string;
 }
 
 export const DEFAULT_MANIFEST_ADMIN_AUTH_CONFIG: ManifestAdminAuthConfig = {
-  breakGlassFeatureFlag: 'MANIFEST_RETRY_ADMIN_ENABLED',
-  requiredRole: 'ops_admin',
+  breakGlassFeatureFlag: BREAK_GLASS_FLAG_ENV,
 };
 
 /**
@@ -60,30 +65,17 @@ export interface RequestWithUser extends Request {
 }
 
 // ============================================================================
-// Feature Flag Service Interface
+// Feature Flag Service Interface (kept for backward compat)
 // ============================================================================
 
-export interface IManifestAdminFeatureFlagService {
-  isBreakGlassOpen(): boolean;
-}
+export interface IManifestAdminFeatureFlagService extends IBreakGlassFlag {}
 
 /**
  * Default implementation using environment variable
  */
-export class ManifestAdminFeatureFlagService implements IManifestAdminFeatureFlagService {
-  private readonly flagName: string;
-
+export class ManifestAdminFeatureFlagService extends EnvBreakGlassFlag implements IManifestAdminFeatureFlagService {
   constructor(flagName: string = DEFAULT_MANIFEST_ADMIN_AUTH_CONFIG.breakGlassFeatureFlag) {
-    this.flagName = flagName;
-  }
-
-  /**
-   * Check if break-glass is open (admin access enabled)
-   * Default: CLOSED (false) - must explicitly enable
-   */
-  isBreakGlassOpen(): boolean {
-    const value = process.env[this.flagName];
-    return value === 'true';
+    super(flagName);
   }
 }
 
@@ -93,68 +85,37 @@ export class ManifestAdminFeatureFlagService implements IManifestAdminFeatureFla
 
 @Injectable()
 export class ManifestAdminAuthGuard implements CanActivate {
-  private readonly logger = new Logger(ManifestAdminAuthGuard.name);
   private featureFlagService: IManifestAdminFeatureFlagService;
-  private readonly config: ManifestAdminAuthConfig;
 
   constructor(
     featureFlagService?: IManifestAdminFeatureFlagService,
     config?: Partial<ManifestAdminAuthConfig>,
   ) {
-    this.config = { ...DEFAULT_MANIFEST_ADMIN_AUTH_CONFIG, ...config };
-    this.featureFlagService = featureFlagService || new ManifestAdminFeatureFlagService(this.config.breakGlassFeatureFlag);
+    const cfg = { ...DEFAULT_MANIFEST_ADMIN_AUTH_CONFIG, ...config };
+    this.featureFlagService = featureFlagService || new ManifestAdminFeatureFlagService(cfg.breakGlassFeatureFlag);
   }
 
   canActivate(context: ExecutionContext): boolean {
     const request = context.switchToHttp().getRequest<RequestWithUser>();
 
-    // GATE 1: Check break-glass state
-    if (!this.featureFlagService.isBreakGlassOpen()) {
-      this.logger.warn('[ManifestAdminAuth] Access denied - break-glass closed', {
-        path: request.path,
-        method: request.method,
-      });
-      throw new ForbiddenException({
-        code: 'BREAK_GLASS_CLOSED',
-        message: 'Admin access is currently disabled',
-      });
+    const result = evaluateInternalOpsPolicy(
+      request.user ?? undefined,
+      this.featureFlagService,
+      { path: request.path, method: request.method },
+    );
+
+    if (result.allowed) return true;
+
+    switch (result.code) {
+      case 'BREAK_GLASS_CLOSED':
+        throw new ForbiddenException({ code: result.code, message: result.message });
+      case 'UNAUTHORIZED':
+        throw new UnauthorizedException({ code: result.code, message: result.message });
+      case 'INSUFFICIENT_ROLE':
+        throw new ForbiddenException({ code: result.code, message: result.message });
+      default:
+        throw new ForbiddenException({ code: 'DENIED', message: result.message });
     }
-
-    // GATE 2: Check authentication
-    const user = request.user;
-    if (!user) {
-      this.logger.warn('[ManifestAdminAuth] Access denied - no user context', {
-        path: request.path,
-        method: request.method,
-      });
-      throw new UnauthorizedException({
-        code: 'UNAUTHORIZED',
-        message: 'Authentication required',
-      });
-    }
-
-    // GATE 3: Check role
-    if (!user.roles?.includes(this.config.requiredRole)) {
-      this.logger.warn('[ManifestAdminAuth] Access denied - missing role', {
-        path: request.path,
-        method: request.method,
-        userId: user.id,
-        userRoles: user.roles,
-        requiredRole: this.config.requiredRole,
-      });
-      throw new ForbiddenException({
-        code: 'INSUFFICIENT_ROLE',
-        message: `Role '${this.config.requiredRole}' required`,
-      });
-    }
-
-    this.logger.debug('[ManifestAdminAuth] Access granted', {
-      path: request.path,
-      method: request.method,
-      userId: user.id,
-    });
-
-    return true;
   }
 
   /**

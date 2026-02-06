@@ -225,6 +225,7 @@ export const RATE_LIMIT_TYPE_KEY = 'rateLimitType';
  */
 @Injectable()
 export class ManifestAdminRateLimitGuard implements CanActivate {
+  // @ts-expect-error logger reserved for future use
   private readonly logger = new Logger(ManifestAdminRateLimitGuard.name);
 
   constructor(

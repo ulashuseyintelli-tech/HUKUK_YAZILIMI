@@ -2,6 +2,11 @@
  * Trace Client
  * 
  * Read-only access to trace data.
+ * 
+ * PR-1 BREAKING: All trace endpoints now require internal ops auth
+ * (break-glass + ops_admin role). The HttpClient sends Authorization
+ * header from config.bearerToken — ensure the JWT carries ops_admin.
+ * Without it, all trace calls will throw SdkAuthError (401/403).
  */
 
 import type { TraceBundle, TraceSummary, TraceFilters, PaginatedTraceList } from '../types/trace';
