@@ -114,7 +114,7 @@ export class MinioObjectStoreClient implements IObjectStoreClient {
   // ==========================================================================
 
   async putObject(input: PutObjectInput): Promise<PutObjectResult> {
-    const { key, body, contentType, metadata, tags, ifNoneMatch } = input;
+    const { key, body, contentType, metadata, tags, ifNoneMatch, signal } = input;
     const s3 = await this.ensureInitialized();
     const { PutObjectCommand } = await getS3Module();
     
@@ -146,7 +146,10 @@ export class MinioObjectStoreClient implements IObjectStoreClient {
         ...(ifNoneMatch && { IfNoneMatch: '*' }),
       });
       
-      const response: PutObjectCommandOutput = await s3.send(command);
+      // Phase 10.1.6: Pass AbortSignal to AWS SDK v3 for hard timeout support
+      // AbortSignal allows worker to enforce 30s timeout (half of 60s lease)
+      const sendOptions = signal ? { abortSignal: signal } : undefined;
+      const response: PutObjectCommandOutput = await s3.send(command, sendOptions);
       
       this.logger.debug(`[MinioObjectStoreClient] PUT ${key} success`, {
         etag: response.ETag,
@@ -438,6 +441,16 @@ export class MinioObjectStoreClient implements IObjectStoreClient {
       error: error instanceof Error ? error.message : String(error),
     });
     
+    // Phase 10.1.6: AbortError detection for hard timeout
+    // AbortController.abort() throws AbortError when timeout exceeded
+    if (this.isAbortError(error)) {
+      throw new ObjectStoreError(
+        `${operation} aborted (timeout): ${key}`,
+        'ABORT_ERROR',
+        error instanceof Error ? error : undefined,
+      );
+    }
+    
     // S3 service exceptions
     if (this.isS3ServiceException(error)) {
       const statusCode = error.$metadata?.httpStatusCode;
@@ -488,6 +501,38 @@ export class MinioObjectStoreClient implements IObjectStoreClient {
       `${operation} failed: ${String(error)}`,
       'UNKNOWN_ERROR',
     );
+  }
+
+  /**
+   * Phase 10.1.6: Detect AbortError from AbortController timeout
+   * 
+   * AbortError can come from:
+   * - Node.js: Error with name='AbortError'
+   * - Browser/DOMException: DOMException with name='AbortError'
+   * - AWS SDK v3: Wraps abort in its own error
+   */
+  private isAbortError(error: unknown): boolean {
+    if (!error) return false;
+    
+    // Standard Error with name='AbortError'
+    if (error instanceof Error && error.name === 'AbortError') {
+      return true;
+    }
+    
+    // DOMException compatibility (browser/Node 18+)
+    if (typeof error === 'object' && 'name' in error) {
+      const err = error as { name?: string };
+      if (err.name === 'AbortError') {
+        return true;
+      }
+    }
+    
+    // AWS SDK v3 may wrap abort errors
+    if (error instanceof Error && error.message?.toLowerCase().includes('abort')) {
+      return true;
+    }
+    
+    return false;
   }
 
   private async streamToBuffer(stream: Readable): Promise<Buffer> {

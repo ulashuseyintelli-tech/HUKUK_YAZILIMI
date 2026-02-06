@@ -68,7 +68,7 @@ describe('Snapshot Idempotency Integration Tests', () => {
     const baseInput = createTestInput();
     const firstInput = { ...baseInput, snapshotId: randomUUID() };
     const secondInput = { ...baseInput, snapshotId: randomUUID() };
-    const first = await repository.insert(firstInput);
+    await repository.insert(firstInput);
     const second = await repository.insert(secondInput);
     expect(second.snapshotId).toBe(firstInput.snapshotId);
     const count = await prisma.simulationSnapshot.count({

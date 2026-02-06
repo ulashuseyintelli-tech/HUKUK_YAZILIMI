@@ -6496,3 +6496,103 @@ model BundleSealEvent {
   @@index([bundleId, createdAt], map: "idx_bundle_seal_events_bundle_created")
   @@map("bundle_seal_events")
 }
+
+
+// ==================== PHASE 10.2: MANIFEST ADMIN AUDIT LOG ====================
+// Audit trail for manifest retry admin operations
+// Retention: 90 days hot (PostgreSQL), then archive to S3
+// PII Protection: IP addresses are hashed (SHA-256) for KVKK compliance
+
+// Audit Event Type
+enum ManifestAdminAuditEventType {
+  DLQ_RESOLVE
+  DLQ_REDRIVE
+  DLQ_REDRIVE_BULK
+  JOB_FORCE_RETRY
+  CB_OVERRIDE
+}
+
+// Audit Resource Type
+enum ManifestAdminAuditResourceType {
+  dlq_entry
+  retry_job
+  circuit_breaker
+}
+
+// Manifest Admin Audit Log - Immutable audit trail for admin operations
+model ManifestAdminAuditLog {
+  id              String                          @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  
+  // Event identification
+  eventType       ManifestAdminAuditEventType     @map("event_type")
+  
+  // Actor information
+  actor           String                          @db.VarChar(256)
+  requestId       String                          @unique @map("request_id") @db.VarChar(256) // Idempotency key
+  ipHash          String                          @map("ip_hash") @db.VarChar(64) // SHA-256 hash of IP
+  userAgent       String                          @map("user_agent") @db.Text
+  
+  // Resource information
+  resourceType    ManifestAdminAuditResourceType  @map("resource_type")
+  resourceId      String                          @map("resource_id") @db.VarChar(256)
+  targetBundleId  String                          @map("target_bundle_id") @db.VarChar(256)
+  
+  // State tracking
+  beforeState     Json?                           @map("before_state")
+  afterState      Json?                           @map("after_state")
+  
+  // Reason/notes
+  reason          String?                         @db.Text
+  
+  // Timestamp
+  createdAt       DateTime                        @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  // Indexes for common queries
+  @@index([createdAt(sort: Desc)], map: "idx_audit_log_created_at")
+  @@index([actor, createdAt(sort: Desc)], map: "idx_audit_log_actor")
+  @@index([targetBundleId, createdAt(sort: Desc)], map: "idx_audit_log_bundle")
+  @@index([eventType, createdAt(sort: Desc)], map: "idx_audit_log_event_type")
+  @@index([resourceType, resourceId], map: "idx_audit_log_resource")
+  @@map("manifest_admin_audit_log")
+}
+
+// ==================== PHASE 10.2: MANIFEST WORKER STATE ====================
+// Singleton table for worker safety controls
+// Design: Single row with owner/lease for multi-instance safety
+// Approved: 2026-02-03 by User
+
+// Pause Reason Enum - Forward-compatible with UNKNOWN
+enum ManifestWorkerPauseReason {
+  CONSECUTIVE_ERRORS  // Auto-resume after cooloff (default 5 min)
+  MANUAL_PAUSE        // Never auto-resume, requires manual resume
+  UNKNOWN             // Forward-compatible placeholder
+}
+
+// Manifest Worker State - Singleton table (id='singleton')
+model ManifestWorkerState {
+  // Singleton constraint: only 'singleton' allowed
+  id                  String                        @id @default("singleton")
+  
+  // Pause state
+  isPaused            Boolean                       @default(false) @map("is_paused")
+  pauseReason         ManifestWorkerPauseReason?    @map("pause_reason")
+  pausedAt            DateTime?                     @map("paused_at") @db.Timestamptz(6)
+  pausedBy            String?                       @map("paused_by")  // Actor for MANUAL_PAUSE
+  
+  // Error tracking
+  consecutiveErrors   Int                           @default(0) @map("consecutive_errors")
+  lastErrorCode       String?                       @map("last_error_code")
+  lastErrorAt         DateTime?                     @map("last_error_at") @db.Timestamptz(6)
+  
+  // Leader election (multi-instance safety)
+  ownerInstanceId     String?                       @map("owner_instance_id")
+  leaseExpiresAt      DateTime?                     @map("lease_expires_at") @db.Timestamptz(6)
+  
+  // Timestamps
+  createdAt           DateTime                      @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt           DateTime                      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  // Indexes
+  @@index([ownerInstanceId, leaseExpiresAt], map: "idx_worker_state_lease")
+  @@map("manifest_worker_state")
+}

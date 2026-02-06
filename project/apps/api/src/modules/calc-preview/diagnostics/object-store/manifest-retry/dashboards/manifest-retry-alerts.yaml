@@ -1,0 +1,585 @@
+# Phase 10.1.7/10.1.13 - Manifest Retry Circuit Breaker & Queue Alerting Rules
+# 
+# Prometheus alerting rules for CB, Queue, DLQ, and Duration metrics.
+# Deploy to Prometheus/AlertManager.
+
+groups:
+  - name: manifest_retry_circuit_breaker
+    rules:
+      # ========================================================================
+      # Sustained OPEN Alert (Warning)
+      # ========================================================================
+      - alert: ManifestRetryCBOpenWarning
+        expr: manifest_retry_circuit_breaker_state{state="open"} == 1
+        for: 2m
+        labels:
+          severity: warning
+          team: platform
+          component: manifest-retry
+        annotations:
+          summary: "Manifest Retry Circuit Breaker OPEN for 2+ minutes"
+          description: "Circuit breaker has been open for more than 2 minutes. Object store may be experiencing issues."
+          runbook_url: "https://docs.internal/runbooks/manifest-retry-cb"
+
+      # ========================================================================
+      # Sustained OPEN Alert (Critical)
+      # ========================================================================
+      - alert: ManifestRetryCBOpenCritical
+        expr: manifest_retry_circuit_breaker_state{state="open"} == 1
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          component: manifest-retry
+        annotations:
+          summary: "Manifest Retry Circuit Breaker OPEN for 5+ minutes"
+          description: "Circuit breaker has been open for more than 5 minutes. Immediate investigation required."
+          runbook_url: "https://docs.internal/runbooks/manifest-retry-cb"
+
+      # ========================================================================
+      # Open Duration Alert (Alternative using gauge)
+      # ========================================================================
+      - alert: ManifestRetryCBOpenDurationWarning
+        expr: manifest_retry_circuit_breaker_open_seconds > 120
+        labels:
+          severity: warning
+          team: platform
+          component: manifest-retry
+        annotations:
+          summary: "Manifest Retry CB open for {{ $value | humanizeDuration }}"
+          description: "Circuit breaker has been open for {{ $value | humanizeDuration }}."
+
+      - alert: ManifestRetryCBOpenDurationCritical
+        expr: manifest_retry_circuit_breaker_open_seconds > 300
+        labels:
+          severity: critical
+          team: platform
+          component: manifest-retry
+        annotations:
+          summary: "Manifest Retry CB open for {{ $value | humanizeDuration }}"
+          description: "Circuit breaker has been open for {{ $value | humanizeDuration }}. Immediate action required."
+
+      # ========================================================================
+      # High Trip Rate Alert
+      # ========================================================================
+      - alert: ManifestRetryCBHighTripRate
+        expr: sum(rate(manifest_retry_circuit_breaker_trips_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          component: manifest-retry
+        annotations:
+          summary: "High circuit breaker trip rate"
+          description: "Circuit breaker is tripping frequently ({{ $value | printf \"%.2f\" }}/s). Check object store health."
+
+      # ========================================================================
+      # DLQ Ratio Alert
+      # ========================================================================
+      - alert: ManifestRetryHighDLQRatio
+        expr: |
+          sum(rate(manifest_retry_job_dlq_total[5m])) 
+          / 
+          sum(rate(manifest_retry_job_done_total[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+          component: manifest-retry
+        annotations:
+          summary: "High DLQ ratio ({{ $value | printf \"%.1f%%\" }})"
+          description: "More than 10% of manifest retry jobs are going to DLQ. Investigate error patterns."
+
+      # ========================================================================
+      # Low Success Rate Alert
+      # ========================================================================
+      - alert: ManifestRetryLowSuccessRate
+        expr: |
+          sum(rate(manifest_retry_job_done_total{reason="ok"}[5m])) 
+          / 
+          sum(rate(manifest_retry_job_done_total[5m])) < 0.9
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+          component: manifest-retry
+        annotations:
+          summary: "Low retry success rate ({{ $value | printf \"%.1f%%\" }})"
+          description: "Manifest retry success rate is below 90%. Check object store connectivity."
+
+      # ========================================================================
+      # Timeout Trip Spike
+      # ========================================================================
+      - alert: ManifestRetryTimeoutSpike
+        expr: |
+          sum(rate(manifest_retry_circuit_breaker_trips_total{trip_reason="timeout"}[5m])) 
+          / 
+          sum(rate(manifest_retry_circuit_breaker_trips_total[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          component: manifest-retry
+        annotations:
+          summary: "Majority of CB trips are timeouts"
+          description: "More than 50% of circuit breaker trips are due to timeouts. Check network latency to object store."
+
+
+  # ==========================================================================
+  # Phase 10.1.13 - Queue & DLQ Alerts
+  # ==========================================================================
+  - name: manifest_retry_queue_dlq
+    rules:
+      # ========================================================================
+      # DLQ Open Count Alert
+      # ========================================================================
+      - alert: ManifestDLQOpenHigh
+        expr: manifest_dlq_size{status="DLQ_OPEN"} > 10
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          component: manifest-retry
+        annotations:
+          summary: "DLQ has {{ $value }} open entries"
+          description: "Dead letter queue has more than 10 unresolved entries. Review and resolve DLQ items."
+
+      - alert: ManifestDLQOpenCritical
+        expr: manifest_dlq_size{status="DLQ_OPEN"} > 50
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          component: manifest-retry
+        annotations:
+          summary: "DLQ has {{ $value }} open entries - CRITICAL"
+          description: "Dead letter queue has more than 50 unresolved entries. Immediate attention required."
+
+      # ========================================================================
+      # DLQ Oldest Age Alert
+      # ========================================================================
+      - alert: ManifestDLQOldestAgeWarning
+        expr: manifest_dlq_oldest_age_seconds > 3600
+        labels:
+          severity: warning
+          team: platform
+          component: manifest-retry
+        annotations:
+          summary: "DLQ oldest entry is {{ $value | humanizeDuration }} old"
+          description: "Oldest DLQ entry has been unresolved for more than 1 hour."
+
+      - alert: ManifestDLQOldestAgeCritical
+        expr: manifest_dlq_oldest_age_seconds > 86400
+        labels:
+          severity: critical
+          team: platform
+          component: manifest-retry
+        annotations:
+          summary: "DLQ oldest entry is {{ $value | humanizeDuration }} old - CRITICAL"
+          description: "Oldest DLQ entry has been unresolved for more than 24 hours. Immediate review required."
+
+      # ========================================================================
+      # Queue Backlog Alert
+      # ========================================================================
+      - alert: ManifestRetryQueueBacklog
+        expr: manifest_retry_queue_size{status="PENDING"} + manifest_retry_queue_size{status="RETRY_SCHEDULED"} > 100
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+          component: manifest-retry
+        annotations:
+          summary: "Retry queue backlog is {{ $value }} jobs"
+          description: "Combined PENDING and RETRY_SCHEDULED queue size exceeds 100. Worker may be falling behind."
+
+      - alert: ManifestRetryQueueBacklogCritical
+        expr: manifest_retry_queue_size{status="PENDING"} + manifest_retry_queue_size{status="RETRY_SCHEDULED"} > 500
+        for: 10m
+        labels:
+          severity: critical
+          team: platform
+          component: manifest-retry
+        annotations:
+          summary: "Retry queue backlog is {{ $value }} jobs - CRITICAL"
+          description: "Queue backlog exceeds 500. Worker capacity may be insufficient."
+
+      # ========================================================================
+      # Job Duration Alert (p95)
+      # ========================================================================
+      - alert: ManifestRetrySlowJobs
+        expr: |
+          histogram_quantile(0.95, 
+            sum(rate(manifest_retry_job_duration_seconds_bucket{outcome="success"}[5m])) by (le)
+          ) > 30
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          component: manifest-retry
+        annotations:
+          summary: "p95 job duration is {{ $value | printf \"%.1f\" }}s"
+          description: "95th percentile job duration exceeds 30 seconds. Check object store latency."
+
+      - alert: ManifestRetryVerySlowJobs
+        expr: |
+          histogram_quantile(0.95, 
+            sum(rate(manifest_retry_job_duration_seconds_bucket{outcome="success"}[5m])) by (le)
+          ) > 60
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          component: manifest-retry
+        annotations:
+          summary: "p95 job duration is {{ $value | printf \"%.1f\" }}s - CRITICAL"
+          description: "95th percentile job duration exceeds 60 seconds. Investigate immediately."
+
+      # ========================================================================
+      # Stuck In-Progress Jobs Alert
+      # ========================================================================
+      - alert: ManifestRetryStuckJobs
+        expr: manifest_retry_queue_size{status="IN_PROGRESS"} > 10
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          component: manifest-retry
+        annotations:
+          summary: "{{ $value }} jobs stuck in IN_PROGRESS"
+          description: "More than 10 jobs have been IN_PROGRESS for extended time. Check for worker issues."
+
+
+  # ==========================================================================
+  # Phase 10.3 PR-5 - Idempotency Takeover Alerts
+  # ==========================================================================
+  - name: idempotency_takeover
+    rules:
+      # ========================================================================
+      # Takeover Spike Alert (Warning)
+      # ========================================================================
+      - alert: IdempotencyTakeoverSpikeWarning
+        expr: sum(rate(idempotency_takeover_total[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          component: idempotency-gate
+        annotations:
+          summary: "Idempotency takeover rate elevated ({{ $value | printf \"%.2f\" }}/s)"
+          description: "Lease takeovers are occurring frequently. This may indicate slow handlers or lease timeout issues."
+          runbook_url: "https://docs.internal/runbooks/idempotency-takeover"
+
+      # ========================================================================
+      # Takeover Spike Alert (Critical)
+      # ========================================================================
+      - alert: IdempotencyTakeoverSpikeCritical
+        expr: sum(rate(idempotency_takeover_total[5m])) > 0.5
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          component: idempotency-gate
+        annotations:
+          summary: "Idempotency takeover rate critical ({{ $value | printf \"%.2f\" }}/s)"
+          description: "High rate of lease takeovers. Immediate investigation required - possible abuse or system issue."
+          runbook_url: "https://docs.internal/runbooks/idempotency-takeover"
+
+      # ========================================================================
+      # Takeover by Action Type Alert
+      # ========================================================================
+      - alert: IdempotencyTakeoverByActionType
+        expr: |
+          sum by (action_type) (rate(idempotency_takeover_total[5m])) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+          component: idempotency-gate
+        annotations:
+          summary: "Takeovers elevated for {{ $labels.action_type }}"
+          description: "Action type {{ $labels.action_type }} has elevated takeover rate. Check handler performance."
+
+      # ========================================================================
+      # Lease Expired Total Alert
+      # ========================================================================
+      - alert: IdempotencyLeaseExpiredHigh
+        expr: sum(rate(idempotency_lease_expired_total[5m])) > 0.2
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          component: idempotency-gate
+        annotations:
+          summary: "High lease expiration rate ({{ $value | printf \"%.2f\" }}/s)"
+          description: "Leases are expiring frequently. Consider increasing lease timeout or investigating slow handlers."
+
+      # ========================================================================
+      # Gate Latency Alert (p95)
+      # ========================================================================
+      - alert: IdempotencyGateLatencyHigh
+        expr: |
+          histogram_quantile(0.95, 
+            sum(rate(idempotency_gate_latency_seconds_bucket[5m])) by (le)
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          component: idempotency-gate
+        annotations:
+          summary: "p95 gate latency is {{ $value | printf \"%.3f\" }}s"
+          description: "Idempotency gate p95 latency exceeds 100ms. Check database performance."
+
+      # ========================================================================
+      # High Failure Rate Alert
+      # ========================================================================
+      - alert: IdempotencyHighFailureRate
+        expr: |
+          sum(rate(idempotency_action_total{outcome="FAILED"}[5m])) 
+          / 
+          sum(rate(idempotency_action_total[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+          component: idempotency-gate
+        annotations:
+          summary: "High idempotency action failure rate ({{ $value | printf \"%.1f%%\" }})"
+          description: "More than 10% of idempotency actions are failing. Investigate error patterns."
+
+
+  # ==========================================================================
+  # Phase 10.3 PR-6.1 - SLO & Error Budget Alerts
+  # ==========================================================================
+  - name: idempotency_slo
+    rules:
+      # ========================================================================
+      # Unknown Action Type Detection (Cardinality Guard)
+      # ========================================================================
+      - alert: IdempotencyUnknownActionType
+        expr: |
+          count by (action_type) (idempotency_action_total) 
+          unless 
+          count by (action_type) (idempotency_action_total{action_type=~"ADMIN_RETRY|DLQ_REDRIVE|DLQ_RESOLVE"})
+        for: 1m
+        labels:
+          severity: warning
+          team: platform
+          component: idempotency-gate
+          slo: cardinality
+        annotations:
+          summary: "Unknown action_type detected: {{ $labels.action_type }}"
+          description: "Action type {{ $labels.action_type }} is not in allowlist. Update allowlist or investigate source."
+          runbook_url: "https://docs.internal/runbooks/idempotency-slo#cardinality"
+
+      # ========================================================================
+      # SLO-1: Gate Latency Budget Burn
+      # ========================================================================
+      - alert: IdempotencyGateLatencyBudgetBurn
+        expr: |
+          (
+            histogram_quantile(0.95, 
+              sum(rate(idempotency_gate_latency_seconds_bucket[1h])) by (le)
+            ) > 0.05
+          ) and (
+            histogram_quantile(0.95, 
+              sum(rate(idempotency_gate_latency_seconds_bucket[5m])) by (le)
+            ) > 0.05
+          )
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+          component: idempotency-gate
+          slo: gate_latency
+        annotations:
+          summary: "Gate latency SLO budget burning fast"
+          description: "p95 latency >50ms for both 1h and 5m windows. Error budget depleting rapidly."
+          runbook_url: "https://docs.internal/runbooks/idempotency-slo#latency"
+
+      - alert: IdempotencyGateLatencyP99High
+        expr: |
+          histogram_quantile(0.99, 
+            sum(rate(idempotency_gate_latency_seconds_bucket[5m])) by (le)
+          ) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          component: idempotency-gate
+          slo: gate_latency
+        annotations:
+          summary: "Gate latency p99 exceeds 100ms"
+          description: "p99 latency: {{ $value | printf \"%.3f\" }}s. SLO target: ≤100ms."
+
+      # ========================================================================
+      # SLO-2: Success Rate
+      # ========================================================================
+      - alert: IdempotencySuccessRateLow
+        expr: |
+          (
+            sum(rate(idempotency_action_total{outcome="SUCCESS"}[1h])) 
+            / 
+            sum(rate(idempotency_action_total[1h]))
+          ) < 0.95
+        for: 5m
+        labels:
+          severity: warning
+          team: platform
+          component: idempotency-gate
+          slo: success_rate
+        annotations:
+          summary: "Idempotency success rate below 95%"
+          description: "Success rate: {{ $value | humanizePercentage }}. SLO target: ≥95% (1h)."
+          runbook_url: "https://docs.internal/runbooks/idempotency-slo#success-rate"
+
+      - alert: IdempotencySuccessRateCritical
+        expr: |
+          (
+            sum(rate(idempotency_action_total{outcome="SUCCESS"}[1h])) 
+            / 
+            sum(rate(idempotency_action_total[1h]))
+          ) < 0.90
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          component: idempotency-gate
+          slo: success_rate
+        annotations:
+          summary: "Idempotency success rate critically low (<90%)"
+          description: "Success rate: {{ $value | humanizePercentage }}. Immediate investigation required."
+          runbook_url: "https://docs.internal/runbooks/idempotency-slo#success-rate"
+
+      # ========================================================================
+      # SLO-3: Takeover Rate
+      # ========================================================================
+      - alert: IdempotencyTakeoverRateHigh
+        expr: |
+          (
+            sum(rate(idempotency_takeover_total[1h])) 
+            / 
+            sum(rate(idempotency_gate_result_total{type="PROCEED"}[1h]))
+          ) > 0.01
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+          component: idempotency-gate
+          slo: takeover_rate
+        annotations:
+          summary: "Takeover rate exceeds 1% of PROCEED"
+          description: "Takeover rate: {{ $value | humanizePercentage }}. SLO target: ≤1% (1h)."
+          runbook_url: "https://docs.internal/runbooks/idempotency-slo#takeover-rate"
+
+      - alert: IdempotencyTakeoverRateCritical
+        expr: |
+          (
+            sum(rate(idempotency_takeover_total[1h])) 
+            / 
+            sum(rate(idempotency_gate_result_total{type="PROCEED"}[1h]))
+          ) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+          component: idempotency-gate
+          slo: takeover_rate
+        annotations:
+          summary: "Takeover rate critically high (>5%)"
+          description: "Takeover rate: {{ $value | humanizePercentage }}. Possible abuse or system issue."
+          runbook_url: "https://docs.internal/runbooks/idempotency-slo#takeover-rate"
+
+      # ========================================================================
+      # Error Budget Burn Rate Alerts (Multi-Window)
+      # ========================================================================
+      - alert: IdempotencyErrorBudgetBurnFast
+        expr: |
+          (
+            1 - (
+              sum(rate(idempotency_action_total{outcome="SUCCESS"}[1h])) 
+              / 
+              sum(rate(idempotency_action_total[1h]))
+            )
+          ) / 0.001 > 14.4
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+          component: idempotency-gate
+          slo: error_budget
+        annotations:
+          summary: "Error budget burning at 14.4x rate"
+          description: "At current rate, monthly error budget will be exhausted in ~2 days. Immediate action required."
+          runbook_url: "https://docs.internal/runbooks/idempotency-slo#error-budget"
+
+      - alert: IdempotencyErrorBudgetBurnMedium
+        expr: |
+          (
+            1 - (
+              sum(rate(idempotency_action_total{outcome="SUCCESS"}[6h])) 
+              / 
+              sum(rate(idempotency_action_total[6h]))
+            )
+          ) / 0.001 > 6
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+          component: idempotency-gate
+          slo: error_budget
+        annotations:
+          summary: "Error budget burning at 6x rate"
+          description: "At current rate, monthly error budget will be exhausted in ~5 days. Investigation recommended."
+          runbook_url: "https://docs.internal/runbooks/idempotency-slo#error-budget"
+
+      # ========================================================================
+      # Error Budget Exhaustion Alert
+      # ========================================================================
+      - alert: IdempotencyErrorBudgetLow
+        expr: |
+          (
+            1 - (
+              (
+                1 - (
+                  sum(rate(idempotency_action_total{outcome="SUCCESS"}[30d])) 
+                  / 
+                  sum(rate(idempotency_action_total[30d]))
+                )
+              ) / 0.001
+            )
+          ) < 0.25
+        for: 30m
+        labels:
+          severity: warning
+          team: platform
+          component: idempotency-gate
+          slo: error_budget
+        annotations:
+          summary: "Error budget below 25%"
+          description: "Monthly error budget is running low. Consider freezing non-critical changes."
+          runbook_url: "https://docs.internal/runbooks/idempotency-slo#error-budget"
+
+      - alert: IdempotencyErrorBudgetCritical
+        expr: |
+          (
+            1 - (
+              (
+                1 - (
+                  sum(rate(idempotency_action_total{outcome="SUCCESS"}[30d])) 
+                  / 
+                  sum(rate(idempotency_action_total[30d]))
+                )
+              ) / 0.001
+            )
+          ) < 0.10
+        for: 30m
+        labels:
+          severity: critical
+          team: platform
+          component: idempotency-gate
+          slo: error_budget
+        annotations:
+          summary: "Error budget below 10% - CRITICAL"
+          description: "Monthly error budget nearly exhausted. Feature freeze recommended."
+          runbook_url: "https://docs.internal/runbooks/idempotency-slo#error-budget"

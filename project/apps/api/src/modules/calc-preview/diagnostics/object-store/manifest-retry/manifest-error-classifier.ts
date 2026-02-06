@@ -64,14 +64,17 @@ interface ErrorLike {
 }
 
 function getErrorCode(error: ErrorLike): string | undefined {
+  if (!error) return undefined;
   return error.code || error.Code;
 }
 
 function getHttpStatus(error: ErrorLike): number | undefined {
+  if (!error) return undefined;
   return error.$metadata?.httpStatusCode || error.statusCode;
 }
 
 function getErrorMessage(error: ErrorLike): string {
+  if (!error) return '';
   return error.message || String(error);
 }
 
@@ -109,14 +112,51 @@ function isAlreadyExistsError(error: ErrorLike): boolean {
 function isTimeoutError(error: ErrorLike): boolean {
   const code = getErrorCode(error);
   const message = getErrorMessage(error).toLowerCase();
+  const status = getHttpStatus(error);
+  
+  // HTTP 504 Gateway Timeout
+  if (status === 504) return true;
+  
+  // Phase 10.1.6: AbortError from AbortController timeout
+  if (isAbortError(error)) return true;
   
   if (code === 'ETIMEDOUT') return true;
   if (code === 'ESOCKETTIMEDOUT') return true;
   if (code === 'TimeoutError') return true;
   if (code === 'RequestTimeout') return true;
+  if (code === 'ABORT_ERROR') return true;  // From MinioObjectStoreClient.mapError
   
   if (message.includes('timeout')) return true;
   if (message.includes('timed out')) return true;
+  
+  return false;
+}
+
+/**
+ * Phase 10.1.6: Check if error is an AbortError from AbortController
+ * 
+ * AbortError detection must be robust:
+ * - Node.js Error with name='AbortError'
+ * - DOMException with name='AbortError' (browser/Node 18+)
+ * - AWS SDK v3 wrapped abort errors
+ * 
+ * @see PHASE-10-WORKER-ARCHITECTURE.md Section 11.5
+ */
+function isAbortError(error: ErrorLike): boolean {
+  if (!error) return false;
+  
+  // Check error.name directly
+  const name = error.name;
+  if (name === 'AbortError') return true;
+  
+  // Check error code (from MinioObjectStoreClient.mapError)
+  const code = getErrorCode(error);
+  if (code === 'ABORT_ERROR') return true;
+  
+  // Check message for abort indicators
+  const message = getErrorMessage(error).toLowerCase();
+  if (message.includes('aborted') && message.includes('timeout')) return true;
+  if (message.includes('abort') && message.includes('signal')) return true;
   
   return false;
 }
@@ -247,6 +287,7 @@ function isInvalidObjectError(error: ErrorLike): boolean {
  * Check if error is serialization error
  */
 function isSerializationError(error: ErrorLike): boolean {
+  if (!error) return false;
   const name = error.name;
   const message = getErrorMessage(error).toLowerCase();
   
@@ -393,6 +434,7 @@ export const ManifestErrorClassifier = {
   classifyError,
   isAlreadyExistsError,
   isTimeoutError,
+  isAbortError,
   isConnectionResetError,
   isDnsError,
   isThrottlingError,

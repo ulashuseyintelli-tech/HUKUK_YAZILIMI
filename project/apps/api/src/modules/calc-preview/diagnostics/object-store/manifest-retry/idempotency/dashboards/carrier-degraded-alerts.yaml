@@ -1,0 +1,70 @@
+# Carrier Degraded Correlation Alerts
+# Phase 10.4 - ADR-008 Observability
+#
+# Monitors jobs running without idempotency context due to
+# missing or invalid carriers.
+
+groups:
+  - name: carrier-propagation
+    rules:
+      # Alert when any degraded correlation events occur sustained
+      - alert: DegradedCorrelationSustained
+        expr: rate(audit_degraded_correlation_total[5m]) > 0
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Jobs running without idempotency context"
+          description: |
+            Carrier validation failures detected.
+            Reason: {{ $labels.reason }}
+            Rate: {{ $value | printf "%.2f" }}/s
+          runbook_url: "https://docs.internal/runbooks/carrier-degraded"
+
+      # Alert on high rate of specific failure types
+      - alert: CarrierVersionMismatchSpike
+        expr: rate(audit_degraded_correlation_total{reason="VERSION_MISMATCH"}[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Carrier version mismatch spike - possible deployment issue"
+          description: |
+            High rate of VERSION_MISMATCH errors indicates schema incompatibility.
+            This often happens during rolling deployments.
+            Rate: {{ $value | printf "%.2f" }}/s
+          runbook_url: "https://docs.internal/runbooks/carrier-version-mismatch"
+
+      # Alert on missing carriers (producer not using enqueueWithContext)
+      - alert: MissingCarriersSustained
+        expr: rate(audit_degraded_correlation_total{reason="MISSING"}[5m]) > 0.5
+        for: 15m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "High rate of jobs without carriers"
+          description: |
+            Many jobs are being enqueued without idempotency context.
+            Check if producers are using enqueueWithContext().
+            Rate: {{ $value | printf "%.2f" }}/s
+
+      # SLO: Context restoration success rate
+      - alert: ContextRestorationRateLow
+        expr: |
+          (
+            rate(job_context_restored_total[5m])
+            /
+            (rate(job_context_restored_total[5m]) + rate(audit_degraded_correlation_total[5m]))
+          ) < 0.95
+        for: 10m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Context restoration rate below 95%"
+          description: |
+            Less than 95% of jobs are successfully restoring idempotency context.
+            Current rate: {{ $value | printf "%.1f" }}%

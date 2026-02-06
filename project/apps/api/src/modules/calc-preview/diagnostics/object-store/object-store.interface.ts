@@ -45,6 +45,18 @@ export interface PutObjectInput {
    * Uses If-None-Match: * header
    */
   ifNoneMatch?: boolean;
+  
+  /**
+   * AbortSignal for timeout/cancellation support
+   * 
+   * Phase 10.1.6: Hard timeout enforcement
+   * - Worker uses AbortController with 30s timeout
+   * - Prevents lease expiry during slow S3 stalls
+   * - AbortError → S3_TIMEOUT → RETRYABLE
+   * 
+   * @see PHASE-10-WORKER-ARCHITECTURE.md Section 11.5
+   */
+  signal?: AbortSignal;
 }
 
 /**

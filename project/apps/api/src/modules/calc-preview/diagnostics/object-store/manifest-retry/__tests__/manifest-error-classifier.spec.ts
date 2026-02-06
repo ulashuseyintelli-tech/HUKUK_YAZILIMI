@@ -238,7 +238,7 @@ describe('ManifestErrorClassifier', () => {
       expect(result.errorCode).toBe(ManifestErrorCode.S3_5XX);
     });
     
-    it('should classify HTTP 504 as RETRY', () => {
+    it('should classify HTTP 504 as RETRY with S3_TIMEOUT (Gateway Timeout)', () => {
       const error = {
         $metadata: { httpStatusCode: 504 },
         message: 'Gateway Timeout',
@@ -247,7 +247,8 @@ describe('ManifestErrorClassifier', () => {
       const result = classifyError(error, 0);
       
       expect(result.decision).toBe('RETRY');
-      expect(result.errorCode).toBe(ManifestErrorCode.S3_5XX);
+      // 504 Gateway Timeout is classified as timeout, not generic 5xx
+      expect(result.errorCode).toBe(ManifestErrorCode.S3_TIMEOUT);
     });
     
     it('should classify InternalError code as RETRY', () => {

@@ -1,0 +1,107 @@
+# CI Pipeline - Core Checks
+#
+# Includes:
+# - Unit tests
+# - Lint checks
+# - Architectural guardrails (ADR compliance)
+#
+# ADR-007: ALS-Only Context Access grep gate
+
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'apps/api/src/**'
+      - 'packages/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/api/src/**'
+      - 'packages/**'
+
+jobs:
+  # ===========================================================================
+  # UNIT TESTS
+  # ===========================================================================
+  unit-tests:
+    name: Unit Tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v2
+        with:
+          version: 8
+          
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        
+      - name: Run unit tests
+        run: pnpm --filter api test
+
+  # ===========================================================================
+  # ARCHITECTURAL GUARDRAILS
+  # ===========================================================================
+  architectural-guardrails:
+    name: Architectural Guardrails
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      # ADR-007: ALS-Only Context Access
+      # Prevents regression to req.idempotencyContext pattern
+      - name: Check for banned req.idempotencyContext (ADR-007)
+        run: |
+          echo "Checking ADR-007 compliance: ALS-only context access..."
+          if grep -r "req\.idempotencyContext\s*=" apps/api/src/; then
+            echo ""
+            echo "═══════════════════════════════════════════════════════════════════════════════"
+            echo "  ❌ ADR-007 VIOLATION: req.idempotencyContext assignment found"
+            echo "═══════════════════════════════════════════════════════════════════════════════"
+            echo ""
+            echo "  Context must be accessed via AsyncLocalStorage only."
+            echo "  Use: getIdempotencyContext() from idempotency-context.ts"
+            echo ""
+            echo "  See: docs/adr/ADR-007-ALS-ONLY-CONTEXT-ACCESS.md"
+            echo ""
+            exit 1
+          fi
+          echo "✅ ADR-007 compliant: No req.idempotencyContext assignments"
+      
+      # Future guardrails can be added here
+      # - ADR-XXX: ...
+
+  # ===========================================================================
+  # CI SUMMARY
+  # ===========================================================================
+  ci-summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [unit-tests, architectural-guardrails]
+    if: always()
+    steps:
+      - name: Check all jobs
+        run: |
+          echo "═══════════════════════════════════════════════════════════════════════════════"
+          echo "  CI SUMMARY"
+          echo "═══════════════════════════════════════════════════════════════════════════════"
+          echo ""
+          echo "Unit Tests: ${{ needs.unit-tests.result }}"
+          echo "Architectural Guardrails: ${{ needs.architectural-guardrails.result }}"
+          echo ""
+          
+          if [ "${{ needs.unit-tests.result }}" != "success" ] || \
+             [ "${{ needs.architectural-guardrails.result }}" != "success" ]; then
+            echo "❌ CI FAILED"
+            exit 1
+          fi
+          
+          echo "✅ CI PASSED"

@@ -10,6 +10,6 @@
   coverageDirectory: '../coverage',
   testEnvironment: 'node',
   moduleNameMapper: {
-    '^@/(.*)$': '<rootDir>/',
+    '^@/(.*)$': '<rootDir>/$1',
   },
 };

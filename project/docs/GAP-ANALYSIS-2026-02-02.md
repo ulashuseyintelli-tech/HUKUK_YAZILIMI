@@ -10,9 +10,11 @@
 | Area | Backend | Frontend | Priority |
 |------|---------|----------|----------|
 | Phase 9C Object Storage | ✅ 100% | N/A (internal) | LOCKED |
+| Phase 10.1 Foundation | ✅ 95% (133 tests) | N/A | NEAR COMPLETE |
+| Phase 10.1 Worker | ✅ Done | N/A | COMPLETE |
+| Phase 10.1 Admin APIs | ✅ Done | N/A | COMPLETE |
+| Phase 10.2 Digital Signature | ❌ 0% | ❌ 0% | AFTER 10.1 |
 | Simulation API | ✅ 90% | ⚠️ 20% | HIGH |
-| Phase 10 Retry Pipeline | ❌ 0% | ❌ 0% | NEXT |
-| Phase 10 Digital Signature | ❌ 0% | ❌ 0% | NEXT |
 | Admin Panel | ⚠️ 50% | ❌ 10% | MEDIUM |
 
 ---
@@ -57,17 +59,27 @@ simulation-api/
     └── failover-handler        ✅
 ```
 
-### ❌ NOT STARTED (Phase 10)
+### ❌ NOT STARTED (Phase 10) → ✅ PARTIALLY COMPLETE
 
 **10.1 Retry Pipeline:**
 ```
-manifest-retry/                  ❌ NOT CREATED
-├── manifest-error-classifier.ts
-├── manifest-retry-queue.repository.ts
-├── manifest-retry-worker.service.ts
-├── manifest-dlq.repository.ts
-├── circuit-breaker.service.ts
+manifest-retry/                  ✅ CREATED (133 tests)
+├── manifest-error-classifier.ts ✅ 40 tests
+├── manifest-retry.types.ts      ✅ 17 tests
+├── manifest-retry-queue.repository.ts ✅ 20 tests
+├── manifest-dlq.repository.ts   ✅ 18 tests
+├── manifest-retry-worker.service.ts   ✅ 23 tests
+├── manifest-retry-worker.config.ts    ✅ Created
+├── manifest-admin.controller.ts       ✅ 15 tests
+├── manifest-admin.dto.ts              ✅ Created
+├── circuit-breaker (in worker)        ✅ Implemented
 └── __tests__/
+    ├── manifest-error-classifier.spec.ts ✅
+    ├── manifest-retry.types.spec.ts      ✅
+    ├── manifest-retry-queue.repository.spec.ts ✅
+    ├── manifest-dlq.repository.spec.ts   ✅
+    ├── manifest-retry-worker.spec.ts     ✅
+    └── manifest-admin.controller.spec.ts ✅
 ```
 
 **10.2 Digital Signature:**
@@ -81,9 +93,9 @@ bundle-signature/                ❌ NOT CREATED
 ```
 
 **Database Migrations (Phase 10):**
-- ❌ `manifest_retry_queue` table
-- ❌ `manifest_dead_letter_queue` table
-- ❌ `seal_signatures` table
+- ✅ `manifest_retry_queue` table (created)
+- ✅ `manifest_dead_letter_queue` table (created)
+- ❌ `seal_signatures` table (Phase 10.2)
 
 **Admin APIs (Phase 10):**
 - ❌ `POST /admin/bundles/{id}/manifest/retry`
@@ -292,6 +304,52 @@ Day 5:
 - [ ] DLQ dashboard operational
 - [ ] Bundle verification accessible
 - [ ] Admin panel functional
+
+---
+
+## 7. Traceability Matrix (Gap → Story → Task → Test)
+
+### Phase 10.1 Retry Pipeline
+
+| Gap | User Story | Task | Test File | Status |
+|-----|------------|------|-----------|--------|
+| Error Classifier | US-10.2 | 10.1.1 | manifest-error-classifier.spec.ts | ✅ 40 tests |
+| Retry Queue Schema | US-10.1 | 10.1.2 | migration.sql | ✅ Created |
+| DLQ Schema | US-10.3 | 10.1.3 | migration.sql | ✅ Created |
+| Retry Queue Repo | US-10.1 | 10.1.4 | manifest-retry-queue.repository.spec.ts | ✅ 20 tests |
+| DLQ Repo | US-10.3 | 10.1.5 | manifest-dlq.repository.spec.ts | ✅ 18 tests |
+| Backoff Types | US-10.1 | 10.1.X | manifest-retry.types.spec.ts | ✅ 17 tests |
+| Retry Worker | US-10.1 | 10.1.6 | manifest-retry-worker.spec.ts | ✅ 23 tests |
+| ManifestWriter Integration | US-10.1 | 10.1.7 | - | ❌ Not started |
+| Admin Retry API | US-10.4 | 10.1.8 | manifest-admin.controller.spec.ts | ✅ 4 tests |
+| DLQ Query API | US-10.3 (AC-10.3.2) | 10.1.9 | manifest-admin.controller.spec.ts | ✅ 2 tests |
+| DLQ Redrive API | US-10.3 (AC-10.3.3) | 10.1.10 | manifest-admin.controller.spec.ts | ✅ 4 tests |
+| DLQ Resolve API | US-10.3 (AC-10.3.4) | 10.1.11 | manifest-admin.controller.spec.ts | ✅ 4 tests |
+| Circuit Breaker | US-10.1 | 10.1.12 | manifest-retry-worker.spec.ts | ✅ 9 tests |
+| Metrics | US-10.1 (AC-10.1.7) | 10.1.13 | - | ⚠️ Interface defined |
+
+### Phase 10.2 Digital Signature
+
+| Gap | User Story | Task | Test File | Status |
+|-----|------------|------|-----------|--------|
+| Signature Types | US-10.5 | 10.2.1 | - | ❌ Not started |
+| Signing Key Service | US-10.6 | 10.2.2 | - | ❌ Not started |
+| Signature Service | US-10.5 | 10.2.3 | - | ❌ Not started |
+| ManifestWriter Sig Integration | US-10.5 (AC-10.5.4) | 10.2.4 | - | ❌ Not started |
+| Seal Record Schema | US-10.5 (AC-10.5.4) | 10.2.5 | - | ❌ Not started |
+| Verification API | US-10.7 (AC-10.7.1) | 10.2.6 | - | ❌ Not started |
+| CLI Verification | US-10.7 (AC-10.7.3) | 10.2.7 | - | ❌ Not started |
+| Signature Metrics | US-10.5 | 10.2.8 | - | ❌ Not started |
+
+### Frontend Gaps (Sprint 4)
+
+| Gap | Backend Dependency | Component | Status |
+|-----|-------------------|-----------|--------|
+| SimulationRunList | Simulation API ✅ | SimulationRunList.tsx | ❌ Not started |
+| SimulationDetail | Simulation API ✅ | SimulationDetail.tsx | ❌ Not started |
+| DLQ Dashboard | DLQ APIs (10.1.9-11) | DLQDashboard.tsx | ❌ Blocked |
+| Retry Queue Monitor | Retry Queue Stats | RetryQueueMonitor.tsx | ❌ Blocked |
+| Bundle Verification | Verification API (10.2.6) | BundleVerification.tsx | ❌ Blocked |
 
 ---
 

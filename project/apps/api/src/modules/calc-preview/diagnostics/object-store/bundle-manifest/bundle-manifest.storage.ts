@@ -48,6 +48,28 @@ export class ManifestStorage {
     bundleId: string,
     manifest: BundleManifestV1
   ): Promise<ManifestWriteResult> {
+    return this.writeManifestWithSignal(bundleId, manifest, undefined);
+  }
+
+  /**
+   * Phase 10.1.6: Writes manifest with AbortSignal support.
+   * 
+   * Uses If-None-Match: * to fail if manifest already exists.
+   * Includes metadata headers for debugging and integrity verification.
+   * Signal enables hard timeout enforcement from worker.
+   * 
+   * @param bundleId - Bundle UUID
+   * @param manifest - Manifest to write
+   * @param signal - Optional AbortSignal for timeout
+   * @returns Write result
+   * 
+   * @see PHASE-10-WORKER-ARCHITECTURE.md Section 11.5
+   */
+  async writeManifestWithSignal(
+    bundleId: string,
+    manifest: BundleManifestV1,
+    signal?: AbortSignal
+  ): Promise<ManifestWriteResult> {
     const key = buildManifestKey(bundleId, this.keyPrefix);
     
     // Canonical JSON for consistent storage
@@ -63,18 +85,28 @@ export class ManifestStorage {
     
     try {
       // Write-once: fail if exists
-      await this.objectStore.putWriteOnce({
+      // Phase 10.1.6: Pass signal for timeout support
+      const putInput: Parameters<typeof this.objectStore.putWriteOnce>[0] = {
         key,
         body: buffer,
         contentType: 'application/json',
         metadata,
-      });
+      };
+      if (signal) {
+        putInput.signal = signal;
+      }
+      await this.objectStore.putWriteOnce(putInput);
       
       return {
         success: true,
         key,
       };
     } catch (error) {
+      // Phase 10.1.6: Re-throw AbortError for timeout handling
+      if (this.isAbortError(error)) {
+        throw error;
+      }
+      
       // Check if it's a "already exists" error
       if (error instanceof ObjectAlreadyExistsError) {
         return {
@@ -106,6 +138,19 @@ export class ManifestStorage {
         error: errorMessage,
       };
     }
+  }
+
+  /**
+   * Phase 10.1.6: Detect AbortError for timeout handling
+   */
+  private isAbortError(error: unknown): boolean {
+    if (!error) return false;
+    if (error instanceof Error && error.name === 'AbortError') return true;
+    if (typeof error === 'object' && 'name' in error) {
+      const err = error as { name?: string };
+      if (err.name === 'AbortError') return true;
+    }
+    return false;
   }
 
   /**
