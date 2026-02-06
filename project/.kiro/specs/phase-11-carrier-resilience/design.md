@@ -120,6 +120,23 @@ ALTER TABLE manifest_dead_letter_queue DROP COLUMN carrier_json;
 
 ## Task 11.1: Worker Inbound Degraded Mode
 
+> **Full design:** [phase-11-1-design.md](./phase-11-1-design.md)  
+> **Requirements:** [phase-11-1-requirements.md](./phase-11-1-requirements.md)
+
+### Summary
+
+Worker inbound boundary'de carrier validation + degraded mode.
+Byte-level pre-parse size check → parse → validate → classify → FULL or MINIMAL path.
+
+### Key Design Decisions
+
+1. **Pre-parse byte check:** OVERSIZE carrier → JSON.parse çağrılmaz (CPU/DoS guard)
+2. **Discriminated union result:** `InboundValidationResult` mode: FULL | MINIMAL
+3. **MinimalCarrierContext:** Safe bounded fields only (no nested payloads)
+4. **Snapshot sanitization:** Max 500 chars, serialization failure → '[unserializable]'
+5. **Metric:** `carrier_inbound_total{outcome, reason}` — replaces old `recordCarrierInvalid()`
+6. **Audit extension:** `degradedContext?: DegradedContext` on AuditEventInput
+
 ### Flow Diagram
 
 ```
@@ -174,33 +191,22 @@ ALTER TABLE manifest_dead_letter_queue DROP COLUMN carrier_json;
 
 ### DegradedContext Type
 
+> See [phase-11-1-design.md](./phase-11-1-design.md) for full type definitions.
+
 ```typescript
-/**
- * Degraded context for audit events when carrier is invalid.
- */
 export interface DegradedContext {
-  /** Always true when present */
   readonly isDegraded: true;
-  
-  /** Reason for degradation (FIXED ENUM) */
-  readonly reason: CarrierDropReason;
-  
-  /** 
-   * First 500 chars of carrier JSON (sanitized).
-   * Undefined if carrier was null/undefined.
-   */
-  readonly carrierSnapshot?: string;
+  readonly reason: CarrierDropReasonV2;
+  readonly carrierSnapshot?: string; // max 500 chars
 }
 
-/**
- * Carrier drop reasons (FIXED ENUM - do not add without ADR update).
- */
-export type CarrierDropReason =
-  | 'VERSION_MISMATCH'   // version !== 1 && version !== 2
-  | 'MISSING_REQUIRED'   // requestId, actionId, etc. missing
-  | 'MALFORMED'          // not an object, null, undefined
-  | 'TYPE_ERROR'         // field type mismatch
-  | 'UPGRADE_FAILED';    // V1→V2 upgrade threw error
+export type CarrierDropReasonV2 =
+  | 'MALFORMED'
+  | 'VERSION_MISMATCH'
+  | 'MISSING_REQUIRED'
+  | 'TYPE_ERROR'
+  | 'OVERSIZE'           // Phase 11.1: pre-parse byte check
+  | 'UPGRADE_FAILED';
 ```
 
 ### Carrier Snapshot Sanitization

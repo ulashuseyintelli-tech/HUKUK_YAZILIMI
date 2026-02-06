@@ -76,6 +76,57 @@ jobs:
           fi
           echo "✅ ADR-007 compliant: No req.idempotencyContext assignments"
       
+      # Phase 11: Carrier Write-Once Contract
+      # Prevents UPDATE SET carrier_* outside upsert EXCLUDED path
+      - name: Check carrier write-once contract (Phase 11)
+        run: |
+          echo "Checking Phase 11 compliance: carrier write-once contract..."
+          
+          # Gate #1: UPDATE SET carrier_* drift (expect: 0 match outside EXCLUDED)
+          VIOLATIONS=$(grep -rn "UPDATE.*SET" apps/api/src/ \
+            --include="*.ts" \
+            --exclude-dir="__tests__" \
+            --exclude="*.spec.ts" \
+            --exclude="*.test.ts" \
+            | grep -i "carrier_\(json\|version\|truncated\)" \
+            | grep -v "EXCLUDED\." \
+            || true)
+          
+          # Gate #2: raw SQL helpers referencing carrier columns (expect: 0 match)
+          RAW_VIOLATIONS=$(grep -rn \
+            -e "executeRaw.*carrier_\(json\|version\|truncated\)" \
+            -e "executeRawUnsafe.*carrier_\(json\|version\|truncated\)" \
+            -e "queryRawUnsafe.*carrier_\(json\|version\|truncated\)" \
+            apps/api/src/ \
+            --include="*.ts" \
+            --exclude-dir="__tests__" \
+            --exclude="*.spec.ts" \
+            --exclude="*.test.ts" \
+            || true)
+          
+          ALL_VIOLATIONS="$(printf "%s\n%s" "$VIOLATIONS" "$RAW_VIOLATIONS" | sed '/^$/d')"
+          
+          if [ -n "$ALL_VIOLATIONS" ]; then
+            echo ""
+            echo "═══════════════════════════════════════════════════════════════════════════════"
+            echo "  ❌ PHASE 11 VIOLATION: Carrier write-once contract breached"
+            echo "═══════════════════════════════════════════════════════════════════════════════"
+            echo ""
+            echo "$ALL_VIOLATIONS"
+            echo ""
+            echo "  Carrier columns are write-once: only upsert() INSERT + ON CONFLICT UPDATE"
+            echo "  may set carrier_json, carrier_version, carrier_truncated."
+            echo ""
+            echo "  resolve/markRedriven/atomicRedrive MUST NOT touch carrier columns."
+            echo "  executeRaw/executeRawUnsafe/queryRawUnsafe MUST NOT reference carrier columns."
+            echo ""
+            echo "  See: .kiro/specs/phase-11-carrier-resilience/PHASE-11-DONE.md"
+            echo ""
+            exit 1
+          fi
+          
+          echo "✅ Phase 11 compliant: carrier write-once contract intact"
+      
       # Future guardrails can be added here
       # - ADR-XXX: ...
 
