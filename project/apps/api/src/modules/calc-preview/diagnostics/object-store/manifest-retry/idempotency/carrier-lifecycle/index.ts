@@ -97,14 +97,65 @@ export {
 
 // Worker carrier handler
 export {
-  normalizeInboundCarrier,
+  validateInboundCarrier,
   handleRetryCarrier,
   handleDlqCarrier,
   SimpleWorkerCarrierMetrics,
   WorkerCarrierSizeExceededError,
   CARRIER_SIZE_EXCEEDED_ERROR_CODE,
   IWorkerCarrierMetrics,
-  InboundCarrierResult,
   RetryCarrierResult,
   DlqCarrierResult,
 } from './worker-carrier-handler';
+
+// Phase 11.1 - Degraded context types
+export {
+  CarrierDropReasonV2,
+  DegradedContext,
+  MinimalCarrierContext,
+  InboundValidationResult,
+  InboundValidationFull,
+  InboundValidationMinimal,
+  MAX_CARRIER_SNAPSHOT_CHARS,
+  sanitizeCarrierSnapshot,
+  extractMinimalFields,
+  buildMinimalResult,
+} from './degraded-context.types';
+
+// Phase 11.1 - Inbound metric
+export {
+  carrierInboundMetric,
+} from './carrier-lifecycle-metrics';
+
+// Phase 11.2 - DLQ carrier storage
+export {
+  prepareCarrierForDlqStorage,
+  resolveCarrierForRedrive,
+  createMinimalCarrierFromDlq,
+  DlqCarrierStorageFields,
+} from './dlq-carrier-storage';
+
+// Phase 11.2 - DLQ storage metrics
+export {
+  dlqStorageMetric,
+  dlqStorageTruncatedMetric,
+} from './carrier-lifecycle-metrics';
+
+// Phase 11.3 - Redrive depth calculator
+export {
+  calculateRedriveDepth,
+  DepthCalculationResult,
+} from './redrive-depth-calculator';
+
+// Phase 11.3 - Redrive depth enforcer
+export {
+  enforceRedriveDepthLimit,
+  RedriveDepthExceededError,
+  DepthEnforcementResult,
+  MAX_REDRIVE_DEPTH,
+} from './redrive-depth-enforcer';
+
+// Phase 11.3 - Redrive depth metrics
+export {
+  redriveDepthHistogram,
+} from './carrier-lifecycle-metrics';

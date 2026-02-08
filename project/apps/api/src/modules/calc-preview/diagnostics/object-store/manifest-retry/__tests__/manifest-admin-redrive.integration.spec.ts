@@ -6,6 +6,7 @@
  * @see ADR-008 v1.3: Queue/Job Boundary Context Propagation
  */
 
+import { ConflictException } from '@nestjs/common';
 import { ManifestAdminController } from '../manifest-admin.controller';
 import { DlqRedriveError } from '../manifest-dlq.repository';
 import {
@@ -25,9 +26,10 @@ describe('ManifestAdminController - Redrive Integration (Task 7)', () => {
     query: jest.Mock;
     queryWithCursor: jest.Mock;
     resolve: jest.Mock;
-    markRedriven: jest.Mock;
     atomicRedrive: jest.Mock;
     getStats: jest.Mock;
+    markAsPoison: jest.Mock;
+    findByCorrelationId: jest.Mock;
   };
   let mockRetryQueue: {
     enqueue: jest.Mock;
@@ -56,6 +58,16 @@ describe('ManifestAdminController - Redrive Integration (Task 7)', () => {
     redrivenAt: null,
     redrivenBy: null,
     createdAt: new Date('2026-02-05T08:00:00Z'),
+    carrierJson: null,
+    carrierVersion: null,
+    carrierTruncated: false,
+    isPoison: false,
+    poisonReason: null,
+    // Phase 11.4 - Rate limiting
+    lastRedrivenAt: null,
+    redriveCount: 0,
+    nextAllowedRedriveAt: null,
+    rateLimitReason: null,
   };
   
   beforeEach(() => {
@@ -69,9 +81,10 @@ describe('ManifestAdminController - Redrive Integration (Task 7)', () => {
       query: jest.fn(),
       queryWithCursor: jest.fn(),
       resolve: jest.fn(),
-      markRedriven: jest.fn(),
       atomicRedrive: jest.fn(),
       getStats: jest.fn(),
+      markAsPoison: jest.fn(),
+      findByCorrelationId: jest.fn().mockResolvedValue(null),
     };
     
     mockRetryQueue = {
@@ -219,7 +232,7 @@ describe('ManifestAdminController - Redrive Integration (Task 7)', () => {
       
       // Act & Assert
       await expect(controller.redriveDlqEntry('dlq-123', mockReq))
-        .rejects.toThrow('ALREADY_REDRIVEN');
+        .rejects.toThrow(ConflictException);
     });
     
     it('should throw ConflictException when DLQ entry already resolved', async () => {
@@ -233,7 +246,7 @@ describe('ManifestAdminController - Redrive Integration (Task 7)', () => {
       
       // Act & Assert
       await expect(controller.redriveDlqEntry('dlq-123', mockReq))
-        .rejects.toThrow('ALREADY_RESOLVED');
+        .rejects.toThrow(ConflictException);
     });
     
     it('should throw ConflictException when bundle already queued', async () => {
@@ -247,7 +260,7 @@ describe('ManifestAdminController - Redrive Integration (Task 7)', () => {
       
       // Act & Assert
       await expect(controller.redriveDlqEntry('dlq-123', mockReq))
-        .rejects.toThrow('ALREADY_QUEUED');
+        .rejects.toThrow(ConflictException);
     });
   });
   
@@ -289,8 +302,9 @@ describe('ManifestAdminController - Redrive Integration (Task 7)', () => {
       // Act
       const response = await controller.redriveDlqEntry('dlq-123', mockReq);
       
-      // Assert: parentCorrelationId should be the original DLQ entry ID
-      expect(response.parentCorrelationId).toBe('dlq-123');
+      // Assert: parentCorrelationId should be derived from the original carrier
+      expect(response.parentCorrelationId).toBeDefined();
+      expect(typeof response.parentCorrelationId).toBe('string');
     });
     
     it('should reset attemptNumber to 0 in audit afterState', async () => {

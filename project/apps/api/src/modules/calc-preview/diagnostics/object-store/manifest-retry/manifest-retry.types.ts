@@ -154,6 +154,14 @@ export interface DlqEntry {
   carrierJson: string | null;
   carrierVersion: number | null;
   carrierTruncated: boolean;
+  // Phase 11.3 - Poison tracking
+  isPoison: boolean;
+  poisonReason: string | null;
+  // Phase 11.4 - Rate limiting
+  lastRedrivenAt: Date | null;
+  redriveCount: number;
+  nextAllowedRedriveAt: Date | null;
+  rateLimitReason: string | null;
 }
 
 /**
@@ -170,6 +178,14 @@ export interface CreateDlqEntryInput {
   carrierJson?: string | null;
   carrierVersion?: number | null;
   carrierTruncated?: boolean;
+  // Phase 11.3 - Poison tracking (optional, default false)
+  isPoison?: boolean;
+  poisonReason?: string | null;
+  // Phase 11.4 - Rate limiting (optional, defaults: count=0, others=NULL)
+  redriveCount?: number;
+  lastRedrivenAt?: Date | null;
+  nextAllowedRedriveAt?: Date | null;
+  rateLimitReason?: string | null;
 }
 
 /**
@@ -197,6 +213,7 @@ export interface RedriveResult {
  */
 export interface DlqQueryOptions {
   status?: DlqStatus;
+  isPoison?: boolean;
   limit?: number;
   offset?: number;
   orderBy?: 'created_at' | 'last_failed_at';

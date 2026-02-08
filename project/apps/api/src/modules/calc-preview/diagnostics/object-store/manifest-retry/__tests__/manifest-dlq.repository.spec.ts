@@ -384,29 +384,6 @@ describe('PrismaManifestDlqRepository', () => {
   });
   
   // ==========================================================================
-  // markRedriven
-  // ==========================================================================
-  
-  describe('markRedriven', () => {
-    it('should mark entry as redriven', async () => {
-      prisma.$executeRaw.mockResolvedValueOnce(1);
-      
-      await repository.markRedriven(mockDlqId);
-      
-      expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
-    });
-    
-    it('should not throw when entry not found', async () => {
-      prisma.$executeRaw.mockResolvedValueOnce(0);
-      
-      // Should not throw
-      await repository.markRedriven('non-existent');
-      
-      expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
-    });
-  });
-  
-  // ==========================================================================
   // getStats
   // ==========================================================================
   

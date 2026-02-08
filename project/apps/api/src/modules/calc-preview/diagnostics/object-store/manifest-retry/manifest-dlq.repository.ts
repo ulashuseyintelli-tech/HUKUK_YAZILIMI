@@ -70,31 +70,51 @@ export interface IManifestDlqRepository {
   resolve(input: ResolveDlqInput): Promise<DlqEntry>;
   
   /**
-   * Mark entry as redriven.
-   * @deprecated Use atomicRedrive for transactional safety
-   */
-  markRedriven(dlqId: string, redrivenBy?: string): Promise<void>;
-  
-  /**
    * Atomically redrive a DLQ entry back to the retry queue.
    * Transactional: UPDATE DLQ + INSERT retry job in single transaction.
+   * 
+   * Phase 11.4 patch: When rateLimitGate is provided, the transaction also:
+   *   - Enforces cooldown guard (now < next_allowed_redrive_at → RATE_LIMITED)
+   *   - Updates rate limit state (redrive_count++, last_redriven_at, next_allowed_redrive_at)
+   * All-or-nothing: enqueue + rate limit state update in same tx.
    * 
    * @param dlqId - DLQ entry ID
    * @param redrivenBy - User ID who initiated the redrive
    * @param nextAttemptAt - When to schedule the retry (null = immediate)
+   * @param rateLimitGate - Rate limit gate params (optional, backward compat)
    * @returns Object with dlqEntry and newJobId
-   * @throws DlqRedriveError if entry not found or already resolved
+   * @throws DlqRedriveError if entry not found, already resolved, or rate limited
    */
   atomicRedrive(
     dlqId: string,
     redrivenBy: string,
     nextAttemptAt?: Date | null,
+    rateLimitGate?: { now: Date; nextAllowedRedriveAt: Date },
   ): Promise<{ dlqEntry: DlqEntry; newJobId: string }>;
   
   /**
    * Get DLQ statistics.
    */
   getStats(): Promise<DlqStats>;
+  
+  /**
+   * Mark DLQ entry as POISON (latched — never reverted).
+   * Sets is_poison=true and poison_reason atomically.
+   * Only touches poison columns — carrier columns are NOT modified (NNI-3).
+   * 
+   * Phase 11.3: Redrive Chain Depth Limit
+   */
+  markAsPoison(dlqId: string, input: { reason: string }): Promise<void>;
+  
+  /**
+   * Find DLQ entry by carrier correlationId (requestId in carrier_json).
+   * Used for redrive chain depth traversal.
+   * Returns null if no entry found or carrier_json is NULL.
+   * 
+   * Phase 11.3: Redrive Chain Depth Limit
+   */
+  findByCorrelationId(correlationId: string): Promise<DlqEntry | null>;
+
 }
 
 export interface DlqStats {
@@ -149,7 +169,8 @@ export type DlqRedriveErrorCode =
   | 'NOT_DLQ_OPEN'
   | 'NOT_FOUND'
   | 'JOB_CREATE_FAILED'
-  | 'ALREADY_QUEUED';
+  | 'ALREADY_QUEUED'
+  | 'RATE_LIMITED';
 
 /**
  * Error thrown when DLQ redrive fails
@@ -160,17 +181,23 @@ export class DlqRedriveError extends Error {
   readonly currentStatus: string | undefined;
   /** Existing job ID if ALREADY_QUEUED */
   readonly existingJobId: string | undefined;
+  /** Next allowed redrive time if RATE_LIMITED */
+  readonly nextAllowedAt: Date | undefined;
+  /** Wait seconds until next allowed redrive if RATE_LIMITED */
+  readonly waitSeconds: number | undefined;
   
   constructor(
     message: string, 
     code: DlqRedriveErrorCode,
-    options?: { currentStatus?: string; existingJobId?: string }
+    options?: { currentStatus?: string; existingJobId?: string; nextAllowedAt?: Date; waitSeconds?: number }
   ) {
     super(message);
     this.name = 'DlqRedriveError';
     this.code = code;
     this.currentStatus = options?.currentStatus ?? undefined;
     this.existingJobId = options?.existingJobId ?? undefined;
+    this.nextAllowedAt = options?.nextAllowedAt ?? undefined;
+    this.waitSeconds = options?.waitSeconds ?? undefined;
   }
 }
 
@@ -191,7 +218,8 @@ export class PrismaManifestDlqRepository implements IManifestDlqRepository {
   async upsert(input: CreateDlqEntryInput): Promise<DlqEntry> {
     const { 
       bundleId, attempt, errorCode, errorMessage, firstFailedAt, lastFailedAt,
-      carrierJson, carrierVersion, carrierTruncated 
+      carrierJson, carrierVersion, carrierTruncated,
+      isPoison, poisonReason,
     } = input;
     
     try {
@@ -199,12 +227,14 @@ export class PrismaManifestDlqRepository implements IManifestDlqRepository {
         INSERT INTO manifest_dead_letter_queue (
           bundle_id, attempt, final_error_code, final_error_message,
           first_failed_at, last_failed_at, status, created_at,
-          carrier_json, carrier_version, carrier_truncated
+          carrier_json, carrier_version, carrier_truncated,
+          is_poison, poison_reason
         )
         VALUES (
           ${bundleId}::uuid, ${attempt}, ${errorCode}, ${errorMessage ?? null},
           ${firstFailedAt}, ${lastFailedAt}, 'DLQ_OPEN', NOW(),
-          ${carrierJson ?? null}, ${carrierVersion ?? null}, ${carrierTruncated ?? false}
+          ${carrierJson ?? null}, ${carrierVersion ?? null}, ${carrierTruncated ?? false},
+          ${isPoison ?? false}, ${poisonReason ?? null}
         )
         ON CONFLICT (bundle_id) DO UPDATE SET
           attempt = EXCLUDED.attempt,
@@ -224,7 +254,9 @@ export class PrismaManifestDlqRepository implements IManifestDlqRepository {
           id, bundle_id, attempt, final_error_code, final_error_message,
           first_failed_at, last_failed_at, status, resolved_at, resolved_by,
           resolution_note, redriven_at, redriven_by, created_at,
-          carrier_json, carrier_version, carrier_truncated
+          carrier_json, carrier_version, carrier_truncated,
+          is_poison, poison_reason,
+          last_redriven_at, redrive_count, next_allowed_redrive_at, rate_limit_reason
       `;
       
       const entry = this.mapRawToEntry(result[0]);
@@ -248,7 +280,9 @@ export class PrismaManifestDlqRepository implements IManifestDlqRepository {
           id, bundle_id, attempt, final_error_code, final_error_message,
           first_failed_at, last_failed_at, status, resolved_at, resolved_by,
           resolution_note, redriven_at, redriven_by, created_at,
-          carrier_json, carrier_version, carrier_truncated
+          carrier_json, carrier_version, carrier_truncated,
+          is_poison, poison_reason,
+          last_redriven_at, redrive_count, next_allowed_redrive_at, rate_limit_reason
         FROM manifest_dead_letter_queue
         WHERE id = ${dlqId}::uuid
       `;
@@ -271,7 +305,9 @@ export class PrismaManifestDlqRepository implements IManifestDlqRepository {
           id, bundle_id, attempt, final_error_code, final_error_message,
           first_failed_at, last_failed_at, status, resolved_at, resolved_by,
           resolution_note, redriven_at, redriven_by, created_at,
-          carrier_json, carrier_version, carrier_truncated
+          carrier_json, carrier_version, carrier_truncated,
+          is_poison, poison_reason,
+          last_redriven_at, redrive_count, next_allowed_redrive_at, rate_limit_reason
         FROM manifest_dead_letter_queue
         WHERE bundle_id = ${bundleId}::uuid
       `;
@@ -290,6 +326,7 @@ export class PrismaManifestDlqRepository implements IManifestDlqRepository {
   async query(options: DlqQueryOptions = {}): Promise<DlqQueryResult> {
     const {
       status,
+      isPoison,
       limit = 50,
       offset = 0,
       orderBy = 'last_failed_at',
@@ -297,8 +334,11 @@ export class PrismaManifestDlqRepository implements IManifestDlqRepository {
     } = options;
     
     try {
-      // Build WHERE clause
-      const whereClause = status ? `WHERE status = '${status}'` : '';
+      // Build WHERE clauses
+      const conditions: string[] = [];
+      if (status) conditions.push(`status = '${status}'`);
+      if (isPoison !== undefined) conditions.push(`is_poison = ${isPoison}`);
+      const whereClause = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
       const orderClause = `ORDER BY ${orderBy === 'created_at' ? 'created_at' : 'last_failed_at'} ${orderDir === 'asc' ? 'ASC' : 'DESC'}`;
       
       // Get entries
@@ -307,7 +347,9 @@ export class PrismaManifestDlqRepository implements IManifestDlqRepository {
           id, bundle_id, attempt, final_error_code, final_error_message,
           first_failed_at, last_failed_at, status, resolved_at, resolved_by,
           resolution_note, redriven_at, redriven_by, created_at,
-          carrier_json, carrier_version, carrier_truncated
+          carrier_json, carrier_version, carrier_truncated,
+          is_poison, poison_reason,
+          last_redriven_at, redrive_count, next_allowed_redrive_at, rate_limit_reason
         FROM manifest_dead_letter_queue
         ${whereClause}
         ${orderClause}
@@ -379,7 +421,9 @@ export class PrismaManifestDlqRepository implements IManifestDlqRepository {
             id, bundle_id, attempt, final_error_code, final_error_message,
             first_failed_at, last_failed_at, status, resolved_at, resolved_by,
             resolution_note, redriven_at, redriven_by, created_at,
-            carrier_json, carrier_version, carrier_truncated
+            carrier_json, carrier_version, carrier_truncated,
+            is_poison, poison_reason,
+            last_redriven_at, redrive_count, next_allowed_redrive_at, rate_limit_reason
           FROM manifest_dead_letter_queue
           WHERE (${status}::text IS NULL OR status = ${status}::text)
             AND (created_at, id) < (${decodedCursor.createdAt}, ${decodedCursor.id}::uuid)
@@ -393,10 +437,12 @@ export class PrismaManifestDlqRepository implements IManifestDlqRepository {
             id, bundle_id, attempt, final_error_code, final_error_message,
             first_failed_at, last_failed_at, status, resolved_at, resolved_by,
             resolution_note, redriven_at, redriven_by, created_at,
-            carrier_json, carrier_version, carrier_truncated
+            carrier_json, carrier_version, carrier_truncated,
+            is_poison, poison_reason,
+            last_redriven_at, redrive_count, next_allowed_redrive_at, rate_limit_reason
           FROM manifest_dead_letter_queue
           WHERE (${status}::text IS NULL OR status = ${status}::text)
-          ORDER BY created_at DESC, id DESC
+          ORDER by created_at DESC, id DESC
           LIMIT ${limit + 1}
         `;
       }
@@ -451,7 +497,9 @@ export class PrismaManifestDlqRepository implements IManifestDlqRepository {
           id, bundle_id, attempt, final_error_code, final_error_message,
           first_failed_at, last_failed_at, status, resolved_at, resolved_by,
           resolution_note, redriven_at, redriven_by, created_at,
-          carrier_json, carrier_version, carrier_truncated
+          carrier_json, carrier_version, carrier_truncated,
+          is_poison, poison_reason,
+          last_redriven_at, redrive_count, next_allowed_redrive_at, rate_limit_reason
       `;
       
       if (result.length === 0) {
@@ -469,28 +517,6 @@ export class PrismaManifestDlqRepository implements IManifestDlqRepository {
   }
   
   // ==========================================================================
-  // Mark Redriven (Phase 10.2 - Updated with redriven_at/redriven_by)
-  // ==========================================================================
-  
-  async markRedriven(dlqId: string, redrivenBy?: string): Promise<void> {
-    try {
-      await this.prisma.$executeRaw`
-        UPDATE manifest_dead_letter_queue
-        SET 
-          status = 'DLQ_REDROVE',
-          redriven_at = NOW(),
-          redriven_by = ${redrivenBy ?? null}
-        WHERE id = ${dlqId}::uuid
-          AND status = 'DLQ_OPEN'
-      `;
-      
-      this.logger.debug(`[markRedriven] Redriven: dlqId=${dlqId}, redrivenBy=${redrivenBy}`);
-    } catch (error) {
-      this.logger.error(`[markRedriven] Failed: dlqId=${dlqId}`, error);
-      throw error;
-    }
-  }
-  
   // ==========================================================================
   // Atomic Redrive (Phase 10.2 - Task 1.4)
   // Transactional: UPDATE DLQ + INSERT retry job
@@ -500,32 +526,40 @@ export class PrismaManifestDlqRepository implements IManifestDlqRepository {
    * Atomically redrive a DLQ entry back to the retry queue.
    * 
    * This operation is transactional:
-   * 1. UPDATE DLQ entry to DLQ_REDROVE status
-   * 2. INSERT new retry job
+   * 1. SELECT FOR UPDATE (lock entry)
+   * 2. Status guards (DLQ_OPEN check)
+   * 3. Cooldown guard (Phase 11.4: now < next_allowed_redrive_at → RATE_LIMITED)
+   * 4. UPDATE DLQ entry (status + rate limit state in same UPDATE)
+   * 5. Check existing retry job
+   * 6. INSERT new retry job
    * 
-   * If either operation fails, the entire transaction is rolled back.
+   * All-or-nothing: if any step fails, entire transaction rolls back.
    * 
    * @param dlqId - DLQ entry ID
    * @param redrivenBy - User ID who initiated the redrive
    * @param nextAttemptAt - When to schedule the retry (null = immediate)
+   * @param rateLimitGate - Rate limit gate params (optional, backward compat)
    * @returns Object with dlqEntry and newJobId
-   * @throws Error if DLQ entry not found or already resolved
+   * @throws DlqRedriveError if entry not found, already resolved, or rate limited
    */
   async atomicRedrive(
     dlqId: string,
     redrivenBy: string,
     nextAttemptAt: Date | null = null,
+    rateLimitGate?: { now: Date; nextAllowedRedriveAt: Date },
   ): Promise<{ dlqEntry: DlqEntry; newJobId: string }> {
     try {
       // Use transaction for atomicity
       const result = await this.prisma.$transaction(async (tx) => {
-        // 0. First check if entry exists and get current status
+        // 0. First check if entry exists and get current status (+ rate limit state)
         const existingEntry = await tx.$queryRaw<RawDlqEntry[]>`
           SELECT 
             id, bundle_id, attempt, final_error_code, final_error_message,
             first_failed_at, last_failed_at, status, resolved_at, resolved_by,
             resolution_note, redriven_at, redriven_by, created_at,
-            carrier_json, carrier_version, carrier_truncated
+            carrier_json, carrier_version, carrier_truncated,
+            is_poison, poison_reason,
+            last_redriven_at, redrive_count, next_allowed_redrive_at, rate_limit_reason
           FROM manifest_dead_letter_queue
           WHERE id = ${dlqId}::uuid
           FOR UPDATE
@@ -565,21 +599,69 @@ export class PrismaManifestDlqRepository implements IManifestDlqRepository {
           );
         }
         
-        // 1. Update DLQ entry
-        const dlqResult = await tx.$queryRaw<RawDlqEntry[]>`
-          UPDATE manifest_dead_letter_queue
-          SET 
-            status = 'DLQ_REDROVE',
-            redriven_at = NOW(),
-            redriven_by = ${redrivenBy}
-          WHERE id = ${dlqId}::uuid
-            AND status = 'DLQ_OPEN'
-          RETURNING 
-            id, bundle_id, attempt, final_error_code, final_error_message,
-            first_failed_at, last_failed_at, status, resolved_at, resolved_by,
-            resolution_note, redriven_at, redriven_by, created_at,
-            carrier_json, carrier_version, carrier_truncated
-        `;
+        // ★ Phase 11.4: Cooldown guard (tx gate — pessimistic, authoritative)
+        if (rateLimitGate) {
+          const existingNextAllowed = existingEntry[0].next_allowed_redrive_at;
+          if (existingNextAllowed != null) {
+            const nextAllowedTime = new Date(existingNextAllowed).getTime();
+            const nowTime = rateLimitGate.now.getTime();
+            if (nowTime < nextAllowedTime) {
+              const waitSeconds = Math.ceil((nextAllowedTime - nowTime) / 1000);
+              throw new DlqRedriveError(
+                `Rate limited: next allowed redrive at ${new Date(existingNextAllowed).toISOString()}`,
+                'RATE_LIMITED',
+                {
+                  nextAllowedAt: new Date(existingNextAllowed),
+                  waitSeconds,
+                }
+              );
+            }
+          }
+        }
+        
+        // 1. Update DLQ entry — status transition + rate limit state (all-or-nothing)
+        let dlqResult: RawDlqEntry[];
+        if (rateLimitGate) {
+          // Phase 11.4: merged UPDATE — status + rate limit state in same statement
+          dlqResult = await tx.$queryRaw<RawDlqEntry[]>`
+            UPDATE manifest_dead_letter_queue
+            SET 
+              status = 'DLQ_REDROVE',
+              redriven_at = NOW(),
+              redriven_by = ${redrivenBy},
+              redrive_count = COALESCE(redrive_count, 0) + 1,
+              last_redriven_at = ${rateLimitGate.now},
+              next_allowed_redrive_at = ${rateLimitGate.nextAllowedRedriveAt},
+              rate_limit_reason = NULL
+            WHERE id = ${dlqId}::uuid
+              AND status = 'DLQ_OPEN'
+            RETURNING 
+              id, bundle_id, attempt, final_error_code, final_error_message,
+              first_failed_at, last_failed_at, status, resolved_at, resolved_by,
+              resolution_note, redriven_at, redriven_by, created_at,
+              carrier_json, carrier_version, carrier_truncated,
+              is_poison, poison_reason,
+              last_redriven_at, redrive_count, next_allowed_redrive_at, rate_limit_reason
+          `;
+        } else {
+          // Backward compat: original UPDATE without rate limit state
+          dlqResult = await tx.$queryRaw<RawDlqEntry[]>`
+            UPDATE manifest_dead_letter_queue
+            SET 
+              status = 'DLQ_REDROVE',
+              redriven_at = NOW(),
+              redriven_by = ${redrivenBy}
+            WHERE id = ${dlqId}::uuid
+              AND status = 'DLQ_OPEN'
+            RETURNING 
+              id, bundle_id, attempt, final_error_code, final_error_message,
+              first_failed_at, last_failed_at, status, resolved_at, resolved_by,
+              resolution_note, redriven_at, redriven_by, created_at,
+              carrier_json, carrier_version, carrier_truncated,
+              is_poison, poison_reason,
+              last_redriven_at, redrive_count, next_allowed_redrive_at, rate_limit_reason
+          `;
+        }
         
         // Should not happen due to FOR UPDATE lock, but defensive check
         if (dlqResult.length === 0) {
@@ -655,6 +737,63 @@ export class PrismaManifestDlqRepository implements IManifestDlqRepository {
         throw error;
       }
       this.logger.error(`[atomicRedrive] Failed: dlqId=${dlqId}`, error);
+      throw error;
+    }
+  }
+  
+  // ==========================================================================
+  // Mark As Poison (Phase 11.3)
+  // ==========================================================================
+  
+  /**
+   * Mark DLQ entry as POISON atomically.
+   * Sets is_poison=true and poison_reason in a single UPDATE.
+   * POISON is latched — once set, never reverted.
+   * Only touches poison columns — carrier columns are NOT modified (NNI-3).
+   */
+  async markAsPoison(dlqId: string, input: { reason: string }): Promise<void> {
+    try {
+      await this.prisma.$executeRaw`
+        UPDATE manifest_dead_letter_queue
+        SET is_poison = true, poison_reason = ${input.reason}
+        WHERE id = ${dlqId}::uuid
+      `;
+      this.logger.debug(`[markAsPoison] Marked: dlqId=${dlqId}, reason=${input.reason}`);
+    } catch (error) {
+      this.logger.error(`[markAsPoison] Failed: dlqId=${dlqId}`, error);
+      throw error;
+    }
+  }
+  
+  // ==========================================================================
+  // Find By Correlation ID (Phase 11.3)
+  // ==========================================================================
+  
+  /**
+   * Find DLQ entry by carrier correlationId (requestId in carrier_json).
+   * Uses PostgreSQL JSON operator: carrier_json::jsonb->>'requestId'
+   * Automatically skips entries with NULL carrier_json.
+   */
+  async findByCorrelationId(correlationId: string): Promise<DlqEntry | null> {
+    try {
+      const result = await this.prisma.$queryRawUnsafe<RawDlqEntry[]>(
+        `SELECT 
+          id, bundle_id, attempt, final_error_code, final_error_message,
+          first_failed_at, last_failed_at, status, resolved_at, resolved_by,
+          resolution_note, redriven_at, redriven_by, created_at,
+          carrier_json, carrier_version, carrier_truncated,
+          is_poison, poison_reason,
+          last_redriven_at, redrive_count, next_allowed_redrive_at, rate_limit_reason
+        FROM manifest_dead_letter_queue
+        WHERE carrier_json IS NOT NULL
+          AND carrier_json::jsonb->>'requestId' = $1
+        LIMIT 1`,
+        correlationId,
+      );
+      
+      return result.length > 0 ? this.mapRawToEntry(result[0]) : null;
+    } catch (error) {
+      this.logger.error(`[findByCorrelationId] Failed: correlationId=${correlationId}`, error);
       throw error;
     }
   }
@@ -739,6 +878,14 @@ export class PrismaManifestDlqRepository implements IManifestDlqRepository {
       carrierJson: raw.carrier_json ?? null,
       carrierVersion: raw.carrier_version ?? null,
       carrierTruncated: raw.carrier_truncated ?? false,
+      // Phase 11.3 - Poison tracking (NULL tolerant for pre-11.3 entries)
+      isPoison: raw.is_poison ?? false,
+      poisonReason: raw.poison_reason ?? null,
+      // Phase 11.4 - Rate limiting (NULL tolerant for pre-11.4 entries)
+      lastRedrivenAt: raw.last_redriven_at ?? null,
+      redriveCount: raw.redrive_count ?? 0,
+      nextAllowedRedriveAt: raw.next_allowed_redrive_at ?? null,
+      rateLimitReason: raw.rate_limit_reason ?? null,
     };
   }
 }
@@ -767,4 +914,12 @@ interface RawDlqEntry {
   carrier_json: string | null;
   carrier_version: number | null;
   carrier_truncated: boolean;
+  // Phase 11.3 - Poison tracking
+  is_poison: boolean;
+  poison_reason: string | null;
+  // Phase 11.4 - Rate limiting
+  last_redriven_at: Date | null;
+  redrive_count: number;
+  next_allowed_redrive_at: Date | null;
+  rate_limit_reason: string | null;
 }

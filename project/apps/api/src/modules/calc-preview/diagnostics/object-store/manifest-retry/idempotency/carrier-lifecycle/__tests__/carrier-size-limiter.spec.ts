@@ -244,11 +244,22 @@ describe('Carrier Size Limiter', () => {
     
     describe('custom options', () => {
       it('should respect custom maxSizeBytes', () => {
-        const result = enforceCarrierSizeLimit(smallCarrier, { maxSizeBytes: 100 });
+        const carrierSize = calculateCarrierSize(smallCarrier);
         
         // Small carrier is likely over 100 bytes
-        if (calculateCarrierSize(smallCarrier) > 100) {
-          expect(result.action).not.toBe('OK');
+        if (carrierSize > 100) {
+          // Should throw or truncate depending on carrier content
+          try {
+            const result = enforceCarrierSizeLimit(smallCarrier, { maxSizeBytes: 100 });
+            // If it didn't throw, it must have truncated successfully
+            expect(result.action).not.toBe('OK');
+          } catch (error) {
+            // Expected: carrier too large even after truncation
+            expect(error).toBeInstanceOf(CarrierSizeExceededError);
+          }
+        } else {
+          const result = enforceCarrierSizeLimit(smallCarrier, { maxSizeBytes: 100 });
+          expect(result.action).toBe('OK');
         }
       });
       

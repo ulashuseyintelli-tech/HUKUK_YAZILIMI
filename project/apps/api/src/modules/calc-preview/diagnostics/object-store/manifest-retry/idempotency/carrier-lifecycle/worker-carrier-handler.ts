@@ -1,27 +1,30 @@
 /**
- * Worker Carrier Handler - Phase 10.5 Task 6
+ * Worker Carrier Handler - Phase 10.5 Task 6 + Phase 11.1
  * 
  * Handles carrier lifecycle operations within worker context:
- * - Inbound: validate + upgrade to V2
+ * - Inbound: validate + upgrade to V2 (Phase 11.1: degraded mode)
  * - Retry path: mutate carrier
  * - DLQ path: enrich carrier
  * - Size enforcement: reject/truncate
  * 
  * @see ADR-008 v1.3: Queue/Job Boundary Context Propagation
+ * @see phase-11-1-design.md: Worker Inbound Degraded Mode
  */
 
-import { Logger } from '@nestjs/common';
 import {
   IdempotencyContextCarrierV2,
   CarrierSizeExceededError,
-  isValidCarrier,
-  isCarrierV2,
+  MAX_CARRIER_SIZE_BYTES,
   DlqReason,
 } from './carrier-lifecycle.types';
 import { ensureCarrierV2 } from './carrier-version-upgrade';
 import { mutateCarrierForRetry } from './retry-carrier-mutator';
 import { enrichCarrierForDlq } from './dlq-carrier-enricher';
 import { enforceCarrierSizeLimit } from './carrier-size-limiter';
+import {
+  type InboundValidationResult,
+  buildMinimalResult,
+} from './degraded-context.types';
 
 // ============================================================================
 // METRICS
@@ -99,75 +102,157 @@ export class SimpleWorkerCarrierMetrics implements IWorkerCarrierMetrics {
 export const CARRIER_SIZE_EXCEEDED_ERROR_CODE = 'CARRIER_SIZE_EXCEEDED';
 
 // ============================================================================
-// INBOUND HANDLER
+// INBOUND VALIDATION (Phase 11.1 — Degraded Mode)
 // ============================================================================
 
 /**
- * Result of inbound carrier normalization.
+ * Validate inbound carrier at worker boundary.
+ *
+ * Phase 11.1 entry point for inbound carrier validation.
+ *
+ * CALL ORDER:
+ * 0. Byte-level size check (pre-parse, O(1)) — OVERSIZE → no JSON.parse
+ * 1. Null/type check
+ * 2. Version check (must be 1 or 2)
+ * 3. Required field check
+ * 4. Type check on critical fields
+ * 5. V1→V2 upgrade (if needed)
+ *
+ * GUARANTEES:
+ * - NEVER throws. Always returns InboundValidationResult (FULL | MINIMAL).
+ * - NEVER returns null/undefined.
+ * - mode='FULL'    → reason is absent
+ * - mode='MINIMAL' → degradedContext.reason is present
+ *
+ * @param raw - Raw carrier from job payload (unknown type)
+ * @param rawSizeBytes - Pre-computed byte size of raw carrier payload (optional).
+ *                       When provided, enables pre-parse OVERSIZE guard.
+ * @returns Validation result (FULL or MINIMAL)
  */
-export interface InboundCarrierResult {
-  /** Normalized V2 carrier (null if invalid/missing) */
-  carrier: IdempotencyContextCarrierV2 | null;
-  
-  /** Whether carrier was valid */
-  valid: boolean;
-  
-  /** Whether carrier was upgraded from V1 */
-  upgraded: boolean;
-  
-  /** Reason for invalidity (if invalid) */
-  invalidReason?: string;
+export function validateInboundCarrier(
+  raw: unknown,
+  rawSizeBytes?: number,
+): InboundValidationResult {
+  const receivedAt = new Date().toISOString();
+
+  // 0. Byte-level oversize check (pre-parse guard)
+  //    INVARIANT: OVERSIZE → JSON.parse is NOT called (spy-testable)
+  if (rawSizeBytes !== undefined && rawSizeBytes > MAX_CARRIER_SIZE_BYTES) {
+    return buildMinimalResult('OVERSIZE', raw, receivedAt);
+  }
+
+  // 1. Null/undefined check
+  if (raw == null) {
+    return buildMinimalResult('MALFORMED', raw, receivedAt);
+  }
+
+  // 2. Object check
+  if (typeof raw !== 'object') {
+    return buildMinimalResult('MALFORMED', raw, receivedAt);
+  }
+
+  // 3. Version check
+  const version = (raw as Record<string, unknown>).version;
+  if (version !== 1 && version !== 2) {
+    return buildMinimalResult('VERSION_MISMATCH', raw, receivedAt);
+  }
+
+  // 4. V2 path — validate required fields + type check
+  if (version === 2) {
+    const missingField = findMissingRequiredV2Field(raw);
+    if (missingField) {
+      return buildMinimalResult('MISSING_REQUIRED', raw, receivedAt);
+    }
+    const typeError = findTypeErrorV2(raw);
+    if (typeError) {
+      return buildMinimalResult('TYPE_ERROR', raw, receivedAt);
+    }
+    return {
+      mode: 'FULL',
+      carrier: raw as IdempotencyContextCarrierV2,
+      upgraded: false,
+    };
+  }
+
+  // 5. V1 path — validate required fields + upgrade
+  if (version === 1) {
+    const missingField = findMissingRequiredV1Field(raw);
+    if (missingField) {
+      return buildMinimalResult('MISSING_REQUIRED', raw, receivedAt);
+    }
+    try {
+      const v2 = ensureCarrierV2(raw);
+      return { mode: 'FULL', carrier: v2, upgraded: true };
+    } catch {
+      return buildMinimalResult('UPGRADE_FAILED', raw, receivedAt);
+    }
+  }
+
+  // Unreachable (version already checked), but defensive
+  return buildMinimalResult('MALFORMED', raw, receivedAt);
+}
+
+// ============================================================================
+// VALIDATION HELPERS (Phase 11.1)
+// ============================================================================
+
+/**
+ * V2 required fields: requestId, actionId, actionType, resourceType, attemptNumber.
+ * Returns the name of the first missing/empty field, or null if all present.
+ */
+function findMissingRequiredV2Field(raw: unknown): string | null {
+  const obj = raw as Record<string, unknown>;
+  const stringFields = ['requestId', 'actionId', 'actionType', 'resourceType'];
+
+  for (const field of stringFields) {
+    const val = obj[field];
+    if (typeof val !== 'string' || val.length === 0) {
+      return field;
+    }
+  }
+
+  if (typeof obj.attemptNumber !== 'number') {
+    return 'attemptNumber';
+  }
+
+  return null;
 }
 
 /**
- * Normalize inbound carrier at job start.
- * 
- * BEHAVIOR:
- * - null/undefined → invalid (MISSING)
- * - Invalid structure → invalid (reason)
- * - V1 carrier → upgrade to V2
- * - V2 carrier → pass through
- * 
- * @param rawCarrier - Raw carrier from job payload
- * @param metrics - Metrics recorder
- * @param logger - Logger for warnings
- * @returns Normalization result
+ * V2 type check on critical fields.
+ * Returns the name of the first field with wrong type, or null if all OK.
  */
-export function normalizeInboundCarrier(
-  rawCarrier: unknown,
-  metrics: IWorkerCarrierMetrics,
-  logger?: Logger,
-): InboundCarrierResult {
-  // 1. Handle null/undefined
-  if (rawCarrier == null) {
-    metrics.recordCarrierInvalid('MISSING');
-    logger?.warn('[WorkerCarrier] No carrier provided, degraded mode');
-    return { carrier: null, valid: false, upgraded: false, invalidReason: 'MISSING' };
+function findTypeErrorV2(raw: unknown): string | null {
+  const obj = raw as Record<string, unknown>;
+
+  // requestId must be string
+  if (typeof obj.requestId !== 'string') return 'requestId';
+  // actionId must be string
+  if (typeof obj.actionId !== 'string') return 'actionId';
+  // attemptNumber must be number
+  if (typeof obj.attemptNumber !== 'number') return 'attemptNumber';
+  // resourceId must be string or null
+  if (obj.resourceId !== null && typeof obj.resourceId !== 'string') return 'resourceId';
+
+  return null;
+}
+
+/**
+ * V1 required fields: requestId, actionId, actionType, resourceType.
+ * Returns the name of the first missing/empty field, or null if all present.
+ */
+function findMissingRequiredV1Field(raw: unknown): string | null {
+  const obj = raw as Record<string, unknown>;
+  const fields = ['requestId', 'actionId', 'actionType', 'resourceType'];
+
+  for (const field of fields) {
+    const val = obj[field];
+    if (typeof val !== 'string' || val.length === 0) {
+      return field;
+    }
   }
-  
-  // 2. Validate structure
-  if (!isValidCarrier(rawCarrier)) {
-    metrics.recordCarrierInvalid('INVALID_STRUCTURE');
-    logger?.warn('[WorkerCarrier] Invalid carrier structure, degraded mode');
-    return { carrier: null, valid: false, upgraded: false, invalidReason: 'INVALID_STRUCTURE' };
-  }
-  
-  // 3. Check if already V2
-  if (isCarrierV2(rawCarrier)) {
-    return { carrier: rawCarrier, valid: true, upgraded: false };
-  }
-  
-  // 4. Upgrade V1 to V2
-  try {
-    const v2 = ensureCarrierV2(rawCarrier);
-    metrics.recordCarrierUpgraded();
-    logger?.debug('[WorkerCarrier] Upgraded V1 carrier to V2');
-    return { carrier: v2, valid: true, upgraded: true };
-  } catch (error) {
-    metrics.recordCarrierInvalid('UPGRADE_FAILED');
-    logger?.warn('[WorkerCarrier] Failed to upgrade carrier, degraded mode');
-    return { carrier: null, valid: false, upgraded: false, invalidReason: 'UPGRADE_FAILED' };
-  }
+
+  return null;
 }
 
 // ============================================================================

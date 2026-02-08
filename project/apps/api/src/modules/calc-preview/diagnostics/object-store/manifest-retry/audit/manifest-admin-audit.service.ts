@@ -148,6 +148,8 @@ export class ManifestAdminAuditService implements IAuditService, OnModuleInit, O
       takeoverFrom: input.takeoverFrom ?? (ctx?.takeover ? ctx.previousActorId ?? null : null),
       errorCode: input.errorCode ?? null,
       errorMessage: input.errorMessage ? this.truncateErrorMessage(input.errorMessage) : null,
+      // Phase 11.1: Normalize degradedContext to null
+      degradedContext: input.degradedContext ?? null,
     };
     
     this.buffer.push(event);

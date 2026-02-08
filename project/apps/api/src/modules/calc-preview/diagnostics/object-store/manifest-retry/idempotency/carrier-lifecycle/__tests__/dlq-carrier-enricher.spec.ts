@@ -10,7 +10,6 @@ import {
 } from '../dlq-carrier-enricher';
 import {
   IdempotencyContextCarrierV2,
-  DlqReason,
 } from '../carrier-lifecycle.types';
 import { IdempotencyContextCarrier } from '../../idempotency-carrier.types';
 import { dlqEnrichmentMetric, resetAllMetrics } from '../carrier-lifecycle-metrics';

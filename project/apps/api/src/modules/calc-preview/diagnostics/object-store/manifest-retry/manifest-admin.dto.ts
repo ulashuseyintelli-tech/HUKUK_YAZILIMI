@@ -208,6 +208,14 @@ export class DlqEntryDto {
   resolvedBy?: string | null;
   resolutionNote?: string | null;
   createdAt!: string;
+  // Phase 11.3 - Poison tracking
+  isPoison!: boolean;
+  poisonReason?: string | null;
+  // Phase 11.4 - Rate limiting visibility
+  redriveCount!: number;
+  lastRedrivenAt?: string | null;
+  nextAllowedRedriveAt?: string | null;
+  rateLimitReason?: string | null;
 }
 
 export class DlqQueryResponseDto {
@@ -280,5 +288,14 @@ export class DlqRedriveResponseDto {
   
   /** Original correlation ID - immutable parent link (Task 7) */
   parentCorrelationId?: string;
+  
+  /** Current redrive depth (Phase 11.3) */
+  currentDepth?: number;
+
+  /** Current enqueue count after this redrive (Phase 11.4) */
+  redriveCount?: number;
+
+  /** Next allowed redrive time — ISO 8601 (Phase 11.4) */
+  nextAllowedRedriveAt?: string;
 }
 

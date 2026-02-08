@@ -1,0 +1,124 @@
+# Prometheus Alert Rules — DLQ Redrive
+# Phase 13: Ops Doc & Alert Rules
+#
+# Bu dosya, DLQ redrive mekanizması için Prometheus alerting kurallarını tanımlar.
+# Tüm metrikler Phase 11.3, 11.4 ve 12'de kilitlenmiştir (LOCKED).
+#
+# İlgili runbook: docs/redrive-ops-runbook.md
+# Metrik kaynağı: GET /metrics endpoint'i (Prometheus scrape gerektirir)
+
+groups:
+  - name: redrive_alerts
+    rules:
+      # ─────────────────────────────────────────────────────────────────
+      # Alert 1: RedriveRateCheckFailed
+      # Rate limit pre-check fail-closed tetiklendi — olası bug veya veri bozulması
+      # Normal operasyonda bu counter 0 olmalıdır. Herhangi bir artış acil araştırma gerektirir.
+      # ─────────────────────────────────────────────────────────────────
+      - alert: RedriveRateCheckFailed
+        expr: increase(carrier_redrive_rate_check_failed_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: backend
+          component: redrive
+        annotations:
+          summary: "Redrive rate limit pre-check fail-closed tetiklendi"
+          description: >-
+            carrier_redrive_rate_check_failed_total artış gösterdi.
+            Bu, rate limiter'da bug, veri bozulması veya beklenmeyen hata
+            olduğunu gösterir. Acil araştırma gereklidir.
+          runbook: "docs/redrive-ops-runbook.md#2-rate-limiting-operasyonel-rehber"
+
+      # ─────────────────────────────────────────────────────────────────
+      # Alert 2: RedriveTxDurationHigh
+      # atomicRedrive tx p99 süresi eşiği aştı — DB contention/lock-wait olabilir
+      # Başlangıç eşiği 2s (muhafazakâr) — kalibrasyon prosedürüne göre ayarlanmalıdır.
+      # Min sample guard: 5 dk'da ~30 gözlem minimum (0.1 req/s × 300s)
+      # Aggregation: sum(...) by (le) — servis bazında (instance/pod bazında değil)
+      # ─────────────────────────────────────────────────────────────────
+      - alert: RedriveTxDurationHigh
+        expr: >-
+          histogram_quantile(0.99,
+            sum(rate(carrier_redrive_tx_duration_seconds_bucket[5m])) by (le)
+          ) > 2
+          and
+          sum(rate(carrier_redrive_tx_duration_seconds_count[5m])) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+          component: redrive
+        annotations:
+          summary: "atomicRedrive tx p99 süresi eşiği aştı"
+          description: >-
+            carrier_redrive_tx_duration_seconds p99 değeri 2s üzerinde.
+            DB contention, connection pool tükenmesi veya lock-wait
+            olabilir. Kalibrasyon prosedürü için runbook'a bakın.
+          runbook: "docs/redrive-ops-runbook.md#3-tx-duration-i̇zleme"
+
+      # ─────────────────────────────────────────────────────────────────
+      # Alert 3: RedriveKillSwitchActive
+      # Kill-switch 30 dakikadan fazla aktif — kapatılması unutulmuş olabilir
+      # Kill-switch kısa süreli incident müdahalesi için tasarlandı.
+      # ─────────────────────────────────────────────────────────────────
+      - alert: RedriveKillSwitchActive
+        expr: carrier_redrive_kill_switch_active == 1
+        for: 30m
+        labels:
+          severity: warning
+          team: backend
+          component: redrive
+        annotations:
+          summary: "Redrive kill-switch 30 dakikadan fazla aktif"
+          description: >-
+            Kill-switch 30 dakikadır aktif. Incident çözüldüyse
+            kill-switch'i devre dışı bırakmayı unutmayın.
+          runbook: "docs/redrive-ops-runbook.md#1-kill-switch-prosedürü"
+
+      # ─────────────────────────────────────────────────────────────────
+      # Alert 4: RedriveDepthExceeded
+      # Redrive derinlik limiti aşıldı — poison entry oluştu
+      # Tekrarlayan hata kaynağını araştırın.
+      # ─────────────────────────────────────────────────────────────────
+      - alert: RedriveDepthExceeded
+        expr: increase(carrier_redrive_depth_exceeded_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          team: backend
+          component: redrive
+        annotations:
+          summary: "Redrive derinlik limiti aşıldı"
+          description: >-
+            carrier_redrive_depth_exceeded_total artış gösterdi.
+            Bir veya daha fazla DLQ entry poison olarak işaretlendi.
+            Tekrarlayan hata kaynağını araştırın.
+          runbook: "docs/redrive-ops-runbook.md#2-rate-limiting-operasyonel-rehber"
+
+      # ─────────────────────────────────────────────────────────────────
+      # Alert 5: RedriveScrapeDown
+      # Prometheus scrape başarısız veya job tanımı kaldırılmış —
+      # tüm redrive alert'leri sessiz kalır.
+      # Bu, "alert'lerin alert'i" — meta-monitoring.
+      # up metriği Prometheus built-in'dir, uygulama tarafında üretilmez.
+      # absent() kombinasyonu: hem "target down" hem "job yok/rename" yakalar.
+      # ─────────────────────────────────────────────────────────────────
+      - alert: RedriveScrapeDown
+        expr: >-
+          (up{job="hukuk-api-redrive"} == 0)
+          or
+          absent(up{job="hukuk-api-redrive"})
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+          component: redrive
+        annotations:
+          summary: "Prometheus redrive scrape başarısız"
+          description: >-
+            up{job="hukuk-api-redrive"} == 0 veya absent — Prometheus, redrive
+            /metrics endpoint'ine ulaşamıyor veya job tanımı kaldırılmış.
+            Bu durumda mevcut 4 alert rule tetiklenemez (metrik verisi yok).
+            Pod durumu, network erişimi ve endpoint health kontrol edilmeli.
+          runbook: "docs/redrive-ops-runbook.md#5-scrape-health--redrivescrapedown"

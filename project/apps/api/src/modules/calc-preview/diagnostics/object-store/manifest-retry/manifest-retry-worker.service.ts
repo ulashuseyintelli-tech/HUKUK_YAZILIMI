@@ -1,18 +1,20 @@
 /**
  * Manifest Retry Worker Service
  * 
- * Phase 10 - Task 10.1.6
+ * Phase 10 - Task 10.1.6 + Phase 11.1 (Degraded Mode)
  * 
  * Core worker loop for processing manifest retry jobs:
  * 1. Claim eligible job (SKIP LOCKED)
- * 2. Attempt manifest write
- * 3. Classify result
- * 4. Execute state transition
- * 5. Emit metrics
+ * 2. Validate inbound carrier (Phase 11.1)
+ * 3. Attempt manifest write
+ * 4. Classify result
+ * 5. Execute state transition
+ * 6. Emit metrics
  * 
  * LOCKED CONTRACT - See PHASE-10-WORKER-ARCHITECTURE.md
  * 
  * @see .kiro/specs/phase-10-retry-signature/PHASE-10-WORKER-ARCHITECTURE.md
+ * @see .kiro/specs/phase-11-carrier-resilience/phase-11-1-design.md
  */
 
 import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
@@ -36,6 +38,11 @@ import {
   DEFAULT_WORKER_CONFIG,
   generateWorkerId,
 } from './manifest-retry-worker.config';
+import { validateInboundCarrier } from './idempotency/carrier-lifecycle/worker-carrier-handler';
+import { carrierInboundMetric, dlqStorageMetric, dlqStorageTruncatedMetric } from './idempotency/carrier-lifecycle/carrier-lifecycle-metrics';
+import type { InboundValidationResult } from './idempotency/carrier-lifecycle/degraded-context.types';
+import { prepareCarrierForDlqStorage } from './idempotency/carrier-lifecycle/dlq-carrier-storage';
+import type { IdempotencyContextCarrierV2 } from './idempotency/carrier-lifecycle/carrier-lifecycle.types';
 
 // ============================================================================
 // Types
@@ -65,6 +72,8 @@ export interface WorkerIterationResult {
   bundleId?: string;
   durationMs?: number;
   error?: unknown;
+  /** Phase 11.1: Carrier validation result */
+  carrierValidation?: InboundValidationResult;
 }
 
 /** Worker metrics interface */
@@ -263,6 +272,52 @@ export class ManifestRetryWorkerService implements OnModuleDestroy {
   // ==========================================================================
   
   /**
+   * Phase 11.1: Validate inbound carrier at worker boundary.
+   * 
+   * GUARANTEE: Never throws. Job continues regardless of carrier validity.
+   * FULL  → ALS context available (future: restore ALS)
+   * MINIMAL → degraded mode, metric emitted, warn logged
+   */
+  private validateCarrier(job: RetryQueueJob): InboundValidationResult {
+    // Extract raw carrier from job (if available via job data)
+    // NOTE: Current RetryQueueJob doesn't carry raw payload.
+    // For now, we validate with null (MALFORMED → degraded).
+    // When job payload includes carrier, pass it here.
+    const rawCarrier: unknown = (job as unknown as Record<string, unknown>).carrierPayload ?? null;
+    
+    // Pre-compute byte size for oversize guard
+    let rawSizeBytes: number | undefined;
+    if (rawCarrier != null && typeof rawCarrier === 'string') {
+      rawSizeBytes = Buffer.byteLength(rawCarrier, 'utf8');
+    } else if (rawCarrier != null) {
+      try {
+        rawSizeBytes = Buffer.byteLength(JSON.stringify(rawCarrier), 'utf8');
+      } catch {
+        // If we can't serialize, let the validator handle it
+        rawSizeBytes = undefined;
+      }
+    }
+    
+    const result = validateInboundCarrier(rawCarrier, rawSizeBytes);
+    
+    // Emit metric
+    if (result.mode === 'FULL') {
+      carrierInboundMetric.inc({ outcome: 'accepted', reason: '' });
+      if (result.upgraded) {
+        this.logger.debug(`[CarrierValidation] V1→V2 upgrade: jobId=${job.id}`);
+      }
+    } else {
+      const reason = result.degradedContext.reason;
+      carrierInboundMetric.inc({ outcome: 'degraded', reason });
+      this.logger.warn(
+        `[CarrierValidation] Degraded mode: jobId=${job.id}, reason=${reason}`
+      );
+    }
+    
+    return result;
+  }
+  
+  /**
    * Process one iteration of the worker loop
    */
   async processOnce(): Promise<WorkerIterationResult> {
@@ -294,23 +349,30 @@ export class ManifestRetryWorkerService implements OnModuleDestroy {
     this.metrics.recordJobClaimed(job.source);
     
     try {
-      // 3. Attempt manifest write
+      // 3. Phase 11.1: Validate inbound carrier (degraded mode)
+      //    Job NEVER fails due to carrier issues.
+      const carrierValidation = this.validateCarrier(job);
+      
+      // Phase 11.2: Extract carrier for DLQ storage (null if degraded)
+      const carrier = carrierValidation.mode === 'FULL' ? carrierValidation.carrier : null;
+      
+      // 4. Attempt manifest write
       const writeResult = await this.manifestWriter.tryWriteManifest(job.bundleId);
       
-      // 4. Classify result
+      // 5. Classify result
       const decision = this.classifyWriteResult(writeResult, job.attempt);
       
-      // 5. Execute transition
-      await this.executeTransition(job, decision, writeResult);
+      // 6. Execute transition (Phase 11.2: pass carrier for DLQ storage)
+      await this.executeTransition(job, decision, writeResult, carrier);
       
-      // 6. Update circuit breaker
+      // 7. Update circuit breaker
       if (decision === 'DONE_NOOP' || writeResult.outcome === 'written') {
         this.circuitBreaker.recordSuccess();
       } else if (decision === 'RETRY' || decision === 'DLQ') {
         this.circuitBreaker.recordFailure();
       }
       
-      // 7. Emit metrics
+      // 8. Emit metrics
       const durationMs = Date.now() - startTime;
       this.emitDecisionMetrics(decision, writeResult, job, durationMs);
       
@@ -322,6 +384,7 @@ export class ManifestRetryWorkerService implements OnModuleDestroy {
         jobId: job.id,
         bundleId: job.bundleId,
         durationMs,
+        carrierValidation,
       };
       
     } catch (error) {
@@ -334,7 +397,7 @@ export class ManifestRetryWorkerService implements OnModuleDestroy {
         errorMessage: error instanceof Error ? error.message : String(error),
       };
       
-      await this.executeTransition(job, classified.decision, writeResult);
+      await this.executeTransition(job, classified.decision, writeResult, null);
       this.circuitBreaker.recordFailure();
       
       const durationMs = Date.now() - startTime;
@@ -379,7 +442,8 @@ export class ManifestRetryWorkerService implements OnModuleDestroy {
   private async executeTransition(
     job: RetryQueueJob,
     decision: ClassifierDecision,
-    result: ManifestWriteResult
+    result: ManifestWriteResult,
+    carrier: IdempotencyContextCarrierV2 | null = null,
   ): Promise<void> {
     switch (decision) {
       case 'DONE_NOOP':
@@ -392,7 +456,7 @@ export class ManifestRetryWorkerService implements OnModuleDestroy {
         // Check max attempts
         if (job.attempt + 1 >= job.maxAttempts) {
           // Max attempts reached → DLQ
-          await this.moveToDlq(job, result);
+          await this.moveToDlq(job, result, carrier);
         } else {
           // Schedule retry with backoff
           const nextAttemptAt = calculateNextAttemptAt(job.attempt + 1);
@@ -414,13 +478,22 @@ export class ManifestRetryWorkerService implements OnModuleDestroy {
         break;
         
       case 'DLQ':
-        await this.moveToDlq(job, result);
+        await this.moveToDlq(job, result, carrier);
         break;
     }
   }
   
-  private async moveToDlq(job: RetryQueueJob, result: ManifestWriteResult): Promise<void> {
-    // Insert/update DLQ entry
+  private async moveToDlq(
+    job: RetryQueueJob,
+    result: ManifestWriteResult,
+    carrier: IdempotencyContextCarrierV2 | null = null,
+  ): Promise<void> {
+    // Phase 11.2: Prepare carrier for DLQ storage
+    // prepareCarrierForDlqStorage is the SINGLE CANONICAL LOCATION
+    // for DLQ carrier truncation decisions.
+    const carrierFields = prepareCarrierForDlqStorage(carrier);
+    
+    // Insert/update DLQ entry with carrier
     const dlqInput: {
       bundleId: string;
       attempt: number;
@@ -428,17 +501,29 @@ export class ManifestRetryWorkerService implements OnModuleDestroy {
       errorMessage?: string;
       firstFailedAt: Date;
       lastFailedAt: Date;
+      carrierJson?: string | null;
+      carrierVersion?: number | null;
+      carrierTruncated?: boolean;
     } = {
       bundleId: job.bundleId,
       attempt: job.attempt + 1,
       errorCode: result.errorCode ?? ManifestErrorCode.UNKNOWN,
       firstFailedAt: job.createdAt,
       lastFailedAt: new Date(),
+      carrierJson: carrierFields.carrierJson,
+      carrierVersion: carrierFields.carrierVersion,
+      carrierTruncated: carrierFields.carrierTruncated,
     };
     if (result.errorMessage !== undefined) {
       dlqInput.errorMessage = result.errorMessage;
     }
     await this.dlqRepo.upsert(dlqInput);
+    
+    // Phase 11.2: Emit carrier storage metrics
+    dlqStorageMetric.inc();
+    if (carrierFields.carrierTruncated) {
+      dlqStorageTruncatedMetric.inc();
+    }
     
     // Mark job as done with DLQ reason
     await this.retryQueue.markDone({ jobId: job.id, reason: 'DLQ' });

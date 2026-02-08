@@ -1,0 +1,176 @@
+# ═══════════════════════════════════════════════════════════════════
+# Alertmanager Configuration — DLQ Redrive Alert Delivery
+# Phase 13.1: Alertmanager Routing & Delivery
+# ═══════════════════════════════════════════════════════════════════
+#
+# Bu config, Phase 13'te tanımlanan 4 redrive alert'inin
+# deterministik delivery'sini sağlar.
+#
+# ── Placeholder'lar (ortam bazlı secret — deploy pipeline'da doldurulur) ──
+#
+#   Placeholder                  Env Var                              Açıklama
+#   ─────────────────────────── ──────────────────────────────────── ─────────────────────────────
+#   <PAGERDUTY_SERVICE_KEY>     ALERTMANAGER_PAGERDUTY_KEY           PagerDuty integration key
+#   <SLACK_WEBHOOK_URL>         ALERTMANAGER_SLACK_WEBHOOK           Slack incoming webhook URL
+#   <SLACK_CHANNEL_WARNING>     ALERTMANAGER_SLACK_CHANNEL_WARNING   Slack kanal (ör. #redrive-alerts)
+#   <SLACK_CHANNEL_DEFAULT>     ALERTMANAGER_SLACK_CHANNEL_DEFAULT   Slack fallback kanal (ör. #ops-alerts)
+#
+# ── Ortam bazlı override ──
+#
+#   Dev/Staging: PagerDuty receiver yerine slack-warning kullanılabilir
+#                veya ALERTMANAGER_PAGERDUTY_KEY boş bırakılabilir.
+#                Kanal adları: #dev-alerts (veya ortama uygun kanal)
+#
+#   Prod:        Gerçek PagerDuty key ve Slack webhook URL inject edilir.
+#                Kanal adları: #redrive-alerts (warning), #ops-alerts (default)
+#
+# ── Validation ──
+#
+#   # Placeholder'sız (rendered) config üzerinde:
+#   amtool check-config ops/alertmanager/alertmanager.yml
+#
+#   # Ortam bazlı override varsa: önce render, sonra validate
+#   envsubst < ops/alertmanager/alertmanager.yml > /tmp/alertmanager-rendered.yml
+#   amtool check-config /tmp/alertmanager-rendered.yml
+#
+#   CI pipeline sırası: render (envsubst/helm) → amtool check-config → deploy
+#
+#   Not: Placeholder'lı ham config amtool ile doğrudan validate edilemez
+#        (placeholder'lar geçerli URL/key değildir).
+#
+# ── Timing değerleri ──
+#
+#   Aşağıdaki timing değerleri başlangıç değerleridir.
+#   Production trafiğine göre ayarlanmalıdır:
+#     group_wait: 30s       — deploy spike süzme
+#     group_interval: 5m    — yeni alert ekleme aralığı
+#     repeat_interval: 1h   — critical tekrar hatırlatma
+#     repeat_interval: 2h   — warning tekrar hatırlatma
+#     resolve_timeout: 5m   — geçici resolve/re-fire döngüsü süzme
+#
+# ── İlgili dosyalar ──
+#
+#   Alert rules:  ops/prometheus/redrive-alerts.yml (Phase 13 — LOCKED)
+#   Runbook:      docs/redrive-ops-runbook.md
+#
+# ═══════════════════════════════════════════════════════════════════
+
+global:
+  resolve_timeout: 5m
+
+# ── Receivers ─────────────────────────────────────────────────────
+
+receivers:
+  # Fallback / catch-all receiver — hiçbir route match etmezse buraya düşer.
+  # Bu receiver "blackhole" değildir — Slack'e gönderir, böylece
+  # yanlış label ile gelen alert sessizce kaybolmaz ve debug edilebilir.
+  - name: 'slack-default'
+    slack_configs:
+      - api_url: '<SLACK_WEBHOOK_URL>'
+        channel: '<SLACK_CHANNEL_DEFAULT>'
+        title: '[{{ .Status | toUpper }}] {{ .GroupLabels.alertname }}'
+        text: >-
+          *Severity:* {{ .CommonLabels.severity }}
+          *Summary:* {{ .CommonAnnotations.summary }}
+          *Runbook:* {{ .CommonAnnotations.runbook }}
+        send_resolved: true
+
+  # Critical alert'ler → PagerDuty
+  # Yalnızca severity=critical alert'ler bu receiver'a yönlendirilir.
+  # Dev/staging ortamında bu receiver devre dışı bırakılabilir
+  # (ALERTMANAGER_PAGERDUTY_KEY boş veya test key).
+  - name: 'pagerduty-critical'
+    pagerduty_configs:
+      - service_key: '<PAGERDUTY_SERVICE_KEY>'
+        description: '{{ .CommonAnnotations.summary }}'
+        details:
+          severity: '{{ .CommonLabels.severity }}'
+          component: '{{ .CommonLabels.component }}'
+          runbook: '{{ .CommonAnnotations.runbook }}'
+          description: '{{ .CommonAnnotations.description }}'
+
+  # Warning alert'ler → Slack
+  # severity=warning alert'ler bu receiver'a yönlendirilir.
+  - name: 'slack-warning'
+    slack_configs:
+      - api_url: '<SLACK_WEBHOOK_URL>'
+        channel: '<SLACK_CHANNEL_WARNING>'
+        title: '[{{ .Status | toUpper }}:{{ .CommonLabels.severity | toUpper }}] {{ .GroupLabels.alertname }}'
+        text: >-
+          *Alert:* {{ .GroupLabels.alertname }}
+          *Severity:* {{ .CommonLabels.severity }}
+          *Component:* {{ .CommonLabels.component }}
+          *Summary:* {{ .CommonAnnotations.summary }}
+          *Description:* {{ .CommonAnnotations.description }}
+          *Runbook:* {{ .CommonAnnotations.runbook }}
+        send_resolved: true
+
+# ── Route Tree ────────────────────────────────────────────────────
+#
+# Routing stratejisi:
+#   1. Root route: catch-all → slack-default (hiçbir şey kaybolmaz)
+#   2. team=backend + component=redrive → redrive alt route'u
+#   3. severity=critical → pagerduty-critical (repeat: 1h)
+#   4. severity=warning → slack-warning (repeat: 2h)
+#
+# group_by: [alertname, component] — component-level aggregation.
+#   - service label contract'ta yok (intentional)
+#   - instance/pod eklenmez (flap riski)
+#
+# Catch-all davranışı:
+#   - team label yok/yanlış → slack-default
+#   - component label yok/yanlış → slack-default
+#   - severity label yok/geçersiz → slack-default
+#     (parent route'un receiver'ı devralınır)
+
+route:
+  receiver: 'slack-default'
+  group_by: ['alertname', 'component']
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+  routes:
+    # Redrive alert'leri — team=backend, component=redrive
+    - match:
+        team: backend
+        component: redrive
+      group_by: ['alertname', 'component']
+
+      routes:
+        # Critical → PagerDuty (kısa repeat — 1 saatte bir hatırlat)
+        - match:
+            severity: critical
+          receiver: 'pagerduty-critical'
+          repeat_interval: 1h
+          continue: false
+
+        # Warning → Slack (daha uzun repeat — 2 saatte bir)
+        - match:
+            severity: warning
+          receiver: 'slack-warning'
+          repeat_interval: 2h
+          continue: false
+
+# ── Inhibition Rules ─────────────────────────────────────────────
+#
+# Kural: Aynı component için critical alert aktifken, warning alert'ler
+#         susturulur (inhibited). Bu, incident anında gereksiz warning
+#         gürültüsünü önler.
+#
+# Davranış:
+#   - RedriveRateCheckFailed (critical) aktif →
+#     RedriveTxDurationHigh, RedriveKillSwitchActive, RedriveDepthExceeded
+#     (warning) susturulur
+#   - Critical çözülünce warning'ler otomatik olarak tekrar aktif olur
+#
+# equal: [component] — yalnızca aynı component'teki alert'ler birbirini
+#   etkiler. service label contract'ta olmadığından equal'a eklenmez.
+#   Tüm redrive alert'leri component=redrive altında olduğundan bu yeterlidir.
+
+inhibit_rules:
+  - source_matchers:
+      - severity = "critical"
+    target_matchers:
+      - severity = "warning"
+    equal: ['component']

@@ -7,11 +7,10 @@
  * - POST /admin/bundles/{bundleId}/manifest/retry
  * - GET /admin/manifest/retry-queue
  * - GET /admin/manifest/dlq
- * - POST /admin/manifest/dlq/{dlqId}/redrive
  * - POST /admin/manifest/dlq/{dlqId}/resolve
  */
 
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { NotFoundException, ConflictException } from '@nestjs/common';
 import { ManifestAdminController } from '../manifest-admin.controller';
 import { IManifestRetryQueueRepository } from '../manifest-retry-queue.repository';
 import { IManifestDlqRepository } from '../manifest-dlq.repository';
@@ -43,7 +42,6 @@ function createMockDlqRepo(): jest.Mocked<IManifestDlqRepository> {
     getByBundleId: jest.fn(),
     query: jest.fn(),
     resolve: jest.fn(),
-    markRedriven: jest.fn(),
     getStats: jest.fn(),
   };
 }
@@ -67,7 +65,19 @@ function createMockDlqEntry(overrides: Partial<DlqEntry> = {}): DlqEntry {
     resolvedAt: null,
     resolvedBy: null,
     resolutionNote: null,
+    redrivenAt: null,
+    redrivenBy: null,
     createdAt: new Date('2026-02-02T10:00:00Z'),
+    carrierJson: null,
+    carrierVersion: null,
+    carrierTruncated: false,
+    isPoison: false,
+    poisonReason: null,
+    // Phase 11.4 - Rate limiting
+    lastRedrivenAt: null,
+    redriveCount: 0,
+    nextAllowedRedriveAt: null,
+    rateLimitReason: null,
     ...overrides,
   };
 }
@@ -81,17 +91,20 @@ describe('ManifestAdminController', () => {
   let mockRetryQueue: jest.Mocked<IManifestRetryQueueRepository>;
   let mockDlqRepo: jest.Mocked<IManifestDlqRepository>;
   let mockManifestWriter: jest.Mocked<Pick<ManifestWriter, 'manifestExists'>>;
+  let mockAuditService: { append: jest.Mock };
 
   beforeEach(async () => {
     mockRetryQueue = createMockRetryQueue();
     mockDlqRepo = createMockDlqRepo();
     mockManifestWriter = createMockManifestWriter();
+    mockAuditService = { append: jest.fn() };
 
     // Manual instantiation since we're using interfaces
     controller = new ManifestAdminController(
       mockRetryQueue,
       mockDlqRepo,
       mockManifestWriter as unknown as ManifestWriter,
+      mockAuditService as any,
     );
   });
 
@@ -229,74 +242,6 @@ describe('ManifestAdminController', () => {
   });
 
   // ==========================================================================
-  // POST /admin/manifest/dlq/{dlqId}/redrive
-  // ==========================================================================
-
-  describe('redriveDlqEntry', () => {
-    const dlqId = 'dlq-123';
-
-    it('should throw NotFoundException when DLQ entry not found', async () => {
-      mockDlqRepo.getById.mockResolvedValue(null);
-
-      await expect(controller.redriveDlqEntry(dlqId)).rejects.toThrow(NotFoundException);
-    });
-
-    it('should return ALREADY_RESOLVED when entry is not open', async () => {
-      const entry = createMockDlqEntry({ status: 'DLQ_RESOLVED' });
-      mockDlqRepo.getById.mockResolvedValue(entry);
-
-      const result = await controller.redriveDlqEntry(dlqId);
-
-      expect(result.redriven).toBe(false);
-      expect(result.reason).toBe('ALREADY_RESOLVED');
-    });
-
-    it('should return ALREADY_QUEUED when job exists', async () => {
-      const entry = createMockDlqEntry();
-      mockDlqRepo.getById.mockResolvedValue(entry);
-      mockRetryQueue.getActiveByBundleId.mockResolvedValue({
-        id: 'existing-job',
-        bundleId: entry.bundleId,
-        status: 'PENDING',
-        attempt: 0,
-        maxAttempts: 7,
-        nextAttemptAt: null,
-        leasedUntil: null,
-        leasedBy: null,
-        lastErrorCode: null,
-        lastErrorMessage: null,
-        doneReason: null,
-        source: 'admin_retry',
-        createdAt: new Date(),
-        updatedAt: new Date(),
-      });
-
-      const result = await controller.redriveDlqEntry(dlqId);
-
-      expect(result.redriven).toBe(false);
-      expect(result.reason).toBe('ALREADY_QUEUED');
-    });
-
-    it('should redrive successfully', async () => {
-      const entry = createMockDlqEntry();
-      mockDlqRepo.getById.mockResolvedValue(entry);
-      mockRetryQueue.getActiveByBundleId.mockResolvedValue(null);
-      mockRetryQueue.enqueue.mockResolvedValue({
-        enqueued: true,
-        jobId: 'new-job-123',
-        reason: 'CREATED',
-      });
-
-      const result = await controller.redriveDlqEntry(dlqId);
-
-      expect(result.redriven).toBe(true);
-      expect(result.newJobId).toBe('new-job-123');
-      expect(result.reason).toBe('REDRIVEN');
-      expect(mockDlqRepo.markRedriven).toHaveBeenCalledWith(dlqId);
-    });
-  });
-
-  // ==========================================================================
   // POST /admin/manifest/dlq/{dlqId}/resolve
   // ==========================================================================
 
@@ -311,13 +256,13 @@ describe('ManifestAdminController', () => {
       ).rejects.toThrow(NotFoundException);
     });
 
-    it('should throw BadRequestException when entry already resolved', async () => {
+    it('should throw ConflictException when entry already resolved', async () => {
       const entry = createMockDlqEntry({ status: 'DLQ_RESOLVED' });
       mockDlqRepo.getById.mockResolvedValue(entry);
 
       await expect(
         controller.resolveDlqEntry(dlqId, { resolution: 'manual_fix' })
-      ).rejects.toThrow(BadRequestException);
+      ).rejects.toThrow(ConflictException);
     });
 
     it('should resolve successfully with notes', async () => {

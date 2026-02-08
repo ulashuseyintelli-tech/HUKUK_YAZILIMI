@@ -9,7 +9,6 @@
  */
 
 import {
-  normalizeInboundCarrier,
   handleRetryCarrier,
   handleDlqCarrier,
   SimpleWorkerCarrierMetrics,
@@ -19,13 +18,12 @@ import {
   MAX_CARRIER_SIZE_BYTES,
   resetAllMetrics,
 } from '../idempotency/carrier-lifecycle';
-import { IdempotencyContextCarrier } from '../idempotency/idempotency-carrier.types';
 
 describe('Worker Carrier Lifecycle Integration Tests', () => {
   let metrics: SimpleWorkerCarrierMetrics;
   
-  const v1Carrier: IdempotencyContextCarrier = {
-    version: 1,
+  const baseV2Carrier: IdempotencyContextCarrierV2 = {
+    version: 2,
     requestId: 'req-integration-001',
     actionId: 'act-integration-001',
     actionType: 'ADMIN_RETRY',
@@ -33,6 +31,7 @@ describe('Worker Carrier Lifecycle Integration Tests', () => {
     resourceId: 'bundle-integration-001',
     takeover: false,
     previousActorId: null,
+    attemptNumber: 0,
   };
   
   beforeEach(() => {
@@ -41,56 +40,23 @@ describe('Worker Carrier Lifecycle Integration Tests', () => {
   });
   
   // =========================================================================
-  // IT-7: V1 carrier → V2 upgrade on inbound
-  // =========================================================================
-  
-  describe('IT-7: V1 carrier upgrade on inbound', () => {
-    it('should upgrade V1 carrier to V2 with attemptNumber=0', () => {
-      const result = normalizeInboundCarrier(v1Carrier, metrics);
-      
-      expect(result.valid).toBe(true);
-      expect(result.upgraded).toBe(true);
-      expect(result.carrier?.version).toBe(2);
-      expect(result.carrier?.attemptNumber).toBe(0);
-    });
-    
-    it('should preserve all V1 fields after upgrade', () => {
-      const result = normalizeInboundCarrier(v1Carrier, metrics);
-      
-      expect(result.carrier?.requestId).toBe(v1Carrier.requestId);
-      expect(result.carrier?.actionId).toBe(v1Carrier.actionId);
-      expect(result.carrier?.actionType).toBe(v1Carrier.actionType);
-      expect(result.carrier?.resourceType).toBe(v1Carrier.resourceType);
-      expect(result.carrier?.resourceId).toBe(v1Carrier.resourceId);
-    });
-    
-    it('should record upgrade metric', () => {
-      normalizeInboundCarrier(v1Carrier, metrics);
-      
-      expect(metrics.getCount('carrier_upgraded_total')).toBe(1);
-    });
-  });
-  
-  // =========================================================================
   // IT-8: Retry fail → attempt++ and failureHistory added
   // =========================================================================
   
   describe('IT-8: Retry path mutation', () => {
     it('should increment attemptNumber on retry', () => {
-      const inbound = normalizeInboundCarrier(v1Carrier, metrics);
       const failure = { code: 'S3_TIMEOUT', message: 'Write timeout' };
       
-      const result = handleRetryCarrier(inbound.carrier!, failure, metrics);
+      const result = handleRetryCarrier(baseV2Carrier, failure, metrics);
       
       expect(result.attemptNumber).toBe(1);
       expect(result.carrier.attemptNumber).toBe(1);
     });
     
     it('should append failure to history', () => {
-      const inbound = normalizeInboundCarrier(v1Carrier, metrics);
       const failure = { code: 'S3_TIMEOUT', message: 'Write timeout' };
       
-      const result = handleRetryCarrier(inbound.carrier!, failure, metrics);
+      const result = handleRetryCarrier(baseV2Carrier, failure, metrics);
       
       expect(result.carrier.failureHistory).toHaveLength(1);
       expect(result.carrier.failureHistory![0].errorCode).toBe('S3_TIMEOUT');
@@ -98,9 +64,7 @@ describe('Worker Carrier Lifecycle Integration Tests', () => {
     });
     
     it('should accumulate failures across retries', () => {
-      const inbound = normalizeInboundCarrier(v1Carrier, metrics);
-      
-      const retry1 = handleRetryCarrier(inbound.carrier!, { code: 'ERR_1', message: 'Error 1' }, metrics);
+      const retry1 = handleRetryCarrier(baseV2Carrier, { code: 'ERR_1', message: 'Error 1' }, metrics);
       const retry2 = handleRetryCarrier(retry1.carrier, { code: 'ERR_2', message: 'Error 2' }, metrics);
       const retry3 = handleRetryCarrier(retry2.carrier, { code: 'ERR_3', message: 'Error 3' }, metrics);
       
@@ -109,9 +73,7 @@ describe('Worker Carrier Lifecycle Integration Tests', () => {
     });
     
     it('should record mutation metric with attempt number', () => {
-      const inbound = normalizeInboundCarrier(v1Carrier, metrics);
-      
-      handleRetryCarrier(inbound.carrier!, { code: 'ERR', message: 'Error' }, metrics);
+      handleRetryCarrier(baseV2Carrier, { code: 'ERR', message: 'Error' }, metrics);
       
       expect(metrics.getCount('carrier_mutated_total:attempt=1')).toBe(1);
     });
@@ -225,10 +187,8 @@ describe('Worker Carrier Lifecycle Integration Tests', () => {
   
   describe('IT-10: DLQ path enrichment', () => {
     it('should enrich carrier with EXHAUSTED reason', () => {
-      const inbound = normalizeInboundCarrier(v1Carrier, metrics);
-      
       // Simulate retries
-      const retry1 = handleRetryCarrier(inbound.carrier!, { code: 'ERR', message: 'Error' }, metrics);
+      const retry1 = handleRetryCarrier(baseV2Carrier, { code: 'ERR', message: 'Error' }, metrics);
       const retry2 = handleRetryCarrier(retry1.carrier, { code: 'ERR', message: 'Error' }, metrics);
       
       // Move to DLQ
@@ -240,16 +200,14 @@ describe('Worker Carrier Lifecycle Integration Tests', () => {
     });
     
     it('should preserve failure history in DLQ', () => {
-      const inbound = normalizeInboundCarrier(v1Carrier, metrics);
-      const retry = handleRetryCarrier(inbound.carrier!, { code: 'ERR', message: 'Error' }, metrics);
+      const retry = handleRetryCarrier(baseV2Carrier, { code: 'ERR', message: 'Error' }, metrics);
       const dlq = handleDlqCarrier(retry.carrier, 'EXHAUSTED', metrics);
       
       expect(dlq.carrier.failureHistory).toHaveLength(1);
     });
     
     it('should record DLQ enrichment metric', () => {
-      const inbound = normalizeInboundCarrier(v1Carrier, metrics);
-      handleDlqCarrier(inbound.carrier!, 'EXHAUSTED', metrics);
+      handleDlqCarrier(baseV2Carrier, 'EXHAUSTED', metrics);
       
       expect(metrics.getCount('carrier_dlq_enriched_total:reason=EXHAUSTED')).toBe(1);
     });
@@ -261,20 +219,18 @@ describe('Worker Carrier Lifecycle Integration Tests', () => {
   
   describe('IT-11: Correlation preservation through lifecycle', () => {
     it('should preserve requestId through entire lifecycle', () => {
-      const inbound = normalizeInboundCarrier(v1Carrier, metrics);
-      const retry1 = handleRetryCarrier(inbound.carrier!, { code: 'ERR', message: 'Error' }, metrics);
+      const retry1 = handleRetryCarrier(baseV2Carrier, { code: 'ERR', message: 'Error' }, metrics);
       const retry2 = handleRetryCarrier(retry1.carrier, { code: 'ERR', message: 'Error' }, metrics);
       const dlq = handleDlqCarrier(retry2.carrier, 'EXHAUSTED', metrics);
       
-      expect(dlq.carrier.requestId).toBe(v1Carrier.requestId);
+      expect(dlq.carrier.requestId).toBe(baseV2Carrier.requestId);
     });
     
     it('should preserve actionId through entire lifecycle', () => {
-      const inbound = normalizeInboundCarrier(v1Carrier, metrics);
-      const retry = handleRetryCarrier(inbound.carrier!, { code: 'ERR', message: 'Error' }, metrics);
+      const retry = handleRetryCarrier(baseV2Carrier, { code: 'ERR', message: 'Error' }, metrics);
       const dlq = handleDlqCarrier(retry.carrier, 'EXHAUSTED', metrics);
       
-      expect(dlq.carrier.actionId).toBe(v1Carrier.actionId);
+      expect(dlq.carrier.actionId).toBe(baseV2Carrier.actionId);
     });
   });
   
@@ -286,9 +242,8 @@ describe('Worker Carrier Lifecycle Integration Tests', () => {
     const FORBIDDEN_LABELS = ['bundleId', 'tenantId', 'jobId', 'userId', 'requestId', 'correlationId'];
     
     it('MUST NOT use high-cardinality labels in carrier metrics', () => {
-      const inbound = normalizeInboundCarrier(v1Carrier, metrics);
-      handleRetryCarrier(inbound.carrier!, { code: 'ERR', message: 'Error' }, metrics);
-      handleDlqCarrier(inbound.carrier!, 'EXHAUSTED', metrics);
+      handleRetryCarrier(baseV2Carrier, { code: 'ERR', message: 'Error' }, metrics);
+      handleDlqCarrier(baseV2Carrier, 'EXHAUSTED', metrics);
       
       // Check all metric keys for forbidden labels
       const allKeys = Array.from((metrics as any).counts.keys()) as string[];

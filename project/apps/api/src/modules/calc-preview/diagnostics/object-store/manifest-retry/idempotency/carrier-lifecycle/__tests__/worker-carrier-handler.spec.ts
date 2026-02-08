@@ -3,7 +3,6 @@
  */
 
 import {
-  normalizeInboundCarrier,
   handleRetryCarrier,
   handleDlqCarrier,
   SimpleWorkerCarrierMetrics,
@@ -14,22 +13,10 @@ import {
   IdempotencyContextCarrierV2,
   MAX_CARRIER_SIZE_BYTES,
 } from '../carrier-lifecycle.types';
-import { IdempotencyContextCarrier } from '../../idempotency-carrier.types';
 import { resetAllMetrics } from '../carrier-lifecycle-metrics';
 
 describe('Worker Carrier Handler', () => {
   let metrics: SimpleWorkerCarrierMetrics;
-  
-  const baseV1Carrier: IdempotencyContextCarrier = {
-    version: 1,
-    requestId: 'req-123',
-    actionId: 'act-456',
-    actionType: 'ADMIN_RETRY',
-    resourceType: 'BUNDLE',
-    resourceId: 'bundle-789',
-    takeover: false,
-    previousActorId: null,
-  };
   
   const baseV2Carrier: IdempotencyContextCarrierV2 = {
     version: 2,
@@ -46,89 +33,6 @@ describe('Worker Carrier Handler', () => {
   beforeEach(() => {
     metrics = new SimpleWorkerCarrierMetrics();
     resetAllMetrics();
-  });
-  
-  // =========================================================================
-  // INBOUND NORMALIZATION
-  // =========================================================================
-  
-  describe('normalizeInboundCarrier', () => {
-    describe('null/undefined carrier', () => {
-      it('should return invalid for null carrier', () => {
-        const result = normalizeInboundCarrier(null, metrics);
-        
-        expect(result.valid).toBe(false);
-        expect(result.carrier).toBeNull();
-        expect(result.invalidReason).toBe('MISSING');
-        expect(metrics.getCount('carrier_invalid_total:reason=MISSING')).toBe(1);
-      });
-      
-      it('should return invalid for undefined carrier', () => {
-        const result = normalizeInboundCarrier(undefined, metrics);
-        
-        expect(result.valid).toBe(false);
-        expect(result.invalidReason).toBe('MISSING');
-      });
-    });
-    
-    describe('invalid structure', () => {
-      it('should return invalid for non-object', () => {
-        const result = normalizeInboundCarrier('not-an-object', metrics);
-        
-        expect(result.valid).toBe(false);
-        expect(result.invalidReason).toBe('INVALID_STRUCTURE');
-        expect(metrics.getCount('carrier_invalid_total:reason=INVALID_STRUCTURE')).toBe(1);
-      });
-      
-      it('should return invalid for object without version', () => {
-        const result = normalizeInboundCarrier({ foo: 'bar' }, metrics);
-        
-        expect(result.valid).toBe(false);
-        expect(result.invalidReason).toBe('INVALID_STRUCTURE');
-      });
-      
-      it('should return invalid for object with wrong version', () => {
-        const result = normalizeInboundCarrier({ version: 99 }, metrics);
-        
-        expect(result.valid).toBe(false);
-        expect(result.invalidReason).toBe('INVALID_STRUCTURE');
-      });
-    });
-    
-    describe('V1 carrier upgrade', () => {
-      it('should upgrade V1 carrier to V2', () => {
-        const result = normalizeInboundCarrier(baseV1Carrier, metrics);
-        
-        expect(result.valid).toBe(true);
-        expect(result.upgraded).toBe(true);
-        expect(result.carrier?.version).toBe(2);
-        expect(result.carrier?.attemptNumber).toBe(0);
-        expect(metrics.getCount('carrier_upgraded_total')).toBe(1);
-      });
-      
-      it('should preserve V1 fields after upgrade', () => {
-        const result = normalizeInboundCarrier(baseV1Carrier, metrics);
-        
-        expect(result.carrier?.requestId).toBe(baseV1Carrier.requestId);
-        expect(result.carrier?.actionId).toBe(baseV1Carrier.actionId);
-      });
-    });
-    
-    describe('V2 carrier passthrough', () => {
-      it('should pass through V2 carrier unchanged', () => {
-        const result = normalizeInboundCarrier(baseV2Carrier, metrics);
-        
-        expect(result.valid).toBe(true);
-        expect(result.upgraded).toBe(false);
-        expect(result.carrier).toBe(baseV2Carrier);
-      });
-      
-      it('should not increment upgrade metric for V2', () => {
-        normalizeInboundCarrier(baseV2Carrier, metrics);
-        
-        expect(metrics.getCount('carrier_upgraded_total')).toBe(0);
-      });
-    });
   });
   
   // =========================================================================
@@ -303,13 +207,11 @@ describe('Worker Carrier Handler', () => {
   
   describe('Integration scenarios', () => {
     it('should handle full retry → DLQ lifecycle', () => {
-      // 1. Inbound normalization
-      const inbound = normalizeInboundCarrier(baseV1Carrier, metrics);
-      expect(inbound.valid).toBe(true);
-      expect(inbound.upgraded).toBe(true);
+      // 1. Start with V2 carrier
+      const carrier = { ...baseV2Carrier };
       
       // 2. First retry
-      const retry1 = handleRetryCarrier(inbound.carrier!, { code: 'ERR', message: 'Error' }, metrics);
+      const retry1 = handleRetryCarrier(carrier, { code: 'ERR', message: 'Error' }, metrics);
       expect(retry1.attemptNumber).toBe(1);
       
       // 3. Second retry
@@ -324,13 +226,13 @@ describe('Worker Carrier Handler', () => {
     });
     
     it('should preserve correlation through lifecycle', () => {
-      const inbound = normalizeInboundCarrier(baseV1Carrier, metrics);
-      const retry = handleRetryCarrier(inbound.carrier!, { code: 'ERR', message: 'Error' }, metrics);
+      const carrier = { ...baseV2Carrier };
+      const retry = handleRetryCarrier(carrier, { code: 'ERR', message: 'Error' }, metrics);
       const dlq = handleDlqCarrier(retry.carrier, 'EXHAUSTED', metrics);
       
       // Correlation preserved
-      expect(dlq.carrier.requestId).toBe(baseV1Carrier.requestId);
-      expect(dlq.carrier.actionId).toBe(baseV1Carrier.actionId);
+      expect(dlq.carrier.requestId).toBe(baseV2Carrier.requestId);
+      expect(dlq.carrier.actionId).toBe(baseV2Carrier.actionId);
     });
   });
 });

@@ -12,7 +12,6 @@
 import {
   IdempotencyContextCarrierV2,
   CarrierSizeLimitResult,
-  CarrierSizeLimitAction,
   CarrierSizeExceededError,
   MAX_CARRIER_SIZE_BYTES,
   MIN_FAILURE_HISTORY_SIZE,

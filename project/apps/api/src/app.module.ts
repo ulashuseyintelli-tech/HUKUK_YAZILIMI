@@ -74,6 +74,7 @@ import { InterestEngineModule } from "./modules/interest-engine/interest-engine.
 import { AddressTaskModule } from "./modules/address-task/address-task.module";
 import { PolicyEngineModule } from "./modules/policy-engine/policy-engine.module";
 import { CalcPreviewModule } from "./modules/calc-preview/calc-preview.module";
+import { MetricsAggregatorModule } from "./modules/metrics-aggregator/metrics-aggregator.module";
 // TODO: IcrabotModule geçici olarak devre dışı - Prisma client regenerate gerekli
 // import { IcrabotModule } from "./modules/icrabot/icrabot.module";
 
@@ -192,6 +193,7 @@ function getConditionalImports(): Type<unknown>[] {
     AddressTaskModule,
     PolicyEngineModule,
     CalcPreviewModule,
+    MetricsAggregatorModule,
     // IcrabotModule, // TODO: Prisma client regenerate sonrası aktif et
     // Conditional imports (Sprint 2F)
     ...getConditionalImports(),

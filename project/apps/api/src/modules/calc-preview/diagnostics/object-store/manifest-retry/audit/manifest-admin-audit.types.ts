@@ -6,6 +6,8 @@
  * Type definitions for admin audit service.
  */
 
+import { DegradedContext } from '../idempotency/carrier-lifecycle/degraded-context.types';
+
 // ============================================================================
 // Audit Event Types
 // ============================================================================
@@ -25,7 +27,7 @@ export type AuditResourceType = 'DLQ_ENTRY' | 'RETRY_JOB' | 'WORKER' | 'BUNDLE';
 /**
  * Audit outcome for ADMIN_ACTION events
  */
-export type AuditOutcome = 'SUCCESS' | 'FAILED' | 'TAKEOVER';
+export type AuditOutcome = 'SUCCESS' | 'FAILED' | 'TAKEOVER' | 'REJECTED';
 
 /**
  * Input for creating an audit event
@@ -52,6 +54,9 @@ export interface AuditEventInput {
   errorCode?: string;
   /** Error message for failed actions, max 512 chars (PR-4) */
   errorMessage?: string;
+  /** Phase 11.1: Degraded context when carrier was invalid at worker boundary.
+   *  Present ONLY when job ran in degraded mode. Absent for normal mode. */
+  degradedContext?: DegradedContext;
 }
 
 /**
@@ -60,7 +65,7 @@ export interface AuditEventInput {
  * Note: Uses Omit to override optional fields from AuditEventInput
  * with required null-safe versions for internal storage.
  */
-export interface AuditEvent extends Omit<AuditEventInput, 'actionId' | 'outcome' | 'takeoverFrom' | 'errorCode' | 'errorMessage'> {
+export interface AuditEvent extends Omit<AuditEventInput, 'actionId' | 'outcome' | 'takeoverFrom' | 'errorCode' | 'errorMessage' | 'degradedContext'> {
   /** Append time (when event was created) */
   createdAt: Date;
   /** Hashed IP (null if no secret or no IP) */
@@ -75,6 +80,8 @@ export interface AuditEvent extends Omit<AuditEventInput, 'actionId' | 'outcome'
   errorCode: string | null;
   /** Error message for failed actions (PR-4) - normalized to null */
   errorMessage: string | null;
+  /** Phase 11.1: Degraded context - normalized to null */
+  degradedContext: DegradedContext | null;
 }
 
 // ============================================================================

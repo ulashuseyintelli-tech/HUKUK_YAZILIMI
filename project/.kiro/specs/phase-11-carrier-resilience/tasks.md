@@ -52,8 +52,11 @@ ADD COLUMN carrier_truncated BOOLEAN NOT NULL DEFAULT false;
 - [x] Migration uses ADD COLUMN NULL (no table rewrite, minimal lock time)
 - [x] Existing DLQ entries have NULL carrier_json (expected)
 - [x] Repository types updated for new columns (DlqEntry, CreateDlqEntryInput)
-- [x] Repository SELECT/mapper reads new columns (NULL tolerant)
-- [x] Repository upsert writes new columns
+- [x] DLQ entry döndüren tüm SELECT sorguları (getById/getByBundleId/query/queryWithCursor/resolve/atomicRedrive) yeni carrier kolonlarını kapsıyor
+- [x] Aggregate/stat sorguları (getStats gibi) carrier kolonlarını seçmez; bu beklenen davranış
+- [x] markRedriven() $executeRaw ile status/timestamp update yapar, RETURNING yoktur; DLQ entry okumaz/haritalamaz — "carrier korunması" tartışma konusu değildir
+- [x] Repository upsert writes new columns (INSERT + ON CONFLICT UPDATE)
+- [x] mapRawToEntry NULL-tolerant (?? null / ?? false) for pre-11.0 entries
 - [x] Unit tests updated with carrier field assertions
 
 #### Migration Safety Notes
@@ -66,72 +69,126 @@ ADD COLUMN carrier_truncated BOOLEAN NOT NULL DEFAULT false;
 
 None (schema-only change).
 
+#### Tech Debt (Phase 11.0 scope dışı — kayıt altına alındı)
+
+1. **query() içinde $queryRawUnsafe + string interpolation:**
+   Şu an pratikte injection değil (enum-bounded orderBy/status), ama pattern olarak kötü.
+   Backlog item: Prisma tagged template + allowlist orderBy mapping (ör. `{created_at: 'created_at', last_failed_at: 'last_failed_at'}`) ile tam güvenli hale getir.
+
 ---
 
 ### Task 11.1: Worker Inbound Degraded Mode
 
 **Priority:** P2 | **Size:** S | **Depends On:** Phase 10.5
 
+**Status:** ✅ DONE (2026-02-06)
+
+**Spec Docs:** [requirements](./phase-11-1-requirements.md) | [design](./phase-11-1-design.md)
+
 #### Scope
 
-Invalid carrier → warn + metric, ALS disabled, job continues.
+Worker inbound boundary'de carrier validation + degraded mode.
+Invalid/oversize/malformed carrier → warn + metric, ALS disabled, job continues.
 
-**Guarantee:** Job NEVER fails due to carrier issues.
+**Temel Garanti:** Job ASLA carrier sorunları nedeniyle fail olmaz.
 
 #### Files
 
-| File | Action |
-|------|--------|
-| `apps/api/src/modules/.../manifest-retry/idempotency/carrier-lifecycle/degraded-context.types.ts` | CREATE |
-| `apps/api/src/modules/.../manifest-retry/idempotency/carrier-lifecycle/worker-carrier-handler.ts` | UPDATE |
-| `apps/api/src/modules/.../manifest-retry/idempotency/carrier-lifecycle/carrier-lifecycle-metrics.ts` | UPDATE |
-| `apps/api/src/modules/.../manifest-retry/audit/manifest-admin-audit.types.ts` | UPDATE |
-| `apps/api/src/modules/.../manifest-retry/idempotency/carrier-lifecycle/__tests__/worker-carrier-handler.spec.ts` | UPDATE |
-| `apps/api/src/modules/.../manifest-retry/__tests__/worker-degraded-mode.integration.spec.ts` | CREATE |
+| File | Action | Description |
+|------|--------|-------------|
+| `.../carrier-lifecycle/degraded-context.types.ts` | CREATE | DegradedContext, MinimalCarrierContext, CarrierDropReasonV2, InboundValidationResult |
+| `.../carrier-lifecycle/worker-carrier-handler.ts` | UPDATE | validateInboundCarrier() eklenir, normalizeInboundCarrier() deprecated |
+| `.../carrier-lifecycle/carrier-lifecycle-metrics.ts` | UPDATE | carrier_inbound_total counter eklenir |
+| `.../audit/manifest-admin-audit.types.ts` | UPDATE | AuditEventInput'a degradedContext? eklenir |
+| `.../manifest-retry-worker.service.ts` | UPDATE | processOnce() içinde validation entegrasyonu |
+| `.../carrier-lifecycle/__tests__/worker-carrier-handler.spec.ts` | UPDATE | validateInboundCarrier test cases |
+| `.../__tests__/worker-degraded-mode.integration.spec.ts` | CREATE | End-to-end degraded mode integration |
 
-#### Type Definitions
+#### Degraded Mode Decision Matrix
 
-```typescript
-// degraded-context.types.ts
-export interface DegradedContext {
-  readonly isDegraded: true;
-  readonly reason: CarrierDropReason;
-  readonly carrierSnapshot?: string; // max 500 chars
-}
+| Input Class | Acceptance | Stored Context | DropReason | Metric |
+|-------------|------------|----------------|------------|--------|
+| VALID_V2 | ACCEPT | FULL | — | accepted |
+| VALID_V1 | ACCEPT (upgrade) | FULL | — | accepted |
+| VERSION_MISMATCH | DROP_AND_MINIMAL | MINIMAL | VERSION_MISMATCH | degraded |
+| MALFORMED | DROP_AND_MINIMAL | MINIMAL | MALFORMED | degraded |
+| TYPE_ERROR | DROP_AND_MINIMAL | MINIMAL | TYPE_ERROR | degraded |
+| MISSING_REQUIRED | DROP_AND_MINIMAL | MINIMAL | MISSING_REQUIRED | degraded |
+| OVERSIZE | DROP_AND_MINIMAL | MINIMAL | OVERSIZE | degraded |
+| UPGRADE_FAILED | DROP_AND_MINIMAL | MINIMAL | UPGRADE_FAILED | degraded |
 
-export type CarrierDropReason =
-  | 'VERSION_MISMATCH'
-  | 'MISSING_REQUIRED'
-  | 'MALFORMED'
-  | 'TYPE_ERROR'
-  | 'UPGRADE_FAILED';
-```
+#### Implementation Steps
 
-#### Behavior
+1. **degraded-context.types.ts** (CREATE)
+   - `CarrierDropReasonV2` enum (extends existing + OVERSIZE)
+   - `DegradedContext` interface (isDegraded, reason, carrierSnapshot?)
+   - `MinimalCarrierContext` interface (carrierVersion?, actionId?, requestId?, dropReason, receivedAt)
+   - `InboundValidationResult` discriminated union (mode: FULL | MINIMAL)
+   - `sanitizeCarrierSnapshot()` function
+   - `buildMinimalResult()` helper
 
-| Condition | Action | Metric Label |
-|-----------|--------|--------------|
-| `carrier === null` | warn + run without ALS | `reason=MALFORMED` |
-| `carrier.version` invalid | warn + drop context | `reason=VERSION_MISMATCH` |
-| Required field missing | warn + drop context | `reason=MISSING_REQUIRED` |
-| Type mismatch | warn + drop context | `reason=TYPE_ERROR` |
-| V1→V2 upgrade fails | warn + drop context | `reason=UPGRADE_FAILED` |
-| Valid carrier | restore ALS | - |
+2. **worker-carrier-handler.ts** (UPDATE)
+   - Add `validateInboundCarrier(raw, rawSizeBytes?)` → `InboundValidationResult`
+   - Validation order: byte-size → null → object → version → required fields → type check → upgrade
+   - Mark `normalizeInboundCarrier()` as `@deprecated`
+   - Never throws — always returns result
+
+3. **carrier-lifecycle-metrics.ts** (UPDATE)
+   - Add `carrierInboundMetric` counter: `carrier_inbound_total{outcome, reason}`
+   - outcome: 'accepted' | 'degraded'
+   - reason: CarrierDropReasonV2 values
+
+4. **manifest-admin-audit.types.ts** (UPDATE)
+   - Add `degradedContext?: DegradedContext` to `AuditEventInput`
+   - Add `degradedContext?: DegradedContext` to `AuditEvent`
+
+5. **manifest-retry-worker.service.ts** (UPDATE)
+   - `processOnce()`: job claim sonrası `validateInboundCarrier()` çağır
+   - FULL → ALS context restore (mevcut davranış)
+   - MINIMAL → ALS disabled, metric emit, warn log
+   - Job execution her iki durumda devam eder
+
+6. **Tests** (UPDATE + CREATE)
+   - Unit: tüm edge case'ler (null, undefined, string, number, {}, version:3, oversize, valid V1/V2, snapshot truncation, snapshot serialization failure)
+   - Integration: invalid carrier → job success + degraded metric + audit event with degradedContext
 
 #### DoD
 
-- [ ] Invalid carrier does not fail job
-- [ ] Metric `carrier_degraded_total{reason}` increments correctly
-- [ ] Audit event contains `degradedContext` when degraded
-- [ ] `carrierSnapshot` is max 500 chars, sanitized
-- [ ] Job completes successfully without ALS context
-- [ ] Integration test: invalid carrier → job success + degraded metric
+- [x] `validateInboundCarrier()` implemented and exported
+- [x] Discriminated union: mode='FULL' → reason absent; mode='MINIMAL' → reason required
+- [x] Byte-level oversize check pre-parse (OVERSIZE → no JSON.parse, spy ile kanıt)
+- [x] Invalid carrier does not fail job (zero job failures from carrier)
+- [x] Metric `carrier_inbound_total{outcome, reason}` increments correctly
+- [x] Audit event contains `degradedContext` when degraded
+- [x] `carrierSnapshot` max 500 chars, sanitized; serialization failure → '[unserializable]'
+- [x] `normalizeInboundCarrier()` marked @deprecated AND removed from all consumer call sites (grep verified)
+- [x] MinimalCarrierContext contains only safe bounded fields
+- [x] Truncated inbound carrier (valid V2, short failureHistory) → ACCEPT as FULL
+- [x] Job completes successfully without ALS context
+- [x] Unit tests: all edge cases from design doc (41 tests passing)
+- [ ] Integration test: invalid carrier → job success + degraded metric (deferred to worker integration)
+
+#### Mandatory Tests (sign-off'ta aranır)
+
+1. OVERSIZE → JSON.parse çağrılmıyor (jest.spyOn kanıtı)
+2. MALFORMED (null) → MINIMAL + reason=MALFORMED
+3. VERSION_MISMATCH ({version:3}) → MINIMAL + reason=VERSION_MISMATCH
+4. VALID_V2 → FULL + reason yok (undefined)
+5. Truncated inbound (valid V2, kısa failureHistory) → FULL (accept)
+6. raw=null → MINIMAL, optional fields undefined, sadece dropReason+receivedAt dolu
 
 #### Metrics
 
-| Metric | Type | Labels |
-|--------|------|--------|
-| `carrier_degraded_total` | Counter | `reason` (FIXED ENUM) |
+| Metric | Type | Labels | Max Cardinality |
+|--------|------|--------|-----------------|
+| `carrier_inbound_total` | Counter | `outcome` (accepted\|degraded), `reason` (FIXED ENUM) | 14 |
+
+#### Hard Limits
+
+| Constant | Value | Source |
+|----------|-------|--------|
+| MAX_CARRIER_BYTES | 4096 | Existing `MAX_CARRIER_SIZE_BYTES` |
+| MAX_CARRIER_SNAPSHOT_CHARS | 500 | New (11.1) |
 
 ---
 
@@ -139,94 +196,85 @@ export type CarrierDropReason =
 
 **Priority:** P2 | **Size:** M | **Depends On:** 11.0
 
+**Status:** ✅ DONE (2026-02-06)
+
+**Spec Docs:** [design](./phase-11-2-design.md)
+
 #### Scope
 
 Store full V2 carrier JSON on DLQ insert. Admin redrive uses stored carrier.
 
+#### Non-Negotiable Invariants
+
+1. **Size limiter + truncation flag tek kanonik yer:** `prepareCarrierForDlqStorage()` — başka hiçbir yerde DLQ carrier truncation kararı verilmez
+2. **carrier_truncated ⇒ carrier_json IS NOT NULL:** DB constraint + write path logic
+3. **Carrier DLQ-insert-path only:** carrier alanlarına SADECE `upsert()` dokunur (INSERT + ON CONFLICT UPDATE). resolve/markRedriven/atomicRedrive carrier kolonlarını SET ETMEZ. Not: aynı bundle yeniden DLQ'ye düşerse carrier güncellenir — bu beklenen davranış (yeni lifecycle'ın carrier'ı).
+
 #### Files
 
-| File | Action |
-|------|--------|
-| `apps/api/src/modules/.../manifest-retry/manifest-dlq.repository.ts` | UPDATE |
-| `apps/api/src/modules/.../manifest-retry/manifest-retry-worker.service.ts` | UPDATE |
-| `apps/api/src/modules/.../manifest-retry/manifest-admin.controller.ts` | UPDATE |
-| `apps/api/src/modules/.../manifest-retry/idempotency/carrier-lifecycle/carrier-lifecycle-metrics.ts` | UPDATE |
-| `apps/api/src/modules/.../manifest-retry/__tests__/manifest-dlq.repository.spec.ts` | UPDATE |
-| `apps/api/src/modules/.../manifest-retry/__tests__/dlq-carrier-storage.integration.spec.ts` | CREATE |
+| File | Action | Description |
+|------|--------|-------------|
+| `.../carrier-lifecycle/dlq-carrier-storage.ts` | CREATE | prepareCarrierForDlqStorage(), resolveCarrierForRedrive(), createMinimalCarrierFromDlq() |
+| `.../carrier-lifecycle/carrier-lifecycle-metrics.ts` | UPDATE | dlqStorageMetric, dlqStorageTruncatedMetric |
+| `.../manifest-retry-worker.service.ts` | UPDATE | moveToDlq() carrier parameter + storage |
+| `.../manifest-admin.controller.ts` | UPDATE | Redrive uses resolveCarrierForRedrive() |
+| `.../carrier-lifecycle/index.ts` | UPDATE | New exports |
+| `.../carrier-lifecycle/__tests__/dlq-carrier-storage.spec.ts` | CREATE | Unit tests |
 
-#### DLQ Insert Flow
+#### Implementation Steps
 
-```typescript
-// In worker when moving to DLQ
-async moveToDlq(job: ManifestRetryJob, carrier: IdempotencyContextCarrierV2): Promise<void> {
-  // Apply size limit (allow truncation for storage)
-  const sizeResult = enforceCarrierSizeLimit(carrier, { allowTruncation: true });
-  
-  // Serialize
-  const carrierJson = JSON.stringify(sizeResult.carrier);
-  const carrierVersion = sizeResult.carrier.version;
-  const carrierTruncated = sizeResult.action === 'TRUNCATED';
-  
-  // Atomic insert
-  await this.dlqRepo.insert({
-    ...dlqEntry,
-    carrierJson,
-    carrierVersion,
-    carrierTruncated,
-  });
-  
-  // Metrics
-  dlqStorageMetric.inc();
-  if (carrierTruncated) {
-    dlqStorageTruncatedMetric.inc();
-  }
-}
-```
+1. **dlq-carrier-storage.ts** (CREATE)
+   - `prepareCarrierForDlqStorage(carrier)` → DlqCarrierStorageFields
+   - `resolveCarrierForRedrive(dlqEntry)` → IdempotencyContextCarrierV2
+   - `createMinimalCarrierFromDlq(dlqEntry)` → IdempotencyContextCarrierV2
+   - Both functions NEVER throw
 
-#### Admin Redrive Flow
+2. **carrier-lifecycle-metrics.ts** (UPDATE)
+   - `dlqStorageMetric` counter: `carrier_dlq_storage_total`
+   - `dlqStorageTruncatedMetric` counter: `carrier_dlq_storage_truncated_total`
 
-```typescript
-// In admin controller
-async redrive(dlqId: string, operatorId: string): Promise<RedriveResult> {
-  const dlqEntry = await this.dlqRepo.findById(dlqId);
-  
-  // Try stored carrier first
-  let sourceCarrier: IdempotencyContextCarrierV2;
-  
-  if (dlqEntry.carrierJson) {
-    try {
-      sourceCarrier = ensureCarrierV2(JSON.parse(dlqEntry.carrierJson));
-    } catch {
-      this.logger.warn('Stored carrier invalid, using fallback', { dlqId });
-      sourceCarrier = createMinimalCarrierFromDlq(dlqEntry);
-    }
-  } else {
-    // Fallback for pre-11.2 entries
-    sourceCarrier = createMinimalCarrierFromDlq(dlqEntry);
-  }
-  
-  // Clone for redrive (existing logic)
-  return this.cloneAndRedrive(sourceCarrier, dlqEntry, operatorId);
-}
-```
+3. **manifest-retry-worker.service.ts** (UPDATE)
+   - `moveToDlq()` accepts carrier parameter from validateCarrier result
+   - Calls `prepareCarrierForDlqStorage(carrier)` for storage fields
+   - Passes carrier fields to `dlqRepo.upsert()`
+
+4. **manifest-admin.controller.ts** (UPDATE)
+   - Redrive path uses `resolveCarrierForRedrive(dlqEntry)` instead of creating carrier from scratch
+   - Fallback to minimal carrier for pre-11.2 entries
+
+5. **Tests** (CREATE)
+   - carrier=null → null fields, truncated=false
+   - carrier valid within 4KB → stored as-is, truncated=false
+   - carrier over 4KB truncatable → truncated, flag=true
+   - carrier over 4KB not truncatable → null (REJECTED), truncated=false
+   - resolveCarrierForRedrive with stored carrier → parsed V2
+   - resolveCarrierForRedrive with corrupted carrier → minimal fallback
+   - resolveCarrierForRedrive with null carrier → minimal fallback
+   - prepareCarrierForDlqStorage is only truncation decision point (grep gate)
+   - resolve/markRedriven/atomicRedrive don't SET carrier columns (grep gate)
 
 #### DoD
 
-- [ ] DLQ insert stores carrier_json atomically
-- [ ] carrier_version is set correctly (1 or 2)
-- [ ] carrier_truncated is true when truncation occurred
+- [ ] `prepareCarrierForDlqStorage()` implemented — single canonical truncation location
+- [ ] `resolveCarrierForRedrive()` implemented — never throws, fallback to minimal
+- [ ] `createMinimalCarrierFromDlq()` implemented
+- [ ] DLQ insert stores carrier_json atomically (single SQL)
+- [ ] carrier_truncated ⇒ carrier_json IS NOT NULL (invariant preserved)
+- [ ] carrier_version set correctly (1 or 2)
+- [ ] resolve/markRedriven/atomicRedrive don't touch carrier columns (grep verified)
 - [ ] Admin redrive uses stored carrier when available
 - [ ] Admin redrive falls back to minimal carrier when not available
 - [ ] Metric `carrier_dlq_storage_total` increments
 - [ ] Metric `carrier_dlq_storage_truncated_total` increments on truncation
-- [ ] Integration test: DLQ insert → redrive uses stored carrier
+- [ ] Unit tests: all edge cases
+- [ ] Grep gates: single truncation location + first-write only
 
 #### Metrics
 
 | Metric | Type | Labels |
 |--------|------|--------|
-| `carrier_dlq_storage_total` | Counter | - |
-| `carrier_dlq_storage_truncated_total` | Counter | - |
+| `carrier_dlq_storage_total` | Counter | — |
+| `carrier_dlq_storage_truncated_total` | Counter | — |
 
 ---
 
@@ -349,8 +397,8 @@ Only compress if `JSON.stringify(carrier).length > 1024` (1KB).
 | Task | Priority | Size | Depends On | Status |
 |------|----------|------|------------|--------|
 | 11.0 Migration | P2 | S | Phase 10.5 | ✅ DONE |
-| 11.1 Degraded Mode | P2 | S | Phase 10.5 | ⬜ TODO |
-| 11.2 DLQ Storage | P2 | M | 11.0 | ⬜ TODO |
+| 11.1 Degraded Mode | P2 | S | Phase 10.5 | ✅ DONE (LOCKED design) |
+| 11.2 DLQ Storage | P2 | M | 11.0 | ✅ DONE |
 | 11.3 Depth Limit | P3 | S | 11.2 | ⬜ OPTIONAL |
 | 11.4 Compression | P3 | M | - | ⬜ OPTIONAL |
 

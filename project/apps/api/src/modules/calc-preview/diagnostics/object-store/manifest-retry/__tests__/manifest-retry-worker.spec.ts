@@ -67,7 +67,6 @@ function createMockDlqRepo(): jest.Mocked<IManifestDlqRepository> {
     getByBundleId: jest.fn(),
     query: jest.fn(),
     resolve: jest.fn(),
-    markRedriven: jest.fn(),
     getStats: jest.fn(),
   };
 }

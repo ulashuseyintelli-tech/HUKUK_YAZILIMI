@@ -80,7 +80,8 @@ export function cloneCarrierForRedrive(
   const newCorrelationId = generateUUID();
   const newRequestId = generateUUID();
   
-  // Build cloned carrier
+  // Build cloned carrier — use conditional spread to avoid
+  // assigning undefined to optional properties (exactOptionalPropertyTypes)
   const cloned: IdempotencyContextCarrierV2 = {
     // Version
     version: CARRIER_VERSION_V2,
@@ -107,14 +108,9 @@ export function cloneCarrierForRedrive(
     redrivenAt: now.toISOString(),
     redrivenBy: ctx.operatorId,
     
-    // Clear DLQ fields (fresh start)
-    dlqReason: undefined,
-    movedToDlqAt: undefined,
-    finalAttemptNumber: undefined,
-    
-    // Clear failure history (fresh start)
-    lastFailedAt: undefined,
-    failureHistory: undefined,
+    // DLQ fields, failure history, lastFailedAt intentionally OMITTED
+    // (fresh start — no dlqReason, movedToDlqAt, finalAttemptNumber,
+    //  lastFailedAt, failureHistory)
   };
   
   // Record metric

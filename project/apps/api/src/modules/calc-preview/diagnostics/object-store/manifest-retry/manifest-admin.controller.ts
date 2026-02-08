@@ -31,6 +31,8 @@ import {
   ConflictException,
   BadRequestException,
   PayloadTooLargeException,
+  InternalServerErrorException,
+  ServiceUnavailableException,
   UseGuards,
   UseInterceptors,
   Req,
@@ -66,8 +68,18 @@ import { DlqQueryOptions, RetryQueueJob } from './manifest-retry.types';
 // Task 7: Carrier lifecycle imports
 import { cloneCarrierForRedrive, RedriveCloneResult } from './idempotency/carrier-lifecycle/redrive-carrier-cloner';
 import { enforceCarrierSizeLimit } from './idempotency/carrier-lifecycle/carrier-size-limiter';
-import { IdempotencyContextCarrierV2, CarrierSizeExceededError } from './idempotency/carrier-lifecycle/carrier-lifecycle.types';
-import { redriveClonedMetric, redriveRejectedMetric } from './idempotency/carrier-lifecycle/carrier-lifecycle-metrics';
+import { CarrierSizeExceededError } from './idempotency/carrier-lifecycle/carrier-lifecycle.types';
+import { redriveClonedMetric, redriveRejectedMetric, redriveRateLimitedMetric, redriveRateCheckFailedMetric, redriveBackoffHistogram, redriveBackoffAppliedMetric, redriveCountBucket, redriveTxDurationHistogram, redriveKillSwitchGauge, redriveDisabledMetric } from './idempotency/carrier-lifecycle/carrier-lifecycle-metrics';
+// Phase 11.2: Resolve stored carrier for redrive
+import { resolveCarrierForRedrive } from './idempotency/carrier-lifecycle/dlq-carrier-storage';
+// Phase 11.3: Redrive depth limit
+import { enforceRedriveDepthLimit, MAX_REDRIVE_DEPTH } from './idempotency/carrier-lifecycle/redrive-depth-enforcer';
+// Phase 11.4: Redrive rate limiting
+import { checkRateLimit } from './idempotency/carrier-lifecycle/redrive-rate-limiter';
+import { computeNextAllowedAt } from './idempotency/carrier-lifecycle/redrive-backoff-policy';
+import { DlqRedriveError } from './manifest-dlq.repository';
+// Phase 12: Kill-switch
+import { isRedriveDisabled } from './idempotency/carrier-lifecycle/redrive-kill-switch';
 
 @Controller('admin/manifest')
 @UseGuards(ManifestAdminAuthGuard, ManifestAdminRateLimitGuard)
@@ -81,6 +93,11 @@ export class ManifestAdminController {
     private readonly manifestWriter: ManifestWriter,
     private readonly auditService: ManifestAdminAuditService,
   ) {}
+
+  // Phase 12: Set kill-switch gauge at startup
+  onModuleInit() {
+    redriveKillSwitchGauge.set(isRedriveDisabled() ? 1 : 0);
+  }
 
   // ==========================================================================
   // POST /admin/bundles/{bundleId}/manifest/retry
@@ -282,6 +299,17 @@ export class ManifestAdminController {
     @Param('dlqId') dlqId: string,
     @Req() req: Request,
   ): Promise<DlqRedriveResponseDto> {
+    // Step 0: Kill-switch (SHORT-CIRCUIT — Phase 12)
+    // No downstream calls (getById, depth check, rate check, atomicRedrive) when disabled
+    if (isRedriveDisabled()) {
+      redriveDisabledMetric.inc();
+      throw new ServiceUnavailableException({
+        code: 'REDRIVE_DISABLED',
+        message: 'Redrive is temporarily disabled by operator',
+        retryable: false,
+      });
+    }
+
     this.logger.log(`[redriveDlqEntry] Redrive request: dlqId=${dlqId}`);
 
     // Get actor from request context (set by auth guard)
@@ -296,24 +324,110 @@ export class ManifestAdminController {
         throw new NotFoundException(`DLQ entry not found: ${dlqId}`);
       }
       
-      // 2. Build carrier from DLQ entry (or use stored carrier if available)
-      // For now, create a minimal carrier - in production, carrier would be stored with DLQ entry
-      const originalCarrier: IdempotencyContextCarrierV2 = {
-        version: 2,
-        requestId: dlqEntry.id, // Use DLQ ID as original correlation
-        actionId: `dlq-${dlqEntry.id}`,
-        actionType: 'DLQ_REDRIVE',
-        resourceType: 'BUNDLE',
-        resourceId: dlqEntry.bundleId,
-        takeover: false,
-        previousActorId: null,
-        attemptNumber: dlqEntry.attempt,
-        // dlqReason omitted - type mismatch with ManifestErrorCode
-        movedToDlqAt: dlqEntry.lastFailedAt.toISOString(),
-        finalAttemptNumber: dlqEntry.attempt,
-      };
+      // 2. Phase 11.2: Resolve carrier from stored JSON or minimal fallback
+      const originalCarrier = resolveCarrierForRedrive(dlqEntry);
       
-      // 3. Clone carrier for redrive (Task 7 core logic)
+      // 3. Phase 11.3: Enforce redrive depth limit (fail-closed)
+      let currentDepth = 0;
+      try {
+        const depthResult = await enforceRedriveDepthLimit(
+          dlqEntry,
+          originalCarrier,
+          this.dlqRepo,
+        );
+        currentDepth = depthResult.currentDepth;
+        
+        if (!depthResult.allowed) {
+          // Audit the rejection
+          this.auditService.append({
+            eventType: 'DLQ_REDRIVE',
+            actor: redrivenBy,
+            requestId,
+            ipAddress: req.ip ?? null,
+            userAgent: req.get('user-agent') ?? null,
+            resourceType: 'DLQ_ENTRY',
+            resourceId: dlqId,
+            targetBundleId: dlqEntry.bundleId,
+            beforeState: { status: dlqEntry.status },
+            afterState: { status: dlqEntry.status, poisonReason: depthResult.reason },
+            reason: `Redrive rejected: ${depthResult.reason}`,
+            outcome: 'REJECTED',
+          });
+          
+          const code = depthResult.reason === 'POISON_ENTRY' ? 'POISON_ENTRY' : 'REDRIVE_DEPTH_EXCEEDED';
+          throw new ConflictException({
+            code,
+            dlqId,
+            ...(depthResult.reason === 'DEPTH_EXCEEDED' && {
+              currentDepth: depthResult.currentDepth,
+              maxDepth: MAX_REDRIVE_DEPTH,
+            }),
+          });
+        }
+      } catch (depthError) {
+        // Re-throw HTTP exceptions (ConflictException from above)
+        if (depthError instanceof ConflictException) throw depthError;
+        // Fail-closed: unexpected error → reject redrive
+        this.logger.error(`[redriveDlqEntry] Depth check failed: dlqId=${dlqId}`, depthError);
+        redriveRejectedMetric.inc({ reason: 'DEPTH_CHECK_FAILED' });
+        throw new InternalServerErrorException({
+          code: 'DEPTH_CHECK_FAILED',
+          message: 'Redrive depth check failed unexpectedly',
+        });
+      }
+      
+      // 4. Phase 11.4: Rate limit pre-check (read-only, fail-closed)
+      //    Optimistic check — no DB lock. Real gate is in atomicRedrive tx.
+      //    Pre-check MUST NOT fail-open: any error → 409 reject.
+      const now = new Date();
+      const currentRedriveCount = dlqEntry.redriveCount ?? 0;
+      try {
+        const rateLimitResult = checkRateLimit(dlqEntry, now);
+        if (!rateLimitResult.allowed) {
+          // Audit the rate limit rejection
+          this.auditService.append({
+            eventType: 'DLQ_REDRIVE',
+            actor: redrivenBy,
+            requestId,
+            ipAddress: req.ip ?? null,
+            userAgent: req.get('user-agent') ?? null,
+            resourceType: 'DLQ_ENTRY',
+            resourceId: dlqId,
+            targetBundleId: dlqEntry.bundleId,
+            beforeState: { status: dlqEntry.status, redriveCount: currentRedriveCount },
+            afterState: { status: dlqEntry.status },
+            reason: `Redrive rejected: RATE_LIMITED, waitSeconds=${rateLimitResult.waitSeconds}`,
+            outcome: 'REJECTED',
+          });
+
+          redriveRejectedMetric.inc({ reason: 'RATE_LIMITED' });
+          redriveRateLimitedMetric.inc({ gate: 'precheck' });
+          throw new ConflictException({
+            code: 'REDRIVE_RATE_LIMITED',
+            dlqId,
+            nextAllowedAt: rateLimitResult.nextAllowedAt?.toISOString(),
+            waitSeconds: rateLimitResult.waitSeconds,
+            redriveCount: rateLimitResult.redriveCount,
+          });
+        }
+      } catch (rateLimitError) {
+        // Re-throw HTTP exceptions (ConflictException from above)
+        if (rateLimitError instanceof ConflictException) throw rateLimitError;
+        // Fail-closed: unexpected error → 409 reject (non-retriable)
+        this.logger.error(`[redriveDlqEntry] Rate limit check failed: dlqId=${dlqId}`, rateLimitError);
+        redriveRejectedMetric.inc({ reason: 'RATE_LIMIT_CHECK_FAILED' });
+        redriveRateCheckFailedMetric.inc();
+        throw new ConflictException({
+          code: 'REDRIVE_RATE_LIMIT_CHECK_FAILED',
+          message: 'Rate limit check failed — redrive rejected (fail-closed)',
+          dlqId,
+        });
+      }
+      
+      // 5. Compute backoff for next allowed redrive (domain logic — stays in controller)
+      const backoffResult = computeNextAllowedAt(now, currentRedriveCount);
+      
+      // 6. Clone carrier for redrive (Task 7 core logic)
       let cloneResult: RedriveCloneResult;
       try {
         cloneResult = cloneCarrierForRedrive(
@@ -330,7 +444,7 @@ export class ManifestAdminController {
         });
       }
       
-      // 4. Enforce size limit on cloned carrier (reject policy for admin redrive)
+      // 7. Enforce size limit on cloned carrier (reject policy for admin redrive)
       try {
         enforceCarrierSizeLimit(cloneResult.carrier, { allowTruncation: false });
         // If we get here, size is OK
@@ -350,17 +464,39 @@ export class ManifestAdminController {
         throw sizeError;
       }
       
-      // 5. Perform atomic redrive (DB transaction)
-      const { dlqEntry: updatedDlqEntry, newJobId } = await this.dlqRepo.atomicRedrive(
-        dlqId,
-        redrivenBy,
-        null, // immediate retry
-      );
+      // 8. Perform atomic redrive (DB transaction — all-or-nothing)
+      //    Phase 11.4: tx includes cooldown guard + rate limit state update
+      //    Phase 12: tx duration measurement (try/finally — observe on every outcome)
+      const txStart = Date.now();
+      let updatedDlqEntry: any;
+      let newJobId: string;
+      try {
+        const txResult = await this.dlqRepo.atomicRedrive(
+          dlqId,
+          redrivenBy,
+          null, // immediate retry
+          {
+            now,
+            nextAllowedRedriveAt: backoffResult.nextAllowedAt,
+          },
+        );
+        updatedDlqEntry = txResult.dlqEntry;
+        newJobId = txResult.newJobId;
+      } finally {
+        // Phase 12: observe tx duration — ALWAYS, single point, every outcome
+        redriveTxDurationHistogram.observe((Date.now() - txStart) / 1000);
+      }
       
-      // 6. Record success metric
+      // 9. Record success metric
       redriveClonedMetric.inc();
       
-      // 7. Append audit event with full correlation chain
+      // 9.1 Phase 11.4: Backoff metrics (emitted after successful tx only)
+      redriveBackoffAppliedMetric.inc({ count_bucket: redriveCountBucket(currentRedriveCount) });
+      redriveBackoffHistogram.observe((backoffResult.backoffMs + backoffResult.jitterMs) / 1000);
+      
+      // 10. Append audit event with full correlation chain
+      //     redriveCount comes from tx result (already incremented)
+      const newRedriveCount = updatedDlqEntry.redriveCount;
       this.auditService.append({
         eventType: 'DLQ_REDRIVE',
         actor: redrivenBy,
@@ -374,6 +510,7 @@ export class ManifestAdminController {
           status: 'DLQ_OPEN',
           correlationId: cloneResult.originalCorrelationId,
           attemptNumber: originalCarrier.attemptNumber,
+          redriveCount: currentRedriveCount,
         },
         afterState: {
           status: 'DLQ_REDROVE',
@@ -381,6 +518,8 @@ export class ManifestAdminController {
           parentCorrelationId: cloneResult.originalCorrelationId,
           newJobId,
           attemptNumber: 0, // Reset for redrive
+          redriveCount: newRedriveCount,
+          nextAllowedRedriveAt: backoffResult.nextAllowedAt.toISOString(),
         },
         reason: 'Admin redrive initiated',
         actionId: cloneResult.carrier.actionId,
@@ -400,20 +539,19 @@ export class ManifestAdminController {
         newJobId,
         correlationId: cloneResult.newCorrelationId,
         parentCorrelationId: cloneResult.originalCorrelationId,
+        currentDepth,
+        redriveCount: newRedriveCount,
+        nextAllowedRedriveAt: backoffResult.nextAllowedAt.toISOString(),
       };
     } catch (error) {
-      // Handle DlqRedriveError from repository
-      if (error && typeof error === 'object' && 'code' in error) {
-        const redriveError = error as { code: string; message: string; existingJobId?: string };
-        
-        // Map error codes to response - use 409 Conflict for state transition errors
-        switch (redriveError.code) {
+      // Handle DlqRedriveError from repository (including tx gate RATE_LIMITED)
+      if (error instanceof DlqRedriveError) {
+        switch (error.code) {
           case 'NOT_FOUND':
             redriveRejectedMetric.inc({ reason: 'NOT_FOUND' });
             throw new NotFoundException(`DLQ entry not found: ${dlqId}`);
             
           case 'ALREADY_REDRIVEN':
-            // 409 Conflict: already redriven
             throw new ConflictException({
               code: 'ALREADY_REDRIVEN',
               message: `DLQ entry already redriven: ${dlqId}`,
@@ -421,7 +559,6 @@ export class ManifestAdminController {
             });
             
           case 'ALREADY_RESOLVED':
-            // 409 Conflict: already resolved
             throw new ConflictException({
               code: 'ALREADY_RESOLVED',
               message: `DLQ entry already resolved: ${dlqId}`,
@@ -429,20 +566,29 @@ export class ManifestAdminController {
             });
             
           case 'ALREADY_QUEUED':
-            // 409 Conflict: already queued
             throw new ConflictException({
               code: 'ALREADY_QUEUED',
               message: `Bundle already queued for retry`,
               dlqId,
-              existingJobId: redriveError.existingJobId,
+              existingJobId: error.existingJobId,
             });
             
           case 'NOT_DLQ_OPEN':
-            // 409 Conflict: not in DLQ_OPEN state
             throw new ConflictException({
               code: 'NOT_DLQ_OPEN',
               message: `DLQ entry not in DLQ_OPEN state: ${dlqId}`,
               dlqId,
+            });
+            
+          case 'RATE_LIMITED':
+            // Tx gate caught a concurrent race — pre-check passed but tx found cooldown active
+            redriveRejectedMetric.inc({ reason: 'RATE_LIMITED' });
+            redriveRateLimitedMetric.inc({ gate: 'tx' });
+            throw new ConflictException({
+              code: 'REDRIVE_RATE_LIMITED',
+              dlqId,
+              nextAllowedAt: error.nextAllowedAt?.toISOString(),
+              waitSeconds: error.waitSeconds,
             });
         }
       }
@@ -537,6 +683,13 @@ export class ManifestAdminController {
     resolvedBy: string | null;
     resolutionNote: string | null;
     createdAt: Date;
+    isPoison: boolean;
+    poisonReason: string | null;
+    // Phase 11.4 - Rate limiting
+    redriveCount: number;
+    lastRedrivenAt: Date | null;
+    nextAllowedRedriveAt: Date | null;
+    rateLimitReason: string | null;
   }): DlqEntryDto {
     return {
       id: entry.id,
@@ -551,6 +704,13 @@ export class ManifestAdminController {
       resolvedBy: entry.resolvedBy,
       resolutionNote: entry.resolutionNote,
       createdAt: entry.createdAt.toISOString(),
+      isPoison: entry.isPoison,
+      poisonReason: entry.poisonReason,
+      // Phase 11.4 - Rate limiting visibility
+      redriveCount: entry.redriveCount,
+      lastRedrivenAt: entry.lastRedrivenAt?.toISOString() ?? null,
+      nextAllowedRedriveAt: entry.nextAllowedRedriveAt?.toISOString() ?? null,
+      rateLimitReason: entry.rateLimitReason,
     };
   }
 

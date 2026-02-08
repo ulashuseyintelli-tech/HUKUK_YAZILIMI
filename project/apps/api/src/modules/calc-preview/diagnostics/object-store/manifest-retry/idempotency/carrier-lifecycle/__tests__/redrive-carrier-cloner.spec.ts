@@ -240,20 +240,17 @@ describe('Redrive Carrier Cloner', () => {
   
   describe('wasRedriven', () => {
     it('should return false for carrier not redriven', () => {
-      const carrier: IdempotencyContextCarrierV2 = {
-        ...dlqCarrier,
-        parentCorrelationId: undefined,
-        redrivenAt: undefined,
-      };
+      const { parentCorrelationId, redrivenAt, ...rest } = dlqCarrier;
+      const carrier: IdempotencyContextCarrierV2 = rest;
       
       expect(wasRedriven(carrier)).toBe(false);
     });
     
     it('should return false if only parentCorrelationId is set', () => {
+      const { redrivenAt, ...rest } = dlqCarrier;
       const carrier: IdempotencyContextCarrierV2 = {
-        ...dlqCarrier,
+        ...rest,
         parentCorrelationId: 'parent-123',
-        redrivenAt: undefined,
       };
       
       expect(wasRedriven(carrier)).toBe(false);
@@ -268,10 +265,8 @@ describe('Redrive Carrier Cloner', () => {
   
   describe('getRedriveDepth', () => {
     it('should return 0 for carrier not redriven', () => {
-      const carrier: IdempotencyContextCarrierV2 = {
-        ...dlqCarrier,
-        parentCorrelationId: undefined,
-      };
+      const { parentCorrelationId, ...rest } = dlqCarrier;
+      const carrier: IdempotencyContextCarrierV2 = rest;
       
       expect(getRedriveDepth(carrier)).toBe(0);
     });
