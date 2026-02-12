@@ -243,7 +243,11 @@ export interface TraceCursor {
 // AUDIT TYPES (Sprint 2)
 // ============================================================================
 
-export type AuditAction = 'LIST' | 'DETAIL' | 'DOWNLOAD';
+export type AuditAction = 'LIST' | 'DETAIL' | 'DOWNLOAD'
+  // Sprint 3: Simulation lifecycle audit actions
+  | 'SIMULATION_STARTED' | 'SIMULATION_COMPLETED' | 'SIMULATION_FAILED'
+  | 'PROMOTE_REQUESTED' | 'PROMOTE_ACCEPTED' | 'PROMOTE_DRIFT_BLOCKED'
+  | 'ESCALATION_TRIGGERED' | 'DEESCALATION_TRIGGERED' | 'ESCALATION_STATE_CONFLICT';
 
 export interface DiagnosticsAuditEntry {
   id: string;

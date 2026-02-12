@@ -45,10 +45,13 @@ export type SimulationErrorCode =
   | 'SNAPSHOT_NOT_FOUND'
   | 'RUN_NOT_FOUND'
   | 'BUNDLE_NOT_FOUND'
+  | 'EVIDENCE_NOT_FOUND'
   | 'FORBIDDEN_TENANT_SCOPE'
   | 'SIMULATION_ALREADY_RUNNING'
   | 'TOO_MANY_SIMULATIONS'
-  | 'CANNOT_ARCHIVE_BASELINE';
+  | 'CANNOT_ARCHIVE_BASELINE'
+  | 'DRIFT_DETECTED'
+  | 'ESCALATION_STATE_CONFLICT';
 
 // ============================================================================
 // Error Response Interface
@@ -222,5 +225,54 @@ export class CannotArchiveBaselineException extends HttpException {
 export class SnapshotNotFoundException extends HttpException {
   constructor(snapshotId: string) {
     super(createSnapshotNotFoundError(snapshotId), HttpStatus.NOT_FOUND);
+  }
+}
+
+// ============================================================================
+// Sprint 3 — Promote & Escalation Errors
+// ============================================================================
+
+export function createEvidenceNotFoundError(runId: string): SimulationErrorResponse {
+  return {
+    statusCode: HttpStatus.NOT_FOUND,
+    error: 'Not Found',
+    message: `Evidence snapshot not found for run ${runId}`,
+    details: { errorCode: 'EVIDENCE_NOT_FOUND', runId },
+  };
+}
+
+export function createDriftDetectedError(incidentId: string): SimulationErrorResponse {
+  return {
+    statusCode: HttpStatus.CONFLICT,
+    error: 'Conflict',
+    message: 'Drift detected — promote blocked',
+    details: { errorCode: 'DRIFT_DETECTED', incidentId },
+  };
+}
+
+export function createEscalationStateConflictError(incidentId: string): SimulationErrorResponse {
+  return {
+    statusCode: HttpStatus.CONFLICT,
+    error: 'Conflict',
+    message: 'Escalation state CAS conflict after max retries',
+    details: { errorCode: 'ESCALATION_STATE_CONFLICT', incidentId },
+  };
+}
+
+export class EvidenceNotFoundException extends HttpException {
+  constructor(runId: string) {
+    super(createEvidenceNotFoundError(runId), HttpStatus.NOT_FOUND);
+  }
+}
+
+export class DriftDetectedException extends HttpException {
+  constructor(incidentId: string) {
+    super(createDriftDetectedError(incidentId), HttpStatus.CONFLICT);
+  }
+}
+
+export class EscalationStateConflictException extends HttpException {
+  constructor(incidentId: string) {
+    super(createEscalationStateConflictError(incidentId), HttpStatus.CONFLICT);
   }
 }

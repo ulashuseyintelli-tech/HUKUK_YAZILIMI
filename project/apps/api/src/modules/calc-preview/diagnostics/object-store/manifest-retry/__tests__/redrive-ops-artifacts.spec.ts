@@ -569,7 +569,7 @@ describe('Phase 13 — Property 3: Alert ↔ Runbook Çift Yönlü Eşleşme (IN
       .toLowerCase()
       .replace(/[^\p{L}\p{N}\s-]/gu, '') // keep Unicode letters, digits, spaces, hyphens
       .trim()
-      .replace(/\s+/g, '-'); // spaces → hyphens
+      .replace(/ /g, '-'); // each space → one hyphen (preserve consecutive hyphens from multiple spaces)
   }
 
   /**
@@ -1329,5 +1329,254 @@ describe('Phase 13.1 — Property 1 & 2: Route Determinizm ve Inhibition (INV-13
         );
       }
     });
+  });
+});
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Phase 13.3 — p99 Kalibrasyon Prosedürü Tamlık & Kontrat Testleri
+// ═══════════════════════════════════════════════════════════════════════════════
+
+describe('Phase 13.3 — Property 2: Kalibrasyon Prosedürü Tamlık', () => {
+  /**
+   * **Property 2: Kalibrasyon Prosedürü Tamlık**
+   * Runbook §3 Deep dive altındaki formal kalibrasyon prosedürü,
+   * tüm gerekli alt bölümleri ve anahtar ifadeleri içermelidir.
+   *
+   * **Validates: Requirements 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 2.1, 2.2, 2.3, 3.1, 3.2, 3.3, 3.4**
+   */
+
+  let opsDoc: string;
+  let section3Content: string | null;
+
+  function loadOpsDocForCalibration(): string {
+    const docPath = path.resolve(
+      __dirname,
+      '../../../../../../../../../docs/redrive-ops-runbook.md',
+    );
+    return fs.readFileSync(docPath, 'utf-8');
+  }
+
+  function extractSection(markdown: string, heading: string): string | null {
+    const lines = markdown.split('\n');
+    const prefix = `## ${heading}`;
+    let startIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith(prefix)) {
+        startIdx = i;
+        break;
+      }
+    }
+    if (startIdx === -1) return null;
+    let endIdx = lines.length;
+    for (let i = startIdx + 1; i < lines.length; i++) {
+      if (/^## /.test(lines[i])) {
+        endIdx = i;
+        break;
+      }
+    }
+    return lines.slice(startIdx, endIdx).join('\n');
+  }
+
+  beforeAll(() => {
+    opsDoc = loadOpsDocForCalibration();
+    section3Content = extractSection(opsDoc, '§3 TX Duration');
+  });
+
+  it('§3 bölümü mevcut olmalı', () => {
+    expect(section3Content).not.toBeNull();
+  });
+
+  it('formal kalibrasyon prosedürü başlığı mevcut olmalı', () => {
+    expect(section3Content).toMatch(/Kalibrasyon Prosedürü \(Formal\)/i);
+  });
+
+  it('gözlem penceresi tanımı (7 gün) mevcut olmalı', () => {
+    expect(section3Content).toMatch(/Gözlem Penceresi/i);
+    expect(section3Content).toMatch(/7 gün/i);
+  });
+
+  it('baseline çıkarma yöntemi (median-of-daily p99) mevcut olmalı', () => {
+    expect(section3Content).toMatch(/Baseline Çıkarma/i);
+    expect(section3Content).toMatch(/median/i);
+  });
+
+  it('eşik formülü ve çarpan aralığı (1.5–2.0) mevcut olmalı', () => {
+    expect(section3Content).toMatch(/Eşik Formülü/i);
+    expect(section3Content).toMatch(/1\.5/);
+    expect(section3Content).toMatch(/2\.0/);
+  });
+
+  it('gürültü bastırma kuralları (deploy sonrası 24-48 saat) mevcut olmalı', () => {
+    expect(section3Content).toMatch(/Gürültü Bastırma/i);
+    expect(section3Content).toMatch(/24.*48/);
+  });
+
+  it('"Ne zaman kalibre edilmeli / edilmemeli" bölümü mevcut olmalı', () => {
+    expect(section3Content).toMatch(/Ne Zaman Kalibre Edilmeli/i);
+    expect(section3Content).toMatch(/Kalibrasyon yapılmaması/i);
+  });
+
+  it('kalibrasyon tetikleyicileri tanımlı olmalı', () => {
+    expect(section3Content).toMatch(/trafik pattern/i);
+    expect(section3Content).toMatch(/altyapı değişikliği/i);
+    expect(section3Content).toMatch(/false positive/i);
+  });
+
+  it('min sample guard ayarlama rehberi mevcut olmalı', () => {
+    expect(section3Content).toMatch(/Min Sample Guard/i);
+    expect(section3Content).toMatch(/0\.1 req\/s/);
+  });
+
+  it('en az bir PromQL sorgu bloğu mevcut olmalı', () => {
+    const promqlBlocks = section3Content!.match(/```promql/g);
+    expect(promqlBlocks).not.toBeNull();
+    expect(promqlBlocks!.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('eski "× 3" çarpanı kaldırılmış olmalı', () => {
+    // "baseline × 3" veya "Eşik = baseline × 3" ifadesi kalibrasyon prosedüründe olmamalı
+    const calibrationSection = section3Content!.match(
+      /Kalibrasyon Prosedürü \(Formal\)[\s\S]*?(?=\n---|\n### 5\. Rollback|$)/,
+    );
+    if (calibrationSection) {
+      expect(calibrationSection[0]).not.toMatch(/baseline\s*×\s*3/i);
+    }
+  });
+});
+
+describe('Phase 13.3 — Property 3: Alert Kalibrasyon Yorumları', () => {
+  /**
+   * **Property 3: Alert Kalibrasyon Yorumları**
+   * RedriveTxDurationHigh alert bloğunda kalibrasyon hedefi
+   * YAML yorumları mevcut olmalıdır.
+   *
+   * **Validates: Requirements 4.1, 4.2, 4.4**
+   */
+
+  let alertRulesRaw: string;
+
+  beforeAll(() => {
+    const yamlPath = path.resolve(
+      __dirname,
+      '../../../../../../../../../ops/prometheus/redrive-alerts.yml',
+    );
+    alertRulesRaw = fs.readFileSync(yamlPath, 'utf-8');
+  });
+
+  // Extract the comment block above RedriveTxDurationHigh
+  function extractTxDurationCommentBlock(): string {
+    const lines = alertRulesRaw.split('\n');
+    const alertLineIdx = lines.findIndex((l) =>
+      l.includes('- alert: RedriveTxDurationHigh'),
+    );
+    if (alertLineIdx === -1) return '';
+    // Walk backwards from the alert line to collect comment lines
+    let startIdx = alertLineIdx - 1;
+    while (startIdx >= 0 && lines[startIdx].trim().startsWith('#')) {
+      startIdx--;
+    }
+    return lines.slice(startIdx + 1, alertLineIdx).join('\n');
+  }
+
+  it('RedriveTxDurationHigh alert bloğu mevcut olmalı', () => {
+    expect(alertRulesRaw).toContain('- alert: RedriveTxDurationHigh');
+  });
+
+  it('p99_threshold kalibrasyon hedefi yorumu mevcut olmalı', () => {
+    const commentBlock = extractTxDurationCommentBlock();
+    expect(commentBlock).toMatch(/p99_threshold/);
+    expect(commentBlock).toMatch(/LOCKED/i);
+  });
+
+  it('min_sample_guard kalibrasyon hedefi yorumu mevcut olmalı', () => {
+    const commentBlock = extractTxDurationCommentBlock();
+    expect(commentBlock).toMatch(/min_sample_guard/);
+    expect(commentBlock).toMatch(/LOCKED/i);
+  });
+
+  it('runbook §3 kalibrasyon prosedürüne referans mevcut olmalı', () => {
+    const commentBlock = extractTxDurationCommentBlock();
+    expect(commentBlock).toMatch(/redrive-ops-runbook\.md/i);
+  });
+});
+
+describe('Phase 13.3 — Property 4: Post-Kalibrasyon Checklist Tamlık', () => {
+  /**
+   * **Property 4: Post-Kalibrasyon Checklist Tamlık**
+   * Runbook §3'teki post-kalibrasyon güncelleme checklist'i
+   * tüm gerekli adımları içermelidir.
+   *
+   * **Validates: Requirements 5.1, 5.2, 5.3, 5.4**
+   */
+
+  let opsDoc: string;
+  let section3Content: string | null;
+
+  function loadOpsDocForChecklist(): string {
+    const docPath = path.resolve(
+      __dirname,
+      '../../../../../../../../../docs/redrive-ops-runbook.md',
+    );
+    return fs.readFileSync(docPath, 'utf-8');
+  }
+
+  function extractSection(markdown: string, heading: string): string | null {
+    const lines = markdown.split('\n');
+    const prefix = `## ${heading}`;
+    let startIdx = -1;
+    for (let i = 0; i < lines.length; i++) {
+      if (lines[i].startsWith(prefix)) {
+        startIdx = i;
+        break;
+      }
+    }
+    if (startIdx === -1) return null;
+    let endIdx = lines.length;
+    for (let i = startIdx + 1; i < lines.length; i++) {
+      if (/^## /.test(lines[i])) {
+        endIdx = i;
+        break;
+      }
+    }
+    return lines.slice(startIdx, endIdx).join('\n');
+  }
+
+  beforeAll(() => {
+    opsDoc = loadOpsDocForChecklist();
+    section3Content = extractSection(opsDoc, '§3 TX Duration');
+  });
+
+  it('post-kalibrasyon checklist başlığı mevcut olmalı', () => {
+    expect(section3Content).toMatch(/Post-Kalibrasyon/i);
+    expect(section3Content).toMatch(/Checklist/i);
+  });
+
+  it('alert kuralı güncelleme adımı ve dosya yolu mevcut olmalı', () => {
+    expect(section3Content).toMatch(/redrive-alerts\.yml/);
+  });
+
+  it('test güncelleme adımı ve dosya yolu mevcut olmalı', () => {
+    expect(section3Content).toMatch(/redrive-ops-artifacts\.spec\.ts/);
+  });
+
+  it('CI doğrulama adımı mevcut olmalı', () => {
+    expect(section3Content).toMatch(/jest.*redrive-ops-artifacts/i);
+  });
+
+  it('rollback prosedürü mevcut olmalı', () => {
+    expect(section3Content).toMatch(/[Rr]ollback/);
+    // Rollback bölümünde eski eşik değerine geri dönme ifadesi olmalı
+    expect(section3Content).toMatch(/eski.*eşik|eşik.*geri/i);
+  });
+
+  it('checklist en az 8 adım içermeli', () => {
+    // Checklist tablosundaki numaralı satırları say
+    const checklistSection = section3Content!.match(
+      /Post-Kalibrasyon[\s\S]*?(?=\n##### |\n### |\n---|\n## |$)/i,
+    );
+    expect(checklistSection).not.toBeNull();
+    const numberedRows = checklistSection![0].match(/^\|\s*\d+\s*\|/gm);
+    expect(numberedRows).not.toBeNull();
+    expect(numberedRows!.length).toBeGreaterThanOrEqual(8);
   });
 });

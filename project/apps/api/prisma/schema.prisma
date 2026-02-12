@@ -6596,3 +6596,58 @@ model ManifestWorkerState {
   @@index([ownerInstanceId, leaseExpiresAt], map: "idx_worker_state_lease")
   @@map("manifest_worker_state")
 }
+
+
+// ==================== SPRINT 3: PROMOTE & ESCALATION STATE ====================
+
+// Promote Request Status
+enum PromoteRequestStatus {
+  IN_PROGRESS
+  SUCCEEDED
+  FAILED
+}
+
+// Promote Request - Idempotency store for promote pipeline
+// UNIQUE(incident_id, run_id) — DB-level race condition prevention
+// Pattern: INSERT → catch unique violation → SELECT (not TOCTOU)
+model PromoteRequest {
+  id              String                @id @default(cuid())
+  incidentId      String                @map("incident_id")
+  runId           String                @map("run_id")
+  requestId       String                @map("request_id")
+  status          PromoteRequestStatus  @default(IN_PROGRESS) @map("status")
+  resultRef       String?               @map("result_ref")
+
+  createdAt       DateTime              @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt       DateTime              @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@unique([incidentId, runId], map: "promote_request_incident_run_unique")
+  @@index([createdAt], map: "promote_request_created_at_idx")
+  @@map("promote_request")
+}
+
+// Escalation Level
+enum EscalationLevelEnum {
+  NONE
+  L1
+  L2
+  L3
+}
+
+// Escalation State - DB-backed hysteresis state machine
+// CAS via version column: UPDATE ... SET version = version + 1 WHERE version = $current
+// Max 2 retry on CAS conflict, then 409 ESCALATION_STATE_CONFLICT
+model EscalationStateRecord {
+  incidentId            String              @id @map("incident_id")
+  currentLevel          EscalationLevelEnum @default(NONE) @map("current_level")
+  lastTransitionAt      DateTime            @default(now()) @map("last_transition_at") @db.Timestamptz(6)
+  holdDownUntil         DateTime?           @map("hold_down_until") @db.Timestamptz(6)
+  stableWindowCounter   Int                 @default(0) @map("stable_window_counter")
+  stableWindowStartedAt DateTime?           @map("stable_window_started_at") @db.Timestamptz(6)
+  version               Int                 @default(1) @map("version")
+
+  createdAt             DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  @@map("escalation_state")
+}

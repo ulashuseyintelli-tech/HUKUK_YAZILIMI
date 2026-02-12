@@ -647,26 +647,153 @@ sum(rate(carrier_redrive_tx_duration_seconds_count[5m])) > 0.1
 
 ---
 
-#### Kalibrasyon Prosedürü
+#### Kalibrasyon Prosedürü (Formal)
 
-Alert eşik değeri (başlangıç: 2s) production verisine göre ayarlanmalıdır. Aşağıdaki prosedürü takip edin:
+Alert eşik değeri (başlangıç: `p99_threshold = 2s`, `min_sample_guard = 0.1 req/s`) production verisine dayalı olarak kalibre edilmelidir. Aşağıdaki formal prosedür, tekrarlanabilir ve tutarlı kalibrasyon sağlar.
+
+> **Not:** Bu prosedür pre-deploy olarak hazırlanmıştır. Gerçek kalibrasyon, production'da yeterli veri toplandıktan sonra uygulanır.
+
+##### Gözlem Penceresi Tanımı
+
+- **Süre:** 7 gün (tam bir hafta)
+- **Gerekçe:** Hafta içi ve hafta sonu trafik pattern farklılıklarını yakalar. Daha kısa pencere (3 gün) hafta sonu pattern'ini kaçırabilir; daha uzun pencere (14 gün) gereksiz gecikme yaratır.
+- **Başlangıç:** Deploy sonrası ilk 24-48 saat **hariç tutulur** (bkz. Gürültü Bastırma)
+- **Geçersiz günler:** Bilinen incident günleri, planlı bakım pencereleri ve anormal trafik günleri gözlem penceresinden çıkarılmalıdır
+
+##### Baseline Çıkarma Yöntemi (Median-of-Daily p99)
+
+Tek bir 7 günlük p99 değeri outlier'lara duyarlıdır. Median-of-daily yöntemi daha dayanıklıdır:
+
+1. Her gün için ayrı p99 değeri hesapla (7 değer)
+2. Bu 7 değerin **medyanını** al → bu, baseline'dır
+3. Outlier günler (incident, deploy, anomali) medyanı etkilemez
+
+**Adım 1 — Günlük p99 çıkarma PromQL sorgusu:**
+
+```promql
+# Belirli bir gün için p99 (örn. 2 gün önce, 24 saatlik pencere)
+histogram_quantile(0.99,
+  sum(rate(carrier_redrive_tx_duration_seconds_bucket[24h] offset 2d)) by (le)
+)
+```
+
+> Her gün için `offset` değerini ayarlayarak 7 günlük p99 değerlerini çıkarın:
+> `offset 2d`, `offset 3d`, ..., `offset 8d` (ilk 48 saat hariç tutulduğu için 2d'den başlar)
+
+**Adım 2 — Median hesaplama:**
+
+7 günlük p99 değerlerini küçükten büyüğe sıralayın, ortadaki (4.) değeri alın. Bu, baseline'dır.
+
+> **Opsiyonel göz:** p50 ve p90 değerlerine de bakılabilir — genel dağılım hakkında ek bağlam sağlar, ancak eşik hesaplamasında yalnızca p99 kullanılır.
+
+##### Eşik Formülü ve Çarpan Seçimi
+
+**Formül:**
+
+```
+threshold = baseline × çarpan
+```
+
+**Çarpan aralığı:** 1.5 – 2.0
+
+| Çarpan | Ne Zaman Kullanılır | Gerekçe |
+|--------|---------------------|---------|
+| **1.5×** | Düşük-orta trafik, stabil ortam, düşük p99 varyansı | Daha hassas algılama — gerçek sorunları erken yakalar |
+| **1.75×** | Orta trafik, normal varyans | Dengeli yaklaşım — çoğu ortam için uygun başlangıç |
+| **2.0×** | Yüksek trafik, değişken ortam, sık false positive geçmişi | Daha fazla tolerans — gürültüyü azaltır |
+
+**Karar kriterleri:**
+
+| Kriter | 1.5× yönünde | 2.0× yönünde |
+|--------|-------------|-------------|
+| Trafik hacmi | Düşük-orta | Yüksek |
+| p99 varyansı (günler arası) | Düşük (stabil) | Yüksek (değişken) |
+| False positive geçmişi | Yok veya nadir | Sık |
+| Ortam stabilitesi | Stabil altyapı | Değişken (scaling, migration vb.) |
+
+> **Başlangıç önerisi:** İlk kalibrasyon için **1.75×** ile başlayın. 2-4 hafta gözlemleyin; false positive oranına göre yukarı veya aşağı ayarlayın.
+>
+> **Mevsimsel trafik notu:** Hafta içi/hafta sonu trafik farkı belirginse, 7 günlük gözlem penceresi bu farkı doğal olarak yakalar. Ancak mevsimsel veya kampanya bazlı trafik değişikliklerinde çarpan yeniden değerlendirilmelidir (bkz. Kalibrasyon Tetikleyicileri).
+
+##### Gürültü Bastırma Kuralları
+
+Deploy sonrası ilk 24-48 saat, baseline hesaplamasından **hariç tutulmalıdır**:
+
+| Etki | Açıklama |
+|------|----------|
+| **Cold start** | Uygulama ilk başlatıldığında JIT compilation, class loading vb. geçici yavaşlama |
+| **Cache warming** | Boş cache ile ilk sorgular normalden yavaş çalışır |
+| **Connection pool ramp-up** | Bağlantı havuzu dolana kadar geçici gecikme |
+
+- **Minimum hariç tutma:** 24 saat
+- **Güvenli marj:** 48 saat (önerilir)
+- Gözlem penceresi 7 gün olduğundan, hariç tutulan 48 saat sonrası 7 tam gün veri toplanır
+
+##### Ne Zaman Kalibre Edilmeli / Ne Zaman Kalibre Edilmemeli
+
+**✅ Kalibrasyon tetikleyicileri (yeniden kalibrasyon gerektirir):**
+
+| # | Tetikleyici | Açıklama |
+|---|-------------|----------|
+| 1 | **Trafik pattern değişikliği** | Kullanıcı sayısı veya istek hacminde kalıcı değişiklik (ör. yeni müşteri onboarding) |
+| 2 | **Altyapı değişikliği** | DB upgrade, connection pool ayarı, pod scaling, region değişikliği |
+| 3 | **False positive artışı** | Alert sık tetikleniyor ama gerçek sorun yok — eşik muhtemelen çok düşük |
+| 4 | **False negative şüphesi** | Bilinen yavaşlama var ama alert tetiklenmedi — eşik muhtemelen çok yüksek |
+| 5 | **Periyodik gözden geçirme** | 3 ayda bir — trafik pattern'i ve DB performansı değişebilir |
+
+**❌ Kalibrasyon yapılmaması gereken durumlar:**
+
+| # | Durum | Gerekçe |
+|---|-------|---------|
+| 1 | **Aktif incident sırasında** | Incident verileri baseline'ı bozar — önce incident'ı çözün |
+| 2 | **Bilinen trafik anomalisi sırasında** | Kampanya, load test, migration vb. — normal trafik pattern'ini yansıtmaz |
+| 3 | **Deploy sonrası ilk 48 saat içinde** | Cold start ve cache warming etkileri baseline'ı yükseltir (bkz. Gürültü Bastırma) |
+
+##### Min Sample Guard Ayarlama Rehberi
+
+Mevcut `min_sample_guard = 0.1 req/s` (5 dk'da ~30 gözlem) başlangıç değeridir. Gerçek trafik hacmine göre ayarlanması gerekebilir:
+
+| Trafik Senaryosu | Gözlem Hızı | Önerilen Guard | Gerekçe |
+|-------------------|-------------|----------------|---------|
+| **Çok düşük trafik** | < 0.05 req/s | Guard'ı düşür (ör. 0.02) | Aksi halde alert hiç tetiklenmez — düşük trafik ortamında p99 yüksek olsa bile guard engeller |
+| **Normal trafik** | 0.05 – 1.0 req/s | 0.1 (varsayılan) | Yeterli gözlem sayısı — p99 güvenilir |
+| **Yüksek trafik** | > 1.0 req/s | 0.1 veya artır (ör. 0.5) | Guard zaten aşılıyor — artırma opsiyonel, daha sıkı filtreleme sağlar |
+
+> **Kontrol PromQL sorgusu — mevcut gözlem hızı:**
+>
+> ```promql
+> # Mevcut gözlem hızı (req/s) — guard ile karşılaştırın
+> sum(rate(carrier_redrive_tx_duration_seconds_count[5m]))
+> ```
+>
+> Bu değer sürekli olarak guard değerinin altındaysa, guard'ı düşürmeyi değerlendirin.
+
+##### Post-Kalibrasyon Güncelleme Checklist'i
+
+Kalibrasyon tamamlandığında aşağıdaki adımların **tamamı** uygulanmalıdır. Hiçbir adım atlanmamalıdır.
+
+| # | Adım | Dosya / Konum | Detay |
+|---|------|---------------|-------|
+| 1 | **Yeni eşik değerini hesapla** | — | `threshold = baseline × çarpan` (yukarıdaki formül ve karar matrisine göre) |
+| 2 | **Alert kuralını güncelle** | `ops/prometheus/redrive-alerts.yml` | `RedriveTxDurationHigh` expr'ındaki `> 2` → `> <yeni_eşik>` |
+| 3 | **Min sample guard'ı değerlendir** | `ops/prometheus/redrive-alerts.yml` | `> 0.1` → trafik hacmine göre gerekirse güncelle (bkz. Min Sample Guard Rehberi) |
+| 4 | **YAML kalibrasyon yorumlarını güncelle** | `ops/prometheus/redrive-alerts.yml` | `p99_threshold` ve `min_sample_guard` yorum değerlerini yeni değerlerle güncelle |
+| 5 | **Test'leri güncelle** | `redrive-ops-artifacts.spec.ts` | Eşik değerine bağlı test varsa güncelle (not: test'ler eşik değerini doğrulamaz — yalnızca yapısal kontrol) |
+| 6 | **CI çalıştır** | — | `npx jest --testPathPattern="redrive-ops-artifacts" --no-coverage` — tüm test'ler yeşil olmalı |
+| 7 | **Runbook'u güncelle** | `docs/redrive-ops-runbook.md` | §3 "Beklenen Değer Aralıkları" tablosundaki eşik değerini güncelle, kalibrasyon tarihini not et |
+| 8 | **PR oluştur ve review al** | — | Değişiklikleri (alert rule + test + runbook) tek PR'da toplayın, review'a gönderin |
+| 9 | **Deploy** | — | CI yeşil + review onaylı → prod deploy |
+| 10 | **Rollback planı** | — | Deploy sonrası false positive artarsa → aşağıdaki rollback prosedürünü uygulayın |
+
+**Rollback prosedürü (false positive artarsa):**
 
 | # | Adım | Detay |
 |---|------|-------|
-| 1 | **Production'da 1 hafta veri topla** | `carrier_redrive_tx_duration_seconds` histogram verisi Prometheus'ta biriksin |
-| 2 | **p99 baseline çıkar** | `histogram_quantile(0.99, sum(rate(carrier_redrive_tx_duration_seconds_bucket[1h])) by (le))` ile 1 haftalık p99 trendini incele |
-| 3 | **Eşik = baseline × 3** | Güvenlik marjı olarak baseline'ın 3 katını eşik olarak belirle |
-| 4 | **`redrive-alerts.yml` güncelle** | `RedriveTxDurationHigh` alert expr'ındaki eşik değerini yeni değerle değiştir |
-| 5 | **3 ayda bir gözden geçir** | Trafik pattern'i ve DB performansı değişebilir — periyodik kalibrasyon gereklidir |
-
-**Kalibrasyon PromQL sorgusu:**
-
-```promql
-# 1 haftalık p99 trendi — baseline çıkarmak için
-histogram_quantile(0.99,
-  sum(rate(carrier_redrive_tx_duration_seconds_bucket[1h])) by (le)
-)
-```
+| 1 | Eski eşik değerlerini geri yükle | `ops/prometheus/redrive-alerts.yml` → önceki `> <eski_eşik>` değerine dön |
+| 2 | YAML yorumlarını geri al | Kalibrasyon hedefi yorumlarını eski değerlerle güncelle |
+| 3 | CI çalıştır | Tüm test'ler yeşil olmalı |
+| 4 | Deploy | Eski değerlerle prod deploy |
+| 5 | Kök neden analizi | False positive neden arttı? Çarpan mı düşük, trafik pattern mi değişti? |
 
 ---
 

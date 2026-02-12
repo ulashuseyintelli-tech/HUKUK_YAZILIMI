@@ -19,6 +19,7 @@ import { Module } from '@nestjs/common';
 import { SimulationController } from './simulation.controller';
 import { EvidenceBundleController } from './evidence-bundle.controller';
 import { LegalHoldController } from './legal-hold.controller';
+import { PromoteController } from './promote.controller';
 
 // Guards
 import { SimulationFeatureFlagGuard } from './guards/simulation-feature-flag.guard';
@@ -28,6 +29,15 @@ import { SimulationRateLimitGuard } from './guards/simulation-rate-limit.guard';
 // Services
 import { SimulationFeatureFlagService } from './simulation-feature-flag.service';
 import { SimulationRunStoreService, SIMULATION_RUN_REPOSITORY } from './simulation-run-store.service';
+
+// Sprint 3 Services
+import { PromoteService } from './promote.service';
+import { PromoteRequestStore } from './promote-request.store';
+import { ScenarioRankerService } from './scenario-ranker.service';
+import { SimulationMetricsService } from './simulation-metrics.service';
+import { SimulationAuditAdapter } from './simulation-audit.adapter';
+import { EscalationStateRepository } from '../playbook/escalation-state.repository';
+import { DiagnosticsAuditService } from '../diagnostics-audit.service';
 
 // Persistence - Phase 9B.5 Truth Layer
 import { TruthLayerModule } from '../persistence/truth-layer.module';
@@ -80,6 +90,7 @@ class SimulationClockAdapter implements ISimulationClock {
     SimulationController,
     EvidenceBundleController,
     LegalHoldController,
+    PromoteController,
   ],
   providers: [
     // Prisma Service
@@ -169,6 +180,21 @@ class SimulationClockAdapter implements ISimulationClock {
     
     // Phase 9B.5: LegalHoldInventoryService now uses SNAPSHOT_STORE token
     LegalHoldInventoryService,
+
+    // Sprint 3: Promote pipeline
+    PromoteRequestStore,
+    PromoteService,
+    SimulationMetricsService,
+
+    // Sprint 3: ScenarioRanker
+    ScenarioRankerService,
+
+    // Sprint 3: Audit adapter
+    DiagnosticsAuditService,
+    SimulationAuditAdapter,
+
+    // Sprint 3: Escalation state (DB-backed CAS)
+    EscalationStateRepository,
   ],
   exports: [
     SimulationController,

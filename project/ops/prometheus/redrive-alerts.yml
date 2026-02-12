@@ -36,7 +36,12 @@ groups:
       # Başlangıç eşiği 2s (muhafazakâr) — kalibrasyon prosedürüne göre ayarlanmalıdır.
       # Min sample guard: 5 dk'da ~30 gözlem minimum (0.1 req/s × 300s)
       # Aggregation: sum(...) by (le) — servis bazında (instance/pod bazında değil)
-      # ─────────────────────────────────────────────────────────────────
+      #
+      # ── Kalibrasyon Hedefleri ──────────────────────────────────────────
+      # p99_threshold    = 2    (LOCKED başlangıç — post-deploy kalibrasyonla güncellenir)
+      # min_sample_guard = 0.1  (LOCKED başlangıç — trafik hacmine göre ayarlanır)
+      # Kalibrasyon prosedürü: docs/redrive-ops-runbook.md §3 Deep dive > Kalibrasyon Prosedürü
+      # ───────────────────────────────────────────────────────────────────
       - alert: RedriveTxDurationHigh
         expr: >-
           histogram_quantile(0.99,

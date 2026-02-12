@@ -1,5 +1,6 @@
 -- Phase 10.3 - Idempotency Hardening
--- Creates manifest_admin_actions table (idempotency gate) with lease + ownership token.
+-- Replaces manifest_admin_actions table (from Phase 10.2) with hardened version
+-- that adds: status enum, lease/ownership, http_status caching, CHECK constraints.
 -- Does NOT touch manifest_retry_queue (idx_retry_queue_bundle_active already exists).
 -- Does NOT touch manifest_dead_letter_queue.
 
@@ -14,8 +15,11 @@ BEGIN
   END IF;
 END $$;
 
--- 3) Table: manifest_admin_actions
-CREATE TABLE IF NOT EXISTS manifest_admin_actions (
+-- 3) Drop old table (Phase 10.2 version) and recreate with hardened schema
+--    Safe: no production data in this table yet (dev-only migration chain)
+DROP TABLE IF EXISTS manifest_admin_actions;
+
+CREATE TABLE manifest_admin_actions (
   id               uuid PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- Idempotency key (canonical: Idempotency-Key header)

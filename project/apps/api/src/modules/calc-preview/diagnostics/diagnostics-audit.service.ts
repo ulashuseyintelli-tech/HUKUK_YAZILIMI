@@ -164,9 +164,9 @@ export class DiagnosticsAuditService {
     totalLogs: number;
     allowedCount: number;
     deniedCount: number;
-    byAction: Record<AuditAction, number>;
+    byAction: Partial<Record<AuditAction, number>>;
   } {
-    const byAction: Record<AuditAction, number> = {
+    const byAction: Partial<Record<AuditAction, number>> = {
       LIST: 0,
       DETAIL: 0,
       DOWNLOAD: 0,
@@ -176,7 +176,7 @@ export class DiagnosticsAuditService {
     let deniedCount = 0;
     
     for (const log of this.auditLogs) {
-      byAction[log.action]++;
+      byAction[log.action] = (byAction[log.action] ?? 0) + 1;
       if (log.allowed) {
         allowedCount++;
       } else {

@@ -1,7 +1,7 @@
 # HUKUK YAZILIMI — YOL HARİTASI
 
-**Son Güncelleme:** 2026-01-23  
-**Durum:** Phase 9B.5 LOCKED, Phase 9C %18 tamamlandı (Task 0 + Task 1 DONE), Phase 11 LOCKED
+**Son Güncelleme:** 2026-02-10  
+**Durum:** Tüm altyapı/operability fazları KAPALI. Sıradaki: Phase 8 Sprint 3 (Simulation API)
 
 ---
 
@@ -17,10 +17,30 @@
 | Phase 9A: Redis Migration | ✅ KİLİTLİ | - |
 | Phase 9B: PostgreSQL Migration | ✅ KİLİTLİ | 288 test |
 | Phase 9B.5: Snapshot Store Cutover | ✅ KİLİTLİ | 6 integration test |
+| Phase 9C: Object Storage Migration | ✅ KİLİTLİ | 87+ test (sign-off 2026-02-02) |
 | Phase 11: Cleanup Orchestration | ✅ KİLİTLİ | - |
-| Phase 9C: Object Storage Migration | 🔵 %18 | 108 test (Task 0 + Task 1) |
+| Phase 11.3: Redrive Depth Limit | ✅ KİLİTLİ | property + unit test |
+| Phase 11.4: Redrive Rate Limiting | ✅ KİLİTLİ | property + unit test |
+| Phase 12: Redrive Operational Safeguards | ✅ KİLİTLİ | - |
+| Phase 13: Ops Doc & Alert Rules | ✅ KİLİTLİ | 76 test |
+| Phase 13.1: Alertmanager Routing | ✅ KİLİTLİ | (13 içinde) |
+| Phase 13.2: Scrape Health Alert | ✅ KİLİTLİ | (13 içinde) |
+| Phase 13.3: p99 Calibration Procedure | ✅ KİLİTLİ | 97 test (76 mevcut + 21 yeni) |
+| **Phase 8 Sprint 3: Simulation API** | **🔵 SIRADA** | - |
 
-Buradan sonrası artık "yazılım geliştirme" değil, **operasyonel olgunluk ve ölçek**.
+**Altyapı / operability: %100 kapalı ve kilitli.**  
+Monitoring, alerting, safeguards, CI-enforced ops — tamamı hazır.
+
+---
+
+## 📊 İLERLEME ÖZETİ
+
+| Perspektif | İlerleme | Açıklama |
+|-----------|----------|----------|
+| **Çalışan ürün** (deploy edilebilir) | **≈ %85** | Kalan tek iş: Phase 8 Sprint 3 (~15-20 saat) |
+| **Tüm vizyon** (Phase 9 + 10 dahil) | **≈ %50-55** | Phase 9 (Policy Plugin) ve Phase 10 (Platform & Scale) henüz spec yok |
+
+**Stratejik karar:** Phase 8 Sprint 3 → deploy → gerçek veri → Phase 9 & 10 kanıta dayalı spec.
 
 ---
 
@@ -101,27 +121,15 @@ Buradan sonrası artık "yazılım geliştirme" değil, **operasyonel olgunluk v
 
 ---
 
-## 🔵 PHASE 9C — EVIDENCE BUNDLE → S3/MinIO (IN PROGRESS)
+## 🔒 PHASE 9C — EVIDENCE BUNDLE → S3/MinIO (LOCKED)
 
 **Amaç:** Evidence bundle'ları object storage'a taşı  
-**Durum:** %18 tamamlandı (Task 0 + Task 1 DONE)
-**Test:** 108 test (23 feature flag + 69 keyspace + 16 write-once)
+**Durum:** ✅ KİLİTLİ (sign-off 2026-02-02)  
+**Test:** 87+ test (Task 0 → Task 3 tamamlandı)
 
-### İlerleme Durumu
+### Tamamlanan İşler
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│  PHASE 9C PROGRESS                                              │
-├─────────────────────────────────────────────────────────────────┤
-│  ██████░░░░░░░░░░░░░░░░░░░░░░░░░░  18%                         │
-│                                                                 │
-│  Tamamlanan: ~6 saat / 34 saat                                  │
-└─────────────────────────────────────────────────────────────────┘
-```
-
-### Tamamlanan İşler (Task 0 + Task 1)
-
-**Task 0 - Foundation Gates:**
+**Task 0 - Foundation Gates (12 test):**
 - [x] Feature flag: `EVIDENCE_BUNDLE_S3_ENABLED`
 - [x] Config validation (Zod schema)
 - [x] `IObjectStoreClient` interface
@@ -129,60 +137,149 @@ Buradan sonrası artık "yazılım geliştirme" değil, **operasyonel olgunluk v
 - [x] `EvidenceBundleModule` (conditional loading)
 - [x] DI tokens
 - [x] Prisma schema: `EvidenceBundlePointer` model
-- [x] 23 feature flag tests
 
-**Task 1 - Object Model & Keyspace:**
+**Task 1 - Write-Once Semantics (15 test):**
 - [x] Key builders: `buildManifestKey()`, `buildItemKey()`, `buildBundleRootKey()`
-- [x] Path traversal protection: `..`, `//`, `/`, `\`, `%2f`, `%5c`, null byte reject
-- [x] Segment validation: alphanumeric + hyphen + underscore only
+- [x] Path traversal protection
 - [x] `putWriteOnce()` with If-None-Match + HEAD verification
 - [x] Error types: `WriteOnceViolationError`, `InvalidObjectKeyError`
-- [x] 69 keyspace tests
-- [x] 16 write-once tests
 
-### Kalan İşler
+**Task 2 - DB Migration (8 test):**
+- [x] EvidenceBundle table (state machine: OPEN → SEALED)
+- [x] EvidenceObject table (composite PK)
+- [x] BundleSealEvent table (audit + idempotency)
+- [x] PostgreSQL triggers (insert guard, tenant check, seal guard)
+- [x] Partial unique index: one OPEN bundle per tenant+incident
 
-| Task | Açıklama | Tahmini |
-|------|----------|---------|
-| 2 | DB Migration | 0.5h |
-| 2.5 | BundleSealJob (async trigger) | 3h |
-| 3 | Write Flow (2-phase seal) | 6h |
-| 4 | Verification Path (hash chain) | 4h |
-| 5 | Reconciliation Job | 4h |
-| 6 | Retention & Legal Hold | 2h |
-| 7 | Observability | 3h |
-| 8 | Integration Tests (9 test) | 5h |
+**Task 2.5 - Bundle Seal Service (39 test):**
+- [x] Dual seal semantics (API: NOWAIT, Worker: SKIP LOCKED)
+- [x] Hash computation (canonical format)
+- [x] SQLSTATE → domain error mapping
+- [x] Post-seal manifest hook (fire-and-forget)
 
-### Oluşturulan Dosyalar
+**Task 3 - Bundle Manifest (48 test):**
+- [x] Manifest schema v1.0.0
+- [x] Canonical JSON serializer (deterministic)
+- [x] manifestHash computation (SHA-256)
+- [x] sealedHash verification
+- [x] ManifestBuilder + ManifestStorage + ManifestWriter
+- [x] Seal pipeline hook (auto-manifest on seal)
+
+### Kilitli İnvariantlar
+
+| İnvariant | Açıklama |
+|-----------|----------|
+| State Machine | OPEN → SEALED (tek yön, geri dönüşsüz) |
+| Write-Once | Sealed bundle'a yeni object eklenemez (DB trigger + S3 If-None-Match) |
+| Hash Hierarchy | sealedHash (content) + manifestHash (export) |
+| Transaction Order | UPDATE bundle → INSERT seal_event (trigger 45002 ile zorlanır) |
+| Single Open Bundle | Tenant+incident başına tek OPEN bundle (partial unique index) |
+
+### Dosya Yapısı
 
 ```
 object-store/
-├── object-store.config.ts          # Zod validation, feature flag
-├── object-store.interface.ts       # IObjectStoreClient + putWriteOnce + error types
-├── minio-object-store.client.ts    # AWS SDK v3 + putWriteOnce implementation
-├── evidence-bundle.module.ts       # NestJS conditional module
-├── evidence-bundle.tokens.ts       # DI tokens
-├── evidence-bundle.keys.ts         # Key builders + validation (Task 1)
-├── index.ts                        # Public exports
-└── __tests__/
-    ├── evidence-bundle.feature-flag.spec.ts  # 23 tests
-    ├── evidence-bundle.keyspace.spec.ts      # 69 tests (Task 1)
-    ├── object-store.write-once.spec.ts       # 16 tests (Task 1)
-    └── object-store.write-once.integration.spec.ts  # MinIO integration
+├── object-store.config.ts
+├── object-store.interface.ts
+├── minio-object-store.client.ts
+├── evidence-bundle.module.ts
+├── evidence-bundle.tokens.ts
+├── evidence-bundle.keys.ts
+├── index.ts
+├── bundle-seal/
+│   ├── bundle-seal.service.ts
+│   ├── bundle-seal.repository.ts
+│   ├── bundle-seal.hasher.ts
+│   ├── bundle-seal.errors.ts
+│   ├── bundle-seal.types.ts
+│   └── __tests__/ (39 test)
+├── bundle-manifest/
+│   ├── bundle-manifest.types.ts
+│   ├── bundle-manifest.canonical.ts
+│   ├── bundle-manifest.hasher.ts
+│   ├── bundle-manifest.keys.ts
+│   ├── bundle-manifest.builder.ts
+│   ├── bundle-manifest.verifier.ts
+│   ├── bundle-manifest.storage.ts
+│   ├── bundle-manifest.writer.ts
+│   └── __tests__/ (48 test)
+└── __tests__/ (15 test — Task 0-1)
 ```
-
-### Bağımlılıklar
-
-- ✅ Phase 9B.5 COMPLETE (InMemorySnapshotStore temizliği)
-- ✅ Snapshot data → PostgreSQL (Phase 9B)
-- ✅ Legal hold status → PostgreSQL (Phase 9B)
 
 ---
 
-## 🟡 PHASE 8 SPRINT 3 — API + Rate Limiting + ScenarioRanker + Promote
+## 🔒 PHASE 11.3 — REDRIVE DEPTH LIMIT (LOCKED)
 
-**Amaç:** Simulation API'yi tamamla  
-**Durum:** Phase 9C ile paralel yapılabilir
+**Amaç:** DLQ redrive derinlik limiti — poison entry koruması  
+**Durum:** ✅ KİLİTLİ
+
+### Tamamlanan İşler
+
+- ✅ RedriveDepthCalculator (pure function)
+- ✅ RedriveDepthEnforcer (gate)
+- ✅ Poison entry marking (depth exceeded → permanent reject)
+- ✅ Property-based tests + unit tests
+
+---
+
+## 🔒 PHASE 11.4 — REDRIVE RATE LIMITING (LOCKED)
+
+**Amaç:** Correlation chain bazında üstel backoff rate limiting  
+**Durum:** ✅ KİLİTLİ
+
+### Tamamlanan İşler
+
+- ✅ RedriveRateLimiter (exponential backoff + jitter)
+- ✅ Precheck + TX dual gate
+- ✅ Fail-closed behavior (rate_check_failed → all redrives blocked)
+- ✅ Metrics contract (7 metrik)
+- ✅ Property-based tests + unit tests
+
+---
+
+## 🔒 PHASE 12 — REDRIVE OPERATIONAL SAFEGUARDS (LOCKED)
+
+**Amaç:** Kill-switch, audit logging, operational controls  
+**Durum:** ✅ KİLİTLİ
+
+### Tamamlanan İşler
+
+- ✅ Kill-switch (REDRIVE_DISABLED env var → HTTP 503)
+- ✅ Gauge + counter metrics
+- ✅ Audit log integration
+
+---
+
+## 🔒 PHASE 13 — OPS DOC & ALERT RULES (LOCKED)
+
+**Amaç:** Operasyonel runbook, Prometheus alert kuralları, Alertmanager routing  
+**Durum:** ✅ KİLİTLİ (tüm alt fazlar dahil)  
+**Test:** 97 test (redrive-ops-artifacts.spec.ts)
+
+### Alt Fazlar
+
+| Alt Faz | Açıklama | Durum |
+|---------|----------|-------|
+| Phase 13 (ana) | 5 alert kuralı + runbook (§0-§5) | ✅ KİLİTLİ |
+| Phase 13.1 | Alertmanager routing + inhibition | ✅ KİLİTLİ |
+| Phase 13.2 | RedriveScrapeDown (meta-monitoring) | ✅ KİLİTLİ |
+| Phase 13.3 | p99 kalibrasyon prosedürü (pre-deploy) | ✅ KİLİTLİ |
+
+### Kilitli Kurallar
+
+| Kural | Açıklama |
+|-------|----------|
+| Alert expr/for/labels/annotations | ❌ YASAK (kalibrasyon hariç — prosedüre göre) |
+| Runbook yapısı | 5 bölüm (§0-§5), her bölüm 5-section format |
+| CI koruması | 97 test — yapısal bütünlük, metrik tutarlılığı, çift yönlü eşleşme |
+
+---
+
+## 🔵 PHASE 8 SPRINT 3 — API + Rate Limiting + ScenarioRanker + Promote
+
+**Amaç:** Simulation API'yi tamamla — deploy edilebilir ürün  
+**Durum:** 🔵 SIRADA (başlamadı)  
+**Tahmini Efor:** ~15-20 saat
 
 ### Yapılacaklar
 
@@ -194,11 +291,19 @@ object-store/
 - [ ] PromoteService + drift guard
 - [ ] Audit events wiring
 
+### Bağımlılıklar
+
+- ✅ Phase 8 Sprint 2E (What-if Simulation) — TAMAMLANDI
+- ✅ Phase 9B (Truth Layer) — KİLİTLİ
+- ✅ Phase 9B.5 (Snapshot Store Cutover) — KİLİTLİ
+- ✅ Phase 9C (Evidence Bundle) — KİLİTLİ
+
 ---
 
-## 🟣 PHASE 9 — POLICY PLUGIN PLATFORM
+## 🟣 PHASE 9 — POLICY PLUGIN PLATFORM (PARK EDİLMİŞ)
 
 **Amaç:** Kuralları koddan ayırmak  
+**Durum:** ⏸️ Bilinçli olarak park edilmiş — deploy sonrası gerçek veriyle spec yazılacak  
 **Bittiğinde:** Farklı müşteri / sektör / dönem için policy değişebilir
 
 ### Sprint 1 — Plugin Runtime
@@ -219,9 +324,10 @@ object-store/
 
 ---
 
-## 🟠 PHASE 10 — PLATFORM & SCALE
+## 🟠 PHASE 10 — PLATFORM & SCALE (PARK EDİLMİŞ)
 
 **Amaç:** Büyük müşteri, çok bölge, entegrasyon  
+**Durum:** ⏸️ Bilinçli olarak park edilmiş — deploy sonrası gerçek veriyle spec yazılacak  
 **Bittiğinde:** Sistem "ürün" değil **altyapı** olur
 
 ### İçerik
@@ -263,11 +369,15 @@ Ama **mimari hamle yok**.
 | Phase 9A | Rate limiting Redis'e taşındı | ✅ KİLİTLİ |
 | Phase 9B | Truth Layer PostgreSQL'e taşındı | ✅ KİLİTLİ |
 | Phase 9B.5 | InMemorySnapshotStore temizliği | ✅ KİLİTLİ |
+| Phase 9C | Evidence Bundle → S3/MinIO | ✅ KİLİTLİ |
 | Phase 11 | Cleanup Orchestration | ✅ KİLİTLİ |
-| Phase 9C | Evidence Bundle → S3/MinIO | 🔵 %18 |
-| Phase 8 Sprint 3 | Simulation API tamamlama | ⏳ Paralel |
-| Phase 9 | Kurallar koddan ayrılır | ⏳ |
-| Phase 10 | Sistem altyapı olur | ⏳ |
+| Phase 11.3 | Redrive Depth Limit | ✅ KİLİTLİ |
+| Phase 11.4 | Redrive Rate Limiting | ✅ KİLİTLİ |
+| Phase 12 | Redrive Operational Safeguards | ✅ KİLİTLİ |
+| Phase 13 (+13.1, 13.2, 13.3) | Ops Doc, Alert Rules, Calibration | ✅ KİLİTLİ |
+| **Phase 8 Sprint 3** | **Simulation API tamamlama** | **🔵 SIRADA** |
+| Phase 9 | Kurallar koddan ayrılır | ⏸️ Park |
+| Phase 10 | Sistem altyapı olur | ⏸️ Park |
 | Sonrası | Sadece işletme | - |
 
 ---
@@ -318,31 +428,6 @@ Ama **mimari hamle yok**.
 │                    │  (partial unique index) │                              │
 │                    └─────────────────────────┘                              │
 │                                                                             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                   PHASE 9B.5'TE MİGRATE EDİLECEK                            │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                    InMemorySnapshotStore                             │   │
-│  │  (Hâlâ kullanılıyor - ISnapshotStore interface)                     │   │
-│  │                                                                      │   │
-│  │  Kullanan servisler:                                                │   │
-│  │  - BaselineResolverService                                          │   │
-│  │  - EvidenceBundleService                                            │   │
-│  │  - LegalHoldInventoryService                                        │   │
-│  │  - LegalHoldController                                              │   │
-│  │  - simulation-api.module.ts (DI wiring)                             │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                   PHASE 9C'DE MİGRATE EDİLECEK                              │
-├─────────────────────────────────────────────────────────────────────────────┤
-│                                                                             │
-│  ┌─────────────────────────────────────────────────────────────────────┐   │
-│  │                    Evidence Bundle Storage                           │   │
-│  │  (Phase 9C asıl hedef - S3/MinIO)                                   │   │
-│  └─────────────────────────────────────────────────────────────────────┘   │
-│                                                                             │
 └─────────────────────────────────────────────────────────────────────────────┘
 
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -377,4 +462,3 @@ Ama **mimari hamle yok**.
 
 Bu yolun sonunda ortaya çıkan şey bir **hukuk yazılımı** değil;
 **hukuk operasyonu çalıştıran bir sistem**.
-
