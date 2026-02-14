@@ -11,6 +11,9 @@
  * - POST /incidents/:id/simulate
  * - POST /incidents/:id/runs/:runId/export-bundle
  * - POST /legal-holds/:snapshotId/archive
+ * - POST /v1/incidents/:id/simulations/:runId/promote  (Sprint 3)
+ * - POST /v1/incidents/:id/simulations/rank             (Sprint 3)
+ * - POST /v1/incidents/:id/simulations                  (Sprint 3 v1 alias)
  * 
  * Read Endpoints (always allowed):
  * - GET /incidents/:id/runs
@@ -49,6 +52,12 @@ const MUTATION_PATTERNS = [
   { method: 'POST', pattern: /\/incidents\/[^/]+\/runs\/[^/]+\/export-bundle$/ },
   // POST /legal-holds/:snapshotId/archive
   { method: 'POST', pattern: /\/legal-holds\/[^/]+\/archive$/ },
+  // Sprint 3: POST /v1/incidents/:id/simulations/:runId/promote
+  { method: 'POST', pattern: /\/v1\/incidents\/[^/]+\/simulations\/[^/]+\/promote$/ },
+  // Sprint 3: POST /v1/incidents/:id/simulations/rank
+  { method: 'POST', pattern: /\/v1\/incidents\/[^/]+\/simulations\/rank$/ },
+  // Sprint 3: POST /v1/incidents/:id/simulations (v1 alias for simulate)
+  { method: 'POST', pattern: /\/v1\/incidents\/[^/]+\/simulations$/ },
 ];
 
 // ============================================================================

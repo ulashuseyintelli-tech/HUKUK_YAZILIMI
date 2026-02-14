@@ -1,0 +1,116 @@
+# Prometheus Alert Rules — Simulation API
+# Sprint 3: Ops Readiness (Task 8.3)
+#
+# Minimum alert set — mevcut counter'larla birebir eşleşir.
+# Pattern: redrive-alerts.yml ile aynı yapı.
+#
+# İlgili runbook: docs/simulation-ops-runbook.md
+# Metrik kaynağı: SimulationMetricsService (promote_*, drift_*, escalation_*)
+
+groups:
+  - name: simulation_alerts
+    rules:
+      # ─────────────────────────────────────────────────────────────────
+      # Alert 1: PromoteFailureRateHigh
+      # Promote başarısızlık oranı yüksek — drift spike veya downstream hata
+      # ─────────────────────────────────────────────────────────────────
+      - alert: PromoteFailureRateHigh
+        expr: increase(promote_failure_total[5m]) > 5
+        for: 0m
+        labels:
+          severity: warning
+          team: backend
+          component: simulation
+        annotations:
+          summary: "Promote başarısızlık oranı yüksek"
+          description: >-
+            promote_failure_total son 5 dakikada 5'ten fazla artış gösterdi.
+            Olası nedenler: drift spike, downstream servis hatası,
+            veya snapshot alınamama. Triage için runbook'a bakın.
+          runbook: "docs/simulation-ops-runbook.md#2-promote-drift-triage"
+
+      # ─────────────────────────────────────────────────────────────────
+      # Alert 2: DriftDetectedSpikeHigh
+      # Drift tespit oranı yüksek — veri değişimi veya deploy uyumsuzluğu
+      # ─────────────────────────────────────────────────────────────────
+      - alert: DriftDetectedSpikeHigh
+        expr: increase(drift_detected_total[5m]) > 3
+        for: 0m
+        labels:
+          severity: warning
+          team: backend
+          component: simulation
+        annotations:
+          summary: "Drift tespit oranı yüksek"
+          description: >-
+            drift_detected_total son 5 dakikada 3'ten fazla artış gösterdi.
+            Bu, evidence snapshot'ların hızla değiştiğini veya deploy
+            sonrası veri uyumsuzluğu olduğunu gösterebilir.
+          runbook: "docs/simulation-ops-runbook.md#2-promote-drift-triage"
+
+      # ─────────────────────────────────────────────────────────────────
+      # Alert 3: EscalationChurnHigh
+      # Eskalasyon seviye geçişi çok sık — flip-flop sinyali
+      # 15dk pencere: hysteresis + hold-down'a rağmen churn varsa ciddi
+      # ─────────────────────────────────────────────────────────────────
+      - alert: EscalationChurnHigh
+        expr: increase(escalation_churn_total[15m]) > 4
+        for: 0m
+        labels:
+          severity: warning
+          team: backend
+          component: simulation
+        annotations:
+          summary: "Eskalasyon churn oranı yüksek (flip-flop sinyali)"
+          description: >-
+            escalation_churn_total son 15 dakikada 4'ten fazla artış gösterdi.
+            Hysteresis ve hold-down mekanizmalarına rağmen sık seviye geçişi
+            olması, metrik kaynağında anomali veya config hatası gösterir.
+          runbook: "docs/simulation-ops-runbook.md#3-escalation-misfire-triage"
+
+      # ─────────────────────────────────────────────────────────────────
+      # Alert 4: EscalationConflictSpikeHigh
+      # CAS conflict oranı yüksek — concurrent write contention
+      # ─────────────────────────────────────────────────────────────────
+      - alert: EscalationConflictSpikeHigh
+        expr: increase(escalation_state_conflict_total[5m]) > 2
+        for: 0m
+        labels:
+          severity: critical
+          team: backend
+          component: simulation
+        annotations:
+          summary: "Escalation state CAS conflict oranı yüksek"
+          description: >-
+            escalation_state_conflict_total son 5 dakikada 2'den fazla artış
+            gösterdi. Bu, aynı incident için concurrent escalation evaluation
+            çakışması olduğunu gösterir. DB contention veya cron overlap
+            araştırılmalıdır.
+          runbook: "docs/simulation-ops-runbook.md#3-escalation-misfire-triage"
+
+      # ─────────────────────────────────────────────────────────────────
+      # Alert 5: SimulationKillSwitchActive
+      # Kill-switch 30 dakikadan fazla aktif — kapatılması unutulmuş olabilir
+      # Not: SIMULATION_ENABLED=false olduğunda guard 503 döner.
+      # Explicit gauge metric yoksa bu alert HTTP 503 rate'e dayalı proxy.
+      # ─────────────────────────────────────────────────────────────────
+      - alert: SimulationKillSwitchActive
+        expr: >-
+          increase(promote_failure_total{reason="SIMULATION_DISABLED"}[5m]) > 0
+          or
+          increase(drift_detected_total[30m]) == 0
+          and
+          increase(promote_failure_total[30m]) == 0
+        for: 30m
+        labels:
+          severity: warning
+          team: backend
+          component: simulation
+        annotations:
+          summary: "Simulation kill-switch 30 dakikadan fazla aktif olabilir"
+          description: >-
+            Son 30 dakikada hiçbir promote/drift metriği artışı yok veya
+            SIMULATION_DISABLED nedeniyle failure artışı var.
+            Kill-switch aktifse ve incident çözüldüyse kapatmayı unutmayın.
+            Not: Explicit gauge metric olmadığından bu proxy-based alert'tir.
+          runbook: "docs/simulation-ops-runbook.md#1-kill-switch"

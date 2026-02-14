@@ -12,11 +12,12 @@
  *   6. FAILED status on re-request: same key → same outcome (no re-run)
  */
 
-import { PromoteService, PromoteResult } from '../promote.service';
+import { PromoteService } from '../promote.service';
 import { PromoteRequestStore } from '../promote-request.store';
 import { SimulationRunStoreService } from '../simulation-run-store.service';
 import { SimulationFeatureFlagService } from '../simulation-feature-flag.service';
 import { SimulationMetricsService } from '../simulation-metrics.service';
+import { SimulationAuditAdapter } from '../simulation-audit.adapter';
 import {
   SimulationDisabledException,
   RunNotFoundException,
@@ -64,6 +65,12 @@ function createMockClock(): jest.Mocked<IClock> {
   } as any;
 }
 
+function createMockAudit(): jest.Mocked<SimulationAuditAdapter> {
+  return {
+    logSimulationEvent: jest.fn(),
+  } as any;
+}
+
 function buildClaimedRecord(overrides: Partial<Record<string, any>> = {}) {
   return {
     id: 'pr-1',
@@ -85,6 +92,7 @@ describe('PromoteService', () => {
   let mockFeatureFlag: jest.Mocked<SimulationFeatureFlagService>;
   let mockMetrics: jest.Mocked<SimulationMetricsService>;
   let mockClock: jest.Mocked<IClock>;
+  let mockAudit: jest.Mocked<SimulationAuditAdapter>;
 
   beforeEach(() => {
     mockPromoteStore = createMockPromoteStore();
@@ -92,12 +100,14 @@ describe('PromoteService', () => {
     mockFeatureFlag = createMockFeatureFlag();
     mockMetrics = createMockMetrics();
     mockClock = createMockClock();
+    mockAudit = createMockAudit();
 
     service = new PromoteService(
       mockFeatureFlag,
       mockPromoteStore,
       mockRunStore,
       mockMetrics,
+      mockAudit,
       mockClock,
     );
   });
@@ -275,6 +285,62 @@ describe('PromoteService', () => {
       await service.promote('inc-1', 'run-1', 'actor-1');
 
       expect(mockMetrics.incPromoteSuccess).not.toHaveBeenCalled();
+    });
+  });
+
+  // ==========================================================================
+  // 8. Audit wiring (Task 7.2)
+  // ==========================================================================
+
+  describe('audit wiring', () => {
+    it('should emit PROMOTE_ACCEPTED audit event on success', async () => {
+      mockPromoteStore.claimOrGet.mockResolvedValue({
+        record: buildClaimedRecord({ requestId: 'req-audit' }),
+        isNew: true,
+      });
+      mockRunStore.findById.mockResolvedValue({ id: 'run-1' } as any);
+      mockPromoteStore.markSucceeded.mockResolvedValue(undefined);
+
+      await service.promote('inc-1', 'run-1', 'actor-1');
+
+      expect(mockAudit.logSimulationEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'PROMOTE_ACCEPTED',
+          incidentId: 'inc-1',
+          runId: 'run-1',
+          requestId: 'req-audit',
+          actorId: 'actor-1',
+        }),
+      );
+    });
+
+    it('should NOT emit audit on idempotent replay', async () => {
+      mockPromoteStore.claimOrGet.mockResolvedValue({
+        record: buildClaimedRecord(),
+        isNew: false,
+      });
+
+      await service.promote('inc-1', 'run-1', 'actor-1');
+
+      expect(mockAudit.logSimulationEvent).not.toHaveBeenCalled();
+    });
+
+    it('should not block promote if audit write throws', async () => {
+      mockPromoteStore.claimOrGet.mockResolvedValue({
+        record: buildClaimedRecord(),
+        isNew: true,
+      });
+      mockRunStore.findById.mockResolvedValue({ id: 'run-1' } as any);
+      mockPromoteStore.markSucceeded.mockResolvedValue(undefined);
+      mockAudit.logSimulationEvent.mockImplementation(() => {
+        throw new Error('audit DB down');
+      });
+
+      // Should NOT throw — fire-and-forget
+      // Note: The adapter itself swallows errors, but even if it didn't,
+      // the service should still return ACCEPTED
+      const result = await service.promote('inc-1', 'run-1', 'actor-1');
+      expect(result.status).toBe('ACCEPTED');
     });
   });
 });

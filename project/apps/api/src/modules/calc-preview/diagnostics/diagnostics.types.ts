@@ -247,7 +247,9 @@ export type AuditAction = 'LIST' | 'DETAIL' | 'DOWNLOAD'
   // Sprint 3: Simulation lifecycle audit actions
   | 'SIMULATION_STARTED' | 'SIMULATION_COMPLETED' | 'SIMULATION_FAILED'
   | 'PROMOTE_REQUESTED' | 'PROMOTE_ACCEPTED' | 'PROMOTE_DRIFT_BLOCKED'
-  | 'ESCALATION_TRIGGERED' | 'DEESCALATION_TRIGGERED' | 'ESCALATION_STATE_CONFLICT';
+  | 'ESCALATION_TRIGGERED' | 'DEESCALATION_TRIGGERED' | 'ESCALATION_STATE_CONFLICT'
+  // Phase-7: Drift detection audit actions
+  | 'PHASE7_EVALUATED' | 'PHASE7_BLOCKED' | 'PHASE7_FAULT';
 
 export interface DiagnosticsAuditEntry {
   id: string;

@@ -1,7 +1,7 @@
 # HUKUK YAZILIMI — YOL HARİTASI
 
-**Son Güncelleme:** 2026-02-10  
-**Durum:** Tüm altyapı/operability fazları KAPALI. Sıradaki: Phase 8 Sprint 3 (Simulation API)
+**Son Güncelleme:** 2026-02-14  
+**Durum:** Tüm altyapı/operability fazları KAPALI. Phase 8 Sprint 3 TAMAMLANDI (111 test, 5 property). Sıradaki: Production Deploy
 
 ---
 
@@ -26,7 +26,7 @@
 | Phase 13.1: Alertmanager Routing | ✅ KİLİTLİ | (13 içinde) |
 | Phase 13.2: Scrape Health Alert | ✅ KİLİTLİ | (13 içinde) |
 | Phase 13.3: p99 Calibration Procedure | ✅ KİLİTLİ | 97 test (76 mevcut + 21 yeni) |
-| **Phase 8 Sprint 3: Simulation API** | **🔵 SIRADA** | - |
+| **Phase 8 Sprint 3: Simulation API** | **✅ TAMAMLANDI** | 111 test, 5 property |
 
 **Altyapı / operability: %100 kapalı ve kilitli.**  
 Monitoring, alerting, safeguards, CI-enforced ops — tamamı hazır.
@@ -37,10 +37,10 @@ Monitoring, alerting, safeguards, CI-enforced ops — tamamı hazır.
 
 | Perspektif | İlerleme | Açıklama |
 |-----------|----------|----------|
-| **Çalışan ürün** (deploy edilebilir) | **≈ %85** | Kalan tek iş: Phase 8 Sprint 3 (~15-20 saat) |
-| **Tüm vizyon** (Phase 9 + 10 dahil) | **≈ %50-55** | Phase 9 (Policy Plugin) ve Phase 10 (Platform & Scale) henüz spec yok |
+| **Çalışan ürün** (deploy edilebilir) | **≈ %95** | Sprint 3 tamamlandı, deploy planı hazır. Kalan: prod rollout + drift guard wiring |
+| **Tüm vizyon** (Phase 9 + 10 dahil) | **≈ %60** | Phase 9 (Policy Plugin) ve Phase 10 (Platform & Scale) henüz spec yok |
 
-**Stratejik karar:** Phase 8 Sprint 3 → deploy → gerçek veri → Phase 9 & 10 kanıta dayalı spec.
+**Stratejik karar:** Production deploy planı hazır → staging → canary → prod. Phase 9 & 10 prod verisiyle spec yazılacak.
 
 ---
 
@@ -275,28 +275,34 @@ object-store/
 
 ---
 
-## 🔵 PHASE 8 SPRINT 3 — API + Rate Limiting + ScenarioRanker + Promote
+## ✅ PHASE 8 SPRINT 3 — API + Rate Limiting + ScenarioRanker + Promote (TAMAMLANDI)
 
 **Amaç:** Simulation API'yi tamamla — deploy edilebilir ürün  
-**Durum:** 🔵 SIRADA (başlamadı)  
-**Tahmini Efor:** ~15-20 saat
+**Durum:** ✅ TAMAMLANDI (2026-02-13, property-tested hardened)  
+**Test:** 111 test, 11 suite, 5 zorunlu property (P1, P2, P7, P9, P11)
 
-### Yapılacaklar
+### Tamamlanan İşler
 
-- [ ] POST /v1/simulations controller
-- [ ] GET /v1/simulations/{id} controller
-- [ ] Simulation rate limiting (concurrent max 3, daily max 100)
-- [ ] ScenarioRanker service (riskScore + expectedImpact)
-- [ ] Condition-based escalation + de-escalation
-- [ ] PromoteService + drift guard
-- [ ] Audit events wiring
+- [x] PromoteService (drift guard + Phase 7 request + idempotency) — 12 test
+- [x] PromoteRequestStore (DB UNIQUE + INSERT-or-SELECT) — 9 test
+- [x] ScenarioRanker (Pareto dominance + tie-break) — 7 test
+- [x] Escalation hysteresis (band + stable window + hold-down + CAS) — 25 unit + 8 integration
+- [x] EscalationStateRepository (PostgreSQL + CAS max 2 retry) — 10 test
+- [x] SimulationAuditAdapter (idempotent + fire-and-forget) — 9 test
+- [x] v1 alias route'ları — 4 test
+- [x] Kill-switch genişletme (3 yeni MUTATION_PATTERNS) — 11 test
+- [x] 5 Prometheus alert rule + alertmanager routing
+- [x] Ops runbook (§0-§4)
+- [x] P7 + P9 property testleri (escalation hysteresis) — 9 test, 200 iterasyon
+- [x] P11 property testi (audit bütünlüğü) — 7 test, 200 iterasyon
+- [x] DB migration (promote_request + escalation_state)
+- [x] Checkpoint A, B, C geçti
+- [x] Architecture dokümanı
+- [x] Production deploy planı (docs/simulation-deploy-plan.md)
 
-### Bağımlılıklar
+### Sıradaki: Production Deploy
 
-- ✅ Phase 8 Sprint 2E (What-if Simulation) — TAMAMLANDI
-- ✅ Phase 9B (Truth Layer) — KİLİTLİ
-- ✅ Phase 9B.5 (Snapshot Store Cutover) — KİLİTLİ
-- ✅ Phase 9C (Evidence Bundle) — KİLİTLİ
+Bkz. `docs/simulation-deploy-plan.md` — Stage 0 (dark) → Stage 1 (canary) → Stage 2 (partial) → Stage 3 (full)
 
 ---
 
@@ -375,7 +381,7 @@ Ama **mimari hamle yok**.
 | Phase 11.4 | Redrive Rate Limiting | ✅ KİLİTLİ |
 | Phase 12 | Redrive Operational Safeguards | ✅ KİLİTLİ |
 | Phase 13 (+13.1, 13.2, 13.3) | Ops Doc, Alert Rules, Calibration | ✅ KİLİTLİ |
-| **Phase 8 Sprint 3** | **Simulation API tamamlama** | **🔵 SIRADA** |
+| **Phase 8 Sprint 3** | **Simulation API tamamlama** | **✅ TAMAMLANDI** |
 | Phase 9 | Kurallar koddan ayrılır | ⏸️ Park |
 | Phase 10 | Sistem altyapı olur | ⏸️ Park |
 | Sonrası | Sadece işletme | - |

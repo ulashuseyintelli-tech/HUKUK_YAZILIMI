@@ -12,20 +12,35 @@
  */
 
 import { Injectable, Logger } from '@nestjs/common';
+import { LRUCache } from 'lru-cache';
 import { DiagnosticsAuditService } from '../diagnostics-audit.service';
+import { SimulationMetricsService } from './simulation-metrics.service';
 import {
   SimulationAuditEvent,
   buildAuditIdempotencyKey,
 } from './simulation-audit.types';
 
+// ============================================================================
+// seenKeys cache config — bounded to prevent OOM (F13 fix)
+// ============================================================================
+
+const SEEN_KEYS_MAX = 50_000;
+const SEEN_KEYS_TTL = 86_400_000; // 24 hours in ms
+
 @Injectable()
 export class SimulationAuditAdapter {
   private readonly logger = new Logger(SimulationAuditAdapter.name);
 
-  /** Seen idempotency keys — duplicate suppression */
-  private readonly seenKeys = new Set<string>();
+  /** Seen idempotency keys — bounded LRU cache (max=50k, ttl=24h) */
+  private readonly seenKeys = new LRUCache<string, true>({
+    max: SEEN_KEYS_MAX,
+    ttl: SEEN_KEYS_TTL,
+  });
 
-  constructor(private readonly auditService: DiagnosticsAuditService) {}
+  constructor(
+    private readonly auditService: DiagnosticsAuditService,
+    private readonly metrics: SimulationMetricsService,
+  ) {}
 
   /**
    * Log a simulation lifecycle event.
@@ -39,11 +54,11 @@ export class SimulationAuditAdapter {
       this.logger.debug('[SimulationAudit] Duplicate suppressed', { key });
       return;
     }
-    this.seenKeys.add(key);
+    this.seenKeys.set(key, true);
 
     try {
       // Delegate to existing audit service using logAccessAttempt
-      this.auditService.logAccessAttempt(
+      const result = this.auditService.logAccessAttempt(
         /* ctx */ {
           tenantId: '',
           userId: event.actorId,
@@ -55,10 +70,26 @@ export class SimulationAuditAdapter {
         /* allowed */ true,
         /* reason */ event.detail,
       );
+
+      // Async safety: if logAccessAttempt returns a Promise, catch rejections
+      if (result && typeof (result as any).catch === 'function') {
+        (result as any).catch((err: Error) => {
+          this.metrics.incAuditWriteFailed();
+          this.logger.warn('[SimulationAudit] Async write failed (fire-and-forget)', {
+            key,
+            eventType: event.eventType,
+            incidentId: event.incidentId,
+            error: err.message,
+          });
+        });
+      }
     } catch (err) {
       // Fire-and-forget: audit failure must not block promote/escalation
+      this.metrics.incAuditWriteFailed();
       this.logger.warn('[SimulationAudit] Write failed (fire-and-forget)', {
+        key,
         eventType: event.eventType,
+        incidentId: event.incidentId,
         error: (err as Error).message,
       });
     }

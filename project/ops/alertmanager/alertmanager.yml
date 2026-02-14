@@ -152,6 +152,27 @@ route:
           repeat_interval: 2h
           continue: false
 
+    # Sprint 3: Simulation alert'leri — team=backend, component=simulation
+    - match:
+        team: backend
+        component: simulation
+      group_by: ['alertname', 'component']
+
+      routes:
+        # Critical → PagerDuty (CAS conflict spike)
+        - match:
+            severity: critical
+          receiver: 'pagerduty-critical'
+          repeat_interval: 1h
+          continue: false
+
+        # Warning → Slack (promote failure, drift, churn, kill-switch)
+        - match:
+            severity: warning
+          receiver: 'slack-warning'
+          repeat_interval: 2h
+          continue: false
+
 # ── Inhibition Rules ─────────────────────────────────────────────
 #
 # Kural: Aynı component için critical alert aktifken, warning alert'ler

@@ -20,6 +20,8 @@ import { SimulationController } from './simulation.controller';
 import { EvidenceBundleController } from './evidence-bundle.controller';
 import { LegalHoldController } from './legal-hold.controller';
 import { PromoteController } from './promote.controller';
+import { ScenarioRankerController } from './scenario-ranker.controller';
+import { SimulationV1AliasController } from './simulation-v1-alias.controller';
 
 // Guards
 import { SimulationFeatureFlagGuard } from './guards/simulation-feature-flag.guard';
@@ -91,6 +93,8 @@ class SimulationClockAdapter implements ISimulationClock {
     EvidenceBundleController,
     LegalHoldController,
     PromoteController,
+    ScenarioRankerController,
+    SimulationV1AliasController,
   ],
   providers: [
     // Prisma Service

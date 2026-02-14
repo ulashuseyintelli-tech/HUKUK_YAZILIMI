@@ -22,13 +22,22 @@ import { PromoteRequestStore } from './promote-request.store';
 import { SimulationRunStoreService } from './simulation-run-store.service';
 import { SimulationFeatureFlagService } from './simulation-feature-flag.service';
 import { SimulationMetricsService } from './simulation-metrics.service';
+import { SimulationAuditAdapter } from './simulation-audit.adapter';
+import { calculateDrift } from '../evidence/drift-utils';
 import type { DriftResult } from '../evidence/drift-utils';
 import type { MetricDrift } from '../evidence/drift-utils';
+import type { EvidenceSnapshot } from '../diagnostics.types';
 import {
   SimulationDisabledException,
   RunNotFoundException,
+  EvidenceNotFoundException,
+  Phase7TimeoutError,
+  Phase7PartialResponseError,
+  Phase7TimeoutException,
+  Phase7PartialResponseException,
 } from './simulation-error.types';
 import { IClock } from '../evidence/clock.service';
+import { capturePhase7Config, Phase7ConfigSnapshot } from './phase7-config';
 
 // ============================================================================
 // Result type
@@ -38,6 +47,14 @@ export type PromoteResult =
   | { status: 'ACCEPTED'; requestId: string; createdAt: string }
   | { status: 'ALREADY_PROMOTED'; requestId: string; createdAt: string }
   | { status: 'DRIFT_DETECTED'; driftScore: number; topContributors: MetricDrift[] };
+
+// ============================================================================
+// Snapshot Provider (injectable — InMemorySnapshotStore for now)
+// ============================================================================
+
+export interface ISnapshotProvider {
+  getSnapshot(snapshotId: string): Promise<EvidenceSnapshot | null>;
+}
 
 // ============================================================================
 // Service
@@ -52,7 +69,9 @@ export class PromoteService {
     private readonly promoteStore: PromoteRequestStore,
     private readonly runStore: SimulationRunStoreService,
     private readonly metrics: SimulationMetricsService,
-    private readonly _clock: IClock,
+    private readonly audit: SimulationAuditAdapter,
+    private readonly clock: IClock,
+    private readonly snapshotProvider: ISnapshotProvider,
   ) {}
 
   /**
@@ -98,6 +117,23 @@ export class PromoteService {
       await this.promoteStore.markFailed(incidentId, runId);
       this.metrics.incDriftDetected(incidentId);
       this.metrics.incPromoteFailure('DRIFT_DETECTED');
+
+      // Audit — forensic trace for drift block
+      try {
+        this.audit.logSimulationEvent({
+          eventId: record.requestId,
+          eventType: 'PROMOTE_DRIFT_BLOCKED',
+          timestamp: new Date().toISOString(),
+          actorId: _actorId,
+          incidentId,
+          runId,
+          requestId: record.requestId,
+          detail: `Drift detected: score=${driftResult.driftScore}`,
+        });
+      } catch {
+        // Fire-and-forget: audit failure must not block promote
+      }
+
       return {
         status: 'DRIFT_DETECTED',
         driftScore: driftResult.driftScore,
@@ -112,7 +148,22 @@ export class PromoteService {
     // Step 11: Metrics
     this.metrics.incPromoteSuccess();
 
-    // Step 12: Audit (wired in Task 7.2 via SimulationAuditAdapter)
+    // Step 12: Audit — forensic trace for accepted promote
+    try {
+      this.audit.logSimulationEvent({
+        eventId: record.requestId,
+        eventType: 'PROMOTE_ACCEPTED',
+        timestamp: record.createdAt.toISOString(),
+        actorId: _actorId,
+        incidentId,
+        runId,
+        requestId: record.requestId,
+        detail: `Promote accepted for run ${runId}`,
+      });
+    } catch {
+      // Fire-and-forget: audit failure must not block promote
+    }
+
     this.logger.log('[PromoteService] Promote accepted', {
       incidentId,
       runId,

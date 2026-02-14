@@ -57,6 +57,24 @@ export class SimulationMetricsService {
     'escalation_state_conflict_total',
     'Total CAS conflicts on escalation state',
   );
+  private readonly auditWriteFailedTotal = createCounter(
+    'audit_write_failed_total',
+    'Total audit write failures (fire-and-forget)',
+  );
+  private readonly phase7EvaluationsTotal = createCounter(
+    'phase7_evaluations_total',
+    'Total Phase-7 drift evaluations',
+  );
+  private readonly phase7BlocksTotal = createCounter(
+    'phase7_blocks_total',
+    'Total Phase-7 blocks',
+    ['reason'],
+  );
+  private readonly phase7FaultsTotal = createCounter(
+    'phase7_faults_total',
+    'Total Phase-7 faults (F6/F7)',
+    ['fault'],
+  );
 
   incPromoteSuccess(): void {
     this.promoteSuccessTotal.inc();
@@ -76,5 +94,21 @@ export class SimulationMetricsService {
 
   incEscalationStateConflict(): void {
     this.escalationStateConflictTotal.inc();
+  }
+
+  incAuditWriteFailed(): void {
+    this.auditWriteFailedTotal.inc();
+  }
+
+  incPhase7Evaluation(): void {
+    this.phase7EvaluationsTotal.inc();
+  }
+
+  incPhase7Block(reason: 'DRIFT' | 'FEATURE_DISABLED'): void {
+    this.phase7BlocksTotal.inc({ reason });
+  }
+
+  incPhase7Fault(fault: 'F6' | 'F7'): void {
+    this.phase7FaultsTotal.inc({ fault });
   }
 }

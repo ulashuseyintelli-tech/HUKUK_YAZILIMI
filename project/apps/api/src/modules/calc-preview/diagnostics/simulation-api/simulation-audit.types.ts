@@ -19,7 +19,10 @@ export type SimulationAuditAction =
   | 'PROMOTE_DRIFT_BLOCKED'
   | 'ESCALATION_TRIGGERED'
   | 'DEESCALATION_TRIGGERED'
-  | 'ESCALATION_STATE_CONFLICT';
+  | 'ESCALATION_STATE_CONFLICT'
+  | 'PHASE7_EVALUATED'
+  | 'PHASE7_BLOCKED'
+  | 'PHASE7_FAULT';
 
 // ============================================================================
 // Audit Event

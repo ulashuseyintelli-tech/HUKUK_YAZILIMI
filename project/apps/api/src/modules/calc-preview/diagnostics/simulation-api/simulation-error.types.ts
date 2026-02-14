@@ -51,7 +51,10 @@ export type SimulationErrorCode =
   | 'TOO_MANY_SIMULATIONS'
   | 'CANNOT_ARCHIVE_BASELINE'
   | 'DRIFT_DETECTED'
-  | 'ESCALATION_STATE_CONFLICT';
+  | 'ESCALATION_STATE_CONFLICT'
+  | 'PHASE7_TIMEOUT'
+  | 'PHASE7_PARTIAL'
+  | 'PHASE7_ACCESS_DENIED';
 
 // ============================================================================
 // Error Response Interface
@@ -274,5 +277,63 @@ export class DriftDetectedException extends HttpException {
 export class EscalationStateConflictException extends HttpException {
   constructor(incidentId: string) {
     super(createEscalationStateConflictError(incidentId), HttpStatus.CONFLICT);
+  }
+}
+
+// ============================================================================
+// Phase-7 — F6/F7 Fault Errors (terminal, no retry)
+// ============================================================================
+
+/**
+ * Internal error for Phase-7 external API timeout/network/5xx (F6).
+ * NOT an HttpException — PromoteService catches and maps to 500.
+ */
+export class Phase7TimeoutError extends Error {
+  readonly faultClass = 'F6' as const;
+  constructor(message = 'Phase-7 snapshot fetch timed out or failed') {
+    super(message);
+    this.name = 'Phase7TimeoutError';
+  }
+}
+
+/**
+ * Internal error for Phase-7 partial/malformed response (F7).
+ * NOT an HttpException — PromoteService catches and maps to 500.
+ */
+export class Phase7PartialResponseError extends Error {
+  readonly faultClass = 'F7' as const;
+  constructor(message = 'Phase-7 snapshot response missing required fields') {
+    super(message);
+    this.name = 'Phase7PartialResponseError';
+  }
+}
+
+export function createPhase7TimeoutError(incidentId: string): SimulationErrorResponse {
+  return {
+    statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+    error: 'Internal Server Error',
+    message: 'Phase-7 snapshot fetch failed',
+    details: { errorCode: 'PHASE7_TIMEOUT', incidentId },
+  };
+}
+
+export function createPhase7PartialResponseError(incidentId: string): SimulationErrorResponse {
+  return {
+    statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
+    error: 'Internal Server Error',
+    message: 'Phase-7 snapshot response incomplete',
+    details: { errorCode: 'PHASE7_PARTIAL', incidentId },
+  };
+}
+
+export class Phase7TimeoutException extends HttpException {
+  constructor(incidentId: string) {
+    super(createPhase7TimeoutError(incidentId), HttpStatus.INTERNAL_SERVER_ERROR);
+  }
+}
+
+export class Phase7PartialResponseException extends HttpException {
+  constructor(incidentId: string) {
+    super(createPhase7PartialResponseError(incidentId), HttpStatus.INTERNAL_SERVER_ERROR);
   }
 }
