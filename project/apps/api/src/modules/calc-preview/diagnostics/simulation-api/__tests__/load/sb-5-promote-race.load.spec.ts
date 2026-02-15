@@ -30,6 +30,7 @@ describe('SB-5: Promote-Promote Race', () => {
   let factory: ScenarioFactory;
 
   beforeAll(() => {
+    process.env.PHASE7_ENABLED = 'false';
     factory = new ScenarioFactory(SEED);
 
     const mockFeatureFlag: jest.Mocked<SimulationFeatureFlagService> = {
@@ -100,6 +101,7 @@ describe('SB-5: Promote-Promote Race', () => {
       metricsService,
       mockAudit,
       mockClock,
+      { getSnapshot: jest.fn().mockResolvedValue(null) } as any,
     );
   });
 

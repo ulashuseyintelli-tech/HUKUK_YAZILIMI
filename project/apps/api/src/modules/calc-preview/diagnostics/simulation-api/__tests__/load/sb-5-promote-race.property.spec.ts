@@ -28,6 +28,7 @@ describe('Property 5: Promote-Promote Race Bağımsızlığı', () => {
   let metricsSpy: MetricsSpy;
 
   beforeAll(() => {
+    process.env.PHASE7_ENABLED = 'false';
     metricsService = new SimulationMetricsService();
     metricsSpy = new MetricsSpy(metricsService);
     metricsSpy.attach();
@@ -92,6 +93,7 @@ describe('Property 5: Promote-Promote Race Bağımsızlığı', () => {
           const promoteService = new PromoteService(
             mockFeatureFlag, mockPromoteStore, mockRunStore,
             metricsService, mockAudit, mockClock,
+            { getSnapshot: jest.fn().mockResolvedValue(null) } as any,
           );
 
           metricsSpy.reset();

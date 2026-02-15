@@ -29,6 +29,7 @@ describe('Property 1: Concurrent Promote Idempotency', () => {
   let metricsSpy: MetricsSpy;
 
   beforeAll(() => {
+    process.env.PHASE7_ENABLED = 'false';
     metricsService = new SimulationMetricsService();
     metricsSpy = new MetricsSpy(metricsService);
     metricsSpy.attach();
@@ -92,6 +93,7 @@ describe('Property 1: Concurrent Promote Idempotency', () => {
             metricsService,
             mockAudit,
             mockClock,
+            { getSnapshot: jest.fn().mockResolvedValue(null) } as any,
           );
 
           metricsSpy.reset();

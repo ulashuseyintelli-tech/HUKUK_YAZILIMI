@@ -94,6 +94,47 @@ groups:
       # Not: SIMULATION_ENABLED=false olduğunda guard 503 döner.
       # Explicit gauge metric yoksa bu alert HTTP 503 rate'e dayalı proxy.
       # ─────────────────────────────────────────────────────────────────
+      # ─────────────────────────────────────────────────────────────────
+      # Alert 6: Phase7FaultSpikeHigh
+      # Phase-7 snapshot fetch hatası (F6/F7) spike — snapshot store erişilemez
+      # ─────────────────────────────────────────────────────────────────
+      - alert: Phase7FaultSpikeHigh
+        expr: increase(phase7_faults_total[5m]) > 3
+        for: 0m
+        labels:
+          severity: warning
+          team: backend
+          component: simulation
+        annotations:
+          summary: "Phase-7 snapshot fetch hatası spike"
+          description: >-
+            phase7_faults_total son 5 dakikada 3'ten fazla artış gösterdi.
+            F6 (snapshot bulunamadı/timeout) veya F7 (partial response)
+            hatası. Snapshot store erişilebilirliğini kontrol edin.
+          runbook: "docs/simulation-ops-runbook.md#5-phase-7-drift-detection-ops"
+
+      # ─────────────────────────────────────────────────────────────────
+      # Alert 7: Phase7BlockRateHigh
+      # Phase-7 drift block oranı yüksek — veri değişimi veya deploy uyumsuzluğu
+      # ─────────────────────────────────────────────────────────────────
+      - alert: Phase7BlockRateHigh
+        expr: increase(phase7_blocks_total{reason="DRIFT"}[5m]) > 5
+        for: 0m
+        labels:
+          severity: warning
+          team: backend
+          component: simulation
+        annotations:
+          summary: "Phase-7 drift block oranı yüksek"
+          description: >-
+            phase7_blocks_total{reason="DRIFT"} son 5 dakikada 5'ten fazla
+            artış gösterdi. Evidence snapshot'lar hızla değişiyor veya
+            deploy sonrası veri uyumsuzluğu var.
+          runbook: "docs/simulation-ops-runbook.md#5-phase-7-drift-detection-ops"
+
+      # ─────────────────────────────────────────────────────────────────
+      # Alert 5: SimulationKillSwitchActive
+      # ─────────────────────────────────────────────────────────────────
       - alert: SimulationKillSwitchActive
         expr: >-
           increase(promote_failure_total{reason="SIMULATION_DISABLED"}[5m]) > 0

@@ -65,6 +65,9 @@ function createMockMetrics() {
     incEscalationChurn: jest.fn(),
     incEscalationStateConflict: jest.fn(),
     incAuditWriteFailed: jest.fn(),
+    incPhase7Evaluation: jest.fn(),
+    incPhase7Block: jest.fn(),
+    incPhase7Fault: jest.fn(),
   };
 }
 
@@ -107,6 +110,15 @@ function buildClaimedRecord() {
 // ============================================================================
 
 describe('Feature Flag Mid-Flight Toggle — Fault Injection F14 (Tier-1)', () => {
+  beforeEach(() => {
+    // Phase-7 disabled for F14 tests — these test feature flag behavior, not drift
+    process.env.PHASE7_ENABLED = 'false';
+  });
+
+  afterEach(() => {
+    delete process.env.PHASE7_ENABLED;
+  });
+
   it('registry: F14 scenario exists with correct contract', () => {
     const scenario = selectScenario(SEED, 'F14');
     expect(scenario).toBeDefined();
@@ -142,6 +154,7 @@ describe('Feature Flag Mid-Flight Toggle — Fault Injection F14 (Tier-1)', () =
         metrics as any,
         audit as any,
         clock,
+        { getSnapshot: jest.fn() } as any,
       );
 
       // Act + Assert: 503
@@ -189,6 +202,7 @@ describe('Feature Flag Mid-Flight Toggle — Fault Injection F14 (Tier-1)', () =
         metrics as any,
         audit as any,
         clock,
+        { getSnapshot: jest.fn() } as any,
       );
 
       // Simulate: guard calls first (would be controller)
@@ -316,6 +330,7 @@ describe('Feature Flag Mid-Flight Toggle — Fault Injection F14 (Tier-1)', () =
         metrics as any,
         audit as any,
         clock,
+        { getSnapshot: jest.fn() } as any,
       );
 
       // Act: run full promote pipeline

@@ -38,6 +38,7 @@ describe('SB-1: DB UNIQUE İdempotency', () => {
   let mockClock: IClock;
 
   beforeAll(async () => {
+    process.env.PHASE7_ENABLED = 'false';
     factory = new ScenarioFactory(SEED);
 
     mockFeatureFlag = {
@@ -98,6 +99,7 @@ describe('SB-1: DB UNIQUE İdempotency', () => {
       metricsService,
       mockAudit,
       mockClock,
+      { getSnapshot: jest.fn().mockResolvedValue(null) } as any,
     );
   });
 

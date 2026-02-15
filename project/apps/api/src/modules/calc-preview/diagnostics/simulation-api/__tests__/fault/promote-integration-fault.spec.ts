@@ -37,6 +37,9 @@ function createMockMetrics() {
     incEscalationChurn: jest.fn(),
     incEscalationStateConflict: jest.fn(),
     incAuditWriteFailed: jest.fn(),
+    incPhase7Evaluation: jest.fn(),
+    incPhase7Block: jest.fn(),
+    incPhase7Fault: jest.fn(),
   };
 }
 
@@ -104,13 +107,18 @@ function buildService(overrides: {
   metrics?: any;
   audit?: any;
   clock?: any;
+  snapshotProvider?: any;
 } = {}) {
+  // Phase-7 disabled for legacy integration tests
+  process.env.PHASE7_ENABLED = 'false';
+
   const featureFlag = overrides.featureFlag ?? createMockFeatureFlag();
   const promoteStore = overrides.promoteStore ?? createIdempotentPromoteStore();
   const runStore = overrides.runStore ?? createMockRunStore();
   const metrics = overrides.metrics ?? createMockMetrics();
   const audit = overrides.audit ?? createMockAudit();
   const clock = overrides.clock ?? createMockClock();
+  const snapshotProvider = overrides.snapshotProvider ?? { getSnapshot: jest.fn().mockResolvedValue(null) };
 
   const service = new PromoteService(
     featureFlag as any,
@@ -119,9 +127,10 @@ function buildService(overrides: {
     metrics as any,
     audit as any,
     clock,
+    snapshotProvider as any,
   );
 
-  return { service, featureFlag, promoteStore, runStore, metrics, audit, clock };
+  return { service, featureFlag, promoteStore, runStore, metrics, audit, clock, snapshotProvider };
 }
 
 // ============================================================================
@@ -129,6 +138,10 @@ function buildService(overrides: {
 // ============================================================================
 
 describe('Promote Pipeline — Cross-Boundary Integration (Tier-2)', () => {
+
+  afterEach(() => {
+    delete process.env.PHASE7_ENABLED;
+  });
 
   // ==========================================================================
   // 1. Idempotency Propagation

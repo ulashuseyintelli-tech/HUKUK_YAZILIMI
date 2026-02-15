@@ -37,7 +37,7 @@ import {
   Phase7PartialResponseException,
 } from './simulation-error.types';
 import { IClock } from '../evidence/clock.service';
-import { capturePhase7Config, Phase7ConfigSnapshot } from './phase7-config';
+import { capturePhase7Config } from './phase7-config';
 
 // ============================================================================
 // Result type
@@ -81,6 +81,9 @@ export class PromoteService {
    * @throws RunNotFoundException (404 RUN_NOT_FOUND)
    */
   async promote(incidentId: string, runId: string, _actorId: string): Promise<PromoteResult> {
+    // Phase-7: Config snapshot — captured once, immutable for request lifetime
+    const phase7Config = capturePhase7Config(this.clock.now());
+
     // Step 1: Feature flag (belt-and-suspenders; guard also checks)
     if (!this.featureFlag.isSimulationEnabled()) {
       throw new SimulationDisabledException();
@@ -107,23 +110,109 @@ export class PromoteService {
       throw new RunNotFoundException(runId);
     }
 
-    // Steps 6-8: Snapshot — commit-öncesi (deterministic replay)
-    // TODO: Wire SnapshotStore.getFreshSnapshot + getStoredEvidence
-    // Canonical snapshot = taken just before CAS commit, not at request start
-    const driftResult = this.calculateDriftPlaceholder();
+    // Steps 6-8: Snapshot — baseline (stored) vs current (fresh)
+    // Phase-7: Skip drift if disabled in config snapshot
+    let driftResult: DriftResult;
+
+    if (!phase7Config.phase7Enabled) {
+      // Phase-7 disabled → no drift check, allow promote
+      this.metrics.incPhase7Block('FEATURE_DISABLED');
+      driftResult = {
+        driftScore: 0,
+        shouldBlock: false,
+        noComparableMetrics: false,
+        commonMetrics: [],
+        missingInBaseline: [],
+        missingInCurrent: [],
+        topContributors: [],
+      };
+    } else {
+      // Phase-7 enabled → real drift detection
+      const baselineSnapshotId = run.baselineSnapshotId;
+      if (!baselineSnapshotId) {
+        await this.promoteStore.markFailed(incidentId, runId);
+        throw new EvidenceNotFoundException(runId);
+      }
+
+      const baselineSnapshot = await this.snapshotProvider.getSnapshot(baselineSnapshotId);
+      if (!baselineSnapshot) {
+        await this.promoteStore.markFailed(incidentId, runId);
+        throw new EvidenceNotFoundException(runId);
+      }
+
+      // Fetch fresh snapshot (F6/F7 fault surface)
+      let currentSnapshot: EvidenceSnapshot;
+      try {
+        currentSnapshot = await this.fetchFreshSnapshot(run.currentSnapshotId, incidentId);
+      } catch (err) {
+        // F6/F7 → terminal (no retry per K1), mark row FAILED
+        await this.promoteStore.markFailed(incidentId, runId);
+        const isPartial = err instanceof Phase7PartialResponseError;
+        this.metrics.incPhase7Fault(isPartial ? 'F7' : 'F6');
+        this.metrics.incPromoteFailure(isPartial ? 'PHASE7_PARTIAL' : 'PHASE7_TIMEOUT');
+
+        // Audit — forensic trace for Phase-7 fault
+        try {
+          this.audit.logSimulationEvent({
+            eventId: record.requestId,
+            eventType: 'PHASE7_FAULT',
+            timestamp: this.clock.now().toISOString(),
+            actorId: _actorId,
+            incidentId,
+            runId,
+            requestId: record.requestId,
+            detail: `Phase-7 fault: ${isPartial ? 'F7 partial response' : 'F6 fetch failed'}`,
+          });
+        } catch {
+          // Fire-and-forget
+        }
+
+        if (isPartial) {
+          throw new Phase7PartialResponseException(incidentId);
+        }
+        throw new Phase7TimeoutException(incidentId);
+      }
+
+      // Pure drift calculation — deterministic, no IO
+      driftResult = calculateDrift(baselineSnapshot, currentSnapshot);
+      this.metrics.incPhase7Evaluation();
+
+      // Audit — Phase-7 evaluated
+      try {
+        this.audit.logSimulationEvent({
+          eventId: record.requestId,
+          eventType: 'PHASE7_EVALUATED',
+          timestamp: this.clock.now().toISOString(),
+          actorId: _actorId,
+          incidentId,
+          runId,
+          requestId: record.requestId,
+          detail: `Drift score: ${driftResult.driftScore}, threshold: ${phase7Config.driftThreshold}`,
+        });
+      } catch {
+        // Fire-and-forget
+      }
+
+      // Override shouldBlock with config snapshot threshold
+      driftResult = {
+        ...driftResult,
+        shouldBlock: driftResult.driftScore >= phase7Config.driftThreshold || driftResult.noComparableMetrics,
+      };
+    }
 
     // Step 9: Drift guard
     if (driftResult.shouldBlock) {
       await this.promoteStore.markFailed(incidentId, runId);
       this.metrics.incDriftDetected(incidentId);
       this.metrics.incPromoteFailure('DRIFT_DETECTED');
+      this.metrics.incPhase7Block('DRIFT');
 
       // Audit — forensic trace for drift block
       try {
         this.audit.logSimulationEvent({
           eventId: record.requestId,
           eventType: 'PROMOTE_DRIFT_BLOCKED',
-          timestamp: new Date().toISOString(),
+          timestamp: this.clock.now().toISOString(),
           actorId: _actorId,
           incidentId,
           runId,
@@ -142,7 +231,6 @@ export class PromoteService {
     }
 
     // Step 10: Phase 7 request (idempotent)
-    // TODO: Emit to Phase 7 pipeline
     await this.promoteStore.markSucceeded(incidentId, runId);
 
     // Step 11: Metrics
@@ -177,16 +265,41 @@ export class PromoteService {
     };
   }
 
-  /** Placeholder until snapshot wiring is complete */
-  private calculateDriftPlaceholder(): DriftResult {
-    return {
-      driftScore: 0,
-      shouldBlock: false,
-      noComparableMetrics: false,
-      commonMetrics: [],
-      missingInBaseline: [],
-      missingInCurrent: [],
-      topContributors: [],
-    };
+  /**
+   * Fetch fresh snapshot for drift comparison.
+   *
+   * F6/F7 fault surface — terminal, no retry (K1).
+   * Currently backed by InMemorySnapshotStore (K4).
+   *
+   * @throws Phase7TimeoutError — snapshot not found or fetch failed (F6)
+   * @throws Phase7PartialResponseError — snapshot missing required fields (F7)
+   */
+  private async fetchFreshSnapshot(
+    currentSnapshotId: string | undefined,
+    incidentId: string,
+  ): Promise<EvidenceSnapshot> {
+    if (!currentSnapshotId) {
+      throw new Phase7TimeoutError(`No current snapshot ID for incident ${incidentId}`);
+    }
+
+    let snapshot: EvidenceSnapshot | null;
+    try {
+      snapshot = await this.snapshotProvider.getSnapshot(currentSnapshotId);
+    } catch {
+      // Store/network error → F6
+      throw new Phase7TimeoutError(`Snapshot fetch failed for ${currentSnapshotId}`);
+    }
+
+    if (!snapshot) {
+      // Snapshot not found → F6 (data source unavailable)
+      throw new Phase7TimeoutError(`Snapshot ${currentSnapshotId} not found`);
+    }
+
+    // Validate required fields — missing points = F7
+    if (!snapshot.points || snapshot.points.length === 0) {
+      throw new Phase7PartialResponseError(`Snapshot ${currentSnapshotId} has no evidence points`);
+    }
+
+    return snapshot;
   }
 }

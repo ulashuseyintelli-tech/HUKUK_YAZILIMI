@@ -43,6 +43,7 @@ describe('SB-3: Tenant Skew', () => {
   const tenantResults = new Map<string, { success: number; fail: number; total: number }>();
 
   beforeAll(() => {
+    process.env.PHASE7_ENABLED = 'false';
     factory = new ScenarioFactory(SEED);
 
     const mockFeatureFlag: jest.Mocked<SimulationFeatureFlagService> = {
@@ -102,6 +103,7 @@ describe('SB-3: Tenant Skew', () => {
     promoteService = new PromoteService(
       mockFeatureFlag, mockPromoteStore, mockRunStore,
       metricsService, mockAudit, mockClock,
+      { getSnapshot: jest.fn().mockResolvedValue(null) } as any,
     );
   });
 

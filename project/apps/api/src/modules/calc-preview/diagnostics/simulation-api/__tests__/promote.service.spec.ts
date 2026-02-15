@@ -13,6 +13,7 @@
  */
 
 import { PromoteService } from '../promote.service';
+import type { ISnapshotProvider } from '../promote.service';
 import { PromoteRequestStore } from '../promote-request.store';
 import { SimulationRunStoreService } from '../simulation-run-store.service';
 import { SimulationFeatureFlagService } from '../simulation-feature-flag.service';
@@ -23,6 +24,7 @@ import {
   RunNotFoundException,
 } from '../simulation-error.types';
 import { IClock } from '../../evidence/clock.service';
+import { PHASE7_ENV_KEYS } from '../phase7-config';
 
 // ============================================================================
 // Mocks
@@ -56,6 +58,10 @@ function createMockMetrics(): jest.Mocked<SimulationMetricsService> {
     incDriftDetected: jest.fn(),
     incEscalationChurn: jest.fn(),
     incEscalationStateConflict: jest.fn(),
+    incAuditWriteFailed: jest.fn(),
+    incPhase7Evaluation: jest.fn(),
+    incPhase7Block: jest.fn(),
+    incPhase7Fault: jest.fn(),
   } as any;
 }
 
@@ -68,6 +74,12 @@ function createMockClock(): jest.Mocked<IClock> {
 function createMockAudit(): jest.Mocked<SimulationAuditAdapter> {
   return {
     logSimulationEvent: jest.fn(),
+  } as any;
+}
+
+function createMockSnapshotProvider(): jest.Mocked<ISnapshotProvider> {
+  return {
+    getSnapshot: jest.fn().mockResolvedValue(null),
   } as any;
 }
 
@@ -93,14 +105,19 @@ describe('PromoteService', () => {
   let mockMetrics: jest.Mocked<SimulationMetricsService>;
   let mockClock: jest.Mocked<IClock>;
   let mockAudit: jest.Mocked<SimulationAuditAdapter>;
+  let mockSnapshotProvider: jest.Mocked<ISnapshotProvider>;
 
   beforeEach(() => {
+    // Phase-7 disabled for legacy tests — placeholder behavior preserved
+    process.env[PHASE7_ENV_KEYS.PHASE7_ENABLED] = 'false';
+
     mockPromoteStore = createMockPromoteStore();
     mockRunStore = createMockRunStore();
     mockFeatureFlag = createMockFeatureFlag();
     mockMetrics = createMockMetrics();
     mockClock = createMockClock();
     mockAudit = createMockAudit();
+    mockSnapshotProvider = createMockSnapshotProvider();
 
     service = new PromoteService(
       mockFeatureFlag,
@@ -109,7 +126,12 @@ describe('PromoteService', () => {
       mockMetrics,
       mockAudit,
       mockClock,
+      mockSnapshotProvider,
     );
+  });
+
+  afterEach(() => {
+    delete process.env[PHASE7_ENV_KEYS.PHASE7_ENABLED];
   });
 
   // ==========================================================================

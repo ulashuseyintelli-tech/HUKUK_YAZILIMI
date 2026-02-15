@@ -606,16 +606,149 @@ sum(rate(escalation_churn_total[5m]))
 
 ---
 
+## §5 Phase-7 Drift Detection Ops
+
+### 1. What it means (Semantik)
+
+Phase-7, promote pipeline'ına eklenen drift detection katmanıdır. Baseline snapshot (simülasyon anı) ile current snapshot (promote anı) karşılaştırılır; drift eşiği aşılırsa promote **DRIFT_DETECTED (409)** ile reddedilir. Snapshot fetch başarısız olursa **HTTP 500** terminal hata döner.
+
+**Çalışma prensibi:**
+- Request başında `capturePhase7Config(now)` ile immutable config snapshot alınır — request boyunca değişmez
+- `PHASE7_ENABLED=false` → drift check atlanır, promote doğrudan devam eder (HOLD(FEATURE_DISABLED) — HTTP exception yok)
+- `PHASE7_ENABLED=true` → baseline fetch → current fetch → `calculateDrift(baseline, current)` → threshold karşılaştırma
+- Snapshot fetch hatası → F6 (timeout/network/not found) veya F7 (partial/empty response) → HTTP 500 terminal, retry yok
+
+**İlgili metrikler:**
+
+| Metrik | Tip | Labels | Açıklama |
+|--------|-----|--------|----------|
+| `phase7_evaluations_total` | Counter | — | Drift evaluation sayısı |
+| `phase7_blocks_total` | Counter | `reason` ∈ {`DRIFT`, `FEATURE_DISABLED`} | Phase-7 block sayısı |
+| `phase7_faults_total` | Counter | `fault` ∈ {`F6`, `F7`} | Snapshot fetch hatası sayısı |
+| `promote_failure_total` | Counter | `reason` ∈ {`PHASE7_TIMEOUT`, `PHASE7_PARTIAL`} | F6/F7 kaynaklı promote failure |
+
+**İlgili audit event'ları:**
+
+| Event Type | Tetikleyici |
+|------------|-------------|
+| `PHASE7_EVALUATED` | Drift hesaplaması tamamlandı (block veya allow) |
+| `PHASE7_BLOCKED` | Drift nedeniyle promote reddedildi |
+| `PHASE7_FAULT` | Snapshot fetch hatası (F6 veya F7) |
+
+---
+
+### 2. Phase-7 Nasıl Disable Edilir
+
+> ⏱️ **Hedef:** 2 dakika içinde tamamlanmalıdır.
+
+| # | Adım | Detay |
+|---|------|-------|
+| 1 | **`PHASE7_ENABLED=false` env var ayarla** | K8s ConfigMap veya deployment env |
+| 2 | **Pod'ları rolling restart yap** | `kubectl rollout restart deployment/<api-deployment>` |
+| 3 | **Doğrula** | `phase7_blocks_total{reason="FEATURE_DISABLED"}` artıyor mu? `phase7_evaluations_total` artmıyor mu? |
+
+**Etki:** Phase-7 kapalıyken promote pipeline drift check'i atlar. Promote kararı yalnızca idempotency + run lookup + feature flag'e bağlıdır. Mevcut promote davranışı (Phase-7 öncesi) ile aynıdır.
+
+**Simulation kill-switch'ten farkı:** `SIMULATION_ENABLED=false` tüm mutation'ları 503 yapar. `PHASE7_ENABLED=false` yalnızca drift check'i devre dışı bırakır — promote çalışmaya devam eder.
+
+---
+
+### 3. F6 vs F7 Ayrımı
+
+| Fault | Tetikleyici | HTTP | Metrik | Retry |
+|-------|-------------|------|--------|-------|
+| **F6** | Snapshot bulunamadı, fetch timeout, network hatası, store exception | 500 | `phase7_faults_total{fault="F6"}` + `promote_failure_total{reason="PHASE7_TIMEOUT"}` | Yok (terminal) |
+| **F7** | Snapshot bulundu ama `points` boş veya eksik | 500 | `phase7_faults_total{fault="F7"}` + `promote_failure_total{reason="PHASE7_PARTIAL"}` | Yok (terminal) |
+
+**Client perspektifi:** İkisi de 500. Client idempotent retry yapabilir (promote idempotency key korunur). Pipeline içinde retry yok (K1 kararı).
+
+---
+
+### 4. Hangi Metrikler "Kırmızı"
+
+| Sinyal | PromQL | Eşik | Aksiyon |
+|--------|--------|------|--------|
+| F6/F7 spike | `increase(phase7_faults_total[5m]) > 3` | 5dk'da 3+ | Snapshot store erişilebilirliğini kontrol et |
+| Phase-7 block spike | `increase(phase7_blocks_total{reason="DRIFT"}[5m]) > 5` | 5dk'da 5+ | Veri kaynağı değişimi veya deploy uyumsuzluğu |
+| Cardinality leak | `count(phase7_faults_total) > 10` | Label sayısı artıyor | BUG — bounded label set kırılmış |
+| Config nondeterminism | Log'da farklı threshold değerleri | Aynı request'te 2 farklı threshold | BUG — config snapshot kırılmış |
+
+**PromQL sorguları:**
+
+```promql
+# F6/F7 fault rate
+sum by (fault) (rate(phase7_faults_total[5m]))
+```
+
+```promql
+# Phase-7 block rate by reason
+sum by (reason) (rate(phase7_blocks_total[5m]))
+```
+
+```promql
+# Phase-7 evaluation success rate
+rate(phase7_evaluations_total[5m]) / (rate(phase7_evaluations_total[5m]) + rate(phase7_faults_total[5m]))
+```
+
+---
+
+### 5. Immediate Actions — F6/F7 Spike
+
+| # | Adım | Detay |
+|---|------|-------|
+| 1 | **F6 mi F7 mi?** | `sum by (fault) (increase(phase7_faults_total[5m]))` — hangisi baskın? |
+| 2 | **F6 ise: snapshot store kontrol** | InMemorySnapshotStore erişilebilir mi? Snapshot ID'ler geçerli mi? |
+| 3 | **F7 ise: snapshot içerik kontrol** | Snapshot'lar `points` alanı dolu mu? Evidence collector düzgün çalışıyor mu? |
+| 4 | **Geçici mi sürekli mi?** | 5dk sonra hâlâ artıyor mu? |
+| 5 | **Sürekli ise: Phase-7 disable et** | `PHASE7_ENABLED=false` → pod restart (§5.2'ye bakın) |
+| 6 | **Kök neden çöz** | Snapshot store / evidence collector düzelt |
+| 7 | **Phase-7 yeniden aç** | `PHASE7_ENABLED=true` → pod restart → metrikleri izle |
+
+---
+
+### ❌ Yapma Listesi
+
+1. **F6/F7 altında pipeline retry eklemeyin** — Terminal hata tasarım kararıdır (K1). Retry eklemek latency sürprizleri ve retry fırtınası yaratır.
+
+2. **`phase7_faults_total` label'ına dinamik string eklemeyin** — Label set bounded: `fault ∈ {F6, F7}`. Dinamik label cardinality patlatır.
+
+3. **Config snapshot'ı request ortasında yeniden okumayın** — `capturePhase7Config()` request başında tek kez çağrılır. Mid-request re-read nondeterminism yaratır.
+
+---
+
+### 📋 İlgili Alert'ler
+
+| Alert | Severity | `for` | Açıklama |
+|-------|----------|-------|----------|
+| `Phase7FaultSpikeHigh` | warning | 0m | `phase7_faults_total` son 5dk'da > 3 |
+| `Phase7BlockRateHigh` | warning | 0m | `phase7_blocks_total{reason="DRIFT"}` son 5dk'da > 5 |
+
+---
+
+### İlgili Dosyalar (Phase-7)
+
+| Dosya | Açıklama |
+|-------|----------|
+| `simulation-api/phase7-config.ts` | Config snapshot — `capturePhase7Config(now)` |
+| `simulation-api/promote.service.ts` | Pipeline wiring — `fetchFreshSnapshot()` F6/F7 surface |
+| `simulation-api/simulation-error.types.ts` | `Phase7TimeoutException` (500), `Phase7PartialResponseException` (500) |
+| `simulation-api/simulation-metrics.service.ts` | `phase7_*` counter'ları |
+| `evidence/drift-utils.ts` | `calculateDrift(baseline, current)` — pure drift engine |
+
+---
+
 ## İlgili Dosyalar
 
 | Dosya | Konum | Açıklama |
 |-------|-------|----------|
-| Alert rules | `ops/prometheus/simulation-alerts.yml` | 5 alert kuralı (Sprint 3) |
+| Alert rules | `ops/prometheus/simulation-alerts.yml` | 5+ alert kuralı |
 | Alertmanager config | `ops/alertmanager/alertmanager.yml` | Route tree — `component=simulation` |
 | Metrics service | `apps/api/src/.../simulation-metrics.service.ts` | Prometheus counter'ları |
 | Feature flag guard | `apps/api/src/.../guards/simulation-feature-flag.guard.ts` | Kill-switch guard |
 | Feature flag service | `apps/api/src/.../simulation-feature-flag.service.ts` | `SIMULATION_ENABLED` env var |
 | Audit adapter | `apps/api/src/.../simulation-audit.adapter.ts` | Audit wiring |
 | Promote service | `apps/api/src/.../promote.service.ts` | Promote pipeline |
+| Phase-7 config | `apps/api/src/.../phase7-config.ts` | Config snapshot |
+| Drift utils | `apps/api/src/.../evidence/drift-utils.ts` | Pure drift engine |
 | Escalation hysteresis | `apps/api/src/.../escalation-hysteresis.ts` | Hysteresis pure function |
 | Ops runbook (bu dosya) | `docs/simulation-ops-runbook.md` | Bu dosya |

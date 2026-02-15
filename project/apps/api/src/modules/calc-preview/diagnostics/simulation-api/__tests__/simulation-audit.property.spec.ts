@@ -44,7 +44,11 @@ function createStubMetrics() {
 }
 
 // ============================================================================
-// All valid event types (exhaustive)
+// All valid lifecycle audit event types (exhaustive — 9 types).
+// Excludes PHASE7_EVALUATED / PHASE7_BLOCKED / PHASE7_FAULT by spec:
+// those are operational/diagnostic events emitted via metrics+logs,
+// not persisted in lifecycle audit store.
+// See design.md § Property 11 — Scope.
 // ============================================================================
 
 const ALL_EVENT_TYPES: SimulationAuditAction[] = [
