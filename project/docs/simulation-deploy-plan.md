@@ -45,7 +45,9 @@
 
 ### ⚠️ DB Migration Güvenlik Notu
 
-> **DİKKAT:** Sprint 3 migration'ı yalnızca yeni tablolar oluşturur (`CREATE TYPE` + `CREATE TABLE` + `CREATE INDEX`). Mevcut tablolara `ALTER TABLE` veya `ADD COLUMN` yok — online-safe, lock riski minimal (boş tablo üzerinde index, milisaniye seviyesi).
+> **DİKKAT:** Sprint 3 migration'ı yalnızca yeni tablolar oluşturur (`CREATE TYPE` + `CREATE TABLE` + `CREATE INDEX`). Mevcut tablolara `ALTER TABLE` veya `ADD COLUMN` yok. Lock riski düşük ama sıfır değil: `CREATE TABLE` metadata lock alır (kısa süreli), aynı şemada yoğun DDL varsa bekleme olabilir.
+>
+> **Mitigasyon:** Low-traffic window'da uygulayın. Migration session'da `SET statement_timeout = '30s'; SET lock_timeout = '10s';` ayarlayın — lock alınamazsa migration güvenli şekilde fail eder.
 >
 > Migration Prisma `_prisma_migrations` tablosu ile tracking edilir. SQL seviyesinde idempotent değildir — tekrar çalıştırma `already exists` hatası verir.
 >
@@ -96,11 +98,15 @@
 
 | Özellik | Değer | Risk |
 |---------|-------|------|
-| Mevcut tablolara lock | Yok — sadece `CREATE TYPE` + `CREATE TABLE` | Minimal |
+| Mevcut tablolara lock | Yok — sadece `CREATE TYPE` + `CREATE TABLE` | Düşük (sıfır değil) |
+| Metadata lock | `CREATE TABLE` metadata lock alır (kısa süreli ama lock alır) | Düşük — low-traffic window tercih |
 | Index oluşturma | Boş tablolar üzerinde — `CONCURRENTLY` gereksiz | Milisaniye |
 | `ALTER TABLE` | Yok | Sıfır |
+| DDL contention | Aynı şemada yoğun DDL varsa bekleme olabilir | `statement_timeout` + `lock_timeout` ayarla |
 | Idempotency | Prisma `_prisma_migrations` tracking ile | SQL seviyesinde hayır |
 | Rollback | `DROP TABLE` + `DROP TYPE` (migration dosyasında mevcut) | Forward-fix tercih |
+
+> **Kural:** Migration öncesi `SET statement_timeout = '30s'; SET lock_timeout = '10s';` ayarlanmalı. Lock alınamazsa migration fail eder — bu güvenli davranıştır. Low-traffic window'da uygulayın.
 
 **Migration öncesi schema snapshot:**
 ```sql
@@ -113,7 +119,7 @@
 \dT+ "EscalationLevelEnum"   -- enum values
 ```
 
-> **Not:** Migration yeni tablolar oluşturduğu için off-peak zorunluluğu yoktur. Ancak convention olarak off-peak tercih edilir.
+> **Not:** Migration yeni tablolar oluşturduğu için off-peak zorunluluğu yoktur. Ancak metadata lock riski nedeniyle low-traffic window tercih edilir. `statement_timeout` + `lock_timeout` ayarlanmalıdır.
 
 ### Rollback Türleri
 
@@ -148,6 +154,9 @@ Deploy öncesi doğrulanması gereken maddeler:
 | PF-6 | 111/111 test green (CI) | CI pipeline son run |
 | PF-7 | Build artifact staging'de deploy edildi ve health green | Staging health endpoint |
 | PF-8 | Prometheus scrape staging'de aktif (simulation metrikleri görünüyor) | Prometheus UI: `promote_success_total` mevcut |
+| PF-9a | Image build + publish pipeline çalışıyor | Container registry'de tagged image mevcut |
+| PF-9b | Deploy pipeline (helm/k8s/ecs) env var + secrets injection doğrulandı | Rendered config'de placeholder yok |
+| PF-9c | Rollback pipeline test edildi (önceki tag'e dönüş) | Staging'de rollback dry-run |
 
 ### Risk Doğrulamaları
 
@@ -357,3 +366,77 @@ Production stabil olduktan sonra (7 gün gözlem penceresi sonrası) açılacak 
 | SD-5 | `simulation_kill_switch_active` gauge metric | R3 riskini kapatma | Orta |
 | SD-6 | SLO tanımı (7 gün baseline sonrası) | Gözlem penceresi tamamlandığında | Yüksek |
 | SD-7 | Mutation testing (Stryker) | Test kalitesi ölçümü | Düşük |
+
+---
+
+## §9 Go/No-Go Checklist (Ops Call Formatı)
+
+> **Amaç:** Deploy öncesi ops call'da tek sayfa üzerinden Go/No-Go kararı vermek.
+> **Kural:** Tüm HARD maddeler GO olmalı. SOFT maddelerden 1 tanesi NO-GO olabilir (risk kabul ile).
+> **Format:** Her madde için 1 kanıt artefaktı yeterli.
+
+### HARD — Tümü GO Olmalı
+
+| # | Madde | Kanıt Artefaktı | GO / NO-GO |
+|---|-------|-----------------|------------|
+| H-1 | CI green (111 test + guardrails) | CI pipeline son run URL'i | ☐ |
+| H-2 | Image build + tag pinned | Container registry: `api:<git-sha>` mevcut | ☐ |
+| H-3 | DB migration staging'de başarılı | `prisma migrate deploy` log çıktısı + `\d promote_request` snapshot | ☐ |
+| H-4 | `simulation-alerts.yml` prod Prometheus'a yüklendi | Prometheus UI → `/rules` → `simulation_alerts` group görünüyor | ☐ |
+| H-5 | `guard-alerts.yml` prod Prometheus'a yüklendi | Prometheus UI → `/rules` → `guard_alerts` group görünüyor | ☐ |
+| H-6 | Alertmanager placeholder'lar render edildi | `kubectl get secret/configmap` → `<PAGERDUTY_SERVICE_KEY>` string yok | ☐ |
+| H-7 | Prometheus scrape target aktif | Prometheus UI → `/targets` → simulation endpoint `UP` | ☐ |
+| H-8 | Kill-switch doğrulaması (staging) | `SIMULATION_ENABLED=false` → mutation endpoint 503, read 200 | ☐ |
+| H-9 | Smoke test ST-1…ST-7 (staging) | Test log: 7/7 PASS | ☐ |
+| H-10 | Rollback tag belirlendi | Rollback target: `api:<previous-sha>` — registry'de mevcut | ☐ |
+| H-11 | Rollback rehearsal dry-run (staging) | shadow→disabled flip + kill-switch hard flip 1 kez test edildi | ☐ |
+
+### SOFT — Risk Kabul ile 1 NO-GO Tolere Edilir
+
+| # | Madde | Kanıt Artefaktı | GO / NO-GO |
+|---|-------|-----------------|------------|
+| S-1 | Alert fire drill (PagerDuty/Slack delivery) | Test alert → notification received (screenshot/timestamp) | ☐ |
+| S-2 | Metrics integrity smoke | `guard_decision_total` + `promote_success_total` label set doğru, histogram bucket geliyor | ☐ |
+| S-3 | Staging parity | Staging ve prod aynı chart/values/render mekanizması kullanıyor | ☐ |
+| S-4 | Synthetic burst test (§7.1) | SB-1…SB-5 sonuçları (opsiyonel ama önerilen) | ☐ |
+| S-5 | `statement_timeout` + `lock_timeout` migration config | Migration session'da `SET statement_timeout='30s'; SET lock_timeout='10s';` | ☐ |
+
+### Karar
+
+| Durum | Aksiyon |
+|-------|---------|
+| H-1…H-11 tümü GO + S maddelerinde max 1 NO-GO | **GO** — Stage 0 başlat |
+| H maddelerinden herhangi biri NO-GO | **NO-GO** — eksik maddeyi kapat, tekrar topla |
+| S maddelerinden 2+ NO-GO | **CONDITIONAL GO** — risk kabul notu yazılır, 24 saat içinde kapatılır |
+
+### Version Pinning
+
+| Bilgi | Değer |
+|-------|-------|
+| Deploy commit SHA | `________________` |
+| Image tag | `api:________________` |
+| Rollback commit SHA | `________________` |
+| Rollback image tag | `api:________________` |
+| Migration dosyası | `20260210100000_sprint3_promote_escalation_state` |
+| Deploy tarihi/saati | `____-__-__ __:__ UTC+3` |
+| Deploy eden kişi | `________________` |
+
+### Kanıt Toplama Rehberi
+
+Her madde için tek kanıt yeterli — aşağıdaki format ops ekibiyle sürtüşmeyi keser:
+
+```
+H-1: CI URL → https://github.com/.../actions/runs/XXXXX ✅
+H-2: Registry → docker pull api:abc123def — SUCCESS ✅
+H-3: Migration → prisma migrate deploy output (paste) ✅
+H-4: Prometheus → /rules screenshot veya curl output ✅
+H-5: Prometheus → /rules screenshot veya curl output ✅
+H-6: kubectl → get configmap alertmanager-config -o yaml | grep PAGERDUTY → no placeholder ✅
+H-7: Prometheus → /targets screenshot → simulation endpoint UP ✅
+H-8: curl -X POST .../promote → 503 SIMULATION_DISABLED ✅
+H-9: ST-1..ST-7 log paste ✅
+H-10: Registry → docker pull api:previous-sha — SUCCESS ✅
+H-11: Staging'de shadow→disabled + kill-switch flip log ✅
+```
+
+> **Not:** Bu checklist `simulation-deploy-plan.md` §2 Pre-flight Checklist'in ops-call-ready versiyonudur. §2'deki detaylı doğrulama yöntemleri referans olarak kalır.

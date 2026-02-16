@@ -22,6 +22,7 @@ import {
   MatrixReport,
   MatrixId,
   OverheadDelta,
+  PerRPSOverheadDelta,
   CapacityPoint,
 } from './perf-report.types';
 
@@ -92,12 +93,16 @@ export interface MatrixIndexEntry {
 export interface DuplicateRecord {
   matrixId: MatrixId;
   runKey: string;
-  /** Duplicate raporun runId'si (debugging için) */
-  duplicateRunId: string;
-  /** Duplicate raporun completedAt'i */
-  duplicateCompletedAt: string;
+  /** Kazanan raporun runId'si */
+  keptRunId: string;
+  /** Kazanan raporun completedAt'i */
+  keptCompletedAt: string;
+  /** Düşürülen raporun runId'si */
+  droppedRunId: string;
+  /** Düşürülen raporun completedAt'i */
+  droppedCompletedAt: string;
   /** Neden reddedildi */
-  reason: 'duplicate_matrix_id';
+  reason: 'latest-wins';
 }
 
 // ============================================================================
@@ -132,8 +137,75 @@ export interface CompositePerfReport {
   /** Duplicate raporlar (aynı runKey + matrixId) */
   duplicates: DuplicateRecord[];
 
+  /** Typed diagnostics — warnings[]'den taşınan yapısal veriler */
+  diagnostics: CompositeDiagnostics;
+
+  /** Hangi normalizasyonlar uygulandı (audit trail) */
+  normalizationsApplied: string[];
+
   /** Birleştirme sırasında oluşan uyarılar */
   warnings: string[];
+}
+
+// ============================================================================
+// Composite Diagnostics — typed M4 diagnostics
+// ============================================================================
+
+export interface M4DiagnosticsData {
+  baselineHeapUsedMB: number;
+  baselineExternalMB: number;
+  baselineRssMB: number;
+  intervalDeltas: Array<{
+    intervalIndex: number;
+    simulatedMinute: number;
+    heapUsedDeltaMB: number;
+    heapTotalDeltaMB: number;
+    externalDeltaMB: number;
+    rssDeltaMB: number;
+    retainedObjectCount: number;
+    retainedBufferBytes: number;
+  }>;
+  slopeMBPerInterval: number;
+  slopeMBPerRequest: number;
+  totalHeapUsedDeltaMB: number;
+  totalExternalDeltaMB: number;
+  retainedObjectCount: number;
+  retainedBufferBytes: number;
+  gcAvailable: boolean;
+}
+
+// ============================================================================
+// M5 Diagnostics — micro-benchmark detaylı metrikler
+// ============================================================================
+
+export interface M5RunDetail {
+  grossNs: number;
+  netNs: number;
+  opsPerSec: number;
+}
+
+export interface M5DiagnosticsData {
+  /** Her varyantın 3-run detayları */
+  runs: {
+    float: M5RunDetail[];
+    scaledInt: M5RunDetail[];
+    e2eScaledInt: M5RunDetail[];
+  };
+  /** Empty loop baseline (ns) — zamanlama doğrulama */
+  emptyLoopNs: number;
+  /** Input setup */
+  inputConfig: { metricCount: number; seed: number };
+  /** GC available? */
+  gcAvailable: boolean;
+  /** Varyasyon uyarıları */
+  noiseWarnings: string[];
+}
+
+export interface CompositeDiagnostics {
+  /** M4 GC pressure diagnostics (null = M4 yok veya diagnostics parse fail) */
+  m4: M4DiagnosticsData | null;
+  /** M5 micro-benchmark diagnostics (null = M5 yok veya diagnostics parse fail) */
+  m5: M5DiagnosticsData | null;
 }
 
 // ============================================================================
@@ -183,10 +255,92 @@ export function buildIndexEntry(report: MatrixReport, runKey: string): MatrixInd
 // Matrix ID canonical sort order
 // ============================================================================
 
-const MATRIX_ORDER: Record<MatrixId, number> = {
+export const MATRIX_ORDER: Record<MatrixId, number> = {
   M0: 0, M1: 1, M2: 2, M3: 3, M4: 4, M5: 5,
 };
 
 export function compareMatrixId(a: MatrixId, b: MatrixId): number {
   return (MATRIX_ORDER[a] ?? 99) - (MATRIX_ORDER[b] ?? 99);
+}
+
+// ============================================================================
+// computeOverheadDelta — standalone (PerfHarness'tan extract edildi)
+// ============================================================================
+
+/**
+ * M0 vs M1 overhead delta hesapla.
+ *
+ * Per-RPS eşleme: M1'in her step'i için M0'da exact match veya en yakın
+ * düşük RPS bulunur. İnterpolasyon yapılmaz.
+ *
+ * Özet delta: M1'in sustainableRPS'inde hesaplanır.
+ *
+ * Standalone fonksiyon — PerfHarness coupling'i yok.
+ * Merger ve test'ler doğrudan import edebilir.
+ */
+export function computeOverheadDelta(m0: MatrixReport, m1: MatrixReport): OverheadDelta {
+  const m0Sweep = m0.sweep;
+  const m1Sweep = m1.sweep;
+  const m0Steps = m0Sweep?.steps ?? [];
+  const m1Steps = m1Sweep?.steps ?? [];
+
+  // Per-RPS delta: M1'in her step'i için M0'da en yakın düşük RPS'i bul
+  const perRPSDeltas: PerRPSOverheadDelta[] = [];
+  for (const m1Step of m1Steps) {
+    let m0Step = m0Steps.find((s) => s.rps === m1Step.rps);
+    if (!m0Step) {
+      const candidates = m0Steps.filter((s) => s.rps <= m1Step.rps);
+      if (candidates.length > 0) {
+        m0Step = candidates.reduce((a, b) => (b.rps > a.rps ? b : a));
+      }
+    }
+    if (!m0Step) continue;
+
+    perRPSDeltas.push({
+      rps: m1Step.rps,
+      deltaP50Ms: m1Step.latency.p50 - m0Step.latency.p50,
+      deltaP95Ms: m1Step.latency.p95 - m0Step.latency.p95,
+      deltaP99Ms: m1Step.latency.p99 - m0Step.latency.p99,
+      deltaSnapshotFetchP95Ms:
+        m1Step.splitTimers.phase7_snapshot_fetch_ms.p95 -
+        m0Step.splitTimers.phase7_snapshot_fetch_ms.p95,
+      deltaSnapshotFetchP99Ms:
+        m1Step.splitTimers.phase7_snapshot_fetch_ms.p99 -
+        m0Step.splitTimers.phase7_snapshot_fetch_ms.p99,
+      deltaDriftCalcP95Ms:
+        m1Step.splitTimers.phase7_drift_calc_ms.p95 -
+        m0Step.splitTimers.phase7_drift_calc_ms.p95,
+      deltaDriftCalcP99Ms:
+        m1Step.splitTimers.phase7_drift_calc_ms.p99 -
+        m0Step.splitTimers.phase7_drift_calc_ms.p99,
+      deltaEventLoopP99Ms: m1Step.eventLoop.p99Ms - m0Step.eventLoop.p99Ms,
+      deltaCpuTotalPercent: m1Step.cpu.totalPercent - m0Step.cpu.totalPercent,
+      deltaRssMB:
+        Math.round(m1Step.memory.rssKB / 1024) -
+        Math.round(m0Step.memory.rssKB / 1024),
+    });
+  }
+
+  // Özet delta: M1'in sustainable RPS'inde
+  const compareRPS = m1Sweep?.sustainableRPS ?? m0Sweep?.sustainableRPS ?? 0;
+  const summaryDelta = perRPSDeltas.find((d) => d.rps === compareRPS);
+
+  const emptyStats = { p50: 0, p95: 0, p99: 0, max: 0, count: 0, mean: 0 };
+
+  return {
+    deltaP99Ms: summaryDelta?.deltaP99Ms ?? 0,
+    deltaCpuPercent: summaryDelta?.deltaCpuTotalPercent ?? 0,
+    deltaAllocRateMBPerMin: 0, // M4'ten hesaplanır
+    deltaEventLoopP99Ms: summaryDelta?.deltaEventLoopP99Ms ?? 0,
+    sustainableRPSDelta:
+      (m1Sweep?.sustainableRPS ?? 0) - (m0Sweep?.sustainableRPS ?? 0),
+    splitTimerBreakdown: m1.splitTimers ?? {
+      request_duration_ms: emptyStats,
+      phase7_snapshot_fetch_ms: emptyStats,
+      phase7_drift_calc_ms: emptyStats,
+      phase7_audit_write_ms: emptyStats,
+      phase7_metrics_emit_ms: emptyStats,
+    },
+    perRPSDeltas,
+  };
 }

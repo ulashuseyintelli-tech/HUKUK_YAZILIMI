@@ -23,10 +23,10 @@ import {
   MatrixId,
   MatrixReport,
   OverheadDelta,
-  PerRPSOverheadDelta,
   EnvironmentSnapshot,
   ReportMetadata,
 } from './perf-report.types';
+import { computeOverheadDelta as computeOverheadDeltaStandalone } from './composite-report.types';
 
 // ============================================================================
 // Constants
@@ -137,72 +137,12 @@ export class PerfHarness extends LoadTestRunner {
    * Farklıysa: en yakın düşük RPS'e snap et (interpolasyon yapma).
    * Özet delta: M1'in sustainable RPS'inde hesaplanır.
    */
+  /**
+   * M0 vs M1 overhead delta hesapla.
+   * Standalone fonksiyona delegate eder — algoritma tek yerde yaşar.
+   */
   computeOverheadDelta(m0: MatrixReport, m1: MatrixReport): OverheadDelta {
-    const m0Sweep = m0.sweep;
-    const m1Sweep = m1.sweep;
-    const m0Steps = m0Sweep?.steps ?? [];
-    const m1Steps = m1Sweep?.steps ?? [];
-
-    // Per-RPS delta: M1'in her step'i için M0'da en yakın düşük RPS'i bul
-    const perRPSDeltas: PerRPSOverheadDelta[] = [];
-    for (const m1Step of m1Steps) {
-      // Exact match veya en yakın düşük RPS
-      let m0Step = m0Steps.find((s) => s.rps === m1Step.rps);
-      if (!m0Step) {
-        const candidates = m0Steps.filter((s) => s.rps <= m1Step.rps);
-        if (candidates.length > 0) {
-          m0Step = candidates.reduce((a, b) => (b.rps > a.rps ? b : a));
-        }
-      }
-      if (!m0Step) continue;
-
-      perRPSDeltas.push({
-        rps: m1Step.rps,
-        deltaP50Ms: m1Step.latency.p50 - m0Step.latency.p50,
-        deltaP95Ms: m1Step.latency.p95 - m0Step.latency.p95,
-        deltaP99Ms: m1Step.latency.p99 - m0Step.latency.p99,
-        deltaSnapshotFetchP95Ms:
-          m1Step.splitTimers.phase7_snapshot_fetch_ms.p95 -
-          m0Step.splitTimers.phase7_snapshot_fetch_ms.p95,
-        deltaSnapshotFetchP99Ms:
-          m1Step.splitTimers.phase7_snapshot_fetch_ms.p99 -
-          m0Step.splitTimers.phase7_snapshot_fetch_ms.p99,
-        deltaDriftCalcP95Ms:
-          m1Step.splitTimers.phase7_drift_calc_ms.p95 -
-          m0Step.splitTimers.phase7_drift_calc_ms.p95,
-        deltaDriftCalcP99Ms:
-          m1Step.splitTimers.phase7_drift_calc_ms.p99 -
-          m0Step.splitTimers.phase7_drift_calc_ms.p99,
-        deltaEventLoopP99Ms: m1Step.eventLoop.p99Ms - m0Step.eventLoop.p99Ms,
-        deltaCpuTotalPercent: m1Step.cpu.totalPercent - m0Step.cpu.totalPercent,
-        deltaRssMB:
-          Math.round(m1Step.memory.rssKB / 1024) -
-          Math.round(m0Step.memory.rssKB / 1024),
-      });
-    }
-
-    // Özet delta: M1'in sustainable RPS'inde
-    const compareRPS = m1Sweep?.sustainableRPS ?? m0Sweep?.sustainableRPS ?? 0;
-    const summaryDelta = perRPSDeltas.find((d) => d.rps === compareRPS);
-
-    const emptyStats = { p50: 0, p95: 0, p99: 0, max: 0, count: 0, mean: 0 };
-
-    return {
-      deltaP99Ms: summaryDelta?.deltaP99Ms ?? 0,
-      deltaCpuPercent: summaryDelta?.deltaCpuTotalPercent ?? 0,
-      deltaAllocRateMBPerMin: 0, // M4'ten hesaplanır
-      deltaEventLoopP99Ms: summaryDelta?.deltaEventLoopP99Ms ?? 0,
-      sustainableRPSDelta:
-        (m1Sweep?.sustainableRPS ?? 0) - (m0Sweep?.sustainableRPS ?? 0),
-      splitTimerBreakdown: m1.splitTimers ?? {
-        request_duration_ms: emptyStats,
-        phase7_snapshot_fetch_ms: emptyStats,
-        phase7_drift_calc_ms: emptyStats,
-        phase7_audit_write_ms: emptyStats,
-        phase7_metrics_emit_ms: emptyStats,
-      },
-      perRPSDeltas,
-    };
+    return computeOverheadDeltaStandalone(m0, m1);
   }
 
   /** Rapor JSON olarak kaydet */

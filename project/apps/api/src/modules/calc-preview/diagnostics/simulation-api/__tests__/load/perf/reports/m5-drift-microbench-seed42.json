@@ -1,0 +1,50 @@
+{
+  "metadata": {
+    "schemaVersion": "1.0.0",
+    "runId": "perf_42_1771185213079",
+    "gitSha": "unknown",
+    "environmentSnapshotHash": "589a3417a1ac"
+  },
+  "matrixId": "M5",
+  "startedAt": "2026-02-15T19:53:33.079Z",
+  "completedAt": "",
+  "environment": {
+    "nodeVersion": "v24.11.1",
+    "cpuModel": "Intel(R) Core(TM) i7-8750H CPU @ 2.20GHz",
+    "cpuCores": 12,
+    "totalMemoryMB": 32498,
+    "osVersion": "Windows_NT 10.0.26200",
+    "nodeOptions": "",
+    "maxOldSpaceSize": null,
+    "dbPoolSize": 10,
+    "postgresVersion": "unknown",
+    "perfSeed": 42,
+    "capturedAt": "2026-02-15T19:53:33.078Z"
+  },
+  "warmup": null,
+  "sweep": null,
+  "splitTimers": null,
+  "heapSnapshots": [],
+  "heapTrend": null,
+  "blockRateBuckets": [],
+  "snapshotPressure": null,
+  "microBenchmark": {
+    "triggered": true,
+    "triggerRatio": 0.003076923076923077,
+    "triggerReason": "forced-simulated",
+    "wouldTriggerByThreshold": false,
+    "floatOpsPerSec": 164993.69385852388,
+    "scaledIntOpsPerSec": 205981.23786937867,
+    "e2eScaledIntOpsPerSec": 71001.73335111595,
+    "speedupFactor": 1.248418851971398,
+    "e2eSpeedupFactor": 0.4303299822597909,
+    "migrationPriority": "low",
+    "iterations": 1000000
+  },
+  "seed": 42,
+  "warnings": [
+    "[m5-noise] variant=float cv=41.6%",
+    "[m5-noise] variant=scaledInt cv=37.4%",
+    "{\"m5Diagnostics\":{\"runs\":{\"float\":[{\"grossNs\":9203116100,\"netNs\":9196254700,\"opsPerSec\":108739.91995893719},{\"grossNs\":6061637900,\"netNs\":6060837700,\"opsPerSec\":164993.69385852388},{\"grossNs\":3359336400,\"netNs\":3358909800,\"opsPerSec\":297715.64571337996}],\"scaledInt\":[{\"grossNs\":9181018100,\"netNs\":9179758400,\"opsPerSec\":108935.32884264142},{\"grossNs\":4855937500,\"netNs\":4854811100,\"opsPerSec\":205981.23786937867},{\"grossNs\":3390233900,\"netNs\":3389539000,\"opsPerSec\":295025.3707067539}],\"e2eScaledInt\":[{\"grossNs\":17415119700,\"netNs\":17410679000,\"opsPerSec\":57436.01383955216},{\"grossNs\":14086682200,\"netNs\":14084163200,\"opsPerSec\":71001.73335111595},{\"grossNs\":11314470200,\"netNs\":11313862300,\"opsPerSec\":88387.14609422107}]},\"emptyLoopNs\":6861400,\"inputConfig\":{\"metricCount\":10,\"seed\":42},\"gcAvailable\":false,\"noiseWarnings\":[\"[m5-noise] variant=float cv=41.6%\",\"[m5-noise] variant=scaledInt cv=37.4%\"]}}"
+  ]
+}

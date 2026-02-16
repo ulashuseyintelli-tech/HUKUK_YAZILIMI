@@ -1,0 +1,156 @@
+# Prometheus Alert Rules — Operational Guard Phase
+# A1–A5: Guard tripwire alert kuralları
+#
+# Pattern: simulation-alerts.yml ve redrive-alerts.yml ile aynı yapı.
+# İlgili runbook: docs/guard-ops-runbook.md
+# Metrik kaynağı: SimulationMetricsService (guard tripwire metrics)
+
+groups:
+  - name: guard_alerts
+    rules:
+      # ─────────────────────────────────────────────────────────────────
+      # A1: CASConflictStorm
+      # CAS conflict oranı yüksek — concurrent write contention
+      # Degrade mode aktivasyonu önerilir.
+      # ─────────────────────────────────────────────────────────────────
+      - alert: GuardCASConflictStorm
+        expr: rate(escalation_state_conflict_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          team: backend
+          component: guard
+        annotations:
+          summary: "CAS conflict storm — guard degrade mode önerilir"
+          description: >-
+            escalation_state_conflict_total rate son 5 dakikada eşiği aştı.
+            Concurrent escalation evaluation çakışması yüksek. Degrade mode
+            aktivasyonu veya write contention kaynağı araştırılmalıdır.
+          runbook: "docs/guard-ops-runbook.md#cas-conflict-storm"
+
+      # ─────────────────────────────────────────────────────────────────
+      # A2: DBTimeoutSpike
+      # DB timeout oranı yüksek — hard block seçeneği runbook'ta
+      # ─────────────────────────────────────────────────────────────────
+      - alert: GuardDBTimeoutSpike
+        expr: rate(db_write_timeout_total[5m]) > 0.05
+        for: 2m
+        labels:
+          severity: critical
+          team: backend
+          component: guard
+        annotations:
+          summary: "DB timeout spike — kill-switch değerlendirin"
+          description: >-
+            db_write_timeout_total rate son 5 dakikada eşiği aştı.
+            DB yazma timeout'ları artıyor. Connection pool, disk I/O
+            veya lock contention araştırılmalıdır. Ciddi ise kill-switch
+            ile hard block uygulanabilir.
+          runbook: "docs/guard-ops-runbook.md#db-timeout-spike"
+
+      # ─────────────────────────────────────────────────────────────────
+      # A3: ClockSkewBreach
+      # Clock skew p99 eşiği aştı — evaluate path HOLD önerilir
+      # ─────────────────────────────────────────────────────────────────
+      - alert: GuardClockSkewBreach
+        expr: >-
+          histogram_quantile(0.99,
+            sum(rate(clock_skew_compensated_ms_bucket[5m])) by (le)
+          ) > 500
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+          component: guard
+        annotations:
+          summary: "Clock skew p99 eşiği aştı — degrade mode önerilir"
+          description: >-
+            clock_skew_compensated_ms p99 değeri 500ms üzerinde.
+            NTP senkronizasyonu, container clock drift veya
+            cross-region latency araştırılmalıdır.
+          runbook: "docs/guard-ops-runbook.md#clock-skew-breach"
+
+      # ─────────────────────────────────────────────────────────────────
+      # A4: AlertFireLatencyBreach
+      # Alert fire latency evaluation interval'ın 2 katını aştı — paging
+      # ─────────────────────────────────────────────────────────────────
+      - alert: GuardAlertFireLatencyBreach
+        expr: alert_fire_latency_seconds > 120
+        for: 0m
+        labels:
+          severity: critical
+          team: backend
+          component: guard
+        annotations:
+          summary: "Alert fire latency eşiği aştı — acil müdahale"
+          description: >-
+            alert_fire_latency_seconds 2× evaluation interval'ı (120s) aştı.
+            Alert pipeline'ında gecikme var. Prometheus rule evaluation,
+            Alertmanager veya notification channel araştırılmalıdır.
+          runbook: "docs/guard-ops-runbook.md#alert-fire-latency"
+
+      # ─────────────────────────────────────────────────────────────────
+      # A5: KillSwitchEnabled
+      # Kill-switch aktif — bilgilendirme
+      # ─────────────────────────────────────────────────────────────────
+      - alert: GuardKillSwitchEnabled
+        expr: kill_switch_state == 1
+        for: 5m
+        labels:
+          severity: info
+          team: backend
+          component: guard
+        annotations:
+          summary: "Guard kill-switch aktif"
+          description: >-
+            kill_switch_state == 1 — bir veya daha fazla tenant/operation
+            için kill-switch aktif. Incident çözüldüyse kapatmayı unutmayın.
+          runbook: "docs/guard-ops-runbook.md#kill-switch-management"
+
+      # ─────────────────────────────────────────────────────────────────
+      # A6: ShadowDriftHigh — Canary Rollout
+      # Shadow modda wouldEnforce oranı beklenen bandın üstünde
+      # Config/threshold değişimlerinin sessiz karar kaymasını yakalar
+      # ─────────────────────────────────────────────────────────────────
+      - alert: GuardShadowDriftHigh
+        expr: >-
+          (
+            sum(rate(guard_shadow_would_enforce_total[30m]))
+            /
+            clamp_min(sum(rate(guard_decision_total{guardMode="shadow"}[30m])), 1)
+          ) > 0.05
+        for: 15m
+        labels:
+          severity: warning
+          team: backend
+          component: guard
+        annotations:
+          summary: "Shadow mode wouldEnforce oranı %5 üzerinde — drift riski"
+          description: >-
+            Shadow modda guard kararlarının %5'inden fazlası enforce edilseydi
+            HOLD veya BLOCK_503 olacaktı. Config/threshold değişikliği veya
+            sinyal kalitesi bozulması olabilir. Enforce'a geçmeden önce
+            root cause araştırılmalıdır.
+          runbook: "docs/guard-ops-runbook.md#canary-rollout-prosedürü"
+
+      # ─────────────────────────────────────────────────────────────────
+      # A7: ShadowLatencyOverhead — Canary Rollout
+      # Shadow mode compute overhead p99 eşiği aştı
+      # ─────────────────────────────────────────────────────────────────
+      - alert: GuardShadowLatencyOverhead
+        expr: >-
+          histogram_quantile(0.99,
+            sum(rate(guard_snapshot_duration_seconds_bucket{guardMode="shadow"}[5m])) by (le)
+          ) > 0.01
+        for: 10m
+        labels:
+          severity: warning
+          team: backend
+          component: guard
+        annotations:
+          summary: "Shadow mode latency overhead p99 > 10ms"
+          description: >-
+            Guard snapshot hesaplama süresi shadow modda p99 10ms'yi aştı.
+            Signal engine veya config provider performansı araştırılmalıdır.
+            Enforce'a geçiş bu overhead düşene kadar ertelenmelidir.
+          runbook: "docs/guard-ops-runbook.md#canary-rollout-prosedürü"

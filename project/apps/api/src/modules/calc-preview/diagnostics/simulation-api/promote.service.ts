@@ -38,6 +38,8 @@ import {
 } from './simulation-error.types';
 import { IClock } from '../evidence/clock.service';
 import { capturePhase7Config } from './phase7-config';
+import { enforceGuardDecision } from './guards/guard-enforcement';
+import { GuardOperation, type GuardDecisionSnapshot } from './guards/guard-policy-resolver.types';
 
 // ============================================================================
 // Result type
@@ -80,7 +82,20 @@ export class PromoteService {
    * @throws SimulationDisabledException (503)
    * @throws RunNotFoundException (404 RUN_NOT_FOUND)
    */
-  async promote(incidentId: string, runId: string, _actorId: string): Promise<PromoteResult> {
+  async promote(
+    incidentId: string,
+    runId: string,
+    _actorId: string,
+    guardSnapshot?: GuardDecisionSnapshot,
+  ): Promise<PromoteResult> {
+    // Step 0: Guard enforcement (defense-in-depth — interceptor already short-circuits)
+    const guardCheck = enforceGuardDecision(guardSnapshot, GuardOperation.PROMOTE);
+    if (!guardCheck.allowed) {
+      this.logger.debug('[PromoteService] Guard blocked', { reason: guardCheck.reason, decision: guardCheck.decision });
+      try { this.metrics.incGuardHold(guardCheck.reason ?? 'UNKNOWN'); } catch { /* best-effort */ }
+      return { status: 'DRIFT_DETECTED', driftScore: 0, topContributors: [] };
+    }
+
     // Phase-7: Config snapshot — captured once, immutable for request lifetime
     const phase7Config = capturePhase7Config(this.clock.now());
 
@@ -116,7 +131,7 @@ export class PromoteService {
 
     if (!phase7Config.phase7Enabled) {
       // Phase-7 disabled → no drift check, allow promote
-      this.metrics.incPhase7Block('FEATURE_DISABLED');
+      try { this.metrics.incPhase7Block('FEATURE_DISABLED'); } catch { /* best-effort */ }
       driftResult = {
         driftScore: 0,
         shouldBlock: false,
@@ -148,8 +163,8 @@ export class PromoteService {
         // F6/F7 → terminal (no retry per K1), mark row FAILED
         await this.promoteStore.markFailed(incidentId, runId);
         const isPartial = err instanceof Phase7PartialResponseError;
-        this.metrics.incPhase7Fault(isPartial ? 'F7' : 'F6');
-        this.metrics.incPromoteFailure(isPartial ? 'PHASE7_PARTIAL' : 'PHASE7_TIMEOUT');
+        try { this.metrics.incPhase7Fault(isPartial ? 'F7' : 'F6'); } catch { /* best-effort */ }
+        try { this.metrics.incPromoteFailure(isPartial ? 'PHASE7_PARTIAL' : 'PHASE7_TIMEOUT'); } catch { /* best-effort */ }
 
         // Audit — forensic trace for Phase-7 fault
         try {
@@ -175,7 +190,7 @@ export class PromoteService {
 
       // Pure drift calculation — deterministic, no IO
       driftResult = calculateDrift(baselineSnapshot, currentSnapshot);
-      this.metrics.incPhase7Evaluation();
+      try { this.metrics.incPhase7Evaluation(); } catch { /* best-effort */ }
 
       // Audit — Phase-7 evaluated
       try {
@@ -203,9 +218,9 @@ export class PromoteService {
     // Step 9: Drift guard
     if (driftResult.shouldBlock) {
       await this.promoteStore.markFailed(incidentId, runId);
-      this.metrics.incDriftDetected(incidentId);
-      this.metrics.incPromoteFailure('DRIFT_DETECTED');
-      this.metrics.incPhase7Block('DRIFT');
+      try { this.metrics.incDriftDetected(incidentId); } catch { /* best-effort */ }
+      try { this.metrics.incPromoteFailure('DRIFT_DETECTED'); } catch { /* best-effort */ }
+      try { this.metrics.incPhase7Block('DRIFT'); } catch { /* best-effort */ }
 
       // Audit — forensic trace for drift block
       try {
@@ -233,8 +248,12 @@ export class PromoteService {
     // Step 10: Phase 7 request (idempotent)
     await this.promoteStore.markSucceeded(incidentId, runId);
 
-    // Step 11: Metrics
-    this.metrics.incPromoteSuccess();
+    // Step 11: Metrics (best-effort — MI-1: failure must not change business outcome)
+    try {
+      this.metrics.incPromoteSuccess();
+    } catch {
+      // Swallow: metrics = best-effort, no retry, no error masking
+    }
 
     // Step 12: Audit — forensic trace for accepted promote
     try {

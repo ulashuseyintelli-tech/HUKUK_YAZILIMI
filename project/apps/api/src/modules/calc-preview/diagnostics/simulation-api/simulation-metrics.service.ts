@@ -76,6 +76,27 @@ export class SimulationMetricsService {
     ['fault'],
   );
 
+  // ── Guard tripwire metrics (Task 6.2) ─────────────────────────────
+
+  private readonly dbWriteTimeoutTotal = createCounter(
+    'db_write_timeout_total',
+    'Total DB write timeouts',
+  );
+  private readonly dbReadTimeoutTotal = createCounter(
+    'db_read_timeout_total',
+    'Total DB read timeouts',
+  );
+  private readonly guardHoldTotal = createCounter(
+    'escalation_evaluate_hold_total',
+    'Total guard-forced HOLD decisions',
+    ['reason'],
+  );
+  private readonly killSwitchStateGauge = createCounter(
+    'kill_switch_state',
+    'Kill-switch state (1=active, 0=inactive)',
+    ['tenant', 'operation'],
+  );
+
   incPromoteSuccess(): void {
     this.promoteSuccessTotal.inc();
   }
@@ -110,5 +131,29 @@ export class SimulationMetricsService {
 
   incPhase7Fault(fault: 'F6' | 'F7'): void {
     this.phase7FaultsTotal.inc({ fault });
+  }
+
+  // ── Guard tripwire methods (Task 6.2) ─────────────────────────────
+
+  incDbWriteTimeout(): void {
+    this.dbWriteTimeoutTotal.inc();
+  }
+
+  incDbReadTimeout(): void {
+    this.dbReadTimeoutTotal.inc();
+  }
+
+  /**
+   * Increment guard HOLD counter.
+   * reason label: bounded enum — DEGRADED | STALE_FAILSAFE | MISSING_SIGNALS |
+   *   INSUFFICIENT_SIGNALS | THRESHOLD_BREACH | UNKNOWN
+   * NOT free-form reasonCodes (cardinality risk).
+   */
+  incGuardHold(reason: string): void {
+    this.guardHoldTotal.inc({ reason });
+  }
+
+  setKillSwitchState(tenant: string, operation: string, active: boolean): void {
+    this.killSwitchStateGauge.inc({ tenant, operation }, active ? 1 : 0);
   }
 }

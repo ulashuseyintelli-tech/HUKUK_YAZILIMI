@@ -204,9 +204,13 @@ export interface HeapTrend {
 export interface MicroBenchmarkResult {
   triggered: boolean;
   triggerRatio: number;
+  triggerReason: 'threshold' | 'forced-simulated';
+  wouldTriggerByThreshold: boolean;
   floatOpsPerSec: number;
   scaledIntOpsPerSec: number;
+  e2eScaledIntOpsPerSec: number;
   speedupFactor: number;
+  e2eSpeedupFactor: number;
   migrationPriority: 'high' | 'medium' | 'low';
   iterations: number;
 }

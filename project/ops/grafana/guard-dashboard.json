@@ -1,0 +1,205 @@
+{
+  "dashboard": {
+    "title": "Operational Guard — Pipeline Protection",
+    "description": "Guard engine karar dağılımı, tripwire metrikleri ve degrade mode etkisi",
+    "tags": ["guard", "simulation", "ops"],
+    "timezone": "browser",
+    "refresh": "30s",
+    "time": { "from": "now-1h", "to": "now" },
+    "panels": [
+      {
+        "title": "Guard Decision Distribution",
+        "description": "guard_decision_total{decision, operation, mode} — karar dağılımı",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
+        "targets": [
+          {
+            "expr": "sum(rate(guard_decision_total[5m])) by (decision)",
+            "legendFormat": "{{decision}}"
+          }
+        ]
+      },
+      {
+        "title": "CAS Conflict Rate",
+        "description": "A1 tripwire — escalation_state_conflict_total rate",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
+        "targets": [
+          {
+            "expr": "rate(escalation_state_conflict_total[5m])",
+            "legendFormat": "CAS conflict rate"
+          }
+        ],
+        "thresholds": [
+          { "value": 0.1, "color": "orange", "label": "A1 threshold" }
+        ]
+      },
+      {
+        "title": "DB Timeout Rate",
+        "description": "A2 tripwire — db_write_timeout_total + db_read_timeout_total rate",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
+        "targets": [
+          {
+            "expr": "rate(db_write_timeout_total[5m])",
+            "legendFormat": "write timeout"
+          },
+          {
+            "expr": "rate(db_read_timeout_total[5m])",
+            "legendFormat": "read timeout"
+          }
+        ],
+        "thresholds": [
+          { "value": 0.05, "color": "red", "label": "A2 threshold" }
+        ]
+      },
+      {
+        "title": "Clock Skew (p99)",
+        "description": "A3 tripwire — clock_skew_compensated_ms histogram p99",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
+        "targets": [
+          {
+            "expr": "histogram_quantile(0.99, sum(rate(clock_skew_compensated_ms_bucket[5m])) by (le))",
+            "legendFormat": "p99 clock skew (ms)"
+          }
+        ],
+        "thresholds": [
+          { "value": 500, "color": "orange", "label": "A3 threshold" }
+        ]
+      },
+      {
+        "title": "Kill-Switch State",
+        "description": "A5 — kill_switch_state gauge per tenant/operation",
+        "type": "stat",
+        "gridPos": { "h": 4, "w": 6, "x": 0, "y": 16 },
+        "targets": [
+          {
+            "expr": "sum(kill_switch_state)",
+            "legendFormat": "active kill-switches"
+          }
+        ]
+      },
+      {
+        "title": "Degrade Forced Holds",
+        "description": "escalation_evaluate_hold_total{reason='DEGRADED'} — rate + absolute",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 18, "x": 6, "y": 16 },
+        "targets": [
+          {
+            "expr": "rate(escalation_evaluate_hold_total{reason=\"DEGRADED\"}[5m])",
+            "legendFormat": "degrade hold rate"
+          },
+          {
+            "expr": "escalation_evaluate_hold_total{reason=\"DEGRADED\"}",
+            "legendFormat": "degrade hold total"
+          }
+        ]
+      },
+      {
+        "title": "Guard Hold by Reason",
+        "description": "escalation_evaluate_hold_total breakdown by reason label",
+        "type": "piechart",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 24 },
+        "targets": [
+          {
+            "expr": "sum(escalation_evaluate_hold_total) by (reason)",
+            "legendFormat": "{{reason}}"
+          }
+        ]
+      },
+      {
+        "title": "Alert Fire Latency",
+        "description": "A4 — alert_fire_latency_seconds",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 24 },
+        "targets": [
+          {
+            "expr": "alert_fire_latency_seconds",
+            "legendFormat": "alert fire latency (s)"
+          }
+        ],
+        "thresholds": [
+          { "value": 120, "color": "red", "label": "A4 threshold (2x eval)" }
+        ]
+      },
+      {
+        "title": "Shadow vs Enforce — Decision Distribution",
+        "description": "Canary rollout: guardMode bazlı karar karşılaştırması",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 32 },
+        "targets": [
+          {
+            "expr": "sum(rate(guard_decision_total{guardMode=\"shadow\"}[5m])) by (decision)",
+            "legendFormat": "shadow/{{decision}}"
+          },
+          {
+            "expr": "sum(rate(guard_decision_total{guardMode=\"enforce\"}[5m])) by (decision)",
+            "legendFormat": "enforce/{{decision}}"
+          }
+        ]
+      },
+      {
+        "title": "Shadow Would-Enforce Rate",
+        "description": "Shadow modda enforce edilseydi ne olurdu — wouldEnforce oranı",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+        "targets": [
+          {
+            "expr": "sum(rate(guard_shadow_would_enforce_total[5m])) by (operation)",
+            "legendFormat": "wouldEnforce/{{operation}}"
+          },
+          {
+            "expr": "sum(rate(guard_shadow_would_enforce_total[5m])) / sum(rate(guard_decision_total{guardMode=\"shadow\"}[5m]))",
+            "legendFormat": "wouldEnforce ratio (overall)"
+          }
+        ],
+        "thresholds": [
+          { "value": 0.05, "color": "orange", "label": "Promote gate threshold (%5)" }
+        ]
+      },
+      {
+        "title": "Promote Gate — Pass/Fail",
+        "description": "Shadow → enforce geçiş kriterleri: tümü yeşil = geçiş güvenli",
+        "type": "stat",
+        "gridPos": { "h": 8, "w": 24, "x": 0, "y": 40 },
+        "options": {
+          "colorMode": "background",
+          "graphMode": "none",
+          "textMode": "value_and_name",
+          "orientation": "horizontal"
+        },
+        "targets": [
+          {
+            "expr": "(sum(rate(guard_shadow_would_enforce_total[48h])) / clamp_min(sum(rate(guard_decision_total{guardMode=\"shadow\"}[48h])), 1)) <= 0.05",
+            "legendFormat": "wouldEnforce ≤ %5"
+          },
+          {
+            "expr": "histogram_quantile(0.99, sum(rate(guard_snapshot_duration_seconds_bucket{guardMode=\"shadow\"}[48h])) by (le)) <= 0.01",
+            "legendFormat": "latency p99 ≤ 10ms"
+          },
+          {
+            "expr": "absent(ALERTS{alertname=~\"GuardCAS.*|GuardDB.*|GuardClock.*|GuardAlert.*|GuardKill.*\", alertstate=\"firing\"}) == 1 or (count(ALERTS{alertname=~\"GuardCAS.*|GuardDB.*|GuardClock.*|GuardAlert.*|GuardKill.*\", alertstate=\"firing\"}) == 0)",
+            "legendFormat": "A1–A5 alert yok"
+          },
+          {
+            "expr": "absent(ALERTS{alertname=\"GuardShadowDriftHigh\", alertstate=\"firing\"}) == 1",
+            "legendFormat": "A6 drift yok"
+          },
+          {
+            "expr": "absent(ALERTS{alertname=\"GuardShadowLatencyOverhead\", alertstate=\"firing\"}) == 1",
+            "legendFormat": "A7 latency overhead yok"
+          }
+        ],
+        "fieldConfig": {
+          "defaults": {
+            "mappings": [
+              { "type": "value", "options": { "1": { "text": "PASS", "color": "green" } } },
+              { "type": "value", "options": { "0": { "text": "FAIL", "color": "red" } } }
+            ]
+          }
+        }
+      }
+    ]
+  }
+}

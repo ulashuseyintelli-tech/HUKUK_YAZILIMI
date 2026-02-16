@@ -26,6 +26,8 @@ import {
 } from './escalation-hysteresis.types';
 import { SimulationMetricsService } from '../simulation-api/simulation-metrics.service';
 import { SimulationFeatureFlagService } from '../simulation-api/simulation-feature-flag.service';
+import { enforceGuardDecision } from '../simulation-api/guards/guard-enforcement';
+import { GuardOperation, type GuardDecisionSnapshot } from '../simulation-api/guards/guard-policy-resolver.types';
 
 // ============================================================================
 // Default config (overridable via constructor)
@@ -76,7 +78,22 @@ export class HysteresisEscalationService {
     incidentId: string,
     metricValue: number,
     now: Date = new Date(),
+    guardSnapshot?: GuardDecisionSnapshot,
   ): Promise<HysteresisEvaluationResult> {
+    // Guard enforcement (defense-in-depth — interceptor already short-circuits)
+    const guardCheck = enforceGuardDecision(guardSnapshot, GuardOperation.EVALUATE);
+    if (!guardCheck.allowed) {
+      this.logger.debug('[HysteresisEscalation] Guard blocked', { reason: guardCheck.reason });
+      try { this.metrics.incGuardHold(guardCheck.reason ?? 'UNKNOWN'); } catch { /* best-effort */ }
+      return {
+        decision: { action: 'HOLD', reason: 'GUARD_BLOCKED' },
+        previousLevel: 'NONE',
+        newLevel: 'NONE',
+        incidentId,
+        transitioned: false,
+      };
+    }
+
     // Feature flag check — disabled → freeze
     if (!this.featureFlag.isSimulationEnabled()) {
       this.logger.debug('[HysteresisEscalation] Feature flag disabled, returning HOLD');
@@ -107,10 +124,10 @@ export class HysteresisEscalationService {
       capturedDecision.action === 'ESCALATE' ||
       capturedDecision.action === 'DEESCALATE';
 
-    // Metrics: churn on level transition
+    // Metrics: churn on level transition (best-effort — MI-1)
     if (transitioned) {
       const direction = capturedDecision.action === 'ESCALATE' ? 'up' : 'down';
-      this.metrics.incEscalationChurn(incidentId, direction);
+      try { this.metrics.incEscalationChurn(incidentId, direction); } catch { /* best-effort */ }
 
       this.logger.log('[HysteresisEscalation] Level transition', {
         incidentId,
