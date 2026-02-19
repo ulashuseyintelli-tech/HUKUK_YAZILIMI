@@ -54,6 +54,31 @@ import {
 } from './guard-telemetry';
 
 // ============================================================================
+// Drift Metric Callback (SD-1)
+// ============================================================================
+
+/**
+ * Callback for drift metric emission.
+ * Called by interceptor when reasonCodes contain DRIFT:* prefix (structural drift)
+ * or DRIFT_PROVIDER_ERROR (provider failure — separate counter).
+ * Decoupled from SimulationMetricsService for testability.
+ */
+export interface DriftMetricEmitter {
+  incSimulationDrift(type: string, operation: string, guardMode: string): void;
+  incDriftProviderError(operation: string, guardMode: string): void;
+}
+
+/** Noop drift metric emitter — safe default */
+export class NoopDriftMetricEmitter implements DriftMetricEmitter {
+  incSimulationDrift(_type: string, _operation: string, _guardMode: string): void {
+    // intentionally empty
+  }
+  incDriftProviderError(_operation: string, _guardMode: string): void {
+    // intentionally empty
+  }
+}
+
+// ============================================================================
 // Operation Resolver
 // ============================================================================
 
@@ -199,6 +224,7 @@ export class GuardInterceptor implements NestInterceptor {
     private readonly operationResolver: OperationResolver,
     private readonly tenantResolver: TenantResolver,
     private readonly telemetry: GuardTelemetry = new NoopGuardTelemetry(),
+    private readonly driftMetricEmitter: DriftMetricEmitter = new NoopDriftMetricEmitter(),
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
@@ -245,6 +271,29 @@ export class GuardInterceptor implements NestInterceptor {
         wouldEnforce,
         snapshotDurationMs,
       });
+    } catch {
+      // best-effort: swallow — guard decision is not held hostage
+    }
+
+    // ── SD-1: Drift metric emit (interceptor responsibility) ────────
+    // Condition: reasonCodes contain DRIFT:* prefix (FG-4 gating).
+    // DRIFT_PROVIDER_ERROR → separate counter (pipeline health, not structural drift).
+    // Kill-switch BLOCK_503 → no DRIFT:* → no drift metric.
+    // Best-effort: swallow errors.
+    try {
+      const driftReasonCodes = snapshot.reasonCodes.filter(
+        (r) => r.startsWith('DRIFT:'),
+      );
+      if (driftReasonCodes.length > 0) {
+        for (const rc of driftReasonCodes) {
+          const driftType = rc.slice('DRIFT:'.length);
+          this.driftMetricEmitter.incSimulationDrift(driftType, operation, guardMode);
+        }
+      }
+      // Provider error → separate counter
+      if (snapshot.reasonCodes.includes('DRIFT_PROVIDER_ERROR')) {
+        this.driftMetricEmitter.incDriftProviderError(operation, guardMode);
+      }
     } catch {
       // best-effort: swallow — guard decision is not held hostage
     }

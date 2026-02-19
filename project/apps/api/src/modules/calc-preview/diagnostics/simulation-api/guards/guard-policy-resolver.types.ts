@@ -183,6 +183,8 @@ export interface TenantGuardConfig {
   readonly allowedOpsInDegradeMode: readonly DegradeAllowedOp[];
   /** Guard mode — disabled/shadow/enforce (default: from globalGuardMode) */
   readonly guardMode: GuardMode;
+  /** SD-1: Enable drift guard at P1.5 — default false for backward compatibility */
+  readonly driftGuardEnabled: boolean;
 }
 
 // ============================================================================
@@ -344,6 +346,7 @@ export function resolveTenantConfig(
       thresholds: { ...config.globalDefaults },
       allowedOpsInDegradeMode: [...config.globalDegradeAllowlist],
       guardMode: config.globalGuardMode ?? 'disabled',
+      driftGuardEnabled: false,
     };
   }
 
@@ -357,6 +360,7 @@ export function resolveTenantConfig(
       ? [...override.allowedOpsInDegradeMode]
       : [...config.globalDegradeAllowlist],
     guardMode: override.guardMode ?? config.globalGuardMode ?? 'disabled',
+    driftGuardEnabled: override.driftGuardEnabled ?? false,
   };
 }
 

@@ -45,6 +45,8 @@ import {
   type GuardDecisionSnapshot,
   type RiskContextSnapshot,
 } from './guard-policy-resolver.types';
+import type { DriftInput } from './drift-guard.types';
+import { evaluateDrift } from './drift-guard';
 
 /**
  * Resolve guard policy — pure function, deterministic.
@@ -54,6 +56,8 @@ import {
  * @param riskContext - Risk context snapshot from SignalWindowEngine
  * @param config - Global guard config (includes tenant overrides)
  * @param nowMs - Current time in ms (injected, never Date.now())
+ * @param driftInput - Optional drift input (SD-1 P1.5 — backward compatible)
+ * @param driftProviderError - True when DriftInputProvider threw (fail-closed)
  * @returns Immutable GuardDecisionSnapshot
  */
 export function resolveGuardPolicy(
@@ -62,6 +66,8 @@ export function resolveGuardPolicy(
   riskContext: RiskContextSnapshot,
   config: GuardConfig,
   nowMs: number,
+  driftInput?: DriftInput,
+  driftProviderError?: boolean,
 ): GuardDecisionSnapshot {
   const tenantConfig = resolveTenantConfig(tenantId, config);
   const reasonCodes: string[] = [];
@@ -70,6 +76,25 @@ export function resolveGuardPolicy(
   if (tenantConfig.killSwitchActive) {
     reasonCodes.push('KILL_SWITCH_ACTIVE');
     return snap(GuardDecision.BLOCK_503, null, reasonCodes, config, riskContext, tenantId, nowMs);
+  }
+
+  // ── P1.5: Drift guard (SD-1) ─────────────────────────────────────
+  // Provider failure → fail-closed: BLOCK_503 + DRIFT_PROVIDER_ERROR (D2.1, R5.5, R5.6).
+  // Shadow: interceptor proceeds (next.handle), Enforce: 503 block.
+  if (tenantConfig.driftGuardEnabled && driftProviderError) {
+    reasonCodes.push('DRIFT_PROVIDER_ERROR');
+    return snap(GuardDecision.BLOCK_503, 'DRIFT_BLOCKED', reasonCodes, config, riskContext, tenantId, nowMs);
+  }
+
+  // Normal drift evaluation when driftGuardEnabled=true AND driftInput provided.
+  // Resolver always returns BLOCK_503 for drift — shadow/enforce split
+  // is handled by the interceptor (D2.3).
+  if (tenantConfig.driftGuardEnabled && driftInput) {
+    const driftVerdict = evaluateDrift(driftInput);
+    if (driftVerdict.isDrift) {
+      reasonCodes.push(...driftVerdict.reasonCodes);
+      return snap(GuardDecision.BLOCK_503, 'DRIFT_BLOCKED', reasonCodes, config, riskContext, tenantId, nowMs);
+    }
   }
 
   // ── P2: Missing required signals (fail-closed) ───────────────────

@@ -332,3 +332,67 @@ describe('Mid-flight config change', () => {
     expect(snapshot2.decision).toBe(GuardDecision.BLOCK_503);
   });
 });
+
+// ============================================================================
+// FG-1: Single-read snapshot semantics (SD-1 Final Gate)
+// ============================================================================
+
+describe('FG-1: Single-read snapshot semantics', () => {
+  it('configProvider.getConfig() called exactly once per createSnapshot()', () => {
+    const config: GuardConfig = {
+      ...DEFAULT_GUARD_CONFIG,
+      globalGuardMode: 'enforce',
+    };
+    const configProvider = new StaticGuardConfigProvider(config);
+    const spy = jest.spyOn(configProvider, 'getConfig');
+
+    const clock = new FixedClock(NOW_MS);
+    const signals = new InMemoryRiskSignalProvider(SIGNAL_CONFIGS);
+    signals.addSamples('t1', [
+      ...freshSamples('casConflictRate', 0.01),
+      ...freshSamples('dbTimeoutRate', 0.01),
+      ...freshSamples('clockSkewMs', 10),
+    ]);
+
+    const factory = new GuardDecisionSnapshotFactory(configProvider, signals, clock);
+    factory.createSnapshot('t1', GuardOperation.PROMOTE);
+
+    // Config read exactly once per createSnapshot call
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
+  it('driftInputProvider.getDriftInput() called exactly once per createSnapshot()', () => {
+    const config: GuardConfig = {
+      ...DEFAULT_GUARD_CONFIG,
+      globalGuardMode: 'enforce',
+      tenantOverrides: { t1: { driftGuardEnabled: true } },
+    };
+
+    const { StaticDriftInputProvider } = require('../drift-input-provider');
+    const driftInput = {
+      tenantId: 't1',
+      operation: GuardOperation.PROMOTE,
+      policyVersion: '1.0.0',
+      nowMs: NOW_MS,
+      expectedSchemaVersion: 'v1',
+      actualSchemaVersion: 'v1',
+    };
+    const driftProvider = new StaticDriftInputProvider(driftInput);
+    const spy = jest.spyOn(driftProvider, 'getDriftInput');
+
+    const clock = new FixedClock(NOW_MS);
+    const configProvider = new StaticGuardConfigProvider(config);
+    const signals = new InMemoryRiskSignalProvider(SIGNAL_CONFIGS);
+    signals.addSamples('t1', [
+      ...freshSamples('casConflictRate', 0.01),
+      ...freshSamples('dbTimeoutRate', 0.01),
+      ...freshSamples('clockSkewMs', 10),
+    ]);
+
+    const factory = new GuardDecisionSnapshotFactory(configProvider, signals, clock, driftProvider);
+    factory.createSnapshot('t1', GuardOperation.PROMOTE);
+
+    // DriftInput provider called exactly once per createSnapshot
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+});

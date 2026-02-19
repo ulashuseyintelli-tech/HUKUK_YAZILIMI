@@ -1,17 +1,25 @@
 /**
  * Simulation Metrics Service
  *
- * Sprint 3 - Task 1.3
+ * Sprint 3 - Task 1.3 → I0 Metrics Runway refactor
  *
- * Prometheus counters for promote, drift, escalation observability.
+ * I0 scope metrics (prom-client):
+ *   - simulation_drift_total{type, operation, guardMode}
+ *   - drift_provider_errors_total{operation, guardMode}
+ *   - kill_switch_state{tenant, operation}
  *
+ * Non-I0 metrics remain as stub counters — will be migrated in later iterations.
+ *
+ * @see .kiro/specs/i0-metrics-runway/design.md
  * @see .kiro/specs/sprint-3-deploy-ready/design.md
  */
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, Inject, Optional, Logger } from '@nestjs/common';
+import { Counter, Gauge, Registry } from 'prom-client';
+import { DRIFT_TYPE_VALUES } from './guards/drift-guard.types';
 
 // ============================================================================
-// Counter wrapper (prom-client agnostic for now)
+// Stub counter wrapper (non-I0 metrics — prom-client migration deferred)
 // ============================================================================
 
 interface CounterLike {
@@ -19,7 +27,6 @@ interface CounterLike {
 }
 
 function createCounter(name: string, help: string, labelNames: string[] = []): CounterLike {
-  // TODO: Replace with prom-client Counter once @nestjs/prometheus or prom-client is wired
   let _total = 0;
   return {
     inc(_labels?: Record<string, string>, value = 1) {
@@ -34,6 +41,15 @@ function createCounter(name: string, help: string, labelNames: string[] = []): C
 
 @Injectable()
 export class SimulationMetricsService {
+  private readonly logger = new Logger(SimulationMetricsService.name);
+
+  /** Closed-set whitelist for type label — SD-1 DriftType enum */
+  private static readonly ALLOWED_DRIFT_TYPES: ReadonlySet<string> = new Set(
+    DRIFT_TYPE_VALUES as readonly string[],
+  );
+
+  // ── Non-I0 stub counters (unchanged) ─────────────────────────────
+
   private readonly promoteSuccessTotal = createCounter(
     'promote_success_total',
     'Total successful promote requests',
@@ -76,7 +92,7 @@ export class SimulationMetricsService {
     ['fault'],
   );
 
-  // ── Guard tripwire metrics (Task 6.2) ─────────────────────────────
+  // ── Non-I0 stub tripwire counters (unchanged) ────────────────────
 
   private readonly dbWriteTimeoutTotal = createCounter(
     'db_write_timeout_total',
@@ -91,11 +107,39 @@ export class SimulationMetricsService {
     'Total guard-forced HOLD decisions',
     ['reason'],
   );
-  private readonly killSwitchStateGauge = createCounter(
-    'kill_switch_state',
-    'Kill-switch state (1=active, 0=inactive)',
-    ['tenant', 'operation'],
-  );
+
+  // ── I0 prom-client metrics ───────────────────────────────────────
+
+  private readonly simulationDriftTotal: Counter;
+  private readonly driftProviderErrorsTotal: Counter;
+  private readonly killSwitchStateGauge: Gauge;
+
+  constructor(@Inject('PROM_REGISTRY') @Optional() registry?: Registry) {
+    const reg = registry ?? new Registry();
+
+    this.simulationDriftTotal = new Counter({
+      name: 'simulation_drift_total',
+      help: 'Total runtime drift detections',
+      labelNames: ['type', 'operation', 'guardMode'],
+      registers: [reg],
+    });
+
+    this.driftProviderErrorsTotal = new Counter({
+      name: 'drift_provider_errors_total',
+      help: 'Total DriftInputProvider failures (exception caught at factory)',
+      labelNames: ['operation', 'guardMode'],
+      registers: [reg],
+    });
+
+    this.killSwitchStateGauge = new Gauge({
+      name: 'kill_switch_state',
+      help: 'Kill-switch state (1=active, 0=inactive)',
+      labelNames: ['tenant', 'operation'],
+      registers: [reg],
+    });
+  }
+
+  // ── Non-I0 methods (unchanged) ───────────────────────────────────
 
   incPromoteSuccess(): void {
     this.promoteSuccessTotal.inc();
@@ -133,8 +177,6 @@ export class SimulationMetricsService {
     this.phase7FaultsTotal.inc({ fault });
   }
 
-  // ── Guard tripwire methods (Task 6.2) ─────────────────────────────
-
   incDbWriteTimeout(): void {
     this.dbWriteTimeoutTotal.inc();
   }
@@ -147,13 +189,45 @@ export class SimulationMetricsService {
    * Increment guard HOLD counter.
    * reason label: bounded enum — DEGRADED | STALE_FAILSAFE | MISSING_SIGNALS |
    *   INSUFFICIENT_SIGNALS | THRESHOLD_BREACH | UNKNOWN
-   * NOT free-form reasonCodes (cardinality risk).
    */
   incGuardHold(reason: string): void {
     this.guardHoldTotal.inc({ reason });
   }
 
+  // ── I0 prom-client methods ───────────────────────────────────────
+
+  /**
+   * Set kill-switch state gauge.
+   */
   setKillSwitchState(tenant: string, operation: string, active: boolean): void {
-    this.killSwitchStateGauge.inc({ tenant, operation }, active ? 1 : 0);
+    this.killSwitchStateGauge.set({ tenant, operation }, active ? 1 : 0);
+  }
+
+  /**
+   * Increment simulation drift counter.
+   * Called by interceptor when reasonCodes contain DRIFT:* prefix.
+   * Labels: type (DriftType enum), operation, guardMode — all bounded.
+   *
+   * Runtime whitelist: type ∉ DriftType → warning log + skip (no metric pollution).
+   * Gating rule: DRIFT_PROVIDER_ERROR does NOT trigger this counter.
+   * DRIFT_PROVIDER_ERROR starts with 'DRIFT_', not 'DRIFT:' — excluded by prefix check.
+   */
+  incSimulationDrift(type: string, operation: string, guardMode: string): void {
+    if (!SimulationMetricsService.ALLOWED_DRIFT_TYPES.has(type)) {
+      this.logger.warn(
+        `incSimulationDrift called with unknown type="${type}" — skipping metric. Allowed: ${[...SimulationMetricsService.ALLOWED_DRIFT_TYPES].join(', ')}`,
+      );
+      return;
+    }
+    this.simulationDriftTotal.inc({ type, operation, guardMode });
+  }
+
+  /**
+   * Increment drift provider error counter.
+   * Called by interceptor when reasonCodes contain DRIFT_PROVIDER_ERROR.
+   * Separate from simulation_drift_total — provider error is pipeline health, not structural drift.
+   */
+  incDriftProviderError(operation: string, guardMode: string): void {
+    this.driftProviderErrorsTotal.inc({ operation, guardMode });
   }
 }

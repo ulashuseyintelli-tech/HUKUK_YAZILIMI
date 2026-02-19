@@ -6,12 +6,17 @@
  * - Content-Type is Prometheus exposition format
  * - Body contains known metric names from each source
  * - No metric name collisions across sources
+ * - I0 prom-client metrics present (hybrid aggregator)
+ *
+ * @see .kiro/specs/i0-metrics-runway/requirements.md R2, R7, R11.1
  */
 
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
+import { Registry } from 'prom-client';
 import { MetricsAggregatorModule } from '../metrics-aggregator.module';
+import { MetricsRegistryModule } from '../../metrics-registry/metrics-registry.module';
 
 // Import metric mutators to ensure non-empty output
 import {
@@ -26,7 +31,7 @@ describe('MetricsAggregatorController', () => {
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
-      imports: [MetricsAggregatorModule],
+      imports: [MetricsRegistryModule, MetricsAggregatorModule],
     }).compile();
 
     app = moduleFixture.createNestApplication();
@@ -49,7 +54,6 @@ describe('MetricsAggregatorController', () => {
   });
 
   it('should contain carrier_* metrics (carrier-lifecycle source)', async () => {
-    // Set a gauge so it appears in output
     redriveKillSwitchGauge.set(1);
     redriveDisabledMetric.inc();
     redriveTxDurationHistogram.observe(0.05);
@@ -57,15 +61,10 @@ describe('MetricsAggregatorController', () => {
     const res = await request(app.getHttpServer()).get('/metrics');
     const body: string = res.text;
 
-    // Kill-switch gauge
     expect(body).toContain('carrier_redrive_kill_switch_active');
-    // Disabled counter
     expect(body).toContain('carrier_redrive_disabled_total');
-    // Tx duration histogram buckets
     expect(body).toContain('carrier_redrive_tx_duration_seconds_bucket');
-    // Backoff histogram
     expect(body).toContain('carrier_redrive_backoff_seconds');
-    // Rejected counter
     expect(body).toContain('carrier_redrive_rejected_total');
   });
 

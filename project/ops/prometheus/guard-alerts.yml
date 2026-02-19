@@ -154,3 +154,66 @@ groups:
             Signal engine veya config provider performansı araştırılmalıdır.
             Enforce'a geçiş bu overhead düşene kadar ertelenmelidir.
           runbook: "docs/guard-ops-runbook.md#canary-rollout-prosedürü"
+
+      # ─────────────────────────────────────────────────────────────────
+      # A8: DriftDetectedShadow — SD-1 Structural Drift (shadow)
+      # Shadow modda herhangi bir structural drift tespit edildi
+      # Config/schema/ruleset uyumsuzluğu — config drift uyarısı
+      # ─────────────────────────────────────────────────────────────────
+      - alert: GuardDriftDetectedShadow
+        expr: increase(simulation_drift_total{guardMode="shadow"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+          component: guard
+        annotations:
+          summary: "Shadow modda structural drift tespit edildi"
+          description: >-
+            simulation_drift_total shadow modda artış gösteriyor.
+            Config, schema veya ruleset uyumsuzluğu var. Enforce'a
+            geçmeden önce drift kaynağı araştırılmalıdır.
+            Drift type: {{ $labels.type }}
+          runbook: "docs/guard-ops-runbook.md#drift-triage"
+
+      # ─────────────────────────────────────────────────────────────────
+      # A8e: DriftDetectedEnforce — SD-1 Structural Drift (enforce)
+      # Enforce modda drift → aktif trafik kesiliyor, incident
+      # ─────────────────────────────────────────────────────────────────
+      - alert: GuardDriftDetectedEnforce
+        expr: increase(simulation_drift_total{guardMode="enforce"}[5m]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          team: backend
+          component: guard
+        annotations:
+          summary: "Enforce modda structural drift — trafik kesiliyor"
+          description: >-
+            simulation_drift_total enforce modda artış gösteriyor.
+            Drift-triggered BLOCK_503 aktif — istekler reddediliyor.
+            Acil müdahale: driftGuardEnabled=false ile devre dışı bırakın
+            veya drift kaynağını düzeltin.
+            Drift type: {{ $labels.type }}
+          runbook: "docs/guard-ops-runbook.md#drift-triage"
+
+      # ─────────────────────────────────────────────────────────────────
+      # A9: DriftProviderError — SD-1 Provider Failure (pipeline health)
+      # DriftInputProvider exception — her modda önemli
+      # ─────────────────────────────────────────────────────────────────
+      - alert: GuardDriftProviderError
+        expr: increase(drift_provider_errors_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: backend
+          component: guard
+        annotations:
+          summary: "DriftInputProvider hata veriyor — pipeline health"
+          description: >-
+            drift_provider_errors_total artış gösteriyor. Drift input
+            kaynağına (config store, header, configmap) erişilemiyor.
+            Provider fail-closed davranıyor (BLOCK_503 + DRIFT_PROVIDER_ERROR).
+            Shadow modda trafik kesilmez ama enforce modda kesilir.
+            Provider implementasyonunu ve bağımlılıklarını kontrol edin.
+          runbook: "docs/guard-ops-runbook.md#drift-provider-error"

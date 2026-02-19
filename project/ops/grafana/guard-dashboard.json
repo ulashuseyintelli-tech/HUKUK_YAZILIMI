@@ -140,10 +140,44 @@
         ]
       },
       {
+        "title": "SD-1: Structural Drift Rate (by type)",
+        "description": "simulation_drift_total — structural drift detections by DriftType",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+        "targets": [
+          {
+            "expr": "sum(rate(simulation_drift_total[5m])) by (type)",
+            "legendFormat": "drift/{{type}}"
+          },
+          {
+            "expr": "sum(rate(simulation_drift_total[5m])) by (guardMode)",
+            "legendFormat": "mode/{{guardMode}}"
+          }
+        ],
+        "thresholds": [
+          { "value": 0, "color": "green", "label": "zero drift" }
+        ]
+      },
+      {
+        "title": "SD-1: Drift Provider Errors",
+        "description": "drift_provider_errors_total — DriftInputProvider failures (pipeline health)",
+        "type": "timeseries",
+        "gridPos": { "h": 8, "w": 12, "x": 0, "y": 40 },
+        "targets": [
+          {
+            "expr": "sum(rate(drift_provider_errors_total[5m])) by (operation)",
+            "legendFormat": "provider error/{{operation}}"
+          }
+        ],
+        "thresholds": [
+          { "value": 0, "color": "green", "label": "zero errors" }
+        ]
+      },
+      {
         "title": "Shadow Would-Enforce Rate",
         "description": "Shadow modda enforce edilseydi ne olurdu — wouldEnforce oranı",
         "type": "timeseries",
-        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 32 },
+        "gridPos": { "h": 8, "w": 12, "x": 12, "y": 40 },
         "targets": [
           {
             "expr": "sum(rate(guard_shadow_would_enforce_total[5m])) by (operation)",
@@ -162,7 +196,7 @@
         "title": "Promote Gate — Pass/Fail",
         "description": "Shadow → enforce geçiş kriterleri: tümü yeşil = geçiş güvenli",
         "type": "stat",
-        "gridPos": { "h": 8, "w": 24, "x": 0, "y": 40 },
+        "gridPos": { "h": 8, "w": 24, "x": 0, "y": 48 },
         "options": {
           "colorMode": "background",
           "graphMode": "none",
@@ -189,6 +223,14 @@
           {
             "expr": "absent(ALERTS{alertname=\"GuardShadowLatencyOverhead\", alertstate=\"firing\"}) == 1",
             "legendFormat": "A7 latency overhead yok"
+          },
+          {
+            "expr": "absent(ALERTS{alertname=~\"GuardDriftDetected.*\", alertstate=\"firing\"}) == 1",
+            "legendFormat": "A8 structural drift yok"
+          },
+          {
+            "expr": "absent(ALERTS{alertname=\"GuardDriftProviderError\", alertstate=\"firing\"}) == 1",
+            "legendFormat": "A9 provider error yok"
           }
         ],
         "fieldConfig": {
@@ -199,6 +241,56 @@
             ]
           }
         }
+      },
+      {
+        "title": "T0 Shadow Deploy",
+        "type": "row",
+        "collapsed": true,
+        "gridPos": { "h": 1, "w": 24, "x": 0, "y": 56 },
+        "panels": [
+          {
+            "title": "T0: Structural Drift Rate",
+            "description": "simulation_drift_total — T0 canary drift rate by type (zero = safe)",
+            "type": "timeseries",
+            "gridPos": { "h": 8, "w": 8, "x": 0, "y": 57 },
+            "targets": [
+              {
+                "expr": "sum(rate(simulation_drift_total[5m])) by (type)",
+                "legendFormat": "drift/{{type}}"
+              }
+            ],
+            "thresholds": [
+              { "value": 0, "color": "green", "label": "zero drift" }
+            ]
+          },
+          {
+            "title": "T0: Drift Provider Errors",
+            "description": "drift_provider_errors_total — T0 canary provider error rate (zero = safe)",
+            "type": "timeseries",
+            "gridPos": { "h": 8, "w": 8, "x": 8, "y": 57 },
+            "targets": [
+              {
+                "expr": "sum(rate(drift_provider_errors_total[5m])) by (operation)",
+                "legendFormat": "provider error/{{operation}}"
+              }
+            ],
+            "thresholds": [
+              { "value": 0, "color": "green", "label": "zero errors" }
+            ]
+          },
+          {
+            "title": "T0: HTTP 503 Trend (NR-3)",
+            "description": "http_responses_total{status=503} — NR-3 baseline comparison (shadow modda 503 artışı olmamalı)",
+            "type": "timeseries",
+            "gridPos": { "h": 8, "w": 8, "x": 16, "y": 57 },
+            "targets": [
+              {
+                "expr": "sum(rate(http_responses_total{status=\"503\"}[5m]))",
+                "legendFormat": "503 rate"
+              }
+            ]
+          }
+        ]
       }
     ]
   }

@@ -15,12 +15,14 @@
 
 import type { GuardClock } from './guard-clock';
 import type { GuardConfigProvider } from './guard-config-provider';
+import type { DriftInputProvider } from './drift-input-provider';
 import type { RiskSignalProvider } from './risk-signal-provider';
 import type {
   GuardConfig,
   GuardDecisionSnapshot,
   GuardOperation,
 } from './guard-policy-resolver.types';
+import { resolveTenantConfig } from './guard-policy-resolver.types';
 import { resolveGuardPolicy } from './guard-policy-resolver';
 import { SignalWindowEngine } from './signal-window-engine';
 
@@ -44,6 +46,7 @@ export class GuardDecisionSnapshotFactory {
     private readonly configProvider: GuardConfigProvider,
     private readonly signalProvider: RiskSignalProvider,
     private readonly clock: GuardClock,
+    private readonly driftInputProvider?: DriftInputProvider,
   ) {
     this.engine = new SignalWindowEngine();
   }
@@ -79,6 +82,30 @@ export class GuardDecisionSnapshotFactory {
     const config = this.configProvider.getConfig();
     const signalInputs = this.signalProvider.getSignalInputs(tenantId, nowMs);
     const riskContext = this.engine.computeRiskContext(signalInputs, nowMs);
-    return resolveGuardPolicy(tenantId, operation, riskContext, config, nowMs);
+
+    // SD-1: Fetch drift input only when ALL conditions met:
+    //   1. driftGuardEnabled=true
+    //   2. kill-switch NOT active (D2.2: no provider IO when kill-switch ON)
+    //   3. provider exists
+    // Provider exception → fail-closed (DRIFT_PROVIDER_ERROR — D2.1, R5.5, R5.6).
+    const tenantConfig = resolveTenantConfig(tenantId, config);
+    let driftInput: ReturnType<DriftInputProvider['getDriftInput']> | undefined;
+    let driftProviderError = false;
+
+    if (
+      tenantConfig.driftGuardEnabled &&
+      !tenantConfig.killSwitchActive &&
+      this.driftInputProvider
+    ) {
+      try {
+        driftInput = this.driftInputProvider.getDriftInput(tenantId, operation, nowMs);
+      } catch {
+        // Provider failure → fail-closed: treat as drift (DRIFT_PROVIDER_ERROR).
+        // Shadow: interceptor proceeds (next.handle), Enforce: BLOCK_503.
+        driftProviderError = true;
+      }
+    }
+
+    return resolveGuardPolicy(tenantId, operation, riskContext, config, nowMs, driftInput, driftProviderError);
   }
 }

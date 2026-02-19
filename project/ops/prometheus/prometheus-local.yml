@@ -1,0 +1,18 @@
+# Prometheus config for local metrics harness
+# I0 Metrics Runway
+#
+# Scrapes the NestJS API /metrics endpoint.
+# For Docker: target is host.docker.internal:3000 (app running on host)
+# For containerized app: change target to app:3000
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'api'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['host.docker.internal:3000']
+        labels:
+          env: 'local'

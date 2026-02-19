@@ -1,4 +1,4 @@
-import { Module, Logger, Type } from "@nestjs/common";
+import { Module, Logger, Type, MiddlewareConsumer, NestModule } from "@nestjs/common";
 import { ConfigModule } from "@nestjs/config";
 import { ScheduleModule } from "@nestjs/schedule";
 import { PrismaModule } from "./prisma/prisma.module";
@@ -75,6 +75,8 @@ import { AddressTaskModule } from "./modules/address-task/address-task.module";
 import { PolicyEngineModule } from "./modules/policy-engine/policy-engine.module";
 import { CalcPreviewModule } from "./modules/calc-preview/calc-preview.module";
 import { MetricsAggregatorModule } from "./modules/metrics-aggregator/metrics-aggregator.module";
+import { MetricsRegistryModule } from "./modules/metrics-registry/metrics-registry.module";
+import { HttpMetricsMiddleware } from "./modules/metrics-registry/http-metrics.middleware";
 // TODO: IcrabotModule geçici olarak devre dışı - Prisma client regenerate gerekli
 // import { IcrabotModule } from "./modules/icrabot/icrabot.module";
 
@@ -193,10 +195,15 @@ function getConditionalImports(): Type<unknown>[] {
     AddressTaskModule,
     PolicyEngineModule,
     CalcPreviewModule,
+    MetricsRegistryModule,
     MetricsAggregatorModule,
     // IcrabotModule, // TODO: Prisma client regenerate sonrası aktif et
     // Conditional imports (Sprint 2F)
     ...getConditionalImports(),
   ],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer) {
+    consumer.apply(HttpMetricsMiddleware).forRoutes('*');
+  }
+}

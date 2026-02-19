@@ -1,10 +1,12 @@
 /**
  * Metrics Aggregator Module
  *
- * Standalone module — no DI dependencies.
- * All metric sources are module-level singletons (stateless import).
+ * I0 Metrics Runway — Hybrid aggregator.
  *
- * Wire into AppModule to expose GET /metrics.
+ * PROM_REGISTRY is provided by MetricsRegistryModule (global).
+ * String-based metric sources are module-level singletons (stateless import).
+ *
+ * @see .kiro/specs/i0-metrics-runway/design.md
  */
 
 import { Module } from '@nestjs/common';
