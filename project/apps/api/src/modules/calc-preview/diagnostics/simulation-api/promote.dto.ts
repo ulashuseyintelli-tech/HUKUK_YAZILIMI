@@ -36,3 +36,14 @@ export interface PromoteDriftResponseDto {
   /** Top contributing metrics */
   topContributors: MetricDrift[];
 }
+
+// ============================================================================
+// Response — 503 GUARD_BLOCKED
+// ============================================================================
+
+export interface PromoteGuardBlockedResponseDto {
+  /** Guard decision that caused the block */
+  decision: string;
+  /** Human-readable reason for the block */
+  reason: string;
+}

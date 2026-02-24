@@ -51,7 +51,10 @@
 # ── İlgili dosyalar ──
 #
 #   Alert rules:  ops/prometheus/redrive-alerts.yml (Phase 13 — LOCKED)
+#                 ops/prometheus/simulation-alerts.yml (Sprint 3 — LOCKED)
+#                 ops/prometheus/guard-alerts.yml (Operational Guard — LOCKED)
 #   Runbook:      docs/redrive-ops-runbook.md
+#                 docs/guard-ops-runbook.md
 #
 # ═══════════════════════════════════════════════════════════════════
 
@@ -110,8 +113,10 @@ receivers:
 # Routing stratejisi:
 #   1. Root route: catch-all → slack-default (hiçbir şey kaybolmaz)
 #   2. team=backend + component=redrive → redrive alt route'u
-#   3. severity=critical → pagerduty-critical (repeat: 1h)
-#   4. severity=warning → slack-warning (repeat: 2h)
+#   3. team=backend + component=simulation → simulation alt route'u
+#   4. team=backend + component=guard → guard alt route'u (Stage-0)
+#   5. severity=critical → pagerduty-critical (repeat: 1h)
+#   6. severity=warning → slack-warning (repeat: 2h)
 #
 # group_by: [alertname, component] — component-level aggregation.
 #   - service label contract'ta yok (intentional)
@@ -167,6 +172,30 @@ route:
           continue: false
 
         # Warning → Slack (promote failure, drift, churn, kill-switch)
+        - match:
+            severity: warning
+          receiver: 'slack-warning'
+          repeat_interval: 2h
+          continue: false
+
+    # Guard alert'leri — team=backend, component=guard
+    # Stage-0 blocking prerequisite: Bu route olmadan guard alert'leri
+    # (ör. GuardDBTimeoutSpike critical) slack-default catch-all'a düşer.
+    # S1 route validation bu route'un varlığına bağlıdır.
+    - match:
+        team: backend
+        component: guard
+      group_by: ['alertname', 'component']
+
+      routes:
+        # Critical → PagerDuty (DB timeout spike, alert fire latency, drift enforce)
+        - match:
+            severity: critical
+          receiver: 'pagerduty-critical'
+          repeat_interval: 1h
+          continue: false
+
+        # Warning → Slack (CAS conflict storm, clock skew, shadow drift, latency overhead, provider error)
         - match:
             severity: warning
           receiver: 'slack-warning'

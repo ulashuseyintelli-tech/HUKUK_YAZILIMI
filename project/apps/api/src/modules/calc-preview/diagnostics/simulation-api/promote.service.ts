@@ -48,7 +48,8 @@ import { GuardOperation, type GuardDecisionSnapshot } from './guards/guard-polic
 export type PromoteResult =
   | { status: 'ACCEPTED'; requestId: string; createdAt: string }
   | { status: 'ALREADY_PROMOTED'; requestId: string; createdAt: string }
-  | { status: 'DRIFT_DETECTED'; driftScore: number; topContributors: MetricDrift[] };
+  | { status: 'DRIFT_DETECTED'; driftScore: number; topContributors: MetricDrift[] }
+  | { status: 'GUARD_BLOCKED'; guard: { decision: string; reason: string } };
 
 // ============================================================================
 // Snapshot Provider (injectable — InMemorySnapshotStore for now)
@@ -93,7 +94,10 @@ export class PromoteService {
     if (!guardCheck.allowed) {
       this.logger.debug('[PromoteService] Guard blocked', { reason: guardCheck.reason, decision: guardCheck.decision });
       try { this.metrics.incGuardHold(guardCheck.reason ?? 'UNKNOWN'); } catch { /* best-effort */ }
-      return { status: 'DRIFT_DETECTED', driftScore: 0, topContributors: [] };
+      return {
+        status: 'GUARD_BLOCKED',
+        guard: { decision: guardCheck.decision, reason: guardCheck.reason ?? 'UNKNOWN' },
+      };
     }
 
     // Phase-7: Config snapshot — captured once, immutable for request lifetime

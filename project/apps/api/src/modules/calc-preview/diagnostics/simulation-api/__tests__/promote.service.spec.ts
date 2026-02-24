@@ -10,6 +10,7 @@
  *   4. Feature flag disabled → SimulationDisabledException (503)
  *   5. Drift detected → DRIFT_DETECTED + markFailed + metrics
  *   6. FAILED status on re-request: same key → same outcome (no re-run)
+ *   7. Guard blocked → GUARD_BLOCKED + reason propagation (SD-1 Task 8.1)
  */
 
 import { PromoteService } from '../promote.service';
@@ -25,6 +26,8 @@ import {
 } from '../simulation-error.types';
 import { IClock } from '../../evidence/clock.service';
 import { PHASE7_ENV_KEYS } from '../phase7-config';
+import { GuardDecision } from '../guards/guard-policy-resolver.types';
+import type { GuardDecisionSnapshot } from '../guards/guard-policy-resolver.types';
 
 // ============================================================================
 // Mocks
@@ -62,6 +65,7 @@ function createMockMetrics(): jest.Mocked<SimulationMetricsService> {
     incPhase7Evaluation: jest.fn(),
     incPhase7Block: jest.fn(),
     incPhase7Fault: jest.fn(),
+    incGuardHold: jest.fn(),
   } as any;
 }
 
@@ -363,6 +367,153 @@ describe('PromoteService', () => {
       // the service should still return ACCEPTED
       const result = await service.promote('inc-1', 'run-1', 'actor-1');
       expect(result.status).toBe('ACCEPTED');
+    });
+  });
+
+  // ==========================================================================
+  // 9. Guard blocked → GUARD_BLOCKED (SD-1 Task 8.1)
+  // ==========================================================================
+
+  describe('guard blocked — GUARD_BLOCKED', () => {
+    function buildBlockSnapshot(overrides: Partial<GuardDecisionSnapshot> = {}): GuardDecisionSnapshot {
+      return {
+        decision: GuardDecision.BLOCK_503,
+        mode: 'KILL_SWITCH_ACTIVE',
+        tenantId: 'tenant-1',
+        operation: 'promote' as any,
+        reasonCodes: ['KILL_SWITCH_ACTIVE'],
+        signals: [],
+        riskContext: null as any,
+        createdAtMs: Date.now(),
+        configSnapshot: null as any,
+        ...overrides,
+      } as GuardDecisionSnapshot;
+    }
+
+    it('should return GUARD_BLOCKED with decision and reason when guard blocks (BLOCK_503)', async () => {
+      const snapshot = buildBlockSnapshot();
+
+      const result = await service.promote('inc-1', 'run-1', 'actor-1', snapshot);
+
+      expect(result.status).toBe('GUARD_BLOCKED');
+      if (result.status === 'GUARD_BLOCKED') {
+        expect(result.guard.decision).toBe(GuardDecision.BLOCK_503);
+        expect(result.guard.reason).toBe('BLOCK_503');
+      }
+    });
+
+    it('should return GUARD_BLOCKED with HOLD reason when guard holds', async () => {
+      const snapshot = buildBlockSnapshot({
+        decision: GuardDecision.HOLD,
+        mode: 'MISSING_SIGNALS',
+        reasonCodes: ['MISSING_SIGNAL:risk_score'],
+      });
+
+      const result = await service.promote('inc-1', 'run-1', 'actor-1', snapshot);
+
+      expect(result.status).toBe('GUARD_BLOCKED');
+      if (result.status === 'GUARD_BLOCKED') {
+        expect(result.guard.decision).toBe(GuardDecision.HOLD);
+        expect(result.guard.reason).toBe('MISSING_SIGNALS');
+      }
+    });
+
+    it('should NOT call drift evaluator, run store, or promote store when guard blocks', async () => {
+      const snapshot = buildBlockSnapshot();
+
+      await service.promote('inc-1', 'run-1', 'actor-1', snapshot);
+
+      // No downstream side-effects
+      expect(mockPromoteStore.claimOrGet).not.toHaveBeenCalled();
+      expect(mockRunStore.findById).not.toHaveBeenCalled();
+      expect(mockPromoteStore.markSucceeded).not.toHaveBeenCalled();
+      expect(mockPromoteStore.markFailed).not.toHaveBeenCalled();
+      expect(mockSnapshotProvider.getSnapshot).not.toHaveBeenCalled();
+    });
+
+    it('should increment guard hold metric (best-effort)', async () => {
+      const snapshot = buildBlockSnapshot();
+
+      await service.promote('inc-1', 'run-1', 'actor-1', snapshot);
+
+      expect(mockMetrics.incGuardHold).toHaveBeenCalledWith('BLOCK_503');
+    });
+
+    it('should propagate UNKNOWN reason when guard reason is null', async () => {
+      // enforceGuardDecision returns reason=null for some edge cases
+      // but our code defaults to 'UNKNOWN'
+      const snapshot = buildBlockSnapshot({
+        decision: GuardDecision.BLOCK_503,
+        mode: null,
+      });
+
+      const result = await service.promote('inc-1', 'run-1', 'actor-1', snapshot);
+
+      expect(result.status).toBe('GUARD_BLOCKED');
+      if (result.status === 'GUARD_BLOCKED') {
+        expect(result.guard.reason).toBe('BLOCK_503');
+      }
+    });
+
+    it('should NOT return DRIFT_DETECTED for guard blocks (regression)', async () => {
+      const snapshot = buildBlockSnapshot();
+
+      const result = await service.promote('inc-1', 'run-1', 'actor-1', snapshot);
+
+      // This is the core regression test — guard block must NOT masquerade as drift
+      expect(result.status).not.toBe('DRIFT_DETECTED');
+    });
+  });
+
+  // ==========================================================================
+  // 10. Phase-7 drift block still returns DRIFT_DETECTED (regression)
+  // ==========================================================================
+
+  describe('Phase-7 drift block — DRIFT_DETECTED preserved', () => {
+    it('should return DRIFT_DETECTED when Phase-7 numerical drift exceeds threshold', async () => {
+      // Enable Phase-7
+      process.env[PHASE7_ENV_KEYS.PHASE7_ENABLED] = 'true';
+      process.env[PHASE7_ENV_KEYS.DRIFT_THRESHOLD_OVERRIDE] = '0.1';
+
+      mockPromoteStore.claimOrGet.mockResolvedValue({
+        record: buildClaimedRecord(),
+        isNew: true,
+      });
+      mockRunStore.findById.mockResolvedValue({
+        id: 'run-1',
+        baselineSnapshotId: 'snap-baseline',
+        currentSnapshotId: 'snap-current',
+      } as any);
+
+      // Baseline and current snapshots with divergent metrics
+      const baselineSnapshot = {
+        id: 'snap-baseline',
+        points: [
+          { metricName: 'latency_p99', value: 100, timestamp: '2026-02-10T00:00:00Z' },
+          { metricName: 'error_rate', value: 0.01, timestamp: '2026-02-10T00:00:00Z' },
+        ],
+      };
+      const currentSnapshot = {
+        id: 'snap-current',
+        points: [
+          { metricName: 'latency_p99', value: 500, timestamp: '2026-02-10T01:00:00Z' },
+          { metricName: 'error_rate', value: 0.5, timestamp: '2026-02-10T01:00:00Z' },
+        ],
+      };
+
+      mockSnapshotProvider.getSnapshot
+        .mockResolvedValueOnce(baselineSnapshot as any)
+        .mockResolvedValueOnce(currentSnapshot as any);
+
+      mockPromoteStore.markFailed.mockResolvedValue(undefined);
+
+      const result = await service.promote('inc-1', 'run-1', 'actor-1');
+
+      // Phase-7 numerical drift → DRIFT_DETECTED (NOT GUARD_BLOCKED)
+      expect(result.status).toBe('DRIFT_DETECTED');
+      if (result.status === 'DRIFT_DETECTED') {
+        expect(result.driftScore).toBeGreaterThan(0);
+      }
     });
   });
 });

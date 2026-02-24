@@ -28,7 +28,7 @@ import { SimulationFeatureFlagGuard } from './guards/simulation-feature-flag.gua
 import { SimulationRBACGuard, SimulationTenant, SimulationTenantContext } from './guards/simulation-rbac.guard';
 import { SimulationRateLimitGuard } from './guards/simulation-rate-limit.guard';
 import { PromoteService, PromoteResult } from './promote.service';
-import { PromoteResponseDto, PromoteDriftResponseDto } from './promote.dto';
+import { PromoteResponseDto, PromoteDriftResponseDto, PromoteGuardBlockedResponseDto } from './promote.dto';
 
 // ============================================================================
 // Controller
@@ -48,7 +48,7 @@ export class PromoteController {
     @Param('runId') runId: string,
     @SimulationTenant() tenant: SimulationTenantContext,
     @Res({ passthrough: true }) res: Response,
-  ): Promise<PromoteResponseDto | PromoteDriftResponseDto> {
+  ): Promise<PromoteResponseDto | PromoteDriftResponseDto | PromoteGuardBlockedResponseDto> {
     const result = await this.promoteService.promote(incidentId, runId, tenant.userId);
 
     switch (result.status) {
@@ -60,6 +60,10 @@ export class PromoteController {
       case 'DRIFT_DETECTED':
         res.status(HttpStatus.CONFLICT);
         return { driftScore: result.driftScore, topContributors: result.topContributors };
+
+      case 'GUARD_BLOCKED':
+        res.status(HttpStatus.SERVICE_UNAVAILABLE);
+        return { decision: result.guard.decision, reason: result.guard.reason };
     }
   }
 }

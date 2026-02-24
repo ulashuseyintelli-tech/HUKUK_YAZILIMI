@@ -52,6 +52,10 @@ import {
   type GuardTelemetry,
   NoopGuardTelemetry,
 } from './guard-telemetry';
+import {
+  type AdaptiveShadowEvaluatorPort,
+  NoopAdaptiveShadowEvaluator,
+} from './adaptive-shadow-evaluator';
 
 // ============================================================================
 // Drift Metric Callback (SD-1)
@@ -225,6 +229,7 @@ export class GuardInterceptor implements NestInterceptor {
     private readonly tenantResolver: TenantResolver,
     private readonly telemetry: GuardTelemetry = new NoopGuardTelemetry(),
     private readonly driftMetricEmitter: DriftMetricEmitter = new NoopDriftMetricEmitter(),
+    private readonly adaptiveShadow: AdaptiveShadowEvaluatorPort = new NoopAdaptiveShadowEvaluator(),
   ) {}
 
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
@@ -296,6 +301,13 @@ export class GuardInterceptor implements NestInterceptor {
       }
     } catch {
       // best-effort: swallow — guard decision is not held hostage
+    }
+
+    // ── SD-2.5: Adaptive shadow evaluation — best-effort, zero impact on guard decision ──
+    try {
+      this.adaptiveShadow.evaluateIfEnabled(tenantId, operation);
+    } catch {
+      // R3-AC3: swallow — guard kararı etkilenmez
     }
 
     // ── NR-3: SHADOW → full compute, zero enforcement ───────────────
