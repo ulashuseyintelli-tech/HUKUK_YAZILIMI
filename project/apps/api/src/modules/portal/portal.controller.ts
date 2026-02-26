@@ -20,6 +20,7 @@ import { existsSync, unlinkSync, mkdirSync } from "fs";
 import { PortalService } from "./portal.service";
 import { PortalAuthGuard } from "./portal-auth.guard";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { LoginRateLimitGuard } from "../auth/guards/login-rate-limit.guard";
 
 // Dosya yükleme ayarları
 const portalDocStorage = diskStorage({
@@ -47,6 +48,7 @@ export class PortalController {
    * POST /api/portal/login
    */
   @Post("login")
+  @UseGuards(LoginRateLimitGuard)
   async login(@Body() body: { email: string; password: string }) {
     return this.portalService.login(body.email, body.password);
   }

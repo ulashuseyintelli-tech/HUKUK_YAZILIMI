@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
+import { maskIban } from '../../common/pii-mask.util';
 
 /**
  * Banka Entegrasyon Servisi
@@ -540,12 +541,12 @@ export class BankService {
   private async queryBalanceGaranti(iban: string): Promise<BankBalance> {
     // Garanti API entegrasyonu
     // Gerçek implementasyonda Garanti API'si çağrılacak
-    this.logger.log(`[GARANTI] Bakiye sorgusu: ${iban}`);
+    this.logger.log(`[GARANTI] Bakiye sorgusu: ${maskIban(iban)}`);
     return this.queryBalanceMock(iban);
   }
 
   private async fetchTransactionsGaranti(iban: string, startDate: Date, endDate: Date): Promise<BankTransactionData[]> {
-    this.logger.log(`[GARANTI] Hareket sorgusu: ${iban}`);
+    this.logger.log(`[GARANTI] Hareket sorgusu: ${maskIban(iban)}`);
     return this.fetchTransactionsMock(iban, startDate, endDate);
   }
 
@@ -557,12 +558,12 @@ export class BankService {
   // ==================== AKBANK ====================
 
   private async queryBalanceAkbank(iban: string): Promise<BankBalance> {
-    this.logger.log(`[AKBANK] Bakiye sorgusu: ${iban}`);
+    this.logger.log(`[AKBANK] Bakiye sorgusu: ${maskIban(iban)}`);
     return this.queryBalanceMock(iban);
   }
 
   private async fetchTransactionsAkbank(iban: string, startDate: Date, endDate: Date): Promise<BankTransactionData[]> {
-    this.logger.log(`[AKBANK] Hareket sorgusu: ${iban}`);
+    this.logger.log(`[AKBANK] Hareket sorgusu: ${maskIban(iban)}`);
     return this.fetchTransactionsMock(iban, startDate, endDate);
   }
 
@@ -574,12 +575,12 @@ export class BankService {
   // ==================== İŞ BANKASI ====================
 
   private async queryBalanceIsbank(iban: string): Promise<BankBalance> {
-    this.logger.log(`[ISBANK] Bakiye sorgusu: ${iban}`);
+    this.logger.log(`[ISBANK] Bakiye sorgusu: ${maskIban(iban)}`);
     return this.queryBalanceMock(iban);
   }
 
   private async fetchTransactionsIsbank(iban: string, startDate: Date, endDate: Date): Promise<BankTransactionData[]> {
-    this.logger.log(`[ISBANK] Hareket sorgusu: ${iban}`);
+    this.logger.log(`[ISBANK] Hareket sorgusu: ${maskIban(iban)}`);
     return this.fetchTransactionsMock(iban, startDate, endDate);
   }
 

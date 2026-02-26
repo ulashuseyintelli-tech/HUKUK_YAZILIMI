@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { RateScheduleService } from './rate-schedule.service';
 import { InterestTypeCode, RateSourceType } from './types';
+import { fetchWithTimeout } from '../../common/fetch-with-timeout.util';
 
 /**
  * TCMB Faiz Oranı Senkronizasyon Servisi
@@ -204,9 +205,9 @@ export class RateSyncService {
 
     const url = `${this.EVDS_BASE_URL}?series=${seriesCode}&startDate=${startDate}&endDate=${endDate}&type=json&key=${apiKey}`;
 
-    const response = await fetch(url, {
+    const response = await fetchWithTimeout(url, {
       headers: { Accept: 'application/json' },
-    });
+    }, 15_000); // EVDS API — 15s timeout
 
     if (!response.ok) {
       throw new Error(`EVDS API error: ${response.status}`);

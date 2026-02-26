@@ -15,7 +15,9 @@ import {
   HttpCode,
   HttpStatus,
   NotFoundException,
+  UseGuards,
 } from '@nestjs/common';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { UyapEventIngestService, UyapEvent } from './uyap-event-ingest.service';
 import { FactStoreService } from './factstore.service';
 import { TimelineService, TimelineEntryType, TimelineSeverity, TimelineSource } from './timeline.service';
@@ -30,6 +32,7 @@ import { ActionFeedbackService } from './action-feedback.service';
 
 // ============ UYAP Event Ingest Controller ============
 @Controller('icrabot/v28/events')
+@UseGuards(JwtAuthGuard)
 export class UyapEventController {
   constructor(private readonly ingestService: UyapEventIngestService) {}
 
@@ -48,6 +51,7 @@ export class UyapEventController {
 
 // ============ FactStore Controller ============
 @Controller('icrabot/v28/facts')
+@UseGuards(JwtAuthGuard)
 export class FactStoreController {
   constructor(private readonly factStore: FactStoreService) {}
 
@@ -188,6 +192,7 @@ export class FactStoreController {
 
 // ============ Timeline Controller ============
 @Controller('icrabot/v28/timeline')
+@UseGuards(JwtAuthGuard)
 export class TimelineController {
   constructor(private readonly timeline: TimelineService) {}
 
@@ -240,6 +245,7 @@ export class TimelineController {
 
 // ============ Engine Run Controller ============
 @Controller('icrabot/v28/runs')
+@UseGuards(JwtAuthGuard)
 export class EngineRunController {
   constructor(private readonly engineRun: EngineRunService) {}
 
@@ -273,6 +279,7 @@ export class EngineRunController {
 
 // ============ Outbox Controller ============
 @Controller('icrabot/v28/outbox')
+@UseGuards(JwtAuthGuard)
 export class OutboxController {
   constructor(
     private readonly outbox: OutboxService,
@@ -379,6 +386,7 @@ export class OutboxController {
 
 // ============ Actions Controller (OpenAPI spec) ============
 @Controller('icrabot/v28/actions')
+@UseGuards(JwtAuthGuard)
 export class ActionsController {
   constructor(private readonly outbox: OutboxService) {}
 
@@ -395,6 +403,7 @@ export class ActionsController {
 
 // ============ Rules Controller ============
 @Controller('icrabot/v28/rules')
+@UseGuards(JwtAuthGuard)
 export class RulesController {
   constructor(private readonly ruleLoader: RuleLoaderService) {}
 
@@ -530,6 +539,7 @@ export class RulesController {
 
 // ============ Compute Registry Controller ============
 @Controller('icrabot/v28/compute')
+@UseGuards(JwtAuthGuard)
 export class ComputeController {
   constructor(private readonly computeRegistry: ComputeRegistryService) {}
 
@@ -554,6 +564,7 @@ export class ComputeController {
 import { SeedService } from './seed.service';
 
 @Controller('icrabot/v28/seed')
+@UseGuards(JwtAuthGuard)
 export class SeedController {
   constructor(private readonly seed: SeedService) {}
 
@@ -582,6 +593,7 @@ export class SeedController {
 
 // ============ Policy Gate Controller (v28_ops_bundle) ============
 @Controller('icrabot/v28/policy')
+@UseGuards(JwtAuthGuard)
 export class PolicyGateController {
   constructor(private readonly policyGate: PolicyGateService) {}
 
@@ -667,6 +679,7 @@ export class PolicyGateController {
 
 // ============ Scenario Harness Controller (v28_ops_bundle) ============
 @Controller('icrabot/v28/scenarios')
+@UseGuards(JwtAuthGuard)
 export class ScenarioHarnessController {
   constructor(private readonly harness: ScenarioHarnessService) {}
 
@@ -714,6 +727,7 @@ export class ScenarioHarnessController {
 
 // ============ Action Feedback Controller (v28_policy_feedback) ============
 @Controller('icrabot/v28/feedback')
+@UseGuards(JwtAuthGuard)
 export class ActionFeedbackController {
   constructor(private readonly feedback: ActionFeedbackService) {}
 

@@ -1,7 +1,7 @@
 # HUKUK YAZILIMI — YOL HARİTASI
 
-**Son Güncelleme:** 2026-02-14  
-**Durum:** Tüm altyapı/operability fazları KAPALI. Phase 8 Sprint 3 TAMAMLANDI (111 test, 5 property). Sıradaki: Production Deploy
+**Son Güncelleme:** 2026-02-26  
+**Durum:** Tüm altyapı/operability fazları KAPALI. Phase 8 Sprint 3 TAMAMLANDI (111 test, 5 property). Governance kapanışı tamamlandı. Kalan zorunlu mimari iş: 0. Sıradaki: Production Deploy
 
 ---
 
@@ -37,7 +37,7 @@ Monitoring, alerting, safeguards, CI-enforced ops — tamamı hazır.
 
 | Perspektif | İlerleme | Açıklama |
 |-----------|----------|----------|
-| **Çalışan ürün** (deploy edilebilir) | **≈ %95** | Sprint 3 tamamlandı, deploy planı hazır. Kalan: prod rollout + drift guard wiring |
+| **Çalışan ürün** (deploy edilebilir) | **≈ %98** | Sprint 3 tamamlandı, governance kapandı, drift guard wired. Kalan: prod rollout + operational validation |
 | **Tüm vizyon** (Phase 9 + 10 dahil) | **≈ %60** | Phase 9 (Policy Plugin) ve Phase 10 (Platform & Scale) henüz spec yok |
 
 **Stratejik karar:** Production deploy planı hazır → staging → canary → prod. Phase 9 & 10 prod verisiyle spec yazılacak.
@@ -303,6 +303,32 @@ object-store/
 ### Sıradaki: Production Deploy
 
 Bkz. `docs/simulation-deploy-plan.md` — Stage 0 (dark) → Stage 1 (canary) → Stage 2 (partial) → Stage 3 (full)
+
+---
+
+## 📋 GOVERNANCE KAPANIŞ DURUMU (2026-02-26)
+
+**Kalan zorunlu mimari iş: 0**
+
+Tüm spec zincirleri (stage-0, stage-1, sd-1, sd-2, sd-25, sd-26, sd-3, sprint-3, fault-injection, chaos-soak, perf-characterization, synthetic-load, i0-metrics, t0-runsheet, operational-guard, guard-canary-rollout) kapatılmıştır. SD-2.6 D3 spec drift'i SD-3 kanıtlarıyla senkronize edilmiştir.
+
+**Kalanlar:**
+
+| Kategori | Öğe | Açıklama |
+|----------|-----|----------|
+| Operational Validation | i0-metrics CP13 | compose ortamında manuel Prometheus scrape doğrulaması |
+| Operational Validation | SD-2.6 Staging | canary tenant'ta real signal mapping doğrulaması (deploy sonrası) |
+| Operational Validation | SD-2.6 D1 Staging | Prometheus'ta guard_adaptive_eval_total scrape doğrulaması |
+| Opsiyonel PBT | fault-injection T25 | P8 (metrics best-effort) + P9 (ordering anomaly) |
+| Opsiyonel PBT | fault-injection T2.6 | P2 (fire-and-forget isolation) |
+| Opsiyonel PBT | fault-injection T3.3 | P5 (bounded memory) |
+| Opsiyonel PBT | fault-injection T3.4 | P7 (seenKeys dedupe) |
+| Opsiyonel PBT | fault-injection T5.3 | P4 (CAS linearizability) |
+| Opsiyonel PBT | fault-injection T5.4 | P6 (CAS exhaustion) |
+| Opsiyonel PBT | fault-injection T7.2 | P3 (cooldown invariant) |
+| Opsiyonel PBT | fault-injection T8.4 | P1 (promote idempotency) |
+
+**Karar:** Opsiyonel PBT'ler şu an öncelik değil. Risk matematiksel değil, operasyonel. Production deploy sonrası gerekirse aktive edilir.
 
 ---
 

@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { fetchWithTimeout } from '../../common/fetch-with-timeout.util';
 
 /**
  * E-posta Provider Servisi
@@ -169,7 +170,7 @@ export class EmailProviderService {
     try {
       const apiKey = this.configService.get('SENDGRID_API_KEY');
       
-      const response = await fetch('https://api.sendgrid.com/v3/mail/send', {
+      const response = await fetchWithTimeout('https://api.sendgrid.com/v3/mail/send', {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${apiKey}`,
@@ -196,7 +197,7 @@ export class EmailProviderService {
             type: att.contentType,
           })),
         }),
-      });
+      }, 10_000);
 
       if (response.ok) {
         const messageId = response.headers.get('x-message-id');

@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { PoaService } from '../poa/poa.service';
 import { CasePolicyEngine } from '../policy-engine/case-policy-engine.service';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
+import { maskIdentity } from '../../common/pii-mask.util';
 
 /**
  * UYAP Entegrasyon Servisi
@@ -597,7 +598,7 @@ export class UyapService {
     const requestId = await this.logRequest('queryDebtorAssets', { debtorIdentityNo, caseId });
 
     try {
-      this.logger.log(`[STUB] Borçlu mal varlığı sorgulanıyor: ${debtorIdentityNo}`);
+      this.logger.log(`[STUB] Borçlu mal varlığı sorgulanıyor: ${maskIdentity(debtorIdentityNo)}`);
 
       const response: UyapResponse = {
         success: true,

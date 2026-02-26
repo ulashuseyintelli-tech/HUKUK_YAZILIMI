@@ -17,12 +17,14 @@
 export type AdaptiveShadowErrorCode =
   | 'EVALUATION_EXCEPTION'
   | 'INPUT_VALIDATION_FAILED'
-  | 'STATE_STORE_ERROR';
+  | 'STATE_STORE_ERROR'
+  | 'REAL_MAPPER_UNAVAILABLE';
 
 export const ALL_SHADOW_ERROR_CODES: readonly AdaptiveShadowErrorCode[] = Object.freeze([
   'EVALUATION_EXCEPTION',
   'INPUT_VALIDATION_FAILED',
   'STATE_STORE_ERROR',
+  'REAL_MAPPER_UNAVAILABLE',
 ]);
 
 // ============================================================================

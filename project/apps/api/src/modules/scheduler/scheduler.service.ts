@@ -43,6 +43,8 @@ export class SchedulerService {
         include: {
           debtors: { include: { debtor: true } },
         },
+        take: 50,
+        orderBy: { nextActionAt: 'asc' },
       });
 
       this.logger.log(`📋 ${expiredCases.length} dosyada süre dolmuş`);
@@ -117,6 +119,8 @@ export class SchedulerService {
         include: {
           dues: true,
         },
+        take: 50,
+        orderBy: { createdAt: 'asc' },
       });
 
       this.logger.log(`📋 ${nafakaCases.length} nafaka dosyası bulundu`);
@@ -381,6 +385,7 @@ export class SchedulerService {
             },
           },
         },
+        take: 50,
       });
 
       // 89/2 süresi dolan (89/3 gönderilmemiş)
@@ -398,6 +403,7 @@ export class SchedulerService {
             },
           },
         },
+        take: 50,
       });
 
       this.logger.log(`📋 89/1 süresi dolan: ${expired89_1.length}, 89/2 süresi dolan: ${expired89_2.length}`);
@@ -474,6 +480,7 @@ export class SchedulerService {
             },
           },
         },
+        take: 50,
       });
 
       this.logger.log(`📋 Takip gerektiren dış dosya: ${pendingExternalCases.length}`);
@@ -721,6 +728,8 @@ export class SchedulerService {
             },
           },
         },
+        take: 200,
+        orderBy: { dueDate: 'asc' },
       });
 
       this.logger.log(`📋 ${upcomingDues.length} alacak vadesi yaklaşıyor`);

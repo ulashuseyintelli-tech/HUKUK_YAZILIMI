@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import { fetchWithTimeout } from '../../common/fetch-with-timeout.util';
 
 /**
  * SMS Provider Servisi
@@ -101,7 +102,7 @@ export class SmsProviderService {
         msgheader: this.senderId,
       });
 
-      const response = await fetch(`${url}?${params}`);
+      const response = await fetchWithTimeout(`${url}?${params}`, undefined, 10_000);
       const result = await response.text();
 
       // NetGSM yanıt kodları
@@ -151,7 +152,7 @@ export class SmsProviderService {
         sender: this.senderId,
       });
 
-      const response = await fetch(`${url}?${params}`);
+      const response = await fetchWithTimeout(`${url}?${params}`, undefined, 10_000);
       const result = await response.json();
 
       if (result.response?.status?.code === '200') {
@@ -190,7 +191,7 @@ export class SmsProviderService {
 
       const url = `https://api.twilio.com/2010-04-01/Accounts/${accountSid}/Messages.json`;
       
-      const response = await fetch(url, {
+      const response = await fetchWithTimeout(url, {
         method: 'POST',
         headers: {
           'Authorization': 'Basic ' + Buffer.from(`${accountSid}:${authToken}`).toString('base64'),
@@ -201,7 +202,7 @@ export class SmsProviderService {
           From: fromNumber,
           Body: message,
         }),
-      });
+      }, 10_000);
 
       const result = await response.json();
 
