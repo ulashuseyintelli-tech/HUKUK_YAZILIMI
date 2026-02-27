@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@/prisma/prisma.service';
 import { EmailProviderService, EmailOptions } from '@/modules/notification/email-provider.service';
+import { maskEmail } from '@/common/pii-mask.util';
 
 export interface EmailContent {
   subject: string;
@@ -413,7 +414,7 @@ export class ExpenseNotificationService {
         }
       });
 
-      this.logger.log(`Expense email sent to ${clientEmail} for request ${requestId}`);
+      this.logger.log(`Expense email sent to ${maskEmail(clientEmail)} for request ${requestId}`);
     } else {
       this.logger.error(`Failed to send expense email: ${result.errorMessage}`);
       
@@ -516,7 +517,7 @@ export class ExpenseNotificationService {
         });
       });
 
-      this.logger.log(`Reminder sent to ${clientEmail} for request ${requestId}`);
+      this.logger.log(`Reminder sent to ${maskEmail(clientEmail)} for request ${requestId}`);
     }
 
     return result;

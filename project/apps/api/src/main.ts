@@ -9,6 +9,11 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule);
 
+  // PF-005: Reverse proxy arkasında gerçek client IP'si için
+  // Değer 1 = tek hop (uygulama → nginx/ALB → client)
+  // Hop sayısı değişirse bu değer güncellenmelidir
+  app.getHttpAdapter().getInstance().set('trust proxy', 1);
+
   app.enableCors({
     origin: process.env.CORS_ORIGIN?.split(",") || ["http://localhost:3000"],
     credentials: true,

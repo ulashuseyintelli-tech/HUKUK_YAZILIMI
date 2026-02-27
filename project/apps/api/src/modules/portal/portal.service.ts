@@ -1,6 +1,7 @@
 import { Injectable, Logger, UnauthorizedException, BadRequestException, NotFoundException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { PrismaService } from "../../prisma/prisma.service";
+import { maskEmail } from "../../common/pii-mask.util";
 import * as bcrypt from "bcrypt";
 import * as crypto from "crypto";
 
@@ -52,7 +53,7 @@ export class PortalService {
       data: { hasPortalAccess: true, portalUserId: portalUser.id },
     });
 
-    this.logger.log(`Portal kullanıcısı oluşturuldu: ${email} (Client: ${clientId})`);
+    this.logger.log(`Portal kullanıcısı oluşturuldu: ${maskEmail(email)} (Client: ${clientId})`);
 
     return { success: true, portalUserId: portalUser.id };
   }
@@ -99,7 +100,7 @@ export class PortalService {
 
     const token = this.jwtService.sign(payload);
 
-    this.logger.log(`Portal girişi: ${email}`);
+    this.logger.log(`Portal girişi: ${maskEmail(email)}`);
 
     return {
       token,
@@ -252,7 +253,7 @@ export class PortalService {
     });
 
     // TODO: E-posta gönder
-    this.logger.log(`Şifre sıfırlama token'ı oluşturuldu: ${email}`);
+    this.logger.log(`Şifre sıfırlama token'ı oluşturuldu: ${maskEmail(email)}`);
 
     return { success: true };
   }

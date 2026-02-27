@@ -26,6 +26,7 @@ import {
   ConsoleConfig,
 } from './playbook.types';
 import { PlaybookMetricsService } from './playbook-metrics.service';
+import { fetchWithTimeout } from '../../../../common/fetch-with-timeout.util';
 
 // ============================================================================
 // NOTIFICATION RESULT TYPES
@@ -408,15 +409,14 @@ export class NotificationService implements OnModuleInit, OnModuleDestroy {
         timestamp: new Date().toISOString(),
       };
       
-      const response = await fetch(webhookConfig.url, {
+      const response = await fetchWithTimeout(webhookConfig.url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           ...(webhookConfig.headers || {}),
         },
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(webhookConfig.timeoutMs || 10000),
-      });
+      }, webhookConfig.timeoutMs || 10_000);
       
       if (!response.ok) {
         return { success: false, error: `HTTP ${response.status}: ${response.statusText}` };
@@ -463,12 +463,11 @@ export class NotificationService implements OnModuleInit, OnModuleDestroy {
         ],
       };
       
-      const response = await fetch(slackConfig.webhookUrl, {
+      const response = await fetchWithTimeout(slackConfig.webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
-        signal: AbortSignal.timeout(10000),
-      });
+      }, 10_000);
       
       if (!response.ok) {
         return { success: false, error: `Slack HTTP ${response.status}: ${response.statusText}` };

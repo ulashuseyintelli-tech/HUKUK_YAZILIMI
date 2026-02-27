@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { fetchWithTimeout } from '../../common/fetch-with-timeout.util';
+import { maskPhone } from '../../common/pii-mask.util';
 
 /**
  * SMS Provider Servisi
@@ -56,7 +57,7 @@ export class SmsProviderService {
       };
     }
 
-    this.logger.log(`SMS gönderiliyor: ${normalizedPhone} (${this.provider})`);
+    this.logger.log(`SMS gönderiliyor: ${maskPhone(normalizedPhone)} (${this.provider})`);
 
     switch (this.provider) {
       case 'netgsm':
@@ -235,7 +236,7 @@ export class SmsProviderService {
    * Mock SMS gönder (test için)
    */
   private async sendViaMock(phone: string, message: string): Promise<SmsResult> {
-    this.logger.log(`[MOCK SMS] To: ${phone}`);
+    this.logger.log(`[MOCK SMS] To: ${maskPhone(phone)}`);
     this.logger.log(`[MOCK SMS] Message: ${message.substring(0, 50)}...`);
     
     // Simüle edilmiş gecikme

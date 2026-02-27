@@ -1,6 +1,7 @@
 import { Injectable, Logger, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
+import { fetchWithTimeout } from '../../common/fetch-with-timeout.util';
 
 /**
  * E-İmza Servisi
@@ -191,7 +192,7 @@ export class ESignService {
 
   private async signViaEGuven(request: ESignRequest): Promise<ESignResult> {
     try {
-      const response = await fetch(`${this.apiUrl}/sign`, {
+      const response = await fetchWithTimeout(`${this.apiUrl}/sign`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -210,7 +211,7 @@ export class ESignService {
           signatureLocation: request.signatureLocation || 'Türkiye',
           callbackUrl: request.callbackUrl,
         }),
-      });
+      }, 30_000);
 
       const data = await response.json();
 
@@ -243,12 +244,12 @@ export class ESignService {
 
   private async checkStatusEGuven(transactionId: string): Promise<ESignStatus> {
     try {
-      const response = await fetch(`${this.apiUrl}/status/${transactionId}`, {
+      const response = await fetchWithTimeout(`${this.apiUrl}/status/${transactionId}`, {
         headers: {
           'X-API-Key': this.apiKey,
           'X-API-Secret': this.apiSecret,
         },
-      });
+      }, 10_000);
 
       const data = await response.json();
       return {
@@ -269,7 +270,7 @@ export class ESignService {
 
   private async verifyViaEGuven(signedDocument: string): Promise<ESignVerifyResult> {
     try {
-      const response = await fetch(`${this.apiUrl}/verify`, {
+      const response = await fetchWithTimeout(`${this.apiUrl}/verify`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -277,7 +278,7 @@ export class ESignService {
           'X-API-Secret': this.apiSecret,
         },
         body: JSON.stringify({ document: signedDocument }),
-      });
+      }, 15_000);
 
       const data = await response.json();
       return {
@@ -298,19 +299,19 @@ export class ESignService {
   private async signViaTurkcell(request: ESignRequest): Promise<ESignResult> {
     try {
       // Turkcell Mobil İmza API
-      const response = await fetch(`${this.apiUrl}/mobilimza/sign`, {
+      const response = await fetchWithTimeout(`${this.apiUrl}/mobilimza/sign`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify({
-          msisdn: request.signerPhone, // Turkcell mobil imza telefon numarası gerektirir
+          msisdn: request.signerPhone,
           document: request.documentContent,
           documentName: request.documentName,
           signText: request.signatureReason || 'İmzalamak istediğinize emin misiniz?',
         }),
-      });
+      }, 30_000);
 
       const data = await response.json();
 
@@ -341,11 +342,11 @@ export class ESignService {
 
   private async checkStatusTurkcell(transactionId: string): Promise<ESignStatus> {
     try {
-      const response = await fetch(`${this.apiUrl}/mobilimza/status/${transactionId}`, {
+      const response = await fetchWithTimeout(`${this.apiUrl}/mobilimza/status/${transactionId}`, {
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
         },
-      });
+      }, 10_000);
 
       const data = await response.json();
       
@@ -374,14 +375,14 @@ export class ESignService {
 
   private async verifyViaTurkcell(signedDocument: string): Promise<ESignVerifyResult> {
     try {
-      const response = await fetch(`${this.apiUrl}/mobilimza/verify`, {
+      const response = await fetchWithTimeout(`${this.apiUrl}/mobilimza/verify`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiKey}`,
         },
         body: JSON.stringify({ document: signedDocument }),
-      });
+      }, 15_000);
 
       const data = await response.json();
       return {
@@ -401,7 +402,7 @@ export class ESignService {
 
   private async signViaETugra(request: ESignRequest): Promise<ESignResult> {
     try {
-      const response = await fetch(`${this.apiUrl}/api/sign`, {
+      const response = await fetchWithTimeout(`${this.apiUrl}/api/sign`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -417,7 +418,7 @@ export class ESignService {
           imzaNedeni: request.signatureReason,
           imzaYeri: request.signatureLocation,
         }),
-      });
+      }, 30_000);
 
       const data = await response.json();
 
@@ -455,11 +456,11 @@ export class ESignService {
 
   private async checkStatusETugra(transactionId: string): Promise<ESignStatus> {
     try {
-      const response = await fetch(`${this.apiUrl}/api/durum/${transactionId}`, {
+      const response = await fetchWithTimeout(`${this.apiUrl}/api/durum/${transactionId}`, {
         headers: {
           'X-Auth-Token': this.apiKey,
         },
-      });
+      }, 10_000);
 
       const data = await response.json();
       
@@ -488,14 +489,14 @@ export class ESignService {
 
   private async verifyViaETugra(signedDocument: string): Promise<ESignVerifyResult> {
     try {
-      const response = await fetch(`${this.apiUrl}/api/dogrula`, {
+      const response = await fetchWithTimeout(`${this.apiUrl}/api/dogrula`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'X-Auth-Token': this.apiKey,
         },
         body: JSON.stringify({ imzaliPdf: signedDocument }),
-      });
+      }, 15_000);
 
       const data = await response.json();
       return {

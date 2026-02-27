@@ -1,6 +1,8 @@
 import { Injectable, Logger, BadRequestException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { OfficeService } from "../office/office.service";
+import { fetchWithTimeout } from "../../common/fetch-with-timeout.util";
+import { maskEmail, maskPhone } from "../../common/pii-mask.util";
 import * as nodemailer from "nodemailer";
 
 export interface SendEmailDto {
@@ -108,7 +110,7 @@ export class ClientNotificationService {
         },
       });
 
-      this.logger.log(`E-posta gönderildi: ${recipientEmail}`);
+      this.logger.log(`E-posta gönderildi: ${maskEmail(recipientEmail)}`);
 
       return {
         success: true,
@@ -205,7 +207,7 @@ export class ClientNotificationService {
         },
       });
 
-      this.logger.log(`SMS gönderildi: ${recipientPhone}`);
+      this.logger.log(`SMS gönderildi: ${maskPhone(recipientPhone)}`);
 
       return {
         success: true,
@@ -267,7 +269,7 @@ export class ClientNotificationService {
       filter: "0",
     });
 
-    const response = await fetch(`${url}?${params.toString()}`);
+    const response = await fetchWithTimeout(`${url}?${params.toString()}`, undefined, 10_000);
     const result = await response.text();
 
     // NetGSM yanıt kodları
@@ -307,7 +309,7 @@ export class ClientNotificationService {
       sender: settings.smsSender || "HUKUKBURO",
     });
 
-    const response = await fetch(`${url}?${params.toString()}`);
+    const response = await fetchWithTimeout(`${url}?${params.toString()}`, undefined, 10_000);
     const result = await response.text();
 
     // Basit hata kontrolü

@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { EmailProviderService } from '../notification/email-provider.service';
+import { maskEmail } from '../../common/pii-mask.util';
 import { CreateClientInfoRequestDto } from './dto/client-info-request.dto';
 import {
   ClientInfoEmailData,
@@ -120,7 +121,7 @@ export class ClientInfoRequestService {
     if (!emailResult.success) {
       this.logger.warn(`E-posta gönderilemedi: ${emailResult.errorMessage}`);
     } else {
-      this.logger.log(`Müvekkil bilgi talebi gönderildi: ${emailTo}`);
+      this.logger.log(`Müvekkil bilgi talebi gönderildi: ${maskEmail(emailTo)}`);
       
       // Müvekkil Bildirimleri'ne kayıt ekle
       try {

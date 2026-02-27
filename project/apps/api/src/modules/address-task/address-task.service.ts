@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClientNotificationService } from '../client-notification/client-notification.service';
+import { maskPhone } from '../../common/pii-mask.util';
 import {
   AddressTask,
   AddressTaskType,
@@ -1040,7 +1041,7 @@ export class AddressTaskService {
       // WhatsApp gönder (şimdilik simüle - gerçek implementasyon için WhatsApp Business API gerekir)
       if (selectedChannel === 'WHATSAPP' || selectedChannel === 'BOTH') {
         // TODO: WhatsApp Business API entegrasyonu
-        this.logger.log(`WhatsApp mesajı gönderilecek: ${channels.phone}`);
+        this.logger.log(`WhatsApp mesajı gönderilecek: ${maskPhone(channels.phone)}`);
       }
 
       // Task'ı güncelle - channelUsed kaydet

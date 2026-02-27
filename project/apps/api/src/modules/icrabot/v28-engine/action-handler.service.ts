@@ -29,6 +29,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { OutboxService } from './outbox.service';
 import { TimelineService } from './timeline.service';
 import { FactStoreService } from './factstore.service';
+import { maskPhone } from '../../../common/pii-mask.util';
 
 export type ActionHandler = (payload: Record<string, any>, caseId: string) => Promise<Record<string, any> | void>;
 
@@ -422,7 +423,7 @@ export class ActionHandlerService {
       if (!phone || !message) throw new Error('send_sms requires phone and message');
 
       // SMS gönderimi (production'da gerçek SMS servisi kullanılmalı)
-      this.logger.log(`[SMS] To: ${phone}, Message: ${message.substring(0, 50)}...`);
+      this.logger.log(`[SMS] To: ${maskPhone(phone)}, Message: ${message.substring(0, 50)}...`);
 
       // Log to DB
       await (this.prisma as any).icrabotSmsLog.create({

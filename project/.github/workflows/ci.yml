@@ -130,6 +130,26 @@ jobs:
       # Future guardrails can be added here
       # - ADR-XXX: ...
 
+      # Phase 0b: Bare fetch() gate (CI-1)
+      - name: CI-1 Bare fetch gate
+        run: bash apps/api/scripts/ci-1-bare-fetch-gate.sh
+
+      # Phase 0b: PII log leak gate (CI-2)
+      - name: CI-2 PII log leak gate
+        run: bash apps/api/scripts/ci-2-pii-log-leak-gate.sh
+
+      # Phase 0b: Scheduler unbounded query gate (CI-3)
+      - name: CI-3 Scheduler unbounded query gate
+        run: bash apps/api/scripts/ci-3-scheduler-unbounded-gate.sh
+
+      # Phase 0b: Trust proxy gate (CI-4)
+      - name: CI-4 Trust proxy gate
+        run: bash apps/api/scripts/ci-4-trust-proxy-gate.sh
+
+      # Phase 0b: Scheduler metrics gate (CI-5)
+      - name: CI-5 Scheduler metrics gate
+        run: bash apps/api/scripts/ci-5-scheduler-metrics-gate.sh
+
   # ===========================================================================
   # CI SUMMARY
   # ===========================================================================

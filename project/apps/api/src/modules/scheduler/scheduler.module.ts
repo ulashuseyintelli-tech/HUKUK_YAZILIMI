@@ -3,6 +3,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { SchedulerService } from './scheduler.service';
 import { SchedulerController } from './scheduler.controller';
+import { SchedulerMetricsService } from './scheduler-metrics.service';
 
 @Module({
   imports: [
@@ -10,7 +11,7 @@ import { SchedulerController } from './scheduler.controller';
     PrismaModule,
   ],
   controllers: [SchedulerController],
-  providers: [SchedulerService],
+  providers: [SchedulerService, SchedulerMetricsService],
   exports: [SchedulerService],
 })
 export class SchedulerModule {}

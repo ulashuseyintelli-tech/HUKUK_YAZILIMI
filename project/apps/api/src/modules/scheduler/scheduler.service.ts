@@ -1,6 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
+import { runBatched } from './scheduler-batch.helper';
+import { SchedulerMetricsService } from './scheduler-metrics.service';
 
 /**
  * Zamanlayıcı Servisi
@@ -21,7 +23,20 @@ export class SchedulerService {
     return this.prisma;
   }
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly schedulerMetrics: SchedulerMetricsService,
+  ) {}
+
+  // --- isRunning guards ---
+  private isRunning_checkPaymentOrderDeadlines = false;
+  private isRunning_processNafakaPeriods = false;
+  private isRunning_checkMtsReturns = false;
+  private isRunning_retryFailedUyapRequests = false;
+  private isRunning_checkIhbarnameDeadlines = false;
+  private isRunning_checkExternalCaseFollowups = false;
+  private isRunning_checkTebligatStatus = false;
+  private isRunning_sendDueReminders = false;
 
   /**
    * Her gün saat 09:00'da çalışır
@@ -29,31 +44,38 @@ export class SchedulerService {
    */
   @Cron(CronExpression.EVERY_DAY_AT_9AM)
   async checkPaymentOrderDeadlines() {
+    if (this.isRunning_checkPaymentOrderDeadlines) {
+      this.logger.warn('[scheduler] checkPaymentOrderDeadlines already running, skipping');
+      return;
+    }
+    this.isRunning_checkPaymentOrderDeadlines = true;
+
     this.logger.log('⏰ Ödeme emri süre kontrolü başladı...');
 
     try {
-      // nextActionAt tarihi geçmiş ve WAITING_RESPONSE aşamasındaki dosyalar
-      const expiredCases = await this.db.case.findMany({
-        where: {
-          workflowStage: 'WAITING_RESPONSE',
-          nextActionAt: { lte: new Date() },
-          isAutomationEnabled: true,
-          caseStatus: { in: ['DERDEST', 'ISLEMDE'] },
-        },
-        include: {
-          debtors: { include: { debtor: true } },
-        },
-        take: 50,
-        orderBy: { nextActionAt: 'asc' },
-      });
+      const result = await runBatched(
+        (args) =>
+          this.db.case.findMany({
+            where: {
+              workflowStage: 'WAITING_RESPONSE',
+              nextActionAt: { lte: new Date() },
+              isAutomationEnabled: true,
+              caseStatus: { in: ['DERDEST', 'ISLEMDE'] },
+            },
+            include: {
+              debtors: { include: { debtor: true } },
+            },
+            ...args,
+          }),
+        (caseData) => this.processExpiredPaymentOrder(caseData),
+      );
 
-      this.logger.log(`📋 ${expiredCases.length} dosyada süre dolmuş`);
-
-      for (const caseData of expiredCases) {
-        await this.processExpiredPaymentOrder(caseData);
-      }
+      this.schedulerMetrics.record('checkPaymentOrderDeadlines', result);
+      this.logger.log(`📋 ${result.processed} dosyada süre dolmuş (truncated: ${result.truncated})`);
     } catch (error) {
       this.logger.error('Ödeme emri kontrolü hatası:', error);
+    } finally {
+      this.isRunning_checkPaymentOrderDeadlines = false;
     }
   }
 
@@ -106,32 +128,39 @@ export class SchedulerService {
    */
   @Cron('0 8 1 * *') // Her ayın 1'i saat 08:00
   async processNafakaPeriods() {
+    if (this.isRunning_processNafakaPeriods) {
+      this.logger.warn('[scheduler] processNafakaPeriods already running, skipping');
+      return;
+    }
+    this.isRunning_processNafakaPeriods = true;
+
     this.logger.log('⏰ Nafaka dönem kontrolü başladı...');
 
     try {
-      // Aktif nafaka dosyaları
-      const nafakaCases = await this.db.case.findMany({
-        where: {
-          subCategory: 'NAFAKA',
-          isAutomationEnabled: true,
-          caseStatus: { in: ['DERDEST', 'ISLEMDE'] },
-        },
-        include: {
-          dues: true,
-        },
-        take: 50,
-        orderBy: { createdAt: 'asc' },
-      });
-
-      this.logger.log(`📋 ${nafakaCases.length} nafaka dosyası bulundu`);
-
       const currentMonth = new Date().toLocaleDateString('tr-TR', { month: 'long', year: 'numeric' });
 
-      for (const caseData of nafakaCases) {
-        await this.addNafakaPeriod(caseData, currentMonth);
-      }
+      const result = await runBatched(
+        (args) =>
+          this.db.case.findMany({
+            where: {
+              subCategory: 'NAFAKA',
+              isAutomationEnabled: true,
+              caseStatus: { in: ['DERDEST', 'ISLEMDE'] },
+            },
+            include: {
+              dues: true,
+            },
+            ...args,
+          }),
+        (caseData) => this.addNafakaPeriod(caseData, currentMonth),
+      );
+
+      this.schedulerMetrics.record('processNafakaPeriods', result);
+      this.logger.log(`📋 ${result.processed} nafaka dosyası işlendi (truncated: ${result.truncated})`);
     } catch (error) {
       this.logger.error('Nafaka dönem kontrolü hatası:', error);
+    } finally {
+      this.isRunning_processNafakaPeriods = false;
     }
   }
 
@@ -182,29 +211,38 @@ export class SchedulerService {
    */
   @Cron(CronExpression.EVERY_DAY_AT_10AM)
   async checkMtsReturns() {
+    if (this.isRunning_checkMtsReturns) {
+      this.logger.warn('[scheduler] checkMtsReturns already running, skipping');
+      return;
+    }
+    this.isRunning_checkMtsReturns = true;
+
     this.logger.log('⏰ MTS dönüş kontrolü başladı...');
 
     try {
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
 
-      // MTS dosyaları - 7 günü geçmiş
-      const mtsCases = await this.db.case.findMany({
-        where: {
-          isMtsCase: true,
-          mtsReturnDate: { lte: sevenDaysAgo },
-          isAutomationEnabled: true,
-          caseStatus: { in: ['DERDEST', 'ISLEMDE'] },
-          workflowStage: { not: 'ENFORCEMENT' }, // Henüz icra takibine geçmemiş
-        },
-      });
+      const result = await runBatched(
+        (args) =>
+          this.db.case.findMany({
+            where: {
+              isMtsCase: true,
+              mtsReturnDate: { lte: sevenDaysAgo },
+              isAutomationEnabled: true,
+              caseStatus: { in: ['DERDEST', 'ISLEMDE'] },
+              workflowStage: { not: 'ENFORCEMENT' },
+            },
+            ...args,
+          }),
+        (caseData) => this.processMtsReturn(caseData),
+      );
 
-      this.logger.log(`📋 ${mtsCases.length} MTS dosyasında süre dolmuş`);
-
-      for (const caseData of mtsCases) {
-        await this.processMtsReturn(caseData);
-      }
+      this.schedulerMetrics.record('checkMtsReturns', result);
+      this.logger.log(`📋 ${result.processed} MTS dosyasında süre dolmuş (truncated: ${result.truncated})`);
     } catch (error) {
       this.logger.error('MTS kontrolü hatası:', error);
+    } finally {
+      this.isRunning_checkMtsReturns = false;
     }
   }
 
@@ -255,33 +293,42 @@ export class SchedulerService {
    */
   @Cron(CronExpression.EVERY_6_HOURS)
   async retryFailedUyapRequests() {
+    if (this.isRunning_retryFailedUyapRequests) {
+      this.logger.warn('[scheduler] retryFailedUyapRequests already running, skipping');
+      return;
+    }
+    this.isRunning_retryFailedUyapRequests = true;
+
     this.logger.log('⏰ UYAP retry kontrolü başladı...');
 
     try {
-      const failedRequests = await this.db.uyapRequestLog.findMany({
-        where: {
-          status: 'FAILED',
-          retryCount: { lt: 3 },
+      const result = await runBatched(
+        (args) =>
+          this.db.uyapRequestLog.findMany({
+            where: {
+              status: 'FAILED',
+              retryCount: { lt: 3 },
+            },
+            ...args,
+          }),
+        async (request) => {
+          await this.db.uyapRequestLog.update({
+            where: { id: request.id },
+            data: {
+              status: 'RETRY',
+              retryCount: { increment: 1 },
+            },
+          });
+          this.logger.log(`🔄 Retry kuyruğuna eklendi: ${request.id}`);
         },
-        take: 10,
-      });
+      );
 
-      this.logger.log(`📋 ${failedRequests.length} başarısız istek bulundu`);
-
-      for (const request of failedRequests) {
-        await this.db.uyapRequestLog.update({
-          where: { id: request.id },
-          data: {
-            status: 'RETRY',
-            retryCount: { increment: 1 },
-          },
-        });
-
-        // Not: Gerçek retry UyapService'de yapılacak
-        this.logger.log(`🔄 Retry kuyruğuna eklendi: ${request.id}`);
-      }
+      this.schedulerMetrics.record('retryFailedUyapRequests', result);
+      this.logger.log(`📋 ${result.processed} başarısız istek retry'a alındı (truncated: ${result.truncated})`);
     } catch (error) {
       this.logger.error('UYAP retry hatası:', error);
+    } finally {
+      this.isRunning_retryFailedUyapRequests = false;
     }
   }
 
@@ -363,61 +410,77 @@ export class SchedulerService {
    */
   @Cron(CronExpression.EVERY_DAY_AT_10AM)
   async checkIhbarnameDeadlines() {
+    if (this.isRunning_checkIhbarnameDeadlines) {
+      this.logger.warn('[scheduler] checkIhbarnameDeadlines already running, skipping');
+      return;
+    }
+    this.isRunning_checkIhbarnameDeadlines = true;
+
     this.logger.log('⏰ 89 İhbarname süre kontrolü başladı...');
 
     try {
-      // 7 günlük cevap süresi dolan ihbarnameleri bul
       const sevenDaysAgo = new Date();
       sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
       // 89/1 süresi dolan (89/2 gönderilmemiş)
-      const expired89_1 = await this.db.thirdParty.findMany({
-        where: {
-          ihbarname89_1_date: { lte: sevenDaysAgo },
-          ihbarname89_2_date: null,
-          responseDate: null,
-        },
-        include: {
-          caseDebtor: {
-            include: {
-              case: { select: { id: true, fileNumber: true, tenantId: true } },
-              debtor: { select: { name: true } },
+      const result89_1 = await runBatched(
+        (args) =>
+          this.db.thirdParty.findMany({
+            where: {
+              ihbarname89_1_date: { lte: sevenDaysAgo },
+              ihbarname89_2_date: null,
+              responseDate: null,
             },
-          },
-        },
-        take: 50,
-      });
+            include: {
+              caseDebtor: {
+                include: {
+                  case: { select: { id: true, fileNumber: true, tenantId: true } },
+                  debtor: { select: { name: true } },
+                },
+              },
+            },
+            ...args,
+          }),
+        (tp) => this.createIhbarnameReminderTask(tp, '89/2'),
+      );
 
       // 89/2 süresi dolan (89/3 gönderilmemiş)
-      const expired89_2 = await this.db.thirdParty.findMany({
-        where: {
-          ihbarname89_2_date: { lte: sevenDaysAgo },
-          ihbarname89_3_date: null,
-          responseDate: null,
-        },
-        include: {
-          caseDebtor: {
-            include: {
-              case: { select: { id: true, fileNumber: true, tenantId: true } },
-              debtor: { select: { name: true } },
+      const result89_2 = await runBatched(
+        (args) =>
+          this.db.thirdParty.findMany({
+            where: {
+              ihbarname89_2_date: { lte: sevenDaysAgo },
+              ihbarname89_3_date: null,
+              responseDate: null,
             },
-          },
-        },
-        take: 50,
+            include: {
+              caseDebtor: {
+                include: {
+                  case: { select: { id: true, fileNumber: true, tenantId: true } },
+                  debtor: { select: { name: true } },
+                },
+              },
+            },
+            ...args,
+          }),
+        (tp) => this.createIhbarnameReminderTask(tp, '89/3'),
+      );
+
+      // Toplam sonuçları birleştir ve raporla
+      const totalProcessed = result89_1.processed + result89_2.processed;
+      const totalBatches = result89_1.batches + result89_2.batches;
+      const anyTruncated = result89_1.truncated || result89_2.truncated;
+      this.schedulerMetrics.record('checkIhbarnameDeadlines', {
+        processed: totalProcessed,
+        batches: totalBatches,
+        truncated: anyTruncated,
       });
 
-      this.logger.log(`📋 89/1 süresi dolan: ${expired89_1.length}, 89/2 süresi dolan: ${expired89_2.length}`);
-
-      // Hatırlatma task'ları oluştur
-      for (const tp of expired89_1) {
-        await this.createIhbarnameReminderTask(tp, '89/2');
-      }
-
-      for (const tp of expired89_2) {
-        await this.createIhbarnameReminderTask(tp, '89/3');
-      }
+      this.logger.log(`📋 89/1 süresi dolan: ${result89_1.processed}, 89/2 süresi dolan: ${result89_2.processed} (truncated: ${anyTruncated})`);
     } catch (error) {
       this.logger.error('89 İhbarname kontrolü hatası:', error);
+    } finally {
+      this.isRunning_checkIhbarnameDeadlines = false;
     }
   }
 
@@ -460,36 +523,44 @@ export class SchedulerService {
    */
   @Cron(CronExpression.EVERY_DAY_AT_11AM)
   async checkExternalCaseFollowups() {
+    if (this.isRunning_checkExternalCaseFollowups) {
+      this.logger.warn('[scheduler] checkExternalCaseFollowups already running, skipping');
+      return;
+    }
+    this.isRunning_checkExternalCaseFollowups = true;
+
     this.logger.log('⏰ Alacak haczi takip kontrolü başladı...');
 
     try {
-      // 30 günden fazla HACIZ_KONDU durumunda bekleyen dış dosyalar
       const thirtyDaysAgo = new Date();
       thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-      const pendingExternalCases = await this.db.externalCase.findMany({
-        where: {
-          attachmentStatus: { in: ['HACIZ_KONDU', 'CEVAP_BEKLENIYOR'] },
-          attachedAt: { lte: thirtyDaysAgo },
-        },
-        include: {
-          caseDebtor: {
-            include: {
-              case: { select: { id: true, fileNumber: true, tenantId: true } },
-              debtor: { select: { name: true } },
+      const result = await runBatched(
+        (args) =>
+          this.db.externalCase.findMany({
+            where: {
+              attachmentStatus: { in: ['HACIZ_KONDU', 'CEVAP_BEKLENIYOR'] },
+              attachedAt: { lte: thirtyDaysAgo },
             },
-          },
-        },
-        take: 50,
-      });
+            include: {
+              caseDebtor: {
+                include: {
+                  case: { select: { id: true, fileNumber: true, tenantId: true } },
+                  debtor: { select: { name: true } },
+                },
+              },
+            },
+            ...args,
+          }),
+        (ec) => this.createExternalCaseFollowupTask(ec),
+      );
 
-      this.logger.log(`📋 Takip gerektiren dış dosya: ${pendingExternalCases.length}`);
-
-      for (const ec of pendingExternalCases) {
-        await this.createExternalCaseFollowupTask(ec);
-      }
+      this.schedulerMetrics.record('checkExternalCaseFollowups', result);
+      this.logger.log(`📋 ${result.processed} dış dosya takip edildi (truncated: ${result.truncated})`);
     } catch (error) {
       this.logger.error('Alacak haczi takip kontrolü hatası:', error);
+    } finally {
+      this.isRunning_checkExternalCaseFollowups = false;
     }
   }
 
@@ -601,27 +672,34 @@ export class SchedulerService {
    */
   @Cron('0 */4 * * *') // Her 4 saatte bir
   async checkTebligatStatus() {
+    if (this.isRunning_checkTebligatStatus) {
+      this.logger.warn('[scheduler] checkTebligatStatus already running, skipping');
+      return;
+    }
+    this.isRunning_checkTebligatStatus = true;
+
     this.logger.log('⏰ Tebligat durum kontrolü başladı...');
 
     try {
-      // Gönderilmiş ve barkodu olan tebligatları bul
-      const pendingTebligat = await this.db.tebligat.findMany({
-        where: {
-          status: 'GONDERILDI',
-          barcodeNo: { not: null },
-          channel: 'PTT',
-        },
-        take: 50, // Her seferde max 50 tebligat
-        orderBy: { sentAt: 'asc' }, // En eski gönderilenden başla
-      });
+      const result = await runBatched(
+        (args) =>
+          this.db.tebligat.findMany({
+            where: {
+              status: 'GONDERILDI',
+              barcodeNo: { not: null },
+              channel: 'PTT',
+            },
+            ...args,
+          }),
+        (tebligat) => this.queryPttBarcode(tebligat),
+      );
 
-      this.logger.log(`📋 ${pendingTebligat.length} tebligat sorgulanacak`);
-
-      for (const tebligat of pendingTebligat) {
-        await this.queryPttBarcode(tebligat);
-      }
+      this.schedulerMetrics.record('checkTebligatStatus', result);
+      this.logger.log(`📋 ${result.processed} tebligat sorgulandı (truncated: ${result.truncated})`);
     } catch (error) {
       this.logger.error('Tebligat kontrolü hatası:', error);
+    } finally {
+      this.isRunning_checkTebligatStatus = false;
     }
   }
 
@@ -703,67 +781,75 @@ export class SchedulerService {
    */
   @Cron(CronExpression.EVERY_DAY_AT_8AM)
   async sendDueReminders() {
+    if (this.isRunning_sendDueReminders) {
+      this.logger.warn('[scheduler] sendDueReminders already running, skipping');
+      return;
+    }
+    this.isRunning_sendDueReminders = true;
+
     this.logger.log('⏰ Vade hatırlatma kontrolü başladı...');
 
     try {
       const threeDaysLater = new Date();
       threeDaysLater.setDate(threeDaysLater.getDate() + 3);
 
-      // 3 gün içinde vadesi dolacak alacaklar
-      const upcomingDues = await this.db.due.findMany({
-        where: {
-          dueDate: {
-            gte: new Date(),
-            lte: threeDaysLater,
-          },
-          isPaid: false,
-        },
-        include: {
-          case: {
-            select: {
-              id: true,
-              fileNumber: true,
-              tenantId: true,
-              sorumluPersonelId: true,
+      const result = await runBatched(
+        (args) =>
+          this.db.due.findMany({
+            where: {
+              dueDate: {
+                gte: new Date(),
+                lte: threeDaysLater,
+              },
+              isPaid: false,
             },
-          },
+            include: {
+              case: {
+                select: {
+                  id: true,
+                  fileNumber: true,
+                  tenantId: true,
+                  sorumluPersonelId: true,
+                },
+              },
+            },
+            ...args,
+          }),
+        async (due) => {
+          if (!due.case) return;
+          const caseId = due.case.id;
+
+          // INV-4: DB-level duplicate check (hard guarantee — single process + no overlap)
+          const today = new Date().toISOString().split('T')[0];
+          const existing = await this.db.notification.findFirst({
+            where: {
+              type: 'DUE_REMINDER',
+              data: { path: ['caseId'], equals: caseId },
+              createdAt: { gte: new Date(today) },
+            },
+          });
+          if (existing) return; // Bugün zaten gönderilmiş
+
+          await this.db.notification.create({
+            data: {
+              tenantId: due.case.tenantId,
+              userId: due.case.sorumluPersonelId,
+              type: 'DUE_REMINDER',
+              title: 'Vade Hatırlatması',
+              message: `${due.case.fileNumber} dosyasında alacak kaleminin vadesi 3 gün içinde doluyor. Tutar: ${Number(due.amount || 0).toLocaleString('tr-TR')} TL`,
+              data: { caseId, dueId: due.id, amount: due.amount },
+              isRead: false,
+            },
+          });
         },
-        take: 200,
-        orderBy: { dueDate: 'asc' },
-      });
+      );
 
-      this.logger.log(`📋 ${upcomingDues.length} alacak vadesi yaklaşıyor`);
-
-      // Dosya bazında grupla
-      const caseMap = new Map<string, any[]>();
-      for (const due of upcomingDues) {
-        if (!due.case) continue;
-        const existing = caseMap.get(due.case.id) || [];
-        existing.push(due);
-        caseMap.set(due.case.id, existing);
-      }
-
-      // Her dosya için bildirim oluştur
-      for (const [caseId, dues] of caseMap) {
-        const caseData = dues[0].case;
-        const totalAmount = dues.reduce((sum, d) => sum + Number(d.amount || 0), 0);
-
-        await this.db.notification.create({
-          data: {
-            tenantId: caseData.tenantId,
-            userId: caseData.sorumluPersonelId,
-            type: 'DUE_REMINDER',
-            title: 'Vade Hatırlatması',
-            message: `${caseData.fileNumber} dosyasında ${dues.length} alacak kaleminin vadesi 3 gün içinde doluyor. Toplam: ${totalAmount.toLocaleString('tr-TR')} TL`,
-            data: { caseId, dueCount: dues.length, totalAmount },
-            isRead: false,
-          },
-        });
-      }
-
-      this.logger.log(`✅ ${caseMap.size} dosya için vade hatırlatması oluşturuldu`);
+      this.schedulerMetrics.record('sendDueReminders', result);
+      this.logger.log(`✅ ${result.processed} vade hatırlatması işlendi (truncated: ${result.truncated})`);
     } catch (error) {
       this.logger.error('Vade hatırlatma hatası:', error);
+    } finally {
+      this.isRunning_sendDueReminders = false;
     }
   }
 
