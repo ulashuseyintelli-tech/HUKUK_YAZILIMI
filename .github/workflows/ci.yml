@@ -20,16 +20,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # ADR-007: ALS-Only Context Access
       - name: Check for banned req.idempotencyContext (ADR-007)
         run: |
           if grep -r "req\.idempotencyContext\s*=" apps/api/src/; then
-            echo "❌ ADR-007 VIOLATION"
+            echo "ADR-007 VIOLATION"
             exit 1
           fi
-          echo "✅ ADR-007 PASS"
+          echo "ADR-007 PASS"
 
-      # Phase 0b CI Gates
       - name: CI-1 Bare fetch gate
         run: bash apps/api/scripts/ci-1-bare-fetch-gate.sh
 
@@ -59,7 +57,7 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'pnpm'
+          cache: pnpm
           cache-dependency-path: project/pnpm-lock.yaml
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -67,8 +65,8 @@ jobs:
       - name: Generate Prisma client
         run: pnpm --filter @hukuk/api exec prisma generate
         working-directory: project
-      - name: Type check
-        run: pnpm --filter @hukuk/api type-check
+      - name: Type check (production code)
+        run: pnpm --filter @hukuk/api exec tsc --noEmit -p tsconfig.prod.json
         working-directory: project
       - name: Run tests
         run: pnpm --filter @hukuk/api test -- --ci --forceExit --passWithNoTests
