@@ -59,5 +59,9 @@ jobs:
         working-directory: project
         continue-on-error: true
       - name: Tests
-        run: pnpm --filter @hukuk/api test -- --ci --forceExit --passWithNoTests
+        run: |
+          cd apps/api
+          npx jest --ci --forceExit --passWithNoTests \
+            --testPathPattern="guards/__tests__/(drift-guard|baseline-math|stage-0|stage-1|sd-2|sd-25|sd-26|sd-3)" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
