@@ -44,3 +44,6 @@ jobs:
 
       - name: CI-5 Scheduler metrics gate
         run: bash apps/api/scripts/ci-5-scheduler-metrics-gate.sh
+
+      - name: CI-6 Symbol token singleton gate
+        run: bash apps/api/scripts/ci-6-symbol-token-singleton-gate.sh
