@@ -19,6 +19,13 @@ export const SIMULATION_FEATURE_FLAGS = {
 } as const;
 
 // ============================================================================
+// Injection Token
+// ============================================================================
+
+/** DI token for ISimulationFeatureFlagService interface injection */
+export const FEATURE_FLAG_SERVICE = Symbol('ISimulationFeatureFlagService');
+
+// ============================================================================
 // Interface
 // ============================================================================
 

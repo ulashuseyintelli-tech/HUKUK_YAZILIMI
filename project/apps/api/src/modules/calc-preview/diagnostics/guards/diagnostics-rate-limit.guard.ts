@@ -34,7 +34,7 @@ import { Request } from 'express';
 import { DIAGNOSTICS_RATE_LIMITS } from '../diagnostics.types';
 import { buildScopedKey } from '../../region/scoped-key';
 import { DEFAULT_REGION } from '../../region/region.constants';
-import { IClock } from '../evidence/clock.service';
+import { IClock, CLOCK } from '../evidence/clock.service';
 
 // ============================================================================
 // BUCKET TYPES
@@ -101,7 +101,7 @@ export class DiagnosticsRateLimitGuard implements CanActivate {
   // Injected clock for testability
   private clock: IClock;
 
-  constructor(@Optional() @Inject('IClock') clock?: IClock) {
+  constructor(@Optional() @Inject(CLOCK) clock?: IClock) {
     this.clock = clock || defaultClock;
     // Cleanup interval (only in production, not in tests)
     if (!clock) {

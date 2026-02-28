@@ -14,6 +14,16 @@
 
 import { Injectable } from '@nestjs/common';
 
+// ============================================================================
+// Injection Tokens (Symbol-based, no global namespace collision)
+// ============================================================================
+
+/** DI token for IClock interface injection */
+export const CLOCK = Symbol('IClock');
+
+/** DI token for ISimulationClock interface injection */
+export const SIMULATION_CLOCK = Symbol('ISimulationClock');
+
 /**
  * Clock interface for time operations
  * 

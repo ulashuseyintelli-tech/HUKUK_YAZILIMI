@@ -29,7 +29,7 @@ import { SimulationRBACGuard } from './guards/simulation-rbac.guard';
 import { SimulationRateLimitGuard } from './guards/simulation-rate-limit.guard';
 
 // Services
-import { SimulationFeatureFlagService } from './simulation-feature-flag.service';
+import { SimulationFeatureFlagService, FEATURE_FLAG_SERVICE } from './simulation-feature-flag.service';
 import { SimulationRunStoreService, SIMULATION_RUN_REPOSITORY } from './simulation-run-store.service';
 
 // Sprint 3 Services
@@ -57,7 +57,7 @@ import { SnapshotQueryService } from '../simulation/snapshot-query.service';
 
 // Evidence services
 import { EvidenceGateService } from '../evidence/evidence-gate.service';
-import { ClockService, IClock } from '../evidence/clock.service';
+import { ClockService, IClock, CLOCK, SIMULATION_CLOCK } from '../evidence/clock.service';
 
 // Simulation types
 import { ISimulationClock } from '../simulation/simulation.types';
@@ -104,7 +104,7 @@ class SimulationClockAdapter implements ISimulationClock {
     
     // Clock
     {
-      provide: 'IClock',
+      provide: CLOCK,
       useClass: ClockService,
     },
     {
@@ -114,25 +114,23 @@ class SimulationClockAdapter implements ISimulationClock {
     
     // Simulation Clock Adapter
     {
-      provide: 'ISimulationClock',
+      provide: SIMULATION_CLOCK,
       useFactory: (clock: IClock) => new SimulationClockAdapter(clock),
-      inject: ['IClock'],
+      inject: [CLOCK],
     },
     
     // Feature Flag Service
     SimulationFeatureFlagService,
     {
-      provide: 'ISimulationFeatureFlagService',
+      provide: FEATURE_FLAG_SERVICE,
       useExisting: SimulationFeatureFlagService,
     },
     
-    // Guards
+    // Guards — constructor injection via Symbol tokens, no mutation needed
     {
       provide: SimulationFeatureFlagGuard,
       useFactory: (featureFlagService: SimulationFeatureFlagService) => {
-        const guard = new SimulationFeatureFlagGuard();
-        guard.setFeatureFlagService(featureFlagService);
-        return guard;
+        return new SimulationFeatureFlagGuard(featureFlagService);
       },
       inject: [SimulationFeatureFlagService],
     },
@@ -140,7 +138,7 @@ class SimulationClockAdapter implements ISimulationClock {
     {
       provide: SimulationRateLimitGuard,
       useFactory: (clock: IClock) => new SimulationRateLimitGuard(undefined, clock),
-      inject: ['IClock'],
+      inject: [CLOCK],
     },
     
     // Simulation Run Repository (Phase 9B)
@@ -164,7 +162,7 @@ class SimulationClockAdapter implements ISimulationClock {
     {
       provide: EvidenceGateService,
       useFactory: (clock: IClock) => new EvidenceGateService(clock),
-      inject: ['IClock'],
+      inject: [CLOCK],
     },
     
     // Simulation Engine
@@ -172,14 +170,14 @@ class SimulationClockAdapter implements ISimulationClock {
       provide: SimulationEngineService,
       useFactory: (simulationClock: ISimulationClock, evidenceGate: EvidenceGateService) => 
         new SimulationEngineService(simulationClock, evidenceGate),
-      inject: ['ISimulationClock', EvidenceGateService],
+      inject: [SIMULATION_CLOCK, EvidenceGateService],
     },
     
     // Incident Store
     {
       provide: InMemoryIncidentStore,
       useFactory: (clock: IClock) => new InMemoryIncidentStore(clock),
-      inject: ['IClock'],
+      inject: [CLOCK],
     },
     
     // Phase 9B.5: BaselineResolverService now uses SNAPSHOT_STORE token
@@ -194,7 +192,7 @@ class SimulationClockAdapter implements ISimulationClock {
       provide: EvidenceBundleService,
       useFactory: (clock: IClock, incidentStore: IIncidentStore, snapshotStore: ISnapshotStore) =>
         new EvidenceBundleService(clock, incidentStore, snapshotStore),
-      inject: ['IClock', InMemoryIncidentStore, SNAPSHOT_STORE],
+      inject: [CLOCK, InMemoryIncidentStore, SNAPSHOT_STORE],
     },
     
     // Phase 9B.5: LegalHoldInventoryService - needs IClock, SNAPSHOT_STORE, IIncidentStore
@@ -202,7 +200,7 @@ class SimulationClockAdapter implements ISimulationClock {
       provide: LegalHoldInventoryService,
       useFactory: (clock: IClock, snapshotStore: ISnapshotStore, incidentStore: IIncidentStore) =>
         new LegalHoldInventoryService(clock, snapshotStore, incidentStore),
-      inject: ['IClock', SNAPSHOT_STORE, InMemoryIncidentStore],
+      inject: [CLOCK, SNAPSHOT_STORE, InMemoryIncidentStore],
     },
 
     // Sprint 3: Promote pipeline
@@ -246,7 +244,7 @@ class SimulationClockAdapter implements ISimulationClock {
         SimulationRunStoreService,
         SimulationMetricsService,
         SimulationAuditAdapter,
-        'IClock',
+        CLOCK,
         'ISnapshotProvider',
       ],
     },
@@ -267,7 +265,7 @@ class SimulationClockAdapter implements ISimulationClock {
     SimulationRBACGuard,
     SimulationRateLimitGuard,
     SimulationRunStoreService,
-    'IClock',
+    CLOCK,
   ],
 })
 export class SimulationApiModule {}

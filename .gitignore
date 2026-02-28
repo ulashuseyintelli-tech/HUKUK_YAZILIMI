@@ -38,6 +38,11 @@ coverage/
 # Misc
 *.tsbuildinfo
 
+# Build artifacts - packages/types
+project/packages/types/src/**/*.js
+project/packages/types/src/**/*.d.ts
+project/packages/types/src/**/*.js.map
+
 # Archive - eski proje dosyaları
 _archive/
 

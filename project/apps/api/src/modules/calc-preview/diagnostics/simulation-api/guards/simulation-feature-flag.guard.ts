@@ -37,6 +37,7 @@ import { Request } from 'express';
 import {
   ISimulationFeatureFlagService,
   SimulationFeatureFlagService,
+  FEATURE_FLAG_SERVICE,
 } from '../simulation-feature-flag.service';
 import { SimulationDisabledException } from '../simulation-error.types';
 
@@ -71,7 +72,7 @@ export class SimulationFeatureFlagGuard implements CanActivate {
   private readonly logger = new Logger(SimulationFeatureFlagGuard.name);
   private featureFlagService: ISimulationFeatureFlagService;
 
-  constructor(@Optional() @Inject('ISimulationFeatureFlagService') featureFlagService?: ISimulationFeatureFlagService) {
+  constructor(@Optional() @Inject(FEATURE_FLAG_SERVICE) featureFlagService?: ISimulationFeatureFlagService) {
     this.featureFlagService = featureFlagService || new SimulationFeatureFlagService();
   }
 

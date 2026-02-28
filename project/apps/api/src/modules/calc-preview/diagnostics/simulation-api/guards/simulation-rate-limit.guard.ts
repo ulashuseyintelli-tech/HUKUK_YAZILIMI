@@ -33,7 +33,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { Request } from 'express';
-import { IClock } from '../../evidence/clock.service';
+import { IClock, CLOCK } from '../../evidence/clock.service';
 import {
   SIMULATION_RATE_LIMITS,
   getUtcDateString,
@@ -88,7 +88,7 @@ export class SimulationRateLimitGuard implements CanActivate {
 
   constructor(
     @Optional() @Inject(RATE_LIMIT_STORE) injectedStore?: IRateLimitStore,
-    @Optional() @Inject('IClock') clock?: IClock,
+    @Optional() @Inject(CLOCK) clock?: IClock,
   ) {
     this.clock = clock || this.createDefaultClock();
     // Use injected store (Redis/Failover) or create internal in-memory store

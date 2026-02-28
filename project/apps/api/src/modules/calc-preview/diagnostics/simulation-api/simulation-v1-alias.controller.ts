@@ -39,7 +39,7 @@ import { SimulationEngineService } from '../simulation/simulation-engine.service
 import { InMemoryIncidentStore } from '../simulation/incident-store.service';
 import { SimulationRunStoreService, StoredRun } from './simulation-run-store.service';
 import { SnapshotQueryService } from '../simulation/snapshot-query.service';
-import { IClock } from '../evidence/clock.service';
+import { IClock, CLOCK } from '../evidence/clock.service';
 import {
   SimulateRequestDto,
   SimulateResponseDto,
@@ -63,7 +63,7 @@ export class SimulationV1AliasController {
   private readonly logger = new Logger(SimulationV1AliasController.name);
 
   constructor(
-    @Inject('IClock') private readonly clock: IClock,
+    @Inject(CLOCK) private readonly clock: IClock,
     private readonly simulationEngine: SimulationEngineService,
     private readonly incidentStore: InMemoryIncidentStore,
     private readonly runStore: SimulationRunStoreService,
