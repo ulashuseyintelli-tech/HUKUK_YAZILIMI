@@ -1,0 +1,2 @@
+# Force LF for shell scripts (cross-platform CI safety)
+*.sh text eol=lf
