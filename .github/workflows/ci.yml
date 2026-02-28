@@ -47,3 +47,31 @@ jobs:
 
       - name: CI-6 Symbol token singleton gate
         run: bash apps/api/scripts/ci-6-symbol-token-singleton-gate.sh
+
+  test-suite:
+    name: Test Suite (Unit + Property)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'pnpm'
+          cache-dependency-path: project/pnpm-lock.yaml
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: project
+
+      - name: Type check
+        run: pnpm --filter @hukuk/api type-check
+        working-directory: project
+
+      - name: Run tests
+        run: pnpm --filter @hukuk/api test -- --ci --forceExit --passWithNoTests
+        working-directory: project
