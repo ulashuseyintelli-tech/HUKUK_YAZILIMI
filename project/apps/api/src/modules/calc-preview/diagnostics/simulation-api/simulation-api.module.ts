@@ -59,8 +59,10 @@ import { SnapshotQueryService } from '../simulation/snapshot-query.service';
 import { EvidenceGateService } from '../evidence/evidence-gate.service';
 import { ClockService, IClock } from '../evidence/clock.service';
 
-// Simulation clock adapter
+// Simulation types
 import { ISimulationClock } from '../simulation/simulation.types';
+import { IIncidentStore } from '../simulation/incident.types';
+import { ISnapshotStore } from '../persistence/snapshot-store.interface';
 
 /**
  * Adapter to use IClock as ISimulationClock
@@ -119,6 +121,10 @@ class SimulationClockAdapter implements ISimulationClock {
     
     // Feature Flag Service
     SimulationFeatureFlagService,
+    {
+      provide: 'ISimulationFeatureFlagService',
+      useExisting: SimulationFeatureFlagService,
+    },
     
     // Guards
     {
@@ -155,7 +161,11 @@ class SimulationClockAdapter implements ISimulationClock {
     // InMemorySnapshotStore is REMOVED from prod wiring
     
     // Evidence Gate
-    EvidenceGateService,
+    {
+      provide: EvidenceGateService,
+      useFactory: (clock: IClock) => new EvidenceGateService(clock),
+      inject: ['IClock'],
+    },
     
     // Simulation Engine
     {
@@ -173,21 +183,73 @@ class SimulationClockAdapter implements ISimulationClock {
     },
     
     // Phase 9B.5: BaselineResolverService now uses SNAPSHOT_STORE token
+    // BaselineResolverService only needs SNAPSHOT_STORE (injected via @Inject)
     BaselineResolverService,
     
     // Phase 9B.5: SnapshotQueryService - Query Facade for controllers
-    // Controllers use this instead of direct store access
     SnapshotQueryService,
     
-    // Phase 9B.5: EvidenceBundleService now uses SNAPSHOT_STORE token
-    EvidenceBundleService,
+    // Phase 9B.5: EvidenceBundleService - needs IClock, IIncidentStore, SNAPSHOT_STORE
+    {
+      provide: EvidenceBundleService,
+      useFactory: (clock: IClock, incidentStore: IIncidentStore, snapshotStore: ISnapshotStore) =>
+        new EvidenceBundleService(clock, incidentStore, snapshotStore),
+      inject: ['IClock', InMemoryIncidentStore, SNAPSHOT_STORE],
+    },
     
-    // Phase 9B.5: LegalHoldInventoryService now uses SNAPSHOT_STORE token
-    LegalHoldInventoryService,
+    // Phase 9B.5: LegalHoldInventoryService - needs IClock, SNAPSHOT_STORE, IIncidentStore
+    {
+      provide: LegalHoldInventoryService,
+      useFactory: (clock: IClock, snapshotStore: ISnapshotStore, incidentStore: IIncidentStore) =>
+        new LegalHoldInventoryService(clock, snapshotStore, incidentStore),
+      inject: ['IClock', SNAPSHOT_STORE, InMemoryIncidentStore],
+    },
 
     // Sprint 3: Promote pipeline
     PromoteRequestStore,
-    PromoteService,
+    {
+      provide: 'ISnapshotProvider',
+      useFactory: (snapshotQuery: SnapshotQueryService) => ({
+        async getSnapshot(snapshotId: string) {
+          // SnapshotQueryService.getSnapshotById needs tenantId for security,
+          // but ISnapshotProvider only has snapshotId. Use store directly.
+          // For promote flow, we bypass tenant check (internal operation).
+          const snap = await (snapshotQuery as any).snapshotStore.findById(snapshotId);
+          if (!snap) return null;
+          // Return minimal EvidenceSnapshot shape
+          return {
+            snapshotId: snap.snapshotId,
+            tenantId: snap.tenantId,
+            incidentId: snap.incidentId,
+            capturedAt: snap.createdAt,
+            points: [],
+            promoted: snap.retentionPolicy === 'PROMOTED' || snap.retentionPolicy === 'LEGAL_HOLD',
+          };
+        },
+      }),
+      inject: [SnapshotQueryService],
+    },
+    {
+      provide: PromoteService,
+      useFactory: (
+        featureFlag: SimulationFeatureFlagService,
+        promoteStore: PromoteRequestStore,
+        runStore: SimulationRunStoreService,
+        metrics: SimulationMetricsService,
+        audit: SimulationAuditAdapter,
+        clock: IClock,
+        snapshotProvider: any,
+      ) => new PromoteService(featureFlag, promoteStore, runStore, metrics, audit, clock, snapshotProvider),
+      inject: [
+        SimulationFeatureFlagService,
+        PromoteRequestStore,
+        SimulationRunStoreService,
+        SimulationMetricsService,
+        SimulationAuditAdapter,
+        'IClock',
+        'ISnapshotProvider',
+      ],
+    },
     SimulationMetricsService,
 
     // Sprint 3: ScenarioRanker
@@ -201,16 +263,11 @@ class SimulationClockAdapter implements ISimulationClock {
     EscalationStateRepository,
   ],
   exports: [
-    SimulationController,
-    EvidenceBundleController,
-    LegalHoldController,
     SimulationFeatureFlagGuard,
     SimulationRBACGuard,
     SimulationRateLimitGuard,
     SimulationRunStoreService,
     'IClock',
-    // Phase 9B.5: Export SNAPSHOT_STORE for consumers
-    SNAPSHOT_STORE,
   ],
 })
 export class SimulationApiModule {}

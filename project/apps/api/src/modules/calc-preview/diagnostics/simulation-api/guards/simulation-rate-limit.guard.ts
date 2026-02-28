@@ -88,7 +88,7 @@ export class SimulationRateLimitGuard implements CanActivate {
 
   constructor(
     @Optional() @Inject(RATE_LIMIT_STORE) injectedStore?: IRateLimitStore,
-    @Optional() clock?: IClock,
+    @Optional() @Inject('IClock') clock?: IClock,
   ) {
     this.clock = clock || this.createDefaultClock();
     // Use injected store (Redis/Failover) or create internal in-memory store

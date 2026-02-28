@@ -27,6 +27,8 @@ import {
   ExecutionContext,
   HttpException,
   Logger,
+  Optional,
+  Inject,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { DIAGNOSTICS_RATE_LIMITS } from '../diagnostics.types';
@@ -99,7 +101,7 @@ export class DiagnosticsRateLimitGuard implements CanActivate {
   // Injected clock for testability
   private clock: IClock;
 
-  constructor(clock?: IClock) {
+  constructor(@Optional() @Inject('IClock') clock?: IClock) {
     this.clock = clock || defaultClock;
     // Cleanup interval (only in production, not in tests)
     if (!clock) {

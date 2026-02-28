@@ -6,7 +6,8 @@
  * @see .kiro/specs/simulation-api-2f/design.md
  */
 
-import { EvidenceVerdict, EvidenceStatus } from '../simulation/incident.types';
+import { EvidenceVerdict } from '../simulation/simulation.types';
+import { EvidenceStatus } from '../simulation/incident.types';
 
 // ============================================================================
 // Simulate Endpoint DTOs

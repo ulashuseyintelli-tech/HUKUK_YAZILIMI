@@ -71,7 +71,6 @@ export {
 // Store Services
 export {
   SnapshotStoreService,
-  CreateSnapshotInput,
   SnapshotValidationError,
   SNAPSHOT_REPOSITORY,
 } from './snapshot-store.service';

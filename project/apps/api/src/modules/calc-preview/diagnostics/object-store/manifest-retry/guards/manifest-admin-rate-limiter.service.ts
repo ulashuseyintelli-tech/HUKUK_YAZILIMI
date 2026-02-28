@@ -16,7 +16,7 @@
  * @see .kiro/specs/phase-10-2-production-hardening/design.md
  */
 
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional, Inject } from '@nestjs/common';
 
 // ============================================================================
 // Types
@@ -68,7 +68,7 @@ export class ManifestAdminRateLimiter {
   // Metrics
   private rateLimitExceededCount = 0;
 
-  constructor(config?: Partial<RateLimitConfig>) {
+  constructor(@Optional() @Inject('RateLimitConfig') config?: Partial<RateLimitConfig>) {
     this.config = { ...DEFAULT_RATE_LIMIT_CONFIG, ...config };
   }
 
@@ -225,12 +225,11 @@ export const RATE_LIMIT_TYPE_KEY = 'rateLimitType';
  */
 @Injectable()
 export class ManifestAdminRateLimitGuard implements CanActivate {
-  // @ts-expect-error logger reserved for future use
   private readonly logger = new Logger(ManifestAdminRateLimitGuard.name);
 
   constructor(
     private readonly rateLimiter: ManifestAdminRateLimiter,
-    private readonly defaultType: RateLimitType = 'standard',
+    @Optional() @Inject('DEFAULT_RATE_LIMIT_TYPE') private readonly defaultType: RateLimitType = 'standard',
   ) {}
 
   canActivate(context: ExecutionContext): boolean {

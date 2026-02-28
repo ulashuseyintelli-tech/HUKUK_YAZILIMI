@@ -90,8 +90,16 @@ bootLogger.log(getBackendLogMessage(RESOLVED_BACKEND, RESOLVED_APP_ENV));
     },
     
     // Store Services
-    SimulationRunStoreService,
-    SnapshotStoreService,
+    {
+      provide: SimulationRunStoreService,
+      useFactory: (repo: PrismaSimulationRunRepository) => new SimulationRunStoreService(repo),
+      inject: [PrismaSimulationRunRepository],
+    },
+    {
+      provide: SnapshotStoreService,
+      useFactory: (repo: PrismaSnapshotRepository) => new SnapshotStoreService(repo),
+      inject: [PrismaSnapshotRepository],
+    },
     
     // Phase 9B.5: SNAPSHOT_STORE token → SnapshotStoreService (PostgreSQL)
     // This is the ONLY token that consumers should inject

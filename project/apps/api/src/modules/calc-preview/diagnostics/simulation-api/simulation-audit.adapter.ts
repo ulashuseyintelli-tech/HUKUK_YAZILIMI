@@ -72,7 +72,7 @@ export class SimulationAuditAdapter {
       );
 
       // Async safety: if logAccessAttempt returns a Promise, catch rejections
-      if (result && typeof (result as any).catch === 'function') {
+      if (typeof (result as any)?.catch === 'function') {
         (result as any).catch((err: Error) => {
           this.metrics.incAuditWriteFailed();
           this.logger.warn('[SimulationAudit] Async write failed (fire-and-forget)', {

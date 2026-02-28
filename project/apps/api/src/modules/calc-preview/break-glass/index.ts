@@ -41,5 +41,5 @@ export {
 // Services
 export * from './services';
 
-// Controllers
-export * from './controllers';
+// Controllers — explicit re-exports to avoid duplicate CreateBreakGlassRequestDto
+export { BreakGlassController } from './controllers/break-glass.controller';

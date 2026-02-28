@@ -30,6 +30,8 @@ import {
   CanActivate,
   ExecutionContext,
   Logger,
+  Optional,
+  Inject,
 } from '@nestjs/common';
 import { Request } from 'express';
 import {
@@ -69,7 +71,7 @@ export class SimulationFeatureFlagGuard implements CanActivate {
   private readonly logger = new Logger(SimulationFeatureFlagGuard.name);
   private featureFlagService: ISimulationFeatureFlagService;
 
-  constructor(featureFlagService?: ISimulationFeatureFlagService) {
+  constructor(@Optional() @Inject('ISimulationFeatureFlagService') featureFlagService?: ISimulationFeatureFlagService) {
     this.featureFlagService = featureFlagService || new SimulationFeatureFlagService();
   }
 

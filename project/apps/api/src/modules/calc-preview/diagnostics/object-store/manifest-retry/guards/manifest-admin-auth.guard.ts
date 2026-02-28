@@ -26,6 +26,8 @@ import {
   ExecutionContext,
   ForbiddenException,
   UnauthorizedException,
+  Optional,
+  Inject,
 } from '@nestjs/common';
 import { Request } from 'express';
 import {
@@ -88,8 +90,8 @@ export class ManifestAdminAuthGuard implements CanActivate {
   private featureFlagService: IManifestAdminFeatureFlagService;
 
   constructor(
-    featureFlagService?: IManifestAdminFeatureFlagService,
-    config?: Partial<ManifestAdminAuthConfig>,
+    @Optional() @Inject('IManifestAdminFeatureFlagService') featureFlagService?: IManifestAdminFeatureFlagService,
+    @Optional() @Inject('ManifestAdminAuthConfig') config?: Partial<ManifestAdminAuthConfig>,
   ) {
     const cfg = { ...DEFAULT_MANIFEST_ADMIN_AUTH_CONFIG, ...config };
     this.featureFlagService = featureFlagService || new ManifestAdminFeatureFlagService(cfg.breakGlassFeatureFlag);

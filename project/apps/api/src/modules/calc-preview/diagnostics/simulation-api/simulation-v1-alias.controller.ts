@@ -30,6 +30,7 @@ import {
   Body,
   UseGuards,
   Logger,
+  Inject,
 } from '@nestjs/common';
 import { SimulationFeatureFlagGuard } from './guards/simulation-feature-flag.guard';
 import { SimulationRBACGuard, SimulationTenant, SimulationTenantContext } from './guards/simulation-rbac.guard';
@@ -62,7 +63,7 @@ export class SimulationV1AliasController {
   private readonly logger = new Logger(SimulationV1AliasController.name);
 
   constructor(
-    private readonly clock: IClock,
+    @Inject('IClock') private readonly clock: IClock,
     private readonly simulationEngine: SimulationEngineService,
     private readonly incidentStore: InMemoryIncidentStore,
     private readonly runStore: SimulationRunStoreService,

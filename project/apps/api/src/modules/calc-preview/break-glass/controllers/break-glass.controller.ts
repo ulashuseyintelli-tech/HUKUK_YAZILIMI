@@ -82,7 +82,7 @@ import {
   BreakGlassRequestResponseDto,
   BreakGlassGrantResponseDto,
 } from './break-glass.dto';
-import { BreakGlassRequest, BreakGlassGrant } from '../break-glass.types';
+import { BreakGlassRequest, BreakGlassGrant, RevocationReason } from '../break-glass.types';
 
 /**
  * Extended request with user info from guards
@@ -247,7 +247,7 @@ export class BreakGlassController {
     const user = this.extractUser(req);
 
     try {
-      const grant = await this.grantService.revoke(dto.grantId, dto.reason);
+      const grant = await this.grantService.revoke(dto.grantId, user.userId, (dto.reason ?? 'manual') as RevocationReason);
 
       // Emit revoked audit event - build payload conditionally
       const revokedPayload: Parameters<typeof this.auditService.emitRevoked>[0] = {
