@@ -1,2 +1,4 @@
-# Force LF for shell scripts (cross-platform CI safety)
+# Force LF for shell scripts and CI workflows (cross-platform CI safety)
 *.sh text eol=lf
+*.yml text eol=lf
+*.yaml text eol=lf
