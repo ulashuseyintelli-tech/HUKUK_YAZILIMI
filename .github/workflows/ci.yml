@@ -1,81 +1,58 @@
-# CI Pipeline - Core Checks (repo root wrapper)
-# Actual project lives in project/ subdirectory
-
-name: CI
-
+﻿name: CI
 on:
   push:
     branches: ['*']
   pull_request:
     branches: [main]
-
 defaults:
   run:
     working-directory: project
-
 jobs:
   architectural-guardrails:
     name: Architectural Guardrails
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      # ADR-007: ALS-Only Context Access
-      - name: Check for banned req.idempotencyContext (ADR-007)
+      - name: ADR-007 check
         run: |
           if grep -r "req\.idempotencyContext\s*=" apps/api/src/; then
-            echo "❌ ADR-007 VIOLATION"
-            exit 1
+            echo "ADR-007 VIOLATION"; exit 1
           fi
-          echo "✅ ADR-007 PASS"
-
-      # Phase 0b CI Gates
+          echo "ADR-007 PASS"
       - name: CI-1 Bare fetch gate
         run: bash apps/api/scripts/ci-1-bare-fetch-gate.sh
-
       - name: CI-2 PII log leak gate
         run: bash apps/api/scripts/ci-2-pii-log-leak-gate.sh
-
       - name: CI-3 Scheduler unbounded query gate
         run: bash apps/api/scripts/ci-3-scheduler-unbounded-gate.sh
-
       - name: CI-4 Trust proxy gate
         run: bash apps/api/scripts/ci-4-trust-proxy-gate.sh
-
       - name: CI-5 Scheduler metrics gate
         run: bash apps/api/scripts/ci-5-scheduler-metrics-gate.sh
-
       - name: CI-6 Symbol token singleton gate
         run: bash apps/api/scripts/ci-6-symbol-token-singleton-gate.sh
-
   test-suite:
     name: Test Suite (Unit + Property)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: pnpm/action-setup@v4
         with:
-          package_json_file: project/package.json
-
+          version: 8.15.0
       - uses: actions/setup-node@v4
         with:
           node-version: 20
-          cache: 'pnpm'
+          cache: pnpm
           cache-dependency-path: project/pnpm-lock.yaml
-
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile --ignore-scripts
+        run: pnpm install --frozen-lockfile
         working-directory: project
-
       - name: Generate Prisma client
         run: pnpm --filter @hukuk/api exec prisma generate
         working-directory: project
-
       - name: Type check
         run: pnpm --filter @hukuk/api type-check
         working-directory: project
-
       - name: Run tests
         run: pnpm --filter @hukuk/api test -- --ci --forceExit --passWithNoTests
         working-directory: project
