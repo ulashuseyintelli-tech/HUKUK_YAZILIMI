@@ -1,27 +1,21 @@
-FROM node:20-alpine AS base
-RUN npm install -g pnpm
+FROM node:20-alpine
 
-FROM base AS deps
+RUN npm install -g pnpm@8.15.0
+
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json ./apps/api/
 COPY packages/types/package.json ./packages/types/
+COPY apps/api/prisma/ ./apps/api/prisma/
 RUN pnpm install --frozen-lockfile
 
-FROM base AS builder
-WORKDIR /app
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=deps /app/apps/api/node_modules ./apps/api/node_modules
-COPY . .
-RUN pnpm --filter @hukuk/api db:generate
-RUN pnpm --filter @hukuk/api build
+COPY packages/ ./packages/
+COPY apps/api/ ./apps/api/
 
-FROM base AS runner
-WORKDIR /app
+WORKDIR /app/apps/api
+RUN pnpm exec prisma generate
+RUN pnpm exec nest build
+
 ENV NODE_ENV=production
-COPY --from=builder /app/apps/api/dist ./dist
-COPY --from=builder /app/apps/api/node_modules ./node_modules
-COPY --from=builder /app/apps/api/prisma ./prisma
-
 EXPOSE 8080
 CMD ["node", "dist/main.js"]

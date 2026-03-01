@@ -1,15 +1,15 @@
 {
   "metadata": {
     "schemaVersion": "1.0.0",
-    "runId": "perf_42_1771185213079",
+    "runId": "perf_42_1772305131666",
     "gitSha": "unknown",
-    "environmentSnapshotHash": "589a3417a1ac"
+    "environmentSnapshotHash": "7b4bc3df74cc"
   },
   "matrixId": "M5",
-  "startedAt": "2026-02-15T19:53:33.079Z",
+  "startedAt": "2026-02-28T18:58:51.666Z",
   "completedAt": "",
   "environment": {
-    "nodeVersion": "v24.11.1",
+    "nodeVersion": "v20.18.1",
     "cpuModel": "Intel(R) Core(TM) i7-8750H CPU @ 2.20GHz",
     "cpuCores": 12,
     "totalMemoryMB": 32498,
@@ -19,7 +19,7 @@
     "dbPoolSize": 10,
     "postgresVersion": "unknown",
     "perfSeed": 42,
-    "capturedAt": "2026-02-15T19:53:33.078Z"
+    "capturedAt": "2026-02-28T18:58:51.665Z"
   },
   "warmup": null,
   "sweep": null,
@@ -33,18 +33,16 @@
     "triggerRatio": 0.003076923076923077,
     "triggerReason": "forced-simulated",
     "wouldTriggerByThreshold": false,
-    "floatOpsPerSec": 164993.69385852388,
-    "scaledIntOpsPerSec": 205981.23786937867,
-    "e2eScaledIntOpsPerSec": 71001.73335111595,
-    "speedupFactor": 1.248418851971398,
-    "e2eSpeedupFactor": 0.4303299822597909,
+    "floatOpsPerSec": 135047.54402806525,
+    "scaledIntOpsPerSec": 158156.1848312498,
+    "e2eScaledIntOpsPerSec": 42936.168777236264,
+    "speedupFactor": 1.1711148541759646,
+    "e2eSpeedupFactor": 0.3179337253872116,
     "migrationPriority": "low",
     "iterations": 1000000
   },
   "seed": 42,
   "warnings": [
-    "[m5-noise] variant=float cv=41.6%",
-    "[m5-noise] variant=scaledInt cv=37.4%",
-    "{\"m5Diagnostics\":{\"runs\":{\"float\":[{\"grossNs\":9203116100,\"netNs\":9196254700,\"opsPerSec\":108739.91995893719},{\"grossNs\":6061637900,\"netNs\":6060837700,\"opsPerSec\":164993.69385852388},{\"grossNs\":3359336400,\"netNs\":3358909800,\"opsPerSec\":297715.64571337996}],\"scaledInt\":[{\"grossNs\":9181018100,\"netNs\":9179758400,\"opsPerSec\":108935.32884264142},{\"grossNs\":4855937500,\"netNs\":4854811100,\"opsPerSec\":205981.23786937867},{\"grossNs\":3390233900,\"netNs\":3389539000,\"opsPerSec\":295025.3707067539}],\"e2eScaledInt\":[{\"grossNs\":17415119700,\"netNs\":17410679000,\"opsPerSec\":57436.01383955216},{\"grossNs\":14086682200,\"netNs\":14084163200,\"opsPerSec\":71001.73335111595},{\"grossNs\":11314470200,\"netNs\":11313862300,\"opsPerSec\":88387.14609422107}]},\"emptyLoopNs\":6861400,\"inputConfig\":{\"metricCount\":10,\"seed\":42},\"gcAvailable\":false,\"noiseWarnings\":[\"[m5-noise] variant=float cv=41.6%\",\"[m5-noise] variant=scaledInt cv=37.4%\"]}}"
+    "{\"m5Diagnostics\":{\"runs\":{\"float\":[{\"grossNs\":8194673300,\"netNs\":8185528900,\"opsPerSec\":122166.81563484554},{\"grossNs\":7405861800,\"netNs\":7404799600,\"opsPerSec\":135047.54402806525},{\"grossNs\":6773155100,\"netNs\":6772005500,\"opsPerSec\":147666.74362565123}],\"scaledInt\":[{\"grossNs\":7870977800,\"netNs\":7869843400,\"opsPerSec\":127067.33147955651},{\"grossNs\":6323933900,\"netNs\":6322863700,\"opsPerSec\":158156.1848312498},{\"grossNs\":5991712300,\"netNs\":5990237600,\"opsPerSec\":166938.28638783877}],\"e2eScaledInt\":[{\"grossNs\":29822006400,\"netNs\":29820456100,\"opsPerSec\":33534.02767035478},{\"grossNs\":23293300200,\"netNs\":23290387300,\"opsPerSec\":42936.168777236264},{\"grossNs\":18599174400,\"netNs\":18597925600,\"opsPerSec\":53769.43759792221}]},\"emptyLoopNs\":9144400,\"inputConfig\":{\"metricCount\":10,\"seed\":42},\"gcAvailable\":false,\"noiseWarnings\":[]}}"
   ]
 }

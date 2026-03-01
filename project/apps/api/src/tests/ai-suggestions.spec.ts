@@ -10,7 +10,7 @@ import { PrismaService } from '../prisma/prisma.service';
 
 describe('AiService - Suggestion Tests', () => {
   let service: AiService;
-  let prisma: PrismaService;
+  let _prisma: PrismaService;
 
   const mockPrisma = {
     case: {
@@ -41,7 +41,7 @@ describe('AiService - Suggestion Tests', () => {
     }).compile();
 
     service = module.get<AiService>(AiService);
-    prisma = module.get<PrismaService>(PrismaService);
+    _prisma = module.get<PrismaService>(PrismaService);
   });
 
   afterEach(() => {

@@ -12,7 +12,7 @@
  */
 
 import { Money } from './money';
-import { CollectionId, CaseId, TenantId, DebtorId } from './branded-ids';
+import { CollectionId, CaseId, TenantId } from './branded-ids';
 
 // ============================================
 // ENUMS

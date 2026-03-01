@@ -1,17 +1,8 @@
-import { Injectable, OnModuleInit, Logger, Inject, Optional } from '@nestjs/common';
+import { Injectable, OnModuleInit, Logger, Inject } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
-
-// Shared contracts
-import type {
-  GateCode,
-  GateResult,
-  GateValidationResult as SharedGateValidationResult,
-  ValidationError as SharedValidationError,
-  GateSeverity,
-} from '@shared/types';
 
 /**
  * @deprecated Use policy-engine/gate-checker instead
@@ -39,7 +30,7 @@ export interface ValidationError {
   path: string;
   severity: 'ERROR' | 'WARNING';
   message: string;
-  field?: string;
+  field?: string | undefined;
 }
 
 export interface GateValidationResult {

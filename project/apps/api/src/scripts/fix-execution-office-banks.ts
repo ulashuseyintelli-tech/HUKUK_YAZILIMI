@@ -6,7 +6,7 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 // Seed dosyasındaki banka bilgileri (sadece İstanbul Bakırköy örneği)
-const bankData: Record<string, { bankName: string; branchName?: string }> = {
+const _bankData: Record<string, { bankName: string; branchName?: string }> = {
   // Tüm Vakıfbank hesapları için
   'Vakıf': { bankName: 'T. Vakıflar Bankası T.A.O.', branchName: 'Adliye Şubesi' },
 };
