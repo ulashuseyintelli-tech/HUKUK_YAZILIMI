@@ -5548,10 +5548,14 @@ model IcrabotTimelineEntry {
   body     Json?
   source   String @default("system") // uyap, engine, user, system
 
+  /// HR-11: Per-case monotonic, gap-free ordering. DB trigger enforces gap-free on INSERT.
+  aggregateVersion BigInt
+
   createdAt DateTime @default(now())
 
   run IcrabotEngineRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
 
+  @@unique([caseId, aggregateVersion])
   @@index([caseId])
   @@index([runId])
   @@index([type])

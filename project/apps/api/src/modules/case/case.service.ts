@@ -2,11 +2,13 @@ import { Injectable, NotFoundException, ConflictException, BadRequestException, 
 import { PrismaService } from "@/prisma/prisma.service";
 import { CreateCaseDto, UpdateCaseDto, CaseSubCategory, Currency } from "./dto/case.dto";
 import { Prisma, LegalCaseStatus } from "@prisma/client";
+import { randomUUID } from "crypto";
 import { isInitialStatus } from "../case-status/case-status.service";
 import { AuditService } from "../audit/audit.service";
 import { ClientInfoRequestService } from "../address-discovery/client-info-request.service";
 import { InterestEngineService } from "../interest-engine/interest-engine.service";
 import { ExpenseRequestService } from "../expense-request/expense-request.service";
+import { DomainEventIngestService } from "../icrabot/domain-event-ingest";
 
 @Injectable()
 export class CaseService {
@@ -21,6 +23,7 @@ export class CaseService {
     private interestEngineService: InterestEngineService,
     @Inject(forwardRef(() => ExpenseRequestService))
     private expenseRequestService: ExpenseRequestService,
+    private domainEventIngestService: DomainEventIngestService,
   ) {}
 
   /**
@@ -864,6 +867,29 @@ export class CaseService {
             },
           });
         }
+
+        // 8.5. CASE_OPENED domain event (HR-39: same-tx append)
+        await this.domainEventIngestService.appendInTransaction(tx, {
+          header: {
+            eventId: randomUUID(),
+            aggregateType: 'Case',
+            aggregateId: newCase.id,
+            eventType: 'CASE_OPENED',
+            occurredAt: new Date().toISOString(),
+            occurredAtConfidence: 'SYSTEM_VERIFIED',
+            actor: { type: 'HUMAN', userId: 'system' }, // TODO: propagate real userId from request context
+            tenantId,
+          },
+          payload: {
+            fileNumber: newCase.fileNumber,
+            type: newCase.type,
+            subType: newCase.subType,
+            executionPath: newCase.executionPath,
+            caseStatus: newCase.caseStatus,
+            currency: newCase.currency,
+            caseDate: newCase.caseDate?.toISOString(),
+          },
+        });
 
         // 9. Tam case'i döndür
         const createdCase = await tx.case.findUnique({

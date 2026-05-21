@@ -5,6 +5,7 @@ import { OcrModule } from "../ocr/ocr.module";
 import { AddressDiscoveryModule } from "../address-discovery/address-discovery.module";
 import { InterestEngineModule } from "../interest-engine/interest-engine.module";
 import { ExpenseRequestModule } from "../expense-request/expense-request.module";
+import { DomainEventIngestModule } from "../icrabot/domain-event-ingest";
 
 @Module({
   imports: [
@@ -12,6 +13,7 @@ import { ExpenseRequestModule } from "../expense-request/expense-request.module"
     forwardRef(() => AddressDiscoveryModule),
     forwardRef(() => InterestEngineModule),
     forwardRef(() => ExpenseRequestModule),
+    DomainEventIngestModule,
   ],
   controllers: [CaseController],
   providers: [CaseService],
