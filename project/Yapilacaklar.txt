@@ -1,5 +1,14 @@
+### ⚠️ SUPERSEDED (2026-06-05) ###
+# Bu dosyadaki "faiz motoru takip tipine göre deterministik seçmiyor" tespiti BAYAT.
+# Güncel durum (kod kanıtlı): interest-engine olgun — segment-builder + tbk100-allocator +
+# version-pinning + sprint-4 testleri (%42.25/%39.75) doğru segmentliyor.
+# Tek kalan gerçek iş: preview path'teki hardcoded fallback (interest-engine.service.ts:645
+# 'COMMERCIAL_AVANS_3095_2_2': 39.75) → mevcut RateProviderService'e bağlanacak.
+# Detay: .kiro/specs/legal-kernel/01-stabilization-status.md (Faiz Motoru bölümü)
+# Bu dosyayı analiz öncülü olarak kullanmayın.
+####################################
 
-her bir takip tipine göre nasıl faiz işletileceğini sana araştırtmıştım ve programı buna göre düzenlemiş olmalısın yanılıyor muyum ? Yapmadıysan bunu internet üzerinde araştırarak sistemini buna göre kurar mısın ? 
+her bir takip tipine göre nasıl faiz işletileceğini sana araştırtmıştım ve programı buna göre düzenlemiş olmalısın yanılıyor muyum ? Yapmadıysan bunu internet üzerinde araştırarak sistemini buna göre kurar mısın ?
 
 
 

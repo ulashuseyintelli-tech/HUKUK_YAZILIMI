@@ -1,3 +1,5 @@
+> ⚠️ **SUPERSEDED (2026-06-05)** — Bu belgedeki R-01..R-04 ve PF-001..005 maddeleri **kapatılmıştır.** Güncel ve kanıtlı durum: `.kiro/specs/legal-kernel/01-stabilization-status.md`. Bu dosya **tarihsel kayıttır**, aktif iş listesi DEĞİLDİR — analiz öncülü olarak kullanmayın.
+
 # PART-3 — Performance & Reliability Audit (Revize v2)
 
 **Tarih:** 2026-02-27  

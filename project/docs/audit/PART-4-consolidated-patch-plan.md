@@ -1,3 +1,5 @@
+> ⚠️ **SUPERSEDED (2026-06-05)** — PF-001..PF-005 (Faz 0 acil maddeler) **tamamı kapatılmıştır.** Kanıt linkleri: `.kiro/specs/legal-kernel/01-stabilization-status.md`. Bu dosya **tarihsel kayıttır**; "3 aydır açık" gibi ifadeleri güncel sanmayın — analiz öncülü olarak kullanmayın.
+
 # PART-4 — Consolidated Patch Plan & Test Plan
 
 **Tarih:** 2026-02-27  
