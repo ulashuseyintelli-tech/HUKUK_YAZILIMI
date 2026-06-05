@@ -5540,6 +5540,8 @@ model IcrabotEngineRun {
 model IcrabotTimelineEntry {
   id     String  @id @default(cuid())
   caseId String
+  /// Faz 1: nullable (backfill bekliyor). Faz 4'te NOT NULL — bkz legal-kernel/15-timeline-tenant-isolation-migration.md
+  tenantId String?
   runId  String?
 
   type     String // UYAP_EVENT, FACT_WRITE, COMPUTE, DECISION, ACTION, OUTCOME, NOTE
@@ -5556,6 +5558,7 @@ model IcrabotTimelineEntry {
   run IcrabotEngineRun? @relation(fields: [runId], references: [id], onDelete: SetNull)
 
   @@unique([caseId, aggregateVersion])
+  @@index([tenantId, caseId])
   @@index([caseId])
   @@index([runId])
   @@index([type])
