@@ -271,6 +271,8 @@ describeIf('DomainEventIngest — DB Integration', () => {
 
       expect(timeline).not.toBeNull();
       expect(timeline.aggregateVersion).toBe(BigInt(1));
+      // spec-15 §1 Writer A: tenantId header'dan timeline kolonuna yazılmalı
+      expect(timeline.tenantId).toBe('test-tenant');
       expect(outbox).not.toBeNull();
       expect(outbox.actionType).toBe('EVENT_PUBLISHED:PAYMENT_RECEIVED');
     });

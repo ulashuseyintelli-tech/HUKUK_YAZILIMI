@@ -30,6 +30,8 @@ export type TimelineSource = 'uyap' | 'engine' | 'user' | 'system';
 
 export interface AddTimelineParams {
   caseId: string;
+  /** spec-15 §1: explicit tenant (ana yol). Verilmezse addEntry caseId'den köprü ile türetir (geçici). */
+  tenantId?: string;
   type: TimelineEntryType;
   title: string;
   severity?: TimelineSeverity;
@@ -66,9 +68,23 @@ export class TimelineService {
    * Timeline'a yeni entry ekler
    */
   async addEntry(params: AddTimelineParams): Promise<string> {
+    // TODO(bridge-spec15-§1): v28 caller'larının bir kısmı henüz tenantId threading'ini tamamlamadı.
+    // Geçici köprü: param yoksa caseId'den türet (per-insert lookup — KALICI TASARIM DEĞİL).
+    // v28 threading bitince ve Faz 4 (NOT NULL) öncesi KALDIRILMALI.
+    // bkz .kiro/specs/legal-kernel/15-timeline-tenant-isolation-migration.md
+    let tenantId = params.tenantId ?? null;
+    if (!tenantId) {
+      const c = await (this.prisma as any).case.findUnique({
+        where: { id: params.caseId },
+        select: { tenantId: true },
+      });
+      tenantId = c?.tenantId ?? null;
+    }
+
     const entry = await (this.prisma as any).icrabotTimelineEntry.create({
       data: {
         caseId: params.caseId,
+        tenantId,
         type: params.type,
         title: params.title,
         severity: params.severity || 'info',

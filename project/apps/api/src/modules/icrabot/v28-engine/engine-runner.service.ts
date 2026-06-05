@@ -89,6 +89,7 @@ export class EngineRunnerService {
     caseId: string,
     event: Record<string, any>,
     rule: RuleDefinition,
+    tenantId?: string,
   ): Promise<RunResult> {
     // 1. Get fact snapshot
     const snapshot = await this.factStore.getSnapshot(caseId);
@@ -130,6 +131,7 @@ export class EngineRunnerService {
 
       await this.timeline.addEntry({
         caseId,
+        tenantId,
         type: 'COMPUTE',
         title: 'Compute executed',
         severity: 'info',
@@ -170,6 +172,7 @@ export class EngineRunnerService {
 
       await this.timeline.addEntry({
         caseId,
+        tenantId,
         type: 'FACT_WRITE',
         title: 'Facts/Flags written',
         severity: 'info',
@@ -194,6 +197,7 @@ export class EngineRunnerService {
 
         await this.timeline.addEntry({
           caseId,
+          tenantId,
           type: 'DECISION',
           title: 'Decision matched',
           severity: 'warn',
@@ -225,6 +229,7 @@ export class EngineRunnerService {
             actionsCreated++;
             await this.timeline.addEntry({
               caseId,
+              tenantId,
               type: 'ACTION',
               title: `Action queued: ${actionType}`,
               severity: 'info',
@@ -235,6 +240,7 @@ export class EngineRunnerService {
           } else {
             await this.timeline.addEntry({
               caseId,
+              tenantId,
               type: 'ACTION',
               title: `Action duplicate (ignored): ${actionType}`,
               severity: 'info',
@@ -271,6 +277,7 @@ export class EngineRunnerService {
 
       await this.timeline.addEntry({
         caseId,
+        tenantId,
         type: 'OUTCOME',
         title: 'Engine run failed',
         severity: 'critical',
@@ -290,12 +297,13 @@ export class EngineRunnerService {
     caseId: string,
     event: Record<string, any>,
     rules: RuleDefinition[],
+    tenantId?: string,
   ): Promise<{ matched: RunResult[]; total: number }> {
     const matched: RunResult[] = [];
 
     for (const rule of rules) {
       try {
-        const result = await this.runForEvent(caseId, event, rule);
+        const result = await this.runForEvent(caseId, event, rule, tenantId);
         if (result.matched) {
           matched.push(result);
         }
