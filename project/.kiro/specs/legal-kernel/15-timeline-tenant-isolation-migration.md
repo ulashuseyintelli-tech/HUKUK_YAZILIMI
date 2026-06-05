@@ -14,6 +14,18 @@ sprint: 2D
 
 ---
 
+## ⚠️ DECISION UPDATE (2026-06-05) — Forward-only
+
+> Because `IcrabotTimelineEntry` is protected by immutable-log UPDATE/DELETE triggers, historical tenantId backfill is intentionally not performed.
+> tenantId is forward-only metadata for new entries.
+> The column remains nullable permanently unless a future append-only migration model is designed.
+> Historical tenant resolution must use caseId → Case.tenantId join.
+> NOT NULL phase is dropped.
+
+**Sonuç:** Faz 1 ✅ (kolon+index) · Faz 2 ✅ (writer'lar + bridge + test) · **Faz 3 (backfill) = N/A** · **Faz 4 (NOT NULL) = düşürüldü.** Bridge, Faz 4'e değil, v28 threading tamamlanınca kaldırılacak **ayrı debt** olarak kalır. Aşağıdaki §3/§4/§5 tarihsel bağlamdır; bu banner bağlayıcıdır.
+
+---
+
 ## 0. Neden Bu Spec Gerekli
 
 Event log (`IcrabotTimelineEntry`) hukuki olguların kanonik kaydı. Ama tabloda **`tenantId` kolonu yok** — sadece `caseId` var. tenantId, DomainEventIngest yolunda `body` JSON'una (`body.header.tenantId`) gömülü; sorgulanabilir/partition'lanabilir bir kolon değil.
@@ -87,8 +99,8 @@ WHERE c.id = t.case_id
 |-----|-----|-------|
 | 1 | `tenantId` **nullable** kolon ekle + index | Mevcut yazımları kırmaz |
 | 2 | App writer'ları güncelle (A: header'dan; B: param) → yeni satırlar dolu gelir | Yeni veri canonical |
-| 3 | Backfill (§3) → eski satırlar dolar | Geçmiş tutarlı |
-| 4 | `NOT NULL` constraint ekle | Storage-level garanti |
+| ~~3~~ | ~~Backfill → eski satırlar dolar~~ → **İPTAL/N/A** (immutable-log trigger UPDATE'i yasaklar) | Forward-only kararı |
+| ~~4~~ | ~~`NOT NULL` constraint~~ → **DÜŞÜRÜLDÜ** (geçmiş satırlar mutate edilemez) | Immutability korunur |
 
 **Faz 4, Faz 2+3 doğrulanmadan uygulanmaz.** (Doluluk: `SELECT COUNT(*) WHERE tenant_id IS NULL` = 0 olmalı.)
 
@@ -160,14 +172,17 @@ Bu sprint **kapsamı dışı** — önce kolon + backfill + NOT NULL. Trigger Sp
 
 ## DoD
 
-- [ ] §1 writer kararları onaylı (A: header, B: boundary+threading, fallback TODO'lu)
-- [ ] §2 schema değişikliği
-- [ ] §3 backfill + yetim kontrolü
-- [ ] §4 4-faz migration (nullable → write → backfill → NOT NULL)
-- [ ] §7 test planı
-- [ ] **ulas onayı**
+- [x] §1 writer kararları onaylı (A: header, B: boundary+threading, fallback TODO'lu)
+- [x] §2 schema değişikliği — Faz 1 (commit `f8061b3`)
+- [x] Faz 2 writer'lar + bridge + testler (commit `4ba4d26`)
+- [~] ~~§3 backfill~~ → **N/A** (forward-only — bkz Decision Update)
+- [~] ~~§4 NOT NULL~~ → **düşürüldü** (forward-only)
+- [x] §7 test planı (Writer A real-DB assert + v28 boundary testi)
+- [x] **ulas onayı** (2026-06-05, forward-only)
 
 ---
 
-**Decision Status:** Pending approval
-**Sonraki:** Onay sonrası Faz 1 (nullable kolon + index migration).
+**Decision Status:** Accepted (forward-only) — 2026-06-05
+**Tamamlandı:** Faz 1 (kolon+index, real-DB doğrulamalı), Faz 2 (writer'lar + bridge + 48 test).
+**Kapatıldı:** Faz 3 (backfill) = N/A, Faz 4 (NOT NULL) = düşürüldü (immutable log).
+**Açık debt:** (1) bridge kaldırma — v28 tam threading tamamlanınca; (2) v28 aggregateVersion gap — `90-future-work/deferred/v28-timeline-aggregate-version-gap.md`.
