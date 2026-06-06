@@ -34,8 +34,32 @@ export function calculateSegmentInterest(
 }
 
 /**
+ * Exact decimal scaling — IEEE-754 `value * factor` hatasını giderir.
+ *
+ * Örn: 1.005 * 100 === 100.49999999999999 (float) → yanlış aşağı yuvarlama.
+ * `Number(`1.005e2`)` === 100.5 (decimal string parse) → doğru.
+ *
+ * Çok küçük (<1e-6) / çok büyük (>~1e21) değerlerde exponential string
+ * (`"1e-7e2"`) geçersiz olur → NaN. Bu durumda eski `value * 10^d` davranışına
+ * fallback yapılır (regresyon olmaması için). Para tutarları bu aralığa düşmez.
+ */
+function scaleUp(value: number, decimals: number): number {
+  const scaled = Number(`${value}e${decimals}`);
+  return Number.isFinite(scaled) ? scaled : value * Math.pow(10, decimals);
+}
+
+function scaleDown(value: number, decimals: number): number {
+  const unscaled = Number(`${value}e-${decimals}`);
+  return Number.isFinite(unscaled) ? unscaled : value / Math.pow(10, decimals);
+}
+
+/**
  * Round monetary value based on rounding mode
- * 
+ *
+ * Exact minor-unit yuvarlama: `value * factor` float hatası `scaleUp` ile giderilir.
+ * - HALF_UP: away-from-zero (para için simetrik; -1.005 → -1.01, +1.005 → +1.01).
+ * - BANKERS: round-half-to-even (exact scaled değer üzerinde).
+ *
  * @param value - Değer
  * @param mode - Yuvarlama modu
  * @param decimals - Ondalık basamak sayısı (default: 2)
@@ -45,17 +69,16 @@ export function roundMoney(
   mode: RoundingMode = RoundingMode.HALF_UP,
   decimals: number = 2,
 ): number {
-  const factor = Math.pow(10, decimals);
+  const scaled = scaleUp(value, decimals);
 
   switch (mode) {
-    case RoundingMode.HALF_UP:
-      return Math.round(value * factor) / factor;
-
     case RoundingMode.BANKERS:
-      return bankersRound(value * factor) / factor;
+      return scaleDown(bankersRound(scaled), decimals);
 
+    case RoundingMode.HALF_UP:
     default:
-      return Math.round(value * factor) / factor;
+      // away-from-zero: işareti koru, mutlak değerde Math.round uygula
+      return scaleDown(Math.sign(scaled) * Math.round(Math.abs(scaled)), decimals);
   }
 }
 
