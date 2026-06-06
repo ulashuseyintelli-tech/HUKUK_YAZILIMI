@@ -66,13 +66,14 @@ describe('interest-formula characterization (bugünkü davranış kilidi)', () =
     });
 
     /**
-     * ⚠️ R3: FLOAT ARTEFAKTI — bilinçli kilitlenen KUSURLU davranış.
-     * 1.005 * 100 = 100.49999999999999 (float) → Math.round → 100 → 1.00.
-     * "Doğru" sonuç 1.01 beklenir. PR-2'de minor-unit/bigint ile düzeltilirse
-     * bu test KIRILACAK ve 1.01 olarak bilinçli yeniden onaylanacaktır.
+     * R3: BİLİNÇLİ DÜZELTME (Faz 1B-D1, fix(interest-engine): exact rounding).
+     * Eski float artefaktı: 1.005*100 = 100.4999... → 1.00 (YANLIŞ).
+     * Yeni exact-scale: Number(`1.005e2`) = 100.5 → 1.01 (DOĞRU).
+     * Bu değer, PR-1 characterization'ında `1` olarak kilitlenmişti; exact-rounding
+     * düzeltmesiyle bilinçli olarak 1.01'e güncellendi.
      */
-    it('R3: (1.005, HALF_UP, 2) → 1 [FLOAT ARTEFAKTI, bilinçli kilit]', () => {
-      expect(roundMoney(1.005, RoundingMode.HALF_UP, 2)).toBe(1);
+    it('R3: (1.005, HALF_UP, 2) → 1.01 [exact rounding düzeltmesi]', () => {
+      expect(roundMoney(1.005, RoundingMode.HALF_UP, 2)).toBe(1.01);
     });
 
     it('R4: (2.675, HALF_UP, 2) → 2.68', () => {
@@ -93,6 +94,25 @@ describe('interest-formula characterization (bugünkü davranış kilidi)', () =
 
     it('R8: (3.5, BANKERS, 0) → 4 (even)', () => {
       expect(roundMoney(3.5, RoundingMode.BANKERS, 0)).toBe(4);
+    });
+  });
+
+  /**
+   * INTENT — exact-rounding düzeltmesinin (Faz 1B-D1) hedef davranışları.
+   * Bunlar characterization (eski davranış kilidi) değil; yeni doğru davranışın testidir.
+   */
+  describe('roundMoney intent (exact-rounding hedef davranışı)', () => {
+    it('negatif HALF_UP away-from-zero: (-1.005, HALF_UP, 2) → -1.01', () => {
+      // Eski Math.round toward-+inf: -1.00 verirdi. Yeni: simetrik away-from-zero.
+      expect(roundMoney(-1.005, RoundingMode.HALF_UP, 2)).toBe(-1.01);
+    });
+
+    it('exact half-up: (0.025, HALF_UP, 2) → 0.03', () => {
+      expect(roundMoney(0.025, RoundingMode.HALF_UP, 2)).toBe(0.03);
+    });
+
+    it('BANKERS half-to-even: (1.005, BANKERS, 2) → 1 (100.5 → even 100)', () => {
+      expect(roundMoney(1.005, RoundingMode.BANKERS, 2)).toBe(1);
     });
   });
 
