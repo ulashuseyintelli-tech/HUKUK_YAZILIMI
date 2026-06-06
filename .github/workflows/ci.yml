@@ -3,7 +3,7 @@ name: CI
 
 on:
   push:
-    branches: ['*']
+    branches: ['**']
   pull_request:
     branches: [main]
 
@@ -38,6 +38,22 @@ jobs:
   test-suite:
     name: Test Suite
     runs-on: ubuntu-latest
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/hukuk_test
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: hukuk_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -54,6 +70,9 @@ jobs:
       - name: Prisma generate
         run: pnpm --filter @hukuk/api exec prisma generate
         working-directory: project
+      - name: Prisma migrate deploy
+        run: pnpm --filter @hukuk/api exec prisma migrate deploy
+        working-directory: project
       - name: Type check (non-blocking)
         run: pnpm --filter @hukuk/api exec tsc --noEmit -p tsconfig.prod.json
         working-directory: project
@@ -64,4 +83,10 @@ jobs:
           npx jest --ci --forceExit --passWithNoTests \
             --testPathPattern="guards/__tests__/(drift-guard|baseline-math|stage-0|stage-1|sd-2|sd-25|sd-26|sd-3)" \
             --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
+      - name: Integration Tests (legal-kernel, real Postgres)
+        run: |
+          cd apps/api
+          npx jest --ci --forceExit --runInBand \
+            --testPathPattern="(collection-payment-received|domain-event-ingest|uyap-event-ingest\.boundary)\.integration\.spec\.ts$"
         working-directory: project
