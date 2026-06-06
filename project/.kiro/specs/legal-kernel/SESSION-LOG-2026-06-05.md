@@ -59,4 +59,12 @@ purpose: "Bu oturumun sürecini, kararlarını ve nerede kalındığını kalıc
 - Commit trailer: `Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>`.
 
 ---
-**Son commit (bu branch):** `docs(legal-kernel): add clone rehearsal plan`. **Sıradaki:** klon prova (doc 16 §11).
+
+## G. Cutover execution checkpoint (2026-06-06, ek)
+- **Klon prova ✅ PASSED** (doc 16 §12): `hukuk_cutover_clone`, 151/5/8, 24/24, rollback OK, dev untouched.
+- **Cutover plan review ✅** (doc 17): A/B/C/D fazları + gate'ler. Arşiv hedefi `prisma/migrations-archive/` (root dışı, düzeltildi).
+- **Faz A (repo cutover) ✅ COMMITTED + PUSHED** — `30a0e25`. 19 eski migration → `migrations-archive/` (git mv); yeni zincir baseline (151) + legal_kernel_triggers (5fn/8trg). schema.prisma & lock değişmedi.
+- **Faz C (dev metadata) ✅ PASS** — `hukuk_db._prisma_migrations` 19 → 2 (resolve --applied + eski 19 DELETE). `migrate status` up to date. Şema/veri değişmedi (152/5/8). Yedek `_fazC_backup/20260606_203101/` (pm.before 19 INSERT + tam dump). Tek tek gate'li ilerlendi (C0→C1→C2→C3/C4).
+- **Sıradaki:** Faz D (temiz DB deploy doğrulaması + PR #3 rebase/merge) — ayrı onay.
+
+**Son commit (bu branch):** `docs/prisma(legal-kernel): squash prisma migrations into baseline` (`30a0e25`). **Sıradaki:** cutover Faz D (doc 17).
