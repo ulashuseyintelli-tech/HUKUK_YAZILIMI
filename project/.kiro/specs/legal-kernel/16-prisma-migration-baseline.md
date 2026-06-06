@@ -123,13 +123,32 @@ Hedef DB **yalnız `hukuk_cutover_clone`**; repo simülasyonu **`prisma-cutover-
 8. **Dev dokunulmadı teyidi:** `hukuk_db._prisma_migrations`'ta baseline/triggers YOK (read-only). `git status` temiz.
 9. **Temizlik:** `dropdb hukuk_cutover_clone` + `rm -rf prisma-cutover-tmp /tmp/*.dump /tmp/*.sql`.
 
+## 12. Clone Rehearsal Result (2026-06-06) — PASSED
+Hedef DB **yalnız `hukuk_cutover_clone`** (PG 18.1), temp layout `.cutover-tmp/`; gerçek dev/prod DB + gerçek `prisma/migrations` + gerçek `schema.prisma` **dokunulmadı**. Hata oluşmadı (hiçbir adımda durulmadı).
+
+| # | Adım | Sonuç |
+|---|---|---|
+| 1 | pg_dump/restore | `hukuk_db` → `hukuk_cutover_clone` (640 KB custom dump). Klon: 152 base tablo + 19 migration kaydı (dev ile birebir). Dev'e yalnız okuma. |
+| 2 | Temp layout | `.cutover-tmp/prisma/` = schema kopyası + lock + `{00000000000000_baseline, 00000000000001_legal_kernel_triggers}`. Gerçek migrations elle değişmedi. |
+| 3 | Baseline + trigger üretimi | baseline = `migrate diff --from-empty` → **151 CREATE TABLE**; triggers = 3 kaynaktan **5 fn + 8 trg + 1 worker singleton**, yasak statement (ALTER/CREATE TABLE/backfill/INDEX) = 0. |
+| 4 | resolve --applied | baseline + triggers metadata-only applied (DDL yok) → 19→21 kayıt. Önce orijinal metadata yedeği (`clone_pm.before.sql`, 19 kayıt). |
+| 5 | Eski metadata temizliği | `DELETE … NOT IN (baseline, triggers)` → 19 silindi, 2 kaldı (ikisi finished + not rolled-back). |
+| 6 | migrate status | **"Database schema is up to date!"** — 2 migration, divergence yok. |
+| 7 | Yapı doğrulama | **151 tablo / 5 function / 8 trigger** + worker singleton row korunmuş. |
+| 8 | Integration | `collection-payment-received` + `domain-event-ingest` + `uyap-event-ingest.boundary` → **3 suite, 24/24 PASSED** (klona karşı). |
+| 9 | Rollback provası | 2 kayıt sil → `clone_pm.before.sql` restore → 19 kayıt geri, baseline/triggers gitti (0), **şema değişmedi (151/5/8)** = rollback saf metadata kanıtı. |
+| 10 | Dev DB dokunulmadı | `hukuk_db`: 19 kayıt / 0 baseline-triggers / 152 tablo (değişmemiş). Gerçek repo migrations: 19 klasör, baseline/triggers yok. |
+| 11 | Temizlik | `dropdb hukuk_cutover_clone` (0 kaldı) + `.cutover-tmp` silindi. Final `git status` temiz. |
+
+**Çıktı:** A1 squash-baseline cutover akışı klonda uçtan uca doğrulandı — resolve metadata akışı temiz, şema/veri/trigger korunuyor, rollback metadata-restore ile geri alınabilir, dev tamamen izole kaldı.
+
 ## DoD
 - [x] A1 kararı + envanter + proof planı
 - [x] Proof: temp DB'de squash zinciri yeşil (§9 — 151/5/8, 24/24)
 - [x] Cutover planı (§10)
-- [ ] Klon prova (dev/prod'a dokunmadan)
+- [x] **Klon prova (dev/prod'a dokunmadan) — COMPLETED (§12, 2026-06-06: 151/5/8, 24/24, rollback OK, dev untouched)**
 - [ ] Cutover execution onayı (repo migrations red-line gevşetme)
 - [ ] **ulas onayı**
 
 ---
-**Decision Status:** Plan accepted (A1). Proof PASSED. Cutover plan recorded; clone-prova next (execution pending approval).
+**Decision Status:** Plan accepted (A1). Proof PASSED. Clone rehearsal PASSED (§12). Cutover execution pending — ilk kez gerçek `prisma/migrations` + gerçek dev DB metadata ile temas edecek; **ayrı explicit onay gerektirir.**
