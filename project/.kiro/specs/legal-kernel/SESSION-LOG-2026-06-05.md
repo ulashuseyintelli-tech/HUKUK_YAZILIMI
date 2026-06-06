@@ -66,6 +66,22 @@ purpose: "Bu oturumun sürecini, kararlarını ve nerede kalındığını kalıc
 - **Faz A (repo cutover) ✅ COMMITTED + PUSHED** — `30a0e25`. 19 eski migration → `migrations-archive/` (git mv); yeni zincir baseline (151) + legal_kernel_triggers (5fn/8trg). schema.prisma & lock değişmedi.
 - **Faz C (dev metadata) ✅ PASS** — `hukuk_db._prisma_migrations` 19 → 2 (resolve --applied + eski 19 DELETE). `migrate status` up to date. Şema/veri değişmedi (152/5/8). Yedek `_fazC_backup/20260606_203101/` (pm.before 19 INSERT + tam dump). Tek tek gate'li ilerlendi (C0→C1→C2→C3/C4).
 - **Faz D Blok 1 (DR kanıtı) ✅ PASS** — geçici `hukuk_deploy_verify`'da gerçek committed migrations ile `migrate deploy` sıfırdan geçti; 151/5/8 + singleton + 2 kayıt; 24/24 integration; geçici DB drop; `hukuk_db` dokunulmadı. PR #3'ün kırmızı kök nedeni (migrate deploy temiz DB'de patlıyordu) çözüldü.
-- **Sıradaki:** Faz D Blok 2 (D4 main merge gate · D5 PR #3 rebase · D6 CI · D7 PR #3 merge) — her biri ayrı onay.
 
-**Son commit (bu branch):** `docs(legal-kernel): record phase d verification pass`. **Sıradaki:** cutover Faz D Blok 2 (doc 17, merge & PR #3).
+## H. CUTOVER COMPLETE (2026-06-06, final) ✅
+- **Faz D Blok 2 (merge & PR #3) ✅** — gate'li ilerlendi:
+  - **D4** cutover branch → main merged: **`889363d`** (PR #4, merge commit / no-squash, audit izi korundu).
+  - **D5** PR #3 (`fix/ci-pr-gates`) rebase onto main (çakışma 0) + force-with-lease push: **`99a0ffb`**.
+  - **D6** CI **yeşil** — Prisma migrate deploy ✅ + Integration (legal-kernel, real Postgres) 24/24 ✅.
+  - **D7** PR #3 merged: **`08f9af7`** (main HEAD).
+- **Net sonuç:** Repo ↔ dev DB ↔ CI tam hizalı. `migrate deploy` sıfırdan çalışıyor → CI artık gerçek bir kapı; yeni ortam/DR kurulabilir. db-push-kaynaklı migration-completeness açığı KAPANDI.
+- **Süreç meta:** Tüm cutover, klon/temp prova → plan-review → tek tek gate → checkpoint dokümantasyonu disipliniyle yürütüldü; gerçek dev DB'ye yalnız Faz C'de (metadata-only, yedekli, geri alınabilir) dokunuldu.
+
+### Açık backlog (cutover sonrası)
+1. Money float64 → bigint (determinizm).
+2. `@hukuk/legal-time` paketi (temporal).
+3. INTEREST_POLICY_ASSIGNED emit (doc 14, Sprint 2C — case.service'te emit yok).
+4. Bridge kaldırma (v28 threading sonrası — spec 15).
+5. aggregate-version gap (`v28-timeline-aggregate-version-gap`).
+(Detay: §C yol haritası + §E debt + `90-future-work/deferred/`.)
+
+**Son durum:** main `08f9af7` (cutover + CI gate canlı). **Sıradaki:** yukarıdaki backlog'dan seçim.
