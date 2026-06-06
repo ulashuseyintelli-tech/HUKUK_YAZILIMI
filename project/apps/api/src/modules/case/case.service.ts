@@ -551,7 +551,7 @@ export class CaseService {
     return parts.length > 0 ? parts.join(' / ') : 'Sınıflandırılmamış';
   }
 
-  async create(tenantId: string, dto: CreateCaseDto) {
+  async create(tenantId: string, dto: CreateCaseDto, userId?: string) {
     // B.5: Başlangıç statüsü validasyonu
     if (dto.caseStatus && !isInitialStatus(dto.caseStatus as LegalCaseStatus)) {
       throw new BadRequestException(
@@ -877,7 +877,7 @@ export class CaseService {
             eventType: 'CASE_OPENED',
             occurredAt: new Date().toISOString(),
             occurredAtConfidence: 'SYSTEM_VERIFIED',
-            actor: { type: 'HUMAN', userId: 'system' }, // TODO: propagate real userId from request context
+            actor: { type: 'HUMAN', userId: userId || 'unknown' },
             tenantId,
           },
           payload: {

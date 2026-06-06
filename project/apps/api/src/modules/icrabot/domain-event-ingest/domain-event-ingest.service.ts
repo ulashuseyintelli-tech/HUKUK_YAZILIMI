@@ -95,6 +95,8 @@ export class DomainEventIngestService {
     await (tx as any).icrabotTimelineEntry.create({
       data: {
         caseId: event.header.aggregateId,
+        // Writer A (spec-15 §1): canonical path — tenantId header'da hazır, doğrudan yaz.
+        tenantId: event.header.tenantId,
         type: event.header.eventType,
         severity: 'info',
         title: event.header.eventType,

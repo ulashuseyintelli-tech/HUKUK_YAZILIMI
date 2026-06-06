@@ -1,0 +1,342 @@
+/**
+ * Collection Service — PAYMENT_RECEIVED Integration Tests
+ *
+ * Phase 2 Sprint 2B
+ *
+ * Coverage:
+ * - Test 1: Normal payment → collection + event + outbox in same tx
+ * - Test 2: Closed case (HITAM/INFAZ) → BadRequestException, nothing created
+ * - Test 3: External duplicate sourceId → ConflictException, no new event
+ * - Test 4: PAYMENT_RECEIVED payload has no allocation fields
+ * - Test 5: Currency empty → event payload has explicit 'TRY'
+ * - Test 6: forDebtorId present → appears in payload
+ * - Test 7: autoAllocateInTx fail → full rollback (collection + event + outbox gone)
+ * - Test 8: EXTERNAL_SIGNED without evidence → HR-34 fail
+ *
+ * Requires: DATABASE_URL pointing to test database with migrations applied.
+ */
+import { PrismaClient } from '@prisma/client';
+import { randomUUID } from 'crypto';
+import { CollectionService } from '../collection.service';
+import { DomainEventIngestService } from '../../icrabot/domain-event-ingest';
+import { CreateCollectionDto, CollectionSource, CollectionType } from '../dto/collection.dto';
+
+const DATABASE_URL = process.env.DATABASE_URL ?? '';
+const describeIf = DATABASE_URL ? describe : describe.skip;
+
+describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
+  let prisma: PrismaClient;
+  let service: CollectionService;
+  let domainEventIngest: DomainEventIngestService;
+  let testTenantId: string;
+  let testCaseId: string;
+
+  beforeAll(async () => {
+    prisma = new PrismaClient({
+      datasources: { db: { url: DATABASE_URL } },
+    });
+    await prisma.$connect();
+    domainEventIngest = new DomainEventIngestService();
+    service = new CollectionService(prisma as any, domainEventIngest);
+  });
+
+  afterAll(async () => {
+    await prisma.$disconnect();
+  });
+
+  beforeEach(async () => {
+    // Create test tenant + case for each test
+    testTenantId = `test-tenant-${randomUUID().slice(0, 8)}`;
+    const tenant = await prisma.tenant.create({
+      data: { id: testTenantId, name: 'Test Tenant', slug: `test-${randomUUID().slice(0, 8)}` },
+    });
+
+    const caseRow = await prisma.case.create({
+      data: {
+        tenantId: testTenantId,
+        fileNumber: `TEST-${randomUUID().slice(0, 6)}`,
+        type: 'GENERAL_EXECUTION',
+        caseStatus: 'DERDEST',
+        status: 'ACTIVE',
+      },
+    });
+    testCaseId = caseRow.id;
+  });
+
+  function buildDto(overrides: Partial<CreateCollectionDto> = {}): CreateCollectionDto {
+    return {
+      caseId: testCaseId,
+      amount: 5000,
+      type: CollectionType.BANK_TRANSFER,
+      date: new Date().toISOString(),
+      ...overrides,
+    } as CreateCollectionDto;
+  }
+
+  // ── Test 1: Normal payment creates collection + event + outbox ─────────
+
+  describe('Test 1: Normal payment → same-tx atomic creation', () => {
+    it('creates collection row, PAYMENT_RECEIVED event, and outbox row', async () => {
+      const dto = buildDto({ sourceType: CollectionSource.MANUAL });
+      const result = await service.create(testTenantId, dto, 'test-user-1');
+
+      // Collection exists
+      expect(result).toBeDefined();
+      expect(result.id).toBeDefined();
+      expect(Number(result.amount)).toBe(5000);
+
+      // Event exists (timeline entry with PAYMENT_RECEIVED)
+      const event = await (prisma as any).icrabotTimelineEntry.findFirst({
+        where: { caseId: testCaseId, type: 'PAYMENT_RECEIVED' },
+      });
+      expect(event).not.toBeNull();
+      expect(event.aggregateVersion).toBe(BigInt(1));
+
+      // Outbox exists
+      const outbox = await (prisma as any).icrabotOutboxAction.findFirst({
+        where: {
+          caseId: testCaseId,
+          actionType: 'EVENT_PUBLISHED:PAYMENT_RECEIVED',
+        },
+      });
+      expect(outbox).not.toBeNull();
+    });
+  });
+
+  // ── Test 2: Closed case → reject ──────────────────────────────────────
+
+  describe('Test 2: Closed case → BadRequestException', () => {
+    it('HITAM case rejects payment, nothing created', async () => {
+      // Set case to HITAM
+      await prisma.case.update({
+        where: { id: testCaseId },
+        data: { caseStatus: 'HITAM' },
+      });
+
+      const dto = buildDto();
+
+      await expect(
+        service.create(testTenantId, dto, 'test-user-1'),
+      ).rejects.toThrow(/Kapalı dosyaya tahsilat eklenemez/);
+
+      // No collection created
+      const collections = await prisma.collection.findMany({
+        where: { caseId: testCaseId },
+      });
+      expect(collections).toHaveLength(0);
+
+      // No event created
+      const events = await (prisma as any).icrabotTimelineEntry.findMany({
+        where: { caseId: testCaseId },
+      });
+      expect(events).toHaveLength(0);
+    });
+
+    it('INFAZ case also rejects', async () => {
+      await prisma.case.update({
+        where: { id: testCaseId },
+        data: { caseStatus: 'INFAZ' },
+      });
+
+      await expect(
+        service.create(testTenantId, buildDto(), 'test-user-1'),
+      ).rejects.toThrow(/Kapalı dosyaya/);
+    });
+  });
+
+  // ── Test 3: External duplicate → ConflictException ────────────────────
+
+  describe('Test 3: External duplicate sourceId → ConflictException', () => {
+    it('rejects duplicate BANK_SEIZURE with same sourceId', async () => {
+      const dto = buildDto({
+        sourceType: CollectionSource.BANK_SEIZURE,
+        sourceId: 'BANK-TX-12345',
+      });
+
+      // First payment succeeds
+      await service.create(testTenantId, dto, 'test-user-1');
+
+      // Second payment with same sourceId fails
+      await expect(
+        service.create(testTenantId, dto, 'test-user-1'),
+      ).rejects.toThrow(/Duplicate payment/);
+
+      // Only one event exists
+      const events = await (prisma as any).icrabotTimelineEntry.findMany({
+        where: { caseId: testCaseId, type: 'PAYMENT_RECEIVED' },
+      });
+      expect(events).toHaveLength(1);
+    });
+
+    it('MANUAL source allows same amount without conflict', async () => {
+      const dto = buildDto({ sourceType: CollectionSource.MANUAL });
+
+      await service.create(testTenantId, dto, 'test-user-1');
+      const result2 = await service.create(testTenantId, dto, 'test-user-1');
+
+      expect(result2).toBeDefined();
+
+      // Two events exist
+      const events = await (prisma as any).icrabotTimelineEntry.findMany({
+        where: { caseId: testCaseId, type: 'PAYMENT_RECEIVED' },
+      });
+      expect(events).toHaveLength(2);
+    });
+  });
+
+  // ── Test 4: Payload has no allocation fields ──────────────────────────
+
+  describe('Test 4: PAYMENT_RECEIVED payload — no allocation', () => {
+    it('event payload contains amount/currency/source but NOT allocation breakdown', async () => {
+      const dto = buildDto({ amount: 7500, currency: 'TRY' });
+      await service.create(testTenantId, dto, 'test-user-1');
+
+      const event = await (prisma as any).icrabotTimelineEntry.findFirst({
+        where: { caseId: testCaseId, type: 'PAYMENT_RECEIVED' },
+      });
+
+      const payload = event.body.payload;
+
+      // Present
+      expect(payload.amount).toBe(7500);
+      expect(payload.currency).toBe('TRY');
+      expect(payload.sourceType).toBeDefined();
+      expect(payload.collectionId).toBeDefined();
+
+      // Absent (Anayasa C: allocation = projection, not event)
+      expect(payload.allocatedToPrincipal).toBeUndefined();
+      expect(payload.allocatedToInterest).toBeUndefined();
+      expect(payload.allocatedToExpense).toBeUndefined();
+      expect(payload.remainingBalance).toBeUndefined();
+      expect(payload.allocationBreakdown).toBeUndefined();
+    });
+  });
+
+  // ── Test 5: Currency normalization ────────────────────────────────────
+
+  describe('Test 5: Currency empty → explicit TRY in event', () => {
+    it('event payload has TRY when DTO currency is undefined', async () => {
+      const dto = buildDto();
+      delete (dto as any).currency; // simulate empty
+
+      await service.create(testTenantId, dto, 'test-user-1');
+
+      const event = await (prisma as any).icrabotTimelineEntry.findFirst({
+        where: { caseId: testCaseId, type: 'PAYMENT_RECEIVED' },
+      });
+
+      expect(event.body.payload.currency).toBe('TRY');
+    });
+  });
+
+  // ── Test 6: forDebtorId propagation ───────────────────────────────────
+
+  describe('Test 6: forDebtorId → payload', () => {
+    it('caseDebtorId appears as forDebtorId in event payload', async () => {
+      const dto = buildDto({ caseDebtorId: 'debtor-abc-123' });
+      await service.create(testTenantId, dto, 'test-user-1');
+
+      const event = await (prisma as any).icrabotTimelineEntry.findFirst({
+        where: { caseId: testCaseId, type: 'PAYMENT_RECEIVED' },
+      });
+
+      expect(event.body.payload.forDebtorId).toBe('debtor-abc-123');
+    });
+
+    it('forDebtorId absent when caseDebtorId not provided', async () => {
+      const dto = buildDto();
+      await service.create(testTenantId, dto, 'test-user-1');
+
+      const event = await (prisma as any).icrabotTimelineEntry.findFirst({
+        where: { caseId: testCaseId, type: 'PAYMENT_RECEIVED' },
+      });
+
+      expect(event.body.payload.forDebtorId).toBeUndefined();
+    });
+  });
+
+  // ── Test 7: autoAllocate fail → full rollback ─────────────────────────
+
+  describe('Test 7: Allocation failure → full rollback', () => {
+    it('if autoAllocate throws, collection + event + outbox all rolled back', async () => {
+      // Sabotage: create a case with invalid state that will cause allocation to fail
+      // We'll use a spy to force autoAllocateInTx to throw
+      const originalMethod = (service as any).autoAllocateInTx.bind(service);
+      (service as any).autoAllocateInTx = async () => {
+        throw new Error('ALLOCATION_FAILURE: simulated projection crash');
+      };
+
+      const dto = buildDto({ autoAllocate: true });
+
+      await expect(
+        service.create(testTenantId, dto, 'test-user-1'),
+      ).rejects.toThrow(/ALLOCATION_FAILURE/);
+
+      // Full rollback: no collection
+      const collections = await prisma.collection.findMany({
+        where: { caseId: testCaseId },
+      });
+      expect(collections).toHaveLength(0);
+
+      // Full rollback: no event
+      const events = await (prisma as any).icrabotTimelineEntry.findMany({
+        where: { caseId: testCaseId },
+      });
+      expect(events).toHaveLength(0);
+
+      // Full rollback: no outbox
+      const outbox = await (prisma as any).icrabotOutboxAction.findMany({
+        where: { caseId: testCaseId },
+      });
+      expect(outbox).toHaveLength(0);
+
+      // Restore
+      (service as any).autoAllocateInTx = originalMethod;
+    });
+  });
+
+  // ── Test 8: EXTERNAL_SIGNED without evidence → HR-34 fail ────────────
+
+  describe('Test 8: EXTERNAL_SIGNED without evidence → HR-34 rejection', () => {
+    it('BANK_SEIZURE without sourceId → event validation fails, nothing persisted', async () => {
+      const dto = buildDto({
+        sourceType: CollectionSource.BANK_SEIZURE,
+        // sourceId intentionally omitted → occurredAtEvidence will be undefined
+        // But BANK_SEIZURE maps to EXTERNAL_SIGNED confidence
+      });
+      // Remove sourceId explicitly
+      delete (dto as any).sourceId;
+
+      await expect(
+        service.create(testTenantId, dto, 'test-user-1'),
+      ).rejects.toThrow(); // HR-34: EvidenceMissingError
+
+      // Nothing persisted
+      const collections = await prisma.collection.findMany({
+        where: { caseId: testCaseId },
+      });
+      expect(collections).toHaveLength(0);
+
+      const events = await (prisma as any).icrabotTimelineEntry.findMany({
+        where: { caseId: testCaseId },
+      });
+      expect(events).toHaveLength(0);
+    });
+
+    it('BANK_SEIZURE with sourceId → succeeds (evidence present)', async () => {
+      const dto = buildDto({
+        sourceType: CollectionSource.BANK_SEIZURE,
+        sourceId: 'BANK-EVIDENCE-REF-001',
+      });
+
+      const result = await service.create(testTenantId, dto, 'test-user-1');
+      expect(result).toBeDefined();
+
+      const event = await (prisma as any).icrabotTimelineEntry.findFirst({
+        where: { caseId: testCaseId, type: 'PAYMENT_RECEIVED' },
+      });
+      expect(event.body.header.occurredAtConfidence).toBe('EXTERNAL_SIGNED');
+      expect(event.body.header.occurredAtEvidence).toBe('BANK-EVIDENCE-REF-001');
+    });
+  });
+});

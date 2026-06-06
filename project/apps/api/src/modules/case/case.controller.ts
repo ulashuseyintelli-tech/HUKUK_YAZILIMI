@@ -59,8 +59,8 @@ export class CaseController {
   }
 
   @Post()
-  create(@CurrentUser("tenantId") tenantId: string, @Body() dto: CreateCaseDto) {
-    return this.caseService.create(tenantId, dto);
+  create(@CurrentUser("tenantId") tenantId: string, @CurrentUser("id") userId: string, @Body() dto: CreateCaseDto) {
+    return this.caseService.create(tenantId, dto, userId);
   }
 
   @Put(":id")

@@ -58,9 +58,18 @@ export class UyapEventIngestService {
 
     this.logger.log(`Ingesting UYAP event: ${type} for case ${caseId}`);
 
+    // Boundary resolution (spec-15 §1): UYAP event'i tenantId taşımıyor (case_id ile gelir).
+    // tenantId'yi caseId'den BİR KEZ çöz, pipeline boyunca explicit taşı (per-insert lookup yerine).
+    const caseRow = await this.prisma.case.findUnique({
+      where: { id: caseId },
+      select: { tenantId: true },
+    });
+    const tenantId = caseRow?.tenantId;
+
     // 1. Timeline: raw UYAP event
     await this.timeline.addEntry({
       caseId,
+      tenantId,
       type: 'UYAP_EVENT',
       title: `UYAP event: ${type}`,
       severity: 'info',
@@ -79,6 +88,7 @@ export class UyapEventIngestService {
 
     await this.timeline.addEntry({
       caseId,
+      tenantId,
       type: 'FACT_WRITE',
       title: 'Facts normalized from UYAP event',
       severity: 'info',
@@ -86,9 +96,9 @@ export class UyapEventIngestService {
       source: 'system',
     });
 
-    // 4. Load and run rules
+    // 4. Load and run rules (tenantId threaded into the engine-runner main path)
     const rules = await this.ruleLoader.getActiveRules();
-    const { matched } = await this.engineRunner.runRulesForEvent(caseId, event, rules);
+    const { matched } = await this.engineRunner.runRulesForEvent(caseId, event, rules, tenantId);
 
     return {
       caseId,
