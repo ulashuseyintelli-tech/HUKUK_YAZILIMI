@@ -83,11 +83,41 @@ Temiz DB'de `migrate deploy` → 151 tablo + 8 trigger → 3 integration suite y
 - Baseline migration üretmeden önce doc + proof planı (bu belge).
 - `migrate resolve` gerçek DB'de yok; önce klon.
 
+## 9. Proof Result (2026-06-05) — PASSED
+Temp DB `hukuk_baseline_proof`, geçici dizin (`prisma-proof-tmp/`), gerçek repo/dev/prod dokunulmadı.
+- baseline DDL: 151 CREATE TABLE ✅ · triggers: 5 fn + 8 trg + worker singleton ✅
+- `migrate deploy` (baseline + triggers) temiz DB'de: **applied** ✅
+- Doğrulama: **151 tablo / 5 function / 8 trigger** ✅
+- 3 legal-kernel integration suite: **24/24** ✅
+- Temp DB + geçici dosyalar temizlendi; `git status` temiz.
+
+## 10. Cutover Plan (karar kaydı — execution ayrı onayla)
+
+**(1) Eski migration arşivi:** ~18 eski klasör `prisma/migrations/` dışına `git mv` ile `_archive/`'a (silme yok — tarihsel + trigger kaynağı). Prisma kökü taramaz.
+
+**(2) Yeni zincir:** `00000000000000_baseline` + `00000000000001_legal_kernel_triggers` (lexikografik sıra; tüm eski zincir arşivli).
+
+**(3) Baseline içeriği:** `prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script` → gerçek `migrations/00000000000000_baseline/migration.sql`.
+
+**(4) Trigger içeriği:** proof'ta birleştirilen 5 fn + 8 trg (+ worker singleton), ALTER'sız → `00000000000001_legal_kernel_triggers/`.
+
+**(5) Mevcut DB klon prova (önce klon, dev/prod'a dokunmadan):** pg_dump→clone DB→ repo geçici cutover layout → `migrate resolve --applied baseline` + `--applied triggers` (DDL yok, sadece metadata) → gerekiyorsa `DELETE FROM _prisma_migrations WHERE migration_name NOT IN (baseline, triggers)` → `migrate status` temiz → şema/veri aynı → app yeşil → klon drop.
+
+**(6) Temiz DB deploy doğrulaması:** sıfır DB → `migrate deploy` → 151 tablo + 8 trg + 24 test (DR/yeni-ortam çalışıyor kanıtı).
+
+**(7) CI PR #3:** cutover main'e merge → `fix/ci-pr-gates` rebase → PR #3 re-run (`migrate deploy` artık geçer) → integration yeşil → merge. (Cutover, PR #3'ün önkoşulu.)
+
+**(8) Rollback:** Repo: `git revert` (arşivden geri). DB: cutover şema/veriye dokunmaz (resolve = DDL yok) → yalnız `_prisma_migrations` metadata; dev/prod'dan önce `pg_dump -t _prisma_migrations` + tam DB yedeği → rollback = metadata restore.
+
+**(9) Dev/prod öncesi checklist:** proof ✅ · klon prova ✅ · `_prisma_migrations` yedeği (dev+prod) · prod tam yedek · baseline/triggers review · rollback klonda prova · PR #3 rebase hazır · maintenance penceresi.
+
 ## DoD
-- [x] A1 kararı + envanter + proof planı (bu belge)
-- [ ] Proof: temp DB'de squash zinciri yeşil (komutlar §4)
-- [ ] Cutover onayı (ayrı)
+- [x] A1 kararı + envanter + proof planı
+- [x] Proof: temp DB'de squash zinciri yeşil (§9 — 151/5/8, 24/24)
+- [x] Cutover planı (§10)
+- [ ] Klon prova (dev/prod'a dokunmadan)
+- [ ] Cutover execution onayı (repo migrations red-line gevşetme)
 - [ ] **ulas onayı**
 
 ---
-**Decision Status:** Plan accepted (A1). Proof execution pending approval.
+**Decision Status:** Plan accepted (A1). Proof PASSED. Cutover plan recorded; clone-prova next (execution pending approval).
