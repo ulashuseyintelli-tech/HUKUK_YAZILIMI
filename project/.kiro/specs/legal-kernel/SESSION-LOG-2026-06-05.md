@@ -65,6 +65,7 @@ purpose: "Bu oturumun sürecini, kararlarını ve nerede kalındığını kalıc
 - **Cutover plan review ✅** (doc 17): A/B/C/D fazları + gate'ler. Arşiv hedefi `prisma/migrations-archive/` (root dışı, düzeltildi).
 - **Faz A (repo cutover) ✅ COMMITTED + PUSHED** — `30a0e25`. 19 eski migration → `migrations-archive/` (git mv); yeni zincir baseline (151) + legal_kernel_triggers (5fn/8trg). schema.prisma & lock değişmedi.
 - **Faz C (dev metadata) ✅ PASS** — `hukuk_db._prisma_migrations` 19 → 2 (resolve --applied + eski 19 DELETE). `migrate status` up to date. Şema/veri değişmedi (152/5/8). Yedek `_fazC_backup/20260606_203101/` (pm.before 19 INSERT + tam dump). Tek tek gate'li ilerlendi (C0→C1→C2→C3/C4).
-- **Sıradaki:** Faz D (temiz DB deploy doğrulaması + PR #3 rebase/merge) — ayrı onay.
+- **Faz D Blok 1 (DR kanıtı) ✅ PASS** — geçici `hukuk_deploy_verify`'da gerçek committed migrations ile `migrate deploy` sıfırdan geçti; 151/5/8 + singleton + 2 kayıt; 24/24 integration; geçici DB drop; `hukuk_db` dokunulmadı. PR #3'ün kırmızı kök nedeni (migrate deploy temiz DB'de patlıyordu) çözüldü.
+- **Sıradaki:** Faz D Blok 2 (D4 main merge gate · D5 PR #3 rebase · D6 CI · D7 PR #3 merge) — her biri ayrı onay.
 
-**Son commit (bu branch):** `docs/prisma(legal-kernel): squash prisma migrations into baseline` (`30a0e25`). **Sıradaki:** cutover Faz D (doc 17).
+**Son commit (bu branch):** `docs(legal-kernel): record phase d verification pass`. **Sıradaki:** cutover Faz D Blok 2 (doc 17, merge & PR #3).
