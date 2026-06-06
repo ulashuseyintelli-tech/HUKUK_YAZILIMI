@@ -111,6 +111,18 @@ Temp DB `hukuk_baseline_proof`, geçici dizin (`prisma-proof-tmp/`), gerçek rep
 
 **(9) Dev/prod öncesi checklist:** proof ✅ · klon prova ✅ · `_prisma_migrations` yedeği (dev+prod) · prod tam yedek · baseline/triggers review · rollback klonda prova · PR #3 rebase hazır · maintenance penceresi.
 
+## 11. Clone Rehearsal Plan (dev/prod'a + repo migrations'a dokunmadan)
+Hedef DB **yalnız `hukuk_cutover_clone`**; repo simülasyonu **`prisma-cutover-tmp/`**.
+1. **Clone:** `CREATE DATABASE hukuk_cutover_clone` → `pg_dump --format=custom --no-owner hukuk_db` → `pg_restore -d hukuk_cutover_clone` (şema+veri+`_prisma_migrations`). Ön gereksinim: `pg_dump/pg_restore` PATH'te.
+2. **Temp layout:** `prisma-cutover-tmp/` = schema kopyası + migrations/{baseline, triggers} + lock (cutover-sonrası simülasyon; gerçek klasör dokunulmaz).
+3. **Metadata yedeği:** `pg_dump -t _prisma_migrations hukuk_cutover_clone > clone_pm.before.sql` (rollback provası için).
+4. **resolve:** `migrate resolve --applied 00000000000000_baseline` + `--applied 00000000000001_legal_kernel_triggers` (clone'a, temp schema ile; DDL yok).
+5. **Eski kayıt temizliği:** `DELETE FROM "_prisma_migrations" WHERE migration_name NOT IN ('00000000000000_baseline','00000000000001_legal_kernel_triggers');`
+6. **status beklentisi:** `migrate status` → "up to date" (divergence yok) + 151 tablo/5 fn/8 trg korunmuş + 24/24 integration clone'a karşı.
+7. **Rollback provası:** `_prisma_migrations` temizle + `clone_pm.before.sql` restore → eski metadata geri (şema/veri hiç değişmedi → kanıt).
+8. **Dev dokunulmadı teyidi:** `hukuk_db._prisma_migrations`'ta baseline/triggers YOK (read-only). `git status` temiz.
+9. **Temizlik:** `dropdb hukuk_cutover_clone` + `rm -rf prisma-cutover-tmp /tmp/*.dump /tmp/*.sql`.
+
 ## DoD
 - [x] A1 kararı + envanter + proof planı
 - [x] Proof: temp DB'de squash zinciri yeşil (§9 — 151/5/8, 24/24)
