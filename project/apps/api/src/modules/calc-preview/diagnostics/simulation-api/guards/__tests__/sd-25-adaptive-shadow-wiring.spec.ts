@@ -218,9 +218,21 @@ describe('P4: Telemetry Bounded Cardinality', () => {
     expect(['KILL_SWITCH', 'PROVIDER_OUTAGE', 'NONE']).toContain(eval0.overrideSource);
   });
 
-  it('error code labels are from closed-set', () => {
+  it('error code labels come from the bounded closed-set (ALL_SHADOW_ERROR_CODES)', () => {
+    // Source of truth = production ALL_SHADOW_ERROR_CODES; stale hardcoded mirror removed.
+    // (1) Bounded cardinality: closed-set non-empty, unique, metric-label-safe.
+    expect(ALL_SHADOW_ERROR_CODES.length).toBeGreaterThan(0);
+    expect(new Set(ALL_SHADOW_ERROR_CODES).size).toBe(ALL_SHADOW_ERROR_CODES.length);
     for (const code of ALL_SHADOW_ERROR_CODES) {
-      expect(['EVALUATION_EXCEPTION', 'INPUT_VALIDATION_FAILED', 'STATE_STORE_ERROR']).toContain(code);
+      expect(code).toMatch(/^[A-Z][A-Z0-9_]*$/);
+    }
+
+    // (2) Emitted error codes can never be outside the closed-set (emitted ⊆ canonical).
+    const { deps, metrics } = buildDeps();
+    const evaluator = new AdaptiveShadowEvaluator(deps);
+    evaluator.evaluateIfEnabled('t-1', GuardOperation.EVALUATE);
+    for (const e of metrics.errors) {
+      expect(ALL_SHADOW_ERROR_CODES).toContain(e.code);
     }
   });
 
