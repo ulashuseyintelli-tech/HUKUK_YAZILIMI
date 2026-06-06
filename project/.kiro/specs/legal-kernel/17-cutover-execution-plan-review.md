@@ -18,7 +18,13 @@ purpose: "A1 squash-baseline'ı gerçek repo + dev DB'ye taşımanın faz faz pl
 
 ## Phase A — Migration Inventory
 
-**Arşivlenecek (19 klasör → `prisma/migrations/_archive/`, `git mv` ile — SİLME YOK, tarihsel + trigger kaynağı):**
+> **Arşiv hedefi DÜZELTİLDİ (2026-06-06):** Eski `prisma/migrations/_archive/` (migration root İÇİNDE alt-klasör) ifadesi **hatalı/riskli** — Prisma, `migrations/`'ın doğrudan alt klasörlerini migration sanıp `_archive`'ı bozuk migration olarak değerlendirebilir. **Doğru hedef:** `prisma/migrations-archive/` (migration root DIŞINDA sibling — Prisma taramaz). Migration root altında archive klasörü bırakılmaz. Bkz. doc 16 §10(1).
+
+**Ön-koşul gate (Phase A başlamadan):** FS↔DB **19↔19 parity** — 19 migration klasörü = dev `_prisma_migrations`'taki 19 applied kayıt birebir eşleşmeli (orphan klasör/kayıt = 0). Doğrulandı 2026-06-06: birebir eşleşiyor, 0 rolled-back. Bu, arşivlemenin hiçbir uygulanmış kaydı sahipsiz bırakmamasını garanti eder.
+
+**Anomali notu:** Eski zincirde `20260203200000` timestamp prefix'i **2 klasörde** çakışıyor (`phase10_2_admin_actions` + `phase10_3_pr4_audit_enrichment`) — eski zincirin kırılganlığının bir kanıtı. Yeni 2'li zinciri (`00000000000000`/`00000000000001`) **etkilemez** (eski zincir tümüyle arşive taşınır).
+
+**Arşivlenecek (19 klasör → `prisma/migrations-archive/`, `git mv` ile — SİLME YOK, tarihsel + trigger kaynağı):**
 ```
 20251208174752_add_form_metadata
 20251208175623_add_automation_models
@@ -55,7 +61,7 @@ migration_lock.toml                      → değişmez (provider=postgresql)
 
 ## Phase B — Prisma Diff Review (gerçek migrations değişMEDEN gösterilir)
 
-- **Repo diff'i = saf dosya hareketi:** 19 klasör `git mv → _archive/` + 2 yeni klasör eklenir.
+- **Repo diff'i = saf dosya hareketi:** 19 klasör `git mv → prisma/migrations-archive/` + 2 yeni klasör eklenir.
 - **`schema.prisma` diff = BOŞ** — baseline ondan türetildiği için şema dosyası hiç değişmez. (Kırmızı-çizgi dostu kritik nokta.)
 - Baseline + triggers içeriği **clone rehearsal'da bit-bit doğrulandı** (151 tablo, 5fn/8trg, yasak statement [ALTER/CREATE TABLE/backfill/INDEX] = 0). Cutover'da aynı üretim komutları kullanılır:
   - `prisma migrate diff --from-empty --to-schema-datamodel prisma/schema.prisma --script` → baseline
@@ -104,13 +110,13 @@ Her fazın kendi gate'i vardır; fazlar tek seferde değil, onaylı adımlarla i
 - Gerçek `prisma/migrations` değişmeden önce diff (GATE B).
 - Gerçek dev DB resolve/delete'ten önce tam yedek + diff (GATE C).
 - CI PR #3 merge yok (Faz D, ayrı onay).
-- `db push` hack yok · dev'de `migrate deploy` yok · `migrate deploy` hedefinden sapma yok.
+- `db push` hack yok · dev'de `migrate deploy` yok · **`npx prisma migrate dev` yok** (otomatik migration üretir/uygular) · `migrate deploy` hedefinden sapma yok.
 - Önce klon → yedek → dev sırası (clone rehearsal zaten ✅).
 
 ---
 
 ## Açık riskler / rollback
-- **R1 — `_archive/` taranır mı?** Prisma yalnız `migrations/` kökündeki tarih-prefixli klasörleri okur; `_archive/` alt-klasör güvenli. GATE B'de `migrate status` ile teyit.
+- **R1 — Arşiv taranır mı? (ÇÖZÜLDÜ)** Arşiv `prisma/migrations/` **DIŞINDA** (`prisma/migrations-archive/` sibling) tutulur → Prisma migration root altında archive klasörü görmez. Eski "`migrations/_archive/` alt-klasör" yaklaşımı riskliydi (Prisma `_archive`'ı bozuk migration sanabilir), terk edildi. GATE B'de `migrate status` ile yine teyit.
 - **R2 — Eski 19 kayıt silinince başka ortam etkilenir mi?** bus-factor=1, tek dev DB, prod yok. Yine de tam yedek (C.2) zorunlu.
 - **R3 — Rollback:**
   - Repo: `git revert` (arşivden geri) — eski zincir tekrar `migrations/` köküne.
