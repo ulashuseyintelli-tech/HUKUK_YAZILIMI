@@ -8,10 +8,10 @@ purpose: "Start-here özeti. TEKRAR ETMEZ; detay için SESSION-LOG-2026-06-05.md
 # SESSION HANDOFF — Start Here
 
 ## Yeni oturum başlangıç prompt'u
-> **"`92-architectural-memory.md` + `SESSION-HANDOFF-2026-06-06.md` + `16-prisma-migration-baseline.md` oku. Sıradaki iş: klon prova (doc 16 §11). db push hack yok, gerçek dev/prod yok, repo migrations'a dokunma, CI PR #3 merge etme."**
+> **"`92-architectural-memory.md` + `SESSION-HANDOFF-2026-06-06.md` + `16-prisma-migration-baseline.md` oku. Sıradaki iş: cutover execution planı (doc 16 §10). Kırmızı çizgi: gerçek dev/prod DB'ye dokunmadan plan göster; gerçek `prisma/migrations` değişmeden diff göster; CI PR #3 merge etme; db push hack yok."**
 
 ## Aktif branch & açık PR
-- **Aktif:** `fix/prisma-migration-baseline` (yalnızca belge commit'leri; migration/cutover kodu YOK).
+- **Aktif:** `fix/prisma-migration-baseline` — origin'e push edildi, **HEAD `a6d62b6`'da senkron** (local == origin). Yalnızca belge commit'leri; migration/cutover kodu YOK.
 - **Açık & KIRMIZI:** PR #3 `fix/ci-pr-gates` — `migrate deploy` temiz DB'de patlıyor; **migration baseline önkoşul.**
 
 ## Merge edilen işler
@@ -21,8 +21,9 @@ purpose: "Start-here özeti. TEKRAR ETMEZ; detay için SESSION-LOG-2026-06-05.md
 
 ## Doc 16 özeti
 - **A1 squash-baseline.** Proof **PASSED** (temp DB: 151 tablo / 5 fn / 8 trg / 24 integration).
-- Cutover planı §10; klon prova planı §11.
-- **SIRADAKİ ADIM: klon prova (doc 16 §11).**
+- **Clone rehearsal PASSED** (doc 16 §12, 2026-06-06, klon `hukuk_cutover_clone`): 151/5/8, 24/24 integration, rollback metadata restore OK, dev DB untouched, temp temizlendi.
+- Cutover planı §10; klon prova planı §11; klon prova sonucu §12.
+- **SIRADAKİ ADIM: cutover execution (doc 16 §10) — ilk kez gerçek `prisma/migrations` + gerçek dev DB metadata teması, AYRI explicit onay gerektirir.**
 
 ## Kırmızı çizgiler
 - Gerçek dev/prod DB yok (yalnız klon/temp) · repo `prisma/migrations`'a dokunma (cutover onayına kadar) · CI PR #3 merge yok · db push hack yok · `migrate deploy` hedefinden sapma yok.
