@@ -1,90 +1,94 @@
 ---
-status: review-required
+status: reviewed
 type: legal-awareness
-review-trigger: "legal sign-off (§10 soruları) + prod TZ kesin teyidi + ulas açık 'devam' onayı — T0 fix öncesi"
+review-trigger: "Sorular doc 23'te (Q1-Q7) resolved. Kalan açık tek kapı: ilk prod deploy öncesi runtime TZ doğrulaması (deployment gate). Implementation ayrı 'devam' onayı ister."
 phase: 2
 date: 2026-06-07
-purpose: "day-count timezone bug'ının teknik bulgusunu (doc 19/20/21) hukuki/operasyonel karara çeviren brief. Karar kapısıdır; kod değil. T0 fix HÂLÂ onaysız."
+purpose: "day-count timezone bug'ının teknik bulgusunu (doc 19/20/21) hukuki/operasyonel karara çeviren brief. Karar kapısıdır; kod değil. Sorular doc 23'te cevaplandı; PR B ile çerçeve remediation'dan pre-deployment policy correction'a güncellendi."
 ---
 
 # 22 — Legal Awareness Review — Brief
 
 **Strand:** legal-time · day-count timezone bug
-**Durum:** review-required
-**Girdi:** doc 19 (observation) · doc 20 (decision draft) · doc 21 (forensic evidence) · Gate 1 characterization · prod≈UTC varsayımı · END_OF_DAY ödeme-günü muamelesi
-**Katman ayrımı:** doc 19 = observation · doc 20 = decision draft · doc 21 = forensic evidence · **doc 22 = legal awareness review brief**
+**Durum:** reviewed (sorular doc 23'te resolved)
+**Girdi:** doc 19 (observation) · doc 20 (decision) · doc 21 (forensic evidence) · doc 23 (legal sign-off) · Gate 1 characterization
 
-> Amaç: teknik bulguyu hukuki karara çevirmek. Bu bir karar kapısıdır, kod değil. T0 fix HÂLÂ onaysız. Bu belge fix/runtime/paket değişikliği İÇERMEZ.
+> Amaç: teknik bulguyu hukuki karara çevirmek. Bu bir karar kapısıdır, kod değil. Bu belge fix/runtime/paket değişikliği İÇERMEZ.
+
+> **PR B reframe (2026-06-07, doc 23 sonrası):** Bu brief başlangıçta "END_OF_DAY doğru + UTC bug = alacaklı aleyhine kayıp / remediation" çerçevesindeydi. doc 23 çevirdi: **ödeme günü faiz işlemez → START_OF_DAY doğru, END_OF_DAY hatalı.** Ayrıca **production deploy edilmemiş** → geçmiş etki/remediation YOK. Aşağıdaki bölümler bu çerçeveyle güncellendi; eski ifadeler tarihsel bağlam için işaretlendi.
 
 ---
 
 ## 1. Sorunun kısa tanımı
-Faiz hesabında "ödeme günü faiz işler mi" kuralı (END_OF_DAY) **sunucu saat dilimi UTC olduğunda sessizce tersine dönüyor.** Sonuç: ödemeli faiz hesaplarında ödeme sınırı bir gün erkene kayıyor; ödeme günü hak edilen ~1 günlük faiz hesaba katılmıyor. Sorun gizli bir kenar durum değil; sistemin **ana faiz hesaplama yolunda** ve **varsayılan ayar olarak** mevcut.
+Faiz hesabında "ödeme günü faiz işler mi" kuralı (END_OF_DAY) **sunucu saat dilimi UTC olduğunda sessizce tersine dönüyor.** Sonuç: ödemeli faiz hesaplarında ödeme sınırı bir gün kayıyor. Sorun gizli bir kenar durum değil; sistemin **ana faiz hesaplama yolunda** ve **varsayılan ayar olarak** mevcut. (doc 23 sonrası: asıl mesele bu default'un — END_OF_DAY — hukuken yanlış olması.)
 
 ## 2. Teknik mekanizma (sade)
 - Sistem tarihleri "Istanbul (+03:00) gece yarısı" olarak okuyor; bu doğru.
-- **Ama** gün ekleme/biçimlendirme işlemleri sunucunun yerel saatine göre yapılıyor. Sunucu UTC ise (kanıtlar UTC'yi gösteriyor), "Istanbul gece yarısı" aslında "bir önceki gün 21:00 UTC" olarak görülüyor → takvim günü bir gün geriye kayıyor.
+- **Ama** gün ekleme/biçimlendirme işlemleri sunucunun yerel saatine göre yapılıyor. Sunucu UTC ise, "Istanbul gece yarısı" aslında "bir önceki gün 21:00 UTC" olarak görülüyor → takvim günü bir gün geriye kayıyor.
 - "Ödeme günü +1 gün" (END_OF_DAY) hesabı bu yüzden "+0 gün"e çöküyor → END_OF_DAY pratikte START_OF_DAY gibi davranıyor.
 - Toplam gün sayısı hesabı (`calculateDays`) ve dönem/safhalama (`determinePhase`) **etkilenmiyor** — onlar sabit ve doğru.
 
-## 3. Hukuki anlamı
-- Bu **bir hesap politikası değişikliği değil; istenen davranıştan sapma (bug).** Kod en baştan Istanbul/+03:00 ve END_OF_DAY niyetini taşıyor; UTC ortamı bu niyeti bozuyor.
-- Pratik etki: **ödeme günü için TBK'nin öngördüğü "o gün faiz işler" muamelesi uygulanmıyor.** Her ödemede borçlu lehine ~1 günlük faiz eksik hesaplanıyor (alacaklı aleyhine sapma).
-- Tek başına küçük (bir gün) görünse de **sistematik ve yinelenen**: çok ödemeli/uzun vadeli dosyalarda ödeme adedi kadar birikir; ayrıca kayan sınır bir **oran değişim gününe veya takip (kesinleşme) gününe** denk gelirse o güne yanlış oran/safha uygulanması yoluyla etki büyür.
+## 3. Hukuki anlamı (doc 23 ile TERSİNE GÜNCELLENDİ)
+- **doc 23 hukuki kuralı:** "Ödeme günü faiz İŞLEMEZ; faiz ödeme tarihinden önceki güne kadar." → **doğru politika START_OF_DAY.**
+- Mevcut default **END_OF_DAY ödeme gününü faize DAHİL eder → hukuken YANLIŞ.** (Uygulansaydı: ödeme günü için fazladan faiz → **borçlu aleyhine OVER-CHARGE.**)
+- ~~ESKİ ÇERÇEVE (geçersiz): "Bu politika değişikliği değil, bug; UTC her ödemede borçlu lehine ~1 gün eksik (alacaklı aleyhine)."~~ → Bu, END_OF_DAY'i doğru sayan hatalı çerçeveydi; doc 23 ile düştü.
+- **Düzeltme = default'u START_OF_DAY yapmak** (bir hesap politikası düzeltmesi). UTC'nin END→START çöküşü kazara doğru sonuç verir, ama güvenilemez (determinizm).
+- **Prod deploy edilmediği için** bu sapma hiçbir gerçek dosyada **GERÇEKLEŞMEDİ** (doc 23 Q1).
 
-## 4. Etkilenen case sınıfları
-Üç koşul birlikte gerçekleştiğinde etkilenir: **(a) hesapta en az bir ödeme var, (b) ödeme kuralı END_OF_DAY, (c) sunucu UTC.**
-- (b) **evrensel varsayılan** (Zod default + 5/5 case-type stratejisi END_OF_DAY) → ödeme kuralı neredeyse her dosyada END_OF_DAY.
-- (c) repo kanıtı UTC.
-- → **Pratikte: ödeme içeren tüm faiz hesapları.** Özellikle:
-  - Kısmi/taksitli ödemesi olan icra ve alacak dosyaları.
-  - Çok sayıda ödeme kaydı olan uzun vadeli dosyalar (birikimli sapma).
-  - Ödeme tarihi bir oran değişimi veya takip tarihiyle aynı/komşu olan dosyalar (yüksek etki).
+## 4. Etkilenecek case sınıfları (deploy sonrası, hipotetik)
+Üç koşul: **(a) hesapta ödeme var, (b) ödeme kuralı END_OF_DAY, (c) sunucu UTC.**
+- (b) evrensel default (Zod + 5/5 strateji). (c) repo kanıtı UTC.
+- → Deploy edilseydi: ödeme içeren tüm faiz hesapları (kısmi/taksitli ödeme dosyaları, çok-ödemeli uzun vadeli dosyalar, ödeme-tarihi oran-değişimi/takip gününe komşu dosyalar). **Prod yok → şu an gerçek etkilenen yok.**
 
 ## 5. Etkilenmeyen / düşük riskli durumlar
-- **Ödemesiz hesaplar** (payment yok) → `adjustEndDateForPayment` hiç çalışmaz → etkilenmez.
-- **START_OF_DAY** kuralıyla yapılan hesaplar → no-op, kararlı (ama bu varsayılan değil).
-- **Toplam gün ve faiz** sabit `[başlangıç, bitiş)` üzerinde ödeme yoksa doğru.
-- **Sabit oranlı "light preview"** yolu (ödeme tarihi geçmez) → etkilenmez.
-- **Sunucu gerçekte Istanbul/+03:00 ise** → bug latent (hiç tetiklenmez). *Bu, doğrulanması gereken kritik varsayım (bkz. §10).*
+- **Ödemesiz hesaplar** → `adjustEndDateForPayment` çalışmaz → etkilenmez.
+- **START_OF_DAY** kuralı → no-op, kararlı (ve doc 23'e göre DOĞRU politika).
+- **Toplam gün/faiz** ödeme yoksa doğru.
+- **Sabit oranlı "light preview"** → etkilenmez.
 
-## 6. Geçmiş hesaplar için yeniden hesap sorusu
-Karar gerektiren nokta: **Düzeltme ileriye mi dönük, yoksa geçmişe de mi uygulanacak?**
-- Eğer prod gerçekten UTC ise, **bugüne kadar üretilmiş ödemeli faiz hesapları sistematik olarak ~1 gün eksik** olabilir.
-- Sorular: Hangi tarih aralığındaki dosyalar yeniden hesaplanmalı? Mahkemeye sunulmuş/icraya konmuş raporlar var mı? Yeniden hesap müvekkil/karşı taraf bildirimi gerektirir mi? Maddi eşik (önemsizlik sınırı) var mı?
+## 6. Geçmiş hesaplar için yeniden hesap (doc 23 → N/A)
+```
+N/A — production deploy EDİLMEMİŞ (doc 23 Q1).
+Geçmiş production hesabı yok → retrospective recalculation UYGULANAMAZ.
+Geçmiş-etki ekseni KAPALI.
+(Q2/Q3/Q4 = N/A: geçmiş kapsam / bildirim / önemsizlik eşiği — hepsi konusuz.)
+```
+> Caveat: staging/demo/pilot güvenilen/dışa verilen hesap ürettiyse bu yeniden değerlendirilir (doc 23).
 
-## 7. Mahkeme/rapor çıktısı riski
-- Faiz hesap raporları **mahkemeye delil** olarak sunuluyor → tutarın determinizmi ve doğruluğu kritik.
-- Risk: aynı dosyanın **farklı ortamda (UTC sunucu vs Istanbul geliştirici makinesi) farklı sonuç** vermesi → raporun tekrarlanabilirliği/savunulabilirliği zedelenir; karşı tarafın itirazına açık.
-- Ayrıca rapor metninde "Aynı Gün Ödeme: END_OF_DAY" yazarken hesabın START_OF_DAY gibi davranması → **rapor beyanı ile fiili hesap çelişir** (tutarsızlık delili).
+## 7. Mahkeme/rapor çıktısı riski (deploy sonrası geçerli)
+- Faiz hesap raporları mahkemeye delil → tutar determinizmi kritik.
+- Risk: aynı dosyanın UTC sunucu vs Istanbul makinesinde **farklı sonuç** vermesi → tekrarlanabilirlik/savunulabilirlik zedelenir.
+- Rapor "Aynı Gün Ödeme: END_OF_DAY" derken hesabın START gibi davranması → beyan-hesap çelişkisi. **(Çözüm: policy START_OF_DAY + determinizm; deploy öncesi.)**
 
-## 8. Acil mitigasyon C neden sadece geçici
-"C" = uygulama başlangıcında sunucu saatini `Europe/Istanbul`'a sabitlemek (tek satır).
-- ✅ Artısı: prod UTC ise **anında** ana yolu doğruya çevirir ("kanama durdurma").
-- ⚠️ Eksisi: **kök nedeni gizler** — kod hâlâ sunucu-saatine bağımlı; ileride biri TZ'yi değiştirir/yeni ortam eklerse bug geri döner. Ayrıca **global** etki: tüm sistemin tarih/saat davranışını değiştirir (loglar, zamanlayıcılar, başka modüller) → öngörülemeyen yan etki riski.
-- → C ancak **geçici köprü**; kalıcı çözüm değil.
+## 8. Acil mitigasyon C (doc 23 → GEREKSİZ)
+```
+C (bootstrap TZ pin) GEREKSİZ — canlı prod yok, durdurulacak "kanama" yok (doc 23 Q6).
+En fazla deploy-zamanı determinizm garantisi olarak opsiyonel; ana çözüm değil.
+```
 
-## 9. Asıl fix A neden tercih ediliyor
-"A" = `day-count-calculator.ts` iç fonksiyonlarını saat-diliminden **bağımsız** hale getirmek (string tabanlı/UTC-sabit aritmetik).
-- Dış arayüz, string giriş/çıkış kontratı, `calculateDays`/`determinePhase` **değişmez**.
-- Etki yüzeyi **dar ve izole** (tek zincir, tek dosya iç mantığı) → düşük yan etki.
-- Sonuç **ortamdan bağımsız** olur: UTC de Istanbul da aynı (doğru) sonucu verir → mahkeme tekrarlanabilirliği garanti.
-- C'nin global yan etkisini taşımaz.
+## 9. Asıl fix A (doc 23 → bug-fix DEĞİL, policy correction + determinizm)
+- A artık "doğruluk restorasyonu" değil: **(P) policy correction** (default END_OF_DAY → START_OF_DAY; hukuki düzeltme, doc 23 Q5) + **(D) determinizm hijyeni** (day-count TZ-değişmez).
+- START_OF_DAY benimsenince `adjustEndDateForPayment` no-op → `addDays`/`format` faiz yolunda devre dışı → (D) büyük ölçüde gereksizleşir; (P) asıl iş.
+- Pre-deployment olduğu için historical baggage yok, blast radius düşük (ama policy default `calculation.types` + `case-type-strategy.registry`'ye dokunur — doc 20 §4).
 
-## 10. Legal sign-off için cevaplanacak sorular
-1. **Düzeltme yönü:** Sadece ileriye dönük mü, geçmiş dosyalar da yeniden mi hesaplanacak?
-2. **Geçmiş kapsam:** Yeniden hesap yapılacaksa hangi tarih aralığı / dosya sınıfları?
-3. **Bildirim:** Etkilenen müvekkil/dosyalar için bildirim veya mahkemeye düzeltme gerekir mi?
-4. **Önemsizlik eşiği:** ~1 günlük fark hukuken ihmal edilebilir kabul ediliyor mu, yoksa her kuruş mu?
-5. **END_OF_DAY doğru politika mı?** Düzeltme END_OF_DAY'i amaçlanan haline getirecek; bu ödeme-günü muamelesi hukuken doğru tercih mi (yoksa START_OF_DAY mı olmalı)?
-6. **Acil köprü (C) yetkisi:** Kalıcı fix'e kadar geçici TZ pin uygulansın mı?
-7. **Prod TZ teyidi:** Çalışan ortamın gerçekten UTC olduğu operasyonel olarak doğrulanmalı (bug canlı mı, latent mı buna bağlı).
+## 10. Legal sign-off soruları (→ doc 23'te RESOLVED)
+> **Bu sorular doc 23'te cevaplandı (Q1-Q7 resolved):** Q5=START_OF_DAY doğru; Q1/Q2/Q3/Q4=N/A (prod yok); Q6=acil pin gereksiz; Q7=prod deploy edilmemiş → deploy-öncesi doğrulama. Aşağıdaki liste tarihsel referans olarak korunur.
+1. Düzeltme yönü (ileriye/geçmiş) → Q1: ileriye (geçmiş yok).
+2. Geçmiş kapsam → Q2: N/A.
+3. Bildirim/mahkeme → Q3: N/A.
+4. Önemsizlik eşiği → Q4: N/A.
+5. END_OF_DAY doğru mu → Q5: HAYIR, START_OF_DAY.
+6. Acil köprü C yetkisi → Q6: gereksiz.
+7. Prod TZ teyidi → Q7: deploy edilmemiş; deploy-öncesi doğrulama zorunlu.
 
-## 11. Implementation'a geçiş şartları (sıra kilitli)
-T0 fix (A) yalnızca şu üçü tamamlanınca başlar:
-1. **Legal sign-off** — §10 sorularına yanıt (özellikle geçmiş yeniden-hesap yönü).
-2. **Prod TZ kesin teyidi** — deploy ortamında çalışan container saat dilimi.
-3. **ulas açık "devam" onayı** + implementation planı (karakterizasyon kademe-2 ile nihai-TL deltası pinlenir, sonra fix, sonra characterization güncelleme — ayrı PR).
+## 11. Implementation'a geçiş şartları (doc 23 sonrası güncel sıra)
+```
+doc 23 (Q1-Q7 resolved) ✅
+→ PR B doküman revizyonu (doc 20 + doc 22, bu) ✅
+→ implementation planı + ulas açık "devam"  [(P) policy default + (D) determinizm; characterization kademe-2]
+→ deployment gate: ilk prod deploy ÖNCESİ runtime TZ/date doğrulaması ZORUNLU
+Implementation HÂLÂ blocked.
+```
 
 ---
-**Legal Awareness Status:** review-required. No implementation. No runtime change. Sıradaki adım: §10 sorularına hukuki/operasyonel yanıt.
+**Legal Awareness Status:** reviewed (sorular doc 23'te resolved). Çerçeve: pre-deployment policy correction + determinizm. Geçmiş etki: N/A (prod yok). Deployment gate açık. Implementation NOT authorized.
