@@ -1,16 +1,18 @@
 ---
-status: draft-pending-approval
-review-trigger: "§5 forensic gate + legal awareness + ulas açık 'devam' onayı — üçü tamamlanmadan implementation YOK"
+status: accepted-pending-implementation
+review-trigger: "Yön doc 23 (Q1-Q7 resolved) ile kesinleşti: END_OF_DAY hatalı → default START_OF_DAY (policy change) + determinizm. Prod deploy edilmediği için remediation YOK. Implementation ayrı 'devam' onayı + deployment gate (ilk deploy öncesi runtime TZ doğrulaması) gerektirir."
 phase: 2
 date: 2026-06-07
-purpose: "legal-time strand'inin adoption/düzeltme kararı. Prod=UTC kanıtı ile day-count TZ bug'ı CANLI tespit edildi. İLK davranış-değiştiren adım (UTC'de hesap çıktısı değişir); onay + legal awareness + forensic doğrulama olmadan implementation BAŞLAMAZ."
+purpose: "legal-time düzeltme kararı. doc 23 ile yön kesinleşti: ödeme günü faiz işlemez → END_OF_DAY HATALI, default START_OF_DAY'e değişecek (HESAP POLİTİKASI DÜZELTMESİ) + day-count determinizm. Production deploy EDİLMEMİŞ → geçmiş remediation YOK; pre-deployment düzeltme. Implementation ayrı onayla; deployment gate açık."
 ---
 
 # 20 — legal-time Adoption — Decision Record (Gate 3)
 
-**Karar durumu:** draft-pending-approval
-**Seçilen yön:** Yaklaşım **A** — String-native T0 fix (onay: ulas, 2026-06-07)
-**Kırmızı çizgi:** *Bu belge yalnız KARARDIR. Kod, test, config, runtime değişikliği bu belgeyle başlamaz. Implementation ayrı, açık onayla ve §5/§6 ön-koşulları sonrası.*
+**Karar durumu:** accepted-pending-implementation
+**Seçilen yön:** Yaklaşım **A**, doc 23 sonrası YENİDEN TANIMLANDI → **(P) policy correction (END_OF_DAY → START_OF_DAY)** + **(D) determinizm hijyeni** (onay: ulas, 2026-06-07; hukuki yön: doc 23)
+**Kırmızı çizgi:** *Bu belge yalnız KARARDIR. Kod, test, config, runtime değişikliği bu belgeyle başlamaz. Implementation ayrı, açık "devam" onayıyla.*
+
+> **PR B reframe (2026-06-07):** Bu belge başlangıçta "END_OF_DAY doğruluk restorasyonu / remediation" çerçevesindeydi. doc 23 (Q1-Q7 resolved) bunu çevirdi: **END_OF_DAY hukuken HATALI**, doğru politika **START_OF_DAY**. Ayrıca **production deploy edilmemiş** → geçmiş etki/remediation YOK. Konu artık **pre-deployment policy correction + determinizm**.
 
 ---
 
@@ -18,8 +20,10 @@ purpose: "legal-time strand'inin adoption/düzeltme kararı. Prod=UTC kanıtı i
 - **doc 19** (`19-legal-time-timezone-observation.md`, status: observed) — TZ davranış kanıt tabanı.
 - **Gate 1 characterization** (`day-count-calculator.characterization.spec.ts`, PR #13) — mevcut davranış kilidi.
 - **Gate 1 inventory** — risk tier'ları (T0 = `day-count-calculator.ts`, en yüksek; 1090 prod `new Date(`, 0 tarih kütüphanesi).
+- **doc 21** (forensic evidence) — bug ana faiz path'inde + audit etkisi.
+- **doc 23** (legal sign-off, Q1-Q7 resolved) — **START_OF_DAY doğru; END_OF_DAY hatalı; prod yok.**
 
-## 2. 🔴 Kritik bulgu — production TZ kanıtı (Gate 3, read-only)
+## 2. Bağlam — production TZ ve deployment durumu (Gate 3 + doc 23)
 | Kanıt | Değer | Sonuç |
 |---|---|---|
 | `docker/Dockerfile.api` | `FROM node:20-alpine`, TZ yok, tzdata kurulu değil | Alpine default **UTC** |
@@ -27,52 +31,53 @@ purpose: "legal-time strand'inin adoption/düzeltme kararı. Prod=UTC kanıtı i
 | `apps/api/.env` + `.env.example` | TZ/TIMEZONE yok | runtime pin yok |
 | `.github/workflows/ci.yml` | `runs-on: ubuntu-latest` | test ortamı da UTC |
 
-→ **Production runtime ≈ UTC.** doc 19 §3 mekanizmasına göre `addDays` / `formatIstanbulDate` / `parseIstanbulDate` (takvim okuma) / `adjustEndDateForPayment(END_OF_DAY)` üretimde **−1 gün kayar.** Bug **latent değil, CANLI.** (Kesin teyit: çalışan prod container'da `TZ`/`/etc/localtime` — deploy ortamına erişimle doğrulanmalı; repo kanıtı UTC'yi güçlü gösteriyor.)
+→ **Production DEPLOY EDİLMEMİŞ (doc 23 Q7).** "prod≈UTC" çıkarımı yalnız **gelecek** deploy için risk işaretidir; hiçbir gerçek hesabı etkilememiştir (canlı veri yok). doc 19 §3 mekanizması geçerli ama canlı veriye uygulanmaz. → İlk deploy ÖNCESİ runtime TZ/date doğrulaması (Q7 planı: Node resolvedTZ/offsetMinutes + adjustEndDateForPayment davranışı) zorunlu **deployment gate** olarak saklanır.
 
-## 3. legal-time API seçenekleri ve karar
+## 3. legal-time API seçenekleri ve karar (doc 23 sonrası yeniden tanımlı)
 | Seç. | Yaklaşım | Blast radius | Durum |
 |---|---|---|---|
-| **A — String-native fix (paket YOK)** | `addDays`/`format`/`parse`/`adjust`'ı Date-calendar yerine TZ-değişmez aritmetikle düzelt. Yalnız `day-count-calculator.ts` internals. Public API + string in/out aynı. | En küçük | ✅ **SEÇİLDİ** |
+| **A — Pre-deployment policy correction + determinizm** | **(P)** default `END_OF_DAY → START_OF_DAY` (Zod default + 5/5 strateji) — asıl hukuki düzeltme (doc 23 Q5). **(D)** `day-count-calculator.ts` TZ-değişmez — determinizm hijyeni. | Küçük-orta | ✅ **SEÇİLDİ** |
 | **B — `@hukuk/legal-time` paketi** | Vetted lib (Luxon/Temporal) sarmalı, tier-tier adopsiyon. | Büyük (1090 call-site) | ⏸ ertelendi — şu an gereksiz geniş, hata üretir |
-| **C — Bootstrap TZ pin** | App başlangıcında `process.env.TZ='Europe/Istanbul'`. | Global runtime | ⚠️ yalnız **acil mitigasyon** opsiyonu; ana çözüm değil (global yan etki riski) |
+| **C — Bootstrap TZ pin** | App başlangıcında `process.env.TZ='Europe/Istanbul'`. | Global runtime | ⚠️ "acil mitigasyon" gerekçesi DÜŞTÜ (canlı prod yok, doc 23 Q6); en fazla deploy-zamanı determinizm garantisi olarak opsiyonel |
 
-**Gerekçe (A):** `calculateDays`/`determinePhase` zaten TZ-kararlı; sorun yalnız 3-4 fonksiyonda izole. B'nin 1090 call-site'ı şu an ROI'siz ve riskli. C kök kırılganlığı maskeler.
+**Gerekçe (A):** `calculateDays`/`determinePhase` zaten TZ-kararlı. Asıl düzeltme **(P) policy default** (hukuki — doc 23). **(D) determinizm** ikincil: START_OF_DAY seçilince `adjustEndDateForPayment` no-op olur → `addDays`/`format` faiz yolunda devre dışı kalır → TZ-fix büyük ölçüde gereksizleşir; yalnız gelecekteki başka kullanımlar için hijyen. B'nin 1090 call-site'ı ROI'siz. C kök kırılganlığı maskeler.
 
-## 4. T0 pilot scope (Yaklaşım A)
-- **Yalnız** `apps/api/src/modules/interest-engine/segments/day-count-calculator.ts` internals.
-- TZ-değişmez hale getirilecek: `addDays`, `formatIstanbulDate`, `parseIstanbulDate` (takvim alanı okuması), `adjustEndDateForPayment`.
+## 4. T0 pilot scope (Yaklaşım A — P + D)
+- **(P) Policy default (asıl iş):** `END_OF_DAY → START_OF_DAY`. Dokunulacak: `interest-engine/types/calculation.types.ts` (Zod `.default`) + `interest-engine/strategy/case-type-strategy.registry.ts` (5 strateji `sameDayPaymentRule`). **Kapsam tespiti: bu, eski "yalnız day-count internals" daralmasından DAHA GENİŞ** — bilinçle yazıldı.
+- **(D) Determinizm (ikincil):** `interest-engine/segments/day-count-calculator.ts` internals TZ-değişmez (`addDays`/`formatIstanbulDate`/`parseIstanbulDate` takvim okuması/`adjustEndDateForPayment`).
 - **Değişmeyecek:** public API şekli, string in/out kontratı, `calculateDays`/`determinePhase` semantiği.
-- Gate 1 characterization expected değerleri **Istanbul = doğru** olarak yeniden pinlenir; UTC artık aynı sonucu vereceği için **spec-içi TZ kapsülleme gereksizleşir** (bilinçle kaldırılır/güncellenir).
+- Gate 1 characterization expected değerleri politika + determinizm sonucuna göre **bilinçle yeniden pinlenir** (kademe-2, gerçek koddan).
 - **Guardrails:** no schema · no migration · no DB · no event payload · no public API shape change · no new package · no global runtime TZ change.
 
 ## 5. §5 — Forensic gate (✅ COMPLETED — bkz. doc 21)
 **Durum: ✅ completed (2026-06-07).** Çıktı kalıcılaştırıldı → `21-legal-time-forensic-impact-analysis.md` (status: forensic-evidence).
 
-**Bulgu:** Bug **canlı görünmekle kalmıyor, production ANA FAİZ PATH'ine bağlanıyor.**
-- `adjustEndDateForPayment(END_OF_DAY)` ana hesap path'inde: `interest-engine.service.ts:284 buildAllSegments` → `paymentDates` dolu (satır 290) → `generateTimeline` → `adjustEndDateForPayment` → `addDays` → `parse/format` (TZ-kırılgan zincir).
-- END_OF_DAY **evrensel default** (Zod `.default(END_OF_DAY)` + 5/5 case-type stratejisi).
-- UTC altında END_OF_DAY sessizce START_OF_DAY'e çöküyor → ödeme sınırı 1 gün erkene kayıyor → `allocatePayments` üzerinden **ödeme başına ~1 günlük faiz farkı** → **legal-material, sistematik.**
-- `formatIstanbulDate` dış çağrı = 0; `addDays`/`parseIstanbulDate` prod'a yalnız bu zincirle ulaşıyor. `calculateDays`/`determinePhase` TZ-kararlı (güvenli).
-- Açık teyit: çalışan prod container TZ + `allocatePayments` nihai-TL deltası (karakterizasyon kademe-2 ile pinlenecek). Ayrıntı + güven seviyeleri: doc 21.
+**Bulgu (teknik, değişmedi):** `adjustEndDateForPayment(END_OF_DAY)` ana hesap path'inde (`interest-engine.service.ts:284 buildAllSegments` → `paymentDates` dolu → `generateTimeline` → `adjustEndDateForPayment` → `addDays` → `parse/format`). END_OF_DAY evrensel default (Zod + 5/5 strateji). `formatIstanbulDate` dış çağrı = 0; `calculateDays`/`determinePhase` TZ-kararlı.
 
-## 6. Legal impact + risk-gate
-- Bu bir **politika değişikliği DEĞİL, doğruluk restorasyonu**: kod zaten `parseIstanbulDate`/`+03:00` ile Istanbul semantiğini amaçlıyor; UTC kayması istenmeyen bug. **TBK100 (doc 18) ile farkı:** orada kasıtlı hesap politikası değişikliği, burada niyetlenen davranışa dönüş.
-- **Ama** UTC-prod'da geçmiş hesap çıktıları değişebilir (boundary kayması düzelir) → **legal awareness ZORUNLU**: hangi case'ler etkilendi, yeniden-hesap gerekiyor mu.
+> **doc 23 sonrası okuma:** Forensic'in tespit ettiği "UTC'de END_OF_DAY → START_OF_DAY çöküşü" artık **kazara hukuken-doğru sonuç** demektir (ödeme günü hariç). Asıl düzeltme TZ değil, **policy default'un START_OF_DAY'e çekilmesi**. Prod olmadığı için canlı etki yok.
+
+## 6. Legal impact + risk-gate (doc 23 ile güncellendi)
+- Bu bir **HESAP POLİTİKASI DÜZELTMESİDİR** (doc 23 Q5: END_OF_DAY hatalı, START_OF_DAY doğru) — eski "doğruluk restorasyonu" çerçevesi DÜŞTÜ. TBK100 (doc 18) sınıfı bir politika kararı.
+- **ANCAK** production deploy edilmemiş (doc 23 Q1) → geçmiş hesap çıktısı yok → **remediation/yeniden-hesap YOK** → temiz pre-deployment değişiklik, historical baggage'sız.
+- Legal awareness: doc 22'de tamamlandı; sign-off Q1-Q7: doc 23'te resolved.
 
 ### Onay zinciri (sıra kilitli)
-- [x] Yaklaşım A + T0 pilot prensip onayı (ulas, 2026-06-07)
-- [x] Decision record taslağı (bu belge)
-- [x] **§5 forensic gate** (prod faiz path etkisi — read-only) → ✅ completed, doc 21 (bug ana faiz path'ine bağlı + legal-material doğrulandı)
-- [ ] **Legal awareness** (geçmiş sonuç kayması bildirimi)
+- [x] Yaklaşım A prensip onayı (ulas, 2026-06-07) — doc 23 sonrası P+D olarak yeniden tanımlı
+- [x] Decision record (bu belge) + PR B reframe
+- [x] **§5 forensic gate** → ✅ completed, doc 21
+- [x] **Legal awareness** → ✅ doc 22
+- [x] **Legal sign-off (Q1-Q7)** → ✅ doc 23 (START_OF_DAY benimsendi; prod yok)
 - [ ] **ulas açık "devam" onayı** (implementation başlatma)
-- [ ] Implementation + characterization kademe-2 re-pin (ayrı PR)
+- [ ] Implementation planı + characterization kademe-2 (ayrı PR): (P) policy default + (D) determinizm
+- [ ] **Deployment gate:** ilk prod deploy öncesi runtime TZ doğrulaması
 
 ## 7. Karar durumu
 ```
-draft-pending-approval. No implementation. No package. No runtime change.
-Yön: Yaklaşım A (T0 string-native fix).
-Sıra: doc 20 → §5 forensic gate → legal awareness + explicit devam → implementation.
+accepted-pending-implementation. No implementation. No package. No runtime change.
+Yön: Yaklaşım A YENİDEN TANIMLI → (P) policy END_OF_DAY→START_OF_DAY + (D) determinizm.
+Bağlam: prod yok → remediation yok → pre-deployment correction.
+Sıra: doc 23 ✅ → PR B (bu) ✅ → implementation planı + açık "devam" → deployment gate.
 ```
 
 ---
-**Decision Status:** Draft, pending forensic gate + legal awareness + explicit go. Implementation NOT started.
+**Decision Status:** Accepted (yön kesin, doc 23), pending explicit go + implementation. Pre-deployment policy correction + determinism. Implementation NOT started.
