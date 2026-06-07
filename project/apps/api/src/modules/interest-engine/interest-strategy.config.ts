@@ -300,6 +300,70 @@ export function resolveInterestTypeByDebtNature(
   }
 }
 
+// ============================================================================
+// INTEREST_POLICY_ASSIGNED — EVENT PAYLOAD (doc 14 §2)
+// ============================================================================
+
+/**
+ * INTEREST_POLICY_ASSIGNED domain event payload'u.
+ *
+ * Bu, hesap *kuralıdır* (computation contract), hesap *sonucu* DEĞİLDİR.
+ * Anayasa D gereği hesaplanmış değer (calculatedInterest/balance/segments/rateValues)
+ * payload'da YER ALMAZ.
+ */
+export interface InterestPolicyAssignedPayload {
+  interestType: InterestTypeCode;
+  rateSeriesSource: InterestStrategy['rateSeriesSource'];
+  startEvent: StartDateEvent;
+  startDate: string; // ISO8601
+  dayCountBasis: 365 | 360;
+  compoundingRule: 'NONE' | 'ANNUAL' | 'CUSTOM';
+  interpretationProfileId: string;
+  allocationPolicyId: string;
+  debtNature: DebtNature;
+  caseTypeClassification: string;
+  isDefaultProfile: boolean;
+  reasoning?: string;
+}
+
+/**
+ * Case açılışında ilk faiz politikası atamasının (INTEREST_POLICY_ASSIGNED)
+ * payload'unu, takip tipinin faiz stratejisinden türetir.
+ *
+ * Sprint 2C: interpretationProfileId / allocationPolicyId hardcoded (registry Sprint 3).
+ * dto tipine bağlanmaz (case → interest-engine ters bağımlılığını önlemek için yalnız
+ * CaseType + tarih primitifleri alır).
+ *
+ * @remarks
+ * Çağrıldığı yerler:
+ * - CaseService.create() → POST /cases (case açılışında CASE_OPENED sonrası, aynı tx'te emit)
+ */
+export function resolveInitialPolicy(
+  caseType: CaseType,
+  dates?: { interestStartDate?: string; startDate?: string },
+): InterestPolicyAssignedPayload {
+  const strategy = getInterestStrategy(caseType);
+  const debtNature = strategy.assumeCommercial ? DebtNature.COMMERCIAL : DebtNature.CIVIL;
+  const interestType =
+    strategy.defaultInterestType === 'AUTO_BY_DEBT_NATURE'
+      ? resolveInterestTypeByDebtNature(debtNature)
+      : strategy.defaultInterestType;
+
+  return {
+    interestType,
+    rateSeriesSource: strategy.rateSeriesSource,
+    startEvent: strategy.defaultStartEvent,
+    startDate: dates?.interestStartDate ?? dates?.startDate ?? new Date().toISOString(),
+    dayCountBasis: strategy.dayCountBasis,
+    compoundingRule: strategy.compounding ? 'ANNUAL' : 'NONE',
+    interpretationProfileId: 'DEFAULT_TBK100_V1',
+    allocationPolicyId: 'TBK100_STANDARD',
+    debtNature,
+    caseTypeClassification: caseType,
+    isDefaultProfile: true,
+  };
+}
+
 /**
  * Başlangıç olayı etiketlerini döndürür
  */

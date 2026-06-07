@@ -7,6 +7,7 @@ import { isInitialStatus } from "../case-status/case-status.service";
 import { AuditService } from "../audit/audit.service";
 import { ClientInfoRequestService } from "../address-discovery/client-info-request.service";
 import { InterestEngineService } from "../interest-engine/interest-engine.service";
+import { resolveInitialPolicy } from "../interest-engine/interest-strategy.config";
 import { ExpenseRequestService } from "../expense-request/expense-request.service";
 import { DomainEventIngestService } from "../icrabot/domain-event-ingest";
 
@@ -552,6 +553,15 @@ export class CaseService {
   }
 
   async create(tenantId: string, dto: CreateCaseDto, userId?: string) {
+    // INTEREST_POLICY_ASSIGNED (HR-26: HUMAN actor zorunlu) için userId şart.
+    // "Bu faiz politikasını kim atadı?" sorusunun cevabı olmadan event hukuken zayıf.
+    // Fail-fast: tx başlamadan reddet ('unknown' actor kabul edilmez).
+    if (!userId) {
+      throw new BadRequestException(
+        "Case oluşturmak için kullanıcı kimliği (userId) zorunludur (faiz politikası ataması audit'i)."
+      );
+    }
+
     // B.5: Başlangıç statüsü validasyonu
     if (dto.caseStatus && !isInitialStatus(dto.caseStatus as LegalCaseStatus)) {
       throw new BadRequestException(
@@ -889,6 +899,26 @@ export class CaseService {
             currency: newCase.currency,
             caseDate: newCase.caseDate?.toISOString(),
           },
+        });
+
+        // 8.6. INTEREST_POLICY_ASSIGNED domain event (doc 14, Sprint 2C)
+        // Legal computation contract: CASE_OPENED'dan sonra aynı tx'te → aggregateVersion 2 (otomatik).
+        // Payload hesap KURALIDIR, sonucu değil (Anayasa D); değer alanları taşımaz.
+        await this.domainEventIngestService.appendInTransaction(tx, {
+          header: {
+            eventId: randomUUID(),
+            aggregateType: 'Case',
+            aggregateId: newCase.id,
+            eventType: 'INTEREST_POLICY_ASSIGNED',
+            occurredAt: new Date().toISOString(),
+            occurredAtConfidence: 'SYSTEM_VERIFIED',
+            actor: { type: 'HUMAN', userId },
+            tenantId,
+          },
+          payload: resolveInitialPolicy(dto.type, {
+            interestStartDate: dto.interestStartDate,
+            startDate: dto.startDate,
+          }),
         });
 
         // 9. Tam case'i döndür
