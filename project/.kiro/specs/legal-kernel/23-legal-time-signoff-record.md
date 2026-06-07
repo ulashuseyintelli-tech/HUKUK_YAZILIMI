@@ -1,10 +1,10 @@
 ---
 status: partial-signoff
 type: legal-signoff
-review-trigger: "kalan sorular (Q1 geçmiş yön, Q6 acil köprü C, Q7 prod TZ) cevaplanınca tam sign-off'a yükselt; doc 20+22 revizyonu (ayrı gate) öncesi"
+review-trigger: "Q1–Q7 hukuki olarak cevaplandı (status partial-signoff KORUNUYOR). DEPLOYMENT GATE AÇIK: ilk production deployment ÖNCESİ runtime TZ/date doğrulaması ZORUNLU. Policy START_OF_DAY adopsiyonu + determinizm ayrı implementation onayı; doc 20+22 revizyonu (PR B) öncesi."
 phase: 2
 date: 2026-06-07
-purpose: "legal-time strand'inin kritik çatallanmasını (doc 22 §10 Soru 5) hukuki karara bağlayan resmi kayıt. Ödeme günü faiz muamelesi hakkında benimsenen hukuki pozisyon. KISMİ sign-off: yalnız Q5 yetkili biçimde cevaplandı. Kod/implementation/politika yürürlüğü İÇERMEZ."
+purpose: "legal-time strand'inin Q1-Q7 hukuki/operasyonel yanıtlarını kaydeder. Q5 ile ödeme günü faiz politikası START_OF_DAY olarak benimsenmiştir; Q1/Q6/Q7 prod yok / deployment öncesi doğrulama bağlamında resolved edilmiştir. partial-signoff statüsü yalnız ilk production deployment öncesi runtime TZ/date validation gate'i açık olduğu için korunur. Kod/implementation/politika yürürlüğü içermez."
 ---
 
 # 23 — legal-time Legal Sign-Off Record (PARTIAL)
@@ -60,7 +60,7 @@ Prod = UTC      → sistem kazara START_OF_DAY gibi davranmış olabilir
                 → bu eksende geçmiş hesap DOĞRU olabilir
                 → asıl sorun niyet/determinizm; geçmiş yeniden-hesap gerekmeyebilir
 ```
-**KRİTİK NOT: Q7 (prod TZ kesin teyidi) cevaplanmadan geçmiş hesap etkisi kesin sınıflandırılamaz.**
+**KARARLAŞTI (Q7, 2026-06-07): production deploy EDİLMEMİŞ → bu matrisin hiçbir kolu gerçek geçmiş veriye uygulanmaz → geçmiş hesap ekseni KAPANDI. Matris yalnızca gelecekteki ilk deploy'da runtime TZ doğrulaması için referans kalır (bkz. §7 deployment gate).**
 
 ## 6. Teknik sonuç — sıra kilitli
 ```
@@ -69,12 +69,30 @@ Aksi halde "yanlış politikayı deterministik hale getirme" riski doğar.
 ```
 Not: START_OF_DAY benimsenirse `adjustEndDateForPayment` no-op olur (addDays çağırmaz) → `addDays`/`format` zinciri faiz yolunda büyük ölçüde devre dışı kalır → TZ-fix kapsamı daralır/ikincilleşir.
 
-## 7. Kalan açık sorular (bu sign-off KISMİ)
+## 7. Soru kararları (Q1–Q7) + deployment gate
+
+**Bağlam (operasyonel gerçek, ulas beyanı, 2026-06-07):** HUKUK_YAZILIMI henüz **production'a deploy edilmemiş.** Çalışan prod container yok; legally-relied geçmiş production hesabı yok. Bu, "geçmiş etki" eksenini kapatır ve konuyu **deployment-öncesi hazırlığa** taşır.
+
+> **"partial-signoff" ne demek:** Hukuki sorular (Q1–Q7) CEVAPLANDI. "partial" olmasının TEK sebebi **deployment gate'in AÇIK kalması** (aşağıda) — cevaplanmamış hukuki soru DEĞİL.
+
 ```
-Q1 — geçmiş hesap yönü (yalnız ileriye mi, geçmiş yeniden-hesap mı)   [AÇIK — Q7'ye bağlı]
-Q6 — acil TZ pin (C) yetkisi                                          [AÇIK]
-Q7 — prod TZ kesin teyidi (UTC / Europe/Istanbul / bilinmiyor)        [AÇIK — en kritik]
+Q1 — geçmiş hesap yönü        → resolved: geçmiş prod hesabı YOK → retrospective recalculation NOT APPLICABLE
+Q2 — geçmiş kapsam            → resolved (N/A) — geçmiş yok
+Q3 — bildirim/mahkeme         → resolved (N/A) — sunulmuş geçmiş rapor yok
+Q4 — önemsizlik eşiği         → resolved (N/A) — etkilenen geçmiş hesap yok
+Q5 — END_OF_DAY doğru mu      → resolved: START_OF_DAY doğru, END_OF_DAY hatalı (§2)
+Q6 — acil TZ pin (C) yetkisi  → resolved: GEREKLİ DEĞİL — canlı prod yok, durdurulacak "kanama" yok
+Q7 — prod runtime TZ          → resolved (pre-deployment context): production NOT DEPLOYED → canlı teyit anlamsız
 ```
+
+**🔓 DEPLOYMENT GATE (AÇIK — bu yüzden status hâlâ partial-signoff):**
+```
+İlk production deployment ÖNCESİ runtime timezone/date davranışı doğrulaması ZORUNLU.
+(Q7 doğrulama planı — Node resolvedTZ/offsetMinutes + adjustEndDateForPayment davranışı —
+ ilk deploy gate'i olarak saklanır.)
+```
+
+**Caveat (kayıt doğruluğu):** "Production yok" ulas beyanı operasyonel gerçektir (doc 23 atıf modeli geçerli). EĞER herhangi bir ortam (staging/demo/pilot) güvenilen/dışa verilen hukuki hesap ürettiyse, Q1 "not applicable" yeniden değerlendirilmelidir.
 
 ## 8. Otorite / atıf
 ```
@@ -89,4 +107,4 @@ Bağımlılık yönü: **doc 23 → doc 20 revizyonu → doc 22 revizyonu** (ter
 - **Implementation HÂLÂ blocked.**
 
 ---
-**Sign-Off Status:** partial (yalnız Q5). Implementation NOT authorized. Politika yürürlüğe sokulmadı. Geçmiş etki Q7'ye bağlı.
+**Sign-Off Status:** partial-signoff (Q1–Q7 hukuki olarak RESOLVED; "partial" = deployment gate AÇIK, cevaplanmamış hukuki soru DEĞİL). Implementation NOT authorized. Politika yürürlüğe sokulmadı. Geçmiş etki: NOT APPLICABLE (prod yok). Deployment gate: ilk deploy öncesi runtime TZ doğrulaması ZORUNLU.
