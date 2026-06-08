@@ -1,6 +1,6 @@
 ---
-status: accepted-pending-implementation
-review-trigger: "Yön doc 23 (Q1-Q7 resolved) ile kesinleşti: END_OF_DAY hatalı → default START_OF_DAY (policy change) + determinizm. Prod deploy edilmediği için remediation YOK. Implementation ayrı 'devam' onayı + deployment gate (ilk deploy öncesi runtime TZ doğrulaması) gerektirir."
+status: policy-implemented-pending-deployment-gate
+review-trigger: "(P) policy correction PR-2 (#23, 2026-06-08) ile UYGULANDI: default START_OF_DAY production-kodda. Kalan: (D) determinizm PR-3 (opsiyonel hijyen) + deployment gate (ilk prod deploy öncesi runtime TZ doğrulaması). END_OF_DAY enum korunur."
 phase: 2
 date: 2026-06-07
 purpose: "legal-time düzeltme kararı. doc 23 ile yön kesinleşti: ödeme günü faiz işlemez → END_OF_DAY HATALI, default START_OF_DAY'e değişecek (HESAP POLİTİKASI DÜZELTMESİ) + day-count determinizm. Production deploy EDİLMEMİŞ → geçmiş remediation YOK; pre-deployment düzeltme. Implementation ayrı onayla; deployment gate açık."
@@ -8,8 +8,8 @@ purpose: "legal-time düzeltme kararı. doc 23 ile yön kesinleşti: ödeme gün
 
 # 20 — legal-time Adoption — Decision Record (Gate 3)
 
-**Karar durumu:** accepted-pending-implementation
-**Seçilen yön:** Yaklaşım **A**, doc 23 sonrası YENİDEN TANIMLANDI → **(P) policy correction (END_OF_DAY → START_OF_DAY)** + **(D) determinizm hijyeni** (onay: ulas, 2026-06-07; hukuki yön: doc 23)
+**Karar durumu:** policy-implemented-pending-deployment-gate ((P) ✅ PR-2 #23; (D) PR-3 opsiyonel; deployment gate açık)
+**Seçilen yön:** Yaklaşım **A**, doc 23 sonrası YENİDEN TANIMLANDI → **(P) policy correction (END_OF_DAY → START_OF_DAY)** ✅ + **(D) determinizm hijyeni** ⏭ (onay: ulas, 2026-06-07; hukuki yön: doc 23; uygulama: PR-2 2026-06-08)
 **Kırmızı çizgi:** *Bu belge yalnız KARARDIR. Kod, test, config, runtime değişikliği bu belgeyle başlamaz. Implementation ayrı, açık "devam" onayıyla.*
 
 > **PR B reframe (2026-06-07):** Bu belge başlangıçta "END_OF_DAY doğruluk restorasyonu / remediation" çerçevesindeydi. doc 23 (Q1-Q7 resolved) bunu çevirdi: **END_OF_DAY hukuken HATALI**, doğru politika **START_OF_DAY**. Ayrıca **production deploy edilmemiş** → geçmiş etki/remediation YOK. Konu artık **pre-deployment policy correction + determinizm**.
@@ -67,17 +67,19 @@ purpose: "legal-time düzeltme kararı. doc 23 ile yön kesinleşti: ödeme gün
 - [x] **§5 forensic gate** → ✅ completed, doc 21
 - [x] **Legal awareness** → ✅ doc 22
 - [x] **Legal sign-off (Q1-Q7)** → ✅ doc 23 (START_OF_DAY benimsendi; prod yok)
-- [ ] **ulas açık "devam" onayı** (implementation başlatma)
-- [ ] Implementation planı + characterization kademe-2 (ayrı PR): (P) policy default + (D) determinizm
-- [ ] **Deployment gate:** ilk prod deploy öncesi runtime TZ doğrulaması
+- [x] **ulas açık "devam" onayı** → ✅ (PR-1 + PR-2, 2026-06-08)
+- [x] **Characterization kademe-2** → ✅ PR-1 (#22, payment-boundary characterization)
+- [x] **(P) Policy default END_OF_DAY → START_OF_DAY** → ✅ PR-2 (#23) — production-kodda uygulandı; END_OF_DAY explicit option korundu
+- [ ] **(D) Determinizm** (day-count TZ-invariant) → PR-3, **opsiyonel hijyen** (START_OF_DAY default'ta adjustEndDateForPayment no-op → faiz-path'inde aciliyetsiz)
+- [ ] **Deployment gate:** ilk prod deploy öncesi runtime TZ doğrulaması (AÇIK)
 
 ## 7. Karar durumu
 ```
-accepted-pending-implementation. No implementation. No package. No runtime change.
-Yön: Yaklaşım A YENİDEN TANIMLI → (P) policy END_OF_DAY→START_OF_DAY + (D) determinizm.
-Bağlam: prod yok → remediation yok → pre-deployment correction.
-Sıra: doc 23 ✅ → PR B (bu) ✅ → implementation planı + açık "devam" → deployment gate.
+(P) policy correction UYGULANDI (PR-2 #23, 2026-06-08). No package. No DB/schema/migration. No runtime TZ change. No enum removal.
+Yön: Yaklaşım A → (P) policy END_OF_DAY→START_OF_DAY ✅ · (D) determinizm ⏭ opsiyonel hijyen (PR-3).
+Bağlam: prod yok → remediation yok → pre-deployment correction (geçmiş etki yok).
+Sıra: doc 23 ✅ → PR B ✅ → PR-1 characterization ✅ → PR-2 policy ✅ → PR-3 determinizm (opsiyonel) → deployment gate (AÇIK).
 ```
 
 ---
-**Decision Status:** Accepted (yön kesin, doc 23), pending explicit go + implementation. Pre-deployment policy correction + determinism. Implementation NOT started.
+**Decision Status:** (P) policy correction IMPLEMENTED (PR-2 #23). Pre-deployment; geçmiş etki yok. Kalan: (D) determinizm (PR-3 opsiyonel hijyen) + deployment gate (ilk deploy öncesi runtime TZ doğrulaması, AÇIK).
