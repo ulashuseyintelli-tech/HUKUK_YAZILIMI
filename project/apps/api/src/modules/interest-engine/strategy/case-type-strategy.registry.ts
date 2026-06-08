@@ -53,7 +53,7 @@ export class KambiyoSenediStrategy implements CaseTypeStrategy {
       defaultRoundingScope: 'TOTAL_ONLY',
       defaultRoundingMode: 'HALF_UP',
       defaultClaimPriorityRule: 'OLDEST_DUE_FIRST',
-      sameDayPaymentRule: 'END_OF_DAY',
+      sameDayPaymentRule: 'START_OF_DAY',
       gapPolicy: 'BLOCK',
     };
   }
@@ -101,7 +101,7 @@ export class IlamsizGenelStrategy implements CaseTypeStrategy {
       defaultRoundingScope: 'TOTAL_ONLY',
       defaultRoundingMode: 'HALF_UP',
       defaultClaimPriorityRule: 'OLDEST_DUE_FIRST',
-      sameDayPaymentRule: 'END_OF_DAY',
+      sameDayPaymentRule: 'START_OF_DAY',
       gapPolicy: 'WARN',
     };
   }
@@ -147,7 +147,7 @@ export class IlamliStrategy implements CaseTypeStrategy {
       defaultRoundingScope: 'TOTAL_ONLY',
       defaultRoundingMode: 'HALF_UP',
       defaultClaimPriorityRule: 'OLDEST_DUE_FIRST',
-      sameDayPaymentRule: 'END_OF_DAY',
+      sameDayPaymentRule: 'START_OF_DAY',
       gapPolicy: 'BLOCK',
     };
   }
@@ -194,7 +194,7 @@ export class TTK1530Strategy implements CaseTypeStrategy {
       defaultRoundingScope: 'TOTAL_ONLY',
       defaultRoundingMode: 'HALF_UP',
       defaultClaimPriorityRule: 'HIGHEST_RATE_FIRST',
-      sameDayPaymentRule: 'END_OF_DAY',
+      sameDayPaymentRule: 'START_OF_DAY',
       gapPolicy: 'BLOCK',
     };
   }
@@ -242,7 +242,7 @@ export class KiraAlacagiStrategy implements CaseTypeStrategy {
       defaultRoundingScope: 'TOTAL_ONLY',
       defaultRoundingMode: 'HALF_UP',
       defaultClaimPriorityRule: 'OLDEST_DUE_FIRST',
-      sameDayPaymentRule: 'END_OF_DAY',
+      sameDayPaymentRule: 'START_OF_DAY',
       gapPolicy: 'WARN',
     };
   }

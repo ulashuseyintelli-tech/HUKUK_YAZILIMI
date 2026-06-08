@@ -533,7 +533,7 @@ export class InterestEngineService {
         dayCountBasis: dayCountBasis as 365 | 360,
         roundingMode: RoundingMode.HALF_UP,
         roundingScope: RoundingScope.PER_SEGMENT,
-        sameDayPaymentRule: SameDayPaymentRule.END_OF_DAY,
+        sameDayPaymentRule: SameDayPaymentRule.START_OF_DAY,
       },
     );
 

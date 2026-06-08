@@ -75,7 +75,7 @@ const isoDateRegex = /^\d{4}-\d{2}-\d{2}$/;
 export const CalculationOptionsSchema = z.object({
   // Day Count
   dayCountBasis: z.union([z.literal(365), z.literal(360)]).default(365),
-  sameDayPaymentRule: z.nativeEnum(SameDayPaymentRule).default(SameDayPaymentRule.END_OF_DAY),
+  sameDayPaymentRule: z.nativeEnum(SameDayPaymentRule).default(SameDayPaymentRule.START_OF_DAY),
   
   // Rounding
   roundingMode: z.nativeEnum(RoundingMode).default(RoundingMode.HALF_UP),

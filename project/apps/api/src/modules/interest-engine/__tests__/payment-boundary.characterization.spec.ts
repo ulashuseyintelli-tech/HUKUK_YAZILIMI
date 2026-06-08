@@ -8,9 +8,9 @@
  *       değişeceği bu suite üzerinden net görünür.
  *
  * KATMANLAR:
- *   A — Default resolution: sistemin varsayılanı gerçekten END_OF_DAY mı?
+ *   A — Default resolution: sistemin varsayılanı START_OF_DAY (doc 23 Q5 hukuki politika).
  *       (Zod CalculationOptionsSchema default + 5 case-type stratejisi)
- *       → PR-2'de bu pinler FLIP edecek (START_OF_DAY).
+ *       → PR-2'de FLIP edildi: önceki default END_OF_DAY → START_OF_DAY (bu commit).
  *   B — Timeline boundary: END_OF_DAY → ödeme sınırı P+1; START_OF_DAY → P.
  *   C — Segment sonucu: boundary segment bölünmesini (ve per-segment rounding ile
  *       toplamı 0.01) etkiliyor.
@@ -98,13 +98,13 @@ describe('CHARACTERIZATION: payment boundary + END_OF_DAY default', () => {
   // ───────────────────────────────────────────────────────────────────────────
   // KATMAN A — Default resolution (PR-2'de FLIP edecek pinler)
   // ───────────────────────────────────────────────────────────────────────────
-  describe('A — sistem varsayılanı END_OF_DAY', () => {
-    it('Zod CalculationOptionsSchema default = END_OF_DAY', () => {
+  describe('A — sistem varsayılanı START_OF_DAY (PR-2 sonrası)', () => {
+    it('Zod CalculationOptionsSchema default = START_OF_DAY', () => {
       const parsed = CalculationOptionsSchema.parse({});
-      expect(parsed.sameDayPaymentRule).toBe(SameDayPaymentRule.END_OF_DAY);
+      expect(parsed.sameDayPaymentRule).toBe(SameDayPaymentRule.START_OF_DAY);
     });
 
-    it('5 case-type stratejisinin TÜMÜ END_OF_DAY', () => {
+    it('5 case-type stratejisinin TÜMÜ START_OF_DAY', () => {
       const strategies = [
         new KambiyoSenediStrategy(),
         new IlamsizGenelStrategy(),
@@ -114,7 +114,7 @@ describe('CHARACTERIZATION: payment boundary + END_OF_DAY default', () => {
       ];
       expect(strategies).toHaveLength(5);
       for (const s of strategies) {
-        expect(s.getPolicyConfig().sameDayPaymentRule).toBe('END_OF_DAY');
+        expect(s.getPolicyConfig().sameDayPaymentRule).toBe('START_OF_DAY');
       }
     });
   });
