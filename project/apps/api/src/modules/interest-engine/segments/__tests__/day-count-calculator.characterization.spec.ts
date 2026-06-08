@@ -8,15 +8,14 @@
  *
  * KAPSAM NOTU: Happy-path zaten `__tests__/sprint-2.spec.ts` (satır 90-208, 532)
  *       içinde pinli. Bu suite o testleri TEKRARLAMAZ; boşlukları doldurur:
- *       artık yıl, addDays round-trip/yıl taşması, format/parse server-local
- *       davranışı, determinePhase SAME_DAY sınırları ve TZ-kırılganlığı kanıtı.
+ *       artık yıl, addDays round-trip/yıl taşması, format/parse UTC-anchored
+ *       davranışı, determinePhase SAME_DAY sınırları ve TZ-invariance kanıtı.
  *
- * TZ KAPSÜLLEME (onaylı karar, 2026-06-07): Proje genelinde TZ pinli DEĞİL
- *       (jest.config / jest.setup / env — hiçbiri). `addDays`, `formatIstanbulDate`,
- *       `parseIstanbulDate.getDate`, `adjustEndDateForPayment(END_OF_DAY)` server-local
- *       TZ'ye duyarlıdır → UTC CI'da off-by-one üretir. Bu suite'in deterministik
- *       kalması için TZ YALNIZ BU SPEC içinde 'Europe/Istanbul'a pinlenir ve afterAll
- *       ile eski değer geri alınır. Production koduna ve jest global config'e DOKUNULMAZ.
+ * TZ-INVARIANT (PR-3, 2026-06-08): day-count-calculator artık UTC-anchored
+ *       (parseIstanbulDate → UTC midnight; addDays/format → UTC getters/setters).
+ *       Tüm fonksiyonlar server-TZ'den BAĞIMSIZ → Istanbul = UTC = her TZ aynı çıktı.
+ *       Bu yüzden spec-içi TZ pin KALDIRILDI; alttaki determinizm testi (TZ switch →
+ *       eşit) bunu kanıtlar. (Önceki +03:00 anchor TZ-kırılgandı; PR-3 ile giderildi.)
  */
 
 import {
@@ -30,23 +29,9 @@ import {
 import { SameDayPaymentRule } from '../../types/common.types';
 
 describe('CHARACTERIZATION: day-count-calculator', () => {
-  // --- TZ kapsülleme: yalnız bu spec içinde, production/jest config'e dokunmadan ---
-  const originalTZ = process.env.TZ;
-
-  beforeAll(() => {
-    process.env.TZ = 'Europe/Istanbul';
-  });
-
-  afterAll(() => {
-    if (originalTZ === undefined) {
-      delete process.env.TZ;
-    } else {
-      process.env.TZ = originalTZ;
-    }
-  });
-
+  // (PR-3) TZ pin YOK — fonksiyonlar UTC-anchored, server-TZ'den bağımsız.
   // ───────────────────────────────────────────────────────────────────────────
-  // calculateDays — TZ-KARARLI (sabit +03:00 parse üzerinden getTime diff).
+  // calculateDays — TZ-KARARLI (UTC-anchor getTime diff; her zaman kararlıydı).
   // sprint-2'de olmayan: artık yıl + tarihsel DST-era kararlılığı.
   // ───────────────────────────────────────────────────────────────────────────
   describe('calculateDays — artık yıl + DST-era (boşluk)', () => {
@@ -73,7 +58,7 @@ describe('CHARACTERIZATION: day-count-calculator', () => {
 
   // ───────────────────────────────────────────────────────────────────────────
   // addDays — round-trip + yıl taşması (boşluk; sprint-2 yalnız +5 ve ay taşmasını pinler).
-  // NOT: Istanbul-pinli değerler. UTC altında bu değerler off-by-one olur (latent bug).
+  // NOT: PR-3 sonrası TZ-invariant — değerler her TZ'de aynı (eski UTC off-by-one giderildi).
   // ───────────────────────────────────────────────────────────────────────────
   describe('addDays — round-trip + yıl taşması (boşluk)', () => {
     it('round-trip: (+5 sonra -5) başlangıca döner', () => {
@@ -90,23 +75,23 @@ describe('CHARACTERIZATION: day-count-calculator', () => {
   });
 
   // ───────────────────────────────────────────────────────────────────────────
-  // parseIstanbulDate / formatIstanbulDate — mevcut server-local davranışı.
-  // toISOString() TZ-DEĞİŞMEZ (mutlak an'ı sabitler); getDate/getHours server-local'dir.
+  // parseIstanbulDate / formatIstanbulDate — UTC-anchored (TZ-invariant) davranış.
+  // toISOString() UTC gece yarısı; getUTC* alanları TZ-değişmez.
   // ───────────────────────────────────────────────────────────────────────────
-  describe('parse/format — mevcut (server-local) davranış', () => {
-    it('parseIstanbulDate mutlak an: 2025-01-15 → 2025-01-14T21:00:00.000Z (UTC, TZ-değişmez)', () => {
+  describe('parse/format — UTC-anchored (TZ-invariant) davranış', () => {
+    it('parseIstanbulDate mutlak an: 2025-01-15 → 2025-01-15T00:00:00.000Z (UTC gece yarısı)', () => {
       expect(parseIstanbulDate('2025-01-15').toISOString()).toBe(
-        '2025-01-14T21:00:00.000Z',
+        '2025-01-15T00:00:00.000Z',
       );
     });
 
-    it('parseIstanbulDate server-local alanları (Istanbul): getDate=15, getHours=0', () => {
+    it('parseIstanbulDate UTC alanları: getUTCDate=15, getUTCHours=0 (TZ-değişmez)', () => {
       const d = parseIstanbulDate('2025-01-15');
-      expect(d.getDate()).toBe(15);
-      expect(d.getHours()).toBe(0);
+      expect(d.getUTCDate()).toBe(15);
+      expect(d.getUTCHours()).toBe(0);
     });
 
-    it('formatIstanbulDate round-trip (Istanbul): parse→format aynı string', () => {
+    it('formatIstanbulDate round-trip: parse→format aynı string', () => {
       expect(formatIstanbulDate(parseIstanbulDate('2025-01-15'))).toBe(
         '2025-01-15',
       );
@@ -155,17 +140,40 @@ describe('CHARACTERIZATION: day-count-calculator', () => {
   });
 
   // ───────────────────────────────────────────────────────────────────────────
-  // TZ-KIRILGANLIK NOTU (assertion YOK — bilinçli karar)
-  //
-  // legal-time adoption'ının gerekçesi olan latent bug, ayrı standalone harness ile
-  // KANITLANDI (Gate 1 inventory, 2026-06-07). TZ=UTC altında MEVCUT davranış:
-  //   - addDays('2025-01-01', 5)                 → '2025-01-05'  (Istanbul: '2025-01-06')
-  //   - formatIstanbulDate(parse('2025-01-15'))  → '2025-01-14'  (Istanbul: '2025-01-15')
-  //   - adjustEndDateForPayment(.., END_OF_DAY)  → '2025-01-15'  (Istanbul: '2025-01-16', +1 gün çöker)
-  //   - calculateDays / determinePhase           → KARARLI (sabit +03:00 / string-compare)
-  //
-  // Bu divergence burada CANLI assert EDİLMEZ: jest/V8 aynı process içinde ikinci bir
-  // runtime TZ switch'ini (Istanbul→UTC) güvenilir biçimde uygulamıyor (TZ offset cache);
-  // beforeAll'daki tek-yönlü pin çalışır, test-içi yeniden switch güvenilmez/flaky olur.
-  // Kanıt harness'ta sabittir; bu suite mevcut (Istanbul) davranışı deterministik kilitler.
+  // DETERMİNİZM KANITI (PR-3) — TZ switch'ten BAĞIMSIZ aynı çıktı.
+  // UTC-anchored fonksiyonlar process.env.TZ'yi okumaz (getUTC* TZ'den etkilenmez);
+  // bu yüzden test-içi TZ switch artık GÜVENİLİR. Eski +03:00 anchor'da off-by-one'dı.
+  // ───────────────────────────────────────────────────────────────────────────
+  describe('TZ-invariance (PR-3 determinizm kanıtı)', () => {
+    const underTZ = <T>(tz: string, fn: () => T): T => {
+      const saved = process.env.TZ;
+      try {
+        process.env.TZ = tz;
+        return fn();
+      } finally {
+        process.env.TZ = saved;
+      }
+    };
+
+    it('addDays UTC == Istanbul (off-by-one YOK)', () => {
+      const utc = underTZ('UTC', () => addDays('2025-01-01', 5));
+      const ist = underTZ('Europe/Istanbul', () => addDays('2025-01-01', 5));
+      expect(utc).toBe(ist);
+      expect(utc).toBe('2025-01-06');
+    });
+
+    it('formatIstanbulDate(parse) UTC == Istanbul', () => {
+      const utc = underTZ('UTC', () => formatIstanbulDate(parseIstanbulDate('2025-01-15')));
+      const ist = underTZ('Europe/Istanbul', () => formatIstanbulDate(parseIstanbulDate('2025-01-15')));
+      expect(utc).toBe(ist);
+      expect(utc).toBe('2025-01-15');
+    });
+
+    it('adjustEndDateForPayment(END_OF_DAY) UTC == Istanbul (+1 gün korunur)', () => {
+      const utc = underTZ('UTC', () => adjustEndDateForPayment('2025-01-15', SameDayPaymentRule.END_OF_DAY));
+      const ist = underTZ('Europe/Istanbul', () => adjustEndDateForPayment('2025-01-15', SameDayPaymentRule.END_OF_DAY));
+      expect(utc).toBe(ist);
+      expect(utc).toBe('2025-01-16');
+    });
+  });
 });

@@ -25,9 +25,6 @@
 
 import { SameDayPaymentRule, DayCountBasis } from '../types/common.types';
 
-// Istanbul timezone offset (+03:00)
-const ISTANBUL_OFFSET = '+03:00';
-
 /**
  * Calculate days between two dates using canonical [start, end) rule
  * Start inclusive, end exclusive
@@ -39,11 +36,16 @@ export function calculateDays(startDate: string, endDate: string): number {
 }
 
 /**
- * Parse date string to Istanbul timezone Date object
- * Always uses 00:00:00 (date-only)
+ * Parse a YYYY-MM-DD string to a Date anchored at UTC midnight.
+ *
+ * TZ-INVARIANT (PR-3): The calendar date (Y-M-D) is pinned at UTC midnight so that
+ * UTC getters/setters and formatIstanbulDate yield identical results on any
+ * server timezone (Istanbul, UTC, ...). The legal "Istanbul date" semantics are
+ * preserved — only the internal anchor moved from +03:00 to UTC for determinism.
+ * (calculateDays is unaffected: both endpoints share the anchor, so the day diff is identical.)
  */
 export function parseIstanbulDate(dateStr: string): Date {
-  return new Date(`${dateStr}T00:00:00${ISTANBUL_OFFSET}`);
+  return new Date(`${dateStr}T00:00:00Z`);
 }
 
 
@@ -52,7 +54,7 @@ export function parseIstanbulDate(dateStr: string): Date {
  */
 export function addDays(dateStr: string, days: number): string {
   const date = parseIstanbulDate(dateStr);
-  date.setDate(date.getDate() + days);
+  date.setUTCDate(date.getUTCDate() + days);
   return formatIstanbulDate(date);
 }
 
@@ -60,9 +62,9 @@ export function addDays(dateStr: string, days: number): string {
  * Format Date object to ISO date string (YYYY-MM-DD)
  */
 export function formatIstanbulDate(date: Date): string {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, '0');
-  const day = String(date.getDate()).padStart(2, '0');
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(date.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
