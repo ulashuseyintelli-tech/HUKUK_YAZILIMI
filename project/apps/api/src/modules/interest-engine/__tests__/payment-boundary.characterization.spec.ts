@@ -17,11 +17,10 @@
  *   B/C explicit END_OF_DAY pinleri PR-2'de DEĞİŞMEZ (enum korunuyor);
  *   B/C START_OF_DAY kontrast pinleri PR-2 default'unun üreteceği sonucu gösterir.
  *
- * TZ KAPSÜLLEME (onaylı karar): adjustEndDateForPayment(END_OF_DAY) → addDays
- *   zinciri server-local TZ'ye duyarlıdır (UTC'de P+1 → P'ye çöker). Bu suite
- *   INTENDED Istanbul davranışını (P+1) kilitler; bu yüzden TZ YALNIZ bu spec
- *   içinde 'Europe/Istanbul'a pinlenir (beforeAll/afterAll). Production koduna ve
- *   jest global config'e DOKUNULMAZ. (Determinizm ayrı iş — PR-3.)
+ * TZ-INVARIANT (PR-3 sonrası): day-count-calculator UTC-anchored hale geldi;
+ *   adjustEndDateForPayment(END_OF_DAY) → addDays zinciri artık server-TZ'den BAĞIMSIZ
+ *   (UTC = Istanbul aynı P+1). Bu yüzden eski spec-içi TZ pin KALDIRILDI; değerler her
+ *   TZ'de (CI=UTC dahil) aynı kalır. Determinizm kanıtı: day-count-calculator.characterization.
  *
  * Değerler gerçek koddan (geçici harness ile) capture edildi; elle hesaplanmadı.
  */
@@ -85,15 +84,7 @@ const createMockClaimBucket = (
 });
 
 describe('CHARACTERIZATION: payment boundary + END_OF_DAY default', () => {
-  // --- TZ kapsülleme: yalnız bu spec içinde (intended Istanbul davranışı) ---
-  const originalTZ = process.env.TZ;
-  beforeAll(() => {
-    process.env.TZ = 'Europe/Istanbul';
-  });
-  afterAll(() => {
-    if (originalTZ === undefined) delete process.env.TZ;
-    else process.env.TZ = originalTZ;
-  });
+  // (PR-3) TZ pin YOK — day-count-calculator UTC-anchored, değerler server-TZ'den bağımsız.
 
   // ───────────────────────────────────────────────────────────────────────────
   // KATMAN A — Default resolution (PR-2'de FLIP edecek pinler)
