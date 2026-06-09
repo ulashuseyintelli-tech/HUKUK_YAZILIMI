@@ -324,6 +324,15 @@ export interface InterestPolicyAssignedPayload {
   caseTypeClassification: string;
   isDefaultProfile: boolean;
   reasoning?: string;
+  /** Orijinal operasyonel case tipi (case.dto.CaseType), audit fidelity için (doc 24). */
+  sourceCaseType?: string;
+  /** dto→config CaseType eşleme gerekçesi (explicit fallback'lerde dolu, doc 24). */
+  mappingReasoning?: string;
+  /**
+   * Audit/timeline event payload'u Record<string, unknown> olarak ingest edilir;
+   * yapısal payload'un atanabilir olması için index signature (type-cast değil).
+   */
+  [key: string]: unknown;
 }
 
 /**
