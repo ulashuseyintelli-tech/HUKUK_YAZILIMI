@@ -73,10 +73,9 @@ jobs:
       - name: Prisma migrate deploy
         run: pnpm --filter @hukuk/api exec prisma migrate deploy
         working-directory: project
-      - name: Type check (non-blocking)
+      - name: Type check
         run: pnpm --filter @hukuk/api exec tsc --noEmit -p tsconfig.prod.json
         working-directory: project
-        continue-on-error: true
       - name: Tests
         run: |
           cd apps/api
