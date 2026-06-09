@@ -55,6 +55,9 @@ function createMockTx(opts?: {
         return Promise.resolve({ id: 'fake-outbox-id' });
       }),
     },
+    // getNextAggregateVersion per-aggregate advisory xact lock (pg_advisory_xact_lock)
+    // production kontratına uyum: mock tx $executeRaw sağlamalı (davranışsal assertion yok).
+    $executeRaw: jest.fn().mockResolvedValue(0),
   };
 
   return { tx, calls };

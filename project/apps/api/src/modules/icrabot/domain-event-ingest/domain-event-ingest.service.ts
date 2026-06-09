@@ -204,11 +204,29 @@ export class DomainEventIngestService {
    * HR-11: Get next aggregate_version for a case.
    * Returns max(existing) + 1. For first event: returns 1.
    * DB trigger also enforces gap-free (belt + suspenders).
+   *
+   * CONCURRENCY HARDENING (per-aggregate advisory xact lock):
+   *   max+1 tek başına kilitsizdir → aynı caseId'e eşzamanlı iki transaction aynı max'ı
+   *   okuyup aynı vN+1'i yazmaya çalışır; @@unique([caseId, aggregateVersion]) + gap-free
+   *   trigger bütünlüğü korur (dup/gap YOK) ama loser tx P2002/45011 fırlatır → TÜM domain
+   *   mutation rollback olur, retry yoktur (availability bug).
+   *   Çözüm: hesaplama öncesi pg_advisory_xact_lock(hashtextextended(caseId,0)). Aynı caseId'e
+   *   eşzamanlı append'ler tx içinde serileşir (loser bekler → güncel max'ı okur → doğru
+   *   versiyonu alır, hata yok); farklı caseId'ler kilitlenmez; lock tx commit/rollback'te
+   *   otomatik bırakılır. Schema/migration gerekmez; UNIQUE + trigger korunur (belt+suspenders).
+   *
+   *   KAPSAM DIŞI: v28 TimelineService.addEntry dormant second-writer path
+   *   (timeline.service.ts:84) aggregateVersion vermeden insert eder; bu strand'de
+   *   düzeltilmez — bridge-removal/spec-15 strand'inde ele alınmalı.
    */
   private async getNextAggregateVersion(
     tx: Prisma.TransactionClient,
     caseId: string,
   ): Promise<bigint> {
+    // Per-aggregate serialization: aynı caseId'e eşzamanlı append'leri bu tx süresince kilitle.
+    // hashtextextended(text, seed) → bigint anahtar; tx sonunda otomatik release.
+    await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${caseId}, 0))`;
+
     const result = await (tx as any).icrabotTimelineEntry.aggregate({
       where: { caseId },
       _max: { aggregateVersion: true },
