@@ -8,6 +8,7 @@ import { AuditService } from "../audit/audit.service";
 import { ClientInfoRequestService } from "../address-discovery/client-info-request.service";
 import { InterestEngineService } from "../interest-engine/interest-engine.service";
 import { resolveInitialPolicy } from "../interest-engine/interest-strategy.config";
+import { mapDtoCaseTypeToInterestCaseType } from "./case-type-mapping";
 import { ExpenseRequestService } from "../expense-request/expense-request.service";
 import { DomainEventIngestService } from "../icrabot/domain-event-ingest";
 
@@ -915,10 +916,20 @@ export class CaseService {
             actor: { type: 'HUMAN', userId },
             tenantId,
           },
-          payload: resolveInitialPolicy(dto.type, {
-            interestStartDate: dto.interestStartDate,
-            startDate: dto.startDate,
-          }),
+          payload: ((): Record<string, unknown> => {
+            // doc 24: dto.CaseType → interest config.CaseType (explicit, exhaustive mapping).
+            // resolveInitialPolicy imzası değişmez; audit alanları (sourceCaseType/mappingReasoning)
+            // additive olarak payload'a eklenir.
+            const policyMapping = mapDtoCaseTypeToInterestCaseType(dto.type);
+            return {
+              ...resolveInitialPolicy(policyMapping.configType, {
+                interestStartDate: dto.interestStartDate,
+                startDate: dto.startDate,
+              }),
+              sourceCaseType: policyMapping.sourceCaseType,
+              mappingReasoning: policyMapping.reasoning,
+            };
+          })(),
         });
 
         // 9. Tam case'i döndür
