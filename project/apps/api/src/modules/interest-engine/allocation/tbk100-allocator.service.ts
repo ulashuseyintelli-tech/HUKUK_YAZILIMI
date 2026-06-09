@@ -16,6 +16,7 @@ import {
   TBK100_ALLOCATION_ORDER,
 } from '../types/domain.types';
 import { InterestEngineError, InterestEngineErrorCode } from '../errors/interest-engine-errors';
+import { toCents, fromCents } from './minor-unit';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DEBT STATE
@@ -102,6 +103,14 @@ export class TBK100AllocatorService {
    * @param paymentAmount - Ödeme tutarı
    * @param debtState - Mevcut borç durumu
    * @param options - Allocation options (soft tie-breakers)
+   *
+   * @remarks
+   * Çağrıldığı yerler:
+   * - SummaryEngineService.<allocate-payment>() → claim-item bazlı mahsup dağıtımı (production tüketici, summary-engine.service.ts:639).
+   * - sprint-3.spec.ts / tbk100-allocator.characterization.spec.ts → karakterizasyon (test).
+   * NOT: AllocationEngineService allocate()'i ÇAĞIRMAZ (kendi inline Math.min mahsubunu yapar);
+   *       allocator'dan yalnız isFullyPaid + createDebtState kullanır.
+   * Cents-internal (doc 18 §6): çıktı number kalır; sub-cent değerler HALF_UP away-from-zero normalize edilir.
    */
   allocate(
     paymentAmount: number,
@@ -116,76 +125,86 @@ export class TBK100AllocatorService {
       );
     }
 
-    let remaining = paymentAmount;
+    // INTERNAL-ONLY CENTS (doc 18 §3 R1 + doc 25): para matematiği tamamen integer
+    // kuruş (bigint) üzerinde yürür; number ↔ cents çevrimi yalnız allocate() sınırında.
+    // Public API (number/Map kontratı) korunur; çıktı fromCents ile number'a döner.
+    let remaining = toCents(paymentAmount);
     const allocations: AllocationCategory[] = [];
     const newDebtState = this.cloneDebtState(debtState);
     const ancillaryPriority = options.ancillaryPriority || DEFAULT_ANCILLARY_PRIORITY;
 
     // 1. INTEREST (İşlemiş Faiz) - TBK 100 HARD RULE: Faiz önce
-    const interestAlloc = this.allocateToCategory(
+    const interestBefore = toCents(newDebtState.accruedInterest);
+    const interestRes = this.allocateToCategory(
       'INTEREST',
       CATEGORY_LABELS.INTEREST,
-      newDebtState.accruedInterest,
+      interestBefore,
       remaining,
     );
-    allocations.push(interestAlloc);
-    remaining -= interestAlloc.amountAllocated;
-    newDebtState.accruedInterest -= interestAlloc.amountAllocated;
+    allocations.push(interestRes.allocation);
+    remaining -= interestRes.allocatedCents;
+    newDebtState.accruedInterest = fromCents(interestBefore - interestRes.allocatedCents);
 
     // 2. COSTS & ANCILLARIES (Masraflar ve Fer'iler) - TBK 100 HARD RULE: Masraf/fer'i ikinci
     // Soft tie-breaker: ancillaryPriority sırasına göre
     for (const ancType of ancillaryPriority) {
-      if (remaining <= 0) break;
+      if (remaining <= 0n) break;
 
       // Check costs first
       const costAmount = newDebtState.costs.get(ancType) || 0;
+      // Merge karşılaştırma anahtarı (legacy semantik): cost alloc'ın amountBefore'u.
+      let costAllocBefore = costAmount;
       if (costAmount > 0) {
-        const costAlloc = this.allocateToCategory(
+        const costBefore = toCents(costAmount);
+        const costRes = this.allocateToCategory(
           ancType,
           ANCILLARY_LABELS[ancType],
-          costAmount,
+          costBefore,
           remaining,
         );
-        allocations.push(costAlloc);
-        remaining -= costAlloc.amountAllocated;
-        newDebtState.costs.set(ancType, costAmount - costAlloc.amountAllocated);
+        costAllocBefore = costRes.allocation.amountBefore;
+        allocations.push(costRes.allocation);
+        remaining -= costRes.allocatedCents;
+        newDebtState.costs.set(ancType, fromCents(costBefore - costRes.allocatedCents));
       }
 
       // Then check ancillaries
       const ancAmount = newDebtState.ancillaries.get(ancType) || 0;
       if (ancAmount > 0) {
-        const ancAlloc = this.allocateToCategory(
+        const ancBefore = toCents(ancAmount);
+        const ancRes = this.allocateToCategory(
           ancType,
           ANCILLARY_LABELS[ancType],
-          ancAmount,
+          ancBefore,
           remaining,
         );
         // Merge with existing allocation if same category
         const existingIdx = allocations.findIndex(
-          a => a.category === ancType && a.amountBefore === costAmount,
+          a => a.category === ancType && a.amountBefore === costAllocBefore,
         );
         if (existingIdx === -1) {
-          allocations.push(ancAlloc);
+          allocations.push(ancRes.allocation);
         }
-        remaining -= ancAlloc.amountAllocated;
-        newDebtState.ancillaries.set(ancType, ancAmount - ancAlloc.amountAllocated);
+        remaining -= ancRes.allocatedCents;
+        newDebtState.ancillaries.set(ancType, fromCents(ancBefore - ancRes.allocatedCents));
       }
     }
 
     // 3. PRINCIPAL (Anapara) - TBK 100 HARD RULE: Anapara son
-    const principalAlloc = this.allocateToCategory(
+    const principalBefore = toCents(newDebtState.principal);
+    const principalRes = this.allocateToCategory(
       'PRINCIPAL',
       CATEGORY_LABELS.PRINCIPAL,
-      newDebtState.principal,
+      principalBefore,
       remaining,
     );
-    allocations.push(principalAlloc);
-    remaining -= principalAlloc.amountAllocated;
-    newDebtState.principal -= principalAlloc.amountAllocated;
+    allocations.push(principalRes.allocation);
+    remaining -= principalRes.allocatedCents;
+    newDebtState.principal = fromCents(principalBefore - principalRes.allocatedCents);
 
     return {
       allocations: allocations.filter(a => a.amountBefore > 0 || a.amountAllocated > 0),
-      remainingPayment: Math.max(0, remaining),
+      remainingPayment: fromCents(remaining > 0n ? remaining : 0n),
       newDebtState,
     };
   }
@@ -239,23 +258,17 @@ export class TBK100AllocatorService {
    * Calculate total debt
    */
   calculateTotalDebt(debtState: DebtState): number {
-    let total = debtState.principal + debtState.accruedInterest;
-    
-    for (const amount of debtState.costs.values()) {
-      total += amount;
-    }
-    for (const amount of debtState.ancillaries.values()) {
-      total += amount;
-    }
-    
-    return total;
+    return fromCents(this.totalDebtCents(debtState));
   }
 
   /**
    * Check if debt is fully paid
+   *
+   * Cents-internal: borç tamamen kuruş bazında toplanır; "tam ödendi" =
+   * toplam ≤ 0 kuruş (exact 0n). Float tolerans (0.001) yerine integer karşılaştırma.
    */
   isFullyPaid(debtState: DebtState): boolean {
-    return this.calculateTotalDebt(debtState) <= 0.001; // Tolerance for rounding
+    return this.totalDebtCents(debtState) <= 0n;
   }
 
   /**
@@ -309,21 +322,49 @@ export class TBK100AllocatorService {
   // PRIVATE HELPERS
   // ═══════════════════════════════════════════════════════════════════════════
 
+  /**
+   * Bir kategoriye TBK 100 sınırına kadar tahsis yapar — tamamen integer kuruş üzerinde.
+   * bigint Math.min + subtraction (float dust yok). Döndürülen AllocationCategory'nin
+   * number alanları fromCents ile sınırda dönüştürülür; allocatedCents çağırana akar.
+   */
   private allocateToCategory(
     category: AncillaryType | 'INTEREST' | 'PRINCIPAL',
     label: string,
-    amountBefore: number,
-    availablePayment: number,
-  ): AllocationCategory {
-    const amountAllocated = Math.min(amountBefore, availablePayment);
-    
+    amountBeforeCents: bigint,
+    availableCents: bigint,
+  ): { allocation: AllocationCategory; allocatedCents: bigint } {
+    // bigint Math.min (yerleşik Math.min bigint kabul etmez)
+    const allocatedCents =
+      amountBeforeCents < availableCents ? amountBeforeCents : availableCents;
+    const afterCents = amountBeforeCents - allocatedCents;
+
     return {
-      category,
-      label,
-      amountBefore,
-      amountAllocated,
-      amountAfter: amountBefore - amountAllocated,
+      allocation: {
+        category,
+        label,
+        amountBefore: fromCents(amountBeforeCents),
+        amountAllocated: fromCents(allocatedCents),
+        amountAfter: fromCents(afterCents),
+      },
+      allocatedCents,
     };
+  }
+
+  /**
+   * Toplam borcu integer kuruş (bigint) olarak döndürür — calculateTotalDebt/isFullyPaid
+   * ortak çekirdeği. Float toplama dust'ı yerine exact cent toplamı.
+   */
+  private totalDebtCents(debtState: DebtState): bigint {
+    let total = toCents(debtState.principal) + toCents(debtState.accruedInterest);
+
+    for (const amount of debtState.costs.values()) {
+      total += toCents(amount);
+    }
+    for (const amount of debtState.ancillaries.values()) {
+      total += toCents(amount);
+    }
+
+    return total;
   }
 
   private cloneDebtState(state: DebtState): DebtState {

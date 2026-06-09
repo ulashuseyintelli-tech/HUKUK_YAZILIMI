@@ -17,7 +17,8 @@
  *   `Number(`${value}e2`)` değeri ondalık ölçekte exact yeniden-parse eder: "1550.025e2" → 155002.5 → 155003.
  *
  * Çağrıldığı yerler:
- * - (henüz yok) PR-B'de `tbk100-allocator.service.ts` internals tarafından kullanılacak (doc 18 §6).
+ * - `tbk100-allocator.service.ts` internals (PR-B, doc 18 §6): allocate() para sınırı,
+ *   allocateToCategory() bigint Math.min, totalDebtCents() (calculateTotalDebt/isFullyPaid).
  */
 
 /**

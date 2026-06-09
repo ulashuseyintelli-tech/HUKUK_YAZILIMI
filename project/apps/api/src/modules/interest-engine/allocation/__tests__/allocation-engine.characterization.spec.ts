@@ -10,7 +10,12 @@
  *   per-step amountAllocated/After, finalDebtStates, interestCalculator recalc birikimi).
  * - Step'ler sıraya göre değil (paymentId, claimBucketId, category) ile bulunur → order assert YOK.
  *
- * minor-unit adoption bu dust'ı temizleyince testler bilinçli kırılacak; review'da onaylanır.
+ * PR-B (minor-unit adoption) NOTU — kademe-2 capture ile doğrulandı: AllocationEngineService
+ * para mahsubunu KENDİ İÇİNDE inline Math.min ile yapar; TBK100AllocatorService.allocate()'i
+ * ÇAĞIRMAZ (allocator'dan yalnız isFullyPaid + createDebtState kullanır). Bu yüzden cents
+ * adoption L2 para değerlerini DEĞİŞTİRMEDİ — aşağıdaki dust değerleri engine inline float
+ * davranışını yansıtır ve PR-B sonrası AYNEN geçerlidir (5/5). isFullyPaid artık cents-tabanlı
+ * (≤0n) olsa da S3 sonucu true kalır (tam ödemede kalan borç 0).
  * Kurallar: snapshot yok; dust değerleri literal exact.
  */
 
