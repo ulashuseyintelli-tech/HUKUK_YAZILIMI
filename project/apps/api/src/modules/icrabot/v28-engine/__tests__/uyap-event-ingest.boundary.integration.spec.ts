@@ -6,8 +6,10 @@
  *   2) çözülen tenantId'yi HER timeline yazımına propagate eder,
  *   3) tenantId'yi engine-runner main path'ine thread eder.
  *
- * NOT: timeline WRITE'ı stub'lanmıştır — çünkü v28 timeline.service.addEntry, Sprint 1'de
- *   zorunlu kılınan `aggregateVersion`'ı sağlamıyor (spec-15 DIŞI pre-existing sorun).
+ * NOT: timeline WRITE'ı stub'lanmıştır — boundary-resolution + propagasyonu izole etmek için.
+ *   (Tarihsel: addEntry eskiden aggregateVersion sağlamadığı için yazım zaten patlardı; bu gap
+ *   AggregateVersionAllocator ile kapatıldı — addEntry artık canonical yazıcıyla aynı serileştirilmiş
+ *   versiyon atamasını kullanır. Stub yine de boundary izolasyonu için korunur.)
  *   tenantId'nin DB'ye gerçekten yazıldığı Writer A (domain-event-ingest integration,
  *   real DB) testinde kanıtlı. Bu test sadece boundary-resolution + propagasyonu izole eder.
  *

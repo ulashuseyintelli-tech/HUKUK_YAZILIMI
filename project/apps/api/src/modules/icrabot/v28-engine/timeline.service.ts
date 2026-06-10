@@ -15,6 +15,7 @@
  */
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
+import { AggregateVersionAllocator } from '../domain-event-ingest';
 
 export type TimelineEntryType = 
   | 'UYAP_EVENT' 
@@ -62,7 +63,11 @@ export interface TimelinePageResponse {
 export class TimelineService {
   private readonly logger = new Logger(TimelineService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  // Default-param: mevcut DI/instantiation kırılmaz; allocator canonical yazıcı ile TEK kaynak.
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly versionAllocator: AggregateVersionAllocator = new AggregateVersionAllocator(),
+  ) {}
 
   /**
    * Timeline'a yeni entry ekler
@@ -81,17 +86,25 @@ export class TimelineService {
       tenantId = c?.tenantId ?? null;
     }
 
-    const entry = await (this.prisma as any).icrabotTimelineEntry.create({
-      data: {
-        caseId: params.caseId,
-        tenantId,
-        type: params.type,
-        title: params.title,
-        severity: params.severity || 'info',
-        body: params.body || {},
-        runId: params.runId,
-        source: params.source || 'system',
-      },
+    // aggregateVersion ataması + INSERT atomik olmalı → kendi transaction'ı içinde.
+    // Canonical yazıcı (DomainEventIngest) ile AYNI AggregateVersionAllocator: advisory-lock
+    // serileştirme + max+1. Sprint 1'den beri aggregateVersion NOT NULL (default yok) olduğu için
+    // bu atama olmadan v28 addEntry runtime'da patlardı; allocator ile gap-free trigger uyumlu.
+    const entry = await this.prisma.$transaction(async (tx) => {
+      const aggregateVersion = await this.versionAllocator.next(tx, params.caseId);
+      return (tx as any).icrabotTimelineEntry.create({
+        data: {
+          caseId: params.caseId,
+          tenantId,
+          type: params.type,
+          title: params.title,
+          severity: params.severity || 'info',
+          body: params.body || {},
+          runId: params.runId,
+          source: params.source || 'system',
+          aggregateVersion,
+        },
+      });
     });
 
     this.logger.debug(`Timeline entry: ${params.type} - ${params.title} (caseId=${params.caseId})`);

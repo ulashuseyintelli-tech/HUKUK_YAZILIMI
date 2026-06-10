@@ -25,6 +25,7 @@
  */
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../../prisma/prisma.module';
+import { AggregateVersionAllocator } from '../domain-event-ingest';
 
 // Services
 import { FactStoreService } from './factstore.service';
@@ -75,6 +76,7 @@ import {
     ActionFeedbackController,
   ],
   providers: [
+    AggregateVersionAllocator,
     FactStoreService,
     TimelineService,
     OutboxService,

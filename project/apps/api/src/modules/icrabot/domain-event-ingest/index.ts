@@ -1,5 +1,6 @@
 export { DomainEventIngestModule } from './domain-event-ingest.module';
 export { DomainEventIngestService } from './domain-event-ingest.service';
+export { AggregateVersionAllocator } from './aggregate-version-allocator';
 export {
   DomainEvent,
   DomainEventHeader,
