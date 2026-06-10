@@ -6,9 +6,10 @@
  */
 import { Module } from '@nestjs/common';
 import { DomainEventIngestService } from './domain-event-ingest.service';
+import { AggregateVersionAllocator } from './aggregate-version-allocator';
 
 @Module({
-  providers: [DomainEventIngestService],
-  exports: [DomainEventIngestService],
+  providers: [DomainEventIngestService, AggregateVersionAllocator],
+  exports: [DomainEventIngestService, AggregateVersionAllocator],
 })
 export class DomainEventIngestModule {}

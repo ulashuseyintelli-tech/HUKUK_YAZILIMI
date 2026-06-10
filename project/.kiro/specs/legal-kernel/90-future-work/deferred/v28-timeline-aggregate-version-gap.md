@@ -1,5 +1,5 @@
 ---
-status: deferred
+status: resolved
 owner: ulas
 review-trigger: "v28 UYAP timeline persistence yeniden aktive edilmeden önce; veya v28 path canlıya alınırsa derhal"
 depends-on: "Sprint 1 aggregateVersion + gap-free trigger (mevcut)"
@@ -8,7 +8,26 @@ discovered: "spec-15 Faz 2 Writer B boundary testi sırasında (2026-06-05)"
 
 # v28 timeline aggregateVersion gap
 
-## Note (canonical)
+## ✅ RESOLUTION (2026-06-10)
+
+> Bu doc'taki HER İKİ bulgu da kapandı:
+> - **v28 addEntry gap (§1) — ÇÖZÜLDÜ.** `TimelineService.addEntry` artık paylaşılan
+>   `AggregateVersionAllocator` (advisory-lock serileştirme + max+1) üzerinden, kendi
+>   `$transaction`'ı içinde aggregateVersion atar. Canonical yazıcı (DomainEventIngest) ile
+>   TEK kaynak → "iki ayrı max+1 mantığı" borcu kapandı. (branch `fix/v28-timeline-aggregate-version`)
+> - **Canonical concurrency race (§2/§3) — ÇÖZÜLDÜ (PR #31, main 37486ed).**
+>   `getNextAggregateVersion` artık `pg_advisory_xact_lock(hashtextextended(caseId,0))` ile
+>   serileşir (bu doc §5'in önerdiği yön).
+>
+> **Fail-closed nüansı:** Eski addEntry integrity'yi sessizce by-pass ETMİYORDU — eksik
+> aggregateVersion ile fail-closed patlıyordu. Bu değişiklik, gelecekteki güvensiz reaktivasyonu
+> önler (v28 yazımları artık aynı serileştirilmiş allocator'dan geçer).
+>
+> **HÂLÂ AÇIK (ayrı strand):** tenantId bridge removal / v28 tam threading (spec-15 §1 fallback).
+> **ERTELENMİŞ (operasyonel):** canlı PG advisory-lock davranışının disposable-db/deployment
+> gate'inde gözlenmesi (integration spec'leri immutable satır yazıyor).
+
+## Note (canonical) — TARİHSEL (artık geçersiz, bkz. RESOLUTION)
 
 > v28 timeline.addEntry path currently cannot persist real DB entries because aggregateVersion is required after Sprint 1.
 > Observed during spec-15 Writer B test.
@@ -77,7 +96,9 @@ Yukarıdaki gap **v28 dormant path** ile ilgili. Bu bölüm, **canonical path'i 
 - **Ama:** kaybeden transaction **hata alır** (unique violation → çağıranın tx'i rollback). **Retry / advisory lock / serileştirme YOK.**
 - **Aynı tx içinde çift append güvenli** (ör. CASE_OPENED v1 → INTEREST_POLICY_ASSIGNED v2): ikinci append kendi tx'inin yazımını gördüğü için doğru `max+1` hesaplar. Risk yalnız **ayrı/eş zamanlı** tx'ler arası.
 
-### 3. Karar (2026-06-07)
+### 3. Karar (2026-06-07) — ⚠️ SÜPERSEDE EDİLDİ (bkz. üstteki RESOLUTION 2026-06-10)
+> Aşağıdaki "no implementation" kararı tarihseldir. Canonical race PR #31'de advisory-lock ile,
+> v28 gap ise `AggregateVersionAllocator` ile çözüldü. Bölüm bağlam için korunur.
 - **No implementation now.**
 - **No schema / no migration.**
 - **No advisory lock / retry yet** — contention kanıtı yok; integrity zaten constraint ile korunuyor → runtime hardening **spekülatif**, ölçmeden yapılmayacak.
