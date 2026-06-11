@@ -114,6 +114,7 @@ export class ActionHandlerService {
       // Timeline: OUTCOME success
       await this.timeline.addEntry({
         caseId: action.caseId,
+        tenantId: action.tenantId ?? undefined, // outbox satırından thread (write-time capture)
         type: 'OUTCOME',
         title: `Action done: ${action.actionType}`,
         severity: 'info',
@@ -135,6 +136,7 @@ export class ActionHandlerService {
         'done',
         handlerResult as Record<string, any> | undefined,
         action.runId,
+        action.tenantId,
       );
 
       return {
@@ -160,6 +162,7 @@ export class ActionHandlerService {
         // Timeline: OUTCOME dead-lettered
         await this.timeline.addEntry({
           caseId: action.caseId,
+          tenantId: action.tenantId ?? undefined, // outbox satırından thread (write-time capture)
           type: 'OUTCOME',
           title: `Action dead-lettered: ${action.actionType}`,
           severity: 'critical',
@@ -182,6 +185,7 @@ export class ActionHandlerService {
           'dead',
           { error: error.message },
           action.runId,
+          action.tenantId,
         );
 
         return {
@@ -199,6 +203,7 @@ export class ActionHandlerService {
         
         await this.timeline.addEntry({
           caseId: action.caseId,
+          tenantId: action.tenantId ?? undefined, // outbox satırından thread (write-time capture)
           type: 'OUTCOME',
           title: `Action failed (will retry): ${action.actionType}`,
           severity: 'warn',
@@ -222,6 +227,7 @@ export class ActionHandlerService {
           'failed',
           { error: error.message },
           action.runId,
+          action.tenantId,
         );
 
         return {
@@ -246,6 +252,7 @@ export class ActionHandlerService {
     status: 'done' | 'failed' | 'dead',
     result?: Record<string, any>,
     runId?: string,
+    tenantId?: string | null, // outbox satırından thread (write-time capture)
   ): Promise<void> {
     try {
       const now = new Date().toISOString();
@@ -283,6 +290,7 @@ export class ActionHandlerService {
       // Timeline entry for feedback write
       await this.timeline.addEntry({
         caseId,
+        tenantId: tenantId ?? undefined, // outbox satırından thread (write-time capture)
         type: 'FACT_WRITE',
         title: 'Action feedback written',
         severity: 'info',

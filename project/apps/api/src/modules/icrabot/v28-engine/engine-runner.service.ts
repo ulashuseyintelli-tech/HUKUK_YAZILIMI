@@ -219,6 +219,7 @@ export class EngineRunnerService {
 
           const actionId = await this.outbox.createAction({
             caseId,
+            tenantId, // write-time tenant capture (scope'ta thread'li)
             actionType,
             idempotencyKey: idemKey,
             payload,

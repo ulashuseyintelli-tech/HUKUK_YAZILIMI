@@ -19,6 +19,8 @@ export type OutboxStatus = 'pending' | 'sent' | 'done' | 'failed' | 'dead';
 
 export interface CreateOutboxActionParams {
   caseId: string;
+  /** outbox-tenancy Phase 1: write-time tenant capture (üretici elindeyse yazar; nullable). */
+  tenantId?: string;
   actionType: string;
   idempotencyKey: string;
   payload: Record<string, any>;
@@ -65,6 +67,7 @@ export class OutboxService {
     const action = await (this.prisma as any).icrabotOutboxAction.create({
       data: {
         caseId: params.caseId,
+        tenantId: params.tenantId ?? null, // write-time tenant capture (Phase 1; nullable)
         actionType: params.actionType,
         idempotencyKey: params.idempotencyKey,
         payload: params.payload,

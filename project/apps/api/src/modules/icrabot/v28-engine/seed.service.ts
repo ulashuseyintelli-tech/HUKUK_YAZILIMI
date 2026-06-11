@@ -33,6 +33,14 @@ export class SeedService {
     timelineEntries: number;
     outboxActions: number;
   }> {
+    // outbox-tenancy: seedCase yalnız caseId alır (demo); tenantId boundary'de TEK SEFER çözülür,
+    // sonra timeline + outbox yazımlarına explicit thread'lenir (per-insert lookup değil).
+    const seedCase_ = await (this.prisma as any).case.findUnique({
+      where: { id: caseId },
+      select: { tenantId: true },
+    });
+    const tenantId: string | undefined = seedCase_?.tenantId ?? undefined;
+
     // 1. Engine Run oluştur
     const snapshotHash = `sha256:${crypto.randomBytes(16).toString('hex')}`;
     const runId = await this.engineRun.startRun({
@@ -45,6 +53,7 @@ export class SeedService {
     // 2. UYAP Event - Araç bulundu
     await this.timeline.addEntry({
       caseId,
+      tenantId,
       type: 'UYAP_EVENT',
       title: 'Araç bulundu',
       severity: 'info',
@@ -55,6 +64,7 @@ export class SeedService {
     // 3. COMPUTE - Risk & Recovery
     await this.timeline.addEntry({
       caseId,
+      tenantId,
       type: 'COMPUTE',
       title: 'Risk & Recovery computed',
       severity: 'info',
@@ -76,6 +86,7 @@ export class SeedService {
     // 4. DECISION - Avans maili
     await this.timeline.addEntry({
       caseId,
+      tenantId,
       type: 'DECISION',
       title: 'Avans maili kuyruğa alındı',
       severity: 'warn',
@@ -101,6 +112,7 @@ export class SeedService {
     // 5. ACTION - Outbox'a ekle
     const actionId = await this.outbox.createAction({
       caseId,
+      tenantId,
       actionType: 'enqueue',
       idempotencyKey: `enqueue:${caseId}:advance_request_email:${Date.now()}`,
       payload: { queue: 'advance_request_email', case_id: caseId },
@@ -109,6 +121,7 @@ export class SeedService {
 
     await this.timeline.addEntry({
       caseId,
+      tenantId,
       type: 'ACTION',
       title: 'Action enqueued: advance_request_email',
       severity: 'info',
@@ -136,6 +149,13 @@ export class SeedService {
    * Dosya için örnek UYAP event'leri oluşturur
    */
   async seedUyapEvents(caseId: string, count = 5): Promise<number> {
+    // outbox-tenancy: tenantId boundary'de tek sefer çözülür, sonra her timeline yazımına thread.
+    const seedCase_ = await (this.prisma as any).case.findUnique({
+      where: { id: caseId },
+      select: { tenantId: true },
+    });
+    const tenantId: string | undefined = seedCase_?.tenantId ?? undefined;
+
     const eventTypes = [
       { type: 'ARAC_BULUNDU', title: 'Araç bulundu', body: { plate: '34XYZ789' } },
       { type: 'TASINMAZ_BULUNDU', title: 'Taşınmaz bulundu', body: { ada: '123', parsel: '45' } },
@@ -148,6 +168,7 @@ export class SeedService {
       const event = eventTypes[i % eventTypes.length];
       await this.timeline.addEntry({
         caseId,
+        tenantId,
         type: 'UYAP_EVENT',
         title: event.title,
         severity: 'info',
