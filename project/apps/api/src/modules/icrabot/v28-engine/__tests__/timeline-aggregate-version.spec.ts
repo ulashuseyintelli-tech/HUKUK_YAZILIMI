@@ -44,13 +44,14 @@ describe('TimelineService.addEntry aggregateVersion', () => {
     expect(prisma.case.findUnique).not.toHaveBeenCalled();
   });
 
-  it("tenantId verilmezse bridge caseId'den türetir (mevcut davranış korunur — kapsam dışı)", async () => {
+  it('tenantId verilmezse FAIL-CLOSED: throw, yazım yok, bridge (case lookup) yok (PR2 bridge removal)', async () => {
     const { svc, prisma, createMock } = makeHarness({ caseTenantId: 't-derived' });
 
-    await svc.addEntry({ caseId: 'c2', type: 'NOTE', title: 'y' });
+    await expect(
+      svc.addEntry({ caseId: 'c2', type: 'NOTE', title: 'y' } as any),
+    ).rejects.toThrow(/timeline_tenant_required/);
 
-    expect(prisma.case.findUnique).toHaveBeenCalled();
-    expect(createMock.mock.calls[0][0].data.tenantId).toBe('t-derived');
-    expect(createMock.mock.calls[0][0].data.aggregateVersion).toBe(BigInt(1));
+    expect(prisma.case.findUnique).not.toHaveBeenCalled(); // bridge kaldırıldı — caseId lookup yok
+    expect(createMock).not.toHaveBeenCalled(); // null-tenant timeline yazımı yok
   });
 });

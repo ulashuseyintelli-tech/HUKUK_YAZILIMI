@@ -31,8 +31,11 @@ export type TimelineSource = 'uyap' | 'engine' | 'user' | 'system';
 
 export interface AddTimelineParams {
   caseId: string;
-  /** spec-15 §1: explicit tenant (ana yol). Verilmezse addEntry caseId'den köprü ile türetir (geçici). */
-  tenantId?: string;
+  /**
+   * spec-15 §1: explicit tenant — ZORUNLU (fail-closed). Çağıran boundary'ler tenantId'yi
+   * resolveTenantIdOrThrow ile garanti eder (Phase 2 PR1). Geçici caseId→tenant bridge KALDIRILDI (PR2).
+   */
+  tenantId: string;
   type: TimelineEntryType;
   title: string;
   severity?: TimelineSeverity;
@@ -73,18 +76,15 @@ export class TimelineService {
    * Timeline'a yeni entry ekler
    */
   async addEntry(params: AddTimelineParams): Promise<string> {
-    // TODO(bridge-spec15-§1): v28 caller'larının bir kısmı henüz tenantId threading'ini tamamlamadı.
-    // Geçici köprü: param yoksa caseId'den türet (per-insert lookup — KALICI TASARIM DEĞİL).
-    // v28 threading bitince ve Faz 4 (NOT NULL) öncesi KALDIRILMALI.
-    // bkz .kiro/specs/legal-kernel/15-timeline-tenant-isolation-migration.md
-    let tenantId = params.tenantId ?? null;
-    if (!tenantId) {
-      const c = await (this.prisma as any).case.findUnique({
-        where: { id: params.caseId },
-        select: { tenantId: true },
-      });
-      tenantId = c?.tenantId ?? null;
+    // FAIL-CLOSED (Phase 2 PR2, spec-15 §10 "tenant explicit at write time"):
+    // tenantId ZORUNLU. Yoksa NULL yazmak yerine throw. Eski caseId→case.tenantId per-insert
+    // bridge KALDIRILDI; tenant çözümü çağıran boundary'lerin sorumluluğu (resolveTenantIdOrThrow).
+    if (!params.tenantId) {
+      throw new Error(
+        `timeline_tenant_required: addEntry tenantId olmadan çağrıldı (caseId=${params.caseId}, type=${params.type})`,
+      );
     }
+    const tenantId = params.tenantId;
 
     // aggregateVersion ataması + INSERT atomik olmalı → kendi transaction'ı içinde.
     // Canonical yazıcı (DomainEventIngest) ile AYNI AggregateVersionAllocator: advisory-lock

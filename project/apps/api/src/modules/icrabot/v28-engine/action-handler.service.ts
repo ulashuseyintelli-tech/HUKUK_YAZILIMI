@@ -259,6 +259,12 @@ export class ActionHandlerService {
     runId?: string,
     tenantId?: string, // fail-closed resolved tenant (dispatch'ten gelir; boundary hardening)
   ): Promise<void> {
+    // fail-closed: tenant yoksa feedback timeline'ı yazma (non-critical; null yazımı YOK).
+    // Pratikte dispatch daima effectiveTenantId geçer → tetiklenmez; tip daraltması + savunma.
+    if (!tenantId) {
+      this.logger.warn(`Action feedback skipped: tenantId yok (actionId=${actionId})`);
+      return;
+    }
     try {
       const now = new Date().toISOString();
 

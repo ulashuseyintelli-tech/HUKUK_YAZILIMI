@@ -12,6 +12,7 @@ import { resolveTenantIdOrThrow, TenantResolutionError } from '../tenant-resolve
 import { ActionHandlerService } from '../action-handler.service';
 import { ActionFeedbackService } from '../action-feedback.service';
 import { UyapEventIngestService } from '../uyap-event-ingest.service';
+import { TimelineService } from '../timeline.service';
 
 describe('Phase 2 PR1 — tenant boundary hardening', () => {
   describe('resolveTenantIdOrThrow', () => {
@@ -85,6 +86,18 @@ describe('Phase 2 PR1 — tenant boundary hardening', () => {
       const svc = new ActionFeedbackService(factStore as any, timeline as any, prisma as any);
       await expect(svc.processCallback({ case_id: 'bad', kind: 'x' })).rejects.toBeInstanceOf(TenantResolutionError);
       expect(timeline.addEntry).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('TimelineService.addEntry — fail-closed (PR2 bridge removal)', () => {
+    it('tenantId yoksa throw; $transaction yazmaz; case lookup (bridge) yok', async () => {
+      const prisma = { $transaction: jest.fn(), case: { findUnique: jest.fn() } };
+      const svc = new TimelineService(prisma as any);
+      await expect(
+        svc.addEntry({ caseId: 'c1', type: 'NOTE', title: 'x' } as any),
+      ).rejects.toThrow(/timeline_tenant_required/);
+      expect(prisma.$transaction).not.toHaveBeenCalled(); // yazım yok
+      expect(prisma.case.findUnique).not.toHaveBeenCalled(); // bridge kaldırıldı
     });
   });
 

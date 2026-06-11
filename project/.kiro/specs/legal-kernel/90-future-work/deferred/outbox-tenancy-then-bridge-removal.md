@@ -1,12 +1,21 @@
 ---
-status: deferred
+status: resolved
 owner: ulas
+resolved-date: 2026-06-11
 review-trigger: "v28 worker/callback path'leri (action-handler, action-feedback) tenant-scoped sorgulanması gerektiğinde; veya v28 timeline persistence canlıya alınmadan önce bridge removal istenirse"
 depends-on: "spec-15 (timeline tenant isolation), doc 26 (bridge-removal-blocked-decision)"
 discovered: "bridge removal read-only forensic (2026-06-10)"
 ---
 
 # outbox-tenancy → then bridge removal
+
+## ✅ RESOLVED (2026-06-11)
+
+> Strand tamamlandı: outbox-tenancy Phase 1 (PR #34: IcrabotOutboxAction.tenantId nullable +
+> write-time capture + consumer thread + callback boundary lookup) → Phase 2 PR1 (PR #35: shared
+> `resolveTenantIdOrThrow`, tüm boundary'ler fail-closed, dead method silindi) → Phase 2 PR2:
+> TimelineService.addEntry FAIL-CLOSED + caseId→tenant bridge KALDIRILDI. Behavioral DB gate
+> (disposable PG) ile doğrulandı. doc 26 status=resolved.
 
 ## Strand (canonical)
 
