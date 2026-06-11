@@ -122,6 +122,7 @@ export class DomainEventIngestService {
     await (tx as any).icrabotOutboxAction.create({
       data: {
         caseId: event.header.aggregateId,
+        tenantId: event.header.tenantId, // write-time tenant capture (canonical üretici; header'da hazır)
         actionType: `EVENT_PUBLISHED:${event.header.eventType}`,
         idempotencyKey,
         payload: {

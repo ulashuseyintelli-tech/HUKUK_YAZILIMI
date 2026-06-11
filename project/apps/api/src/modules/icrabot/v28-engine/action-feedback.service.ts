@@ -16,6 +16,7 @@
  *   can write "outcome facts" back into FactStore + timeline.
  */
 import { Injectable, Logger } from '@nestjs/common';
+import { PrismaService } from '../../../prisma/prisma.service';
 import { FactStoreService } from './factstore.service';
 import { TimelineService } from './timeline.service';
 
@@ -48,6 +49,7 @@ export class ActionFeedbackService {
   constructor(
     private readonly factStore: FactStoreService,
     private readonly timeline: TimelineService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /**
@@ -114,9 +116,18 @@ export class ActionFeedbackService {
   async processCallback(payload: CallbackPayload): Promise<{ ok: boolean; caseId: string; facts: Record<string, any> }> {
     const { case_id, kind, data = {} } = payload;
 
+    // External callback path'i: tenantId hiç context'te yok (case_id dış HTTP body'den) →
+    // boundary'de TEK SEFER caseId→case.tenantId resolution (per-insert değil). outbox-tenancy C/hibrit.
+    const c = await (this.prisma as any).case.findUnique({
+      where: { id: case_id },
+      select: { tenantId: true },
+    });
+    const tenantId: string | undefined = c?.tenantId ?? undefined;
+
     // Add timeline entry for callback
     await this.timeline.addEntry({
       caseId: case_id,
+      tenantId,
       type: 'OUTCOME',
       title: `Callback: ${kind}`,
       severity: 'info',
