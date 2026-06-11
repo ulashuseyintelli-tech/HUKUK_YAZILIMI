@@ -1,13 +1,25 @@
 ---
-status: decision-record
+status: resolved
 type: decision
 phase: 2
 date: 2026-06-10
+resolved-date: 2026-06-11
 review-trigger: "outbox-tenancy tasarım/şema kararı tamamlanınca — bridge removal yeniden değerlendirilir"
-purpose: "v28 TimelineService.addEntry tenantId bridge fallback'inin neden bu strand'de KALDIRILAMAYACAĞINI belgeler. Read-only forensic sonucu; kod/şema/migration YOK."
+purpose: "v28 TimelineService.addEntry tenantId bridge fallback'inin neden ÖNCE kaldırılamadığını belgeler; ardından (outbox-tenancy Phase 1 + boundary hardening sonrası) KALDIRILDI."
 ---
 
 # 26 — Bridge Removal Blocked by Outbox-Tenancy — Decision Record
+
+## ✅ RESOLUTION (2026-06-11)
+
+> Blocker kalktı ve bridge KALDIRILDI. Sıra: outbox-tenancy Phase 1 (PR #34, write-time tenant
+> capture + consumer thread + callback lookup) → Phase 2 PR1 (PR #35, boundary fail-closed
+> `resolveTenantIdOrThrow`; tüm v28 writer boundary'leri non-null garanti; dead writeActionFeedback
+> silindi) → Phase 2 PR2 (TimelineService.addEntry FAIL-CLOSED: tenantId required + runtime throw,
+> caseId→tenant bridge fallback KALDIRILDI). §2'deki 11 null-bağımlı çağrının tamamı artık
+> boundary'de resolve-or-throw ile kapandı; null-tenant timeline yazım yolu YOK. Behavioral DB
+> gate (disposable PG) ile legacy null-tenant outbox dispatch + invalid-case controlled-failure
+> doğrulandı. **Karar §3 ("kaldırılmaz") aşıldı: ön-koşullar karşılandığı için güvenle kaldırıldı.**
 
 **Karar durumu:** decision-record (read-only forensic)
 **Kırmızı çizgiler:** No schema · No migration · No outbox tenancy change · No fail-open tenant risk

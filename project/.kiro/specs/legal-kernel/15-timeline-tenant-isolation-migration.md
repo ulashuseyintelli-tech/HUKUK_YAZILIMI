@@ -185,4 +185,4 @@ Bu sprint **kapsamı dışı** — önce kolon + backfill + NOT NULL. Trigger Sp
 **Decision Status:** Accepted (forward-only) — 2026-06-05
 **Tamamlandı:** Faz 1 (kolon+index, real-DB doğrulamalı), Faz 2 (writer'lar + bridge + 48 test).
 **Kapatıldı:** Faz 3 (backfill) = N/A, Faz 4 (NOT NULL) = düşürüldü (immutable log).
-**Açık debt:** (1) bridge kaldırma — v28 tam threading tamamlanınca; (2) v28 aggregateVersion gap — `90-future-work/deferred/v28-timeline-aggregate-version-gap.md`.
+**Açık debt:** (1) bridge kaldırma — ✅ TAMAMLANDI (2026-06-11): outbox-tenancy Phase 1 (PR #34) + Phase 2 PR1 boundary hardening (PR #35) + PR2 TimelineService.addEntry fail-closed; caseId→tenant bridge fallback KALDIRILDI, tenantId artık zorunlu (resolveTenantIdOrThrow boundary'lerde). bkz doc 26 (resolved); (2) v28 aggregateVersion gap — ✅ RESOLVED (PR #32) — `90-future-work/deferred/v28-timeline-aggregate-version-gap.md`.
