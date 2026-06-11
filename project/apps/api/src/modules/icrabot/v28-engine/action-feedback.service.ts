@@ -19,27 +19,12 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { FactStoreService } from './factstore.service';
 import { TimelineService } from './timeline.service';
-
-export type FeedbackStatus = 'done' | 'failed' | 'dead';
-
-export interface ActionFeedback {
-  caseId: string;
-  actionType: string;
-  actionId: string;
-  status: FeedbackStatus;
-  result?: Record<string, any>;
-  runId?: string;
-}
+import { resolveTenantIdOrThrow } from './tenant-resolver';
 
 export interface CallbackPayload {
   case_id: string;
   kind: string;
   data?: Record<string, any>;
-}
-
-export interface FeedbackWriteResult {
-  facts: Record<string, any>;
-  timelineEntryId?: string;
 }
 
 @Injectable()
@@ -53,76 +38,14 @@ export class ActionFeedbackService {
   ) {}
 
   /**
-   * Action sonucunu FactStore'a yazar (Python write_action_feedback)
-   */
-  async writeActionFeedback(feedback: ActionFeedback): Promise<FeedbackWriteResult> {
-    const { caseId, actionType, actionId, status, result, runId } = feedback;
-    const now = new Date().toISOString();
-
-    // Build feedback facts
-    const facts: Record<string, any> = {
-      [`actions.${actionType}.last_status`]: status,
-      [`actions.${actionType}.last_action_id`]: actionId,
-      [`actions.last.status`]: status,
-    };
-
-    // Add timestamp based on status
-    if (status === 'done') {
-      facts['actions.last.success_at'] = now;
-      facts[`actions.${actionType}.last_success_at`] = now;
-    } else {
-      facts['actions.last.fail_at'] = now;
-      facts[`actions.${actionType}.last_fail_at`] = now;
-    }
-
-    // Add result if provided
-    if (result !== undefined) {
-      facts[`actions.${actionType}.last_result`] = result;
-    }
-
-    // Write to FactStore
-    await this.factStore.write(
-      caseId,
-      facts,
-      {},
-      {
-        source: 'action_feedback',
-        action_id: actionId,
-        action_type: actionType,
-        status,
-      },
-    );
-
-    // Add timeline entry for feedback write
-    // Add timeline entry for feedback write
-    const entryId = await this.timeline.addEntry({
-      caseId,
-      type: 'FACT_WRITE',
-      title: 'Action feedback written',
-      severity: 'info',
-      body: { facts, action_id: actionId, action_type: actionType, status },
-      runId,
-      source: 'system',
-    });
-
-    this.logger.debug(`Action feedback written: ${actionType} -> ${status} for case ${caseId}`);
-
-    return { facts, timelineEntryId: entryId };
-  }
-
-  /**
    * External callback'i işler (Python ActionCallbackView)
    */
   async processCallback(payload: CallbackPayload): Promise<{ ok: boolean; caseId: string; facts: Record<string, any> }> {
     const { case_id, kind, data = {} } = payload;
 
     // External callback path'i: tenantId hiç context'te yok (case_id dış HTTP body'den) →
-    // boundary'de TEK SEFER caseId→case.tenantId resolution (per-insert değil). outbox-tenancy C/hibrit.
-    const c = await (this.prisma as any).case.findUnique({
-      where: { id: case_id },
-      select: { tenantId: true },
-    });
-    const tenantId: string | undefined = c?.tenantId ?? undefined;
+    // boundary'de TEK SEFER caseId→tenant resolution (fail-closed: case yoksa throw, null yazma).
+    const tenantId = await resolveTenantIdOrThrow(this.prisma, case_id);
 
     // Add timeline entry for callback
     await this.timeline.addEntry({

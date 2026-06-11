@@ -15,6 +15,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { FactStoreService } from './factstore.service';
 import { TimelineService } from './timeline.service';
+import { resolveTenantIdOrThrow } from './tenant-resolver';
 import { EngineRunnerService, RuleDefinition, RunResult } from './engine-runner.service';
 import { RuleLoaderService } from './rule-loader.service';
 
@@ -59,12 +60,9 @@ export class UyapEventIngestService {
     this.logger.log(`Ingesting UYAP event: ${type} for case ${caseId}`);
 
     // Boundary resolution (spec-15 §1): UYAP event'i tenantId taşımıyor (case_id ile gelir).
-    // tenantId'yi caseId'den BİR KEZ çöz, pipeline boyunca explicit taşı (per-insert lookup yerine).
-    const caseRow = await this.prisma.case.findUnique({
-      where: { id: caseId },
-      select: { tenantId: true },
-    });
-    const tenantId = caseRow?.tenantId;
+    // tenantId'yi caseId'den BİR KEZ çöz (fail-closed: case yoksa throw, null yazma), pipeline
+    // boyunca explicit taşı (per-insert lookup yerine).
+    const tenantId = await resolveTenantIdOrThrow(this.prisma, caseId);
 
     // 1. Timeline: raw UYAP event
     await this.timeline.addEntry({

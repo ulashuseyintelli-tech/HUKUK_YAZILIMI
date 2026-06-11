@@ -89,7 +89,7 @@ export class EngineRunnerService {
     caseId: string,
     event: Record<string, any>,
     rule: RuleDefinition,
-    tenantId?: string,
+    tenantId: string, // fail-closed: uyap boundary'de resolve edilmiş non-null tenant
   ): Promise<RunResult> {
     // 1. Get fact snapshot
     const snapshot = await this.factStore.getSnapshot(caseId);
@@ -298,7 +298,7 @@ export class EngineRunnerService {
     caseId: string,
     event: Record<string, any>,
     rules: RuleDefinition[],
-    tenantId?: string,
+    tenantId: string, // fail-closed: uyap boundary'de resolve edilmiş non-null tenant
   ): Promise<{ matched: RunResult[]; total: number }> {
     const matched: RunResult[] = [];
 
