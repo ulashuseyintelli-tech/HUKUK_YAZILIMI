@@ -29,6 +29,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { OutboxService } from './outbox.service';
 import { TimelineService } from './timeline.service';
 import { FactStoreService } from './factstore.service';
+import { resolveTenantIdOrThrow } from './tenant-resolver';
 import { maskPhone } from '../../../common/pii-mask.util';
 
 export type ActionHandler = (payload: Record<string, any>, caseId: string) => Promise<Record<string, any> | void>;
@@ -103,6 +104,10 @@ export class ActionHandlerService {
       };
     }
 
+    // fail-closed tenant: satırda tenantId varsa onu kullan; yoksa (legacy/null row) caseId'den
+    // resolve et (case yoksa throw → null timeline yazımı yok). Phase 2 PR1 boundary hardening.
+    const effectiveTenantId = action.tenantId ?? await resolveTenantIdOrThrow(this.prisma, action.caseId);
+
     // Mark as sent (processing)
     await this.outbox.markSent(actionId);
 
@@ -114,7 +119,7 @@ export class ActionHandlerService {
       // Timeline: OUTCOME success
       await this.timeline.addEntry({
         caseId: action.caseId,
-        tenantId: action.tenantId ?? undefined, // outbox satırından thread (write-time capture)
+        tenantId: effectiveTenantId, // fail-closed resolved tenant (boundary hardening)
         type: 'OUTCOME',
         title: `Action done: ${action.actionType}`,
         severity: 'info',
@@ -136,7 +141,7 @@ export class ActionHandlerService {
         'done',
         handlerResult as Record<string, any> | undefined,
         action.runId,
-        action.tenantId,
+        effectiveTenantId,
       );
 
       return {
@@ -162,7 +167,7 @@ export class ActionHandlerService {
         // Timeline: OUTCOME dead-lettered
         await this.timeline.addEntry({
           caseId: action.caseId,
-          tenantId: action.tenantId ?? undefined, // outbox satırından thread (write-time capture)
+          tenantId: effectiveTenantId, // fail-closed resolved tenant (boundary hardening)
           type: 'OUTCOME',
           title: `Action dead-lettered: ${action.actionType}`,
           severity: 'critical',
@@ -185,7 +190,7 @@ export class ActionHandlerService {
           'dead',
           { error: error.message },
           action.runId,
-          action.tenantId,
+          effectiveTenantId,
         );
 
         return {
@@ -203,7 +208,7 @@ export class ActionHandlerService {
         
         await this.timeline.addEntry({
           caseId: action.caseId,
-          tenantId: action.tenantId ?? undefined, // outbox satırından thread (write-time capture)
+          tenantId: effectiveTenantId, // fail-closed resolved tenant (boundary hardening)
           type: 'OUTCOME',
           title: `Action failed (will retry): ${action.actionType}`,
           severity: 'warn',
@@ -227,7 +232,7 @@ export class ActionHandlerService {
           'failed',
           { error: error.message },
           action.runId,
-          action.tenantId,
+          effectiveTenantId,
         );
 
         return {
@@ -252,7 +257,7 @@ export class ActionHandlerService {
     status: 'done' | 'failed' | 'dead',
     result?: Record<string, any>,
     runId?: string,
-    tenantId?: string | null, // outbox satırından thread (write-time capture)
+    tenantId?: string, // fail-closed resolved tenant (dispatch'ten gelir; boundary hardening)
   ): Promise<void> {
     try {
       const now = new Date().toISOString();
@@ -290,7 +295,7 @@ export class ActionHandlerService {
       // Timeline entry for feedback write
       await this.timeline.addEntry({
         caseId,
-        tenantId: tenantId ?? undefined, // outbox satırından thread (write-time capture)
+        tenantId, // fail-closed resolved tenant (dispatch effectiveTenantId)
         type: 'FACT_WRITE',
         title: 'Action feedback written',
         severity: 'info',

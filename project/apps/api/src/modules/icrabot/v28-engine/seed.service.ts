@@ -12,6 +12,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { TimelineService } from './timeline.service';
 import { OutboxService } from './outbox.service';
 import { EngineRunService } from './engine-run.service';
+import { resolveTenantIdOrThrow } from './tenant-resolver';
 import * as crypto from 'crypto';
 
 @Injectable()
@@ -35,11 +36,7 @@ export class SeedService {
   }> {
     // outbox-tenancy: seedCase yalnız caseId alır (demo); tenantId boundary'de TEK SEFER çözülür,
     // sonra timeline + outbox yazımlarına explicit thread'lenir (per-insert lookup değil).
-    const seedCase_ = await (this.prisma as any).case.findUnique({
-      where: { id: caseId },
-      select: { tenantId: true },
-    });
-    const tenantId: string | undefined = seedCase_?.tenantId ?? undefined;
+    const tenantId = await resolveTenantIdOrThrow(this.prisma, caseId);
 
     // 1. Engine Run oluştur
     const snapshotHash = `sha256:${crypto.randomBytes(16).toString('hex')}`;
@@ -150,11 +147,7 @@ export class SeedService {
    */
   async seedUyapEvents(caseId: string, count = 5): Promise<number> {
     // outbox-tenancy: tenantId boundary'de tek sefer çözülür, sonra her timeline yazımına thread.
-    const seedCase_ = await (this.prisma as any).case.findUnique({
-      where: { id: caseId },
-      select: { tenantId: true },
-    });
-    const tenantId: string | undefined = seedCase_?.tenantId ?? undefined;
+    const tenantId = await resolveTenantIdOrThrow(this.prisma, caseId);
 
     const eventTypes = [
       { type: 'ARAC_BULUNDU', title: 'Araç bulundu', body: { plate: '34XYZ789' } },
