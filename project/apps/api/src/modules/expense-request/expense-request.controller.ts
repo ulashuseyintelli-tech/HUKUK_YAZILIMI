@@ -8,7 +8,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { ExpenseRequestStatus } from '@prisma/client';
 import { Request } from 'express';
 // CPE Integration - Phase 3
-import { CpeRequired, ScopeResolvers } from '@/modules/policy-engine';
+import { CpeRequired } from '@/modules/policy-engine';
 import { ActionCode } from '@/modules/policy-engine/types/action-code.enum';
 
 interface AuthRequest extends Request {
@@ -150,7 +150,7 @@ export class ExpenseRequestController {
    * @CpeRequired - Masraf onaylama HIGH risk aksiyon
    */
   @Post(':id/finalize')
-  @CpeRequired(ActionCode.APPROVE_EXPENSE, ScopeResolvers.fromExpenseParam)
+  @CpeRequired(ActionCode.APPROVE_EXPENSE, { caseIdFromExpenseParam: true })
   async finalizeAndSend(
     @Req() req: AuthRequest,
     @Param('id') id: string,
@@ -166,7 +166,7 @@ export class ExpenseRequestController {
    * @CpeRequired - Tahsilat kaydı MEDIUM risk aksiyon
    */
   @Post(':id/payment')
-  @CpeRequired(ActionCode.RECORD_COLLECTION, ScopeResolvers.fromExpenseParam)
+  @CpeRequired(ActionCode.RECORD_COLLECTION, { caseIdFromExpenseParam: true })
   async recordPayment(
     @Req() req: AuthRequest,
     @Param('id') id: string,
