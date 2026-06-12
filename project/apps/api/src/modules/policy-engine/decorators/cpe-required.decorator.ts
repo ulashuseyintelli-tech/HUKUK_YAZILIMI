@@ -27,10 +27,25 @@ export type ScopeResolverFn = (req: any) => ActionContext | undefined;
 export const CPE_ACTION_CODE_KEY = 'cpe:actionCode';
 export const CPE_SCOPE_RESOLVER_KEY = 'cpe:scopeResolver';
 export const CPE_CASE_ID_RESOLVER_KEY = 'cpe:caseIdResolver';
+/** P1b: caseId'yi expense ':id' param'ından tenant-scoped çöz (guard'da async lookup) */
+export const CPE_CASE_ID_FROM_EXPENSE_PARAM_KEY = 'cpe:caseIdFromExpenseParam';
+
+/**
+ * @CpeRequired opsiyonları
+ */
+export interface CpeRequiredOptions {
+  /**
+   * caseId, route ':id' (expense request id) üzerinden tenant-scoped çözülsün mü?
+   * true ise guard, prisma.expenseRequest'ten (id + req.user.tenantId) caseId türetir;
+   * bulunamazsa fail-closed 403. Route/body kontratı DEĞİŞMEZ.
+   */
+  caseIdFromExpenseParam?: boolean;
+}
 
 /**
  * Case ID resolver function type
- * Request'ten caseId çıkarır
+ * Request'ten caseId çıkarır (senkron). Async/DB lookup gereken durum (expense->case)
+ * resolver fonksiyonu ile değil, guard'daki caseIdFromExpenseParam stratejisiyle yapılır.
  */
 export type CaseIdResolverFn = (req: any) => string;
 
@@ -46,18 +61,29 @@ export const defaultCaseIdResolver: CaseIdResolverFn = (req: any): string => {
  * @CpeRequired Decorator
  * 
  * @param actionCode - Kontrol edilecek aksiyon kodu
- * @param scopeResolver - Opsiyonel scope resolver (debtorId, assetId çıkarmak için)
+ * @param scopeResolverOrOptions - Scope resolver (fonksiyon) VEYA opsiyon objesi (CpeRequiredOptions)
  * @param caseIdResolver - Opsiyonel case ID resolver (varsayılan: params/body'den)
+ *
+ * Geriye dönük uyumlu: 2. parametre fonksiyon ise scopeResolver gibi davranır;
+ * obje ise opsiyon olarak değerlendirilir.
  */
 export function CpeRequired(
   actionCode: ActionCode,
-  scopeResolver?: ScopeResolverFn,
+  scopeResolverOrOptions?: ScopeResolverFn | CpeRequiredOptions,
   caseIdResolver?: CaseIdResolverFn,
 ) {
+  const isOptions =
+    typeof scopeResolverOrOptions === 'object' && scopeResolverOrOptions !== null;
+  const scopeResolver = isOptions
+    ? undefined
+    : (scopeResolverOrOptions as ScopeResolverFn | undefined);
+  const options = isOptions ? (scopeResolverOrOptions as CpeRequiredOptions) : undefined;
+
   return applyDecorators(
     SetMetadata(CPE_ACTION_CODE_KEY, actionCode),
     SetMetadata(CPE_SCOPE_RESOLVER_KEY, scopeResolver),
     SetMetadata(CPE_CASE_ID_RESOLVER_KEY, caseIdResolver || defaultCaseIdResolver),
+    SetMetadata(CPE_CASE_ID_FROM_EXPENSE_PARAM_KEY, options?.caseIdFromExpenseParam ?? false),
   );
 }
 
