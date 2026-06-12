@@ -57,21 +57,31 @@ const mockCaseBalanceService = {
   credit: jest.fn(),
 };
 
+// ExpenseCalculatorService artık getActiveSharedTariff() çağırıp camelCase okuyor (fixedFees/rateFees/minAmount).
+// Eski snake_case getActiveTariff mock'u eşleşmiyordu → camelCase getActiveSharedTariff eklendi.
+const sharedTariff = {
+  fixedFees: {
+    application_fee: { amount: 738.50 },
+    poa_copy_fee: { amount: 105.00 },
+    bar_stamp_fee: { amount: 165.60 },
+    file_expense: { amount: 50.00 },
+  },
+  rateFees: {
+    ilamsiz_pesin_harc: { rate: 0.005, minAmount: 120 },
+  },
+  postage: {
+    NORMAL: { amount: 252.00 },
+  },
+};
 const mockTariffService = {
-  getActiveTariff: jest.fn().mockReturnValue({
-    fixed_fees: {
-      application_fee: { amount: 738.50 },
-      poa_copy_fee: { amount: 105.00 },
-      bar_stamp_fee: { amount: 165.60 },
-      file_expense: { amount: 50.00 },
-    },
-    rate_fees: {
-      ilamsiz_pesin_harc: { rate: 0.005, min_amount: 120 },
-    },
-    postage: {
-      NORMAL: { amount: 252.00 },
-    },
-  }),
+  getActiveSharedTariff: jest.fn().mockReturnValue(sharedTariff),
+  getActiveTariff: jest.fn().mockReturnValue(sharedTariff),
+};
+
+// ExpenseRequestService yeni bağımlılık kazandı: ExpenseNotificationService (forwardRef, index [3]).
+// Property testleri e-posta göndermeyi test etmiyor → stub (yalnız servisin çağırdığı sendExpenseRequest).
+const mockExpenseNotificationService = {
+  sendExpenseRequest: jest.fn().mockResolvedValue(undefined),
 };
 
 describe('ExpenseRequestService - Property Tests', () => {
@@ -89,6 +99,7 @@ describe('ExpenseRequestService - Property Tests', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: CaseBalanceService, useValue: mockCaseBalanceService },
         { provide: TariffService, useValue: mockTariffService },
+        { provide: ExpenseNotificationService, useValue: mockExpenseNotificationService },
       ],
     }).compile();
 
@@ -389,6 +400,7 @@ describe('ExpenseGateService - Property Tests', () => {
 // ==================== ExpenseNotificationService Tests ====================
 import { ExpenseNotificationService, ExpenseEmailData, EmailContent } from './expense-notification.service';
 import { EmailProviderService } from '@/modules/notification/email-provider.service';
+import { ConfigService } from '@nestjs/config';
 
 const mockEmailProviderService = {
   send: jest.fn().mockResolvedValue({
@@ -396,6 +408,12 @@ const mockEmailProviderService = {
     messageId: 'msg-123',
     provider: 'smtp',
   }),
+};
+
+// ExpenseNotificationService ConfigService'ten banka bilgisi okuyor (BANK_*); test sağlamıyordu.
+// get→undefined: servis e-posta verisindeki değerlere düşer (content testleri veriyi kullanır).
+const mockConfigService = {
+  get: jest.fn().mockReturnValue(undefined),
 };
 
 describe('ExpenseNotificationService - Property Tests', () => {
@@ -409,6 +427,7 @@ describe('ExpenseNotificationService - Property Tests', () => {
         ExpenseNotificationService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: EmailProviderService, useValue: mockEmailProviderService },
+        { provide: ConfigService, useValue: mockConfigService },
       ],
     }).compile();
 
@@ -882,6 +901,7 @@ describe('Property 6: Task Completion on Payment', () => {
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: CaseBalanceService, useValue: mockCaseBalanceService },
         { provide: TariffService, useValue: mockTariffService },
+        { provide: ExpenseNotificationService, useValue: mockExpenseNotificationService },
       ],
     }).compile();
 

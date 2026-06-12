@@ -2,32 +2,37 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { ExpenseCalculatorService, CaseData, EXPENSE_SET_TEMPLATES } from './expense-calculator.service';
 import { TariffService } from '@/modules/tariff/tariff.service';
 
-// Mock TariffService
+// Mock TariffService.
+// NOT: ExpenseCalculatorService artık getActiveSharedTariff() çağırıp camelCase okuyor
+// (fixedFees/rateFees/minAmount); seizure_fees/sale_fees ise snake_case (servis `as any` ile okur).
+// Eski getActiveTariff mock'u (snake_case) servisin camelCase okumalarıyla eşleşmiyordu → eklendi.
+const sharedTariff = {
+  fixedFees: {
+    application_fee: { amount: 738.50 },
+    poa_copy_fee: { amount: 105.00 },
+    bar_stamp_fee: { amount: 165.60 },
+    file_expense: { amount: 50.00 },
+  },
+  rateFees: {
+    ilamsiz_pesin_harc: { rate: 0.005, minAmount: 120 },
+  },
+  postage: {
+    NORMAL: { amount: 252.00 },
+    UETS: { amount: 18.00 },
+    FAST: { amount: 504.00 },
+  },
+  seizure_fees: {
+    haciz_harci: { rate: 0.0044, min_amount: 100 },
+    haciz_yolluk: { amount: 350.00 },
+  },
+  sale_fees: {
+    ilan_gideri: { amount: 2500.00 },
+    satis_harci: { rate: 0.0113 },
+  },
+};
 const mockTariffService = {
-  getActiveTariff: jest.fn().mockReturnValue({
-    fixed_fees: {
-      application_fee: { amount: 738.50 },
-      poa_copy_fee: { amount: 105.00 },
-      bar_stamp_fee: { amount: 165.60 },
-      file_expense: { amount: 50.00 },
-    },
-    rate_fees: {
-      ilamsiz_pesin_harc: { rate: 0.005, min_amount: 120 },
-    },
-    postage: {
-      NORMAL: { amount: 252.00 },
-      UETS: { amount: 18.00 },
-      FAST: { amount: 504.00 },
-    },
-    seizure_fees: {
-      haciz_harci: { rate: 0.0044, min_amount: 100 },
-      haciz_yolluk: { amount: 350.00 },
-    },
-    sale_fees: {
-      ilan_gideri: { amount: 2500.00 },
-      satis_harci: { rate: 0.0113 },
-    },
-  }),
+  getActiveSharedTariff: jest.fn().mockReturnValue(sharedTariff),
+  getActiveTariff: jest.fn().mockReturnValue(sharedTariff),
 };
 
 describe('ExpenseCalculatorService', () => {
