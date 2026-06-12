@@ -1,3 +1,4 @@
+import { describeDb } from '../../../../../../test/describe-db';
 /**
  * PromoteRequestStore — Idempotency Tests
  *
@@ -42,7 +43,7 @@ function buildRow(overrides: Partial<Record<string, any>> = {}) {
   };
 }
 
-describe('PromoteRequestStore', () => {
+describeDb('PromoteRequestStore', () => {
   let store: PromoteRequestStore;
   let mockPrisma: ReturnType<typeof createMockPrisma>;
 

@@ -1,3 +1,4 @@
+import { describeDb } from '../../../../../../../../test/describe-db';
 /**
  * Idempotency Gate Integration Tests
  * 
@@ -302,7 +303,7 @@ function createTestInput(overrides: Partial<GateAcquireInput> = {}): GateAcquire
 // Tests
 // ============================================================================
 
-describe('Idempotency Gate Integration Tests (MUST 3.6, 3.7)', () => {
+describeDb('Idempotency Gate Integration Tests (MUST 3.6, 3.7)', () => {
   let prisma: InMemoryPrismaService;
   let gate: IdempotencyGateService;
 

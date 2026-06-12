@@ -31,6 +31,7 @@ import {
   EntityNotFoundError,
   RunNotCompletedError,
 } from '../truth-layer-errors';
+import { describeDb } from '../../../../../../test/describe-db';
 
 // ============================================================================
 // Test Helpers
@@ -73,7 +74,7 @@ function createSnapshotInput(overrides: Partial<SnapshotInput> = {}): SnapshotIn
 // Test Suite
 // ============================================================================
 
-describe('Phase 9B - Truth Layer Integration Tests', () => {
+describeDb('Phase 9B - Truth Layer Integration Tests', () => {
   let module: TestingModule;
   let prisma: PrismaService;
   let runRepo: PrismaSimulationRunRepository;
@@ -584,7 +585,10 @@ describe('Phase 9B - Truth Layer Integration Tests', () => {
   // Phase 9B.6-LOCK: Tenant Isolation Behavior Tests
   // ==========================================================================
 
-  describe('Tenant Isolation Behavior (Phase 9B.6-LOCK)', () => {
+  // NOT (footgun PR): bu blok ana describeDb'nin DIŞINDA (satır 581'deki `});` ana bloğu erken
+  // kapatıyor) → createdSnapshotIds/snapshotRepo scope'ta değil = pre-existing ReferenceError bug.
+  // Footgun kapsamında yalnız DB-gate ediliyor (default'ta skip). Yapısal düzeltme AYRI iş.
+  describeDb('Tenant Isolation Behavior (Phase 9B.6-LOCK)', () => {
     /**
      * These tests verify BEHAVIOR, not SQL syntax.
      * They ensure that tenant A cannot see tenant B's data even when

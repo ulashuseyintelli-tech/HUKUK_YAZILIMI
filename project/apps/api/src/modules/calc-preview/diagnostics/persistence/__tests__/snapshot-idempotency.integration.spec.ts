@@ -3,6 +3,7 @@ import { PrismaService } from '../../../../../prisma/prisma.service';
 import { PrismaSnapshotRepository } from '../prisma-snapshot.repository';
 import { SnapshotInput, SnapshotKind, EvidenceVerdict } from '../snapshot-repository.interface';
 import { randomUUID } from 'crypto';
+import { describeDb } from '../../../../../../test/describe-db';
 
 function generateTestHash(): string {
   const chars = 'abcdef0123456789';
@@ -29,7 +30,7 @@ const createTestInput = (overrides: Partial<SnapshotInput> = {}): SnapshotInput 
   ...overrides,
 });
 
-describe('Snapshot Idempotency Integration Tests', () => {
+describeDb('Snapshot Idempotency Integration Tests', () => {
   let module: TestingModule;
   let repository: PrismaSnapshotRepository;
   let prisma: PrismaService;

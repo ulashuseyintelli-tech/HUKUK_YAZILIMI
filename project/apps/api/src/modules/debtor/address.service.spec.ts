@@ -1,3 +1,4 @@
+import { describeDb } from '../../../test/describe-db';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AddressService, AddressDTO } from './address.service';
@@ -26,7 +27,7 @@ import {
  * Property 9: Risk Flag Auto-Assignment
  */
 
-describe('AddressService Property Tests', () => {
+describeDb('AddressService Property Tests', () => {
   let service: AddressService;
   let prisma: PrismaService;
 
