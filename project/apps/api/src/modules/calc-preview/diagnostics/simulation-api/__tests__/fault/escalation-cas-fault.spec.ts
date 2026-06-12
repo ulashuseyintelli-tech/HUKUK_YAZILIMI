@@ -1,3 +1,4 @@
+import { describeDb } from '../../../../../../../test/describe-db';
 /**
  * Escalation State Repository — CAS Fault Injection Tests
  *
@@ -32,7 +33,7 @@ const SEED = 42;
 // Tests
 // ============================================================================
 
-describe('Escalation State Repository — CAS Fault Injection (Tier-0)', () => {
+describeDb('Escalation State Repository — CAS Fault Injection (Tier-0)', () => {
   // --------------------------------------------------------------------------
   // 5.2 — F4: CAS UPDATE timeout → error, state unchanged
   // --------------------------------------------------------------------------

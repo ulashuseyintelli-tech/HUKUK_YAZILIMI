@@ -12,6 +12,7 @@ import { ManifestBuilder } from '../bundle-manifest.builder';
 import { verifyManifest, verifyManifestDetailed } from '../bundle-manifest.verifier';
 import type { IObjectStoreClient, PutObjectInput, PutWriteOnceResult, HeadObjectResult, HeadObjectNotFound, GetObjectResult } from '../../object-store.interface';
 import type { BundleManifestV1 } from '../bundle-manifest.types';
+import { describeDb } from '../../../../../../../test/describe-db';
 
 // Mock object store for testing
 class MockObjectStore implements IObjectStoreClient {
@@ -90,7 +91,7 @@ class MockObjectStore implements IObjectStoreClient {
   }
 }
 
-describe('Bundle Manifest Integration', () => {
+describeDb('Bundle Manifest Integration', () => {
   let prisma: PrismaClient;
   let objectStore: MockObjectStore;
   let manifestWriter: ManifestWriter;

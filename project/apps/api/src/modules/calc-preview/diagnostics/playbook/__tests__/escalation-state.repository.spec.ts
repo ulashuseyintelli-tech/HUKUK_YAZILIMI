@@ -1,3 +1,4 @@
+import { describeDb } from '../../../../../../test/describe-db';
 /**
  * EscalationStateRepository — CAS Retry / 409 Contract Tests
  *
@@ -56,7 +57,7 @@ function buildStateRow(overrides: Partial<Record<string, any>> = {}) {
   };
 }
 
-describe('EscalationStateRepository', () => {
+describeDb('EscalationStateRepository', () => {
   let repo: EscalationStateRepository;
   let mockPrisma: ReturnType<typeof createMockPrisma>;
   let mockMetrics: jest.Mocked<SimulationMetricsService>;

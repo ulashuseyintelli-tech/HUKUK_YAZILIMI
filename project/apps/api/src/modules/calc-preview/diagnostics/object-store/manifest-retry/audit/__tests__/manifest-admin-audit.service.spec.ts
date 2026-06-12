@@ -1,3 +1,4 @@
+import { describeDb } from '../../../../../../../../test/describe-db';
 /**
  * Manifest Admin Audit Service Tests
  * 
@@ -48,7 +49,7 @@ const createTestEvent = (overrides?: Partial<AuditEventInput>): AuditEventInput 
   ...overrides,
 });
 
-describe('ManifestAdminAuditService', () => {
+describeDb('ManifestAdminAuditService', () => {
   let service: ManifestAdminAuditService;
   let mockPrisma: ReturnType<typeof createMockPrisma>;
   let testConfig: Partial<AuditServiceConfig>;

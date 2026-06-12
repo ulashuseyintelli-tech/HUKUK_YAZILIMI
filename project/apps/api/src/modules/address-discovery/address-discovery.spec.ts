@@ -1,3 +1,4 @@
+import { describeDb } from '../../../test/describe-db';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AddressDiscoveryService } from './address-discovery.service';
@@ -28,7 +29,7 @@ import {
  * 4. Auto-trigger rules
  */
 
-describe('AddressDiscoveryModule Integration Tests', () => {
+describeDb('AddressDiscoveryModule Integration Tests', () => {
   let module: TestingModule;
   let prisma: PrismaService;
   let addressDiscoveryService: AddressDiscoveryService;
