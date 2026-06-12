@@ -18,8 +18,8 @@ import { StateInfo } from '../../types/policy-decision.interface';
 import { ComputedMetrics } from '../rule-engine.types';
 
 // Version hash - YAML içeriğinden üretilir
-export const RULE_VERSION = 'rules-v1.0.0-compiled-2026-01-13';
-export const COMPILED_AT = '2026-01-13T00:00:00.000Z';
+export const RULE_VERSION = 'rules-v1.0.1-compiled-2026-06-12';
+export const COMPILED_AT = '2026-06-12T00:00:00.000Z';
 
 /**
  * Compiled Rules - Priority sırasına göre
@@ -92,9 +92,12 @@ export const COMPILED_RULES: CompiledRule[] = [
     description: 'Tebligat yapıldıktan ve itiraz süresi dolduktan sonra haciz öner',
     when: (facts: FactMap, state: StateInfo, metrics: ComputedMetrics) => {
       const daysSince = facts.get('case.min_days_since_notification');
+      // İtiraz süresi icra türüne göre (kambiyo 5 / ilamsız 7); gate ile aynı fact
+      const period = facts.get('case.objection_period_days');
+      const threshold = typeof period === 'number' ? period : 7;
       return state.currentState === 'NOTIFICATION_DELIVERED' &&
              typeof daysSince === 'number' &&
-             daysSince >= 7 &&
+             daysSince >= threshold &&
              facts.get('case.has_objection') !== true;
     },
     then: {

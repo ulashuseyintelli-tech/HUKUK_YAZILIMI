@@ -166,7 +166,10 @@ export class ComputedFactRegistry implements OnModuleInit {
     
     // Has unpaid blocking expense
     this.register(new HasUnpaidBlockingExpenseProvider());
-    
+
+    // İtiraz süresi (gün) - icra türüne göre (kambiyo 5 / ilamsız 7)
+    this.register(new CaseObjectionPeriodDaysProvider());
+
     this.logger.log(`Registered ${this.providers.size} built-in providers`);
   }
 }
@@ -236,5 +239,28 @@ class HasUnpaidBlockingExpenseProvider implements ComputedFactProvider {
     // This will be computed from ExpenseRequest table
     // For now, check if there's a flag
     return facts?.get('case.expense_gate_blocked') === true;
+  }
+}
+
+/**
+ * İtiraz süresi (gün) - icra/takip türüne göre.
+ * Kambiyo senetlerine özgü takipte (İİK m.168) 5 gün; ilamsız genel ve diğerlerinde
+ * (İİK m.62) 7 gün. Tek kaynak: hem gate (OBJECTION_PERIOD_NOT_PASSED) hem öneri-rule
+ * (RULE_ENFORCEMENT_AFTER_NOTIFICATION) bu fact'i kullanır.
+ * Kambiyo tespiti CPE ile aynı kaynaktan: case.type='ILAMSIZ' && case.sub_type='KAMBIYO'.
+ */
+class CaseObjectionPeriodDaysProvider implements ComputedFactProvider {
+  readonly factKey = 'case.objection_period_days';
+  readonly dependsOn: string[] = [];
+
+  async compute(
+    caseId: string,
+    context?: ActionContext,
+    facts?: FactMap,
+  ): Promise<number> {
+    const type = facts?.get('case.type');
+    const subType = facts?.get('case.sub_type');
+    const isKambiyo = type === 'ILAMSIZ' && subType === 'KAMBIYO';
+    return isKambiyo ? 5 : 7;
   }
 }

@@ -229,6 +229,7 @@ export class FactStoreService {
         hasArticle4Request: true,
         isMtsCase: true,
         type: true,
+        subType: true,
         subCategory: true,
         currency: true,
         principalAmount: true,
@@ -248,6 +249,7 @@ export class FactStoreService {
     factMap.set('case.has_article_4_request', caseData.hasArticle4Request);
     factMap.set('case.is_mts_case', caseData.isMtsCase);
     factMap.set('case.type', caseData.type);
+    factMap.set('case.sub_type', caseData.subType);
     factMap.set('case.sub_category', caseData.subCategory);
     factMap.set('case.currency', caseData.currency);
     factMap.set('case.principal_amount', Number(caseData.principalAmount || 0));

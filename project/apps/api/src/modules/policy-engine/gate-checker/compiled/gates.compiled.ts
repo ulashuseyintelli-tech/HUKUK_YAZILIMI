@@ -16,8 +16,8 @@ import { FactMap } from '../../fact-store';
 import { ActionContext } from '../../types/policy-decision.interface';
 
 // Version hash - YAML içeriğinden üretilir
-export const RULE_VERSION = 'gates-v1.0.0-compiled-2026-01-13';
-export const COMPILED_AT = '2026-01-13T00:00:00.000Z';
+export const RULE_VERSION = 'gates-v1.0.1-compiled-2026-06-12';
+export const COMPILED_AT = '2026-06-12T00:00:00.000Z';
 
 /**
  * Compiled Gates - Priority sırasına göre
@@ -126,18 +126,21 @@ export const COMPILED_GATES: CompiledGate[] = [
   {
     gateCode: 'OBJECTION_PERIOD_NOT_PASSED',
     name: 'İtiraz Süresi Dolmamış',
-    description: '7 günlük itiraz süresi geçmeli',
+    description: 'İtiraz süresi geçmeli (kambiyo 5 / ilamsız 7 gün; case.objection_period_days)',
     actionCodes: [ActionCode.TRIGGER_HACIZ, ActionCode.REQUEST_ENFORCEMENT],
     condition: (facts: FactMap, context?: ActionContext) => {
       const daysSince = context?.debtorId
         ? facts.get(`debtor.${context.debtorId}.days_since_notification`)
         : facts.get('case.min_days_since_notification');
-      
+
       if (typeof daysSince !== 'number') return true; // Tebligat yok
-      return daysSince < 7;
+      // İtiraz süresi icra türüne göre (kambiyo 5 / ilamsız 7); fact yoksa default 7
+      const period = facts.get('case.objection_period_days');
+      const threshold = typeof period === 'number' ? period : 7;
+      return daysSince < threshold;
     },
     severity: 'HARD',
-    reason: '7 günlük itiraz süresi henüz dolmadı.',
+    reason: 'İtiraz süresi henüz dolmadı.',
     priority: 23,
   },
 
