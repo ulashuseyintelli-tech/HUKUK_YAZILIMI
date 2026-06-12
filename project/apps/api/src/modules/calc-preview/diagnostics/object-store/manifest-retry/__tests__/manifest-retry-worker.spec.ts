@@ -389,6 +389,10 @@ describe('ManifestRetryWorkerService', () => {
         errorMessage: 'Access denied',
         firstFailedAt: job.createdAt,
         lastFailedAt: expect.any(Date),
+        // Phase 11.2: prepareCarrierForDlqStorage(null) → carrier alanları null/false
+        carrierJson: null,
+        carrierVersion: null,
+        carrierTruncated: false,
       });
       expect(mockRetryQueue.markDone).toHaveBeenCalledWith({
         jobId: job.id,
