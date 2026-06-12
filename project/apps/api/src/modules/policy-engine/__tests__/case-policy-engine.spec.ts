@@ -85,15 +85,17 @@ const SCENARIO_2_READY_FOR_UYAP = {
   name: 'Masraf ödenmiş - UYAP hazır',
   caseId: 'case-002',
   facts: {
-    'case.workflow_stage': 'DRAFT',
+    'case.workflow_stage': 'INITIAL',
     'case.icra_type': 'ILAMSIZ_GENEL',
-    'case.status': 'ACTIVE',
+    'case.status': 'DERDEST',
     'case.has_unpaid_blocking_expense': false,
-    'case.uyap_enabled': true,
+    'case.allow_uyap_actions': true,
+    // UYAP_SEND için vekaletname zorunlu (POWER_OF_ATTORNEY_MISSING gate'i)
+    'case.has_power_of_attorney': true,
   } as Record<string, unknown>,
   actionCode: ActionCode.UYAP_SEND,
   expectedAllowed: true,
-  expectedCode: 'ALLOWED',
+  expectedCode: 'OK',
 };
 
 /**
@@ -105,9 +107,10 @@ const SCENARIO_3_CLOSED_CASE = {
   name: 'Kapalı dosya - tüm işlemler engelli',
   caseId: 'case-003',
   facts: {
-    'case.workflow_stage': 'CLOSED',
+    // HITAM = LegalCaseStatus kapanış statüsü (fact-store closingStatuses → is_closed=true)
+    'case.workflow_stage': 'CLOSED_PAID',
     'case.icra_type': 'ILAMSIZ_GENEL',
-    'case.status': 'CLOSED',
+    'case.status': 'HITAM',
   } as Record<string, unknown>,
   actionCode: ActionCode.TRIGGER_HACIZ,
   expectedAllowed: false,
@@ -125,83 +128,97 @@ const SCENARIO_4_READY_FOR_HACIZ = {
   name: 'Tebligat sonrası - haciz hazır',
   caseId: 'case-004',
   facts: {
-    'case.workflow_stage': 'WAITING_RESPONSE',
+    'case.workflow_stage': 'ENFORCEMENT_REQUESTED',
     'case.icra_type': 'ILAMSIZ_GENEL',
-    'case.status': 'ACTIVE',
+    'case.status': 'DERDEST',
     'case.has_unpaid_blocking_expense': false,
-    'debtor.d1.notification_date': new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(), // 15 gün önce
-    'debtor.d1.has_objection': false,
+    // Gate sözlüğü: NOTIFICATION_NOT_DELIVERED + OBJECTION_PERIOD_NOT_PASSED
+    'debtor.d1.notification_delivered': true,
+    'debtor.d1.days_since_notification': 15, // 7 günlük itiraz süresi geçti
   } as Record<string, unknown>,
   context: { debtorId: 'd1' },
   actionCode: ActionCode.TRIGGER_HACIZ,
   expectedAllowed: true,
-  expectedCode: 'ALLOWED',
+  expectedCode: 'OK',
 };
 
 /**
- * Scenario 5: Tebligat süresi dolmamış - haciz engelli
- * - Tebligat yapılmış, 5 gün geçmiş (10 gün dolmamış)
- * - Beklenen: TRIGGER_HACIZ engellenmeli
+ * Scenario 5: İtiraz süresi dolmamış - haciz engelli
+ * - Tebligat yapılmış, 5 gün geçmiş (7 günlük itiraz süresi dolmamış)
+ * - Beklenen: TRIGGER_HACIZ engellenmeli (OBJECTION_PERIOD_NOT_PASSED)
  */
 const SCENARIO_5_HACIZ_TOO_EARLY = {
   name: 'Tebligat süresi dolmamış - haciz engelli',
   caseId: 'case-005',
   facts: {
-    'case.workflow_stage': 'WAITING_RESPONSE',
+    'case.workflow_stage': 'ENFORCEMENT_REQUESTED',
     'case.icra_type': 'ILAMSIZ_GENEL',
-    'case.status': 'ACTIVE',
+    'case.status': 'DERDEST',
     'case.has_unpaid_blocking_expense': false,
-    'debtor.d1.notification_date': new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 gün önce
-    'debtor.d1.has_objection': false,
+    'debtor.d1.notification_delivered': true,
+    'debtor.d1.days_since_notification': 5, // 7 günlük itiraz süresi henüz dolmadı (5 < 7)
   } as Record<string, unknown>,
   context: { debtorId: 'd1' },
   actionCode: ActionCode.TRIGGER_HACIZ,
   expectedAllowed: false,
   expectedCode: 'GATE_BLOCKED',
-  expectedBlockedBy: 'NOTIFICATION_PERIOD_NOT_EXPIRED',
+  // Gerçek gate kodu OBJECTION_PERIOD_NOT_PASSED'tır; NOTIFICATION_PERIOD_NOT_EXPIRED diye bir gate YOK.
+  expectedBlockedBy: 'OBJECTION_PERIOD_NOT_PASSED',
 };
 
 /**
  * Scenario 6: Kambiyo takibi - 5 gün yeterli
  * - Kambiyo takibi (ILAMSIZ_KAMBIYO)
- * - Tebligat yapılmış, 5 gün geçmiş
+ * - Tebligat yapılmış, 6 gün geçmiş
  * - Beklenen: TRIGGER_HACIZ izin verilmeli (kambiyo'da 5 gün yeterli)
+ *
+ * TODO(P2 - PRODUCTION GAP): OBJECTION_PERIOD_NOT_PASSED gate'i icra türünden bağımsız
+ * düz `<7` uyguluyor; kambiyo (İİK m.168 → 5 gün) kuralını içermiyor. Beklenen ALLOWED
+ * hukuken DOĞRU (bkz. automation/rule-engine.service.ts evaluateKambiyoRules → 5 gün).
+ * Expected'ı 7 güne ÇEKMEYİN. Gate icra-türü farkındalı yapılana kadar bu test KIRIK kalır.
+ * Fixture key'leri compiled sözlüğe hizalandı → test artık gerçek gap'ten (gate) patlıyor.
  */
 const SCENARIO_6_KAMBIYO_5_DAYS = {
   name: 'Kambiyo takibi - 5 gün yeterli',
   caseId: 'case-006',
   facts: {
-    'case.workflow_stage': 'WAITING_RESPONSE',
+    'case.workflow_stage': 'ENFORCEMENT_REQUESTED',
     'case.icra_type': 'ILAMSIZ_KAMBIYO',
-    'case.status': 'ACTIVE',
+    'case.status': 'DERDEST',
     'case.has_unpaid_blocking_expense': false,
-    'debtor.d1.notification_date': new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(), // 6 gün önce
-    'debtor.d1.has_objection': false,
+    'debtor.d1.notification_delivered': true,
+    'debtor.d1.days_since_notification': 6, // kambiyo: 5 gün yeterli olmalı (İİK m.168)
   } as Record<string, unknown>,
   context: { debtorId: 'd1' },
   actionCode: ActionCode.TRIGGER_HACIZ,
   expectedAllowed: true,
-  expectedCode: 'ALLOWED',
+  expectedCode: 'OK',
 };
 
 /**
  * Scenario 7: UYAP devre dışı - soft warning
  * - UYAP sistemi geçici olarak devre dışı
  * - Beklenen: İşlem izin verilmeli ama warning olmalı
+ *
+ * TODO(P3 - PRODUCTION GAP / ÜRÜN KARARI): "geçici UYAP arızası → allow + warning"
+ * davranışı sistemde YOK. Tek mekanizma HARD `UYAP_DISABLED` gate'i (kalıcı, dosya-bazlı).
+ * "İzin ver ama uyar" için SOFT bir gate tanımlı değil. Ürün kararı gerekiyor:
+ * (a) soft-warning gate'i eklensin mi, yoksa (b) senaryo obsolete mi? Karar verilene
+ * kadar bu test KIRIK kalır. Fixture key'leri yine de compiled sözlüğe hizalandı.
  */
 const SCENARIO_7_UYAP_DISABLED_WARNING = {
   name: 'UYAP devre dışı - soft warning',
   caseId: 'case-007',
   facts: {
-    'case.workflow_stage': 'DRAFT',
+    'case.workflow_stage': 'UYAP_SENT',
     'case.icra_type': 'ILAMSIZ_GENEL',
-    'case.status': 'ACTIVE',
+    'case.status': 'DERDEST',
     'case.has_unpaid_blocking_expense': false,
-    'case.uyap_enabled': false, // UYAP devre dışı
+    'case.allow_uyap_actions': false, // UYAP devre dışı
   } as Record<string, unknown>,
   actionCode: ActionCode.UYAP_QUERY,
   expectedAllowed: true,
-  expectedCode: 'ALLOWED',
+  expectedCode: 'OK',
   expectedWarnings: ['UYAP sistemi geçici olarak devre dışı'],
 };
 
@@ -209,18 +226,25 @@ const SCENARIO_7_UYAP_DISABLED_WARNING = {
  * Scenario 8: Masraf onaylama - dosya kapalı değil
  * - Dosya aktif
  * - Beklenen: APPROVE_EXPENSE izin verilmeli
+ *
+ * TODO(P1 - PRODUCTION BLOCKER): APPROVE_EXPENSE hiçbir state-flow stage'inin
+ * allowedActions/transitions listesinde YOK → canTransition her zaman INVALID_TRANSITION
+ * döner. expense-request.controller.ts:153 @CpeRequired(APPROVE_EXPENSE) bu guard'a bağlı
+ * ve guard !allowed'da ForbiddenException atıyor → masraf onayı CANLIDA bloklanır.
+ * EN YÜKSEK ÖNCELİK. state-flow'a APPROVE_EXPENSE eklenene (veya state-machine'den muaf
+ * tutulana) kadar bu test KIRIK kalır. Fixture statü/stage compiled sözlüğe hizalandı.
  */
 const SCENARIO_8_APPROVE_EXPENSE = {
   name: 'Masraf onaylama - aktif dosya',
   caseId: 'case-008',
   facts: {
-    'case.workflow_stage': 'DRAFT',
+    'case.workflow_stage': 'INITIAL',
     'case.icra_type': 'ILAMSIZ_GENEL',
-    'case.status': 'ACTIVE',
+    'case.status': 'DERDEST',
   } as Record<string, unknown>,
   actionCode: ActionCode.APPROVE_EXPENSE,
   expectedAllowed: true,
-  expectedCode: 'ALLOWED',
+  expectedCode: 'OK',
 };
 
 const ALL_SCENARIOS = [
@@ -459,14 +483,14 @@ describe('CasePolicyEngine - Golden Scenarios', () => {
       // Case is closed AND has unpaid expense
       // CASE_CLOSED should be the blocking reason, not EXPENSE_BLOCKING
       mockPrismaService.icrabotCaseFact.findMany.mockResolvedValue([
-        { caseId: 'case-x', key: 'case.status', value: 'CLOSED' },
+        { caseId: 'case-x', key: 'case.status', value: 'HITAM' },
         { caseId: 'case-x', key: 'case.has_unpaid_blocking_expense', value: true },
       ]);
       mockPrismaService.icrabotCaseFlag.findMany.mockResolvedValue([]);
       mockPrismaService.expenseRequest.count.mockResolvedValue(1);
       mockPrismaService.cpeDecisionLog.create.mockResolvedValue({ id: 'log-1' });
       mockPrismaService.case.findUnique.mockResolvedValue(
-        buildCaseRow({ caseId: 'case-x', status: 'CLOSED', workflowStage: 'CLOSED' })
+        buildCaseRow({ caseId: 'case-x', status: 'HITAM', workflowStage: 'CLOSED_PAID' })
       );
 
       const decision = await cpe.canPerformAction('case-x', ActionCode.UYAP_SEND);
