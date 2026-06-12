@@ -391,6 +391,29 @@ const KEYWORD_GROUPS = {
 };
 
 /**
+ * Kambiyo senedine ÖZGÜ güçlü çapa kelimeleri.
+ *
+ * KAMBIYO sınıflandırması yalnızca bunlardan en az biri metinde varsa seçilebilir.
+ * "banka", "bankası", "tarih", "tl", "türk lirası", "karşılığı" gibi genel terimler
+ * (KEYWORD_GROUPS.KAMBIYO içinde bulunsalar da) tek başına KAMBIYO'yu taşıyamaz —
+ * aksi halde döviz/ilamlı mahkeme kararları yanlışlıkla KAMBIYO sınıflanıyordu
+ * (ör. "Merkez Bankası efektif kur ... Türk Lirası karşılığı ... karar verilmiştir").
+ */
+const KAMBIYO_ANCHORS = [
+  "çek",
+  "cek",
+  "bono",
+  "senet",
+  "poliçe",
+  "police",
+  "emre muharrer",
+  "keşideci",
+  "kesideci",
+  "lehtar",
+  "ciranta",
+];
+
+/**
  * Form kodu eşleştirme tablosu
  */
 const FORM_MAPPING: Record<DetectedCaseType, Record<string, string>> = {
@@ -539,6 +562,22 @@ export class OcrService {
       }
     }
 
+    // KAMBIYO yalnızca kambiyoya özgü güçlü çapa (çek/bono/senet/poliçe/emre
+    // muharrer/keşideci/lehtar/ciranta) varsa seçilebilir. Çapa yoksa, genel
+    // terimlerle (banka/tarih/tl/türk lirası/karşılığı) öne geçen KAMBIYO skorunu
+    // yok say ve KAMBIYO dışı en yüksek kategoriye düş (ilamlı/döviz sinyali korunur).
+    if (maxCategory === "KAMBIYO" && !this.hasKambiyoAnchor(normalizedText)) {
+      maxCategory = "UNKNOWN";
+      maxScore = 0;
+      for (const [category, score] of Object.entries(scores)) {
+        if (category === "KAMBIYO") continue;
+        if (score > maxScore) {
+          maxScore = score;
+          maxCategory = category;
+        }
+      }
+    }
+
     // Confidence hesapla (max 100)
     const totalKeywords = Object.values(KEYWORD_GROUPS).flat().length;
     const confidence = Math.min(100, Math.round((maxScore / 5) * 100)); // 5+ keyword = %100
@@ -610,6 +649,18 @@ export class OcrService {
       suggestedFormCode,
       explanation,
     };
+  }
+
+  /**
+   * Metinde kambiyoya özgü güçlü çapa kelimesi (çek/bono/senet/poliçe/emre
+   * muharrer/keşideci/lehtar/ciranta) var mı?
+   *
+   * Çağrıldığı yerler:
+   * - OcrService.classifyDocument() → KAMBIYO sınıflandırma guard'ı (genel
+   *   terimlerin tek başına KAMBIYO seçmesini engeller)
+   */
+  private hasKambiyoAnchor(normalizedText: string): boolean {
+    return KAMBIYO_ANCHORS.some((anchor) => normalizedText.includes(anchor));
   }
 
   /**
