@@ -14,8 +14,8 @@ import { ActionCode } from '../../types/action-code.enum';
 import { IcraType, CompiledStateFlow, StageDefinition } from '../state-machine.types';
 
 // Version hash - YAML içeriğinden üretilir
-export const RULE_VERSION = 'v1.0.0-compiled-2026-01-13';
-export const COMPILED_AT = '2026-01-13T00:00:00.000Z';
+export const RULE_VERSION = 'v1.0.1-compiled-2026-06-12';
+export const COMPILED_AT = '2026-06-12T00:00:00.000Z';
 
 /**
  * İlamsız Genel Haciz - Stage Definitions
@@ -28,6 +28,7 @@ const ILAMSIZ_GENEL_STAGES: Map<string, StageDefinition> = new Map([
     isTerminal: false,
     allowedActions: [
       ActionCode.REQUEST_EXPENSE,
+      ActionCode.APPROVE_EXPENSE,
       ActionCode.UYAP_SEND,
     ],
   }],
@@ -39,6 +40,7 @@ const ILAMSIZ_GENEL_STAGES: Map<string, StageDefinition> = new Map([
     allowedActions: [
       ActionCode.UYAP_QUERY,
       ActionCode.REQUEST_EXPENSE,
+      ActionCode.APPROVE_EXPENSE,
     ],
   }],
   ['PAYMENT_ORDER_SENT', {
@@ -50,6 +52,7 @@ const ILAMSIZ_GENEL_STAGES: Map<string, StageDefinition> = new Map([
       ActionCode.UYAP_QUERY,
       ActionCode.SEND_DEBTOR_MSG,
       ActionCode.REQUEST_EXPENSE,
+      ActionCode.APPROVE_EXPENSE,
     ],
   }],
   ['NOTIFICATION_DELIVERED', {
@@ -63,6 +66,7 @@ const ILAMSIZ_GENEL_STAGES: Map<string, StageDefinition> = new Map([
       ActionCode.QUERY_VEHICLES,
       ActionCode.REQUEST_ENFORCEMENT,
       ActionCode.REQUEST_EXPENSE,
+      ActionCode.APPROVE_EXPENSE,
     ],
   }],
   ['WAITING_OBJECTION_PERIOD', {
@@ -84,6 +88,7 @@ const ILAMSIZ_GENEL_STAGES: Map<string, StageDefinition> = new Map([
       ActionCode.TRIGGER_HACIZ,
       ActionCode.UYAP_QUERY,
       ActionCode.REQUEST_EXPENSE,
+      ActionCode.APPROVE_EXPENSE,
     ],
   }],
   ['HACIZ_APPLIED', {
@@ -95,6 +100,7 @@ const ILAMSIZ_GENEL_STAGES: Map<string, StageDefinition> = new Map([
       ActionCode.REQUEST_SALE,
       ActionCode.UYAP_QUERY,
       ActionCode.REQUEST_EXPENSE,
+      ActionCode.APPROVE_EXPENSE,
     ],
   }],
   ['SALE_REQUESTED', {
@@ -105,6 +111,7 @@ const ILAMSIZ_GENEL_STAGES: Map<string, StageDefinition> = new Map([
     allowedActions: [
       ActionCode.UYAP_QUERY,
       ActionCode.REQUEST_EXPENSE,
+      ActionCode.APPROVE_EXPENSE,
     ],
   }],
   ['COLLECTION_PENDING', {
@@ -211,13 +218,13 @@ const ILAMSIZ_KAMBIYO_STAGES: Map<string, StageDefinition> = new Map([
     code: 'INITIAL',
     name: 'Dosya Açıldı',
     isTerminal: false,
-    allowedActions: [ActionCode.REQUEST_EXPENSE, ActionCode.UYAP_SEND],
+    allowedActions: [ActionCode.REQUEST_EXPENSE, ActionCode.APPROVE_EXPENSE, ActionCode.UYAP_SEND],
   }],
   ['UYAP_SENT', {
     code: 'UYAP_SENT',
     name: 'UYAP\'a Gönderildi',
     isTerminal: false,
-    allowedActions: [ActionCode.UYAP_QUERY, ActionCode.REQUEST_EXPENSE],
+    allowedActions: [ActionCode.UYAP_QUERY, ActionCode.REQUEST_EXPENSE, ActionCode.APPROVE_EXPENSE],
   }],
   ['PAYMENT_ORDER_SENT', {
     code: 'PAYMENT_ORDER_SENT',
