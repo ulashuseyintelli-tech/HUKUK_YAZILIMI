@@ -224,8 +224,9 @@ describe('Cursor Pagination', () => {
 
   describe('validateLimit', () => {
     it('should return default for invalid input', () => {
-      expect(validateLimit(NaN)).toBe(20);
-      expect(validateLimit(undefined as any)).toBe(20);
+      // Default = PAGINATION_DEFAULTS.DEFAULT_LIMIT (50) — bkz. manifest-admin.dto.ts / cursor-pagination.ts
+      expect(validateLimit(NaN)).toBe(50);
+      expect(validateLimit(undefined as any)).toBe(50);
     });
 
     it('should clamp to minimum of 1', () => {
@@ -234,8 +235,10 @@ describe('Cursor Pagination', () => {
     });
 
     it('should clamp to maximum', () => {
-      expect(validateLimit(200)).toBe(100);
-      expect(validateLimit(150, 50)).toBe(50);
+      // Default max = PAGINATION_DEFAULTS.MAX_LIMIT (200); >max girdi clamp'lenir
+      expect(validateLimit(500)).toBe(200);
+      // Custom max=50 (imza: validateLimit(limit, defaultLimit, maxLimit)) → 150 clamp'lenir
+      expect(validateLimit(150, undefined, 50)).toBe(50);
     });
 
     it('should floor decimal values', () => {
