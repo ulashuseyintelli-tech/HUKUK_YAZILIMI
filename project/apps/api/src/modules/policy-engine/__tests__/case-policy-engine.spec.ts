@@ -235,6 +235,51 @@ const ALL_SCENARIOS = [
 ];
 
 // ============================================
+// Case Row Helper
+// ============================================
+
+/**
+ * 'case.icra_type' fact değerini gerçek case satırının type/subType alanlarına ayrıştırır.
+ * Servisteki mapCaseTypeToIcraType(type, subType) ile uyumludur:
+ *   'ILAMSIZ_KAMBIYO' -> { type: 'ILAMSIZ', subType: 'KAMBIYO' }
+ *   'ILAMSIZ_GENEL'   -> { type: 'ILAMSIZ', subType: null }
+ */
+function parseIcraType(icraType?: unknown): { type: string; subType: string | null } {
+  if (icraType === 'ILAMSIZ_KAMBIYO') return { type: 'ILAMSIZ', subType: 'KAMBIYO' };
+  if (icraType === 'ILAMSIZ_GENEL') return { type: 'ILAMSIZ', subType: null };
+  if (typeof icraType === 'string' && icraType.startsWith('ILAMSIZ')) {
+    return { type: 'ILAMSIZ', subType: null };
+  }
+  return { type: typeof icraType === 'string' ? icraType : 'ILAMSIZ', subType: null };
+}
+
+/**
+ * Senaryo fact'lerinden gerçek `case` satırını türetir.
+ *
+ * Neden gerekli: CPE.evaluateDecision (adım 1, case var mı kontrolü) ve
+ * StateMachineService.getCurrentState doğrudan prisma.case.findUnique okur.
+ * Fact-store mock'u (icrabotCaseFact) tek başına yeterli değildir; case satırı
+ * stub edilmezse her senaryo gate'e ulaşamadan CASE_NOT_FOUND ile kısa devre yapar.
+ */
+function buildCaseRow(opts: {
+  caseId: string;
+  status?: unknown;
+  workflowStage?: unknown;
+  icraType?: unknown;
+}) {
+  const { type, subType } = parseIcraType(opts.icraType);
+  return {
+    id: opts.caseId,
+    caseStatus: (opts.status as string) ?? 'ACTIVE',
+    workflowStage: (opts.workflowStage as string) ?? 'DRAFT',
+    type,
+    subType,
+    // State-machine version'u updatedAt.getTime()'ten türetiyor
+    updatedAt: new Date(),
+  };
+}
+
+// ============================================
 // Test Suite
 // ============================================
 
@@ -280,8 +325,8 @@ describe('CasePolicyEngine - Golden Scenarios', () => {
         mockPrismaService.icrabotCaseFact.findMany.mockResolvedValue(
           Object.entries(scenario.facts).map(([key, value]) => ({
             caseId: scenario.caseId,
-            factKey: key,
-            factValue: value,
+            key,
+            value,
           }))
         );
         mockPrismaService.icrabotCaseFlag.findMany.mockResolvedValue([]);
@@ -289,6 +334,15 @@ describe('CasePolicyEngine - Golden Scenarios', () => {
           scenario.facts['case.has_unpaid_blocking_expense'] ? 1 : 0
         );
         mockPrismaService.cpeDecisionLog.create.mockResolvedValue({ id: 'log-1' });
+        // Gerçek case satırını fact'lerden türet (CPE + StateMachine bunu okur)
+        mockPrismaService.case.findUnique.mockResolvedValue(
+          buildCaseRow({
+            caseId: scenario.caseId,
+            status: scenario.facts['case.status'],
+            workflowStage: scenario.facts['case.workflow_stage'],
+            icraType: scenario.facts['case.icra_type'],
+          })
+        );
 
         // Act
         const decision = await cpe.canPerformAction(
@@ -302,7 +356,8 @@ describe('CasePolicyEngine - Golden Scenarios', () => {
         expect(decision.code).toBe(scenario.expectedCode);
 
         if ((scenario as any).expectedBlockedBy) {
-          expect(decision.blockedBy).toBe((scenario as any).expectedBlockedBy);
+          // PolicyDecision.blockedBy artık { gateCode, severity } objesi (bkz. policy-decision.interface.ts)
+          expect(decision.blockedBy?.gateCode).toBe((scenario as any).expectedBlockedBy);
         }
 
         if ((scenario as any).expectedWarnings) {
@@ -324,13 +379,21 @@ describe('CasePolicyEngine - Golden Scenarios', () => {
       mockPrismaService.icrabotCaseFact.findMany.mockResolvedValue(
         Object.entries(scenario.facts).map(([key, value]) => ({
           caseId: scenario.caseId,
-          factKey: key,
-          factValue: value,
+          key,
+          value,
         }))
       );
       mockPrismaService.icrabotCaseFlag.findMany.mockResolvedValue([]);
       mockPrismaService.expenseRequest.count.mockResolvedValue(1);
       mockPrismaService.cpeDecisionLog.create.mockResolvedValue({ id: 'log-1' });
+      mockPrismaService.case.findUnique.mockResolvedValue(
+        buildCaseRow({
+          caseId: scenario.caseId,
+          status: scenario.facts['case.status'],
+          workflowStage: scenario.facts['case.workflow_stage'],
+          icraType: scenario.facts['case.icra_type'],
+        })
+      );
 
       // Call multiple times
       const decision1 = await cpe.canPerformAction(scenario.caseId, scenario.actionCode);
@@ -355,31 +418,35 @@ describe('CasePolicyEngine - Golden Scenarios', () => {
       const caseId = 'case-001';
       const actionCode = ActionCode.UYAP_SEND;
 
-      // First call - execution doesn't exist
+      // First call - execution doesn't exist (startExecution PENDING kayıt oluşturur)
       mockPrismaService.cpeExecutionRecord.findUnique.mockResolvedValueOnce(null);
       mockPrismaService.cpeExecutionRecord.create.mockResolvedValue({
         executionId,
         caseId,
         actionCode,
-        status: 'COMPLETED',
+        status: 'PENDING',
       });
       mockPrismaService.icrabotCaseFact.findMany.mockResolvedValue([]);
       mockPrismaService.icrabotCaseFlag.findMany.mockResolvedValue([]);
 
       const result1 = await cpe.onActionExecuted(caseId, actionCode, {}, { success: true }, executionId);
 
-      // Second call - execution exists (duplicate)
+      // Second call - execution exists (duplicate). NOOP = canonical duplicate marker (markAsNoop)
       mockPrismaService.cpeExecutionRecord.findUnique.mockResolvedValueOnce({
         executionId,
         caseId,
         actionCode,
-        status: 'COMPLETED',
+        status: 'NOOP',
       });
 
       const result2 = await cpe.onActionExecuted(caseId, actionCode, {}, { success: true }, executionId);
 
-      // Both should indicate duplicate
-      expect((result2 as any).isDuplicate).toBe(true);
+      // Servis sözleşmesi: duplicate dönüşü { success, code } (isDuplicate alanı yok).
+      // NOOP kayıt -> success:false, code:'DUPLICATE'
+      expect(result2.success).toBe(false);
+      expect(result2.code).toBe('DUPLICATE');
+      // Idempotency: duplicate çağrı YENİ kayıt oluşturmaz (re-execute yok) - sadece ilk çağrı create eder
+      expect(mockPrismaService.cpeExecutionRecord.create).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -392,17 +459,20 @@ describe('CasePolicyEngine - Golden Scenarios', () => {
       // Case is closed AND has unpaid expense
       // CASE_CLOSED should be the blocking reason, not EXPENSE_BLOCKING
       mockPrismaService.icrabotCaseFact.findMany.mockResolvedValue([
-        { caseId: 'case-x', factKey: 'case.status', factValue: 'CLOSED' },
-        { caseId: 'case-x', factKey: 'case.has_unpaid_blocking_expense', factValue: true },
+        { caseId: 'case-x', key: 'case.status', value: 'CLOSED' },
+        { caseId: 'case-x', key: 'case.has_unpaid_blocking_expense', value: true },
       ]);
       mockPrismaService.icrabotCaseFlag.findMany.mockResolvedValue([]);
       mockPrismaService.expenseRequest.count.mockResolvedValue(1);
       mockPrismaService.cpeDecisionLog.create.mockResolvedValue({ id: 'log-1' });
+      mockPrismaService.case.findUnique.mockResolvedValue(
+        buildCaseRow({ caseId: 'case-x', status: 'CLOSED', workflowStage: 'CLOSED' })
+      );
 
       const decision = await cpe.canPerformAction('case-x', ActionCode.UYAP_SEND);
 
       expect(decision.allowed).toBe(false);
-      expect(decision.blockedBy).toBe('CASE_CLOSED');
+      expect(decision.blockedBy?.gateCode).toBe('CASE_CLOSED');
     });
   });
 });
@@ -442,6 +512,9 @@ describe('CasePolicyEngine - Performance', () => {
     mockPrismaService.icrabotCaseFlag.findMany.mockResolvedValue([]);
     mockPrismaService.expenseRequest.count.mockResolvedValue(0);
     mockPrismaService.cpeDecisionLog.create.mockResolvedValue({ id: 'log-1' });
+    mockPrismaService.case.findUnique.mockResolvedValue(
+      buildCaseRow({ caseId: 'case-perf', status: 'ACTIVE', workflowStage: 'DRAFT' })
+    );
 
     const iterations = 10;
     const times: number[] = [];
