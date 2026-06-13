@@ -119,4 +119,24 @@ describe('InterestEngineService.calculate() — determinism + audit contract (ch
     expect(rec!.totalInterest).toBe(r.totalInterest);
     expect(rec!.totalDue).toBe(r.totalDue);
   });
+
+  // ── PR-2: pure-split (computeBalance) sözleşmesi ───────────────────────────
+  it('7) computeBalance(fixedNow) deterministik + calculate() normalize-result ile uyumlu', () => {
+    const fixedNow = '2025-08-15T10:00:00.000Z';
+    const cb1 = engine.computeBalance(buildRequest('cb-1'), rates, fixedNow);
+    const cb2 = engine.computeBalance(buildRequest('cb-1'), rates, fixedNow);
+    expect(cb1).toEqual(cb2); // saf + sabit now → tamamen birebir (calculatedAt dahil)
+  });
+
+  it('7b) computeBalance saf çekirdeği calculate() ile aynı sonucu üretir (audit/now hariç)', async () => {
+    const cb = engine.computeBalance(buildRequest('cb-1b'), rates, '2025-08-15T10:00:00.000Z');
+    const r = await engine.calculate(buildRequest('cb-1b'), rates, TENANT);
+    expect(normalize(cb)).toEqual(normalize(r));
+  });
+
+  it('8) computeBalance TEK BAŞINA audit YAZMAZ', async () => {
+    engine.computeBalance(buildRequest('cb-2'), rates, '2025-08-15T10:00:00.000Z');
+    const records = await auditWriter.getRecordsForCase('cb-2', TENANT);
+    expect(records).toHaveLength(0);
+  });
 });
