@@ -5570,10 +5570,10 @@ model IcrabotTimelineEntry {
 model IcrabotOutboxAction {
   id     String  @id @default(cuid())
   caseId String
-  /// outbox-tenancy Phase 1 (doc 26 → outbox-tenancy strand): write-time tenant capture.
-  /// Forward-only nullable; üreticiler enqueue anında yazar, tüketiciler satırdan thread eder.
+  /// outbox-tenancy: write-time tenant capture. Adım A tip+runtime guard, Adım B DB NOT NULL.
+  /// Üreticiler enqueue anında tenantId yazmak zorunda; tüketiciler satırdan thread eder.
   /// External callback path'i (processCallback) caseId→tenant boundary lookup yapar.
-  tenantId String?
+  tenantId String
   runId    String?
 
   actionType     String // open_lock, enqueue, send_email, send_sms, uyap_submit, etc.
