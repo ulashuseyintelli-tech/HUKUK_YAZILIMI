@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger, Inject, forwardRef } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
-import { CreateCaseDto, UpdateCaseDto, CaseSubCategory, Currency } from "./dto/case.dto";
+import { CreateCaseDto, UpdateCaseDto, CaseSubCategory, Currency, DueDto } from "./dto/case.dto";
 import { Prisma, LegalCaseStatus } from "@prisma/client";
+import { mapDueTypeToClaimItemType, buildClaimItemData } from "./due-to-claim-item.mapper";
 import { randomUUID } from "crypto";
 import { isInitialStatus } from "../case-status/case-status.service";
 import { AuditService } from "../audit/audit.service";
@@ -553,6 +554,34 @@ export class CaseService {
     return parts.length > 0 ? parts.join(' / ') : 'Sınıflandırılmamış';
   }
 
+  /**
+   * G1 KÖPRÜSÜ — dosya açılışındaki dues'tan kanonik ClaimItem üretir.
+   *
+   * Kanonik alacak modeli = ClaimItem; bakiye/TBK100 motoru yalnız ClaimItem okur.
+   * Due satırları korunur (legacy/transition + nafaka taksit takvimi). NAFAKA için
+   * ClaimItem üretilmez (mapper null döner). tenantId zorunlu set edilir (multitenant;
+   * Due'da tenantId yok, ClaimItem tenant-scoped). Çağıranın transaction'ı kullanılır.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseService.create() → POST /cases (create $transaction içi, dues sonrası)
+   * </remarks>
+   */
+  private async createClaimItemsFromDues(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    caseId: string,
+    dues: DueDto[],
+  ): Promise<void> {
+    for (const due of dues) {
+      const itemType = mapDueTypeToClaimItemType(due.type);
+      if (itemType === null) continue; // NAFAKA → yalnız Due (taksit takvimi)
+      await tx.claimItem.create({
+        data: buildClaimItemData(tenantId, caseId, due, itemType),
+      });
+    }
+  }
+
   async create(tenantId: string, dto: CreateCaseDto, userId?: string) {
     // INTEREST_POLICY_ASSIGNED (HR-26: HUMAN actor zorunlu) için userId şart.
     // "Bu faiz politikasını kim atadı?" sorusunun cevabı olmadan event hukuken zayıf.
@@ -822,6 +851,11 @@ export class CaseService {
               },
             });
           }
+
+          // 6b. G1 KÖPRÜSÜ — kanonik ClaimItem'lar üret (bakiye motoru bunları okur).
+          // Due satırları korunur (legacy/transition + nafaka takvimi); NAFAKA için
+          // ClaimItem üretilmez. Aynı tx içinde, tenantId zorunlu.
+          await this.createClaimItemsFromDues(tx, tenantId, newCase.id, dto.dues);
 
           // Ana para toplamını hesapla ve case'e yaz
           const principalDues = dto.dues.filter(d => d.type === 'PRINCIPAL');
