@@ -4,6 +4,7 @@ import {
   BadRequestException,
   ConflictException,
   Logger,
+  Optional,
 } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { randomUUID } from "crypto";
@@ -19,6 +20,7 @@ import {
 } from "./dto/collection.dto";
 import { DomainEventIngestService } from "../icrabot/domain-event-ingest";
 import { OccurredAtConfidence, ActorType } from "../icrabot/domain-event-ingest/domain-event-ingest.types";
+import { SummaryEngineService } from "../summary-engine/summary-engine.service";
 
 // ─── Source → Header Mapping ─────────────────────────────────────────────────
 
@@ -59,6 +61,9 @@ export class CollectionService {
   constructor(
     private prisma: PrismaService,
     private domainEventIngestService: DomainEventIngestService,
+    // G3a: kanonik ledger forward write. @Optional → enjekte edilmezse ledger
+    // atlanır + diagnostic (akış kırılmaz; test/araç bağlamları için).
+    @Optional() private readonly summaryEngine?: SummaryEngineService,
   ) {}
 
   /**
@@ -303,12 +308,44 @@ export class CollectionService {
         },
       });
 
-      // ── 5. Auto-allocate (projection, same-tx, does NOT mutate event) ───
+      // ── 5. G3a: KANONİK ledger forward write (LedgerAllocation = legal SoT) ──
+      // Aynı tx; case'te ACTIVE ClaimItem varsa LedgerEntry+LedgerAllocation üretilir
+      // (P-0 allocator tek otorite; sıra düzeltmesi PR-AO). Kalem yoksa S5(i): ledger
+      // yazılmaz, intake+event KORUNUR, diagnostic loglanır.
+      if (this.summaryEngine) {
+        const ledger = await this.summaryEngine.allocatePaymentToLedgerInTx(
+          tx,
+          tenantId,
+          dto.caseId,
+          dto.amount,
+          {
+            entryDate: new Date(dto.date),
+            description: dto.description,
+            referenceNo: dto.receiptNo,
+            sourceType: dto.sourceType,
+          },
+        );
+        if (!ledger.allocated) {
+          this.logger.warn(
+            `case has no claimItems; payment not ledger-allocated ` +
+              `(case=${dto.caseId}, collection=${collection.id}, reason=${ledger.reason})`,
+          );
+        }
+      } else {
+        this.logger.warn(
+          `SummaryEngine not injected; payment not ledger-allocated ` +
+            `(case=${dto.caseId}, collection=${collection.id})`,
+        );
+      }
+
+      // ── 6. Auto-allocate (CollectionAllocation = geçici compat/gölge, S2) ───
+      //  ⚠ Çift-sayım YASAK: bu projeksiyon legal SoT DEĞİL; okuma yüzeyleri
+      //  G3b'de ledger'a taşınacak. Şimdilik geriye-uyum için korunuyor.
       if (dto.autoAllocate !== false) {
         await this.autoAllocateInTx(tx, tenantId, collection.id, dto.amount);
       }
 
-      // ── 6. Manual allocations ───────────────────────────────────────────
+      // ── 7. Manual allocations (CollectionAllocation compat, S2) ─────────
       if (dto.allocations && dto.allocations.length > 0) {
         for (const alloc of dto.allocations) {
           await (tx as any).collectionAllocation.create({
