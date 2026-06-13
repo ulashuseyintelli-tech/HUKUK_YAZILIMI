@@ -1,0 +1,14 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell -NoProfile -ExecutionPolicy Bypass -File \"C:/Users/ulas.htelli/Desktop/HUKUK_PROJE/HUKUK_YAZILIMI/.claude/hooks/notify-stop.ps1\""
+          }
+        ]
+      }
+    ]
+  }
+}
