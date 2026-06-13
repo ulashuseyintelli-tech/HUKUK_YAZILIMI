@@ -75,6 +75,10 @@ export const ClaimBucketSchema = z.object({
   metadata: z.record(z.unknown()).optional(),
   // Strategy selection hint
   claimType: z.string().optional(), // e.g., 'CEK', 'BONO', 'POLICE', 'KIRA', etc.
+  // PR-X1: cost-inclusive balance — masraf (costs) ve fer'i (ancillaries) slotları.
+  // Opsiyonel/additive; verilmezse mevcut davranış (anapara+faiz). DebtState'e beslenir, TBK100 sırasına girer.
+  costs: z.record(z.nativeEnum(AncillaryType), z.number().nonnegative()).optional(),
+  ancillaries: z.record(z.nativeEnum(AncillaryType), z.number().nonnegative()).optional(),
 });
 
 export const SegmentSchema = z.object({

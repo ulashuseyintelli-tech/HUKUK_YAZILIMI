@@ -30,7 +30,7 @@ import { AuditWriterService } from '../audit/audit-writer.service';
 import { VersionPinningService } from '../version/version-pinning.service';
 import { RateEntry, RateSourceType } from '../rates/rate-entry.entity';
 import { CalculationRequest, CalculationRequestSchema, GapPolicy, CalculationResult, DEFAULT_INTERPRETATION_PROFILE_ID } from '../types/calculation.types';
-import { ClaimBucket, InterestTypeCode } from '../types/domain.types';
+import { ClaimBucket, InterestTypeCode, AncillaryType } from '../types/domain.types';
 import { CalculationMode, RoundingMode, RoundingScope, SameDayPaymentRule } from '../types/common.types';
 
 describe('InterestEngineService.calculate() — determinism + audit contract (characterization)', () => {
@@ -171,5 +171,58 @@ describe('InterestEngineService.calculate() — determinism + audit contract (ch
   it('13) CalculationRequestSchema DEĞİŞMEDİ — profil request şemasında YOK (FE/API kırılmadı)', () => {
     expect(() => CalculationRequestSchema.parse(buildRequest('p13'))).not.toThrow();
     expect('interpretationProfileId' in CalculationRequestSchema.shape).toBe(false);
+  });
+
+  // ── PR-X1: cost/ancillary slotu (additive, davranış-koruyucu) ──────────────────────────
+  const NOW = '2025-08-15T10:00:00.000Z';
+  const P = DEFAULT_INTERPRETATION_PROFILE_ID;
+
+  it('X-a) costs boş/{} → sonuç ve inputHash DEĞİŞMEZ (regresyon guard)', () => {
+    const base = engine.computeBalance(buildRequest('xa'), rates, NOW, P);
+    const empty = buildRequest('xa');
+    empty.claimBuckets[0].costs = {};
+    empty.claimBuckets[0].ancillaries = {};
+    const r = engine.computeBalance(empty, rates, NOW, P);
+    expect(r.inputHash).toBe(base.inputHash);
+    expect(r.totalDue).toBe(base.totalDue);
+  });
+
+  it('X-b) cost eklenince totalDue tam Σcost kadar artar (ödeme yok)', () => {
+    const base = engine.computeBalance(buildRequest('xb'), rates, NOW, P);
+    const withCost = buildRequest('xb');
+    withCost.claimBuckets[0].costs = { [AncillaryType.HARC]: 500 };
+    withCost.claimBuckets[0].ancillaries = { [AncillaryType.VEKALET_UCRETI]: 300 };
+    const r = engine.computeBalance(withCost, rates, NOW, P);
+    expect(r.totalDue).toBeCloseTo(base.totalDue + 800, 2);
+  });
+
+  it('X-c) ödeme TBK100 sırasına göre cost\'a da gider (allocation step HARC içerir)', () => {
+    const req = buildRequest('xc');
+    req.claimBuckets[0].costs = { [AncillaryType.HARC]: 1000 };
+    req.payments = [{ id: 'p1', date: '2025-03-15', amount: 300000, currency: 'TRY' }];
+    const r = engine.computeBalance(req, rates, NOW, P);
+    const categories = (r.allocations ?? []).flatMap((s) => s.allocations.map((a) => a.category));
+    expect(categories).toContain(AncillaryType.HARC);
+  });
+
+  it('X-d) costs/ancillaries inputHash\'i DEĞİŞTİRİR', () => {
+    const h0 = engine.computeBalance(buildRequest('xd'), rates, NOW, P).inputHash;
+    const a = buildRequest('xd');
+    a.claimBuckets[0].costs = { [AncillaryType.HARC]: 500 };
+    const hA = engine.computeBalance(a, rates, NOW, P).inputHash;
+    const b = buildRequest('xd');
+    b.claimBuckets[0].costs = { [AncillaryType.HARC]: 700 };
+    const hB = engine.computeBalance(b, rates, NOW, P).inputHash;
+    expect(hA).not.toBe(h0);
+    expect(hA).not.toBe(hB);
+  });
+
+  it('X-e) cost-dahil totalDue = anapara+faiz+Σcost (tek-kaynak tutarlılık)', () => {
+    const noCost = engine.computeBalance(buildRequest('xe'), rates, NOW, P).totalDue;
+    const req = buildRequest('xe');
+    req.claimBuckets[0].costs = { [AncillaryType.HARC]: 250 };
+    req.claimBuckets[0].ancillaries = { [AncillaryType.VEKALET_UCRETI]: 150 };
+    const r = engine.computeBalance(req, rates, NOW, P);
+    expect(r.totalDue).toBeCloseTo(noCost + 400, 2);
   });
 });

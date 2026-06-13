@@ -289,8 +289,8 @@ export class TBK100AllocatorService {
   createDebtState(
     principal: number,
     accruedInterest: number,
-    costs?: Record<AncillaryType, number>,
-    ancillaries?: Record<AncillaryType, number>,
+    costs?: Partial<Record<AncillaryType, number>>,
+    ancillaries?: Partial<Record<AncillaryType, number>>,
   ): DebtState {
     const state: DebtState = {
       principal,

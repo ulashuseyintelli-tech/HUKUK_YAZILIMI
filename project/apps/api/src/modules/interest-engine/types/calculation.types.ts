@@ -227,6 +227,16 @@ export type CalculationResult = z.infer<typeof CalculationResultSchema>;
  * Aynı input → Aynı hash (sıralama ve normalize)
  */
 export function generateInputHash(request: CalculationRequest, interpretationProfileId: string): string {
+  // PR-X1: cost/ancillary map'lerini key-sort ile stabilize et; BOŞ ise undefined → JSON'dan düşer →
+  // costs'suz mevcut request'lerin hash'i DEĞİŞMEZ (geriye uyumlu).
+  const normMap = (rec?: Record<string, number | undefined>): Record<string, number> | undefined => {
+    if (!rec) return undefined;
+    const keys = Object.keys(rec).filter((k) => rec[k] != null).sort();
+    if (keys.length === 0) return undefined;
+    const out: Record<string, number> = {};
+    for (const k of keys) out[k] = rec[k] as number;
+    return out;
+  };
   // Normalize: sırala ve sadece hesaplamayı etkileyen alanları al
   const normalized = {
     caseId: request.caseId,
@@ -240,6 +250,8 @@ export function generateInputHash(request: CalculationRequest, interpretationPro
         interestType: c.interestType,
         dayCountBasis: c.dayCountBasis,
         fixedRate: c.fixedRate,
+        costs: normMap(c.costs),
+        ancillaries: normMap(c.ancillaries),
       })),
     payments: request.payments
       ? [...request.payments]
