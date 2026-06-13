@@ -74,7 +74,6 @@ export interface Payment {
 
 export interface CalculationOptions {
   includeKarsilisizCekTazminati?: boolean; // Default: true for çek
-  skipPolicyGate?: boolean; // For testing only
 }
 
 export interface InterestCalculationRequest {

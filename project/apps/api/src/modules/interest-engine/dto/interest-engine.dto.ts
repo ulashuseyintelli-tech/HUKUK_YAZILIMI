@@ -76,10 +76,6 @@ export class CalculationOptionsDto {
   @IsOptional()
   @IsBoolean()
   includeKarsilisizCekTazminati?: boolean;
-
-  @IsOptional()
-  @IsBoolean()
-  skipPolicyGate?: boolean;
 }
 
 // ============================================================================
