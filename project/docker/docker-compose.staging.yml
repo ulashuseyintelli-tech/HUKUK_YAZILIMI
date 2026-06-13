@@ -15,6 +15,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      TZ: UTC # legal-time hijyen: prod paritesi; faiz TZ-invariant (PR-3), UTC kilitlenir
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/hukuk_db
       JWT_SECRET: staging-jwt-secret-change-me
       REDIS_URL: redis://redis:6379

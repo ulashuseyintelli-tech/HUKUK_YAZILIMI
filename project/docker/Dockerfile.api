@@ -16,6 +16,10 @@ WORKDIR /app/apps/api
 RUN pnpm exec prisma generate
 RUN pnpm exec nest build
 
+# legal-time deploy hijyeni: faiz hesabı TZ-invariant (day-count UTC-anchored, PR-3) →
+# TZ=UTC correctness için ZORUNLU DEĞİL; prod varsayımını kilitler (base-image/host TZ
+# kayması sessizce sızamaz). node:20-alpine zaten UTC; bu satır niyeti açık yapar.
 ENV NODE_ENV=production
+ENV TZ=UTC
 EXPOSE 8080
 CMD ["node", "dist/main.js"]
