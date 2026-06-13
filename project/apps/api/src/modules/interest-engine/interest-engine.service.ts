@@ -384,21 +384,37 @@ export class InterestEngineService {
     allocationResult?: { steps: AllocationStep[]; finalDebtStates: ClaimDebtState[] },
   ): number {
     const totalPrincipal = claims.reduce((sum, c) => sum + c.amount, 0);
-    
+
     if (allocationResult) {
-      // Calculate remaining debt after allocations
+      // Calculate remaining debt after allocations (PR-X1: cost/ancillary DAHİL)
       let remainingPrincipal = 0;
       let remainingInterest = 0;
-      
+      let remainingCosts = 0;
+
       for (const state of allocationResult.finalDebtStates) {
         remainingPrincipal += state.debtState.principal;
         remainingInterest += state.debtState.accruedInterest;
+        for (const v of state.debtState.costs.values()) remainingCosts += v;
+        for (const v of state.debtState.ancillaries.values()) remainingCosts += v;
       }
-      
-      return remainingPrincipal + remainingInterest;
+
+      return remainingPrincipal + remainingInterest + remainingCosts;
     }
-    
-    return totalPrincipal + totalInterest;
+
+    // PR-X1: ödeme yoksa toplam = anapara + faiz + masraf + fer'i
+    const totalCosts = claims.reduce(
+      (sum, c) => sum + this.sumMapValues(c.costs) + this.sumMapValues(c.ancillaries),
+      0,
+    );
+    return totalPrincipal + totalInterest + totalCosts;
+  }
+
+  /** PR-X1: opsiyonel cost/ancillary map'inin değerlerini toplar (yoksa 0). */
+  private sumMapValues(rec?: Record<string, number | undefined>): number {
+    if (!rec) return 0;
+    let total = 0;
+    for (const v of Object.values(rec)) total += Number(v) || 0;
+    return total;
   }
 
   private generateLegalText(request: CalculationRequest, segments: Segment[]): string {

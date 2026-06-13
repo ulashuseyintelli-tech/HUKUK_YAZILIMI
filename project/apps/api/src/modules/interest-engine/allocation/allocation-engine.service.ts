@@ -352,6 +352,8 @@ export class AllocationEngineService {
         debtState: this.tbk100Allocator.createDebtState(
           claim.amount,
           accruedInterest,
+          claim.costs,
+          claim.ancillaries,
         ),
         segments,
       };
