@@ -95,7 +95,6 @@ export const CalculationOptionsSchema = z.object({
   
   // Special
   includeKarsilisizCekTazminati: z.boolean().optional(),
-  skipPolicyGate: z.boolean().optional(),
 });
 
 export type CalculationOptions = z.infer<typeof CalculationOptionsSchema>;
