@@ -119,6 +119,13 @@ export class DomainEventIngestService {
     // Only if event has external dispatch implications
     // For now: all events get an outbox entry for downstream consumers
     const idempotencyKey = `evt:${event.header.eventId}`;
+    // outbox-tenancy Adım A: direct-create path (OutboxService baypas edilir) → header.tenantId
+    // tip-zorunlu olsa da runtime guard (untyped / dış-ingest savunması). NULL tenant satırı YAZMA.
+    if (!event.header.tenantId) {
+      throw new Error(
+        `outbox_tenant_required: domain-event-ingest tenantId olmadan outbox yazamaz (eventId=${event.header.eventId})`,
+      );
+    }
     await (tx as any).icrabotOutboxAction.create({
       data: {
         caseId: event.header.aggregateId,
