@@ -53,7 +53,6 @@ export interface PaymentOrderRequest {
   interestType?: string;
   interestStartDate?: Date;
   skipPoaCheck?: boolean; // Test için vekalet kontrolünü atla
-  skipCpeCheck?: boolean; // Test için CPE kontrolünü atla
 }
 
 export interface TebligatStatus {
@@ -72,7 +71,6 @@ export interface HacizRequest {
   lawyerId?: string; // Vekalet kontrolü için
   tenantId?: string; // Vekalet kontrolü için
   skipPoaCheck?: boolean; // Test için vekalet kontrolünü atla
-  skipCpeCheck?: boolean; // Test için CPE kontrolünü atla
 }
 
 export interface PoaValidationResult {
@@ -183,7 +181,7 @@ export class UyapService {
     let cpeTraceId: string | undefined;
 
     // CPE Gate kontrolü (HIGH risk aksiyon)
-    if (!request.skipCpeCheck && this.casePolicyEngine) {
+    if (this.casePolicyEngine) {
       try {
         const decision = await this.casePolicyEngine.canPerformAction(
           request.caseId,
@@ -317,7 +315,7 @@ export class UyapService {
     let cpeTraceId: string | undefined;
 
     // CPE Gate kontrolü (HIGH risk aksiyon)
-    if (!request.skipCpeCheck && this.casePolicyEngine) {
+    if (this.casePolicyEngine) {
       try {
         const decision = await this.casePolicyEngine.canPerformAction(
           request.caseId,
