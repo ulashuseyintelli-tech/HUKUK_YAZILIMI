@@ -691,7 +691,10 @@ export class SummaryEngineService implements OnModuleInit {
     let orderIndex = 1;
 
     // TBK 100 sırasına göre: FAİZ → MASRAF/FER'İ → ANAPARA
-    const tbk100Order = ['INTEREST', 'PRE_INTEREST', 'POST_INTEREST', 'FEE', 'EXPENSE', 'ATTORNEY_FEE', 'CHECK_PENALTY', 'PENALTY', 'COMMISSION', 'OTHER', 'PRINCIPAL'];
+    // P-0 (doc-27): MASRAF → FER'İ → FAİZ → ANAPARA. allocationOrder indeksi bu
+    // sırayı yansıtır (tutarlar allocator'dan gelir). NOT (F1/PR-AO-3): cost/anc
+    // SINIFLAMASI ayrı sorundur (KOMISYON şu an fer'i tarafına düşüyor — kapsam dışı).
+    const tbk100Order = ['FEE', 'EXPENSE', 'ATTORNEY_FEE', 'CHECK_PENALTY', 'PENALTY', 'COMMISSION', 'OTHER', 'INTEREST', 'PRE_INTEREST', 'POST_INTEREST', 'PRINCIPAL'];
 
     for (const category of tbk100Order) {
       const categoryItems = itemsByCategory.get(category) || [];

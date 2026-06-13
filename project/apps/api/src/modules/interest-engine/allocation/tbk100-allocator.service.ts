@@ -1,19 +1,18 @@
 /**
  * Task 8.1 - TBK 100 Core Allocator
  * 
- * TBK 100 HARD RULE:
- * Sıra: FAİZ → MASRAF → FER'İ → ANAPARA
- * 
- * Bu sıra kanundan gelir, policy ile değiştirilemez.
- * Policy sadece aynı sınıf içinde tie-breaker belirler.
+ * P-0 ÜRÜN/HUKUK KURALI (doc-27):
+ * Sıra: MASRAF → FER'İ → FAİZ → ANAPARA
+ *
+ * Bu sıra üründe kilitlenen TBK 100 yorumudur (doc-27, P-0); policy ile değiştirilemez.
+ * Policy sadece aynı sınıf içinde tie-breaker belirler (ancillaryPriority).
  */
 
 import { Injectable } from '@nestjs/common';
-import { 
-  AllocationStep, 
-  AllocationCategory, 
+import {
+  AllocationStep,
+  AllocationCategory,
   AncillaryType,
-  TBK100_ALLOCATION_ORDER,
 } from '../types/domain.types';
 import { InterestEngineError, InterestEngineErrorCode } from '../errors/interest-engine-errors';
 import { toCents, fromCents } from './minor-unit';
@@ -94,10 +93,10 @@ export class TBK100AllocatorService {
   /**
    * Allocate a single payment according to TBK 100 rules
    * 
-   * HARD RULE ORDER:
-   * 1. INTEREST (İşlemiş Faiz)
-   * 2. COSTS (Masraflar - HARC, TEBLIGAT_MASRAFI)
-   * 3. ANCILLARIES (Fer'iler - VEKALET_UCRETI, CEK_TAZMINATI, etc.)
+   * P-0 ORDER (doc-27):
+   * 1. COSTS (Masraflar - HARC, TEBLIGAT_MASRAFI, KOMISYON, cost-DIGER)
+   * 2. ANCILLARIES (Fer'iler - VEKALET_UCRETI, CEK_TAZMINATI, anc-DIGER)
+   * 3. INTEREST (İşlemiş Faiz)
    * 4. PRINCIPAL (Anapara)
    * 
    * @param paymentAmount - Ödeme tutarı
@@ -133,7 +132,49 @@ export class TBK100AllocatorService {
     const newDebtState = this.cloneDebtState(debtState);
     const ancillaryPriority = options.ancillaryPriority || DEFAULT_ANCILLARY_PRIORITY;
 
-    // 1. INTEREST (İşlemiş Faiz) - TBK 100 HARD RULE: Faiz önce
+    // P-0 SIRA (doc-27): 1) MASRAF → 2) FER'İ → 3) FAİZ → 4) ANAPARA.
+    // DIGER ayrı kademe DEĞİL: kaynağına göre costs (masraf) veya ancillaries
+    // (fer'i) Map'inde durur, dolayısıyla doğru kademede ödenir (4-kademe).
+
+    // 1. COSTS (Masraflar - HARC, TEBLIGAT_MASRAFI, KOMISYON, cost-DIGER)
+    // Soft tie-breaker: ancillaryPriority sırasına göre.
+    for (const ancType of ancillaryPriority) {
+      if (remaining <= 0n) break;
+      const costAmount = newDebtState.costs.get(ancType) || 0;
+      if (costAmount > 0) {
+        const costBefore = toCents(costAmount);
+        const costRes = this.allocateToCategory(
+          ancType,
+          ANCILLARY_LABELS[ancType],
+          costBefore,
+          remaining,
+        );
+        allocations.push(costRes.allocation);
+        remaining -= costRes.allocatedCents;
+        newDebtState.costs.set(ancType, fromCents(costBefore - costRes.allocatedCents));
+      }
+    }
+
+    // 2. ANCILLARIES (Fer'iler - VEKALET_UCRETI, CEK_TAZMINATI, anc-DIGER)
+    // Soft tie-breaker: ancillaryPriority sırasına göre.
+    for (const ancType of ancillaryPriority) {
+      if (remaining <= 0n) break;
+      const ancAmount = newDebtState.ancillaries.get(ancType) || 0;
+      if (ancAmount > 0) {
+        const ancBefore = toCents(ancAmount);
+        const ancRes = this.allocateToCategory(
+          ancType,
+          ANCILLARY_LABELS[ancType],
+          ancBefore,
+          remaining,
+        );
+        allocations.push(ancRes.allocation);
+        remaining -= ancRes.allocatedCents;
+        newDebtState.ancillaries.set(ancType, fromCents(ancBefore - ancRes.allocatedCents));
+      }
+    }
+
+    // 3. INTEREST (İşlemiş Faiz) - masraf ve fer'iden sonra
     const interestBefore = toCents(newDebtState.accruedInterest);
     const interestRes = this.allocateToCategory(
       'INTEREST',
@@ -145,52 +186,7 @@ export class TBK100AllocatorService {
     remaining -= interestRes.allocatedCents;
     newDebtState.accruedInterest = fromCents(interestBefore - interestRes.allocatedCents);
 
-    // 2. COSTS & ANCILLARIES (Masraflar ve Fer'iler) - TBK 100 HARD RULE: Masraf/fer'i ikinci
-    // Soft tie-breaker: ancillaryPriority sırasına göre
-    for (const ancType of ancillaryPriority) {
-      if (remaining <= 0n) break;
-
-      // Check costs first
-      const costAmount = newDebtState.costs.get(ancType) || 0;
-      // Merge karşılaştırma anahtarı (legacy semantik): cost alloc'ın amountBefore'u.
-      let costAllocBefore = costAmount;
-      if (costAmount > 0) {
-        const costBefore = toCents(costAmount);
-        const costRes = this.allocateToCategory(
-          ancType,
-          ANCILLARY_LABELS[ancType],
-          costBefore,
-          remaining,
-        );
-        costAllocBefore = costRes.allocation.amountBefore;
-        allocations.push(costRes.allocation);
-        remaining -= costRes.allocatedCents;
-        newDebtState.costs.set(ancType, fromCents(costBefore - costRes.allocatedCents));
-      }
-
-      // Then check ancillaries
-      const ancAmount = newDebtState.ancillaries.get(ancType) || 0;
-      if (ancAmount > 0) {
-        const ancBefore = toCents(ancAmount);
-        const ancRes = this.allocateToCategory(
-          ancType,
-          ANCILLARY_LABELS[ancType],
-          ancBefore,
-          remaining,
-        );
-        // Merge with existing allocation if same category
-        const existingIdx = allocations.findIndex(
-          a => a.category === ancType && a.amountBefore === costAllocBefore,
-        );
-        if (existingIdx === -1) {
-          allocations.push(ancRes.allocation);
-        }
-        remaining -= ancRes.allocatedCents;
-        newDebtState.ancillaries.set(ancType, fromCents(ancBefore - ancRes.allocatedCents));
-      }
-    }
-
-    // 3. PRINCIPAL (Anapara) - TBK 100 HARD RULE: Anapara son
+    // 4. PRINCIPAL (Anapara) - son
     const principalBefore = toCents(newDebtState.principal);
     const principalRes = this.allocateToCategory(
       'PRINCIPAL',

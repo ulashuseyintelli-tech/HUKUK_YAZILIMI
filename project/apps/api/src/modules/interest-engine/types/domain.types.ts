@@ -42,15 +42,18 @@ export enum AncillaryType {
   DIGER = 'DIGER',
 }
 
-// TBK 100 Allocation Order
+// TBK 100 Allocation Order — P-0 (doc-27): MASRAF → FER'İ → FAİZ → ANAPARA.
+// NOT: masraf/fer'i ayrımı DebtState'in costs vs ancillaries Map'inden gelir;
+// bu düz liste yalnız dokümantasyon + sınıf-içi tie-breaker sırasıdır. DIGER
+// kaynağına göre costs(masraf) veya ancillaries(fer'i) tarafında yer alır.
 export const TBK100_ALLOCATION_ORDER: (AncillaryType | 'INTEREST' | 'PRINCIPAL')[] = [
-  'INTEREST',
   AncillaryType.HARC,
   AncillaryType.TEBLIGAT_MASRAFI,
+  AncillaryType.KOMISYON,
   AncillaryType.VEKALET_UCRETI,
   AncillaryType.CEK_TAZMINATI,
-  AncillaryType.KOMISYON,
   AncillaryType.DIGER,
+  'INTEREST',
   'PRINCIPAL',
 ];
 
