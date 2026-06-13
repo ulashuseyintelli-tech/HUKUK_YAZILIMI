@@ -12,7 +12,7 @@
  * - In DEGRADED mode, break-glass operations return 503
  */
 
-import { Injectable, Inject, Logger } from '@nestjs/common';
+import { Injectable, Inject, Optional, Logger } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import {
   CrossTenantAuditEvent,
@@ -154,6 +154,7 @@ export class CrossTenantAuditService {
   constructor(
     @Inject(CROSS_TENANT_AUDIT_REPOSITORY)
     private readonly repository: ICrossTenantAuditRepository,
+    @Optional()
     failureConfig?: AuditFailureConfig,
   ) {
     this.failureConfig = failureConfig || DEFAULT_FAILURE_CONFIG;
