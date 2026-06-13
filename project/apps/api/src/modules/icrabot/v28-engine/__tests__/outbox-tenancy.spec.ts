@@ -2,7 +2,7 @@
  * outbox-tenancy Phase 1 — DB-free unit (decision C / hibrit)
  *
  * Doğrular:
- *  1. PRODUCER (OutboxService.createAction): tenantId write-time olarak satıra yazılır (verilmezse null).
+ *  1. PRODUCER (OutboxService.createAction): tenantId write-time ZORUNLU yazılır (verilmezse throw — Adım A).
  *  2. CONSUMER (ActionHandlerService.dispatch): outbox satırındaki tenantId timeline yazımlarına thread'lenir.
  *  3. EXTERNAL CALLBACK (ActionFeedbackService.processCallback): tenantId case_id boundary lookup ile çözülüp thread'lenir.
  *
@@ -35,11 +35,13 @@ describe('outbox-tenancy Phase 1 (decision C)', () => {
       expect(create.mock.calls[0][0].data.tenantId).toBe('t1');
     });
 
-    it('tenantId verilmezse null yazar (forward-only nullable)', async () => {
+    it('tenantId verilmezse throw (Adım A: fail-closed, NULL yazmaz)', async () => {
       const { prisma, create } = makePrisma();
       const svc = new OutboxService(prisma as any);
-      await svc.createAction({ caseId: 'c1', actionType: 'x', idempotencyKey: 'k2', payload: {} });
-      expect(create.mock.calls[0][0].data.tenantId).toBeNull();
+      await expect(
+        svc.createAction({ caseId: 'c1', actionType: 'x', idempotencyKey: 'k2', payload: {} } as any),
+      ).rejects.toThrow(/outbox_tenant_required/);
+      expect(create).not.toHaveBeenCalled();
     });
   });
 

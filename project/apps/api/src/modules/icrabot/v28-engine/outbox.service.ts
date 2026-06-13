@@ -19,8 +19,11 @@ export type OutboxStatus = 'pending' | 'sent' | 'done' | 'failed' | 'dead';
 
 export interface CreateOutboxActionParams {
   caseId: string;
-  /** outbox-tenancy Phase 1: write-time tenant capture (üretici elindeyse yazar; nullable). */
-  tenantId?: string;
+  /**
+   * outbox-tenancy Adım A: write-time tenant capture — ZORUNLU (fail-closed).
+   * Üreticiler tenantId taşımak zorunda; sessiz NULL yazımı tip + runtime guard ile engellenir.
+   */
+  tenantId: string;
   actionType: string;
   idempotencyKey: string;
   payload: Record<string, any>;
@@ -52,8 +55,24 @@ export class OutboxService {
   /**
    * Outbox'a yeni action ekler (idempotent)
    * Aynı idempotencyKey varsa null döner
+   *
+   * @remarks
+   * Çağrıldığı yerler:
+   * - EngineRunnerService.<rule-action-dispatch>() → engine-runner.service.ts:220 (kural aksiyonu enqueue; tenantId=scope)
+   * - SeedService.<seed-uyap-events>() → seed.service.ts:110 (demo/seed enqueue; tenantId=seed)
+   * NOT: domain-event-ingest.service.ts:122 outbox satırını DOĞRUDAN (bu servisi baypas ederek) yazar;
+   *      orada da ayrı runtime guard var (Adım A).
+   * outbox-tenancy Adım A: tenantId ZORUNLU — fail-closed guard ile sessiz NULL yazımı engellenir.
    */
   async createAction(params: CreateOutboxActionParams): Promise<string | null> {
+    // outbox-tenancy Adım A: fail-closed tenant guard. Tip zorunlu kılsa da untyped/`as any`
+    // çağrılara karşı runtime koruma; NULL tenant satırı yazmak yerine throw.
+    if (!params.tenantId) {
+      throw new Error(
+        `outbox_tenant_required: createAction tenantId olmadan çağrıldı (caseId=${params.caseId}, actionType=${params.actionType})`,
+      );
+    }
+
     // Check idempotency
     const existing = await (this.prisma as any).icrabotOutboxAction.findUnique({
       where: { idempotencyKey: params.idempotencyKey },
@@ -67,7 +86,7 @@ export class OutboxService {
     const action = await (this.prisma as any).icrabotOutboxAction.create({
       data: {
         caseId: params.caseId,
-        tenantId: params.tenantId ?? null, // write-time tenant capture (Phase 1; nullable)
+        tenantId: params.tenantId, // write-time tenant capture (Adım A: zorunlu + guard'lı)
         actionType: params.actionType,
         idempotencyKey: params.idempotencyKey,
         payload: params.payload,
