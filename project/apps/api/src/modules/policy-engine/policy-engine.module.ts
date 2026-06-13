@@ -3,7 +3,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { CasePolicyEngine } from './case-policy-engine.service';
 import { PolicyEngineController } from './policy-engine.controller';
-import { FactStoreService, ComputedFactRegistry } from './fact-store';
+import { FactStoreService, ComputedFactRegistry, UyapAvailabilityService } from './fact-store';
 import { DecisionLoggerService, ExecutionRecorderService, DecisionLogRetentionService } from './decision-logger';
 import { StateMachineService } from './state-machine';
 import { GateCheckerService } from './gate-checker';
@@ -46,6 +46,7 @@ import { DeprecatedUsageTrackerService } from './deprecated-usage-tracker.servic
     // Fact Store
     FactStoreService,
     ComputedFactRegistry,
+    UyapAvailabilityService,
     
     // State Machine
     StateMachineService,

@@ -16,8 +16,8 @@ import { FactMap } from '../../fact-store';
 import { ActionContext } from '../../types/policy-decision.interface';
 
 // Version hash - YAML içeriğinden üretilir
-export const RULE_VERSION = 'gates-v1.0.1-compiled-2026-06-12';
-export const COMPILED_AT = '2026-06-12T00:00:00.000Z';
+export const RULE_VERSION = 'gates-v1.1.0-compiled-2026-06-13';
+export const COMPILED_AT = '2026-06-13T00:00:00.000Z';
 
 /**
  * Compiled Gates - Priority sırasına göre
@@ -78,6 +78,17 @@ export const COMPILED_GATES: CompiledGate[] = [
     severity: 'HARD',
     reason: 'Bu dosya için UYAP işlemleri devre dışı.',
     priority: 11,
+  },
+
+  {
+    gateCode: 'UYAP_TEMPORARILY_UNAVAILABLE_SEND',
+    name: 'UYAP Geçici Arıza - Gönderim Engeli',
+    description: 'UYAP sistemi geçici arızadayken gönderim (UYAP_SEND) yapılamaz (P3). Kalıcı per-case kapatma (UYAP_DISABLED / allow_uyap_actions) ile karıştırılmamalı.',
+    actionCodes: [ActionCode.UYAP_SEND],
+    condition: (facts: FactMap) => facts.get('system.uyap_available') === false,
+    severity: 'HARD',
+    reason: 'UYAP sistemi geçici olarak devre dışı. Gönderim yapılamaz.',
+    priority: 12,
   },
 
   {
@@ -252,6 +263,17 @@ export const COMPILED_GATES: CompiledGate[] = [
     severity: 'SOFT',
     reason: 'Dosyada birden fazla borçlu var. Tüm borçlular için işlem yapıldığından emin olun.',
     priority: 104,
+  },
+
+  {
+    gateCode: 'UYAP_TEMPORARILY_UNAVAILABLE',
+    name: 'UYAP Geçici Arıza',
+    description: 'UYAP sistemi geçici olarak erişilemiyor (P3) - sorgu (UYAP_QUERY) uyarısı. Kalıcı per-case kapatma (UYAP_DISABLED / allow_uyap_actions) ile karıştırılmamalı.',
+    actionCodes: [ActionCode.UYAP_QUERY],
+    condition: (facts: FactMap) => facts.get('system.uyap_available') === false,
+    severity: 'SOFT',
+    reason: 'UYAP sistemi geçici olarak devre dışı',
+    priority: 105,
   },
 ];
 

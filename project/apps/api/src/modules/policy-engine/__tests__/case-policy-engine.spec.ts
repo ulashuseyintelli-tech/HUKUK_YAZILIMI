@@ -12,6 +12,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { CasePolicyEngine } from '../case-policy-engine.service';
 import { FactStoreService } from '../fact-store/fact-store.service';
 import { ComputedFactRegistry } from '../fact-store/computed-fact-registry';
+import { UyapAvailabilityService, MockUyapAvailabilityService } from '../fact-store/uyap-availability.service';
 import { StateMachineService } from '../state-machine/state-machine.service';
 import { GateCheckerService } from '../gate-checker/gate-checker.service';
 import { RuleEngineService } from '../rule-engine/rule-engine.service';
@@ -185,25 +186,12 @@ const SCENARIO_6_KAMBIYO_5_DAYS = {
 };
 
 /**
- * Scenario 7: UYAP devre dışı - soft warning
- * - UYAP sistemi geçici olarak devre dışı
- * - Beklenen: İşlem izin verilmeli ama warning olmalı
+ * Scenario 7 (UYAP geçici arıza) artık bu generic loop'ta DEĞİL.
+ * Legacy `case.uyap_enabled` modeli terk edildi (P3); outage global `system.uyap_available`
+ * computed fact'i + UYAP_TEMPORARILY_UNAVAILABLE(_SEND) gate'leri ile modellenir.
+ * Adanmış CPE uçtan uca testi için: dosya sonundaki
+ * "P3 — UYAP geçici arıza (CPE uçtan uca)" describe bloğu.
  */
-const SCENARIO_7_UYAP_DISABLED_WARNING = {
-  name: 'UYAP devre dışı - soft warning',
-  caseId: 'case-007',
-  facts: {
-    'case.workflow_stage': 'DRAFT',
-    'case.icra_type': 'ILAMSIZ_GENEL',
-    'case.status': 'ACTIVE',
-    'case.has_unpaid_blocking_expense': false,
-    'case.uyap_enabled': false, // UYAP devre dışı
-  } as Record<string, unknown>,
-  actionCode: ActionCode.UYAP_QUERY,
-  expectedAllowed: true,
-  expectedCode: 'ALLOWED',
-  expectedWarnings: ['UYAP sistemi geçici olarak devre dışı'],
-};
 
 /**
  * Scenario 8: Masraf onaylama - dosya kapalı değil
@@ -230,7 +218,6 @@ const ALL_SCENARIOS = [
   SCENARIO_4_READY_FOR_HACIZ,
   SCENARIO_5_HACIZ_TOO_EARLY,
   SCENARIO_6_KAMBIYO_5_DAYS,
-  SCENARIO_7_UYAP_DISABLED_WARNING,
   SCENARIO_8_APPROVE_EXPENSE,
 ];
 
@@ -249,6 +236,7 @@ describe('CasePolicyEngine - Golden Scenarios', () => {
         CasePolicyEngine,
         FactStoreService,
         ComputedFactRegistry,
+        UyapAvailabilityService,
         StateMachineService,
         GateCheckerService,
         RuleEngineService,
@@ -421,6 +409,7 @@ describe('CasePolicyEngine - Performance', () => {
         CasePolicyEngine,
         FactStoreService,
         ComputedFactRegistry,
+        UyapAvailabilityService,
         StateMachineService,
         GateCheckerService,
         RuleEngineService,
@@ -462,5 +451,104 @@ describe('CasePolicyEngine - Performance', () => {
 
     // With mocked DB, should be very fast
     expect(p95).toBeLessThan(150);
+  });
+});
+
+// ============================================
+// P3 — UYAP geçici arıza (CPE uçtan uca)
+// ============================================
+//
+// Outage, global `system.uyap_available` computed fact'i ile modellenir; kaynak
+// UyapAvailabilityService (burada MockUyapAvailabilityService ile outage'a çekilir).
+// StateMachineService stub'lanır (outage davranışı state-flow detayına bağlı olmasın;
+// QUERY için state-allow yeter, SEND zaten state'ten önce gate'te bloklanır).
+// Legacy `case.uyap_enabled` kullanılmaz. `allow_uyap_actions`'a dokunulmaz.
+
+describe('CasePolicyEngine - P3 UYAP geçici arıza (outage)', () => {
+  let module: TestingModule;
+  let cpe: CasePolicyEngine;
+  let mockUyap: MockUyapAvailabilityService;
+
+  const outageMockPrisma = {
+    icrabotCaseFact: { findMany: jest.fn().mockResolvedValue([]) },
+    icrabotCaseFlag: { findMany: jest.fn().mockResolvedValue([]) },
+    case: {
+      findUnique: jest.fn().mockResolvedValue({
+        id: 'case-outage',
+        caseStatus: 'ACTIVE',
+        workflowStage: 'UYAP_SENT',
+        type: 'ILAMSIZ',
+        subType: null,
+        isAutoMode: false,
+        isAutomationEnabled: true,
+        allowUyapActions: true, // kalıcı kapatma YOK → UYAP_DISABLED tetiklenmesin
+        hasArticle4Request: false,
+        isMtsCase: false,
+        subCategory: null,
+        currency: 'TRY',
+        principalAmount: 0,
+        createdAt: new Date(),
+        nextActionAt: null,
+      }),
+    },
+  };
+
+  // StateMachine stub: QUERY'nin state'ten geçmesi için allow döner.
+  const stubStateMachine = {
+    getRuleVersion: jest.fn().mockReturnValue('state-test-v1'),
+    getCurrentState: jest
+      .fn()
+      .mockResolvedValue({ scope: Scope.CASE, currentState: 'UYAP_SENT', version: 1 }),
+    canTransition: jest
+      .fn()
+      .mockReturnValue({ allowed: true, reason: 'OK', targetState: 'UYAP_SENT' }),
+  };
+
+  beforeEach(async () => {
+    mockUyap = new MockUyapAvailabilityService();
+    mockUyap.setAvailable(false); // OUTAGE
+
+    module = await Test.createTestingModule({
+      providers: [
+        CasePolicyEngine,
+        FactStoreService,
+        ComputedFactRegistry,
+        GateCheckerService,
+        { provide: UyapAvailabilityService, useValue: mockUyap },
+        { provide: StateMachineService, useValue: stubStateMachine },
+        { provide: DecisionLoggerService, useValue: { log: jest.fn().mockResolvedValue('dec-id') } },
+        { provide: ExecutionRecorderService, useValue: {} },
+        { provide: RuleEngineService, useValue: {} },
+        { provide: PrismaService, useValue: outageMockPrisma },
+      ],
+    }).compile();
+
+    cpe = module.get<CasePolicyEngine>(CasePolicyEngine);
+    // compile() lifecycle hook'ları çağırmaz → computed fact provider'larını elle kaydet
+    // (objection-period.spec ile aynı idiom).
+    module.get<ComputedFactRegistry>(ComputedFactRegistry).onModuleInit();
+  });
+
+  afterEach(async () => {
+    await module.close();
+  });
+
+  it('UYAP_QUERY → allowed:true + outage warning (code/message birebir)', async () => {
+    const decision = await cpe.canPerformAction('case-outage', ActionCode.UYAP_QUERY);
+
+    expect(decision.allowed).toBe(true);
+    expect(decision.warnings).toBeDefined();
+    const w = decision.warnings?.find((x) => x.code === 'UYAP_TEMPORARILY_UNAVAILABLE');
+    expect(w).toBeDefined();
+    expect(w?.message).toBe('UYAP sistemi geçici olarak devre dışı');
+  });
+
+  it('UYAP_SEND → allowed:false + HARD blok (code/reason birebir)', async () => {
+    const decision = await cpe.canPerformAction('case-outage', ActionCode.UYAP_SEND);
+
+    expect(decision.allowed).toBe(false);
+    expect(decision.code).toBe('GATE_BLOCKED');
+    expect((decision.blockedBy as any)?.gateCode).toBe('UYAP_TEMPORARILY_UNAVAILABLE_SEND');
+    expect(decision.reason).toBe('UYAP sistemi geçici olarak devre dışı. Gönderim yapılamaz.');
   });
 });
