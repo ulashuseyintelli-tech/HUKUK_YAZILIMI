@@ -1,10 +1,9 @@
 /**
  * Phase 2 PR1 — boundary tenant hardening (DB-free unit)
  *
- * Doğrular (bridge KORUNUYOR; addEntry henüz fail-closed DEĞİL — bu PR1):
- *  - resolveTenantIdOrThrow: valid case → tenant; case yok / tenant null → throw.
- *  - action-handler.dispatch: action.tenantId varsa onu kullanır; null + valid caseId → resolve;
- *    null + invalid caseId → throw, timeline yazmaz, markSent çağrılmaz.
+ * Doğrular (Adım C: action-handler outbox-fallback KALDIRILDI; boundary resolve KORUNUR):
+ *  - resolveTenantIdOrThrow: valid case → tenant; case yok / tenant null → throw (boundary'lerde kullanılır).
+ *  - action-handler.dispatch: action.tenantId'yi DOĞRUDAN kullanır (outbox.tenantId DB-NOT NULL); resolve YOK.
  *  - action-feedback.processCallback: invalid case_id → throw, timeline yazmaz.
  *  - uyap-event-ingest.ingestEvent: invalid caseId → throw, timeline yazmaz.
  */
@@ -57,25 +56,10 @@ describe('Phase 2 PR1 — tenant boundary hardening', () => {
       for (const call of timeline.addEntry.mock.calls) expect(call[0].tenantId).toBe('row-tenant');
     });
 
-    it('action.tenantId null + valid caseId → case.tenantId resolve', async () => {
-      const { svc, prisma, timeline } = build(
-        { id: 'a2', caseId: 'c2', tenantId: null, actionType: 'e2e', payload: {}, runId: null, attemptCount: 0 },
-        { tenantId: 'resolved-tenant' },
-      );
-      await svc.dispatch('a2');
-      expect(prisma.case.findUnique).toHaveBeenCalledWith({ where: { id: 'c2' }, select: { tenantId: true } });
-      for (const call of timeline.addEntry.mock.calls) expect(call[0].tenantId).toBe('resolved-tenant');
-    });
-
-    it('action.tenantId null + invalid caseId → throw, timeline yazmaz, markSent çağrılmaz', async () => {
-      const { svc, outbox, timeline } = build(
-        { id: 'a3', caseId: 'bad', tenantId: null, actionType: 'e2e', payload: {}, runId: null, attemptCount: 0 },
-        null, // case bulunamadı
-      );
-      await expect(svc.dispatch('a3')).rejects.toBeInstanceOf(TenantResolutionError);
-      expect(outbox.markSent).not.toHaveBeenCalled();
-      expect(timeline.addEntry).not.toHaveBeenCalled();
-    });
+    // (Adım C) "action.tenantId null → caseId resolve" ve "null + invalid caseId → throw"
+    // testleri KALDIRILDI: outbox.tenantId DB-NOT NULL (Adım B) → null tenant satırı DB'de imkânsız;
+    // action-handler caseId→tenant fallback'i de kaldırıldı (bridge full removal). Yukarıdaki test,
+    // dispatch'in case.findUnique'i HİÇ çağırmadığını (resolve yok) doğrulayan regresyon guard'ıdır.
   });
 
   describe('ActionFeedbackService.processCallback', () => {

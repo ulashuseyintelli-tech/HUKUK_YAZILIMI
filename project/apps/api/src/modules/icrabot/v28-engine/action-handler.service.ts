@@ -29,7 +29,6 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import { OutboxService } from './outbox.service';
 import { TimelineService } from './timeline.service';
 import { FactStoreService } from './factstore.service';
-import { resolveTenantIdOrThrow } from './tenant-resolver';
 import { maskPhone } from '../../../common/pii-mask.util';
 
 export type ActionHandler = (payload: Record<string, any>, caseId: string) => Promise<Record<string, any> | void>;
@@ -104,9 +103,9 @@ export class ActionHandlerService {
       };
     }
 
-    // fail-closed tenant: satırda tenantId varsa onu kullan; yoksa (legacy/null row) caseId'den
-    // resolve et (case yoksa throw → null timeline yazımı yok). Phase 2 PR1 boundary hardening.
-    const effectiveTenantId = action.tenantId ?? await resolveTenantIdOrThrow(this.prisma, action.caseId);
+    // outbox.tenantId DB-NOT NULL (Adım B) → her satır tenant taşır. caseId→tenant fallback
+    // KALDIRILDI (Adım C / bridge full removal); yakalanan tenant'a doğrudan güvenilir.
+    const effectiveTenantId = action.tenantId;
 
     // Mark as sent (processing)
     await this.outbox.markSent(actionId);
