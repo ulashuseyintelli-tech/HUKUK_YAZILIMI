@@ -81,6 +81,36 @@ export class InterestEngineService {
     tenantId: string,
     userId?: string,
   ): Promise<CalculationResult> {
+    // D-A PR-2: orkestratör = saf hesap (computeBalance) + audit side-effect (writeAuditRecord).
+    // Public imza KORUNUR (controller + testler etkilenmez); side-effect tek noktada izole.
+    const result = this.computeBalance(request, rates, new Date().toISOString());
+    result.auditLogId = await this.writeAuditRecord(
+      request,
+      result,
+      result.segments,
+      result.allocations,
+      rates,
+      tenantId,
+      userId,
+    );
+    return result;
+  }
+
+  /**
+   * Saf hesap çekirdeği (D-A PR-2): I/O yok, side-effect yok, deterministik.
+   * Aynı (request, rates, now) → aynı CalculationResult (auditLogId='' döner; audit'i calculate() yazar).
+   * `now` ENJEKTE edilir (duvar-saati determinizm sızıntısı yok); asOf zaten request.asOfDate'tedir.
+   *
+   * @remarks
+   * Çağrıldığı yerler:
+   * - InterestEngineService.calculate() → orkestratör (audit ile).
+   * - (gelecek) preview / case_balance_view projection → audit'siz saf hesap (D-E).
+   */
+  computeBalance(
+    request: CalculationRequest,
+    rates: RateEntry[],
+    now: string,
+  ): CalculationResult {
     // 1. Validate input & generate hash
     this.validateRequest(request);
     const inputHash = generateInputHash(request);
@@ -150,7 +180,7 @@ export class InterestEngineService {
     // 11. Generate result
     const result: CalculationResult = {
       caseId: request.caseId,
-      calculatedAt: new Date().toISOString(),
+      calculatedAt: now,
       asOfDate: request.asOfDate,
       totalInterest,
       totalDue,
@@ -176,18 +206,7 @@ export class InterestEngineService {
       strategyUsed: strategy?.name,
     };
 
-    // 12. Write audit record
-    const auditLogId = await this.writeAuditRecord(
-      request,
-      result,
-      allSegments,
-      allocationResult?.steps,
-      rates,
-      tenantId,
-      userId,
-    );
-    result.auditLogId = auditLogId;
-
+    // computeBalance SAF: audit YAZMAZ; auditLogId='' döner (calculate() orkestratörü doldurur).
     return result;
   }
 
