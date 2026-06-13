@@ -9,6 +9,7 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
+      TZ: UTC # legal-time hijyen: faiz TZ-invariant (PR-3); UTC varsayımını kilitler
       DATABASE_URL: ${DATABASE_URL}
       JWT_SECRET: ${JWT_SECRET}
       PORT: 8080
