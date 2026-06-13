@@ -46,5 +46,9 @@ project/packages/types/src/**/*.js.map
 # Archive - eski proje dosyaları
 _archive/
 
+# DB backup dumps (yerel geri-dönüş noktaları — taşındı: project/apps/api/backups/ignored/; asla commit edilmez)
+*.dump
+project/apps/api/backups/ignored/
+
 # Lock files (opsiyonel - büyük dosyalar)
 # pnpm-lock.yaml
