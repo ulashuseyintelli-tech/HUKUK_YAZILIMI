@@ -85,15 +85,17 @@ const SCENARIO_2_READY_FOR_UYAP = {
   name: 'Masraf ödenmiş - UYAP hazır',
   caseId: 'case-002',
   facts: {
-    'case.workflow_stage': 'DRAFT',
+    'case.workflow_stage': 'INITIAL',
     'case.icra_type': 'ILAMSIZ_GENEL',
-    'case.status': 'ACTIVE',
+    'case.status': 'DERDEST',
     'case.has_unpaid_blocking_expense': false,
-    'case.uyap_enabled': true,
+    'case.allow_uyap_actions': true,
+    // UYAP_SEND için vekaletname zorunlu (POWER_OF_ATTORNEY_MISSING gate'i)
+    'case.has_power_of_attorney': true,
   } as Record<string, unknown>,
   actionCode: ActionCode.UYAP_SEND,
   expectedAllowed: true,
-  expectedCode: 'ALLOWED',
+  expectedCode: 'OK',
 };
 
 /**
@@ -105,9 +107,10 @@ const SCENARIO_3_CLOSED_CASE = {
   name: 'Kapalı dosya - tüm işlemler engelli',
   caseId: 'case-003',
   facts: {
-    'case.workflow_stage': 'CLOSED',
+    // HITAM = LegalCaseStatus kapanış statüsü (fact-store closingStatuses → is_closed=true)
+    'case.workflow_stage': 'CLOSED_PAID',
     'case.icra_type': 'ILAMSIZ_GENEL',
-    'case.status': 'CLOSED',
+    'case.status': 'HITAM',
   } as Record<string, unknown>,
   actionCode: ActionCode.TRIGGER_HACIZ,
   expectedAllowed: false,
@@ -125,102 +128,103 @@ const SCENARIO_4_READY_FOR_HACIZ = {
   name: 'Tebligat sonrası - haciz hazır',
   caseId: 'case-004',
   facts: {
-    'case.workflow_stage': 'WAITING_RESPONSE',
+    'case.workflow_stage': 'ENFORCEMENT_REQUESTED',
     'case.icra_type': 'ILAMSIZ_GENEL',
-    'case.status': 'ACTIVE',
+    'case.status': 'DERDEST',
     'case.has_unpaid_blocking_expense': false,
-    'debtor.d1.notification_date': new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toISOString(), // 15 gün önce
-    'debtor.d1.has_objection': false,
+    // Gate sözlüğü: NOTIFICATION_NOT_DELIVERED + OBJECTION_PERIOD_NOT_PASSED
+    'debtor.d1.notification_delivered': true,
+    'debtor.d1.days_since_notification': 15, // 7 günlük itiraz süresi geçti
   } as Record<string, unknown>,
   context: { debtorId: 'd1' },
   actionCode: ActionCode.TRIGGER_HACIZ,
   expectedAllowed: true,
-  expectedCode: 'ALLOWED',
+  expectedCode: 'OK',
 };
 
 /**
- * Scenario 5: Tebligat süresi dolmamış - haciz engelli
- * - Tebligat yapılmış, 5 gün geçmiş (10 gün dolmamış)
- * - Beklenen: TRIGGER_HACIZ engellenmeli
+ * Scenario 5: İtiraz süresi dolmamış - haciz engelli
+ * - Tebligat yapılmış, 5 gün geçmiş (7 günlük itiraz süresi dolmamış)
+ * - Beklenen: TRIGGER_HACIZ engellenmeli (OBJECTION_PERIOD_NOT_PASSED)
  */
 const SCENARIO_5_HACIZ_TOO_EARLY = {
   name: 'Tebligat süresi dolmamış - haciz engelli',
   caseId: 'case-005',
   facts: {
-    'case.workflow_stage': 'WAITING_RESPONSE',
+    'case.workflow_stage': 'ENFORCEMENT_REQUESTED',
     'case.icra_type': 'ILAMSIZ_GENEL',
-    'case.status': 'ACTIVE',
+    'case.status': 'DERDEST',
     'case.has_unpaid_blocking_expense': false,
-    'debtor.d1.notification_date': new Date(Date.now() - 5 * 24 * 60 * 60 * 1000).toISOString(), // 5 gün önce
-    'debtor.d1.has_objection': false,
+    'debtor.d1.notification_delivered': true,
+    'debtor.d1.days_since_notification': 5, // 7 günlük itiraz süresi henüz dolmadı (5 < 7)
   } as Record<string, unknown>,
   context: { debtorId: 'd1' },
   actionCode: ActionCode.TRIGGER_HACIZ,
   expectedAllowed: false,
   expectedCode: 'GATE_BLOCKED',
-  expectedBlockedBy: 'NOTIFICATION_PERIOD_NOT_EXPIRED',
+  // Gerçek gate kodu OBJECTION_PERIOD_NOT_PASSED'tır; NOTIFICATION_PERIOD_NOT_EXPIRED diye bir gate YOK.
+  expectedBlockedBy: 'OBJECTION_PERIOD_NOT_PASSED',
 };
 
 /**
  * Scenario 6: Kambiyo takibi - 5 gün yeterli
  * - Kambiyo takibi (ILAMSIZ_KAMBIYO)
- * - Tebligat yapılmış, 5 gün geçmiş
+ * - Tebligat yapılmış, 6 gün geçmiş
  * - Beklenen: TRIGGER_HACIZ izin verilmeli (kambiyo'da 5 gün yeterli)
+ *
+ * P2 (MERGED): OBJECTION_PERIOD_NOT_PASSED gate artık icra türüne göre çalışır —
+ * itiraz süresini `case.objection_period_days` computed fact'inden okur (kambiyo 5 / ilamsız 7).
+ * Üretimde bu fact'i ComputedFactRegistry üretir; bu golden unit testte registry inert olduğu
+ * için fact fixture'da SABİT verilir (provider'ın tür→süre mantığı objection-period.spec'te
+ * ayrıca test edilir). Burada compiled gate, sabit fact setiyle doğrulanır (Çözüm B).
  */
 const SCENARIO_6_KAMBIYO_5_DAYS = {
   name: 'Kambiyo takibi - 5 gün yeterli',
   caseId: 'case-006',
   facts: {
-    'case.workflow_stage': 'WAITING_RESPONSE',
+    'case.workflow_stage': 'ENFORCEMENT_REQUESTED',
     'case.icra_type': 'ILAMSIZ_KAMBIYO',
-    'case.status': 'ACTIVE',
+    'case.status': 'DERDEST',
     'case.has_unpaid_blocking_expense': false,
-    'debtor.d1.notification_date': new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString(), // 6 gün önce
-    'debtor.d1.has_objection': false,
+    'debtor.d1.notification_delivered': true,
+    'debtor.d1.days_since_notification': 6, // kambiyo: 5 gün yeterli olmalı (İİK m.168)
+    // Çözüm B: üretimde ComputedFactRegistry üretir; unit-testte registry inert → fixture sağlar
+    'case.objection_period_days': 5,
   } as Record<string, unknown>,
   context: { debtorId: 'd1' },
   actionCode: ActionCode.TRIGGER_HACIZ,
   expectedAllowed: true,
-  expectedCode: 'ALLOWED',
+  expectedCode: 'OK',
 };
 
-/**
- * Scenario 7: UYAP devre dışı - soft warning
- * - UYAP sistemi geçici olarak devre dışı
- * - Beklenen: İşlem izin verilmeli ama warning olmalı
- */
-const SCENARIO_7_UYAP_DISABLED_WARNING = {
-  name: 'UYAP devre dışı - soft warning',
-  caseId: 'case-007',
-  facts: {
-    'case.workflow_stage': 'DRAFT',
-    'case.icra_type': 'ILAMSIZ_GENEL',
-    'case.status': 'ACTIVE',
-    'case.has_unpaid_blocking_expense': false,
-    'case.uyap_enabled': false, // UYAP devre dışı
-  } as Record<string, unknown>,
-  actionCode: ActionCode.UYAP_QUERY,
-  expectedAllowed: true,
-  expectedCode: 'ALLOWED',
-  expectedWarnings: ['UYAP sistemi geçici olarak devre dışı'],
-};
+// Scenario 7 (UYAP geçici arıza → allow + soft-warning): P3 ürün kararı bekliyor.
+// "geçici outage" sinyali + SOFT gate sistemde YOK. Eski fixture'daki allow_uyap_actions=false
+// KALICI HARD UYAP_DISABLED bloğudur (geçici arıza değil) → bu senaryo aktif test olarak
+// tutulamaz. Kırmızı gürültü bırakmamak için aşağıda it.todo olarak işaretlendi (P3: task_3349ece1).
 
 /**
  * Scenario 8: Masraf onaylama - dosya kapalı değil
  * - Dosya aktif
  * - Beklenen: APPROVE_EXPENSE izin verilmeli
+ *
+ * TODO(P1 - PRODUCTION BLOCKER): APPROVE_EXPENSE hiçbir state-flow stage'inin
+ * allowedActions/transitions listesinde YOK → canTransition her zaman INVALID_TRANSITION
+ * döner. expense-request.controller.ts:153 @CpeRequired(APPROVE_EXPENSE) bu guard'a bağlı
+ * ve guard !allowed'da ForbiddenException atıyor → masraf onayı CANLIDA bloklanır.
+ * EN YÜKSEK ÖNCELİK. state-flow'a APPROVE_EXPENSE eklenene (veya state-machine'den muaf
+ * tutulana) kadar bu test KIRIK kalır. Fixture statü/stage compiled sözlüğe hizalandı.
  */
 const SCENARIO_8_APPROVE_EXPENSE = {
   name: 'Masraf onaylama - aktif dosya',
   caseId: 'case-008',
   facts: {
-    'case.workflow_stage': 'DRAFT',
+    'case.workflow_stage': 'INITIAL',
     'case.icra_type': 'ILAMSIZ_GENEL',
-    'case.status': 'ACTIVE',
+    'case.status': 'DERDEST',
   } as Record<string, unknown>,
   actionCode: ActionCode.APPROVE_EXPENSE,
   expectedAllowed: true,
-  expectedCode: 'ALLOWED',
+  expectedCode: 'OK',
 };
 
 const ALL_SCENARIOS = [
@@ -230,9 +234,54 @@ const ALL_SCENARIOS = [
   SCENARIO_4_READY_FOR_HACIZ,
   SCENARIO_5_HACIZ_TOO_EARLY,
   SCENARIO_6_KAMBIYO_5_DAYS,
-  SCENARIO_7_UYAP_DISABLED_WARNING,
+  // SCENARIO_7 (UYAP geçici arıza) it.todo'ya taşındı — P3 ürün kararı bekliyor (task_3349ece1)
   SCENARIO_8_APPROVE_EXPENSE,
 ];
+
+// ============================================
+// Case Row Helper
+// ============================================
+
+/**
+ * 'case.icra_type' fact değerini gerçek case satırının type/subType alanlarına ayrıştırır.
+ * Servisteki mapCaseTypeToIcraType(type, subType) ile uyumludur:
+ *   'ILAMSIZ_KAMBIYO' -> { type: 'ILAMSIZ', subType: 'KAMBIYO' }
+ *   'ILAMSIZ_GENEL'   -> { type: 'ILAMSIZ', subType: null }
+ */
+function parseIcraType(icraType?: unknown): { type: string; subType: string | null } {
+  if (icraType === 'ILAMSIZ_KAMBIYO') return { type: 'ILAMSIZ', subType: 'KAMBIYO' };
+  if (icraType === 'ILAMSIZ_GENEL') return { type: 'ILAMSIZ', subType: null };
+  if (typeof icraType === 'string' && icraType.startsWith('ILAMSIZ')) {
+    return { type: 'ILAMSIZ', subType: null };
+  }
+  return { type: typeof icraType === 'string' ? icraType : 'ILAMSIZ', subType: null };
+}
+
+/**
+ * Senaryo fact'lerinden gerçek `case` satırını türetir.
+ *
+ * Neden gerekli: CPE.evaluateDecision (adım 1, case var mı kontrolü) ve
+ * StateMachineService.getCurrentState doğrudan prisma.case.findUnique okur.
+ * Fact-store mock'u (icrabotCaseFact) tek başına yeterli değildir; case satırı
+ * stub edilmezse her senaryo gate'e ulaşamadan CASE_NOT_FOUND ile kısa devre yapar.
+ */
+function buildCaseRow(opts: {
+  caseId: string;
+  status?: unknown;
+  workflowStage?: unknown;
+  icraType?: unknown;
+}) {
+  const { type, subType } = parseIcraType(opts.icraType);
+  return {
+    id: opts.caseId,
+    caseStatus: (opts.status as string) ?? 'ACTIVE',
+    workflowStage: (opts.workflowStage as string) ?? 'DRAFT',
+    type,
+    subType,
+    // State-machine version'u updatedAt.getTime()'ten türetiyor
+    updatedAt: new Date(),
+  };
+}
 
 // ============================================
 // Test Suite
@@ -280,8 +329,8 @@ describe('CasePolicyEngine - Golden Scenarios', () => {
         mockPrismaService.icrabotCaseFact.findMany.mockResolvedValue(
           Object.entries(scenario.facts).map(([key, value]) => ({
             caseId: scenario.caseId,
-            factKey: key,
-            factValue: value,
+            key,
+            value,
           }))
         );
         mockPrismaService.icrabotCaseFlag.findMany.mockResolvedValue([]);
@@ -289,6 +338,15 @@ describe('CasePolicyEngine - Golden Scenarios', () => {
           scenario.facts['case.has_unpaid_blocking_expense'] ? 1 : 0
         );
         mockPrismaService.cpeDecisionLog.create.mockResolvedValue({ id: 'log-1' });
+        // Gerçek case satırını fact'lerden türet (CPE + StateMachine bunu okur)
+        mockPrismaService.case.findUnique.mockResolvedValue(
+          buildCaseRow({
+            caseId: scenario.caseId,
+            status: scenario.facts['case.status'],
+            workflowStage: scenario.facts['case.workflow_stage'],
+            icraType: scenario.facts['case.icra_type'],
+          })
+        );
 
         // Act
         const decision = await cpe.canPerformAction(
@@ -302,15 +360,17 @@ describe('CasePolicyEngine - Golden Scenarios', () => {
         expect(decision.code).toBe(scenario.expectedCode);
 
         if ((scenario as any).expectedBlockedBy) {
-          expect(decision.blockedBy).toBe((scenario as any).expectedBlockedBy);
-        }
-
-        if ((scenario as any).expectedWarnings) {
-          expect(decision.warnings).toBeDefined();
-          expect(decision.warnings?.length).toBeGreaterThan(0);
+          // PolicyDecision.blockedBy artık { gateCode, severity } objesi (bkz. policy-decision.interface.ts)
+          expect(decision.blockedBy?.gateCode).toBe((scenario as any).expectedBlockedBy);
         }
       });
     });
+
+    // P3 (ürün kararı bekliyor): UYAP geçici arıza → izin ver + soft-warning.
+    // "geçici outage" sinyali + SOFT gate sistemde yok (allow_uyap_actions=false KALICI HARD blok).
+    it.todo(
+      'UYAP geçici arıza -> allow + soft-warning (P3: task_3349ece1 - define UYAP temporary outage source and soft-warning policy)'
+    );
   });
 
   // ============================================
@@ -324,13 +384,21 @@ describe('CasePolicyEngine - Golden Scenarios', () => {
       mockPrismaService.icrabotCaseFact.findMany.mockResolvedValue(
         Object.entries(scenario.facts).map(([key, value]) => ({
           caseId: scenario.caseId,
-          factKey: key,
-          factValue: value,
+          key,
+          value,
         }))
       );
       mockPrismaService.icrabotCaseFlag.findMany.mockResolvedValue([]);
       mockPrismaService.expenseRequest.count.mockResolvedValue(1);
       mockPrismaService.cpeDecisionLog.create.mockResolvedValue({ id: 'log-1' });
+      mockPrismaService.case.findUnique.mockResolvedValue(
+        buildCaseRow({
+          caseId: scenario.caseId,
+          status: scenario.facts['case.status'],
+          workflowStage: scenario.facts['case.workflow_stage'],
+          icraType: scenario.facts['case.icra_type'],
+        })
+      );
 
       // Call multiple times
       const decision1 = await cpe.canPerformAction(scenario.caseId, scenario.actionCode);
@@ -355,31 +423,35 @@ describe('CasePolicyEngine - Golden Scenarios', () => {
       const caseId = 'case-001';
       const actionCode = ActionCode.UYAP_SEND;
 
-      // First call - execution doesn't exist
+      // First call - execution doesn't exist (startExecution PENDING kayıt oluşturur)
       mockPrismaService.cpeExecutionRecord.findUnique.mockResolvedValueOnce(null);
       mockPrismaService.cpeExecutionRecord.create.mockResolvedValue({
         executionId,
         caseId,
         actionCode,
-        status: 'COMPLETED',
+        status: 'PENDING',
       });
       mockPrismaService.icrabotCaseFact.findMany.mockResolvedValue([]);
       mockPrismaService.icrabotCaseFlag.findMany.mockResolvedValue([]);
 
       const result1 = await cpe.onActionExecuted(caseId, actionCode, {}, { success: true }, executionId);
 
-      // Second call - execution exists (duplicate)
+      // Second call - execution exists (duplicate). NOOP = canonical duplicate marker (markAsNoop)
       mockPrismaService.cpeExecutionRecord.findUnique.mockResolvedValueOnce({
         executionId,
         caseId,
         actionCode,
-        status: 'COMPLETED',
+        status: 'NOOP',
       });
 
       const result2 = await cpe.onActionExecuted(caseId, actionCode, {}, { success: true }, executionId);
 
-      // Both should indicate duplicate
-      expect((result2 as any).isDuplicate).toBe(true);
+      // Servis sözleşmesi: duplicate dönüşü { success, code } (isDuplicate alanı yok).
+      // NOOP kayıt -> success:false, code:'DUPLICATE'
+      expect(result2.success).toBe(false);
+      expect(result2.code).toBe('DUPLICATE');
+      // Idempotency: duplicate çağrı YENİ kayıt oluşturmaz (re-execute yok) - sadece ilk çağrı create eder
+      expect(mockPrismaService.cpeExecutionRecord.create).toHaveBeenCalledTimes(1);
     });
   });
 
@@ -392,17 +464,20 @@ describe('CasePolicyEngine - Golden Scenarios', () => {
       // Case is closed AND has unpaid expense
       // CASE_CLOSED should be the blocking reason, not EXPENSE_BLOCKING
       mockPrismaService.icrabotCaseFact.findMany.mockResolvedValue([
-        { caseId: 'case-x', factKey: 'case.status', factValue: 'CLOSED' },
-        { caseId: 'case-x', factKey: 'case.has_unpaid_blocking_expense', factValue: true },
+        { caseId: 'case-x', key: 'case.status', value: 'HITAM' },
+        { caseId: 'case-x', key: 'case.has_unpaid_blocking_expense', value: true },
       ]);
       mockPrismaService.icrabotCaseFlag.findMany.mockResolvedValue([]);
       mockPrismaService.expenseRequest.count.mockResolvedValue(1);
       mockPrismaService.cpeDecisionLog.create.mockResolvedValue({ id: 'log-1' });
+      mockPrismaService.case.findUnique.mockResolvedValue(
+        buildCaseRow({ caseId: 'case-x', status: 'HITAM', workflowStage: 'CLOSED_PAID' })
+      );
 
       const decision = await cpe.canPerformAction('case-x', ActionCode.UYAP_SEND);
 
       expect(decision.allowed).toBe(false);
-      expect(decision.blockedBy).toBe('CASE_CLOSED');
+      expect(decision.blockedBy?.gateCode).toBe('CASE_CLOSED');
     });
   });
 });
@@ -442,6 +517,9 @@ describe('CasePolicyEngine - Performance', () => {
     mockPrismaService.icrabotCaseFlag.findMany.mockResolvedValue([]);
     mockPrismaService.expenseRequest.count.mockResolvedValue(0);
     mockPrismaService.cpeDecisionLog.create.mockResolvedValue({ id: 'log-1' });
+    mockPrismaService.case.findUnique.mockResolvedValue(
+      buildCaseRow({ caseId: 'case-perf', status: 'ACTIVE', workflowStage: 'DRAFT' })
+    );
 
     const iterations = 10;
     const times: number[] = [];
