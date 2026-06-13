@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { Decimal } from '@prisma/client/runtime/library';
+import { Prisma } from '@prisma/client';
 
 // TBK 100 Allocator - TEK KAYNAK
 import { 
@@ -505,12 +506,64 @@ export class SummaryEngineService implements OnModuleInit {
       sourceType?: string;
     } = {},
   ): Promise<{ ledgerEntry: any; allocations: any[] }> {
-    if (!this.rules?.ledger_allocation?.enabled) {
-      throw new Error('Tahsilat dağıtımı devre dışı');
+    const result = await this.prisma.$transaction((tx) =>
+      this.allocatePaymentToLedgerInTx(tx, tenantId, caseId, amount, options),
+    );
+
+    // Endpoint eski sözleşmesini koru: dağıtılamazsa hata fırlat.
+    if (!result.allocated) {
+      if (result.reason === 'LEDGER_DISABLED') {
+        throw new Error('Tahsilat dağıtımı devre dışı');
+      }
+      // NO_CLAIM_ITEMS: S5(i) — kalem yoksa ledger yazılmaz.
+      throw new Error('Dosyada aktif alacak kalemi yok; tahsilat ledger\'a dağıtılamadı');
     }
 
-    // Dosya ve aktif kalemleri getir
-    const caseRecord = await this.prisma.case.findFirst({
+    return {
+      ledgerEntry: result.ledgerEntry,
+      allocations: result.allocations,
+    };
+  }
+
+  /**
+   * G3a — Tahsilatı KANONİK ledger'a (LedgerEntry + LedgerAllocation) dağıtır.
+   * tx-AWARE: çağıranın transaction'ında çalışır (kendi $transaction'ını AÇMAZ),
+   * böylece Collection create ile aynı atomik işleme girer.
+   *
+   * S5(i): case'te ACTIVE ClaimItem YOKSA hiçbir yazma YAPILMAZ → { allocated:false,
+   * reason:'NO_CLAIM_ITEMS' } döner (çağıran intake'i korur + diagnostic loglar).
+   * P-0 sıra notu: dağıtım sırası TBK100Allocator'ın mevcut uyguladığı sıradır;
+   * P-0 düzeltmesi ayrı gate (PR-AO).
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - SummaryEngineService.recordPayment() → POST /summary-engine/case/:caseId/payment (deprecated/internal, S4)
+   * - CollectionService.create() → POST /collections (G3a forward write, aynı tx)
+   * </remarks>
+   */
+  async allocatePaymentToLedgerInTx(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    caseId: string,
+    amount: number,
+    options: {
+      entryDate?: Date;
+      description?: string;
+      referenceNo?: string;
+      sourceType?: string;
+    } = {},
+  ): Promise<{
+    allocated: boolean;
+    reason?: 'NO_CLAIM_ITEMS' | 'LEDGER_DISABLED';
+    ledgerEntry: any | null;
+    allocations: any[];
+  }> {
+    if (!this.rules?.ledger_allocation?.enabled) {
+      return { allocated: false, reason: 'LEDGER_DISABLED', ledgerEntry: null, allocations: [] };
+    }
+
+    // Dosya ve aktif kalemleri getir (çağıranın tx'i ile)
+    const caseRecord = await tx.case.findFirst({
       where: { id: caseId, tenantId },
       include: {
         claimItems: {
@@ -525,9 +578,13 @@ export class SummaryEngineService implements OnModuleInit {
     }
 
     const items = caseRecord.claimItems;
-    let allocations: Array<{ claimItemId: string; amount: number; allocationOrder: number }> = [];
+    if (items.length === 0) {
+      // S5(i): mahsup edilecek kalem yok → ledger YAZMA, diagnostic döndür.
+      return { allocated: false, reason: 'NO_CLAIM_ITEMS', ledgerEntry: null, allocations: [] };
+    }
 
-    // TBK 100 Allocator varsa kullan (TEK KAYNAK)
+    let allocations: Array<{ claimItemId: string; amount: number; allocationOrder: number }> = [];
+    // TBK 100 Allocator varsa kullan (TEK KAYNAK). Sıra = allocator'ın mevcut hâli (PR-AO ayrı).
     if (this.tbk100Allocator) {
       allocations = this.allocateWithTBK100(items, amount);
     } else {
@@ -536,51 +593,42 @@ export class SummaryEngineService implements OnModuleInit {
       allocations = this.allocateLegacy(items, amount);
     }
 
-    // Transaction ile kaydet
-    const result = await this.prisma.$transaction(async (tx) => {
-      // Ledger entry oluştur
-      const ledgerEntry = await tx.ledgerEntry.create({
-        data: {
-          tenantId,
-          caseId,
-          entryType: 'PAYMENT',
-          amount,
-          currency: caseRecord.currency || 'TRY',
-          entryDate: options.entryDate || new Date(),
-          description: options.description,
-          referenceNo: options.referenceNo,
-          sourceType: options.sourceType,
-          status: 'CONFIRMED',
-          allocations: {
-            create: allocations.map(a => ({
-              claimItemId: a.claimItemId,
-              amount: a.amount,
-              allocationOrder: a.allocationOrder,
-            })),
-          },
+    const ledgerEntry = await tx.ledgerEntry.create({
+      data: {
+        tenantId,
+        caseId,
+        entryType: 'PAYMENT',
+        amount,
+        currency: caseRecord.currency || 'TRY',
+        entryDate: options.entryDate || new Date(),
+        description: options.description,
+        referenceNo: options.referenceNo,
+        sourceType: options.sourceType,
+        status: 'CONFIRMED',
+        allocations: {
+          create: allocations.map((a) => ({
+            claimItemId: a.claimItemId,
+            amount: a.amount,
+            allocationOrder: a.allocationOrder,
+          })),
         },
-        include: { allocations: true },
-      });
-
-      // ClaimItem'ların collectedAmount'larını güncelle
-      for (const allocation of allocations) {
-        await tx.claimItem.update({
-          where: { id: allocation.claimItemId },
-          data: {
-            collectedAmount: {
-              increment: allocation.amount,
-            },
-          },
-        });
-      }
-
-      return ledgerEntry;
+      },
+      include: { allocations: true },
     });
 
-    return {
-      ledgerEntry: result,
-      allocations: result.allocations,
-    };
+    // ClaimItem'ların collectedAmount'larını güncelle
+    for (const allocation of allocations) {
+      await tx.claimItem.update({
+        where: { id: allocation.claimItemId },
+        data: {
+          collectedAmount: {
+            increment: allocation.amount,
+          },
+        },
+      });
+    }
+
+    return { allocated: true, ledgerEntry, allocations: ledgerEntry.allocations };
   }
 
   /**
