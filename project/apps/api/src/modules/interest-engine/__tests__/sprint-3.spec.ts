@@ -541,7 +541,7 @@ describe('Sprint-3: Allocation Engine', () => {
       );
     });
 
-    it('Property 3: interest allocated before costs', () => {
+    it('Property 3 (P-0): costs allocated before interest', () => {
       fc.assert(
         fc.property(
           fc.record({
@@ -559,9 +559,10 @@ describe('Sprint-3: Allocation Engine', () => {
             const interestAlloc = result.allocations.find(a => a.category === 'INTEREST');
             const harcAlloc = result.allocations.find(a => a.category === AncillaryType.HARC);
 
-            // If harc received any allocation, interest must be fully paid
-            if (harcAlloc && harcAlloc.amountAllocated > 0) {
-              expect(interestAlloc?.amountAfter).toBe(0);
+            // P-0: masraf faizden önce. Faiz herhangi bir tahsis aldıysa,
+            // masraf (harc) tamamen ödenmiş olmalı.
+            if (interestAlloc && interestAlloc.amountAllocated > 0) {
+              expect(harcAlloc?.amountAfter).toBe(0);
             }
 
             return true;
@@ -968,7 +969,7 @@ describe('Sprint-3: Allocation Engine', () => {
         [AncillaryType.VEKALET_UCRETI]: 2000,
       });
 
-      // Payment enough for interest + some costs but not all
+      // Payment enough for all costs (harc+vekalet) + partial interest, not principal
       const result = tbk100Allocator.allocate(7000, debtState);
 
       const interestAlloc = result.allocations.find(a => a.category === 'INTEREST');
@@ -976,12 +977,16 @@ describe('Sprint-3: Allocation Engine', () => {
       const vekaletAlloc = result.allocations.find(a => a.category === AncillaryType.VEKALET_UCRETI);
       const principalAlloc = result.allocations.find(a => a.category === 'PRINCIPAL');
 
-      // Interest fully paid
-      expect(interestAlloc?.amountAfter).toBe(0);
-      // Harc fully paid
+      // P-0: MASRAF (harc 1000 + vekalet 2000, ikisi de costs map'inde) → FAİZ → ANAPARA.
+      // 7000 = 1000 + 2000 (masraf) + 4000 (faiz, 5000'den) → anapara'ya ulaşmaz.
+      // Harc fully paid (masraf)
       expect(harcAlloc?.amountAfter).toBe(0);
-      // Vekalet partially paid (1000 remaining from 7000 - 5000 - 1000)
-      expect(vekaletAlloc?.amountAllocated).toBe(1000);
+      // Vekalet fully paid (masraf — P-0'da faizden önce)
+      expect(vekaletAlloc?.amountAllocated).toBe(2000);
+      expect(vekaletAlloc?.amountAfter).toBe(0);
+      // Interest partially paid (4000 of 5000)
+      expect(interestAlloc?.amountAllocated).toBe(4000);
+      expect(interestAlloc?.amountAfter).toBe(1000);
       // Principal not touched
       expect(principalAlloc?.amountAllocated).toBe(0);
     });

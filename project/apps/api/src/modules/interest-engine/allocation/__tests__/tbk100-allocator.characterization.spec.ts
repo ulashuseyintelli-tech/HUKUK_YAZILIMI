@@ -44,7 +44,7 @@ describe('TBK100AllocatorService characterization (messy/float-dust baseline)', 
     expect(r.newDebtState.accruedInterest).toBe(0);
   });
 
-  it('S2: multi-cost + multi-ancillary partial → VEKALET 250.255 normalize 250.26, amountAfter 49.86', () => {
+  it('S2 (P-0): MASRAF→FER\'İ→FAİZ; payment masraf+VEKALET+CEK kapatır, faiz kısmi (49.87 kalır)', () => {
     const r = svc.allocate(
       800.5,
       svc.createDebtState(
@@ -55,16 +55,24 @@ describe('TBK100AllocatorService characterization (messy/float-dust baseline)', 
       ),
     );
 
+    // P-0 sırası: HARC 333.33 + TEBLIGAT 166.67 (masraf) → VEKALET 250.26 + CEK 0.01
+    // (fer'i) → FAİZ kalan 50.23 (100.1'den) → ANAPARA'ya ulaşmaz.
     const vekalet = find(r, AncillaryType.VEKALET_UCRETI)!;
     expect(vekalet.amountBefore).toBe(250.26); // 250.255 → 250.26
-    expect(vekalet.amountAllocated).toBe(200.4);
-    expect(vekalet.amountAfter).toBe(49.86); // 250.26 - 200.4 (dust YOK)
+    expect(vekalet.amountAllocated).toBe(250.26); // P-0: fer'i faizden önce tam ödenir
+    expect(vekalet.amountAfter).toBe(0);
+
+    const interest = find(r, 'INTEREST')!;
+    expect(interest.amountBefore).toBe(100.1);
+    expect(interest.amountAllocated).toBe(50.23); // 800.5 - 500 - 250.26 - 0.01
+    expect(interest.amountAfter).toBe(49.87);
 
     expect(r.newDebtState.costs.get(AncillaryType.HARC)).toBe(0);
     expect(r.newDebtState.costs.get(AncillaryType.TEBLIGAT_MASRAFI)).toBe(0);
-    expect(r.newDebtState.ancillaries.get(AncillaryType.VEKALET_UCRETI)).toBe(49.86);
-    expect(r.newDebtState.ancillaries.get(AncillaryType.CEK_TAZMINATI)).toBe(0.005); // ödemeye ulaşmadı, dokunulmadı (raw)
-    expect(r.newDebtState.principal).toBe(5000.55); // anaparaya ulaşmadı (dokunulmadı, raw)
+    expect(r.newDebtState.ancillaries.get(AncillaryType.VEKALET_UCRETI)).toBe(0); // tam ödendi
+    expect(r.newDebtState.ancillaries.get(AncillaryType.CEK_TAZMINATI)).toBe(0); // 0.01 ödendi
+    expect(r.newDebtState.accruedInterest).toBe(49.87); // faiz kısmi
+    expect(r.newDebtState.principal).toBe(5000.55); // anaparaya ulaşmadı (raw)
     expect(r.remainingPayment).toBe(0);
   });
 
