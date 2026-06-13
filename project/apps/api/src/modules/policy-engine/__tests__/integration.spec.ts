@@ -12,6 +12,7 @@ import { INestApplication } from '@nestjs/common';
 import { CasePolicyEngine } from '../case-policy-engine.service';
 import { FactStoreService } from '../fact-store/fact-store.service';
 import { ComputedFactRegistry } from '../fact-store/computed-fact-registry';
+import { UyapAvailabilityService } from '../fact-store/uyap-availability.service';
 import { StateMachineService } from '../state-machine/state-machine.service';
 import { GateCheckerService } from '../gate-checker/gate-checker.service';
 import { RuleEngineService } from '../rule-engine/rule-engine.service';
@@ -90,6 +91,7 @@ describe('CasePolicyEngine - Integration Tests', () => {
         CasePolicyEngine,
         FactStoreService,
         ComputedFactRegistry,
+        UyapAvailabilityService,
         StateMachineService,
         GateCheckerService,
         RuleEngineService,

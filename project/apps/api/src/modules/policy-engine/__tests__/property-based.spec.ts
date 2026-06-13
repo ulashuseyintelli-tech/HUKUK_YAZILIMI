@@ -15,6 +15,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { FactStoreService } from '../fact-store/fact-store.service';
 import { ComputedFactRegistry } from '../fact-store/computed-fact-registry';
+import { UyapAvailabilityService } from '../fact-store/uyap-availability.service';
 import { StateMachineService } from '../state-machine/state-machine.service';
 import { GateCheckerService } from '../gate-checker/gate-checker.service';
 import { DecisionLoggerService } from '../decision-logger/decision-logger.service';
@@ -357,7 +358,7 @@ describe('Property 5: Computed Fact Dependency Resolution', () => {
 
   beforeEach(async () => {
     const module = await Test.createTestingModule({
-      providers: [ComputedFactRegistry],
+      providers: [ComputedFactRegistry, UyapAvailabilityService],
     }).compile();
 
     registry = module.get<ComputedFactRegistry>(ComputedFactRegistry);

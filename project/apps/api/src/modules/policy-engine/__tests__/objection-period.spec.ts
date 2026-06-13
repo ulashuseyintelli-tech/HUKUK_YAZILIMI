@@ -6,6 +6,7 @@
  * ve öneri-rule bu fact'i kullanır.
  */
 import { ComputedFactRegistry } from '../fact-store/computed-fact-registry';
+import { UyapAvailabilityService } from '../fact-store/uyap-availability.service';
 import { GateCheckerService } from '../gate-checker/gate-checker.service';
 import { ActionCode } from '../types/action-code.enum';
 import type { FactMap, FactValue } from '../fact-store';
@@ -15,7 +16,7 @@ describe('İtiraz süresi - case.objection_period_days (P2)', () => {
     let registry: ComputedFactRegistry;
 
     beforeEach(() => {
-      registry = new ComputedFactRegistry();
+      registry = new ComputedFactRegistry(new UyapAvailabilityService());
       registry.onModuleInit(); // built-in provider'ları kaydet
     });
 

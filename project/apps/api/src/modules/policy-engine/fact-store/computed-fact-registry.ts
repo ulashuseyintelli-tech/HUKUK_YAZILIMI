@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ActionContext } from '../types';
 import { FactMap, FactValue } from './fact-store.types';
 import { ComputedFactProvider, ProviderMetadata } from './computed-fact-provider.interface';
+import { UyapAvailabilityService } from './uyap-availability.service';
 
 /**
  * ComputedFactRegistry
@@ -20,6 +21,8 @@ export class ComputedFactRegistry implements OnModuleInit {
   
   /** Computed order (topologically sorted) */
   private computeOrder: string[] = [];
+
+  constructor(private readonly uyapAvailability: UyapAvailabilityService) {}
 
   onModuleInit() {
     // Register built-in providers
@@ -170,6 +173,9 @@ export class ComputedFactRegistry implements OnModuleInit {
     // İtiraz süresi (gün) - icra türüne göre (kambiyo 5 / ilamsız 7)
     this.register(new CaseObjectionPeriodDaysProvider());
 
+    // UYAP geçici arıza sinyali (P3) - ops feature-flag'inden gelir
+    this.register(new SystemUyapAvailableProvider(this.uyapAvailability));
+
     this.logger.log(`Registered ${this.providers.size} built-in providers`);
   }
 }
@@ -262,5 +268,26 @@ class CaseObjectionPeriodDaysProvider implements ComputedFactProvider {
     const subType = facts?.get('case.sub_type');
     const isKambiyo = type === 'ILAMSIZ' && subType === 'KAMBIYO';
     return isKambiyo ? 5 : 7;
+  }
+}
+
+/**
+ * UYAP sistemi şu an erişilebilir mi (P3 — geçici arıza sinyali).
+ *
+ * Kaynak: UyapAvailabilityService (ops feature-flag `UYAP_AVAILABLE`). GLOBAL/sistem
+ * seviyesi; per-case değil. Bu fact'i SOFT gate UYAP_TEMPORARILY_UNAVAILABLE (UYAP_QUERY →
+ * allow+warn) ve HARD gate UYAP_TEMPORARILY_UNAVAILABLE_SEND (UYAP_SEND → block) okur.
+ * Per-case KALICI kapatma `case.allow_uyap_actions` (UYAP_DISABLED) ile KARIŞTIRILMAZ.
+ *
+ * Daima boolean döner (asla undefined/null) → undefined-tetiklenmez gate semantiği korunur.
+ */
+class SystemUyapAvailableProvider implements ComputedFactProvider {
+  readonly factKey = 'system.uyap_available';
+  readonly dependsOn: string[] = [];
+
+  constructor(private readonly uyapAvailability: UyapAvailabilityService) {}
+
+  async compute(): Promise<boolean> {
+    return this.uyapAvailability.isUyapAvailable() === true;
   }
 }
