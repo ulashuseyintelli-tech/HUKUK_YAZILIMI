@@ -281,8 +281,10 @@ export class TemplateEngineService {
     
     // Alacak kalemleri - önce claimItems, yoksa dues, yoksa boş array
     const rawClaimItems = caseRecord.claimItems?.length > 0 ? caseRecord.claimItems : (caseRecord.dues?.length > 0 ? caseRecord.dues : []);
-    const claimItems = rawClaimItems.map((item: any) => ({ 
-      type: item.type || 'PRINCIPAL', 
+    const claimItems = rawClaimItems.map((item: any) => ({
+      // G1: kaynak ClaimItem ise alan `itemType`, Due ise `type`. İkisini de tanı,
+      // yoksa tüm kalemler PRINCIPAL'a yığılır (faiz/masraf 0 → yanlış belge).
+      type: item.type || item.itemType || 'PRINCIPAL',
       description: item.description || 'Asıl Alacak', 
       amount: Number(item.amount) || 0, 
       currency: item.currency || 'TRY', 
