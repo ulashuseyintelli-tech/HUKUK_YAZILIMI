@@ -31,7 +31,10 @@ export const CalculationRecordSchema = z.object({
   rateTableVersion: z.string(),
   engineVersion: z.string(),
   ruleVersion: z.string().optional(),
-  
+
+  // Interpretation profile (D-A PR-3) — pinned for replay/legal-report reproducibility
+  interpretationProfileId: z.string(),
+
   // Metadata
   mode: z.nativeEnum(CalculationMode),
   calculatedAt: z.string().datetime(),

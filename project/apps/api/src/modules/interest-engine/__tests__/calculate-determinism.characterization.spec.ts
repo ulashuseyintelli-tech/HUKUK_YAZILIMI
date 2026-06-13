@@ -29,7 +29,7 @@ import { SegmentReporterService } from '../reporter/segment-reporter.service';
 import { AuditWriterService } from '../audit/audit-writer.service';
 import { VersionPinningService } from '../version/version-pinning.service';
 import { RateEntry, RateSourceType } from '../rates/rate-entry.entity';
-import { CalculationRequest, GapPolicy, CalculationResult } from '../types/calculation.types';
+import { CalculationRequest, CalculationRequestSchema, GapPolicy, CalculationResult, DEFAULT_INTERPRETATION_PROFILE_ID } from '../types/calculation.types';
 import { ClaimBucket, InterestTypeCode } from '../types/domain.types';
 import { CalculationMode, RoundingMode, RoundingScope, SameDayPaymentRule } from '../types/common.types';
 
@@ -121,22 +121,55 @@ describe('InterestEngineService.calculate() — determinism + audit contract (ch
   });
 
   // ── PR-2: pure-split (computeBalance) sözleşmesi ───────────────────────────
-  it('7) computeBalance(fixedNow) deterministik + calculate() normalize-result ile uyumlu', () => {
+  it('7) computeBalance(fixedNow, profil) deterministik (saf + sabit → birebir)', () => {
     const fixedNow = '2025-08-15T10:00:00.000Z';
-    const cb1 = engine.computeBalance(buildRequest('cb-1'), rates, fixedNow);
-    const cb2 = engine.computeBalance(buildRequest('cb-1'), rates, fixedNow);
-    expect(cb1).toEqual(cb2); // saf + sabit now → tamamen birebir (calculatedAt dahil)
+    const cb1 = engine.computeBalance(buildRequest('cb-1'), rates, fixedNow, DEFAULT_INTERPRETATION_PROFILE_ID);
+    const cb2 = engine.computeBalance(buildRequest('cb-1'), rates, fixedNow, DEFAULT_INTERPRETATION_PROFILE_ID);
+    expect(cb1).toEqual(cb2);
   });
 
   it('7b) computeBalance saf çekirdeği calculate() ile aynı sonucu üretir (audit/now hariç)', async () => {
-    const cb = engine.computeBalance(buildRequest('cb-1b'), rates, '2025-08-15T10:00:00.000Z');
+    const cb = engine.computeBalance(buildRequest('cb-1b'), rates, '2025-08-15T10:00:00.000Z', DEFAULT_INTERPRETATION_PROFILE_ID);
     const r = await engine.calculate(buildRequest('cb-1b'), rates, TENANT);
     expect(normalize(cb)).toEqual(normalize(r));
   });
 
   it('8) computeBalance TEK BAŞINA audit YAZMAZ', async () => {
-    engine.computeBalance(buildRequest('cb-2'), rates, '2025-08-15T10:00:00.000Z');
+    engine.computeBalance(buildRequest('cb-2'), rates, '2025-08-15T10:00:00.000Z', DEFAULT_INTERPRETATION_PROFILE_ID);
     const records = await auditWriter.getRecordsForCase('cb-2', TENANT);
     expect(records).toHaveLength(0);
+  });
+
+  // ── PR-3: interpretationProfileId (engine-türetimli; hash + audit'e pinli) ──────────────
+  it('9) farklı interpretationProfileId → farklı inputHash', () => {
+    const now = '2025-08-15T10:00:00.000Z';
+    const hA = engine.computeBalance(buildRequest('p9'), rates, now, 'PROFILE_A').inputHash;
+    const hB = engine.computeBalance(buildRequest('p9'), rates, now, 'PROFILE_B').inputHash;
+    expect(hA).not.toBe(hB);
+  });
+
+  it('10) aynı interpretationProfileId → aynı inputHash (determinizm korunur)', () => {
+    const now = '2025-08-15T10:00:00.000Z';
+    const h1 = engine.computeBalance(buildRequest('p10'), rates, now, 'PROFILE_A').inputHash;
+    const h2 = engine.computeBalance(buildRequest('p10'), rates, now, 'PROFILE_A').inputHash;
+    expect(h1).toBe(h2);
+  });
+
+  it('11) audit record + result, calculate() türettiği profili (DEFAULT) taşır', async () => {
+    const r = await engine.calculate(buildRequest('p11'), rates, TENANT);
+    expect(r.interpretationProfileId).toBe(DEFAULT_INTERPRETATION_PROFILE_ID); // result echo
+    const rec = await auditWriter.getRecord(r.auditLogId);
+    expect(rec!.interpretationProfileId).toBe(DEFAULT_INTERPRETATION_PROFILE_ID); // audit pin
+  });
+
+  it('12) computeBalance interpretationProfileId olmadan çağrılamaz (TS-zorunlu)', () => {
+    // @ts-expect-error — interpretationProfileId ZORUNLU param; eksik 4. arg derleme hatası vermeli
+    const typecheck = () => engine.computeBalance(buildRequest('p12'), rates, '2025-08-15T10:00:00.000Z');
+    expect(typeof typecheck).toBe('function');
+  });
+
+  it('13) CalculationRequestSchema DEĞİŞMEDİ — profil request şemasında YOK (FE/API kırılmadı)', () => {
+    expect(() => CalculationRequestSchema.parse(buildRequest('p13'))).not.toThrow();
+    expect('interpretationProfileId' in CalculationRequestSchema.shape).toBe(false);
   });
 });

@@ -119,6 +119,18 @@ export const CalculationRequestSchema = z.object({
 export type CalculationRequest = z.infer<typeof CalculationRequestSchema>;
 
 // ═══════════════════════════════════════════════════════════════════════════
+// INTERPRETATION PROFILE (D-A PR-3)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Faiz yorum profili. Şu an TEK profil (multi-profil registry = Sprint 3 işi).
+ * computeBalance() imzasında ZORUNLU; calculate() bunu türetir — request/API'den GELMEZ
+ * (Hard Rule #13: frontend hukuki yorum seçmez). Profil inputHash + audit'e pinlenir.
+ * SEAM: registry/strategy getter geldiğinde değer bu sabitten değil strateji katmanından türetilecek.
+ */
+export const DEFAULT_INTERPRETATION_PROFILE_ID = 'DEFAULT_TBK100_V1';
+
+// ═══════════════════════════════════════════════════════════════════════════
 // POLICY WARNING
 // ═══════════════════════════════════════════════════════════════════════════
 
@@ -199,6 +211,9 @@ export const CalculationResultSchema = z.object({
   
   // Strategy
   strategyUsed: z.string().optional(),
+
+  // Interpretation profile (D-A PR-3) — echo of the profile used for this calculation
+  interpretationProfileId: z.string().optional(),
 });
 
 export type CalculationResult = z.infer<typeof CalculationResultSchema>;
@@ -211,7 +226,7 @@ export type CalculationResult = z.infer<typeof CalculationResultSchema>;
  * Deterministik input hash üretimi
  * Aynı input → Aynı hash (sıralama ve normalize)
  */
-export function generateInputHash(request: CalculationRequest): string {
+export function generateInputHash(request: CalculationRequest, interpretationProfileId: string): string {
   // Normalize: sırala ve sadece hesaplamayı etkileyen alanları al
   const normalized = {
     caseId: request.caseId,
@@ -239,6 +254,7 @@ export function generateInputHash(request: CalculationRequest): string {
     asOfDate: request.asOfDate,
     enforcementDate: request.enforcementDate,
     mode: request.mode,
+    interpretationProfileId,
     options: {
       dayCountBasis: request.options.dayCountBasis,
       sameDayPaymentRule: request.options.sameDayPaymentRule,

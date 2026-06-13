@@ -15,10 +15,11 @@
  */
 
 import { Injectable, Optional } from '@nestjs/common';
-import { 
-  CalculationRequest, 
-  CalculationResult, 
+import {
+  CalculationRequest,
+  CalculationResult,
   generateInputHash,
+  DEFAULT_INTERPRETATION_PROFILE_ID,
 } from './types/calculation.types';
 import { ClaimBucket, Segment, AllocationStep, InterestTypeCode } from './types/domain.types';
 import { CalculationMode, RoundingMode, RoundingScope, SameDayPaymentRule } from './types/common.types';
@@ -83,7 +84,10 @@ export class InterestEngineService {
   ): Promise<CalculationResult> {
     // D-A PR-2: orkestratör = saf hesap (computeBalance) + audit side-effect (writeAuditRecord).
     // Public imza KORUNUR (controller + testler etkilenmez); side-effect tek noktada izole.
-    const result = this.computeBalance(request, rates, new Date().toISOString());
+    // D-A PR-3: interpretationProfileId BACKEND'de türetilir (request/API'den GELMEZ; Hard Rule #13).
+    // SEAM: registry/strategy getter (Sprint 3) gelene kadar tek profil = DEFAULT_INTERPRETATION_PROFILE_ID.
+    const interpretationProfileId = DEFAULT_INTERPRETATION_PROFILE_ID;
+    const result = this.computeBalance(request, rates, new Date().toISOString(), interpretationProfileId);
     result.auditLogId = await this.writeAuditRecord(
       request,
       result,
@@ -110,10 +114,11 @@ export class InterestEngineService {
     request: CalculationRequest,
     rates: RateEntry[],
     now: string,
+    interpretationProfileId: string,
   ): CalculationResult {
-    // 1. Validate input & generate hash
+    // 1. Validate input & generate hash (profil hash'e dahil → farklı profil = farklı hash)
     this.validateRequest(request);
-    const inputHash = generateInputHash(request);
+    const inputHash = generateInputHash(request, interpretationProfileId);
 
     // 2. Select strategy based on case metadata (if strategy selector available)
     const strategy = this.selectStrategy(request);
@@ -204,6 +209,8 @@ export class InterestEngineService {
       claimPriorityRule: effectiveOptions.claimPriorityRule,
       // Strategy info (if used)
       strategyUsed: strategy?.name,
+      // D-A PR-3: yorum profili echo (audit/rapor görünürlüğü)
+      interpretationProfileId,
     };
 
     // computeBalance SAF: audit YAZMAZ; auditLogId='' döner (calculate() orkestratörü doldurur).
@@ -423,6 +430,7 @@ export class InterestEngineService {
       rateTableVersion: result.rateTableVersion,
       engineVersion: result.engineVersion,
       ruleVersion: result.ruleVersion,
+      interpretationProfileId: result.interpretationProfileId ?? DEFAULT_INTERPRETATION_PROFILE_ID,
       mode: request.mode,
       calculatedAt: result.calculatedAt,
     }, tenantId, userId);
