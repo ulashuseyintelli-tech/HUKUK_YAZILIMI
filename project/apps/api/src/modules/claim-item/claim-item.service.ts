@@ -196,6 +196,9 @@ export class ClaimItemService {
         isCalculated: true,
         calculatedAt: new Date(),
         sortOrder: 2,
+        // D (vergi): fatura KDV'si asıl alacağın parçası → mahsup tier'i ANAPARA.
+        // metadata konvansiyonu (şemasız parent-link, ledger D-Q2/D-Q3).
+        metadata: { taxParentCategory: 'PRINCIPAL' },
       });
     }
 
