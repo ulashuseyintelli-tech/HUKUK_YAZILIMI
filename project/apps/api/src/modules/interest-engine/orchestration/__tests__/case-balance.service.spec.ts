@@ -1,0 +1,141 @@
+/**
+ * G4c-1 CaseBalanceService testleri — compute-on-demand orkestrasyon (gerçek engine + mock prisma/RateProvider).
+ * ADDITIVE/READ-ONLY: prisma write çağrılmaz; trigger/persist yok.
+ */
+
+import { CaseBalanceService } from '../case-balance.service';
+import { InterestEngineService } from '../../interest-engine.service';
+import { PolicyGateV2Service } from '../../policy-gate/policy-gate-v2.service';
+import { SegmentBuilderService } from '../../segments/segment-builder.service';
+import { AllocationEngineService } from '../../allocation/allocation-engine.service';
+import { TBK100AllocatorService } from '../../allocation/tbk100-allocator.service';
+import { ClaimPriorityService } from '../../allocation/claim-priority.service';
+import { LegalReportRendererService } from '../../reporter/legal-report-renderer.service';
+import { SegmentReporterService } from '../../reporter/segment-reporter.service';
+import { AuditWriterService } from '../../audit/audit-writer.service';
+import { VersionPinningService } from '../../version/version-pinning.service';
+import { InterestTypeCode } from '../../types/domain.types';
+import { RateSourceType } from '../../rates/rate-entry.entity';
+
+function realEngine(): InterestEngineService {
+  const policyGate = new PolicyGateV2Service();
+  const segmentBuilder = new SegmentBuilderService();
+  const allocationEngine = new AllocationEngineService(new TBK100AllocatorService(), new ClaimPriorityService());
+  const reportRenderer = new LegalReportRendererService(new SegmentReporterService());
+  const auditWriter = new AuditWriterService();
+  auditWriter.clearAll();
+  return new InterestEngineService(policyGate, segmentBuilder, allocationEngine, reportRenderer, auditWriter, new VersionPinningService());
+}
+
+function legalRate() {
+  return [{ id: 'r1', interestType: InterestTypeCode.LEGAL_3095, validFrom: '2025-01-01', validTo: null, annualRate: 0.24, source: RateSourceType.TCMB, versionHash: 'h1', createdAt: '2025-01-01T00:00:00Z' }];
+}
+
+interface MockPrisma {
+  case: { findFirst: jest.Mock };
+  claimItem: { findMany: jest.Mock };
+  ledgerEntry: { findMany: jest.Mock };
+  collection: { findMany: jest.Mock };
+}
+
+function setup(opts: {
+  caseRow?: { interestType: string | null; interestStartDate: Date | null } | null;
+  claimItems?: unknown[];
+  ledger?: unknown[];
+  collections?: unknown[];
+  rates?: unknown[];
+}) {
+  const prisma: MockPrisma = {
+    case: { findFirst: jest.fn().mockResolvedValue(opts.caseRow === undefined ? { interestType: null, interestStartDate: null } : opts.caseRow) },
+    claimItem: { findMany: jest.fn().mockResolvedValue(opts.claimItems ?? []) },
+    ledgerEntry: { findMany: jest.fn().mockResolvedValue(opts.ledger ?? []) },
+    collection: { findMany: jest.fn().mockResolvedValue(opts.collections ?? []) },
+  };
+  const rateProvider = { getRatesForPeriod: jest.fn().mockResolvedValue(opts.rates ?? []) };
+  const service = new CaseBalanceService(prisma as never, rateProvider as never, realEngine());
+  return { service, prisma, rateProvider };
+}
+
+const principal = (p: Record<string, unknown> = {}) => ({
+  id: 'p1', itemType: 'PRINCIPAL', demandedAmount: 10000, amount: 10000, currency: 'TRY',
+  interestType: 'YASAL', interestRate: null, interestStartDate: new Date('2025-01-01'),
+  status: 'ACTIVE', metadata: null, ...p,
+});
+const collection = (p: Record<string, unknown> = {}) => ({
+  id: 'c1', status: 'CONFIRMED', cancelledAt: null, amount: 2000, currency: 'TRY',
+  date: new Date('2025-03-01'), sourceType: 'BANKA', channel: null, ...p,
+});
+
+describe('CaseBalanceService (G4c-1)', () => {
+  it('happy: principal(YASAL) + collection + variable rate → result, source COLLECTION', async () => {
+    const { service, rateProvider } = setup({ claimItems: [principal()], collections: [collection()], rates: legalRate() });
+    const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+    expect(res.source).toBe('COLLECTION');
+    expect(res.currencyResults).toHaveLength(1);
+    expect(res.currencyResults[0].currency).toBe('TRY');
+    expect(res.currencyResults[0].result).not.toBeNull();
+    expect(res.currencyResults[0].result!.totalInterest).toBeGreaterThanOrEqual(0);
+    expect(rateProvider.getRatesForPeriod).toHaveBeenCalledTimes(1);
+  });
+
+  it('ledger-first: confirmed PAYMENT ledger varsa source LEDGER', async () => {
+    const { service } = setup({
+      claimItems: [principal()],
+      ledger: [{ id: 'L1', entryType: 'PAYMENT', status: 'CONFIRMED', amount: 500, currency: 'TRY', entryDate: new Date('2025-03-10'), effectiveDate: null, sourceType: 'BANKA' }],
+      collections: [collection()],
+      rates: legalRate(),
+    });
+    const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+    expect(res.source).toBe('LEDGER');
+  });
+
+  it('fixed-rate: SABIT bucket → sentetik rate, RateProvider ÇAĞRILMAZ, result null DEĞİL', async () => {
+    const { service, rateProvider } = setup({
+      claimItems: [principal({ interestType: 'SABIT', interestRate: 48 })],
+      collections: [collection()],
+    });
+    const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+    expect(rateProvider.getRatesForPeriod).not.toHaveBeenCalled(); // fixed → requirement yok
+    expect(res.currencyResults[0].result).not.toBeNull();
+  });
+
+  it('çok-currency: USD payment-only → NO_BUCKETS skip + CURRENCY_MISMATCH', async () => {
+    const { service } = setup({
+      claimItems: [principal()],
+      collections: [collection(), collection({ id: 'c2', currency: 'USD', amount: 100 })],
+      rates: legalRate(),
+    });
+    const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+    const usd = res.currencyResults.find((r) => r.currency === 'USD')!;
+    expect(usd.result).toBeNull();
+    expect(usd.skippedReason).toBe('NO_BUCKETS');
+    expect(res.diagnostics.currency).toEqual([{ code: 'CURRENCY_MISMATCH', currency: 'USD', detail: '1 payment(s), 0 bucket' }]);
+  });
+
+  it('assembler diagnostic: faiz konfigsiz principal → MISSING_INTEREST_CONFIG, bucket yok', async () => {
+    const { service } = setup({
+      caseRow: { interestType: null, interestStartDate: null },
+      claimItems: [principal({ interestType: null, interestStartDate: null })],
+      collections: [],
+    });
+    const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+    expect(res.diagnostics.assembler.map((d) => d.code)).toContain('MISSING_INTEREST_CONFIG');
+    expect(res.currencyResults).toHaveLength(0);
+  });
+
+  it('case yok → CASE_NOT_FOUND, erken dön (claimItem okunmaz)', async () => {
+    const { service, prisma } = setup({ caseRow: null });
+    const res = await service.computeCaseBalance('t1', 'missing', '2025-06-01');
+    expect(res.diagnostics.fatal).toEqual([{ code: 'CASE_NOT_FOUND', caseId: 'missing' }]);
+    expect(res.currencyResults).toHaveLength(0);
+    expect(prisma.claimItem.findMany).not.toHaveBeenCalled();
+  });
+
+  it('tenant-scoped okuma (where tenantId)', async () => {
+    const { service, prisma } = setup({ claimItems: [principal()], collections: [collection()], rates: legalRate() });
+    await service.computeCaseBalance('tenantX', 'caseY', '2025-06-01');
+    expect(prisma.case.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'caseY', tenantId: 'tenantX' } }));
+    expect(prisma.claimItem.findMany).toHaveBeenCalledWith({ where: { caseId: 'caseY', tenantId: 'tenantX' } });
+    expect(prisma.ledgerEntry.findMany).toHaveBeenCalledWith({ where: { caseId: 'caseY', tenantId: 'tenantX', entryType: 'PAYMENT' } });
+  });
+});
