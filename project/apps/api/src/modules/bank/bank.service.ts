@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { maskIban } from '../../common/pii-mask.util';
+import { CollectionService } from '../collection/collection.service';
 
 /**
  * Banka Entegrasyon Servisi
@@ -82,6 +83,8 @@ export class BankService {
   constructor(
     private configService: ConfigService,
     private prisma: PrismaService,
+    // G3d: banka eşleşmesi tahsilatı kanonik yoldan üretir.
+    private collectionService: CollectionService,
   ) {}
 
   // ==================== HESAP YÖNETİMİ ====================
@@ -333,22 +336,32 @@ export class BankService {
       throw new Error('Bu işlem zaten eşleştirilmiş');
     }
 
-    // Tahsilat kaydı oluştur
-    const collection = await (this.prisma as any).collection.create({
-      data: {
-        tenantId: transaction.tenantId,
-        caseId,
-        amount: transaction.amount,
-        currency: transaction.currency,
-        date: transaction.transactionDate,
-        channel: 'BANKA',
-        sourceType: 'BANK_INTEGRATION',
-        description: `Banka hareketi: ${transaction.description || transaction.referenceNo || ''}`,
-        status: 'CONFIRMED',
-      },
-    });
+    // G3d: kanonik yola delege (closed/duplicate guard + PAYMENT_RECEIVED + G3a ledger).
+    // sourceType=undefined (BANK_INTEGRATION enum'da yok; şema gate). Idempotency =
+    // mevcut isMatched/matchedCollectionId (yalnız create BAŞARILIYSA işaretlenir).
+    let collection: any;
+    try {
+      collection = await this.collectionService.create(
+        transaction.tenantId,
+        {
+          caseId,
+          amount: transaction.amount,
+          currency: transaction.currency,
+          date: transaction.transactionDate,
+          channel: 'BANKA',
+          description: `Banka hareketi: ${transaction.description || transaction.referenceNo || ''}`,
+        } as any,
+        userId,
+      );
+    } catch (err: any) {
+      // Closed-case (BadRequestException) vb. → eşleşme YAPILMAZ, raporlanır.
+      this.logger.warn(
+        `Bank match rejected (tx=${transactionId}, case=${caseId}): ${err?.message ?? err}`,
+      );
+      throw err;
+    }
 
-    // İşlemi güncelle
+    // SADECE create başarılıysa işlemi eşleşmiş işaretle
     await this.db.bankTransaction.update({
       where: { id: transactionId },
       data: {

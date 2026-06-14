@@ -10,10 +10,15 @@ import {
   RecordIhbarnameDto,
   RecordResponseDto,
 } from "./dto/third-party.dto";
+import { CollectionService } from "../collection/collection.service";
 
 @Injectable()
 export class ThirdPartyService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    // G3d: alacak haczi tahsilatını ana dosyaya kanonik yoldan yansıtır.
+    private collectionService: CollectionService,
+  ) {}
 
   // 89 İhbarname için 7 günlük cevap süresi
   private readonly RESPONSE_DEADLINE_DAYS = 7;
@@ -584,21 +589,22 @@ export class ThirdPartyService {
     });
 
     // Ana dosyaya tahsilat kaydı ekle (syncToMainCase varsayılan true)
+    // G3d: kanonik yola delege (closed/duplicate guard + PAYMENT_RECEIVED + G3a ledger).
+    // sourceType=EXTERNAL_CASE + sourceId=externalCaseId → idempotency (duplicate guard).
     if (dto.syncToMainCase !== false && externalCase.caseDebtor?.case?.id) {
       try {
-        await this.prisma.collection.create({
-          data: {
-            tenantId,
-            caseId: externalCase.caseDebtor.case.id,
-            amount: dto.amount,
-            type: "OTHER", // Alacak Haczi tahsilatı
-            date: collectionDate,
-            description: `[Alacak Haczi] ${externalCase.externalOffice} ${externalCase.externalCaseNo} - ${externalCase.counterpartyName}${dto.notes ? ` - ${dto.notes}` : ''}`,
-          },
-        });
-      } catch (err) {
-        // Collection tablosu yoksa sessizce devam et
-        console.log("Ana dosyaya tahsilat kaydı eklenemedi:", err);
+        await this.collectionService.create(tenantId, {
+          caseId: externalCase.caseDebtor.case.id,
+          amount: dto.amount,
+          type: "OTHER", // Alacak Haczi tahsilatı
+          date: collectionDate.toISOString(),
+          sourceType: "EXTERNAL_CASE" as any,
+          sourceId: externalCaseId,
+          description: `[Alacak Haczi] ${externalCase.externalOffice} ${externalCase.externalCaseNo} - ${externalCase.counterpartyName}${dto.notes ? ` - ${dto.notes}` : ''}`,
+        } as any);
+      } catch (err: any) {
+        // Closed-case reddi vb. → ana dosyaya yansıtılamadı, raporlanır (yutulmaz).
+        console.log("Ana dosyaya tahsilat kaydı eklenemedi (kanonik yol):", err?.message ?? err);
       }
     }
 

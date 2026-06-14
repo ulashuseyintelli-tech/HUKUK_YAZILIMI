@@ -12,6 +12,7 @@ import { resolveInitialPolicy } from "../interest-engine/interest-strategy.confi
 import { mapDtoCaseTypeToInterestCaseType } from "./case-type-mapping";
 import { ExpenseRequestService } from "../expense-request/expense-request.service";
 import { DomainEventIngestService } from "../icrabot/domain-event-ingest";
+import { CollectionService } from "../collection/collection.service";
 
 @Injectable()
 export class CaseService {
@@ -27,6 +28,9 @@ export class CaseService {
     @Inject(forwardRef(() => ExpenseRequestService))
     private expenseRequestService: ExpenseRequestService,
     private domainEventIngestService: DomainEventIngestService,
+    // G3d: tahsilat create/cancel tek otorite = CollectionService (kanonik yol:
+    // closed/duplicate guard + PAYMENT_RECEIVED event + G3a ledger + CollectionAllocation).
+    private collectionService: CollectionService,
   ) {}
 
   /**
@@ -2081,45 +2085,30 @@ export class CaseService {
       bankName?: string;
       accountNo?: string;
       notes?: string;
-    }
+    },
+    userId?: string,
   ) {
-    const caseExists = await this.prisma.case.findFirst({
-      where: { id: caseId, tenantId },
-    });
-    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
-
-    const collection = await this.prisma.collection.create({
-      data: {
-        tenantId,
+    // G3d: kanonik yola delege — closed/duplicate guard + PAYMENT_RECEIVED event +
+    // G3a ledger + CollectionAllocation tek otoritede (collection.service.create).
+    return this.collectionService.create(
+      tenantId,
+      {
         caseId,
         caseDebtorId: data.caseDebtorId,
         amount: data.amount,
-        currency: data.currency || "TRY",
+        currency: data.currency,
         type: data.type as any,
         channel: data.channel as any,
-        date: new Date(data.date),
-        valueDate: data.valueDate ? new Date(data.valueDate) : undefined,
+        date: data.date,
+        valueDate: data.valueDate,
         description: data.description,
         receiptNo: data.receiptNo,
         bankName: data.bankName,
         accountNo: data.accountNo,
         notes: data.notes,
-        status: "CONFIRMED",
-      },
-    });
-
-    // Tahsilat sonrası faiz hesaplamasını yeniden tetikle
-    // TODO: interest-engine entegrasyonu tamamlandığında aktif edilecek
-    // try {
-    //   const today = new Date().toISOString().split('T')[0];
-    //   await this.interestEngineService.recalculateForCase(caseId, today, tenantId);
-    //   this.logger.debug(`Interest recalculated after collection for case ${caseId}`);
-    // } catch (error) {
-    //   // Faiz hesaplama hatası tahsilat kaydını engellemez
-    //   this.logger.warn(`Failed to recalculate interest after collection: ${error.message}`);
-    // }
-
-    return collection;
+      } as any,
+      userId,
+    );
   }
 
   /**
@@ -2180,18 +2169,9 @@ export class CaseService {
    * Tahsilat iptal et
    */
   async cancelCollection(tenantId: string, caseId: string, collectionId: string, reason?: string) {
-    const collection = await this.prisma.collection.findFirst({
-      where: { id: collectionId, caseId, tenantId },
-    });
-    if (!collection) throw new NotFoundException("Tahsilat bulunamadı");
-
-    return this.prisma.collection.update({
-      where: { id: collectionId },
-      data: {
-        status: "CANCELLED",
-        cancelledAt: new Date(),
-        cancelReason: reason,
-      },
+    // G3d: kanonik cancel'a delege (tenant doğrulaması collection.service.cancel içinde).
+    return this.collectionService.cancel(tenantId, collectionId, {
+      cancelReason: reason || "",
     });
   }
 
