@@ -1866,6 +1866,7 @@ enum CollectionSource {
   SALARY_SEIZURE // Maaş haczi
   AUCTION // Satış/ihale
   SETTLEMENT // Sulh/anlaşma
+  BANK_INTEGRATION // Banka entegrasyonu (otomatik eşleşen banka hareketi); BANK_SEIZURE=banka haczi ≠ bu
 }
 
 // Tahsilat Durumu

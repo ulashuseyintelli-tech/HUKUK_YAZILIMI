@@ -37,7 +37,8 @@ describe('BankService.matchTransaction delegation (G3d)', () => {
 
     expect(coll.create).toHaveBeenCalledWith(
       't1',
-      expect.objectContaining({ caseId: 'c1', amount: 500, channel: 'BANKA' }),
+      // BANK_INTEGRATION: sourceType artık etiketli (şema-gate kapandı, undefined değil)
+      expect.objectContaining({ caseId: 'c1', amount: 500, channel: 'BANKA', sourceType: 'BANK_INTEGRATION' }),
       'u1',
     );
     expect(update).toHaveBeenCalledWith(
