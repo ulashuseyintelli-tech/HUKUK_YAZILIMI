@@ -7,18 +7,23 @@
  * GET /interest-engine/trace/:id
  */
 
-import { 
-  Controller, 
-  Post, 
-  Get, 
-  Body, 
-  Param, 
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  Param,
   Query,
   HttpCode,
   HttpStatus,
   BadRequestException,
   NotFoundException,
+  UseGuards,
 } from '@nestjs/common';
+// G4c-2: read-only bakiye endpoint (auth-context tenantId)
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { CaseBalanceService, CaseBalanceResult } from './orchestration/case-balance.service';
 import { InterestEngineService } from './interest-engine.service';
 import { AuditWriterService } from './audit/audit-writer.service';
 import { TraceExporterService } from './trace/trace-exporter.service';
@@ -105,7 +110,28 @@ export class InterestEngineController {
     private readonly auditWriter: AuditWriterService,
     private readonly traceExporter: TraceExporterService,
     private readonly metrics: InterestEngineMetricsService,
+    private readonly caseBalance: CaseBalanceService,
   ) {}
+
+  /**
+   * GET /interest-engine/case/:caseId/balance
+   *
+   * G4c-2: compute-on-read TBK100 bakiyesi (G4c-1 CaseBalanceService). READ-ONLY, additive.
+   * tenantId YALNIZ auth context'ten (@CurrentUser); client/body/query'den ALINMAZ.
+   * asOfDate yoksa bugün (YYYY-MM-DD). Persist/trigger/projection YOK; summary-engine'e dokunulmaz.
+   *
+   * <remarks>Çağrıldığı yerler: HTTP GET /interest-engine/case/:caseId/balance (frontend/araç gözlemi).</remarks>
+   */
+  @Get('case/:caseId/balance')
+  @UseGuards(JwtAuthGuard)
+  async getCaseBalance(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('caseId') caseId: string,
+    @Query('asOfDate') asOfDate?: string,
+  ): Promise<CaseBalanceResult> {
+    const date = asOfDate ?? new Date().toISOString().slice(0, 10);
+    return this.caseBalance.computeCaseBalance(tenantId, caseId, date);
+  }
 
   /**
    * POST /interest-engine/calculate

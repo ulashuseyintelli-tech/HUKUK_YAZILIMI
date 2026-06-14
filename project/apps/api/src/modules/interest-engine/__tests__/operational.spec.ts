@@ -137,6 +137,7 @@ describe('Task 17.4-17.5: Controller and API Tests', () => {
       auditWriter,
       traceExporter,
       metrics,
+      {} as never, // G4c-2: CaseBalanceService (bu operational testlerde kullanılmaz)
     );
 
     auditWriter.clearAll();
@@ -392,6 +393,7 @@ describe('Integration: Full Calculation Flow', () => {
       auditWriter,
       traceExporter,
       metrics,
+      {} as never, // G4c-2: CaseBalanceService (bu operational testlerde kullanılmaz)
     );
 
     auditWriter.clearAll();
