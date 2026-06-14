@@ -5775,6 +5775,7 @@ enum InterestTypeCode {
   MEVDUAT_TL_KAMU // Kamu bankası TL mevduat faizi
   MEVDUAT_USD_KAMU // Kamu bankası USD mevduat faizi
   MEVDUAT_EUR_KAMU // Kamu bankası EUR mevduat faizi
+  COMMERCIAL_FIXED // Ticari sabit oran (E5: TS InterestTypeCode ile parity; SABIT→COMMERCIAL_FIXED)
 }
 
 // Oran Kaynağı
