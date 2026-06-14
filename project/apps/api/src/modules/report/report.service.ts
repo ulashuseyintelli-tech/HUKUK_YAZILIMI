@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
+import { CollectionService } from "../collection/collection.service";
 import {
   CaseDebtReportResult,
   InterestReportResult,
@@ -8,7 +9,10 @@ import {
 
 @Injectable()
 export class ReportService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private collectionService: CollectionService,
+  ) {}
 
   // 1. Müvekkil Bazlı Durum Raporu
   async getClientReport(tenantId: string, clientId?: string) {
@@ -507,13 +511,13 @@ export class ReportService {
     const totalCollected = collections.reduce((sum: number, c: any) => sum + Number(c.amount || 0), 0);
     
     // Mahsup dağılımı
+    // G3b: mahsup dağılımı kanonik kaynaktan (ledger-varsa-ledger / yoksa-CollectionAllocation;
+    // per-case tek kaynak, çift-sayım yok). Sıfır kovalar atlanır (eski şekle yakın).
+    const breakdown = await this.collectionService.getCollectedBreakdown(tenantId, caseId);
     const allocatedByType: Record<string, number> = {};
-    collections.forEach((c: any) => {
-      (c.allocations || []).forEach((alloc: any) => {
-        const type = alloc.allocationType || 'OTHER';
-        allocatedByType[type] = (allocatedByType[type] || 0) + Number(alloc.amount || 0);
-      });
-    });
+    for (const [type, amount] of Object.entries(breakdown)) {
+      if (amount !== 0) allocatedByType[type] = amount;
+    }
 
     // Masraf ve harç (varsayılan değerler - gerçek sistemde ayrı tablolardan gelir)
     const expenseAmount = 0;
