@@ -39,6 +39,7 @@ export enum CollectionSource {
   SALARY_SEIZURE = "SALARY_SEIZURE",
   AUCTION = "AUCTION",
   SETTLEMENT = "SETTLEMENT",
+  BANK_INTEGRATION = "BANK_INTEGRATION", // Banka entegrasyonu (otomatik eşleşen hareket); BANK_SEIZURE ≠ bu
 }
 
 // Tahsilat Durumu

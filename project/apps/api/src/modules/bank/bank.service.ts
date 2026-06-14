@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { maskIban } from '../../common/pii-mask.util';
 import { CollectionService } from '../collection/collection.service';
+import { CollectionSource } from '../collection/dto/collection.dto';
 
 /**
  * Banka Entegrasyon Servisi
@@ -337,8 +338,8 @@ export class BankService {
     }
 
     // G3d: kanonik yola delege (closed/duplicate guard + PAYMENT_RECEIVED + G3a ledger).
-    // sourceType=undefined (BANK_INTEGRATION enum'da yok; şema gate). Idempotency =
-    // mevcut isMatched/matchedCollectionId (yalnız create BAŞARILIYSA işaretlenir).
+    // BANK_INTEGRATION: şema-gate KAPANDI → sourceType=BANK_INTEGRATION (otomatik eşleşen banka hareketi;
+    // BANK_SEIZURE ≠ bu). Idempotency = mevcut isMatched/matchedCollectionId (yalnız create BAŞARILIYSA).
     let collection: any;
     try {
       collection = await this.collectionService.create(
@@ -349,6 +350,7 @@ export class BankService {
           currency: transaction.currency,
           date: transaction.transactionDate,
           channel: 'BANKA',
+          sourceType: CollectionSource.BANK_INTEGRATION,
           description: `Banka hareketi: ${transaction.description || transaction.referenceNo || ''}`,
         } as any,
         userId,
