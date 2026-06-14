@@ -125,12 +125,38 @@ export function isVariableRateType(type: InterestTypeCode): boolean {
 
 /**
  * Sabit oran girişi gerektiren faiz türü mü?
+ *
+ * TEK OTORİTE (E-G2a/Q5): bu predicate fixedRate-zorunlu kuralının yegâne kaynağıdır.
+ * Param `InterestTypeCode | string`: hem bu paketin enum'u, hem motor (domain.types) hem
+ * web yerel enum'u (aynı string değerleri) cast'siz geçebilsin diye genişletildi. Davranış
+ * değişmez — yalnız COMMERCIAL_FIXED ve CONTRACTUAL için true.
  */
-export function requiresFixedRate(type: InterestTypeCode): boolean {
+export function requiresFixedRate(type: InterestTypeCode | string): boolean {
   return [
     InterestTypeCode.COMMERCIAL_FIXED,
     InterestTypeCode.CONTRACTUAL,
-  ].includes(type);
+  ].includes(type as InterestTypeCode);
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// BİRİM DÖNÜŞTÜRÜCÜLER — % ↔ 0-1 (E-G2a/Q1: TEK kaynak; ad-hoc /100 yasak)
+// ═══════════════════════════════════════════════════════════════════════════
+
+/**
+ * Yüzde → ondalık oran. SAF matematik; sessiz yuvarlama YOK.
+ *   18 → 0.18 · 48 → 0.48 · 999.99 → 9.9999
+ * API/persistence girişi yüzdedir; motor (ClaimBucket.fixedRate / segment rate) 0-1 ister.
+ */
+export function percentToRate(percent: number): number {
+  return percent / 100;
+}
+
+/**
+ * Ondalık oran → yüzde. percentToRate'in tam tersi. SAF matematik; sessiz yuvarlama YOK.
+ *   0.18 → 18 · 0.48 → 48 · 9.9999 → 999.99
+ */
+export function rateToPercent(rate: number): number {
+  return rate * 100;
 }
 
 /**

@@ -380,14 +380,12 @@ export function isVariableRateType(type: InterestTypeCode): boolean {
 }
 
 /**
- * Check if interest type requires fixed rate input
+ * Sabit oran girişi gerektiren faiz türü mü?
+ * E-G2a/Q5: TEK OTORİTE = packages/types. Yerel kopya KALDIRILDI → re-export.
+ * (packages/types.requiresFixedRate param'ı `InterestTypeCode | string` olduğundan bu
+ *  dosyanın yerel InterestTypeCode enum değerleri de cast'siz geçer.)
  */
-export function requiresFixedRate(type: InterestTypeCode): boolean {
-  return [
-    InterestTypeCode.COMMERCIAL_FIXED,
-    InterestTypeCode.CONTRACTUAL,
-  ].includes(type);
-}
+export { requiresFixedRate } from '@shared/types';
 
 /**
  * Format rate as percentage
