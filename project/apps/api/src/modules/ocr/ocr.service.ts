@@ -182,7 +182,9 @@ const SURELI_VEKALET_KEYWORDS = [
   "bitis tarihi",
   "son geçerlilik",
   "son gecerlilik",
-  "tarihine kadar",
+  // "tarihine kadar" KALDIRILDI: vekaletnamelerde boilerplate olarak sık geçer (ör. kimlik kartı
+  //   geçerlilik tarihi bağlamında) → false-positive "süreli vekalet". Yalnız "...tarihine kadar
+  //   geçerlidir" (yukarıda) açık ibaresi süreli sayılır.
   "süresiz değildir",
   "suresiz degildir",
   "belirli süre",
@@ -190,6 +192,22 @@ const SURELI_VEKALET_KEYWORDS = [
   "sınırlı süre",
   "sinirli sure",
 ];
+
+/**
+ * Süreli vekalet SAĞDUYU GUARD'ı (parser/AI çıkarımı sonrası).
+ * Süreli SADECE açık VE düzenleme tarihinden SONRA bir bitiş tarihi varsa kabul edilir.
+ * - validUntil yoksa → süresiz (uydurma süreli engellenir).
+ * - validUntil <= poaDate ise → süresiz (düzenleme tarihi / müvekkilin kimlik-kartı geçerlilik
+ *   tarihi yanlışlıkla validUntil olarak gelirse elenir). ISO YYYY-MM-DD karşılaştırması.
+ */
+export function sanitizeLimitedPoa(
+  isLimited: boolean | undefined,
+  validUntil: string | undefined,
+  poaDate: string | undefined,
+): { isLimited: boolean; validUntil: string | undefined } {
+  const limited = !!isLimited && !!validUntil && (!poaDate || validUntil > poaDate);
+  return { isLimited: limited, validUntil: limited ? validUntil : undefined };
+}
 
 /**
  * Vekalet kapsamı tespiti için keyword'ler
@@ -1309,9 +1327,10 @@ Yetki tespiti için şu ifadeleri ara:
 - "ibra" = canRelease: true
 
 SÜRELİ VEKALET TESPİTİ:
-- "...tarihine kadar geçerlidir" ifadesi varsa isLimited: true
-- Bitiş tarihi varsa validUntil alanına YYYY-MM-DD formatında yaz
-- Süresiz vekaletlerde isLimited: false
+- isLimited: true SADECE vekaletin KENDİSİ için açık "...tarihine kadar geçerlidir" ibaresi varsa.
+- ÖNEMLİ: Müvekkilin KİMLİK KARTI geçerlilik/veriliş tarihini ya da noter/düzenleme tarihini SÜRE sanma;
+  bunlar validUntil DEĞİLDİR. validUntil mutlaka düzenleme tarihinden (poaDate) SONRA olan açık bir bitiş tarihidir.
+- Açık bir bitiş ibaresi yoksa isLimited: false ve validUntil: null.
 
 KAPSAM TESPİTİ:
 - "icra takip", "icra işleri" → scopeType: "ICRA_TAKIP"
@@ -1393,9 +1412,8 @@ JSON formatında yanıt ver:
         canWaive: parsed.canWaive ?? false,
         canSettle: parsed.canSettle ?? false,
         canRelease: parsed.canRelease ?? false,
-        // Süreli vekalet bilgileri
-        isLimited: parsed.isLimited ?? false,
-        validUntil: parsed.validUntil || undefined,
+        // Süreli vekalet bilgileri (guard: düzenleme/kimlik-kartı tarihi validUntil olamaz)
+        ...sanitizeLimitedPoa(parsed.isLimited ?? false, parsed.validUntil || undefined, parsed.poaDate || undefined),
         scopeType: parsed.scopeType || "GENEL",
         scopeDescription: parsed.scopeDescription || undefined,
         // Çoklu avukat
@@ -1479,10 +1497,10 @@ JSON formatında yanıt ver:
     if (validUntilMatch) {
       isLimited = true;
       validUntil = `${validUntilMatch[3]}-${validUntilMatch[2]}-${validUntilMatch[1]}`;
-    } else if (isLimited && allDates.length > 1) {
-      // Süreli vekalet tespit edildi ama tarih bulunamadı, son tarihi kullan
-      validUntil = allDates[allDates.length - 1];
     }
+    // NOT: "süreli ama tarih yok → belgedeki SON tarihi validUntil yap" fallback'i KALDIRILDI —
+    //   son tarih genelde düzenleme/noter tarihi olup yanlışlıkla "bitiş tarihi" sanılıyordu.
+    //   validUntil yalnız açık "...tarihine kadar" ibaresinden gelir; gerisini guard eler.
 
     // KAPSAM TESPİTİ
     let scopeType: "GENEL" | "ICRA_TAKIP" | "BU_DOSYA" | "OZEL" = "GENEL";
@@ -1532,6 +1550,7 @@ JSON formatında yanıt ver:
     }
 
     const clientType = companyName || vkn ? "COMPANY" : "PERSON";
+    const lim = sanitizeLimitedPoa(isLimited, validUntil, poaDate);
 
     return {
       clientType,
@@ -1545,9 +1564,9 @@ JSON formatında yanıt ver:
       poaNumber,
       poaDate,
       notaryName,
-      // Süreli vekalet
-      isLimited,
-      validUntil,
+      // Süreli vekalet (sağduyu guard'ı uygulanmış)
+      isLimited: lim.isLimited,
+      validUntil: lim.validUntil,
       scopeType,
       scopeDescription,
       // Avukatlar
@@ -1629,7 +1648,7 @@ JSON formatında yanıt ver:
   "confidence": 0-100 (ne kadar emin olduğun)
 }
 
-SÜRELİ VEKALET: "...tarihine kadar geçerlidir", "süreli vekalet" gibi ifadeler varsa isLimited: true yap.
+SÜRELİ VEKALET: isLimited: true SADECE vekaletin kendisi için açık "...tarihine kadar geçerlidir" ibaresi varsa. Müvekkilin KİMLİK KARTI geçerlilik tarihini veya noter/düzenleme tarihini validUntil/süre SANMA; açık bir bitiş ibaresi yoksa isLimited: false ve validUntil: null.
 KAPSAM: İcra takip işlemleri için ise ICRA_TAKIP, belirli dosya için ise BU_DOSYA, özel kapsam ise OZEL, genel ise GENEL.
 
 Sadece JSON döndür, başka açıklama ekleme.`
@@ -1690,9 +1709,8 @@ Sadece JSON döndür, başka açıklama ekleme.`
         canWaive: parsed.canWaive ?? false,
         canSettle: parsed.canSettle ?? false,
         canRelease: parsed.canRelease ?? false,
-        // Süreli vekalet
-        isLimited: parsed.isLimited ?? false,
-        validUntil: parsed.validUntil || undefined,
+        // Süreli vekalet (guard: düzenleme/kimlik-kartı tarihi validUntil olamaz)
+        ...sanitizeLimitedPoa(parsed.isLimited ?? false, parsed.validUntil || undefined, parsed.poaDate || undefined),
         scopeType: parsed.scopeType || "GENEL",
         scopeDescription: parsed.scopeDescription || undefined,
         // Çoklu avukat
