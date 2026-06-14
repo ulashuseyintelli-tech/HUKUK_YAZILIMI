@@ -172,7 +172,8 @@ export class CollectionService {
     });
 
     const principalAmount = Number(caseData?.principalAmount) || 0;
-    const interestAmount = Number((caseData as any)?.calculatedInterest) || 0;
+    // G5: calculatedInterest DB alanı YOK; faiz computeBalance/ledger entegrasyonu bekler (şu an 0).
+    const interestAmount = 0;
     const expenseAmount = 0;
     const feeAmount = 0;
     const attorneyFeeAmount = 0;
@@ -544,8 +545,7 @@ export class CollectionService {
    * Kapak hesabı (dosya borç özeti) hesapla
    * 
    * ⚠️ HESAP YASAĞI: Bu metod faiz hesabı YAPMAZ
-   * Faiz değeri DB'deki calculatedInterest alanından okunur.
-   * Bu alan interest-engine tarafından güncellenir.
+   * G5: calculatedInterest DB alanı YOK; faiz computeBalance/ledger entegrasyonu bekler (şu an 0).
    * 
    * @see ARCHITECTURE.md - Source of Truth Matrix
    * @see interest-engine/interest-engine.service.ts
@@ -620,10 +620,9 @@ export class CollectionService {
     const principalAmount = Number(caseData.principalAmount) || 0;
     const principalCurrency = caseData.currency || "TRY";
 
-    // ⚠️ FAİZ: DB'den oku - hesaplama YASAK
-    // Bu değer interest-engine tarafından güncellenir.
-    // Güncel faiz için: POST /interest-engine/calculate
-    const interestAmount = Number((caseData as any).calculatedInterest) || 0;
+    // G5: calculatedInterest DB alanı YOK; faiz computeBalance/ledger entegrasyonu bekler (şu an 0).
+    // Güncel faiz için: POST /interest-engine/calculate (veya GET /interest-engine/case/:caseId/balance).
+    const interestAmount = 0;
 
     // Masraflar (şimdilik sabit değerler - gerçek sistemde expense tablosundan)
     const expenseAmount = 0;

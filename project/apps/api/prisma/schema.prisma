@@ -958,6 +958,9 @@ model Case {
   client          Client?    @relation(fields: [clientId], references: [id])
   courtId         String?
   court           Court?     @relation(fields: [courtId], references: [id])
+  // @deprecated (G5): denormalize legacy toplam. Kanonik = Σ ClaimItem.demandedAmount
+  //   (computeBalance/summary-engine). ClaimItem-yokken fallback olarak KORUNUYOR; derived/
+  //   consumer-repoint (ai/automation/document/uyap) AYRI gate. Field KALDIRILMAZ; davranış değişmez.
   principalAmount Decimal?   @db.Decimal(15, 2)
   interestRate    Decimal?   @db.Decimal(5, 2)
   startDate       DateTime?
