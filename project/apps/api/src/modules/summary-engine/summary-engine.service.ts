@@ -13,6 +13,8 @@ import {
   DEFAULT_ANCILLARY_PRIORITY,
 } from '../interest-engine/allocation/tbk100-allocator.service';
 import { AncillaryType } from '../interest-engine/types/domain.types';
+// G4a: sınıflandırma TEK OTORİTE (ikinci kopya yok). mapItemTypeToAncillary + masraf/fer'i kuralı buradan.
+import { mapItemTypeToAncillary as classifierMapAncillary, isCostItemType } from '../interest-engine/classification/claim-item-classifier';
 
 // ============================================================
 // TYPES
@@ -475,20 +477,9 @@ export class SummaryEngineService implements OnModuleInit {
    * ClaimItem tipini AncillaryType'a map et
    */
   private mapItemTypeToAncillary(itemType: string): AncillaryType | null {
-    // PR-AO-3 (doc-27): PENALTY/CONTRACTUAL_PENALTY = fer'i → DIGER (yalnız
-    // CHECK_PENALTY → CEK_TAZMINATI). COMMISSION → KOMISYON (masraf; cost filtresinde).
-    // NOT: TAX_KDV/BSMV/KKDF bilinçli olarak EKLENMEDİ → açık hukuki soru D (field-based).
-    const mapping: Record<string, AncillaryType> = {
-      'FEE': AncillaryType.HARC,
-      'EXPENSE': AncillaryType.TEBLIGAT_MASRAFI,
-      'ATTORNEY_FEE': AncillaryType.VEKALET_UCRETI,
-      'CHECK_PENALTY': AncillaryType.CEK_TAZMINATI,
-      'PENALTY': AncillaryType.DIGER,
-      'CONTRACTUAL_PENALTY': AncillaryType.DIGER,
-      'COMMISSION': AncillaryType.KOMISYON,
-      'OTHER': AncillaryType.DIGER,
-    };
-    return mapping[itemType] || null;
+    // G4a: eşleme TEK OTORİTE = interest-engine/classification/claim-item-classifier (delege).
+    // Mantık (doc-27/PR-AO-3) oraya BİREBİR taşındı; burada davranış değişmez.
+    return classifierMapAncillary(itemType);
   }
 
   /**
@@ -706,9 +697,9 @@ export class SummaryEngineService implements OnModuleInit {
       } else {
         const ancType = this.mapItemTypeToAncillary(itemType);
         if (ancType) {
-          // Masraf mı fer'i mi? (doc-27) FEE/EXPENSE/KOMISYON = masraf; gerisi fer'i.
-          // COMMISSION ölü (ClaimItemType'ta yok) ama niyet-doğru ve ileriye dönük.
-          if (['FEE', 'EXPENSE', 'COMMISSION'].includes(itemType)) {
+          // Masraf mı fer'i mi? (doc-27) FEE/EXPENSE/COMMISSION = masraf; gerisi fer'i.
+          // TEK OTORİTE = classifier.isCostItemType (ikinci kopya yok).
+          if (isCostItemType(itemType)) {
             costs.set(ancType, (costs.get(ancType) || 0) + remaining);
           } else {
             ancillaries.set(ancType, (ancillaries.get(ancType) || 0) + remaining);
