@@ -475,12 +475,16 @@ export class SummaryEngineService implements OnModuleInit {
    * ClaimItem tipini AncillaryType'a map et
    */
   private mapItemTypeToAncillary(itemType: string): AncillaryType | null {
+    // PR-AO-3 (doc-27): PENALTY/CONTRACTUAL_PENALTY = fer'i → DIGER (yalnız
+    // CHECK_PENALTY → CEK_TAZMINATI). COMMISSION → KOMISYON (masraf; cost filtresinde).
+    // NOT: TAX_KDV/BSMV/KKDF bilinçli olarak EKLENMEDİ → açık hukuki soru D (field-based).
     const mapping: Record<string, AncillaryType> = {
       'FEE': AncillaryType.HARC,
       'EXPENSE': AncillaryType.TEBLIGAT_MASRAFI,
       'ATTORNEY_FEE': AncillaryType.VEKALET_UCRETI,
       'CHECK_PENALTY': AncillaryType.CEK_TAZMINATI,
-      'PENALTY': AncillaryType.CEK_TAZMINATI,
+      'PENALTY': AncillaryType.DIGER,
+      'CONTRACTUAL_PENALTY': AncillaryType.DIGER,
       'COMMISSION': AncillaryType.KOMISYON,
       'OTHER': AncillaryType.DIGER,
     };
@@ -671,8 +675,9 @@ export class SummaryEngineService implements OnModuleInit {
       } else {
         const ancType = this.mapItemTypeToAncillary(itemType);
         if (ancType) {
-          // Masraf mı fer'i mi?
-          if (['FEE', 'EXPENSE'].includes(itemType)) {
+          // Masraf mı fer'i mi? (doc-27) FEE/EXPENSE/KOMISYON = masraf; gerisi fer'i.
+          // COMMISSION ölü (ClaimItemType'ta yok) ama niyet-doğru ve ileriye dönük.
+          if (['FEE', 'EXPENSE', 'COMMISSION'].includes(itemType)) {
             costs.set(ancType, (costs.get(ancType) || 0) + remaining);
           } else {
             ancillaries.set(ancType, (ancillaries.get(ancType) || 0) + remaining);
@@ -690,44 +695,53 @@ export class SummaryEngineService implements OnModuleInit {
     const allocations: Array<{ claimItemId: string; amount: number; allocationOrder: number }> = [];
     let orderIndex = 1;
 
-    // TBK 100 sırasına göre: FAİZ → MASRAF/FER'İ → ANAPARA
-    // P-0 (doc-27): MASRAF → FER'İ → FAİZ → ANAPARA. allocationOrder indeksi bu
-    // sırayı yansıtır (tutarlar allocator'dan gelir). NOT (F1/PR-AO-3): cost/anc
-    // SINIFLAMASI ayrı sorundur (KOMISYON şu an fer'i tarafına düşüyor — kapsam dışı).
-    const tbk100Order = ['FEE', 'EXPENSE', 'ATTORNEY_FEE', 'CHECK_PENALTY', 'PENALTY', 'COMMISSION', 'OTHER', 'INTEREST', 'PRE_INTEREST', 'POST_INTEREST', 'PRINCIPAL'];
+    // P-0 (doc-27): MASRAF → FER'İ → FAİZ → ANAPARA. allocationOrder indeksi bu sırayı
+    // yansıtır (tutarlar allocator'dan gelir). CONTRACTUAL_PENALTY dahil (yoksa o item'a
+    // satır atanmaz).
+    const tbk100Order = ['FEE', 'EXPENSE', 'COMMISSION', 'ATTORNEY_FEE', 'CHECK_PENALTY', 'PENALTY', 'CONTRACTUAL_PENALTY', 'OTHER', 'INTEREST', 'PRE_INTEREST', 'POST_INTEREST', 'PRINCIPAL'];
+
+    // PR-AO-3 ÇİFT-DAĞITIM FIX: result-kategori bazında PAYLAŞILAN kalan havuzu.
+    // Birden çok itemType aynı AncillaryType'a maplenince (örn. PENALTY/CONTRACTUAL/
+    // OTHER→DIGER, ya da CHECK_PENALTY→CEK), o tutar kombine item listesine TEK KEZ
+    // dağıtılır (eskiden her kategoriye TAM tekrar dağıtılıyordu → çift-sayım).
+    const remainingByResultCategory = new Map<string, number>();
+    for (const alloc of result.allocations) {
+      remainingByResultCategory.set(
+        alloc.category as string,
+        (remainingByResultCategory.get(alloc.category as string) || 0) + alloc.amountAllocated,
+      );
+    }
+
+    const resolveResultCategory = (cat: string): string | null => {
+      if (['INTEREST', 'PRE_INTEREST', 'POST_INTEREST'].includes(cat)) return 'INTEREST';
+      if (cat === 'PRINCIPAL') return 'PRINCIPAL';
+      return this.mapItemTypeToAncillary(cat); // AncillaryType (string) | null
+    };
 
     for (const category of tbk100Order) {
       const categoryItems = itemsByCategory.get(category) || [];
-      
-      // Bu kategoriye ne kadar ayrıldı?
-      let categoryAllocation = 0;
-      for (const alloc of result.allocations) {
-        if (alloc.category === 'INTEREST' && ['INTEREST', 'PRE_INTEREST', 'POST_INTEREST'].includes(category)) {
-          categoryAllocation = alloc.amountAllocated;
-          break;
-        } else if (alloc.category === 'PRINCIPAL' && category === 'PRINCIPAL') {
-          categoryAllocation = alloc.amountAllocated;
-          break;
-        } else if (alloc.category === this.mapItemTypeToAncillary(category)) {
-          categoryAllocation += alloc.amountAllocated;
-        }
-      }
+      if (categoryItems.length === 0) continue;
 
-      // Kategori içindeki item'lara dağıt (FIFO)
-      let remainingCategoryAlloc = categoryAllocation;
+      const resultCat = resolveResultCategory(category);
+      if (!resultCat) continue;
+
+      let avail = remainingByResultCategory.get(resultCat) || 0;
+      if (avail <= 0) continue;
+
       for (const item of categoryItems) {
-        if (remainingCategoryAlloc <= 0) break;
-        
-        const allocAmount = Math.min(item.remaining, remainingCategoryAlloc);
+        if (avail <= 0) break;
+        const allocAmount = Math.min(item.remaining, avail);
         if (allocAmount > 0) {
           allocations.push({
             claimItemId: item.id,
             amount: allocAmount,
             allocationOrder: orderIndex++,
           });
-          remainingCategoryAlloc -= allocAmount;
+          avail -= allocAmount;
         }
       }
+      // Paylaşılan havuzdan tüket (sonraki aynı-kategori itemType'lar kalanı paylaşır).
+      remainingByResultCategory.set(resultCat, avail);
     }
 
     return allocations;
