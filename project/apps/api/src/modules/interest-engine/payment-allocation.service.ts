@@ -8,8 +8,14 @@ import {
 
 /**
  * TBK 100 Ödeme Mahsubu Servisi
- * 
- * Türk Borçlar Kanunu 100. madde uyarınca ödeme sırası:
+ *
+ * @deprecated ÖLÜ — KULLANMA. Kanonik mahsup = `allocation-engine.service`
+ *   (allocateSinglePayment, P-0 sırası: MASRAF→FER'İ→FAİZ→ANAPARA) + `tbk100-allocator`.
+ *   Bu servis ESKİ FAİZ-ÖNCE sırayı (1.faiz 2.masraf 3.fer'i 4.anapara) taşır = **P-0 İHLALİ**.
+ *   DI provider'ından ve barrel export'undan ÇIKARILDI (de-fang); yanlışlıkla inject edilemez.
+ *   Yalnız tarihsel/karakterizasyon (payment-allocation.characterization.spec) için duruyor.
+ *
+ * Türk Borçlar Kanunu 100. madde uyarınca (ESKİ) ödeme sırası:
  * 1. İşlemiş faiz
  * 2. Masraflar (harç, tebligat, vb.)
  * 3. Fer'i alacaklar (komisyon, tazminat, vb.)
