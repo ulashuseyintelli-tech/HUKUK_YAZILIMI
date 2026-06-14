@@ -183,11 +183,11 @@ export class AllocationEngineService {
   /**
    * Allocate a single payment to multiple claims
    * 
-   * TBK 100 HARD RULE across all claims:
-   * 1. All claims' interest (by priority order)
-   * 2. All claims' costs (by priority order)
-   * 3. All claims' ancillaries (by priority order)
-   * 4. All claims' principal (by priority order)
+   * P-0 (doc-27) across all claims:
+   * 1. All claims' costs (masraf, by priority order)
+   * 2. All claims' ancillaries (fer'i, by priority order)
+   * 3. All claims' interest (faiz)
+   * 4. All claims' principal (anapara, last)
    */
   allocateSinglePayment(
     payment: Payment,
@@ -213,40 +213,14 @@ export class AllocationEngineService {
     const claimOrder = sortedClaims.map(c => c.claim.id);
     const ancillaryPriority = options.ancillaryPriority || DEFAULT_ANCILLARY_PRIORITY;
 
-    // TBK 100 HARD RULE: Process by category across all claims
+    // P-0 (doc-27): MASRAF → FER'İ → FAİZ → ANAPARA (tüm claim'ler arası, kategori bazında).
+    // İç içe cost+anc DEĞİL: önce TÜM masraf, sonra TÜM fer'i.
 
-    // 1. INTEREST - All claims' interest first
-    for (const claimId of claimOrder) {
-      if (remaining <= 0) break;
-      
-      const cds = claimDebtStates.find(c => c.claimId === claimId)!;
-      const interestAmount = cds.debtState.accruedInterest;
-      
-      if (interestAmount > 0) {
-        const allocated = Math.min(interestAmount, remaining);
-        cds.debtState.accruedInterest -= allocated;
-        remaining -= allocated;
-
-        steps.push(this.createAllocationStep(
-          payment,
-          claimId,
-          'INTEREST',
-          'İşlemiş Faiz',
-          interestAmount,
-          allocated,
-          cds.debtState.principal,
-        ));
-      }
-    }
-
-    // 2. COSTS & ANCILLARIES - All claims' costs/ancillaries by priority
+    // 1. COSTS (Masraflar) - tüm claim'lerin masrafı, ancillaryPriority sırasıyla
     for (const ancType of ancillaryPriority) {
       for (const claimId of claimOrder) {
         if (remaining <= 0) break;
-        
         const cds = claimDebtStates.find(c => c.claimId === claimId)!;
-        
-        // Costs
         const costAmount = cds.debtState.costs.get(ancType) || 0;
         if (costAmount > 0) {
           const allocated = Math.min(costAmount, remaining);
@@ -263,8 +237,14 @@ export class AllocationEngineService {
             cds.debtState.principal,
           ));
         }
+      }
+    }
 
-        // Ancillaries
+    // 2. ANCILLARIES (Fer'iler) - tüm claim'lerin fer'isi, ancillaryPriority sırasıyla
+    for (const ancType of ancillaryPriority) {
+      for (const claimId of claimOrder) {
+        if (remaining <= 0) break;
+        const cds = claimDebtStates.find(c => c.claimId === claimId)!;
         const ancAmount = cds.debtState.ancillaries.get(ancType) || 0;
         if (ancAmount > 0) {
           const allocated = Math.min(ancAmount, remaining);
@@ -284,7 +264,31 @@ export class AllocationEngineService {
       }
     }
 
-    // 3. PRINCIPAL - All claims' principal last
+    // 3. INTEREST (İşlemiş Faiz) - masraf ve fer'iden SONRA
+    for (const claimId of claimOrder) {
+      if (remaining <= 0) break;
+
+      const cds = claimDebtStates.find(c => c.claimId === claimId)!;
+      const interestAmount = cds.debtState.accruedInterest;
+
+      if (interestAmount > 0) {
+        const allocated = Math.min(interestAmount, remaining);
+        cds.debtState.accruedInterest -= allocated;
+        remaining -= allocated;
+
+        steps.push(this.createAllocationStep(
+          payment,
+          claimId,
+          'INTEREST',
+          'İşlemiş Faiz',
+          interestAmount,
+          allocated,
+          cds.debtState.principal,
+        ));
+      }
+    }
+
+    // 4. PRINCIPAL - All claims' principal last
     for (const claimId of claimOrder) {
       if (remaining <= 0) break;
       
