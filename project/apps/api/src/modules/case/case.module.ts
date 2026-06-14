@@ -6,14 +6,17 @@ import { AddressDiscoveryModule } from "../address-discovery/address-discovery.m
 import { InterestEngineModule } from "../interest-engine/interest-engine.module";
 import { ExpenseRequestModule } from "../expense-request/expense-request.module";
 import { DomainEventIngestModule } from "../icrabot/domain-event-ingest";
+import { CollectionModule } from "../collection/collection.module";
 
 @Module({
   imports: [
-    OcrModule, 
+    OcrModule,
     forwardRef(() => AddressDiscoveryModule),
     forwardRef(() => InterestEngineModule),
     forwardRef(() => ExpenseRequestModule),
     DomainEventIngestModule,
+    // G3d: tahsilat create/cancel tek otorite (CollectionService).
+    CollectionModule,
   ],
   controllers: [CaseController],
   providers: [CaseService],

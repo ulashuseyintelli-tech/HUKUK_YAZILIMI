@@ -444,6 +444,7 @@ export class CaseController {
   @Post(":id/collections")
   async createCollection(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Body() body: {
       caseDebtorId?: string;
@@ -460,7 +461,7 @@ export class CaseController {
       notes?: string;
     }
   ) {
-    return this.caseService.createCollection(tenantId, id, body);
+    return this.caseService.createCollection(tenantId, id, body, userId);
   }
 
   /**

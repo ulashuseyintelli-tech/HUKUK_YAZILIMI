@@ -9,8 +9,11 @@ import { DebtorCommunicationService } from "./communication.service";
 import { CommunicationController } from "./communication.controller";
 import { AddressService } from "./address.service";
 import { AddressController } from "./address.controller";
+import { CollectionModule } from "../collection/collection.module";
 
 @Module({
+  // G3d: ThirdPartyService alacak haczi tahsilatını kanonik CollectionService'ten yansıtır.
+  imports: [CollectionModule],
   controllers: [
     DebtorController,
     CaseDebtorController,
