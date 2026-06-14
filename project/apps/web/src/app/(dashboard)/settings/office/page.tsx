@@ -63,6 +63,8 @@ export default function OfficeSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  // Office bölümüne özel belirgin geri bildirim (paylaşılan saved/saving'e dokunmadan)
+  const [officeStatus, setOfficeStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [showLawyerModal, setShowLawyerModal] = useState(false);
   const [showBankModal, setShowBankModal] = useState(false);
   const [showStaffModal, setShowStaffModal] = useState(false);
@@ -137,8 +139,19 @@ export default function OfficeSettingsPage() {
 
   const handleSaveOffice = async () => {
     setSaving(true);
-    try { await api.put("/office", officeForm); showSaved(); } catch (e) { console.error(e); }
-    finally { setSaving(false); }
+    setOfficeStatus(null); // yeni denemede önceki (özellikle error) temizlenir
+    try {
+      await api.put("/office", officeForm);
+      showSaved();
+      setOfficeStatus({ ok: true, msg: "Kaydedildi" });
+      // success 3 sn sonra kaybolur; bu sırada gelen bir error'ı SİLME (yalnız ok ise temizle)
+      setTimeout(() => setOfficeStatus((s) => (s?.ok ? null : s)), 3000);
+    } catch (e: any) {
+      console.error(e);
+      setOfficeStatus({ ok: false, msg: e?.response?.data?.message || e?.message || "Kaydedilemedi" });
+    } finally {
+      setSaving(false);
+    }
   };
 
   const handleSaveSmtp = async () => {
@@ -274,9 +287,17 @@ export default function OfficeSettingsPage() {
             </div>
             <div><label className="text-muted-foreground">E-posta</label><input value={officeForm.email} onChange={e => setOfficeForm({...officeForm, email: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
           </div>
-          <button onClick={handleSaveOffice} disabled={saving} className="mt-2 px-3 py-1 bg-primary text-white text-xs rounded hover:bg-primary/90 disabled:opacity-50">
-            {saving ? "..." : "Kaydet"}
-          </button>
+          <div className="mt-2 flex items-center gap-2">
+            <button onClick={handleSaveOffice} disabled={saving} className="px-3 py-1 bg-primary text-white text-xs rounded hover:bg-primary/90 disabled:opacity-50">
+              {saving ? "..." : "Kaydet"}
+            </button>
+            {officeStatus && (
+              <span className={`text-xs inline-flex items-center gap-1 ${officeStatus.ok ? "text-green-600" : "text-red-600"}`}>
+                {officeStatus.ok ? <Check className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
+                {officeStatus.ok ? "Kaydedildi" : `Kaydedilemedi: ${officeStatus.msg}`}
+              </span>
+            )}
+          </div>
         </div>
 
         {/* Banka Hesapları */}
