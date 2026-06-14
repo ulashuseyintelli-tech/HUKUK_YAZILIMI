@@ -660,8 +660,39 @@ export class SummaryEngineService implements OnModuleInit {
       if (remaining <= 0) continue;
 
       const itemType = item.itemType;
-      
-      // Kategoriye göre grupla
+
+      // D (vergi): TAX_* tek başına masraf/fer'i DEĞİL → metadata.taxParentCategory'nin
+      // tier'ine PARENT kalemin kovasına yönlendirilir (ledger D). metadata YOKSA
+      // silent-drop YASAK → diagnostic warn + DIŞLA (D-K-S1a). result-mapping (PR-AO-3)
+      // bu item'ı yönlendirildiği mevcut kovadan (PRINCIPAL/INTEREST/OTHER) dağıtır.
+      if (['TAX_KDV', 'TAX_BSMV', 'TAX_KKDF'].includes(itemType)) {
+        const pc = (item.metadata as any)?.taxParentCategory;
+        let taxKey: string | null = null;
+        if (pc === 'PRINCIPAL') {
+          principal += remaining;
+          taxKey = 'PRINCIPAL';
+        } else if (pc === 'INTEREST') {
+          accruedInterest += remaining;
+          taxKey = 'INTEREST';
+        } else if (pc === 'ANCILLARY') {
+          ancillaries.set(AncillaryType.DIGER, (ancillaries.get(AncillaryType.DIGER) || 0) + remaining);
+          taxKey = 'OTHER';
+        } else if (pc === 'COST') {
+          costs.set(AncillaryType.DIGER, (costs.get(AncillaryType.DIGER) || 0) + remaining);
+          taxKey = 'OTHER';
+        } else {
+          this.logger.warn(
+            `TAX item without valid taxParentCategory; excluded from allocation ` +
+              `(item=${item.id}, itemType=${itemType}, parent=${pc})`,
+          );
+          continue;
+        }
+        if (!itemsByCategory.has(taxKey)) itemsByCategory.set(taxKey, []);
+        itemsByCategory.get(taxKey)!.push({ id: item.id, remaining });
+        continue;
+      }
+
+      // Kategoriye göre grupla (non-TAX)
       if (!itemsByCategory.has(itemType)) {
         itemsByCategory.set(itemType, []);
       }

@@ -572,13 +572,14 @@ export class CollectionService {
     // 1. Ledger var mı? (kanonik kaynak)
     const ledgerAllocs = await (this.prisma as any).ledgerAllocation.findMany({
       where: { ledgerEntry: { tenantId, caseId, status: "CONFIRMED" } },
-      select: { amount: true, claimItem: { select: { itemType: true } } },
+      // D (vergi): TAX_* kovası metadata.taxParentCategory'den çözülür → metadata seç.
+      select: { amount: true, claimItem: { select: { itemType: true, metadata: true } } },
     });
 
     if (ledgerAllocs.length > 0) {
       // LEDGER-ONLY (CollectionAllocation'a BAKILMAZ → çift-sayım imkânsız)
       for (const la of ledgerAllocs) {
-        const at = mapClaimItemTypeToAllocationType(la.claimItem.itemType);
+        const at = mapClaimItemTypeToAllocationType(la.claimItem.itemType, la.claimItem.metadata);
         breakdown[at] += Number(la.amount);
       }
       return breakdown;

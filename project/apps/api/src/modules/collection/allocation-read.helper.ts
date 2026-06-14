@@ -24,7 +24,8 @@ export function emptyBreakdown(): AllocationBreakdown {
   };
 }
 
-// EXHAUSTIVE: 14 ClaimItemType → 7 AllocationType kovası (silent default yok).
+// EXHAUSTIVE: ClaimItemType → AllocationType kovası (silent default yok).
+// TAX_* burada DEĞİL — parent'a (metadata.taxParentCategory) göre çözülür (D).
 const ITEM_TYPE_TO_ALLOCATION: Record<string, AllocationType> = {
   PRINCIPAL: AllocationType.PRINCIPAL,
   INTEREST: AllocationType.INTEREST,
@@ -36,19 +37,30 @@ const ITEM_TYPE_TO_ALLOCATION: Record<string, AllocationType> = {
   PENALTY: AllocationType.PENALTY,
   CHECK_PENALTY: AllocationType.PENALTY,
   CONTRACTUAL_PENALTY: AllocationType.PENALTY,
-  TAX_KDV: AllocationType.OTHER,
-  TAX_BSMV: AllocationType.OTHER,
-  TAX_KKDF: AllocationType.OTHER,
   OTHER: AllocationType.OTHER,
 };
 
+const TAX_ITEM_TYPES = ['TAX_KDV', 'TAX_BSMV', 'TAX_KKDF'];
+
 /**
- * ClaimItem.itemType → AllocationType kovası. Bilinmeyen değerde throw (doc-24).
+ * ClaimItem.itemType → AllocationType kovası (okuma-tarafı). Bilinmeyen değerde throw (doc-24).
+ *
+ * D (vergi): TAX_* parent'ının niteliğini alır → metadata.taxParentCategory'den kova:
+ * PRINCIPAL→PRINCIPAL · INTEREST→INTEREST · COST/ANCILLARY/eksik → OTHER (D-K-S3 + display fallback).
  *
  * Çağrıldığı yerler:
  * - CollectionService.getCollectedBreakdown() → ledger-okuma kırılımı
  */
-export function mapClaimItemTypeToAllocationType(itemType: ClaimItemType | string): AllocationType {
+export function mapClaimItemTypeToAllocationType(
+  itemType: ClaimItemType | string,
+  metadata?: unknown,
+): AllocationType {
+  if (TAX_ITEM_TYPES.includes(itemType as string)) {
+    const pc = (metadata as any)?.taxParentCategory;
+    if (pc === 'PRINCIPAL') return AllocationType.PRINCIPAL;
+    if (pc === 'INTEREST') return AllocationType.INTEREST;
+    return AllocationType.OTHER; // COST/ANCILLARY/eksik → OTHER (display fallback)
+  }
   const mapped = ITEM_TYPE_TO_ALLOCATION[itemType as string];
   if (!mapped) {
     throw new Error(`Eşlenmemiş ClaimItemType→AllocationType: "${itemType}"`);
