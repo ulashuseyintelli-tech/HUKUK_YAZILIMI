@@ -21,6 +21,11 @@ import {
 import { DomainEventIngestService } from "../icrabot/domain-event-ingest";
 import { OccurredAtConfidence, ActorType } from "../icrabot/domain-event-ingest/domain-event-ingest.types";
 import { SummaryEngineService } from "../summary-engine/summary-engine.service";
+import {
+  AllocationBreakdown,
+  emptyBreakdown,
+  mapClaimItemTypeToAllocationType,
+} from "./allocation-read.helper";
 
 // ─── Source → Header Mapping ─────────────────────────────────────────────────
 
@@ -545,6 +550,55 @@ export class CollectionService {
    * @see ARCHITECTURE.md - Source of Truth Matrix
    * @see interest-engine/interest-engine.service.ts
    */
+  /**
+   * G3b — Tahsilat mahsup KIRILIMINI kanonik kaynaktan üretir (PER-CASE TEK KAYNAK).
+   *
+   * Çift-sayım GUARD'ı tek nokta: case'te EN AZ BİR (CONFIRMED) LedgerAllocation
+   * varsa YALNIZ ledger okunur (LedgerAllocation = legal SoT); yoksa CollectionAllocation
+   * fallback (compat). İkisi ASLA birlikte toplanmaz.
+   *
+   * NOT (mixed-case): ledgerli case'te dönen kırılım ledger alt-kümesidir; ledger'sız
+   * eski collection'lar dahil DEĞİLDİR. Çift-sayımı önler; tam tarihsel hizalama G3c.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CollectionService.calculateCover() → GET /collections/cover/:caseId (cover.collectionDetails)
+   * - ReportService.getCaseDebtReport() → GET /reports/... (allocatedByType)
+   * </remarks>
+   */
+  async getCollectedBreakdown(tenantId: string, caseId: string): Promise<AllocationBreakdown> {
+    const breakdown = emptyBreakdown();
+
+    // 1. Ledger var mı? (kanonik kaynak)
+    const ledgerAllocs = await (this.prisma as any).ledgerAllocation.findMany({
+      where: { ledgerEntry: { tenantId, caseId, status: "CONFIRMED" } },
+      select: { amount: true, claimItem: { select: { itemType: true } } },
+    });
+
+    if (ledgerAllocs.length > 0) {
+      // LEDGER-ONLY (CollectionAllocation'a BAKILMAZ → çift-sayım imkânsız)
+      for (const la of ledgerAllocs) {
+        const at = mapClaimItemTypeToAllocationType(la.claimItem.itemType);
+        breakdown[at] += Number(la.amount);
+      }
+      return breakdown;
+    }
+
+    // 2. FALLBACK: CollectionAllocation (compat; case'te ledger yok)
+    const collections = await (this.prisma.collection as any).findMany({
+      where: { tenantId, caseId, status: CollectionStatus.CONFIRMED },
+      include: { allocations: true },
+    });
+    for (const col of collections) {
+      for (const alloc of (col as any).allocations || []) {
+        const at = alloc.allocationType as AllocationType;
+        const key = breakdown[at] !== undefined ? at : AllocationType.OTHER;
+        breakdown[key] += Number(alloc.amount);
+      }
+    }
+    return breakdown;
+  }
+
   async calculateCover(
     tenantId: string,
     caseId: string,
@@ -579,56 +633,32 @@ export class CollectionService {
     // Toplam alacak
     const totalClaim = principalAmount + interestAmount + expenseAmount + feeAmount + attorneyFeeAmount + otherAmount;
 
-    // Tahsilatları al
+    // Tahsilatları al (totalCollected için; kırılım getCollectedBreakdown'dan gelir)
     const collections = await (this.prisma.collection as any).findMany({
       where: {
         tenantId,
         caseId,
         status: CollectionStatus.CONFIRMED,
       },
-      include: {
-        allocations: true,
-      },
+      select: { amount: true },
     });
 
-    // Tahsilat detayları
+    const totalCollected = collections.reduce(
+      (sum: number, c: any) => sum + Number(c.amount),
+      0,
+    );
+
+    // G3b: mahsup kırılımı kanonik kaynaktan (ledger-varsa-ledger / yoksa-CollectionAllocation).
+    const bd = await this.getCollectedBreakdown(tenantId, caseId);
     const collectionDetails = {
-      principal: 0,
-      interest: 0,
-      expense: 0,
-      fee: 0,
-      attorneyFee: 0,
-      other: 0,
+      principal: bd[AllocationType.PRINCIPAL],
+      interest: bd[AllocationType.INTEREST],
+      expense: bd[AllocationType.EXPENSE],
+      fee: bd[AllocationType.FEE],
+      attorneyFee: bd[AllocationType.ATTORNEY_FEE],
+      // cover 6-alan şeması: PENALTY kovası "other"a katlanır (mevcut default davranışı).
+      other: bd[AllocationType.OTHER] + bd[AllocationType.PENALTY],
     };
-
-    let totalCollected = 0;
-
-    for (const col of collections) {
-      totalCollected += Number(col.amount);
-
-      for (const alloc of (col as any).allocations || []) {
-        const allocAmount = Number(alloc.amount);
-        switch (alloc.allocationType) {
-          case AllocationType.PRINCIPAL:
-            collectionDetails.principal += allocAmount;
-            break;
-          case AllocationType.INTEREST:
-            collectionDetails.interest += allocAmount;
-            break;
-          case AllocationType.EXPENSE:
-            collectionDetails.expense += allocAmount;
-            break;
-          case AllocationType.FEE:
-            collectionDetails.fee += allocAmount;
-            break;
-          case AllocationType.ATTORNEY_FEE:
-            collectionDetails.attorneyFee += allocAmount;
-            break;
-          default:
-            collectionDetails.other += allocAmount;
-        }
-      }
-    }
 
     // Kalan borç
     const remainingDebt = Math.max(0, totalClaim - totalCollected);
