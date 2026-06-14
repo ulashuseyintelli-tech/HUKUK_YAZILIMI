@@ -3,7 +3,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { InterestEngineService } from './interest-engine.service';
 import { RateScheduleService } from './rate-schedule.service';
-import { PaymentAllocationService } from './payment-allocation.service';
+// payment-allocation.service: @deprecated/ölü → DI provider'ından ÇIKARILDI (de-fang). Import yok.
 import { PolicyGateService } from './policy-gate.service';
 import { InterestAuditLogService } from './audit-log.service';
 import { RateSyncService } from './rate-sync.service';
@@ -73,7 +73,8 @@ const AuditServiceProvider = {
     // Legacy services (deprecated, kept for backward compatibility)
     InterestEngineService,
     RateScheduleService, // @deprecated - use RateProviderService
-    PaymentAllocationService,
+    // PaymentAllocationService KALDIRILDI (de-fang): ölü + ESKİ faiz-önce sıra (P-0 ihlali);
+    //   kanonik = AllocationEngineService + TBK100AllocatorService. Dosya yalnız characterization için durur.
     PolicyGateService,
     InterestAuditLogService,
     RateSyncService,
