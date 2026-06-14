@@ -29,6 +29,8 @@ export enum InterestEngineErrorCode {
   E_INTEREST_ANOMALY = 'E_INTEREST_ANOMALY',
   E_LONG_SEGMENT = 'E_LONG_SEGMENT',
   E_MISSING_REQUIRED = 'E_MISSING_REQUIRED',
+  // E-G2a/Q3: oran ZORUNLU ama YOK (E_INVALID_RATE'ten ayrı: o "oran var ama geçersiz").
+  E_FIXED_RATE_REQUIRED = 'E_FIXED_RATE_REQUIRED',
   E_INVALID_CURRENCY = 'E_INVALID_CURRENCY',
   E_ALLOCATION_OVERFLOW = 'E_ALLOCATION_OVERFLOW',
   
@@ -97,6 +99,11 @@ export interface MissingRequiredEvidence {
   missingFields: string[];
 }
 
+export interface FixedRateRequiredEvidence {
+  claimId: string;
+  interestType: string;
+}
+
 export interface InvalidCurrencyEvidence {
   providedCurrency: string;
   allowedCurrencies: string[];
@@ -140,6 +147,7 @@ export type ErrorEvidence =
   | InterestAnomalyEvidence
   | LongSegmentEvidence
   | MissingRequiredEvidence
+  | FixedRateRequiredEvidence
   | InvalidCurrencyEvidence
   | AllocationOverflowEvidence
   | CurrencyMismatchEvidence

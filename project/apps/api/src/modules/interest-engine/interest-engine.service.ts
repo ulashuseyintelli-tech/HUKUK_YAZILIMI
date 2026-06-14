@@ -22,6 +22,8 @@ import {
   DEFAULT_INTERPRETATION_PROFILE_ID,
 } from './types/calculation.types';
 import { ClaimBucket, Segment, AllocationStep, InterestTypeCode } from './types/domain.types';
+// E-G2a: fixedRate zorunluluk predicate'i + % → 0-1 dönüştürücü (TEK kaynak, packages/types).
+import { requiresFixedRate, percentToRate } from '@shared/types';
 import { CalculationMode, RoundingMode, RoundingScope, SameDayPaymentRule } from './types/common.types';
 import { RateEntry, RateSourceType } from './rates/rate-entry.entity';
 import { CoverageMapBuilder } from './rates/coverage-map.builder';
@@ -297,6 +299,19 @@ export class InterestEngineService {
         { missingFields: ['asOfDate'] },
       );
     }
+
+    // E-G2a/Q3: KANONİK ENFORCEMENT — fixedRate zorunlu türde (COMMERCIAL_FIXED/CONTRACTUAL)
+    // oran yoksa generic hataya DÜŞME; net E_FIXED_RATE_REQUIRED üret (silent default yok).
+    // claim.fixedRate burada 0-1 (ClaimBucket kanoniktir; % dönüşümü intake sınırında yapılır).
+    for (const claim of request.claimBuckets) {
+      if (requiresFixedRate(claim.interestType) && claim.fixedRate == null) {
+        throw new InterestEngineError(
+          InterestEngineErrorCode.E_FIXED_RATE_REQUIRED,
+          `Sabit oranlı faiz türü (${claim.interestType}) için fixedRate zorunludur`,
+          { claimId: claim.id, interestType: claim.interestType },
+        );
+      }
+    }
   }
 
   private buildAllSegments(
@@ -519,6 +534,18 @@ export class InterestEngineService {
       };
     }
 
+    // E-G2a/Q3: validateRequest guard'ının PREVIEW yansıması — fixedRate zorunlu türde oran
+    // yoksa generic RATE_NOT_FOUND yerine net FIXED_RATE_REQUIRED döndür (silent default yok).
+    if (requiresFixedRate(interestType) && fixedRate === undefined) {
+      return {
+        success: false,
+        error: {
+          code: 'FIXED_RATE_REQUIRED',
+          message: `Sabit oranlı faiz türü (${interestType}) için fixedRate (oran) zorunludur`,
+        },
+      };
+    }
+
     // 2. Get rates for period
     const rates = this.getPreviewRates(interestType, currency, startDate, endDate, fixedRate);
     
@@ -565,7 +592,7 @@ export class InterestEngineService {
       startDate,
       interestType: interestType as InterestTypeCode,
       dayCountBasis: dayCountBasis as 365 | 360,
-      fixedRate: fixedRate !== undefined ? fixedRate / 100 : undefined, // Convert % to decimal
+      fixedRate: fixedRate !== undefined ? percentToRate(fixedRate) : undefined, // E-G2a: % → 0-1
     };
 
     const segmentResult = this.segmentBuilder.buildSegments(
@@ -673,7 +700,7 @@ export class InterestEngineService {
         interestType: interestType as InterestTypeCode,
         validFrom: startDate,
         validTo: endDate,
-        annualRate: fixedRate / 100, // % to decimal
+        annualRate: percentToRate(fixedRate), // E-G2a: % → 0-1
         source: RateSourceType.CONTRACT,
         sourceReference: 'Sabit Oran',
         versionHash: 'fixed-rate',
@@ -703,7 +730,7 @@ export class InterestEngineService {
       interestType: interestType as InterestTypeCode,
       validFrom: '2025-01-01',
       validTo: null, // Open-ended
-      annualRate: rate / 100, // % to decimal
+      annualRate: percentToRate(rate), // E-G2a: % → 0-1
       source: RateSourceType.TCMB,
       sourceReference: interestType,
       versionHash: `${interestType}-2025-01`,

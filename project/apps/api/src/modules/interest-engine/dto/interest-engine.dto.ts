@@ -1,4 +1,4 @@
-import { IsString, IsNumber, IsOptional, IsArray, IsEnum, IsBoolean, ValidateNested, IsDateString, IsIn } from 'class-validator';
+import { IsString, IsNumber, IsOptional, IsArray, IsEnum, IsBoolean, ValidateNested, IsDateString, IsIn, Min, Max } from 'class-validator';
 import { Type } from 'class-transformer';
 import { InterestTypeCode, RateSourceType, Currency } from '../types';
 
@@ -24,6 +24,15 @@ export class PrincipalItemDto {
 
   @IsEnum(InterestTypeCode)
   interestType: InterestTypeCode;
+
+  // E-G2a/Q2a: Sabit oran (YÜZDE, ör. 18 / 48 / 60) — COMMERCIAL_FIXED / CONTRACTUAL için.
+  // Motor sınırında percentToRate ile 0-1'e çevrilir. NOT: bu DTO policy-validation yüzeyidir
+  // (principalItems → policy-gate); hesaplayıcıya canlı wiring D-E assembler gate'inde (additive).
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  @Max(999.99)
+  fixedRate?: number;
 
   @IsOptional()
   @IsNumber()

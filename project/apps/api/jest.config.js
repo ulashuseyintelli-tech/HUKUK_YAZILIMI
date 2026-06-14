@@ -17,5 +17,9 @@
   testEnvironment: 'node',
   moduleNameMapper: {
     '^@/(.*)$': '<rootDir>/$1',
+    // E-G2a: '@shared/types' tsconfig paths'te tanımlı (→ packages/types/src). Runtime (nest start)
+    // path'leri çözer; jest için '@/' deseniyle paralel map gerekir (value-import çözümü).
+    '^@shared/types$': '<rootDir>/../../../packages/types/src',
+    '^@shared/types/(.*)$': '<rootDir>/../../../packages/types/src/$1',
   },
 };

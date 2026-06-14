@@ -27,6 +27,8 @@ import { CalculationRequest, CalculationResult } from './types/calculation.types
 import { RateEntry } from './rates/rate-entry.entity';
 import { CalculationMode } from './types/common.types';
 import { InterestTypeCode } from './types/domain.types';
+// E-G2a: fixedRate zorunluluk predicate'i + % → 0-1 dönüştürücü (TEK kaynak, packages/types).
+import { requiresFixedRate, percentToRate } from '@shared/types';
 
 // ═══════════════════════════════════════════════════════════════════════════
 // DTOs
@@ -76,7 +78,7 @@ export interface PreviewResponseDto {
     interestType: InterestTypeCode;
   };
   error?: {
-    code: 'RATE_NOT_FOUND' | 'SERVICE_UNAVAILABLE' | 'INVALID_INPUT' | 'INVALID_DATE_RANGE';
+    code: 'RATE_NOT_FOUND' | 'SERVICE_UNAVAILABLE' | 'INVALID_INPUT' | 'INVALID_DATE_RANGE' | 'FIXED_RATE_REQUIRED';
     message: string;
   };
   cached: boolean;
@@ -238,6 +240,19 @@ export class InterestEngineController {
       // Calculate days
       const days = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
 
+      // E-G2a/Q3: fixedRate zorunlu türde (COMMERCIAL_FIXED/CONTRACTUAL) oran yoksa net
+      // FIXED_RATE_REQUIRED döndür — generic RATE_NOT_FOUND'a düşme (silent default yok).
+      if (requiresFixedRate(dto.interestType) && dto.fixedRate === undefined) {
+        return {
+          success: false,
+          error: {
+            code: 'FIXED_RATE_REQUIRED',
+            message: `Sabit oranlı faiz türü (${dto.interestType}) için fixedRate (oran) zorunludur`,
+          },
+          cached: false,
+        };
+      }
+
       // Get current rate based on interest type
       // TODO: Implement proper rate lookup from RateProviderService
       const currentRate = this.getPreviewRate(dto.interestType, dto.fixedRate);
@@ -254,7 +269,7 @@ export class InterestEngineController {
       }
 
       // Simple interest calculation (preview only - not for legal use)
-      const annualRate = currentRate / 100;
+      const annualRate = percentToRate(currentRate); // E-G2a: % → 0-1
       const estimatedInterest = Math.round(dto.principalAmount * annualRate * days / 365 * 100) / 100;
 
       // Cache expiry: 5 minutes
