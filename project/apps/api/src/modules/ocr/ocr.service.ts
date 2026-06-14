@@ -462,6 +462,43 @@ const FORM_MAPPING: Record<DetectedCaseType, Record<string, string>> = {
   },
 };
 
+/**
+ * Müvekkil telefonunu doğrular ve normalize eder.
+ *
+ * SADECE Türk cep telefonu kabul edilir (05XX / +905XX / 5XX → "05XXXXXXXXX").
+ * Sabit hatlar (0212, 0216, 0312 vb. noter/büro santralleri) ve beklenmeyen
+ * uzunluktaki değerler reddedilir → undefined. Böylece vekaletname taramasında
+ * noterin sabit hattının müvekkil telefonu sanılması engellenir.
+ *
+ * Çağrıldığı yerler:
+ * - OcrService.scanPowerOfAttorney() (AI text parse) → vekalet müvekkil telefonu sanitize
+ * - OcrService.scanPoaWithVision() (Vision parse) → vekalet müvekkil telefonu sanitize
+ * NOT: Borç evrakı taraf telefonlarına (parseDebtDocument*) uygulanmaz; şirket
+ *      taraflarının sabit hattı meşru olabilir.
+ */
+export function sanitizeClientPhone(raw: unknown): string | undefined {
+  if (typeof raw !== "string") return undefined;
+  const digits = raw.replace(/\D/g, "");
+  if (!digits) return undefined;
+
+  // Ülke/alan kodu varyantlarını 10 haneli ulusal numaraya indir
+  let national: string;
+  if (digits.length === 12 && digits.startsWith("90")) {
+    national = digits.slice(2); // +90 5XX XXXXXXX
+  } else if (digits.length === 11 && digits.startsWith("0")) {
+    national = digits.slice(1); // 05XX XXXXXXX
+  } else if (digits.length === 10) {
+    national = digits; // 5XX XXXXXXX
+  } else {
+    return undefined; // beklenmeyen uzunluk → güvenli tarafta reddet
+  }
+
+  // Türk cep telefonları ulusal numarada "5" ile başlar; sabit hatlar 2/3/4 ile.
+  if (!national.startsWith("5")) return undefined;
+
+  return `0${national}`;
+}
+
 @Injectable()
 export class OcrService {
   private readonly logger = new Logger(OcrService.name);
@@ -1338,6 +1375,13 @@ KAPSAM TESPİTİ:
 - "özel vekalet", "sınırlı yetki" → scopeType: "OZEL"
 - Genel ifadeler veya belirtilmemişse → scopeType: "GENEL"
 
+TELEFON:
+- "phone" alanına SADECE müvekkilin cep telefonunu yaz (05XX...).
+- Noterin/büronun sabit hattını (0212, 0216, 0312 vb.) müvekkil telefonu olarak ALMA.
+- Müvekkilin cep telefonundan emin değilsen phone: null bırak.
+
+NOT (tarih): poaDate/validUntil alanlarında belgedeki tarihi olduğu gibi al; emin değilsen null bırak, tahmin etme.
+
 JSON formatında yanıt ver:
 {
   "clientType": "PERSON|COMPANY|PUBLIC",
@@ -1399,7 +1443,7 @@ JSON formatında yanıt ver:
         tckn: parsed.tckn || undefined,
         vkn: parsed.vkn || undefined,
         taxOffice: parsed.taxOffice || undefined,
-        phone: parsed.phone || undefined,
+        phone: sanitizeClientPhone(parsed.phone),
         email: parsed.email || undefined,
         address: parsed.address || undefined,
         city: parsed.city || undefined,
@@ -1650,6 +1694,8 @@ JSON formatında yanıt ver:
 
 SÜRELİ VEKALET: isLimited: true SADECE vekaletin kendisi için açık "...tarihine kadar geçerlidir" ibaresi varsa. Müvekkilin KİMLİK KARTI geçerlilik tarihini veya noter/düzenleme tarihini validUntil/süre SANMA; açık bir bitiş ibaresi yoksa isLimited: false ve validUntil: null.
 KAPSAM: İcra takip işlemleri için ise ICRA_TAKIP, belirli dosya için ise BU_DOSYA, özel kapsam ise OZEL, genel ise GENEL.
+TELEFON: Noterin/büronun sabit hattını müvekkil telefonu olarak alma; müvekkilin cep telefonundan emin değilsen yazma.
+NOT (tarih): poaDate/validUntil alanlarında belgedeki tarihi olduğu gibi al; emin değilsen null bırak, tahmin etme.
 
 Sadece JSON döndür, başka açıklama ekleme.`
               },
@@ -1696,7 +1742,7 @@ Sadece JSON döndür, başka açıklama ekleme.`
         tckn: parsed.tckn || undefined,
         vkn: parsed.vkn || undefined,
         taxOffice: parsed.taxOffice || undefined,
-        phone: parsed.phone || undefined,
+        phone: sanitizeClientPhone(parsed.phone),
         email: parsed.email || undefined,
         address: parsed.address || undefined,
         city: parsed.city || undefined,
