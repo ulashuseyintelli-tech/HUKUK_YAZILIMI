@@ -1499,8 +1499,9 @@ model Office {
   smsSender    String? // Gönderen adı
 
   // Otomatik Tebrik Ayarları
-  autoGreetingEnabled Boolean @default(true) // Otomatik tebrik sistemi açık/kapalı
-  autoGreetingTime    String? @default("09:00") // Tebrik gönderim saati (HH:mm)
+  autoGreetingEnabled Boolean   @default(true) // Otomatik tebrik sistemi açık/kapalı
+  autoGreetingTime    String?   @default("09:00") // Tebrik gönderim saati (HH:mm)
+  lastGreetingRunAt   DateTime? // Otomatik tebrik scheduler'ının o tenant için en son BAŞARIYLA çalıştığı an (aynı-gün tekrar gönderim guard'ı)
 
   // İİK 78 Ayarları
   inactivityThresholdDays Int @default(365) // Pasifleşme süresi (gün) - İİK 78
