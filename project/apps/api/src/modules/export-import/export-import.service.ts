@@ -2,6 +2,32 @@ import { Injectable } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 import * as ExcelJS from "exceljs";
 import * as PDFDocument from "pdfkit";
+import { computeDebtorMissingFields } from "../debtor/debtor.service"; // PR-D5-e: eksik bilgi sayısı
+
+// PR-D5-e borçlu export etiketleri.
+const DEBTOR_TYPE_LABELS: Record<string, string> = {
+  INDIVIDUAL: "Sahis",
+  COMPANY: "Kurum",
+  PUBLIC_INSTITUTION: "Kamu",
+  ESTATE: "Tereke",
+};
+const DEBTOR_RISK_LABELS: Record<string, string> = {
+  DUSUK: "Dusuk",
+  ORTA: "Orta",
+  YUKSEK: "Yuksek",
+  COK_YUKSEK: "Kritik",
+};
+const debtorCity = (d: any): string =>
+  (d.debtorAddresses?.find((a: any) => a.isPrimary)?.city || d.debtorAddresses?.[0]?.city || "-");
+
+export interface DebtorExportFilters {
+  search?: string;
+  type?: string;
+  riskLevel?: string;
+  city?: string;
+  sortBy?: string;
+  sortOrder?: string;
+}
 
 // ── Müvekkil PDF export yardımcıları (saf/test-edilebilir) ──
 // NOT: PDFKit varsayılan fontu (Helvetica/WinAnsi) Türkçe ş/ğ/İ/ı gibi karakterleri
@@ -385,6 +411,112 @@ export class ExportImportService {
       }
     }
     return { success, errors };
+  }
+
+  // ==================== BORÇLU EXPORT (PR-D5-e) ====================
+
+  async exportDebtorsToExcel(tenantId: string, filters?: DebtorExportFilters): Promise<Buffer> {
+    const debtors = await this.getDebtorsForExport(tenantId, filters);
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Borclular");
+    sheet.columns = [
+      { header: "Ad / Unvan", key: "name", width: 30 },
+      { header: "Tur", key: "type", width: 12 },
+      { header: "Kimlik / VKN / DETSIS", key: "identityNo", width: 20 },
+      { header: "Telefon", key: "phone", width: 15 },
+      { header: "E-posta", key: "email", width: 25 },
+      { header: "Risk", key: "risk", width: 10 },
+      { header: "Sehir", key: "city", width: 15 },
+      { header: "Adres Sayisi", key: "addressCount", width: 12 },
+      { header: "Eksik Bilgi", key: "missingCount", width: 12 },
+      { header: "Olusturma", key: "createdAt", width: 18 },
+    ];
+    sheet.getRow(1).font = { bold: true };
+    for (const d of debtors) {
+      sheet.addRow({
+        name: d.name || "",
+        type: DEBTOR_TYPE_LABELS[d.type] || d.type,
+        identityNo: d.identityNo || "",
+        phone: d.phone || "",
+        email: d.email || "",
+        risk: d.riskLevel ? DEBTOR_RISK_LABELS[d.riskLevel] || d.riskLevel : "",
+        city: debtorCity(d),
+        addressCount: d.debtorAddresses?.length || 0,
+        missingCount: computeDebtorMissingFields(d).length,
+        createdAt: formatDateTR(d.createdAt),
+      });
+    }
+    const buffer = await workbook.xlsx.writeBuffer();
+    return Buffer.from(buffer);
+  }
+
+  async exportDebtorsToPdf(tenantId: string, filters?: DebtorExportFilters): Promise<Buffer> {
+    const debtors = await this.getDebtorsForExport(tenantId, filters);
+    return new Promise((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      const doc = new PDFDocument({ size: "A4", margin: 40 });
+      doc.on("data", (chunk) => chunks.push(chunk));
+      doc.on("end", () => resolve(Buffer.concat(chunks)));
+      doc.on("error", reject);
+
+      doc.fontSize(16).fillColor("#000").text("Borclu Listesi", { align: "center" });
+      doc.moveDown(0.3);
+      doc.fontSize(9).fillColor("#666");
+      doc.text(`Olusturulma: ${formatDateTR(new Date())}  |  Toplam: ${debtors.length} borclu`, { align: "center" });
+      doc.fillColor("#000").moveDown(0.8);
+
+      if (debtors.length === 0) {
+        doc.fontSize(11).text("Kayit bulunamadi.", { align: "center" });
+        doc.end();
+        return;
+      }
+
+      debtors.forEach((d: any, idx: number) => {
+        const typeLabel = DEBTOR_TYPE_LABELS[d.type] || d.type;
+        const risk = d.riskLevel ? DEBTOR_RISK_LABELS[d.riskLevel] || d.riskLevel : "-";
+        const missing = computeDebtorMissingFields(d).length;
+        doc.fontSize(11).fillColor("#000").text(`${idx + 1}. ${d.name || "-"}  [${typeLabel}]`);
+        doc.fontSize(9).fillColor("#333");
+        doc.text(`Kimlik: ${d.identityNo || "-"}     Tel: ${d.phone || "-"}     E-posta: ${d.email || "-"}`);
+        doc.text(`Risk: ${risk}     Sehir: ${debtorCity(d)}     Adres: ${d.debtorAddresses?.length || 0}     Eksik Bilgi: ${missing}`);
+        doc.text(`Kayit: ${formatDateTR(d.createdAt)}`);
+        doc.fillColor("#000").moveDown(0.5);
+      });
+
+      doc.end();
+    });
+  }
+
+  /** Borçlu export verisi: liste filtreleriyle (search/type/riskLevel/city/sort) UYUMLU, SAYFALAMA YOK. */
+  private async getDebtorsForExport(tenantId: string, filters?: DebtorExportFilters) {
+    const where: any = { tenantId };
+    const search = filters?.search?.trim();
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { identityNo: { contains: search } },
+        { tckn: { contains: search } },
+        { vkn: { contains: search } },
+        { detsisNo: { contains: search } },
+        { email: { contains: search, mode: "insensitive" } },
+        { phone: { contains: search } },
+      ];
+    }
+    if (filters?.type && filters.type !== "ALL") where.type = filters.type;
+    if (filters?.riskLevel && filters.riskLevel !== "ALL") where.riskLevel = filters.riskLevel;
+    const city = filters?.city?.trim();
+    if (city) where.debtorAddresses = { some: { city: { contains: city, mode: "insensitive" } } };
+
+    const SORT_ALLOWLIST = ["name", "identityNo", "type", "createdAt", "updatedAt"];
+    const validSort = SORT_ALLOWLIST.includes(filters?.sortBy || "");
+    const sortField = validSort ? (filters!.sortBy as string) : "createdAt";
+    const direction = validSort && filters?.sortOrder === "asc" ? "asc" : "desc";
+
+    return this.prisma.debtor.findMany({
+      where,
+      include: { debtorAddresses: true, estateHeirs: true },
+      orderBy: { [sortField]: direction },
+    });
   }
 
   private async getClients(tenantId: string, filters?: { type?: string; search?: string }) {
