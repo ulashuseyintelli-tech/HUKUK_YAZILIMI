@@ -11,6 +11,7 @@ import {
 import { OfficeService } from "./office.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
+import { StaffType } from "@prisma/client";
 
 @Controller("office")
 @UseGuards(JwtAuthGuard)
@@ -189,6 +190,7 @@ export class OfficeController {
       opRepeatMonths?: number;
       opEmailEnabled?: boolean;
       opSmsEnabled?: boolean;
+      opStaffTypes?: StaffType[];
     }
   ) {
     return this.officeService.updateEscalationSettings(tenantId, data);

@@ -1539,6 +1539,9 @@ model Office {
   opRepeatMonths Int     @default(3)  // Periyodik tekrar (ay)
   opEmailEnabled Boolean @default(true) // E-posta bildirimi açık mı
   opSmsEnabled   Boolean @default(true) // SMS bildirimi açık mı (yalnız kurucu/6g kademesi)
+  // Operasyonel görevin İLK SAHİBİ (L1): bu personel türleri görür/bildirim alır. Yeni StaffRole
+  // enum'u YOK — mevcut StaffType kullanılır.
+  opStaffTypes StaffType[] @default([MUHASEBE, ADLI_KATIP, SEKRETER])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

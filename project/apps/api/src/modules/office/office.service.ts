@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
+import { StaffType } from "@prisma/client";
 
 @Injectable()
 export class OfficeService {
@@ -312,6 +313,7 @@ export class OfficeService {
       opRepeatMonths: office.opRepeatMonths,
       opEmailEnabled: office.opEmailEnabled,
       opSmsEnabled: office.opSmsEnabled,
+      opStaffTypes: office.opStaffTypes, // L1 alıcı personel türleri
     };
   }
 
@@ -325,6 +327,7 @@ export class OfficeService {
       opRepeatMonths?: number;
       opEmailEnabled?: boolean;
       opSmsEnabled?: boolean;
+      opStaffTypes?: StaffType[];
     }
   ) {
     const office = await this.getOrCreate(tenantId);

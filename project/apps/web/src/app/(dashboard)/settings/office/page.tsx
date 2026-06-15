@@ -76,7 +76,7 @@ export default function OfficeSettingsPage() {
   const [smtpForm, setSmtpForm] = useState<SmtpSettings>({ smtpHost: "", smtpPort: 587, smtpUser: "", smtpPass: "", smtpSecure: false, smtpFromName: "", smtpFromEmail: "" });
   const [smsForm, setSmsForm] = useState({ smsProvider: "", smsApiKey: "", smsApiSecret: "", smsSender: "" });
   const [greetingForm, setGreetingForm] = useState({ autoGreetingEnabled: true, autoGreetingTime: "09:00" });
-  const [escalationForm, setEscalationForm] = useState<{ escalationManagerLawyerId: string; escalationFounderLawyerId: string; opReminderDays: number; opFounderDays: number; opRepeatMonths: number; opEmailEnabled: boolean; opSmsEnabled: boolean }>({ escalationManagerLawyerId: "", escalationFounderLawyerId: "", opReminderDays: 3, opFounderDays: 6, opRepeatMonths: 3, opEmailEnabled: true, opSmsEnabled: true });
+  const [escalationForm, setEscalationForm] = useState<{ escalationManagerLawyerId: string; escalationFounderLawyerId: string; opReminderDays: number; opFounderDays: number; opRepeatMonths: number; opEmailEnabled: boolean; opSmsEnabled: boolean; opStaffTypes: string[] }>({ escalationManagerLawyerId: "", escalationFounderLawyerId: "", opReminderDays: 3, opFounderDays: 6, opRepeatMonths: 3, opEmailEnabled: true, opSmsEnabled: true, opStaffTypes: ["MUHASEBE", "ADLI_KATIP", "SEKRETER"] });
   const [testingSmtp, setTestingSmtp] = useState(false);
   const [testingSms, setTestingSms] = useState(false);
   const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -142,6 +142,7 @@ export default function OfficeSettingsPage() {
         opRepeatMonths: escRes.data?.opRepeatMonths ?? 3,
         opEmailEnabled: escRes.data?.opEmailEnabled ?? true,
         opSmsEnabled: escRes.data?.opSmsEnabled ?? true,
+        opStaffTypes: escRes.data?.opStaffTypes || ["MUHASEBE", "ADLI_KATIP", "SEKRETER"],
       });
     } catch (e) { console.error("Büro bilgileri yüklenemedi:", e); }
     finally { setLoading(false); }
@@ -652,6 +653,20 @@ export default function OfficeSettingsPage() {
                 <label className="block font-medium text-gray-700 mb-0.5">Periyodik tekrar (ay)</label>
                 <input type="number" min={1} value={escalationForm.opRepeatMonths} onChange={e => setEscalationForm({...escalationForm, opRepeatMonths: parseInt(e.target.value) || 0})} className="w-full border rounded px-2 py-1 text-xs" />
               </div>
+            </div>
+            <div>
+              <label className="block font-medium text-gray-700 mb-1">Operasyonel Görev Alıcıları (ilk sahip)</label>
+              <div className="flex flex-wrap gap-x-4 gap-y-1">
+                {STAFF_TYPES.filter(t => t.value !== "DIGER").map(t => (
+                  <label key={t.value} className="flex items-center gap-1.5">
+                    <input type="checkbox" checked={escalationForm.opStaffTypes.includes(t.value)} onChange={e => {
+                      setEscalationForm(prev => ({ ...prev, opStaffTypes: e.target.checked ? [...prev.opStaffTypes, t.value] : prev.opStaffTypes.filter(v => v !== t.value) }));
+                    }} />
+                    {t.label}
+                  </label>
+                ))}
+              </div>
+              <p className="text-[10px] text-gray-500 mt-0.5">Operasyonel eksik görevini önce bu personel türleri görür / bildirim alır (motor PR-3b'de).</p>
             </div>
             <div className="flex items-center gap-4">
               <label className="flex items-center gap-1.5"><input type="checkbox" checked={escalationForm.opEmailEnabled} onChange={e => setEscalationForm({...escalationForm, opEmailEnabled: e.target.checked})} /> E-posta aktif</label>
