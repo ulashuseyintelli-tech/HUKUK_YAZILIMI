@@ -91,6 +91,8 @@ export class OperationalEscalationService {
         include: {
           client: { select: { displayName: true, firstName: true, lastName: true, companyName: true } },
           debtor: { select: { name: true } },
+          // PR-D4e-1: istihbarat görevinde "hangi adres" mailde gösterilsin.
+          address: { select: { street: true, district: true, city: true } },
         },
       });
 
@@ -287,7 +289,10 @@ export class OperationalEscalationService {
     const priorityStr = priorityTr(task.priority);
     const escalationLine = nextEscalationLine(tier, nextEscalationAt);
 
-    const subject = `[Operasyonel Görev] ${entity.label} Bilgileri Eksik - ${entity.name}`;
+    // PR-D4e-1: istihbarat görevi farklı içerik ("saha teyidi gerekli", "eksik bilgi" DEĞİL).
+    const intel = isIntelligenceTask(task);
+    const addressText = taskAddressText(task);
+    const subject = escalationSubject(task, entity);
     let anySent = false;
     let anyFailed = false;
     const channels: string[] = [];
@@ -298,17 +303,29 @@ export class OperationalEscalationService {
       channels.push("EMAIL");
       emailRecipients = recipients.emails.length;
       for (const r of recipients.emails) {
-        const html =
-          `Sayın ${r.name},<br><br>` +
-          `Aşağıdaki operasyonel görev sizin çözümünüzü beklemektedir.<br><br>` +
-          `<b>${entity.label}:</b><br>${entity.name}<br><br>` +
-          `<b>Eksik Bilgiler:</b><br>${missingList.map((m) => `&bull; ${m}`).join("<br>")}<br><br>` +
-          `<b>Oluşturulma Tarihi:</b><br>${createdStr}<br><br>` +
-          `<b>Son Tamamlama Tarihi:</b><br>${dueStr}<br><br>` +
-          `<b>Kalan Süre:</b><br>${remainingStr}<br><br>` +
-          `<b>Görev Önceliği:</b><br>${priorityStr}<br><br>` +
-          (link ? `<b>Göreve Git:</b><br><a href="${link}">${link}</a><br><br>` : "") +
-          `<b>Eskalasyon:</b><br>${escalationLine}`;
+        const html = intel
+          ? // PR-D4e-1: SAHA İSTİHBARATI içeriği (veri eksikliği değil).
+            `Sayın ${r.name},<br><br>` +
+            `Aşağıdaki <b>saha istihbaratı</b> görevi teyidinizi beklemektedir:<br><br>` +
+            `<b>${entity.label}:</b><br>${entity.name}<br><br>` +
+            (addressText ? `<b>Adres:</b><br>${addressText}<br><br>` : "") +
+            `<b>Görev:</b><br>${task.title || "Saha teyidi"}<br>${(task.description || "").replace(/\n/g, "<br>")}<br><br>` +
+            `<b>Son Tamamlama Tarihi:</b><br>${dueStr}<br><br>` +
+            `<b>Kalan Süre:</b><br>${remainingStr}<br><br>` +
+            `<b>Görev Önceliği:</b><br>${priorityStr}<br><br>` +
+            (link ? `<b>Borçluya Git:</b><br><a href="${link}">${link}</a><br><br>` : "") +
+            `Lütfen sahada teyit edip sonucu sisteme girin.<br><br>` +
+            `<b>Eskalasyon:</b><br>${escalationLine}`
+          : `Sayın ${r.name},<br><br>` +
+            `Aşağıdaki operasyonel görev sizin çözümünüzü beklemektedir.<br><br>` +
+            `<b>${entity.label}:</b><br>${entity.name}<br><br>` +
+            `<b>Eksik Bilgiler:</b><br>${missingList.map((m) => `&bull; ${m}`).join("<br>")}<br><br>` +
+            `<b>Oluşturulma Tarihi:</b><br>${createdStr}<br><br>` +
+            `<b>Son Tamamlama Tarihi:</b><br>${dueStr}<br><br>` +
+            `<b>Kalan Süre:</b><br>${remainingStr}<br><br>` +
+            `<b>Görev Önceliği:</b><br>${priorityStr}<br><br>` +
+            (link ? `<b>Göreve Git:</b><br><a href="${link}">${link}</a><br><br>` : "") +
+            `<b>Eskalasyon:</b><br>${escalationLine}`;
         const r1 = await this.sendTenantEmail(tenantId, r.email, subject, html);
         if (r1 === "SENT") anySent = true;
         else if (r1 === "FAILED") anyFailed = true;
@@ -318,10 +335,13 @@ export class OperationalEscalationService {
       channels.push("SMS");
       smsRecipients = recipients.phones.length;
       for (const r of recipients.phones) {
-        const msg =
-          `Sayın ${r.name}, ${entity.name} (${entity.label.toLowerCase()}) için bilgiler eksik (${missingList.join(", ")}). ` +
-          `Kalan süre: ${remainingStr}.` +
-          (link ? ` ${link}` : "");
+        const msg = intel
+          ? `Sayın ${r.name}, ${entity.name} için saha teyidi bekliyor${addressText ? ` (${addressText})` : ""}. ` +
+            `Kalan süre: ${remainingStr}.` +
+            (link ? ` ${link}` : "")
+          : `Sayın ${r.name}, ${entity.name} (${entity.label.toLowerCase()}) için bilgiler eksik (${missingList.join(", ")}). ` +
+            `Kalan süre: ${remainingStr}.` +
+            (link ? ` ${link}` : "");
         const r2 = await this.sendTenantSms(tenantId, r.phone, msg);
         if (r2 === "SENT") anySent = true;
         else if (r2 === "FAILED") anyFailed = true;
@@ -528,6 +548,24 @@ export function escalationEntity(task: any): { label: string; name: string; link
     name: clientDisplayName(task.client),
     link: taskDeepLink(task.clientId),
   };
+}
+
+/** PR-D4e-1: görev subtype'ı DEBTOR_INTELLIGENCE mı? (saha istihbaratı ≠ veri eksikliği). */
+export function isIntelligenceTask(task: any): boolean {
+  return task?.taskSubType === "DEBTOR_INTELLIGENCE";
+}
+
+/** PR-D4e-1: subtype-aware mail konusu. İstihbarat "Bilgileri Eksik" DEĞİL → "Saha İstihbaratı". */
+export function escalationSubject(task: any, entity: { label: string; name: string }): string {
+  if (isIntelligenceTask(task)) return `[Saha İstihbaratı] ${entity.name}`;
+  return `[Operasyonel Görev] ${entity.label} Bilgileri Eksik - ${entity.name}`;
+}
+
+/** PR-D4e-1: görevdeki adresi tek satır metne çevirir (istihbarat mailinde gösterilir). */
+export function taskAddressText(task: any): string {
+  const a = task?.address;
+  if (!a) return "";
+  return [a.street, a.district, a.city].filter(Boolean).join(", ");
 }
 
 /** Bir sonraki eskalasyon kademesi açıklaması. */
