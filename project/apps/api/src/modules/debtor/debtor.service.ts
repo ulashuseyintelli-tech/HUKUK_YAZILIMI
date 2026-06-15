@@ -15,6 +15,62 @@ import {
   DebtorType,
 } from "./dto/debtor.dto";
 
+// ==================== PR-D4c: BORÇLU COMPLETENESS (global veri eksikliği) ====================
+// Client completeness deseninin (computeMissingContactFields + syncContactFollowUpTask) borçlu ikizi.
+// Yalnız global borçlu veri eksikliği (istihbarat/tebligat/CaseDebtor DEĞİL).
+
+export const DEBTOR_TASK_DEDUPE_PREFIX = 'OPCOMP:DEBTOR:';
+
+/** Borçlu için completeness-task dedupe anahtarı (tek aktif görev garantisi). */
+export function debtorTaskDedupeKey(debtorId: string): string {
+  return `${DEBTOR_TASK_DEDUPE_PREFIX}${debtorId}`;
+}
+
+/**
+ * Borçluda eksik VERİ alanlarını tür-bazlı hesaplar (saf fonksiyon, test edilebilir).
+ * Kural (D4c, makul default): adres = en az 1 debtorAddress (primary şartı YOK);
+ * iletişim = telefon VEYA e-posta. Kodlar generic → escalation humanizeMissingFields ile etiketlenir.
+ */
+export function computeDebtorMissingFields(debtor: {
+  type: string;
+  tckn?: string | null;
+  vkn?: string | null;
+  detsisNo?: string | null;
+  institutionName?: string | null;
+  deceasedName?: string | null;
+  phone?: string | null;
+  email?: string | null;
+  debtorAddresses?: { id: string }[] | null;
+  estateHeirs?: { id: string }[] | null;
+}): string[] {
+  const missing: string[] = [];
+  const has = (v?: string | null) => !!(v && String(v).trim());
+  const hasContact = has(debtor.phone) || has(debtor.email);
+  const hasAddress = (debtor.debtorAddresses?.length || 0) > 0;
+
+  switch (debtor.type) {
+    case 'INDIVIDUAL':
+      if (!has(debtor.tckn)) missing.push('tckn');
+      if (!hasAddress) missing.push('address');
+      if (!hasContact) missing.push('contact');
+      break;
+    case 'COMPANY':
+      if (!has(debtor.vkn)) missing.push('vkn');
+      if (!hasAddress) missing.push('address');
+      if (!hasContact) missing.push('contact');
+      break;
+    case 'PUBLIC_INSTITUTION':
+      if (!has(debtor.detsisNo) && !has(debtor.institutionName)) missing.push('detsisOrName');
+      break;
+    case 'ESTATE':
+      if (!has(debtor.deceasedName)) missing.push('deceasedName');
+      if ((debtor.estateHeirs?.length || 0) === 0) missing.push('heirs');
+      if (!hasAddress) missing.push('address');
+      break;
+  }
+  return missing;
+}
+
 // Types for case debtors (FAZ 1)
 // Using inline types instead of @hukuk/types to avoid TypeScript strip-only mode issues
 
@@ -313,11 +369,14 @@ export class DebtorService {
             }
           : undefined,
       },
-      include: { 
+      include: {
         debtorAddresses: true,
         estateHeirs: true,
       },
     });
+
+    // PR-D4c: completeness görevini senkronla (best-effort).
+    await this.syncDebtorTaskByIdSafe(tenantId, debtor.id);
 
     return debtor;
   }
@@ -370,8 +429,9 @@ export class DebtorService {
 
     // PR-D2b: estateHeirs gönderildiyse mirasçı listesini ATOMİK replace et (deleteMany+create
     // + scalar update aynı transaction'da → yarım güncelleme riski yok). Gönderilmezse dokunma.
+    let result;
     if (estateHeirs !== undefined) {
-      return this.prisma.$transaction(async (tx) => {
+      result = await this.prisma.$transaction(async (tx) => {
         await tx.estateHeir.deleteMany({ where: { debtorId: id } });
         return tx.debtor.update({
           where: { id },
@@ -393,13 +453,18 @@ export class DebtorService {
           include: { debtorAddresses: true, estateHeirs: true },
         });
       });
+    } else {
+      result = await this.prisma.debtor.update({
+        where: { id },
+        data: updateData,
+        include: { debtorAddresses: true, estateHeirs: true },
+      });
     }
 
-    return this.prisma.debtor.update({
-      where: { id },
-      data: updateData,
-      include: { debtorAddresses: true, estateHeirs: true },
-    });
+    // PR-D4c: completeness görevini senkronla (best-effort).
+    await this.syncDebtorTaskByIdSafe(tenantId, id);
+
+    return result;
   }
 
   async delete(tenantId: string, id: string) {
@@ -422,6 +487,98 @@ export class DebtorService {
     }
 
     return this.prisma.debtor.delete({ where: { id } });
+  }
+
+  // ==================== PR-D4c: COMPLETENESS TASK SYNC ====================
+
+  /**
+   * Borçlu verisini çekip completeness görevini senkronlar. BEST-EFFORT (sync hatası ana
+   * işlemi BOZMAZ). create/update + addAddress/deleteAddress sonrası çağrılır (adres ayrı
+   * endpoint'lerle değiştiği için adres-eksiği takılı kalmasın).
+   */
+  private async syncDebtorTaskByIdSafe(tenantId: string, debtorId: string): Promise<void> {
+    try {
+      const debtor = await this.prisma.debtor.findFirst({
+        where: { id: debtorId, tenantId },
+        select: {
+          id: true, type: true, tckn: true, vkn: true, detsisNo: true,
+          institutionName: true, deceasedName: true, phone: true, email: true,
+          debtorAddresses: { select: { id: true } },
+          estateHeirs: { select: { id: true } },
+        },
+      });
+      if (debtor) await this.syncDebtorTask(tenantId, debtor as any);
+    } catch (e: any) {
+      console.error(`[DebtorService] completeness sync hatası (debtor ${debtorId}): ${e?.message}`);
+    }
+  }
+
+  /**
+   * Client completeness deseninin borçlu ikizi: eksik varsa tek-satır deduped DEBTOR_INFO görevi
+   * (taskSubType=DEBTOR_INFO, debtorId, escalationLevel STAFF); eksik yoksa açık görevi
+   * AUTO_SYSTEM COMPLETED yapar. dedupeKey "OPCOMP:DEBTOR:{debtorId}" → tek aktif görev.
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - DebtorService.create()/update()/addAddress()/deleteAddress() → completeness senkronu
+   * </remarks>
+   */
+  private async syncDebtorTask(
+    tenantId: string,
+    debtor: { id: string; type: string; [k: string]: any }
+  ): Promise<void> {
+    const dedupeKey = debtorTaskDedupeKey(debtor.id);
+    const existing = await this.prisma.task.findUnique({ where: { dedupeKey } });
+    const missing = computeDebtorMissingFields(debtor);
+
+    // Eksik yok → tamamlandı (sistem kapanışı).
+    if (missing.length === 0) {
+      if (existing && existing.status !== 'COMPLETED' && existing.status !== 'CANCELLED') {
+        await this.prisma.task.update({
+          where: { id: existing.id },
+          data: { status: 'COMPLETED', completedAt: new Date(), resolutionType: 'AUTO_SYSTEM', completedByUserId: null },
+        });
+      }
+      return;
+    }
+
+    // Eksik var → tek satır upsert.
+    const now = new Date();
+    const due = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000); // +3 gün SLA
+    const description = `Eksik borçlu bilgisi: ${missing.join(', ')}`;
+    const reopening = !!existing && (existing.status === 'COMPLETED' || existing.status === 'CANCELLED');
+
+    if (existing) {
+      await this.prisma.task.update({
+        where: { id: existing.id },
+        data: {
+          missingFields: missing,
+          description,
+          // Kapalı görevi yeniden aç + SLA/eskalasyon sıfırla + kapanış izini temizle; açık görevse
+          // sadece eksik listesini güncelle.
+          ...(reopening
+            ? { status: 'PENDING', completedAt: null, completedByUserId: null, resolutionType: null, dueDate: due, escalationLevel: 'STAFF', nextFollowUpAt: due }
+            : {}),
+        },
+      });
+    } else {
+      await this.prisma.task.create({
+        data: {
+          tenantId,
+          debtorId: debtor.id,
+          title: 'Borçlu bilgilerini tamamla',
+          description,
+          status: 'PENDING',
+          priority: 'MEDIUM',
+          taskCategory: 'OPERATIONAL_COMPLETENESS',
+          taskSubType: 'DEBTOR_INFO',
+          dedupeKey,
+          missingFields: missing,
+          dueDate: due,
+          escalationLevel: 'STAFF',
+          nextFollowUpAt: due,
+        },
+      });
+    }
   }
 
   // ==================== DUPLICATE CHECK ====================
@@ -482,9 +639,12 @@ export class DebtorService {
       });
     }
 
-    return this.prisma.debtorAddress.create({
+    const created = await this.prisma.debtorAddress.create({
       data: { debtorId, ...dto },
     });
+    // PR-D4c: adres eklenince "adres eksik" completeness durumu değişebilir → senkronla.
+    await this.syncDebtorTaskByIdSafe(tenantId, debtorId);
+    return created;
   }
 
   async updateAddress(
@@ -539,7 +699,10 @@ export class DebtorService {
       );
     }
 
-    return this.prisma.debtorAddress.delete({ where: { id: addressId } });
+    const deleted = await this.prisma.debtorAddress.delete({ where: { id: addressId } });
+    // PR-D4c: son adres silinince "adres eksik" completeness görevi yeniden açılabilir → senkronla.
+    await this.syncDebtorTaskByIdSafe(tenantId, debtorId);
+    return deleted;
   }
 
   async setPrimaryAddress(tenantId: string, debtorId: string, addressId: string) {
