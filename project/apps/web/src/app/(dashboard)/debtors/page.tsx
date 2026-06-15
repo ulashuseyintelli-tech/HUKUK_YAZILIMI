@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   Users,
@@ -17,8 +17,6 @@ import {
   MapPin,
   AlertTriangle,
   ChevronUp,
-  ChevronDown,
-  ChevronsUpDown,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import {
@@ -31,11 +29,9 @@ import {
   DebtorRiskLevel,
 } from "@/types/debtor";
 import { NewDebtorModal } from "@/components/debtor/NewDebtorModal";
+import { buildDebtorQuery } from "@/lib/debtor-query";
 
-const PAGE_SIZE = 50; // Sayfa başına gösterilecek kayıt sayısı
-
-type DebtorSortField = "name" | "type" | "identityNo" | "phone" | "caseCount";
-type SortDirection = "asc" | "desc" | null;
+const PAGE_SIZE = 25; // PR-D3: sunucu tarafı sayfa boyutu
 
 export default function DebtorsPage() {
   const searchParams = useSearchParams();
@@ -44,15 +40,20 @@ export default function DebtorsPage() {
   // PR-D1: seed/test verisi butonları yalnız geliştirme ortamında görünür (prod kirliliğini önler).
   const isDev = process.env.NODE_ENV !== "production";
 
+  // PR-D3: server-side liste. Arama/tür/sayfalama backend findAll'a delege edilir (limit=2000
+  // client-side kesim + client-side arama/sayfalama KALDIRILDI). Sorting bu PR'da yok.
   const [debtors, setDebtors] = useState<Debtor[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<DebtorType | "ALL">("ALL");
   const [currentPage, setCurrentPage] = useState(1);
-
-  // Sıralama state'leri
-  const [sortField, setSortField] = useState<DebtorSortField | null>(null);
-  const [sortDirection, setSortDirection] = useState<SortDirection>(null);
+  const [total, setTotal] = useState(0);
+  const [totalPages, setTotalPages] = useState(1);
+  const [refetchToken, setRefetchToken] = useState(0);
+  const refetchDebtors = () => setRefetchToken((t) => t + 1);
+  // Stale-response guard: yalnız en son istek state'i günceller (debounce + page reset yarışı).
+  const reqIdRef = useRef(0);
 
   // Modal states
   const [showNewModal, setShowNewModal] = useState(false);
@@ -63,19 +64,40 @@ export default function DebtorsPage() {
   const [loadingPublicInstitutions, setLoadingPublicInstitutions] = useState(false);
   const [loadingTestDebtors, setLoadingTestDebtors] = useState(false);
 
+  // Arama debounce (300ms) — backend'i her tuşta yormamak için.
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Arama/tür değişince ilk sayfaya dön (sonra fetch effect tetiklenir).
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearch, typeFilter]);
+
+  // Server-side fetch: debouncedSearch / typeFilter / currentPage / refetchToken değiştikçe.
   useEffect(() => {
     fetchDebtors();
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [debouncedSearch, typeFilter, currentPage, refetchToken]);
 
   const fetchDebtors = async () => {
+    const myReq = ++reqIdRef.current;
     try {
       setLoading(true);
-      const res = await api.get<{ data: Debtor[] }>("/debtors?limit=2000");
+      const qs = buildDebtorQuery({ page: currentPage, limit: PAGE_SIZE, search: debouncedSearch, type: typeFilter });
+      // findAll → { data: Debtor[], meta: { total, page, limit, totalPages } }
+      const res = await api.get<{ data: Debtor[]; meta: { total: number; totalPages: number } }>(
+        `/debtors?${qs}`
+      );
+      if (myReq !== reqIdRef.current) return; // bayat yanıt → yoksay
       setDebtors(res.data?.data || []);
+      setTotal(res.data?.meta?.total || 0);
+      setTotalPages(res.data?.meta?.totalPages || 1);
     } catch (e) {
-      console.error("Error fetching debtors:", e);
+      if (myReq === reqIdRef.current) console.error("Error fetching debtors:", e);
     } finally {
-      setLoading(false);
+      if (myReq === reqIdRef.current) setLoading(false);
     }
   };
 
@@ -113,7 +135,7 @@ export default function DebtorsPage() {
     setDeleting(debtor.id);
     try {
       await api.delete(`/debtors/${debtor.id}`);
-      setDebtors((prev) => prev.filter((d) => d.id !== debtor.id));
+      refetchDebtors(); // server-side: mevcut sayfayı yeniden çek (toplam/sayfa doğru kalsın)
     } catch (e: any) {
       alert(e.message || "Borçlu silinemedi");
     } finally {
@@ -134,9 +156,10 @@ export default function DebtorsPage() {
     }
   };
 
-  const handleNewDebtorSaved = (debtor: Debtor) => {
-    setDebtors((prev) => [debtor, ...prev]);
+  const handleNewDebtorSaved = (_debtor: Debtor) => {
     setShowNewModal(false);
+    setCurrentPage(1); // yeni kayıt createdAt desc ile ilk sayfada görünür
+    refetchDebtors();
   };
 
   const handleDebtorUpdated = (updatedDebtor: Debtor) => {
@@ -149,82 +172,8 @@ export default function DebtorsPage() {
     setShowNewModal(true);
   };
 
-  const filtered = debtors.filter((d) => {
-    const matchesSearch =
-      !search ||
-      d.name.toLowerCase().includes(search.toLowerCase()) ||
-      d.identityNo?.includes(search) ||
-      d.phone?.includes(search);
-    const matchesType = typeFilter === "ALL" || d.type === typeFilter;
-    return matchesSearch && matchesType;
-  });
-
-  // Sıralama fonksiyonu
-  const handleSort = (field: DebtorSortField) => {
-    if (sortField === field) {
-      if (sortDirection === "asc") {
-        setSortDirection("desc");
-      } else if (sortDirection === "desc") {
-        setSortDirection(null);
-        setSortField(null);
-      } else {
-        setSortDirection("asc");
-      }
-    } else {
-      setSortField(field);
-      setSortDirection("asc");
-    }
-  };
-
-  // Sıralanmış liste - editDebtorId varsa en üste çıkar
-  const sortedFiltered = [...filtered].sort((a, b) => {
-    // URL'den gelen edit parametresi varsa o borçluyu en üste al
-    if (editDebtorId) {
-      if (a.id === editDebtorId) return -1;
-      if (b.id === editDebtorId) return 1;
-    }
-    
-    if (!sortField || !sortDirection) return 0;
-    
-    let aValue: any, bValue: any;
-    
-    if (sortField === "caseCount") {
-      aValue = a._count?.caseDebtors || 0;
-      bValue = b._count?.caseDebtors || 0;
-      return sortDirection === "asc" ? aValue - bValue : bValue - aValue;
-    }
-    
-    aValue = (a[sortField] || "").toString().toLowerCase();
-    bValue = (b[sortField] || "").toString().toLowerCase();
-    
-    if (sortDirection === "asc") {
-      return aValue.localeCompare(bValue, "tr");
-    } else {
-      return bValue.localeCompare(aValue, "tr");
-    }
-  });
-
-  // Sıralama ikonu
-  const SortIcon = ({ field }: { field: DebtorSortField }) => {
-    if (sortField !== field) {
-      return <ChevronsUpDown className="h-3 w-3 text-gray-400" />;
-    }
-    if (sortDirection === "asc") {
-      return <ChevronUp className="h-3 w-3 text-primary" />;
-    }
-    return <ChevronDown className="h-3 w-3 text-primary" />;
-  };
-
-  // Sayfalama hesaplamaları
-  const totalPages = Math.ceil(sortedFiltered.length / PAGE_SIZE);
+  // Footer gösterim aralığı (server-side toplam üzerinden). debtors = mevcut sayfa.
   const startIndex = (currentPage - 1) * PAGE_SIZE;
-  const endIndex = startIndex + PAGE_SIZE;
-  const paginatedDebtors = sortedFiltered.slice(startIndex, endIndex);
-
-  // Filtre veya arama değiştiğinde ilk sayfaya dön
-  useEffect(() => {
-    setCurrentPage(1);
-  }, [search, typeFilter]);
 
   const getTypeIcon = (type: string) => {
     switch (type) {
@@ -370,6 +319,7 @@ export default function DebtorsPage() {
             { value: DebtorType.INDIVIDUAL, label: "Şahıs" },
             { value: DebtorType.COMPANY, label: "Kurum" },
             { value: DebtorType.PUBLIC_INSTITUTION, label: "Kamu" },
+            { value: DebtorType.ESTATE, label: "Tereke" },
           ].map((opt) => (
             <button
               key={opt.value}
@@ -390,9 +340,9 @@ export default function DebtorsPage() {
       {/* Table */}
       {loading ? (
         <div className="text-center py-8 text-gray-500">Yükleniyor...</div>
-      ) : filtered.length === 0 ? (
+      ) : debtors.length === 0 ? (
         <div className="text-center py-12 text-gray-500">
-          {search ? "Sonuç bulunamadı" : "Henüz borçlu kaydı yok"}
+          {debouncedSearch ? "Sonuç bulunamadı" : "Henüz borçlu kaydı yok"}
           <p className="text-sm mt-2">Yukarıdaki butonlardan yeni borçlu ekleyebilirsiniz.</p>
         </div>
       ) : (
@@ -402,36 +352,11 @@ export default function DebtorsPage() {
             <table className="w-full">
               <thead>
                 <tr>
-                  <th 
-                    className="text-left px-4 py-3 text-sm font-medium w-[30%] cursor-pointer hover:bg-gray-100 select-none"
-                    onClick={() => handleSort("name")}
-                  >
-                    <div className="flex items-center gap-1">Borçlu <SortIcon field="name" /></div>
-                  </th>
-                  <th 
-                    className="text-left px-4 py-3 text-sm font-medium w-[10%] cursor-pointer hover:bg-gray-100 select-none"
-                    onClick={() => handleSort("type")}
-                  >
-                    <div className="flex items-center gap-1">Tür <SortIcon field="type" /></div>
-                  </th>
-                  <th 
-                    className="text-left px-4 py-3 text-sm font-medium w-[15%] cursor-pointer hover:bg-gray-100 select-none"
-                    onClick={() => handleSort("identityNo")}
-                  >
-                    <div className="flex items-center gap-1">Kimlik/VKN <SortIcon field="identityNo" /></div>
-                  </th>
-                  <th 
-                    className="text-left px-4 py-3 text-sm font-medium w-[25%] cursor-pointer hover:bg-gray-100 select-none"
-                    onClick={() => handleSort("phone")}
-                  >
-                    <div className="flex items-center gap-1">İletişim <SortIcon field="phone" /></div>
-                  </th>
-                  <th 
-                    className="text-center px-4 py-3 text-sm font-medium w-[10%] cursor-pointer hover:bg-gray-100 select-none"
-                    onClick={() => handleSort("caseCount")}
-                  >
-                    <div className="flex items-center justify-center gap-1">Dosya <SortIcon field="caseCount" /></div>
-                  </th>
+                  <th className="text-left px-4 py-3 text-sm font-medium w-[30%]">Borçlu</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium w-[10%]">Tür</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium w-[15%]">Kimlik/VKN</th>
+                  <th className="text-left px-4 py-3 text-sm font-medium w-[25%]">İletişim</th>
+                  <th className="text-center px-4 py-3 text-sm font-medium w-[10%]">Dosya</th>
                   <th className="text-center px-4 py-3 text-sm font-medium w-[10%]">İşlem</th>
                 </tr>
               </thead>
@@ -442,7 +367,7 @@ export default function DebtorsPage() {
           <div className="overflow-y-auto flex-1 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-gray-100">
             <table className="w-full">
               <tbody className="divide-y">
-                {paginatedDebtors.map((debtor) => {
+                {debtors.map((debtor) => {
                   const isHighlighted = debtor.id === editDebtorId;
                   return (
                   <tr key={debtor.id} className={`hover:bg-gray-50 ${isHighlighted ? 'bg-yellow-50 ring-2 ring-yellow-400 ring-inset' : ''}`}>
@@ -510,9 +435,9 @@ export default function DebtorsPage() {
           {/* Sayfalama Footer */}
           <div className="bg-gray-50 border-t px-4 py-3 flex items-center justify-between flex-shrink-0">
             <div className="text-sm text-gray-500">
-              Toplam {sortedFiltered.length} kayıt • Sayfa {currentPage}/{totalPages || 1}
+              Toplam {total} kayıt • Sayfa {currentPage}/{totalPages || 1}
               <span className="ml-2 text-gray-400">
-                ({startIndex + 1}-{Math.min(endIndex, sortedFiltered.length)} arası gösteriliyor)
+                ({total === 0 ? 0 : startIndex + 1}-{startIndex + debtors.length} arası gösteriliyor)
               </span>
             </div>
             <div className="flex items-center gap-1">
