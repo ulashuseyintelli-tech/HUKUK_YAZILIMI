@@ -9,7 +9,7 @@ export class EscalationController {
 
   /**
    * Manuel tetik (test/operasyon): saat başı cron'u beklemeden eskalasyon turunu çalıştırır.
-   * Sonuç: { processed, notified, skipped }.
+   * Sonuç: { processed, notified, skipped, failed } (PR-3b.2: failed = sağlayıcı hatası → retry edilir).
    */
   @Post("run")
   run() {
