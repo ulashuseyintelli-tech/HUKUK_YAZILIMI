@@ -5,6 +5,7 @@ import {
   Logger,
 } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
+import { DebtorService } from "../debtor/debtor.service";
 import {
   CreateTebligatDto,
   RecordPttResultDto,
@@ -18,6 +19,30 @@ import {
   TebligatSummary,
 } from "./dto/tebligat.dto";
 
+// PR-D5-b-1: TebligatStatus → CaseDebtor ServiceStatus eşleme (O-b). Tebligat=entegrasyon/evrak,
+// CaseDebtor.serviceStatus=KANONİK canlı durum. Tek yönlü (Tebligat → CaseDebtor).
+export const TEBLIGAT_TO_SERVICE_STATUS: Record<string, string> = {
+  HAZIRLANDI: "READY",
+  GONDERILDI: "SENT",
+  TESLIM_EDILDI: "DELIVERED",
+  IADE_GELDI: "RETURNED",
+  MUHTARLIGA_BIRAKILDI: "MUHTAR",
+  TEBLIG_EDILMIS_SAYILDI: "DELIVERED",
+  IPTAL: "FAILED",
+};
+// O-c: ilk sürümde yalnız SONUÇ olayları senkronlanır (DELIVERED/RETURNED/MUHTAR).
+export const SYNC_SERVICE_STATUSES = new Set(["DELIVERED", "RETURNED", "MUHTAR"]);
+// PTT sonucu → ServiceReturnReason (istihbarat [C] MOVED/ADDRESS_NOT_FOUND tetiği için).
+export const PTT_RESULT_TO_RETURN_REASON: Record<string, string> = {
+  TASINMIS: "MOVED",
+  ADRESTE_BULUNAMADI: "ADDRESS_NOT_FOUND",
+  ADRES_YETERSIZ: "ADDRESS_NOT_FOUND",
+  BINA_YIKILMIS: "ADDRESS_NOT_FOUND",
+  ADRES_KAPALI: "ADDRESS_NOT_FOUND",
+  TANIMIYOR: "OTHER",
+  VEFAT: "DECEASED",
+};
+
 @Injectable()
 export class TebligatService {
   private readonly logger = new Logger(TebligatService.name);
@@ -25,7 +50,10 @@ export class TebligatService {
   // TK 21/2 için tebliğ edilmiş sayılma süresi (gün)
   private readonly TK_21_2_DAYS = 15;
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private debtorService: DebtorService // PR-D5-b-1: CaseDebtor senkronu
+  ) {}
 
   // ==================== CRUD İŞLEMLERİ ====================
 
@@ -198,10 +226,36 @@ export class TebligatService {
       updateData.returnedAt = dto.pttResultDate ? new Date(dto.pttResultDate) : new Date();
     }
 
-    const updated = await (this.prisma as any).tebligat.update({
-      where: { id },
-      data: updateData,
+    // PR-D5-b-1: Tebligat sonucu + CaseDebtor senkronu AYNI TRANSACTION (atomik; sync başarısızsa
+    // Tebligat de yazılmaz → divergence yok, kullanıcı retry eder). caseDebtorId yoksa NO-OP.
+    const serviceStatus = TEBLIGAT_TO_SERVICE_STATUS[status];
+    const shouldSync = !!tebligat.caseDebtorId && SYNC_SERVICE_STATUSES.has(serviceStatus);
+    const returnReason = status === TebligatStatus.IADE_GELDI ? (PTT_RESULT_TO_RETURN_REASON[dto.pttResult] || "OTHER") : null;
+    const actionDate = dto.pttResultDate ? new Date(dto.pttResultDate) : new Date();
+
+    let syncResult: { debtorId: string; addressId: string | null; newStatus: string; channel: string | null; returnReason: string | null } | null = null;
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const upd = await (tx as any).tebligat.update({ where: { id }, data: updateData });
+      if (shouldSync) {
+        syncResult = await this.debtorService.syncServiceStatusInTx(tx, {
+          tenantId,
+          caseDebtorId: tebligat.caseDebtorId,
+          newStatus: serviceStatus,
+          channel: "NORMAL", // PTT fiziksel
+          returnReason,
+          addressId: tebligat.addressId || null,
+          actionDate,
+        });
+      }
+      return upd;
     });
+
+    // Commit sonrası: istihbarat tetiği — ORTAK method (Tebligat sonuçlarında KAÇMAZ). best-effort.
+    if (syncResult) {
+      const sr = syncResult as { debtorId: string; addressId: string | null; newStatus: string; channel: string | null; returnReason: string | null };
+      await this.debtorService.runServiceResultIntelligence(tenantId, sr.debtorId, sr.addressId, sr.newStatus, sr.channel, sr.returnReason);
+    }
 
     return {
       tebligat: updated,
