@@ -145,7 +145,7 @@ export class ExportImportService {
     });
   }
 
-  async exportCasesToExcel(tenantId: string, filters?: { status?: string; clientId?: string }): Promise<Buffer> {
+  async exportCasesToExcel(tenantId: string, filters?: { status?: string; clientId?: string; ids?: string[] }): Promise<Buffer> {
     const cases = await this.getCases(tenantId, filters);
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Takipler");
@@ -166,7 +166,7 @@ export class ExportImportService {
     return Buffer.from(buffer);
   }
 
-  async exportCasesToPdf(tenantId: string, filters?: { status?: string; clientId?: string }): Promise<Buffer> {
+  async exportCasesToPdf(tenantId: string, filters?: { status?: string; clientId?: string; ids?: string[] }): Promise<Buffer> {
     const cases = await this.getCases(tenantId, filters);
     return new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
@@ -408,9 +408,14 @@ export class ExportImportService {
     return this.prisma.client.findMany({ where, include: { _count: { select: { cases: true } } }, orderBy: { createdAt: "desc" } });
   }
 
-  private async getCases(tenantId: string, filters?: { status?: string; clientId?: string }) {
+  private async getCases(tenantId: string, filters?: { status?: string; clientId?: string; ids?: string[] }) {
     const where: any = { tenantId };
     if (filters?.status) where.caseStatus = filters.status;
+    if (filters?.clientId) where.clientId = filters.clientId;
+    // Seçili takipler: kullanıcı satırları işaretleyip export ettiğinde yalnız o ID'ler.
+    // tenantId where'da kaldığı için ID filtresi tenant izolasyonunu BOZMAZ (başka tenant'ın
+    // ID'si gönderilse bile tenantId eşleşmediğinden dönmez).
+    if (filters?.ids && filters.ids.length > 0) where.id = { in: filters.ids };
     return this.prisma.case.findMany({ where, include: { client: true, debtors: { include: { debtor: true }, take: 1 } }, orderBy: { createdAt: "desc" } });
   }
 }
