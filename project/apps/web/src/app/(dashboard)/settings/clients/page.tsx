@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { Plus, X, Search, Building2, User, Landmark, Edit2, Trash2, Loader2, Mail, Send, MessageSquare, Download, Upload, FileSpreadsheet, FileText, FileCheck, AlertTriangle, Clock, CheckCircle, Globe, Users, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { api } from "@/lib/api";
@@ -54,6 +54,26 @@ export default function ClientsSettingsPage() {
     } catch (e) { console.error("Müvekkiller yüklenemedi:", e); }
     finally { setLoading(false); }
   };
+
+  // Görevdeki "Müvekkile git" linki: /settings/clients?edit={clientId} ile gelince o müvekkilin
+  // düzenleme modalını OTOMATİK aç (üste sıralama davranışı sortedClients'ta korunur).
+  const deepLinkHandledRef = useRef(false);
+  useEffect(() => {
+    if (!editClientId || deepLinkHandledRef.current || clients.length === 0) return;
+    const target = clients.find((c: any) => c.id === editClientId);
+    if (!target) return;
+    deepLinkHandledRef.current = true;
+    (async () => {
+      try {
+        const res = await api.get(`/clients/${editClientId}`);
+        setEditingClient(res.data?.data || res.data);
+      } catch {
+        setEditingClient(target);
+      }
+      setScannedData(null);
+      setShowModal(true);
+    })();
+  }, [editClientId, clients]);
 
   const handleSave = async (data: any) => {
     setSaving(true);
@@ -385,6 +405,14 @@ export default function ClientsSettingsPage() {
                       >
                         {client.name}
                       </button>
+                      {client.contactFollowUpStatus === "ACTIVE" && (
+                        <span
+                          className="ml-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] bg-blue-100 text-blue-700 align-middle"
+                          title="Operasyonel eksik: telefon/e-posta tamamlanmalı (Görevler > Operasyonel Eksikler)"
+                        >
+                          <AlertTriangle className="h-3 w-3" /> İletişim eksik
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2 font-mono text-xs text-gray-600">{client.identityNo || "-"}</td>
                     <td className="px-3 py-2 text-gray-600">{client.phone || "-"}</td>
@@ -570,6 +598,9 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
   const [emails, setEmails] = useState<{value: string; label: string; isPrimary: boolean}[]>([
     { value: "", label: "", isPrimary: true }
   ]);
+  // Eksik iletişim (telefon/e-posta) modalı: kaydı engellemez, ama görev üretimi öncesi sorar.
+  const [missingContact, setMissingContact] = useState<string[] | null>(null);
+  const firstPhoneRef = useRef<HTMLInputElement>(null);
   const [addresses, setAddresses] = useState<{street: string; city: string; district: string; region: string; label: string; isPrimary: boolean}[]>([
     { street: "", city: "", district: "", region: "", label: "", isPrimary: true }
   ]);
@@ -669,20 +700,11 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
     }
   }, [client]);
 
-  const handleSubmit = () => {
-    if (form.type === "PERSON" || form.type === "INDIVIDUAL") {
-      if (!form.firstName || !form.lastName) { alert("Ad ve Soyad zorunludur"); return; }
-      if (!form.tckn || form.tckn.length !== 11) { alert("TCKN 11 haneli olmalıdır"); return; }
-    } else {
-      if (!form.companyName) { alert("Kurum adı zorunludur"); return; }
-      if (!form.vkn || form.vkn.length !== 10) { alert("VKN 10 haneli olmalıdır"); return; }
-    }
-    // Çoklu iletişim bilgilerini ekle
+  const buildPayload = () => {
     const validPhones = phones.filter(p => p.value.trim());
     const validEmails = emails.filter(e => e.value.trim());
     const validAddresses = addresses.filter(a => a.street.trim() || a.city.trim());
-    
-    onSave({
+    return {
       ...form,
       phones: validPhones,
       emails: validEmails,
@@ -699,7 +721,31 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
       poaDate: form.poaDate,
       notaryName: form.notaryName,
       notaryCity: form.notaryCity,
-    });
+    };
+  };
+
+  // Eksik telefon/e-posta listesi (kaydetmeden önce uyarı için; kaydı engellemez)
+  const computeMissing = (): string[] => {
+    const missing: string[] = [];
+    if (phones.filter(p => p.value.trim()).length === 0) missing.push("telefon");
+    if (emails.filter(e => e.value.trim()).length === 0) missing.push("e-posta");
+    return missing;
+  };
+
+  const doSave = () => onSave(buildPayload());
+
+  const handleSubmit = () => {
+    if (form.type === "PERSON" || form.type === "INDIVIDUAL") {
+      if (!form.firstName || !form.lastName) { alert("Ad ve Soyad zorunludur"); return; }
+      if (!form.tckn || form.tckn.length !== 11) { alert("TCKN 11 haneli olmalıdır"); return; }
+    } else {
+      if (!form.companyName) { alert("Kurum adı zorunludur"); return; }
+      if (!form.vkn || form.vkn.length !== 10) { alert("VKN 10 haneli olmalıdır"); return; }
+    }
+    // Telefon/e-posta eksikse: kaydı ENGELLEME, önce sor (Eksik Kaydet → backend görev üretir).
+    const missing = computeMissing();
+    if (missing.length > 0) { setMissingContact(missing); return; }
+    doSave();
   };
 
   const isPerson = form.type === "PERSON" || form.type === "INDIVIDUAL";
@@ -830,7 +876,7 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
                     <option value="WORK_PHONE">İş</option>
                     <option value="FAX">Faks</option>
                   </select>
-                  <input value={phone.value} onChange={e => updatePhone(idx, 'value', e.target.value)} placeholder="05XX XXX XX XX" className="flex-1 border rounded px-2 py-1 text-sm" />
+                  <input ref={idx === 0 ? firstPhoneRef : undefined} value={phone.value} onChange={e => updatePhone(idx, 'value', e.target.value)} placeholder="05XX XXX XX XX" className="flex-1 border rounded px-2 py-1 text-sm" />
                   <input value={phone.label} onChange={e => updatePhone(idx, 'label', e.target.value)} placeholder="Etiket" className="w-20 border rounded px-2 py-1 text-xs" />
                   <label className="flex items-center gap-1 cursor-pointer" title="Birincil">
                     <input type="radio" name="primaryPhone" checked={phone.isPrimary} onChange={() => updatePhone(idx, 'isPrimary', true)} className="w-3 h-3" />
@@ -1021,6 +1067,34 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
           </button>
         </div>
       </div>
+
+      {/* Eksik iletişim modalı: kaydı engellemez; "Bilgileri Ekle" forma döner, "Eksik Kaydet" görev üretir */}
+      {missingContact && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4" onClick={() => setMissingContact(null)}>
+          <div className="bg-white rounded-lg w-full max-w-md p-5 space-y-4" onClick={e => e.stopPropagation()}>
+            <h3 className="font-semibold text-base">Eksik iletişim bilgisi</h3>
+            <p className="text-sm text-muted-foreground">
+              Müvekkilin <span className="font-medium text-foreground">{missingContact.join(" ve ")}</span> bilgisi bulunamadı.
+              Şimdi eklemek ister misiniz? Eklemezseniz kayıt yapılır ve "iletişim bilgilerini tamamla" görevi oluşturulur.
+            </p>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => { setMissingContact(null); setTimeout(() => firstPhoneRef.current?.focus(), 50); }}
+                className="w-full px-4 py-2 text-sm bg-primary text-white rounded hover:bg-primary/90"
+              >
+                Bilgileri Ekle
+              </button>
+              <button
+                onClick={() => { setMissingContact(null); doSave(); }}
+                disabled={saving}
+                className="w-full px-4 py-2 text-sm border rounded hover:bg-gray-50 disabled:opacity-50"
+              >
+                Eksik Kaydet ve Görev Oluştur
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -17,6 +17,9 @@ export class TaskService {
         where,
         include: {
           case: { select: { id: true, fileNumber: true } },
+          // Operasyonel görevler (ör. iletişim eksiği) müvekkile bağlı, dosyaya değil →
+          // görev kartında müvekkil adını gösterip "Müvekkile git" linki kurabilmek için.
+          client: { select: { id: true, displayName: true, companyName: true, firstName: true, lastName: true } },
           assignee: { select: { id: true, name: true, surname: true } },
         },
         orderBy: [{ priority: "desc" }, { dueDate: "asc" }],
@@ -37,6 +40,7 @@ export class TaskService {
       where: { id, tenantId },
       include: {
         case: true,
+        client: { select: { id: true, displayName: true, companyName: true, firstName: true, lastName: true } },
         assignee: { select: { id: true, name: true, surname: true, email: true } },
         createdBy: { select: { id: true, name: true, surname: true } },
       },

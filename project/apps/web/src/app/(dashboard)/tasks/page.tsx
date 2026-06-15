@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Plus, CheckCircle2, Circle, Clock, AlertCircle, LayoutGrid, Loader2, Trash2, Edit2, X } from "lucide-react";
+import { Plus, CheckCircle2, Circle, Clock, AlertCircle, LayoutGrid, Loader2, Trash2, Edit2, X, User } from "lucide-react";
 import { Badge } from "@hukuk/ui";
 import Link from "next/link";
 import { api } from "@/lib/api";
@@ -16,7 +16,17 @@ interface Task {
   case?: { id: string; fileNumber: string };
   assignee?: { id: string; name: string; surname: string };
   createdAt: string;
+  taskCategory?: string;
+  clientId?: string;
+  client?: { id: string; displayName?: string; companyName?: string; firstName?: string; lastName?: string };
+  missingFields?: string[];
 }
+
+// Müvekkil görünen adı (görev kartında "Müvekkile git" için)
+const clientLabel = (c?: Task["client"]): string =>
+  c
+    ? c.displayName || c.companyName || `${c.firstName || ""} ${c.lastName || ""}`.trim() || "Müvekkil"
+    : "";
 
 const statusIcons: Record<string, React.ReactNode> = {
   PENDING: <Circle className="h-5 w-5 text-muted-foreground" />,
@@ -50,6 +60,8 @@ export default function TasksPage() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("all");
+  // Kategori filtresi: İcra görevleri ile operasyonel eksikleri ayır (görev enflasyonu önlemi).
+  const [categoryFilter, setCategoryFilter] = useState<"all" | "LEGAL_WORKFLOW" | "OPERATIONAL_COMPLETENESS">("all");
   const [showModal, setShowModal] = useState(false);
   const [editingTask, setEditingTask] = useState<Task | null>(null);
   const [saving, setSaving] = useState(false);
@@ -168,13 +180,17 @@ export default function TasksPage() {
     });
   };
 
+  // Operasyonel görevler taskCategory ile gelir; eski/icra görevleri LEGAL_WORKFLOW (default) → "İcra".
+  const taskCat = (t: Task) => t.taskCategory || "LEGAL_WORKFLOW";
   const filteredTasks = tasks.filter((task) => {
-    if (filter === "all") return true;
-    return task.status === filter;
+    if (categoryFilter !== "all" && taskCat(task) !== categoryFilter) return false;
+    if (filter !== "all" && task.status !== filter) return false;
+    return true;
   });
 
   const pendingCount = tasks.filter((t) => t.status === "PENDING").length;
   const inProgressCount = tasks.filter((t) => t.status === "IN_PROGRESS").length;
+  const operationalCount = tasks.filter((t) => taskCat(t) === "OPERATIONAL_COMPLETENESS" && t.status !== "COMPLETED").length;
 
   const isOverdue = (dueDate?: string) => {
     if (!dueDate) return false;
@@ -214,6 +230,32 @@ export default function TasksPage() {
             Yeni Görev
           </button>
         </div>
+      </div>
+
+      {/* Kategori filtresi: İcra görevleri ile operasyonel eksikleri ayır */}
+      <div className="flex gap-2">
+        {[
+          { value: "all" as const, label: "Tüm Kategoriler" },
+          { value: "LEGAL_WORKFLOW" as const, label: "İcra Görevleri" },
+          { value: "OPERATIONAL_COMPLETENESS" as const, label: "Operasyonel Eksikler", count: operationalCount },
+        ].map((c) => (
+          <button
+            key={c.value}
+            onClick={() => setCategoryFilter(c.value)}
+            className={`px-3 py-1.5 text-sm rounded-full border transition-colors ${
+              categoryFilter === c.value
+                ? "bg-primary text-primary-foreground border-primary"
+                : "bg-white text-muted-foreground border-gray-200 hover:bg-gray-50"
+            }`}
+          >
+            {c.label}
+            {"count" in c && c.count! > 0 && (
+              <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-xs ${categoryFilter === c.value ? "bg-white/25" : "bg-blue-100 text-blue-700"}`}>
+                {c.count}
+              </span>
+            )}
+          </button>
+        ))}
       </div>
 
       {/* Filter Tabs */}
@@ -276,6 +318,16 @@ export default function TasksPage() {
                   {task.case && (
                     <Link href={`/cases/${task.case.id}`} className="text-muted-foreground hover:text-primary">
                       Dosya: <span className="text-primary">{task.case.fileNumber}</span>
+                    </Link>
+                  )}
+                  {task.clientId && (
+                    <Link
+                      href={`/settings/clients?edit=${task.clientId}`}
+                      className="flex items-center gap-1 text-primary hover:underline font-medium"
+                      title="Müvekkil bilgilerini düzenle"
+                    >
+                      <User className="h-4 w-4" />
+                      {clientLabel(task.client) || "Müvekkil"} — Müvekkile git
                     </Link>
                   )}
                   {task.dueDate && (
