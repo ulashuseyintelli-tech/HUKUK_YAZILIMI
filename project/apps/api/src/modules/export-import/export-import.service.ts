@@ -3,6 +3,67 @@ import { PrismaService } from "@/prisma/prisma.service";
 import * as ExcelJS from "exceljs";
 import * as PDFDocument from "pdfkit";
 
+// ── Müvekkil PDF export yardımcıları (saf/test-edilebilir) ──
+// NOT: PDFKit varsayılan fontu (Helvetica/WinAnsi) Türkçe ş/ğ/İ/ı gibi karakterleri
+// tam render etmeyebilir; etiketler bu yüzden ASCII-güvenli tutulur (mevcut Excel/PDF deseniyle aynı).
+
+export function formatClientTypeLabel(type?: string | null): string {
+  switch (type) {
+    case "PERSON":
+      return "Sahis";
+    case "COMPANY":
+      return "Kurum";
+    case "PUBLIC":
+      return "Kamu";
+    default:
+      return type || "-";
+  }
+}
+
+export function formatDateTR(value?: Date | string | null): string {
+  if (!value) return "-";
+  const d = value instanceof Date ? value : new Date(value);
+  if (isNaN(d.getTime())) return "-";
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  return `${dd}.${mm}.${d.getFullYear()}`;
+}
+
+export function buildShortAddress(
+  client: { address?: string | null; district?: string | null; city?: string | null },
+  maxLen = 70
+): string {
+  const parts = [client.address, client.district, client.city]
+    .map((p) => (p || "").trim())
+    .filter(Boolean);
+  let s = parts.join(" / ");
+  if (s.length > maxLen) s = s.slice(0, maxLen - 3).trimEnd() + "...";
+  return s;
+}
+
+/** Başlıkta gösterilecek filtre alt-başlığı; filtre yoksa boş string. */
+export function buildPdfFilterSubtitle(filters?: { type?: string; search?: string }): string {
+  const parts: string[] = [];
+  if (filters?.type && filters.type !== "ALL") parts.push(`Tur: ${formatClientTypeLabel(filters.type)}`);
+  if (filters?.search && filters.search.trim()) parts.push(`Arama: "${filters.search.trim()}"`);
+  return parts.length ? `Filtre - ${parts.join("  |  ")}` : "";
+}
+
+/** Müvekkil görünen adını türetir (displayName → companyName → ad soyad → "-"). */
+export function clientDisplayName(client: {
+  displayName?: string | null;
+  companyName?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+}): string {
+  return (
+    client.displayName ||
+    client.companyName ||
+    `${client.firstName || ""} ${client.lastName || ""}`.trim() ||
+    "-"
+  );
+}
+
 @Injectable()
 export class ExportImportService {
   constructor(private prisma: PrismaService) {}
@@ -41,12 +102,45 @@ export class ExportImportService {
       doc.on("data", (chunk) => chunks.push(chunk));
       doc.on("end", () => resolve(Buffer.concat(chunks)));
       doc.on("error", reject);
-      doc.fontSize(16).text("Muvekkil Listesi", { align: "center" });
-      doc.moveDown();
-      doc.fontSize(10);
-      for (const client of clients) {
-        doc.text("- " + (client.displayName || client.name || ""));
+
+      // Başlık
+      doc.fontSize(16).fillColor("#000").text("Muvekkil Listesi", { align: "center" });
+      doc.moveDown(0.3);
+
+      // Filtre + meta (oluşturulma tarihi, toplam)
+      const subtitle = buildPdfFilterSubtitle(filters);
+      doc.fontSize(9).fillColor("#666");
+      if (subtitle) doc.text(subtitle, { align: "center" });
+      doc.text(
+        `Olusturulma: ${formatDateTR(new Date())}  |  Toplam: ${clients.length} muvekkil`,
+        { align: "center" }
+      );
+      doc.fillColor("#000").moveDown(0.8);
+
+      if (clients.length === 0) {
+        doc.fontSize(11).text("Kayit bulunamadi.", { align: "center" });
+        doc.end();
+        return;
       }
+
+      // Her müvekkil için zengin blok
+      clients.forEach((client: any, idx: number) => {
+        const name = clientDisplayName(client);
+        const typeLabel = formatClientTypeLabel(client.type);
+        const identityNo = client.tckn || client.vkn || "-";
+        const phone = client.phone || "-";
+        const email = client.email || "-";
+        const address = buildShortAddress(client);
+        const created = formatDateTR(client.createdAt);
+
+        doc.fontSize(11).fillColor("#000").text(`${idx + 1}. ${name}  [${typeLabel}]`);
+        doc.fontSize(9).fillColor("#333");
+        doc.text(`TCKN/VKN: ${identityNo}     Tel: ${phone}     E-posta: ${email}`);
+        if (address) doc.text(`Adres: ${address}`);
+        doc.text(`Kayit: ${created}`);
+        doc.fillColor("#000").moveDown(0.5);
+      });
+
       doc.end();
     });
   }
@@ -296,6 +390,21 @@ export class ExportImportService {
   private async getClients(tenantId: string, filters?: { type?: string; search?: string }) {
     const where: any = { tenantId, isActive: true };
     if (filters?.type && filters.type !== "ALL") where.type = filters.type;
+    // Arama: frontend export'ta search gönderiyordu ama uygulanmıyordu → çıktı arama kutusunu
+    // yok sayıyordu. Artık hem Excel hem PDF export arama terimini dikkate alır.
+    const search = filters?.search?.trim();
+    if (search) {
+      where.OR = [
+        { displayName: { contains: search, mode: "insensitive" } },
+        { firstName: { contains: search, mode: "insensitive" } },
+        { lastName: { contains: search, mode: "insensitive" } },
+        { companyName: { contains: search, mode: "insensitive" } },
+        { tckn: { contains: search } },
+        { vkn: { contains: search } },
+        { phone: { contains: search } },
+        { email: { contains: search, mode: "insensitive" } },
+      ];
+    }
     return this.prisma.client.findMany({ where, include: { _count: { select: { cases: true } } }, orderBy: { createdAt: "desc" } });
   }
 
