@@ -438,6 +438,11 @@ const MISSING_FIELD_LABELS: Record<string, string> = {
   vkn: "Vergi Kimlik No",
   address: "Adres",
   taxOffice: "Vergi Dairesi",
+  // PR-D4c borçlu completeness kodları
+  contact: "Telefon veya E-posta",
+  detsisOrName: "DETSİS veya Kurum Adı",
+  deceasedName: "Muris Adı",
+  heirs: "Mirasçı Bilgisi",
 };
 
 /**
