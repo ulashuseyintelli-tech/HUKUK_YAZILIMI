@@ -8,6 +8,10 @@ import {
   Length,
   Matches,
   IsDateString,
+  IsInt,
+  Min,
+  Max,
+  Allow,
 } from "class-validator";
 import { Type } from "class-transformer";
 
@@ -453,6 +457,54 @@ export class SearchDebtorsDto {
   @IsString()
   @IsOptional()
   city?: string;
+}
+
+// ==================== DEBTOR INTELLIGENCE DTO (PR-D4e-3a) ====================
+
+export enum DebtorIntelType {
+  LOCATION_VERIFICATION = "LOCATION_VERIFICATION",
+  ACTIVITY_CHECK = "ACTIVITY_CHECK",
+  ASSET_SIGHTING = "ASSET_SIGHTING",
+  NEIGHBOR_CONFIRM = "NEIGHBOR_CONFIRM",
+}
+
+export enum DebtorIntelResult {
+  PENDING_VERIFICATION = "PENDING_VERIFICATION",
+  IN_FIELD = "IN_FIELD",
+  VERIFIED_PRESENT = "VERIFIED_PRESENT",
+  VERIFIED_ABSENT = "VERIFIED_ABSENT",
+  INCONCLUSIVE = "INCONCLUSIVE",
+  NOT_FOUND = "NOT_FOUND",
+}
+
+export class CreateDebtorIntelligenceDto {
+  @IsString()
+  @IsOptional()
+  addressId?: string;
+
+  @IsString()
+  @IsOptional()
+  caseId?: string;
+
+  @IsEnum(DebtorIntelType)
+  intelType: DebtorIntelType;
+
+  @IsEnum(DebtorIntelResult)
+  result: DebtorIntelResult;
+
+  @IsInt()
+  @Min(0)
+  @Max(100)
+  @IsOptional()
+  confidence?: number;
+
+  @Allow() // serbest Json (foto/koordinat referansları); whitelist'te korunur
+  @IsOptional()
+  evidence?: any;
+
+  @IsString()
+  @IsOptional()
+  note?: string;
 }
 
 // ==================== DUPLICATE CHECK DTO ====================
