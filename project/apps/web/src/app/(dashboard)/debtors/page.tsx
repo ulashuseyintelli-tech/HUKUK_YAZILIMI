@@ -23,6 +23,7 @@ import {
 import { api } from "@/lib/api";
 import {
   Debtor,
+  DebtorAddress,
   DebtorType,
   DebtorTypeLabels,
   DebtorRiskLabels,
@@ -609,6 +610,298 @@ export default function DebtorsPage() {
 }
 
 
+// ==================== ADDRESS MANAGER (PR-D2a) ====================
+
+const ADDRESS_TYPE_OPTIONS = [
+  { value: "TEBLIGAT", label: "Tebligat" },
+  { value: "EV", label: "Ev" },
+  { value: "IS", label: "İş" },
+  { value: "MERNIS", label: "MERNİS" },
+  { value: "KEP", label: "KEP" },
+];
+const addressTypeLabel = (v?: string) =>
+  ADDRESS_TYPE_OPTIONS.find((o) => o.value === v)?.label || v || "Adres";
+
+/** Adres kaynağı insan-okunur: Müvekkil / MERNİS / Sistem / Manuel. */
+const addressSourceLabel = (addr: DebtorAddress): string => {
+  if (addr.addressCategory === "DECLARED_CLIENT") return "Müvekkil";
+  const s = addr.source;
+  if (s === "MERNIS") return "MERNİS";
+  if (!s || s === "USER_INPUT") return "Manuel";
+  return "Sistem";
+};
+
+type AddressForm = {
+  addressType: string;
+  street: string;
+  city: string;
+  district: string;
+  postalCode: string;
+  isPrimary: boolean;
+  isMernis: boolean;
+};
+const emptyAddressForm = (): AddressForm => ({
+  addressType: "TEBLIGAT",
+  street: "",
+  city: "",
+  district: "",
+  postalCode: "",
+  isPrimary: false,
+  isMernis: false,
+});
+
+function AddressManager({
+  debtorId,
+  addresses,
+  onChanged,
+}: {
+  debtorId: string;
+  addresses: DebtorAddress[];
+  onChanged: (updated: Debtor) => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<AddressForm>(emptyAddressForm());
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const refetch = async () => {
+    // findOne düz debtor döndürür (sarmalsız); api.get bunu { data } içine sarar → res.data = debtor.
+    // Bazı endpoint'ler { data } sarmalı döndüğünden iki şekli de tolere et.
+    const res = await api.get<any>(`/debtors/${debtorId}`);
+    const updated = res.data?.data ?? res.data;
+    if (updated?.id) onChanged(updated);
+  };
+
+  const startAdd = () => {
+    setForm(emptyAddressForm());
+    setEditingId(null);
+    setAdding(true);
+    setErr("");
+  };
+  const startEdit = (addr: DebtorAddress) => {
+    setForm({
+      addressType: addr.addressType || "TEBLIGAT",
+      street: addr.street || "",
+      city: addr.city || "",
+      district: addr.district || "",
+      postalCode: addr.postalCode || "",
+      isPrimary: addr.isPrimary,
+      isMernis: addr.isMernis,
+    });
+    setEditingId(addr.id || null);
+    setAdding(false);
+    setErr("");
+  };
+  const cancelForm = () => {
+    setAdding(false);
+    setEditingId(null);
+    setErr("");
+  };
+
+  const save = async () => {
+    if (!form.street.trim() || !form.city.trim()) {
+      setErr("Adres (sokak) ve il zorunludur");
+      return;
+    }
+    setBusy(true);
+    setErr("");
+    try {
+      const payload = {
+        addressType: form.addressType,
+        street: form.street.trim(),
+        city: form.city.trim(),
+        district: form.district.trim() || undefined,
+        postalCode: form.postalCode.trim() || undefined,
+        isPrimary: form.isPrimary,
+        isMernis: form.isMernis,
+      };
+      if (editingId) {
+        await api.put(`/debtors/${debtorId}/addresses/${editingId}`, payload);
+      } else {
+        await api.post(`/debtors/${debtorId}/addresses`, payload);
+      }
+      await refetch();
+      cancelForm();
+    } catch (e: any) {
+      setErr(e.response?.data?.message || e.message || "Adres kaydedilemedi");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (addr: DebtorAddress) => {
+    if (!addr.id) return;
+    if (!confirm("Bu adresi silmek istediğinize emin misiniz?")) return;
+    setBusy(true);
+    setErr("");
+    try {
+      await api.delete(`/debtors/${debtorId}/addresses/${addr.id}`);
+      await refetch();
+    } catch (e: any) {
+      setErr(e.response?.data?.message || e.message || "Adres silinemedi");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const makePrimary = async (addr: DebtorAddress) => {
+    if (!addr.id || addr.isPrimary) return;
+    setBusy(true);
+    setErr("");
+    try {
+      await api.post(`/debtors/${debtorId}/addresses/${addr.id}/set-primary`);
+      await refetch();
+    } catch (e: any) {
+      setErr(e.response?.data?.message || e.message || "Birincil adres ayarlanamadı");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="border-t pt-4">
+      <div className="flex items-center justify-between mb-2">
+        <label className="text-xs text-gray-500 font-medium flex items-center gap-1">
+          <MapPin className="w-4 h-4" /> Adresler ({addresses.length})
+        </label>
+        {!adding && !editingId && (
+          <button
+            onClick={startAdd}
+            className="text-xs text-primary hover:underline font-medium"
+          >
+            + Adres Ekle
+          </button>
+        )}
+      </div>
+
+      {err && (
+        <div className="mb-2 p-2 bg-red-50 text-red-600 rounded text-xs flex items-center gap-1">
+          <AlertTriangle className="h-3 w-3" /> {err}
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {addresses.map((addr) => (
+          <div key={addr.id} className="p-2 bg-gray-50 rounded-lg text-sm">
+            {editingId === addr.id ? (
+              <AddressFormFields form={form} setForm={setForm} busy={busy} onSave={save} onCancel={cancelForm} />
+            ) : (
+              <div className="flex items-start justify-between gap-2">
+                <div className="flex items-start gap-2 min-w-0">
+                  <MapPin className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
+                      <span className="text-xs bg-gray-200 px-1.5 py-0.5 rounded">{addressTypeLabel(addr.addressType)}</span>
+                      <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{addressSourceLabel(addr)}</span>
+                      {addr.verified ? (
+                        <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">✓ Doğrulandı</span>
+                      ) : (
+                        <span className="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">Doğrulanmadı</span>
+                      )}
+                      {addr.isPrimary && <span className="text-xs bg-primary/10 text-primary px-1.5 py-0.5 rounded">Birincil</span>}
+                    </div>
+                    <div className="text-gray-700 break-words">
+                      {addr.street}
+                      {addr.district && `, ${addr.district}`}
+                      {addr.city && ` / ${addr.city}`}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  {!addr.isPrimary && (
+                    <button onClick={() => makePrimary(addr)} disabled={busy} title="Birincil yap" className="p-1 text-gray-400 hover:text-primary disabled:opacity-50">
+                      <ChevronUp className="w-4 h-4" />
+                    </button>
+                  )}
+                  <button onClick={() => startEdit(addr)} disabled={busy} title="Düzenle" className="p-1 text-gray-400 hover:text-blue-500 disabled:opacity-50">
+                    <Edit className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => remove(addr)} disabled={busy} title="Sil" className="p-1 text-gray-400 hover:text-red-500 disabled:opacity-50">
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        ))}
+
+        {adding && (
+          <div className="p-2 bg-blue-50 rounded-lg">
+            <AddressFormFields form={form} setForm={setForm} busy={busy} onSave={save} onCancel={cancelForm} />
+          </div>
+        )}
+
+        {addresses.length === 0 && !adding && (
+          <p className="text-xs text-gray-400 italic">Kayıtlı adres yok. "+ Adres Ekle" ile ekleyin.</p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function AddressFormFields({
+  form,
+  setForm,
+  busy,
+  onSave,
+  onCancel,
+}: {
+  form: AddressForm;
+  setForm: (f: AddressForm) => void;
+  busy: boolean;
+  onSave: () => void;
+  onCancel: () => void;
+}) {
+  const set = (patch: Partial<AddressForm>) => setForm({ ...form, ...patch });
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="block text-[11px] text-gray-500 mb-0.5">Adres Türü</label>
+          <select value={form.addressType} onChange={(e) => set({ addressType: e.target.value })} className="w-full border rounded px-2 py-1.5 text-sm">
+            {ADDRESS_TYPE_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+        </div>
+        <div>
+          <label className="block text-[11px] text-gray-500 mb-0.5">İl *</label>
+          <input value={form.city} onChange={(e) => set({ city: e.target.value })} className="w-full border rounded px-2 py-1.5 text-sm" />
+        </div>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="block text-[11px] text-gray-500 mb-0.5">İlçe</label>
+          <input value={form.district} onChange={(e) => set({ district: e.target.value })} className="w-full border rounded px-2 py-1.5 text-sm" />
+        </div>
+        <div>
+          <label className="block text-[11px] text-gray-500 mb-0.5">Posta Kodu</label>
+          <input value={form.postalCode} onChange={(e) => set({ postalCode: e.target.value })} className="w-full border rounded px-2 py-1.5 text-sm" />
+        </div>
+      </div>
+      <div>
+        <label className="block text-[11px] text-gray-500 mb-0.5">Adres (Mahalle, cadde, sokak, no) *</label>
+        <textarea value={form.street} onChange={(e) => set({ street: e.target.value })} rows={2} className="w-full border rounded px-2 py-1.5 text-sm resize-none" />
+      </div>
+      <div className="flex items-center gap-4">
+        <label className="flex items-center gap-1.5 text-xs">
+          <input type="checkbox" checked={form.isPrimary} onChange={(e) => set({ isPrimary: e.target.checked })} className="rounded" /> Birincil adres
+        </label>
+        <label className="flex items-center gap-1.5 text-xs">
+          <input type="checkbox" checked={form.isMernis} onChange={(e) => set({ isMernis: e.target.checked })} className="rounded" /> MERNİS adresi
+        </label>
+      </div>
+      <div className="flex justify-end gap-2 pt-1">
+        <button onClick={onCancel} disabled={busy} className="px-3 py-1.5 text-xs border rounded hover:bg-gray-50 disabled:opacity-50">İptal</button>
+        <button onClick={onSave} disabled={busy} className="px-3 py-1.5 text-xs bg-primary text-white rounded hover:bg-primary/90 disabled:opacity-50 flex items-center gap-1">
+          {busy && <Loader2 className="h-3 w-3 animate-spin" />} Kaydet
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ==================== DEBTOR DETAIL MODAL ====================
 
 interface DebtorDetailModalProps {
@@ -881,26 +1174,6 @@ function DebtorDetailModal({ debtor, onClose, onUpdate, onDelete }: DebtorDetail
                 </div>
               )}
 
-              {/* Addresses */}
-              {debtor.debtorAddresses && debtor.debtorAddresses.length > 0 && (
-                <div>
-                  <label className="text-xs text-gray-500 mb-2 block">Adresler</label>
-                  <div className="space-y-2">
-                    {debtor.debtorAddresses.map((addr, i) => (
-                      <div key={i} className="p-2 bg-gray-50 rounded-lg text-sm flex items-start gap-2">
-                        <MapPin className="w-4 h-4 text-gray-400 mt-0.5" />
-                        <div>
-                          <span className="text-xs bg-gray-200 px-1.5 py-0.5 rounded mr-2">
-                            {addr.addressType} {addr.isPrimary && "(Ana)"}
-                          </span>
-                          {addr.street}, {addr.district && `${addr.district}/`}{addr.city}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               {/* Notes */}
               {debtor.notes && (
                 <div>
@@ -916,6 +1189,15 @@ function DebtorDetailModal({ debtor, onClose, onUpdate, onDelete }: DebtorDetail
               </div>
             </div>
           )}
+
+          {/* Adres Yönetimi (PR-D2a) — her iki modda görünür, ayrı endpoint'lerle yönetilir */}
+          <div className="mt-4">
+            <AddressManager
+              debtorId={debtor.id}
+              addresses={debtor.debtorAddresses || []}
+              onChanged={onUpdate}
+            />
+          </div>
         </div>
 
         {/* Footer */}
