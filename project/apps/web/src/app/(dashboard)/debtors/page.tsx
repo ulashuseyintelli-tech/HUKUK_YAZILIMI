@@ -19,6 +19,7 @@ import {
   ChevronUp,
   ChevronDown,
   ChevronsUpDown,
+  Download,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import {
@@ -82,6 +83,31 @@ export default function DebtorsPage() {
     } else {
       setSortBy(field);
       setSortOrder("asc");
+    }
+  };
+  // PR-D5-e: export (Excel/PDF). Mevcut liste filtreleriyle uyumlu; SAYFALAMA YOK (tüm sonuç).
+  const [exporting, setExporting] = useState(false);
+  const handleExport = async (format: "excel" | "pdf") => {
+    setExporting(true);
+    try {
+      const p = new URLSearchParams();
+      if (debouncedSearch.trim()) p.set("search", debouncedSearch.trim());
+      if (typeFilter !== "ALL") p.set("type", typeFilter);
+      if (riskFilter !== "ALL") p.set("riskLevel", riskFilter);
+      if (debouncedCity.trim()) p.set("city", debouncedCity.trim());
+      if (sortBy) { p.set("sortBy", sortBy); p.set("sortOrder", sortOrder); }
+      const res = await api.get(`/export-import/debtors/${format}?${p.toString()}`, { responseType: "blob" });
+      const blob = new Blob([res.data as any], {
+        type: format === "excel" ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" : "application/pdf",
+      });
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `borclular_${Date.now()}.${format === "excel" ? "xlsx" : "pdf"}`;
+      link.click();
+    } catch (e: any) {
+      alert("Dışa aktarma hatası: " + (e.message || "Bilinmeyen hata"));
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -249,6 +275,23 @@ export default function DebtorsPage() {
             className="inline-flex items-center gap-1.5 px-3 py-2 text-sm bg-purple-500 text-white rounded-lg hover:bg-purple-600"
           >
             <Landmark className="h-4 w-4" /> Kamu Ekle
+          </button>
+          {/* PR-D5-e: export (filtreli, sayfalamasız) */}
+          <button
+            onClick={() => handleExport("excel")}
+            disabled={exporting}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-green-600 text-green-700 rounded-lg hover:bg-green-50 disabled:opacity-50"
+            title="Filtrelenmiş listeyi Excel'e aktar"
+          >
+            <Download className="h-4 w-4" /> Excel
+          </button>
+          <button
+            onClick={() => handleExport("pdf")}
+            disabled={exporting}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-sm border border-red-600 text-red-700 rounded-lg hover:bg-red-50 disabled:opacity-50"
+            title="Filtrelenmiş listeyi PDF'e aktar"
+          >
+            <Download className="h-4 w-4" /> PDF
           </button>
         </div>
       </div>

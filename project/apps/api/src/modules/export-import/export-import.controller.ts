@@ -67,6 +67,44 @@ export class ExportImportController {
     res!.send(buffer);
   }
 
+  // ==================== BORÇLU EXPORT (PR-D5-e) ====================
+
+  @Get("debtors/excel")
+  async exportDebtorsExcel(
+    @CurrentUser("tenantId") tenantId: string,
+    @Query("search") search?: string,
+    @Query("type") type?: string,
+    @Query("riskLevel") riskLevel?: string,
+    @Query("city") city?: string,
+    @Query("sortBy") sortBy?: string,
+    @Query("sortOrder") sortOrder?: string,
+    @Res() res?: Response
+  ) {
+    const buffer = await this.exportImportService.exportDebtorsToExcel(tenantId, { search, type, riskLevel, city, sortBy, sortOrder });
+    const filename = `borclular_${new Date().toISOString().split("T")[0]}.xlsx`;
+    res!.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res!.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res!.send(buffer);
+  }
+
+  @Get("debtors/pdf")
+  async exportDebtorsPdf(
+    @CurrentUser("tenantId") tenantId: string,
+    @Query("search") search?: string,
+    @Query("type") type?: string,
+    @Query("riskLevel") riskLevel?: string,
+    @Query("city") city?: string,
+    @Query("sortBy") sortBy?: string,
+    @Query("sortOrder") sortOrder?: string,
+    @Res() res?: Response
+  ) {
+    const buffer = await this.exportImportService.exportDebtorsToPdf(tenantId, { search, type, riskLevel, city, sortBy, sortOrder });
+    const filename = `borclular_${new Date().toISOString().split("T")[0]}.pdf`;
+    res!.setHeader("Content-Type", "application/pdf");
+    res!.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    res!.send(buffer);
+  }
+
   // ==================== TAKİP EXPORT ====================
 
   // Takipleri Excel'e aktar
