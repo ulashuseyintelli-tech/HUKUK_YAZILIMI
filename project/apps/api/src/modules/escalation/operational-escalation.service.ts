@@ -62,6 +62,8 @@ export class OperationalEscalationService {
           status: { in: ["PENDING", "IN_PROGRESS"] },
           escalationLevel: { not: null },
         },
+        // Mail/SMS şablonunda "hangi müvekkil?" sorusunu yanıtlamak için ad alanları çekilir.
+        include: { client: { select: { displayName: true, firstName: true, lastName: true, companyName: true } } },
       });
 
       const cfg: EscalationConfig = {
@@ -95,7 +97,7 @@ export class OperationalEscalationService {
         });
 
         if (upd.notifyTier) {
-          const sent = await this.dispatch(tenant.id, office, task, upd.notifyTier);
+          const sent = await this.dispatch(tenant.id, office, task, upd.notifyTier, now, upd.nextFollowUpAt);
           if (sent) notified++;
           else skipped++;
         }
@@ -147,8 +149,19 @@ export class OperationalEscalationService {
     };
   }
 
-  /** Bildirimi ilgili kanallardan gönderir. Hiçbir alıcı yoksa skip+log → false döner. */
-  private async dispatch(tenantId: string, office: any, task: any, tier: EscalationTier): Promise<boolean> {
+  /**
+   * Bildirimi ilgili kanallardan gönderir. Hiçbir alıcı yoksa skip+log → false döner.
+   * `now` + `nextEscalationAt` mail/SMS şablonunda "kalan süre" ve "ne zaman eskale olur"
+   * bilgisini üretmek için kullanılır (motor mantığını DEĞİŞTİRMEZ, yalnız içerik).
+   */
+  private async dispatch(
+    tenantId: string,
+    office: any,
+    task: any,
+    tier: EscalationTier,
+    now: Date,
+    nextEscalationAt: Date | null
+  ): Promise<boolean> {
     const { email, sms } = channelsForTier(tier);
     const recipients = await this.resolveRecipients(tenantId, office, tier);
 
@@ -157,25 +170,40 @@ export class OperationalEscalationService {
       return false;
     }
 
-    const taskTitle = task.title || "Operasyonel eksik görevi";
-    const subject = `Operasyonel Görev: ${taskTitle}`;
+    const clientName = clientDisplayName(task.client);
+    const missingList = humanizeMissingFields(task.missingFields, task.description);
+    const link = taskDeepLink(task.clientId);
+    const createdStr = formatTrDateTime(task.createdAt);
+    const dueStr = task.dueDate ? formatTrDateTime(task.dueDate) : "Belirtilmemiş";
+    const remainingStr = formatRemaining(task.dueDate, now);
+    const priorityStr = priorityTr(task.priority);
+    const escalationLine = nextEscalationLine(tier, nextEscalationAt);
+
+    const subject = `[Operasyonel Görev] Müvekkil Bilgileri Eksik - ${clientName}`;
     let anySent = false;
 
     if (email && office.opEmailEnabled !== false) {
       for (const r of recipients.emails) {
         const html =
           `Sayın ${r.name},<br><br>` +
-          `Büronuzda bir <b>operasyonel eksik görevi</b> tamamlanmayı bekliyor:<br><br>` +
-          `<b>${taskTitle}</b><br>` +
-          `${(task.description || "").replace(/\n/g, "<br>")}<br><br>` +
-          `Lütfen ilgili müvekkil kaydındaki eksik bilgileri tamamlayın.<br><br>` +
-          `<small>Eskalasyon kademesi: ${tier}</small>`;
+          `Aşağıdaki operasyonel görev sizin çözümünüzü beklemektedir.<br><br>` +
+          `<b>Müvekkil:</b><br>${clientName}<br><br>` +
+          `<b>Eksik Bilgiler:</b><br>${missingList.map((m) => `&bull; ${m}`).join("<br>")}<br><br>` +
+          `<b>Oluşturulma Tarihi:</b><br>${createdStr}<br><br>` +
+          `<b>Son Tamamlama Tarihi:</b><br>${dueStr}<br><br>` +
+          `<b>Kalan Süre:</b><br>${remainingStr}<br><br>` +
+          `<b>Görev Önceliği:</b><br>${priorityStr}<br><br>` +
+          (link ? `<b>Göreve Git:</b><br><a href="${link}">${link}</a><br><br>` : "") +
+          `<b>Eskalasyon:</b><br>${escalationLine}`;
         if (await this.sendTenantEmail(tenantId, r.email, subject, html)) anySent = true;
       }
     }
     if (sms && office.opSmsEnabled !== false) {
       for (const r of recipients.phones) {
-        const msg = `Sayın ${r.name}, "${taskTitle}" operasyonel görevi tamamlanmayı bekliyor (eskalasyon: ${tier}).`;
+        const msg =
+          `Sayın ${r.name}, ${clientName} müvekkili için bilgiler eksik (${missingList.join(", ")}). ` +
+          `Kalan süre: ${remainingStr}.` +
+          (link ? ` ${link}` : "");
         if (await this.sendTenantSms(tenantId, r.phone, msg)) anySent = true;
       }
     }
@@ -258,4 +286,93 @@ export class OperationalEscalationService {
       return false;
     }
   }
+}
+
+// ───────────────────────── Saf şablon yardımcıları (test edilebilir) ─────────────────────────
+
+/** Müvekkil görünen adı: displayName → ad+soyad → kurum adı → fallback. */
+export function clientDisplayName(client: any): string {
+  if (!client) return "Bilinmeyen Müvekkil";
+  if (client.displayName) return client.displayName;
+  const full = `${client.firstName || ""} ${client.lastName || ""}`.trim();
+  if (full) return full;
+  if (client.companyName) return client.companyName;
+  return "Bilinmeyen Müvekkil";
+}
+
+const MISSING_FIELD_LABELS: Record<string, string> = {
+  phone: "Telefon",
+  email: "E-posta",
+  iban: "IBAN",
+  tckn: "TC Kimlik No",
+  vkn: "Vergi Kimlik No",
+  address: "Adres",
+  taxOffice: "Vergi Dairesi",
+};
+
+/**
+ * Eksik alan kodlarını insan-okunur Türkçe etiketlere çevirir.
+ * Öncelik: Task.missingFields (Json dizi) → yoksa description'daki "Eksik: a, b" metni.
+ */
+export function humanizeMissingFields(missingFields: any, description?: string | null): string[] {
+  let codes: string[] = [];
+  if (Array.isArray(missingFields)) {
+    codes = missingFields.map((c) => String(c));
+  } else if (description) {
+    const m = description.match(/[:：]\s*(.+)$/);
+    if (m) codes = m[1].split(/[,\s]+/).filter(Boolean);
+  }
+  if (codes.length === 0) return ["Eksik bilgi"];
+  return codes.map((c) => MISSING_FIELD_LABELS[c] || c);
+}
+
+/** TR tarih-saat: "15.06.2026 14:07". */
+export function formatTrDateTime(date: Date | string | null | undefined): string {
+  if (!date) return "Belirtilmemiş";
+  const d = typeof date === "string" ? new Date(date) : date;
+  if (isNaN(d.getTime())) return "Belirtilmemiş";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(d.getDate())}.${p(d.getMonth() + 1)}.${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+/** Kalan süre: "2 gün 18 saat" / "5 saat" / süresi geçtiyse "SÜRESİ GEÇTİ". */
+export function formatRemaining(dueDate: Date | string | null | undefined, now: Date): string {
+  if (!dueDate) return "Belirtilmemiş";
+  const due = typeof dueDate === "string" ? new Date(dueDate) : dueDate;
+  if (isNaN(due.getTime())) return "Belirtilmemiş";
+  let ms = due.getTime() - now.getTime();
+  if (ms <= 0) return "SÜRESİ GEÇTİ";
+  const days = Math.floor(ms / 86_400_000);
+  ms -= days * 86_400_000;
+  const hours = Math.floor(ms / 3_600_000);
+  if (days > 0) return hours > 0 ? `${days} gün ${hours} saat` : `${days} gün`;
+  if (hours > 0) return `${hours} saat`;
+  const mins = Math.max(1, Math.floor(ms / 60_000));
+  return `${mins} dakika`;
+}
+
+/** Öncelik enum → Türkçe. */
+export function priorityTr(priority: any): string {
+  switch (priority) {
+    case "LOW": return "Düşük";
+    case "HIGH": return "Yüksek";
+    case "URGENT": return "Acil";
+    case "MEDIUM":
+    default: return "Orta";
+  }
+}
+
+/** PR-2 deep-link: müvekkil düzenleme modalını açar. clientId yoksa boş döner. */
+export function taskDeepLink(clientId: string | null | undefined): string {
+  if (!clientId) return "";
+  const base = (process.env.FRONTEND_URL || "http://localhost:3002").replace(/\/$/, "");
+  return `${base}/settings/clients?edit=${clientId}`;
+}
+
+/** Bir sonraki eskalasyon kademesi açıklaması. */
+export function nextEscalationLine(tier: EscalationTier, nextAt: Date | null): string {
+  const dateStr = nextAt ? formatTrDateTime(nextAt) : "ileri tarihte";
+  if (tier === "STAFF") return `Tamamlanmazsa ${dateStr} tarihinde yönetici avukatlara bildirilecektir.`;
+  if (tier === "MANAGER") return `Tamamlanmazsa ${dateStr} tarihinde kurucu/ortak avukatlara bildirilecektir.`;
+  return `Tamamlanmazsa ${dateStr} tarihinde tekrar hatırlatılacaktır.`;
 }
