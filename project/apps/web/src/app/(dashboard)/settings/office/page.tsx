@@ -76,6 +76,7 @@ export default function OfficeSettingsPage() {
   const [smtpForm, setSmtpForm] = useState<SmtpSettings>({ smtpHost: "", smtpPort: 587, smtpUser: "", smtpPass: "", smtpSecure: false, smtpFromName: "", smtpFromEmail: "" });
   const [smsForm, setSmsForm] = useState({ smsProvider: "", smsApiKey: "", smsApiSecret: "", smsSender: "" });
   const [greetingForm, setGreetingForm] = useState({ autoGreetingEnabled: true, autoGreetingTime: "09:00" });
+  const [escalationForm, setEscalationForm] = useState<{ escalationManagerLawyerId: string; escalationFounderLawyerId: string; opReminderDays: number; opFounderDays: number; opRepeatMonths: number; opEmailEnabled: boolean; opSmsEnabled: boolean }>({ escalationManagerLawyerId: "", escalationFounderLawyerId: "", opReminderDays: 3, opFounderDays: 6, opRepeatMonths: 3, opEmailEnabled: true, opSmsEnabled: true });
   const [testingSmtp, setTestingSmtp] = useState(false);
   const [testingSms, setTestingSms] = useState(false);
   const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -131,6 +132,17 @@ export default function OfficeSettingsPage() {
         autoGreetingEnabled: greetingRes.data?.autoGreetingEnabled ?? true,
         autoGreetingTime: greetingRes.data?.autoGreetingTime || "09:00",
       });
+      // Görev & eskalasyon ayarlarını yükle
+      const escRes = await api.get("/office/escalation-settings");
+      setEscalationForm({
+        escalationManagerLawyerId: escRes.data?.escalationManagerLawyerId || "",
+        escalationFounderLawyerId: escRes.data?.escalationFounderLawyerId || "",
+        opReminderDays: escRes.data?.opReminderDays ?? 3,
+        opFounderDays: escRes.data?.opFounderDays ?? 6,
+        opRepeatMonths: escRes.data?.opRepeatMonths ?? 3,
+        opEmailEnabled: escRes.data?.opEmailEnabled ?? true,
+        opSmsEnabled: escRes.data?.opSmsEnabled ?? true,
+      });
     } catch (e) { console.error("Büro bilgileri yüklenemedi:", e); }
     finally { setLoading(false); }
   };
@@ -181,6 +193,22 @@ export default function OfficeSettingsPage() {
     setSaving(true);
     try {
       await api.put("/office/greeting-settings", greetingForm);
+      showSaved();
+    } catch (e) { console.error(e); }
+    finally { setSaving(false); }
+  };
+
+  const handleSaveEscalation = async () => {
+    setSaving(true);
+    try {
+      await api.put("/office/escalation-settings", {
+        ...escalationForm,
+        escalationManagerLawyerId: escalationForm.escalationManagerLawyerId || null,
+        escalationFounderLawyerId: escalationForm.escalationFounderLawyerId || null,
+        opReminderDays: Number(escalationForm.opReminderDays),
+        opFounderDays: Number(escalationForm.opFounderDays),
+        opRepeatMonths: Number(escalationForm.opRepeatMonths),
+      });
       showSaved();
     } catch (e) { console.error(e); }
     finally { setSaving(false); }
@@ -589,6 +617,50 @@ export default function OfficeSettingsPage() {
               </div>
             </div>
           </div>
+
+        {/* Görev ve Eskalasyon Ayarları */}
+        <div className="bg-white rounded-lg border p-3 flex flex-col">
+          <h2 className="text-sm font-semibold mb-2 flex items-center gap-1">⏱️ Görev ve Eskalasyon Ayarları</h2>
+          <div className="flex-1 space-y-3 text-xs">
+            <p className="text-[10px] text-gray-500">Operasyonel eksik görevleri (ör. müvekkil iletişim bilgisi) zamanında çözülmezse büro-geneli politikaya göre eskale edilir. (Motor sonraki sürümde aktifleşir.)</p>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block font-medium text-gray-700 mb-0.5">Yönetici Avukat</label>
+                <select value={escalationForm.escalationManagerLawyerId} onChange={e => setEscalationForm({...escalationForm, escalationManagerLawyerId: e.target.value})} className="w-full border rounded px-2 py-1 text-xs">
+                  <option value="">Seçiniz</option>
+                  {(office?.lawyers || []).map((l: any) => <option key={l.id} value={l.id}>{l.name} {l.surname}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block font-medium text-gray-700 mb-0.5">Kurucu/Ortak</label>
+                <select value={escalationForm.escalationFounderLawyerId} onChange={e => setEscalationForm({...escalationForm, escalationFounderLawyerId: e.target.value})} className="w-full border rounded px-2 py-1 text-xs">
+                  <option value="">Seçiniz</option>
+                  {(office?.lawyers || []).map((l: any) => <option key={l.id} value={l.id}>{l.name} {l.surname}</option>)}
+                </select>
+              </div>
+            </div>
+            <div className="grid grid-cols-3 gap-2">
+              <div>
+                <label className="block font-medium text-gray-700 mb-0.5">İlk hatırlatma (gün)</label>
+                <input type="number" min={1} value={escalationForm.opReminderDays} onChange={e => setEscalationForm({...escalationForm, opReminderDays: parseInt(e.target.value) || 0})} className="w-full border rounded px-2 py-1 text-xs" />
+              </div>
+              <div>
+                <label className="block font-medium text-gray-700 mb-0.5">Kurucu eskalasyonu (gün)</label>
+                <input type="number" min={1} value={escalationForm.opFounderDays} onChange={e => setEscalationForm({...escalationForm, opFounderDays: parseInt(e.target.value) || 0})} className="w-full border rounded px-2 py-1 text-xs" />
+              </div>
+              <div>
+                <label className="block font-medium text-gray-700 mb-0.5">Periyodik tekrar (ay)</label>
+                <input type="number" min={1} value={escalationForm.opRepeatMonths} onChange={e => setEscalationForm({...escalationForm, opRepeatMonths: parseInt(e.target.value) || 0})} className="w-full border rounded px-2 py-1 text-xs" />
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-1.5"><input type="checkbox" checked={escalationForm.opEmailEnabled} onChange={e => setEscalationForm({...escalationForm, opEmailEnabled: e.target.checked})} /> E-posta aktif</label>
+              <label className="flex items-center gap-1.5"><input type="checkbox" checked={escalationForm.opSmsEnabled} onChange={e => setEscalationForm({...escalationForm, opSmsEnabled: e.target.checked})} /> SMS aktif</label>
+              <label className="flex items-center gap-1.5 text-gray-400" title="WhatsApp gönderimi yakında"><input type="checkbox" disabled /> WhatsApp (yakında)</label>
+            </div>
+            <button onClick={handleSaveEscalation} disabled={saving} className="w-full px-2 py-1 bg-blue-600 text-white text-xs rounded disabled:opacity-50">{saving ? "..." : "Kaydet"}</button>
+          </div>
+        </div>
         </div>
       </div>
 
@@ -607,6 +679,7 @@ function LawyerModal({ lawyer, onSave, onClose, saving }: { lawyer: any; onSave:
     name: lawyer?.name || "", surname: lawyer?.surname || "", tckn: lawyer?.tckn || "",
     title: lawyer?.title || "", barNumber: lawyer?.barNumber || "", barCity: lawyer?.barCity || "",
     vergiNo: lawyer?.vergiNo || "", email: lawyer?.email || "", phone: lawyer?.phone || "",
+    mobilePhone: lawyer?.mobilePhone || "", whatsappPhone: lawyer?.whatsappPhone || "",
     fax: lawyer?.fax || "", address: lawyer?.address || "",
     bankName: lawyer?.bankName || "", branchName: lawyer?.branchName || "", iban: lawyer?.iban || "",
     role: lawyer?.role || "EMPLOYEE", canSign: lawyer?.canSign || false,
@@ -780,8 +853,10 @@ function LawyerModal({ lawyer, onSave, onClose, saving }: { lawyer: any; onSave:
           {/* İletişim */}
           <div className="grid grid-cols-3 gap-2">
             <div><label>E-posta</label><input value={form.email} onChange={e => setForm({...form, email: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
-            <div><label>Telefon</label><input value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
+            <div><label>Ofis Telefonu</label><input value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
             <div><label>Faks</label><input value={form.fax} onChange={e => setForm({...form, fax: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
+            <div><label>Cep Telefonu</label><input value={form.mobilePhone} onChange={e => setForm({...form, mobilePhone: e.target.value})} placeholder="05XX..." className="w-full border rounded px-2 py-1" /></div>
+            <div><label>WhatsApp</label><input value={form.whatsappPhone} onChange={e => setForm({...form, whatsappPhone: e.target.value})} placeholder="05XX... (opsiyonel)" className="w-full border rounded px-2 py-1" /></div>
           </div>
           <div>
             <label>Adres</label>
@@ -869,6 +944,7 @@ function StaffModal({ staff, onSave, onClose, saving }: { staff: any; onSave: (d
   const [form, setForm] = useState({
     firstName: staff?.firstName || "", lastName: staff?.lastName || "", tckn: staff?.tckn || "",
     email: staff?.email || "", phone: staff?.phone || "", staffType: staff?.staffType || "DIGER",
+    mobilePhone: staff?.mobilePhone || "", whatsappPhone: staff?.whatsappPhone || "",
     canCreateCase: staff?.canCreateCase || false, canEditCase: staff?.canEditCase || false,
     canGenerateDocuments: staff?.canGenerateDocuments || false, canApproveDocuments: staff?.canApproveDocuments || false,
     canSeeFinance: staff?.canSeeFinance || false, canApproveFinance: staff?.canApproveFinance || false,
@@ -904,7 +980,9 @@ function StaffModal({ staff, onSave, onClose, saving }: { staff: any; onSave: (d
           </div>
           <div className="grid grid-cols-2 gap-2">
             <div><label>E-posta</label><input value={form.email} onChange={e => setForm({...form, email: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
-            <div><label>Telefon</label><input value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
+            <div><label>Ofis Telefonu</label><input value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
+            <div><label>Cep Telefonu</label><input value={form.mobilePhone} onChange={e => setForm({...form, mobilePhone: e.target.value})} placeholder="05XX..." className="w-full border rounded px-2 py-1" /></div>
+            <div><label>WhatsApp</label><input value={form.whatsappPhone} onChange={e => setForm({...form, whatsappPhone: e.target.value})} placeholder="05XX... (opsiyonel)" className="w-full border rounded px-2 py-1" /></div>
           </div>
           <div className="pt-2 border-t">
             <p className="font-medium mb-2">Yetkiler</p>

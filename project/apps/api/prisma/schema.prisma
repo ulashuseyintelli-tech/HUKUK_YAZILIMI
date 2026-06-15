@@ -1530,6 +1530,16 @@ model Office {
   inactivityThresholdDays Int @default(365) // Pasifleşme süresi (gün) - İİK 78
   inactivityWarningDays   Int @default(60) // Uyarı süresi (gün) - kalan gün bu değerin altına düşünce uyarı
 
+  // Görev & Eskalasyon Ayarları (büro-geneli politika) — PR-3a config; motor PR-3b okur.
+  // manager/founder = Lawyer id (düz alan; FK relation değil, motor id ile çözer, yoksa skip+log).
+  escalationManagerLawyerId String? // Yönetici avukat (3g aşımında bildirim)
+  escalationFounderLawyerId String? // Kurucu/ortak avukat (6g aşımında bildirim)
+  opReminderDays Int     @default(3)  // İlk hatırlatma / yöneticiye eskalasyon (gün)
+  opFounderDays  Int     @default(6)  // Kurucu/ortağa eskalasyon (gün)
+  opRepeatMonths Int     @default(3)  // Periyodik tekrar (ay)
+  opEmailEnabled Boolean @default(true) // E-posta bildirimi açık mı
+  opSmsEnabled   Boolean @default(true) // SMS bildirimi açık mı (yalnız kurucu/6g kademesi)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -1592,7 +1602,9 @@ model Lawyer {
 
   // İletişim
   email    String?
-  phone    String?
+  phone    String? // Ofis telefonu (UI: "Ofis Telefonu")
+  mobilePhone   String? // Cep telefonu — SMS eskalasyonu bu alana gider (PR-3b)
+  whatsappPhone String? // WhatsApp numarası — gönderim ileride (entegrasyon yok)
   fax      String? // Faks numarası
   address  String?
   city     String?
@@ -2818,7 +2830,9 @@ model StaffMember {
   lastName  String
   tckn      String? // TC Kimlik No
   email     String?
-  phone     String?
+  phone     String? // Ofis telefonu (UI: "Ofis Telefonu")
+  mobilePhone   String? // Cep telefonu — SMS eskalasyonu bu alana gider (PR-3b)
+  whatsappPhone String? // WhatsApp numarası — gönderim ileride (entegrasyon yok)
 
   // Personel Türü
   staffType StaffType

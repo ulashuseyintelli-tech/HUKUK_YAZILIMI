@@ -169,4 +169,28 @@ export class OfficeController {
   ) {
     return this.officeService.updateIik78Settings(tenantId, data);
   }
+
+  // Görev & Eskalasyon ayarlarını getir
+  @Get("escalation-settings")
+  getEscalationSettings(@CurrentUser("tenantId") tenantId: string) {
+    return this.officeService.getEscalationSettings(tenantId);
+  }
+
+  // Görev & Eskalasyon ayarlarını güncelle
+  @Put("escalation-settings")
+  updateEscalationSettings(
+    @CurrentUser("tenantId") tenantId: string,
+    @Body()
+    data: {
+      escalationManagerLawyerId?: string | null;
+      escalationFounderLawyerId?: string | null;
+      opReminderDays?: number;
+      opFounderDays?: number;
+      opRepeatMonths?: number;
+      opEmailEnabled?: boolean;
+      opSmsEnabled?: boolean;
+    }
+  ) {
+    return this.officeService.updateEscalationSettings(tenantId, data);
+  }
 }

@@ -300,4 +300,38 @@ export class OfficeService {
       data,
     });
   }
+
+  // Görev & Eskalasyon ayarlarını getir (büro-geneli politika; motor PR-3b okur)
+  async getEscalationSettings(tenantId: string) {
+    const office = await this.getOrCreate(tenantId);
+    return {
+      escalationManagerLawyerId: office.escalationManagerLawyerId,
+      escalationFounderLawyerId: office.escalationFounderLawyerId,
+      opReminderDays: office.opReminderDays,
+      opFounderDays: office.opFounderDays,
+      opRepeatMonths: office.opRepeatMonths,
+      opEmailEnabled: office.opEmailEnabled,
+      opSmsEnabled: office.opSmsEnabled,
+    };
+  }
+
+  async updateEscalationSettings(
+    tenantId: string,
+    data: {
+      escalationManagerLawyerId?: string | null;
+      escalationFounderLawyerId?: string | null;
+      opReminderDays?: number;
+      opFounderDays?: number;
+      opRepeatMonths?: number;
+      opEmailEnabled?: boolean;
+      opSmsEnabled?: boolean;
+    }
+  ) {
+    const office = await this.getOrCreate(tenantId);
+
+    return this.prisma.office.update({
+      where: { id: office.id },
+      data,
+    });
+  }
 }
