@@ -123,4 +123,21 @@ describe("DebtorService.findAll — PR-D4d completeness sinyali", () => {
     expect(res.data[1]).toMatchObject({ id: "d2", isComplete: false, missingFieldsCount: 3 });
     expect(res.data[1].missingFields).toEqual(["vkn", "address", "contact"]);
   });
+
+  // PR-D5-c: server-side sıralama allowlist.
+  it("sortBy allowlist içindeyse uygulanır; dışındaysa createdAt desc'e düşer", async () => {
+    const prisma = {
+      debtor: { findMany: jest.fn().mockResolvedValue([]), count: jest.fn().mockResolvedValue(0) },
+    } as any;
+    const svc = new DebtorService(prisma);
+
+    await svc.findAll("t1", { sortBy: "name", sortOrder: "asc" });
+    expect(prisma.debtor.findMany.mock.calls[0][0].orderBy).toEqual({ name: "asc" });
+
+    await svc.findAll("t1", { sortBy: "evil_col", sortOrder: "asc" }); // allowlist dışı
+    expect(prisma.debtor.findMany.mock.calls[1][0].orderBy).toEqual({ createdAt: "desc" });
+
+    await svc.findAll("t1", { sortBy: "type", sortOrder: "bogus" }); // geçersiz yön → desc
+    expect(prisma.debtor.findMany.mock.calls[2][0].orderBy).toEqual({ type: "desc" });
+  });
 });

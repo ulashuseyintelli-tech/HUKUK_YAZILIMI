@@ -284,9 +284,19 @@ export class DebtorService {
       type?: string;
       riskLevel?: string;
       city?: string;
+      sortBy?: string;
+      sortOrder?: string;
     }
   ) {
-    const { page = 1, limit = 20, search, type, riskLevel, city } = params || {};
+    const { page = 1, limit = 20, search, type, riskLevel, city, sortBy, sortOrder } = params || {};
+
+    // PR-D5-c: server-side sıralama. Allowlist dışı → default createdAt; yön sadece asc|desc.
+    // Computed/relation alanlara (adres/eksik-bilgi/risk) GİRME.
+    const SORT_ALLOWLIST = ["name", "identityNo", "type", "createdAt", "updatedAt"];
+    const validSort = SORT_ALLOWLIST.includes(sortBy || "");
+    // Allowlist dışı sortBy → TAM default (createdAt desc, sortOrder yoksayılır).
+    const sortField = validSort ? (sortBy as string) : "createdAt";
+    const direction = validSort && sortOrder === "asc" ? "asc" : "desc";
 
     const where: any = { tenantId };
 
@@ -328,7 +338,7 @@ export class DebtorService {
           estateHeirs: true,
           _count: { select: { caseDebtors: true, assets: true } },
         },
-        orderBy: { createdAt: "desc" },
+        orderBy: { [sortField]: direction },
         skip: (page - 1) * limit,
         take: limit,
       }),
