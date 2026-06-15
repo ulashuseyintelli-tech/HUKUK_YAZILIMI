@@ -20,6 +20,8 @@ import {
   formatRemaining,
   priorityTr,
   taskDeepLink,
+  debtorDeepLink,
+  escalationEntity,
   nextEscalationLine,
 } from "../operational-escalation.service";
 import { addDays } from "../escalation-logic";
@@ -197,5 +199,23 @@ describe("Eskalasyon şablon yardımcıları (PR-3b.1)", () => {
   it("nextEscalationLine: STAFF kademesi yöneticiye işaret eder", () => {
     expect(nextEscalationLine("STAFF" as any, new Date(2026, 5, 18, 14, 7))).toContain("yönetici avukatlara");
     expect(nextEscalationLine("MANAGER" as any, new Date(2026, 5, 18, 14, 7))).toContain("kurucu/ortak");
+  });
+
+  // PR-D4b: muhatap çözümleme (müvekkil VEYA borçlu) — eskalasyon maili patlamasın.
+  it("escalationEntity: clientId'li görev → Müvekkil + /settings/clients linki", () => {
+    delete process.env.FRONTEND_URL;
+    const e = escalationEntity({ clientId: "cl1", client: { displayName: "ŞÜKRÜ AKDOĞAN" }, debtorId: null });
+    expect(e).toEqual({ label: "Müvekkil", name: "ŞÜKRÜ AKDOĞAN", link: "http://localhost:3002/settings/clients?edit=cl1" });
+  });
+
+  it("escalationEntity: debtorId'li (clientId yok) görev → Borçlu + /debtors linki", () => {
+    delete process.env.FRONTEND_URL;
+    const e = escalationEntity({ clientId: null, debtorId: "db1", debtor: { name: "Mehmet Borçlu" } });
+    expect(e).toEqual({ label: "Borçlu", name: "Mehmet Borçlu", link: "http://localhost:3002/debtors?edit=db1" });
+  });
+
+  it("escalationEntity: borçlu adı yoksa fallback; debtorDeepLink boş id'de boş döner", () => {
+    expect(escalationEntity({ clientId: null, debtorId: "db1", debtor: null }).name).toBe("Bilinmeyen Borçlu");
+    expect(debtorDeepLink(null)).toBe("");
   });
 });
