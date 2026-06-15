@@ -223,6 +223,7 @@ model Tenant {
   debtors           Debtor[]
   clients           Client[]
   tasks             Task[]
+  escalationEvents  EscalationEvent[]
   courts            Court[]
   collections       Collection[]
   lawyers           Lawyer[]
@@ -1457,12 +1458,46 @@ model Task {
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
+  // K2: eskalasyon geçmişi (append-only). Task = canlı durum; EscalationEvent = iz.
+  escalationEvents EscalationEvent[]
+
   @@index([tenantId, status])
   @@index([tenantId, dueDate])
   @@index([assigneeId])
   @@index([tenantId, taskCategory, status])
   @@index([clientId])
   @@index([nextFollowUpAt])
+}
+
+// K2: Eskalasyon geçmişi (append-only). Operasyonel görevin eskalasyon motoru (PR-3b) her
+// tier ilerlemesinde ve her bildirim sonucunda buraya iz bırakır. Task üstündeki canlı durum
+// (escalationLevel/lastNotifiedLevel/nextFollowUpAt) değişmez; bu tablo SLA/rapor/performans
+// için doğrudan sorgulanır. ASLA update/delete edilmez (yalnız insert). Görev silinirse cascade.
+model EscalationEvent {
+  id             String              @id @default(cuid())
+  tenantId       String
+  tenant         Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  taskId         String
+  task           Task                @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  fromLevel      EscalationTier? // TIER_ADVANCED'te eski tier; NOTIFICATION'da null
+  toLevel        EscalationTier? // hedef tier (yeni tier veya bildirilen tier)
+  eventType      EscalationEventType
+  channel        String? // hızlı filtre: "EMAIL" / "EMAIL,SMS" / null (tier-advance)
+  deliveryStatus String? // "SENT" / "SKIPPED" / "FAILED" / null (tier-advance)
+  metadata       Json? // { channels:[...], emailRecipients, smsRecipients, notifyTier }
+  createdAt      DateTime            @default(now())
+
+  @@index([tenantId, taskId])
+  @@index([taskId, createdAt])
+  @@index([tenantId, createdAt])
+}
+
+// K2 olay türleri. NOTIFICATION_* aggregated (dispatch başına 1); TIER_ADVANCED tier değişiminde.
+enum EscalationEventType {
+  TIER_ADVANCED
+  NOTIFICATION_SENT
+  NOTIFICATION_SKIPPED
+  NOTIFICATION_FAILED
 }
 
 model Court {

@@ -65,7 +65,12 @@ const buildPrisma = () => ({
   },
   staffMember: { findMany: jest.fn().mockResolvedValue([{ firstName: "Muhasebe", lastName: "Personeli", email: "muhasebe@buro.com" }]) },
   lawyer: { findMany: jest.fn().mockResolvedValue([]) },
+  escalationEvent: { create: jest.fn().mockResolvedValue({}) }, // K2 append-only iz
 });
+
+// K2: belirli eventType ile yazılan EscalationEvent çağrısının data'sını döndürür (yoksa undefined).
+const eventOfType = (prisma: any, type: string) =>
+  prisma.escalationEvent.create.mock.calls.map((c: any) => c[0].data).find((d: any) => d.eventType === type);
 
 describe("OperationalEscalationService.processEscalations", () => {
   beforeEach(() => {
@@ -88,6 +93,9 @@ describe("OperationalEscalationService.processEscalations", () => {
     expect(data.escalationLevel).toBe("STAFF"); // zaman çizelgesi kalıcı
     expect(data.lastNotifiedLevel).toBeNull(); // PR-3b.2: SKIPPED → guard ilerlemez (baseline)
     expect(res).toEqual({ processed: 1, notified: 0, skipped: 1, failed: 0 });
+    // K2: tier ilerlemedi → TIER_ADVANCED yok; SKIPPED bildirim izi var.
+    expect(eventOfType(prisma, "TIER_ADVANCED")).toBeUndefined();
+    expect(eventOfType(prisma, "NOTIFICATION_SKIPPED")).toMatchObject({ toLevel: "STAFF", deliveryStatus: "SKIPPED" });
   });
 
   it("SMTP varsa: SENT → guard İLERLER (STAFF), e-posta personele gider, notified", async () => {
@@ -104,6 +112,10 @@ describe("OperationalEscalationService.processEscalations", () => {
     const data = prisma.task.update.mock.calls[0][0].data;
     expect(data.lastNotifiedLevel).toBe("STAFF"); // başarı → guard ilerledi
     expect(res).toEqual({ processed: 1, notified: 1, skipped: 0, failed: 0 });
+    // K2: NOTIFICATION_SENT izi — kanal EMAIL, 1 alıcı, metadata dolu.
+    const ev = eventOfType(prisma, "NOTIFICATION_SENT");
+    expect(ev).toMatchObject({ toLevel: "STAFF", channel: "EMAIL", deliveryStatus: "SENT" });
+    expect(ev.metadata).toMatchObject({ channels: ["EMAIL"], emailRecipients: 1, smsRecipients: 0, notifyTier: "STAFF" });
   });
 
   it("SMTP exception: FAILED → guard baseline (null) KALIR + failed=1, tier/next yine güncellenir", async () => {
@@ -122,6 +134,24 @@ describe("OperationalEscalationService.processEscalations", () => {
     expect(data.lastNotifiedLevel).toBeNull(); // PR-3b.2: FAILED → guard ilerlemez → retry
     expect(data.escalationLevel).toBe("STAFF"); // tier kalıcı
     expect(data.nextFollowUpAt).toBeDefined(); // zaman çizelgesi yazıldı
+    // K2: NOTIFICATION_FAILED izi (kanal denendi, teslim olmadı).
+    expect(eventOfType(prisma, "NOTIFICATION_FAILED")).toMatchObject({ toLevel: "STAFF", channel: "EMAIL", deliveryStatus: "FAILED" });
+  });
+
+  it("K2: tier ilerlemesi (STAFF→MANAGER, due) → TIER_ADVANCED + NOTIFICATION event yazılır", async () => {
+    const prisma = buildPrisma() as any;
+    const officeService = {
+      getFullSmtpSettings: jest.fn().mockResolvedValue({ smtpHost: null, smtpUser: null }),
+      getFullSmsSettings: jest.fn().mockResolvedValue({ smsProvider: null }),
+    } as any;
+    const svc = new OperationalEscalationService(prisma, officeService);
+
+    await svc.processEscalations(addDays(D0, 3)); // now=D0+3 → süre doldu → MANAGER'a ilerle
+
+    const adv = eventOfType(prisma, "TIER_ADVANCED");
+    expect(adv).toMatchObject({ fromLevel: "STAFF", toLevel: "MANAGER" });
+    // MANAGER alıcısı yok (lawyer []) → bildirim SKIPPED ama yine de izlenir.
+    expect(eventOfType(prisma, "NOTIFICATION_SKIPPED")).toMatchObject({ toLevel: "MANAGER" });
   });
 });
 

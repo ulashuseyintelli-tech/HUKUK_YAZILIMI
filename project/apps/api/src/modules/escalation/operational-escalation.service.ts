@@ -25,6 +25,14 @@ interface Recipients {
  */
 type DispatchResult = "SENT" | "FAILED" | "SKIPPED";
 
+/** Dispatch çıktısı (K2): sonuç + denenen kanallar/alıcı sayıları (EscalationEvent metadata'sı için). */
+interface DispatchOutcome {
+  result: DispatchResult;
+  channels: string[]; // gerçekten denenen kanallar, ör. ["EMAIL"] / ["EMAIL","SMS"]
+  emailRecipients: number;
+  smsRecipients: number;
+}
+
 /**
  * Operasyonel eksik görevlerinin (taskCategory=OPERATIONAL_COMPLETENESS) eskalasyon motoru.
  * Saat başı çalışır; büro-geneli config'e (Office) göre STAFF→MANAGER→FOUNDER bildirim atar.
@@ -101,13 +109,24 @@ export class OperationalEscalationService {
           now
         );
 
+        // K2: tier GERÇEKTEN ilerlediyse append-only iz bırak (FOUNDER periyodik tekrarda tier
+        // değişmez → TIER_ADVANCED yok, yalnız NOTIFICATION). best-effort.
+        if (task.escalationLevel && upd.escalationLevel !== task.escalationLevel) {
+          await this.recordEscalationEvent(tenant.id, task.id, {
+            eventType: "TIER_ADVANCED",
+            fromLevel: task.escalationLevel,
+            toLevel: upd.escalationLevel,
+          });
+        }
+
         // PR-3b.2 retry-safety: guard (lastNotifiedLevel) gönderim SONUCUNA göre yazılır.
         // Zaman çizelgesi (escalationLevel + nextFollowUpAt) zamana bağlıdır → HER ZAMAN kalıcı.
         // Guard yalnız SENT'te ilerler; FAILED/SKIPPED'te baseline'da kalır → sonraki tick retry.
         let guardToPersist: EscalationTier | null = upd.lastNotifiedLevel;
 
         if (upd.notifyTier) {
-          const result = await this.dispatch(tenant.id, office, task, upd.notifyTier, now, upd.nextFollowUpAt);
+          const outcome = await this.dispatch(tenant.id, office, task, upd.notifyTier, now, upd.nextFollowUpAt);
+          const result = outcome.result;
           if (result === "SENT") {
             notified++;
             guardToPersist = upd.lastNotifiedLevel; // gönderildi → guard ilerler
@@ -124,6 +143,20 @@ export class OperationalEscalationService {
               skipped++;
             }
           }
+
+          // K2: dispatch başına TEK aggregated NOTIFICATION_* event (kanal/alıcı detayı metadata'da).
+          await this.recordEscalationEvent(tenant.id, task.id, {
+            eventType: `NOTIFICATION_${result}` as any,
+            toLevel: upd.notifyTier,
+            channel: outcome.channels.length ? outcome.channels.join(",") : null,
+            deliveryStatus: result,
+            metadata: {
+              channels: outcome.channels,
+              emailRecipients: outcome.emailRecipients,
+              smsRecipients: outcome.smsRecipients,
+              notifyTier: upd.notifyTier,
+            },
+          });
         }
 
         await this.prisma.task.update({
@@ -141,6 +174,40 @@ export class OperationalEscalationService {
       `Eskalasyon turu bitti: processed=${processed} notified=${notified} skipped=${skipped} failed=${failed}`
     );
     return { processed, notified, skipped, failed };
+  }
+
+  /**
+   * K2: Eskalasyon geçmişine append-only iz yazar. BEST-EFFORT — yazım hatası motoru/retry'ı
+   * BOZMAZ (yalnız warn loglar). Append-only: bu kayıtlar asla update/delete edilmez.
+   */
+  private async recordEscalationEvent(
+    tenantId: string,
+    taskId: string,
+    ev: {
+      eventType: string;
+      fromLevel?: EscalationTier | null;
+      toLevel?: EscalationTier | null;
+      channel?: string | null;
+      deliveryStatus?: string | null;
+      metadata?: any;
+    }
+  ): Promise<void> {
+    try {
+      await this.prisma.escalationEvent.create({
+        data: {
+          tenantId,
+          taskId,
+          eventType: ev.eventType as any,
+          fromLevel: ev.fromLevel ?? null,
+          toLevel: ev.toLevel ?? null,
+          channel: ev.channel ?? null,
+          deliveryStatus: ev.deliveryStatus ?? null,
+          metadata: ev.metadata ?? undefined,
+        },
+      });
+    } catch (e: any) {
+      this.logger.warn(`EscalationEvent yazılamadı (task ${taskId}, ${ev.eventType}): ${e?.message}`);
+    }
   }
 
   /** Bir tier için alıcıları çözer (config → fallback rank/role). */
@@ -197,13 +264,13 @@ export class OperationalEscalationService {
     tier: EscalationTier,
     now: Date,
     nextEscalationAt: Date | null
-  ): Promise<DispatchResult> {
+  ): Promise<DispatchOutcome> {
     const { email, sms } = channelsForTier(tier);
     const recipients = await this.resolveRecipients(tenantId, office, tier);
 
     if (recipients.emails.length === 0 && recipients.phones.length === 0) {
       this.logger.warn(`Eskalasyon skipped: ${tier} alıcısı yok (tenant ${tenantId}, task ${task.id})`);
-      return "SKIPPED";
+      return { result: "SKIPPED", channels: [], emailRecipients: 0, smsRecipients: 0 };
     }
 
     const clientName = clientDisplayName(task.client);
@@ -218,8 +285,13 @@ export class OperationalEscalationService {
     const subject = `[Operasyonel Görev] Müvekkil Bilgileri Eksik - ${clientName}`;
     let anySent = false;
     let anyFailed = false;
+    const channels: string[] = [];
+    let emailRecipients = 0;
+    let smsRecipients = 0;
 
-    if (email && office.opEmailEnabled !== false) {
+    if (email && office.opEmailEnabled !== false && recipients.emails.length > 0) {
+      channels.push("EMAIL");
+      emailRecipients = recipients.emails.length;
       for (const r of recipients.emails) {
         const html =
           `Sayın ${r.name},<br><br>` +
@@ -237,7 +309,9 @@ export class OperationalEscalationService {
         else if (r1 === "FAILED") anyFailed = true;
       }
     }
-    if (sms && office.opSmsEnabled !== false) {
+    if (sms && office.opSmsEnabled !== false && recipients.phones.length > 0) {
+      channels.push("SMS");
+      smsRecipients = recipients.phones.length;
       for (const r of recipients.phones) {
         const msg =
           `Sayın ${r.name}, ${clientName} müvekkili için bilgiler eksik (${missingList.join(", ")}). ` +
@@ -250,9 +324,8 @@ export class OperationalEscalationService {
     }
 
     // En az bir teslim → SENT. Aksi halde gerçek hata varsa FAILED (retry), yoksa SKIPPED (self-heal).
-    if (anySent) return "SENT";
-    if (anyFailed) return "FAILED";
-    return "SKIPPED";
+    const result: DispatchResult = anySent ? "SENT" : anyFailed ? "FAILED" : "SKIPPED";
+    return { result, channels, emailRecipients, smsRecipients };
   }
 
   /**
