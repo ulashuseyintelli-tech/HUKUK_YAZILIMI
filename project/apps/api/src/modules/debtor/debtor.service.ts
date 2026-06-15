@@ -34,6 +34,36 @@ export function intelligenceLocationDedupeKey(debtorId: string, addressId?: stri
 }
 
 /**
+ * PR-D4e-3a: İstihbarat sonucunun DebtorAddress'e ASİMETRİK beslemesi (saf, test edilebilir).
+ * PRESENT güçlendirir (verified=true/FIELD/confidence↑). ABSENT otoriter verified=true'yu
+ * KÖRLEMESİNE ezmez (yalnız kaynak boş/zayıf/FIELD ise verified=false) + riskFlag + confidence↓.
+ * INCONCLUSIVE/NOT_FOUND/PENDING/IN_FIELD → adres update YOK (null döner).
+ */
+export function computeIntelAddressUpdate(
+  existing: { verified: boolean; verifiedSource?: string | null; confidenceScore?: number | null; riskFlags?: string[] | null },
+  result: string
+): { verified?: boolean; verifiedSource?: string; confidenceScore?: number; riskFlags?: string[] } | null {
+  if (result === 'VERIFIED_PRESENT') {
+    return {
+      verified: true,
+      verifiedSource: 'FIELD',
+      confidenceScore: Math.max(existing.confidenceScore ?? 0, 80),
+    };
+  }
+  if (result === 'VERIFIED_ABSENT') {
+    const src = existing.verifiedSource;
+    const weak = !src || src === 'FIELD'; // otoriter (UYAP/MERNIS/Kurum) DEĞİL
+    const flags = Array.from(new Set([...(existing.riskFlags || []), 'ADDRESS_SUSPECT']));
+    return {
+      ...(weak ? { verified: false } : {}), // güçlü kayıt-doğrulamasını koru
+      riskFlags: flags,
+      confidenceScore: Math.min(existing.confidenceScore ?? 20, 20),
+    };
+  }
+  return null;
+}
+
+/**
  * Borçluda eksik VERİ alanlarını tür-bazlı hesaplar (saf fonksiyon, test edilebilir).
  * Kural (D4c, makul default): adres = en az 1 debtorAddress (primary şartı YOK);
  * iletişim = telefon VEYA e-posta. Kodlar generic → escalation humanizeMissingFields ile etiketlenir.
@@ -672,6 +702,84 @@ export class DebtorService {
     } catch (e: any) {
       console.error(`[DebtorService] intelligence sync hatası (debtor ${debtorId}): ${e?.message}`);
     }
+  }
+
+  /**
+   * PR-D4e-3a: Saha istihbaratı SONUCU yaz. DebtorIntelligence kaydı + (PRESENT/ABSENT'te)
+   * DebtorAddress asimetrik besleme + ilgili INTEL:LOCATION görevini kapat — HEPSİ TEK TRANSACTION.
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - DebtorController.createIntelligence() → POST /debtors/:id/intelligence (saha sonucu girişi)
+   * </remarks>
+   */
+  async createIntelligence(
+    tenantId: string,
+    debtorId: string,
+    userId: string,
+    dto: {
+      addressId?: string;
+      caseId?: string;
+      intelType: string;
+      result: string;
+      confidence?: number;
+      evidence?: any;
+      note?: string;
+    }
+  ) {
+    // Tenant guard.
+    const debtor = await this.prisma.debtor.findFirst({ where: { id: debtorId, tenantId }, select: { id: true } });
+    if (!debtor) throw new NotFoundException("Borçlu bulunamadı");
+
+    // addressId verilirse o adres AYNI borçluya ait olmalı.
+    let address: { id: string; verified: boolean; verifiedSource: string | null; confidenceScore: number | null; riskFlags: string[] } | null = null;
+    if (dto.addressId) {
+      const addr = await this.prisma.debtorAddress.findFirst({
+        where: { id: dto.addressId, debtorId },
+        select: { id: true, verified: true, verifiedSource: true, confidenceScore: true, riskFlags: true },
+      });
+      if (!addr) throw new BadRequestException("Adres bu borçluya ait değil");
+      address = addr as any;
+    }
+
+    const isResolved = dto.result === "VERIFIED_PRESENT" || dto.result === "VERIFIED_ABSENT" || dto.result === "INCONCLUSIVE" || dto.result === "NOT_FOUND";
+
+    return this.prisma.$transaction(async (tx) => {
+      const intel = await tx.debtorIntelligence.create({
+        data: {
+          tenantId,
+          debtorId,
+          addressId: dto.addressId || null,
+          caseId: dto.caseId || null,
+          intelType: dto.intelType as any,
+          result: dto.result as any,
+          confidence: dto.confidence ?? null,
+          evidence: dto.evidence ?? undefined,
+          note: dto.note || null,
+          createdById: userId,
+          verifiedAt: isResolved ? new Date() : null,
+        },
+      });
+
+      // Adres besleme (asimetrik; yalnız PRESENT/ABSENT + addressId).
+      if (address && dto.addressId) {
+        const upd = computeIntelAddressUpdate(address, dto.result);
+        if (upd) {
+          await tx.debtorAddress.update({ where: { id: dto.addressId }, data: upd as any });
+        }
+      }
+
+      // İlgili INTEL:LOCATION görevini kapat (varsa + açıksa) — sonuç girildi = saha işi bitti.
+      const dedupeKey = intelligenceLocationDedupeKey(debtorId, dto.addressId || null);
+      const task = await tx.task.findUnique({ where: { dedupeKey } });
+      if (task && (task.status === "PENDING" || task.status === "IN_PROGRESS")) {
+        await tx.task.update({
+          where: { id: task.id },
+          data: { status: "COMPLETED", completedAt: new Date(), resolutionType: "MANUAL", completedByUserId: userId },
+        });
+      }
+
+      return intel;
+    });
   }
 
   // ==================== DUPLICATE CHECK ====================

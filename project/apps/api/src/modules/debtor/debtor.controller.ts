@@ -16,6 +16,7 @@ import {
   CheckDuplicateDto,
   CreateDebtorAddressDto,
   UpdateDebtorAddressDto,
+  CreateDebtorIntelligenceDto,
 } from "./dto/debtor.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
@@ -172,6 +173,18 @@ export class DebtorController {
   }
 
   // ==================== ADDRESS MANAGEMENT ====================
+
+  // ==================== INTELLIGENCE (PR-D4e-3a) ====================
+
+  @Post(":id/intelligence")
+  createIntelligence(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @Param("id") debtorId: string,
+    @Body() dto: CreateDebtorIntelligenceDto
+  ) {
+    return this.debtorService.createIntelligence(tenantId, debtorId, userId, dto);
+  }
 
   @Post(":id/addresses")
   addAddress(
