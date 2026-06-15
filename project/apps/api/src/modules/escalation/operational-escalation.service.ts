@@ -18,10 +18,23 @@ interface Recipients {
 }
 
 /**
+ * Gönderim sonucu (PR-3b.2 retry-safety):
+ *  - SENT: en az bir kanal gerçekten teslim etti → guard ilerler.
+ *  - FAILED: sağlayıcı hatası/exception (geçici) → guard ilerlemez, sonraki tick retry.
+ *  - SKIPPED: gönderecek kimse/yapılandırma yok (benign) → guard ilerlemez (self-heal).
+ */
+type DispatchResult = "SENT" | "FAILED" | "SKIPPED";
+
+/**
  * Operasyonel eksik görevlerinin (taskCategory=OPERATIONAL_COMPLETENESS) eskalasyon motoru.
  * Saat başı çalışır; büro-geneli config'e (Office) göre STAFF→MANAGER→FOUNDER bildirim atar.
  * Çift-gönderim guard'ı: Task.lastNotifiedLevel (aynı tier'a saat başı tekrar göndermez).
  * Göndericiler office SMTP/SMS yapılandırılmamışsa "skipped" loglar, HİÇBİR ŞEY göndermez.
+ *
+ * PR-3b.2 retry-safety: guard (lastNotifiedLevel) gönderim SONUCUNA göre yazılır →
+ * yalnız SENT'te ilerler. FAILED (sağlayıcı hatası) / SKIPPED (alıcı/yapılandırma yok)
+ * durumunda baseline'da kalır → sonraki tick aynı tier'ı retry eder. Zaman çizelgesi
+ * (escalationLevel + nextFollowUpAt) gönderimden bağımsız HER ZAMAN kalıcıdır.
  *
  * <remarks>
  * Çağrıldığı yerler:
@@ -44,10 +57,13 @@ export class OperationalEscalationService {
   }
 
   /** Tüm tenant'ların açık operasyonel görevlerini işler. Manuel tetikten de çağrılır. */
-  async processEscalations(now: Date = new Date()): Promise<{ processed: number; notified: number; skipped: number }> {
+  async processEscalations(
+    now: Date = new Date()
+  ): Promise<{ processed: number; notified: number; skipped: number; failed: number }> {
     let processed = 0;
     let notified = 0;
     let skipped = 0;
+    let failed = 0;
 
     const tenants = await this.prisma.tenant.findMany({ include: { office: true } });
 
@@ -85,27 +101,46 @@ export class OperationalEscalationService {
           now
         );
 
-        // Durumu ÖNCE kalıcı yap (lastNotifiedLevel guard) → bildirim başarısız olsa bile
-        // saat başı tekrar gönderim OLMAZ (ulas'ın kritik freni). Gönderim best-effort + log.
+        // PR-3b.2 retry-safety: guard (lastNotifiedLevel) gönderim SONUCUNA göre yazılır.
+        // Zaman çizelgesi (escalationLevel + nextFollowUpAt) zamana bağlıdır → HER ZAMAN kalıcı.
+        // Guard yalnız SENT'te ilerler; FAILED/SKIPPED'te baseline'da kalır → sonraki tick retry.
+        let guardToPersist: EscalationTier | null = upd.lastNotifiedLevel;
+
+        if (upd.notifyTier) {
+          const result = await this.dispatch(tenant.id, office, task, upd.notifyTier, now, upd.nextFollowUpAt);
+          if (result === "SENT") {
+            notified++;
+            guardToPersist = upd.lastNotifiedLevel; // gönderildi → guard ilerler
+          } else {
+            // FAILED veya SKIPPED → guard ilerlemez (baseline), aynı tier retry edilebilir kalır.
+            guardToPersist = upd.lastNotifiedLevelOnFailure;
+            if (result === "FAILED") {
+              failed++;
+              this.logger.warn(
+                `Eskalasyon gönderimi BAŞARISIZ → guard ilerletilmedi (retry edilecek): ` +
+                  `tenant ${tenant.id}, task ${task.id}, tier ${upd.notifyTier}`
+              );
+            } else {
+              skipped++;
+            }
+          }
+        }
+
         await this.prisma.task.update({
           where: { id: task.id },
           data: {
             escalationLevel: upd.escalationLevel,
-            lastNotifiedLevel: upd.lastNotifiedLevel,
+            lastNotifiedLevel: guardToPersist,
             nextFollowUpAt: upd.nextFollowUpAt,
           },
         });
-
-        if (upd.notifyTier) {
-          const sent = await this.dispatch(tenant.id, office, task, upd.notifyTier, now, upd.nextFollowUpAt);
-          if (sent) notified++;
-          else skipped++;
-        }
       }
     }
 
-    this.logger.log(`Eskalasyon turu bitti: processed=${processed} notified=${notified} skipped=${skipped}`);
-    return { processed, notified, skipped };
+    this.logger.log(
+      `Eskalasyon turu bitti: processed=${processed} notified=${notified} skipped=${skipped} failed=${failed}`
+    );
+    return { processed, notified, skipped, failed };
   }
 
   /** Bir tier için alıcıları çözer (config → fallback rank/role). */
@@ -150,7 +185,8 @@ export class OperationalEscalationService {
   }
 
   /**
-   * Bildirimi ilgili kanallardan gönderir. Hiçbir alıcı yoksa skip+log → false döner.
+   * Bildirimi ilgili kanallardan gönderir (PR-3b.2).
+   * Sonuç: SENT (≥1 kanal teslim) / FAILED (sağlayıcı hatası→retry) / SKIPPED (alıcı/yapılandırma yok).
    * `now` + `nextEscalationAt` mail/SMS şablonunda "kalan süre" ve "ne zaman eskale olur"
    * bilgisini üretmek için kullanılır (motor mantığını DEĞİŞTİRMEZ, yalnız içerik).
    */
@@ -161,13 +197,13 @@ export class OperationalEscalationService {
     tier: EscalationTier,
     now: Date,
     nextEscalationAt: Date | null
-  ): Promise<boolean> {
+  ): Promise<DispatchResult> {
     const { email, sms } = channelsForTier(tier);
     const recipients = await this.resolveRecipients(tenantId, office, tier);
 
     if (recipients.emails.length === 0 && recipients.phones.length === 0) {
       this.logger.warn(`Eskalasyon skipped: ${tier} alıcısı yok (tenant ${tenantId}, task ${task.id})`);
-      return false;
+      return "SKIPPED";
     }
 
     const clientName = clientDisplayName(task.client);
@@ -181,6 +217,7 @@ export class OperationalEscalationService {
 
     const subject = `[Operasyonel Görev] Müvekkil Bilgileri Eksik - ${clientName}`;
     let anySent = false;
+    let anyFailed = false;
 
     if (email && office.opEmailEnabled !== false) {
       for (const r of recipients.emails) {
@@ -195,7 +232,9 @@ export class OperationalEscalationService {
           `<b>Görev Önceliği:</b><br>${priorityStr}<br><br>` +
           (link ? `<b>Göreve Git:</b><br><a href="${link}">${link}</a><br><br>` : "") +
           `<b>Eskalasyon:</b><br>${escalationLine}`;
-        if (await this.sendTenantEmail(tenantId, r.email, subject, html)) anySent = true;
+        const r1 = await this.sendTenantEmail(tenantId, r.email, subject, html);
+        if (r1 === "SENT") anySent = true;
+        else if (r1 === "FAILED") anyFailed = true;
       }
     }
     if (sms && office.opSmsEnabled !== false) {
@@ -204,20 +243,29 @@ export class OperationalEscalationService {
           `Sayın ${r.name}, ${clientName} müvekkili için bilgiler eksik (${missingList.join(", ")}). ` +
           `Kalan süre: ${remainingStr}.` +
           (link ? ` ${link}` : "");
-        if (await this.sendTenantSms(tenantId, r.phone, msg)) anySent = true;
+        const r2 = await this.sendTenantSms(tenantId, r.phone, msg);
+        if (r2 === "SENT") anySent = true;
+        else if (r2 === "FAILED") anyFailed = true;
       }
     }
-    return anySent;
+
+    // En az bir teslim → SENT. Aksi halde gerçek hata varsa FAILED (retry), yoksa SKIPPED (self-heal).
+    if (anySent) return "SENT";
+    if (anyFailed) return "FAILED";
+    return "SKIPPED";
   }
 
-  /** Tenant SMTP ile ham e-posta gönderir. Yapılandırma yoksa skip+log → false. */
-  private async sendTenantEmail(tenantId: string, to: string, subject: string, html: string): Promise<boolean> {
+  /**
+   * Tenant SMTP ile ham e-posta gönderir (PR-3b.2).
+   * SKIPPED: SMTP yapılandırılmamış. FAILED: gönderim exception'ı (retry). SENT: başarılı.
+   */
+  private async sendTenantEmail(tenantId: string, to: string, subject: string, html: string): Promise<DispatchResult> {
+    const s = await this.officeService.getFullSmtpSettings(tenantId).catch(() => null);
+    if (!s || !s.smtpHost || !s.smtpUser) {
+      this.logger.warn(`E-posta skipped (SMTP yapılandırılmamış): tenant ${tenantId}`);
+      return "SKIPPED";
+    }
     try {
-      const s = await this.officeService.getFullSmtpSettings(tenantId);
-      if (!s.smtpHost || !s.smtpUser) {
-        this.logger.warn(`E-posta skipped (SMTP yapılandırılmamış): tenant ${tenantId}`);
-        return false;
-      }
       const transporter = nodemailer.createTransport({
         host: s.smtpHost,
         port: s.smtpPort || 587,
@@ -226,26 +274,30 @@ export class OperationalEscalationService {
       } as nodemailer.TransportOptions);
       const from = `"${s.smtpFromName || "Hukuk Bürosu"}" <${s.smtpFromEmail || s.smtpUser}>`;
       await transporter.sendMail({ from, to, subject, html });
-      return true;
+      return "SENT";
     } catch (e: any) {
       this.logger.error(`Eskalasyon e-posta hatası (${to}): ${e?.message}`);
-      return false;
+      return "FAILED";
     }
   }
 
-  /** Tenant SMS sağlayıcısı ile ham SMS gönderir. Yapılandırma/numara yoksa skip+log → false. */
-  private async sendTenantSms(tenantId: string, to: string, message: string): Promise<boolean> {
+  /**
+   * Tenant SMS sağlayıcısı ile ham SMS gönderir (PR-3b.2).
+   * SKIPPED: sağlayıcı yok / numara geçersiz / desteklenmeyen sağlayıcı.
+   * FAILED: sağlayıcı hata yanıtı veya exception (retry). SENT: başarılı.
+   */
+  private async sendTenantSms(tenantId: string, to: string, message: string): Promise<DispatchResult> {
+    const s = await this.officeService.getFullSmsSettings(tenantId).catch(() => null);
+    if (!s || !s.smsProvider || !s.smsApiKey) {
+      this.logger.warn(`SMS skipped (sağlayıcı yapılandırılmamış): tenant ${tenantId}`);
+      return "SKIPPED";
+    }
+    const phone = normalizeTrPhone(to);
+    if (!phone) {
+      this.logger.warn(`SMS skipped (geçersiz cep numarası): ${to}`);
+      return "SKIPPED";
+    }
     try {
-      const s = await this.officeService.getFullSmsSettings(tenantId);
-      if (!s.smsProvider || !s.smsApiKey) {
-        this.logger.warn(`SMS skipped (sağlayıcı yapılandırılmamış): tenant ${tenantId}`);
-        return false;
-      }
-      const phone = normalizeTrPhone(to);
-      if (!phone) {
-        this.logger.warn(`SMS skipped (geçersiz cep numarası): ${to}`);
-        return false;
-      }
       if (s.smsProvider === "NETGSM") {
         const params = new URLSearchParams({
           usercode: s.smsApiKey || "",
@@ -259,9 +311,9 @@ export class OperationalEscalationService {
         const text = await res.text();
         if (text.split(" ")[0] !== "00" && !text.startsWith("00")) {
           this.logger.error(`NetGSM eskalasyon SMS hatası: ${text}`);
-          return false;
+          return "FAILED";
         }
-        return true;
+        return "SENT";
       }
       if (s.smsProvider === "ILETI_MERKEZI") {
         const params = new URLSearchParams({
@@ -275,15 +327,15 @@ export class OperationalEscalationService {
         const text = await res.text();
         if (/error/i.test(text)) {
           this.logger.error(`İleti Merkezi eskalasyon SMS hatası: ${text}`);
-          return false;
+          return "FAILED";
         }
-        return true;
+        return "SENT";
       }
       this.logger.warn(`SMS skipped (desteklenmeyen sağlayıcı ${s.smsProvider})`);
-      return false;
+      return "SKIPPED";
     } catch (e: any) {
       this.logger.error(`Eskalasyon SMS hatası (${to}): ${e?.message}`);
-      return false;
+      return "FAILED";
     }
   }
 }

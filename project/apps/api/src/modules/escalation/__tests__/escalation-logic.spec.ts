@@ -80,6 +80,40 @@ describe("computeEscalationUpdate", () => {
     const exp = new Date(now); exp.setMonth(exp.getMonth() + 3);
     expect(r.nextFollowUpAt.getTime()).toBe(exp.getTime());
   });
+
+  // PR-3b.2 retry-safety: lastNotifiedLevelOnFailure = notify-advance ÖNCESİ baseline.
+  // Gönderim başarısız/atlanırsa bu kalıcı yapılır → baseline ≠ level olduğundan aynı tier retry edilir.
+  describe("lastNotifiedLevelOnFailure (retry baseline)", () => {
+    it("STAFF ilk bildirim → baseline null (başarısızsa STAFF retry)", () => {
+      const r = computeEscalationUpdate(task({}), cfg, D0);
+      expect(r.notifyTier).toBe("STAFF");
+      expect(r.lastNotifiedLevel).toBe("STAFF"); // başarı değeri
+      expect(r.lastNotifiedLevelOnFailure).toBeNull(); // başarısızlık baseline ≠ STAFF
+    });
+
+    it("STAFF→MANAGER ilerleme → baseline STAFF (başarısızsa MANAGER retry)", () => {
+      const r = computeEscalationUpdate(task({ lastNotifiedLevel: "STAFF" }), cfg, addDays(D0, 3));
+      expect(r.escalationLevel).toBe("MANAGER");
+      expect(r.notifyTier).toBe("MANAGER");
+      expect(r.lastNotifiedLevelOnFailure).toBe("STAFF"); // baseline ≠ MANAGER → retry
+    });
+
+    it("FOUNDER periyodik tekrar → baseline null (başarısızsa FOUNDER retry)", () => {
+      const now = addDays(D0, 100);
+      const r = computeEscalationUpdate(
+        task({ escalationLevel: "FOUNDER", lastNotifiedLevel: "FOUNDER", nextFollowUpAt: addDays(D0, 90) }),
+        cfg,
+        now
+      );
+      expect(r.notifyTier).toBe("FOUNDER");
+      expect(r.lastNotifiedLevelOnFailure).toBeNull(); // reset → baseline ≠ FOUNDER → retry
+    });
+
+    it("gönderim gerekmiyorsa (guard==level) → notifyTier null", () => {
+      const r = computeEscalationUpdate(task({ lastNotifiedLevel: "STAFF" }), cfg, addDays(D0, 1));
+      expect(r.notifyTier).toBeNull();
+    });
+  });
 });
 
 describe("normalizeTrPhone (SMS için)", () => {

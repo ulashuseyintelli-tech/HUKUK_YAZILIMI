@@ -20,7 +20,14 @@ export interface EscalationTaskState {
 
 export interface EscalationUpdate {
   escalationLevel: EscalationTier;
+  /** Gönderim BAŞARILI olursa (ya da gönderim gerekmiyorsa) kalıcı yapılacak guard değeri. */
   lastNotifiedLevel: EscalationTier;
+  /**
+   * Gönderim BAŞARISIZ/ATLANMIŞ olursa kalıcı yapılacak guard değeri (notify-advance ÖNCESİ baseline).
+   * notifyTier set iken bu değer mevcut level'dan FARKLIDIR → sonraki tick aynı tier'ı retry eder.
+   * (PR-3b.2 retry-safety: guard yalnız SENT'te ilerler.)
+   */
+  lastNotifiedLevelOnFailure: EscalationTier | null;
   nextFollowUpAt: Date;
   /** Bu tick'te bildirim atılacak tier; null ise gönderim yok (zaten bildirilmiş). */
   notifyTier: EscalationTier | null;
@@ -83,13 +90,22 @@ export function computeEscalationUpdate(
     }
   }
 
+  // notify-advance ÖNCESİ baseline: gönderim başarısız/atlanırsa bu kalıcı yapılır → retry mümkün.
+  const guardBaseline: EscalationTier | null = lastNotified;
+
   let notifyTier: EscalationTier | null = null;
   if (lastNotified !== level) {
     notifyTier = level;
     lastNotified = level;
   }
 
-  return { escalationLevel: level, lastNotifiedLevel: lastNotified, nextFollowUpAt: next, notifyTier };
+  return {
+    escalationLevel: level,
+    lastNotifiedLevel: lastNotified,
+    lastNotifiedLevelOnFailure: guardBaseline,
+    nextFollowUpAt: next,
+    notifyTier,
+  };
 }
 
 /** Bir tier'da hangi kanallar kullanılır (politika KİLİTLİ: SMS yalnız FOUNDER). */

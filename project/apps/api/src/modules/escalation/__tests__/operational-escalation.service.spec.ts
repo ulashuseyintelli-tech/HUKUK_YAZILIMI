@@ -1,12 +1,16 @@
 /**
- * PR-3b Escalation Engine — servis orkestrasyon testleri (mock prisma + officeService).
- * Doğrular: (1) guard ÖNCE kalıcı yapılır (lastNotifiedLevel), (2) SMTP yoksa skip,
- * (3) SMTP varsa STAFF e-postası gider (nodemailer mock).
+ * PR-3b/3b.2 Escalation Engine — servis orkestrasyon testleri (mock prisma + officeService).
+ * Doğrular: (1) SKIPPED → guard ilerlemez (baseline kalır), (2) SENT → guard ilerler,
+ * (3) FAILED (SMTP exception) → guard baseline kalır + failed=1, tier/next yine kalıcı.
  */
 
-jest.mock("nodemailer", () => ({
-  createTransport: () => ({ sendMail: jest.fn().mockResolvedValue({ messageId: "x" }) }),
-}));
+jest.mock("nodemailer", () => {
+  const sendMail = jest.fn().mockResolvedValue({ messageId: "x" });
+  return { __sendMail: sendMail, createTransport: () => ({ sendMail }) };
+});
+
+import * as nodemailer from "nodemailer";
+const mockSendMail = (nodemailer as any).__sendMail as jest.Mock;
 
 import {
   OperationalEscalationService,
@@ -64,7 +68,12 @@ const buildPrisma = () => ({
 });
 
 describe("OperationalEscalationService.processEscalations", () => {
-  it("SMTP yoksa: guard yine de set edilir (STAFF), gönderim SKIPPED", async () => {
+  beforeEach(() => {
+    mockSendMail.mockReset();
+    mockSendMail.mockResolvedValue({ messageId: "x" }); // varsayılan: başarılı
+  });
+
+  it("SMTP yoksa: SKIPPED → guard İLERLEMEZ (baseline null kalır), tier kalıcı, retry mümkün", async () => {
     const prisma = buildPrisma() as any;
     const officeService = {
       getFullSmtpSettings: jest.fn().mockResolvedValue({ smtpHost: null, smtpUser: null }),
@@ -74,16 +83,14 @@ describe("OperationalEscalationService.processEscalations", () => {
 
     const res = await svc.processEscalations(D0); // now=D0 → süre dolmadı (next=D0+3)
 
-    // Guard ÖNCE kalıcı: lastNotifiedLevel=STAFF (tekrar gönderimi engeller)
     expect(prisma.task.update).toHaveBeenCalledTimes(1);
     const data = prisma.task.update.mock.calls[0][0].data;
-    expect(data.escalationLevel).toBe("STAFF");
-    expect(data.lastNotifiedLevel).toBe("STAFF");
-    // SMTP yok → e-posta gitmedi
-    expect(res).toEqual({ processed: 1, notified: 0, skipped: 1 });
+    expect(data.escalationLevel).toBe("STAFF"); // zaman çizelgesi kalıcı
+    expect(data.lastNotifiedLevel).toBeNull(); // PR-3b.2: SKIPPED → guard ilerlemez (baseline)
+    expect(res).toEqual({ processed: 1, notified: 0, skipped: 1, failed: 0 });
   });
 
-  it("SMTP varsa: STAFF e-postası muhasebe personeline gider, notified", async () => {
+  it("SMTP varsa: SENT → guard İLERLER (STAFF), e-posta personele gider, notified", async () => {
     const prisma = buildPrisma() as any;
     const officeService = {
       getFullSmtpSettings: jest.fn().mockResolvedValue({ smtpHost: "smtp.x.com", smtpUser: "u@x.com", smtpPass: "p" }),
@@ -94,7 +101,27 @@ describe("OperationalEscalationService.processEscalations", () => {
     const res = await svc.processEscalations(D0);
 
     expect(prisma.staffMember.findMany).toHaveBeenCalled(); // STAFF alıcı çözüldü
-    expect(res).toEqual({ processed: 1, notified: 1, skipped: 0 });
+    const data = prisma.task.update.mock.calls[0][0].data;
+    expect(data.lastNotifiedLevel).toBe("STAFF"); // başarı → guard ilerledi
+    expect(res).toEqual({ processed: 1, notified: 1, skipped: 0, failed: 0 });
+  });
+
+  it("SMTP exception: FAILED → guard baseline (null) KALIR + failed=1, tier/next yine güncellenir", async () => {
+    mockSendMail.mockRejectedValue(new Error("smtp down")); // gönderim patlar
+    const prisma = buildPrisma() as any;
+    const officeService = {
+      getFullSmtpSettings: jest.fn().mockResolvedValue({ smtpHost: "smtp.x.com", smtpUser: "u@x.com", smtpPass: "p" }),
+      getFullSmsSettings: jest.fn().mockResolvedValue({ smsProvider: null }),
+    } as any;
+    const svc = new OperationalEscalationService(prisma, officeService);
+
+    const res = await svc.processEscalations(D0);
+
+    expect(res).toEqual({ processed: 1, notified: 0, skipped: 0, failed: 1 });
+    const data = prisma.task.update.mock.calls[0][0].data;
+    expect(data.lastNotifiedLevel).toBeNull(); // PR-3b.2: FAILED → guard ilerlemez → retry
+    expect(data.escalationLevel).toBe("STAFF"); // tier kalıcı
+    expect(data.nextFollowUpAt).toBeDefined(); // zaman çizelgesi yazıldı
   });
 });
 
