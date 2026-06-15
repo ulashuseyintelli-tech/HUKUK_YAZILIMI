@@ -93,6 +93,12 @@ export interface DebtorAddress {
   addressCategory?: string;
   /** Güven seviyesi (LOW, MEDIUM, MEDIUM_HIGH, HIGH) */
   confidenceLevel?: string;
+  /** Adres kaynağı (AddressSource: MERNIS, USER_INPUT, UYAP, CONTRACT, ...) */
+  source?: string;
+  /** Doğrulandı mı? */
+  verified?: boolean;
+  /** Doğrulama tarihi */
+  verifiedAt?: string;
 }
 
 export interface Debtor {
