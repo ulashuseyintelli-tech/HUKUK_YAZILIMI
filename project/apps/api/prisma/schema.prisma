@@ -1435,9 +1435,12 @@ model Task {
   dedupeKey   String?    @unique
   // Operasyonel görevde eksik alan kodları (ör. ["phone","email"]). Generic → IBAN/kimlik vb. ileride.
   missingFields Json?
-  // Zaman-temelli eskalasyon (STAFF→MANAGER→FOUNDER) — PR-3 scheduler işler.
+  // Zaman-temelli eskalasyon (STAFF→MANAGER→FOUNDER) — PR-3b scheduler işler.
   escalationLevel EscalationTier?
   nextFollowUpAt  DateTime?
+  // PR-3b çift-gönderim guard'ı: bir tier'a bildirim atıldıktan sonra bu set edilir;
+  // scheduler her saat çalışsa da aynı tier'a tekrar göndermez (lastNotifiedLevel == escalationLevel).
+  lastNotifiedLevel EscalationTier?
   assigneeId  String?
   assignee    User?      @relation("AssignedTasks", fields: [assigneeId], references: [id])
   createdById String?
