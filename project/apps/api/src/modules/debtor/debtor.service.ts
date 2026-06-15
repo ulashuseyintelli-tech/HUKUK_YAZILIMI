@@ -812,6 +812,100 @@ export class DebtorService {
     });
   }
 
+  /**
+   * PR-D5-b-1: tebligat SONUCUNA göre istihbarat tetiği — ORTAK (updateServiceStatus + Tebligat senkronu).
+   * Bu method çağrılmadığı yolda istihbarat KAÇAR; tek kaynak burası. best-effort (syncIntelligenceTaskSafe).
+   * [B] DELIVERED+UETS/KEP → 90g VERIFIED_PRESENT yoksa görev · [C] RETURNED+MOVED/ADDRESS_NOT_FOUND → görev.
+   */
+  async runServiceResultIntelligence(
+    tenantId: string,
+    debtorId: string,
+    addressId: string | null,
+    newStatus: string,
+    channel: string | null,
+    returnReason: string | null
+  ): Promise<void> {
+    if (newStatus === "DELIVERED" && (channel === "UETS" || channel === "KEP") && addressId) {
+      await this.syncIntelligenceTaskSafe(tenantId, debtorId, addressId, true);
+    }
+    if (newStatus === "RETURNED" && (returnReason === "MOVED" || returnReason === "ADDRESS_NOT_FOUND")) {
+      await this.syncIntelligenceTaskSafe(tenantId, debtorId, addressId);
+    }
+  }
+
+  /**
+   * PR-D5-b-1: Tebligat sonucunu CaseDebtor.serviceStatus'a TEK YÖNLÜ senkronlar (Tebligat → CaseDebtor).
+   * Çağıranın transaction'ı içinde çalışır (tx) → Tebligat yazımıyla ATOMİK. caseDebtor yoksa NO-OP (null).
+   * İstihbarat tetiği BURADA DEĞİL (DB-write); commit sonrası runServiceResultIntelligence ile çağrılmalı.
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - TebligatService.recordPttResult() → Tebligat sonucu (TESLIM/IADE/MUHTAR) CaseDebtor senkronu
+   * </remarks>
+   */
+  async syncServiceStatusInTx(
+    tx: any,
+    params: {
+      tenantId: string;
+      caseDebtorId: string;
+      newStatus: string;
+      channel?: string | null;
+      returnReason?: string | null;
+      addressId?: string | null;
+      actionDate?: Date;
+      userId?: string | null;
+    }
+  ): Promise<{ debtorId: string; addressId: string | null; newStatus: string; channel: string | null; returnReason: string | null } | null> {
+    const cd = await tx.caseDebtor.findFirst({
+      where: { id: params.caseDebtorId, case: { tenantId: params.tenantId } },
+      include: { debtor: { select: { id: true } } },
+    });
+    if (!cd) return null; // hedef CaseDebtor yok → NO-OP
+
+    const fromStatus = cd.serviceStatus || "NOT_STARTED";
+    const addressId = params.addressId ?? cd.selectedAddressId ?? null;
+    const actionDate = params.actionDate ?? new Date();
+
+    await tx.caseDebtor.update({
+      where: { id: cd.id },
+      data: {
+        serviceStatus: params.newStatus as any,
+        ...(params.channel ? { serviceChannel: params.channel as any } : {}),
+        ...(params.returnReason ? { returnReason: params.returnReason as any } : {}),
+        ...(params.newStatus === "DELIVERED" || params.newStatus === "MUHTAR" ? { deliveredAt: actionDate } : {}),
+        ...(params.newStatus === "RETURNED" ? { returnedAt: actionDate } : {}),
+      },
+    });
+
+    // Adres snapshot (ServiceHistory için).
+    let addressType: string | null = null;
+    let addressText: string | null = null;
+    if (addressId) {
+      const a = await tx.debtorAddress.findUnique({ where: { id: addressId }, select: { type: true, street: true, district: true, city: true } });
+      if (a) {
+        addressType = a.type;
+        addressText = [a.street, a.district, a.city].filter(Boolean).join(", ");
+      }
+    }
+
+    await tx.serviceHistory.create({
+      data: {
+        caseDebtorId: cd.id,
+        fromStatus: fromStatus as any,
+        toStatus: params.newStatus as any,
+        channel: (params.channel as any) || null,
+        returnReason: (params.returnReason as any) || null,
+        actionDate,
+        note: "Tebligat sonucu senkronu (D5-b-1)",
+        createdBy: params.userId || null,
+        addressId,
+        addressType: addressType as any,
+        addressText,
+      },
+    });
+
+    return { debtorId: cd.debtor.id, addressId, newStatus: params.newStatus, channel: params.channel ?? null, returnReason: params.returnReason ?? null };
+  }
+
   // ==================== DUPLICATE CHECK ====================
 
   async checkDuplicate(tenantId: string, dto: CheckDuplicateDto) {
@@ -1696,16 +1790,9 @@ export class DebtorService {
         // Don't fail the main operation
       }
 
-      // PR-D4e-2: tebligat sonucuna göre saha istihbaratı tetiği (best-effort, ana işlemi bozmaz).
-      const debtorIdForIntel = caseDebtor.debtor.id;
-      // [B] e-tebligat (UETS/KEP) BAŞARILI + adres var → son 90g VERIFIED_PRESENT yoksa görev.
-      if (newStatus === "DELIVERED" && (mappedChannel === "UETS" || mappedChannel === "KEP") && addressId) {
-        await this.syncIntelligenceTaskSafe(tenantId, debtorIdForIntel, addressId, true);
-      }
-      // [C] İADE (taşınmış / adres bulunamadı) → fiili lokasyon teyidi.
-      if (newStatus === "RETURNED" && (data.returnReason === "MOVED" || data.returnReason === "ADDRESS_NOT_FOUND")) {
-        await this.syncIntelligenceTaskSafe(tenantId, debtorIdForIntel, addressId);
-      }
+      // PR-D4e-2/D5-b-1: tebligat sonucuna göre saha istihbaratı tetiği — ORTAK method (Tebligat→
+      // CaseDebtor senkronu da AYNI method'u çağırır → istihbarat Tebligat sonuçlarında KAÇMAZ).
+      await this.runServiceResultIntelligence(tenantId, caseDebtor.debtor.id, addressId, newStatus, mappedChannel, data.returnReason ?? null);
 
       // Return updated detail
       return this.getCaseDebtorDetail(tenantId, caseId, caseDebtorId);
