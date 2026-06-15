@@ -1,6 +1,8 @@
-import { Controller, Get, Post, Param, Body, Query } from '@nestjs/common';
+import { Controller, Get, Post, Param, Body, Query, UseGuards } from '@nestjs/common';
 import { ValidationGateService, GateId, GateValidationResult } from './validation-gate.service';
 import { validateBankClaim, isBankClaim, getBankClaimInterestRules, BankClaimValidation } from './rules/bank-claim.rules';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 // MasterValidations tipini export et
 export interface MasterValidationsResponse {
@@ -86,6 +88,20 @@ export class ValidationGateController {
     @Body() additionalData?: Record<string, any>,
   ): Promise<GateValidationResult> {
     return this.validationGateService.validateGate(caseId, 'GATE_4_UYAP_INTEGRATION', additionalData);
+  }
+
+  /**
+   * PR-D4e-3b: HACİZ ÖNCESİ saha istihbaratı SOFT-UYARILARI (read-only, BLOK YOK).
+   * GET /api/validation-gate/:caseId/pre-haciz-intelligence
+   * Tenant-scoped (JwtAuthGuard). isValid her zaman true; yalnız warnings döner.
+   */
+  @Get(':caseId/pre-haciz-intelligence')
+  @UseGuards(JwtAuthGuard)
+  async preHacizIntelligence(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('caseId') caseId: string,
+  ) {
+    return this.validationGateService.checkPreHacizIntelligence(tenantId, caseId);
   }
 
   /**
