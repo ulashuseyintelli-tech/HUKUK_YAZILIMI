@@ -86,8 +86,12 @@ export class OperationalEscalationService {
           status: { in: ["PENDING", "IN_PROGRESS"] },
           escalationLevel: { not: null },
         },
-        // Mail/SMS şablonunda "hangi müvekkil?" sorusunu yanıtlamak için ad alanları çekilir.
-        include: { client: { select: { displayName: true, firstName: true, lastName: true, companyName: true } } },
+        // Mail/SMS şablonunda "hangi müvekkil/borçlu?" sorusunu yanıtlamak için ad alanları çekilir.
+        // PR-D4b: borçlu-bağlı görevler için debtor.name de çekilir (debtor-aware dispatch).
+        include: {
+          client: { select: { displayName: true, firstName: true, lastName: true, companyName: true } },
+          debtor: { select: { name: true } },
+        },
       });
 
       const cfg: EscalationConfig = {
@@ -273,16 +277,17 @@ export class OperationalEscalationService {
       return { result: "SKIPPED", channels: [], emailRecipients: 0, smsRecipients: 0 };
     }
 
-    const clientName = clientDisplayName(task.client);
+    // PR-D4b: muhatap müvekkil VEYA borçlu olabilir → etiket/ad/deep-link entity'den gelir.
+    const entity = escalationEntity(task);
     const missingList = humanizeMissingFields(task.missingFields, task.description);
-    const link = taskDeepLink(task.clientId);
+    const link = entity.link;
     const createdStr = formatTrDateTime(task.createdAt);
     const dueStr = task.dueDate ? formatTrDateTime(task.dueDate) : "Belirtilmemiş";
     const remainingStr = formatRemaining(task.dueDate, now);
     const priorityStr = priorityTr(task.priority);
     const escalationLine = nextEscalationLine(tier, nextEscalationAt);
 
-    const subject = `[Operasyonel Görev] Müvekkil Bilgileri Eksik - ${clientName}`;
+    const subject = `[Operasyonel Görev] ${entity.label} Bilgileri Eksik - ${entity.name}`;
     let anySent = false;
     let anyFailed = false;
     const channels: string[] = [];
@@ -296,7 +301,7 @@ export class OperationalEscalationService {
         const html =
           `Sayın ${r.name},<br><br>` +
           `Aşağıdaki operasyonel görev sizin çözümünüzü beklemektedir.<br><br>` +
-          `<b>Müvekkil:</b><br>${clientName}<br><br>` +
+          `<b>${entity.label}:</b><br>${entity.name}<br><br>` +
           `<b>Eksik Bilgiler:</b><br>${missingList.map((m) => `&bull; ${m}`).join("<br>")}<br><br>` +
           `<b>Oluşturulma Tarihi:</b><br>${createdStr}<br><br>` +
           `<b>Son Tamamlama Tarihi:</b><br>${dueStr}<br><br>` +
@@ -314,7 +319,7 @@ export class OperationalEscalationService {
       smsRecipients = recipients.phones.length;
       for (const r of recipients.phones) {
         const msg =
-          `Sayın ${r.name}, ${clientName} müvekkili için bilgiler eksik (${missingList.join(", ")}). ` +
+          `Sayın ${r.name}, ${entity.name} (${entity.label.toLowerCase()}) için bilgiler eksik (${missingList.join(", ")}). ` +
           `Kalan süre: ${remainingStr}.` +
           (link ? ` ${link}` : "");
         const r2 = await this.sendTenantSms(tenantId, r.phone, msg);
@@ -492,6 +497,32 @@ export function taskDeepLink(clientId: string | null | undefined): string {
   if (!clientId) return "";
   const base = (process.env.FRONTEND_URL || "http://localhost:3002").replace(/\/$/, "");
   return `${base}/settings/clients?edit=${clientId}`;
+}
+
+/** PR-D4b deep-link: borçlu düzenleme modalını açar. debtorId yoksa boş döner. */
+export function debtorDeepLink(debtorId: string | null | undefined): string {
+  if (!debtorId) return "";
+  const base = (process.env.FRONTEND_URL || "http://localhost:3002").replace(/\/$/, "");
+  return `${base}/debtors?edit=${debtorId}`;
+}
+
+/**
+ * PR-D4b: görevin muhatap varlığını çözer (müvekkil VEYA borçlu). Borçlu-bağlı görevde
+ * (clientId yok, debtorId var) doğru etiket/ad/deep-link döner → eskalasyon maili patlamaz.
+ */
+export function escalationEntity(task: any): { label: string; name: string; link: string } {
+  if (!task.clientId && task.debtorId) {
+    return {
+      label: "Borçlu",
+      name: task.debtor?.name || "Bilinmeyen Borçlu",
+      link: debtorDeepLink(task.debtorId),
+    };
+  }
+  return {
+    label: "Müvekkil",
+    name: clientDisplayName(task.client),
+    link: taskDeepLink(task.clientId),
+  };
 }
 
 /** Bir sonraki eskalasyon kademesi açıklaması. */
