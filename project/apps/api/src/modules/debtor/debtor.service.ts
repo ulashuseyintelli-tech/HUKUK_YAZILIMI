@@ -26,6 +26,13 @@ export function debtorTaskDedupeKey(debtorId: string): string {
   return `${DEBTOR_TASK_DEDUPE_PREFIX}${debtorId}`;
 }
 
+// PR-D4e-2: saha istihbaratı (lokasyon doğrulama) görev dedupe — borçlu+adres anchored
+// (caseId YOK; aynı debtor+address farklı dosyalarda tek görev). Completeness prefix'iyle çakışmaz.
+export const INTEL_LOCATION_DEDUPE_PREFIX = 'INTEL:LOCATION:';
+export function intelligenceLocationDedupeKey(debtorId: string, addressId?: string | null): string {
+  return `${INTEL_LOCATION_DEDUPE_PREFIX}${debtorId}:${addressId || ''}`;
+}
+
 /**
  * Borçluda eksik VERİ alanlarını tür-bazlı hesaplar (saf fonksiyon, test edilebilir).
  * Kural (D4c, makul default): adres = en az 1 debtorAddress (primary şartı YOK);
@@ -593,6 +600,80 @@ export class DebtorService {
     }
   }
 
+  // ==================== PR-D4e-2: İSTİHBARAT TETİKLERİ ====================
+
+  /**
+   * Saha istihbaratı (LOCATION_VERIFICATION) görevini senkronlar. BEST-EFFORT (ana işlemi BOZMAZ).
+   * Mükerrer aktif görev açmaz (dedupe). Kapalı görev + yeni tetik → yeniden açar. SONUÇ YAZMAZ (D4e-3).
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - DebtorService.addAddress() → yeni adres (verified=false) [A]
+   * - DebtorService.updateServiceStatus() → DELIVERED+UETS/KEP [B] · RETURNED+MOVED/ADDRESS_NOT_FOUND [C]
+   * </remarks>
+   * @param checkRecentVerified B kuralı: son 90 gün VERIFIED_PRESENT varsa görev açma.
+   */
+  private async syncIntelligenceTaskSafe(
+    tenantId: string,
+    debtorId: string,
+    addressId: string | null,
+    checkRecentVerified = false
+  ): Promise<void> {
+    try {
+      // B: son 90 gün içinde bu adres VERIFIED_PRESENT ise yeniden teyide gerek yok.
+      if (checkRecentVerified && addressId) {
+        const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+        const recent = await this.prisma.debtorIntelligence.findFirst({
+          where: { debtorId, addressId, result: 'VERIFIED_PRESENT', createdAt: { gte: ninetyDaysAgo } },
+          select: { id: true },
+        });
+        if (recent) return;
+      }
+
+      const dedupeKey = intelligenceLocationDedupeKey(debtorId, addressId);
+      const existing = await this.prisma.task.findUnique({ where: { dedupeKey } });
+
+      // Mükerrer aktif görev açma.
+      if (existing && (existing.status === 'PENDING' || existing.status === 'IN_PROGRESS')) return;
+
+      const now = new Date();
+      const due = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000); // +3g SLA
+      const title = 'Saha teyidi (lokasyon doğrulama)';
+      const description = 'Bu borçlu/adres için saha teyidi (fiili lokasyon doğrulama) gerekli.';
+
+      if (existing) {
+        // Kapalı görev (COMPLETED/CANCELLED) + yeni tetik → yeniden aç.
+        await this.prisma.task.update({
+          where: { id: existing.id },
+          data: {
+            status: 'PENDING', completedAt: null, completedByUserId: null, resolutionType: null,
+            dueDate: due, escalationLevel: 'STAFF', nextFollowUpAt: due,
+            ...(addressId ? { addressId } : {}),
+          },
+        });
+      } else {
+        await this.prisma.task.create({
+          data: {
+            tenantId,
+            debtorId,
+            ...(addressId ? { addressId } : {}),
+            title,
+            description,
+            status: 'PENDING',
+            priority: 'MEDIUM',
+            taskCategory: 'OPERATIONAL_COMPLETENESS',
+            taskSubType: 'DEBTOR_INTELLIGENCE',
+            dedupeKey,
+            dueDate: due,
+            escalationLevel: 'STAFF',
+            nextFollowUpAt: due,
+          },
+        });
+      }
+    } catch (e: any) {
+      console.error(`[DebtorService] intelligence sync hatası (debtor ${debtorId}): ${e?.message}`);
+    }
+  }
+
   // ==================== DUPLICATE CHECK ====================
 
   async checkDuplicate(tenantId: string, dto: CheckDuplicateDto) {
@@ -656,6 +737,10 @@ export class DebtorService {
     });
     // PR-D4c: adres eklenince "adres eksik" completeness durumu değişebilir → senkronla.
     await this.syncDebtorTaskByIdSafe(tenantId, debtorId);
+    // PR-D4e-2 [A]: yeni adres doğrulanmamış (verified=false) → saha teyidi görevi.
+    if (!created.verified) {
+      await this.syncIntelligenceTaskSafe(tenantId, debtorId, created.id);
+    }
     return created;
   }
 
@@ -1464,6 +1549,17 @@ export class DebtorService {
       } catch (historyError) {
         console.error("ServiceHistory create error:", historyError);
         // Don't fail the main operation
+      }
+
+      // PR-D4e-2: tebligat sonucuna göre saha istihbaratı tetiği (best-effort, ana işlemi bozmaz).
+      const debtorIdForIntel = caseDebtor.debtor.id;
+      // [B] e-tebligat (UETS/KEP) BAŞARILI + adres var → son 90g VERIFIED_PRESENT yoksa görev.
+      if (newStatus === "DELIVERED" && (mappedChannel === "UETS" || mappedChannel === "KEP") && addressId) {
+        await this.syncIntelligenceTaskSafe(tenantId, debtorIdForIntel, addressId, true);
+      }
+      // [C] İADE (taşınmış / adres bulunamadı) → fiili lokasyon teyidi.
+      if (newStatus === "RETURNED" && (data.returnReason === "MOVED" || data.returnReason === "ADDRESS_NOT_FOUND")) {
+        await this.syncIntelligenceTaskSafe(tenantId, debtorIdForIntel, addressId);
       }
 
       // Return updated detail
