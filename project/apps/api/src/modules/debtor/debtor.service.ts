@@ -15,6 +15,30 @@ import {
   DebtorType,
 } from "./dto/debtor.dto";
 
+// ==================== PR-D5-a: DEPRECATED addressType/isMernis → KANONİK type/source ====================
+// Frontend hâlâ DTO addressType (EV/IS/TEBLIGAT/MERNIS/KEP) + isMernis gönderir; backend KANONİK
+// DebtorAddress.type (AddressType) + source (AddressSource) ÜRETİR (asıl kaynak). Deprecated kolonlar
+// (N-d) korunur ama priority/verified/TK21-2 motoru doğru sınıflasın diye type/source yazılır.
+// Enum eşleme (N-a, hukuki karar): EV→DECLARED, IS→BUSINESS_HQ, TEBLIGAT→DECLARED, MERNIS→MERNIS, KEP→KEP.
+const ADDRESS_TYPE_CANONICAL_MAP: Record<string, string> = {
+  EV: 'DECLARED',
+  IS: 'BUSINESS_HQ',
+  TEBLIGAT: 'DECLARED',
+  MERNIS: 'MERNIS',
+  KEP: 'KEP',
+};
+
+/** DTO addressType + isMernis → kanonik { type, source }. isMernis/MERNIS → type=source=MERNIS. */
+export function mapAddressTypeToCanonical(
+  addressType?: string | null,
+  isMernis?: boolean | null
+): { type: string; source: string } {
+  if (isMernis || addressType === 'MERNIS') {
+    return { type: 'MERNIS', source: 'MERNIS' };
+  }
+  return { type: ADDRESS_TYPE_CANONICAL_MAP[addressType || ''] || 'DECLARED', source: 'USER_INPUT' };
+}
+
 // ==================== PR-D4c: BORÇLU COMPLETENESS (global veri eksikliği) ====================
 // Client completeness deseninin (computeMissingContactFields + syncContactFollowUpTask) borçlu ikizi.
 // Yalnız global borçlu veri eksikliği (istihbarat/tebligat/CaseDebtor DEĞİL).
@@ -394,12 +418,18 @@ export class DebtorService {
         addressIntakeMode,
         debtorAddresses: addresses?.length
           ? {
-              create: addresses.map((addr, index) => ({
-                ...addr,
-                isPrimary: addr.isPrimary ?? index === 0,
-                // If clientConfirmed, set addressCategory to DECLARED_CLIENT
-                ...(clientConfirmed ? { addressCategory: 'DECLARED_CLIENT' } : {}),
-              })),
+              create: addresses.map((addr, index) => {
+                // PR-D5-a: kanonik type/source üret (deprecated addressType/isMernis korunur).
+                const canon = mapAddressTypeToCanonical(addr.addressType, addr.isMernis);
+                return {
+                  ...addr,
+                  type: canon.type as any,
+                  source: canon.source as any,
+                  isPrimary: addr.isPrimary ?? index === 0,
+                  // If clientConfirmed, set addressCategory to DECLARED_CLIENT
+                  ...(clientConfirmed ? { addressCategory: 'DECLARED_CLIENT' } : {}),
+                };
+              }),
             }
           : undefined,
         // Tereke için mirasçıları oluştur
@@ -840,8 +870,10 @@ export class DebtorService {
       });
     }
 
+    // PR-D5-a: deprecated addressType/isMernis korunur AMA kanonik type/source ASIL kaynak olarak yazılır.
+    const canonical = mapAddressTypeToCanonical(dto.addressType, dto.isMernis);
     const created = await this.prisma.debtorAddress.create({
-      data: { debtorId, ...dto },
+      data: { debtorId, ...dto, type: canonical.type as any, source: canonical.source as any },
     });
     // PR-D4c: adres eklenince "adres eksik" completeness durumu değişebilir → senkronla.
     await this.syncDebtorTaskByIdSafe(tenantId, debtorId);
@@ -876,9 +908,14 @@ export class DebtorService {
       });
     }
 
+    // PR-D5-a: addressType/isMernis değişirse kanonik type/source da güncellenir (asıl kaynak).
+    const canonicalUpd =
+      dto.addressType !== undefined || dto.isMernis !== undefined
+        ? mapAddressTypeToCanonical(dto.addressType ?? address.addressType, dto.isMernis ?? address.isMernis)
+        : null;
     return this.prisma.debtorAddress.update({
       where: { id: addressId },
-      data: dto,
+      data: { ...dto, ...(canonicalUpd ? { type: canonicalUpd.type as any, source: canonicalUpd.source as any } : {}) },
     });
   }
 
