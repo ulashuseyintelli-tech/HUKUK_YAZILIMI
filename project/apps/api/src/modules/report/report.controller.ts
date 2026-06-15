@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Param, UseGuards, ForbiddenException } from '@nestjs/common';
 import { ReportService } from './report.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -25,7 +25,7 @@ export class ReportController {
     return { success: true, data };
   }
 
-  // Personel performans raporu
+  // Personel performans raporu (DOSYA bazlı — eski rapor, değişmedi)
   @Get('personel')
   async getPersonelReport(
     @CurrentUser('tenantId') tenantId: string,
@@ -34,6 +34,26 @@ export class ReportController {
     @Query('endDate') endDate?: string,
   ) {
     const data = await this.service.getPersonelReport(tenantId, personelId, startDate, endDate);
+    return { success: true, data };
+  }
+
+  /**
+   * K3 — Kategori bazlı GÖREV performansı (ham metrik). Yönetici (ADMIN) gate: performans
+   * verisi hassastır, salt-JWT yetmez. people=MANUAL, system=AUTO_SYSTEM, unattributed=legacy.
+   */
+  @Get('task-performance')
+  async getTaskPerformanceReport(
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('role') role: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+    @Query('taskCategory') taskCategory?: string,
+    @Query('resolutionType') resolutionType?: string,
+  ) {
+    if (role !== 'ADMIN') {
+      throw new ForbiddenException('Bu rapora yalnız yönetici (ADMIN) erişebilir');
+    }
+    const data = await this.service.getTaskPerformanceReport(tenantId, { from, to, taskCategory, resolutionType });
     return { success: true, data };
   }
 
