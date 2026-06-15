@@ -1,6 +1,26 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
+// ── Operasyonel iletişim eksiği takibi (PR-1, saf yardımcılar) ──
+
+export const CONTACT_TASK_DEDUPE_PREFIX = 'OPCOMP:CONTACT:';
+
+/** Müvekkil için contact-task dedupe anahtarı (tek aktif görev garantisi). */
+export function contactTaskDedupeKey(clientId: string): string {
+  return `${CONTACT_TASK_DEDUPE_PREFIX}${clientId}`;
+}
+
+/**
+ * Müvekkilde eksik iletişim alanlarını hesaplar. PR-1: yalnız telefon + e-posta.
+ * Generic dizi döner → ileride IBAN/vergi levhası/kimlik aynı makineyle eklenebilir (yeni tablo yok).
+ */
+export function computeMissingContactFields(client: { phone?: string | null; email?: string | null }): string[] {
+  const missing: string[] = [];
+  if (!client.phone || !String(client.phone).trim()) missing.push('phone');
+  if (!client.email || !String(client.email).trim()) missing.push('email');
+  return missing;
+}
+
 @Injectable()
 export class ClientService {
   constructor(private prisma: PrismaService) {}
@@ -135,6 +155,14 @@ export class ClientService {
       });
     }
 
+    // PR-1: operasyonel iletişim eksiği görevini senkronla (yeni müvekkil → henüz WAIVED olamaz)
+    await this.syncContactFollowUpTaskSafe(tenantId, {
+      id: client.id,
+      phone: primaryPhone,
+      email: primaryEmail,
+      contactFollowUpStatus: null,
+    });
+
     return this.findOne(client.id, tenantId);
   }
 
@@ -225,7 +253,116 @@ export class ClientService {
       }
     }
 
+    // PR-1: operasyonel iletişim eksiği görevini senkronla (WAIVED kararı 'existing'ten gelir)
+    await this.syncContactFollowUpTaskSafe(tenantId, {
+      id,
+      phone: primaryPhone,
+      email: primaryEmail,
+      contactFollowUpStatus: (existing as any).contactFollowUpStatus ?? null,
+    });
+
     return this.findOne(id, tenantId);
+  }
+
+  /**
+   * Operasyonel iletişim eksiği görevini müvekkilin GERÇEK alan durumuna göre senkronlar.
+   * Hata client akışını BOZMAZ (safe wrapper).
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ClientService.create() → vekalet "Bilgileri Kullan" + Manuel Ekle (POST /clients)
+   * - ClientService.update() → müvekkil düzenleme (PUT /clients/:id)
+   * NOT: Excel import (prisma.client.create, service bypass) çağırmaz (bilinçli).
+   * </remarks>
+   */
+  private async syncContactFollowUpTaskSafe(
+    tenantId: string,
+    client: { id: string; phone?: string | null; email?: string | null; contactFollowUpStatus?: string | null }
+  ): Promise<void> {
+    try {
+      await this.syncContactFollowUpTask(tenantId, client);
+    } catch (e: any) {
+      console.error(`[ClientService] contact follow-up sync hatası (client ${client.id}): ${e?.message}`);
+    }
+  }
+
+  private async syncContactFollowUpTask(
+    tenantId: string,
+    client: { id: string; phone?: string | null; email?: string | null; contactFollowUpStatus?: string | null }
+  ): Promise<void> {
+    const dedupeKey = contactTaskDedupeKey(client.id);
+    const existing = await this.prisma.task.findUnique({ where: { dedupeKey } });
+
+    // WAIVED: kalıcı karar → görev üretme; açık görev varsa iptal et.
+    if (client.contactFollowUpStatus === 'WAIVED') {
+      if (existing && existing.status !== 'CANCELLED' && existing.status !== 'COMPLETED') {
+        await this.prisma.task.update({ where: { id: existing.id }, data: { status: 'CANCELLED' } });
+      }
+      return;
+    }
+
+    const missing = computeMissingContactFields(client);
+
+    // Eksik yok → tamamlandı.
+    if (missing.length === 0) {
+      if (existing && existing.status !== 'COMPLETED' && existing.status !== 'CANCELLED') {
+        await this.prisma.task.update({
+          where: { id: existing.id },
+          data: { status: 'COMPLETED', completedAt: new Date() },
+        });
+      }
+      if (client.contactFollowUpStatus === 'ACTIVE') {
+        await this.prisma.client.update({
+          where: { id: client.id },
+          data: { contactFollowUpStatus: 'COMPLETED' },
+        });
+      }
+      return;
+    }
+
+    // Eksik var, WAIVED değil → tek satır upsert (dedupe ile tek aktif görev).
+    const now = new Date();
+    const due = new Date(now.getTime() + 3 * 24 * 60 * 60 * 1000); // +3 gün SLA
+    const description = `Eksik iletişim bilgisi: ${missing.join(', ')}`;
+    const reopening = !!existing && (existing.status === 'COMPLETED' || existing.status === 'CANCELLED');
+
+    if (existing) {
+      await this.prisma.task.update({
+        where: { id: existing.id },
+        data: {
+          missingFields: missing,
+          description,
+          // Kapalı görevi yeniden aç + SLA/eskalasyonu sıfırla; açık görevse sadece eksik listesini güncelle.
+          ...(reopening
+            ? { status: 'PENDING', completedAt: null, dueDate: due, escalationLevel: 'STAFF', nextFollowUpAt: due }
+            : {}),
+        },
+      });
+    } else {
+      await this.prisma.task.create({
+        data: {
+          tenantId,
+          clientId: client.id,
+          title: 'Müvekkil iletişim bilgilerini tamamla',
+          description,
+          status: 'PENDING',
+          priority: 'MEDIUM',
+          taskCategory: 'OPERATIONAL_COMPLETENESS',
+          dedupeKey,
+          missingFields: missing,
+          dueDate: due,
+          escalationLevel: 'STAFF',
+          nextFollowUpAt: due,
+        },
+      });
+    }
+
+    if (client.contactFollowUpStatus !== 'ACTIVE') {
+      await this.prisma.client.update({
+        where: { id: client.id },
+        data: { contactFollowUpStatus: 'ACTIVE' },
+      });
+    }
   }
 
   // Müvekkil sil (soft delete)

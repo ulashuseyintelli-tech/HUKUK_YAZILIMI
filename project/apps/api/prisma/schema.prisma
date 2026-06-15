@@ -431,11 +431,16 @@ model Client {
   email      String? // @deprecated - contacts kullan
   phone      String? // @deprecated - contacts kullan
 
+  // Operasyonel iletişim eksiği takibi (OPERATIONAL_COMPLETENESS görevinin müvekkil-seviyesi durumu).
+  // null = takip edilmiyor/değerlendirilmedi. Tek kalıcı kontrol budur; eksik alanlar/termin/eskalasyon Task'tadır.
+  contactFollowUpStatus ClientContactFollowUpStatus?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   // İLİŞKİLER
   cases            Case[]
+  tasks            Task[]
   contacts         ClientContact[]
   bankAccounts     ClientBankAccount[]
   powerOfAttorneys ClientPowerOfAttorney[]
@@ -1413,11 +1418,26 @@ model Task {
   tenant      Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   caseId      String?
   case        Case?      @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  // Müvekkil bağlama: operasyonel görevler (ör. iletişim eksiği) dosya açılmadan, müvekkil
+  // seviyesinde doğabilir. clientId nullable; case zorunlu değil.
+  clientId    String?
+  client      Client?    @relation(fields: [clientId], references: [id], onDelete: Cascade)
   title       String
   description String?
   status      TaskStatus @default(PENDING)
   priority    Priority   @default(MEDIUM)
   dueDate     DateTime?
+  // Görev sınıflandırması: enflasyonu önlemek için icra/operasyon ayrımı. Mevcut üreticiler
+  // alanı set etmediğinden default LEGAL_WORKFLOW (bugünkü davranış korunur).
+  taskCategory TaskCategory @default(LEGAL_WORKFLOW)
+  // Mükerrer engeli: aynı müvekkil için 2. contact-task oluşmaz. AddressTask deseni.
+  // Format ör. "OPCOMP:CONTACT:{clientId}". Nullable; Postgres çoklu-null'a izin verir.
+  dedupeKey   String?    @unique
+  // Operasyonel görevde eksik alan kodları (ör. ["phone","email"]). Generic → IBAN/kimlik vb. ileride.
+  missingFields Json?
+  // Zaman-temelli eskalasyon (STAFF→MANAGER→FOUNDER) — PR-3 scheduler işler.
+  escalationLevel EscalationTier?
+  nextFollowUpAt  DateTime?
   assigneeId  String?
   assignee    User?      @relation("AssignedTasks", fields: [assigneeId], references: [id])
   createdById String?
@@ -1429,6 +1449,9 @@ model Task {
   @@index([tenantId, status])
   @@index([tenantId, dueDate])
   @@index([assigneeId])
+  @@index([tenantId, taskCategory, status])
+  @@index([clientId])
+  @@index([nextFollowUpAt])
 }
 
 model Court {
@@ -2615,6 +2638,27 @@ enum Priority {
   MEDIUM
   HIGH
   URGENT
+}
+
+// Görev sınıflandırması (3 katman). DATA_QUALITY burada YOK: o, görev değil computed badge/signal
+// olarak ele alınır (ürün kararı) — Task tablosu yalnız eyleme-geçilir işler için.
+enum TaskCategory {
+  LEGAL_WORKFLOW          // İcra/dosya yürütme görevleri (tebligat, kesinleşme, haciz, satış, yenileme)
+  OPERATIONAL_COMPLETENESS // Operasyonel eksikler (iletişim, IBAN, vergi levhası, kimlik)
+}
+
+// Operasyonel görev eskalasyon kademesi (zaman-temelli; PR-3 scheduler işler).
+enum EscalationTier {
+  STAFF   // görevli muhasebe / adli katip / sorumlu icra avukatı (rol-kuyruğu)
+  MANAGER // yönetici avukat (lawyerRank=MANAGER)
+  FOUNDER // kurucu/ortak avukat (role=OWNER/PARTNER)
+}
+
+// Müvekkil-seviyesi iletişim takibi durumu. WAIVED kalıcı karardır (görev tekrar üretilmez).
+enum ClientContactFollowUpStatus {
+  ACTIVE    // açık eksik var, takipte
+  WAIVED    // bu müvekkil için takipten vazgeçildi
+  COMPLETED // eksik tamamlandı
 }
 
 enum CollectionType {
