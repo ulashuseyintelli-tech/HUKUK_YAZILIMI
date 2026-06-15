@@ -45,7 +45,7 @@ const buildPrisma = () => ({
     ]),
     update: jest.fn().mockResolvedValue({}),
   },
-  staffMember: { findMany: jest.fn().mockResolvedValue([{ email: "muhasebe@buro.com" }]) },
+  staffMember: { findMany: jest.fn().mockResolvedValue([{ firstName: "Muhasebe", lastName: "Personeli", email: "muhasebe@buro.com" }]) },
   lawyer: { findMany: jest.fn().mockResolvedValue([]) },
 });
 
