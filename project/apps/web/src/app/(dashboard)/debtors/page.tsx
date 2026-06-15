@@ -38,7 +38,10 @@ type SortDirection = "asc" | "desc" | null;
 export default function DebtorsPage() {
   const searchParams = useSearchParams();
   const editDebtorId = searchParams.get("edit");
-  
+
+  // PR-D1: seed/test verisi butonları yalnız geliştirme ortamında görünür (prod kirliliğini önler).
+  const isDev = process.env.NODE_ENV !== "production";
+
   const [debtors, setDebtors] = useState<Debtor[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -265,8 +268,8 @@ export default function DebtorsPage() {
         </div>
       </div>
 
-      {/* Test Borçluları Yükle Butonu - Şahıs veya Kurum sekmesinde göster */}
-      {(typeFilter === DebtorType.INDIVIDUAL || typeFilter === DebtorType.COMPANY) && !loading && (
+      {/* Test Borçluları Yükle Butonu - Şahıs veya Kurum sekmesinde göster (YALNIZ DEV) */}
+      {isDev && (typeFilter === DebtorType.INDIVIDUAL || typeFilter === DebtorType.COMPANY) && !loading && (
         <div className={`mb-4 p-4 border rounded-lg ${
           typeFilter === DebtorType.INDIVIDUAL 
             ? "bg-emerald-50 border-emerald-200" 
@@ -316,8 +319,8 @@ export default function DebtorsPage() {
         </div>
       )}
 
-      {/* Kamu Kurumları Yükle Butonu - Kamu sekmesinde göster */}
-      {typeFilter === DebtorType.PUBLIC_INSTITUTION && !loading && (
+      {/* Kamu Kurumları Yükle Butonu - Kamu sekmesinde göster (YALNIZ DEV) */}
+      {isDev && typeFilter === DebtorType.PUBLIC_INSTITUTION && !loading && (
         <div className="mb-4 p-4 bg-purple-50 border border-purple-200 rounded-lg">
           <div className="flex items-center justify-between">
             <div>
