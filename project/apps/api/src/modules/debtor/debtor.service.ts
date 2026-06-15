@@ -348,30 +348,57 @@ export class DebtorService {
     }
 
     // Computed `name` ve `identityNo` TEK KAYNAK türevidir → her update'te mevcut+dto birleşiminden
-    // YENİDEN hesaplanır. Eski davranış yalnız ad-alanları değişince hesaplıyordu; sadece
-    // tckn/vkn/detsis değişince identityNo DRIFT ediyordu (PR-D1 fix). `??` ile yalnız dto'da
-    // gelmeyen alan mevcuttan alınır. deceasedName/deceasedTckn UpdateDebtorDto'da yok → mevcuttan.
-    const updateData: any = { ...dto };
+    // YENİDEN hesaplanır (PR-D1). `??` ile yalnız dto'da gelmeyen alan mevcuttan alınır.
+    // PR-D2b: estateHeirs bir RELATION → scalar update'e karışmasın diye dto'dan ayrıştırılır.
+    const { estateHeirs, ...debtorDto } = dto as any;
+    const updateData: any = { ...debtorDto };
     const merged = {
       type: dto.type ?? existing.type,
       firstName: dto.firstName ?? existing.firstName,
       lastName: dto.lastName ?? existing.lastName,
       companyName: dto.companyName ?? existing.companyName,
       institutionName: dto.institutionName ?? existing.institutionName,
-      deceasedName: existing.deceasedName,
+      deceasedName: dto.deceasedName ?? existing.deceasedName,
       tckn: dto.tckn ?? existing.tckn,
       vkn: dto.vkn ?? existing.vkn,
       detsisNo: dto.detsisNo ?? existing.detsisNo,
-      deceasedTckn: existing.deceasedTckn,
+      deceasedTckn: dto.deceasedTckn ?? existing.deceasedTckn,
     };
     const { name, identityNo } = this.computeNameAndIdentity(merged as CreateDebtorDto);
     updateData.name = name;
     updateData.identityNo = identityNo;
 
+    // PR-D2b: estateHeirs gönderildiyse mirasçı listesini ATOMİK replace et (deleteMany+create
+    // + scalar update aynı transaction'da → yarım güncelleme riski yok). Gönderilmezse dokunma.
+    if (estateHeirs !== undefined) {
+      return this.prisma.$transaction(async (tx) => {
+        await tx.estateHeir.deleteMany({ where: { debtorId: id } });
+        return tx.debtor.update({
+          where: { id },
+          data: {
+            ...updateData,
+            estateHeirs: {
+              create: (estateHeirs as any[]).map((h) => ({
+                name: h.name,
+                tckn: h.tckn || null,
+                address: h.address || "", // Zorunlu alan (şema)
+                city: h.city || null,
+                district: h.district || null,
+                shareRatio: h.shareRatio || null,
+                phone: h.phone || null,
+                email: h.email || null,
+              })),
+            },
+          },
+          include: { debtorAddresses: true, estateHeirs: true },
+        });
+      });
+    }
+
     return this.prisma.debtor.update({
       where: { id },
       data: updateData,
-      include: { debtorAddresses: true },
+      include: { debtorAddresses: true, estateHeirs: true },
     });
   }
 

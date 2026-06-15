@@ -24,6 +24,7 @@ import { api } from "@/lib/api";
 import {
   Debtor,
   DebtorAddress,
+  EstateHeir,
   DebtorType,
   DebtorTypeLabels,
   DebtorRiskLabels,
@@ -932,6 +933,16 @@ function DebtorDetailModal({ debtor, onClose, onUpdate, onDelete }: DebtorDetail
   const [riskLevel, setRiskLevel] = useState(debtor.riskLevel || "");
   const [riskNotes, setRiskNotes] = useState(debtor.riskNotes || "");
   const [notes, setNotes] = useState(debtor.notes || "");
+  // PR-D2b: Tereke (ESTATE) alanları
+  const [deceasedName, setDeceasedName] = useState(debtor.deceasedName || "");
+  const [deceasedTckn, setDeceasedTckn] = useState(debtor.deceasedTckn || "");
+  const [deathDate, setDeathDate] = useState((debtor.deathDate || "").slice(0, 10));
+  const [inheritanceDocPath, setInheritanceDocPath] = useState(debtor.inheritanceDocPath || "");
+  const [heirs, setHeirs] = useState<EstateHeir[]>(debtor.estateHeirs || []);
+
+  const addHeir = () => setHeirs([...heirs, { name: "", tckn: "", address: "", city: "", district: "", shareRatio: "", phone: "", email: "" }]);
+  const removeHeir = (i: number) => setHeirs(heirs.filter((_, idx) => idx !== i));
+  const updateHeir = (i: number, patch: Partial<EstateHeir>) => setHeirs(heirs.map((h, idx) => (idx === i ? { ...h, ...patch } : h)));
 
   const handleSave = async () => {
     setError("");
@@ -957,6 +968,24 @@ function DebtorDetailModal({ debtor, onClose, onUpdate, onDelete }: DebtorDetail
       } else if (debtor.type === DebtorType.PUBLIC_INSTITUTION) {
         payload.institutionName = institutionName;
         payload.detsisNo = detsisNo || undefined;
+      } else if (debtor.type === DebtorType.ESTATE) {
+        payload.deceasedName = deceasedName;
+        payload.deceasedTckn = deceasedTckn || undefined;
+        payload.deathDate = deathDate || undefined;
+        payload.inheritanceDocPath = inheritanceDocPath || undefined;
+        // estateHeirs gönderilince backend listeyi REPLACE eder (transaction). Boş-isimliler atlanır.
+        payload.estateHeirs = heirs
+          .filter((h) => h.name.trim())
+          .map((h) => ({
+            name: h.name.trim(),
+            tckn: h.tckn || undefined,
+            address: h.address || undefined,
+            city: h.city || undefined,
+            district: h.district || undefined,
+            shareRatio: h.shareRatio || undefined,
+            phone: h.phone || undefined,
+            email: h.email || undefined,
+          }));
       }
 
       const res = await api.put<Debtor>(`/debtors/${debtor.id}`, payload);
@@ -1080,6 +1109,57 @@ function DebtorDetailModal({ debtor, onClose, onUpdate, onDelete }: DebtorDetail
                 </div>
               )}
 
+              {/* Estate (Tereke) Fields — PR-D2b */}
+              {debtor.type === DebtorType.ESTATE && (
+                <div className="space-y-3">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-xs font-medium mb-1">Muris Adı Soyadı</label>
+                      <input type="text" value={deceasedName} onChange={(e) => setDeceasedName(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1">Muris TCKN</label>
+                      <input type="text" value={deceasedTckn} onChange={(e) => setDeceasedTckn(e.target.value.replace(/\D/g, "").slice(0, 11))} className="w-full border rounded-lg px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1">Ölüm Tarihi</label>
+                      <input type="date" value={deathDate} onChange={(e) => setDeathDate(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium mb-1">Veraset İlamı (yol/no)</label>
+                      <input type="text" value={inheritanceDocPath} onChange={(e) => setInheritanceDocPath(e.target.value)} className="w-full border rounded-lg px-3 py-2 text-sm" />
+                    </div>
+                  </div>
+
+                  {/* Mirasçılar */}
+                  <div className="border-t pt-2">
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-xs font-medium">Mirasçılar ({heirs.length})</label>
+                      <button onClick={addHeir} className="text-xs text-primary hover:underline font-medium">+ Mirasçı Ekle</button>
+                    </div>
+                    <div className="space-y-2">
+                      {heirs.map((h, i) => (
+                        <div key={i} className="p-2 bg-gray-50 rounded-lg space-y-2">
+                          <div className="flex items-center justify-between">
+                            <span className="text-[11px] text-gray-500">Mirasçı {i + 1}</span>
+                            <button onClick={() => removeHeir(i)} className="p-1 text-gray-400 hover:text-red-500" title="Mirasçıyı sil"><Trash2 className="w-3.5 h-3.5" /></button>
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <input value={h.name} onChange={(e) => updateHeir(i, { name: e.target.value })} placeholder="Ad Soyad *" className="border rounded px-2 py-1.5 text-sm" />
+                            <input value={h.tckn || ""} onChange={(e) => updateHeir(i, { tckn: e.target.value.replace(/\D/g, "").slice(0, 11) })} placeholder="TCKN" className="border rounded px-2 py-1.5 text-sm" />
+                            <input value={h.shareRatio || ""} onChange={(e) => updateHeir(i, { shareRatio: e.target.value })} placeholder="Pay (ör. 1/4)" className="border rounded px-2 py-1.5 text-sm" />
+                            <input value={h.phone || ""} onChange={(e) => updateHeir(i, { phone: e.target.value })} placeholder="Telefon" className="border rounded px-2 py-1.5 text-sm" />
+                            <input value={h.email || ""} onChange={(e) => updateHeir(i, { email: e.target.value })} placeholder="E-posta" className="border rounded px-2 py-1.5 text-sm col-span-2" />
+                            <input value={h.address || ""} onChange={(e) => updateHeir(i, { address: e.target.value })} placeholder="Adres" className="border rounded px-2 py-1.5 text-sm col-span-2" />
+                          </div>
+                        </div>
+                      ))}
+                      {heirs.length === 0 && <p className="text-xs text-gray-400 italic">Mirasçı yok. "+ Mirasçı Ekle" ile ekleyin.</p>}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               {/* Contact Fields */}
               <div className="grid grid-cols-3 gap-3">
                 <div>
@@ -1171,6 +1251,37 @@ function DebtorDetailModal({ debtor, onClose, onUpdate, onDelete }: DebtorDetail
                     </span>
                     {debtor.riskNotes && <span className="ml-2 text-gray-500">{debtor.riskNotes}</span>}
                   </p>
+                </div>
+              )}
+
+              {/* Estate (Tereke) view — PR-D2b */}
+              {debtor.type === DebtorType.ESTATE && (
+                <div className="space-y-2">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-xs text-gray-500">Muris</label>
+                      <p className="font-medium">{debtor.deceasedName || "-"}</p>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500">Ölüm Tarihi</label>
+                      <p className="font-medium">{debtor.deathDate ? new Date(debtor.deathDate).toLocaleDateString("tr-TR") : "-"}</p>
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Mirasçılar ({debtor.estateHeirs?.length || 0})</label>
+                    {debtor.estateHeirs && debtor.estateHeirs.length > 0 ? (
+                      <div className="space-y-1">
+                        {debtor.estateHeirs.map((h, i) => (
+                          <div key={i} className="text-sm bg-gray-50 rounded px-2 py-1 flex items-center justify-between">
+                            <span>{h.name}{h.shareRatio && <span className="text-gray-400 ml-1">({h.shareRatio})</span>}</span>
+                            {h.tckn && <span className="text-xs text-gray-400">{h.tckn}</span>}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="text-sm text-gray-400 italic">Mirasçı kaydı yok</p>
+                    )}
+                  </div>
                 </div>
               )}
 

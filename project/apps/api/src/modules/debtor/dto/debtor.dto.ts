@@ -381,6 +381,33 @@ export class UpdateDebtorDto {
   @IsOptional()
   authorizedPerson?: string;
 
+  // === ESTATE (Tereke) - PR-D2b: Debtor.update() içinde çözülür, ayrı endpoint yok ===
+  @IsString()
+  @IsOptional()
+  deceasedName?: string;
+
+  @IsString()
+  @IsOptional()
+  @Length(11, 11, { message: "Muris TCKN 11 haneli olmalıdır" })
+  @Matches(/^[0-9]+$/, { message: "Muris TCKN sadece rakam içermelidir" })
+  deceasedTckn?: string;
+
+  @IsDateString()
+  @IsOptional()
+  deathDate?: string;
+
+  @IsString()
+  @IsOptional()
+  inheritanceDocPath?: string;
+
+  // estateHeirs gönderilirse mevcut mirasçı listesi REPLACE edilir (deleteMany+create, transaction).
+  // Gönderilmezse mirasçılara dokunulmaz. (Ayrı incremental endpoint yok — ürün kararı.)
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CreateEstateHeirDto)
+  @IsOptional()
+  estateHeirs?: CreateEstateHeirDto[];
+
   // === İLETİŞİM ===
   @IsString()
   @IsOptional()
