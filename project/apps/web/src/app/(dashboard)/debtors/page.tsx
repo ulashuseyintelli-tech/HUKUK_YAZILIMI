@@ -62,6 +62,10 @@ export default function DebtorsPage() {
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<DebtorType | "ALL">("ALL");
+  // PR-D5-d: risk/şehir filtreleri (backend findAll destekler).
+  const [riskFilter, setRiskFilter] = useState<string>("ALL");
+  const [city, setCity] = useState("");
+  const [debouncedCity, setDebouncedCity] = useState("");
   const [currentPage, setCurrentPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
@@ -90,28 +94,32 @@ export default function DebtorsPage() {
   const [loadingPublicInstitutions, setLoadingPublicInstitutions] = useState(false);
   const [loadingTestDebtors, setLoadingTestDebtors] = useState(false);
 
-  // Arama debounce (300ms) — backend'i her tuşta yormamak için.
+  // Arama + şehir debounce (300ms) — backend'i her tuşta yormamak için.
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300);
     return () => clearTimeout(t);
   }, [search]);
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedCity(city), 300);
+    return () => clearTimeout(t);
+  }, [city]);
 
-  // Arama/tür/sıralama değişince ilk sayfaya dön (sonra fetch effect tetiklenir).
+  // Arama/tür/risk/şehir/sıralama değişince ilk sayfaya dön (sonra fetch effect tetiklenir).
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearch, typeFilter, sortBy, sortOrder]);
+  }, [debouncedSearch, typeFilter, riskFilter, debouncedCity, sortBy, sortOrder]);
 
-  // Server-side fetch: debouncedSearch / typeFilter / sıralama / currentPage / refetchToken değiştikçe.
+  // Server-side fetch: filtre/sıralama/sayfa/refetchToken değiştikçe.
   useEffect(() => {
     fetchDebtors();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, typeFilter, sortBy, sortOrder, currentPage, refetchToken]);
+  }, [debouncedSearch, typeFilter, riskFilter, debouncedCity, sortBy, sortOrder, currentPage, refetchToken]);
 
   const fetchDebtors = async () => {
     const myReq = ++reqIdRef.current;
     try {
       setLoading(true);
-      const qs = buildDebtorQuery({ page: currentPage, limit: PAGE_SIZE, search: debouncedSearch, type: typeFilter, sortBy: sortBy ?? undefined, sortOrder });
+      const qs = buildDebtorQuery({ page: currentPage, limit: PAGE_SIZE, search: debouncedSearch, type: typeFilter, riskLevel: riskFilter, city: debouncedCity, sortBy: sortBy ?? undefined, sortOrder });
       // findAll → { data: Debtor[], meta: { total, page, limit, totalPages } }
       const res = await api.get<{ data: Debtor[]; meta: { total: number; totalPages: number } }>(
         `/debtors?${qs}`
@@ -359,6 +367,33 @@ export default function DebtorsPage() {
               {opt.label}
             </button>
           ))}
+        </div>
+      </div>
+
+      {/* PR-D5-d: risk + şehir filtreleri */}
+      <div className="flex gap-3 mb-4 items-center">
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-gray-500">Risk:</label>
+          <select
+            value={riskFilter}
+            onChange={(e) => setRiskFilter(e.target.value)}
+            className="px-3 py-2 text-sm border rounded-lg focus:outline-none focus:border-primary"
+          >
+            <option value="ALL">Tümü</option>
+            {Object.entries(DebtorRiskLabels).map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="relative">
+          <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Şehir filtrele..."
+            value={city}
+            onChange={(e) => setCity(e.target.value)}
+            className="pl-10 pr-4 py-2 text-sm border rounded-lg focus:outline-none focus:border-primary w-48"
+          />
         </div>
       </div>
 

@@ -7,6 +7,8 @@ export function buildDebtorQuery(p: {
   limit: number;
   search?: string;
   type?: string;
+  riskLevel?: string;
+  city?: string;
   sortBy?: string;
   sortOrder?: string;
 }): string {
@@ -16,6 +18,10 @@ export function buildDebtorQuery(p: {
   const s = p.search?.trim();
   if (s) params.set("search", s);
   if (p.type && p.type !== "ALL") params.set("type", p.type);
+  // PR-D5-d: risk/şehir filtreleri (backend findAll destekler). "ALL"/boş → gönderme.
+  if (p.riskLevel && p.riskLevel !== "ALL") params.set("riskLevel", p.riskLevel);
+  const c = p.city?.trim();
+  if (c) params.set("city", c);
   // PR-D5-c: sıralama (allowlist backend'de; burada yalnız taşır). sortBy yoksa backend default.
   if (p.sortBy) {
     params.set("sortBy", p.sortBy);

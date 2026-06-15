@@ -29,6 +29,16 @@ describe("buildDebtorQuery (PR-D3 server-side liste)", () => {
     expect(q.get("type")).toBe("ESTATE");
   });
 
+  it("PR-D5-d: riskLevel ('ALL'/boş hariç) + city (trim) eklenir", () => {
+    const q = new URLSearchParams(buildDebtorQuery({ page: 1, limit: 25, riskLevel: "YUKSEK", city: "  İstanbul " }));
+    expect(q.get("riskLevel")).toBe("YUKSEK");
+    expect(q.get("city")).toBe("İstanbul");
+    // ALL/boş → gönderilmez
+    const none = new URLSearchParams(buildDebtorQuery({ page: 1, limit: 25, riskLevel: "ALL", city: "  " }));
+    expect(none.get("riskLevel")).toBeNull();
+    expect(none.get("city")).toBeNull();
+  });
+
   it("PR-D5-c: sortBy verilince sortBy+sortOrder eklenir; yoksa hiçbiri (backend default)", () => {
     const sorted = new URLSearchParams(buildDebtorQuery({ page: 1, limit: 25, sortBy: "name", sortOrder: "asc" }));
     expect(sorted.get("sortBy")).toBe("name");
