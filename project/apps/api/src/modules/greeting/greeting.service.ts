@@ -3,6 +3,55 @@ import { PrismaService } from "../../prisma/prisma.service";
 import { ClientNotificationService } from "../client-notification/client-notification.service";
 import { Cron, CronExpression } from "@nestjs/schedule";
 
+/**
+ * Office.autoGreetingTime ("HH:mm") değerini saat/dakikaya ayrıştırır.
+ * Parse edilemezse (null/boş/hatalı format/aralık dışı) 09:00 fallback döner ve
+ * fallbackUsed=true işaretler — çağıran taraf bu durumda warn loglar.
+ */
+export function parseGreetingTime(
+  raw?: string | null
+): { hour: number; minute: number; fallbackUsed: boolean } {
+  const fallback = { hour: 9, minute: 0, fallbackUsed: true };
+  if (typeof raw !== "string") return fallback;
+  const m = raw.trim().match(/^(\d{1,2}):(\d{2})$/);
+  if (!m) return fallback;
+  const hour = Number(m[1]);
+  const minute = Number(m[2]);
+  if (hour < 0 || hour > 23 || minute < 0 || minute > 59) return fallback;
+  return { hour, minute, fallbackUsed: false };
+}
+
+function isSameLocalDay(a: Date, b: Date): boolean {
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+}
+
+/**
+ * Bir tenant için otomatik tebrik scheduler'ının ŞU AN çalışıp çalışmayacağına karar verir.
+ * Her dakika çağrılır; catch-up mantığı: now >= bugünkü planlanan saat ise tetikler
+ * (tam-dakika eşleşmesi GEREKMEZ → sunucu kapalı kalsa bile açılınca aynı gün yakalar).
+ *
+ * true döner ⇔ enabled=true VE now >= bugünkü autoGreetingTime VE bugün henüz çalışılmadı
+ * (lastRunAt bugün değil). Aynı-gün guard'ı son koşulla sağlanır.
+ */
+export function shouldRunGreetingNow(
+  now: Date,
+  autoGreetingTime: string | null | undefined,
+  lastRunAt: Date | null | undefined,
+  enabled: boolean
+): boolean {
+  if (!enabled) return false;
+  const { hour, minute } = parseGreetingTime(autoGreetingTime);
+  const scheduled = new Date(now);
+  scheduled.setHours(hour, minute, 0, 0);
+  if (now.getTime() < scheduled.getTime()) return false; // bugünkü saat henüz gelmedi
+  if (lastRunAt && isSameLocalDay(lastRunAt, now)) return false; // bugün zaten çalıştı (guard)
+  return true;
+}
+
 @Injectable()
 export class GreetingService {
   private readonly logger = new Logger(GreetingService.name);
@@ -279,31 +328,77 @@ export class GreetingService {
     return results;
   }
 
-  // Günlük otomatik tebrik kontrolü (her gün sabah 9'da)
-  @Cron("0 9 * * *")
-  async dailyGreetingCheck() {
-    this.logger.log("Günlük tebrik kontrolü başlatılıyor...");
+  /**
+   * Otomatik tebrik scheduler'ı — HER DAKİKA çalışır, ama her tenant için gün içinde
+   * yalnızca BİR KEZ (tenant'ın autoGreetingTime'ında veya sonrasındaki ilk uygun dakikada)
+   * tebrik gönderir. Eski sabit "0 9 * * *" cron'unun yerini alır; artık tenant'ın ayarladığı
+   * saat gerçekten dikkate alınır.
+   *
+   * Akış (tenant başına):
+   *  1. Office kaydı yoksa atla (guard damgası tutulamaz → güvenli taraf).
+   *  2. autoGreetingTime parse edilemezse 09:00 fallback + warn.
+   *  3. shouldRunGreetingNow(...) === false ise atla (saat gelmedi / kapalı / bugün çalıştı).
+   *  4. Tebrikleri gönder; SADECE baştan sona hatasız tamamlanırsa lastGreetingRunAt = now
+   *     damgalanır (aynı-gün guard). Hata fırlarsa damgalama YOK → sonraki dakika tekrar denenir,
+   *     böylece o gün tebrik atlanmaz.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - Yalnızca @Cron(EVERY_MINUTE) scheduler tetikler (harici/manuel çağrı yok).
+   *   Manuel tebrik akışı ayrıdır ve DEĞİŞMEDİ: GreetingController.sendGreeting →
+   *   service.sendGreeting() / findTodayGreetings().
+   * </remarks>
+   */
+  @Cron(CronExpression.EVERY_MINUTE)
+  async greetingSchedulerTick() {
+    const now = new Date();
 
-    // Tüm tenant'ları al (office bilgisiyle birlikte)
-    const tenants = await this.prisma.tenant.findMany({ 
-      include: { office: { select: { autoGreetingEnabled: true } } },
+    // Tüm tenant'ları al (otomatik tebrik için gerekli office alanlarıyla)
+    const tenants = await this.prisma.tenant.findMany({
+      include: {
+        office: {
+          select: {
+            id: true,
+            autoGreetingEnabled: true,
+            autoGreetingTime: true,
+            lastGreetingRunAt: true,
+          },
+        },
+      },
     });
 
     for (const tenant of tenants) {
-      try {
-        // Otomatik tebrik kapalıysa atla
-        if (tenant.office && tenant.office.autoGreetingEnabled === false) {
-          this.logger.log(`Tenant ${tenant.id}: Otomatik tebrik kapalı, atlanıyor`);
-          continue;
-        }
+      const office = tenant.office;
 
+      // Office kaydı yoksa: aynı-gün guard'ı için damgalanacak satır yok → güvenli tarafta atla
+      // (henüz hiç büro ayarı yapılmamış tenant; otomatik tebrik yapılandırılmamış sayılır).
+      if (!office) continue;
+
+      const enabled = office.autoGreetingEnabled ?? true;
+
+      // autoGreetingTime ayarı bozuksa 09:00'a düş ve uyar (sessizce yanlış saatte çalışma)
+      const parsed = parseGreetingTime(office.autoGreetingTime);
+      if (parsed.fallbackUsed && office.autoGreetingTime != null) {
+        this.logger.warn(
+          `Tenant ${tenant.id}: autoGreetingTime ayrıştırılamadı ("${office.autoGreetingTime}"), 09:00 varsayılanı kullanılıyor`
+        );
+      }
+
+      if (!shouldRunGreetingNow(now, office.autoGreetingTime, office.lastGreetingRunAt, enabled)) {
+        continue;
+      }
+
+      try {
         const greetings = await this.findTodayGreetings(tenant.id);
-        
-        // Sistem kullanıcısı ID'si (ilk admin)
+
+        // Sistem kullanıcısı (ilk admin) — yoksa gönderim yapılamaz, damgalama YOK
         const systemUser = await this.prisma.user.findFirst({
           where: { tenantId: tenant.id, role: "ADMIN" },
         });
-        if (!systemUser) continue;
+        if (!systemUser) {
+          this.logger.warn(`Tenant ${tenant.id}: ADMIN kullanıcı yok, tebrik gönderilemedi (damgalanmadı)`);
+          continue;
+        }
 
         // Doğum günü tebrikleri
         for (const client of greetings.birthdays) {
@@ -328,12 +423,19 @@ export class GreetingService {
           }
         }
 
-        this.logger.log(`Tenant ${tenant.id}: ${greetings.birthdays.length} doğum günü, ${greetings.foundingAnniversaries.length} kuruluş, ${greetings.poaAnniversaries.length} vekalet yıldönümü, ${greetings.specialDays.length} özel gün`);
+        // SADECE buraya HATASIZ ulaşıldıysa damgala → aynı-gün tekrar gönderim guard'ı
+        await this.prisma.office.update({
+          where: { id: office.id },
+          data: { lastGreetingRunAt: new Date() },
+        });
+
+        this.logger.log(
+          `Tenant ${tenant.id}: ${greetings.birthdays.length} doğum günü, ${greetings.foundingAnniversaries.length} kuruluş, ${greetings.poaAnniversaries.length} vekalet yıldönümü, ${greetings.specialDays.length} özel gün gönderildi (damgalandı)`
+        );
       } catch (e: any) {
-        this.logger.error(`Tenant ${tenant.id} tebrik hatası: ${e.message}`);
+        // Hata → damgalama YOK → sonraki dakika tekrar denenir (o gün tebrik atlanmaz)
+        this.logger.error(`Tenant ${tenant.id} tebrik hatası (damgalanmadı, retry edilecek): ${e.message}`);
       }
     }
-
-    this.logger.log("Günlük tebrik kontrolü tamamlandı");
   }
 }
