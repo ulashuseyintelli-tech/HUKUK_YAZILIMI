@@ -77,6 +77,8 @@ export default function OfficeSettingsPage() {
   const [smsForm, setSmsForm] = useState({ smsProvider: "", smsApiKey: "", smsApiSecret: "", smsSender: "" });
   const [greetingForm, setGreetingForm] = useState({ autoGreetingEnabled: true, autoGreetingTime: "09:00" });
   const [escalationForm, setEscalationForm] = useState<{ escalationManagerLawyerId: string; escalationFounderLawyerId: string; opReminderDays: number; opFounderDays: number; opRepeatMonths: number; opEmailEnabled: boolean; opSmsEnabled: boolean; opStaffTypes: string[] }>({ escalationManagerLawyerId: "", escalationFounderLawyerId: "", opReminderDays: 3, opFounderDays: 6, opRepeatMonths: 3, opEmailEnabled: true, opSmsEnabled: true, opStaffTypes: ["MUHASEBE", "ADLI_KATIP", "SEKRETER"] });
+  // Eskalasyon kartı sağ-altta; üstteki global "Kaydedildi" görünmüyor → karta özel inline geri bildirim
+  const [escalationStatus, setEscalationStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [testingSmtp, setTestingSmtp] = useState(false);
   const [testingSms, setTestingSms] = useState(false);
   const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message: string } | null>(null);
@@ -201,6 +203,7 @@ export default function OfficeSettingsPage() {
 
   const handleSaveEscalation = async () => {
     setSaving(true);
+    setEscalationStatus(null);
     try {
       await api.put("/office/escalation-settings", {
         ...escalationForm,
@@ -211,7 +214,12 @@ export default function OfficeSettingsPage() {
         opRepeatMonths: Number(escalationForm.opRepeatMonths),
       });
       showSaved();
-    } catch (e) { console.error(e); }
+      setEscalationStatus({ ok: true, msg: "✓ Kaydedildi" });
+      setTimeout(() => setEscalationStatus((s) => (s?.ok ? null : s)), 3000);
+    } catch (e: any) {
+      console.error(e);
+      setEscalationStatus({ ok: false, msg: "✗ Kaydedilemedi: " + (e?.response?.data?.message || e?.message || "hata") });
+    }
     finally { setSaving(false); }
   };
 
@@ -673,6 +681,7 @@ export default function OfficeSettingsPage() {
               <label className="flex items-center gap-1.5"><input type="checkbox" checked={escalationForm.opSmsEnabled} onChange={e => setEscalationForm({...escalationForm, opSmsEnabled: e.target.checked})} /> SMS aktif</label>
               <label className="flex items-center gap-1.5 text-gray-400" title="WhatsApp gönderimi yakında"><input type="checkbox" disabled /> WhatsApp (yakında)</label>
             </div>
+            {escalationStatus && <div className={`p-1 rounded text-xs text-center ${escalationStatus.ok ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{escalationStatus.msg}</div>}
             <button onClick={handleSaveEscalation} disabled={saving} className="w-full px-2 py-1 bg-blue-600 text-white text-xs rounded disabled:opacity-50">{saving ? "..." : "Kaydet"}</button>
           </div>
         </div>
