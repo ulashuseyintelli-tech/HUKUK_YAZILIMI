@@ -316,6 +316,10 @@ model User {
   assignedTasks Task[]              @relation("AssignedTasks")
   createdTasks  Task[]              @relation("CreatedTasks")
   completedTasks Task[]             @relation("CompletedTasks")
+
+  // K1 kimlik köprüsü (one-to-one, opsiyonel): bir login hesabı en fazla bir kişi profiline bağlanır.
+  staffMember StaffMember? @relation("StaffMemberUser")
+  lawyer      Lawyer?      @relation("LawyerUser")
   statusChanges CaseStatusHistory[] @relation("StatusChangedBy")
   sorumluCases  Case[]              @relation("SorumluPersonel")
 
@@ -1709,10 +1713,18 @@ model Lawyer {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // K1 kimlik köprüsü: Lawyer = gerçek kişi profili, User = login/hesap kimliği. Opsiyonel
+  // (zorunlu User yok). Eşleşince Task.completedByUserId → User → Lawyer zinciri kurulur
+  // (K3 raporu kullanacak). User silinirse köprü kopar (SET NULL). @unique: bir User en fazla
+  // bir Lawyer'a bağlanır.
+  userId String?
+  user   User?   @relation("LawyerUser", fields: [userId], references: [id], onDelete: SetNull)
+
   caseLawyers      CaseLawyer[]
   poaLawyers       PoaLawyer[] // Avukatın dahil olduğu vekaletler
   powerOfAttorneys PowerOfAttorney[] // Eski vekalet modeli ilişkisi
 
+  @@unique([userId])
   @@index([tenantId])
   @@index([officeId])
   @@index([isActive])
@@ -2910,8 +2922,16 @@ model StaffMember {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // K1 kimlik köprüsü: StaffMember = gerçek kişi profili, User = login/hesap kimliği.
+  // Opsiyonel (her personel için zorunlu User yok). Eşleşince Task.completedByUserId → User →
+  // StaffMember zinciri kurulur (K3 raporu kullanacak). User silinirse köprü kopar (SET NULL),
+  // kişi profili korunur. @unique: bir User en fazla bir StaffMember'a bağlanır.
+  userId String?
+  user   User?   @relation("StaffMemberUser", fields: [userId], references: [id], onDelete: SetNull)
+
   caseAssignments CaseStaff[]
 
+  @@unique([userId])
   @@index([tenantId])
   @@index([officeId])
   @@index([staffType])
