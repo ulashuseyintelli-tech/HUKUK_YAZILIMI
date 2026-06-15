@@ -224,6 +224,7 @@ model Tenant {
   clients           Client[]
   tasks             Task[]
   escalationEvents  EscalationEvent[]
+  debtorIntelligence DebtorIntelligence[]
   courts            Court[]
   collections       Collection[]
   lawyers           Lawyer[]
@@ -320,6 +321,9 @@ model User {
   // K1 kimlik köprüsü (one-to-one, opsiyonel): bir login hesabı en fazla bir kişi profiline bağlanır.
   staffMember StaffMember? @relation("StaffMemberUser")
   lawyer      Lawyer?      @relation("LawyerUser")
+
+  // PR-D4e-1: oluşturulan saha istihbaratı kayıtları
+  createdIntelligence DebtorIntelligence[] @relation("IntelligenceCreator")
   statusChanges CaseStatusHistory[] @relation("StatusChangedBy")
   sorumluCases  Case[]              @relation("SorumluPersonel")
 
@@ -712,6 +716,9 @@ model Debtor {
   // PR-D4b: borçlu-bağlı görevler (completeness/intelligence)
   tasks Task[]
 
+  // PR-D4e-1: saha istihbaratı kayıtları (sonuç+kanıt)
+  intelligence DebtorIntelligence[]
+
   @@index([tenantId])
   @@index([tenantId, identityNo])
   @@index([tenantId, tckn])
@@ -832,6 +839,10 @@ model DebtorAddress {
   // İlişkiler
   caseDebtors    CaseDebtor[]
   serviceHistory ServiceHistory[]
+
+  // PR-D4e-1: bu adres için açılan istihbarat görevleri + istihbarat kayıtları
+  tasks        Task[]               @relation("TaskAddress")
+  intelligence DebtorIntelligence[]
 
   @@unique([debtorId, addressHash], name: "debtor_address_hash_unique")
   @@index([debtorId])
@@ -1003,6 +1014,7 @@ model Case {
   lawyers             CaseLawyer[]
   staff               CaseStaff[]
   tasks               Task[]
+  debtorIntelligence  DebtorIntelligence[]
   collections         Collection[]
   dues                Due[]
   lifecycleEvents     CaseLifecycle[]
@@ -1435,6 +1447,10 @@ model Task {
   // simetrik. onDelete Cascade: borçlu silinirse görev anlamsız → birlikte silinir.
   debtorId    String?
   debtor      Debtor?    @relation(fields: [debtorId], references: [id], onDelete: Cascade)
+  // PR-D4e-1: istihbarat görevi hangi adres için açıldı (saha teyidi). Adres silinirse görev
+  // KALIR (SetNull) — iş emri borçluya bağlı, adres referansı opsiyonel.
+  addressId   String?
+  address     DebtorAddress? @relation("TaskAddress", fields: [addressId], references: [id], onDelete: SetNull)
   title       String
   description String?
   status      TaskStatus @default(PENDING)
@@ -1481,6 +1497,7 @@ model Task {
   @@index([tenantId, taskCategory, status])
   @@index([clientId])
   @@index([debtorId])
+  @@index([addressId])
   @@index([nextFollowUpAt])
 }
 
@@ -1513,6 +1530,58 @@ enum EscalationEventType {
   NOTIFICATION_SENT
   NOTIFICATION_SKIPPED
   NOTIFICATION_FAILED
+}
+
+// PR-D4e-1: Borçlu saha istihbaratı (sonuç+kanıt). "Bu adreste fiilen ne var?" sorusu →
+// borçlu-anchored + adres-referanslı. Task = iş emri (subtype=DEBTOR_INTELLIGENCE); bu model = SONUÇ.
+// caseId yalnız TETİK kaydı (istihbarat dosyalar arası yeniden kullanılabilir, borçlu+adres'e bağlı).
+// Sonuç DebtorAddress doğrulama alanlarını da besleyebilir (D4e-2+; dikkatli, eski doğrulamayı ezme).
+model DebtorIntelligence {
+  id        String         @id @default(cuid())
+  tenantId  String
+  tenant    Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  debtorId  String
+  debtor    Debtor         @relation(fields: [debtorId], references: [id], onDelete: Cascade)
+  addressId String?
+  address   DebtorAddress? @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  caseId    String?
+  case      Case?          @relation(fields: [caseId], references: [id], onDelete: SetNull)
+
+  intelType  DebtorIntelType
+  result     DebtorIntelResult @default(PENDING_VERIFICATION)
+  confidence Int? // 0-100 saha güven skoru
+  evidence   Json? // foto/belge/koordinat referansları
+  note       String?
+
+  createdById String?
+  createdBy   User?     @relation("IntelligenceCreator", fields: [createdById], references: [id])
+  verifiedAt  DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId, debtorId])
+  @@index([addressId])
+  @@index([caseId])
+  @@index([debtorId, createdAt])
+}
+
+// PR-D4e-1: istihbarat türü (ne teyit ediliyor).
+enum DebtorIntelType {
+  LOCATION_VERIFICATION // Borçlu/adres fiili teyidi
+  ACTIVITY_CHECK        // Adreste faaliyet var mı
+  ASSET_SIGHTING        // Araç/depo/mal görüldü mü
+  NEIGHBOR_CONFIRM      // Komşu/çevre teyidi
+}
+
+// PR-D4e-1: istihbarat sonucu (görev TODO durumundan AYRI eksen).
+enum DebtorIntelResult {
+  PENDING_VERIFICATION // teyit bekliyor
+  IN_FIELD             // sahada
+  VERIFIED_PRESENT     // borçlu/mal/faaliyet VAR
+  VERIFIED_ABSENT      // taşınmış/boş/yok
+  INCONCLUSIVE         // sonuçsuz
+  NOT_FOUND            // bulunamadı
 }
 
 model Court {

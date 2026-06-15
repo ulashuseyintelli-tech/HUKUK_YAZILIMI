@@ -22,6 +22,9 @@ import {
   taskDeepLink,
   debtorDeepLink,
   escalationEntity,
+  isIntelligenceTask,
+  escalationSubject,
+  taskAddressText,
   nextEscalationLine,
 } from "../operational-escalation.service";
 import { addDays } from "../escalation-logic";
@@ -217,5 +220,24 @@ describe("Eskalasyon şablon yardımcıları (PR-3b.1)", () => {
   it("escalationEntity: borçlu adı yoksa fallback; debtorDeepLink boş id'de boş döner", () => {
     expect(escalationEntity({ clientId: null, debtorId: "db1", debtor: null }).name).toBe("Bilinmeyen Borçlu");
     expect(debtorDeepLink(null)).toBe("");
+  });
+
+  // PR-D4e-1: subtype-aware içerik (istihbarat ≠ veri eksikliği).
+  it("isIntelligenceTask: taskSubType=DEBTOR_INTELLIGENCE", () => {
+    expect(isIntelligenceTask({ taskSubType: "DEBTOR_INTELLIGENCE" })).toBe(true);
+    expect(isIntelligenceTask({ taskSubType: "DEBTOR_INFO" })).toBe(false);
+    expect(isIntelligenceTask({})).toBe(false);
+  });
+
+  it("escalationSubject: istihbarat → Saha İstihbaratı; diğer → Bilgileri Eksik", () => {
+    const entity = { label: "Borçlu", name: "Mehmet Borçlu" };
+    expect(escalationSubject({ taskSubType: "DEBTOR_INTELLIGENCE" }, entity)).toBe("[Saha İstihbaratı] Mehmet Borçlu");
+    expect(escalationSubject({ taskSubType: "DEBTOR_INFO" }, entity)).toBe("[Operasyonel Görev] Borçlu Bilgileri Eksik - Mehmet Borçlu");
+  });
+
+  it("taskAddressText: adres tek satır; adres yoksa boş", () => {
+    expect(taskAddressText({ address: { street: "Atatürk Cd. No:1", district: "Kadıköy", city: "İstanbul" } })).toBe("Atatürk Cd. No:1, Kadıköy, İstanbul");
+    expect(taskAddressText({ address: null })).toBe("");
+    expect(taskAddressText({})).toBe("");
   });
 });
