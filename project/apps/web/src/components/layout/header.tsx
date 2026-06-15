@@ -38,6 +38,14 @@ export function Header() {
   const pathname = usePathname();
   const router = useRouter();
 
+  // Aktif menü = en uzun (en spesifik) eşleşen href. href'teki query (?new=true) ayıklanır;
+  // böylece /cases/new yolunda "Takipler" (/cases) değil "Yeni Takip" (/cases/new) yanar.
+  const matchLength = (href: string) => {
+    const path = href.split("?")[0];
+    return pathname === path || pathname.startsWith(path + "/") ? path.length : -1;
+  };
+  const bestMatchLength = Math.max(...mobileNavigation.map((n) => matchLength(n.href)));
+
   // Click outside to close
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -134,7 +142,8 @@ export function Header() {
               </div>
               <nav className="p-4 space-y-1">
                 {mobileNavigation.map((item) => {
-                  const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
+                  const len = matchLength(item.href);
+                  const isActive = len > 0 && len === bestMatchLength;
                   return (
                     <Link
                       key={item.name}

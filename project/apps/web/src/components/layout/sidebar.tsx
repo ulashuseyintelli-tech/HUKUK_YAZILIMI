@@ -66,6 +66,15 @@ export function Sidebar() {
     }
   };
 
+  // Aktif menü = mevcut yolu eşleyen EN UZUN (en spesifik) href. Böylece /cases/new yolundayken
+  // genel "/cases" (Eski Takipler) DEĞİL, yalnız "/cases/new" (Yeni Takip) yanar.
+  // href'teki query string (?new=true) ayıklanır; usePathname() zaten query'siz döner.
+  const matchLength = (href: string) => {
+    const path = href.split("?")[0];
+    return pathname === path || pathname.startsWith(path + "/") ? path.length : -1;
+  };
+  const bestMatchLength = Math.max(...navigation.map((n) => matchLength(n.href)));
+
   return (
     <aside className="fixed inset-y-0 left-0 z-50 hidden sm:flex w-56 md:w-60 lg:w-64 flex-col border-r bg-white">
       {/* Logo */}
@@ -77,8 +86,9 @@ export function Sidebar() {
       {/* Navigation */}
       <nav className="flex-1 space-y-1 p-2 lg:p-4 overflow-y-auto">
         {navigation.map((item) => {
-          const isActive = pathname === item.href || pathname.startsWith(item.href + "/");
-          
+          const len = matchLength(item.href);
+          const isActive = len > 0 && len === bestMatchLength;
+
           if (item.disabled) {
             return (
               <div
