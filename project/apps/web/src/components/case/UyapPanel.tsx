@@ -32,10 +32,21 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
   const [hacizType, setHacizType] = useState<HacizTargetType>("BANK");
   const [hacizAmount, setHacizAmount] = useState("");
   const [hacizDetails, setHacizDetails] = useState("");
+  // PR-D4e-3c: haciz öncesi saha istihbaratı soft-uyarıları (lazy fetch, blok yok).
+  const [preHacizWarnings, setPreHacizWarnings] = useState<{ id: string; message: string }[] | null>(null);
 
   useEffect(() => {
     loadData();
   }, [caseId]);
+
+  // Haciz sekmesi açılınca uyarıları bir kez çek (lazy). Hata sessiz (read-only, kritik değil).
+  useEffect(() => {
+    if (activeTab !== "haciz" || preHacizWarnings !== null) return;
+    api
+      .getPreHacizIntelligence(caseId)
+      .then((r) => setPreHacizWarnings(r.warnings || []))
+      .catch(() => setPreHacizWarnings([]));
+  }, [activeTab, caseId, preHacizWarnings]);
 
   const loadData = async () => {
     setLoading(true);
@@ -328,6 +339,25 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
               <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 mb-4">
                 <p className="text-sm text-yellow-800">
                   ⚠️ Vekalet sorunları nedeniyle haciz talebi engellenebilir.
+                </p>
+              </div>
+            )}
+
+            {/* PR-D4e-3c: haciz öncesi saha istihbaratı uyarıları (blok YOK, bilgilendirme). */}
+            {preHacizWarnings && preHacizWarnings.length > 0 && (
+              <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-4 mb-4">
+                <p className="text-sm font-medium text-yellow-900 mb-2">
+                  ⚠️ Haciz öncesi istihbarat uyarıları
+                </p>
+                <ul className="space-y-2">
+                  {preHacizWarnings.map((w, i) => (
+                    <li key={i} className="text-sm text-yellow-800 whitespace-pre-line border-l-2 border-yellow-400 pl-2">
+                      {w.message}
+                    </li>
+                  ))}
+                </ul>
+                <p className="text-xs text-yellow-700 mt-2">
+                  Bu uyarılar haciz talebini engellemez; bilgilendirme amaçlıdır.
                 </p>
               </div>
             )}
