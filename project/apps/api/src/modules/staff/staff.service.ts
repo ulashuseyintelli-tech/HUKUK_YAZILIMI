@@ -35,6 +35,8 @@ export class StaffService {
         tckn: data.tckn,
         email: data.email,
         phone: data.phone,
+        mobilePhone: data.mobilePhone,
+        whatsappPhone: data.whatsappPhone,
         staffType: data.staffType || 'DIGER',
         canCreateCase: data.canCreateCase || false,
         canEditCase: data.canEditCase || false,
@@ -64,6 +66,8 @@ export class StaffService {
     if (data.tckn !== undefined) updateData.tckn = data.tckn;
     if (data.email !== undefined) updateData.email = data.email;
     if (data.phone !== undefined) updateData.phone = data.phone;
+    if (data.mobilePhone !== undefined) updateData.mobilePhone = data.mobilePhone;
+    if (data.whatsappPhone !== undefined) updateData.whatsappPhone = data.whatsappPhone;
     if (data.staffType !== undefined) updateData.staffType = data.staffType;
     if (data.canCreateCase !== undefined) updateData.canCreateCase = data.canCreateCase;
     if (data.canEditCase !== undefined) updateData.canEditCase = data.canEditCase;

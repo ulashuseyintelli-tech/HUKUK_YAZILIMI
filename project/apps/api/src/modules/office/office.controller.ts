@@ -11,6 +11,7 @@ import {
 import { OfficeService } from "./office.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
+import { StaffType } from "@prisma/client";
 
 @Controller("office")
 @UseGuards(JwtAuthGuard)
@@ -168,5 +169,30 @@ export class OfficeController {
     }
   ) {
     return this.officeService.updateIik78Settings(tenantId, data);
+  }
+
+  // Görev & Eskalasyon ayarlarını getir
+  @Get("escalation-settings")
+  getEscalationSettings(@CurrentUser("tenantId") tenantId: string) {
+    return this.officeService.getEscalationSettings(tenantId);
+  }
+
+  // Görev & Eskalasyon ayarlarını güncelle
+  @Put("escalation-settings")
+  updateEscalationSettings(
+    @CurrentUser("tenantId") tenantId: string,
+    @Body()
+    data: {
+      escalationManagerLawyerIds?: string[];
+      escalationFounderLawyerIds?: string[];
+      opReminderDays?: number;
+      opFounderDays?: number;
+      opRepeatMonths?: number;
+      opEmailEnabled?: boolean;
+      opSmsEnabled?: boolean;
+      opStaffTypes?: StaffType[];
+    }
+  ) {
+    return this.officeService.updateEscalationSettings(tenantId, data);
   }
 }

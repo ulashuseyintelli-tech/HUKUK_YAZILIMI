@@ -66,6 +66,8 @@ export class LawyerController {
       vergiNo?: string;
       email?: string;
       phone?: string;
+      mobilePhone?: string;
+      whatsappPhone?: string;
       fax?: string;
       address?: string;
       city?: string;
@@ -109,6 +111,8 @@ export class LawyerController {
       vergiNo?: string;
       email?: string;
       phone?: string;
+      mobilePhone?: string;
+      whatsappPhone?: string;
       fax?: string;
       address?: string;
       city?: string;

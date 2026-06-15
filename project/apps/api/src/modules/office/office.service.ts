@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
+import { StaffType } from "@prisma/client";
 
 @Injectable()
 export class OfficeService {
@@ -291,6 +292,42 @@ export class OfficeService {
     data: {
       inactivityThresholdDays?: number;
       inactivityWarningDays?: number;
+    }
+  ) {
+    const office = await this.getOrCreate(tenantId);
+
+    return this.prisma.office.update({
+      where: { id: office.id },
+      data,
+    });
+  }
+
+  // Görev & Eskalasyon ayarlarını getir (büro-geneli politika; motor PR-3b okur)
+  async getEscalationSettings(tenantId: string) {
+    const office = await this.getOrCreate(tenantId);
+    return {
+      escalationManagerLawyerIds: office.escalationManagerLawyerIds,
+      escalationFounderLawyerIds: office.escalationFounderLawyerIds,
+      opReminderDays: office.opReminderDays,
+      opFounderDays: office.opFounderDays,
+      opRepeatMonths: office.opRepeatMonths,
+      opEmailEnabled: office.opEmailEnabled,
+      opSmsEnabled: office.opSmsEnabled,
+      opStaffTypes: office.opStaffTypes, // L1 alıcı personel türleri
+    };
+  }
+
+  async updateEscalationSettings(
+    tenantId: string,
+    data: {
+      escalationManagerLawyerIds?: string[];
+      escalationFounderLawyerIds?: string[];
+      opReminderDays?: number;
+      opFounderDays?: number;
+      opRepeatMonths?: number;
+      opEmailEnabled?: boolean;
+      opSmsEnabled?: boolean;
+      opStaffTypes?: StaffType[];
     }
   ) {
     const office = await this.getOrCreate(tenantId);
