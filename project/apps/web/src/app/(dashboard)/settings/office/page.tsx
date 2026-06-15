@@ -76,7 +76,7 @@ export default function OfficeSettingsPage() {
   const [smtpForm, setSmtpForm] = useState<SmtpSettings>({ smtpHost: "", smtpPort: 587, smtpUser: "", smtpPass: "", smtpSecure: false, smtpFromName: "", smtpFromEmail: "" });
   const [smsForm, setSmsForm] = useState({ smsProvider: "", smsApiKey: "", smsApiSecret: "", smsSender: "" });
   const [greetingForm, setGreetingForm] = useState({ autoGreetingEnabled: true, autoGreetingTime: "09:00" });
-  const [escalationForm, setEscalationForm] = useState<{ escalationManagerLawyerId: string; escalationFounderLawyerId: string; opReminderDays: number; opFounderDays: number; opRepeatMonths: number; opEmailEnabled: boolean; opSmsEnabled: boolean; opStaffTypes: string[] }>({ escalationManagerLawyerId: "", escalationFounderLawyerId: "", opReminderDays: 3, opFounderDays: 6, opRepeatMonths: 3, opEmailEnabled: true, opSmsEnabled: true, opStaffTypes: ["MUHASEBE", "ADLI_KATIP", "SEKRETER"] });
+  const [escalationForm, setEscalationForm] = useState<{ escalationManagerLawyerIds: string[]; escalationFounderLawyerIds: string[]; opReminderDays: number; opFounderDays: number; opRepeatMonths: number; opEmailEnabled: boolean; opSmsEnabled: boolean; opStaffTypes: string[] }>({ escalationManagerLawyerIds: [], escalationFounderLawyerIds: [], opReminderDays: 3, opFounderDays: 6, opRepeatMonths: 3, opEmailEnabled: true, opSmsEnabled: true, opStaffTypes: ["MUHASEBE", "ADLI_KATIP", "SEKRETER"] });
   // Eskalasyon kartı sağ-altta; üstteki global "Kaydedildi" görünmüyor → karta özel inline geri bildirim
   const [escalationStatus, setEscalationStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [testingSmtp, setTestingSmtp] = useState(false);
@@ -137,8 +137,8 @@ export default function OfficeSettingsPage() {
       // Görev & eskalasyon ayarlarını yükle
       const escRes = await api.get("/office/escalation-settings");
       setEscalationForm({
-        escalationManagerLawyerId: escRes.data?.escalationManagerLawyerId || "",
-        escalationFounderLawyerId: escRes.data?.escalationFounderLawyerId || "",
+        escalationManagerLawyerIds: escRes.data?.escalationManagerLawyerIds || [],
+        escalationFounderLawyerIds: escRes.data?.escalationFounderLawyerIds || [],
         opReminderDays: escRes.data?.opReminderDays ?? 3,
         opFounderDays: escRes.data?.opFounderDays ?? 6,
         opRepeatMonths: escRes.data?.opRepeatMonths ?? 3,
@@ -207,8 +207,6 @@ export default function OfficeSettingsPage() {
     try {
       await api.put("/office/escalation-settings", {
         ...escalationForm,
-        escalationManagerLawyerId: escalationForm.escalationManagerLawyerId || null,
-        escalationFounderLawyerId: escalationForm.escalationFounderLawyerId || null,
         opReminderDays: Number(escalationForm.opReminderDays),
         opFounderDays: Number(escalationForm.opFounderDays),
         opRepeatMonths: Number(escalationForm.opRepeatMonths),
@@ -634,18 +632,32 @@ export default function OfficeSettingsPage() {
             <p className="text-[10px] text-gray-500">Operasyonel eksik görevleri (ör. müvekkil iletişim bilgisi) zamanında çözülmezse büro-geneli politikaya göre eskale edilir. (Motor sonraki sürümde aktifleşir.)</p>
             <div className="grid grid-cols-2 gap-2">
               <div>
-                <label className="block font-medium text-gray-700 mb-0.5">Yönetici Avukat</label>
-                <select value={escalationForm.escalationManagerLawyerId} onChange={e => setEscalationForm({...escalationForm, escalationManagerLawyerId: e.target.value})} className="w-full border rounded px-2 py-1 text-xs">
-                  <option value="">Seçiniz</option>
-                  {(office?.lawyers || []).map((l: any) => <option key={l.id} value={l.id}>{l.name} {l.surname}</option>)}
-                </select>
+                <label className="block font-medium text-gray-700 mb-0.5">Yönetici Avukat(lar)</label>
+                <div className="border rounded p-1.5 max-h-28 overflow-auto space-y-0.5">
+                  {(office?.lawyers || []).length === 0 && <p className="text-gray-400">Avukat yok</p>}
+                  {(office?.lawyers || []).map((l: any) => (
+                    <label key={l.id} className="flex items-center gap-1.5">
+                      <input type="checkbox" checked={escalationForm.escalationManagerLawyerIds.includes(l.id)} onChange={e => {
+                        setEscalationForm(prev => ({ ...prev, escalationManagerLawyerIds: e.target.checked ? [...prev.escalationManagerLawyerIds, l.id] : prev.escalationManagerLawyerIds.filter(id => id !== l.id) }));
+                      }} />
+                      {l.name} {l.surname}
+                    </label>
+                  ))}
+                </div>
               </div>
               <div>
-                <label className="block font-medium text-gray-700 mb-0.5">Kurucu/Ortak</label>
-                <select value={escalationForm.escalationFounderLawyerId} onChange={e => setEscalationForm({...escalationForm, escalationFounderLawyerId: e.target.value})} className="w-full border rounded px-2 py-1 text-xs">
-                  <option value="">Seçiniz</option>
-                  {(office?.lawyers || []).map((l: any) => <option key={l.id} value={l.id}>{l.name} {l.surname}</option>)}
-                </select>
+                <label className="block font-medium text-gray-700 mb-0.5">Kurucu/Ortak(lar)</label>
+                <div className="border rounded p-1.5 max-h-28 overflow-auto space-y-0.5">
+                  {(office?.lawyers || []).length === 0 && <p className="text-gray-400">Avukat yok</p>}
+                  {(office?.lawyers || []).map((l: any) => (
+                    <label key={l.id} className="flex items-center gap-1.5">
+                      <input type="checkbox" checked={escalationForm.escalationFounderLawyerIds.includes(l.id)} onChange={e => {
+                        setEscalationForm(prev => ({ ...prev, escalationFounderLawyerIds: e.target.checked ? [...prev.escalationFounderLawyerIds, l.id] : prev.escalationFounderLawyerIds.filter(id => id !== l.id) }));
+                      }} />
+                      {l.name} {l.surname}
+                    </label>
+                  ))}
+                </div>
               </div>
             </div>
             <div className="grid grid-cols-3 gap-2">

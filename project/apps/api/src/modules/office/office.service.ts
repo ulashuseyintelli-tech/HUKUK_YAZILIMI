@@ -306,8 +306,8 @@ export class OfficeService {
   async getEscalationSettings(tenantId: string) {
     const office = await this.getOrCreate(tenantId);
     return {
-      escalationManagerLawyerId: office.escalationManagerLawyerId,
-      escalationFounderLawyerId: office.escalationFounderLawyerId,
+      escalationManagerLawyerIds: office.escalationManagerLawyerIds,
+      escalationFounderLawyerIds: office.escalationFounderLawyerIds,
       opReminderDays: office.opReminderDays,
       opFounderDays: office.opFounderDays,
       opRepeatMonths: office.opRepeatMonths,
@@ -320,8 +320,8 @@ export class OfficeService {
   async updateEscalationSettings(
     tenantId: string,
     data: {
-      escalationManagerLawyerId?: string | null;
-      escalationFounderLawyerId?: string | null;
+      escalationManagerLawyerIds?: string[];
+      escalationFounderLawyerIds?: string[];
       opReminderDays?: number;
       opFounderDays?: number;
       opRepeatMonths?: number;

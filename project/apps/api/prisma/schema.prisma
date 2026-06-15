@@ -1531,9 +1531,10 @@ model Office {
   inactivityWarningDays   Int @default(60) // Uyarı süresi (gün) - kalan gün bu değerin altına düşünce uyarı
 
   // Görev & Eskalasyon Ayarları (büro-geneli politika) — PR-3a config; motor PR-3b okur.
-  // manager/founder = Lawyer id (düz alan; FK relation değil, motor id ile çözer, yoksa skip+log).
-  escalationManagerLawyerId String? // Yönetici avukat (3g aşımında bildirim)
-  escalationFounderLawyerId String? // Kurucu/ortak avukat (6g aşımında bildirim)
+  // manager/founder = Lawyer id DİZİSİ (düz alan; FK relation değil; motor id ile çözer, yoksa skip+log).
+  // Birden fazla yönetici/kurucu olabilir → hepsine bildirim gider.
+  escalationManagerLawyerIds String[] @default([]) // Yönetici avukat(lar) (3g aşımında bildirim)
+  escalationFounderLawyerIds String[] @default([]) // Kurucu/ortak avukat(lar) (6g aşımında bildirim)
   opReminderDays Int     @default(3)  // İlk hatırlatma / yöneticiye eskalasyon (gün)
   opFounderDays  Int     @default(6)  // Kurucu/ortağa eskalasyon (gün)
   opRepeatMonths Int     @default(3)  // Periyodik tekrar (ay)

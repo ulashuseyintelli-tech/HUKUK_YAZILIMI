@@ -183,8 +183,8 @@ export class OfficeController {
     @CurrentUser("tenantId") tenantId: string,
     @Body()
     data: {
-      escalationManagerLawyerId?: string | null;
-      escalationFounderLawyerId?: string | null;
+      escalationManagerLawyerIds?: string[];
+      escalationFounderLawyerIds?: string[];
       opReminderDays?: number;
       opFounderDays?: number;
       opRepeatMonths?: number;
