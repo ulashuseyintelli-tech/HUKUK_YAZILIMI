@@ -121,7 +121,9 @@ export class DebtorController {
     @Query("search") search?: string,
     @Query("type") type?: string,
     @Query("riskLevel") riskLevel?: string,
-    @Query("city") city?: string
+    @Query("city") city?: string,
+    @Query("sortBy") sortBy?: string,
+    @Query("sortOrder") sortOrder?: string
   ) {
     return this.debtorService.findAll(tenantId, {
       page: page ? parseInt(page) : undefined,
@@ -130,6 +132,8 @@ export class DebtorController {
       type,
       riskLevel,
       city,
+      sortBy,
+      sortOrder,
     });
   }
 

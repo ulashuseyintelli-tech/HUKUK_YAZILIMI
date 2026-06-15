@@ -17,6 +17,8 @@ import {
   MapPin,
   AlertTriangle,
   ChevronUp,
+  ChevronDown,
+  ChevronsUpDown,
 } from "lucide-react";
 import { api } from "@/lib/api";
 import {
@@ -67,6 +69,17 @@ export default function DebtorsPage() {
   const refetchDebtors = () => setRefetchToken((t) => t + 1);
   // Stale-response guard: yalnız en son istek state'i günceller (debounce + page reset yarışı).
   const reqIdRef = useRef(0);
+  // PR-D5-c: server-side sıralama. sortBy null → backend default (createdAt desc).
+  const [sortBy, setSortBy] = useState<string | null>(null);
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const handleSort = (field: string) => {
+    if (sortBy === field) {
+      setSortOrder((o) => (o === "asc" ? "desc" : "asc"));
+    } else {
+      setSortBy(field);
+      setSortOrder("asc");
+    }
+  };
 
   // Modal states
   const [showNewModal, setShowNewModal] = useState(false);
@@ -83,22 +96,22 @@ export default function DebtorsPage() {
     return () => clearTimeout(t);
   }, [search]);
 
-  // Arama/tür değişince ilk sayfaya dön (sonra fetch effect tetiklenir).
+  // Arama/tür/sıralama değişince ilk sayfaya dön (sonra fetch effect tetiklenir).
   useEffect(() => {
     setCurrentPage(1);
-  }, [debouncedSearch, typeFilter]);
+  }, [debouncedSearch, typeFilter, sortBy, sortOrder]);
 
-  // Server-side fetch: debouncedSearch / typeFilter / currentPage / refetchToken değiştikçe.
+  // Server-side fetch: debouncedSearch / typeFilter / sıralama / currentPage / refetchToken değiştikçe.
   useEffect(() => {
     fetchDebtors();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [debouncedSearch, typeFilter, currentPage, refetchToken]);
+  }, [debouncedSearch, typeFilter, sortBy, sortOrder, currentPage, refetchToken]);
 
   const fetchDebtors = async () => {
     const myReq = ++reqIdRef.current;
     try {
       setLoading(true);
-      const qs = buildDebtorQuery({ page: currentPage, limit: PAGE_SIZE, search: debouncedSearch, type: typeFilter });
+      const qs = buildDebtorQuery({ page: currentPage, limit: PAGE_SIZE, search: debouncedSearch, type: typeFilter, sortBy: sortBy ?? undefined, sortOrder });
       // findAll → { data: Debtor[], meta: { total, page, limit, totalPages } }
       const res = await api.get<{ data: Debtor[]; meta: { total: number; totalPages: number } }>(
         `/debtors?${qs}`
@@ -365,9 +378,16 @@ export default function DebtorsPage() {
             <table className="w-full">
               <thead>
                 <tr>
-                  <th className="text-left px-4 py-3 text-sm font-medium w-[30%]">Borçlu</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium w-[10%]">Tür</th>
-                  <th className="text-left px-4 py-3 text-sm font-medium w-[15%]">Kimlik/VKN</th>
+                  {/* PR-D5-c: tıklanabilir başlıklar (allowlist: name/type/identityNo). İletişim/Dosya = computed/relation → sıralanmaz. */}
+                  <th onClick={() => handleSort("name")} className="text-left px-4 py-3 text-sm font-medium w-[30%] cursor-pointer hover:bg-gray-100 select-none">
+                    <div className="flex items-center gap-1">Borçlu <SortIcon field="name" sortBy={sortBy} sortOrder={sortOrder} /></div>
+                  </th>
+                  <th onClick={() => handleSort("type")} className="text-left px-4 py-3 text-sm font-medium w-[10%] cursor-pointer hover:bg-gray-100 select-none">
+                    <div className="flex items-center gap-1">Tür <SortIcon field="type" sortBy={sortBy} sortOrder={sortOrder} /></div>
+                  </th>
+                  <th onClick={() => handleSort("identityNo")} className="text-left px-4 py-3 text-sm font-medium w-[15%] cursor-pointer hover:bg-gray-100 select-none">
+                    <div className="flex items-center gap-1">Kimlik/VKN <SortIcon field="identityNo" sortBy={sortBy} sortOrder={sortOrder} /></div>
+                  </th>
                   <th className="text-left px-4 py-3 text-sm font-medium w-[25%]">İletişim</th>
                   <th className="text-center px-4 py-3 text-sm font-medium w-[10%]">Dosya</th>
                   <th className="text-center px-4 py-3 text-sm font-medium w-[10%]">İşlem</th>
@@ -559,6 +579,12 @@ export default function DebtorsPage() {
   );
 }
 
+
+// PR-D5-c: sıralama ikonu (aktif kolon yön gösterir; pasifte nötr).
+function SortIcon({ field, sortBy, sortOrder }: { field: string; sortBy: string | null; sortOrder: "asc" | "desc" }) {
+  if (sortBy !== field) return <ChevronsUpDown className="h-3 w-3 text-gray-400" />;
+  return sortOrder === "asc" ? <ChevronUp className="h-3 w-3 text-primary" /> : <ChevronDown className="h-3 w-3 text-primary" />;
+}
 
 // ==================== ADDRESS MANAGER (PR-D2a) ====================
 

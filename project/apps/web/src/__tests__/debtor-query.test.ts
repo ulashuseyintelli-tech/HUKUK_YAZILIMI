@@ -28,4 +28,16 @@ describe("buildDebtorQuery (PR-D3 server-side liste)", () => {
     expect(q.get("search")).toBe("miras");
     expect(q.get("type")).toBe("ESTATE");
   });
+
+  it("PR-D5-c: sortBy verilince sortBy+sortOrder eklenir; yoksa hiçbiri (backend default)", () => {
+    const sorted = new URLSearchParams(buildDebtorQuery({ page: 1, limit: 25, sortBy: "name", sortOrder: "asc" }));
+    expect(sorted.get("sortBy")).toBe("name");
+    expect(sorted.get("sortOrder")).toBe("asc");
+    // sortOrder normalize: geçersiz → desc
+    expect(new URLSearchParams(buildDebtorQuery({ page: 1, limit: 25, sortBy: "type", sortOrder: "x" })).get("sortOrder")).toBe("desc");
+    // sortBy yok → sort param yok
+    const none = new URLSearchParams(buildDebtorQuery({ page: 1, limit: 25 }));
+    expect(none.get("sortBy")).toBeNull();
+    expect(none.get("sortOrder")).toBeNull();
+  });
 });
