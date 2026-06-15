@@ -109,6 +109,111 @@ export class ReportService {
     return results.filter(r => r.totalCases > 0).sort((a, b) => b.totalCases - a.totalCases);
   }
 
+  /**
+   * K3 — Kategori bazlı GÖREV performansı (ham metrik; SKOR/BADGE/LEADERBOARD YOK).
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ReportController.getTaskPerformanceReport() → GET /reports/task-performance (yönetici/ADMIN gate)
+   * </remarks>
+   * Kurallar (kararlaştırıldı):
+   * - people[]: YALNIZ resolutionType=MANUAL + completedByUserId dolu görevler (insan kapanışı).
+   *   AUTO_SYSTEM kişiye atfedilmez (şişmeyi önler) → ayrı `system` bloğu.
+   *   Legacy/eksik (resolutionType=null) sessizce düşürülmez → `unattributed`.
+   * - from/to → completedAt'e uygulanır (bu dönemde KAPANANLAR).
+   * - User → StaffMember/Lawyer K1 köprüsüyle resolve (Lawyer önceliklidir); eşleşmezse USER_ONLY.
+   * - Tüm sorgular tenant-scoped. avgCompletionHours = avg(completedAt-createdAt), JS'te (kolon yok).
+   */
+  async getTaskPerformanceReport(
+    tenantId: string,
+    params?: { from?: string; to?: string; taskCategory?: string; resolutionType?: string }
+  ) {
+    const { from, to, taskCategory, resolutionType } = params || {};
+
+    const where: any = { tenantId, status: 'COMPLETED' };
+    if (from || to) {
+      where.completedAt = {};
+      if (from) where.completedAt.gte = new Date(from);
+      if (to) where.completedAt.lte = new Date(to);
+    }
+    if (taskCategory) where.taskCategory = taskCategory;
+    if (resolutionType) where.resolutionType = resolutionType;
+
+    const tasks = await this.prisma.task.findMany({
+      where,
+      select: { completedByUserId: true, resolutionType: true, taskCategory: true, createdAt: true, completedAt: true },
+    });
+
+    const emptyCat = () => ({ LEGAL_WORKFLOW: 0, OPERATIONAL_COMPLETENESS: 0 });
+    const catKey = (c: any) => (c === 'OPERATIONAL_COMPLETENESS' ? 'OPERATIONAL_COMPLETENESS' : 'LEGAL_WORKFLOW');
+
+    const system = { autoSystemCount: 0, byCategory: emptyCat() as Record<string, number> };
+    const unattributed = { count: 0 };
+    const perPerson = new Map<string, { count: number; totalHours: number; byCategory: Record<string, number> }>();
+
+    for (const t of tasks) {
+      const cat = catKey(t.taskCategory);
+      if (t.resolutionType === 'MANUAL' && t.completedByUserId) {
+        let p = perPerson.get(t.completedByUserId);
+        if (!p) { p = { count: 0, totalHours: 0, byCategory: emptyCat() }; perPerson.set(t.completedByUserId, p); }
+        p.count++;
+        p.byCategory[cat]++;
+        if (t.completedAt && t.createdAt) p.totalHours += (t.completedAt.getTime() - t.createdAt.getTime()) / 3_600_000;
+      } else if (t.resolutionType === 'AUTO_SYSTEM') {
+        system.autoSystemCount++;
+        system.byCategory[cat]++;
+      } else {
+        // resolutionType=null (legacy/PR-PERF-1 öncesi) → atfedilemez, dürüstçe ayrı sayılır.
+        unattributed.count++;
+      }
+    }
+
+    // K1 köprüsü ile kimlik resolve (tenant-scoped, batch).
+    const userIds = [...perPerson.keys()];
+    const [users, staff, lawyers] = await Promise.all([
+      userIds.length ? this.prisma.user.findMany({ where: { tenantId, id: { in: userIds } }, select: { id: true, name: true, surname: true } }) : Promise.resolve([]),
+      userIds.length ? this.prisma.staffMember.findMany({ where: { tenantId, userId: { in: userIds } }, select: { userId: true, firstName: true, lastName: true } }) : Promise.resolve([]),
+      userIds.length ? this.prisma.lawyer.findMany({ where: { tenantId, userId: { in: userIds } }, select: { userId: true, name: true, surname: true } }) : Promise.resolve([]),
+    ]);
+    const userMap = new Map(users.map((u: any) => [u.id, u]));
+    const staffMap = new Map(staff.map((s: any) => [s.userId, s]));
+    const lawyerMap = new Map(lawyers.map((l: any) => [l.userId, l]));
+
+    const people = [...perPerson.entries()]
+      .map(([userId, p]) => {
+        let personType: 'USER_ONLY' | 'STAFF_MEMBER' | 'LAWYER' = 'USER_ONLY';
+        let displayName = '';
+        if (lawyerMap.has(userId)) {
+          personType = 'LAWYER';
+          const l = lawyerMap.get(userId);
+          displayName = `${l.name} ${l.surname}`.trim();
+        } else if (staffMap.has(userId)) {
+          personType = 'STAFF_MEMBER';
+          const s = staffMap.get(userId);
+          displayName = `${s.firstName} ${s.lastName}`.trim();
+        } else {
+          const u = userMap.get(userId);
+          displayName = u ? `${u.name} ${u.surname}`.trim() : 'Bilinmeyen Kullanıcı';
+        }
+        return {
+          personId: userId,
+          personType,
+          displayName,
+          completedManualCount: p.count,
+          avgCompletionHours: p.count > 0 ? Math.round((p.totalHours / p.count) * 10) / 10 : 0,
+          byCategory: p.byCategory,
+        };
+      })
+      .sort((a, b) => b.completedManualCount - a.completedManualCount);
+
+    return {
+      range: { from: from || null, to: to || null },
+      filters: { taskCategory: taskCategory || null, resolutionType: resolutionType || null },
+      people,
+      system,
+      unattributed,
+    };
+  }
+
   // 3. Risk Yönetimi Raporu
   async getRiskReport(tenantId: string, riskId?: string) {
     const where: any = { tenantId };
