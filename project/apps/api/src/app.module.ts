@@ -30,6 +30,7 @@ import { OfficeModule } from "./modules/office/office.module";
 import { StaffModule } from "./modules/staff/staff.module";
 import { ClientNotificationModule } from "./modules/client-notification/client-notification.module";
 import { GreetingModule } from "./modules/greeting/greeting.module";
+import { EscalationModule } from "./modules/escalation/escalation.module";
 import { ExportImportModule } from "./modules/export-import/export-import.module";
 import { PoaModule } from "./modules/poa/poa.module";
 import { PortalModule } from "./modules/portal/portal.module";
@@ -155,6 +156,7 @@ function getConditionalImports(): Type<unknown>[] {
     StaffModule,
     ClientNotificationModule,
     GreetingModule,
+    EscalationModule,
     ExportImportModule,
     PoaModule,
     PortalModule,
