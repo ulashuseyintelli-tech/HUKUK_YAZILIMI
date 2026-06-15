@@ -79,7 +79,7 @@ export default function OfficeSettingsPage() {
   const [testingSmtp, setTestingSmtp] = useState(false);
   const [testingSms, setTestingSms] = useState(false);
   const [smtpTestResult, setSmtpTestResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [smsTestResult, setSmsTestResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [smsTestResult, setSmsTestResult] = useState<{ status: "verified" | "unverified" | "error"; message: string } | null>(null);
 
   useEffect(() => { loadOffice(); loadStaff(); }, []);
 
@@ -191,9 +191,11 @@ export default function OfficeSettingsPage() {
     setSmsTestResult(null);
     try {
       const res = await api.post("/client-notifications/test-sms");
-      setSmsTestResult({ success: true, message: res.data?.message || "Bağlantı başarılı" });
+      // Backend dürüst durum döner: verified (gerçek doğrulama) / unverified (test edilmedi) / error
+      const status = (res.data?.status as "verified" | "unverified" | "error") || "unverified";
+      setSmsTestResult({ status, message: res.data?.message || "Sonuç alınamadı" });
     } catch (e: any) {
-      setSmsTestResult({ success: false, message: e.response?.data?.message || e.message || "Bağlantı hatası" });
+      setSmsTestResult({ status: "error", message: e.response?.data?.message || e.message || "Bağlantı hatası" });
     }
     finally { setTestingSms(false); }
   };
@@ -552,7 +554,7 @@ export default function OfficeSettingsPage() {
                 <input value={smsForm.smsApiKey} onChange={e => setSmsForm({...smsForm, smsApiKey: e.target.value})} placeholder="API Key / Kullanıcı Kodu" className="w-full border rounded px-2 py-1 text-xs" />
                 <input type="password" value={smsForm.smsApiSecret} onChange={e => setSmsForm({...smsForm, smsApiSecret: e.target.value})} placeholder="API Secret / Şifre" className="w-full border rounded px-2 py-1 text-xs" />
                 <input value={smsForm.smsSender} onChange={e => setSmsForm({...smsForm, smsSender: e.target.value})} placeholder="Gönderen Adı (Başlık)" className="w-full border rounded px-2 py-1 text-xs" />
-                {smsTestResult && <div className={`p-1 rounded text-xs ${smsTestResult.success ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{smsTestResult.message}</div>}
+                {smsTestResult && <div className={`p-1 rounded text-xs ${smsTestResult.status === "verified" ? "bg-green-100 text-green-700" : smsTestResult.status === "unverified" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>{smsTestResult.message}</div>}
                 <div className="flex gap-1">
                   <button onClick={handleTestSms} disabled={testingSms || !smsForm.smsProvider} className="flex-1 px-2 py-1 border text-xs rounded hover:bg-white disabled:opacity-50">{testingSms ? "..." : "Test"}</button>
                   <button onClick={handleSaveSms} disabled={saving} className="flex-1 px-2 py-1 bg-green-500 text-white text-xs rounded disabled:opacity-50">{saving ? "..." : "Kaydet"}</button>

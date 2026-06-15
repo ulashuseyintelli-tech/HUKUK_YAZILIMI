@@ -21,6 +21,76 @@ export interface SendSmsDto {
   body: string;
 }
 
+/**
+ * SMS bağlantı testi sonucu.
+ * - "verified": sağlayıcıya gerçekten bağlanıldı ve kimlik doğrulandı (SMS gönderilmedi).
+ * - "unverified": ayarlar mevcut ama bu sağlayıcı için gerçek test desteklenmiyor → YEŞİL/başarı DEĞİL.
+ * - "error": sağlayıcı kimliği/bağlantıyı reddetti veya ağ hatası.
+ */
+export type SmsTestStatus = "verified" | "unverified" | "error";
+export interface SmsTestResult {
+  status: SmsTestStatus;
+  message: string;
+  provider?: string;
+  balance?: string;
+}
+
+/**
+ * NetGSM bakiye (balance/list/get) yanıtını yorumlar. SMS GÖNDERMEZ.
+ * Başarı: ilk token sayısal bakiye. Bilinen hata kodları (30/40/50/60/70) → kesin hata (definite).
+ * Diğer beklenmeyen yanıtlar → belirsiz (definite=false → çağıran "doğrulanamadı/uyarı" gösterir).
+ */
+export function parseNetGsmBalance(
+  raw: string
+): { ok: boolean; balance?: string; error?: string; definite?: boolean } {
+  const text = (raw || "").trim();
+  if (!text) return { ok: false, error: "Boş yanıt", definite: false };
+
+  const first = text.split(/\s+/)[0];
+  const errorCodes: Record<string, string> = {
+    "30": "Geçersiz kullanıcı adı, şifre veya API erişim izni yok",
+    "40": "Gönderici adı (başlık) sistemde tanımlı değil",
+    "50": "Abone hesabı aktif değil",
+    "60": "Hesap özelliği uygun değil",
+    "70": "Hatalı parametre",
+  };
+  if (errorCodes[first]) return { ok: false, error: errorCodes[first], definite: true };
+
+  const amount = Number(first.replace(",", "."));
+  if (!Number.isNaN(amount)) return { ok: true, balance: first };
+
+  return { ok: false, error: `Beklenmeyen yanıt: ${text.slice(0, 80)}`, definite: false };
+}
+
+/**
+ * İleti Merkezi bakiye (get-balance) XML yanıtını yorumlar. SMS GÖNDERMEZ.
+ * <code>200</code> → doğrulandı (varsa <amount>/<credits> bakiye). Diğer kod → kesin hata.
+ * Kod bulunamazsa → belirsiz (definite=false).
+ */
+export function parseIletiMerkeziBalance(
+  raw: string
+): { ok: boolean; balance?: string; error?: string; definite?: boolean } {
+  const text = (raw || "").trim();
+  if (!text) return { ok: false, error: "Boş yanıt", definite: false };
+
+  const codeMatch = text.match(/<code>\s*(\d+)\s*<\/code>/i);
+  const code = codeMatch ? codeMatch[1] : undefined;
+
+  if (code && code !== "200") {
+    const msgMatch = text.match(/<message>\s*([^<]*)<\/message>/i);
+    return { ok: false, error: msgMatch ? msgMatch[1].trim() : `Hata kodu ${code}`, definite: true };
+  }
+
+  if (code === "200") {
+    const amtMatch =
+      text.match(/<amount>\s*([^<]+?)\s*<\/amount>/i) ||
+      text.match(/<credits?>\s*([^<]+?)\s*<\/credits?>/i);
+    return { ok: true, balance: amtMatch ? amtMatch[1].trim() : undefined };
+  }
+
+  return { ok: false, error: "Doğrulanamadı (beklenmeyen yanıt)", definite: false };
+}
+
 @Injectable()
 export class ClientNotificationService {
   private readonly logger = new Logger(ClientNotificationService.name);
@@ -321,19 +391,94 @@ export class ClientNotificationService {
   }
 
   // SMS bağlantı testi
-  async testSmsConnection(tenantId: string) {
+  /**
+   * SMS sağlayıcı bağlantısını GERÇEKTEN doğrular — bakiye/kredi ucunu çağırır, SMS GÖNDERMEZ.
+   * Sahte "başarılı" dönmez:
+   *  - NETGSM / ILETI_MERKEZI → bakiye ucu ile kimlik+bağlantı doğrulanır (status "verified"),
+   *    kimlik reddi/ağ hatası → "error".
+   *  - Desteklenmeyen sağlayıcı → "unverified" (ayar kayıtlı ama gerçek test yapılamadı; YEŞİL DEĞİL).
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ClientNotificationController.testSmsConnection() → POST /client-notifications/test-sms
+   *   (Büro Ayarları > SMS > "Test" butonu; office/page.tsx handleTestSms)
+   * </remarks>
+   */
+  async testSmsConnection(tenantId: string): Promise<SmsTestResult> {
     const smsSettings = await this.officeService.getFullSmsSettings(tenantId);
 
     if (!smsSettings.smsProvider || !smsSettings.smsApiKey) {
       throw new BadRequestException("SMS ayarları yapılandırılmamış");
     }
 
-    // Basit doğrulama - gerçek test için kredi kontrolü yapılabilir
-    return { 
-      success: true, 
-      message: `${smsSettings.smsProvider} bağlantısı yapılandırılmış`,
-      provider: smsSettings.smsProvider,
-    };
+    const provider = smsSettings.smsProvider;
+    const apiKey = smsSettings.smsApiKey || "";
+    const apiSecret = smsSettings.smsApiSecret || "";
+
+    try {
+      if (provider === "NETGSM") {
+        const params = new URLSearchParams({ usercode: apiKey, password: apiSecret });
+        const res = await fetchWithTimeout(
+          `https://api.netgsm.com.tr/balance/list/get?${params.toString()}`,
+          undefined,
+          10_000
+        );
+        const parsed = parseNetGsmBalance(await res.text());
+        if (parsed.ok) {
+          return {
+            status: "verified",
+            provider,
+            balance: parsed.balance,
+            message: `NetGSM bağlantısı doğrulandı${parsed.balance ? ` (kalan kredi: ${parsed.balance})` : ""}`,
+          };
+        }
+        return {
+          status: parsed.definite ? "error" : "unverified",
+          provider,
+          message: parsed.definite
+            ? `NetGSM doğrulanamadı: ${parsed.error}`
+            : `NetGSM bağlantısı doğrulanamadı (yanıt anlaşılamadı): ${parsed.error}`,
+        };
+      }
+
+      if (provider === "ILETI_MERKEZI") {
+        const params = new URLSearchParams({ username: apiKey, password: apiSecret });
+        const res = await fetchWithTimeout(
+          `https://api.iletimerkezi.com/v1/get-balance/get?${params.toString()}`,
+          undefined,
+          10_000
+        );
+        const parsed = parseIletiMerkeziBalance(await res.text());
+        if (parsed.ok) {
+          return {
+            status: "verified",
+            provider,
+            balance: parsed.balance,
+            message: `İleti Merkezi bağlantısı doğrulandı${parsed.balance ? ` (kalan kredi: ${parsed.balance})` : ""}`,
+          };
+        }
+        return {
+          status: parsed.definite ? "error" : "unverified",
+          provider,
+          message: parsed.definite
+            ? `İleti Merkezi doğrulanamadı: ${parsed.error}`
+            : `İleti Merkezi bağlantısı doğrulanamadı (yanıt anlaşılamadı): ${parsed.error}`,
+        };
+      }
+
+      // Desteklenmeyen sağlayıcı: gerçek test yapılamıyor → sahte başarı DÖNME
+      return {
+        status: "unverified",
+        provider,
+        message: `Ayarlar kayıtlı ancak "${provider}" için gerçek SMS bağlantı testi desteklenmiyor (bağlantı test edilmedi).`,
+      };
+    } catch (e: any) {
+      return {
+        status: "error",
+        provider,
+        message: `SMS sağlayıcısına bağlanılamadı: ${e.message}`,
+      };
+    }
   }
 
   // Müvekkilin bildirim geçmişi
