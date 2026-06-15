@@ -365,6 +365,51 @@ export class ClientService {
     }
   }
 
+  /**
+   * TEK SEFERLİK BAKIM: özellik canlıya inmeden ÖNCE oluşmuş, iletişim bilgisi eksik
+   * müvekkiller için görev/rozet üretir (yeni kayıtlar sync'ten geçiyor; eskiler geçmedi).
+   * - WAIVED'a DOKUNMAZ · ACTIVE zaten var · COMPLETED'ı yeniden aktive ETMEZ (şimdilik)
+   * - Yalnız contactFollowUpStatus=null & eksik olanlara görev üretir (dedupeKey ile mükerrer yok)
+   * Idempotent: tekrar çalıştırmak güvenli.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ClientController.backfillContactFollowUp() → POST /clients/backfill-contact-followup (admin)
+   * </remarks>
+   */
+  async backfillContactFollowUp(
+    tenantId: string
+  ): Promise<{ scanned: number; createdOrUpdated: number; skippedWaived: number; alreadyActive: number }> {
+    const clients = await this.prisma.client.findMany({
+      where: { tenantId, isActive: true },
+      select: { id: true, phone: true, email: true, contactFollowUpStatus: true },
+    });
+
+    let scanned = 0;
+    let createdOrUpdated = 0;
+    let skippedWaived = 0;
+    let alreadyActive = 0;
+
+    for (const c of clients) {
+      scanned++;
+      const missing = computeMissingContactFields(c);
+      if (missing.length === 0) continue; // tam → dokunma
+      if (c.contactFollowUpStatus === 'WAIVED') { skippedWaived++; continue; }
+      if (c.contactFollowUpStatus === 'ACTIVE') { alreadyActive++; continue; }
+      if (c.contactFollowUpStatus === 'COMPLETED') continue; // şimdilik dokunma
+      // status === null & eksik → görev üret + ACTIVE (dedupe'lu)
+      await this.syncContactFollowUpTaskSafe(tenantId, {
+        id: c.id,
+        phone: c.phone,
+        email: c.email,
+        contactFollowUpStatus: null,
+      });
+      createdOrUpdated++;
+    }
+
+    return { scanned, createdOrUpdated, skippedWaived, alreadyActive };
+  }
+
   // Müvekkil sil (soft delete)
   async remove(id: string, tenantId: string) {
     const existing = await this.prisma.client.findFirst({ where: { id, tenantId } });

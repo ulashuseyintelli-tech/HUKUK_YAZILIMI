@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query, ForbiddenException } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ClientService } from './client.service';
 
@@ -36,6 +36,16 @@ export class ClientController {
     } catch (error: any) {
       return { error: error.message };
     }
+  }
+
+  // TEK SEFERLİK BAKIM (admin): özellik öncesi oluşmuş eksik müvekkillere görev/rozet üret.
+  // Idempotent; dedupeKey ile mükerrer görev oluşmaz.
+  @Post('backfill-contact-followup')
+  async backfillContactFollowUp(@Request() req: any) {
+    if (req.user?.role !== 'ADMIN') {
+      throw new ForbiddenException('Bu işlem yalnızca admin tarafından yapılabilir');
+    }
+    return this.clientService.backfillContactFollowUp(req.user.tenantId);
   }
 
   // Müvekkil güncelle

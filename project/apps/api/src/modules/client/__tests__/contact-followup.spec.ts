@@ -122,3 +122,24 @@ describe('ClientService.syncContactFollowUpTask', () => {
     expect(upd.data.completedAt).toBeNull();
   });
 });
+
+describe('ClientService.backfillContactFollowUp', () => {
+  it('yalnız null+eksik üretir; WAIVED/ACTIVE/COMPLETED dokunmaz; tam atlanır; sayaçlar doğru', async () => {
+    const clients = [
+      { id: 'c1', phone: null, email: null, contactFollowUpStatus: null }, // null+eksik → üret
+      { id: 'c2', phone: null, email: null, contactFollowUpStatus: 'WAIVED' }, // skippedWaived
+      { id: 'c3', phone: null, email: null, contactFollowUpStatus: 'ACTIVE' }, // alreadyActive
+      { id: 'c4', phone: null, email: null, contactFollowUpStatus: 'COMPLETED' }, // dokunma
+      { id: 'c5', phone: '05321234567', email: 'a@b.com', contactFollowUpStatus: null }, // tam → atla
+    ];
+    const prisma = { client: { findMany: jest.fn().mockResolvedValue(clients) } } as any;
+    const svc = new ClientService(prisma);
+    const syncSpy = jest.spyOn(svc as any, 'syncContactFollowUpTaskSafe').mockResolvedValue(undefined);
+
+    const res = await svc.backfillContactFollowUp('t1');
+
+    expect(res).toEqual({ scanned: 5, createdOrUpdated: 1, skippedWaived: 1, alreadyActive: 1 });
+    expect(syncSpy).toHaveBeenCalledTimes(1);
+    expect(syncSpy).toHaveBeenCalledWith('t1', expect.objectContaining({ id: 'c1', contactFollowUpStatus: null }));
+  });
+});
