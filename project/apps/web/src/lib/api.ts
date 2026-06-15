@@ -664,6 +664,15 @@ class ApiClient {
   }
 
   /**
+   * PR-D4e-3c: Haciz öncesi saha istihbaratı soft-uyarıları (read-only, blok yok).
+   */
+  async getPreHacizIntelligence(caseId: string) {
+    return this.request<{ caseId: string; isValid: boolean; warnings: { id: string; path: string; severity: string; message: string }[] }>(
+      `/validation-gate/${caseId}/pre-haciz-intelligence`
+    );
+  }
+
+  /**
    * Politika degerini getir
    */
   async getValidationPolicy(key: string) {
