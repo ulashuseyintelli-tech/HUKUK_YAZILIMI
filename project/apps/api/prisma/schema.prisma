@@ -314,6 +314,7 @@ model User {
 
   assignedTasks Task[]              @relation("AssignedTasks")
   createdTasks  Task[]              @relation("CreatedTasks")
+  completedTasks Task[]             @relation("CompletedTasks")
   statusChanges CaseStatusHistory[] @relation("StatusChangedBy")
   sorumluCases  Case[]              @relation("SorumluPersonel")
 
@@ -1446,6 +1447,13 @@ model Task {
   createdById String?
   createdBy   User?      @relation("CreatedTasks", fields: [createdById], references: [id])
   completedAt DateTime?
+  // PR-PERF-1: kapanış atfı. completedByUserId = görevi kapatan User (manuel kapanışta dolu,
+  // sistem otomatik kapanışında null). resolutionType = MANUAL (insan, PUT /tasks) /
+  // AUTO_SYSTEM (sistem: contact-followup auto-close, masraf PAID tetikli). Performans
+  // raporu sistem kapanışlarını insan kapanışından AYIRT edebilsin diye (drift'i önler).
+  completedByUserId String?
+  completedBy       User?               @relation("CompletedTasks", fields: [completedByUserId], references: [id])
+  resolutionType    TaskResolutionType?
   createdAt   DateTime   @default(now())
   updatedAt   DateTime   @updatedAt
 
@@ -2657,6 +2665,13 @@ enum Priority {
   MEDIUM
   HIGH
   URGENT
+}
+
+// PR-PERF-1: görev kapanış türü. Performans ölçümü sistem kapanışını insan kapanışından
+// ayırt edebilsin diye (ör. "Fatma 500 görev kapattı"nın 450'si AUTO_SYSTEM olabilir).
+enum TaskResolutionType {
+  MANUAL      // İnsan kapattı (PUT /tasks/:id status=COMPLETED) → completedByUserId dolu
+  AUTO_SYSTEM // Sistem kapattı (contact-followup auto-close, masraf PAID tetikli) → completedByUserId null
 }
 
 // Görev sınıflandırması (3 katman). DATA_QUALITY burada YOK: o, görev değil computed badge/signal

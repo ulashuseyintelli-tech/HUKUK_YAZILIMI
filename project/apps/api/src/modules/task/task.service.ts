@@ -63,12 +63,27 @@ export class TaskService {
     });
   }
 
-  async update(tenantId: string, id: string, dto: UpdateTaskDto) {
+  /**
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - TaskController.update() → PUT /tasks/:id (görev güncelleme; manuel kapanış)
+   * </remarks>
+   * PR-PERF-1 kapanış atfı: status=COMPLETED → completedByUserId=userId + resolutionType=MANUAL.
+   * Görev COMPLETED'dan çıkarılırsa (yeniden açılır) kapanış alanları temizlenir (yalan veri bırakmaz).
+   */
+  async update(tenantId: string, id: string, userId: string, dto: UpdateTaskDto) {
     await this.findOne(tenantId, id);
 
     const data: any = { ...dto };
     if (dto.status === "COMPLETED") {
       data.completedAt = new Date();
+      data.completedByUserId = userId; // insan kapanışı → kapatanı yakala
+      data.resolutionType = "MANUAL";
+    } else if (dto.status !== undefined) {
+      // COMPLETED dışı bir statüye geçiş (yeniden açma vb.) → kapanış izini temizle.
+      data.completedAt = null;
+      data.completedByUserId = null;
+      data.resolutionType = null;
     }
 
     return this.prisma.task.update({

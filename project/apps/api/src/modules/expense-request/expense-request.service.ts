@@ -776,13 +776,18 @@ export class ExpenseRequestService {
         },
       });
 
-      // Task completion on payment - PAID olunca ilgili task'ı tamamla
+      // Task completion on payment - PAID olunca ilgili task'ı tamamla.
+      // PR-PERF-1: bu sistem tetikli bir kapanıştır (ödemenin yan etkisi, doğrudan görev işi değil) →
+      // AUTO_SYSTEM + completedByUserId null (ödemeyi kaydeden userId zaten expenseAuditLog'da; bu
+      // kapanış performans raporunda kişiye atfedilmemeli, aksi halde sayım şişer).
       if (newStatus === 'PAID' && updated.taskId) {
         await tx.task.update({
           where: { id: updated.taskId },
           data: {
             status: 'COMPLETED',
             completedAt: new Date(),
+            resolutionType: 'AUTO_SYSTEM',
+            completedByUserId: null,
           },
         });
         this.logger.log(`Task ${updated.taskId} completed due to expense payment`);
