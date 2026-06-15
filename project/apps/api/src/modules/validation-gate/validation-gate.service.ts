@@ -93,6 +93,73 @@ export class ValidationGateService implements OnModuleInit {
 
   constructor(private prisma: PrismaService) {}
 
+  /**
+   * PR-D4e-3b: HACİZ ÖNCESİ saha istihbaratı SOFT-UYARILARI (READ-ONLY).
+   * BLOK YOK → her zaman isValid:true; yalnız WARNING üretir (haciz akışı durdurulmaz).
+   * Hiçbir tabloya YAZMAZ, hiçbir görev AÇMAZ. Yalnız CaseDebtor + DebtorIntelligence +
+   * DebtorAddress OKUR. Per-case çalışır; her warning borçlu ADIYLA kırılımlı.
+   * Sinyaller: INTEL_90D_MISSING · INTEL_ETEBLIGAT_NO_PHYSICAL_VERIFY · INTEL_ADDRESS_UNVERIFIED.
+   * NOT: validation-gate.service @deprecated (gate-makinesi policy-engine'e taşınıyor); bu
+   * read-only kontrol YAML-rule değil, ileride taşınırsa haciz-pre-flight concern'üyle birlikte gider.
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ValidationGateController.preHacizIntelligence() → GET /validation-gate/:caseId/pre-haciz-intelligence
+   * </remarks>
+   */
+  async checkPreHacizIntelligence(
+    tenantId: string,
+    caseId: string
+  ): Promise<{ caseId: string; isValid: boolean; warnings: ValidationError[] }> {
+    const warnings: ValidationError[] = [];
+
+    const caseExists = await this.prisma.case.findFirst({ where: { id: caseId, tenantId }, select: { id: true } });
+    if (!caseExists) {
+      return { caseId, isValid: true, warnings: [{ id: 'CASE_NOT_FOUND', path: 'case', severity: 'WARNING', message: 'Dosya bulunamadı.' }] };
+    }
+
+    const caseDebtors = await this.prisma.caseDebtor.findMany({
+      where: { caseId },
+      include: {
+        debtor: { select: { id: true, name: true, debtorAddresses: { where: { isPrimary: true }, take: 1, select: { id: true, verified: true, verifiedSource: true } } } },
+        selectedAddress: { select: { id: true, verified: true, verifiedSource: true } },
+      },
+    });
+
+    const ninetyDaysAgo = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+
+    for (const cd of caseDebtors) {
+      const name = cd.debtor?.name || 'Borçlu';
+      const addr = cd.selectedAddress || cd.debtor?.debtorAddresses?.[0] || null;
+
+      // S1: son 90 gün saha istihbaratı yok mu?
+      const recentCount = await this.prisma.debtorIntelligence.count({
+        where: { tenantId, debtorId: cd.debtor.id, createdAt: { gte: ninetyDaysAgo } },
+      });
+      if (recentCount === 0) {
+        warnings.push({ id: 'INTEL_90D_MISSING', path: `debtor.${cd.debtor.id}`, severity: 'WARNING', message: `${name}:\nSon 90 gün içinde saha istihbaratı bulunmuyor.` });
+      }
+
+      // S2: e-tebligat (UETS/KEP) teslim AMA o adres için fiziksel VERIFIED_PRESENT yok.
+      const channel = (cd as any).serviceChannel;
+      if (cd.serviceStatus === 'DELIVERED' && (channel === 'UETS' || channel === 'KEP')) {
+        const physical = addr?.id
+          ? await this.prisma.debtorIntelligence.count({ where: { tenantId, debtorId: cd.debtor.id, addressId: addr.id, result: 'VERIFIED_PRESENT' } })
+          : 0;
+        if (physical === 0) {
+          warnings.push({ id: 'INTEL_ETEBLIGAT_NO_PHYSICAL_VERIFY', path: `debtor.${cd.debtor.id}`, severity: 'WARNING', message: `${name}:\nElektronik tebligat mevcut ancak fiziksel teyit bulunmuyor.` });
+        }
+      }
+
+      // S3: tebligat adresi fiili doğrulamadan geçmemiş (verified=false veya kaynak FIELD değil).
+      if (addr && (!addr.verified || addr.verifiedSource !== 'FIELD')) {
+        warnings.push({ id: 'INTEL_ADDRESS_UNVERIFIED', path: `debtor.${cd.debtor.id}`, severity: 'WARNING', message: `${name}:\nTebligat adresi fiili saha doğrulamasından geçmemiş.` });
+      }
+    }
+
+    // BLOK YOK: warning olsa da isValid her zaman true.
+    return { caseId, isValid: true, warnings };
+  }
+
   async onModuleInit() {
     await this.loadRules();
     
