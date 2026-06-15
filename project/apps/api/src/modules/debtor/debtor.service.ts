@@ -274,8 +274,20 @@ export class DebtorService {
       this.prisma.debtor.count({ where }),
     ]);
 
+    // PR-D4d: her satıra ANLIK completeness sinyali (task'tan bağımsız = gerçek veri durumu).
+    // page limit 25 olduğundan per-row compute performans sorunu değil.
+    const data = debtors.map((d) => {
+      const missingFields = computeDebtorMissingFields(d as any);
+      return {
+        ...d,
+        missingFields,
+        missingFieldsCount: missingFields.length,
+        isComplete: missingFields.length === 0,
+      };
+    });
+
     return {
-      data: debtors,
+      data,
       meta: { total, page, limit, totalPages: Math.ceil(total / limit) },
     };
   }

@@ -102,3 +102,25 @@ describe("DebtorService.syncDebtorTask (client deseni ikizi)", () => {
     expect(data.resolutionType).toBeNull();
   });
 });
+
+describe("DebtorService.findAll — PR-D4d completeness sinyali", () => {
+  it("her satıra missingFields/missingFieldsCount/isComplete eklenir (anlık compute)", async () => {
+    const prisma = {
+      debtor: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: "d1", type: "INDIVIDUAL", tckn: "1", phone: "0532", debtorAddresses: [{ id: "a" }], estateHeirs: [] },
+          { id: "d2", type: "COMPANY", vkn: null, debtorAddresses: [], estateHeirs: [] },
+        ]),
+        count: jest.fn().mockResolvedValue(2),
+      },
+    } as any;
+    const svc = new DebtorService(prisma);
+
+    const res = await svc.findAll("t1", {});
+
+    expect(res.data[0]).toMatchObject({ id: "d1", isComplete: true, missingFieldsCount: 0 });
+    expect(res.data[0].missingFields).toEqual([]);
+    expect(res.data[1]).toMatchObject({ id: "d2", isComplete: false, missingFieldsCount: 3 });
+    expect(res.data[1].missingFields).toEqual(["vkn", "address", "contact"]);
+  });
+});

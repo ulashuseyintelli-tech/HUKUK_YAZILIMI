@@ -33,6 +33,19 @@ import { buildDebtorQuery } from "@/lib/debtor-query";
 
 const PAGE_SIZE = 25; // PR-D3: sunucu tarafı sayfa boyutu
 
+// PR-D4d: borçlu completeness eksik-alan kodları → insan-okunur (tooltip için).
+const DEBTOR_MISSING_LABELS: Record<string, string> = {
+  tckn: "TCKN",
+  vkn: "VKN",
+  address: "Adres",
+  contact: "Telefon/E-posta",
+  detsisOrName: "DETSİS/Kurum adı",
+  deceasedName: "Muris adı",
+  heirs: "Mirasçı",
+};
+const debtorMissingTooltip = (codes?: string[]) =>
+  (codes || []).map((c) => DEBTOR_MISSING_LABELS[c] || c).join(", ");
+
 export default function DebtorsPage() {
   const searchParams = useSearchParams();
   const editDebtorId = searchParams.get("edit");
@@ -377,7 +390,18 @@ export default function DebtorsPage() {
                         className="flex items-center gap-2 hover:text-primary transition-colors text-left"
                       >
                         {getTypeIcon(debtor.type)}
-                        <span className="font-medium hover:underline truncate max-w-[250px]" title={debtor.name}>{debtor.name}</span>
+                        <span className="font-medium hover:underline truncate max-w-[200px]" title={debtor.name}>{debtor.name}</span>
+                        {/* PR-D4d: anlık completeness rozeti */}
+                        {debtor.isComplete ? (
+                          <span className="text-[11px] bg-green-100 text-green-700 px-1.5 py-0.5 rounded flex-shrink-0">Tam</span>
+                        ) : (debtor.missingFieldsCount ?? 0) > 0 ? (
+                          <span
+                            className="text-[11px] bg-amber-100 text-amber-800 px-1.5 py-0.5 rounded flex-shrink-0"
+                            title={`Eksik: ${debtorMissingTooltip(debtor.missingFields)}`}
+                          >
+                            Eksik: {debtor.missingFieldsCount}
+                          </span>
+                        ) : null}
                       </button>
                     </td>
                     <td className="px-4 py-3 text-sm text-gray-500 w-[10%]">
