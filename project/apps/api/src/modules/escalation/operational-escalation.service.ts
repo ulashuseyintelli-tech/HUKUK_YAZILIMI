@@ -13,8 +13,8 @@ import {
 import * as nodemailer from "nodemailer";
 
 interface Recipients {
-  emails: string[];
-  phones: string[]; // yalnız FOUNDER için doldurulur
+  emails: { name: string; email: string }[]; // ad-soyad ile hitap için isim taşınır
+  phones: { name: string; phone: string }[]; // yalnız FOUNDER için doldurulur
 }
 
 /**
@@ -111,25 +111,39 @@ export class OperationalEscalationService {
     if (tier === "STAFF") {
       const staff = await this.prisma.staffMember.findMany({
         where: { tenantId, isActive: true, staffType: { in: office.opStaffTypes || [] } },
-        select: { email: true },
+        select: { firstName: true, lastName: true, email: true },
       });
-      return { emails: staff.map((s) => s.email).filter((e): e is string => !!e), phones: [] };
+      return {
+        emails: staff
+          .filter((s) => !!s.email)
+          .map((s) => ({ name: `${s.firstName} ${s.lastName}`.trim(), email: s.email as string })),
+        phones: [],
+      };
     }
 
     if (tier === "MANAGER") {
-      let lawyers = office.escalationManagerLawyerIds?.length
-        ? await this.prisma.lawyer.findMany({ where: { tenantId, isActive: true, id: { in: office.escalationManagerLawyerIds } }, select: { email: true } })
-        : await this.prisma.lawyer.findMany({ where: { tenantId, isActive: true, lawyerRank: "MANAGER" }, select: { email: true } });
-      return { emails: lawyers.map((l) => l.email).filter((e): e is string => !!e), phones: [] };
+      const lawyers = office.escalationManagerLawyerIds?.length
+        ? await this.prisma.lawyer.findMany({ where: { tenantId, isActive: true, id: { in: office.escalationManagerLawyerIds } }, select: { name: true, surname: true, email: true } })
+        : await this.prisma.lawyer.findMany({ where: { tenantId, isActive: true, lawyerRank: "MANAGER" }, select: { name: true, surname: true, email: true } });
+      return {
+        emails: lawyers
+          .filter((l) => !!l.email)
+          .map((l) => ({ name: `${l.name} ${l.surname}`.trim(), email: l.email as string })),
+        phones: [],
+      };
     }
 
     // FOUNDER
     const founders = office.escalationFounderLawyerIds?.length
-      ? await this.prisma.lawyer.findMany({ where: { tenantId, isActive: true, id: { in: office.escalationFounderLawyerIds } }, select: { email: true, mobilePhone: true } })
-      : await this.prisma.lawyer.findMany({ where: { tenantId, isActive: true, role: { in: ["OWNER", "PARTNER"] } }, select: { email: true, mobilePhone: true } });
+      ? await this.prisma.lawyer.findMany({ where: { tenantId, isActive: true, id: { in: office.escalationFounderLawyerIds } }, select: { name: true, surname: true, email: true, mobilePhone: true } })
+      : await this.prisma.lawyer.findMany({ where: { tenantId, isActive: true, role: { in: ["OWNER", "PARTNER"] } }, select: { name: true, surname: true, email: true, mobilePhone: true } });
     return {
-      emails: founders.map((l) => l.email).filter((e): e is string => !!e),
-      phones: founders.map((l) => l.mobilePhone).filter((p): p is string => !!p),
+      emails: founders
+        .filter((l) => !!l.email)
+        .map((l) => ({ name: `${l.name} ${l.surname}`.trim(), email: l.email as string })),
+      phones: founders
+        .filter((l) => !!l.mobilePhone)
+        .map((l) => ({ name: `${l.name} ${l.surname}`.trim(), phone: l.mobilePhone as string })),
     };
   }
 
@@ -143,18 +157,26 @@ export class OperationalEscalationService {
       return false;
     }
 
-    const subject = `[Operasyonel Görev] ${task.title || "Eksik bilgi"} — ${tier}`;
-    const body = `${task.title || "Operasyonel eksik görevi"}\n\n${task.description || ""}\n\nBu görev ${tier} kademesine eskale edildi.`;
+    const taskTitle = task.title || "Operasyonel eksik görevi";
+    const subject = `Operasyonel Görev: ${taskTitle}`;
     let anySent = false;
 
     if (email && office.opEmailEnabled !== false) {
-      for (const to of recipients.emails) {
-        if (await this.sendTenantEmail(tenantId, to, subject, body.replace(/\n/g, "<br>"))) anySent = true;
+      for (const r of recipients.emails) {
+        const html =
+          `Sayın ${r.name},<br><br>` +
+          `Büronuzda bir <b>operasyonel eksik görevi</b> tamamlanmayı bekliyor:<br><br>` +
+          `<b>${taskTitle}</b><br>` +
+          `${(task.description || "").replace(/\n/g, "<br>")}<br><br>` +
+          `Lütfen ilgili müvekkil kaydındaki eksik bilgileri tamamlayın.<br><br>` +
+          `<small>Eskalasyon kademesi: ${tier}</small>`;
+        if (await this.sendTenantEmail(tenantId, r.email, subject, html)) anySent = true;
       }
     }
     if (sms && office.opSmsEnabled !== false) {
-      for (const to of recipients.phones) {
-        if (await this.sendTenantSms(tenantId, to, `${task.title || "Operasyonel eksik"} — eskalasyon (${tier})`)) anySent = true;
+      for (const r of recipients.phones) {
+        const msg = `Sayın ${r.name}, "${taskTitle}" operasyonel görevi tamamlanmayı bekliyor (eskalasyon: ${tier}).`;
+        if (await this.sendTenantSms(tenantId, r.phone, msg)) anySent = true;
       }
     }
     return anySent;
