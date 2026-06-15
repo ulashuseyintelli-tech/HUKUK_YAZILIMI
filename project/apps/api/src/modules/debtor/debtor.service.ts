@@ -347,23 +347,26 @@ export class DebtorService {
       }
     }
 
-    // Compute name and identityNo if relevant fields changed
+    // Computed `name` ve `identityNo` TEK KAYNAK türevidir → her update'te mevcut+dto birleşiminden
+    // YENİDEN hesaplanır. Eski davranış yalnız ad-alanları değişince hesaplıyordu; sadece
+    // tckn/vkn/detsis değişince identityNo DRIFT ediyordu (PR-D1 fix). `??` ile yalnız dto'da
+    // gelmeyen alan mevcuttan alınır. deceasedName/deceasedTckn UpdateDebtorDto'da yok → mevcuttan.
     const updateData: any = { ...dto };
-    if (dto.firstName || dto.lastName || dto.companyName || dto.institutionName) {
-      const merged = {
-        type: dto.type || existing.type,
-        firstName: dto.firstName || existing.firstName,
-        lastName: dto.lastName || existing.lastName,
-        companyName: dto.companyName || existing.companyName,
-        institutionName: dto.institutionName || existing.institutionName,
-        tckn: dto.tckn || existing.tckn,
-        vkn: dto.vkn || existing.vkn,
-        detsisNo: dto.detsisNo || existing.detsisNo,
-      };
-      const { name, identityNo } = this.computeNameAndIdentity(merged as CreateDebtorDto);
-      updateData.name = name;
-      updateData.identityNo = identityNo;
-    }
+    const merged = {
+      type: dto.type ?? existing.type,
+      firstName: dto.firstName ?? existing.firstName,
+      lastName: dto.lastName ?? existing.lastName,
+      companyName: dto.companyName ?? existing.companyName,
+      institutionName: dto.institutionName ?? existing.institutionName,
+      deceasedName: existing.deceasedName,
+      tckn: dto.tckn ?? existing.tckn,
+      vkn: dto.vkn ?? existing.vkn,
+      detsisNo: dto.detsisNo ?? existing.detsisNo,
+      deceasedTckn: existing.deceasedTckn,
+    };
+    const { name, identityNo } = this.computeNameAndIdentity(merged as CreateDebtorDto);
+    updateData.name = name;
+    updateData.identityNo = identityNo;
 
     return this.prisma.debtor.update({
       where: { id },
