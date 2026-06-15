@@ -742,9 +742,12 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
       if (!form.companyName) { alert("Kurum adı zorunludur"); return; }
       if (!form.vkn || form.vkn.length !== 10) { alert("VKN 10 haneli olmalıdır"); return; }
     }
-    // Telefon/e-posta eksikse: kaydı ENGELLEME, önce sor (Eksik Kaydet → backend görev üretir).
+    // Telefon/e-posta eksikse SOR — ama yalnız İLK KEZ. Müvekkil zaten takipteyse (ACTIVE)
+    // veya vazgeçilmişse (WAIVED) modal tekrar çıkmaz (başka alan düzenlerken bezdirmesin);
+    // backend (PR-1) rozeti/görevi zaten koruyor. Yeni müvekkilde status null → modal çıkar.
+    const tracked = client?.contactFollowUpStatus === "ACTIVE" || client?.contactFollowUpStatus === "WAIVED";
     const missing = computeMissing();
-    if (missing.length > 0) { setMissingContact(missing); return; }
+    if (missing.length > 0 && !tracked) { setMissingContact(missing); return; }
     doSave();
   };
 
