@@ -50,10 +50,11 @@ export class TaskController {
   @Put(":id")
   update(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Body() dto: UpdateTaskDto
   ) {
-    return this.taskService.update(tenantId, id, dto);
+    return this.taskService.update(tenantId, id, userId, dto);
   }
 
   @Delete(":id")

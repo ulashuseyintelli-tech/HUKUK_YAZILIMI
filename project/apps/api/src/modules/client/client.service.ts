@@ -308,7 +308,8 @@ export class ClientService {
       if (existing && existing.status !== 'COMPLETED' && existing.status !== 'CANCELLED') {
         await this.prisma.task.update({
           where: { id: existing.id },
-          data: { status: 'COMPLETED', completedAt: new Date() },
+          // PR-PERF-1: sistem kapanışı → AUTO_SYSTEM + completedByUserId null (insan kapanışından ayrılır).
+          data: { status: 'COMPLETED', completedAt: new Date(), resolutionType: 'AUTO_SYSTEM', completedByUserId: null },
         });
       }
       if (client.contactFollowUpStatus === 'ACTIVE') {
@@ -333,8 +334,9 @@ export class ClientService {
           missingFields: missing,
           description,
           // Kapalı görevi yeniden aç + SLA/eskalasyonu sıfırla; açık görevse sadece eksik listesini güncelle.
+          // PR-PERF-1: yeniden açılışta eski kapanış izini de temizle (stale atıf bırakmaz).
           ...(reopening
-            ? { status: 'PENDING', completedAt: null, dueDate: due, escalationLevel: 'STAFF', nextFollowUpAt: due }
+            ? { status: 'PENDING', completedAt: null, completedByUserId: null, resolutionType: null, dueDate: due, escalationLevel: 'STAFF', nextFollowUpAt: due }
             : {}),
         },
       });

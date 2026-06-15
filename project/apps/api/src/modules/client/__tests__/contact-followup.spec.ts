@@ -92,7 +92,8 @@ describe('ClientService.syncContactFollowUpTask', () => {
 
     expect(prisma.task.update).toHaveBeenCalledWith({
       where: { id: 'tk' },
-      data: { status: 'COMPLETED', completedAt: expect.any(Date) },
+      // PR-PERF-1: sistem kapanışı AUTO_SYSTEM + completedByUserId null damgalanır.
+      data: { status: 'COMPLETED', completedAt: expect.any(Date), resolutionType: 'AUTO_SYSTEM', completedByUserId: null },
     });
     expect(prisma.client.update).toHaveBeenCalledWith({
       where: { id: 'c1' },
@@ -120,6 +121,9 @@ describe('ClientService.syncContactFollowUpTask', () => {
     expect(upd.data.status).toBe('PENDING');
     expect(upd.data.escalationLevel).toBe('STAFF');
     expect(upd.data.completedAt).toBeNull();
+    // PR-PERF-1: yeniden açılışta eski kapanış izi de temizlenir.
+    expect(upd.data.completedByUserId).toBeNull();
+    expect(upd.data.resolutionType).toBeNull();
   });
 });
 
