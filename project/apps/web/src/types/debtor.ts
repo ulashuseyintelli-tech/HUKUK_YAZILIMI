@@ -144,6 +144,10 @@ export interface Debtor {
   // Relations
   debtorAddresses?: DebtorAddress[];
   _count?: { caseDebtors: number; assets: number };
+  // PR-D4d: anlık completeness sinyali (backend findAll'dan, task'tan bağımsız)
+  missingFields?: string[];
+  missingFieldsCount?: number;
+  isComplete?: boolean;
 }
 
 // Tereke Mirasçısı
