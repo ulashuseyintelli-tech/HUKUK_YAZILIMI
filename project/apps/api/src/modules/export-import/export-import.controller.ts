@@ -15,6 +15,19 @@ import { ExportImportService } from "./export-import.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 
+/**
+ * "id1,id2,id3" virgüllü query paramını temizlenmiş ID dizisine çevirir.
+ * Boş/whitespace girdiler atılır; hiç geçerli ID yoksa undefined (= "ID filtresi yok").
+ */
+export function parseIdsParam(ids?: string): string[] | undefined {
+  if (!ids) return undefined;
+  const list = ids
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return list.length > 0 ? list : undefined;
+}
+
 @Controller("export-import")
 @UseGuards(JwtAuthGuard)
 export class ExportImportController {
@@ -62,9 +75,11 @@ export class ExportImportController {
     @CurrentUser("tenantId") tenantId: string,
     @Query("status") status?: string,
     @Query("clientId") clientId?: string,
+    @Query("ids") ids?: string,
     @Res() res?: Response
   ) {
-    const buffer = await this.exportImportService.exportCasesToExcel(tenantId, { status, clientId });
+    const idList = parseIdsParam(ids);
+    const buffer = await this.exportImportService.exportCasesToExcel(tenantId, { status, clientId, ids: idList });
     const filename = `takipler_${new Date().toISOString().split("T")[0]}.xlsx`;
 
     res!.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
@@ -78,9 +93,11 @@ export class ExportImportController {
     @CurrentUser("tenantId") tenantId: string,
     @Query("status") status?: string,
     @Query("clientId") clientId?: string,
+    @Query("ids") ids?: string,
     @Res() res?: Response
   ) {
-    const buffer = await this.exportImportService.exportCasesToPdf(tenantId, { status, clientId });
+    const idList = parseIdsParam(ids);
+    const buffer = await this.exportImportService.exportCasesToPdf(tenantId, { status, clientId, ids: idList });
     const filename = `takipler_${new Date().toISOString().split("T")[0]}.pdf`;
 
     res!.setHeader("Content-Type", "application/pdf");

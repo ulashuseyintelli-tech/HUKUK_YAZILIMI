@@ -790,6 +790,7 @@ export default function CasesPage() {
   const [showBulkAssignModal, setShowBulkAssignModal] = useState(false);
   const [bulkStatus, setBulkStatus] = useState("");
   const [bulkAssignee, setBulkAssignee] = useState({ type: "", id: "" });
+  const [exportingCases, setExportingCases] = useState(false);
 
   useEffect(() => {
     loadLookupData();
@@ -1465,12 +1466,38 @@ export default function CasesPage() {
     }
   };
 
+  // Seçili takipleri gerçek backend ucundan (ids filtresiyle) Excel/PDF indir.
+  const exportCases = async (format: 'excel' | 'pdf', ids: string[]) => {
+    if (ids.length === 0) return;
+    setExportingCases(true);
+    try {
+      const params = new URLSearchParams();
+      params.append('ids', ids.join(','));
+      const res = await api.get(`/export-import/cases/${format}?${params.toString()}`, { responseType: 'blob' });
+      const blob = new Blob([res.data], {
+        type: format === 'excel'
+          ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+          : 'application/pdf',
+      });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `takipler_${Date.now()}.${format === 'excel' ? 'xlsx' : 'pdf'}`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+    } catch (e: any) {
+      alert('Dışa aktarma hatası: ' + (e?.message || 'Bilinmeyen hata'));
+    } finally {
+      setExportingCases(false);
+    }
+  };
+
+  // Üst toolbar: seçili takip yoksa uyar, varsa seçilenleri indir.
   const handleBulkExport = async (format: 'excel' | 'pdf') => {
     if (selectedCases.length === 0) {
       alert('Lütfen en az bir takip seçin');
       return;
     }
-    alert(`${selectedCases.length} takip ${format.toUpperCase()} olarak indirilecek (yakında)`);
+    await exportCases(format, selectedCases);
   };
 
   const clearFilters = () => {
@@ -2492,6 +2519,26 @@ export default function CasesPage() {
                           >
                             <FileText className="h-4 w-4" />
                             {processingIds.includes(`${c.id}-xml`) ? 'İndiriliyor...' : 'XML (.xml)'}
+                          </button>
+                          {/* Tek takibi liste olarak (Excel/PDF) indir - /export-import/cases ids filtresi */}
+                          <div className="px-3 py-1.5 text-xs text-muted-foreground font-medium">
+                            Liste Olarak İndir
+                          </div>
+                          <button
+                            onClick={() => { exportCases('excel', [c.id]); setActionMenuOpen(null); }}
+                            disabled={exportingCases}
+                            className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-green-50 w-full text-left text-green-600 disabled:opacity-50"
+                          >
+                            <Download className="h-4 w-4" />
+                            Excel (.xlsx)
+                          </button>
+                          <button
+                            onClick={() => { exportCases('pdf', [c.id]); setActionMenuOpen(null); }}
+                            disabled={exportingCases}
+                            className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-red-50 w-full text-left text-red-600 disabled:opacity-50"
+                          >
+                            <Download className="h-4 w-4" />
+                            PDF (.pdf)
                           </button>
                           <hr className="my-1" />
                           <button

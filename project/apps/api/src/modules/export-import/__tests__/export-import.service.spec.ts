@@ -12,6 +12,7 @@ import {
   buildPdfFilterSubtitle,
   clientDisplayName,
 } from "../export-import.service";
+import { parseIdsParam } from "../export-import.controller";
 
 describe("formatClientTypeLabel", () => {
   it("bilinen türler → TR etiket", () => {
@@ -131,5 +132,52 @@ describe("ExportImportService export buffers (smoke)", () => {
   it("exportClientsToExcel → PK (xlsx zip) imzalı Buffer", async () => {
     const buf = await buildService().exportClientsToExcel("t1");
     expect(buf.subarray(0, 2).toString("latin1")).toBe("PK");
+  });
+});
+
+describe("Takip (cases) export ids filtresi", () => {
+  const buildSvc = (rows: any[] = []) => {
+    const findMany = jest.fn().mockResolvedValue(rows);
+    const svc = new ExportImportService({ case: { findMany } } as any);
+    return { svc, findMany };
+  };
+
+  it("ids verilince prisma.case.findMany where.id={in} + tenantId ile çağrılır (seçili export)", async () => {
+    const { svc, findMany } = buildSvc();
+    await svc.exportCasesToExcel("t1", { ids: ["c1", "c2"] });
+    expect(findMany).toHaveBeenCalledTimes(1);
+    const arg = findMany.mock.calls[0][0];
+    expect(arg.where.tenantId).toBe("t1"); // tenant izolasyonu korunur
+    expect(arg.where.id).toEqual({ in: ["c1", "c2"] });
+  });
+
+  it("ids yoksa where.id EKLENMEZ (tüm tenant takipleri)", async () => {
+    const { svc, findMany } = buildSvc();
+    await svc.exportCasesToPdf("t1", {});
+    const arg = findMany.mock.calls[0][0];
+    expect(arg.where.id).toBeUndefined();
+    expect(arg.where.tenantId).toBe("t1");
+  });
+
+  it("exportCasesToPdf → %PDF imzalı Buffer", async () => {
+    const { svc } = buildSvc([
+      { fileNumber: "2024/1", client: { name: "X Ltd" }, caseStatus: "ACIK", debtors: [] },
+    ]);
+    const buf = await svc.exportCasesToPdf("t1", { ids: ["c1"] });
+    expect(buf.subarray(0, 4).toString("latin1")).toBe("%PDF");
+  });
+});
+
+describe("parseIdsParam", () => {
+  it("virgüllü liste → dizi", () => {
+    expect(parseIdsParam("a,b,c")).toEqual(["a", "b", "c"]);
+  });
+  it("trim + boş parçaları atar", () => {
+    expect(parseIdsParam(" a , , b ")).toEqual(["a", "b"]);
+  });
+  it("undefined/boş/sadece-virgül → undefined (ID filtresi yok)", () => {
+    expect(parseIdsParam(undefined)).toBeUndefined();
+    expect(parseIdsParam("")).toBeUndefined();
+    expect(parseIdsParam(" , , ")).toBeUndefined();
   });
 });
