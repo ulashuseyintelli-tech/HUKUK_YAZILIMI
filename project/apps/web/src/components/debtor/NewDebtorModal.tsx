@@ -27,6 +27,10 @@ interface NewDebtorModalProps {
   editDebtor?: Debtor; // Düzenleme modu için mevcut borçlu
   onSave: (debtor: Debtor) => void;
   onClose: () => void;
+  // PR-D: kimliksiz benzer-isim review'unda "Mevcut kaydı kullan" davranışı caller'a bağlıdır.
+  // Bağlama akışı (DebtorStep) bunu geçer → seçilen mevcut borçlu dosyaya eklenir.
+  // Verilmezse (standalone Borçlular sayfası / detay drawer) buton yalnız modalı kapatır.
+  onUseExisting?: (candidate: { id: string; name: string }) => void;
 }
 
 const CITIES = [
@@ -42,11 +46,13 @@ const CITIES = [
   "Bartın", "Ardahan", "Iğdır", "Yalova", "Karabük", "Kilis", "Osmaniye", "Düzce"
 ];
 
-export function NewDebtorModal({ initialType, editDebtor, onSave, onClose }: NewDebtorModalProps) {
+export function NewDebtorModal({ initialType, editDebtor, onSave, onClose, onUseExisting }: NewDebtorModalProps) {
   const isEditMode = !!editDebtor;
   const [type, setType] = useState<DebtorType>(editDebtor?.type || initialType);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  // PR-D: kimliksiz benzer-isim review (otomatik merge/block YOK → kullanıcı kararı)
+  const [similarReview, setSimilarReview] = useState<{ id: string; name: string }[] | null>(null);
 
   // Individual fields
   const [firstName, setFirstName] = useState(editDebtor?.firstName || "");
@@ -130,7 +136,13 @@ export function NewDebtorModal({ initialType, editDebtor, onSave, onClose }: New
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    await submitDebtor(false);
+  };
+
+  // forceCreate=true → "ayrı kişi olarak kaydet" (benzer-isim review'ını bilinçli geç).
+  const submitDebtor = async (forceCreate: boolean) => {
     setError("");
+    setSimilarReview(null);
 
     // Validation
     if (type === DebtorType.INDIVIDUAL && (!firstName || !lastName)) {
@@ -215,11 +227,16 @@ export function NewDebtorModal({ initialType, editDebtor, onSave, onClose }: New
       if (isEditMode && editDebtor?.id) {
         res = await api.patch(`/debtors/${editDebtor.id}`, payload);
       } else {
-        res = await api.post("/debtors", payload);
+        res = await api.post("/debtors", { ...payload, forceCreate });
       }
       onSave(res.data?.data || res.data);
     } catch (err: any) {
-      setError(err.response?.data?.message || err.message || "Borçlu kaydedilemedi");
+      // PR-D: kimliksiz benzer-isim → review diyaloğu (otomatik kaydetme yok).
+      if (err?.body?.code === "SIMILAR_NAME_REVIEW") {
+        setSimilarReview(err.body.candidates || []);
+        return;
+      }
+      setError(err?.body?.message || err.message || "Borçlu kaydedilemedi");
     } finally {
       setSaving(false);
     }
@@ -228,6 +245,58 @@ export function NewDebtorModal({ initialType, editDebtor, onSave, onClose }: New
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      {/* PR-D: benzer-isim review diyaloğu (kimliksiz borçlu, otomatik karar YOK) */}
+      {similarReview && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5">
+            <h3 className="text-base font-semibold text-gray-900 mb-2">Benzer isimli borçlu mevcut</h3>
+            <p className="text-sm text-gray-600 mb-2">
+              Aşağıdaki kayıt(lar) aynı isimde. Kimlik (TCKN/VKN) girilmediği için otomatik birleştirme yapılmaz —
+              <b> mevcut kaydı kullanabilir</b> veya <b>ayrı bir kişi olarak yeni kayıt</b> açabilirsiniz.
+            </p>
+            {!onUseExisting && (
+              <ul className="text-sm text-gray-800 bg-gray-50 rounded-lg p-2 mb-4 max-h-32 overflow-y-auto">
+                {similarReview.map((c) => (
+                  <li key={c.id} className="py-0.5">• {c.name}</li>
+                ))}
+              </ul>
+            )}
+            <div className="flex flex-col gap-2">
+              {onUseExisting ? (
+                // Bağlama akışı: hangi mevcut kaydın seçileceği kullanıcıya bırakılır (çoklu aday olabilir).
+                similarReview.map((c) => (
+                  <button
+                    key={c.id}
+                    onClick={() => { setSimilarReview(null); onUseExisting(c); }}
+                    className="w-full px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm hover:bg-emerald-700 text-left"
+                  >
+                    Bunu kullan: {c.name}
+                  </button>
+                ))
+              ) : (
+                <button
+                  onClick={() => { setSimilarReview(null); onClose(); }}
+                  className="w-full px-3 py-2 rounded-lg bg-emerald-600 text-white text-sm hover:bg-emerald-700"
+                >
+                  Mevcut kaydı kullan
+                </button>
+              )}
+              <button
+                onClick={() => { setSimilarReview(null); submitDebtor(true); }}
+                className="w-full px-3 py-2 rounded-lg bg-amber-500 text-white text-sm hover:bg-amber-600"
+              >
+                Ayrı kişi olarak kaydet
+              </button>
+              <button
+                onClick={() => setSimilarReview(null)}
+                className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm hover:bg-gray-200"
+              >
+                Vazgeç
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b">
