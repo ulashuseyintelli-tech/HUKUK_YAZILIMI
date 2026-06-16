@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 import { LawyerRole, LawyerRank } from "@prisma/client";
+import { normalizePersonName } from "@/common/name-match.util";
 
 // Rol'e göre varsayılan unvan/sıfat
 const DEFAULT_TITLES: Record<string, string> = {
@@ -148,6 +149,24 @@ export class LawyerService {
       canModifyOtherPermissions?: boolean;
     }
   ) {
+    // PR-AUDIT: duplicate guard — aynı baro no/TCKN VEYA aynı ad-soyad → yeni AÇMA, mevcut döndür.
+    // (Eskiden guard yoktu → "Ulaş Hüseyin Telli" gibi mükerrer avukat açılıyordu → yetki/atama karışıklığı.)
+    const wantName = normalizePersonName(data.name, data.surname);
+    const allLawyers = await this.prisma.lawyer.findMany({ where: { tenantId } });
+    const dup = allLawyers.find(
+      (l) =>
+        (data.barNumber && l.barNumber === data.barNumber) ||
+        (data.tckn && l.tckn === data.tckn) ||
+        (!!wantName && normalizePersonName(l.name, l.surname) === wantName),
+    );
+    if (dup) {
+      const wasReactivated = (dup as any).isActive === false;
+      if (wasReactivated) {
+        await this.prisma.lawyer.update({ where: { id: dup.id }, data: { isActive: true } });
+      }
+      return { ...(dup as any), isActive: true, _existingReturned: true, _reactivated: wasReactivated };
+    }
+
     // Office'i al veya oluştur
     let office = await this.prisma.office.findUnique({
       where: { tenantId },

@@ -251,7 +251,11 @@ export default function OfficeSettingsPage() {
     setSaving(true);
     try {
       if (editingLawyer?.id) await api.put(`/lawyers/${editingLawyer.id}`, data);
-      else await api.post("/lawyers", data);
+      else {
+        const res = await api.post("/lawyers", data);
+        const body = (res as any)?.data?.data ?? (res as any)?.data;
+        if (body?._existingReturned) alert("Bu avukat zaten kayıtlı; yeni kayıt açılmadı, mevcut kayıt kullanıldı.");
+      }
       await loadOffice(); setShowLawyerModal(false); setEditingLawyer(null); showSaved();
     } catch (e) { console.error(e); } finally { setSaving(false); }
   };
@@ -279,7 +283,11 @@ export default function OfficeSettingsPage() {
     setSaving(true);
     try {
       if (editingStaff?.id) await api.put(`/staff/${editingStaff.id}`, data);
-      else await api.post("/staff", data);
+      else {
+        const res = await api.post("/staff", data);
+        const body = (res as any)?.data?.data ?? (res as any)?.data;
+        if (body?._existingReturned) alert("Bu personel zaten kayıtlı; yeni kayıt açılmadı, mevcut kayıt kullanıldı.");
+      }
       await loadStaff(); setShowStaffModal(false); setEditingStaff(null); showSaved();
     } catch (e) { console.error(e); } finally { setSaving(false); }
   };
