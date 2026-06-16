@@ -54,14 +54,16 @@ describe("PoaService.create — idempotency", () => {
 
   const baseDto = { clientId: "cli1", notaryName: "BÜLENT ÖVEN", dateIssued: new Date("2026-01-12") };
 
-  it("aynı client+noter+tarih aktif varsa → YENİ kayıt AÇMAZ, mevcut döner", async () => {
+  it("aynı client+noter+tarih aktif varsa → YENİ kayıt AÇMAZ, mevcut döner + _suppressedDuplicate bayrağı (PR-2a)", async () => {
     const { svc, prisma } = build([
       { id: "poa-existing", notaryName: "BÜLENT ÖVEN", dateIssued: new Date("2026-01-12"), poaNumber: "48", notaryCity: null },
     ]);
 
-    await svc.create({ ...baseDto, poaNumber: "00468" } as any, "t1");
+    const res = await svc.create({ ...baseDto, poaNumber: "00468" } as any, "t1");
 
     expect(prisma.clientPowerOfAttorney.create).not.toHaveBeenCalled();
+    expect((res as any)._suppressedDuplicate).toBe(true); // PR-2a: UX sinyali
+    expect((res as any).id).toBe("poa-existing"); // mevcut kayıt döner
   });
 
   it("eşleşmede BOŞ alan zenginleşir (update çağrılır), poaNumber DOLU ezilmez", async () => {

@@ -635,15 +635,19 @@ export default function NewCasePage() {
         }
       }
       
-      await api.post("/poa", poaData);
-      
+      const poaRes = await api.post("/poa", poaData);
+      // PR-2a: aynı vekalet zaten kayıtlıysa backend yeni açmaz; mesajı buna göre ver.
+      const poaSuppressed = poaRes?.data?._suppressedDuplicate || poaRes?.data?.data?._suppressedDuplicate;
+
       // 3. Müvekkil listesini yenile ve seçili olarak ekle
       const clientsRes = await api.get("/clients");
       setExistingClients(clientsRes.data?.data || []);
       addExistingCreditor(savedClient);
-      
+
       // 4. Bilgi mesajı göster
-      alert(`✅ Müvekkil "${savedClient.displayName}" ve vekalet kaydı başarıyla oluşturuldu!\n\nŞimdi takip türünü seçebilirsiniz.`);
+      alert(poaSuppressed
+        ? `✅ Müvekkil "${savedClient.displayName}" kaydedildi.\n\nBu vekalet zaten kayıtlıydı; yeni kayıt açılmadı, mevcut kayıt kullanıldı.\n\nŞimdi takip türünü seçebilirsiniz.`
+        : `✅ Müvekkil "${savedClient.displayName}" ve vekalet kaydı başarıyla oluşturuldu!\n\nŞimdi takip türünü seçebilirsiniz.`);
       
     } catch (err: any) {
       alert(`Hata: ${err.message || "Müvekkil veya vekalet oluşturulamadı"}`);

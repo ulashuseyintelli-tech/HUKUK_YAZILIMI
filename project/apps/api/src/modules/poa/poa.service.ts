@@ -167,7 +167,10 @@ export class PoaService {
         }
         // NOT: lawyerIds eklenmez — addLawyers createMany dedupe'siz; suppress yolunda çağırmak
         // mükerrer PoaLawyer üretir (fix'in amacına aykırı). Tarama akışı zaten lawyerIds göndermez.
-        return this.findOne(match.id, tenantId);
+        const existing = await this.findOne(match.id, tenantId);
+        // PR-2a: kullanıcıya "mükerrer bastırıldı" sinyali. TRANSIENT alan (persist edilmez,
+        // API kontratı bozulmaz) → frontend bilgilendirici notice gösterir.
+        return { ...(existing as any), _suppressedDuplicate: true };
       }
     }
 
