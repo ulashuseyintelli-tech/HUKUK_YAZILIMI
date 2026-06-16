@@ -53,6 +53,8 @@ export function NewDebtorModal({ initialType, editDebtor, onSave, onClose, onUse
   const [error, setError] = useState("");
   // PR-D: kimliksiz benzer-isim review (otomatik merge/block YOK → kullanıcı kararı)
   const [similarReview, setSimilarReview] = useState<{ id: string; name: string }[] | null>(null);
+  // PR-U2: düzenleme (update) sırasında benzer-isim review → 2 buton (güncelle/vazgeç). Create'tekinden ayrı.
+  const [updateReview, setUpdateReview] = useState<{ id: string; name: string }[] | null>(null);
 
   // Individual fields
   const [firstName, setFirstName] = useState(editDebtor?.firstName || "");
@@ -136,13 +138,15 @@ export function NewDebtorModal({ initialType, editDebtor, onSave, onClose, onUse
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    await submitDebtor(false);
+    await submitDebtor({});
   };
 
-  // forceCreate=true → "ayrı kişi olarak kaydet" (benzer-isim review'ını bilinçli geç).
-  const submitDebtor = async (forceCreate: boolean) => {
+  // create: forceCreate=true → "ayrı kişi olarak kaydet". update: confirmSimilarNameUpdate=true →
+  // "benzerliğe rağmen güncelle". Her ikisi de ilgili benzer-isim review'ını bilinçli geçer.
+  const submitDebtor = async (opts: { forceCreate?: boolean; confirmSimilarNameUpdate?: boolean } = {}) => {
     setError("");
     setSimilarReview(null);
+    setUpdateReview(null);
 
     // Validation
     if (type === DebtorType.INDIVIDUAL && (!firstName || !lastName)) {
@@ -225,15 +229,17 @@ export function NewDebtorModal({ initialType, editDebtor, onSave, onClose, onUse
 
       let res;
       if (isEditMode && editDebtor?.id) {
-        res = await api.patch(`/debtors/${editDebtor.id}`, payload);
+        // PR-U2: @Put(":id") rotası (eski api.patch → PATCH rotası yoktu, 404 oluyordu).
+        res = await api.put(`/debtors/${editDebtor.id}`, { ...payload, confirmSimilarNameUpdate: opts.confirmSimilarNameUpdate });
       } else {
-        res = await api.post("/debtors", { ...payload, forceCreate });
+        res = await api.post("/debtors", { ...payload, forceCreate: opts.forceCreate });
       }
       onSave(res.data?.data || res.data);
     } catch (err: any) {
-      // PR-D: kimliksiz benzer-isim → review diyaloğu (otomatik kaydetme yok).
+      // benzer-isim → review diyaloğu (otomatik kaydetme yok). create=3 buton, update=2 buton.
       if (err?.body?.code === "SIMILAR_NAME_REVIEW") {
-        setSimilarReview(err.body.candidates || []);
+        if (isEditMode) setUpdateReview(err.body.candidates || []);
+        else setSimilarReview(err.body.candidates || []);
         return;
       }
       setError(err?.body?.message || err.message || "Borçlu kaydedilemedi");
@@ -282,13 +288,44 @@ export function NewDebtorModal({ initialType, editDebtor, onSave, onClose, onUse
                 </button>
               )}
               <button
-                onClick={() => { setSimilarReview(null); submitDebtor(true); }}
+                onClick={() => { setSimilarReview(null); submitDebtor({ forceCreate: true }); }}
                 className="w-full px-3 py-2 rounded-lg bg-amber-500 text-white text-sm hover:bg-amber-600"
               >
                 Ayrı kişi olarak kaydet
               </button>
               <button
                 onClick={() => setSimilarReview(null)}
+                className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm hover:bg-gray-200"
+              >
+                Vazgeç
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* PR-U2: düzenleme (update) benzer-isim review — 2 buton (güncelle/vazgeç; merge YOK) */}
+      {updateReview && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5">
+            <h3 className="text-base font-semibold text-gray-900 mb-2">Benzer isimli borçlu mevcut</h3>
+            <p className="text-sm text-gray-600 mb-2">
+              Aşağıdaki kayıt(lar) aynı isimde. Kimlik (TCKN/VKN) girilmediği için otomatik birleştirme yapılmaz.
+              Yine de <b>bu kaydı güncellemek</b> istiyor musunuz?
+            </p>
+            <ul className="text-sm text-gray-800 bg-gray-50 rounded-lg p-2 mb-4 max-h-32 overflow-y-auto">
+              {updateReview.map((c) => (
+                <li key={c.id} className="py-0.5">• {c.name}</li>
+              ))}
+            </ul>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => { setUpdateReview(null); submitDebtor({ confirmSimilarNameUpdate: true }); }}
+                className="w-full px-3 py-2 rounded-lg bg-amber-500 text-white text-sm hover:bg-amber-600"
+              >
+                Benzerliğe rağmen güncelle
+              </button>
+              <button
+                onClick={() => setUpdateReview(null)}
                 className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm hover:bg-gray-200"
               >
                 Vazgeç

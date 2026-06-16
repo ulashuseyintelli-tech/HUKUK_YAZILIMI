@@ -527,6 +527,8 @@ export class DebtorService {
       }, id);
       if (duplicate) {
         throw new ConflictException({
+          // PR-U2: create ile tutarlı code (frontend yapısal ayırt etsin). confirmSimilarNameUpdate GEÇMEZ.
+          code: "DUPLICATE_IDENTITY",
           message: "Bu kimlik numarasına sahip başka bir borçlu mevcut",
           existingDebtor: duplicate,
         });
@@ -536,7 +538,7 @@ export class DebtorService {
     // Computed `name` ve `identityNo` TEK KAYNAK türevidir → her update'te mevcut+dto birleşiminden
     // YENİDEN hesaplanır (PR-D1). `??` ile yalnız dto'da gelmeyen alan mevcuttan alınır.
     // PR-D2b: estateHeirs bir RELATION → scalar update'e karışmasın diye dto'dan ayrıştırılır.
-    const { estateHeirs, ...debtorDto } = dto as any;
+    const { estateHeirs, confirmSimilarNameUpdate, ...debtorDto } = dto as any;
     const updateData: any = { ...debtorDto };
     const merged = {
       type: dto.type ?? existing.type,
@@ -553,6 +555,30 @@ export class DebtorService {
     const { name, identityNo } = this.computeNameAndIdentity(merged as CreateDebtorDto);
     updateData.name = name;
     updateData.identityNo = identityNo;
+
+    // PR-U2: UPDATE-PATH isim review (create guard'ının edit ikizi). İsim GERÇEKTEN değiştiyse +
+    // kesin kimlik YOKSA + başka kayıtta aynı normalize-isim varsa + confirmSimilarNameUpdate yoksa
+    // → 409 SIMILAR_NAME_REVIEW (self HARİÇ). "Ulaş Telli"→"Ulaş Hüseyin Telli" yan kapısını kapatır.
+    const wantNameU = normalizePersonName(name);
+    const nameChangedU = wantNameU !== normalizePersonName(existing.name);
+    const hasIdentityU = !!(merged.tckn || merged.vkn || merged.detsisNo);
+    if (nameChangedU && !hasIdentityU && !confirmSimilarNameUpdate && wantNameU) {
+      const allU = await this.prisma.debtor.findMany({
+        where: { tenantId, id: { not: id } },
+        select: { id: true, name: true },
+      });
+      const candidatesU = allU
+        .filter((d) => normalizePersonName(d.name) === wantNameU)
+        .map((d) => ({ id: d.id, name: d.name }));
+      if (candidatesU.length > 0) {
+        throw new ConflictException({
+          code: "SIMILAR_NAME_REVIEW",
+          message:
+            "Benzer isimli borçlu mevcut. Benzerliğe rağmen bu kaydı güncelleyebilir veya vazgeçebilirsiniz.",
+          candidates: candidatesU,
+        });
+      }
+    }
 
     // PR-D2b: estateHeirs gönderildiyse mirasçı listesini ATOMİK replace et (deleteMany+create
     // + scalar update aynı transaction'da → yarım güncelleme riski yok). Gönderilmezse dokunma.
