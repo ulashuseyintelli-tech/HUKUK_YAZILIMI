@@ -311,6 +311,12 @@ export class UpdateDebtorDto {
   @IsOptional()
   type?: DebtorType;
 
+  // PR-U2: isim DEĞİŞİRKEN benzer-isim review'ını bilinçli geç ("Benzerliğe rağmen güncelle").
+  // Yalnız isim-review'ı geçer; kesin kimlik (TCKN/VKN) collision block'unu GEÇMEZ.
+  @IsBoolean()
+  @IsOptional()
+  confirmSimilarNameUpdate?: boolean;
+
   // === INDIVIDUAL ===
   @IsString()
   @IsOptional()
