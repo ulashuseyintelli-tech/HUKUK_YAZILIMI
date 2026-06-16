@@ -76,6 +76,8 @@ export default function OfficeSettingsPage() {
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
   // PR-S: kimliksiz benzer-isim review (personel) — { candidates, data(yeniden POST için form) }
   const [staffSimilar, setStaffSimilar] = useState<{ candidates: { id: string; name: string }[]; data: any } | null>(null);
+  // PR-U3: personel UPDATE-path benzer-isim review — 2 buton (güncelle/vazgeç). Create'ten ayrı.
+  const [staffUpdateReview, setStaffUpdateReview] = useState<{ candidates: { id: string; name: string }[]; data: any } | null>(null);
   const [officeForm, setOfficeForm] = useState({ name: "", address: "", city: "", district: "", phone: "", email: "", barAssociation: "" });
   const [smtpForm, setSmtpForm] = useState<SmtpSettings>({ smtpHost: "", smtpPort: 587, smtpUser: "", smtpPass: "", smtpSecure: false, smtpFromName: "", smtpFromEmail: "" });
   const [smsForm, setSmsForm] = useState({ smsProvider: "", smsApiKey: "", smsApiSecret: "", smsSender: "" });
@@ -291,25 +293,31 @@ export default function OfficeSettingsPage() {
     try { await api.delete(`/office/bank-accounts/${id}`); await loadOffice(); showSaved(); } catch (e) { console.error(e); }
   };
 
-  // PR-S: kimliksiz benzer-isim review (otomatik merge/block YOK → kullanıcı kararı)
-  const submitStaff = async (data: any, forceCreate: boolean) => {
+  // PR-S/PR-U3: benzer-isim review. create: forceCreate ("Ayrı kişi olarak kaydet").
+  // update: confirmSimilarNameUpdate ("Benzerliğe rağmen güncelle").
+  const submitStaff = async (data: any, opts: { forceCreate?: boolean; confirmSimilarNameUpdate?: boolean } = {}) => {
     setSaving(true);
     try {
-      if (editingStaff?.id) await api.put(`/staff/${editingStaff.id}`, data);
+      if (editingStaff?.id) await api.put(`/staff/${editingStaff.id}`, { ...data, confirmSimilarNameUpdate: opts.confirmSimilarNameUpdate });
       else {
-        const res = await api.post("/staff", { ...data, forceCreate });
+        const res = await api.post("/staff", { ...data, forceCreate: opts.forceCreate });
         const body = (res as any)?.data?.data ?? (res as any)?.data;
         if (body?._existingReturned) alert("Bu personel zaten kayıtlı; yeni kayıt açılmadı, mevcut kayıt kullanıldı.");
       }
-      await loadStaff(); setShowStaffModal(false); setEditingStaff(null); setStaffSimilar(null); showSaved();
+      await loadStaff(); setShowStaffModal(false); setEditingStaff(null); setStaffSimilar(null); setStaffUpdateReview(null); showSaved();
     } catch (e: any) {
-      // PR-S: kimliksiz benzer-isim → review diyaloğu (otomatik kaydetme yok).
-      if (e?.body?.code === "SIMILAR_NAME_REVIEW") { setStaffSimilar({ candidates: e.body.candidates || [], data }); return; }
+      // benzer-isim → review diyaloğu (otomatik kaydetme yok). create=3 buton, update=2 buton.
+      if (e?.body?.code === "SIMILAR_NAME_REVIEW") {
+        if (editingStaff?.id) setStaffUpdateReview({ candidates: e.body.candidates || [], data });
+        else setStaffSimilar({ candidates: e.body.candidates || [], data });
+        return;
+      }
+      if (e?.body?.code === "DUPLICATE_IDENTITY") { alert(e.body.message || "Bu TCKN ile kayıtlı başka bir personel mevcut."); return; }
       console.error(e);
     } finally { setSaving(false); }
   };
 
-  const handleSaveStaff = (data: any) => submitStaff(data, false);
+  const handleSaveStaff = (data: any) => submitStaff(data, {});
 
   const handleDeleteStaff = async (id: string) => {
     if (!confirm("Silmek istediğinize emin misiniz?")) return;
@@ -786,13 +794,45 @@ export default function OfficeSettingsPage() {
                 Mevcut kaydı kullan
               </button>
               <button
-                onClick={() => submitStaff(staffSimilar.data, true)}
+                onClick={() => submitStaff(staffSimilar.data, { forceCreate: true })}
                 className="w-full px-3 py-2 rounded-lg bg-amber-500 text-white text-sm hover:bg-amber-600"
               >
                 Ayrı kişi olarak kaydet
               </button>
               <button
                 onClick={() => setStaffSimilar(null)}
+                className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm hover:bg-gray-200"
+              >
+                Vazgeç
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PR-U3: personel update-path benzer-isim review (2 buton: güncelle / vazgeç; merge YOK) */}
+      {staffUpdateReview && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5">
+            <h3 className="text-base font-semibold text-gray-900 mb-2">Benzer isimli personel mevcut</h3>
+            <p className="text-sm text-gray-600 mb-2">
+              Aşağıdaki kayıt(lar) aynı isimde. Kimlik (TCKN) girilmediği için otomatik birleştirme yapılmaz.
+              Yine de <b>bu kaydı güncellemek</b> istiyor musunuz?
+            </p>
+            <ul className="text-sm text-gray-800 bg-gray-50 rounded-lg p-2 mb-4 max-h-32 overflow-y-auto">
+              {staffUpdateReview.candidates.map((c) => (
+                <li key={c.id} className="py-0.5">• {c.name}</li>
+              ))}
+            </ul>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => submitStaff(staffUpdateReview.data, { confirmSimilarNameUpdate: true })}
+                className="w-full px-3 py-2 rounded-lg bg-amber-500 text-white text-sm hover:bg-amber-600"
+              >
+                Benzerliğe rağmen güncelle
+              </button>
+              <button
+                onClick={() => setStaffUpdateReview(null)}
                 className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm hover:bg-gray-200"
               >
                 Vazgeç
