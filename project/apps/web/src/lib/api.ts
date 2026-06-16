@@ -685,6 +685,27 @@ class ApiClient {
   }
 
   /**
+   * PR-D4e-7: Dosyanın haciz gönderim KARAR-ANI audit kayıtları (read-only, salt görüntü).
+   * Mevcut GET /audit/logs yeniden kullanılır (tenant-scoped); yeni endpoint yok.
+   */
+  async getCaseHacizAudits(caseId: string, page = 1, limit = 20) {
+    const params = new URLSearchParams({
+      entityType: "CASE",
+      entityId: caseId,
+      action: "HACIZ_REQUEST_SUBMITTED",
+      page: String(page),
+      limit: String(limit),
+    });
+    return this.request<{
+      logs: HacizAuditLog[];
+      total: number;
+      page: number;
+      limit: number;
+      totalPages: number;
+    }>(`/audit/logs?${params.toString()}`);
+  }
+
+  /**
    * Cek tazminati bilgisi
    */
   async getCheckCompensationInfo() {
@@ -2716,6 +2737,27 @@ class ApiClient {
 
 // PR-D4e-4: haciz öncesi risk seviyesi (read-model; blok değil, karar destek).
 export type PreHacizRiskLevel = "YOK" | "DUSUK" | "ORTA" | "YUKSEK";
+
+// PR-D4e-7: haciz gönderim karar-anı audit snapshot'ı (AuditLog.metadata şekli).
+export interface HacizAuditLog {
+  id: string;
+  action: string;
+  entityType: string;
+  entityId?: string;
+  userId?: string | null;
+  userName?: string | null;
+  description?: string | null;
+  createdAt: string;
+  metadata?: {
+    targetType?: string;
+    amount?: number;
+    uyapRequestId?: string;
+    cpeTraceId?: string | null;
+    overallLevel?: PreHacizRiskLevel;
+    debtors?: { debtorId: string; name: string; level: PreHacizRiskLevel; reasonIds: string[] }[];
+    cpeWarnings?: any[];
+  } | null;
+}
 
 export interface ValidationError {
   code: string;
