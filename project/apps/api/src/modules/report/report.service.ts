@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CollectionService } from "../collection/collection.service";
+import { ValidationGateService } from "../validation-gate/validation-gate.service"; // D4e-8: pre-haciz risk teşhisi
 import {
   CaseDebtReportResult,
   InterestReportResult,
@@ -12,6 +13,7 @@ export class ReportService {
   constructor(
     private prisma: PrismaService,
     private collectionService: CollectionService,
+    private validationGate: ValidationGateService,
   ) {}
 
   // 1. Müvekkil Bazlı Durum Raporu
@@ -929,6 +931,74 @@ export class ReportService {
       allTimeTotal: Number(totalCollections?._sum?.amount || 0),
       pendingTotal: Number(pendingCollections?._sum?.amount || 0),
       pendingCount: pendingCollections?._count?.id || 0,
+    };
+  }
+
+  /**
+   * D4e-8 — Pre-haciz risk DAĞILIM/TEŞHİS raporu (READ-ONLY, ölçüm). Mevcut production logic'i
+   * (checkPreHacizIntelligence) örneklem dosyalar üzerinde YENİDEN ÇALIŞTIRIP dağılım çıkarır.
+   * Kalıcı yazım YOK, blok YOK, ağırlık/eşik DEĞİŞMEZ. Kör tarama YOK: limit zorunlu cap'li.
+   * İlk sürüm metrikleri: overallLevel dağılımı + debtorLevel dağılımı + reasonId frekansı +
+   * taranan dosya/borçlu sayısı. (Signal-confirmation proxy AYRI/sonraki iş.)
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ReportController.getPreHacizRiskDistribution() → GET /reports/pre-haciz-risk-distribution (ADMIN)
+   * </remarks>
+   */
+  async getPreHacizRiskDistribution(
+    tenantId: string,
+    opts?: { limit?: number; status?: string },
+  ) {
+    // Cap: kör tarama yok. Default 100, üst sınır 500.
+    const limit = Math.min(Math.max(1, opts?.limit ?? 100), 500);
+    // Default aktif/otomasyon-açık statüler; opsiyonel tek statü override.
+    const statuses = opts?.status ? [opts.status] : ["DERDEST", "ISLEMDE"];
+
+    const cases = await this.prisma.case.findMany({
+      where: { tenantId, caseStatus: { in: statuses as any } },
+      select: { id: true },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+    });
+
+    const caseIds = cases.map((c) => c.id);
+    // Taranan dosyaların TOPLAM borçlu sayısı (flagged-oran bağlamı için tek sorgu).
+    const totalDebtorCount = caseIds.length
+      ? await this.prisma.caseDebtor.count({ where: { caseId: { in: caseIds } } })
+      : 0;
+
+    const overallLevelDistribution: Record<string, number> = { YUKSEK: 0, ORTA: 0, DUSUK: 0, YOK: 0 };
+    const debtorLevelDistribution: Record<string, number> = { YUKSEK: 0, ORTA: 0, DUSUK: 0 };
+    const reasonFrequency: Record<string, number> = {};
+    let flaggedDebtorCount = 0;
+    let evaluatedCaseCount = 0;
+
+    for (const c of cases) {
+      try {
+        const risk = await this.validationGate.checkPreHacizIntelligence(tenantId, c.id);
+        overallLevelDistribution[risk.overallLevel] = (overallLevelDistribution[risk.overallLevel] || 0) + 1;
+        for (const d of risk.debtors) {
+          flaggedDebtorCount++;
+          debtorLevelDistribution[d.level] = (debtorLevelDistribution[d.level] || 0) + 1;
+          for (const r of d.reasons) {
+            reasonFrequency[r.id] = (reasonFrequency[r.id] || 0) + 1;
+          }
+        }
+        evaluatedCaseCount++; // başarıyla değerlendirilen dosya
+      } catch {
+        // best-effort: tek dosya hatası raporu düşürmez (teşhis aracı).
+      }
+    }
+
+    return {
+      params: { limit, statuses },
+      scannedCaseCount: cases.length,
+      evaluatedCaseCount,
+      totalDebtorCount,
+      flaggedDebtorCount,
+      overallLevelDistribution,
+      debtorLevelDistribution,
+      reasonFrequency,
     };
   }
 }

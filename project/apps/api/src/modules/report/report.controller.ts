@@ -57,6 +57,27 @@ export class ReportController {
     return { success: true, data };
   }
 
+  /**
+   * D4e-8 — Pre-haciz risk DAĞILIM/TEŞHİS raporu (READ-ONLY ölçüm). ADMIN gate: kalibrasyon
+   * verisi yönetimseldir. Kör tarama yok: limit cap'li (default 100, max 500). Ağırlık/eşik DEĞİŞMEZ.
+   */
+  @Get('pre-haciz-risk-distribution')
+  async getPreHacizRiskDistribution(
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('role') role: string,
+    @Query('limit') limit?: string,
+    @Query('status') status?: string,
+  ) {
+    if (role !== 'ADMIN') {
+      throw new ForbiddenException('Bu rapora yalnız yönetici (ADMIN) erişebilir');
+    }
+    const data = await this.service.getPreHacizRiskDistribution(tenantId, {
+      limit: limit ? parseInt(limit, 10) : undefined,
+      status,
+    });
+    return { success: true, data };
+  }
+
   // Risk yönetimi raporu
   @Get('risk')
   async getRiskReport(

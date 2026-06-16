@@ -3,11 +3,13 @@ import { ReportService } from './report.service';
 import { ReportController } from './report.controller';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { CollectionModule } from '../collection/collection.module';
+import { ValidationGateModule } from '../validation-gate/validation-gate.module'; // D4e-8: pre-haciz risk dağılım teşhisi
 
 @Module({
   // G3b: CollectionModule → ReportService, kanonik mahsup kırılımı için
   // CollectionService.getCollectedBreakdown'ı kullanır.
-  imports: [PrismaModule, CollectionModule],
+  // D4e-8: ValidationGateModule → checkPreHacizIntelligence yeniden çalıştırma (cycle yok: yalnız Prisma).
+  imports: [PrismaModule, CollectionModule, ValidationGateModule],
   controllers: [ReportController],
   providers: [ReportService],
   exports: [ReportService],
