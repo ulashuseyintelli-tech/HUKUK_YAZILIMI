@@ -55,6 +55,17 @@ describe("scoreDebtorSignals — seviye = en yüksek önem", () => {
     expect(r.level).toBe("DUSUK");
     expect(r.score).toBe(10);
   });
+
+  it("D4e-5 yeni sinyaller YÜKSEK: NO_ADDRESS=40, VERIFIED_ABSENT_RECENT=40", () => {
+    expect(scoreDebtorSignals("d1", "Ali", [sig("INTEL_NO_ADDRESS")])).toMatchObject({ level: "YUKSEK", score: 40 });
+    expect(scoreDebtorSignals("d1", "Ali", [sig("INTEL_VERIFIED_ABSENT_RECENT")])).toMatchObject({ level: "YUKSEK", score: 40 });
+  });
+
+  it("VERIFIED_ABSENT_RECENT + 90D_MISSING birlikte → YÜKSEK, score 60 (absent S1'i susturmaz)", () => {
+    const r = scoreDebtorSignals("d1", "Ali", [sig("INTEL_90D_MISSING"), sig("INTEL_VERIFIED_ABSENT_RECENT")]);
+    expect(r.level).toBe("YUKSEK");
+    expect(r.score).toBe(60);
+  });
 });
 
 describe("buildPreHacizRisk — sinyalsiz borçlu elenir + risk azalan sıralı + overall rollup", () => {

@@ -8,10 +8,12 @@
  * Net sınır: SKOR BLOK DEĞİL, karar destektir. Skor read'de hesaplanır, hiçbir yere yazılmaz.
  * Ham sayısal skor UI'da gösterilmez (D-2); yalnız sıralama + hesap içi kullanılır.
  *
- * Ağırlık şeması (D-3 kararı):
+ * Ağırlık şeması (D-3 kararı + D4e-5 yeni sinyaller):
  *   INTEL_ADDRESS_UNVERIFIED            = YÜKSEK
  *   INTEL_ETEBLIGAT_NO_PHYSICAL_VERIFY  = YÜKSEK
- *   INTEL_90D_MISSING                   = ORTA
+ *   INTEL_NO_ADDRESS                    = YÜKSEK  (D4e-5/D5-Q1: adressiz borçlu = haciz riski)
+ *   INTEL_VERIFIED_ABSENT_RECENT        = YÜKSEK  (D4e-5/D5-Q2: borçlu orada YOK kanıtı = risk, "var" değil)
+ *   INTEL_90D_MISSING                   = ORTA    (D4e-5/D5-Q3: yalnız VERIFIED_PRESENT sust, PENDING/IN_FIELD susturmaz)
  *
  * <remarks>
  * Çağrıldığı yerler:
@@ -26,6 +28,8 @@ export type RiskLevel = "YOK" | "DUSUK" | "ORTA" | "YUKSEK";
 export const PRE_HACIZ_SIGNAL_WEIGHTS: Record<string, { severity: RiskSeverity; points: number }> = {
   INTEL_ADDRESS_UNVERIFIED: { severity: "HIGH", points: 40 },
   INTEL_ETEBLIGAT_NO_PHYSICAL_VERIFY: { severity: "HIGH", points: 40 },
+  INTEL_NO_ADDRESS: { severity: "HIGH", points: 40 },
+  INTEL_VERIFIED_ABSENT_RECENT: { severity: "HIGH", points: 40 },
   INTEL_90D_MISSING: { severity: "MEDIUM", points: 20 },
 };
 
