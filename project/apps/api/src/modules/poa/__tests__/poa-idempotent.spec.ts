@@ -6,10 +6,20 @@
 
 import { PoaService, normalizeNotaryName, sameIssueDay, buildPoaEnrichment } from "../poa.service";
 
-describe("normalizeNotaryName", () => {
-  it("trim + tek boşluk + TR upper", () => {
-    expect(normalizeNotaryName("  bülent   öven ")).toBe("BÜLENT ÖVEN");
-    expect(normalizeNotaryName("BÜLENT ÖVEN")).toBe("BÜLENT ÖVEN");
+describe("normalizeNotaryName (PR-2b hardening: diakritik + noktalama folding)", () => {
+  it("trim + tek boşluk + uppercase + diakritik folding", () => {
+    expect(normalizeNotaryName("  bülent   öven ")).toBe("BULENT OVEN");
+    expect(normalizeNotaryName("BÜLENT ÖVEN")).toBe("BULENT OVEN");
+  });
+  it("OCR varyansları AYNI sonuca foldlanır (asıl amaç)", () => {
+    const variants = ["BÜLENT ÖVEN", "BÜLENT OVEN", "BÜLENT ÖVEN.", "bülent öven", "BÜLENT  ÖVEN", "Bülent Öven,"];
+    const out = variants.map((v) => normalizeNotaryName(v));
+    expect(new Set(out).size).toBe(1); // hepsi tek değere foldlanır
+    expect(out[0]).toBe("BULENT OVEN");
+  });
+  it("tüm TR diakritikleri: ş/ğ/ü/ö/ç/ı/İ → s/g/u/o/c/i/i", () => {
+    expect(normalizeNotaryName("ŞAHİN ÇAĞLAR")).toBe("SAHIN CAGLAR");
+    expect(normalizeNotaryName("Işıl Gökçe")).toBe("ISIL GOKCE");
   });
   it("boş/undefined → ''", () => {
     expect(normalizeNotaryName(undefined)).toBe("");
