@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { normalizePersonName } from '../../common/name-match.util';
 
 @Injectable()
 export class StaffService {
@@ -23,9 +24,28 @@ export class StaffService {
 
   // Yeni personel ekle
   async create(tenantId: string, data: any) {
+    // PR-AUDIT: duplicate guard — aynı TCKN/e-posta VEYA aynı ad-soyad → yeni AÇMA, mevcut döndür.
+    // (Eskiden guard yoktu → "Fatih engin" gibi mükerrer personel açılıyordu.) Soft-deleted ise
+    // reactivate. Transient bayrak (persist YOK) → frontend bilgilendirir.
+    const wantName = normalizePersonName(data.firstName, data.lastName);
+    const all = await this.prisma.staffMember.findMany({ where: { tenantId } });
+    const match = all.find(
+      (s) =>
+        (data.tckn && s.tckn === data.tckn) ||
+        (data.email && s.email === data.email) ||
+        (!!wantName && normalizePersonName(s.firstName, s.lastName) === wantName),
+    );
+    if (match) {
+      const wasReactivated = match.isActive === false;
+      if (wasReactivated) {
+        await this.prisma.staffMember.update({ where: { id: match.id }, data: { isActive: true } });
+      }
+      return { ...(match as any), isActive: true, _existingReturned: true, _reactivated: wasReactivated };
+    }
+
     // Office ID'yi bul
     const office = await this.prisma.office.findUnique({ where: { tenantId } });
-    
+
     return this.prisma.staffMember.create({
       data: {
         tenantId,
