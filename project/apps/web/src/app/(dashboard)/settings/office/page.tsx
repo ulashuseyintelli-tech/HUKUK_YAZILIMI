@@ -69,6 +69,8 @@ export default function OfficeSettingsPage() {
   const [showBankModal, setShowBankModal] = useState(false);
   const [showStaffModal, setShowStaffModal] = useState(false);
   const [editingLawyer, setEditingLawyer] = useState<Lawyer | null>(null);
+  // PR-U1: avukat UPDATE-path benzer-isim review — { candidates, data(yeniden PUT için) }
+  const [lawyerSimilar, setLawyerSimilar] = useState<{ candidates: { id: string; name: string }[]; data: any } | null>(null);
   const [editingBank, setEditingBank] = useState<BankAccount | null>(null);
   const [editingStaff, setEditingStaff] = useState<StaffMember | null>(null);
   const [staffList, setStaffList] = useState<StaffMember[]>([]);
@@ -249,18 +251,26 @@ export default function OfficeSettingsPage() {
     finally { setTestingSmtp(false); }
   };
 
-  const handleSaveLawyer = async (data: any) => {
+  // PR-U1: confirmSimilarNameUpdate=true → "Benzerliğe rağmen güncelle" (isim review'ını bilinçli geç).
+  const submitLawyer = async (data: any, confirmSimilarNameUpdate: boolean) => {
     setSaving(true);
     try {
-      if (editingLawyer?.id) await api.put(`/lawyers/${editingLawyer.id}`, data);
+      if (editingLawyer?.id) await api.put(`/lawyers/${editingLawyer.id}`, { ...data, confirmSimilarNameUpdate });
       else {
         const res = await api.post("/lawyers", data);
         const body = (res as any)?.data?.data ?? (res as any)?.data;
         if (body?._existingReturned) alert("Bu avukat zaten kayıtlı; yeni kayıt açılmadı, mevcut kayıt kullanıldı.");
       }
-      await loadOffice(); setShowLawyerModal(false); setEditingLawyer(null); showSaved();
-    } catch (e) { console.error(e); } finally { setSaving(false); }
+      await loadOffice(); setShowLawyerModal(false); setEditingLawyer(null); setLawyerSimilar(null); showSaved();
+    } catch (e: any) {
+      // PR-U1: isim benzerliği → review diyaloğu (güncellemeyi onayla/vazgeç). Kimlik collision → hard block.
+      if (e?.body?.code === "SIMILAR_NAME_REVIEW") { setLawyerSimilar({ candidates: e.body.candidates || [], data }); return; }
+      if (e?.body?.code === "DUPLICATE_IDENTITY") { alert(e.body.message || "Bu kimlik/baro numarasına sahip başka bir avukat mevcut."); return; }
+      console.error(e);
+    } finally { setSaving(false); }
   };
+
+  const handleSaveLawyer = (data: any) => submitLawyer(data, false);
 
   const handleDeleteLawyer = async (id: string) => {
     if (!confirm("Silmek istediğinize emin misiniz?")) return;
@@ -719,6 +729,38 @@ export default function OfficeSettingsPage() {
 
       {/* Modals */}
       {showLawyerModal && <LawyerModal lawyer={editingLawyer} onSave={handleSaveLawyer} onClose={() => { setShowLawyerModal(false); setEditingLawyer(null); }} saving={saving} />}
+
+      {/* PR-U1: avukat update-path benzer-isim review (2 buton: güncelle / vazgeç; merge YOK) */}
+      {lawyerSimilar && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5">
+            <h3 className="text-base font-semibold text-gray-900 mb-2">Benzer isimli avukat mevcut</h3>
+            <p className="text-sm text-gray-600 mb-2">
+              Aşağıdaki kayıt(lar) aynı isimde. Kimlik (TCKN/baro) girilmediği için otomatik birleştirme yapılmaz.
+              Yine de <b>bu kaydı güncellemek</b> istiyor musunuz?
+            </p>
+            <ul className="text-sm text-gray-800 bg-gray-50 rounded-lg p-2 mb-4 max-h-32 overflow-y-auto">
+              {lawyerSimilar.candidates.map((c) => (
+                <li key={c.id} className="py-0.5">• {c.name}</li>
+              ))}
+            </ul>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => submitLawyer(lawyerSimilar.data, true)}
+                className="w-full px-3 py-2 rounded-lg bg-amber-500 text-white text-sm hover:bg-amber-600"
+              >
+                Benzerliğe rağmen güncelle
+              </button>
+              <button
+                onClick={() => setLawyerSimilar(null)}
+                className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm hover:bg-gray-200"
+              >
+                Vazgeç
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       {showBankModal && <BankModal account={editingBank} onSave={handleSaveBankAccount} onClose={() => { setShowBankModal(false); setEditingBank(null); }} saving={saving} />}
       {showStaffModal && <StaffModal staff={editingStaff} onSave={handleSaveStaff} onClose={() => { setShowStaffModal(false); setEditingStaff(null); }} saving={saving} />}
 

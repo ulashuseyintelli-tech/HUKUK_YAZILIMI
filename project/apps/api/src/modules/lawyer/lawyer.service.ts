@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from "@nestjs/common";
+import { Injectable, NotFoundException, ConflictException } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 import { LawyerRole, LawyerRank } from "@prisma/client";
 import { normalizePersonName } from "@/common/name-match.util";
@@ -242,14 +242,61 @@ export class LawyerService {
       defaultPermissions?: any;
       permissionsLocked?: boolean;
       canModifyOtherPermissions?: boolean;
+      // PR-U1: isim benzerliği review'ını bilinçli geç ("Benzerliğe rağmen güncelle").
+      confirmSimilarNameUpdate?: boolean;
     }
   ) {
     // Avukatın bu tenant'a ait olduğunu kontrol et
-    await this.findOne(tenantId, id);
+    const existing = await this.findOne(tenantId, id);
 
+    // PR-U1: UPDATE-PATH DUPLICATE GUARD. create guard'ı vardı ama edit yan kapısı açıktı
+    // (örn. "Ulaş Telli" açıp sonra "Hüseyin" ekleyerek mükerrer üretmek). Self (id) HARİÇ,
+    // yalnız AKTİF diğer kayıtlara bakılır. confirmSimilarNameUpdate yalnız İSİM review'ını geçer
+    // (kimlik collision'ı GEÇMEZ). Yalnız ilgili alan GERÇEKTEN değişince tetiklenir.
+    const mergedTckn = data.tckn ?? existing.tckn;
+    const mergedBar = data.barNumber ?? existing.barNumber;
+    const tcknChanged = data.tckn !== undefined && data.tckn !== existing.tckn;
+    const barChanged = data.barNumber !== undefined && data.barNumber !== existing.barNumber;
+
+    if (tcknChanged || barChanged) {
+      const others = await this.prisma.lawyer.findMany({
+        where: { tenantId, isActive: true, id: { not: id } },
+      });
+      const idDup = others.find(
+        (l) => (mergedTckn && l.tckn === mergedTckn) || (mergedBar && l.barNumber === mergedBar),
+      );
+      if (idDup) {
+        throw new ConflictException({
+          code: "DUPLICATE_IDENTITY",
+          message: "Bu kimlik/baro numarasına sahip başka bir avukat mevcut",
+          existingLawyer: { id: idDup.id, name: `${idDup.name} ${idDup.surname}`.replace(/\s+/g, " ").trim() },
+        });
+      }
+    }
+
+    const wantName = normalizePersonName(data.name ?? existing.name, data.surname ?? existing.surname);
+    const nameChanged = wantName !== normalizePersonName(existing.name, existing.surname);
+    if (nameChanged && !data.confirmSimilarNameUpdate && wantName) {
+      const others = await this.prisma.lawyer.findMany({
+        where: { tenantId, isActive: true, id: { not: id } },
+      });
+      const candidates = others
+        .filter((l) => normalizePersonName(l.name, l.surname) === wantName)
+        .map((l) => ({ id: l.id, name: `${l.name} ${l.surname}`.replace(/\s+/g, " ").trim() }));
+      if (candidates.length > 0) {
+        throw new ConflictException({
+          code: "SIMILAR_NAME_REVIEW",
+          message: "Benzer isimli avukat mevcut. Benzerliğe rağmen bu kaydı güncelleyebilir veya vazgeçebilirsiniz.",
+          candidates,
+        });
+      }
+    }
+
+    // confirmSimilarNameUpdate transient → prisma'ya YAZILMAZ.
+    const { confirmSimilarNameUpdate, ...writeData } = data;
     const lawyer = await this.prisma.lawyer.update({
       where: { id },
-      data,
+      data: writeData,
     });
 
     return withDisplayName(lawyer);
