@@ -3,6 +3,8 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { runBatched } from './scheduler-batch.helper';
 import { SchedulerMetricsService } from './scheduler-metrics.service';
+import { TebligatService } from '../tebligat/tebligat.service'; // PR-S2: tebligat sonuç senkronu ortak kapı
+import { TebligatPttResult } from '../tebligat/dto/tebligat.dto';
 
 /**
  * Zamanlayıcı Servisi
@@ -26,6 +28,7 @@ export class SchedulerService {
   constructor(
     private prisma: PrismaService,
     private readonly schedulerMetrics: SchedulerMetricsService,
+    private readonly tebligatService: TebligatService, // PR-S2: cron tebligat sonuçları ortak sync yoluna bağlandı
   ) {}
 
   // --- isRunning guards ---
@@ -668,7 +671,11 @@ export class SchedulerService {
 
   /**
    * Her 4 saatte bir çalışır
-   * PTT barkod sorgulama ile tebligat durumlarını günceller
+   * Gönderilmiş tebligatların sonucunu sorgular:
+   *  - PTT kanalı  → queryPttBarcode (barkod sorgu) → recordPttResult ortak yolu
+   *  - UETS/KEP    → queryElectronicDelivery → recordElectronicResult ortak yolu
+   * PR-S2: cron artık db.tebligat.update'i DOĞRUDAN çağırmaz; tüm sonuçlar TebligatService'in
+   * ortak senkron kapısından geçer (CaseDebtor.serviceStatus + istihbarat tetiği cron'da da çalışır).
    */
   @Cron('0 */4 * * *') // Her 4 saatte bir
   async checkTebligatStatus() {
@@ -681,7 +688,8 @@ export class SchedulerService {
     this.logger.log('⏰ Tebligat durum kontrolü başladı...');
 
     try {
-      const result = await runBatched(
+      // 1) PTT (fiziksel) barkod sorgu
+      const pttResult = await runBatched(
         (args) =>
           this.db.tebligat.findMany({
             where: {
@@ -693,9 +701,27 @@ export class SchedulerService {
           }),
         (tebligat) => this.queryPttBarcode(tebligat),
       );
+      this.schedulerMetrics.record('checkTebligatStatus', pttResult);
 
-      this.schedulerMetrics.record('checkTebligatStatus', result);
-      this.logger.log(`📋 ${result.processed} tebligat sorgulandı (truncated: ${result.truncated})`);
+      // 2) UETS/KEP (elektronik) teslim sorgu — PR-S2: e-tebligat artık cron kapsamında
+      const electronicResult = await runBatched(
+        (args) =>
+          this.db.tebligat.findMany({
+            where: {
+              status: 'GONDERILDI',
+              barcodeNo: { not: null },
+              channel: { in: ['UETS', 'KEP'] },
+            },
+            ...args,
+          }),
+        (tebligat) => this.queryElectronicDelivery(tebligat),
+      );
+      this.schedulerMetrics.record('checkTebligatStatus', electronicResult);
+
+      this.logger.log(
+        `📋 PTT ${pttResult.processed} + e-tebligat ${electronicResult.processed} sorgulandı ` +
+          `(truncated: ${pttResult.truncated || electronicResult.truncated})`,
+      );
     } catch (error) {
       this.logger.error('Tebligat kontrolü hatası:', error);
     } finally {
@@ -704,47 +730,55 @@ export class SchedulerService {
   }
 
   /**
-   * PTT barkod sorgulama (mock - gerçek API entegrasyonu için güncellenmeli)
+   * PTT barkod sorgulama (mock - gerçek PTT API entegrasyonu için güncellenecek).
+   * PR-S2: Doğrudan db.tebligat.update KALDIRILDI. Mock sonuç → pttResult koduna çevrilir ve
+   * TebligatService.recordPttResult ortak kapısından geçirilir → Tebligat.update + CaseDebtor
+   * senkronu + istihbarat tetiği AYNI yoldan (B kararı: IADE_GELDI → ADRESTE_BULUNAMADI).
+   * İade halinde, recordPttResult'tan SONRA case-seviyesi takip görevi korunur (A kararı).
    */
   private async queryPttBarcode(tebligat: any) {
     try {
-      // Mock: Gerçek PTT API entegrasyonu burada yapılacak
-      // Şimdilik rastgele sonuç üretiyoruz (test için)
+      // Mock: Gerçek PTT API entegrasyonu burada yapılacak. Şimdilik rastgele sonuç (test için).
       const mockResults = ['TESLIM_EDILDI', 'IADE_GELDI', 'GONDERILDI'];
       const randomResult = mockResults[Math.floor(Math.random() * mockResults.length)];
 
-      // Sadece durum değiştiyse güncelle
-      if (randomResult !== 'GONDERILDI') {
-        const updateData: any = {
-          pttResultDate: new Date(),
-        };
+      // GONDERILDI = sonuç yok → no-op
+      if (randomResult === 'GONDERILDI') return;
 
-        if (randomResult === 'TESLIM_EDILDI') {
-          updateData.status = 'TESLIM_EDILDI';
-          updateData.deliveredAt = new Date();
-          updateData.pttResult = 'TESLIM_EDILDI';
-          updateData.nextAction = 'TEBLIG_TAMAMLANDI';
-        } else if (randomResult === 'IADE_GELDI') {
-          updateData.status = 'IADE_GELDI';
-          updateData.returnedAt = new Date();
-          updateData.pttResult = 'ADRESTE_BULUNAMADI';
-          updateData.nextAction = 'MERNIS_TEBLIGAT';
-        }
+      // B kararı: mock durumu → tek kapı pttResult koduna eşle
+      const pttResult =
+        randomResult === 'TESLIM_EDILDI'
+          ? TebligatPttResult.TESLIM_EDILDI
+          : TebligatPttResult.ADRESTE_BULUNAMADI; // IADE_GELDI
 
-        await this.db.tebligat.update({
-          where: { id: tebligat.id },
-          data: updateData,
-        });
+      // Ortak senkron kapısı: Tebligat.update + CaseDebtor.serviceStatus + istihbarat (atomik)
+      await this.tebligatService.recordPttResult(tebligat.tenantId, tebligat.id, {
+        pttResult,
+        pttResultDate: new Date().toISOString(),
+      } as any);
 
-        this.logger.log(`✅ Tebligat güncellendi: ${tebligat.barcodeNo} -> ${randomResult}`);
+      this.logger.log(`✅ Tebligat senkronlandı: ${tebligat.barcodeNo} -> ${randomResult}`);
 
-        // İade geldiyse task oluştur
-        if (randomResult === 'IADE_GELDI') {
-          await this.createTebligatFollowupTask(tebligat);
-        }
+      // A kararı: İade geldiyse case-seviyesi takip görevi (MERNİS sorgu) recordPttResult'tan SONRA korunur
+      if (randomResult === 'IADE_GELDI') {
+        await this.createTebligatFollowupTask(tebligat);
       }
     } catch (error) {
       this.logger.error(`Barkod sorgulama hatası (${tebligat.barcodeNo}):`, error);
+    }
+  }
+
+  /**
+   * UETS/KEP elektronik teslim sorgulama (mock plumbing).
+   * PR-S2: e-tebligat sonucu ortak kapıdan (recordElectronicResult) geçer → Tebligat.update +
+   * CaseDebtor.serviceStatus + istihbarat tetiği. Doğrudan db.tebligat.update YOK.
+   */
+  private async queryElectronicDelivery(tebligat: any) {
+    try {
+      await this.tebligatService.recordElectronicResult(tebligat.tenantId, tebligat.id);
+      this.logger.log(`✅ E-tebligat senkronlandı: ${tebligat.channel} ${tebligat.barcodeNo}`);
+    } catch (error) {
+      this.logger.error(`E-tebligat sorgulama hatası (${tebligat.barcodeNo}):`, error);
     }
   }
 
