@@ -60,8 +60,69 @@ CaseStaff { caseId, userId, role(RESPONSIBLE_LAWYER|STAFF|FIELD_AGENT|REVIEWER) 
 - **D-1 (Party vs Staff ayrımı):** İç avukat/personel = `User`+`AttorneyProfile`+`CaseStaff`. **Karşı taraf vekili** = `Party` + `CaseParty.role=ATTORNEY`. Vekaletname = `Party`(müvekkil) → `AttorneyProfile`(iç avukat) köprüsü. İç personel ASLA Party'ye gömülmez.
 - **D-2 (case-specific vs party-level):** `serviceStatus`/tebligat, haciz işlemi **dosyaya özgüdür** → `CaseParty`/`CaseAssetAttachment` üstünde kalır, Party'ye İNMEZ. `PartyAsset`=kişinin bilinen varlığı (istihbarat), `CaseAssetAttachment`=bu dosyada haczedildi mi (işlem). Bu ayrım cross-case istihbaratın kilidi.
 - **D-3 (tenant scope):** Party tenant-scoped. Unique kimlik **tenant içinde**: `UNIQUE(tenantId, value) WHERE value IS NOT NULL` (PartyIdentifier başına). Cross-case istihbarat tenant İÇİNDE.
-- **D-4 (NULL-kimlik = birinci sınıf merge):** UYAP borçlularının çoğu yalnız isim taşır. Unique constraint NULL'ları tekilleştiremez → **PartyMatch** bileşeni: TCKN/VKN varsa exact-dedupe; yoksa isim+doğum/isim+adres FUZZY aday üretir → **manuel onaylı merge**. Sessiz otomatik merge YOK.
+- **D-4 (NULL-kimlik = birinci sınıf merge):** UYAP borçlularının çoğu yalnız isim taşır. Unique constraint NULL'ları tekilleştiremez → **PartyMatch** bileşeni: TCKN/VKN varsa exact-dedupe; yoksa isim+doğum/isim+adres FUZZY aday üretir → **manuel onaylı merge**. Sessiz otomatik merge YOK. (Tam workflow + geri-alınabilirlik: **§4b**.)
 - **D-5 (UI dedupe akışı):** Borçlu/müvekkil eklerken TCKN/VKN girilince: "Bu kişi/şirket zaten kayıtlı. Mevcut kart kullanılsın mı?" → [Mevcut kartı kullan] [Yeni rol olarak ekle] [Vazgeç]. "Yine de yeni kayıt oluştur" yalnız **ADMIN**.
+
+## 4b. Eşleştirme (PartyMatch) & geri-alınabilir merge (KRİTİK)
+> **Temel kural:** Yanlış merge, duplicate kayıttan DAHA tehlikelidir. Bu yüzden: sistem yalnız
+> **önerir**, insan **karar verir**, kabul edilen merge **audit'li ve geri alınabilir** olur.
+
+### 4b.1 Eşleştirme akışı (insan döngüde)
+```
+Kayıt eklenir/taranır (Client/Debtor/ThirdParty/EstateHeir/PublicInstitution)
+  → PartyMatch aday üretir (skor + nedenler)
+  → exact kimlik mi, fuzzy mi? (karar matrisi 4b.3)
+  → exact → auto-link (ama isim çok farklıysa SOFT-UYARI: olası TCKN yazım hatası)
+  → fuzzy → İNSAN incelemesi: [Mevcut kartı kullan] [Ayrı kişi olarak kaydet] [Kararsız/incele]
+```
+**Asla:** fuzzy eşleşmede insan onayı olmadan merge YOK.
+
+### 4b.2 Modeller
+```
+PartyMatchCandidate {
+  id, tenantId,
+  sourceRecordType(CLIENT|DEBTOR|THIRD_PARTY|ESTATE_HEIR|PUBLIC_INSTITUTION),
+  sourceRecordId,                 # geçici; suppress için pairKey de tut
+  candidatePartyId,
+  pairKey,                        # STABLE: normalize(isim+kimlik imzası) — recordId değil
+  matchScore, matchReasons[],     # ör. "TCKN eşleşiyor", "isim %92", "aynı telefon"
+  status(PENDING|ACCEPTED|REJECTED|IGNORED),
+  reviewedBy?, reviewedAt?, reviewNote?
+}
+# NOT: ayrı "PartyMatchDecision" tablosu GEREKMEZ — karar bu kaydın status+reviewedBy'ında.
+# REJECTED + pairKey = suppress listesi (aynı çift bir daha ÖNERİLMEZ).
+
+PartyMergeLog {
+  id, tenantId,
+  sourcePartyId, targetPartyId,   # survivor=target
+  canonicalReason,                # neden target survivor (daha çok doğrulanmış/eski/çok dosya | insan seçti)
+  movedRecords[],                 # taşınan adres/telefon/intel/POA/caseParty id'leri
+  performedBy, performedAt,
+  undoPayload,                    # pre-merge snapshot (geri-alma için)
+  reversibleUntil                 # bkz 4b.4 — ilk post-merge yazıma kadar TEMİZ
+}
+```
+
+### 4b.3 Karar matrisi
+```
+TCKN/VKN/MERSIS aynı            → auto-link  (isim çok farklıysa → SOFT-UYARI, yine de incele)
+telefon + isim benzer          → review (insan)
+adres + isim benzer            → review (insan)
+yalnız isim benzer             → düşük güven → review
+çelişkili TCKN/VKN             → BLOCK / ayrı kayıt (auto-link YOK)
+```
+
+### 4b.4 Geri-alınabilirlik sınırı (dürüst kısıt)
+- Merge **temiz geri alınabilir yalnız ilk post-merge yazıma kadar** (`reversibleUntil`).
+- Merge sonrası karta YENİ veri eklenirse (yeni dosya/istihbarat/telefon), saf "undo" belirsizleşir
+  (post-merge kayıt hangi orijinale ait?). Bu noktadan sonra işlem **undo değil SPLIT** (ayırma) olur —
+  daha zor, ayrı tasarlanmalı.
+- `undoPayload` = pre-merge snapshot + taşınan id listesi. Undo: taşınanları sourcePartyId'ye geri ver,
+  target'ı eski haline al. Post-merge eklenenler için kural: **target'ta kalır** (veya kullanıcıya sor).
+
+### 4b.5 Reddin kalıcılığı
+- REJECTED bir aday → `pairKey` ile suppress; aynı çift gelecekte **tekrar önerilmez**.
+- Suppress anahtarı **transient recordId değil**, normalize kimlik-imzasıdır (kayıt yeniden import edilse de korunur).
 
 ## 5. Cross-case istihbarat (asıl kazanım)
 Yeni dosya açılınca sistem Party kartından besler:
