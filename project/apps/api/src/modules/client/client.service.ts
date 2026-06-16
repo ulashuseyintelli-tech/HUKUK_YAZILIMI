@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 // ── Operasyonel iletişim eksiği takibi (PR-1, saf yardımcılar) ──
@@ -184,6 +184,29 @@ export class ClientService {
   async update(id: string, tenantId: string, data: any) {
     const existing = await this.prisma.client.findFirst({ where: { id, tenantId } });
     if (!existing) throw new Error('Müvekkil bulunamadı');
+
+    // PR-U4: UPDATE-PATH kimlik-block (önce guard YOKTU). Müvekkilde TCKN zorunlu/kesin ayrıştırıcı →
+    // isim-review YOK (false-positive riski); yalnız kesin kimlik (TCKN/VKN) collision block.
+    // Self (id) HARİÇ, yalnız AKTİF kayıtlar, yalnız kimlik GERÇEKTEN değişince.
+    const tcknChanged = data.tckn !== undefined && data.tckn !== existing.tckn;
+    const vknChanged = data.vkn !== undefined && data.vkn !== existing.vkn;
+    if (tcknChanged || vknChanged) {
+      const orConds: any[] = [];
+      if (data.tckn) orConds.push({ tckn: data.tckn }, { identityNo: data.tckn });
+      if (data.vkn) orConds.push({ vkn: data.vkn }, { identityNo: data.vkn });
+      if (orConds.length > 0) {
+        const dup = await this.prisma.client.findFirst({
+          where: { tenantId, isActive: true, id: { not: id }, OR: orConds },
+        });
+        if (dup) {
+          throw new ConflictException({
+            code: 'DUPLICATE_IDENTITY',
+            message: 'Bu kimlik numarasına sahip başka bir müvekkil mevcut',
+            existingClient: { id: dup.id, name: (dup as any).displayName || (dup as any).name },
+          });
+        }
+      }
+    }
 
     const displayName = data.type === 'COMPANY' || data.type === 'PUBLIC'
       ? data.companyName

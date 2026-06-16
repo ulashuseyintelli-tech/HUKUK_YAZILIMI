@@ -141,7 +141,10 @@ export default function ClientsSettingsPage() {
       setShowModal(false);
       setEditingClient(null);
       setScannedData(null);
-    } catch (e: any) { alert(e.message || "Hata oluştu"); }
+    } catch (e: any) {
+      // PR-U4: kesin kimlik collision (DUPLICATE_IDENTITY) hard block mesajını göster.
+      alert(e?.body?.message || e.message || "Hata oluştu");
+    }
     finally { setSaving(false); }
   };
 

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query, ForbiddenException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query, ForbiddenException, HttpException } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ClientService } from './client.service';
 
@@ -56,6 +56,8 @@ export class ClientController {
       const client = await this.clientService.update(id, tenantId, body);
       return { data: client };
     } catch (error: any) {
+      // PR-U4: yapısal HttpException (409 DUPLICATE_IDENTITY) frontend'e olduğu gibi geçmeli.
+      if (error instanceof HttpException) throw error;
       return { error: error.message };
     }
   }
