@@ -80,14 +80,17 @@ export class ClientService {
         // FIX A (PR-1): duplicate eşleşme SOFT-DELETED ise GERİ GETİR (reactivate).
         // Silme = soft-delete (isActive=false). Silinmiş müvekkili yeniden ekleme/yeniden tarama
         // eskiden kaydı isActive=false bırakıyordu → findAll (isActive=true) gizliyordu (vekaletleri olsa da).
-        if (existing.isActive === false) {
+        const wasReactivated = existing.isActive === false;
+        if (wasReactivated) {
           await this.prisma.client.update({ where: { id: existing.id }, data: { isActive: true } });
           console.log(`[ClientService] Soft-deleted müvekkil reaktive edildi: ${existing.id} (${existing.displayName})`);
         } else {
           console.log(`[ClientService] Duplicate müvekkil bulundu: ${existing.id} (${existing.displayName})`);
         }
-        // Mevcut müvekkili döndür, yeni oluşturma
-        return this.findOne(existing.id, tenantId);
+        // PR-AUDIT-1: duplicate'te SESSİZ döndürme yerine UX sinyali (POA deseni). Transient alanlar
+        // (persist EDİLMEZ, kontrat bozulmaz) → frontend "zaten kayıtlı / geri getirildi" bildirir.
+        const result = await this.findOne(existing.id, tenantId);
+        return { ...(result as any), _existingReturned: true, _reactivated: wasReactivated };
       }
     }
 

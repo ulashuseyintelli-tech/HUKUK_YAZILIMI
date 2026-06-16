@@ -18,24 +18,28 @@ describe("ClientService.create — soft-deleted reactivation (FIX A)", () => {
     },
   });
 
-  it("duplicate soft-deleted → client.update({isActive:true}) çağrılır, create ÇAĞRILMAZ", async () => {
+  it("duplicate soft-deleted → reactivate + _existingReturned/_reactivated bayrakları, create YOK", async () => {
     const prisma = buildPrisma({ id: "c1", isActive: false, displayName: "ŞÜKRÜ AKDOĞAN" }) as any;
     const svc = new ClientService(prisma);
 
-    await svc.create("t1", { tckn: "40294995552", firstName: "Ş", lastName: "A", type: "PERSON" });
+    const res = await svc.create("t1", { tckn: "40294995552", firstName: "Ş", lastName: "A", type: "PERSON" });
 
     expect(prisma.client.update).toHaveBeenCalledWith({ where: { id: "c1" }, data: { isActive: true } });
     expect(prisma.client.create).not.toHaveBeenCalled();
+    expect((res as any)._existingReturned).toBe(true);
+    expect((res as any)._reactivated).toBe(true); // PR-AUDIT-1: silinmişti, geri getirildi
   });
 
-  it("duplicate AKTİF → reactivate YOK, create YOK (mevcut döner)", async () => {
+  it("duplicate AKTİF → reactivate YOK, create YOK, _existingReturned:true / _reactivated:false", async () => {
     const prisma = buildPrisma({ id: "c2", isActive: true, displayName: "X" }) as any;
     const svc = new ClientService(prisma);
 
-    await svc.create("t1", { tckn: "123", type: "PERSON" });
+    const res = await svc.create("t1", { tckn: "123", type: "PERSON" });
 
     expect(prisma.client.update).not.toHaveBeenCalled();
     expect(prisma.client.create).not.toHaveBeenCalled();
+    expect((res as any)._existingReturned).toBe(true);
+    expect((res as any)._reactivated).toBe(false);
   });
 });
 
