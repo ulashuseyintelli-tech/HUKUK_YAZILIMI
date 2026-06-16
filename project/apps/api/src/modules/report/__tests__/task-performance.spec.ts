@@ -33,7 +33,7 @@ const buildPrisma = () => ({
 describe("ReportService.getTaskPerformanceReport", () => {
   it("MANUAL→people, AUTO_SYSTEM→system, null→unattributed; personType ve avg doğru", async () => {
     const prisma = buildPrisma() as any;
-    const svc = new ReportService(prisma, {} as any);
+    const svc = new ReportService(prisma, {} as any, {} as any);
 
     const res = await svc.getTaskPerformanceReport("t1", {});
 
@@ -60,7 +60,7 @@ describe("ReportService.getTaskPerformanceReport", () => {
 
   it("tarih + kategori filtreleri completedAt/taskCategory where'ine yansır", async () => {
     const prisma = buildPrisma() as any;
-    const svc = new ReportService(prisma, {} as any);
+    const svc = new ReportService(prisma, {} as any, {} as any);
 
     await svc.getTaskPerformanceReport("t1", { from: "2026-06-01", to: "2026-06-30", taskCategory: "OPERATIONAL_COMPLETENESS", resolutionType: "MANUAL" });
 
@@ -76,7 +76,7 @@ describe("ReportService.getTaskPerformanceReport", () => {
   it("LAWYER eşleşmesi STAFF_MEMBER'dan önceliklidir", async () => {
     const prisma = buildPrisma() as any;
     prisma.lawyer.findMany = jest.fn().mockResolvedValue([{ userId: "uA", name: "Av. Cem", surname: "Ortak" }]);
-    const svc = new ReportService(prisma, {} as any);
+    const svc = new ReportService(prisma, {} as any, {} as any);
 
     const res = await svc.getTaskPerformanceReport("t1", {});
     expect(res.people[0]).toMatchObject({ personId: "uA", personType: "LAWYER", displayName: "Av. Cem Ortak" });
