@@ -982,6 +982,8 @@ function DebtorDetailModal({ debtor, onClose, onUpdate, onDelete }: DebtorDetail
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState("");
+  // PR-U5: düzenleme (update) benzer-isim review → 2 buton (güncelle/vazgeç). NewDebtorModal updateReview deseni.
+  const [updateReview, setUpdateReview] = useState<{ id: string; name: string }[] | null>(null);
 
   // Form state
   const [firstName, setFirstName] = useState(debtor.firstName || "");
@@ -1009,7 +1011,7 @@ function DebtorDetailModal({ debtor, onClose, onUpdate, onDelete }: DebtorDetail
   const removeHeir = (i: number) => setHeirs(heirs.filter((_, idx) => idx !== i));
   const updateHeir = (i: number, patch: Partial<EstateHeir>) => setHeirs(heirs.map((h, idx) => (idx === i ? { ...h, ...patch } : h)));
 
-  const handleSave = async () => {
+  const handleSave = async (opts: { confirmSimilarNameUpdate?: boolean } = {}) => {
     setError("");
     setSaving(true);
     try {
@@ -1053,10 +1055,13 @@ function DebtorDetailModal({ debtor, onClose, onUpdate, onDelete }: DebtorDetail
           }));
       }
 
-      const res = await api.put<Debtor>(`/debtors/${debtor.id}`, payload);
+      // PR-U5: confirmSimilarNameUpdate transient → backend "Benzerliğe rağmen güncelle" review'ını geçer.
+      const res = await api.put<Debtor>(`/debtors/${debtor.id}`, { ...payload, confirmSimilarNameUpdate: opts.confirmSimilarNameUpdate });
       onUpdate(res.data);
       setIsEditing(false);
     } catch (e: any) {
+      // PR-U5: benzer-isim → kırmızı banttan 2 butonlu review dialoguna yükselt (kimlik collision değil).
+      if (e?.body?.code === "SIMILAR_NAME_REVIEW") { setUpdateReview(e.body.candidates || []); return; }
       setError(e.message || "Güncelleme başarısız");
     } finally {
       setSaving(false);
@@ -1089,6 +1094,37 @@ function DebtorDetailModal({ debtor, onClose, onUpdate, onDelete }: DebtorDetail
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+      {/* PR-U5: düzenleme benzer-isim review — 2 buton (güncelle/vazgeç; merge YOK). NewDebtorModal updateReview deseni. */}
+      {updateReview && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-[60] p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-5">
+            <h3 className="text-base font-semibold text-gray-900 mb-2">Benzer isimli borçlu mevcut</h3>
+            <p className="text-sm text-gray-600 mb-2">
+              Aşağıdaki kayıt(lar) aynı isimde. Kimlik (TCKN/VKN) girilmediği için otomatik birleştirme yapılmaz.
+              Yine de <b>bu kaydı güncellemek</b> istiyor musunuz?
+            </p>
+            <ul className="text-sm text-gray-800 bg-gray-50 rounded-lg p-2 mb-4 max-h-32 overflow-y-auto">
+              {updateReview.map((c) => (
+                <li key={c.id} className="py-0.5">• {c.name}</li>
+              ))}
+            </ul>
+            <div className="flex flex-col gap-2">
+              <button
+                onClick={() => { setUpdateReview(null); handleSave({ confirmSimilarNameUpdate: true }); }}
+                className="w-full px-3 py-2 rounded-lg bg-amber-500 text-white text-sm hover:bg-amber-600"
+              >
+                Benzerliğe rağmen güncelle
+              </button>
+              <button
+                onClick={() => setUpdateReview(null)}
+                className="w-full px-3 py-2 rounded-lg bg-gray-100 text-gray-700 text-sm hover:bg-gray-200"
+              >
+                Vazgeç
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-hidden">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b">
@@ -1391,7 +1427,7 @@ function DebtorDetailModal({ debtor, onClose, onUpdate, onDelete }: DebtorDetail
                 <button onClick={() => setIsEditing(false)} className="px-4 py-2 text-sm border rounded-lg hover:bg-gray-50">
                   İptal
                 </button>
-                <button onClick={handleSave} disabled={saving} className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2">
+                <button onClick={() => handleSave()} disabled={saving} className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 flex items-center gap-2">
                   {saving && <Loader2 className="h-4 w-4 animate-spin" />}
                   {saving ? "Kaydediliyor..." : "Kaydet"}
                 </button>
