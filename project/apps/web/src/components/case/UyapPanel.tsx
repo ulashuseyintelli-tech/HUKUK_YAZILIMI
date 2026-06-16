@@ -8,7 +8,24 @@ import {
   UyapCasePoaValidation,
   UyapDocumentType,
   HacizTargetType,
+  PreHacizRiskLevel,
 } from "@/lib/api";
+
+// PR-D4e-4: risk seviyesi → etiket + renk (yalnız seviye gösterilir, ham skor değil).
+type PreHacizDebtorRisk = {
+  debtorId: string;
+  name: string;
+  level: PreHacizRiskLevel;
+  score: number;
+  reasons: { id: string; message: string; severity: string }[];
+};
+const RISK_LEVEL_LABEL: Record<PreHacizRiskLevel, string> = { YUKSEK: "Yüksek", ORTA: "Orta", DUSUK: "Düşük", YOK: "Yok" };
+const RISK_LEVEL_BADGE: Record<PreHacizRiskLevel, string> = {
+  YUKSEK: "bg-red-100 text-red-800 border-red-300",
+  ORTA: "bg-amber-100 text-amber-800 border-amber-300",
+  DUSUK: "bg-yellow-50 text-yellow-700 border-yellow-200",
+  YOK: "bg-gray-100 text-gray-600 border-gray-200",
+};
 
 interface UyapPanelProps {
   caseId: string;
@@ -32,21 +49,21 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
   const [hacizType, setHacizType] = useState<HacizTargetType>("BANK");
   const [hacizAmount, setHacizAmount] = useState("");
   const [hacizDetails, setHacizDetails] = useState("");
-  // PR-D4e-3c: haciz öncesi saha istihbaratı soft-uyarıları (lazy fetch, blok yok).
-  const [preHacizWarnings, setPreHacizWarnings] = useState<{ id: string; message: string }[] | null>(null);
+  // PR-D4e-3c/D4e-4: haciz öncesi saha istihbaratı risk read-model (lazy fetch, blok yok).
+  const [preHacizRisk, setPreHacizRisk] = useState<{ debtors: PreHacizDebtorRisk[]; overallLevel: PreHacizRiskLevel } | null>(null);
 
   useEffect(() => {
     loadData();
   }, [caseId]);
 
-  // Haciz sekmesi açılınca uyarıları bir kez çek (lazy). Hata sessiz (read-only, kritik değil).
+  // Haciz sekmesi açılınca riski bir kez çek (lazy). Hata sessiz (read-only, kritik değil).
   useEffect(() => {
-    if (activeTab !== "haciz" || preHacizWarnings !== null) return;
+    if (activeTab !== "haciz" || preHacizRisk !== null) return;
     api
       .getPreHacizIntelligence(caseId)
-      .then((r) => setPreHacizWarnings(r.warnings || []))
-      .catch(() => setPreHacizWarnings([]));
-  }, [activeTab, caseId, preHacizWarnings]);
+      .then((r) => setPreHacizRisk({ debtors: r.debtors || [], overallLevel: r.overallLevel || "YOK" }))
+      .catch(() => setPreHacizRisk({ debtors: [], overallLevel: "YOK" }));
+  }, [activeTab, caseId, preHacizRisk]);
 
   const loadData = async () => {
     setLoading(true);
@@ -343,21 +360,37 @@ export function UyapPanel({ caseId, onDocumentSubmitted }: UyapPanelProps) {
               </div>
             )}
 
-            {/* PR-D4e-3c: haciz öncesi saha istihbaratı uyarıları (blok YOK, bilgilendirme). */}
-            {preHacizWarnings && preHacizWarnings.length > 0 && (
+            {/* PR-D4e-4: haciz öncesi saha istihbaratı RİSK read-model (borçlu-bazlı seviye + nedenler).
+                Blok YOK. Sinyal yoksa hiçbir şey gösterme (susmaya devam). Ham skor gösterilmez. */}
+            {preHacizRisk && preHacizRisk.debtors.length > 0 && (
               <div className="bg-yellow-50 border border-yellow-300 rounded-lg p-4 mb-4">
-                <p className="text-sm font-medium text-yellow-900 mb-2">
-                  ⚠️ Haciz öncesi istihbarat uyarıları
+                <p className="text-sm font-medium text-yellow-900 mb-3">
+                  ⚠️ Haciz öncesi istihbarat değerlendirmesi
+                  <span className={`ml-2 text-xs font-medium px-1.5 py-0.5 rounded border ${RISK_LEVEL_BADGE[preHacizRisk.overallLevel]}`}>
+                    Genel: {RISK_LEVEL_LABEL[preHacizRisk.overallLevel]}
+                  </span>
                 </p>
-                <ul className="space-y-2">
-                  {preHacizWarnings.map((w, i) => (
-                    <li key={i} className="text-sm text-yellow-800 whitespace-pre-line border-l-2 border-yellow-400 pl-2">
-                      {w.message}
+                <ul className="space-y-3">
+                  {preHacizRisk.debtors.map((d) => (
+                    <li key={d.debtorId} className="border-l-2 border-yellow-400 pl-2">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-sm font-medium text-yellow-900">{d.name}</span>
+                        <span className={`text-xs font-medium px-1.5 py-0.5 rounded border ${RISK_LEVEL_BADGE[d.level]}`}>
+                          {RISK_LEVEL_LABEL[d.level]} risk
+                        </span>
+                      </div>
+                      <ul className="space-y-1">
+                        {d.reasons.map((r, i) => (
+                          <li key={i} className="text-sm text-yellow-800">
+                            • {r.message.split("\n").slice(1).join(" ").trim() || r.message}
+                          </li>
+                        ))}
+                      </ul>
                     </li>
                   ))}
                 </ul>
-                <p className="text-xs text-yellow-700 mt-2">
-                  Bu uyarılar haciz talebini engellemez; bilgilendirme amaçlıdır.
+                <p className="text-xs text-yellow-700 mt-3">
+                  Bu değerlendirme haciz talebini engellemez; karar desteği amaçlıdır.
                 </p>
               </div>
             )}

@@ -664,12 +664,17 @@ class ApiClient {
   }
 
   /**
-   * PR-D4e-3c: Haciz öncesi saha istihbaratı soft-uyarıları (read-only, blok yok).
+   * PR-D4e-3c/D4e-4: Haciz öncesi saha istihbaratı soft-uyarıları + risk read-model (read-only, blok yok).
+   * warnings[] geriye uyum için kalır; debtors[] borçlu-bazlı seviye+nedenler, overallLevel rollup.
    */
   async getPreHacizIntelligence(caseId: string) {
-    return this.request<{ caseId: string; isValid: boolean; warnings: { id: string; path: string; severity: string; message: string }[] }>(
-      `/validation-gate/${caseId}/pre-haciz-intelligence`
-    );
+    return this.request<{
+      caseId: string;
+      isValid: boolean;
+      warnings: { id: string; path: string; severity: string; message: string }[];
+      debtors: { debtorId: string; name: string; level: PreHacizRiskLevel; score: number; reasons: { id: string; message: string; severity: string }[] }[];
+      overallLevel: PreHacizRiskLevel;
+    }>(`/validation-gate/${caseId}/pre-haciz-intelligence`);
   }
 
   /**
@@ -2708,6 +2713,9 @@ class ApiClient {
 // ============================================
 // ValidationGate Types
 // ============================================
+
+// PR-D4e-4: haciz öncesi risk seviyesi (read-model; blok değil, karar destek).
+export type PreHacizRiskLevel = "YOK" | "DUSUK" | "ORTA" | "YUKSEK";
 
 export interface ValidationError {
   code: string;
