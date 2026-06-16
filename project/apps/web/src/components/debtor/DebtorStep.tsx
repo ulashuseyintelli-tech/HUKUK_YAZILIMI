@@ -192,6 +192,29 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
     setEditingDebtor(null);
   };
 
+  // PR-D: Kimliksiz benzer-isim review'unda "Bunu kullan" → yeni kayıt AÇMA, mevcut borçluyu dosyaya ekle.
+  const handleUseExistingDebtor = async (candidate: { id: string; name: string }) => {
+    // Zaten bu dosyaya eklenmişse tekrar ekleme (addDebtorToCase mükerrer korumasız).
+    if (selectedDebtors.some((sd) => sd.debtorId === candidate.id)) {
+      setShowNewDebtorModal(false);
+      setEditingDebtor(null);
+      return;
+    }
+    let existing = existingDebtors.find((d) => d.id === candidate.id);
+    if (!existing) {
+      // Liste 500 ile sınırlı; aday listede yoksa id ile çek.
+      try {
+        const res = await api.get(`/debtors/${candidate.id}`);
+        existing = res.data?.data || res.data;
+      } catch (err: any) {
+        console.error("Mevcut borçlu yüklenemedi:", err?.message || err);
+      }
+    }
+    if (existing) addDebtorToCase(existing);
+    setShowNewDebtorModal(false);
+    setEditingDebtor(null);
+  };
+
   // Sihirbaz: Dosya seçimi
   const handleWizardFileSelect = (file: File) => {
     const lowerName = file.name.toLowerCase();
@@ -697,6 +720,7 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
           editDebtor={editingDebtor || undefined}
           onSave={handleDebtorSaved}
           onClose={() => { setShowNewDebtorModal(false); setEditingDebtor(null); }}
+          onUseExisting={handleUseExistingDebtor}
         />
       )}
     </div>
