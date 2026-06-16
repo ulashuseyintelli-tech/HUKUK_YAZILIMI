@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculator, TrendingUp, Receipt, Banknote, FileCheck, Calendar, XCircle, Info, Search, Users, Building2, Landmark, Edit2, Trash2, Phone, Mail, AlertCircle, Settings } from "lucide-react";
 import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
+import { isPoaDuplicateSuppressed } from "@/lib/poa-ux";
 import { FormMetadata, SubFormMetadata, FormCategory } from "@/types/form-metadata";
 import { WizardAnswers } from "@/types/wizard";
 import { formMetadata, filterFormsByCategory } from "@/config/form-metadata";
@@ -637,7 +638,7 @@ export default function NewCasePage() {
       
       const poaRes = await api.post("/poa", poaData);
       // PR-2a: aynı vekalet zaten kayıtlıysa backend yeni açmaz; mesajı buna göre ver.
-      const poaSuppressed = poaRes?.data?._suppressedDuplicate || poaRes?.data?.data?._suppressedDuplicate;
+      const poaSuppressed = isPoaDuplicateSuppressed(poaRes);
 
       // 3. Müvekkil listesini yenile ve seçili olarak ekle
       const clientsRes = await api.get("/clients");
