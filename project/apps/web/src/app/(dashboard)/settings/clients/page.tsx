@@ -95,7 +95,7 @@ export default function ClientsSettingsPage() {
       if (clientId && hasPoaInfo && !editingClient) {
         // Sadece yeni müvekkil oluştururken otomatik POA oluştur
         try {
-          await api.post("/poa", {
+          const poaRes = await api.post("/poa", {
             clientId,
             journalNo: poaData.poaNumber,
             poaNumber: poaData.poaNumber,
@@ -111,7 +111,12 @@ export default function ClientsSettingsPage() {
             canSettle: poaData.canSettle ?? data.canSettle ?? false,
             canRelease: poaData.canRelease ?? data.canRelease ?? false,
           });
-          console.log("Vekalet otomatik oluşturuldu");
+          // PR-2a: aynı vekalet zaten kayıtlıysa backend yeni açmaz; kullanıcıya bildir.
+          if (poaRes?.data?._suppressedDuplicate || poaRes?.data?.data?._suppressedDuplicate) {
+            alert("Bu vekalet zaten kayıtlı; yeni kayıt açılmadı, mevcut kayıt kullanıldı.");
+          } else {
+            console.log("Vekalet otomatik oluşturuldu");
+          }
         } catch (poaErr) {
           console.warn("Vekalet oluşturulamadı:", poaErr);
           // Vekalet oluşturulamazsa bile müvekkil kaydedildi, devam et
@@ -1570,12 +1575,16 @@ function ClientPoaModal({ client, onClose }: { client: any; onClose: () => void 
 
     setSaving(true);
     try {
-      await api.post("/poa", {
+      const poaRes = await api.post("/poa", {
         clientId: client.id,
         ...form,
         dateIssued: form.dateIssued ? new Date(form.dateIssued) : undefined,
         validUntil: form.validUntil ? new Date(form.validUntil) : undefined,
       });
+      // PR-2a: aynı vekalet zaten kayıtlıysa backend yeni açmaz; kullanıcıya bildir.
+      if (poaRes?.data?._suppressedDuplicate || poaRes?.data?.data?._suppressedDuplicate) {
+        alert("Bu vekalet zaten kayıtlı; yeni kayıt açılmadı, mevcut kayıt kullanıldı.");
+      }
       await loadPoas();
       setShowAddForm(false);
       setForm({
