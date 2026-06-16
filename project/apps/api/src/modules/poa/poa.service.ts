@@ -8,9 +8,19 @@ import * as path from "path";
 // Dedupe anahtarı: clientId + normalizedNotaryName + dateIssued (aktif). poaNumber/yevmiyeNo
 // OCR-gürültülü → anahtar DEĞİL. documentHash bu PR dışında.
 
-/** Noter adını eşleştirme için normalize eder (trim + tek boşluk + TR upper). */
+/**
+ * Noter adını EŞLEŞTİRME için normalize eder (PR-2b hardening). Yalnız karşılaştırma anahtarı;
+ * saklanan değer DEĞİŞMEZ. OCR varyanslarını yutar: diakritik folding + noktalama temizliği +
+ * tek boşluk + uppercase. "BÜLENT OVEN" = "BÜLENT ÖVEN" = "BÜLENT ÖVEN." = "bülent  öven" → "BULENT OVEN".
+ */
 export function normalizeNotaryName(name?: string | null): string {
-  return (name || "").trim().replace(/\s+/g, " ").toLocaleUpperCase("tr-TR");
+  return (name || "")
+    .replace(/ı/g, "i").replace(/İ/g, "i") // TR noktasız/noktalı i (NFD tam çözmez)
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "") // birlesik aksanlari sok: s g u o c
+    .replace(/[^a-zA-Z0-9\s]/g, " ") // noktalama → boşluk
+    .replace(/\s+/g, " ")
+    .trim()
+    .toUpperCase();
 }
 
 /** İki vekalet tarihinin AYNI GÜN olup olmadığı (saat/zaman dilimi yok say). */
