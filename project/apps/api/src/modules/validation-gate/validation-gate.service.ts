@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import { buildPreHacizRisk, DebtorRisk, RiskLevel, PreHacizSignal } from './pre-haciz-risk';
 
 /**
  * @deprecated Use policy-engine/gate-checker instead
@@ -109,12 +110,14 @@ export class ValidationGateService implements OnModuleInit {
   async checkPreHacizIntelligence(
     tenantId: string,
     caseId: string
-  ): Promise<{ caseId: string; isValid: boolean; warnings: ValidationError[] }> {
+  ): Promise<{ caseId: string; isValid: boolean; warnings: ValidationError[]; debtors: DebtorRisk[]; overallLevel: RiskLevel }> {
     const warnings: ValidationError[] = [];
+    // PR-D4e-4: per-borçlu sinyal toplama → saf skor modülü ile risk read-model.
+    const perDebtor: { debtorId: string; name: string; signals: PreHacizSignal[] }[] = [];
 
     const caseExists = await this.prisma.case.findFirst({ where: { id: caseId, tenantId }, select: { id: true } });
     if (!caseExists) {
-      return { caseId, isValid: true, warnings: [{ id: 'CASE_NOT_FOUND', path: 'case', severity: 'WARNING', message: 'Dosya bulunamadı.' }] };
+      return { caseId, isValid: true, warnings: [{ id: 'CASE_NOT_FOUND', path: 'case', severity: 'WARNING', message: 'Dosya bulunamadı.' }], debtors: [], overallLevel: 'YOK' };
     }
 
     const caseDebtors = await this.prisma.caseDebtor.findMany({
@@ -130,13 +133,16 @@ export class ValidationGateService implements OnModuleInit {
     for (const cd of caseDebtors) {
       const name = cd.debtor?.name || 'Borçlu';
       const addr = cd.selectedAddress || cd.debtor?.debtorAddresses?.[0] || null;
+      const signals: PreHacizSignal[] = []; // bu borçlunun sinyalleri (skor için)
 
       // S1: son 90 gün saha istihbaratı yok mu?
       const recentCount = await this.prisma.debtorIntelligence.count({
         where: { tenantId, debtorId: cd.debtor.id, createdAt: { gte: ninetyDaysAgo } },
       });
       if (recentCount === 0) {
-        warnings.push({ id: 'INTEL_90D_MISSING', path: `debtor.${cd.debtor.id}`, severity: 'WARNING', message: `${name}:\nSon 90 gün içinde saha istihbaratı bulunmuyor.` });
+        const msg = `${name}:\nSon 90 gün içinde saha istihbaratı bulunmuyor.`;
+        warnings.push({ id: 'INTEL_90D_MISSING', path: `debtor.${cd.debtor.id}`, severity: 'WARNING', message: msg });
+        signals.push({ id: 'INTEL_90D_MISSING', message: msg });
       }
 
       // S2: e-tebligat (UETS/KEP) teslim AMA o adres için fiziksel VERIFIED_PRESENT yok.
@@ -146,18 +152,27 @@ export class ValidationGateService implements OnModuleInit {
           ? await this.prisma.debtorIntelligence.count({ where: { tenantId, debtorId: cd.debtor.id, addressId: addr.id, result: 'VERIFIED_PRESENT' } })
           : 0;
         if (physical === 0) {
-          warnings.push({ id: 'INTEL_ETEBLIGAT_NO_PHYSICAL_VERIFY', path: `debtor.${cd.debtor.id}`, severity: 'WARNING', message: `${name}:\nElektronik tebligat mevcut ancak fiziksel teyit bulunmuyor.` });
+          const msg = `${name}:\nElektronik tebligat mevcut ancak fiziksel teyit bulunmuyor.`;
+          warnings.push({ id: 'INTEL_ETEBLIGAT_NO_PHYSICAL_VERIFY', path: `debtor.${cd.debtor.id}`, severity: 'WARNING', message: msg });
+          signals.push({ id: 'INTEL_ETEBLIGAT_NO_PHYSICAL_VERIFY', message: msg });
         }
       }
 
       // S3: tebligat adresi fiili doğrulamadan geçmemiş (verified=false veya kaynak FIELD değil).
       if (addr && (!addr.verified || addr.verifiedSource !== 'FIELD')) {
-        warnings.push({ id: 'INTEL_ADDRESS_UNVERIFIED', path: `debtor.${cd.debtor.id}`, severity: 'WARNING', message: `${name}:\nTebligat adresi fiili saha doğrulamasından geçmemiş.` });
+        const msg = `${name}:\nTebligat adresi fiili saha doğrulamasından geçmemiş.`;
+        warnings.push({ id: 'INTEL_ADDRESS_UNVERIFIED', path: `debtor.${cd.debtor.id}`, severity: 'WARNING', message: msg });
+        signals.push({ id: 'INTEL_ADDRESS_UNVERIFIED', message: msg });
       }
+
+      perDebtor.push({ debtorId: cd.debtor.id, name, signals });
     }
 
-    // BLOK YOK: warning olsa da isValid her zaman true.
-    return { caseId, isValid: true, warnings };
+    // PR-D4e-4: saf skor modülü → risk azalan sıralı debtors[] + overallLevel (KALICI YAZIM YOK).
+    const { debtors, overallLevel } = buildPreHacizRisk(perDebtor);
+
+    // BLOK YOK: warning/skor olsa da isValid her zaman true.
+    return { caseId, isValid: true, warnings, debtors, overallLevel };
   }
 
   async onModuleInit() {

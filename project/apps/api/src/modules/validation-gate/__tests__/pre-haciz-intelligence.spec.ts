@@ -39,6 +39,12 @@ describe("checkPreHacizIntelligence (PR-D4e-3b)", () => {
     expect(ids).toEqual(expect.arrayContaining(["INTEL_90D_MISSING", "INTEL_ETEBLIGAT_NO_PHYSICAL_VERIFY", "INTEL_ADDRESS_UNVERIFIED"]));
     expect(res.warnings.every((w) => w.severity === "WARNING")).toBe(true);
     expect(res.warnings[0].message).toContain("ABC LTD"); // borçlu adı kırılımı
+
+    // PR-D4e-4: risk read-model zenginleşmesi (warnings[] geriye uyum için KORUNUR)
+    expect(res.debtors).toHaveLength(1);
+    expect(res.debtors[0]).toMatchObject({ debtorId: "d1", name: "ABC LTD", level: "YUKSEK" }); // 2×HIGH+1×MEDIUM
+    expect(res.debtors[0].reasons).toHaveLength(3);
+    expect(res.overallLevel).toBe("YUKSEK");
   });
 
   it("tam doğrulanmış borçlu → 0 warning (recent intel + NORMAL kanal + verified FIELD adres)", async () => {
@@ -54,6 +60,9 @@ describe("checkPreHacizIntelligence (PR-D4e-3b)", () => {
     const res = await svcWith(prisma).checkPreHacizIntelligence("t1", "c1");
     expect(res.isValid).toBe(true);
     expect(res.warnings).toHaveLength(0);
+    // PR-D4e-4: sinyal yok → debtors boş, overall YOK (UI susar)
+    expect(res.debtors).toHaveLength(0);
+    expect(res.overallLevel).toBe("YOK");
   });
 
   it("otoriter (UYAP) verified adres → ADDRESS_UNVERIFIED FİRELENİR (FIELD değil ama verified=true+kaynak güçlü)", async () => {
