@@ -81,12 +81,24 @@ export default function ClientsSettingsPage() {
     try {
       let clientId: string;
       
+      let clientExisting = false;
       if (editingClient) {
         await api.put(`/clients/${editingClient.id}`, data);
         clientId = editingClient.id;
       } else {
         const res = await api.post("/clients", data);
         clientId = res.data?.id || res.data?.data?.id;
+        // PR-AUDIT-1: mevcut TCKN/VKN ile manuel ekleme → backend yeni açmaz, mevcut kartı döndürür.
+        // Sessiz kalmasın, kullanıcıya bildir (silinmişse "geri getirildi", aktifse "zaten kayıtlı").
+        const body = res.data?.data ?? res.data;
+        if (body?._existingReturned) {
+          clientExisting = true;
+          alert(
+            body._reactivated
+              ? "Bu müvekkil daha önce silinmişti; kaydı geri getirildi (mevcut kart kullanıldı)."
+              : "Bu müvekkil zaten kayıtlı; yeni kayıt açılmadı, mevcut kart kullanıldı."
+          );
+        }
       }
       
       // Vekaletname bilgileri varsa (taranmış veya manuel girilmiş), otomatik vekalet oluştur
@@ -113,9 +125,10 @@ export default function ClientsSettingsPage() {
             canRelease: poaData.canRelease ?? data.canRelease ?? false,
           });
           // PR-2a: aynı vekalet zaten kayıtlıysa backend yeni açmaz; kullanıcıya bildir.
-          if (isPoaDuplicateSuppressed(poaRes)) {
+          // clientExisting ise müvekkil mesajı zaten gösterildi → çift uyarı verme.
+          if (isPoaDuplicateSuppressed(poaRes) && !clientExisting) {
             alert(POA_DUPLICATE_MESSAGE);
-          } else {
+          } else if (!isPoaDuplicateSuppressed(poaRes)) {
             console.log("Vekalet otomatik oluşturuldu");
           }
         } catch (poaErr) {
