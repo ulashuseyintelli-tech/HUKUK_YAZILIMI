@@ -3,6 +3,7 @@
  * Eskiden guard yoktu → "Fatih engin"/"Ulaş Hüseyin Telli" mükerrer açılıyordu.
  */
 
+import { ConflictException } from "@nestjs/common";
 import { normalizePersonName } from "../../../common/name-match.util";
 import { StaffService } from "../staff.service";
 import { LawyerService } from "../../lawyer/lawyer.service";
@@ -18,7 +19,7 @@ describe("normalizePersonName", () => {
   });
 });
 
-describe("StaffService.create — duplicate guard", () => {
+describe("StaffService.create — duplicate handling (PR-S)", () => {
   const build = (existing: any[]) => {
     const prisma: any = {
       staffMember: {
@@ -31,24 +32,49 @@ describe("StaffService.create — duplicate guard", () => {
     return { svc: new StaffService(prisma), prisma };
   };
 
-  it("aynı ad-soyad (case/diakritik farklı) → yeni AÇMAZ, mevcut + bayrak", async () => {
-    const { svc, prisma } = build([{ id: "s1", firstName: "Fatih", lastName: "Engin", isActive: true }]);
-    const res = await svc.create("t1", { firstName: "fatih", lastName: "engin" });
+  it("aynı TCKN → kesin duplicate: yeni AÇMAZ, mevcut döner", async () => {
+    const { svc, prisma } = build([{ id: "s1", firstName: "A", lastName: "B", tckn: "111", isActive: true }]);
+    const res = await svc.create("t1", { firstName: "X", lastName: "Y", tckn: "111" });
     expect(prisma.staffMember.create).not.toHaveBeenCalled();
     expect((res as any)._existingReturned).toBe(true);
   });
 
-  it("aynı TCKN → yeni AÇMAZ", async () => {
-    const { svc, prisma } = build([{ id: "s1", firstName: "A", lastName: "B", tckn: "111", isActive: true }]);
-    await svc.create("t1", { firstName: "X", lastName: "Y", tckn: "111" });
+  it("aynı e-posta → kesin duplicate: yeni AÇMAZ, mevcut döner", async () => {
+    const { svc, prisma } = build([{ id: "s1", firstName: "A", lastName: "B", email: "x@y.z", isActive: true }]);
+    const res = await svc.create("t1", { firstName: "X", lastName: "Y", email: "x@y.z" });
+    expect(prisma.staffMember.create).not.toHaveBeenCalled();
+    expect((res as any)._existingReturned).toBe(true);
+  });
+
+  it("soft-deleted + aynı TCKN → reactivate", async () => {
+    const { svc, prisma } = build([{ id: "s1", firstName: "A", lastName: "B", tckn: "111", isActive: false }]);
+    const res = await svc.create("t1", { firstName: "X", lastName: "Y", tckn: "111" });
+    expect(prisma.staffMember.update).toHaveBeenCalledWith({ where: { id: "s1" }, data: { isActive: true } });
+    expect((res as any)._reactivated).toBe(true);
+  });
+
+  it("kimliksiz aynı ad-soyad + forceCreate yok → SESSİZ MERGE YOK, 409 SIMILAR_NAME_REVIEW", async () => {
+    const { svc, prisma } = build([{ id: "s1", firstName: "Fatih", lastName: "Engin", isActive: true }]);
+    await expect(svc.create("t1", { firstName: "fatih", lastName: "engin" })).rejects.toThrow(ConflictException);
     expect(prisma.staffMember.create).not.toHaveBeenCalled();
   });
 
-  it("soft-deleted eşleşme → reactivate", async () => {
-    const { svc, prisma } = build([{ id: "s1", firstName: "Fatih", lastName: "Engin", isActive: false }]);
-    const res = await svc.create("t1", { firstName: "Fatih", lastName: "Engin" });
-    expect(prisma.staffMember.update).toHaveBeenCalledWith({ where: { id: "s1" }, data: { isActive: true } });
-    expect((res as any)._reactivated).toBe(true);
+  it("409 gövdesi code + candidates döndürür", async () => {
+    const { svc } = build([{ id: "s1", firstName: "Fatih", lastName: "Engin", isActive: true }]);
+    expect.assertions(2);
+    try {
+      await svc.create("t1", { firstName: "fatih", lastName: "engin" });
+    } catch (e: any) {
+      const body = e.getResponse();
+      expect(body.code).toBe("SIMILAR_NAME_REVIEW");
+      expect(body.candidates).toEqual([{ id: "s1", name: "Fatih Engin" }]);
+    }
+  });
+
+  it("kimliksiz aynı ad-soyad + forceCreate=true → ayrı kişi olarak YENİ açılır", async () => {
+    const { svc, prisma } = build([{ id: "s1", firstName: "Fatih", lastName: "Engin", isActive: true }]);
+    await svc.create("t1", { firstName: "fatih", lastName: "engin", forceCreate: true });
+    expect(prisma.staffMember.create).toHaveBeenCalled();
   });
 
   it("eşleşme yok → YENİ açılır", async () => {

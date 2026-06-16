@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { normalizePersonName } from '../../common/name-match.util';
 
@@ -22,28 +22,57 @@ export class StaffService {
     });
   }
 
-  // Yeni personel ekle
+  /**
+   * Yeni personel ekle.
+   *
+   * Mükerrer politikası (PR-S — duplicate-handling kontratı):
+   * - KESİN kimlik (TCKN/e-posta) eşleşmesi → kesin duplicate: yeni AÇMA, mevcut döndür
+   *   (soft-deleted ise reactivate) + transient `_existingReturned`/`_reactivated` bayrağı.
+   * - Kimlik YOK + SADECE ad-soyad eşleşmesi → SESSİZ MERGE YASAK: 409 SIMILAR_NAME_REVIEW
+   *   { code, message, candidates } döner → frontend review-dialog açar (insan kararı).
+   *   İki farklı kimliksiz "Fatih engin" meşru olabilir.
+   * - `forceCreate=true` ("Ayrı kişi olarak kaydet") → isim review'unu bilinçli geçer; kimlik
+   *   eşleşmesini geçmez (TCKN/e-posta hâlâ kesin duplicate sayılır).
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - StaffController.create() → POST /staff (ayarlar > ofis > personel ekle)
+   * </remarks>
+   */
   async create(tenantId: string, data: any) {
-    // PR-AUDIT: duplicate guard — aynı TCKN/e-posta VEYA aynı ad-soyad → yeni AÇMA, mevcut döndür.
-    // (Eskiden guard yoktu → "Fatih engin" gibi mükerrer personel açılıyordu.) Soft-deleted ise
-    // reactivate. Transient bayrak (persist YOK) → frontend bilgilendirir.
     const wantName = normalizePersonName(data.firstName, data.lastName);
     const all = await this.prisma.staffMember.findMany({ where: { tenantId } });
-    const match = all.find(
+
+    // 1) KESİN kimlik (TCKN/e-posta) → mevcut kullan + bildir (gerekirse reactivate). forceCreate bunu GEÇMEZ.
+    const identityMatch = all.find(
       (s) =>
         (data.tckn && s.tckn === data.tckn) ||
-        (data.email && s.email === data.email) ||
-        (!!wantName && normalizePersonName(s.firstName, s.lastName) === wantName),
+        (data.email && s.email === data.email),
     );
-    if (match) {
-      const wasReactivated = match.isActive === false;
+    if (identityMatch) {
+      const wasReactivated = identityMatch.isActive === false;
       if (wasReactivated) {
-        await this.prisma.staffMember.update({ where: { id: match.id }, data: { isActive: true } });
+        await this.prisma.staffMember.update({ where: { id: identityMatch.id }, data: { isActive: true } });
       }
-      return { ...(match as any), isActive: true, _existingReturned: true, _reactivated: wasReactivated };
+      return { ...(identityMatch as any), isActive: true, _existingReturned: true, _reactivated: wasReactivated };
     }
 
-    // Office ID'yi bul
+    // 2) Kimlik YOK + sadece ad-soyad eşleşmesi + forceCreate yok → review (sessiz merge yasak).
+    if (!data.forceCreate && wantName) {
+      const candidates = all
+        .filter((s) => normalizePersonName(s.firstName, s.lastName) === wantName)
+        .map((s) => ({ id: s.id, name: `${s.firstName} ${s.lastName}`.replace(/\s+/g, ' ').trim() }));
+      if (candidates.length > 0) {
+        throw new ConflictException({
+          code: 'SIMILAR_NAME_REVIEW',
+          message:
+            'Benzer isimli personel mevcut. Mevcut kayıt kullanılabilir veya ayrı kişi olarak yeni kayıt açılabilir.',
+          candidates,
+        });
+      }
+    }
+
+    // 3) Yeni kayıt (forceCreate veya hiç eşleşme yok). forceCreate prisma'ya YAZILMAZ (alanlar açıkça map'lenir).
     const office = await this.prisma.office.findUnique({ where: { tenantId } });
 
     return this.prisma.staffMember.create({

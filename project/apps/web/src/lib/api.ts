@@ -49,7 +49,11 @@ class ApiClient {
 
       if (!response.ok) {
         const error = await response.json().catch(() => ({}));
-        throw new Error(error.message || "Bir hata oluştu");
+        // Hata gövdesini KORU (code/candidates gibi yapısal alanlar) — review akışları için.
+        const e = new Error(error.message || "Bir hata oluştu") as any;
+        e.body = error;
+        e.status = response.status;
+        throw e;
       }
 
       return response.json();

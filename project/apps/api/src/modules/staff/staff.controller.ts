@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query, HttpException } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { StaffService } from './staff.service';
 import { StaffType } from '@prisma/client';
@@ -37,6 +37,9 @@ export class StaffController {
       const staff = await this.staffService.create(tenantId, body);
       return { data: staff };
     } catch (error: any) {
+      // PR-S: yapısal HttpException'lar (örn. 409 SIMILAR_NAME_REVIEW) frontend'e olduğu gibi
+      // geçmeli — yutup 200 { error } döndürmek review-dialog'u kırardı.
+      if (error instanceof HttpException) throw error;
       return { error: error.message };
     }
   }
