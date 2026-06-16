@@ -52,6 +52,9 @@ export class StaffController {
       const staff = await this.staffService.update(id, tenantId, body);
       return { data: staff };
     } catch (error: any) {
+      // PR-U3: yapısal HttpException'lar (409 SIMILAR_NAME_REVIEW/DUPLICATE_IDENTITY) frontend'e
+      // olduğu gibi geçmeli — yutup 200 { error } döndürmek review-dialog'u kırardı.
+      if (error instanceof HttpException) throw error;
       return { error: error.message };
     }
   }

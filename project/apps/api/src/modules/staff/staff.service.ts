@@ -108,7 +108,45 @@ export class StaffService {
     });
     if (!existing) throw new NotFoundException('Personel bulunamadı');
 
-    // Sadece gönderilen alanları güncelle (undefined olanları atla)
+    // PR-U3: UPDATE-PATH DUPLICATE GUARD (önce HİÇ yoktu → edit ile mükerrer üretilebiliyordu).
+    // Self (id) HARİÇ, yalnız AKTİF diğer kayıtlar. confirmSimilarNameUpdate yalnız İSİM review'ını
+    // geçer (kimlik block'unu GEÇMEZ). Yalnız ilgili alan GERÇEKTEN değişince tetiklenir.
+    const mergedTckn = data.tckn ?? existing.tckn;
+    const tcknChanged = data.tckn !== undefined && data.tckn !== existing.tckn;
+    if (tcknChanged && mergedTckn) {
+      const others = await this.prisma.staffMember.findMany({
+        where: { tenantId, isActive: true, id: { not: id } },
+      });
+      const idDup = others.find((s) => s.tckn === mergedTckn);
+      if (idDup) {
+        throw new ConflictException({
+          code: 'DUPLICATE_IDENTITY',
+          message: 'Bu TCKN ile kayıtlı başka bir personel mevcut',
+          existingStaff: { id: idDup.id, name: `${idDup.firstName} ${idDup.lastName}`.replace(/\s+/g, ' ').trim() },
+        });
+      }
+    }
+
+    const wantName = normalizePersonName(data.firstName ?? existing.firstName, data.lastName ?? existing.lastName);
+    const nameChanged = wantName !== normalizePersonName(existing.firstName, existing.lastName);
+    if (nameChanged && !data.confirmSimilarNameUpdate && wantName) {
+      const others = await this.prisma.staffMember.findMany({
+        where: { tenantId, isActive: true, id: { not: id } },
+      });
+      const candidates = others
+        .filter((s) => normalizePersonName(s.firstName, s.lastName) === wantName)
+        .map((s) => ({ id: s.id, name: `${s.firstName} ${s.lastName}`.replace(/\s+/g, ' ').trim() }));
+      if (candidates.length > 0) {
+        throw new ConflictException({
+          code: 'SIMILAR_NAME_REVIEW',
+          message: 'Benzer isimli personel mevcut. Benzerliğe rağmen bu kaydı güncelleyebilir veya vazgeçebilirsiniz.',
+          candidates,
+        });
+      }
+    }
+
+    // Sadece gönderilen alanları güncelle (undefined olanları atla).
+    // NOT: confirmSimilarNameUpdate map'lenmediği için prisma'ya YAZILMAZ.
     const updateData: any = {};
     if (data.firstName !== undefined) updateData.firstName = data.firstName;
     if (data.lastName !== undefined) updateData.lastName = data.lastName;
