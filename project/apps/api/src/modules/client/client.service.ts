@@ -35,6 +35,9 @@ export class ClientService {
       },
       include: {
         contacts: true,
+        // FIX B (PR-1): Vekalet sütunu için aktif vekaletleri getir (liste eskiden POA join etmiyordu
+        // → sütun daima "+Ekle" gösteriyordu, aktif vekaleti olan müvekkilde bile).
+        powerOfAttorneys: { where: { isActive: true }, orderBy: { createdAt: 'desc' } },
         _count: {
           select: { cases: true }
         }
@@ -74,7 +77,15 @@ export class ClientService {
       });
       
       if (existing) {
-        console.log(`[ClientService] Duplicate müvekkil bulundu: ${existing.id} (${existing.displayName})`);
+        // FIX A (PR-1): duplicate eşleşme SOFT-DELETED ise GERİ GETİR (reactivate).
+        // Silme = soft-delete (isActive=false). Silinmiş müvekkili yeniden ekleme/yeniden tarama
+        // eskiden kaydı isActive=false bırakıyordu → findAll (isActive=true) gizliyordu (vekaletleri olsa da).
+        if (existing.isActive === false) {
+          await this.prisma.client.update({ where: { id: existing.id }, data: { isActive: true } });
+          console.log(`[ClientService] Soft-deleted müvekkil reaktive edildi: ${existing.id} (${existing.displayName})`);
+        } else {
+          console.log(`[ClientService] Duplicate müvekkil bulundu: ${existing.id} (${existing.displayName})`);
+        }
         // Mevcut müvekkili döndür, yeni oluşturma
         return this.findOne(existing.id, tenantId);
       }
