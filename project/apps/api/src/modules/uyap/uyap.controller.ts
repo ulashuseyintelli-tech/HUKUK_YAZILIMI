@@ -180,6 +180,7 @@ export class UyapController {
       clientId: body.clientId,
       lawyerId: body.lawyerId,
       tenantId,
+      userId: req.user?.id, // PR-D4e-6: karar-anı audit aktörü
     });
   }
 

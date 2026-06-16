@@ -4,6 +4,7 @@ import { PoaService } from '../poa/poa.service';
 import { CasePolicyEngine } from '../policy-engine/case-policy-engine.service';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { maskIdentity } from '../../common/pii-mask.util';
+import { ValidationGateService } from '../validation-gate/validation-gate.service'; // PR-D4e-6: karar-anı risk snapshot
 
 /**
  * UYAP Entegrasyon Servisi
@@ -70,6 +71,7 @@ export interface HacizRequest {
   clientId?: string; // Vekalet kontrolü için
   lawyerId?: string; // Vekalet kontrolü için
   tenantId?: string; // Vekalet kontrolü için
+  userId?: string; // PR-D4e-6: karar-anı audit aktörü (yoksa sistem/otomasyon)
   skipPoaCheck?: boolean; // Test için vekalet kontrolünü atla
 }
 
@@ -88,6 +90,7 @@ export class UyapService {
     private prisma: PrismaService,
     @Inject(forwardRef(() => PoaService))
     private poaService: PoaService,
+    private validationGate: ValidationGateService, // PR-D4e-6: haciz karar-anı risk snapshot audit
     @Optional() @Inject(forwardRef(() => CasePolicyEngine))
     private casePolicyEngine?: CasePolicyEngine,
   ) {}
@@ -313,6 +316,7 @@ export class UyapService {
    */
   async pushHacizRequest(request: HacizRequest): Promise<UyapResponse> {
     let cpeTraceId: string | undefined;
+    let cpeWarnings: any[] = []; // PR-D4e-6: CPE soft warnings audit metadata'sına eklenecek
 
     // CPE Gate kontrolü (HIGH risk aksiyon)
     if (this.casePolicyEngine) {
@@ -339,9 +343,10 @@ export class UyapService {
           });
         }
 
-        // Soft warnings varsa logla
+        // Soft warnings varsa logla + audit metadata'sı için sakla (D4e-6)
         if (decision.warnings && decision.warnings.length > 0) {
           this.logger.warn(`CPE warnings for TRIGGER_HACIZ:`, decision.warnings);
+          cpeWarnings = decision.warnings;
         }
       } catch (error: any) {
         if (error.response?.code === 'CPE_GATE_BLOCKED') {
@@ -376,6 +381,9 @@ export class UyapService {
     }
 
     const requestId = await this.logRequest('pushHacizRequest', request);
+
+    // PR-D4e-6: KARAR-ANI risk snapshot audit (best-effort, BLOK YOK — audit hatası haczi kesmez).
+    await this.auditHacizDecision(request, requestId, cpeTraceId, cpeWarnings);
 
     try {
       // TODO: Gerçek UYAP SOAP çağrısı
@@ -696,12 +704,71 @@ export class UyapService {
       data: {
         requestType,
         requestData,
+        // PR-D4e-6/D6-Q5: transport log'unda caseId boş kalıyordu; requestData'dan set et.
+        caseId: requestData?.caseId ?? null,
         status: 'PENDING',
       },
     });
 
     this.logger.debug(`UYAP Request logged: ${log.id} - ${requestType}`);
     return log.id;
+  }
+
+  /**
+   * PR-D4e-6: Haciz talebi gönderim anında BACKEND'in hesapladığı saha istihbaratı riskini
+   * AuditLog'a değiştirilemez snapshot olarak yazar (karar-anı izi). Bu CANLI skor persist'i
+   * DEĞİL; nokta-anı audit olayıdır. BLOK YOK + BEST-EFFORT: hesap/yazım hatası haczi KESMEZ.
+   * Risk client snapshot'ından DEĞİL, submission anında YENİDEN hesaplanır (tamper-proof).
+   * Aktör userId; yoksa sistem/otomasyon (retry yolu kullanıcısız). tenantId yoksa atlanır.
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - UyapService.pushHacizRequest() → haciz gönderiminden hemen sonra (logRequest ardından)
+   * </remarks>
+   */
+  private async auditHacizDecision(
+    request: HacizRequest,
+    requestId: string,
+    cpeTraceId: string | undefined,
+    cpeWarnings: any[],
+  ): Promise<void> {
+    try {
+      if (!request.tenantId) {
+        this.logger.warn('[D4e-6] Haciz audit atlandı: tenantId yok');
+        return;
+      }
+
+      // Submission anında backend-otoriter risk (client snapshot'a güvenme).
+      const risk = await this.validationGate.checkPreHacizIntelligence(request.tenantId, request.caseId);
+
+      await this.prisma.auditLog.create({
+        data: {
+          tenantId: request.tenantId,
+          action: 'HACIZ_REQUEST_SUBMITTED',
+          entityType: 'CASE',
+          entityId: request.caseId,
+          userId: request.userId ?? null,
+          userName: request.userId ? null : 'SYSTEM',
+          description: `Haciz talebi gönderildi (${request.targetType}). Karar-anı risk: ${risk.overallLevel}.`,
+          metadata: {
+            targetType: request.targetType,
+            amount: request.amount,
+            uyapRequestId: requestId,
+            cpeTraceId: cpeTraceId ?? null,
+            overallLevel: risk.overallLevel,
+            debtors: risk.debtors.map((d) => ({
+              debtorId: d.debtorId,
+              name: d.name,
+              level: d.level,
+              reasonIds: d.reasons.map((r) => r.id),
+            })),
+            cpeWarnings,
+          },
+        },
+      });
+    } catch (error: any) {
+      // BEST-EFFORT: audit hatası haciz talebini ASLA başarısız yapmaz.
+      this.logger.error(`[D4e-6] Haciz karar-anı audit yazılamadı (haciz etkilenmez): ${error?.message}`);
+    }
   }
 
   /**
