@@ -676,6 +676,18 @@ const ADDRESS_TYPE_OPTIONS = [
 const addressTypeLabel = (v?: string) =>
   ADDRESS_TYPE_OPTIONS.find((o) => o.value === v)?.label || v || "Adres";
 
+// PR-D5-final-1: kanonik DebtorAddress.type → görünen DTO addressType (deprecated addressType
+// kolonu OKUNMADAN display/init için). DECLARED→TEBLIGAT, BUSINESS_*/LEGAL_CENTER→IS.
+const CANONICAL_TO_ADDRESS_TYPE: Record<string, string> = {
+  DECLARED: "TEBLIGAT",
+  BUSINESS_HQ: "IS",
+  BUSINESS_BRANCH: "IS",
+  LEGAL_CENTER: "IS",
+  MERNIS: "MERNIS",
+  KEP: "KEP",
+};
+const canonicalToAddressType = (type?: string) => CANONICAL_TO_ADDRESS_TYPE[type || ""] || "TEBLIGAT";
+
 /** Adres kaynağı insan-okunur: Müvekkil / MERNİS / Sistem / Manuel. */
 const addressSourceLabel = (addr: DebtorAddress): string => {
   if (addr.addressCategory === "DECLARED_CLIENT") return "Müvekkil";
@@ -735,13 +747,13 @@ function AddressManager({
   };
   const startEdit = (addr: DebtorAddress) => {
     setForm({
-      addressType: addr.addressType || "TEBLIGAT",
+      addressType: canonicalToAddressType(addr.type),
       street: addr.street || "",
       city: addr.city || "",
       district: addr.district || "",
       postalCode: addr.postalCode || "",
       isPrimary: addr.isPrimary,
-      isMernis: addr.isMernis,
+      isMernis: addr.type === "MERNIS",
     });
     setEditingId(addr.id || null);
     setAdding(false);
@@ -846,7 +858,7 @@ function AddressManager({
                   <MapPin className="w-4 h-4 text-gray-400 mt-0.5 flex-shrink-0" />
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5 flex-wrap mb-0.5">
-                      <span className="text-xs bg-gray-200 px-1.5 py-0.5 rounded">{addressTypeLabel(addr.addressType)}</span>
+                      <span className="text-xs bg-gray-200 px-1.5 py-0.5 rounded">{addressTypeLabel(canonicalToAddressType(addr.type))}</span>
                       <span className="text-xs bg-blue-100 text-blue-700 px-1.5 py-0.5 rounded">{addressSourceLabel(addr)}</span>
                       {addr.verified ? (
                         <span className="text-xs bg-green-100 text-green-700 px-1.5 py-0.5 rounded">✓ Doğrulandı</span>

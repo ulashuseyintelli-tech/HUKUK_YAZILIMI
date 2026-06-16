@@ -79,14 +79,18 @@ export enum ThirdPartyType {
 
 export interface DebtorAddress {
   id?: string;
-  addressType: string;
+  /** Kanonik adres tipi (AddressType: MERNIS, BUSINESS_HQ, BUSINESS_BRANCH, LEGAL_CENTER, DECLARED, KEP). Görüntüleme/init için bunu kullan. */
+  type?: string;
+  /** @deprecated Kolon kaldırılacak (D5-final-2). DTO girişi için korunur; görüntülemede `type`'tan türet (canonicalToAddressType). */
+  addressType?: string;
   street: string;
   city: string;
   district?: string;
   postalCode?: string;
   country?: string;
   isPrimary: boolean;
-  isMernis: boolean;
+  /** @deprecated Kolon kaldırılacak (D5-final-2). `type === "MERNIS"` ile türet. */
+  isMernis?: boolean;
   /** Güncel adres mi? */
   isCurrent?: boolean;
   /** Adres kategorisi (DECLARED_CLIENT, DECLARED_DOCUMENT, MERNIS_RESIDENCE, etc.) */
