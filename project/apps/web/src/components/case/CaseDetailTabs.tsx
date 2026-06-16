@@ -16,6 +16,7 @@ import {
   Home,
   Gavel,
   Shield,
+  History,
 } from "lucide-react";
 
 // Panel imports
@@ -32,6 +33,7 @@ import { CaseTimeline } from "./CaseTimeline";
 import { CaseNotes } from "./case-notes";
 import { CaseAttachments } from "./case-attachments";
 import { InterestCalculator } from "./interest-calculator";
+import { CaseHistoryPanel } from "./CaseHistoryPanel";
 
 interface CaseDetailTabsProps {
   caseId: string;
@@ -63,6 +65,7 @@ export function CaseDetailTabs({ caseId, caseData, takipTuru, onRefresh }: CaseD
     { id: "bank", label: "Banka", icon: Banknote, always: true },
     { id: "interest", label: "Faiz", icon: Calculator, always: true },
     { id: "timeline", label: "Zaman Çizelgesi", icon: Clock, always: true },
+    { id: "history", label: "İşlem Geçmişi", icon: History, always: true },
     { id: "notes", label: "Notlar", icon: FileCheck, always: true },
     { id: "attachments", label: "Ekler", icon: FileText, always: true },
   ];
@@ -234,6 +237,8 @@ export function CaseDetailTabs({ caseId, caseData, takipTuru, onRefresh }: CaseD
 
           {/* UYAP Tab */}
           {activeTab === "uyap" && <UyapPanel caseId={caseId} />}
+
+          {activeTab === "history" && <CaseHistoryPanel caseId={caseId} />}
 
           {/* E-Sign Tab */}
           {activeTab === "esign" && <ESignPanel caseId={caseId} />}
