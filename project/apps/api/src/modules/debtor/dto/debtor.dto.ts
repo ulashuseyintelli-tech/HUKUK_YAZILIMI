@@ -158,6 +158,11 @@ export class CreateDebtorDto {
   @IsEnum(DebtorType)
   type: DebtorType;
 
+  // PR-D: kimlik (TCKN/VKN) YOKKEN aynı/benzer isim review'ını bilinçli olarak geç ("ayrı kişi olarak kaydet").
+  @IsBoolean()
+  @IsOptional()
+  forceCreate?: boolean;
+
   // === INDIVIDUAL (Gerçek Kişi) ===
   @IsString()
   @IsOptional()

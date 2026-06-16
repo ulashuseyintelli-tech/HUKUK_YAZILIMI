@@ -5,6 +5,7 @@ import {
   ConflictException,
 } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
+import { normalizePersonName } from "@/common/name-match.util";
 import {
   CreateDebtorDto,
   UpdateDebtorDto,
@@ -406,20 +407,42 @@ export class DebtorService {
     // Validate required fields based on type
     this.validateDebtorByType(dto);
 
-    // Check for duplicates
+    // Check for duplicates (KESİN kimlik: TCKN/VKN/DETSİS) → exact duplicate engellenir.
     const duplicate = await this.checkDuplicateInternal(tenantId, dto);
     if (duplicate) {
       throw new ConflictException({
+        code: "DUPLICATE_IDENTITY",
         message: "Bu kimlik numarasına sahip borçlu zaten mevcut",
         existingDebtor: duplicate,
       });
     }
 
+    // PR-D: KİMLİK YOK + benzer isim → otomatik merge/block YOK; İNSAN KARARI (review).
+    // İki farklı "Ayşe Yılmaz" meşru olabilir → kullanıcı [mevcut kullan]/[ayrı kişi]/[vazgeç] seçer.
+    // forceCreate=true ("ayrı kişi olarak kaydet") bu kontrolü bilinçli geçer.
+    const hasIdentity = !!(dto.tckn || dto.vkn || dto.detsisNo);
+    if (!hasIdentity && !dto.forceCreate) {
+      const wantName = normalizePersonName(this.computeNameAndIdentity(dto).name);
+      if (wantName) {
+        const all = await this.prisma.debtor.findMany({ where: { tenantId }, select: { id: true, name: true } });
+        const candidates = all
+          .filter((d) => normalizePersonName(d.name) === wantName)
+          .map((d) => ({ id: d.id, name: d.name }));
+        if (candidates.length > 0) {
+          throw new ConflictException({
+            code: "SIMILAR_NAME_REVIEW",
+            message: "Benzer isimli borçlu mevcut. Mevcut kayıt kullanılabilir veya ayrı kişi olarak yeni kayıt açılabilir.",
+            candidates,
+          });
+        }
+      }
+    }
+
     // Compute name and identityNo
     const { name, identityNo } = this.computeNameAndIdentity(dto);
 
-    // Extract addresses, estateHeirs, and clientConfirmed from dto
-    const { addresses, estateHeirs, clientConfirmed, ...debtorData } = dto;
+    // Extract addresses, estateHeirs, clientConfirmed, forceCreate from dto (forceCreate prisma'ya YAZILMAZ)
+    const { addresses, estateHeirs, clientConfirmed, forceCreate, ...debtorData } = dto;
 
     // Determine addressIntakeMode based on clientConfirmed and addresses
     let addressIntakeMode: 'CLIENT_CONFIRMED' | 'UNKNOWN' | 'NEEDS_CLIENT_REQUEST' = 'UNKNOWN';
