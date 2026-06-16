@@ -6,6 +6,7 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { DebtorService } from "../debtor/debtor.service";
+import { UetsService } from "./uets.service"; // PR-S1: UETS/KEP teslim durumu sorgulama
 import {
   CreateTebligatDto,
   RecordPttResultDto,
@@ -43,6 +44,15 @@ export const PTT_RESULT_TO_RETURN_REASON: Record<string, string> = {
   VEFAT: "DECEASED",
 };
 
+// PR-S1: UETS/KEP teslim durumu (UetsDeliveryStatus) → TebligatStatus eşleme.
+// Yalnız TERMİNAL sonuçlar eşlenir; ara durumlar (GONDERILDI/OKUNAMADI) → undefined = no-op
+// (durum değiştirilmez, senkron tetiklenmez). TESLIM_EDILDI → DELIVERED (sync set'inde),
+// HATA → IPTAL/FAILED (sync set'i DIŞINDA, CaseDebtor'a yansımaz = güvenli).
+export const ELECTRONIC_DELIVERY_TO_TEBLIGAT_STATUS: Record<string, TebligatStatus> = {
+  TESLIM_EDILDI: TebligatStatus.TESLIM_EDILDI,
+  HATA: TebligatStatus.IPTAL,
+};
+
 @Injectable()
 export class TebligatService {
   private readonly logger = new Logger(TebligatService.name);
@@ -52,7 +62,8 @@ export class TebligatService {
 
   constructor(
     private prisma: PrismaService,
-    private debtorService: DebtorService // PR-D5-b-1: CaseDebtor senkronu
+    private debtorService: DebtorService, // PR-D5-b-1: CaseDebtor senkronu
+    private uetsService: UetsService // PR-S1: UETS/KEP teslim durumu
   ) {}
 
   // ==================== CRUD İŞLEMLERİ ====================
@@ -262,6 +273,78 @@ export class TebligatService {
       nextAction,
       message: this.getNextActionMessage(nextAction, tebligat.addressType),
     };
+  }
+
+  /**
+   * PR-S1: UETS/KEP elektronik tebligat sonucunu kanonik duruma akıtır (ölü-uç kapatma).
+   * recordPttResult'ın elektronik ikizi: UETS/KEP teslim durumu sorgulanır → TebligatStatus +
+   * CaseDebtor.serviceStatus AYNI TRANSACTION'da (atomik) güncellenir, commit sonrası istihbarat
+   * tetiklenir. Kanal UETS/KEP olarak korunur (D4e-2 [B] e-tebligat fiziksel-teyit tetiği için ŞART).
+   * Yalnız terminal sonuçlar (TESLIM_EDILDI→DELIVERED) CaseDebtor'a yansır; ara durumlar no-op.
+   * caseDebtorId yoksa sync NO-OP. NOT: checkDeliveryStatus şu an mock; gerçek UETS/KEP API ile
+   * çalışınca aynı yol kullanılır. Cron entegrasyonu PR-S2'de (burada YOK).
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - TebligatController.recordElectronicResult() → POST /tebligat/:id/electronic-result (UETS/KEP teslim senkronu)
+   * </remarks>
+   */
+  async recordElectronicResult(tenantId: string, id: string) {
+    const tebligat = await this.findById(tenantId, id);
+
+    if (tebligat.channel !== "UETS" && tebligat.channel !== "KEP") {
+      throw new BadRequestException("Bu tebligat elektronik kanaldan (UETS/KEP) gönderilmemiş");
+    }
+    if (!tebligat.barcodeNo) {
+      throw new BadRequestException("Elektronik tebligat numarası (UETS/KEP No) bulunamadı");
+    }
+
+    // UETS/KEP teslim durumu (mock/gerçek API). Deterministik mock TESLIM_EDILDI döner.
+    const delivery = await this.uetsService.checkDeliveryStatus(tebligat.barcodeNo);
+
+    const tebligatStatus = ELECTRONIC_DELIVERY_TO_TEBLIGAT_STATUS[delivery.status];
+    if (!tebligatStatus) {
+      // Ara durum (GONDERILDI/OKUNAMADI) → terminal sonuç değil, durumu değiştirme.
+      return { tebligat, synced: false, message: "Elektronik tebligat henüz sonuçlanmadı" };
+    }
+
+    const actionDate = delivery.deliveredAt ? new Date(delivery.deliveredAt) : new Date();
+    const updateData: any = { status: tebligatStatus };
+    if (tebligatStatus === TebligatStatus.TESLIM_EDILDI) {
+      updateData.deliveredAt = actionDate;
+      updateData.notes = `${tebligat.channel} teslim edildi. No: ${tebligat.barcodeNo}`;
+    } else if (tebligatStatus === TebligatStatus.IPTAL) {
+      updateData.notes = `${tebligat.channel} hata: ${delivery.errorMessage || "bilinmeyen"}`;
+    }
+
+    const serviceStatus = TEBLIGAT_TO_SERVICE_STATUS[tebligatStatus];
+    const shouldSync = !!tebligat.caseDebtorId && SYNC_SERVICE_STATUSES.has(serviceStatus);
+
+    let syncResult: { debtorId: string; addressId: string | null; newStatus: string; channel: string | null; returnReason: string | null } | null = null;
+
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const upd = await (tx as any).tebligat.update({ where: { id }, data: updateData });
+      if (shouldSync) {
+        syncResult = await this.debtorService.syncServiceStatusInTx(tx, {
+          tenantId,
+          caseDebtorId: tebligat.caseDebtorId,
+          newStatus: serviceStatus,
+          channel: tebligat.channel, // UETS | KEP — KORUNUR (istihbarat [B] tetiği için kritik)
+          returnReason: null,
+          addressId: tebligat.addressId || null,
+          actionDate,
+        });
+      }
+      return upd;
+    });
+
+    // Commit sonrası: istihbarat tetiği — ORTAK method. E-tebligat DELIVERED + UETS/KEP + adres →
+    // fiziksel teyit eksikse istihbarat görevi açar (D4e-2 [B]). best-effort.
+    if (syncResult) {
+      const sr = syncResult as { debtorId: string; addressId: string | null; newStatus: string; channel: string | null; returnReason: string | null };
+      await this.debtorService.runServiceResultIntelligence(tenantId, sr.debtorId, sr.addressId, sr.newStatus, sr.channel, sr.returnReason);
+    }
+
+    return { tebligat: updated, synced: !!syncResult };
   }
 
   /**

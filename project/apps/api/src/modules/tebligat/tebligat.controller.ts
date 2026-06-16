@@ -120,6 +120,19 @@ export class TebligatController {
     return this.tebligatService.recordPttResult(tenantId, id, dto);
   }
 
+  /**
+   * PR-S1: UETS/KEP elektronik tebligat sonucunu sorgulayıp kanonik duruma akıt.
+   * Tebligat.status + CaseDebtor.serviceStatus senkronu + istihbarat tetiği (atomik).
+   * POST /tebligat/:id/electronic-result
+   */
+  @Post(":id/electronic-result")
+  recordElectronicResult(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string
+  ) {
+    return this.tebligatService.recordElectronicResult(tenantId, id);
+  }
+
   // ==================== ADRES ÖNCELİK KONTROLÜ ====================
 
   /**
