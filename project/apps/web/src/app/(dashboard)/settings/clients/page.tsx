@@ -418,7 +418,7 @@ export default function ClientsSettingsPage() {
                     <td className="px-3 py-2 text-gray-600">{client.phone || "-"}</td>
                     <td className="px-3 py-2 text-gray-600">{client.email || "-"}</td>
                     <td className="px-3 py-2">
-                      {client.poaCount > 0 || client._count?.poas > 0 ? (
+                      {(client.powerOfAttorneys?.length ?? 0) > 0 || client.poaCount > 0 || client._count?.poas > 0 ? (
                         <button 
                           onClick={() => { setPoaClient(client); setShowPoaModal(true); }}
                           className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs cursor-pointer hover:opacity-80 ${
