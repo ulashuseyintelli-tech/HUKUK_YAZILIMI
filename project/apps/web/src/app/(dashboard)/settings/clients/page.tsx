@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { Plus, X, Search, Building2, User, Landmark, Edit2, Trash2, Loader2, Mail, Send, MessageSquare, Download, Upload, FileSpreadsheet, FileText, FileCheck, AlertTriangle, Clock, CheckCircle, Globe, Users, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
 import { api } from "@/lib/api";
+import { isPoaDuplicateSuppressed, POA_DUPLICATE_MESSAGE } from "@/lib/poa-ux";
 import { PoaScannerWizard } from "@/components/client/PoaScannerWizard";
 import { BulkEmailModal } from "@/components/bulk-email-modal";
 
@@ -112,8 +113,8 @@ export default function ClientsSettingsPage() {
             canRelease: poaData.canRelease ?? data.canRelease ?? false,
           });
           // PR-2a: aynı vekalet zaten kayıtlıysa backend yeni açmaz; kullanıcıya bildir.
-          if (poaRes?.data?._suppressedDuplicate || poaRes?.data?.data?._suppressedDuplicate) {
-            alert("Bu vekalet zaten kayıtlı; yeni kayıt açılmadı, mevcut kayıt kullanıldı.");
+          if (isPoaDuplicateSuppressed(poaRes)) {
+            alert(POA_DUPLICATE_MESSAGE);
           } else {
             console.log("Vekalet otomatik oluşturuldu");
           }
@@ -1582,8 +1583,8 @@ function ClientPoaModal({ client, onClose }: { client: any; onClose: () => void 
         validUntil: form.validUntil ? new Date(form.validUntil) : undefined,
       });
       // PR-2a: aynı vekalet zaten kayıtlıysa backend yeni açmaz; kullanıcıya bildir.
-      if (poaRes?.data?._suppressedDuplicate || poaRes?.data?.data?._suppressedDuplicate) {
-        alert("Bu vekalet zaten kayıtlı; yeni kayıt açılmadı, mevcut kayıt kullanıldı.");
+      if (isPoaDuplicateSuppressed(poaRes)) {
+        alert(POA_DUPLICATE_MESSAGE);
       }
       await loadPoas();
       setShowAddForm(false);
