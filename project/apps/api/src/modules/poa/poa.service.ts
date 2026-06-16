@@ -4,6 +4,38 @@ import { PoaStatus, PoaScopeType } from "@prisma/client";
 import * as fs from "fs";
 import * as path from "path";
 
+// ── PR-2: POA semantik idempotency saf yardımcıları ──
+// Dedupe anahtarı: clientId + normalizedNotaryName + dateIssued (aktif). poaNumber/yevmiyeNo
+// OCR-gürültülü → anahtar DEĞİL. documentHash bu PR dışında.
+
+/** Noter adını eşleştirme için normalize eder (trim + tek boşluk + TR upper). */
+export function normalizeNotaryName(name?: string | null): string {
+  return (name || "").trim().replace(/\s+/g, " ").toLocaleUpperCase("tr-TR");
+}
+
+/** İki vekalet tarihinin AYNI GÜN olup olmadığı (saat/zaman dilimi yok say). */
+export function sameIssueDay(a?: Date | string | null, b?: Date | string | null): boolean {
+  if (!a || !b) return false;
+  const da = new Date(a);
+  const db = new Date(b);
+  if (isNaN(da.getTime()) || isNaN(db.getTime())) return false;
+  return da.toISOString().slice(0, 10) === db.toISOString().slice(0, 10);
+}
+
+/** Mevcut kayıttaki BOŞ alanları yeni taramadan gelen değerle doldurur; DOLU alanları EZMEZ. */
+export function buildPoaEnrichment(existing: any, dto: any): Record<string, any> {
+  const fields = ["notaryCity", "journalNo", "poaNumber", "validUntil", "scopeDescription", "filePath"];
+  const out: Record<string, any> = {};
+  for (const f of fields) {
+    const cur = existing?.[f];
+    const empty = cur === null || cur === undefined || (typeof cur === "string" && cur.trim() === "");
+    const incoming = dto?.[f];
+    const hasIncoming = incoming !== null && incoming !== undefined && incoming !== "";
+    if (empty && hasIncoming) out[f] = incoming;
+  }
+  return out;
+}
+
 export interface CreatePoaDto {
   clientId: string;
   notaryName?: string;
@@ -108,6 +140,35 @@ export class PoaService {
     // Süreli vekalet kontrolü
     if (dto.isLimited && !dto.validUntil) {
       throw new BadRequestException("Süreli vekalet için geçerlilik bitiş tarihi zorunludur");
+    }
+
+    // PR-2: SEMANTİK IDEMPOTENCY — aynı vekalet evrakı tekrar taranınca yeni kayıt AÇMA.
+    // Anahtar: clientId + normalizedNotaryName + dateIssued (aktif). Anahtar eksikse (noter/tarih
+    // yoksa) güvenli taraf = normal create (yanlış-merge etme). Eşleşme varsa mevcut aktif döner;
+    // boş alanlar yeni taramadan zenginleşir, dolu alanlar ezilmez. (Aynı client+noter+gün gerçek
+    // hayatta nadiren 2 ayrı vekalet olabilir → bu PR yalnız TARAMA kaynaklı duplicate'i bastırır;
+    // kullanıcı "yine de yeni kayıt aç" override'ı ileride tasarlanabilir.)
+    if (dto.notaryName && dto.dateIssued) {
+      const activePoas = await this.prisma.clientPowerOfAttorney.findMany({
+        where: { clientId: dto.clientId, isActive: true },
+      });
+      const wantNotary = normalizeNotaryName(dto.notaryName);
+      const match = activePoas.find(
+        (poa) => normalizeNotaryName(poa.notaryName) === wantNotary && sameIssueDay(poa.dateIssued, dto.dateIssued),
+      );
+      if (match) {
+        this.logger.warn(
+          `[PR-2] duplicate scan suppressed → mevcut aktif vekalet döndürüldü (${match.id}); ` +
+            `client=${dto.clientId}, noter="${dto.notaryName}", tarih=${dto.dateIssued}`,
+        );
+        const enrichment = buildPoaEnrichment(match, dto);
+        if (Object.keys(enrichment).length > 0) {
+          await this.prisma.clientPowerOfAttorney.update({ where: { id: match.id }, data: enrichment });
+        }
+        // NOT: lawyerIds eklenmez — addLawyers createMany dedupe'siz; suppress yolunda çağırmak
+        // mükerrer PoaLawyer üretir (fix'in amacına aykırı). Tarama akışı zaten lawyerIds göndermez.
+        return this.findOne(match.id, tenantId);
+      }
     }
 
     const { lawyerIds, clientId: _, ...poaData } = dto;
