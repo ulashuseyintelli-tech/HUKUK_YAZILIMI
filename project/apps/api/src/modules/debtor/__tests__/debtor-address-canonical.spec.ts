@@ -3,7 +3,7 @@
  * Frontend addressType (EV/IS/TEBLIGAT/MERNIS/KEP) gönderir; backend kanonik type/source üretir.
  */
 
-import { DebtorService, mapAddressTypeToCanonical } from "../debtor.service";
+import { DebtorService, mapAddressTypeToCanonical, canonicalToAddressType } from "../debtor.service";
 
 describe("mapAddressTypeToCanonical (N-a enum eşleme)", () => {
   it("EV→DECLARED, IS→BUSINESS_HQ, TEBLIGAT→DECLARED, KEP→KEP (source=USER_INPUT)", () => {
@@ -25,6 +25,23 @@ describe("mapAddressTypeToCanonical (N-a enum eşleme)", () => {
   });
 });
 
+describe("canonicalToAddressType (R-a ters eşleme — görüntüleme/init)", () => {
+  it("DECLARED→TEBLIGAT, BUSINESS_HQ/BRANCH/LEGAL_CENTER→IS, MERNIS→MERNIS, KEP→KEP", () => {
+    expect(canonicalToAddressType("DECLARED")).toBe("TEBLIGAT");
+    expect(canonicalToAddressType("BUSINESS_HQ")).toBe("IS");
+    expect(canonicalToAddressType("BUSINESS_BRANCH")).toBe("IS");
+    expect(canonicalToAddressType("LEGAL_CENTER")).toBe("IS");
+    expect(canonicalToAddressType("MERNIS")).toBe("MERNIS");
+    expect(canonicalToAddressType("KEP")).toBe("KEP");
+  });
+
+  it("bilinmeyen/boş → TEBLIGAT fallback", () => {
+    expect(canonicalToAddressType(undefined)).toBe("TEBLIGAT");
+    expect(canonicalToAddressType(null)).toBe("TEBLIGAT");
+    expect(canonicalToAddressType("XXX")).toBe("TEBLIGAT");
+  });
+});
+
 describe("DebtorService.addAddress — kanonik type/source yazımı (PR-D5-a)", () => {
   const buildPrisma = () => ({
     debtor: { findFirst: jest.fn().mockResolvedValue({ id: "d1", debtorAddresses: [], estateHeirs: [], type: "INDIVIDUAL" }) },
@@ -35,7 +52,7 @@ describe("DebtorService.addAddress — kanonik type/source yazımı (PR-D5-a)", 
     task: { findUnique: jest.fn().mockResolvedValue(null), create: jest.fn().mockResolvedValue({}) },
   });
 
-  it("IS adresi → DebtorAddress.type=BUSINESS_HQ + source=USER_INPUT (deprecated addressType korunur)", async () => {
+  it("IS adresi → DebtorAddress.type=BUSINESS_HQ + source=USER_INPUT (deprecated kolona YAZILMAZ — D5-final-1)", async () => {
     const prisma = buildPrisma() as any;
     const svc = new DebtorService(prisma);
 
@@ -44,7 +61,9 @@ describe("DebtorService.addAddress — kanonik type/source yazımı (PR-D5-a)", 
     const data = prisma.debtorAddress.create.mock.calls[0][0].data;
     expect(data.type).toBe("BUSINESS_HQ");
     expect(data.source).toBe("USER_INPUT");
-    expect(data.addressType).toBe("IS"); // deprecated korunur (N-d)
+    // D5-final-1: deprecated kolonlara artık yazım yok (bağımlılık kesildi)
+    expect(data.addressType).toBeUndefined();
+    expect(data.isMernis).toBeUndefined();
   });
 
   it("isMernis=true adresi → type=source=MERNIS", async () => {
