@@ -11,7 +11,9 @@ import { CaseService } from '../case.service';
 describe('CaseService.create() userId guard (fail-fast)', () => {
   // Guard, tx ve hiçbir dependency çağrılmadan ÖNCE çalıştığı için stub yeterli.
   const stub = {} as any;
-  const service = new CaseService(stub, stub, stub, stub, stub, stub, stub);
+  // RFA-016: constructor 10 dep (… + clientService, lawyerService, debtorService). Guard tx öncesi
+  // çalıştığı için bu testte hepsi stub.
+  const service = new CaseService(stub, stub, stub, stub, stub, stub, stub, stub, stub, stub);
 
   it('userId yoksa BadRequestException fırlatır (case oluşturmaz)', async () => {
     await expect(service.create('tenant-1', {} as any, undefined)).rejects.toBeInstanceOf(

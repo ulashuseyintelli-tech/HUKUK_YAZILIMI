@@ -13,6 +13,12 @@ import { mapDtoCaseTypeToInterestCaseType } from "./case-type-mapping";
 import { ExpenseRequestService } from "../expense-request/expense-request.service";
 import { DomainEventIngestService } from "../icrabot/domain-event-ingest";
 import { CollectionService } from "../collection/collection.service";
+// RFA-016: case.create içindeki inline taraf oluşturma artık bu guard'lı servislere devredilir
+// (tx.client/lawyer/debtor.create duplicate guard'ı atlıyordu → Şükrü-deseninin dış-kapı hali).
+import { ClientService } from "../client/client.service";
+import { LawyerService } from "../lawyer/lawyer.service";
+import { DebtorService } from "../debtor/debtor.service";
+import { DebtorType } from "@prisma/client";
 
 @Injectable()
 export class CaseService {
@@ -31,7 +37,102 @@ export class CaseService {
     // G3d: tahsilat create/cancel tek otorite = CollectionService (kanonik yol:
     // closed/duplicate guard + PAYMENT_RECEIVED event + G3a ledger + CollectionAllocation).
     private collectionService: CollectionService,
+    // RFA-016: inline taraf (id YOK) resolve/create için guard'lı servisler.
+    private clientService: ClientService,
+    private lawyerService: LawyerService,
+    private debtorService: DebtorService,
   ) {}
+
+  /**
+   * RFA-016: case.create içindeki inline-yeni taraflar (id YOK) için guard'lı resolve/create.
+   * Transaction ÖNCESİ çağrılır (Tasarım A): guard mantığı tek-kaynak kalır (replike edilmez),
+   * exact/identity eşleşmesi mevcut kaydı reuse eder → silent duplicate önlenir. dto party'lerin
+   * `.id` alanı yerinde set edilir; tx içindeki döngüler artık yalnız id kullanır (tx.X.create YOK).
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseService.create() → POST /cases (Yeni Takip sihirbazı: inline-yeni müvekkil/avukat/borçlu)
+   * </remarks>
+   */
+  private async resolveInlinePartiesBeforeTx(tenantId: string, dto: CreateCaseDto): Promise<void> {
+    // 1) Müvekkil (creditor) — ClientService.create: identity (tckn/vkn) eşleşmesi → mevcut döndür
+    //    (reactivate dahil). Kimliksizde fuzzy YOK (Müvekkil=TCKN kontratı). Throw etmez.
+    if (dto.creditors?.length) {
+      for (const c of dto.creditors) {
+        if (c.id || !c.name) continue;
+        const isCompany = c.type === "COMPANY";
+        const parts = c.name.trim().split(/\s+/);
+        const resolved: any = await this.clientService.create(tenantId, {
+          type: c.type,
+          name: c.name,
+          firstName: !isCompany ? (parts.length > 1 ? parts.slice(0, -1).join(" ") : c.name.trim()) : undefined,
+          lastName: !isCompany && parts.length > 1 ? parts[parts.length - 1] : undefined,
+          companyName: isCompany ? c.name : undefined,
+          tckn: !isCompany ? c.identityNo : undefined,
+          vkn: isCompany ? c.identityNo : undefined,
+          taxOffice: c.taxOffice,
+          phone: c.phone,
+          email: c.email,
+          address: c.address,
+        });
+        c.id = resolved.id;
+      }
+    }
+
+    // 2) Avukat — LawyerService.create: bar/tckn VEYA isim eşleşmesi → mevcut döndür (reactivate). Throw etmez.
+    if (dto.lawyers?.length) {
+      for (const l of dto.lawyers) {
+        if (l.id || !l.name || !l.surname) continue;
+        const resolved: any = await this.lawyerService.create(tenantId, {
+          name: l.name, surname: l.surname, tckn: l.tckn, gender: l.gender,
+          barNumber: l.barNumber, barCity: l.barCity, tbbNo: l.tbbNo,
+          vergiDairesi: l.vergiDairesi, vergiNo: l.vergiNo,
+          phone: l.phone, email: l.email, bankName: l.bankName, iban: l.iban,
+          isInHouseCounsel: l.isInHouseCounsel, isEmployee: l.isEmployee, canSign: l.canSign,
+        });
+        l.id = resolved.id;
+      }
+    }
+
+    // 3) Legacy borçlu (yalnız caseDebtors yoksa kullanılır; UI=NO ama API kapısı açık → guard'a çevrildi).
+    //    DebtorService.create THROW eder: DUPLICATE_IDENTITY → mevcut reuse (client ile tutarlı);
+    //    SIMILAR_NAME_REVIEW (kimliksiz isim) → case-create'te interaktif review yok → forceCreate
+    //    (iki gerçek aynı-isimli borçlu meşru, IR-0). NOT: legacy `address` (deprecated JSON) artık
+    //    taşınmaz; kanonik adres = DebtorAddress (legacy yol UI=NO).
+    if (!dto.caseDebtors?.length && dto.debtors?.length) {
+      for (const d of dto.debtors) {
+        if (d.id || !d.name) continue;
+        const isCompany = d.type === "COMPANY";
+        const parts = d.name.trim().split(/\s+/);
+        const mapped: any = {
+          type: isCompany ? DebtorType.COMPANY : DebtorType.INDIVIDUAL,
+          ...(isCompany
+            ? { companyName: d.name, vkn: d.identityNo, taxOffice: d.taxOffice }
+            : {
+                firstName: parts.length > 1 ? parts.slice(0, -1).join(" ") : d.name.trim(),
+                lastName: parts.length > 1 ? parts[parts.length - 1] : "",
+                tckn: d.identityNo,
+              }),
+          phone: d.phone,
+          email: d.email,
+        };
+        try {
+          const resolved: any = await this.debtorService.create(tenantId, mapped);
+          d.id = resolved.id;
+        } catch (e: any) {
+          const body = e?.response ?? e;
+          if (body?.code === "DUPLICATE_IDENTITY" && body?.existingDebtor?.id) {
+            d.id = body.existingDebtor.id; // kimlik eşleşmesi → mevcut reuse
+          } else if (body?.code === "SIMILAR_NAME_REVIEW") {
+            const forced: any = await this.debtorService.create(tenantId, { ...mapped, forceCreate: true });
+            d.id = forced.id;
+          } else {
+            throw e;
+          }
+        }
+      }
+    }
+  }
 
   /**
    * Vekalet kontrolü - müvekkil ve avukat arasında geçerli vekalet var mı?
@@ -607,6 +708,10 @@ export class CaseService {
     this.validateSubCategoryRules(dto);
 
     try {
+      // RFA-016: inline-yeni taraflar (id YOK) tx ÖNCESİ guard'lı servislerle resolve edilir
+      // (Tasarım A). Böylece tx içinde duplicate guard bypass'lı tx.client/lawyer/debtor.create kalmaz.
+      await this.resolveInlinePartiesBeforeTx(tenantId, dto);
+
       const result = await this.prisma.$transaction(async (tx) => {
         // 1. Alacaklıları (Clients) hazırla - tüm creditors'ları kaydet
         const clientIds: string[] = [];
@@ -614,30 +719,11 @@ export class CaseService {
         
         if (dto.creditors && dto.creditors.length > 0) {
           for (const creditor of dto.creditors) {
-            let clientId: string;
-            
-            if (creditor.id) {
-              // Mevcut client kullan
-              clientId = creditor.id;
-            } else {
-              // Yeni client oluştur
-              const client = await tx.client.create({
-                data: {
-                  tenantId,
-                  type: creditor.type,
-                  name: creditor.name,
-                  identityNo: creditor.identityNo,
-                  taxOffice: creditor.taxOffice,
-                  phone: creditor.phone,
-                  email: creditor.email,
-                  address: creditor.address || undefined,
-                },
-              });
-              clientId = client.id;
-            }
-            
-            clientIds.push(clientId);
-            if (!primaryClientId) primaryClientId = clientId;
+            // RFA-016: inline-yeni müvekkil id'si tx ÖNCESİ guard'lı ClientService.create ile
+            // resolve edildi (reuse/reactivate dahil). Burada tx.client.create YOK; yalnız id kullanılır.
+            if (!creditor.id) continue; // isimsiz/çözülemeyen → atla
+            clientIds.push(creditor.id);
+            if (!primaryClientId) primaryClientId = creditor.id;
           }
         }
 
@@ -726,30 +812,15 @@ export class CaseService {
             let lawyerId: string;
             let lawyerRank: string | null = null;
             
-            if (lawyerDto.id) {
-              // Mevcut avukat kullan - lawyerRank'i al
-              lawyerId = lawyerDto.id;
-              const existingLawyer = await tx.lawyer.findUnique({
-                where: { id: lawyerId },
-                select: { lawyerRank: true },
-              });
-              lawyerRank = existingLawyer?.lawyerRank || null;
-            } else {
-              // Yeni avukat oluştur
-              const lawyer = await tx.lawyer.create({
-                data: {
-                  tenantId,
-                  name: lawyerDto.name,
-                  surname: lawyerDto.surname,
-                  tckn: lawyerDto.tckn,
-                  barNumber: lawyerDto.barNumber,
-                  barCity: lawyerDto.barCity,
-                  phone: lawyerDto.phone,
-                  email: lawyerDto.email,
-                },
-              });
-              lawyerId = lawyer.id;
-            }
+            // RFA-016: inline-yeni avukat id'si tx ÖNCESİ guard'lı LawyerService.create ile resolve
+            // edildi (reuse/reactivate dahil). Burada tx.lawyer.create YOK; yalnız id kullanılır.
+            if (!lawyerDto.id) continue; // isimsiz/çözülemeyen → atla
+            lawyerId = lawyerDto.id;
+            const existingLawyer = await tx.lawyer.findUnique({
+              where: { id: lawyerId },
+              select: { lawyerRank: true },
+            });
+            lawyerRank = existingLawyer?.lawyerRank || null;
 
             // LawyerRank'e göre CaseLawyerRole belirle
             let caseRole: 'RESPONSIBLE' | 'ASSIGNED' | 'ASSISTANT' | 'INTERN' = 'ASSIGNED';
@@ -811,31 +882,13 @@ export class CaseService {
         // Eski format (geriye uyumluluk) - sadece caseDebtors yoksa kullan
         else if (dto.debtors && dto.debtors.length > 0) {
           for (const debtorDto of dto.debtors) {
-            let debtorId: string;
-            if (debtorDto.id) {
-              // Mevcut borçlu kullan
-              debtorId = debtorDto.id;
-            } else {
-              // Yeni borçlu oluştur
-              const debtor = await tx.debtor.create({
-                data: {
-                  tenantId,
-                  type: debtorDto.type,
-                  name: debtorDto.name,
-                  identityNo: debtorDto.identityNo,
-                  taxOffice: debtorDto.taxOffice,
-                  phone: debtorDto.phone,
-                  email: debtorDto.email,
-                  addresses: debtorDto.address ? { primary: debtorDto.address } : undefined,
-                },
-              });
-              debtorId = debtor.id;
-            }
-
+            // RFA-016: inline-yeni borçlu id'si tx ÖNCESİ guard'lı DebtorService.create ile resolve
+            // edildi (kimlik eşleşmesi → reuse). Burada tx.debtor.create YOK; yalnız id kullanılır.
+            if (!debtorDto.id) continue; // isimsiz/çözülemeyen → atla
             await tx.caseDebtor.create({
               data: {
                 caseId: newCase.id,
-                debtorId,
+                debtorId: debtorDto.id,
                 role: "ASIL_BORCLU",
               },
             });

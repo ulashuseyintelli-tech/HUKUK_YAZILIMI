@@ -8,7 +8,7 @@ import { CaseService } from '../case.service';
 
 function buildService(coll: any) {
   // CaseService deps sırası: prisma, audit, clientInfo, interestEngine, expenseRequest,
-  // domainEventIngest, collectionService.
+  // domainEventIngest, collectionService, clientService, lawyerService, debtorService (RFA-016).
   return new CaseService(
     {} as any,
     {} as any,
@@ -17,6 +17,9 @@ function buildService(coll: any) {
     {} as any,
     {} as any,
     coll,
+    {} as any,
+    {} as any,
+    {} as any,
   );
 }
 

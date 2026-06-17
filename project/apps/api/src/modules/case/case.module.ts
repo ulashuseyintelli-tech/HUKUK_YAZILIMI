@@ -7,6 +7,10 @@ import { InterestEngineModule } from "../interest-engine/interest-engine.module"
 import { ExpenseRequestModule } from "../expense-request/expense-request.module";
 import { DomainEventIngestModule } from "../icrabot/domain-event-ingest";
 import { CollectionModule } from "../collection/collection.module";
+// RFA-016: inline taraf oluşturmayı guard'lı servislere devretmek için (duplicate bypass kapatma).
+import { ClientModule } from "../client/client.module";
+import { LawyerModule } from "../lawyer/lawyer.module";
+import { DebtorModule } from "../debtor/debtor.module";
 
 @Module({
   imports: [
@@ -17,6 +21,11 @@ import { CollectionModule } from "../collection/collection.module";
     DomainEventIngestModule,
     // G3d: tahsilat create/cancel tek otorite (CollectionService).
     CollectionModule,
+    // RFA-016: case.create artık inline tx.client/lawyer/debtor.create YAPMAZ; bu servislerin
+    // guard'lı create'ini çağırır (modüller CaseModule'ü import etmez → circular yok).
+    ClientModule,
+    LawyerModule,
+    DebtorModule,
   ],
   controllers: [CaseController],
   providers: [CaseService],
