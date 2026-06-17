@@ -3742,7 +3742,9 @@ model ClientIntakeSubmission {
 
   status      ClientIntakeSubmissionStatus @default(CLIENT_SUBMITTED)
   submittedAt DateTime  @default(now())
-  reviewedById String?
+  claimedById String? // inceleyen personel (claim; review için zorunlu — Faz 4.5)
+  claimedAt   DateTime?
+  reviewedById String? // son karar veren (reviewedAt ile)
   reviewedAt   DateTime?
   sourceMeta   Json? // PII-min: ip hash / ua özeti (ham IP YOK)
 

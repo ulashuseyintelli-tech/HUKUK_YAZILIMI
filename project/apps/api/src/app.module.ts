@@ -71,6 +71,7 @@ import { ClientStatementModule } from "./modules/client-statement/client-stateme
 import { ClientIntelStatementModule } from "./modules/client-intel-statement/client-intel-statement.module";
 import { ClientIntakeLinkModule } from "./modules/client-intake-link/client-intake-link.module";
 import { ClientIntakePublicModule } from "./modules/client-intake-public/client-intake-public.module";
+import { ClientIntakeReviewModule } from "./modules/client-intake-review/client-intake-review.module";
 import { MessageTemplateModule } from "./modules/message-template/message-template.module";
 import { CostPackageModule } from "./modules/cost-package/cost-package.module";
 import { CaseBalanceModule } from "./modules/case-balance/case-balance.module";
@@ -200,6 +201,7 @@ function getConditionalImports(): Type<unknown>[] {
     ClientIntelStatementModule,
     ClientIntakeLinkModule,
     ClientIntakePublicModule,
+    ClientIntakeReviewModule,
     MessageTemplateModule,
     CostPackageModule,
     CaseBalanceModule,
