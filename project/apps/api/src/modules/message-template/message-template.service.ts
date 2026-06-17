@@ -348,6 +348,24 @@ Detay için bürumuzla iletişime geçebilirsiniz.
 Saygılarımızla,
 {{officeName}}`,
       },
+      // ===== Faz 4.3 (intake link) =====
+      {
+        code: 'INTAKE_LINK',
+        name: 'Müvekkil Bilgi Formu Linki',
+        category: 'CLIENT_INFO' as MessageTemplateCategory,
+        channel: 'EMAIL' as MessageTemplateChannel,
+        subject: '{{caseFileNumber}} - Bilgi Formu',
+        body: `Sayın {{clientName}},
+
+{{executionFileNumber}} sayılı dosyanız için bazı bilgilere ihtiyacımız var. Aşağıdaki güvenli bağlantıdan formu doldurabilirsiniz:
+
+{{intakeUrl}}
+
+Son geçerlilik: {{expiresAt}}
+
+Saygılarımızla,
+{{officeName}}`,
+      },
     ];
 
     for (const template of templates) {
