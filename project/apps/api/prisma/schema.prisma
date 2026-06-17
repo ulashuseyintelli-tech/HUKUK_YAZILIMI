@@ -1033,6 +1033,7 @@ model Case {
   precautionaryOrders PrecautionaryOrder[] // İhtiyati haciz kararları
   expenseRequests     ExpenseRequest[] // Masraf talepleri
   caseBalance         CaseBalance? // Masraf bakiyesi (1:1)
+  expenseBlockReasons ExpenseBlockReason[] // "Ödeme/onay yok → işlem yapılmadı" savunma kayıtları (PR-1)
 
   // Address Discovery
   clientInfoRequests ClientInfoRequest[]
@@ -3226,6 +3227,9 @@ model ExpenseRequest {
   // YENİ: Audit log
   auditLogs ExpenseAuditLog[]
 
+  // Savunma kayıtları: bu masraf ödenmediği için yapılmayan işlemler (PR-1)
+  blockReasons ExpenseBlockReason[]
+
   // Tutarlar
   totalSuggested Decimal? @db.Decimal(15, 2) // Sistem önerisi
   totalAmount    Decimal  @db.Decimal(15, 2) // Final tutar (override sonrası)
@@ -3359,6 +3363,59 @@ model ExpenseAuditLog {
   @@index([expenseRequestId])
   @@index([action])
   @@index([createdAt])
+}
+
+// ============================================================
+// MASRAF BLOK GEREKÇESİ (PR-1) — "Ödeme/onay yok → işlem yapılmadı"
+// Operasyonel SAVUNMA DEFTERİ. Salt-kayıt: hiçbir işlemi otomatik durdurmaz.
+// Çekirdek alanlar create sonrası IMMUTABLE; kayıt SİLİNMEZ (yalnız cancel).
+// onDelete=Restrict: açık/var olan gerekçe varken ilgili Case/ExpenseRequest
+// hard-delete EDİLEMEZ (savunma izi DB seviyesinde de korunur).
+// ============================================================
+model ExpenseBlockReason {
+  id       String @id @default(cuid())
+  tenantId String
+
+  caseId String
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Restrict)
+
+  // Opsiyonel: hangi masraf talebinin ödenmemesi bu bloğa sebep oldu
+  expenseRequestId String?
+  expenseRequest   ExpenseRequest? @relation(fields: [expenseRequestId], references: [id], onDelete: Restrict)
+
+  // ÇEKİRDEK (immutable — create sonrası DEĞİŞMEZ)
+  blockedActionCode String // Serbest string: VEHICLE_SEIZURE, REAL_ESTATE_SEIZURE, BANK_QUERY, SALE_REQUEST, FIELD_VISIT (enum DEĞİL — M-1)
+  reasonCode        ExpenseBlockReasonCode
+  note              String?
+
+  // LIFECYCLE (yalnız bu alanlar değişebilir)
+  status        ExpenseBlockStatus @default(OPEN)
+  createdById   String
+  createdAt     DateTime           @default(now())
+  resolvedAt    DateTime?
+  resolvedById  String?
+  cancelledAt   DateTime?
+  cancelledById String?
+  resolutionNote String?
+
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([expenseRequestId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum ExpenseBlockReasonCode {
+  PAYMENT_NOT_RECEIVED // Masraf talep edildi, ödeme gelmedi
+  APPROVAL_PENDING // Müvekkil onayı bekleniyor
+  INSUFFICIENT_ADVANCE // Avans bakiyesi yetersiz
+  OTHER
+}
+
+enum ExpenseBlockStatus {
+  OPEN // İşlem hâlâ bloklu (sebep devam ediyor)
+  RESOLVED // Ödeme/onay geldi, işlem yapılabilir
+  CANCELLED // Kayıt yanlış/geçersiz (silinmez, iptal edilir)
 }
 
 // Mesaj Şablonları (E-posta, SMS, WhatsApp)
