@@ -1,5 +1,7 @@
 import { Injectable } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
+// RFA-017: Excel client import guard'lı ClientService.create'e devredilir (duplicate bypass kapatma).
+import { ClientService } from "../client/client.service";
 import * as ExcelJS from "exceljs";
 import * as PDFDocument from "pdfkit";
 import { computeDebtorMissingFields } from "../debtor/debtor.service"; // PR-D5-e: eksik bilgi sayısı
@@ -92,7 +94,11 @@ export function clientDisplayName(client: {
 
 @Injectable()
 export class ExportImportService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    // RFA-017: import create yolu guard'lı servise devredilir (tek-kaynak; tckn/vkn dedup + reactivate).
+    private clientService: ClientService,
+  ) {}
 
   async exportClientsToExcel(tenantId: string, filters?: { type?: string; search?: string }): Promise<Buffer> {
     const clients = await this.getClients(tenantId, filters);
@@ -404,7 +410,10 @@ export class ExportImportService {
           data.identityNo = data.vkn;
         }
         
-        await this.prisma.client.create({ data });
+        // RFA-017: düz prisma.client.create YERİNE guard'lı ClientService.create.
+        // tckn/vkn eşleşmesi → mevcut kullan (soft-deleted ise reactivate) → re-import duplicate üretmez.
+        // displayName/name/identityNo'yu ClientService kendi hesaplar; tenant izolasyonu korunur.
+        await this.clientService.create(tenantId, data);
         success++;
       } catch (e: any) {
         errors.push({ row: i, message: e.message || "Hata" });
