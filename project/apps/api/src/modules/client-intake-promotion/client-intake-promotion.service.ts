@@ -7,7 +7,19 @@ import {
   ClientIntelSource,
   ClientIntelConfidence,
   ClientIntelStatus,
+  AddressSource,
+  AddressType,
+  AddressCategory,
+  ConfidenceLevel,
 } from '@prisma/client';
+import { findOrCreateDebtorAddress } from '@/common/address-hash.util';
+import { PromoteAddressDto } from './dto/promote-address.dto';
+
+export interface PromoteAddressResult {
+  result: 'PROMOTED' | 'DUPLICATE_ADDRESS';
+  debtorAddressId: string;
+  submissionStatus: ClientIntakeSubmissionStatus;
+}
 
 // Yalnız YUMUŞAK istihbarat → ClientIntelStatement (F46-K2). Diğerleri (ADDRESS/ASSET/CONTACT) 4.6b/c.
 const SOFT_TO_INTEL: Record<string, ClientIntelCategory> = {
@@ -137,5 +149,103 @@ export class ClientIntakePromotionService {
     }
 
     return { submissionStatus: newStatus, promoted, skipped };
+  }
+
+  /**
+   * ADDRESS alanını DebtorAddress(source=CLIENT)'e promote et (Faz 4.6b — HYBRID).
+   * Ham müvekkil beyanı rawAddress'te korunur; YAPISAL street/city personelden (dto).
+   * Duplicate (aynı hash) → promotedRef DOLDURULMAZ, DUPLICATE_ADDRESS döner (audit doğru).
+   * Soft-intel promote (promote()) davranışına DOKUNMAZ.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ClientIntakePromotionController.promoteAddress() → POST /client-intake-fields/:fieldId/promote-address
+   * </remarks>
+   */
+  async promoteAddress(tenantId: string, fieldId: string, userId: string, dto: PromoteAddressDto): Promise<PromoteAddressResult> {
+    const field = await this.prisma.clientIntakeField.findFirst({
+      where: { id: fieldId, submission: { tenantId } },
+      select: {
+        id: true, category: true, value: true, reviewStatus: true, promotedRefId: true,
+        submission: { select: { id: true, status: true, caseId: true } },
+      },
+    });
+    if (!field) throw new NotFoundException('Alan bulunamadı');
+    if (field.category !== 'ADDRESS') throw new BadRequestException('Yalnız ADDRESS alanı bu uçtan promote edilir');
+    if (field.reviewStatus !== ClientIntakeFieldReviewStatus.APPROVED) throw new BadRequestException('Yalnız onaylı (APPROVED) alan promote edilir');
+    if (field.promotedRefId) throw new BadRequestException('Alan zaten promote edilmiş'); // idempotent
+    const subStatus = field.submission.status;
+    if (subStatus !== ClientIntakeSubmissionStatus.IN_REVIEW && subStatus !== ClientIntakeSubmissionStatus.PARTIALLY_PROMOTED) {
+      throw new BadRequestException(`Promote yalnız IN_REVIEW/PARTIALLY_PROMOTED için (durum: ${subStatus})`);
+    }
+
+    // F46-K1: debtor aynı tenant + aynı case (CaseDebtor) mi?
+    const debtor = await this.prisma.debtor.findFirst({ where: { id: dto.debtorId, tenantId }, select: { id: true } });
+    if (!debtor) throw new BadRequestException('Borçlu bulunamadı (tenant)');
+    const cd = await this.prisma.caseDebtor.findFirst({ where: { caseId: field.submission.caseId, debtorId: dto.debtorId }, select: { id: true } });
+    if (!cd) throw new BadRequestException('Borçlu bu takibe ait değil');
+
+    const data = {
+      debtorId: dto.debtorId,
+      street: dto.street,
+      city: dto.city,
+      district: dto.district ?? null,
+      postalCode: dto.postalCode ?? null,
+      country: dto.country ?? 'Türkiye',
+      source: AddressSource.CLIENT,
+      type: AddressType.DECLARED,
+      addressCategory: AddressCategory.DECLARED_CLIENT,
+      verified: false,
+      confidenceLevel: ConfidenceLevel.LOW,
+      rawAddress: field.value, // ham müvekkil beyanı korunur
+    };
+
+    // Atomik: bul-veya-oluştur (RFA-006 ortak helper) + (created ise) promotedRef damgası tek transaction.
+    const { address, created } = await this.prisma.$transaction(async (tx) => {
+      const r = await findOrCreateDebtorAddress(tx, data);
+      if (r.created) {
+        await tx.clientIntakeField.update({
+          where: { id: fieldId },
+          data: { promotedRefType: 'DebtorAddress', promotedRefId: r.address.id },
+        });
+      }
+      return r;
+    });
+
+    if (!created) {
+      // DUPLICATE: yeni kanonik kayıt YOK → promotedRef DOLDURULMADI (D3). Audit doğru kalır.
+      this.logger.log(`Promote-address DUPLICATE: field ${fieldId} → mevcut DebtorAddress ${address.id} (promotedRef set edilmedi)`);
+      return { result: 'DUPLICATE_ADDRESS', debtorAddressId: address.id, submissionStatus: subStatus };
+    }
+
+    const submissionStatus = await this.recomputeSubmissionStatus(field.submission.id, subStatus, userId);
+    return { result: 'PROMOTED', debtorAddressId: address.id, submissionStatus };
+  }
+
+  /** APPROVED alanların tamamı promote edildiyse COMPLETED, kalan varsa PARTIALLY_PROMOTED. */
+  private async recomputeSubmissionStatus(
+    submissionId: string,
+    fallback: ClientIntakeSubmissionStatus,
+    userId: string,
+  ): Promise<ClientIntakeSubmissionStatus> {
+    const approvedTotal = await this.prisma.clientIntakeField.count({
+      where: { submissionId, reviewStatus: ClientIntakeFieldReviewStatus.APPROVED },
+    });
+    const promotedTotal = await this.prisma.clientIntakeField.count({
+      where: { submissionId, reviewStatus: ClientIntakeFieldReviewStatus.APPROVED, promotedRefId: { not: null } },
+    });
+    let newStatus = fallback;
+    if (approvedTotal > 0) {
+      newStatus = promotedTotal >= approvedTotal
+        ? ClientIntakeSubmissionStatus.COMPLETED
+        : ClientIntakeSubmissionStatus.PARTIALLY_PROMOTED;
+    }
+    if (newStatus !== fallback) {
+      await this.prisma.clientIntakeSubmission.update({
+        where: { id: submissionId },
+        data: { status: newStatus, reviewedById: userId, reviewedAt: new Date() },
+      });
+    }
+    return newStatus;
   }
 }
