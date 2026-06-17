@@ -128,7 +128,7 @@ export class ClientIntakePromotionService {
         });
         await tx.clientIntakeField.update({
           where: { id: f.id },
-          data: { promotedRefType: 'ClientIntelStatement', promotedRefId: created.id },
+          data: { promotedRefType: 'ClientIntelStatement', promotedRefId: created.id, promotedAt: new Date(), promotedById: userId },
         });
         return created;
       });
@@ -217,7 +217,7 @@ export class ClientIntakePromotionService {
       if (r.created) {
         await tx.clientIntakeField.update({
           where: { id: fieldId },
-          data: { promotedRefType: 'DebtorAddress', promotedRefId: r.address.id },
+          data: { promotedRefType: 'DebtorAddress', promotedRefId: r.address.id, promotedAt: new Date(), promotedById: userId },
         });
       }
       return r;
@@ -292,7 +292,7 @@ export class ClientIntakePromotionService {
       });
       await tx.clientIntakeField.update({
         where: { id: fieldId },
-        data: { promotedRefType: 'ClientIntelStatement', promotedRefId: created.id },
+        data: { promotedRefType: 'ClientIntelStatement', promotedRefId: created.id, promotedAt: new Date(), promotedById: userId },
       });
       return created;
     });

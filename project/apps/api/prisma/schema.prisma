@@ -3774,6 +3774,8 @@ model ClientIntakeField {
   reviewNote      String?
   promotedRefType String? // onaylanınca yazıldığı kanonik model (4.6)
   promotedRefId   String?
+  promotedAt      DateTime? // promote anı (Faz 4.7 C2b-pre); eski satırlar null, yeni promote MUTLAKA set eder
+  promotedById    String? // promote eden personel (audit); eski null, yeni promote MUTLAKA set eder
 
   createdAt DateTime @default(now())
 
