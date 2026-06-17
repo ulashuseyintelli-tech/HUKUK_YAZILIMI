@@ -3096,6 +3096,10 @@ model ClientNotification {
   // Meta
   metadata Json? // Ek bilgiler (template id, vs.)
 
+  // Idempotency anahtarı (Faz 3): "{templateCode}:{refType}:{refId}:{bucket}"
+  // Aynı mailin iki kez gitmesini güvenilir engellemek için ayrı indexli kolon (JSON'a gömülmez).
+  dedupeKey String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -3105,6 +3109,7 @@ model ClientNotification {
   @@index([channel])
   @@index([type])
   @@index([status])
+  @@index([dedupeKey])
 }
 
 // Portal Bildirimleri (Müvekkil portalında gösterilecek bildirimler)
@@ -3659,6 +3664,9 @@ enum MessageTemplateCategory {
   COLLECTION_INFO // Tahsilat bildirimi
   DEBTOR_NOTICE // Borçluya bildirim
   GREETING // Tebrik mesajları
+  CLIENT_APPROVAL // Müvekkil işlem onayı / onay sonucu (Faz 3)
+  STATEMENT_READY // Müvekkil ekstresi hazır (Faz 3)
+  PAYMENT_INFO // Ödeme alındı / kısmi ödeme bakiye (Faz 3)
   OTHER // Diğer
 }
 
