@@ -138,9 +138,20 @@ export function checkFormConsistency(
     }
   }
 
-  // En yüksek öncelikli öneriyi belirle
-  const suggestedFormCode = warnings.find((w) => w.severity === 'error')?.suggestedFormCode ||
-                           warnings[0]?.suggestedFormCode;
+  // En yüksek öncelikli öneriyi belirle.
+  // Öncelik sırası:
+  //   (1) error-severity uyarının önerisi — error her zaman kazanır,
+  //   (2) ilam + rehin BİRLİKTE tutarsızsa birleşik üst-doğru form: FORM_6 (İpotekli İlamlı Takip)
+  //       — FORM_2_3_4_5 yalnız ilamı, FORM_9 yalnız rehni kapsar; her iki olguyu da yalnız FORM_6 kapsar,
+  //   (3) aksi halde mevcut ilk uyarı (warnings[0]) fallback.
+  const errorSuggestion = warnings.find((w) => w.severity === 'error')?.suggestedFormCode;
+  const judgmentAndMortgage =
+    warnings.some((w) => w.type === 'JUDGMENT_MISMATCH') &&
+    warnings.some((w) => w.type === 'MORTGAGE_MISMATCH');
+  const suggestedFormCode =
+    errorSuggestion ||
+    (judgmentAndMortgage ? 'FORM_6' : undefined) ||
+    warnings[0]?.suggestedFormCode;
 
   const isValid = warnings.length === 0;
 
