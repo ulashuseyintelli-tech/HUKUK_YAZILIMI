@@ -859,7 +859,23 @@ export default function NewCasePage() {
     if (currentStep === 0 && !selectedForm) { setError("Lütfen bir form türü seçin"); return; }
     if (currentStep === 0 && selectedForm?.subForms?.length && !selectedSubForm) { setError("Lütfen bir alt form türü seçin"); return; }
     if (currentStep === 1 && !caseData.fileNumber.trim()) { setError("Takip No zorunludur"); return; }
+    if (currentStep === 1 && !caseData.takipTuruId) { setError("Takip türü zorunludur"); return; }
     setError(""); setCurrentStep(prev => Math.min(prev + 1, steps.length - 1));
+  };
+
+  // B2: Adım-bazlı yumuşak uyarı (ilerlemeyi engellemez). Girdiler submit
+  // validasyonuyla (handleSubmitClick → validateCaseCreation) birebir aynıdır;
+  // amaç eksiği son adım yerine ilgili adımda erken sinyallemektir.
+  const getStepSoftNotice = (): { message: string; severity: "warning" | "info" } | null => {
+    if (currentStep === 2 && lawyers.filter(l => l.name && l.surname).length === 0)
+      return { message: "Bu adımda henüz avukat eklemediniz. Şimdi ekleyebilir ya da sonra tamamlayabilirsiniz.", severity: "warning" };
+    if (currentStep === 3 && creditors.filter(c => c.name).length === 0)
+      return { message: "Bu adımda henüz müvekkil eklemediniz. Şimdi ekleyebilir ya da sonra tamamlayabilirsiniz.", severity: "warning" };
+    if (currentStep === 4 && caseDebtors.length === 0)
+      return { message: "Bu adımda henüz borçlu eklemediniz. Şimdi ekleyebilir ya da sonra tamamlayabilirsiniz.", severity: "warning" };
+    if (currentStep === 5 && dues.filter(d => d.amount && parseFloat(d.amount) > 0).length === 0)
+      return { message: "Alacak kalemi eklemediniz — dosya oluşturulduktan sonra ekleyebilirsiniz.", severity: "info" };
+    return null;
   };
 
   const goToStep = (stepId: number) => {
@@ -1832,6 +1848,19 @@ export default function NewCasePage() {
             </ul>
           </div>
         )}
+
+        {/* B2: Adım-bazlı yumuşak uyarı (adım 2-5) — ilerlemeyi engellemez, yalnız erken bilgilendirir */}
+        {(() => {
+          const notice = getStepSoftNotice();
+          if (!notice) return null;
+          const isInfo = notice.severity === "info";
+          return (
+            <div className={`mt-4 p-3 rounded-lg border flex items-start gap-2 ${isInfo ? 'bg-blue-50 border-blue-200' : 'bg-amber-50 border-amber-200'}`}>
+              {isInfo ? <Info className="h-4 w-4 mt-0.5 flex-shrink-0 text-blue-600" /> : <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0 text-amber-600" />}
+              <span className={`text-sm ${isInfo ? 'text-blue-700' : 'text-amber-700'}`}>{notice.message}</span>
+            </div>
+          );
+        })()}
 
         {/* Wizard açıkken ana sayfa butonlarını gizle - wizard kendi butonlarını kullanır */}
         {!(currentStep === 0 && showWizard && !showDocumentSelector) && (
