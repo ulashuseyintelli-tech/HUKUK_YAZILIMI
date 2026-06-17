@@ -157,4 +157,67 @@ describe('ClientIntakePromotionService', () => {
       expect(mockFindOrCreate).not.toHaveBeenCalled();
     });
   });
+
+  // ==================== Faz 4.7 PR-C2a — promoteSoftField (FIELD-LEVEL soft) ====================
+  describe('promoteSoftField (tek soft-intel alan → ClientIntelStatement)', () => {
+    const armSoftField = (over: any = {}) =>
+      mockPrisma.clientIntakeField.findFirst.mockResolvedValue({
+        id: 'sf-1', category: 'INCOME_SOURCE', label: 'L', value: 'Müteahhit', reviewStatus: 'APPROVED', promotedRefId: null,
+        submission: { id: SUB, status: 'IN_REVIEW', caseId: CASE }, ...over,
+      });
+
+    it('soft APPROVED → ClientIntelStatement.create + promotedRef; PROMOTED + COMPLETED', async () => {
+      armSoftField();
+      mockPrisma.clientIntakeField.count.mockResolvedValueOnce(1).mockResolvedValueOnce(1); // approved=1, promoted=1
+      const res = await service.promoteSoftField(TENANT, 'sf-1', USER, DEBTOR);
+      expect(mockPrisma.clientIntelStatement.create).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ tenantId: TENANT, caseId: CASE, debtorId: DEBTOR, category: 'INCOME_SOURCE', value: 'Müteahhit', source: 'CLIENT_DECLARATION', confidence: 'DECLARED', status: 'ACTIVE' }),
+      }));
+      expect(mockPrisma.clientIntakeField.update).toHaveBeenCalledWith({ where: { id: 'sf-1' }, data: { promotedRefType: 'ClientIntelStatement', promotedRefId: 'cis-1' } });
+      expect(res).toEqual({ result: 'PROMOTED', clientIntelStatementId: 'cis-1', submissionStatus: 'COMPLETED' });
+    });
+
+    it('ADDRESS → 400 (promote-soft yalnız soft-6); create YOK', async () => {
+      armSoftField({ category: 'ADDRESS' });
+      await expect(service.promoteSoftField(TENANT, 'sf-1', USER, DEBTOR)).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.clientIntelStatement.create).not.toHaveBeenCalled();
+    });
+
+    it('ASSET → 400 ve CONTACT → 400 (4.6c yok); create YOK', async () => {
+      armSoftField({ category: 'ASSET' });
+      await expect(service.promoteSoftField(TENANT, 'sf-1', USER, DEBTOR)).rejects.toThrow(BadRequestException);
+      armSoftField({ category: 'CONTACT' });
+      await expect(service.promoteSoftField(TENANT, 'sf-1', USER, DEBTOR)).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.clientIntelStatement.create).not.toHaveBeenCalled();
+    });
+
+    it('APPROVED olmayan alan → 400; create YOK', async () => {
+      armSoftField({ reviewStatus: 'PENDING' });
+      await expect(service.promoteSoftField(TENANT, 'sf-1', USER, DEBTOR)).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.clientIntelStatement.create).not.toHaveBeenCalled();
+    });
+
+    it('zaten promote edilmiş alan → 400 (idempotent, çift-yazım yok)', async () => {
+      armSoftField({ promotedRefId: 'cis-old' });
+      await expect(service.promoteSoftField(TENANT, 'sf-1', USER, DEBTOR)).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.clientIntelStatement.create).not.toHaveBeenCalled();
+    });
+
+    it('debtor casee ait değilse → 400 (CaseDebtor yok); create YOK', async () => {
+      armSoftField();
+      mockPrisma.caseDebtor.findFirst.mockResolvedValue(null);
+      await expect(service.promoteSoftField(TENANT, 'sf-1', USER, DEBTOR)).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.clientIntelStatement.create).not.toHaveBeenCalled();
+    });
+
+    it('alan bulunamazsa NotFound', async () => {
+      mockPrisma.clientIntakeField.findFirst.mockResolvedValue(null);
+      await expect(service.promoteSoftField(TENANT, 'sf-1', USER, DEBTOR)).rejects.toThrow(NotFoundException);
+    });
+
+    it('submission IN_REVIEW/PARTIALLY değilse → 400', async () => {
+      armSoftField({ submission: { id: SUB, status: 'COMPLETED', caseId: CASE } });
+      await expect(service.promoteSoftField(TENANT, 'sf-1', USER, DEBTOR)).rejects.toThrow(BadRequestException);
+    });
+  });
 });

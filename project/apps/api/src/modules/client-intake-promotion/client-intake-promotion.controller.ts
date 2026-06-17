@@ -4,6 +4,7 @@ import { Request } from 'express';
 import { ClientIntakePromotionService } from './client-intake-promotion.service';
 import { PromoteSubmissionDto } from './dto/promote-submission.dto';
 import { PromoteAddressDto } from './dto/promote-address.dto';
+import { PromoteSoftDto } from './dto/promote-soft.dto';
 
 interface AuthRequest extends Request {
   user: { id: string; tenantId: string };
@@ -35,5 +36,16 @@ export class ClientIntakePromotionController {
   @Post('client-intake-fields/:fieldId/promote-address')
   async promoteAddress(@Req() req: AuthRequest, @Param('fieldId') fieldId: string, @Body() dto: PromoteAddressDto) {
     return this.service.promoteAddress(req.user.tenantId, fieldId, req.user.id, dto);
+  }
+
+  /**
+   * TEK soft-intel alanını ClientIntelStatement'a promote et (Faz 4.7 PR-C2a — FIELD-LEVEL).
+   * Frontend (C2b) yalnız bu ucu kullanır (bulk/tek-tık submission-level promote DEĞİL).
+   * POST /client-intake-fields/:fieldId/promote-soft { debtorId }
+   * Yanıt: { result: 'PROMOTED', clientIntelStatementId, submissionStatus }.
+   */
+  @Post('client-intake-fields/:fieldId/promote-soft')
+  async promoteSoft(@Req() req: AuthRequest, @Param('fieldId') fieldId: string, @Body() dto: PromoteSoftDto) {
+    return this.service.promoteSoftField(req.user.tenantId, fieldId, req.user.id, dto.debtorId);
   }
 }
