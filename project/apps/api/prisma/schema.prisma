@@ -706,6 +706,7 @@ model Debtor {
   caseDebtors     CaseDebtor[]
   assets          Asset[]
   communications  DebtorCommunication[]
+  clientIntelStatements ClientIntelStatement[] // Müvekkil yumuşak-istihbarat beyanı (Faz 4.0)
   estateHeirs     EstateHeir[] // Tereke mirasçıları
   icrabotJobs     IcrabotJobRun[] // v30: Debtor-scoped jobs
 
@@ -1038,6 +1039,7 @@ model Case {
   expenseBlockReasons ExpenseBlockReason[] // "Ödeme/onay yok → işlem yapılmadı" savunma kayıtları (PR-1)
   clientApprovalRequests ClientApprovalRequest[] // Müvekkil onay defteri (PR-2)
   clientStatements ClientStatement[] // Müvekkil ekstresi (PR-3)
+  clientIntelStatements ClientIntelStatement[] // Müvekkil yumuşak-istihbarat beyanı (Faz 4.0)
 
   // Address Discovery
   clientInfoRequests ClientInfoRequest[]
@@ -3614,6 +3616,74 @@ enum ClientStatementLineType {
   EXPENSE_REQUESTED // Masraf talebi (ExpenseRequest) — BİLGİ, bakiyeyi oynatmaz
   REFUND // İade (BalanceLedger REFUND)
   ADJUST // Manuel düzeltme (BalanceLedger ADJUST)
+}
+
+// ============================================================
+// MÜVEKKİL İSTİHBARAT BEYANI (Faz 4.0) — yalnız YUMUŞAK istihbarat
+// (gelir/ticari/aile/dijital/tahsilat-beyanı/strateji). Adres→DebtorAddress,
+// varlık→Asset, iletişim→Debtor BU MODELE YAZILMAZ (anti-tekrar).
+// source=CLIENT_DECLARATION, confidence=DECLARED. value IMMUTABLE; düzeltme=supersede;
+// yanlış çıkan SİLİNMEZ (RETRACTED/FALSE_POSITIVE). onDelete=Restrict (delil izi).
+// Faz 4 dış-form promote hedefi. Party/IR-0/cross-case YOK.
+// ============================================================
+model ClientIntelStatement {
+  id       String @id @default(cuid())
+  tenantId String
+
+  caseId String
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Restrict)
+
+  debtorId String
+  debtor   Debtor @relation(fields: [debtorId], references: [id], onDelete: Restrict)
+
+  category ClientIntelCategory
+  label    String? // soru/etiket ("Borçlu nasıl para kazanıyor?")
+  value    String // müvekkil beyanı (IMMUTABLE)
+  note     String?
+
+  source     ClientIntelSource     @default(CLIENT_DECLARATION)
+  confidence ClientIntelConfidence @default(DECLARED)
+
+  status         ClientIntelStatus @default(ACTIVE)
+  supersededById String? // yerine geçen kayıt (self-ref, FK YOK — gevşek)
+  supersededAt   DateTime?
+  revokedAt      DateTime? // retract / false-positive damgası
+  revokedById    String?
+  lifecycleNote  String? // geçiş gerekçesi (içerik değil)
+
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt // yalnız lifecycle geçişinde değişir
+
+  @@index([tenantId, debtorId])
+  @@index([caseId])
+  @@index([debtorId, status])
+  @@index([status])
+  @@index([createdAt])
+}
+
+enum ClientIntelCategory {
+  INCOME_SOURCE // Gelir kaynağı (müteahhit/nakliyeci/doktor…)
+  COMMERCIAL_RELATION // Ticari ilişki (kim ödüyor/müşteri/tedarikçi/POS)
+  FAMILY_CIRCLE // Aile / yakın çevre
+  DIGITAL_FOOTPRINT // Dijital iz (sosyal medya/online mağaza)
+  PAYMENT_HISTORY // Tahsilat geçmişi beyanı
+  STRATEGY // Dosya stratejisi soruları
+}
+
+enum ClientIntelSource {
+  CLIENT_DECLARATION // Müvekkil beyanı (CLIENT_PORTAL/INTAKE Faz 4'te additive)
+}
+
+enum ClientIntelConfidence {
+  DECLARED // Beyan — en zayıf güven katmanı
+}
+
+enum ClientIntelStatus {
+  ACTIVE // Geçerli beyan
+  RETRACTED // Müvekkil geri aldı (silinmez)
+  SUPERSEDED // Yenisiyle değiştirildi (içerik aynen kalır)
+  FALSE_POSITIVE // Yanlış çıktı (silinmez)
 }
 
 // Mesaj Şablonları (E-posta, SMS, WhatsApp)
