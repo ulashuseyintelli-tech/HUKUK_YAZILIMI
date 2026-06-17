@@ -20,14 +20,14 @@ interface ValidationState {
 
 /**
  * Pre-submit validasyon hook'u
- * Case olusturulmadan once frontend'de validasyon yapar
+ * Case oluşturulmadan önce frontend'de validasyon yapar
  */
 export function usePreSubmitValidation() {
   const [errors, setErrors] = useState<ValidationError[]>([]);
   const [warnings, setWarnings] = useState<ValidationError[]>([]);
 
   /**
-   * Takip olusturma oncesi validasyon
+   * Takip oluşturma öncesi validasyon
    */
   const validateCaseCreation = useCallback((data: {
     takipTuruId?: string;
@@ -42,17 +42,17 @@ export function usePreSubmitValidation() {
     const newErrors: ValidationError[] = [];
     const newWarnings: ValidationError[] = [];
 
-    // Takip turu kontrolu
+    // Takip türü kontrolü
     if (!data.takipTuruId) {
       newErrors.push({
         code: "MISSING_CASE_TYPE",
-        message: "Takip turu secilmedi",
+        message: "Takip türü seçilmedi",
         field: "takipTuruId",
         severity: "error",
       });
     }
 
-    // Avukat kontrolu
+    // Avukat kontrolü
     if (!data.lawyers || data.lawyers.length === 0) {
       newErrors.push({
         code: "MISSING_LAWYER",
@@ -61,7 +61,7 @@ export function usePreSubmitValidation() {
         severity: "error",
       });
     } else {
-      // Sorumlu avukat kontrolu
+      // Sorumlu avukat kontrolü
       const hasResponsible = data.lawyers.some(l => l.isResponsible);
       if (!hasResponsible) {
         newWarnings.push({
@@ -73,27 +73,27 @@ export function usePreSubmitValidation() {
       }
     }
 
-    // Muvekkil kontrolu
+    // Müvekkil kontrolü
     if (!data.creditors || data.creditors.length === 0) {
       newErrors.push({
         code: "MISSING_CREDITOR",
-        message: "En az bir muvekkil eklenmeli",
+        message: "En az bir müvekkil eklenmeli",
         field: "creditors",
         severity: "error",
       });
     }
 
-    // Borclu kontrolu
+    // Borçlu kontrolü
     if ((!data.caseDebtors || data.caseDebtors.length === 0)) {
       newErrors.push({
         code: "MISSING_DEBTOR",
-        message: "En az bir borclu eklenmeli",
+        message: "En az bir borçlu eklenmeli",
         field: "caseDebtors",
         severity: "error",
       });
     }
 
-    // Alacak kalemi kontrolu
+    // Alacak kalemi kontrolü
     if (!data.dues || data.dues.length === 0) {
       newWarnings.push({
         code: "NO_CLAIM_ITEMS",
@@ -103,21 +103,21 @@ export function usePreSubmitValidation() {
       });
     }
 
-    // Kambiyo takiplerinde ozel kontroller
+    // Kambiyo takiplerinde özel kontroller
     if (data.mahiyetKodu === "CEK" || data.mahiyetKodu === "SENET") {
-      // Cek/Senet bilgisi kontrolu (ileride CaseInstrument ile)
+      // Çek/Senet bilgisi kontrolü (ileride CaseInstrument ile)
       newWarnings.push({
         code: "INSTRUMENT_INFO_PENDING",
-        message: `${data.mahiyetKodu === "CEK" ? "Cek" : "Senet"} bilgileri dosya olusturulduktan sonra eklenebilir`,
+        message: `${data.mahiyetKodu === "CEK" ? "Çek" : "Senet"} bilgileri dosya oluşturulduktan sonra eklenebilir`,
         severity: "info",
       });
     }
 
-    // Doviz takiplerinde kur kontrolu
+    // Döviz takiplerinde kur kontrolü
     if (data.currency && data.currency !== "TRY") {
       newWarnings.push({
         code: "FOREIGN_CURRENCY_NOTICE",
-        message: `Doviz cinsi: ${data.currency} - Kur hesaplamasi otomatik yapilacak`,
+        message: `Döviz cinsi: ${data.currency} - Kur hesaplaması otomatik yapılacak`,
         severity: "info",
       });
     }
@@ -149,7 +149,7 @@ export function usePreSubmitValidation() {
 
 /**
  * Backend validasyon hook'u
- * Mevcut case icin gate validasyonu yapar
+ * Mevcut case için gate validasyonu yapar
  */
 export function useGateValidation(options?: UseValidationOptions) {
   const [state, setState] = useState<ValidationState>({
@@ -190,7 +190,7 @@ export function useGateValidation(options?: UseValidationOptions) {
         gateId,
         gateName: gateId,
         passed: false,
-        errors: [{ code: "API_ERROR", message: err.message || "Validasyon hatasi", severity: "error" }],
+        errors: [{ code: "API_ERROR", message: err.message || "Validasyon hatası", severity: "error" }],
         warnings: [],
         infos: [],
         validatedAt: new Date().toISOString(),
@@ -217,7 +217,7 @@ export function useGateValidation(options?: UseValidationOptions) {
     try {
       const results = await api.validateAllGates(caseId, additionalData);
       
-      // Tum hatalari ve uyarilari topla
+      // Tüm hataları ve uyarıları topla
       const allErrors: ValidationError[] = [];
       const allWarnings: ValidationError[] = [];
       
@@ -238,7 +238,7 @@ export function useGateValidation(options?: UseValidationOptions) {
       setState(prev => ({
         ...prev,
         loading: false,
-        errors: [{ code: "API_ERROR", message: err.message || "Validasyon hatasi", severity: "error" }],
+        errors: [{ code: "API_ERROR", message: err.message || "Validasyon hatası", severity: "error" }],
       }));
       return null;
     }
@@ -264,7 +264,7 @@ export function useGateValidation(options?: UseValidationOptions) {
 }
 
 /**
- * Cek tazminati bilgisi hook'u
+ * Çek tazminatı bilgisi hook'u
  */
 export function useCheckCompensation() {
   const [info, setInfo] = useState<{
@@ -280,7 +280,7 @@ export function useCheckCompensation() {
       const data = await api.getCheckCompensationInfo();
       setInfo(data);
     } catch (err) {
-      console.error("Cek tazminati bilgisi alinamadi:", err);
+      console.error("Çek tazminatı bilgisi alınamadı:", err);
     } finally {
       setLoading(false);
     }
@@ -290,7 +290,7 @@ export function useCheckCompensation() {
 }
 
 /**
- * Adres onerileri hook'u
+ * Adres önerileri hook'u
  */
 export function useAddressSuggestions() {
   const [suggestions, setSuggestions] = useState<{
@@ -305,7 +305,7 @@ export function useAddressSuggestions() {
       const data = await api.getAddressSuggestions();
       setSuggestions(data);
     } catch (err) {
-      console.error("Adres onerileri alinamadi:", err);
+      console.error("Adres önerileri alınamadı:", err);
     } finally {
       setLoading(false);
     }
