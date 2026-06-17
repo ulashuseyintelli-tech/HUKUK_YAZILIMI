@@ -714,6 +714,25 @@ export class CaseService {
     this.validateSubCategoryRules(dto);
 
     try {
+      // B4/D: fileNumber ön-benzersizlik kontrolü — tx-öncesi taraf yaratımından
+      // (resolveInlinePartiesBeforeTx) HEMEN ÖNCE. Mükerrer dosya no'da Case tx zaten
+      // aşağıdaki P2002 ile patlardı; fakat o ana dek inline-yeni müvekkil/borçlu/avukat
+      // KALICI yaratılmış olurdu (orphan yan-etki). Erken 409 → hiç taraf yaratılmaz.
+      // where TENANT-SCOPED: @@unique([tenantId, fileNumber]) constraint'i ile birebir.
+      // NOT: Bu, atomiklik garantisi DEĞİL; eşzamanlı çift submit (TOCTOU) için aşağıdaki
+      // P2002 catch backstop olarak KORUNUR.
+      if (dto.fileNumber) {
+        const duplicate = await this.prisma.case.findFirst({
+          where: { tenantId, fileNumber: dto.fileNumber },
+          select: { id: true },
+        });
+        if (duplicate) {
+          throw new ConflictException(
+            `Bu dosya numarası (${dto.fileNumber}) zaten kullanılıyor`
+          );
+        }
+      }
+
       // RFA-016: inline-yeni taraflar (id YOK) tx ÖNCESİ guard'lı servislerle resolve edilir
       // (Tasarım A). Böylece tx içinde duplicate guard bypass'lı tx.client/lawyer/debtor.create kalmaz.
       await this.resolveInlinePartiesBeforeTx(tenantId, dto);
