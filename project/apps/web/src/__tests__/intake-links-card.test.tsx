@@ -91,4 +91,42 @@ describe("IntakeLinksCard (link üret / listele / iptal)", () => {
     fireEvent.click(screen.getByRole("button", { name: /^İptal$/i }));
     await waitFor(() => expect(revokeIntakeLink).toHaveBeenCalledWith("l1"));
   });
+
+  // Bulgu A: revoke hatası sessiz kalmamalı + listeyi sahte güncellememeli
+  it("revoke FAILURE → açık hata gösterir, listeyi sahte güncellemez", async () => {
+    listIntakeLinks.mockResolvedValue([link()]); // ACTIVE
+    revokeIntakeLink.mockRejectedValue(new Error("Sunucu reddetti"));
+    render(<IntakeLinksCard caseId="c1" client={clientProp} />);
+    await waitFor(() => screen.getByText("Aktif"));
+    const loadCallsBefore = listIntakeLinks.mock.calls.length; // mount yüklemesi
+    fireEvent.click(screen.getByRole("button", { name: /^İptal$/i }));
+    await waitFor(() => expect(revokeIntakeLink).toHaveBeenCalledWith("l1"));
+    // Açık hata mesajı görünür (sessiz değil)
+    await waitFor(() => expect(screen.getByText(/Sunucu reddetti/i)).toBeTruthy());
+    // Liste SAHTE güncellenmedi: başarısızlıkta reload YOK + link hâlâ ACTIVE
+    expect(listIntakeLinks.mock.calls.length).toBe(loadCallsBefore);
+    expect(screen.getByText("Aktif")).toBeTruthy();
+  });
+
+  // Bulgu B: expiry, seçilen günün YEREL sonuna çevrilmeli (UTC gece-yarısı değil)
+  it("expiry date → seçilen günün YEREL sonuna çevrilir", async () => {
+    listIntakeLinks.mockResolvedValue([]);
+    createIntakeLink.mockResolvedValue({ link: link(), rawToken: "r", intakeUrl: "u" });
+    const { container } = render(<IntakeLinksCard caseId="c1" client={clientProp} />);
+    await waitFor(() => screen.getByText(/tekrar görüntülenemez/i));
+    fireEvent.click(screen.getByRole("button", { name: /Yeni bilgi formu/i }));
+    fireEvent.click(screen.getByLabelText("Adres"));
+    const dateInput = container.querySelector('input[type="date"]') as HTMLInputElement;
+    fireEvent.change(dateInput, { target: { value: "2026-06-20" } });
+    fireEvent.click(screen.getByRole("button", { name: /Oluştur/i }));
+    await waitFor(() => expect(createIntakeLink).toHaveBeenCalled());
+    const [, input] = createIntakeLink.mock.calls[0];
+    // Gönderilen ISO, geri parse edilince seçilen günün YEREL sonu olmalı
+    // (CI saat dilimi ne olursa olsun yerel-yerel karşılaştırma sabit kalır).
+    const sent = new Date(input.expiresAt);
+    const expected = new Date(2026, 5, 20, 23, 59, 59, 999); // yerel gün sonu
+    expect(sent.getTime()).toBe(expected.getTime());
+    expect(sent.getDate()).toBe(20);
+    expect(sent.getHours()).toBe(23);
+  });
 });
