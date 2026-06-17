@@ -9,9 +9,11 @@ import { PrismaModule } from '@/prisma/prisma.module';
 import { CaseBalanceModule } from '@/modules/case-balance/case-balance.module';
 import { TariffModule } from '@/modules/tariff/tariff.module';
 import { NotificationModule } from '@/modules/notification/notification.module';
+import { ClientNotificationModule } from '@/modules/client-notification/client-notification.module';
+import { OfficeModule } from '@/modules/office/office.module';
 
 @Module({
-  imports: [PrismaModule, forwardRef(() => CaseBalanceModule), TariffModule, NotificationModule],
+  imports: [PrismaModule, forwardRef(() => CaseBalanceModule), TariffModule, NotificationModule, ClientNotificationModule, OfficeModule],
   controllers: [ExpenseRequestController],
   providers: [ExpenseRequestService, ExpenseCalculatorService, ExpenseGateService, ExpenseNotificationService, ExpenseViewService],
   exports: [ExpenseRequestService, ExpenseCalculatorService, ExpenseGateService, ExpenseNotificationService, ExpenseViewService],

@@ -4,6 +4,8 @@ import { ExpenseGateService, GateCheckResult } from './expense-gate.service';
 import { ExpenseCalculatorService } from './expense-calculator.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CaseBalanceService } from '@/modules/case-balance/case-balance.service';
+import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
+import { OfficeService } from '@/modules/office/office.service';
 import { TariffService } from '@/modules/tariff/tariff.service';
 import { Decimal } from '@prisma/client/runtime/library';
 
@@ -50,11 +52,22 @@ const mockPrismaService: any = {
   case: {
     findFirst: jest.fn(),
   },
+  client: {
+    findFirst: jest.fn(),
+  },
   $transaction: jest.fn((fn: any) => fn(mockPrismaService)),
 };
 
 const mockCaseBalanceService = {
   credit: jest.fn(),
+};
+
+// Faz 3.5: ödeme maili tetiği — best-effort dispatcher + office (mail finansal state'i etkilemez).
+const mockDispatcher = {
+  dispatch: jest.fn().mockResolvedValue({ status: 'sent' }),
+};
+const mockOffice = {
+  getOrCreate: jest.fn().mockResolvedValue({ name: 'Test Büro' }),
 };
 
 // ExpenseCalculatorService artık getActiveSharedTariff() çağırıp camelCase okuyor (fixedFees/rateFees/minAmount).
@@ -100,6 +113,8 @@ describe('ExpenseRequestService - Property Tests', () => {
         { provide: CaseBalanceService, useValue: mockCaseBalanceService },
         { provide: TariffService, useValue: mockTariffService },
         { provide: ExpenseNotificationService, useValue: mockExpenseNotificationService },
+        { provide: NotificationDispatcherService, useValue: mockDispatcher },
+        { provide: OfficeService, useValue: mockOffice },
       ],
     }).compile();
 
@@ -219,6 +234,53 @@ describe('ExpenseRequestService - Property Tests', () => {
           }),
         })
       );
+    });
+
+    // ===== Faz 3.5: ödeme maili tetiği (best-effort; ödeme state'ini etkilemez) =====
+    it('PARTIAL → dispatcher PARTIAL_PAYMENT_BALANCE (paidAmount=bu ödeme, remaining doğru)', async () => {
+      const req = { ...mockExpenseRequest, totalAmount: new Decimal(1000), paidTotal: new Decimal(0), clientId: 'client-1', caseId: 'case-1' };
+      mockPrismaService.expenseRequest.findFirst.mockResolvedValue(req);
+      mockPrismaService.expensePayment.create.mockResolvedValue({ id: 'pay-1' });
+      mockPrismaService.expenseRequest.update.mockResolvedValue({ ...req, paidTotal: new Decimal(400), status: 'PARTIAL' });
+      mockPrismaService.client.findFirst.mockResolvedValue({ name: 'Test Müvekkil' });
+      mockPrismaService.case.findFirst.mockResolvedValue({ fileNumber: '2024/1', executionFileNumber: '2024/99' });
+
+      await service.recordPayment('tenant-1', 'exp-1', { amount: 400, paymentDate: new Date(), method: 'BANK_TRANSFER' }, 'user-1');
+
+      expect(mockDispatcher.dispatch).toHaveBeenCalledWith('tenant-1', 'user-1',
+        expect.objectContaining({
+          templateCode: 'PARTIAL_PAYMENT_BALANCE', type: 'PAYMENT_INFO', refType: 'ExpensePayment', refId: 'pay-1',
+          tokens: expect.objectContaining({ paidAmount: '400.00', remainingAmount: '600.00' }),
+        }),
+      );
+    });
+
+    it('PAID → dispatcher PAYMENT_RECEIVED', async () => {
+      const req = { ...mockExpenseRequest, totalAmount: new Decimal(1000), paidTotal: new Decimal(500), clientId: 'client-1', caseId: 'case-1' };
+      mockPrismaService.expenseRequest.findFirst.mockResolvedValue(req);
+      mockPrismaService.expensePayment.create.mockResolvedValue({ id: 'pay-2' });
+      mockPrismaService.expenseRequest.update.mockResolvedValue({ ...req, paidTotal: new Decimal(1000), status: 'PAID' });
+      mockPrismaService.client.findFirst.mockResolvedValue({ name: 'Test' });
+      mockPrismaService.case.findFirst.mockResolvedValue({ fileNumber: '2024/1' });
+
+      await service.recordPayment('tenant-1', 'exp-1', { amount: 500, paymentDate: new Date(), method: 'BANK_TRANSFER' }, 'user-1');
+
+      expect(mockDispatcher.dispatch).toHaveBeenCalledWith('tenant-1', 'user-1',
+        expect.objectContaining({ templateCode: 'PAYMENT_RECEIVED', refType: 'ExpensePayment', refId: 'pay-2' }),
+      );
+    });
+
+    it('mail dispatch reddedilse de ödeme sonucu SAĞLAM döner (throw yok)', async () => {
+      const req = { ...mockExpenseRequest, totalAmount: new Decimal(1000), paidTotal: new Decimal(0), clientId: 'client-1', caseId: 'case-1' };
+      mockPrismaService.expenseRequest.findFirst.mockResolvedValue(req);
+      mockPrismaService.expensePayment.create.mockResolvedValue({ id: 'pay-3' });
+      mockPrismaService.expenseRequest.update.mockResolvedValue({ ...req, paidTotal: new Decimal(400), status: 'PARTIAL' });
+      mockPrismaService.client.findFirst.mockResolvedValue({ name: 'Test' });
+      mockPrismaService.case.findFirst.mockResolvedValue({ fileNumber: '2024/1' });
+      mockDispatcher.dispatch.mockRejectedValueOnce(new Error('mail patladı'));
+
+      const result = await service.recordPayment('tenant-1', 'exp-1', { amount: 400, paymentDate: new Date(), method: 'BANK_TRANSFER' }, 'user-1');
+      expect(result).toBeDefined(); // throw yok — ödeme state'i sağlam döndü
     });
   });
 
@@ -902,6 +964,8 @@ describe('Property 6: Task Completion on Payment', () => {
         { provide: CaseBalanceService, useValue: mockCaseBalanceService },
         { provide: TariffService, useValue: mockTariffService },
         { provide: ExpenseNotificationService, useValue: mockExpenseNotificationService },
+        { provide: NotificationDispatcherService, useValue: mockDispatcher },
+        { provide: OfficeService, useValue: mockOffice },
       ],
     }).compile();
 

@@ -2,6 +2,8 @@ import { Injectable, NotFoundException, BadRequestException, Inject, forwardRef,
 import { PrismaService } from '@/prisma/prisma.service';
 import { ExpenseRequestStatus, ExpenseGateType, Prisma } from '@prisma/client';
 import { CaseBalanceService } from '@/modules/case-balance/case-balance.service';
+import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
+import { OfficeService } from '@/modules/office/office.service';
 import { ExpenseCalculatorService, CaseData, EXPENSE_SET_TEMPLATES } from './expense-calculator.service';
 import { ExpenseNotificationService } from './expense-notification.service';
 
@@ -57,6 +59,8 @@ export class ExpenseRequestService {
     private expenseCalculator: ExpenseCalculatorService,
     @Inject(forwardRef(() => ExpenseNotificationService))
     private expenseNotification: ExpenseNotificationService,
+    private dispatcher: NotificationDispatcherService,
+    private office: OfficeService,
   ) {}
 
   async findAll(tenantId: string, params?: { caseId?: string; clientId?: string; status?: ExpenseRequestStatus }) {
@@ -729,9 +733,10 @@ export class ExpenseRequestService {
       newStatus = request.status;
     }
 
+    let paymentId: string | null = null;
     const result = await this.prisma.$transaction(async (tx) => {
       // Ödeme kaydı oluştur
-      await tx.expensePayment.create({
+      const createdPayment = await tx.expensePayment.create({
         data: {
           expenseRequestId: requestId,
           amount: payment.amount,
@@ -743,6 +748,7 @@ export class ExpenseRequestService {
           matchedById: userId,
         },
       });
+      paymentId = createdPayment?.id ?? null;
 
       // ExpenseRequest güncelle
       const updated = await tx.expenseRequest.update({
@@ -813,8 +819,73 @@ export class ExpenseRequestService {
       this.logger.error('Bakiye kredisi eklenemedi:', error);
     }
 
+    // Ödeme maili — BEST-EFFORT (Faz 3.5). Ödeme = finansal olay (commit'li);
+    // mail yalnız bildirim. Mail başarısızlığı ödeme state'ini DEĞİŞTİRMEZ.
+    await this.notifyPayment(tenantId, userId, request.clientId, request.caseId, newStatus, payment.amount, newPaidTotal, totalAmount, paymentId);
+
     this.logger.log(`Payment recorded for expense ${requestId}: ${payment.amount} TL, new status: ${newStatus}`);
     return result;
+  }
+
+  /**
+   * Ödeme bildirimi maili — BEST-EFFORT. Token derleme + dispatch tamamen try/catch içinde:
+   * mail (veya okuma) başarısız olsa bile commit'li ödeme DEĞİŞMEZ, throw etmez.
+   * Yalnız PAID → PAYMENT_RECEIVED ve PARTIAL → PARTIAL_PAYMENT_BALANCE (m35-4).
+   * refId = ExpensePayment.id → her ödeme ayrı mail olayı (m35-1).
+   */
+  private async notifyPayment(
+    tenantId: string,
+    userId: string,
+    clientId: string,
+    caseId: string,
+    newStatus: ExpenseRequestStatus,
+    paymentAmount: number,
+    newPaidTotal: number,
+    totalAmount: number,
+    paymentId: string | null,
+  ): Promise<void> {
+    if (newStatus !== 'PAID' && newStatus !== 'PARTIAL') return; // yalnız PAID/PARTIAL
+    if (!paymentId) return;
+
+    try {
+      const [client, kase, office] = await Promise.all([
+        this.prisma.client.findFirst({
+          where: { id: clientId, tenantId },
+          select: { displayName: true, name: true, firstName: true, lastName: true },
+        }),
+        this.prisma.case.findFirst({
+          where: { id: caseId, tenantId },
+          select: { fileNumber: true, executionFileNumber: true },
+        }),
+        this.office.getOrCreate(tenantId),
+      ]);
+
+      const tokens: Record<string, string> = {
+        clientName: client?.displayName || client?.name || [client?.firstName, client?.lastName].filter(Boolean).join(' ') || 'Müvekkil',
+        caseFileNumber: kase?.fileNumber ?? '',
+        executionFileNumber: kase?.executionFileNumber ?? '',
+        totalAmount: totalAmount.toFixed(2),
+        officeName: office?.name ?? '',
+      };
+
+      const templateCode = newStatus === 'PAID' ? 'PAYMENT_RECEIVED' : 'PARTIAL_PAYMENT_BALANCE';
+      if (newStatus === 'PARTIAL') {
+        tokens.paidAmount = paymentAmount.toFixed(2); // bu ödeme (m35-2)
+        tokens.remainingAmount = (totalAmount - newPaidTotal).toFixed(2);
+      }
+
+      await this.dispatcher.dispatch(tenantId, userId, {
+        clientId,
+        caseId,
+        templateCode,
+        type: 'PAYMENT_INFO',
+        tokens,
+        refType: 'ExpensePayment',
+        refId: paymentId,
+      });
+    } catch (e: any) {
+      this.logger.warn(`Ödeme maili tetiklenemedi (${newStatus}, payment=${paymentId}): ${e.message}`);
+    }
   }
 
   /**
