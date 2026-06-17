@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export type LookupType = 'takipTuru' | 'asama' | 'risk' | 'borcluTipi' | 'durumEtiketi' | 'mahiyetTipi';
@@ -63,6 +63,33 @@ export class LookupService {
 
   async create(tenantId: string, type: LookupType, data: any) {
     const model = this.getModel(type) as any;
+
+    // RFA-005: soft-delete + @@unique([tenantId, code]) çakışması. Silinen (isActive=false) bir code
+    // yeniden create edilince eskiden Prisma P2002 → ham 500 oluyordu. (tenantId, code) ile inactive
+    // dahil mevcut kaydı ara:
+    //  - active varsa → 409 ConflictException (sessiz overwrite YOK)
+    //  - soft-deleted varsa → AYNI id'yi reactivate + editable alanları yeni payload ile güncelle
+    //  - hiç yoksa → düz create (mevcut davranış)
+    // code ve tenantId DEĞİŞMEZ. Generic servis tek-kaynak → 6 lookup modelini birden kapsar.
+    if (data?.code) {
+      const existing = await model.findFirst({ where: { tenantId, code: data.code } });
+      if (existing) {
+        if (existing.isActive) {
+          throw new ConflictException({
+            code: 'DUPLICATE_LOOKUP_CODE',
+            message: `Bu kod (${data.code}) zaten kayıtlı`,
+            existingId: existing.id,
+          });
+        }
+        // soft-deleted → reactivate. code/tenantId/id güncellenmez; editable alanlar yeni payload'tan.
+        const { code: _code, tenantId: _tenantId, id: _id, isActive: _isActive, ...editable } = data;
+        return model.update({
+          where: { id: existing.id },
+          data: { ...editable, isActive: true },
+        });
+      }
+    }
+
     return model.create({
       data: { ...data, tenantId },
     });
