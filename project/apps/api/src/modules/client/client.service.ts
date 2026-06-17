@@ -127,6 +127,14 @@ export class ClientService {
         city: primaryAddress?.city || data.city,
         district: primaryAddress?.district || data.district,
         region: primaryAddress?.region || data.region,
+        // RFA-017: mevcut Client kolonları (additive). Önceden map'lenmiyordu → Excel import
+        // (ve normal create) bu alanları sessizce DÜŞÜRÜYORDU. Yeni kolon/migration YOK.
+        postalCode: data.postalCode,
+        isForeigner: data.isForeigner ?? undefined,
+        nationality: data.nationality,
+        companyType: data.companyType,
+        mersisNo: data.mersisNo,
+        ticaretSicilNo: data.ticaretSicilNo,
         canCollect: data.canCollect ?? true,
         canWaive: data.canWaive ?? false,
         canSettle: data.canSettle ?? false,

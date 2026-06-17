@@ -17,7 +17,7 @@ const buildPrisma = () => ({ debtor: { findMany: jest.fn().mockResolvedValue([sa
 describe("ExportImportService — borçlu export (PR-D5-e)", () => {
   it("filtreler where'e + sort orderBy'a yansır (sayfalama YOK)", async () => {
     const prisma = buildPrisma() as any;
-    const svc = new ExportImportService(prisma);
+    const svc = new ExportImportService(prisma, {} as any);
 
     await svc.exportDebtorsToExcel("t1", { search: "ali", type: "INDIVIDUAL", riskLevel: "YUKSEK", city: "İstanbul", sortBy: "name", sortOrder: "asc" });
 
@@ -34,7 +34,7 @@ describe("ExportImportService — borçlu export (PR-D5-e)", () => {
 
   it("allowlist dışı sortBy → createdAt desc; type=ALL/risk=ALL filtrelenmez", async () => {
     const prisma = buildPrisma() as any;
-    const svc = new ExportImportService(prisma);
+    const svc = new ExportImportService(prisma, {} as any);
 
     await svc.exportDebtorsToExcel("t1", { type: "ALL", riskLevel: "ALL", sortBy: "evil", sortOrder: "asc" });
 
@@ -45,14 +45,14 @@ describe("ExportImportService — borçlu export (PR-D5-e)", () => {
   });
 
   it("Excel buffer üretilir (non-empty)", async () => {
-    const svc = new ExportImportService(buildPrisma() as any);
+    const svc = new ExportImportService(buildPrisma() as any, {} as any);
     const buf = await svc.exportDebtorsToExcel("t1", {});
     expect(Buffer.isBuffer(buf)).toBe(true);
     expect(buf.length).toBeGreaterThan(0);
   });
 
   it("PDF buffer üretilir (non-empty)", async () => {
-    const svc = new ExportImportService(buildPrisma() as any);
+    const svc = new ExportImportService(buildPrisma() as any, {} as any);
     const buf = await svc.exportDebtorsToPdf("t1", {});
     expect(Buffer.isBuffer(buf)).toBe(true);
     expect(buf.length).toBeGreaterThan(0);

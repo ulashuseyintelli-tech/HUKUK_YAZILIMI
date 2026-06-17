@@ -113,7 +113,7 @@ describe("ExportImportService export buffers (smoke)", () => {
 
   const buildService = () => {
     const prisma = { client: { findMany: jest.fn().mockResolvedValue(sampleClients) } } as any;
-    return new ExportImportService(prisma);
+    return new ExportImportService(prisma, {} as any);
   };
 
   it("exportClientsToPdf → %PDF imzalı Buffer", async () => {
@@ -125,7 +125,7 @@ describe("ExportImportService export buffers (smoke)", () => {
 
   it("boş listede de geçerli PDF üretir (patlamadan)", async () => {
     const prisma = { client: { findMany: jest.fn().mockResolvedValue([]) } } as any;
-    const buf = await new ExportImportService(prisma).exportClientsToPdf("t1");
+    const buf = await new ExportImportService(prisma, {} as any).exportClientsToPdf("t1");
     expect(buf.subarray(0, 4).toString("latin1")).toBe("%PDF");
   });
 
@@ -138,7 +138,7 @@ describe("ExportImportService export buffers (smoke)", () => {
 describe("Takip (cases) export ids filtresi", () => {
   const buildSvc = (rows: any[] = []) => {
     const findMany = jest.fn().mockResolvedValue(rows);
-    const svc = new ExportImportService({ case: { findMany } } as any);
+    const svc = new ExportImportService({ case: { findMany } } as any, {} as any);
     return { svc, findMany };
   };
 
