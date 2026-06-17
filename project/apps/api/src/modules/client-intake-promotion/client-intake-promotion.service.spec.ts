@@ -47,7 +47,7 @@ describe('ClientIntakePromotionService', () => {
     expect(mockPrisma.clientIntelStatement.create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({ tenantId: TENANT, caseId: CASE, debtorId: DEBTOR, category: 'INCOME_SOURCE', value: 'Müteahhit', source: 'CLIENT_DECLARATION', confidence: 'DECLARED' }),
     }));
-    expect(mockPrisma.clientIntakeField.update).toHaveBeenCalledWith({ where: { id: 'f-1' }, data: { promotedRefType: 'ClientIntelStatement', promotedRefId: 'cis-1' } });
+    expect(mockPrisma.clientIntakeField.update).toHaveBeenCalledWith({ where: { id: 'f-1' }, data: expect.objectContaining({ promotedRefType: 'ClientIntelStatement', promotedRefId: 'cis-1', promotedById: USER, promotedAt: expect.any(Date) }) });
     expect(res.promoted).toEqual([{ fieldId: 'f-1', clientIntelStatementId: 'cis-1' }]);
     expect(res.skipped).toEqual([]);
     expect(res.submissionStatus).toBe('COMPLETED');
@@ -119,7 +119,7 @@ describe('ClientIntakePromotionService', () => {
         debtorId: DEBTOR, street: 'X Sok 1', city: 'İstanbul', source: 'CLIENT', type: 'DECLARED',
         addressCategory: 'DECLARED_CLIENT', verified: false, confidenceLevel: 'LOW', rawAddress: 'X Sok 1 Kadıköy',
       }));
-      expect(mockPrisma.clientIntakeField.update).toHaveBeenCalledWith({ where: { id: 'af-1' }, data: { promotedRefType: 'DebtorAddress', promotedRefId: 'da-1' } });
+      expect(mockPrisma.clientIntakeField.update).toHaveBeenCalledWith({ where: { id: 'af-1' }, data: expect.objectContaining({ promotedRefType: 'DebtorAddress', promotedRefId: 'da-1', promotedById: USER, promotedAt: expect.any(Date) }) });
       expect(res).toEqual({ result: 'PROMOTED', debtorAddressId: 'da-1', submissionStatus: 'COMPLETED' });
     });
 
@@ -173,7 +173,12 @@ describe('ClientIntakePromotionService', () => {
       expect(mockPrisma.clientIntelStatement.create).toHaveBeenCalledWith(expect.objectContaining({
         data: expect.objectContaining({ tenantId: TENANT, caseId: CASE, debtorId: DEBTOR, category: 'INCOME_SOURCE', value: 'Müteahhit', source: 'CLIENT_DECLARATION', confidence: 'DECLARED', status: 'ACTIVE' }),
       }));
-      expect(mockPrisma.clientIntakeField.update).toHaveBeenCalledWith({ where: { id: 'sf-1' }, data: { promotedRefType: 'ClientIntelStatement', promotedRefId: 'cis-1' } });
+      expect(mockPrisma.clientIntakeField.update).toHaveBeenCalledWith({ where: { id: 'sf-1' }, data: expect.objectContaining({ promotedRefType: 'ClientIntelStatement', promotedRefId: 'cis-1', promotedById: USER, promotedAt: expect.any(Date) }) });
+      // C2b-pre red line: yeni promote write'ta promotedAt != null + promotedById == userId
+      const stampData = (mockPrisma.clientIntakeField.update.mock.calls.find((c: any) => c[0]?.where?.id === 'sf-1') as any)[0].data;
+      expect(stampData.promotedAt).toBeInstanceOf(Date);
+      expect(stampData.promotedAt).not.toBeNull();
+      expect(stampData.promotedById).toBe(USER);
       expect(res).toEqual({ result: 'PROMOTED', clientIntelStatementId: 'cis-1', submissionStatus: 'COMPLETED' });
     });
 

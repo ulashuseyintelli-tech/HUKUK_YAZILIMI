@@ -39,6 +39,8 @@ jobs:
         run: bash apps/api/scripts/ci-5-scheduler-metrics-gate.sh
       - name: CI-6 Symbol token singleton gate
         run: bash apps/api/scripts/ci-6-symbol-token-singleton-gate.sh
+      - name: CI-7 Web no submission-level promote gate
+        run: bash apps/api/scripts/ci-7-web-no-submission-promote-gate.sh
 
   test-suite:
     name: Test Suite
