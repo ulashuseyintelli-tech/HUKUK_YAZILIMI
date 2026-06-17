@@ -167,6 +167,12 @@ export class MessageTemplateService {
         return [...commonTokens, 'debtorName', 'status'];
       case 'DEBTOR_NOTICE':
         return ['debtorName', 'caseFileNumber', 'executionFileNumber', 'totalAmount', 'dueDate'];
+      case 'PAYMENT_INFO':
+        return [...commonTokens, 'totalAmount', 'paidAmount', 'remainingAmount'];
+      case 'CLIENT_APPROVAL':
+        return [...commonTokens, 'subjectLabel', 'decision'];
+      case 'STATEMENT_READY':
+        return [...commonTokens, 'periodStart', 'periodEnd', 'closingBalance'];
       default:
         return commonTokens;
     }
@@ -261,6 +267,86 @@ Saygılarımızla,
         channel: 'SMS' as MessageTemplateChannel,
         subject: null,
         body: `{{caseFileNumber}} dosyası için {{totalAmount}} TL masraf talebi. Son tarih: {{dueDate}}. {{officeName}}`,
+      },
+      // ===== Faz 3 (mail merkezi) — yeni sistem şablonları =====
+      {
+        code: 'PARTIAL_PAYMENT_BALANCE',
+        name: 'Kısmi Ödeme Sonrası Bakiye',
+        category: 'PAYMENT_INFO' as MessageTemplateCategory,
+        channel: 'EMAIL' as MessageTemplateChannel,
+        subject: '{{caseFileNumber}} - Kısmi Ödeme Alındı',
+        body: `Sayın {{clientName}},
+
+{{executionFileNumber}} sayılı dosyada kısmi ödemeniz alınmıştır.
+
+Ödenen Tutar: {{paidAmount}} TL
+Kalan Tutar: {{remainingAmount}} TL
+
+Saygılarımızla,
+{{officeName}}`,
+      },
+      {
+        code: 'PAYMENT_RECEIVED',
+        name: 'Ödeme Alındı Teyidi',
+        category: 'PAYMENT_INFO' as MessageTemplateCategory,
+        channel: 'EMAIL' as MessageTemplateChannel,
+        subject: '{{caseFileNumber}} - Ödeme Alındı',
+        body: `Sayın {{clientName}},
+
+{{executionFileNumber}} sayılı dosyada {{totalAmount}} TL tutarındaki ödemeniz tam olarak alınmıştır. Teşekkür ederiz.
+
+Saygılarımızla,
+{{officeName}}`,
+      },
+      {
+        code: 'APPROVAL_REQUEST',
+        name: 'Müvekkil İşlem Onayı Talebi',
+        category: 'CLIENT_APPROVAL' as MessageTemplateCategory,
+        channel: 'EMAIL' as MessageTemplateChannel,
+        subject: '{{caseFileNumber}} - Onayınız Gerekiyor',
+        body: `Sayın {{clientName}},
+
+{{executionFileNumber}} sayılı dosyada aşağıdaki işlem için onayınızı rica ederiz:
+
+{{subjectLabel}}
+
+Onayınızı bürumuza iletebilirsiniz.
+
+Saygılarımızla,
+{{officeName}}`,
+      },
+      {
+        code: 'APPROVAL_RESULT',
+        name: 'Onay Sonucu Teyidi',
+        category: 'CLIENT_APPROVAL' as MessageTemplateCategory,
+        channel: 'EMAIL' as MessageTemplateChannel,
+        subject: '{{caseFileNumber}} - Onay Sonucu',
+        body: `Sayın {{clientName}},
+
+{{executionFileNumber}} sayılı dosyadaki şu işlem için kararınız kaydedilmiştir:
+
+İşlem: {{subjectLabel}}
+Karar: {{decision}}
+
+Saygılarımızla,
+{{officeName}}`,
+      },
+      {
+        code: 'STATEMENT_READY',
+        name: 'Müvekkil Ekstresi Hazır',
+        category: 'STATEMENT_READY' as MessageTemplateCategory,
+        channel: 'EMAIL' as MessageTemplateChannel,
+        subject: '{{caseFileNumber}} - Hesap Ekstreniz Hazır',
+        body: `Sayın {{clientName}},
+
+{{executionFileNumber}} sayılı dosyanız için {{periodStart}} - {{periodEnd}} dönemine ait hesap ekstreniz hazırlanmıştır.
+
+Dönem Sonu Bakiye: {{closingBalance}} TL
+
+Detay için bürumuzla iletişime geçebilirsiniz.
+
+Saygılarımızla,
+{{officeName}}`,
       },
     ];
 

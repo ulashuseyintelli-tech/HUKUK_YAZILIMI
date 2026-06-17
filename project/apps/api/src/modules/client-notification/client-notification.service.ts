@@ -12,6 +12,7 @@ export interface SendEmailDto {
   subject: string;
   body: string;
   templateId?: string;
+  dedupeKey?: string; // Faz 3 idempotency anahtarı (opsiyonel; ClientNotification.dedupeKey'e yazılır)
 }
 
 export interface SendSmsDto {
@@ -156,6 +157,7 @@ export class ClientNotificationService {
         status: "PENDING",
         sentById: userId,
         metadata: dto.templateId ? { templateId: dto.templateId } : undefined,
+        dedupeKey: dto.dedupeKey,
       },
     });
 
