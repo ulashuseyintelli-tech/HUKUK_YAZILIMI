@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
+import { OfficeService } from '@/modules/office/office.service';
 import { ClientApprovalService } from './client-approval.service';
 import { CreateClientApprovalRequestDto } from './dto/client-approval.dto';
 
@@ -22,14 +24,23 @@ const mockPrisma: any = {
   clientApprovalEvent: { create: jest.fn() },
   $transaction: jest.fn((fn: any) => fn(mockPrisma)),
 };
+const mockDispatcher: any = { dispatch: jest.fn().mockResolvedValue({ status: 'sent' }) };
+const mockOffice: any = { getOrCreate: jest.fn().mockResolvedValue({ name: 'Test Büro' }) };
 
 describe('ClientApprovalService', () => {
   let service: ClientApprovalService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockDispatcher.dispatch.mockResolvedValue({ status: 'sent' });
+    mockOffice.getOrCreate.mockResolvedValue({ name: 'Test Büro' });
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ClientApprovalService, { provide: PrismaService, useValue: mockPrisma }],
+      providers: [
+        ClientApprovalService,
+        { provide: PrismaService, useValue: mockPrisma },
+        { provide: NotificationDispatcherService, useValue: mockDispatcher },
+        { provide: OfficeService, useValue: mockOffice },
+      ],
     }).compile();
     service = module.get(ClientApprovalService);
   });
@@ -172,6 +183,37 @@ describe('ClientApprovalService', () => {
       expect(mockPrisma.clientApprovalRequest.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({ include: { events: { orderBy: { createdAt: 'asc' } } } }),
       );
+    });
+  });
+
+  describe('mail tetiği (3.4) — best-effort, state değiştirmez', () => {
+    it('send → dispatcher APPROVAL_REQUEST ile çağrılır', async () => {
+      mockPrisma.clientApprovalRequest.findFirst.mockResolvedValue({ id: 'car-1', status: 'DRAFT' });
+      mockPrisma.clientApprovalRequest.update.mockResolvedValue({ id: 'car-1', status: 'SENT', clientId: CLIENT, caseId: CASE, subjectLabel: 'Haciz onayı', decision: null });
+      const res = await service.send(TENANT, 'car-1', USER);
+      expect(res.status).toBe('SENT');
+      expect(mockDispatcher.dispatch).toHaveBeenCalledWith(
+        TENANT, USER,
+        expect.objectContaining({ templateCode: 'APPROVAL_REQUEST', type: 'CLIENT_APPROVAL', refType: 'ClientApprovalRequest', refId: 'car-1' }),
+      );
+    });
+
+    it('decision → dispatcher APPROVAL_RESULT ile çağrılır', async () => {
+      mockPrisma.clientApprovalRequest.findFirst.mockResolvedValue({ id: 'car-1', status: 'SENT' });
+      mockPrisma.clientApprovalRequest.update.mockResolvedValue({ id: 'car-1', status: 'APPROVED', clientId: CLIENT, caseId: CASE, subjectLabel: 'Haciz', decision: 'APPROVE' });
+      await service.decision(TENANT, 'car-1', USER, { decision: 'APPROVE' as any });
+      expect(mockDispatcher.dispatch).toHaveBeenCalledWith(
+        TENANT, USER,
+        expect.objectContaining({ templateCode: 'APPROVAL_RESULT' }),
+      );
+    });
+
+    it('mail dispatch reddedilse bile send state SAĞLAM döner (throw yok)', async () => {
+      mockPrisma.clientApprovalRequest.findFirst.mockResolvedValue({ id: 'car-1', status: 'DRAFT' });
+      mockPrisma.clientApprovalRequest.update.mockResolvedValue({ id: 'car-1', status: 'SENT', clientId: CLIENT, caseId: CASE, subjectLabel: null, decision: null });
+      mockDispatcher.dispatch.mockRejectedValue(new Error('mail patladı'));
+      const res = await service.send(TENANT, 'car-1', USER);
+      expect(res.status).toBe('SENT');
     });
   });
 

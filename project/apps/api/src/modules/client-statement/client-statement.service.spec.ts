@@ -2,6 +2,8 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
+import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
+import { OfficeService } from '@/modules/office/office.service';
 import { ClientStatementService } from './client-statement.service';
 import { CreateClientStatementDto } from './dto/client-statement.dto';
 
@@ -21,14 +23,23 @@ const mockPrisma: any = {
   clientStatementLine: { createMany: jest.fn() },
   $transaction: jest.fn((fn: any) => fn(mockPrisma)),
 };
+const mockDispatcher: any = { dispatch: jest.fn().mockResolvedValue({ status: 'sent' }) };
+const mockOffice: any = { getOrCreate: jest.fn().mockResolvedValue({ name: 'Test Büro' }) };
 
 describe('ClientStatementService', () => {
   let service: ClientStatementService;
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockDispatcher.dispatch.mockResolvedValue({ status: 'sent' });
+    mockOffice.getOrCreate.mockResolvedValue({ name: 'Test Büro' });
     const module: TestingModule = await Test.createTestingModule({
-      providers: [ClientStatementService, { provide: PrismaService, useValue: mockPrisma }],
+      providers: [
+        ClientStatementService,
+        { provide: PrismaService, useValue: mockPrisma },
+        { provide: NotificationDispatcherService, useValue: mockDispatcher },
+        { provide: OfficeService, useValue: mockOffice },
+      ],
     }).compile();
     service = module.get(ClientStatementService);
   });
@@ -161,6 +172,39 @@ describe('ClientStatementService', () => {
       mockPrisma.clientStatement.findFirst.mockResolvedValue({ id: 'st-1', status: 'VOID', caseId: CASE, clientId: CLIENT });
       await expect(service.void(TENANT, 'st-1', USER)).rejects.toThrow(BadRequestException);
       expect(mockPrisma.clientStatement.update).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('mail tetiği (3.4) — yalnız create, best-effort', () => {
+    it('create → dispatcher STATEMENT_READY ile çağrılır', async () => {
+      mockPrisma.case.findFirst.mockResolvedValue({ id: CASE });
+      mockPrisma.client.findFirst.mockResolvedValue({ id: CLIENT });
+      mockPrisma.caseBalance.findFirst.mockResolvedValue(null);
+      mockPrisma.clientStatement.create.mockResolvedValue({ id: 'st-1' });
+      mockPrisma.clientStatement.findFirst.mockResolvedValue({
+        id: 'st-1', clientId: CLIENT, caseId: CASE,
+        periodStart: new Date('2026-06-01'), periodEnd: new Date('2026-06-30'),
+        closingBalance: D(120), lines: [],
+      });
+
+      await service.create(TENANT, CASE, USER, dto);
+
+      expect(mockDispatcher.dispatch).toHaveBeenCalledWith(
+        TENANT, USER,
+        expect.objectContaining({ templateCode: 'STATEMENT_READY', type: 'STATEMENT_READY', refType: 'ClientStatement', refId: 'st-1' }),
+      );
+    });
+
+    it('supersede STATEMENT_READY maili TETİKLEMEZ (m34-1 create only)', async () => {
+      mockPrisma.clientStatement.findFirst
+        .mockResolvedValueOnce({ id: 'old-1', status: 'ACTIVE', caseId: CASE, clientId: CLIENT })
+        .mockResolvedValue({ id: 'new-1', clientId: CLIENT, caseId: CASE, periodStart: new Date(), periodEnd: new Date(), closingBalance: D(0), lines: [] });
+      mockPrisma.caseBalance.findFirst.mockResolvedValue(null);
+      mockPrisma.expenseRequest.findMany.mockResolvedValue([]);
+      mockPrisma.clientStatement.create.mockResolvedValue({ id: 'new-1' });
+
+      await service.supersede(TENANT, 'old-1', USER, { periodStart: dto.periodStart, periodEnd: dto.periodEnd });
+      expect(mockDispatcher.dispatch).not.toHaveBeenCalled();
     });
   });
 
