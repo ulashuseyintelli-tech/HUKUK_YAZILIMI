@@ -2815,8 +2815,8 @@ class ApiClient {
 
   // ============================================
   // Client Intake PROMOTE (Faz 4.7 PR-C2b) — personel/JWT, YALNIZ FIELD-LEVEL.
-  // ⛔ KIRMIZI ÇİZGİ: submission-level promote (POST /client-intake-submissions/:id/promote)
-  //    bu istemciye EKLENMEZ; UI yalnız alan-bazlı promote eder (CI-7 ile yapısal enforce).
+  // ⛔ KIRMIZI ÇİZGİ: submission-level (toplu / gönderim-düzeyi) promote ucu bu istemciye
+  //    EKLENMEZ; UI yalnız alan-bazlı promote eder (CI-7 gate'i yapısal enforce eder).
   //    soft-6 → promote-soft (#178) · ADDRESS → promote-address HYBRID (#168).
   //    ASSET/CONTACT promote ucu YOK (4.6c) → UI'da rozet+disabled.
   // ============================================
