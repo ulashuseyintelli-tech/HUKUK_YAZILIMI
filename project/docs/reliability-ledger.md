@@ -40,7 +40,7 @@ audit'te tekrar bulgu gibi raporlanması. Bu ledger üç şeyi ayırır: (1) ger
 | ID | Bulgu | Kanıt (file:line) | Güven | Risk | Fix yaklaşımı | Migration |
 |----|-------|-------------------|-------|------|---------------|-----------|
 | **RFA-005** ✅ **RESOLVED** | Lookup create reactivate-on-code yok → silinen kodu yeniden ekleyince P2002 → ham **500** | lookup.service.ts create (eski düz create); schema 6× `@@unique([tenantId,code])` | **A (canlı DB e2e PASS)** | MED→kapandı | **MERGED PR-RFA005**: generic create()'te (tenantId,code) inactive dahil ara → active=409 ConflictException (500→409 iyileştirme), soft-deleted=aynı id reactivate + editable alan güncelle (code/tenantId sabit), yok=düz create. Tek-kaynak (6 model birden). Test: 4 unit + canlı e2e (reactivate aynı id/count=1/409). Migration yok | Hayır |
-| **RFA-006** ✅ **RESOLVED** | DebtorAddress dedup yok → mükerrer adres yığılır (DEAD-1 addressHash hiç hesaplanmıyordu) | 6 write yolu: addAddress, address.service, debtor.create inline, cross-file/institution/uyap discovery | **A (canlı DB e2e PASS)** | MED/yüksek değer→kapandı | **MERGED PR-RFA006**: ortak `address-hash.util` (normalizeAddress+computeAddressHash+findOrCreateDebtorAddress, race-safe P2002 retry). 6 yol bu helper'ı kullanır (tek-kaynak); discovery'lerin zayıf dedup'u normalized-hash'e yükseltildi; inline array-içi dedup. Test: 9 util unit + canlı e2e (case/boşluk varyant→count=1, hash dolu, farklı borçlu serbest). **Backfill AYRI op** (9 eski null-hash satır, PR sonrası). Migration yok | Hayır (kolon var) |
+| **RFA-006** ✅ **RESOLVED** | DebtorAddress dedup yok → mükerrer adres yığılır (DEAD-1 addressHash hiç hesaplanmıyordu) | 6 write yolu: addAddress, address.service, debtor.create inline, cross-file/institution/uyap discovery | **A (canlı DB e2e PASS)** | MED/yüksek değer→kapandı | **MERGED PR-RFA006**: ortak `address-hash.util` (normalizeAddress+computeAddressHash+findOrCreateDebtorAddress, race-safe P2002 retry). 6 yol bu helper'ı kullanır (tek-kaynak); discovery'lerin zayıf dedup'u normalized-hash'e yükseltildi; inline array-içi dedup. Test: 9 util unit + canlı e2e (case/boşluk varyant→count=1, hash dolu, farklı borçlu serbest). **Backfill DRY-RUN yapıldı (gerçek util) → APPLY NO-OP:** 9 null-hash satırın TAMAMI junk placeholder (street="." / city=Adana, eski QA test) → hash hesaplanabilir=0, update=0. Gerçek backfill borcu YOK. Migration yok | Hayır (kolon var) |
 | RFA-007 | EnforcementAction idempotency yok → cron(5dk)+manuel çift-tetik → mükerrer kayıt | workflow-engine.service.ts:293-307 (düz create); ScheduleModule app.module:130 AKTİF + @Cron EVERY_5_MINUTES (automation.service:25) → processCase → createEnforcementAction:233 | B (wiring canlı doğrulandı) | MED bugün / **HIGH otomasyon açılınca** — yalnız `isAutoMode+isAutomationEnabled` dosyalar işlenir; gerçek veri yok → pratikte dormant ama wiring CANLI | **status-bazlı guard** (PENDING/SENT varsa atla) — `@@unique([caseId,type])` veya `[caseId,type,status]` YANLIŞ (meşru tekrar var) | Hayır |
 | RFA-008 | ThirdParty.create duplicate guard yok | third-party.service.ts:42-52 | B | MED | tckn/vkn + caseDebtorId bazlı guard | Hayır |
 | RFA-009 | Debtor.delete HARD delete → kapalı dosyada DebtorAddress/Intelligence cascade kaybı | debtor.service.ts:623-642 (aktif-dosya guard var; sonunda `prisma.debtor.delete`) | B | MED | Debtor'a soft-delete | **Evet** (isActive/deletedAt) |
@@ -63,7 +63,7 @@ audit'te tekrar bulgu gibi raporlanması. Bu ledger üç şeyi ayırır: (1) ger
 > En tehlikeli desen: geliştirici "dedup/guard çözüldü" sanır, runtime'da fiilen çalışmaz.
 | ID | Ölü altyapı | Kanıt | Etki |
 |----|-------------|-------|------|
-| DEAD-1 ✅ **CANLANDIRILDI (RFA-006)** | `DebtorAddress.addressHash` + `@@unique([debtorId, addressHash])` constraint vardı ama kodda hiç hesaplanmıyordu → unique fiilen ölüydü | RFA-006 (#PR) ile 6 write yolu hash üretir → constraint artık CANLI. **Kalan:** 9 eski null-hash satır için backfill AYRI op (PR sonrası) | yeni write'larda dedup çalışıyor; eski satırlar backfill bekliyor |
+| DEAD-1 ✅ **CANLANDIRILDI (RFA-006 #145)** | `DebtorAddress.addressHash` + `@@unique([debtorId, addressHash])` constraint vardı ama kodda hiç hesaplanmıyordu → unique fiilen ölüydü | 6 write yolu hash üretir → constraint CANLI. **Backfill dry-run (gerçek util): 9 eski null-hash satırın TAMAMI junk (street="."/Adana, eski QA test) → backfill NO-OP, gerçek borç yok.** | yeni write'larda dedup canlı; eski 9 satır junk olduğu için kalıcı null (doğru — false-positive guard) |
 | DEAD-2 | `Asset` modeli var ama servis/controller YOK (`prisma.asset.create` = 0 hit) — kullanılmıyor | schema 1299-1312 | ileride doldurulursa guard yok; şu an LOW |
 
 ---
@@ -90,13 +90,13 @@ audit'te tekrar bulgu gibi raporlanması. Bu ledger üç şeyi ayırır: (1) ger
 - ✅ Automation engine: CANLI wiring (cron 5dk) ama yalnız auto-enabled dosyalar → RFA-007 güncellendi.
 - ✅ Visibility sweep: RFA-010 (ghost-relations, lawyer dahil) + RFA-012 (_count). Lookup/Client/Lawyer/Staff findAll filtreleri OK.
 
-## ÖNERİLEN FIX SIRASI (collection sonrası — ONAY BEKLER, henüz uygulanmaz)
+## FIX SIRASI / İLERLEME
 UI-tetiklenebilirlik + güven + değer sırası. Gerçek kullanıcı riski > salt kod riski:
-1. **RFA-016 (HIGH, UI=YES client+lawyer)** — case.service inline create guard → en yüksek gerçek risk.
-2. **RFA-017 (MED/HIGH, UI=YES)** — Excel client import guard.
-3. **RFA-005 (MED, UI=YES)** — Lookup reactivate-on-code (500 hatası).
-4. **RFA-006 (MED, yüksek değer)** — DebtorAddress dedup (DEAD-1 addressHash'i bağla).
-5. **RFA-008 (MED)** — ThirdParty guard.
+1. ✅ **RFA-016** (#142) — case.service inline create guard.
+2. ✅ **RFA-017** (#143) — Excel client import guard.
+3. ✅ **RFA-005** (#144) — Lookup reactivate-on-code.
+4. ✅ **RFA-006** (#145) — DebtorAddress dedup (DEAD-1 canlandı; backfill no-op, junk veri).
+5. ⏭️ **RFA-008 (MED)** — ThirdParty guard. ← SIRADAKİ
 6. **RFA-013 (MED, UI=YES?)** — ClientPortalUser reactivate.
 7. **RFA-007** — EnforcementAction status-guard (otomasyon açılmadan düşük aciliyet).
 8. Düşük/tasarım-gated: RFA-010 (tasarım kararı), RFA-009 (Debtor soft-delete, migration, IR/Party ile), RFA-014/015 (LOW), RFA-011 (API-only), RFA-012 (LOW).
