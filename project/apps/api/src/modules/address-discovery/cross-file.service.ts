@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { findOrCreateDebtorAddress } from '@/common/address-hash.util'; // RFA-006 adres dedup
 
 export interface CrossFileMatch {
   caseId: string;
@@ -263,43 +264,32 @@ export class CrossFileService {
       throw new NotFoundException('Hedef borçlu bulunamadı');
     }
 
-    // Aynı adres zaten var mı kontrol et
-    const existingAddress = await this.prisma.debtorAddress.findFirst({
-      where: {
-        debtorId: targetDebtorId,
-        street: sourceAddress.street,
-        city: sourceAddress.city,
-      },
+    // RFA-006: normalize hash dedup (eski zayıf street+city findFirst yerine). Idempotent.
+    const { address: newAddress, created } = await findOrCreateDebtorAddress(this.prisma, {
+      debtorId: targetDebtorId,
+      type: sourceAddress.type,
+      subType: sourceAddress.subType,
+      source: 'CROSS_FILE',
+      street: sourceAddress.street,
+      city: sourceAddress.city,
+      district: sourceAddress.district,
+      postalCode: sourceAddress.postalCode,
+      country: sourceAddress.country,
+      fullText: sourceAddress.fullText,
+      legalPriority: 'LOW', // Cross-file adresler düşük öncelikli
+      verified: false, // Yeni dosyada doğrulanmamış
+      isPrimary: false,
+      notes: `Dosya ${sourceAddressId} kaynağından kopyalandı`,
+      confidenceScore: Math.max((sourceAddress.confidenceScore || 0) - 20, 10), // Skor düşür
     });
 
-    if (existingAddress) {
+    if (!created) {
       return {
         success: false,
         message: 'Bu adres zaten mevcut',
-        existingAddressId: existingAddress.id,
+        existingAddressId: newAddress.id,
       };
     }
-
-    // Yeni adres oluştur
-    const newAddress = await this.prisma.debtorAddress.create({
-      data: {
-        debtorId: targetDebtorId,
-        type: sourceAddress.type,
-        subType: sourceAddress.subType,
-        source: 'CROSS_FILE',
-        street: sourceAddress.street,
-        city: sourceAddress.city,
-        district: sourceAddress.district,
-        postalCode: sourceAddress.postalCode,
-        country: sourceAddress.country,
-        fullText: sourceAddress.fullText,
-        legalPriority: 'LOW', // Cross-file adresler düşük öncelikli
-        verified: false, // Yeni dosyada doğrulanmamış
-        isPrimary: false,
-        notes: `Dosya ${sourceAddressId} kaynağından kopyalandı`,
-        confidenceScore: Math.max((sourceAddress.confidenceScore || 0) - 20, 10), // Skor düşür
-      },
-    });
 
     this.logger.log(`Adres kopyalandı: ${sourceAddressId} -> ${newAddress.id}`);
 

@@ -6,6 +6,8 @@ import {
 } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 import { normalizePersonName } from "@/common/name-match.util";
+// RFA-006: adres dedup (normalize + hash); tüm write yolları ortak helper kullanır.
+import { computeAddressHash, findOrCreateDebtorAddress } from "@/common/address-hash.util";
 import {
   CreateDebtorDto,
   UpdateDebtorDto,
@@ -455,6 +457,36 @@ export class DebtorService {
     }
     // else: hasAddresses but not confirmed → UNKNOWN (default)
 
+    // RFA-006: inline adreslerde addressHash hesapla + ARRAY-İÇİ dedup. Yeni borçluda mevcut adres
+    // yok → DB-dedup gerekmez; ama aynı adres payload'da 2× gelirse @@unique([debtorId,addressHash])
+    // P2002 ile debtor.create'i patlatır → aynı hash'i tek kez yaz.
+    const addressCreateInput = (() => {
+      if (!addresses?.length) return undefined;
+      const seen = new Set<string>();
+      const out: any[] = [];
+      addresses.forEach((addr, index) => {
+        // PR-D5-final-1: kanonik type/source üret; deprecated addressType/isMernis KOLONA yazma.
+        const canon = mapAddressTypeToCanonical(addr.addressType, addr.isMernis);
+        const { addressType: _at, isMernis: _im, ...rest } = addr as any;
+        const entry: any = {
+          ...rest,
+          type: canon.type as any,
+          source: canon.source as any,
+          isPrimary: addr.isPrimary ?? index === 0,
+          // If clientConfirmed, set addressCategory to DECLARED_CLIENT
+          ...(clientConfirmed ? { addressCategory: 'DECLARED_CLIENT' } : {}),
+        };
+        const hash = computeAddressHash(entry);
+        if (hash) {
+          if (seen.has(hash)) return; // array-içi duplicate → atla
+          seen.add(hash);
+          entry.addressHash = hash;
+        }
+        out.push(entry);
+      });
+      return out.length ? { create: out } : undefined;
+    })();
+
     // Create debtor with addresses and estate heirs
     const debtor = await this.prisma.debtor.create({
       data: {
@@ -463,23 +495,7 @@ export class DebtorService {
         name,
         identityNo,
         addressIntakeMode,
-        debtorAddresses: addresses?.length
-          ? {
-              create: addresses.map((addr, index) => {
-                // PR-D5-final-1: kanonik type/source üret; deprecated addressType/isMernis KOLONA yazma.
-                const canon = mapAddressTypeToCanonical(addr.addressType, addr.isMernis);
-                const { addressType: _at, isMernis: _im, ...rest } = addr as any;
-                return {
-                  ...rest,
-                  type: canon.type as any,
-                  source: canon.source as any,
-                  isPrimary: addr.isPrimary ?? index === 0,
-                  // If clientConfirmed, set addressCategory to DECLARED_CLIENT
-                  ...(clientConfirmed ? { addressCategory: 'DECLARED_CLIENT' } : {}),
-                };
-              }),
-            }
-          : undefined,
+        debtorAddresses: addressCreateInput,
         // Tereke için mirasçıları oluştur
         estateHeirs: dto.type === DebtorType.ESTATE && estateHeirs?.length
           ? {
@@ -1030,26 +1046,36 @@ export class DebtorService {
   async addAddress(tenantId: string, debtorId: string, dto: CreateDebtorAddressDto) {
     await this.findOne(tenantId, debtorId);
 
-    // If this is primary, unset other primaries
-    if (dto.isPrimary) {
-      await this.prisma.debtorAddress.updateMany({
-        where: { debtorId },
-        data: { isPrimary: false },
-      });
-    }
-
     // PR-D5-final-1: DTO addressType/isMernis yalnız kanonik map için kullanılır; deprecated KOLONA
     // ARTIK YAZILMAZ (bağımlılık kesildi). Kanonik type/source asıl kaynak.
     const canonical = mapAddressTypeToCanonical(dto.addressType, dto.isMernis);
-    const { addressType: _at, isMernis: _im, ...rest } = dto as any;
-    const created = await this.prisma.debtorAddress.create({
-      data: { debtorId, ...rest, type: canonical.type as any, source: canonical.source as any },
+    // RFA-006: isPrimary'i find-or-create'ten AYIR → find-or-create sonrası tutarlı uygula.
+    const { addressType: _at, isMernis: _im, isPrimary: _ip, ...rest } = dto as any;
+    const { address: createdRaw, created: isNew } = await findOrCreateDebtorAddress(this.prisma, {
+      debtorId, ...rest, type: canonical.type as any, source: canonical.source as any,
     });
-    // PR-D4c: adres eklenince "adres eksik" completeness durumu değişebilir → senkronla.
-    await this.syncDebtorTaskByIdSafe(tenantId, debtorId);
-    // PR-D4e-2 [A]: yeni adres doğrulanmamış (verified=false) → saha teyidi görevi.
-    if (!created.verified) {
-      await this.syncIntelligenceTaskSafe(tenantId, debtorId, created.id);
+    let created = createdRaw;
+
+    // RFA-006: isPrimary find-or-create sonrası — yeni VE idempotent eşleşmede tutarlı (others unset + promote).
+    if (dto.isPrimary && !created.isPrimary) {
+      await this.prisma.debtorAddress.updateMany({
+        where: { debtorId, id: { not: created.id } },
+        data: { isPrimary: false },
+      });
+      created = await this.prisma.debtorAddress.update({
+        where: { id: created.id },
+        data: { isPrimary: true },
+      });
+    }
+
+    // Görev senkronu yalnız YENİ adres açıldığında (idempotent eşleşmede completeness değişmez).
+    if (isNew) {
+      // PR-D4c: adres eklenince "adres eksik" completeness durumu değişebilir → senkronla.
+      await this.syncDebtorTaskByIdSafe(tenantId, debtorId);
+      // PR-D4e-2 [A]: yeni adres doğrulanmamış (verified=false) → saha teyidi görevi.
+      if (!created.verified) {
+        await this.syncIntelligenceTaskSafe(tenantId, debtorId, created.id);
+      }
     }
     return created;
   }
