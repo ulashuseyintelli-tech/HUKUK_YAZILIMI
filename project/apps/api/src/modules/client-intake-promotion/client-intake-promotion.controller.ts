@@ -3,6 +3,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { Request } from 'express';
 import { ClientIntakePromotionService } from './client-intake-promotion.service';
 import { PromoteSubmissionDto } from './dto/promote-submission.dto';
+import { PromoteAddressDto } from './dto/promote-address.dto';
 
 interface AuthRequest extends Request {
   user: { id: string; tenantId: string };
@@ -24,5 +25,15 @@ export class ClientIntakePromotionController {
   @Post('client-intake-submissions/:id/promote')
   async promote(@Req() req: AuthRequest, @Param('id') id: string, @Body() dto: PromoteSubmissionDto) {
     return this.service.promote(req.user.tenantId, id, req.user.id, dto.debtorId);
+  }
+
+  /**
+   * ADDRESS alanını DebtorAddress'e promote et (Faz 4.6b — HYBRID, personel structured girer)
+   * POST /client-intake-fields/:fieldId/promote-address { debtorId, street, city, ... }
+   * Yanıt: { result: PROMOTED|DUPLICATE_ADDRESS, debtorAddressId, submissionStatus }.
+   */
+  @Post('client-intake-fields/:fieldId/promote-address')
+  async promoteAddress(@Req() req: AuthRequest, @Param('fieldId') fieldId: string, @Body() dto: PromoteAddressDto) {
+    return this.service.promoteAddress(req.user.tenantId, fieldId, req.user.id, dto);
   }
 }

@@ -2,6 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ClientIntakePromotionService } from './client-intake-promotion.service';
+import { findOrCreateDebtorAddress } from '@/common/address-hash.util';
+
+jest.mock('@/common/address-hash.util', () => ({ findOrCreateDebtorAddress: jest.fn() }));
+const mockFindOrCreate = findOrCreateDebtorAddress as jest.Mock;
 
 const TENANT = 'tenant-1';
 const USER = 'user-1';
@@ -11,7 +15,7 @@ const DEBTOR = 'debtor-1';
 
 const mockPrisma: any = {
   clientIntakeSubmission: { findFirst: jest.fn(), update: jest.fn() },
-  clientIntakeField: { findMany: jest.fn(), update: jest.fn(), count: jest.fn() },
+  clientIntakeField: { findFirst: jest.fn(), findMany: jest.fn(), update: jest.fn(), count: jest.fn() },
   clientIntelStatement: { create: jest.fn() },
   debtor: { findFirst: jest.fn() },
   caseDebtor: { findFirst: jest.fn() },
@@ -92,5 +96,65 @@ describe('ClientIntakePromotionService', () => {
   it('submission bulunamazsa NotFound', async () => {
     mockPrisma.clientIntakeSubmission.findFirst.mockResolvedValue(null);
     await expect(service.promote(TENANT, SUB, USER, DEBTOR)).rejects.toThrow(NotFoundException);
+  });
+
+  // ==================== Faz 4.6b — promoteAddress ====================
+  describe('promoteAddress (ADDRESS → DebtorAddress)', () => {
+    const addrDto = { debtorId: DEBTOR, street: 'X Sok 1', city: 'İstanbul' };
+    const armAddrField = (over: any = {}) =>
+      mockPrisma.clientIntakeField.findFirst.mockResolvedValue({
+        id: 'af-1', category: 'ADDRESS', value: 'X Sok 1 Kadıköy', reviewStatus: 'APPROVED', promotedRefId: null,
+        submission: { id: SUB, status: 'IN_REVIEW', caseId: CASE }, ...over,
+      });
+
+    it('created:true → DebtorAddress(source=CLIENT...) + promotedRef; PROMOTED', async () => {
+      armAddrField();
+      mockFindOrCreate.mockResolvedValue({ address: { id: 'da-1' }, created: true });
+      mockPrisma.clientIntakeField.count.mockResolvedValueOnce(1).mockResolvedValueOnce(1); // approved=1, promoted=1
+
+      const res = await service.promoteAddress(TENANT, 'af-1', USER, addrDto);
+
+      const data = mockFindOrCreate.mock.calls[0][1];
+      expect(data).toEqual(expect.objectContaining({
+        debtorId: DEBTOR, street: 'X Sok 1', city: 'İstanbul', source: 'CLIENT', type: 'DECLARED',
+        addressCategory: 'DECLARED_CLIENT', verified: false, confidenceLevel: 'LOW', rawAddress: 'X Sok 1 Kadıköy',
+      }));
+      expect(mockPrisma.clientIntakeField.update).toHaveBeenCalledWith({ where: { id: 'af-1' }, data: { promotedRefType: 'DebtorAddress', promotedRefId: 'da-1' } });
+      expect(res).toEqual({ result: 'PROMOTED', debtorAddressId: 'da-1', submissionStatus: 'COMPLETED' });
+    });
+
+    it('created:false (DUPLICATE) → promotedRef DOLDURULMAZ, DUPLICATE_ADDRESS döner', async () => {
+      armAddrField();
+      mockFindOrCreate.mockResolvedValue({ address: { id: 'da-existing' }, created: false });
+
+      const res = await service.promoteAddress(TENANT, 'af-1', USER, addrDto);
+
+      expect(mockPrisma.clientIntakeField.update).not.toHaveBeenCalled(); // promotedRef set EDİLMEDİ
+      expect(res).toEqual({ result: 'DUPLICATE_ADDRESS', debtorAddressId: 'da-existing', submissionStatus: 'IN_REVIEW' });
+    });
+
+    it('ADDRESS olmayan alan reddedilir', async () => {
+      armAddrField({ category: 'INCOME_SOURCE' });
+      await expect(service.promoteAddress(TENANT, 'af-1', USER, addrDto)).rejects.toThrow(BadRequestException);
+      expect(mockFindOrCreate).not.toHaveBeenCalled();
+    });
+
+    it('APPROVED olmayan alan reddedilir', async () => {
+      armAddrField({ reviewStatus: 'PENDING' });
+      await expect(service.promoteAddress(TENANT, 'af-1', USER, addrDto)).rejects.toThrow(BadRequestException);
+    });
+
+    it('zaten promote edilmiş alan reddedilir (idempotent)', async () => {
+      armAddrField({ promotedRefId: 'da-old' });
+      await expect(service.promoteAddress(TENANT, 'af-1', USER, addrDto)).rejects.toThrow(BadRequestException);
+      expect(mockFindOrCreate).not.toHaveBeenCalled();
+    });
+
+    it('debtor casee ait değilse reddedilir', async () => {
+      armAddrField();
+      mockPrisma.caseDebtor.findFirst.mockResolvedValue(null);
+      await expect(service.promoteAddress(TENANT, 'af-1', USER, addrDto)).rejects.toThrow(BadRequestException);
+      expect(mockFindOrCreate).not.toHaveBeenCalled();
+    });
   });
 });
