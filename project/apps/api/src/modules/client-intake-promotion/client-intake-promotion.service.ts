@@ -19,7 +19,7 @@ const SOFT_TO_INTEL: Record<string, ClientIntelCategory> = {
   STRATEGY: ClientIntelCategory.STRATEGY,
 };
 
-interface PromoteResult {
+export interface PromoteResult {
   submissionStatus: ClientIntakeSubmissionStatus;
   promoted: { fieldId: string; clientIntelStatementId: string }[];
   skipped: { fieldId: string; category: string; reason: string }[];
