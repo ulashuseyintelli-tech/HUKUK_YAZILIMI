@@ -458,6 +458,7 @@ model Client {
   notifications    ClientNotification[]
   expenseRequests  ExpenseRequest[]
   clientApprovalRequests ClientApprovalRequest[] // Müvekkil onay defteri (PR-2)
+  clientStatements ClientStatement[] // Müvekkil ekstresi (PR-3)
   portalUser       ClientPortalUser?
 
   // Address Discovery
@@ -1036,6 +1037,7 @@ model Case {
   caseBalance         CaseBalance? // Masraf bakiyesi (1:1)
   expenseBlockReasons ExpenseBlockReason[] // "Ödeme/onay yok → işlem yapılmadı" savunma kayıtları (PR-1)
   clientApprovalRequests ClientApprovalRequest[] // Müvekkil onay defteri (PR-2)
+  clientStatements ClientStatement[] // Müvekkil ekstresi (PR-3)
 
   // Address Discovery
   clientInfoRequests ClientInfoRequest[]
@@ -3520,6 +3522,93 @@ enum ClientApprovalEventType {
   REJECTED
   CANCELLED
   EXPIRED
+}
+
+// ============================================================
+// MÜVEKKİL EKSTRESİ (PR-3) — dosya bazlı, IMMUTABLE finansal belge snapshot'ı
+// Üretildiği anki durumu DONDURUR. Eski ekstre ASLA değişmez; düzeltme = yeni
+// statement + supersededById. runningBalance TEK kanonik kaynak = BalanceLedger
+// (ExpenseRequest/ExpensePayment yalnız BİLGİ satırı, bakiyeyi oynatmaz).
+// updatedAt YOK; satır update/delete YOK. onDelete=Restrict (belge kaybolmamalı).
+// Tutar Decimal(15,2) — finans hattıyla aynı (Collection/TBK100 bigint-cents DEĞİL).
+// ============================================================
+model ClientStatement {
+  id       String @id @default(cuid())
+  tenantId String
+
+  caseId String
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Restrict)
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  periodStart DateTime
+  periodEnd   DateTime
+
+  openingBalance Decimal @db.Decimal(15, 2)
+  closingBalance Decimal @db.Decimal(15, 2)
+  currency       String  @default("TRY")
+
+  status         ClientStatementStatus @default(ACTIVE)
+  supersededById String? // yerine geçen statement id (self-ref, FK YOK — gevşek)
+  supersededAt   DateTime?
+  voidedAt       DateTime?
+  voidedById     String?
+  voidNote       String? // void gerekçesi (lifecycle metadata — içerik değil)
+  note           String?
+
+  generatedById String // üreten personel (plain string — FK yok)
+  createdAt     DateTime @default(now())
+  // updatedAt YOK — başlık içeriği immutable. Yalnız lifecycle damgaları
+  // (status/supersededById/supersededAt/voidedAt/voidedById/voidNote) tek-seferlik değişir.
+
+  lines ClientStatementLine[]
+
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([clientId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Ekstre satırı — immutable snapshot. refType/refId scalar (FK YOK): kaynak
+// sonradan değişse/silinse satır SABİT (tarihsel doğruluk).
+model ClientStatementLine {
+  id          String          @id @default(cuid())
+  statementId String
+  statement   ClientStatement @relation(fields: [statementId], references: [id], onDelete: Cascade)
+
+  lineDate DateTime
+  lineType ClientStatementLineType
+
+  refType String? // 'BalanceLedger' | 'ExpenseRequest' | 'ExpensePayment'
+  refId   String? // kaynak kayıt id (snapshot anındaki)
+
+  debit          Decimal @default(0) @db.Decimal(15, 2)
+  credit         Decimal @default(0) @db.Decimal(15, 2)
+  runningBalance Decimal @db.Decimal(15, 2)
+  note           String?
+
+  createdAt DateTime @default(now())
+
+  @@index([statementId])
+  @@index([lineType])
+  @@index([lineDate])
+}
+
+enum ClientStatementStatus {
+  ACTIVE // Geçerli ekstre
+  SUPERSEDED // Yenisiyle değiştirildi (içeriği yine değişmez)
+  VOID // Geçersiz işaretlendi
+}
+
+enum ClientStatementLineType {
+  ADVANCE_CREDIT // Avans/kredi (BalanceLedger CREDIT) — bakiyeyi artırır
+  CLIENT_PAYMENT // Müvekkil ödemesi (rezerve enum; otomatik türetilmez)
+  EXPENSE_ACTUAL // Gerçekleşen masraf (BalanceLedger DEBIT) — bakiyeyi düşürür
+  EXPENSE_REQUESTED // Masraf talebi (ExpenseRequest) — BİLGİ, bakiyeyi oynatmaz
+  REFUND // İade (BalanceLedger REFUND)
+  ADJUST // Manuel düzeltme (BalanceLedger ADJUST)
 }
 
 // Mesaj Şablonları (E-posta, SMS, WhatsApp)
