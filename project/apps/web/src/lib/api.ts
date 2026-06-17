@@ -2812,6 +2812,38 @@ class ApiClient {
       body: JSON.stringify({ note }),
     });
   }
+
+  // ============================================
+  // Client Intake PROMOTE (Faz 4.7 PR-C2b) — personel/JWT, YALNIZ FIELD-LEVEL.
+  // ⛔ KIRMIZI ÇİZGİ: submission-level (toplu / gönderim-düzeyi) promote ucu bu istemciye
+  //    EKLENMEZ; UI yalnız alan-bazlı promote eder (CI-7 gate'i yapısal enforce eder).
+  //    soft-6 → promote-soft (#178) · ADDRESS → promote-address HYBRID (#168).
+  //    ASSET/CONTACT promote ucu YOK (4.6c) → UI'da rozet+disabled.
+  // ============================================
+
+  /**
+   * TEK soft-intel alanını ClientIntelStatement'a promote et (field-level).
+   * <remarks>Çağrıldığı yerler:
+   * - intake/[id]/promote/page.tsx (C2b promote ekranı) → POST /client-intake-fields/:fieldId/promote-soft</remarks>
+   */
+  async promoteSoftField(fieldId: string, debtorId: string) {
+    return this.request<PromoteSoftResult>(`/client-intake-fields/${fieldId}/promote-soft`, {
+      method: 'POST',
+      body: JSON.stringify({ debtorId }),
+    });
+  }
+
+  /**
+   * TEK ADDRESS alanını DebtorAddress'e promote et (HYBRID: ham value korunur, personel structured girer).
+   * <remarks>Çağrıldığı yerler:
+   * - intake/[id]/promote/page.tsx (C2b promote ekranı) → POST /client-intake-fields/:fieldId/promote-address</remarks>
+   */
+  async promoteAddressField(fieldId: string, input: PromoteAddressInput) {
+    return this.request<PromoteAddressResult>(`/client-intake-fields/${fieldId}/promote-address`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
 }
 
 // ============================================
@@ -2897,11 +2929,33 @@ export interface IntakeSubmissionField {
   reviewNote: string | null;
   promotedRefType: string | null;
   promotedRefId: string | null;
+  promotedAt?: string | null; // Faz 4.7 C2b-pre promote audit damgası (backend dönerse gösterilir; opsiyonel)
+  promotedById?: string | null;
   createdAt: string;
 }
 
 export interface IntakeSubmissionDetail extends IntakeSubmission {
   fields: IntakeSubmissionField[];
+}
+
+// Field-level promote (Faz 4.7 PR-C2b) — YALNIZ field-level; submission-level promote istemcide/UI'da YOK.
+export interface PromoteAddressInput {
+  debtorId: string;
+  street: string;
+  city: string;
+  district?: string;
+  postalCode?: string;
+  country?: string;
+}
+export interface PromoteSoftResult {
+  result: 'PROMOTED';
+  clientIntelStatementId: string;
+  submissionStatus: IntakeSubmissionStatus;
+}
+export interface PromoteAddressResult {
+  result: 'PROMOTED';
+  debtorAddressId: string;
+  submissionStatus: IntakeSubmissionStatus;
 }
 
 // ============================================
