@@ -517,9 +517,11 @@ export class CaseService {
                 iban: true,
                 lawyerRank: true,
                 defaultPermissions: true,
+                // RFA-010: pasif avukat gizlenmez; detayda [Pasif] etiketi için bayrak taşınır.
+                isActive: true,
               }
-            } 
-          } 
+            }
+          }
         },
         staff: {
           include: {
@@ -531,12 +533,14 @@ export class CaseService {
                 staffType: true,
                 phone: true,
                 email: true,
+                // RFA-010: pasif personel gizlenmez; detayda [Pasif] etiketi için bayrak taşınır.
+                isActive: true,
               }
             }
           }
         },
-        caseClients: { 
-          include: { 
+        caseClients: {
+          include: {
             client: {
               select: {
                 id: true,
@@ -551,6 +555,8 @@ export class CaseService {
                 address: true,
                 city: true,
                 district: true,
+                // RFA-010: pasif müvekkil gizlenmez; detayda [Pasif] etiketi için bayrak taşınır.
+                isActive: true,
                 bankAccounts: {
                   select: {
                     id: true,

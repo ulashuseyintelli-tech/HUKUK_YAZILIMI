@@ -105,6 +105,7 @@ interface CaseDetail {
     city?: string;
     district?: string;
     bankAccounts?: BankAccount[];
+    isActive?: boolean; // RFA-010: pasif müvekkil [Pasif] etiketi için
   };
   caseClients?: {
     id: string;
@@ -123,6 +124,7 @@ interface CaseDetail {
       city?: string;
       district?: string;
       bankAccounts?: BankAccount[];
+      isActive?: boolean; // RFA-010: pasif müvekkil [Pasif] etiketi için
     };
   }[];
   debtors: {
@@ -182,6 +184,7 @@ interface CaseDetail {
         canChangeStatus?: boolean;
         canEditParties?: boolean;
       };
+      isActive?: boolean; // RFA-010: pasif avukat [Pasif] etiketi için
     };
   }[];
   staff?: {
@@ -195,6 +198,7 @@ interface CaseDetail {
       staffType?: string;
       phone?: string;
       email?: string;
+      isActive?: boolean; // RFA-010: pasif personel [Pasif] etiketi için
     };
   }[];
   claimItems?: any[];
@@ -2023,7 +2027,7 @@ export default function CaseDetailPage() {
                   >
                     <div className="flex items-center justify-between">
                       <div className="min-w-0 flex-1">
-                        <p className="font-medium text-[11px] truncate group-hover:text-blue-700">Av. {le.lawyer.name} {le.lawyer.surname}</p>
+                        <p className="font-medium text-[11px] truncate group-hover:text-blue-700">Av. {le.lawyer.name} {le.lawyer.surname}{le.lawyer.isActive === false && <span className="ml-1 px-1 rounded bg-gray-200 text-gray-600 text-[9px] font-normal align-middle">Pasif</span>}</p>
                       </div>
                       <div className="flex items-center gap-1">
                         <span className={`text-[8px] ${rankColor} px-1 py-0.5 rounded font-medium`}>{rankLabel}</span>
@@ -2050,7 +2054,7 @@ export default function CaseDetailPage() {
                   >
                     <div className="flex items-center justify-between">
                       <div className="min-w-0 flex-1">
-                        <p className="font-medium text-[11px] truncate group-hover:text-orange-700">Stj. Av. {le.lawyer.name} {le.lawyer.surname}</p>
+                        <p className="font-medium text-[11px] truncate group-hover:text-orange-700">Stj. Av. {le.lawyer.name} {le.lawyer.surname}{le.lawyer.isActive === false && <span className="ml-1 px-1 rounded bg-gray-200 text-gray-600 text-[9px] font-normal align-middle">Pasif</span>}</p>
                       </div>
                       <div className="flex items-center gap-1">
                         <span className="text-[8px] bg-orange-100 text-orange-700 px-1 py-0.5 rounded font-medium">Stajyer</span>
@@ -2075,7 +2079,7 @@ export default function CaseDetailPage() {
                   >
                     <div className="flex items-center justify-between">
                       <div className="min-w-0 flex-1">
-                        <p className="font-medium text-[11px] truncate group-hover:text-purple-700">{se.staffMember.firstName} {se.staffMember.lastName}</p>
+                        <p className="font-medium text-[11px] truncate group-hover:text-purple-700">{se.staffMember.firstName} {se.staffMember.lastName}{se.staffMember.isActive === false && <span className="ml-1 px-1 rounded bg-gray-200 text-gray-600 text-[9px] font-normal align-middle">Pasif</span>}</p>
                       </div>
                       <div className="flex items-center gap-1">
                         <span className="text-[8px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded font-medium">{se.roleOnCase || se.staffMember.staffType || 'Personel'}</span>
@@ -2134,6 +2138,7 @@ export default function CaseDetailPage() {
                         <div className="min-w-0 flex-1">
                           <p className="font-medium text-[11px] truncate group-hover:text-green-700">
                             {client.displayName || client.name}
+                            {client.isActive === false && <span className="ml-1 px-1 rounded bg-gray-200 text-gray-600 text-[9px] font-normal align-middle">Pasif</span>}
                           </p>
                           <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
                             {identityNo && (
@@ -2166,6 +2171,7 @@ export default function CaseDetailPage() {
                       <div className="min-w-0 flex-1">
                         <p className="font-medium text-[11px] truncate group-hover:text-green-700">
                           {caseData.client.displayName || caseData.client.name}
+                          {caseData.client.isActive === false && <span className="ml-1 px-1 rounded bg-gray-200 text-gray-600 text-[9px] font-normal align-middle">Pasif</span>}
                         </p>
                       </div>
                       <ChevronRight className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100" />
