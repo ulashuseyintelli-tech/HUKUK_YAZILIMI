@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import {
   ClientApprovalStatus,
@@ -7,6 +7,8 @@ import {
   ClientApprovalSubjectType,
   Prisma,
 } from '@prisma/client';
+import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
+import { OfficeService } from '@/modules/office/office.service';
 import {
   CreateClientApprovalRequestDto,
   DecisionClientApprovalDto,
@@ -34,7 +36,13 @@ const TERMINAL: ClientApprovalStatus[] = [
  */
 @Injectable()
 export class ClientApprovalService {
-  constructor(private prisma: PrismaService) {}
+  private readonly logger = new Logger(ClientApprovalService.name);
+
+  constructor(
+    private prisma: PrismaService,
+    private dispatcher: NotificationDispatcherService,
+    private office: OfficeService,
+  ) {}
 
   /**
    * Onay talebi oluştur (DRAFT) + CREATED event.
@@ -105,13 +113,16 @@ export class ClientApprovalService {
    * </remarks>
    */
   async send(tenantId: string, id: string, userId: string, note?: string) {
-    return this.transition(tenantId, id, userId, {
+    const updated = await this.transition(tenantId, id, userId, {
       allowedFrom: [ClientApprovalStatus.DRAFT],
       to: ClientApprovalStatus.SENT,
       eventType: ClientApprovalEventType.SENT,
       extra: { sentAt: new Date() },
       note,
     });
+    // State commit edildi → mail BEST-EFFORT (başarısızlık state'i değiştirmez)
+    await this.notify(tenantId, userId, updated, 'APPROVAL_REQUEST');
+    return updated;
   }
 
   /**
@@ -124,13 +135,16 @@ export class ClientApprovalService {
    */
   async decision(tenantId: string, id: string, userId: string, dto: DecisionClientApprovalDto) {
     const approve = dto.decision === ClientApprovalDecision.APPROVE;
-    return this.transition(tenantId, id, userId, {
+    const updated = await this.transition(tenantId, id, userId, {
       allowedFrom: [ClientApprovalStatus.SENT],
       to: approve ? ClientApprovalStatus.APPROVED : ClientApprovalStatus.REJECTED,
       eventType: approve ? ClientApprovalEventType.APPROVED : ClientApprovalEventType.REJECTED,
       extra: { decidedAt: new Date(), decision: dto.decision, decisionNote: dto.note ?? null },
       note: dto.note,
     });
+    // State commit edildi → onay sonucu maili BEST-EFFORT
+    await this.notify(tenantId, userId, updated, 'APPROVAL_RESULT');
+    return updated;
   }
 
   /**
@@ -197,6 +211,57 @@ export class ClientApprovalService {
     });
     if (!record) throw new NotFoundException('Onay talebi bulunamadı');
     return record;
+  }
+
+  // ==================== mail tetiği (Faz 3.4) ====================
+
+  /**
+   * Onay maili — BEST-EFFORT. Token derleme + dispatch tamamen try/catch içinde:
+   * mail (veya token okuması) başarısız olsa bile commit'li state DEĞİŞMEZ, throw etmez.
+   * templateCode: APPROVAL_REQUEST (send) | APPROVAL_RESULT (decision).
+   */
+  private async notify(
+    tenantId: string,
+    userId: string,
+    req: { id: string; clientId: string; caseId: string; subjectLabel: string | null; decision: ClientApprovalDecision | null },
+    templateCode: 'APPROVAL_REQUEST' | 'APPROVAL_RESULT',
+  ): Promise<void> {
+    try {
+      const [client, kase, office] = await Promise.all([
+        this.prisma.client.findFirst({
+          where: { id: req.clientId, tenantId },
+          select: { displayName: true, name: true, firstName: true, lastName: true },
+        }),
+        this.prisma.case.findFirst({
+          where: { id: req.caseId, tenantId },
+          select: { fileNumber: true, executionFileNumber: true },
+        }),
+        this.office.getOrCreate(tenantId),
+      ]);
+
+      const tokens: Record<string, string> = {
+        clientName: client?.displayName || client?.name || [client?.firstName, client?.lastName].filter(Boolean).join(' ') || 'Müvekkil',
+        caseFileNumber: kase?.fileNumber ?? '',
+        executionFileNumber: kase?.executionFileNumber ?? '',
+        subjectLabel: req.subjectLabel ?? '',
+        officeName: office?.name ?? '',
+      };
+      if (templateCode === 'APPROVAL_RESULT') {
+        tokens.decision = req.decision === ClientApprovalDecision.APPROVE ? 'Onaylandı' : 'Reddedildi';
+      }
+
+      await this.dispatcher.dispatch(tenantId, userId, {
+        clientId: req.clientId,
+        caseId: req.caseId,
+        templateCode,
+        type: 'CLIENT_APPROVAL',
+        tokens,
+        refType: 'ClientApprovalRequest',
+        refId: req.id,
+      });
+    } catch (e: any) {
+      this.logger.warn(`Onay maili tetiklenemedi (${templateCode}, ${req.id}): ${e.message}`);
+    }
   }
 
   // ==================== iç yardımcılar ====================
