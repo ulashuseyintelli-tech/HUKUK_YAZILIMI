@@ -3,9 +3,14 @@ name: CI
 
 on:
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
     branches: [main]
+
+# Aynı ref için devam eden eski koşuyu iptal et (maliyet: çift/yığılan run önleme).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
 
 defaults:
   run:
