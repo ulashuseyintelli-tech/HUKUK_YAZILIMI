@@ -37,6 +37,12 @@ export interface PromoteResult {
   skipped: { fieldId: string; category: string; reason: string }[];
 }
 
+export interface PromoteSoftResult {
+  result: 'PROMOTED';
+  clientIntelStatementId: string;
+  submissionStatus: ClientIntakeSubmissionStatus;
+}
+
 /**
  * Client Intake PROMOTE servisi (Faz 4.6) — dış-form verisinin İLK KEZ kanoniğe yazıldığı KÖPRÜ.
  *
@@ -57,11 +63,16 @@ export class ClientIntakePromotionService {
   constructor(private prisma: PrismaService) {}
 
   /**
-   * Onaylı soft-intel alanları ClientIntelStatement'a promote et.
+   * Onaylı soft-intel alanları ClientIntelStatement'a promote et (SUBMISSION-LEVEL, toplu).
+   *
+   * NOT (Faz 4.7 PR-C2a): Frontend (C2b) bu ucu KULLANMAZ — alan-bazlı promoteSoftField()
+   * (POST /client-intake-fields/:fieldId/promote-soft) tercih edilir (bulk/tek-tık yok).
+   * Bu metod backend'de ÇALIŞIR halde kalır (deprecate EDİLMEDİ); davranışı değişmedi.
    *
    * <remarks>
    * Çağrıldığı yerler:
    * - ClientIntakePromotionController.promote() → POST /client-intake-submissions/:id/promote
+   *   (frontend kullanmaz; geriye-dönük/programatik çağrılar için durur)
    * </remarks>
    */
   async promote(tenantId: string, submissionId: string, userId: string, debtorId: string): Promise<PromoteResult> {
@@ -220,6 +231,74 @@ export class ClientIntakePromotionService {
 
     const submissionStatus = await this.recomputeSubmissionStatus(field.submission.id, subStatus, userId);
     return { result: 'PROMOTED', debtorAddressId: address.id, submissionStatus };
+  }
+
+  /**
+   * TEK soft-intel alanını ClientIntelStatement'a promote et (Faz 4.7 PR-C2a — FIELD-LEVEL).
+   *
+   * Bulk YOK: tam olarak BİR alan yazılır (C2b promote yolu yalnız budur).
+   * Yalnız 6 SOFT kategori (SOFT_TO_INTEL). ADDRESS → promote-address; ASSET/CONTACT → 400 (4.6c yok).
+   * Submission-level promote() ve promoteAddress() davranışına DOKUNMAZ; SOFT_TO_INTEL +
+   * recomputeSubmissionStatus REUSE edilir (kod tekrarı yok).
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ClientIntakePromotionController.promoteSoft() → POST /client-intake-fields/:fieldId/promote-soft
+   * </remarks>
+   */
+  async promoteSoftField(tenantId: string, fieldId: string, userId: string, debtorId: string): Promise<PromoteSoftResult> {
+    const field = await this.prisma.clientIntakeField.findFirst({
+      where: { id: fieldId, submission: { tenantId } },
+      select: {
+        id: true, category: true, label: true, value: true, reviewStatus: true, promotedRefId: true,
+        submission: { select: { id: true, status: true, caseId: true } },
+      },
+    });
+    if (!field) throw new NotFoundException('Alan bulunamadı');
+
+    // Yalnız SOFT-6. ADDRESS/ASSET/CONTACT bu uçtan promote EDİLMEZ.
+    const intelCategory = SOFT_TO_INTEL[field.category];
+    if (!intelCategory) {
+      throw new BadRequestException('Bu uç yalnız yumuşak istihbarat alanlarını promote eder (ADDRESS için promote-address; ASSET/CONTACT henüz yok)');
+    }
+    if (field.reviewStatus !== ClientIntakeFieldReviewStatus.APPROVED) throw new BadRequestException('Yalnız onaylı (APPROVED) alan promote edilir');
+    if (field.promotedRefId) throw new BadRequestException('Alan zaten promote edilmiş'); // idempotent
+    const subStatus = field.submission.status;
+    if (subStatus !== ClientIntakeSubmissionStatus.IN_REVIEW && subStatus !== ClientIntakeSubmissionStatus.PARTIALLY_PROMOTED) {
+      throw new BadRequestException(`Promote yalnız IN_REVIEW/PARTIALLY_PROMOTED için (durum: ${subStatus})`);
+    }
+
+    // F46-K1: debtor aynı tenant + aynı case (CaseDebtor) mi?
+    const debtor = await this.prisma.debtor.findFirst({ where: { id: debtorId, tenantId }, select: { id: true } });
+    if (!debtor) throw new BadRequestException('Borçlu bulunamadı (tenant)');
+    const cd = await this.prisma.caseDebtor.findFirst({ where: { caseId: field.submission.caseId, debtorId }, select: { id: true } });
+    if (!cd) throw new BadRequestException('Borçlu bu takibe ait değil');
+
+    // Atomik: kanonik create + promotedRef damgası TEK transaction (orphan/çift-yazım yok).
+    const cis = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.clientIntelStatement.create({
+        data: {
+          tenantId,
+          caseId: field.submission.caseId,
+          debtorId,
+          category: intelCategory,
+          label: field.label ?? null,
+          value: field.value,
+          source: ClientIntelSource.CLIENT_DECLARATION,
+          confidence: ClientIntelConfidence.DECLARED,
+          status: ClientIntelStatus.ACTIVE,
+          createdById: userId,
+        },
+      });
+      await tx.clientIntakeField.update({
+        where: { id: fieldId },
+        data: { promotedRefType: 'ClientIntelStatement', promotedRefId: created.id },
+      });
+      return created;
+    });
+
+    const submissionStatus = await this.recomputeSubmissionStatus(field.submission.id, subStatus, userId);
+    return { result: 'PROMOTED', clientIntelStatementId: cis.id, submissionStatus };
   }
 
   /** APPROVED alanların tamamı promote edildiyse COMPLETED, kalan varsa PARTIALLY_PROMOTED. */
