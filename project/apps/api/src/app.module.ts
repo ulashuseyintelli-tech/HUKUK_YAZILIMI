@@ -66,6 +66,7 @@ import { RelatedLawsuitsModule } from "./modules/related-lawsuits/related-lawsui
 import { PaymentInstructionModule } from "./modules/payment-instruction/payment-instruction.module";
 import { ExpenseRequestModule } from "./modules/expense-request/expense-request.module";
 import { ExpenseBlockReasonModule } from "./modules/expense-block-reason/expense-block-reason.module";
+import { ClientApprovalModule } from "./modules/client-approval/client-approval.module";
 import { MessageTemplateModule } from "./modules/message-template/message-template.module";
 import { CostPackageModule } from "./modules/cost-package/cost-package.module";
 import { CaseBalanceModule } from "./modules/case-balance/case-balance.module";
@@ -190,6 +191,7 @@ function getConditionalImports(): Type<unknown>[] {
     PaymentInstructionModule,
     ExpenseRequestModule,
     ExpenseBlockReasonModule,
+    ClientApprovalModule,
     MessageTemplateModule,
     CostPackageModule,
     CaseBalanceModule,
