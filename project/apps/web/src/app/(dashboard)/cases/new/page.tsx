@@ -966,7 +966,7 @@ export default function NewCasePage() {
     // Hata varsa goster ve durdur
     if (!validation.valid) {
       setShowValidationPanel(true);
-      setError("Lutfen zorunlu alanlari doldurun");
+      setError("Lütfen zorunlu alanları doldurun");
       return;
     }
 
