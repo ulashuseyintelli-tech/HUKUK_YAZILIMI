@@ -59,6 +59,15 @@ audit'te tekrar bulgu gibi raporlanması. Bu ledger üç şeyi ayırır: (1) ger
 
 ---
 
+## SÜREÇ / CI KAPSAMI (runtime data-integrity DEĞİL — test/CI boşluğu)
+> Bu bölüm diğer RFA'lardan FARKLI sınıf: kod-içi guard/dedup değil, **CI'nın neyi doğruladığı**. Ulaş kararı (2026-06-17): stratejik risk olarak ayrı madde kaydedildi.
+
+| ID | Bulgu | Kanıt | Güven | Risk | Fix yaklaşımı |
+|----|-------|-------|-------|------|---------------|
+| **RFA-018** | **CI frontend/web testlerini HİÇ koşmuyor** — `apps/web` vitest CI dışında. Sonuç: (1) kırmızı web testleri merge olabilir, (2) component regresyonları görünmez, (3) CI yalnız backend (api) sağlığını doğrular | `.github/workflows/ci.yml`: yalnız api guardrails + `tsc.prod` + jest; `apps/web` vitest job YOK. **Canlı kanıt:** `cross-check.test.ts` ÖNCEDEN kırmızı ama tüm CI koşuları (PR #169 dahil) yeşil geçti | **A** (ci.yml okundu + kırmızı testin CI'da görünmediği canlı gözlendi) | **MED** (veri-bütünlüğü riski değil; ama kullanıcı-görünür UI sessizce kırılabilir + backend-only CI uzun vadede yanıltıcı "yeşil" verir) | ci.yml'e `apps/web` vitest job ekle (pnpm --filter web test). **⚠️ SIRA ZORUNLU:** önce `task_14be085b` (cross-check kırmızısı, ürün kuralı) çözülmeli — yoksa job eklenir eklenmez TÜM PR'ları bloklar. Cross-check yeşile dönünce web vitest CI'a girer. |
+
+---
+
 ## DEAD RELIABILITY INFRASTRUCTURE (yarım kalmış — "çözüldü sanılan ama çalışmayan")
 > En tehlikeli desen: geliştirici "dedup/guard çözüldü" sanır, runtime'da fiilen çalışmaz.
 | ID | Ölü altyapı | Kanıt | Etki |
@@ -117,4 +126,4 @@ UI-tetiklenebilirlik + güven + değer sırası. Gerçek kullanıcı riski > sal
 3. Bir bulgu RESOLVED ise tekrar "bulgu" olarak raporlama (bayat-bilgi tuzağı).
 4. Risk haritası (HENÜZ TARANMADI listesi) bitmeden toplu fix planı kilitlenmez.
 
-_Son güncelleme: 2026-06-17 — Tur 1+2+3 + (b) spot-check. RFA-016 UI-tetiklenebilir doğrulandı (client+lawyer=YES, debtor=NO) → #1 fix adayı. RFA-011 UI=NO (API-only). C sınıfı RFA-013/014/015 → B'ye terfi. Risk haritası büyük ölçüde tamam; fix sırası önerildi (onay bekler)._
+_Son güncelleme: 2026-06-17 — Tur 1+2+3 + (b) spot-check. RFA-016 UI-tetiklenebilir doğrulandı (client+lawyer=YES, debtor=NO) → #1 fix adayı. RFA-011 UI=NO (API-only). C sınıfı RFA-013/014/015 → B'ye terfi. Risk haritası büyük ölçüde tamam; fix sırası önerildi (onay bekler). **RFA-018 eklendi (SÜREÇ/CI sınıfı): web vitest CI dışında — cross-check kırmızısı (task_14be085b) çözülünce CI'a eklenecek.**_
