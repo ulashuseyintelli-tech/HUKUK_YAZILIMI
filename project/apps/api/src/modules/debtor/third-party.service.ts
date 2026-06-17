@@ -4,6 +4,7 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
+import { normalizePersonName } from "@/common/name-match.util"; // RFA-008 isim-fallback dedup
 import {
   CreateThirdPartyDto,
   UpdateThirdPartyDto,
@@ -39,6 +40,20 @@ export class ThirdPartyService {
     });
   }
 
+  /**
+   * Üçüncü şahıs (89 ihbarname muhatabı) ekle.
+   *
+   * RFA-008 dedup (idempotent, guard YOK iken sessiz duplicate oluyordu):
+   * - identityNo varsa → caseDebtorId + identityNo eşleşmesi (otoriter; type farkı overwrite ETMEZ).
+   * - identityNo yoksa → caseDebtorId + type + normalize-isim eşleşmesi (sadece isim YETMEZ:
+   *   "kiracı Ahmet" ≠ "işveren Ahmet"). Eşleşme → MEVCUT döndür (_existingReturned), yeni satır YOK.
+   * - 409 YOK (alt kayıt; re-add = no-op, 89-ihbarname state'i ezilmez). forceCreate YOK.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ThirdPartyController.createThirdParty() → POST /case-debtors/:caseDebtorId/third-parties (ThirdPartyPanel)
+   * </remarks>
+   */
   async create(tenantId: string, caseDebtorId: string, dto: CreateThirdPartyDto) {
     const caseDebtor = await this.prisma.caseDebtor.findFirst({
       where: { id: caseDebtorId },
@@ -47,6 +62,19 @@ export class ThirdPartyService {
 
     if (!caseDebtor || caseDebtor.case.tenantId !== tenantId) {
       throw new NotFoundException("Dosya borçlusu bulunamadı");
+    }
+
+    // RFA-008: aynı caseDebtor içinde dedup. identityNo otoriter; yoksa type+normalize-isim.
+    const siblings = await this.prisma.thirdParty.findMany({ where: { caseDebtorId } });
+    const wantName = normalizePersonName(dto.name);
+    const dup = siblings.find((t) =>
+      dto.identityNo
+        ? t.identityNo === dto.identityNo
+        : !!wantName && t.type === dto.type && normalizePersonName(t.name) === wantName,
+    );
+    if (dup) {
+      // idempotent: mevcut kaydı döndür, overwrite YOK (type/89-ihbarname state korunur).
+      return { ...(dup as any), _existingReturned: true };
     }
 
     return this.prisma.thirdParty.create({
