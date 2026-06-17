@@ -15,7 +15,8 @@ import { DueType } from '../dto/case.dto';
 
 describe('CaseService.createClaimItemsFromDues (G1)', () => {
   const stub = {} as any;
-  const service = new CaseService(stub, stub, stub, stub, stub, stub, stub);
+  // RFA-016: constructor 10 dep (… + clientService, lawyerService, debtorService).
+  const service = new CaseService(stub, stub, stub, stub, stub, stub, stub, stub, stub, stub);
 
   function mockTx() {
     const created: any[] = [];
