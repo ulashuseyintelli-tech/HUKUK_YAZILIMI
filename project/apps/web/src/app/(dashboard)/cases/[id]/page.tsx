@@ -50,6 +50,7 @@ import { UyapExportButton } from "@/components/uyap-export/UyapExportButton";
 import { DueModal, CollectionModal, HesapOzetiPanel } from "@/components/finance";
 import { FaizDokumuPanel } from "@/components/interest";
 import { OperationDeck } from "@/components/case-detail";
+import IntakeLinksCard from "@/components/case/IntakeLinksCard";
 
 // ============================================
 // TİPLER
@@ -2252,6 +2253,15 @@ export default function CaseDetailPage() {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Müvekkil Bilgi Formu Linki (Faz 4.7 PR-B) — link üret/listele/iptal */}
+        <div className="px-3 pt-3">
+          <IntakeLinksCard
+            caseId={caseData.id}
+            client={caseData.client}
+            caseClients={caseData.caseClients}
+          />
         </div>
 
         {/* ALT İÇERİK - 2 Panel */}
