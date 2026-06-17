@@ -459,6 +459,8 @@ model Client {
   expenseRequests  ExpenseRequest[]
   clientApprovalRequests ClientApprovalRequest[] // Müvekkil onay defteri (PR-2)
   clientStatements ClientStatement[] // Müvekkil ekstresi (PR-3)
+  clientIntakeLinks ClientIntakeLink[] // Müvekkil dış-form intake linkleri (Faz 4.2)
+  clientIntakeSubmissions ClientIntakeSubmission[] // Müvekkil dış-form gönderimleri (Faz 4.2)
   portalUser       ClientPortalUser?
 
   // Address Discovery
@@ -1040,6 +1042,8 @@ model Case {
   clientApprovalRequests ClientApprovalRequest[] // Müvekkil onay defteri (PR-2)
   clientStatements ClientStatement[] // Müvekkil ekstresi (PR-3)
   clientIntelStatements ClientIntelStatement[] // Müvekkil yumuşak-istihbarat beyanı (Faz 4.0)
+  clientIntakeLinks ClientIntakeLink[] // Müvekkil dış-form intake linkleri (Faz 4.2)
+  clientIntakeSubmissions ClientIntakeSubmission[] // Müvekkil dış-form gönderimleri (Faz 4.2)
 
   // Address Discovery
   clientInfoRequests ClientInfoRequest[]
@@ -3684,6 +3688,129 @@ enum ClientIntelStatus {
   RETRACTED // Müvekkil geri aldı (silinmez)
   SUPERSEDED // Yenisiyle değiştirildi (içerik aynen kalır)
   FALSE_POSITIVE // Yanlış çıktı (silinmez)
+}
+
+// ============================================================
+// MÜVEKKİL DIŞ-FORM INTAKE (Faz 4.2) — YALNIZ ŞEMA (servis/endpoint 4.3+)
+// Dış formdan gelen veri DOĞRUDAN kanonik olmaz: önce CLIENT_SUBMITTED review queue.
+// Güvenlik: ham token DB'de YOK (yalnız tokenHash); sourceMeta PII-min; value immutable.
+// onDelete=Restrict (link/submission case/client/link) — denetim izi; field→submission Cascade.
+// Promote (4.6) onaylı alanı kanonik modele (ClientIntelStatement/DebtorAddress/Asset) yazacak.
+// ============================================================
+model ClientIntakeLink {
+  id       String @id @default(cuid())
+  tenantId String
+
+  caseId String
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Restrict)
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  tokenHash String // opak token'ın HASH'i (ham token DB'de YOK)
+  status    ClientIntakeLinkStatus @default(ACTIVE)
+  scope     ClientIntakeFieldCategory[] // istenen kategoriler
+
+  expiresAt DateTime?
+  maxUses   Int @default(1)
+  useCount  Int @default(0)
+
+  createdById String
+  createdAt   DateTime @default(now())
+
+  submissions ClientIntakeSubmission[]
+
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([clientId])
+  @@index([tokenHash])
+  @@index([status])
+}
+
+model ClientIntakeSubmission {
+  id       String @id @default(cuid())
+  tenantId String
+
+  intakeLinkId String
+  intakeLink   ClientIntakeLink @relation(fields: [intakeLinkId], references: [id], onDelete: Restrict)
+
+  caseId String
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Restrict)
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  status      ClientIntakeSubmissionStatus @default(CLIENT_SUBMITTED)
+  submittedAt DateTime  @default(now())
+  reviewedById String?
+  reviewedAt   DateTime?
+  sourceMeta   Json? // PII-min: ip hash / ua özeti (ham IP YOK)
+
+  createdAt DateTime @default(now())
+
+  fields ClientIntakeField[]
+
+  @@index([tenantId])
+  @@index([intakeLinkId])
+  @@index([caseId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Tek alan — immutable ham beyan. Onaylanınca promotedRef ile kanonik kayda bağlanır (4.6).
+model ClientIntakeField {
+  id           String                 @id @default(cuid())
+  submissionId String
+  submission   ClientIntakeSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  category ClientIntakeFieldCategory
+  label    String?
+  value    String // ham beyan (immutable)
+  note     String?
+
+  reviewStatus    ClientIntakeFieldReviewStatus @default(PENDING)
+  reviewNote      String?
+  promotedRefType String? // onaylanınca yazıldığı kanonik model (4.6)
+  promotedRefId   String?
+
+  createdAt DateTime @default(now())
+
+  @@index([submissionId])
+  @@index([category])
+  @@index([reviewStatus])
+}
+
+enum ClientIntakeLinkStatus {
+  ACTIVE
+  USED
+  EXPIRED
+  REVOKED
+}
+
+enum ClientIntakeSubmissionStatus {
+  CLIENT_SUBMITTED // Müvekkil gönderdi — henüz incelenmedi (kanonik DEĞİL)
+  IN_REVIEW
+  PARTIALLY_PROMOTED // bazı alanlar onaylanıp kanoniğe yazıldı
+  COMPLETED
+  REJECTED
+}
+
+enum ClientIntakeFieldReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum ClientIntakeFieldCategory {
+  INCOME_SOURCE
+  COMMERCIAL_RELATION
+  FAMILY_CIRCLE
+  DIGITAL_FOOTPRINT
+  PAYMENT_HISTORY
+  STRATEGY
+  ADDRESS // promote → DebtorAddress(source=CLIENT)
+  ASSET // promote → Asset
+  CONTACT // promote → Debtor/DebtorCommunication
 }
 
 // Mesaj Şablonları (E-posta, SMS, WhatsApp)
