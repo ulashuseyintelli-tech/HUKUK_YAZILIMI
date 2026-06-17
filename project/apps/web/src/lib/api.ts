@@ -2733,6 +2733,79 @@ class ApiClient {
       }
     );
   }
+
+  // ============================================
+  // Client Intake Links (Faz 4.7 PR-B) — personel/JWT
+  // Public intake formu (lib/intake-api.ts) AYRI ve AUTH'suz tutulur;
+  // BU metodlar authed (request() Bearer token ekler).
+  // ============================================
+
+  /**
+   * Müvekkil bilgi formu linki üret (+ best-effort INTAKE_LINK maili).
+   * rawToken/intakeUrl YALNIZ bu yanıtta döner (tek sefer); liste DÖNDÜRMEZ.
+   */
+  async createIntakeLink(caseId: string, input: CreateIntakeLinkInput) {
+    return this.request<CreateIntakeLinkResult>(`/client-intake-links/case/${caseId}`, {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  }
+
+  /** Dosyanın intake linkleri (token/URL DÖNMEZ — güvenlik). */
+  async listIntakeLinks(caseId: string, status?: IntakeLinkStatus) {
+    const query = status ? `?status=${encodeURIComponent(status)}` : '';
+    return this.request<IntakeLink[]>(`/client-intake-links/case/${caseId}${query}`);
+  }
+
+  /** Linki iptal et (ACTIVE → REVOKED). */
+  async revokeIntakeLink(id: string) {
+    return this.request<IntakeLink>(`/client-intake-links/${id}/revoke`, {
+      method: 'POST',
+    });
+  }
+}
+
+// ============================================
+// Client Intake Link Types (Faz 4.7 PR-B)
+// ============================================
+export type IntakeLinkStatus = 'ACTIVE' | 'USED' | 'EXPIRED' | 'REVOKED';
+
+export type IntakeFieldCategory =
+  | 'INCOME_SOURCE'
+  | 'COMMERCIAL_RELATION'
+  | 'FAMILY_CIRCLE'
+  | 'DIGITAL_FOOTPRINT'
+  | 'PAYMENT_HISTORY'
+  | 'STRATEGY'
+  | 'ADDRESS'
+  | 'ASSET'
+  | 'CONTACT';
+
+export interface IntakeLink {
+  id: string;
+  tenantId: string;
+  caseId: string;
+  clientId: string;
+  status: IntakeLinkStatus;
+  scope: IntakeFieldCategory[];
+  expiresAt: string | null;
+  maxUses: number;
+  useCount: number;
+  createdById: string;
+  createdAt: string;
+}
+
+export interface CreateIntakeLinkInput {
+  clientId: string;
+  scope: IntakeFieldCategory[];
+  expiresAt?: string;
+  maxUses?: number;
+}
+
+export interface CreateIntakeLinkResult {
+  link: IntakeLink;
+  rawToken: string;
+  intakeUrl: string;
 }
 
 // ============================================
