@@ -457,6 +457,7 @@ model Client {
   caseClients      CaseClient[]
   notifications    ClientNotification[]
   expenseRequests  ExpenseRequest[]
+  clientApprovalRequests ClientApprovalRequest[] // Müvekkil onay defteri (PR-2)
   portalUser       ClientPortalUser?
 
   // Address Discovery
@@ -1034,6 +1035,7 @@ model Case {
   expenseRequests     ExpenseRequest[] // Masraf talepleri
   caseBalance         CaseBalance? // Masraf bakiyesi (1:1)
   expenseBlockReasons ExpenseBlockReason[] // "Ödeme/onay yok → işlem yapılmadı" savunma kayıtları (PR-1)
+  clientApprovalRequests ClientApprovalRequest[] // Müvekkil onay defteri (PR-2)
 
   // Address Discovery
   clientInfoRequests ClientInfoRequest[]
@@ -3416,6 +3418,108 @@ enum ExpenseBlockStatus {
   OPEN // İşlem hâlâ bloklu (sebep devam ediyor)
   RESOLVED // Ödeme/onay geldi, işlem yapılabilir
   CANCELLED // Kayıt yanlış/geçersiz (silinmez, iptal edilir)
+}
+
+// ============================================================
+// MÜVEKKİL ONAY DEFTERİ (PR-2) — "ne gönderildi, ne zaman onaylandı/reddedildi?"
+// DEFTER, karar motoru DEĞİL: CPE (policy-engine) hâlâ tek karar otoritesi;
+// bu modül CPE'yi çağırmaz, CPE kararını ve ExpenseRequest state'ini DEĞİŞTİRMEZ.
+// subjectId POLİMORFİK (FK yok). Terminal kararlar değişmez; kayıt silinmez.
+// onDelete=Restrict: açık approval varken Case/Client hard-delete edilemez.
+// ============================================================
+model ClientApprovalRequest {
+  id       String @id @default(cuid())
+  tenantId String
+
+  caseId String
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Restrict)
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  // Gevşek/polimorfik bağ (FK YOK) — CPE/ExpenseRequest'e sıkı bağlanmaz
+  subjectType  ClientApprovalSubjectType
+  subjectId    String? // EXPENSE_REQUEST/OPERATION id'si (doğrulama soft)
+  subjectLabel String? // İnsan-okur etiket: "Haciz masrafı onayı"
+
+  status      ClientApprovalStatus    @default(DRAFT)
+  channel     ClientApprovalChannel   @default(EMAIL)
+  title       String?
+  description String?
+
+  requestedById String // talep eden personel (plain string — FK yok)
+
+  // Gönderim / karar (lifecycle)
+  sentAt       DateTime?
+  decidedAt    DateTime?
+  decision     ClientApprovalDecision? // son karar (geçmiş event'lerde)
+  decisionNote String?
+  expiresAt    DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  events ClientApprovalEvent[]
+
+  @@index([tenantId])
+  @@index([caseId])
+  @@index([clientId])
+  @@index([status])
+  @@index([subjectType, subjectId])
+  @@index([createdAt])
+}
+
+// Append-only alt-defter: her geçişin değişmez kaydı (kim/ne zaman/ne)
+model ClientApprovalEvent {
+  id                String                @id @default(cuid())
+  approvalRequestId String
+  approvalRequest   ClientApprovalRequest @relation(fields: [approvalRequestId], references: [id], onDelete: Cascade)
+
+  eventType  ClientApprovalEventType
+  fromStatus ClientApprovalStatus?
+  toStatus   ClientApprovalStatus
+  byUserId   String? // sistem/expire için null olabilir
+  note       String?
+
+  createdAt DateTime @default(now())
+
+  @@index([approvalRequestId])
+  @@index([createdAt])
+}
+
+enum ClientApprovalSubjectType {
+  EXPENSE_REQUEST // Masraf talebi onayı (soft-validate edilir)
+  OPERATION // Genel işlem onayı
+  OTHER
+}
+
+enum ClientApprovalStatus {
+  DRAFT // Hazırlanıyor (henüz gönderilmedi)
+  SENT // Müvekkile gönderildi, karar bekleniyor
+  APPROVED // Onaylandı (terminal)
+  REJECTED // Reddedildi (terminal)
+  EXPIRED // Süresi doldu (terminal)
+  CANCELLED // İptal edildi (terminal)
+}
+
+enum ClientApprovalChannel {
+  EMAIL
+  PORTAL
+  MANUAL
+}
+
+enum ClientApprovalDecision {
+  APPROVE
+  REJECT
+}
+
+enum ClientApprovalEventType {
+  CREATED
+  SENT
+  APPROVED
+  REJECTED
+  CANCELLED
+  EXPIRED
 }
 
 // Mesaj Şablonları (E-posta, SMS, WhatsApp)
