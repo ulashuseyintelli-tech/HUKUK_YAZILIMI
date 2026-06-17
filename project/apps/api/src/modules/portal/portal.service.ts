@@ -1,4 +1,4 @@
-import { Injectable, Logger, UnauthorizedException, BadRequestException, NotFoundException } from "@nestjs/common";
+import { Injectable, Logger, UnauthorizedException, BadRequestException, NotFoundException, ConflictException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { PrismaService } from "../../prisma/prisma.service";
 import { maskEmail } from "../../common/pii-mask.util";
@@ -27,17 +27,40 @@ export class PortalService {
       throw new NotFoundException("Müvekkil bulunamadı");
     }
 
-    // Mevcut portal kullanıcısı kontrolü
+    // RFA-013: email collision guard — GLOBAL (login email-global çalışıyor; iki aktif kullanıcı
+    // aynı email'de olursa login belirsizleşir = güvenlik kokusu). Başka AKTİF user aynı email → 409.
+    const emailDup = await this.prisma.clientPortalUser.findFirst({
+      where: { email, isActive: true, clientId: { not: clientId } },
+    });
+    if (emailDup) {
+      throw new ConflictException("Bu e-posta başka bir aktif portal kullanıcısında kayıtlı");
+    }
+
+    // Şifre hash'le (reactivate'te de yeni şifre → eski şifre geçersiz olur)
+    const passwordHash = await bcrypt.hash(password, 10);
+
+    // RFA-013: clientId @unique → disable→tekrar-create eskiden 400 veriyordu (inaktif satır clientId'yi
+    // tutuyor). Şimdi: aktif varsa 409; inaktif varsa AYNI id reactivate (yeni şifre + email,
+    // resetToken temizle → güvenli); yoksa düz create.
     const existing = await this.prisma.clientPortalUser.findUnique({
       where: { clientId },
     });
 
     if (existing) {
-      throw new BadRequestException("Bu müvekkil için portal hesabı zaten mevcut");
+      if (existing.isActive) {
+        throw new ConflictException("Bu müvekkil için portal hesabı zaten mevcut");
+      }
+      await this.prisma.clientPortalUser.update({
+        where: { id: existing.id },
+        data: { isActive: true, email, passwordHash, resetToken: null, resetTokenExp: null },
+      });
+      await this.prisma.client.update({
+        where: { id: clientId },
+        data: { hasPortalAccess: true, portalUserId: existing.id },
+      });
+      this.logger.log(`Portal kullanıcısı yeniden aktifleştirildi: ${maskEmail(email)} (Client: ${clientId})`);
+      return { success: true, portalUserId: existing.id, _reactivated: true };
     }
-
-    // Şifre hash'le
-    const passwordHash = await bcrypt.hash(password, 10);
 
     const portalUser = await this.prisma.clientPortalUser.create({
       data: {

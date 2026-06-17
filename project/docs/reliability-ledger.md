@@ -53,7 +53,7 @@ audit'te tekrar bulgu gibi raporlanması. Bu ledger üç şeyi ayırır: (1) ger
 ## SPOT-CHECK EDİLDİ — C→B terfi (2026-06-17)
 | ID | Bulgu | Kanıt (doğrulandı) | Güven | Risk | UI tetiklenebilir |
 |----|-------|--------------------|-------|------|-------------------|
-| RFA-013 | ClientPortalUser reactivate yok → disable sonra yeniden enable **400 "zaten mevcut"** | portal.service.ts:31 findUnique(clientId)→36 throw; :293/304 disable isActive=false; schema `clientId @unique` + isActive; reactivate YOK | **B** (kendim okudum) | MED | YES (portal aç/kapat toggle); doğrula |
+| **RFA-013** ✅ **RESOLVED** | ClientPortalUser reactivate yok → disable sonra yeniden enable 400 "zaten mevcut" | portal.service.ts createPortalUser (eski findUnique→400); schema `clientId @unique` + isActive | **A (canlı DB e2e PASS)** | MED→kapandı | **MERGED PR-RFA013**: aktif→409 (400 değil), inaktif→aynı id reactivate (yeni passwordHash→eski şifre geçersiz, resetToken/Exp temizle), email-collision GLOBAL guard (login email-global). Test: 4 unit + canlı e2e (reactivate aynı id, eski-şifre 401/yeni 201, active-dup 409, farklı-client aynı-email 409). Migration yok | Hayır |
 | RFA-014 | GroupDefinition reactivate yok → **sessiz duplicate** (name'de unique YOK → 500 değil, çift satır) | group.service.ts:44-56 create reactivate yok, soft-delete; schema name @unique YOK | **B** (kendim okudum) | LOW-MED | YES (grup oluştur); ama düşük etki |
 | RFA-015 | DebtorIntelligence idempotency yok → çift-submit/timeout-retry 2 kayıt (adres update idempotent) | debtor.service.ts:819-887 createIntelligence, @unique yok | B (agent kanıtı, satır doğrulandı) | LOW-MED | YES (saha sonucu submit retry) |
 
@@ -97,8 +97,8 @@ UI-tetiklenebilirlik + güven + değer sırası. Gerçek kullanıcı riski > sal
 3. ✅ **RFA-005** (#144) — Lookup reactivate-on-code.
 4. ✅ **RFA-006** (#145) — DebtorAddress dedup (DEAD-1 canlandı; backfill no-op, junk veri).
 5. ✅ **RFA-008** (#PR) — ThirdParty guard (idempotent return-existing).
-6. ⏭️ **RFA-013 (MED, UI=YES?)** — ClientPortalUser reactivate. ← SIRADAKİ
-7. **RFA-007** — EnforcementAction status-guard (otomasyon açılmadan düşük aciliyet).
+6. ✅ **RFA-013** (#PR) — ClientPortalUser reactivate + email-collision guard.
+7. ⏭️ **RFA-007** — EnforcementAction status-guard (otomasyon pratikte dormant; düşük aciliyet). ← SIRADAKİ kod fix
 8. Düşük/tasarım-gated: RFA-010 (tasarım kararı), RFA-009 (Debtor soft-delete, migration, IR/Party ile), RFA-014/015 (LOW), RFA-011 (API-only), RFA-012 (LOW).
 
 ## HENÜZ TARANMADI (sonraki turlar)
