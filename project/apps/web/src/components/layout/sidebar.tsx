@@ -22,6 +22,7 @@ import {
   Shield,
   AlertTriangle,
   FileCode,
+  Inbox,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserSettings } from "@/lib/user-settings";
@@ -37,6 +38,7 @@ const navigation = [
   { name: "Borçlular", href: "/debtors", icon: Users, disabled: false },
   { name: "Müvekkiller", href: "/clients", icon: Building2, disabled: true }, // Sayfa yok
   { name: "Görevler", href: "/tasks", icon: CheckSquare, disabled: false },
+  { name: "Bilgi Formları", href: "/intake", icon: Inbox, disabled: false },
   { name: "Bildirimler", href: "/notifications", icon: Bell, disabled: true }, // Sayfa yok
   { name: "Mahkemeler", href: "/courts", icon: Gavel, disabled: true }, // Sayfa yok
   { name: "Tahsilatlar", href: "/collections", icon: CreditCard, disabled: true }, // Sayfa yok

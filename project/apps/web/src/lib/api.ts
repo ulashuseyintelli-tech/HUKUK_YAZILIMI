@@ -2763,6 +2763,55 @@ class ApiClient {
       method: 'POST',
     });
   }
+
+  // ============================================
+  // Client Intake Review Queue (Faz 4.7 PR-C1) — personel/JWT, REVIEW-ONLY
+  // ⛔ Kanoniğe yazım YOK / promote YOK (4.6 PromotionModule AYRI ve bu istemcide
+  // BİLİNÇLİ olarak yer almaz). Bu metodlar yalnız submission/field lifecycle işaretler.
+  // ============================================
+
+  /** İnceleme kuyruğu (default CLIENT_SUBMITTED+IN_REVIEW). */
+  async listIntakeSubmissions(params?: { status?: IntakeSubmissionStatus; caseId?: string }) {
+    const q = new URLSearchParams();
+    if (params?.status) q.set('status', params.status);
+    if (params?.caseId) q.set('caseId', params.caseId);
+    const qs = q.toString();
+    return this.request<IntakeSubmission[]>(`/client-intake-submissions${qs ? `?${qs}` : ''}`);
+  }
+
+  /** Tek gönderim + alanlar. */
+  async getIntakeSubmission(id: string) {
+    return this.request<IntakeSubmissionDetail>(`/client-intake-submissions/${id}`);
+  }
+
+  /** İncelemeyi üstlen (CLIENT_SUBMITTED → IN_REVIEW). */
+  async claimIntakeSubmission(id: string) {
+    return this.request<IntakeSubmission>(`/client-intake-submissions/${id}/claim`, { method: 'POST' });
+  }
+
+  /** Tek alan review (APPROVE/REJECT). Döner: güncel submission + alanlar. */
+  async reviewIntakeField(fieldId: string, decision: IntakeReviewDecision, note?: string) {
+    return this.request<IntakeSubmissionDetail>(`/client-intake-fields/${fieldId}/review`, {
+      method: 'POST',
+      body: JSON.stringify({ decision, note }),
+    });
+  }
+
+  /** Toplu alan review (YALNIZ aynı submission). */
+  async bulkReviewIntakeFields(id: string, fieldIds: string[], decision: IntakeReviewDecision, note?: string) {
+    return this.request<IntakeSubmissionDetail>(`/client-intake-submissions/${id}/fields/bulk-review`, {
+      method: 'POST',
+      body: JSON.stringify({ fieldIds, decision, note }),
+    });
+  }
+
+  /** Gönderimi reddet (→ REJECTED; PENDING alanlar REJECTED, APPROVED'a dokunmaz). */
+  async rejectIntakeSubmission(id: string, note?: string) {
+    return this.request<IntakeSubmissionDetail>(`/client-intake-submissions/${id}/reject`, {
+      method: 'POST',
+      body: JSON.stringify({ note }),
+    });
+  }
 }
 
 // ============================================
@@ -2806,6 +2855,53 @@ export interface CreateIntakeLinkResult {
   link: IntakeLink;
   rawToken: string;
   intakeUrl: string;
+}
+
+// ============================================
+// Client Intake Review Types (Faz 4.7 PR-C1) — review-only (promote tipleri YOK)
+// ============================================
+export type IntakeSubmissionStatus =
+  | 'CLIENT_SUBMITTED'
+  | 'IN_REVIEW'
+  | 'PARTIALLY_PROMOTED'
+  | 'COMPLETED'
+  | 'REJECTED';
+
+export type IntakeFieldReviewStatus = 'PENDING' | 'APPROVED' | 'REJECTED';
+
+export type IntakeReviewDecision = 'APPROVE' | 'REJECT';
+
+export interface IntakeSubmission {
+  id: string;
+  tenantId: string;
+  intakeLinkId: string;
+  caseId: string;
+  clientId: string;
+  status: IntakeSubmissionStatus;
+  submittedAt: string;
+  claimedById: string | null;
+  claimedAt: string | null;
+  reviewedById: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+}
+
+export interface IntakeSubmissionField {
+  id: string;
+  submissionId: string;
+  category: IntakeFieldCategory;
+  label: string | null;
+  value: string;
+  note: string | null;
+  reviewStatus: IntakeFieldReviewStatus;
+  reviewNote: string | null;
+  promotedRefType: string | null;
+  promotedRefId: string | null;
+  createdAt: string;
+}
+
+export interface IntakeSubmissionDetail extends IntakeSubmission {
+  fields: IntakeSubmissionField[];
 }
 
 // ============================================
