@@ -89,3 +89,25 @@ jobs:
           npx jest --ci --forceExit --runInBand \
             --testPathPattern="(collection-payment-received|domain-event-ingest|uyap-event-ingest\.boundary)\.integration\.spec\.ts$"
         working-directory: project
+
+  # Frontend (apps/web) vitest — jsdom unit/component testleri. DB/prisma GEREKMEZ.
+  # RFA-018: web testleri artık CI'da; kırmızı web testi merge'i bloklar.
+  web-tests:
+    name: Web Tests (vitest)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 8.15.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+          cache-dependency-path: project/pnpm-lock.yaml
+      - name: Install
+        run: pnpm install --frozen-lockfile
+        working-directory: project
+      - name: Web vitest (jsdom)
+        run: pnpm --filter @hukuk/web test
+        working-directory: project
