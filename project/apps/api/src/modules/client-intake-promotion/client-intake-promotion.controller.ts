@@ -1,0 +1,28 @@
+import { Controller, Post, Body, Param, UseGuards, Req } from '@nestjs/common';
+import { AuthGuard } from '@nestjs/passport';
+import { Request } from 'express';
+import { ClientIntakePromotionService } from './client-intake-promotion.service';
+import { PromoteSubmissionDto } from './dto/promote-submission.dto';
+
+interface AuthRequest extends Request {
+  user: { id: string; tenantId: string };
+}
+
+/**
+ * Client Intake PROMOTE controller (Faz 4.6) — personel/JWT.
+ * Onaylı soft-intel alanları ClientIntelStatement'a yazar. Public uç promote ETMEZ.
+ */
+@Controller()
+@UseGuards(AuthGuard('jwt'))
+export class ClientIntakePromotionController {
+  constructor(private readonly service: ClientIntakePromotionService) {}
+
+  /**
+   * Promote — POST /client-intake-submissions/:id/promote { debtorId }
+   * Yanıt: { submissionStatus, promoted[], skipped[] } (skipped açıkça döner — F46-K4).
+   */
+  @Post('client-intake-submissions/:id/promote')
+  async promote(@Req() req: AuthRequest, @Param('id') id: string, @Body() dto: PromoteSubmissionDto) {
+    return this.service.promote(req.user.tenantId, id, req.user.id, dto.debtorId);
+  }
+}
