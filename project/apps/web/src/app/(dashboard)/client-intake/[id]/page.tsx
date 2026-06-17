@@ -154,7 +154,7 @@ export default function IntakeSubmissionDetailPage({ params }: { params: { id: s
   if (notFound) {
     return (
       <div className="max-w-3xl mx-auto">
-        <Link href="/intake" className="text-sm text-blue-600 hover:text-blue-800">← Kuyruğa dön</Link>
+        <Link href="/client-intake" className="text-sm text-blue-600 hover:text-blue-800">← Kuyruğa dön</Link>
         <p className="mt-4 text-slate-600">Gönderim bulunamadı.</p>
       </div>
     );
@@ -165,7 +165,7 @@ export default function IntakeSubmissionDetailPage({ params }: { params: { id: s
 
   return (
     <div className="max-w-3xl mx-auto">
-      <Link href="/intake" className="text-sm text-blue-600 hover:text-blue-800">← Kuyruğa dön</Link>
+      <Link href="/client-intake" className="text-sm text-blue-600 hover:text-blue-800">← Kuyruğa dön</Link>
 
       <div className="mt-3 flex items-center justify-between">
         <div>
