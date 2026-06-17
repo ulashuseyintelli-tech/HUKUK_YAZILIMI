@@ -66,6 +66,17 @@ function fmtDate(iso: string | null): string {
   return d.toLocaleDateString("tr-TR");
 }
 
+/**
+ * type=date ("YYYY-MM-DD") → seçilen günün YEREL sonu (23:59:59.999) → ISO.
+ * Aksi halde new Date("YYYY-MM-DD") UTC gece-yarısı kabul edilir ve link yerel
+ * kullanıcı için ~1 gün erken ölür (örn. İstanbul UTC+3 → günün 03:00'ünde).
+ * Personelin "seçtiğim günün sonuna kadar geçerli" beklentisini karşılar.
+ */
+function endOfDayIso(dateStr: string): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  return new Date(y, m - 1, d, 23, 59, 59, 999).toISOString();
+}
+
 export default function IntakeLinksCard({
   caseId,
   client,
@@ -101,6 +112,7 @@ export default function IntakeLinksCard({
   const [created, setCreated] = useState<{ url: string } | null>(null);
   const [copied, setCopied] = useState(false);
   const [revokingId, setRevokingId] = useState<string | null>(null);
+  const [revokeError, setRevokeError] = useState("");
 
   const loadLinks = useCallback(async () => {
     setListError("");
@@ -161,7 +173,7 @@ export default function IntakeLinksCard({
       const res = await api.createIntakeLink(caseId, {
         clientId,
         scope: Array.from(scope),
-        expiresAt: expiresAt ? new Date(expiresAt).toISOString() : undefined,
+        expiresAt: expiresAt ? endOfDayIso(expiresAt) : undefined,
         maxUses: parsedMax,
       });
       setCreated({ url: res.intakeUrl });
@@ -189,11 +201,15 @@ export default function IntakeLinksCard({
 
   const handleRevoke = async (id: string) => {
     setRevokingId(id);
+    setRevokeError("");
     try {
       await api.revokeIntakeLink(id);
-      await loadLinks();
-    } catch {
-      // sessiz; liste yeniden yüklenir
+      await loadLinks(); // yalnız BAŞARIDA yenile
+    } catch (err) {
+      // Sessiz kalma: personel "iptal edildi" sanmasın. Liste yenilenmez →
+      // link gerçekte ACTIVE kalır ve listede öyle görünür (yanlış güven yok).
+      const msg = err instanceof Error && err.message ? err.message : "Link iptal edilemedi.";
+      setRevokeError(msg);
     } finally {
       setRevokingId(null);
     }
@@ -335,6 +351,7 @@ export default function IntakeLinksCard({
           Mevcut linkler güvenlik nedeniyle tekrar görüntülenemez. Gerekirse yeni link üretip eskisini iptal edin.
         </p>
         {listError && <p className="text-sm text-red-600 mb-2">{listError}</p>}
+        {revokeError && <p className="text-sm text-red-600 mb-2">{revokeError}</p>}
         {links === null ? (
           <p className="text-sm text-slate-400">Yükleniyor…</p>
         ) : links.length === 0 ? (
