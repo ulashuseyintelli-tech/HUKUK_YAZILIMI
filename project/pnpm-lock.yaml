@@ -89,6 +89,9 @@ importers:
       mammoth:
         specifier: ^1.11.0
         version: 1.11.0
+      multer:
+        specifier: ^2.0.2
+        version: 2.0.2
       nodemailer:
         specifier: ^7.0.11
         version: 7.0.11
