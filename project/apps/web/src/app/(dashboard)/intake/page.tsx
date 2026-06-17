@@ -117,7 +117,7 @@ export default function IntakeQueuePage() {
                   </td>
                   <td className="px-4 py-2.5 text-right">
                     <Link
-                      href={`/intake/${s.id}`}
+                      href={`/intake-review/${s.id}`}
                       className="text-sm font-medium text-blue-600 hover:text-blue-800"
                     >
                       İncele →

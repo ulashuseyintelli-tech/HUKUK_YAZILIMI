@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
-import IntakeSubmissionDetailPage from "@/app/(dashboard)/intake/[id]/page";
+import IntakeSubmissionDetailPage from "@/app/(dashboard)/intake-review/[id]/page";
 import { api } from "@/lib/api";
 
 vi.mock("next/link", () => ({

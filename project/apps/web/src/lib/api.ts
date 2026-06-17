@@ -2824,7 +2824,7 @@ class ApiClient {
   /**
    * TEK soft-intel alanını ClientIntelStatement'a promote et (field-level).
    * <remarks>Çağrıldığı yerler:
-   * - intake/[id]/promote/page.tsx (C2b promote ekranı) → POST /client-intake-fields/:fieldId/promote-soft</remarks>
+   * - intake-review/[id]/promote/page.tsx (C2b promote ekranı) → POST /client-intake-fields/:fieldId/promote-soft</remarks>
    */
   async promoteSoftField(fieldId: string, debtorId: string) {
     return this.request<PromoteSoftResult>(`/client-intake-fields/${fieldId}/promote-soft`, {
@@ -2836,7 +2836,7 @@ class ApiClient {
   /**
    * TEK ADDRESS alanını DebtorAddress'e promote et (HYBRID: ham value korunur, personel structured girer).
    * <remarks>Çağrıldığı yerler:
-   * - intake/[id]/promote/page.tsx (C2b promote ekranı) → POST /client-intake-fields/:fieldId/promote-address</remarks>
+   * - intake-review/[id]/promote/page.tsx (C2b promote ekranı) → POST /client-intake-fields/:fieldId/promote-address</remarks>
    */
   async promoteAddressField(fieldId: string, input: PromoteAddressInput) {
     return this.request<PromoteAddressResult>(`/client-intake-fields/${fieldId}/promote-address`, {
