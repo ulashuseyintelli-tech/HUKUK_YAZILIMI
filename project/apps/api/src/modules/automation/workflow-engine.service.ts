@@ -289,11 +289,31 @@ export class WorkflowEngine {
     }
   }
 
+  // RFA-007: aynı caseId+type için AÇIK (terminal olmayan) sayılan statüler. Bunlardan biri varsa
+  // yeni action AÇILMAZ → cron tekrarlarında aynı açık aksiyon yığılmaz. Terminal statüler
+  // (COMPLETED/FAILED/CANCELLED) yeni action'a izin verir (retry / ileride meşru tekrar).
+  private static readonly OPEN_ENFORCEMENT_STATUSES: EnforcementStatus[] = [
+    EnforcementStatus.PENDING,
+    EnforcementStatus.REQUESTED,
+    EnforcementStatus.IN_PROGRESS,
+    EnforcementStatus.PARTIAL,
+  ];
+
   // İcra işlemi oluştur
   async createEnforcementAction(
     caseId: string,
     type: EnforcementType
   ): Promise<void> {
+    // RFA-007: status-bazlı duplicate guard (unique constraint DEĞİL — meşru tekrarı kırmaz).
+    // Açık aynı caseId+type action varsa idempotent no-op. @@unique([caseId,type]) bilinçli YOK.
+    const open = await this.prisma.enforcementAction.findFirst({
+      where: { caseId, type, status: { in: WorkflowEngine.OPEN_ENFORCEMENT_STATUSES } },
+    });
+    if (open) {
+      this.logger.log(`Açık ${type} enforcement action zaten var (case ${caseId}), yeni açılmadı`);
+      return;
+    }
+
     await this.prisma.enforcementAction.create({
       data: {
         caseId,
