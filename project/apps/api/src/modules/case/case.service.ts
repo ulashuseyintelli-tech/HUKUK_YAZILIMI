@@ -20,6 +20,61 @@ import { LawyerService } from "../lawyer/lawyer.service";
 import { DebtorService } from "../debtor/debtor.service";
 import { DebtorType } from "@prisma/client";
 
+/**
+ * B5/D — sorumsuz (zero-responsible) case'te fallback sorumlu avukat seçimi.
+ * Öncelik: PARTNER > MANAGER > AUTHORIZED > LAWYER > INTERN > rank'siz.
+ * Eşit öncelikte İLK kayıt seçilir (strict `<` ile korunur). Aday yoksa -1.
+ *
+ * Saf fonksiyon (yan-etkisiz, izole test edilebilir). Yalnız createCase'in
+ * "≥1 sorumlu" invariant'ı, hiç RESPONSIBLE yokken çağırır.
+ *
+ * @remarks Çağrıldığı yerler:
+ * - CaseService.create() → POST /cases (Yeni Takip sihirbazı: sorumlu seçilmeden açılırsa fallback)
+ */
+export function pickResponsibleFallbackIndex(ranks: (string | null)[]): number {
+  const priority: Record<string, number> = {
+    PARTNER: 0,
+    MANAGER: 1,
+    AUTHORIZED: 2,
+    LAWYER: 3,
+    INTERN: 4,
+  };
+  const RANKLESS = 5; // rank'siz → en düşük öncelik (INTERN'den sonra)
+  let bestIdx = -1;
+  let bestPri = Number.POSITIVE_INFINITY;
+  for (let i = 0; i < ranks.length; i++) {
+    const r = ranks[i];
+    const pri = r != null && priority[r] !== undefined ? priority[r] : RANKLESS;
+    if (pri < bestPri) {
+      // strict `<` → eşit öncelikte İLK kayıt korunur
+      bestPri = pri;
+      bestIdx = i;
+    }
+  }
+  return bestIdx;
+}
+
+/**
+ * B5/D — "≥1 sorumlu avukat" invariant kararı (saf). Verilen CaseLawyer listesinde
+ * yükseltilecek satırın id'sini döndürür, yoksa null.
+ *
+ * Kurallar:
+ * - Liste boşsa → null (hiç avukat yok → no-op).
+ * - Zaten bir RESPONSIBLE varsa → null (explicit seçim / PARTNER-MANAGER KORUNUR; ezme/demote YOK).
+ * - Hiç sorumlu yoksa → {@link pickResponsibleFallbackIndex} önceliğiyle BİR satır seç.
+ *
+ * @remarks Çağrıldığı yerler:
+ * - CaseService.create() → POST /cases (createCase tx'inde post-loop invariant)
+ */
+export function resolveResponsiblePromotion(
+  created: { id: string; lawyerRank: string | null; isResponsible: boolean }[],
+): string | null {
+  if (created.length === 0) return null;
+  if (created.some((cl) => cl.isResponsible)) return null; // sorumlu zaten var → dokunma
+  const idx = pickResponsibleFallbackIndex(created.map((cl) => cl.lawyerRank));
+  return idx >= 0 ? created[idx].id : null;
+}
+
 @Injectable()
 export class CaseService {
   private readonly logger = new Logger(CaseService.name);
@@ -832,6 +887,8 @@ export class CaseService {
         }
 
         // 4. Avukatları - mevcut veya yeni
+        // B5/D: oluşturulan CaseLawyer'ları izle (post-loop "≥1 sorumlu" invariant'ı için).
+        const createdCaseLawyers: { id: string; lawyerRank: string | null; isResponsible: boolean }[] = [];
         if (dto.lawyers && dto.lawyers.length > 0) {
           for (const lawyerDto of dto.lawyers) {
             let lawyerId: string;
@@ -872,7 +929,7 @@ export class CaseService {
               }
             }
 
-            await tx.caseLawyer.create({
+            const createdLawyer = await tx.caseLawyer.create({
               data: {
                 caseId: newCase.id,
                 lawyerId,
@@ -882,6 +939,7 @@ export class CaseService {
                 role: caseRole,
               },
             });
+            createdCaseLawyers.push({ id: createdLawyer.id, lawyerRank, isResponsible: caseRole === 'RESPONSIBLE' });
           }
         }
 
@@ -963,7 +1021,7 @@ export class CaseService {
         });
 
         for (const lawyer of defaultInternLawyers) {
-          await tx.caseLawyer.create({
+          const createdIntern = await tx.caseLawyer.create({
             data: {
               caseId: newCase.id,
               lawyerId: lawyer.id,
@@ -972,6 +1030,20 @@ export class CaseService {
               hasSignatureAuthority: false,
               role: lawyer.lawyerRank === 'INTERN' ? 'INTERN' : 'ASSISTANT',
             },
+          });
+          createdCaseLawyers.push({ id: createdIntern.id, lawyerRank: lawyer.lawyerRank, isResponsible: false });
+        }
+
+        // B5/D: "≥1 sorumlu avukat" invariant'ı. Hiçbir CaseLawyer RESPONSIBLE değilse (ve
+        // avukat varsa), önceliğe göre BİR avukatı RESPONSIBLE'a yükselt. Explicit isResponsible
+        // ve PARTNER/MANAGER zaten yukarıda RESPONSIBLE ürettiğinden bu blok YALNIZ "sıfır sorumlu"
+        // hâlinde çalışır → kullanıcının açık seçimi ASLA ezilmez/demote edilmez. Yükseltmede
+        // isResponsible ve role BİRLİKTE set edilir (isResponsible ⇔ role===RESPONSIBLE tutarlılığı).
+        const promoteResponsibleId = resolveResponsiblePromotion(createdCaseLawyers);
+        if (promoteResponsibleId) {
+          await tx.caseLawyer.update({
+            where: { id: promoteResponsibleId },
+            data: { isResponsible: true, role: 'RESPONSIBLE' },
           });
         }
 
