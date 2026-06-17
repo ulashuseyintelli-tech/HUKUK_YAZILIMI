@@ -38,7 +38,7 @@ const navigation = [
   { name: "Borçlular", href: "/debtors", icon: Users, disabled: false },
   { name: "Müvekkiller", href: "/clients", icon: Building2, disabled: true }, // Sayfa yok
   { name: "Görevler", href: "/tasks", icon: CheckSquare, disabled: false },
-  { name: "Bilgi Formları", href: "/intake", icon: Inbox, disabled: false },
+  { name: "Bilgi Formları", href: "/client-intake", icon: Inbox, disabled: false },
   { name: "Bildirimler", href: "/notifications", icon: Bell, disabled: true }, // Sayfa yok
   { name: "Mahkemeler", href: "/courts", icon: Gavel, disabled: true }, // Sayfa yok
   { name: "Tahsilatlar", href: "/collections", icon: CreditCard, disabled: true }, // Sayfa yok

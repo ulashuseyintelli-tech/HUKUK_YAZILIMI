@@ -18,7 +18,7 @@ import {
  *   - soft-6 → ClientIntelStatement (api.promoteSoftField, #178)
  *   - ADDRESS → DebtorAddress HYBRID (api.promoteAddressField, #168; personel street/city girer)
  *   - ASSET/CONTACT → aktarım ucu YOK (4.6c) → rozet + DISABLED
- * Review (onay/ret) ile promote (aktarım) AYRI işlerdir (review ekranı: /intake/[id]).
+ * Review (onay/ret) ile promote (aktarım) AYRI işlerdir (review ekranı: /client-intake/[id]).
  * Yalnız APPROVED + henüz aktarılmamış alanlar, TEK TEK + KALICI açık-onayla aktarılır.
  */
 
@@ -153,7 +153,7 @@ export default function IntakePromotePage({ params }: { params: { id: string } }
   if (notFound) {
     return (
       <div className="max-w-3xl mx-auto">
-        <Link href="/intake" className="text-sm text-blue-600 hover:text-blue-800">← Kuyruğa dön</Link>
+        <Link href="/client-intake" className="text-sm text-blue-600 hover:text-blue-800">← Kuyruğa dön</Link>
         <p className="mt-4 text-slate-600">Gönderim bulunamadı.</p>
       </div>
     );
@@ -164,7 +164,7 @@ export default function IntakePromotePage({ params }: { params: { id: string } }
 
   return (
     <div className="max-w-3xl mx-auto">
-      <Link href={`/intake/${sub.id}`} className="text-sm text-blue-600 hover:text-blue-800">← İncelemeye dön</Link>
+      <Link href={`/client-intake/${sub.id}`} className="text-sm text-blue-600 hover:text-blue-800">← İncelemeye dön</Link>
 
       <div className="mt-3">
         <h1 className="text-xl font-semibold text-slate-800">Kanoniğe Aktarım (Promote)</h1>
