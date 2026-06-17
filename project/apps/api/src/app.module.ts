@@ -65,6 +65,7 @@ import { LimitationEngineModule } from "./modules/limitation-engine/limitation-e
 import { RelatedLawsuitsModule } from "./modules/related-lawsuits/related-lawsuits.module";
 import { PaymentInstructionModule } from "./modules/payment-instruction/payment-instruction.module";
 import { ExpenseRequestModule } from "./modules/expense-request/expense-request.module";
+import { ExpenseBlockReasonModule } from "./modules/expense-block-reason/expense-block-reason.module";
 import { MessageTemplateModule } from "./modules/message-template/message-template.module";
 import { CostPackageModule } from "./modules/cost-package/cost-package.module";
 import { CaseBalanceModule } from "./modules/case-balance/case-balance.module";
@@ -188,6 +189,7 @@ function getConditionalImports(): Type<unknown>[] {
     RelatedLawsuitsModule,
     PaymentInstructionModule,
     ExpenseRequestModule,
+    ExpenseBlockReasonModule,
     MessageTemplateModule,
     CostPackageModule,
     CaseBalanceModule,
