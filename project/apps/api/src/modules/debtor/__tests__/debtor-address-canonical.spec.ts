@@ -46,6 +46,8 @@ describe("DebtorService.addAddress — kanonik type/source yazımı (PR-D5-a)", 
   const buildPrisma = () => ({
     debtor: { findFirst: jest.fn().mockResolvedValue({ id: "d1", debtorAddresses: [], estateHeirs: [], type: "INDIVIDUAL" }) },
     debtorAddress: {
+      // RFA-006: addAddress artık findOrCreateDebtorAddress → findFirst (hash dedup). null → create'e geçer.
+      findFirst: jest.fn().mockResolvedValue(null),
       updateMany: jest.fn().mockResolvedValue({}),
       create: jest.fn().mockImplementation((a: any) => Promise.resolve({ id: "a1", verified: false, ...a.data })),
     },

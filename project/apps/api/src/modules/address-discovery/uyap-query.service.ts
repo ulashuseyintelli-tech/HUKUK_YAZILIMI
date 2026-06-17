@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { findOrCreateDebtorAddress } from '@/common/address-hash.util'; // RFA-006 adres dedup
 import {
   CreateUyapQueryDto,
   UpdateUyapQueryResponseDto,
@@ -152,34 +153,25 @@ export class UyapQueryService {
     const createdAddresses = [];
 
     for (const addr of addresses) {
-      // Aynı adres var mı kontrol et (basit karşılaştırma)
-      const existing = await this.prisma.debtorAddress.findFirst({
-        where: {
-          debtorId,
-          fullText: addr.fullAddress,
-        },
+      // RFA-006: normalize hash dedup (eski zayıf fullText findFirst yerine). Idempotent.
+      const { address: newAddress, created } = await findOrCreateDebtorAddress(this.prisma, {
+        debtorId,
+        fullText: addr.fullAddress,
+        city: addr.city || 'Bilinmiyor',
+        district: addr.district,
+        street: addr.street || addr.fullAddress.substring(0, 200),
+        postalCode: addr.postalCode,
+        type: 'DECLARED',
+        source: addressSource as any,
+        verifiedSource: `UYAP ${query.queryCode} - ${queryId}`,
+        verified: true,
+        verifiedAt: new Date(),
       });
 
-      if (existing) {
+      if (!created) {
         this.logger.log(`Adres zaten mevcut, atlanıyor: ${addr.fullAddress.substring(0, 50)}...`);
         continue;
       }
-
-      const newAddress = await this.prisma.debtorAddress.create({
-        data: {
-          debtorId,
-          fullText: addr.fullAddress,
-          city: addr.city || 'Bilinmiyor',
-          district: addr.district,
-          street: addr.street || addr.fullAddress.substring(0, 200),
-          postalCode: addr.postalCode,
-          type: 'DECLARED',
-          source: addressSource as any,
-          verifiedSource: `UYAP ${query.queryCode} - ${queryId}`,
-          verified: true,
-          verifiedAt: new Date(),
-        },
-      });
 
       createdAddresses.push(newAddress);
     }

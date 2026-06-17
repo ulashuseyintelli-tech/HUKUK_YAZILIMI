@@ -4,6 +4,7 @@ import {
   BadRequestException,
 } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
+import { findOrCreateDebtorAddress } from "@/common/address-hash.util"; // RFA-006 adres dedup
 import {
   AddressType,
   AddressSubType,
@@ -143,26 +144,25 @@ export class AddressService {
     });
     const isPrimary = existingCount === 0;
 
-    const address = await this.prisma.debtorAddress.create({
-      data: {
-        debtorId,
-        type: dto.type,
-        subType: dto.subType,
-        source: dto.source,
-        street: dto.street,
-        city: dto.city,
-        district: dto.district,
-        postalCode: dto.postalCode,
-        country: dto.country || "Türkiye",
-        fullText,
-        legalPriority,
-        canApply21_2,
-        verified,
-        verifiedAt: verified ? new Date() : null,
-        isPrimary,
-        notes: dto.notes,
-        confidenceScore: this.calculateConfidenceScore(dto.source, verified),
-      },
+    // RFA-006: hash dedup. Aynı borçluya aynı normalize adres varsa yeni satır açılmaz (idempotent).
+    const { address } = await findOrCreateDebtorAddress(this.prisma, {
+      debtorId,
+      type: dto.type,
+      subType: dto.subType,
+      source: dto.source,
+      street: dto.street,
+      city: dto.city,
+      district: dto.district,
+      postalCode: dto.postalCode,
+      country: dto.country || "Türkiye",
+      fullText,
+      legalPriority,
+      canApply21_2,
+      verified,
+      verifiedAt: verified ? new Date() : null,
+      isPrimary,
+      notes: dto.notes,
+      confidenceScore: this.calculateConfidenceScore(dto.source, verified),
     });
 
     return this.toDTO(address);

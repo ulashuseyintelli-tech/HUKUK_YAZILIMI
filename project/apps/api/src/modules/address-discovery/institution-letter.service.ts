@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { findOrCreateDebtorAddress } from '@/common/address-hash.util'; // RFA-006 adres dedup
 import {
   CreateInstitutionLetterDto,
   MarkLetterAsSentDto,
@@ -149,27 +150,19 @@ export class InstitutionLetterService {
       const addressSource = this.getAddressSourceFromInstitution(letter.institution as InstitutionType);
 
       for (const addr of dto.addresses) {
-        // Aynı adres var mı kontrol et
-        const existing = await this.prisma.debtorAddress.findFirst({
-          where: { debtorId, fullText: addr.fullAddress },
+        // RFA-006: normalize hash dedup (eski zayıf fullText findFirst yerine). Idempotent.
+        await findOrCreateDebtorAddress(this.prisma, {
+          debtorId,
+          fullText: addr.fullAddress,
+          city: addr.city || 'Bilinmiyor',
+          district: addr.district,
+          street: addr.fullAddress.substring(0, 200),
+          type: 'DECLARED',
+          source: addressSource as any,
+          verifiedSource: `Kurum Yazısı - ${letterId}`,
+          verified: true,
+          verifiedAt: new Date(),
         });
-
-        if (!existing) {
-          await this.prisma.debtorAddress.create({
-            data: {
-              debtorId,
-              fullText: addr.fullAddress,
-              city: addr.city || 'Bilinmiyor',
-              district: addr.district,
-              street: addr.fullAddress.substring(0, 200),
-              type: 'DECLARED',
-              source: addressSource as any,
-              verifiedSource: `Kurum Yazısı - ${letterId}`,
-              verified: true,
-              verifiedAt: new Date(),
-            },
-          });
-        }
       }
     }
 
