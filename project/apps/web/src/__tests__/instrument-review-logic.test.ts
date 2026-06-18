@@ -10,6 +10,8 @@ import {
   isAcceptDisabled,
   shouldShowInstrumentTable,
   buildInitialReviewRows,
+  isInstrumentComplete,
+  hasIncompleteSelected,
   Instrument,
 } from '../components/debtor/ocr-instrument';
 
@@ -77,5 +79,51 @@ describe('PR-N1 buildInitialReviewRows — needsReview default-unselected', () =
     expect(rows[0].instrument).not.toBe(src);
     rows[0].instrument.amount = 999;
     expect(src.amount).toBeUndefined();
+  });
+});
+
+describe('PR-N4a isInstrumentComplete — CaseInstrument zorunlu alanları', () => {
+  const full = () => inst({ documentNo: 'CK-1', amount: 1000, issueDate: '2026-01-10' });
+
+  it('tam (no+tutar>0+currency+keşide) → true', () => {
+    expect(isInstrumentComplete(full())).toBe(true);
+  });
+
+  it('documentNo eksik/boş/boşluk → false', () => {
+    expect(isInstrumentComplete(inst({ amount: 1000, issueDate: '2026-01-10' }))).toBe(false);
+    expect(isInstrumentComplete({ ...full(), documentNo: '' })).toBe(false);
+    expect(isInstrumentComplete({ ...full(), documentNo: '   ' })).toBe(false);
+  });
+
+  it('issueDate eksik → false', () => {
+    expect(isInstrumentComplete({ ...full(), issueDate: undefined })).toBe(false);
+  });
+
+  it('amount eksik/0/negatif → false', () => {
+    expect(isInstrumentComplete({ ...full(), amount: undefined })).toBe(false);
+    expect(isInstrumentComplete({ ...full(), amount: 0 })).toBe(false);
+    expect(isInstrumentComplete({ ...full(), amount: -5 })).toBe(false);
+  });
+
+  it('currency eksik → false', () => {
+    expect(isInstrumentComplete({ ...full(), currency: undefined as any })).toBe(false);
+  });
+});
+
+describe('PR-N4a hasIncompleteSelected + accept gating', () => {
+  const full = () => inst({ documentNo: 'CK-1', amount: 1000, issueDate: '2026-01-10' });
+
+  it('hepsi tam → false; biri eksik → true; boş → false', () => {
+    expect(hasIncompleteSelected([full(), full()])).toBe(false);
+    expect(hasIncompleteSelected([full(), inst({ amount: 1000 })])).toBe(true);
+    expect(hasIncompleteSelected([])).toBe(false);
+  });
+
+  it('accept gating: tablo+seçili+tam → ENABLED; seçili+eksik VEYA seçim yok → DISABLED', () => {
+    const ok = [full(), full()];
+    expect(isAcceptDisabled(true, ok.length) || hasIncompleteSelected(ok)).toBe(false); // enabled
+    const bad = [full(), inst({ amount: 1000 })];
+    expect(isAcceptDisabled(true, bad.length) || hasIncompleteSelected(bad)).toBe(true); // disabled (eksik)
+    expect(isAcceptDisabled(true, 0) || hasIncompleteSelected([])).toBe(true); // disabled (seçim yok)
   });
 });

@@ -47,7 +47,7 @@ describe('PR-3b InstrumentReviewTable', () => {
     expect(screen.getByTestId('instrument-row-0')).toBeTruthy();
     expect(screen.getByTestId('instrument-row-1')).toBeTruthy();
     expect(screen.getAllByRole('checkbox')).toHaveLength(2);
-    expect(screen.getByText('0265895')).toBeTruthy();
+    expect(screen.getByDisplayValue('0265895')).toBeTruthy(); // N4a: No artık input (display value)
   });
 
   it('checkbox toggle → onChange (selected flip)', () => {
@@ -81,5 +81,35 @@ describe('PR-3b InstrumentReviewTable', () => {
   it('sayfa aralığı gösterilir', () => {
     render(<InstrumentReviewTable rows={makeRows()} onChange={() => {}} />);
     expect(screen.getAllByText('Sayfa 1-2').length).toBeGreaterThan(0);
+  });
+
+  it('N4a: belge no düzenle → onChange (documentNo güncellenir)', () => {
+    const onChange = vi.fn();
+    render(<InstrumentReviewTable rows={makeRows()} onChange={onChange} />);
+    fireEvent.change(screen.getByLabelText('Satır 1 belge no'), { target: { value: 'YENI-1' } });
+    expect(onChange.mock.calls[0][0][0].instrument.documentNo).toBe('YENI-1');
+  });
+
+  it('N4a: keşide (issueDate) düzenle → onChange (issueDate güncellenir)', () => {
+    const onChange = vi.fn();
+    render(<InstrumentReviewTable rows={makeRows()} onChange={onChange} />);
+    fireEvent.change(screen.getByLabelText('Satır 1 keşide'), { target: { value: '2026-01-10' } });
+    expect(onChange.mock.calls[0][0][0].instrument.issueDate).toBe('2026-01-10');
+  });
+
+  it('N4a: eksik zorunlu (issueDate yok) → satırda incomplete uyarısı', () => {
+    render(<InstrumentReviewTable rows={makeRows()} onChange={() => {}} />);
+    expect(screen.getByTestId('instrument-incomplete-0')).toBeTruthy();
+  });
+
+  it('N4a: tam enstrüman → incomplete uyarısı YOK', () => {
+    const complete: ReviewRow[] = [
+      {
+        selected: true,
+        instrument: { type: 'CEK', currency: 'TRY', documentNo: 'CK-1', amount: 1000, issueDate: '2026-01-10', confidence: 90 },
+      },
+    ];
+    render(<InstrumentReviewTable rows={complete} onChange={() => {}} />);
+    expect(screen.queryByTestId('instrument-incomplete-0')).toBeNull();
   });
 });

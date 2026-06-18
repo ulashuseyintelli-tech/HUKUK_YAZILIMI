@@ -1,12 +1,13 @@
 "use client";
 
-// PR-3b — Çoklu borç enstrümanı inceleme tablosu (controlled).
-// Kullanıcı seçer/düzenler (tutar/vade); seçilen enstrümanlar → N alacak kalemi (page wiring).
+// PR-3b/N4a — Çoklu borç enstrümanı inceleme tablosu (controlled).
+// Kullanıcı seçer/düzenler (no/keşide/vade/tutar); seçilenler → instruments[] (page wiring N4b).
+// N4a: documentNo + issueDate EDITABLE + eksik-zorunlu görsel uyarı (N3-pure invariant aynası).
 // Yalnız wizardResult.instruments.length > 1 iken gösterilir (veri-bazlı kapı).
 
 import React from "react";
 import { AlertTriangle } from "lucide-react";
-import { Instrument, INSTRUMENT_TYPE_LABELS, ReviewRow } from "./ocr-instrument";
+import { Instrument, INSTRUMENT_TYPE_LABELS, ReviewRow, isInstrumentComplete } from "./ocr-instrument";
 
 interface InstrumentReviewTableProps {
   rows: ReviewRow[];
@@ -36,13 +37,17 @@ export function InstrumentReviewTable({ rows, onChange }: InstrumentReviewTableP
     onChange(rows.map((r, i) => (i === index ? mut(r) : r)));
   };
   const toggle = (index: number) => update(index, (r) => ({ ...r, selected: !r.selected }));
+  const editDocumentNo = (index: number, value: string) =>
+    update(index, (r) => ({ ...r, instrument: { ...r.instrument, documentNo: value || undefined } }));
+  const editIssueDate = (index: number, value: string) =>
+    update(index, (r) => ({ ...r, instrument: { ...r.instrument, issueDate: value || undefined } }));
+  const editDueDate = (index: number, value: string) =>
+    update(index, (r) => ({ ...r, instrument: { ...r.instrument, dueDate: value || undefined } }));
   const editAmount = (index: number, value: string) =>
     update(index, (r) => ({
       ...r,
       instrument: { ...r.instrument, amount: value === "" ? undefined : Number(value) },
     }));
-  const editDueDate = (index: number, value: string) =>
-    update(index, (r) => ({ ...r, instrument: { ...r.instrument, dueDate: value || undefined } }));
 
   return (
     <div className="overflow-x-auto rounded border border-amber-200 bg-white">
@@ -52,6 +57,7 @@ export function InstrumentReviewTable({ rows, onChange }: InstrumentReviewTableP
             <th className="px-2 py-1">Seç</th>
             <th className="px-2 py-1">Tür</th>
             <th className="px-2 py-1">No</th>
+            <th className="px-2 py-1">Keşide</th>
             <th className="px-2 py-1">Vade</th>
             <th className="px-2 py-1">Tutar</th>
             <th className="px-2 py-1">Keşideci</th>
@@ -63,9 +69,16 @@ export function InstrumentReviewTable({ rows, onChange }: InstrumentReviewTableP
           {rows.map((row, index) => {
             const inst = row.instrument;
             const review = inst.needsReview === true;
+            const incomplete = !isInstrumentComplete(inst);
+            const noMissing = !inst.documentNo || inst.documentNo.trim() === "";
+            const issueMissing = !inst.issueDate;
+            const amountMissing = inst.amount == null || inst.amount <= 0;
             return (
               <React.Fragment key={index}>
-                <tr className={review ? "bg-amber-50" : ""} data-testid={`instrument-row-${index}`}>
+                <tr
+                  className={`${review ? "bg-amber-50" : ""} ${incomplete ? "border-l-2 border-l-red-400" : ""}`}
+                  data-testid={`instrument-row-${index}`}
+                >
                   <td className="px-2 py-1">
                     <input
                       type="checkbox"
@@ -81,8 +94,34 @@ export function InstrumentReviewTable({ rows, onChange }: InstrumentReviewTableP
                         <AlertTriangle className="h-3 w-3 text-amber-600" />
                       </span>
                     )}
+                    {incomplete && (
+                      <span
+                        data-testid={`instrument-incomplete-${index}`}
+                        title="Zorunlu alan eksik: çek/senet no, tutar, keşide tarihi"
+                        className="ml-1 inline-flex align-middle"
+                      >
+                        <AlertTriangle className="h-3 w-3 text-red-600" />
+                      </span>
+                    )}
                   </td>
-                  <td className="px-2 py-1">{inst.documentNo ?? "-"}</td>
+                  <td className="px-2 py-1">
+                    <input
+                      type="text"
+                      value={inst.documentNo ?? ""}
+                      onChange={(e) => editDocumentNo(index, e.target.value)}
+                      className={`border rounded px-1 py-0.5 text-xs w-24 ${noMissing ? "border-red-400" : ""}`}
+                      aria-label={`Satır ${index + 1} belge no`}
+                    />
+                  </td>
+                  <td className="px-2 py-1">
+                    <input
+                      type="date"
+                      value={inst.issueDate ?? ""}
+                      onChange={(e) => editIssueDate(index, e.target.value)}
+                      className={`border rounded px-1 py-0.5 text-xs ${issueMissing ? "border-red-400" : ""}`}
+                      aria-label={`Satır ${index + 1} keşide`}
+                    />
+                  </td>
                   <td className="px-2 py-1">
                     <input
                       type="date"
@@ -97,7 +136,7 @@ export function InstrumentReviewTable({ rows, onChange }: InstrumentReviewTableP
                       type="number"
                       value={inst.amount ?? ""}
                       onChange={(e) => editAmount(index, e.target.value)}
-                      className="border rounded px-1 py-0.5 text-xs w-24"
+                      className={`border rounded px-1 py-0.5 text-xs w-24 ${amountMissing ? "border-red-400" : ""}`}
                       aria-label={`Satır ${index + 1} tutar`}
                     />
                   </td>
@@ -108,7 +147,7 @@ export function InstrumentReviewTable({ rows, onChange }: InstrumentReviewTableP
                 {(inst.evidenceText || (review && inst.duplicateCandidateReason)) && (
                   <tr className={review ? "bg-amber-50" : ""}>
                     <td />
-                    <td colSpan={7} className="px-2 pb-1 text-[10px] text-slate-500">
+                    <td colSpan={8} className="px-2 pb-1 text-[10px] text-slate-500">
                       {review && inst.duplicateCandidateReason && (
                         <div className="text-amber-700">⚠ {inst.duplicateCandidateReason}</div>
                       )}

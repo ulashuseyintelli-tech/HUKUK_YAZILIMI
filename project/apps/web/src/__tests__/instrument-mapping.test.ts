@@ -4,7 +4,12 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { instrumentsToDues, INSTRUMENT_TYPE_LABELS, Instrument } from '../components/debtor/ocr-instrument';
+import {
+  instrumentsToDues,
+  instrumentToCaseInstrumentPayload,
+  INSTRUMENT_TYPE_LABELS,
+  Instrument,
+} from '../components/debtor/ocr-instrument';
 
 const inst = (over: Partial<Instrument>): Instrument =>
   ({ type: 'CEK', currency: 'TRY', confidence: 90, ...over } as Instrument);
@@ -64,5 +69,43 @@ describe('PR-3a instrumentsToDues — N enstrüman → N due (1:1)', () => {
   it('bilinmeyen tip → "Belge" fallback (savunmacı)', () => {
     const out = instrumentsToDues([inst({ type: 'XXX' as any, documentNo: '1' })]);
     expect(out[0].description).toBe('1 numaralı Belge (asıl alacak)');
+  });
+});
+
+describe('PR-N4a instrumentToCaseInstrumentPayload — Instrument → CaseInstrumentInputDto şekli', () => {
+  it('alanları DTO şekline eşler (type/documentNo/amount/currency/issueDate/dueDate/banka/keşideci)', () => {
+    const p = instrumentToCaseInstrumentPayload(
+      inst({
+        type: 'SENET',
+        documentNo: 'SN-7',
+        amount: 5000,
+        currency: 'USD',
+        issueDate: '2026-01-10',
+        dueDate: '2026-03-01',
+        bankName: 'X Bank',
+        branchName: 'Kadıköy',
+        drawerName: 'Ali',
+      }),
+    );
+    expect(p).toEqual({
+      type: 'SENET',
+      documentNo: 'SN-7',
+      amount: 5000,
+      currency: 'USD',
+      issueDate: '2026-01-10',
+      dueDate: '2026-03-01',
+      bankName: 'X Bank',
+      branchName: 'Kadıköy',
+      drawerName: 'Ali',
+    });
+  });
+
+  it('payeeName taşınmaz (OCR Instrument\'ta yok); opsiyoneller undefined kalır', () => {
+    const p = instrumentToCaseInstrumentPayload(
+      inst({ documentNo: 'CK-1', amount: 100, currency: 'TRY', issueDate: '2026-01-10' }),
+    );
+    expect(p.dueDate).toBeUndefined();
+    expect(p.bankName).toBeUndefined();
+    expect('payeeName' in p).toBe(false);
   });
 });
