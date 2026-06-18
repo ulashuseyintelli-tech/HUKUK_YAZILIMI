@@ -23,7 +23,7 @@ import { DocumentSourceSelector, DocumentSourceType, ClassificationResult, PoaSc
 import { WizardResultCard } from "@/components/case/WizardResultCard";
 import { PoaScannerWizard } from "@/components/client/PoaScannerWizard";
 import { DebtorStep } from "@/components/debtor";
-import { instrumentsToDues } from "@/components/debtor/ocr-instrument";
+import { selectedInstrumentsToPayload, CaseInstrumentPayload } from "@/components/debtor/ocr-instrument";
 import { CaseDebtor } from "@/types/debtor";
 import { PeriodSelector } from "@/components/case/PeriodSelector";
 import { useFormHistory } from "@/hooks/useFormHistory";
@@ -246,6 +246,7 @@ export default function NewCasePage() {
   const [debtors, setDebtors] = useState<Party[]>([]); // Eski format (geriye uyumluluk)
   const [caseDebtors, setCaseDebtors] = useState<CaseDebtor[]>([]); // Yeni format
   const [dues, setDues] = useState<DueItem[]>([]);
+  const [instruments, setInstruments] = useState<CaseInstrumentPayload[]>([]); // PR-N4b: OCR kambiyo evrakları → createCase payload instruments[]
   const [lookups, setLookups] = useState<Lookups>({ takipTuru: [], asama: [], risk: [], borcluTipi: [], durumEtiketi: [], mahiyetTipi: [] });
   
   // Vekalet kontrolü state'leri
@@ -287,6 +288,7 @@ export default function NewCasePage() {
       if (savedState.caseDebtors?.length > 0) setCaseDebtors(savedState.caseDebtors);
       if (savedState.selectedStaff?.length > 0) setSelectedStaff(savedState.selectedStaff);
       if (savedState.dues?.length > 0) setDues(savedState.dues);
+      if (savedState.instruments?.length > 0) setInstruments(savedState.instruments); // PR-N4b/S4: taslaktan kambiyo evrakları
       if (savedState.caseData) setCaseData(prev => ({ ...prev, ...savedState.caseData }));
       if (savedState.selectedCity) setSelectedCity(savedState.selectedCity);
       if (savedState.documentSource) setDocumentSource(savedState.documentSource);
@@ -310,6 +312,7 @@ export default function NewCasePage() {
       caseDebtors,
       selectedStaff,
       dues,
+      instruments,
       caseData,
       selectedCity,
       documentSource,
@@ -318,7 +321,7 @@ export default function NewCasePage() {
     };
     
     saveWizardState(stateToSave);
-  }, [currentStep, lawyers, creditors, caseDebtors, selectedStaff, dues, caseData, selectedCity, documentSource, showWizard, showDocumentSelector, draftLoaded, dataLoaded]);
+  }, [currentStep, lawyers, creditors, caseDebtors, selectedStaff, dues, instruments, caseData, selectedCity, documentSource, showWizard, showDocumentSelector, draftLoaded, dataLoaded]);
 
   // Mevcut verileri yükle - draftLoaded olduktan sonra
   useEffect(() => { 
@@ -1066,6 +1069,7 @@ export default function NewCasePage() {
         // Eski format (geriye uyumluluk)
         debtors: debtors.filter(d => d.name).map(d => ({ id: d.isNew ? undefined : d.id, type: d.type, name: d.name, identityNo: d.identityNo, taxOffice: d.taxOffice, phone: d.phone, email: d.email, address: d.address })),
         dues: dues.filter(d => d.amount && parseFloat(d.amount) > 0).map(d => ({ type: d.type, description: d.description || undefined, amount: parseFloat(d.amount), dueDate: d.dueDate })),
+        instruments: instruments, // PR-N4b: kambiyo evrakları (CaseInstrumentInputDto[]); backend flag-gated (N3-wire)
       });
       if (selectedForm) recordUsage(selectedForm.code);
       // Başarılı kayıt sonrası taslağı temizle
@@ -1691,16 +1695,10 @@ export default function NewCasePage() {
                   }
                 }
               }}
-              onInstrumentsDetected={(instruments) => {
-                // PR-3b: çoklu enstrüman → N alacak kalemi (her biri PRINCIPAL), tek borçlu/takip altında
-                const today = new Date().toISOString().split("T")[0];
-                const mapped = instrumentsToDues(instruments, today);
-                if (mapped.length > 0) {
-                  setDues((prev) => [
-                    ...prev,
-                    ...mapped.map((m) => ({ type: m.type, description: m.description, amount: m.amount, dueDate: m.dueDate })),
-                  ]);
-                }
+              onInstrumentsDetected={(detected) => {
+                // PR-N4b: seçili kambiyo enstrümanları → instruments[] (REPLACE, S3); dues'a PRINCIPAL KONMAZ (K1).
+                // Kambiyo PRINCIPAL'ı backend instruments[] üzerinden gider (N3-wire); çek dues'a yazılmaz.
+                setInstruments(selectedInstrumentsToPayload(detected));
               }}
             />
           </div>
