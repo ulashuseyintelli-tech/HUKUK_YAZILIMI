@@ -31,6 +31,7 @@ describe("CaseDebtorService.removeCaseDebtor", () => {
   const mockPrisma = {
     caseDebtor: { findFirst: jest.fn() },
     thirdParty: { count: jest.fn() },
+    collection: { count: jest.fn() },
     $transaction: jest.fn(),
   };
 
@@ -49,6 +50,8 @@ describe("CaseDebtorService.removeCaseDebtor", () => {
     mockPrisma.$transaction.mockImplementation((cb: any) => cb(txMock));
     txMock.addressTask.updateMany.mockResolvedValue({ count: 0 });
     txMock.caseDebtor.delete.mockResolvedValue({ id: CASE_DEBTOR });
+    // Default: bağlı tahsilat yok (guard'ı geçer); tahsilat senaryosu testinde override edilir.
+    mockPrisma.collection.count.mockResolvedValue(0);
   });
 
   it("açık AddressTask'ları (caseId+debtorId+tenant pinli) CANCELLED yapar ve CaseDebtor'u aynı tx'te siler", async () => {
@@ -156,6 +159,30 @@ describe("CaseDebtorService.removeCaseDebtor", () => {
       service.removeCaseDebtor(TENANT, CASE_DEBTOR)
     ).rejects.toBeInstanceOf(BadRequestException);
 
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    expect(txMock.addressTask.updateMany).not.toHaveBeenCalled();
+    expect(txMock.caseDebtor.delete).not.toHaveBeenCalled();
+  });
+
+  it("bağlı tahsilat (Collection) varsa BadRequest atar — hiçbir iptal/silme yapılmaz", async () => {
+    mockPrisma.caseDebtor.findFirst.mockResolvedValue({
+      id: CASE_DEBTOR,
+      caseId: CASE,
+      debtorId: DEBTOR,
+      case: { tenantId: TENANT },
+    });
+    mockPrisma.thirdParty.count.mockResolvedValue(0);
+    mockPrisma.collection.count.mockResolvedValue(1);
+
+    await expect(
+      service.removeCaseDebtor(TENANT, CASE_DEBTOR)
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    // Tahsilat sayımı tenant + caseDebtorId ile pinlenir (multitenant + defense-in-depth)
+    expect(mockPrisma.collection.count).toHaveBeenCalledWith({
+      where: { caseDebtorId: CASE_DEBTOR, tenantId: TENANT },
+    });
+    // Blok: ne transaction ne silme
     expect(mockPrisma.$transaction).not.toHaveBeenCalled();
     expect(txMock.addressTask.updateMany).not.toHaveBeenCalled();
     expect(txMock.caseDebtor.delete).not.toHaveBeenCalled();
