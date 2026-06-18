@@ -13,7 +13,15 @@ import {
 } from "@/types/debtor";
 import { NewDebtorModal } from "./NewDebtorModal";
 import { SelectedDebtorCard } from "./SelectedDebtorCard";
-import { Instrument } from "./ocr-instrument";
+import {
+  Instrument,
+  ReviewRow,
+  decideScanAccept,
+  acceptButtonLabel,
+  isAcceptDisabled,
+  shouldShowInstrumentTable,
+} from "./ocr-instrument";
+import { InstrumentReviewTable } from "./InstrumentReviewTable";
 
 // Borç evrakı tarama sonucu tipi
 interface DebtDocumentResult {
@@ -76,9 +84,10 @@ interface DebtorStepProps {
   selectedDebtors: CaseDebtor[];
   onDebtorsChange: (debtors: CaseDebtor[]) => void;
   onDebtInfoDetected?: (debtInfo: DebtDocumentResult["debtInfo"]) => void;
+  onInstrumentsDetected?: (instruments: Instrument[]) => void;
 }
 
-export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetected }: DebtorStepProps) {
+export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetected, onInstrumentsDetected }: DebtorStepProps) {
   const [existingDebtors, setExistingDebtors] = useState<Debtor[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -91,7 +100,17 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
   const [showWizard, setShowWizard] = useState(false);
   const [wizardScanning, setWizardScanning] = useState(false);
   const [wizardResult, setWizardResult] = useState<DebtDocumentResult | null>(null);
+  const [reviewRows, setReviewRows] = useState<ReviewRow[]>([]);
   const [wizardError, setWizardError] = useState<string | null>(null);
+
+  // PR-3b: çoklu enstrüman (>1) varsa review satırlarını hazırla (hepsi seçili). ≤1 → boş.
+  useEffect(() => {
+    if (shouldShowInstrumentTable(wizardResult?.instruments)) {
+      setReviewRows(wizardResult!.instruments!.map((i) => ({ selected: true, instrument: { ...i } })));
+    } else {
+      setReviewRows([]);
+    }
+  }, [wizardResult]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -347,8 +366,15 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
       await handleAcceptParty(party);
     }
     
-    // Borç bilgilerini üst bileşene aktar
-    if (onDebtInfoDetected && wizardResult.debtInfo) {
+    // PR-3b: çoklu enstrüman (>1) → YALNIZ onInstrumentsDetected (seçili); aksi → YALNIZ
+    // eski onDebtInfoDetected. Çift-ekleme (N due + primary tek due) önlenir.
+    const decision = decideScanAccept(
+      wizardResult.instruments,
+      reviewRows.filter((r) => r.selected).map((r) => r.instrument),
+    );
+    if (decision.mode === "instruments") {
+      onInstrumentsDetected?.(decision.instruments);
+    } else if (onDebtInfoDetected && wizardResult.debtInfo) {
       onDebtInfoDetected(wizardResult.debtInfo);
     }
     
@@ -535,13 +561,21 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
             </div>
           )}
 
+          {shouldShowInstrumentTable(wizardResult.instruments) && (
+            <InstrumentReviewTable rows={reviewRows} onChange={setReviewRows} />
+          )}
+
           <div className="flex gap-1">
             <button
               type="button"
               onClick={handleAcceptAllDebtors}
-              className="px-2 py-1 bg-emerald-500 text-white rounded text-xs hover:bg-emerald-600 flex items-center gap-1"
+              disabled={isAcceptDisabled(
+                shouldShowInstrumentTable(wizardResult.instruments),
+                reviewRows.filter((r) => r.selected).length,
+              )}
+              className="px-2 py-1 bg-emerald-500 text-white rounded text-xs hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
             >
-              <CheckCircle className="h-3 w-3" /> Tümünü Ekle
+              <CheckCircle className="h-3 w-3" /> {acceptButtonLabel(shouldShowInstrumentTable(wizardResult.instruments))}
             </button>
             <button
               type="button"

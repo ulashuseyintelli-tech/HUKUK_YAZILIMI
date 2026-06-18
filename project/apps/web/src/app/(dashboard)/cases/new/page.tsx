@@ -23,6 +23,7 @@ import { DocumentSourceSelector, DocumentSourceType, ClassificationResult, PoaSc
 import { WizardResultCard } from "@/components/case/WizardResultCard";
 import { PoaScannerWizard } from "@/components/client/PoaScannerWizard";
 import { DebtorStep } from "@/components/debtor";
+import { instrumentsToDues } from "@/components/debtor/ocr-instrument";
 import { CaseDebtor } from "@/types/debtor";
 import { PeriodSelector } from "@/components/case/PeriodSelector";
 import { useFormHistory } from "@/hooks/useFormHistory";
@@ -1688,6 +1689,17 @@ export default function NewCasePage() {
                   if (debtInfo.currency && debtInfo.currency !== "TRY") {
                     setCaseData(prev => ({ ...prev, currency: debtInfo.currency as any }));
                   }
+                }
+              }}
+              onInstrumentsDetected={(instruments) => {
+                // PR-3b: çoklu enstrüman → N alacak kalemi (her biri PRINCIPAL), tek borçlu/takip altında
+                const today = new Date().toISOString().split("T")[0];
+                const mapped = instrumentsToDues(instruments, today);
+                if (mapped.length > 0) {
+                  setDues((prev) => [
+                    ...prev,
+                    ...mapped.map((m) => ({ type: m.type, description: m.description, amount: m.amount, dueDate: m.dueDate })),
+                  ]);
                 }
               }}
             />
