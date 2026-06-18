@@ -7,6 +7,7 @@ import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculat
 import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
 import { isPoaDuplicateSuppressed } from "@/lib/poa-ux";
+import { buildStaffPayload } from "@/lib/case-staff-payload";
 import { FormMetadata, SubFormMetadata, FormCategory } from "@/types/form-metadata";
 import { WizardAnswers } from "@/types/wizard";
 import { formMetadata, filterFormsByCategory } from "@/config/form-metadata";
@@ -221,6 +222,9 @@ export default function NewCasePage() {
   const [existingDebtors, setExistingDebtors] = useState<any[]>([]);
   const [existingStaff, setExistingStaff] = useState<any[]>([]);
   const [selectedStaff, setSelectedStaff] = useState<any[]>([]);
+  // PR-ASSIGN-2b: /staff listesi başarıyla yüklendi mi? Payload'da undefined-vs-[] ayrımı için
+  // şart — yüklendiyse seçim DAİMA dizi (deselection korunur), yüklenmediyse undefined (default).
+  const [staffListLoaded, setStaffListLoaded] = useState(false);
   const [teamTab, setTeamTab] = useState<"lawyers" | "staff">("lawyers");
   const [showNewClientModal, setShowNewClientModal] = useState(false);
   const [savingClient, setSavingClient] = useState(false);
@@ -411,6 +415,7 @@ export default function NewCasePage() {
 
   const loadExistingData = async () => {
     try {
+      let staffLoadFailed = false; // PR-ASSIGN-2b: /staff fetch hatası → payload'da undefined fallback
       const [lawyersRes, clientsRes, debtorsRes, officesRes, lookupsRes, usersRes, staffRes] = await Promise.all([
         api.getLawyers().catch((e) => { console.error("getLawyers error:", e); return []; }), 
         api.get('/clients').catch((e) => { console.error("getClients error:", e); return { data: { data: [] } }; }), 
@@ -418,7 +423,7 @@ export default function NewCasePage() {
         api.get('/execution-offices').catch(() => ({ data: { data: [] } })),
         api.get('/lookups').catch(() => ({ data: { data: { takipTuru: [], asama: [], risk: [], borcluTipi: [], durumEtiketi: [] } } })),
         api.get('/users').catch(() => ({ data: { data: [] } })),
-        api.get('/staff').catch(() => ({ data: { data: [] } })),
+        api.get('/staff').catch(() => { staffLoadFailed = true; return { data: { data: [] } }; }),
       ]);
       const allLawyers = lawyersRes || [];
       setExistingLawyers(allLawyers);
@@ -432,6 +437,9 @@ export default function NewCasePage() {
       setUsers(usersRes?.data?.data || []);
       const allStaff = staffRes?.data?.data || [];
       setExistingStaff(allStaff);
+      // PR-ASSIGN-2b: yalnız /staff başarıyla yüklendiyse payload'da staff[] gönderilecek
+      // (yüklenemediyse undefined → backend default personel). Boş [] gönderip default'ları düşürmeyiz.
+      setStaffListLoaded(!staffLoadFailed);
       
       // Varsayılan avukatları otomatik seç (localStorage'dan veya mevcut seçimden yüklenmemişse)
       // lawyers state'i zaten localStorage'dan yüklendiyse dokunma
@@ -1032,6 +1040,9 @@ export default function NewCasePage() {
         dahiliNot: caseData.dahiliNot || undefined, muvekkilNotu: caseData.muvekkilNotu || undefined,
         // Masraf mail gönderimi seçeneği
         sendExpenseEmail: sendExpenseEmail,
+        // PR-ASSIGN-2b: seçilen personel → backend kanonik kayıt. Yüklendiyse DAİMA dizi (boş []
+        // = deselection); /staff yüklenemediyse undefined → backend isDefaultForNewCases'e döner.
+        staff: buildStaffPayload(selectedStaff, staffListLoaded),
         lawyers: lawyers.filter(l => l.name && l.surname).map(l => ({ 
           id: l.isNew ? undefined : l.id, 
           name: l.name, 
@@ -1503,7 +1514,7 @@ export default function NewCasePage() {
                 )}
 
                 <p className="text-[10px] text-amber-600 mt-1 p-1 bg-amber-50 rounded border border-amber-200 flex-shrink-0">
-                  ⚠️ Personel UYAP/takip belgelerinde görünmez
+                  ℹ️ Personel dosyaya kaydedilir; ancak UYAP/resmi takip belgelerinde görünmez.
                 </p>
               </div>
             </div>
