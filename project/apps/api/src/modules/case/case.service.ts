@@ -1,8 +1,13 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger, Inject, forwardRef } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
-import { CreateCaseDto, UpdateCaseDto, CaseSubCategory, Currency, DueDto } from "./dto/case.dto";
+import { CreateCaseDto, UpdateCaseDto, CaseSubCategory, Currency, DueDto, CaseInstrumentInputDto } from "./dto/case.dto";
 import { Prisma, LegalCaseStatus } from "@prisma/client";
 import { mapDueTypeToClaimItemType, buildClaimItemData } from "./due-to-claim-item.mapper";
+import {
+  resolveCaseInstrumentType,
+  buildCaseInstrumentData,
+  buildInstrumentPrincipalClaimItemData,
+} from "./ocr-instrument-to-case-instrument.mapper";
 import { randomUUID } from "crypto";
 import { isInitialStatus } from "../case-status/case-status.service";
 import { AuditService } from "../audit/audit.service";
@@ -748,6 +753,55 @@ export class CaseService {
     }
   }
 
+  /**
+   * PR-N3-wire: çoklu-enstrüman pipeline AÇIK mı (env flag; varsayılan KAPALI).
+   * ocr.service.isMultiInstrumentEnabled ile AYNI anahtar/semantik (ConfigModule .env'i
+   * process.env'e yükler). KAPALIYKEN createCase legacy BİREBİR (instruments[] yok sayılır).
+   *
+   * @remarks Çağrıldığı yerler:
+   * - CaseService.create() → POST /cases (instrument işleme kapısı; AS1 kapsam sınırı).
+   */
+  private multiInstrumentEnabled(): boolean {
+    return process.env.OCR_MULTI_INSTRUMENT === "true";
+  }
+
+  /**
+   * PR-N3-wire: OCR kambiyo enstrümanlarını createCase tx içinde kanonik kayda çevirir —
+   * her GEÇERLİ instrument için: CaseInstrument (hukuki evrak) + bağlı PRINCIPAL ClaimItem
+   * (parasal yansıma, instrumentId BAĞ). Toplam instrument PRINCIPAL tutarını döndürür
+   * (caller principalAmount'a ekler).
+   *
+   * INVARIANT (resolveCaseInstrumentType): kambiyo-değil (FATURA/DIGER) / documentNo boş /
+   * amount≤0 / currency yok / issueDate yok → ATLA (sessiz create YOK).
+   * K1: PRINCIPAL YALNIZ buradan; dues[]'da tekrarlanmaz → çift-sayım yok.
+   * Flag KAPALI veya instruments boş → hiçbir şey üretmez, 0 döner (legacy).
+   *
+   * @remarks Çağrıldığı yerler:
+   * - CaseService.create() → POST /cases (dues/ClaimItem sonrası 6c adımı; flag-gated AS1).
+   */
+  private async createInstrumentsAndClaims(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    caseId: string,
+    instruments: CaseInstrumentInputDto[],
+    enabled: boolean,
+  ): Promise<number> {
+    if (!enabled || instruments.length === 0) return 0;
+    let totalPrincipal = 0;
+    for (const input of instruments) {
+      const instrumentType = resolveCaseInstrumentType(input);
+      if (instrumentType === null) continue; // kambiyo değil / eksik → sessiz create YOK
+      const created = await tx.caseInstrument.create({
+        data: buildCaseInstrumentData(tenantId, caseId, input, instrumentType),
+      });
+      await tx.claimItem.create({
+        data: buildInstrumentPrincipalClaimItemData(tenantId, caseId, created.id, input),
+      });
+      totalPrincipal += input.amount;
+    }
+    return totalPrincipal;
+  }
+
   async create(tenantId: string, dto: CreateCaseDto, userId?: string) {
     // INTEREST_POLICY_ASSIGNED (HR-26: HUMAN actor zorunlu) için userId şart.
     // "Bu faiz politikasını kim atadı?" sorusunun cevabı olmadan event hukuken zayıf.
@@ -979,6 +1033,7 @@ export class CaseService {
         }
 
         // 6. Alacak Kalemleri (Dues)
+        let duesPrincipal = 0;
         if (dto.dues && dto.dues.length > 0) {
           for (const dueDto of dto.dues) {
             await tx.due.create({
@@ -997,15 +1052,29 @@ export class CaseService {
           // ClaimItem üretilmez. Aynı tx içinde, tenantId zorunlu.
           await this.createClaimItemsFromDues(tx, tenantId, newCase.id, dto.dues);
 
-          // Ana para toplamını hesapla ve case'e yaz
-          const principalDues = dto.dues.filter(d => d.type === 'PRINCIPAL');
-          if (principalDues.length > 0) {
-            const totalPrincipal = principalDues.reduce((sum, d) => sum + d.amount, 0);
-            await tx.case.update({
-              where: { id: newCase.id },
-              data: { principalAmount: totalPrincipal },
-            });
-          }
+          // Ana para (dues PRINCIPAL); case.update aşağıda instrument ile birleştirilir.
+          duesPrincipal = dto.dues
+            .filter(d => d.type === 'PRINCIPAL')
+            .reduce((sum, d) => sum + d.amount, 0);
+        }
+
+        // 6c. PR-N3-wire: kambiyo enstrümanları → CaseInstrument + bağlı PRINCIPAL ClaimItem
+        // (flag-gated AS1; K1: PRINCIPAL tek kaynak = instrument, dues'da tekrarlanmaz → çift-sayım yok).
+        const instrumentPrincipal = await this.createInstrumentsAndClaims(
+          tx,
+          tenantId,
+          newCase.id,
+          dto.instruments ?? [],
+          this.multiInstrumentEnabled(),
+        );
+
+        // Ana para toplamı = dues PRINCIPAL + instrument PRINCIPAL → case.principalAmount (G5 @deprecated).
+        const totalPrincipal = duesPrincipal + instrumentPrincipal;
+        if (totalPrincipal > 0) {
+          await tx.case.update({
+            where: { id: newCase.id },
+            data: { principalAmount: totalPrincipal },
+          });
         }
 
         // 7. Varsayılan stajyer avukatları ekle (isDefaultForNewCases = true)
