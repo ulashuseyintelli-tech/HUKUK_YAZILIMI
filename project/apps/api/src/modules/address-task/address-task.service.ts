@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClientNotificationService } from '../client-notification/client-notification.service';
 import { maskPhone } from '../../common/pii-mask.util';
@@ -48,15 +48,32 @@ export class AddressTaskService {
   ) {}
 
   /**
+   * taskId'nin verilen tenant'a ait olduğunu doğrula (cross-tenant mutasyon engeli — ASSIGN-1).
+   * tenantId verilmezse (scheduler / iç sistem bağlamı) kontrol atlanır; controller DAİMA geçirir.
+   * @remarks Çağıran: updateTaskStatus, completeTask, cancelTask, failTask (hepsi controller'dan tenantId ile gelir).
+   */
+  private async assertTaskTenant(taskId: string, tenantId?: string): Promise<void> {
+    if (!tenantId) return;
+    const owned = await this.prisma.addressTask.findFirst({
+      where: { id: taskId, tenantId },
+      select: { id: true },
+    });
+    if (!owned) {
+      throw new NotFoundException(`Adres görevi bulunamadı: ${taskId}`);
+    }
+  }
+
+  /**
    * Yeni görev oluştur (idempotent)
    * Aynı dedupe key ile görev varsa ve terminal durumda değilse, mevcut görevi döndürür
    */
   async createTask(params: CreateTaskParams): Promise<AddressTask | null> {
     const { tenantId, caseId, debtorId, taskType, scopeKey, title, description, assignedToId, dueAt } = params;
 
-    // Dedupe key kontrolü
+    // Dedupe key kontrolü (tenant-scoped — ASSIGN-1)
     const existingTask = await this.prisma.addressTask.findFirst({
       where: {
+        tenantId,
         caseId,
         debtorId,
         taskType,
@@ -147,7 +164,10 @@ export class AddressTaskService {
       lastRunAt?: Date;
       nextRunAt?: Date;
     },
+    tenantId?: string,
   ): Promise<AddressTask> {
+    await this.assertTaskTenant(taskId, tenantId);
+
     const task = await this.prisma.addressTask.update({
       where: { id: taskId },
       data: {
@@ -177,8 +197,10 @@ export class AddressTaskService {
   /**
    * Görevi tamamla
    */
-  async completeTask(taskId: string, params: CompleteTaskParams): Promise<AddressTask> {
+  async completeTask(taskId: string, params: CompleteTaskParams, tenantId?: string): Promise<AddressTask> {
     const { resultType, resultData, resolution, resolutionNotes } = params;
+
+    await this.assertTaskTenant(taskId, tenantId);
 
     const task = await this.prisma.addressTask.update({
       where: { id: taskId },
@@ -221,7 +243,10 @@ export class AddressTaskService {
   async cancelTask(
     taskId: string,
     reason: AddressTaskCancellationReason,
+    tenantId?: string,
   ): Promise<AddressTask> {
+    await this.assertTaskTenant(taskId, tenantId);
+
     const task = await this.prisma.addressTask.update({
       where: { id: taskId },
       data: {
@@ -255,7 +280,10 @@ export class AddressTaskService {
     taskId: string,
     reason: AddressTaskFailureReason,
     details?: string,
+    tenantId?: string,
   ): Promise<AddressTask> {
+    await this.assertTaskTenant(taskId, tenantId);
+
     const task = await this.prisma.addressTask.update({
       where: { id: taskId },
       data: {
@@ -357,9 +385,10 @@ export class AddressTaskService {
   /**
    * Dosya için bekleyen görevleri getir
    */
-  async getPendingTasksForCase(caseId: string): Promise<AddressTask[]> {
+  async getPendingTasksForCase(caseId: string, tenantId?: string): Promise<AddressTask[]> {
     return this.prisma.addressTask.findMany({
       where: {
+        ...(tenantId ? { tenantId } : {}),
         caseId,
         status: {
           in: ['PENDING', 'IN_PROGRESS', 'WAITING_EXTERNAL', 'OVERDUE'],
@@ -372,9 +401,12 @@ export class AddressTaskService {
   /**
    * Dosya için tüm görevleri getir (tamamlananlar dahil)
    */
-  async getAllTasksForCase(caseId: string): Promise<AddressTask[]> {
+  async getAllTasksForCase(caseId: string, tenantId?: string): Promise<AddressTask[]> {
     return this.prisma.addressTask.findMany({
-      where: { caseId },
+      where: {
+        ...(tenantId ? { tenantId } : {}),
+        caseId,
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -382,9 +414,10 @@ export class AddressTaskService {
   /**
    * Dosya için notları getir (audit log'lardan showInNotes=true olanlar)
    */
-  async getNotesForCase(caseId: string): Promise<any[]> {
+  async getNotesForCase(caseId: string, tenantId?: string): Promise<any[]> {
     const logs = await this.prisma.addressAuditLog.findMany({
       where: {
+        ...(tenantId ? { tenantId } : {}),
         caseId,
         showInNotes: true,
       },
@@ -406,9 +439,12 @@ export class AddressTaskService {
   /**
    * Borçlu için görevleri getir
    */
-  async getTasksByDebtor(debtorId: string): Promise<AddressTask[]> {
+  async getTasksByDebtor(debtorId: string, tenantId?: string): Promise<AddressTask[]> {
     return this.prisma.addressTask.findMany({
-      where: { debtorId },
+      where: {
+        ...(tenantId ? { tenantId } : {}),
+        debtorId,
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -444,9 +480,9 @@ export class AddressTaskService {
       };
     }
 
-    // Dosya bilgilerini al (müvekkil dahil)
-    const caseData = await this.prisma.case.findUnique({
-      where: { id: caseId },
+    // Dosya bilgilerini al (müvekkil dahil) — tenant-scoped (ASSIGN-1: cross-tenant tetikleme engeli)
+    const caseData = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
       include: {
         caseClients: {
           include: {
@@ -713,10 +749,12 @@ export class AddressTaskService {
    * Yararlı adres: DECLARED_CLIENT, DECLARED_DOCUMENT veya MERNIS_RESIDENCE
    * isCurrent = true ve confidenceLevel >= MEDIUM
    */
-  async hasUsefulAddresses(debtorId: string): Promise<boolean> {
+  async hasUsefulAddresses(debtorId: string, tenantId?: string): Promise<boolean> {
     const usefulAddressCount = await this.prisma.debtorAddress.count({
       where: {
         debtorId,
+        // DebtorAddress'te tenantId yok → debtor relation üzerinden scope (ASSIGN-1)
+        ...(tenantId ? { debtor: { tenantId } } : {}),
         isCurrent: true,
         addressCategory: {
           in: ['DECLARED_CLIENT', 'DECLARED_DOCUMENT', 'MERNIS_RESIDENCE'],
@@ -777,6 +815,7 @@ export class AddressTaskService {
     // Açık CLIENT_REQUEST_DEBTOR_ADDRESSES görevini bul ve tamamla
     const requestTask = await this.prisma.addressTask.findFirst({
       where: {
+        tenantId,
         caseId,
         debtorId,
         taskType: 'CLIENT_REQUEST_DEBTOR_ADDRESSES',
@@ -805,6 +844,7 @@ export class AddressTaskService {
     // Açık hatırlatma görevlerini iptal et
     const reminderResult = await this.prisma.addressTask.updateMany({
       where: {
+        tenantId,
         caseId,
         debtorId,
         taskType: 'CLIENT_REMIND_DEBTOR_ADDRESSES',
@@ -843,13 +883,16 @@ export class AddressTaskService {
   async confirmReceivedByOperator(
     taskId: string,
     operatorId?: string,
+    tenantId?: string,
   ): Promise<AddressTask> {
-    const task = await this.prisma.addressTask.findUnique({
-      where: { id: taskId },
+    // Tenant-scoped sahiplik kontrolü (ASSIGN-1): controller tenantId geçirir,
+    // scheduler/iç bağlam geçmezse tüm tenant'larda aranır (eski davranış).
+    const task = await this.prisma.addressTask.findFirst({
+      where: { id: taskId, ...(tenantId ? { tenantId } : {}) },
     });
 
     if (!task) {
-      throw new Error(`Task not found: ${taskId}`);
+      throw new NotFoundException(`Adres görevi bulunamadı: ${taskId}`);
     }
 
     // Görevi tamamla
