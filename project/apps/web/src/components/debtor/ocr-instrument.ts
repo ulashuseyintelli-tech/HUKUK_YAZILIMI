@@ -71,3 +71,44 @@ export function instrumentsToDues(instruments: Instrument[], defaultDueDate = ""
     };
   });
 }
+
+// ── PR-3b: review tablosu satırı + accept davranış kararı (saf, test edilebilir) ──
+
+/** Review tablosunda tek satır: seçim + (düzenlenebilir) enstrüman kopyası. */
+export interface ReviewRow {
+  selected: boolean;
+  instrument: Instrument;
+}
+
+export type ScanAcceptDecision =
+  | { mode: "instruments"; instruments: Instrument[] }
+  | { mode: "debtInfo" };
+
+/**
+ * Accept kararı (KRİTİK SINIR): instruments.length > 1 → YALNIZ onInstrumentsDetected
+ * (seçili enstrümanlar); aksi → YALNIZ eski onDebtInfoDetected. Çift-ekleme önlenir.
+ */
+export function decideScanAccept(
+  allInstruments: Instrument[] | undefined,
+  selectedInstruments: Instrument[],
+): ScanAcceptDecision {
+  if (allInstruments && allInstruments.length > 1) {
+    return { mode: "instruments", instruments: selectedInstruments };
+  }
+  return { mode: "debtInfo" };
+}
+
+/** Tablo görünürken buton metni "Seçili evrakları ekle"; aksi "Tümünü Ekle". */
+export function acceptButtonLabel(hasInstrumentTable: boolean): string {
+  return hasInstrumentTable ? "Seçili evrakları ekle" : "Tümünü Ekle";
+}
+
+/** Tablo görünür ve hiç seçim yoksa accept butonu disabled. */
+export function isAcceptDisabled(hasInstrumentTable: boolean, selectedCount: number): boolean {
+  return hasInstrumentTable && selectedCount === 0;
+}
+
+/** instruments>1 ise tablo gösterilir (veri-bazlı kapı; flag bilgisi yok). */
+export function shouldShowInstrumentTable(instruments: Instrument[] | undefined): boolean {
+  return !!instruments && instruments.length > 1;
+}
