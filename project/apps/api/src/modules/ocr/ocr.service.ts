@@ -1,6 +1,7 @@
 import { Injectable, Logger, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import * as Tesseract from "tesseract.js";
+import { Instrument } from "./debt-instrument.types";
 import * as sharp from "sharp";
 import * as AdmZip from "adm-zip";
 import * as mammoth from "mammoth";
@@ -46,26 +47,9 @@ export enum DetectedSubCategory {
 /**
  * Borç evrakı tarama sonucu - Borçlu Sihirbazı için
  */
-/**
- * Tek borç enstrümanı (çek/senet/fatura...). Bir PDF içinde BİRDEN FAZLA olabilir
- * (çoklu çıkarımı PR-2 dolduracak). PR-1: yalnız tip + tek-belge geriye uyumluluk türetimi.
- */
-export interface Instrument {
-  // CEK=cheque, SENET=promissory_note, POLICE=poliçe, FATURA=invoice, DIGER=other
-  type: "CEK" | "SENET" | "POLICE" | "FATURA" | "DIGER";
-  documentNo?: string;
-  amount?: number;
-  currency: "TRY" | "USD" | "EUR" | "GBP" | "CHF";
-  issueDate?: string; // YYYY-MM-DD (düzenleme)
-  dueDate?: string; // YYYY-MM-DD (vade)
-  bankName?: string;
-  branchName?: string;
-  iban?: string;
-  drawerName?: string; // keşideci / borçlu adayı (tek isim)
-  debtorCandidates?: string[]; // PR-2: çoklu borçlu adayı
-  pageRange?: [number, number]; // PR-2: enstrümanın PDF sayfa aralığı [from, to]
-  confidence: number;
-}
+// Instrument tipi debt-instrument.types.ts'e taşındı (prisma-bağımsız, grouping motoruyla ortak).
+// Geriye uyumluluk: dışarıdan `import { Instrument } from '.../ocr.service'` çalışsın diye re-export.
+export type { Instrument };
 
 export interface DebtDocumentResult {
   // Evrak türü
