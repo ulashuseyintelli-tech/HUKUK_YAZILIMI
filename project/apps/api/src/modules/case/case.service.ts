@@ -804,11 +804,13 @@ export class CaseService {
 
   /**
    * Dosyaya personel ata — createCase tx step-8 (ASSIGN-2a / PR-ASSIGN-2a).
-   * - dtoStaff verilmişse (undefined DEĞİL) SEÇİM KANONİK OTORİTEDİR: yalnız bu liste yazılır;
-   *   isDefaultForNewCases ile MERGE YOK (kullanıcı default'u çıkardıysa eklenmez). Boş liste →
-   *   hiç personel (deselection'a saygı). staffMemberId dedupe edilir; tenant ownership doğrulanır
-   *   (cross-tenant/nonexistent → BadRequestException, hiç create yapılmaz).
-   * - dtoStaff undefined ise mevcut davranış AYNEN korunur: isDefaultForNewCases personelleri eklenir.
+   * - dtoStaff DİZİ ise (Array.isArray; null/undefined DEĞİL) SEÇİM KANONİK OTORİTEDİR: yalnız bu
+   *   liste yazılır; isDefaultForNewCases ile MERGE YOK (kullanıcı default'u çıkardıysa eklenmez).
+   *   Boş dizi → hiç personel (deselection'a saygı). staffMemberId dedupe edilir; tenant ownership
+   *   doğrulanır (cross-tenant/nonexistent → BadRequestException, hiç create yapılmaz).
+   * - dtoStaff DİZİ DEĞİLse (undefined VEYA null) mevcut davranış AYNEN korunur: isDefaultForNewCases
+   *   personelleri eklenir. (ASSIGN-2a-FU: `Array.isArray` guard → `staff: null` payload'ı crash
+   *   etmez, undefined gibi güvenli default'a düşer; @IsOptional null'a izin verdiği için gerekli.)
    * Saf: yalnız verilen tx üzerinde çalışır → izole test edilebilir (case-create-instruments deseni).
    * @remarks Çağrıldığı yer: CaseService.create() → POST /cases (createCase tx step-8).
    */
@@ -820,7 +822,7 @@ export class CaseService {
   ): Promise<{ selectionProvided: boolean; assigned: { staffMemberId: string; roleOnCase: string }[] }> {
     const assigned: { staffMemberId: string; roleOnCase: string }[] = [];
 
-    if (dtoStaff !== undefined) {
+    if (Array.isArray(dtoStaff)) {
       // Seçim otoritesi: yalnız gönderilen personel (dedupe).
       const requestedIds = Array.from(new Set(dtoStaff.map((s) => s.staffMemberId).filter(Boolean)));
       if (requestedIds.length > 0) {

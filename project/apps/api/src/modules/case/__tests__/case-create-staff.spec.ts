@@ -84,6 +84,19 @@ describe('CaseService.assignCaseStaff (PR-ASSIGN-2a)', () => {
     );
   });
 
+  it('(FU) dto.staff null → crash YOK, default davranışa düşer (Array.isArray guard; undefined gibi)', async () => {
+    // @IsOptional() null'a izin verir → servise null gelebilir; eski `!== undefined` guard'ı null.map ile çökerdi.
+    const { tx, created } = mockTx({ defaults: [{ id: 'd1', staffType: 'PERSONEL' }] });
+
+    const res = await call(tx, null as any);
+
+    expect(res.selectionProvided).toBe(false); // null = seçim YOK → default yol
+    expect(created).toEqual([{ caseId: 'case-1', staffMemberId: 'd1', roleOnCase: 'PERSONEL' }]);
+    expect(tx.staffMember.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ isDefaultForNewCases: true }) }),
+    );
+  });
+
   it('(c) cross-tenant / nonexistent staffMemberId reddedilir (BadRequest, create yok)', async () => {
     const { tx, created } = mockTx({ owned: [{ id: 's1', staffType: 'PERSONEL' }] }); // s2 owned değil
 
