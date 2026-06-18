@@ -329,6 +329,17 @@ export class CaseInstrumentInputDto {
   payeeName?: string;
 }
 
+// ASSIGN-2a: yeni takipte seçilen personel girişi. staffMemberId zorunlu; roleOnCase opsiyonel
+// (verilmezse backend StaffMember.staffType'ını kullanır).
+export class CaseStaffInputDto {
+  @IsString()
+  staffMemberId: string;
+
+  @IsString()
+  @IsOptional()
+  roleOnCase?: string;
+}
+
 export class CreateCaseDto {
   @IsString()
   fileNumber: string;
@@ -452,6 +463,14 @@ export class CreateCaseDto {
   @Type(() => LawyerDto)
   @IsOptional()
   lawyers?: LawyerDto[];
+
+  // ASSIGN-2a: yeni takipte seçilen personel. VERİLİRSE backend SADECE bunu yazar (default ile
+  // merge YOK); VERİLMEZSE backend isDefaultForNewCases davranışını korur. (Frontend wiring=PR-2b.)
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CaseStaffInputDto)
+  @IsOptional()
+  staff?: CaseStaffInputDto[];
 
   @IsArray()
   @ValidateNested({ each: true })
