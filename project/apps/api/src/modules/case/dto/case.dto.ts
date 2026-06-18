@@ -274,6 +274,61 @@ export class DueDto {
   dueDate: string;
 }
 
+/**
+ * PR-N3: OCR kambiyo enstrümanı girişi (CaseInstrument adayı) — frontend OCR Instrument'ın
+ * CaseInstrument'a aktarılabilir alt kümesi. FATURA/DIGER de gelebilir; mapper bunları null'a
+ * düşürür (CaseInstrument ÜRETİLMEZ). NOT: N3-pure'de yalnız TANIM (dormant); createCase tx
+ * wiring N3-wire'da.
+ *
+ * INVARIANT — DTO, CaseInstrument zorunluluklarını GEVŞETMEZ: type + documentNo (→serialNo) +
+ * amount + currency + issueDate ZORUNLU. Eksikse validation REDDEDER (sessiz create yok).
+ * Çift kemer: mapper'da resolveCaseInstrumentType de eksikte null döner.
+ */
+export enum OcrInstrumentInputType {
+  CEK = "CEK",
+  SENET = "SENET",
+  POLICE = "POLICE",
+  FATURA = "FATURA",
+  DIGER = "DIGER",
+}
+
+export class CaseInstrumentInputDto {
+  @IsEnum(OcrInstrumentInputType)
+  type: OcrInstrumentInputType;
+
+  @IsNumber()
+  amount: number; // ZORUNLU — CaseInstrument.amount şema-zorunlu
+
+  @IsDateString()
+  issueDate: string; // YYYY-MM-DD (keşide) — CaseInstrument.issueDate şema-ZORUNLU
+
+  @IsString()
+  documentNo: string; // → serialNo (ZORUNLU: serialNo şema-zorunlu; eksikse validation reddeder)
+
+  @IsEnum(Currency)
+  currency: Currency; // ZORUNLU — sessiz TRY-default YOK (OCR Instrument.currency zaten zorunlu)
+
+  @IsDateString()
+  @IsOptional()
+  dueDate?: string; // CEK→presentmentDate · SENET/BONO/POLICE→maturityDate (K2)
+
+  @IsString()
+  @IsOptional()
+  bankName?: string;
+
+  @IsString()
+  @IsOptional()
+  branchName?: string; // → bankBranch
+
+  @IsString()
+  @IsOptional()
+  drawerName?: string;
+
+  @IsString()
+  @IsOptional()
+  payeeName?: string;
+}
+
 export class CreateCaseDto {
   @IsString()
   fileNumber: string;
@@ -422,6 +477,14 @@ export class CreateCaseDto {
   @Type(() => DueDto)
   @IsOptional()
   dues?: DueDto[];
+
+  // PR-N3: kambiyo enstrümanları (CaseInstrument adayı). Dormant — wiring N3-wire'da.
+  // KRİTİK (K1): instruments[] kambiyo PRINCIPAL'ın TEK kaynağı; aynı çek dues[]'da TEKRARLANMAZ.
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => CaseInstrumentInputDto)
+  @IsOptional()
+  instruments?: CaseInstrumentInputDto[];
 
   // OCR / Belge Tarama Bilgileri
   @IsString()
