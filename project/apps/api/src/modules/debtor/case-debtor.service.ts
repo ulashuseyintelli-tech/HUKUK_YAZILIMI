@@ -174,6 +174,12 @@ export class CaseDebtorService {
    * Reason = MANUAL_CANCEL (prod'da boş slot; "borçlu çıkarıldı" anlamını temiz taşır —
    * SUPERSEDED repo'da "ardıl kayıt ikame etti" demek, burada ardıl yok).
    *
+   * Finansal koruma (BLOK): bu borçluya (caseDebtorId) bağlı Collection (tahsilat) kaydı
+   * varsa silme ENGELLENİR — ThirdParty guard'ıyla aynı felsefe. Collection.caseDebtorId
+   * loose String'tir (Prisma @relation YOK → FK/onDelete YOK); CaseDebtor silinince tahsilatın
+   * "hangi borçludan geldiği" kanonik/muhasebe atfı öksüz kalır. null'a çekmek muhasebe izini
+   * zayıflatır, cascade tahsilatı yok eder → ikisi de yanlış; doğru tercih BLOK.
+   *
    * @remarks Çağrıldığı yerler:
    * - CaseDebtorController.removeCaseDebtor() → DELETE /case-debtors/:id (borçluyu dosyadan çıkar)
    */
@@ -195,6 +201,21 @@ export class CaseDebtorService {
     if (thirdPartyCount > 0) {
       throw new BadRequestException(
         `Bu borçluya bağlı ${thirdPartyCount} üçüncü şahıs kaydı var. Önce bunları silin.`
+      );
+    }
+
+    // Finansal bütünlük: bu borçluya bağlı tahsilat (Collection) varsa silmeyi BLOKLA.
+    // Collection.caseDebtorId loose String'tir (Prisma @relation/FK yok) → CaseDebtor
+    // silinince tahsilatın borçlu atfı öksüz kalır. Tenant-scoped sayım (multitenant +
+    // defense-in-depth; caseDebtorId zaten benzersiz).
+    const collectionCount = await this.prisma.collection.count({
+      where: { caseDebtorId, tenantId },
+    });
+
+    if (collectionCount > 0) {
+      throw new BadRequestException(
+        "Bu borçluya bağlı tahsilat kaydı bulunduğu için borçlu dosyadan çıkarılamaz. " +
+          "Önce tahsilat kaydını başka borçluya aktarın, atfı kaldırın veya tahsilatı iptal/düzeltin."
       );
     }
 
