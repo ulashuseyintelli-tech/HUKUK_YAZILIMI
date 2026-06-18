@@ -13,6 +13,7 @@ import {
 } from "@/types/debtor";
 import { NewDebtorModal } from "./NewDebtorModal";
 import { SelectedDebtorCard } from "./SelectedDebtorCard";
+import { Instrument } from "./ocr-instrument";
 
 // Borç evrakı tarama sonucu tipi
 interface DebtDocumentResult {
@@ -46,6 +47,8 @@ interface DebtDocumentResult {
   confidence: number;
   rawText?: string;
   matchedKeywords?: string[];
+  // PR-3a: çoklu borç enstrümanı (backend instruments[]). PR-3b review tablosu kullanacak.
+  instruments?: Instrument[];
 }
 
 // Rol etiketleri
