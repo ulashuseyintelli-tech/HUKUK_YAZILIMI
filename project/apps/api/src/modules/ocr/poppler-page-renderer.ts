@@ -21,6 +21,32 @@ const logger = new Logger("PopplerPdfPageRenderer");
  */
 export type SinglePageRenderImpl = (buffer: Buffer, pageIndex: number) => Promise<string>;
 
+// ── DPI fix: render çözünürlüğü (pdf-poppler -scale-to = EN UZUN kenar px) ──
+// pdf-poppler default scale=1024 → geniş çek sayfasında (1756pt) metin okunamaz → vision zayıf
+// (V2-A: DIGER/no-face). Yüksek scale → vision documentNo/face okur.
+export const DEFAULT_RENDER_SCALE = 2480;
+const MIN_RENDER_SCALE = 1024; // 1024 kanıtlı yetersiz; altı → default'a düşür (footgun guard)
+
+/**
+ * Render scale'ini GÜVENLİ çöz: yok / geçersiz (NaN) / çok-düşük (<1024) → DEFAULT_RENDER_SCALE.
+ * env: OCR_RENDER_SCALE (redeploysuz tuning).
+ */
+export function resolveRenderScale(raw?: string): number {
+  const n = Number(raw);
+  if (!raw || !Number.isFinite(n) || n < MIN_RENDER_SCALE) return DEFAULT_RENDER_SCALE;
+  return Math.floor(n);
+}
+
+/** pdf-poppler convert opts (scale DAHİL). Saf — test edilebilir. */
+export function buildPopplerConvertOpts(
+  outDir: string,
+  outPrefix: string,
+  pageIndex: number,
+  scale: number,
+): { format: string; out_dir: string; out_prefix: string; page: number; scale: number } {
+  return { format: "png", out_dir: outDir, out_prefix: outPrefix, page: pageIndex, scale };
+}
+
 /**
  * Gerçek poppler render: buffer → temp .pdf → pdf-poppler convert(page) → png yolu.
  * Lazy-require (modül yüklemesi hafif). Native poppler/pdftoppm YOKSA burası THROW eder;
@@ -41,12 +67,9 @@ export const defaultPopplerRender: SinglePageRenderImpl = async (buffer, pageInd
   const outPrefix = "page";
   fs.writeFileSync(pdfPath, buffer);
   try {
-    await pdfPoppler.convert(pdfPath, {
-      format: "png",
-      out_dir: tmpDir,
-      out_prefix: outPrefix,
-      page: pageIndex, // 1-based tek sayfa
-    });
+    // DPI fix: scale (en uzun kenar px) geçir — düşük-çöz vision sorununu çözer (env OCR_RENDER_SCALE)
+    const scale = resolveRenderScale(process.env.OCR_RENDER_SCALE);
+    await pdfPoppler.convert(pdfPath, buildPopplerConvertOpts(tmpDir, outPrefix, pageIndex, scale));
     const images: string[] = fs
       .readdirSync(tmpDir)
       .filter((f: string) => f.startsWith(outPrefix) && f.toLowerCase().endsWith(".png"));

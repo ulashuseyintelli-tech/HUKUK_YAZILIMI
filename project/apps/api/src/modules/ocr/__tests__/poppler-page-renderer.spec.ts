@@ -5,7 +5,12 @@
  * Native poppler GERÇEK çağrısı YOK (mock renderImpl). Gerçek poppler = env-gated/skip.
  */
 
-import { PopplerPdfPageRenderer } from '../poppler-page-renderer';
+import {
+  PopplerPdfPageRenderer,
+  resolveRenderScale,
+  buildPopplerConvertOpts,
+  DEFAULT_RENDER_SCALE,
+} from '../poppler-page-renderer';
 
 const buf = Buffer.from('dummy-pdf');
 
@@ -77,4 +82,37 @@ describe('PR-2b-1 — gerçek poppler entegrasyonu (env-gated)', () => {
       expect(runIntegration).toBe(true);
     },
   );
+});
+
+describe('DPI fix — resolveRenderScale / buildPopplerConvertOpts', () => {
+  it('env yoksa/boşsa → DEFAULT_RENDER_SCALE (2480)', () => {
+    expect(resolveRenderScale(undefined)).toBe(DEFAULT_RENDER_SCALE);
+    expect(resolveRenderScale('')).toBe(DEFAULT_RENDER_SCALE);
+    expect(DEFAULT_RENDER_SCALE).toBe(2480);
+  });
+
+  it('geçerli env → o değer', () => {
+    expect(resolveRenderScale('3200')).toBe(3200);
+  });
+
+  it('geçersiz env (NaN) → default', () => {
+    expect(resolveRenderScale('abc')).toBe(DEFAULT_RENDER_SCALE);
+  });
+
+  it('çok düşük env (<1024) → default (footgun guard)', () => {
+    expect(resolveRenderScale('500')).toBe(DEFAULT_RENDER_SCALE);
+    expect(resolveRenderScale('0')).toBe(DEFAULT_RENDER_SCALE);
+  });
+
+  it('default scale convert opts\'a gider', () => {
+    const opts = buildPopplerConvertOpts('/tmp/x', 'page', 3, resolveRenderScale(undefined));
+    expect(opts).toEqual({ format: 'png', out_dir: '/tmp/x', out_prefix: 'page', page: 3, scale: 2480 });
+  });
+
+  it('env scale convert opts\'a gider', () => {
+    const opts = buildPopplerConvertOpts('/tmp/x', 'page', 1, resolveRenderScale('3000'));
+    expect(opts.scale).toBe(3000);
+    expect(opts.format).toBe('png');
+    expect(opts.page).toBe(1);
+  });
 });
