@@ -63,8 +63,13 @@ export interface PageCandidate {
   iban?: string;
   drawerName?: string;
   debtorCandidates?: string[];
-  face?: boolean; // extraction "yüz" dedi (opsiyonel ipucu)
-  back?: boolean; // extraction "arka/ciro" dedi
+  // face/back: BU sayfanın KENDİ görünümü (yüz mü / arka mı). "şu belgenin arkasıdır"
+  // gibi SAYFALAR-ARASI ilişki DEĞİL — o grouping motorunun işi (AI'ya yasak).
+  face?: boolean; // bu sayfa bir belge YÜZÜ gibi görünüyor (tutar/no/banka var)
+  back?: boolean; // bu sayfa ARKA/ciro gibi görünüyor (ciro/imza, tutar yok)
   endorsementMarkers?: boolean; // ciro/imza/aval/teminat/keşide metni bulundu
+  // evidenceText: bu sayfadan KISA kanıt parçası (review "AI bunu nereden çıkardı?").
+  // Tüm OCR metni DEĞİL — yalnız ilgili kısa alıntı.
+  evidenceText?: string;
   confidence?: number;
 }
