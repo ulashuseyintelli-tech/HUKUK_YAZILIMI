@@ -9,6 +9,7 @@ import {
   acceptButtonLabel,
   isAcceptDisabled,
   shouldShowInstrumentTable,
+  buildInitialReviewRows,
   Instrument,
 } from '../components/debtor/ocr-instrument';
 
@@ -47,5 +48,34 @@ describe('PR-3b buton etiketi / disabled / kapı', () => {
     expect(shouldShowInstrumentTable([inst({}), inst({})])).toBe(true);
     expect(shouldShowInstrumentTable([inst({})])).toBe(false);
     expect(shouldShowInstrumentTable(undefined)).toBe(false);
+  });
+});
+
+describe('PR-N1 buildInitialReviewRows — needsReview default-unselected', () => {
+  it('needsReview=true → satır default SEÇİLİ DEĞİL', () => {
+    expect(buildInitialReviewRows([inst({ needsReview: true })])[0].selected).toBe(false);
+  });
+
+  it('needsReview=false/undefined → satır default seçili', () => {
+    expect(buildInitialReviewRows([inst({ needsReview: false })])[0].selected).toBe(true);
+    expect(buildInitialReviewRows([inst({})])[0].selected).toBe(true);
+  });
+
+  it('karışık liste: yalnız needsReview olanlar seçilmez, sıra korunur', () => {
+    const rows = buildInitialReviewRows([
+      inst({ documentNo: 'A' }),
+      inst({ documentNo: 'B', needsReview: true }),
+      inst({ documentNo: 'C' }),
+    ]);
+    expect(rows.map((r) => r.selected)).toEqual([true, false, true]);
+    expect(rows.map((r) => r.instrument.documentNo)).toEqual(['A', 'B', 'C']);
+  });
+
+  it('enstrümanın KOPYASINI taşır (orijinali mutasyona uğratmaz)', () => {
+    const src = inst({ documentNo: 'X' });
+    const rows = buildInitialReviewRows([src]);
+    expect(rows[0].instrument).not.toBe(src);
+    rows[0].instrument.amount = 999;
+    expect(src.amount).toBeUndefined();
   });
 });
