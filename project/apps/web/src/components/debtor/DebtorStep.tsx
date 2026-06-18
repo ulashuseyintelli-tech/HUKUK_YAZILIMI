@@ -21,6 +21,7 @@ import {
   isAcceptDisabled,
   shouldShowInstrumentTable,
   buildInitialReviewRows,
+  hasIncompleteSelected,
 } from "./ocr-instrument";
 import { InstrumentReviewTable } from "./InstrumentReviewTable";
 
@@ -571,10 +572,13 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
             <button
               type="button"
               onClick={handleAcceptAllDebtors}
-              disabled={isAcceptDisabled(
-                shouldShowInstrumentTable(wizardResult.instruments),
-                reviewRows.filter((r) => r.selected).length,
-              )}
+              disabled={
+                isAcceptDisabled(
+                  shouldShowInstrumentTable(wizardResult.instruments),
+                  reviewRows.filter((r) => r.selected).length,
+                ) ||
+                hasIncompleteSelected(reviewRows.filter((r) => r.selected).map((r) => r.instrument))
+              }
               className="px-2 py-1 bg-emerald-500 text-white rounded text-xs hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-1"
             >
               <CheckCircle className="h-3 w-3" /> {acceptButtonLabel(shouldShowInstrumentTable(wizardResult.instruments))}

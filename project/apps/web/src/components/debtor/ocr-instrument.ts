@@ -121,3 +121,59 @@ export function shouldShowInstrumentTable(instruments: Instrument[] | undefined)
 export function buildInitialReviewRows(instruments: Instrument[]): ReviewRow[] {
   return instruments.map((i) => ({ selected: i.needsReview !== true, instrument: { ...i } }));
 }
+
+// ── PR-N4a: createCase payload instruments[] şekli + zorunlu-alan doğrulama (saf) ──
+
+/**
+ * Backend CaseInstrumentInputDto AYNASI (createCase payload `instruments[]` öğesi).
+ * Yalnız CaseInstrument'a aktarılabilir alanlar (payeeName OCR'da yok → taşınmaz).
+ */
+export interface CaseInstrumentPayload {
+  type: InstrumentType;
+  amount: number;
+  issueDate: string;
+  documentNo: string;
+  currency: Currency;
+  dueDate?: string;
+  bankName?: string;
+  branchName?: string;
+  drawerName?: string;
+}
+
+/**
+ * Enstrüman CaseInstrument olabilmek için gerekli alanlar TAM mı (N3-pure invariant aynası).
+ * documentNo (boş değil) + amount (>0) + currency + issueDate. Eksikse backend sessiz atlar/400.
+ */
+export function isInstrumentComplete(i: Instrument): boolean {
+  return (
+    !!i.documentNo &&
+    i.documentNo.trim() !== "" &&
+    i.amount != null &&
+    i.amount > 0 &&
+    !!i.currency &&
+    !!i.issueDate
+  );
+}
+
+/**
+ * Frontend Instrument → backend CaseInstrumentInputDto şekli (saf). YALNIZ isInstrumentComplete
+ * geçen enstrümanlar için çağrılır (zorunlu alanlar garanti). Wiring/payload N4b'de.
+ */
+export function instrumentToCaseInstrumentPayload(i: Instrument): CaseInstrumentPayload {
+  return {
+    type: i.type,
+    amount: i.amount as number,
+    issueDate: i.issueDate as string,
+    documentNo: i.documentNo as string,
+    currency: i.currency,
+    dueDate: i.dueDate,
+    bankName: i.bankName,
+    branchName: i.branchName,
+    drawerName: i.drawerName,
+  };
+}
+
+/** Seçili enstrümanlardan herhangi biri eksikse true (accept butonu disabled için). */
+export function hasIncompleteSelected(selected: Instrument[]): boolean {
+  return selected.some((i) => !isInstrumentComplete(i));
+}
