@@ -219,3 +219,28 @@ export function groupPageCandidatesIntoInstruments(pages: PageCandidate[]): Inst
 
   return out;
 }
+
+/**
+ * PR-2b-3 — "primary" (geriye uyumlu debtInfo için) enstrümanı seçer.
+ * Kural (en-yüksek-tutar DEĞİL — belge sırası daha doğal):
+ *  1) İLK güvenilir (needsReview=false) instrument,
+ *  2) yoksa confidence/groupConfidence en yüksek,
+ *  3) eşitse sourcePages en küçük (en erken sayfa).
+ * Saf fonksiyon (test edilebilir). Aday yoksa null.
+ */
+export function pickPrimaryInstrument(instruments: Instrument[]): Instrument | null {
+  if (!instruments || instruments.length === 0) return null;
+  // 1) belge sırasında İLK needsReview=false
+  const reliable = instruments.find((i) => i.needsReview !== true);
+  if (reliable) return reliable;
+  // 2) confidence/groupConfidence en yüksek; 3) eşitse en küçük sourcePages
+  const minPage = (i: Instrument) =>
+    i.sourcePages && i.sourcePages.length ? Math.min(...i.sourcePages) : Number.POSITIVE_INFINITY;
+  return [...instruments].sort((a, b) => {
+    const c = (b.confidence ?? 0) - (a.confidence ?? 0);
+    if (c !== 0) return c;
+    const g = (b.groupConfidence ?? 0) - (a.groupConfidence ?? 0);
+    if (g !== 0) return g;
+    return minPage(a) - minPage(b);
+  })[0];
+}

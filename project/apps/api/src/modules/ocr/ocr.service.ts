@@ -2,6 +2,10 @@ import { Injectable, Logger, Optional } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import * as Tesseract from "tesseract.js";
 import { Instrument } from "./debt-instrument.types";
+import { segmentDocumentIntoPages, PdfPageRenderer } from "./pdf-segmentation";
+import { PopplerPdfPageRenderer } from "./poppler-page-renderer";
+import { extractAllPageCandidates, PageAiExtractor } from "./page-candidate-extractor";
+import { groupPageCandidatesIntoInstruments, pickPrimaryInstrument } from "./debt-instrument-grouping";
 import * as sharp from "sharp";
 import * as AdmZip from "adm-zip";
 import * as mammoth from "mammoth";
@@ -140,6 +144,63 @@ export function deriveInstrumentsFromDebtInfo(result: DebtDocumentResult): Instr
 export function ensureInstruments(result: DebtDocumentResult): Instrument[] {
   if (result.instruments && result.instruments.length > 0) return result.instruments;
   return deriveInstrumentsFromDebtInfo(result);
+}
+
+/** PR-2b-3: Instrument.type → DebtDocumentResult.documentType (POLICE → DIGER). */
+function mapInstrumentTypeToDocumentType(t: Instrument["type"]): DebtDocumentResult["documentType"] {
+  switch (t) {
+    case "CEK":
+      return "CEK";
+    case "SENET":
+      return "SENET";
+    case "FATURA":
+      return "FATURA";
+    default:
+      return "DIGER"; // POLICE/DIGER
+  }
+}
+
+/**
+ * PR-2b-3 — instruments[] → DebtDocumentResult. debtInfo = PRIMARY (ilk güvenilir) instrument.
+ * instruments boşsa null (caller eski akışa fallback eder). Saf fonksiyon (test edilebilir).
+ */
+export function buildDebtResultFromInstruments(instruments: Instrument[]): DebtDocumentResult | null {
+  if (!instruments || instruments.length === 0) return null;
+  const primary = pickPrimaryInstrument(instruments);
+  if (!primary) return null;
+
+  // Taraflar: enstrümanlardaki keşideci/borçlu adayları (dedup)
+  const names = new Set<string>();
+  for (const inst of instruments) {
+    if (inst.drawerName) names.add(inst.drawerName);
+    for (const d of inst.debtorCandidates ?? []) names.add(d);
+  }
+  const parties = Array.from(names).map((name) => ({
+    name,
+    type: "INDIVIDUAL" as const,
+    role: "BORCLU" as const,
+    confidence: primary.confidence ?? 0,
+  }));
+
+  const isKambiyo = primary.type === "CEK" || primary.type === "SENET" || primary.type === "POLICE";
+  return {
+    documentType: mapInstrumentTypeToDocumentType(primary.type),
+    parties,
+    debtInfo: {
+      amount: primary.amount,
+      currency: primary.currency,
+      dueDate: primary.dueDate,
+      issueDate: primary.issueDate,
+      documentNo: primary.documentNo,
+    },
+    bankInfo:
+      primary.bankName || primary.iban
+        ? { bankName: primary.bankName, branchName: primary.branchName, iban: primary.iban }
+        : undefined,
+    suggestedCaseType: isKambiyo ? "KAMBIYO" : "ILAMSIZ",
+    confidence: primary.confidence ?? 0,
+    instruments, // TAM liste (PR-3 review kullanır)
+  };
 }
 
 /**
@@ -1825,10 +1886,95 @@ Sadece JSON döndür, başka açıklama ekleme.`
   }
 
   /**
-   * Borç evrakı tarama - Borçlu Sihirbazı için
-   * Fatura, senet, çek, kira sözleşmesi, cari hesap ekstresi vb.
+   * Borç evrakı tarama (entrypoint). PR-2b-3: flag AÇIKSA önce çoklu-enstrüman
+   * pipeline denenir; hata/boş sonuçta ESKİ tek-belge akışına (legacy) fallback.
+   * Flag KAPALI (varsayılan) → davranış BİREBİR eski.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - OcrController.scanDebtDocument() → POST /ocr/scan-debt-document (Borç Evrakını Tara)
    */
   async scanDebtDocument(buffer: Buffer, mimeType: string, filename?: string): Promise<DebtDocumentResult> {
+    if (this.isMultiInstrumentEnabled()) {
+      try {
+        const multi = await this.scanDebtDocumentMultiInstrument(buffer, mimeType, filename);
+        if (multi && multi.instruments && multi.instruments.length > 0) {
+          return multi; // başarı → çoklu-enstrüman sonucu
+        }
+        // boş instruments → eski akışa düş
+      } catch (e: any) {
+        this.logger.warn(`Çoklu-enstrüman pipeline başarısız, eski akışa düşülüyor: ${e?.message ?? e}`);
+        // fall-through → eski akış
+      }
+    }
+    return this.scanDebtDocumentLegacy(buffer, mimeType, filename);
+  }
+
+  /** PR-2b-3: çoklu-enstrüman pipeline AÇIK mı (env flag; varsayılan KAPALI). */
+  isMultiInstrumentEnabled(): boolean {
+    return this.configService.get<string>("OCR_MULTI_INSTRUMENT") === "true";
+  }
+
+  /**
+   * PR-2b-3: segment → render → per-page AI → deterministik grouping → instruments → debtInfo(primary).
+   * AI tek sayfa görür, GRUPLAMAZ (kırmızı çizgi; grouping deterministik motorda). instruments
+   * boşsa null (caller fallback eder). deps test için enjekte edilebilir (gerçek AI/poppler mock).
+   */
+  async scanDebtDocumentMultiInstrument(
+    buffer: Buffer,
+    mimeType: string,
+    filename?: string,
+    deps?: {
+      segment?: typeof segmentDocumentIntoPages;
+      renderer?: PdfPageRenderer;
+      aiExtract?: PageAiExtractor;
+    },
+  ): Promise<DebtDocumentResult | null> {
+    const segment = deps?.segment ?? segmentDocumentIntoPages;
+    const renderer = deps?.renderer ?? new PopplerPdfPageRenderer();
+    const aiExtract = deps?.aiExtract ?? this.buildPageAiExtract();
+
+    const seg = await segment({ buffer, mimeType, filename }, { renderer });
+    const candidates = await extractAllPageCandidates(seg.pages, { aiExtract });
+    const instruments = groupPageCandidatesIntoInstruments(candidates);
+    return buildDebtResultFromInstruments(instruments);
+  }
+
+  /** PR-2b-3: servisin yapılandırılmış OpenAI client'ından per-page aiExtract üretir. */
+  private buildPageAiExtract(): PageAiExtractor {
+    const openai = this.openai;
+    const model = this.configService.get<string>("OPENAI_MODEL") || "gpt-4o";
+    return async (input) => {
+      if (!openai) throw new Error("OpenAI yapılandırılmamış (page extraction)");
+      let useModel = model;
+      let userContent: any;
+      if (input.kind === "vision" && input.imageRef) {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        const fs = require("fs");
+        const b64 = fs.readFileSync(input.imageRef).toString("base64");
+        useModel = "gpt-4o";
+        userContent = [{ type: "image_url", image_url: { url: `data:image/png;base64,${b64}` } }];
+      } else {
+        userContent = input.text ?? "";
+      }
+      const resp = await openai.chat.completions.create({
+        model: useModel,
+        messages: [
+          { role: "system", content: input.prompt },
+          { role: "user", content: userContent },
+        ],
+        temperature: 0.1,
+        max_tokens: 1000,
+      });
+      const content = resp.choices?.[0]?.message?.content || "{}";
+      return JSON.parse(content);
+    };
+  }
+
+  /**
+   * Borç evrakı tarama (ESKİ tek-belge akışı). PR-2b-3 öncesi scanDebtDocument gövdesi
+   * AYNEN korundu; çoklu-enstrüman flag'i kapalıyken veya fallback'te kullanılır.
+   */
+  private async scanDebtDocumentLegacy(buffer: Buffer, mimeType: string, filename?: string): Promise<DebtDocumentResult> {
     // 1. Belgeden metin çıkar
     const { text } = await this.extractText(buffer, mimeType, filename);
     
