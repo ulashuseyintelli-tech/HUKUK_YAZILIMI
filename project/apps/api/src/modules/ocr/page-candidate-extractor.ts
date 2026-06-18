@@ -1,0 +1,184 @@
+/**
+ * PR-2b-2 — Page → PageCandidate (per-page AI/Vision aday üretimi).
+ *
+ * 🔴 KIRMIZI ÇİZGİ (üç katman):
+ *  1) YAPISAL: TEK Page alır → TEK PageCandidate döner. AI çağrısına yalnız O SAYFANIN
+ *     içeriği girer; başka sayfa GÖRÜNMEZ.
+ *  2) PROMPT: anti-grouping (PAGE_EXTRACTION_PROMPT) — gruplama/sayma/önü-arkası kararı YASAK.
+ *  3) ÇIKTI: tek nesne; gruplama alanı yok. Gruplama DETERMİNİSTİK motorda (PR-2a-1).
+ *
+ * SINIRLAR: AI gruplamaz/saymaz · scanDebtDocument wiring YOK (PR-2b-3) · grouping YOK ·
+ *  gerçek AI unit-test'te YOK (mock) · IMAGE imageRef yoksa graceful düşük-güven ·
+ *  AI throw → throw DIŞARI taşmaz · pageIndex 1-BASED korunur (AI'dan değil, Page'ten).
+ */
+
+import { Logger } from "@nestjs/common";
+import { Page } from "./pdf-segmentation";
+import { PageCandidate, InstrumentType, Currency } from "./debt-instrument.types";
+
+const logger = new Logger("PageCandidateExtractor");
+
+/**
+ * Anti-grouping system prompt. AI yalnız BU sayfayı işler; gruplama/sayma yapmaz.
+ */
+export const PAGE_EXTRACTION_PROMPT = `Sen bir Türk icra hukuku belge analiz uzmanısın. Sana TEK BİR SAYFA verilecek.
+
+KURALLAR (kesin):
+- YALNIZ bu sayfada GÖRDÜĞÜNÜ çıkar. Başka sayfayla İLİŞKİLENDİRME/BİRLEŞTİRME yapma.
+- KAÇ çek/senet/belge olduğunu SÖYLEME. Sayma yapma. Tek belge varmış gibi düşünme.
+- Bu sayfanın başka bir belgenin önü/arkası olup olmadığına KARAR VERME. Sadece bu sayfada görünen sinyalleri işaretle.
+- face = bu sayfa bir belge YÜZÜ gibi mi görünüyor (tutar/belge no/banka görünür).
+  back = bu sayfa ARKA/ciro gibi mi görünüyor (ciro/imza/aval, tutar yok).
+  Bunlar bu sayfanın KENDİ görünümüdür; "şu belgenin arkasıdır" DEME.
+
+Yalnız bu sayfa için TEK JSON nesnesi döndür (dizi DEĞİL):
+{
+  "documentType": "CEK|SENET|POLICE|FATURA|DIGER",
+  "documentNo": "bu sayfada görünüyorsa",
+  "amount": 12345.67,
+  "currency": "TRY|USD|EUR|GBP|CHF",
+  "issueDate": "YYYY-MM-DD",
+  "dueDate": "YYYY-MM-DD",
+  "bankName": "...",
+  "drawerName": "keşideci/borçlu adı (bu sayfada görünüyorsa)",
+  "debtorCandidates": ["..."],
+  "face": true,
+  "back": false,
+  "endorsementMarkers": true,
+  "evidenceText": "bu sayfadan KISA kanıt alıntısı (tüm metin DEĞİL, en çok ~200 karakter)",
+  "confidence": 0-100
+}`;
+
+export interface RawPageFields {
+  documentType?: InstrumentType;
+  documentNo?: string;
+  amount?: number;
+  currency?: Currency;
+  issueDate?: string;
+  dueDate?: string;
+  bankName?: string;
+  drawerName?: string;
+  debtorCandidates?: string[];
+  face?: boolean;
+  back?: boolean;
+  endorsementMarkers?: boolean;
+  evidenceText?: string;
+  confidence?: number;
+}
+
+export interface PageAiInput {
+  kind: "text" | "vision";
+  text?: string; // TEXT sayfa metni
+  imageRef?: string; // IMAGE sayfa görüntü yolu
+  prompt: string; // PAGE_EXTRACTION_PROMPT
+}
+
+/** AI/Vision çağrısı — TEK sayfa için ham alanlar. Test'te mock'lanır. */
+export type PageAiExtractor = (input: PageAiInput) => Promise<RawPageFields>;
+
+const EVIDENCE_MAX = 240; // evidenceText üst sınırı (kısa kanıt; tüm OCR DEĞİL)
+
+function truncate(s: string, max: number): string {
+  return s.length > max ? s.slice(0, max) : s;
+}
+
+function mapRawToCandidate(page: Page, raw: RawPageFields): PageCandidate {
+  return {
+    pageIndex: page.pageIndex, // 1-BASED — AI'dan DEĞİL, Page'ten (güvenli)
+    documentType: raw.documentType,
+    documentNo: raw.documentNo,
+    amount: raw.amount,
+    currency: raw.currency,
+    issueDate: raw.issueDate,
+    dueDate: raw.dueDate,
+    bankName: raw.bankName,
+    drawerName: raw.drawerName,
+    debtorCandidates: raw.debtorCandidates,
+    face: raw.face,
+    back: raw.back,
+    endorsementMarkers: raw.endorsementMarkers,
+    evidenceText: raw.evidenceText ? truncate(raw.evidenceText, EVIDENCE_MAX) : undefined,
+    confidence: raw.confidence ?? 0,
+  };
+}
+
+/**
+ * TEK sayfadan PageCandidate üretir. Graceful: hata/eksik girdi → düşük-güven aday, throw YOK.
+ *
+ * @remarks Çağrıldığı yerler:
+ * - (henüz YOK — PR-2b-2 izole adapter; üretim bağlama PR-2b-3)
+ */
+export async function extractPageCandidate(
+  page: Page,
+  deps: { aiExtract?: PageAiExtractor } = {},
+): Promise<PageCandidate> {
+  const aiExtract = deps.aiExtract ?? defaultPageAiExtract;
+  try {
+    if (page.kind === "TEXT" && page.text && page.text.trim().length > 0) {
+      const raw = await aiExtract({ kind: "text", text: page.text, prompt: PAGE_EXTRACTION_PROMPT });
+      return mapRawToCandidate(page, raw);
+    }
+    if (page.needsImageExtraction && page.imageRef) {
+      const raw = await aiExtract({ kind: "vision", imageRef: page.imageRef, prompt: PAGE_EXTRACTION_PROMPT });
+      return mapRawToCandidate(page, raw);
+    }
+    // IMAGE ama imageRef YOK (render başarısız/stub) → çıkaramaz → graceful düşük-güven
+    return { pageIndex: page.pageIndex, confidence: 0 };
+  } catch (e: any) {
+    // GRACEFUL: AI hatası/timeout → düşük-güven aday, throw DIŞARI taşmaz
+    logger.warn(`Sayfa ${page.pageIndex} aday çıkarımı başarısız: ${e?.message ?? e}`);
+    return { pageIndex: page.pageIndex, confidence: 0 };
+  }
+}
+
+/**
+ * Tüm sayfaları SIRALI işler (eşzamanlı Vision maliyetli → sıralı, cost-bilinçli).
+ * Her sayfa BAĞIMSIZ; sayfalar-arası bilgi taşınmaz (kırmızı çizgi).
+ */
+export async function extractAllPageCandidates(
+  pages: Page[],
+  deps: { aiExtract?: PageAiExtractor } = {},
+): Promise<PageCandidate[]> {
+  const out: PageCandidate[] = [];
+  for (const page of pages) {
+    out.push(await extractPageCandidate(page, deps));
+  }
+  return out;
+}
+
+/**
+ * Gerçek AI/Vision çağrısı (lazy OpenAI). DORMANT — PR-2b-2'de hiçbir yere bağlı değil;
+ * testler mock enjekte eder. Anahtar yoksa throw eder → extractPageCandidate graceful yakalar.
+ */
+export const defaultPageAiExtract: PageAiExtractor = async (input) => {
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const OpenAI = require("openai");
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) throw new Error("OPENAI_API_KEY yok (page extraction)");
+  const client = new OpenAI({ apiKey });
+
+  let model: string;
+  let userContent: any;
+  if (input.kind === "vision" && input.imageRef) {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const fs = require("fs");
+    const b64 = fs.readFileSync(input.imageRef).toString("base64");
+    model = "gpt-4o";
+    userContent = [{ type: "image_url", image_url: { url: `data:image/png;base64,${b64}` } }];
+  } else {
+    model = process.env.OPENAI_MODEL || "gpt-4o";
+    userContent = input.text ?? "";
+  }
+
+  const resp = await client.chat.completions.create({
+    model,
+    messages: [
+      { role: "system", content: input.prompt },
+      { role: "user", content: userContent },
+    ],
+    temperature: 0.1,
+    max_tokens: 1000,
+  });
+  const content = resp.choices?.[0]?.message?.content || "{}";
+  return JSON.parse(content);
+};
