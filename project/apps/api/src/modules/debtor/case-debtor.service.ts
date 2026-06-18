@@ -157,6 +157,26 @@ export class CaseDebtorService {
     });
   }
 
+  /**
+   * Borçluyu dosyadan çıkarır + o (caseId, debtorId) çiftine ait AÇIK adres
+   * görevlerini (AddressTask) AYNI transaction içinde iptal eder (öksüz görev temizliği).
+   *
+   * Neden burada: AddressTask'ın CaseDebtor'a foreign key'i YOKTUR — yalnız caseId ve
+   * debtorId tutar; onDelete:Cascade sadece Case veya Debtor silinince tetiklenir.
+   * CaseDebtor linki kalkınca (Case/Debtor yaşamaya devam ettiği için) DB cascade
+   * çalışmaz → açık görevler "öksüz" kalır ve AddressTaskScheduler onları boşa işler
+   * (saatlik hatırlatma + ASSIGN_MANUAL_CALL_CLIENT escalation + yıllık adres refresh).
+   * Bu yüzden iptal, silme noktasında uygulama katmanında yapılır.
+   *
+   * Kapsam: where = tenantId + caseId + debtorId (üçü birden pinlenir) → başka
+   * borçlu / başka dosya / başka tenant ETKİLENMEZ. Yalnız açık statüler
+   * (PENDING/IN_PROGRESS/WAITING_EXTERNAL) iptal edilir; terminal görevlere dokunulmaz.
+   * Reason = MANUAL_CANCEL (prod'da boş slot; "borçlu çıkarıldı" anlamını temiz taşır —
+   * SUPERSEDED repo'da "ardıl kayıt ikame etti" demek, burada ardıl yok).
+   *
+   * @remarks Çağrıldığı yerler:
+   * - CaseDebtorController.removeCaseDebtor() → DELETE /case-debtors/:id (borçluyu dosyadan çıkar)
+   */
   async removeCaseDebtor(tenantId: string, caseDebtorId: string) {
     const caseDebtor = await this.prisma.caseDebtor.findFirst({
       where: { id: caseDebtorId },
@@ -178,7 +198,25 @@ export class CaseDebtorService {
       );
     }
 
-    return this.prisma.caseDebtor.delete({ where: { id: caseDebtorId } });
+    // Borçlu çıkarılırken açık adres görevlerini iptal et + CaseDebtor'u sil — atomik.
+    return this.prisma.$transaction(async (tx) => {
+      await tx.addressTask.updateMany({
+        where: {
+          tenantId,
+          caseId: caseDebtor.caseId,
+          debtorId: caseDebtor.debtorId,
+          status: { in: ["PENDING", "IN_PROGRESS", "WAITING_EXTERNAL"] },
+        },
+        data: {
+          status: "CANCELLED",
+          cancellationReason: "MANUAL_CANCEL",
+          completedAt: new Date(),
+          updatedAt: new Date(),
+        },
+      });
+
+      return tx.caseDebtor.delete({ where: { id: caseDebtorId } });
+    });
   }
 
 
