@@ -247,7 +247,7 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
       formData.append('file', selectedFile);
       formData.append('useAI', useAI.toString());
 
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080/api'}/ocr/classify-file`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/api/ocr/classify-file`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${localStorage.getItem('token')}`,
