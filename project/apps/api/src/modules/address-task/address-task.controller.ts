@@ -126,6 +126,9 @@ export class AddressTaskController {
    * Yeni görev oluştur (manuel veya tetikleyici)
    * @remarks Çağıran: api.ts (manuel görev). Tenant=auth context;
    *          body.tenantId gelirse auth ile eşleşmeli (yoksa 403).
+   *          Veri bütünlüğü: keyfi caseId+debtorId geldiği için enforceCaseDebtorLink=true
+   *          geçirilir → borçlu o dosyanın borçlusu (CaseDebtor) değilse 400. Scheduler ve
+   *          triggerAddressWorkflowForCase servisi doğrudan çağırır ve bu bayrağı geçmez.
    */
   @Post('create')
   @HttpCode(HttpStatus.CREATED)
@@ -143,7 +146,11 @@ export class AddressTaskController {
     },
   ) {
     const resolved = this.resolveTenantId(tenantId, body.tenantId);
-    const task = await this.addressTaskService.createTask({ ...body, tenantId: resolved });
+    const task = await this.addressTaskService.createTask({
+      ...body,
+      tenantId: resolved,
+      enforceCaseDebtorLink: true,
+    });
     return { task, created: !!task };
   }
 
