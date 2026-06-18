@@ -19,7 +19,6 @@
  * - ActionHandlerService: Action dispatch + feedback
  * - EngineRunService: Engine run tracking (v28_decision_timeline)
  * - SeedService: Test verisi oluşturma (v28_django_timeline)
- * - PolicyGateService: Policy kuralları (v28_ops_bundle)
  * - ScenarioHarnessService: Senaryo test harness (v28_ops_bundle)
  * - ActionFeedbackService: Action feedback writer (v28_policy_feedback)
  */
@@ -39,7 +38,6 @@ import { UyapEventIngestService } from './uyap-event-ingest.service';
 import { ActionHandlerService } from './action-handler.service';
 import { EngineRunService } from './engine-run.service';
 import { SeedService } from './seed.service';
-import { PolicyGateService } from './policy-gate.service';
 import { ScenarioHarnessService } from './scenario-harness.service';
 import { ActionFeedbackService } from './action-feedback.service';
 
@@ -54,7 +52,6 @@ import {
   EngineRunController,
   ActionsController,
   SeedController,
-  PolicyGateController,
   ScenarioHarnessController,
   ActionFeedbackController,
 } from './v28-engine.controller';
@@ -71,7 +68,6 @@ import {
     EngineRunController,
     ActionsController,
     SeedController,
-    PolicyGateController,
     ScenarioHarnessController,
     ActionFeedbackController,
   ],
@@ -88,7 +84,6 @@ import {
     ActionHandlerService,
     EngineRunService,
     SeedService,
-    PolicyGateService,
     ScenarioHarnessService,
     ActionFeedbackService,
   ],
@@ -104,7 +99,6 @@ import {
     ActionHandlerService,
     EngineRunService,
     SeedService,
-    PolicyGateService,
     ScenarioHarnessService,
     ActionFeedbackService,
   ],

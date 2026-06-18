@@ -597,48 +597,6 @@ export const v28Api = {
       results: Array<{ success: boolean; actionId: string; actionType: string; error?: string }>;
     }>('/icrabot/v28/outbox/dispatch-batch', { actionIds }),
 
-  // ==================== v28_ops_bundle: POLICY GATE ====================
-
-  // Policy Rules
-  getPolicyRules: () =>
-    apiClient.get<{ rules: PolicyRule[] }>('/icrabot/v28/policy/rules'),
-
-  evaluatePolicy: (caseId: string, actionType: string, payload: Record<string, any>) =>
-    apiClient.post<PolicyEvalResult>('/icrabot/v28/policy/evaluate', { caseId, actionType, payload }),
-
-  addPolicyRule: (rule: {
-    name: string;
-    priority: number;
-    actionType?: string;
-    expr: string;
-    decision: 'ALLOW' | 'DENY' | 'MANUAL';
-    manualActionType?: string;
-    manualPayload?: Record<string, any>;
-    note?: string;
-  }) =>
-    apiClient.post<PolicyRule>('/icrabot/v28/policy/rules', rule),
-
-  disablePolicyRule: (id: string) =>
-    apiClient.post<{ ok: boolean; id: string; disabled: boolean }>(`/icrabot/v28/policy/rules/${id}/disable`),
-
-  enablePolicyRule: (id: string) =>
-    apiClient.post<{ ok: boolean; id: string; enabled: boolean }>(`/icrabot/v28/policy/rules/${id}/enable`),
-
-  deletePolicyRule: (id: string) =>
-    apiClient.delete<{ ok: boolean; id: string; deleted: boolean }>(`/icrabot/v28/policy/rules/${id}`),
-
-  reloadPolicyRules: () =>
-    apiClient.post<{ ok: boolean; count: number }>('/icrabot/v28/policy/reload'),
-
-  seedDefaultPolicyRules: () =>
-    apiClient.post<{ created: number; updated: number }>('/icrabot/v28/policy/seed'),
-
-  getRiskBand: (score: number) =>
-    apiClient.get<{ score: number; band: 'LOW' | 'MED' | 'HIGH' }>(`/icrabot/v28/policy/risk-band/${score}`),
-
-  isQuietHours: () =>
-    apiClient.get<{ isQuietHours: boolean }>('/icrabot/v28/policy/quiet-hours'),
-
   // ==================== v28_ops_bundle: SCENARIO HARNESS ====================
 
   // Scenarios
@@ -694,31 +652,6 @@ export interface ActionFeedback {
 }
 
 // ==================== v28_ops_bundle TYPES ====================
-
-export type PolicyDecision = 'ALLOW' | 'DENY' | 'MANUAL';
-
-export interface PolicyRule {
-  id: string;
-  name: string;
-  priority: number;
-  actionType: string | null;
-  expr: string;
-  decision: PolicyDecision;
-  manualActionType?: string;
-  manualPayload?: Record<string, any>;
-  note?: string;
-  isActive: boolean;
-}
-
-export interface PolicyEvalResult {
-  decision: PolicyDecision;
-  matchedRule: PolicyRule | null;
-  reason: string;
-  manualAction?: {
-    actionType: string;
-    payload: Record<string, any>;
-  };
-}
 
 export interface ScenarioResult {
   scenarioName: string;
