@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest';
 import {
   instrumentsToDues,
   instrumentToCaseInstrumentPayload,
+  selectedInstrumentsToPayload,
   INSTRUMENT_TYPE_LABELS,
   Instrument,
 } from '../components/debtor/ocr-instrument';
@@ -107,5 +108,36 @@ describe('PR-N4a instrumentToCaseInstrumentPayload — Instrument → CaseInstru
     expect(p.dueDate).toBeUndefined();
     expect(p.bankName).toBeUndefined();
     expect('payeeName' in p).toBe(false);
+  });
+});
+
+describe('PR-N4b selectedInstrumentsToPayload — seçili → payload[] (REPLACE caller)', () => {
+  const full = (over: Partial<Instrument> = {}) =>
+    inst({ documentNo: 'CK-1', amount: 1000, currency: 'TRY', issueDate: '2026-01-10', ...over });
+
+  it('tam enstrümanlar → payload[], sıra korunur', () => {
+    const out = selectedInstrumentsToPayload([
+      full({ documentNo: 'CK-1', amount: 1000 }),
+      full({ type: 'SENET', documentNo: 'SN-2', amount: 2000 }),
+    ]);
+    expect(out).toHaveLength(2);
+    expect(out.map((p) => p.documentNo)).toEqual(['CK-1', 'SN-2']);
+    expect(out.map((p) => p.type)).toEqual(['CEK', 'SENET']);
+    expect(out[0].amount).toBe(1000);
+  });
+
+  it('eksik (no/keşide/tutar yok) ELENİR (savunmacı; N4a gating zaten engeller)', () => {
+    const out = selectedInstrumentsToPayload([
+      full({ documentNo: 'CK-OK', amount: 500 }), // tam
+      inst({ amount: 1000 }), // documentNo + issueDate yok → elenir
+      full({ documentNo: '', amount: 100 }), // documentNo boş → elenir
+      full({ issueDate: undefined, amount: 100 }), // keşide yok → elenir
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].documentNo).toBe('CK-OK');
+  });
+
+  it('boş girdi → []', () => {
+    expect(selectedInstrumentsToPayload([])).toEqual([]);
   });
 });

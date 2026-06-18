@@ -177,3 +177,12 @@ export function instrumentToCaseInstrumentPayload(i: Instrument): CaseInstrument
 export function hasIncompleteSelected(selected: Instrument[]): boolean {
   return selected.some((i) => !isInstrumentComplete(i));
 }
+
+/**
+ * PR-N4b: seçili enstrümanları createCase payload `instruments[]` şekline çevirir (REPLACE caller'da).
+ * Savunmacı: eksik (isInstrumentComplete=false) olanları ELER (N4a accept-gating zaten engeller).
+ * Sıra korunur. instrumentsToDues YERİNE bu kullanılır → çek dues'a PRINCIPAL KONMAZ (K1).
+ */
+export function selectedInstrumentsToPayload(instruments: Instrument[]): CaseInstrumentPayload[] {
+  return instruments.filter(isInstrumentComplete).map(instrumentToCaseInstrumentPayload);
+}
