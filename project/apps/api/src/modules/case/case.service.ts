@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger, Inject, forwardRef } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
-import { CreateCaseDto, UpdateCaseDto, CaseSubCategory, Currency, DueDto, CaseInstrumentInputDto } from "./dto/case.dto";
+import { CreateCaseDto, UpdateCaseDto, CaseSubCategory, Currency, DueDto, CaseInstrumentInputDto, CaseStaffInputDto } from "./dto/case.dto";
 import { Prisma, LegalCaseStatus } from "@prisma/client";
 import { mapDueTypeToClaimItemType, buildClaimItemData } from "./due-to-claim-item.mapper";
 import {
@@ -802,6 +802,87 @@ export class CaseService {
     return totalPrincipal;
   }
 
+  /**
+   * Dosyaya personel ata — createCase tx step-8 (ASSIGN-2a / PR-ASSIGN-2a).
+   * - dtoStaff verilmişse (undefined DEĞİL) SEÇİM KANONİK OTORİTEDİR: yalnız bu liste yazılır;
+   *   isDefaultForNewCases ile MERGE YOK (kullanıcı default'u çıkardıysa eklenmez). Boş liste →
+   *   hiç personel (deselection'a saygı). staffMemberId dedupe edilir; tenant ownership doğrulanır
+   *   (cross-tenant/nonexistent → BadRequestException, hiç create yapılmaz).
+   * - dtoStaff undefined ise mevcut davranış AYNEN korunur: isDefaultForNewCases personelleri eklenir.
+   * Saf: yalnız verilen tx üzerinde çalışır → izole test edilebilir (case-create-instruments deseni).
+   * @remarks Çağrıldığı yer: CaseService.create() → POST /cases (createCase tx step-8).
+   */
+  private async assignCaseStaff(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    caseId: string,
+    dtoStaff?: CaseStaffInputDto[],
+  ): Promise<{ selectionProvided: boolean; assigned: { staffMemberId: string; roleOnCase: string }[] }> {
+    const assigned: { staffMemberId: string; roleOnCase: string }[] = [];
+
+    if (dtoStaff !== undefined) {
+      // Seçim otoritesi: yalnız gönderilen personel (dedupe).
+      const requestedIds = Array.from(new Set(dtoStaff.map((s) => s.staffMemberId).filter(Boolean)));
+      if (requestedIds.length > 0) {
+        // Tenant ownership: tüm id'ler bu tenant'a ait olmalı.
+        const owned = await tx.staffMember.findMany({
+          where: { tenantId, id: { in: requestedIds } },
+          select: { id: true, staffType: true },
+        });
+        if (owned.length !== requestedIds.length) {
+          const ownedIds = new Set(owned.map((s) => s.id));
+          const invalid = requestedIds.filter((id) => !ownedIds.has(id));
+          throw new BadRequestException(
+            `Geçersiz veya başka tenant'a ait personel: ${invalid.join(', ')}`,
+          );
+        }
+        const roleByDto = new Map(dtoStaff.map((s) => [s.staffMemberId, s.roleOnCase]));
+        const typeById = new Map(owned.map((s) => [s.id, s.staffType]));
+        for (const id of requestedIds) {
+          const roleOnCase = roleByDto.get(id) || typeById.get(id) || 'PERSONEL';
+          await tx.caseStaff.create({ data: { caseId, staffMemberId: id, roleOnCase } });
+          assigned.push({ staffMemberId: id, roleOnCase });
+        }
+      }
+      return { selectionProvided: true, assigned };
+    }
+
+    // dtoStaff undefined → eski davranış AYNEN: isDefaultForNewCases personelleri ekle.
+    const defaultStaffMembers = await tx.staffMember.findMany({
+      where: { tenantId, isDefaultForNewCases: true, isActive: true },
+      select: { id: true, staffType: true },
+    });
+    for (const staff of defaultStaffMembers) {
+      await tx.caseStaff.create({
+        data: { caseId, staffMemberId: staff.id, roleOnCase: staff.staffType || 'PERSONEL' },
+      });
+      assigned.push({ staffMemberId: staff.id, roleOnCase: staff.staffType || 'PERSONEL' });
+    }
+    return { selectionProvided: false, assigned };
+  }
+
+  /**
+   * Personel atamasını audit'le (ASSIGN-0: "dosyaya personel ekleme"). Yalnız seçim yoluyla
+   * (dtoStaff verildiğinde) ve ≥1 personel atandığında anlamlı; default yol mevcut davranışı
+   * AYNEN korur (ek audit üretmez). Tx DIŞINDA (commit sonrası) çağrılmalı.
+   * @remarks Çağrıldığı yer: CaseService.create() → POST /cases (tx commit sonrası).
+   */
+  private async auditStaffAssignment(
+    tenantId: string,
+    caseId: string,
+    assigned: { staffMemberId: string; roleOnCase: string }[],
+  ): Promise<void> {
+    if (assigned.length === 0) return;
+    await this.auditService.log({
+      tenantId,
+      action: 'CREATE',
+      entityType: 'CASE_STAFF',
+      entityId: caseId,
+      newValues: { staff: assigned },
+      description: `Dosyaya ${assigned.length} personel atandı`,
+    });
+  }
+
   async create(tenantId: string, dto: CreateCaseDto, userId?: string) {
     // INTEREST_POLICY_ASSIGNED (HR-26: HUMAN actor zorunlu) için userId şart.
     // "Bu faiz politikasını kim atadı?" sorusunun cevabı olmadan event hukuken zayıf.
@@ -1116,25 +1197,9 @@ export class CaseService {
           });
         }
 
-        // 8. Varsayılan personeli ekle (isDefaultForNewCases = true)
-        const defaultStaffMembers = await tx.staffMember.findMany({
-          where: {
-            tenantId,
-            isDefaultForNewCases: true,
-            isActive: true,
-          },
-          select: { id: true, staffType: true },
-        });
-
-        for (const staff of defaultStaffMembers) {
-          await tx.caseStaff.create({
-            data: {
-              caseId: newCase.id,
-              staffMemberId: staff.id,
-              roleOnCase: staff.staffType || 'PERSONEL',
-            },
-          });
-        }
+        // 8. Personel ata (ASSIGN-2a). dto.staff verilmişse SEÇİM kanonik otorite (default ile
+        //    MERGE YOK); verilmemişse mevcut isDefaultForNewCases davranışı AYNEN. Detay: assignCaseStaff.
+        const staffResult = await this.assignCaseStaff(tx, tenantId, newCase.id, dto.staff);
 
         // 8.5. CASE_OPENED domain event (HR-39: same-tx append)
         await this.domainEventIngestService.appendInTransaction(tx, {
@@ -1204,8 +1269,14 @@ export class CaseService {
           },
         });
 
-        return { case: createdCase, clientIds, lawyerIds: dto.lawyers?.map(l => l.id).filter(Boolean) || [] };
+        return { case: createdCase, clientIds, lawyerIds: dto.lawyers?.map(l => l.id).filter(Boolean) || [], staffResult };
       });
+
+      // ASSIGN-2a: seçimle atanan personel için audit (yalnız dto.staff verildiğinde; default
+      // yol mevcut davranışı AYNEN korur → ek audit üretmez). Tx commit sonrası.
+      if (result.staffResult.selectionProvided) {
+        await this.auditStaffAssignment(tenantId, result.case?.id ?? '', result.staffResult.assigned);
+      }
 
       // 7. Vekalet kontrolü (transaction dışında)
       const poaWarnings: string[] = [];
