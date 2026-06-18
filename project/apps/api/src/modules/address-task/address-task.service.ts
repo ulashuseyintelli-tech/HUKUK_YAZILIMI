@@ -70,6 +70,20 @@ export class AddressTaskService {
   async createTask(params: CreateTaskParams): Promise<AddressTask | null> {
     const { tenantId, caseId, debtorId, taskType, scopeKey, title, description, assignedToId, dueAt } = params;
 
+    // Cross-tenant input guard (ASSIGN-1 blocker #1): caseId ve debtorId DAİMA bu tenant'a
+    // ait olmalı. Controller body'sinden keyfi caseId/debtorId gelebilir; auth-tenant'a ait
+    // değilse görev oluşturulmaz (cross-tenant veri bağlama engeli). İç çağrılar (scheduler/
+    // workflow) tutarlı veri geçirdiği için bu kontrolü sorunsuz geçer.
+    const [caseOwned, debtorOwned] = await Promise.all([
+      this.prisma.case.findFirst({ where: { id: caseId, tenantId }, select: { id: true } }),
+      this.prisma.debtor.findFirst({ where: { id: debtorId, tenantId }, select: { id: true } }),
+    ]);
+    if (!caseOwned || !debtorOwned) {
+      throw new NotFoundException(
+        `Dosya veya borçlu bu tenant'ta bulunamadı (case=${caseId}, debtor=${debtorId})`,
+      );
+    }
+
     // Dedupe key kontrolü (tenant-scoped — ASSIGN-1)
     const existingTask = await this.prisma.addressTask.findFirst({
       where: {
@@ -459,28 +473,9 @@ export class AddressTaskService {
     caseId: string,
     sendNotification: boolean = true,
   ): Promise<{ tasksCreated: number; debtorsProcessed: number; notificationSent: boolean; skippedDuplicate?: boolean }> {
-    // Son 5 dakika içinde aynı dosya için e-posta gönderilmiş mi kontrol et
-    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
-    const recentNotification = await this.prisma.addressAuditLog.findFirst({
-      where: {
-        caseId,
-        action: 'CLIENT_NOTIFICATION_SENT',
-        createdAt: { gte: fiveMinutesAgo },
-      },
-      orderBy: { createdAt: 'desc' },
-    });
-
-    if (recentNotification) {
-      this.logger.warn(`Son 5 dakika içinde bu dosya için e-posta gönderilmiş, atlanıyor: ${caseId}`);
-      return {
-        tasksCreated: 0,
-        debtorsProcessed: 0,
-        notificationSent: false,
-        skippedDuplicate: true,
-      };
-    }
-
-    // Dosya bilgilerini al (müvekkil dahil) — tenant-scoped (ASSIGN-1: cross-tenant tetikleme engeli)
+    // 1) Dosya bu tenant'a ait mi? (ASSIGN-1 blocker #2: cross-tenant bilgi sızıntısı engeli —
+    //    audit/varlık kontrolünden ÖNCE. Yabancı tenant'ın caseId'si için recent-audit oracle'ı
+    //    çalışmadan 404 döner.)
     const caseData = await this.prisma.case.findFirst({
       where: { id: caseId, tenantId },
       include: {
@@ -499,12 +494,34 @@ export class AddressTaskService {
     });
 
     if (!caseData) {
-      throw new Error(`Case not found: ${caseId}`);
+      throw new NotFoundException(`Dosya bu tenant'ta bulunamadı: ${caseId}`);
     }
 
-    // Dosyadaki borçluları al
+    // 2) Son 5 dakika içinde aynı dosya için e-posta gönderilmiş mi (tenant-scoped — ASSIGN-1 blocker #2)
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000);
+    const recentNotification = await this.prisma.addressAuditLog.findFirst({
+      where: {
+        tenantId,
+        caseId,
+        action: 'CLIENT_NOTIFICATION_SENT',
+        createdAt: { gte: fiveMinutesAgo },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (recentNotification) {
+      this.logger.warn(`Son 5 dakika içinde bu dosya için e-posta gönderilmiş, atlanıyor: ${caseId}`);
+      return {
+        tasksCreated: 0,
+        debtorsProcessed: 0,
+        notificationSent: false,
+        skippedDuplicate: true,
+      };
+    }
+
+    // Dosyadaki borçluları al (tenant-scoped via case relation — ASSIGN-1 blocker #3)
     const caseDebtors = await this.prisma.caseDebtor.findMany({
-      where: { caseId },
+      where: { caseId, case: { tenantId } },
       include: {
         debtor: {
           select: {
@@ -522,8 +539,8 @@ export class AddressTaskService {
     const skippedDebtorNames: string[] = [];
 
     for (const cd of caseDebtors) {
-      // Bypass kontrolü - müvekkil teyitli adres varsa görev oluşturma
-      const bypassCheck = await this.shouldBypassAddressRequest(cd.debtorId);
+      // Bypass kontrolü - müvekkil teyitli adres varsa görev oluşturma (tenant-scoped — ASSIGN-1 blocker #3)
+      const bypassCheck = await this.shouldBypassAddressRequest(cd.debtorId, tenantId);
       if (bypassCheck.bypass) {
         this.logger.log(`Skipping address request for ${cd.debtor.name}: ${bypassCheck.reason}`);
         skippedDebtorNames.push(cd.debtor.name);
@@ -774,9 +791,10 @@ export class AddressTaskService {
    * 1. Debtor'un addressIntakeMode = CLIENT_CONFIRMED
    * 2. VE yararlı adresi var
    */
-  async shouldBypassAddressRequest(debtorId: string): Promise<{ bypass: boolean; reason?: string }> {
-    const debtor = await this.prisma.debtor.findUnique({
-      where: { id: debtorId },
+  async shouldBypassAddressRequest(debtorId: string, tenantId?: string): Promise<{ bypass: boolean; reason?: string }> {
+    // Debtor tenant-scoped (ASSIGN-1 blocker #3): tenantId verilirse yabancı tenant borçlusu okunmaz.
+    const debtor = await this.prisma.debtor.findFirst({
+      where: { id: debtorId, ...(tenantId ? { tenantId } : {}) },
       select: { addressIntakeMode: true, name: true },
     });
 
@@ -786,7 +804,7 @@ export class AddressTaskService {
 
     // CLIENT_CONFIRMED ise ve yararlı adres varsa bypass
     if (debtor.addressIntakeMode === 'CLIENT_CONFIRMED') {
-      const hasUseful = await this.hasUsefulAddresses(debtorId);
+      const hasUseful = await this.hasUsefulAddresses(debtorId, tenantId);
       if (hasUseful) {
         return { 
           bypass: true, 
@@ -907,9 +925,10 @@ export class AddressTaskService {
       },
     });
 
-    // Aynı borçlu için açık hatırlatma görevlerini iptal et
+    // Aynı borçlu için açık hatırlatma görevlerini iptal et (tenant-scoped — ASSIGN-1 blocker #4)
     await this.prisma.addressTask.updateMany({
       where: {
+        tenantId: task.tenantId,
         caseId: task.caseId,
         debtorId: task.debtorId,
         taskType: 'CLIENT_REMIND_DEBTOR_ADDRESSES',
