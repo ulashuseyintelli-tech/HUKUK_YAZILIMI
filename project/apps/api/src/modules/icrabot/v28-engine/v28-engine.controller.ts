@@ -26,7 +26,6 @@ import { RuleLoaderService } from './rule-loader.service';
 import { ActionHandlerService } from './action-handler.service';
 import { ComputeRegistryService } from './compute-registry.service';
 import { EngineRunService } from './engine-run.service';
-import { PolicyGateService } from './policy-gate.service';
 import { ScenarioHarnessService, BUILT_IN_SCENARIOS } from './scenario-harness.service';
 import { ActionFeedbackService } from './action-feedback.service';
 
@@ -588,92 +587,6 @@ export class SeedController {
   ) {
     const created = await this.seed.seedUyapEvents(caseId, count ? parseInt(count) : 5);
     return { created };
-  }
-}
-
-// ============ Policy Gate Controller (v28_ops_bundle) ============
-@Controller('icrabot/v28/policy')
-@UseGuards(JwtAuthGuard)
-export class PolicyGateController {
-  constructor(private readonly policyGate: PolicyGateService) {}
-
-  @Get('rules')
-  async getRules() {
-    return { rules: this.policyGate.getRules() };
-  }
-
-  @Post('evaluate')
-  @HttpCode(HttpStatus.OK)
-  async evaluate(
-    @Body() body: { caseId: string; actionType: string; payload: Record<string, any> },
-  ) {
-    return this.policyGate.evaluateAction(body.caseId, body.actionType, body.payload);
-  }
-
-  @Post('rules')
-  @HttpCode(HttpStatus.CREATED)
-  async addRule(
-    @Body() body: {
-      name: string;
-      priority: number;
-      actionType?: string;
-      expr: string;
-      decision: 'ALLOW' | 'DENY' | 'MANUAL';
-      manualActionType?: string;
-      manualPayload?: Record<string, any>;
-      note?: string;
-    },
-  ) {
-    return this.policyGate.addRule({
-      ...body,
-      actionType: body.actionType || null,
-      isActive: true,
-    });
-  }
-
-  @Post('rules/:id/disable')
-  @HttpCode(HttpStatus.OK)
-  async disableRule(@Param('id') id: string) {
-    await this.policyGate.disableRule(id);
-    return { ok: true, id, disabled: true };
-  }
-
-  @Post('rules/:id/enable')
-  @HttpCode(HttpStatus.OK)
-  async enableRule(@Param('id') id: string) {
-    await this.policyGate.enableRule(id);
-    return { ok: true, id, enabled: true };
-  }
-
-  @Delete('rules/:id')
-  @HttpCode(HttpStatus.OK)
-  async deleteRule(@Param('id') id: string) {
-    await this.policyGate.deleteRule(id);
-    return { ok: true, id, deleted: true };
-  }
-
-  @Post('reload')
-  @HttpCode(HttpStatus.OK)
-  async reloadRules() {
-    const count = await this.policyGate.reloadRules();
-    return { ok: true, count };
-  }
-
-  @Post('seed')
-  @HttpCode(HttpStatus.OK)
-  async seedDefaultRules() {
-    return this.policyGate.seedDefaultRules();
-  }
-
-  @Get('risk-band/:score')
-  async getRiskBand(@Param('score') score: string) {
-    const band = this.policyGate.getRiskBand(parseInt(score));
-    return { score: parseInt(score), band };
-  }
-
-  @Get('quiet-hours')
-  async isQuietHours() {
-    return { isQuietHours: this.policyGate.isQuietHours() };
   }
 }
 
