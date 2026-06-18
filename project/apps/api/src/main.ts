@@ -1,12 +1,10 @@
 import { NestFactory } from "@nestjs/core";
 import { ValidationPipe } from "@nestjs/common";
 import { AppModule } from "./app.module";
-import { initializeDatabase } from "./prisma/db-init";
 
 async function bootstrap() {
-  // Veritabanı kontrolü ve otomatik kurulum
-  await initializeDatabase();
-
+  // BOOT SAFLIĞI: API boot'u DB'ye YAZMAZ (seed/db push yok). Veri kurulumu artık
+  // explicit komutla: `pnpm db:seed` (prisma/seed.ts) veya `pnpm db:bootstrap` (push+seed).
   const app = await NestFactory.create(AppModule);
 
   // PF-005: Reverse proxy arkasında gerçek client IP'si için
