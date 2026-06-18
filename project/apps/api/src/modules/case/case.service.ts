@@ -2190,6 +2190,71 @@ export class CaseService {
     return { success: true };
   }
 
+  /**
+   * Dosyadaki personelin bu-dosyaya özel ayarlarını güncelle (ASSIGN-3a).
+   * Yalnız CaseStaff modeli alanları whitelist'lenir: roleOnCase, canEdit, canApprove, canView,
+   * receiveNotifications, notes. Bilinmeyen alanlar (canSign, permissions — lawyer drawer'ından
+   * sızmış kavramlar, PR-ASSIGN-3b'de frontend'den kaldırılacak) SESSİZCE yok sayılır.
+   * Tenant guard: case bu tenant'a + caseStaff bu dosyaya ait. Audit: UPDATE / CASE_STAFF.
+   * @remarks Çağrıldığı yer: CaseController.updateCaseStaff() → PATCH /cases/:id/staff/:caseStaffId.
+   */
+  async updateCaseStaff(
+    tenantId: string,
+    caseId: string,
+    caseStaffId: string,
+    data: {
+      roleOnCase?: string;
+      canEdit?: boolean;
+      canApprove?: boolean;
+      canView?: boolean;
+      receiveNotifications?: boolean;
+      notes?: string;
+    },
+  ) {
+    // Dosya bu tenant'a ait mi?
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+    });
+    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+
+    // CaseStaff bu dosyaya ait mi? (cross-tenant/yanlış-dosya → 404)
+    const caseStaff = await this.prisma.caseStaff.findFirst({
+      where: { id: caseStaffId, caseId },
+    });
+    if (!caseStaff) throw new NotFoundException("Personel ataması bulunamadı");
+
+    // Service-whitelist: yalnız CaseStaff alanları (verilenler). canSign/permissions vb. yok sayılır.
+    const updateData: Prisma.CaseStaffUpdateInput = {};
+    if (data.roleOnCase !== undefined) updateData.roleOnCase = data.roleOnCase;
+    if (data.canEdit !== undefined) updateData.canEdit = data.canEdit;
+    if (data.canApprove !== undefined) updateData.canApprove = data.canApprove;
+    if (data.canView !== undefined) updateData.canView = data.canView;
+    if (data.receiveNotifications !== undefined) updateData.receiveNotifications = data.receiveNotifications;
+    if (data.notes !== undefined) updateData.notes = data.notes;
+
+    const updated = await this.prisma.caseStaff.update({
+      where: { id: caseStaffId },
+      data: updateData,
+      include: {
+        staffMember: {
+          select: { id: true, firstName: true, lastName: true, staffType: true },
+        },
+      },
+    });
+
+    // Audit (ASSIGN-3a): personel rol/yetki güncellemesi (add/remove audit AYRI iş).
+    await this.auditService.log({
+      tenantId,
+      action: "UPDATE",
+      entityType: "CASE_STAFF",
+      entityId: caseStaffId,
+      newValues: updateData,
+      description: `Dosya personeli güncellendi: ${updated.staffMember.firstName} ${updated.staffMember.lastName}`,
+    });
+
+    return updated;
+  }
+
   // ==================== ALACAK KALEMLERİ (DUES) ====================
 
   /**

@@ -338,6 +338,32 @@ export class CaseController {
     return this.caseService.removeCaseStaff(tenantId, id, caseStaffId);
   }
 
+  /**
+   * Dosyadaki personelin bu-dosyaya özel rol/yetki/bildirim ayarlarını güncelle (ASSIGN-3a).
+   * PATCH /cases/:id/staff/:caseStaffId
+   * @remarks Çağıran: apps/web/.../cases/[id]/page.tsx (personel drawer "Bu dosya için kaydet").
+   *   Body INLINE tip (class-DTO DEĞİL): global ValidationPipe forbidNonWhitelisted=true olduğu için
+   *   class-DTO canSign/permissions'ı 400'lerdi → frontend kırılırdı. Inline tip + service-whitelist:
+   *   yalnız CaseStaff alanları güncellenir; canSign/permissions (lawyer-kopyası, PR-ASSIGN-3b'de
+   *   kaldırılacak) SESSİZCE yok sayılır → 3a tek başına 404'ü çözer, geçişte kırmaz.
+   */
+  @Patch(":id/staff/:caseStaffId")
+  async updateCaseStaff(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Param("caseStaffId") caseStaffId: string,
+    @Body() body: {
+      roleOnCase?: string;
+      canEdit?: boolean;
+      canApprove?: boolean;
+      canView?: boolean;
+      receiveNotifications?: boolean;
+      notes?: string;
+    }
+  ) {
+    return this.caseService.updateCaseStaff(tenantId, id, caseStaffId, body);
+  }
+
   // ==================== ALACAK KALEMLERİ (DUES) ====================
 
   /**
