@@ -20,6 +20,7 @@ import {
   acceptButtonLabel,
   isAcceptDisabled,
   shouldShowInstrumentTable,
+  buildInitialReviewRows,
 } from "./ocr-instrument";
 import { InstrumentReviewTable } from "./InstrumentReviewTable";
 
@@ -103,10 +104,11 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
   const [reviewRows, setReviewRows] = useState<ReviewRow[]>([]);
   const [wizardError, setWizardError] = useState<string | null>(null);
 
-  // PR-3b: çoklu enstrüman (>1) varsa review satırlarını hazırla (hepsi seçili). ≤1 → boş.
+  // PR-3b/N1: çoklu enstrüman (>1) varsa review satırlarını hazırla
+  // (needsReview=true → default SEÇİLİ DEĞİL). ≤1 → boş.
   useEffect(() => {
     if (shouldShowInstrumentTable(wizardResult?.instruments)) {
-      setReviewRows(wizardResult!.instruments!.map((i) => ({ selected: true, instrument: { ...i } })));
+      setReviewRows(buildInitialReviewRows(wizardResult!.instruments!));
     } else {
       setReviewRows([]);
     }

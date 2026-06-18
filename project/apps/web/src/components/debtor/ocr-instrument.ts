@@ -112,3 +112,12 @@ export function isAcceptDisabled(hasInstrumentTable: boolean, selectedCount: num
 export function shouldShowInstrumentTable(instruments: Instrument[] | undefined): boolean {
   return !!instruments && instruments.length > 1;
 }
+
+/**
+ * PR-N1 — Review tablosunun ilk satırları: needsReview=true → default SEÇİLİ DEĞİL
+ * (sistem "emin değilim" diyorsa kalemi otomatik takibe sokmaz); aksi seçili.
+ * Enstrümanın KOPYASINI taşır (tabloda düzenlenir; orijinal mutasyona uğramaz).
+ */
+export function buildInitialReviewRows(instruments: Instrument[]): ReviewRow[] {
+  return instruments.map((i) => ({ selected: i.needsReview !== true, instrument: { ...i } }));
+}
