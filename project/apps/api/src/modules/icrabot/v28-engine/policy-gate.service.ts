@@ -82,9 +82,19 @@ export class PolicyGateService implements OnModuleInit {
     private readonly factStore: FactStoreService,
   ) {}
 
+  /**
+   * Nest lifecycle hook — uygulama boot'unda çalışır.
+   *
+   * Çağrıldığı yerler:
+   * - Nest DI lifecycle → boot (V28EngineModule, app.module'e bağlı)
+   *
+   * BOOT SAFLIĞI: Boot HİÇBİR koşulda DB'ye policy-rule seed'i YAZMAZ. loadRules(), DB
+   * delegate'i (IcrabotPolicyRule) yoksa in-memory getDefaultRules()'a düşer ve bu kurallar
+   * çalışma anında otoritedir. (Eski boot-seed çağrısı + yanıltıcı "Policy rules seeded:
+   * created=5" log'u kaldırıldı; seed yalnızca explicit POST /icrabot/v28/policy/seed ile.)
+   */
   async onModuleInit() {
     await this.loadRules();
-    await this.seedDefaultRules();
   }
 
   /**
@@ -184,21 +194,40 @@ export class PolicyGateService implements OnModuleInit {
   }
 
   /**
-   * Varsayılan kuralları DB'ye seed eder
+   * Varsayılan kuralları DB'ye seed eder — YALNIZCA IcrabotPolicyRule Prisma modeli mevcutsa.
+   *
+   * Çağrıldığı yerler:
+   * - PolicyGateController.seedDefaultRules() → POST /api/icrabot/v28/policy/seed (explicit admin/dev)
+   *   (onModuleInit ARTIK çağırmaz — boot saflığı.)
+   *
+   * NOT: `IcrabotPolicyRule` modeli Prisma şemasında YOK (Django v28_ops_bundle
+   * seed_policy_rules.py'den yarım port). Model yokken `prisma.icrabotPolicyRule` undefined olur.
+   * Eski kod optional-chaining ile sessizce no-op yapıp sayaçları artırarak yanıltıcı
+   * "created=5" telemetrisi üretiyordu. Artık delegate yoksa DÜRÜSTçe {created:0,updated:0} döner;
+   * model eklenirse gerçek seed çalışır (future-safe).
    */
   async seedDefaultRules(): Promise<{ created: number; updated: number }> {
+    const delegate = (this.prisma as any).icrabotPolicyRule;
+    if (!delegate) {
+      this.logger.warn(
+        'Policy rule seed atlandı: IcrabotPolicyRule modeli Prisma şemasında yok; ' +
+          'in-memory varsayılan kurallar otoritedir.',
+      );
+      return { created: 0, updated: 0 };
+    }
+
     const defaultRules = this.getDefaultRules();
     let created = 0;
     let updated = 0;
 
     try {
       for (const rule of defaultRules) {
-        const existing = await (this.prisma as any).icrabotPolicyRule?.findFirst({
+        const existing = await delegate.findFirst({
           where: { name: rule.name },
         });
 
         if (!existing) {
-          await (this.prisma as any).icrabotPolicyRule?.create({
+          await delegate.create({
             data: {
               name: rule.name,
               priority: rule.priority,
@@ -213,7 +242,7 @@ export class PolicyGateService implements OnModuleInit {
           });
           created++;
         } else {
-          await (this.prisma as any).icrabotPolicyRule?.update({
+          await delegate.update({
             where: { id: existing.id },
             data: {
               priority: rule.priority,
