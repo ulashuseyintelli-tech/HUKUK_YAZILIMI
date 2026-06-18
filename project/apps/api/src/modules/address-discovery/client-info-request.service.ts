@@ -21,6 +21,11 @@ export class ClientInfoRequestService {
     private emailProvider: EmailProviderService,
   ) {}
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AddressDiscoveryController.createClientInfoRequest() → POST /address-discovery/client-info-request (Manuel müvekkil bilgi talebi)
+  /// - ClientInfoRequestService.sendAutoRequestOnCaseCreate() → Takip oluşturma sonrası otomatik bilgi talebi
+  /// </remarks>
   /**
    * Müvekkil bilgi talebi oluştur
    */
@@ -64,6 +69,9 @@ export class ClientInfoRequestService {
     let debtor = null;
     if (dto.debtorId) {
       debtor = caseData.debtors.find(d => d.debtor.id === dto.debtorId)?.debtor;
+      if (!debtor) {
+        throw new NotFoundException('Borçlu bu dosyaya bağlı değil');
+      }
     } else if (caseData.debtors.length > 0) {
       debtor = caseData.debtors[0].debtor;
     }
