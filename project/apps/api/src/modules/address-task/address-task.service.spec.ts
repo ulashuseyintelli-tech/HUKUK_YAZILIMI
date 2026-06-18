@@ -1,4 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { NotFoundException } from '@nestjs/common';
 import * as fc from 'fast-check';
 import { AddressTaskService } from './address-task.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -28,12 +29,14 @@ const mockPrismaService = {
   },
   case: {
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
   },
   caseDebtor: {
     findMany: jest.fn(),
   },
   debtor: {
     findUnique: jest.fn(),
+    findFirst: jest.fn(),
   },
   debtorAddress: {
     count: jest.fn(),
@@ -77,6 +80,9 @@ describe('AddressTaskService', () => {
         taskType: 'CLIENT_REQUEST_DEBTOR_ADDRESSES' as AddressTaskType,
       };
 
+      // ASSIGN-1: createTask artık caseId/debtorId tenant-ownership doğruluyor
+      mockPrismaService.case.findFirst.mockResolvedValue({ id: 'case-1' });
+      mockPrismaService.debtor.findFirst.mockResolvedValue({ id: 'debtor-1' });
       mockPrismaService.addressTask.findFirst.mockResolvedValue(null);
       mockPrismaService.addressTask.create.mockResolvedValue({
         id: 'task-1',
@@ -101,6 +107,9 @@ describe('AddressTaskService', () => {
         taskType: 'CLIENT_REQUEST_DEBTOR_ADDRESSES' as AddressTaskType,
       };
 
+      // ASSIGN-1: ownership guard önce çalışır (caseId/debtorId tenant'a ait olmalı)
+      mockPrismaService.case.findFirst.mockResolvedValue({ id: 'case-1' });
+      mockPrismaService.debtor.findFirst.mockResolvedValue({ id: 'debtor-1' });
       mockPrismaService.addressTask.findFirst.mockResolvedValue({
         id: 'existing-task',
         ...params,
@@ -188,6 +197,9 @@ describe('AddressTaskService', () => {
             ) as fc.Arbitrary<AddressTaskType>,
           }),
           async (params) => {
+            // ASSIGN-1: ownership guard her iki createTask çağrısında da geçer (persistent mock)
+            mockPrismaService.case.findFirst.mockResolvedValue({ id: params.caseId });
+            mockPrismaService.debtor.findFirst.mockResolvedValue({ id: params.debtorId });
             mockPrismaService.addressTask.findFirst.mockResolvedValueOnce(null);
             mockPrismaService.addressTask.create.mockResolvedValueOnce({ id: 'task-1', ...params, status: 'PENDING' });
             mockPrismaService.addressAuditLog.create.mockResolvedValue({});
@@ -260,7 +272,7 @@ describe('AddressTaskService', () => {
 
   describe('shouldBypassAddressRequest', () => {
     it('should bypass when CLIENT_CONFIRMED and has useful addresses', async () => {
-      mockPrismaService.debtor.findUnique.mockResolvedValue({
+      mockPrismaService.debtor.findFirst.mockResolvedValue({
         id: 'debtor-1',
         name: 'Test Debtor',
         addressIntakeMode: 'CLIENT_CONFIRMED',
@@ -273,7 +285,7 @@ describe('AddressTaskService', () => {
     });
 
     it('should not bypass when addressIntakeMode is UNKNOWN', async () => {
-      mockPrismaService.debtor.findUnique.mockResolvedValue({
+      mockPrismaService.debtor.findFirst.mockResolvedValue({
         id: 'debtor-1',
         name: 'Test Debtor',
         addressIntakeMode: 'UNKNOWN',
@@ -307,7 +319,8 @@ describe('AddressTaskService', () => {
 
   describe('confirmReceivedByOperator', () => {
     it('should complete task when operator confirms', async () => {
-      mockPrismaService.addressTask.findUnique.mockResolvedValue({
+      // ASSIGN-1: confirmReceivedByOperator artık findFirst (tenant-scoped) kullanır
+      mockPrismaService.addressTask.findFirst.mockResolvedValue({
         id: 'task-1',
         tenantId: 'tenant-1',
         caseId: 'case-1',
@@ -330,6 +343,8 @@ describe('AddressTaskService', () => {
 
   describe('triggerAddressWorkflowForCase', () => {
     it('should skip duplicate notifications within 5 minutes', async () => {
+      // ASSIGN-1: case-ownership kontrolü artık önce çalışır → truthy olmalı
+      mockPrismaService.case.findFirst.mockResolvedValue({ id: 'case-1', caseClients: [] });
       mockPrismaService.addressAuditLog.findFirst.mockResolvedValue({
         id: 'log-1',
         action: 'CLIENT_NOTIFICATION_SENT',
@@ -484,6 +499,203 @@ describe('AddressTaskService', () => {
       const result = await service.getClientContactChannels('non-existent');
 
       expect(result.preferredChannel).toBe('NONE');
+    });
+  });
+
+  // ============================================================================
+  // ASSIGN-1: TENANT ISOLATION
+  // ============================================================================
+
+  describe('ASSIGN-1: tenant isolation', () => {
+    it('getPendingTasksForCase scopes query by tenant when tenantId provided', async () => {
+      mockPrismaService.addressTask.findMany.mockResolvedValue([]);
+
+      await service.getPendingTasksForCase('case-1', 'tenant-1');
+
+      expect(mockPrismaService.addressTask.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ tenantId: 'tenant-1', caseId: 'case-1' }),
+        }),
+      );
+    });
+
+    it('completeTask rejects a task from another tenant (ownership guard → NotFound)', async () => {
+      mockPrismaService.addressTask.findFirst.mockResolvedValue(null); // sahiplik kontrolü başarısız
+
+      await expect(
+        service.completeTask('task-x', { resultType: 'POSITIVE' as AddressTaskResultType }, 'tenant-1'),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockPrismaService.addressTask.update).not.toHaveBeenCalled();
+    });
+
+    it('completeTask proceeds when the task belongs to the tenant', async () => {
+      mockPrismaService.addressTask.findFirst.mockResolvedValue({ id: 'task-1' }); // sahiplik OK
+      mockPrismaService.addressTask.update.mockResolvedValue({
+        id: 'task-1',
+        tenantId: 'tenant-1',
+        caseId: 'case-1',
+        debtorId: 'debtor-1',
+        status: 'DONE',
+        resultType: 'POSITIVE',
+      });
+      mockPrismaService.addressAuditLog.create.mockResolvedValue({});
+
+      const result = await service.completeTask(
+        'task-1',
+        { resultType: 'POSITIVE' as AddressTaskResultType },
+        'tenant-1',
+      );
+
+      expect(result.status).toBe('DONE');
+    });
+
+    it('autoCompleteOnAddressReceived scopes both lookups by tenant', async () => {
+      mockPrismaService.addressTask.findFirst.mockResolvedValue(null);
+      mockPrismaService.addressTask.updateMany.mockResolvedValue({ count: 0 });
+
+      await service.autoCompleteOnAddressReceived('tenant-1', 'case-1', 'debtor-1', 'CLIENT_REPLY');
+
+      expect(mockPrismaService.addressTask.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ tenantId: 'tenant-1' }) }),
+      );
+      expect(mockPrismaService.addressTask.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ tenantId: 'tenant-1' }) }),
+      );
+    });
+
+    it('hasUsefulAddresses scopes by tenant via debtor relation', async () => {
+      mockPrismaService.debtorAddress.count.mockResolvedValue(0);
+
+      await service.hasUsefulAddresses('debtor-1', 'tenant-1');
+
+      expect(mockPrismaService.debtorAddress.count).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ debtorId: 'debtor-1', debtor: { tenantId: 'tenant-1' } }),
+        }),
+      );
+    });
+
+    it('triggerAddressWorkflowForCase scopes case lookup by tenant', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue(null); // bu tenant'ta dosya yok
+
+      await expect(
+        service.triggerAddressWorkflowForCase('tenant-1', 'case-x'),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockPrismaService.case.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'case-x', tenantId: 'tenant-1' } }),
+      );
+      // ASSIGN-1 blocker #2: yabancı case için recent-audit oracle ÇALIŞMAMALI (leak engeli)
+      expect(mockPrismaService.addressAuditLog.findFirst).not.toHaveBeenCalled();
+    });
+
+    it('omitting tenantId keeps system-context behavior (scheduler path, no tenant filter)', async () => {
+      mockPrismaService.addressTask.findMany.mockResolvedValue([]);
+
+      await service.getPendingTasksForCase('case-1');
+
+      const callArg = mockPrismaService.addressTask.findMany.mock.calls[0][0];
+      expect(callArg.where.tenantId).toBeUndefined();
+    });
+
+    // ------------------------------------------------------------------------
+    // ASSIGN-1 blocker hardening (Codex review-only bulguları)
+    // ------------------------------------------------------------------------
+
+    it('(a) createTask cross-tenant caseId reddedilir (NotFound, create yok)', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue(null); // case başka tenant'ta
+      mockPrismaService.debtor.findFirst.mockResolvedValue({ id: 'debtor-1' });
+
+      await expect(
+        service.createTask({
+          tenantId: 'tenant-1',
+          caseId: 'foreign-case',
+          debtorId: 'debtor-1',
+          taskType: 'CLIENT_REQUEST_DEBTOR_ADDRESSES' as AddressTaskType,
+        }),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockPrismaService.addressTask.create).not.toHaveBeenCalled();
+    });
+
+    it('(a) createTask cross-tenant debtorId reddedilir (NotFound, create yok)', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue({ id: 'case-1' });
+      mockPrismaService.debtor.findFirst.mockResolvedValue(null); // debtor başka tenant'ta
+
+      await expect(
+        service.createTask({
+          tenantId: 'tenant-1',
+          caseId: 'case-1',
+          debtorId: 'foreign-debtor',
+          taskType: 'CLIENT_REQUEST_DEBTOR_ADDRESSES' as AddressTaskType,
+        }),
+      ).rejects.toThrow(NotFoundException);
+
+      expect(mockPrismaService.addressTask.create).not.toHaveBeenCalled();
+    });
+
+    it('(b) triggerAddressWorkflowForCase recent-audit sorgusu tenant-scoped (cross-tenant skippedDuplicate sızdırmaz)', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue({ id: 'case-1', fileNumber: 'F1', caseClients: [] });
+      mockPrismaService.addressAuditLog.findFirst.mockResolvedValue(null); // tenant-scoped → foreign audit eşleşmez
+      mockPrismaService.caseDebtor.findMany.mockResolvedValue([]);
+      mockPrismaService.addressAuditLog.create.mockResolvedValue({});
+
+      const result = await service.triggerAddressWorkflowForCase('tenant-1', 'case-1');
+
+      expect(mockPrismaService.addressAuditLog.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ tenantId: 'tenant-1', caseId: 'case-1' }) }),
+      );
+      expect(result.skippedDuplicate).toBeUndefined(); // foreign audit eşleşmedi → skip YOK
+    });
+
+    it('(c) shouldBypassAddressRequest debtor + hasUseful tenant-scope kullanır', async () => {
+      mockPrismaService.debtor.findFirst.mockResolvedValue({ addressIntakeMode: 'CLIENT_CONFIRMED', name: 'X' });
+      mockPrismaService.debtorAddress.count.mockResolvedValue(1);
+
+      const result = await service.shouldBypassAddressRequest('debtor-1', 'tenant-1');
+
+      expect(result.bypass).toBe(true);
+      expect(mockPrismaService.debtor.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ id: 'debtor-1', tenantId: 'tenant-1' }) }),
+      );
+      expect(mockPrismaService.debtorAddress.count).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ debtor: { tenantId: 'tenant-1' } }) }),
+      );
+    });
+
+    it('(c) workflow caseDebtor sorgusu case relation ile tenant-scoped', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue({ id: 'case-1', caseClients: [] });
+      mockPrismaService.addressAuditLog.findFirst.mockResolvedValue(null);
+      mockPrismaService.caseDebtor.findMany.mockResolvedValue([]);
+      mockPrismaService.addressAuditLog.create.mockResolvedValue({});
+
+      await service.triggerAddressWorkflowForCase('tenant-1', 'case-1');
+
+      expect(mockPrismaService.caseDebtor.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expect.objectContaining({ caseId: 'case-1', case: { tenantId: 'tenant-1' } }) }),
+      );
+    });
+
+    it('(d) confirmReceivedByOperator reminder updateMany tenant-scoped', async () => {
+      mockPrismaService.addressTask.findFirst.mockResolvedValue({
+        id: 'task-1',
+        tenantId: 'tenant-1',
+        caseId: 'case-1',
+        debtorId: 'debtor-1',
+        status: 'WAITING_EXTERNAL',
+      });
+      mockPrismaService.addressTask.update.mockResolvedValue({ status: 'DONE', resultType: 'POSITIVE' });
+      mockPrismaService.addressTask.updateMany.mockResolvedValue({ count: 0 });
+      mockPrismaService.addressAuditLog.create.mockResolvedValue({});
+
+      await service.confirmReceivedByOperator('task-1', 'operator-1', 'tenant-1');
+
+      expect(mockPrismaService.addressTask.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ tenantId: 'tenant-1', taskType: 'CLIENT_REMIND_DEBTOR_ADDRESSES' }),
+        }),
+      );
     });
   });
 });
