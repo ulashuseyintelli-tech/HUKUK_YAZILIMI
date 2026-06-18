@@ -46,6 +46,27 @@ export enum DetectedSubCategory {
 /**
  * Borç evrakı tarama sonucu - Borçlu Sihirbazı için
  */
+/**
+ * Tek borç enstrümanı (çek/senet/fatura...). Bir PDF içinde BİRDEN FAZLA olabilir
+ * (çoklu çıkarımı PR-2 dolduracak). PR-1: yalnız tip + tek-belge geriye uyumluluk türetimi.
+ */
+export interface Instrument {
+  // CEK=cheque, SENET=promissory_note, POLICE=poliçe, FATURA=invoice, DIGER=other
+  type: "CEK" | "SENET" | "POLICE" | "FATURA" | "DIGER";
+  documentNo?: string;
+  amount?: number;
+  currency: "TRY" | "USD" | "EUR" | "GBP" | "CHF";
+  issueDate?: string; // YYYY-MM-DD (düzenleme)
+  dueDate?: string; // YYYY-MM-DD (vade)
+  bankName?: string;
+  branchName?: string;
+  iban?: string;
+  drawerName?: string; // keşideci / borçlu adayı (tek isim)
+  debtorCandidates?: string[]; // PR-2: çoklu borçlu adayı
+  pageRange?: [number, number]; // PR-2: enstrümanın PDF sayfa aralığı [from, to]
+  confidence: number;
+}
+
 export interface DebtDocumentResult {
   // Evrak türü
   documentType: "FATURA" | "SENET" | "CEK" | "KIRA" | "CARI_HESAP" | "SOZLESME" | "DIGER";
@@ -83,11 +104,58 @@ export interface DebtDocumentResult {
   
   // Önerilen takip türü
   suggestedCaseType: "ILAMLI" | "ILAMSIZ" | "KAMBIYO" | "KIRA";
-  
+
+  // Çoklu borç enstrümanı (KANONİK). Bir PDF'de N çek/senet olabilir.
+  // PR-1: scanDebtDocument her zaman doldurur (boşsa debtInfo'dan tek eleman türetilir).
+  // debtInfo (tek nesne) geriye uyumluluk için korunur; kanonik kaynak instruments[].
+  instruments?: Instrument[];
+
   // Meta
   confidence: number;
   rawText?: string;
   matchedKeywords?: string[];
+}
+
+/**
+ * PR-1: Tek-belge geriye uyumluluk — DebtDocumentResult.debtInfo'dan TEK Instrument türetir.
+ * Anlamlı borç verisi (amount/documentNo/dueDate) yoksa boş dizi döner. Saf fonksiyon (test edilebilir).
+ */
+export function deriveInstrumentsFromDebtInfo(result: DebtDocumentResult): Instrument[] {
+  const { documentType, debtInfo, bankInfo, confidence } = result;
+  const hasData = !!debtInfo && (debtInfo.amount != null || !!debtInfo.documentNo || !!debtInfo.dueDate);
+  if (!hasData) return [];
+  const typeMap: Record<DebtDocumentResult["documentType"], Instrument["type"]> = {
+    CEK: "CEK",
+    SENET: "SENET",
+    FATURA: "FATURA",
+    KIRA: "DIGER",
+    CARI_HESAP: "DIGER",
+    SOZLESME: "DIGER",
+    DIGER: "DIGER",
+  };
+  return [
+    {
+      type: typeMap[documentType] ?? "DIGER",
+      documentNo: debtInfo.documentNo,
+      amount: debtInfo.amount,
+      currency: debtInfo.currency,
+      issueDate: debtInfo.issueDate,
+      dueDate: debtInfo.dueDate,
+      bankName: bankInfo?.bankName,
+      branchName: bankInfo?.branchName,
+      iban: bankInfo?.iban,
+      confidence: confidence ?? 0,
+    },
+  ];
+}
+
+/**
+ * PR-1: instruments[] kanonik garantisi. Çoklu (PR-2) zaten doluysa AYNEN korunur;
+ * boşsa debtInfo'dan tek eleman türetilir. scanDebtDocument her dönüşte uygular.
+ */
+export function ensureInstruments(result: DebtDocumentResult): Instrument[] {
+  if (result.instruments && result.instruments.length > 0) return result.instruments;
+  return deriveInstrumentsFromDebtInfo(result);
 }
 
 /**
@@ -1789,7 +1857,7 @@ Sadece JSON döndür, başka açıklama ekleme.`
     
     if (isImage || !text || text.length < 50) {
       this.logger.log("Metin çıkarılamadı veya görüntü dosyası, Vision API deneniyor...");
-      return this.scanDebtDocumentWithVision(buffer, mimeType);
+      return this.finalizeDebtResult(await this.scanDebtDocumentWithVision(buffer, mimeType));
     }
 
     this.logger.log(`Borç evrakı tarama başlatılıyor. Metin uzunluğu: ${text.length}`);
@@ -1797,7 +1865,7 @@ Sadece JSON döndür, başka açıklama ekleme.`
     // 2. OpenAI ile analiz et
     if (!this.openai) {
       this.logger.warn("OpenAI yapılandırılmamış, kural tabanlı analiz yapılacak");
-      return this.parseDebtDocumentWithRules(text);
+      return this.finalizeDebtResult(this.parseDebtDocumentWithRules(text));
     }
 
     const model = this.configService.get<string>("OPENAI_MODEL") || "gpt-4";
@@ -1876,7 +1944,7 @@ JSON formatında yanıt ver:
 
       const parsed = JSON.parse(content);
 
-      return {
+      return this.finalizeDebtResult({
         documentType: parsed.documentType || "DIGER",
         parties: (parsed.parties || []).map((p: any) => ({
           name: p.name || "",
@@ -1902,11 +1970,20 @@ JSON formatında yanıt ver:
         confidence: parsed.confidence || 70,
         rawText: text.substring(0, 1000),
         matchedKeywords: parsed.matchedKeywords || [],
-      };
+      });
     } catch (error) {
       this.logger.error("OpenAI borç evrakı analiz hatası:", error);
-      return this.parseDebtDocumentWithRules(text);
+      return this.finalizeDebtResult(this.parseDebtDocumentWithRules(text));
     }
+  }
+
+  /**
+   * PR-1: Dönüşten önce instruments[] kanonik garantisini uygula (çoklu doluysa korur,
+   * boşsa debtInfo'dan tek eleman türetir). scanDebtDocument'in TÜM dönüş yolları bundan geçer.
+   */
+  private finalizeDebtResult(result: DebtDocumentResult): DebtDocumentResult {
+    result.instruments = ensureInstruments(result);
+    return result;
   }
 
   /**
