@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClientNotificationService } from '../client-notification/client-notification.service';
 import { maskPhone } from '../../common/pii-mask.util';
@@ -29,6 +29,15 @@ export interface CreateTaskParams {
   assignedToId?: string;
   dueAt?: Date;
   sendNotification?: boolean; // Müvekkile bildirim gönder
+  /**
+   * true ise: caseId+debtorId çiftinin gerçekten bir CaseDebtor ilişkisine sahip olduğu
+   * (borçlu o dosyanın borçlusu) doğrulanır; yoksa BadRequestException atılır.
+   * Default (false/undefined): yalnız tenant-ownership kontrolü yapılır — iç çağrılar
+   * (triggerAddressWorkflowForCase, scheduler escalation/annual) ilişkiyi yapısı gereği
+   * sağladığı için bu bayrağı GEÇMEZ ve davranışları değişmez. Yalnız controller
+   * POST /create (keyfi caseId+debtorId girişi) true geçirir.
+   */
+  enforceCaseDebtorLink?: boolean;
 }
 
 export interface CompleteTaskParams {
@@ -66,9 +75,20 @@ export class AddressTaskService {
   /**
    * Yeni görev oluştur (idempotent)
    * Aynı dedupe key ile görev varsa ve terminal durumda değilse, mevcut görevi döndürür
+   *
+   * @remarks
+   * Çağrıldığı yerler:
+   * - AddressTaskController.createTask() → POST /address-tasks/create (manuel/tetikleyici;
+   *   keyfi caseId+debtorId girişi → enforceCaseDebtorLink=true geçirir)
+   * - AddressTaskService.triggerAddressWorkflowForCase() → caseDebtor.findMany döngüsü
+   *   (ilişki yapısı gereği var; bayrak geçmez)
+   * - AddressTaskSchedulerService.checkOverdueTasks() → escalation (caseId+debtorId mevcut
+   *   task'tan kopyalanır; bayrak geçmez)
+   * - AddressTaskSchedulerService.checkAnnualRefreshTasks() → yıllık yenileme (mevcut task'tan
+   *   kopyalanır; bayrak geçmez)
    */
   async createTask(params: CreateTaskParams): Promise<AddressTask | null> {
-    const { tenantId, caseId, debtorId, taskType, scopeKey, title, description, assignedToId, dueAt } = params;
+    const { tenantId, caseId, debtorId, taskType, scopeKey, title, description, assignedToId, dueAt, enforceCaseDebtorLink } = params;
 
     // Cross-tenant input guard (ASSIGN-1 blocker #1): caseId ve debtorId DAİMA bu tenant'a
     // ait olmalı. Controller body'sinden keyfi caseId/debtorId gelebilir; auth-tenant'a ait
@@ -82,6 +102,22 @@ export class AddressTaskService {
       throw new NotFoundException(
         `Dosya veya borçlu bu tenant'ta bulunamadı (case=${caseId}, debtor=${debtorId})`,
       );
+    }
+
+    // Veri bütünlüğü guard'ı (opt-in): caseId+debtorId aynı tenant'ta olsa bile, borçlu
+    // gerçekten o dosyanın borçlusu (CaseDebtor satırı) olmalı. Yoksa A dosyası + B dosyasının
+    // borçlusuyla tutarsız bir AddressTask oluşur. caseId yukarıda tenant-doğrulandığı için
+    // CaseDebtor sorgusu tenant-güvenlidir (ek case:{tenantId} gereksiz). Yalnız controller
+    // POST /create bu bayrağı geçirir; iç çağrılar ilişkiyi yapısı gereği sağlar (bkz. @remarks).
+    // (Mevcut desen: client-intake-promotion.service.ts içindeki "Borçlu bu takibe ait değil".)
+    if (enforceCaseDebtorLink) {
+      const link = await this.prisma.caseDebtor.findFirst({
+        where: { caseId, debtorId },
+        select: { id: true },
+      });
+      if (!link) {
+        throw new BadRequestException('Borçlu bu takibe ait değil');
+      }
     }
 
     // Dedupe key kontrolü (tenant-scoped — ASSIGN-1)

@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 import * as fc from 'fast-check';
 import { AddressTaskService } from './address-task.service';
 import { PrismaService } from '../../prisma/prisma.service';
@@ -33,6 +33,7 @@ const mockPrismaService = {
   },
   caseDebtor: {
     findMany: jest.fn(),
+    findFirst: jest.fn(),
   },
   debtor: {
     findUnique: jest.fn(),
@@ -120,6 +121,71 @@ describe('AddressTaskService', () => {
       const result = await service.createTask(params);
 
       expect(result).toBeNull();
+    });
+
+    // ── Veri bütünlüğü: CaseDebtor ilişki kontrolü (opt-in, controller risk yüzeyi) ──
+    it('enforceCaseDebtorLink=true + borçlu bu dosyanın borçlusu değilse → BadRequestException', async () => {
+      const params = {
+        tenantId: 'tenant-1',
+        caseId: 'case-1',
+        debtorId: 'debtor-1',
+        taskType: 'CLIENT_REQUEST_DEBTOR_ADDRESSES' as AddressTaskType,
+        enforceCaseDebtorLink: true,
+      };
+
+      // caseId+debtorId aynı tenant'ta (ASSIGN-1 guard geçer) ama CaseDebtor satırı YOK.
+      mockPrismaService.case.findFirst.mockResolvedValue({ id: 'case-1' });
+      mockPrismaService.debtor.findFirst.mockResolvedValue({ id: 'debtor-1' });
+      mockPrismaService.caseDebtor.findFirst.mockResolvedValue(null);
+
+      await expect(service.createTask(params)).rejects.toBeInstanceOf(BadRequestException);
+
+      // İlişki yoksa görev OLUŞTURULMAZ.
+      expect(mockPrismaService.addressTask.create).not.toHaveBeenCalled();
+    });
+
+    it('enforceCaseDebtorLink=true + CaseDebtor ilişkisi varsa → görev oluşturulur', async () => {
+      const params = {
+        tenantId: 'tenant-1',
+        caseId: 'case-1',
+        debtorId: 'debtor-1',
+        taskType: 'CLIENT_REQUEST_DEBTOR_ADDRESSES' as AddressTaskType,
+        enforceCaseDebtorLink: true,
+      };
+
+      mockPrismaService.case.findFirst.mockResolvedValue({ id: 'case-1' });
+      mockPrismaService.debtor.findFirst.mockResolvedValue({ id: 'debtor-1' });
+      mockPrismaService.caseDebtor.findFirst.mockResolvedValue({ id: 'cd-1' });
+      mockPrismaService.addressTask.findFirst.mockResolvedValue(null);
+      mockPrismaService.addressTask.create.mockResolvedValue({ id: 'task-1', ...params, status: 'PENDING' });
+      mockPrismaService.addressAuditLog.create.mockResolvedValue({});
+
+      const result = await service.createTask(params);
+
+      expect(result?.id).toBe('task-1');
+    });
+
+    it('bayrak GEÇİLMEZSE (iç çağrı) + CaseDebtor YOK olsa bile → görev oluşturulur (scheduler/workflow etkilenmez)', async () => {
+      const params = {
+        tenantId: 'tenant-1',
+        caseId: 'case-1',
+        debtorId: 'debtor-1',
+        taskType: 'ASSIGN_MANUAL_CALL_CLIENT' as AddressTaskType,
+        // enforceCaseDebtorLink yok → scheduler escalation/annual + triggerWorkflow yolu.
+      };
+
+      mockPrismaService.case.findFirst.mockResolvedValue({ id: 'case-1' });
+      mockPrismaService.debtor.findFirst.mockResolvedValue({ id: 'debtor-1' });
+      mockPrismaService.caseDebtor.findFirst.mockResolvedValue(null); // öksüz çift olsa bile
+      mockPrismaService.addressTask.findFirst.mockResolvedValue(null);
+      mockPrismaService.addressTask.create.mockResolvedValue({ id: 'task-2', ...params, status: 'PENDING' });
+      mockPrismaService.addressAuditLog.create.mockResolvedValue({});
+
+      const result = await service.createTask(params);
+
+      expect(result?.id).toBe('task-2');
+      // Bayrak yokken CaseDebtor sorgusu HİÇ yapılmaz (eski davranış birebir korunur).
+      expect(mockPrismaService.caseDebtor.findFirst).not.toHaveBeenCalled();
     });
   });
 

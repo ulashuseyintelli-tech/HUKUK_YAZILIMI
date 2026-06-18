@@ -129,6 +129,16 @@ describe('AddressTaskController (ASSIGN-1 tenant isolation)', () => {
       );
     });
 
+    it('createTask: veri bütünlüğü için enforceCaseDebtorLink=true geçirir', async () => {
+      mockService.createTask.mockResolvedValue({ id: 'task-1' });
+
+      await controller.createTask('tenant-A', { caseId: 'c', debtorId: 'd', taskType: TASK_TYPE });
+
+      expect(mockService.createTask).toHaveBeenCalledWith(
+        expect.objectContaining({ enforceCaseDebtorLink: true }),
+      );
+    });
+
     it('getOverdueTasks: query tenantId yoksa auth-tenant kullanılır', async () => {
       mockService.findOverdueTasks.mockResolvedValue([]);
 
