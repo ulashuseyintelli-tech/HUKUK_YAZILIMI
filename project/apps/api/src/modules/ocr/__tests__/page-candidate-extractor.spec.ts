@@ -11,6 +11,8 @@ import {
   PageAiInput,
   PageAiExtractor,
   PAGE_EXTRACTION_PROMPT,
+  parseAiJson,
+  stripJsonFence,
 } from '../page-candidate-extractor';
 import { Page } from '../pdf-segmentation';
 
@@ -165,5 +167,33 @@ describe('PR-2b-2 — extractAllPageCandidates (her sayfa bağımsız)', () => {
     expect(out.map(c => c.pageIndex)).toEqual([1, 2, 3]);
     // her çağrı tek sayfa içeriği (sayfalar-arası taşıma yok)
     expect(inputs.map(i => i.text)).toEqual(['SAYFA-1', 'SAYFA-2', 'SAYFA-3']);
+  });
+});
+
+describe('fence-fix — parseAiJson / stripJsonFence (markdown-fence robustluğu)', () => {
+  it('```json ... ``` fence → soyulur + parse edilir (V2 kök neden)', () => {
+    expect(parseAiJson('```json\n{ "documentType": "CEK", "amount": 1000 }\n```')).toEqual({
+      documentType: 'CEK',
+      amount: 1000,
+    });
+  });
+
+  it('``` ... ``` (json etiketi YOK) fence → soyulur + parse edilir', () => {
+    expect(parseAiJson('```\n{ "amount": 5 }\n```')).toEqual({ amount: 5 });
+  });
+
+  it('düz JSON (fence YOK) → aynen parse edilir (regresyon yok)', () => {
+    expect(parseAiJson('{ "documentNo": "0265898", "amount": 2000 }')).toEqual({
+      documentNo: '0265898',
+      amount: 2000,
+    });
+  });
+
+  it('baş/son boşluk + satırbaşı sarmalı fence → tolere edilir', () => {
+    expect(parseAiJson('   \n```json {"a":1} ```  \n ')).toEqual({ a: 1 });
+  });
+
+  it('stripJsonFence: fence yoksa metni AYNEN döner', () => {
+    expect(stripJsonFence('{"x":1}')).toBe('{"x":1}');
   });
 });

@@ -147,6 +147,23 @@ export async function extractAllPageCandidates(
 }
 
 /**
+ * fence-fix: LLM çıktısı bazen ```json ... ``` markdown-fence ile gelir → ham JSON.parse PATLAR
+ * (çek kaybı; V2 teşhisinde 4 sayfanın 3'ü bu yüzden parse-fail oldu). Bu helper fence'i SOYAR
+ * (yoksa metni AYNEN döner). response_format:json_object BİRİNCİL savunma; bu fence-strip
+ * İKİNCİL/garantör — model/SDK/endpoint davranışı değişse de parse ROBUST kalır.
+ */
+export function stripJsonFence(s: string): string {
+  const t = s.trim();
+  const m = t.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return m ? m[1].trim() : t;
+}
+
+/** LLM JSON cevabını güvenli ayrıştır: fence-strip + JSON.parse (tek parse noktası). */
+export function parseAiJson(content: string): any {
+  return JSON.parse(stripJsonFence(content));
+}
+
+/**
  * Gerçek AI/Vision çağrısı (lazy OpenAI). DORMANT — PR-2b-2'de hiçbir yere bağlı değil;
  * testler mock enjekte eder. Anahtar yoksa throw eder → extractPageCandidate graceful yakalar.
  */
@@ -178,7 +195,8 @@ export const defaultPageAiExtract: PageAiExtractor = async (input) => {
     ],
     temperature: 0.1,
     max_tokens: 1000,
+    response_format: { type: "json_object" }, // fence-fix: modele ham JSON zorla (fence olasılığını düşür)
   });
   const content = resp.choices?.[0]?.message?.content || "{}";
-  return JSON.parse(content);
+  return parseAiJson(content); // fence-fix: fence-strip + parse (garantör; ham JSON.parse'ın yerine)
 };
