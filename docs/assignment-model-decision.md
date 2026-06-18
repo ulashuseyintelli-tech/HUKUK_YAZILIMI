@@ -144,7 +144,7 @@ Kapsam:
 
 - Sadece bu doküman.
 - Kod değişikliği yok.
-- PR yok.
+- Doc-only karar kaydı PR'ı olarak açılır.
 
 ### PR-ASSIGN-1 - AddressTask Güvenlik Fix
 
@@ -199,7 +199,6 @@ ASSIGN-0 kapsamında yapılmayacaklar:
 - Database migration
 - Controller veya service değişikliği
 - UI değişikliği
-- PR açma
 - Otomatik görev taşıma
 - Yeni tebligat, istihbarat veya haciz görevi ekleme
 
