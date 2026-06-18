@@ -160,10 +160,15 @@ export class BankService {
 
   /**
    * Hesap bakiyesi sorgula
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - BankController.getBalance() → GET /bank/accounts/:id/balance (hesap bakiyesi sorgular)
+   * </remarks>
    */
-  async getBalance(accountId: string): Promise<BankBalance> {
-    const account = await this.db.bankAccount.findUnique({
-      where: { id: accountId },
+  async getBalance(accountId: string, tenantId: string): Promise<BankBalance> {
+    const account = await this.db.bankAccount.findFirst({
+      where: { id: accountId, tenantId },
     });
 
     if (!account) {
@@ -182,10 +187,15 @@ export class BankService {
 
   /**
    * Hesap hareketlerini senkronize et
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - BankController.syncTransactions() → POST /bank/accounts/:id/sync (hesap hareketlerini senkronize eder)
+   * </remarks>
    */
-  async syncTransactions(accountId: string, startDate?: Date, endDate?: Date): Promise<SyncResult> {
-    const account = await this.db.bankAccount.findUnique({
-      where: { id: accountId },
+  async syncTransactions(accountId: string, tenantId: string, startDate?: Date, endDate?: Date): Promise<SyncResult> {
+    const account = await this.db.bankAccount.findFirst({
+      where: { id: accountId, tenantId },
     });
 
     if (!account) {
@@ -218,6 +228,7 @@ export class BankService {
         // Aynı işlem var mı kontrol et
         const existing = await this.db.bankTransaction.findFirst({
           where: {
+            tenantId,
             bankAccountId: accountId,
             bankReferenceId: tx.bankReferenceId,
           },
@@ -298,16 +309,30 @@ export class BankService {
 
   /**
    * Hesap hareketlerini listele
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - BankController.getTransactions() → GET /bank/accounts/:id/transactions (hesap hareketlerini listeler)
+   * </remarks>
    */
-  async getTransactions(accountId: string, filters?: {
+  async getTransactions(accountId: string, tenantId: string, filters?: {
     startDate?: Date;
     endDate?: Date;
     transactionType?: string;
     isMatched?: boolean;
     limit?: number;
   }) {
+    const account = await this.db.bankAccount.findFirst({
+      where: { id: accountId, tenantId },
+    });
+
+    if (!account) {
+      throw new NotFoundException('Hesap bulunamadı');
+    }
+
     return this.db.bankTransaction.findMany({
       where: {
+        tenantId,
         bankAccountId: accountId,
         transactionDate: {
           gte: filters?.startDate,
@@ -323,10 +348,15 @@ export class BankService {
 
   /**
    * İşlemi dosyayla eşleştir
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - BankController.matchTransaction() → POST /bank/transactions/:id/match (banka hareketini dosyayla eşleştirir)
+   * </remarks>
    */
-  async matchTransaction(transactionId: string, caseId: string, userId: string) {
-    const transaction = await this.db.bankTransaction.findUnique({
-      where: { id: transactionId },
+  async matchTransaction(transactionId: string, caseId: string, userId: string, tenantId: string) {
+    const transaction = await this.db.bankTransaction.findFirst({
+      where: { id: transactionId, tenantId },
     });
 
     if (!transaction) {
@@ -343,7 +373,7 @@ export class BankService {
     let collection: any;
     try {
       collection = await this.collectionService.create(
-        transaction.tenantId,
+        tenantId,
         {
           caseId,
           amount: transaction.amount,

@@ -40,9 +40,14 @@ export class BankController {
   /**
    * Hesap bakiyesi sorgula
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - BankController.getBalance() → GET /bank/accounts/:id/balance (hesap bakiyesi sorgular)
+  /// - BankService.getBalance() → tenant kontrollü hesap bakiyesi sorgusu
+  /// </remarks>
   @Get('accounts/:id/balance')
-  async getBalance(@Param('id') id: string) {
-    return this.bankService.getBalance(id);
+  async getBalance(@CurrentUser('tenantId') tenantId: string, @Param('id') id: string) {
+    return this.bankService.getBalance(id, tenantId);
   }
 
   // ==================== HESAP HAREKETLERİ ====================
@@ -50,13 +55,20 @@ export class BankController {
   /**
    * Hesap hareketlerini senkronize et
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - BankController.syncTransactions() → POST /bank/accounts/:id/sync (hesap hareketlerini senkronize eder)
+  /// - BankService.syncTransactions() → tenant kontrollü hesap hareketi senkronizasyonu
+  /// </remarks>
   @Post('accounts/:id/sync')
   async syncTransactions(
+    @CurrentUser('tenantId') tenantId: string,
     @Param('id') id: string,
     @Body() body: { startDate?: string; endDate?: string },
   ) {
     return this.bankService.syncTransactions(
       id,
+      tenantId,
       body.startDate ? new Date(body.startDate) : undefined,
       body.endDate ? new Date(body.endDate) : undefined,
     );
@@ -65,8 +77,14 @@ export class BankController {
   /**
    * Hesap hareketlerini listele
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - BankController.getTransactions() → GET /bank/accounts/:id/transactions (hesap hareketlerini listeler)
+  /// - BankService.getTransactions() → tenant kontrollü hesap hareketi listesi
+  /// </remarks>
   @Get('accounts/:id/transactions')
   async getTransactions(
+    @CurrentUser('tenantId') tenantId: string,
     @Param('id') id: string,
     @Query('startDate') startDate?: string,
     @Query('endDate') endDate?: string,
@@ -74,7 +92,7 @@ export class BankController {
     @Query('isMatched') isMatched?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.bankService.getTransactions(id, {
+    return this.bankService.getTransactions(id, tenantId, {
       startDate: startDate ? new Date(startDate) : undefined,
       endDate: endDate ? new Date(endDate) : undefined,
       transactionType,
@@ -86,13 +104,19 @@ export class BankController {
   /**
    * İşlemi dosyayla eşleştir
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - BankController.matchTransaction() → POST /bank/transactions/:id/match (banka hareketini dosyayla eşleştirir)
+  /// - BankService.matchTransaction() → tenant kontrollü banka hareketi eşleştirme
+  /// </remarks>
   @Post('transactions/:id/match')
   async matchTransaction(
+    @CurrentUser('tenantId') tenantId: string,
     @Param('id') id: string,
     @Body() body: { caseId: string },
     @CurrentUser('id') userId: string,
   ) {
-    return this.bankService.matchTransaction(id, body.caseId, userId);
+    return this.bankService.matchTransaction(id, body.caseId, userId, tenantId);
   }
 
   /**
