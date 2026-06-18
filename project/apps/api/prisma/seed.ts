@@ -1,9 +1,19 @@
-import { exec } from "child_process";
-import { promisify } from "util";
+/**
+ * Veritabanı seed scripti — EXPLICIT, boot'ta ÇALIŞMAZ.
+ *
+ * Çalıştırma:
+ *   pnpm db:seed       → npx tsx prisma/seed.ts (yalnız seed: users + form types)
+ *   pnpm db:bootstrap  → db:push && db:seed (ilk kurulum convenience wrapper)
+ *   pnpm db:push       → şema (DDL) — ayrı, explicit
+ *
+ * API/boot HİÇBİR ZAMAN bu scripti çağırmaz (boot saflığı). Eski src/prisma/db-init.ts'in
+ * (initializeDatabase: seed + koşullu `prisma db push`) yerini alır; db push artık seed'in
+ * parçası DEĞİL (yalnız explicit `pnpm db:push`).
+ *
+ * İdempotent: var olan kayıtları atlar (findUnique/findFirst → yoksa create).
+ */
 import { PrismaClient, FormCategory, ProcedureType } from "@prisma/client";
 import * as bcrypt from "bcrypt";
-
-const execAsync = promisify(exec);
 
 // Form Metadata - Veritabanına eklenecek form tipleri
 const FORM_TYPES = [
@@ -308,47 +318,30 @@ async function seedDefaultUsers(prisma: PrismaClient): Promise<void> {
   }
 }
 
-export async function initializeDatabase(): Promise<void> {
+/**
+ * Seed runner — explicit `pnpm db:seed` / `pnpm db:bootstrap` ile çağrılır.
+ * DB push YAPMAZ (şema için ayrı `pnpm db:push`). Şema yoksa Prisma anlamlı hata döndürür.
+ */
+async function main(): Promise<void> {
   const prisma = new PrismaClient();
 
   try {
-    // Veritabanı bağlantısını test et
     await prisma.$connect();
-    console.log("✅ Veritabanı bağlantısı başarılı");
+    console.log("✅ Seed: veritabanı bağlantısı başarılı");
 
-    // Tabloları kontrol et (User tablosu var mı?)
-    const tables = await prisma.$queryRaw<{ tablename: string }[]>`
-      SELECT tablename FROM pg_tables WHERE schemaname = 'public'
-    `;
-
-    if (tables.length === 0) {
-      console.log("📦 Tablolar bulunamadı, şema oluşturuluyor...");
-      await execAsync("npx prisma db push", { cwd: process.cwd() });
-      console.log("✅ Veritabanı şeması oluşturuldu");
-    } else {
-      console.log(`✅ Veritabanı hazır (${tables.length} tablo mevcut)`);
-    }
-
-    // Varsayılan kullanıcıları oluştur
+    // Varsayılan kullanıcıları oluştur (idempotent)
     await seedDefaultUsers(prisma);
 
-    // Form tiplerini oluştur
+    // Form tiplerini oluştur (idempotent)
     await seedFormTypes(prisma);
-  } catch (error: any) {
-    if (error.code === "P1001" || error.code === "ECONNREFUSED") {
-      console.error("❌ PostgreSQL bağlantısı başarısız!");
-      console.error("   PostgreSQL servisinin çalıştığından emin olun.");
-      process.exit(1);
-    }
 
-    if (error.code === "P1003") {
-      console.log("📦 Veritabanı bulunamadı, oluşturuluyor...");
-      await execAsync("npx prisma db push", { cwd: process.cwd() });
-      console.log("✅ Veritabanı oluşturuldu");
-    } else {
-      throw error;
-    }
+    console.log("✅ Seed tamamlandı");
   } finally {
     await prisma.$disconnect();
   }
 }
+
+main().catch((error) => {
+  console.error("❌ Seed başarısız:", error);
+  process.exit(1);
+});
