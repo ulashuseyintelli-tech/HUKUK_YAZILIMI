@@ -7,6 +7,7 @@ import { JwtService } from "@nestjs/jwt";
 import * as bcrypt from "bcrypt";
 import { PrismaService } from "@/prisma/prisma.service";
 import { RegisterDto, LoginDto } from "./dto/auth.dto";
+import { seedLookupCatalog } from "../lookup/lookup-seed";
 
 @Injectable()
 export class AuthService {
@@ -55,6 +56,12 @@ export class AuthService {
           role: "ADMIN",
         },
       });
+
+      // PR-B: Yeni tenant kanonik lookup kataloğu ile DOLU doğsun (takip türü/mahiyet vb.).
+      // AYNI transaction'daki tx client ile çağrılır (this.prisma DEĞİL): seed başarısız olursa
+      // tenant + user da ROLLBACK olur → yarı-kurulu (lookup'suz) tenant oluşmaz.
+      // user create'ten SONRA: önce ucuz unique kontrolleri geçsin, ~53 upsert boşa gitmesin.
+      await seedLookupCatalog(tx, tenant.id);
 
       return { tenant, user };
     });
