@@ -4,7 +4,7 @@ import * as Tesseract from "tesseract.js";
 import { Instrument } from "./debt-instrument.types";
 import { segmentDocumentIntoPages, PdfPageRenderer } from "./pdf-segmentation";
 import { PopplerPdfPageRenderer } from "./poppler-page-renderer";
-import { extractAllPageCandidates, PageAiExtractor } from "./page-candidate-extractor";
+import { extractAllPageCandidates, PageAiExtractor, parseAiJson } from "./page-candidate-extractor";
 import { groupPageCandidatesIntoInstruments, pickPrimaryInstrument } from "./debt-instrument-grouping";
 import * as sharp from "sharp";
 import * as AdmZip from "adm-zip";
@@ -1939,7 +1939,14 @@ Sadece JSON döndür, başka açıklama ekleme.`
     return buildDebtResultFromInstruments(instruments);
   }
 
-  /** PR-2b-3: servisin yapılandırılmış OpenAI client'ından per-page aiExtract üretir. */
+  /**
+   * PR-2b-3: servisin yapılandırılmış OpenAI client'ından per-page aiExtract üretir.
+   * fence-fix (PR-1): response_format:json_object + parseAiJson — ham JSON.parse, gpt-4o'nun
+   * aralıklı ```json markdown-fence'inde patlıyordu (repro: ~%31 parse-fail → boş candidate → DIGER).
+   *
+   * @remarks Çağrıldığı yerler:
+   * - scanDebtDocumentMultiInstrument() → çoklu-enstrüman per-page AI extractor (flag OCR_MULTI_INSTRUMENT)
+   */
   private buildPageAiExtract(): PageAiExtractor {
     const openai = this.openai;
     const model = this.configService.get<string>("OPENAI_MODEL") || "gpt-4o";
@@ -1964,9 +1971,10 @@ Sadece JSON döndür, başka açıklama ekleme.`
         ],
         temperature: 0.1,
         max_tokens: 1000,
+        response_format: { type: "json_object" }, // fence-fix: ham JSON zorla (markdown fence olasılığını düşür)
       });
       const content = resp.choices?.[0]?.message?.content || "{}";
-      return JSON.parse(content);
+      return parseAiJson(content); // fence-fix: stripJsonFence + JSON.parse (üretim path'i; V2-A fence kaybını kapatır)
     };
   }
 
