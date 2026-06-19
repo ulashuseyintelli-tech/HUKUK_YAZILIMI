@@ -63,11 +63,16 @@ export class CaseDebtorController {
     return this.caseDebtorService.updateCaseDebtor(tenantId, id, dto);
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseDebtorController.removeCaseDebtor() → DELETE /case-debtors/:id (dosya borçlusunu aktif işlem öznesi olmaktan çıkarır)
+  /// </remarks>
   @Delete("case-debtors/:id")
   removeCaseDebtor(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") currentUserId: string | undefined,
     @Param("id") id: string
   ) {
-    return this.caseDebtorService.removeCaseDebtor(tenantId, id);
+    return this.caseDebtorService.removeCaseDebtor(tenantId, id, currentUserId);
   }
 }
