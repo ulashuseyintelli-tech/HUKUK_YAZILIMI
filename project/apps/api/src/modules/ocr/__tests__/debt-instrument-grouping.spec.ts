@@ -196,3 +196,70 @@ describe('PR-2a-1 — sourcePages / pageRange bütünlüğü', () => {
     expect(out[0].pageRange).toEqual([0, 2]);
   });
 });
+
+describe('PR-2 — arka yüz documentNo split fix (back-page kendi no\'su ile ayrı belge başlatmaz)', () => {
+  // Gerçek arka yüz: back=true + face=false + KENDİ (farklı) documentNo + tutar
+  const backWithDocNo = (pageIndex: number, documentNo: string, amount = 357350) =>
+    pc({ pageIndex, documentType: 'CEK', documentNo, amount, back: true, face: false });
+
+  it('mismatched documentNo taşıyan back page → önceki face\'e bağlanır (yeni belge DEĞİL)', () => {
+    const out = groupPageCandidatesIntoInstruments([faceCheque(0, '0265897'), backWithDocNo(1, '99101226')]);
+    expect(out).toHaveLength(1); // 2 DEĞİL
+    expect(out[0].sourcePages).toEqual([0, 1]);
+    expect(out[0].documentNo).toBe('0265897'); // ön yüz no'su korunur, arka no'su ezmez
+    expect(out[0].needsReview).toBe(true); // mismatched docNo → review
+    expect(out[0].duplicateCandidateReason).toMatch(/arka yüz kendi belge no/i);
+  });
+
+  it('face + mismatched-back + next-face → 2 instrument', () => {
+    const out = groupPageCandidatesIntoInstruments([
+      faceCheque(0, '0265897'),
+      backWithDocNo(1, '99101226'),
+      faceCheque(2, '0265898'),
+    ]);
+    expect(out).toHaveLength(2);
+    expect(out[0].sourcePages).toEqual([0, 1]);
+    expect(out[0].documentNo).toBe('0265897');
+    expect(out[1].sourcePages).toEqual([2]);
+    expect(out[1].documentNo).toBe('0265898');
+  });
+
+  it('iki ardışık ÖN yüz (face=true, docNo) HÂLÂ 2 instrument (over-merge YOK)', () => {
+    const out = groupPageCandidatesIntoInstruments([
+      pc({ pageIndex: 0, documentType: 'CEK', documentNo: '0265897', amount: 400000, dueDate: '2025-12-01', face: true }),
+      pc({ pageIndex: 1, documentType: 'CEK', documentNo: '0265898', amount: 425000, dueDate: '2026-01-01', face: true }),
+    ]);
+    expect(out).toHaveLength(2);
+  });
+
+  it('öksüz (current yok) docNo\'lu arka yüz → AMBIGUOUS + needsReview (temiz ön yüz sayılmaz)', () => {
+    const out = groupPageCandidatesIntoInstruments([backWithDocNo(0, '99101226')]);
+    expect(out).toHaveLength(1);
+    expect(out[0].groupingMethod).toBe('AMBIGUOUS');
+    expect(out[0].needsReview).toBe(true);
+  });
+
+  it('ŞÜKRÜ 4-candidate senaryosu → 2 instrument: [1,2]=0265897, [3,4]=0265898', () => {
+    const pages: PageCandidate[] = [
+      pc({ pageIndex: 1, documentType: 'CEK', documentNo: '0265897', amount: 400000, face: true, back: false }),
+      pc({ pageIndex: 2, documentType: 'CEK', documentNo: '99101226', amount: 357350, face: false, back: true }),
+      pc({ pageIndex: 3, documentType: 'CEK', documentNo: '0265898', amount: 425000, face: true, back: false }),
+      pc({ pageIndex: 4, documentType: 'CEK', amount: 1250, face: false, back: true }), // docNo yok
+    ];
+    const out = groupPageCandidatesIntoInstruments(pages);
+    expect(out).toHaveLength(2);
+    expect(out[0].documentNo).toBe('0265897');
+    expect(out[0].sourcePages).toEqual([1, 2]);
+    expect(out[1].documentNo).toBe('0265898');
+    expect(out[1].sourcePages).toEqual([3, 4]);
+  });
+
+  it('face=false ama back flag YOK → yine önceki current\'a bağlanır (face===false dalı)', () => {
+    const out = groupPageCandidatesIntoInstruments([
+      faceCheque(0, '0265897'),
+      pc({ pageIndex: 1, documentType: 'CEK', documentNo: '99101226', amount: 357350, face: false }), // back flag yok
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].sourcePages).toEqual([0, 1]);
+  });
+});

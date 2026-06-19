@@ -124,6 +124,33 @@ export function groupPageCandidatesIntoInstruments(pages: PageCandidate[]): Inst
       continue;
     }
 
+    // PR-2: ARKA YÜZ (isBackish ya da face=false; ama face=true DEĞİL) kendi documentNo'su olsa bile
+    // YENİ "temiz" instrument BAŞLATMAZ. Çek arka yüzünün hesap/ref no'su ön-yüz çek no'sundan
+    // FARKLI olabilir; bunu yeni belge saymak over-split üretir (V2-A: 2 çek → 3 instrument).
+    if ((isBackish(page) || page.face === false) && page.face !== true) {
+      if (current) {
+        // açık belgeye bağla (yeni instrument açma) — over-split önle
+        attach(current, page, {
+          lowerConfidence: true,
+          needsReview: !!page.documentNo, // kendi no'su taşıyorsa gerçekten ayrı belge olabilir → review
+          reason: page.documentNo
+            ? `sayfa ${page.pageIndex}: arka yüz kendi belge no'su (${page.documentNo}) taşıyor — önceki belgeye bağlandı (ayrı belge olabilir, kontrol edin)`
+            : `sayfa ${page.pageIndex}: arka yüz — önceki belgeye bağlandı`,
+        });
+        continue;
+      }
+      // öksüz arka yüz (öncesinde belge yok): docNo'suna güvenip temiz ön yüz SAYMA → belirsiz + review
+      current = buildInstrument(
+        page,
+        "AMBIGUOUS",
+        0.3,
+        true,
+        `sayfa ${page.pageIndex}: arka yüz, öncesinde belge yok — belirsiz öksüz`,
+      );
+      out.push(current);
+      continue;
+    }
+
     const sig = classifyFace(page, current);
 
     switch (sig) {
