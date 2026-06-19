@@ -936,7 +936,7 @@ JSON formatında yanıt ver:
       const content = response.choices[0]?.message?.content || "{}";
       this.logger.debug(`OpenAI yanıtı: ${content}`);
       
-      const parsed = JSON.parse(content);
+      const parsed = parseAiJson(content); // fence-fix: stripJsonFence + JSON.parse (AI yanıtı ```json fence'inde patlamasın → fallback'e düşmesin)
       
       // Enum değerlerine dönüştür
       const detectedType = (DetectedCaseType[parsed.detectedType as keyof typeof DetectedCaseType]) || DetectedCaseType.UNKNOWN;
@@ -1536,7 +1536,7 @@ JSON formatında yanıt ver:
       const content = response.choices[0]?.message?.content || "{}";
       this.logger.debug(`OpenAI vekaletname yanıtı: ${content}`);
 
-      const parsed = JSON.parse(content);
+      const parsed = parseAiJson(content); // fence-fix: stripJsonFence + JSON.parse (AI yanıtı ```json fence'inde patlamasın → fallback'e düşmesin)
 
       // Çoklu avukat desteği - eski format ile uyumluluk
       let lawyers = parsed.lawyers;
@@ -2080,7 +2080,7 @@ JSON formatında yanıt ver:
       const content = response.choices[0]?.message?.content || "{}";
       this.logger.debug(`OpenAI borç evrakı yanıtı: ${content}`);
 
-      const parsed = JSON.parse(content);
+      const parsed = parseAiJson(content); // fence-fix: stripJsonFence + JSON.parse (AI yanıtı ```json fence'inde patlamasın → fallback'e düşmesin)
 
       return this.finalizeDebtResult({
         documentType: parsed.documentType || "DIGER",
@@ -2436,7 +2436,7 @@ JSON formatında yanıt ver:
       const content = response.choices[0]?.message?.content || "{}";
       this.logger.debug(`OpenAI dış dosya yanıtı: ${content}`);
 
-      const parsed = JSON.parse(content);
+      const parsed = parseAiJson(content); // fence-fix: stripJsonFence + JSON.parse (AI yanıtı ```json fence'inde patlamasın → fallback'e düşmesin)
 
       return {
         externalOffice: parsed.externalOffice || undefined,
@@ -2580,7 +2580,7 @@ JSON formatında yanıt ver:
       });
 
       const content = response.choices[0]?.message?.content || "{}";
-      const parsed = JSON.parse(content);
+      const parsed = parseAiJson(content); // fence-fix: stripJsonFence + JSON.parse (AI yanıtı ```json fence'inde patlamasın → fallback'e düşmesin)
 
       return {
         externalOffice: parsed.externalOffice || undefined,
