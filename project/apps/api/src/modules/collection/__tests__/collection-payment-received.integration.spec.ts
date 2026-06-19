@@ -16,6 +16,7 @@
  * Requires: DATABASE_URL pointing to test database with migrations applied.
  */
 import { PrismaClient } from '@prisma/client';
+import { BadRequestException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { CollectionService } from '../collection.service';
 import { DomainEventIngestService } from '../../icrabot/domain-event-ingest';
@@ -29,6 +30,7 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
   let service: CollectionService;
   let domainEventIngest: DomainEventIngestService;
   let testTenantId: string;
+  let testClientId: string;
   let testCaseId: string;
   let testCaseDebtorId: string;
   const createdTenantIds = new Set<string>();
@@ -91,6 +93,7 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
         type: 'INDIVIDUAL',
       },
     });
+    testClientId = client.id;
 
     const debtor = await prisma.debtor.create({
       data: {
@@ -131,6 +134,116 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
       ...overrides,
     } as CreateCollectionDto;
   }
+
+  async function createCaseDebtorFixture(tenantId: string, caseId: string) {
+    const debtor = await prisma.debtor.create({
+      data: {
+        tenantId,
+        name: `Test Borclu ${randomUUID().slice(0, 6)}`,
+        type: 'INDIVIDUAL',
+      },
+    });
+
+    return prisma.caseDebtor.create({
+      data: {
+        caseId,
+        debtorId: debtor.id,
+        role: 'ASIL_BORCLU',
+      },
+    });
+  }
+
+  async function createForeignTenantCaseDebtorFixture() {
+    const tenantId = `foreign-tenant-${randomUUID().slice(0, 8)}`;
+    createdTenantIds.add(tenantId);
+
+    await prisma.tenant.create({
+      data: { id: tenantId, name: 'Foreign Tenant', slug: `foreign-${randomUUID().slice(0, 8)}` },
+    });
+
+    const client = await prisma.client.create({
+      data: {
+        tenantId,
+        displayName: 'Foreign Muvekkil',
+        type: 'INDIVIDUAL',
+      },
+    });
+
+    const caseRow = await prisma.case.create({
+      data: {
+        tenantId,
+        clientId: client.id,
+        fileNumber: `FOREIGN-${randomUUID().slice(0, 6)}`,
+        type: 'GENERAL_EXECUTION',
+        caseStatus: 'DERDEST',
+        status: 'ACTIVE',
+      },
+    });
+
+    return createCaseDebtorFixture(tenantId, caseRow.id);
+  }
+
+  describe('PR-2a: caseDebtorId integrity guard', () => {
+    it('accepts a CaseDebtor attached to the same case and tenant', async () => {
+      const result = await service.create(
+        testTenantId,
+        buildDto({ caseDebtorId: testCaseDebtorId }),
+        'test-user-1',
+      );
+
+      expect(result.caseDebtorId).toBe(testCaseDebtorId);
+    });
+
+    it('rejects orphan caseDebtorId before creating a collection', async () => {
+      await expect(
+        service.create(
+          testTenantId,
+          buildDto({ caseDebtorId: `missing-${randomUUID()}` }),
+          'test-user-1',
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      await expect(prisma.collection.count({ where: { tenantId: testTenantId } })).resolves.toBe(0);
+    });
+
+    it('rejects a CaseDebtor attached to another case in the same tenant', async () => {
+      const otherCase = await prisma.case.create({
+        data: {
+          tenantId: testTenantId,
+          clientId: testClientId,
+          fileNumber: `TEST-OTHER-${randomUUID().slice(0, 6)}`,
+          type: 'GENERAL_EXECUTION',
+          caseStatus: 'DERDEST',
+          status: 'ACTIVE',
+        },
+      });
+      const otherCaseDebtor = await createCaseDebtorFixture(testTenantId, otherCase.id);
+
+      await expect(
+        service.create(
+          testTenantId,
+          buildDto({ caseDebtorId: otherCaseDebtor.id }),
+          'test-user-1',
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      await expect(prisma.collection.count({ where: { tenantId: testTenantId } })).resolves.toBe(0);
+    });
+
+    it('rejects a CaseDebtor from another tenant', async () => {
+      const foreignCaseDebtor = await createForeignTenantCaseDebtorFixture();
+
+      await expect(
+        service.create(
+          testTenantId,
+          buildDto({ caseDebtorId: foreignCaseDebtor.id }),
+          'test-user-1',
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      await expect(prisma.collection.count({ where: { tenantId: testTenantId } })).resolves.toBe(0);
+    });
+  });
 
   // ── Test 1: Normal payment creates collection + event + outbox ─────────
 
