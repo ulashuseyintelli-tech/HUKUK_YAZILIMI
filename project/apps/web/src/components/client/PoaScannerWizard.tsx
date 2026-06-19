@@ -2,6 +2,7 @@
 
 import React, { useState, useRef } from "react";
 import { Upload, Loader2, Check, X, FileText, AlertCircle, ScanLine } from "lucide-react";
+import { MAX_OCR_UPLOAD_LABEL } from "@/lib/upload-limits";
 
 interface PoaScanResult {
   clientType: "PERSON" | "COMPANY" | "PUBLIC";
@@ -352,7 +353,7 @@ export function PoaScannerWizard({ onScanComplete, onClose, compact = false, asB
                 {isDragging ? "Dosya algılandı, bırakabilirsiniz" : "Sürükle-bırak veya tıklayarak seçin"}
               </p>
               <p className="text-xs text-gray-500 mb-3">
-                PDF, Word, JPG, PNG veya TIFF formatında (max 10MB)
+                PDF, Word, JPG, PNG veya TIFF formatında (max {MAX_OCR_UPLOAD_LABEL})
               </p>
               {!isDragging && (
                 <span className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white text-sm rounded-xl hover:from-indigo-700 hover:to-blue-700 shadow-md hover:shadow-lg transition-all">
@@ -619,7 +620,7 @@ export function PoaScannerWizard({ onScanComplete, onClose, compact = false, asB
               {isDragging ? "Dosya algılandı, bırakabilirsiniz" : "Sürükle-bırak veya tıklayarak seçin"}
             </p>
             <p className="text-xs text-gray-500 mb-3">
-              PDF, Word, JPG, PNG veya TIFF formatında (max 10MB)
+              PDF, Word, JPG, PNG veya TIFF formatında (max {MAX_OCR_UPLOAD_LABEL})
             </p>
             {!isDragging && (
               <span className="inline-flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-indigo-600 to-blue-600 text-white text-sm rounded-xl hover:from-indigo-700 hover:to-blue-700 shadow-md hover:shadow-lg transition-all">

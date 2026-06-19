@@ -7,6 +7,7 @@ import {
   AlertTriangle, Scroll, FileCheck
 } from "lucide-react";
 import { api } from "@/lib/api";
+import { MAX_OCR_UPLOAD_BYTES, MAX_OCR_UPLOAD_LABEL } from "@/lib/upload-limits";
 import {
   Debtor, CaseDebtor, DebtorType, DebtorRole, NotificationMode,
   TebligatLegalMethod, TebligatDeliveryType,
@@ -251,8 +252,8 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
       return;
     }
     
-    if (file.size > 10 * 1024 * 1024) {
-      setWizardError("Dosya boyutu 10MB'dan büyük olamaz.");
+    if (file.size > MAX_OCR_UPLOAD_BYTES) {
+      setWizardError(`Dosya boyutu ${MAX_OCR_UPLOAD_LABEL}'dan büyük olamaz.`);
       return;
     }
     

@@ -28,6 +28,10 @@ interface ClassifyResponse {
   extractionMethod?: string;
 }
 
+// PR-4: OCR yükleme dosya limiti — TEK KAYNAK (4 FileInterceptor + supported-formats).
+const MAX_OCR_UPLOAD_BYTES = 50 * 1024 * 1024; // 50MB
+const MAX_OCR_UPLOAD_LABEL = `${MAX_OCR_UPLOAD_BYTES / (1024 * 1024)}MB`; // "50MB"
+
 @Controller("ocr")
 @UseGuards(JwtAuthGuard)
 export class OcrController {
@@ -59,7 +63,7 @@ export class OcrController {
   @Post("classify-file")
   @UseInterceptors(
     FileInterceptor("file", {
-      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+      limits: { fileSize: MAX_OCR_UPLOAD_BYTES }, // 50MB (PR-4)
       fileFilter: (req, file, cb) => {
         const allowedMimes = [
           "application/pdf",
@@ -226,7 +230,7 @@ export class OcrController {
         { mime: "image/png", extension: ".png", description: "PNG Görüntü" },
         { mime: "text/plain", extension: ".txt", description: "Metin Dosyası" },
       ],
-      maxFileSize: "10MB",
+      maxFileSize: MAX_OCR_UPLOAD_LABEL,
       ocrSupport: {
         pdf: true,
         image: false, // Henüz aktif değil
@@ -243,7 +247,7 @@ export class OcrController {
   @Post("scan-debt-document")
   @UseInterceptors(
     FileInterceptor("file", {
-      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+      limits: { fileSize: MAX_OCR_UPLOAD_BYTES }, // 50MB (PR-4)
       fileFilter: (req, file, cb) => {
         const allowedMimes = [
           "application/pdf",
@@ -300,7 +304,7 @@ export class OcrController {
   @Post("scan-external-case")
   @UseInterceptors(
     FileInterceptor("file", {
-      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+      limits: { fileSize: MAX_OCR_UPLOAD_BYTES }, // 50MB (PR-4)
       fileFilter: (req, file, cb) => {
         const allowedMimes = [
           "application/pdf",
@@ -356,7 +360,7 @@ export class OcrController {
   @Post("scan-poa")
   @UseInterceptors(
     FileInterceptor("file", {
-      limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+      limits: { fileSize: MAX_OCR_UPLOAD_BYTES }, // 50MB (PR-4)
       fileFilter: (req, file, cb) => {
         const allowedMimes = [
           "application/pdf",
