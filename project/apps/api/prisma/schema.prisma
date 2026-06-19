@@ -1158,6 +1158,14 @@ model CaseDebtor {
   liabilityAmount Decimal?       @db.Decimal(15, 2)
   liabilityType   LiabilityType?
 
+  // CaseDebtor relationship lifecycle
+  lifecycleStatus        CaseDebtorLifecycleStatus @default(ACTIVE)
+  passivatedAt           DateTime?
+  passivatedById         String?
+  passivationReason      String?
+  passivationNote        String?
+  passivationEffectiveAt DateTime?
+
   // Tebligat Modu ve Adres
   notificationMode    DebtorNotificationMode @default(NORMAL)
   selectedAddressId   String?
@@ -1222,6 +1230,7 @@ model CaseDebtor {
 
   @@unique([caseId, debtorId, role])
   @@index([caseId])
+  @@index([caseId, lifecycleStatus])
   @@index([debtorId])
   @@index([serviceStatus])
 }
@@ -2598,6 +2607,11 @@ enum DebtorNotificationMode {
   KEP // Kayıtlı Elektronik Posta
   UETS // Ulusal Elektronik Tebligat Sistemi
   ILANEN // İlanen Tebligat
+}
+
+enum CaseDebtorLifecycleStatus {
+  ACTIVE
+  PASSIVE
 }
 
 // Tebligat Durumu (ServiceStatus)
