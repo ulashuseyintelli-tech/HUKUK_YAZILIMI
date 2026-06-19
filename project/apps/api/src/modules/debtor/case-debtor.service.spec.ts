@@ -3,19 +3,6 @@ import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { CaseDebtorService } from "./case-debtor.service";
 import { PrismaService } from "@/prisma/prisma.service";
 
-/**
- * CaseDebtorService.removeCaseDebtor — unit tests (mock Prisma).
- *
- * Odak:
- * - PR-L1 stopgap preflight sadece bağımlılık var/yok kontrolü yapar.
- * - Bloklayıcı kayıt varsa hard-delete başlamaz.
- * - Bloklayıcı yoksa açık AddressTask'lar aynı transaction içinde CANCELLED olur,
- *   sonra CaseDebtor silinir.
- *
- * NOT: Mock Prisma gerçek satır filtrelemez; tenant/case izolasyonunu burada where
- * şekliyle assert ederiz. Gerçek AddressTask satır izolasyonu describeDb integration
- * spec'inde ayrıca kanıtlanır.
- */
 describe("CaseDebtorService.removeCaseDebtor", () => {
   let service: CaseDebtorService;
 
@@ -23,102 +10,65 @@ describe("CaseDebtorService.removeCaseDebtor", () => {
   const CASE = "case-1";
   const DEBTOR = "debtor-1";
   const CASE_DEBTOR = "cd-1";
+  const USER = "user-1";
+
+  const activeCaseDebtor = {
+    id: CASE_DEBTOR,
+    caseId: CASE,
+    debtorId: DEBTOR,
+    role: "ASIL_BORCLU",
+    lifecycleStatus: "ACTIVE",
+    passivatedAt: null,
+    passivatedById: null,
+    passivationReason: null,
+    passivationNote: null,
+    passivationEffectiveAt: null,
+  };
 
   const txMock = {
     addressTask: { updateMany: jest.fn() },
-    caseDebtor: { delete: jest.fn() },
+    caseDebtor: {
+      update: jest.fn(),
+      delete: jest.fn(),
+    },
   };
 
   const mockPrisma = {
-    caseDebtor: { findFirst: jest.fn() },
-    serviceHistory: { count: jest.fn() },
-    externalCase: { count: jest.fn() },
-    uyapQuery: { count: jest.fn() },
-    institutionLetter: { count: jest.fn() },
-    addressResearch: { count: jest.fn() },
-    assetQuery: { count: jest.fn() },
-    tebligat: { count: jest.fn() },
-    collection: { count: jest.fn() },
-    thirdParty: { count: jest.fn() },
+    caseDebtor: {
+      findFirst: jest.fn(),
+      update: jest.fn(),
+    },
+    debtorAddress: { findFirst: jest.fn() },
     $transaction: jest.fn(),
   };
 
-  const blockerCountMocks: jest.Mock[] = [
-    mockPrisma.serviceHistory.count,
-    mockPrisma.externalCase.count,
-    mockPrisma.uyapQuery.count,
-    mockPrisma.institutionLetter.count,
-    mockPrisma.addressResearch.count,
-    mockPrisma.assetQuery.count,
-    mockPrisma.tebligat.count,
-    mockPrisma.collection.count,
-    mockPrisma.thirdParty.count,
-  ];
-
-  const blockerCases: Array<[string, jest.Mock]> = [
-    ["ServiceHistory", mockPrisma.serviceHistory.count],
-    ["ExternalCase", mockPrisma.externalCase.count],
-    ["UyapQuery", mockPrisma.uyapQuery.count],
-    ["InstitutionLetter", mockPrisma.institutionLetter.count],
-    ["AddressResearch", mockPrisma.addressResearch.count],
-    ["AssetQuery", mockPrisma.assetQuery.count],
-    ["Tebligat", mockPrisma.tebligat.count],
-    ["Collection", mockPrisma.collection.count],
-    ["ThirdParty", mockPrisma.thirdParty.count],
-  ];
-
-  const mockExistingCaseDebtor = (tenantId = TENANT) => {
+  const mockExistingCaseDebtor = (overrides: Record<string, unknown> = {}) => {
     mockPrisma.caseDebtor.findFirst.mockResolvedValue({
-      id: CASE_DEBTOR,
-      caseId: CASE,
-      debtorId: DEBTOR,
-      case: { tenantId },
+      ...activeCaseDebtor,
+      ...overrides,
     });
   };
 
-  const expectNoDeleteSideEffect = () => {
-    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
-    expect(txMock.addressTask.updateMany).not.toHaveBeenCalled();
-    expect(txMock.caseDebtor.delete).not.toHaveBeenCalled();
+  const expectTenantScopedLookup = () => {
+    expect(mockPrisma.caseDebtor.findFirst).toHaveBeenCalledWith({
+      where: { id: CASE_DEBTOR, case: { tenantId: TENANT } },
+    });
   };
 
-  const expectPreflightTenantScope = () => {
-    const relationScopedWhere = {
-      caseDebtorId: CASE_DEBTOR,
-      caseDebtor: { case: { tenantId: TENANT } },
-    };
-    const looseScalarWhere = {
-      caseDebtorId: CASE_DEBTOR,
-      caseId: CASE,
-      case: { tenantId: TENANT },
-    };
-
-    expect(mockPrisma.serviceHistory.count).toHaveBeenCalledWith({
-      where: relationScopedWhere,
-    });
-    expect(mockPrisma.externalCase.count).toHaveBeenCalledWith({
-      where: relationScopedWhere,
-    });
-    expect(mockPrisma.uyapQuery.count).toHaveBeenCalledWith({
-      where: relationScopedWhere,
-    });
-    expect(mockPrisma.institutionLetter.count).toHaveBeenCalledWith({
-      where: relationScopedWhere,
-    });
-    expect(mockPrisma.addressResearch.count).toHaveBeenCalledWith({
-      where: relationScopedWhere,
-    });
-    expect(mockPrisma.assetQuery.count).toHaveBeenCalledWith({
-      where: relationScopedWhere,
-    });
-    expect(mockPrisma.tebligat.count).toHaveBeenCalledWith({
-      where: looseScalarWhere,
-    });
-    expect(mockPrisma.collection.count).toHaveBeenCalledWith({
-      where: looseScalarWhere,
-    });
-    expect(mockPrisma.thirdParty.count).toHaveBeenCalledWith({
-      where: relationScopedWhere,
+  const expectAddressTaskCancellation = () => {
+    expect(txMock.addressTask.updateMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: TENANT,
+        caseId: CASE,
+        debtorId: DEBTOR,
+        status: { in: ["PENDING", "IN_PROGRESS", "WAITING_EXTERNAL"] },
+      },
+      data: expect.objectContaining({
+        status: "CANCELLED",
+        cancellationReason: "MANUAL_CANCEL",
+        completedAt: expect.any(Date),
+        updatedAt: expect.any(Date),
+      }),
     });
   };
 
@@ -135,49 +85,48 @@ describe("CaseDebtorService.removeCaseDebtor", () => {
     jest.clearAllMocks();
     mockPrisma.$transaction.mockImplementation((cb: any) => cb(txMock));
     txMock.addressTask.updateMany.mockResolvedValue({ count: 0 });
-    txMock.caseDebtor.delete.mockResolvedValue({ id: CASE_DEBTOR });
-    blockerCountMocks.forEach((count) => count.mockResolvedValue(0));
+    txMock.caseDebtor.update.mockResolvedValue({
+      ...activeCaseDebtor,
+      lifecycleStatus: "PASSIVE",
+      passivatedById: USER,
+      passivationReason: "MANUAL",
+    });
   });
 
-  it("bloklayıcı bağımlılık yoksa CaseDebtor'u siler", async () => {
+  it("aktif CaseDebtor kaydını hard-delete yerine PASSIVE yapar", async () => {
     mockExistingCaseDebtor();
 
-    const result = await service.removeCaseDebtor(TENANT, CASE_DEBTOR);
+    const result = await service.removeCaseDebtor(TENANT, CASE_DEBTOR, USER);
 
-    expectPreflightTenantScope();
+    expectTenantScopedLookup();
     expect(mockPrisma.$transaction).toHaveBeenCalledTimes(1);
-    expect(txMock.caseDebtor.delete).toHaveBeenCalledWith({
+    expect(txMock.caseDebtor.update).toHaveBeenCalledWith({
       where: { id: CASE_DEBTOR },
-    });
-    expect(result).toEqual({ id: CASE_DEBTOR });
-  });
-
-  it("açık AddressTask'ları (caseId+debtorId+tenant pinli) CANCELLED yapar ve CaseDebtor'u aynı tx'te siler", async () => {
-    mockExistingCaseDebtor();
-
-    await service.removeCaseDebtor(TENANT, CASE_DEBTOR);
-
-    expect(txMock.addressTask.updateMany).toHaveBeenCalledTimes(1);
-    expect(txMock.addressTask.updateMany).toHaveBeenCalledWith({
-      where: {
-        tenantId: TENANT,
-        caseId: CASE,
-        debtorId: DEBTOR,
-        status: { in: ["PENDING", "IN_PROGRESS", "WAITING_EXTERNAL"] },
+      data: {
+        lifecycleStatus: "PASSIVE",
+        passivatedAt: expect.any(Date),
+        passivatedById: USER,
+        passivationReason: "MANUAL",
+        passivationNote: null,
+        passivationEffectiveAt: null,
       },
-      data: expect.objectContaining({
-        status: "CANCELLED",
-        cancellationReason: "MANUAL_CANCEL",
-        completedAt: expect.any(Date),
-        updatedAt: expect.any(Date),
-      }),
     });
+    expect(txMock.caseDebtor.delete).not.toHaveBeenCalled();
+    expect(result.lifecycleStatus).toBe("PASSIVE");
   });
 
-  it("data.status filtresi yalnız açık statüleri hedefler; terminal AddressTask blocker değildir", async () => {
+  it("açık AddressTask kayıtlarını tenant+case+debtor pinli şekilde CANCELLED yapar", async () => {
     mockExistingCaseDebtor();
 
-    await service.removeCaseDebtor(TENANT, CASE_DEBTOR);
+    await service.removeCaseDebtor(TENANT, CASE_DEBTOR, USER);
+
+    expectAddressTaskCancellation();
+  });
+
+  it("terminal AddressTask statülerini cancellation filtresine dahil etmez", async () => {
+    mockExistingCaseDebtor();
+
+    await service.removeCaseDebtor(TENANT, CASE_DEBTOR, USER);
 
     const where = txMock.addressTask.updateMany.mock.calls[0][0].where;
     expect(where.status.in).toEqual([
@@ -191,39 +140,127 @@ describe("CaseDebtorService.removeCaseDebtor", () => {
     expect(where.status.in).not.toContain("RESOLVED");
   });
 
-  it("tenant uyuşmazlığında NotFound atar ve preflight/silme yapmaz", async () => {
-    mockExistingCaseDebtor("baska-tenant");
-
-    await expect(
-      service.removeCaseDebtor(TENANT, CASE_DEBTOR)
-    ).rejects.toBeInstanceOf(NotFoundException);
-
-    blockerCountMocks.forEach((count) => expect(count).not.toHaveBeenCalled());
-    expectNoDeleteSideEffect();
-  });
-
-  it("CaseDebtor bulunamazsa NotFound atar ve preflight/silme yapmaz", async () => {
+  it("tenant uyuşmazlığında veya kayıt yoksa mutation yapmaz", async () => {
     mockPrisma.caseDebtor.findFirst.mockResolvedValue(null);
 
     await expect(
-      service.removeCaseDebtor(TENANT, CASE_DEBTOR)
+      service.removeCaseDebtor(TENANT, CASE_DEBTOR, USER)
     ).rejects.toBeInstanceOf(NotFoundException);
 
-    blockerCountMocks.forEach((count) => expect(count).not.toHaveBeenCalled());
-    expectNoDeleteSideEffect();
+    expectTenantScopedLookup();
+    expect(mockPrisma.$transaction).not.toHaveBeenCalled();
+    expect(txMock.addressTask.updateMany).not.toHaveBeenCalled();
+    expect(txMock.caseDebtor.update).not.toHaveBeenCalled();
+    expect(txMock.caseDebtor.delete).not.toHaveBeenCalled();
   });
 
-  it.each(blockerCases)(
-    "bağlı %s varsa BadRequest atar ve hard-delete başlamaz",
-    async (_name, countMock) => {
-      mockExistingCaseDebtor();
-      countMock.mockResolvedValue(1);
+  it("PASSIVE kayıt için idempotent döner ve passivation metadata değerlerini ezmez", async () => {
+    const passivatedAt = new Date("2026-01-01T00:00:00.000Z");
+    mockExistingCaseDebtor({
+      lifecycleStatus: "PASSIVE",
+      passivatedAt,
+      passivatedById: "existing-user",
+      passivationReason: "EXISTING_REASON",
+      passivationNote: "existing note",
+      passivationEffectiveAt: new Date("2026-01-02T00:00:00.000Z"),
+    });
 
-      await expect(
-        service.removeCaseDebtor(TENANT, CASE_DEBTOR)
-      ).rejects.toBeInstanceOf(BadRequestException);
+    const result = await service.removeCaseDebtor(TENANT, CASE_DEBTOR, USER);
 
-      expectNoDeleteSideEffect();
-    }
-  );
+    expectAddressTaskCancellation();
+    expect(txMock.caseDebtor.update).not.toHaveBeenCalled();
+    expect(txMock.caseDebtor.delete).not.toHaveBeenCalled();
+    expect(result).toEqual(
+      expect.objectContaining({
+        lifecycleStatus: "PASSIVE",
+        passivatedAt,
+        passivatedById: "existing-user",
+        passivationReason: "EXISTING_REASON",
+        passivationNote: "existing note",
+      })
+    );
+  });
+
+  it("currentUser yoksa passivatedById null bırakılır", async () => {
+    mockExistingCaseDebtor();
+
+    await service.removeCaseDebtor(TENANT, CASE_DEBTOR);
+
+    expect(txMock.caseDebtor.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ passivatedById: null }),
+      })
+    );
+  });
+});
+
+describe("CaseDebtorService.updateCaseDebtor", () => {
+  let service: CaseDebtorService;
+
+  const mockPrisma = {
+    caseDebtor: {
+      findFirst: jest.fn(),
+      update: jest.fn(),
+    },
+    debtorAddress: { findFirst: jest.fn() },
+  };
+
+  const existingCaseDebtor = {
+    id: "case-debtor-1",
+    caseId: "case-1",
+    debtorId: "debtor-1",
+    role: "ASIL_BORCLU",
+    lifecycleStatus: "ACTIVE",
+    ilanenJustification: null,
+    case: { tenantId: "tenant-1" },
+    debtor: { kepAddress: null },
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    service = new CaseDebtorService(mockPrisma as any);
+  });
+
+  it("PASSIVE CaseDebtor üzerinde PUT mutasyonunu engeller", async () => {
+    mockPrisma.caseDebtor.findFirst.mockResolvedValue({
+      ...existingCaseDebtor,
+      lifecycleStatus: "PASSIVE",
+    });
+
+    await expect(
+      service.updateCaseDebtor("tenant-1", "case-debtor-1", {
+        caseNote: "pasif kayıt güncellemesi",
+      } as any)
+    ).rejects.toBeInstanceOf(BadRequestException);
+
+    expect(mockPrisma.caseDebtor.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "case-debtor-1", case: { tenantId: "tenant-1" } },
+      })
+    );
+    expect(mockPrisma.debtorAddress.findFirst).not.toHaveBeenCalled();
+    expect(mockPrisma.caseDebtor.update).not.toHaveBeenCalled();
+  });
+
+  it("ACTIVE CaseDebtor üzerinde mevcut update davranışını korur", async () => {
+    mockPrisma.caseDebtor.findFirst.mockResolvedValue(existingCaseDebtor);
+    mockPrisma.caseDebtor.update.mockResolvedValue({
+      ...existingCaseDebtor,
+      caseNote: "aktif kayıt güncellemesi",
+    });
+
+    const result = await service.updateCaseDebtor("tenant-1", "case-debtor-1", {
+      caseNote: "aktif kayıt güncellemesi",
+    } as any);
+
+    expect(mockPrisma.caseDebtor.update).toHaveBeenCalledWith({
+      where: { id: "case-debtor-1" },
+      data: { caseNote: "aktif kayıt güncellemesi" },
+      include: {
+        debtor: { include: { debtorAddresses: true } },
+        selectedAddress: true,
+      },
+    });
+    expect(result.caseNote).toBe("aktif kayıt güncellemesi");
+  });
 });

@@ -153,6 +153,12 @@ export class CaseDebtorService {
       throw new NotFoundException("Dosya borçlusu bulunamadı");
     }
 
+    if (caseDebtor.lifecycleStatus === "PASSIVE") {
+      throw new BadRequestException(
+        "Pasif dosya borçlusu güncellenemez."
+      );
+    }
+
     // Validate notification mode if changing
     if (dto.notificationMode) {
       this.validateNotificationMode(
@@ -190,54 +196,26 @@ export class CaseDebtorService {
     });
   }
 
-  /**
-   * Borçluyu dosyadan çıkarır + o (caseId, debtorId) çiftine ait AÇIK adres
-   * görevlerini (AddressTask) AYNI transaction içinde iptal eder (öksüz görev temizliği).
-   *
-   * Neden burada: AddressTask'ın CaseDebtor'a foreign key'i YOKTUR — yalnız caseId ve
-   * debtorId tutar; onDelete:Cascade sadece Case veya Debtor silinince tetiklenir.
-   * CaseDebtor linki kalkınca (Case/Debtor yaşamaya devam ettiği için) DB cascade
-   * çalışmaz → açık görevler "öksüz" kalır ve AddressTaskScheduler onları boşa işler
-   * (saatlik hatırlatma + ASSIGN_MANUAL_CALL_CLIENT escalation + yıllık adres refresh).
-   * Bu yüzden iptal, silme noktasında uygulama katmanında yapılır.
-   *
-   * Kapsam: where = tenantId + caseId + debtorId (üçü birden pinlenir) → başka
-   * borçlu / başka dosya / başka tenant ETKİLENMEZ. Yalnız açık statüler
-   * (PENDING/IN_PROGRESS/WAITING_EXTERNAL) iptal edilir; terminal görevlere dokunulmaz.
-   * Reason = MANUAL_CANCEL (prod'da boş slot; "borçlu çıkarıldı" anlamını temiz taşır —
-   * SUPERSEDED repo'da "ardıl kayıt ikame etti" demek, burada ardıl yok).
-   *
-   * PR-L1 preflight (BLOK): bu borçluya (caseDebtorId) bağlı legal/audit/business
-   * kayıtlardan herhangi biri varsa silme ENGELLENİR. Bu geçici guard sadece var/yok
-   * kontrolüdür; passivation/soft-delete davranışı başlatmaz.
-   *
-   * @remarks Çağrıldığı yerler:
-   * - CaseDebtorController.removeCaseDebtor() → DELETE /case-debtors/:id (borçluyu dosyadan çıkar)
-   */
-  async removeCaseDebtor(tenantId: string, caseDebtorId: string) {
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseDebtorController.removeCaseDebtor() → DELETE /case-debtors/:id (dosya borçlusunu aktif işlem öznesi olmaktan çıkarır)
+  /// </remarks>
+  async removeCaseDebtor(
+    tenantId: string,
+    caseDebtorId: string,
+    currentUserId?: string | null
+  ) {
     const caseDebtor = await this.prisma.caseDebtor.findFirst({
-      where: { id: caseDebtorId },
-      include: { case: true },
+      where: { id: caseDebtorId, case: { tenantId } },
     });
 
-    if (!caseDebtor || caseDebtor.case.tenantId !== tenantId) {
+    if (!caseDebtor) {
       throw new NotFoundException("Dosya borçlusu bulunamadı");
     }
 
-    if (
-      await this.hasCaseDebtorDeleteBlocker(
-        tenantId,
-        caseDebtor.caseId,
-        caseDebtorId
-      )
-    ) {
-      throw new BadRequestException(
-        "Bu borçluya bağlı hukuki/audit/iş kayıtları bulunduğu için borçlu dosyadan çıkarılamaz."
-      );
-    }
-
-    // Borçlu çıkarılırken açık adres görevlerini iptal et + CaseDebtor'u sil — atomik.
     return this.prisma.$transaction(async (tx) => {
+      const now = new Date();
+
       await tx.addressTask.updateMany({
         where: {
           tenantId,
@@ -248,55 +226,27 @@ export class CaseDebtorService {
         data: {
           status: "CANCELLED",
           cancellationReason: "MANUAL_CANCEL",
-          completedAt: new Date(),
-          updatedAt: new Date(),
+          completedAt: now,
+          updatedAt: now,
         },
       });
 
-      return tx.caseDebtor.delete({ where: { id: caseDebtorId } });
+      if (caseDebtor.lifecycleStatus === "PASSIVE") {
+        return caseDebtor;
+      }
+
+      return tx.caseDebtor.update({
+        where: { id: caseDebtorId },
+        data: {
+          lifecycleStatus: "PASSIVE",
+          passivatedAt: now,
+          passivatedById: currentUserId ?? null,
+          passivationReason: "MANUAL",
+          passivationNote: null,
+          passivationEffectiveAt: null,
+        },
+      });
     });
-  }
-
-  /// <remarks>
-  /// Çağrıldığı yerler:
-  /// - CaseDebtorService.removeCaseDebtor() → DELETE /case-debtors/:id öncesi PR-L1 var/yok preflight guard
-  /// </remarks>
-  private async hasCaseDebtorDeleteBlocker(
-    tenantId: string,
-    caseId: string,
-    caseDebtorId: string
-  ): Promise<boolean> {
-    const counts = await Promise.all([
-      this.prisma.serviceHistory.count({
-        where: { caseDebtorId, caseDebtor: { case: { tenantId } } },
-      }),
-      this.prisma.externalCase.count({
-        where: { caseDebtorId, caseDebtor: { case: { tenantId } } },
-      }),
-      this.prisma.uyapQuery.count({
-        where: { caseDebtorId, caseDebtor: { case: { tenantId } } },
-      }),
-      this.prisma.institutionLetter.count({
-        where: { caseDebtorId, caseDebtor: { case: { tenantId } } },
-      }),
-      this.prisma.addressResearch.count({
-        where: { caseDebtorId, caseDebtor: { case: { tenantId } } },
-      }),
-      this.prisma.assetQuery.count({
-        where: { caseDebtorId, caseDebtor: { case: { tenantId } } },
-      }),
-      this.prisma.tebligat.count({
-        where: { caseDebtorId, caseId, case: { tenantId } },
-      }),
-      this.prisma.collection.count({
-        where: { caseDebtorId, caseId, case: { tenantId } },
-      }),
-      this.prisma.thirdParty.count({
-        where: { caseDebtorId, caseDebtor: { case: { tenantId } } },
-      }),
-    ]);
-
-    return counts.some((count) => count > 0);
   }
 
 

@@ -1,6 +1,5 @@
 import { describeDb } from "../../../test/describe-db";
 import { Test, TestingModule } from "@nestjs/testing";
-import { BadRequestException } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 import { CaseDebtorService } from "./case-debtor.service";
 import {
@@ -10,22 +9,8 @@ import {
   CollectionType,
 } from "@prisma/client";
 
-/**
- * CaseDebtorService.removeCaseDebtor — Collection (tahsilat) BLOK guard'ı (integration / canlı DB).
- *
- * describeDb gate'i: DATABASE_URL yoksa SKIP → CI'da kırmızı yapmaz (bkz test/describe-db.ts).
- *
- * Kanonik finansal bütünlük garantisi EMPİRİK kanıtlanır (mock değil, gerçek count filtresi):
- *
- *   CaseDebtor'a bağlı Collection VAR  → removeCaseDebtor BadRequest atar; CaseDebtor SİLİNMEZ,
- *                                        Collection KORUNUR ve caseDebtorId atfı bozulmaz.
- *   CaseDebtor'a bağlı Collection YOK  → silme NORMAL çalışır (guard yalnız tahsilat varken bloklar).
- *
- * Neden: Collection.caseDebtorId loose String'tir (Prisma @relation/FK YOK) → CaseDebtor
- * silinse DB hata vermez, tahsilatın borçlu atfı sessizce öksüz kalırdı. Guard bunu engeller.
- */
 describeDb(
-  "CaseDebtorService.removeCaseDebtor — Collection guard (tahsilat varsa BLOK)",
+  "CaseDebtorService.removeCaseDebtor - dependent records are preserved by passivation",
   () => {
     let module: TestingModule;
     let prisma: PrismaService;
@@ -52,8 +37,11 @@ describeDb(
     });
 
     async function cleanup() {
-      // FK sırası: önce çocuklar (collection, caseDebtor), sonra ebeveynler.
       await prisma.collection.deleteMany({ where: { tenantId } });
+      await prisma.tebligat.deleteMany({ where: { tenantId } });
+      await prisma.serviceHistory.deleteMany({
+        where: { caseDebtor: { case: { tenantId } } },
+      });
       await prisma.caseDebtor.deleteMany({ where: { case: { tenantId } } });
       await prisma.case.deleteMany({ where: { tenantId } });
       await prisma.debtor.deleteMany({ where: { tenantId } });
@@ -69,13 +57,13 @@ describeDb(
       });
 
       const client = await prisma.client.create({
-        data: { tenantId, displayName: "Test Müvekkil", type: "INDIVIDUAL" },
+        data: { tenantId, displayName: "Test Muvekkil", type: "INDIVIDUAL" },
       });
 
       const debtor = await prisma.debtor.create({
         data: {
           tenantId,
-          name: "Borçlu CG",
+          name: "Borclu CG",
           type: "INDIVIDUAL",
           tckn: `9${suffix}`.slice(0, 11),
         },
@@ -102,7 +90,7 @@ describeDb(
       return { caseId: caseRow.id, cd };
     }
 
-    it("bağlı tahsilat varsa silmeyi BLOKLAR; CaseDebtor ve Collection korunur (atıf öksüz kalmaz)", async () => {
+    it("Collection, Tebligat ve ServiceHistory varken hard-delete yapmaz; atıfları koruyarak PASSIVE yapar", async () => {
       const suffix = Date.now();
       const { caseId, cd } = await seedCaseDebtor(suffix);
 
@@ -117,34 +105,66 @@ describeDb(
         },
       });
 
-      // ── ACT + ASSERT: tahsilat var → BadRequest, hiçbir şey silinmez ──
-      await expect(
-        service.removeCaseDebtor(tenantId, cd.id)
-      ).rejects.toBeInstanceOf(BadRequestException);
+      const tebligat = await prisma.tebligat.create({
+        data: {
+          tenantId,
+          caseId,
+          caseDebtorId: cd.id,
+          tebligatType: "ODEME_EMRI",
+          addressType: "BILINEN",
+          addressText: "Test adresi",
+          recipientName: "Borclu CG",
+          channel: "PTT",
+        },
+      });
 
-      // CaseDebtor DURUR (öksüz atıf oluşmadı)
-      expect(
-        await prisma.caseDebtor.findUnique({ where: { id: cd.id } })
-      ).not.toBeNull();
+      const serviceHistory = await prisma.serviceHistory.create({
+        data: {
+          caseDebtorId: cd.id,
+          toStatus: "READY",
+          actionDate: new Date(),
+          note: "PR-L5 preservation test",
+        },
+      });
 
-      // Collection DURUR ve borçlu atfı bozulmadı
+      const passivated = await service.removeCaseDebtor(tenantId, cd.id);
+
+      expect(passivated.id).toBe(cd.id);
+      expect(passivated.lifecycleStatus).toBe("PASSIVE");
+
+      const cdAfter = await prisma.caseDebtor.findUnique({ where: { id: cd.id } });
+      expect(cdAfter?.lifecycleStatus).toBe("PASSIVE");
+      expect(cdAfter?.passivationReason).toBe("MANUAL");
+
       const collAfter = await prisma.collection.findUnique({
         where: { id: collection.id },
       });
-      expect(collAfter).not.toBeNull();
       expect(collAfter?.caseDebtorId).toBe(cd.id);
+
+      const tebligatAfter = await prisma.tebligat.findUnique({
+        where: { id: tebligat.id },
+      });
+      expect(tebligatAfter?.caseDebtorId).toBe(cd.id);
+
+      const historyAfter = await prisma.serviceHistory.findUnique({
+        where: { id: serviceHistory.id },
+      });
+      expect(historyAfter?.caseDebtorId).toBe(cd.id);
     });
 
-    it("bağlı tahsilat YOKKEN silme normal çalışır (guard yalnız tahsilat varken bloklar)", async () => {
+    it("bağlı kayıt yokken de CaseDebtor'u silmez; PASSIVE yapar", async () => {
       const suffix = Date.now() + 1;
       const { cd } = await seedCaseDebtor(suffix);
 
-      const deleted = await service.removeCaseDebtor(tenantId, cd.id);
+      const passivated = await service.removeCaseDebtor(tenantId, cd.id);
 
-      expect(deleted.id).toBe(cd.id);
-      expect(
-        await prisma.caseDebtor.findUnique({ where: { id: cd.id } })
-      ).toBeNull();
+      expect(passivated.id).toBe(cd.id);
+      expect(passivated.lifecycleStatus).toBe("PASSIVE");
+
+      const cdAfter = await prisma.caseDebtor.findUnique({ where: { id: cd.id } });
+      expect(cdAfter?.lifecycleStatus).toBe("PASSIVE");
+      expect(cdAfter?.passivatedAt).toBeTruthy();
+      expect(cdAfter?.passivationReason).toBe("MANUAL");
     });
   }
 );
