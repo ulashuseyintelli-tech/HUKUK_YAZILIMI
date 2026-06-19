@@ -41,6 +41,7 @@ import {
   Search,
 } from "lucide-react";
 import { api, DebtorListItemDTO, DebtorsSummaryDTO, DebtorDetailDTO } from "@/lib/api";
+import { caseStaffEditFields, buildCaseStaffPatch } from "@/lib/case-staff-edit";
 import { useAuth } from "@/lib/auth-context";
 import { PaymentInstructionModal } from "@/components/payment/PaymentInstructionModal";
 import { ExpenseRequestModal, BalanceWidget, ExpenseRequestList } from "@/components/expense";
@@ -741,15 +742,10 @@ export default function CaseDetailPage() {
     roleOnCase?: string;
     phone?: string;
     email?: string;
-    canSign?: boolean;
+    canEdit?: boolean;
+    canApprove?: boolean;
+    canView?: boolean;
     receiveNotifications?: boolean;
-    permissions?: {
-      canEditCase?: boolean;
-      canGenerateDocs?: boolean;
-      canViewFinance?: boolean;
-      canEditFinance?: boolean;
-      canChangeStatus?: boolean;
-    };
   } | null>(null);
   const [teamModalTab, setTeamModalTab] = useState<'lawyers' | 'staff'>('lawyers');
   const [addingTeamMember, setAddingTeamMember] = useState(false);
@@ -1442,18 +1438,11 @@ export default function CaseDetailPage() {
       firstName: se.staffMember.firstName,
       lastName: se.staffMember.lastName,
       staffType: se.staffMember.staffType,
-      roleOnCase: se.roleOnCase,
       phone: se.staffMember.phone,
       email: se.staffMember.email,
-      canSign: se.canSign,
-      receiveNotifications: (se as any).receiveNotifications ?? true,
-      permissions: (se as any).permissions || {
-        canEditCase: false,
-        canGenerateDocs: true,
-        canViewFinance: true,
-        canEditFinance: false,
-        canChangeStatus: false,
-      },
+      // PR-ASSIGN-3b: CaseStaff modeli alanları (roleOnCase/canEdit/canApprove/canView/receiveNotifications).
+      // Eski canSign + permissions{5} (lawyer drawer'ından sızmış, CaseStaff'ta yok) KALDIRILDI.
+      ...caseStaffEditFields(se as any),
     });
     setStaffDrawerOpen(true);
   };
@@ -2997,21 +2986,8 @@ export default function CaseDetailPage() {
                     <option value="TAKIPCI">Takipçi</option>
                   </select>
                 </div>
-                <div className="flex items-center justify-between p-2 bg-purple-50 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <Edit className="h-4 w-4 text-purple-600" />
-                    <span className="text-sm font-medium text-purple-800">İmza Yetkisi</span>
-                  </div>
-                  <label className="relative inline-flex items-center cursor-pointer">
-                    <input 
-                      type="checkbox" 
-                      checked={selectedStaff.canSign || false}
-                      onChange={(e) => setSelectedStaff({...selectedStaff, canSign: e.target.checked})}
-                      className="sr-only peer" 
-                    />
-                    <div className="w-9 h-5 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-purple-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-purple-600"></div>
-                  </label>
-                </div>
+                {/* PR-ASSIGN-3b: "İmza Yetkisi" (canSign) toggle KALDIRILDI — personel imzacı değil
+                    (avukat kavramı; CaseStaff modelinde alan yok). */}
               </div>
             </div>
 
@@ -3019,21 +2995,18 @@ export default function CaseDetailPage() {
             <div className="space-y-3">
               <h4 className="text-xs font-semibold text-gray-600 uppercase">Dosya Yetkileri</h4>
               <div className="space-y-2 bg-gray-50 rounded-lg p-3">
-                {[
-                  { key: 'canEditCase', label: 'Dosyayı düzenleme', icon: Edit },
-                  { key: 'canGenerateDocs', label: 'Evrak oluşturma', icon: FileText },
-                  { key: 'canViewFinance', label: 'Hesap özeti görme', icon: Eye },
-                  { key: 'canEditFinance', label: 'Masraf/harç düzenleme', icon: CreditCard },
-                  { key: 'canChangeStatus', label: 'Statü değiştirme', icon: Settings },
-                ].map(({ key, label, icon: Icon }) => (
+                {/* PR-ASSIGN-3b: CaseStaff modelinin 3 yetki bool'u (canEdit/canApprove/canView).
+                    Eski 5 ince-taneli permissions{} (lawyer-kopyası, CaseStaff'ta yok) kaldırıldı. */}
+                {([
+                  { key: 'canEdit', label: 'Düzenleme', icon: Edit },
+                  { key: 'canApprove', label: 'Onaylama', icon: FileText },
+                  { key: 'canView', label: 'Görüntüleme', icon: Eye },
+                ] as const).map(({ key, label, icon: Icon }) => (
                   <label key={key} className="flex items-center gap-2 cursor-pointer hover:bg-white p-1 rounded">
                     <input
                       type="checkbox"
-                      checked={(selectedStaff.permissions as any)?.[key] ?? false}
-                      onChange={(e) => setSelectedStaff({
-                        ...selectedStaff, 
-                        permissions: { ...(selectedStaff.permissions || {}), [key]: e.target.checked }
-                      })}
+                      checked={selectedStaff[key] ?? (key === 'canView')}
+                      onChange={(e) => setSelectedStaff({ ...selectedStaff, [key]: e.target.checked })}
                       className="rounded border-gray-300 text-purple-600 focus:ring-purple-500"
                     />
                     <Icon className="h-4 w-4 text-gray-500" />
@@ -3080,12 +3053,8 @@ export default function CaseDetailPage() {
               onClick={async () => {
                 if (!caseData || !selectedStaff) return;
                 try {
-                  await api.patch(`/cases/${caseData.id}/staff/${selectedStaff.caseStaffId}`, {
-                    roleOnCase: selectedStaff.roleOnCase,
-                    canSign: selectedStaff.canSign,
-                    permissions: selectedStaff.permissions,
-                    receiveNotifications: selectedStaff.receiveNotifications,
-                  });
+                  // PR-ASSIGN-3b: yalnız CaseStaff alanları (canSign/permissions GÖNDERİLMEZ).
+                  await api.patch(`/cases/${caseData.id}/staff/${selectedStaff.caseStaffId}`, buildCaseStaffPatch(selectedStaff));
                   await fetchCase();
                   setStaffDrawerOpen(false);
                 } catch (error) {
