@@ -207,11 +207,9 @@ export class CaseDebtorService {
    * Reason = MANUAL_CANCEL (prod'da boş slot; "borçlu çıkarıldı" anlamını temiz taşır —
    * SUPERSEDED repo'da "ardıl kayıt ikame etti" demek, burada ardıl yok).
    *
-   * Finansal koruma (BLOK): bu borçluya (caseDebtorId) bağlı Collection (tahsilat) kaydı
-   * varsa silme ENGELLENİR — ThirdParty guard'ıyla aynı felsefe. Collection.caseDebtorId
-   * loose String'tir (Prisma @relation YOK → FK/onDelete YOK); CaseDebtor silinince tahsilatın
-   * "hangi borçludan geldiği" kanonik/muhasebe atfı öksüz kalır. null'a çekmek muhasebe izini
-   * zayıflatır, cascade tahsilatı yok eder → ikisi de yanlış; doğru tercih BLOK.
+   * PR-L1 preflight (BLOK): bu borçluya (caseDebtorId) bağlı legal/audit/business
+   * kayıtlardan herhangi biri varsa silme ENGELLENİR. Bu geçici guard sadece var/yok
+   * kontrolüdür; passivation/soft-delete davranışı başlatmaz.
    *
    * @remarks Çağrıldığı yerler:
    * - CaseDebtorController.removeCaseDebtor() → DELETE /case-debtors/:id (borçluyu dosyadan çıkar)
@@ -226,29 +224,15 @@ export class CaseDebtorService {
       throw new NotFoundException("Dosya borçlusu bulunamadı");
     }
 
-    // Check if there are third parties linked
-    const thirdPartyCount = await this.prisma.thirdParty.count({
-      where: { caseDebtorId },
-    });
-
-    if (thirdPartyCount > 0) {
+    if (
+      await this.hasCaseDebtorDeleteBlocker(
+        tenantId,
+        caseDebtor.caseId,
+        caseDebtorId
+      )
+    ) {
       throw new BadRequestException(
-        `Bu borçluya bağlı ${thirdPartyCount} üçüncü şahıs kaydı var. Önce bunları silin.`
-      );
-    }
-
-    // Finansal bütünlük: bu borçluya bağlı tahsilat (Collection) varsa silmeyi BLOKLA.
-    // Collection.caseDebtorId loose String'tir (Prisma @relation/FK yok) → CaseDebtor
-    // silinince tahsilatın borçlu atfı öksüz kalır. Tenant-scoped sayım (multitenant +
-    // defense-in-depth; caseDebtorId zaten benzersiz).
-    const collectionCount = await this.prisma.collection.count({
-      where: { caseDebtorId, tenantId },
-    });
-
-    if (collectionCount > 0) {
-      throw new BadRequestException(
-        "Bu borçluya bağlı tahsilat kaydı bulunduğu için borçlu dosyadan çıkarılamaz. " +
-          "Önce tahsilat kaydını başka borçluya aktarın, atfı kaldırın veya tahsilatı iptal/düzeltin."
+        "Bu borçluya bağlı hukuki/audit/iş kayıtları bulunduğu için borçlu dosyadan çıkarılamaz."
       );
     }
 
@@ -271,6 +255,48 @@ export class CaseDebtorService {
 
       return tx.caseDebtor.delete({ where: { id: caseDebtorId } });
     });
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseDebtorService.removeCaseDebtor() → DELETE /case-debtors/:id öncesi PR-L1 var/yok preflight guard
+  /// </remarks>
+  private async hasCaseDebtorDeleteBlocker(
+    tenantId: string,
+    caseId: string,
+    caseDebtorId: string
+  ): Promise<boolean> {
+    const counts = await Promise.all([
+      this.prisma.serviceHistory.count({
+        where: { caseDebtorId, caseDebtor: { case: { tenantId } } },
+      }),
+      this.prisma.externalCase.count({
+        where: { caseDebtorId, caseDebtor: { case: { tenantId } } },
+      }),
+      this.prisma.uyapQuery.count({
+        where: { caseDebtorId, caseDebtor: { case: { tenantId } } },
+      }),
+      this.prisma.institutionLetter.count({
+        where: { caseDebtorId, caseDebtor: { case: { tenantId } } },
+      }),
+      this.prisma.addressResearch.count({
+        where: { caseDebtorId, caseDebtor: { case: { tenantId } } },
+      }),
+      this.prisma.assetQuery.count({
+        where: { caseDebtorId, caseDebtor: { case: { tenantId } } },
+      }),
+      this.prisma.tebligat.count({
+        where: { caseDebtorId, caseId, case: { tenantId } },
+      }),
+      this.prisma.collection.count({
+        where: { caseDebtorId, caseId, case: { tenantId } },
+      }),
+      this.prisma.thirdParty.count({
+        where: { caseDebtorId, caseDebtor: { case: { tenantId } } },
+      }),
+    ]);
+
+    return counts.some((count) => count > 0);
   }
 
 
