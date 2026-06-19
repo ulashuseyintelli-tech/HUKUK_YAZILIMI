@@ -159,3 +159,33 @@ describe('PR-2b-3 scanDebtDocument — flag + fallback wiring', () => {
     expect(legacySpy).toHaveBeenCalledTimes(1);
   });
 });
+
+describe('PR-1 buildPageAiExtract — fence-safe parse (response_format + parseAiJson)', () => {
+  const makeSvc = (content: string) => {
+    const svc = buildSvc();
+    const create = jest.fn(async () => ({ choices: [{ message: { content } }] }));
+    (svc as any).openai = { chat: { completions: { create } } }; // openai SET edildikten SONRA buildPageAiExtract çağrılır
+    return { svc, create };
+  };
+
+  it('```json markdown-fence yanıtı parse eder (eski ham JSON.parse PATLARDI → parseAiJson)', async () => {
+    const { svc } = makeSvc('```json\n{"documentType":"CEK","documentNo":"X"}\n```');
+    const extract = (svc as any).buildPageAiExtract();
+    const r = await extract({ kind: 'text', text: 'FACE', prompt: 'JSON döndür' });
+    expect(r).toEqual({ documentType: 'CEK', documentNo: 'X' });
+  });
+
+  it('fence-siz düz JSON da parse eder (regresyon)', async () => {
+    const { svc } = makeSvc('{"documentType":"SENET"}');
+    const extract = (svc as any).buildPageAiExtract();
+    const r = await extract({ kind: 'text', text: 'FACE', prompt: 'JSON döndür' });
+    expect(r).toEqual({ documentType: 'SENET' });
+  });
+
+  it('OpenAI çağrısı response_format:{type:"json_object"} ile yapılır', async () => {
+    const { svc, create } = makeSvc('{"documentType":"CEK"}');
+    const extract = (svc as any).buildPageAiExtract();
+    await extract({ kind: 'text', text: 'FACE', prompt: 'JSON döndür' });
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({ response_format: { type: 'json_object' } }));
+  });
+});
