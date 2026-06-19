@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef } from "react";
+import { MAX_OCR_UPLOAD_BYTES, MAX_OCR_UPLOAD_LABEL } from "@/lib/upload-limits";
 import {
   FileText,
   Receipt,
@@ -103,8 +104,8 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
-      setScanError("Dosya boyutu 10MB'dan büyük olamaz.");
+    if (file.size > MAX_OCR_UPLOAD_BYTES) {
+      setScanError(`Dosya boyutu ${MAX_OCR_UPLOAD_LABEL}'dan büyük olamaz.`);
       return;
     }
 
@@ -203,8 +204,8 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
       return;
     }
     
-    if (file.size > 10 * 1024 * 1024) {
-      setScanError('Dosya boyutu 10MB\'dan büyük olamaz.');
+    if (file.size > MAX_OCR_UPLOAD_BYTES) {
+      setScanError(`Dosya boyutu ${MAX_OCR_UPLOAD_LABEL}'dan büyük olamaz.`);
       return;
     }
     setSelectedFile(file);
@@ -525,7 +526,7 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
                       {isDragging ? "Dosyayı Bırakın" : "Dosyayı sürükleyip bırakın veya tıklayın"}
                     </p>
                     <p className="text-xs text-emerald-600/80">
-                      PDF, Word (DOC/DOCX), RTF, UDF, JPG, PNG, TIFF veya TXT (max 10MB)
+                      PDF, Word (DOC/DOCX), RTF, UDF, JPG, PNG, TIFF veya TXT (max {MAX_OCR_UPLOAD_LABEL})
                     </p>
                   </div>
 
@@ -702,7 +703,7 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
                     <p className="text-sm font-medium text-indigo-800 mb-1">
                       {isDragging ? "Dosyayı Bırakın" : "Vekaletname dosyasını sürükleyin veya tıklayın"}
                     </p>
-                    <p className="text-xs text-indigo-600/80">PDF, Word, JPG, PNG veya TIFF (max 10MB)</p>
+                    <p className="text-xs text-indigo-600/80">PDF, Word, JPG, PNG veya TIFF (max {MAX_OCR_UPLOAD_LABEL})</p>
                   </>
                 )}
               </div>
