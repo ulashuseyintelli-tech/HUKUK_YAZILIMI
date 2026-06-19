@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, BadRequestException, Optional, Inject } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { findOrCreateDebtorAddress } from '@/common/address-hash.util'; // RFA-006 adres dedup
 import {
@@ -9,12 +9,48 @@ import {
   UYAP_QUERY_CODES,
   QUERY_HIERARCHY,
 } from './dto/uyap-query.dto';
+import { CasePolicyEngine } from '../policy-engine/case-policy-engine.service';
+import { ActionCode } from '../policy-engine/types/action-code.enum';
+import { GateWarning } from '../policy-engine/types/policy-decision.interface';
 
 @Injectable()
 export class UyapQueryService {
   private readonly logger = new Logger(UyapQueryService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    // ASSIGN: UYAP_QUERY soft-warning (advisory). @Optional → CPE inject edilemezse
+    // fail-open (uyarı yok, sorgu akışı bozulmaz) — uyap.service/stage-trigger deseni.
+    @Optional() @Inject(CasePolicyEngine) private readonly cpe?: CasePolicyEngine,
+  ) {}
+
+  /**
+   * UYAP_QUERY policy gate'ini ADVISORY değerlendirir — ASLA bloklamaz.
+   * UYAP geçici kesintisinde (system.uyap_available=false) SOFT uyarı (GateWarning[]) döner.
+   * CPE inject edilmemişse ya da hata verirse → [] (fail-open), sorgu akışı bozulmaz.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - UyapQueryService.createQuery() → POST /address-discovery/uyap-query
+   */
+  private async getUyapQueryWarnings(
+    caseId: string,
+    debtorId: string,
+    userId: string,
+  ): Promise<GateWarning[]> {
+    if (!this.cpe) return [];
+    try {
+      const decision = await this.cpe.canPerformAction(caseId, ActionCode.UYAP_QUERY, {
+        debtorId,
+        userId,
+      });
+      return decision.warnings ?? [];
+    } catch (error) {
+      this.logger.warn(
+        `UYAP_QUERY policy uyarısı alınamadı (fail-open): ${(error as Error)?.message ?? error}`,
+      );
+      return [];
+    }
+  }
 
   /**
    * UYAP sorgusu oluştur
@@ -69,11 +105,19 @@ export class UyapQueryService {
       },
     });
 
+    // ASSIGN: UYAP_QUERY policy gate'i ADVISORY → UYAP kesintisinde SOFT uyarı (asla
+    // bloklamaz; query yukarıda zaten oluştu). Frontend `warnings`'i opsiyonel okur.
+    const warnings = await this.getUyapQueryWarnings(
+      caseDebtor.caseId,
+      caseDebtor.debtor.id,
+      userId,
+    );
+
     this.logger.log(
       `UYAP sorgusu oluşturuldu: ${queryCode} - ${caseDebtor.debtor.name} (${caseDebtor.case.fileNumber})`
     );
 
-    return query;
+    return { ...query, warnings };
   }
 
   /**
@@ -226,6 +270,12 @@ export class UyapQueryService {
 
   /**
    * Önerilen sorguları getir (henüz yapılmamış)
+   *
+   * NOT (ASSIGN [S], ERTELENDİ — ayrı PR/karar): Bu uç UYAP-kesinti SOFT uyarısını TAŞIMAZ.
+   * Dönüş bare array (`UyapQuerySuggestion[]`); frontend (UyapQueryList/UyapQueryModal) `.map`
+   * ile array olarak tüketir → `warnings` eklemek `{suggestions,warnings}` wrap'i gerektirir =
+   * response-shape + frontend-contract KIRILIR. Outage uyarısı şimdilik yalnız createQuery'de
+   * yüzeyleniyor; öneri-akışına uyarı frontend contract değişikliği gerektirir (ayrı PR).
    */
   async getSuggestedQueries(tenantId: string, caseDebtorId: string) {
     // Borçlu tipini al
