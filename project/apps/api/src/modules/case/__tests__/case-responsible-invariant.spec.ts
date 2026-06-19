@@ -12,7 +12,8 @@
  * (mevcut B5/D test deseni — saf karar test edilir, dev DB wiring ayrı).
  */
 
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { CaseService, planResponsible } from '../case.service';
 
 // ============================ SAF HELPER: planResponsible ============================
@@ -304,6 +305,101 @@ describe('ASSIGN-4b CaseService.removeCaseLawyer (tam-1 invariant)', () => {
     // ASSIGN-4c: silme her zaman DELETE audit'ler; 4b PROMOTE-UPDATE audit'i OLMAMALI.
     expect(auditLog).not.toHaveBeenCalledWith(
       expect.objectContaining({ newValues: expect.objectContaining({ reason: 'RESPONSIBLE_REMOVED_AUTO_PROMOTE' }) }),
+    );
+  });
+});
+
+// =============== ASSIGN-4b-DB (PR-A): reorder (clear-before-set) + P2002→409 ===============
+// Reorder amacı: tx içinde HİÇBİR an >1 isResponsible=true olmasın → PR-C kısmi tekil index
+// (CaseLawyer_one_responsible_per_case) ile uyumlu. Testler "düşürme ÖNCE, sorumlu-yapma SONRA"
+// çağrı SIRASINI kilitler + P2002→409 dormant çevirisini doğrular.
+describe('ASSIGN-4b-DB updateCaseLawyer — reorder + conflict', () => {
+  const makeMocks = (opts: { txUpdate: jest.Mock; caseLawyers: { id: string; isResponsible: boolean }[] }) => ({
+    case: { findFirst: jest.fn(async () => ({ id: 'case-1', tenantId: 'tenant-1' })) },
+    caseLawyer: {
+      findFirst: jest.fn(async () => ({
+        id: 'cl-1', caseId: 'case-1', isResponsible: false, lawyer: { name: 'Av', surname: 'X' },
+      })),
+      findMany: jest.fn(async () => opts.caseLawyers),
+    },
+    $transaction: jest.fn(async (cb: any) => cb({ caseLawyer: { update: opts.txUpdate } })),
+  });
+
+  it('eski sorumlu ÖNCE düşürülür, hedef SONRA sorumlu yapılır (mid-tx >1 YOK)', async () => {
+    const service = makeService();
+    const txUpdate = jest.fn(async ({ data }: any) => ({
+      id: 'cl-1', role: data.role ?? 'ASSIGNED', ...data,
+      lawyer: { id: 'l-1', name: 'Av', surname: 'X', barNumber: '1', lawyerRank: 'LAWYER' },
+    }));
+    (service as any).prisma = makeMocks({
+      txUpdate,
+      caseLawyers: [{ id: 'cl-0', isResponsible: true }, { id: 'cl-1', isResponsible: false }],
+    });
+    (service as any).auditService = { log: jest.fn(async () => undefined) };
+
+    await (service as any).updateCaseLawyer('tenant-1', 'case-1', 'cl-1', { role: 'RESPONSIBLE' });
+
+    const order = txUpdate.mock.calls.map((c: any) => c[0].where.id);
+    expect(order.indexOf('cl-0')).toBeGreaterThanOrEqual(0);
+    expect(order.indexOf('cl-0')).toBeLessThan(order.indexOf('cl-1')); // demote ÖNCE, hedef SONRA
+    expect(txUpdate).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'cl-1' }, data: expect.objectContaining({ isResponsible: true }) }),
+    );
+  });
+
+  it('P2002 (sorumlu index) → 409 ConflictException', async () => {
+    const service = makeService();
+    const p2002 = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+      code: 'P2002', clientVersion: '5.8.0', meta: { target: 'CaseLawyer_one_responsible_per_case' },
+    });
+    const txUpdate = jest.fn(async () => { throw p2002; });
+    (service as any).prisma = makeMocks({ txUpdate, caseLawyers: [{ id: 'cl-1', isResponsible: false }] });
+    (service as any).auditService = { log: jest.fn(async () => undefined) };
+
+    await expect(
+      (service as any).updateCaseLawyer('tenant-1', 'case-1', 'cl-1', { role: 'RESPONSIBLE' }),
+    ).rejects.toThrow(ConflictException);
+  });
+
+  it('P2002-dışı hata AYNEN yeniden fırlatılır (maskeleme yok)', async () => {
+    const service = makeService();
+    const boom = new Error('db-down');
+    const txUpdate = jest.fn(async () => { throw boom; });
+    (service as any).prisma = makeMocks({ txUpdate, caseLawyers: [{ id: 'cl-1', isResponsible: false }] });
+    (service as any).auditService = { log: jest.fn(async () => undefined) };
+
+    await expect(
+      (service as any).updateCaseLawyer('tenant-1', 'case-1', 'cl-1', { role: 'RESPONSIBLE' }),
+    ).rejects.toThrow('db-down');
+  });
+});
+
+describe('ASSIGN-4b-DB addCaseLawyer — reorder', () => {
+  it('mevcut sorumlu ÖNCE düşürülür (NOT filtresiz), yeni satır SONRA create edilir', async () => {
+    const service = makeService();
+    const txCreate = jest.fn(async ({ data }: any) => ({
+      id: 'cl-new', ...data,
+      lawyer: { id: data.lawyerId, name: 'Yeni', surname: 'Av', barNumber: '9', lawyerRank: 'PARTNER' },
+    }));
+    const txFindMany = jest.fn(async () => [{ id: 'cl-0' }]);
+    const txUpdate = jest.fn(async () => ({}));
+    (service as any).prisma = {
+      case: { findFirst: jest.fn(async () => ({ id: 'case-1', tenantId: 'tenant-1' })) },
+      lawyer: { findFirst: jest.fn(async () => ({ id: 'law-1', tenantId: 'tenant-1', lawyerRank: 'PARTNER' })) },
+      caseLawyer: { findFirst: jest.fn(async () => null) },
+      $transaction: jest.fn(async (cb: any) =>
+        cb({ caseLawyer: { create: txCreate, findMany: txFindMany, update: txUpdate } }),
+      ),
+    };
+    (service as any).auditService = { log: jest.fn(async () => undefined) };
+
+    await (service as any).addCaseLawyer('tenant-1', 'case-1', { lawyerId: 'law-1', role: 'RESPONSIBLE' });
+
+    // demote update, create'DEN ÖNCE çağrıldı
+    expect(txUpdate.mock.invocationCallOrder[0]).toBeLessThan(txCreate.mock.invocationCallOrder[0]);
+    // findMany NOT filtresi olmadan çağrıldı (yeni satır henüz yok)
+    expect(txFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { caseId: 'case-1', isResponsible: true } }),
     );
   });
 });
