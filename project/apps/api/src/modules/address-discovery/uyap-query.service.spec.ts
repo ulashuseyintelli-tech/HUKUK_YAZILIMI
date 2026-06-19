@@ -111,7 +111,7 @@ describe('UyapQueryService.createQuery — UYAP_QUERY soft-warning (advisory, [P
 
   it('caseDebtor yok → NotFound (mevcut davranış korunur, CPE çağrılmaz)', async () => {
     const prisma = makePrisma();
-    prisma.caseDebtor.findFirst = jest.fn(async () => null);
+    prisma.caseDebtor.findFirst = jest.fn(async () => null) as any;
     const cpe = { canPerformAction: jest.fn() };
     const svc = new UyapQueryService(prisma as any, cpe as any);
 
@@ -121,7 +121,7 @@ describe('UyapQueryService.createQuery — UYAP_QUERY soft-warning (advisory, [P
 
   it('aynı sorgu zaten var → BadRequest (mevcut davranış korunur)', async () => {
     const prisma = makePrisma();
-    prisma.uyapQuery.findFirst = jest.fn(async () => ({ status: 'PENDING' }));
+    prisma.uyapQuery.findFirst = jest.fn(async () => ({ status: 'PENDING' })) as any;
     const svc = new UyapQueryService(prisma as any);
 
     await expect(svc.createQuery('t1', 'u1', dto)).rejects.toThrow(BadRequestException);
