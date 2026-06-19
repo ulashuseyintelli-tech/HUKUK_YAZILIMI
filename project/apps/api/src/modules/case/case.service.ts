@@ -194,6 +194,59 @@ export class CaseService {
     }
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseService.create() → POST /cases (transaction öncesi mevcut borçlu/adres ownership guard)
+  /// </remarks>
+  private async validateDebtorOwnershipBeforeCreate(tenantId: string, dto: CreateCaseDto): Promise<void> {
+    const caseDebtorLinks = (dto.caseDebtors || [])
+      .filter((caseDebtor) => !!caseDebtor.debtorId)
+      .map((caseDebtor) => ({
+        debtorId: caseDebtor.debtorId,
+        selectedAddressId: caseDebtor.selectedAddressId,
+      }));
+
+    const legacyDebtorLinks = !dto.caseDebtors?.length
+      ? (dto.debtors || [])
+          .filter((debtor) => !!debtor.id)
+          .map((debtor) => ({
+            debtorId: debtor.id!,
+            selectedAddressId: undefined,
+          }))
+      : [];
+
+    const debtorLinks = [...caseDebtorLinks, ...legacyDebtorLinks];
+    if (debtorLinks.length === 0) return;
+
+    const debtorIds = Array.from(new Set(debtorLinks.map((link) => link.debtorId)));
+    const ownedDebtors = await this.prisma.debtor.findMany({
+      where: { id: { in: debtorIds }, tenantId },
+      select: { id: true },
+    });
+    const ownedDebtorIds = new Set(ownedDebtors.map((debtor) => debtor.id));
+    const missingDebtorId = debtorIds.find((debtorId) => !ownedDebtorIds.has(debtorId));
+
+    if (missingDebtorId) {
+      throw new NotFoundException("Borçlu bulunamadı");
+    }
+
+    const addressLinks = debtorLinks.filter((link) => !!link.selectedAddressId);
+    if (addressLinks.length === 0) return;
+
+    const selectedAddressIds = Array.from(new Set(addressLinks.map((link) => link.selectedAddressId!)));
+    const addresses = await this.prisma.debtorAddress.findMany({
+      where: { id: { in: selectedAddressIds } },
+      select: { id: true, debtorId: true },
+    });
+    const addressOwnerById = new Map(addresses.map((address) => [address.id, address.debtorId]));
+
+    for (const link of addressLinks) {
+      if (addressOwnerById.get(link.selectedAddressId!) !== link.debtorId) {
+        throw new NotFoundException("Adres bulunamadı veya bu borçluya ait değil");
+      }
+    }
+  }
+
   /**
    * Vekalet kontrolü - müvekkil ve avukat arasında geçerli vekalet var mı?
    */
@@ -885,6 +938,10 @@ export class CaseService {
     });
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseController.create() → POST /cases (Yeni takip oluşturma)
+  /// </remarks>
   async create(tenantId: string, dto: CreateCaseDto, userId?: string) {
     // INTEREST_POLICY_ASSIGNED (HR-26: HUMAN actor zorunlu) için userId şart.
     // "Bu faiz politikasını kim atadı?" sorusunun cevabı olmadan event hukuken zayıf.
@@ -928,6 +985,7 @@ export class CaseService {
       // RFA-016: inline-yeni taraflar (id YOK) tx ÖNCESİ guard'lı servislerle resolve edilir
       // (Tasarım A). Böylece tx içinde duplicate guard bypass'lı tx.client/lawyer/debtor.create kalmaz.
       await this.resolveInlinePartiesBeforeTx(tenantId, dto);
+      await this.validateDebtorOwnershipBeforeCreate(tenantId, dto);
 
       const result = await this.prisma.$transaction(async (tx) => {
         // 1. Alacaklıları (Clients) hazırla - tüm creditors'ları kaydet

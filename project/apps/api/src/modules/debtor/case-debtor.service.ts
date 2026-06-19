@@ -17,6 +17,27 @@ export class CaseDebtorService {
 
   // ==================== CASE DEBTOR OPERATIONS ====================
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseDebtorService.addDebtorToCase() → POST /cases/:caseId/debtors (seçili adres ownership guard)
+  /// - CaseDebtorService.updateCaseDebtor() → PUT /case-debtors/:id (seçili adres ownership guard)
+  /// </remarks>
+  private async assertSelectedAddressBelongsToDebtor(
+    debtorId: string,
+    selectedAddressId?: string | null
+  ): Promise<void> {
+    if (selectedAddressId === undefined || selectedAddressId === null) return;
+
+    const address = await this.prisma.debtorAddress.findFirst({
+      where: { id: selectedAddressId, debtorId },
+      select: { id: true },
+    });
+
+    if (!address) {
+      throw new NotFoundException("Adres bulunamadı veya bu borçluya ait değil");
+    }
+  }
+
   async getCaseDebtors(tenantId: string, caseId: string) {
     // Verify case belongs to tenant
     const caseRecord = await this.prisma.case.findFirst({
@@ -39,6 +60,11 @@ export class CaseDebtorService {
     });
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseDebtorController.addDebtorToCase() → POST /cases/:caseId/debtors (Dosyaya mevcut borçlu ekleme)
+  /// - CaseDebtorService.bulkAddDebtorsToCase() → Çoklu borçlu ekleme
+  /// </remarks>
   async addDebtorToCase(tenantId: string, caseId: string, dto: AddDebtorToCaseDto) {
     // Verify case belongs to tenant
     const caseRecord = await this.prisma.case.findFirst({
@@ -77,6 +103,7 @@ export class CaseDebtorService {
 
     // If no address selected, use primary address
     let selectedAddressId = dto.selectedAddressId;
+    await this.assertSelectedAddressBelongsToDebtor(dto.debtorId, selectedAddressId);
     if (!selectedAddressId && debtor.debtorAddresses.length > 0) {
       const primaryAddress = debtor.debtorAddresses.find((a) => a.isPrimary);
       selectedAddressId = primaryAddress?.id || debtor.debtorAddresses[0].id;
@@ -109,16 +136,20 @@ export class CaseDebtorService {
     return caseDebtor;
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseDebtorController.updateCaseDebtor() → PUT /case-debtors/:id (Dosya borçlusu bilgilerini güncelleme)
+  /// </remarks>
   async updateCaseDebtor(tenantId: string, caseDebtorId: string, dto: UpdateCaseDebtorDto) {
     const caseDebtor = await this.prisma.caseDebtor.findFirst({
-      where: { id: caseDebtorId },
+      where: { id: caseDebtorId, case: { tenantId } },
       include: {
         case: true,
         debtor: true,
       },
     });
 
-    if (!caseDebtor || caseDebtor.case.tenantId !== tenantId) {
+    if (!caseDebtor) {
       throw new NotFoundException("Dosya borçlusu bulunamadı");
     }
 
@@ -146,6 +177,8 @@ export class CaseDebtorService {
         throw new ConflictException("Bu borçlu zaten bu takipte bu rolle mevcut");
       }
     }
+
+    await this.assertSelectedAddressBelongsToDebtor(caseDebtor.debtorId, dto.selectedAddressId);
 
     return this.prisma.caseDebtor.update({
       where: { id: caseDebtorId },
