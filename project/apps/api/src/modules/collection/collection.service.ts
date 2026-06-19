@@ -202,6 +202,44 @@ export class CollectionService {
     return { principalAmount, interestAmount, expenseAmount, feeAmount, attorneyFeeAmount, collectionDetails };
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CollectionService.create() → POST /collections ve tahsilat delegasyonları için CaseDebtor integrity guard
+  /// </remarks>
+  private async validateCaseDebtorForCollectionInTx(
+    tx: any,
+    tenantId: string,
+    caseId: string,
+    caseDebtorId?: string | null,
+  ) {
+    if (caseDebtorId === undefined || caseDebtorId === null) return;
+
+    if (caseDebtorId.trim() === "") {
+      throw new BadRequestException("Tahsilat borçlu bağlantısı geçersiz");
+    }
+
+    const caseDebtor = await tx.caseDebtor.findUnique({
+      where: { id: caseDebtorId },
+      select: {
+        id: true,
+        caseId: true,
+        case: { select: { tenantId: true } },
+      },
+    });
+
+    if (!caseDebtor) {
+      throw new BadRequestException("Tahsilat borçlu bağlantısı geçersiz");
+    }
+
+    if (caseDebtor.case?.tenantId !== tenantId) {
+      throw new BadRequestException("Tahsilat borçlu bağlantısı bu tenant'a ait değil");
+    }
+
+    if (caseDebtor.caseId !== caseId) {
+      throw new BadRequestException("Tahsilat borçlu bağlantısı bu dosyaya ait değil");
+    }
+  }
+
   // ==================== CRUD İŞLEMLERİ (eski, tx-dışı) ====================
 
   /**
@@ -212,6 +250,13 @@ export class CollectionService {
    * HR-44: Outbox same-tx
    * HR-45: Rollback guarantee
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CollectionController.create() → POST /collections (doğrudan tahsilat oluşturma)
+  /// - CaseService.createCollection() → POST /cases/:id/collections (dosya detayından tahsilat ekleme)
+  /// - BankService.matchTransaction() → POST /bank/transactions/:id/match (banka hareketinden tahsilat oluşturma)
+  /// - ThirdPartyService.addExternalCaseCollection() → POST /external-cases/:id/collection (alacak haczi tahsilatını ana dosyaya yansıtma)
+  /// </remarks>
   async create(tenantId: string, dto: CreateCollectionDto, userId?: string) {
     // Late-entry warning (audit flag, no reject)
     const daysDiff = Math.floor(
@@ -241,6 +286,8 @@ export class CollectionService {
       }
 
       // ── 2. Duplicate pre-check (external source) ────────────────────────
+      await this.validateCaseDebtorForCollectionInTx(tx, tenantId, dto.caseId, dto.caseDebtorId);
+
       if (dto.sourceType && EXTERNAL_SOURCES.has(dto.sourceType) && dto.sourceId) {
         const existing = await (tx as any).collection.findFirst({
           where: {
