@@ -1,6 +1,6 @@
 # ASSIGN-0 - Assignment Model Decision
 
-Durum: Taslak karar kaydı
+Durum: Karar kaydı (ASSIGN-4d ile güncellendi; 4a/4b/4c kod hattı tamamlandı)
 
 Kapsam: Bu doküman kod davranışı değiştirmez. Sorumlu avukat, personel ve görev atama modelinin kanonik kararlarını sabitler. Sonraki PR'lar bu kararı referans alarak yapılacaktır.
 
@@ -8,13 +8,15 @@ Kapsam: Bu doküman kod davranışı değiştirmez. Sorumlu avukat, personel ve 
 
 Mevcut sistemde "sorumlu" kavramı birden fazla yerde farklı anlamlarda kullanılıyor:
 
-- Hukuki dosya sorumluluğu: `CaseLawyer.role`, `CaseLawyer.isResponsible`
-- Eski/genel dosya sorumlusu: `Case.sorumluPersonelId`
+- Hukuki dosya sorumluluğu (avukat): `CaseLawyer.role`, `CaseLawyer.isResponsible`
+- Operasyonel sorumlu / bildirim hedefi (kullanıcı): `Case.sorumluPersonelId`
 - Genel görev sorumlusu: `Task.assigneeId`
 - Adres/istihbarat görevi sorumlusu: `AddressTask.assignedToId`
 - Takvim kaydı: `CalendarEvent.createdById`
 
 Bu alanlar aynı iş kuralını temsil etmiyor. Bu nedenle dosyanın hukuki sorumlusu, işi fiilen yapan kişi, görevi kapatan kişi ve bildirim alacak kişi birbirine karışabiliyor.
+
+Doğru teşhis (ASSIGN-4d): `Case.sorumluPersonelId` "deprecated" değildir; önceki bu teşhis yanlıştı. Asıl sorun, **aynı kelimeyle ("sorumlu") iki farklı sorumluluğun** anlatılmasıdır — biri **operasyonel iş sahibi / bildirim hedefi** (`Case.sorumluPersonelId` → `User`), diğeri **hukuki sorumlu avukat** (`CaseLawyer.isResponsible` → `Lawyer`). Bu iki eksen bilerek ayrı kalır.
 
 ## Kanonik Kararlar
 
@@ -30,9 +32,9 @@ Anlamı:
 
 Beklenen hedef davranış:
 
-- Aktif dosyada en az bir hukuki sorumlu avukat bulunmalıdır.
+- Aktif dosyada **tam olarak bir** hukuki sorumlu avukat bulunur (avukatsız dosya istisna).
 - Ürün dili tek "sorumlu avukat" üzerinden kurgulanır.
-- Birden fazla `isResponsible=true` kaydı oluşmasını engelleme veya legacy veriyi düzeltme konusu PR-ASSIGN-4 kapsamında ele alınacaktır.
+- Bu invariant PR-ASSIGN-4b ile uygulandı (create/update/add/remove sonrası tam-1; demote = `isResponsible=false` + `role=ASSIGNED`). Mevcut legacy 0/>1 drift'in tek seferlik onarımı ayrı script/PR konusudur.
 
 ### 2. Operasyonel Görev Sorumlusu
 
@@ -47,16 +49,25 @@ Anlamı:
 - Avukat, icra personeli, sekreter, muhasebe veya başka bir kullanıcı olabilir.
 - Hukuki dosya sorumluluğu anlamına gelmez.
 
-### 3. Deprecated Alan
+### 3. Operasyonel Sorumlu / Bildirim Hedefi
 
-Deprecated aday: `Case.sorumluPersonelId`
+Kanonik kaynak: `Case.sorumluPersonelId` (bir `User`)
 
-Karar:
+Karar (ASSIGN-4d): Bu alan **deprecated DEĞİLDİR**. Önceki "deprecated aday" teşhisi yanlıştı.
 
-- Yeni hukuki sorumluluk kararlarında kanonik kaynak olarak kullanılmayacaktır.
-- Yeni özelliklerde bu alan üzerinden "sorumlu avukat" anlamı kurulmayacaktır.
-- Geçiş sürecinde raporlama veya eski ekran uyumluluğu için okunabilir.
-- Yazma yolları kontrollü biçimde azaltılacak, sonra kaldırma/deprecated migration planı hazırlanacaktır.
+Anlamı:
+
+- Dosyanın operasyonel sahibini / bildirim hedefini gösterir (yeni takip formunda zorunlu "Sorumlu" alanı).
+- Vade hatırlatması gibi bildirimlerin gönderildiği kullanıcıdır (`scheduler` DUE_REMINDER `userId`).
+- Raporlama filtrelerinde operasyonel sahip olarak kullanılır.
+- Hukuki sorumlu avukat anlamına GELMEZ (o `CaseLawyer.isResponsible`'dır).
+
+Neden hukuki sorumluyla birleştirilmedi (`isResponsible` üzerinden unify edilmedi):
+
+- `Case.sorumluPersonelId` doğrudan bir `User`'dır → her zaman bildirim alabilir.
+- `CaseLawyer.isResponsible` bir `Lawyer`'dır; `Lawyer.userId` **opsiyoneldir** (her avukatın login `User` hesabı yoktur).
+- Bu nedenle scheduler/rapor bildirimleri hukuki sorumlu avukata güvenilir biçimde yönlendirilemez → iki eksen **bilerek ayrı** tutulur.
+- Unify / auto-sync (sorumlu avukatın `userId`'sinden türetme) şu an YAPILMAZ; ileride gerçek ihtiyaç + avukat onayı netleşince değerlendirilebilir.
 
 ## Avukat Değişimi ve Görev Devri
 
@@ -181,15 +192,16 @@ Sebep:
 
 - Mevcut frontend/backend kontratı kırık görünmektedir.
 
-### PR-ASSIGN-4 - Sorumlu Avukat Kanonikleştirme
+### PR-ASSIGN-4 - Sorumlu Avukat Kanonikleştirme (TAMAMLANDI)
 
-Kapsam:
+Durum: 4a/4b/4c kod hattı tamamlandı; 4d karar düzeltmesidir (bu doküman).
 
-- `CaseLawyer.isResponsible` tek hukuki sorumluluk kaynağı olarak sabitlenir.
-- `Case.sorumluPersonelId` deprecated okuma/yazma planı netleşir.
-- `responsibleLawyerId`, `sorumluPersonelId`, batch update ve patchFlags uyumsuzlukları temizlenir.
-- Avukat değişimi audit üretir.
-- Görev devri için default "hiçbirini taşıma" davranışı korunur.
+- 4a (#222): bulk-assign sessiz no-op düzeltmesi — toplu sorumlu personel ataması gerçekten yazılır (`POST /cases/batch-update`); avukat toplu ataması dürüstçe devre dışı (`responsibleLawyerId` için backend yazıcısı yoktur); `patchFlags` üzerinden sessiz alan-düşürme kalktı.
+- 4b (#223): `CaseLawyer.isResponsible` "tam olarak 1 sorumlu" invariant'ı — create/update/add/remove atomik; son sorumluyu (başka biri yükseltilmeden) düşürme `BadRequest`; sorumlu silinince önceliğe göre fallback promote; otomatik promote/demote audit'lenir.
+- 4c (#225): atama audit'i — `addCaseLawyer`/`removeCaseLawyer` için `CASE_LAWYER` CREATE/DELETE audit; `batchUpdate` için `sorumluPersonelId` tenant-doğrulaması + tek özet `CASE` UPDATE audit.
+- 4d (bu doküman): `Case.sorumluPersonelId` **deprecated değildir**; operasyonel sorumlu / bildirim hedefi (`User`) olarak netleştirilir. Hukuki sorumlu (`CaseLawyer.isResponsible` / `Lawyer`) ile **bilerek ayrı** kalır. `Lawyer.userId` opsiyonel olduğundan scheduler/rapor `isResponsible` üzerinden unify EDİLMEZ; scheduler/rapor `sorumluPersonelId` üzerinde kalır, müvekkil iletişimi / hukuki taraf `isResponsible` üzerinde kalır.
+
+Açık backlog (bu doküman dışı; ayrı kod PR'ları): legacy 0/>1 sorumlu drift onarımı script'i; `CaseLawyer` için partial-unique index (`UNIQUE(caseId) WHERE isResponsible`); tekil `create()`/`update()` `sorumluPersonelId` tenant guard.
 
 ## Non-Goals
 
