@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@hukuk/ui";
 import { api } from "@/lib/api";
+import { buildBulkAssignPayload } from "@/lib/bulk-assign";
 import { BulkDocumentGenerator } from "@/components/case";
 import { MultiSelectDropdown, QuickFilterChip, ActiveFilterPill, QuickFilterHelpBanner, MissingBadge } from "@/components/ui";
 
@@ -1396,13 +1397,13 @@ export default function CasesPage() {
   };
 
   const handleBulkAssign = async () => {
-    if (selectedCases.length === 0 || !bulkAssignee.id) return;
+    // ASSIGN-4a: yalnız PERSONEL toplu ataması; tek `POST /cases/batch-update` çağrısı
+    // (per-case PATCH döngüsü YOK). Avukat ('lawyer') geçici devre dışı → payload null → no-op.
+    const payload = buildBulkAssignPayload(bulkAssignee.type, selectedCases, bulkAssignee.id);
+    if (!payload) return;
     try {
       setProcessingIds(selectedCases);
-      const field = bulkAssignee.type === 'lawyer' ? 'responsibleLawyerId' : 'sorumluPersonelId';
-      for (const caseId of selectedCases) {
-        await api.patch(`/cases/${caseId}`, { [field]: bulkAssignee.id });
-      }
+      await api.post('/cases/batch-update', payload);
       fetchCases();
       setSelectedCases([]);
       setShowBulkAssignModal(false);
@@ -2725,25 +2726,13 @@ export default function CasesPage() {
                   className="w-full px-3 py-2 border rounded-lg"
                 >
                   <option value="">Seçin</option>
-                  <option value="lawyer">Avukat</option>
+                  <option value="lawyer" disabled>Avukat (yakında)</option>
                   <option value="staff">Personel</option>
                 </select>
               </div>
-              {bulkAssignee.type === 'lawyer' && (
-                <div>
-                  <label className="text-sm text-muted-foreground mb-1 block">Avukat</label>
-                  <select
-                    value={bulkAssignee.id}
-                    onChange={(e) => setBulkAssignee(prev => ({ ...prev, id: e.target.value }))}
-                    className="w-full px-3 py-2 border rounded-lg"
-                  >
-                    <option value="">Avukat Seçin</option>
-                    {lawyers.map((l: any) => (
-                      <option key={l.id} value={l.id}>{l.name} {l.surname}</option>
-                    ))}
-                  </select>
-                </div>
-              )}
+              <p className="text-xs text-muted-foreground">
+                Avukat toplu atama, sorumlu-avukat modeli ile gelecek.
+              </p>
               {bulkAssignee.type === 'staff' && (
                 <div>
                   <label className="text-sm text-muted-foreground mb-1 block">Personel</label>
