@@ -11,6 +11,7 @@ import { buildStaffPayload } from "@/lib/case-staff-payload";
 import { FormMetadata, SubFormMetadata, FormCategory } from "@/types/form-metadata";
 import { WizardAnswers } from "@/types/wizard";
 import { formMetadata, filterFormsByCategory } from "@/config/form-metadata";
+import { shouldShowLookupBanner, lookupBannerMessage } from "./lookup-ui";
 import { FormWizard } from "@/components/case/FormWizard";
 import { CaseWizard } from "@/components/case/CaseWizard";
 import { IlamsizWizard } from "@/components/case/IlamsizWizard";
@@ -214,6 +215,7 @@ export default function NewCasePage() {
   const [dues, setDues] = useState<DueItem[]>([]);
   const [instruments, setInstruments] = useState<CaseInstrumentPayload[]>([]); // PR-N4b: OCR kambiyo evrakları → createCase payload instruments[]
   const [lookups, setLookups] = useState<Lookups>({ takipTuru: [], asama: [], risk: [], borcluTipi: [], durumEtiketi: [], mahiyetTipi: [] });
+  const [lookupsLoadFailed, setLookupsLoadFailed] = useState(false); // PR-D: /lookups fetch hatası → açık uyarı banner'ı (boş veriden ayrı)
   
   // Vekalet kontrolü state'leri
   const [poaWarnings, setPoaWarnings] = useState<{ clientId: string; clientName: string; lawyerId: string; lawyerName: string; message: string; }[]>([]);
@@ -338,7 +340,7 @@ export default function NewCasePage() {
   useEffect(() => {
     if (lookups.mahiyetTipi.length === 0) return; // Lookups henüz yüklenmedi
     if (!documentSource) return; // Document source henüz seçilmedi
-    if (caseData.mahiyetTipiId) return; // Mahiyet tipi zaten seçilmiş
+    if (caseData.takipTuruId) return; // PR-D (D4): takip türü zaten ATANMIŞ ise dokunma. Guard mahiyetTipiId yerine takipTuruId'ye taşındı → draft rehydration'da mahiyetTipiId dolu/takipTuruId boş edge'inde takip türü yeniden atanabilir; kullanıcı seçimini ezmez (yalnız boşken atar).
     
     // Document source'a göre varsayılan mahiyet tipini belirle
     // Veritabanındaki mahiyet kodları: PARA, KIRA, AIDAT, KREDI, NAFAKA, KIRA_FARK, FATURA, CEK, SENET, TAZMINAT, ICRA_INKAR, ISCILIK, DIGER
@@ -364,6 +366,11 @@ export default function NewCasePage() {
       const takipTuru = lookups.takipTuru.find(t => t.code === takipTuruCode);
       const gercekKisi = lookups.borcluTipi.find(b => b.code === "GERCEK_KISI");
       
+      // PR-D (D3): lookups yüklü ama beklenen takip türü kodu yoksa = katalog/seed drift.
+      // Sessiz kalma → gözlemlenebilir yap. Banner DEĞİL (banner yalnız boş/yüklenememiş lookup için).
+      if (takipTuruCode && !takipTuru) {
+        console.warn(`[lookup] beklenen takip türü kodu katalogda yok: ${takipTuruCode} (documentSource=${documentSource}) — seed/katalog drift olabilir`);
+      }
       console.log(`[useEffect] Mahiyet tipi ayarlanıyor: ${mahiyetCode} -> ${mahiyet?.id}`);
       
       if (mahiyet || takipTuru) {
@@ -381,12 +388,13 @@ export default function NewCasePage() {
   const loadExistingData = async () => {
     try {
       let staffLoadFailed = false; // PR-ASSIGN-2b: /staff fetch hatası → payload'da undefined fallback
+      let lookupsFetchFailed = false; // PR-D: /lookups fetch hatası → açık uyarı banner'ı (boş veriden ayrı)
       const [lawyersRes, clientsRes, debtorsRes, officesRes, lookupsRes, usersRes, staffRes] = await Promise.all([
         api.getLawyers().catch((e) => { console.error("getLawyers error:", e); return []; }), 
         api.get('/clients').catch((e) => { console.error("getClients error:", e); return { data: { data: [] } }; }), 
         api.searchDebtors().catch((e) => { console.error("searchDebtors error:", e); return []; }), 
         api.get('/execution-offices').catch(() => ({ data: { data: [] } })),
-        api.get('/lookups').catch(() => ({ data: { data: { takipTuru: [], asama: [], risk: [], borcluTipi: [], durumEtiketi: [] } } })),
+        api.get('/lookups').catch(() => { lookupsFetchFailed = true; return { data: { data: { takipTuru: [], asama: [], risk: [], borcluTipi: [], durumEtiketi: [], mahiyetTipi: [] } } }; }),
         api.get('/users').catch(() => ({ data: { data: [] } })),
         api.get('/staff').catch(() => { staffLoadFailed = true; return { data: { data: [] } }; }),
       ]);
@@ -399,6 +407,7 @@ export default function NewCasePage() {
       setExistingDebtors(debtorsRes?.data || debtorsRes || []);
       setExecutionOffices(officesRes?.data?.data || []);
       setLookups(lookupsRes?.data?.data || { takipTuru: [], asama: [], risk: [], borcluTipi: [], durumEtiketi: [], mahiyetTipi: [] });
+      setLookupsLoadFailed(lookupsFetchFailed); // PR-D: fetch hatası vs boş veri ayrımı için
       setUsers(usersRes?.data?.data || []);
       const allStaff = staffRes?.data?.data || [];
       setExistingStaff(allStaff);
@@ -728,18 +737,16 @@ export default function NewCasePage() {
       if (selectedTakipTuru) {
         // Takip türüne göre mahiyet kodunu otomatik ayarla
         // Veritabanındaki mahiyet kodları: PARA, KIRA, AIDAT, KREDI, NAFAKA, KIRA_FARK, FATURA, CEK, SENET, TAZMINAT, ICRA_INKAR, ISCILIK, TAHLIYE, DIGER
+        // PR-D (D5): yalnız kanonik takip türü kodları (lookup-catalog.ts ile hizalı).
+        // Ölü anahtarlar kaldırıldı: ILAMSIZ_KAMBIYO, ILAMSIZ_FATURA, KIRA, TAHLIYE (kanonik değil → asla eşleşmezdi).
         const takipTuruMahiyetMap: Record<string, string> = {
           KAMBIYO_CEK: "CEK",
           KAMBIYO_SENET: "SENET",
-          ILAMSIZ_KAMBIYO: "SENET",
           ILAMSIZ_GENEL: "PARA",
           ILAMSIZ_KIRA: "KIRA",
           ILAMSIZ_TAHLIYE: "TAHLIYE",
-          ILAMSIZ_FATURA: "FATURA",
           ILAMLI: "TAZMINAT",
           NAFAKA: "NAFAKA",
-          KIRA: "KIRA",
-          TAHLIYE: "TAHLIYE",
           REHIN_TASINIR: "REHIN",
           REHIN_TASINMAZ: "IPOTEK",
           IFLAS_ADI: "PARA",
@@ -1202,9 +1209,12 @@ export default function NewCasePage() {
                   const takipTuruCode = isCek ? "KAMBIYO_CEK" : "KAMBIYO_SENET";
                   const mahiyetCode = isCek ? "CEK" : "SENET";
                   
-                  const takipTuru = lookups.takipTuru.find(t => t.code === takipTuruCode) || 
-                                   lookups.takipTuru.find(t => t.code === "ILAMSIZ_KAMBIYO") ||
-                                   lookups.takipTuru.find(t => t.name?.toLowerCase().includes("kambiyo"));
+                  const takipTuru = lookups.takipTuru.find(t => t.code === takipTuruCode);
+                  // PR-D (D5/D3): kanonik KAMBIYO_CEK/KAMBIYO_SENET artık her zaman var → ölü
+                  // ILAMSIZ_KAMBIYO + ad-içeren fallback'ler kaldırıldı; miss artık gözlemlenebilir.
+                  if (!takipTuru) {
+                    console.warn(`[lookup] beklenen takip türü kodu katalogda yok: ${takipTuruCode} (KambiyoWizard) — seed/katalog drift olabilir`);
+                  }
                   
                   // Mahiyet tipi - birden fazla fallback ile
                   const mahiyet = lookups.mahiyetTipi.find(m => m.code === mahiyetCode) ||
@@ -1353,6 +1363,13 @@ export default function NewCasePage() {
             
             <div className="p-2 bg-purple-50 rounded-lg">
               <h3 className="text-xs font-semibold mb-2 text-purple-800">📊 Sınıflandırma</h3>
+              {/* PR-D (D2): lookups yüklenememiş VEYA takip türü tanımı boşsa açık sistem-konfig uyarısı (sessiz "Seçiniz" yerine). */}
+              {shouldShowLookupBanner(lookupsLoadFailed, lookups.takipTuru.length) && (
+                <div className="mb-2 p-2 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                  <span>{lookupBannerMessage(lookupsLoadFailed)}</span>
+                </div>
+              )}
               <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                 <div><label className="block text-xs font-medium mb-0.5">Takip Türü <span className="text-red-500">*</span></label><select name="takipTuruId" value={caseData.takipTuruId} onChange={(e) => handleTakipTuruChange(e.target.value)} className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary"><option value="">Seçiniz</option>{lookups.takipTuru.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
                 <div><label className="block text-xs font-medium mb-0.5">Sorumlu <span className="text-red-500">*</span></label><select name="sorumluPersonelId" value={caseData.sorumluPersonelId} onChange={handleCaseDataChange} className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary"><option value="">Seçiniz</option>{users.map(user => <option key={user.id} value={user.id}>{user.name} {user.surname}</option>)}</select></div>
