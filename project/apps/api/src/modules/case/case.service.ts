@@ -921,6 +921,24 @@ export class CaseService {
     // İlamlı Alt Kategori Validasyonları
     this.validateSubCategoryRules(dto);
 
+    // PR-1 (F1): operasyonel sorumlu / bildirim hedefi (Case.sorumluPersonelId → User) create'te
+    // persist edilir. Frontend zorunlu "Sorumlu" alanını gönderiyor, DTO kabul ediyordu, ama
+    // create() data bloğu YAZMIYORDU → wizard'dan açılan her dosyada sessizce null kalıyordu (veri
+    // kaybı). Tenant guard: batchUpdate ile AYNI kural — verilen User bu tenant'a ait değilse 400
+    // (cross-tenant/geçersiz id sessizce yazılmaz). Boş/undefined → atama yok, kontrol gerekmez.
+    // tx ÖNCESİ (fail-fast): geçersiz sorumlu personelde hiçbir taraf/dosya yaratılmaz.
+    if (dto.sorumluPersonelId) {
+      const personel = await this.prisma.user.findFirst({
+        where: { id: dto.sorumluPersonelId, tenantId },
+        select: { id: true },
+      });
+      if (!personel) {
+        throw new BadRequestException(
+          'Geçersiz sorumlu personel: Belirtilen kullanıcı bu büroya ait değil'
+        );
+      }
+    }
+
     try {
       // B4/D: fileNumber ön-benzersizlik kontrolü — tx-öncesi taraf yaratımından
       // (resolveInlinePartiesBeforeTx) HEMEN ÖNCE. Mükerrer dosya no'da Case tx zaten
@@ -1024,6 +1042,8 @@ export class CaseService {
             interestRate: dto.interestRate,
             startDate: dto.startDate ? new Date(dto.startDate) : undefined,
             notes: dto.notes,
+            // PR-1 (F1): operasyonel sorumlu / bildirim hedefi (User) — tx öncesi tenant-doğrulandı.
+            ...(dto.sorumluPersonelId && { sorumluPersonelId: dto.sorumluPersonelId }),
           },
         });
 
