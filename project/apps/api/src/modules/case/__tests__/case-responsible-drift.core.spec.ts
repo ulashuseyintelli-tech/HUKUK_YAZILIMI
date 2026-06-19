@@ -4,7 +4,7 @@
  * Kararın create() dedupe'iyle BİREBİR aynı olduğunu (planResponsible REUSE) ve 4 durumun
  * doğru sınıflandığını kanıtlar. Yazma (runDriftRepair) DB e2e ile doğrulanır (rfa016 deseni).
  */
-import { planCaseDriftFix, parseDriftRepairArgs, DriftCaseLawyer } from "../case-responsible-drift.core";
+import { planCaseDriftFix, parseDriftRepairArgs, runDriftRepair, DriftCaseLawyer } from "../case-responsible-drift.core";
 
 describe("planCaseDriftFix — drift sınıflandırma + onarım planı (saf)", () => {
   it("avukatsız dosya → EMPTY, no-op (ASSIGN-4b bilinçli istisnası)", () => {
@@ -122,5 +122,25 @@ describe("parseDriftRepairArgs — scope/yazma kilidi (backfill sözleşmesi)", 
   it("--out <path> okunur", () => {
     const o = parseDriftRepairArgs(["--all-tenants", "--out", "rapor.json"]);
     expect(o.out).toBe("rapor.json");
+  });
+});
+
+describe("runDriftRepair — deterministik sıralama (orderBy wiring)", () => {
+  it("lawyers select'i orderBy [createdAt ASC, id ASC] içerir (eşit-rank tie-break deterministik, örtük DB sırası YOK)", async () => {
+    let captured: any;
+    const prisma = {
+      case: {
+        findMany: async (args: any) => {
+          captured = args;
+          return [];
+        },
+      },
+      $transaction: async (fn: any) => fn({ caseLawyer: { update: async () => ({}) } }),
+    };
+    const opts = parseDriftRepairArgs(["--all-tenants"]); // dry-run
+    const report = await runDriftRepair(prisma as any, opts, {});
+
+    expect(captured.select.lawyers.orderBy).toEqual([{ createdAt: "asc" }, { id: "asc" }]);
+    expect(report.scannedCases).toBe(0); // mock boş döndü → query şekli kanıtlandı, yazma yok
   });
 });
