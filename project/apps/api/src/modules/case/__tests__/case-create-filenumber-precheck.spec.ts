@@ -89,6 +89,9 @@ describe('B4/D — createCase fileNumber ön-benzersizlik kontrolü (orphan-önl
           where.tenantId === 'tenant-DUP' && where.fileNumber === '2024/1' ? { id: 'dup' } : null,
         ),
       },
+      // CASE-CREATE-FK-TENANT: create() tx ÖNCESİ creditor.id'yi tenant-doğrular (validateCaseFkOwnership);
+      // ön-kontrolü geçen happy-path bu mock'a uğrar (id same-tenant → bulundu, guard geçer).
+      client: { findFirst: jest.fn(async () => ({ id: 'existing-c' })) },
       // Pre-check geçilince buraya gelinir; sentinel ile "geçti"yi kanıtla (tx içini test etmiyoruz)
       $transaction: jest.fn(async () => {
         throw new Error('REACHED_TX');
@@ -108,6 +111,8 @@ describe('B4/D — createCase fileNumber ön-benzersizlik kontrolü (orphan-önl
   it('fileNumber yoksa ön-kontrol sorgu yapmaz (normal akış devralır)', async () => {
     const prisma = {
       case: { findFirst: jest.fn() },
+      // CASE-CREATE-FK-TENANT: fileNumber yok → ön-kontrol atlanır; guard yine creditor.id'yi doğrular.
+      client: { findFirst: jest.fn(async () => ({ id: 'existing-c' })) },
       $transaction: jest.fn(async () => {
         throw new Error('REACHED_TX');
       }),

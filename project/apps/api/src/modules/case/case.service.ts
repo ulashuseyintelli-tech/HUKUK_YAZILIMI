@@ -403,6 +403,7 @@ export class CaseService {
    * null/undefined → atla (mevcut semantik korunur; "" çağıran tarafça undefined'a çevrilir).
    *
    * @remarks Çağrıldığı yerler:
+   * - CaseService.create() → POST /cases (her creditor.id → clientId + courtId + executionOfficeId, tx öncesi)
    * - CaseService.update() → PUT /cases/:id (clientId, courtId)
    * - CaseService.patchFlags() → PATCH /cases/:id (executionOfficeId)
    */
@@ -1003,6 +1004,25 @@ export class CaseService {
           );
         }
       }
+
+      // CASE-CREATE-FK-TENANT: Case'e bağlanacak tenant-scoped FK'ler (Client/Court/ExecutionOffice)
+      // bu büroya ait mi? ValidationPipe yalnız SHAPE doğrular; caller'ın doğrudan verdiği MEVCUT id'ler
+      // cross-tenant olabilir → guard'sız persist (clientId + caseClient creditorIds + courtId +
+      // executionOfficeId) + findOne FK-join'i (client/court/executionOffice: true) başka tenant'ın TAM
+      // kaydını döndürür (#246 update path ile AYNI sızıntı vektörü). tx ÖNCESİ (resolveInlinePartiesBeforeTx'ten
+      // ÖNCE) fail-fast: cross-tenant/geçersiz id'de hiçbir taraf/dosya yaratılmadan reddedilir.
+      // Inline-YENİ müvekkiller (id YOK) burada ATLANIR; resolve içinde tenant-scoped ClientService.create
+      // ile yaratıldıklarından zaten bu tenant'a aittir. caseClient TÜM creditor id'lerini persist ettiğinden
+      // (ortak alacaklılar dahil, yalnız primary değil) hepsi tek tek doğrulanır.
+      for (const creditor of dto.creditors ?? []) {
+        if (creditor.id) {
+          await this.validateCaseFkOwnership(tenantId, { clientId: creditor.id });
+        }
+      }
+      await this.validateCaseFkOwnership(tenantId, {
+        courtId: dto.courtId,
+        executionOfficeId: dto.executionOfficeId,
+      });
 
       // RFA-016: inline-yeni taraflar (id YOK) tx ÖNCESİ guard'lı servislerle resolve edilir
       // (Tasarım A). Böylece tx içinde duplicate guard bypass'lı tx.client/lawyer/debtor.create kalmaz.
