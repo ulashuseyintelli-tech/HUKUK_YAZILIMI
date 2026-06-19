@@ -69,7 +69,8 @@ export function pickResponsibleFallbackIndex(ranks: (string | null)[]): number {
  * - Hiç sorumlu yoksa → {@link pickResponsibleFallbackIndex} önceliğiyle BİR satır seç.
  *
  * @remarks Çağrıldığı yerler:
- * - CaseService.create() → POST /cases (createCase tx'inde post-loop invariant)
+ * - CaseService.removeCaseLawyer() → DELETE /cases/:id/lawyers/:caseLawyerId
+ *   (sorumlu silinince kalanlar arasından fallback promote; ASSIGN-4b)
  */
 export function resolveResponsiblePromotion(
   created: { id: string; lawyerRank: string | null; isResponsible: boolean }[],
@@ -78,6 +79,44 @@ export function resolveResponsiblePromotion(
   if (created.some((cl) => cl.isResponsible)) return null; // sorumlu zaten var → dokunma
   const idx = pickResponsibleFallbackIndex(created.map((cl) => cl.lawyerRank));
   return idx >= 0 ? created[idx].id : null;
+}
+
+/**
+ * ASSIGN-4b — "her dosyada TAM OLARAK 1 sorumlu avukat" invariant'ı (saf karar).
+ *
+ * Verilen caseLawyer listesinde sorumlu kalacak/olacak BİR satırı (keepId) ve
+ * sorumluluğu düşürülecek diğer satırları (demoteIds) hesaplar. Avukat yoksa keepId=null.
+ *
+ * @param lawyers Dosyanın caseLawyer'ları ({id, lawyerRank, isResponsible}).
+ * @param preferId Explicit sorumlu hedefi (update/add). Listede varsa keepId=preferId
+ *   (kullanıcının açık seçimi korunur). null ise: önce mevcut sorumlular, yoksa tüm
+ *   liste arasından {@link pickResponsibleFallbackIndex} önceliğiyle BİR tane seçilir
+ *   (create dedupe). demoteIds = keepId DIŞINDA şu an sorumlu olan tüm satırlar
+ *   (çağıran bunları isResponsible=false + role=ASSIGNED yapar).
+ *
+ * @remarks Çağrıldığı yerler:
+ * - CaseService.create() → POST /cases (loop sonrası dedupe → tam 1; preferId=null, rank önceliği)
+ * Not: updateCaseLawyer/addCaseLawyer aynı "tam 1" kararını inline uygular (hedef sorumlu
+ * yapılırken `responsibleIds.filter(!=hedef)` ile diğer sorumluları demote eder).
+ */
+export function planResponsible(
+  lawyers: { id: string; lawyerRank: string | null; isResponsible: boolean }[],
+  preferId: string | null,
+): { keepId: string | null; demoteIds: string[] } {
+  if (lawyers.length === 0) return { keepId: null, demoteIds: [] };
+  let keepId: string | null = null;
+  if (preferId && lawyers.some((l) => l.id === preferId)) {
+    keepId = preferId; // kullanıcının açık seçimi
+  } else {
+    const responsibles = lawyers.filter((l) => l.isResponsible);
+    const pool = responsibles.length > 0 ? responsibles : lawyers;
+    const idx = pickResponsibleFallbackIndex(pool.map((l) => l.lawyerRank));
+    keepId = idx >= 0 ? pool[idx].id : null;
+  }
+  const demoteIds = lawyers
+    .filter((l) => l.id !== keepId && l.isResponsible)
+    .map((l) => l.id);
+  return { keepId, demoteIds };
 }
 
 @Injectable()
@@ -1244,16 +1283,23 @@ export class CaseService {
           createdCaseLawyers.push({ id: createdIntern.id, lawyerRank: lawyer.lawyerRank, isResponsible: false });
         }
 
-        // B5/D: "≥1 sorumlu avukat" invariant'ı. Hiçbir CaseLawyer RESPONSIBLE değilse (ve
-        // avukat varsa), önceliğe göre BİR avukatı RESPONSIBLE'a yükselt. Explicit isResponsible
-        // ve PARTNER/MANAGER zaten yukarıda RESPONSIBLE ürettiğinden bu blok YALNIZ "sıfır sorumlu"
-        // hâlinde çalışır → kullanıcının açık seçimi ASLA ezilmez/demote edilmez. Yükseltmede
-        // isResponsible ve role BİRLİKTE set edilir (isResponsible ⇔ role===RESPONSIBLE tutarlılığı).
-        const promoteResponsibleId = resolveResponsiblePromotion(createdCaseLawyers);
-        if (promoteResponsibleId) {
+        // B5/D + ASSIGN-4b: "TAM OLARAK 1 sorumlu avukat" invariant'ı. Loop sonrası sorumlu
+        // sayısı 0/1/>1 olabilir (explicit isResponsible / birden çok PARTNER-MANAGER → çoklu).
+        // planResponsible önceliğe göre BİR satırı sorumlu tutar (0 ise yükseltir), fazlalarını
+        // isResponsible=false + role=ASSIGNED yaparak düşürür → avukatsız dosya hariç tam 1.
+        // (isResponsible ⇔ role===RESPONSIBLE tutarlılığı korunur.)
+        const { keepId: responsibleKeptId, demoteIds: responsibleDemotedIds } =
+          planResponsible(createdCaseLawyers, null);
+        if (responsibleKeptId) {
           await tx.caseLawyer.update({
-            where: { id: promoteResponsibleId },
+            where: { id: responsibleKeptId },
             data: { isResponsible: true, role: 'RESPONSIBLE' },
+          });
+        }
+        for (const demoteId of responsibleDemotedIds) {
+          await tx.caseLawyer.update({
+            where: { id: demoteId },
+            data: { isResponsible: false, role: 'ASSIGNED' },
           });
         }
 
@@ -1329,7 +1375,7 @@ export class CaseService {
           },
         });
 
-        return { case: createdCase, clientIds, lawyerIds: dto.lawyers?.map(l => l.id).filter(Boolean) || [], staffResult };
+        return { case: createdCase, clientIds, lawyerIds: dto.lawyers?.map(l => l.id).filter(Boolean) || [], staffResult, responsibleKeptId, responsibleDemotedIds };
       });
 
       // ASSIGN-2a: seçimle atanan personel için audit (yalnız dto.staff verildiğinde; default
@@ -1373,6 +1419,19 @@ export class CaseService {
           newValues: { fileNumber: result.case.fileNumber, type: result.case.type },
           description: `Yeni takip oluşturuldu: ${result.case.fileNumber}`,
         });
+
+        // ASSIGN-4b: create dedupe fazla sorumlu düşürdüyse CASE_LAWYER UPDATE olarak audit'le
+        // (avukat CREATE/DELETE audit'i 4c kapsamında; burada YALNIZ otomatik demote loglanır).
+        if (result.responsibleKeptId && result.responsibleDemotedIds.length > 0) {
+          await this.auditService.log({
+            tenantId,
+            action: 'UPDATE',
+            entityType: 'CASE_LAWYER',
+            entityId: result.responsibleKeptId,
+            newValues: { isResponsible: true, role: 'RESPONSIBLE', demotedCaseLawyerIds: result.responsibleDemotedIds, reason: 'CREATE_DEDUPE' },
+            description: `Takip oluşturulurken fazla sorumlu avukat düşürüldü (${result.responsibleDemotedIds.length})`,
+          });
+        }
 
         // Otomatik müvekkil bilgi talebi gönder (arka planda)
         this.clientInfoRequestService
@@ -1906,7 +1965,15 @@ export class CaseService {
   // ==================== DOSYA AVUKAT YÖNETİMİ ====================
 
   /**
-   * Dosyadaki avukatın rol ve yetkilerini güncelle
+   * Dosyadaki avukatın rol ve yetkilerini güncelle.
+   *
+   * ASSIGN-4b: "tam 1 sorumlu" invariant'ı — bir avukat RESPONSIBLE yapılırsa diğer tüm
+   * sorumlular düşürülür (isResponsible=false + role=ASSIGNED); tek sorumlu başka biri
+   * yükseltilmeden düşürülmek istenirse BadRequest. Yazımlar tek $transaction'da atomik.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - CaseController.updateCaseLawyer() → PATCH /cases/:id/lawyers/:caseLawyerId
+   *   ← apps/web cases/[id]/page.tsx#handleSaveCasePermissions (lawyer drawer rol/yetki)
    */
   async updateCaseLawyer(
     tenantId: string,
@@ -1977,30 +2044,71 @@ export class CaseService {
       updateData.receiveNotifications = data.receiveNotifications;
     }
 
-    // Güncelle
-    const updated = await this.prisma.caseLawyer.update({
-      where: { id: caseLawyerId },
-      data: updateData,
-      include: {
-        lawyer: {
-          select: {
-            id: true,
-            name: true,
-            surname: true,
-            barNumber: true,
-            lawyerRank: true,
+    // ASSIGN-4b: "tam 1 sorumlu" invariant'ı. Yalnız sorumluluğu DEĞİŞTİREN güncellemelerde
+    // çalışır (salt yetki/canSign güncellemesi ekstra sorgu/yazım üretmez).
+    const willBeResponsible = data.isResponsible === true || data.role === 'RESPONSIBLE';
+    const willDropResponsible =
+      data.isResponsible === false || (data.role !== undefined && data.role !== 'RESPONSIBLE');
+
+    let demoteIds: string[] = [];
+    if (willBeResponsible || willDropResponsible) {
+      // Dosyadaki mevcut sorumlular (block-last + demote için).
+      const caseLawyersForInvariant = await this.prisma.caseLawyer.findMany({
+        where: { caseId },
+        select: { id: true, isResponsible: true },
+      });
+      const responsibleIds = caseLawyersForInvariant
+        .filter((cl) => cl.isResponsible)
+        .map((cl) => cl.id);
+      const isCurrentlyResponsible = responsibleIds.includes(caseLawyerId);
+
+      // Son sorumluyu (başka biri yükseltilmeden) düşürme girişimi → engelle.
+      if (isCurrentlyResponsible && willDropResponsible && !willBeResponsible) {
+        const otherResponsibles = responsibleIds.filter((id) => id !== caseLawyerId);
+        if (otherResponsibles.length === 0) {
+          throw new BadRequestException(
+            'Dosyada en az bir sorumlu avukat olmalı; önce başka bir avukatı sorumlu yapın.',
+          );
+        }
+      }
+
+      // Bu avukat sorumlu yapılıyorsa diğer tüm sorumluları düşür (tam 1).
+      demoteIds = willBeResponsible ? responsibleIds.filter((id) => id !== caseLawyerId) : [];
+    }
+
+    // Güncelle (+ gerekiyorsa demote) — atomik tek transaction.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const u = await tx.caseLawyer.update({
+        where: { id: caseLawyerId },
+        data: updateData,
+        include: {
+          lawyer: {
+            select: {
+              id: true,
+              name: true,
+              surname: true,
+              barNumber: true,
+              lawyerRank: true,
+            },
           },
         },
-      },
+      });
+      for (const demoteId of demoteIds) {
+        await tx.caseLawyer.update({
+          where: { id: demoteId },
+          data: { isResponsible: false, role: 'ASSIGNED' },
+        });
+      }
+      return u;
     });
 
-    // Audit log
+    // Audit log (ASSIGN-4b: otomatik demote edilenler de newValues'a yazılır)
     await this.auditService.log({
       tenantId,
       action: 'UPDATE',
       entityType: 'CASE_LAWYER',
       entityId: caseLawyerId,
-      newValues: updateData,
+      newValues: demoteIds.length > 0 ? { ...updateData, demotedCaseLawyerIds: demoteIds } : updateData,
       description: `Avukat yetkileri güncellendi: ${caseLawyer.lawyer.name} ${caseLawyer.lawyer.surname}`,
     });
 
@@ -2058,7 +2166,13 @@ export class CaseService {
   }
 
   /**
-   * Dosyaya avukat ekle
+   * Dosyaya avukat ekle.
+   *
+   * ASSIGN-4b: yeni eklenen avukat RESPONSIBLE ise eski sorumlular düşürülür (tam 1);
+   * ekleme + demote tek $transaction'da atomik.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - CaseController.addCaseLawyer() → POST /cases/:id/lawyers
    */
   async addCaseLawyer(tenantId: string, caseId: string, data: {
     lawyerId: string;
@@ -2102,32 +2216,73 @@ export class CaseService {
       }
     }
 
-    const caseLawyer = await this.prisma.caseLawyer.create({
-      data: {
-        caseId,
-        lawyerId: data.lawyerId,
-        role,
-        canSign: data.canSign ?? (lawyer.lawyerRank !== 'INTERN'),
-        isResponsible: role === 'RESPONSIBLE',
-      },
-      include: {
-        lawyer: {
-          select: {
-            id: true,
-            name: true,
-            surname: true,
-            barNumber: true,
-            lawyerRank: true,
+    const willBeResponsible = role === 'RESPONSIBLE';
+
+    // Ekle (+ RESPONSIBLE ise eski sorumluları düşür) — atomik tek transaction.
+    const { caseLawyer, demotedIds } = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.caseLawyer.create({
+        data: {
+          caseId,
+          lawyerId: data.lawyerId,
+          role,
+          canSign: data.canSign ?? (lawyer.lawyerRank !== 'INTERN'),
+          isResponsible: willBeResponsible,
+        },
+        include: {
+          lawyer: {
+            select: {
+              id: true,
+              name: true,
+              surname: true,
+              barNumber: true,
+              lawyerRank: true,
+            },
           },
         },
-      },
+      });
+
+      // ASSIGN-4b: yeni eklenen sorumluysa diğer sorumluları düşür (tam 1).
+      let demotedIds: string[] = [];
+      if (willBeResponsible) {
+        const others = await tx.caseLawyer.findMany({
+          where: { caseId, isResponsible: true, NOT: { id: created.id } },
+          select: { id: true },
+        });
+        demotedIds = others.map((o) => o.id);
+        for (const demoteId of demotedIds) {
+          await tx.caseLawyer.update({
+            where: { id: demoteId },
+            data: { isResponsible: false, role: 'ASSIGNED' },
+          });
+        }
+      }
+      return { caseLawyer: created, demotedIds };
     });
+
+    // ASSIGN-4b: otomatik demote'u CASE_LAWYER UPDATE olarak audit'le (ekleme=CREATE audit'i 4c).
+    if (demotedIds.length > 0) {
+      await this.auditService.log({
+        tenantId,
+        action: 'UPDATE',
+        entityType: 'CASE_LAWYER',
+        entityId: caseLawyer.id,
+        newValues: { isResponsible: true, role: 'RESPONSIBLE', demotedCaseLawyerIds: demotedIds },
+        description: `Yeni sorumlu avukat atandı; ${demotedIds.length} eski sorumlu düşürüldü`,
+      });
+    }
 
     return caseLawyer;
   }
 
   /**
-   * Dosyadan avukat çıkar
+   * Dosyadan avukat çıkar.
+   *
+   * ASSIGN-4b: silinen avukat sorumluysa ve başka avukat varsa, kalanlar arasından
+   * önceliğe göre yeni sorumlu yükseltilir (tam 1); son avukatsa dosya avukatsız kalabilir.
+   * Silme + yeniden-yükseltme tek $transaction'da atomik.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - CaseController.removeCaseLawyer() → DELETE /cases/:id/lawyers/:caseLawyerId
    */
   async removeCaseLawyer(tenantId: string, caseId: string, caseLawyerId: string) {
     // Dosyanın bu tenant'a ait olduğunu kontrol et
@@ -2142,9 +2297,45 @@ export class CaseService {
     });
     if (!caseLawyer) throw new NotFoundException("Avukat ataması bulunamadı");
 
-    await this.prisma.caseLawyer.delete({
-      where: { id: caseLawyerId },
+    // ASSIGN-4b: sorumlu silinirse ve başka avukat varsa yeni sorumlu seç (tam 1).
+    const wasResponsible = caseLawyer.isResponsible;
+    const { promotedId } = await this.prisma.$transaction(async (tx) => {
+      await tx.caseLawyer.delete({ where: { id: caseLawyerId } });
+      let promotedId: string | null = null;
+      if (wasResponsible) {
+        const remaining = await tx.caseLawyer.findMany({
+          where: { caseId },
+          select: { id: true, isResponsible: true, lawyer: { select: { lawyerRank: true } } },
+        });
+        const promote = resolveResponsiblePromotion(
+          remaining.map((r) => ({
+            id: r.id,
+            lawyerRank: r.lawyer.lawyerRank,
+            isResponsible: r.isResponsible,
+          })),
+        );
+        if (promote) {
+          await tx.caseLawyer.update({
+            where: { id: promote },
+            data: { isResponsible: true, role: 'RESPONSIBLE' },
+          });
+          promotedId = promote;
+        }
+      }
+      return { promotedId };
     });
+
+    // ASSIGN-4b: otomatik yeni sorumlu atandıysa CASE_LAWYER UPDATE audit'i (silme=DELETE audit'i 4c).
+    if (promotedId) {
+      await this.auditService.log({
+        tenantId,
+        action: 'UPDATE',
+        entityType: 'CASE_LAWYER',
+        entityId: promotedId,
+        newValues: { isResponsible: true, role: 'RESPONSIBLE', reason: 'RESPONSIBLE_REMOVED_AUTO_PROMOTE' },
+        description: 'Sorumlu avukat silindi; otomatik yeni sorumlu avukat atandı',
+      });
+    }
 
     return { success: true };
   }
