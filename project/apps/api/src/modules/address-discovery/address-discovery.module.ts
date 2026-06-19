@@ -8,9 +8,10 @@ import { ConfidenceScoreService } from './confidence-score.service';
 import { CrossFileService } from './cross-file.service';
 import { UyapQueryService } from './uyap-query.service';
 import { InstitutionLetterService } from './institution-letter.service';
+import { PolicyEngineModule } from '../policy-engine/policy-engine.module';
 
 @Module({
-  imports: [PrismaModule, NotificationModule],
+  imports: [PrismaModule, NotificationModule, forwardRef(() => PolicyEngineModule)],
   controllers: [AddressDiscoveryController],
   providers: [
     AddressDiscoveryService,
