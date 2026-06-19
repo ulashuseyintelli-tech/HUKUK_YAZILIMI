@@ -71,6 +71,10 @@ export class TebligatService {
   /**
    * Yeni tebligat oluştur
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TebligatController.create() → POST /tebligat (tebligat oluşturma)
+  /// </remarks>
   async create(tenantId: string, dto: CreateTebligatDto) {
     // Dosya kontrolü
     const caseData = await this.prisma.case.findFirst({
@@ -80,6 +84,13 @@ export class TebligatService {
     if (!caseData) {
       throw new NotFoundException("Dosya bulunamadı");
     }
+
+    await this.validateCreateCaseDebtorAddress(
+      tenantId,
+      dto.caseId,
+      dto.caseDebtorId,
+      dto.addressId
+    );
 
     // Adres öncelik kontrolü
     const priorityCheck = await this.checkAddressPriority(
@@ -113,6 +124,87 @@ export class TebligatService {
         notes: dto.notes,
       },
     });
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TebligatService.create() → tebligat oluşturma öncesi CaseDebtor ve adres sahiplik kontrolü
+  /// </remarks>
+  private async validateCreateCaseDebtorAddress(
+    tenantId: string,
+    caseId: string,
+    caseDebtorId?: string | null,
+    addressId?: string | null
+  ) {
+    const hasCaseDebtorId = caseDebtorId !== undefined && caseDebtorId !== null;
+    const hasAddressId = addressId !== undefined && addressId !== null;
+
+    if (!hasCaseDebtorId && !hasAddressId) {
+      return;
+    }
+
+    if (hasAddressId && !hasCaseDebtorId) {
+      throw new BadRequestException("Adres bağlantısı için borçlu bağlantısı zorunludur");
+    }
+
+    let caseDebtor: {
+      id: string;
+      caseId: string;
+      debtorId: string;
+      case?: { tenantId: string } | null;
+    } | null = null;
+
+    if (hasCaseDebtorId) {
+      if (caseDebtorId.trim() === "") {
+        throw new BadRequestException("Tebligat borçlu bağlantısı geçersiz");
+      }
+
+      caseDebtor = await (this.prisma as any).caseDebtor.findUnique({
+        where: { id: caseDebtorId },
+        select: {
+          id: true,
+          caseId: true,
+          debtorId: true,
+          case: { select: { tenantId: true } },
+        },
+      });
+
+      if (!caseDebtor) {
+        throw new BadRequestException("Tebligat borçlu bağlantısı geçersiz");
+      }
+
+      if (caseDebtor.case?.tenantId !== tenantId) {
+        throw new BadRequestException("Tebligat borçlu bağlantısı bu tenant'a ait değil");
+      }
+
+      if (caseDebtor.caseId !== caseId) {
+        throw new BadRequestException("Tebligat borçlu bağlantısı bu dosyaya ait değil");
+      }
+    }
+
+    if (!hasAddressId) {
+      return;
+    }
+
+    if (addressId.trim() === "") {
+      throw new BadRequestException("Tebligat adres bağlantısı geçersiz");
+    }
+
+    const debtorAddress = await (this.prisma as any).debtorAddress.findUnique({
+      where: { id: addressId },
+      select: {
+        id: true,
+        debtorId: true,
+      },
+    });
+
+    if (!debtorAddress) {
+      throw new BadRequestException("Tebligat adres bağlantısı geçersiz");
+    }
+
+    if (debtorAddress.debtorId !== caseDebtor?.debtorId) {
+      throw new BadRequestException("Tebligat adres bağlantısı bu borçluya ait değil");
+    }
   }
 
   /**
