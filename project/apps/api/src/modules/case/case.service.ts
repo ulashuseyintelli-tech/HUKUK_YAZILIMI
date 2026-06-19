@@ -1648,7 +1648,16 @@ export class CaseService {
     });
   }
 
-  // Toplu güncelleme (Batch Update)
+  /**
+   * Toplu dosya güncelleme (Batch Update).
+   *
+   * ASSIGN-4c: `sorumluPersonelId` (User) tenant'a ait mi doğrulanır (yoksa BadRequest);
+   * updateMany sonrası tek özet `CASE` UPDATE audit'i üretilir (dosya-başına audit YOK).
+   *
+   * @remarks Çağrıldığı yerler:
+   * - CaseController.batchUpdate() → POST /cases/batch-update
+   *   ← apps/web reports/page.tsx (toplu güncelle paneli) · cases/page.tsx#handleBulkAssign (toplu sorumlu personel)
+   */
   async batchUpdate(
     tenantId: string,
     caseIds: string[],
@@ -1668,6 +1677,17 @@ export class CaseService {
       mahiyetTipiId: updates.mahiyetTipiId,
     });
 
+    // ASSIGN-4c: sorumluPersonelId (User) bu tenant'a ait mi? (validateLookupIds yalnız lookup
+    // tablolarını kapsar.) null=atamayı temizleme → doğrulama gerekmez; dolu id → tenant kontrolü.
+    if (updates.sorumluPersonelId) {
+      const personel = await this.prisma.user.findFirst({
+        where: { id: updates.sorumluPersonelId, tenantId },
+      });
+      if (!personel) {
+        throw new BadRequestException('Geçersiz sorumlu personel: Belirtilen kullanıcı bu büroya ait değil');
+      }
+    }
+
     // Sadece bu tenant'a ait dosyaları güncelle
     const result = await this.prisma.case.updateMany({
       where: {
@@ -1681,6 +1701,16 @@ export class CaseService {
         ...(updates.takipTuruId !== undefined && { takipTuruId: updates.takipTuruId }),
         ...(updates.mahiyetTipiId !== undefined && { mahiyetTipiId: updates.mahiyetTipiId }),
       },
+    });
+
+    // ASSIGN-4c: toplu güncellemeyi tek özet CASE UPDATE olarak audit'le (dosya-başına audit YOK).
+    await this.auditService.log({
+      tenantId,
+      action: 'UPDATE',
+      entityType: 'CASE',
+      entityId: caseIds[0] ?? 'BATCH',
+      newValues: { caseIds, updates, updatedCount: result.count },
+      description: 'Toplu dosya güncellemesi',
     });
 
     return { updatedCount: result.count };
@@ -2259,6 +2289,16 @@ export class CaseService {
       return { caseLawyer: created, demotedIds };
     });
 
+    // ASSIGN-4c: avukat eklemesi CASE_LAWYER CREATE olarak audit'lenir.
+    await this.auditService.log({
+      tenantId,
+      action: 'CREATE',
+      entityType: 'CASE_LAWYER',
+      entityId: caseLawyer.id,
+      newValues: { lawyerId: caseLawyer.lawyerId, role: caseLawyer.role, isResponsible: caseLawyer.isResponsible },
+      description: `Dosyaya avukat eklendi: ${caseLawyer.lawyer.name} ${caseLawyer.lawyer.surname}`,
+    });
+
     // ASSIGN-4b: otomatik demote'u CASE_LAWYER UPDATE olarak audit'le (ekleme=CREATE audit'i 4c).
     if (demotedIds.length > 0) {
       await this.auditService.log({
@@ -2323,6 +2363,16 @@ export class CaseService {
         }
       }
       return { promotedId };
+    });
+
+    // ASSIGN-4c: avukat çıkarması CASE_LAWYER DELETE olarak audit'lenir (oldValues silinen kayıttan).
+    await this.auditService.log({
+      tenantId,
+      action: 'DELETE',
+      entityType: 'CASE_LAWYER',
+      entityId: caseLawyerId,
+      oldValues: { lawyerId: caseLawyer.lawyerId, role: caseLawyer.role, isResponsible: caseLawyer.isResponsible },
+      description: 'Dosyadan avukat çıkarıldı',
     });
 
     // ASSIGN-4b: otomatik yeni sorumlu atandıysa CASE_LAWYER UPDATE audit'i (silme=DELETE audit'i 4c).
