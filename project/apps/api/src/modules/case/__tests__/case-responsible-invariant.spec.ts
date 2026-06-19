@@ -227,13 +227,16 @@ describe('ASSIGN-4b CaseService.addCaseLawyer (tam-1 invariant)', () => {
     );
   });
 
-  it('yeni eklenen RESPONSIBLE ama mevcut sorumlu yok → demote yok, audit yok', async () => {
+  it('yeni eklenen RESPONSIBLE ama mevcut sorumlu yok → demote yok (demote-audit yok)', async () => {
     const { service, txUpdate, auditLog } = setup({ otherResponsible: [] });
 
     await (service as any).addCaseLawyer('tenant-1', 'case-1', { lawyerId: 'law-1', role: 'RESPONSIBLE' });
 
     expect(txUpdate).not.toHaveBeenCalled();
-    expect(auditLog).not.toHaveBeenCalled();
+    // ASSIGN-4c: ekleme artık her zaman CREATE audit'ler; burada 4b DEMOTE-UPDATE audit'i OLMAMALI.
+    expect(auditLog).not.toHaveBeenCalledWith(
+      expect.objectContaining({ newValues: expect.objectContaining({ demotedCaseLawyerIds: expect.anything() }) }),
+    );
   });
 });
 
@@ -274,14 +277,17 @@ describe('ASSIGN-4b CaseService.removeCaseLawyer (tam-1 invariant)', () => {
     expect(res).toEqual({ success: true });
   });
 
-  it('son avukatsa (kalan yok) → avukatsız kalabilir, promote/audit yok', async () => {
+  it('son avukatsa (kalan yok) → avukatsız kalabilir, promote yok (promote-audit yok)', async () => {
     const { service, txDelete, txUpdate, auditLog } = setup({ removedResponsible: true, remaining: [] });
 
     const res = await (service as any).removeCaseLawyer('tenant-1', 'case-1', 'cl-1');
 
     expect(txDelete).toHaveBeenCalledWith({ where: { id: 'cl-1' } });
     expect(txUpdate).not.toHaveBeenCalled();
-    expect(auditLog).not.toHaveBeenCalled();
+    // ASSIGN-4c: silme artık her zaman DELETE audit'ler; burada 4b PROMOTE-UPDATE audit'i OLMAMALI.
+    expect(auditLog).not.toHaveBeenCalledWith(
+      expect.objectContaining({ newValues: expect.objectContaining({ reason: 'RESPONSIBLE_REMOVED_AUTO_PROMOTE' }) }),
+    );
     expect(res).toEqual({ success: true });
   });
 
@@ -295,6 +301,9 @@ describe('ASSIGN-4b CaseService.removeCaseLawyer (tam-1 invariant)', () => {
 
     expect(txDelete).toHaveBeenCalledWith({ where: { id: 'cl-1' } });
     expect(txUpdate).not.toHaveBeenCalled();
-    expect(auditLog).not.toHaveBeenCalled();
+    // ASSIGN-4c: silme her zaman DELETE audit'ler; 4b PROMOTE-UPDATE audit'i OLMAMALI.
+    expect(auditLog).not.toHaveBeenCalledWith(
+      expect.objectContaining({ newValues: expect.objectContaining({ reason: 'RESPONSIBLE_REMOVED_AUTO_PROMOTE' }) }),
+    );
   });
 });
