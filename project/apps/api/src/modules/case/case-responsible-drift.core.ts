@@ -175,6 +175,10 @@ export async function runDriftRepair(
       tenantId: true,
       lawyers: {
         select: { id: true, isResponsible: true, lawyer: { select: { lawyerRank: true } } },
+        // Determinizm: eşit-rank tie-break için STABİL sıra. planResponsible "dizideki ilk" en
+        // öncelikli rank'i seçer → createdAt ASC ile eşit-rank içinde en ESKİ kayıt keeper olur
+        // (runtime create/remove fallback'iyle birebir). Örtük DB sırası bırakılmaz.
+        orderBy: [{ createdAt: "asc" }, { id: "asc" }],
       },
     },
   });
