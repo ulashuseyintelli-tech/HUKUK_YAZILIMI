@@ -7,6 +7,7 @@ import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculat
 import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
 import { isPoaDuplicateSuppressed } from "@/lib/poa-ux";
+import { resolveLawyerIdsFromScan } from "@/lib/lawyer-match";
 import { buildStaffPayload } from "@/lib/case-staff-payload";
 import { FormMetadata, SubFormMetadata, FormCategory } from "@/types/form-metadata";
 import { WizardAnswers } from "@/types/wizard";
@@ -579,49 +580,10 @@ export default function NewCasePage() {
         lawyerIds: [] as string[],
       };
       
-      // Avukatları eşleştir - TCKN veya isim ile
-      if (result.lawyers && result.lawyers.length > 0) {
-        for (const lawyer of result.lawyers) {
-          // Önce TCKN ile eşleştir (barNumber aslında TCKN olabilir)
-          let matchedLawyer = existingLawyers.find(
-            l => l.tckn === lawyer.barNumber
-          );
-          
-          // TCKN ile bulunamadıysa baro sicil no ile dene
-          if (!matchedLawyer && lawyer.barNumber) {
-            matchedLawyer = existingLawyers.find(
-              l => l.barNumber === lawyer.barNumber
-            );
-          }
-          
-          // Hala bulunamadıysa isim ile eşleştir
-          if (!matchedLawyer && lawyer.name) {
-            const nameParts = lawyer.name.split(' ');
-            const firstName = nameParts[0]?.toLowerCase();
-            const lastName = nameParts.slice(1).join(' ')?.toLowerCase();
-            
-            matchedLawyer = existingLawyers.find(
-              l => l.name?.toLowerCase() === firstName && 
-                   l.surname?.toLowerCase() === lastName
-            );
-          }
-          
-          if (matchedLawyer) {
-            poaData.lawyerIds.push(matchedLawyer.id);
-          }
-        }
-      } else if (result.lawyerBarNumber) {
-        // Önce TCKN olarak dene
-        let matchedLawyer = existingLawyers.find(l => l.tckn === result.lawyerBarNumber);
-        // Sonra baro sicil no olarak dene
-        if (!matchedLawyer) {
-          matchedLawyer = existingLawyers.find(l => l.barNumber === result.lawyerBarNumber);
-        }
-        if (matchedLawyer) {
-          poaData.lawyerIds.push(matchedLawyer.id);
-        }
-      }
-      
+      // Avukatları eşleştir: tam-ad normalize + TCKN/baro sinyali + mükerrer
+      // kayıtlarda kanonik tercih. Saf/test edilebilir mantık: lib/lawyer-match.ts
+      poaData.lawyerIds = resolveLawyerIdsFromScan(result, existingLawyers);
+
       const poaRes = await api.post("/poa", poaData);
       // PR-2a: aynı vekalet zaten kayıtlıysa backend yeni açmaz; mesajı buna göre ver.
       const poaSuppressed = isPoaDuplicateSuppressed(poaRes);
