@@ -191,8 +191,13 @@ interface CaseDetail {
   }[];
   staff?: {
     id: string;
-    canSign?: boolean;
+    // PR-ASSIGN-3c: CaseStaff model alanları (getCaseStaff tüm CaseStaff scalar'larını döndürür).
+    // Bayat `canSign` KALDIRILDI — lawyer-kopyasıydı, CaseStaff modelinde yok (bkz. case-staff-edit.ts).
     roleOnCase?: string;
+    canEdit?: boolean;
+    canApprove?: boolean;
+    canView?: boolean;
+    receiveNotifications?: boolean;
     staffMember: {
       id: string;
       firstName: string;
@@ -1442,7 +1447,8 @@ export default function CaseDetailPage() {
       email: se.staffMember.email,
       // PR-ASSIGN-3b: CaseStaff modeli alanları (roleOnCase/canEdit/canApprove/canView/receiveNotifications).
       // Eski canSign + permissions{5} (lawyer drawer'ından sızmış, CaseStaff'ta yok) KALDIRILDI.
-      ...caseStaffEditFields(se as any),
+      // PR-ASSIGN-3c: `se` tipi artık CaseStaff alanlarını taşıyor → `as any` kaldırıldı (tsc-denetimli).
+      ...caseStaffEditFields(se),
     });
     setStaffDrawerOpen(true);
   };
