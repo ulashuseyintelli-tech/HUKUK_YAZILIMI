@@ -14,6 +14,7 @@
  */
 import { PrismaClient, FormCategory, ProcedureType } from "@prisma/client";
 import * as bcrypt from "bcrypt";
+import { seedLookupCatalog } from "../src/modules/lookup/lookup-seed";
 
 // Form Metadata - Veritabanına eklenecek form tipleri
 const FORM_TYPES = [
@@ -334,6 +335,18 @@ async function main(): Promise<void> {
 
     // Form tiplerini oluştur (idempotent)
     await seedFormTypes(prisma);
+
+    // Lookup katalog — TEK kanonik kaynak (lookup-catalog.ts). Demo Firma tenant'ına idempotent seed.
+    // Bu sayede db:seed / db:bootstrap sonrası Demo Firma takip türü + mahiyet ile DOLU gelir
+    // (regresyonun kök sebebi: bootstrap lookup tohumlamıyordu).
+    const demoTenant = await prisma.tenant.findUnique({ where: { slug: "demo-firma" } });
+    if (demoTenant) {
+      const r = await seedLookupCatalog(prisma, demoTenant.id);
+      console.log(
+        `✅ Lookup katalog seedlendi (Demo Firma): takipTuru=${r.takipTuru}, mahiyet=${r.mahiyet}, ` +
+          `asama=${r.asama}, risk=${r.risk}, borcluTipi=${r.borcluTipi}, durumEtiketi=${r.durumEtiketi}`,
+      );
+    }
 
     console.log("✅ Seed tamamlandı");
   } finally {
