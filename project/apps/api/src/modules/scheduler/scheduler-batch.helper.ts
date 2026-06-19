@@ -41,11 +41,16 @@ export interface RunBatchedResult {
 }
 
 export async function runBatched<T extends Record<string, any>>(
+  // F2: cursor/orderBy Prisma'da model-özel tiplerdir (XWhereUniqueInput / XOrderByInput).
+  // Generic helper bunları bilemez → `any`. Böylece scheduler'da `db` PrismaService olarak
+  // tiplenince call-site'taki `findMany({ where, ...args })` spread'i Prisma findMany'e
+  // friction'sız geçer; where/include YİNE type-checked kalır. Runtime davranışı DEĞİŞMEZ
+  // (args zaten içeride `any` olarak kuruluyor).
   findMany: (args: {
     take: number;
     skip?: number;
-    cursor?: Record<string, string>;
-    orderBy: Record<string, 'asc'> | Record<string, 'asc'>[];
+    cursor?: any;
+    orderBy?: any;
   }) => Promise<T[]>,
   handler: (item: T) => Promise<void>,
   options?: RunBatchedOptions,

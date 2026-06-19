@@ -20,8 +20,11 @@ import { TebligatPttResult } from '../tebligat/dto/tebligat.dto';
 export class SchedulerService {
   private readonly logger = new Logger(SchedulerService.name);
 
-  // Prisma client'a any olarak erişim (generate sonrası düzelecek)
-  private get db(): any {
+  // F2 hardening: `db` artık `any` DEĞİL (eski "generate sonrası düzelecek" notu burada çözüldü).
+  // `any` iken `this.db.notification` gibi OLMAYAN Prisma delegelerine erişim derleme-zamanı
+  // yakalanmıyordu → DUE_REMINDER ölü yolu böyle kaçmıştı. PrismaService tipiyle nonexistent
+  // delege artık tsc hatası verir (bu sınıf runtime-ölü-yol shipping'e giremez).
+  private get db(): PrismaService {
     return this.prisma;
   }
 
@@ -39,7 +42,7 @@ export class SchedulerService {
   private isRunning_checkIhbarnameDeadlines = false;
   private isRunning_checkExternalCaseFollowups = false;
   private isRunning_checkTebligatStatus = false;
-  private isRunning_sendDueReminders = false;
+  // isRunning_sendDueReminders kaldırıldı — sendDueReminders F2'de devre dışı (ölü yol).
 
   /**
    * Her gün saat 09:00'da çalışır
@@ -810,81 +813,27 @@ export class SchedulerService {
   }
 
   /**
-   * Her gün saat 08:00'da çalışır
-   * Vade hatırlatma bildirimleri gönderir
+   * Her gün saat 08:00'da çalışırdı; vade hatırlatma bildirimleri gönderirdi.
+   *
+   * F2 (DEVRE DIŞI — ölü yol kaldırıldı): Staff in-app bildirim altyapısı YOK.
+   * `Notification` Prisma modeli yok (canlı doğrulandı: `prisma.notification === undefined`);
+   * userId'ye in-app feed API'si yok; web "bell" tüketicisi yok. Eski gövde
+   * `this.db.notification.findFirst/create` çağırıyordu — bu delege RUNTIME'da `undefined`
+   * olduğundan cron HER sabah ilk `due`'da TypeError fırlatıp generic "Vade hatırlatma hatası"
+   * logluyor, HİÇBİR hatırlatma göndermiyordu (feature çalışıyor görünüp ölüydü).
+   *
+   * Karar (F2/Option C): olmayan feature'ı bug gibi yamamak yerine ölü yolu kaldır + cron'u
+   * devre dışı bırak. Staff in-app vade hatırlatması istenirse AYRI ürün kararı + feature
+   * (Notification modeli + API feed + web bell) olarak tasarlanır; o zaman cron yeniden
+   * etkinleştirilir. Veri ön-koşulu (`Case.sorumluPersonelId` doluluğu) F1 (#241) ile sağlandı.
    */
-  @Cron(CronExpression.EVERY_DAY_AT_8AM)
+  // @Cron(CronExpression.EVERY_DAY_AT_8AM) // DEVRE DIŞI — F2: in-app bildirim altyapısı yok (model/API/UI)
   async sendDueReminders() {
-    if (this.isRunning_sendDueReminders) {
-      this.logger.warn('[scheduler] sendDueReminders already running, skipping');
-      return;
-    }
-    this.isRunning_sendDueReminders = true;
-
-    this.logger.log('⏰ Vade hatırlatma kontrolü başladı...');
-
-    try {
-      const threeDaysLater = new Date();
-      threeDaysLater.setDate(threeDaysLater.getDate() + 3);
-
-      const result = await runBatched(
-        (args) =>
-          this.db.due.findMany({
-            where: {
-              dueDate: {
-                gte: new Date(),
-                lte: threeDaysLater,
-              },
-              isPaid: false,
-            },
-            include: {
-              case: {
-                select: {
-                  id: true,
-                  fileNumber: true,
-                  tenantId: true,
-                  sorumluPersonelId: true,
-                },
-              },
-            },
-            ...args,
-          }),
-        async (due) => {
-          if (!due.case) return;
-          const caseId = due.case.id;
-
-          // INV-4: DB-level duplicate check (hard guarantee — single process + no overlap)
-          const today = new Date().toISOString().split('T')[0];
-          const existing = await this.db.notification.findFirst({
-            where: {
-              type: 'DUE_REMINDER',
-              data: { path: ['caseId'], equals: caseId },
-              createdAt: { gte: new Date(today) },
-            },
-          });
-          if (existing) return; // Bugün zaten gönderilmiş
-
-          await this.db.notification.create({
-            data: {
-              tenantId: due.case.tenantId,
-              userId: due.case.sorumluPersonelId,
-              type: 'DUE_REMINDER',
-              title: 'Vade Hatırlatması',
-              message: `${due.case.fileNumber} dosyasında alacak kaleminin vadesi 3 gün içinde doluyor. Tutar: ${Number(due.amount || 0).toLocaleString('tr-TR')} TL`,
-              data: { caseId, dueId: due.id, amount: due.amount },
-              isRead: false,
-            },
-          });
-        },
-      );
-
-      this.schedulerMetrics.record('sendDueReminders', result);
-      this.logger.log(`✅ ${result.processed} vade hatırlatması işlendi (truncated: ${result.truncated})`);
-    } catch (error) {
-      this.logger.error('Vade hatırlatma hatası:', error);
-    } finally {
-      this.isRunning_sendDueReminders = false;
-    }
+    // Cron devre dışı → normalde çağrılmaz. Elle/yanlışlıkla çağrılırsa sessiz no-op yerine
+    // AÇIKÇA logla (ölü yol görünür olsun); gerçek teslim YOK.
+    this.logger.warn(
+      '[scheduler] sendDueReminders DEVRE DIŞI (F2): in-app bildirim altyapısı yok; vade hatırlatması gönderilmiyor.',
+    );
   }
 
   /**
