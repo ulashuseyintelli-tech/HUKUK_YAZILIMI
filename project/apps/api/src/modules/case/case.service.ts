@@ -1938,7 +1938,15 @@ export class CaseService {
   private toCaseLawyerConflict(error: unknown): Error {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
       const target = String((error.meta as { target?: unknown } | undefined)?.target ?? '');
-      if (target.includes('one_responsible_per_case')) {
+      // PR-C-FU: sorumlu partial unique index (case_lawyer_one_responsible_per_case). Prisma bu raw
+      // (şema-dışı) index için P2002 target'ını KOLON raporlar = "caseId" (index ADI DEĞİL — canlı
+      // doğrulamayla saptandı). caseId+lawyerId unique'inde target "caseId,lawyerId" olur. Ayrım:
+      // caseId VAR + lawyerId YOK → sorumlu çakışması (409). Ad-substring kontrolü belt-and-suspenders
+      // (başka bir Prisma sürümü target'ta index adını raporlarsa).
+      const isResponsibleConflict =
+        target.includes('one_responsible_per_case') ||
+        (target.includes('caseId') && !target.includes('lawyerId'));
+      if (isResponsibleConflict) {
         return new ConflictException(
           'Sorumlu avukat aynı anda başka bir işlemce değiştirildi; lütfen sayfayı yenileyip tekrar deneyin.',
         );
