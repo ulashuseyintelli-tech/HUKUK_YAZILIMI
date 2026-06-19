@@ -4,7 +4,13 @@
  * Kararın create() dedupe'iyle BİREBİR aynı olduğunu (planResponsible REUSE) ve 4 durumun
  * doğru sınıflandığını kanıtlar. Yazma (runDriftRepair) DB e2e ile doğrulanır (rfa016 deseni).
  */
-import { planCaseDriftFix, parseDriftRepairArgs, DriftCaseLawyer } from "../case-responsible-drift.core";
+import {
+  planCaseDriftFix,
+  parseDriftRepairArgs,
+  runDriftRepair,
+  DRIFT_AUDIT_SOURCE,
+  DriftCaseLawyer,
+} from "../case-responsible-drift.core";
 
 describe("planCaseDriftFix — drift sınıflandırma + onarım planı (saf)", () => {
   it("avukatsız dosya → EMPTY, no-op (ASSIGN-4b bilinçli istisnası)", () => {
@@ -122,5 +128,79 @@ describe("parseDriftRepairArgs — scope/yazma kilidi (backfill sözleşmesi)", 
   it("--out <path> okunur", () => {
     const o = parseDriftRepairArgs(["--all-tenants", "--out", "rapor.json"]);
     expect(o.out).toBe("rapor.json");
+  });
+});
+
+describe("runDriftRepair — APPLY yazımı + D2 audit (mock prisma, DB'siz)", () => {
+  function mockPrisma(cases: unknown[]) {
+    const updates: any[] = [];
+    const audits: any[] = [];
+    const prisma = {
+      case: { findMany: async () => cases },
+      $transaction: async (fn: (tx: unknown) => Promise<unknown>) =>
+        fn({
+          caseLawyer: { update: async (a: any) => { updates.push(a); } },
+          auditLog: { create: async (a: any) => { audits.push(a.data); } },
+        }),
+    };
+    return { prisma, updates, audits };
+  }
+  const opts = { apply: true, tenantId: "t1", allTenants: false, confirmProd: false };
+
+  it("MULTI → diğer sorumlu demote + tek DEMOTE audit (keepId zaten sorumlu → keep-audit yok)", async () => {
+    const { prisma, updates, audits } = mockPrisma([
+      { id: "c1", fileNumber: "F1", tenantId: "t1", lawyers: [
+        { id: "r1", isResponsible: true, lawyer: { lawyerRank: "PARTNER" } },
+        { id: "r2", isResponsible: true, lawyer: { lawyerRank: "LAWYER" } },
+      ] },
+    ]);
+    const rep = await runDriftRepair(prisma as never, opts, {});
+    expect(rep.appliedDemotes).toBe(1);
+    expect(updates).toHaveLength(2); // keepId(no-op update) + 1 demote
+    // keepId(r1, PARTNER) zaten sorumlu → audit YOK; yalnız r2 demote → audit
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ entityType: "CASE_LAWYER", entityId: "r2", action: "UPDATE" });
+    expect(audits[0].newValues.reason).toBe("DRIFT_REPAIR_DEMOTE");
+    expect(audits[0].metadata.source).toBe(DRIFT_AUDIT_SOURCE);
+    expect(audits[0].metadata.caseId).toBe("c1");
+  });
+
+  it("ZERO → öncelikli promote + tek PROMOTE audit", async () => {
+    const { prisma, audits } = mockPrisma([
+      { id: "c2", fileNumber: "F2", tenantId: "t1", lawyers: [
+        { id: "a", isResponsible: false, lawyer: { lawyerRank: "LAWYER" } },
+        { id: "b", isResponsible: false, lawyer: { lawyerRank: "AUTHORIZED" } },
+      ] },
+    ]);
+    await runDriftRepair(prisma as never, opts, {});
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({ entityId: "b", action: "UPDATE" }); // AUTHORIZED > LAWYER
+    expect(audits[0].newValues.reason).toBe("DRIFT_REPAIR_PROMOTE");
+    expect(audits[0].metadata.source).toBe(DRIFT_AUDIT_SOURCE);
+  });
+
+  it("DRY-RUN → ne update ne audit", async () => {
+    const { prisma, updates, audits } = mockPrisma([
+      { id: "c3", fileNumber: "F3", tenantId: "t1", lawyers: [
+        { id: "x", isResponsible: true, lawyer: { lawyerRank: "PARTNER" } },
+        { id: "y", isResponsible: true, lawyer: { lawyerRank: "LAWYER" } },
+      ] },
+    ]);
+    await runDriftRepair(prisma as never, { ...opts, apply: false }, {});
+    expect(updates).toHaveLength(0);
+    expect(audits).toHaveLength(0);
+  });
+
+  it("OK (tam 1 sorumlu) → drift yok, update/audit yok", async () => {
+    const { prisma, updates, audits } = mockPrisma([
+      { id: "c4", fileNumber: "F4", tenantId: "t1", lawyers: [
+        { id: "p", isResponsible: true, lawyer: { lawyerRank: "PARTNER" } },
+        { id: "q", isResponsible: false, lawyer: { lawyerRank: "LAWYER" } },
+      ] },
+    ]);
+    const rep = await runDriftRepair(prisma as never, opts, {});
+    expect(rep.driftCases).toBe(0);
+    expect(updates).toHaveLength(0);
+    expect(audits).toHaveLength(0);
   });
 });

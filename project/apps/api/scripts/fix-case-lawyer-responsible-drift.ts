@@ -15,15 +15,15 @@
  * ⚠️ Bu script, CaseLawyer partial-unique-index migration'ının ÖN KOŞULUDUR: drift varken
  *    `CREATE UNIQUE INDEX ... (caseId) WHERE "isResponsible"` FAIL eder. Index'ten ÖNCE koşulmalı.
  *
- * Kullanım (project/apps/api altından):
+ * Kullanım (project/apps/api altından; backfill:due-claimitem ile aynı sözleşme):
  *   # Dry-run (tek tenant):
- *   npx --yes tsx src/scripts/fix-case-lawyer-responsible-drift.ts --tenant <id>
+ *   npm run repair:responsible-drift -- --tenant <id>
  *   # Dry-run (tüm tenantlar — yazma yok, güvenli, migration öncesi tam resim):
- *   npx --yes tsx src/scripts/fix-case-lawyer-responsible-drift.ts --all-tenants
+ *   npm run repair:responsible-drift -- --all-tenants
  *   # APPLY (tek tenant):
- *   npx --yes tsx src/scripts/fix-case-lawyer-responsible-drift.ts --apply --tenant <id>
+ *   npm run repair:responsible-drift -- --apply --tenant <id>
  *   # APPLY (tüm tenantlar — global yazım kilidi):
- *   npx --yes tsx src/scripts/fix-case-lawyer-responsible-drift.ts --apply --all-tenants --confirm-prod-backfill
+ *   npm run repair:responsible-drift -- --apply --all-tenants --confirm-prod-backfill
  *   # Raporu dosyaya da yaz: --out rapor.json
  *
  * Çağrıldığı yerler:
@@ -31,7 +31,7 @@
  */
 import { PrismaClient } from "@prisma/client";
 import * as fs from "fs";
-import { parseDriftRepairArgs, runDriftRepair } from "../modules/case/case-responsible-drift.core";
+import { parseDriftRepairArgs, runDriftRepair } from "../src/modules/case/case-responsible-drift.core";
 
 const prisma = new PrismaClient();
 

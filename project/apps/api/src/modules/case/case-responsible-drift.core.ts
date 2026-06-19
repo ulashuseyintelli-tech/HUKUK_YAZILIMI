@@ -103,10 +103,14 @@ export function planCaseDriftFix(lawyers: DriftCaseLawyer[]): CaseDriftPlan {
   return { kind, isDrift: true, lawyerCount, responsibleBefore, keepId, demoteIds };
 }
 
+/** Drift onarımı audit'lerinin metadata.source etiketi (sorgulanabilir; 4b/4c audit deseni). */
+export const DRIFT_AUDIT_SOURCE = "ASSIGN-4-drift-repair";
+
 // ==================== ORKESTRASYON (yapısal Prisma) ====================
 
 export interface DriftPrismaTx {
   caseLawyer: { update(args: unknown): Promise<unknown> };
+  auditLog: { create(args: unknown): Promise<unknown> };
 }
 export interface DriftPrisma {
   case: {
@@ -234,11 +238,39 @@ export async function runDriftRepair(
             where: { id: plan.keepId },
             data: { isResponsible: true, role: "RESPONSIBLE" },
           });
+          // ASSIGN-4 D2: yalnız GERÇEKTEN değişen satır audit'lenir. ZERO_RESPONSIBLE'da
+          // keepId false→true yükseltilir → audit. MULTI'de keepId zaten sorumluydu (durum
+          // değişmez) → keep-audit YOK; yalnız aşağıdaki demote'lar (true→false) audit'lenir.
+          if (plan.kind === "ZERO_RESPONSIBLE") {
+            await tx.auditLog.create({
+              data: {
+                tenantId: c.tenantId,
+                action: "UPDATE",
+                entityType: "CASE_LAWYER",
+                entityId: plan.keepId,
+                newValues: { isResponsible: true, role: "RESPONSIBLE", reason: "DRIFT_REPAIR_PROMOTE" },
+                description: `Drift onarımı: sorumlu avukat atandı (${plan.kind})`,
+                metadata: { source: DRIFT_AUDIT_SOURCE, caseId: c.id, kind: plan.kind },
+              },
+            });
+          }
         }
         for (const demoteId of plan.demoteIds) {
           await tx.caseLawyer.update({
             where: { id: demoteId },
             data: { isResponsible: false, role: "ASSIGNED" },
+          });
+          // ASSIGN-4 D2: sorumluluğu düşürülen her satır (true→false) audit'lenir — aynı tx.
+          await tx.auditLog.create({
+            data: {
+              tenantId: c.tenantId,
+              action: "UPDATE",
+              entityType: "CASE_LAWYER",
+              entityId: demoteId,
+              newValues: { isResponsible: false, role: "ASSIGNED", reason: "DRIFT_REPAIR_DEMOTE" },
+              description: `Drift onarımı: fazladan sorumluluk düşürüldü (${plan.kind})`,
+              metadata: { source: DRIFT_AUDIT_SOURCE, caseId: c.id, kind: plan.kind },
+            },
           });
         }
       });

@@ -21,6 +21,7 @@
     "db:studio": "prisma studio",
     "seed:rates": "ts-node scripts/seed-interest-rates.ts",
     "backfill:due-claimitem": "npx --yes tsx scripts/backfill-due-to-claimitem.ts",
+    "repair:responsible-drift": "npx --yes tsx scripts/fix-case-lawyer-responsible-drift.ts",
     "clean": "rm -rf dist .turbo node_modules"
   },
   "dependencies": {
