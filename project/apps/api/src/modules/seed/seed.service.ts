@@ -10,6 +10,7 @@ import { HASTANE_DATA } from '../public-institution/public-institution-seed-hast
 import { KAMU_HASTANE_DATA } from '../public-institution/public-institution-seed-hastane-2';
 import { DEVLET_HASTANE_DATA } from '../public-institution/public-institution-seed-hastane-3';
 import { MAHKEME_DATA } from '../public-institution/public-institution-seed-mahkeme';
+import { seedLookupCatalog } from '../lookup/lookup-seed';
 
 @Injectable()
 export class SeedService {
@@ -48,86 +49,22 @@ export class SeedService {
     return { lawyers, clients, debtors, cases, offices, staff, lookups };
   }
 
+  /**
+   * Lookup'ları kanonik katalogdan (lookup-catalog.ts) idempotent upsert eder.
+   * Eski drifted inline listeler (8 takip türü + 0 mahiyet) KALDIRILDI; tek kaynak artık
+   * lookup-catalog.ts. Veri/prosedür için bkz. lookup-seed.ts (seedLookupCatalog).
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - SeedController.seedLookups() → POST /seed/lookups (in-app, JwtAuthGuard, kendi tenant'ı)
+   * - SeedService.seedAll() → POST /seed/all
+   * </remarks>
+   */
   async seedLookups(tenantId: string) {
-    let created = 0;
-    // Takip Türleri
-    const takipTurleri = [
-      { code: 'ILAMSIZ_GENEL', name: 'İlamsız Genel Haciz', sortOrder: 1 },
-      { code: 'ILAMSIZ_KAMBIYO', name: 'İlamsız Kambiyo', sortOrder: 2 },
-      { code: 'ILAMLI', name: 'İlamlı İcra', sortOrder: 3 },
-      { code: 'NAFAKA', name: 'Nafaka', sortOrder: 4 },
-      { code: 'KIRA', name: 'Kira Alacağı', sortOrder: 5 },
-      { code: 'REHIN', name: 'Rehin', sortOrder: 6 },
-      { code: 'IPOTEKLI', name: 'İpotekli', sortOrder: 7 },
-      { code: 'IFLAS', name: 'İflas', sortOrder: 8 },
-    ];
-
-    for (const item of takipTurleri) {
-      const exists = await this.prisma.lookupTakipTuru.findFirst({ where: { tenantId, code: item.code } });
-      if (!exists) {
-        await this.prisma.lookupTakipTuru.create({ data: { tenantId, ...item } });
-        created++;
-      }
-    }
-    // Risk Seviyeleri
-    const riskler = [
-      { code: 'DUSUK', name: 'Düşük', color: '#22c55e', sortOrder: 1 },
-      { code: 'ORTA', name: 'Orta', color: '#eab308', sortOrder: 2 },
-      { code: 'YUKSEK', name: 'Yüksek', color: '#ef4444', sortOrder: 3 },
-    ];
-    for (const item of riskler) {
-      const exists = await this.prisma.lookupRisk.findFirst({ where: { tenantId, code: item.code } });
-      if (!exists) {
-        await this.prisma.lookupRisk.create({ data: { tenantId, ...item } });
-        created++;
-      }
-    }
-    // Aşamalar
-    const asamalar = [
-      { code: 'DOSYA_ACILDI', name: 'Dosya Açıldı', sortOrder: 1 },
-      { code: 'TEBLIG', name: 'Tebligat', sortOrder: 2 },
-      { code: 'HACIZ_TALEP', name: 'Haciz Talebi', sortOrder: 3 },
-      { code: 'HACIZ', name: 'Haciz', sortOrder: 4 },
-      { code: 'SATIS', name: 'Satış', sortOrder: 5 },
-      { code: 'TAHSILAT', name: 'Tahsilat', sortOrder: 6 },
-      { code: 'KAPALI', name: 'Kapalı', sortOrder: 7 },
-    ];
-    for (const item of asamalar) {
-      const exists = await this.prisma.lookupAsama.findFirst({ where: { tenantId, code: item.code } });
-      if (!exists) {
-        await this.prisma.lookupAsama.create({ data: { tenantId, ...item } });
-        created++;
-      }
-    }
-    // Durum Etiketleri
-    const durumlar = [
-      { code: 'MASRAF_BEKLIYOR', name: 'Masraf Bekliyor', color: '#f59e0b', sortOrder: 1 },
-      { code: 'ADRES_ARASTIRMA', name: 'Adres Araştırma', color: '#3b82f6', sortOrder: 2 },
-      { code: 'TEBLIG_BEKLIYOR', name: 'Tebligat Bekliyor', color: '#8b5cf6', sortOrder: 3 },
-      { code: 'HACIZ_BEKLIYOR', name: 'Haciz Bekliyor', color: '#ec4899', sortOrder: 4 },
-      { code: 'ODEME_PLANI', name: 'Ödeme Planı', color: '#10b981', sortOrder: 5 },
-    ];
-    for (const item of durumlar) {
-      const exists = await this.prisma.lookupDurumEtiketi.findFirst({ where: { tenantId, code: item.code } });
-      if (!exists) {
-        await this.prisma.lookupDurumEtiketi.create({ data: { tenantId, ...item } });
-        created++;
-      }
-    }
-    // Borçlu Tipleri
-    const borcluTipleri = [
-      { code: 'GERCEK_KISI', name: 'Gerçek Kişi', sortOrder: 1 },
-      { code: 'TUZEL_KISI', name: 'Tüzel Kişi', sortOrder: 2 },
-      { code: 'KAMU', name: 'Kamu Kurumu', sortOrder: 3 },
-    ];
-    for (const item of borcluTipleri) {
-      const exists = await this.prisma.lookupBorcluTipi.findFirst({ where: { tenantId, code: item.code } });
-      if (!exists) {
-        await this.prisma.lookupBorcluTipi.create({ data: { tenantId, ...item } });
-        created++;
-      }
-    }
-    return { created, message: `${created} lookup kaydı oluşturuldu` };
+    const detail = await seedLookupCatalog(this.prisma, tenantId);
+    const created =
+      detail.takipTuru + detail.mahiyet + detail.asama + detail.risk + detail.borcluTipi + detail.durumEtiketi;
+    return { created, message: `${created} lookup kaydı (kanonik katalog) upsert edildi`, detail };
   }
 
 
