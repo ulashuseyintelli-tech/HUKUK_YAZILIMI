@@ -394,6 +394,51 @@ export class CaseService {
     }
   }
 
+  /**
+   * CASE-UPDATE-FK-TENANT: Case'e bağlanan tenant-scoped FK'lerin (Client/Court/ExecutionOffice)
+   * bu tenant'a ait olduğunu doğrular. `validateLookupIds` yalnız lookup tablolarını kapsar; bu
+   * üç FK dışarıda kalıyordu → tekil update()/patchFlags() cross-tenant id'yi guard'sız persist
+   * ediyor, sonra `findOne` FK-join'i (client/court/executionOffice: true) başka tenant'ın tam
+   * kaydını döndürüyordu (cross-tenant veri sızıntısı). Cross-tenant/geçersiz id → BadRequest.
+   * null/undefined → atla (mevcut semantik korunur; "" çağıran tarafça undefined'a çevrilir).
+   *
+   * @remarks Çağrıldığı yerler:
+   * - CaseService.update() → PUT /cases/:id (clientId, courtId)
+   * - CaseService.patchFlags() → PATCH /cases/:id (executionOfficeId)
+   */
+  private async validateCaseFkOwnership(
+    tenantId: string,
+    fks: { clientId?: string | null; courtId?: string | null; executionOfficeId?: string | null },
+  ): Promise<void> {
+    if (fks.clientId) {
+      const client = await this.prisma.client.findFirst({
+        where: { id: fks.clientId, tenantId },
+        select: { id: true },
+      });
+      if (!client) {
+        throw new BadRequestException('Geçersiz müvekkil: Belirtilen müvekkil bu büroya ait değil');
+      }
+    }
+    if (fks.courtId) {
+      const court = await this.prisma.court.findFirst({
+        where: { id: fks.courtId, tenantId },
+        select: { id: true },
+      });
+      if (!court) {
+        throw new BadRequestException('Geçersiz mahkeme: Belirtilen mahkeme bu büroya ait değil');
+      }
+    }
+    if (fks.executionOfficeId) {
+      const office = await this.prisma.executionOffice.findFirst({
+        where: { id: fks.executionOfficeId, tenantId },
+        select: { id: true },
+      });
+      if (!office) {
+        throw new BadRequestException('Geçersiz icra dairesi: Belirtilen icra dairesi bu büroya ait değil');
+      }
+    }
+  }
+
   async findAll(tenantId: string, params?: { status?: string; expenseRequestStatus?: string; clientId?: string; page?: number; limit?: number }) {
     const { status, expenseRequestStatus, clientId, page = 1, limit = 20 } = params || {};
 
@@ -1462,6 +1507,11 @@ export class CaseService {
       }
     }
 
+    // CASE-UPDATE-FK-TENANT: clientId/courtId tenant ownership guard (cross-tenant/geçersiz → 400;
+    // null/undefined → atla — "" yukarıda undefined'a çevrildi). executionOfficeId UpdateCaseDto'da
+    // YOK (forbidNonWhitelisted PUT'ta bloklar) → burada doğrulanmaz; o yol patchFlags()'te ele alınır.
+    await this.validateCaseFkOwnership(tenantId, { clientId: data.clientId, courtId: data.courtId });
+
     const updated = await this.prisma.case.update({
       where: { id },
       data,
@@ -1586,6 +1636,11 @@ export class CaseService {
       this.logger.warn(`patchFlags: No allowed fields found in dto`);
       return this.findOne(tenantId, id);
     }
+
+    // CASE-UPDATE-FK-TENANT: executionOfficeId tenant ownership guard (cross-tenant/geçersiz → 400).
+    // patchFlags body'si Partial<UpdateCaseDto> → metatype Object → ValidationPipe ATLAR; dolayısıyla
+    // tenant koruması yalnız bu service-level guard'dan gelir (allowedFlags'teki tek tenant-scoped FK).
+    await this.validateCaseFkOwnership(tenantId, { executionOfficeId: data.executionOfficeId });
 
     return this.prisma.case.update({
       where: { id },
