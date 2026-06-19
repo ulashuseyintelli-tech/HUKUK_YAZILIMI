@@ -39,6 +39,14 @@ import {
 } from "./case-responsible.helpers";
 export { pickResponsibleFallbackIndex, resolveResponsiblePromotion, planResponsible };
 
+/**
+ * PR-A (ASSIGN-4b-DB): PR-C'de yaratılacak CaseLawyer partial unique index'inin ADI (sözleşme).
+ * Dormant P2002→409 çevirici YALNIZ bu adın P2002'sini 409'a çevirir; diğer tüm unique ihlalleri
+ * (caseId+lawyerId, tenant+fileNumber, ...) AYNEN rethrow edilir. Index henüz YOK → bugün dormant.
+ * PR-C bu index'i TAM bu adla yaratmalıdır.
+ */
+const CASE_LAWYER_RESPONSIBLE_UNIQUE_INDEX = "case_lawyer_one_responsible_per_case";
+
 @Injectable()
 export class CaseService {
   private readonly logger = new Logger(CaseService.name);
@@ -61,6 +69,43 @@ export class CaseService {
     private lawyerService: LawyerService,
     private debtorService: DebtorService,
   ) {}
+
+  /**
+   * PR-A: yalnız sorumlu-avukat partial unique index'inin (PR-C: case_lawyer_one_responsible_per_case)
+   * P2002'sini 409'a çevirir; BAŞKA her P2002/hata AYNEN rethrow (caseId+lawyerId / tenant+fileNumber /
+   * diğer unique YUTULMAZ — Ulaş şartı #2). Index henüz yok → bugün asla tetiklenmez (dormant).
+   */
+  private translateResponsibleConflict(e: unknown): never {
+    if (
+      e instanceof Prisma.PrismaClientKnownRequestError &&
+      e.code === "P2002" &&
+      this.isResponsibleIndexTarget((e.meta as { target?: unknown } | undefined)?.target)
+    ) {
+      throw new ConflictException(
+        "Bu dosyada aynı anda yalnızca bir sorumlu avukat olabilir; lütfen tekrar deneyin.",
+      );
+    }
+    throw e;
+  }
+
+  /** Prisma meta.target (string index-adı VEYA alan listesi) sorumlu-index'i mi gösteriyor? */
+  private isResponsibleIndexTarget(target: unknown): boolean {
+    if (typeof target === "string") return target === CASE_LAWYER_RESPONSIBLE_UNIQUE_INDEX;
+    if (Array.isArray(target)) return target.includes(CASE_LAWYER_RESPONSIBLE_UNIQUE_INDEX);
+    return false;
+  }
+
+  /**
+   * PR-A: sorumlu-avukat SET eden tx'i sarar; yalnız sorumlu-index P2002'sini 409'a çevirir (dormant).
+   * Diğer hatalar aynen yayılır → mevcut hata akışı (ör. fileNumber 409 backstop) DEĞİŞMEZ.
+   */
+  private async runWithResponsibleConflict<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (e) {
+      this.translateResponsibleConflict(e);
+    }
+  }
 
   /**
    * RFA-016: case.create içindeki inline-yeni taraflar (id YOK) için guard'lı resolve/create.
@@ -1088,7 +1133,12 @@ export class CaseService {
                 caseId: newCase.id,
                 lawyerId,
                 canSign: lawyerDto.canSign || false,
-                isResponsible: caseRole === 'RESPONSIBLE',
+                // PR-A clear-before-set: herkes isResponsible=false INSERT edilir; aşağıdaki
+                // planResponsible önceliğe göre TEK satırı sorumlu yapar (SET = İLK true → partial
+                // unique index'i geçici 2-true ile İHLAL ETMEZ). NOT (Ulaş şartı #1): plan/audit
+                // girdisi createdCaseLawyers.push'taki NİYET'tir (caseRole==='RESPONSIBLE'), bu
+                // persisted-false DEĞİL → planResponsible çıktısı ve CREATE_DEDUPE audit'i AYNEN korunur.
+                isResponsible: false,
                 hasSignatureAuthority: lawyerDto.hasSignatureAuthority || false,
                 role: caseRole,
               },
@@ -2027,7 +2077,15 @@ export class CaseService {
     }
 
     // Güncelle (+ gerekiyorsa demote) — atomik tek transaction.
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const updated = await this.runWithResponsibleConflict(() => this.prisma.$transaction(async (tx) => {
+      // PR-A clear-before-set: ÖNCE diğer sorumluları düşür, SONRA hedefi güncelle. Hedef sorumlu
+      // yapılıyorsa demote'lar önce gittiği için geçici 2-true olmaz → partial unique index güvenli.
+      for (const demoteId of demoteIds) {
+        await tx.caseLawyer.update({
+          where: { id: demoteId },
+          data: { isResponsible: false, role: 'ASSIGNED' },
+        });
+      }
       const u = await tx.caseLawyer.update({
         where: { id: caseLawyerId },
         data: updateData,
@@ -2043,14 +2101,8 @@ export class CaseService {
           },
         },
       });
-      for (const demoteId of demoteIds) {
-        await tx.caseLawyer.update({
-          where: { id: demoteId },
-          data: { isResponsible: false, role: 'ASSIGNED' },
-        });
-      }
       return u;
-    });
+    }));
 
     // Audit log (ASSIGN-4b: otomatik demote edilenler de newValues'a yazılır)
     await this.auditService.log({
@@ -2169,7 +2221,24 @@ export class CaseService {
     const willBeResponsible = role === 'RESPONSIBLE';
 
     // Ekle (+ RESPONSIBLE ise eski sorumluları düşür) — atomik tek transaction.
-    const { caseLawyer, demotedIds } = await this.prisma.$transaction(async (tx) => {
+    const { caseLawyer, demotedIds } = await this.runWithResponsibleConflict(() => this.prisma.$transaction(async (tx) => {
+      // PR-A clear-before-set: yeni avukat sorumlu OLACAKSA ÖNCE mevcut sorumluları düşür, SONRA
+      // oluştur (create = ilk/tek true → geçici 2-true olmaz → partial unique index güvenli).
+      // created henüz yok → eski `NOT: { id: created.id }` filtresine gerek kalmaz.
+      let demotedIds: string[] = [];
+      if (willBeResponsible) {
+        const others = await tx.caseLawyer.findMany({
+          where: { caseId, isResponsible: true },
+          select: { id: true },
+        });
+        demotedIds = others.map((o) => o.id);
+        for (const demoteId of demotedIds) {
+          await tx.caseLawyer.update({
+            where: { id: demoteId },
+            data: { isResponsible: false, role: 'ASSIGNED' },
+          });
+        }
+      }
       const created = await tx.caseLawyer.create({
         data: {
           caseId,
@@ -2190,24 +2259,8 @@ export class CaseService {
           },
         },
       });
-
-      // ASSIGN-4b: yeni eklenen sorumluysa diğer sorumluları düşür (tam 1).
-      let demotedIds: string[] = [];
-      if (willBeResponsible) {
-        const others = await tx.caseLawyer.findMany({
-          where: { caseId, isResponsible: true, NOT: { id: created.id } },
-          select: { id: true },
-        });
-        demotedIds = others.map((o) => o.id);
-        for (const demoteId of demotedIds) {
-          await tx.caseLawyer.update({
-            where: { id: demoteId },
-            data: { isResponsible: false, role: 'ASSIGNED' },
-          });
-        }
-      }
       return { caseLawyer: created, demotedIds };
-    });
+    }));
 
     // ASSIGN-4c: avukat eklemesi CASE_LAWYER CREATE olarak audit'lenir.
     await this.auditService.log({
