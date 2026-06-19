@@ -30,6 +30,8 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
   let domainEventIngest: DomainEventIngestService;
   let testTenantId: string;
   let testCaseId: string;
+  let testCaseDebtorId: string;
+  const createdTenantIds = new Set<string>();
 
   beforeAll(async () => {
     prisma = new PrismaClient({
@@ -40,20 +42,68 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
     service = new CollectionService(prisma as any, domainEventIngest);
   });
 
+  afterEach(async () => {
+    await cleanupTenant(testTenantId);
+  });
+
   afterAll(async () => {
+    for (const tenantId of createdTenantIds) {
+      await cleanupTenant(tenantId);
+    }
     await prisma.$disconnect();
   });
 
+  async function cleanupTenant(tenantId?: string) {
+    if (!tenantId) return;
+
+    await (prisma as any).collectionAllocation.deleteMany({
+      where: { collection: { tenantId } },
+    });
+    await (prisma as any).icrabotOutboxAction.deleteMany({
+      where: { tenantId },
+    });
+    await (prisma as any).icrabotTimelineEntry.deleteMany({
+      where: { tenantId },
+    });
+    await prisma.collection.deleteMany({ where: { tenantId } });
+    await prisma.caseDebtor.deleteMany({ where: { case: { tenantId } } });
+    await prisma.case.deleteMany({ where: { tenantId } });
+    await prisma.debtor.deleteMany({ where: { tenantId } });
+    await prisma.client.deleteMany({ where: { tenantId } });
+    await prisma.tenant.deleteMany({ where: { id: tenantId } });
+
+    createdTenantIds.delete(tenantId);
+  }
+
   beforeEach(async () => {
-    // Create test tenant + case for each test
+    // Create tenant-scoped case, client, debtor, and CaseDebtor for each test.
     testTenantId = `test-tenant-${randomUUID().slice(0, 8)}`;
-    const tenant = await prisma.tenant.create({
+    createdTenantIds.add(testTenantId);
+
+    await prisma.tenant.create({
       data: { id: testTenantId, name: 'Test Tenant', slug: `test-${randomUUID().slice(0, 8)}` },
+    });
+
+    const client = await prisma.client.create({
+      data: {
+        tenantId: testTenantId,
+        displayName: 'Test Muvekkil',
+        type: 'INDIVIDUAL',
+      },
+    });
+
+    const debtor = await prisma.debtor.create({
+      data: {
+        tenantId: testTenantId,
+        name: 'Test Borclu',
+        type: 'INDIVIDUAL',
+      },
     });
 
     const caseRow = await prisma.case.create({
       data: {
         tenantId: testTenantId,
+        clientId: client.id,
         fileNumber: `TEST-${randomUUID().slice(0, 6)}`,
         type: 'GENERAL_EXECUTION',
         caseStatus: 'DERDEST',
@@ -61,6 +111,15 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
       },
     });
     testCaseId = caseRow.id;
+
+    const caseDebtor = await prisma.caseDebtor.create({
+      data: {
+        caseId: testCaseId,
+        debtorId: debtor.id,
+        role: 'ASIL_BORCLU',
+      },
+    });
+    testCaseDebtorId = caseDebtor.id;
   });
 
   function buildDto(overrides: Partial<CreateCollectionDto> = {}): CreateCollectionDto {
@@ -233,14 +292,14 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
 
   describe('Test 6: forDebtorId → payload', () => {
     it('caseDebtorId appears as forDebtorId in event payload', async () => {
-      const dto = buildDto({ caseDebtorId: 'debtor-abc-123' });
+      const dto = buildDto({ caseDebtorId: testCaseDebtorId });
       await service.create(testTenantId, dto, 'test-user-1');
 
       const event = await (prisma as any).icrabotTimelineEntry.findFirst({
         where: { caseId: testCaseId, type: 'PAYMENT_RECEIVED' },
       });
 
-      expect(event.body.payload.forDebtorId).toBe('debtor-abc-123');
+      expect(event.body.payload.forDebtorId).toBe(testCaseDebtorId);
     });
 
     it('forDebtorId absent when caseDebtorId not provided', async () => {
