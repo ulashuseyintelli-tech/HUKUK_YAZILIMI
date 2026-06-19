@@ -27,3 +27,33 @@ Daha önce bir yeri yaparken başka yeri bozduğun için bu kuralları otomatik 
   - Migration + frontend-davranış + backend-logic ASLA aynı PR'da.
 - Her PR öncesi: önce local tsc + test; PR açınca TEK CI bekle; yeşilse merge; gereksiz yeni commit/retry yok.
 - Asla: CI maliyetini düşürmek için riskli işleri tek PR'a yığma; kırmızı CI'yı bypass etme; path-filter/docs-skip dâhil hiçbir mekanizma "testi atlatmak" için kullanılmaz (şüphede testi çalıştır).
+
+## Worktree / Lokal Sunucu / Doğrulama Disiplini
+
+ÇAKIŞMA = ZAMAN KAYBI. Worktree/lokal sunucu/session çoğaltması proje genelinde çakışma üretiyor (port, branch, paralel oturum, node_modules junction, shared tree). Bunu önle.
+
+### Bulgu yönetişimi (kod tabanını issue-tracker'a ÇEVİRME)
+Bir bug/risk/gözlem keşfedince seviyeye göre davran — hepsini koda yorum olarak GÖMME (diff'i kirletir, kalıcıdır, önem sıralamasını yok eder, CI/PR maliyet disipliniyle çelişir):
+- A) Çalıştığın kodu ENGELLEYEN gerçek bug → hemen düzelt; kapsam dışıysa AYRI PR aç.
+- B) Çalıştığın modülde ama bu PR kapsamı DIŞINDA risk/teknik borç → kodun içine değil, modülün LEDGER/DOC dosyasına yaz:
+      RISK:
+      Dosya: <path>
+      Konu: <kısa>
+      Bulundu: <YYYY-AA-GG>
+- C) Sadece gözlem / mimari endişe → SOHBETTE bildir; kod tabanına yazma.
+- Kod içine `// CLAUDE-UYARI` türü işaret bırakmak VARSAYILAN DEĞİLDİR; yalnız kullanıcı belirli bir yere açıkça isterse.
+
+### Lokal sunucu / runtime doğrulama
+- Varsayılan olarak "lokali başlat" ÖNERME. Önce STATİK doğrulama: kod okuma → tsc → unit/integration test.
+- Runtime doğrulaması GERÇEKTEN gerekliyse (yalnız çalışırken görülenler: hydration, React state senaryoları, race condition, websocket, auth redirect, tarayıcı davranışı) → NEDEN gerekli olduğunu açıkla ve AYRICA onay iste. Sessizce sunucu başlatma.
+
+### Worktree / yeni session (worktree = risk yönetim aracı, "yasak" değil)
+- Varsayılan: mevcut worktree'de çalış (worktree/server kurulum + sahiplik maliyeti + shared-tree çakışması bedava değil).
+- Worktree bir İSTİSNA değil RİSK YÖNETİM ARACIDIR — şu işlerde izole worktree TERCİH EDİLİR (maliyet değil, maliyetten kaçınma):
+  - Farklı PR sahibi / aktif paralel oturum (shared-tree collision'ı önler)
+  - Riskli refactor
+  - Migration
+  - Uzun süreli / deneysel çalışma
+  - Rollback ihtiyacı yüksek iş
+  - İzole smoke testi
+- İzole worktree açtığında sahiplik maliyetini sıfırla: ayrı port · shared tree'ye DOKUNMA · iş bitince junction + branch temizle (`gh ... --delete-branch` shared-tree'de `main` çakışırsa branch'i manuel sil). Doc-only işte junction/node_modules gerekmez (hafif worktree).
