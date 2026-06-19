@@ -219,3 +219,35 @@ ASSIGN-0 kapsamında yapılmayacaklar:
 Yeni tebligat, istihbarat, haciz veya görev otomasyonu yazmadan önce assignment zemini net olmalıdır.
 
 Bozuk veya parçalı assignment modeli üzerine yeni operasyonel akış eklemek, ileride sessiz görev kaybı, yanlış kişiye bildirim, hatalı performans raporu ve audit eksikliği üretir.
+
+## Kapanış Özeti & Gerekçe (Closure Review)
+
+Durum: ASSIGN-0 → ASSIGN-4 tamamlandı (2026-06-19). Bu bölüm, aylar sonra "neden böyle?" sorularına hızlı yanıt için kararların gerekçesini özetler. (Kod hattı kapandı; kalan işler "Açık backlog"ta, strand dışıdır.)
+
+### Ne yapıldı ve neden bu sıra
+Sıra bilinçliydi: önce **model**, sonra **özellik**. Bozuk zemin üzerine özellik yazmak sessiz görev kaybı / yanlış bildirim üretir.
+
+1. ASSIGN-0 (#199) — **Karar**: model kanonik kararları sabitlendi (kod yok).
+2. ASSIGN-1 (#202 · #207 · #209) — **Güvenlik**: AddressTask tenant izolasyonu (auth guard + body/query tenant→403 + cross-tenant→404 + CaseDebtor link + öksüz görev temizliği). Mimari borç değil güvenlik açığı → önce bu.
+3. ASSIGN-2 (#210 · #212 · #214) — **Veri kaybı**: yeni takipte seçilen personel artık gerçekten case'e yazılır (eskiden sessizce kaybediliyordu).
+4. ASSIGN-3 (#217 · #219 · #221) — **Kırık kontrat**: `PATCH /cases/:id/staff/:caseStaffId` ucu eklendi (eskiden 404), drawer CaseStaff modeline hizalandı, bayat tip temizlendi.
+5. ASSIGN-4 (#222 · #223 · #225 · #231) — **Kanonik model**: sorumlu avukat tek otorite + audit + anlam netleştirme.
+
+### Üç kritik "neden?" (en sık unutulan)
+
+**Neden `Case.sorumluPersonelId` SİLİNMEDİ / deprecated değil?**
+Çünkü "sorumlu" kelimesiyle **iki ayrı sorumluluk** anlatılıyordu:
+- `Case.sorumluPersonelId` = **operasyonel sorumlu / bildirim hedefi** → bir **`User`** (her zaman bildirim alabilir). Scheduler vade-hatırlatması (`DUE_REMINDER.userId`) ve rapor filtreleri buna bağlıdır; yeni-takip formunda zorunlu alandır.
+- `CaseLawyer.isResponsible` = **hukuki sorumlu avukat** → bir **`Lawyer`**.
+Silinemez çünkü scheduler/rapor yük taşıyor. `isResponsible`'a "unify" edilmedi çünkü `Lawyer.userId` **opsiyoneldir** (her avukatın login `User` hesabı yok) → sorumlu avukata güvenilir bildirim gönderilemez. İki eksen bilerek ayrı tutulur.
+
+**Neden "tam olarak 1 sorumlu avukat" invariant'ı var?**
+Önceden **0 sorumlu** (tek sorumluyu düşürme/silme) veya **>1 sorumlu** (2. RESPONSIBLE ekleme / 2 ortak) mümkündü → `client-info-request` `take:1` rastgele avukat seçiyordu (belirsizlik). 4b ile create/update/add/remove sonrası **tam-1** garanti edilir (demote = `isResponsible=false` + `role=ASSIGNED`; son sorumluyu başka biri yükseltilmeden düşürme → `BadRequest`; sorumlu silinince önceliğe göre otomatik yeni sorumlu). Avukatsız dosya istisnadır.
+
+**Neden avukat toplu-atama (bulk lawyer assign) DEVRE DIŞI?**
+"Sorumlu avukat" `Case` üzerinde bir skalar **değildir** (`CaseLawyer.isResponsible`'dır). Frontend `responsibleLawyerId` gönderiyordu ama backend yazıcısı **yoktu** → `patchFlags` alanı sessizce düşürüyordu (sahte "başarılı" toast). Gerçek bir "toplu sorumlu avukat değiştir" semantiği (mevcut sorumluyu düşürme? görev devri? çok-avukatlı dosyalar?) ayrı tasarım gerektirir → sahte buton yerine **dürüstçe disable**. Personel toplu-ataması çalışır (`POST /cases/batch-update` → `sorumluPersonelId`).
+
+### Açık backlog (bu strand DIŞI; ayrı kod işleri)
+- Legacy 0/>1 sorumlu **drift onarımı** (büyük ölçüde ayrı bir PR ile yapıldı).
+- `CaseLawyer` için **partial-unique index** (`UNIQUE("caseId") WHERE "isResponsible"`) — DB seviyesinde ≤1 garanti + eşzamanlılık race'ini kapatır; migration gerektirir (drift onarımı ön koşul).
+- Tekil `create()` / `update()` için `sorumluPersonelId` **tenant guard** (batchUpdate'te var, tekil yollarda yok).
