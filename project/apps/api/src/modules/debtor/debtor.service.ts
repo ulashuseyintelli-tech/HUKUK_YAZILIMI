@@ -667,6 +667,67 @@ export class DebtorService {
       );
     }
 
+    const dependencyCountChecks = [
+      { label: "adres", count: this.prisma.debtorAddress.count({ where: { debtorId: id } }) },
+      { label: "tereke mirasçısı", count: this.prisma.estateHeir.count({ where: { debtorId: id } }) },
+      { label: "malvarlığı", count: this.prisma.asset.count({ where: { debtorId: id } }) },
+      {
+        label: "iletişim",
+        count: this.prisma.debtorCommunication.count({ where: { tenantId, debtorId: id } }),
+      },
+      { label: "görev", count: this.prisma.task.count({ where: { tenantId, debtorId: id } }) },
+      {
+        label: "istihbarat",
+        count: this.prisma.debtorIntelligence.count({ where: { tenantId, debtorId: id } }),
+      },
+      {
+        label: "müvekkil istihbarat beyanı",
+        count: this.prisma.clientIntelStatement.count({ where: { tenantId, debtorId: id } }),
+      },
+      {
+        label: "müvekkil bilgi talebi",
+        count: this.prisma.clientInfoRequest.count({ where: { tenantId, debtorId: id } }),
+      },
+      {
+        label: "icrabot iş kaydı",
+        count: this.prisma.icrabotJobRun.count({ where: { tenantId, debtorId: id } }),
+      },
+      {
+        label: "adres görevi",
+        count: this.prisma.addressTask.count({ where: { tenantId, debtorId: id } }),
+      },
+      {
+        label: "adres eksikliği görevi",
+        count: this.prisma.addressMissingTask.count({ where: { tenantId, debtorId: id } }),
+      },
+      {
+        label: "adres audit kaydı",
+        count: this.prisma.addressAuditLog.count({ where: { tenantId, debtorId: id } }),
+      },
+      {
+        label: "dış dosya karşı taraf atfı",
+        count: this.prisma.externalCase.count({ where: { tenantId, counterpartyId: id } }),
+      },
+    ];
+
+    const dependencyCounts = await Promise.all(
+      dependencyCountChecks.map(async (dependency) => ({
+        label: dependency.label,
+        count: await dependency.count,
+      }))
+    );
+
+    const dependencyCount = dependencyCounts.reduce(
+      (total, dependency) => total + dependency.count,
+      0
+    );
+
+    if (dependencyCount > 0) {
+      throw new BadRequestException(
+        `Bu borçlu ${dependencyCount} bağlı kayıtla ilişkilidir. Adres, görev, tarihçe, istihbarat veya dış atıf varken borçlu silinemez.`
+      );
+    }
+
     return this.prisma.debtor.delete({ where: { id } });
   }
 
