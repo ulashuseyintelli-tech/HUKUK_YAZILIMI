@@ -125,7 +125,9 @@ export function assembleClaimBuckets(
   for (const item of active) {
     const cls = classifyClaimItemType(item.itemType);
 
-    // INTEREST DIŞLA (Q6) — motor hesaplar.
+    // INTEREST ClaimItem amount canonical balance’da talep edilmiş işlemiş faiz olarak sayılmaz;
+    // sadece interest config fallback semantiğinde kullanılır. Talep edilmiş işlemiş faiz tutarının
+    // bakiyeye dahil edilmesi ayrı hukukî/mimari karardır.
     if (cls.category === 'INTEREST') {
       excludedInterestIds.push(item.id);
       continue;
