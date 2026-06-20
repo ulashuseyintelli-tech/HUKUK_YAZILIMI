@@ -167,7 +167,7 @@ export default function CaseDetailV2Page() {
   const fetchDebtors = useCallback(async () => {
     if (!caseId) return;
     try {
-      const response: CaseDebtorsResponse = await api.getCaseDebtors(caseId);
+      const response: CaseDebtorsResponse = await api.getCaseDebtors(caseId, { includePassive: true });
       setDebtors(response.items);
     } catch (err) {
       console.error("Borçlular yüklenirken hata:", err);
@@ -605,7 +605,12 @@ export default function CaseDetailV2Page() {
                         )}
                       </div>
                       <div>
-                        <div className="text-sm font-medium text-slate-700">{d.displayName}</div>
+                        <div className="text-sm font-medium text-slate-700 flex items-center gap-1.5">
+                          <span>{d.displayName}</span>
+                          {d.lifecycleStatus === "PASSIVE" && (
+                            <span className="px-1.5 py-0.5 bg-gray-200 text-gray-600 text-[9px] rounded">Pasif</span>
+                          )}
+                        </div>
                         <div className="text-[10px] text-slate-400">{d.role}</div>
                       </div>
                     </div>

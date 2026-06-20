@@ -18,6 +18,7 @@ import { api, AddressResearchDTO, AddressResearchStatus } from '@/lib/api';
 interface ResearchStatusCardProps {
   caseDebtorId: string;
   initialData?: AddressResearchDTO;
+  readOnly?: boolean;
   onStatusChange?: () => void;
 }
 
@@ -51,6 +52,7 @@ const STATUS_CONFIG: Record<AddressResearchStatus, {
 export function ResearchStatusCard({ 
   caseDebtorId, 
   initialData,
+  readOnly = false,
   onStatusChange 
 }: ResearchStatusCardProps) {
   const [data, setData] = useState<AddressResearchDTO | null>(initialData || null);
@@ -76,6 +78,7 @@ export function ResearchStatusCard({
   };
 
   const handleStartResearch = async () => {
+    if (readOnly) return;
     try {
       setActionLoading(true);
       const result = await api.startResearch(caseDebtorId);
@@ -89,6 +92,7 @@ export function ResearchStatusCard({
   };
 
   const handleComplete = async () => {
+    if (readOnly) return;
     try {
       setActionLoading(true);
       const result = await api.completeResearch(caseDebtorId);
@@ -102,6 +106,7 @@ export function ResearchStatusCard({
   };
 
   const handleMarkExhausted = async () => {
+    if (readOnly) return;
     try {
       setActionLoading(true);
       const result = await api.markResearchAsExhausted(caseDebtorId);
@@ -199,12 +204,17 @@ export function ResearchStatusCard({
         )}
 
         {/* Actions */}
+        {readOnly && (
+          <div className="p-2 rounded bg-gray-50 border border-gray-200 text-xs text-gray-600">
+            Pasif kayit: arastirma aksiyonlari kapali.
+          </div>
+        )}
         <div className="flex gap-2 pt-2">
           {status === 'NOT_STARTED' && (
             <Button 
               size="sm" 
               onClick={handleStartResearch}
-              disabled={actionLoading}
+              disabled={actionLoading || readOnly}
               className="flex-1"
             >
               {actionLoading ? <Spinner size="sm" /> : <Play className="w-4 h-4 mr-1" />}
@@ -217,7 +227,7 @@ export function ResearchStatusCard({
                 size="sm" 
                 variant="outline"
                 onClick={handleComplete}
-                disabled={actionLoading}
+                disabled={actionLoading || readOnly}
               >
                 Tamamla
               </Button>
@@ -225,7 +235,7 @@ export function ResearchStatusCard({
                 size="sm" 
                 variant="outline"
                 onClick={handleMarkExhausted}
-                disabled={actionLoading}
+                disabled={actionLoading || readOnly}
               >
                 Tükendi
               </Button>

@@ -78,7 +78,7 @@ export default function CaseDetailPageV2() {
       setLoading(true);
       const [caseRes, debtorsRes] = await Promise.all([
         api.getCase(params.id as string),
-        api.getCaseDebtors(params.id as string).catch(() => ({ items: [], summary: null }))
+        api.getCaseDebtors(params.id as string, { includePassive: true }).catch(() => ({ items: [], summary: null }))
       ]);
       setData(caseRes);
       setDebtors(debtorsRes.items || []);
@@ -96,9 +96,7 @@ export default function CaseDetailPageV2() {
   if (loading) return <div className="flex items-center justify-center h-screen"><Loader2 className="h-6 w-6 animate-spin" /></div>;
   if (!data) return <div className="text-center py-8"><p>Takip bulunamadı</p><Link href="/cases" className="text-blue-600">Geri dön</Link></div>;
 
-  const activeCaseDebtorLinks = (data.debtors || []).filter(
-    (de: any) => de.lifecycleStatus !== "PASSIVE"
-  );
+  const caseDebtorLinks = data.debtors || [];
 
   return (
     <div className="h-screen flex flex-col bg-slate-100 overflow-hidden">
@@ -255,14 +253,19 @@ export default function CaseDetailPageV2() {
                 {debtorsSummary && debtorsSummary.danger > 0 && (
                   <span className="text-[8px] bg-red-600 text-white px-1 rounded">{debtorsSummary.danger} Risk</span>
                 )}
-                <span className="text-[9px] text-red-600">{debtors.length || activeCaseDebtorLinks.length || 0}</span>
+                <span className="text-[9px] text-red-600">{debtors.length || caseDebtorLinks.length || 0}</span>
               </div>
             </div>
             <div className="overflow-y-auto" style={{ maxHeight: 'calc(100% - 28px)' }}>
-              {(debtors.length ? debtors : activeCaseDebtorLinks).map((d: any) => (
+              {(debtors.length ? debtors : caseDebtorLinks).map((d: any) => (
                 <div key={d.caseDebtorId || d.id} className="px-2 py-1 flex items-center gap-2 hover:bg-red-50 cursor-pointer text-[11px] border-b last:border-0">
                   <div className="w-5 h-5 rounded-full bg-red-100 flex items-center justify-center text-[9px] text-red-600">B</div>
-                  <span className="flex-1 truncate">{d.displayName || d.debtor?.displayName || d.debtor?.name}</span>
+                  <span className="flex-1 truncate">
+                    {d.displayName || d.debtor?.displayName || d.debtor?.name}
+                    {d.lifecycleStatus === "PASSIVE" && (
+                      <span className="ml-1 text-[8px] bg-gray-200 text-gray-600 px-1 rounded">Pasif</span>
+                    )}
+                  </span>
                   <span className="text-[8px] bg-red-100 text-red-700 px-1 rounded">{d.role === 'ASIL_BORCLU' ? 'Asıl' : d.role}</span>
                 </div>
               ))}

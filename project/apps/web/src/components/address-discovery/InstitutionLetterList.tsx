@@ -24,6 +24,7 @@ import {
 
 interface InstitutionLetterListProps {
   caseDebtorId: string;
+  readOnly?: boolean;
   onCreateLetter?: () => void;
   onLetterClick?: (letter: InstitutionLetterDTO) => void;
 }
@@ -75,6 +76,7 @@ const INSTITUTION_ICONS: Record<InstitutionType, string> = {
 
 export function InstitutionLetterList({ 
   caseDebtorId, 
+  readOnly = false,
   onCreateLetter,
   onLetterClick 
 }: InstitutionLetterListProps) {
@@ -124,13 +126,20 @@ export function InstitutionLetterList({
             <Building2 className="w-4 h-4 text-muted-foreground" />
             Kurum Yazıları
           </CardTitle>
-          <Button size="sm" variant="outline" onClick={onCreateLetter}>
-            <Plus className="w-4 h-4 mr-1" />
-            Yeni Yazı
-          </Button>
+          {!readOnly && (
+            <Button size="sm" variant="outline" onClick={onCreateLetter}>
+              <Plus className="w-4 h-4 mr-1" />
+              Yeni Yazı
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent>
+        {readOnly && (
+          <div className="p-2 mb-3 rounded bg-gray-50 border border-gray-200 text-xs text-gray-600">
+            Pasif kayit: yeni kurum yazisi kapali.
+          </div>
+        )}
         {letters.length === 0 ? (
           <p className="text-sm text-muted-foreground text-center py-4">
             Henüz kurum yazısı oluşturulmamış

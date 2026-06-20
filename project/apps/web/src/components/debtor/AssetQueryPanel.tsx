@@ -19,6 +19,7 @@ import {
 
 interface AssetQueryPanelProps {
   caseDebtorId: string;
+  readOnly?: boolean;
   onRefresh?: () => void;
 }
 
@@ -38,7 +39,7 @@ const mainQueryTypes: AssetQueryType[] = ["VEHICLE", "REAL_ESTATE", "BANK", "SGK
 // Additional query types
 const additionalQueryTypes: AssetQueryType[] = ["SGK_EMPLOYER", "TAX", "TRADE_REGISTRY", "GSM"];
 
-export function AssetQueryPanel({ caseDebtorId, onRefresh }: AssetQueryPanelProps) {
+export function AssetQueryPanel({ caseDebtorId, readOnly = false, onRefresh }: AssetQueryPanelProps) {
   const [summary, setSummary] = useState<AssetSummaryDTO | null>(null);
   const [queries, setQueries] = useState<AssetQueryDTO[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,7 +77,7 @@ export function AssetQueryPanel({ caseDebtorId, onRefresh }: AssetQueryPanelProp
   };
 
   const handleRunQueries = async () => {
-    if (selectedTypes.length === 0) return;
+    if (readOnly || selectedTypes.length === 0) return;
     
     setRunning(true);
     try {
@@ -95,6 +96,7 @@ export function AssetQueryPanel({ caseDebtorId, onRefresh }: AssetQueryPanelProp
   };
 
   const handleRunAllMain = async () => {
+    if (readOnly) return;
     setRunning(true);
     try {
       await api.runAssetQueries(caseDebtorId, {
@@ -111,6 +113,7 @@ export function AssetQueryPanel({ caseDebtorId, onRefresh }: AssetQueryPanelProp
   };
 
   const toggleType = (type: AssetQueryType) => {
+    if (readOnly) return;
     setSelectedTypes(prev => 
       prev.includes(type) 
         ? prev.filter(t => t !== type)
@@ -155,7 +158,14 @@ export function AssetQueryPanel({ caseDebtorId, onRefresh }: AssetQueryPanelProp
         </div>
       )}
 
+      {readOnly && (
+        <div className="p-2 rounded bg-gray-50 border border-gray-200 text-xs text-gray-600">
+          Pasif kayit: yeni malvarligi sorgusu kapali.
+        </div>
+      )}
+
       {/* Quick Actions */}
+      {!readOnly && (
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-xs font-medium text-slate-600">Hızlı Sorgu</span>
@@ -245,6 +255,7 @@ export function AssetQueryPanel({ caseDebtorId, onRefresh }: AssetQueryPanelProp
           </Button>
         )}
       </div>
+      )}
 
       {/* Error */}
       {error && (

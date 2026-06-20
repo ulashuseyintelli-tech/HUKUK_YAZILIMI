@@ -139,9 +139,10 @@ interface TebligatPanelProps {
   caseId: string;
   caseDebtorId?: string;
   debtorName?: string;
+  readOnly?: boolean;
 }
 
-export function TebligatPanel({ caseId, caseDebtorId, debtorName }: TebligatPanelProps) {
+export function TebligatPanel({ caseId, caseDebtorId, debtorName, readOnly = false }: TebligatPanelProps) {
   const [tebligatlar, setTebligatlar] = useState<Tebligat[]>([]);
   const [summary, setSummary] = useState<TebligatSummary | null>(null);
   const [priorityCheck, setPriorityCheck] = useState<AddressPriorityCheck | null>(null);
@@ -238,12 +239,20 @@ export function TebligatPanel({ caseId, caseDebtorId, debtorName }: TebligatPane
         </div>
         <button
           type="button"
-          onClick={() => setShowNewModal(true)}
-          className="px-3 py-1.5 bg-indigo-500 text-white text-sm rounded-lg hover:bg-indigo-600 flex items-center gap-1"
+          onClick={() => {
+            if (!readOnly) setShowNewModal(true);
+          }}
+          disabled={readOnly}
+          className="px-3 py-1.5 bg-indigo-500 text-white text-sm rounded-lg hover:bg-indigo-600 flex items-center gap-1 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-indigo-500"
         >
           <Plus className="h-4 w-4" /> Yeni Tebligat
         </button>
       </div>
+      {readOnly && (
+        <div className="mb-4 p-2 rounded bg-gray-50 border border-gray-200 text-xs text-gray-600">
+          Pasif kayit: yeni tebligat kapali.
+        </div>
+      )}
 
       {/* Adres Öncelik Uyarısı */}
       {priorityCheck && (
@@ -449,7 +458,7 @@ export function TebligatPanel({ caseId, caseDebtorId, debtorName }: TebligatPane
       )}
 
       {/* Yeni Tebligat Modal */}
-      {showNewModal && (
+      {showNewModal && !readOnly && (
         <NewTebligatModal
           caseId={caseId}
           caseDebtorId={caseDebtorId}

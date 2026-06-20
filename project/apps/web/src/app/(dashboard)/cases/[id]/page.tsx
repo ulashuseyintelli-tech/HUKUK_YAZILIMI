@@ -925,7 +925,7 @@ export default function CaseDetailPage() {
     if (!params.id) return;
     try {
       setLoadingDebtors(true);
-      const response = await api.getCaseDebtors(params.id as string);
+      const response = await api.getCaseDebtors(params.id as string, { includePassive: true });
       setCaseDebtors(response.items);
       setDebtorsSummary(response.summary);
     } catch (error) {
@@ -1580,9 +1580,7 @@ export default function CaseDetailPage() {
     );
   }
 
-  const activeCaseDebtorLinks = (caseData.debtors || []).filter(
-    (de: any) => de.lifecycleStatus !== "PASSIVE"
-  );
+  const caseDebtorLinks = caseData.debtors || [];
 
   return (
     <div className="min-h-screen flex flex-col bg-[#F1F3F6]">
@@ -2209,9 +2207,9 @@ export default function CaseDetailPage() {
                       onClick={() => handleDebtorClick(debtor)}
                     />
                   ))
-                ) : activeCaseDebtorLinks.length ? (
+                ) : caseDebtorLinks.length ? (
                   // Fallback to old data if new API not available
-                  activeCaseDebtorLinks.map((de) => (
+                  caseDebtorLinks.map((de) => (
                     <div 
                       key={de.id} 
                       className="px-2 py-1.5 hover:bg-red-100 cursor-pointer transition-colors group border-l-2 border-red-400 rounded"
@@ -2236,7 +2234,12 @@ export default function CaseDetailPage() {
                     >
                       <div className="flex items-center justify-between">
                         <div className="min-w-0 flex-1">
-                          <p className="font-medium text-[11px] text-gray-900 group-hover:text-red-700">{de.debtor.displayName || de.debtor.name}</p>
+                          <p className="font-medium text-[11px] text-gray-900 group-hover:text-red-700">
+                            {de.debtor.displayName || de.debtor.name}
+                            {(de as any).lifecycleStatus === "PASSIVE" && (
+                              <span className="ml-1 px-1 rounded bg-gray-200 text-gray-600 text-[9px] font-normal align-middle">Pasif</span>
+                            )}
+                          </p>
                           <div className="flex items-center gap-2 mt-0.5">
                             {de.debtor.tckn && <span className="text-[9px] text-gray-500">TCKN: {de.debtor.tckn}</span>}
                             <span className="text-[8px] bg-red-100 text-red-700 px-1 py-0.5 rounded font-medium">{de.role === 'ASIL_BORCLU' ? 'Asıl' : de.role}</span>

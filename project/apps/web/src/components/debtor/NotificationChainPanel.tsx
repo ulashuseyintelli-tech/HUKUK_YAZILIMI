@@ -21,11 +21,13 @@ import {
 interface NotificationChainPanelProps {
   debtorId: string;
   onAddressSelect?: (addressId: string) => void;
+  readOnly?: boolean;
 }
 
 export function NotificationChainPanel({
   debtorId,
   onAddressSelect,
+  readOnly = false,
 }: NotificationChainPanelProps) {
   const [chain, setChain] = useState<NotificationChainDTO | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -162,6 +164,11 @@ export function NotificationChainPanel({
             )}
             {chain.recommendation}
           </div>
+          {readOnly && (
+            <div className="px-1.5 py-0.5 rounded text-[10px] leading-tight bg-gray-50 text-gray-600 border border-gray-200">
+              Pasif kayit: adres secimi kapali.
+            </div>
+          )}
 
           {/* Address Chain - Compact */}
           <div>
@@ -212,7 +219,8 @@ export function NotificationChainPanel({
                 {/* Select Button */}
                 {!item.isExhausted &&
                   item.address.id !== chain.currentAddressId &&
-                  onAddressSelect && (
+                  onAddressSelect &&
+                  !readOnly && (
                     <button
                       onClick={() => onAddressSelect(item.address.id)}
                       className="text-blue-600 hover:text-blue-800 px-1 hover:bg-blue-100 rounded"

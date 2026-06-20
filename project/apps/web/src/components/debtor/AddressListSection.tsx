@@ -17,6 +17,7 @@ interface AddressListSectionProps {
   selectedAddressId?: string;
   debtorType?: DebtorPersonType;
   identityNo?: string; // TCKN or VKN
+  readOnly?: boolean;
   onUpdate: () => void;
 }
 
@@ -27,6 +28,7 @@ export function AddressListSection({
   selectedAddressId,
   debtorType,
   identityNo,
+  readOnly = false,
   onUpdate,
 }: AddressListSectionProps) {
   const [isExpanded, setIsExpanded] = useState(true);
@@ -38,6 +40,7 @@ export function AddressListSection({
   const [verificationResult, setVerificationResult] = useState<{ addressId: string; result: VerificationResultDTO } | null>(null);
 
   const handleSetActive = async (addressId: string) => {
+    if (readOnly) return;
     try {
       await api.setActiveAddress(caseDebtorId, addressId);
       onUpdate();
@@ -47,6 +50,7 @@ export function AddressListSection({
   };
 
   const handleDelete = async (addressId: string) => {
+    if (readOnly) return;
     if (!confirm("Bu adresi silmek istediğinize emin misiniz?")) return;
     
     try {
@@ -58,6 +62,7 @@ export function AddressListSection({
   };
 
   const handleVerify = async (address: AddressDTO) => {
+    if (readOnly) return;
     if (!identityNo) {
       alert("Doğrulama için TCKN/VKN bilgisi gereklidir");
       return;
@@ -91,6 +96,7 @@ export function AddressListSection({
   };
 
   const handleVerifyAll = async () => {
+    if (readOnly) return;
     if (!identityNo) {
       alert("Doğrulama için TCKN/VKN bilgisi gereklidir");
       return;
@@ -109,6 +115,7 @@ export function AddressListSection({
   };
 
   const handleEdit = (address: AddressDTO) => {
+    if (readOnly) return;
     setEditingAddress(address);
     setIsFormOpen(true);
   };
@@ -257,6 +264,12 @@ export function AddressListSection({
           )}
 
           {/* Address List */}
+          {readOnly && (
+            <div className="p-2 rounded bg-gray-50 border border-gray-200 text-xs text-gray-600">
+              Pasif kayit: adres islemleri salt okunur.
+            </div>
+          )}
+
           {sortedAddresses.length === 0 ? (
             <div className="text-center py-6 text-gray-500 text-sm">
               Henüz adres eklenmemiş
@@ -268,11 +281,11 @@ export function AddressListSection({
                   key={address.id}
                   address={address}
                   isActive={address.id === selectedAddressId}
-                  onSetActive={() => handleSetActive(address.id)}
-                  onEdit={() => handleEdit(address)}
-                  onDelete={() => handleDelete(address.id)}
+                  onSetActive={readOnly ? undefined : () => handleSetActive(address.id)}
+                  onEdit={readOnly ? undefined : () => handleEdit(address)}
+                  onDelete={readOnly ? undefined : () => handleDelete(address.id)}
                   onViewHistory={() => setHistoryAddressId(address.id)}
-                  onVerify={() => handleVerify(address)}
+                  onVerify={readOnly ? undefined : () => handleVerify(address)}
                   isVerifying={verifyingAddressId === address.id}
                 />
               ))}
@@ -308,6 +321,7 @@ export function AddressListSection({
               size="sm"
               className="flex-1"
               onClick={() => setIsFormOpen(true)}
+              disabled={readOnly}
             >
               <Plus className="w-4 h-4 mr-1" />
               Yeni Adres
@@ -318,7 +332,7 @@ export function AddressListSection({
                 variant="outline"
                 size="sm"
                 onClick={handleVerifyAll}
-                disabled={isVerifyingAll}
+                disabled={isVerifyingAll || readOnly}
                 className="text-blue-600 border-blue-200 hover:bg-blue-50"
               >
                 {isVerifyingAll ? (
@@ -334,7 +348,7 @@ export function AddressListSection({
       )}
 
       {/* Form Modal */}
-      {isFormOpen && (
+      {isFormOpen && !readOnly && (
         <AddressFormModal
           isOpen={isFormOpen}
           onClose={handleFormClose}

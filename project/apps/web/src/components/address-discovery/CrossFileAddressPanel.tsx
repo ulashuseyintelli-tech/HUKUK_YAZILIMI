@@ -17,12 +17,14 @@ import { api, CrossFileAddressDTO } from '@/lib/api';
 interface CrossFileAddressPanelProps {
   debtorId: string;
   currentCaseId: string;
+  readOnly?: boolean;
   onAddressCopied?: () => void;
 }
 
 export function CrossFileAddressPanel({ 
   debtorId, 
   currentCaseId,
+  readOnly = false,
   onAddressCopied 
 }: CrossFileAddressPanelProps) {
   const [addresses, setAddresses] = useState<CrossFileAddressDTO[]>([]);
@@ -47,6 +49,7 @@ export function CrossFileAddressPanel({
   };
 
   const handleCopyAddress = async (addressId: string) => {
+    if (readOnly) return;
     try {
       setCopyingId(addressId);
       await api.copyAddressToCase(addressId, debtorId);
@@ -122,7 +125,7 @@ export function CrossFileAddressPanel({
                 variant={isCopied ? "ghost" : "outline"}
                 className="ml-2 flex-shrink-0"
                 onClick={() => handleCopyAddress(addr.id)}
-                disabled={isCopying || isCopied}
+                disabled={isCopying || isCopied || readOnly}
               >
                 {isCopying ? (
                   <Spinner size="sm" />
