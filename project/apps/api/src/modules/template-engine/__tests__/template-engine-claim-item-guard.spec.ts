@@ -12,7 +12,7 @@ describe('TemplateEngineService.getCaseData — ClaimItem itemType guard (G1)', 
   function buildService(opts: { dues?: any[]; claimItems?: any[]; principalAmount?: number }) {
     const prisma: any = {
       case: {
-        findUnique: jest.fn(async () => ({
+        findFirst: jest.fn(async () => ({
           fileNumber: '2026/1',
           startDate: new Date('2026-01-01'),
           type: 'GENERAL_EXECUTION',
@@ -24,7 +24,17 @@ describe('TemplateEngineService.getCaseData — ClaimItem itemType guard (G1)', 
           executionOffice: null,
           caseClients: [],
           lawyers: [],
-          debtors: [],
+          debtors: [
+            {
+              role: 'ASIL_BORCLU',
+              selectedAddress: null,
+              debtor: {
+                type: 'INDIVIDUAL',
+                name: 'Aktif Borclu',
+                debtorAddresses: [],
+              },
+            },
+          ],
           dues: opts.dues ?? [],
           claimItems: opts.claimItems ?? [],
         })),

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FeeEngineService } from '../fee-engine/fee-engine.service';
 import type { TDocumentDefinitions, TFontDictionary } from 'pdfmake/interfaces';
@@ -215,18 +215,31 @@ export class TemplateEngineService {
     return { title: 'HACIZ TUTANAGI', content: this.renderTemplate(template, data), format: 'text', templateCode: 'HACIZ_TUTANAGI' };
   }
 
-  async generateTakipTalebiFromCase(caseId: string): Promise<GeneratedDocument> {
-    const caseData = await this.getCaseData(caseId);
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.generateTakipTalebiFromCase() → GET /template-engine/takip-talebi/case/:caseId (takip talebi üretimi)
+  /// - PdfController.downloadTakipTalebi() → GET /pdf/takip-talebi/:caseId (legacy PDF üretimi)
+  /// </remarks>
+  async generateTakipTalebiFromCase(caseId: string, tenantId?: string): Promise<GeneratedDocument> {
+    const caseData = await this.getCaseData(caseId, tenantId);
     return this.generateTakipTalebi(caseData);
   }
 
-  async generateOdemeEmriFromCase(caseId: string): Promise<GeneratedDocument> {
-    const caseData = await this.getCaseData(caseId);
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.generateOdemeEmriFromCase() → GET /template-engine/odeme-emri/case/:caseId (ödeme emri üretimi)
+  /// </remarks>
+  async generateOdemeEmriFromCase(caseId: string, tenantId?: string): Promise<GeneratedDocument> {
+    const caseData = await this.getCaseData(caseId, tenantId);
     return this.generateOdemeEmri(caseData);
   }
 
-  async generateIcraEmriFromCase(caseId: string): Promise<GeneratedDocument> {
-    const caseData = await this.getCaseData(caseId);
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.generateIcraEmriFromCase() → GET /template-engine/icra-emri/case/:caseId (icra emri üretimi)
+  /// </remarks>
+  async generateIcraEmriFromCase(caseId: string, tenantId?: string): Promise<GeneratedDocument> {
+    const caseData = await this.getCaseData(caseId, tenantId);
     return this.generateIcraEmri(caseData);
   }
 
@@ -255,14 +268,31 @@ export class TemplateEngineService {
     ];
   }
 
-  private async getCaseData(caseId: string): Promise<TemplateData> {
-    const caseRecord = await (this.prisma as any).case.findUnique({
-      where: { id: caseId },
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineService.generateTakipTalebiFromCase() → takip talebi verisi
+  /// - TemplateEngineService.generateOdemeEmriFromCase() → ödeme emri verisi
+  /// - TemplateEngineService.generateIcraEmriFromCase() → icra emri verisi
+  /// - TemplateEngineService.generatePdfFromCase() → PDF üretim verisi
+  /// - TemplateEngineService.generateWordFromCase() → Word üretim verisi
+  /// - TemplateEngineService.generateUdfFromCase() → UDF üretim verisi
+  /// - TemplateEngineService.generateXmlFromCase() → XML üretim verisi
+  /// - TemplateEngineService.generateKarsiliksizCekSikayetFromCase() → karşılıksız çek şikayet verisi
+  /// - TemplateEngineService.generateItirazinIptaliFromCase() → itirazın iptali verisi
+  /// - TemplateEngineService.generateTasarrufunIptaliFromCase() → tasarrufun iptali verisi
+  /// - TemplateEngineService.generateDolandiricilikSucDuyurusuFromCase() → suç duyurusu verisi
+  /// - TemplateEngineService.generateDocumentFromCase() → merkezi doküman üretim verisi
+  /// </remarks>
+  private async getCaseData(caseId: string, tenantId?: string): Promise<TemplateData> {
+    const where = tenantId ? { id: caseId, tenantId } : { id: caseId };
+    const caseRecord = await (this.prisma as any).case.findFirst({
+      where,
       include: { 
         executionOffice: true, 
         caseClients: { include: { client: true } }, 
         lawyers: { include: { lawyer: true } }, 
         debtors: { 
+          where: { lifecycleStatus: 'ACTIVE' },
           include: { 
             debtor: {
               include: {
@@ -277,7 +307,10 @@ export class TemplateEngineService {
         claimItems: true,
       },
     });
-    if (!caseRecord) throw new Error('Dosya bulunamadi');
+    if (!caseRecord) throw new NotFoundException('Dosya bulunamadı');
+    if (!caseRecord.debtors?.length) {
+      throw new BadRequestException('Operasyonel çıktı için aktif borçlu bulunmuyor');
+    }
     
     // Alacak kalemleri - önce claimItems, yoksa dues, yoksa boş array
     const rawClaimItems = caseRecord.claimItems?.length > 0 ? caseRecord.claimItems : (caseRecord.dues?.length > 0 ? caseRecord.dues : []);
@@ -1496,8 +1529,17 @@ Borclu: ............................    Yediemin: ..............................
   /**
    * Case ID'den PDF oluştur
    */
-  async generatePdfFromCase(caseId: string, documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri'): Promise<Buffer> {
-    const caseData = await this.getCaseData(caseId);
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.downloadPdfFromCase() → GET /template-engine/case/:caseId/pdf (case PDF indirme)
+  /// - TemplateEngineService.generateDocumentFromCase() → merkezi PDF üretimi
+  /// </remarks>
+  async generatePdfFromCase(
+    caseId: string,
+    documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri',
+    tenantId?: string,
+  ): Promise<Buffer> {
+    const caseData = await this.getCaseData(caseId, tenantId);
     
     // Takip talebi için resmi formatlı PDF kullan
     if (documentType === 'takip-talebi') {
@@ -1523,8 +1565,17 @@ Borclu: ............................    Yediemin: ..............................
   /**
    * Case ID'den Word oluştur
    */
-  async generateWordFromCase(caseId: string, documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri'): Promise<Buffer> {
-    const caseData = await this.getCaseData(caseId);
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.downloadWordFromCase() → GET /template-engine/case/:caseId/word (case Word indirme)
+  /// - TemplateEngineService.generateDocumentFromCase() → merkezi Word üretimi
+  /// </remarks>
+  async generateWordFromCase(
+    caseId: string,
+    documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri',
+    tenantId?: string,
+  ): Promise<Buffer> {
+    const caseData = await this.getCaseData(caseId, tenantId);
     
     // Takip talebi için resmi formatlı Word kullan
     if (documentType === 'takip-talebi') {
@@ -1550,8 +1601,17 @@ Borclu: ............................    Yediemin: ..............................
   /**
    * Case ID'den UDF oluştur (UYAP için)
    */
-  async generateUdfFromCase(caseId: string, documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri'): Promise<UdfDocument> {
-    const caseData = await this.getCaseData(caseId);
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.generateUdfFromCase() → GET /template-engine/case/:caseId/udf (case UDF üretimi)
+  /// - TemplateEngineController.downloadUdfFromCase() → GET /template-engine/case/:caseId/udf/download (case UDF indirme)
+  /// </remarks>
+  async generateUdfFromCase(
+    caseId: string,
+    documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri',
+    tenantId?: string,
+  ): Promise<UdfDocument> {
+    const caseData = await this.getCaseData(caseId, tenantId);
     
     const documentCodeMap: Record<string, string> = {
       'takip-talebi': 'ORNEK_1',
@@ -1586,8 +1646,17 @@ Borclu: ............................    Yediemin: ..............................
   /**
    * Case ID'den XML oluştur
    */
-  async generateXmlFromCase(caseId: string, documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri'): Promise<string> {
-    const caseData = await this.getCaseData(caseId);
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.downloadXmlFromCase() → GET /template-engine/case/:caseId/xml (case XML indirme)
+  /// - TemplateEngineService.generateDocumentFromCase() → merkezi XML üretimi
+  /// </remarks>
+  async generateXmlFromCase(
+    caseId: string,
+    documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri',
+    tenantId?: string,
+  ): Promise<string> {
+    const caseData = await this.getCaseData(caseId, tenantId);
     
     const documentCodeMap: Record<string, string> = {
       'takip-talebi': 'ORNEK_1',
@@ -2624,8 +2693,15 @@ NETİCE VE İSTEM : Yukarıda izah olunan ve re'sen dikkate alınacak nedenlerle
   /**
    * Case ID'den Karşılıksız Çek Şikayet Dilekçesi Oluştur
    */
-  async generateKarsiliksizCekSikayetFromCase(caseId: string): Promise<GeneratedDocument> {
-    const caseData = await this.getCaseData(caseId);
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.generateKarsiliksizCekSikayetFromCase() → GET /template-engine/karsiliksiz-cek/case/:caseId
+  /// - TemplateEngineController.previewKarsiliksizCekSikayet() → GET /template-engine/karsiliksiz-cek/case/:caseId/preview
+  /// - TemplateEngineController.downloadKarsiliksizCekSikayet() → GET /template-engine/karsiliksiz-cek/case/:caseId/download
+  /// - RelatedLawsuitsService.generateKarsiliksizCekSikayet() → ilgili dava şikayet dilekçesi üretimi
+  /// </remarks>
+  async generateKarsiliksizCekSikayetFromCase(caseId: string, tenantId?: string): Promise<GeneratedDocument> {
+    const caseData = await this.getCaseData(caseId, tenantId);
     
     // Çek bilgisi kontrolü
     if (!caseData.instrumentInfo || caseData.instrumentInfo.type !== 'CEK') {
@@ -2638,8 +2714,13 @@ NETİCE VE İSTEM : Yukarıda izah olunan ve re'sen dikkate alınacak nedenlerle
   /**
    * Karşılıksız Çek Şikayet Dilekçesi Word (DOCX) formatında oluştur
    */
-  async generateKarsiliksizCekSikayetWord(caseId: string): Promise<Buffer> {
-    const doc = await this.generateKarsiliksizCekSikayetFromCase(caseId);
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.downloadKarsiliksizCekSikayetWord() → GET /template-engine/karsiliksiz-cek/case/:caseId/word
+  /// - RelatedLawsuitsService.generateKarsiliksizCekSikayetWord() → ilgili dava Word üretimi
+  /// </remarks>
+  async generateKarsiliksizCekSikayetWord(caseId: string, tenantId?: string): Promise<Buffer> {
+    const doc = await this.generateKarsiliksizCekSikayetFromCase(caseId, tenantId);
     return this.textToWord(doc.content, doc.title);
   }
 
@@ -2711,8 +2792,13 @@ karar verilmesini saygılarımızla arz ve talep ederiz. {{TARIH}}
   /**
    * İtirazın İptali Dilekçesi oluştur
    */
-  async generateItirazinIptaliFromCase(caseId: string): Promise<{ title: string; content: string }> {
-    const caseData = await this.getCaseData(caseId);
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.generateItirazinIptaliFromCase() → GET /template-engine/itirazin-iptali/case/:caseId
+  /// - TemplateEngineController.previewItirazinIptali() → GET /template-engine/itirazin-iptali/case/:caseId/preview
+  /// </remarks>
+  async generateItirazinIptaliFromCase(caseId: string, tenantId?: string): Promise<{ title: string; content: string }> {
+    const caseData = await this.getCaseData(caseId, tenantId);
     
     const template = this.getItirazinIptaliTemplate();
     const today = new Date().toLocaleDateString('tr-TR');
@@ -2746,8 +2832,12 @@ karar verilmesini saygılarımızla arz ve talep ederiz. {{TARIH}}
     };
   }
 
-  async generateItirazinIptaliWord(caseId: string): Promise<Buffer> {
-    const doc = await this.generateItirazinIptaliFromCase(caseId);
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.downloadItirazinIptaliWord() → GET /template-engine/itirazin-iptali/case/:caseId/word
+  /// </remarks>
+  async generateItirazinIptaliWord(caseId: string, tenantId?: string): Promise<Buffer> {
+    const doc = await this.generateItirazinIptaliFromCase(caseId, tenantId);
     return this.textToWord(doc.content, doc.title);
   }
 
@@ -2823,8 +2913,13 @@ karar verilmesini saygılarımızla arz ve talep ederiz. {{TARIH}}
   /**
    * Tasarrufun İptali Dilekçesi oluştur
    */
-  async generateTasarrufunIptaliFromCase(caseId: string): Promise<{ title: string; content: string }> {
-    const caseData = await this.getCaseData(caseId);
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.generateTasarrufunIptaliFromCase() → GET /template-engine/tasarrufun-iptali/case/:caseId
+  /// - TemplateEngineController.previewTasarrufunIptali() → GET /template-engine/tasarrufun-iptali/case/:caseId/preview
+  /// </remarks>
+  async generateTasarrufunIptaliFromCase(caseId: string, tenantId?: string): Promise<{ title: string; content: string }> {
+    const caseData = await this.getCaseData(caseId, tenantId);
     
     const template = this.getTasarrufunIptaliTemplate();
     const today = new Date().toLocaleDateString('tr-TR');
@@ -2860,8 +2955,12 @@ karar verilmesini saygılarımızla arz ve talep ederiz. {{TARIH}}
     };
   }
 
-  async generateTasarrufunIptaliWord(caseId: string): Promise<Buffer> {
-    const doc = await this.generateTasarrufunIptaliFromCase(caseId);
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.downloadTasarrufunIptaliWord() → GET /template-engine/tasarrufun-iptali/case/:caseId/word
+  /// </remarks>
+  async generateTasarrufunIptaliWord(caseId: string, tenantId?: string): Promise<Buffer> {
+    const doc = await this.generateTasarrufunIptaliFromCase(caseId, tenantId);
     return this.textToWord(doc.content, doc.title);
   }
 
@@ -2928,8 +3027,13 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
 `;
   }
 
-  async generateDolandiricilikSucDuyurusuFromCase(caseId: string): Promise<{ title: string; content: string }> {
-    const caseData = await this.getCaseData(caseId);
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.generateDolandiricilikFromCase() → GET /template-engine/dolandiricilik/case/:caseId
+  /// - TemplateEngineController.previewDolandiricilik() → GET /template-engine/dolandiricilik/case/:caseId/preview
+  /// </remarks>
+  async generateDolandiricilikSucDuyurusuFromCase(caseId: string, tenantId?: string): Promise<{ title: string; content: string }> {
+    const caseData = await this.getCaseData(caseId, tenantId);
     
     const template = this.getDolandiricilikSucDuyurusuTemplate();
     const today = new Date().toLocaleDateString('tr-TR');
@@ -2960,8 +3064,12 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
     };
   }
 
-  async generateDolandiricilikSucDuyurusuWord(caseId: string): Promise<Buffer> {
-    const doc = await this.generateDolandiricilikSucDuyurusuFromCase(caseId);
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.downloadDolandiricilikWord() → GET /template-engine/dolandiricilik/case/:caseId/word
+  /// </remarks>
+  async generateDolandiricilikSucDuyurusuWord(caseId: string, tenantId?: string): Promise<Buffer> {
+    const doc = await this.generateDolandiricilikSucDuyurusuFromCase(caseId, tenantId);
     return this.textToWord(doc.content, doc.title);
   }
 
@@ -2971,14 +3079,19 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
    * Case ID bazlı doküman üretimi - Eski Takipler ve Yeni Takip ekranlarından çağrılabilir
    * Cache sistemi ile aynı veri için tekrar üretim yapılmaz
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.generateDocumentFromCase() → POST /template-engine/cases/:caseId/documents/:format (merkezi doküman üretimi)
+  /// </remarks>
   async generateDocumentFromCase(
     caseId: string,
     format: 'DOCX' | 'PDF' | 'XML',
     documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi',
-    templateVersion: string = 'v1'
+    templateVersion: string = 'v1',
+    tenantId?: string,
   ): Promise<{ buffer: Buffer; artifact?: any; fromCache: boolean }> {
     // 1. Case verisini çek
-    const caseData = await this.getCaseData(caseId);
+    const caseData = await this.getCaseData(caseId, tenantId);
     
     // 2. Veri hash'i oluştur (cache key için)
     const dataHash = this.generateDataHash(caseData);
@@ -3020,13 +3133,13 @@ saygılarımızla arz ve talep ederiz. {{TARIH}}
     
     switch (format) {
       case 'DOCX':
-        buffer = await this.generateWordFromCase(caseId, documentType);
+        buffer = await this.generateWordFromCase(caseId, documentType, tenantId);
         break;
       case 'PDF':
-        buffer = await this.generatePdfFromCase(caseId, documentType);
+        buffer = await this.generatePdfFromCase(caseId, documentType, tenantId);
         break;
       case 'XML':
-        const xmlContent = await this.generateXmlFromCase(caseId, documentType);
+        const xmlContent = await this.generateXmlFromCase(caseId, documentType, tenantId);
         buffer = Buffer.from(xmlContent, 'utf-8');
         break;
       default:

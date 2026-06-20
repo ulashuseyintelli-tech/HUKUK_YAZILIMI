@@ -2008,6 +2008,10 @@ export class DebtorService {
   /**
    * Get service history for a case debtor
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DebtorController.getServiceHistory() → GET /case/:caseId/:caseDebtorId/service/history (tebligat servis geçmişi)
+  /// </remarks>
   async getServiceHistory(
     tenantId: string,
     caseId: string,
@@ -2023,6 +2027,8 @@ export class DebtorService {
     note?: string;
     createdAt: string;
     createdBy?: string;
+    caseDebtorLifecycleStatus?: CaseDebtorLifecycleStatus;
+    caseDebtorLifecycleLabel?: string;
     // Address info (TK compliance)
     addressId?: string;
     addressType?: string;
@@ -2054,6 +2060,8 @@ export class DebtorService {
       note: h.note || undefined,
       createdAt: h.createdAt.toISOString(),
       createdBy: h.createdBy || undefined,
+      caseDebtorLifecycleStatus: caseDebtor.lifecycleStatus as CaseDebtorLifecycleStatus,
+      caseDebtorLifecycleLabel: caseDebtor.lifecycleStatus === "PASSIVE" ? "PASSIVE" : "ACTIVE",
       // Address info (TK compliance)
       addressId: h.addressId || undefined,
       addressType: h.addressType || undefined,

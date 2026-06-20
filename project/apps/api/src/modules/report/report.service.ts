@@ -493,6 +493,10 @@ export class ReportService {
   }
 
   // Genel Dashboard İstatistikleri
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - ReportController.getDashboard() → GET /reports/dashboard (dashboard özet sayımları)
+  /// </remarks>
   async getDashboardStats(tenantId: string) {
     const [totalCases, activeCases, closedCases, totalCollection, byTakipTuru] = await Promise.all([
       this.prisma.case.count({ where: { tenantId } }),
@@ -509,6 +513,11 @@ export class ReportService {
     const takipTurleri = await this.prisma.lookupTakipTuru.findMany({ where: { tenantId } });
 
     return {
+      semantics: {
+        caseScope: 'ALL_CASES_BY_STATUS',
+        collectionScope: 'ALL_COLLECTIONS',
+        debtorLifecycleScope: 'NO_DEBTOR_LIFECYCLE_COUNT',
+      },
       totalCases,
       activeCases,
       closedCases,
@@ -576,6 +585,10 @@ export class ReportService {
   // ==================== YENİ RAPORLAR ====================
 
   // 10. Dosya Borç Raporu (Kapak Hesabı)
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - ReportController.getCaseDebtReport() → GET /reports/case-debt/:caseId (dosya borç raporu)
+  /// </remarks>
   async getCaseDebtReport(tenantId: string, caseId: string, calculationDate?: string): Promise<CaseDebtReportResult> {
     const calcDate = calculationDate ? new Date(calculationDate) : new Date();
 
@@ -648,9 +661,12 @@ export class ReportService {
       },
       debtors: caseData.debtors.map(cd => ({
         id: cd.debtor.id,
+        caseDebtorId: cd.id,
         name: cd.debtor.name,
         tcNo: cd.debtor.tckn || cd.debtor.vkn || undefined,
         role: cd.role,
+        lifecycleStatus: cd.lifecycleStatus as "ACTIVE" | "PASSIVE",
+        lifecycleLabel: cd.lifecycleStatus === "PASSIVE" ? "PASSIVE" : "ACTIVE",
       })),
       claimDetails: {
         principalAmount,
@@ -764,6 +780,10 @@ export class ReportService {
   }
 
   // 12. Tahsilat Geçmişi Raporu
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - ReportController.getCollectionHistoryReport() → GET /reports/collection-history (tahsilat geçmişi raporu)
+  /// </remarks>
   async getCollectionHistoryReport(
     tenantId: string,
     filters?: {
@@ -793,6 +813,24 @@ export class ReportService {
       },
       orderBy: { date: 'desc' },
     });
+
+    const caseDebtorIds = Array.from(
+      new Set(
+        collections
+          .map((c: any) => c.caseDebtorId)
+          .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0),
+      ),
+    );
+    const caseDebtorLifecycleById = new Map<string, "ACTIVE" | "PASSIVE">();
+    if (caseDebtorIds.length > 0) {
+      const caseDebtors = await (this.prisma.caseDebtor as any).findMany({
+        where: { id: { in: caseDebtorIds }, case: { tenantId } },
+        select: { id: true, lifecycleStatus: true },
+      });
+      for (const cd of caseDebtors) {
+        caseDebtorLifecycleById.set(cd.id, cd.lifecycleStatus as "ACTIVE" | "PASSIVE");
+      }
+    }
 
     // Özet hesaplamalar
     const confirmed = collections.filter((c: any) => c.status === 'CONFIRMED');
@@ -880,6 +918,13 @@ export class ReportService {
         source: c.sourceType || undefined,
         status: c.status || 'CONFIRMED',
         caseFileNumber: c.case?.fileNumber || undefined,
+        caseDebtorId: c.caseDebtorId || undefined,
+        caseDebtorLifecycleStatus: c.caseDebtorId
+          ? caseDebtorLifecycleById.get(c.caseDebtorId)
+          : undefined,
+        caseDebtorLifecycleLabel: c.caseDebtorId && caseDebtorLifecycleById.get(c.caseDebtorId)
+          ? caseDebtorLifecycleById.get(c.caseDebtorId)
+          : undefined,
         description: c.description || undefined,
       })),
       generatedAt: new Date().toISOString(),
@@ -887,6 +932,10 @@ export class ReportService {
   }
 
   // 13. Tahsilat Özet Raporu (Dashboard için)
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - ReportController.getCollectionSummary() → GET /reports/collection-summary (tahsilat özet raporu)
+  /// </remarks>
   async getCollectionSummary(tenantId: string, period?: 'week' | 'month' | 'year') {
     const now = new Date();
     let startDate: Date;
@@ -925,6 +974,10 @@ export class ReportService {
     ]);
 
     return {
+      semantics: {
+        collectionScope: 'ALL_COLLECTIONS_BY_STATUS',
+        debtorLifecycleScope: 'HISTORICAL_COLLECTIONS_INCLUDE_PASSIVE_WHEN_LINKED',
+      },
       period: period || 'month',
       periodTotal: Number(periodCollections?._sum?.amount || 0),
       periodCount: periodCollections?._count?.id || 0,
@@ -962,9 +1015,9 @@ export class ReportService {
     });
 
     const caseIds = cases.map((c) => c.id);
-    // Taranan dosyaların TOPLAM borçlu sayısı (flagged-oran bağlamı için tek sorgu).
+    // Taranan dosyaların TOPLAM aktif borçlu sayısı (flagged-oran bağlamı için tek sorgu).
     const totalDebtorCount = caseIds.length
-      ? await this.prisma.caseDebtor.count({ where: { caseId: { in: caseIds } } })
+      ? await this.prisma.caseDebtor.count({ where: { caseId: { in: caseIds }, lifecycleStatus: "ACTIVE" } })
       : 0;
 
     const overallLevelDistribution: Record<string, number> = { YUKSEK: 0, ORTA: 0, DUSUK: 0, YOK: 0 };
@@ -991,7 +1044,7 @@ export class ReportService {
     }
 
     return {
-      params: { limit, statuses },
+      params: { limit, statuses, debtorLifecycleScope: "ACTIVE_ONLY" },
       scannedCaseCount: cases.length,
       evaluatedCaseCount,
       totalDebtorCount,

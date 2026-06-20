@@ -3,6 +3,7 @@ import { Response } from 'express';
 import { IsString, IsOptional, IsArray, IsObject, ValidateNested, IsNumber, IsBoolean } from 'class-validator';
 import { Type } from 'class-transformer';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { TemplateEngineService, TemplateData, GeneratedDocument, UdfDocument } from './template-engine.service';
 
 // Nested DTO'lar
@@ -267,9 +268,16 @@ export class TemplateEngineController {
   /**
    * Takip Talebi (Örnek 1) belgesi oluştur - Case ID ile
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.generateTakipTalebiFromCase() → GET /template-engine/takip-talebi/case/:caseId (case bazlı takip talebi üretimi)
+  /// </remarks>
   @Get('takip-talebi/case/:caseId')
-  async generateTakipTalebiFromCase(@Param('caseId') caseId: string): Promise<GeneratedDocument> {
-    return this.templateEngineService.generateTakipTalebiFromCase(caseId);
+  async generateTakipTalebiFromCase(
+    @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
+  ): Promise<GeneratedDocument> {
+    return this.templateEngineService.generateTakipTalebiFromCase(caseId, tenantId);
   }
 
   /**
@@ -318,9 +326,16 @@ export class TemplateEngineController {
   /**
    * Ödeme Emri (Örnek 7) belgesi oluştur - Case ID ile
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.generateOdemeEmriFromCase() → GET /template-engine/odeme-emri/case/:caseId (case bazlı ödeme emri üretimi)
+  /// </remarks>
   @Get('odeme-emri/case/:caseId')
-  async generateOdemeEmriFromCase(@Param('caseId') caseId: string): Promise<GeneratedDocument> {
-    return this.templateEngineService.generateOdemeEmriFromCase(caseId);
+  async generateOdemeEmriFromCase(
+    @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
+  ): Promise<GeneratedDocument> {
+    return this.templateEngineService.generateOdemeEmriFromCase(caseId, tenantId);
   }
 
   /**
@@ -334,9 +349,16 @@ export class TemplateEngineController {
   /**
    * İcra Emri (Örnek 4-5) belgesi oluştur - Case ID ile
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.generateIcraEmriFromCase() → GET /template-engine/icra-emri/case/:caseId (case bazlı icra emri üretimi)
+  /// </remarks>
   @Get('icra-emri/case/:caseId')
-  async generateIcraEmriFromCase(@Param('caseId') caseId: string): Promise<GeneratedDocument> {
-    return this.templateEngineService.generateIcraEmriFromCase(caseId);
+  async generateIcraEmriFromCase(
+    @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
+  ): Promise<GeneratedDocument> {
+    return this.templateEngineService.generateIcraEmriFromCase(caseId, tenantId);
   }
 
   /**
@@ -372,13 +394,18 @@ export class TemplateEngineController {
   /**
    * Takip Talebi PDF indir - Case ID ile
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.downloadPdfFromCase() → GET /template-engine/case/:caseId/pdf (case bazlı PDF indirme)
+  /// </remarks>
   @Get('case/:caseId/pdf')
   async downloadPdfFromCase(
     @Param('caseId') caseId: string,
     @Query('type') documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi',
+    @CurrentUser('tenantId') tenantId: string,
     @Res() res: Response
   ): Promise<void> {
-    const pdfBuffer = await this.templateEngineService.generatePdfFromCase(caseId, documentType);
+    const pdfBuffer = await this.templateEngineService.generatePdfFromCase(caseId, documentType, tenantId);
     
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="${documentType}-${caseId}.pdf"`);
@@ -411,13 +438,18 @@ export class TemplateEngineController {
   /**
    * Takip Talebi Word indir - Case ID ile
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.downloadWordFromCase() → GET /template-engine/case/:caseId/word (case bazlı Word indirme)
+  /// </remarks>
   @Get('case/:caseId/word')
   async downloadWordFromCase(
     @Param('caseId') caseId: string,
     @Query('type') documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi',
+    @CurrentUser('tenantId') tenantId: string,
     @Res() res: Response
   ): Promise<void> {
-    const wordBuffer = await this.templateEngineService.generateWordFromCase(caseId, documentType);
+    const wordBuffer = await this.templateEngineService.generateWordFromCase(caseId, documentType, tenantId);
     
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="${documentType}-${caseId}.docx"`);
@@ -439,24 +471,34 @@ export class TemplateEngineController {
   /**
    * UDF oluştur - Case ID ile (UYAP'a gönderim için)
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.generateUdfFromCase() → GET /template-engine/case/:caseId/udf (case bazlı UDF üretimi)
+  /// </remarks>
   @Get('case/:caseId/udf')
   async generateUdfFromCase(
     @Param('caseId') caseId: string,
-    @Query('type') documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi'
+    @Query('type') documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi',
+    @CurrentUser('tenantId') tenantId: string,
   ): Promise<UdfDocument> {
-    return this.templateEngineService.generateUdfFromCase(caseId, documentType);
+    return this.templateEngineService.generateUdfFromCase(caseId, documentType, tenantId);
   }
 
   /**
    * UDF dosyası indir - Case ID ile
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.downloadUdfFromCase() → GET /template-engine/case/:caseId/udf/download (case bazlı UDF indirme)
+  /// </remarks>
   @Get('case/:caseId/udf/download')
   async downloadUdfFromCase(
     @Param('caseId') caseId: string,
     @Query('type') documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi',
+    @CurrentUser('tenantId') tenantId: string,
     @Res() res: Response
   ): Promise<void> {
-    const udfDocument = await this.templateEngineService.generateUdfFromCase(caseId, documentType);
+    const udfDocument = await this.templateEngineService.generateUdfFromCase(caseId, documentType, tenantId);
     
     res.setHeader('Content-Type', 'application/json');
     res.setHeader('Content-Disposition', `attachment; filename="${documentType}-${caseId}.udf"`);
@@ -488,13 +530,18 @@ export class TemplateEngineController {
   /**
    * Takip Talebi XML indir - Case ID ile
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.downloadXmlFromCase() → GET /template-engine/case/:caseId/xml (case bazlı XML indirme)
+  /// </remarks>
   @Get('case/:caseId/xml')
   async downloadXmlFromCase(
     @Param('caseId') caseId: string,
     @Query('type') documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi',
+    @CurrentUser('tenantId') tenantId: string,
     @Res() res: Response
   ): Promise<void> {
-    const xmlContent = await this.templateEngineService.generateXmlFromCase(caseId, documentType);
+    const xmlContent = await this.templateEngineService.generateXmlFromCase(caseId, documentType, tenantId);
     
     res.setHeader('Content-Type', 'application/xml; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${documentType}-${caseId}.xml"`);
@@ -508,17 +555,31 @@ export class TemplateEngineController {
   /**
    * Karşılıksız Çek Şikayet Dilekçesi oluştur - Case ID ile
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.generateKarsiliksizCekSikayetFromCase() → GET /template-engine/karsiliksiz-cek/case/:caseId (karşılıksız çek şikayet üretimi)
+  /// </remarks>
   @Get('karsiliksiz-cek/case/:caseId')
-  async generateKarsiliksizCekSikayetFromCase(@Param('caseId') caseId: string): Promise<GeneratedDocument> {
-    return this.templateEngineService.generateKarsiliksizCekSikayetFromCase(caseId);
+  async generateKarsiliksizCekSikayetFromCase(
+    @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
+  ): Promise<GeneratedDocument> {
+    return this.templateEngineService.generateKarsiliksizCekSikayetFromCase(caseId, tenantId);
   }
 
   /**
    * Karşılıksız Çek Şikayet Dilekçesi önizleme - Case ID ile
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.previewKarsiliksizCekSikayet() → GET /template-engine/karsiliksiz-cek/case/:caseId/preview (karşılıksız çek şikayet önizleme)
+  /// </remarks>
   @Get('karsiliksiz-cek/case/:caseId/preview')
-  async previewKarsiliksizCekSikayet(@Param('caseId') caseId: string): Promise<{ html: string }> {
-    const doc = await this.templateEngineService.generateKarsiliksizCekSikayetFromCase(caseId);
+  async previewKarsiliksizCekSikayet(
+    @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
+  ): Promise<{ html: string }> {
+    const doc = await this.templateEngineService.generateKarsiliksizCekSikayetFromCase(caseId, tenantId);
     const html = `
       <div style="font-family: 'Courier New', monospace; white-space: pre-wrap; padding: 20px; background: white; border: 1px solid #ccc;">
         ${doc.content.replace(/\n/g, '<br>')}
@@ -530,12 +591,17 @@ export class TemplateEngineController {
   /**
    * Karşılıksız Çek Şikayet Dilekçesi Word indir - Case ID ile
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.downloadKarsiliksizCekSikayetWord() → GET /template-engine/karsiliksiz-cek/case/:caseId/word (karşılıksız çek şikayet Word indirme)
+  /// </remarks>
   @Get('karsiliksiz-cek/case/:caseId/word')
   async downloadKarsiliksizCekSikayetWord(
     @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
     @Res() res: Response
   ): Promise<void> {
-    const wordBuffer = await this.templateEngineService.generateKarsiliksizCekSikayetWord(caseId);
+    const wordBuffer = await this.templateEngineService.generateKarsiliksizCekSikayetWord(caseId, tenantId);
     
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="karsiliksiz-cek-sikayet-${caseId}.docx"`);
@@ -545,12 +611,17 @@ export class TemplateEngineController {
   /**
    * Karşılıksız Çek Şikayet Dilekçesi Text indir - Case ID ile
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.downloadKarsiliksizCekSikayet() → GET /template-engine/karsiliksiz-cek/case/:caseId/download (karşılıksız çek şikayet metin indirme)
+  /// </remarks>
   @Get('karsiliksiz-cek/case/:caseId/download')
   async downloadKarsiliksizCekSikayet(
     @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
     @Res() res: Response
   ): Promise<void> {
-    const doc = await this.templateEngineService.generateKarsiliksizCekSikayetFromCase(caseId);
+    const doc = await this.templateEngineService.generateKarsiliksizCekSikayetFromCase(caseId, tenantId);
     
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="karsiliksiz-cek-sikayet-${caseId}.txt"`);
@@ -564,17 +635,31 @@ export class TemplateEngineController {
   /**
    * İtirazın İptali Dilekçesi oluştur - Case ID ile
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.generateItirazinIptaliFromCase() → GET /template-engine/itirazin-iptali/case/:caseId (itirazın iptali dilekçe üretimi)
+  /// </remarks>
   @Get('itirazin-iptali/case/:caseId')
-  async generateItirazinIptaliFromCase(@Param('caseId') caseId: string): Promise<{ title: string; content: string }> {
-    return this.templateEngineService.generateItirazinIptaliFromCase(caseId);
+  async generateItirazinIptaliFromCase(
+    @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
+  ): Promise<{ title: string; content: string }> {
+    return this.templateEngineService.generateItirazinIptaliFromCase(caseId, tenantId);
   }
 
   /**
    * İtirazın İptali Dilekçesi önizleme
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.previewItirazinIptali() → GET /template-engine/itirazin-iptali/case/:caseId/preview (itirazın iptali önizleme)
+  /// </remarks>
   @Get('itirazin-iptali/case/:caseId/preview')
-  async previewItirazinIptali(@Param('caseId') caseId: string): Promise<{ html: string }> {
-    const doc = await this.templateEngineService.generateItirazinIptaliFromCase(caseId);
+  async previewItirazinIptali(
+    @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
+  ): Promise<{ html: string }> {
+    const doc = await this.templateEngineService.generateItirazinIptaliFromCase(caseId, tenantId);
     const html = `
       <div style="font-family: 'Courier New', monospace; white-space: pre-wrap; padding: 20px; background: white; border: 1px solid #ccc;">
         ${doc.content.replace(/\n/g, '<br>')}
@@ -586,12 +671,17 @@ export class TemplateEngineController {
   /**
    * İtirazın İptali Dilekçesi Word indir
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.downloadItirazinIptaliWord() → GET /template-engine/itirazin-iptali/case/:caseId/word (itirazın iptali Word indirme)
+  /// </remarks>
   @Get('itirazin-iptali/case/:caseId/word')
   async downloadItirazinIptaliWord(
     @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
     @Res() res: Response
   ): Promise<void> {
-    const wordBuffer = await this.templateEngineService.generateItirazinIptaliWord(caseId);
+    const wordBuffer = await this.templateEngineService.generateItirazinIptaliWord(caseId, tenantId);
     
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="itirazin-iptali-${caseId}.docx"`);
@@ -605,17 +695,31 @@ export class TemplateEngineController {
   /**
    * Tasarrufun İptali Dilekçesi oluştur - Case ID ile
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.generateTasarrufunIptaliFromCase() → GET /template-engine/tasarrufun-iptali/case/:caseId (tasarrufun iptali dilekçe üretimi)
+  /// </remarks>
   @Get('tasarrufun-iptali/case/:caseId')
-  async generateTasarrufunIptaliFromCase(@Param('caseId') caseId: string): Promise<{ title: string; content: string }> {
-    return this.templateEngineService.generateTasarrufunIptaliFromCase(caseId);
+  async generateTasarrufunIptaliFromCase(
+    @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
+  ): Promise<{ title: string; content: string }> {
+    return this.templateEngineService.generateTasarrufunIptaliFromCase(caseId, tenantId);
   }
 
   /**
    * Tasarrufun İptali Dilekçesi önizleme
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.previewTasarrufunIptali() → GET /template-engine/tasarrufun-iptali/case/:caseId/preview (tasarrufun iptali önizleme)
+  /// </remarks>
   @Get('tasarrufun-iptali/case/:caseId/preview')
-  async previewTasarrufunIptali(@Param('caseId') caseId: string): Promise<{ html: string }> {
-    const doc = await this.templateEngineService.generateTasarrufunIptaliFromCase(caseId);
+  async previewTasarrufunIptali(
+    @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
+  ): Promise<{ html: string }> {
+    const doc = await this.templateEngineService.generateTasarrufunIptaliFromCase(caseId, tenantId);
     const html = `
       <div style="font-family: 'Courier New', monospace; white-space: pre-wrap; padding: 20px; background: white; border: 1px solid #ccc;">
         ${doc.content.replace(/\n/g, '<br>')}
@@ -627,12 +731,17 @@ export class TemplateEngineController {
   /**
    * Tasarrufun İptali Dilekçesi Word indir
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.downloadTasarrufunIptaliWord() → GET /template-engine/tasarrufun-iptali/case/:caseId/word (tasarrufun iptali Word indirme)
+  /// </remarks>
   @Get('tasarrufun-iptali/case/:caseId/word')
   async downloadTasarrufunIptaliWord(
     @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
     @Res() res: Response
   ): Promise<void> {
-    const wordBuffer = await this.templateEngineService.generateTasarrufunIptaliWord(caseId);
+    const wordBuffer = await this.templateEngineService.generateTasarrufunIptaliWord(caseId, tenantId);
     
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="tasarrufun-iptali-${caseId}.docx"`);
@@ -646,17 +755,31 @@ export class TemplateEngineController {
   /**
    * Dolandırıcılık Suç Duyurusu oluştur - Case ID ile
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.generateDolandiricilikFromCase() → GET /template-engine/dolandiricilik/case/:caseId (dolandırıcılık suç duyurusu üretimi)
+  /// </remarks>
   @Get('dolandiricilik/case/:caseId')
-  async generateDolandiricilikFromCase(@Param('caseId') caseId: string): Promise<{ title: string; content: string }> {
-    return this.templateEngineService.generateDolandiricilikSucDuyurusuFromCase(caseId);
+  async generateDolandiricilikFromCase(
+    @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
+  ): Promise<{ title: string; content: string }> {
+    return this.templateEngineService.generateDolandiricilikSucDuyurusuFromCase(caseId, tenantId);
   }
 
   /**
    * Dolandırıcılık Suç Duyurusu önizleme
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.previewDolandiricilik() → GET /template-engine/dolandiricilik/case/:caseId/preview (dolandırıcılık suç duyurusu önizleme)
+  /// </remarks>
   @Get('dolandiricilik/case/:caseId/preview')
-  async previewDolandiricilik(@Param('caseId') caseId: string): Promise<{ html: string }> {
-    const doc = await this.templateEngineService.generateDolandiricilikSucDuyurusuFromCase(caseId);
+  async previewDolandiricilik(
+    @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
+  ): Promise<{ html: string }> {
+    const doc = await this.templateEngineService.generateDolandiricilikSucDuyurusuFromCase(caseId, tenantId);
     const html = `
       <div style="font-family: 'Courier New', monospace; white-space: pre-wrap; padding: 20px; background: white; border: 1px solid #ccc;">
         ${doc.content.replace(/\n/g, '<br>')}
@@ -668,12 +791,17 @@ export class TemplateEngineController {
   /**
    * Dolandırıcılık Suç Duyurusu Word indir
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.downloadDolandiricilikWord() → GET /template-engine/dolandiricilik/case/:caseId/word (dolandırıcılık suç duyurusu Word indirme)
+  /// </remarks>
   @Get('dolandiricilik/case/:caseId/word')
   async downloadDolandiricilikWord(
     @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
     @Res() res: Response
   ): Promise<void> {
-    const wordBuffer = await this.templateEngineService.generateDolandiricilikSucDuyurusuWord(caseId);
+    const wordBuffer = await this.templateEngineService.generateDolandiricilikSucDuyurusuWord(caseId, tenantId);
     
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="dolandiricilik-suc-duyurusu-${caseId}.docx"`);
@@ -688,16 +816,27 @@ export class TemplateEngineController {
    * Case ID bazlı doküman üret - Eski Takipler ve Yeni Takip ekranlarından çağrılabilir
    * POST /template-engine/cases/:caseId/documents/:format
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TemplateEngineController.generateDocumentFromCase() → POST /template-engine/cases/:caseId/documents/:format (case bazlı belge artifact üretimi)
+  /// </remarks>
   @Post('cases/:caseId/documents/:format')
   async generateDocumentFromCase(
     @Param('caseId') caseId: string,
     @Param('format') format: 'docx' | 'pdf' | 'xml',
     @Query('type') documentType: 'takip-talebi' | 'odeme-emri' | 'icra-emri' = 'takip-talebi',
+    @CurrentUser('tenantId') tenantId: string,
     @Res() res: Response
   ): Promise<void> {
     try {
       const formatUpper = format.toUpperCase() as 'DOCX' | 'PDF' | 'XML';
-      const result = await this.templateEngineService.generateDocumentFromCase(caseId, formatUpper, documentType);
+      const result = await this.templateEngineService.generateDocumentFromCase(
+        caseId,
+        formatUpper,
+        documentType,
+        'v1',
+        tenantId,
+      );
       
       const mimeTypes: Record<string, string> = {
         DOCX: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',

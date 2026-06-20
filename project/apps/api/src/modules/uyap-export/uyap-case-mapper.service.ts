@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import {
   UyapETakipDosyasi,
@@ -53,12 +53,19 @@ export class UyapCaseMapperService {
   /**
    * Tek bir case'i UYAP takip talebine dönüştür
    */
-  async mapCaseToTakipTalebi(caseId: string): Promise<UyapTakipTalebi> {
-    const caseData = await this.prisma.case.findUnique({
-      where: { id: caseId },
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - UyapCaseMapperService.mapCasesToETakipDosyasi() → UYAP e-takip dosyası üretimi
+  /// </remarks>
+  async mapCaseToTakipTalebi(caseId: string, tenantId: string): Promise<UyapTakipTalebi> {
+    const caseData = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
       include: {
         caseClients: { include: { client: true } },
-        debtors: { include: { debtor: true } },
+        debtors: {
+          where: { lifecycleStatus: 'ACTIVE' },
+          include: { debtor: true },
+        },
         lawyers: { include: { lawyer: true } },
         claimItems: true,
         dues: true,
@@ -66,6 +73,9 @@ export class UyapCaseMapperService {
     });
 
     if (!caseData) throw new Error('Case bulunamadı');
+    if (!caseData.debtors?.length) {
+      throw new BadRequestException('Operasyonel çıktı için aktif borçlu bulunmuyor');
+    }
 
     // Tarafları oluştur
     const taraflar: UyapTaraf[] = [];
@@ -125,6 +135,11 @@ export class UyapCaseMapperService {
   /**
    * Birden fazla case'i tek bir e-takip dosyasına dönüştür
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - UyapExportService.exportSingleCase() → POST /uyap-export/single ve GET /uyap-export/download/:caseId
+  /// - UyapExportService.exportBatchCases() → POST /uyap-export/batch ve POST /uyap-export/batch/download
+  /// </remarks>
   async mapCasesToETakipDosyasi(
     caseIds: string[],
     tenantId: string
@@ -132,7 +147,7 @@ export class UyapCaseMapperService {
     const takipTalepleri: UyapTakipTalebi[] = [];
 
     for (const caseId of caseIds) {
-      const talep = await this.mapCaseToTakipTalebi(caseId);
+      const talep = await this.mapCaseToTakipTalebi(caseId, tenantId);
       takipTalepleri.push(talep);
     }
 

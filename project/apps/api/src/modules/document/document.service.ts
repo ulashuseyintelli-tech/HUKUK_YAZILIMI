@@ -1,4 +1,4 @@
-import { Injectable, Logger, NotFoundException } from "@nestjs/common";
+import { BadRequestException, Injectable, Logger, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { TemplateService, DocumentData } from "./template.service";
 import { TDocumentDefinitions } from "pdfmake/interfaces";
@@ -16,12 +16,29 @@ export class DocumentService {
   }
 
   // Dosya verilerini hazırla
-  async prepareDocumentData(caseId: string): Promise<DocumentData> {
-    const caseData = await this.prisma.case.findUnique({
-      where: { id: caseId },
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DocumentController.getPreviewData() → GET /documents/case/:caseId/preview-data (belge veri önizleme)
+  /// - DocumentController.getAvailableTemplates() → GET /documents/case/:caseId/available-templates (şablon önerisi)
+  /// - DocumentService.generatePaymentOrder() → ödeme emri PDF verisi
+  /// - DocumentService.generateSeizureNotice() → haciz müzekkeresi PDF verisi
+  /// - DocumentService.generateSaleRequest() → satış talebi PDF verisi
+  /// - DocumentService.generateUyapXml() → UYAP XML verisi
+  /// - DocumentService.generateIhbarname89_1() → 89/1 ihbarname verisi
+  /// - DocumentService.generateIhbarname89_2() → 89/2 ihbarname verisi
+  /// - DocumentService.generateIhbarname89_3() → 89/3 ihbarname verisi
+  /// - DocumentService.generateAlacakHacziTalebi() → alacak haczi talebi verisi
+  /// </remarks>
+  async prepareDocumentData(caseId: string, tenantId?: string): Promise<DocumentData> {
+    const where = tenantId ? { id: caseId, tenantId } : { id: caseId };
+    const caseData = await this.prisma.case.findFirst({
+      where,
       include: {
         client: true,
-        debtors: { include: { debtor: true } },
+        debtors: {
+          where: { lifecycleStatus: 'ACTIVE' },
+          include: { debtor: true },
+        },
         lawyers: { include: { lawyer: true } },
         formType: true,
         collections: true,
@@ -35,6 +52,9 @@ export class DocumentService {
     }
 
     const debtor = caseData.debtors[0]?.debtor;
+    if (!debtor) {
+      throw new BadRequestException("Operasyonel çıktı için aktif borçlu bulunmuyor");
+    }
     const lawyer = caseData.lawyers[0]?.lawyer;
     
     // Alacak kalemlerinden toplam hesapla
@@ -101,19 +121,28 @@ export class DocumentService {
   }
 
   // Ödeme emri PDF oluştur
-  async generatePaymentOrder(caseId: string): Promise<Buffer> {
-    const data = await this.prepareDocumentData(caseId);
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DocumentController.getPaymentOrder() → GET /documents/case/:caseId/payment-order (ödeme emri PDF)
+  /// </remarks>
+  async generatePaymentOrder(caseId: string, tenantId?: string): Promise<Buffer> {
+    const data = await this.prepareDocumentData(caseId, tenantId);
     const docDefinition = this.templateService.getPaymentOrderTemplate(data);
     return this.generatePdf(docDefinition);
   }
 
   // Haciz müzekkeresi PDF oluştur
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DocumentController.getSeizureNotice() → POST /documents/case/:caseId/seizure-notice (haciz müzekkeresi PDF)
+  /// </remarks>
   async generateSeizureNotice(
     caseId: string,
     targetType: string,
-    targetDetails: any
+    targetDetails: any,
+    tenantId?: string,
   ): Promise<Buffer> {
-    const data = await this.prepareDocumentData(caseId);
+    const data = await this.prepareDocumentData(caseId, tenantId);
     const docDefinition = this.templateService.getSeizureNoticeTemplate(
       data,
       targetType,
@@ -123,8 +152,12 @@ export class DocumentService {
   }
 
   // Satış talebi PDF oluştur
-  async generateSaleRequest(caseId: string, assetDetails: any): Promise<Buffer> {
-    const data = await this.prepareDocumentData(caseId);
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DocumentController.getSaleRequest() → POST /documents/case/:caseId/sale-request (satış talebi PDF)
+  /// </remarks>
+  async generateSaleRequest(caseId: string, assetDetails: any, tenantId?: string): Promise<Buffer> {
+    const data = await this.prepareDocumentData(caseId, tenantId);
     const docDefinition = this.templateService.getSaleRequestTemplate(data, assetDetails);
     return this.generatePdf(docDefinition);
   }
@@ -138,8 +171,12 @@ export class DocumentService {
   }
 
   // UYAP XML formatı oluştur
-  async generateUyapXml(caseId: string): Promise<string> {
-    const data = await this.prepareDocumentData(caseId);
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DocumentController.getUyapXml() → GET /documents/case/:caseId/uyap-xml (UYAP XML belge üretimi)
+  /// </remarks>
+  async generateUyapXml(caseId: string, tenantId?: string): Promise<string> {
+    const data = await this.prepareDocumentData(caseId, tenantId);
 
     const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <IcraTakip>
@@ -168,6 +205,10 @@ export class DocumentService {
   }
 
   // 89/1 Haciz İhbarnamesi PDF oluştur
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DocumentController.getIhbarname89_1() → POST /documents/case/:caseId/ihbarname-89-1 (89/1 ihbarname PDF)
+  /// </remarks>
   async generateIhbarname89_1(
     caseId: string,
     thirdPartyDetails: {
@@ -175,14 +216,19 @@ export class DocumentService {
       type: "BANKA" | "ISVEREN" | "KIRACI" | "DIGER";
       identityNo?: string;
       address?: string;
-    }
+    },
+    tenantId?: string,
   ): Promise<Buffer> {
-    const data = await this.prepareDocumentData(caseId);
+    const data = await this.prepareDocumentData(caseId, tenantId);
     const docDefinition = this.templateService.getIhbarname89_1Template(data, thirdPartyDetails);
     return this.generatePdf(docDefinition);
   }
 
   // 89/2 Haciz İhbarnamesi PDF oluştur
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DocumentController.getIhbarname89_2() → POST /documents/case/:caseId/ihbarname-89-2 (89/2 ihbarname PDF)
+  /// </remarks>
   async generateIhbarname89_2(
     caseId: string,
     thirdPartyDetails: {
@@ -191,14 +237,19 @@ export class DocumentService {
       identityNo?: string;
       address?: string;
       firstIhbarnameDate: string;
-    }
+    },
+    tenantId?: string,
   ): Promise<Buffer> {
-    const data = await this.prepareDocumentData(caseId);
+    const data = await this.prepareDocumentData(caseId, tenantId);
     const docDefinition = this.templateService.getIhbarname89_2Template(data, thirdPartyDetails);
     return this.generatePdf(docDefinition);
   }
 
   // 89/3 Haciz İhbarnamesi PDF oluştur
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DocumentController.getIhbarname89_3() → POST /documents/case/:caseId/ihbarname-89-3 (89/3 ihbarname PDF)
+  /// </remarks>
   async generateIhbarname89_3(
     caseId: string,
     thirdPartyDetails: {
@@ -208,14 +259,19 @@ export class DocumentService {
       address?: string;
       firstIhbarnameDate: string;
       secondIhbarnameDate: string;
-    }
+    },
+    tenantId?: string,
   ): Promise<Buffer> {
-    const data = await this.prepareDocumentData(caseId);
+    const data = await this.prepareDocumentData(caseId, tenantId);
     const docDefinition = this.templateService.getIhbarname89_3Template(data, thirdPartyDetails);
     return this.generatePdf(docDefinition);
   }
 
   // Alacak Haczi Talebi (Dosya Haczi) PDF oluştur
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DocumentController.getAlacakHacziTalebi() → POST /documents/case/:caseId/alacak-haczi-talebi (alacak haczi talebi PDF)
+  /// </remarks>
   async generateAlacakHacziTalebi(
     caseId: string,
     externalCaseDetails: {
@@ -223,9 +279,10 @@ export class DocumentService {
       externalCaseNo: string;
       counterpartyName: string;
       claimAmount: number;
-    }
+    },
+    tenantId?: string,
   ): Promise<Buffer> {
-    const data = await this.prepareDocumentData(caseId);
+    const data = await this.prepareDocumentData(caseId, tenantId);
     const docDefinition = this.templateService.getAlacakHacziTalebiTemplate(data, externalCaseDetails);
     return this.generatePdf(docDefinition);
   }

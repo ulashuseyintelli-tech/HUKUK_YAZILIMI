@@ -105,6 +105,10 @@ export class AssetQueryService {
   /**
    * Get all asset queries for a debtor
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AssetQueryController.getQueriesForDebtor() → GET /asset-queries/debtor/:caseDebtorId (malvarlığı sorgu geçmişi)
+  /// </remarks>
   async getQueriesForDebtor(
     tenantId: string,
     caseDebtorId: string
@@ -113,6 +117,7 @@ export class AssetQueryService {
       where: { tenantId, caseDebtorId },
       include: {
         requestedByUser: { select: { name: true, surname: true } },
+        caseDebtor: { select: { lifecycleStatus: true } },
       },
       orderBy: { requestedAt: 'desc' },
     });
@@ -123,6 +128,10 @@ export class AssetQueryService {
   /**
    * Get a single query by ID
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AssetQueryController.getQueryById() → GET /asset-queries/:queryId (malvarlığı sorgu detayı)
+  /// </remarks>
   async getQueryById(
     tenantId: string,
     queryId: string
@@ -131,6 +140,7 @@ export class AssetQueryService {
       where: { id: queryId, tenantId },
       include: {
         requestedByUser: { select: { name: true, surname: true } },
+        caseDebtor: { select: { lifecycleStatus: true } },
       },
     });
 
@@ -284,6 +294,10 @@ export class AssetQueryService {
         : 'Bilinmiyor',
       startedAt: query.startedAt?.toISOString() || null,
       completedAt: query.completedAt?.toISOString() || null,
+      caseDebtorLifecycleStatus: query.caseDebtor?.lifecycleStatus,
+      caseDebtorLifecycleLabel: query.caseDebtor?.lifecycleStatus
+        ? query.caseDebtor.lifecycleStatus
+        : undefined,
     };
   }
 }

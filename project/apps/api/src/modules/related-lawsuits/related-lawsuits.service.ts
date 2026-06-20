@@ -462,18 +462,27 @@ export class RelatedLawsuitsService implements OnModuleInit {
   /**
    * Karşılıksız çek şikayet dilekçesi oluştur - Case ID ile
    */
-  async generateKarsiliksizCekSikayet(caseId: string): Promise<{
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - RelatedLawsuitsController.generateKarsiliksizCekSikayet() → GET /related-lawsuits/generate/karsiliksiz-cek/:caseId
+  /// - RelatedLawsuitsController.previewKarsiliksizCekSikayet() → GET /related-lawsuits/generate/karsiliksiz-cek/:caseId/preview
+  /// </remarks>
+  async generateKarsiliksizCekSikayet(caseId: string, tenantId: string): Promise<{
     content: string;
     title: string;
     templateCode: string;
   }> {
-    return this.templateEngine.generateKarsiliksizCekSikayetFromCase(caseId);
+    return this.templateEngine.generateKarsiliksizCekSikayetFromCase(caseId, tenantId);
   }
 
   /**
    * Karşılıksız çek şikayet dilekçesi Word formatında oluştur
    */
-  async generateKarsiliksizCekSikayetWord(caseId: string): Promise<Buffer> {
-    return this.templateEngine.generateKarsiliksizCekSikayetWord(caseId);
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - RelatedLawsuitsController.downloadKarsiliksizCekSikayetWord() → GET /related-lawsuits/generate/karsiliksiz-cek/:caseId/word
+  /// </remarks>
+  async generateKarsiliksizCekSikayetWord(caseId: string, tenantId: string): Promise<Buffer> {
+    return this.templateEngine.generateKarsiliksizCekSikayetWord(caseId, tenantId);
   }
 }

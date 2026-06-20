@@ -3,6 +3,7 @@ import { Response } from 'express';
 import { UyapService } from './uyap.service';
 import { UyapXmlService } from './uyap-xml.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 // CPE Integration - Phase 3
 import { CpeRequired, ScopeResolvers } from '@/modules/policy-engine';
 import { ActionCode } from '@/modules/policy-engine/types/action-code.enum';
@@ -248,9 +249,16 @@ export class UyapController {
    * Case'den UYAP e-Takip XML'i oluştur
    * GET /uyap/xml/case/:caseId
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - UyapController.generateXmlFromCase() → GET /uyap/xml/case/:caseId (case bazlı UYAP XML üretimi)
+  /// </remarks>
   @Get('xml/case/:caseId')
-  async generateXmlFromCase(@Param('caseId') caseId: string) {
-    const xml = await this.uyapXmlService.generateFromCase(caseId);
+  async generateXmlFromCase(
+    @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
+  ) {
+    const xml = await this.uyapXmlService.generateFromCase(caseId, tenantId);
     const validation = this.uyapXmlService.validateXml(xml);
     
     return {
@@ -265,12 +273,17 @@ export class UyapController {
    * Case'den UYAP e-Takip XML dosyası indir
    * GET /uyap/xml/case/:caseId/download
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - UyapController.downloadXmlFromCase() → GET /uyap/xml/case/:caseId/download (case bazlı UYAP XML indirme)
+  /// </remarks>
   @Get('xml/case/:caseId/download')
   async downloadXmlFromCase(
     @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
     @Res() res: Response,
   ) {
-    const xml = await this.uyapXmlService.generateFromCase(caseId);
+    const xml = await this.uyapXmlService.generateFromCase(caseId, tenantId);
     
     // Dosya adı için case bilgisini al
     const caseData = await this.uyapService.queryCaseStatus(caseId);
@@ -296,6 +309,10 @@ export class UyapController {
    * 
    * @CpeRequired - UYAP gönderimi HIGH risk aksiyon
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - UyapController.submitXmlToUyap() → POST /uyap/xml/submit/:caseId (case bazlı UYAP XML gönderimi)
+  /// </remarks>
   @Post('xml/submit/:caseId')
   @CpeRequired(ActionCode.UYAP_SEND)
   async submitXmlToUyap(
@@ -316,7 +333,7 @@ export class UyapController {
     }
 
     // XML oluştur
-    const xml = await this.uyapXmlService.generateFromCase(caseId);
+    const xml = await this.uyapXmlService.generateFromCase(caseId, tenantId);
     
     // XML doğrula
     const validation = this.uyapXmlService.validateXml(xml);

@@ -115,9 +115,12 @@ export interface CaseDebtReportResult {
   };
   debtors: {
     id: string;
+    caseDebtorId: string;
     name: string;
     tcNo?: string;
     role: string;
+    lifecycleStatus: "ACTIVE" | "PASSIVE";
+    lifecycleLabel: string;
   }[];
   claimDetails: {
     principalAmount: number;
@@ -217,6 +220,9 @@ export interface CollectionHistoryReportResult {
     source?: string;
     status: string;
     caseFileNumber?: string;
+    caseDebtorId?: string;
+    caseDebtorLifecycleStatus?: "ACTIVE" | "PASSIVE";
+    caseDebtorLifecycleLabel?: string;
     description?: string;
   }[];
   generatedAt: string;
