@@ -2,6 +2,7 @@ import {
   Controller,
   Post,
   Body,
+  Req,
   UseGuards,
   UploadedFile,
   UseInterceptors,
@@ -10,6 +11,8 @@ import {
 import { FileInterceptor } from "@nestjs/platform-express";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { OcrService, ClassificationResult } from "./ocr.service";
+import { OcrFeedbackService } from "./ocr-feedback.service";
+import { OcrExtractionFeedbackDto } from "./dto/extraction-feedback.dto";
 
 /**
  * Metin sınıflandırma DTO
@@ -35,7 +38,25 @@ const MAX_OCR_UPLOAD_LABEL = `${MAX_OCR_UPLOAD_BYTES / (1024 * 1024)}MB`; // "50
 @Controller("ocr")
 @UseGuards(JwtAuthGuard)
 export class OcrController {
-  constructor(private readonly ocrService: OcrService) {}
+  constructor(
+    private readonly ocrService: OcrService,
+    private readonly ocrFeedbackService: OcrFeedbackService,
+  ) {}
+
+  /**
+   * A2-min / A3 — OCR extraction feedback (PII'SİZ telemetri).
+   * POST /ocr/extraction-feedback
+   * Kullanıcının OCR ön-doldurmasını alan-bazlı düzeltme-oranını toplar (yalnız metrik; ham değer YOK).
+   * Bu PR yalnız backend altyapısı; frontend ACCEPT diff bağlama PR-2'de.
+   */
+  @Post("extraction-feedback")
+  async recordExtractionFeedback(@Req() req: any, @Body() dto: OcrExtractionFeedbackDto) {
+    const result = await this.ocrFeedbackService.recordExtractionFeedback(
+      { tenantId: req.user.tenantId, userId: req.user.id, userName: req.user.name },
+      dto,
+    );
+    return { success: true, recorded: result.recorded };
+  }
 
   /**
    * Metin içeriğini sınıflandır
