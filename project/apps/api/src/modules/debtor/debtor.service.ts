@@ -156,6 +156,7 @@ export function computeDebtorMissingFields(debtor: {
 export type ServiceStatus = "NOT_STARTED" | "READY" | "SENT" | "DELIVERED" | "RETURNED" | "MUHTAR" | "ANNOUNCEMENT" | "FAILED" | "UNKNOWN";
 export type AssetQueryStatus = "UNKNOWN" | "YES" | "NO" | "PENDING" | "ERROR";
 export type DebtorRole = "ASIL_BORCLU" | "MUSTEREK_BORCLU" | "KEFIL" | "AVALIST" | "MIRASCI" | "TEMSILCI" | "DIGER";
+export type CaseDebtorLifecycleStatus = "ACTIVE" | "PASSIVE";
 export type AlertLevel = "NONE" | "INFO" | "WARN" | "DANGER";
 
 export type DebtorIssueCode =
@@ -186,6 +187,7 @@ export interface DebtorListItemDTO {
   displayName: string;
   personType: "REAL" | "LEGAL";
   role: DebtorRole;
+  lifecycleStatus: CaseDebtorLifecycleStatus;
   identityMasked?: string;
   phoneMasked?: string;
   addressShort?: string;
@@ -1342,7 +1344,11 @@ export class DebtorService {
    * Get debtors for a specific case with summary
    * Returns DebtorListItemDTO[] + DebtorsSummaryDTO
    */
-  async getDebtorsForCase(tenantId: string, caseId: string): Promise<{
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DebtorController.getDebtorsForCase() → GET /debtors/case/:caseId (operasyonel dosya borçlusu listesi)
+  /// </remarks>
+  async getDebtorsForCase(tenantId: string, caseId: string, includePassive = false): Promise<{
     summary: DebtorsSummaryDTO;
     items: DebtorListItemDTO[];
   }> {
@@ -1358,7 +1364,10 @@ export class DebtorService {
 
     // Fetch case debtors with debtor details
     const caseDebtors = await this.prisma.caseDebtor.findMany({
-      where: { caseId },
+      where: {
+        caseId,
+        ...(includePassive ? {} : { lifecycleStatus: "ACTIVE" }),
+      },
       include: {
         debtor: {
           include: {
@@ -1427,6 +1436,7 @@ export class DebtorService {
         displayName: debtor.name,
         personType: this.mapDebtorTypeToPersonType(debtor.type),
         role: cd.role as DebtorRole,
+        lifecycleStatus: cd.lifecycleStatus as CaseDebtorLifecycleStatus,
         identityMasked: this.maskIdentity(debtor.identityNo, debtor.type),
         phoneMasked: this.maskPhone(debtor.phone),
         addressShort: address ? `${address.district || ""}/${address.city || ""}`.replace(/^\//, "") : undefined,
@@ -1449,15 +1459,16 @@ export class DebtorService {
       });
     }
 
-    // Calculate summary
+    // Calculate operational summary from ACTIVE records even when passive history is included.
+    const operationalItems = items.filter((i) => i.lifecycleStatus === "ACTIVE");
     const summary: DebtorsSummaryDTO = {
-      total: items.length,
-      delivered: items.filter((i) => i.serviceStatus === "DELIVERED").length,
-      pending: items.filter((i) => 
+      total: operationalItems.length,
+      delivered: operationalItems.filter((i) => i.serviceStatus === "DELIVERED").length,
+      pending: operationalItems.filter((i) =>
         ["NOT_STARTED", "READY", "SENT"].includes(i.serviceStatus)
       ).length,
-      returned: items.filter((i) => i.serviceStatus === "RETURNED").length,
-      danger: items.filter((i) => i.alertLevel === "DANGER").length,
+      returned: operationalItems.filter((i) => i.serviceStatus === "RETURNED").length,
+      danger: operationalItems.filter((i) => i.alertLevel === "DANGER").length,
     };
 
     return { summary, items };
@@ -1499,6 +1510,7 @@ export class DebtorService {
       displayName: debtor.name,
       personType: this.mapDebtorTypeToPersonType(debtor.type),
       role: caseDebtor.role as DebtorRole,
+      lifecycleStatus: caseDebtor.lifecycleStatus as CaseDebtorLifecycleStatus,
       identityMasked: this.maskIdentity(debtor.identityNo, debtor.type),
       phoneMasked: this.maskPhone(debtor.phone),
       emailMasked: this.maskEmail(debtor.email),

@@ -39,8 +39,9 @@ export const debtorsApi = {
   },
 
   // Case Debtors
-  async getCaseDebtors(caseId: string) {
-    return apiClient.request<CaseDebtorsResponse>(`/debtors/case/${caseId}`);
+  async getCaseDebtors(caseId: string, options?: { includePassive?: boolean }) {
+    const query = options?.includePassive ? "?includePassive=true" : "";
+    return apiClient.request<CaseDebtorsResponse>(`/debtors/case/${caseId}${query}`);
   },
 
   async addCaseDebtor(caseId: string, data: { debtorId: string; role?: string }) {
