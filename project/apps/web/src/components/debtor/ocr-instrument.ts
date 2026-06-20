@@ -169,6 +169,13 @@ export function showsVade(i: Instrument): boolean {
   return i.type !== "CEK";
 }
 
+/** BUG-X hotfix — ISO tarih (YYYY-MM-DD) → TR gösterim (DD.MM.YYYY). Saf, deterministik; tanınmazsa olduğu gibi döner. */
+export function formatDateTr(iso?: string): string {
+  if (!iso) return "";
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  return m ? `${m[3]}.${m[2]}.${m[1]}` : iso;
+}
+
 /**
  * Enstrüman CaseInstrument olabilmek için gerekli alanlar TAM mı (N3-pure invariant aynası).
  * documentNo (boş değil) + amount (>0) + currency + EFEKTİF keşide (çek: issueDate ?? dueDate).

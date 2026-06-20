@@ -166,4 +166,27 @@ describe('BUG-X — çek tarih/vade modeli (render)', () => {
     expect(screen.queryByLabelText('Satır 1 vade')).toBeNull(); // çek
     expect(screen.getByLabelText('Satır 2 vade')).toBeTruthy(); // senet
   });
+
+  // ── HOTFIX: iki-tarih uyarısı aksiyone edilebilir (ikinci tarih gizlenmez) ──
+  it('HOTFIX: çek iki tarih → uyarıda ikinci tarih (TR) açıkça GÖRÜNÜR + "keşide yap" butonu', () => {
+    render(<InstrumentReviewTable rows={[cek({ issueDate: '2025-07-07', dueDate: '2025-12-30' })]} onChange={() => {}} />);
+    expect(screen.getByTestId('cek-date-warn-detail-0').textContent).toContain('30.12.2025'); // GİZLENMEZ
+    expect(screen.getByTestId('cek-date-apply-0').textContent).toContain('30.12.2025 keşide yap');
+  });
+
+  it('HOTFIX: "keşide yap" tık → issueDate=dueDate (otomatik DEĞİL); dueDate KORUNUR', () => {
+    const onChange = vi.fn();
+    render(<InstrumentReviewTable rows={[cek({ issueDate: '2025-07-07', dueDate: '2025-12-30' })]} onChange={onChange} />);
+    fireEvent.click(screen.getByTestId('cek-date-apply-0'));
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const updated = onChange.mock.calls[0][0][0].instrument;
+    expect(updated.issueDate).toBe('2025-12-30');
+    expect(updated.dueDate).toBe('2025-12-30'); // silinmez (backend presentmentDate)
+  });
+
+  it('HOTFIX: issueDate === dueDate → uyarı detayı + ikon GÖSTERİLMEZ', () => {
+    render(<InstrumentReviewTable rows={[cek({ issueDate: '2025-12-30', dueDate: '2025-12-30' })]} onChange={() => {}} />);
+    expect(screen.queryByTestId('cek-date-warn-detail-0')).toBeNull();
+    expect(screen.queryByTestId('cek-date-warn-0')).toBeNull();
+  });
 });
