@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger, Inject, forwardRef } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
-import { CreateCaseDto, UpdateCaseDto, CaseSubCategory, Currency, DueDto, CaseInstrumentInputDto, CaseStaffInputDto } from "./dto/case.dto";
+import { CreateCaseDto, UpdateCaseDto, CaseSubCategory, Currency, DueDto, DueType, CaseInstrumentInputDto, CaseStaffInputDto } from "./dto/case.dto";
 import { Prisma, LegalCaseStatus } from "@prisma/client";
 import { mapDueTypeToClaimItemType, buildClaimItemData } from "./due-to-claim-item.mapper";
 import {
@@ -800,15 +800,149 @@ export class CaseService {
     tx: Prisma.TransactionClient,
     tenantId: string,
     caseId: string,
-    dues: DueDto[],
+    dues: Array<DueDto & { id?: string; currency?: string | null; sortOrder?: number | null }>,
   ): Promise<void> {
     for (const due of dues) {
       const itemType = mapDueTypeToClaimItemType(due.type);
       if (itemType === null) continue; // NAFAKA → yalnız Due (taksit takvimi)
+      const claimItemData = due.id
+        ? this.buildDueSyncClaimItemData(tenantId, caseId, { ...due, id: due.id })
+        : buildClaimItemData(tenantId, caseId, due, itemType);
+      if (!claimItemData) continue;
+
       await tx.claimItem.create({
-        data: buildClaimItemData(tenantId, caseId, due, itemType),
+        data: claimItemData,
       });
     }
+  }
+
+  /**
+   * PR-ALACAK-1 — post-create Due kayıtlarını marker'lı kanonik ClaimItem'a çevirir.
+   * Eski unmarked kayıtlar için eşleştirme tahmini yapılmaz.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseService.createClaimItemsFromDues() → POST /cases (dosya açılışında persisted Due→ClaimItem marker)
+   * - CaseService.createDue() → POST /cases/:id/dues (dosya açıldıktan sonra Due→ClaimItem sync)
+   * </remarks>
+   */
+  private buildDueSyncClaimItemData(
+    tenantId: string,
+    caseId: string,
+    due: {
+      id: string;
+      type: string;
+      description?: string | null;
+      amount: unknown;
+      dueDate: Date | string;
+      currency?: string | null;
+      sortOrder?: number | null;
+    },
+  ): Prisma.ClaimItemUncheckedCreateInput | null {
+    const itemType = mapDueTypeToClaimItemType(due.type as DueType);
+    if (itemType === null) return null;
+
+    const dueDto: DueDto = {
+      type: due.type as DueType,
+      description: due.description ?? undefined,
+      amount: Number(due.amount),
+      dueDate: due.dueDate instanceof Date ? due.dueDate.toISOString() : due.dueDate,
+    };
+
+    return {
+      ...buildClaimItemData(tenantId, caseId, dueDto, itemType),
+      currency: due.currency || "TRY",
+      sortOrder: due.sortOrder ?? 0,
+      metadata: {
+        dueSync: {
+          sourceDueId: due.id,
+          mappedFrom: 'Due',
+        },
+      },
+    };
+  }
+
+  /**
+   * PR-ALACAK-1 — yalnız marker ile güvenli eşleşen ClaimItem'ı bulur.
+   * Birden fazla marker bulunursa sync durdurulur; heuristic yoktur.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseService.updateDue() → PATCH /cases/:id/dues/:dueId (marker'lı ClaimItem sync)
+   * - CaseService.deleteDue() → DELETE /cases/:id/dues/:dueId (marker'lı ClaimItem cancel)
+   * </remarks>
+   */
+  private async findDueSyncClaimItem(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    caseId: string,
+    dueId: string,
+  ) {
+    const claimItems = await tx.claimItem.findMany({
+      where: {
+        tenantId,
+        caseId,
+        metadata: { path: ["dueSync", "sourceDueId"], equals: dueId },
+      },
+      take: 2,
+    });
+
+    if (claimItems.length > 1) {
+      throw new BadRequestException("Due senkronu için birden fazla ClaimItem bulundu");
+    }
+
+    return claimItems[0] ?? null;
+  }
+
+  /**
+   * PR-ALACAK-1 — güncel Due değerlerini marker'lı ClaimItem alanlarına yansıtır.
+   * Mapper null dönerse mevcut marker'lı ClaimItem iptal edilir.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseService.updateDue() → PATCH /cases/:id/dues/:dueId (marker'lı ClaimItem sync)
+   * </remarks>
+   */
+  private async syncMarkedClaimItemFromDue(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    caseId: string,
+    due: {
+      id: string;
+      type: string;
+      description?: string | null;
+      amount: unknown;
+      dueDate: Date | string;
+      currency?: string | null;
+      sortOrder?: number | null;
+    },
+  ): Promise<void> {
+    const claimItem = await this.findDueSyncClaimItem(tx, tenantId, caseId, due.id);
+    if (!claimItem) return;
+
+    const itemType = mapDueTypeToClaimItemType(due.type as DueType);
+    if (itemType === null) {
+      await tx.claimItem.update({
+        where: { id: claimItem.id },
+        data: { status: "CANCELLED" },
+      });
+      return;
+    }
+
+    const amount = Number(due.amount);
+    await tx.claimItem.update({
+      where: { id: claimItem.id },
+      data: {
+        itemType,
+        originalAmount: amount,
+        demandedAmount: amount,
+        amount,
+        currency: due.currency || "TRY",
+        description: due.description,
+        dueDate: due.dueDate instanceof Date ? due.dueDate : new Date(due.dueDate),
+        sortOrder: due.sortOrder ?? 0,
+      },
+    });
   }
 
   /**
@@ -1223,8 +1357,9 @@ export class CaseService {
         // 6. Alacak Kalemleri (Dues)
         let duesPrincipal = 0;
         if (dto.dues && dto.dues.length > 0) {
+          const createdDues: Array<DueDto & { id: string; currency?: string | null; sortOrder?: number | null }> = [];
           for (const dueDto of dto.dues) {
-            await tx.due.create({
+            const due = await tx.due.create({
               data: {
                 caseId: newCase.id,
                 type: dueDto.type,
@@ -1233,12 +1368,21 @@ export class CaseService {
                 dueDate: new Date(dueDto.dueDate),
               },
             });
+            createdDues.push({
+              id: due.id,
+              type: due.type as DueType,
+              description: due.description ?? undefined,
+              amount: Number(due.amount),
+              dueDate: due.dueDate.toISOString(),
+              currency: due.currency,
+              sortOrder: due.sortOrder,
+            });
           }
 
           // 6b. G1 KÖPRÜSÜ — kanonik ClaimItem'lar üret (bakiye motoru bunları okur).
           // Due satırları korunur (legacy/transition + nafaka takvimi); NAFAKA için
           // ClaimItem üretilmez. Aynı tx içinde, tenantId zorunlu.
-          await this.createClaimItemsFromDues(tx, tenantId, newCase.id, dto.dues);
+          await this.createClaimItemsFromDues(tx, tenantId, newCase.id, createdDues);
 
           // Ana para (dues PRINCIPAL); case.update aşağıda instrument ile birleştirilir.
           duesPrincipal = dto.dues
@@ -2644,7 +2788,12 @@ export class CaseService {
   }
 
   /**
-   * Alacak kalemi ekle
+   * Alacak kalemi ekle.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseController.createDue() → POST /cases/:id/dues (dosya açıldıktan sonra alacak kalemi ekleme)
+   * </remarks>
    */
   async createDue(
     tenantId: string,
@@ -2664,39 +2813,53 @@ export class CaseService {
       isPrimary?: boolean;
     }
   ) {
-    const caseExists = await this.prisma.case.findFirst({
-      where: { id: caseId, tenantId },
-    });
-    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+    return this.prisma.$transaction(async (tx) => {
+      const caseExists = await tx.case.findFirst({
+        where: { id: caseId, tenantId },
+      });
+      if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
 
-    // Get max sortOrder
-    const maxSort = await this.prisma.due.aggregate({
-      where: { caseId },
-      _max: { sortOrder: true },
-    });
+      // Get max sortOrder
+      const maxSort = await tx.due.aggregate({
+        where: { caseId },
+        _max: { sortOrder: true },
+      });
 
-    return this.prisma.due.create({
-      data: {
-        caseId,
-        type: data.type as any,
-        description: data.description,
-        amount: data.amount,
-        dueDate: new Date(data.dueDate),
-        currency: data.currency || "TRY",
-        interestType: data.interestType,
-        interestRate: data.interestRate,
-        interestStartDate: data.interestStartDate ? new Date(data.interestStartDate) : undefined,
-        sourceDocumentNo: data.sourceDocumentNo,
-        hasKdv: data.hasKdv || false,
-        kdvRate: data.kdvRate,
-        isPrimary: data.isPrimary || false,
-        sortOrder: (maxSort._max.sortOrder || 0) + 1,
-      },
+      const due = await tx.due.create({
+        data: {
+          caseId,
+          type: data.type as any,
+          description: data.description,
+          amount: data.amount,
+          dueDate: new Date(data.dueDate),
+          currency: data.currency || "TRY",
+          interestType: data.interestType,
+          interestRate: data.interestRate,
+          interestStartDate: data.interestStartDate ? new Date(data.interestStartDate) : undefined,
+          sourceDocumentNo: data.sourceDocumentNo,
+          hasKdv: data.hasKdv || false,
+          kdvRate: data.kdvRate,
+          isPrimary: data.isPrimary || false,
+          sortOrder: (maxSort._max.sortOrder || 0) + 1,
+        },
+      });
+
+      const claimItemData = this.buildDueSyncClaimItemData(tenantId, caseId, due);
+      if (claimItemData) {
+        await tx.claimItem.create({ data: claimItemData });
+      }
+
+      return due;
     });
   }
 
   /**
-   * Alacak kalemi güncelle
+   * Alacak kalemi güncelle.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseController.updateDue() → PATCH /cases/:id/dues/:dueId (dosya açıldıktan sonra alacak kalemi güncelleme)
+   * </remarks>
    */
   async updateDue(
     tenantId: string,
@@ -2722,56 +2885,77 @@ export class CaseService {
       isPrimary?: boolean;
     }
   ) {
-    const caseExists = await this.prisma.case.findFirst({
-      where: { id: caseId, tenantId },
-    });
-    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+    return this.prisma.$transaction(async (tx) => {
+      const caseExists = await tx.case.findFirst({
+        where: { id: caseId, tenantId },
+      });
+      if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
 
-    const due = await this.prisma.due.findFirst({
-      where: { id: dueId, caseId },
-    });
-    if (!due) throw new NotFoundException("Alacak kalemi bulunamadı");
+      const due = await tx.due.findFirst({
+        where: { id: dueId, caseId },
+      });
+      if (!due) throw new NotFoundException("Alacak kalemi bulunamadı");
 
-    return this.prisma.due.update({
-      where: { id: dueId },
-      data: {
-        type: data.type as any,
-        description: data.description,
-        amount: data.amount,
-        dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
-        currency: data.currency,
-        interestType: data.interestType,
-        interestRate: data.interestRate,
-        interestStartDate: data.interestStartDate ? new Date(data.interestStartDate) : undefined,
-        interestEndDate: data.interestEndDate ? new Date(data.interestEndDate) : undefined,
-        sourceDocumentNo: data.sourceDocumentNo,
-        hasKdv: data.hasKdv,
-        kdvRate: data.kdvRate,
-        isFinalized: data.isFinalized,
-        finalizationDate: data.finalizationDate ? new Date(data.finalizationDate) : undefined,
-        finalizationNote: data.finalizationNote,
-        sortOrder: data.sortOrder,
-        isPrimary: data.isPrimary,
-      },
+      const updatedDue = await tx.due.update({
+        where: { id: dueId },
+        data: {
+          type: data.type as any,
+          description: data.description,
+          amount: data.amount,
+          dueDate: data.dueDate ? new Date(data.dueDate) : undefined,
+          currency: data.currency,
+          interestType: data.interestType,
+          interestRate: data.interestRate,
+          interestStartDate: data.interestStartDate ? new Date(data.interestStartDate) : undefined,
+          interestEndDate: data.interestEndDate ? new Date(data.interestEndDate) : undefined,
+          sourceDocumentNo: data.sourceDocumentNo,
+          hasKdv: data.hasKdv,
+          kdvRate: data.kdvRate,
+          isFinalized: data.isFinalized,
+          finalizationDate: data.finalizationDate ? new Date(data.finalizationDate) : undefined,
+          finalizationNote: data.finalizationNote,
+          sortOrder: data.sortOrder,
+          isPrimary: data.isPrimary,
+        },
+      });
+
+      await this.syncMarkedClaimItemFromDue(tx, tenantId, caseId, updatedDue);
+
+      return updatedDue;
     });
   }
 
   /**
-   * Alacak kalemi sil
+   * Alacak kalemi sil.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseController.deleteDue() → DELETE /cases/:id/dues/:dueId (dosya açıldıktan sonra alacak kalemi silme)
+   * </remarks>
    */
   async deleteDue(tenantId: string, caseId: string, dueId: string) {
-    const caseExists = await this.prisma.case.findFirst({
-      where: { id: caseId, tenantId },
-    });
-    if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
+    return this.prisma.$transaction(async (tx) => {
+      const caseExists = await tx.case.findFirst({
+        where: { id: caseId, tenantId },
+      });
+      if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
 
-    const due = await this.prisma.due.findFirst({
-      where: { id: dueId, caseId },
-    });
-    if (!due) throw new NotFoundException("Alacak kalemi bulunamadı");
+      const due = await tx.due.findFirst({
+        where: { id: dueId, caseId },
+      });
+      if (!due) throw new NotFoundException("Alacak kalemi bulunamadı");
 
-    await this.prisma.due.delete({ where: { id: dueId } });
-    return { success: true };
+      const claimItem = await this.findDueSyncClaimItem(tx, tenantId, caseId, dueId);
+      if (claimItem) {
+        await tx.claimItem.update({
+          where: { id: claimItem.id },
+          data: { status: "CANCELLED" },
+        });
+      }
+
+      await tx.due.delete({ where: { id: dueId } });
+      return { success: true };
+    });
   }
 
   // ==================== TAHSİLATLAR (COLLECTIONS) ====================

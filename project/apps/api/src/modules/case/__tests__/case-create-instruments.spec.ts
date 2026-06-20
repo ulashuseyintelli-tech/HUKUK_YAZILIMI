@@ -84,6 +84,7 @@ describe('CaseService.createInstrumentsAndClaims (N3-wire)', () => {
     expect(claims[0].instrumentId).toBe('inst-1'); // K1 bağ: 1. ClaimItem → 1. CaseInstrument
     expect(claims[1].instrumentId).toBe('inst-2');
     expect(claims.every((c) => c.tenantId === 'tenant-1' && c.caseId === 'case-1')).toBe(true);
+    expect(claims.every((c) => c.metadata?.dueSync === undefined)).toBe(true);
     expect(total).toBe(3000); // principalAmount'a eklenecek
   });
 
