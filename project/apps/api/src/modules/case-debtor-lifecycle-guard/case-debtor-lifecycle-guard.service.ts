@@ -41,6 +41,11 @@ export class CaseDebtorLifecycleGuardService {
    * - AddressDiscoveryService.startResearch() → POST /address-discovery/research/:caseDebtorId/start (research start aktiflik kontrolü)
    * - AddressDiscoveryService.suggestNextAction() → GET /address-discovery/research/:caseDebtorId/suggestions (new-operation suggestion aktiflik kontrolü)
    * - AddressDiscoveryService.updateResearchStatus() → internal AddressResearch progress update aktiflik kontrolü
+   * - AssetQueryService.runQueries() → POST /asset-queries/debtor/:caseDebtorId/run (malvarlığı sorgusu aktiflik kontrolü)
+   * - UyapQueryService.createQuery() → POST /address-discovery/uyap-query (UYAP sorgusu aktiflik kontrolü)
+   * - InstitutionLetterService.createLetter() → POST /address-discovery/institution-letter (kurum yazısı aktiflik kontrolü)
+   * - ThirdPartyService.create() → POST /case-debtors/:caseDebtorId/third-parties (üçüncü şahıs aktiflik kontrolü)
+   * - ThirdPartyService.createExternalCase() → POST /case-debtors/:caseDebtorId/external-cases (dış dosya aktiflik kontrolü)
    * </remarks>
    */
   async assertActiveByCaseDebtorId(

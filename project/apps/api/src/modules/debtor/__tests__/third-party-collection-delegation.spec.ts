@@ -26,7 +26,8 @@ function buildService(coll: any) {
       update: jest.fn(async () => ({ id: 'ec1' })),
     },
   };
-  const svc = new ThirdPartyService(prisma, coll);
+  const caseDebtorLifecycleGuard = { assertActiveByCaseDebtorId: jest.fn() };
+  const svc = new ThirdPartyService(prisma, coll, caseDebtorLifecycleGuard as any);
   return { svc, prisma };
 }
 

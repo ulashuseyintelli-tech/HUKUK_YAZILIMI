@@ -12,6 +12,7 @@ import {
 import { CasePolicyEngine } from '../policy-engine/case-policy-engine.service';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { GateWarning } from '../policy-engine/types/policy-decision.interface';
+import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
 
 @Injectable()
 export class UyapQueryService {
@@ -19,6 +20,7 @@ export class UyapQueryService {
 
   constructor(
     private prisma: PrismaService,
+    private caseDebtorLifecycleGuard: CaseDebtorLifecycleGuardService,
     // ASSIGN: UYAP_QUERY soft-warning (advisory). @Optional → CPE inject edilemezse
     // fail-open (uyarı yok, sorgu akışı bozulmaz) — uyap.service/stage-trigger deseni.
     @Optional() @Inject(CasePolicyEngine) private readonly cpe?: CasePolicyEngine,
@@ -55,7 +57,13 @@ export class UyapQueryService {
   /**
    * UYAP sorgusu oluştur
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AddressDiscoveryController.createUyapQuery() → POST /address-discovery/uyap-query (UYAP sorgusu oluşturma)
+  /// </remarks>
   async createQuery(tenantId: string, userId: string, dto: CreateUyapQueryDto) {
+    await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, dto.caseDebtorId);
+
     // CaseDebtor'u doğrula
     const caseDebtor = await this.prisma.caseDebtor.findFirst({
       where: { id: dto.caseDebtorId },
