@@ -8,6 +8,7 @@ import {
 } from "lucide-react";
 import { api } from "@/lib/api";
 import { MAX_OCR_UPLOAD_BYTES, MAX_OCR_UPLOAD_LABEL } from "@/lib/upload-limits";
+import { nameMatchKey } from "@/lib/lawyer-match";
 import {
   Debtor, CaseDebtor, DebtorType, DebtorRole, NotificationMode,
   TebligatLegalMethod, TebligatDeliveryType,
@@ -196,14 +197,44 @@ export function selectablePartyRows(rows: PartyRow[]): PartyRow[] {
   return rows.filter((r) => !r.ignored && !r.added && isDebtorRole(r.draft.role));
 }
 
+// BUG-4: taranan ALACAKLI/lehtar ↔ case müvekkil(ler)i uyumsuzluğu (saf, export).
+export interface CreditorRef {
+  name: string;
+  identityNo?: string;
+}
+
+/**
+ * Eşleşmeyen ALACAKLI/lehtar adlarını döndürür (boş → uyarı yok). Karar (ulas):
+ * ad birincil (`nameMatchKey`, lib/lawyer-match — backend normalizePersonName ile birebir) +
+ * identityNo (10+ hane) GÜÇLÜ override (kimlik eşleşirse isim farkı önemsiz). NON-BLOCKING.
+ */
+export function detectPayeeMismatch(payees: CreditorRef[], creditors: CreditorRef[]): string[] {
+  if (payees.length === 0 || creditors.length === 0) return [];
+  const creditorKeys = new Set(creditors.map((c) => nameMatchKey(c.name)).filter(Boolean));
+  const creditorIds = new Set(
+    creditors.map((c) => (c.identityNo || "").replace(/\D/g, "")).filter((d) => d.length >= 10),
+  );
+  return payees
+    .filter((p) => {
+      const pid = (p.identityNo || "").replace(/\D/g, "");
+      if (pid.length >= 10 && creditorIds.has(pid)) return false; // identityNo güçlü-eşleşme
+      const key = nameMatchKey(p.name);
+      return key !== "" && !creditorKeys.has(key);
+    })
+    .map((p) => p.name)
+    .filter(Boolean);
+}
+
 interface DebtorStepProps {
   selectedDebtors: CaseDebtor[];
   onDebtorsChange: Dispatch<SetStateAction<CaseDebtor[]>>;
   onDebtInfoDetected?: (debtInfo: DebtDocumentResult["debtInfo"]) => void;
   onInstrumentsDetected?: (instruments: Instrument[]) => void;
+  // BUG-4: case müvekkil(ler)i — taranan ALACAKLI/lehtar ile karşılaştırma (mismatch uyarısı).
+  creditors?: CreditorRef[];
 }
 
-export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetected, onInstrumentsDetected }: DebtorStepProps) {
+export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetected, onInstrumentsDetected, creditors = [] }: DebtorStepProps) {
   const [existingDebtors, setExistingDebtors] = useState<Debtor[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -545,6 +576,14 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
     setWizardError(null);
   };
 
+  // BUG-4: taranan ALACAKLI/lehtar ↔ müvekkil uyumsuzluğu (CANLI; editlenmiş+yoksaylanmamış partyRows'tan).
+  const payeeMismatches = detectPayeeMismatch(
+    partyRows
+      .filter((r) => !r.ignored && r.draft.role === "ALACAKLI")
+      .map((r) => ({ name: r.draft.name, identityNo: r.draft.identityNo })),
+    creditors,
+  );
+
   // Drag & Drop handlers
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -695,6 +734,17 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
             <div className="p-1.5 bg-red-50 border border-red-200 rounded flex items-center gap-1 text-red-700 text-[10px]">
               <AlertTriangle className="h-3 w-3 flex-shrink-0" />
               {wizardError}
+            </div>
+          )}
+
+          {payeeMismatches.length > 0 && (
+            <div data-testid="payee-mismatch" className="p-1.5 bg-amber-50 border border-amber-300 rounded flex items-start gap-1 text-amber-800 text-[10px]">
+              <AlertTriangle className="h-3 w-3 flex-shrink-0 mt-0.5" />
+              <span>
+                Taranan alacaklı/lehtar (<strong>{payeeMismatches.join(", ")}</strong>) seçili
+                müvekkil(ler)le eşleşmiyor — OCR yanlış okumuş olabilir veya yanlış belge olabilir.
+                Kontrol edin.
+              </span>
             </div>
           )}
 
