@@ -125,6 +125,14 @@ class ApiClient {
     });
   }
 
+  // A2-min/A3 — OCR extraction feedback (PII'siz telemetri). Fire-and-forget caller'da .catch ile çağrılır.
+  async recordOcrExtractionFeedback(payload: any) {
+    return this.request<{ success: boolean; recorded: number }>("/ocr/extraction-feedback", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
   async updateCase(id: string, data: any) {
     return this.request<any>(`/cases/${id}`, {
       method: "PUT",
