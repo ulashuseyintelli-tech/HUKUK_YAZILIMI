@@ -9,6 +9,7 @@ import {
 import { api } from "@/lib/api";
 import { MAX_OCR_UPLOAD_BYTES, MAX_OCR_UPLOAD_LABEL } from "@/lib/upload-limits";
 import { nameMatchKey } from "@/lib/lawyer-match";
+import { buildExtractionFeedbackPayload } from "./ocr-feedback-telemetry";
 import {
   Debtor, CaseDebtor, DebtorType, DebtorRole, NotificationMode,
   TebligatLegalMethod, TebligatDeliveryType,
@@ -547,6 +548,19 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
     );
     if (decision.mode === "instruments") {
       onInstrumentsDetected?.(decision.instruments);
+      // A2-min/A3: PII'siz extraction feedback (fire-and-forget; ACCEPT/case akışını BLOKLAMAZ).
+      try {
+        const feedback = buildExtractionFeedbackPayload(
+          wizardResult.documentType,
+          wizardResult.instruments,
+          reviewRows,
+        );
+        if (feedback) {
+          void api.recordOcrExtractionFeedback(feedback).catch(() => {});
+        }
+      } catch {
+        /* telemetri hatası accept'i bloke etmez */
+      }
     } else if (onDebtInfoDetected && wizardResult.debtInfo) {
       onDebtInfoDetected(wizardResult.debtInfo);
     }
