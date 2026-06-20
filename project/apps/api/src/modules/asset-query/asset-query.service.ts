@@ -2,10 +2,14 @@ import { Injectable, NotFoundException, BadRequestException, ConflictException }
 import { PrismaService } from '../../prisma/prisma.service';
 import { AssetQueryType, AssetQueryJobStatus, AssetQueryStatus } from '@prisma/client';
 import { AssetQueryDTO, AssetSummaryDTO, RunAssetQueriesDTO, UpdateAssetQueryResultDTO } from './dto/asset-query.dto';
+import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
 
 @Injectable()
 export class AssetQueryService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private caseDebtorLifecycleGuard: CaseDebtorLifecycleGuardService,
+  ) {}
 
   // ==================== RUN QUERIES ====================
 
@@ -13,12 +17,18 @@ export class AssetQueryService {
    * Start asset queries for a debtor
    * Creates query records and returns job info
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AssetQueryController.runQueries() → POST /asset-queries/debtor/:caseDebtorId/run (malvarlığı sorgusu başlatma)
+  /// </remarks>
   async runQueries(
     tenantId: string,
     caseDebtorId: string,
     userId: string,
     dto: RunAssetQueriesDTO
   ): Promise<{ jobId: string; queries: AssetQueryDTO[] }> {
+    await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, caseDebtorId);
+
     // Verify caseDebtor exists and belongs to tenant
     const caseDebtor = await this.prisma.caseDebtor.findFirst({
       where: { id: caseDebtorId },

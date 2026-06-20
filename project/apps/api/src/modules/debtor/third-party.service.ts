@@ -12,6 +12,7 @@ import {
   RecordResponseDto,
 } from "./dto/third-party.dto";
 import { CollectionService } from "../collection/collection.service";
+import { CaseDebtorLifecycleGuardService } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service";
 
 @Injectable()
 export class ThirdPartyService {
@@ -19,6 +20,7 @@ export class ThirdPartyService {
     private prisma: PrismaService,
     // G3d: alacak haczi tahsilatını ana dosyaya kanonik yoldan yansıtır.
     private collectionService: CollectionService,
+    private caseDebtorLifecycleGuard: CaseDebtorLifecycleGuardService,
   ) {}
 
   // 89 İhbarname için 7 günlük cevap süresi
@@ -55,6 +57,8 @@ export class ThirdPartyService {
    * </remarks>
    */
   async create(tenantId: string, caseDebtorId: string, dto: CreateThirdPartyDto) {
+    await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, caseDebtorId);
+
     const caseDebtor = await this.prisma.caseDebtor.findFirst({
       where: { id: caseDebtorId },
       include: { case: true },
@@ -509,7 +513,13 @@ export class ThirdPartyService {
   /**
    * Yeni dış dosya ekle (alacak haczi)
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - ThirdPartyController.createExternalCase() → POST /case-debtors/:caseDebtorId/external-cases (alacak haczi dış dosya oluşturma)
+  /// </remarks>
   async createExternalCase(tenantId: string, caseDebtorId: string, dto: any) {
+    await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, caseDebtorId);
+
     const caseDebtor = await this.prisma.caseDebtor.findFirst({
       where: { id: caseDebtorId },
       include: { case: true },

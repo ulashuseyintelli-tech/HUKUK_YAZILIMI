@@ -31,6 +31,17 @@ describe('UyapQueryService.createQuery — UYAP_QUERY soft-warning (advisory, [P
     };
   }
 
+  function makeGuard() {
+    return {
+      assertActiveByCaseDebtorId: jest.fn(async () => ({
+        id: 'cd-1',
+        caseId: 'case-1',
+        debtorId: 'deb-1',
+        lifecycleStatus: 'ACTIVE',
+      })),
+    };
+  }
+
   const outageWarning = {
     code: 'UYAP_TEMPORARILY_UNAVAILABLE',
     message: 'UYAP geçici olarak erişilemiyor',
@@ -42,7 +53,7 @@ describe('UyapQueryService.createQuery — UYAP_QUERY soft-warning (advisory, [P
     const cpe = {
       canPerformAction: jest.fn(async () => ({ allowed: true, warnings: [outageWarning] })),
     };
-    const svc = new UyapQueryService(prisma as any, cpe as any);
+    const svc = new UyapQueryService(prisma as any, makeGuard() as any, cpe as any);
 
     const res: any = await svc.createQuery('t1', 'u1', dto);
 
@@ -59,7 +70,7 @@ describe('UyapQueryService.createQuery — UYAP_QUERY soft-warning (advisory, [P
   it('CPE uyarı yok → warnings boş, query oluşur', async () => {
     const prisma = makePrisma();
     const cpe = { canPerformAction: jest.fn(async () => ({ allowed: true, warnings: [] })) };
-    const svc = new UyapQueryService(prisma as any, cpe as any);
+    const svc = new UyapQueryService(prisma as any, makeGuard() as any, cpe as any);
 
     const res: any = await svc.createQuery('t1', 'u1', dto);
 
@@ -69,7 +80,7 @@ describe('UyapQueryService.createQuery — UYAP_QUERY soft-warning (advisory, [P
 
   it('CPE inject edilmemiş → fail-open: warnings boş, query oluşur, CPE çağrılmaz', async () => {
     const prisma = makePrisma();
-    const svc = new UyapQueryService(prisma as any); // cpe undefined
+    const svc = new UyapQueryService(prisma as any, makeGuard() as any); // cpe undefined
 
     const res: any = await svc.createQuery('t1', 'u1', dto);
 
@@ -84,7 +95,7 @@ describe('UyapQueryService.createQuery — UYAP_QUERY soft-warning (advisory, [P
         throw new Error('cpe patladı');
       }),
     };
-    const svc = new UyapQueryService(prisma as any, cpe as any);
+    const svc = new UyapQueryService(prisma as any, makeGuard() as any, cpe as any);
 
     const res: any = await svc.createQuery('t1', 'u1', dto);
 
@@ -101,7 +112,7 @@ describe('UyapQueryService.createQuery — UYAP_QUERY soft-warning (advisory, [P
         warnings: [outageWarning],
       })),
     };
-    const svc = new UyapQueryService(prisma as any, cpe as any);
+    const svc = new UyapQueryService(prisma as any, makeGuard() as any, cpe as any);
 
     const res: any = await svc.createQuery('t1', 'u1', dto);
 
@@ -113,7 +124,7 @@ describe('UyapQueryService.createQuery — UYAP_QUERY soft-warning (advisory, [P
     const prisma = makePrisma();
     prisma.caseDebtor.findFirst = jest.fn(async () => null) as any;
     const cpe = { canPerformAction: jest.fn() };
-    const svc = new UyapQueryService(prisma as any, cpe as any);
+    const svc = new UyapQueryService(prisma as any, makeGuard() as any, cpe as any);
 
     await expect(svc.createQuery('t1', 'u1', dto)).rejects.toThrow(NotFoundException);
     expect(cpe.canPerformAction).not.toHaveBeenCalled();
@@ -122,7 +133,7 @@ describe('UyapQueryService.createQuery — UYAP_QUERY soft-warning (advisory, [P
   it('aynı sorgu zaten var → BadRequest (mevcut davranış korunur)', async () => {
     const prisma = makePrisma();
     prisma.uyapQuery.findFirst = jest.fn(async () => ({ status: 'PENDING' })) as any;
-    const svc = new UyapQueryService(prisma as any);
+    const svc = new UyapQueryService(prisma as any, makeGuard() as any);
 
     await expect(svc.createQuery('t1', 'u1', dto)).rejects.toThrow(BadRequestException);
   });

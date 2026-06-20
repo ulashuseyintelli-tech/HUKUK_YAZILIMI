@@ -16,8 +16,16 @@ function build(siblings: any[]) {
       create: jest.fn().mockImplementation((a: any) => Promise.resolve({ id: 'NEW', ...a.data })),
     },
   };
-  const svc = new ThirdPartyService(prisma as any, {} as any);
-  return { svc, prisma };
+  const caseDebtorLifecycleGuard = {
+    assertActiveByCaseDebtorId: jest.fn().mockResolvedValue({
+      id: 'cd1',
+      caseId: 'case1',
+      debtorId: 'debtor1',
+      lifecycleStatus: 'ACTIVE',
+    }),
+  };
+  const svc = new ThirdPartyService(prisma as any, {} as any, caseDebtorLifecycleGuard as any);
+  return { svc, prisma, caseDebtorLifecycleGuard };
 }
 
 describe('RFA-008 ThirdPartyService.create dedup', () => {

@@ -1,6 +1,7 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { findOrCreateDebtorAddress } from '@/common/address-hash.util'; // RFA-006 adres dedup
+import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
 import {
   CreateInstitutionLetterDto,
   MarkLetterAsSentDto,
@@ -13,12 +14,21 @@ import {
 export class InstitutionLetterService {
   private readonly logger = new Logger(InstitutionLetterService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private caseDebtorLifecycleGuard: CaseDebtorLifecycleGuardService,
+  ) {}
 
   /**
    * Kurum yazısı oluştur
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AddressDiscoveryController.createInstitutionLetter() → POST /address-discovery/institution-letter (kurum yazısı oluşturma)
+  /// </remarks>
   async createLetter(tenantId: string, dto: CreateInstitutionLetterDto) {
+    await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, dto.caseDebtorId);
+
     // CaseDebtor'u doğrula
     const caseDebtor = await this.prisma.caseDebtor.findFirst({
       where: { id: dto.caseDebtorId },
