@@ -34,7 +34,9 @@ export class CaseDebtorLifecycleGuardService {
   /**
    * <remarks>
    * Çağrıldığı yerler:
-   * - Henüz yok → PR-L6a helper-only; writer guard bağlantıları sonraki PR'larda yapılacak.
+   * - CollectionService.validateCaseDebtorForCollectionInTx() → CollectionService.create() içinde tahsilat CaseDebtor aktiflik kontrolü
+   * - TebligatService.validateCreateCaseDebtorAddress() → TebligatService.create() içinde tebligat CaseDebtor aktiflik kontrolü
+   * - TebligatService.createMernisTebligat() → POST /tebligat/:id/create-mernis (MERNIS tebligatı CaseDebtor aktiflik kontrolü)
    * </remarks>
    */
   async assertActiveByCaseDebtorId(

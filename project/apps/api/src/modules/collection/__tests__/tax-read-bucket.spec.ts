@@ -31,7 +31,7 @@ describe('D K3 — read-helper TAX parent bucket', () => {
       },
       collection: { findMany: jest.fn(async () => []) },
     };
-    const svc = new CollectionService(prisma, {} as any, undefined);
+    const svc = new CollectionService(prisma, {} as any, {} as any, undefined);
 
     const bd = await svc.getCollectedBreakdown('t1', 'c1');
 

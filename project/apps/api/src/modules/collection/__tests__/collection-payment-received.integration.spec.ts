@@ -15,12 +15,13 @@
  *
  * Requires: DATABASE_URL pointing to test database with migrations applied.
  */
-import { PrismaClient } from '@prisma/client';
+import { CaseDebtorLifecycleStatus, PrismaClient } from '@prisma/client';
 import { BadRequestException } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { CollectionService } from '../collection.service';
 import { DomainEventIngestService } from '../../icrabot/domain-event-ingest';
 import { CreateCollectionDto, CollectionSource, CollectionType } from '../dto/collection.dto';
+import { CaseDebtorLifecycleGuardService } from '../../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
 
 const DATABASE_URL = process.env.DATABASE_URL ?? '';
 const describeIf = DATABASE_URL ? describe : describe.skip;
@@ -41,7 +42,11 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
     });
     await prisma.$connect();
     domainEventIngest = new DomainEventIngestService();
-    service = new CollectionService(prisma as any, domainEventIngest);
+    service = new CollectionService(
+      prisma as any,
+      domainEventIngest,
+      new CaseDebtorLifecycleGuardService(prisma as any)
+    );
   });
 
   afterEach(async () => {
@@ -192,6 +197,25 @@ describeIf('CollectionService — PAYMENT_RECEIVED Integration', () => {
       );
 
       expect(result.caseDebtorId).toBe(testCaseDebtorId);
+    });
+
+    it('rejects a passive CaseDebtor before creating collection, event, or outbox rows', async () => {
+      await prisma.caseDebtor.update({
+        where: { id: testCaseDebtorId },
+        data: { lifecycleStatus: CaseDebtorLifecycleStatus.PASSIVE },
+      });
+
+      await expect(
+        service.create(
+          testTenantId,
+          buildDto({ caseDebtorId: testCaseDebtorId }),
+          'test-user-1',
+        ),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      await expect(prisma.collection.count({ where: { tenantId: testTenantId } })).resolves.toBe(0);
+      await expect((prisma as any).icrabotTimelineEntry.count({ where: { tenantId: testTenantId } })).resolves.toBe(0);
+      await expect((prisma as any).icrabotOutboxAction.count({ where: { tenantId: testTenantId } })).resolves.toBe(0);
     });
 
     it('rejects orphan caseDebtorId before creating a collection', async () => {
