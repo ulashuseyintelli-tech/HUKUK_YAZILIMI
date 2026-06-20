@@ -7,6 +7,7 @@ import { CrossFileService } from './cross-file.service';
 import { ConfidenceScoreService } from './confidence-score.service';
 import { UyapQueryService } from './uyap-query.service';
 import { InstitutionLetterService } from './institution-letter.service';
+import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
 import { EmailProviderService } from '../notification/email-provider.service';
 import { 
   AddressSource, 
@@ -55,6 +56,7 @@ describeDb('AddressDiscoveryModule Integration Tests', () => {
         ConfidenceScoreService,
         UyapQueryService,
         InstitutionLetterService,
+        CaseDebtorLifecycleGuardService,
         PrismaService,
         {
           provide: EmailProviderService,

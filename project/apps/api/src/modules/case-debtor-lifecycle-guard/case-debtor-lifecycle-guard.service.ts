@@ -37,6 +37,10 @@ export class CaseDebtorLifecycleGuardService {
    * - CollectionService.validateCaseDebtorForCollectionInTx() → CollectionService.create() içinde tahsilat CaseDebtor aktiflik kontrolü
    * - TebligatService.validateCreateCaseDebtorAddress() → TebligatService.create() içinde tebligat CaseDebtor aktiflik kontrolü
    * - TebligatService.createMernisTebligat() → POST /tebligat/:id/create-mernis (MERNIS tebligatı CaseDebtor aktiflik kontrolü)
+   * - AddressDiscoveryService.getOrCreateResearch() → AddressResearch hidden create aktiflik kontrolü
+   * - AddressDiscoveryService.startResearch() → POST /address-discovery/research/:caseDebtorId/start (research start aktiflik kontrolü)
+   * - AddressDiscoveryService.suggestNextAction() → GET /address-discovery/research/:caseDebtorId/suggestions (new-operation suggestion aktiflik kontrolü)
+   * - AddressDiscoveryService.updateResearchStatus() → internal AddressResearch progress update aktiflik kontrolü
    * </remarks>
    */
   async assertActiveByCaseDebtorId(
@@ -62,7 +66,7 @@ export class CaseDebtorLifecycleGuardService {
   /**
    * <remarks>
    * Çağrıldığı yerler:
-   * - Henüz yok → PR-L6a helper-only; FK'siz writer guard bağlantıları sonraki PR'larda yapılacak.
+   * - AddressTaskService.createTask() → POST /address-tasks/create (FK'siz AddressTask manual create aktiflik kontrolü)
    * </remarks>
    */
   async assertActiveByCaseAndDebtor(

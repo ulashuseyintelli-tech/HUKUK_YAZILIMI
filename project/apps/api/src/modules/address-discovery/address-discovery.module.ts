@@ -9,9 +9,10 @@ import { CrossFileService } from './cross-file.service';
 import { UyapQueryService } from './uyap-query.service';
 import { InstitutionLetterService } from './institution-letter.service';
 import { PolicyEngineModule } from '../policy-engine/policy-engine.module';
+import { CaseDebtorLifecycleGuardModule } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.module';
 
 @Module({
-  imports: [PrismaModule, NotificationModule, forwardRef(() => PolicyEngineModule)],
+  imports: [PrismaModule, NotificationModule, forwardRef(() => PolicyEngineModule), CaseDebtorLifecycleGuardModule],
   controllers: [AddressDiscoveryController],
   providers: [
     AddressDiscoveryService,

@@ -4,11 +4,11 @@ import * as fc from 'fast-check';
 import { AddressTaskService } from './address-task.service';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClientNotificationService } from '../client-notification/client-notification.service';
+import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
 import {
   AddressTaskType,
-  AddressTaskStatus,
   AddressTaskResultType,
-  AddressTaskCancellationReason,
+  AddressTaskFailureReason,
 } from '@prisma/client';
 
 // Mock PrismaService
@@ -52,6 +52,10 @@ const mockClientNotificationService = {
   sendEmail: jest.fn(),
 };
 
+const mockCaseDebtorLifecycleGuard = {
+  assertActiveByCaseAndDebtor: jest.fn(),
+};
+
 describe('AddressTaskService', () => {
   let service: AddressTaskService;
 
@@ -61,11 +65,18 @@ describe('AddressTaskService', () => {
         AddressTaskService,
         { provide: PrismaService, useValue: mockPrismaService },
         { provide: ClientNotificationService, useValue: mockClientNotificationService },
+        { provide: CaseDebtorLifecycleGuardService, useValue: mockCaseDebtorLifecycleGuard },
       ],
     }).compile();
 
     service = module.get<AddressTaskService>(AddressTaskService);
     jest.clearAllMocks();
+    mockCaseDebtorLifecycleGuard.assertActiveByCaseAndDebtor.mockResolvedValue({
+      id: 'cd-1',
+      caseId: 'case-1',
+      debtorId: 'debtor-1',
+      lifecycleStatus: 'ACTIVE',
+    });
   });
 
   // ============================================================================
@@ -136,7 +147,9 @@ describe('AddressTaskService', () => {
       // caseId+debtorId aynı tenant'ta (ASSIGN-1 guard geçer) ama CaseDebtor satırı YOK.
       mockPrismaService.case.findFirst.mockResolvedValue({ id: 'case-1' });
       mockPrismaService.debtor.findFirst.mockResolvedValue({ id: 'debtor-1' });
-      mockPrismaService.caseDebtor.findFirst.mockResolvedValue(null);
+      mockCaseDebtorLifecycleGuard.assertActiveByCaseAndDebtor.mockRejectedValueOnce(
+        new NotFoundException('Dosya borçlusu bulunamadı.'),
+      );
 
       await expect(service.createTask(params)).rejects.toBeInstanceOf(BadRequestException);
 
@@ -163,6 +176,86 @@ describe('AddressTaskService', () => {
       const result = await service.createTask(params);
 
       expect(result?.id).toBe('task-1');
+      expect(mockCaseDebtorLifecycleGuard.assertActiveByCaseAndDebtor).toHaveBeenCalledWith(
+        'tenant-1',
+        'case-1',
+        'debtor-1',
+      );
+    });
+
+    it('enforceCaseDebtorLink=true + passive CaseDebtor → task ve audit oluşturmadan bloklar', async () => {
+      const params = {
+        tenantId: 'tenant-1',
+        caseId: 'case-1',
+        debtorId: 'debtor-1',
+        taskType: 'CLIENT_REQUEST_DEBTOR_ADDRESSES' as AddressTaskType,
+        enforceCaseDebtorLink: true,
+      };
+
+      mockPrismaService.case.findFirst.mockResolvedValue({ id: 'case-1' });
+      mockPrismaService.debtor.findFirst.mockResolvedValue({ id: 'debtor-1' });
+      mockCaseDebtorLifecycleGuard.assertActiveByCaseAndDebtor.mockRejectedValueOnce(
+        new BadRequestException('Pasif dosya borçlusu yeni operasyon hedefi olamaz.'),
+      );
+
+      await expect(service.createTask(params)).rejects.toBeInstanceOf(BadRequestException);
+
+      expect(mockPrismaService.addressTask.findFirst).not.toHaveBeenCalled();
+      expect(mockPrismaService.addressTask.create).not.toHaveBeenCalled();
+      expect(mockPrismaService.addressAuditLog.create).not.toHaveBeenCalled();
+    });
+
+    it('same debtor passive in one case but active in another case passes for the active membership', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue({ id: 'case-active' });
+      mockPrismaService.debtor.findFirst.mockResolvedValue({ id: 'debtor-1' });
+      mockPrismaService.addressTask.findFirst.mockResolvedValue(null);
+      mockPrismaService.addressTask.create.mockResolvedValue({
+        id: 'task-active',
+        tenantId: 'tenant-1',
+        caseId: 'case-active',
+        debtorId: 'debtor-1',
+        taskType: 'CLIENT_REQUEST_DEBTOR_ADDRESSES',
+        status: 'PENDING',
+      });
+      mockPrismaService.addressAuditLog.create.mockResolvedValue({});
+      mockCaseDebtorLifecycleGuard.assertActiveByCaseAndDebtor.mockImplementation(
+        (_tenantId: string, caseId: string) => {
+          if (caseId === 'case-passive') {
+            return Promise.reject(new BadRequestException('Pasif dosya borçlusu yeni operasyon hedefi olamaz.'));
+          }
+          return Promise.resolve({
+            id: 'cd-active',
+            caseId,
+            debtorId: 'debtor-1',
+            lifecycleStatus: 'ACTIVE',
+          });
+        },
+      );
+
+      await expect(
+        service.createTask({
+          tenantId: 'tenant-1',
+          caseId: 'case-passive',
+          debtorId: 'debtor-1',
+          taskType: 'CLIENT_REQUEST_DEBTOR_ADDRESSES' as AddressTaskType,
+          enforceCaseDebtorLink: true,
+        }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+
+      const activeResult = await service.createTask({
+        tenantId: 'tenant-1',
+        caseId: 'case-active',
+        debtorId: 'debtor-1',
+        taskType: 'CLIENT_REQUEST_DEBTOR_ADDRESSES' as AddressTaskType,
+        enforceCaseDebtorLink: true,
+      });
+
+      expect(activeResult?.id).toBe('task-active');
+      expect(mockPrismaService.addressTask.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ caseId: 'case-active', debtorId: 'debtor-1' }),
+        }),
+      );
     });
 
     it('bayrak GEÇİLMEZSE (iç çağrı) + CaseDebtor YOK olsa bile → görev oluşturulur (scheduler/workflow etkilenmez)', async () => {
@@ -184,8 +277,8 @@ describe('AddressTaskService', () => {
       const result = await service.createTask(params);
 
       expect(result?.id).toBe('task-2');
-      // Bayrak yokken CaseDebtor sorgusu HİÇ yapılmaz (eski davranış birebir korunur).
-      expect(mockPrismaService.caseDebtor.findFirst).not.toHaveBeenCalled();
+      // Bayrak yokken lifecycle guard HİÇ yapılmaz (scheduler/internal davranış korunur).
+      expect(mockCaseDebtorLifecycleGuard.assertActiveByCaseAndDebtor).not.toHaveBeenCalled();
     });
   });
 
@@ -403,6 +496,82 @@ describe('AddressTaskService', () => {
     });
   });
 
+  describe('PR-L6c passive guard scope for existing task closures', () => {
+    it('complete/cancel/fail existing tasks without lifecycle guard', async () => {
+      mockPrismaService.addressTask.update
+        .mockResolvedValueOnce({
+          id: 'task-complete',
+          tenantId: 'tenant-1',
+          caseId: 'case-1',
+          debtorId: 'debtor-1',
+          status: 'DONE',
+          resultType: 'POSITIVE',
+        })
+        .mockResolvedValueOnce({
+          id: 'task-cancel',
+          tenantId: 'tenant-1',
+          caseId: 'case-1',
+          debtorId: 'debtor-1',
+          status: 'CANCELLED',
+          cancellationReason: 'CASE_CLOSED',
+        })
+        .mockResolvedValueOnce({
+          id: 'task-fail',
+          tenantId: 'tenant-1',
+          caseId: 'case-1',
+          debtorId: 'debtor-1',
+          status: 'FAILED',
+          failureReason: 'SLA_EXCEEDED',
+        });
+      mockPrismaService.addressAuditLog.create.mockResolvedValue({});
+
+      await expect(
+        service.completeTask('task-complete', { resultType: 'POSITIVE' as AddressTaskResultType }),
+      ).resolves.toMatchObject({ status: 'DONE' });
+      await expect(service.cancelTask('task-cancel', 'CASE_CLOSED')).resolves.toMatchObject({
+        status: 'CANCELLED',
+      });
+      await expect(
+        service.failTask('task-fail', AddressTaskFailureReason.SLA_EXCEEDED),
+      ).resolves.toMatchObject({ status: 'FAILED' });
+
+      expect(mockCaseDebtorLifecycleGuard.assertActiveByCaseAndDebtor).not.toHaveBeenCalled();
+    });
+
+    it('autoComplete and confirmReceived existing task closures do not require lifecycle guard', async () => {
+      mockPrismaService.addressTask.findFirst
+        .mockResolvedValueOnce({
+          id: 'task-request',
+          tenantId: 'tenant-1',
+          caseId: 'case-1',
+          debtorId: 'debtor-1',
+          taskType: 'CLIENT_REQUEST_DEBTOR_ADDRESSES',
+          status: 'WAITING_EXTERNAL',
+        })
+        .mockResolvedValueOnce({
+          id: 'task-confirm',
+          tenantId: 'tenant-1',
+          caseId: 'case-1',
+          debtorId: 'debtor-1',
+          status: 'WAITING_EXTERNAL',
+        });
+      mockPrismaService.addressTask.update
+        .mockResolvedValueOnce({ status: 'DONE', resultType: 'POSITIVE' })
+        .mockResolvedValueOnce({ status: 'DONE', resultType: 'POSITIVE' });
+      mockPrismaService.addressTask.updateMany.mockResolvedValue({ count: 0 });
+      mockPrismaService.addressAuditLog.create.mockResolvedValue({});
+
+      await expect(
+        service.autoCompleteOnAddressReceived('tenant-1', 'case-1', 'debtor-1', 'CLIENT_REPLY'),
+      ).resolves.toEqual({ tasksCompleted: 1, tasksCancelled: 0 });
+      await expect(service.confirmReceivedByOperator('task-confirm', 'operator-1', 'tenant-1')).resolves.toMatchObject({
+        status: 'DONE',
+      });
+
+      expect(mockCaseDebtorLifecycleGuard.assertActiveByCaseAndDebtor).not.toHaveBeenCalled();
+    });
+  });
+
   // ============================================================================
   // WORKFLOW TRIGGERS
   // ============================================================================
@@ -420,6 +589,58 @@ describe('AddressTaskService', () => {
       const result = await service.triggerAddressWorkflowForCase('tenant-1', 'case-1');
 
       expect(result.skippedDuplicate).toBe(true);
+    });
+
+    it('workflow mixed active/passive case debtors creates task only for active membership', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue({ id: 'case-1', fileNumber: 'F1', caseClients: [] });
+      mockPrismaService.addressAuditLog.findFirst.mockResolvedValue(null);
+      mockPrismaService.caseDebtor.findMany.mockResolvedValue([
+        {
+          id: 'cd-active',
+          caseId: 'case-1',
+          debtorId: 'debtor-active',
+          lifecycleStatus: 'ACTIVE',
+          debtor: { id: 'debtor-active', name: 'Active Debtor', type: 'INDIVIDUAL' },
+        },
+        {
+          id: 'cd-passive',
+          caseId: 'case-1',
+          debtorId: 'debtor-passive',
+          lifecycleStatus: 'PASSIVE',
+          debtor: { id: 'debtor-passive', name: 'Passive Debtor', type: 'INDIVIDUAL' },
+        },
+      ]);
+      mockPrismaService.debtor.findFirst.mockResolvedValue({
+        id: 'debtor-active',
+        name: 'Active Debtor',
+        addressIntakeMode: 'UNKNOWN',
+      });
+      mockPrismaService.addressTask.findFirst.mockResolvedValue(null);
+      mockPrismaService.addressTask.create.mockResolvedValue({
+        id: 'task-active',
+        tenantId: 'tenant-1',
+        caseId: 'case-1',
+        debtorId: 'debtor-active',
+        taskType: 'CLIENT_REQUEST_DEBTOR_ADDRESSES',
+        status: 'PENDING',
+      });
+      mockPrismaService.addressAuditLog.create.mockResolvedValue({});
+
+      const result = await service.triggerAddressWorkflowForCase('tenant-1', 'case-1');
+
+      expect(result.tasksCreated).toBe(1);
+      expect(result.debtorsProcessed).toBe(2);
+      expect(mockPrismaService.addressTask.create).toHaveBeenCalledTimes(1);
+      expect(mockPrismaService.addressTask.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ debtorId: 'debtor-active' }),
+        }),
+      );
+      expect(mockPrismaService.addressTask.create).not.toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ debtorId: 'debtor-passive' }),
+        }),
+      );
     });
   });
 

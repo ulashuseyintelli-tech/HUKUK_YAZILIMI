@@ -3,6 +3,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { AddressResearchStatus, DebtorType } from '@prisma/client';
 import { ClientInfoRequestService } from './client-info-request.service';
 import { CrossFileService } from './cross-file.service';
+import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
 
 /**
  * UYAP Sorgu Hiyerarşisi
@@ -50,26 +51,25 @@ export class AddressDiscoveryService {
     private prisma: PrismaService,
     private clientInfoRequestService: ClientInfoRequestService,
     private crossFileService: CrossFileService,
+    private caseDebtorLifecycleGuard: CaseDebtorLifecycleGuardService,
   ) {}
 
   /**
    * Araştırma durumunu getir veya oluştur
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AddressDiscoveryService.getResearchStatus() → GET /address-discovery/research/:caseDebtorId (read-looking status; may create missing research)
+  /// - AddressDiscoveryService.startResearch() → POST /address-discovery/research/:caseDebtorId/start (research start)
+  /// - AddressDiscoveryService.updateResearchStatus() → internal research progress update
+  /// - AddressDiscoveryService.completeResearch() → PUT /address-discovery/research/:caseDebtorId/complete (historical closure)
+  /// - AddressDiscoveryService.markAsExhausted() → PUT /address-discovery/research/:caseDebtorId/exhausted (historical closure)
+  /// </remarks>
   async getOrCreateResearch(tenantId: string, caseDebtorId: string) {
-    let research = await this.prisma.addressResearch.findUnique({
-      where: { caseDebtorId },
-    });
+    let research = await this.findResearchForTenant(tenantId, caseDebtorId);
 
     if (!research) {
-      // CaseDebtor'u doğrula
-      const caseDebtor = await this.prisma.caseDebtor.findFirst({
-        where: { id: caseDebtorId },
-        include: { case: { select: { tenantId: true } } },
-      });
-
-      if (!caseDebtor || caseDebtor.case.tenantId !== tenantId) {
-        throw new NotFoundException('Dosya borçlusu bulunamadı');
-      }
+      await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, caseDebtorId);
 
       research = await this.prisma.addressResearch.create({
         data: {
@@ -86,12 +86,17 @@ export class AddressDiscoveryService {
   /**
    * Araştırma durumunu getir (detaylı)
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AddressDiscoveryController.getResearchStatus() → GET /address-discovery/research/:caseDebtorId (research status card)
+  /// - AddressDiscoveryService.suggestNextAction() → GET /address-discovery/research/:caseDebtorId/suggestions (suggestion calculation)
+  /// </remarks>
   async getResearchStatus(tenantId: string, caseDebtorId: string) {
     const research = await this.getOrCreateResearch(tenantId, caseDebtorId);
 
     // İlgili verileri al
-    const caseDebtor = await this.prisma.caseDebtor.findUnique({
-      where: { id: caseDebtorId },
+    const caseDebtor = await this.prisma.caseDebtor.findFirst({
+      where: { id: caseDebtorId, case: { tenantId } },
       include: {
         debtor: {
           select: {
@@ -117,41 +122,45 @@ export class AddressDiscoveryService {
       },
     });
 
+    if (!caseDebtor) {
+      throw new NotFoundException('Dosya borçlusu bulunamadı');
+    }
+
     // Cross-file adres sayısı
     const crossFileCount = await this.crossFileService.getCrossFileAddressCount(
       tenantId,
-      caseDebtor!.debtor.id,
-      caseDebtor!.case.id,
+      caseDebtor.debtor.id,
+      caseDebtor.case.id,
     );
 
     // Müvekkil bilgi talepleri
     const clientInfoRequests = await this.prisma.clientInfoRequest.findMany({
-      where: { caseId: caseDebtor!.case.id },
+      where: { caseId: caseDebtor.case.id },
       select: { status: true },
     });
 
     // İstatistikleri hesapla
-    const completedUyapQueries = caseDebtor!.uyapQueries.filter(q => q.status === 'COMPLETED').length;
-    const totalUyapQueries = caseDebtor!.uyapQueries.length;
-    const sentInstitutionLetters = caseDebtor!.institutionLetters.filter(l => l.status !== 'DRAFT').length;
+    const completedUyapQueries = caseDebtor.uyapQueries.filter(q => q.status === 'COMPLETED').length;
+    const totalUyapQueries = caseDebtor.uyapQueries.length;
+    const sentInstitutionLetters = caseDebtor.institutionLetters.filter(l => l.status !== 'DRAFT').length;
     const respondedClientRequests = clientInfoRequests.filter(r => r.status === 'RESPONDED').length;
 
     return {
       ...research,
-      debtor: caseDebtor!.debtor,
-      case: caseDebtor!.case,
-      uyapQueries: caseDebtor!.uyapQueries, // Include for suggestNextAction
+      debtor: caseDebtor.debtor,
+      case: caseDebtor.case,
+      uyapQueries: caseDebtor.uyapQueries, // Include for suggestNextAction
       statistics: {
-        totalAddresses: caseDebtor!.debtor.debtorAddresses.length,
-        verifiedAddresses: caseDebtor!.debtor.debtorAddresses.filter(a => a.verified).length,
-        failedNotifications: caseDebtor!.serviceHistory.length,
+        totalAddresses: caseDebtor.debtor.debtorAddresses.length,
+        verifiedAddresses: caseDebtor.debtor.debtorAddresses.filter(a => a.verified).length,
+        failedNotifications: caseDebtor.serviceHistory.length,
         crossFileAddresses: crossFileCount,
         uyapQueries: {
           total: totalUyapQueries,
           completed: completedUyapQueries,
         },
         institutionLetters: {
-          total: caseDebtor!.institutionLetters.length,
+          total: caseDebtor.institutionLetters.length,
           sent: sentInstitutionLetters,
         },
         clientInfoRequests: {
@@ -165,7 +174,12 @@ export class AddressDiscoveryService {
   /**
    * Araştırmayı başlat
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AddressDiscoveryController.startResearch() → POST /address-discovery/research/:caseDebtorId/start (start address research)
+  /// </remarks>
   async startResearch(tenantId: string, caseDebtorId: string) {
+    await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, caseDebtorId);
     const research = await this.getOrCreateResearch(tenantId, caseDebtorId);
 
     if (research.status !== 'NOT_STARTED') {
@@ -184,7 +198,12 @@ export class AddressDiscoveryService {
   /**
    * Sonraki aksiyonu öner
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AddressDiscoveryController.getSuggestions() → GET /address-discovery/research/:caseDebtorId/suggestions (next action suggestions)
+  /// </remarks>
   async suggestNextAction(tenantId: string, caseDebtorId: string): Promise<ResearchSuggestion[]> {
+    await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, caseDebtorId);
     const status = await this.getResearchStatus(tenantId, caseDebtorId);
     const suggestions: ResearchSuggestion[] = [];
 
@@ -344,6 +363,10 @@ export class AddressDiscoveryService {
   /**
    * Araştırma durumunu güncelle
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AddressDiscoveryService.updateResearchStatus() → internal research progress update
+  /// </remarks>
   async updateResearchStatus(
     tenantId: string,
     caseDebtorId: string,
@@ -356,6 +379,7 @@ export class AddressDiscoveryService {
       failedNotifications: number;
     }>,
   ) {
+    await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, caseDebtorId);
     const research = await this.getOrCreateResearch(tenantId, caseDebtorId);
 
     return this.prisma.addressResearch.update({
@@ -367,6 +391,10 @@ export class AddressDiscoveryService {
   /**
    * Araştırmayı tamamla
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AddressDiscoveryController.completeResearch() → PUT /address-discovery/research/:caseDebtorId/complete (historical closure)
+  /// </remarks>
   async completeResearch(tenantId: string, caseDebtorId: string) {
     const research = await this.getOrCreateResearch(tenantId, caseDebtorId);
 
@@ -382,6 +410,10 @@ export class AddressDiscoveryService {
   /**
    * Araştırmayı tükendi olarak işaretle
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AddressDiscoveryController.markAsExhausted() → PUT /address-discovery/research/:caseDebtorId/exhausted (historical closure)
+  /// </remarks>
   async markAsExhausted(tenantId: string, caseDebtorId: string) {
     const research = await this.getOrCreateResearch(tenantId, caseDebtorId);
 
@@ -400,5 +432,15 @@ export class AddressDiscoveryService {
   private getQueryCode(queryType: string): string {
     const query = QUERY_HIERARCHY.find(q => q.type === queryType);
     return query?.code || '';
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AddressDiscoveryService.getOrCreateResearch() → tenant-safe existing AddressResearch lookup before optional create
+  /// </remarks>
+  private async findResearchForTenant(tenantId: string, caseDebtorId: string) {
+    return this.prisma.addressResearch.findFirst({
+      where: { tenantId, caseDebtorId },
+    });
   }
 }

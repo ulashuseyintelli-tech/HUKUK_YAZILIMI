@@ -4,9 +4,10 @@ import { ClientNotificationModule } from '../client-notification/client-notifica
 import { AddressTaskService } from './address-task.service';
 import { AddressTaskController } from './address-task.controller';
 import { AddressTaskSchedulerService } from './address-task-scheduler.service';
+import { CaseDebtorLifecycleGuardModule } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.module';
 
 @Module({
-  imports: [PrismaModule, ClientNotificationModule],
+  imports: [PrismaModule, ClientNotificationModule, CaseDebtorLifecycleGuardModule],
   controllers: [AddressTaskController],
   providers: [AddressTaskService, AddressTaskSchedulerService],
   exports: [AddressTaskService, AddressTaskSchedulerService],
