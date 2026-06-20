@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, type Dispatch, type SetStateAction } from "react";
 import { 
   Search, Users, Building2, Landmark, X, AlertCircle,
   ScanLine, Sparkles, Upload, FileText, Loader2, CheckCircle,
@@ -83,9 +83,97 @@ const DocumentTypeLabels: Record<string, string> = {
   DIGER: "Diğer",
 };
 
+/**
+ * BUG-2a — Sihirbazda tespit edilen `party` → backend CreateDebtorDto'ya UYUMLU payload.
+ * Test edilebilirlik için export edilir (kapsam: tek prod dosyası → ayrı lib açılmadı).
+ *
+ * Eski kod `name` / `identityNo` / `type:"WORK"` / `fullAddress` gönderiyordu; backend
+ * whitelist + forbidNonWhitelisted olduğundan bunlar 400'lerdi. Burada DTO alan adlarına
+ * map edilir: firstName/lastName | companyName | institutionName · tckn/vkn · addressType/street.
+ *
+ * INDIVIDUAL'da ad+soyad ZORUNLU (backend validateDebtorByType). Ayrıştırılamazsa { ok:false }
+ * döner → caller POST ETMEZ ve sahte soyad ("—") YAZMAZ (karar: ulas).
+ */
+export type WizardDebtorBuildResult =
+  | { ok: true; payload: Record<string, unknown> }
+  | { ok: false; error: string };
+
+export function buildWizardDebtorPayload(
+  party: DebtDocumentResult["parties"][0],
+): WizardDebtorBuildResult {
+  const debtorType =
+    party.type === "INDIVIDUAL"
+      ? DebtorType.INDIVIDUAL
+      : party.type === "COMPANY"
+      ? DebtorType.COMPANY
+      : DebtorType.PUBLIC_INSTITUTION;
+  // BUG-1/OCR NOTU: multi-instrument akışı keşideciyi DAİMA INDIVIDUAL etiketliyor
+  // (ocr.service buildDebtResultFromInstruments). Bir A.Ş. çeki bu yüzden geçici olarak
+  // gerçek-kişi gibi kaydolabilir; party-type düzeltmesi BUG-1/OCR kapsamı, bu PR'da DOKUNULMAZ.
+
+  const rawName = (party.name || "").trim();
+
+  const nameFields: {
+    firstName?: string;
+    lastName?: string;
+    companyName?: string;
+    institutionName?: string;
+  } = {};
+  if (debtorType === DebtorType.INDIVIDUAL) {
+    const tokens = rawName.split(/\s+/).filter(Boolean);
+    if (tokens.length < 2) {
+      return {
+        ok: false,
+        error: `"${rawName || "İsimsiz"}" için ad ve soyad ayrıştırılamadı. Lütfen manuel ekleyin/düzeltin.`,
+      };
+    }
+    nameFields.lastName = tokens[tokens.length - 1];
+    nameFields.firstName = tokens.slice(0, -1).join(" ");
+  } else if (debtorType === DebtorType.COMPANY) {
+    if (!rawName) return { ok: false, error: "Şirket adı okunamadı. Lütfen manuel ekleyin." };
+    nameFields.companyName = rawName;
+  } else {
+    if (!rawName) return { ok: false, error: "Kurum adı okunamadı. Lütfen manuel ekleyin." };
+    nameFields.institutionName = rawName;
+  }
+
+  // Kimlik: 11 hane → tckn (gerçek kişi), 10 hane → vkn (tüzel). Aksi halde gönderilmez.
+  const idDigits = (party.identityNo || "").replace(/\D/g, "");
+  const identity: { tckn?: string; vkn?: string } = {};
+  if (debtorType === DebtorType.INDIVIDUAL && idDigits.length === 11) identity.tckn = idDigits;
+  else if (debtorType === DebtorType.COMPANY && idDigits.length === 10) identity.vkn = idDigits;
+
+  // Adres: backend CreateDebtorAddressDto → addressType(enum) + street + city ZORUNLU.
+  // Yalnız hem adres hem şehir varsa gönder ("WORK" enum'da yok → "IS").
+  const addresses =
+    party.address && party.city
+      ? [
+          {
+            addressType: "IS",
+            street: party.address,
+            city: party.city,
+            district: party.district,
+            isPrimary: true,
+          },
+        ]
+      : [];
+
+  return {
+    ok: true,
+    payload: {
+      type: debtorType,
+      ...nameFields,
+      ...identity,
+      ...(party.phone ? { phone: party.phone } : {}),
+      addresses,
+      forceCreate: true,
+    },
+  };
+}
+
 interface DebtorStepProps {
   selectedDebtors: CaseDebtor[];
-  onDebtorsChange: (debtors: CaseDebtor[]) => void;
+  onDebtorsChange: Dispatch<SetStateAction<CaseDebtor[]>>;
   onDebtInfoDetected?: (debtInfo: DebtDocumentResult["debtInfo"]) => void;
   onInstrumentsDetected?: (instruments: Instrument[]) => void;
 }
@@ -298,24 +386,16 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
 
   // Sihirbaz: Parti kabul et (borçlu olarak ekle)
   const handleAcceptParty = async (party: DebtDocumentResult["parties"][0]) => {
-    // Önce borçlu rehberine kaydet
+    // BUG-2a: backend-uyumlu payload üret. Ad/soyad ayrıştırılamazsa POST ETME, net hata göster.
+    setWizardError(null);
+    const built = buildWizardDebtorPayload(party);
+    if (!built.ok) {
+      setWizardError(built.error);
+      return;
+    }
     try {
-      const debtorData = {
-        name: party.name,
-        type: party.type === "INDIVIDUAL" ? DebtorType.INDIVIDUAL : 
-              party.type === "COMPANY" ? DebtorType.COMPANY : DebtorType.PUBLIC_INSTITUTION,
-        identityNo: party.identityNo,
-        phone: party.phone,
-        addresses: party.address ? [{
-          type: "WORK",
-          fullAddress: party.address,
-          city: party.city,
-          district: party.district,
-          isPrimary: true,
-        }] : [],
-      };
       
-      const response = await api.post("/debtors", debtorData);
+      const response = await api.post("/debtors", built.payload);
       const savedDebtor = response.data?.data || response.data;
       
       // Dosyaya ekle
@@ -348,8 +428,10 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
         isNew: false,
       };
       
-      onDebtorsChange([...selectedDebtors, newCaseDebtor]);
-      
+      // BUG-2b: stale-closure → functional update. Bulk loop'ta her parti TAZE prev'e eklenir
+      // (eski [...selectedDebtors, x] yalnız SONUNCU borçluyu bırakıyordu).
+      onDebtorsChange((prev) => [...prev, newCaseDebtor]);
+
       // Borçlu listesini yenile
       await loadDebtors();
     } catch (err: any) {
@@ -539,6 +621,14 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
               <X className="h-4 w-4 text-amber-600" />
             </button>
           </div>
+
+          {/* BUG-2: sonuç panelinde de hata göster (ör. tek-kelime isim → POST yok + uyarı). */}
+          {wizardError && (
+            <div className="p-1.5 bg-red-50 border border-red-200 rounded flex items-center gap-1 text-red-700 text-[10px]">
+              <AlertTriangle className="h-3 w-3 flex-shrink-0" />
+              {wizardError}
+            </div>
+          )}
 
           {wizardResult.parties.length > 0 && (
             <div className="flex flex-wrap gap-1">
