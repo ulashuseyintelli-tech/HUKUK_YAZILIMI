@@ -647,22 +647,23 @@ export class DebtorService {
     return result;
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DebtorController.delete() → DELETE /debtors/:id (borçlu hard-delete preflight)
+  /// </remarks>
   async delete(tenantId: string, id: string) {
-    const debtor = await this.findOne(tenantId, id);
+    await this.findOne(tenantId, id);
 
-    // Check for active case associations
-    const activeCases = await this.prisma.caseDebtor.count({
+    const caseDebtorCount = await this.prisma.caseDebtor.count({
       where: {
         debtorId: id,
-        case: {
-          caseStatus: { in: ["DERDEST", "ISLEMDE", "DERKENAR"] },
-        },
+        case: { tenantId },
       },
     });
 
-    if (activeCases > 0) {
+    if (caseDebtorCount > 0) {
       throw new BadRequestException(
-        `Bu borçlu ${activeCases} aktif takipte yer almaktadır. Silmeden önce takiplerden çıkarılmalıdır.`
+        `Bu borçlu ${caseDebtorCount} dosya/tarihçe kaydıyla bağlantılıdır. Dosya bağlantısı veya tarihçe varken borçlu silinemez.`
       );
     }
 
