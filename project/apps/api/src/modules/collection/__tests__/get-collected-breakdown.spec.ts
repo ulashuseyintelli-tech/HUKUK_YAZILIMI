@@ -10,7 +10,7 @@ import { AllocationType } from '../dto/collection.dto';
 import { mapClaimItemTypeToAllocationType } from '../allocation-read.helper';
 
 function buildService(prisma: any) {
-  return new CollectionService(prisma, {} as any, undefined);
+  return new CollectionService(prisma, {} as any, {} as any, undefined);
 }
 
 describe('CollectionService.getCollectedBreakdown (G3b per-case single source)', () => {

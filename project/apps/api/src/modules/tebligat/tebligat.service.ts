@@ -7,6 +7,7 @@ import {
 import { PrismaService } from "../../prisma/prisma.service";
 import { DebtorService } from "../debtor/debtor.service";
 import { UetsService } from "./uets.service"; // PR-S1: UETS/KEP teslim durumu sorgulama
+import { CaseDebtorLifecycleGuardService } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service";
 import {
   CreateTebligatDto,
   RecordPttResultDto,
@@ -63,7 +64,8 @@ export class TebligatService {
   constructor(
     private prisma: PrismaService,
     private debtorService: DebtorService, // PR-D5-b-1: CaseDebtor senkronu
-    private uetsService: UetsService // PR-S1: UETS/KEP teslim durumu
+    private uetsService: UetsService, // PR-S1: UETS/KEP teslim durumu
+    private caseDebtorLifecycleGuard: CaseDebtorLifecycleGuardService
   ) {}
 
   // ==================== CRUD İŞLEMLERİ ====================
@@ -159,26 +161,18 @@ export class TebligatService {
         throw new BadRequestException("Tebligat borçlu bağlantısı geçersiz");
       }
 
-      caseDebtor = await (this.prisma as any).caseDebtor.findUnique({
-        where: { id: caseDebtorId },
-        select: {
-          id: true,
-          caseId: true,
-          debtorId: true,
-          case: { select: { tenantId: true } },
-        },
-      });
-
-      if (!caseDebtor) {
-        throw new BadRequestException("Tebligat borçlu bağlantısı geçersiz");
-      }
-
-      if (caseDebtor.case?.tenantId !== tenantId) {
-        throw new BadRequestException("Tebligat borçlu bağlantısı bu tenant'a ait değil");
-      }
-
-      if (caseDebtor.caseId !== caseId) {
-        throw new BadRequestException("Tebligat borçlu bağlantısı bu dosyaya ait değil");
+      try {
+        caseDebtor =
+          await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(
+            tenantId,
+            caseDebtorId,
+            { expectedCaseId: caseId }
+          );
+      } catch (error) {
+        if (error instanceof NotFoundException) {
+          throw new BadRequestException("Tebligat borçlu bağlantısı geçersiz");
+        }
+        throw error;
       }
     }
 
@@ -791,6 +785,10 @@ export class TebligatService {
   /**
    * Başarısız bilinen adres tebligatı için otomatik MERNİS tebligatı oluştur
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TebligatController.createMernisTebligat() → POST /tebligat/:id/create-mernis (başarısız bilinen adres tebligatından MERNİS tebligatı oluşturma)
+  /// </remarks>
   async createMernisTebligat(tenantId: string, failedTebligatId: string, mernisAddress: string) {
     const failedTebligat = await this.findById(tenantId, failedTebligatId);
 
@@ -800,6 +798,14 @@ export class TebligatService {
 
     if (failedTebligat.nextAction !== TebligatNextAction.MERNIS_TEBLIGAT) {
       throw new BadRequestException("Bu tebligat için MERNİS tebligatı önerilmiyor");
+    }
+
+    if (failedTebligat.caseDebtorId) {
+      await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(
+        tenantId,
+        failedTebligat.caseDebtorId,
+        { expectedCaseId: failedTebligat.caseId }
+      );
     }
 
     // Yeni MERNİS tebligatı oluştur

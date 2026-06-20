@@ -26,6 +26,7 @@ import {
   emptyBreakdown,
   mapClaimItemTypeToAllocationType,
 } from "./allocation-read.helper";
+import { CaseDebtorLifecycleGuardService } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service";
 
 // ─── Source → Header Mapping ─────────────────────────────────────────────────
 
@@ -66,6 +67,7 @@ export class CollectionService {
   constructor(
     private prisma: PrismaService,
     private domainEventIngestService: DomainEventIngestService,
+    private caseDebtorLifecycleGuard: CaseDebtorLifecycleGuardService,
     // G3a: kanonik ledger forward write. @Optional → enjekte edilmezse ledger
     // atlanır + diagnostic (akış kırılmaz; test/araç bağlamları için).
     @Optional() private readonly summaryEngine?: SummaryEngineService,
@@ -218,25 +220,20 @@ export class CollectionService {
       throw new BadRequestException("Tahsilat borçlu bağlantısı geçersiz");
     }
 
-    const caseDebtor = await tx.caseDebtor.findUnique({
-      where: { id: caseDebtorId },
-      select: {
-        id: true,
-        caseId: true,
-        case: { select: { tenantId: true } },
-      },
-    });
-
-    if (!caseDebtor) {
-      throw new BadRequestException("Tahsilat borçlu bağlantısı geçersiz");
-    }
-
-    if (caseDebtor.case?.tenantId !== tenantId) {
-      throw new BadRequestException("Tahsilat borçlu bağlantısı bu tenant'a ait değil");
-    }
-
-    if (caseDebtor.caseId !== caseId) {
-      throw new BadRequestException("Tahsilat borçlu bağlantısı bu dosyaya ait değil");
+    try {
+      await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(
+        tenantId,
+        caseDebtorId,
+        {
+          expectedCaseId: caseId,
+          prisma: tx,
+        }
+      );
+    } catch (error) {
+      if (error instanceof NotFoundException) {
+        throw new BadRequestException("Tahsilat borçlu bağlantısı geçersiz");
+      }
+      throw error;
     }
   }
 

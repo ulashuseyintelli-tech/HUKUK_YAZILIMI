@@ -4,6 +4,7 @@
  * (atomik) + istihbarat tetiği. Kanal UETS/KEP KORUNUR (D4e-2 [B] için kritik).
  */
 
+import { TebligatPttResult } from "../dto/tebligat.dto";
 import { TebligatService, ELECTRONIC_DELIVERY_TO_TEBLIGAT_STATUS, TEBLIGAT_TO_SERVICE_STATUS } from "../tebligat.service";
 
 describe("ELECTRONIC_DELIVERY_TO_TEBLIGAT_STATUS (UETS/KEP → TebligatStatus eşleme)", () => {
@@ -21,6 +22,55 @@ describe("ELECTRONIC_DELIVERY_TO_TEBLIGAT_STATUS (UETS/KEP → TebligatStatus e�
   });
 });
 
+describe("TebligatService.recordPttResult passive guard scope", () => {
+  it("PTT late result remains unguarded by CaseDebtor lifecycle guard", async () => {
+    const tebligat = {
+      id: "tb-ptt-1",
+      channel: "PTT",
+      barcodeNo: "PTT123",
+      caseDebtorId: "cd1",
+      addressId: "a1",
+      addressType: "BILINEN",
+    };
+    const prisma: any = {
+      tebligat: {
+        findFirst: jest.fn().mockResolvedValue(tebligat),
+        update: jest.fn().mockImplementation((a: any) =>
+          Promise.resolve({ id: a.where.id, ...a.data })
+        ),
+      },
+      $transaction: jest.fn().mockImplementation(async (cb: any) => cb(prisma)),
+    };
+    const debtorService: any = {
+      syncServiceStatusInTx: jest.fn().mockResolvedValue({
+        debtorId: "d1",
+        addressId: "a1",
+        newStatus: "DELIVERED",
+        channel: "NORMAL",
+        returnReason: null,
+      }),
+      runServiceResultIntelligence: jest.fn().mockResolvedValue(undefined),
+    };
+    const caseDebtorLifecycleGuard: any = {
+      assertActiveByCaseDebtorId: jest.fn(),
+    };
+    const svc = new TebligatService(
+      prisma,
+      debtorService,
+      {} as any,
+      caseDebtorLifecycleGuard
+    );
+
+    await svc.recordPttResult("t1", "tb-ptt-1", {
+      pttResult: TebligatPttResult.TESLIM_EDILDI,
+    } as any);
+
+    expect(prisma.tebligat.update).toHaveBeenCalled();
+    expect(debtorService.syncServiceStatusInTx).toHaveBeenCalled();
+    expect(caseDebtorLifecycleGuard.assertActiveByCaseDebtorId).not.toHaveBeenCalled();
+  });
+});
+
 describe("TebligatService.recordElectronicResult", () => {
   const build = (tebligat: any, delivery: any) => {
     const prisma: any = {
@@ -35,12 +85,18 @@ describe("TebligatService.recordElectronicResult", () => {
       runServiceResultIntelligence: jest.fn().mockResolvedValue(undefined),
     };
     const uetsService: any = { checkDeliveryStatus: jest.fn().mockResolvedValue(delivery) };
-    const svc = new TebligatService(prisma, debtorService, uetsService);
-    return { svc, prisma, debtorService, uetsService };
+    const caseDebtorLifecycleGuard: any = { assertActiveByCaseDebtorId: jest.fn() };
+    const svc = new TebligatService(
+      prisma,
+      debtorService,
+      uetsService,
+      caseDebtorLifecycleGuard
+    );
+    return { svc, prisma, debtorService, uetsService, caseDebtorLifecycleGuard };
   };
 
   it("UETS + TESLIM_EDILDI + caseDebtorId → Tebligat.status=TESLIM_EDILDI + sync(channel=UETS,DELIVERED) + istihbarat", async () => {
-    const { svc, prisma, debtorService } = build(
+    const { svc, prisma, debtorService, caseDebtorLifecycleGuard } = build(
       { id: "tb1", channel: "UETS", barcodeNo: "UETS123", caseDebtorId: "cd1", addressId: "a1" },
       { uetsNo: "UETS123", status: "TESLIM_EDILDI", deliveredAt: new Date() }
     );
@@ -55,6 +111,7 @@ describe("TebligatService.recordElectronicResult", () => {
       expect.objectContaining({ caseDebtorId: "cd1", newStatus: "DELIVERED", channel: "UETS", addressId: "a1" })
     );
     expect(debtorService.runServiceResultIntelligence).toHaveBeenCalledWith("t1", "d1", "a1", "DELIVERED", "UETS", null);
+    expect(caseDebtorLifecycleGuard.assertActiveByCaseDebtorId).not.toHaveBeenCalled();
     expect(res.synced).toBe(true);
   });
 
