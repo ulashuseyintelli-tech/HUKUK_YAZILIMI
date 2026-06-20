@@ -11,11 +11,26 @@ import {
   showsVade,
   isInstrumentComplete,
   selectedInstrumentsToPayload,
+  formatDateTr,
   Instrument,
 } from '../components/debtor/ocr-instrument';
 
 const inst = (over: Partial<Instrument>): Instrument =>
   ({ type: 'CEK', currency: 'TRY', confidence: 90, ...over } as Instrument);
+
+describe('formatDateTr — ISO → TR gösterim (hotfix)', () => {
+  it('YYYY-MM-DD → DD.MM.YYYY', () => {
+    expect(formatDateTr('2025-12-30')).toBe('30.12.2025');
+    expect(formatDateTr('2025-07-07')).toBe('07.07.2025');
+  });
+  it('boş/undefined → boş string', () => {
+    expect(formatDateTr(undefined)).toBe('');
+    expect(formatDateTr('')).toBe('');
+  });
+  it('tanınmayan format → olduğu gibi döner (savunmacı)', () => {
+    expect(formatDateTr('30.12.2025')).toBe('30.12.2025');
+  });
+});
 
 describe('effectiveIssueDate — çek keşide fallback', () => {
   it('çek: issueDate varsa KORUNUR', () => {

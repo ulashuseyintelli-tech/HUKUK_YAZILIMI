@@ -15,6 +15,7 @@ import {
   effectiveIssueDate,
   shouldWarnCekDates,
   showsVade,
+  formatDateTr,
 } from "./ocr-instrument";
 
 interface InstrumentReviewTableProps {
@@ -175,10 +176,24 @@ export function InstrumentReviewTable({ rows, onChange }: InstrumentReviewTableP
                   <td className="px-2 py-1">{pageLabel(inst)}</td>
                   <td className="px-2 py-1">{confidenceLabel(inst)}</td>
                 </tr>
-                {(inst.evidenceText || (review && inst.duplicateCandidateReason)) && (
+                {(warnCek || inst.evidenceText || (review && inst.duplicateCandidateReason)) && (
                   <tr className={review ? "bg-amber-50" : ""}>
                     <td />
                     <td colSpan={anyVade ? 8 : 7} className="px-2 pb-1 text-[10px] text-slate-500">
+                      {warnCek && (
+                        <div className="text-amber-700" data-testid={`cek-date-warn-detail-${index}`}>
+                          ⚠ Çekte vade olmaz. OCR ikinci bir tarih buldu:{" "}
+                          <strong>{formatDateTr(inst.dueDate)}</strong>. Keşide tarihi bu olabilir; kontrol edin.{" "}
+                          <button
+                            type="button"
+                            data-testid={`cek-date-apply-${index}`}
+                            onClick={() => editIssueDate(index, inst.dueDate as string)}
+                            className="ml-1 rounded border border-amber-400 px-1 py-0.5 font-medium text-amber-800 hover:bg-amber-100"
+                          >
+                            {formatDateTr(inst.dueDate)} keşide yap
+                          </button>
+                        </div>
+                      )}
                       {review && inst.duplicateCandidateReason && (
                         <div className="text-amber-700">⚠ {inst.duplicateCandidateReason}</div>
                       )}
