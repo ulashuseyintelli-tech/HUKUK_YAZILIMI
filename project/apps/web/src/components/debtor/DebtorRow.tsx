@@ -12,6 +12,7 @@ interface DebtorRowProps {
 
 export function DebtorRow({ debtor, onClick }: DebtorRowProps) {
   const PersonIcon = debtor.personType === "LEGAL" ? Building2 : User;
+  const isPassive = debtor.lifecycleStatus === "PASSIVE";
 
   // Research status indicator config
   const getResearchIndicator = (status?: AddressResearchStatus) => {
@@ -60,6 +61,11 @@ export function DebtorRow({ debtor, onClick }: DebtorRowProps) {
           <span className="flex-shrink-0 px-2 py-0.5 text-[9px] font-medium rounded bg-slate-100 text-slate-500 whitespace-nowrap">
             {DebtorRoleLabels[debtor.role] || debtor.role}
           </span>
+          {isPassive && (
+            <span className="flex-shrink-0 px-2 py-0.5 text-[9px] font-medium rounded bg-gray-200 text-gray-700 whitespace-nowrap">
+              Pasif
+            </span>
+          )}
           {/* Cross-file address indicator */}
           {debtor.hasDifferentAddressInOtherCase && (
             <span 

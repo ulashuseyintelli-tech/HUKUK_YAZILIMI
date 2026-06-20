@@ -26,6 +26,7 @@ interface AddressDiscoveryPanelProps {
   clientId?: string;
   clientEmail?: string;
   debtorType?: 'INDIVIDUAL' | 'COMPANY';
+  readOnly?: boolean;
   onAddressAdded?: () => void;
 }
 
@@ -46,6 +47,7 @@ export function AddressDiscoveryPanel({
   clientId,
   clientEmail,
   debtorType = 'INDIVIDUAL',
+  readOnly = false,
   onAddressAdded 
 }: AddressDiscoveryPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>('uyap');
@@ -103,6 +105,7 @@ export function AddressDiscoveryPanel({
       <ResearchStatusCard 
         key={`status-${refreshKey}`}
         caseDebtorId={caseDebtorId} 
+        readOnly={readOnly}
         onStatusChange={handleRefresh}
       />
 
@@ -111,6 +114,7 @@ export function AddressDiscoveryPanel({
         key={`crossfile-${refreshKey}`}
         debtorId={debtorId}
         currentCaseId={caseId}
+        readOnly={readOnly}
         onAddressCopied={handleRefresh}
       />
 
@@ -142,7 +146,10 @@ export function AddressDiscoveryPanel({
             <UyapQueryList
               key={`uyap-${refreshKey}`}
               caseDebtorId={caseDebtorId}
-              onCreateQuery={() => setUyapQueryModalOpen(true)}
+              readOnly={readOnly}
+              onCreateQuery={() => {
+                if (!readOnly) setUyapQueryModalOpen(true);
+              }}
               onQueryClick={handleQueryClick}
             />
           )}
@@ -151,7 +158,10 @@ export function AddressDiscoveryPanel({
             <InstitutionLetterList
               key={`letters-${refreshKey}`}
               caseDebtorId={caseDebtorId}
-              onCreateLetter={() => setInstitutionLetterModalOpen(true)}
+              readOnly={readOnly}
+              onCreateLetter={() => {
+                if (!readOnly) setInstitutionLetterModalOpen(true);
+              }}
               onLetterClick={(letter) => {
                 // TODO: Open letter detail/response modal
                 console.log('Letter clicked:', letter);
@@ -166,7 +176,10 @@ export function AddressDiscoveryPanel({
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={() => setClientInfoModalOpen(true)}
+                  onClick={() => {
+                    if (!readOnly) setClientInfoModalOpen(true);
+                  }}
+                  disabled={readOnly}
                 >
                   <Plus className="w-4 h-4 mr-1" />
                   Yeni Talep
@@ -207,13 +220,15 @@ export function AddressDiscoveryPanel({
       </div>
 
       {/* Modals */}
-      <UyapQueryModal
-        open={uyapQueryModalOpen}
-        onClose={() => setUyapQueryModalOpen(false)}
-        caseDebtorId={caseDebtorId}
-        debtorType={debtorType}
-        onSuccess={handleRefresh}
-      />
+      {!readOnly && (
+        <UyapQueryModal
+          open={uyapQueryModalOpen}
+          onClose={() => setUyapQueryModalOpen(false)}
+          caseDebtorId={caseDebtorId}
+          debtorType={debtorType}
+          onSuccess={handleRefresh}
+        />
+      )}
 
       {selectedQuery && (
         <UyapQueryResponseModal
@@ -227,26 +242,30 @@ export function AddressDiscoveryPanel({
         />
       )}
 
-      <InstitutionLetterModal
-        open={institutionLetterModalOpen}
-        onClose={() => setInstitutionLetterModalOpen(false)}
-        caseDebtorId={caseDebtorId}
-        onSuccess={handleRefresh}
-      />
+      {!readOnly && (
+        <InstitutionLetterModal
+          open={institutionLetterModalOpen}
+          onClose={() => setInstitutionLetterModalOpen(false)}
+          caseDebtorId={caseDebtorId}
+          onSuccess={handleRefresh}
+        />
+      )}
 
-      <ClientInfoRequestModal
-        open={clientInfoModalOpen}
-        onClose={() => setClientInfoModalOpen(false)}
-        caseId={caseId}
-        clientId={clientId}
-        clientEmail={clientEmail}
-        debtorId={debtorId}
-        debtorName={debtorName}
-        onSuccess={() => {
-          loadClientInfoRequests();
-          handleRefresh();
-        }}
-      />
+      {!readOnly && (
+        <ClientInfoRequestModal
+          open={clientInfoModalOpen}
+          onClose={() => setClientInfoModalOpen(false)}
+          caseId={caseId}
+          clientId={clientId}
+          clientEmail={clientEmail}
+          debtorId={debtorId}
+          debtorName={debtorName}
+          onSuccess={() => {
+            loadClientInfoRequests();
+            handleRefresh();
+          }}
+        />
+      )}
     </div>
   );
 }

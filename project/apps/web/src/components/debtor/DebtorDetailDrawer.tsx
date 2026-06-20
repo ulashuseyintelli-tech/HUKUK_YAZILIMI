@@ -26,7 +26,7 @@ import { ServiceHistoryTimeline } from "./ServiceHistoryTimeline";
 import { NewDebtorModal } from "./NewDebtorModal";
 import { AddressListSection } from "./AddressListSection";
 import { NotificationChainPanel } from "./NotificationChainPanel";
-import { AddressDiscoveryPanel, AddressResearchWidget } from "../address-discovery";
+import { AddressResearchWidget } from "../address-discovery";
 import { AssetQueryPanel } from "./AssetQueryPanel";
 import { Debtor, DebtorType } from "@/types/debtor";
 
@@ -105,6 +105,7 @@ export function DebtorDetailDrawer({
   };
 
   const handleServiceUpdate = async (data: UpdateServiceStatusDTO) => {
+    if (debtor?.lifecycleStatus === "PASSIVE") return;
     setIsUpdating(true);
     try {
       await api.updateServiceStatus(caseId, caseDebtorId, data);
@@ -117,6 +118,7 @@ export function DebtorDetailDrawer({
   };
 
   const handleRetry = async () => {
+    if (debtor?.lifecycleStatus === "PASSIVE") return;
     setIsUpdating(true);
     try {
       await api.startNewServiceAttempt(caseId, caseDebtorId);
@@ -131,6 +133,7 @@ export function DebtorDetailDrawer({
   };
 
   const handleSaveNote = async () => {
+    if (debtor?.lifecycleStatus === "PASSIVE") return;
     try {
       await api.updateDebtorQuickNote(caseId, caseDebtorId, quickNote);
       setIsEditingNote(false);
@@ -142,7 +145,7 @@ export function DebtorDetailDrawer({
 
   // Borçlu düzenleme modal'ını aç
   const handleOpenEditModal = async () => {
-    if (!debtor) return;
+    if (!debtor || debtor.lifecycleStatus === "PASSIVE") return;
     try {
       // Tam borçlu verisini çek
       const fullDebtor = await api.getDebtor(debtor.id);
@@ -163,7 +166,8 @@ export function DebtorDetailDrawer({
 
   if (!isOpen) return null;
 
-  const canRetry = debtor && ["RETURNED", "FAILED"].includes(debtor.service.status);
+  const isPassive = debtor?.lifecycleStatus === "PASSIVE";
+  const canRetry = debtor && !isPassive && ["RETURNED", "FAILED"].includes(debtor.service.status);
 
   return (
     <>
@@ -177,7 +181,19 @@ export function DebtorDetailDrawer({
       <div className="fixed right-0 top-0 h-full w-full max-w-md bg-white shadow-xl z-50 flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between p-4 border-b">
-          <h2 className="text-lg font-semibold">Borçlu Detayı</h2>
+          <div>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-semibold">Borçlu Detayı</h2>
+              {isPassive && (
+                <span className="px-2 py-0.5 text-xs font-medium rounded bg-gray-200 text-gray-700">
+                  Pasif
+                </span>
+              )}
+            </div>
+            {isPassive && (
+              <p className="text-xs text-gray-500 mt-0.5">Salt okunur - yeni operasyonlar kapali.</p>
+            )}
+          </div>
           <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded">
             <X className="w-5 h-5" />
           </button>
@@ -255,8 +271,9 @@ export function DebtorDetailDrawer({
                   <div className="flex items-center gap-2">
                     <button
                       onClick={handleOpenEditModal}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
-                      title="Borçluyu Düzenle"
+                      disabled={isPassive}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-blue-50"
+                      title={isPassive ? "Pasif kayit salt okunur" : "Borçluyu Düzenle"}
                     >
                       <Pencil className="w-4 h-4" />
                       Düzenle
@@ -312,6 +329,7 @@ export function DebtorDetailDrawer({
                     selectedAddressId={debtor.selectedAddressId}
                     debtorType={debtor.personType === "LEGAL" ? "LEGAL" : "NATURAL"}
                     identityNo={debtor.identityNo}
+                    readOnly={isPassive}
                     onUpdate={fetchDebtor}
                   />
                 </div>
@@ -320,7 +338,9 @@ export function DebtorDetailDrawer({
                 <div className="mt-1">
                   <NotificationChainPanel
                     debtorId={debtor.id}
+                    readOnly={isPassive}
                     onAddressSelect={async (addressId) => {
+                      if (isPassive) return;
                       try {
                         await api.setActiveAddress(caseDebtorId, addressId);
                         fetchDebtor();
@@ -388,7 +408,7 @@ export function DebtorDetailDrawer({
                   <Button
                     size="sm"
                     onClick={() => setIsServiceModalOpen(true)}
-                    disabled={isUpdating}
+                    disabled={isUpdating || isPassive}
                   >
                     <Send className="w-4 h-4 mr-1" />
                     Güncelle
@@ -398,7 +418,7 @@ export function DebtorDetailDrawer({
                       size="sm"
                       variant="outline"
                       onClick={handleRetry}
-                      disabled={isUpdating}
+                      disabled={isUpdating || isPassive}
                     >
                       <RotateCcw className="w-4 h-4 mr-1" />
                       Yeni Deneme
@@ -445,7 +465,7 @@ export function DebtorDetailDrawer({
               {/* Quick Note Section */}
               <div>
                 <h3 className="font-medium text-[11px] mb-0.5">Hızlı Not</h3>
-                {isEditingNote ? (
+                {isEditingNote && !isPassive ? (
                   <div className="space-y-1">
                     <textarea
                       value={quickNote}
@@ -472,8 +492,14 @@ export function DebtorDetailDrawer({
                   </div>
                 ) : (
                   <div
-                    onClick={() => setIsEditingNote(true)}
-                    className="p-2 bg-yellow-50 rounded text-xs cursor-pointer hover:bg-yellow-100 transition-colors min-h-[40px]"
+                    onClick={() => {
+                      if (!isPassive) setIsEditingNote(true);
+                    }}
+                    className={`p-2 rounded text-xs transition-colors min-h-[40px] ${
+                      isPassive
+                        ? "bg-gray-50 text-gray-600 cursor-default"
+                        : "bg-yellow-50 cursor-pointer hover:bg-yellow-100"
+                    }`}
                   >
                     {debtor.quickNote || (
                       <span className="text-gray-400 italic">Not eklemek için tıklayın...</span>
@@ -516,6 +542,7 @@ export function DebtorDetailDrawer({
                     debtorType={debtor.personType === "LEGAL" ? "COMPANY" : "INDIVIDUAL"}
                     clientId={clientId}
                     clientEmail={clientEmail}
+                    readOnly={isPassive}
                     onAddressAdded={fetchDebtor}
                   />
                 </div>
@@ -526,6 +553,7 @@ export function DebtorDetailDrawer({
                 <div className="p-2.5">
                   <AssetQueryPanel
                     caseDebtorId={caseDebtorId}
+                    readOnly={isPassive}
                     onRefresh={fetchDebtor}
                   />
                 </div>
@@ -542,7 +570,7 @@ export function DebtorDetailDrawer({
       {/* Service Update Modal */}
       {debtor && (
         <ServiceUpdateModal
-          isOpen={isServiceModalOpen}
+          isOpen={isServiceModalOpen && !isPassive}
           onClose={() => setIsServiceModalOpen(false)}
           debtor={debtor}
           onSubmit={handleServiceUpdate}

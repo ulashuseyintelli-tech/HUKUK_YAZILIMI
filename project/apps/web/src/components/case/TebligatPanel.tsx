@@ -14,6 +14,7 @@ import {
 interface TebligatPanelProps {
   caseId: string;
   caseDebtorId?: string;
+  readOnly?: boolean;
   onTebligatChange?: () => void;
 }
 
@@ -81,7 +82,7 @@ const STATUS_LABELS: Record<TebligatStatus, string> = {
   IPTAL: "Iptal",
 };
 
-export function TebligatPanel({ caseId, caseDebtorId, onTebligatChange }: TebligatPanelProps) {
+export function TebligatPanel({ caseId, caseDebtorId, readOnly = false, onTebligatChange }: TebligatPanelProps) {
   const [tebligatlar, setTebligatlar] = useState<Tebligat[]>([]);
   const [summary, setSummary] = useState<TebligatSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -136,6 +137,7 @@ export function TebligatPanel({ caseId, caseDebtorId, onTebligatChange }: Teblig
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (readOnly) return;
     if (!form.addressText || !form.recipientName) return;
 
     try {
@@ -340,7 +342,7 @@ export function TebligatPanel({ caseId, caseDebtorId, onTebligatChange }: Teblig
       )}
 
       {/* Yeni Tebligat Formu */}
-      {showForm ? (
+      {showForm && !readOnly ? (
         <form onSubmit={handleCreate} className="border rounded-lg p-4 bg-gray-50 space-y-4">
           <div className="flex items-center justify-between">
             <h4 className="font-medium flex items-center gap-2">
@@ -454,6 +456,10 @@ export function TebligatPanel({ caseId, caseDebtorId, onTebligatChange }: Teblig
             </button>
           </div>
         </form>
+      ) : readOnly ? (
+        <div className="w-full py-2 border rounded-lg text-sm text-gray-500 flex items-center justify-center gap-2 bg-gray-50">
+          Pasif kayit: yeni tebligat kapali.
+        </div>
       ) : (
         <button
           onClick={() => setShowForm(true)}

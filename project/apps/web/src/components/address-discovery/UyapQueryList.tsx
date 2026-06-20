@@ -23,6 +23,7 @@ import {
 
 interface UyapQueryListProps {
   caseDebtorId: string;
+  readOnly?: boolean;
   onCreateQuery?: () => void;
   onQueryClick?: (query: UyapQueryDTO) => void;
 }
@@ -68,6 +69,7 @@ const QUERY_TYPE_NAMES: Record<string, string> = {
 
 export function UyapQueryList({ 
   caseDebtorId, 
+  readOnly = false,
   onCreateQuery,
   onQueryClick 
 }: UyapQueryListProps) {
@@ -84,7 +86,7 @@ export function UyapQueryList({
       setLoading(true);
       const [queriesData, suggestionsData] = await Promise.all([
         api.getUyapQueriesForDebtor(caseDebtorId),
-        api.getSuggestedUyapQueries(caseDebtorId),
+        readOnly ? Promise.resolve([]) : api.getSuggestedUyapQueries(caseDebtorId),
       ]);
       setQueries(queriesData);
       setSuggestions(suggestionsData);
@@ -123,15 +125,22 @@ export function UyapQueryList({
             <Database className="w-4 h-4 text-muted-foreground" />
             UYAP Sorguları
           </CardTitle>
-          <Button size="sm" variant="outline" onClick={onCreateQuery}>
-            <Plus className="w-4 h-4 mr-1" />
-            Yeni Sorgu
-          </Button>
+          {!readOnly && (
+            <Button size="sm" variant="outline" onClick={onCreateQuery}>
+              <Plus className="w-4 h-4 mr-1" />
+              Yeni Sorgu
+            </Button>
+          )}
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
+        {readOnly && (
+          <div className="p-2 rounded bg-gray-50 border border-gray-200 text-xs text-gray-600">
+            Pasif kayit: yeni UYAP sorgusu kapali.
+          </div>
+        )}
         {/* Suggestions */}
-        {suggestions.length > 0 && (
+        {!readOnly && suggestions.length > 0 && (
           <div className="bg-blue-50 rounded-lg p-3 space-y-2">
             <p className="text-xs font-medium text-blue-700">Önerilen Sorgular</p>
             <div className="flex flex-wrap gap-2">

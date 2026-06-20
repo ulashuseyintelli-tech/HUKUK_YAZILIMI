@@ -56,6 +56,7 @@ interface AddressResearchWidgetProps {
   clientId?: string;
   clientEmail?: string;
   compact?: boolean;
+  readOnly?: boolean;
   onAddressAdded?: () => void;
 }
 
@@ -68,6 +69,7 @@ export function AddressResearchWidget({
   clientId,
   clientEmail,
   compact = false,
+  readOnly = false,
   onAddressAdded
 }: AddressResearchWidgetProps) {
   const [stats, setStats] = useState<AddressStats | null>(null);
@@ -131,6 +133,7 @@ export function AddressResearchWidget({
 
   // Müvekkile hızlı mail
   const handleQuickEmail = async () => {
+    if (readOnly) return;
     if (!clientId || !clientEmail) {
       setClientModalOpen(true);
       return;
@@ -193,7 +196,7 @@ export function AddressResearchWidget({
 
           <button
             onClick={handleQuickEmail}
-            disabled={sendingEmail}
+            disabled={sendingEmail || readOnly}
             className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors disabled:opacity-50"
             title="Müvekkile adres sor"
           >
@@ -205,16 +208,18 @@ export function AddressResearchWidget({
           </button>
         </div>
 
-        <ClientInfoRequestModal
-          open={clientModalOpen}
-          onClose={() => setClientModalOpen(false)}
-          caseId={caseId}
-          clientId={clientId}
-          clientEmail={clientEmail}
-          debtorId={debtorId}
-          debtorName={debtorName}
-          onSuccess={handleRefresh}
-        />
+        {!readOnly && (
+          <ClientInfoRequestModal
+            open={clientModalOpen}
+            onClose={() => setClientModalOpen(false)}
+            caseId={caseId}
+            clientId={clientId}
+            clientEmail={clientEmail}
+            debtorId={debtorId}
+            debtorName={debtorName}
+            onSuccess={handleRefresh}
+          />
+        )}
       </>
     );
   }
@@ -236,6 +241,11 @@ export function AddressResearchWidget({
           {stats?.total || 0} adres
         </div>
       </div>
+      {readOnly && (
+        <div className="p-2 rounded bg-gray-50 border border-gray-200 text-xs text-gray-600">
+          Pasif kayit: yeni adres arastirma operasyonlari kapali.
+        </div>
+      )}
 
       {/* BÖLÜM 1: UYAP Sorguları - Doğrudan Adres Verenler */}
       <div className="space-y-2">
@@ -249,7 +259,8 @@ export function AddressResearchWidget({
           {/* MERNİS - Gerçek Kişi */}
           <button
             onClick={() => setUyapModalOpen(true)}
-            className="flex items-center gap-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 hover:border-emerald-300 transition-all text-left"
+            disabled={readOnly}
+            className="flex items-center gap-2 p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg hover:bg-emerald-100 hover:border-emerald-300 transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-emerald-50"
           >
             <div className="w-8 h-8 bg-emerald-100 rounded-full flex items-center justify-center flex-shrink-0">
               <Users className="h-4 w-4 text-emerald-600" />
@@ -268,7 +279,8 @@ export function AddressResearchWidget({
           {/* SGK İşyeri */}
           <button
             onClick={() => setUyapModalOpen(true)}
-            className="flex items-center gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 hover:border-amber-300 transition-all text-left"
+            disabled={readOnly}
+            className="flex items-center gap-2 p-2.5 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 hover:border-amber-300 transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-amber-50"
           >
             <div className="w-8 h-8 bg-amber-100 rounded-full flex items-center justify-center flex-shrink-0">
               <Building2 className="h-4 w-4 text-amber-600" />
@@ -296,7 +308,8 @@ export function AddressResearchWidget({
           {/* Vergi Dairesi */}
           <button
             onClick={() => setInstitutionModalOpen(true)}
-            className="flex flex-col items-center gap-1 p-2 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 hover:border-purple-300 transition-all"
+            disabled={readOnly}
+            className="flex flex-col items-center gap-1 p-2 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 hover:border-purple-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-purple-50"
           >
             <span className="text-lg">💰</span>
             <span className="text-[10px] font-medium text-purple-700">Vergi Dairesi</span>
@@ -306,7 +319,8 @@ export function AddressResearchWidget({
           {debtorType === 'COMPANY' && (
             <button
               onClick={() => setInstitutionModalOpen(true)}
-              className="flex flex-col items-center gap-1 p-2 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 hover:border-purple-300 transition-all"
+              disabled={readOnly}
+              className="flex flex-col items-center gap-1 p-2 bg-purple-50 border border-purple-200 rounded-lg hover:bg-purple-100 hover:border-purple-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-purple-50"
             >
               <span className="text-lg">📋</span>
               <span className="text-[10px] font-medium text-purple-700">Ticaret Sicil</span>
@@ -316,7 +330,8 @@ export function AddressResearchWidget({
           {/* Belediye */}
           <button
             onClick={() => setInstitutionModalOpen(true)}
-            className="flex flex-col items-center gap-1 p-2 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 hover:border-gray-300 transition-all"
+            disabled={readOnly}
+            className="flex flex-col items-center gap-1 p-2 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 hover:border-gray-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50"
           >
             <span className="text-lg">🏛️</span>
             <span className="text-[10px] font-medium text-gray-600">Belediye</span>
@@ -325,7 +340,8 @@ export function AddressResearchWidget({
           {/* Tapu */}
           <button
             onClick={() => setInstitutionModalOpen(true)}
-            className="flex flex-col items-center gap-1 p-2 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 hover:border-gray-300 transition-all"
+            disabled={readOnly}
+            className="flex flex-col items-center gap-1 p-2 bg-gray-50 border border-gray-200 rounded-lg hover:bg-gray-100 hover:border-gray-300 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-gray-50"
           >
             <span className="text-lg">🏠</span>
             <span className="text-[10px] font-medium text-gray-600">Tapu</span>
@@ -351,8 +367,8 @@ export function AddressResearchWidget({
           {/* Müvekkil */}
           <button
             onClick={() => setClientModalOpen(true)}
-            disabled={sendingEmail}
-            className="flex items-center gap-2 p-2.5 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 hover:border-green-300 transition-all text-left disabled:opacity-50"
+            disabled={sendingEmail || readOnly}
+            className="flex items-center gap-2 p-2.5 bg-green-50 border border-green-200 rounded-lg hover:bg-green-100 hover:border-green-300 transition-all text-left disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-green-50"
           >
             <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
               {sendingEmail ? (
@@ -391,24 +407,28 @@ export function AddressResearchWidget({
       </div>
 
       {/* Modals */}
-      <ClientInfoRequestModal
-        open={clientModalOpen}
-        onClose={() => setClientModalOpen(false)}
-        caseId={caseId}
-        clientId={clientId}
-        clientEmail={clientEmail}
-        debtorId={debtorId}
-        debtorName={debtorName}
-        onSuccess={handleRefresh}
-      />
+      {!readOnly && (
+        <ClientInfoRequestModal
+          open={clientModalOpen}
+          onClose={() => setClientModalOpen(false)}
+          caseId={caseId}
+          clientId={clientId}
+          clientEmail={clientEmail}
+          debtorId={debtorId}
+          debtorName={debtorName}
+          onSuccess={handleRefresh}
+        />
+      )}
 
-      <UyapQueryModal
-        open={uyapModalOpen}
-        onClose={() => setUyapModalOpen(false)}
-        caseDebtorId={caseDebtorId}
-        debtorType={debtorType}
-        onSuccess={handleRefresh}
-      />
+      {!readOnly && (
+        <UyapQueryModal
+          open={uyapModalOpen}
+          onClose={() => setUyapModalOpen(false)}
+          caseDebtorId={caseDebtorId}
+          debtorType={debtorType}
+          onSuccess={handleRefresh}
+        />
+      )}
 
       {selectedUyapQuery && (
         <UyapQueryResponseModal
@@ -422,12 +442,14 @@ export function AddressResearchWidget({
         />
       )}
 
-      <InstitutionLetterModal
-        open={institutionModalOpen}
-        onClose={() => setInstitutionModalOpen(false)}
-        caseDebtorId={caseDebtorId}
-        onSuccess={handleRefresh}
-      />
+      {!readOnly && (
+        <InstitutionLetterModal
+          open={institutionModalOpen}
+          onClose={() => setInstitutionModalOpen(false)}
+          caseDebtorId={caseDebtorId}
+          onSuccess={handleRefresh}
+        />
+      )}
     </div>
   );
 }
