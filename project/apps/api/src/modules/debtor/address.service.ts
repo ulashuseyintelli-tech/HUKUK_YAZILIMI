@@ -14,6 +14,7 @@ import {
   DebtorType,
   ServiceReturnReason,
 } from "@prisma/client";
+import { CaseDebtorLifecycleGuardService } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service";
 
 // Re-export for controller
 export type AddressRiskFlagType = AddressRiskFlag;
@@ -109,7 +110,10 @@ export interface VerificationResultDto {
 
 @Injectable()
 export class AddressService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly caseDebtorLifecycleGuard: CaseDebtorLifecycleGuardService
+  ) {}
 
   // ==================== CRUD OPERATIONS ====================
 
@@ -264,11 +268,20 @@ export class AddressService {
   /**
    * Set active address for a case debtor
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AddressController.setActiveAddress() → POST /case-debtors/:caseDebtorId/active-address (dosya borçlusu seçili adresini değiştirme)
+  /// </remarks>
   async setActiveAddress(
     tenantId: string,
     caseDebtorId: string,
     addressId: string
   ): Promise<void> {
+    await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(
+      tenantId,
+      caseDebtorId
+    );
+
     // Verify case debtor exists
     const caseDebtor = await this.prisma.caseDebtor.findFirst({
       where: { id: caseDebtorId, case: { tenantId } },

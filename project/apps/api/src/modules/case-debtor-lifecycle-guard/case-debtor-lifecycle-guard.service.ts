@@ -46,6 +46,9 @@ export class CaseDebtorLifecycleGuardService {
    * - InstitutionLetterService.createLetter() → POST /address-discovery/institution-letter (kurum yazısı aktiflik kontrolü)
    * - ThirdPartyService.create() → POST /case-debtors/:caseDebtorId/third-parties (üçüncü şahıs aktiflik kontrolü)
    * - ThirdPartyService.createExternalCase() → POST /case-debtors/:caseDebtorId/external-cases (dış dosya aktiflik kontrolü)
+   * - DebtorService.updateServiceStatus() → PUT /case/:caseId/:caseDebtorId/service (manuel servis durumu aktiflik kontrolü)
+   * - DebtorService.startNewServiceAttempt() → POST /case/:caseId/:caseDebtorId/service/retry (manuel servis retry aktiflik kontrolü)
+   * - AddressService.setActiveAddress() → POST /case-debtors/:caseDebtorId/active-address (seçili adres aktiflik kontrolü)
    * </remarks>
    */
   async assertActiveByCaseDebtorId(
