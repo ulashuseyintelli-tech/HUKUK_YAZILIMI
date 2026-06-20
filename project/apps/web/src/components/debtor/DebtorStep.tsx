@@ -171,6 +171,31 @@ export function buildWizardDebtorPayload(
   };
 }
 
+// BUG-3: party review (edit/rol/yoksay) — saf yardımcılar, export (kapsam: tek prod dosyası DebtorStep.tsx).
+export type PartyDraft = DebtDocumentResult["parties"][0];
+export interface PartyRow {
+  draft: PartyDraft;
+  ignored: boolean;
+  added: boolean;
+}
+
+const DEBTOR_ROLES: string[] = ["BORCLU", "KEFIL", "CIRANTA", "AVAL", "MUTESELSIL"];
+
+/** Borçlu-tarafı rol mü (ALACAKLI hariç)? Per-party Ekle butonu + bulk filtre bunu kullanır. */
+export function isDebtorRole(role: string): boolean {
+  return DEBTOR_ROLES.includes(role);
+}
+
+/** Scan partilerinden ilk review satırları (ignored/added=false, draft = kopya). */
+export function buildInitialPartyRows(parties: DebtDocumentResult["parties"]): PartyRow[] {
+  return (parties ?? []).map((p) => ({ draft: { ...p }, ignored: false, added: false }));
+}
+
+/** Bulk "Tümünü Ekle" hedefleri: yoksaylı/eklenmiş/ALACAKLI hariç (pure; testlerde kullanılır). */
+export function selectablePartyRows(rows: PartyRow[]): PartyRow[] {
+  return rows.filter((r) => !r.ignored && !r.added && isDebtorRole(r.draft.role));
+}
+
 interface DebtorStepProps {
   selectedDebtors: CaseDebtor[];
   onDebtorsChange: Dispatch<SetStateAction<CaseDebtor[]>>;
@@ -192,6 +217,7 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
   const [wizardScanning, setWizardScanning] = useState(false);
   const [wizardResult, setWizardResult] = useState<DebtDocumentResult | null>(null);
   const [reviewRows, setReviewRows] = useState<ReviewRow[]>([]);
+  const [partyRows, setPartyRows] = useState<PartyRow[]>([]);
   const [wizardError, setWizardError] = useState<string | null>(null);
 
   // PR-3b/N1: çoklu enstrüman (>1) varsa review satırlarını hazırla
@@ -202,6 +228,11 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
     } else {
       setReviewRows([]);
     }
+  }, [wizardResult]);
+
+  // BUG-3: yeni scan geldiğinde party review satırlarını YENİDEN kur (reviewRows ikizi).
+  useEffect(() => {
+    setPartyRows(buildInitialPartyRows(wizardResult?.parties ?? []));
   }, [wizardResult]);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [isDragging, setIsDragging] = useState(false);
@@ -385,25 +416,24 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
   };
 
   // Sihirbaz: Parti kabul et (borçlu olarak ekle)
-  const handleAcceptParty = async (party: DebtDocumentResult["parties"][0]) => {
-    // BUG-2a: backend-uyumlu payload üret. Ad/soyad ayrıştırılamazsa POST ETME, net hata göster.
-    setWizardError(null);
-    const built = buildWizardDebtorPayload(party);
-    if (!built.ok) {
-      setWizardError(built.error);
-      return;
-    }
+  // BUG-3: editlenmiş party draft'ı alır ve SONUCU DÖNDÜRÜR (caller hata/added/kapanışı yönetir).
+  //   buildWizardDebtorPayload (BUG-2) korunur → tek-kelime/şekil doğrulaması AYNI.
+  const handleAcceptParty = async (
+    draft: PartyDraft,
+  ): Promise<{ ok: true } | { ok: false; error: string }> => {
+    const built = buildWizardDebtorPayload(draft);
+    if (!built.ok) return { ok: false, error: built.error };
     try {
       
       const response = await api.post("/debtors", built.payload);
       const savedDebtor = response.data?.data || response.data;
       
       // Dosyaya ekle
-      const role = party.role === "BORCLU" ? DebtorRole.ASIL_BORCLU :
-                   party.role === "KEFIL" ? DebtorRole.MUTESELSIL_KEFIL :
-                   party.role === "CIRANTA" ? DebtorRole.CIRANTA :
-                   party.role === "AVAL" ? DebtorRole.AVAL :
-                   party.role === "MUTESELSIL" ? DebtorRole.MUSETEREK_BORCLU :
+      const role = draft.role === "BORCLU" ? DebtorRole.ASIL_BORCLU :
+                   draft.role === "KEFIL" ? DebtorRole.MUTESELSIL_KEFIL :
+                   draft.role === "CIRANTA" ? DebtorRole.CIRANTA :
+                   draft.role === "AVAL" ? DebtorRole.AVAL :
+                   draft.role === "MUTESELSIL" ? DebtorRole.MUSETEREK_BORCLU :
                    DebtorRole.ASIL_BORCLU;
       
       // Elektronik tebligat zorunlu mu?
@@ -434,22 +464,42 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
 
       // Borçlu listesini yenile
       await loadDebtors();
+      return { ok: true };
     } catch (err: any) {
-      setWizardError(`Borçlu kaydedilemedi: ${err.message}`);
+      return { ok: false, error: `Borçlu kaydedilemedi: ${err.message}` };
     }
   };
 
   // Sihirbaz: Tüm borçluları kabul et
   const handleAcceptAllDebtors = async () => {
     if (!wizardResult) return;
-    
-    const debtorParties = wizardResult.parties.filter(p => 
-      p.role === "BORCLU" || p.role === "KEFIL" || p.role === "CIRANTA" || 
-      p.role === "AVAL" || p.role === "MUTESELSIL"
-    );
-    
-    for (const party of debtorParties) {
-      await handleAcceptParty(party);
+    setWizardError(null);
+
+    // BUG-3: editlenmiş partyRows üzerinden (yoksaylı/eklenmiş/ALACAKLI hariç). İndeks için inline filtre.
+    const targets = partyRows
+      .map((row, index) => ({ row, index }))
+      .filter(({ row }) => !row.ignored && !row.added && isDebtorRole(row.draft.role));
+
+    const addedIdx: number[] = [];
+    let lastError: string | null = null;
+    for (const { row, index } of targets) {
+      const res = await handleAcceptParty(row.draft);
+      if (res.ok) addedIdx.push(index);
+      else lastError = res.error;
+    }
+    if (addedIdx.length > 0) {
+      setPartyRows((rows) => rows.map((r, i) => (addedIdx.includes(i) ? { ...r, added: true } : r)));
+    }
+
+    // (b) Bir parti bile eklenemezse: wizard AÇIK kalır + hata görünür (enstrüman emit + kapatma YOK).
+    const failCount = targets.length - addedIdx.length;
+    if (failCount > 0) {
+      setWizardError(
+        failCount === 1 && lastError
+          ? lastError
+          : `${failCount} borçlu eklenemedi. Lütfen düzeltip tekrar deneyin.`,
+      );
+      return;
     }
     
     // PR-3b: çoklu enstrüman (>1) → YALNIZ onInstrumentsDetected (seçili); aksi → YALNIZ
@@ -468,6 +518,24 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
     setWizardResult(null);
     setSelectedFile(null);
     setShowWizard(false);
+  };
+
+  // BUG-3: partyRows düzenleme yardımcıları (per-party edit / yoksay / ekle).
+  const updatePartyDraft = (index: number, patch: Partial<PartyDraft>) => {
+    setPartyRows((rows) =>
+      rows.map((r, i) => (i === index ? { ...r, draft: { ...r.draft, ...patch } } : r)),
+    );
+  };
+
+  const updatePartyRow = (index: number, patch: Partial<Omit<PartyRow, "draft">>) => {
+    setPartyRows((rows) => rows.map((r, i) => (i === index ? { ...r, ...patch } : r)));
+  };
+
+  const acceptPartyRow = async (index: number) => {
+    setWizardError(null);
+    const res = await handleAcceptParty(partyRows[index].draft);
+    if (res.ok) updatePartyRow(index, { added: true });
+    else setWizardError(res.error);
   };
 
   // Sihirbaz: Sıfırla
@@ -630,25 +698,90 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
             </div>
           )}
 
-          {wizardResult.parties.length > 0 && (
-            <div className="flex flex-wrap gap-1">
-              {wizardResult.parties.map((party, index) => (
-                <div key={index} className="px-2 py-1 bg-white rounded border border-amber-200 flex items-center gap-1 text-xs">
-                  <span className="font-medium">{party.name}</span>
-                  <span className={`px-1 py-0.5 rounded text-[10px] ${
-                    party.role === "BORCLU" ? "bg-red-100 text-red-700" : "bg-amber-100 text-amber-700"
-                  }`}>
-                    {RoleLabels[party.role]}
-                  </span>
-                  {(party.role === "BORCLU" || party.role === "KEFIL" || party.role === "CIRANTA" || 
-                    party.role === "AVAL" || party.role === "MUTESELSIL") && (
+          {partyRows.length > 0 && (
+            <div className="space-y-1">
+              {partyRows.map((row, index) => (
+                <div
+                  key={index}
+                  className={`p-1.5 bg-white rounded border flex flex-wrap items-center gap-1 text-xs ${
+                    row.ignored ? "border-gray-200 opacity-50" : "border-amber-200"
+                  }`}
+                >
+                  <input
+                    type="text"
+                    data-testid={`party-name-${index}`}
+                    value={row.draft.name}
+                    onChange={(e) => updatePartyDraft(index, { name: e.target.value })}
+                    disabled={row.ignored || row.added}
+                    placeholder="Ad Soyad / Unvan"
+                    className="flex-1 min-w-[110px] px-1 py-0.5 border rounded text-xs disabled:bg-gray-50"
+                  />
+                  <select
+                    data-testid={`party-type-${index}`}
+                    value={row.draft.type}
+                    onChange={(e) => updatePartyDraft(index, { type: e.target.value as PartyDraft["type"] })}
+                    disabled={row.ignored || row.added}
+                    className="px-1 py-0.5 border rounded text-[10px] disabled:bg-gray-50"
+                  >
+                    <option value="INDIVIDUAL">Şahıs</option>
+                    <option value="COMPANY">Kurum</option>
+                    <option value="PUBLIC_INSTITUTION">Kamu</option>
+                  </select>
+                  <select
+                    data-testid={`party-role-${index}`}
+                    value={row.draft.role}
+                    onChange={(e) => updatePartyDraft(index, { role: e.target.value as PartyDraft["role"] })}
+                    disabled={row.ignored || row.added}
+                    className="px-1 py-0.5 border rounded text-[10px] disabled:bg-gray-50"
+                  >
+                    <option value="BORCLU">Borçlu</option>
+                    <option value="ALACAKLI">Alacaklı</option>
+                    <option value="KEFIL">Kefil</option>
+                    <option value="CIRANTA">Ciranta</option>
+                    <option value="AVAL">Aval</option>
+                    <option value="MUTESELSIL">Müteselsil Borçlu</option>
+                  </select>
+                  <input
+                    type="text"
+                    data-testid={`party-id-${index}`}
+                    value={row.draft.identityNo ?? ""}
+                    onChange={(e) => updatePartyDraft(index, { identityNo: e.target.value })}
+                    disabled={row.ignored || row.added}
+                    placeholder="TCKN/VKN"
+                    className="w-[100px] px-1 py-0.5 border rounded text-[10px] disabled:bg-gray-50"
+                  />
+                  {row.added ? (
+                    <span className="px-1 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[10px] flex items-center gap-0.5">
+                      <CheckCircle className="h-3 w-3" /> Eklendi
+                    </span>
+                  ) : row.ignored ? (
                     <button
                       type="button"
-                      onClick={() => handleAcceptParty(party)}
-                      className="px-1 py-0.5 bg-emerald-500 text-white text-[10px] rounded hover:bg-emerald-600"
+                      onClick={() => updatePartyRow(index, { ignored: false })}
+                      className="px-1 py-0.5 border border-gray-300 text-gray-600 text-[10px] rounded hover:bg-gray-50"
                     >
-                      Ekle
+                      Geri al
                     </button>
+                  ) : (
+                    <>
+                      {isDebtorRole(row.draft.role) && (
+                        <button
+                          type="button"
+                          data-testid={`party-accept-${index}`}
+                          onClick={() => acceptPartyRow(index)}
+                          className="px-1 py-0.5 bg-emerald-500 text-white text-[10px] rounded hover:bg-emerald-600"
+                        >
+                          Ekle
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => updatePartyRow(index, { ignored: true })}
+                        className="px-1 py-0.5 border border-gray-300 text-gray-600 text-[10px] rounded hover:bg-gray-50"
+                      >
+                        Yoksay
+                      </button>
+                    </>
                   )}
                 </div>
               ))}
