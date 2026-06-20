@@ -395,6 +395,7 @@ export class CaseController {
       interestType?: string;
       interestRate?: number;
       interestStartDate?: string;
+      interestEndDate?: string;
       sourceDocumentNo?: string;
       hasKdv?: boolean;
       kdvRate?: number;

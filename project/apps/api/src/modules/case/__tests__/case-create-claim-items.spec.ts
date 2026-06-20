@@ -11,7 +11,7 @@
 
 import { ClaimItemType } from '@prisma/client';
 import { CaseService } from '../case.service';
-import { DueType } from '../dto/case.dto';
+import { DueType, InterestType } from '../dto/case.dto';
 
 describe('CaseService.createClaimItemsFromDues (G1)', () => {
   const stub = {} as any;
@@ -34,7 +34,17 @@ describe('CaseService.createClaimItemsFromDues (G1)', () => {
   it('non-NAFAKA persisted dues → markerlı ClaimItem üretir; itemType eşlenir; tenantId/caseId set', async () => {
     const { tx, created } = mockTx();
     const dues = [
-      { id: 'due-1', type: DueType.PRINCIPAL, amount: 1000, dueDate: '2026-01-01' },
+      {
+        id: 'due-1',
+        type: DueType.PRINCIPAL,
+        amount: 1000,
+        dueDate: '2026-01-01',
+        interestType: InterestType.YASAL,
+        interestRate: 24,
+        interestStartDate: '2026-01-02',
+        interestEndDate: '2026-02-02',
+        interestAmount: 123.45,
+      },
       { id: 'due-2', type: DueType.INTEREST, amount: 200, dueDate: '2026-01-01' },
       { id: 'due-3', type: DueType.EXPENSE, amount: 50, dueDate: '2026-01-01' },
     ];
@@ -51,7 +61,14 @@ describe('CaseService.createClaimItemsFromDues (G1)', () => {
     expect(created.every((c) => c.caseId === 'case-1')).toBe(true);
     expect(created[0].demandedAmount).toBe(1000);
     expect(created[0].originalAmount).toBe(1000);
+    expect(created[0].interestType).toBe(InterestType.YASAL);
+    expect(created[0].interestRate).toBe(24);
+    expect(created[0].interestStartDate).toEqual(new Date('2026-01-02'));
+    expect(created[0].interestEndDate).toEqual(new Date('2026-02-02'));
     expect(created[0].metadata).toEqual({
+      dueInterest: {
+        interestAmount: 123.45,
+      },
       dueSync: {
         sourceDueId: 'due-1',
         mappedFrom: 'Due',

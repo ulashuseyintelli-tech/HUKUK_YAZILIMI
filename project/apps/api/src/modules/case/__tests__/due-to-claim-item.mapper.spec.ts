@@ -7,7 +7,7 @@
 
 import { ClaimItemType } from '@prisma/client';
 import { mapDueTypeToClaimItemType, buildClaimItemData } from '../due-to-claim-item.mapper';
-import { DueType, DueDto } from '../dto/case.dto';
+import { DueType, DueDto, InterestType } from '../dto/case.dto';
 
 describe('mapDueTypeToClaimItemType (G1)', () => {
   const expected: Array<[DueType, ClaimItemType | null]> = [
@@ -65,5 +65,47 @@ describe('buildClaimItemData (G1)', () => {
     expect(data.currency).toBe('TRY');
     expect(data.description).toBe('Asıl Alacak');
     expect(data.dueDate).toEqual(new Date('2026-01-01'));
+  });
+
+  it('DB-backed faiz girdilerini ClaimItem alanlarina, interestAmount izini metadataya tasir', () => {
+    const data = buildClaimItemData(
+      'tenant-1',
+      'case-1',
+      {
+        ...due,
+        interestType: InterestType.YASAL,
+        interestRate: 24,
+        interestStartDate: '2026-01-02',
+        interestEndDate: '2026-02-02',
+        interestAmount: 123.45,
+      },
+      ClaimItemType.PRINCIPAL,
+    );
+
+    expect(data.interestType).toBe(InterestType.YASAL);
+    expect(data.interestRate).toBe(24);
+    expect(data.interestStartDate).toEqual(new Date('2026-01-02'));
+    expect(data.interestEndDate).toEqual(new Date('2026-02-02'));
+    expect(data.metadata).toEqual({
+      dueInterest: {
+        interestAmount: 123.45,
+      },
+    });
+    expect((data as any).interestAmount).toBeUndefined();
+  });
+
+  it('interestAmount yoksa metadata yazmadan guvenli calisir', () => {
+    const data = buildClaimItemData(
+      'tenant-1',
+      'case-1',
+      {
+        ...due,
+        interestType: InterestType.YASAL,
+      },
+      ClaimItemType.PRINCIPAL,
+    );
+
+    expect(data.interestType).toBe(InterestType.YASAL);
+    expect(data.metadata).toBeUndefined();
   });
 });

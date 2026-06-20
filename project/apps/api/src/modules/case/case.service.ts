@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger, Inject, forwardRef } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
-import { CreateCaseDto, UpdateCaseDto, CaseSubCategory, Currency, DueDto, DueType, CaseInstrumentInputDto, CaseStaffInputDto } from "./dto/case.dto";
-import { Prisma, LegalCaseStatus } from "@prisma/client";
+import { CreateCaseDto, UpdateCaseDto, CaseSubCategory, Currency, DueDto, DueType, InterestType, CaseInstrumentInputDto, CaseStaffInputDto } from "./dto/case.dto";
+import { Prisma, LegalCaseStatus, InterestType as PrismaInterestType } from "@prisma/client";
 import { mapDueTypeToClaimItemType, buildClaimItemData } from "./due-to-claim-item.mapper";
 import {
   resolveCaseInstrumentType,
@@ -38,6 +38,61 @@ import {
   planResponsible,
 } from "./case-responsible.helpers";
 export { pickResponsibleFallbackIndex, resolveResponsiblePromotion, planResponsible };
+
+type DueForClaimItemSync = {
+  id: string;
+  type: string;
+  description?: string | null;
+  amount: unknown;
+  dueDate: Date | string;
+  currency?: string | null;
+  sortOrder?: number | null;
+  interestType?: string | null;
+  interestRate?: unknown;
+  interestStartDate?: Date | string | null;
+  interestEndDate?: Date | string | null;
+  interestAmount?: number | null;
+};
+
+function normalizeDueInterestRate(value: unknown): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  return Number(value);
+}
+
+function normalizeClaimItemInterestRate(value: unknown): number | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  return Number(value);
+}
+
+function serializeDueInterestDate(value?: Date | string | null): string | undefined {
+  if (!value) return undefined;
+  return value instanceof Date ? value.toISOString() : value;
+}
+
+function normalizeClaimItemInterestDate(value?: Date | string | null): Date | null | undefined {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  return value instanceof Date ? value : new Date(value);
+}
+
+function mergeDueSyncMetadata(
+  metadata: Prisma.ClaimItemUncheckedCreateInput["metadata"],
+  dueId: string,
+): Prisma.InputJsonObject {
+  const base =
+    metadata && typeof metadata === "object" && !Array.isArray(metadata)
+      ? { ...(metadata as Prisma.InputJsonObject) }
+      : {};
+
+  return {
+    ...base,
+    dueSync: {
+      sourceDueId: dueId,
+      mappedFrom: "Due",
+    },
+  };
+}
 
 @Injectable()
 export class CaseService {
@@ -829,15 +884,7 @@ export class CaseService {
   private buildDueSyncClaimItemData(
     tenantId: string,
     caseId: string,
-    due: {
-      id: string;
-      type: string;
-      description?: string | null;
-      amount: unknown;
-      dueDate: Date | string;
-      currency?: string | null;
-      sortOrder?: number | null;
-    },
+    due: DueForClaimItemSync,
   ): Prisma.ClaimItemUncheckedCreateInput | null {
     const itemType = mapDueTypeToClaimItemType(due.type as DueType);
     if (itemType === null) return null;
@@ -847,18 +894,20 @@ export class CaseService {
       description: due.description ?? undefined,
       amount: Number(due.amount),
       dueDate: due.dueDate instanceof Date ? due.dueDate.toISOString() : due.dueDate,
+      interestType: due.interestType ? (due.interestType as InterestType) : undefined,
+      interestRate: normalizeDueInterestRate(due.interestRate),
+      interestStartDate: serializeDueInterestDate(due.interestStartDate),
+      interestEndDate: serializeDueInterestDate(due.interestEndDate),
+      interestAmount: due.interestAmount ?? undefined,
     };
 
+    const base = buildClaimItemData(tenantId, caseId, dueDto, itemType);
+
     return {
-      ...buildClaimItemData(tenantId, caseId, dueDto, itemType),
+      ...base,
       currency: due.currency || "TRY",
       sortOrder: due.sortOrder ?? 0,
-      metadata: {
-        dueSync: {
-          sourceDueId: due.id,
-          mappedFrom: 'Due',
-        },
-      },
+      metadata: mergeDueSyncMetadata(base.metadata, due.id),
     };
   }
 
@@ -907,15 +956,7 @@ export class CaseService {
     tx: Prisma.TransactionClient,
     tenantId: string,
     caseId: string,
-    due: {
-      id: string;
-      type: string;
-      description?: string | null;
-      amount: unknown;
-      dueDate: Date | string;
-      currency?: string | null;
-      sortOrder?: number | null;
-    },
+    due: DueForClaimItemSync,
   ): Promise<void> {
     const claimItem = await this.findDueSyncClaimItem(tx, tenantId, caseId, due.id);
     if (!claimItem) return;
@@ -940,6 +981,10 @@ export class CaseService {
         currency: due.currency || "TRY",
         description: due.description,
         dueDate: due.dueDate instanceof Date ? due.dueDate : new Date(due.dueDate),
+        interestType: due.interestType ? (due.interestType as PrismaInterestType) : null,
+        interestRate: normalizeClaimItemInterestRate(due.interestRate),
+        interestStartDate: normalizeClaimItemInterestDate(due.interestStartDate),
+        interestEndDate: normalizeClaimItemInterestDate(due.interestEndDate),
         sortOrder: due.sortOrder ?? 0,
       },
     });
@@ -1366,6 +1411,10 @@ export class CaseService {
                 description: dueDto.description,
                 amount: dueDto.amount,
                 dueDate: new Date(dueDto.dueDate),
+                interestType: dueDto.interestType,
+                interestRate: dueDto.interestRate,
+                interestStartDate: dueDto.interestStartDate ? new Date(dueDto.interestStartDate) : undefined,
+                interestEndDate: dueDto.interestEndDate ? new Date(dueDto.interestEndDate) : undefined,
               },
             });
             createdDues.push({
@@ -1376,6 +1425,11 @@ export class CaseService {
               dueDate: due.dueDate.toISOString(),
               currency: due.currency,
               sortOrder: due.sortOrder,
+              interestType: due.interestType ? (due.interestType as InterestType) : undefined,
+              interestRate: normalizeDueInterestRate(due.interestRate),
+              interestStartDate: serializeDueInterestDate(due.interestStartDate),
+              interestEndDate: serializeDueInterestDate(due.interestEndDate),
+              interestAmount: dueDto.interestAmount,
             });
           }
 
@@ -2807,6 +2861,7 @@ export class CaseService {
       interestType?: string;
       interestRate?: number;
       interestStartDate?: string;
+      interestEndDate?: string;
       sourceDocumentNo?: string;
       hasKdv?: boolean;
       kdvRate?: number;
@@ -2836,6 +2891,7 @@ export class CaseService {
           interestType: data.interestType,
           interestRate: data.interestRate,
           interestStartDate: data.interestStartDate ? new Date(data.interestStartDate) : undefined,
+          interestEndDate: data.interestEndDate ? new Date(data.interestEndDate) : undefined,
           sourceDocumentNo: data.sourceDocumentNo,
           hasKdv: data.hasKdv || false,
           kdvRate: data.kdvRate,

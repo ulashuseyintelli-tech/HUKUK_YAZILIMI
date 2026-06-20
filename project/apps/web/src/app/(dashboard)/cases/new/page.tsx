@@ -6,6 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculator, TrendingUp, Receipt, Banknote, FileCheck, Calendar, XCircle, Info, Search, Users, Building2, Landmark, Edit2, Trash2, Phone, Mail, AlertCircle, Settings } from "lucide-react";
 import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
+import { buildCreateCaseDuesPayload } from "@/lib/case-due-payload";
 import { isPoaDuplicateSuppressed } from "@/lib/poa-ux";
 import { resolveLawyerIdsFromScan } from "@/lib/lawyer-match";
 import { buildStaffPayload } from "@/lib/case-staff-payload";
@@ -1016,7 +1017,7 @@ export default function NewCasePage() {
         })),
         // Eski format (geriye uyumluluk)
         debtors: debtors.filter(d => d.name).map(d => ({ id: d.isNew ? undefined : d.id, type: d.type, name: d.name, identityNo: d.identityNo, taxOffice: d.taxOffice, phone: d.phone, email: d.email, address: d.address })),
-        dues: dues.filter(d => d.amount && parseFloat(d.amount) > 0).map(d => ({ type: d.type, description: d.description || undefined, amount: parseFloat(d.amount), dueDate: d.dueDate })),
+        dues: buildCreateCaseDuesPayload(dues),
         instruments: instruments, // PR-N4b: kambiyo evrakları (CaseInstrumentInputDto[]); backend flag-gated (N3-wire)
       });
       if (selectedForm) recordUsage(selectedForm.code);

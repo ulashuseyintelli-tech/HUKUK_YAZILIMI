@@ -9,7 +9,7 @@
 import { NotFoundException } from '@nestjs/common';
 import { ClaimItemType } from '@prisma/client';
 import { CaseService } from '../case.service';
-import { DueType } from '../dto/case.dto';
+import { DueType, InterestType } from '../dto/case.dto';
 
 const stub = {} as any;
 
@@ -70,6 +70,10 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       amount: 1000,
       dueDate: '2026-01-01',
       currency: 'TRY',
+      interestType: InterestType.YASAL,
+      interestRate: 24,
+      interestStartDate: '2026-01-02',
+      interestEndDate: '2026-02-02',
     });
 
     expect(tx.claimItem.create).toHaveBeenCalledTimes(1);
@@ -82,6 +86,10 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
         demandedAmount: 1000,
         amount: 1000,
         currency: 'TRY',
+        interestType: InterestType.YASAL,
+        interestRate: 24,
+        interestStartDate: new Date('2026-01-02T00:00:00.000Z'),
+        interestEndDate: new Date('2026-02-02T00:00:00.000Z'),
         metadata: {
           dueSync: {
             sourceDueId: 'due-1',
@@ -122,6 +130,10 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
             amount: 1250,
             description: 'Güncel ana alacak',
             dueDate: new Date('2026-02-01T00:00:00.000Z'),
+            interestType: InterestType.TICARI,
+            interestRate: 48,
+            interestStartDate: new Date('2026-02-02T00:00:00.000Z'),
+            interestEndDate: new Date('2026-04-01T00:00:00.000Z'),
           }),
         ),
       },
@@ -136,6 +148,10 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       amount: 1250,
       description: 'Güncel ana alacak',
       dueDate: '2026-02-01',
+      interestType: InterestType.TICARI,
+      interestRate: 48,
+      interestStartDate: '2026-02-02',
+      interestEndDate: '2026-04-01',
     });
 
     expect(tx.claimItem.findMany).toHaveBeenCalledWith({
@@ -155,6 +171,10 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
         amount: 1250,
         description: 'Güncel ana alacak',
         dueDate: new Date('2026-02-01T00:00:00.000Z'),
+        interestType: InterestType.TICARI,
+        interestRate: 48,
+        interestStartDate: new Date('2026-02-02T00:00:00.000Z'),
+        interestEndDate: new Date('2026-04-01T00:00:00.000Z'),
       }),
     });
   });

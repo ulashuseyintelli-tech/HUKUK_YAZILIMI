@@ -1,4 +1,4 @@
-import { ClaimItemType, Prisma } from '@prisma/client';
+import { ClaimItemType, InterestType as PrismaInterestType, Prisma } from '@prisma/client';
 import { DueType, DueDto } from './dto/case.dto';
 
 /**
@@ -38,6 +38,9 @@ const DUE_TO_CLAIM_ITEM: Record<DueType, ClaimItemType | null> = {
  *
  * Çağrıldığı yerler:
  * - CaseService.createClaimItemsFromDues() → POST /cases (dosya açılışı, dues→ClaimItem)
+ * - CaseService.createDue() → POST /cases/:id/dues (dosya açıldıktan sonra Due→ClaimItem sync)
+ * - CaseService.syncMarkedClaimItemFromDue() → PATCH /cases/:id/dues/:dueId (marker'lı ClaimItem sync)
+ * - planBackfillForCase() → scripts/backfill-due-to-claimitem.ts (eski Due kayıtları için plan)
  */
 export function mapDueTypeToClaimItemType(dueType: DueType): ClaimItemType | null {
   if (!(dueType in DUE_TO_CLAIM_ITEM)) {
@@ -49,6 +52,24 @@ export function mapDueTypeToClaimItemType(dueType: DueType): ClaimItemType | nul
   return DUE_TO_CLAIM_ITEM[dueType];
 }
 
+function toPrismaInterestType(value?: string | null): PrismaInterestType | undefined {
+  return value ? (value as PrismaInterestType) : undefined;
+}
+
+function toDate(value?: string | Date | null): Date | undefined {
+  if (!value) return undefined;
+  return value instanceof Date ? value : new Date(value);
+}
+
+function buildDueInterestMetadata(interestAmount?: number | null): Prisma.InputJsonObject | undefined {
+  if (interestAmount === undefined || interestAmount === null) return undefined;
+  return {
+    dueInterest: {
+      interestAmount,
+    },
+  };
+}
+
 /**
  * DueDto'dan ClaimItem create verisi kurar (G1 köprüsü).
  * Üç-tutar sistemi açılışta eşitlenir: originalAmount = demandedAmount = amount = due.amount.
@@ -56,6 +77,8 @@ export function mapDueTypeToClaimItemType(dueType: DueType): ClaimItemType | nul
  *
  * Çağrıldığı yerler:
  * - CaseService.createClaimItemsFromDues() → POST /cases (dosya açılışı, dues→ClaimItem)
+ * - CaseService.createDue() → POST /cases/:id/dues (dosya açıldıktan sonra Due→ClaimItem sync)
+ * - planBackfillForCase() → scripts/backfill-due-to-claimitem.ts (eski Due kayıtları için plan)
  */
 export function buildClaimItemData(
   tenantId: string,
@@ -64,6 +87,7 @@ export function buildClaimItemData(
   itemType: ClaimItemType,
 ): Prisma.ClaimItemUncheckedCreateInput {
   const amount = due.amount;
+  const metadata = buildDueInterestMetadata(due.interestAmount);
   return {
     tenantId,
     caseId,
@@ -74,5 +98,10 @@ export function buildClaimItemData(
     currency: 'TRY',
     description: due.description,
     dueDate: due.dueDate ? new Date(due.dueDate) : null,
+    interestType: toPrismaInterestType(due.interestType),
+    interestRate: due.interestRate,
+    interestStartDate: toDate(due.interestStartDate),
+    interestEndDate: toDate(due.interestEndDate),
+    ...(metadata ? { metadata } : {}),
   };
 }
