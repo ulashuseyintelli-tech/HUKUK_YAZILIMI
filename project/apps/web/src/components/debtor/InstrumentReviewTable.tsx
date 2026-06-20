@@ -7,7 +7,15 @@
 
 import React from "react";
 import { AlertTriangle } from "lucide-react";
-import { Instrument, INSTRUMENT_TYPE_LABELS, ReviewRow, isInstrumentComplete } from "./ocr-instrument";
+import {
+  Instrument,
+  INSTRUMENT_TYPE_LABELS,
+  ReviewRow,
+  isInstrumentComplete,
+  effectiveIssueDate,
+  shouldWarnCekDates,
+  showsVade,
+} from "./ocr-instrument";
 
 interface InstrumentReviewTableProps {
   rows: ReviewRow[];
@@ -49,6 +57,9 @@ export function InstrumentReviewTable({ rows, onChange }: InstrumentReviewTableP
       instrument: { ...r.instrument, amount: value === "" ? undefined : Number(value) },
     }));
 
+  // BUG-X: "Vade" kolonu yalnız çek-DIŞI satır varsa görünür (tüm satırlar çekse kolon kalkar).
+  const anyVade = rows.some((r) => showsVade(r.instrument));
+
   return (
     <div className="overflow-x-auto rounded border border-amber-200 bg-white">
       <table className="w-full text-xs" data-testid="instrument-review-table">
@@ -58,7 +69,7 @@ export function InstrumentReviewTable({ rows, onChange }: InstrumentReviewTableP
             <th className="px-2 py-1">Tür</th>
             <th className="px-2 py-1">No</th>
             <th className="px-2 py-1">Keşide</th>
-            <th className="px-2 py-1">Vade</th>
+            {anyVade && <th className="px-2 py-1">Vade</th>}
             <th className="px-2 py-1">Tutar</th>
             <th className="px-2 py-1">Keşideci</th>
             <th className="px-2 py-1">Sayfa</th>
@@ -71,7 +82,8 @@ export function InstrumentReviewTable({ rows, onChange }: InstrumentReviewTableP
             const review = inst.needsReview === true;
             const incomplete = !isInstrumentComplete(inst);
             const noMissing = !inst.documentNo || inst.documentNo.trim() === "";
-            const issueMissing = !inst.issueDate;
+            const issueMissing = !effectiveIssueDate(inst); // BUG-X: çek için dueDate fallback dahil
+            const warnCek = shouldWarnCekDates(inst);
             const amountMissing = inst.amount == null || inst.amount <= 0;
             return (
               <React.Fragment key={index}>
@@ -114,23 +126,42 @@ export function InstrumentReviewTable({ rows, onChange }: InstrumentReviewTableP
                     />
                   </td>
                   <td className="px-2 py-1">
-                    <input
-                      type="date"
-                      value={inst.issueDate ?? ""}
-                      onChange={(e) => editIssueDate(index, e.target.value)}
-                      className={`border rounded px-1 py-0.5 text-xs ${issueMissing ? "border-red-400" : ""}`}
-                      aria-label={`Satır ${index + 1} keşide`}
-                    />
+                    <div className="flex items-center">
+                      <input
+                        type="date"
+                        value={effectiveIssueDate(inst) ?? ""}
+                        onChange={(e) => editIssueDate(index, e.target.value)}
+                        className={`border rounded px-1 py-0.5 text-xs ${issueMissing ? "border-red-400" : ""}`}
+                        aria-label={`Satır ${index + 1} keşide`}
+                      />
+                      {warnCek && (
+                        <span
+                          data-testid={`cek-date-warn-${index}`}
+                          title="Çekte vade bulunmaz. OCR farklı ikinci bir tarih buldu; bu tarih keşide olabilir, kontrol edin."
+                          className="ml-1 inline-flex align-middle"
+                        >
+                          <AlertTriangle className="h-3 w-3 text-amber-600" />
+                        </span>
+                      )}
+                    </div>
                   </td>
-                  <td className="px-2 py-1">
-                    <input
-                      type="date"
-                      value={inst.dueDate ?? ""}
-                      onChange={(e) => editDueDate(index, e.target.value)}
-                      className="border rounded px-1 py-0.5 text-xs"
-                      aria-label={`Satır ${index + 1} vade`}
-                    />
-                  </td>
+                  {anyVade && (
+                    <td className="px-2 py-1">
+                      {showsVade(inst) ? (
+                        <input
+                          type="date"
+                          value={inst.dueDate ?? ""}
+                          onChange={(e) => editDueDate(index, e.target.value)}
+                          className="border rounded px-1 py-0.5 text-xs"
+                          aria-label={`Satır ${index + 1} vade`}
+                        />
+                      ) : (
+                        <span title="Çekte vade bulunmaz" className="text-slate-400">
+                          —
+                        </span>
+                      )}
+                    </td>
+                  )}
                   <td className="px-2 py-1">
                     <input
                       type="number"
@@ -147,7 +178,7 @@ export function InstrumentReviewTable({ rows, onChange }: InstrumentReviewTableP
                 {(inst.evidenceText || (review && inst.duplicateCandidateReason)) && (
                   <tr className={review ? "bg-amber-50" : ""}>
                     <td />
-                    <td colSpan={8} className="px-2 pb-1 text-[10px] text-slate-500">
+                    <td colSpan={anyVade ? 8 : 7} className="px-2 pb-1 text-[10px] text-slate-500">
                       {review && inst.duplicateCandidateReason && (
                         <div className="text-amber-700">⚠ {inst.duplicateCandidateReason}</div>
                       )}
