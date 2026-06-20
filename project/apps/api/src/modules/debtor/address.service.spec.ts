@@ -2,6 +2,7 @@ import { describeDb } from '../../../test/describe-db';
 import { Test, TestingModule } from '@nestjs/testing';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AddressService, AddressDTO } from './address.service';
+import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
 import * as fc from 'fast-check';
 import {
   AddressType,
@@ -36,6 +37,10 @@ describeDb('AddressService Property Tests', () => {
       providers: [
         AddressService,
         PrismaService,
+        {
+          provide: CaseDebtorLifecycleGuardService,
+          useValue: { assertActiveByCaseDebtorId: jest.fn() },
+        },
       ],
     }).compile();
 

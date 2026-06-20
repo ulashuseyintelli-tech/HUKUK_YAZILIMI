@@ -8,6 +8,7 @@ import { PrismaService } from "@/prisma/prisma.service";
 import { normalizePersonName } from "@/common/name-match.util";
 // RFA-006: adres dedup (normalize + hash); tüm write yolları ortak helper kullanır.
 import { computeAddressHash, findOrCreateDebtorAddress } from "@/common/address-hash.util";
+import { CaseDebtorLifecycleGuardService } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service";
 import {
   CreateDebtorDto,
   UpdateDebtorDto,
@@ -288,7 +289,17 @@ const DebtorIssueLabelMap: Record<DebtorIssueCode, string> = {
 
 @Injectable()
 export class DebtorService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly caseDebtorLifecycleGuard?: CaseDebtorLifecycleGuardService
+  ) {}
+
+  private requireCaseDebtorLifecycleGuard(): CaseDebtorLifecycleGuardService {
+    if (!this.caseDebtorLifecycleGuard) {
+      throw new Error("CaseDebtorLifecycleGuardService is required for CaseDebtor lifecycle writes.");
+    }
+    return this.caseDebtorLifecycleGuard;
+  }
 
   // ==================== CRUD OPERATIONS ====================
 
@@ -1771,6 +1782,10 @@ export class DebtorService {
   /**
    * Update service status for a case debtor
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DebtorController.updateServiceStatus() → PUT /case/:caseId/:caseDebtorId/service (manuel tebligat servis durumu güncelleme)
+  /// </remarks>
   async updateServiceStatus(
     tenantId: string,
     caseId: string,
@@ -1789,6 +1804,12 @@ export class DebtorService {
       addressId?: string; // Tebligat yapılan adres ID'si
     }
   ): Promise<DebtorDetailDTO> {
+    await this.requireCaseDebtorLifecycleGuard().assertActiveByCaseDebtorId(
+      tenantId,
+      caseDebtorId,
+      { expectedCaseId: caseId }
+    );
+
     // Verify access
     const caseDebtor = await this.prisma.caseDebtor.findFirst({
       where: { id: caseDebtorId, caseId, case: { tenantId } },
@@ -1970,6 +1991,10 @@ export class DebtorService {
    * Start a new service attempt (after RETURNED)
    * Resets status to READY and clears tracking info
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DebtorController.startNewServiceAttempt() → POST /case/:caseId/:caseDebtorId/service/retry (manuel yeni tebligat denemesi başlatma)
+  /// </remarks>
   async startNewServiceAttempt(
     tenantId: string,
     caseId: string,
@@ -1977,6 +2002,12 @@ export class DebtorService {
     userId: string,
     newAddressId?: string
   ): Promise<DebtorDetailDTO> {
+    await this.requireCaseDebtorLifecycleGuard().assertActiveByCaseDebtorId(
+      tenantId,
+      caseDebtorId,
+      { expectedCaseId: caseId }
+    );
+
     const caseDebtor = await this.prisma.caseDebtor.findFirst({
       where: { id: caseDebtorId, caseId, case: { tenantId } },
     });
