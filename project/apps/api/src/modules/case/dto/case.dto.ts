@@ -272,6 +272,26 @@ export class DueDto {
 
   @IsDateString()
   dueDate: string;
+
+  @IsEnum(InterestType)
+  @IsOptional()
+  interestType?: InterestType;
+
+  @IsNumber()
+  @IsOptional()
+  interestRate?: number;
+
+  @IsDateString()
+  @IsOptional()
+  interestStartDate?: string;
+
+  @IsDateString()
+  @IsOptional()
+  interestEndDate?: string;
+
+  @IsNumber()
+  @IsOptional()
+  interestAmount?: number;
 }
 
 /**
