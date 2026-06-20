@@ -14,6 +14,7 @@ import * as path from "path";
 import * as os from "os";
 import OpenAI from "openai";
 import { ClaimEngineService } from "../claim-engine/claim-engine.service";
+import { sanitizeOcrIdentityNo } from "../../common/identity-validation.util";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pdfParse = require("pdf-parse");
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -2088,7 +2089,7 @@ JSON formatında yanıt ver:
           name: p.name || "",
           type: p.type || "INDIVIDUAL",
           role: p.role || "BORCLU",
-          identityNo: p.identityNo,
+          identityNo: sanitizeOcrIdentityNo(p.identityNo, p.type || "INDIVIDUAL"),
           address: p.address,
           city: p.city,
           district: p.district,
@@ -2336,7 +2337,7 @@ Sadece JSON döndür.`
           name: p.name || "",
           type: p.type || "INDIVIDUAL",
           role: p.role || "BORCLU",
-          identityNo: p.identityNo,
+          identityNo: sanitizeOcrIdentityNo(p.identityNo, p.type || "INDIVIDUAL"),
           address: p.address,
           city: p.city,
           district: p.district,
