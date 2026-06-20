@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClientNotificationService } from '../client-notification/client-notification.service';
+import { CaseDebtorLifecycleGuardService } from '../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service';
 import { maskPhone } from '../../common/pii-mask.util';
 import {
   AddressTask,
@@ -9,6 +10,7 @@ import {
   AddressTaskResultType,
   AddressTaskFailureReason,
   AddressTaskCancellationReason,
+  CaseDebtorLifecycleStatus,
   ManualTaskResolution,
   Prisma,
 } from '@prisma/client';
@@ -54,6 +56,7 @@ export class AddressTaskService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly clientNotificationService: ClientNotificationService,
+    private readonly caseDebtorLifecycleGuard: CaseDebtorLifecycleGuardService,
   ) {}
 
   /**
@@ -107,16 +110,17 @@ export class AddressTaskService {
     // Veri bütünlüğü guard'ı (opt-in): caseId+debtorId aynı tenant'ta olsa bile, borçlu
     // gerçekten o dosyanın borçlusu (CaseDebtor satırı) olmalı. Yoksa A dosyası + B dosyasının
     // borçlusuyla tutarsız bir AddressTask oluşur. caseId yukarıda tenant-doğrulandığı için
-    // CaseDebtor sorgusu tenant-güvenlidir (ek case:{tenantId} gereksiz). Yalnız controller
-    // POST /create bu bayrağı geçirir; iç çağrılar ilişkiyi yapısı gereği sağlar (bkz. @remarks).
+    // Lifecycle guard tenant+case+debtor ile membership ve PASSIVE durumunu birlikte denetler.
+    // Yalnız controller POST /create bu bayrağı geçirir; iç çağrılar ilişkiyi yapısı gereği sağlar (bkz. @remarks).
     // (Mevcut desen: client-intake-promotion.service.ts içindeki "Borçlu bu takibe ait değil".)
     if (enforceCaseDebtorLink) {
-      const link = await this.prisma.caseDebtor.findFirst({
-        where: { caseId, debtorId },
-        select: { id: true },
-      });
-      if (!link) {
-        throw new BadRequestException('Borçlu bu takibe ait değil');
+      try {
+        await this.caseDebtorLifecycleGuard.assertActiveByCaseAndDebtor(tenantId, caseId, debtorId);
+      } catch (error) {
+        if (error instanceof NotFoundException) {
+          throw new BadRequestException('Borçlu bu takibe ait değil');
+        }
+        throw error;
       }
     }
 
@@ -504,6 +508,10 @@ export class AddressTaskService {
    * Her borçlu için CLIENT_REQUEST_DEBTOR_ADDRESSES görevi oluşturur
    * Müvekkile otomatik bildirim gönderir
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AddressTaskController.triggerAddressWorkflow() → POST /address-tasks/case/:caseId/trigger-address-workflow (case-level address task workflow)
+  /// </remarks>
   async triggerAddressWorkflowForCase(
     tenantId: string,
     caseId: string,
@@ -571,10 +579,17 @@ export class AddressTaskService {
 
     let tasksCreated = 0;
     let tasksSkipped = 0;
+    let passiveSkipped = 0;
     const debtorNames: string[] = [];
     const skippedDebtorNames: string[] = [];
 
     for (const cd of caseDebtors) {
+      if (cd.lifecycleStatus === CaseDebtorLifecycleStatus.PASSIVE) {
+        this.logger.log(`Skipping address request for passive case debtor ${cd.debtor.name}`);
+        passiveSkipped++;
+        continue;
+      }
+
       // Bypass kontrolü - müvekkil teyitli adres varsa görev oluşturma (tenant-scoped — ASSIGN-1 blocker #3)
       const bypassCheck = await this.shouldBypassAddressRequest(cd.debtorId, tenantId);
       if (bypassCheck.bypass) {
@@ -708,6 +723,7 @@ export class AddressTaskService {
       {
         debtorsProcessed: caseDebtors.length,
         tasksCreated,
+        passiveSkipped,
         notificationSent,
       },
       true,
