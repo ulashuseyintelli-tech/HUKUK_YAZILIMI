@@ -31,12 +31,12 @@ describe('CaseService.createClaimItemsFromDues (G1)', () => {
     return { tx, created };
   }
 
-  it('non-NAFAKA dues → ClaimItem üretir; itemType eşlenir; tenantId/caseId set', async () => {
+  it('non-NAFAKA persisted dues → markerlı ClaimItem üretir; itemType eşlenir; tenantId/caseId set', async () => {
     const { tx, created } = mockTx();
     const dues = [
-      { type: DueType.PRINCIPAL, amount: 1000, dueDate: '2026-01-01' },
-      { type: DueType.INTEREST, amount: 200, dueDate: '2026-01-01' },
-      { type: DueType.EXPENSE, amount: 50, dueDate: '2026-01-01' },
+      { id: 'due-1', type: DueType.PRINCIPAL, amount: 1000, dueDate: '2026-01-01' },
+      { id: 'due-2', type: DueType.INTEREST, amount: 200, dueDate: '2026-01-01' },
+      { id: 'due-3', type: DueType.EXPENSE, amount: 50, dueDate: '2026-01-01' },
     ];
 
     await (service as any).createClaimItemsFromDues(tx, 'tenant-1', 'case-1', dues);
@@ -51,11 +51,17 @@ describe('CaseService.createClaimItemsFromDues (G1)', () => {
     expect(created.every((c) => c.caseId === 'case-1')).toBe(true);
     expect(created[0].demandedAmount).toBe(1000);
     expect(created[0].originalAmount).toBe(1000);
+    expect(created[0].metadata).toEqual({
+      dueSync: {
+        sourceDueId: 'due-1',
+        mappedFrom: 'Due',
+      },
+    });
   });
 
   it('NAFAKA → ClaimItem üretilmez (Due-only takvim)', async () => {
     const { tx, created } = mockTx();
-    const dues = [{ type: DueType.NAFAKA, amount: 500, dueDate: '2026-01-01' }];
+    const dues = [{ id: 'due-nafaka', type: DueType.NAFAKA, amount: 500, dueDate: '2026-01-01' }];
 
     await (service as any).createClaimItemsFromDues(tx, 'tenant-1', 'case-1', dues);
 
@@ -66,9 +72,9 @@ describe('CaseService.createClaimItemsFromDues (G1)', () => {
   it('karışık: NAFAKA atlanır, diğerleri üretilir', async () => {
     const { tx, created } = mockTx();
     const dues = [
-      { type: DueType.PRINCIPAL, amount: 1000, dueDate: '2026-01-01' },
-      { type: DueType.NAFAKA, amount: 500, dueDate: '2026-01-01' },
-      { type: DueType.HARC, amount: 100, dueDate: '2026-01-01' },
+      { id: 'due-1', type: DueType.PRINCIPAL, amount: 1000, dueDate: '2026-01-01' },
+      { id: 'due-nafaka', type: DueType.NAFAKA, amount: 500, dueDate: '2026-01-01' },
+      { id: 'due-2', type: DueType.HARC, amount: 100, dueDate: '2026-01-01' },
     ];
 
     await (service as any).createClaimItemsFromDues(tx, 'tenant-1', 'case-1', dues);
@@ -78,5 +84,6 @@ describe('CaseService.createClaimItemsFromDues (G1)', () => {
       ClaimItemType.PRINCIPAL,
       ClaimItemType.FEE,
     ]);
+    expect(created.map((c) => c.metadata?.dueSync?.sourceDueId)).toEqual(['due-1', 'due-2']);
   });
 });

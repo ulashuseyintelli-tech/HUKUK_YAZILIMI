@@ -800,13 +800,18 @@ export class CaseService {
     tx: Prisma.TransactionClient,
     tenantId: string,
     caseId: string,
-    dues: DueDto[],
+    dues: Array<DueDto & { id?: string; currency?: string | null; sortOrder?: number | null }>,
   ): Promise<void> {
     for (const due of dues) {
       const itemType = mapDueTypeToClaimItemType(due.type);
       if (itemType === null) continue; // NAFAKA → yalnız Due (taksit takvimi)
+      const claimItemData = due.id
+        ? this.buildDueSyncClaimItemData(tenantId, caseId, { ...due, id: due.id })
+        : buildClaimItemData(tenantId, caseId, due, itemType);
+      if (!claimItemData) continue;
+
       await tx.claimItem.create({
-        data: buildClaimItemData(tenantId, caseId, due, itemType),
+        data: claimItemData,
       });
     }
   }
@@ -817,6 +822,7 @@ export class CaseService {
    *
    * <remarks>
    * Çağrıldığı yerler:
+   * - CaseService.createClaimItemsFromDues() → POST /cases (dosya açılışında persisted Due→ClaimItem marker)
    * - CaseService.createDue() → POST /cases/:id/dues (dosya açıldıktan sonra Due→ClaimItem sync)
    * </remarks>
    */
@@ -850,7 +856,7 @@ export class CaseService {
       metadata: {
         dueSync: {
           sourceDueId: due.id,
-          mappedFrom: due.type,
+          mappedFrom: 'Due',
         },
       },
     };
@@ -1351,8 +1357,9 @@ export class CaseService {
         // 6. Alacak Kalemleri (Dues)
         let duesPrincipal = 0;
         if (dto.dues && dto.dues.length > 0) {
+          const createdDues: Array<DueDto & { id: string; currency?: string | null; sortOrder?: number | null }> = [];
           for (const dueDto of dto.dues) {
-            await tx.due.create({
+            const due = await tx.due.create({
               data: {
                 caseId: newCase.id,
                 type: dueDto.type,
@@ -1361,12 +1368,21 @@ export class CaseService {
                 dueDate: new Date(dueDto.dueDate),
               },
             });
+            createdDues.push({
+              id: due.id,
+              type: due.type as DueType,
+              description: due.description ?? undefined,
+              amount: Number(due.amount),
+              dueDate: due.dueDate.toISOString(),
+              currency: due.currency,
+              sortOrder: due.sortOrder,
+            });
           }
 
           // 6b. G1 KÖPRÜSÜ — kanonik ClaimItem'lar üret (bakiye motoru bunları okur).
           // Due satırları korunur (legacy/transition + nafaka takvimi); NAFAKA için
           // ClaimItem üretilmez. Aynı tx içinde, tenantId zorunlu.
-          await this.createClaimItemsFromDues(tx, tenantId, newCase.id, dto.dues);
+          await this.createClaimItemsFromDues(tx, tenantId, newCase.id, createdDues);
 
           // Ana para (dues PRINCIPAL); case.update aşağıda instrument ile birleştirilir.
           duesPrincipal = dto.dues

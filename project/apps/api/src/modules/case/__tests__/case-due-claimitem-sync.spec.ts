@@ -85,7 +85,7 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
         metadata: {
           dueSync: {
             sourceDueId: 'due-1',
-            mappedFrom: DueType.PRINCIPAL,
+            mappedFrom: 'Due',
           },
         },
       }),
@@ -159,6 +159,69 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
     });
   });
 
+  it('case-create markerıyla oluşan ClaimItemı updateDue senkronlar', async () => {
+    const tx = makeTx({
+      due: {
+        findFirst: jest.fn(async () => makeDue()),
+        update: jest.fn(async ({ data }: any) =>
+          makeDue({
+            ...data,
+            amount: 1500,
+            description: 'Açılış alacağı güncel',
+            dueDate: new Date('2026-03-01T00:00:00.000Z'),
+          }),
+        ),
+      },
+      claimItem: {
+        findMany: jest.fn(async () => [{ id: 'claim-opening' }]),
+        update: jest.fn(async ({ data }: any) => ({ id: 'claim-opening', ...data })),
+      },
+    });
+    const { service } = makeService(tx);
+    const createTx = {
+      claimItem: {
+        create: jest.fn(async ({ data }: any) => ({ id: 'claim-opening', ...data })),
+      },
+    } as any;
+
+    await (service as any).createClaimItemsFromDues(createTx, 'tenant-1', 'case-1', [makeDue()]);
+    expect(createTx.claimItem.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        metadata: {
+          dueSync: {
+            sourceDueId: 'due-1',
+            mappedFrom: 'Due',
+          },
+        },
+      }),
+    });
+
+    await service.updateDue('tenant-1', 'case-1', 'due-1', {
+      amount: 1500,
+      description: 'Açılış alacağı güncel',
+      dueDate: '2026-03-01',
+    });
+
+    expect(tx.claimItem.findMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: 'tenant-1',
+        caseId: 'case-1',
+        metadata: { path: ['dueSync', 'sourceDueId'], equals: 'due-1' },
+      },
+      take: 2,
+    });
+    expect(tx.claimItem.update).toHaveBeenCalledWith({
+      where: { id: 'claim-opening' },
+      data: expect.objectContaining({
+        originalAmount: 1500,
+        demandedAmount: 1500,
+        amount: 1500,
+        description: 'Açılış alacağı güncel',
+        dueDate: new Date('2026-03-01T00:00:00.000Z'),
+      }),
+    });
+  });
+
   it('updateDue unmarked eski kayıtta heuristic yapmaz', async () => {
     const tx = makeTx({
       claimItem: {
@@ -201,6 +264,48 @@ describe('CaseService Due ↔ ClaimItem post-create sync (PR-ALACAK-1)', () => {
       data: { status: 'CANCELLED' },
     });
     expect(tx.due.delete).toHaveBeenCalledWith({ where: { id: 'due-1' } });
+  });
+
+  it('case-create markerıyla oluşan ClaimItemı deleteDue CANCELLED yapar', async () => {
+    const tx = makeTx({
+      claimItem: {
+        findMany: jest.fn(async () => [{ id: 'claim-opening' }]),
+        update: jest.fn(async ({ data }: any) => ({ id: 'claim-opening', ...data })),
+      },
+    });
+    const { service } = makeService(tx);
+    const createTx = {
+      claimItem: {
+        create: jest.fn(async ({ data }: any) => ({ id: 'claim-opening', ...data })),
+      },
+    } as any;
+
+    await (service as any).createClaimItemsFromDues(createTx, 'tenant-1', 'case-1', [makeDue()]);
+    expect(createTx.claimItem.create).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        metadata: {
+          dueSync: {
+            sourceDueId: 'due-1',
+            mappedFrom: 'Due',
+          },
+        },
+      }),
+    });
+
+    await service.deleteDue('tenant-1', 'case-1', 'due-1');
+
+    expect(tx.claimItem.findMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: 'tenant-1',
+        caseId: 'case-1',
+        metadata: { path: ['dueSync', 'sourceDueId'], equals: 'due-1' },
+      },
+      take: 2,
+    });
+    expect(tx.claimItem.update).toHaveBeenCalledWith({
+      where: { id: 'claim-opening' },
+      data: { status: 'CANCELLED' },
+    });
   });
 
   it('cross-tenant caseId ile Due/ClaimItem sync yapılamaz', async () => {
