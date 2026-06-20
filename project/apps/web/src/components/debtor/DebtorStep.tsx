@@ -225,6 +225,12 @@ export function detectPayeeMismatch(payees: CreditorRef[], creditors: CreditorRe
     .filter(Boolean);
 }
 
+/** BUG-1B: party güveni düşük mü? Mevcut UI sınırıyla tutarlı (header `>=70 yeşil`). NON-BLOCKING. */
+const PARTY_LOW_CONFIDENCE_THRESHOLD = 70;
+export function isLowConfidence(confidence: number | null | undefined): boolean {
+  return typeof confidence === "number" && confidence < PARTY_LOW_CONFIDENCE_THRESHOLD;
+}
+
 interface DebtorStepProps {
   selectedDebtors: CaseDebtor[];
   onDebtorsChange: Dispatch<SetStateAction<CaseDebtor[]>>;
@@ -800,6 +806,15 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
                     placeholder="TCKN/VKN"
                     className="w-[100px] px-1 py-0.5 border rounded text-[10px] disabled:bg-gray-50"
                   />
+                  {!row.ignored && !row.added && isLowConfidence(row.draft.confidence) && (
+                    <span
+                      data-testid={`party-low-confidence-${index}`}
+                      title="Düşük güven, kontrol edin"
+                      className="inline-flex items-center gap-0.5 px-1 py-0.5 bg-amber-50 text-amber-700 rounded text-[10px]"
+                    >
+                      <AlertTriangle className="h-3 w-3" /> %{row.draft.confidence}
+                    </span>
+                  )}
                   {row.added ? (
                     <span className="px-1 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[10px] flex items-center gap-0.5">
                       <CheckCircle className="h-3 w-3" /> Eklendi
