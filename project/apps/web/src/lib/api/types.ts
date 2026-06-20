@@ -173,13 +173,22 @@ export interface UetsRecipient {
 
 export type ServiceReturnReason = 'ADRESTE_BULUNAMADI' | 'TASINMIS' | 'ADRES_YETERSIZ' | 'BINA_YIKILMIS' | 'ADRES_KAPALI' | 'IMTINA' | 'VEFAT' | 'TANIMIYOR' | 'DIGER';
 
+export interface CaseDebtorListItem {
+  id: string;
+  caseDebtorId: string;
+  displayName: string;
+  lifecycleStatus: 'ACTIVE' | 'PASSIVE';
+  [key: string]: any;
+}
+
 export interface CaseDebtorsResponse {
-  debtors: any[];
+  items: CaseDebtorListItem[];
   summary: {
     total: number;
-    served: number;
+    delivered: number;
     pending: number;
-    failed: number;
+    returned: number;
+    danger: number;
   };
 }
 

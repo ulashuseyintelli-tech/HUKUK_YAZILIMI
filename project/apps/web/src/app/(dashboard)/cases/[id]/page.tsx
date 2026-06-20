@@ -1580,6 +1580,10 @@ export default function CaseDetailPage() {
     );
   }
 
+  const activeCaseDebtorLinks = (caseData.debtors || []).filter(
+    (de: any) => de.lifecycleStatus !== "PASSIVE"
+  );
+
   return (
     <div className="min-h-screen flex flex-col bg-[#F1F3F6]">
       
@@ -2205,9 +2209,9 @@ export default function CaseDetailPage() {
                       onClick={() => handleDebtorClick(debtor)}
                     />
                   ))
-                ) : caseData.debtors?.length ? (
+                ) : activeCaseDebtorLinks.length ? (
                   // Fallback to old data if new API not available
-                  caseData.debtors.map((de) => (
+                  activeCaseDebtorLinks.map((de) => (
                     <div 
                       key={de.id} 
                       className="px-2 py-1.5 hover:bg-red-100 cursor-pointer transition-colors group border-l-2 border-red-400 rounded"

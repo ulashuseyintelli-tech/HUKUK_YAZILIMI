@@ -329,6 +329,9 @@ export default function CaseDetailPageNew() {
   }
 
   const statusConfig = statusLabels[caseData.caseStatus] || statusLabels.DERDEST;
+  const activeCaseDebtorLinks = (caseData.debtors || []).filter(
+    (de: any) => de.lifecycleStatus !== "PASSIVE"
+  );
 
   return (
     <div className="h-screen flex flex-col bg-gray-100 overflow-hidden">
@@ -475,14 +478,14 @@ export default function CaseDetailPageNew() {
                 className="w-full flex items-center justify-between p-2 bg-red-50 hover:bg-red-100 rounded-t-lg"
               >
                 <span className="text-xs font-semibold text-red-800 flex items-center gap-1">
-                  <Users className="h-3 w-3" /> Borçlular ({caseData.debtors?.length || 0})
+                  <Users className="h-3 w-3" /> Borçlular ({activeCaseDebtorLinks.length})
                 </span>
                 {expandedPanels.debtors ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
               </button>
               {expandedPanels.debtors && (
                 <div className="p-2 space-y-1 max-h-48 overflow-y-auto">
-                  {caseData.debtors?.length ? (
-                    caseData.debtors.map((de) => (
+                  {activeCaseDebtorLinks.length ? (
+                    activeCaseDebtorLinks.map((de) => (
                       <div key={de.id} className="p-1.5 bg-gray-50 rounded text-xs border-l-2 border-red-400">
                         <div className="flex items-center justify-between">
                           <p className="font-medium">{de.debtor.displayName || de.debtor.name}</p>

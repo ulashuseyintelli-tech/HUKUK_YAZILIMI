@@ -96,6 +96,10 @@ export default function CaseDetailPageV2() {
   if (loading) return <div className="flex items-center justify-center h-screen"><Loader2 className="h-6 w-6 animate-spin" /></div>;
   if (!data) return <div className="text-center py-8"><p>Takip bulunamadı</p><Link href="/cases" className="text-blue-600">Geri dön</Link></div>;
 
+  const activeCaseDebtorLinks = (data.debtors || []).filter(
+    (de: any) => de.lifecycleStatus !== "PASSIVE"
+  );
+
   return (
     <div className="h-screen flex flex-col bg-slate-100 overflow-hidden">
       {/* ═══════════════════════════════════════════════════════════════════
@@ -251,11 +255,11 @@ export default function CaseDetailPageV2() {
                 {debtorsSummary && debtorsSummary.danger > 0 && (
                   <span className="text-[8px] bg-red-600 text-white px-1 rounded">{debtorsSummary.danger} Risk</span>
                 )}
-                <span className="text-[9px] text-red-600">{debtors.length || data.debtors?.length || 0}</span>
+                <span className="text-[9px] text-red-600">{debtors.length || activeCaseDebtorLinks.length || 0}</span>
               </div>
             </div>
             <div className="overflow-y-auto" style={{ maxHeight: 'calc(100% - 28px)' }}>
-              {(debtors.length ? debtors : data.debtors || []).map((d: any) => (
+              {(debtors.length ? debtors : activeCaseDebtorLinks).map((d: any) => (
                 <div key={d.caseDebtorId || d.id} className="px-2 py-1 flex items-center gap-2 hover:bg-red-50 cursor-pointer text-[11px] border-b last:border-0">
                   <div className="w-5 h-5 rounded-full bg-red-100 flex items-center justify-center text-[9px] text-red-600">B</div>
                   <span className="flex-1 truncate">{d.displayName || d.debtor?.displayName || d.debtor?.name}</span>

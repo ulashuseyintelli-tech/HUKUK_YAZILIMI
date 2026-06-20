@@ -225,8 +225,9 @@ class ApiClient {
   }
 
   // Case Debtors (FAZ 1 - Borçlu Modülü)
-  async getCaseDebtors(caseId: string) {
-    return this.request<CaseDebtorsResponse>(`/debtors/case/${caseId}`);
+  async getCaseDebtors(caseId: string, options?: { includePassive?: boolean }) {
+    const query = options?.includePassive ? "?includePassive=true" : "";
+    return this.request<CaseDebtorsResponse>(`/debtors/case/${caseId}${query}`);
   }
 
   async getCaseDebtorDetail(caseId: string, caseDebtorId: string) {
@@ -4214,6 +4215,7 @@ export interface DebtorListItemDTO {
   displayName: string;
   personType: "REAL" | "LEGAL";
   role: DebtorRole;
+  lifecycleStatus: "ACTIVE" | "PASSIVE";
   identityMasked?: string;
   phoneMasked?: string;
   addressShort?: string;

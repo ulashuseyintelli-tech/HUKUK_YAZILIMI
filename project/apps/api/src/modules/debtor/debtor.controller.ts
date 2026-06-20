@@ -28,12 +28,21 @@ export class DebtorController {
 
   // ==================== CASE DEBTORS (FAZ 1) ====================
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DebtorController.getDebtorsForCase() → GET /debtors/case/:caseId (operasyonel dosya borçlusu listesi)
+  /// </remarks>
   @Get("case/:caseId")
   getDebtorsForCase(
     @CurrentUser("tenantId") tenantId: string,
-    @Param("caseId") caseId: string
+    @Param("caseId") caseId: string,
+    @Query("includePassive") includePassive?: string
   ) {
-    return this.debtorService.getDebtorsForCase(tenantId, caseId);
+    return this.debtorService.getDebtorsForCase(
+      tenantId,
+      caseId,
+      includePassive === "true"
+    );
   }
 
   @Get("case/:caseId/:caseDebtorId")
