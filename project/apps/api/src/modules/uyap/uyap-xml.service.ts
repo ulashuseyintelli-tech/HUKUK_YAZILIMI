@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { create } from 'xmlbuilder2';
 
@@ -474,8 +474,14 @@ export class UyapXmlService {
   /**
    * Case ID'den UYAP e-Takip XML'i oluştur (exchange.dtd formatında)
    */
-  async generateFromCase(caseId: string): Promise<string> {
-    const data = await this.getCaseDataForExchange(caseId);
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - UyapController.generateXmlFromCase() → GET /uyap/xml/case/:caseId (UYAP XML önizleme)
+  /// - UyapController.downloadXmlFromCase() → GET /uyap/xml/case/:caseId/download (UYAP XML indirme)
+  /// - UyapController.submitXmlToUyap() → POST /uyap/xml/submit/:caseId (UYAP XML gönderim hazırlığı)
+  /// </remarks>
+  async generateFromCase(caseId: string, tenantId: string): Promise<string> {
+    const data = await this.getCaseDataForExchange(caseId, tenantId);
     return this.generateExchangeXml(data);
   }
 
@@ -718,14 +724,19 @@ export class UyapXmlService {
   /**
    * Case verilerini UyapExchangeData formatına dönüştür
    */
-  private async getCaseDataForExchange(caseId: string): Promise<UyapExchangeData> {
-    const caseRecord = await this.prisma.case.findUnique({
-      where: { id: caseId },
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - UyapXmlService.generateFromCase() → UYAP exchange.dtd XML verisi hazırlama
+  /// </remarks>
+  private async getCaseDataForExchange(caseId: string, tenantId: string): Promise<UyapExchangeData> {
+    const caseRecord = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
       include: {
         executionOffice: true,
         caseClients: { include: { client: true } },
         lawyers: { include: { lawyer: true } },
         debtors: { 
+          where: { lifecycleStatus: 'ACTIVE' },
           include: { 
             debtor: { include: { debtorAddresses: true } },
             selectedAddress: true,
@@ -738,7 +749,11 @@ export class UyapXmlService {
     });
 
     if (!caseRecord) {
-      throw new Error('Dosya bulunamadı');
+      throw new NotFoundException('Dosya bulunamadı');
+    }
+
+    if (!caseRecord.debtors?.length) {
+      throw new BadRequestException('Operasyonel çıktı için aktif borçlu bulunmuyor');
     }
 
     // Takip türü ve yolunu belirle

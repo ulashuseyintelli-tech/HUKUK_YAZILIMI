@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export interface TemplateVariables {
@@ -165,13 +165,21 @@ export class DocumentTemplateService {
   }
 
   // Case'den değişkenleri hazırla
-  async prepareVariablesFromCase(caseId: string): Promise<TemplateVariables> {
-    const caseData = await this.prisma.case.findUnique({
-      where: { id: caseId },
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DocumentTemplateService.generateDocument() → /documents/case/:caseId/generate/:templateCode şablon verisi
+  /// </remarks>
+  async prepareVariablesFromCase(caseId: string, tenantId?: string): Promise<TemplateVariables> {
+    const where = tenantId ? { id: caseId, tenantId } : { id: caseId };
+    const caseData = await this.prisma.case.findFirst({
+      where,
       include: {
         client: true,
         executionOffice: true,
-        debtors: { include: { debtor: true } },
+        debtors: {
+          where: { lifecycleStatus: 'ACTIVE' },
+          include: { debtor: true },
+        },
         lawyers: { include: { lawyer: true } },
         dues: true,
       },
@@ -182,6 +190,9 @@ export class DocumentTemplateService {
     }
 
     const debtor = caseData.debtors[0]?.debtor;
+    if (!debtor) {
+      throw new BadRequestException('Operasyonel çıktı için aktif borçlu bulunmuyor');
+    }
     const lawyer = caseData.lawyers[0]?.lawyer;
 
     // Tutarları hesapla
@@ -286,9 +297,13 @@ export class DocumentTemplateService {
   }
 
   // Belge üret
-  async generateDocument(caseId: string, templateCode: string): Promise<string> {
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DocumentController.generateFromTemplate() → GET /documents/case/:caseId/generate/:templateCode (şablondan belge üretimi)
+  /// </remarks>
+  async generateDocument(caseId: string, templateCode: string, tenantId?: string): Promise<string> {
     const template = await this.findByCode(templateCode);
-    const variables = await this.prepareVariablesFromCase(caseId);
+    const variables = await this.prepareVariablesFromCase(caseId, tenantId);
     return this.renderTemplate(template.templateContent, variables);
   }
 }

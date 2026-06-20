@@ -41,6 +41,8 @@ export interface ResearchTimelineItem {
   description?: string;
   status?: string;
   metadata?: any;
+  caseDebtorLifecycleStatus?: 'ACTIVE' | 'PASSIVE';
+  caseDebtorLifecycleLabel?: string;
 }
 
 @Injectable()
@@ -149,6 +151,8 @@ export class AddressDiscoveryService {
       ...research,
       debtor: caseDebtor.debtor,
       case: caseDebtor.case,
+      caseDebtorLifecycleStatus: caseDebtor.lifecycleStatus,
+      caseDebtorLifecycleLabel: caseDebtor.lifecycleStatus,
       uyapQueries: caseDebtor.uyapQueries, // Include for suggestNextAction
       statistics: {
         totalAddresses: caseDebtor.debtor.debtorAddresses.length,
@@ -283,6 +287,10 @@ export class AddressDiscoveryService {
   /**
    * Araştırma timeline'ını getir
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AddressDiscoveryController.getResearchTimeline() → GET /address-discovery/research/:caseDebtorId/timeline (adres araştırma geçmişi)
+  /// </remarks>
   async getResearchTimeline(tenantId: string, caseDebtorId: string): Promise<ResearchTimelineItem[]> {
     const caseDebtor = await this.prisma.caseDebtor.findFirst({
       where: { id: caseDebtorId },
@@ -294,6 +302,10 @@ export class AddressDiscoveryService {
     }
 
     const timeline: ResearchTimelineItem[] = [];
+    const lifecycleMetadata = {
+      caseDebtorLifecycleStatus: caseDebtor.lifecycleStatus as 'ACTIVE' | 'PASSIVE',
+      caseDebtorLifecycleLabel: caseDebtor.lifecycleStatus,
+    };
 
     // Müvekkil bilgi talepleri
     const clientRequests = await this.prisma.clientInfoRequest.findMany({
@@ -308,6 +320,7 @@ export class AddressDiscoveryService {
         title: 'Müvekkil Bilgi Talebi',
         description: `E-posta gönderildi: ${req.emailTo}`,
         status: req.status,
+        ...lifecycleMetadata,
       });
 
       if (req.respondedAt) {
@@ -317,6 +330,7 @@ export class AddressDiscoveryService {
           title: 'Müvekkil Yanıtı',
           description: req.responseNotes || 'Yanıt alındı',
           status: 'RESPONDED',
+          ...lifecycleMetadata,
         });
       }
     }
@@ -336,6 +350,7 @@ export class AddressDiscoveryService {
         description: `Sorgu kodu: ${query.queryCode}`,
         status: query.status,
         metadata: { addressesFound: query.addressesFound },
+        ...lifecycleMetadata,
       });
     }
 
@@ -353,6 +368,7 @@ export class AddressDiscoveryService {
         description: letter.subject,
         status: letter.status,
         metadata: { addressesFound: letter.addressesFound },
+        ...lifecycleMetadata,
       });
     }
 

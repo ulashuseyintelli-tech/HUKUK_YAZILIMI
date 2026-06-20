@@ -120,12 +120,16 @@ export class UyapExportController {
    * Dosya export validasyonu
    * GET /uyap-export/validate/:caseId
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - UyapExportController.validateCase() → GET /uyap-export/validate/:caseId (UYAP export ön doğrulama)
+  /// </remarks>
   @Get('validate/:caseId')
   async validateCase(
     @Param('caseId') caseId: string,
     @CurrentUser() user: AuthUser,
   ) {
-    return this.uyapExportService.validateCaseForExport(caseId);
+    return this.uyapExportService.validateCaseForExport(caseId, user.tenantId);
   }
 
   /**

@@ -38,6 +38,10 @@ export class CaseDebtorService {
     }
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseDebtorController.getCaseDebtors() → GET /cases/:caseId/debtors (legacy CaseDebtor okuyucu; ACTIVE-only default)
+  /// </remarks>
   async getCaseDebtors(tenantId: string, caseId: string) {
     // Verify case belongs to tenant
     const caseRecord = await this.prisma.case.findFirst({
@@ -49,7 +53,7 @@ export class CaseDebtorService {
     }
 
     return this.prisma.caseDebtor.findMany({
-      where: { caseId },
+      where: { caseId, lifecycleStatus: "ACTIVE" },
       include: {
         debtor: {
           include: { debtorAddresses: true },
@@ -301,9 +305,13 @@ export class CaseDebtorService {
 
   // ==================== STATISTICS ====================
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseDebtorController.getCaseDebtorStatistics() → GET /cases/:caseId/debtors/statistics (legacy CaseDebtor istatistikleri; ACTIVE-only)
+  /// </remarks>
   async getCaseDebtorStatistics(tenantId: string, caseId: string) {
     const caseDebtors = await this.prisma.caseDebtor.findMany({
-      where: { caseId, case: { tenantId } },
+      where: { caseId, lifecycleStatus: "ACTIVE", case: { tenantId } },
       include: { debtor: true },
     });
 

@@ -68,6 +68,57 @@ export class TebligatService {
     private caseDebtorLifecycleGuard: CaseDebtorLifecycleGuardService
   ) {}
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TebligatService.findById() → GET /tebligat/:id (tebligat detay geçmişi)
+  /// - TebligatService.findByCaseId() → GET /tebligat/case/:caseId (dosya tebligat geçmişi)
+  /// - TebligatService.findByCaseDebtorId() → GET /tebligat/case-debtor/:caseDebtorId (borçlu tebligat geçmişi)
+  /// - TebligatService.getPendingActions() → GET /tebligat/pending-actions (bekleyen tebligat aksiyonları)
+  /// </remarks>
+  private async withCaseDebtorLifecycleMetadata<T extends { caseDebtorId?: string | null }>(
+    tenantId: string,
+    records: T[],
+  ): Promise<Array<T & {
+    caseDebtorLifecycleStatus?: "ACTIVE" | "PASSIVE";
+    caseDebtorLifecycleLabel?: string;
+  }>> {
+    const caseDebtorIds = Array.from(
+      new Set(
+        records
+          .map((record) => record.caseDebtorId)
+          .filter((id): id is string => typeof id === "string" && id.length > 0),
+      ),
+    );
+
+    if (caseDebtorIds.length === 0) {
+      return records;
+    }
+
+    const caseDebtorDelegate = (this.prisma as any).caseDebtor;
+    if (!caseDebtorDelegate?.findMany) {
+      return records;
+    }
+
+    const caseDebtors = await caseDebtorDelegate.findMany({
+      where: { id: { in: caseDebtorIds }, case: { tenantId } },
+      select: { id: true, lifecycleStatus: true },
+    });
+    const lifecycleById = new Map<string, "ACTIVE" | "PASSIVE">(
+      caseDebtors.map((cd: any) => [cd.id, cd.lifecycleStatus]),
+    );
+
+    return records.map((record) => {
+      const lifecycleStatus = record.caseDebtorId
+        ? lifecycleById.get(record.caseDebtorId)
+        : undefined;
+      return {
+        ...record,
+        caseDebtorLifecycleStatus: lifecycleStatus,
+        caseDebtorLifecycleLabel: lifecycleStatus,
+      };
+    });
+  }
+
   // ==================== CRUD İŞLEMLERİ ====================
 
   /**
@@ -204,6 +255,10 @@ export class TebligatService {
   /**
    * Tebligat getir
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TebligatController.findById() → GET /tebligat/:id (tebligat detayı)
+  /// </remarks>
   async findById(tenantId: string, id: string) {
     const tebligat = await (this.prisma as any).tebligat.findFirst({
       where: { id, tenantId },
@@ -218,27 +273,40 @@ export class TebligatService {
       throw new NotFoundException("Tebligat bulunamadı");
     }
 
-    return tebligat;
+    const [withLifecycle] = await this.withCaseDebtorLifecycleMetadata(tenantId, [tebligat]);
+    return withLifecycle;
   }
 
   /**
    * Dosya için tebligatları getir
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TebligatController.findByCaseId() → GET /tebligat/case/:caseId (dosya tebligat geçmişi)
+  /// </remarks>
   async findByCaseId(tenantId: string, caseId: string) {
-    return (this.prisma as any).tebligat.findMany({
+    const tebligatlar = await (this.prisma as any).tebligat.findMany({
       where: { tenantId, caseId },
       orderBy: { createdAt: "desc" },
     });
+
+    return this.withCaseDebtorLifecycleMetadata(tenantId, tebligatlar);
   }
 
   /**
    * Borçlu için tebligatları getir
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TebligatController.findByCaseDebtorId() → GET /tebligat/case-debtor/:caseDebtorId (borçlu tebligat geçmişi)
+  /// </remarks>
   async findByCaseDebtorId(tenantId: string, caseDebtorId: string) {
-    return (this.prisma as any).tebligat.findMany({
+    const tebligatlar = await (this.prisma as any).tebligat.findMany({
       where: { tenantId, caseDebtorId },
       orderBy: { createdAt: "desc" },
     });
+
+    return this.withCaseDebtorLifecycleMetadata(tenantId, tebligatlar);
   }
 
   /**
@@ -761,8 +829,12 @@ export class TebligatService {
   /**
    * Bekleyen işlemleri getir (MERNİS'e yönlendirilmesi gereken vs.)
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - TebligatController.getPendingActions() → GET /tebligat/pending-actions (bekleyen tebligat aksiyonları)
+  /// </remarks>
   async getPendingActions(tenantId: string) {
-    return (this.prisma as any).tebligat.findMany({
+    const tebligatlar = await (this.prisma as any).tebligat.findMany({
       where: {
         tenantId,
         nextAction: {
@@ -778,6 +850,8 @@ export class TebligatService {
       },
       orderBy: { pttResultDate: "asc" },
     });
+
+    return this.withCaseDebtorLifecycleMetadata(tenantId, tebligatlar);
   }
 
   // ==================== OTOMATİK MERNİS TEBLİGATI ====================

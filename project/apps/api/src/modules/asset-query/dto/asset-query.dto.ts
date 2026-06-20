@@ -45,6 +45,8 @@ export interface AssetQueryDTO {
   requestedByName: string;
   startedAt: string | null;
   completedAt: string | null;
+  caseDebtorLifecycleStatus?: 'ACTIVE' | 'PASSIVE';
+  caseDebtorLifecycleLabel?: string;
 }
 
 export interface AssetQueryJobDTO {

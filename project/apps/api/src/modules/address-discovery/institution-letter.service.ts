@@ -208,16 +208,33 @@ export class InstitutionLetterService {
   /**
    * Borçlu için yazıları getir
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AddressDiscoveryController.getInstitutionLetters() → GET /address-discovery/institution-letter/debtor/:caseDebtorId (kurum yazısı geçmişi)
+  /// </remarks>
   async getLettersForDebtor(tenantId: string, caseDebtorId: string) {
-    return this.prisma.institutionLetter.findMany({
+    const letters = await this.prisma.institutionLetter.findMany({
       where: { tenantId, caseDebtorId },
+      include: {
+        caseDebtor: { select: { lifecycleStatus: true } },
+      },
       orderBy: { createdAt: 'desc' },
     });
+
+    return letters.map((letter: any) => ({
+      ...letter,
+      caseDebtorLifecycleStatus: letter.caseDebtor?.lifecycleStatus,
+      caseDebtorLifecycleLabel: letter.caseDebtor?.lifecycleStatus,
+    }));
   }
 
   /**
    * Tek bir yazıyı getir
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AddressDiscoveryController.getInstitutionLetter() → GET /address-discovery/institution-letter/:letterId (kurum yazısı detayı)
+  /// </remarks>
   async getLetter(tenantId: string, letterId: string) {
     const letter = await this.prisma.institutionLetter.findFirst({
       where: { id: letterId, tenantId },
@@ -235,7 +252,11 @@ export class InstitutionLetterService {
       throw new NotFoundException('Yazı bulunamadı');
     }
 
-    return letter;
+    return {
+      ...letter,
+      caseDebtorLifecycleStatus: letter.caseDebtor?.lifecycleStatus,
+      caseDebtorLifecycleLabel: letter.caseDebtor?.lifecycleStatus,
+    };
   }
 
   /**

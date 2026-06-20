@@ -3,6 +3,7 @@ import { Response } from 'express';
 import { IsString, IsOptional, IsObject } from 'class-validator';
 import { RelatedLawsuitsService, LawsuitAvailability, LawsuitRecommendation } from './related-lawsuits.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { CurrentUser } from '../auth/decorators/current-user.decorator';
 
 // ============================================
 // DTO'LAR
@@ -222,9 +223,16 @@ export class RelatedLawsuitsController {
    * Karşılıksız çek şikayet dilekçesi oluştur - Case ID ile
    * GET /related-lawsuits/generate/karsiliksiz-cek/:caseId
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - RelatedLawsuitsController.generateKarsiliksizCekSikayet() → GET /related-lawsuits/generate/karsiliksiz-cek/:caseId (karşılıksız çek şikayet üretimi)
+  /// </remarks>
   @Get('generate/karsiliksiz-cek/:caseId')
-  async generateKarsiliksizCekSikayet(@Param('caseId') caseId: string) {
-    const document = await this.relatedLawsuitsService.generateKarsiliksizCekSikayet(caseId);
+  async generateKarsiliksizCekSikayet(
+    @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
+  ) {
+    const document = await this.relatedLawsuitsService.generateKarsiliksizCekSikayet(caseId, tenantId);
     return { document };
   }
 
@@ -232,9 +240,16 @@ export class RelatedLawsuitsController {
    * Karşılıksız çek şikayet dilekçesi önizleme - Case ID ile
    * GET /related-lawsuits/generate/karsiliksiz-cek/:caseId/preview
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - RelatedLawsuitsController.previewKarsiliksizCekSikayet() → GET /related-lawsuits/generate/karsiliksiz-cek/:caseId/preview (karşılıksız çek şikayet önizleme)
+  /// </remarks>
   @Get('generate/karsiliksiz-cek/:caseId/preview')
-  async previewKarsiliksizCekSikayet(@Param('caseId') caseId: string) {
-    const document = await this.relatedLawsuitsService.generateKarsiliksizCekSikayet(caseId);
+  async previewKarsiliksizCekSikayet(
+    @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
+  ) {
+    const document = await this.relatedLawsuitsService.generateKarsiliksizCekSikayet(caseId, tenantId);
     const html = `
       <div style="font-family: 'Courier New', monospace; white-space: pre-wrap; padding: 20px; background: white; border: 1px solid #ccc;">
         ${document.content.replace(/\n/g, '<br>')}
@@ -247,12 +262,17 @@ export class RelatedLawsuitsController {
    * Karşılıksız çek şikayet dilekçesi Word indir - Case ID ile
    * GET /related-lawsuits/generate/karsiliksiz-cek/:caseId/word
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - RelatedLawsuitsController.downloadKarsiliksizCekSikayetWord() → GET /related-lawsuits/generate/karsiliksiz-cek/:caseId/word (karşılıksız çek şikayet Word indirme)
+  /// </remarks>
   @Get('generate/karsiliksiz-cek/:caseId/word')
   async downloadKarsiliksizCekSikayetWord(
     @Param('caseId') caseId: string,
+    @CurrentUser('tenantId') tenantId: string,
     @Res() res: Response
   ) {
-    const wordBuffer = await this.relatedLawsuitsService.generateKarsiliksizCekSikayetWord(caseId);
+    const wordBuffer = await this.relatedLawsuitsService.generateKarsiliksizCekSikayetWord(caseId, tenantId);
     
     res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
     res.setHeader('Content-Disposition', `attachment; filename="karsiliksiz-cek-sikayet-${caseId}.docx"`);

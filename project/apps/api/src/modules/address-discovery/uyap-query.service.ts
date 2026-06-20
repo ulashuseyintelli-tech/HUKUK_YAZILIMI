@@ -242,19 +242,34 @@ export class UyapQueryService {
   /**
    * Borçlu için sorguları getir
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AddressDiscoveryController.getUyapQueries() → GET /address-discovery/uyap-query/debtor/:caseDebtorId (UYAP sorgu geçmişi)
+  /// </remarks>
   async getQueriesForDebtor(tenantId: string, caseDebtorId: string) {
-    return this.prisma.uyapQuery.findMany({
+    const queries = await this.prisma.uyapQuery.findMany({
       where: { tenantId, caseDebtorId },
       include: {
         requestedByUser: { select: { name: true, surname: true } },
+        caseDebtor: { select: { lifecycleStatus: true } },
       },
       orderBy: { requestedAt: 'desc' },
     });
+
+    return queries.map((query: any) => ({
+      ...query,
+      caseDebtorLifecycleStatus: query.caseDebtor?.lifecycleStatus,
+      caseDebtorLifecycleLabel: query.caseDebtor?.lifecycleStatus,
+    }));
   }
 
   /**
    * Tek bir sorguyu getir
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AddressDiscoveryController.getUyapQuery() → GET /address-discovery/uyap-query/:queryId (UYAP sorgu detayı)
+  /// </remarks>
   async getQuery(tenantId: string, queryId: string) {
     const query = await this.prisma.uyapQuery.findFirst({
       where: { id: queryId, tenantId },
@@ -273,7 +288,11 @@ export class UyapQueryService {
       throw new NotFoundException('Sorgu bulunamadı');
     }
 
-    return query;
+    return {
+      ...query,
+      caseDebtorLifecycleStatus: query.caseDebtor?.lifecycleStatus,
+      caseDebtorLifecycleLabel: query.caseDebtor?.lifecycleStatus,
+    };
   }
 
   /**

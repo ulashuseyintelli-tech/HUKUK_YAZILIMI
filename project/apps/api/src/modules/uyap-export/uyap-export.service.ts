@@ -22,6 +22,11 @@ export class UyapExportService {
   /**
    * Tek bir case'i XML olarak export et
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - UyapExportController.exportSingle() → POST /uyap-export/single (tek dosya XML export)
+  /// - UyapExportController.downloadSingle() → GET /uyap-export/download/:caseId (tek dosya XML download)
+  /// </remarks>
   async exportSingleCase(
     caseId: string,
     tenantId: string,
@@ -41,7 +46,7 @@ export class UyapExportService {
     const errors: string[] = [];
 
     // Validasyonları kontrol et
-    const validationResult = await this.validateCaseForExport(caseId);
+    const validationResult = await this.validateCaseForExport(caseId, tenantId);
     warnings.push(...validationResult.warnings);
     
     if (validationResult.errors.length > 0) {
@@ -79,6 +84,11 @@ export class UyapExportService {
   /**
    * Birden fazla case'i toplu XML olarak export et
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - UyapExportController.exportBatch() → POST /uyap-export/batch (toplu XML export)
+  /// - UyapExportController.downloadBatch() → POST /uyap-export/batch/download (toplu XML download)
+  /// </remarks>
   async exportBatchCases(
     caseIds: string[],
     tenantId: string,
@@ -103,7 +113,7 @@ export class UyapExportService {
 
     // Her case için validasyon
     for (const caseId of caseIds) {
-      const validationResult = await this.validateCaseForExport(caseId);
+      const validationResult = await this.validateCaseForExport(caseId, tenantId);
       
       if (validationResult.errors.length > 0) {
         const caseInfo = cases.find(c => c.id === caseId);
@@ -153,7 +163,13 @@ export class UyapExportService {
   /**
    * Case'in UYAP export için uygun olup olmadığını kontrol et
    */
-  async validateCaseForExport(caseId: string): Promise<{
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - UyapExportController.validateCase() → GET /uyap-export/validate/:caseId (export uygunluk kontrolü)
+  /// - UyapExportService.exportSingleCase() → tek dosya export öncesi validasyon
+  /// - UyapExportService.exportBatchCases() → toplu export öncesi validasyon
+  /// </remarks>
+  async validateCaseForExport(caseId: string, tenantId: string): Promise<{
     isValid: boolean;
     errors: string[];
     warnings: string[];
@@ -161,11 +177,14 @@ export class UyapExportService {
     const errors: string[] = [];
     const warnings: string[] = [];
 
-    const caseData = await this.prisma.case.findUnique({
-      where: { id: caseId },
+    const caseData = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
       include: {
         caseClients: { include: { client: true } },
-        debtors: { include: { debtor: true } },
+        debtors: {
+          where: { lifecycleStatus: 'ACTIVE' },
+          include: { debtor: true },
+        },
         dues: true,
       },
     });
@@ -189,7 +208,7 @@ export class UyapExportService {
 
     // Borçlu kontrolü
     if (!caseData.debtors?.length) {
-      errors.push('Dosyada borçlu tanımlı değil');
+      errors.push('Dosyada aktif borçlu tanımlı değil');
     } else {
       for (const cd of caseData.debtors) {
         const debtor = cd.debtor;
@@ -219,6 +238,10 @@ export class UyapExportService {
   /**
    * Export edilebilir dosyaları listele
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - UyapExportController.getExportableCases() → GET /uyap-export/exportable (export edilebilir aktif dosyalar)
+  /// </remarks>
   async getExportableCases(tenantId: string, limit = 100): Promise<{
     cases: Array<{
       id: string;
@@ -233,10 +256,11 @@ export class UyapExportService {
       where: {
         tenantId,
         caseStatus: 'DERDEST', // Sadece aktif dosyalar
+        debtors: { some: { lifecycleStatus: 'ACTIVE' } },
       },
       include: {
         caseClients: { include: { client: true } },
-        debtors: true,
+        debtors: { where: { lifecycleStatus: 'ACTIVE' } },
       },
       take: limit,
       orderBy: { createdAt: 'desc' },
@@ -251,7 +275,11 @@ export class UyapExportService {
     }));
 
     const total = await this.prisma.case.count({
-      where: { tenantId, caseStatus: 'DERDEST' },
+      where: {
+        tenantId,
+        caseStatus: 'DERDEST',
+        debtors: { some: { lifecycleStatus: 'ACTIVE' } },
+      },
     });
 
     return { cases: result, total };
