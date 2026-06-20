@@ -140,9 +140,39 @@ export interface CaseInstrumentPayload {
   drawerName?: string;
 }
 
+// ── BUG-X: Çek tip-farkındalı tarih modeli (saf helper'lar) ──
+// Hukuk: çekte VADE yoktur (TTK; görüldüğünde ödenir). OCR ikinci tarihi yanlışlıkla dueDate'e
+// koymuş olabilir. Backend zaten çek-farkında (dueDate→presentmentDate, maturityDate=null); bu
+// katman yalnız FRONTEND'i düzeltir: UI'da Vade gösterme + keşide fallback + uyarı. Backend'e dokunulmaz.
+
+/**
+ * BUG-X — Çek için EFEKTİF keşide tarihi.
+ * Kural: issueDate varsa KORU; yoksa dueDate'i keşide olarak kullan (çek-only fallback).
+ * İkisi de dolu + farklıysa OTOMATİK swap YOK → issueDate korunur (uyarı: shouldWarnCekDates).
+ * Çek dışı (senet/poliçe): aynen issueDate (davranış değişmez).
+ */
+export function effectiveIssueDate(i: Instrument): string | undefined {
+  if (i.type === "CEK") return i.issueDate ?? i.dueDate;
+  return i.issueDate;
+}
+
+/**
+ * BUG-X — Çekte issueDate VE dueDate ikisi de dolu ve FARKLI mı?
+ * true → "Çekte vade olmaz; OCR iki tarih buldu, keşide tarihini kontrol edin" uyarısı (otomatik karar YOK).
+ */
+export function shouldWarnCekDates(i: Instrument): boolean {
+  return i.type === "CEK" && !!i.issueDate && !!i.dueDate && i.issueDate !== i.dueDate;
+}
+
+/** BUG-X — Bu enstrüman "Vade" alanı gösterir mi? Çek HAYIR; senet/poliçe EVET. */
+export function showsVade(i: Instrument): boolean {
+  return i.type !== "CEK";
+}
+
 /**
  * Enstrüman CaseInstrument olabilmek için gerekli alanlar TAM mı (N3-pure invariant aynası).
- * documentNo (boş değil) + amount (>0) + currency + issueDate. Eksikse backend sessiz atlar/400.
+ * documentNo (boş değil) + amount (>0) + currency + EFEKTİF keşide (çek: issueDate ?? dueDate).
+ * Eksikse backend sessiz atlar/400.
  */
 export function isInstrumentComplete(i: Instrument): boolean {
   return (
@@ -151,7 +181,7 @@ export function isInstrumentComplete(i: Instrument): boolean {
     i.amount != null &&
     i.amount > 0 &&
     !!i.currency &&
-    !!i.issueDate
+    !!effectiveIssueDate(i) // BUG-X: çek için dueDate fallback dahil
   );
 }
 
@@ -163,10 +193,10 @@ export function instrumentToCaseInstrumentPayload(i: Instrument): CaseInstrument
   return {
     type: i.type,
     amount: i.amount as number,
-    issueDate: i.issueDate as string,
+    issueDate: effectiveIssueDate(i) as string, // BUG-X: çek için issueDate ?? dueDate (swap yok)
     documentNo: i.documentNo as string,
     currency: i.currency,
-    dueDate: i.dueDate,
+    dueDate: i.dueDate, // değişmez — çekte backend bunu presentmentDate'e yazar; otomatik silinmez
     bankName: i.bankName,
     branchName: i.branchName,
     drawerName: i.drawerName,

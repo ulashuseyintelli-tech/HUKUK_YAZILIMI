@@ -5,7 +5,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { render, screen, fireEvent } from '@testing-library/react';
 import { InstrumentReviewTable } from '../components/debtor/InstrumentReviewTable';
-import { ReviewRow } from '../components/debtor/ocr-instrument';
+import { ReviewRow, Instrument } from '../components/debtor/ocr-instrument';
 
 const makeRows = (): ReviewRow[] => [
   {
@@ -65,11 +65,17 @@ describe('PR-3b InstrumentReviewTable', () => {
     expect(onChange.mock.calls[0][0][0].instrument.amount).toBe(999);
   });
 
-  it('vade düzenle → onChange (dueDate güncellenir)', () => {
+  it('BUG-X: senet satırı Vade input KORUR + düzenlenir (çek-dışı davranış değişmez)', () => {
     const onChange = vi.fn();
-    render(<InstrumentReviewTable rows={makeRows()} onChange={onChange} />);
-    fireEvent.change(screen.getByLabelText('Satır 1 vade'), { target: { value: '2026-01-01' } });
-    expect(onChange.mock.calls[0][0][0].instrument.dueDate).toBe('2026-01-01');
+    const rows: ReviewRow[] = [
+      {
+        selected: true,
+        instrument: { type: 'SENET', currency: 'TRY', documentNo: 'SN-1', amount: 1000, issueDate: '2026-01-10', dueDate: '2026-03-01', confidence: 90 },
+      },
+    ];
+    render(<InstrumentReviewTable rows={rows} onChange={onChange} />);
+    fireEvent.change(screen.getByLabelText('Satır 1 vade'), { target: { value: '2026-04-01' } });
+    expect(onChange.mock.calls[0][0][0].instrument.dueDate).toBe('2026-04-01');
   });
 
   it('needsReview satır → reason + evidenceText görünür', () => {
@@ -97,8 +103,12 @@ describe('PR-3b InstrumentReviewTable', () => {
     expect(onChange.mock.calls[0][0][0].instrument.issueDate).toBe('2026-01-10');
   });
 
-  it('N4a: eksik zorunlu (issueDate yok) → satırda incomplete uyarısı', () => {
-    render(<InstrumentReviewTable rows={makeRows()} onChange={() => {}} />);
+  it('BUG-X: çek keşide YOK (issueDate + dueDate ikisi de boş) → incomplete uyarısı', () => {
+    // makeRows artık dueDate fallback ile TAM sayılır; gerçek eksiklik = iki tarih de boş.
+    const rows: ReviewRow[] = [
+      { selected: true, instrument: { type: 'CEK', currency: 'TRY', documentNo: 'CK-1', amount: 1000, confidence: 90 } },
+    ];
+    render(<InstrumentReviewTable rows={rows} onChange={() => {}} />);
     expect(screen.getByTestId('instrument-incomplete-0')).toBeTruthy();
   });
 
@@ -111,5 +121,49 @@ describe('PR-3b InstrumentReviewTable', () => {
     ];
     render(<InstrumentReviewTable rows={complete} onChange={() => {}} />);
     expect(screen.queryByTestId('instrument-incomplete-0')).toBeNull();
+  });
+});
+
+describe('BUG-X — çek tarih/vade modeli (render)', () => {
+  const cek = (over: Partial<Instrument> = {}): ReviewRow => ({
+    selected: true,
+    instrument: { type: 'CEK', currency: 'TRY', documentNo: 'CK-1', amount: 1000, confidence: 90, ...over },
+  });
+  const senet = (over: Partial<Instrument> = {}): ReviewRow => ({
+    selected: true,
+    instrument: {
+      type: 'SENET', currency: 'TRY', documentNo: 'SN-1', amount: 2000,
+      issueDate: '2026-01-10', dueDate: '2026-03-01', confidence: 90, ...over,
+    },
+  });
+
+  it('tüm satırlar çek → "Vade" kolonu ve vade input GÖSTERİLMEZ', () => {
+    render(
+      <InstrumentReviewTable
+        rows={[cek({ issueDate: '2025-07-07' }), cek({ documentNo: 'CK-2', issueDate: '2025-08-08' })]}
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.queryByText('Vade')).toBeNull();
+    expect(screen.queryByLabelText('Satır 1 vade')).toBeNull();
+  });
+
+  it('çek dueDate-only → keşide alanı dueDate fallback gösterir + incomplete YOK', () => {
+    render(<InstrumentReviewTable rows={[cek({ dueDate: '2025-11-25' })]} onChange={() => {}} />);
+    expect((screen.getByLabelText('Satır 1 keşide') as HTMLInputElement).value).toBe('2025-11-25');
+    expect(screen.queryByTestId('instrument-incomplete-0')).toBeNull();
+  });
+
+  it('çek iki tarih (issueDate≠dueDate) → keşide uyarısı görünür; keşide=issueDate (swap yok)', () => {
+    render(<InstrumentReviewTable rows={[cek({ issueDate: '2025-07-07', dueDate: '2025-12-30' })]} onChange={() => {}} />);
+    expect(screen.getByTestId('cek-date-warn-0')).toBeTruthy();
+    expect((screen.getByLabelText('Satır 1 keşide') as HTMLInputElement).value).toBe('2025-07-07');
+  });
+
+  it('karışık (çek + senet) → "Vade" kolonu VAR; çek satırı vade input YOK, senet satırı vade input VAR', () => {
+    render(<InstrumentReviewTable rows={[cek({ issueDate: '2025-07-07' }), senet()]} onChange={() => {}} />);
+    expect(screen.getByText('Vade')).toBeTruthy();
+    expect(screen.queryByLabelText('Satır 1 vade')).toBeNull(); // çek
+    expect(screen.getByLabelText('Satır 2 vade')).toBeTruthy(); // senet
   });
 });
