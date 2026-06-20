@@ -115,3 +115,83 @@ describe("PoaService.create — idempotency", () => {
     expect(prisma.clientPowerOfAttorney.create).toHaveBeenCalled();
   });
 });
+
+describe("PoaService.create — suppress lawyer reconcile (Fix E)", () => {
+  const build = (activePoas: any[], opts: any = {}) => {
+    const prisma: any = {
+      client: { findFirst: jest.fn().mockResolvedValue({ id: "cli1", displayName: "ŞÜKRÜ AKDOĞAN" }) },
+      clientPowerOfAttorney: {
+        findMany: jest.fn().mockResolvedValue(activePoas),
+        findFirst: jest.fn().mockImplementation(({ where }) => Promise.resolve({ id: where.id })),
+        create: jest.fn().mockImplementation((a) => Promise.resolve({ id: "new1", ...a.data })),
+        update: jest.fn().mockResolvedValue({}),
+      },
+      poaLawyer: {
+        createMany: jest.fn(),
+        findMany: jest.fn().mockResolvedValue(opts.existingLinks ?? []),
+      },
+      lawyer: { findMany: jest.fn().mockResolvedValue(opts.validLawyers ?? []) },
+    };
+    return { svc: new PoaService(prisma), prisma };
+  };
+
+  const dupDto = { clientId: "cli1", notaryName: "BÜLENT ÖVEN", dateIssued: new Date("2026-01-12") };
+  const activeMatch = [{ id: "poa-existing", notaryName: "BÜLENT ÖVEN", dateIssued: new Date("2026-01-12") }];
+
+  it("1) duplicate POA + yeni lawyerIds → eksik PoaLawyer eklenir (ilk=primary, skipDuplicates)", async () => {
+    const { svc, prisma } = build(activeMatch, { existingLinks: [], validLawyers: [{ id: "law1" }, { id: "law2" }] });
+    const res = await svc.create({ ...dupDto, lawyerIds: ["law1", "law2"] }, "t1");
+    expect(res._suppressedDuplicate).toBe(true);
+    expect(prisma.clientPowerOfAttorney.create).not.toHaveBeenCalled();
+    expect(prisma.poaLawyer.createMany).toHaveBeenCalledTimes(1);
+    const arg = prisma.poaLawyer.createMany.mock.calls[0][0];
+    expect(arg.skipDuplicates).toBe(true);
+    expect(arg.data).toEqual([
+      { poaId: "poa-existing", lawyerId: "law1", isPrimary: true },
+      { poaId: "poa-existing", lawyerId: "law2", isPrimary: false },
+    ]);
+  });
+
+  it("2) duplicate POA + zaten bağlı lawyerIds → createMany ÇAĞRILMAZ (duplicate yok)", async () => {
+    const { svc, prisma } = build(activeMatch, { existingLinks: [{ lawyerId: "law1", isPrimary: true }], validLawyers: [{ id: "law1" }] });
+    await svc.create({ ...dupDto, lawyerIds: ["law1"] }, "t1");
+    expect(prisma.poaLawyer.createMany).not.toHaveBeenCalled();
+    expect(prisma.lawyer.findMany).not.toHaveBeenCalled();
+  });
+
+  it("3) empty lawyerIds → NO-OP", async () => {
+    const { svc, prisma } = build(activeMatch);
+    await svc.create({ ...dupDto, lawyerIds: [] }, "t1");
+    expect(prisma.poaLawyer.findMany).not.toHaveBeenCalled();
+    expect(prisma.poaLawyer.createMany).not.toHaveBeenCalled();
+  });
+
+  it("3b) lawyerIds undefined → NO-OP", async () => {
+    const { svc, prisma } = build(activeMatch);
+    await svc.create({ ...dupDto }, "t1");
+    expect(prisma.poaLawyer.findMany).not.toHaveBeenCalled();
+    expect(prisma.poaLawyer.createMany).not.toHaveBeenCalled();
+  });
+
+  it("4) cross-tenant/invalid lawyerId → eklenmez, suppress PATLAMAZ", async () => {
+    const { svc, prisma } = build(activeMatch, { existingLinks: [], validLawyers: [{ id: "law1" }] });
+    const res = await svc.create({ ...dupDto, lawyerIds: ["law1", "foreign"] }, "t1");
+    expect(res._suppressedDuplicate).toBe(true);
+    const arg = prisma.poaLawyer.createMany.mock.calls[0][0];
+    expect(arg.data).toEqual([{ poaId: "poa-existing", lawyerId: "law1", isPrimary: true }]);
+  });
+
+  it("4b) hepsi cross-tenant → createMany çağrılmaz, suppress döner (throw yok)", async () => {
+    const { svc, prisma } = build(activeMatch, { existingLinks: [], validLawyers: [] });
+    const res = await svc.create({ ...dupDto, lawyerIds: ["foreign"] }, "t1");
+    expect(res._suppressedDuplicate).toBe(true);
+    expect(prisma.poaLawyer.createMany).not.toHaveBeenCalled();
+  });
+
+  it("5) mevcut bağ varsa yeni eklenen primary OLMAZ", async () => {
+    const { svc, prisma } = build(activeMatch, { existingLinks: [{ lawyerId: "lawX", isPrimary: true }], validLawyers: [{ id: "law2" }] });
+    await svc.create({ ...dupDto, lawyerIds: ["law2"] }, "t1");
+    const arg = prisma.poaLawyer.createMany.mock.calls[0][0];
+    expect(arg.data).toEqual([{ poaId: "poa-existing", lawyerId: "law2", isPrimary: false }]);
+  });
+});

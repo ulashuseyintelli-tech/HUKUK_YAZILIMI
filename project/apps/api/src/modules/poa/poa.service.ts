@@ -175,8 +175,10 @@ export class PoaService {
         if (Object.keys(enrichment).length > 0) {
           await this.prisma.clientPowerOfAttorney.update({ where: { id: match.id }, data: enrichment });
         }
-        // NOT: lawyerIds eklenmez — addLawyers createMany dedupe'siz; suppress yolunda çağırmak
-        // mükerrer PoaLawyer üretir (fix'in amacına aykırı). Tarama akışı zaten lawyerIds göndermez.
+        // Fix E: suppress edilen MEVCUT POA'ya taramadan gelen lawyerIds'i idempotent +
+        // tenant-güvenli reconcile et. Eskiden eklenmiyordu → reactivate edilen müvekkilde
+        // aktif POA avukatsız kalıyordu ("geçerli vekalet bulunamadı"). addLawyers DEĞİŞMEDEN ayrı yol.
+        await this.reconcileSuppressedLawyers(match.id, dto.lawyerIds, tenantId);
         const existing = await this.findOne(match.id, tenantId);
         // PR-2a: kullanıcıya "mükerrer bastırıldı" sinyali. TRANSIENT alan (persist edilmez,
         // API kontratı bozulmaz) → frontend bilgilendirici notice gösterir.
@@ -283,6 +285,60 @@ export class PoaService {
     await this.prisma.poaLawyer.createMany({ data });
 
     return { success: true, count: lawyerIds.length };
+  }
+
+  /**
+   * PR-2 suppress yolu için avukat reconcile (Fix E). Suppress edilen MEVCUT POA'ya,
+   * taramadan gelen lawyerIds'ten EKSİK olanları idempotent + tenant-güvenli ekler.
+   *
+   * Çağrıldığı yerler:
+   * - PoaService.create() → PR-2 duplicate-suppress dalı (TEK çağıran).
+   *
+   * Neden: Fix B sonrası tarama akışı lawyerIds gönderiyor; eski suppress yolu bunları
+   * DÜŞÜRÜYORDU → reactivate edilen müvekkilde aktif POA avukatsız kalıyordu. addLawyers
+   * DEĞİŞTİRİLMEDEN ayrı, idempotent yol.
+   *
+   * Idempotency: mevcut PoaLawyer ile filtre + createMany skipDuplicates (@@unique[poaId,lawyerId]).
+   * Multitenant: yalnız tenant'a ait avukatlar eklenir (cross-tenant/invalid FİLTRELENİR, throw YOK
+   * → suppress başarı yolu patlamaz). lawyerIds boş/undefined → NO-OP.
+   */
+  private async reconcileSuppressedLawyers(
+    poaId: string,
+    lawyerIds: string[] | undefined,
+    tenantId: string,
+  ): Promise<void> {
+    if (!lawyerIds || lawyerIds.length === 0) return; // boş → no-op
+
+    // Mevcut bağlar (filtre + primary kararı için tek sorgu)
+    const existingLinks = await this.prisma.poaLawyer.findMany({
+      where: { poaId },
+      select: { lawyerId: true, isPrimary: true },
+    });
+    const linked = new Set(existingLinks.map((l) => l.lawyerId));
+
+    // Eksik + benzersiz adaylar
+    const candidateIds = [...new Set(lawyerIds)].filter((id) => !linked.has(id));
+    if (candidateIds.length === 0) return; // hepsi zaten bağlı → no-op
+
+    // Multitenant guard: yalnız bu tenant'a ait avukatlar (cross-tenant/invalid FİLTRELENİR)
+    const validLawyers = await this.prisma.lawyer.findMany({
+      where: { id: { in: candidateIds }, tenantId },
+      select: { id: true },
+    });
+    if (validLawyers.length === 0) return;
+
+    // POA'da primary yoksa ilk eklenen primary olsun; varsa yeni primary OLMASIN
+    const hasPrimaryAlready = existingLinks.some((l) => l.isPrimary);
+    const data = validLawyers.map((l, index) => ({
+      poaId,
+      lawyerId: l.id,
+      isPrimary: !hasPrimaryAlready && index === 0,
+    }));
+
+    await this.prisma.poaLawyer.createMany({ data, skipDuplicates: true });
+    this.logger.log(
+      `[Fix E] suppress reconcile → POA ${poaId}: ${data.length} avukat bağı eklendi (idempotent)`,
+    );
   }
 
   /**
