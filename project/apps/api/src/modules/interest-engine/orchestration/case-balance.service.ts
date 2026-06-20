@@ -12,10 +12,15 @@
  *  - ADDITIVE: trigger yok · persist yok · case_balance_view yok · summary-engine'e dokunulmaz ·
  *    READ-ONLY (prisma write/transaction yok) · mevcut canlı akış değişmez.
  *
- * <remarks>Çağrıldığı yerler: (G4c-1'de canlı çağıran/endpoint YOK; ileride G4c-2/G4c-3).</remarks>
+ * <remarks>
+ * Çağrıldığı yerler:
+ * - InterestEngineController.getCaseBalance() → GET /interest-engine/case/:caseId/balance (read-only bakiye endpoint)
+ * - BalanceShadowCompareService.compare() → summary-engine vs computeBalance read-only gözlem
+ * </remarks>
  */
 
 import { Injectable } from '@nestjs/common';
+import { ClaimItemStatus } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { RateProviderService } from '../rates/rate-provider.service';
 import type { RateEntry as ProviderRateEntry } from '../rates/rate-provider.service';
@@ -121,7 +126,11 @@ export class CaseBalanceService {
   /**
    * Bir case için compute-on-demand bakiye hesaplar (per-currency). READ-ONLY, side-effect yok.
    *
-   * <remarks>Çağrıldığı yerler: (henüz canlı çağıran/endpoint YOK — additive servis).</remarks>
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - InterestEngineController.getCaseBalance() → GET /interest-engine/case/:caseId/balance (read-only bakiye endpoint)
+   * - BalanceShadowCompareService.compare() → summary-engine vs computeBalance read-only gözlem
+   * </remarks>
    */
   async computeCaseBalance(
     tenantId: string,
@@ -148,7 +157,9 @@ export class CaseBalanceService {
 
     // 2. READ-ONLY okumalar (tenant-scoped)
     const [claimItems, ledgerRows, collections] = await Promise.all([
-      this.prisma.claimItem.findMany({ where: { caseId, tenantId } }),
+      this.prisma.claimItem.findMany({
+        where: { caseId, tenantId, status: { not: ClaimItemStatus.CANCELLED } },
+      }),
       this.prisma.ledgerEntry.findMany({ where: { caseId, tenantId, entryType: 'PAYMENT' } }),
       this.prisma.collection.findMany({ where: { caseId, tenantId } }),
     ]);

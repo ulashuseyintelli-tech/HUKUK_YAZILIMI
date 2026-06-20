@@ -3,6 +3,7 @@
  * ADDITIVE/READ-ONLY: prisma write çağrılmaz; trigger/persist yok.
  */
 
+import { ClaimItemStatus } from '@prisma/client';
 import { CaseBalanceService } from '../case-balance.service';
 import { InterestEngineService } from '../../interest-engine.service';
 import { PolicyGateV2Service } from '../../policy-gate/policy-gate-v2.service';
@@ -45,9 +46,17 @@ function setup(opts: {
   collections?: unknown[];
   rates?: unknown[];
 }) {
+  const claimItems = opts.claimItems ?? [];
   const prisma: MockPrisma = {
     case: { findFirst: jest.fn().mockResolvedValue(opts.caseRow === undefined ? { interestType: null, interestStartDate: null } : opts.caseRow) },
-    claimItem: { findMany: jest.fn().mockResolvedValue(opts.claimItems ?? []) },
+    claimItem: {
+      findMany: jest.fn().mockImplementation(async (args?: any) => {
+        const excludedStatus = args?.where?.status?.not;
+        return excludedStatus
+          ? claimItems.filter((item: any) => item.status !== excludedStatus)
+          : claimItems;
+      }),
+    },
     ledgerEntry: { findMany: jest.fn().mockResolvedValue(opts.ledger ?? []) },
     collection: { findMany: jest.fn().mockResolvedValue(opts.collections ?? []) },
   };
@@ -123,6 +132,22 @@ describe('CaseBalanceService (G4c-1)', () => {
     expect(res.currencyResults).toHaveLength(0);
   });
 
+  it('CANCELLED ClaimItem computeCaseBalance hesabına dahil edilmez', async () => {
+    const { service, prisma, rateProvider } = setup({
+      claimItems: [principal({ status: ClaimItemStatus.CANCELLED })],
+      collections: [],
+      rates: legalRate(),
+    });
+
+    const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+
+    expect(prisma.claimItem.findMany).toHaveBeenCalledWith({
+      where: { caseId: 'case1', tenantId: 't1', status: { not: ClaimItemStatus.CANCELLED } },
+    });
+    expect(res.currencyResults).toHaveLength(0);
+    expect(rateProvider.getRatesForPeriod).not.toHaveBeenCalled();
+  });
+
   it('case yok → CASE_NOT_FOUND, erken dön (claimItem okunmaz)', async () => {
     const { service, prisma } = setup({ caseRow: null });
     const res = await service.computeCaseBalance('t1', 'missing', '2025-06-01');
@@ -135,7 +160,9 @@ describe('CaseBalanceService (G4c-1)', () => {
     const { service, prisma } = setup({ claimItems: [principal()], collections: [collection()], rates: legalRate() });
     await service.computeCaseBalance('tenantX', 'caseY', '2025-06-01');
     expect(prisma.case.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'caseY', tenantId: 'tenantX' } }));
-    expect(prisma.claimItem.findMany).toHaveBeenCalledWith({ where: { caseId: 'caseY', tenantId: 'tenantX' } });
+    expect(prisma.claimItem.findMany).toHaveBeenCalledWith({
+      where: { caseId: 'caseY', tenantId: 'tenantX', status: { not: ClaimItemStatus.CANCELLED } },
+    });
     expect(prisma.ledgerEntry.findMany).toHaveBeenCalledWith({ where: { caseId: 'caseY', tenantId: 'tenantX', entryType: 'PAYMENT' } });
   });
 });
