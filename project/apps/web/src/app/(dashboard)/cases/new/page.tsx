@@ -1631,6 +1631,7 @@ export default function NewCasePage() {
             <DebtorStep
               selectedDebtors={caseDebtors}
               onDebtorsChange={setCaseDebtors}
+              creditors={creditors.map((c) => ({ name: c.name, identityNo: c.identityNo }))}
               onDebtInfoDetected={(debtInfo) => {
                 // Borç evrakından tespit edilen bilgileri alacak kalemlerine otomatik aktar
                 if (debtInfo.amount) {
