@@ -171,20 +171,32 @@ export function buildDebtResultFromInstruments(instruments: Instrument[]): DebtD
   const primary = pickPrimaryInstrument(instruments);
   if (!primary) return null;
 
-  // Taraflar: enstrümanlardaki keşideci/borçlu adayları (dedup)
-  const names = new Set<string>();
+  // Taraflar: enstrümanlardaki keşideci/borçlu adayları (dedup; isim→kimlik no eşlemesi KORUNUR).
+  // drawerName ↔ drawerIdentityNo (keşidecinin kimliği); debtorCandidates'ın kimlik no'su YOK (undefined).
+  const idByName = new Map<string, string | undefined>();
+  const addName = (name: string | undefined, identityNo?: string) => {
+    if (!name) return;
+    // İlk görüşte ekle; sonra kimlik no'lu görülürse doldur (mevcut kimliği EZMEZ).
+    if (!idByName.has(name)) idByName.set(name, identityNo);
+    else if (identityNo && !idByName.get(name)) idByName.set(name, identityNo);
+  };
   for (const inst of instruments) {
-    if (inst.drawerName) names.add(inst.drawerName);
-    for (const d of inst.debtorCandidates ?? []) names.add(d);
+    addName(inst.drawerName, inst.drawerIdentityNo);
+    for (const d of inst.debtorCandidates ?? []) addName(d);
   }
-  const parties = Array.from(names).map((name) => ({
-    name,
-    // BUG (OCR taraf-tipi): tip artık isimden çıkarılır (unvan eki → COMPANY). Bu path'te Instrument
-    // kimlik no taşımaz → inferPartyType isim sezgisine düşer; ileride VKN taşınırsa otomatik güçlenir.
-    type: inferPartyType(name),
-    role: "BORCLU" as const,
-    confidence: primary.confidence ?? 0,
-  }));
+  const parties = Array.from(idByName.entries()).map(([name, rawId]) => {
+    // Tip: geçerli VKN→COMPANY · TCKN→INDIVIDUAL · unvan eki→COMPANY · aksi→INDIVIDUAL (PR-1).
+    const type = inferPartyType(name, rawId);
+    // Kimlik no: tip-katı checksum (sanitizeOcrIdentityNo) — misread/uydurma DÜŞER, yalnız geçerli yayılır.
+    const identityNo = sanitizeOcrIdentityNo(rawId, type);
+    return {
+      name,
+      type,
+      role: "BORCLU" as const,
+      ...(identityNo ? { identityNo } : {}),
+      confidence: primary.confidence ?? 0,
+    };
+  });
 
   const isKambiyo = primary.type === "CEK" || primary.type === "SENET" || primary.type === "POLICE";
   return {

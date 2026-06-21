@@ -263,3 +263,22 @@ describe('PR-2 — arka yüz documentNo split fix (back-page kendi no\'su ile ay
     expect(out[0].sourcePages).toEqual([0, 1]);
   });
 });
+
+describe('PR-2 — drawerIdentityNo passthrough (buildInstrument + attach)', () => {
+  it('ön yüz drawerIdentityNo → instrument\'a taşınır', () => {
+    const out = groupPageCandidatesIntoInstruments([
+      pc({ pageIndex: 0, documentType: 'CEK', documentNo: '0265897', amount: 400000, dueDate: '2025-12-01', drawerName: 'GORKA A.Ş.', drawerIdentityNo: '1234567890' }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].drawerIdentityNo).toBe('1234567890');
+  });
+
+  it('attach: ön yüzde id yok, sonraki aynı-docNo sayfa id taşırsa doldurulur', () => {
+    const out = groupPageCandidatesIntoInstruments([
+      pc({ pageIndex: 0, documentType: 'CEK', documentNo: '0265897', amount: 400000, dueDate: '2025-12-01', drawerName: 'GORKA A.Ş.' }), // id yok
+      pc({ pageIndex: 1, documentType: 'CEK', documentNo: '0265897', drawerIdentityNo: '1234567890', back: true }), // aynı docNo → merge, id getirir
+    ]);
+    expect(out).toHaveLength(1); // aynı docNo → tek instrument
+    expect(out[0].drawerIdentityNo).toBe('1234567890'); // attach doldurdu
+  });
+});

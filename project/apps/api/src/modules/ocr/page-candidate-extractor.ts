@@ -69,6 +69,7 @@ export interface RawPageFields {
   dueDate?: string;
   bankName?: string;
   drawerName?: string;
+  drawerIdentityNo?: string;
   debtorCandidates?: string[];
   face?: boolean;
   back?: boolean;
@@ -104,6 +105,7 @@ function mapRawToCandidate(page: Page, raw: RawPageFields): PageCandidate {
     dueDate: raw.dueDate,
     bankName: raw.bankName,
     drawerName: raw.drawerName,
+    drawerIdentityNo: raw.drawerIdentityNo,
     debtorCandidates: raw.debtorCandidates,
     face: raw.face,
     back: raw.back,
