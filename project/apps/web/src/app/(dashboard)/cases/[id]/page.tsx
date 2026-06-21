@@ -82,6 +82,7 @@ interface CaseDetail {
   createdAt: string;
   workflowStage?: string;
   subCategory?: string;
+  sorumluPersonel?: { id: string; name: string; surname: string }; // Dosya Sorumlusu (Case.sorumluPersonelId → User; koordinatör)
   lastAutoActionAt?: string; // Son işlem tarihi (eski alan)
   lastEnforcementActionAt?: string; // Son icrai işlem tarihi (İİK 78 için)
   executionOffice?: {
@@ -2001,6 +2002,17 @@ export default function CaseDetailPage() {
                 </div>
               </div>
               <div className="divide-y max-h-48 overflow-y-auto">
+                {/* Dosya Sorumlusu (Case.sorumluPersonel → User): koordinatör / varsayılan görev sahibi (A3) */}
+                <div className="px-2 py-1.5 bg-indigo-50/60">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-[9px] font-semibold text-indigo-600 uppercase">Dosya Sorumlusu</span>
+                    {caseData.sorumluPersonel ? (
+                      <span className="font-medium text-[11px] text-indigo-900 truncate">{caseData.sorumluPersonel.name} {caseData.sorumluPersonel.surname}</span>
+                    ) : (
+                      <span className="text-[10px] text-gray-400">Atanmamış</span>
+                    )}
+                  </div>
+                </div>
                 {/* Yetkili Avukatlar Başlık */}
                 {(caseData.lawyers?.filter(le => le.lawyer.lawyerRank !== 'INTERN' && !le.lawyer.barNumber?.startsWith('STJ'))?.length || 0) > 0 && (
                   <div className="px-2 py-1 bg-blue-50/50">
