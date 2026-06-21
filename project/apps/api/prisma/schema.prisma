@@ -1494,6 +1494,12 @@ model Task {
   // PR-3b çift-gönderim guard'ı: bir tier'a bildirim atıldıktan sonra bu set edilir;
   // scheduler her saat çalışsa da aynı tier'a tekrar göndermez (lastNotifiedLevel == escalationLevel).
   lastNotifiedLevel EscalationTier?
+  // D-G0 (Gate D / D-i): DOSYA GÖREVİ owner-first eskalasyonu — operasyonel motordan AYRI alanlar
+  // (K-D1: paylaşım YOK). RESPONSIBLE→TEAM_LEAD→MANAGER→FOUNDER. CaseTaskEscalationService (D-G3) okur.
+  // Şu an hiçbir kod yazmaz/okumaz; additive.
+  caseEscalationLevel   CaseTaskTier?
+  caseNextFollowUpAt    DateTime?
+  caseLastNotifiedLevel CaseTaskTier?
   assigneeId  String?
   assignee    User?      @relation("AssignedTasks", fields: [assigneeId], references: [id])
   createdById String?
@@ -1694,6 +1700,13 @@ model Office {
   // Operasyonel görevin İLK SAHİBİ (L1): bu personel türleri görür/bildirim alır. Yeni StaffRole
   // enum'u YOK — mevcut StaffType kullanılır.
   opStaffTypes StaffType[] @default([MUHASEBE, ADLI_KATIP, SEKRETER])
+
+  // D-G0 (Gate D / D-i): DOSYA GÖREVİ eskalasyon ayarları (operasyonel op* alanlarından AYRI).
+  // Takım Lideri = Lawyer id dizisi (boşsa L1 atlanır → doğrudan Yönetici). SLA günleri owner/lider/yönetici.
+  escalationTeamLeadLawyerIds String[] @default([]) // Takım Lideri avukat(lar) (L1; boşsa kademe atlanır)
+  caseTaskOwnerDays    Int @default(2) // L0 Dosya Sorumlusu → L1 eşiği (gün)
+  caseTaskTeamLeadDays Int @default(2) // L1 Takım Lideri → L2 Yönetici eşiği (gün)
+  caseTaskManagerDays  Int @default(3) // L2 Yönetici → L3 Kurucu eşiği (gün)
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -2847,6 +2860,15 @@ enum EscalationTier {
   STAFF   // görevli muhasebe / adli katip / sorumlu icra avukatı (rol-kuyruğu)
   MANAGER // yönetici avukat (lawyerRank=MANAGER)
   FOUNDER // kurucu/ortak avukat (role=OWNER/PARTNER)
+}
+
+// Dosya görevi (case-linked LEGAL_WORKFLOW) owner-first eskalasyon kademesi (Gate D / D-i).
+// Operasyonel EscalationTier'dan AYRI (K-D1: paylaşım YOK). CaseTaskEscalationService (D-G3) işler.
+enum CaseTaskTier {
+  RESPONSIBLE // L0: Dosya Sorumlusu (Task.assignee → User) — owner-first
+  TEAM_LEAD   // L1: Office.escalationTeamLeadLawyerIds (boşsa atlanır → L2)
+  MANAGER     // L2: Yönetici avukat (escalationManagerLawyerIds | rank=MANAGER)
+  FOUNDER     // L3: Kurucu/ortak (escalationFounderLawyerIds | role OWNER/PARTNER) (+SMS)
 }
 
 // Müvekkil-seviyesi iletişim takibi durumu. WAIVED kalıcı karardır (görev tekrar üretilmez).
