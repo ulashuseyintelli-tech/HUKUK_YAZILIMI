@@ -78,6 +78,7 @@ interface FilterState {
   dataQuality: string[];
   includeArchived: boolean;
   expenseRequestStatus: string;
+  noOwner: boolean; // SAHIPSIZ-DOSYALAR-G1b: sahipsiz (Dosya Sorumlusu yok) server-side filtre
 }
 
 // Hızlı filtre sayaçları için interface
@@ -184,6 +185,7 @@ const defaultFilters: FilterState = {
   dataQuality: [],
   includeArchived: false,
   expenseRequestStatus: "all",
+  noOwner: false,
 };
 
 // Hızlı filtre kategorileri ve tanımları
@@ -792,6 +794,7 @@ export default function CasesPage() {
   const [bulkStatus, setBulkStatus] = useState("");
   const [bulkAssignee, setBulkAssignee] = useState({ type: "", id: "" });
   const [exportingCases, setExportingCases] = useState(false);
+  const [ownerlessCount, setOwnerlessCount] = useState(0); // SAHIPSIZ-DOSYALAR-G1b: getStats.ownerless
 
   useEffect(() => {
     loadLookupData();
@@ -1046,11 +1049,14 @@ export default function CasesPage() {
       if (filters.status.length > 0) params.status = filters.status.join(',');
       if (filters.caseType.length > 0) params.type = filters.caseType.join(',');
       if (filters.includeArchived) params.includeArchived = true;
+      if (filters.noOwner) params.noOwner = true; // SAHIPSIZ-DOSYALAR-G1b: server-side sahipsiz filtre
       // URL'den gelen clientId varsa API'ye gönder
       if (urlClientId) params.clientId = urlClientId;
-      
+
       const response = await api.getCases(params);
       setCases(response.data || []);
+      // SAHIPSIZ-DOSYALAR-G1b: doğru sahipsiz toplamı (server-side; chip rozeti). Best-effort.
+      api.get('/cases/stats').then((r: any) => setOwnerlessCount(r?.data?.ownerless ?? 0)).catch(() => {});
     } catch (error) {
       console.error("Takipler yüklenemedi:", error);
     } finally {
@@ -1083,7 +1089,7 @@ export default function CasesPage() {
 
   useEffect(() => {
     fetchCases();
-  }, [filters.status, filters.caseType, filters.includeArchived, urlClientId]);
+  }, [filters.status, filters.caseType, filters.includeArchived, filters.noOwner, urlClientId]);
 
   const filteredCases = cases.filter((c) => {
     if (filters.search) {
@@ -1621,6 +1627,15 @@ export default function CasesPage() {
       {/* Hızlı Filtre Chip'leri - Seçimlik Panel ile */}
       <div className="flex flex-wrap items-center gap-2 mb-3">
         <span className="text-xs text-muted-foreground flex-shrink-0">Hızlı Filtreler:</span>
+        {/* SAHIPSIZ-DOSYALAR-G1b: izole "Sahipsiz" chip (generic smart-filter sisteminden bağımsız);
+            sayı=getStats.ownerless (server-side doğru toplam); tık→server-side noOwner filtresi. Atama=mevcut toplu modal. */}
+        <QuickFilterChip
+          label="Sahipsiz"
+          count={ownerlessCount}
+          isActive={filters.noOwner}
+          onClick={() => setFilters(prev => ({ ...prev, noOwner: !prev.noOwner }))}
+          color="warning"
+        />
         {visibleFilterIds.map((filterId) => {
           const qf = allQuickFilters.find(f => f.id === filterId);
           if (!qf) return null;
