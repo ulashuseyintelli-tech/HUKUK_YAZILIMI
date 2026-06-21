@@ -154,6 +154,23 @@ function genClaimDraftItemId(): string {
   return `cdi_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
+// PR-2a eski-draft guard: PR-2a ÖNCESİ draft'larda claimDraftItems yok, yalnız dues var.
+// Kaybı önlemek için her Due'yu BİREBİR koruyan minimal bir claimDraftItem'a sarar
+// (__legacyDue passthrough; buildDuesFromClaimItem onu aynen geri verir). Belge-özel
+// metadata ÜRETİLMEZ — yalnız mevcut dues korunur (silent boş gönderme engellenir).
+function hydrateClaimDraftItemsFromDues(dues: DueItem[]): ClaimDraftItem[] {
+  return dues.map((due) => ({
+    id: genClaimDraftItemId(),
+    raw: {
+      __legacyDue: due,
+      kalemTuru: 'ASIL_ALACAK',
+      bakiyeTutar: parseFloat(due.amount) || 0,
+      vadeTarihi: due.dueDate,
+      currency: 'TRY',
+    },
+  }));
+}
+
 function claimItemKalemLabel(kalemTuru?: string): string {
   switch (kalemTuru) {
     case 'CEK': return 'Çek Bedeli';
@@ -173,6 +190,9 @@ function claimItemKalemLabel(kalemTuru?: string): string {
 function buildDuesFromClaimItem(item: any, startDate: string): DueItem[] {
   const newDues: DueItem[] = [];
   if (!item) return newDues;
+  // PR-2a eski-draft guard: hydrate edilmiş legacy Due passthrough → BİREBİR korunur
+  // (type/amount/description/dueDate/interest), normal köprü mantığına girmeden.
+  if (item.__legacyDue) return [item.__legacyDue as DueItem];
   const kalemTuru = item.kalemTuru as string;
   const anaKalemLabel = claimItemKalemLabel(kalemTuru);
 
@@ -357,7 +377,13 @@ export default function NewCasePage() {
       if (savedState.caseDebtors?.length > 0) setCaseDebtors(savedState.caseDebtors);
       if (savedState.selectedStaff?.length > 0) setSelectedStaff(savedState.selectedStaff);
       if (savedState.dues?.length > 0) setDues(savedState.dues);
-      if (savedState.claimDraftItems?.length > 0) setClaimDraftItems(savedState.claimDraftItems); // PR-2a: çok-kalemli liste
+      // PR-2a + eski-draft guard: claimDraftItems varsa onu kullan; yoksa ama dues varsa
+      // (PR-2a öncesi draft) dues'tan minimal hydrate et → liste boş kalmaz, kalem kaybı önlenir.
+      if (savedState.claimDraftItems?.length > 0) {
+        setClaimDraftItems(savedState.claimDraftItems);
+      } else if (savedState.dues?.length > 0) {
+        setClaimDraftItems(hydrateClaimDraftItemsFromDues(savedState.dues));
+      }
       if (savedState.instruments?.length > 0) setInstruments(savedState.instruments); // PR-N4b/S4: taslaktan kambiyo evrakları
       if (savedState.caseData) setCaseData(prev => ({ ...prev, ...savedState.caseData }));
       if (savedState.selectedCity) setSelectedCity(savedState.selectedCity);
@@ -945,9 +971,13 @@ export default function NewCasePage() {
       return;
     }
     setError("");
+    // PR-2a eski-draft guard: düzenlenen kalem artık birebir-legacy passthrough değildir;
+    // __legacyDue'yu temizle ki edit, form değerlerinden yeniden türetilsin (sessiz no-op olmasın).
+    const cleanRaw = { ...claimFormBuffer };
+    delete cleanRaw.__legacyDue;
     const entry: ClaimDraftItem = {
       id: editingItemIndex !== null ? claimDraftItems[editingItemIndex].id : genClaimDraftItemId(),
-      raw: claimFormBuffer,
+      raw: cleanRaw,
     };
     if (editingItemIndex !== null) {
       const updated = [...claimDraftItems];
@@ -1095,7 +1125,12 @@ export default function NewCasePage() {
       applyClaimDraftItems(effClaimItems);
       resetClaimEditor();
     }
-    const effDues = effClaimItems.flatMap(ci => buildDuesFromClaimItem(ci.raw, caseData.startDate));
+    let effDues = effClaimItems.flatMap(ci => buildDuesFromClaimItem(ci.raw, caseData.startDate));
+    // Eski-draft güvenliği: claimDraftItems boş ama dues doluysa (PR-2a öncesi draft / hydrate
+    // edilmemiş durum) mevcut dues'u kullan — eski draft SESSİZCE boş gönderilmesin.
+    if (effDues.length === 0 && dues.length > 0) {
+      effDues = dues;
+    }
 
     // Pre-submit validasyon
     const validation = validateCaseCreation({
@@ -1887,7 +1922,7 @@ export default function NewCasePage() {
                       className={`flex items-center justify-between gap-2 rounded border px-2 py-1.5 text-sm bg-white ${editingItemIndex === i ? 'ring-2 ring-blue-400' : ''}`}
                     >
                       <span className="truncate">
-                        <span className="font-medium">{claimItemKalemLabel(ci.raw?.kalemTuru)}</span>
+                        <span className="font-medium">{ci.raw?.__legacyDue?.description || claimItemKalemLabel(ci.raw?.kalemTuru)}</span>
                         {ci.raw?.bakiyeTutar ? ` — ${Number(ci.raw.bakiyeTutar).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${ci.raw?.currency || 'TRY'}` : ''}
                         {ci.raw?.vadeTarihi ? ` · ${ci.raw.vadeTarihi}` : ''}
                       </span>
