@@ -388,8 +388,7 @@ export class ExpenseNotificationService {
           data: {
             tenantId,
             caseId: request.caseId,
-            // A5: dosyaya bağlı otomatik görev → varsayılan sahip = Dosya Sorumlusu (yoksa boş; explicit ezme yok)
-            assigneeId: request.case?.sorumluPersonelId ?? undefined,
+            // G4a (A5 reversal): otomatik görev ATANMAMIŞ doğar (Dosya Sorumlusu DOER değil; assignee=doer sonradan manuel atanır).
             title: `Masraf Takibi - ${request.case.fileNumber}`,
             description: `${formattedTotal} TL masraf talebi müvekkile gönderildi. Ödeme takibi yapılmalı.\n\nGönderim: ${formattedDate}\nAlıcı: ${clientEmail}`,
             status: 'PENDING',
@@ -569,8 +568,7 @@ export class ExpenseNotificationService {
       data: {
         tenantId,
         caseId: request.caseId,
-        // A5: varsayılan sahip = Dosya Sorumlusu (yoksa boş)
-        assigneeId: request.case?.sorumluPersonelId ?? undefined,
+        // G4a (A5 reversal): otomatik görev ATANMAMIŞ doğar (Dosya Sorumlusu DOER değil; assignee=doer sonradan manuel atanır).
         title: `Masraf takibi - ${request.client?.displayName || 'Müvekkil'}`,
         description: `${request.case.fileNumber} dosyası için ${formattedTotal} TL masraf talebi vadesi geçti. Müvekkil ile iletişime geçilmeli.`,
         status: 'PENDING',
