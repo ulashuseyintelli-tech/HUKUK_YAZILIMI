@@ -9,7 +9,11 @@ export class UserController {
   constructor(private userService: UserService) {}
 
   @Get()
-  findAll(@CurrentUser("tenantId") tenantId: string) {
-    return this.userService.findByTenant(tenantId);
+  async findAll(@CurrentUser("tenantId") tenantId: string) {
+    // Tüm /users tüketicileri (cases/new sihirbazı, görev atama, yorum @bahsetme,
+    // raporlar) yanıtı `{ data: [...] }` zarfı bekliyor (res.data.data). Kardeş
+    // uçlarla (clients/lookups) tutarlı olması için diziyi zarfla.
+    const data = await this.userService.findByTenant(tenantId);
+    return { data };
   }
 }
