@@ -82,6 +82,18 @@ type CalculationSummaryCanonicalShadowScopeStatus =
   | "CANDIDATE_ONLY"
   | "UNAVAILABLE";
 
+type CalculationSummaryCanonicalShadowPaymentScope =
+  | "NET_OF_PAYMENTS"
+  | "GROSS_INTEREST"
+  | "GROSS_OF_COLLECTIONS"
+  | "NET_OF_COLLECTIONS";
+
+type CalculationSummaryCanonicalShadowPaymentScopeAlignment =
+  | "MATCH_NET_TO_NET"
+  | "POSSIBLE_NET_TO_NET"
+  | "MISMATCH_NET_TO_GROSS"
+  | "UNKNOWN";
+
 type CalculationSummaryCanonicalShadowScopeComparison = {
   legacyField: CalculationSummaryCanonicalShadowLegacyField;
   canonicalScope: CalculationSummaryCanonicalShadowCanonicalScope;
@@ -90,6 +102,7 @@ type CalculationSummaryCanonicalShadowScopeComparison = {
   delta: number | null;
   deltaPercent: number | null;
   scopeStatus: CalculationSummaryCanonicalShadowScopeStatus;
+  paymentScopeAlignment: CalculationSummaryCanonicalShadowPaymentScopeAlignment;
 };
 
 type CalculationSummaryCanonicalShadow = {
@@ -101,6 +114,11 @@ type CalculationSummaryCanonicalShadow = {
   canonicalProjectionCurrencyScope: CalculationSummaryCanonicalShadowProjectionCurrencyScope;
   canonicalProjectionCurrency: string;
   matchStatusInterpretation: CalculationSummaryCanonicalShadowMatchStatusInterpretation;
+  canonicalTotalDuePaymentScope: "NET_OF_PAYMENTS";
+  canonicalInterestPaymentScope: "GROSS_INTEREST";
+  legacyToplamBorcPaymentScope: "GROSS_OF_COLLECTIONS";
+  legacySonBorcPaymentScope: "GROSS_OF_COLLECTIONS";
+  legacyKalanBorcPaymentScope: "NET_OF_COLLECTIONS";
   legacyToplamBorc: number;
   legacySonBorc: number;
   legacyToplamTahsilat: number;
@@ -150,6 +168,26 @@ const CANONICAL_SHADOW_PROJECTION_CURRENCY_SCOPE: CalculationSummaryCanonicalSha
   "UNSCOPED_CASE_CURRENCY_ASSUMED";
 const CANONICAL_SHADOW_MATCH_STATUS_INTERPRETATION: CalculationSummaryCanonicalShadowMatchStatusInterpretation =
   "RAW_DELTA_DIAGNOSTIC_ONLY";
+const CANONICAL_TOTAL_DUE_PAYMENT_SCOPE: Extract<
+  CalculationSummaryCanonicalShadowPaymentScope,
+  "NET_OF_PAYMENTS"
+> = "NET_OF_PAYMENTS";
+const CANONICAL_INTEREST_PAYMENT_SCOPE: Extract<
+  CalculationSummaryCanonicalShadowPaymentScope,
+  "GROSS_INTEREST"
+> = "GROSS_INTEREST";
+const LEGACY_TOPLAM_BORC_PAYMENT_SCOPE: Extract<
+  CalculationSummaryCanonicalShadowPaymentScope,
+  "GROSS_OF_COLLECTIONS"
+> = "GROSS_OF_COLLECTIONS";
+const LEGACY_SON_BORC_PAYMENT_SCOPE: Extract<
+  CalculationSummaryCanonicalShadowPaymentScope,
+  "GROSS_OF_COLLECTIONS"
+> = "GROSS_OF_COLLECTIONS";
+const LEGACY_KALAN_BORC_PAYMENT_SCOPE: Extract<
+  CalculationSummaryCanonicalShadowPaymentScope,
+  "NET_OF_COLLECTIONS"
+> = "NET_OF_COLLECTIONS";
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
@@ -162,6 +200,14 @@ function sumCanonicalProjectionTotal(values: Partial<Record<string, unknown>> | 
     total += Number(value ?? 0);
   }
   return round2(total);
+}
+
+function paymentScopeAlignmentForLegacyField(
+  legacyField: CalculationSummaryCanonicalShadowLegacyField,
+): CalculationSummaryCanonicalShadowPaymentScopeAlignment {
+  if (legacyField === "kalanBorc") return "POSSIBLE_NET_TO_NET";
+  if (legacyField === "toplamBorc" || legacyField === "sonBorc") return "MISMATCH_NET_TO_GROSS";
+  return "UNKNOWN";
 }
 
 function buildCanonicalShadowScopeComparisonMatrix(
@@ -211,6 +257,7 @@ function buildCanonicalShadowScopeComparisonMatrix(
         delta,
         deltaPercent,
         scopeStatus: canonicalValue == null ? "UNAVAILABLE" : "CANDIDATE_ONLY",
+        paymentScopeAlignment: paymentScopeAlignmentForLegacyField(legacyField),
       };
     }),
   );
@@ -3627,6 +3674,11 @@ export class CaseService {
         canonicalProjectionCurrencyScope: CANONICAL_SHADOW_PROJECTION_CURRENCY_SCOPE,
         canonicalProjectionCurrency: legacy.legacyCurrency,
         matchStatusInterpretation: CANONICAL_SHADOW_MATCH_STATUS_INTERPRETATION,
+        canonicalTotalDuePaymentScope: CANONICAL_TOTAL_DUE_PAYMENT_SCOPE,
+        canonicalInterestPaymentScope: CANONICAL_INTEREST_PAYMENT_SCOPE,
+        legacyToplamBorcPaymentScope: LEGACY_TOPLAM_BORC_PAYMENT_SCOPE,
+        legacySonBorcPaymentScope: LEGACY_SON_BORC_PAYMENT_SCOPE,
+        legacyKalanBorcPaymentScope: LEGACY_KALAN_BORC_PAYMENT_SCOPE,
         legacyToplamBorc: legacy.legacyToplamBorc,
         legacySonBorc: legacy.legacySonBorc,
         legacyToplamTahsilat: legacy.legacyToplamTahsilat,
@@ -3679,6 +3731,11 @@ export class CaseService {
         canonicalProjectionCurrencyScope: CANONICAL_SHADOW_PROJECTION_CURRENCY_SCOPE,
         canonicalProjectionCurrency: legacy.legacyCurrency,
         matchStatusInterpretation: CANONICAL_SHADOW_MATCH_STATUS_INTERPRETATION,
+        canonicalTotalDuePaymentScope: CANONICAL_TOTAL_DUE_PAYMENT_SCOPE,
+        canonicalInterestPaymentScope: CANONICAL_INTEREST_PAYMENT_SCOPE,
+        legacyToplamBorcPaymentScope: LEGACY_TOPLAM_BORC_PAYMENT_SCOPE,
+        legacySonBorcPaymentScope: LEGACY_SON_BORC_PAYMENT_SCOPE,
+        legacyKalanBorcPaymentScope: LEGACY_KALAN_BORC_PAYMENT_SCOPE,
         legacyToplamBorc: legacy.legacyToplamBorc,
         legacySonBorc: legacy.legacySonBorc,
         legacyToplamTahsilat: legacy.legacyToplamTahsilat,
@@ -3752,6 +3809,11 @@ export class CaseService {
         canonicalProjectionCurrencyScope: CANONICAL_SHADOW_PROJECTION_CURRENCY_SCOPE,
         canonicalProjectionCurrency: legacy.legacyCurrency,
         matchStatusInterpretation: CANONICAL_SHADOW_MATCH_STATUS_INTERPRETATION,
+        canonicalTotalDuePaymentScope: CANONICAL_TOTAL_DUE_PAYMENT_SCOPE,
+        canonicalInterestPaymentScope: CANONICAL_INTEREST_PAYMENT_SCOPE,
+        legacyToplamBorcPaymentScope: LEGACY_TOPLAM_BORC_PAYMENT_SCOPE,
+        legacySonBorcPaymentScope: LEGACY_SON_BORC_PAYMENT_SCOPE,
+        legacyKalanBorcPaymentScope: LEGACY_KALAN_BORC_PAYMENT_SCOPE,
         legacyToplamBorc: legacy.legacyToplamBorc,
         legacySonBorc: legacy.legacySonBorc,
         legacyToplamTahsilat: legacy.legacyToplamTahsilat,

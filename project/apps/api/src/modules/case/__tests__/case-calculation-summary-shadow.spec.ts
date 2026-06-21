@@ -14,6 +14,10 @@ function hasUnavailableScopeStatus(entry: { scopeStatus: string }): boolean {
   return entry.scopeStatus === 'UNAVAILABLE';
 }
 
+function hasCandidateScopeStatus(entry: { scopeStatus: string }): boolean {
+  return entry.scopeStatus === 'CANDIDATE_ONLY';
+}
+
 function makePrisma(overrides: Record<string, any> = {}) {
   return {
     case: {
@@ -127,6 +131,11 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       canonicalProjectionCurrencyScope: 'UNSCOPED_CASE_CURRENCY_ASSUMED',
       canonicalProjectionCurrency: 'TRY',
       matchStatusInterpretation: 'RAW_DELTA_DIAGNOSTIC_ONLY',
+      canonicalTotalDuePaymentScope: 'NET_OF_PAYMENTS',
+      canonicalInterestPaymentScope: 'GROSS_INTEREST',
+      legacyToplamBorcPaymentScope: 'GROSS_OF_COLLECTIONS',
+      legacySonBorcPaymentScope: 'GROSS_OF_COLLECTIONS',
+      legacyKalanBorcPaymentScope: 'NET_OF_COLLECTIONS',
       legacyToplamBorc: result.toplamBorc,
       legacySonBorc: result.sonBorc,
       legacyToplamTahsilat: result.toplamTahsilat,
@@ -167,6 +176,7 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       diagnostics: { fatal: [], assembler: [], payments: [], currency: [], perCurrency: [] },
     });
     expect(result.canonicalShadow.scopeComparisonMatrix).toHaveLength(9);
+    expect(result.canonicalShadow.scopeComparisonMatrix.every(hasCandidateScopeStatus)).toBe(true);
     expect(result.canonicalShadow.scopeComparisonMatrix).toEqual(expect.arrayContaining([
       {
         legacyField: 'toplamBorc',
@@ -176,6 +186,7 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
         delta: round2(1234.56 - result.toplamBorc),
         deltaPercent: deltaPercent(round2(1234.56 - result.toplamBorc), result.toplamBorc),
         scopeStatus: 'CANDIDATE_ONLY',
+        paymentScopeAlignment: 'MISMATCH_NET_TO_GROSS',
       },
       {
         legacyField: 'sonBorc',
@@ -188,6 +199,20 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
           result.sonBorc,
         ),
         scopeStatus: 'CANDIDATE_ONLY',
+        paymentScopeAlignment: 'MISMATCH_NET_TO_GROSS',
+      },
+      {
+        legacyField: 'kalanBorc',
+        canonicalScope: 'PROJECTED_WITH_COSTS_AND_ANCILLARIES',
+        legacyValue: result.kalanBorc,
+        canonicalValue: expectedProjectedWithCostsAndAncillaries,
+        delta: round2(expectedProjectedWithCostsAndAncillaries - result.kalanBorc),
+        deltaPercent: deltaPercent(
+          round2(expectedProjectedWithCostsAndAncillaries - result.kalanBorc),
+          result.kalanBorc,
+        ),
+        scopeStatus: 'CANDIDATE_ONLY',
+        paymentScopeAlignment: 'POSSIBLE_NET_TO_NET',
       },
     ]));
     expect((result.canonicalShadow as any).canonicalSonBorc).toBeUndefined();
@@ -213,6 +238,11 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       canonicalProjectionCurrencyScope: 'UNSCOPED_CASE_CURRENCY_ASSUMED',
       canonicalProjectionCurrency: 'TRY',
       matchStatusInterpretation: 'RAW_DELTA_DIAGNOSTIC_ONLY',
+      canonicalTotalDuePaymentScope: 'NET_OF_PAYMENTS',
+      canonicalInterestPaymentScope: 'GROSS_INTEREST',
+      legacyToplamBorcPaymentScope: 'GROSS_OF_COLLECTIONS',
+      legacySonBorcPaymentScope: 'GROSS_OF_COLLECTIONS',
+      legacyKalanBorcPaymentScope: 'NET_OF_COLLECTIONS',
       legacyToplamBorc: result.toplamBorc,
       legacySonBorc: result.sonBorc,
       legacyToplamTahsilat: result.toplamTahsilat,
@@ -234,6 +264,16 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
     });
     expect(result.canonicalShadow.scopeComparisonMatrix).toHaveLength(9);
     expect(result.canonicalShadow.scopeComparisonMatrix.every(hasUnavailableScopeStatus)).toBe(true);
+    expect(result.canonicalShadow.scopeComparisonMatrix).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        legacyField: 'toplamBorc',
+        paymentScopeAlignment: 'MISMATCH_NET_TO_GROSS',
+      }),
+      expect.objectContaining({
+        legacyField: 'kalanBorc',
+        paymentScopeAlignment: 'POSSIBLE_NET_TO_NET',
+      }),
+    ]));
     expect((result.canonicalShadow as any).error).toBeUndefined();
     expect(JSON.stringify(result.canonicalShadow)).not.toContain('engine down');
   });
@@ -254,6 +294,11 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       canonicalProjectionCurrencyScope: 'UNSCOPED_CASE_CURRENCY_ASSUMED',
       canonicalProjectionCurrency: 'TRY',
       matchStatusInterpretation: 'RAW_DELTA_DIAGNOSTIC_ONLY',
+      canonicalTotalDuePaymentScope: 'NET_OF_PAYMENTS',
+      canonicalInterestPaymentScope: 'GROSS_INTEREST',
+      legacyToplamBorcPaymentScope: 'GROSS_OF_COLLECTIONS',
+      legacySonBorcPaymentScope: 'GROSS_OF_COLLECTIONS',
+      legacyKalanBorcPaymentScope: 'NET_OF_COLLECTIONS',
       legacyToplamBorc: result.toplamBorc,
       legacySonBorc: result.sonBorc,
       legacyToplamTahsilat: result.toplamTahsilat,
@@ -275,6 +320,16 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
     });
     expect(result.canonicalShadow.scopeComparisonMatrix).toHaveLength(9);
     expect(result.canonicalShadow.scopeComparisonMatrix.every(hasUnavailableScopeStatus)).toBe(true);
+    expect(result.canonicalShadow.scopeComparisonMatrix).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        legacyField: 'sonBorc',
+        paymentScopeAlignment: 'MISMATCH_NET_TO_GROSS',
+      }),
+      expect.objectContaining({
+        legacyField: 'kalanBorc',
+        paymentScopeAlignment: 'POSSIBLE_NET_TO_NET',
+      }),
+    ]));
   });
 
   it('legacySonBorc sifirsa deltaPercent null ve LEGACY_ZERO doner', async () => {
@@ -313,6 +368,17 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       delta: 1234.56,
       deltaPercent: null,
       scopeStatus: 'CANDIDATE_ONLY',
+      paymentScopeAlignment: 'MISMATCH_NET_TO_GROSS',
+    });
+    expect(shadow.scopeComparisonMatrix).toContainEqual({
+      legacyField: 'kalanBorc',
+      canonicalScope: 'CLAIM_ONLY',
+      legacyValue: 0,
+      canonicalValue: 1234.56,
+      delta: 1234.56,
+      deltaPercent: null,
+      scopeStatus: 'CANDIDATE_ONLY',
+      paymentScopeAlignment: 'POSSIBLE_NET_TO_NET',
     });
     expect(shadow.currencyResults[0]).toMatchObject({
       currency: 'TRY',
@@ -367,6 +433,16 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
     });
     expect(shadow.scopeComparisonMatrix).toHaveLength(9);
     expect(shadow.scopeComparisonMatrix.every(hasUnavailableScopeStatus)).toBe(true);
+    expect(shadow.scopeComparisonMatrix).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        legacyField: 'toplamBorc',
+        paymentScopeAlignment: 'MISMATCH_NET_TO_GROSS',
+      }),
+      expect.objectContaining({
+        legacyField: 'kalanBorc',
+        paymentScopeAlignment: 'POSSIBLE_NET_TO_NET',
+      }),
+    ]));
     expect(shadow.currencyResults[0]).toMatchObject({
       currency: 'USD',
       totalDue: 500,
