@@ -247,6 +247,7 @@ export class ExpenseNotificationService {
         },
         case: {
           select: {
+            sorumluPersonelId: true, // A5: varsayılan görev sahibi (Dosya Sorumlusu)
             fileNumber: true,
             executionFileNumber: true,
             executionOffice: { select: { name: true } },
@@ -387,6 +388,8 @@ export class ExpenseNotificationService {
           data: {
             tenantId,
             caseId: request.caseId,
+            // A5: dosyaya bağlı otomatik görev → varsayılan sahip = Dosya Sorumlusu (yoksa boş; explicit ezme yok)
+            assigneeId: request.case?.sorumluPersonelId ?? undefined,
             title: `Masraf Takibi - ${request.case.fileNumber}`,
             description: `${formattedTotal} TL masraf talebi müvekkile gönderildi. Ödeme takibi yapılmalı.\n\nGönderim: ${formattedDate}\nAlıcı: ${clientEmail}`,
             status: 'PENDING',
@@ -550,7 +553,7 @@ export class ExpenseNotificationService {
     const request = await this.prisma.expenseRequest.findFirst({
       where: { id: requestId, tenantId },
       include: {
-        case: { select: { id: true, fileNumber: true } },
+        case: { select: { id: true, fileNumber: true, sorumluPersonelId: true } },
         client: { select: { displayName: true } },
       },
     });
@@ -566,6 +569,8 @@ export class ExpenseNotificationService {
       data: {
         tenantId,
         caseId: request.caseId,
+        // A5: varsayılan sahip = Dosya Sorumlusu (yoksa boş)
+        assigneeId: request.case?.sorumluPersonelId ?? undefined,
         title: `Masraf takibi - ${request.client?.displayName || 'Müvekkil'}`,
         description: `${request.case.fileNumber} dosyası için ${formattedTotal} TL masraf talebi vadesi geçti. Müvekkil ile iletişime geçilmeli.`,
         status: 'PENDING',

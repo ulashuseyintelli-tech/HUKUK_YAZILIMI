@@ -12,7 +12,7 @@ describe("SchedulerService — cron tebligat synced-path (PR-S2)", () => {
   const build = () => {
     const prisma: any = {
       tebligat: { update: jest.fn().mockResolvedValue({}) },
-      case: { findUnique: jest.fn().mockResolvedValue({ id: "c1", fileNumber: "2024/1", tenantId: "t1" }) },
+      case: { findUnique: jest.fn().mockResolvedValue({ id: "c1", fileNumber: "2024/1", tenantId: "t1", sorumluPersonelId: "u9" }) },
       task: { create: jest.fn().mockResolvedValue({}) },
     };
     const metrics: any = { record: jest.fn() };
@@ -55,7 +55,22 @@ describe("SchedulerService — cron tebligat synced-path (PR-S2)", () => {
       expect.objectContaining({ pttResult: TebligatPttResult.ADRESTE_BULUNAMADI })
     );
     expect(prisma.task.create).toHaveBeenCalled(); // A kararı: case-seviyesi takip görevi korunur
+    const taskData = prisma.task.create.mock.calls[0][0].data;
+    expect(taskData.caseId).toBe("c1");
+    expect(taskData.assigneeId).toBe("u9"); // A5: dosyaya bağlı otomatik görev → varsayılan sahip = Dosya Sorumlusu
     expect(prisma.tebligat.update).not.toHaveBeenCalled();
+  });
+
+  it("IADE + dosya sorumlusu YOK → A5 fallback üretmez (assigneeId boş kalır)", async () => {
+    const { svc, prisma } = build();
+    prisma.case.findUnique.mockResolvedValueOnce({ id: "c1", fileNumber: "2024/1", tenantId: "t1" }); // sorumlu yok
+    jest.spyOn(Math, "random").mockReturnValue(0.5); // IADE
+
+    await (svc as any).queryPttBarcode(ptt);
+
+    const taskData = prisma.task.create.mock.calls[0][0].data;
+    expect(taskData.caseId).toBe("c1");
+    expect(taskData.assigneeId).toBeUndefined(); // A5: sorumlu yoksa fallback YOK
   });
 
   it("PTT GONDERILDI (sonuç yok) → no-op (recordPttResult, update, followup hiçbiri yok)", async () => {
