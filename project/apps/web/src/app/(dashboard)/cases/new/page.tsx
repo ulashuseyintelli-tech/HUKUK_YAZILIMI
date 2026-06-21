@@ -1111,7 +1111,12 @@ export default function NewCasePage() {
         {error && <div className="mb-2 p-2 bg-red-50 border border-red-200 text-red-700 rounded-lg text-xs">{error}</div>}
 
         {currentStep === 0 && (
-          <div>
+          // PR-1 layout fix: step-0 kendi içinde scroll'lansın. Ebeveyn (flex-1 ... overflow-hidden
+          // flex flex-col min-h-0) yüksekliği sabit; bu sarmalayıcı düz <div> olduğunda uzun form
+          // listesi + footer taşıp KESİLİYORDU (son form yarım, Geri/İleri görünmez). flex-1 min-h-0
+          // overflow-y-auto ile içerik kayar, footer altta sabit kalır. Adım 1-5 kendi scroll'unu
+          // yönetir; bu className yalnız currentStep===0'ı etkiler.
+          <div className="flex-1 min-h-0 overflow-y-auto">
             {showDocumentSelector ? (
               <DocumentSourceSelector onSelect={handleDocumentSourceSelect} onSkip={() => { setShowDocumentSelector(false); setShowWizard(false); }} onPoaScan={handlePoaScan} />
             ) : wizardResult ? (
