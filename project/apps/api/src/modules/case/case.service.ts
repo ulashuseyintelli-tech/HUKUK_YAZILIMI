@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger, Inject, forwardRef } from "@nestjs/common";
+import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger, Inject, forwardRef, Optional } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 import { CreateCaseDto, UpdateCaseDto, CaseSubCategory, Currency, DueDto, DueType, InterestType, CaseInstrumentInputDto, CaseStaffInputDto } from "./dto/case.dto";
 import { Prisma, LegalCaseStatus, InterestType as PrismaInterestType } from "@prisma/client";
@@ -13,6 +13,8 @@ import { isInitialStatus } from "../case-status/case-status.service";
 import { AuditService } from "../audit/audit.service";
 import { ClientInfoRequestService } from "../address-discovery/client-info-request.service";
 import { InterestEngineService } from "../interest-engine/interest-engine.service";
+import { CaseBalanceService } from "../interest-engine/orchestration/case-balance.service";
+import type { CaseBalanceResult } from "../interest-engine/orchestration/case-balance.service";
 import { resolveInitialPolicy } from "../interest-engine/interest-strategy.config";
 import { mapDtoCaseTypeToInterestCaseType } from "./case-type-mapping";
 import { ExpenseRequestService } from "../expense-request/expense-request.service";
@@ -38,6 +40,23 @@ import {
   planResponsible,
 } from "./case-responsible.helpers";
 export { pickResponsibleFallbackIndex, resolveResponsiblePromotion, planResponsible };
+
+type CalculationSummaryCanonicalShadow = {
+  status: "OK" | "ERROR" | "UNAVAILABLE";
+  source: "computeCaseBalance";
+  asOfDate: string;
+  engineSource?: CaseBalanceResult["source"];
+  currencyResults?: Array<{
+    currency: string;
+    totalDue: number | null;
+    totalInterest: number | null;
+    preEnforcementInterest: number | null;
+    postEnforcementInterest: number | null;
+    skippedReason: string | null;
+  }>;
+  diagnostics?: CaseBalanceResult["diagnostics"];
+  error?: string;
+};
 
 type DueForClaimItemSync = {
   id: string;
@@ -115,6 +134,8 @@ export class CaseService {
     private clientService: ClientService,
     private lawyerService: LawyerService,
     private debtorService: DebtorService,
+    @Optional()
+    private canonicalCaseBalance?: CaseBalanceService,
   ) {}
 
   /**
@@ -3230,6 +3251,11 @@ export class CaseService {
    * 
    * UI'da hesaplama YAPILMAZ.
    * 
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseController.getCalculationSummary() → GET /cases/:id/calculation-summary (case detay hesap özeti)
+   * </remarks>
+   *
    * @see ARCHITECTURE.md - Source of Truth Matrix
    */
   async getCalculationSummary(tenantId: string, caseId: string, calculationDate: string) {
@@ -3326,7 +3352,7 @@ export class CaseService {
       tutar: Math.round(toplamBorc * (1 + t.oran) * 100) / 100,
     }));
 
-    return {
+    const legacySummary = {
       caseId,
       hesapTarihi,
       takipTarihi,
@@ -3362,6 +3388,64 @@ export class CaseService {
       faizSegmentleri,
       tahsilOranlari,
     };
+
+    return {
+      ...legacySummary,
+      canonicalShadow: await this.buildCalculationSummaryCanonicalShadow(tenantId, caseId, calculationDate),
+    };
+  }
+
+  /**
+   * Legacy hesap ozeti sonucuna, davranis degistirmeyen canonical computeBalance tanisi ekler.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - CaseService.getCalculationSummary() → GET /cases/:id/calculation-summary (canonicalShadow diagnostic)
+   * </remarks>
+   */
+  private async buildCalculationSummaryCanonicalShadow(
+    tenantId: string,
+    caseId: string,
+    calculationDate: string,
+  ): Promise<CalculationSummaryCanonicalShadow> {
+    if (!this.canonicalCaseBalance) {
+      return {
+        status: "UNAVAILABLE",
+        source: "computeCaseBalance",
+        asOfDate: calculationDate,
+        error: "CASE_BALANCE_SERVICE_UNAVAILABLE",
+      };
+    }
+
+    try {
+      const balance = await this.canonicalCaseBalance.computeCaseBalance(tenantId, caseId, calculationDate);
+
+      return {
+        status: "OK",
+        source: "computeCaseBalance",
+        asOfDate: balance.asOfDate,
+        engineSource: balance.source,
+        currencyResults: balance.currencyResults.map((entry) => ({
+          currency: entry.currency,
+          totalDue: entry.result?.totalDue ?? null,
+          totalInterest: entry.result?.totalInterest ?? null,
+          preEnforcementInterest: entry.result?.preEnforcementInterest ?? null,
+          postEnforcementInterest: entry.result?.postEnforcementInterest ?? null,
+          skippedReason: entry.skippedReason ?? null,
+        })),
+        diagnostics: balance.diagnostics,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Canonical balance shadow failed for case ${caseId}: ${message}`);
+
+      return {
+        status: "ERROR",
+        source: "computeCaseBalance",
+        asOfDate: calculationDate,
+        error: message,
+      };
+    }
   }
 
   /**
