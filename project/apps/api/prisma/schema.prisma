@@ -224,6 +224,7 @@ model Tenant {
   clients           Client[]
   tasks             Task[]
   escalationEvents  EscalationEvent[]
+  caseTaskEscalationEvents CaseTaskEscalationEvent[]
   debtorIntelligence DebtorIntelligence[]
   courts            Court[]
   collections       Collection[]
@@ -1081,6 +1082,9 @@ model Case {
   cpeDecisionLogs    CpeDecisionLog[]    @relation("CpeDecisionLogs")
   cpeExecutionRecords CpeExecutionRecord[] @relation("CpeExecutionRecords")
 
+  // D-G3a: dosya görevi eskalasyon izleri (case düzeyi gözlemlenebilirlik)
+  caseTaskEscalationEvents CaseTaskEscalationEvent[]
+
   @@unique([tenantId, fileNumber])
   @@index([tenantId, status])
   @@index([tenantId, caseStatus])
@@ -1517,6 +1521,8 @@ model Task {
 
   // K2: eskalasyon geçmişi (append-only). Task = canlı durum; EscalationEvent = iz.
   escalationEvents EscalationEvent[]
+  // D-G3a: dosya görevi eskalasyon izleri (operasyonel EscalationEvent'ten AYRI, K-D1)
+  caseTaskEscalationEvents CaseTaskEscalationEvent[]
 
   @@index([tenantId, status])
   @@index([tenantId, dueDate])
@@ -1553,6 +1559,41 @@ model EscalationEvent {
 
 // K2 olay türleri. NOTIFICATION_* aggregated (dispatch başına 1); TIER_ADVANCED tier değişiminde.
 enum EscalationEventType {
+  TIER_ADVANCED
+  NOTIFICATION_SENT
+  NOTIFICATION_SKIPPED
+  NOTIFICATION_FAILED
+}
+
+// D-G3a: Dosya görevi (case-linked LEGAL_WORKFLOW) eskalasyon geçmişi (append-only).
+// Operasyonel EscalationEvent'ten AYRI (K-D1: paylaşım YOK). CaseTaskEscalationService (D-G3b)
+// her tier ilerlemesinde + her bildirim sonucunda iz bırakır. tenant/case/task düzeyinde
+// gözlemlenebilirlik (SLA/rapor). ASLA update/delete (yalnız insert); görev/dosya silinirse cascade.
+model CaseTaskEscalationEvent {
+  id             String                      @id @default(cuid())
+  tenantId       String
+  tenant         Tenant                      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  caseId         String
+  case           Case                        @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  taskId         String
+  task           Task                        @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  fromLevel      CaseTaskTier? // TIER_ADVANCED'te eski tier; NOTIFICATION'da null
+  toLevel        CaseTaskTier? // hedef/bildirilen tier
+  eventType      CaseTaskEscalationEventType
+  channel        String? // "EMAIL" / "EMAIL,SMS" / null (tier-advance)
+  deliveryStatus String? // "SENT" / "SKIPPED" / "FAILED" / null (tier-advance)
+  metadata       Json? // { channels:[...], emailRecipients, smsRecipients, notifyTier }
+  createdAt      DateTime                    @default(now())
+
+  @@index([tenantId, taskId])
+  @@index([tenantId, caseId])
+  @@index([taskId, createdAt])
+  @@index([caseId, createdAt])
+  @@index([tenantId, createdAt])
+}
+
+// Dosya görevi eskalasyon olay türleri (CaseTaskEscalationEvent için; EscalationEventType'tan AYRI, K-D1).
+enum CaseTaskEscalationEventType {
   TIER_ADVANCED
   NOTIFICATION_SENT
   NOTIFICATION_SKIPPED
