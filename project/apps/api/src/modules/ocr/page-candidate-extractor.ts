@@ -31,14 +31,25 @@ KURALLAR (kesin):
   back = bu sayfa ARKA/ciro gibi mi görünüyor (ciro/imza/aval, tutar yok).
   Bunlar bu sayfanın KENDİ görünümüdür; "şu belgenin arkasıdır" DEME.
 
+TARİH KURALLARI (belge türüne göre — ÇOK ÖNEMLİ):
+- ÇEK: Çekte VADE YOKTUR (çek görüldüğünde ödenir). Çekin tek meşru tarihi KEŞİDE tarihidir.
+  • issueDate = YALNIZ gerçek KEŞİDE tarihi. Çek için dueDate'i BOŞ/null bırak (çekte vade yok).
+  • Keşide tarihi genellikle çekin SAĞ tarafındaki "keşide yeri / tarih" alanında bulunur — onu kullan.
+  • "Basım tarihi / baskı tarihi / print date / basım" olarak etiketli tarihler KEŞİDE DEĞİLDİR → DIŞLA.
+    Basım tarihini issueDate'e DE dueDate'e DE YAZMA (hiçbir alana koyma).
+  • Tarih belirsizse: en olası keşideyi issueDate'e koy AMA confidence'ı DÜŞÜR ve evidenceText'e
+    "basım tarihi görüldü / keşide tarihi belirsiz" notu ekle. Basım tarihini yine de hiçbir alana KOYMA.
+- BONO/SENET/POLİÇE: issueDate = düzenleme tarihi; dueDate = VADE tarihi (mevcut anlam KORUNUR).
+- FATURA/DIGER: gördüğün tarihleri uygun alana yaz.
+
 Yalnız bu sayfa için TEK JSON nesnesi döndür (dizi DEĞİL):
 {
   "documentType": "CEK|SENET|POLICE|FATURA|DIGER",
   "documentNo": "bu sayfada görünüyorsa",
   "amount": 12345.67,
   "currency": "TRY|USD|EUR|GBP|CHF",
-  "issueDate": "YYYY-MM-DD",
-  "dueDate": "YYYY-MM-DD",
+  "issueDate": "YYYY-MM-DD (ÇEK: yalnız KEŞİDE tarihi — basım tarihi DEĞİL · bono/senet/poliçe: düzenleme tarihi)",
+  "dueDate": "YYYY-MM-DD (bono/senet/poliçe: VADE · ÇEK: BOŞ/null — çekte vade yok, basım tarihi de buraya yazılmaz)",
   "bankName": "...",
   "drawerName": "keşideci/borçlu adı (bu sayfada görünüyorsa)",
   "debtorCandidates": ["..."],
