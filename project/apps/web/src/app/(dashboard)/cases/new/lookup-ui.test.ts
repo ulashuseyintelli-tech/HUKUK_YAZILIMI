@@ -69,6 +69,14 @@ describe("PR-2 formToTakipTuruCode — manuel form → kanonik takipTürü seed"
     expect(formToTakipTuruCode("FORM_2_3_4_5", "FORM_5_NAFAKA")).toBe("NAFAKA");
   });
 
+  it("PR-3: Kambiyo (FORM_10) alt-kırılımı → çek/senet ayrımı", () => {
+    expect(formToTakipTuruCode("FORM_10", "FORM_10_CEK")).toBe("KAMBIYO_CEK");
+    expect(formToTakipTuruCode("FORM_10", "FORM_10_BONO")).toBe("KAMBIYO_SENET");
+    expect(formToTakipTuruCode("FORM_10", "FORM_10_POLICE")).toBe("KAMBIYO_SENET");
+    // alt-form seçilmemişken taban varsayılan KORUNUR (sihirbaz yolu / güvenlik)
+    expect(formToTakipTuruCode("FORM_10")).toBe("KAMBIYO_SENET");
+  });
+
   it("nafaka dışı ilamlı alt-form → ana form eşlemesi (ILAMLI) korunur", () => {
     expect(formToTakipTuruCode("FORM_2_3_4_5", "FORM_5_ALACAK")).toBe("ILAMLI");
     expect(formToTakipTuruCode("FORM_2_3_4_5", "FORM_2_5_TAHLIYE")).toBe("ILAMLI");

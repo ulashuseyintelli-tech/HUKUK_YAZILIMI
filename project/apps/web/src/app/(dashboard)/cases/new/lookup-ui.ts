@@ -41,8 +41,12 @@ export function lookupBannerMessage(lookupsLoadFailed: boolean): string {
  * - cases/new/page.tsx > handleFormSelect() → manuel/skip form seçiminde sınıflandırma seed eder.
  */
 export function formToTakipTuruCode(formCode: string, subFormCode?: string | null): string | null {
-  // Alt-form özel kuralı (ana form eşlemesinden önce gelir)
+  // Alt-form özel kuralları (ana form eşlemesinden önce gelir)
   if (subFormCode === "FORM_5_NAFAKA") return "NAFAKA";
+  // PR-3: Kambiyo (FORM_10) alt-kırılımı → çek/senet ayrımı. KambiyoWizard semantiğiyle birebir:
+  // çek → KAMBIYO_CEK (mahiyet CEK, vade yok); bono/poliçe → KAMBIYO_SENET (mahiyet SENET, vade var).
+  if (subFormCode === "FORM_10_CEK") return "KAMBIYO_CEK";
+  if (subFormCode === "FORM_10_BONO" || subFormCode === "FORM_10_POLICE") return "KAMBIYO_SENET";
 
   const FORM_TO_TAKIP_TURU: Record<string, string> = {
     FORM_7: "ILAMSIZ_GENEL",       // İlamsız İcra Takibi

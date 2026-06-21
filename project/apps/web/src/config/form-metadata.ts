@@ -72,6 +72,15 @@ export const formMetadata: FormMetadata[] = [
     needsMortgage: false,
     isKambiyo: true,
     isRental: false,
+    // PR-3: Kambiyo senedi türünü (çek/bono/poliçe) manuel akışta SOR. Tek kart çek+bono+poliçe'yi
+    // birleştirdiği için seçince doğrudan 2. adıma geçmek yerine alt-kırılım açılır (İlamlı ile aynı
+    // pattern, FormCard değişmeden). Çek/senet ayrımı mahiyet (CEK vs SENET) + faiz/vade için kritik.
+    // İflas yoluyla kambiyo AYRI form (FORM_12) olduğu için burada yer almaz.
+    subForms: [
+      { code: 'FORM_10_CEK', name: 'Form 10', title: 'Çek', uyapCode: '163', usageScenario: 'Çeke dayalı kambiyo takibi — çekte vade yoktur, keşide tarihi esas alınır' },
+      { code: 'FORM_10_BONO', name: 'Form 10', title: 'Bono / Emre Muharrer Senet', uyapCode: '163', usageScenario: 'Bono (emre muharrer senet) alacağının kambiyo takibi — vade tarihli' },
+      { code: 'FORM_10_POLICE', name: 'Form 10', title: 'Poliçe', uyapCode: '163', usageScenario: 'Poliçeye dayalı kambiyo takibi' },
+    ],
   },
   {
     code: 'FORM_12',
