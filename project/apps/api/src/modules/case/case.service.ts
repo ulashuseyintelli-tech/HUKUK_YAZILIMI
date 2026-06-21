@@ -765,14 +765,18 @@ export class CaseService {
     }
   }
 
-  async findAll(tenantId: string, params?: { status?: string; expenseRequestStatus?: string; clientId?: string; noOwner?: boolean; page?: number; limit?: number }) {
-    const { status, expenseRequestStatus, clientId, noOwner, page = 1, limit = 20 } = params || {};
+  async findAll(tenantId: string, params?: { status?: string; expenseRequestStatus?: string; clientId?: string; noOwner?: boolean; responsibleLawyerId?: string; responsibleStaffId?: string; page?: number; limit?: number }) {
+    const { status, expenseRequestStatus, clientId, noOwner, responsibleLawyerId, responsibleStaffId, page = 1, limit = 20 } = params || {};
 
     const where: any = { tenantId };
     if (status) where.status = status;
     if (clientId) where.clientId = clientId;
     // SAHIPSIZ-DOSYALAR-G1: Dosya Sorumlusu atanmamış (legacy) dosyalar görünürlük filtresi (server-side, doğru kapsam).
     if (noOwner) where.sorumluPersonelId = null;
+    // G5a: gerçek-kişi owner kolon filtreleri (her param KENDİ kolonuna; K1 bridge yok → cross-fallback yok).
+    // noOwner/Sahipsiz'in Model-2 (both-FK-null) tanımı bu gate'te DEĞİŞMEDİ — G5c.
+    if (responsibleLawyerId) where.responsibleLawyerId = responsibleLawyerId;
+    if (responsibleStaffId) where.responsibleStaffId = responsibleStaffId;
     
     // Masraf talebi durumuna göre filtreleme
     if (expenseRequestStatus) {

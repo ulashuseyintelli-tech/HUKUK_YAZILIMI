@@ -34,6 +34,8 @@ export class CaseController {
     @Query("expenseRequestStatus") expenseRequestStatus?: string,
     @Query("clientId") clientId?: string,
     @Query("noOwner") noOwner?: string,
+    @Query("responsibleLawyerId") responsibleLawyerId?: string,
+    @Query("responsibleStaffId") responsibleStaffId?: string,
     @Query("page") page?: string,
     @Query("limit") limit?: string
   ) {
@@ -42,6 +44,8 @@ export class CaseController {
       expenseRequestStatus,
       clientId,
       noOwner: noOwner === "1" || noOwner === "true",
+      responsibleLawyerId,
+      responsibleStaffId,
       page: page ? parseInt(page) : undefined,
       limit: limit ? parseInt(limit) : undefined,
     });

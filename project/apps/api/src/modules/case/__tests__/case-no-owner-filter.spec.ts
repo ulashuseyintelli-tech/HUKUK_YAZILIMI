@@ -42,3 +42,32 @@ describe('SAHIPSIZ-DOSYALAR-G1a — noOwner filter + getStats.ownerless', () => 
     );
   });
 });
+
+describe("M2-G5a — findAll gerçek-kişi owner filtreleri (responsible*; cross-bridge YOK)", () => {
+  it("responsibleLawyerId → where.responsibleLawyerId (kendi kolonu)", async () => {
+    const { service, findMany } = setup();
+    await service.findAll("t1", { responsibleLawyerId: "L1" });
+    expect(findMany.mock.calls[0][0].where).toMatchObject({ tenantId: "t1", responsibleLawyerId: "L1" });
+  });
+
+  it("responsibleStaffId → where.responsibleStaffId", async () => {
+    const { service, findMany } = setup();
+    await service.findAll("t1", { responsibleStaffId: "S1" });
+    expect(findMany.mock.calls[0][0].where).toMatchObject({ tenantId: "t1", responsibleStaffId: "S1" });
+  });
+
+  it("noOwner + responsibleLawyerId karışık → deterministik (ikisi de where icinde)", async () => {
+    const { service, findMany } = setup();
+    await service.findAll("t1", { noOwner: true, responsibleLawyerId: "L1" });
+    expect(findMany.mock.calls[0][0].where).toMatchObject({ tenantId: "t1", sorumluPersonelId: null, responsibleLawyerId: "L1" });
+  });
+
+  it("person filtre yok → responsible* uygulanmaz, tenant scope korunur", async () => {
+    const { service, findMany } = setup();
+    await service.findAll("t1", {});
+    const where = findMany.mock.calls[0][0].where;
+    expect(where.responsibleLawyerId).toBeUndefined();
+    expect(where.responsibleStaffId).toBeUndefined();
+    expect(where.tenantId).toBe("t1");
+  });
+});
