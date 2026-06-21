@@ -27,6 +27,7 @@ import {
   hasIncompleteSelected,
 } from "./ocr-instrument";
 import { InstrumentReviewTable } from "./InstrumentReviewTable";
+import { computeClientMatch, type ClientMatchResult } from "@/lib/client-match";
 
 // Borç evrakı tarama sonucu tipi
 interface DebtDocumentResult {
@@ -604,6 +605,11 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
     creditors,
   );
 
+  // P4-3: müvekkilin her instrument'taki konumu (clientMatch) — SADECE badge gösterimi (karar/guard YOK; K8 ayrı iş).
+  const clientMatches: (ClientMatchResult | null)[] = reviewRows.map((row) =>
+    creditors && creditors.length > 0 ? computeClientMatch(row.instrument, creditors) : null,
+  );
+
   // Drag & Drop handlers
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
@@ -868,7 +874,7 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
           )}
 
           {shouldShowInstrumentTable(wizardResult.instruments) && (
-            <InstrumentReviewTable rows={reviewRows} onChange={setReviewRows} />
+            <InstrumentReviewTable rows={reviewRows} onChange={setReviewRows} clientMatches={clientMatches} />
           )}
 
           <div className="flex gap-1">
