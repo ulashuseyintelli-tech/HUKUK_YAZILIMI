@@ -2,6 +2,18 @@ import { CaseService } from '../case.service';
 
 const stub = {} as any;
 
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function deltaPercent(delta: number | null, legacyValue: number): number | null {
+  return delta != null && legacyValue !== 0 ? round2((delta / legacyValue) * 100) : null;
+}
+
+function hasUnavailableScopeStatus(entry: { scopeStatus: string }): boolean {
+  return entry.scopeStatus === 'UNAVAILABLE';
+}
+
 function makePrisma(overrides: Record<string, any> = {}) {
   return {
     case: {
@@ -59,6 +71,9 @@ function legacyShadowInput(overrides: Record<string, any> = {}) {
     legacySonBorc: 1000,
     legacyToplamTahsilat: 0,
     legacyKalanBorc: 1000,
+    legacyTahsilHarci: 0,
+    legacyIcraMasraflari: 0,
+    legacyVekaletUcreti: 0,
     legacyCurrency: 'TRY',
     ...overrides,
   };
@@ -98,9 +113,10 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
     expect(result.sonBorc).toBeCloseTo(11536.26, 2);
     expect(result.kalanBorc).toBeCloseTo(result.sonBorc, 2);
 
-    const expectedDelta = Math.round((1234.56 - result.sonBorc) * 100) / 100;
-    const expectedDeltaPercent = Math.round((expectedDelta / result.sonBorc) * 10000) / 100;
-    const expectedProjectedTotalDue = Math.round((1234.56 + 12.5 + 100) * 100) / 100;
+    const expectedDelta = round2(1234.56 - result.sonBorc);
+    const expectedDeltaPercent = deltaPercent(expectedDelta, result.sonBorc);
+    const expectedProjectedWithCosts = round2(1234.56 + 12.5);
+    const expectedProjectedWithCostsAndAncillaries = round2(1234.56 + 12.5 + 100);
 
     expect(result.canonicalShadow).toMatchObject({
       status: 'OK',
@@ -115,11 +131,17 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       legacySonBorc: result.sonBorc,
       legacyToplamTahsilat: result.toplamTahsilat,
       legacyKalanBorc: result.kalanBorc,
+      legacyTahsilHarci: result.pesinHarcHaricTahsilHarci,
+      legacyIcraMasraflari: result.icraMasraflari,
+      legacyVekaletUcreti: result.vekaletUcreti,
       legacyCurrency: 'TRY',
       canonicalTotalDue: 1234.56,
       canonicalProjectionCostsTotal: 12.5,
       canonicalProjectionAncillariesTotal: 100,
-      canonicalProjectedTotalDue: expectedProjectedTotalDue,
+      canonicalProjectedTotalDue: expectedProjectedWithCostsAndAncillaries,
+      canonicalClaimOnlyTotal: 1234.56,
+      canonicalProjectedWithCosts: expectedProjectedWithCosts,
+      canonicalProjectedWithCostsAndAncillaries: expectedProjectedWithCostsAndAncillaries,
       rawDelta: expectedDelta,
       engineSource: 'LEDGER',
       currencyResults: [
@@ -144,6 +166,31 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       ],
       diagnostics: { fatal: [], assembler: [], payments: [], currency: [], perCurrency: [] },
     });
+    expect(result.canonicalShadow.scopeComparisonMatrix).toHaveLength(9);
+    expect(result.canonicalShadow.scopeComparisonMatrix).toEqual(expect.arrayContaining([
+      {
+        legacyField: 'toplamBorc',
+        canonicalScope: 'CLAIM_ONLY',
+        legacyValue: result.toplamBorc,
+        canonicalValue: 1234.56,
+        delta: round2(1234.56 - result.toplamBorc),
+        deltaPercent: deltaPercent(round2(1234.56 - result.toplamBorc), result.toplamBorc),
+        scopeStatus: 'CANDIDATE_ONLY',
+      },
+      {
+        legacyField: 'sonBorc',
+        canonicalScope: 'PROJECTED_WITH_COSTS_AND_ANCILLARIES',
+        legacyValue: result.sonBorc,
+        canonicalValue: expectedProjectedWithCostsAndAncillaries,
+        delta: round2(expectedProjectedWithCostsAndAncillaries - result.sonBorc),
+        deltaPercent: deltaPercent(
+          round2(expectedProjectedWithCostsAndAncillaries - result.sonBorc),
+          result.sonBorc,
+        ),
+        scopeStatus: 'CANDIDATE_ONLY',
+      },
+    ]));
+    expect((result.canonicalShadow as any).canonicalSonBorc).toBeUndefined();
   });
 
   it('computeCaseBalance hata verirse legacy response kirilmadan ERROR diagnostic doner', async () => {
@@ -157,7 +204,7 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
 
     expect(result.asilAlacak).toBe(1000);
     expect(result.kalemTuru).toBe('PRINCIPAL');
-    expect(result.canonicalShadow).toEqual({
+    expect(result.canonicalShadow).toMatchObject({
       status: 'ERROR',
       source: 'computeCaseBalance',
       asOfDate: '2026-06-21',
@@ -170,15 +217,23 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       legacySonBorc: result.sonBorc,
       legacyToplamTahsilat: result.toplamTahsilat,
       legacyKalanBorc: result.kalanBorc,
+      legacyTahsilHarci: result.pesinHarcHaricTahsilHarci,
+      legacyIcraMasraflari: result.icraMasraflari,
+      legacyVekaletUcreti: result.vekaletUcreti,
       legacyCurrency: 'TRY',
       canonicalTotalDue: null,
       canonicalProjectionCostsTotal: null,
       canonicalProjectionAncillariesTotal: null,
       canonicalProjectedTotalDue: null,
+      canonicalClaimOnlyTotal: null,
+      canonicalProjectedWithCosts: null,
+      canonicalProjectedWithCostsAndAncillaries: null,
       rawDelta: null,
       matchStatus: 'ERROR',
       errorCode: 'CANONICAL_SHADOW_COMPUTE_FAILED',
     });
+    expect(result.canonicalShadow.scopeComparisonMatrix).toHaveLength(9);
+    expect(result.canonicalShadow.scopeComparisonMatrix.every(hasUnavailableScopeStatus)).toBe(true);
     expect((result.canonicalShadow as any).error).toBeUndefined();
     expect(JSON.stringify(result.canonicalShadow)).not.toContain('engine down');
   });
@@ -190,7 +245,7 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
     const result = await service.getCalculationSummary('tenant-1', 'case-1', '2026-06-21');
 
     expect(result.asilAlacak).toBe(1000);
-    expect(result.canonicalShadow).toEqual({
+    expect(result.canonicalShadow).toMatchObject({
       status: 'UNAVAILABLE',
       source: 'computeCaseBalance',
       asOfDate: '2026-06-21',
@@ -203,15 +258,23 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       legacySonBorc: result.sonBorc,
       legacyToplamTahsilat: result.toplamTahsilat,
       legacyKalanBorc: result.kalanBorc,
+      legacyTahsilHarci: result.pesinHarcHaricTahsilHarci,
+      legacyIcraMasraflari: result.icraMasraflari,
+      legacyVekaletUcreti: result.vekaletUcreti,
       legacyCurrency: 'TRY',
       canonicalTotalDue: null,
       canonicalProjectionCostsTotal: null,
       canonicalProjectionAncillariesTotal: null,
       canonicalProjectedTotalDue: null,
+      canonicalClaimOnlyTotal: null,
+      canonicalProjectedWithCosts: null,
+      canonicalProjectedWithCostsAndAncillaries: null,
       rawDelta: null,
       matchStatus: 'UNAVAILABLE',
       errorCode: 'CASE_BALANCE_SERVICE_UNAVAILABLE',
     });
+    expect(result.canonicalShadow.scopeComparisonMatrix).toHaveLength(9);
+    expect(result.canonicalShadow.scopeComparisonMatrix.every(hasUnavailableScopeStatus)).toBe(true);
   });
 
   it('legacySonBorc sifirsa deltaPercent null ve LEGACY_ZERO doner', async () => {
@@ -237,7 +300,19 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       canonicalProjectionCostsTotal: 12.5,
       canonicalProjectionAncillariesTotal: 100,
       canonicalProjectedTotalDue: 1347.06,
+      canonicalClaimOnlyTotal: 1234.56,
+      canonicalProjectedWithCosts: 1247.06,
+      canonicalProjectedWithCostsAndAncillaries: 1347.06,
       rawDelta: 1234.56,
+    });
+    expect(shadow.scopeComparisonMatrix).toContainEqual({
+      legacyField: 'sonBorc',
+      canonicalScope: 'CLAIM_ONLY',
+      legacyValue: 0,
+      canonicalValue: 1234.56,
+      delta: 1234.56,
+      deltaPercent: null,
+      scopeStatus: 'CANDIDATE_ONLY',
     });
     expect(shadow.currencyResults[0]).toMatchObject({
       currency: 'TRY',
@@ -282,11 +357,16 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       canonicalProjectionCostsTotal: 12.5,
       canonicalProjectionAncillariesTotal: 100,
       canonicalProjectedTotalDue: null,
+      canonicalClaimOnlyTotal: null,
+      canonicalProjectedWithCosts: null,
+      canonicalProjectedWithCostsAndAncillaries: null,
       rawDelta: null,
       canonicalProjectionCurrencyScope: 'UNSCOPED_CASE_CURRENCY_ASSUMED',
       canonicalProjectionCurrency: 'TRY',
       matchStatusInterpretation: 'RAW_DELTA_DIAGNOSTIC_ONLY',
     });
+    expect(shadow.scopeComparisonMatrix).toHaveLength(9);
+    expect(shadow.scopeComparisonMatrix.every(hasUnavailableScopeStatus)).toBe(true);
     expect(shadow.currencyResults[0]).toMatchObject({
       currency: 'USD',
       totalDue: 500,
