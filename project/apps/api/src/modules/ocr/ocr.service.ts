@@ -15,7 +15,11 @@ import * as path from "path";
 import * as os from "os";
 import OpenAI from "openai";
 import { ClaimEngineService } from "../claim-engine/claim-engine.service";
-import { sanitizeOcrIdentityNo, inferPartyType } from "../../common/identity-validation.util";
+import {
+  sanitizeOcrIdentityNo,
+  inferPartyType,
+  foldTurkishUpper,
+} from "../../common/identity-validation.util";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pdfParse = require("pdf-parse");
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -186,20 +190,6 @@ export function buildDebtResultFromInstruments(instruments: Instrument[]): DebtD
     addName(inst.drawerName, inst.drawerIdentityNo);
     for (const d of inst.debtorCandidates ?? []) addName(d);
   }
-  const debtorParties = Array.from(idByName.entries()).map(([name, rawId]) => {
-    // Tip: geçerli VKN→COMPANY · TCKN→INDIVIDUAL · unvan eki→COMPANY · aksi→INDIVIDUAL (PR-1).
-    const type = inferPartyType(name, rawId);
-    // Kimlik no: tip-katı checksum (sanitizeOcrIdentityNo) — misread/uydurma DÜŞER, yalnız geçerli yayılır.
-    const identityNo = sanitizeOcrIdentityNo(rawId, type);
-    return {
-      name,
-      type,
-      role: "BORCLU" as const,
-      ...(identityNo ? { identityNo } : {}),
-      confidence: primary.confidence ?? 0,
-    };
-  });
-
   // FATURA (G1): alacaklı (satıcı) tarafı — role=ALACAKLI. Kambiyo'da creditorName BOŞ → hiç eklenmez (regresyon yok).
   // debtor ile AYNI dedup/checksum mantığı; G1 saf extraction (müvekkil eşleştirme = F-5/G2, burada YAPILMAZ).
   const creditorByName = new Map<string, string | undefined>();
@@ -209,18 +199,41 @@ export function buildDebtResultFromInstruments(instruments: Instrument[]): DebtD
     else if (identityNo && !creditorByName.get(name)) creditorByName.set(name, identityNo);
   };
   for (const inst of instruments) addCreditor(inst.creditorName, inst.creditorIdentityNo);
-  const creditorParties = Array.from(creditorByName.entries()).map(([name, rawId]) => {
-    const type = inferPartyType(name, rawId);
-    const identityNo = sanitizeOcrIdentityNo(rawId, type);
-    return {
-      name,
-      type,
-      role: "ALACAKLI" as const,
-      ...(identityNo ? { identityNo } : {}),
-      confidence: primary.confidence ?? 0,
-    };
-  });
 
+  // Taraf sentezi + kimlik-bilinçli dedup (BUG: aynı tüzel kişi farklı OCR yazımıyla 2 taraf — Gorka, aynı VKN 3961146289):
+  //  - geçerli kimlik no (VKN/TCKN checksum) varsa anahtar = "id:<no>" → aynı kimlik tek tarafa iner
+  //    (isim yazımı/diyakritik önemsiz; sanitizeOcrIdentityNo zaten rakam-normalize eder).
+  //  - kimlik no yoksa anahtar = "name:<Türkçe-katlanmış>" → "GORKA…" vs "Gorka…" tek tarafa iner
+  //    (regresyon yok: aynı isim zaten tek girerdi; katlama yalnız büyük/küçük+diyakritik varyantı birleştirir).
+  //  - İlk görülen kanonik kalır (identityNo ALANI korunur). Debtor & creditor AYNI mantığı paylaşır (kod tekrarı yok);
+  //    dedup ROL İÇİNDE (borçlu/alacaklı ayrı map → aynı kişi iki rolde ayrı taraf olabilir, F-5/G2 eşleştirmesine kalır).
+  const buildPartiesDeduped = (
+    nameToId: Map<string, string | undefined>,
+    role: "BORCLU" | "ALACAKLI",
+  ): DebtDocumentResult["parties"] => {
+    const byKey = new Map<string, DebtDocumentResult["parties"][number]>();
+    for (const [name, rawId] of nameToId.entries()) {
+      // Tip: geçerli VKN→COMPANY · TCKN→INDIVIDUAL · unvan eki→COMPANY · aksi→INDIVIDUAL (PR-1).
+      const type = inferPartyType(name, rawId);
+      // Kimlik no: tip-katı checksum (sanitizeOcrIdentityNo) — misread/uydurma DÜŞER, yalnız geçerli yayılır.
+      const identityNo = sanitizeOcrIdentityNo(rawId, type);
+      const key = identityNo
+        ? `id:${identityNo}`
+        : `name:${foldTurkishUpper(name).replace(/\s+/g, " ").trim()}`;
+      if (byKey.has(key)) continue; // ilk görülen kanonik (aynı kimlik/katlanmış-isim ikinci kez gelmez)
+      byKey.set(key, {
+        name,
+        type,
+        role,
+        ...(identityNo ? { identityNo } : {}),
+        confidence: primary.confidence ?? 0,
+      });
+    }
+    return Array.from(byKey.values());
+  };
+
+  const debtorParties = buildPartiesDeduped(idByName, "BORCLU");
+  const creditorParties = buildPartiesDeduped(creditorByName, "ALACAKLI");
   const parties = [...debtorParties, ...creditorParties];
 
   const isKambiyo = primary.type === "CEK" || primary.type === "SENET" || primary.type === "POLICE";
