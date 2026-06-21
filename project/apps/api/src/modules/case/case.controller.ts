@@ -16,6 +16,7 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { OcrService } from "../ocr/ocr.service";
 import { ResponsibleCandidatesService } from "./responsible-candidates.service";
+import { AssignResponsiblePersonDto } from "./dto/responsible-person.dto";
 
 @Controller("cases")
 @UseGuards(JwtAuthGuard)
@@ -57,6 +58,20 @@ export class CaseController {
     const data =
       await this.responsibleCandidatesService.getResponsibleCandidates(tenantId);
     return { data };
+  }
+
+  // M2-G3a: Dosya Sorumlusu (gerçek kişi) atama. İzole servise delege; case.service.ts'e dokunmadan.
+  @Patch(":id/responsible-person")
+  assignResponsiblePerson(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Body() dto: AssignResponsiblePersonDto
+  ) {
+    return this.responsibleCandidatesService.assignResponsiblePerson(
+      tenantId,
+      id,
+      dto
+    );
   }
 
   @Get("next-file-number")
