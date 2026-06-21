@@ -26,10 +26,12 @@ export function ResponsibleCandidateSelect({
   value,
   onChange,
   disabled,
+  className,
 }: {
   value: ResponsibleSelection | null;
   onChange: (v: ResponsibleSelection | null) => void;
   disabled?: boolean;
+  className?: string; // G5d-1: filtre çubuğu gibi farklı bağlamlarda stil override'ı
 }) {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -69,7 +71,7 @@ export function ResponsibleCandidateSelect({
         const [type, id] = v.split(":");
         onChange({ type: type as "LAWYER" | "STAFF", id });
       }}
-      className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary disabled:opacity-60"
+      className={className ?? "w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary disabled:opacity-60"}
     >
       <option value="">{loading ? "Yükleniyor…" : "Seçiniz"}</option>
       {lawyers.length > 0 && (

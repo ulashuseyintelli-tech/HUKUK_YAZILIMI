@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
+import { ResponsibleCandidateSelect, type ResponsibleSelection } from "@/components/case/responsible-candidate-select";
 import {
   BarChart3,
   Users,
@@ -109,6 +110,9 @@ export default function ReportsPage() {
     caseStatus: "",
     search: "",
   });
+  // M2-G5d-1: rapor owner filtresi gerçek kişi (responsible-candidates → responsibleLawyerId/StaffId).
+  // Legacy filters.sorumluPersonelId artık dropdown'a/param'a bağlı değil (batch ayrı = G5d-2).
+  const [ownerFilter, setOwnerFilter] = useState<ResponsibleSelection | null>(null);
   const [lookups, setLookups] = useState<{
     takipTuru: LookupItem[];
     mahiyetTipi: LookupItem[];
@@ -185,7 +189,9 @@ export default function ReportsPage() {
       if (filters.mahiyetTipiId) params.append("mahiyetTipiId", filters.mahiyetTipiId);
       if (filters.riskId) params.append("riskId", filters.riskId);
       if (filters.durumEtiketiId) params.append("durumEtiketiId", filters.durumEtiketiId);
-      if (filters.sorumluPersonelId) params.append("sorumluPersonelId", filters.sorumluPersonelId);
+      // M2-G5d-1: gerçek kişi owner → kendi kolonu (G5a backend). K1 bridge yok → cross-map yok.
+      if (ownerFilter?.type === "LAWYER") params.append("responsibleLawyerId", ownerFilter.id);
+      else if (ownerFilter?.type === "STAFF") params.append("responsibleStaffId", ownerFilter.id);
       if (filters.caseStatus) params.append("caseStatus", filters.caseStatus);
       if (filters.search) params.append("search", filters.search);
       
@@ -216,6 +222,7 @@ export default function ReportsPage() {
       caseStatus: "",
       search: "",
     });
+    setOwnerFilter(null);
   };
 
   const activeFilterCount = Object.values(filters).filter((v) => v !== "").length;
@@ -554,16 +561,12 @@ export default function ReportsPage() {
                       ))}
                     </select>
 
-                    <select
-                      value={filters.sorumluPersonelId}
-                      onChange={(e) => handleFilterChange("sorumluPersonelId", e.target.value)}
+                    {/* M2-G5d-1: gerçek kişi owner filtresi (responsible-candidates; responsibleLawyerId/StaffId). */}
+                    <ResponsibleCandidateSelect
+                      value={ownerFilter}
+                      onChange={setOwnerFilter}
                       className="rounded-lg border px-2 py-2 text-sm outline-none focus:border-primary"
-                    >
-                      <option value="">Sorumlu</option>
-                      {lookups.users.map((user) => (
-                        <option key={user.id} value={user.id}>{user.name} {user.surname}</option>
-                      ))}
-                    </select>
+                    />
 
                     <select
                       value={filters.caseStatus}
@@ -612,7 +615,8 @@ export default function ReportsPage() {
                           if (filters.mahiyetTipiId) params.append("mahiyetTipiId", filters.mahiyetTipiId);
                           if (filters.riskId) params.append("riskId", filters.riskId);
                           if (filters.durumEtiketiId) params.append("durumEtiketiId", filters.durumEtiketiId);
-                          if (filters.sorumluPersonelId) params.append("sorumluPersonelId", filters.sorumluPersonelId);
+                          if (ownerFilter?.type === "LAWYER") params.append("responsibleLawyerId", ownerFilter.id);
+                          else if (ownerFilter?.type === "STAFF") params.append("responsibleStaffId", ownerFilter.id);
                           if (filters.caseStatus) params.append("caseStatus", filters.caseStatus);
                           
                           const res = await api.get(`/reports/export/cases?${params.toString()}`);
