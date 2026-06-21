@@ -28,6 +28,7 @@ import {
   nextEscalationLine,
 } from "../operational-escalation.service";
 import { addDays } from "../escalation-logic";
+import { TenantNotifier } from "../tenant-notifier.service";
 
 const D0 = new Date(2026, 5, 1, 9, 0, 0);
 
@@ -89,7 +90,7 @@ describe("OperationalEscalationService.processEscalations", () => {
       getFullSmtpSettings: jest.fn().mockResolvedValue({ smtpHost: null, smtpUser: null }),
       getFullSmsSettings: jest.fn().mockResolvedValue({ smsProvider: null }),
     } as any;
-    const svc = new OperationalEscalationService(prisma, officeService);
+    const svc = new OperationalEscalationService(prisma, new TenantNotifier(officeService));
 
     const res = await svc.processEscalations(D0); // now=D0 → süre dolmadı (next=D0+3)
 
@@ -109,7 +110,7 @@ describe("OperationalEscalationService.processEscalations", () => {
       getFullSmtpSettings: jest.fn().mockResolvedValue({ smtpHost: "smtp.x.com", smtpUser: "u@x.com", smtpPass: "p" }),
       getFullSmsSettings: jest.fn().mockResolvedValue({ smsProvider: null }),
     } as any;
-    const svc = new OperationalEscalationService(prisma, officeService);
+    const svc = new OperationalEscalationService(prisma, new TenantNotifier(officeService));
 
     const res = await svc.processEscalations(D0);
 
@@ -130,7 +131,7 @@ describe("OperationalEscalationService.processEscalations", () => {
       getFullSmtpSettings: jest.fn().mockResolvedValue({ smtpHost: "smtp.x.com", smtpUser: "u@x.com", smtpPass: "p" }),
       getFullSmsSettings: jest.fn().mockResolvedValue({ smsProvider: null }),
     } as any;
-    const svc = new OperationalEscalationService(prisma, officeService);
+    const svc = new OperationalEscalationService(prisma, new TenantNotifier(officeService));
 
     const res = await svc.processEscalations(D0);
 
@@ -149,7 +150,7 @@ describe("OperationalEscalationService.processEscalations", () => {
       getFullSmtpSettings: jest.fn().mockResolvedValue({ smtpHost: null, smtpUser: null }),
       getFullSmsSettings: jest.fn().mockResolvedValue({ smsProvider: null }),
     } as any;
-    const svc = new OperationalEscalationService(prisma, officeService);
+    const svc = new OperationalEscalationService(prisma, new TenantNotifier(officeService));
 
     await svc.processEscalations(addDays(D0, 3)); // now=D0+3 → süre doldu → MANAGER'a ilerle
 
