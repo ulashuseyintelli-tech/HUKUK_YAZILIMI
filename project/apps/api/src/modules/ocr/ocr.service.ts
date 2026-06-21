@@ -5,6 +5,7 @@ import { Instrument } from "./debt-instrument.types";
 import { segmentDocumentIntoPages, PdfPageRenderer } from "./pdf-segmentation";
 import { PopplerPdfPageRenderer } from "./poppler-page-renderer";
 import { extractAllPageCandidates, PageAiExtractor, parseAiJson } from "./page-candidate-extractor";
+import { PayeeExtractor, applyPayeePass } from "./payee-extractor";
 import { groupPageCandidatesIntoInstruments, pickPrimaryInstrument } from "./debt-instrument-grouping";
 import { applyEndorsementPass, EndorsementExtractor } from "./endorsement-extractor";
 import * as sharp from "sharp";
@@ -2003,6 +2004,7 @@ Sadece JSON döndür, başka açıklama ekleme.`
       renderer?: PdfPageRenderer;
       aiExtract?: PageAiExtractor;
       endorsementExtract?: EndorsementExtractor;
+      payeeExtract?: PayeeExtractor;
     },
   ): Promise<DebtDocumentResult | null> {
     const segment = deps?.segment ?? segmentDocumentIntoPages;
@@ -2016,6 +2018,10 @@ Sadece JSON döndür, başka açıklama ekleme.`
     // YALNIZ inst.endorsementNames yazar). Borçlu/Party YARATMAZ; clientMatch P4-2'de tüketir.
     const endorsementExtract = deps?.endorsementExtract ?? this.buildEndorsementExtract();
     await applyEndorsementPass(instruments, candidates, seg.pages, endorsementExtract);
+    // C-PR2 (#296): çek ön-yüz LEHTAR second-pass (AYRI AI çağrısı). B1 extraction'a DOKUNMAZ; yalnız
+    // payeeName boşsa doldurur (drawer/tarih/tutar IMMUTABLE). +1 gpt-4o vision çağrısı / çek-FACE sayfası.
+    const payeeExtract = deps?.payeeExtract ?? this.buildPayeeExtract();
+    await applyPayeePass(instruments, candidates, seg.pages, payeeExtract);
     return buildDebtResultFromInstruments(instruments);
   }
 
@@ -2099,6 +2105,43 @@ Sadece JSON döndür, başka açıklama ekleme.`
           : [],
         evidence: typeof parsed.evidence === "string" ? parsed.evidence : undefined,
       };
+    };
+  }
+
+  /**
+   * C-PR2 (#296): çek ön-yüz LEHTAR-only extractor (second-pass). this.openai REUSE (gpt-4o VISION).
+   * YALNIZ {payeeName, payeeEvidence} üretir — başka alan çıkarmaz (tek-pass'in drawer regresyonunu önler).
+   *
+   * @remarks Çağrıldığı yerler:
+   * - scanDebtDocumentMultiInstrument() → applyPayeePass deps (flag OCR_MULTI_INSTRUMENT, yalnız çek-face)
+   */
+  private buildPayeeExtract(): PayeeExtractor {
+    const openai = this.openai;
+    return async (input) => {
+      if (!openai) throw new Error("OpenAI yapılandırılmamış (payee extraction)");
+      let userContent: any;
+      if (input.kind === "vision" && input.imageRef) {
+        const b64 = fs.readFileSync(input.imageRef).toString("base64");
+        userContent = [
+          { type: "text", text: input.context ?? "" },
+          { type: "image_url", image_url: { url: `data:image/png;base64,${b64}` } },
+        ];
+      } else {
+        userContent = `${input.context ?? ""}\n\n${input.text ?? ""}`;
+      }
+      const resp = await openai.chat.completions.create({
+        model: "gpt-4o", // VISION (çek görseli gerek)
+        messages: [
+          { role: "system", content: input.prompt },
+          { role: "user", content: userContent },
+        ],
+        temperature: 0.1,
+        max_tokens: 300,
+        response_format: { type: "json_object" },
+      });
+      const content = resp.choices?.[0]?.message?.content || "{}";
+      const parsed = parseAiJson(content);
+      return { payeeName: parsed.payeeName ?? null, payeeEvidence: parsed.payeeEvidence ?? null };
     };
   }
 

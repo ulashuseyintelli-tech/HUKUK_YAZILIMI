@@ -34,6 +34,8 @@ export interface Instrument {
   iban?: string;
   drawerName?: string; // keşideci / borçlu adayı (tek isim)
   drawerIdentityNo?: string; // keşidecinin VKN(10)/TCKN(11) kimlik no'su (PR-2 passthrough; PR-3 AI doldurur)
+  payeeName?: string; // lehtar (çek ön-yüz); second-pass AI doldurur ya da manuel (#294). drawer EZİLMEZ.
+  payeeEvidence?: string; // lehtarı hangi metinden çıkardı (debug; second-pass)
   debtorCandidates?: string[]; // çoklu borçlu adayı
   // FATURA (G1) — kambiyo'da BOŞ; faturada alacaklı(satıcı) tarafı + KDV (saf extraction)
   creditorName?: string; // FATURA: alacaklı/satıcı adı
