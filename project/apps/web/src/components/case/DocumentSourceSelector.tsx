@@ -882,7 +882,7 @@ export function DocumentSourceSelector({ onSelect, onSkip, onPoaScan }: Document
           className="px-4 py-2 text-xs sm:text-sm border border-gray-300 rounded-xl hover:bg-gray-50 hover:border-gray-400 hover:shadow-sm transition-all flex items-center gap-1.5 text-gray-600 hover:text-gray-800"
         >
           <ArrowRight className="h-3.5 w-3.5" />
-          <span className="hidden sm:inline">Sihirbazı Atla,</span> Form Seçimine Git
+          Manuel Takip Aç
         </button>
       </div>
     </div>

@@ -13,7 +13,7 @@ import { buildStaffPayload } from "@/lib/case-staff-payload";
 import { FormMetadata, SubFormMetadata, FormCategory } from "@/types/form-metadata";
 import { WizardAnswers } from "@/types/wizard";
 import { formMetadata, filterFormsByCategory } from "@/config/form-metadata";
-import { shouldShowLookupBanner, lookupBannerMessage } from "./lookup-ui";
+import { shouldShowLookupBanner, lookupBannerMessage, formToTakipTuruCode } from "./lookup-ui";
 import { FormWizard } from "@/components/case/FormWizard";
 import { CaseWizard } from "@/components/case/CaseWizard";
 import { IlamsizWizard } from "@/components/case/IlamsizWizard";
@@ -679,6 +679,21 @@ export default function NewCasePage() {
 
   const handleFormSelect = (form: FormMetadata, subForm?: SubFormMetadata) => {
     setSelectedForm(form); setSelectedSubForm(subForm || null); setError("");
+    // PR-2: Manuel form seçimi de (sihirbaz gibi) 2. adım Sınıflandırma'sını ÖN-doldursun.
+    // Önceden yalnız documentSource'a bağlı useEffect seed ederdi; "Manuel Takip Aç" yolunda
+    // documentSource=null kaldığı için Sınıflandırma BOŞ geliyordu. Form → kanonik takipTürü
+    // kodu (formToTakipTuruCode) → mevcut handleTakipTuruChange ile mahiyet + borçlu tipi türetilir
+    // (kod tekrarı yok). Sihirbaz yolları (CaseWizard/Kambiyo/Ilamsiz) handleFormSelect KULLANMAZ,
+    // kendi seed'ini yapar → çift-seed yok.
+    const takipTuruCode = formToTakipTuruCode(form.code, subForm?.code);
+    if (takipTuruCode) {
+      const takipTuru = lookups.takipTuru.find(t => t.code === takipTuruCode);
+      if (takipTuru) {
+        handleTakipTuruChange(takipTuru.id);
+      } else {
+        console.warn(`[form-seed] beklenen takip türü kodu katalogda yok: ${takipTuruCode} (form=${form.code}) — seed/katalog drift olabilir`);
+      }
+    }
     if (!form.subForms || form.subForms.length === 0 || subForm) setCurrentStep(1);
   };
 
