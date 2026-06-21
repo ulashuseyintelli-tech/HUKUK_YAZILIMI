@@ -41,11 +41,27 @@ import {
 } from "./case-responsible.helpers";
 export { pickResponsibleFallbackIndex, resolveResponsiblePromotion, planResponsible };
 
+type CalculationSummaryCanonicalShadowMatchStatus =
+  | "MATCH"
+  | "MINOR_DELTA"
+  | "MAJOR_DELTA"
+  | "LEGACY_ZERO"
+  | "CURRENCY_MISMATCH"
+  | "ERROR"
+  | "UNAVAILABLE";
+
+type CalculationSummaryCanonicalShadowErrorCode =
+  | "CASE_BALANCE_SERVICE_UNAVAILABLE"
+  | "CANONICAL_SHADOW_COMPUTE_FAILED";
+
 type CalculationSummaryCanonicalShadow = {
   status: "OK" | "ERROR" | "UNAVAILABLE";
   source: "computeCaseBalance";
   asOfDate: string;
+  legacySonBorc: number;
+  legacyCurrency: string;
   engineSource?: CaseBalanceResult["source"];
+  matchStatus?: CalculationSummaryCanonicalShadowMatchStatus;
   currencyResults?: Array<{
     currency: string;
     totalDue: number | null;
@@ -53,10 +69,38 @@ type CalculationSummaryCanonicalShadow = {
     preEnforcementInterest: number | null;
     postEnforcementInterest: number | null;
     skippedReason: string | null;
+    delta: number | null;
+    deltaPercent: number | null;
+    matchStatus: CalculationSummaryCanonicalShadowMatchStatus;
   }>;
   diagnostics?: CaseBalanceResult["diagnostics"];
-  error?: string;
+  errorCode?: CalculationSummaryCanonicalShadowErrorCode;
 };
+
+const CANONICAL_SHADOW_MATCH_EPSILON = 0.01;
+const CANONICAL_SHADOW_MINOR_DELTA_PERCENT = 1;
+
+function round2(value: number): number {
+  return Math.round(value * 100) / 100;
+}
+
+function classifyCanonicalShadowDelta(
+  legacyCurrency: string,
+  currency: string,
+  legacySonBorc: number,
+  canonicalTotalDue: number | null,
+  delta: number | null,
+  deltaPercent: number | null,
+): CalculationSummaryCanonicalShadowMatchStatus {
+  if (currency !== legacyCurrency) return "CURRENCY_MISMATCH";
+  if (legacySonBorc === 0) return "LEGACY_ZERO";
+  if (canonicalTotalDue == null || delta == null) return "MAJOR_DELTA";
+  if (Math.abs(delta) < CANONICAL_SHADOW_MATCH_EPSILON) return "MATCH";
+  if (deltaPercent != null && Math.abs(deltaPercent) < CANONICAL_SHADOW_MINOR_DELTA_PERCENT) {
+    return "MINOR_DELTA";
+  }
+  return "MAJOR_DELTA";
+}
 
 type DueForClaimItemSync = {
   id: string;
@@ -3339,6 +3383,7 @@ export class CaseService {
     const toplamBorc = takipTutari + icraMasraflari + vekaletUcreti + takipSonrasiFaiz;
     const sonBorc = toplamBorc + pesinHarcHaricTahsilHarci;
     const kalanBorc = sonBorc - toplamTahsilat;
+    const legacyCurrency = String(caseData.currency || "TRY");
 
     // 11. Tahsil oranları
     const tahsilOranlari = [
@@ -3391,7 +3436,10 @@ export class CaseService {
 
     return {
       ...legacySummary,
-      canonicalShadow: await this.buildCalculationSummaryCanonicalShadow(tenantId, caseId, calculationDate),
+      canonicalShadow: await this.buildCalculationSummaryCanonicalShadow(tenantId, caseId, calculationDate, {
+        legacySonBorc: sonBorc,
+        legacyCurrency,
+      }),
     };
   }
 
@@ -3407,13 +3455,17 @@ export class CaseService {
     tenantId: string,
     caseId: string,
     calculationDate: string,
+    legacy: { legacySonBorc: number; legacyCurrency: string },
   ): Promise<CalculationSummaryCanonicalShadow> {
     if (!this.canonicalCaseBalance) {
       return {
         status: "UNAVAILABLE",
         source: "computeCaseBalance",
         asOfDate: calculationDate,
-        error: "CASE_BALANCE_SERVICE_UNAVAILABLE",
+        legacySonBorc: legacy.legacySonBorc,
+        legacyCurrency: legacy.legacyCurrency,
+        matchStatus: "UNAVAILABLE",
+        errorCode: "CASE_BALANCE_SERVICE_UNAVAILABLE",
       };
     }
 
@@ -3424,15 +3476,37 @@ export class CaseService {
         status: "OK",
         source: "computeCaseBalance",
         asOfDate: balance.asOfDate,
+        legacySonBorc: legacy.legacySonBorc,
+        legacyCurrency: legacy.legacyCurrency,
         engineSource: balance.source,
-        currencyResults: balance.currencyResults.map((entry) => ({
-          currency: entry.currency,
-          totalDue: entry.result?.totalDue ?? null,
-          totalInterest: entry.result?.totalInterest ?? null,
-          preEnforcementInterest: entry.result?.preEnforcementInterest ?? null,
-          postEnforcementInterest: entry.result?.postEnforcementInterest ?? null,
-          skippedReason: entry.skippedReason ?? null,
-        })),
+        currencyResults: balance.currencyResults.map((entry) => {
+          const totalDue = entry.result?.totalDue ?? null;
+          const canCompareCurrency = entry.currency === legacy.legacyCurrency;
+          const delta = canCompareCurrency && totalDue != null ? round2(totalDue - legacy.legacySonBorc) : null;
+          const deltaPercent =
+            delta != null && legacy.legacySonBorc !== 0
+              ? round2((delta / legacy.legacySonBorc) * 100)
+              : null;
+
+          return {
+            currency: entry.currency,
+            totalDue,
+            totalInterest: entry.result?.totalInterest ?? null,
+            preEnforcementInterest: entry.result?.preEnforcementInterest ?? null,
+            postEnforcementInterest: entry.result?.postEnforcementInterest ?? null,
+            skippedReason: entry.skippedReason ?? null,
+            delta,
+            deltaPercent,
+            matchStatus: classifyCanonicalShadowDelta(
+              legacy.legacyCurrency,
+              entry.currency,
+              legacy.legacySonBorc,
+              totalDue,
+              delta,
+              deltaPercent,
+            ),
+          };
+        }),
         diagnostics: balance.diagnostics,
       };
     } catch (error) {
@@ -3443,7 +3517,10 @@ export class CaseService {
         status: "ERROR",
         source: "computeCaseBalance",
         asOfDate: calculationDate,
-        error: message,
+        legacySonBorc: legacy.legacySonBorc,
+        legacyCurrency: legacy.legacyCurrency,
+        matchStatus: "ERROR",
+        errorCode: "CANONICAL_SHADOW_COMPUTE_FAILED",
       };
     }
   }
