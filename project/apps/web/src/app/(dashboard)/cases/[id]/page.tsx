@@ -52,6 +52,7 @@ import { DueModal, CollectionModal, HesapOzetiPanel } from "@/components/finance
 import { FaizDokumuPanel } from "@/components/interest";
 import { OperationDeck } from "@/components/case-detail";
 import IntakeLinksCard from "@/components/case/IntakeLinksCard";
+import { ResponsiblePersonPicker } from "@/components/case/responsible-person-picker";
 
 // ============================================
 // TİPLER
@@ -2002,17 +2003,8 @@ export default function CaseDetailPage() {
                 </div>
               </div>
               <div className="divide-y max-h-48 overflow-y-auto">
-                {/* Dosya Sorumlusu (Case.sorumluPersonel → User): koordinatör / varsayılan görev sahibi (A3) */}
-                <div className="px-2 py-1.5 bg-indigo-50/60">
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[9px] font-semibold text-indigo-600 uppercase">Dosya Sorumlusu</span>
-                    {caseData.sorumluPersonel ? (
-                      <span className="font-medium text-[11px] text-indigo-900 truncate">{caseData.sorumluPersonel.name} {caseData.sorumluPersonel.surname}</span>
-                    ) : (
-                      <span className="text-[10px] text-gray-400">Atanmamış</span>
-                    )}
-                  </div>
-                </div>
+                {/* M2-G3b: Dosya Sorumlusu = gerçek kişi seçici (aday GET + mevcut GET + PATCH). A3 statik satırının yerine. */}
+                <ResponsiblePersonPicker caseId={caseData.id} />
                 {/* Yetkili Avukatlar Başlık */}
                 {(caseData.lawyers?.filter(le => le.lawyer.lawyerRank !== 'INTERN' && !le.lawyer.barNumber?.startsWith('STJ'))?.length || 0) > 0 && (
                   <div className="px-2 py-1 bg-blue-50/50">

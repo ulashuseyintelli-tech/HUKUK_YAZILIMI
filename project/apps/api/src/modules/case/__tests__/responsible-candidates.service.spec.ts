@@ -158,3 +158,64 @@ describe("ResponsibleCandidatesService.assignResponsiblePerson (M2-G3a)", () => 
     );
   });
 });
+
+describe("ResponsibleCandidatesService.getCaseResponsiblePerson (M2-G3b)", () => {
+  const makeSvc = (kase: any) => {
+    const prisma = {
+      case: { findFirst: jest.fn((..._a: any[]) => Promise.resolve(kase)) },
+    } as any;
+    return { service: new ResponsibleCandidatesService(prisma), prisma };
+  };
+
+  it("responsibleLawyer → LAWYER, isLegacy=false, 'Av.' formatı + rank subtitle", async () => {
+    const { service } = makeSvc({
+      responsibleLawyer: { id: "L1", name: "Ulaş", surname: "Telli", title: null, lawyerRank: "PARTNER" },
+      responsibleStaff: null,
+      sorumluPersonel: { id: "U9", name: "X", surname: "Y" },
+    });
+    expect(await service.getCaseResponsiblePerson("t1", "c1")).toEqual({
+      type: "LAWYER", id: "L1", displayName: "Av. Ulaş Telli", subtitle: "Ortak Avukat", isLegacy: false,
+    });
+  });
+
+  it("responsibleStaff → STAFF, isLegacy=false", async () => {
+    const { service } = makeSvc({
+      responsibleLawyer: null,
+      responsibleStaff: { id: "S1", firstName: "Büşra", lastName: "Atmaca", staffType: "SEKRETER" },
+      sorumluPersonel: null,
+    });
+    expect(await service.getCaseResponsiblePerson("t1", "c1")).toEqual({
+      type: "STAFF", id: "S1", displayName: "Büşra Atmaca", subtitle: "Sekreter", isLegacy: false,
+    });
+  });
+
+  it("yalnız legacy sorumluPersonel → LEGACY_USER, isLegacy=true", async () => {
+    const { service } = makeSvc({
+      responsibleLawyer: null,
+      responsibleStaff: null,
+      sorumluPersonel: { id: "U9", name: "Admin", surname: "Kullanıcı" },
+    });
+    expect(await service.getCaseResponsiblePerson("t1", "c1")).toEqual({
+      type: "LEGACY_USER", id: "U9", displayName: "Admin Kullanıcı", subtitle: "Eski sorumlu (kullanıcı hesabı)", isLegacy: true,
+    });
+  });
+
+  it("hiçbiri yoksa → null", async () => {
+    const { service } = makeSvc({ responsibleLawyer: null, responsibleStaff: null, sorumluPersonel: null });
+    expect(await service.getCaseResponsiblePerson("t1", "c1")).toBeNull();
+  });
+
+  it("dosya bu tenant'ta yok → 404", async () => {
+    const { service } = makeSvc(null);
+    await expect(service.getCaseResponsiblePerson("t1", "cX")).rejects.toThrow(NotFoundException);
+  });
+
+  it("responsibleLawyer, responsibleStaff'tan önceliklidir", async () => {
+    const { service } = makeSvc({
+      responsibleLawyer: { id: "L1", name: "A", surname: "B", title: "Av.", lawyerRank: "LAWYER" },
+      responsibleStaff: { id: "S1", firstName: "C", lastName: "D", staffType: "MUHASEBE" },
+      sorumluPersonel: null,
+    });
+    expect((await service.getCaseResponsiblePerson("t1", "c1"))?.type).toBe("LAWYER");
+  });
+});

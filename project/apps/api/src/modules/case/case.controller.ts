@@ -60,6 +60,18 @@ export class CaseController {
     return { data };
   }
 
+  // M2-G3b: Dosyanın MEVCUT Dosya Sorumlusu (gerçek kişi); legacy sorumluPersonel fallback. İzole servis.
+  @Get(":id/responsible-person")
+  getCaseResponsiblePerson(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string
+  ) {
+    return this.responsibleCandidatesService.getCaseResponsiblePerson(
+      tenantId,
+      id
+    );
+  }
+
   // M2-G3a: Dosya Sorumlusu (gerçek kişi) atama. İzole servise delege; case.service.ts'e dokunmadan.
   @Patch(":id/responsible-person")
   assignResponsiblePerson(
