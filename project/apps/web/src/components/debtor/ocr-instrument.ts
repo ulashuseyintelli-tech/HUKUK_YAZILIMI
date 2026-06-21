@@ -23,6 +23,7 @@ export interface Instrument {
   branchName?: string;
   iban?: string;
   drawerName?: string;
+  payeeName?: string; // C-PR: lehtar OCR taslağı (≠Client/Party, çözümleme yok)
   debtorCandidates?: string[];
   pageRange?: [number, number];
   confidence: number;
@@ -126,7 +127,7 @@ export function buildInitialReviewRows(instruments: Instrument[]): ReviewRow[] {
 
 /**
  * Backend CaseInstrumentInputDto AYNASI (createCase payload `instruments[]` öğesi).
- * Yalnız CaseInstrument'a aktarılabilir alanlar (payeeName OCR'da yok → taşınmaz).
+ * Yalnız CaseInstrument'a aktarılabilir alanlar. payeeName (lehtar OCR taslağı) C-PR ile taşınır.
  */
 export interface CaseInstrumentPayload {
   type: InstrumentType;
@@ -138,6 +139,7 @@ export interface CaseInstrumentPayload {
   bankName?: string;
   branchName?: string;
   drawerName?: string;
+  payeeName?: string; // C-PR: lehtar OCR taslağı (backend CaseInstrument.payeeName'e gider)
 }
 
 // ── BUG-X: Çek tip-farkındalı tarih modeli (saf helper'lar) ──
@@ -207,6 +209,7 @@ export function instrumentToCaseInstrumentPayload(i: Instrument): CaseInstrument
     bankName: i.bankName,
     branchName: i.branchName,
     drawerName: i.drawerName,
+    payeeName: i.payeeName, // C-PR: lehtar taslağı payload'a (backend payeeName saklar)
   };
 }
 

@@ -57,6 +57,9 @@ export function InstrumentReviewTable({ rows, onChange }: InstrumentReviewTableP
       ...r,
       instrument: { ...r.instrument, amount: value === "" ? undefined : Number(value) },
     }));
+  // C-PR: lehtar OCR taslağı (düzenlenebilir; ≠Client/Party, auto-match YOK).
+  const editPayeeName = (index: number, value: string) =>
+    update(index, (r) => ({ ...r, instrument: { ...r.instrument, payeeName: value || undefined } }));
 
   // BUG-X: "Vade" kolonu yalnız çek-DIŞI satır varsa görünür (tüm satırlar çekse kolon kalkar).
   const anyVade = rows.some((r) => showsVade(r.instrument));
@@ -73,6 +76,7 @@ export function InstrumentReviewTable({ rows, onChange }: InstrumentReviewTableP
             {anyVade && <th className="px-2 py-1">Vade</th>}
             <th className="px-2 py-1">Tutar</th>
             <th className="px-2 py-1">Keşideci</th>
+            <th className="px-2 py-1">Lehtar</th>
             <th className="px-2 py-1">Sayfa</th>
             <th className="px-2 py-1">Güven</th>
           </tr>
@@ -173,13 +177,23 @@ export function InstrumentReviewTable({ rows, onChange }: InstrumentReviewTableP
                     />
                   </td>
                   <td className="px-2 py-1">{inst.drawerName ?? "-"}</td>
+                  <td className="px-2 py-1">
+                    <input
+                      type="text"
+                      value={inst.payeeName ?? ""}
+                      onChange={(e) => editPayeeName(index, e.target.value)}
+                      className="border rounded px-1 py-0.5 text-xs w-28"
+                      aria-label={`Satır ${index + 1} lehtar`}
+                      placeholder="—"
+                    />
+                  </td>
                   <td className="px-2 py-1">{pageLabel(inst)}</td>
                   <td className="px-2 py-1">{confidenceLabel(inst)}</td>
                 </tr>
                 {(warnCek || inst.evidenceText || (review && inst.duplicateCandidateReason)) && (
                   <tr className={review ? "bg-amber-50" : ""}>
                     <td />
-                    <td colSpan={anyVade ? 8 : 7} className="px-2 pb-1 text-[10px] text-slate-500">
+                    <td colSpan={anyVade ? 9 : 8} className="px-2 pb-1 text-[10px] text-slate-500">
                       {warnCek && (
                         <div className="text-amber-700" data-testid={`cek-date-warn-detail-${index}`}>
                           ⚠ Çekte vade olmaz. OCR ikinci bir tarih buldu:{" "}

@@ -190,3 +190,28 @@ describe('BUG-X — çek tarih/vade modeli (render)', () => {
     expect(screen.queryByTestId('cek-date-warn-0')).toBeNull();
   });
 });
+
+describe('C-PR — Lehtar (payee) kolonu', () => {
+  const row = (over: Partial<Instrument> = {}): ReviewRow => ({
+    selected: true,
+    instrument: { type: 'CEK', currency: 'TRY', documentNo: 'CK-1', amount: 1000, issueDate: '2025-12-30', confidence: 90, ...over },
+  });
+
+  it('"Lehtar" kolonu + düzenlenebilir input render eder', () => {
+    render(<InstrumentReviewTable rows={[row()]} onChange={() => {}} />);
+    expect(screen.getByText('Lehtar')).toBeTruthy();
+    expect(screen.getByLabelText('Satır 1 lehtar')).toBeTruthy();
+  });
+
+  it('payeeName VARSA input değeri gösterir', () => {
+    render(<InstrumentReviewTable rows={[row({ payeeName: 'Müvekkil A.Ş.' })]} onChange={() => {}} />);
+    expect((screen.getByLabelText('Satır 1 lehtar') as HTMLInputElement).value).toBe('Müvekkil A.Ş.');
+  });
+
+  it('Lehtar düzenle → onChange payeeName günceller (≠Client/Party, auto-match yok)', () => {
+    const onChange = vi.fn();
+    render(<InstrumentReviewTable rows={[row()]} onChange={onChange} />);
+    fireEvent.change(screen.getByLabelText('Satır 1 lehtar'), { target: { value: 'Yeni Lehtar' } });
+    expect(onChange.mock.calls[0][0][0].instrument.payeeName).toBe('Yeni Lehtar');
+  });
+});
