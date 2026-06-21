@@ -54,23 +54,45 @@ type CalculationSummaryCanonicalShadowErrorCode =
   | "CASE_BALANCE_SERVICE_UNAVAILABLE"
   | "CANONICAL_SHADOW_COMPUTE_FAILED";
 
+type CalculationSummaryCanonicalShadowAlignmentStatus =
+  | "SCOPE_MISMATCH"
+  | "ALIGNED"
+  | "UNKNOWN";
+
+type CalculationSummaryCanonicalShadowComparisonScope =
+  | "RAW_LEGACY_SON_BORC_VS_CANONICAL_TOTAL_DUE";
+
 type CalculationSummaryCanonicalShadow = {
   status: "OK" | "ERROR" | "UNAVAILABLE";
   source: "computeCaseBalance";
   asOfDate: string;
+  alignmentStatus: CalculationSummaryCanonicalShadowAlignmentStatus;
+  comparisonScope: CalculationSummaryCanonicalShadowComparisonScope;
+  legacyToplamBorc: number;
   legacySonBorc: number;
+  legacyToplamTahsilat: number;
+  legacyKalanBorc: number;
   legacyCurrency: string;
+  canonicalTotalDue?: number | null;
+  canonicalProjectionCostsTotal?: number | null;
+  canonicalProjectionAncillariesTotal?: number | null;
+  canonicalProjectedTotalDue?: number | null;
+  rawDelta?: number | null;
   engineSource?: CaseBalanceResult["source"];
   matchStatus?: CalculationSummaryCanonicalShadowMatchStatus;
   currencyResults?: Array<{
     currency: string;
     totalDue: number | null;
+    canonicalTotalDue: number | null;
     totalInterest: number | null;
     preEnforcementInterest: number | null;
     postEnforcementInterest: number | null;
     skippedReason: string | null;
     delta: number | null;
     deltaPercent: number | null;
+    rawDelta: number | null;
+    alignmentStatus: CalculationSummaryCanonicalShadowAlignmentStatus;
+    comparisonScope: CalculationSummaryCanonicalShadowComparisonScope;
     matchStatus: CalculationSummaryCanonicalShadowMatchStatus;
   }>;
   diagnostics?: CaseBalanceResult["diagnostics"];
@@ -79,9 +101,20 @@ type CalculationSummaryCanonicalShadow = {
 
 const CANONICAL_SHADOW_MATCH_EPSILON = 0.01;
 const CANONICAL_SHADOW_MINOR_DELTA_PERCENT = 1;
+const CANONICAL_SHADOW_COMPARISON_SCOPE: CalculationSummaryCanonicalShadowComparisonScope =
+  "RAW_LEGACY_SON_BORC_VS_CANONICAL_TOTAL_DUE";
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+function sumCanonicalProjectionTotal(values: Partial<Record<string, unknown>> | null | undefined): number {
+  if (!values) return 0;
+  let total = 0;
+  for (const value of Object.values(values)) {
+    total += Number(value ?? 0);
+  }
+  return round2(total);
 }
 
 function classifyCanonicalShadowDelta(
@@ -3440,7 +3473,10 @@ export class CaseService {
     return {
       ...legacySummary,
       canonicalShadow: await this.buildCalculationSummaryCanonicalShadow(tenantId, caseId, calculationDate, {
+        legacyToplamBorc: toplamBorc,
         legacySonBorc: sonBorc,
+        legacyToplamTahsilat: toplamTahsilat,
+        legacyKalanBorc: kalanBorc,
         legacyCurrency,
       }),
     };
@@ -3458,15 +3494,31 @@ export class CaseService {
     tenantId: string,
     caseId: string,
     calculationDate: string,
-    legacy: { legacySonBorc: number; legacyCurrency: string },
+    legacy: {
+      legacyToplamBorc: number;
+      legacySonBorc: number;
+      legacyToplamTahsilat: number;
+      legacyKalanBorc: number;
+      legacyCurrency: string;
+    },
   ): Promise<CalculationSummaryCanonicalShadow> {
     if (!this.canonicalCaseBalance) {
       return {
         status: "UNAVAILABLE",
         source: "computeCaseBalance",
         asOfDate: calculationDate,
+        alignmentStatus: "SCOPE_MISMATCH",
+        comparisonScope: CANONICAL_SHADOW_COMPARISON_SCOPE,
+        legacyToplamBorc: legacy.legacyToplamBorc,
         legacySonBorc: legacy.legacySonBorc,
+        legacyToplamTahsilat: legacy.legacyToplamTahsilat,
+        legacyKalanBorc: legacy.legacyKalanBorc,
         legacyCurrency: legacy.legacyCurrency,
+        canonicalTotalDue: null,
+        canonicalProjectionCostsTotal: null,
+        canonicalProjectionAncillariesTotal: null,
+        canonicalProjectedTotalDue: null,
+        rawDelta: null,
         matchStatus: "UNAVAILABLE",
         errorCode: "CASE_BALANCE_SERVICE_UNAVAILABLE",
       };
@@ -3474,13 +3526,32 @@ export class CaseService {
 
     try {
       const balance = await this.canonicalCaseBalance.computeCaseBalance(tenantId, caseId, calculationDate);
+      const canonicalProjectionCostsTotal = sumCanonicalProjectionTotal(balance.projections.costs);
+      const canonicalProjectionAncillariesTotal = sumCanonicalProjectionTotal(balance.projections.ancillaries);
+      const legacyCurrencyResult = balance.currencyResults.find((entry) => entry.currency === legacy.legacyCurrency);
+      const canonicalTotalDue = legacyCurrencyResult?.result?.totalDue ?? null;
+      const rawDelta = canonicalTotalDue != null ? round2(canonicalTotalDue - legacy.legacySonBorc) : null;
+      const canonicalProjectedTotalDue =
+        canonicalTotalDue != null
+          ? round2(canonicalTotalDue + canonicalProjectionCostsTotal + canonicalProjectionAncillariesTotal)
+          : null;
 
       return {
         status: "OK",
         source: "computeCaseBalance",
         asOfDate: balance.asOfDate,
+        alignmentStatus: "SCOPE_MISMATCH",
+        comparisonScope: CANONICAL_SHADOW_COMPARISON_SCOPE,
+        legacyToplamBorc: legacy.legacyToplamBorc,
         legacySonBorc: legacy.legacySonBorc,
+        legacyToplamTahsilat: legacy.legacyToplamTahsilat,
+        legacyKalanBorc: legacy.legacyKalanBorc,
         legacyCurrency: legacy.legacyCurrency,
+        canonicalTotalDue,
+        canonicalProjectionCostsTotal,
+        canonicalProjectionAncillariesTotal,
+        canonicalProjectedTotalDue,
+        rawDelta,
         engineSource: balance.source,
         currencyResults: balance.currencyResults.map((entry) => {
           const totalDue = entry.result?.totalDue ?? null;
@@ -3494,12 +3565,16 @@ export class CaseService {
           return {
             currency: entry.currency,
             totalDue,
+            canonicalTotalDue: totalDue,
             totalInterest: entry.result?.totalInterest ?? null,
             preEnforcementInterest: entry.result?.preEnforcementInterest ?? null,
             postEnforcementInterest: entry.result?.postEnforcementInterest ?? null,
             skippedReason: entry.skippedReason ?? null,
             delta,
             deltaPercent,
+            rawDelta: delta,
+            alignmentStatus: "SCOPE_MISMATCH",
+            comparisonScope: CANONICAL_SHADOW_COMPARISON_SCOPE,
             matchStatus: classifyCanonicalShadowDelta(
               legacy.legacyCurrency,
               entry.currency,
@@ -3520,8 +3595,18 @@ export class CaseService {
         status: "ERROR",
         source: "computeCaseBalance",
         asOfDate: calculationDate,
+        alignmentStatus: "SCOPE_MISMATCH",
+        comparisonScope: CANONICAL_SHADOW_COMPARISON_SCOPE,
+        legacyToplamBorc: legacy.legacyToplamBorc,
         legacySonBorc: legacy.legacySonBorc,
+        legacyToplamTahsilat: legacy.legacyToplamTahsilat,
+        legacyKalanBorc: legacy.legacyKalanBorc,
         legacyCurrency: legacy.legacyCurrency,
+        canonicalTotalDue: null,
+        canonicalProjectionCostsTotal: null,
+        canonicalProjectionAncillariesTotal: null,
+        canonicalProjectedTotalDue: null,
+        rawDelta: null,
         matchStatus: "ERROR",
         errorCode: "CANONICAL_SHADOW_COMPUTE_FAILED",
       };
