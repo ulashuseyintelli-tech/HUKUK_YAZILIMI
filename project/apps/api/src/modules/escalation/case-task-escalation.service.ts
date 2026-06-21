@@ -14,7 +14,7 @@ import { caseTaskEscalationSubject, buildCaseTaskEmailHtml, buildCaseTaskSmsText
  * D-G3b — Dosya görevi (case-linked LEGAL_WORKFLOW) owner-first eskalasyon motoru.
  * Operasyonel OperationalEscalationService'ten TAMAMEN AYRI (K-D1): ayrı cron, ayrı alan/enum
  * (case* + CaseTaskTier), ayrı audit tablosu (CaseTaskEscalationEvent). Hedef sorgu DİSJOİNT
- * (LEGAL_WORKFLOW + caseId + assignee) → bir görev asla iki motorda işlenmez.
+ * (LEGAL_WORKFLOW + caseId) → bir görev asla iki motorda işlenmez.
  *
  * FLAG: CASE_TASK_ESCALATION_ENABLED (varsayılan OFF). Kapalıyken cron hiçbir şey yapmaz
  * (prod'da kapalı; açma kararı D-G6). processCaseTaskEscalations() flag'den bağımsız çağrılabilir (test).
@@ -48,7 +48,7 @@ export class CaseTaskEscalationService {
   }
 
   /**
-   * Tüm tenant'ların caseId'li + atanmış + LEGAL_WORKFLOW görevlerini owner-first işler.
+   * Tüm tenant'ların caseId'li + LEGAL_WORKFLOW görevlerini (atanmış olsun olmasın) owner-first işler.
    * Lazy-adopt: caseEscalationLevel=null görev RESPONSIBLE'dan başlatılır (creator dokunulmaz).
    * Flag'den BAĞIMSIZ — doğrudan çağrılabilir (test/manuel).
    */
@@ -67,18 +67,27 @@ export class CaseTaskEscalationService {
       if (!office) continue;
 
       // DİSJOİNT hedef sorgu: operasyonel motor OPERATIONAL_COMPLETENESS işler; bu motor
-      // LEGAL_WORKFLOW + caseId + assignee. Bir görev asla iki motorda işlenmez.
+      // LEGAL_WORKFLOW + caseId. Disjointlik kategori+caseId ile korunur. G4b: `assigneeId`
+      // filtresi KALDIRILDI — atanmamış ama geç görev de Dosya Sorumlusu'na eskale olur.
       const tasks = await this.prisma.task.findMany({
         where: {
           tenantId: tenant.id,
           taskCategory: "LEGAL_WORKFLOW",
           caseId: { not: null },
-          assigneeId: { not: null },
           status: { in: ["PENDING", "IN_PROGRESS"] },
         },
         include: {
-          assignee: { select: { id: true, name: true, surname: true, email: true } },
-          case: { select: { id: true, fileNumber: true } },
+          // G4b: RESPONSIBLE = case'in GERÇEK KİŞİ sorumlusu (Lawyer/Staff, legacy sorumluPersonel fallback);
+          // task.assignee (doer) eskalasyon alıcısı DEĞİL → assignee include'u kaldırıldı.
+          case: {
+            select: {
+              id: true,
+              fileNumber: true,
+              responsibleLawyer: { select: { name: true, surname: true, email: true } },
+              responsibleStaff: { select: { firstName: true, lastName: true, email: true } },
+              sorumluPersonel: { select: { name: true, surname: true, email: true } },
+            },
+          },
         },
       });
 
@@ -198,7 +207,7 @@ export class CaseTaskEscalationService {
     }
   }
 
-  /** Bir tier için alıcıları çözer. L0=assignee(User); L1=teamLead; L2/L3=operasyonel ile aynı Lawyer sorgusu. */
+  /** Bir tier için alıcıları çözer. L0=case GERÇEK-KİŞİ owner (Lawyer/Staff, legacy sorumluPersonel fallback); L1=teamLead; L2/L3=Lawyer sorgusu. */
   private async resolveRecipients(
     tenantId: string,
     office: any,
@@ -206,13 +215,22 @@ export class CaseTaskEscalationService {
     tier: CaseTaskTier
   ): Promise<{ emails: { name: string; email: string }[]; phones: { name: string; phone: string }[] }> {
     if (tier === "RESPONSIBLE") {
-      // Owner-first: görevin assignee'si (Dosya Sorumlusu, User).
-      const a = task.assignee;
-      const email = a?.email;
-      return {
-        emails: email ? [{ name: `${a.name || ""} ${a.surname || ""}`.trim(), email }] : [],
-        phones: [],
-      };
+      // G4b: Dosya Sorumlusu = case'in GERÇEK KİŞİ owner'ı (Lawyer/Staff), task.assignee (doer) DEĞİL.
+      // Öncelik: responsibleLawyer → responsibleStaff → legacy sorumluPersonel (User) fallback.
+      const c = task.case || {};
+      const lawyer = c.responsibleLawyer;
+      if (lawyer?.email) {
+        return { emails: [{ name: `${lawyer.name || ""} ${lawyer.surname || ""}`.trim(), email: lawyer.email }], phones: [] };
+      }
+      const staff = c.responsibleStaff;
+      if (staff?.email) {
+        return { emails: [{ name: `${staff.firstName || ""} ${staff.lastName || ""}`.trim(), email: staff.email }], phones: [] };
+      }
+      const legacy = c.sorumluPersonel; // geçiş dönemi fallback'i (User)
+      if (legacy?.email) {
+        return { emails: [{ name: `${legacy.name || ""} ${legacy.surname || ""}`.trim(), email: legacy.email }], phones: [] };
+      }
+      return { emails: [], phones: [] }; // owner yok → dispatch SKIPPED (fail-safe)
     }
 
     if (tier === "TEAM_LEAD") {
