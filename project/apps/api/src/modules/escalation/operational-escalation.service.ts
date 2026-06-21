@@ -1,29 +1,18 @@
 import { Injectable, Logger } from "@nestjs/common";
 import { Cron, CronExpression } from "@nestjs/schedule";
 import { PrismaService } from "../../prisma/prisma.service";
-import { OfficeService } from "../office/office.service";
-import { fetchWithTimeout } from "../../common/fetch-with-timeout.util";
 import { EscalationTier } from "@prisma/client";
 import {
   computeEscalationUpdate,
   channelsForTier,
-  normalizeTrPhone,
   EscalationConfig,
 } from "./escalation-logic";
-import * as nodemailer from "nodemailer";
+import { TenantNotifier, DispatchResult } from "./tenant-notifier.service";
 
 interface Recipients {
   emails: { name: string; email: string }[]; // ad-soyad ile hitap için isim taşınır
   phones: { name: string; phone: string }[]; // yalnız FOUNDER için doldurulur
 }
-
-/**
- * Gönderim sonucu (PR-3b.2 retry-safety):
- *  - SENT: en az bir kanal gerçekten teslim etti → guard ilerler.
- *  - FAILED: sağlayıcı hatası/exception (geçici) → guard ilerlemez, sonraki tick retry.
- *  - SKIPPED: gönderecek kimse/yapılandırma yok (benign) → guard ilerlemez (self-heal).
- */
-type DispatchResult = "SENT" | "FAILED" | "SKIPPED";
 
 /** Dispatch çıktısı (K2): sonuç + denenen kanallar/alıcı sayıları (EscalationEvent metadata'sı için). */
 interface DispatchOutcome {
@@ -56,7 +45,7 @@ export class OperationalEscalationService {
 
   constructor(
     private prisma: PrismaService,
-    private officeService: OfficeService
+    private tenantNotifier: TenantNotifier
   ) {}
 
   @Cron(CronExpression.EVERY_HOUR)
@@ -326,7 +315,7 @@ export class OperationalEscalationService {
             `<b>Görev Önceliği:</b><br>${priorityStr}<br><br>` +
             (link ? `<b>Göreve Git:</b><br><a href="${link}">${link}</a><br><br>` : "") +
             `<b>Eskalasyon:</b><br>${escalationLine}`;
-        const r1 = await this.sendTenantEmail(tenantId, r.email, subject, html);
+        const r1 = await this.tenantNotifier.sendEmail(tenantId, r.email, subject, html);
         if (r1 === "SENT") anySent = true;
         else if (r1 === "FAILED") anyFailed = true;
       }
@@ -342,7 +331,7 @@ export class OperationalEscalationService {
           : `Sayın ${r.name}, ${entity.name} (${entity.label.toLowerCase()}) için bilgiler eksik (${missingList.join(", ")}). ` +
             `Kalan süre: ${remainingStr}.` +
             (link ? ` ${link}` : "");
-        const r2 = await this.sendTenantSms(tenantId, r.phone, msg);
+        const r2 = await this.tenantNotifier.sendSms(tenantId, r.phone, msg);
         if (r2 === "SENT") anySent = true;
         else if (r2 === "FAILED") anyFailed = true;
       }
@@ -353,89 +342,6 @@ export class OperationalEscalationService {
     return { result, channels, emailRecipients, smsRecipients };
   }
 
-  /**
-   * Tenant SMTP ile ham e-posta gönderir (PR-3b.2).
-   * SKIPPED: SMTP yapılandırılmamış. FAILED: gönderim exception'ı (retry). SENT: başarılı.
-   */
-  private async sendTenantEmail(tenantId: string, to: string, subject: string, html: string): Promise<DispatchResult> {
-    const s = await this.officeService.getFullSmtpSettings(tenantId).catch(() => null);
-    if (!s || !s.smtpHost || !s.smtpUser) {
-      this.logger.warn(`E-posta skipped (SMTP yapılandırılmamış): tenant ${tenantId}`);
-      return "SKIPPED";
-    }
-    try {
-      const transporter = nodemailer.createTransport({
-        host: s.smtpHost,
-        port: s.smtpPort || 587,
-        secure: s.smtpSecure || false,
-        auth: { user: s.smtpUser, pass: s.smtpPass },
-      } as nodemailer.TransportOptions);
-      const from = `"${s.smtpFromName || "Hukuk Bürosu"}" <${s.smtpFromEmail || s.smtpUser}>`;
-      await transporter.sendMail({ from, to, subject, html });
-      return "SENT";
-    } catch (e: any) {
-      this.logger.error(`Eskalasyon e-posta hatası (${to}): ${e?.message}`);
-      return "FAILED";
-    }
-  }
-
-  /**
-   * Tenant SMS sağlayıcısı ile ham SMS gönderir (PR-3b.2).
-   * SKIPPED: sağlayıcı yok / numara geçersiz / desteklenmeyen sağlayıcı.
-   * FAILED: sağlayıcı hata yanıtı veya exception (retry). SENT: başarılı.
-   */
-  private async sendTenantSms(tenantId: string, to: string, message: string): Promise<DispatchResult> {
-    const s = await this.officeService.getFullSmsSettings(tenantId).catch(() => null);
-    if (!s || !s.smsProvider || !s.smsApiKey) {
-      this.logger.warn(`SMS skipped (sağlayıcı yapılandırılmamış): tenant ${tenantId}`);
-      return "SKIPPED";
-    }
-    const phone = normalizeTrPhone(to);
-    if (!phone) {
-      this.logger.warn(`SMS skipped (geçersiz cep numarası): ${to}`);
-      return "SKIPPED";
-    }
-    try {
-      if (s.smsProvider === "NETGSM") {
-        const params = new URLSearchParams({
-          usercode: s.smsApiKey || "",
-          password: s.smsApiSecret || "",
-          gsmno: phone,
-          message,
-          msgheader: s.smsSender || "HUKUKBURO",
-          filter: "0",
-        });
-        const res = await fetchWithTimeout(`https://api.netgsm.com.tr/sms/send/get?${params.toString()}`, undefined, 10_000);
-        const text = await res.text();
-        if (text.split(" ")[0] !== "00" && !text.startsWith("00")) {
-          this.logger.error(`NetGSM eskalasyon SMS hatası: ${text}`);
-          return "FAILED";
-        }
-        return "SENT";
-      }
-      if (s.smsProvider === "ILETI_MERKEZI") {
-        const params = new URLSearchParams({
-          username: s.smsApiKey || "",
-          password: s.smsApiSecret || "",
-          text: message,
-          receipents: phone,
-          sender: s.smsSender || "HUKUKBURO",
-        });
-        const res = await fetchWithTimeout(`https://api.iletimerkezi.com/v1/send-sms/get?${params.toString()}`, undefined, 10_000);
-        const text = await res.text();
-        if (/error/i.test(text)) {
-          this.logger.error(`İleti Merkezi eskalasyon SMS hatası: ${text}`);
-          return "FAILED";
-        }
-        return "SENT";
-      }
-      this.logger.warn(`SMS skipped (desteklenmeyen sağlayıcı ${s.smsProvider})`);
-      return "SKIPPED";
-    } catch (e: any) {
-      this.logger.error(`Eskalasyon SMS hatası (${to}): ${e?.message}`);
-      return "FAILED";
-    }
-  }
 }
 
 // ───────────────────────── Saf şablon yardımcıları (test edilebilir) ─────────────────────────
