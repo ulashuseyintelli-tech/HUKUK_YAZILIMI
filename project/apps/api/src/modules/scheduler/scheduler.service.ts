@@ -513,8 +513,7 @@ export class SchedulerService {
       data: {
         tenantId: caseData.tenantId,
         caseId: caseData.id,
-        // A5: dosyaya bağlı otomatik görev → varsayılan sahip = Dosya Sorumlusu (yoksa boş; explicit ezme yok)
-        assigneeId: caseData.sorumluPersonelId ?? undefined,
+        // G4a (A5 reversal): otomatik görev ATANMAMIŞ doğar (Dosya Sorumlusu DOER değil; assignee=doer sonradan manuel atanır).
         title: `${nextIhbarname} İhbarname Gönder - ${thirdParty.name}`,
         description: `${caseData.fileNumber} dosyasında ${thirdParty.caseDebtor?.debtor?.name || 'borçlu'} için ${thirdParty.name}'a ${nextIhbarname} haciz ihbarnamesi gönderilmeli. Önceki ihbarname süresi doldu.`,
         status: 'PENDING',
@@ -595,8 +594,7 @@ export class SchedulerService {
       data: {
         tenantId: caseData.tenantId,
         caseId: caseData.id,
-        // A5: varsayılan sahip = Dosya Sorumlusu (yoksa boş)
-        assigneeId: caseData.sorumluPersonelId ?? undefined,
+        // G4a (A5 reversal): otomatik görev ATANMAMIŞ doğar (Dosya Sorumlusu DOER değil; assignee=doer sonradan manuel atanır).
         title: `Alacak Haczi Takip - ${externalCase.externalCaseNo}`,
         description: `${caseData.fileNumber} dosyasında ${externalCase.externalOffice} ${externalCase.externalCaseNo} nolu dış dosyaya konulan haciz 30 günü aştı. Durum sorgulanmalı.`,
         status: 'PENDING',
@@ -805,8 +803,7 @@ export class SchedulerService {
       data: {
         tenantId: caseData.tenantId,
         caseId: caseData.id,
-        // A5: varsayılan sahip = Dosya Sorumlusu (yoksa boş)
-        assigneeId: caseData.sorumluPersonelId ?? undefined,
+        // G4a (A5 reversal): otomatik görev ATANMAMIŞ doğar (Dosya Sorumlusu DOER değil; assignee=doer sonradan manuel atanır).
         title: `Tebligat İade - ${tebligat.recipientName}`,
         description: `${caseData.fileNumber} dosyasında ${tebligat.recipientName}'a gönderilen tebligat iade geldi. MERNİS adresi sorgulanarak yeni tebligat çıkarılmalı.`,
         status: 'PENDING',

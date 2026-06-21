@@ -57,11 +57,11 @@ describe("SchedulerService — cron tebligat synced-path (PR-S2)", () => {
     expect(prisma.task.create).toHaveBeenCalled(); // A kararı: case-seviyesi takip görevi korunur
     const taskData = prisma.task.create.mock.calls[0][0].data;
     expect(taskData.caseId).toBe("c1");
-    expect(taskData.assigneeId).toBe("u9"); // A5: dosyaya bağlı otomatik görev → varsayılan sahip = Dosya Sorumlusu
+    expect(taskData.assigneeId).toBeUndefined(); // G4a (A5 reversal): Dosya Sorumlusu (u9) VAR olsa BİLE otomatik görev ATANMAMIŞ doğar (owner DOER değil)
     expect(prisma.tebligat.update).not.toHaveBeenCalled();
   });
 
-  it("IADE + dosya sorumlusu YOK → A5 fallback üretmez (assigneeId boş kalır)", async () => {
+  it("IADE + dosya sorumlusu YOK → görev yine ATANMAMIŞ (G4a: assignee sorumludan bağımsız)", async () => {
     const { svc, prisma } = build();
     prisma.case.findUnique.mockResolvedValueOnce({ id: "c1", fileNumber: "2024/1", tenantId: "t1" }); // sorumlu yok
     jest.spyOn(Math, "random").mockReturnValue(0.5); // IADE
@@ -70,7 +70,7 @@ describe("SchedulerService — cron tebligat synced-path (PR-S2)", () => {
 
     const taskData = prisma.task.create.mock.calls[0][0].data;
     expect(taskData.caseId).toBe("c1");
-    expect(taskData.assigneeId).toBeUndefined(); // A5: sorumlu yoksa fallback YOK
+    expect(taskData.assigneeId).toBeUndefined(); // G4a: assignee artık sorumludan bağımsız — her durumda atanmamış
   });
 
   it("PTT GONDERILDI (sonuç yok) → no-op (recordPttResult, update, followup hiçbiri yok)", async () => {
