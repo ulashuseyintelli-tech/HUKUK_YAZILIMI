@@ -5,7 +5,7 @@
  * EXHAUSTIVE eşleme + silent default yasağı doğrulanır.
  */
 
-import { ClaimItemType } from '@prisma/client';
+import { ClaimItemType, DocumentSourceType } from '@prisma/client';
 import { mapDueTypeToClaimItemType, buildClaimItemData } from '../due-to-claim-item.mapper';
 import { DueType, DueDto, InterestType } from '../dto/case.dto';
 
@@ -106,6 +106,45 @@ describe('buildClaimItemData (G1)', () => {
     );
 
     expect(data.interestType).toBe(InterestType.YASAL);
+    expect(data.metadata).toBeUndefined();
+  });
+});
+
+describe('buildClaimItemData — FATURA G2a (referenceNo + sourceDocumentType + KDV metadata)', () => {
+  const base: DueDto = { type: DueType.PRINCIPAL, amount: 1200, dueDate: '2026-01-01' };
+
+  it('fatura Due → referenceNo=faturaNo · sourceDocumentType=FATURA · PRINCIPAL=KDV-dahil toplam · metadata.kdv', () => {
+    const data = buildClaimItemData('t', 'c', {
+      ...base,
+      sourceDocumentNo: 'F-2026-1',
+      sourceDocumentType: DocumentSourceType.FATURA,
+      hasKdv: true,
+      kdvRate: 20,
+      kdvAmount: 200,
+    }, ClaimItemType.PRINCIPAL);
+    expect(data.referenceNo).toBe('F-2026-1');
+    expect(data.sourceDocumentType).toBe(DocumentSourceType.FATURA);
+    expect(data.amount).toBe(1200); // O-2=A: genel toplam (KDV dahil)
+    expect(data.itemType).toBe(ClaimItemType.PRINCIPAL); // ayrı TAX_KDV kalemi YOK
+    expect((data.metadata as any).kdv).toEqual({ hasKdv: true, kdvRate: 20, kdvAmount: 200 });
+  });
+
+  it('KDV/belge yok → referenceNo/sourceDocumentType/metadata set EDİLMEZ (regresyon)', () => {
+    const data = buildClaimItemData('t', 'c', base, ClaimItemType.PRINCIPAL);
+    expect(data.referenceNo).toBeUndefined();
+    expect(data.sourceDocumentType).toBeUndefined();
+    expect(data.metadata).toBeUndefined();
+  });
+
+  it('faiz + KDV metadata BİRLİKTE birleşir (dueInterest + kdv)', () => {
+    const data = buildClaimItemData('t', 'c', { ...base, interestAmount: 50, hasKdv: true, kdvRate: 18 }, ClaimItemType.PRINCIPAL);
+    expect((data.metadata as any).dueInterest).toEqual({ interestAmount: 50 });
+    expect((data.metadata as any).kdv).toEqual({ hasKdv: true, kdvRate: 18 });
+  });
+
+  it('hasKdv=false → metadata.kdv yazılmaz (referenceNo yine taşınır)', () => {
+    const data = buildClaimItemData('t', 'c', { ...base, sourceDocumentNo: 'F-2', sourceDocumentType: DocumentSourceType.FATURA, hasKdv: false, kdvRate: 20 }, ClaimItemType.PRINCIPAL);
+    expect(data.referenceNo).toBe('F-2');
     expect(data.metadata).toBeUndefined();
   });
 });

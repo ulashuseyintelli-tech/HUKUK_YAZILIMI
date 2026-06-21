@@ -9,6 +9,7 @@ import {
   IsBoolean,
 } from "class-validator";
 import { Type } from "class-transformer";
+import { DocumentSourceType } from "@prisma/client";
 
 export enum CaseType {
   GENERAL_EXECUTION = "GENERAL_EXECUTION",
@@ -292,6 +293,28 @@ export class DueDto {
   @IsNumber()
   @IsOptional()
   interestAmount?: number;
+
+  // FATURA (G2a) — fatura kaynaklı Due için belge/KDV metadata. SAF-KATMAN (DTO+mapper);
+  // case.service threading (createdDues→buildClaimItemData) = ayrı G2-wire → şu an DORMANT.
+  @IsString()
+  @IsOptional()
+  sourceDocumentNo?: string; // faturaNo → ClaimItem.referenceNo
+
+  @IsEnum(DocumentSourceType)
+  @IsOptional()
+  sourceDocumentType?: DocumentSourceType; // FATURA → ClaimItem.sourceDocumentType
+
+  @IsBoolean()
+  @IsOptional()
+  hasKdv?: boolean; // O-1=A: KDV gömülü bilgi (ayrı TAX_KDV kalemi YOK)
+
+  @IsNumber()
+  @IsOptional()
+  kdvRate?: number; // KDV oranı (%)
+
+  @IsNumber()
+  @IsOptional()
+  kdvAmount?: number; // KDV tutarı (bilgi)
 }
 
 /**
