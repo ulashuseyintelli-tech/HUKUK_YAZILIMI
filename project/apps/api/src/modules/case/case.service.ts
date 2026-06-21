@@ -68,6 +68,30 @@ type CalculationSummaryCanonicalShadowProjectionCurrencyScope =
 type CalculationSummaryCanonicalShadowMatchStatusInterpretation =
   | "RAW_DELTA_DIAGNOSTIC_ONLY";
 
+type CalculationSummaryCanonicalShadowLegacyField =
+  | "toplamBorc"
+  | "sonBorc"
+  | "kalanBorc";
+
+type CalculationSummaryCanonicalShadowCanonicalScope =
+  | "CLAIM_ONLY"
+  | "PROJECTED_WITH_COSTS"
+  | "PROJECTED_WITH_COSTS_AND_ANCILLARIES";
+
+type CalculationSummaryCanonicalShadowScopeStatus =
+  | "CANDIDATE_ONLY"
+  | "UNAVAILABLE";
+
+type CalculationSummaryCanonicalShadowScopeComparison = {
+  legacyField: CalculationSummaryCanonicalShadowLegacyField;
+  canonicalScope: CalculationSummaryCanonicalShadowCanonicalScope;
+  legacyValue: number;
+  canonicalValue: number | null;
+  delta: number | null;
+  deltaPercent: number | null;
+  scopeStatus: CalculationSummaryCanonicalShadowScopeStatus;
+};
+
 type CalculationSummaryCanonicalShadow = {
   status: "OK" | "ERROR" | "UNAVAILABLE";
   source: "computeCaseBalance";
@@ -81,11 +105,18 @@ type CalculationSummaryCanonicalShadow = {
   legacySonBorc: number;
   legacyToplamTahsilat: number;
   legacyKalanBorc: number;
+  legacyTahsilHarci: number;
+  legacyIcraMasraflari: number;
+  legacyVekaletUcreti: number;
   legacyCurrency: string;
   canonicalTotalDue?: number | null;
   canonicalProjectionCostsTotal?: number | null;
   canonicalProjectionAncillariesTotal?: number | null;
   canonicalProjectedTotalDue?: number | null;
+  canonicalClaimOnlyTotal?: number | null;
+  canonicalProjectedWithCosts?: number | null;
+  canonicalProjectedWithCostsAndAncillaries?: number | null;
+  scopeComparisonMatrix: CalculationSummaryCanonicalShadowScopeComparison[];
   rawDelta?: number | null;
   engineSource?: CaseBalanceResult["source"];
   matchStatus?: CalculationSummaryCanonicalShadowMatchStatus;
@@ -131,6 +162,58 @@ function sumCanonicalProjectionTotal(values: Partial<Record<string, unknown>> | 
     total += Number(value ?? 0);
   }
   return round2(total);
+}
+
+function buildCanonicalShadowScopeComparisonMatrix(
+  legacy: {
+    legacyToplamBorc: number;
+    legacySonBorc: number;
+    legacyKalanBorc: number;
+  },
+  canonical: {
+    canonicalClaimOnlyTotal: number | null;
+    canonicalProjectedWithCosts: number | null;
+    canonicalProjectedWithCostsAndAncillaries: number | null;
+  },
+): CalculationSummaryCanonicalShadowScopeComparison[] {
+  const legacyFields: Array<{
+    legacyField: CalculationSummaryCanonicalShadowLegacyField;
+    legacyValue: number;
+  }> = [
+    { legacyField: "toplamBorc", legacyValue: legacy.legacyToplamBorc },
+    { legacyField: "sonBorc", legacyValue: legacy.legacySonBorc },
+    { legacyField: "kalanBorc", legacyValue: legacy.legacyKalanBorc },
+  ];
+
+  const canonicalScopes: Array<{
+    canonicalScope: CalculationSummaryCanonicalShadowCanonicalScope;
+    canonicalValue: number | null;
+  }> = [
+    { canonicalScope: "CLAIM_ONLY", canonicalValue: canonical.canonicalClaimOnlyTotal },
+    { canonicalScope: "PROJECTED_WITH_COSTS", canonicalValue: canonical.canonicalProjectedWithCosts },
+    {
+      canonicalScope: "PROJECTED_WITH_COSTS_AND_ANCILLARIES",
+      canonicalValue: canonical.canonicalProjectedWithCostsAndAncillaries,
+    },
+  ];
+
+  return legacyFields.flatMap(({ legacyField, legacyValue }) =>
+    canonicalScopes.map(({ canonicalScope, canonicalValue }) => {
+      const delta = canonicalValue != null ? round2(canonicalValue - legacyValue) : null;
+      const deltaPercent =
+        delta != null && legacyValue !== 0 ? round2((delta / legacyValue) * 100) : null;
+
+      return {
+        legacyField,
+        canonicalScope,
+        legacyValue,
+        canonicalValue,
+        delta,
+        deltaPercent,
+        scopeStatus: canonicalValue == null ? "UNAVAILABLE" : "CANDIDATE_ONLY",
+      };
+    }),
+  );
 }
 
 function classifyCanonicalShadowDelta(
@@ -3497,6 +3580,9 @@ export class CaseService {
         legacySonBorc: sonBorc,
         legacyToplamTahsilat: toplamTahsilat,
         legacyKalanBorc: kalanBorc,
+        legacyTahsilHarci: pesinHarcHaricTahsilHarci,
+        legacyIcraMasraflari: icraMasraflari,
+        legacyVekaletUcreti: vekaletUcreti,
         legacyCurrency,
       }),
     };
@@ -3519,10 +3605,19 @@ export class CaseService {
       legacySonBorc: number;
       legacyToplamTahsilat: number;
       legacyKalanBorc: number;
+      legacyTahsilHarci: number;
+      legacyIcraMasraflari: number;
+      legacyVekaletUcreti: number;
       legacyCurrency: string;
     },
   ): Promise<CalculationSummaryCanonicalShadow> {
     if (!this.canonicalCaseBalance) {
+      const scopeComparisonMatrix = buildCanonicalShadowScopeComparisonMatrix(legacy, {
+        canonicalClaimOnlyTotal: null,
+        canonicalProjectedWithCosts: null,
+        canonicalProjectedWithCostsAndAncillaries: null,
+      });
+
       return {
         status: "UNAVAILABLE",
         source: "computeCaseBalance",
@@ -3536,11 +3631,18 @@ export class CaseService {
         legacySonBorc: legacy.legacySonBorc,
         legacyToplamTahsilat: legacy.legacyToplamTahsilat,
         legacyKalanBorc: legacy.legacyKalanBorc,
+        legacyTahsilHarci: legacy.legacyTahsilHarci,
+        legacyIcraMasraflari: legacy.legacyIcraMasraflari,
+        legacyVekaletUcreti: legacy.legacyVekaletUcreti,
         legacyCurrency: legacy.legacyCurrency,
         canonicalTotalDue: null,
         canonicalProjectionCostsTotal: null,
         canonicalProjectionAncillariesTotal: null,
         canonicalProjectedTotalDue: null,
+        canonicalClaimOnlyTotal: null,
+        canonicalProjectedWithCosts: null,
+        canonicalProjectedWithCostsAndAncillaries: null,
+        scopeComparisonMatrix,
         rawDelta: null,
         matchStatus: "UNAVAILABLE",
         errorCode: "CASE_BALANCE_SERVICE_UNAVAILABLE",
@@ -3554,10 +3656,19 @@ export class CaseService {
       const legacyCurrencyResult = balance.currencyResults.find((entry) => entry.currency === legacy.legacyCurrency);
       const canonicalTotalDue = legacyCurrencyResult?.result?.totalDue ?? null;
       const rawDelta = canonicalTotalDue != null ? round2(canonicalTotalDue - legacy.legacySonBorc) : null;
-      const canonicalProjectedTotalDue =
+      const canonicalClaimOnlyTotal = canonicalTotalDue;
+      const canonicalProjectedWithCosts =
+        canonicalTotalDue != null ? round2(canonicalTotalDue + canonicalProjectionCostsTotal) : null;
+      const canonicalProjectedWithCostsAndAncillaries =
         canonicalTotalDue != null
           ? round2(canonicalTotalDue + canonicalProjectionCostsTotal + canonicalProjectionAncillariesTotal)
           : null;
+      const canonicalProjectedTotalDue = canonicalProjectedWithCostsAndAncillaries;
+      const scopeComparisonMatrix = buildCanonicalShadowScopeComparisonMatrix(legacy, {
+        canonicalClaimOnlyTotal,
+        canonicalProjectedWithCosts,
+        canonicalProjectedWithCostsAndAncillaries,
+      });
 
       return {
         status: "OK",
@@ -3572,11 +3683,18 @@ export class CaseService {
         legacySonBorc: legacy.legacySonBorc,
         legacyToplamTahsilat: legacy.legacyToplamTahsilat,
         legacyKalanBorc: legacy.legacyKalanBorc,
+        legacyTahsilHarci: legacy.legacyTahsilHarci,
+        legacyIcraMasraflari: legacy.legacyIcraMasraflari,
+        legacyVekaletUcreti: legacy.legacyVekaletUcreti,
         legacyCurrency: legacy.legacyCurrency,
         canonicalTotalDue,
         canonicalProjectionCostsTotal,
         canonicalProjectionAncillariesTotal,
         canonicalProjectedTotalDue,
+        canonicalClaimOnlyTotal,
+        canonicalProjectedWithCosts,
+        canonicalProjectedWithCostsAndAncillaries,
+        scopeComparisonMatrix,
         rawDelta,
         engineSource: balance.source,
         currencyResults: balance.currencyResults.map((entry) => {
@@ -3619,6 +3737,11 @@ export class CaseService {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       this.logger.warn(`Canonical balance shadow failed for case ${caseId}: ${message}`);
+      const scopeComparisonMatrix = buildCanonicalShadowScopeComparisonMatrix(legacy, {
+        canonicalClaimOnlyTotal: null,
+        canonicalProjectedWithCosts: null,
+        canonicalProjectedWithCostsAndAncillaries: null,
+      });
 
       return {
         status: "ERROR",
@@ -3633,11 +3756,18 @@ export class CaseService {
         legacySonBorc: legacy.legacySonBorc,
         legacyToplamTahsilat: legacy.legacyToplamTahsilat,
         legacyKalanBorc: legacy.legacyKalanBorc,
+        legacyTahsilHarci: legacy.legacyTahsilHarci,
+        legacyIcraMasraflari: legacy.legacyIcraMasraflari,
+        legacyVekaletUcreti: legacy.legacyVekaletUcreti,
         legacyCurrency: legacy.legacyCurrency,
         canonicalTotalDue: null,
         canonicalProjectionCostsTotal: null,
         canonicalProjectionAncillariesTotal: null,
         canonicalProjectedTotalDue: null,
+        canonicalClaimOnlyTotal: null,
+        canonicalProjectedWithCosts: null,
+        canonicalProjectedWithCostsAndAncillaries: null,
+        scopeComparisonMatrix,
         rawDelta: null,
         matchStatus: "ERROR",
         errorCode: "CANONICAL_SHADOW_COMPUTE_FAILED",
