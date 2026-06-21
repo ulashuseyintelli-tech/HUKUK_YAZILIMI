@@ -31,7 +31,7 @@ const AVAILABLE_COLUMNS: ReportColumn[] = [
   { id: '9', field: 'durumEtiketi', label: 'Durum Etiketi', enabled: false },
   { id: '10', field: 'takipTuru', label: 'Takip Türü', enabled: false },
   { id: '11', field: 'mahiyetTipi', label: 'Mahiyet', enabled: false },
-  { id: '12', field: 'sorumlu', label: 'Sorumlu', enabled: false },
+  { id: '12', field: 'sorumlu', label: 'Dosya Sorumlusu', enabled: false },
   { id: '13', field: 'caseDate', label: 'Takip Tarihi', enabled: false },
   { id: '14', field: 'createdAt', label: 'Oluşturma Tarihi', enabled: false },
   { id: '15', field: 'lastActionDate', label: 'Son İşlem', enabled: false },

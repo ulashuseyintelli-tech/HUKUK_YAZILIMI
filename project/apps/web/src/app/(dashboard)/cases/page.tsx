@@ -2002,7 +2002,7 @@ export default function CasesPage() {
 
             {/* Sorumlu Personel - MultiSelect */}
             <MultiSelectDropdown
-              label="Sorumlu Personel"
+              label="Dosya Sorumlusu"
               options={staff.map((s: any) => ({ 
                 value: s.id, 
                 label: `${s.name} ${s.surname}` 
@@ -2153,7 +2153,7 @@ export default function CasesPage() {
               className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-white border rounded-lg hover:bg-muted"
             >
               <UserCheck className="h-4 w-4" />
-              Sorumlu Ata
+              Dosya Sorumlusu Ata
             </button>
 
             {/* SMS Gönder */}
@@ -2713,9 +2713,9 @@ export default function CasesPage() {
       {showBulkAssignModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-4">Toplu Sorumlu Atama</h3>
+            <h3 className="text-lg font-semibold mb-4">Toplu Dosya Sorumlusu Atama</h3>
             <p className="text-muted-foreground mb-4">
-              <strong>{selectedCases.length}</strong> dosyaya sorumlu atayın:
+              <strong>{selectedCases.length}</strong> dosyaya Dosya Sorumlusu atayın:
             </p>
             <div className="space-y-3 mb-4">
               <div>
