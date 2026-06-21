@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@hukuk/ui";
 import { api } from "@/lib/api";
-import { buildBulkAssignPayload } from "@/lib/bulk-assign";
+import { bulkAssignResponsible, type BulkAssignResult } from "@/lib/bulk-assign-responsible";
 import { BulkDocumentGenerator } from "@/components/case";
 import { ResponsibleCandidateSelect, type ResponsibleSelection } from "@/components/case/responsible-candidate-select";
 import { MultiSelectDropdown, QuickFilterChip, ActiveFilterPill, QuickFilterHelpBanner, MissingBadge } from "@/components/ui";
@@ -796,7 +796,9 @@ export default function CasesPage() {
   const [showBulkStatusModal, setShowBulkStatusModal] = useState(false);
   const [showBulkAssignModal, setShowBulkAssignModal] = useState(false);
   const [bulkStatus, setBulkStatus] = useState("");
-  const [bulkAssignee, setBulkAssignee] = useState({ type: "", id: "" });
+  // M2-G5d-2: toplu gerçek-kişi Dosya Sorumlusu atama (multi-PATCH). Seçilen owner + sonuç.
+  const [bulkOwner, setBulkOwner] = useState<ResponsibleSelection | null>(null);
+  const [bulkResult, setBulkResult] = useState<BulkAssignResult | null>(null);
   const [exportingCases, setExportingCases] = useState(false);
   const [ownerlessCount, setOwnerlessCount] = useState(0); // SAHIPSIZ-DOSYALAR-G1b: getStats.ownerless
 
@@ -1410,19 +1412,26 @@ export default function CasesPage() {
   };
 
   const handleBulkAssign = async () => {
-    // ASSIGN-4a: yalnız PERSONEL toplu ataması; tek `POST /cases/batch-update` çağrısı
-    // (per-case PATCH döngüsü YOK). Avukat ('lawyer') geçici devre dışı → payload null → no-op.
-    const payload = buildBulkAssignPayload(bulkAssignee.type, selectedCases, bulkAssignee.id);
-    if (!payload) return;
+    // M2-G5d-2: gerçek-kişi Dosya Sorumlusu toplu atama — backend batch YOK; her dosya için
+    // G3a PATCH /cases/:id/responsible-person (multi-PATCH, Promise.allSettled). Rollback YOK.
+    if (!bulkOwner || selectedCases.length === 0) return;
+    setBulkResult(null);
     try {
       setProcessingIds(selectedCases);
-      await api.post('/cases/batch-update', payload);
-      fetchCases();
-      setSelectedCases([]);
-      setShowBulkAssignModal(false);
-      setBulkAssignee({ type: "", id: "" });
-    } catch (error: any) {
-      alert(error.message || 'Toplu atama başarısız');
+      const result = await bulkAssignResponsible(
+        selectedCases,
+        bulkOwner,
+        (caseId, body) => api.patch(`/cases/${caseId}/responsible-person`, body)
+      );
+      setBulkResult(result);
+      fetchCases(); // başarılılar yansısın
+      if (result.failed.length === 0) {
+        // tam başarı → seçimi temizle + modalı kapat
+        setSelectedCases([]);
+        setShowBulkAssignModal(false);
+        setBulkOwner(null);
+      }
+      // kısmi/tam başarısızlıkta modal AÇIK kalır → sonuç + başarısız listesi gösterilir
     } finally {
       setProcessingIds([]);
     }
@@ -2738,47 +2747,42 @@ export default function CasesPage() {
               <strong>{selectedCases.length}</strong> dosyaya Dosya Sorumlusu atayın:
             </p>
             <div className="space-y-3 mb-4">
+              {/* M2-G5d-2: gerçek kişi (avukat/personel) seçici — responsible-candidates. */}
               <div>
-                <label className="text-sm text-muted-foreground mb-1 block">Atama Türü</label>
-                <select
-                  value={bulkAssignee.type}
-                  onChange={(e) => setBulkAssignee({ type: e.target.value, id: "" })}
-                  className="w-full px-3 py-2 border rounded-lg"
-                >
-                  <option value="">Seçin</option>
-                  <option value="lawyer" disabled>Avukat (yakında)</option>
-                  <option value="staff">Personel</option>
-                </select>
+                <label className="text-sm text-muted-foreground mb-1 block">Dosya Sorumlusu (gerçek kişi)</label>
+                <ResponsibleCandidateSelect
+                  value={bulkOwner}
+                  onChange={(v) => { setBulkOwner(v); setBulkResult(null); }}
+                  disabled={processingIds.length > 0}
+                  className="w-full px-3 py-2 border rounded-lg text-sm outline-none focus:border-primary disabled:opacity-60"
+                />
               </div>
               <p className="text-xs text-muted-foreground">
-                Avukat toplu atama, sorumlu-avukat modeli ile gelecek.
+                Her dosya tek tek atanır (geri alma yok); kısmi başarı mümkündür.
               </p>
-              {bulkAssignee.type === 'staff' && (
-                <div>
-                  <label className="text-sm text-muted-foreground mb-1 block">Personel</label>
-                  <select
-                    value={bulkAssignee.id}
-                    onChange={(e) => setBulkAssignee(prev => ({ ...prev, id: e.target.value }))}
-                    className="w-full px-3 py-2 border rounded-lg"
-                  >
-                    <option value="">Personel Seçin</option>
-                    {staff.map((s: any) => (
-                      <option key={s.id} value={s.id}>{s.name} {s.surname}</option>
-                    ))}
-                  </select>
+              {bulkResult && (
+                <div className={`text-sm rounded-lg border p-3 ${bulkResult.failed.length === 0 ? 'border-green-200 bg-green-50 text-green-800' : 'border-amber-200 bg-amber-50 text-amber-800'}`}>
+                  <strong>{selectedCases.length} dosyadan {bulkResult.success.length}'i atandı</strong>
+                  {bulkResult.failed.length > 0 ? (
+                    <>, {bulkResult.failed.length}'i başarısız.
+                      <div className="mt-1 text-xs">
+                        Başarısız: {bulkResult.failed.map((f) => cases.find((c: any) => c.id === f.id)?.fileNumber || f.id).join(', ')}
+                      </div>
+                    </>
+                  ) : '.'}
                 </div>
               )}
             </div>
             <div className="flex justify-end gap-2">
               <button
-                onClick={() => { setShowBulkAssignModal(false); setBulkAssignee({ type: "", id: "" }); }}
+                onClick={() => { setShowBulkAssignModal(false); setBulkOwner(null); setBulkResult(null); }}
                 className="px-4 py-2 text-sm border rounded-lg hover:bg-muted"
               >
                 İptal
               </button>
               <button
                 onClick={handleBulkAssign}
-                disabled={!bulkAssignee.id || processingIds.length > 0}
+                disabled={!bulkOwner || processingIds.length > 0}
                 className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
               >
                 {processingIds.length > 0 ? 'İşleniyor...' : 'Uygula'}
