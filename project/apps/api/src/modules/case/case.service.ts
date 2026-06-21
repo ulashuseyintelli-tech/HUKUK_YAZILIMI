@@ -1171,7 +1171,8 @@ export class CaseService {
     // persist edilir. Frontend zorunlu "Sorumlu" alanını gönderiyor, DTO kabul ediyordu, ama
     // create() data bloğu YAZMIYORDU → wizard'dan açılan her dosyada sessizce null kalıyordu (veri
     // kaybı). Tenant guard: batchUpdate ile AYNI kural — verilen User bu tenant'a ait değilse 400
-    // (cross-tenant/geçersiz id sessizce yazılmaz). Boş/undefined → atama yok, kontrol gerekmez.
+    // (cross-tenant/geçersiz id sessizce yazılmaz). Boş/undefined → A2: write-site'ta oluşturan
+    // kullanıcıya (userId) düşer; tenant kontrolü yalnız dto-provided id için çalışır.
     // tx ÖNCESİ (fail-fast): geçersiz sorumlu personelde hiçbir taraf/dosya yaratılmaz.
     if (dto.sorumluPersonelId) {
       const personel = await this.prisma.user.findFirst({
@@ -1308,7 +1309,9 @@ export class CaseService {
             startDate: dto.startDate ? new Date(dto.startDate) : undefined,
             notes: dto.notes,
             // PR-1 (F1): operasyonel sorumlu / bildirim hedefi (User) — tx öncesi tenant-doğrulandı.
-            ...(dto.sorumluPersonelId && { sorumluPersonelId: dto.sorumluPersonelId }),
+            // A2: sorumlu boşsa oluşturan kullanıcıya (userId; yukarıda zorunlu) düşer — yeni dosya
+            // sahipsiz kalamaz. Eski null kayıtlar için backfill YOK (ayrı PR).
+            sorumluPersonelId: dto.sorumluPersonelId || userId,
           },
         });
 

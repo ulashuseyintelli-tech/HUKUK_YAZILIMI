@@ -297,11 +297,19 @@ export default function NewCasePage() {
   }, [currentStep, lawyers, creditors, caseDebtors, selectedStaff, dues, instruments, caseData, selectedCity, documentSource, showWizard, showDocumentSelector, draftLoaded, dataLoaded, authLoading, wizardTenantId, wizardUserId]);
 
   // Mevcut verileri yükle - draftLoaded olduktan sonra
-  useEffect(() => { 
+  useEffect(() => {
     if (draftLoaded) {
-      loadExistingData(); 
+      loadExistingData();
     }
   }, [draftLoaded]);
+
+  // A2: Dosya Sorumlusu varsayılanı = oturum açan kullanıcı. Draft uygulandıktan (draftLoaded) SONRA
+  // çalışır ve YALNIZ alan boşsa doldurur → kayıtlı draft / elle seçim ezilmez (yeni dosya sahipsiz kalmasın).
+  useEffect(() => {
+    if (draftLoaded && user?.id) {
+      setCaseData(prev => prev.sorumluPersonelId ? prev : { ...prev, sorumluPersonelId: user.id });
+    }
+  }, [draftLoaded, user?.id]);
   
   // Varsayılan il ayarını uygula
   useEffect(() => {
@@ -931,6 +939,7 @@ export default function NewCasePage() {
     // Pre-submit validasyon
     const validation = validateCaseCreation({
       takipTuruId: caseData.takipTuruId,
+      sorumluPersonelId: caseData.sorumluPersonelId,
       mahiyetKodu: caseData.mahiyetKodu,
       lawyers: lawyers.filter(l => l.name && l.surname),
       creditors: creditors.filter(c => c.name),

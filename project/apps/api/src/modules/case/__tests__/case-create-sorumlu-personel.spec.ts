@@ -6,6 +6,9 @@
  * Fix: tx ÖNCESİ tenant-doğrulamalı persist (batchUpdate ile AYNI kural; cross-tenant/geçersiz User
  * → 400). Mevcut null kayıtlar dokunulmaz (backfill yok); update() kapsam dışı.
  *
+ * A2: sorumluPersonelId boş gelirse oluşturan kullanıcıya (userId) düşer — yeni dosyalar sahipsiz
+ * kalmaz. Backfill (eski null kayıtlar) HÂLÂ kapsam dışı; ayrı PR.
+ *
  * Test deseni (4c spec'leriyle aynı): mock prisma + $transaction passthrough; pre-tx
  * party-resolve/subcategory metodları no-op override. `case.create` bir sentinel fırlatır → create()'in
  * tx-sonrası ~300 satırını mock'lamadan yazılan `data`yı yakalarız (catch non-P2002 → re-throw eder).
@@ -76,13 +79,13 @@ describe('PR-1 (F1) CaseService.create() — sorumluPersonelId persist + tenant 
     );
   });
 
-  it('sorumluPersonelId yoksa → guard atlanır (user kontrolü YOK; data alanı yazılmaz)', async () => {
+  it('sorumluPersonelId yoksa → A2: oluşturan kullanıcıya (userId) düşer; tenant guard atlanır', async () => {
     const { service, userFindFirst, caseCreate } = setup();
 
     await expect(service.create('tenant-1', {} as any, 'user-1')).rejects.toThrow(STOP);
 
-    expect(userFindFirst).not.toHaveBeenCalled();
+    expect(userFindFirst).not.toHaveBeenCalled(); // dto boş → cross-tenant kontrolü çalışmaz
     const data = caseCreate.mock.calls[0][0].data;
-    expect(data.sorumluPersonelId).toBeUndefined(); // koşullu spread → alan hiç yazılmaz
+    expect(data.sorumluPersonelId).toBe('user-1'); // A2 fallback: dto.sorumluPersonelId || userId
   });
 });
