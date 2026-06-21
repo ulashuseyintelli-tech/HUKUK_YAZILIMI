@@ -136,6 +136,10 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       legacyToplamBorcPaymentScope: 'GROSS_OF_COLLECTIONS',
       legacySonBorcPaymentScope: 'GROSS_OF_COLLECTIONS',
       legacyKalanBorcPaymentScope: 'NET_OF_COLLECTIONS',
+      legacyPaymentSource: 'COLLECTIONS_STATUS_NOT_CANCELLED',
+      canonicalPaymentSource: 'LEDGER_CONFIRMED_OR_CONFIRMED_COLLECTION_FALLBACK',
+      paymentSourceParity: 'NOT_PROVEN',
+      paymentSourceParityReason: 'LEGACY_COLLECTION_FILTER_DIFFERS_FROM_CANONICAL_PAYMENT_MAPPER',
       legacyToplamBorc: result.toplamBorc,
       legacySonBorc: result.sonBorc,
       legacyToplamTahsilat: result.toplamTahsilat,
@@ -187,6 +191,7 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
         deltaPercent: deltaPercent(round2(1234.56 - result.toplamBorc), result.toplamBorc),
         scopeStatus: 'CANDIDATE_ONLY',
         paymentScopeAlignment: 'MISMATCH_NET_TO_GROSS',
+        paymentSourceParity: 'NOT_PROVEN',
       },
       {
         legacyField: 'sonBorc',
@@ -200,6 +205,7 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
         ),
         scopeStatus: 'CANDIDATE_ONLY',
         paymentScopeAlignment: 'MISMATCH_NET_TO_GROSS',
+        paymentSourceParity: 'NOT_PROVEN',
       },
       {
         legacyField: 'kalanBorc',
@@ -213,6 +219,7 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
         ),
         scopeStatus: 'CANDIDATE_ONLY',
         paymentScopeAlignment: 'POSSIBLE_NET_TO_NET',
+        paymentSourceParity: 'NOT_PROVEN',
       },
     ]));
     expect((result.canonicalShadow as any).canonicalSonBorc).toBeUndefined();
@@ -243,6 +250,10 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       legacyToplamBorcPaymentScope: 'GROSS_OF_COLLECTIONS',
       legacySonBorcPaymentScope: 'GROSS_OF_COLLECTIONS',
       legacyKalanBorcPaymentScope: 'NET_OF_COLLECTIONS',
+      legacyPaymentSource: 'COLLECTIONS_STATUS_NOT_CANCELLED',
+      canonicalPaymentSource: 'LEDGER_CONFIRMED_OR_CONFIRMED_COLLECTION_FALLBACK',
+      paymentSourceParity: 'NOT_PROVEN',
+      paymentSourceParityReason: 'LEGACY_COLLECTION_FILTER_DIFFERS_FROM_CANONICAL_PAYMENT_MAPPER',
       legacyToplamBorc: result.toplamBorc,
       legacySonBorc: result.sonBorc,
       legacyToplamTahsilat: result.toplamTahsilat,
@@ -268,10 +279,12 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       expect.objectContaining({
         legacyField: 'toplamBorc',
         paymentScopeAlignment: 'MISMATCH_NET_TO_GROSS',
+        paymentSourceParity: 'NOT_PROVEN',
       }),
       expect.objectContaining({
         legacyField: 'kalanBorc',
         paymentScopeAlignment: 'POSSIBLE_NET_TO_NET',
+        paymentSourceParity: 'NOT_PROVEN',
       }),
     ]));
     expect((result.canonicalShadow as any).error).toBeUndefined();
@@ -299,6 +312,10 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       legacyToplamBorcPaymentScope: 'GROSS_OF_COLLECTIONS',
       legacySonBorcPaymentScope: 'GROSS_OF_COLLECTIONS',
       legacyKalanBorcPaymentScope: 'NET_OF_COLLECTIONS',
+      legacyPaymentSource: 'COLLECTIONS_STATUS_NOT_CANCELLED',
+      canonicalPaymentSource: 'LEDGER_CONFIRMED_OR_CONFIRMED_COLLECTION_FALLBACK',
+      paymentSourceParity: 'NOT_PROVEN',
+      paymentSourceParityReason: 'LEGACY_COLLECTION_FILTER_DIFFERS_FROM_CANONICAL_PAYMENT_MAPPER',
       legacyToplamBorc: result.toplamBorc,
       legacySonBorc: result.sonBorc,
       legacyToplamTahsilat: result.toplamTahsilat,
@@ -324,10 +341,12 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       expect.objectContaining({
         legacyField: 'sonBorc',
         paymentScopeAlignment: 'MISMATCH_NET_TO_GROSS',
+        paymentSourceParity: 'NOT_PROVEN',
       }),
       expect.objectContaining({
         legacyField: 'kalanBorc',
         paymentScopeAlignment: 'POSSIBLE_NET_TO_NET',
+        paymentSourceParity: 'NOT_PROVEN',
       }),
     ]));
   });
@@ -369,6 +388,7 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       deltaPercent: null,
       scopeStatus: 'CANDIDATE_ONLY',
       paymentScopeAlignment: 'MISMATCH_NET_TO_GROSS',
+      paymentSourceParity: 'NOT_PROVEN',
     });
     expect(shadow.scopeComparisonMatrix).toContainEqual({
       legacyField: 'kalanBorc',
@@ -379,6 +399,7 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       deltaPercent: null,
       scopeStatus: 'CANDIDATE_ONLY',
       paymentScopeAlignment: 'POSSIBLE_NET_TO_NET',
+      paymentSourceParity: 'NOT_PROVEN',
     });
     expect(shadow.currencyResults[0]).toMatchObject({
       currency: 'TRY',
@@ -437,10 +458,12 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       expect.objectContaining({
         legacyField: 'toplamBorc',
         paymentScopeAlignment: 'MISMATCH_NET_TO_GROSS',
+        paymentSourceParity: 'NOT_PROVEN',
       }),
       expect.objectContaining({
         legacyField: 'kalanBorc',
         paymentScopeAlignment: 'POSSIBLE_NET_TO_NET',
+        paymentSourceParity: 'NOT_PROVEN',
       }),
     ]));
     expect(shadow.currencyResults[0]).toMatchObject({
