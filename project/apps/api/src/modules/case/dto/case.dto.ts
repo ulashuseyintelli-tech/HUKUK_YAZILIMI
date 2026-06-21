@@ -335,6 +335,16 @@ export enum OcrInstrumentInputType {
   DIGER = "DIGER",
 }
 
+/**
+ * PR-2b-1: enstrüman kaynağı (provenance). createCase per-source gate'i için:
+ * OCR → OCR_MULTI_INSTRUMENT · MANUAL → MANUAL_CASE_INSTRUMENTS (bağımsız flag'ler).
+ * Yokluğunda = OCR (geri uyum; mevcut OCR payload'ları source taşımaz).
+ */
+export enum CaseInstrumentSource {
+  OCR = "OCR",
+  MANUAL = "MANUAL",
+}
+
 export class CaseInstrumentInputDto {
   @IsEnum(OcrInstrumentInputType)
   type: OcrInstrumentInputType;
@@ -370,6 +380,13 @@ export class CaseInstrumentInputDto {
   @IsString()
   @IsOptional()
   payeeName?: string;
+
+  // PR-2b-1: enstrüman kaynağı (provenance). Yokluğunda = OCR (geri uyum). Backend per-source
+  // gate: OCR → OCR_MULTI_INSTRUMENT, MANUAL → MANUAL_CASE_INSTRUMENTS. Transient gate metadata
+  // (CaseInstrument şemasına yazılmaz; yalnız createCase işleme kapısını seçer).
+  @IsEnum(CaseInstrumentSource)
+  @IsOptional()
+  source?: CaseInstrumentSource;
 }
 
 // ASSIGN-2a: yeni takipte seçilen personel girişi. staffMemberId zorunlu; roleOnCase opsiyonel
