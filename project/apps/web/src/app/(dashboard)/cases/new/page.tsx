@@ -139,6 +139,94 @@ interface DueItem {
   interestStartDate?: string;
   interestEndDate?: string;
 }
+
+// ── PR-2a (CLAIM-ITEM-WIZARD-2a): çok-kalemli alacak girişi ──────────────────
+// claimDraftItems[] = sihirbazda kullanıcının yönettiği alacak kalemleri listesi.
+// `raw` = ProfessionalClaimItemForm'un onItemsChange ile verdiği kalem (AlacakKalemi
+// + ilamYanAlacaklar + hesapOzeti). dues[] bu listeden buildDuesFromClaimItem köprüsüyle
+// türetilir; createCase sözleşmesi (dues[]) DEĞİŞMEZ. Kambiyo/instruments[] PR-2a'da DOKUNULMAZ.
+interface ClaimDraftItem {
+  id: string;
+  raw: any;
+}
+
+function genClaimDraftItemId(): string {
+  return `cdi_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function claimItemKalemLabel(kalemTuru?: string): string {
+  switch (kalemTuru) {
+    case 'CEK': return 'Çek Bedeli';
+    case 'SENET': return 'Senet Bedeli';
+    case 'ILAM': return 'İlam Asıl Alacağı';
+    case 'FATURA': return 'Fatura Alacağı';
+    case 'KIRA': return 'Kira Alacağı';
+    case 'NAFAKA': return 'Nafaka Alacağı';
+    default: return 'Asıl Alacak';
+  }
+}
+
+// Tek bir alacak kalemini (form çıktısı) DueItem[]'a çevirir — MEVCUT KÖPRÜ.
+// (Eski onItemsChange mantığının BİREBİR aynısı; tek-kalem → çok-kalem refactor'unda
+// tekrar kullanılabilir saf fonksiyona çıkarıldı.) Çek kimliği persist EDİLMEZ (PR-2a kapsamı:
+// yalnız ibrazTarihi → interestStartDate, eskisiyle aynı). startDate = caseData.startDate.
+function buildDuesFromClaimItem(item: any, startDate: string): DueItem[] {
+  const newDues: DueItem[] = [];
+  if (!item) return newDues;
+  const kalemTuru = item.kalemTuru as string;
+  const anaKalemLabel = claimItemKalemLabel(kalemTuru);
+
+  // 1. Ana Alacak Kalemi
+  if (item.bakiyeTutar && item.bakiyeTutar > 0) {
+    newDues.push({
+      type: 'PRINCIPAL',
+      description: anaKalemLabel,
+      amount: item.bakiyeTutar.toString(),
+      dueDate: item.vadeTarihi || startDate,
+      interestType: item.takipOncesiFaiz || 'YASAL',
+      interestRate: 0,
+      interestAmount: 0,
+      interestStartDate: kalemTuru === 'CEK' && item.cekBilgileri?.ibrazTarihi
+        ? item.cekBilgileri.ibrazTarihi
+        : item.vadeTarihi,
+      interestEndDate: startDate,
+    });
+  }
+
+  // 2. İlamlı Takip Yan Alacakları
+  if (item.ilamYanAlacaklar && Array.isArray(item.ilamYanAlacaklar)) {
+    item.ilamYanAlacaklar.forEach((yan: { tur: string; tutar: number; aciklama: string }) => {
+      if (yan.tutar > 0) {
+        let yanDueType: DueItem['type'] = 'PRINCIPAL';
+        let yanLabel = yan.aciklama;
+        if (yan.tur === 'ILAM_YARGILAMA_GIDERI') {
+          yanDueType = 'EXPENSE';
+          yanLabel = 'Yargılama Giderleri';
+        } else if (yan.tur === 'ILAM_VEKALET_UCRETI') {
+          yanDueType = 'VEKALET_UCRETI';
+          yanLabel = 'Karşı Taraf Vekalet Ücreti';
+        } else if (yan.tur === 'ILAM_ISLEMIS_FAIZ') {
+          yanDueType = 'INTEREST';
+          yanLabel = 'İşlemiş Faiz (Dava-İlam Arası)';
+        }
+        newDues.push({
+          type: yanDueType,
+          description: yanLabel,
+          amount: yan.tutar.toString(),
+          dueDate: item.vadeTarihi || startDate,
+          interestType: yanDueType === 'INTEREST' ? undefined : 'YASAL',
+          interestRate: 0,
+          interestAmount: 0,
+          interestStartDate: item.vadeTarihi,
+          interestEndDate: startDate,
+        });
+      }
+    });
+  }
+
+  return newDues;
+}
+
 interface LookupItem { id: string; code: string; name: string; description?: string; color?: string; uyapCode?: string; sortOrder: number; }
 interface TakipTuruItem extends LookupItem { defaultMahiyetTipiId?: string; defaultBorcluTipiId?: string; }
 interface Lookups { takipTuru: TakipTuruItem[]; asama: LookupItem[]; risk: LookupItem[]; borcluTipi: LookupItem[]; durumEtiketi: LookupItem[]; mahiyetTipi: LookupItem[]; }
@@ -217,6 +305,11 @@ export default function NewCasePage() {
   const [caseDebtors, setCaseDebtors] = useState<CaseDebtor[]>([]); // Yeni format
   const [dues, setDues] = useState<DueItem[]>([]);
   const [instruments, setInstruments] = useState<CaseInstrumentPayload[]>([]); // PR-N4b: OCR kambiyo evrakları → createCase payload instruments[]
+  // PR-2a: çok-kalemli alacak girişi. claimDraftItems[] tek otorite; dues[] bundan türetilir.
+  const [claimDraftItems, setClaimDraftItems] = useState<ClaimDraftItem[]>([]);
+  const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null); // null = yeni kalem ekleme
+  const [claimEditorKey, setClaimEditorKey] = useState(0); // editör formunu reset/yükle için remount anahtarı
+  const [claimFormBuffer, setClaimFormBuffer] = useState<any | null>(null); // editördeki güncel (henüz eklenmemiş) kalem
   const [lookups, setLookups] = useState<Lookups>({ takipTuru: [], asama: [], risk: [], borcluTipi: [], durumEtiketi: [], mahiyetTipi: [] });
   const [lookupsLoadFailed, setLookupsLoadFailed] = useState(false); // PR-D: /lookups fetch hatası → açık uyarı banner'ı (boş veriden ayrı)
   
@@ -264,6 +357,7 @@ export default function NewCasePage() {
       if (savedState.caseDebtors?.length > 0) setCaseDebtors(savedState.caseDebtors);
       if (savedState.selectedStaff?.length > 0) setSelectedStaff(savedState.selectedStaff);
       if (savedState.dues?.length > 0) setDues(savedState.dues);
+      if (savedState.claimDraftItems?.length > 0) setClaimDraftItems(savedState.claimDraftItems); // PR-2a: çok-kalemli liste
       if (savedState.instruments?.length > 0) setInstruments(savedState.instruments); // PR-N4b/S4: taslaktan kambiyo evrakları
       if (savedState.caseData) setCaseData(prev => ({ ...prev, ...savedState.caseData }));
       if (savedState.selectedCity) setSelectedCity(savedState.selectedCity);
@@ -288,6 +382,7 @@ export default function NewCasePage() {
       caseDebtors,
       selectedStaff,
       dues,
+      claimDraftItems,
       instruments,
       caseData,
       selectedCity,
@@ -297,7 +392,7 @@ export default function NewCasePage() {
     };
     
     saveCaseWizardDraftState(stateToSave, { tenantId: wizardTenantId, userId: wizardUserId });
-  }, [currentStep, lawyers, creditors, caseDebtors, selectedStaff, dues, instruments, caseData, selectedCity, documentSource, showWizard, showDocumentSelector, draftLoaded, dataLoaded, authLoading, wizardTenantId, wizardUserId]);
+  }, [currentStep, lawyers, creditors, caseDebtors, selectedStaff, dues, claimDraftItems, instruments, caseData, selectedCity, documentSource, showWizard, showDocumentSelector, draftLoaded, dataLoaded, authLoading, wizardTenantId, wizardUserId]);
 
   // Mevcut verileri yükle - draftLoaded olduktan sonra
   useEffect(() => {
@@ -826,6 +921,57 @@ export default function NewCasePage() {
   const addNewDue = () => setDues([...dues, { type: "PRINCIPAL", description: "", amount: "", dueDate: new Date().toISOString().split("T")[0] }]);
   const updateDue = (index: number, field: keyof DueItem, value: any) => { const updated = [...dues]; updated[index] = { ...updated[index], [field]: value }; setDues(updated); };
   const removeDue = (index: number) => setDues(dues.filter((_, i) => i !== index));
+
+  // ── PR-2a: çok-kalemli alacak girişi yönetimi ───────────────────────────────
+  // claimDraftItems[] tek otorite; her mutasyonda dues[] buildDuesFromClaimItem köprüsüyle
+  // yeniden türetilir (createCase yine dues[] gönderir). instruments[] DOKUNULMAZ.
+  const applyClaimDraftItems = (next: ClaimDraftItem[]) => {
+    setClaimDraftItems(next);
+    const allDues = next.flatMap(ci => buildDuesFromClaimItem(ci.raw, caseData.startDate));
+    setDues(allDues);
+    const principalTotal = allDues
+      .filter(d => d.type === 'PRINCIPAL')
+      .reduce((sum, d) => sum + parseFloat(d.amount || '0'), 0);
+    if (principalTotal > 0) setCaseData(prev => ({ ...prev, principalAmount: principalTotal }));
+  };
+  const resetClaimEditor = () => {
+    setEditingItemIndex(null);
+    setClaimFormBuffer(null);
+    setClaimEditorKey(k => k + 1);
+  };
+  const handleAddOrUpdateClaimItem = () => {
+    if (!claimFormBuffer || !(Number(claimFormBuffer.bakiyeTutar) > 0)) {
+      setError("Alacak kalemi eklemek için geçerli bir bakiye tutarı girin");
+      return;
+    }
+    setError("");
+    const entry: ClaimDraftItem = {
+      id: editingItemIndex !== null ? claimDraftItems[editingItemIndex].id : genClaimDraftItemId(),
+      raw: claimFormBuffer,
+    };
+    if (editingItemIndex !== null) {
+      const updated = [...claimDraftItems];
+      updated[editingItemIndex] = entry;
+      applyClaimDraftItems(updated);
+    } else {
+      applyClaimDraftItems([...claimDraftItems, entry]);
+    }
+    resetClaimEditor();
+  };
+  const handleEditClaimItem = (index: number) => {
+    setEditingItemIndex(index);
+    setClaimFormBuffer(claimDraftItems[index]?.raw ?? null);
+    setClaimEditorKey(k => k + 1); // formu initialItems ile yeniden mount et
+  };
+  const handleDeleteClaimItem = (index: number) => {
+    const updated = claimDraftItems.filter((_, i) => i !== index);
+    applyClaimDraftItems(updated);
+    if (editingItemIndex === index) {
+      resetClaimEditor();
+    } else if (editingItemIndex !== null && index < editingItemIndex) {
+      setEditingItemIndex(editingItemIndex - 1);
+    }
+  };
   const getTotalDues = () => dues.reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
 
   const nextStep = () => {
@@ -939,6 +1085,18 @@ export default function NewCasePage() {
     
     // Backend'e gönderilecek subCategory değerini hesapla
     const backendSubCategory = mapSubCategoryToBackend(caseData.subCategory);
+
+    // PR-2a: düzenleyicide bekleyen geçerli kalemi (henüz "Listeye Ekle" denmemiş) tek-kalem
+    // kolaylığı için listeye dahil et. dues[] daima claimDraftItems[]'tan türetilir; createCase
+    // sözleşmesi (dues[]) değişmez. Modal yolunda da listeye işlendiği için state taze kalır.
+    let effClaimItems = claimDraftItems;
+    if (editingItemIndex === null && claimFormBuffer && Number(claimFormBuffer.bakiyeTutar) > 0) {
+      effClaimItems = [...claimDraftItems, { id: genClaimDraftItemId(), raw: claimFormBuffer }];
+      applyClaimDraftItems(effClaimItems);
+      resetClaimEditor();
+    }
+    const effDues = effClaimItems.flatMap(ci => buildDuesFromClaimItem(ci.raw, caseData.startDate));
+
     // Pre-submit validasyon
     const validation = validateCaseCreation({
       takipTuruId: caseData.takipTuruId,
@@ -947,7 +1105,7 @@ export default function NewCasePage() {
       lawyers: lawyers.filter(l => l.name && l.surname),
       creditors: creditors.filter(c => c.name),
       caseDebtors: caseDebtors,
-      dues: dues.filter(d => d.amount && parseFloat(d.amount) > 0),
+      dues: effDues.filter(d => d.amount && parseFloat(d.amount) > 0),
       subCategory: backendSubCategory,
       currency: caseData.currency,
     });
@@ -970,12 +1128,12 @@ export default function NewCasePage() {
       setShowExpenseConfirmModal(true);
     } else {
       // Müvekkil yoksa direkt oluştur
-      doCreateCase(false);
+      doCreateCase(false, effDues);
     }
   };
 
   // Gerçek takip oluşturma fonksiyonu
-  const doCreateCase = async (sendExpenseEmail: boolean) => {
+  const doCreateCase = async (sendExpenseEmail: boolean, duesToSubmit?: DueItem[]) => {
     setShowExpenseConfirmModal(false);
     setLoading(true);
     
@@ -1044,7 +1202,7 @@ export default function NewCasePage() {
         })),
         // Eski format (geriye uyumluluk)
         debtors: debtors.filter(d => d.name).map(d => ({ id: d.isNew ? undefined : d.id, type: d.type, name: d.name, identityNo: d.identityNo, taxOffice: d.taxOffice, phone: d.phone, email: d.email, address: d.address })),
-        dues: buildCreateCaseDuesPayload(dues),
+        dues: buildCreateCaseDuesPayload(duesToSubmit ?? dues),
         instruments: instruments, // PR-N4b: kambiyo evrakları (CaseInstrumentInputDto[]); backend flag-gated (N3-wire)
       });
       // M2-G3c: create-then-PATCH — gerçek kişi Dosya Sorumlusu ataması (backend create'e DOKUNULMADAN).
@@ -1718,8 +1876,33 @@ export default function NewCasePage() {
         )}
 
         {currentStep === 5 && (
-          <div className="min-h-[600px]">
+          <div className="min-h-[600px] space-y-3">
+            {claimDraftItems.length > 0 && (
+              <div className="border rounded-lg p-3 bg-blue-50/40">
+                <h3 className="text-sm font-semibold mb-2">Eklenen Alacak Kalemleri ({claimDraftItems.length})</h3>
+                <ul className="space-y-1">
+                  {claimDraftItems.map((ci, i) => (
+                    <li
+                      key={ci.id}
+                      className={`flex items-center justify-between gap-2 rounded border px-2 py-1.5 text-sm bg-white ${editingItemIndex === i ? 'ring-2 ring-blue-400' : ''}`}
+                    >
+                      <span className="truncate">
+                        <span className="font-medium">{claimItemKalemLabel(ci.raw?.kalemTuru)}</span>
+                        {ci.raw?.bakiyeTutar ? ` — ${Number(ci.raw.bakiyeTutar).toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ${ci.raw?.currency || 'TRY'}` : ''}
+                        {ci.raw?.vadeTarihi ? ` · ${ci.raw.vadeTarihi}` : ''}
+                      </span>
+                      <span className="flex items-center gap-2 shrink-0">
+                        <button type="button" onClick={() => handleEditClaimItem(i)} className="text-xs text-blue-600 hover:underline">Düzenle</button>
+                        <button type="button" onClick={() => handleDeleteClaimItem(i)} className="text-xs text-red-500 hover:underline">Sil</button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             <ProfessionalClaimItemForm
+              key={claimEditorKey}
+              initialItems={editingItemIndex !== null && claimDraftItems[editingItemIndex] ? [claimDraftItems[editingItemIndex].raw] : undefined}
               caseType={selectedForm?.category}
               formCode={selectedForm?.code}
               currency={caseData.currency || "TRY"}
@@ -1755,88 +1938,26 @@ export default function NewCasePage() {
                   role: cd.role,
                 };
               })}
-              onItemsChange={(items) => {
-                // Alacak kalemlerini Due formatına dönüştür
-                // NOT: Sadece ANA KALEMLER Due tablosuna kaydedilir
-                // Hesap özetindeki türetilmiş kalemler (faiz, tazminat, harçlar) kaydedilmez
-                if (items.length > 0) {
-                  const item = items[0];
-                  const newDues: typeof dues = [];
-                  
-                  // 1. Ana Alacak Kalemi (Çek Bedeli, Senet Bedeli, İlam Asıl Alacağı vs.)
-                  const kalemTuru = item.kalemTuru as string;
-                  let anaKalemLabel = 'Asıl Alacak';
-                  
-                  if (kalemTuru === 'CEK') anaKalemLabel = 'Çek Bedeli';
-                  else if (kalemTuru === 'SENET') anaKalemLabel = 'Senet Bedeli';
-                  else if (kalemTuru === 'ILAM') anaKalemLabel = 'İlam Asıl Alacağı';
-                  else if (kalemTuru === 'FATURA') anaKalemLabel = 'Fatura Alacağı';
-                  else if (kalemTuru === 'KIRA') anaKalemLabel = 'Kira Alacağı';
-                  else if (kalemTuru === 'NAFAKA') anaKalemLabel = 'Nafaka Alacağı';
-                  
-                  // Ana alacak kalemi
-                  if (item.bakiyeTutar && item.bakiyeTutar > 0) {
-                    newDues.push({
-                      type: 'PRINCIPAL',
-                      description: anaKalemLabel,
-                      amount: item.bakiyeTutar.toString(),
-                      dueDate: item.vadeTarihi || caseData.startDate,
-                      interestType: item.takipOncesiFaiz || 'YASAL',
-                      interestRate: 0,
-                      interestAmount: 0,
-                      interestStartDate: kalemTuru === 'CEK' && item.cekBilgileri?.ibrazTarihi 
-                        ? item.cekBilgileri.ibrazTarihi 
-                        : item.vadeTarihi,
-                      interestEndDate: caseData.startDate,
-                    });
-                  }
-                  
-                  // 2. İlamlı Takip Yan Alacakları (bunlar ilamda hükmedilen kalemler, hesaplanan değil)
-                  if (item.ilamYanAlacaklar && Array.isArray(item.ilamYanAlacaklar)) {
-                    item.ilamYanAlacaklar.forEach((yan: { tur: string; tutar: number; aciklama: string }) => {
-                      if (yan.tutar > 0) {
-                        let yanDueType: DueItem['type'] = 'PRINCIPAL';
-                        let yanLabel = yan.aciklama;
-                        
-                        if (yan.tur === 'ILAM_YARGILAMA_GIDERI') {
-                          yanDueType = 'EXPENSE';
-                          yanLabel = 'Yargılama Giderleri';
-                        } else if (yan.tur === 'ILAM_VEKALET_UCRETI') {
-                          yanDueType = 'VEKALET_UCRETI';
-                          yanLabel = 'Karşı Taraf Vekalet Ücreti';
-                        } else if (yan.tur === 'ILAM_ISLEMIS_FAIZ') {
-                          yanDueType = 'INTEREST';
-                          yanLabel = 'İşlemiş Faiz (Dava-İlam Arası)';
-                        }
-                        
-                        newDues.push({
-                          type: yanDueType,
-                          description: yanLabel,
-                          amount: yan.tutar.toString(),
-                          dueDate: item.vadeTarihi || caseData.startDate,
-                          interestType: yanDueType === 'INTEREST' ? undefined : 'YASAL',
-                          interestRate: 0,
-                          interestAmount: 0,
-                          interestStartDate: item.vadeTarihi,
-                          interestEndDate: caseData.startDate,
-                        });
-                      }
-                    });
-                  }
-                  
-                  // principalAmount'u güncelle (asıl alacak toplamı)
-                  const principalTotal = newDues
-                    .filter(d => d.type === 'PRINCIPAL')
-                    .reduce((sum, d) => sum + parseFloat(d.amount || '0'), 0);
-                  
-                  if (principalTotal > 0) {
-                    setCaseData(prev => ({ ...prev, principalAmount: principalTotal }));
-                  }
-                  
-                  setDues(newDues);
-                }
-              }}
+              onItemsChange={(items) => setClaimFormBuffer(items[0] ?? null)}
             />
+            <div className="flex items-center justify-end gap-2">
+              {editingItemIndex !== null && (
+                <button
+                  type="button"
+                  onClick={resetClaimEditor}
+                  className="px-3 py-2 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50"
+                >
+                  Vazgeç
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={handleAddOrUpdateClaimItem}
+                className="inline-flex items-center gap-1 px-4 py-2 text-sm rounded-lg bg-primary text-white hover:bg-primary/90"
+              >
+                {editingItemIndex !== null ? 'Kalemi Güncelle' : '+ Kalemi Listeye Ekle'}
+              </button>
+            </div>
           </div>
         )}
 
