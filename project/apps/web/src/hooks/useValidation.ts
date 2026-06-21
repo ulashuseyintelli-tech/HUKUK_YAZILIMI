@@ -31,6 +31,7 @@ export function usePreSubmitValidation() {
    */
   const validateCaseCreation = useCallback((data: {
     takipTuruId?: string;
+    sorumluPersonelId?: string;
     mahiyetKodu?: string;
     lawyers?: any[];
     creditors?: any[];
@@ -48,6 +49,16 @@ export function usePreSubmitValidation() {
         code: "MISSING_CASE_TYPE",
         message: "Takip türü seçilmedi",
         field: "takipTuruId",
+        severity: "error",
+      });
+    }
+
+    // Dosya sorumlusu kontrolü (A2: zorunlu — dosya sahipsiz kalamaz)
+    if (!data.sorumluPersonelId) {
+      newErrors.push({
+        code: "MISSING_RESPONSIBLE",
+        message: "Dosya Sorumlusu seçilmedi",
+        field: "sorumluPersonelId",
         severity: "error",
       });
     }
