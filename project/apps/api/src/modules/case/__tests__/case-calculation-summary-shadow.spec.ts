@@ -43,10 +43,24 @@ function makeCanonical(overrides: Record<string, any> = {}) {
           },
         },
       ],
-      projections: { costs: {}, ancillaries: {} },
+      projections: {
+        costs: { HARC: 12.5 },
+        ancillaries: { VEKALET_UCRETI: 100 },
+      },
       diagnostics: { fatal: [], assembler: [], payments: [], currency: [], perCurrency: [] },
       ...overrides,
     }),
+  };
+}
+
+function legacyShadowInput(overrides: Record<string, any> = {}) {
+  return {
+    legacyToplamBorc: 1000,
+    legacySonBorc: 1000,
+    legacyToplamTahsilat: 0,
+    legacyKalanBorc: 1000,
+    legacyCurrency: 'TRY',
+    ...overrides,
   };
 }
 
@@ -80,28 +94,45 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
     expect(canonical.computeCaseBalance).toHaveBeenCalledWith('tenant-1', 'case-1', '2026-06-21');
     expect(result.asilAlacak).toBe(1000);
     expect(result.kalemTuru).toBe('PRINCIPAL');
+    expect(result.toplamTahsilat).toBe(0);
     expect(result.sonBorc).toBeCloseTo(11536.26, 2);
+    expect(result.kalanBorc).toBeCloseTo(result.sonBorc, 2);
 
     const expectedDelta = Math.round((1234.56 - result.sonBorc) * 100) / 100;
     const expectedDeltaPercent = Math.round((expectedDelta / result.sonBorc) * 10000) / 100;
+    const expectedProjectedTotalDue = Math.round((1234.56 + 12.5 + 100) * 100) / 100;
 
     expect(result.canonicalShadow).toMatchObject({
       status: 'OK',
       source: 'computeCaseBalance',
       asOfDate: '2026-06-21',
+      alignmentStatus: 'SCOPE_MISMATCH',
+      comparisonScope: 'RAW_LEGACY_SON_BORC_VS_CANONICAL_TOTAL_DUE',
+      legacyToplamBorc: result.toplamBorc,
       legacySonBorc: result.sonBorc,
+      legacyToplamTahsilat: result.toplamTahsilat,
+      legacyKalanBorc: result.kalanBorc,
       legacyCurrency: 'TRY',
+      canonicalTotalDue: 1234.56,
+      canonicalProjectionCostsTotal: 12.5,
+      canonicalProjectionAncillariesTotal: 100,
+      canonicalProjectedTotalDue: expectedProjectedTotalDue,
+      rawDelta: expectedDelta,
       engineSource: 'LEDGER',
       currencyResults: [
         {
           currency: 'TRY',
           totalDue: 1234.56,
+          canonicalTotalDue: 1234.56,
           totalInterest: 34.56,
           preEnforcementInterest: 0,
           postEnforcementInterest: 34.56,
           skippedReason: null,
           delta: expectedDelta,
           deltaPercent: expectedDeltaPercent,
+          rawDelta: expectedDelta,
+          alignmentStatus: 'SCOPE_MISMATCH',
+          comparisonScope: 'RAW_LEGACY_SON_BORC_VS_CANONICAL_TOTAL_DUE',
           matchStatus: 'MAJOR_DELTA',
         },
       ],
@@ -124,8 +155,18 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       status: 'ERROR',
       source: 'computeCaseBalance',
       asOfDate: '2026-06-21',
+      alignmentStatus: 'SCOPE_MISMATCH',
+      comparisonScope: 'RAW_LEGACY_SON_BORC_VS_CANONICAL_TOTAL_DUE',
+      legacyToplamBorc: result.toplamBorc,
       legacySonBorc: result.sonBorc,
+      legacyToplamTahsilat: result.toplamTahsilat,
+      legacyKalanBorc: result.kalanBorc,
       legacyCurrency: 'TRY',
+      canonicalTotalDue: null,
+      canonicalProjectionCostsTotal: null,
+      canonicalProjectionAncillariesTotal: null,
+      canonicalProjectedTotalDue: null,
+      rawDelta: null,
       matchStatus: 'ERROR',
       errorCode: 'CANONICAL_SHADOW_COMPUTE_FAILED',
     });
@@ -144,8 +185,18 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       status: 'UNAVAILABLE',
       source: 'computeCaseBalance',
       asOfDate: '2026-06-21',
+      alignmentStatus: 'SCOPE_MISMATCH',
+      comparisonScope: 'RAW_LEGACY_SON_BORC_VS_CANONICAL_TOTAL_DUE',
+      legacyToplamBorc: result.toplamBorc,
       legacySonBorc: result.sonBorc,
+      legacyToplamTahsilat: result.toplamTahsilat,
+      legacyKalanBorc: result.kalanBorc,
       legacyCurrency: 'TRY',
+      canonicalTotalDue: null,
+      canonicalProjectionCostsTotal: null,
+      canonicalProjectionAncillariesTotal: null,
+      canonicalProjectedTotalDue: null,
+      rawDelta: null,
       matchStatus: 'UNAVAILABLE',
       errorCode: 'CASE_BALANCE_SERVICE_UNAVAILABLE',
     });
@@ -160,15 +211,26 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       'tenant-1',
       'case-1',
       '2026-06-21',
-      { legacySonBorc: 0, legacyCurrency: 'TRY' },
+      legacyShadowInput({ legacySonBorc: 0, legacyKalanBorc: 0 }),
     );
 
     expect(canonical.computeCaseBalance).toHaveBeenCalledWith('tenant-1', 'case-1', '2026-06-21');
+    expect(shadow).toMatchObject({
+      alignmentStatus: 'SCOPE_MISMATCH',
+      comparisonScope: 'RAW_LEGACY_SON_BORC_VS_CANONICAL_TOTAL_DUE',
+      canonicalTotalDue: 1234.56,
+      canonicalProjectionCostsTotal: 12.5,
+      canonicalProjectionAncillariesTotal: 100,
+      canonicalProjectedTotalDue: 1347.06,
+      rawDelta: 1234.56,
+    });
     expect(shadow.currencyResults[0]).toMatchObject({
       currency: 'TRY',
       totalDue: 1234.56,
+      canonicalTotalDue: 1234.56,
       delta: 1234.56,
       deltaPercent: null,
+      rawDelta: 1234.56,
       matchStatus: 'LEGACY_ZERO',
     });
   });
@@ -194,14 +256,25 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       'tenant-1',
       'case-1',
       '2026-06-21',
-      { legacySonBorc: 1000, legacyCurrency: 'TRY' },
+      legacyShadowInput(),
     );
 
+    expect(shadow).toMatchObject({
+      canonicalTotalDue: null,
+      canonicalProjectionCostsTotal: 12.5,
+      canonicalProjectionAncillariesTotal: 100,
+      canonicalProjectedTotalDue: null,
+      rawDelta: null,
+    });
     expect(shadow.currencyResults[0]).toMatchObject({
       currency: 'USD',
       totalDue: 500,
+      canonicalTotalDue: 500,
       delta: null,
       deltaPercent: null,
+      rawDelta: null,
+      alignmentStatus: 'SCOPE_MISMATCH',
+      comparisonScope: 'RAW_LEGACY_SON_BORC_VS_CANONICAL_TOTAL_DUE',
       matchStatus: 'CURRENCY_MISMATCH',
     });
   });
