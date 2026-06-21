@@ -96,6 +96,36 @@ describe('claim-bucket-assembler (G4a)', () => {
       expect(res.buckets).toHaveLength(1);
       expect(res.excluded.interestItemIds.sort()).toEqual(['i1', 'i2', 'i3']);
     });
+
+    it('principal kendi faiz configine sahipse explicit INTEREST amount bucket veya double-count olmaz', () => {
+      const res = assembleClaimBuckets([
+        item({
+          id: 'p1',
+          itemType: 'PRINCIPAL',
+          amount: 1000,
+          interestType: 'SABIT',
+          interestRate: 48,
+          interestStartDate: '2025-01-01',
+        }),
+        item({
+          id: 'i1',
+          itemType: 'INTEREST',
+          amount: 500,
+          interestType: 'YASAL',
+          interestStartDate: '2024-01-01',
+        }),
+      ]);
+
+      expect(res.buckets).toHaveLength(1);
+      expect(res.buckets[0]).toMatchObject({
+        id: 'p1',
+        amount: 1000,
+        interestType: InterestTypeCode.COMMERCIAL_FIXED,
+        startDate: '2025-01-01',
+        fixedRate: 0.48,
+      });
+      expect(res.excluded.interestItemIds).toEqual(['i1']);
+    });
   });
 
   describe('Q4 costs/ancillaries ayrı projeksiyon (dağıtılmaz)', () => {
@@ -147,7 +177,13 @@ describe('claim-bucket-assembler (G4a)', () => {
         item({ id: 'i1', itemType: 'INTEREST', amount: 100, interestType: 'YASAL', interestStartDate: '2025-01-01' }),
       ]);
       expect(res.buckets).toHaveLength(1);
-      expect(res.buckets[0]).toMatchObject({ interestType: InterestTypeCode.LEGAL_3095, startDate: '2025-01-01' });
+      expect(res.buckets[0]).toMatchObject({
+        id: 'p1',
+        amount: 1000,
+        interestType: InterestTypeCode.LEGAL_3095,
+        startDate: '2025-01-01',
+      });
+      expect(res.excluded.interestItemIds).toEqual(['i1']);
     });
 
     it('çok principal + ayrı INTEREST config → AMBIGUOUS_INTEREST_CONFIG, bucket yok', () => {

@@ -61,8 +61,10 @@ function setup(opts: {
     collection: { findMany: jest.fn().mockResolvedValue(opts.collections ?? []) },
   };
   const rateProvider = { getRatesForPeriod: jest.fn().mockResolvedValue(opts.rates ?? []) };
-  const service = new CaseBalanceService(prisma as never, rateProvider as never, realEngine());
-  return { service, prisma, rateProvider };
+  const engine = realEngine();
+  const computeBalanceSpy = jest.spyOn(engine, 'computeBalance');
+  const service = new CaseBalanceService(prisma as never, rateProvider as never, engine);
+  return { service, prisma, rateProvider, computeBalanceSpy };
 }
 
 const principal = (p: Record<string, unknown> = {}) => ({
@@ -106,6 +108,39 @@ describe('CaseBalanceService (G4c-1)', () => {
     const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
     expect(rateProvider.getRatesForPeriod).not.toHaveBeenCalled(); // fixed → requirement yok
     expect(res.currencyResults[0].result).not.toBeNull();
+  });
+
+  it('principal faiz configli + explicit INTEREST amount → engine tek principal bucket alır; INTEREST amount totalDueya eklenmez', async () => {
+    const explicitInterest = {
+      id: 'i1',
+      itemType: 'INTEREST',
+      demandedAmount: 500,
+      amount: 500,
+      currency: 'TRY',
+      interestType: 'YASAL',
+      interestRate: null,
+      interestStartDate: new Date('2024-01-01'),
+      status: 'ACTIVE',
+      metadata: null,
+    };
+    const { service, computeBalanceSpy } = setup({
+      claimItems: [principal(), explicitInterest],
+      collections: [],
+      rates: legalRate(),
+    });
+
+    const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+
+    expect(computeBalanceSpy).toHaveBeenCalledTimes(1);
+    const request = computeBalanceSpy.mock.calls[0][0];
+    expect(request.claimBuckets).toHaveLength(1);
+    expect(request.claimBuckets[0]).toMatchObject({ id: 'p1', amount: 10000 });
+    expect(request.claimBuckets.find((bucket) => bucket.id === 'i1')).toBeUndefined();
+    expect(res.currencyResults[0].result).not.toBeNull();
+    expect(res.currencyResults[0].result!.totalDue).toBeCloseTo(
+      10000 + res.currencyResults[0].result!.totalInterest,
+      5,
+    );
   });
 
   it('çok-currency: USD payment-only → NO_BUCKETS skip + CURRENCY_MISMATCH', async () => {
