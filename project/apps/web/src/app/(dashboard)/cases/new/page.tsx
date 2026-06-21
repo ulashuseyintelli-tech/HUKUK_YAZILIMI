@@ -16,6 +16,7 @@ import { formMetadata, filterFormsByCategory } from "@/config/form-metadata";
 import { shouldShowLookupBanner, lookupBannerMessage, formToTakipTuruCode } from "./lookup-ui";
 import { FormWizard } from "@/components/case/FormWizard";
 import { CaseWizard } from "@/components/case/CaseWizard";
+import { ResponsibleCandidateSelect, buildAssignBody, type ResponsibleSelection } from "@/components/case/responsible-candidate-select";
 import { IlamsizWizard } from "@/components/case/IlamsizWizard";
 import { KambiyoWizard } from "@/components/case/KambiyoWizard";
 import { CategoryFilter } from "@/components/case/CategoryFilter";
@@ -227,6 +228,8 @@ export default function NewCasePage() {
   const [pendingSubmit, setPendingSubmit] = useState(false);
   const [checkingPoa, setCheckingPoa] = useState(false);
   const [users, setUsers] = useState<{ id: string; name: string; surname: string; role?: string; isActive?: boolean; }[]>([]);
+  // M2-G3c: Dosya Sorumlusu = gerçek kişi (Lawyer/StaffMember) seçimi. Zorunlu; create sonrası PATCH ile yazılır.
+  const [responsiblePerson, setResponsiblePerson] = useState<ResponsibleSelection | null>(null);
   const [draftLoaded, setDraftLoaded] = useState(false);
   const [dataLoaded, setDataLoaded] = useState(false);
 
@@ -939,7 +942,7 @@ export default function NewCasePage() {
     // Pre-submit validasyon
     const validation = validateCaseCreation({
       takipTuruId: caseData.takipTuruId,
-      sorumluPersonelId: caseData.sorumluPersonelId,
+      sorumluPersonelId: responsiblePerson?.id ?? "", // M2-G3c: zorunluluk artık gerçek kişi seçimine bağlı
       mahiyetKodu: caseData.mahiyetKodu,
       lawyers: lawyers.filter(l => l.name && l.surname),
       creditors: creditors.filter(c => c.name),
@@ -1044,9 +1047,28 @@ export default function NewCasePage() {
         dues: buildCreateCaseDuesPayload(dues),
         instruments: instruments, // PR-N4b: kambiyo evrakları (CaseInstrumentInputDto[]); backend flag-gated (N3-wire)
       });
+      // M2-G3c: create-then-PATCH — gerçek kişi Dosya Sorumlusu ataması (backend create'e DOKUNULMADAN).
+      // sorumluPersonelId zaten oturum açan kullanıcıya (yaratıcı) görünmez transition fallback olarak yazıldı.
+      let responsibleAssignFailed = false;
+      if (responsiblePerson) {
+        try {
+          await api.patch(
+            `/cases/${response.id}/responsible-person`,
+            buildAssignBody(responsiblePerson)
+          );
+        } catch {
+          responsibleAssignFailed = true;
+        }
+      }
       if (selectedForm) recordUsage(selectedForm.code);
       // Başarılı kayıt sonrası taslağı temizle
       clearCaseWizardDraftState({ tenantId: wizardTenantId, userId: wizardUserId });
+      // M2-G3c: POST başarılı ama PATCH başarısızsa — dosya OLUŞTU; yönlendirmeden ÖNCE açık uyarı ver.
+      if (responsibleAssignFailed && typeof window !== "undefined") {
+        window.alert(
+          'Dosya oluşturuldu ancak Dosya Sorumlusu (gerçek kişi) atanamadı.\nDosya detayında "Dosya Ekibi" bölümünden tekrar atayabilirsiniz.'
+        );
+      }
       // Yeni takip oluşturuldu - belgeler sekmesine yönlendir
       router.push(`/cases/${response.id}?tab=documents`);
     } catch (err: any) { setError(err.message || "Takip oluşturulurken bir hata oluştu"); } finally { setLoading(false); }
@@ -1365,7 +1387,8 @@ export default function NewCasePage() {
               <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
                 <div><label className="block text-xs font-medium mb-0.5">Takip Türü <span className="text-red-500">*</span></label><select name="takipTuruId" value={caseData.takipTuruId} onChange={(e) => handleTakipTuruChange(e.target.value)} className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary"><option value="">Seçiniz</option>{lookups.takipTuru.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
                 {/* A4 (Dosya Sorumlusu): dropdown yalnız aktif + VIEWER olmayan kullanıcıları gösterir; zaten atanmış değer korunur */}
-                <div><label className="block text-xs font-medium mb-0.5">Dosya Sorumlusu <span className="text-red-500">*</span></label><select name="sorumluPersonelId" value={caseData.sorumluPersonelId} onChange={handleCaseDataChange} className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary"><option value="">Seçiniz</option>{users.filter(u => (u.isActive !== false && u.role !== 'VIEWER') || u.id === caseData.sorumluPersonelId).map(user => <option key={user.id} value={user.id}>{user.name} {user.surname}</option>)}</select></div>
+                {/* M2-G3c: Dosya Sorumlusu = gerçek kişi (Lawyer/StaffMember) picker. User dropdown'unun yerine; zorunlu. */}
+                <div><label className="block text-xs font-medium mb-0.5">Dosya Sorumlusu <span className="text-red-500">*</span></label><ResponsibleCandidateSelect value={responsiblePerson} onChange={setResponsiblePerson} disabled={loading} /></div>
                 <div><label className="block text-xs font-medium mb-0.5">Aşama</label><select name="asamaId" value={caseData.asamaId} onChange={handleCaseDataChange} className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary"><option value="">Seçiniz</option>{lookups.asama.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
                 <div><label className="block text-xs font-medium mb-0.5">Borçlu Tipi</label><select name="borcluTipiId" value={caseData.borcluTipiId} onChange={handleCaseDataChange} className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary"><option value="">Seçiniz</option>{lookups.borcluTipi.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
                 <div><label className="block text-xs font-medium mb-0.5">Mahiyet Tipi</label><select name="mahiyetTipiId" value={caseData.mahiyetTipiId} onChange={(e) => { const selectedId = e.target.value; const selectedItem = lookups.mahiyetTipi.find(m => m.id === selectedId); setCaseData(prev => ({ ...prev, mahiyetTipiId: selectedId, mahiyetKodu: selectedItem?.code || '' })); }} className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary"><option value="">Seçiniz</option>{lookups.mahiyetTipi.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
