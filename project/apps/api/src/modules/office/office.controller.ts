@@ -191,6 +191,11 @@ export class OfficeController {
       opEmailEnabled?: boolean;
       opSmsEnabled?: boolean;
       opStaffTypes?: StaffType[];
+      // D-G5: dosya görevi (case-task) eskalasyon ayarları
+      escalationTeamLeadLawyerIds?: string[];
+      caseTaskOwnerDays?: number;
+      caseTaskTeamLeadDays?: number;
+      caseTaskManagerDays?: number;
     }
   ) {
     return this.officeService.updateEscalationSettings(tenantId, data);

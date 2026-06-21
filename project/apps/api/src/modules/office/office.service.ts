@@ -314,6 +314,11 @@ export class OfficeService {
       opEmailEnabled: office.opEmailEnabled,
       opSmsEnabled: office.opSmsEnabled,
       opStaffTypes: office.opStaffTypes, // L1 alıcı personel türleri
+      // D-G5: dosya görevi (case-task) owner-first eskalasyon ayarları (operasyonelden AYRI)
+      escalationTeamLeadLawyerIds: office.escalationTeamLeadLawyerIds,
+      caseTaskOwnerDays: office.caseTaskOwnerDays,
+      caseTaskTeamLeadDays: office.caseTaskTeamLeadDays,
+      caseTaskManagerDays: office.caseTaskManagerDays,
     };
   }
 
@@ -328,6 +333,11 @@ export class OfficeService {
       opEmailEnabled?: boolean;
       opSmsEnabled?: boolean;
       opStaffTypes?: StaffType[];
+      // D-G5: dosya görevi (case-task) eskalasyon ayarları
+      escalationTeamLeadLawyerIds?: string[];
+      caseTaskOwnerDays?: number;
+      caseTaskTeamLeadDays?: number;
+      caseTaskManagerDays?: number;
     }
   ) {
     const office = await this.getOrCreate(tenantId);
