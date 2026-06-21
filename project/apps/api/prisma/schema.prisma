@@ -978,6 +978,15 @@ model Case {
   sorumluPersonelId String?
   sorumluPersonel   User?   @relation("SorumluPersonel", fields: [sorumluPersonelId], references: [id])
 
+  // M2-G1: Dosya Sorumlusu = gerçek kişi (Lawyer XOR StaffMember).
+  // DB CHECK yalnız "both-set yasak" garantisi verir (ikisi de null = legacy/sahipsiz OLABİLİR);
+  // exactly-one zorunluluğu uygulama katmanında M2-G3'te gelir.
+  // sorumluPersonelId geçişte KORUNUR (dokunulmadı), otomatik backfill yok.
+  responsibleLawyerId String?
+  responsibleLawyer   Lawyer?      @relation("CaseResponsibleLawyer", fields: [responsibleLawyerId], references: [id])
+  responsibleStaffId  String?
+  responsibleStaff    StaffMember? @relation("CaseResponsibleStaff", fields: [responsibleStaffId], references: [id])
+
   // Ek Bilgi Alanları
   dahiliNot              String? // Müvekkile gitmez
   muvekkilNotu           String? // Raporlarda görünür
@@ -1100,6 +1109,8 @@ model Case {
   @@index([durumEtiketiId])
   @@index([mahiyetTipiId])
   @@index([sorumluPersonelId])
+  @@index([responsibleLawyerId])
+  @@index([responsibleStaffId])
   @@index([clientId])
 }
 
@@ -1878,6 +1889,7 @@ model Lawyer {
   caseLawyers      CaseLawyer[]
   poaLawyers       PoaLawyer[] // Avukatın dahil olduğu vekaletler
   powerOfAttorneys PowerOfAttorney[] // Eski vekalet modeli ilişkisi
+  responsibleForCases Case[] @relation("CaseResponsibleLawyer") // M2-G1: Dosya Sorumlusu olduğu davalar
 
   @@unique([userId])
   @@index([tenantId])
@@ -3107,6 +3119,7 @@ model StaffMember {
   user   User?   @relation("StaffMemberUser", fields: [userId], references: [id], onDelete: SetNull)
 
   caseAssignments CaseStaff[]
+  responsibleForCases Case[] @relation("CaseResponsibleStaff") // M2-G1: Dosya Sorumlusu olduğu davalar
 
   @@unique([userId])
   @@index([tenantId])
