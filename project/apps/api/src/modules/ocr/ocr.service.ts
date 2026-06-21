@@ -81,6 +81,8 @@ export interface DebtDocumentResult {
     dueDate?: string; // YYYY-MM-DD
     issueDate?: string; // Düzenleme tarihi
     documentNo?: string; // Fatura no, senet no, çek no vb.
+    kdvRate?: number; // FATURA: KDV oranı (%) — G1 saf extraction (G2'de Due/ClaimItem KDV'ye map)
+    kdvAmount?: number; // FATURA: KDV tutarı — G1 saf extraction
     description?: string;
   };
   
@@ -184,7 +186,7 @@ export function buildDebtResultFromInstruments(instruments: Instrument[]): DebtD
     addName(inst.drawerName, inst.drawerIdentityNo);
     for (const d of inst.debtorCandidates ?? []) addName(d);
   }
-  const parties = Array.from(idByName.entries()).map(([name, rawId]) => {
+  const debtorParties = Array.from(idByName.entries()).map(([name, rawId]) => {
     // Tip: geçerli VKN→COMPANY · TCKN→INDIVIDUAL · unvan eki→COMPANY · aksi→INDIVIDUAL (PR-1).
     const type = inferPartyType(name, rawId);
     // Kimlik no: tip-katı checksum (sanitizeOcrIdentityNo) — misread/uydurma DÜŞER, yalnız geçerli yayılır.
@@ -198,6 +200,29 @@ export function buildDebtResultFromInstruments(instruments: Instrument[]): DebtD
     };
   });
 
+  // FATURA (G1): alacaklı (satıcı) tarafı — role=ALACAKLI. Kambiyo'da creditorName BOŞ → hiç eklenmez (regresyon yok).
+  // debtor ile AYNI dedup/checksum mantığı; G1 saf extraction (müvekkil eşleştirme = F-5/G2, burada YAPILMAZ).
+  const creditorByName = new Map<string, string | undefined>();
+  const addCreditor = (name: string | undefined, identityNo?: string) => {
+    if (!name) return;
+    if (!creditorByName.has(name)) creditorByName.set(name, identityNo);
+    else if (identityNo && !creditorByName.get(name)) creditorByName.set(name, identityNo);
+  };
+  for (const inst of instruments) addCreditor(inst.creditorName, inst.creditorIdentityNo);
+  const creditorParties = Array.from(creditorByName.entries()).map(([name, rawId]) => {
+    const type = inferPartyType(name, rawId);
+    const identityNo = sanitizeOcrIdentityNo(rawId, type);
+    return {
+      name,
+      type,
+      role: "ALACAKLI" as const,
+      ...(identityNo ? { identityNo } : {}),
+      confidence: primary.confidence ?? 0,
+    };
+  });
+
+  const parties = [...debtorParties, ...creditorParties];
+
   const isKambiyo = primary.type === "CEK" || primary.type === "SENET" || primary.type === "POLICE";
   return {
     documentType: mapInstrumentTypeToDocumentType(primary.type),
@@ -208,6 +233,8 @@ export function buildDebtResultFromInstruments(instruments: Instrument[]): DebtD
       dueDate: primary.dueDate,
       issueDate: primary.issueDate,
       documentNo: primary.documentNo,
+      kdvRate: primary.kdvRate, // FATURA G1: KDV oranı (kambiyo'da undefined)
+      kdvAmount: primary.kdvAmount, // FATURA G1: KDV tutarı
     },
     bankInfo:
       primary.bankName || primary.iban

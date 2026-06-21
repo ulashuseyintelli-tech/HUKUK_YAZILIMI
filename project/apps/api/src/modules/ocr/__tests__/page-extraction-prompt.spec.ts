@@ -65,3 +65,17 @@ describe("PR-3 PAGE_EXTRACTION_PROMPT — keşideci kimlik no (drawerIdentityNo)
     expect(P).toContain("UYDURMA");
   });
 });
+
+describe("G1 PAGE_EXTRACTION_PROMPT — FATURA kuralı + alanlar mevcut", () => {
+  it("FATURA KURALI yazılı (alıcı=borçlu, satıcı=alacaklı)", () => {
+    expect(P).toContain("FATURA KURALI");
+    expect(P).toContain("ALICI");
+    expect(P).toContain("SATICI");
+  });
+  it("creditorName/creditorIdentityNo/kdvRate/kdvAmount JSON şemasında", () => {
+    expect(P).toContain("creditorName");
+    expect(P).toContain("creditorIdentityNo");
+    expect(P).toContain("kdvRate");
+    expect(P).toContain("kdvAmount");
+  });
+});

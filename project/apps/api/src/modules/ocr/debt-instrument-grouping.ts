@@ -76,6 +76,10 @@ function buildInstrument(
     drawerName: page.drawerName,
     drawerIdentityNo: page.drawerIdentityNo,
     debtorCandidates: page.debtorCandidates,
+    creditorName: page.creditorName,
+    creditorIdentityNo: page.creditorIdentityNo,
+    kdvRate: page.kdvRate,
+    kdvAmount: page.kdvAmount,
     confidence: page.confidence ?? 0,
     sourcePages: [page.pageIndex],
     needsReview,
@@ -99,6 +103,10 @@ function attach(
   inst.iban = inst.iban ?? page.iban;
   if (page.drawerName && !inst.drawerName) inst.drawerName = page.drawerName;
   if (page.drawerIdentityNo && !inst.drawerIdentityNo) inst.drawerIdentityNo = page.drawerIdentityNo;
+  if (page.creditorName && !inst.creditorName) inst.creditorName = page.creditorName;
+  if (page.creditorIdentityNo && !inst.creditorIdentityNo) inst.creditorIdentityNo = page.creditorIdentityNo;
+  if (page.kdvRate != null && inst.kdvRate == null) inst.kdvRate = page.kdvRate;
+  if (page.kdvAmount != null && inst.kdvAmount == null) inst.kdvAmount = page.kdvAmount;
   if (opts.lowerConfidence) {
     inst.groupConfidence = Math.min(inst.groupConfidence ?? 1, 0.55);
   }

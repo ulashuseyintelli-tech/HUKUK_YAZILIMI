@@ -138,6 +138,45 @@ describe('PR-2 buildDebtResultFromInstruments — party.identityNo (drawerIdenti
   });
 });
 
+describe('G1 FATURA buildDebtResultFromInstruments — alacaklı (ALACAKLI) party + KDV', () => {
+  it('creditorName + geçerli VKN → ALACAKLI party COMPANY + identityNo (+ borçlu/alıcı ayrı)', () => {
+    const r = buildDebtResultFromInstruments([
+      inst({ type: 'FATURA', documentNo: 'F-1', amount: 1200, creditorName: 'SATICI GIDA A.Ş.', creditorIdentityNo: '1234567890', drawerName: 'ALICI LTD. ŞTİ.', drawerIdentityNo: '1111111114', needsReview: false, sourcePages: [1] }),
+    ])!;
+    const alacakli = r.parties.find((p) => p.role === 'ALACAKLI')!;
+    expect(alacakli.name).toBe('SATICI GIDA A.Ş.');
+    expect(alacakli.type).toBe('COMPANY');
+    expect(alacakli.identityNo).toBe('1234567890');
+    expect(r.parties.find((p) => p.role === 'BORCLU' && p.name.includes('ALICI'))).toBeTruthy();
+  });
+
+  it('KDV oran/tutar debtInfo\'ya taşınır', () => {
+    const r = buildDebtResultFromInstruments([
+      inst({ type: 'FATURA', documentNo: 'F-1', amount: 1200, kdvRate: 20, kdvAmount: 200, needsReview: false, sourcePages: [1] }),
+    ])!;
+    expect(r.debtInfo.kdvRate).toBe(20);
+    expect(r.debtInfo.kdvAmount).toBe(200);
+  });
+
+  it('kambiyo (creditorName yok) → ALACAKLI party YOK + KDV yok (regresyon yok)', () => {
+    const r = buildDebtResultFromInstruments([
+      inst({ type: 'CEK', documentNo: '0265897', drawerName: 'GORKA A.Ş.', drawerIdentityNo: '1234567890', needsReview: false, sourcePages: [1] }),
+    ])!;
+    expect(r.parties.every((p) => p.role === 'BORCLU')).toBe(true);
+    expect(r.parties.some((p) => p.role === 'ALACAKLI')).toBe(false);
+    expect(r.debtInfo.kdvRate).toBeUndefined();
+  });
+
+  it('çöp creditor VKN → identityNo düşer (sanitize), tip isimden', () => {
+    const r = buildDebtResultFromInstruments([
+      inst({ type: 'FATURA', documentNo: 'F-1', creditorName: 'SATICI A.Ş.', creditorIdentityNo: '0000', needsReview: false, sourcePages: [1] }),
+    ])!;
+    const a = r.parties.find((p) => p.role === 'ALACAKLI')!;
+    expect(a.type).toBe('COMPANY'); // unvan eki
+    expect(a.identityNo).toBeUndefined();
+  });
+});
+
 describe('PR-2b-3 scanDebtDocumentMultiInstrument — e2e (mock segment + mock AI + gerçek grouping)', () => {
   it('flag açık + 4 page candidate → 2 instrument; debtInfo primary (docNo A)', async () => {
     const svc = buildSvc('true');
