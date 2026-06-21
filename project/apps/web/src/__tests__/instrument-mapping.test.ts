@@ -101,13 +101,20 @@ describe('PR-N4a instrumentToCaseInstrumentPayload — Instrument → CaseInstru
     });
   });
 
-  it('payeeName taşınmaz (OCR Instrument\'ta yok); opsiyoneller undefined kalır', () => {
+  it('C-PR: payeeName YOKSA undefined; opsiyoneller undefined kalır', () => {
     const p = instrumentToCaseInstrumentPayload(
       inst({ documentNo: 'CK-1', amount: 100, currency: 'TRY', issueDate: '2026-01-10' }),
     );
     expect(p.dueDate).toBeUndefined();
     expect(p.bankName).toBeUndefined();
-    expect('payeeName' in p).toBe(false);
+    expect(p.payeeName).toBeUndefined(); // C-PR: artık taşınır ama değer yoksa undefined
+  });
+
+  it('C-PR: payeeName VARSA payload\'a taşınır (lehtar OCR taslağı)', () => {
+    const p = instrumentToCaseInstrumentPayload(
+      inst({ documentNo: 'CK-1', amount: 100, currency: 'TRY', issueDate: '2026-01-10', payeeName: 'Müvekkil A.Ş.' }),
+    );
+    expect(p.payeeName).toBe('Müvekkil A.Ş.');
   });
 });
 
