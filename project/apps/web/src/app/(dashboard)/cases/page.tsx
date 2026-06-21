@@ -14,6 +14,7 @@ import { Badge } from "@hukuk/ui";
 import { api } from "@/lib/api";
 import { buildBulkAssignPayload } from "@/lib/bulk-assign";
 import { BulkDocumentGenerator } from "@/components/case";
+import { ResponsibleCandidateSelect, type ResponsibleSelection } from "@/components/case/responsible-candidate-select";
 import { MultiSelectDropdown, QuickFilterChip, ActiveFilterPill, QuickFilterHelpBanner, MissingBadge } from "@/components/ui";
 
 interface CaseItem {
@@ -785,6 +786,9 @@ export default function CasesPage() {
     ...defaultFilters,
     status: urlStatus ? [urlStatus] : [],
   });
+  // M2-G5d-1b: "Dosya Sorumlusu" filtresi gerçek kişi (server-side responsibleLawyerId/StaffId).
+  // Legacy client-side staffId[] (sorumluPersonel.id) filtresi kaldırıldı; staffId FilterState'te atıl bırakıldı.
+  const [ownerFilter, setOwnerFilter] = useState<ResponsibleSelection | null>(null);
 
   // URL'den gelen clientId için müvekkil adı
   const [urlClientName, setUrlClientName] = useState<string | null>(null);
@@ -1050,6 +1054,9 @@ export default function CasesPage() {
       if (filters.caseType.length > 0) params.type = filters.caseType.join(',');
       if (filters.includeArchived) params.includeArchived = true;
       if (filters.noOwner) params.noOwner = true; // SAHIPSIZ-DOSYALAR-G1b: server-side sahipsiz filtre
+      // M2-G5d-1b: gerçek kişi owner filtresi (server-side; G5a). Tipine göre KENDİ kolonu.
+      if (ownerFilter?.type === "LAWYER") params.responsibleLawyerId = ownerFilter.id;
+      else if (ownerFilter?.type === "STAFF") params.responsibleStaffId = ownerFilter.id;
       // URL'den gelen clientId varsa API'ye gönder
       if (urlClientId) params.clientId = urlClientId;
 
@@ -1089,7 +1096,7 @@ export default function CasesPage() {
 
   useEffect(() => {
     fetchCases();
-  }, [filters.status, filters.caseType, filters.includeArchived, filters.noOwner, urlClientId]);
+  }, [filters.status, filters.caseType, filters.includeArchived, filters.noOwner, ownerFilter, urlClientId]);
 
   const filteredCases = cases.filter((c) => {
     if (filters.search) {
@@ -1106,7 +1113,7 @@ export default function CasesPage() {
     if (filters.executionOfficeId.length > 0 && !filters.executionOfficeId.includes(c.executionOffice?.id || '')) return false;
     if (filters.clientId.length > 0 && !filters.clientId.includes(c.client?.id || '')) return false;
     if (filters.lawyerId.length > 0 && !c.lawyers?.some(l => filters.lawyerId.includes(l.lawyer.id))) return false;
-    if (filters.staffId.length > 0 && !filters.staffId.includes(c.sorumluPersonel?.id || '')) return false;
+    // M2-G5d-1b: "Dosya Sorumlusu" filtresi server-side'a taşındı (responsibleLawyerId/StaffId); client-side staffId filtresi kaldırıldı.
     
     // Risk filtresi
     if (filters.riskId.length > 0) {
@@ -1510,6 +1517,7 @@ export default function CasesPage() {
   const clearFilters = () => {
     setFilters(defaultFilters);
     setActiveQuickFilters([]);
+    setOwnerFilter(null);
   };
 
   const activeFilterCount = Object.entries(filters).filter(([key, value]) => {
@@ -2015,18 +2023,15 @@ export default function CasesPage() {
               searchPlaceholder="Avukat ara..."
             />
 
-            {/* Sorumlu Personel - MultiSelect */}
-            <MultiSelectDropdown
-              label="Dosya Sorumlusu"
-              options={staff.map((s: any) => ({ 
-                value: s.id, 
-                label: `${s.name} ${s.surname}` 
-              }))}
-              selected={filters.staffId}
-              onChange={(selected) => setFilters(prev => ({ ...prev, staffId: selected }))}
-              placeholder="Tümü"
-              searchPlaceholder="Personel ara..."
-            />
+            {/* M2-G5d-1b: "Dosya Sorumlusu" filtresi = gerçek kişi (server-side responsibleLawyerId/StaffId). */}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Dosya Sorumlusu</label>
+              <ResponsibleCandidateSelect
+                value={ownerFilter}
+                onChange={setOwnerFilter}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+              />
+            </div>
 
             {/* Risk - MultiSelect */}
             <MultiSelectDropdown
