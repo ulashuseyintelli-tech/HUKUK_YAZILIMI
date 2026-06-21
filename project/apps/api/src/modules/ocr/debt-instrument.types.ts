@@ -34,6 +34,10 @@ export interface Instrument {
   iban?: string;
   drawerName?: string; // keşideci / borçlu adayı (tek isim)
   debtorCandidates?: string[]; // çoklu borçlu adayı
+  // P4-1: arka-yüz ciro/kaşe isim adayları (SIRASIZ, ham). AYRI back-pass doldurur — front
+  // extraction'a DOKUNMAZ. holderName / zincir-sırası DEĞİL (onlar A1 türevi). Borçlu önerisine
+  // SENTEZLENMEZ; clientMatch (P4-2) bu listeyi seçili müvekkille eşleştirir.
+  endorsementNames?: string[];
   pageRange?: [number, number]; // enstrümanın PDF sayfa aralığı [from, to]
   confidence: number; // sayfa-extraction güveni (0-100)
 

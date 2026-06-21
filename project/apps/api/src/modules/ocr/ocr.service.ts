@@ -6,6 +6,7 @@ import { segmentDocumentIntoPages, PdfPageRenderer } from "./pdf-segmentation";
 import { PopplerPdfPageRenderer } from "./poppler-page-renderer";
 import { extractAllPageCandidates, PageAiExtractor, parseAiJson } from "./page-candidate-extractor";
 import { groupPageCandidatesIntoInstruments, pickPrimaryInstrument } from "./debt-instrument-grouping";
+import { applyEndorsementPass, EndorsementExtractor } from "./endorsement-extractor";
 import * as sharp from "sharp";
 import * as AdmZip from "adm-zip";
 import * as mammoth from "mammoth";
@@ -1928,6 +1929,7 @@ Sadece JSON döndür, başka açıklama ekleme.`
       segment?: typeof segmentDocumentIntoPages;
       renderer?: PdfPageRenderer;
       aiExtract?: PageAiExtractor;
+      endorsementExtract?: EndorsementExtractor;
     },
   ): Promise<DebtDocumentResult | null> {
     const segment = deps?.segment ?? segmentDocumentIntoPages;
@@ -1937,6 +1939,10 @@ Sadece JSON döndür, başka açıklama ekleme.`
     const seg = await segment({ buffer, mimeType, filename }, { renderer });
     const candidates = await extractAllPageCandidates(seg.pages, { aiExtract });
     const instruments = groupPageCandidatesIntoInstruments(candidates);
+    // P4-1 (A1-V1b): arka-yüz ciro/kaşe isim çıkarımı — AYRI pass (front extraction'a DOKUNMAZ;
+    // YALNIZ inst.endorsementNames yazar). Borçlu/Party YARATMAZ; clientMatch P4-2'de tüketir.
+    const endorsementExtract = deps?.endorsementExtract ?? this.buildEndorsementExtract();
+    await applyEndorsementPass(instruments, candidates, seg.pages, endorsementExtract);
     return buildDebtResultFromInstruments(instruments);
   }
 
@@ -1976,6 +1982,50 @@ Sadece JSON döndür, başka açıklama ekleme.`
       });
       const content = resp.choices?.[0]?.message?.content || "{}";
       return parseAiJson(content); // fence-fix: stripJsonFence + JSON.parse (üretim path'i; V2-A fence kaybını kapatır)
+    };
+  }
+
+  /**
+   * P4-1 (A1-V1b): servisin OpenAI client'ından arka-yüz ciro/kaşe İSİM çıkarıcısı üretir.
+   * buildPageAiExtract İKİZİ ama AYRI prompt (BACK_ENDORSEMENT_PROMPT pass'ten input.prompt ile gelir)
+   * ve AYRI çıktı ({endorsementNames}). gpt-4o vision + fence-fix (json_object + parseAiJson).
+   * front extraction'a DOKUNMAZ; yalnız endorsementNames üretir.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - scanDebtDocumentMultiInstrument() → applyEndorsementPass arka-yüz second-pass extractor'ı
+   */
+  private buildEndorsementExtract(): EndorsementExtractor {
+    const openai = this.openai;
+    return async (input) => {
+      if (!openai) throw new Error("OpenAI yapılandırılmamış (endorsement extraction)");
+      let userContent: any;
+      if (input.imageRef) {
+        const b64 = fs.readFileSync(input.imageRef).toString("base64");
+        const parts: any[] = [];
+        if (input.context) parts.push({ type: "text", text: input.context });
+        parts.push({ type: "image_url", image_url: { url: `data:image/png;base64,${b64}` } });
+        userContent = parts;
+      } else {
+        userContent = `${input.context ? input.context + "\n\n" : ""}${input.text ?? ""}`;
+      }
+      const resp = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: input.prompt },
+          { role: "user", content: userContent },
+        ],
+        temperature: 0.1,
+        max_tokens: 600,
+        response_format: { type: "json_object" }, // fence-fix: ham JSON zorla
+      });
+      const content = resp.choices?.[0]?.message?.content || "{}";
+      const parsed = parseAiJson(content);
+      return {
+        endorsementNames: Array.isArray(parsed.endorsementNames)
+          ? parsed.endorsementNames.filter((x: any) => typeof x === "string")
+          : [],
+        evidence: typeof parsed.evidence === "string" ? parsed.evidence : undefined,
+      };
     };
   }
 
