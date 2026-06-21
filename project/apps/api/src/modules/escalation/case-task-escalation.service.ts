@@ -8,7 +8,7 @@ import {
   CaseTaskTier,
   CaseTaskEscalationConfig,
 } from "./case-task-escalation-logic";
-import { formatRemaining, formatTrDateTime, priorityTr } from "./operational-escalation.service";
+import { caseTaskEscalationSubject, buildCaseTaskEmailHtml, buildCaseTaskSmsText } from "./case-task-escalation-content";
 
 /**
  * D-G3b — Dosya görevi (case-linked LEGAL_WORKFLOW) owner-first eskalasyon motoru.
@@ -268,13 +268,7 @@ export class CaseTaskEscalationService {
       return { result: "SKIPPED", channels: [], emailRecipients: 0, smsRecipients: 0 };
     }
 
-    const fileNumber = task.case?.fileNumber || "-";
-    const link = `${(process.env.FRONTEND_URL || "http://localhost:3002").replace(/\/$/, "")}/cases/${task.caseId}`;
-    const dueStr = task.dueDate ? formatTrDateTime(task.dueDate) : "Belirtilmemiş";
-    const remainingStr = formatRemaining(task.dueDate, now);
-    const priorityStr = priorityTr(task.priority);
-    const nextStr = nextAt ? formatTrDateTime(nextAt) : "ileri tarihte";
-    const subject = `[Dosya Görevi] ${fileNumber} — ${task.title || "Görev"}`;
+    const subject = caseTaskEscalationSubject(task, tier);
 
     let anySent = false;
     let anyFailed = false;
@@ -286,17 +280,7 @@ export class CaseTaskEscalationService {
       channels.push("EMAIL");
       emailRecipients = recipients.emails.length;
       for (const r of recipients.emails) {
-        // D-G3b BASİT içerik (zengin şablon D-G4'te gelecek).
-        const html =
-          `Sayın ${r.name},<br><br>` +
-          `Aşağıdaki dosya göreviniz takibinizi bekliyor:<br><br>` +
-          `<b>Dosya:</b> ${fileNumber}<br>` +
-          `<b>Görev:</b> ${task.title || "-"}<br>` +
-          `<b>Son Tarih:</b> ${dueStr}<br>` +
-          `<b>Kalan Süre:</b> ${remainingStr}<br>` +
-          `<b>Öncelik:</b> ${priorityStr}<br>` +
-          `<b>Dosyaya Git:</b> <a href="${link}">${link}</a><br><br>` +
-          `Tamamlanmazsa ${nextStr} tarihinde bir üst kademeye bildirilecektir.`;
+        const html = buildCaseTaskEmailHtml({ recipientName: r.name, task, tier, now, nextAt });
         const r1 = await this.tenantNotifier.sendEmail(tenantId, r.email, subject, html);
         if (r1 === "SENT") anySent = true;
         else if (r1 === "FAILED") anyFailed = true;
@@ -306,7 +290,7 @@ export class CaseTaskEscalationService {
       channels.push("SMS");
       smsRecipients = recipients.phones.length;
       for (const r of recipients.phones) {
-        const msg = `Sayın ${r.name}, ${fileNumber} dosya görevi (${task.title || "görev"}) takip bekliyor. Kalan süre: ${remainingStr}.`;
+        const msg = buildCaseTaskSmsText({ recipientName: r.name, task, now });
         const r2 = await this.tenantNotifier.sendSms(tenantId, r.phone, msg);
         if (r2 === "SENT") anySent = true;
         else if (r2 === "FAILED") anyFailed = true;
