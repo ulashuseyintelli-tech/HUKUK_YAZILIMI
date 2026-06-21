@@ -1,7 +1,7 @@
 "use client";
 
 import { Info, ChevronDown, ChevronUp, Star } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { FormMetadata, SubFormMetadata } from "@/types/form-metadata";
 
 interface FormCardProps {
@@ -15,6 +15,13 @@ interface FormCardProps {
 export function FormCard({ form, isSelected, isRecommended, onSelect, onInfoClick }: FormCardProps) {
   const [showSubForms, setShowSubForms] = useState(isSelected);
   const hasSubForms = form.subForms && form.subForms.length > 0;
+
+  // PR-3 (edge 3a): Form dışarıdan SEÇİLİ hale gelince (ör. Sık Kullanılanlar / Son Kullanılanlar
+  // hızlı-seçim — bunlar subForm göstermez) alt-kırılımı OTOMATİK aç ki "Kambiyo" ölü-tık olmasın;
+  // kullanıcı açılan listeden çek/bono/poliçe seçer. Yalnız açar, asla kapatmaz.
+  useEffect(() => {
+    if (isSelected) setShowSubForms(true);
+  }, [isSelected]);
 
   const handleClick = () => {
     if (hasSubForms) {

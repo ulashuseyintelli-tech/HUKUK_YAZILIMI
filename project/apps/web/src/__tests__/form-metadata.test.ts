@@ -87,6 +87,11 @@ describe('Form Metadata Schema Completeness', () => {
     });
   });
 
+  it('PR-3: FORM_10 (Kambiyo) çek/bono/poliçe alt-formlarına sahip (manuel akış sub-breakdown)', () => {
+    const form10 = formMetadata.find((f) => f.code === 'FORM_10');
+    expect(form10?.subForms?.map((s) => s.code)).toEqual(['FORM_10_CEK', 'FORM_10_BONO', 'FORM_10_POLICE']);
+  });
+
   it('should have valid subForms structure when present', () => {
     formMetadata.forEach((form) => {
       if (form.subForms) {
