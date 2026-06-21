@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger, Inject, forwardRef, Optional } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 import { CreateCaseDto, UpdateCaseDto, CaseSubCategory, Currency, DueDto, DueType, InterestType, CaseInstrumentInputDto, CaseStaffInputDto } from "./dto/case.dto";
-import { Prisma, LegalCaseStatus, InterestType as PrismaInterestType } from "@prisma/client";
+import { Prisma, LegalCaseStatus, InterestType as PrismaInterestType, DocumentSourceType } from "@prisma/client";
 import { mapDueTypeToClaimItemType, buildClaimItemData } from "./due-to-claim-item.mapper";
 import {
   resolveCaseInstrumentType,
@@ -307,7 +307,7 @@ function classifyCanonicalShadowDelta(
   return "MAJOR_DELTA";
 }
 
-type DueForClaimItemSync = {
+export type DueForClaimItemSync = {
   id: string;
   type: string;
   description?: string | null;
@@ -320,6 +320,12 @@ type DueForClaimItemSync = {
   interestStartDate?: Date | string | null;
   interestEndDate?: Date | string | null;
   interestAmount?: number | null;
+  // FATURA (G2-wire) — belge/KDV alanları (sourceDocumentNo/hasKdv/kdvRate Due'da; sourceDocumentType/kdvAmount in-memory)
+  sourceDocumentNo?: string | null;
+  sourceDocumentType?: DocumentSourceType | null;
+  hasKdv?: boolean | null;
+  kdvRate?: unknown;
+  kdvAmount?: number | null;
 };
 
 function normalizeDueInterestRate(value: unknown): number | undefined {
@@ -336,6 +342,33 @@ function normalizeClaimItemInterestRate(value: unknown): number | null | undefin
 function serializeDueInterestDate(value?: Date | string | null): string | undefined {
   if (!value) return undefined;
   return value instanceof Date ? value.toISOString() : value;
+}
+
+/**
+ * FATURA (G2-wire) — DB Due'sundan ClaimItem köprüsü için DueDto kurar (SAF, test edilebilir).
+ * G2a mapper'ın (buildClaimItemData) okuduğu belge/KDV alanlarını dahil eder → DORMANT G2a CANLI olur.
+ *
+ * Çağrıldığı yerler:
+ * - CaseService.buildDueSyncClaimItemData() → POST /cases (dosya açılışı) + POST /cases/:id/dues (Due→ClaimItem sync)
+ */
+export function buildSyncDueDto(due: DueForClaimItemSync): DueDto {
+  return {
+    type: due.type as DueType,
+    description: due.description ?? undefined,
+    amount: Number(due.amount),
+    dueDate: due.dueDate instanceof Date ? due.dueDate.toISOString() : due.dueDate,
+    interestType: due.interestType ? (due.interestType as InterestType) : undefined,
+    interestRate: normalizeDueInterestRate(due.interestRate),
+    interestStartDate: serializeDueInterestDate(due.interestStartDate),
+    interestEndDate: serializeDueInterestDate(due.interestEndDate),
+    interestAmount: due.interestAmount ?? undefined,
+    // FATURA (G2-wire): belge/KDV → DueDto → buildClaimItemData ClaimItem.referenceNo/sourceDocumentType/metadata.kdv
+    sourceDocumentNo: due.sourceDocumentNo ?? undefined,
+    sourceDocumentType: due.sourceDocumentType ?? undefined,
+    hasKdv: due.hasKdv ?? undefined,
+    kdvRate: normalizeDueInterestRate(due.kdvRate),
+    kdvAmount: due.kdvAmount ?? undefined,
+  };
 }
 
 function normalizeClaimItemInterestDate(value?: Date | string | null): Date | null | undefined {
@@ -1165,18 +1198,7 @@ export class CaseService {
     const itemType = mapDueTypeToClaimItemType(due.type as DueType);
     if (itemType === null) return null;
 
-    const dueDto: DueDto = {
-      type: due.type as DueType,
-      description: due.description ?? undefined,
-      amount: Number(due.amount),
-      dueDate: due.dueDate instanceof Date ? due.dueDate.toISOString() : due.dueDate,
-      interestType: due.interestType ? (due.interestType as InterestType) : undefined,
-      interestRate: normalizeDueInterestRate(due.interestRate),
-      interestStartDate: serializeDueInterestDate(due.interestStartDate),
-      interestEndDate: serializeDueInterestDate(due.interestEndDate),
-      interestAmount: due.interestAmount ?? undefined,
-    };
-
+    const dueDto = buildSyncDueDto(due);
     const base = buildClaimItemData(tenantId, caseId, dueDto, itemType);
 
     return {
@@ -1694,6 +1716,10 @@ export class CaseService {
                 interestRate: dueDto.interestRate,
                 interestStartDate: dueDto.interestStartDate ? new Date(dueDto.interestStartDate) : undefined,
                 interestEndDate: dueDto.interestEndDate ? new Date(dueDto.interestEndDate) : undefined,
+                // FATURA (G2-wire): belge/KDV alanlarını Due'ya yaz (sourceDocumentType+kdvAmount Due alanı DEĞİL)
+                sourceDocumentNo: dueDto.sourceDocumentNo,
+                hasKdv: dueDto.hasKdv ?? false,
+                kdvRate: dueDto.kdvRate,
               },
             });
             createdDues.push({
@@ -1709,6 +1735,12 @@ export class CaseService {
               interestStartDate: serializeDueInterestDate(due.interestStartDate),
               interestEndDate: serializeDueInterestDate(due.interestEndDate),
               interestAmount: dueDto.interestAmount,
+              // FATURA (G2-wire): Due-alanları due'dan · sourceDocumentType+kdvAmount dueDto'dan (in-memory)
+              sourceDocumentNo: due.sourceDocumentNo ?? undefined,
+              sourceDocumentType: dueDto.sourceDocumentType,
+              hasKdv: due.hasKdv ?? undefined,
+              kdvRate: normalizeDueInterestRate(due.kdvRate),
+              kdvAmount: dueDto.kdvAmount,
             });
           }
 
