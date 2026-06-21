@@ -31,6 +31,10 @@ KURALLAR (kesin):
   back = bu sayfa ARKA/ciro gibi mi görünüyor (ciro/imza/aval, tutar yok).
   Bunlar bu sayfanın KENDİ görünümüdür; "şu belgenin arkasıdır" DEME.
 
+KİMLİK NO KURALI (keşideci/borçlu): Sayfada AÇIKÇA yazılıysa drawerIdentityNo'ya yaz —
+  VERGİ KİMLİK NO (VKN) = 10 hane (tüzel kişi / şirket) · TC KİMLİK NO (TCKN) = 11 hane (gerçek kişi).
+  Banka HESAP NO / IBAN / ÇEK SERİ NO / müşteri no / telefon DEĞİL. Görünmüyorsa BOŞ bırak — UYDURMA.
+
 TARİH KURALLARI (belge türüne göre — ÇOK ÖNEMLİ):
 - ÇEK: Çekte VADE YOKTUR (çek görüldüğünde ödenir). Çekin tek meşru tarihi KEŞİDE tarihidir.
   • issueDate = YALNIZ gerçek KEŞİDE tarihi. Çek için dueDate'i BOŞ/null bırak (çekte vade yok).
@@ -52,6 +56,7 @@ Yalnız bu sayfa için TEK JSON nesnesi döndür (dizi DEĞİL):
   "dueDate": "YYYY-MM-DD (bono/senet/poliçe: VADE · ÇEK: BOŞ/null — çekte vade yok, basım tarihi de buraya yazılmaz)",
   "bankName": "...",
   "drawerName": "keşideci/borçlu adı (bu sayfada görünüyorsa)",
+  "drawerIdentityNo": "keşidecinin VKN(10 hane) veya TCKN(11 hane) kimlik no'su — yalnız sayfada açıkça yazılıysa; IBAN/hesap/çek seri no DEĞİL; yoksa boş",
   "debtorCandidates": ["..."],
   "face": true,
   "back": false,

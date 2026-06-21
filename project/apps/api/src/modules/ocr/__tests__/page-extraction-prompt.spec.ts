@@ -49,3 +49,19 @@ describe("PAGE_EXTRACTION_PROMPT — çek tarih semantiği kuralları mevcut", (
     expect(P).toContain("VADE tarihi");
   });
 });
+
+describe("PR-3 PAGE_EXTRACTION_PROMPT — keşideci kimlik no (drawerIdentityNo) kuralı mevcut", () => {
+  it("drawerIdentityNo JSON şemasında alan olarak var", () => {
+    expect(P).toContain("drawerIdentityNo");
+  });
+  it("VKN(10 hane)/TCKN(11 hane) ayrımı yazılı", () => {
+    expect(P).toContain("VKN");
+    expect(P).toContain("TCKN");
+    expect(P).toContain("10 hane");
+    expect(P).toContain("11 hane");
+  });
+  it("IBAN/hesap/çek seri no karıştırma yasağı + UYDURMA yasağı (KVKK)", () => {
+    expect(P).toContain("IBAN");
+    expect(P).toContain("UYDURMA");
+  });
+});
