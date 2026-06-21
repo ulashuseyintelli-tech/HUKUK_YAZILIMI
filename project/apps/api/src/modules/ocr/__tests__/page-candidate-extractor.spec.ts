@@ -95,6 +95,25 @@ describe('PR-2b-2 extractPageCandidate — TEXT/IMAGE yolları', () => {
     expect(out.drawerIdentityNo).toBe('1234567890');
     expect(out.drawerName).toBe('GORKA A.Ş.');
   });
+
+  it('G1: fatura creditor/KDV alanları RawPageFields → PageCandidate map edilir', async () => {
+    const mock: PageAiExtractor = async () => ({
+      documentType: 'FATURA',
+      documentNo: 'F-1',
+      drawerName: 'ALICI LTD. ŞTİ.',
+      creditorName: 'SATICI GIDA A.Ş.',
+      creditorIdentityNo: '1234567890',
+      kdvRate: 20,
+      kdvAmount: 200,
+      face: true,
+      confidence: 90,
+    });
+    const out = await extractPageCandidate(textPage(1, 'fatura...'), { aiExtract: mock });
+    expect(out.creditorName).toBe('SATICI GIDA A.Ş.');
+    expect(out.creditorIdentityNo).toBe('1234567890');
+    expect(out.kdvRate).toBe(20);
+    expect(out.kdvAmount).toBe(200);
+  });
 });
 
 describe('PR-2b-2 — graceful (throw dışarı taşmaz)', () => {

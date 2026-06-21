@@ -35,6 +35,11 @@ export interface Instrument {
   drawerName?: string; // keşideci / borçlu adayı (tek isim)
   drawerIdentityNo?: string; // keşidecinin VKN(10)/TCKN(11) kimlik no'su (PR-2 passthrough; PR-3 AI doldurur)
   debtorCandidates?: string[]; // çoklu borçlu adayı
+  // FATURA (G1) — kambiyo'da BOŞ; faturada alacaklı(satıcı) tarafı + KDV (saf extraction)
+  creditorName?: string; // FATURA: alacaklı/satıcı adı
+  creditorIdentityNo?: string; // FATURA: alacaklının VKN/TCKN'si
+  kdvRate?: number; // FATURA: KDV oranı (% — ör. 20)
+  kdvAmount?: number; // FATURA: KDV tutarı
   // P4-1: arka-yüz ciro/kaşe isim adayları (SIRASIZ, ham). AYRI back-pass doldurur — front
   // extraction'a DOKUNMAZ. holderName / zincir-sırası DEĞİL (onlar A1 türevi). Borçlu önerisine
   // SENTEZLENMEZ; clientMatch (P4-2) bu listeyi seçili müvekkille eşleştirir.
@@ -69,6 +74,11 @@ export interface PageCandidate {
   drawerName?: string;
   drawerIdentityNo?: string; // keşidecinin kimlik no'su (VKN/TCKN) — bu sayfada görünüyorsa
   debtorCandidates?: string[];
+  // FATURA (G1) — kambiyo'da BOŞ; faturada alacaklı(satıcı) + KDV
+  creditorName?: string; // FATURA: alacaklı/satıcı adı
+  creditorIdentityNo?: string; // FATURA: alacaklının VKN/TCKN'si
+  kdvRate?: number; // FATURA: KDV oranı (%)
+  kdvAmount?: number; // FATURA: KDV tutarı
   // face/back: BU sayfanın KENDİ görünümü (yüz mü / arka mı). "şu belgenin arkasıdır"
   // gibi SAYFALAR-ARASI ilişki DEĞİL — o grouping motorunun işi (AI'ya yasak).
   face?: boolean; // bu sayfa bir belge YÜZÜ gibi görünüyor (tutar/no/banka var)

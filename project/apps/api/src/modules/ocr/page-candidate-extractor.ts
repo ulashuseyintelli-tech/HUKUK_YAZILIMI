@@ -46,6 +46,13 @@ TARİH KURALLARI (belge türüne göre — ÇOK ÖNEMLİ):
 - BONO/SENET/POLİÇE: issueDate = düzenleme tarihi; dueDate = VADE tarihi (mevcut anlam KORUNUR).
 - FATURA/DIGER: gördüğün tarihleri uygun alana yaz.
 
+FATURA KURALI (yalnız documentType=FATURA): Faturada İKİ taraf vardır —
+  • ALICI (müşteri) = BORÇLU → drawerName + drawerIdentityNo (VKN/TCKN)
+  • SATICI (düzenleyen) = ALACAKLI → creditorName + creditorIdentityNo (VKN)
+  Tutarlar: amount = GENEL TOPLAM (KDV dahil) · kdvRate = KDV oranı (% sayı, ör. 20) · kdvAmount = KDV tutarı.
+  Yalnız sayfada AÇIKÇA yazılanı al; net + KDV ≈ toplam tutmuyorsa KDV alanlarını BOŞ bırak (UYDURMA).
+  Çek/senet/poliçede creditorName/creditorIdentityNo/kdvRate/kdvAmount BOŞ.
+
 Yalnız bu sayfa için TEK JSON nesnesi döndür (dizi DEĞİL):
 {
   "documentType": "CEK|SENET|POLICE|FATURA|DIGER",
@@ -57,6 +64,10 @@ Yalnız bu sayfa için TEK JSON nesnesi döndür (dizi DEĞİL):
   "bankName": "...",
   "drawerName": "keşideci/borçlu adı (bu sayfada görünüyorsa)",
   "drawerIdentityNo": "keşidecinin VKN(10 hane) veya TCKN(11 hane) kimlik no'su — yalnız sayfada açıkça yazılıysa; IBAN/hesap/çek seri no DEĞİL; yoksa boş",
+  "creditorName": "FATURA: alacaklı/satıcı adı (çek/senet'te boş)",
+  "creditorIdentityNo": "FATURA: alacaklının VKN(10)/TCKN(11)'si — açıkça yazılıysa; yoksa boş",
+  "kdvRate": "FATURA: KDV oranı (% sayı, ör. 20) — yazılıysa; yoksa boş",
+  "kdvAmount": "FATURA: KDV tutarı (sayı) — yazılıysa; yoksa boş",
   "debtorCandidates": ["..."],
   "face": true,
   "back": false,
@@ -76,6 +87,10 @@ export interface RawPageFields {
   drawerName?: string;
   drawerIdentityNo?: string;
   debtorCandidates?: string[];
+  creditorName?: string; // FATURA: alacaklı/satıcı
+  creditorIdentityNo?: string; // FATURA: alacaklının VKN/TCKN'si
+  kdvRate?: number; // FATURA: KDV oranı (%)
+  kdvAmount?: number; // FATURA: KDV tutarı
   face?: boolean;
   back?: boolean;
   endorsementMarkers?: boolean;
@@ -112,6 +127,10 @@ function mapRawToCandidate(page: Page, raw: RawPageFields): PageCandidate {
     drawerName: raw.drawerName,
     drawerIdentityNo: raw.drawerIdentityNo,
     debtorCandidates: raw.debtorCandidates,
+    creditorName: raw.creditorName,
+    creditorIdentityNo: raw.creditorIdentityNo,
+    kdvRate: raw.kdvRate,
+    kdvAmount: raw.kdvAmount,
     face: raw.face,
     back: raw.back,
     endorsementMarkers: raw.endorsementMarkers,

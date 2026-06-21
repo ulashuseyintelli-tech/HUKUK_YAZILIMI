@@ -282,3 +282,16 @@ describe('PR-2 — drawerIdentityNo passthrough (buildInstrument + attach)', () 
     expect(out[0].drawerIdentityNo).toBe('1234567890'); // attach doldurdu
   });
 });
+
+describe('G1 — fatura creditor/KDV passthrough (buildInstrument)', () => {
+  it('fatura ön yüz creditorName/creditorIdentityNo/KDV → instrument\'a taşınır', () => {
+    const out = groupPageCandidatesIntoInstruments([
+      pc({ pageIndex: 0, documentType: 'FATURA', documentNo: 'F-1', amount: 1200, creditorName: 'SATICI A.Ş.', creditorIdentityNo: '1234567890', kdvRate: 20, kdvAmount: 200 }),
+    ]);
+    expect(out).toHaveLength(1);
+    expect(out[0].creditorName).toBe('SATICI A.Ş.');
+    expect(out[0].creditorIdentityNo).toBe('1234567890');
+    expect(out[0].kdvRate).toBe(20);
+    expect(out[0].kdvAmount).toBe(200);
+  });
+});
