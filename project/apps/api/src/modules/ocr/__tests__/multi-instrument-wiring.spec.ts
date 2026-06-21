@@ -67,6 +67,35 @@ describe('PR-2b-3 buildDebtResultFromInstruments — debtInfo=primary', () => {
   });
 });
 
+describe('BUG buildDebtResultFromInstruments — party.type drawerName sezgisinden (şirket → COMPANY)', () => {
+  it('şirket unvanı drawerName → party.type COMPANY (Gorka senaryosu)', () => {
+    const insts = [
+      inst({ documentNo: 'A', drawerName: 'GORKA KOZMETİK SANAYİ VE TİCARET ANONİM ŞİRKETİ', needsReview: false, sourcePages: [1] }),
+    ];
+    const r = buildDebtResultFromInstruments(insts)!;
+    const p = r.parties.find((x) => x.name.includes('GORKA'))!;
+    expect(p.type).toBe('COMPANY');
+  });
+
+  it('şahıs adı drawerName → party.type INDIVIDUAL (regresyon yok)', () => {
+    const insts = [
+      inst({ documentNo: 'A', drawerName: 'AHMET YILMAZ', needsReview: false, sourcePages: [1] }),
+    ];
+    const r = buildDebtResultFromInstruments(insts)!;
+    const p = r.parties.find((x) => x.name === 'AHMET YILMAZ')!;
+    expect(p.type).toBe('INDIVIDUAL');
+  });
+
+  it('debtorCandidates karışık (şirket + şahıs) → her biri kendi tipine', () => {
+    const insts = [
+      inst({ documentNo: 'A', debtorCandidates: ['ABC İNŞAAT LTD. ŞTİ.', 'MEHMET KAYA'], needsReview: false, sourcePages: [1] }),
+    ];
+    const r = buildDebtResultFromInstruments(insts)!;
+    expect(r.parties.find((x) => x.name.includes('ABC'))!.type).toBe('COMPANY');
+    expect(r.parties.find((x) => x.name === 'MEHMET KAYA')!.type).toBe('INDIVIDUAL');
+  });
+});
+
 describe('PR-2b-3 scanDebtDocumentMultiInstrument — e2e (mock segment + mock AI + gerçek grouping)', () => {
   it('flag açık + 4 page candidate → 2 instrument; debtInfo primary (docNo A)', async () => {
     const svc = buildSvc('true');

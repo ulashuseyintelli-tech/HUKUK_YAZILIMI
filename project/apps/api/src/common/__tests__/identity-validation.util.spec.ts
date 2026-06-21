@@ -1,7 +1,13 @@
 /**
  * BUG-1A — TCKN/VKN checksum doğrulama testleri (saf). Tüm örnekler SENTETİK (gerçek PII yok, KVKK).
  */
-import { isValidTckn, isValidVkn, sanitizeOcrIdentityNo } from '../identity-validation.util';
+import {
+  isValidTckn,
+  isValidVkn,
+  sanitizeOcrIdentityNo,
+  looksLikeCompanyName,
+  inferPartyType,
+} from '../identity-validation.util';
 
 describe('BUG-1A isValidTckn', () => {
   it('geçerli TCKN → true', () => {
@@ -69,5 +75,53 @@ describe('BUG-1A sanitizeOcrIdentityNo (tip-katı)', () => {
   it('boş/null → undefined', () => {
     expect(sanitizeOcrIdentityNo('', 'INDIVIDUAL')).toBeUndefined();
     expect(sanitizeOcrIdentityNo(null, 'COMPANY')).toBeUndefined();
+  });
+});
+
+describe('BUG looksLikeCompanyName — unvan eki sezgisi (diyakritik-duyarsız)', () => {
+  it('ANONİM ŞİRKETİ (diyakritikli) → true', () => {
+    expect(looksLikeCompanyName('GORKA KOZMETİK SANAYİ VE TİCARET ANONİM ŞİRKETİ')).toBe(true);
+  });
+  it('diyakritiksiz "ANONIM SIRKETI" (OCR katlaması) → true', () => {
+    expect(looksLikeCompanyName('GORKA KOZMETIK ANONIM SIRKETI')).toBe(true);
+  });
+  it('LTD. ŞTİ. / A.Ş. / AŞ / LİMİTED ŞİRKETİ → true', () => {
+    expect(looksLikeCompanyName('XYZ İNŞAAT LTD. ŞTİ.')).toBe(true);
+    expect(looksLikeCompanyName('ABC GIDA A.Ş.')).toBe(true);
+    expect(looksLikeCompanyName('ABC GIDA AŞ')).toBe(true);
+    expect(looksLikeCompanyName('DEF TEKSTİL LİMİTED ŞİRKETİ')).toBe(true);
+  });
+  it('gerçek şahıs adı → false (regresyon yok)', () => {
+    expect(looksLikeCompanyName('AHMET YILMAZ')).toBe(false);
+    expect(looksLikeCompanyName('Ayşe Kaya')).toBe(false);
+    expect(looksLikeCompanyName('Hasan Aslan')).toBe(false); // "ASLAN" → yanlış-pozitif DEĞİL
+    expect(looksLikeCompanyName('Başak Demir')).toBe(false); // "BAŞAK" → yanlış-pozitif DEĞİL
+  });
+  it('boş / null / undefined → false', () => {
+    expect(looksLikeCompanyName('')).toBe(false);
+    expect(looksLikeCompanyName(null)).toBe(false);
+    expect(looksLikeCompanyName(undefined)).toBe(false);
+  });
+});
+
+describe('BUG inferPartyType — kimlik no önceliği + isim sezgisi', () => {
+  it('geçerli VKN (10 hane) → COMPANY (isim ne olursa olsun)', () => {
+    expect(inferPartyType('Herhangi İsim', '1234567890')).toBe('COMPANY');
+    expect(inferPartyType('AHMET YILMAZ', '1234567890')).toBe('COMPANY'); // kimlik > isim
+  });
+  it('geçerli TCKN (11 hane) → INDIVIDUAL', () => {
+    expect(inferPartyType('Herhangi İsim', '10000000146')).toBe('INDIVIDUAL');
+  });
+  it('kimlik no yok + unvan eki → COMPANY', () => {
+    expect(inferPartyType('GORKA KOZMETİK SANAYİ VE TİCARET ANONİM ŞİRKETİ')).toBe('COMPANY');
+  });
+  it('kimlik no yok + şahıs adı → INDIVIDUAL (varsayılan, regresyon yok)', () => {
+    expect(inferPartyType('AHMET YILMAZ')).toBe('INDIVIDUAL');
+    expect(inferPartyType('AHMET YILMAZ', undefined)).toBe('INDIVIDUAL');
+    expect(inferPartyType('AHMET YILMAZ', null)).toBe('INDIVIDUAL');
+  });
+  it('geçersiz/eksik kimlik no → isim sezgisine düşer', () => {
+    expect(inferPartyType('ABC GIDA A.Ş.', '0000')).toBe('COMPANY');
+    expect(inferPartyType('AHMET YILMAZ', '0000')).toBe('INDIVIDUAL');
   });
 });

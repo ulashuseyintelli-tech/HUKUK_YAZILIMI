@@ -62,3 +62,50 @@ export function sanitizeOcrIdentityNo(
   if (type === "COMPANY") return isValidVkn(digits) ? digits : undefined;
   return identityNo;
 }
+
+/**
+ * BUG (OCR taraf-tipi) — Bir unvan/isim Türk tüzel-kişi unvan eki taşıyor mu? SAF, yan-etkisiz.
+ *
+ * Türkçe diyakritik-DUYARSIZ: OCR "ANONİM ŞİRKETİ"yi "ANONIM SIRKETI" olarak da okuyabilir →
+ * önce İ/Ş/Ç/Ğ/Ü/Ö ASCII'ye katlanır, sonra unvan ekleri aranır.
+ * Tüzel-kişi ekleri: ANONİM ŞİRKETİ / LİMİTED ŞİRKETİ / A.Ş. (AŞ) / LTD / ŞTİ.
+ *
+ * NOT: Bu fonksiyon BİLİNEN bir ismi SINIFLANDIRIR (.test). Ham OCR metninden şirket adı ÇIKARMA
+ * (ocr.service.ts legacy/POA path'lerindeki .match regex'i) AYRI amaçtır → bilerek paylaşılmaz.
+ *
+ * Çağrıldığı yerler:
+ * - inferPartyType() (bu dosya) → kimlik no yoksa isim sezgisi
+ */
+export function looksLikeCompanyName(name: string | null | undefined): boolean {
+  if (!name) return false;
+  const folded = String(name)
+    .toUpperCase()
+    .replace(/İ/g, "I")
+    .replace(/Ş/g, "S")
+    .replace(/Ç/g, "C")
+    .replace(/Ğ/g, "G")
+    .replace(/Ü/g, "U")
+    .replace(/Ö/g, "O");
+  return /(ANONIM\s*SIRKET|LIMITED\s*SIRKET|\bLTD\b|\bSTI\b|\bA\.?\s*S\.?\b(?!\w))/.test(folded);
+}
+
+/**
+ * BUG (OCR taraf-tipi) — Bir tarafın INDIVIDUAL/COMPANY tipini çıkarır (karar: ulas). SAF.
+ *   Öncelik: geçerli VKN(10) → COMPANY · geçerli TCKN(11) → INDIVIDUAL ·
+ *   unvan eki (looksLikeCompanyName) → COMPANY · aksi halde → INDIVIDUAL (sinyal yok = güvenli varsayılan).
+ *
+ * PUBLIC_INSTITUTION KAPSAM DIŞI (ayrı sinyal yok; mevcut davranışla aynı → regresyon yok).
+ *
+ * Çağrıldığı yerler:
+ * - buildDebtResultFromInstruments() (ocr.service.ts) → çoklu-enstrüman taraf sentezi
+ *   (bu path'te Instrument kimlik no taşımaz → isim sezgisine düşer)
+ */
+export function inferPartyType(
+  name: string | null | undefined,
+  identityNo?: string | null,
+): "INDIVIDUAL" | "COMPANY" {
+  if (isValidVkn(identityNo)) return "COMPANY";
+  if (isValidTckn(identityNo)) return "INDIVIDUAL";
+  if (looksLikeCompanyName(name)) return "COMPANY";
+  return "INDIVIDUAL";
+}
