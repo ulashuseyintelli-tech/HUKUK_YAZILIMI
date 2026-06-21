@@ -62,12 +62,21 @@ type CalculationSummaryCanonicalShadowAlignmentStatus =
 type CalculationSummaryCanonicalShadowComparisonScope =
   | "RAW_LEGACY_SON_BORC_VS_CANONICAL_TOTAL_DUE";
 
+type CalculationSummaryCanonicalShadowProjectionCurrencyScope =
+  | "UNSCOPED_CASE_CURRENCY_ASSUMED";
+
+type CalculationSummaryCanonicalShadowMatchStatusInterpretation =
+  | "RAW_DELTA_DIAGNOSTIC_ONLY";
+
 type CalculationSummaryCanonicalShadow = {
   status: "OK" | "ERROR" | "UNAVAILABLE";
   source: "computeCaseBalance";
   asOfDate: string;
   alignmentStatus: CalculationSummaryCanonicalShadowAlignmentStatus;
   comparisonScope: CalculationSummaryCanonicalShadowComparisonScope;
+  canonicalProjectionCurrencyScope: CalculationSummaryCanonicalShadowProjectionCurrencyScope;
+  canonicalProjectionCurrency: string;
+  matchStatusInterpretation: CalculationSummaryCanonicalShadowMatchStatusInterpretation;
   legacyToplamBorc: number;
   legacySonBorc: number;
   legacyToplamTahsilat: number;
@@ -93,6 +102,9 @@ type CalculationSummaryCanonicalShadow = {
     rawDelta: number | null;
     alignmentStatus: CalculationSummaryCanonicalShadowAlignmentStatus;
     comparisonScope: CalculationSummaryCanonicalShadowComparisonScope;
+    canonicalProjectionCurrencyScope: CalculationSummaryCanonicalShadowProjectionCurrencyScope;
+    canonicalProjectionCurrency: string;
+    matchStatusInterpretation: CalculationSummaryCanonicalShadowMatchStatusInterpretation;
     matchStatus: CalculationSummaryCanonicalShadowMatchStatus;
   }>;
   diagnostics?: CaseBalanceResult["diagnostics"];
@@ -103,6 +115,10 @@ const CANONICAL_SHADOW_MATCH_EPSILON = 0.01;
 const CANONICAL_SHADOW_MINOR_DELTA_PERCENT = 1;
 const CANONICAL_SHADOW_COMPARISON_SCOPE: CalculationSummaryCanonicalShadowComparisonScope =
   "RAW_LEGACY_SON_BORC_VS_CANONICAL_TOTAL_DUE";
+const CANONICAL_SHADOW_PROJECTION_CURRENCY_SCOPE: CalculationSummaryCanonicalShadowProjectionCurrencyScope =
+  "UNSCOPED_CASE_CURRENCY_ASSUMED";
+const CANONICAL_SHADOW_MATCH_STATUS_INTERPRETATION: CalculationSummaryCanonicalShadowMatchStatusInterpretation =
+  "RAW_DELTA_DIAGNOSTIC_ONLY";
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
@@ -3509,6 +3525,9 @@ export class CaseService {
         asOfDate: calculationDate,
         alignmentStatus: "SCOPE_MISMATCH",
         comparisonScope: CANONICAL_SHADOW_COMPARISON_SCOPE,
+        canonicalProjectionCurrencyScope: CANONICAL_SHADOW_PROJECTION_CURRENCY_SCOPE,
+        canonicalProjectionCurrency: legacy.legacyCurrency,
+        matchStatusInterpretation: CANONICAL_SHADOW_MATCH_STATUS_INTERPRETATION,
         legacyToplamBorc: legacy.legacyToplamBorc,
         legacySonBorc: legacy.legacySonBorc,
         legacyToplamTahsilat: legacy.legacyToplamTahsilat,
@@ -3542,6 +3561,9 @@ export class CaseService {
         asOfDate: balance.asOfDate,
         alignmentStatus: "SCOPE_MISMATCH",
         comparisonScope: CANONICAL_SHADOW_COMPARISON_SCOPE,
+        canonicalProjectionCurrencyScope: CANONICAL_SHADOW_PROJECTION_CURRENCY_SCOPE,
+        canonicalProjectionCurrency: legacy.legacyCurrency,
+        matchStatusInterpretation: CANONICAL_SHADOW_MATCH_STATUS_INTERPRETATION,
         legacyToplamBorc: legacy.legacyToplamBorc,
         legacySonBorc: legacy.legacySonBorc,
         legacyToplamTahsilat: legacy.legacyToplamTahsilat,
@@ -3575,6 +3597,9 @@ export class CaseService {
             rawDelta: delta,
             alignmentStatus: "SCOPE_MISMATCH",
             comparisonScope: CANONICAL_SHADOW_COMPARISON_SCOPE,
+            canonicalProjectionCurrencyScope: CANONICAL_SHADOW_PROJECTION_CURRENCY_SCOPE,
+            canonicalProjectionCurrency: legacy.legacyCurrency,
+            matchStatusInterpretation: CANONICAL_SHADOW_MATCH_STATUS_INTERPRETATION,
             matchStatus: classifyCanonicalShadowDelta(
               legacy.legacyCurrency,
               entry.currency,
@@ -3597,6 +3622,9 @@ export class CaseService {
         asOfDate: calculationDate,
         alignmentStatus: "SCOPE_MISMATCH",
         comparisonScope: CANONICAL_SHADOW_COMPARISON_SCOPE,
+        canonicalProjectionCurrencyScope: CANONICAL_SHADOW_PROJECTION_CURRENCY_SCOPE,
+        canonicalProjectionCurrency: legacy.legacyCurrency,
+        matchStatusInterpretation: CANONICAL_SHADOW_MATCH_STATUS_INTERPRETATION,
         legacyToplamBorc: legacy.legacyToplamBorc,
         legacySonBorc: legacy.legacySonBorc,
         legacyToplamTahsilat: legacy.legacyToplamTahsilat,
