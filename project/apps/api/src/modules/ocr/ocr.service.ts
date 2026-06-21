@@ -15,7 +15,7 @@ import * as path from "path";
 import * as os from "os";
 import OpenAI from "openai";
 import { ClaimEngineService } from "../claim-engine/claim-engine.service";
-import { sanitizeOcrIdentityNo } from "../../common/identity-validation.util";
+import { sanitizeOcrIdentityNo, inferPartyType } from "../../common/identity-validation.util";
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const pdfParse = require("pdf-parse");
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -179,7 +179,9 @@ export function buildDebtResultFromInstruments(instruments: Instrument[]): DebtD
   }
   const parties = Array.from(names).map((name) => ({
     name,
-    type: "INDIVIDUAL" as const,
+    // BUG (OCR taraf-tipi): tip artık isimden çıkarılır (unvan eki → COMPANY). Bu path'te Instrument
+    // kimlik no taşımaz → inferPartyType isim sezgisine düşer; ileride VKN taşınırsa otomatik güçlenir.
+    type: inferPartyType(name),
     role: "BORCLU" as const,
     confidence: primary.confidence ?? 0,
   }));
