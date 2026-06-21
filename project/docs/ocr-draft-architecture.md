@@ -2,6 +2,7 @@
 
 > **Durum:** Kararlar **ONAYLANDI** (Ulaş, 2026-06-20) · **Kod YOK · Şema YOK · Migration YOK · PR YOK** (uygulama ayrı plan+PR)
 > **Sahip:** Ulaş + Claude (oturum) · **Tarih:** 2026-06-20
+> **Güncelleme (2026-06-21):** §5.0 **A1-V1 kavram sözleşmesi** eklendi (P1) — `payeeName ≠ holderName ≠ clientMatch`. Hâlâ **kod/şema/UI YOK**.
 > **Tetikleyici:** BUG-2→BUG-1B "taranan borçlu" hattı (5 PR merged) + **canlı çek kanıtı**
 > (Gorka 2-çek, flag-on): `party.confidence=95` AMA insan gözüyle belirsizlik var → mimari dönüşüm.
 > **İlgili tasarımlar (REUSE — yeniden yazılmaz):** `case-instrument-canonical-design.md` ·
@@ -135,6 +136,57 @@ Dolayısıyla "A3 > A2" bir yarış değil: **A3 hedef, A2-min onun alt-yapısı
 
 ## 5. A1 — Kambiyo İlişki Motoru (veri-modeli yönü)
 
+### 5.0 Kavram Sözleşmesi (A1-V1 ÖN KOŞULU) — `payeeName` ≠ `holderName` ≠ `clientMatch`
+
+> **Durum:** P1 — kavram sözleşmesi · ✅ Onaylı (Ulaş, 2026-06-21) · **Kod / şema / UI / API / migration YOK.**
+> **Tetikleyici:** canlı Gorka çeki — second-pass `payeeName="Süreyya Avcıoğlan"` çıktı, **seçili müvekkil
+> Şükrü Akdoğan** ile karıştırıldı (#296 DRAFT/HOLD). Kök neden teknik değil **kavram karmaşası**: tek
+> "Lehtar/müvekkil" alanı üç AYRI şeyi eziyor. Bu ayrım yazıya dökülmeden kod aynı hatayı yeniden üretir.
+
+Bu üç kavram **AYRI** tutulur; biri diğerinin yerine yazılmaz:
+
+| Kavram | Tanım | Doğası | Kaynak | Bugün var mı? |
+|---|---|---|---|---|
+| `payeeName` | Çekin **ön yüzündeki orijinal LEHTAR** ("emrine / ödeyiniz" satırı) | **Belge gerçeği** | Ön yüz OCR | ✅ C-PR2 #296 çıkarır (DRAFT/HOLD) |
+| `holderName` | **Güncel HAMİL** = ciro zinciriyle son devralan | **Belge gerçeği** | **Arka yüz / ciro** OCR | ❌ **YAKALANMIYOR** (bugün yalnız `endorsementMarkers:boolean` — isim yok) |
+| `clientMatch` | **Seçili müvekkilin** bu belgede / zincirde **bulunması** | **Türev İLİŞKİ** (müvekkil ↔ belge) | Eşleştirme (sihirbaz müvekkili ↔ OCR isimleri) | ❌ A1-V1 getirecek |
+
+**Somut örnek (canlı Gorka çeki — DOĞRU çerçeve):**
+```
+drawerName (keşideci)     = GORKA KOZMETİK SAN. VE TİC. A.Ş.   → borçlu (ön yüz, yakalanıyor ✓)
+payeeName (ön-yüz lehtar) = Süreyya Avcıoğlan                  → belge gerçeği · müvekkil DEĞİL
+seçili müvekkil           = Şükrü Akdoğan                       → sihirbazda seçili · sistemin BELGEDE ARAMASI gereken
+holderName (güncel hamil) = Şükrü Akdoğan (ciro ile devralan, arka yüz)  → bugün OCR YAKALAMIYOR
+```
+⇒ `payeeName ≠ seçili müvekkil`. **"Lehtar = müvekkil" varsayımı her ciro'lu çekte yanılır.**
+
+**Sözleşme kuralları (gevşetilemez):**
+- **K1 —** `OCRPartyCandidate` **doğrudan `CaseDebtor` / `CaseParty` YARATMAZ.** (OCR taslak; insan onayı zorunlu — §1 invaryantı.)
+- **K2 —** `payeeName` **müvekkil DEĞİLDİR.** Ön-yüz orijinal lehtardır; müvekkil bağlamı taşımaz.
+- **K3 —** `holderName` arka yüzden / cirodan gelebilir **ama bugün yakalanmıyor** (yapısal boşluk; bkz. §3 boyut #2/#5). A1-V1b'ye kadar **null / bilinmiyor**.
+- **K4 —** `clientMatch` bir **read-model / türev ilişkidir**, otorite kayıt DEĞİL; yeniden hesaplanabilir (graf/seçim değişince yeniden koşar — G4 ile uyumlu).
+- **K5 —** `clientMatch` **`CaseParty` / `CaseDebtor` YARATMAZ.** Yalnız "müvekkil şurada bulundu" sinyali; kayıt insan onayıyla açılır.
+- **K6 —** **A1-V1a (ön-yüz eşleştirme)** Gorka / Şükrü vakasını **ÇÖZMEZ** — müvekkil ön yüzde lehtar değil, ciro ile arka yüzde. A1-V1a = düşük-riskli **temel** altyapı (çeke doğrudan müvekkile yazılmış basit hâl).
+- **K7 —** Gorka / Şükrü vakası **A1-V1b (arka-yüz / ciro isim çıkarımı)** gerektirir — **yeni OCR yeteneği** (page-candidate'a holder/endorsement isim alanı). **Asıl yatırım burada.**
+- **K8 —** **Müvekkil belgede bulunamadan borçlu önerisi KESİN HÜKÜM DEĞİLDİR** — yalnız **uyarı / `needsReview`**. Sert blok yok (OCR başarısızsa manuel zincir kurulabilir — §5 V2). Mevcut BUG-4 uyarı deseninin yanında.
+
+**`clientMatch` read-model şekli (kavram; şema/DDL DEĞİL):**
+```
+clientMatch = {
+  found:       boolean,
+  location:    "FRONT_PAYEE" | "FRONT_DRAWER" | "ENDORSEMENT" | "NOT_FOUND",
+  matchedField, confidence, evidence
+}
+```
+`location` neden kritik: müvekkil **FRONT_DRAWER**'da bulunursa (müvekkil = keşideci) hukuki yön **ters** olabilir
+→ ayrı uyarı. **ENDORSEMENT** = normal kambiyo alacaklısı (ciro ile devralan). **NOT_FOUND** → K8 (uyarı, hüküm değil).
+
+**Reuse (anti-tekrar — CLAUDE.md):** eşleştirme motoru sıfırdan yazılmaz. **BUG-4 `detectPayeeMismatch`**
+(`DebtorStep.tsx`) + `nameMatchKey` / `normalizePersonName` (Türkçe-duyarlı İ/ı, NFD) yeniden kullanılır;
+A1-V1 bunu **pozitif yöne** çevirir ("eşleşmiyorsa uyar" → "eşleşiyorsa `clientMatch.found=true`").
+Eklenecek **tek** yeni normalizasyon: **şirket-eki** (A.Ş. / LTD / ŞTİ) sadeleştirme. Benzerlik (levenshtein) yalnız
+**yumuşak** "olası eşleşme, onay gerek" sinyali — asla oto-kabul (Confidence ≠ Hukuki Güven, §3).
+
 ### Karar 1 (KİLİT) — A1'in ürünü = İLİŞKİ GRAFI; roller grafın TÜREVİ
 
 A1 **borçlu adayı tablosu** değil, **PartyRelationship grafı** üretir. Borçlu/sanık/şikayetçi adayı = graf
@@ -169,7 +221,7 @@ A1'in çözümleme ihtiyacı, generik Party lookup'tan **daha büyük** ama **ye
 - **GENERİK katman (REUSE — yeniden yazma):** `PartyMatch` / IR-0 aday üretimi (isim/kimlik/adres/telefon
   sinyalleri; exact→auto-link, fuzzy→manuel, çelişki→block). Bkz. `party-registry-design.md §4b` + IR-0.
 - **DOMAIN katmanı (YENİ, ince):** A1-P0 = **kambiyo-context ranker** — generik adayları KAŞE / CİRO-SIRASI /
-  MÜVEKKİL-LİSTESİ / ÖNCEKİ-DOSYA sinyalleriyle **sırala/daralt**. ("Süngersan" → "Süngersan Plastik A.Ş.")
+  MÜVEKKİL-LİSTESİ / ÖNCEKİ-DOSYA sinyalleriyle **sırala/daralt**. ("Akçelik" → "Akçelik İnşaat A.Ş.")
 - **Sinyal ağırlığı:** DETERMİNİSTİK-sahip-olunan (müvekkil listesi, önceki dosyalar) **>** BELİRSİZ-OCR
   (kaşe, ciro sırası). Belirsiz sinyalle **oto-seçim YOK** (garbage-in'i büyütme).
 - **Invaryant (IR-0):** aday üret, **OTO-MERGE ETME**. Bulanık şirket-adı eşleşmesi tehlikeli
@@ -245,6 +297,9 @@ OCR → Party Candidate → Party Resolution → Party Relationship Graph (insan
 | **Belge merkezi (L0)** | **yok** | yüksek değer, OCR-bağımsız |
 | **L3 güven/ambiguity yüzeyleme** | **yok** | mevcut grup-uyarı UI'ı genişletir |
 | A1-P0 çözümleme ağırlıkları | **veri** | A3 verisi + gerçek dosyalar |
+| **A1-V1 kavram sözleşmesi (P1)** | **yok** | bu doc §5.0 — kod yok |
+| **A1-V1a ön-yüz `clientMatch` (P2)** | **yok** | BUG-4 reuse; Gorka/Şükrü ÇÖZMEZ |
+| **A1-V1b arka-yüz holder çıkarımı (P4)** | **canlı-OCR** | yeni OCR alanı; Gorka/Şükrü'yü çözer; en büyük |
 | Taksonomi (EndorsedTo ötesi) | **Av.** | Party doc "ŞİMDİ kodlanmaz" |
 | V3 müracaat kuralı | **Av.** | hukuki |
 | V5 ceza pisti | **Av. + ikinci dosya tipi** | yeni case type |
@@ -289,6 +344,7 @@ OCR → Party Candidate → Party Resolution → Party Relationship Graph (insan
 | BUG-X tip-farkındalı tarih (çek=keşide, vade yok) | ✅ Onaylı (Ulaş, 2026-06-20) |
 | Belge merkezi (L0) önceliği | ✅ Onaylı (Ulaş, 2026-06-20) |
 | Gate sırası (A2/A3 → BUG-X → belge → L3) | ✅ Onaylı (Ulaş, 2026-06-20) |
+| **A1-V1 kavram sözleşmesi: `payeeName` ≠ `holderName` ≠ `clientMatch` (P1, §5.0)** | ✅ Onaylı (Ulaş, 2026-06-21) |
 
 **Sonraki adım (Ulaş kararı, 2026-06-20):** İlk kod işi = **A2-min köken + A3 ölçüm** — **BUG-X'ten bile ÖNCE**
 ("veri toplamaya ne kadar erken başlanırsa OCR tartışması o kadar hızlı gerçek zemine iner"). Ayrı plan + PR.
