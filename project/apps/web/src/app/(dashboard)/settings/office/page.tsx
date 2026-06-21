@@ -82,7 +82,7 @@ export default function OfficeSettingsPage() {
   const [smtpForm, setSmtpForm] = useState<SmtpSettings>({ smtpHost: "", smtpPort: 587, smtpUser: "", smtpPass: "", smtpSecure: false, smtpFromName: "", smtpFromEmail: "" });
   const [smsForm, setSmsForm] = useState({ smsProvider: "", smsApiKey: "", smsApiSecret: "", smsSender: "" });
   const [greetingForm, setGreetingForm] = useState({ autoGreetingEnabled: true, autoGreetingTime: "09:00" });
-  const [escalationForm, setEscalationForm] = useState<{ escalationManagerLawyerIds: string[]; escalationFounderLawyerIds: string[]; opReminderDays: number; opFounderDays: number; opRepeatMonths: number; opEmailEnabled: boolean; opSmsEnabled: boolean; opStaffTypes: string[] }>({ escalationManagerLawyerIds: [], escalationFounderLawyerIds: [], opReminderDays: 3, opFounderDays: 6, opRepeatMonths: 3, opEmailEnabled: true, opSmsEnabled: true, opStaffTypes: ["MUHASEBE", "ADLI_KATIP", "SEKRETER"] });
+  const [escalationForm, setEscalationForm] = useState<{ escalationManagerLawyerIds: string[]; escalationFounderLawyerIds: string[]; opReminderDays: number; opFounderDays: number; opRepeatMonths: number; opEmailEnabled: boolean; opSmsEnabled: boolean; opStaffTypes: string[]; escalationTeamLeadLawyerIds: string[]; caseTaskOwnerDays: number; caseTaskTeamLeadDays: number; caseTaskManagerDays: number }>({ escalationManagerLawyerIds: [], escalationFounderLawyerIds: [], opReminderDays: 3, opFounderDays: 6, opRepeatMonths: 3, opEmailEnabled: true, opSmsEnabled: true, opStaffTypes: ["MUHASEBE", "ADLI_KATIP", "SEKRETER"], escalationTeamLeadLawyerIds: [], caseTaskOwnerDays: 2, caseTaskTeamLeadDays: 2, caseTaskManagerDays: 3 });
   // Eskalasyon kartı sağ-altta; üstteki global "Kaydedildi" görünmüyor → karta özel inline geri bildirim
   const [escalationStatus, setEscalationStatus] = useState<{ ok: boolean; msg: string } | null>(null);
   const [testingSmtp, setTestingSmtp] = useState(false);
@@ -151,6 +151,10 @@ export default function OfficeSettingsPage() {
         opEmailEnabled: escRes.data?.opEmailEnabled ?? true,
         opSmsEnabled: escRes.data?.opSmsEnabled ?? true,
         opStaffTypes: escRes.data?.opStaffTypes || ["MUHASEBE", "ADLI_KATIP", "SEKRETER"],
+        escalationTeamLeadLawyerIds: escRes.data?.escalationTeamLeadLawyerIds || [],
+        caseTaskOwnerDays: escRes.data?.caseTaskOwnerDays ?? 2,
+        caseTaskTeamLeadDays: escRes.data?.caseTaskTeamLeadDays ?? 2,
+        caseTaskManagerDays: escRes.data?.caseTaskManagerDays ?? 3,
       });
     } catch (e) { console.error("Büro bilgileri yüklenemedi:", e); }
     finally { setLoading(false); }
@@ -216,6 +220,9 @@ export default function OfficeSettingsPage() {
         opReminderDays: Number(escalationForm.opReminderDays),
         opFounderDays: Number(escalationForm.opFounderDays),
         opRepeatMonths: Number(escalationForm.opRepeatMonths),
+        caseTaskOwnerDays: Number(escalationForm.caseTaskOwnerDays),
+        caseTaskTeamLeadDays: Number(escalationForm.caseTaskTeamLeadDays),
+        caseTaskManagerDays: Number(escalationForm.caseTaskManagerDays),
       });
       showSaved();
       setEscalationStatus({ ok: true, msg: "✓ Kaydedildi" });
@@ -727,6 +734,41 @@ export default function OfficeSettingsPage() {
               <label className="flex items-center gap-1.5"><input type="checkbox" checked={escalationForm.opEmailEnabled} onChange={e => setEscalationForm({...escalationForm, opEmailEnabled: e.target.checked})} /> E-posta aktif</label>
               <label className="flex items-center gap-1.5"><input type="checkbox" checked={escalationForm.opSmsEnabled} onChange={e => setEscalationForm({...escalationForm, opSmsEnabled: e.target.checked})} /> SMS aktif</label>
               <label className="flex items-center gap-1.5 text-gray-400" title="WhatsApp gönderimi yakında"><input type="checkbox" disabled /> WhatsApp (yakında)</label>
+            </div>
+
+            {/* D-G5: Dosya Görevi Eskalasyonu (case-task; operasyonel bölümden AYRI). Motor flag ile kapalı. */}
+            <div className="border-t pt-2 mt-1">
+              <h3 className="font-semibold text-gray-700 mb-1 flex items-center gap-1">📁 Dosya Görevi Eskalasyonu</h3>
+              <p className="text-[10px] text-gray-500 mb-2">Dosyaya bağlı otomatik görevler (ör. tebligat iade, ihbarname, masraf takibi) önce Dosya Sorumlusu'na, çözülmezse sırasıyla Takım Lideri → Yönetici Avukat → Kurucu'ya bildirilir. (Motor şu an kapalı; bu ayarlar açıldığında geçerli olur.)</p>
+              <div>
+                <label className="block font-medium text-gray-700 mb-0.5">Takım Lideri Avukat(lar)</label>
+                <div className="border rounded p-1.5 max-h-28 overflow-auto space-y-0.5">
+                  {(office?.lawyers || []).length === 0 && <p className="text-gray-400">Avukat yok</p>}
+                  {(office?.lawyers || []).map((l: any) => (
+                    <label key={l.id} className="flex items-center gap-1.5">
+                      <input type="checkbox" checked={escalationForm.escalationTeamLeadLawyerIds.includes(l.id)} onChange={e => {
+                        setEscalationForm(prev => ({ ...prev, escalationTeamLeadLawyerIds: e.target.checked ? [...prev.escalationTeamLeadLawyerIds, l.id] : prev.escalationTeamLeadLawyerIds.filter(id => id !== l.id) }));
+                      }} />
+                      {l.name} {l.surname}
+                    </label>
+                  ))}
+                </div>
+                <p className="text-[10px] text-gray-500 mt-0.5">Boş bırakılırsa Takım Lideri kademesi atlanır → doğrudan Yönetici Avukat'a geçilir.</p>
+              </div>
+              <div className="grid grid-cols-3 gap-2 mt-2">
+                <div>
+                  <label className="block font-medium text-gray-700 mb-0.5">Sorumlu → Lider (gün)</label>
+                  <input type="number" min={1} value={escalationForm.caseTaskOwnerDays} onChange={e => setEscalationForm({...escalationForm, caseTaskOwnerDays: parseInt(e.target.value) || 0})} className="w-full border rounded px-2 py-1 text-xs" />
+                </div>
+                <div>
+                  <label className="block font-medium text-gray-700 mb-0.5">Lider → Yönetici (gün)</label>
+                  <input type="number" min={1} value={escalationForm.caseTaskTeamLeadDays} onChange={e => setEscalationForm({...escalationForm, caseTaskTeamLeadDays: parseInt(e.target.value) || 0})} className="w-full border rounded px-2 py-1 text-xs" />
+                </div>
+                <div>
+                  <label className="block font-medium text-gray-700 mb-0.5">Yönetici → Kurucu (gün)</label>
+                  <input type="number" min={1} value={escalationForm.caseTaskManagerDays} onChange={e => setEscalationForm({...escalationForm, caseTaskManagerDays: parseInt(e.target.value) || 0})} className="w-full border rounded px-2 py-1 text-xs" />
+                </div>
+              </div>
             </div>
             {escalationStatus && <div className={`p-1 rounded text-xs text-center ${escalationStatus.ok ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{escalationStatus.msg}</div>}
             <button onClick={handleSaveEscalation} disabled={saving} className="w-full px-2 py-1 bg-blue-600 text-white text-xs rounded disabled:opacity-50">{saving ? "..." : "Kaydet"}</button>
