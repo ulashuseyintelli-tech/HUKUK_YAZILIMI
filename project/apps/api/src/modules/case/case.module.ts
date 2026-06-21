@@ -11,6 +11,7 @@ import { CollectionModule } from "../collection/collection.module";
 import { ClientModule } from "../client/client.module";
 import { LawyerModule } from "../lawyer/lawyer.module";
 import { DebtorModule } from "../debtor/debtor.module";
+import { ResponsibleCandidatesService } from "./responsible-candidates.service";
 
 @Module({
   imports: [
@@ -28,7 +29,7 @@ import { DebtorModule } from "../debtor/debtor.module";
     DebtorModule,
   ],
   controllers: [CaseController],
-  providers: [CaseService],
+  providers: [CaseService, ResponsibleCandidatesService],
   exports: [CaseService],
 })
 export class CaseModule {}

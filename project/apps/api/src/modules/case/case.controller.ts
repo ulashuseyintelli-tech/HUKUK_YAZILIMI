@@ -15,13 +15,15 @@ import { CreateCaseDto, UpdateCaseDto } from "./dto/case.dto";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { OcrService } from "../ocr/ocr.service";
+import { ResponsibleCandidatesService } from "./responsible-candidates.service";
 
 @Controller("cases")
 @UseGuards(JwtAuthGuard)
 export class CaseController {
   constructor(
     private caseService: CaseService,
-    private ocrService: OcrService
+    private ocrService: OcrService,
+    private responsibleCandidatesService: ResponsibleCandidatesService
   ) {}
 
   @Get()
@@ -47,6 +49,14 @@ export class CaseController {
   @Get("stats")
   getStats(@CurrentUser("tenantId") tenantId: string) {
     return this.caseService.getStats(tenantId);
+  }
+
+  // M2-G2: Dosya Sorumlusu picker kaynağı (aktif gerçek kişiler). İzole servise delege; { data } zarfı.
+  @Get("responsible-candidates")
+  async getResponsibleCandidates(@CurrentUser("tenantId") tenantId: string) {
+    const data =
+      await this.responsibleCandidatesService.getResponsibleCandidates(tenantId);
+    return { data };
   }
 
   @Get("next-file-number")
