@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ConflictException, BadRequestException, Logger, Inject, forwardRef, Optional } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
-import { CreateCaseDto, UpdateCaseDto, CaseSubCategory, Currency, DueDto, DueType, InterestType, CaseInstrumentInputDto, CaseStaffInputDto } from "./dto/case.dto";
+import { CreateCaseDto, UpdateCaseDto, CaseSubCategory, Currency, DueDto, DueType, InterestType, CaseInstrumentInputDto, CaseInstrumentSource, CaseStaffInputDto } from "./dto/case.dto";
 import { Prisma, LegalCaseStatus, InterestType as PrismaInterestType, DocumentSourceType } from "@prisma/client";
 import { mapDueTypeToClaimItemType, buildClaimItemData } from "./due-to-claim-item.mapper";
 import {
@@ -1301,6 +1301,15 @@ export class CaseService {
   }
 
   /**
+   * PR-2b-1: manuel case instrument girişi AÇIK mı (env flag; varsayılan KAPALI).
+   * OCR_MULTI_INSTRUMENT'ten BAĞIMSIZ — manuel kambiyo, OCR pipeline'ı açılmadan geçebilir (O-1).
+   * @remarks Çağrıldığı yer: CaseService.create() → createInstrumentsAndClaims per-source MANUAL gate.
+   */
+  private manualCaseInstrumentsEnabled(): boolean {
+    return process.env.MANUAL_CASE_INSTRUMENTS === "true";
+  }
+
+  /**
    * PR-N3-wire: OCR kambiyo enstrümanlarını createCase tx içinde kanonik kayda çevirir —
    * her GEÇERLİ instrument için: CaseInstrument (hukuki evrak) + bağlı PRINCIPAL ClaimItem
    * (parasal yansıma, instrumentId BAĞ). Toplam instrument PRINCIPAL tutarını döndürür
@@ -1319,11 +1328,16 @@ export class CaseService {
     tenantId: string,
     caseId: string,
     instruments: CaseInstrumentInputDto[],
-    enabled: boolean,
+    ocrEnabled: boolean,
+    manualEnabled = false,
   ): Promise<number> {
-    if (!enabled || instruments.length === 0) return 0;
+    if (instruments.length === 0) return 0;
     let totalPrincipal = 0;
     for (const input of instruments) {
+      // PR-2b-1: per-source gate. source yok → OCR (geri uyum). OCR/MANUAL flag'leri BAĞIMSIZ;
+      // kapalı kaynak güvenle ATLANIR (karışık payload → yalnız açık-kaynak alt kümesi işlenir).
+      const isManual = input.source === CaseInstrumentSource.MANUAL;
+      if (isManual ? !manualEnabled : !ocrEnabled) continue;
       const instrumentType = resolveCaseInstrumentType(input);
       if (instrumentType === null) continue; // kambiyo değil / eksik → sessiz create YOK
       const created = await tx.caseInstrument.create({
@@ -1763,6 +1777,7 @@ export class CaseService {
           newCase.id,
           dto.instruments ?? [],
           this.multiInstrumentEnabled(),
+          this.manualCaseInstrumentsEnabled(),
         );
 
         // Ana para toplamı = dues PRINCIPAL + instrument PRINCIPAL → case.principalAmount (G5 @deprecated).
