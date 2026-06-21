@@ -177,6 +177,65 @@ describe('G1 FATURA buildDebtResultFromInstruments — alacaklı (ALACAKLI) part
   });
 });
 
+describe('BUG buildDebtResultFromInstruments — taraf dedup (kimlik-bilinçli; aynı VKN/TCKN tek taraf)', () => {
+  // Gorka senaryosu (canlı UI'da görüldü): aynı tüzel kişi 2 çekte farklı OCR yazımıyla okundu,
+  // AYNI geçerli VKN (3961146289) taşıdı → eskiden EXACT-isim dedup'ı 2 ayrı taraf üretiyordu.
+  it('(a) aynı geçerli VKN + farklı büyük/küçük drawerName → TEK COMPANY taraf (VKN dolu)', () => {
+    const r = buildDebtResultFromInstruments([
+      inst({ documentNo: 'A', drawerName: 'GORKA KOZMETİK SANAYİ VE TİCARET ANONİM ŞİRKETİ', drawerIdentityNo: '3961146289', needsReview: false, sourcePages: [1] }),
+      inst({ documentNo: 'B', drawerName: 'Gorka Kozmetik Sanayi ve Ticaret Anonim Şirketi', drawerIdentityNo: '3961146289', needsReview: false, sourcePages: [3] }),
+    ])!;
+    expect(r.parties).toHaveLength(1); // İKİ değil — aynı VKN → tek tüzel kişi
+    expect(r.parties[0].type).toBe('COMPANY');
+    expect(r.parties[0].identityNo).toBe('3961146289');
+    expect(r.parties[0].name).toBe('GORKA KOZMETİK SANAYİ VE TİCARET ANONİM ŞİRKETİ'); // ilk görülen kanonik
+  });
+
+  it('(a2) aynı geçerli VKN + KATLAMASI farklı isimler (kısaltma) → yine TEK taraf (kimlik birleştirir, isim değil)', () => {
+    const r = buildDebtResultFromInstruments([
+      inst({ documentNo: 'A', drawerName: 'GORKA KOZMETİK SAN. VE TİC. A.Ş.', drawerIdentityNo: '3961146289', needsReview: false, sourcePages: [1] }),
+      inst({ documentNo: 'B', drawerName: 'GORKA KOZMETİK SANAYİ VE TİCARET ANONİM ŞİRKETİ', drawerIdentityNo: '3961146289', needsReview: false, sourcePages: [3] }),
+    ])!;
+    // İsimler katlandığında bile EŞİT DEĞİL → yalnız kimlik no birleştirebilir (identity path izole kanıt).
+    expect(r.parties.filter((p) => p.identityNo === '3961146289')).toHaveLength(1);
+    expect(r.parties).toHaveLength(1);
+  });
+
+  it('(b) FARKLI geçerli VKN → iki ayrı taraf (over-merge yok)', () => {
+    const r = buildDebtResultFromInstruments([
+      inst({ documentNo: 'A', drawerName: 'ALFA A.Ş.', drawerIdentityNo: '1234567890', needsReview: false, sourcePages: [1] }),
+      inst({ documentNo: 'B', drawerName: 'BETA A.Ş.', drawerIdentityNo: '1111111114', needsReview: false, sourcePages: [3] }),
+    ])!;
+    expect(r.parties).toHaveLength(2);
+    expect(r.parties.map((p) => p.identityNo).sort()).toEqual(['1111111114', '1234567890']);
+  });
+
+  it('(c) kimlik no YOK + AYNEN aynı isim → tek taraf (regresyon yok)', () => {
+    const r = buildDebtResultFromInstruments([
+      inst({ documentNo: 'A', drawerName: 'AHMET YILMAZ', needsReview: false, sourcePages: [1] }),
+      inst({ documentNo: 'B', drawerName: 'AHMET YILMAZ', needsReview: false, sourcePages: [3] }),
+    ])!;
+    expect(r.parties.filter((p) => p.name === 'AHMET YILMAZ')).toHaveLength(1);
+  });
+
+  it('(d) kimlik no YOK + farklı isimler → iki taraf (bugünkü davranış korunur)', () => {
+    const r = buildDebtResultFromInstruments([
+      inst({ documentNo: 'A', drawerName: 'AHMET YILMAZ', needsReview: false, sourcePages: [1] }),
+      inst({ documentNo: 'B', drawerName: 'MEHMET KAYA', needsReview: false, sourcePages: [3] }),
+    ])!;
+    expect(r.parties).toHaveLength(2);
+  });
+
+  it('(e) kimlik no YOK + aynı isim farklı OCR yazımı (büyük/küçük+diyakritik) → tek taraf (isim katlama)', () => {
+    const r = buildDebtResultFromInstruments([
+      inst({ documentNo: 'A', drawerName: 'GORKA KOZMETİK ANONİM ŞİRKETİ', needsReview: false, sourcePages: [1] }),
+      inst({ documentNo: 'B', drawerName: 'Gorka Kozmetik Anonim Şirketi', needsReview: false, sourcePages: [3] }),
+    ])!;
+    expect(r.parties).toHaveLength(1); // katlanmış isim eşit → tek taraf (kimlik no yokken bile)
+    expect(r.parties[0].type).toBe('COMPANY'); // unvan eki
+  });
+});
+
 describe('PR-2b-3 scanDebtDocumentMultiInstrument — e2e (mock segment + mock AI + gerçek grouping)', () => {
   it('flag açık + 4 page candidate → 2 instrument; debtInfo primary (docNo A)', async () => {
     const svc = buildSvc('true');

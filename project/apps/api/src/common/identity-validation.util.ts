@@ -64,10 +64,34 @@ export function sanitizeOcrIdentityNo(
 }
 
 /**
+ * BUG (OCR taraf-dedup/sınıflandırma) — Türkçe diyakritik-DUYARSIZ BÜYÜK-harf katlama. SAF, yan-etkisiz.
+ *
+ * toUpperCase() + İ/Ş/Ç/Ğ/Ü/Ö → ASCII (locale-BAĞIMSIZ; tüm i-aileleri 'I'ya iner: i/ı/İ/I → I).
+ * Amaç: aynı tüzel/şahıs adının farklı OCR yazımları (büyük/küçük + diyakritik) tek katlanmış anahtara insin.
+ * null/boş → "".
+ *
+ * Çağrıldığı yerler:
+ * - looksLikeCompanyName() (bu dosya) → unvan-eki .test'inden önce katlama
+ * - buildDebtResultFromInstruments() (ocr.service.ts) → kimlik no'suz taraf dedup anahtarı
+ *   (aynı isim farklı OCR yazımı tek tarafa iner)
+ */
+export function foldTurkishUpper(value: string | null | undefined): string {
+  if (!value) return "";
+  return String(value)
+    .toUpperCase()
+    .replace(/İ/g, "I")
+    .replace(/Ş/g, "S")
+    .replace(/Ç/g, "C")
+    .replace(/Ğ/g, "G")
+    .replace(/Ü/g, "U")
+    .replace(/Ö/g, "O");
+}
+
+/**
  * BUG (OCR taraf-tipi) — Bir unvan/isim Türk tüzel-kişi unvan eki taşıyor mu? SAF, yan-etkisiz.
  *
  * Türkçe diyakritik-DUYARSIZ: OCR "ANONİM ŞİRKETİ"yi "ANONIM SIRKETI" olarak da okuyabilir →
- * önce İ/Ş/Ç/Ğ/Ü/Ö ASCII'ye katlanır, sonra unvan ekleri aranır.
+ * önce İ/Ş/Ç/Ğ/Ü/Ö ASCII'ye katlanır (foldTurkishUpper), sonra unvan ekleri aranır.
  * Tüzel-kişi ekleri: ANONİM ŞİRKETİ / LİMİTED ŞİRKETİ / A.Ş. (AŞ) / LTD / ŞTİ.
  *
  * NOT: Bu fonksiyon BİLİNEN bir ismi SINIFLANDIRIR (.test). Ham OCR metninden şirket adı ÇIKARMA
@@ -77,16 +101,9 @@ export function sanitizeOcrIdentityNo(
  * - inferPartyType() (bu dosya) → kimlik no yoksa isim sezgisi
  */
 export function looksLikeCompanyName(name: string | null | undefined): boolean {
-  if (!name) return false;
-  const folded = String(name)
-    .toUpperCase()
-    .replace(/İ/g, "I")
-    .replace(/Ş/g, "S")
-    .replace(/Ç/g, "C")
-    .replace(/Ğ/g, "G")
-    .replace(/Ü/g, "U")
-    .replace(/Ö/g, "O");
-  return /(ANONIM\s*SIRKET|LIMITED\s*SIRKET|\bLTD\b|\bSTI\b|\bA\.?\s*S\.?\b(?!\w))/.test(folded);
+  return /(ANONIM\s*SIRKET|LIMITED\s*SIRKET|\bLTD\b|\bSTI\b|\bA\.?\s*S\.?\b(?!\w))/.test(
+    foldTurkishUpper(name),
+  );
 }
 
 /**
