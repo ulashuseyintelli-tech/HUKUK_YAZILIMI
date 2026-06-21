@@ -96,6 +96,48 @@ describe('BUG buildDebtResultFromInstruments — party.type drawerName sezgisind
   });
 });
 
+describe('PR-2 buildDebtResultFromInstruments — party.identityNo (drawerIdentityNo passthrough + sanitize)', () => {
+  const partyOf = (insts: Instrument[], match: string) =>
+    buildDebtResultFromInstruments(insts)!.parties.find((x) => x.name.includes(match))!;
+
+  it('geçerli VKN → party.type COMPANY + identityNo dolu', () => {
+    const p = partyOf([inst({ drawerName: 'GORKA A.Ş.', drawerIdentityNo: '1234567890', needsReview: false, sourcePages: [1] })], 'GORKA');
+    expect(p.type).toBe('COMPANY');
+    expect(p.identityNo).toBe('1234567890');
+  });
+
+  it('geçerli TCKN → INDIVIDUAL + identityNo dolu (şahıs isim)', () => {
+    const p = partyOf([inst({ drawerName: 'AHMET YILMAZ', drawerIdentityNo: '10000000146', needsReview: false, sourcePages: [1] })], 'AHMET');
+    expect(p.type).toBe('INDIVIDUAL');
+    expect(p.identityNo).toBe('10000000146');
+  });
+
+  it('çöp/geçersiz kimlik no → identityNo DÜŞER (sanitize checksum), tip isimden', () => {
+    const p = partyOf([inst({ drawerName: 'GORKA A.Ş.', drawerIdentityNo: '0000', needsReview: false, sourcePages: [1] })], 'GORKA');
+    expect(p.type).toBe('COMPANY'); // unvan eki
+    expect(p.identityNo).toBeUndefined(); // checksum tutmaz → yayılmaz
+  });
+
+  it('kimlik no boşluk/nokta içerir → temiz rakam yayılır (sanitize)', () => {
+    const p = partyOf([inst({ drawerName: 'GORKA A.Ş.', drawerIdentityNo: '123 456 78 90', needsReview: false, sourcePages: [1] })], 'GORKA');
+    expect(p.identityNo).toBe('1234567890');
+  });
+
+  it('kimlik no yok → identityNo alanı yok (PR-1 davranışı korunur)', () => {
+    const p = partyOf([inst({ drawerName: 'GORKA A.Ş.', needsReview: false, sourcePages: [1] })], 'GORKA');
+    expect(p.type).toBe('COMPANY');
+    expect(p.identityNo).toBeUndefined();
+  });
+
+  it('debtorCandidates kimlik no TAŞIMAZ → yalnız drawer kimliği yayılır', () => {
+    const r = buildDebtResultFromInstruments([
+      inst({ drawerName: 'GORKA A.Ş.', drawerIdentityNo: '1234567890', debtorCandidates: ['MEHMET KAYA'], needsReview: false, sourcePages: [1] }),
+    ])!;
+    expect(r.parties.find((x) => x.name.includes('GORKA'))!.identityNo).toBe('1234567890');
+    expect(r.parties.find((x) => x.name === 'MEHMET KAYA')!.identityNo).toBeUndefined();
+  });
+});
+
 describe('PR-2b-3 scanDebtDocumentMultiInstrument — e2e (mock segment + mock AI + gerçek grouping)', () => {
   it('flag açık + 4 page candidate → 2 instrument; debtInfo primary (docNo A)', async () => {
     const svc = buildSvc('true');

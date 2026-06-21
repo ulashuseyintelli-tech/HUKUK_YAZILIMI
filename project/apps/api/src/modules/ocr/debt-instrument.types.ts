@@ -33,6 +33,7 @@ export interface Instrument {
   branchName?: string;
   iban?: string;
   drawerName?: string; // keşideci / borçlu adayı (tek isim)
+  drawerIdentityNo?: string; // keşidecinin VKN(10)/TCKN(11) kimlik no'su (PR-2 passthrough; PR-3 AI doldurur)
   debtorCandidates?: string[]; // çoklu borçlu adayı
   // P4-1: arka-yüz ciro/kaşe isim adayları (SIRASIZ, ham). AYRI back-pass doldurur — front
   // extraction'a DOKUNMAZ. holderName / zincir-sırası DEĞİL (onlar A1 türevi). Borçlu önerisine
@@ -66,6 +67,7 @@ export interface PageCandidate {
   branchName?: string;
   iban?: string;
   drawerName?: string;
+  drawerIdentityNo?: string; // keşidecinin kimlik no'su (VKN/TCKN) — bu sayfada görünüyorsa
   debtorCandidates?: string[];
   // face/back: BU sayfanın KENDİ görünümü (yüz mü / arka mı). "şu belgenin arkasıdır"
   // gibi SAYFALAR-ARASI ilişki DEĞİL — o grouping motorunun işi (AI'ya yasak).

@@ -74,6 +74,7 @@ function buildInstrument(
     branchName: page.branchName,
     iban: page.iban,
     drawerName: page.drawerName,
+    drawerIdentityNo: page.drawerIdentityNo,
     debtorCandidates: page.debtorCandidates,
     confidence: page.confidence ?? 0,
     sourcePages: [page.pageIndex],
@@ -97,6 +98,7 @@ function attach(
   inst.bankName = inst.bankName ?? page.bankName;
   inst.iban = inst.iban ?? page.iban;
   if (page.drawerName && !inst.drawerName) inst.drawerName = page.drawerName;
+  if (page.drawerIdentityNo && !inst.drawerIdentityNo) inst.drawerIdentityNo = page.drawerIdentityNo;
   if (opts.lowerConfidence) {
     inst.groupConfidence = Math.min(inst.groupConfidence ?? 1, 0.55);
   }

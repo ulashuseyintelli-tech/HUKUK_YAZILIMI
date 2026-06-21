@@ -81,6 +81,20 @@ describe('PR-2b-2 extractPageCandidate — TEXT/IMAGE yolları', () => {
     expect(called).toBe(false);
     expect(out).toMatchObject({ pageIndex: 3, confidence: 0 });
   });
+
+  it('drawerIdentityNo: RawPageFields → PageCandidate map edilir (PR-2 passthrough)', async () => {
+    const mock: PageAiExtractor = async () => ({
+      documentType: 'CEK',
+      documentNo: '0265897',
+      drawerName: 'GORKA A.Ş.',
+      drawerIdentityNo: '1234567890',
+      face: true,
+      confidence: 90,
+    });
+    const out = await extractPageCandidate(textPage(1, 'çek...'), { aiExtract: mock });
+    expect(out.drawerIdentityNo).toBe('1234567890');
+    expect(out.drawerName).toBe('GORKA A.Ş.');
+  });
 });
 
 describe('PR-2b-2 — graceful (throw dışarı taşmaz)', () => {
