@@ -87,7 +87,18 @@ export function buildClaimItemData(
   itemType: ClaimItemType,
 ): Prisma.ClaimItemUncheckedCreateInput {
   const amount = due.amount;
-  const metadata = buildDueInterestMetadata(due.interestAmount);
+  // FATURA (G2a) — KDV gömülü bilgi → metadata.kdv (ClaimItem'da hasKdv alanı YOK; O-1=A). Faiz
+  // metadata'sı (dueInterest) ile BİRLEŞİR. PRINCIPAL=amount=KDV-dahil genel toplam (O-2=A; ayrı TAX_KDV YOK).
+  const metadata: Record<string, unknown> = {};
+  const interestMeta = buildDueInterestMetadata(due.interestAmount);
+  if (interestMeta) Object.assign(metadata, interestMeta);
+  if (due.hasKdv) {
+    const kdv: Record<string, unknown> = { hasKdv: true };
+    if (due.kdvRate != null) kdv.kdvRate = due.kdvRate;
+    if (due.kdvAmount != null) kdv.kdvAmount = due.kdvAmount;
+    metadata.kdv = kdv;
+  }
+  const hasMetadata = Object.keys(metadata).length > 0;
   return {
     tenantId,
     caseId,
@@ -102,6 +113,9 @@ export function buildClaimItemData(
     interestRate: due.interestRate,
     interestStartDate: toDate(due.interestStartDate),
     interestEndDate: toDate(due.interestEndDate),
-    ...(metadata ? { metadata } : {}),
+    // FATURA (G2a): belge referansı → kanonik ClaimItem (referenceNo=faturaNo · sourceDocumentType=FATURA)
+    ...(due.sourceDocumentNo ? { referenceNo: due.sourceDocumentNo } : {}),
+    ...(due.sourceDocumentType ? { sourceDocumentType: due.sourceDocumentType } : {}),
+    ...(hasMetadata ? { metadata: metadata as Prisma.InputJsonObject } : {}),
   };
 }
