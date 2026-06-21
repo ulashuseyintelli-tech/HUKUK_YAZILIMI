@@ -588,7 +588,7 @@ export function ProfessionalClaimItemForm({
   documentSource,
   onItemsChange,
   onPrecautionaryChange,
-  initialItems: _initialItems,
+  initialItems,
   takipTarihi = new Date().toISOString().split("T")[0],
   borcluSayisi = 1,
   fileNumber = "",
@@ -651,7 +651,13 @@ export function ProfessionalClaimItemForm({
     return "ASIL_ALACAK";
   };
 
-  const [kalem, setKalem] = useState<AlacakKalemi>(() => createEmptyKalem(getDefaultKalemTuru(), currency));
+  // PR-2a: düzenleme için dışarıdan verilen kalem (initialItems[0]) ile hidratlanır;
+  // verilmezse eski davranış (boş yeni kalem). initialItems = onItemsChange'in verdiği kalem.
+  const [kalem, setKalem] = useState<AlacakKalemi>(() =>
+    initialItems?.[0]
+      ? ({ ...createEmptyKalem(getDefaultKalemTuru(), currency), ...initialItems[0] } as AlacakKalemi)
+      : createEmptyKalem(getDefaultKalemTuru(), currency),
+  );
   const [hesapOzeti, setHesapOzeti] = useState<HesapOzetiSatir[]>([]);
   const [isCalculated, setIsCalculated] = useState(false);
   const [hesapTarihi, setHesapTarihi] = useState<string>(new Date().toISOString().split("T")[0]);
@@ -682,7 +688,7 @@ export function ProfessionalClaimItemForm({
   const [interestTypeResult, setInterestTypeResult] = useState<InterestTypeResult | null>(null);
 
   // İlamlı Takip Yan Alacak Kalemleri
-  const [ilamYanAlacaklar, setIlamYanAlacaklar] = useState<IlamYanAlacak[]>([]);
+  const [ilamYanAlacaklar, setIlamYanAlacaklar] = useState<IlamYanAlacak[]>(() => initialItems?.[0]?.ilamYanAlacaklar ?? []);
 
   // Kalem türü değiştiğinde faiz türünü yeniden hesapla
   useEffect(() => {
