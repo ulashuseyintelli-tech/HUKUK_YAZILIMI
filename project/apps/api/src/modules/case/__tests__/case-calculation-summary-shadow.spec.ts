@@ -108,6 +108,9 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       asOfDate: '2026-06-21',
       alignmentStatus: 'SCOPE_MISMATCH',
       comparisonScope: 'RAW_LEGACY_SON_BORC_VS_CANONICAL_TOTAL_DUE',
+      canonicalProjectionCurrencyScope: 'UNSCOPED_CASE_CURRENCY_ASSUMED',
+      canonicalProjectionCurrency: 'TRY',
+      matchStatusInterpretation: 'RAW_DELTA_DIAGNOSTIC_ONLY',
       legacyToplamBorc: result.toplamBorc,
       legacySonBorc: result.sonBorc,
       legacyToplamTahsilat: result.toplamTahsilat,
@@ -133,6 +136,9 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
           rawDelta: expectedDelta,
           alignmentStatus: 'SCOPE_MISMATCH',
           comparisonScope: 'RAW_LEGACY_SON_BORC_VS_CANONICAL_TOTAL_DUE',
+          canonicalProjectionCurrencyScope: 'UNSCOPED_CASE_CURRENCY_ASSUMED',
+          canonicalProjectionCurrency: 'TRY',
+          matchStatusInterpretation: 'RAW_DELTA_DIAGNOSTIC_ONLY',
           matchStatus: 'MAJOR_DELTA',
         },
       ],
@@ -157,6 +163,9 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       asOfDate: '2026-06-21',
       alignmentStatus: 'SCOPE_MISMATCH',
       comparisonScope: 'RAW_LEGACY_SON_BORC_VS_CANONICAL_TOTAL_DUE',
+      canonicalProjectionCurrencyScope: 'UNSCOPED_CASE_CURRENCY_ASSUMED',
+      canonicalProjectionCurrency: 'TRY',
+      matchStatusInterpretation: 'RAW_DELTA_DIAGNOSTIC_ONLY',
       legacyToplamBorc: result.toplamBorc,
       legacySonBorc: result.sonBorc,
       legacyToplamTahsilat: result.toplamTahsilat,
@@ -187,6 +196,9 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       asOfDate: '2026-06-21',
       alignmentStatus: 'SCOPE_MISMATCH',
       comparisonScope: 'RAW_LEGACY_SON_BORC_VS_CANONICAL_TOTAL_DUE',
+      canonicalProjectionCurrencyScope: 'UNSCOPED_CASE_CURRENCY_ASSUMED',
+      canonicalProjectionCurrency: 'TRY',
+      matchStatusInterpretation: 'RAW_DELTA_DIAGNOSTIC_ONLY',
       legacyToplamBorc: result.toplamBorc,
       legacySonBorc: result.sonBorc,
       legacyToplamTahsilat: result.toplamTahsilat,
@@ -218,6 +230,9 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
     expect(shadow).toMatchObject({
       alignmentStatus: 'SCOPE_MISMATCH',
       comparisonScope: 'RAW_LEGACY_SON_BORC_VS_CANONICAL_TOTAL_DUE',
+      canonicalProjectionCurrencyScope: 'UNSCOPED_CASE_CURRENCY_ASSUMED',
+      canonicalProjectionCurrency: 'TRY',
+      matchStatusInterpretation: 'RAW_DELTA_DIAGNOSTIC_ONLY',
       canonicalTotalDue: 1234.56,
       canonicalProjectionCostsTotal: 12.5,
       canonicalProjectionAncillariesTotal: 100,
@@ -232,6 +247,9 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       deltaPercent: null,
       rawDelta: 1234.56,
       matchStatus: 'LEGACY_ZERO',
+      canonicalProjectionCurrencyScope: 'UNSCOPED_CASE_CURRENCY_ASSUMED',
+      canonicalProjectionCurrency: 'TRY',
+      matchStatusInterpretation: 'RAW_DELTA_DIAGNOSTIC_ONLY',
     });
   });
 
@@ -265,6 +283,9 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       canonicalProjectionAncillariesTotal: 100,
       canonicalProjectedTotalDue: null,
       rawDelta: null,
+      canonicalProjectionCurrencyScope: 'UNSCOPED_CASE_CURRENCY_ASSUMED',
+      canonicalProjectionCurrency: 'TRY',
+      matchStatusInterpretation: 'RAW_DELTA_DIAGNOSTIC_ONLY',
     });
     expect(shadow.currencyResults[0]).toMatchObject({
       currency: 'USD',
@@ -275,6 +296,9 @@ describe('CaseService.getCalculationSummary canonicalShadow', () => {
       rawDelta: null,
       alignmentStatus: 'SCOPE_MISMATCH',
       comparisonScope: 'RAW_LEGACY_SON_BORC_VS_CANONICAL_TOTAL_DUE',
+      canonicalProjectionCurrencyScope: 'UNSCOPED_CASE_CURRENCY_ASSUMED',
+      canonicalProjectionCurrency: 'TRY',
+      matchStatusInterpretation: 'RAW_DELTA_DIAGNOSTIC_ONLY',
       matchStatus: 'CURRENCY_MISMATCH',
     });
   });
