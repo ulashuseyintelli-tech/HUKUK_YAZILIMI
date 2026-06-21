@@ -105,10 +105,11 @@ class ApiClient {
   }
 
   // Cases
-  async getCases(params?: { status?: string; clientId?: string; page?: number; limit?: number }) {
+  async getCases(params?: { status?: string; clientId?: string; noOwner?: boolean; page?: number; limit?: number }) {
     const query = new URLSearchParams();
     if (params?.status) query.set("status", params.status);
     if (params?.clientId) query.set("clientId", params.clientId);
+    if (params?.noOwner) query.set("noOwner", "1"); // SAHIPSIZ-DOSYALAR-G1
     if (params?.page) query.set("page", params.page.toString());
     if (params?.limit) query.set("limit", params.limit.toString());
     return this.request<any>(`/cases?${query}`);

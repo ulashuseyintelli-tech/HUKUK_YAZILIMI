@@ -609,12 +609,14 @@ export class CaseService {
     }
   }
 
-  async findAll(tenantId: string, params?: { status?: string; expenseRequestStatus?: string; clientId?: string; page?: number; limit?: number }) {
-    const { status, expenseRequestStatus, clientId, page = 1, limit = 20 } = params || {};
+  async findAll(tenantId: string, params?: { status?: string; expenseRequestStatus?: string; clientId?: string; noOwner?: boolean; page?: number; limit?: number }) {
+    const { status, expenseRequestStatus, clientId, noOwner, page = 1, limit = 20 } = params || {};
 
     const where: any = { tenantId };
     if (status) where.status = status;
     if (clientId) where.clientId = clientId;
+    // SAHIPSIZ-DOSYALAR-G1: Dosya Sorumlusu atanmamış (legacy) dosyalar görünürlük filtresi (server-side, doğru kapsam).
+    if (noOwner) where.sorumluPersonelId = null;
     
     // Masraf talebi durumuna göre filtreleme
     if (expenseRequestStatus) {
@@ -1889,7 +1891,7 @@ export class CaseService {
   }
 
   async getStats(tenantId: string) {
-    const [total, active, closed, thisMonth] = await Promise.all([
+    const [total, active, closed, thisMonth, ownerless] = await Promise.all([
       this.prisma.case.count({ where: { tenantId } }),
       this.prisma.case.count({ where: { tenantId, status: "ACTIVE" } }),
       this.prisma.case.count({ where: { tenantId, status: "CLOSED" } }),
@@ -1901,9 +1903,11 @@ export class CaseService {
           },
         },
       }),
+      // SAHIPSIZ-DOSYALAR-G1: Dosya Sorumlusu atanmamış (sahipsiz) dosya sayısı — DOĞRU toplam (server-side).
+      this.prisma.case.count({ where: { tenantId, sorumluPersonelId: null } }),
     ]);
 
-    return { total, active, closed, thisMonth };
+    return { total, active, closed, thisMonth, ownerless };
   }
 
   // Sıradaki dosya numarasını al
