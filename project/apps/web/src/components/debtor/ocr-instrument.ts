@@ -25,6 +25,8 @@ export interface Instrument {
   drawerName?: string;
   payeeName?: string; // C-PR: lehtar OCR taslağı (≠Client/Party, çözümleme yok)
   debtorCandidates?: string[];
+  // P4-1: arka-yüz ciro/kaşe isim adayları (SIRASIZ, ham; backend endorsement-pass üretir). P4-2 clientMatch tüketir.
+  endorsementNames?: string[];
   pageRange?: [number, number];
   confidence: number;
   // PR-2a-1 / PR-2b-2 meta (review UI'da gösterilir — PR-3b)
