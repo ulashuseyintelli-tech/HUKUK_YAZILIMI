@@ -15,3 +15,27 @@ Bir geliştirme yapmadan önce daha önce yapılan bir geliştirme var mı bak, 
 Onay almadan kodlamaya geçme ne yapacağını söyle onay aldıktan sonra devam et 
 
 Daha önce bir yeri yaparken başka yeri bozduğun için bu kuralları otomatik yaptık ki aynı şeyi yapma diye.
+
+## Repository discipline
+
+Kanonik repo:
+
+```text
+C:\Users\ulas.htelli\Desktop\HUKUK_PROJE\HUKUK_YAZILIMI
+```
+
+- Bu tek doğru repository köküdür.
+- AGENTS.md ana agent kural dosyasıdır; repository discipline için tek kaynak burasıdır.
+- Başka bir HUKUK_YAZILIMI clone otomatik seçilmemelidir.
+- HUKUK_PROJE altındaki kardeş dizinler yalnız kanonik repodan açılmış geçici git worktree olabilir.
+- Worktree isimleri serbest olabilir; önemli olan `git worktree list` içinde kanonik repo ağına bağlı olmalarıdır.
+- Yeni worktree her zaman kanonik repodan oluşturulmalıdır.
+- Bağımsız ikinci HUKUK_YAZILIMI clone tespit edilirse kodlamaya başlamadan dur ve raporla.
+- Riskli, migration, finans veya çok-oturumlu işlerden önce şunları raporla:
+  - repo path
+  - active branch
+  - HEAD
+  - git worktree list
+- İş bitince geçici worktree `git worktree remove` ile temizlenmelidir; `rm -rf` kullanılmamalıdır.
+- Aktif WIP worktree silinmemelidir.
+- Localhost çalışan servislerin hangi worktree’den servis edildiği riskli UI/API doğrulamalarından önce kontrol edilmelidir.
