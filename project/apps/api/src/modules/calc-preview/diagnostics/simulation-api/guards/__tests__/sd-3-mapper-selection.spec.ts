@@ -122,6 +122,42 @@ function createHarness(opts: {
 // ============================================================================
 
 describe('SD-3 Task 3: Mapper Selection + Canary Isolation', () => {
+  // ─────────────────────────────────────────────────────────────────────────
+  // NEDEN BURADA fake timer var (test kolaylığı DEĞİL — belgelenmiş bir
+  // flake'in regresyon korumasıdır):
+  //
+  // Bu spec mapper-selection mantığını dwellTimeMs=0 ile sınar. Üretim kodu
+  // aynı değerlendirme akışında Date.now()'u İKİ AYRI yoldan, BAĞIMSIZ okur:
+  //   1. mapper.buildInput()                → input.nowMs
+  //   2. state başlatma (stateStore.getForTenant → createInitialState(Date.now()))
+  //                                          → state.lastTransitionMs
+  // Bu iki okuma arasında (özellikle dolu CI suite'i yükünde) duvar saati ≥1ms
+  // ilerleyebilir. O zaman dwellElapsed = input.nowMs - state.lastTransitionMs < 0
+  // olur ve dwellTimeMs=0 iken dwell guard (dwellElapsed < dwellTimeMs) BEKLENEN
+  // geçişi ara sıra bastırır → transitions.length === 0 → testin "Canary
+  // transition possible" / "transition metric labels" assertion'ları kırılır.
+  // İzole koşuda iki okuma hemen hep aynı ms'e düşer (geçer); flake yalnız yük
+  // altında görünür.
+  //
+  // Saati bilerek donduruyoruz ki her iki okuma da AYNI anı görsün
+  // (dwellElapsed === 0 → guard bastırmaz). Üretimde gerçek dwellTimeMs=300_000
+  // bu <1ms farkı zaten maskeler; ayrıca prod guard-interceptor varsayılan
+  // NoopAdaptiveShadowEvaluator kullanır (gerçek evaluator yalnız testte) →
+  // kusur uykuda. Bu yüzden burada test-only stabilizasyon yeterli.
+  //
+  // Altta yatan çift-Date.now() davranışı değişmedikçe (örn. evaluator tek bir
+  // nowMs'i hem mapper'a hem state başlatmaya enjekte edene dek) BU SATIRLARI
+  // SİLME — silmek flake'i geri getirir.
+  // ─────────────────────────────────────────────────────────────────────────
+  beforeEach(() => {
+    jest.useFakeTimers({ now: 1_700_000_000_000 });
+  });
+
+  afterEach(() => {
+    jest.useRealTimers();
+    jest.restoreAllMocks();
+  });
+
   describe('Selection Matrix (4 combinations)', () => {
     test('enabled=false, canary=false → no eval (0-work)', () => {
       const h = createHarness({ enabled: false, canary: false });
