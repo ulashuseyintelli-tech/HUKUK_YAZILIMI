@@ -94,6 +94,18 @@ type CalculationSummaryCanonicalShadowPaymentScopeAlignment =
   | "MISMATCH_NET_TO_GROSS"
   | "UNKNOWN";
 
+type CalculationSummaryCanonicalShadowLegacyPaymentSource =
+  | "COLLECTIONS_STATUS_NOT_CANCELLED";
+
+type CalculationSummaryCanonicalShadowCanonicalPaymentSource =
+  | "LEDGER_CONFIRMED_OR_CONFIRMED_COLLECTION_FALLBACK";
+
+type CalculationSummaryCanonicalShadowPaymentSourceParity =
+  | "NOT_PROVEN";
+
+type CalculationSummaryCanonicalShadowPaymentSourceParityReason =
+  | "LEGACY_COLLECTION_FILTER_DIFFERS_FROM_CANONICAL_PAYMENT_MAPPER";
+
 type CalculationSummaryCanonicalShadowScopeComparison = {
   legacyField: CalculationSummaryCanonicalShadowLegacyField;
   canonicalScope: CalculationSummaryCanonicalShadowCanonicalScope;
@@ -103,6 +115,7 @@ type CalculationSummaryCanonicalShadowScopeComparison = {
   deltaPercent: number | null;
   scopeStatus: CalculationSummaryCanonicalShadowScopeStatus;
   paymentScopeAlignment: CalculationSummaryCanonicalShadowPaymentScopeAlignment;
+  paymentSourceParity: CalculationSummaryCanonicalShadowPaymentSourceParity;
 };
 
 type CalculationSummaryCanonicalShadow = {
@@ -119,6 +132,10 @@ type CalculationSummaryCanonicalShadow = {
   legacyToplamBorcPaymentScope: "GROSS_OF_COLLECTIONS";
   legacySonBorcPaymentScope: "GROSS_OF_COLLECTIONS";
   legacyKalanBorcPaymentScope: "NET_OF_COLLECTIONS";
+  legacyPaymentSource: CalculationSummaryCanonicalShadowLegacyPaymentSource;
+  canonicalPaymentSource: CalculationSummaryCanonicalShadowCanonicalPaymentSource;
+  paymentSourceParity: CalculationSummaryCanonicalShadowPaymentSourceParity;
+  paymentSourceParityReason: CalculationSummaryCanonicalShadowPaymentSourceParityReason;
   legacyToplamBorc: number;
   legacySonBorc: number;
   legacyToplamTahsilat: number;
@@ -188,6 +205,14 @@ const LEGACY_KALAN_BORC_PAYMENT_SCOPE: Extract<
   CalculationSummaryCanonicalShadowPaymentScope,
   "NET_OF_COLLECTIONS"
 > = "NET_OF_COLLECTIONS";
+const LEGACY_PAYMENT_SOURCE: CalculationSummaryCanonicalShadowLegacyPaymentSource =
+  "COLLECTIONS_STATUS_NOT_CANCELLED";
+const CANONICAL_PAYMENT_SOURCE: CalculationSummaryCanonicalShadowCanonicalPaymentSource =
+  "LEDGER_CONFIRMED_OR_CONFIRMED_COLLECTION_FALLBACK";
+const PAYMENT_SOURCE_PARITY: CalculationSummaryCanonicalShadowPaymentSourceParity =
+  "NOT_PROVEN";
+const PAYMENT_SOURCE_PARITY_REASON: CalculationSummaryCanonicalShadowPaymentSourceParityReason =
+  "LEGACY_COLLECTION_FILTER_DIFFERS_FROM_CANONICAL_PAYMENT_MAPPER";
 
 function round2(value: number): number {
   return Math.round(value * 100) / 100;
@@ -258,6 +283,7 @@ function buildCanonicalShadowScopeComparisonMatrix(
         deltaPercent,
         scopeStatus: canonicalValue == null ? "UNAVAILABLE" : "CANDIDATE_ONLY",
         paymentScopeAlignment: paymentScopeAlignmentForLegacyField(legacyField),
+        paymentSourceParity: PAYMENT_SOURCE_PARITY,
       };
     }),
   );
@@ -3679,6 +3705,10 @@ export class CaseService {
         legacyToplamBorcPaymentScope: LEGACY_TOPLAM_BORC_PAYMENT_SCOPE,
         legacySonBorcPaymentScope: LEGACY_SON_BORC_PAYMENT_SCOPE,
         legacyKalanBorcPaymentScope: LEGACY_KALAN_BORC_PAYMENT_SCOPE,
+        legacyPaymentSource: LEGACY_PAYMENT_SOURCE,
+        canonicalPaymentSource: CANONICAL_PAYMENT_SOURCE,
+        paymentSourceParity: PAYMENT_SOURCE_PARITY,
+        paymentSourceParityReason: PAYMENT_SOURCE_PARITY_REASON,
         legacyToplamBorc: legacy.legacyToplamBorc,
         legacySonBorc: legacy.legacySonBorc,
         legacyToplamTahsilat: legacy.legacyToplamTahsilat,
@@ -3736,6 +3766,10 @@ export class CaseService {
         legacyToplamBorcPaymentScope: LEGACY_TOPLAM_BORC_PAYMENT_SCOPE,
         legacySonBorcPaymentScope: LEGACY_SON_BORC_PAYMENT_SCOPE,
         legacyKalanBorcPaymentScope: LEGACY_KALAN_BORC_PAYMENT_SCOPE,
+        legacyPaymentSource: LEGACY_PAYMENT_SOURCE,
+        canonicalPaymentSource: CANONICAL_PAYMENT_SOURCE,
+        paymentSourceParity: PAYMENT_SOURCE_PARITY,
+        paymentSourceParityReason: PAYMENT_SOURCE_PARITY_REASON,
         legacyToplamBorc: legacy.legacyToplamBorc,
         legacySonBorc: legacy.legacySonBorc,
         legacyToplamTahsilat: legacy.legacyToplamTahsilat,
@@ -3814,6 +3848,10 @@ export class CaseService {
         legacyToplamBorcPaymentScope: LEGACY_TOPLAM_BORC_PAYMENT_SCOPE,
         legacySonBorcPaymentScope: LEGACY_SON_BORC_PAYMENT_SCOPE,
         legacyKalanBorcPaymentScope: LEGACY_KALAN_BORC_PAYMENT_SCOPE,
+        legacyPaymentSource: LEGACY_PAYMENT_SOURCE,
+        canonicalPaymentSource: CANONICAL_PAYMENT_SOURCE,
+        paymentSourceParity: PAYMENT_SOURCE_PARITY,
+        paymentSourceParityReason: PAYMENT_SOURCE_PARITY_REASON,
         legacyToplamBorc: legacy.legacyToplamBorc,
         legacySonBorc: legacy.legacySonBorc,
         legacyToplamTahsilat: legacy.legacyToplamTahsilat,
