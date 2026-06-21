@@ -362,7 +362,9 @@ export class ReportService {
       mahiyetTipiId?: string;
       riskId?: string;
       durumEtiketiId?: string;
-      sorumluPersonelId?: string;
+      sorumluPersonelId?: string; // legacy User owner filtresi (transition'da KORUNUR)
+      responsibleLawyerId?: string; // G5a: gerçek-kişi avukat owner kolonu filtresi
+      responsibleStaffId?: string; // G5a: gerçek-kişi personel owner kolonu filtresi
       caseStatus?: string;
       search?: string;
     },
@@ -374,7 +376,12 @@ export class ReportService {
     if (filters?.mahiyetTipiId) where.mahiyetTipiId = filters.mahiyetTipiId;
     if (filters?.riskId) where.riskId = filters.riskId;
     if (filters?.durumEtiketiId) where.durumEtiketiId = filters.durumEtiketiId;
+    // G5a: her param KENDİ kolonuna bakar. K1 bridge yok → Lawyer/Staff ↔ User cross-fallback ZORLANMAZ.
+    // sorumluPersonelId = legacy User owner; responsible* = gerçek-kişi owner. effectiveOwner fallback'i
+    // gösterim/aggregate'e ait (G5b), filtreye değil.
     if (filters?.sorumluPersonelId) where.sorumluPersonelId = filters.sorumluPersonelId;
+    if (filters?.responsibleLawyerId) where.responsibleLawyerId = filters.responsibleLawyerId;
+    if (filters?.responsibleStaffId) where.responsibleStaffId = filters.responsibleStaffId;
     if (filters?.caseStatus) where.caseStatus = filters.caseStatus;
     if (filters?.search) {
       where.OR = [
@@ -537,7 +544,9 @@ export class ReportService {
       mahiyetTipiId?: string;
       riskId?: string;
       durumEtiketiId?: string;
-      sorumluPersonelId?: string;
+      sorumluPersonelId?: string; // legacy User owner (transition)
+      responsibleLawyerId?: string; // G5a: gerçek-kişi avukat owner
+      responsibleStaffId?: string; // G5a: gerçek-kişi personel owner
       caseStatus?: string;
     },
   ): Promise<string> {

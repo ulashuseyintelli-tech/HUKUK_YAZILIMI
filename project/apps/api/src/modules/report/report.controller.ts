@@ -117,6 +117,8 @@ export class ReportController {
     @Query('riskId') riskId?: string,
     @Query('durumEtiketiId') durumEtiketiId?: string,
     @Query('sorumluPersonelId') sorumluPersonelId?: string,
+    @Query('responsibleLawyerId') responsibleLawyerId?: string,
+    @Query('responsibleStaffId') responsibleStaffId?: string,
     @Query('caseStatus') caseStatus?: string,
     @Query('search') search?: string,
   ) {
@@ -126,6 +128,8 @@ export class ReportController {
       riskId,
       durumEtiketiId,
       sorumluPersonelId,
+      responsibleLawyerId,
+      responsibleStaffId,
       caseStatus,
       search,
     });
@@ -148,6 +152,8 @@ export class ReportController {
     @Query('riskId') riskId?: string,
     @Query('durumEtiketiId') durumEtiketiId?: string,
     @Query('sorumluPersonelId') sorumluPersonelId?: string,
+    @Query('responsibleLawyerId') responsibleLawyerId?: string,
+    @Query('responsibleStaffId') responsibleStaffId?: string,
     @Query('caseStatus') caseStatus?: string,
   ) {
     const csvData = await this.service.exportCasesAsCsv(tenantId, {
@@ -156,6 +162,8 @@ export class ReportController {
       riskId,
       durumEtiketiId,
       sorumluPersonelId,
+      responsibleLawyerId,
+      responsibleStaffId,
       caseStatus,
     });
     return { success: true, data: csvData, contentType: 'text/csv' };
