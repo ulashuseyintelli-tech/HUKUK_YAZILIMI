@@ -16,29 +16,33 @@ function setup() {
 }
 
 describe('SAHIPSIZ-DOSYALAR-G1a — noOwner filter + getStats.ownerless', () => {
-  it('findAll noOwner=true → where.sorumluPersonelId = null (sahipsizler)', async () => {
+  it('findAll noOwner=true → Model-2 sahipsiz (responsibleLawyerId=null AND responsibleStaffId=null)', async () => {
     const { service, findMany } = setup();
     await service.findAll('t1', { noOwner: true });
     expect(findMany).toHaveBeenCalled();
     const where = findMany.mock.calls[0][0].where;
-    expect(where).toMatchObject({ tenantId: 't1', sorumluPersonelId: null });
+    expect(where).toMatchObject({ tenantId: 't1', responsibleLawyerId: null, responsibleStaffId: null });
+    expect(where.sorumluPersonelId).toBeUndefined(); // M2-G5c: legacy sorumluPersonelId artık sahipsizliği BELİRLEMEZ
   });
 
-  it('findAll noOwner yokken → sorumluPersonelId filtresi UYGULANMAZ', async () => {
+  it('findAll noOwner yokken → owner sahipsiz filtresi UYGULANMAZ', async () => {
     const { service, findMany } = setup();
     await service.findAll('t1', {});
-    expect(findMany.mock.calls[0][0].where.sorumluPersonelId).toBeUndefined();
+    const where = findMany.mock.calls[0][0].where;
+    expect(where.responsibleLawyerId).toBeUndefined();
+    expect(where.responsibleStaffId).toBeUndefined();
+    expect(where.sorumluPersonelId).toBeUndefined();
   });
 
-  it('getStats → ownerless = count(sorumluPersonelId:null) ve sonuçta döner', async () => {
+  it('getStats → ownerless = count(responsibleLawyerId:null AND responsibleStaffId:null)', async () => {
     const { service, count } = setup();
     count.mockImplementation(async (args: any) =>
-      args?.where && Object.prototype.hasOwnProperty.call(args.where, 'sorumluPersonelId') && args.where.sorumluPersonelId === null ? 7 : 3
+      args?.where && args.where.responsibleLawyerId === null && args.where.responsibleStaffId === null ? 7 : 3
     );
     const stats = await service.getStats('t1');
     expect(stats.ownerless).toBe(7);
     expect(count).toHaveBeenCalledWith(
-      expect.objectContaining({ where: expect.objectContaining({ tenantId: 't1', sorumluPersonelId: null }) })
+      expect.objectContaining({ where: expect.objectContaining({ tenantId: 't1', responsibleLawyerId: null, responsibleStaffId: null }) })
     );
   });
 });
@@ -56,10 +60,11 @@ describe("M2-G5a — findAll gerçek-kişi owner filtreleri (responsible*; cross
     expect(findMany.mock.calls[0][0].where).toMatchObject({ tenantId: "t1", responsibleStaffId: "S1" });
   });
 
-  it("noOwner + responsibleLawyerId karışık → deterministik (ikisi de where icinde)", async () => {
+  it("noOwner + responsibleLawyerId karışık → deterministik (G5c: noOwner staffId'yi null'lar, param lawyerId'yi yazar)", async () => {
     const { service, findMany } = setup();
     await service.findAll("t1", { noOwner: true, responsibleLawyerId: "L1" });
-    expect(findMany.mock.calls[0][0].where).toMatchObject({ tenantId: "t1", sorumluPersonelId: null, responsibleLawyerId: "L1" });
+    // M2-G5c: noOwner → responsibleLawyerId=null + responsibleStaffId=null; sonra param responsibleLawyerId=L1 overwrite eder.
+    expect(findMany.mock.calls[0][0].where).toMatchObject({ tenantId: "t1", responsibleLawyerId: "L1", responsibleStaffId: null });
   });
 
   it("person filtre yok → responsible* uygulanmaz, tenant scope korunur", async () => {

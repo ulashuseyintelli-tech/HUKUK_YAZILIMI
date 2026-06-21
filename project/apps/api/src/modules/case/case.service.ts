@@ -804,10 +804,13 @@ export class CaseService {
     const where: any = { tenantId };
     if (status) where.status = status;
     if (clientId) where.clientId = clientId;
-    // SAHIPSIZ-DOSYALAR-G1: Dosya Sorumlusu atanmamış (legacy) dosyalar görünürlük filtresi (server-side, doğru kapsam).
-    if (noOwner) where.sorumluPersonelId = null;
-    // G5a: gerçek-kişi owner kolon filtreleri (her param KENDİ kolonuna; K1 bridge yok → cross-fallback yok).
-    // noOwner/Sahipsiz'in Model-2 (both-FK-null) tanımı bu gate'te DEĞİŞMEDİ — G5c.
+    // M2-G5c: Sahipsiz/noOwner = gerçek-kişi owner YOKLUĞU (responsibleLawyer/Staff İKİSİ de null).
+    // Legacy sorumluPersonelId dolu olsa BİLE real-person owner yoksa SAHİPSİZ (eski sorumluPersonelId=null tanımı kaldırıldı).
+    if (noOwner) {
+      where.responsibleLawyerId = null;
+      where.responsibleStaffId = null;
+    }
+    // G5a: açık person owner filtreleri — her param KENDİ kolonuna (K1 bridge yok → cross-fallback yok).
     if (responsibleLawyerId) where.responsibleLawyerId = responsibleLawyerId;
     if (responsibleStaffId) where.responsibleStaffId = responsibleStaffId;
     
@@ -2095,8 +2098,8 @@ export class CaseService {
           },
         },
       }),
-      // SAHIPSIZ-DOSYALAR-G1: Dosya Sorumlusu atanmamış (sahipsiz) dosya sayısı — DOĞRU toplam (server-side).
-      this.prisma.case.count({ where: { tenantId, sorumluPersonelId: null } }),
+      // M2-G5c: Sahipsiz = gerçek-kişi owner yok (responsibleLawyer/Staff ikisi de null); legacy sorumluPersonelId sayılmaz.
+      this.prisma.case.count({ where: { tenantId, responsibleLawyerId: null, responsibleStaffId: null } }),
     ]);
 
     return { total, active, closed, thisMonth, ownerless };
