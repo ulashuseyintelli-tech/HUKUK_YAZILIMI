@@ -14,6 +14,43 @@ async function getPdfPrinter() {
   return PdfPrinter;
 }
 
+/**
+ * Faz 1 (A1) — CaseInstrument.endorsers (Json) → şablon için ciranta İSİM listesi (string[]).
+ * Geriye-uyumlu: yeni InstrumentChain {nodes} şekli → ENDORSER node isimleri; eski string[] veya
+ * [{name}] (legacy) → isimler; null/boş/tanınmayan → []. Davranış-nötr: kolon boşsa eskisi gibi [].
+ *
+ * Çağrıldığı yerler:
+ * - TemplateEngineService (instrumentInfo.endorsers kurulumu) → belge üretimi.
+ * - template-engine-endorsers-compat.spec.ts → birim test.
+ */
+export function extractEndorserNames(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    // Legacy: string[] veya [{name,...}] → isimler.
+    return raw
+      .map((x) =>
+        typeof x === 'string'
+          ? x
+          : x && typeof x === 'object' && typeof (x as { name?: unknown }).name === 'string'
+            ? (x as { name: string }).name
+            : null,
+      )
+      .filter((x): x is string => !!x);
+  }
+  if (raw && typeof raw === 'object' && Array.isArray((raw as { nodes?: unknown }).nodes)) {
+    // Yeni InstrumentChain: yalnız ENDORSER node isimleri (DRAWER/AVALIST hariç).
+    return (raw as { nodes: unknown[] }).nodes
+      .filter(
+        (n): n is { role: string; party: { name: string } } =>
+          !!n &&
+          typeof n === 'object' &&
+          (n as { role?: unknown }).role === 'ENDORSER' &&
+          typeof (n as { party?: { name?: unknown } }).party?.name === 'string',
+      )
+      .map((n) => n.party.name);
+  }
+  return [];
+}
+
 export interface TemplateData {
   fileNumber: string;
   filingDate: string;
@@ -392,7 +429,7 @@ export class TemplateEngineService {
           bankName: instrument.bankName,
           branchName: instrument.bankBranch || instrument.branchName,
           drawerName: instrument.drawerName,
-          endorsers: instrument.endorsers,
+          endorsers: extractEndorserNames(instrument.endorsers),
           amount: this.formatMoney(Number(instrument.amount || 0)),
           currency: instrument.currency || 'TRY',
           amountText: amountText,

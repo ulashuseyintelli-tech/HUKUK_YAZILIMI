@@ -11,6 +11,7 @@ import {
   mapOcrInstrumentTypeToCaseInstrumentType,
   resolveCaseInstrumentType,
   buildCaseInstrumentData,
+  buildEndorsersJson,
   buildInstrumentPrincipalClaimItemData,
 } from '../ocr-instrument-to-case-instrument.mapper';
 import { CaseInstrumentInputDto, OcrInstrumentInputType, Currency } from '../dto/case.dto';
@@ -126,6 +127,66 @@ describe('buildCaseInstrumentData', () => {
     const data = buildCaseInstrumentData('t1', 'c1', input({ dueDate: undefined }), InstrumentType.CEK);
     expect(data.maturityDate).toBeNull();
     expect(data.presentmentDate).toBeNull();
+  });
+});
+
+describe('buildEndorsersJson (Faz 1 — InstrumentChain endorsers; A1-d HOLD: nodes-only)', () => {
+  it('endorsementNames yoksa undefined (endorsers YAZILMAZ → davranış-nötr)', () => {
+    expect(buildEndorsersJson(input({ drawerName: 'Ali' }))).toBeUndefined();
+    expect(buildEndorsersJson(input({ endorsementNames: [] }))).toBeUndefined();
+    expect(buildEndorsersJson(input({ endorsementNames: ['  '] }))).toBeUndefined();
+  });
+
+  it('ciranta varsa DRAWER(0) + ENDORSER(null) nodes; endorsements=[] (sıra yok)', () => {
+    const chain = buildEndorsersJson(
+      input({ drawerName: 'Ali Veli', endorsementNames: ['Borç A.Ş.', 'Mehmet'] }),
+    )!;
+    expect(chain.endorsements).toEqual([]);
+    const drawer = chain.nodes.find((n) => n.role === 'DRAWER')!;
+    expect(drawer.position).toBe(0);
+    expect(drawer.party.name).toBe('Ali Veli');
+    const endorsers = chain.nodes.filter((n) => n.role === 'ENDORSER');
+    expect(endorsers.map((n) => n.party.name)).toEqual(['Borç A.Ş.', 'Mehmet']);
+    expect(endorsers.every((n) => n.position === null)).toBe(true); // A1-d HOLD
+  });
+
+  it('PAYEE node ASLA üretilmez (payee OCR güvenilmez; #296 park)', () => {
+    const chain = buildEndorsersJson(
+      input({ drawerName: 'Ali', payeeName: 'Veli', endorsementNames: ['Mehmet'] }),
+    )!;
+    expect(chain.nodes.some((n) => (n.role as string) === 'PAYEE')).toBe(false);
+    expect(chain.nodes.some((n) => n.party.name === 'Veli')).toBe(false);
+  });
+
+  it('köken=OCR + confidence taşır; geçerli VKN kalır, geçersiz kimlik düşer', () => {
+    const valid = buildEndorsersJson(
+      input({ drawerName: 'Borç A.Ş.', drawerIdentityNo: '3961146289', endorsementNames: ['Mehmet'] }),
+    )!;
+    const drawer = valid.nodes.find((n) => n.role === 'DRAWER')!;
+    expect(drawer.party.identityNo).toBe('3961146289'); // geçerli VKN korunur
+    expect(drawer.party.type).toBe('COMPANY');
+    expect(drawer.provenance.source).toBe('OCR');
+    expect(typeof drawer.provenance.confidence).toBe('number');
+    const bad = buildEndorsersJson(
+      input({ drawerName: 'Ali', drawerIdentityNo: '123', endorsementNames: ['M'] }),
+    )!;
+    expect(bad.nodes.find((n) => n.role === 'DRAWER')!.party.identityNo).toBeUndefined();
+  });
+
+  it('buildCaseInstrumentData: ciranta yoksa endorsers alanı YOK; varsa JSON yazılır', () => {
+    const empty = buildCaseInstrumentData('t1', 'c1', input({ drawerName: 'Ali' }), InstrumentType.CEK);
+    expect((empty as { endorsers?: unknown }).endorsers).toBeUndefined();
+    const filled = buildCaseInstrumentData(
+      't1',
+      'c1',
+      input({ drawerName: 'Ali', endorsementNames: ['Mehmet'] }),
+      InstrumentType.CEK,
+    );
+    expect(
+      (filled as { endorsers?: { nodes: Array<{ role: string }> } }).endorsers?.nodes.some(
+        (n) => n.role === 'ENDORSER',
+      ),
+    ).toBe(true);
   });
 });
 
