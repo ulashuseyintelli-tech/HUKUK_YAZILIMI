@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { CollectionService } from "../collection/collection.service";
 import { ValidationGateService } from "../validation-gate/validation-gate.service"; // D4e-8: pre-haciz risk teşhisi
+import { formatLawyer, formatStaff } from "../case/responsible-candidates.service"; // M2-G5b: tek-kaynak kişi display
 import {
   CaseDebtReportResult,
   InterestReportResult,
@@ -70,45 +71,87 @@ export class ReportService {
     };
   }
 
-  // 2. Personel Performans Raporu
+  // 2. Personel Performans Raporu — M2-G5b: gerçek kişi (Lawyer/Staff) + legacy User.
+  // Gerçek satırlar:  Lawyer → responsibleLawyerId · Staff → responsibleStaffId (kendi kolonu).
+  // Legacy satırlar:  User → sorumluPersonelId VE responsibleLawyerId IS NULL VE responsibleStaffId IS NULL
+  //   → yalnız "gerçek sahibi olmayan" dosyalar; ÇİFT SAYIM YOK, User→Lawyer/Staff OTOMATİK MAP YOK (K1 bridge yok).
+  // Shape KORUNUR: array + 6 eski alan (personel/personelId/totalCases/closedCases/totalCollection/closureRate);
+  //   ownerType ('LAWYER'|'STAFF'|'LEGACY_USER') ve ownerId ADDITIVE — eski tüketiciler bozulmaz.
   async getPersonelReport(tenantId: string, personelId?: string, startDate?: string, endDate?: string) {
-    const where: any = { tenantId };
-    if (personelId) where.sorumluPersonelId = personelId;
+    // Tarih filtresi (case.createdAt) — üç kaynakta da ortak uygulanır.
+    const dateWhere: any = {};
     if (startDate || endDate) {
-      where.createdAt = {};
-      if (startDate) where.createdAt.gte = new Date(startDate);
-      if (endDate) where.createdAt.lte = new Date(endDate);
+      dateWhere.createdAt = {};
+      if (startDate) dateWhere.createdAt.gte = new Date(startDate);
+      if (endDate) dateWhere.createdAt.lte = new Date(endDate);
     }
 
-    const users = await this.prisma.user.findMany({
-      where: { tenantId, isActive: true },
-      select: { id: true, name: true, surname: true },
-    });
+    const [lawyers, staff, users] = await Promise.all([
+      this.prisma.lawyer.findMany({
+        where: { tenantId, isActive: true },
+        select: { id: true, name: true, surname: true, title: true, lawyerRank: true },
+      }),
+      this.prisma.staffMember.findMany({
+        where: { tenantId, isActive: true },
+        select: { id: true, firstName: true, lastName: true, staffType: true },
+      }),
+      this.prisma.user.findMany({
+        where: { tenantId, isActive: true },
+        select: { id: true, name: true, surname: true },
+      }),
+    ]);
 
+    // Tek sahip satırı: verilen case-where ile total/closed/collection metrikleri.
+    const buildRow = async (
+      ownerType: 'LAWYER' | 'STAFF' | 'LEGACY_USER',
+      ownerId: string,
+      personel: string,
+      caseWhere: any,
+    ) => {
+      const [totalCases, closedCases, totalCollection] = await Promise.all([
+        this.prisma.case.count({ where: caseWhere }),
+        this.prisma.case.count({ where: { ...caseWhere, caseStatus: { in: ['HITAM', 'INFAZ'] } } }),
+        this.prisma.collection.aggregate({ where: { case: caseWhere }, _sum: { amount: true } }),
+      ]);
+      return {
+        personel,
+        personelId: ownerId, // back-compat: eski alan adı = ownerId
+        ownerType, // ADDITIVE
+        ownerId, // ADDITIVE
+        totalCases,
+        closedCases,
+        totalCollection: totalCollection._sum.amount || 0,
+        closureRate: totalCases > 0 ? Math.round((closedCases / totalCases) * 100) : 0,
+      };
+    };
 
-    const results = await Promise.all(
-      users.map(async (user) => {
-        const userWhere = { ...where, sorumluPersonelId: user.id };
-        const [totalCases, closedCases, totalCollection] = await Promise.all([
-          this.prisma.case.count({ where: userWhere }),
-          this.prisma.case.count({ where: { ...userWhere, caseStatus: { in: ['HITAM', 'INFAZ'] } } }),
-          this.prisma.collection.aggregate({
-            where: { case: userWhere },
-            _sum: { amount: true },
-          }),
-        ]);
-        return {
-          personel: `${user.name} ${user.surname}`,
-          personelId: user.id,
-          totalCases,
-          closedCases,
-          totalCollection: totalCollection._sum.amount || 0,
-          closureRate: totalCases > 0 ? Math.round((closedCases / totalCases) * 100) : 0,
-        };
-      })
-    );
+    const rows = await Promise.all([
+      ...lawyers.map((l) =>
+        buildRow('LAWYER', l.id, formatLawyer(l).displayName, {
+          ...dateWhere,
+          tenantId,
+          responsibleLawyerId: l.id,
+        })),
+      ...staff.map((s) =>
+        buildRow('STAFF', s.id, formatStaff(s).displayName, {
+          ...dateWhere,
+          tenantId,
+          responsibleStaffId: s.id,
+        })),
+      ...users.map((u) =>
+        buildRow('LEGACY_USER', u.id, `${u.name} ${u.surname}`.trim(), {
+          ...dateWhere,
+          tenantId,
+          sorumluPersonelId: u.id,
+          responsibleLawyerId: null, // legacy yalnız gerçek-sahibi-OLMAYAN dosyaları sayar
+          responsibleStaffId: null,
+        })),
+    ]);
 
-    return results.filter(r => r.totalCases > 0).sort((a, b) => b.totalCases - a.totalCases);
+    // personelId verilirse ownerId ile filtrele (tip bilinmeden lawyer/staff/user arasında eşleşir;
+    // UI bu paramı kullanmıyor → low-risk). Sonra boş satırları at + dosya sayısına göre sırala.
+    const filtered = personelId ? rows.filter((r) => r.ownerId === personelId) : rows;
+    return filtered.filter((r) => r.totalCases > 0).sort((a, b) => b.totalCases - a.totalCases);
   }
 
   /**
