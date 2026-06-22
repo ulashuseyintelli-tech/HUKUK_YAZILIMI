@@ -326,6 +326,14 @@ export type DueForClaimItemSync = {
   hasKdv?: boolean | null;
   kdvRate?: unknown;
   kdvAmount?: number | null;
+  // PR-2c — İLAM/KİRA belge alanları (hiçbiri Due kolonu değil; in-memory taşınır → ClaimItem metadata/referenceNo/issueDate)
+  ilamMahkeme?: string | null;
+  ilamEsasNo?: string | null;
+  ilamKararNo?: string | null;
+  davaTarihi?: string | null;
+  issueDate?: string | null;
+  kiraDonemBaslangic?: string | null;
+  kiraDonemBitis?: string | null;
 };
 
 function normalizeDueInterestRate(value: unknown): number | undefined {
@@ -368,6 +376,14 @@ export function buildSyncDueDto(due: DueForClaimItemSync): DueDto {
     hasKdv: due.hasKdv ?? undefined,
     kdvRate: normalizeDueInterestRate(due.kdvRate),
     kdvAmount: due.kdvAmount ?? undefined,
+    // PR-2c (G2-wire deseni): İLAM/KİRA belge alanları → DueDto → buildClaimItemData (metadata.ilam/kira · referenceNo · issueDate)
+    ilamMahkeme: due.ilamMahkeme ?? undefined,
+    ilamEsasNo: due.ilamEsasNo ?? undefined,
+    ilamKararNo: due.ilamKararNo ?? undefined,
+    davaTarihi: due.davaTarihi ?? undefined,
+    issueDate: due.issueDate ?? undefined,
+    kiraDonemBaslangic: due.kiraDonemBaslangic ?? undefined,
+    kiraDonemBitis: due.kiraDonemBitis ?? undefined,
   };
 }
 
@@ -1758,6 +1774,14 @@ export class CaseService {
               hasKdv: due.hasKdv ?? undefined,
               kdvRate: normalizeDueInterestRate(due.kdvRate),
               kdvAmount: dueDto.kdvAmount,
+              // PR-2c: İLAM/KİRA belge alanları dueDto'dan (in-memory; Due kolonu değil → round-trip'te kaybolmaz)
+              ilamMahkeme: dueDto.ilamMahkeme,
+              ilamEsasNo: dueDto.ilamEsasNo,
+              ilamKararNo: dueDto.ilamKararNo,
+              davaTarihi: dueDto.davaTarihi,
+              issueDate: dueDto.issueDate,
+              kiraDonemBaslangic: dueDto.kiraDonemBaslangic,
+              kiraDonemBitis: dueDto.kiraDonemBitis,
             });
           }
 

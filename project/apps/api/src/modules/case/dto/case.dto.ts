@@ -315,6 +315,36 @@ export class DueDto {
   @IsNumber()
   @IsOptional()
   kdvAmount?: number; // KDV tutarı (bilgi)
+
+  // ── PR-2c: belge-özel alanlar → ClaimItem.referenceNo / issueDate / metadata.
+  // Hiçbiri Due kolonu DEĞİL; case.service in-memory taşır (sourceDocumentType/kdvAmount ile aynı G2-wire deseni).
+  @IsString()
+  @IsOptional()
+  ilamMahkeme?: string; // → metadata.ilam.mahkemeAdi
+
+  @IsString()
+  @IsOptional()
+  ilamEsasNo?: string; // → referenceNo birleşik ("esas E. / karar K.") + metadata.ilam.esasNo
+
+  @IsString()
+  @IsOptional()
+  ilamKararNo?: string; // → referenceNo birleşik + metadata.ilam.kararNo
+
+  @IsDateString()
+  @IsOptional()
+  davaTarihi?: string; // → metadata.ilam.davaTarihi (faiz motoru DEĞİŞMEZ; yalnız kayıt)
+
+  @IsDateString()
+  @IsOptional()
+  issueDate?: string; // FATURA/İLAM düzenleme tarihi → ClaimItem.issueDate (tipli kolon)
+
+  @IsDateString()
+  @IsOptional()
+  kiraDonemBaslangic?: string; // → metadata.kira.donemBaslangic
+
+  @IsDateString()
+  @IsOptional()
+  kiraDonemBitis?: string; // → metadata.kira.donemBitis
 }
 
 /**
