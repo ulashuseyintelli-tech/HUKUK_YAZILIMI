@@ -39,3 +39,20 @@ C:\Users\ulas.htelli\Desktop\HUKUK_PROJE\HUKUK_YAZILIMI
 - İş bitince geçici worktree `git worktree remove` ile temizlenmelidir; `rm -rf` kullanılmamalıdır.
 - Aktif WIP worktree silinmemelidir.
 - Localhost çalışan servislerin hangi worktree’den servis edildiği riskli UI/API doğrulamalarından önce kontrol edilmelidir.
+
+### Worktree Isolation Protocol (her iş = ayrı worktree)
+
+Bu protokol yukarıdaki repository discipline'ı bağlayıcı operasyon kuralına dönüştürür ve TÜM HUKUK_YAZILIMI işleri için geçerlidir (Claude, Codex ve diğer ajanlar dahil). Göreve-özel oturum/sayfa bu protokolü yeniden yazmaz; yalnız "Bu iş de Worktree Isolation Protocol'e tabidir" diye kısa çapraz-referans verir.
+
+- Canonical (`HUKUK_YAZILIMI`) working tree yalnız `main` senkronu ve final doğrulama içindir. Kanonik working tree'de feature/bugfix çalışması YAPILMAZ.
+- Her aktif iş, konuya özel ayrı worktree + ayrı branch ile yürütülür. Worktree kanonik reponun git'i ile, base `origin/main` olacak şekilde açılır (kanonik'in o an checkout'lu/kirli branch'i baz ALINMAZ). Branch adı konuya özeldir ve yeniden kullanılmaz. Tüm değişiklik yalnız o worktree içinde yapılır.
+- Kanonik kirliyse (sana ait olmayan WIP) ona DOKUNULMAZ: bilinmeyen/sahipsiz WIP `stash`/`pop`/relocate EDİLMEZ, branch'i değiştirilmez, "temizleme/düzeltme" girişilmez. Kanonik kirli olsa bile iş durmaz — yine `origin/main`'den yeni worktree açılır.
+- Merge sonrası cleanup'tan ÖNCE `node_modules` junction/symlink denetimi ZORUNLUDUR (junction'ı takip eden recursive silme kanonik repoyu bozabilir). Sıra: junction/symlink audit → `git worktree remove <yol>` → `git worktree prune` → `git fetch --prune`.
+
+İş başlatma şablonu:
+
+```text
+git fetch origin
+git worktree add ../HUKUK_<konu> origin/main -b feat/<konu>
+cd ../HUKUK_<konu>
+```
