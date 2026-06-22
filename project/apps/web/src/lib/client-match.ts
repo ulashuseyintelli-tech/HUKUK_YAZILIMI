@@ -150,3 +150,56 @@ export function computeClientMatch(instrument: Instrument, selectedClients: Clie
   const primaryMatch = allMatches.find((m) => m.found) ?? null;
   return { primaryMatch, allMatches };
 }
+
+// ───────────────────────── A1-a: müvekkil anchoring (gate + uyarı) ─────────────────────────
+// Mevcut eşleşme primitifleri (valueMatchType/nameMatchKey/identity) REUSE; payee'ye GÜVENMEZ.
+
+/** Eşleşme GÜVENİLİR mi? Yalnız GÜÇLÜ kabul (IDENTITY/EXACT) — gate yanlış borçlu DÜŞÜRMESİN; SUFFIX/NONE zayıf. */
+export function isReliableMatch(mt: ClientMatchType): boolean {
+  return mt === "IDENTITY" || mt === "EXACT";
+}
+
+/**
+ * A1-a — Bir OCR PARTY'si (sentezlenmiş taraf: name + YAPISAL identityNo) seçili müvekkillerden biriyle
+ * eşleşiyor mu? Instrument alan-eşleşmesinden FARKLI: party'nin yapısal identityNo'su client identity'siyle
+ * doğrudan karşılaştırılır (metne gömülü DEĞİL) + isim nameMatchKey (valueMatchType REUSE). PAYEE'ye BAKMAZ.
+ * İlk eşleşen müvekkil + tip; hiçbiri eşleşmezse null.
+ */
+export function matchClientToParty(
+  party: { name: string; identityNo?: string },
+  clients: ClientRef[],
+): { client: ClientRef; matchType: ClientMatchType } | null {
+  for (const c of clients || []) {
+    const cid = digitsOnly(c.identityNo);
+    const pid = digitsOnly(party.identityNo);
+    const mt: ClientMatchType = cid.length >= 10 && cid === pid ? "IDENTITY" : valueMatchType(c, party.name);
+    if (mt !== "NONE") return { client: c, matchType: mt };
+  }
+  return null;
+}
+
+/** A1-a gate: party seçili müvekkille GÜVENİLİR eşleşiyor → borçlu adayı YAPILMAZ ("Müvekkil eşleşti"). */
+export function isSelectedClientParty(party: { name: string; identityNo?: string }, clients: ClientRef[]): boolean {
+  const m = matchClientToParty(party, clients);
+  return !!m && isReliableMatch(m.matchType);
+}
+
+/**
+ * A1-a uyarı (NON-BLOCKING): seçili müvekkil(ler) VAR ama ne party'lerde ne de enstrüman alanlarında
+ * (drawer/payee/endorsement) GÜVENİLİR eşleşme yok → "müvekkil güvenilir eşleşmedi". Takip BLOKLANMAZ.
+ * Müvekkil yoksa null. Enstrüman eşleşmesi (computeClientMatch) ciro/keşideci dahil tüm alanları kapsar →
+ * müvekkil CİRODA bulunursa (Gorka senaryosu) UYARI ÇIKMAZ (anchored). payee yanlışsa zaten match olmaz.
+ */
+export function clientAnchorWarning(
+  partyDrafts: { name: string; identityNo?: string }[],
+  instrumentMatches: (ClientMatchResult | null)[],
+  clients: ClientRef[],
+): string | null {
+  if (!clients || clients.length === 0) return null;
+  const partyReliable = (partyDrafts || []).some((p) => isSelectedClientParty(p, clients));
+  const instrReliable = (instrumentMatches || []).some(
+    (m) => !!m?.primaryMatch && isReliableMatch(m.primaryMatch.matchType),
+  );
+  if (partyReliable || instrReliable) return null;
+  return "Seçili müvekkil OCR taraflarında güvenilir şekilde eşleşmedi. Lütfen lehtar/ciro alanını manuel kontrol edin.";
+}

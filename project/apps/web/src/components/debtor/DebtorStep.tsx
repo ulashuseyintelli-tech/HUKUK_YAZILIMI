@@ -27,7 +27,12 @@ import {
   hasIncompleteSelected,
 } from "./ocr-instrument";
 import { InstrumentReviewTable } from "./InstrumentReviewTable";
-import { computeClientMatch, type ClientMatchResult } from "@/lib/client-match";
+import {
+  computeClientMatch,
+  isSelectedClientParty,
+  clientAnchorWarning,
+  type ClientMatchResult,
+} from "@/lib/client-match";
 
 // Borç evrakı tarama sonucu tipi
 interface DebtDocumentResult {
@@ -196,9 +201,14 @@ export function buildInitialPartyRows(parties: DebtDocumentResult["parties"]): P
   return (parties ?? []).map((p) => ({ draft: { ...p }, ignored: false, added: false }));
 }
 
-/** Bulk "Tümünü Ekle" hedefleri: yoksaylı/eklenmiş/ALACAKLI hariç (pure; testlerde kullanılır). */
-export function selectablePartyRows(rows: PartyRow[]): PartyRow[] {
-  return rows.filter((r) => !r.ignored && !r.added && isDebtorRole(r.draft.role));
+/**
+ * Bulk "Tümünü Ekle" hedefleri: yoksaylı/eklenmiş/ALACAKLI hariç (pure; testlerde kullanılır).
+ * A1-a: seçili müvekkille GÜVENİLİR eşleşen party borçlu adayı YAPILMAZ (creditors verilirse gate; default boş = geriye-uyumlu).
+ */
+export function selectablePartyRows(rows: PartyRow[], creditors: CreditorRef[] = []): PartyRow[] {
+  return rows.filter(
+    (r) => !r.ignored && !r.added && isDebtorRole(r.draft.role) && !isSelectedClientParty(r.draft, creditors),
+  );
 }
 
 // BUG-4: taranan ALACAKLI/lehtar ↔ case müvekkil(ler)i uyumsuzluğu (saf, export).
@@ -517,9 +527,13 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
     setWizardError(null);
 
     // BUG-3: editlenmiş partyRows üzerinden (yoksaylı/eklenmiş/ALACAKLI hariç). İndeks için inline filtre.
+    // A1-a: seçili müvekkille güvenilir eşleşen party borçlu YAPILMAZ (gate).
     const targets = partyRows
       .map((row, index) => ({ row, index }))
-      .filter(({ row }) => !row.ignored && !row.added && isDebtorRole(row.draft.role));
+      .filter(
+        ({ row }) =>
+          !row.ignored && !row.added && isDebtorRole(row.draft.role) && !isSelectedClientParty(row.draft, creditors),
+      );
 
     const addedIdx: number[] = [];
     let lastError: string | null = null;
@@ -610,6 +624,12 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
   // P4-3: müvekkilin her instrument'taki konumu (clientMatch) — SADECE badge gösterimi (karar/guard YOK; K8 ayrı iş).
   const clientMatches: (ClientMatchResult | null)[] = reviewRows.map((row) =>
     creditors && creditors.length > 0 ? computeClientMatch(row.instrument, creditors) : null,
+  );
+  // A1-a: müvekkil ne party'lerde ne enstrüman alanlarında güvenilir eşleşmediyse NON-BLOCKING uyarı (takip bloklanmaz).
+  const clientAnchorWarn = clientAnchorWarning(
+    partyRows.map((r) => r.draft),
+    clientMatches,
+    creditors,
   );
 
   // Drag & Drop handlers
@@ -776,6 +796,16 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
             </div>
           )}
 
+          {clientAnchorWarn && (
+            <div
+              data-testid="client-anchor-warning"
+              className="p-1.5 bg-amber-50 border border-amber-300 rounded flex items-start gap-1 text-amber-800 text-[10px]"
+            >
+              <AlertTriangle className="h-3 w-3 flex-shrink-0 mt-0.5" />
+              <span>{clientAnchorWarn}</span>
+            </div>
+          )}
+
           {partyRows.length > 0 && (
             <div className="space-y-1">
               {partyRows.map((row, index) => (
@@ -851,16 +881,25 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
                     </button>
                   ) : (
                     <>
-                      {isDebtorRole(row.draft.role) && (
-                        <button
-                          type="button"
-                          data-testid={`party-accept-${index}`}
-                          onClick={() => acceptPartyRow(index)}
-                          className="px-1 py-0.5 bg-emerald-500 text-white text-[10px] rounded hover:bg-emerald-600"
-                        >
-                          Ekle
-                        </button>
-                      )}
+                      {isDebtorRole(row.draft.role) &&
+                        (isSelectedClientParty(row.draft, creditors) ? (
+                          <span
+                            data-testid={`party-client-match-${index}`}
+                            title="Seçili müvekkil — borçlu olarak eklenmez (A1-a)"
+                            className="px-1 py-0.5 bg-blue-100 text-blue-700 rounded text-[10px] flex items-center gap-0.5"
+                          >
+                            <CheckCircle className="h-3 w-3" /> Müvekkil eşleşti
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            data-testid={`party-accept-${index}`}
+                            onClick={() => acceptPartyRow(index)}
+                            className="px-1 py-0.5 bg-emerald-500 text-white text-[10px] rounded hover:bg-emerald-600"
+                          >
+                            Ekle
+                          </button>
+                        ))}
                       <button
                         type="button"
                         onClick={() => updatePartyRow(index, { ignored: true })}
