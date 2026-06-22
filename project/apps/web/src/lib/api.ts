@@ -1,3 +1,5 @@
+import type { InstrumentChain, ChainAnalysis } from "./instrument-chain";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
 // Debug: Log API URL on client side
@@ -768,6 +770,18 @@ class ApiClient {
 
   async getInstrumentsTotal(caseId: string) {
     return this.request<{ total: number }>(`/case-instruments/case/${caseId}/total`);
+  }
+
+  /**
+   * A1 Faz 2b-B — SAF kambiyo zinciri analizi (hamil + ADAY müracaat borçluları).
+   * POST /case-instruments/chain/analyze (2a motoru; #384). DB'ye dokunmaz, kayıt YARATMAZ.
+   * Kalıcılık ayrıdır: zinciri kaydetmek için updateInstrument(id, { endorsers, avals }).
+   */
+  async analyzeInstrumentChain(chain: InstrumentChain) {
+    return this.request<ChainAnalysis>("/case-instruments/chain/analyze", {
+      method: "POST",
+      body: JSON.stringify(chain),
+    });
   }
 
   // ============================================
@@ -3068,6 +3082,10 @@ export interface CaseInstrument {
   protestDate?: string;
   protestNo?: string;
   notes?: string;
+  /** A1 Faz 0/1a/2b: kambiyo zinciri (ciranta düğümleri) — { nodes, endorsements } JSON. */
+  endorsers?: { nodes?: unknown[]; endorsements?: unknown[] } | null;
+  /** A1 Faz 0/2b: aval kenarları — AvalEdge[] JSON. */
+  avals?: unknown[] | null;
   createdAt: string;
 }
 

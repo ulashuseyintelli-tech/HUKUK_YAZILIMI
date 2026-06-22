@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from "react";
 import { Plus, Trash2, Edit2, Save, X, FileText, Loader2 } from "lucide-react";
 import { api, CaseInstrument, InstrumentType } from "@/lib/api";
+import { FEATURE_FLAGS } from "@/lib/config/feature-flags";
+import { InstrumentChainPanel } from "./InstrumentChainPanel";
 
 interface InstrumentFormProps {
   caseId: string;
@@ -180,7 +182,8 @@ export function InstrumentForm({ caseId, instrumentType, onTotalChange }: Instru
             </thead>
             <tbody className="divide-y">
               {instruments.map((inst) => (
-                <tr key={inst.id} className="hover:bg-gray-50">
+                <React.Fragment key={inst.id}>
+                <tr className="hover:bg-gray-50">
                   <td className="px-3 py-2">
                     <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                       inst.instrumentType === "CEK" ? "bg-blue-100 text-blue-700" : "bg-amber-100 text-amber-700"
@@ -200,6 +203,15 @@ export function InstrumentForm({ caseId, instrumentType, onTotalChange }: Instru
                     </button>
                   </td>
                 </tr>
+                {/* A1 Faz 2b-B: kambiyo zinciri & müracaat paneli (flag-gated; collapsible+lazy) */}
+                {FEATURE_FLAGS.A1_INSTRUMENT_CHAIN && (
+                  <tr>
+                    <td colSpan={5} className="px-3 pb-2">
+                      <InstrumentChainPanel instrument={inst} onSaved={loadInstruments} />
+                    </td>
+                  </tr>
+                )}
+                </React.Fragment>
               ))}
             </tbody>
             <tfoot className="bg-gray-50">
