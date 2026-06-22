@@ -90,6 +90,13 @@ export function shouldUseUnifiedPreview(tenantId?: string, sessionHash?: string)
  */
 export const FEATURE_FLAGS = {
   /**
+   * A1 Faz 2b-B: Kambiyo zinciri & müracaat (recourse) UI — enstrüman detayında
+   * manuel zincir-kurucu panel (POST /case-instruments/chain/analyze çağırır).
+   * Varsayılan KAPALI. Salt aday gösterim; otomatik borçlu YOK. Backend 2b-A (#384) her zaman açık.
+   */
+  A1_INSTRUMENT_CHAIN: process.env.NEXT_PUBLIC_A1_INSTRUMENT_CHAIN === 'true',
+
+  /**
    * PR-2b-2: Manuel kambiyo (CEK/SENET) → CaseInstrument instruments[] yolu.
    *
    * ⚠️ Backend MANUAL_CASE_INSTRUMENTS ile BİRLİKTE açılmalı. Yalnız frontend açık + backend kapalı
