@@ -141,7 +141,57 @@ describe('CollectionService.cancel — reversal ledger write', () => {
       },
       data: { collectedAmount: 0 },
     });
+    expect(tx.claimItem.updateMany).toHaveBeenCalledTimes(4);
     expect(tx.ledgerEntry.update).not.toHaveBeenCalled();
+  });
+
+  it('kısmi PAYMENT cancel edilince allocation mirror ve projection rollback aynı tutarda olur', async () => {
+    const originalLedger = {
+      id: 'le-partial',
+      amount: 400,
+      currency: 'TRY',
+      effectiveDate: null,
+      referenceNo: 'PARTIAL-1',
+      reversedByLedgerEntry: null,
+      allocations: [
+        { claimItemId: 'ci-principal', amount: 400, allocationOrder: 1 },
+      ],
+    };
+    const tx = buildTx({ originalLedger });
+    const { service } = buildService(tx);
+
+    await service.cancel('t1', 'col1', { cancelReason: 'kısmi ödeme iptali' } as any);
+
+    const reversalData = tx.ledgerEntry.create.mock.calls[0][0].data;
+    expect(reversalData).toMatchObject({
+      tenantId: 't1',
+      caseId: 'case1',
+      collectionId: 'col1',
+      reversesLedgerEntryId: 'le-partial',
+      entryType: 'REVERSAL',
+      amount: -400,
+      referenceNo: 'PARTIAL-1',
+      sourceType: 'COLLECTION_CANCEL',
+      sourceId: 'col1',
+      status: 'CONFIRMED',
+    });
+    expect(reversalData.allocations.create).toEqual([
+      { claimItemId: 'ci-principal', amount: -400, allocationOrder: 1 },
+    ]);
+    expect(tx.claimItem.updateMany).toHaveBeenNthCalledWith(1, {
+      where: { id: 'ci-principal', tenantId: 't1', caseId: 'case1' },
+      data: { collectedAmount: { decrement: 400 } },
+    });
+    expect(tx.claimItem.updateMany).toHaveBeenNthCalledWith(2, {
+      where: {
+        id: 'ci-principal',
+        tenantId: 't1',
+        caseId: 'case1',
+        collectedAmount: { lt: 0 },
+      },
+      data: { collectedAmount: 0 },
+    });
+    expect(tx.claimItem.updateMany).toHaveBeenCalledTimes(2);
   });
 
   it('REVERSAL projection decrement clamp ile negatif collectedAmount bırakmaz', async () => {

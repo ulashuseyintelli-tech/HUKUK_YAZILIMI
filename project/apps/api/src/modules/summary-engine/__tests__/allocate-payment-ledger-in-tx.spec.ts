@@ -8,6 +8,7 @@
  */
 
 import { SummaryEngineService } from '../summary-engine.service';
+import { TBK100AllocatorService } from '../../interest-engine/allocation/tbk100-allocator.service';
 
 function buildService(opts: { enabled?: boolean; allocator?: any } = {}) {
   const svc = new SummaryEngineService({} as any, opts.allocator);
@@ -25,6 +26,9 @@ function mockTx(claimItems: any[]) {
     claimItem: { update: jest.fn(async () => ({})) },
   } as any;
 }
+
+const sumAmounts = (rows: Array<{ amount: number }>) =>
+  rows.reduce((sum, row) => sum + Number(row.amount), 0);
 
 describe('SummaryEngineService.allocatePaymentToLedgerInTx (G3a)', () => {
   it('LEDGER_DISABLED → hiçbir yazma/okuma yapmaz', async () => {
@@ -67,6 +71,99 @@ describe('SummaryEngineService.allocatePaymentToLedgerInTx (G3a)', () => {
     expect(tx.claimItem.update).toHaveBeenCalledWith({
       where: { id: 'ci1' },
       data: { collectedAmount: { increment: 1000 } },
+    });
+  });
+
+  it('kısmi ödeme → yalnız allocate edilen tutar kadar LedgerAllocation ve collectedAmount increment üretir', async () => {
+    const svc = buildService({ enabled: true, allocator: new TBK100AllocatorService() });
+    const tx = mockTx([
+      {
+        id: 'ci-principal',
+        itemType: 'PRINCIPAL',
+        demandedAmount: 1000,
+        collectedAmount: 0,
+        amount: 1000,
+      },
+    ]);
+
+    const r = await svc.allocatePaymentToLedgerInTx(tx, 'tenant-1', 'case-partial', 400, {
+      collectionId: 'col-partial',
+    });
+
+    expect(r.allocated).toBe(true);
+    expect(tx.case.findFirst).toHaveBeenCalledWith({
+      where: { id: 'case-partial', tenantId: 'tenant-1' },
+      include: {
+        claimItems: {
+          where: { status: 'ACTIVE' },
+          orderBy: { sortOrder: 'asc' },
+        },
+      },
+    });
+
+    const data = (tx.ledgerEntry.create as jest.Mock).mock.calls[0][0].data;
+    expect(data).toMatchObject({
+      tenantId: 'tenant-1',
+      caseId: 'case-partial',
+      collectionId: 'col-partial',
+      entryType: 'PAYMENT',
+      amount: 400,
+    });
+    expect(data.allocations.create).toEqual([
+      { claimItemId: 'ci-principal', amount: 400, allocationOrder: 1 },
+    ]);
+    expect(sumAmounts(data.allocations.create)).toBe(400);
+    expect(tx.claimItem.update).toHaveBeenCalledTimes(1);
+    expect(tx.claimItem.update).toHaveBeenCalledWith({
+      where: { id: 'ci-principal' },
+      data: { collectedAmount: { increment: 400 } },
+    });
+  });
+
+  it('multi ClaimItem → TBK100 sırası ile per-ClaimItem increment üretir', async () => {
+    const svc = buildService({ enabled: true, allocator: new TBK100AllocatorService() });
+    const tx = mockTx([
+      { id: 'ci-fee', itemType: 'FEE', demandedAmount: 100, collectedAmount: 0, amount: 100 },
+      { id: 'ci-attorney', itemType: 'ATTORNEY_FEE', demandedAmount: 200, collectedAmount: 0, amount: 200 },
+      { id: 'ci-interest', itemType: 'INTEREST', demandedAmount: 300, collectedAmount: 0, amount: 300 },
+      { id: 'ci-principal', itemType: 'PRINCIPAL', demandedAmount: 1000, collectedAmount: 0, amount: 1000 },
+    ]);
+
+    const r = await svc.allocatePaymentToLedgerInTx(tx, 'tenant-1', 'case-matrix', 750, {
+      collectionId: 'col-matrix',
+    });
+
+    expect(r.allocated).toBe(true);
+    const data = (tx.ledgerEntry.create as jest.Mock).mock.calls[0][0].data;
+    expect(data).toMatchObject({
+      tenantId: 'tenant-1',
+      caseId: 'case-matrix',
+      collectionId: 'col-matrix',
+      entryType: 'PAYMENT',
+      amount: 750,
+    });
+    expect(data.allocations.create).toEqual([
+      { claimItemId: 'ci-fee', amount: 100, allocationOrder: 1 },
+      { claimItemId: 'ci-attorney', amount: 200, allocationOrder: 2 },
+      { claimItemId: 'ci-interest', amount: 300, allocationOrder: 3 },
+      { claimItemId: 'ci-principal', amount: 150, allocationOrder: 4 },
+    ]);
+    expect(sumAmounts(data.allocations.create)).toBe(750);
+    expect(tx.claimItem.update).toHaveBeenNthCalledWith(1, {
+      where: { id: 'ci-fee' },
+      data: { collectedAmount: { increment: 100 } },
+    });
+    expect(tx.claimItem.update).toHaveBeenNthCalledWith(2, {
+      where: { id: 'ci-attorney' },
+      data: { collectedAmount: { increment: 200 } },
+    });
+    expect(tx.claimItem.update).toHaveBeenNthCalledWith(3, {
+      where: { id: 'ci-interest' },
+      data: { collectedAmount: { increment: 300 } },
+    });
+    expect(tx.claimItem.update).toHaveBeenNthCalledWith(4, {
+      where: { id: 'ci-principal' },
+      data: { collectedAmount: { increment: 150 } },
     });
   });
 });
