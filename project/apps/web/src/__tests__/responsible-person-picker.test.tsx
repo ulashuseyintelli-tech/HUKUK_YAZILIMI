@@ -80,4 +80,33 @@ describe("ResponsiblePersonPicker (M2-G3b)", () => {
     expect(screen.getByText("Atanmamış")).toBeTruthy();
     expect(patch).not.toHaveBeenCalled();
   });
+
+  // A1: loud-error — sessiz başarısızlık maskelenmesin.
+  it("PATCH başarısız → GÖRÜNÜR 'Kaydedilemedi' uyarısı + seçim uygulanmaz", async () => {
+    mockGet(null);
+    patch.mockRejectedValueOnce(new Error("Geçersiz avukat"));
+    render(<ResponsiblePersonPicker caseId="c1" />);
+    await ready();
+    fireEvent.change(select(), { target: { value: "LAWYER:L1" } });
+    // role=alert görünür + "Kaydedilemedi" başlığı + sebep metni
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(screen.getByText(/Kaydedilemedi/)).toBeTruthy();
+    expect(screen.getByText(/Geçersiz avukat/)).toBeTruthy();
+    // seçim uygulanmadı → dropdown eski (boş) değerine döner
+    expect(select().value).toBe("");
+  });
+
+  it("başarısız sonra başarılı PATCH → uyarı temizlenir", async () => {
+    mockGet(null);
+    patch.mockRejectedValueOnce(new Error("Geçici hata"));
+    render(<ResponsiblePersonPicker caseId="c1" />);
+    await ready();
+    // 1) başarısız → uyarı çıkar
+    fireEvent.change(select(), { target: { value: "LAWYER:L1" } });
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    // 2) tekrar dene → bu sefer başarılı (beforeEach default resolve) → uyarı kalkar
+    await ready();
+    fireEvent.change(select(), { target: { value: "LAWYER:L1" } });
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  });
 });
