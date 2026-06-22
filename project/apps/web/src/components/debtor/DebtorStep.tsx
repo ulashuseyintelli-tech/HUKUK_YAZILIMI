@@ -50,6 +50,8 @@ interface DebtDocumentResult {
     issueDate?: string;
     documentNo?: string;
     description?: string;
+    kdvRate?: number; // FATURA (G1 backend): KDV oranı
+    kdvAmount?: number; // FATURA (G1 backend): KDV tutarı
   };
   bankInfo?: {
     bankName?: string;
@@ -236,7 +238,7 @@ export function isLowConfidence(confidence: number | null | undefined): boolean 
 interface DebtorStepProps {
   selectedDebtors: CaseDebtor[];
   onDebtorsChange: Dispatch<SetStateAction<CaseDebtor[]>>;
-  onDebtInfoDetected?: (debtInfo: DebtDocumentResult["debtInfo"]) => void;
+  onDebtInfoDetected?: (debtInfo: DebtDocumentResult["debtInfo"], documentType?: DebtDocumentResult["documentType"]) => void;
   onInstrumentsDetected?: (instruments: Instrument[]) => void;
   // BUG-4: case müvekkil(ler)i — taranan ALACAKLI/lehtar ile karşılaştırma (mismatch uyarısı).
   creditors?: CreditorRef[];
@@ -563,7 +565,7 @@ export function DebtorStep({ selectedDebtors, onDebtorsChange, onDebtInfoDetecte
         /* telemetri hatası accept'i bloke etmez */
       }
     } else if (onDebtInfoDetected && wizardResult.debtInfo) {
-      onDebtInfoDetected(wizardResult.debtInfo);
+      onDebtInfoDetected(wizardResult.debtInfo, wizardResult.documentType);
     }
     
     // Sihirbazı kapat
