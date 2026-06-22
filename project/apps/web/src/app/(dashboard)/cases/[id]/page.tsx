@@ -52,6 +52,7 @@ import { DueModal, CollectionModal, HesapOzetiPanel } from "@/components/finance
 import { FaizDokumuPanel } from "@/components/interest";
 import { OperationDeck } from "@/components/case-detail";
 import IntakeLinksCard from "@/components/case/IntakeLinksCard";
+import { ClaimItemPanel } from "@/components/claim-item";
 import { ResponsiblePersonPicker } from "@/components/case/responsible-person-picker";
 
 // ============================================
@@ -804,6 +805,8 @@ export default function CaseDetailPage() {
   
   // Due Modal State
   const [dueModalOpen, setDueModalOpen] = useState(false);
+  // PR-5a: kanonik ClaimItem paneli collapsible + lazy (yalnız açılınca mount → GET /claim-items).
+  const [showCanonicalClaims, setShowCanonicalClaims] = useState(false);
   const [editingDue, setEditingDue] = useState<any>(null);
   
   // Doküman İndirme State
@@ -2457,6 +2460,26 @@ export default function CaseDetailPage() {
                   </div>
                 </div>
               </div>
+            </div>
+
+            {/* PR-5a: Alacak Kalemleri (Kanonik) — salt görüntüleme · collapsible + lazy (kapalı gelir) */}
+            <div className="bg-white border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)] p-3">
+              <button
+                type="button"
+                onClick={() => setShowCanonicalClaims((v) => !v)}
+                className="w-full flex items-center justify-between gap-2"
+              >
+                <div className="text-left">
+                  <h4 className="text-[11px] font-semibold text-gray-700">Alacak Kalemleri (Kanonik)</h4>
+                  <p className="text-[9px] text-gray-400">Tahsilat ve TBK100 dağıtımında kullanılan kanonik alacak kalemleri. Salt görüntüleme.</p>
+                </div>
+                <span className="text-[10px] text-blue-600 whitespace-nowrap">{showCanonicalClaims ? "▲ Gizle" : "▼ Göster"}</span>
+              </button>
+              {showCanonicalClaims && (
+                <div className="mt-2">
+                  <ClaimItemPanel caseId={caseData.id} readOnly />
+                </div>
+              )}
             </div>
 
             {/* Operasyon Masası - Accordion Paneller */}
