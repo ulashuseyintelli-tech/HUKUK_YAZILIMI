@@ -186,8 +186,11 @@ export function buildDebtResultFromInstruments(instruments: Instrument[]): DebtD
     if (!idByName.has(name)) idByName.set(name, identityNo);
     else if (identityNo && !idByName.get(name)) idByName.set(name, identityNo);
   };
+  // Keşideci (drawer) = ONAYLI rol (kambiyo'da keşideci borçludur) → person-gate'ten MUAF.
+  const drawerNames = new Set<string>();
   for (const inst of instruments) {
     addName(inst.drawerName, inst.drawerIdentityNo);
+    if (inst.drawerName) drawerNames.add(inst.drawerName);
     for (const d of inst.debtorCandidates ?? []) addName(d);
   }
   // FATURA (G1): alacaklı (satıcı) tarafı — role=ALACAKLI. Kambiyo'da creditorName BOŞ → hiç eklenmez (regresyon yok).
@@ -210,6 +213,7 @@ export function buildDebtResultFromInstruments(instruments: Instrument[]): DebtD
   const buildPartiesDeduped = (
     nameToId: Map<string, string | undefined>,
     role: "BORCLU" | "ALACAKLI",
+    opts?: { gatePersonsWithoutRole?: boolean; exemptNames?: Set<string> },
   ): DebtDocumentResult["parties"] => {
     const byKey = new Map<string, DebtDocumentResult["parties"][number]>();
     for (const [name, rawId] of nameToId.entries()) {
@@ -217,6 +221,17 @@ export function buildDebtResultFromInstruments(instruments: Instrument[]): DebtD
       const type = inferPartyType(name, rawId);
       // Kimlik no: tip-katı checksum (sanitizeOcrIdentityNo) — misread/uydurma DÜŞER, yalnız geçerli yayılır.
       const identityNo = sanitizeOcrIdentityNo(rawId, type);
+      // PERSON-GATE (#2, ulas kuralı): kimliksiz + rolü belirsiz ŞAHIS borçlu adayı SENTEZLENMEZ.
+      //  OCR'ın rol-siz attığı şahıs adları (lehtar/hamil/ciranta misread) yanlışlıkla borçlu olmasın.
+      //  MUAF: keşideci (exemptNames) · geçerli kimlikli · COMPANY. Onaylı ciranta/kefil/aval muafiyeti
+      //  ve REVIEW-rolü surfacing = A1 ilişki motoru işi (bu veri katmanında rol bilgisi yok).
+      if (
+        opts?.gatePersonsWithoutRole &&
+        type === "INDIVIDUAL" &&
+        !identityNo &&
+        !opts.exemptNames?.has(name)
+      )
+        continue;
       const key = identityNo
         ? `id:${identityNo}`
         : `name:${foldTurkishUpper(name).replace(/\s+/g, " ").trim()}`;
@@ -232,7 +247,11 @@ export function buildDebtResultFromInstruments(instruments: Instrument[]): DebtD
     return Array.from(byKey.values());
   };
 
-  const debtorParties = buildPartiesDeduped(idByName, "BORCLU");
+  // Borçlu sentezi: person-gate AÇIK (keşideci muaf). Alacaklı (FATURA satıcı): gate YOK (farklı rol semantiği).
+  const debtorParties = buildPartiesDeduped(idByName, "BORCLU", {
+    gatePersonsWithoutRole: true,
+    exemptNames: drawerNames,
+  });
   const creditorParties = buildPartiesDeduped(creditorByName, "ALACAKLI");
   const parties = [...debtorParties, ...creditorParties];
 
