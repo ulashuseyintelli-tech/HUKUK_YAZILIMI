@@ -331,7 +331,7 @@ export default function NewCasePage() {
     nafakaStartDate: "", monthlyNafakaAmount: "",
     exchangeDate: "", exchangeRateType: "ODEME_TARIHI" as "TAKIP_TARIHI" | "ODEME_TARIHI",
     // Yeni lookup alanları
-    takipTuruId: "", asamaId: "", riskId: "", borcluTipiId: "", durumEtiketiId: "",
+    takipTuruId: "", asamaId: "", riskId: "", durumEtiketiId: "",
     mahiyetTipiId: "", mahiyetKodu: "",
     sorumluPersonelId: "", dahiliNot: "", muvekkilNotu: "",
   });
@@ -517,8 +517,7 @@ export default function NewCasePage() {
     if (mahiyetCode) {
       const mahiyet = lookups.mahiyetTipi.find(m => m.code === mahiyetCode);
       const takipTuru = lookups.takipTuru.find(t => t.code === takipTuruCode);
-      const gercekKisi = lookups.borcluTipi.find(b => b.code === "GERCEK_KISI");
-      
+
       // PR-D (D3): lookups yüklü ama beklenen takip türü kodu yoksa = katalog/seed drift.
       // Sessiz kalma → gözlemlenebilir yap. Banner DEĞİL (banner yalnız boş/yüklenememiş lookup için).
       if (takipTuruCode && !takipTuru) {
@@ -532,11 +531,10 @@ export default function NewCasePage() {
           mahiyetTipiId: mahiyet?.id || prev.mahiyetTipiId,
           mahiyetKodu: mahiyet?.code || mahiyetCode || prev.mahiyetKodu,
           takipTuruId: takipTuru?.id || prev.takipTuruId,
-          borcluTipiId: gercekKisi?.id || prev.borcluTipiId,
         }));
       }
     }
-  }, [lookups.mahiyetTipi, lookups.takipTuru, lookups.borcluTipi, documentSource, caseData.subCategory]);
+  }, [lookups.mahiyetTipi, lookups.takipTuru, documentSource, caseData.subCategory]);
 
   const loadExistingData = async () => {
     try {
@@ -896,11 +894,6 @@ export default function NewCasePage() {
           if (mahiyet) updates.mahiyetKodu = mahiyet.code;
         }
         
-        // Varsayılan Borçlu Tipi
-        if (selectedTakipTuru.defaultBorcluTipiId && !prev.borcluTipiId) {
-          updates.borcluTipiId = selectedTakipTuru.defaultBorcluTipiId;
-        }
-        
         // Risk durumu otomatik atanmaz - dosya açıldıktan sonra manuel belirlenir
       }
       
@@ -1214,7 +1207,7 @@ export default function NewCasePage() {
         exchangeDate: caseData.exchangeDate || undefined, exchangeRateType: caseData.exchangeRateType,
         // Yeni lookup alanları
         takipTuruId: caseData.takipTuruId || undefined, asamaId: caseData.asamaId || undefined,
-        riskId: caseData.riskId || undefined, borcluTipiId: caseData.borcluTipiId || undefined,
+        riskId: caseData.riskId || undefined,
         durumEtiketiId: caseData.durumEtiketiId || undefined, mahiyetTipiId: caseData.mahiyetTipiId || undefined,
         mahiyetKodu: caseData.mahiyetKodu || undefined, sorumluPersonelId: caseData.sorumluPersonelId || undefined,
         dahiliNot: caseData.dahiliNot || undefined, muvekkilNotu: caseData.muvekkilNotu || undefined,
@@ -1609,7 +1602,6 @@ export default function NewCasePage() {
                 {/* M2-G3c: Dosya Sorumlusu = gerçek kişi (Lawyer/StaffMember) picker. User dropdown'unun yerine; zorunlu. */}
                 <div><label className="block text-xs font-medium mb-0.5">Dosya Sorumlusu <span className="text-red-500">*</span></label><ResponsibleCandidateSelect value={responsiblePerson} onChange={setResponsiblePerson} disabled={loading} /></div>
                 <div><label className="block text-xs font-medium mb-0.5">Aşama</label><select name="asamaId" value={caseData.asamaId} onChange={handleCaseDataChange} className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary"><option value="">Seçiniz</option>{lookups.asama.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
-                <div><label className="block text-xs font-medium mb-0.5">Borçlu Tipi</label><select name="borcluTipiId" value={caseData.borcluTipiId} onChange={handleCaseDataChange} className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary"><option value="">Seçiniz</option>{lookups.borcluTipi.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
                 <div><label className="block text-xs font-medium mb-0.5">Mahiyet Tipi</label><select name="mahiyetTipiId" value={caseData.mahiyetTipiId} onChange={(e) => { const selectedId = e.target.value; const selectedItem = lookups.mahiyetTipi.find(m => m.id === selectedId); setCaseData(prev => ({ ...prev, mahiyetTipiId: selectedId, mahiyetKodu: selectedItem?.code || '' })); }} className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary"><option value="">Seçiniz</option>{lookups.mahiyetTipi.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
                 <div><label className="block text-xs font-medium mb-0.5">Mahiyet Kodu</label><input type="text" name="mahiyetKodu" value={caseData.mahiyetKodu} onChange={handleCaseDataChange} placeholder="KIRA, AIDAT" className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary" /></div>
               </div>
