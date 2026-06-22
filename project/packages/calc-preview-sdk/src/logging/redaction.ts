@@ -11,13 +11,16 @@ import { PII_FIELDS } from '../constants';
  * Replaces known PII patterns with [REDACTED].
  */
 export function redactPii(message: string): string {
-  // TCKN pattern (11 digits)
-  let result = message.replace(/\b\d{11}\b/g, '[TCKN_REDACTED]');
-  
-  // Phone patterns (Turkish)
-  result = result.replace(/\b0?5\d{9}\b/g, '[PHONE_REDACTED]');
+  // Telefon desenleri (Türkiye) — TCKN deseninden ÖNCE çalışmalı.
+  // 05321234567 gibi 11 haneli bir cep numarası, aksi halde genel 11-hane
+  // TCKN kuralına (\b\d{11}\b) takılır. Geçerli bir TCKN asla 0 ile başlamaz,
+  // bu yüzden 0 ile başlayan 11 haneli dizi her zaman telefon kabul edilir.
+  let result = message.replace(/\b0?5\d{9}\b/g, '[PHONE_REDACTED]');
   result = result.replace(/\+90\s?\d{10}/g, '[PHONE_REDACTED]');
-  
+
+  // TCKN pattern (11 digits; first digit 1-9 — a TCKN never starts with 0)
+  result = result.replace(/\b[1-9]\d{10}\b/g, '[TCKN_REDACTED]');
+
   // Email pattern
   result = result.replace(/\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/g, '[EMAIL_REDACTED]');
   
