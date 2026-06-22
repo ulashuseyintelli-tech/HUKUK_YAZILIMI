@@ -49,8 +49,9 @@ const STAFF_TYPE_LABEL: Record<string, string> = {
 
 const squish = (s: string) => s.replace(/\s+/g, " ").trim();
 
-// Ortak biçimlendirme — hem aday listesi (G2) hem mevcut-sorumlu okuması (G3b) kullanır.
-const formatLawyer = (l: {
+// Ortak biçimlendirme — hem aday listesi (G2) hem mevcut-sorumlu okuması (G3b) hem
+// personel raporu (G5b: report.service) kullanır → tek-kaynak display, drift yok.
+export const formatLawyer = (l: {
   id: string;
   name: string;
   surname: string;
@@ -67,7 +68,7 @@ const formatLawyer = (l: {
   };
 };
 
-const formatStaff = (s: {
+export const formatStaff = (s: {
   id: string;
   firstName: string;
   lastName: string;
