@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, mapClaimKalemTuruToDueType } from '../lib/case-due-payload';
+import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, mapClaimKalemTuruToDueType, resolveDueInterestType } from '../lib/case-due-payload';
 
 describe('buildCreateCaseDuesPayload', () => {
   it('create-case payload alacak faiz alanlarini dusurmez', () => {
@@ -195,5 +195,29 @@ describe("mapClaimKalemTuruToDueType (PR-i1 — genel fer'i/masraf foundation)",
     expect(mapClaimKalemTuruToDueType('___X___')).toBe('PRINCIPAL');
     expect(mapClaimKalemTuruToDueType('')).toBe('PRINCIPAL');
     expect(mapClaimKalemTuruToDueType(undefined)).toBe('PRINCIPAL');
+  });
+});
+
+describe("resolveDueInterestType (PR-i2 — fer'i faiz uygunlaştırma)", () => {
+  it('INTEREST (işlemiş faiz) → undefined (kalem faizin kendisi)', () => {
+    expect(resolveDueInterestType('INTEREST', 'YASAL')).toBeUndefined();
+    expect(resolveDueInterestType('INTEREST', 'YOK')).toBeUndefined();
+    expect(resolveDueInterestType('INTEREST', undefined)).toBeUndefined();
+  });
+
+  it('"YOK" → undefined (geçersiz tip payload\'a sızmaz)', () => {
+    expect(resolveDueInterestType('EXPENSE', 'YOK')).toBeUndefined();
+    expect(resolveDueInterestType('PRINCIPAL', 'YOK')).toBeUndefined();
+  });
+
+  it("fer'i geçerli tip korunur", () => {
+    expect(resolveDueInterestType('EXPENSE', 'YASAL')).toBe('YASAL');
+    expect(resolveDueInterestType('VEKALET_UCRETI', 'YASAL')).toBe('YASAL');
+  });
+
+  it('PRINCIPAL mevcut davranış korunur (raw geçer · undefined→YASAL)', () => {
+    expect(resolveDueInterestType('PRINCIPAL', 'TICARI')).toBe('TICARI');
+    expect(resolveDueInterestType('PRINCIPAL', undefined)).toBe('YASAL');
+    expect(resolveDueInterestType('PRINCIPAL', '')).toBe('YASAL');
   });
 });

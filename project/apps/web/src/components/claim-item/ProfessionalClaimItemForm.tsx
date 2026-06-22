@@ -113,6 +113,70 @@ const TAKIP_TIPI_CONFIG: Record<string, TakipTipiConfig> = {
     ekBilgiler: null,
     canOverrideInterest: true,
   },
+  // ── PR-i2: GENEL FER'İ / MASRAF KALEMLERİ (standalone; tüm takip türlerinde) ──
+  MASRAF: {
+    label: "Masraf",
+    faizTuru: "YASAL",
+    tazminatOrani: 0,
+    komisyonOrani: 0,
+    zorunluAlanlar: ["tutar"],
+    ekBilgiler: null,
+    canOverrideInterest: true,
+  },
+  YARGILAMA_GIDERI: {
+    label: "Yargılama Gideri",
+    faizTuru: "YASAL",
+    tazminatOrani: 0,
+    komisyonOrani: 0,
+    zorunluAlanlar: ["tutar"],
+    ekBilgiler: null,
+    canOverrideInterest: true,
+  },
+  VEKALET_UCRETI: {
+    label: "Vekalet Ücreti",
+    faizTuru: "YASAL",
+    tazminatOrani: 0,
+    komisyonOrani: 0,
+    zorunluAlanlar: ["tutar"],
+    ekBilgiler: null,
+    canOverrideInterest: true,
+  },
+  ISLEMIS_FAIZ: {
+    label: "İşlemiş Faiz",
+    faizTuru: "YOK", // PR-i2: kalemin kendisi faiz → resolveDueInterestType interestType'ı undefined yapar
+    tazminatOrani: 0,
+    komisyonOrani: 0,
+    zorunluAlanlar: ["tutar"],
+    ekBilgiler: null,
+    canOverrideInterest: false,
+  },
+  CEZAI_SART: {
+    label: "Cezai Şart",
+    faizTuru: "YASAL",
+    tazminatOrani: 0,
+    komisyonOrani: 0,
+    zorunluAlanlar: ["tutar"],
+    ekBilgiler: null,
+    canOverrideInterest: true,
+  },
+  HARC: {
+    label: "Harç",
+    faizTuru: "YASAL",
+    tazminatOrani: 0,
+    komisyonOrani: 0,
+    zorunluAlanlar: ["tutar"],
+    ekBilgiler: null,
+    canOverrideInterest: true,
+  },
+  DIGER_FERI: {
+    label: "Diğer Fer'i Alacak",
+    faizTuru: "YASAL",
+    tazminatOrani: 0,
+    komisyonOrani: 0,
+    zorunluAlanlar: ["tutar"],
+    ekBilgiler: null,
+    canOverrideInterest: true,
+  },
   // NAFAKA ÖZEL KALEMLERİ
   NAFAKA_BIRIKIMIS: {
     label: "Birikmiş Nafaka",
@@ -1177,6 +1241,15 @@ export function ProfessionalClaimItemForm({
                 <optgroup label="İlamlı Alacaklar">
                   <option value="ILAM">İlam</option>
                   <option value="NAFAKA">Nafaka</option>
+                </optgroup>
+                <optgroup label="Fer'i Alacaklar / Masraflar">
+                  <option value="MASRAF">Masraf</option>
+                  <option value="YARGILAMA_GIDERI">Yargılama Gideri</option>
+                  <option value="VEKALET_UCRETI">Vekalet Ücreti</option>
+                  <option value="ISLEMIS_FAIZ">İşlemiş Faiz</option>
+                  <option value="CEZAI_SART">Cezai Şart</option>
+                  <option value="HARC">Harç</option>
+                  <option value="DIGER_FERI">Diğer Fer'i Alacak</option>
                 </optgroup>
               </select>
             </div>

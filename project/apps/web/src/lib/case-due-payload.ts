@@ -190,3 +190,20 @@ export function mapClaimKalemTuruToDueType(kalemTuru?: string): ClaimDueType {
   if (!kalemTuru) return 'PRINCIPAL';
   return CLAIM_KALEM_DUE_TYPE[kalemTuru] ?? 'PRINCIPAL';
 }
+
+/**
+ * PR-i2 (genel fer'i/masraf) — standalone/fer'i kalem için Due.interestType uygunlaştırma.
+ * İşlemiş faiz (DueType INTEREST) kalemin KENDİSİ faizdir → ayrı faiz tipi YOK (undefined).
+ * Geçersiz "YOK" (config faizTuru) payload'a SIZMASIN → undefined.
+ * Diğer durumda MEVCUT davranış korunur: geçerli tip ya da varsayılan 'YASAL'
+ * (PRINCIPAL akışı DEĞİŞMEZ; hiçbir ana kalemTuru faizTuru='YOK' değil).
+ */
+export type DueInterestType = 'YASAL' | 'TICARI' | 'AVANS' | 'TEMERRUT';
+
+export function resolveDueInterestType(dueType: ClaimDueType, takipOncesiFaiz?: string): DueInterestType | undefined {
+  if (dueType === 'INTEREST') return undefined;
+  if (takipOncesiFaiz === 'YOK') return undefined;
+  // takipOncesiFaiz mevcut sistemde config.faizTuru'dan gelir (örn. TICARI_DEGISEN/AKDI de olabilir);
+  // eski davranış `item:any` üzerinden bu değeri aynen geçiriyordu → cast ile birebir korunur.
+  return (takipOncesiFaiz || 'YASAL') as DueInterestType;
+}
