@@ -656,6 +656,17 @@ export class CreateCaseDto {
   @IsOptional()
   sorumluPersonelId?: string;
 
+  // M2-A3a: Dosya Sorumlusu = gerçek kişi (Lawyer XOR StaffMember). Create'te EN FAZLA BİR;
+  // verilirse create TX'inde yazılır (ayrı PATCH'siz). none = sahipsiz (meşru). both → 400.
+  // sorumluPersonelId (User) geçiş alanı olarak ayrı kalır (yaratıcı fallback).
+  @IsString()
+  @IsOptional()
+  responsibleLawyerId?: string;
+
+  @IsString()
+  @IsOptional()
+  responsibleStaffId?: string;
+
   @IsString()
   @IsOptional()
   dahiliNot?: string;

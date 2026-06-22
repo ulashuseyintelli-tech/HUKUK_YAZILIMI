@@ -80,6 +80,64 @@ export const formatStaff = (s: {
   subtitle: STAFF_TYPE_LABEL[s.staffType] ?? "Personel",
 });
 
+/**
+ * M2-A3a: Dosya Sorumlusu (gerçek kişi) seçimini doğrular + çözer (DB YAZMAZ).
+ * assign (allowNone=false → tam bir) ve create (allowNone=true → en fazla bir) ORTAK kullanır.
+ * - both-set → 400 · none + !allowNone → 400 · none + allowNone → {null, null} (sahipsiz, meşru)
+ * - lawyer: aktif + canBeResponsible + aynı tenant · staff: aktif + aynı tenant · değilse → 400
+ * Cross-tenant/pasif aday: tenant-scoped sorgu eşleşmez → otomatik reddedilir.
+ */
+export async function validateResponsibleSelection(
+  prisma: PrismaService,
+  tenantId: string,
+  dto: { responsibleLawyerId?: string; responsibleStaffId?: string },
+  opts: { allowNone: boolean }
+): Promise<{ responsibleLawyerId: string | null; responsibleStaffId: string | null }> {
+  const lawyerId = dto.responsibleLawyerId?.trim() || undefined;
+  const staffId = dto.responsibleStaffId?.trim() || undefined;
+
+  if (lawyerId && staffId) {
+    throw new BadRequestException(
+      "Yalnız bir Dosya Sorumlusu tipi seçilebilir (avukat VEYA personel)."
+    );
+  }
+  if (!lawyerId && !staffId) {
+    if (opts.allowNone) return { responsibleLawyerId: null, responsibleStaffId: null };
+    throw new BadRequestException(
+      "Bir Dosya Sorumlusu (avukat veya personel) seçilmelidir."
+    );
+  }
+
+  if (lawyerId) {
+    const lawyer = await prisma.lawyer.findFirst({
+      where: { id: lawyerId, tenantId, isActive: true, canBeResponsible: true },
+      select: { id: true },
+    });
+    if (!lawyer) {
+      throw new BadRequestException(
+        "Geçersiz avukat: aktif ve Dosya Sorumlusu olabilecek bir aday değil."
+      );
+    }
+    return { responsibleLawyerId: lawyerId, responsibleStaffId: null };
+  }
+
+  // Buraya yalnızca staffId tanımlıyken gelinir (exactly-one guard'ları + lawyer return).
+  // Açık daraltma: tip güvenliği + "id: undefined → herhangi kayıt eşleşir" footgun'unu kapatır.
+  if (!staffId) {
+    throw new BadRequestException(
+      "Bir Dosya Sorumlusu (avukat veya personel) seçilmelidir."
+    );
+  }
+  const staff = await prisma.staffMember.findFirst({
+    where: { id: staffId, tenantId, isActive: true },
+    select: { id: true },
+  });
+  if (!staff) {
+    throw new BadRequestException("Geçersiz personel: aktif bir aday değil.");
+  }
+  return { responsibleLawyerId: null, responsibleStaffId: staffId };
+}
+
 @Injectable()
 export class ResponsibleCandidatesService {
   constructor(private prisma: PrismaService) {}
@@ -157,20 +215,10 @@ export class ResponsibleCandidatesService {
     caseId: string,
     dto: { responsibleLawyerId?: string; responsibleStaffId?: string }
   ): Promise<{ responsibleLawyerId: string | null; responsibleStaffId: string | null }> {
-    const lawyerId = dto.responsibleLawyerId?.trim() || undefined;
-    const staffId = dto.responsibleStaffId?.trim() || undefined;
-
-    // exactly-one (girdi)
-    if (lawyerId && staffId) {
-      throw new BadRequestException(
-        "Yalnız bir Dosya Sorumlusu tipi seçilebilir (avukat VEYA personel)."
-      );
-    }
-    if (!lawyerId && !staffId) {
-      throw new BadRequestException(
-        "Bir Dosya Sorumlusu (avukat veya personel) seçilmelidir."
-      );
-    }
+    // M2-A3a: ortak validator (exactly-one) — geçersiz seçimde DB'ye dokunulmadan 400.
+    const resolved = await validateResponsibleSelection(this.prisma, tenantId, dto, {
+      allowNone: false,
+    });
 
     // dosya bu tenant'a ait olmalı (cross-tenant dosya → 404)
     const kase = await this.prisma.case.findFirst({
@@ -179,46 +227,13 @@ export class ResponsibleCandidatesService {
     });
     if (!kase) throw new NotFoundException("Dosya bulunamadı.");
 
-    if (lawyerId) {
-      // aktif + canBeResponsible + aynı tenant (cross-tenant/pasif → aday değil)
-      const lawyer = await this.prisma.lawyer.findFirst({
-        where: { id: lawyerId, tenantId, isActive: true, canBeResponsible: true },
-        select: { id: true },
-      });
-      if (!lawyer) {
-        throw new BadRequestException(
-          "Geçersiz avukat: aktif ve Dosya Sorumlusu olabilecek bir aday değil."
-        );
-      }
-      await this.prisma.case.update({
-        where: { id: caseId },
-        data: { responsibleLawyerId: lawyerId, responsibleStaffId: null },
-      });
-      return { responsibleLawyerId: lawyerId, responsibleStaffId: null };
-    }
-
-    // Buraya yalnızca staffId tanımlıyken gelinir (exactly-one guard'ları + lawyer return).
-    // Açık daraltma: tip güvenliği + "id: undefined → herhangi kayıt eşleşir" footgun'unu kapatır.
-    if (!staffId) {
-      throw new BadRequestException(
-        "Bir Dosya Sorumlusu (avukat veya personel) seçilmelidir."
-      );
-    }
-
-    // staff: aktif + aynı tenant
-    const staff = await this.prisma.staffMember.findFirst({
-      where: { id: staffId, tenantId, isActive: true },
-      select: { id: true },
-    });
-    if (!staff) {
-      throw new BadRequestException(
-        "Geçersiz personel: aktif bir aday değil."
-      );
-    }
     await this.prisma.case.update({
       where: { id: caseId },
-      data: { responsibleStaffId: staffId, responsibleLawyerId: null },
+      data: {
+        responsibleLawyerId: resolved.responsibleLawyerId,
+        responsibleStaffId: resolved.responsibleStaffId,
+      },
     });
-    return { responsibleLawyerId: null, responsibleStaffId: staffId };
+    return resolved;
   }
 }
