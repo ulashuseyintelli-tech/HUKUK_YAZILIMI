@@ -276,12 +276,7 @@ const TAKIP_TIPI_CONFIG: Record<string, TakipTipiConfig> = {
   },
 };
 
-// İlamlı takipte eklenebilecek yan alacak kalemleri
-const ILAM_YAN_ALACAK_TURLERI = [
-  { value: "ILAM_ISLEMIS_FAIZ", label: "İşlemiş Faiz (Dava-İlam Arası)", zorunlu: false },
-  { value: "ILAM_YARGILAMA_GIDERI", label: "Yargılama Giderleri", zorunlu: false },
-  { value: "ILAM_VEKALET_UCRETI", label: "Karşı Taraf Vekalet Ücreti", zorunlu: false },
-];
+// PR-i3: ILAM_YAN_ALACAK_TURLERI + nested yan-alacak girişi EMEKLİ → standalone fer'i kalemler (tek-kaynak).
 
 // Nafaka ilamında eklenebilecek kalemler
 const NAFAKA_YAN_ALACAK_TURLERI = [
@@ -413,14 +408,7 @@ interface AlacakKalemi {
   };
 }
 
-// İlamlı takip için yan alacak kalemi
-interface IlamYanAlacak {
-  id: string;
-  tur: string; // ILAM_ISLEMIS_FAIZ | ILAM_YARGILAMA_GIDERI | ILAM_VEKALET_UCRETI
-  tutar: number;
-  aciklama: string;
-  faizBaslangic?: string; // Faiz işleyecekse
-}
+// PR-i3: IlamYanAlacak interface EMEKLİ (nested yan-alacak state kaldırıldı).
 
 interface HesapOzetiSatir {
   key: string;
@@ -757,8 +745,7 @@ export function ProfessionalClaimItemForm({
   // Faiz türü belirleme sonucu
   const [interestTypeResult, setInterestTypeResult] = useState<InterestTypeResult | null>(null);
 
-  // İlamlı Takip Yan Alacak Kalemleri
-  const [ilamYanAlacaklar, setIlamYanAlacaklar] = useState<IlamYanAlacak[]>(() => initialItems?.[0]?.ilamYanAlacaklar ?? []);
+  // PR-i3: ilamYanAlacaklar state KALDIRILDI (nested yan-alacak emekli → standalone fer'i kalemler).
 
   // Kalem türü değiştiğinde faiz türünü yeniden hesapla
   useEffect(() => {
@@ -898,19 +885,9 @@ export function ProfessionalClaimItemForm({
     // 1. Asıl Alacak
     satirlar.push({ key: "asil_alacak", label: config.label, tutar: kalem.bakiyeTutar });
 
-    // 2. İlamlı Takip Yan Alacakları (varsa)
-    let yanAlacakToplam = 0;
-    if (kalem.kalemTuru === "ILAM" && ilamYanAlacaklar.length > 0) {
-      ilamYanAlacaklar.forEach((yan, index) => {
-        const yanConfig = TAKIP_TIPI_CONFIG[yan.tur];
-        satirlar.push({ 
-          key: `yan_alacak_${index}`, 
-          label: yanConfig?.label || yan.aciklama, 
-          tutar: yan.tutar 
-        });
-        yanAlacakToplam += yan.tutar;
-      });
-    }
+    // 2. İlamlı Takip Yan Alacakları — PR-i3: nested EMEKLİ; yan-alacaklar artık AYRI fer'i kalemdir
+    // (listede ayrı satır). ILAM kalem toplamı yalnız asıl alacaktır (dosya toplamı = liste toplamı).
+    const yanAlacakToplam = 0;
 
     // 3. Çek Tazminatı
     let tazminat = 0;
@@ -1076,9 +1053,10 @@ export function ProfessionalClaimItemForm({
     setIsCalculated(true);
 
     if (onItemsChange) {
-      onItemsChange([{ ...kalem, hesapOzeti: satirlar, ilamYanAlacaklar }]);
+      // PR-i3: ilamYanAlacaklar artık emit EDİLMEZ (nested emekli; standalone fer'i kalemler).
+      onItemsChange([{ ...kalem, hesapOzeti: satirlar }]);
     }
-  }, [kalem, takipTarihi, hesapTarihi, borcluSayisi, hasIhtiyatiHaciz, ihtiyatiHacizMasraflari, ilamYanAlacaklar, checkZorunluAlanlar, onItemsChange, faizBaslangicTercih]);
+  }, [kalem, takipTarihi, hesapTarihi, borcluSayisi, hasIhtiyatiHaciz, ihtiyatiHacizMasraflari, checkZorunluAlanlar, onItemsChange, faizBaslangicTercih]);
 
   // OTOMATİK HESAPLAMA - değişiklik olduğunda 500ms sonra hesapla
   useEffect(() => {
@@ -1477,76 +1455,9 @@ export function ProfessionalClaimItemForm({
             </label>
           </div>
 
-          {/* İLAM YAN ALACAK KALEMLERİ - Asıl alacağın hemen altında */}
-          {kalem.kalemTuru === "ILAM" && (
-            <div className="mt-1.5 pt-1.5 border-t">
-              <div className="flex items-center justify-between mb-1">
-                <select
-                  className="border rounded px-1 py-0.5 text-[10px]"
-                  value=""
-                  onChange={(e) => {
-                    if (e.target.value) {
-                      setIlamYanAlacaklar(prev => [...prev, {
-                        id: `yan_${Date.now()}`,
-                        tur: e.target.value,
-                        tutar: 0,
-                        aciklama: TAKIP_TIPI_CONFIG[e.target.value]?.label || ""
-                      }]);
-                    }
-                  }}
-                >
-                  <option value="">+ Yan Alacak Ekle</option>
-                  {ILAM_YAN_ALACAK_TURLERI.map(t => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
-                <h4 className="text-[10px] font-medium text-gray-600">İlamda Hükmedilen Yan Alacaklar</h4>
-              </div>
-              
-              {ilamYanAlacaklar.length > 0 && (
-                <div className="space-y-1">
-                  {ilamYanAlacaklar.map((yan, index) => (
-                    <div key={yan.id} className="grid grid-cols-4 gap-1.5 items-center">
-                      <div className="col-span-2">
-                        <span className="text-[10px] text-gray-600">
-                          {TAKIP_TIPI_CONFIG[yan.tur]?.label || yan.aciklama}
-                        </span>
-                      </div>
-                      <div>
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={yan.tutar || ""}
-                          onChange={(e) => {
-                            const newYanAlacaklar = [...ilamYanAlacaklar];
-                            newYanAlacaklar[index].tutar = parseFloat(e.target.value) || 0;
-                            setIlamYanAlacaklar(newYanAlacaklar);
-                          }}
-                          placeholder="0,00"
-                          className="w-full border rounded px-1.5 py-0.5 text-xs text-right"
-                        />
-                      </div>
-                      <div className="flex justify-end">
-                        <button
-                          type="button"
-                          onClick={() => setIlamYanAlacaklar(prev => prev.filter((_, i) => i !== index))}
-                          className="text-red-500 hover:text-red-700 text-xs px-1"
-                        >
-                          ✕
-                        </button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-              
-              {ilamYanAlacaklar.length === 0 && (
-                <p className="text-[9px] text-gray-400 italic">
-                  İlamda yargılama gideri, vekalet ücreti veya işlemiş faiz varsa ekleyebilirsiniz.
-                </p>
-              )}
-            </div>
-          )}
+          {/* PR-i3: nested İlam yan-alacak girişi KALDIRILDI → yargılama gideri / vekalet ücreti /
+              işlemiş faiz artık "Fer'i Alacaklar / Masraflar" dropdown'undan AYRI kalem girilir
+              (tek-kaynak; çift-giriş yapısal imkânsız). Eski draft'lar restore'da otomatik göç eder. */}
         </div>
 
         {/* Çek Bilgileri */}

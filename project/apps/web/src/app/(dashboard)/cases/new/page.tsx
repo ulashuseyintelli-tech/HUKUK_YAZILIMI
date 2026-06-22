@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculator, TrendingUp, Receipt, Banknote, FileCheck, Calendar, XCircle, Info, Search, Users, Building2, Landmark, Edit2, Trash2, Phone, Mail, AlertCircle, Settings } from "lucide-react";
 import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
-import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, mapClaimKalemTuruToDueType, resolveDueInterestType } from "@/lib/case-due-payload";
+import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, mapClaimKalemTuruToDueType, resolveDueInterestType, flattenNestedYanAlacaklarRaws } from "@/lib/case-due-payload";
 import { isPoaDuplicateSuppressed } from "@/lib/poa-ux";
 import { resolveLawyerIdsFromScan } from "@/lib/lawyer-match";
 import { buildStaffPayload } from "@/lib/case-staff-payload";
@@ -240,7 +240,9 @@ function buildDuesFromClaimItem(item: any, startDate: string): DueItem[] {
     });
   }
 
-  // 2. İlamlı Takip Yan Alacakları
+  // 2. İlamlı Takip Yan Alacakları — PR-i3: LEGACY/DEFANSİF. Yeni UI nested ÜRETMEZ (kaldırıldı);
+  // eski draft'lar restore'da flattenNestedYanAlacaklarRaws ile düzleştirilir (parent.ilamYanAlacaklar
+  // temizlenir → bu dal fire ETMEZ). Yalnız göç-dışı residual veri için güvenlik ağı (Due kaybı yok).
   if (item.ilamYanAlacaklar && Array.isArray(item.ilamYanAlacaklar)) {
     item.ilamYanAlacaklar.forEach((yan: { tur: string; tutar: number; aciklama: string }) => {
       if (yan.tutar > 0) {
@@ -419,7 +421,11 @@ export default function NewCasePage() {
       // PR-2a + eski-draft guard: claimDraftItems varsa onu kullan; yoksa ama dues varsa
       // (PR-2a öncesi draft) dues'tan minimal hydrate et → liste boş kalmaz, kalem kaybı önlenir.
       if (savedState.claimDraftItems?.length > 0) {
-        setClaimDraftItems(savedState.claimDraftItems);
+        // PR-i3: eski draft'taki nested ilamYanAlacaklar'ı AYRI fer'i kalemlere düzleştir (göç; kayıp yok).
+        setClaimDraftItems(
+          flattenNestedYanAlacaklarRaws(savedState.claimDraftItems.map((i: any) => i.raw))
+            .map((raw: any) => ({ id: genClaimDraftItemId(), raw })),
+        );
       } else if (savedState.dues?.length > 0) {
         setClaimDraftItems(hydrateClaimDraftItemsFromDues(savedState.dues));
       }

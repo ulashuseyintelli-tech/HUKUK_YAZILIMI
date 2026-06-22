@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, mapClaimKalemTuruToDueType, resolveDueInterestType } from '../lib/case-due-payload';
+import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, mapClaimKalemTuruToDueType, resolveDueInterestType, flattenNestedYanAlacaklarRaws } from '../lib/case-due-payload';
 
 describe('buildCreateCaseDuesPayload', () => {
   it('create-case payload alacak faiz alanlarini dusurmez', () => {
@@ -219,5 +219,47 @@ describe("resolveDueInterestType (PR-i2 — fer'i faiz uygunlaştırma)", () => 
     expect(resolveDueInterestType('PRINCIPAL', 'TICARI')).toBe('TICARI');
     expect(resolveDueInterestType('PRINCIPAL', undefined)).toBe('YASAL');
     expect(resolveDueInterestType('PRINCIPAL', '')).toBe('YASAL');
+  });
+});
+
+describe('flattenNestedYanAlacaklarRaws (PR-i3 — nested göç)', () => {
+  it("ILAM + yan-alacaklar → parent (ilamYanAlacaklar temizli) + ayrı fer'i kalemler", () => {
+    const out = flattenNestedYanAlacaklarRaws([
+      {
+        kalemTuru: 'ILAM', bakiyeTutar: 10000, currency: 'TRY', vadeTarihi: '2026-01-01',
+        ilamYanAlacaklar: [
+          { id: 'y1', tur: 'ILAM_YARGILAMA_GIDERI', tutar: 500, aciklama: 'Yarg.' },
+          { id: 'y2', tur: 'ILAM_VEKALET_UCRETI', tutar: 800, aciklama: 'Vek.' },
+          { id: 'y3', tur: 'ILAM_ISLEMIS_FAIZ', tutar: 300, aciklama: 'Faiz' },
+        ],
+      },
+    ]);
+    expect(out).toHaveLength(4);
+    expect(out[0].kalemTuru).toBe('ILAM');
+    expect(out[0].ilamYanAlacaklar).toEqual([]); // parent temizlendi → defansif dal fire etmez
+    expect(out[1]).toMatchObject({ kalemTuru: 'YARGILAMA_GIDERI', bakiyeTutar: 500 });
+    expect(out[2]).toMatchObject({ kalemTuru: 'VEKALET_UCRETI', bakiyeTutar: 800 });
+    expect(out[3]).toMatchObject({ kalemTuru: 'ISLEMIS_FAIZ', bakiyeTutar: 300 });
+  });
+
+  it('nested yoksa parent passthrough (idempotent; ilamYanAlacaklar:[])', () => {
+    const out = flattenNestedYanAlacaklarRaws([{ kalemTuru: 'FATURA', bakiyeTutar: 100 }]);
+    expect(out).toHaveLength(1);
+    expect(out[0].kalemTuru).toBe('FATURA');
+    expect(out[0].ilamYanAlacaklar).toEqual([]);
+  });
+
+  it('tutar<=0 yan-alacak atlanır', () => {
+    const out = flattenNestedYanAlacaklarRaws([
+      { kalemTuru: 'ILAM', bakiyeTutar: 1000, ilamYanAlacaklar: [{ tur: 'ILAM_YARGILAMA_GIDERI', tutar: 0 }] },
+    ]);
+    expect(out).toHaveLength(1); // yalnız parent
+  });
+
+  it('bilinmeyen tur → DIGER_FERI', () => {
+    const out = flattenNestedYanAlacaklarRaws([
+      { kalemTuru: 'ILAM', bakiyeTutar: 1000, ilamYanAlacaklar: [{ tur: 'BILINMEYEN', tutar: 50 }] },
+    ]);
+    expect(out[1].kalemTuru).toBe('DIGER_FERI');
   });
 });
