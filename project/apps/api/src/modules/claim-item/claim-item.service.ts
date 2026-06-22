@@ -78,7 +78,18 @@ export class ClaimItemService {
 
   // Alacak kalemi güncelle
   async update(tenantId: string, id: string, dto: UpdateClaimItemDto) {
-    await this.findOne(tenantId, id);
+    const existing = await this.findOne(tenantId, id);
+
+    // PR-5b — tahsilat invariant'ları (PR-5c edit açılmadan ÖNCE backend guard).
+    const collected = Number(existing.collectedAmount) || 0;
+    // G-A: tahsil edilen tutarın ALTINA düşürmek yasak (eşitleme/artırma serbest).
+    if (dto.amount !== undefined && Number(dto.amount) < collected) {
+      throw new BadRequestException(`Tutar tahsil edilen tutardan (${collected}) düşük olamaz.`);
+    }
+    // G-B: tahsilat başlamışsa kalem tipi değişemez (TBK100 dağıtım kategorisi bozulmasın).
+    if (collected > 0 && dto.itemType && dto.itemType !== existing.itemType) {
+      throw new BadRequestException('Tahsilat yapılmış kalemde kalem tipi (itemType) değiştirilemez.');
+    }
 
     const updateData: any = {};
     if (dto.itemType) updateData.itemType = dto.itemType;
