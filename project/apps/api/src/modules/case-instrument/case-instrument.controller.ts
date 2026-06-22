@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Param, Body, UseGuards, Request } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CaseInstrumentService, CreateInstrumentDto, UpdateInstrumentDto } from './case-instrument.service';
+import { AnalyzeChainDto } from './dto/analyze-chain.dto';
 
 @Controller('case-instruments')
 @UseGuards(JwtAuthGuard)
@@ -14,6 +15,19 @@ export class CaseInstrumentController {
   @Post()
   async create(@Request() req: any, @Body() dto: CreateInstrumentDto) {
     return this.service.create(req.user.tenantId, req.user.id, dto);
+  }
+
+  /**
+   * A1 Faz 2b-A — SAF/stateless kambiyo zinciri analizi (hamil + ADAY müracaat borçluları).
+   * POST /api/case-instruments/chain/analyze
+   *
+   * Gövde = InstrumentChain (Faz 0 kontratı). DB OKUMAZ/YAZMAZ · CaseDebtor YARATMAZ.
+   * Çıktı = { holder, recourse } (recourse.parties = aday; sıralama eksikse NEEDS_REVIEW, borçlu üretilmez).
+   * JwtAuthGuard (sınıf düzeyi) ile korunur; per-tenant veri kullanmaz (saf hesap).
+   */
+  @Post('chain/analyze')
+  analyzeChain(@Body() dto: AnalyzeChainDto) {
+    return this.service.analyzeChain(dto);
   }
 
   /**

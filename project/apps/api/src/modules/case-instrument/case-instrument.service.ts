@@ -1,6 +1,9 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { InstrumentType } from '@prisma/client';
+import { InstrumentChain } from './instrument-chain.contract';
+import { analyzeChain as runChainAnalysis, ChainAnalysis } from './instrument-chain-engine';
+import { AnalyzeChainDto } from './dto/analyze-chain.dto';
 
 export interface CreateInstrumentDto {
   caseId: string;
@@ -142,5 +145,62 @@ export class CaseInstrumentService {
   async getTotalAmount(tenantId: string, caseId: string) {
     const instruments = await this.findAllByCase(tenantId, caseId);
     return instruments.reduce((sum, i) => sum + Number(i.amount), 0);
+  }
+
+  /**
+   * A1 Faz 2b-A — SAF/stateless kambiyo zinciri analizi (hamil + müracaat adayları).
+   * Doğrulanmış DTO'yu Faz 0 kontratına (InstrumentChain) normalize edip headless motoru (2a) çağırır.
+   * DB OKUMAZ/YAZMAZ · tenant verisi DOKUNMAZ · CaseDebtor YARATMAZ (yalnız aday RecourseParty[]).
+   *
+   * Normalize: `position`/`toPosition` undefined → null (motorun `=== null` sıralama kontratı için);
+   * `endorsements`/`avals` verilmezse [] (motor yalnız nodes + avals kullanır).
+   *
+   * Çağrıldığı yerler:
+   * - CaseInstrumentController.analyzeChain() → POST /api/case-instruments/chain/analyze
+   * - case-instrument chain-analyze.endpoint.spec.ts (unit)
+   */
+  analyzeChain(dto: AnalyzeChainDto): ChainAnalysis {
+    const chain: InstrumentChain = {
+      nodes: (dto.nodes ?? []).map((n) => ({
+        role: n.role,
+        party: {
+          name: n.party.name,
+          identityNo: n.party.identityNo,
+          type: n.party.type,
+          partyId: n.party.partyId,
+        },
+        position: n.position ?? null,
+        provenance: {
+          source: n.provenance.source,
+          confidence: n.provenance.confidence,
+          verifiedById: n.provenance.verifiedById,
+          verifiedAt: n.provenance.verifiedAt,
+        },
+      })),
+      endorsements: (dto.endorsements ?? []).map((e) => ({
+        fromPosition: e.fromPosition,
+        toPosition: e.toPosition ?? null,
+        type: e.type,
+        provenance: {
+          source: e.provenance.source,
+          confidence: e.provenance.confidence,
+          verifiedById: e.provenance.verifiedById,
+          verifiedAt: e.provenance.verifiedAt,
+        },
+      })),
+      avals: (dto.avals ?? []).map((a) => ({
+        avalistPosition: a.avalistPosition,
+        guaranteesPosition: a.guaranteesPosition,
+        amount: a.amount,
+        provenance: {
+          source: a.provenance.source,
+          confidence: a.provenance.confidence,
+          verifiedById: a.provenance.verifiedById,
+          verifiedAt: a.provenance.verifiedAt,
+        },
+      })),
+    };
+
+    return runChainAnalysis(chain);
   }
 }
