@@ -52,9 +52,9 @@ export function mapHttpStatusToError(
   // Validation error
   if (status === 400) {
     const validationErrors = extractValidationErrors(body);
-    return new SdkValidationError(message, { 
+    return new SdkValidationError(message, {
       httpStatus: status,
-      validationErrors,
+      ...(validationErrors !== undefined ? { validationErrors } : {}),
     });
   }
   
@@ -63,7 +63,7 @@ export function mapHttpStatusToError(
     const retryAfterMs = extractRetryAfter(body);
     return new SdkRateLimitError('Rate limit exceeded', {
       httpStatus: status,
-      retryAfterMs,
+      ...(retryAfterMs !== undefined ? { retryAfterMs } : {}),
     });
   }
   
@@ -145,11 +145,14 @@ function extractValidationErrors(body: unknown): { field: string; message: strin
   if (Array.isArray(obj['errors'])) {
     return obj['errors']
       .filter((e): e is Record<string, unknown> => typeof e === 'object' && e !== null)
-      .map(e => ({
-        field: String(e['field'] ?? 'unknown'),
-        message: sanitizeErrorMessage(String(e['message'] ?? 'Validation error')),
-        code: typeof e['code'] === 'string' ? e['code'] : undefined,
-      }));
+      .map(e => {
+        const code = typeof e['code'] === 'string' ? e['code'] : undefined;
+        return {
+          field: String(e['field'] ?? 'unknown'),
+          message: sanitizeErrorMessage(String(e['message'] ?? 'Validation error')),
+          ...(code !== undefined ? { code } : {}),
+        };
+      });
   }
   
   return undefined;

@@ -96,7 +96,7 @@ export class TraceClient {
     const query = this.buildQuery(filters);
 
     this.logger.debug('Listing traces', {
-      status: filters?.status,
+      ...(filters?.status !== undefined ? { status: filters.status } : {}),
     });
 
     const result = await this.httpClient.request<PaginatedTraceList>({

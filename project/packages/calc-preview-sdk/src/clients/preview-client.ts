@@ -65,15 +65,15 @@ export class PreviewClient {
       method: 'POST',
       path: API_PATHS.PREVIEW,
       body: this.serializeRequest(request),
-      idempotencyKey: options?.idempotencyKey,
+      ...(options?.idempotencyKey !== undefined ? { idempotencyKey: options.idempotencyKey } : {}),
       ...(options?.signal ? { signal: options.signal } : {}),
     });
 
     this.logger.info('Preview completed', {
-      traceId: result.traceId,
       requestHash: result.requestHash,
       durationMs: result.totalTimeMs,
       httpStatus: result.status,
+      ...(result.traceId !== undefined ? { traceId: result.traceId } : {}),
     } satisfies SafeLogMeta);
 
     return {

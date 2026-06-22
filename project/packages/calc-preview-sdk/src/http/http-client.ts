@@ -104,7 +104,7 @@ export class HttpClient {
           const response = await fetch(url, {
             method: options.method,
             headers,
-            body: options.body ? JSON.stringify(options.body) : undefined,
+            ...(options.body ? { body: JSON.stringify(options.body) } : {}),
             signal: controller.signal,
           });
 
@@ -147,7 +147,7 @@ export class HttpClient {
         config: this.config.retry,
         deadline: this.config.deadline,
         startTime,
-        signal: options.signal,
+        ...(options.signal !== undefined ? { signal: options.signal } : {}),
         onRetry: (attempt, error, _delayMs) => {
           this.log('warn', `Retry attempt ${attempt}`, {
             requestHash,
@@ -167,7 +167,7 @@ export class HttpClient {
       data: result.result.data,
       status: result.result.status,
       headers: result.result.headers,
-      traceId,
+      ...(traceId !== undefined ? { traceId } : {}),
       requestHash,
       replay,
       attempts: result.attempts,
