@@ -33,6 +33,9 @@ function buildTx(opts: {
       }),
       update: jest.fn(),
     },
+    claimItem: {
+      updateMany: jest.fn(async () => ({ count: 1 })),
+    },
   };
 }
 
@@ -112,7 +115,65 @@ describe('CollectionService.cancel — reversal ledger write', () => {
       { claimItemId: 'ci-principal', amount: -700, allocationOrder: 1 },
       { claimItemId: 'ci-interest', amount: -300, allocationOrder: 2 },
     ]);
+    expect(tx.claimItem.updateMany).toHaveBeenCalledWith({
+      where: { id: 'ci-principal', tenantId: 't1', caseId: 'case1' },
+      data: { collectedAmount: { decrement: 700 } },
+    });
+    expect(tx.claimItem.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'ci-principal',
+        tenantId: 't1',
+        caseId: 'case1',
+        collectedAmount: { lt: 0 },
+      },
+      data: { collectedAmount: 0 },
+    });
+    expect(tx.claimItem.updateMany).toHaveBeenCalledWith({
+      where: { id: 'ci-interest', tenantId: 't1', caseId: 'case1' },
+      data: { collectedAmount: { decrement: 300 } },
+    });
+    expect(tx.claimItem.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'ci-interest',
+        tenantId: 't1',
+        caseId: 'case1',
+        collectedAmount: { lt: 0 },
+      },
+      data: { collectedAmount: 0 },
+    });
     expect(tx.ledgerEntry.update).not.toHaveBeenCalled();
+  });
+
+  it('REVERSAL projection decrement clamp ile negatif collectedAmount bırakmaz', async () => {
+    const originalLedger = {
+      id: 'le1',
+      amount: 1200,
+      currency: 'TRY',
+      effectiveDate: null,
+      referenceNo: null,
+      reversedByLedgerEntry: null,
+      allocations: [
+        { claimItemId: 'ci-principal', amount: 1200, allocationOrder: 1 },
+      ],
+    };
+    const tx = buildTx({ originalLedger });
+    const { service } = buildService(tx);
+
+    await service.cancel('t1', 'col1', { cancelReason: 'fazla projection clamp' } as any);
+
+    expect(tx.claimItem.updateMany).toHaveBeenCalledWith({
+      where: { id: 'ci-principal', tenantId: 't1', caseId: 'case1' },
+      data: { collectedAmount: { decrement: 1200 } },
+    });
+    expect(tx.claimItem.updateMany).toHaveBeenCalledWith({
+      where: {
+        id: 'ci-principal',
+        tenantId: 't1',
+        caseId: 'case1',
+        collectedAmount: { lt: 0 },
+      },
+      data: { collectedAmount: 0 },
+    });
   });
 
   it('linked ledger yoksa sadece Collection cancel eder, reversal yazmaz', async () => {
@@ -123,6 +184,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
 
     expect(tx.collection.update).toHaveBeenCalledTimes(1);
     expect(tx.ledgerEntry.create).not.toHaveBeenCalled();
+    expect(tx.claimItem.updateMany).not.toHaveBeenCalled();
   });
 
   it('Collection zaten CANCELLED ise ikinci reversal yazmaz', async () => {
@@ -141,6 +203,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(tx.collection.update).not.toHaveBeenCalled();
     expect(tx.ledgerEntry.create).not.toHaveBeenCalled();
+    expect(tx.claimItem.updateMany).not.toHaveBeenCalled();
   });
 
   it('tenant guard fail-closed: collection bulunmazsa yazma yapmaz', async () => {
@@ -152,6 +215,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     ).rejects.toBeInstanceOf(NotFoundException);
     expect(tx.collection.update).not.toHaveBeenCalled();
     expect(tx.ledgerEntry.create).not.toHaveBeenCalled();
+    expect(tx.claimItem.updateMany).not.toHaveBeenCalled();
   });
 
   it('existing reversedByLedgerEntry varsa duplicate REVERSAL yazmaz', async () => {
@@ -172,6 +236,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
 
     expect(tx.collection.update).toHaveBeenCalledTimes(1);
     expect(tx.ledgerEntry.create).not.toHaveBeenCalled();
+    expect(tx.claimItem.updateMany).not.toHaveBeenCalled();
   });
 
   it('P2002 duplicate reversal race güvenli şekilde already-cancelled hatasına döner', async () => {
@@ -198,5 +263,6 @@ describe('CollectionService.cancel — reversal ledger write', () => {
       service.cancel('t1', 'col1', { cancelReason: 'race' } as any),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(prisma.collection.findFirst).toHaveBeenCalled();
+    expect(tx.claimItem.updateMany).not.toHaveBeenCalled();
   });
 });

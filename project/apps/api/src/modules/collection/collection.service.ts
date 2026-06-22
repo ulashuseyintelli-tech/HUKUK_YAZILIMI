@@ -545,6 +545,36 @@ export class CollectionService {
               },
             },
           });
+
+          for (const allocation of originalLedger.allocations || []) {
+            const amount = Number(allocation.amount);
+            if (!Number.isFinite(amount) || amount <= 0) continue;
+
+            await (tx.claimItem as any).updateMany({
+              where: {
+                id: allocation.claimItemId,
+                tenantId,
+                caseId: collection.caseId,
+              },
+              data: {
+                collectedAmount: {
+                  decrement: amount,
+                },
+              },
+            });
+
+            await (tx.claimItem as any).updateMany({
+              where: {
+                id: allocation.claimItemId,
+                tenantId,
+                caseId: collection.caseId,
+                collectedAmount: { lt: 0 },
+              },
+              data: {
+                collectedAmount: 0,
+              },
+            });
+          }
         }
 
         return cancelledCollection;
