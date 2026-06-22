@@ -373,6 +373,7 @@ export class CollectionService {
             description: dto.description,
             referenceNo: dto.receiptNo,
             sourceType: dto.sourceType,
+            collectionId: collection.id,
           },
         );
         if (!ledger.allocated) {

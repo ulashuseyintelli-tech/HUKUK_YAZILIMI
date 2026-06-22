@@ -2068,7 +2068,8 @@ model Collection {
   sourceId   String? // Kaynak ID (ExternalCase, ThirdParty vs.)
 
   // Mahsup Bilgileri
-  allocations CollectionAllocation[]
+  allocations   CollectionAllocation[]
+  ledgerEntries LedgerEntry[]
 
   // Açıklama ve Notlar
   description String?
@@ -4361,9 +4362,14 @@ model LedgerEntry {
   tenantId String
   caseId   String
   case     Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+  collectionId          String?
+  collection            Collection?  @relation(fields: [collectionId], references: [id], onDelete: SetNull)
+  reversesLedgerEntryId String?      @unique
+  reversesLedgerEntry   LedgerEntry? @relation("LedgerEntryReversal", fields: [reversesLedgerEntryId], references: [id], onDelete: Restrict)
+  reversedByLedgerEntry LedgerEntry? @relation("LedgerEntryReversal")
 
   // Kayıt Türü
-  entryType LedgerEntryType // PAYMENT, ADJUSTMENT, WAIVER, REFUND
+  entryType LedgerEntryType // PAYMENT, REVERSAL, ADJUSTMENT, WAIVER, REFUND
 
   // Tutar
   amount   Decimal @db.Decimal(15, 2)
@@ -4395,6 +4401,7 @@ model LedgerEntry {
 
   @@index([tenantId])
   @@index([caseId])
+  @@index([tenantId, caseId, collectionId])
   @@index([entryType])
   @@index([entryDate])
 }
@@ -4423,6 +4430,7 @@ model LedgerAllocation {
 // Defter Kayıt Türü
 enum LedgerEntryType {
   PAYMENT // Tahsilat
+  REVERSAL // Ters kayıt
   ADJUSTMENT // Düzeltme
   WAIVER // Feragat
   REFUND // İade
