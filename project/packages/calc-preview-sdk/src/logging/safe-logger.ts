@@ -61,7 +61,7 @@ export function createSafeLogger(config?: LoggingConfig): Logger {
     const safeMessage = redactPii(message);
 
     if (customLogger) {
-      customLogger(level, safeMessage, meta);
+      customLogger[level](safeMessage, meta);
       return;
     }
 

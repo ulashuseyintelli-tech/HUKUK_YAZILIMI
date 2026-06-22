@@ -13,13 +13,17 @@ export abstract class SdkError extends Error {
   abstract readonly errorCode: string;
   abstract readonly retryable: boolean;
   readonly httpStatus?: number;
-  readonly cause?: Error;
+  override readonly cause?: Error;
 
   constructor(message: string, options?: { httpStatus?: number; cause?: Error }) {
     super(message);
     this.name = this.constructor.name;
-    this.httpStatus = options?.httpStatus;
-    this.cause = options?.cause;
+    if (options?.httpStatus !== undefined) {
+      this.httpStatus = options.httpStatus;
+    }
+    if (options?.cause !== undefined) {
+      this.cause = options.cause;
+    }
     
     // Maintain proper stack trace
     if (Error.captureStackTrace) {
@@ -69,7 +73,9 @@ export class SdkRateLimitError extends SdkError {
 
   constructor(message: string, options?: { httpStatus?: number; retryAfterMs?: number }) {
     super(message, { httpStatus: options?.httpStatus ?? 429 });
-    this.retryAfterMs = options?.retryAfterMs;
+    if (options?.retryAfterMs !== undefined) {
+      this.retryAfterMs = options.retryAfterMs;
+    }
   }
 }
 
@@ -101,7 +107,9 @@ export class SdkValidationError extends SdkError {
 
   constructor(message: string, options?: { httpStatus?: number; validationErrors?: ValidationError[] }) {
     super(message, { httpStatus: options?.httpStatus ?? 400 });
-    this.validationErrors = options?.validationErrors;
+    if (options?.validationErrors !== undefined) {
+      this.validationErrors = options.validationErrors;
+    }
   }
 }
 
@@ -123,8 +131,12 @@ export class SdkNotFoundError extends SdkError {
 
   constructor(message: string, options?: { resourceType?: string; resourceId?: string }) {
     super(message, { httpStatus: 404 });
-    this.resourceType = options?.resourceType;
-    this.resourceId = options?.resourceId;
+    if (options?.resourceType !== undefined) {
+      this.resourceType = options.resourceType;
+    }
+    if (options?.resourceId !== undefined) {
+      this.resourceId = options.resourceId;
+    }
   }
 }
 
@@ -143,7 +155,9 @@ export class SdkConfigError extends SdkError {
 
   constructor(message: string, options?: { configField?: string }) {
     super(message);
-    this.configField = options?.configField;
+    if (options?.configField !== undefined) {
+      this.configField = options.configField;
+    }
   }
 }
 

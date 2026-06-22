@@ -9,7 +9,6 @@ import type {
   InterestTypeCode,
   CurrencyCode,
   PreviewStatus,
-  PolicyOutcome,
   ExplanationSeverity,
   RecommendedAction,
 } from './enums';

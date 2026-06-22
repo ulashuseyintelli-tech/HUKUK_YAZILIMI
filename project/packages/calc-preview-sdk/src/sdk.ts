@@ -82,12 +82,12 @@ export class CalcPreviewSdk {
     // Create HTTP client
     const httpClient = new HttpClient({
       baseUrl: this.config.baseUrl,
-      apiKey: this.config.apiKey,
-      bearerToken: this.config.bearerToken,
+      ...(this.config.apiKey !== undefined ? { apiKey: this.config.apiKey } : {}),
+      ...(this.config.bearerToken !== undefined ? { bearerToken: this.config.bearerToken } : {}),
       timeout: this.config.timeout,
       deadline: this.config.deadline,
       retry: this.config.retry,
-      headers: this.config.headers,
+      ...(this.config.headers !== undefined ? { headers: this.config.headers } : {}),
       logger: (level, message, meta) => {
         switch (level) {
           case 'debug': this.logger.debug(message, meta); break;
