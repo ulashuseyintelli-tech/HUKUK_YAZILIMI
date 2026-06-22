@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculator, TrendingUp, Receipt, Banknote, FileCheck, Calendar, XCircle, Info, Search, Users, Building2, Landmark, Edit2, Trash2, Phone, Mail, AlertCircle, Settings } from "lucide-react";
 import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
-import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, mapClaimKalemTuruToDueType } from "@/lib/case-due-payload";
+import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, mapClaimKalemTuruToDueType, resolveDueInterestType } from "@/lib/case-due-payload";
 import { isPoaDuplicateSuppressed } from "@/lib/poa-ux";
 import { resolveLawyerIdsFromScan } from "@/lib/lawyer-match";
 import { buildStaffPayload } from "@/lib/case-staff-payload";
@@ -193,6 +193,14 @@ function claimItemKalemLabel(kalemTuru?: string): string {
     case 'FATURA': return 'Fatura Alacağı';
     case 'KIRA': return 'Kira Alacağı';
     case 'NAFAKA': return 'Nafaka Alacağı';
+    // PR-i2: genel fer'i/masraf etiketleri (listede net görünüm)
+    case 'MASRAF': return 'Masraf';
+    case 'YARGILAMA_GIDERI': return 'Yargılama Gideri';
+    case 'VEKALET_UCRETI': return 'Vekalet Ücreti';
+    case 'ISLEMIS_FAIZ': return 'İşlemiş Faiz';
+    case 'CEZAI_SART': return 'Cezai Şart';
+    case 'HARC': return 'Harç';
+    case 'DIGER_FERI': return "Diğer Fer'i Alacak";
     default: return 'Asıl Alacak';
   }
 }
@@ -212,13 +220,15 @@ function buildDuesFromClaimItem(item: any, startDate: string): DueItem[] {
 
   // 1. Ana Alacak Kalemi
   if (item.bakiyeTutar && item.bakiyeTutar > 0) {
+    // PR-i1: fer'i/masraf kalemTuru → doğru DueType (PRINCIPAL varsayılan).
+    const anaDueType = mapClaimKalemTuruToDueType(kalemTuru);
     newDues.push({
-      // PR-i1: fer'i/masraf kalemTuru → doğru DueType (bugün NO-OP: ana kalemTuru'lar PRINCIPAL döner).
-      type: mapClaimKalemTuruToDueType(kalemTuru),
+      type: anaDueType,
       description: anaKalemLabel,
       amount: item.bakiyeTutar.toString(),
       dueDate: item.vadeTarihi || startDate,
-      interestType: item.takipOncesiFaiz || 'YASAL',
+      // PR-i2: fer'i faiz uygunlaştırma (INTEREST→tip yok · "YOK"→undefined · PRINCIPAL korunur).
+      interestType: resolveDueInterestType(anaDueType, item.takipOncesiFaiz),
       interestRate: 0,
       interestAmount: 0,
       interestStartDate: kalemTuru === 'CEK' && item.cekBilgileri?.ibrazTarihi
