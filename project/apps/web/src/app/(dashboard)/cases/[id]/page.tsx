@@ -2471,13 +2471,13 @@ export default function CaseDetailPage() {
               >
                 <div className="text-left">
                   <h4 className="text-[11px] font-semibold text-gray-700">Alacak Kalemleri (Kanonik)</h4>
-                  <p className="text-[9px] text-gray-400">Tahsilat ve TBK100 dağıtımında kullanılan kanonik alacak kalemleri. Salt görüntüleme.</p>
+                  <p className="text-[9px] text-gray-400">Tahsilat ve TBK100 dağıtımında kullanılan kanonik alacak kalemleri. Metadata düzenlenebilir; tutar ve kalem tipi bakiye cutover tamamlanana kadar kilitlidir.</p>
                 </div>
                 <span className="text-[10px] text-blue-600 whitespace-nowrap">{showCanonicalClaims ? "▲ Gizle" : "▼ Göster"}</span>
               </button>
               {showCanonicalClaims && (
                 <div className="mt-2">
-                  <ClaimItemPanel caseId={caseData.id} readOnly />
+                  <ClaimItemPanel caseId={caseData.id} readOnly metadataEdit />
                 </div>
               )}
             </div>

@@ -14,6 +14,7 @@ import {
   Receipt,
   Scale,
   AlertCircle,
+  Pencil,
 } from "lucide-react";
 
 interface ClaimItem {
@@ -29,6 +30,7 @@ interface ClaimItem {
   interestEndDate?: string;
   dueDate?: string;
   sourceDocumentType?: string;
+  sortOrder?: number;
   status: string;
   isCalculated: boolean;
 }
@@ -74,14 +76,17 @@ interface Props {
   caseId: string;
   /** PR-5a: salt görüntüleme — tüm mutation aksiyonları (ekle/sil/yeniden-hesapla) gizlenir. */
   readOnly?: boolean;
+  /** PR-5c: per-item metadata-only düzenleme (amount/itemType kilitli; readOnly ile kompoze edilir). */
+  metadataEdit?: boolean;
 }
 
-export function ClaimItemPanel({ caseId, readOnly = false }: Props) {
+export function ClaimItemPanel({ caseId, readOnly = false, metadataEdit = false }: Props) {
   const [items, setItems] = useState<ClaimItem[]>([]);
   const [summary, setSummary] = useState<ClaimSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [addType, setAddType] = useState<string>("");
+  const [editItem, setEditItem] = useState<ClaimItem | null>(null); // PR-5c: metadata-edit modal hedefi
 
   useEffect(() => {
     loadData();
@@ -269,6 +274,15 @@ export function ClaimItemPanel({ caseId, readOnly = false }: Props) {
                   <span className="text-lg font-bold">
                     {formatCurrency(item.amount, item.currency)}
                   </span>
+                  {metadataEdit && (
+                  <button
+                    onClick={() => setEditItem(item)}
+                    className="flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded-lg"
+                    title="Metadata düzenle (tutar ve kalem tipi kilitli)"
+                  >
+                    <Pencil className="h-3.5 w-3.5" /> Düzenle
+                  </button>
+                  )}
                   {!readOnly && (
                   <button
                     onClick={() => handleDelete(item.id)}
@@ -359,6 +373,15 @@ export function ClaimItemPanel({ caseId, readOnly = false }: Props) {
           itemType={addType}
           onClose={() => setShowAddModal(false)}
           onSuccess={() => { setShowAddModal(false); loadData(); }}
+        />
+      )}
+
+      {/* PR-5c: Metadata-only düzenleme modalı — amount/itemType kilitli, payload yalnız metadata. */}
+      {metadataEdit && editItem && (
+        <EditMetadataModal
+          item={editItem}
+          onClose={() => setEditItem(null)}
+          onSuccess={() => { setEditItem(null); loadData(); }}
         />
       )}
     </div>
@@ -518,6 +541,191 @@ function AddClaimItemModal({
               className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
             >
               {loading ? "Ekleniyor..." : "Ekle"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+
+// PR-5c: Metadata-only düzenleme modalı.
+// KIRMIZI ÇİZGİ: amount / itemType / currency / status / collectedAmount / demandedAmount
+// payload'a ASLA girmez — tutar ve kalem tipi bakiye cutover'a kadar kilitli (salt görüntü).
+function EditMetadataModal({
+  item,
+  onClose,
+  onSuccess,
+}: {
+  item: ClaimItem;
+  onClose: () => void;
+  onSuccess: () => void;
+}) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [form, setForm] = useState({
+    description: item.description ?? "",
+    referenceNo: item.referenceNo ?? "",
+    dueDate: item.dueDate ? item.dueDate.slice(0, 10) : "",
+    interestStartDate: item.interestStartDate ? item.interestStartDate.slice(0, 10) : "",
+    interestEndDate: item.interestEndDate ? item.interestEndDate.slice(0, 10) : "",
+    interestRate: item.interestRate != null ? String(item.interestRate) : "",
+    sortOrder: item.sortOrder != null ? String(item.sortOrder) : "",
+  });
+
+  const typeInfo = itemTypeLabels[item.itemType] || itemTypeLabels.OTHER;
+  const lockNote = "Tutar ve kalem tipi, bakiye cutover tamamlanana kadar düzenlenemez.";
+  const amountLabel = new Intl.NumberFormat("tr-TR", {
+    style: "currency",
+    currency: item.currency || "TRY",
+  }).format(Number(item.amount) || 0);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      // YALNIZ metadata alanları — finansal/yapısal alanlar bilinçli olarak hariç.
+      const payload: Record<string, any> = {
+        description: form.description || undefined,
+        referenceNo: form.referenceNo || undefined,
+        dueDate: form.dueDate || undefined,
+        interestStartDate: form.interestStartDate || undefined,
+        interestEndDate: form.interestEndDate || undefined,
+        interestRate: form.interestRate !== "" ? parseFloat(form.interestRate) : undefined,
+        sortOrder: form.sortOrder !== "" ? parseInt(form.sortOrder, 10) : undefined,
+      };
+      await api.put(`/claim-items/${item.id}`, payload);
+      onSuccess();
+    } catch (err: any) {
+      console.error("Metadata güncelleme hatası:", err);
+      setError(err?.response?.data?.message || "Güncelleme sırasında bir hata oluştu");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl p-6 w-full max-w-md max-h-[90vh] overflow-y-auto">
+        <h3 className="font-semibold text-lg mb-1">Kalem Metadata Düzenle</h3>
+        <p className="text-xs text-muted-foreground mb-4">{lockNote}</p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Kilitli alanlar — salt görüntüleme (disabled) */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Kalem Tipi <span className="text-[10px] text-amber-600">(kilitli)</span>
+              </label>
+              <input
+                type="text"
+                value={typeInfo.label}
+                disabled
+                title={lockNote}
+                className="w-full rounded-lg border px-3 py-2 text-sm bg-gray-100 text-gray-500 cursor-not-allowed"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Tutar <span className="text-[10px] text-amber-600">(kilitli)</span>
+              </label>
+              <input
+                type="text"
+                value={amountLabel}
+                disabled
+                title={lockNote}
+                className="w-full rounded-lg border px-3 py-2 text-sm bg-gray-100 text-gray-500 cursor-not-allowed"
+              />
+            </div>
+          </div>
+
+          {/* Düzenlenebilir metadata */}
+          <div>
+            <label className="block text-sm font-medium mb-1">Açıklama</label>
+            <input
+              type="text"
+              value={form.description}
+              onChange={(e) => setForm((p) => ({ ...p, description: e.target.value }))}
+              placeholder="Açıklama..."
+              className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Referans No</label>
+            <input
+              type="text"
+              value={form.referenceNo}
+              onChange={(e) => setForm((p) => ({ ...p, referenceNo: e.target.value }))}
+              placeholder="Fatura no, esas/karar no vb."
+              className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">Vade Tarihi</label>
+              <input
+                type="date"
+                value={form.dueDate}
+                onChange={(e) => setForm((p) => ({ ...p, dueDate: e.target.value }))}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Sıra No</label>
+              <input
+                type="number"
+                value={form.sortOrder}
+                onChange={(e) => setForm((p) => ({ ...p, sortOrder: e.target.value }))}
+                placeholder="0"
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="block text-sm font-medium mb-1">Faiz Başlangıç</label>
+              <input
+                type="date"
+                value={form.interestStartDate}
+                onChange={(e) => setForm((p) => ({ ...p, interestStartDate: e.target.value }))}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium mb-1">Faiz Bitiş</label>
+              <input
+                type="date"
+                value={form.interestEndDate}
+                onChange={(e) => setForm((p) => ({ ...p, interestEndDate: e.target.value }))}
+                className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+              />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Faiz Oranı (%)</label>
+            <input
+              type="number"
+              step="0.01"
+              value={form.interestRate}
+              onChange={(e) => setForm((p) => ({ ...p, interestRate: e.target.value }))}
+              placeholder="örn. 24"
+              className="w-full rounded-lg border px-3 py-2 text-sm outline-none focus:border-primary"
+            />
+          </div>
+
+          {error && <p className="text-xs text-red-600">{error}</p>}
+
+          <div className="flex justify-end gap-2 pt-4">
+            <button type="button" onClick={onClose} className="px-4 py-2 border rounded-lg hover:bg-gray-50">
+              İptal
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
+            >
+              {loading ? "Kaydediliyor..." : "Kaydet"}
             </button>
           </div>
         </form>
