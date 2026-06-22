@@ -23,6 +23,7 @@ export interface Instrument {
   branchName?: string;
   iban?: string;
   drawerName?: string;
+  drawerIdentityNo?: string; // Faz 1b: keşideci VKN/TCKN (backend debt-instrument.types mirror; #322). Backend DRAWER node identityNo.
   payeeName?: string; // C-PR: lehtar OCR taslağı (≠Client/Party, çözümleme yok)
   debtorCandidates?: string[];
   // P4-1: arka-yüz ciro/kaşe isim adayları (SIRASIZ, ham; backend endorsement-pass üretir). P4-2 clientMatch tüketir.
@@ -141,7 +142,11 @@ export interface CaseInstrumentPayload {
   bankName?: string;
   branchName?: string;
   drawerName?: string;
+  drawerIdentityNo?: string; // Faz 1b: backend CaseInstrumentInputDto.drawerIdentityNo → DRAWER node identityNo (checksum backend'de doğrulanır)
   payeeName?: string; // C-PR: lehtar OCR taslağı (backend CaseInstrument.payeeName'e gider)
+  // Faz 1b: arka-yüz ciranta isimleri → backend buildEndorsersJson → endorsers JSON (ENDORSER nodes).
+  // SINIR: PAYEE node YOK · sıra YOK (A1-d HOLD) · aval YOK · backend aday-only (CaseDebtor YARATMAZ).
+  endorsementNames?: string[];
   source?: "OCR" | "MANUAL"; // PR-2b-2: provenance (backend CaseInstrumentInputDto.source aynası; yok=OCR)
 }
 
@@ -212,7 +217,9 @@ export function instrumentToCaseInstrumentPayload(i: Instrument): CaseInstrument
     bankName: i.bankName,
     branchName: i.branchName,
     drawerName: i.drawerName,
+    drawerIdentityNo: i.drawerIdentityNo, // Faz 1b: keşideci kimlik → backend DRAWER node (checksum backend'de)
     payeeName: i.payeeName, // C-PR: lehtar taslağı payload'a (backend payeeName saklar)
+    endorsementNames: i.endorsementNames, // Faz 1b: ciranta isimleri → backend endorsers JSON (ENDORSER nodes; payee node YOK)
   };
 }
 

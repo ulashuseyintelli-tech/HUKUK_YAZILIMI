@@ -116,6 +116,30 @@ describe('PR-N4a instrumentToCaseInstrumentPayload — Instrument → CaseInstru
     );
     expect(p.payeeName).toBe('Müvekkil A.Ş.');
   });
+
+  it('Faz 1b: endorsementNames + drawerIdentityNo VARSA payload\'a taşınır', () => {
+    const p = instrumentToCaseInstrumentPayload(
+      inst({
+        documentNo: 'CK-1',
+        amount: 100,
+        currency: 'TRY',
+        issueDate: '2026-01-10',
+        drawerName: 'Borç A.Ş.',
+        drawerIdentityNo: '3961146289',
+        endorsementNames: ['Ciranta 1', 'Ciranta 2'],
+      }),
+    );
+    expect(p.drawerIdentityNo).toBe('3961146289');
+    expect(p.endorsementNames).toEqual(['Ciranta 1', 'Ciranta 2']);
+  });
+
+  it('Faz 1b: endorsementNames/drawerIdentityNo YOKSA undefined (geri uyum)', () => {
+    const p = instrumentToCaseInstrumentPayload(
+      inst({ documentNo: 'CK-1', amount: 100, currency: 'TRY', issueDate: '2026-01-10' }),
+    );
+    expect(p.drawerIdentityNo).toBeUndefined();
+    expect(p.endorsementNames).toBeUndefined();
+  });
 });
 
 describe('PR-N4b selectedInstrumentsToPayload — seçili → payload[] (REPLACE caller)', () => {
