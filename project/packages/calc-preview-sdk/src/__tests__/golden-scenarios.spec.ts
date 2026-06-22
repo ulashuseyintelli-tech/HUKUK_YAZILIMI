@@ -284,8 +284,11 @@ describe('Golden Scenario 6: PII Redaction (KVKK)', () => {
     const message1 = 'Call 05321234567 for support';
     const message2 = 'Call +905321234567 for support';
 
+    // Türkiye cep numaraları telefon olarak maskelenmeli; TCKN sanılmamalı.
     expect(redactPii(message1)).toContain('[PHONE_REDACTED]');
+    expect(redactPii(message1)).not.toContain('[TCKN_REDACTED]');
     expect(redactPii(message2)).toContain('[PHONE_REDACTED]');
+    expect(redactPii(message2)).not.toContain('[TCKN_REDACTED]');
   });
 
   it('should redact email patterns', () => {
