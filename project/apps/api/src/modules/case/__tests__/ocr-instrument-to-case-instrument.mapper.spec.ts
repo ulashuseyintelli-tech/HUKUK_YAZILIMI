@@ -190,6 +190,34 @@ describe('buildEndorsersJson (Faz 1 — InstrumentChain endorsers; A1-d HOLD: no
   });
 });
 
+describe("D-INV-4 (OCR güvenlik ağı): payeeName chain NODE'a dönüşmez; OCR aday-only", () => {
+  it('payeeName VARSA bile PAYEE-rol node YOK + payeeName hiçbir node\'da geçmez', () => {
+    const chain = buildEndorsersJson(
+      input({ drawerName: 'Keşideci', payeeName: 'Lehtar A.Ş.', endorsementNames: ['Ciranta'] }),
+    )!;
+    expect(chain.nodes.some((n) => (n.role as string) === 'PAYEE')).toBe(false);
+    expect(chain.nodes.some((n) => n.party.name === 'Lehtar A.Ş.')).toBe(false);
+  });
+
+  it('OCR yolundan yalnız DRAWER + ENDORSER rolleri üretilir (PAYEE/AVALIST node YOK)', () => {
+    const chain = buildEndorsersJson(input({ drawerName: 'K', endorsementNames: ['C1', 'C2'] }))!;
+    const roles = new Set(chain.nodes.map((n) => n.role));
+    expect([...roles].sort()).toEqual(['DRAWER', 'ENDORSER']);
+  });
+
+  it('buildCaseInstrumentData: payeeName KOLON kalır ama chain node\'a SIZMAZ', () => {
+    const data = buildCaseInstrumentData(
+      't1',
+      'c1',
+      input({ drawerName: 'K', payeeName: 'Lehtar', endorsementNames: ['C1'] }),
+      InstrumentType.CEK,
+    );
+    expect(data.payeeName).toBe('Lehtar'); // belge gerçeği (kolon) — OK
+    const endorsers = (data as { endorsers?: { nodes: Array<{ party: { name: string } }> } }).endorsers;
+    expect(endorsers?.nodes.some((n) => n.party.name === 'Lehtar')).toBe(false); // node'a SIZMAZ
+  });
+});
+
 describe('buildInstrumentPrincipalClaimItemData (K1 bağ + Corollary-2)', () => {
   it('PRINCIPAL + üç-tutar eşit + instrumentId bağ + currency korunur', () => {
     const data = buildInstrumentPrincipalClaimItemData('t1', 'c1', 'inst-1', input({ amount: 5000, currency: Currency.EUR, documentNo: 'CK-9' }));
