@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { api } from "@/lib/api";
 import { ResponsibleCandidateSelect, type ResponsibleSelection } from "@/components/case/responsible-candidate-select";
+import { splitPersonelByOwnership } from "@/lib/personel-report-grouping";
 import {
   BarChart3,
   Users,
@@ -36,6 +37,9 @@ interface PersonelReport {
   closedCases: number;
   totalCollection: number;
   closureRate: number;
+  // M2-G5b: gerçek kişi (LAWYER/STAFF) vs legacy (LEGACY_USER). Eski response'larda yok → opsiyonel.
+  ownerType?: "LAWYER" | "STAFF" | "LEGACY_USER";
+  ownerId?: string;
 }
 
 interface RiskSummary {
@@ -744,50 +748,35 @@ export default function ReportsPage() {
             </div>
           )}
 
-          {/* Personel Performans */}
-          {activeTab === "personel" && (
-            <div className="bg-white rounded-xl border overflow-hidden">
-              <table className="w-full">
-                <thead className="bg-gray-50 border-b">
-                  <tr>
-                    <th className="text-left px-4 py-3 text-sm font-medium">Personel</th>
-                    <th className="text-right px-4 py-3 text-sm font-medium">Toplam Dosya</th>
-                    <th className="text-right px-4 py-3 text-sm font-medium">Kapatılan</th>
-                    <th className="text-right px-4 py-3 text-sm font-medium">Kapama Oranı</th>
-                    <th className="text-right px-4 py-3 text-sm font-medium">Tahsilat</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {personelReport.map((item, i) => (
-                    <tr key={i} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium">{item.personel}</td>
-                      <td className="px-4 py-3 text-right">{item.totalCases}</td>
-                      <td className="px-4 py-3 text-right">{item.closedCases}</td>
-                      <td className="px-4 py-3 text-right">
-                        <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          item.closureRate >= 50 ? 'bg-green-100 text-green-700' :
-                          item.closureRate >= 25 ? 'bg-yellow-100 text-yellow-700' :
-                          'bg-red-100 text-red-700'
-                        }`}>
-                          %{item.closureRate}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-right font-medium">
-                        {Number(item.totalCollection).toLocaleString("tr-TR")} ₺
-                      </td>
-                    </tr>
-                  ))}
-                  {personelReport.length === 0 && (
-                    <tr>
-                      <td colSpan={5} className="px-4 py-8 text-center text-muted-foreground">
-                        Henüz veri yok
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
+          {/* Personel Performans — M2-G5b-2: Gerçek Kişi / Legacy iki bölüm (ownerType yok → legacy) */}
+          {activeTab === "personel" && (() => {
+            const { realPersons, legacy } = splitPersonelByOwnership(personelReport);
+            if (personelReport.length === 0) {
+              return (
+                <div className="bg-white rounded-xl border p-8 text-center text-muted-foreground">
+                  Henüz veri yok
+                </div>
+              );
+            }
+            return (
+              <div className="space-y-6">
+                {realPersons.length > 0 && (
+                  <PersonelReportSection
+                    title="Gerçek Kişi Sahipliği"
+                    subtitle="Avukat ve personel (Dosya Sorumlusu)"
+                    rows={realPersons}
+                  />
+                )}
+                {legacy.length > 0 && (
+                  <PersonelReportSection
+                    title="Legacy / Geçiş"
+                    subtitle="Eski kullanıcı-hesabı sahipliği (gerçek kişi atanmamış dosyalar)"
+                    rows={legacy}
+                  />
+                )}
+              </div>
+            );
+          })()}
 
           {/* Risk Analizi */}
           {activeTab === "risk" && riskReport && (
@@ -966,6 +955,62 @@ export default function ReportsPage() {
         isOpen={showEmailModal}
         onClose={() => setShowEmailModal(false)}
       />
+    </div>
+  );
+}
+
+// M2-G5b-2: Personel performans tablosu (tek bölüm). Gerçek Kişi / Legacy bölümlerinde tekrar kullanılır.
+function PersonelReportSection({
+  title,
+  subtitle,
+  rows,
+}: {
+  title: string;
+  subtitle: string;
+  rows: PersonelReport[];
+}) {
+  return (
+    <div className="bg-white rounded-xl border overflow-hidden">
+      <div className="px-4 py-3 border-b bg-gray-50">
+        <h3 className="font-semibold text-sm">{title}</h3>
+        <p className="text-xs text-muted-foreground">{subtitle}</p>
+      </div>
+      <table className="w-full">
+        <thead className="bg-gray-50 border-b">
+          <tr>
+            <th className="text-left px-4 py-3 text-sm font-medium">Personel</th>
+            <th className="text-right px-4 py-3 text-sm font-medium">Toplam Dosya</th>
+            <th className="text-right px-4 py-3 text-sm font-medium">Kapatılan</th>
+            <th className="text-right px-4 py-3 text-sm font-medium">Kapama Oranı</th>
+            <th className="text-right px-4 py-3 text-sm font-medium">Tahsilat</th>
+          </tr>
+        </thead>
+        <tbody className="divide-y">
+          {rows.map((item, i) => (
+            <tr key={item.ownerId ?? item.personelId ?? i} className="hover:bg-gray-50">
+              <td className="px-4 py-3 font-medium">{item.personel}</td>
+              <td className="px-4 py-3 text-right">{item.totalCases}</td>
+              <td className="px-4 py-3 text-right">{item.closedCases}</td>
+              <td className="px-4 py-3 text-right">
+                <span
+                  className={`px-2 py-1 rounded text-xs font-medium ${
+                    item.closureRate >= 50
+                      ? "bg-green-100 text-green-700"
+                      : item.closureRate >= 25
+                        ? "bg-yellow-100 text-yellow-700"
+                        : "bg-red-100 text-red-700"
+                  }`}
+                >
+                  %{item.closureRate}
+                </span>
+              </td>
+              <td className="px-4 py-3 text-right font-medium">
+                {Number(item.totalCollection).toLocaleString("tr-TR")} ₺
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

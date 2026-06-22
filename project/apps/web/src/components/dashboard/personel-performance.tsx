@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { api, PersonelReport } from "@/lib/api";
+import { isRealPersonOwner } from "@/lib/personel-report-grouping";
 import { Users, Trophy, TrendingUp, Target, Medal, Award } from "lucide-react";
 
 interface PersonelPerformanceProps {
@@ -22,7 +23,8 @@ export function PersonelPerformance({ startDate, endDate }: PersonelPerformanceP
     setLoading(true);
     try {
       const result = await api.getPersonelReport({ startDate, endDate });
-      setData(result);
+      // M2-G5b-2: dashboard leaderboard YALNIZ gerçek kişiyi gösterir; legacy (ownerType yok/LEGACY_USER) hariç.
+      setData(result.filter(isRealPersonOwner));
     } catch (error) {
       console.error("Personel verisi yüklenemedi:", error);
     } finally {

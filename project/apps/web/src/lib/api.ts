@@ -3344,6 +3344,9 @@ export interface PersonelReport {
   closedCases: number;
   totalCollection: number;
   closureRate: number;
+  // M2-G5b: gerçek kişi (LAWYER/STAFF) vs legacy (LEGACY_USER) ayrımı. Eski response'larda yok → opsiyonel.
+  ownerType?: "LAWYER" | "STAFF" | "LEGACY_USER";
+  ownerId?: string;
 }
 
 export interface RiskReport {
