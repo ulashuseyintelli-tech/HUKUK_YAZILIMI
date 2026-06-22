@@ -134,6 +134,7 @@ describe("applyEndorsementPass", () => {
       applyEndorsementPass([inst], [frontCand(1), backCand(2)], [imgPage(1), imgPage(2)], throwing),
     ).resolves.toBeUndefined();
     expect(inst.endorsementNames).toBeUndefined();
+    expect(inst.whiteEndorsementDetected).toBeUndefined(); // AI okuyamadı → "beyaz ciro" DEĞİL (okunamadı ≠ isim yok)
   });
 
   it("kambiyo olmayan enstrüman → atla (endorsementNames yok)", async () => {
@@ -142,10 +143,45 @@ describe("applyEndorsementPass", () => {
     expect(inst.endorsementNames).toBeUndefined();
   });
 
-  it("boş çıktı (hamiline/beyaz ciro) → endorsementNames yazılmaz", async () => {
+  it("boş çıktı + arka marker VAR (hamiline/beyaz ciro) → endorsementNames YOK + whiteEndorsementDetected=true", async () => {
     const inst = cek();
     await applyEndorsementPass([inst], [backCand(2)], [imgPage(2)], names([]));
     expect(inst.endorsementNames).toBeUndefined();
+    expect(inst.whiteEndorsementDetected).toBe(true); // imza/kaşe markeri var + isim yok → muhtemel beyaz ciro
+  });
+
+  it("isim VARSA whiteEndorsementDetected SET EDİLMEZ (adlı ciro ≠ beyaz ciro)", async () => {
+    const inst = cek();
+    await applyEndorsementPass([inst], [backCand(2)], [imgPage(2)], names(["Ada Lovelace"]));
+    expect(inst.endorsementNames).toEqual(["Ada Lovelace"]);
+    expect(inst.whiteEndorsementDetected).toBeUndefined();
+  });
+
+  it("arka-yüz markeri YOK (yalnız ön) → whiteEndorsementDetected SET EDİLMEZ (ciro yok ≠ beyaz ciro)", async () => {
+    const inst = cek({ sourcePages: [1] });
+    await applyEndorsementPass([inst], [frontCand(1), backCand(2)], [imgPage(1), imgPage(2)], names([]));
+    expect(inst.endorsementNames).toBeUndefined();
+    expect(inst.whiteEndorsementDetected).toBeUndefined(); // arka sinyal yok → flag yok
+  });
+
+  it("🔒 beyaz ciro SİNYALİ ön-yüz alanlarını DEĞİŞTİRMEZ (yalnız sinyal)", async () => {
+    const inst = cek();
+    const before = {
+      drawerName: inst.drawerName,
+      amount: inst.amount,
+      documentNo: inst.documentNo,
+      issueDate: inst.issueDate,
+      currency: inst.currency,
+    };
+    await applyEndorsementPass([inst], [backCand(2)], [imgPage(2)], names([]));
+    expect({
+      drawerName: inst.drawerName,
+      amount: inst.amount,
+      documentNo: inst.documentNo,
+      issueDate: inst.issueDate,
+      currency: inst.currency,
+    }).toEqual(before);
+    expect(inst.whiteEndorsementDetected).toBe(true);
   });
 
   it("dedupe (Türkçe-duyarlı) + trim", async () => {

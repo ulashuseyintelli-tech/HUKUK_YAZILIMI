@@ -44,6 +44,10 @@ export interface Instrument {
   // extraction'a DOKUNMAZ. holderName / zincir-sırası DEĞİL (onlar A1 türevi). Borçlu önerisine
   // SENTEZLENMEZ; clientMatch (P4-2) bu listeyi seçili müvekkille eşleştirir.
   endorsementNames?: string[];
+  // Beyaz ciro SİNYALİ: arka-yüzde ciro/kaşe/imza markeri VAR (back/endorsementMarkers) ama
+  // İSİM YOK → muhtemel beyaz/hamiline ciro. SINIR: yalnız ham OCR sinyali — holder/zincir/
+  // borçlu/UI kararı ÜRETMEZ (A1 invaryantı). Tüketim ileride (Faz 2/3); burada yalnız yakalanır.
+  whiteEndorsementDetected?: boolean;
   pageRange?: [number, number]; // enstrümanın PDF sayfa aralığı [from, to]
   confidence: number; // sayfa-extraction güveni (0-100)
 

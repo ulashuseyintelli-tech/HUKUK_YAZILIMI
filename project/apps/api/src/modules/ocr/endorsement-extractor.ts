@@ -3,7 +3,8 @@
  *
  * 🔴 KIRMIZI ÇİZGİ (yapısal izolasyon — #294 regresyonunu tekrar ETMEMEK için):
  *  1) Front PAGE_EXTRACTION_PROMPT'a DOKUNULMAZ. Bu pass AYRI çalışır.
- *  2) applyEndorsementPass YALNIZ `inst.endorsementNames` yazar. drawerName/amount/issueDate/
+ *  2) applyEndorsementPass YALNIZ arka-yüz alanlarını yazar: `inst.endorsementNames` +
+ *     `inst.whiteEndorsementDetected` (beyaz ciro SİNYALİ). drawerName/amount/issueDate/
  *     dueDate/documentNo/currency/bankName'e DOKUNMAZ → ön-yüz regresyonu KOD OLARAK İMKANSIZ.
  *  3) SIRA/ZİNCİR KURMAZ (kimin kime ciro ettiği = A1 türevi). Yalnız SIRASIZ ham isim listesi.
  *  4) Borçlu/CaseDebtor/Party YARATMAZ. Yalnız taslak veri (clientMatch P4-2'de tüketir).
@@ -129,6 +130,7 @@ export async function applyEndorsementPass(
     if (backPages.length === 0) continue;
 
     const collected: string[] = [];
+    let read = false; // en az bir arka sayfa BAŞARIYLA okundu mu (isim 0 olsa bile) → beyaz ciro ayrımı
     for (const page of backPages) {
       const imageRef = page.imageRef;
       const text = page.kind === "TEXT" ? page.text : undefined;
@@ -140,6 +142,7 @@ export async function applyEndorsementPass(
           text,
           context: buildContext(inst),
         });
+        read = true; // başarıyla okundu (isim sayısı 0 olsa bile) → beyaz ciro adayı
         for (const raw of res?.endorsementNames ?? []) {
           const name = (raw ?? "").trim();
           if (name) collected.push(name.slice(0, MAX_NAME_LEN));
@@ -155,6 +158,12 @@ export async function applyEndorsementPass(
         0,
         MAX_ENDORSEMENT_NAMES,
       );
+    } else if (read) {
+      // BEYAZ CİRO SİNYALİ: arka-yüz markeri VAR + sayfa BAŞARIYLA okundu (read) ama hiç İSİM çıkmadı
+      // → muhtemel beyaz/hamiline ciro. (AI hata / içeriksiz sayfa → read=false → flag YOK; "okunamadı"
+      // ≠ "isim yok".) SINIR: yalnız SİNYAL — holder/zincir/borçlu/UI kararı ÜRETMEZ; endorsementNames'e
+      // DOKUNMAZ (boş kalır). Tüketim ileride (Faz 2/3).
+      inst.whiteEndorsementDetected = true;
     }
   }
 }
