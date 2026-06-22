@@ -475,24 +475,89 @@ export class CollectionService {
     });
   }
 
-  /**
-   * Tahsilat iptal et
-   */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CollectionController.cancel() → POST /collections/:id/cancel (doğrudan tahsilat iptali)
+  /// - CaseService.cancelCollection() → POST /cases/:id/collections/:collectionId/cancel (dosya detayından tahsilat iptali)
+  /// </remarks>
   async cancel(tenantId: string, id: string, dto: CancelCollectionDto) {
-    const collection = await this.findById(tenantId, id);
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const collection = await (tx.collection as any).findFirst({
+          where: { id, tenantId },
+        });
 
-    if (collection.status === CollectionStatus.CANCELLED) {
-      throw new BadRequestException("Tahsilat zaten iptal edilmiş");
+        if (!collection) {
+          throw new NotFoundException("Tahsilat bulunamadı");
+        }
+
+        if (collection.status === CollectionStatus.CANCELLED) {
+          throw new BadRequestException("Tahsilat zaten iptal edilmiş");
+        }
+
+        const originalLedger = await (tx.ledgerEntry as any).findFirst({
+          where: {
+            tenantId,
+            caseId: collection.caseId,
+            collectionId: collection.id,
+            entryType: 'PAYMENT',
+            status: 'CONFIRMED',
+          },
+          include: {
+            allocations: true,
+            reversedByLedgerEntry: { select: { id: true } },
+          },
+          orderBy: { createdAt: 'asc' },
+        });
+
+        const cancelledCollection = await (tx.collection as any).update({
+          where: { id },
+          data: {
+            status: CollectionStatus.CANCELLED,
+            cancelledAt: new Date(),
+            cancelReason: dto.cancelReason,
+          },
+        });
+
+        if (originalLedger && !originalLedger.reversedByLedgerEntry) {
+          await (tx.ledgerEntry as any).create({
+            data: {
+              tenantId,
+              caseId: collection.caseId,
+              collectionId: collection.id,
+              reversesLedgerEntryId: originalLedger.id,
+              entryType: 'REVERSAL',
+              amount: -Number(originalLedger.amount),
+              currency: originalLedger.currency,
+              entryDate: new Date(),
+              effectiveDate: originalLedger.effectiveDate,
+              description: `Collection cancellation reversal for ${collection.id}`,
+              referenceNo: originalLedger.referenceNo,
+              sourceType: 'COLLECTION_CANCEL',
+              sourceId: collection.id,
+              status: 'CONFIRMED',
+              allocations: {
+                create: (originalLedger.allocations || []).map((allocation: any) => ({
+                  claimItemId: allocation.claimItemId,
+                  amount: -Number(allocation.amount),
+                  allocationOrder: allocation.allocationOrder,
+                })),
+              },
+            },
+          });
+        }
+
+        return cancelledCollection;
+      });
+    } catch (error: any) {
+      if (error?.code === 'P2002') {
+        const collection = await this.findById(tenantId, id);
+        if (collection.status === CollectionStatus.CANCELLED) {
+          throw new BadRequestException("Tahsilat zaten iptal edilmiş");
+        }
+      }
+      throw error;
     }
-
-    return (this.prisma.collection as any).update({
-      where: { id },
-      data: {
-        status: CollectionStatus.CANCELLED,
-        cancelledAt: new Date(),
-        cancelReason: dto.cancelReason,
-      },
-    });
   }
 
   // ==================== OTOMATİK MAHSUP ====================
