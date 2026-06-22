@@ -90,6 +90,15 @@ export function shouldUseUnifiedPreview(tenantId?: string, sessionHash?: string)
  */
 export const FEATURE_FLAGS = {
   /**
+   * PR-2b-2: Manuel kambiyo (CEK/SENET) → CaseInstrument instruments[] yolu.
+   *
+   * ⚠️ Backend MANUAL_CASE_INSTRUMENTS ile BİRLİKTE açılmalı. Yalnız frontend açık + backend kapalı
+   * = kambiyo kalem kaybı (frontend dues'tan çıkarır, backend instrument'ı yok sayar).
+   * Varsayılan KAPALI → PR-2a davranışı korunur (kambiyo → dues[]).
+   */
+  MANUAL_CASE_INSTRUMENTS: process.env.NEXT_PUBLIC_MANUAL_CASE_INSTRUMENTS === 'true',
+
+  /**
    * Mock hesaplama izni
    * 
    * ⚠️ SADECE development ortamında true olabilir.
