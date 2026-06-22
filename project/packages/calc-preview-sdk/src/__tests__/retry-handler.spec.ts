@@ -99,9 +99,11 @@ describe('Retry Handler', () => {
         startTime: Date.now(),
       });
 
-      // Advance timers for retries
-      await vi.advanceTimersByTimeAsync(100); // First retry delay
-      await vi.advanceTimersByTimeAsync(200); // Second retry delay
+      // Tüm bekleyen zamanlayıcıları boşalt. Jitter (±%10) gerçek Math.random
+      // ile hesaplandığından sabit advanceTimersByTimeAsync(100/200) bazen
+      // gerçek gecikmeyi karşılamayıp test'i 5sn'de zaman aşımına uğratır;
+      // runAllTimersAsync zincirleme yeniden deneme timer'larını da çalıştırır.
+      await vi.runAllTimersAsync();
 
       const result = await resultPromise;
 
@@ -131,11 +133,12 @@ describe('Retry Handler', () => {
         startTime: Date.now(),
       });
 
-      // Advance timers for all retries
-      await vi.advanceTimersByTimeAsync(100);
-      await vi.advanceTimersByTimeAsync(200);
+      // Red beklentisini timer'ları boşaltMADAN ÖNCE bağla; aksi halde yüzen
+      // promise fake timer'lar altında "unhandled rejection" uyarısı üretir.
+      const assertion = expect(resultPromise).rejects.toThrow(SdkNetworkError);
+      await vi.runAllTimersAsync();
+      await assertion;
 
-      await expect(resultPromise).rejects.toThrow(SdkNetworkError);
       expect(fn).toHaveBeenCalledTimes(3);
     });
 
@@ -149,10 +152,10 @@ describe('Retry Handler', () => {
         startTime,
       });
 
-      // Advance past deadline
-      await vi.advanceTimersByTimeAsync(600);
-
-      await expect(resultPromise).rejects.toThrow(SdkTimeoutError);
+      // Red beklentisini önce bağla, sonra timer'ları boşalt (deadline aşılır).
+      const assertion = expect(resultPromise).rejects.toThrow(SdkTimeoutError);
+      await vi.runAllTimersAsync();
+      await assertion;
     });
 
     it('should call onRetry callback', async () => {
@@ -168,7 +171,7 @@ describe('Retry Handler', () => {
         onRetry,
       });
 
-      await vi.advanceTimersByTimeAsync(100);
+      await vi.runAllTimersAsync();
       await resultPromise;
 
       expect(onRetry).toHaveBeenCalledTimes(1);
