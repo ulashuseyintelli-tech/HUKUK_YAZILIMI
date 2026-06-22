@@ -17,6 +17,7 @@ import { CaseBalanceService } from "../interest-engine/orchestration/case-balanc
 import type { CaseBalanceResult } from "../interest-engine/orchestration/case-balance.service";
 import { resolveInitialPolicy } from "../interest-engine/interest-strategy.config";
 import { mapDtoCaseTypeToInterestCaseType } from "./case-type-mapping";
+import { validateResponsibleSelection } from "./responsible-candidates.service"; // M2-A3a: create'te ortak Dosya Sorumlusu validator
 import { ExpenseRequestService } from "../expense-request/expense-request.service";
 import { DomainEventIngestService } from "../icrabot/domain-event-ingest";
 import { CollectionService } from "../collection/collection.service";
@@ -1496,6 +1497,16 @@ export class CaseService {
       }
     }
 
+    // M2-A3a: Dosya Sorumlusu (gerçek kişi) tx-ÖNCESİ doğrula (fail-fast; allowNone=true=create'te
+    // sahipsiz meşru). both → 400; pasif/cross-tenant aday → 400 → geçersizse HİÇ dosya/taraf yaratılmaz
+    // (atomik). Sonuç tx.case.create data'sına yazılır = tek-adım atama (ayrı PATCH footgun'u kapanır).
+    const resolvedResponsible = await validateResponsibleSelection(
+      this.prisma,
+      tenantId,
+      { responsibleLawyerId: dto.responsibleLawyerId, responsibleStaffId: dto.responsibleStaffId },
+      { allowNone: true }
+    );
+
     try {
       // B4/D: fileNumber ön-benzersizlik kontrolü — tx-öncesi taraf yaratımından
       // (resolveInlinePartiesBeforeTx) HEMEN ÖNCE. Mükerrer dosya no'da Case tx zaten
@@ -1622,6 +1633,10 @@ export class CaseService {
             // A2: sorumlu boşsa oluşturan kullanıcıya (userId; yukarıda zorunlu) düşer — yeni dosya
             // sahipsiz kalamaz. Eski null kayıtlar için backfill YOK (ayrı PR).
             sorumluPersonelId: dto.sorumluPersonelId || userId,
+            // M2-A3a: gerçek kişi Dosya Sorumlusu — tx-öncesi validate edildi (resolvedResponsible).
+            // none → ikisi de null (sahipsiz, meşru); DB CHECK both-set'i ayrıca engeller.
+            responsibleLawyerId: resolvedResponsible.responsibleLawyerId,
+            responsibleStaffId: resolvedResponsible.responsibleStaffId,
           },
         });
 
