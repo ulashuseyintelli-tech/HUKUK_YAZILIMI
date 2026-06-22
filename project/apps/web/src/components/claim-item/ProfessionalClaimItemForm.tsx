@@ -320,6 +320,7 @@ interface AlacakKalemi {
   senetBilgileri?: {
     duzenlemeYeri: string;
     duzenlemeTarihi: string;
+    senetNo?: string; // PR-2b-2: manuel SENET → CaseInstrument.documentNo
   };
   // İlam bilgileri
   ilamBilgileri?: {
@@ -1577,6 +1578,19 @@ export function ProfessionalClaimItemForm({
               Senet / Bono Bilgileri
             </h3>
             <div className="grid grid-cols-2 gap-1.5">
+              <div>
+                <label className="block text-[10px] text-gray-500 mb-0.5">Senet/Bono No</label>
+                <input
+                  type="text"
+                  value={kalem.senetBilgileri?.senetNo || ""}
+                  onChange={(e) => setKalem(prev => ({
+                    ...prev,
+                    senetBilgileri: { ...prev.senetBilgileri, senetNo: e.target.value, duzenlemeYeri: prev.senetBilgileri?.duzenlemeYeri || "", duzenlemeTarihi: prev.senetBilgileri?.duzenlemeTarihi || "" }
+                  }))}
+                  placeholder="Senet seri/no"
+                  className="w-full border rounded px-1.5 py-0.5 text-xs"
+                />
+              </div>
               <div>
                 <label className="block text-[10px] text-gray-500 mb-0.5">Düzenleme Yeri</label>
                 <input

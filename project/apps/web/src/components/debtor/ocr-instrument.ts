@@ -142,6 +142,7 @@ export interface CaseInstrumentPayload {
   branchName?: string;
   drawerName?: string;
   payeeName?: string; // C-PR: lehtar OCR taslağı (backend CaseInstrument.payeeName'e gider)
+  source?: "OCR" | "MANUAL"; // PR-2b-2: provenance (backend CaseInstrumentInputDto.source aynası; yok=OCR)
 }
 
 // ── BUG-X: Çek tip-farkındalı tarih modeli (saf helper'lar) ──
@@ -227,4 +228,95 @@ export function hasIncompleteSelected(selected: Instrument[]): boolean {
  */
 export function selectedInstrumentsToPayload(instruments: Instrument[]): CaseInstrumentPayload[] {
   return instruments.filter(isInstrumentComplete).map(instrumentToCaseInstrumentPayload);
+}
+
+// ── PR-2b-2: Manuel kambiyo claim item (CEK/SENET) → CaseInstrumentPayload (source:"MANUAL") ──
+// Wizard ProfessionalClaimItemForm çıktısı (claimDraftItem.raw) → CaseInstrument adayı.
+//   CEK:   cekBilgileri.cekSeriNo → documentNo · ibrazTarihi → dueDate (backend presentmentDate)
+//   SENET: senetBilgileri.senetNo → documentNo · vadeTarihi → dueDate (backend maturityDate)
+//   POLICE / kambiyo-dışı → null (manuel form seçeneği yok). Eksik zorunlu alan → null (gönderilmez).
+
+/** banka+şube tek alanı (" - " ayraçlı) → bankName/branchName (best-effort). */
+function splitBankBranch(bankaVeSube?: string): { bankName?: string; branchName?: string } {
+  const s = (bankaVeSube || "").trim();
+  if (!s) return {};
+  const parts = s.split(/\s*-\s*/);
+  return {
+    bankName: parts[0]?.trim() || undefined,
+    branchName: parts.slice(1).join(" - ").trim() || undefined,
+  };
+}
+
+/** CaseInstrument zorunlulukları: documentNo + amount>0 + currency + issueDate. Eksikse gönderilmez. */
+function isManualPayloadComplete(p: CaseInstrumentPayload): boolean {
+  return !!p.documentNo && p.documentNo.trim() !== "" && p.amount > 0 && !!p.currency && !!p.issueDate;
+}
+
+export function claimDraftItemToManualInstrumentPayload(raw: any): CaseInstrumentPayload | null {
+  if (!raw) return null;
+  const amount = Number(raw.bakiyeTutar) || 0;
+  const currency = (raw.currency || "TRY") as Currency;
+
+  if (raw.kalemTuru === "CEK") {
+    const cek = raw.cekBilgileri || {};
+    const { bankName, branchName } = splitBankBranch(cek.bankaVeSube);
+    const payload: CaseInstrumentPayload = {
+      type: "CEK",
+      documentNo: (cek.cekSeriNo || "").trim(),
+      amount,
+      currency,
+      issueDate: raw.vadeTarihi || "", // keşide (form: Vade/Keşide Tarihi)
+      dueDate: cek.ibrazTarihi || undefined, // backend: çek → presentmentDate
+      bankName,
+      branchName,
+      source: "MANUAL",
+    };
+    return isManualPayloadComplete(payload) ? payload : null;
+  }
+
+  if (raw.kalemTuru === "SENET") {
+    const senet = raw.senetBilgileri || {};
+    const payload: CaseInstrumentPayload = {
+      type: "SENET",
+      documentNo: (senet.senetNo || "").trim(),
+      amount,
+      currency,
+      issueDate: senet.duzenlemeTarihi || raw.vadeTarihi || "",
+      dueDate: raw.vadeTarihi || undefined, // backend: senet → maturityDate
+      source: "MANUAL",
+    };
+    return isManualPayloadComplete(payload) ? payload : null;
+  }
+
+  return null; // POLICE / kambiyo-dışı → manuel instrument değil (PR-2b-2 kapsam dışı)
+}
+
+/** Bir claim item kambiyo mu (manuel instrument adayı: CEK/SENET)? */
+export function isKambiyoRaw(raw: any): boolean {
+  return raw?.kalemTuru === "CEK" || raw?.kalemTuru === "SENET";
+}
+
+/**
+ * PR-2b-2 ROUTING (tek karar noktası, saf+testable). Wizard claim item raw'larını ikiye ayırır:
+ *   - manualInstruments: TAM kambiyo (CEK/SENET) → CaseInstrumentPayload (source:MANUAL)
+ *   - remainingForDues: kambiyo-dışı + EKSİK kambiyo (eksik=dues fallback, KAYIP YOK; tamamlanınca instrument'a geçer)
+ * Flag KAPALI → hepsi dues'a (PR-2a; manualInstruments boş). K1: TAM kambiyo dues'a GİTMEZ → çift-sayım yok.
+ */
+export function routeClaimRawsForManualInstruments(
+  raws: any[],
+  enabled: boolean,
+): { manualInstruments: CaseInstrumentPayload[]; remainingForDues: any[] } {
+  if (!enabled) return { manualInstruments: [], remainingForDues: raws };
+  const manualInstruments: CaseInstrumentPayload[] = [];
+  const remainingForDues: any[] = [];
+  for (const raw of raws) {
+    if (isKambiyoRaw(raw)) {
+      const p = claimDraftItemToManualInstrumentPayload(raw);
+      if (p) manualInstruments.push(p); // TAM kambiyo → instrument (dues'a değil)
+      else remainingForDues.push(raw); // EKSİK kambiyo → dues fallback (kayıp yok)
+    } else {
+      remainingForDues.push(raw); // kambiyo-dışı → dues
+    }
+  }
+  return { manualInstruments, remainingForDues };
 }

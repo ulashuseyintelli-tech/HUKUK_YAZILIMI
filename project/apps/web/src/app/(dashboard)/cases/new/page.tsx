@@ -28,7 +28,8 @@ import { DocumentSourceSelector, DocumentSourceType, ClassificationResult, PoaSc
 import { WizardResultCard } from "@/components/case/WizardResultCard";
 import { PoaScannerWizard } from "@/components/client/PoaScannerWizard";
 import { DebtorStep } from "@/components/debtor";
-import { selectedInstrumentsToPayload, CaseInstrumentPayload } from "@/components/debtor/ocr-instrument";
+import { selectedInstrumentsToPayload, routeClaimRawsForManualInstruments, CaseInstrumentPayload } from "@/components/debtor/ocr-instrument";
+import { FEATURE_FLAGS } from "@/lib/config/feature-flags";
 import { CaseDebtor } from "@/types/debtor";
 import { PeriodSelector } from "@/components/case/PeriodSelector";
 import { useFormHistory } from "@/hooks/useFormHistory";
@@ -251,6 +252,18 @@ function buildDuesFromClaimItem(item: any, startDate: string): DueItem[] {
   }
 
   return newDues;
+}
+
+// ── PR-2b-2: kambiyo (CEK/SENET) routing — tek karar routeClaimRawsForManualInstruments (ocr-instrument, saf+testable) ──
+// Flag ON: TAM kambiyo → instruments[] (source:MANUAL), dues'a DEĞİL (K1); eksik kambiyo → dues fallback.
+// Flag OFF: hepsi dues (PR-2a).
+function claimItemsToDues(items: ClaimDraftItem[], startDate: string, manualInstrumentsEnabled: boolean): DueItem[] {
+  const { remainingForDues } = routeClaimRawsForManualInstruments(items.map(ci => ci.raw), manualInstrumentsEnabled);
+  return remainingForDues.flatMap(raw => buildDuesFromClaimItem(raw, startDate));
+}
+
+function claimItemsToManualInstruments(items: ClaimDraftItem[], manualInstrumentsEnabled: boolean): CaseInstrumentPayload[] {
+  return routeClaimRawsForManualInstruments(items.map(ci => ci.raw), manualInstrumentsEnabled).manualInstruments;
 }
 
 interface LookupItem { id: string; code: string; name: string; description?: string; color?: string; uyapCode?: string; sortOrder: number; }
@@ -959,7 +972,7 @@ export default function NewCasePage() {
   // yeniden türetilir (createCase yine dues[] gönderir). instruments[] DOKUNULMAZ.
   const applyClaimDraftItems = (next: ClaimDraftItem[]) => {
     setClaimDraftItems(next);
-    const allDues = next.flatMap(ci => buildDuesFromClaimItem(ci.raw, caseData.startDate));
+    const allDues = claimItemsToDues(next, caseData.startDate, FEATURE_FLAGS.MANUAL_CASE_INSTRUMENTS);
     setDues(allDues);
     const principalTotal = allDues
       .filter(d => d.type === 'PRINCIPAL')
@@ -1131,12 +1144,15 @@ export default function NewCasePage() {
       applyClaimDraftItems(effClaimItems);
       resetClaimEditor();
     }
-    let effDues = effClaimItems.flatMap(ci => buildDuesFromClaimItem(ci.raw, caseData.startDate));
+    let effDues = claimItemsToDues(effClaimItems, caseData.startDate, FEATURE_FLAGS.MANUAL_CASE_INSTRUMENTS);
     // Eski-draft güvenliği: claimDraftItems boş ama dues doluysa (PR-2a öncesi draft / hydrate
     // edilmemiş durum) mevcut dues'u kullan — eski draft SESSİZCE boş gönderilmesin.
     if (effDues.length === 0 && dues.length > 0) {
       effDues = dues;
     }
+    // PR-2b-2: manuel kambiyo (CEK/SENET) → instruments[] (source:MANUAL). Flag ON'da dues'tan ÇIKARILDI (K1);
+    // OFF'ta boş (kambiyo dues'a gitti = PR-2a). createCase'e effDues ile birlikte taşınır.
+    const manualInstruments = claimItemsToManualInstruments(effClaimItems, FEATURE_FLAGS.MANUAL_CASE_INSTRUMENTS);
 
     // Pre-submit validasyon
     const validation = validateCaseCreation({
@@ -1169,12 +1185,12 @@ export default function NewCasePage() {
       setShowExpenseConfirmModal(true);
     } else {
       // Müvekkil yoksa direkt oluştur
-      doCreateCase(false, effDues);
+      doCreateCase(false, effDues, manualInstruments);
     }
   };
 
   // Gerçek takip oluşturma fonksiyonu
-  const doCreateCase = async (sendExpenseEmail: boolean, duesToSubmit?: DueItem[]) => {
+  const doCreateCase = async (sendExpenseEmail: boolean, duesToSubmit?: DueItem[], manualInstrumentsToSubmit?: CaseInstrumentPayload[]) => {
     setShowExpenseConfirmModal(false);
     setLoading(true);
     
@@ -1244,7 +1260,11 @@ export default function NewCasePage() {
         // Eski format (geriye uyumluluk)
         debtors: debtors.filter(d => d.name).map(d => ({ id: d.isNew ? undefined : d.id, type: d.type, name: d.name, identityNo: d.identityNo, taxOffice: d.taxOffice, phone: d.phone, email: d.email, address: d.address })),
         dues: buildCreateCaseDuesPayload(duesToSubmit ?? dues),
-        instruments: instruments, // PR-N4b: kambiyo evrakları (CaseInstrumentInputDto[]); backend flag-gated (N3-wire)
+        // PR-2b-2: OCR instruments[] (source yok=OCR) + manuel kambiyo (source:MANUAL). Flag OFF → yalnız OCR (PR-2a).
+        // Modal yolunda manualInstrumentsToSubmit gelmez → claimDraftItems state'ten türetilir (oturmuş).
+        instruments: FEATURE_FLAGS.MANUAL_CASE_INSTRUMENTS
+          ? [...instruments, ...(manualInstrumentsToSubmit ?? claimItemsToManualInstruments(claimDraftItems, true))]
+          : instruments, // PR-N4b: kambiyo evrakları (CaseInstrumentInputDto[])
       });
       // M2-G3c: create-then-PATCH — gerçek kişi Dosya Sorumlusu ataması (backend create'e DOKUNULMADAN).
       // sorumluPersonelId zaten oturum açan kullanıcıya (yaratıcı) görünmez transition fallback olarak yazıldı.
