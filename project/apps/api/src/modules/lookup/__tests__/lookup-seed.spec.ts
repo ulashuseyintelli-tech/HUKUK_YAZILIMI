@@ -14,7 +14,6 @@ import {
   MAHIYET_TIPI_CATALOG,
   ASAMA_CATALOG,
   RISK_CATALOG,
-  BORCLU_TIPI_CATALOG,
   DURUM_ETIKETI_CATALOG,
   TAKIP_TURU_DEFAULTS,
 } from '../lookup-catalog';
@@ -30,7 +29,6 @@ function makeModel(findManyRows: any[] = []) {
 function makeDb() {
   return {
     lookupMahiyetTipi: makeModel(MAHIYET_TIPI_CATALOG.map((m) => ({ id: `m_${m.code}`, code: m.code }))),
-    lookupBorcluTipi: makeModel(BORCLU_TIPI_CATALOG.map((b) => ({ id: `b_${b.code}`, code: b.code }))),
     lookupRisk: makeModel(),
     lookupAsama: makeModel(),
     lookupDurumEtiketi: makeModel(),
@@ -46,7 +44,6 @@ describe('seedLookupCatalog', () => {
     const res = await seedLookupCatalog(db as any, TENANT);
 
     expect(db.lookupMahiyetTipi.upsert).toHaveBeenCalledTimes(MAHIYET_TIPI_CATALOG.length);
-    expect(db.lookupBorcluTipi.upsert).toHaveBeenCalledTimes(BORCLU_TIPI_CATALOG.length);
     expect(db.lookupRisk.upsert).toHaveBeenCalledTimes(RISK_CATALOG.length);
     expect(db.lookupAsama.upsert).toHaveBeenCalledTimes(ASAMA_CATALOG.length);
     expect(db.lookupDurumEtiketi.upsert).toHaveBeenCalledTimes(DURUM_ETIKETI_CATALOG.length);
@@ -57,7 +54,6 @@ describe('seedLookupCatalog', () => {
       mahiyet: MAHIYET_TIPI_CATALOG.length,
       asama: ASAMA_CATALOG.length,
       risk: RISK_CATALOG.length,
-      borcluTipi: BORCLU_TIPI_CATALOG.length,
       durumEtiketi: DURUM_ETIKETI_CATALOG.length,
     });
   });
@@ -68,7 +64,6 @@ describe('seedLookupCatalog', () => {
 
     const allUpserts = [
       ...db.lookupMahiyetTipi.upsert.mock.calls,
-      ...db.lookupBorcluTipi.upsert.mock.calls,
       ...db.lookupRisk.upsert.mock.calls,
       ...db.lookupAsama.upsert.mock.calls,
       ...db.lookupDurumEtiketi.upsert.mock.calls,
@@ -107,20 +102,18 @@ describe('seedLookupCatalog', () => {
     // Her default için bir update beklenir (mahiyet+borçlu id'leri findMany ile çözülebildi)
     expect(db.lookupTakipTuru.update).toHaveBeenCalledTimes(Object.keys(TAKIP_TURU_DEFAULTS).length);
 
-    // KAMBIYO_CEK → mahiyet CEK, borçlu TUZEL_KISI olmalı
+    // KAMBIYO_CEK → mahiyet CEK olmalı
     const cekUpdate = db.lookupTakipTuru.update.mock.calls.find(
       (c: any[]) => c[0].where.tenantId_code.code === 'KAMBIYO_CEK',
     );
     expect(cekUpdate).toBeDefined();
     expect(cekUpdate![0].data.defaultMahiyetTipiId).toBe('m_CEK');
-    expect(cekUpdate![0].data.defaultBorcluTipiId).toBe('b_TUZEL_KISI');
   });
 
-  it('mahiyet/borçlu id çözülemezse takipTuru.update ÇAĞRILMAZ (guard)', async () => {
+  it('mahiyet id çözülemezse takipTuru.update ÇAĞRILMAZ (guard)', async () => {
     const db = makeDb();
     // findMany boş → hiçbir default çözülemez
     db.lookupMahiyetTipi.findMany.mockResolvedValue([]);
-    db.lookupBorcluTipi.findMany.mockResolvedValue([]);
 
     await seedLookupCatalog(db as any, TENANT);
     expect(db.lookupTakipTuru.update).not.toHaveBeenCalled();

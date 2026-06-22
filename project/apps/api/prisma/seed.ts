@@ -344,7 +344,7 @@ async function main(): Promise<void> {
       const r = await seedLookupCatalog(prisma, demoTenant.id);
       console.log(
         `✅ Lookup katalog seedlendi (Demo Firma): takipTuru=${r.takipTuru}, mahiyet=${r.mahiyet}, ` +
-          `asama=${r.asama}, risk=${r.risk}, borcluTipi=${r.borcluTipi}, durumEtiketi=${r.durumEtiketi}`,
+          `asama=${r.asama}, risk=${r.risk}, durumEtiketi=${r.durumEtiketi}`,
       );
     }
 

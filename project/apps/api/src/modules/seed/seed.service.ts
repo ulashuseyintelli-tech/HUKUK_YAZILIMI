@@ -63,7 +63,7 @@ export class SeedService {
   async seedLookups(tenantId: string) {
     const detail = await seedLookupCatalog(this.prisma, tenantId);
     const created =
-      detail.takipTuru + detail.mahiyet + detail.asama + detail.risk + detail.borcluTipi + detail.durumEtiketi;
+      detail.takipTuru + detail.mahiyet + detail.asama + detail.risk + detail.durumEtiketi;
     return { created, message: `${created} lookup kaydı (kanonik katalog) upsert edildi`, detail };
   }
 

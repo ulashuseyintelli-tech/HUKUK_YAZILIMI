@@ -7,7 +7,6 @@ import {
   MAHIYET_TIPI_CATALOG,
   ASAMA_CATALOG,
   RISK_CATALOG,
-  BORCLU_TIPI_CATALOG,
   DURUM_ETIKETI_CATALOG,
 } from "../lookup-catalog";
 
@@ -30,7 +29,6 @@ describeDb("seedLookupCatalog — gerçek Postgres (integration)", () => {
     mahiyet: MAHIYET_TIPI_CATALOG.length, // 18
     asama: ASAMA_CATALOG.length, // 9
     risk: RISK_CATALOG.length, // 3
-    borcluTipi: BORCLU_TIPI_CATALOG.length, // 3
     durumEtiketi: DURUM_ETIKETI_CATALOG.length, // 9
   };
 
@@ -51,7 +49,6 @@ describeDb("seedLookupCatalog — gerçek Postgres (integration)", () => {
     await prisma.lookupMahiyetTipi.deleteMany({ where: { tenantId } });
     await prisma.lookupAsama.deleteMany({ where: { tenantId } });
     await prisma.lookupRisk.deleteMany({ where: { tenantId } });
-    await prisma.lookupBorcluTipi.deleteMany({ where: { tenantId } });
     await prisma.lookupDurumEtiketi.deleteMany({ where: { tenantId } });
     await prisma.tenant.deleteMany({ where: { id: tenantId } });
   }
@@ -65,31 +62,29 @@ describeDb("seedLookupCatalog — gerçek Postgres (integration)", () => {
   }
 
   async function activeCounts() {
-    const [takipTuru, mahiyet, asama, risk, borcluTipi, durumEtiketi] = await Promise.all([
+    const [takipTuru, mahiyet, asama, risk, durumEtiketi] = await Promise.all([
       prisma.lookupTakipTuru.count({ where: { tenantId, isActive: true } }),
       prisma.lookupMahiyetTipi.count({ where: { tenantId, isActive: true } }),
       prisma.lookupAsama.count({ where: { tenantId, isActive: true } }),
       prisma.lookupRisk.count({ where: { tenantId, isActive: true } }),
-      prisma.lookupBorcluTipi.count({ where: { tenantId, isActive: true } }),
       prisma.lookupDurumEtiketi.count({ where: { tenantId, isActive: true } }),
     ]);
-    return { takipTuru, mahiyet, asama, risk, borcluTipi, durumEtiketi };
+    return { takipTuru, mahiyet, asama, risk, durumEtiketi };
   }
 
-  it("boş tenant → 11/18/9/3/3/9 aktif + defaults id çözülür", async () => {
+  it("boş tenant → 11/18/9/3/9 aktif + defaults id çözülür", async () => {
     await ensureTenant();
 
     const r = await seedLookupCatalog(prisma, tenantId);
     expect(r).toEqual(EXPECTED);
     expect(await activeCounts()).toEqual(EXPECTED);
 
-    // defaults: takipTuru → mahiyet/borçlu id'leri çözülmüş olmalı
+    // defaults: takipTuru → mahiyet id'leri çözülmüş olmalı
     const cek = await prisma.lookupTakipTuru.findUnique({
       where: { tenantId_code: { tenantId, code: "KAMBIYO_CEK" } },
     });
     expect(cek).toBeTruthy();
     expect(cek!.defaultMahiyetTipiId).toBeTruthy();
-    expect(cek!.defaultBorcluTipiId).toBeTruthy();
 
     // frontend'in aradığı kanonik kodlar var
     const ilamli = await prisma.lookupTakipTuru.findUnique({

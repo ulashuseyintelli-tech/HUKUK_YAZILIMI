@@ -163,11 +163,10 @@ async function runTests() {
     const takipTuru = await prisma.lookupTakipTuru.count({ where: { tenantId: TENANT_ID } });
     const asama = await prisma.lookupAsama.count({ where: { tenantId: TENANT_ID } });
     const risk = await prisma.lookupRisk.count({ where: { tenantId: TENANT_ID } });
-    const borcluTipi = await prisma.lookupBorcluTipi.count({ where: { tenantId: TENANT_ID } });
     
     return {
       status: takipTuru > 0 && asama > 0 ? 'OK' : 'WARN',
-      message: `Takip Türü: ${takipTuru} | Aşama: ${asama} | Risk: ${risk} | Borçlu Tipi: ${borcluTipi}`,
+      message: `Takip Türü: ${takipTuru} | Aşama: ${asama} | Risk: ${risk}`,
     };
   });
 

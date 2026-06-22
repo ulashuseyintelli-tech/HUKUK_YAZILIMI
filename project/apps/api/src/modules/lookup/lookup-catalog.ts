@@ -32,7 +32,6 @@ export interface MahiyetSeedItem extends LookupSeedItem {
 
 export interface TakipTuruDefault {
   mahiyetKodu: string;
-  borcluTipiKodu: string;
 }
 
 // ==================== TAKİP TÜRLERİ (11) ====================
@@ -92,13 +91,6 @@ export const RISK_CATALOG: readonly LookupColorSeedItem[] = [
   { code: 'YUKSEK', name: 'Yüksek', description: 'Tahsil ihtimali düşük', color: '#ef4444', sortOrder: 3 },
 ];
 
-// ==================== BORÇLU TİPLERİ (3) ====================
-export const BORCLU_TIPI_CATALOG: readonly LookupSeedItem[] = [
-  { code: 'GERCEK_KISI', name: 'Gerçek Kişi', description: 'Bireysel borçlu', sortOrder: 1 },
-  { code: 'TUZEL_KISI', name: 'Tüzel Kişi (Şirket)', description: 'Şirket borçlu', sortOrder: 2 },
-  { code: 'KAMU', name: 'Kamu Kurumu', description: 'Kamu kurumu borçlu', sortOrder: 3 },
-];
-
 // ==================== DURUM ETİKETLERİ (9) ====================
 export const DURUM_ETIKETI_CATALOG: readonly LookupColorSeedItem[] = [
   { code: 'MASRAF_BEKLIYOR', name: 'Masraf Bekliyor', description: 'Masraf yatırılması bekleniyor', color: '#f97316', sortOrder: 1 },
@@ -113,18 +105,18 @@ export const DURUM_ETIKETI_CATALOG: readonly LookupColorSeedItem[] = [
 ];
 
 // ==================== TAKİP TÜRÜ VARSAYILANLARI ====================
-// Her takip türüne göre varsayılan mahiyet tipi + borçlu tipi (id'leri seed sırasında çözülür).
+// Her takip türüne göre varsayılan mahiyet tipi (id'si seed sırasında çözülür).
 // Risk durumu otomatik atanmaz (dosya açıldıktan sonra manuel belirlenir).
 export const TAKIP_TURU_DEFAULTS: Readonly<Record<string, TakipTuruDefault>> = {
-  ILAMSIZ_GENEL: { mahiyetKodu: 'PARA', borcluTipiKodu: 'GERCEK_KISI' },
-  ILAMSIZ_KIRA: { mahiyetKodu: 'KIRA', borcluTipiKodu: 'GERCEK_KISI' },
-  ILAMSIZ_TAHLIYE: { mahiyetKodu: 'TAHLIYE', borcluTipiKodu: 'GERCEK_KISI' },
-  ILAMLI: { mahiyetKodu: 'TAZMINAT', borcluTipiKodu: 'GERCEK_KISI' },
-  NAFAKA: { mahiyetKodu: 'NAFAKA', borcluTipiKodu: 'GERCEK_KISI' },
-  KAMBIYO_CEK: { mahiyetKodu: 'CEK', borcluTipiKodu: 'TUZEL_KISI' },
-  KAMBIYO_SENET: { mahiyetKodu: 'SENET', borcluTipiKodu: 'GERCEK_KISI' },
-  REHIN_TASINIR: { mahiyetKodu: 'REHIN', borcluTipiKodu: 'GERCEK_KISI' },
-  REHIN_TASINMAZ: { mahiyetKodu: 'IPOTEK', borcluTipiKodu: 'GERCEK_KISI' },
-  IFLAS_ADI: { mahiyetKodu: 'PARA', borcluTipiKodu: 'TUZEL_KISI' },
-  IFLAS_KAMBIYO: { mahiyetKodu: 'SENET', borcluTipiKodu: 'TUZEL_KISI' },
+  ILAMSIZ_GENEL: { mahiyetKodu: 'PARA' },
+  ILAMSIZ_KIRA: { mahiyetKodu: 'KIRA' },
+  ILAMSIZ_TAHLIYE: { mahiyetKodu: 'TAHLIYE' },
+  ILAMLI: { mahiyetKodu: 'TAZMINAT' },
+  NAFAKA: { mahiyetKodu: 'NAFAKA' },
+  KAMBIYO_CEK: { mahiyetKodu: 'CEK' },
+  KAMBIYO_SENET: { mahiyetKodu: 'SENET' },
+  REHIN_TASINIR: { mahiyetKodu: 'REHIN' },
+  REHIN_TASINMAZ: { mahiyetKodu: 'IPOTEK' },
+  IFLAS_ADI: { mahiyetKodu: 'PARA' },
+  IFLAS_KAMBIYO: { mahiyetKodu: 'SENET' },
 };

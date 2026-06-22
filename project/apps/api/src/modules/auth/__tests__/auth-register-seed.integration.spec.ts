@@ -33,7 +33,6 @@ describeDb("AuthService.register → yeni tenant kanonik lookup (integration)", 
       await prisma.lookupMahiyetTipi.deleteMany({ where: { tenantId: tid } });
       await prisma.lookupAsama.deleteMany({ where: { tenantId: tid } });
       await prisma.lookupRisk.deleteMany({ where: { tenantId: tid } });
-      await prisma.lookupBorcluTipi.deleteMany({ where: { tenantId: tid } });
       await prisma.lookupDurumEtiketi.deleteMany({ where: { tenantId: tid } });
       await prisma.user.deleteMany({ where: { tenantId: tid } });
       await prisma.tenant.deleteMany({ where: { id: tid } });
@@ -54,21 +53,19 @@ describeDb("AuthService.register → yeni tenant kanonik lookup (integration)", 
     const tid = res.tenant.id as string;
     createdTenantIds.push(tid);
 
-    const [takipTuru, mahiyet, asama, risk, borcluTipi, durumEtiketi] = await Promise.all([
+    const [takipTuru, mahiyet, asama, risk, durumEtiketi] = await Promise.all([
       prisma.lookupTakipTuru.count({ where: { tenantId: tid, isActive: true } }),
       prisma.lookupMahiyetTipi.count({ where: { tenantId: tid, isActive: true } }),
       prisma.lookupAsama.count({ where: { tenantId: tid, isActive: true } }),
       prisma.lookupRisk.count({ where: { tenantId: tid, isActive: true } }),
-      prisma.lookupBorcluTipi.count({ where: { tenantId: tid, isActive: true } }),
       prisma.lookupDurumEtiketi.count({ where: { tenantId: tid, isActive: true } }),
     ]);
 
-    expect({ takipTuru, mahiyet, asama, risk, borcluTipi, durumEtiketi }).toEqual({
+    expect({ takipTuru, mahiyet, asama, risk, durumEtiketi }).toEqual({
       takipTuru: 11,
       mahiyet: 18,
       asama: 9,
       risk: 3,
-      borcluTipi: 3,
       durumEtiketi: 9,
     });
 

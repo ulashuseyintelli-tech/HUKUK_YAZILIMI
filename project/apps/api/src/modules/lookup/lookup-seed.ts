@@ -17,7 +17,6 @@ import {
   MAHIYET_TIPI_CATALOG,
   ASAMA_CATALOG,
   RISK_CATALOG,
-  BORCLU_TIPI_CATALOG,
   DURUM_ETIKETI_CATALOG,
   TAKIP_TURU_DEFAULTS,
 } from './lookup-catalog';
@@ -33,7 +32,6 @@ export interface LookupSeedResult {
   mahiyet: number;
   asama: number;
   risk: number;
-  borcluTipi: number;
   durumEtiketi: number;
 }
 
@@ -47,8 +45,8 @@ export interface LookupSeedResult {
  *   - kanonik OLMAYAN (RFA005_*, eski drift, manuel) → DOKUNULMAZ (upsert yalnız katalog kodlarını hedefler)
  *   - hard-delete ASLA (Case FK)
  *
- * Sıra: mahiyet + borçlu + risk + aşama + durum ÖNCE (takipTuru defaults bunların id'lerini gerektirir),
- *       SONRA takipTuru, EN SON defaults geçişi (defaultMahiyetTipiId / defaultBorcluTipiId).
+ * Sıra: mahiyet + risk + aşama + durum ÖNCE (takipTuru defaults bunların id'lerini gerektirir),
+ *       SONRA takipTuru, EN SON defaults geçişi (defaultMahiyetTipiId).
  *
  * <remarks>
  * Çağrıldığı yerler:
@@ -71,16 +69,7 @@ export async function seedLookupCatalog(
     });
   }
 
-  // 2) Borçlu tipleri (takipTuru defaults bunların id'lerini gerektirir)
-  for (const b of BORCLU_TIPI_CATALOG) {
-    await db.lookupBorcluTipi.upsert({
-      where: { tenantId_code: { tenantId, code: b.code } },
-      update: { name: b.name, description: b.description, sortOrder: b.sortOrder, isActive: true },
-      create: { tenantId, code: b.code, name: b.name, description: b.description, sortOrder: b.sortOrder },
-    });
-  }
-
-  // 3) Risk sınıfları
+  // 2) Risk sınıfları
   for (const r of RISK_CATALOG) {
     await db.lookupRisk.upsert({
       where: { tenantId_code: { tenantId, code: r.code } },
@@ -89,7 +78,7 @@ export async function seedLookupCatalog(
     });
   }
 
-  // 4) Aşamalar
+  // 3) Aşamalar
   for (const a of ASAMA_CATALOG) {
     await db.lookupAsama.upsert({
       where: { tenantId_code: { tenantId, code: a.code } },
@@ -98,7 +87,7 @@ export async function seedLookupCatalog(
     });
   }
 
-  // 5) Durum etiketleri
+  // 4) Durum etiketleri
   for (const d of DURUM_ETIKETI_CATALOG) {
     await db.lookupDurumEtiketi.upsert({
       where: { tenantId_code: { tenantId, code: d.code } },
@@ -107,7 +96,7 @@ export async function seedLookupCatalog(
     });
   }
 
-  // 6) Takip türleri (defaults henüz yok — id'ler bir sonraki adımda çözülür)
+  // 5) Takip türleri (defaults henüz yok — id'ler bir sonraki adımda çözülür)
   for (const t of TAKIP_TURU_CATALOG) {
     await db.lookupTakipTuru.upsert({
       where: { tenantId_code: { tenantId, code: t.code } },
@@ -116,18 +105,14 @@ export async function seedLookupCatalog(
     });
   }
 
-  // 7) Defaults geçişi — mahiyet/borçlu id'lerini çöz, takipTuru'yu güncelle
-  const [mahiyetler, borclular] = await Promise.all([
-    db.lookupMahiyetTipi.findMany({ where: { tenantId }, select: { id: true, code: true } }),
-    db.lookupBorcluTipi.findMany({ where: { tenantId }, select: { id: true, code: true } }),
-  ]);
+  // 6) Defaults geçişi — mahiyet id'lerini çöz, takipTuru'yu güncelle
+  const mahiyetler = await db.lookupMahiyetTipi.findMany({ where: { tenantId }, select: { id: true, code: true } });
   for (const [takipKodu, def] of Object.entries(TAKIP_TURU_DEFAULTS)) {
     const mahiyet = mahiyetler.find((x) => x.code === def.mahiyetKodu);
-    const borclu = borclular.find((x) => x.code === def.borcluTipiKodu);
-    if (mahiyet && borclu) {
+    if (mahiyet) {
       await db.lookupTakipTuru.update({
         where: { tenantId_code: { tenantId, code: takipKodu } },
-        data: { defaultMahiyetTipiId: mahiyet.id, defaultBorcluTipiId: borclu.id },
+        data: { defaultMahiyetTipiId: mahiyet.id },
       });
     }
   }
@@ -137,7 +122,6 @@ export async function seedLookupCatalog(
     mahiyet: MAHIYET_TIPI_CATALOG.length,
     asama: ASAMA_CATALOG.length,
     risk: RISK_CATALOG.length,
-    borcluTipi: BORCLU_TIPI_CATALOG.length,
     durumEtiketi: DURUM_ETIKETI_CATALOG.length,
   };
 }

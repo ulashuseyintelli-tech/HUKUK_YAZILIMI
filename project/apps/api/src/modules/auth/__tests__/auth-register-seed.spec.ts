@@ -44,7 +44,7 @@ describe('PR-B AuthService.register tenant-create auto-seed', () => {
 
   it('başarı: seedLookupCatalog tx client + tenant.id ile, user create SONRASI, 1 kez çağrılır', async () => {
     const tx = buildTx();
-    mockedSeed.mockResolvedValue({ takipTuru: 11, mahiyet: 18, asama: 9, risk: 3, borcluTipi: 3, durumEtiketi: 9 });
+    mockedSeed.mockResolvedValue({ takipTuru: 11, mahiyet: 18, asama: 9, risk: 3, durumEtiketi: 9 });
     const svc = buildService(tx);
 
     const res = await svc.register(dto);
