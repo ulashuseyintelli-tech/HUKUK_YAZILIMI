@@ -1267,29 +1267,14 @@ export default function NewCasePage() {
         instruments: FEATURE_FLAGS.MANUAL_CASE_INSTRUMENTS
           ? [...instruments, ...(manualInstrumentsToSubmit ?? claimItemsToManualInstruments(claimDraftItems, true))]
           : instruments, // PR-N4b: kambiyo evrakları (CaseInstrumentInputDto[])
+        // M2-A3b: gerçek kişi Dosya Sorumlusu create payload'ında — ayrı PATCH YOK (tek atomik istek).
+        // Backend A3a tx-İÇİNDE validate+yazar → geçersizse dosya HİÇ oluşmaz (orphan imkânsız);
+        // create başarısızsa aşağıdaki catch setError gösterir.
+        ...(responsiblePerson ? buildAssignBody(responsiblePerson) : {}),
       });
-      // M2-G3c: create-then-PATCH — gerçek kişi Dosya Sorumlusu ataması (backend create'e DOKUNULMADAN).
-      // sorumluPersonelId zaten oturum açan kullanıcıya (yaratıcı) görünmez transition fallback olarak yazıldı.
-      let responsibleAssignFailed = false;
-      if (responsiblePerson) {
-        try {
-          await api.patch(
-            `/cases/${response.id}/responsible-person`,
-            buildAssignBody(responsiblePerson)
-          );
-        } catch {
-          responsibleAssignFailed = true;
-        }
-      }
       if (selectedForm) recordUsage(selectedForm.code);
       // Başarılı kayıt sonrası taslağı temizle
       clearCaseWizardDraftState({ tenantId: wizardTenantId, userId: wizardUserId });
-      // M2-G3c: POST başarılı ama PATCH başarısızsa — dosya OLUŞTU; yönlendirmeden ÖNCE açık uyarı ver.
-      if (responsibleAssignFailed && typeof window !== "undefined") {
-        window.alert(
-          'Dosya oluşturuldu ancak Dosya Sorumlusu (gerçek kişi) atanamadı.\nDosya detayında "Dosya Ekibi" bölümünden tekrar atayabilirsiniz.'
-        );
-      }
       // Yeni takip oluşturuldu - belgeler sekmesine yönlendir
       router.push(`/cases/${response.id}?tab=documents`);
     } catch (err: any) { setError(err.message || "Takip oluşturulurken bir hata oluştu"); } finally { setLoading(false); }
