@@ -440,7 +440,7 @@ export class SchedulerService {
             include: {
               caseDebtor: {
                 include: {
-                  case: { select: { id: true, fileNumber: true, tenantId: true, sorumluPersonelId: true } },
+                  case: { select: { id: true, fileNumber: true, tenantId: true } },
                   debtor: { select: { name: true } },
                 },
               },
@@ -462,7 +462,7 @@ export class SchedulerService {
             include: {
               caseDebtor: {
                 include: {
-                  case: { select: { id: true, fileNumber: true, tenantId: true, sorumluPersonelId: true } },
+                  case: { select: { id: true, fileNumber: true, tenantId: true } },
                   debtor: { select: { name: true } },
                 },
               },
@@ -552,7 +552,7 @@ export class SchedulerService {
             include: {
               caseDebtor: {
                 include: {
-                  case: { select: { id: true, fileNumber: true, tenantId: true, sorumluPersonelId: true } },
+                  case: { select: { id: true, fileNumber: true, tenantId: true } },
                   debtor: { select: { name: true } },
                 },
               },
@@ -794,7 +794,7 @@ export class SchedulerService {
     // Case bilgisini al
     const caseData = await this.db.case.findUnique({
       where: { id: tebligat.caseId },
-      select: { id: true, fileNumber: true, tenantId: true, sorumluPersonelId: true },
+      select: { id: true, fileNumber: true, tenantId: true },
     });
 
     if (!caseData) return;

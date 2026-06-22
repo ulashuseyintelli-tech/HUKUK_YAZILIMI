@@ -247,7 +247,6 @@ export class ExpenseNotificationService {
         },
         case: {
           select: {
-            sorumluPersonelId: true, // A5: varsayılan görev sahibi (Dosya Sorumlusu)
             fileNumber: true,
             executionFileNumber: true,
             executionOffice: { select: { name: true } },
@@ -552,7 +551,7 @@ export class ExpenseNotificationService {
     const request = await this.prisma.expenseRequest.findFirst({
       where: { id: requestId, tenantId },
       include: {
-        case: { select: { id: true, fileNumber: true, sorumluPersonelId: true } },
+        case: { select: { id: true, fileNumber: true } },
         client: { select: { displayName: true } },
       },
     });
