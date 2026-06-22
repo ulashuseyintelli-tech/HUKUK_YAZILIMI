@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculator, TrendingUp, Receipt, Banknote, FileCheck, Calendar, XCircle, Info, Search, Users, Building2, Landmark, Edit2, Trash2, Phone, Mail, AlertCircle, Settings } from "lucide-react";
 import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
-import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo } from "@/lib/case-due-payload";
+import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields } from "@/lib/case-due-payload";
 import { isPoaDuplicateSuppressed } from "@/lib/poa-ux";
 import { resolveLawyerIdsFromScan } from "@/lib/lawyer-match";
 import { buildStaffPayload } from "@/lib/case-staff-payload";
@@ -145,6 +145,13 @@ interface DueItem {
   hasKdv?: boolean;
   kdvRate?: number;
   kdvAmount?: number;
+  // PR-2c-2: belge-özel alanlar (FATURA/İLAM/KİRA) → backend DueDto (PR-2c-1) → ClaimItem
+  issueDate?: string;
+  ilamMahkeme?: string;
+  ilamEsasNo?: string;
+  ilamKararNo?: string;
+  kiraDonemBaslangic?: string;
+  kiraDonemBitis?: string;
 }
 
 // ── PR-2a (CLAIM-ITEM-WIZARD-2a): çok-kalemli alacak girişi ──────────────────
@@ -217,6 +224,8 @@ function buildDuesFromClaimItem(item: any, startDate: string): DueItem[] {
         ? item.cekBilgileri.ibrazTarihi
         : item.vadeTarihi,
       interestEndDate: startDate,
+      // PR-2c-2: belge-özel alanlar (FATURA/İLAM/KİRA) → PRINCIPAL due (kambiyo-dışı; CEK/SENET → {})
+      ...buildClaimDocumentFields(item),
     });
   }
 

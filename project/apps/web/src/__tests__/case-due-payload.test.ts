@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo } from '../lib/case-due-payload';
+import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields } from '../lib/case-due-payload';
 
 describe('buildCreateCaseDuesPayload', () => {
   it('create-case payload alacak faiz alanlarini dusurmez', () => {
@@ -95,5 +95,75 @@ describe('buildCreateCaseDuesPayload — FATURA belge/KDV alanlari (G2b)', () =>
     expect(p.sourceDocumentNo).toBeUndefined();
     expect(p.sourceDocumentType).toBeUndefined();
     expect(p.hasKdv).toBeUndefined();
+  });
+});
+
+describe('buildClaimDocumentFields (PR-2c-2 — manuel belge alanları)', () => {
+  it('FATURA → sourceDocumentNo=faturaNo · issueDate=faturaTarihi · sourceDocumentType=FATURA', () => {
+    expect(
+      buildClaimDocumentFields({ kalemTuru: 'FATURA', faturaBilgileri: { faturaNo: 'FTR-1', faturaTarihi: '2026-02-15' } }),
+    ).toEqual({ sourceDocumentType: 'FATURA', sourceDocumentNo: 'FTR-1', issueDate: '2026-02-15' });
+  });
+
+  it('İLAM → ilamMahkeme/EsasNo/KararNo · issueDate=ilamTarihi · sourceDocumentType=ILAM (davaTarihi YOK)', () => {
+    expect(
+      buildClaimDocumentFields({
+        kalemTuru: 'ILAM',
+        ilamBilgileri: { mahkemeAdi: 'Ankara 1. AHM', esasNo: '2024/123', kararNo: '2025/45', ilamTarihi: '2025-06-20' },
+      }),
+    ).toEqual({
+      sourceDocumentType: 'ILAM',
+      ilamMahkeme: 'Ankara 1. AHM',
+      ilamEsasNo: '2024/123',
+      ilamKararNo: '2025/45',
+      issueDate: '2025-06-20',
+    });
+  });
+
+  it('KİRA → kiraDonemBaslangic/Bitis · sourceDocumentType=KIRA', () => {
+    expect(
+      buildClaimDocumentFields({ kalemTuru: 'KIRA', kiraBilgileri: { donemBaslangic: '2026-01-01', donemBitis: '2026-03-31' } }),
+    ).toEqual({ sourceDocumentType: 'KIRA', kiraDonemBaslangic: '2026-01-01', kiraDonemBitis: '2026-03-31' });
+  });
+
+  it('boş alt-nesne → yalnız sourceDocumentType (boş string alan EKLENMEZ)', () => {
+    expect(buildClaimDocumentFields({ kalemTuru: 'FATURA', faturaBilgileri: { faturaNo: '', faturaTarihi: '' } })).toEqual({ sourceDocumentType: 'FATURA' });
+  });
+
+  it('CEK/SENET/diğer → {} (dokunulmaz; instruments track)', () => {
+    expect(buildClaimDocumentFields({ kalemTuru: 'CEK', cekBilgileri: { cekSeriNo: 'A-1' } } as any)).toEqual({});
+    expect(buildClaimDocumentFields({ kalemTuru: 'SENET' })).toEqual({});
+    expect(buildClaimDocumentFields({ kalemTuru: 'ASIL_ALACAK' })).toEqual({});
+  });
+});
+
+describe('buildCreateCaseDuesPayload — PR-2c-2 belge alanları passthrough', () => {
+  it('issueDate/ilam*/sourceDocumentType payload içine taşınır', () => {
+    const [p] = buildCreateCaseDuesPayload([
+      {
+        type: 'PRINCIPAL', amount: '5000', dueDate: '2026-01-01',
+        sourceDocumentType: 'ILAM', ilamMahkeme: 'X AHM', ilamEsasNo: '2024/1', ilamKararNo: '2025/2', issueDate: '2025-06-20',
+      },
+    ]);
+    expect(p.sourceDocumentType).toBe('ILAM');
+    expect(p.ilamMahkeme).toBe('X AHM');
+    expect(p.ilamEsasNo).toBe('2024/1');
+    expect(p.ilamKararNo).toBe('2025/2');
+    expect(p.issueDate).toBe('2025-06-20');
+  });
+
+  it('kira dönem alanları payload içine taşınır', () => {
+    const [p] = buildCreateCaseDuesPayload([
+      { type: 'PRINCIPAL', amount: '3000', dueDate: '2026-01-01', sourceDocumentType: 'KIRA', kiraDonemBaslangic: '2026-01-01', kiraDonemBitis: '2026-03-31' },
+    ]);
+    expect(p.kiraDonemBaslangic).toBe('2026-01-01');
+    expect(p.kiraDonemBitis).toBe('2026-03-31');
+  });
+
+  it('PR-2c-2 alanları yoksa undefined (regresyon)', () => {
+    const [p] = buildCreateCaseDuesPayload([{ type: 'PRINCIPAL', amount: '1000', dueDate: '2026-01-01' }]);
+    expect(p.issueDate).toBeUndefined();
+    expect(p.ilamEsasNo).toBeUndefined();
+    expect(p.kiraDonemBaslangic).toBeUndefined();
   });
 });
