@@ -101,7 +101,12 @@ export function ResponsiblePersonPicker({
       </div>
       <select
         aria-label="Dosya Sorumlusu seç"
-        className="mt-1 w-full rounded border border-indigo-200 bg-white px-1.5 py-1 text-[10px] outline-none focus:border-indigo-500 disabled:opacity-60"
+        aria-invalid={!!error}
+        className={`mt-1 w-full rounded border bg-white px-1.5 py-1 text-[10px] outline-none disabled:opacity-60 ${
+          error
+            ? "border-red-400 focus:border-red-500"
+            : "border-indigo-200 focus:border-indigo-500"
+        }`}
         value={selectedValue}
         disabled={loading || saving}
         onChange={(e) => handleSelect(e.target.value)}
@@ -132,8 +137,23 @@ export function ResponsiblePersonPicker({
           </optgroup>
         )}
       </select>
-      {saving && <span className="text-[8px] text-indigo-500">Kaydediliyor…</span>}
-      {error && <span className="text-[8px] text-red-600">{error}</span>}
+      {saving && (
+        <span className="mt-1 block text-[10px] font-medium text-indigo-600">
+          Kaydediliyor…
+        </span>
+      )}
+      {error && (
+        <div
+          role="alert"
+          className="mt-1 flex items-start gap-1 rounded border border-red-300 bg-red-50 px-1.5 py-1 text-[10px] font-medium leading-tight text-red-700"
+        >
+          <span aria-hidden="true">⚠</span>
+          <span>
+            <span className="font-semibold">Kaydedilemedi.</span> Seçim uygulanmadı —
+            tekrar deneyin. <span className="font-normal text-red-600">({error})</span>
+          </span>
+        </div>
+      )}
     </div>
   );
 }
