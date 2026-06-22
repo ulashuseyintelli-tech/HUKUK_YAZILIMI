@@ -336,6 +336,11 @@ interface AlacakKalemi {
     faturaNo: string;
     faturaTarihi: string;
   };
+  // Kira bilgileri (PR-2c-2: dönem)
+  kiraBilgileri?: {
+    donemBaslangic: string;
+    donemBitis: string;
+  };
   // Nafaka bilgileri
   nafakaBilgileri?: {
     aylikTutar: number;
@@ -1722,10 +1727,64 @@ export function ProfessionalClaimItemForm({
                   className="w-full border rounded px-1.5 py-0.5 text-xs bg-yellow-50"
                 />
               </div>
+              <div className="col-span-2">
+                <label className="block text-[10px] text-gray-500 mb-0.5">İlam Tarihi</label>
+                <input
+                  type="date"
+                  value={kalem.ilamBilgileri?.ilamTarihi || ""}
+                  onChange={(e) => setKalem(prev => ({
+                    ...prev,
+                    ilamBilgileri: {
+                      ...prev.ilamBilgileri,
+                      ilamTarihi: e.target.value,
+                      mahkemeAdi: prev.ilamBilgileri?.mahkemeAdi || "",
+                      esasNo: prev.ilamBilgileri?.esasNo || "",
+                      kararNo: prev.ilamBilgileri?.kararNo || ""
+                    }
+                  }))}
+                  className="w-full border rounded px-1.5 py-0.5 text-xs"
+                />
+              </div>
             </div>
           </div>
         )}
 
+
+        {/* Kira Bilgileri (PR-2c-2: dönem) */}
+        {kalem.kalemTuru === "KIRA" && (
+          <div className="border rounded p-2 bg-white">
+            <h3 className="font-medium text-xs mb-1 flex items-center gap-1">
+              <Clock className="h-3 w-3 text-green-600" />
+              Kira Dönemi
+            </h3>
+            <div className="grid grid-cols-2 gap-1.5">
+              <div>
+                <label className="block text-[10px] text-gray-500 mb-0.5">Dönem Başlangıç</label>
+                <input
+                  type="date"
+                  value={kalem.kiraBilgileri?.donemBaslangic || ""}
+                  onChange={(e) => setKalem(prev => ({
+                    ...prev,
+                    kiraBilgileri: { ...prev.kiraBilgileri, donemBaslangic: e.target.value, donemBitis: prev.kiraBilgileri?.donemBitis || "" }
+                  }))}
+                  className="w-full border rounded px-1.5 py-0.5 text-xs"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] text-gray-500 mb-0.5">Dönem Bitiş</label>
+                <input
+                  type="date"
+                  value={kalem.kiraBilgileri?.donemBitis || ""}
+                  onChange={(e) => setKalem(prev => ({
+                    ...prev,
+                    kiraBilgileri: { ...prev.kiraBilgileri, donemBitis: e.target.value, donemBaslangic: prev.kiraBilgileri?.donemBaslangic || "" }
+                  }))}
+                  className="w-full border rounded px-1.5 py-0.5 text-xs"
+                />
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* İHTİYATİ HACİZ */}
         <div className="border rounded p-2 bg-white">
