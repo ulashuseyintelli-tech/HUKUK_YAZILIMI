@@ -86,13 +86,13 @@ describe('BUG buildDebtResultFromInstruments — party.type drawerName sezgisind
     expect(p.type).toBe('INDIVIDUAL');
   });
 
-  it('debtorCandidates karışık (şirket + şahıs) → her biri kendi tipine', () => {
+  it('debtorCandidates: şirket adayı KALIR (COMPANY); kimliksiz şahıs adayı #2 person-gate ile DÜŞER', () => {
     const insts = [
       inst({ documentNo: 'A', debtorCandidates: ['ABC İNŞAAT LTD. ŞTİ.', 'MEHMET KAYA'], needsReview: false, sourcePages: [1] }),
     ];
     const r = buildDebtResultFromInstruments(insts)!;
-    expect(r.parties.find((x) => x.name.includes('ABC'))!.type).toBe('COMPANY');
-    expect(r.parties.find((x) => x.name === 'MEHMET KAYA')!.type).toBe('INDIVIDUAL');
+    expect(r.parties.find((x) => x.name.includes('ABC'))!.type).toBe('COMPANY'); // şirket adayı kalır
+    expect(r.parties.find((x) => x.name === 'MEHMET KAYA')).toBeUndefined(); // kimliksiz+rolsüz şahıs → borçlu sentezlenmez
   });
 });
 
@@ -129,12 +129,56 @@ describe('PR-2 buildDebtResultFromInstruments — party.identityNo (drawerIdenti
     expect(p.identityNo).toBeUndefined();
   });
 
-  it('debtorCandidates kimlik no TAŞIMAZ → yalnız drawer kimliği yayılır', () => {
+  it('debtorCandidates kimliksiz şahıs → #2 person-gate ile DÜŞER; drawer kimliği korunur', () => {
     const r = buildDebtResultFromInstruments([
       inst({ drawerName: 'GORKA A.Ş.', drawerIdentityNo: '1234567890', debtorCandidates: ['MEHMET KAYA'], needsReview: false, sourcePages: [1] }),
     ])!;
-    expect(r.parties.find((x) => x.name.includes('GORKA'))!.identityNo).toBe('1234567890');
-    expect(r.parties.find((x) => x.name === 'MEHMET KAYA')!.identityNo).toBeUndefined();
+    expect(r.parties.find((x) => x.name.includes('GORKA'))!.identityNo).toBe('1234567890'); // drawer kimliği yayılır
+    expect(r.parties.find((x) => x.name === 'MEHMET KAYA')).toBeUndefined(); // kimliksiz şahıs adayı borçlu olmaz
+  });
+});
+
+describe('BUG #2 person-gate — kimliksiz + rolsüz ŞAHIS borçlu sentezlenmez (keşideci/şirket muaf)', () => {
+  // Süreyya senaryosu (canlı 3002): Gorka keşideci (COMPANY+VKN) + OCR'ın attığı kimliksiz şahıs
+  // adayları (Süreyya Avcıoğlu/Erdoğan) → eskiden hepsi "Borçlu" oluyordu; artık şahıs adayları DÜŞER.
+  it('keşideci COMPANY + kimliksiz şahıs adayları → SADECE keşideci borçlu (şahıslar düşer)', () => {
+    const r = buildDebtResultFromInstruments([
+      inst({ documentNo: 'A', drawerName: 'GORKA KOZMETİK SANAYİ VE TİCARET ANONİM ŞİRKETİ', drawerIdentityNo: '3961146289', debtorCandidates: ['Süreyya Avcıoğlu', 'Süreyya Erdoğan'], needsReview: false, sourcePages: [1] }),
+    ])!;
+    expect(r.parties).toHaveLength(1);
+    expect(r.parties[0].type).toBe('COMPANY');
+    expect(r.parties[0].identityNo).toBe('3961146289');
+    expect(r.parties.some((p) => p.name.includes('Süreyya'))).toBe(false); // kimliksiz şahıs adayları düştü
+  });
+
+  it('keşideci ŞAHIS (kimliksiz) → MUAF (drawer onaylı rol → borçlu kalır); aday şahıs düşer', () => {
+    const r = buildDebtResultFromInstruments([
+      inst({ documentNo: 'A', drawerName: 'AHMET YILMAZ', debtorCandidates: ['Süreyya Avcıoğlu'], needsReview: false, sourcePages: [1] }),
+    ])!;
+    expect(r.parties.find((x) => x.name === 'AHMET YILMAZ')!.role).toBe('BORCLU'); // keşideci muaf
+    expect(r.parties.some((p) => p.name.includes('Süreyya'))).toBe(false); // aday şahıs düştü
+  });
+
+  it('aynı şahıs hem keşideci hem aday → keşideci muafiyetiyle KALIR (tek taraf)', () => {
+    const r = buildDebtResultFromInstruments([
+      inst({ documentNo: 'A', drawerName: 'AHMET YILMAZ', debtorCandidates: ['AHMET YILMAZ'], needsReview: false, sourcePages: [1] }),
+    ])!;
+    expect(r.parties.filter((x) => x.name === 'AHMET YILMAZ')).toHaveLength(1);
+    expect(r.parties[0].role).toBe('BORCLU');
+  });
+
+  it('COMPANY adayı kimliksiz → gate ETKİLEMEZ (gate yalnız ŞAHIS)', () => {
+    const r = buildDebtResultFromInstruments([
+      inst({ documentNo: 'A', debtorCandidates: ['ABC İNŞAAT LTD. ŞTİ.'], needsReview: false, sourcePages: [1] }),
+    ])!;
+    expect(r.parties.find((x) => x.name.includes('ABC'))!.type).toBe('COMPANY');
+  });
+
+  it('ALACAKLI (FATURA satıcı) tarafına gate UYGULANMAZ (kimliksiz şahıs creditor kalır)', () => {
+    const r = buildDebtResultFromInstruments([
+      inst({ type: 'FATURA', documentNo: 'F-1', creditorName: 'Ayşe Satıcı', drawerName: 'ALICI A.Ş.', drawerIdentityNo: '1234567890', needsReview: false, sourcePages: [1] }),
+    ])!;
+    expect(r.parties.find((p) => p.role === 'ALACAKLI' && p.name === 'Ayşe Satıcı')).toBeTruthy();
   });
 });
 
