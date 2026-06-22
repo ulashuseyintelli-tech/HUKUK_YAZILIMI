@@ -5,7 +5,13 @@
  * bu test yalnız KURALLARIN PROMPT METNİNDE BULUNDUĞUNU doğrular (string/snapshot). Asıl doğrulama
  * = CANLI Gorka re-scan (PR gövdesinde). Bu yüzden burada davranış değil, sözleşme (kuralların varlığı) test edilir.
  */
-import { PAGE_EXTRACTION_PROMPT } from "../page-candidate-extractor";
+import {
+  PAGE_EXTRACTION_PROMPT,
+  extractPageCandidate,
+  capConfidenceForPrintDateAmbiguity,
+  PageAiExtractor,
+} from "../page-candidate-extractor";
+import { Page } from "../pdf-segmentation";
 
 const P = PAGE_EXTRACTION_PROMPT;
 // Türkçe-güvenli küçük harf: İ→i, I→ı ÖNCE (yoksa "KEŞİDE".toLowerCase() = "keşi̇de" combining-dot tuzağı).
@@ -77,5 +83,65 @@ describe("G1 PAGE_EXTRACTION_PROMPT — FATURA kuralı + alanlar mevcut", () => 
     expect(P).toContain("creditorIdentityNo");
     expect(P).toContain("kdvRate");
     expect(P).toContain("kdvAmount");
+  });
+});
+
+describe("B (deterministik enforcement) — capConfidenceForPrintDateAmbiguity (0-100; tavan 45)", () => {
+  it("ÇEK + evidenceText'te basım → güven tavanlanır (Math.min → 45)", () => {
+    expect(capConfidenceForPrintDateAmbiguity("CEK", "basım tarihi görüldü; keşide belirsiz", 90)).toBe(45);
+  });
+
+  it("baskı / print izi de yakalanır", () => {
+    expect(capConfidenceForPrintDateAmbiguity("CEK", "baskı tarihi 2019", 95)).toBe(45);
+    expect(capConfidenceForPrintDateAmbiguity("CEK", "print date 2019", 80)).toBe(45);
+  });
+
+  it("mevcut güven zaten <=45 ise KORUNUR (Math.min yükseltmez)", () => {
+    expect(capConfidenceForPrintDateAmbiguity("CEK", "basım tarihi", 30)).toBe(30);
+  });
+
+  it("iz YOKSA güven AYNEN (happy-path değişmez)", () => {
+    expect(capConfidenceForPrintDateAmbiguity("CEK", "keşide yeri/tarih net", 90)).toBe(90);
+    expect(capConfidenceForPrintDateAmbiguity("CEK", undefined, 90)).toBe(90);
+  });
+
+  it("ÇEK DIŞI (SENET/FATURA/undefined) → tavan UYGULANMAZ (yalnız çek semantiği)", () => {
+    expect(capConfidenceForPrintDateAmbiguity("SENET", "basım tarihi", 90)).toBe(90);
+    expect(capConfidenceForPrintDateAmbiguity("FATURA", "basım tarihi", 90)).toBe(90);
+    expect(capConfidenceForPrintDateAmbiguity(undefined, "basım tarihi", 90)).toBe(90);
+  });
+});
+
+describe("B — extractPageCandidate confidence tavan entegrasyonu (issueDate'e DOKUNMADAN)", () => {
+  const textPage = (text: string): Page => ({
+    pageIndex: 1,
+    kind: "TEXT",
+    text,
+    hasText: true,
+    needsImageExtraction: false,
+    source: "text",
+  });
+
+  it("ÇEK + AI basım notu + yüksek güven → candidate.confidence=45; issueDate KORUNUR", async () => {
+    const aiExtract: PageAiExtractor = async () => ({
+      documentType: "CEK",
+      issueDate: "2025-12-30",
+      evidenceText: "basım tarihi görüldü; keşide belirsiz",
+      confidence: 92,
+    });
+    const cand = await extractPageCandidate(textPage("... çek ..."), { aiExtract });
+    expect(cand.confidence).toBe(45); // deterministik tavan
+    expect(cand.issueDate).toBe("2025-12-30"); // SINIR: issueDate'e DOKUNULMAZ
+  });
+
+  it("ÇEK + basım izi YOK → güven AYNEN (davranış-nötr)", async () => {
+    const aiExtract: PageAiExtractor = async () => ({
+      documentType: "CEK",
+      issueDate: "2025-12-30",
+      evidenceText: "keşide yeri/tarih net",
+      confidence: 92,
+    });
+    const cand = await extractPageCandidate(textPage("... çek ..."), { aiExtract });
+    expect(cand.confidence).toBe(92);
   });
 });
