@@ -114,7 +114,42 @@ function truncate(s: string, max: number): string {
   return s.length > max ? s.slice(0, max) : s;
 }
 
+// B (DETERMİNİSTİK ENFORCEMENT): PAGE_EXTRACTION_PROMPT ZATEN "ÇEK: basım≠keşide; belirsizse
+// confidence DÜŞÜR + evidenceText'e not" diyor (B-PR prompt fix). Bu helper o NOTU EYLEME ÇEVİRİR —
+// AI talimatı atlasa bile (ÇEK + evidenceText'te basım/baskı/print izi) güveni DETERMİNİSTİK tavanlar
+// → düşük güven review yüzeyine taşınır. SINIR: yalnız confidence; issueDate/dueDate'e DOKUNMAZ;
+// yeni alan YOK; motor/CaseDebtor/migration YOK. AI hiç not düşmezse yakalamaz = Faz 3/OCR-kalite işi.
+const PRINT_DATE_AMBIGUITY_RE = /bas[ıi]m|bask[ıi]|print/i;
+// confidence 0-100 ölçeğinde (prompt + PageCandidate.confidence; testlerde 90 vb.). ulas: "örneğin
+// 0.45 üstüne çıkmasın" → 0-100 karşılığı 45 (~%45 tavan; sıfırlamaz, review eşiğine düşürür).
+const PRINT_DATE_AMBIGUITY_CONF_CAP = 45;
+
+/**
+ * ÇEK + evidenceText'te basım/baskı/print izi → keşide belirsiz → güveni deterministik TAVANLA
+ * (Math.min). Happy-path (ÇEK değil / iz yok / evidenceText yok) → confidence AYNEN. issueDate DEĞİŞMEZ.
+ *
+ * @remarks Çağrıldığı yerler:
+ * - mapRawToCandidate() (aynı dosya) → her PageCandidate üretiminde
+ * - page-extraction-prompt.spec.ts → birim test
+ */
+export function capConfidenceForPrintDateAmbiguity(
+  documentType: InstrumentType | undefined,
+  evidenceText: string | undefined,
+  confidence: number,
+): number {
+  if (documentType === "CEK" && !!evidenceText && PRINT_DATE_AMBIGUITY_RE.test(evidenceText)) {
+    return Math.min(confidence, PRINT_DATE_AMBIGUITY_CONF_CAP);
+  }
+  return confidence;
+}
+
 function mapRawToCandidate(page: Page, raw: RawPageFields): PageCandidate {
+  // B: ÇEK + basım/baskı/print izi → keşide belirsiz → güveni deterministik tavanla (issueDate'e dokunmadan).
+  const confidence = capConfidenceForPrintDateAmbiguity(
+    raw.documentType,
+    raw.evidenceText,
+    raw.confidence ?? 0,
+  );
   return {
     pageIndex: page.pageIndex, // 1-BASED — AI'dan DEĞİL, Page'ten (güvenli)
     documentType: raw.documentType,
@@ -135,7 +170,7 @@ function mapRawToCandidate(page: Page, raw: RawPageFields): PageCandidate {
     back: raw.back,
     endorsementMarkers: raw.endorsementMarkers,
     evidenceText: raw.evidenceText ? truncate(raw.evidenceText, EVIDENCE_MAX) : undefined,
-    confidence: raw.confidence ?? 0,
+    confidence,
   };
 }
 
