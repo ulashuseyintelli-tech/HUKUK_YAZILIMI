@@ -8,8 +8,10 @@ import {
   isReliableMatch,
   isSelectedClientParty,
   clientAnchorWarning,
+  clientRoleSignal,
 } from "../lib/client-match";
 import type { Instrument } from "../components/debtor/ocr-instrument";
+import type { ClientMatchHit, ClientMatchType } from "../lib/client-match";
 
 // Gorka çek 1 — P4-1 canlı taramasından gerçek veri (endorsementNames'te banka GÜRÜLTÜSÜ var).
 const gorkaCheck1: Instrument = {
@@ -187,5 +189,53 @@ describe("stripCompanySuffix (nameMatchKey-normalize sonrası UPPER ASCII)", () 
     expect(stripCompanySuffix("Y LTD STI")).toBe("Y");
     // tanımlayıcı kelimeler korunur (SANAYI VE TICARET strip EDİLMEZ) — bilinen sınır
     expect(stripCompanySuffix("GORKA KOZMETIK SANAYI VE TICARET ANONIM SIRKETI")).toBe("GORKA KOZMETIK SANAYI VE TICARET");
+  });
+});
+
+describe("A1-c clientRoleSignal (güvenli mod — otomatik rol YOK; konum+durum)", () => {
+  const sig = (location: ClientMatchHit["location"], matchType: ClientMatchType = "EXACT") =>
+    clientRoleSignal({
+      primaryMatch: {
+        client: { name: "Şükrü Akdoğan" },
+        found: true,
+        location,
+        matchType,
+        matchedField: null,
+        matchedValue: "",
+        evidence: "",
+      },
+      allMatches: [],
+    });
+
+  it("FRONT_DRAWER → ANOMALY (müvekkil keşideci=ters; belge kontrol)", () => {
+    const s = sig("FRONT_DRAWER")!;
+    expect(s.status).toBe("ANOMALY");
+    expect(s.message).toContain("KEŞİDECİ");
+  });
+  it("ENDORSEMENT → REVIEW (rol atanmaz; pozisyon belirsiz)", () => {
+    const s = sig("ENDORSEMENT")!;
+    expect(s.status).toBe("REVIEW");
+    expect(s.message.toLowerCase()).toContain("ciro");
+  });
+  it("FRONT_PAYEE → VERIFY (payee güvenilmez); EXACT'te 'kesin değil' notu var", () => {
+    const s = sig("FRONT_PAYEE", "EXACT")!;
+    expect(s.status).toBe("VERIFY");
+    expect(s.message).toContain("kesin değil");
+  });
+  it("FRONT_PAYEE + IDENTITY → 'kesin değil' notu YOK", () => {
+    expect(sig("FRONT_PAYEE", "IDENTITY")!.message).not.toContain("kesin değil");
+  });
+  it("SUFFIX (zayıf) → reliable=false + mesajda 'zayıf'", () => {
+    const s = sig("ENDORSEMENT", "SUFFIX")!;
+    expect(s.reliable).toBe(false);
+    expect(s.message).toContain("zayıf");
+  });
+  it("IDENTITY/EXACT → reliable=true", () => {
+    expect(sig("ENDORSEMENT", "IDENTITY")!.reliable).toBe(true);
+    expect(sig("ENDORSEMENT", "EXACT")!.reliable).toBe(true);
+  });
+  it("eşleşme yok / null → null (A1-a uyarısı devrede)", () => {
+    expect(clientRoleSignal({ primaryMatch: null, allMatches: [] })).toBeNull();
+    expect(clientRoleSignal(null)).toBeNull();
   });
 });
