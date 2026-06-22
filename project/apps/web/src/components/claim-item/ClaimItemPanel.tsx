@@ -72,9 +72,11 @@ const itemTypeLabels: Record<string, { label: string; icon: any; color: string }
 
 interface Props {
   caseId: string;
+  /** PR-5a: salt görüntüleme — tüm mutation aksiyonları (ekle/sil/yeniden-hesapla) gizlenir. */
+  readOnly?: boolean;
 }
 
-export function ClaimItemPanel({ caseId }: Props) {
+export function ClaimItemPanel({ caseId, readOnly = false }: Props) {
   const [items, setItems] = useState<ClaimItem[]>([]);
   const [summary, setSummary] = useState<ClaimSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -165,7 +167,8 @@ export function ClaimItemPanel({ caseId }: Props) {
         </div>
       )}
 
-      {/* Aksiyon Butonları */}
+      {/* Aksiyon Butonları — PR-5a: readOnly'de TÜMÜYLE gizli (mutation + deprecated recalculate/add-interest uçları). */}
+      {!readOnly && (
       <div className="flex flex-wrap gap-2">
         <button
           onClick={() => { setAddType("PRINCIPAL"); setShowAddModal(true); }}
@@ -210,6 +213,7 @@ export function ClaimItemPanel({ caseId }: Props) {
           Faizleri Yeniden Hesapla
         </button>
       </div>
+      )}
 
 
       {/* Alacak Kalemleri Listesi */}
@@ -265,6 +269,7 @@ export function ClaimItemPanel({ caseId }: Props) {
                   <span className="text-lg font-bold">
                     {formatCurrency(item.amount, item.currency)}
                   </span>
+                  {!readOnly && (
                   <button
                     onClick={() => handleDelete(item.id)}
                     className="p-2 text-red-500 hover:bg-red-50 rounded-lg"
@@ -272,6 +277,7 @@ export function ClaimItemPanel({ caseId }: Props) {
                   >
                     <Trash2 className="h-4 w-4" />
                   </button>
+                  )}
                 </div>
               </div>
             );
@@ -346,8 +352,8 @@ export function ClaimItemPanel({ caseId }: Props) {
         </div>
       )}
 
-      {/* Ekleme Modal */}
-      {showAddModal && (
+      {/* Ekleme Modal — PR-5a: readOnly'de asla açılmaz */}
+      {!readOnly && showAddModal && (
         <AddClaimItemModal
           caseId={caseId}
           itemType={addType}
