@@ -63,7 +63,7 @@ async function main(): Promise<void> {
       const r = await seedLookupCatalog(prisma, t.id);
       console.log(
         `✓ ${t.name} (${t.id}): takipTuru=${r.takipTuru} mahiyet=${r.mahiyet} asama=${r.asama} ` +
-          `risk=${r.risk} borcluTipi=${r.borcluTipi} durumEtiketi=${r.durumEtiketi}`,
+          `risk=${r.risk} durumEtiketi=${r.durumEtiketi}`,
       );
     }
 

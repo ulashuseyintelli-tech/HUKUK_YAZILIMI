@@ -710,7 +710,6 @@ export class CaseService {
       riskId?: string | null;
       durumEtiketiId?: string | null;
       mahiyetTipiId?: string | null;
-      borcluTipiId?: string | null;
     }
   ): Promise<void> {
     const validations: Promise<boolean>[] = [];
@@ -751,14 +750,6 @@ export class CaseService {
       validations.push(
         this.prisma.lookupMahiyetTipi.findFirst({
           where: { id: lookupIds.mahiyetTipiId, tenantId },
-        }).then(r => !!r)
-      );
-    }
-
-    if (lookupIds.borcluTipiId) {
-      validations.push(
-        this.prisma.lookupBorcluTipi.findFirst({
-          where: { id: lookupIds.borcluTipiId, tenantId },
         }).then(r => !!r)
       );
     }
@@ -1088,7 +1079,6 @@ export class CaseService {
         takipTuru: { select: { id: true, code: true, name: true } },
         asama: { select: { id: true, code: true, name: true } },
         risk: { select: { id: true, code: true, name: true, color: true } },
-        borcluTipi: { select: { id: true, code: true, name: true } },
         durumEtiketi: { select: { id: true, code: true, name: true, color: true } },
         mahiyetTipi: { select: { id: true, code: true, name: true, uyapCode: true } },
         sorumluPersonel: { select: { id: true, name: true, surname: true } },

@@ -277,8 +277,8 @@ function claimItemsToManualInstruments(items: ClaimDraftItem[], manualInstrument
 }
 
 interface LookupItem { id: string; code: string; name: string; description?: string; color?: string; uyapCode?: string; sortOrder: number; }
-interface TakipTuruItem extends LookupItem { defaultMahiyetTipiId?: string; defaultBorcluTipiId?: string; }
-interface Lookups { takipTuru: TakipTuruItem[]; asama: LookupItem[]; risk: LookupItem[]; borcluTipi: LookupItem[]; durumEtiketi: LookupItem[]; mahiyetTipi: LookupItem[]; }
+interface TakipTuruItem extends LookupItem { defaultMahiyetTipiId?: string; }
+interface Lookups { takipTuru: TakipTuruItem[]; asama: LookupItem[]; risk: LookupItem[]; durumEtiketi: LookupItem[]; mahiyetTipi: LookupItem[]; }
 
 export default function NewCasePage() {
   const router = useRouter();
@@ -359,7 +359,7 @@ export default function NewCasePage() {
   const [editingItemIndex, setEditingItemIndex] = useState<number | null>(null); // null = yeni kalem ekleme
   const [claimEditorKey, setClaimEditorKey] = useState(0); // editör formunu reset/yükle için remount anahtarı
   const [claimFormBuffer, setClaimFormBuffer] = useState<any | null>(null); // editördeki güncel (henüz eklenmemiş) kalem
-  const [lookups, setLookups] = useState<Lookups>({ takipTuru: [], asama: [], risk: [], borcluTipi: [], durumEtiketi: [], mahiyetTipi: [] });
+  const [lookups, setLookups] = useState<Lookups>({ takipTuru: [], asama: [], risk: [], durumEtiketi: [], mahiyetTipi: [] });
   const [lookupsLoadFailed, setLookupsLoadFailed] = useState(false); // PR-D: /lookups fetch hatası → açık uyarı banner'ı (boş veriden ayrı)
   
   // Vekalet kontrolü state'leri
@@ -555,7 +555,7 @@ export default function NewCasePage() {
         api.get('/clients').catch((e) => { console.error("getClients error:", e); return { data: { data: [] } }; }), 
         api.searchDebtors().catch((e) => { console.error("searchDebtors error:", e); return []; }), 
         api.get('/execution-offices').catch(() => ({ data: { data: [] } })),
-        api.get('/lookups').catch(() => { lookupsFetchFailed = true; return { data: { data: { takipTuru: [], asama: [], risk: [], borcluTipi: [], durumEtiketi: [], mahiyetTipi: [] } } }; }),
+        api.get('/lookups').catch(() => { lookupsFetchFailed = true; return { data: { data: { takipTuru: [], asama: [], risk: [], durumEtiketi: [], mahiyetTipi: [] } } }; }),
         api.get('/users').catch(() => ({ data: { data: [] } })),
         api.get('/staff').catch(() => { staffLoadFailed = true; return { data: { data: [] } }; }),
       ]);
@@ -567,7 +567,7 @@ export default function NewCasePage() {
       setExistingClients(clientsList);
       setExistingDebtors(debtorsRes?.data || debtorsRes || []);
       setExecutionOffices(officesRes?.data?.data || []);
-      setLookups(lookupsRes?.data?.data || { takipTuru: [], asama: [], risk: [], borcluTipi: [], durumEtiketi: [], mahiyetTipi: [] });
+      setLookups(lookupsRes?.data?.data || { takipTuru: [], asama: [], risk: [], durumEtiketi: [], mahiyetTipi: [] });
       setLookupsLoadFailed(lookupsFetchFailed); // PR-D: fetch hatası vs boş veri ayrımı için
       setUsers(usersRes?.data?.data || []);
       const allStaff = staffRes?.data?.data || [];

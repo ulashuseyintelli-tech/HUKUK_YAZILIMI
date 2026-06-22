@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
-export type LookupType = 'takipTuru' | 'asama' | 'risk' | 'borcluTipi' | 'durumEtiketi' | 'mahiyetTipi';
+export type LookupType = 'takipTuru' | 'asama' | 'risk' | 'durumEtiketi' | 'mahiyetTipi';
 
 @Injectable()
 export class LookupService {
@@ -12,7 +12,6 @@ export class LookupService {
       takipTuru: this.prisma.lookupTakipTuru,
       asama: this.prisma.lookupAsama,
       risk: this.prisma.lookupRisk,
-      borcluTipi: this.prisma.lookupBorcluTipi,
       durumEtiketi: this.prisma.lookupDurumEtiketi,
       mahiyetTipi: this.prisma.lookupMahiyetTipi,
     };
@@ -40,7 +39,6 @@ export class LookupService {
           sortOrder: true,
           isActive: true,
           defaultMahiyetTipiId: true,
-          defaultBorcluTipiId: true,
         },
       });
     }
@@ -117,14 +115,13 @@ export class LookupService {
 
   // Tüm lookup tiplerini tek seferde getir (frontend için)
   async getAllLookups(tenantId: string) {
-    const [takipTuru, asama, risk, borcluTipi, durumEtiketi, mahiyetTipi] = await Promise.all([
+    const [takipTuru, asama, risk, durumEtiketi, mahiyetTipi] = await Promise.all([
       this.findAll(tenantId, 'takipTuru'),
       this.findAll(tenantId, 'asama'),
       this.findAll(tenantId, 'risk'),
-      this.findAll(tenantId, 'borcluTipi'),
       this.findAll(tenantId, 'durumEtiketi'),
       this.findAll(tenantId, 'mahiyetTipi'),
     ]);
-    return { takipTuru, asama, risk, borcluTipi, durumEtiketi, mahiyetTipi };
+    return { takipTuru, asama, risk, durumEtiketi, mahiyetTipi };
   }
 }

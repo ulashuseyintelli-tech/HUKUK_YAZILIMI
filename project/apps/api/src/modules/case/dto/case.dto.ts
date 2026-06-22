@@ -638,10 +638,6 @@ export class CreateCaseDto {
 
   @IsString()
   @IsOptional()
-  borcluTipiId?: string;
-
-  @IsString()
-  @IsOptional()
   durumEtiketiId?: string;
 
   @IsString()

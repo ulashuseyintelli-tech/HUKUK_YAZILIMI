@@ -43,7 +43,6 @@ model LookupTakipTuru {
 
   // Varsayılan değerler (otomatik doldurma için)
   defaultMahiyetTipiId String? // Takip türüne göre varsayılan mahiyet tipi
-  defaultBorcluTipiId  String? // Takip türüne göre varsayılan borçlu tipi
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -87,24 +86,6 @@ model LookupRisk {
   updatedAt   DateTime @updatedAt
 
   cases Case[] @relation("CaseRisk")
-
-  @@unique([tenantId, code])
-  @@index([tenantId])
-  @@index([isActive])
-}
-
-model LookupBorcluTipi {
-  id          String   @id @default(cuid())
-  tenantId    String
-  code        String // GERCEK_KISI, TUZEL_KISI, KAMU
-  name        String // Gerçek Kişi
-  description String?
-  sortOrder   Int      @default(0)
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-
-  cases Case[] @relation("CaseBorcluTipi")
 
   @@unique([tenantId, code])
   @@index([tenantId])
@@ -960,10 +941,6 @@ model Case {
   // Risk Sınıfı
   riskId String?
   risk   LookupRisk? @relation("CaseRisk", fields: [riskId], references: [id])
-
-  // Borçlu Tipi
-  borcluTipiId String?
-  borcluTipi   LookupBorcluTipi? @relation("CaseBorcluTipi", fields: [borcluTipiId], references: [id])
 
   // Durum Etiketi
   durumEtiketiId String?

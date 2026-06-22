@@ -23,7 +23,6 @@
 import {
   TAKIP_TURU_CATALOG,
   MAHIYET_TIPI_CATALOG,
-  BORCLU_TIPI_CATALOG,
   TAKIP_TURU_DEFAULTS,
 } from '../lookup-catalog';
 
@@ -65,7 +64,6 @@ const DEAD_MAP_KEYS_TO_REMOVE_IN_PR_D = ['ILAMSIZ_KAMBIYO', 'ILAMSIZ_FATURA', 'K
 
 const takipTuruCodes = new Set(TAKIP_TURU_CATALOG.map((t) => t.code));
 const mahiyetCodes = new Set(MAHIYET_TIPI_CATALOG.map((m) => m.code));
-const borcluCodes = new Set(BORCLU_TIPI_CATALOG.map((b) => b.code));
 
 describe('lookup-catalog contract', () => {
   describe('Katman 1 — frontend takipTuru kodları ⊆ katalog', () => {
@@ -93,10 +91,9 @@ describe('lookup-catalog contract', () => {
       }
     });
 
-    it('her default mahiyetKodu/borcluTipiKodu katalogda geçerlidir', () => {
+    it('her default mahiyetKodu katalogda geçerlidir', () => {
       for (const def of Object.values(TAKIP_TURU_DEFAULTS)) {
         expect(mahiyetCodes.has(def.mahiyetKodu)).toBe(true);
-        expect(borcluCodes.has(def.borcluTipiKodu)).toBe(true);
       }
     });
   });
