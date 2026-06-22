@@ -84,7 +84,7 @@ describe('CollectionService.create — G3a ledger forward write', () => {
       't1',
       'c1',
       1000,
-      expect.objectContaining({ sourceType: undefined }),
+      expect.objectContaining({ sourceType: undefined, collectionId: 'col1' }),
     );
     expect(tx.collection.create).toHaveBeenCalled();
     expect(domainEvent.appendInTransaction).toHaveBeenCalled();
