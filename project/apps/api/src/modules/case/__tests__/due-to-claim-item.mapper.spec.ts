@@ -148,3 +148,76 @@ describe('buildClaimItemData — FATURA G2a (referenceNo + sourceDocumentType + 
     expect(data.metadata).toBeUndefined();
   });
 });
+
+describe('buildClaimItemData — PR-2c (İLAM referenceNo/metadata.ilam · KİRA metadata.kira · issueDate)', () => {
+  const base: DueDto = { type: DueType.PRINCIPAL, amount: 5000, dueDate: '2026-01-01' };
+
+  it('İLAM → referenceNo birleşik "esas E. / karar K." + metadata.ilam yapısal + issueDate', () => {
+    const data = buildClaimItemData('t', 'c', {
+      ...base,
+      sourceDocumentType: DocumentSourceType.ILAM,
+      ilamMahkeme: 'Ankara 1. Asliye Hukuk',
+      ilamEsasNo: '2024/123',
+      ilamKararNo: '2025/45',
+      davaTarihi: '2024-03-10',
+      issueDate: '2025-06-20',
+    }, ClaimItemType.PRINCIPAL);
+    expect(data.referenceNo).toBe('2024/123 E. / 2025/45 K.');
+    expect(data.sourceDocumentType).toBe(DocumentSourceType.ILAM);
+    expect(data.issueDate).toEqual(new Date('2025-06-20'));
+    expect((data.metadata as any).ilam).toEqual({
+      mahkemeAdi: 'Ankara 1. Asliye Hukuk',
+      esasNo: '2024/123',
+      kararNo: '2025/45',
+      davaTarihi: '2024-03-10',
+    });
+  });
+
+  it('İLAM yalnız esasNo → referenceNo "esas E." (karar yok) + metadata.ilam tek alan', () => {
+    const data = buildClaimItemData('t', 'c', { ...base, ilamEsasNo: '2024/9' }, ClaimItemType.PRINCIPAL);
+    expect(data.referenceNo).toBe('2024/9 E.');
+    expect((data.metadata as any).ilam).toEqual({ esasNo: '2024/9' });
+  });
+
+  it('KİRA → metadata.kira={donemBaslangic,donemBitis}; ilam yoksa referenceNo undefined', () => {
+    const data = buildClaimItemData('t', 'c', {
+      ...base,
+      sourceDocumentType: DocumentSourceType.KIRA,
+      kiraDonemBaslangic: '2026-01-01',
+      kiraDonemBitis: '2026-03-31',
+    }, ClaimItemType.PRINCIPAL);
+    expect((data.metadata as any).kira).toEqual({ donemBaslangic: '2026-01-01', donemBitis: '2026-03-31' });
+    expect(data.sourceDocumentType).toBe(DocumentSourceType.KIRA);
+    expect(data.referenceNo).toBeUndefined();
+  });
+
+  it('issueDate → ClaimItem.issueDate (FATURA tarihi); ilam yokken referenceNo=sourceDocumentNo korunur', () => {
+    const data = buildClaimItemData('t', 'c', {
+      ...base,
+      sourceDocumentNo: 'F-9',
+      sourceDocumentType: DocumentSourceType.FATURA,
+      issueDate: '2026-02-15',
+    }, ClaimItemType.PRINCIPAL);
+    expect(data.referenceNo).toBe('F-9');
+    expect(data.issueDate).toEqual(new Date('2026-02-15'));
+  });
+
+  it('İLAM metadata + mevcut KDV/faiz metadata BİRLİKTE birleşir (regresyon)', () => {
+    const data = buildClaimItemData('t', 'c', {
+      ...base,
+      ilamEsasNo: '2024/7',
+      interestAmount: 50,
+      hasKdv: true,
+      kdvRate: 20,
+    }, ClaimItemType.PRINCIPAL);
+    expect((data.metadata as any).ilam).toEqual({ esasNo: '2024/7' });
+    expect((data.metadata as any).dueInterest).toEqual({ interestAmount: 50 });
+    expect((data.metadata as any).kdv).toEqual({ hasKdv: true, kdvRate: 20 });
+  });
+
+  it('PR-2c alanları yoksa issueDate/metadata set EDİLMEZ (regresyon)', () => {
+    const data = buildClaimItemData('t', 'c', base, ClaimItemType.PRINCIPAL);
+    expect(data.issueDate).toBeUndefined();
+    expect(data.metadata).toBeUndefined();
+  });
+});

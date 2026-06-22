@@ -71,6 +71,41 @@ function buildDueInterestMetadata(interestAmount?: number | null): Prisma.InputJ
 }
 
 /**
+ * PR-2c — İLAM esas/karar numaralarını insan-okur tek referansa birleştirir.
+ * "2024/123 E. / 2025/45 K." (yalnız biri varsa o kısım). Hepsi boşsa undefined.
+ * Yapısal esas/karar AYRICA metadata.ilam'da tutulur (kayıp yok, sorgulanabilir).
+ */
+function composeIlamReference(esasNo?: string | null, kararNo?: string | null): string | undefined {
+  const parts: string[] = [];
+  if (esasNo) parts.push(`${esasNo} E.`);
+  if (kararNo) parts.push(`${kararNo} K.`);
+  return parts.length > 0 ? parts.join(' / ') : undefined;
+}
+
+/**
+ * PR-2c — İLAM belge alanlarını metadata.ilam nesnesine toplar (yalnız dolu alanlar; hepsi boşsa undefined).
+ */
+function buildIlamMetadata(due: DueDto): Record<string, unknown> | undefined {
+  const ilam: Record<string, unknown> = {};
+  if (due.ilamMahkeme) ilam.mahkemeAdi = due.ilamMahkeme;
+  if (due.ilamEsasNo) ilam.esasNo = due.ilamEsasNo;
+  if (due.ilamKararNo) ilam.kararNo = due.ilamKararNo;
+  if (due.davaTarihi) ilam.davaTarihi = due.davaTarihi;
+  return Object.keys(ilam).length > 0 ? ilam : undefined;
+}
+
+/**
+ * PR-2c — KİRA dönem alanlarını metadata.kira nesnesine toplar (yalnız dolu alanlar; hepsi boşsa undefined).
+ * (Aynı tutarlı Ocak/Şubat/Mart kiraları açıklamayla değil dönemle ayrışır.)
+ */
+function buildKiraMetadata(due: DueDto): Record<string, unknown> | undefined {
+  const kira: Record<string, unknown> = {};
+  if (due.kiraDonemBaslangic) kira.donemBaslangic = due.kiraDonemBaslangic;
+  if (due.kiraDonemBitis) kira.donemBitis = due.kiraDonemBitis;
+  return Object.keys(kira).length > 0 ? kira : undefined;
+}
+
+/**
  * DueDto'dan ClaimItem create verisi kurar (G1 köprüsü).
  * Üç-tutar sistemi açılışta eşitlenir: originalAmount = demandedAmount = amount = due.amount.
  * tenantId ZORUNLU (multitenant; Due'da tenantId yok, ClaimItem tenant-scoped).
@@ -98,7 +133,14 @@ export function buildClaimItemData(
     if (due.kdvAmount != null) kdv.kdvAmount = due.kdvAmount;
     metadata.kdv = kdv;
   }
+  // PR-2c — İLAM yapısal alanları + KİRA dönemi → metadata (mevcut kdv/dueInterest ile BİRLEŞİR).
+  const ilam = buildIlamMetadata(due);
+  if (ilam) metadata.ilam = ilam;
+  const kira = buildKiraMetadata(due);
+  if (kira) metadata.kira = kira;
   const hasMetadata = Object.keys(metadata).length > 0;
+  // PR-2c — referenceNo: İLAM ise "esasNo E. / kararNo K." birleşik; değilse belge no (FATURA faturaNo vb.).
+  const referenceNo = composeIlamReference(due.ilamEsasNo, due.ilamKararNo) ?? due.sourceDocumentNo;
   return {
     tenantId,
     caseId,
@@ -109,12 +151,14 @@ export function buildClaimItemData(
     currency: 'TRY',
     description: due.description,
     dueDate: due.dueDate ? new Date(due.dueDate) : null,
+    // FATURA/İLAM (PR-2c): belge düzenleme tarihi → issueDate (fatura tarihi / ilam tarihi).
+    ...(due.issueDate ? { issueDate: toDate(due.issueDate) } : {}),
     interestType: toPrismaInterestType(due.interestType),
     interestRate: due.interestRate,
     interestStartDate: toDate(due.interestStartDate),
     interestEndDate: toDate(due.interestEndDate),
-    // FATURA (G2a): belge referansı → kanonik ClaimItem (referenceNo=faturaNo · sourceDocumentType=FATURA)
-    ...(due.sourceDocumentNo ? { referenceNo: due.sourceDocumentNo } : {}),
+    // FATURA (G2a) + İLAM (PR-2c): belge referansı → ClaimItem.referenceNo (faturaNo / "esasNo E. / kararNo K.").
+    ...(referenceNo ? { referenceNo } : {}),
     ...(due.sourceDocumentType ? { sourceDocumentType: due.sourceDocumentType } : {}),
     ...(hasMetadata ? { metadata: metadata as Prisma.InputJsonObject } : {}),
   };
