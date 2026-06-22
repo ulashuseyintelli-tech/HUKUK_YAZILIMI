@@ -411,6 +411,18 @@ export class CaseInstrumentInputDto {
   @IsOptional()
   payeeName?: string;
 
+  // Faz 1 (A1 Kambiyo İlişki Motoru): OCR arka-yüz ciranta isimleri → endorsers JSON
+  // (InstrumentChain ENDORSER nodes). Transient OCR aday; CaseDebtor YARATMAZ. Boşsa endorsers yazılmaz.
+  @IsArray()
+  @IsString({ each: true })
+  @IsOptional()
+  endorsementNames?: string[];
+
+  // Faz 1: keşideci VKN/TCKN → DRAWER node identityNo (checksum mapper'da doğrulanır; geçersizse düşer).
+  @IsString()
+  @IsOptional()
+  drawerIdentityNo?: string;
+
   // PR-2b-1: enstrüman kaynağı (provenance). Yokluğunda = OCR (geri uyum). Backend per-source
   // gate: OCR → OCR_MULTI_INSTRUMENT, MANUAL → MANUAL_CASE_INSTRUMENTS. Transient gate metadata
   // (CaseInstrument şemasına yazılmaz; yalnız createCase işleme kapısını seçer).
