@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculator, TrendingUp, Receipt, Banknote, FileCheck, Calendar, XCircle, Info, Search, Users, Building2, Landmark, Edit2, Trash2, Phone, Mail, AlertCircle, Settings } from "lucide-react";
 import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
-import { buildCreateCaseDuesPayload } from "@/lib/case-due-payload";
+import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo } from "@/lib/case-due-payload";
 import { isPoaDuplicateSuppressed } from "@/lib/poa-ux";
 import { resolveLawyerIdsFromScan } from "@/lib/lawyer-match";
 import { buildStaffPayload } from "@/lib/case-staff-payload";
@@ -138,6 +138,12 @@ interface DueItem {
   interestAmount?: number;
   interestStartDate?: string;
   interestEndDate?: string;
+  // FATURA (G2b): scan-only fatura → Due belge/KDV metadata (backend G2a → ClaimItem)
+  sourceDocumentNo?: string;
+  sourceDocumentType?: string;
+  hasKdv?: boolean;
+  kdvRate?: number;
+  kdvAmount?: number;
 }
 
 // ── PR-2a (CLAIM-ITEM-WIZARD-2a): çok-kalemli alacak girişi ──────────────────
@@ -1879,16 +1885,18 @@ export default function NewCasePage() {
               selectedDebtors={caseDebtors}
               onDebtorsChange={setCaseDebtors}
               creditors={creditors.map((c) => ({ name: c.name, identityNo: c.identityNo }))}
-              onDebtInfoDetected={(debtInfo) => {
+              onDebtInfoDetected={(debtInfo, documentType) => {
                 // Borç evrakından tespit edilen bilgileri alacak kalemlerine otomatik aktar
                 if (debtInfo.amount) {
                   const newDue: DueItem = {
                     type: "PRINCIPAL",
-                    description: debtInfo.documentNo 
+                    description: debtInfo.documentNo
                       ? `${debtInfo.documentNo} numaralı belgeye istinaden asıl alacak`
                       : "Asıl Alacak (Borç evrakından tespit edildi)",
                     amount: debtInfo.amount.toString(),
                     dueDate: debtInfo.dueDate || new Date().toISOString().split("T")[0],
+                    // FATURA (G2b, scan-only): documentType=FATURA ise belge/KDV metadata (amount=KDV-dahil genel toplam)
+                    ...faturaDueFieldsFromDebtInfo(debtInfo, documentType),
                   };
                   // Mevcut kalemlere ekle (aynı tutar yoksa)
                   const existingAmount = dues.find(d => d.amount === newDue.amount && d.type === "PRINCIPAL");
