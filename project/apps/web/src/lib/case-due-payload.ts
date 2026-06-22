@@ -207,3 +207,38 @@ export function resolveDueInterestType(dueType: ClaimDueType, takipOncesiFaiz?: 
   // eski davranış `item:any` üzerinden bu değeri aynen geçiriyordu → cast ile birebir korunur.
   return (takipOncesiFaiz || 'YASAL') as DueInterestType;
 }
+
+/**
+ * PR-i3 (nested emekli) — eski draft/item'lardaki nested `ilamYanAlacaklar[]`'ı AYRI standalone
+ * fer'i kalemlere düzleştirir (göç; veri kaybı YOK). Her raw → parent (ilamYanAlacaklar TEMİZLENİR
+ * → buildDuesFromClaimItem'daki defansif nested dal fire ETMEZ, çift-sayım yok) + her yan-alacak için
+ * ayrı fer'i raw (yan.tur → genel fer'i kalemTuru; bilinmeyen → DIGER_FERI). SAF + idempotent
+ * (nested yoksa parent passthrough). Üretilen fer'i kalemler buildDues'da ESKİ nested expansion ile
+ * birebir aynı Due'yu verir (mapClaimKalemTuruToDueType + resolveDueInterestType).
+ */
+const NESTED_YAN_TO_KALEM_TURU: Record<string, string> = {
+  ILAM_YARGILAMA_GIDERI: 'YARGILAMA_GIDERI',
+  ILAM_VEKALET_UCRETI: 'VEKALET_UCRETI',
+  ILAM_ISLEMIS_FAIZ: 'ISLEMIS_FAIZ',
+};
+
+export function flattenNestedYanAlacaklarRaws(raws: any[]): any[] {
+  const out: any[] = [];
+  for (const raw of raws ?? []) {
+    const yanlar = Array.isArray(raw?.ilamYanAlacaklar) ? raw.ilamYanAlacaklar : [];
+    out.push({ ...raw, ilamYanAlacaklar: [] });
+    for (const yan of yanlar) {
+      const tutar = Number(yan?.tutar);
+      if (!(tutar > 0)) continue;
+      out.push({
+        kalemTuru: NESTED_YAN_TO_KALEM_TURU[yan.tur] ?? 'DIGER_FERI',
+        bakiyeTutar: tutar,
+        toplamTutar: tutar,
+        currency: raw?.currency || 'TRY',
+        vadeTarihi: raw?.vadeTarihi || '',
+        aciklama: yan?.aciklama || '',
+      });
+    }
+  }
+  return out;
+}
