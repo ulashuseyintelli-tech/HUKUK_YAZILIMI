@@ -1031,6 +1031,9 @@ export default function NewCasePage() {
     if (currentStep === 0 && selectedForm?.subForms?.length && !selectedSubForm) { setError("Lütfen bir alt form türü seçin"); return; }
     if (currentStep === 1 && !caseData.fileNumber.trim()) { setError("Takip No zorunludur"); return; }
     if (currentStep === 1 && !caseData.takipTuruId) { setError("Takip türü zorunludur"); return; }
+    // M2-G3c: Dosya Sorumlusu (gerçek kişi) zorunlu — adım-1 İleri'de de enforce (eskiden yalnız
+    // final-submit validateCaseCreation/MISSING_RESPONSIBLE bloklıyordu; * işaretiyle tutarsızdı).
+    if (currentStep === 1 && !responsiblePerson) { setError("Dosya Sorumlusu seçilmelidir"); return; }
     setError(""); setCurrentStep(prev => Math.min(prev + 1, steps.length - 1));
   };
 
