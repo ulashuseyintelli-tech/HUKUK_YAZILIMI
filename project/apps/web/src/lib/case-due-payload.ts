@@ -155,3 +155,38 @@ export function buildClaimDocumentFields(item: {
       return {};
   }
 }
+
+/**
+ * PR-i1 (İLAM çoklu-kalem cila — genel fer'i/masraf foundation) — sihirbaz kalem tipini (kalemTuru)
+ * doğru DueType'a eşler; standalone girilen fer'i/masraf kalemi motorda yanlışlıkla PRINCIPAL'a
+ * DÜŞMESİN. Backend DUE_TO_CLAIM_ITEM köprüsü bu DueType'ları kanonik ClaimItemType'a çevirir
+ * (EXPENSE→EXPENSE · VEKALET_UCRETI→ATTORNEY_FEE · INTEREST→INTEREST · CEZAI_SART→CONTRACTUAL_PENALTY
+ * · HARC→FEE · OTHER→OTHER).
+ *
+ * NOT — PR-i1 BUGÜN NO-OP: fer'i kalemTuru'lar henüz ana dropdown'da YOK (PR-i2 açacak); bugün
+ * "Ana Alacak" dalına yalnız ana-dropdown değerleri ulaşır → hepsi PRINCIPAL döner = davranış AYNEN.
+ * Bilinmeyen/boş kalemTuru → PRINCIPAL (güvenli varsayılan).
+ */
+export type ClaimDueType =
+  | 'PRINCIPAL' | 'INTEREST' | 'EXPENSE' | 'VEKALET_UCRETI' | 'HARC' | 'TAZMINAT'
+  | 'CEZAI_SART' | 'NAFAKA' | 'KIRA' | 'AIDAT' | 'KOMISYON' | 'PRIM' | 'OTHER';
+
+const CLAIM_KALEM_DUE_TYPE: Record<string, ClaimDueType> = {
+  // Genel fer'i/masraf (prefixsiz jenerik; PR-i2 dropdown'u bunları açacak)
+  MASRAF: 'EXPENSE',
+  YARGILAMA_GIDERI: 'EXPENSE',
+  VEKALET_UCRETI: 'VEKALET_UCRETI',
+  ISLEMIS_FAIZ: 'INTEREST',
+  CEZAI_SART: 'CEZAI_SART', // M2: backend → CONTRACTUAL_PENALTY (TAZMINAT/PENALTY DEĞİL)
+  HARC: 'HARC',
+  DIGER_FERI: 'OTHER',
+  // Mevcut nested ILAM_* yan-alacak kalemTuru'ları (gerçek; güvenlik için de eşlenir)
+  ILAM_YARGILAMA_GIDERI: 'EXPENSE',
+  ILAM_VEKALET_UCRETI: 'VEKALET_UCRETI',
+  ILAM_ISLEMIS_FAIZ: 'INTEREST',
+};
+
+export function mapClaimKalemTuruToDueType(kalemTuru?: string): ClaimDueType {
+  if (!kalemTuru) return 'PRINCIPAL';
+  return CLAIM_KALEM_DUE_TYPE[kalemTuru] ?? 'PRINCIPAL';
+}

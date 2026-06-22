@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculator, TrendingUp, Receipt, Banknote, FileCheck, Calendar, XCircle, Info, Search, Users, Building2, Landmark, Edit2, Trash2, Phone, Mail, AlertCircle, Settings } from "lucide-react";
 import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
-import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields } from "@/lib/case-due-payload";
+import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, mapClaimKalemTuruToDueType } from "@/lib/case-due-payload";
 import { isPoaDuplicateSuppressed } from "@/lib/poa-ux";
 import { resolveLawyerIdsFromScan } from "@/lib/lawyer-match";
 import { buildStaffPayload } from "@/lib/case-staff-payload";
@@ -213,7 +213,8 @@ function buildDuesFromClaimItem(item: any, startDate: string): DueItem[] {
   // 1. Ana Alacak Kalemi
   if (item.bakiyeTutar && item.bakiyeTutar > 0) {
     newDues.push({
-      type: 'PRINCIPAL',
+      // PR-i1: fer'i/masraf kalemTuru → doğru DueType (bugün NO-OP: ana kalemTuru'lar PRINCIPAL döner).
+      type: mapClaimKalemTuruToDueType(kalemTuru),
       description: anaKalemLabel,
       amount: item.bakiyeTutar.toString(),
       dueDate: item.vadeTarihi || startDate,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields } from '../lib/case-due-payload';
+import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, mapClaimKalemTuruToDueType } from '../lib/case-due-payload';
 
 describe('buildCreateCaseDuesPayload', () => {
   it('create-case payload alacak faiz alanlarini dusurmez', () => {
@@ -165,5 +165,35 @@ describe('buildCreateCaseDuesPayload — PR-2c-2 belge alanları passthrough', (
     expect(p.issueDate).toBeUndefined();
     expect(p.ilamEsasNo).toBeUndefined();
     expect(p.kiraDonemBaslangic).toBeUndefined();
+  });
+});
+
+describe("mapClaimKalemTuruToDueType (PR-i1 — genel fer'i/masraf foundation)", () => {
+  it('ana/bilinen kalemTuru → PRINCIPAL (no-op-today)', () => {
+    for (const k of ['CEK', 'SENET', 'FATURA', 'KIRA', 'AIDAT', 'ASIL_ALACAK', 'KREDI', 'BANKA', 'IPOTEK', 'REHIN', 'ILAM', 'NAFAKA']) {
+      expect(mapClaimKalemTuruToDueType(k)).toBe('PRINCIPAL');
+    }
+  });
+
+  it("genel fer'i kalemTuru → doğru DueType", () => {
+    expect(mapClaimKalemTuruToDueType('MASRAF')).toBe('EXPENSE');
+    expect(mapClaimKalemTuruToDueType('YARGILAMA_GIDERI')).toBe('EXPENSE');
+    expect(mapClaimKalemTuruToDueType('VEKALET_UCRETI')).toBe('VEKALET_UCRETI');
+    expect(mapClaimKalemTuruToDueType('ISLEMIS_FAIZ')).toBe('INTEREST');
+    expect(mapClaimKalemTuruToDueType('CEZAI_SART')).toBe('CEZAI_SART'); // → backend CONTRACTUAL_PENALTY
+    expect(mapClaimKalemTuruToDueType('HARC')).toBe('HARC');
+    expect(mapClaimKalemTuruToDueType('DIGER_FERI')).toBe('OTHER');
+  });
+
+  it("mevcut nested ILAM_* kalemTuru → doğru DueType", () => {
+    expect(mapClaimKalemTuruToDueType('ILAM_YARGILAMA_GIDERI')).toBe('EXPENSE');
+    expect(mapClaimKalemTuruToDueType('ILAM_VEKALET_UCRETI')).toBe('VEKALET_UCRETI');
+    expect(mapClaimKalemTuruToDueType('ILAM_ISLEMIS_FAIZ')).toBe('INTEREST');
+  });
+
+  it('bilinmeyen/boş/undefined → PRINCIPAL (güvenli default)', () => {
+    expect(mapClaimKalemTuruToDueType('___X___')).toBe('PRINCIPAL');
+    expect(mapClaimKalemTuruToDueType('')).toBe('PRINCIPAL');
+    expect(mapClaimKalemTuruToDueType(undefined)).toBe('PRINCIPAL');
   });
 });
