@@ -203,3 +203,58 @@ export function clientAnchorWarning(
   if (partyReliable || instrReliable) return null;
   return "Seçili müvekkil OCR taraflarında güvenilir şekilde eşleşmedi. Lütfen lehtar/ciro alanını manuel kontrol edin.";
 }
+
+// ───────────────────────── A1-c: müvekkil ROL-SİNYALİ (UI; GÜVENLİ MOD) ─────────────────────────
+// Otomatik KESİN rol ATAMAZ; yalnız müvekkilin NEREDE bulunduğunu + DURUMU yüzeyler (kullanıcı yön anlar).
+// Kalıcı Party/CaseParty yazımı YOK · ciro sırası YOK · payee mantığına güvenmez. Rol haritası ulas-kilitli.
+
+export type ClientRoleStatus = "ANOMALY" | "REVIEW" | "VERIFY";
+
+export interface ClientRoleSignal {
+  status: ClientRoleStatus;
+  clientName: string;
+  location: ClientMatchLocation;
+  matchType: ClientMatchType;
+  reliable: boolean; // IDENTITY|EXACT
+  label: string; // kısa rozet etiketi
+  message: string; // tooltip/satır açıklaması (insan-okur)
+}
+
+/**
+ * A1-c (GÜVENLİ MOD) — `computeClientMatch` primaryMatch → UI rol-SİNYALİ. Otomatik rol ATAMAZ.
+ *  FRONT_DRAWER → ANOMALY (müvekkil keşideci=ters; belge/müvekkil kontrol)
+ *  ENDORSEMENT  → REVIEW  (ciroda bulundu; pozisyon A1-d'ye kadar belirsiz; rol atanmaz)
+ *  FRONT_PAYEE  → VERIFY  (olası lehtar; payee OCR güvenilmez; IDENTITY yoksa kesin değil)
+ * matchType SUFFIX (zayıf) → mesaja not. Eşleşme yoksa null (A1-a `clientAnchorWarning` devrede).
+ */
+export function clientRoleSignal(result: ClientMatchResult | null): ClientRoleSignal | null {
+  const m = result?.primaryMatch;
+  if (!m || !m.found) return null;
+  const reliable = isReliableMatch(m.matchType);
+  const weak = m.matchType === "SUFFIX" ? " (zayıf eşleşme — yalnız öneri)" : "";
+  const base = { clientName: m.client.name, location: m.location, matchType: m.matchType, reliable };
+  if (m.location === "FRONT_DRAWER") {
+    return {
+      ...base,
+      status: "ANOMALY",
+      label: "Keşideci ⚠",
+      message: `Seçili müvekkil (${m.client.name}) KEŞİDECİ olarak görünüyor — belge/müvekkil seçimini kontrol edin (otomatik rol atanmaz).${weak}`,
+    };
+  }
+  if (m.location === "ENDORSEMENT") {
+    return {
+      ...base,
+      status: "REVIEW",
+      label: "Ciro · İncele",
+      message: `Müvekkil ciro zincirinde bulundu — pozisyon (hamil/ciranta) belirsiz, gözden geçirin. Rol otomatik atanmaz.${weak}`,
+    };
+  }
+  // FRONT_PAYEE
+  const certainty = m.matchType === "IDENTITY" ? "" : " — kimlik no yok, kesin değil";
+  return {
+    ...base,
+    status: "VERIFY",
+    label: "Olası lehtar",
+    message: `Olası lehtar; payee OCR güvenilmez, DOĞRULAYIN${certainty}.${weak}`,
+  };
+}

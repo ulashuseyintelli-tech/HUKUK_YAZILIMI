@@ -24,28 +24,28 @@ const res = (primary: ClientMatchHit | null, all: ClientMatchHit[]): ClientMatch
   allMatches: all,
 });
 
-describe("ClientMatchBadge — 4 durum", () => {
-  it("ENDORSEMENT → yeşil 'Ciro'", () => {
+describe("ClientMatchBadge — A1-c rol-sinyali durumları (güvenli mod)", () => {
+  it("ENDORSEMENT → REVIEW 'Ciro' (ciroda bulundu, pozisyon belirsiz; otomatik rol yok)", () => {
     const h = hit({ location: "ENDORSEMENT" });
     render(<ClientMatchBadge result={res(h, [h])} />);
     const b = screen.getByTestId("client-match-badge");
-    expect(b.getAttribute("data-state")).toBe("found");
+    expect(b.getAttribute("data-state")).toBe("review");
     expect(b.textContent).toContain("Ciro");
   });
 
-  it("FRONT_PAYEE → yeşil 'Lehtar'", () => {
+  it("FRONT_PAYEE → VERIFY 'Olası lehtar' (payee OCR güvenilmez; doğrula)", () => {
     const h = hit({ location: "FRONT_PAYEE" });
     render(<ClientMatchBadge result={res(h, [h])} />);
     const b = screen.getByTestId("client-match-badge");
-    expect(b.getAttribute("data-state")).toBe("found");
-    expect(b.textContent).toContain("Lehtar");
+    expect(b.getAttribute("data-state")).toBe("verify");
+    expect(b.textContent).toContain("lehtar");
   });
 
-  it("FRONT_DRAWER → amber 'Keşideci' (ters-yön)", () => {
+  it("FRONT_DRAWER → ANOMALY 'Keşideci' (ters-yön; belge/müvekkil kontrol)", () => {
     const h = hit({ location: "FRONT_DRAWER" });
     render(<ClientMatchBadge result={res(h, [h])} />);
     const b = screen.getByTestId("client-match-badge");
-    expect(b.getAttribute("data-state")).toBe("front-drawer");
+    expect(b.getAttribute("data-state")).toBe("anomaly");
     expect(b.textContent).toContain("Keşideci");
   });
 
@@ -81,13 +81,13 @@ describe("InstrumentReviewTable — Müvekkil kolonu entegrasyonu", () => {
     sourcePages: [1, 2],
   };
 
-  it("Müvekkil kolon başlığı + Gorka/Şükrü satırında yeşil 'Ciro' (gerçek computeClientMatch)", () => {
+  it("Müvekkil kolon başlığı + Gorka/Şükrü satırında REVIEW 'Ciro' (gerçek computeClientMatch)", () => {
     const rows: ReviewRow[] = [{ selected: true, instrument: gorkaCheck }];
     const cm = [computeClientMatch(gorkaCheck, [{ name: "Şükrü Akdoğan" }])];
     render(<InstrumentReviewTable rows={rows} onChange={() => {}} clientMatches={cm} />);
     expect(screen.getByText("Müvekkil")).toBeTruthy(); // kolon başlığı
     const b = screen.getByTestId("client-match-badge");
-    expect(b.getAttribute("data-state")).toBe("found");
+    expect(b.getAttribute("data-state")).toBe("review"); // A1-c: ciroda bulundu → REVIEW (yeşil "found" değil)
     expect(b.textContent).toContain("Ciro");
   });
 
