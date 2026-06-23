@@ -153,6 +153,14 @@ export const FEATURE_FLAGS = {
   get UNIFIED_PREVIEW_CONFIG() {
     return getUnifiedPreviewRolloutConfig();
   },
+
+  /**
+   * Balance display shadow evidence paneli.
+   *
+   * Varsayilan KAPALI. UI'da ancak bu flag true ve URL'de balanceShadow=1 varsa
+   * shadow-diff endpoint'i okunur. Ana hesap ozeti calculation-summary hattinda kalir.
+   */
+  BALANCE_SHADOW_DISPLAY: process.env.NEXT_PUBLIC_BALANCE_SHADOW_DISPLAY === 'true',
 } as const;
 
 // ============================================================================
