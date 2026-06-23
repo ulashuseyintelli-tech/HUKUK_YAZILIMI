@@ -1989,6 +1989,32 @@ export class CaseService {
           description: `Yeni takip oluşturuldu: ${result.case.fileNumber}`,
         });
 
+        // WP-1d-pre: creation-anı canonical operasyon owner audit (sorumluluk yaşam-döngüsünün
+        // BAŞLANGIÇ event'i; WP-1a değişim + WP-1b createdById ile temporal sorgunun ön-koşulu).
+        // YALNIZ create payload'ında gerçek-kişi owner (responsibleLawyer/Staff) SET edildiyse yazılır;
+        // legacy sorumluPersonelId BAŞKA kavram, buraya GİRMEZ (karıştırma yasağı). tx commit SONRASI →
+        // create başarısızsa yazılmaz. AuditLog tek otorite (yeni tablo/migration YOK).
+        if (resolvedResponsible.responsibleLawyerId || resolvedResponsible.responsibleStaffId) {
+          await this.auditService.log({
+            tenantId,
+            action: 'CREATE',
+            entityType: 'CASE',
+            entityId: result.case.id,
+            userId,
+            oldValues: { responsibleLawyerId: null, responsibleStaffId: null },
+            newValues: {
+              responsibleLawyerId: resolvedResponsible.responsibleLawyerId,
+              responsibleStaffId: resolvedResponsible.responsibleStaffId,
+            },
+            metadata: {
+              changeType: 'OPERATION_OWNER_INITIALIZED',
+              source: 'CaseService.create',
+              createdById: userId,
+              temporalOrigin: true,
+            },
+          });
+        }
+
         // ASSIGN-4b: create dedupe fazla sorumlu düşürdüyse CASE_LAWYER UPDATE olarak audit'le
         // (avukat CREATE/DELETE audit'i 4c kapsamında; burada YALNIZ otomatik demote loglanır).
         if (result.responsibleKeptId && result.responsibleDemotedIds.length > 0) {
