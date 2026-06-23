@@ -100,6 +100,9 @@ export class ThirdPartyService {
       throw new NotFoundException("Üçüncü şahıs bulunamadı");
     }
 
+    // Gate-2: pasif CaseDebtor üzerinde operasyonel write engellenir (tarihsel read serbest).
+    await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, thirdParty.caseDebtorId);
+
     return this.prisma.thirdParty.update({
       where: { id: thirdPartyId },
       data: dto,
@@ -115,6 +118,9 @@ export class ThirdPartyService {
       throw new NotFoundException("Üçüncü şahıs bulunamadı");
     }
 
+    // Gate-2: pasif CaseDebtor üzerinde operasyonel write engellenir (tarihsel read serbest).
+    await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, thirdParty.caseDebtorId);
+
     return this.prisma.thirdParty.delete({ where: { id: thirdPartyId } });
   }
 
@@ -128,6 +134,9 @@ export class ThirdPartyService {
     if (!thirdParty) {
       throw new NotFoundException("Üçüncü şahıs bulunamadı");
     }
+
+    // Gate-2: pasif CaseDebtor üzerinde operasyonel write engellenir (tarihsel read serbest).
+    await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, thirdParty.caseDebtorId);
 
     const updateData: any = {};
     const dateField = `ihbarname${dto.ihbarnameType}_date`;
@@ -150,6 +159,10 @@ export class ThirdPartyService {
     if (!thirdParty) {
       throw new NotFoundException("Üçüncü şahıs bulunamadı");
     }
+
+    // Gate-2: pasif CaseDebtor üzerinde operasyonel write engellenir (late-result NOTU: 3. şahıs
+    // cevabı pasifleştirme SONRASI gelirse kayıt yapılamaz; ürün kararı raporlandı).
+    await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, thirdParty.caseDebtorId);
 
     // Update the latest ihbarname status to CEVAP_ALINDI
     const updateData: any = {
@@ -349,6 +362,9 @@ export class ThirdPartyService {
     if (!thirdParty) {
       throw new NotFoundException("Üçüncü şahıs bulunamadı");
     }
+
+    // Gate-2: pasif CaseDebtor üzerinde operasyonel write engellenir (tarihsel read serbest).
+    await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, thirdParty.caseDebtorId);
 
     const status = this.getIhbarnameStatus(thirdParty);
     
@@ -569,6 +585,9 @@ export class ThirdPartyService {
       throw new NotFoundException("Dış dosya bulunamadı");
     }
 
+    // Gate-2: pasif CaseDebtor üzerinde operasyonel write engellenir (tarihsel read serbest).
+    await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, externalCase.caseDebtorId);
+
     return (this.prisma as any).externalCase.update({
       where: { id: externalCaseId },
       data: {
@@ -669,6 +688,9 @@ export class ThirdPartyService {
     if (!externalCase) {
       throw new NotFoundException("Dış dosya bulunamadı");
     }
+
+    // Gate-2: pasif CaseDebtor üzerinde operasyonel write engellenir (tarihsel read serbest).
+    await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, externalCase.caseDebtorId);
 
     // Tahsilat varsa uyar
     if (externalCase.receivedAmount && Number(externalCase.receivedAmount) > 0) {
