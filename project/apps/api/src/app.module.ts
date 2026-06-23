@@ -60,6 +60,7 @@ import { BankModule } from "./modules/bank/bank.module";
 import { SummaryEngineModule } from "./modules/summary-engine/summary-engine.module";
 // G4c-3: read-only bakiye gözlem (summary-engine vs computeBalance)
 import { BalanceShadowCompareModule } from "./modules/balance-shadow-compare/balance-shadow-compare.module";
+import { BalanceDisplayShadowDiffModule } from "./modules/balance-display-shadow-diff/balance-display-shadow-diff.module";
 import { PrecautionaryOrderModule } from "./modules/precautionary-order/precautionary-order.module";
 import { LimitationEngineModule } from "./modules/limitation-engine/limitation-engine.module";
 import { RelatedLawsuitsModule } from "./modules/related-lawsuits/related-lawsuits.module";
@@ -191,6 +192,7 @@ function getConditionalImports(): Type<unknown>[] {
     BankModule,
     SummaryEngineModule,
     BalanceShadowCompareModule,
+    BalanceDisplayShadowDiffModule,
     PrecautionaryOrderModule,
     LimitationEngineModule,
     RelatedLawsuitsModule,
