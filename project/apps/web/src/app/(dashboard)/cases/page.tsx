@@ -80,6 +80,7 @@ interface FilterState {
   includeArchived: boolean;
   expenseRequestStatus: string;
   noOwner: boolean; // SAHIPSIZ-DOSYALAR-G1b: sahipsiz (Dosya Sorumlusu yok) server-side filtre
+  legalResponsibleMissing: boolean; // WP-3a: aktif dosyada staff-owner ama hukuki sorumlu avukat yok
 }
 
 // Hızlı filtre sayaçları için interface
@@ -187,6 +188,7 @@ const defaultFilters: FilterState = {
   includeArchived: false,
   expenseRequestStatus: "all",
   noOwner: false,
+  legalResponsibleMissing: false,
 };
 
 // Hızlı filtre kategorileri ve tanımları
@@ -801,6 +803,7 @@ export default function CasesPage() {
   const [bulkResult, setBulkResult] = useState<BulkAssignResult | null>(null);
   const [exportingCases, setExportingCases] = useState(false);
   const [ownerlessCount, setOwnerlessCount] = useState(0); // SAHIPSIZ-DOSYALAR-G1b: getStats.ownerless
+  const [legalResponsibleMissingCount, setLegalResponsibleMissingCount] = useState(0); // WP-3a: getStats.legalResponsibleMissing
 
   useEffect(() => {
     loadLookupData();
@@ -1056,6 +1059,7 @@ export default function CasesPage() {
       if (filters.caseType.length > 0) params.type = filters.caseType.join(',');
       if (filters.includeArchived) params.includeArchived = true;
       if (filters.noOwner) params.noOwner = true; // SAHIPSIZ-DOSYALAR-G1b: server-side sahipsiz filtre
+      if (filters.legalResponsibleMissing) params.legalResponsibleMissing = true; // WP-3a: server-side warn/report filtre
       // M2-G5d-1b: gerçek kişi owner filtresi (server-side; G5a). Tipine göre KENDİ kolonu.
       if (ownerFilter?.type === "LAWYER") params.responsibleLawyerId = ownerFilter.id;
       else if (ownerFilter?.type === "STAFF") params.responsibleStaffId = ownerFilter.id;
@@ -1065,7 +1069,10 @@ export default function CasesPage() {
       const response = await api.getCases(params);
       setCases(response.data || []);
       // SAHIPSIZ-DOSYALAR-G1b: doğru sahipsiz toplamı (server-side; chip rozeti). Best-effort.
-      api.get('/cases/stats').then((r: any) => setOwnerlessCount(r?.data?.ownerless ?? 0)).catch(() => {});
+      api.get('/cases/stats').then((r: any) => {
+        setOwnerlessCount(r?.data?.ownerless ?? 0);
+        setLegalResponsibleMissingCount(r?.data?.legalResponsibleMissing ?? 0); // WP-3a
+      }).catch(() => {});
     } catch (error) {
       console.error("Takipler yüklenemedi:", error);
     } finally {
@@ -1098,7 +1105,7 @@ export default function CasesPage() {
 
   useEffect(() => {
     fetchCases();
-  }, [filters.status, filters.caseType, filters.includeArchived, filters.noOwner, ownerFilter, urlClientId]);
+  }, [filters.status, filters.caseType, filters.includeArchived, filters.noOwner, filters.legalResponsibleMissing, ownerFilter, urlClientId]);
 
   const filteredCases = cases.filter((c) => {
     if (filters.search) {
@@ -1651,6 +1658,15 @@ export default function CasesPage() {
           count={ownerlessCount}
           isActive={filters.noOwner}
           onClick={() => setFilters(prev => ({ ...prev, noOwner: !prev.noOwner }))}
+          color="warning"
+        />
+        {/* WP-3a: izole "Hukuki Sorumlu Eksik" chip — aktif dosyada operasyon owner personel ama
+            hukuki sorumlu avukat yok. sayı=getStats.legalResponsibleMissing; tık→server-side filtre. Warn/report. */}
+        <QuickFilterChip
+          label="Hukuki Sorumlu Eksik"
+          count={legalResponsibleMissingCount}
+          isActive={filters.legalResponsibleMissing}
+          onClick={() => setFilters(prev => ({ ...prev, legalResponsibleMissing: !prev.legalResponsibleMissing }))}
           color="warning"
         />
         {visibleFilterIds.map((filterId) => {

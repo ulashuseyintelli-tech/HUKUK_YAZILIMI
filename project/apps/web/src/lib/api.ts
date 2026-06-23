@@ -107,11 +107,12 @@ class ApiClient {
   }
 
   // Cases
-  async getCases(params?: { status?: string; clientId?: string; noOwner?: boolean; responsibleLawyerId?: string; responsibleStaffId?: string; page?: number; limit?: number }) {
+  async getCases(params?: { status?: string; clientId?: string; noOwner?: boolean; legalResponsibleMissing?: boolean; responsibleLawyerId?: string; responsibleStaffId?: string; page?: number; limit?: number }) {
     const query = new URLSearchParams();
     if (params?.status) query.set("status", params.status);
     if (params?.clientId) query.set("clientId", params.clientId);
     if (params?.noOwner) query.set("noOwner", "1"); // SAHIPSIZ-DOSYALAR-G1
+    if (params?.legalResponsibleMissing) query.set("legalResponsibleMissing", "1"); // WP-3a
     // M2-G5d-1b: gerçek kişi owner filtresi (server-side; backend G5a hazır). K1 bridge yok → cross-map yok.
     if (params?.responsibleLawyerId) query.set("responsibleLawyerId", params.responsibleLawyerId);
     if (params?.responsibleStaffId) query.set("responsibleStaffId", params.responsibleStaffId);
