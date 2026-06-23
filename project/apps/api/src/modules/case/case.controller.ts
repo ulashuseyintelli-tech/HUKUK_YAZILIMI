@@ -115,15 +115,20 @@ export class CaseController {
   @Put(":id")
   update(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Body() dto: UpdateCaseDto
   ) {
-    return this.caseService.update(tenantId, id, dto);
+    return this.caseService.update(tenantId, id, dto, userId);
   }
 
   @Delete(":id")
-  delete(@CurrentUser("tenantId") tenantId: string, @Param("id") id: string) {
-    return this.caseService.delete(tenantId, id);
+  delete(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @Param("id") id: string
+  ) {
+    return this.caseService.delete(tenantId, id, userId);
   }
 
   @Patch(":id")
@@ -162,6 +167,7 @@ export class CaseController {
   @Post("batch-update")
   async batchUpdate(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Body()
     body: {
       caseIds: string[];
@@ -177,7 +183,8 @@ export class CaseController {
     const result = await this.caseService.batchUpdate(
       tenantId,
       body.caseIds,
-      body.updates
+      body.updates,
+      userId
     );
     return { success: true, data: result };
   }

@@ -2086,7 +2086,7 @@ export class CaseService {
     }
   }
 
-  async update(tenantId: string, id: string, dto: UpdateCaseDto) {
+  async update(tenantId: string, id: string, dto: UpdateCaseDto, userId: string) {
     await this.findOne(tenantId, id);
 
     // Boş string'leri undefined'a çevir
@@ -2139,6 +2139,7 @@ export class CaseService {
       action: 'UPDATE',
       entityType: 'CASE',
       entityId: id,
+      userId, // WP-1c-2: user-driven CASE update → actor zorunlu
       newValues: data,
       description: `Takip güncellendi: ${updated.fileNumber}`,
     });
@@ -2146,7 +2147,7 @@ export class CaseService {
     return updated;
   }
 
-  async delete(tenantId: string, id: string) {
+  async delete(tenantId: string, id: string, userId: string) {
     const existing = await this.findOne(tenantId, id);
 
     // Transaction içinde silme ve audit log (veri bütünlüğü için)
@@ -2161,6 +2162,7 @@ export class CaseService {
         action: 'DELETE',
         entityType: 'CASE',
         entityId: id,
+        userId, // WP-1c-2: user-driven CASE delete → actor zorunlu
         oldValues: { fileNumber: existing.fileNumber },
         description: `Takip silindi: ${existing.fileNumber}`,
       });
@@ -2297,6 +2299,7 @@ export class CaseService {
       takipTuruId?: string | null;
       mahiyetTipiId?: string | null;
     },
+    userId: string, // WP-1c-2: user-driven toplu güncelleme → actor zorunlu
   ) {
     // Lookup ID'lerinin bu tenant'a ait olduğunu kontrol et
     await this.validateLookupIds(tenantId, {
@@ -2338,6 +2341,7 @@ export class CaseService {
       action: 'UPDATE',
       entityType: 'CASE',
       entityId: caseIds[0] ?? 'BATCH',
+      userId, // WP-1c-2: user-driven toplu güncelleme → actor zorunlu
       newValues: { caseIds, updates, updatedCount: result.count },
       description: 'Toplu dosya güncellemesi',
     });
