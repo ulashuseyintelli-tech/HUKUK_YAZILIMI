@@ -24,6 +24,7 @@ import {
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { CaseBalanceService, CaseBalanceResult } from './orchestration/case-balance.service';
+import { CaseBalanceDisplay, toCaseBalanceDisplay } from './orchestration/case-balance-display';
 import { InterestEngineService } from './interest-engine.service';
 import { AuditWriterService } from './audit/audit-writer.service';
 import { TraceExporterService } from './trace/trace-exporter.service';
@@ -131,6 +132,28 @@ export class InterestEngineController {
   ): Promise<CaseBalanceResult> {
     const date = asOfDate ?? new Date().toISOString().slice(0, 10);
     return this.caseBalance.computeCaseBalance(tenantId, caseId, date);
+  }
+
+  /**
+   * GET /interest-engine/case/:caseId/balance/display
+   *
+   * BALANCE-DISPLAY PR-1: panel-facing CaseBalanceDisplay DTO (computeCaseBalance → stabil UI sözleşmesi).
+   * READ-ONLY, ADDITIVE; getCaseBalance ile aynı auth/tenant/asOfDate deseni. Davranış değiştirmez
+   * (frontend hâlâ legacy gösterir). Ham engine shape'i panelden ayırır; yalnız doğrulanmış alanlar map'lenir.
+   * tenantId YALNIZ auth context'ten (@CurrentUser).
+   *
+   * <remarks>Çağrıldığı yerler: HTTP GET /interest-engine/case/:caseId/balance/display (cutover panel kaynağı, flag arkası).</remarks>
+   */
+  @Get('case/:caseId/balance/display')
+  @UseGuards(JwtAuthGuard)
+  async getCaseBalanceDisplay(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('caseId') caseId: string,
+    @Query('asOfDate') asOfDate?: string,
+  ): Promise<CaseBalanceDisplay> {
+    const date = asOfDate ?? new Date().toISOString().slice(0, 10);
+    const balance = await this.caseBalance.computeCaseBalance(tenantId, caseId, date);
+    return toCaseBalanceDisplay(caseId, balance);
   }
 
   /**
