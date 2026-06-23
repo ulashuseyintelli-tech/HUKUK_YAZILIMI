@@ -42,6 +42,19 @@ const EXTERNAL_SOURCES = new Set<string>([
   CollectionSource.THIRD_PARTY,
 ]);
 
+function toFiniteAmount(value: unknown): number {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function sumAmounts(rows: Array<{ amount: unknown }>): number {
+  return roundMoney(rows.reduce((sum, row) => sum + toFiniteAmount(row.amount), 0));
+}
+
 function mapSourceToActor(sourceType: CollectionSource | undefined, userId?: string): { type: ActorType; userId?: string; externalSystem?: string } {
   if (!sourceType || sourceType === CollectionSource.MANUAL || sourceType === CollectionSource.SETTLEMENT) {
     return { type: 'HUMAN', userId: userId || 'unknown' };
@@ -330,10 +343,11 @@ export class CollectionService {
       // ── 4. PAYMENT_RECEIVED event append (HR-39: same-tx) ───────────────
       const confidence = mapSourceToConfidence(dto.sourceType as CollectionSource);
       const actor = mapSourceToActor(dto.sourceType as CollectionSource, userId);
+      const paymentEventId = randomUUID();
 
       await this.domainEventIngestService.appendInTransaction(tx, {
         header: {
-          eventId: randomUUID(),
+          eventId: paymentEventId,
           aggregateType: 'Case',
           aggregateId: dto.caseId,
           eventType: 'PAYMENT_RECEIVED',
@@ -376,6 +390,56 @@ export class CollectionService {
             collectionId: collection.id,
           },
         );
+        if (ledger.allocated && ledger.ledgerEntry) {
+          const allocatedAmount = sumAmounts(ledger.allocations || []);
+          const overpaymentAmount = roundMoney(toFiniteAmount(dto.amount) - allocatedAmount);
+
+          if (overpaymentAmount > 0) {
+            await (tx as any).collectionOverpayment.create({
+              data: {
+                tenantId,
+                caseId: dto.caseId,
+                collectionId: collection.id,
+                sourceLedgerEntryId: ledger.ledgerEntry.id,
+                amount: overpaymentAmount,
+                remainingAmount: overpaymentAmount,
+                currency,
+                status: 'HELD',
+                createdById: userId,
+                metadata: {
+                  collectionAmount: toFiniteAmount(dto.amount),
+                  allocatedAmount,
+                },
+              },
+            });
+
+            await this.domainEventIngestService.appendInTransaction(tx, {
+              header: {
+                eventId: randomUUID(),
+                aggregateType: 'Case',
+                aggregateId: dto.caseId,
+                eventType: 'OVERPAYMENT_RECORDED',
+                occurredAt: new Date().toISOString(),
+                occurredAtConfidence: 'SYSTEM_VERIFIED',
+                actor: {
+                  type: 'SYSTEM',
+                  reason: 'COLLECTION_OVERPAYMENT_PROJECTION',
+                },
+                causedBy: paymentEventId,
+                tenantId,
+              },
+              payload: {
+                collectionId: collection.id,
+                sourceLedgerEntryId: ledger.ledgerEntry.id,
+                amount: overpaymentAmount,
+                remainingAmount: overpaymentAmount,
+                currency,
+                collectionAmount: toFiniteAmount(dto.amount),
+                allocatedAmount,
+              },
+            });
+          }
+        }
         if (!ledger.allocated) {
           this.logger.warn(
             `case has no claimItems; payment not ledger-allocated ` +
@@ -576,6 +640,20 @@ export class CollectionService {
             });
           }
         }
+
+        await (tx as any).collectionOverpayment.updateMany({
+          where: {
+            tenantId,
+            caseId: collection.caseId,
+            collectionId: collection.id,
+            status: 'HELD',
+          },
+          data: {
+            status: 'REVERSED',
+            remainingAmount: 0,
+            reversedAt: new Date(),
+          },
+        });
 
         return cancelledCollection;
       });

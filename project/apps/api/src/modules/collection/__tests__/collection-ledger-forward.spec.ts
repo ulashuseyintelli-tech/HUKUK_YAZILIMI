@@ -16,6 +16,7 @@ function setup(opts: { summaryEngine?: any } = {}) {
     case: { findFirst: jest.fn(async () => ({ id: 'c1', caseStatus: 'DERDEST' })) },
     collection: { create: jest.fn(async () => ({ id: 'col1' })), findFirst: jest.fn() },
     collectionAllocation: { create: jest.fn() },
+    collectionOverpayment: { create: jest.fn() },
   };
   const prisma: any = {
     $transaction: jest.fn(async (fn: any) => fn(tx)),
@@ -72,7 +73,11 @@ describe('CollectionService.create — G3a ledger forward write', () => {
 
   it('ClaimItem varsa: ledger çağrılır + Collection/event korunur + CollectionAllocation compat', async () => {
     const summaryEngine = {
-      allocatePaymentToLedgerInTx: jest.fn(async () => ({ allocated: true, ledgerEntry: { id: 'le1' }, allocations: [] })),
+      allocatePaymentToLedgerInTx: jest.fn(async () => ({
+        allocated: true,
+        ledgerEntry: { id: 'le1' },
+        allocations: [{ amount: 1000 }],
+      })),
     };
     const { svc, tx, domainEvent, autoSpy, warnSpy } = setup({ summaryEngine });
 
@@ -88,8 +93,69 @@ describe('CollectionService.create — G3a ledger forward write', () => {
     );
     expect(tx.collection.create).toHaveBeenCalled();
     expect(domainEvent.appendInTransaction).toHaveBeenCalled();
+    expect(
+      domainEvent.appendInTransaction.mock.calls.some(([, event]: any[]) => event.header.eventType === 'OVERPAYMENT_RECORDED'),
+    ).toBe(false);
+    expect(tx.collectionOverpayment.create).not.toHaveBeenCalled();
     expect(autoSpy).toHaveBeenCalled(); // S2 compat korunur
     expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('not ledger-allocated'));
+  });
+
+  it('overpayment varsa CollectionOverpayment HELD projection ve event yazar', async () => {
+    const summaryEngine = {
+      allocatePaymentToLedgerInTx: jest.fn(async () => ({
+        allocated: true,
+        ledgerEntry: { id: 'le-overpay' },
+        allocations: [{ amount: 700 }, { amount: 300 }],
+      })),
+    };
+    const { svc, tx, domainEvent } = setup({ summaryEngine });
+
+    await svc.create('t1', { ...dto, amount: 1200, currency: 'TRY' }, 'u1');
+
+    expect(tx.collectionOverpayment.create).toHaveBeenCalledWith({
+      data: {
+        tenantId: 't1',
+        caseId: 'c1',
+        collectionId: 'col1',
+        sourceLedgerEntryId: 'le-overpay',
+        amount: 200,
+        remainingAmount: 200,
+        currency: 'TRY',
+        status: 'HELD',
+        createdById: 'u1',
+        metadata: {
+          collectionAmount: 1200,
+          allocatedAmount: 1000,
+        },
+      },
+    });
+
+    expect(domainEvent.appendInTransaction).toHaveBeenCalledTimes(2);
+    const paymentEvent = domainEvent.appendInTransaction.mock.calls[0][1];
+    const overpaymentEvent = domainEvent.appendInTransaction.mock.calls[1][1];
+    expect(paymentEvent.header.eventType).toBe('PAYMENT_RECEIVED');
+    expect(overpaymentEvent.header).toMatchObject({
+      aggregateType: 'Case',
+      aggregateId: 'c1',
+      eventType: 'OVERPAYMENT_RECORDED',
+      occurredAtConfidence: 'SYSTEM_VERIFIED',
+      tenantId: 't1',
+      causedBy: paymentEvent.header.eventId,
+    });
+    expect(overpaymentEvent.header.actor).toMatchObject({
+      type: 'SYSTEM',
+      reason: 'COLLECTION_OVERPAYMENT_PROJECTION',
+    });
+    expect(overpaymentEvent.payload).toMatchObject({
+      collectionId: 'col1',
+      sourceLedgerEntryId: 'le-overpay',
+      amount: 200,
+      remainingAmount: 200,
+      currency: 'TRY',
+      collectionAmount: 1200,
+      allocatedAmount: 1000,
+    });
   });
 
   it('ClaimItem yoksa: diagnostic warn, akış kırılmaz, THROW yok', async () => {
@@ -108,6 +174,10 @@ describe('CollectionService.create — G3a ledger forward write', () => {
     expect(res).toBeDefined();
     expect(tx.collection.create).toHaveBeenCalled();
     expect(domainEvent.appendInTransaction).toHaveBeenCalled();
+    expect(
+      domainEvent.appendInTransaction.mock.calls.some(([, event]: any[]) => event.header.eventType === 'OVERPAYMENT_RECORDED'),
+    ).toBe(false);
+    expect(tx.collectionOverpayment.create).not.toHaveBeenCalled();
     expect(autoSpy).toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('payment not ledger-allocated'));
   });
