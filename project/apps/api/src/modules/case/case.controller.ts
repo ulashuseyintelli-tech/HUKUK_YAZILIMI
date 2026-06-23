@@ -301,6 +301,7 @@ export class CaseController {
   @Post(":id/lawyers")
   async addCaseLawyer(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Body() body: {
       lawyerId: string;
@@ -308,7 +309,7 @@ export class CaseController {
       canSign?: boolean;
     }
   ) {
-    return this.caseService.addCaseLawyer(tenantId, id, body);
+    return this.caseService.addCaseLawyer(tenantId, id, body, userId);
   }
 
   /**
@@ -318,10 +319,11 @@ export class CaseController {
   @Delete(":id/lawyers/:caseLawyerId")
   async removeCaseLawyer(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Param("caseLawyerId") caseLawyerId: string
   ) {
-    return this.caseService.removeCaseLawyer(tenantId, id, caseLawyerId);
+    return this.caseService.removeCaseLawyer(tenantId, id, caseLawyerId, userId);
   }
 
   /**
@@ -331,6 +333,7 @@ export class CaseController {
   @Patch(":id/lawyers/:caseLawyerId")
   async updateCaseLawyer(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Param("caseLawyerId") caseLawyerId: string,
     @Body() body: {
@@ -350,7 +353,7 @@ export class CaseController {
       receiveNotifications?: boolean;
     }
   ) {
-    return this.caseService.updateCaseLawyer(tenantId, id, caseLawyerId, body);
+    return this.caseService.updateCaseLawyer(tenantId, id, caseLawyerId, body, userId);
   }
 
   /**
@@ -406,6 +409,7 @@ export class CaseController {
   @Patch(":id/staff/:caseStaffId")
   async updateCaseStaff(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Param("caseStaffId") caseStaffId: string,
     @Body() body: {
@@ -417,7 +421,7 @@ export class CaseController {
       notes?: string;
     }
   ) {
-    return this.caseService.updateCaseStaff(tenantId, id, caseStaffId, body);
+    return this.caseService.updateCaseStaff(tenantId, id, caseStaffId, body, userId);
   }
 
   // ==================== ALACAK KALEMLERİ (DUES) ====================

@@ -2696,7 +2696,8 @@ export class CaseService {
         canEditParties?: boolean;
       };
       receiveNotifications?: boolean;
-    }
+    },
+    userId: string,
   ) {
     // Dosyanın bu tenant'a ait olduğunu kontrol et
     const caseExists = await this.prisma.case.findFirst({
@@ -2816,6 +2817,7 @@ export class CaseService {
       action: 'UPDATE',
       entityType: 'CASE_LAWYER',
       entityId: caseLawyerId,
+      userId, // WP-1c-3
       newValues: demoteIds.length > 0 ? { ...updateData, demotedCaseLawyerIds: demoteIds } : updateData,
       description: `Avukat yetkileri güncellendi: ${caseLawyer.lawyer.name} ${caseLawyer.lawyer.surname}`,
     });
@@ -2886,7 +2888,7 @@ export class CaseService {
     lawyerId: string;
     role?: 'RESPONSIBLE' | 'ASSIGNED' | 'ASSISTANT' | 'INTERN';
     canSign?: boolean;
-  }) {
+  }, userId: string) {
     // Dosyanın bu tenant'a ait olduğunu kontrol et
     const caseExists = await this.prisma.case.findFirst({
       where: { id: caseId, tenantId },
@@ -2980,6 +2982,7 @@ export class CaseService {
       action: 'CREATE',
       entityType: 'CASE_LAWYER',
       entityId: caseLawyer.id,
+      userId, // WP-1c-3
       newValues: { lawyerId: caseLawyer.lawyerId, role: caseLawyer.role, isResponsible: caseLawyer.isResponsible },
       description: `Dosyaya avukat eklendi: ${caseLawyer.lawyer.name} ${caseLawyer.lawyer.surname}`,
     });
@@ -2991,6 +2994,7 @@ export class CaseService {
         action: 'UPDATE',
         entityType: 'CASE_LAWYER',
         entityId: caseLawyer.id,
+        userId, // WP-1c-3
         newValues: { isResponsible: true, role: 'RESPONSIBLE', demotedCaseLawyerIds: demotedIds },
         description: `Yeni sorumlu avukat atandı; ${demotedIds.length} eski sorumlu düşürüldü`,
       });
@@ -3009,7 +3013,7 @@ export class CaseService {
    * @remarks Çağrıldığı yerler:
    * - CaseController.removeCaseLawyer() → DELETE /cases/:id/lawyers/:caseLawyerId
    */
-  async removeCaseLawyer(tenantId: string, caseId: string, caseLawyerId: string) {
+  async removeCaseLawyer(tenantId: string, caseId: string, caseLawyerId: string, userId: string) {
     // Dosyanın bu tenant'a ait olduğunu kontrol et
     const caseExists = await this.prisma.case.findFirst({
       where: { id: caseId, tenantId },
@@ -3056,6 +3060,7 @@ export class CaseService {
       action: 'DELETE',
       entityType: 'CASE_LAWYER',
       entityId: caseLawyerId,
+      userId, // WP-1c-3
       oldValues: { lawyerId: caseLawyer.lawyerId, role: caseLawyer.role, isResponsible: caseLawyer.isResponsible },
       description: 'Dosyadan avukat çıkarıldı',
     });
@@ -3067,6 +3072,7 @@ export class CaseService {
         action: 'UPDATE',
         entityType: 'CASE_LAWYER',
         entityId: promotedId,
+        userId, // WP-1c-3
         newValues: { isResponsible: true, role: 'RESPONSIBLE', reason: 'RESPONSIBLE_REMOVED_AUTO_PROMOTE' },
         description: 'Sorumlu avukat silindi; otomatik yeni sorumlu avukat atandı',
       });
@@ -3194,6 +3200,7 @@ export class CaseService {
       receiveNotifications?: boolean;
       notes?: string;
     },
+    userId: string,
   ) {
     // Dosya bu tenant'a ait mi?
     const caseExists = await this.prisma.case.findFirst({
@@ -3232,6 +3239,7 @@ export class CaseService {
       action: "UPDATE",
       entityType: "CASE_STAFF",
       entityId: caseStaffId,
+      userId, // WP-1c-3
       newValues: updateData,
       description: `Dosya personeli güncellendi: ${updated.staffMember.firstName} ${updated.staffMember.lastName}`,
     });
