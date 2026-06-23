@@ -9,6 +9,7 @@ import {
   Param,
   Query,
   UseGuards,
+  BadRequestException,
 } from "@nestjs/common";
 import { CaseService } from "./case.service";
 import { CreateCaseDto, UpdateCaseDto } from "./dto/case.dto";
@@ -16,6 +17,7 @@ import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { OcrService } from "../ocr/ocr.service";
 import { ResponsibleCandidatesService } from "./responsible-candidates.service";
+import { TemporalResponsibilityService } from "./temporal-responsibility.service";
 import { AssignResponsiblePersonDto } from "./dto/responsible-person.dto";
 
 @Controller("cases")
@@ -24,7 +26,8 @@ export class CaseController {
   constructor(
     private caseService: CaseService,
     private ocrService: OcrService,
-    private responsibleCandidatesService: ResponsibleCandidatesService
+    private responsibleCandidatesService: ResponsibleCandidatesService,
+    private temporalResponsibilityService: TemporalResponsibilityService
   ) {}
 
   @Get()
@@ -77,6 +80,26 @@ export class CaseController {
       tenantId,
       id
     );
+  }
+
+  // WP-1d-3: read-only combined temporal sorumluluk. "asOf tarihinde Dosya Operasyon Sorumlusu ve
+  // Hukuki Sorumlu Avukat kimdi?" İki mevcut temporal service'i birleştirir; yeni reconstruction/mutation YOK.
+  @Get(":id/responsibility-at")
+  async getResponsibilityAt(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Query("asOf") asOf?: string
+  ) {
+    let asOfDate: Date;
+    if (asOf === undefined || asOf === "") {
+      asOfDate = new Date();
+    } else {
+      asOfDate = new Date(asOf);
+      if (Number.isNaN(asOfDate.getTime())) {
+        throw new BadRequestException("Geçersiz asOf tarihi (ISO 8601 bekleniyor).");
+      }
+    }
+    return this.temporalResponsibilityService.getResponsibilityAt(tenantId, id, asOfDate);
   }
 
   // M2-G3a: Dosya Sorumlusu (gerçek kişi) atama. İzole servise delege; case.service.ts'e dokunmadan.

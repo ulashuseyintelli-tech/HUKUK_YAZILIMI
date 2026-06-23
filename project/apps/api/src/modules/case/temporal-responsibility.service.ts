@@ -1,4 +1,4 @@
-import { Injectable } from "@nestjs/common";
+import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 
 /**
@@ -48,6 +48,18 @@ export type LegalResponsibleTemporalResult = {
     effectiveAt?: string;
   };
   horizon: { instrumentationStartedAt?: string; note?: string };
+};
+
+export type CombinedResponsibilityResult = {
+  caseId: string;
+  asOf: string;
+  operationOwner: OperationOwnerTemporalResult["operationOwner"];
+  legalResponsibleLawyer: LegalResponsibleTemporalResult["legalResponsibleLawyer"];
+  horizon: {
+    operationOwnerInstrumentationStartedAt?: string;
+    legalResponsibleInstrumentationStartedAt?: string;
+    note?: string;
+  };
 };
 
 // metadata.changeType ∈ {OPERATION_OWNER, OPERATION_OWNER_INITIALIZED} (Prisma JSON path filtresi).
@@ -260,6 +272,37 @@ export class TemporalResponsibilityService {
       horizon: {
         instrumentationStartedAt: horizonAt.toISOString(),
         note: "Bu dosya için reliable CASE_LAWYER event'i yok; current snapshot kullanıldı (geçmişe kesin teşmil edilemez).",
+      },
+    };
+  }
+
+  /**
+   * WP-1d-3 — combined: "asOf tarihinde operasyon owner + hukuki sorumlu avukat kimdi?" (READ-ONLY).
+   * İki mevcut temporal service'i (getOperationOwnerAt + getLegalResponsibleLawyerAt) birleştirir;
+   * yeni reconstruction YOK. Dosya bu tenant'ta yoksa 404 (event-yok ≠ dosya-yok ayrımı korunur).
+   */
+  async getResponsibilityAt(
+    tenantId: string,
+    caseId: string,
+    asOf: Date,
+  ): Promise<CombinedResponsibilityResult> {
+    const kase = await this.prisma.case.findFirst({ where: { id: caseId, tenantId }, select: { id: true } });
+    if (!kase) throw new NotFoundException("Dosya bulunamadı.");
+
+    const [op, legal] = await Promise.all([
+      this.getOperationOwnerAt(tenantId, caseId, asOf),
+      this.getLegalResponsibleLawyerAt(tenantId, caseId, asOf),
+    ]);
+
+    return {
+      caseId,
+      asOf: asOf.toISOString(),
+      operationOwner: op.operationOwner,
+      legalResponsibleLawyer: legal.legalResponsibleLawyer,
+      horizon: {
+        operationOwnerInstrumentationStartedAt: op.horizon.instrumentationStartedAt,
+        legalResponsibleInstrumentationStartedAt: legal.horizon.instrumentationStartedAt,
+        note: [op.horizon.note, legal.horizon.note].filter(Boolean).join(" | ") || undefined,
       },
     };
   }
