@@ -209,6 +209,7 @@ model Tenant {
   debtorIntelligence DebtorIntelligence[]
   courts            Court[]
   collections       Collection[]
+  collectionOverpayments CollectionOverpayment[]
   lawyers           Lawyer[]
   workflowTemplates WorkflowTemplate[]
   executionOffices  ExecutionOffice[]
@@ -1008,6 +1009,7 @@ model Case {
   tasks               Task[]
   debtorIntelligence  DebtorIntelligence[]
   collections         Collection[]
+  collectionOverpayments CollectionOverpayment[]
   dues                Due[]
   caseInstruments     CaseInstrument[]
   lifecycleEvents     CaseLifecycle[]
@@ -2047,6 +2049,7 @@ model Collection {
   // Mahsup Bilgileri
   allocations   CollectionAllocation[]
   ledgerEntries LedgerEntry[]
+  overpayment   CollectionOverpayment?
 
   // Açıklama ve Notlar
   description String?
@@ -2088,6 +2091,38 @@ model CollectionAllocation {
   @@index([collectionId])
 }
 
+// Fazla Tahsilat Projection - borca mahsup edilmeyen emanet/iade bekleyen tutar
+model CollectionOverpayment {
+  id       String @id @default(cuid())
+  tenantId String
+  tenant   Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  caseId   String
+  case     Case   @relation(fields: [caseId], references: [id], onDelete: Cascade)
+
+  collectionId String     @unique
+  collection   Collection @relation(fields: [collectionId], references: [id], onDelete: Cascade)
+
+  sourceLedgerEntryId String?
+  sourceLedgerEntry   LedgerEntry? @relation(fields: [sourceLedgerEntryId], references: [id], onDelete: SetNull)
+
+  amount          Decimal @db.Decimal(15, 2)
+  remainingAmount Decimal @db.Decimal(15, 2)
+  currency        String  @default("TRY")
+  status          OverpaymentStatus @default(HELD)
+
+  reversedAt DateTime?
+  refundedAt DateTime?
+
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  createdById String?
+
+  @@index([tenantId, caseId, status])
+  @@index([tenantId, status])
+  @@index([sourceLedgerEntryId])
+}
+
 // Tahsilat Kanalı
 enum CollectionChannel {
   NAKIT // Nakit
@@ -2118,6 +2153,14 @@ enum CollectionStatus {
   CONFIRMED // Onaylandı
   CANCELLED // İptal edildi
   REFUNDED // İade edildi
+}
+
+enum OverpaymentStatus {
+  HELD // Emanette tutuluyor
+  REFUNDED // İade edildi
+  TRANSFERRED // Virmanlandı
+  RE_ALLOCATED // Yeniden mahsup edildi
+  REVERSED // Tahsilat iptaliyle terslendi
 }
 
 // Masraf Talebi Durumu
@@ -4366,6 +4409,7 @@ model LedgerEntry {
 
   // Dağıtım (TBK 100 sırasına göre)
   allocations LedgerAllocation[]
+  sourceOverpayments CollectionOverpayment[]
 
   // Durum
   status LedgerEntryStatus @default(CONFIRMED)
