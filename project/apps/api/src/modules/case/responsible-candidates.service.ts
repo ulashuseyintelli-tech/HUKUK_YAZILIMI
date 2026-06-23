@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
+import { AuditService } from "../audit/audit.service";
 
 // M2-G2: "Dosya Sorumlusu" picker kaynağı. Gerçek kişi adayları = aktif Lawyer + aktif StaffMember.
 // İZOLE servis (case.service.ts'e DOKUNULMAZ — paralel LEGACY-READER WIP'i orada). Salt-okuma.
@@ -140,7 +141,10 @@ export async function validateResponsibleSelection(
 
 @Injectable()
 export class ResponsibleCandidatesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private auditService: AuditService
+  ) {}
 
   /**
    * Bir tenant'taki Dosya Sorumlusu adayları: aktif avukatlar (canBeResponsible) + aktif personel.
@@ -209,21 +213,26 @@ export class ResponsibleCandidatesService {
    * M2-G3a: Dosya Sorumlusu (gerçek kişi) atar. responsibleLawyerId XOR responsibleStaffId.
    * Kurallar: exactly-one (her ikisi/hiçbiri → 400); aday aktif + aynı tenant olmalı; diğer alan null'lanır.
    * `sorumluPersonelId`'e DOKUNULMAZ (geçiş alanı). DB CHECK backstop.
+   *
+   * WP-1a (Responsibility Audit Hardening): gerçek-kişi Dosya Operasyon Sorumlusu (K2) değişimi
+   * `AuditLog`'a yazılır (old→new + actor `userId` + tenant). AuditLog TEK otorite — ayrı
+   * OwnerChangeHistory tablosu YOK. `userId` actor ZORUNLU (kim değiştirdi).
    */
   async assignResponsiblePerson(
     tenantId: string,
     caseId: string,
-    dto: { responsibleLawyerId?: string; responsibleStaffId?: string }
+    dto: { responsibleLawyerId?: string; responsibleStaffId?: string },
+    userId: string
   ): Promise<{ responsibleLawyerId: string | null; responsibleStaffId: string | null }> {
     // M2-A3a: ortak validator (exactly-one) — geçersiz seçimde DB'ye dokunulmadan 400.
     const resolved = await validateResponsibleSelection(this.prisma, tenantId, dto, {
       allowNone: false,
     });
 
-    // dosya bu tenant'a ait olmalı (cross-tenant dosya → 404)
+    // dosya bu tenant'a ait olmalı (cross-tenant dosya → 404). WP-1a: eski owner'ı da oku (audit old→new).
     const kase = await this.prisma.case.findFirst({
       where: { id: caseId, tenantId },
-      select: { id: true },
+      select: { id: true, responsibleLawyerId: true, responsibleStaffId: true },
     });
     if (!kase) throw new NotFoundException("Dosya bulunamadı.");
 
@@ -234,6 +243,25 @@ export class ResponsibleCandidatesService {
         responsibleStaffId: resolved.responsibleStaffId,
       },
     });
+
+    // WP-1a: K2 owner-change audit (old→new + actor + tenant). best-effort (AuditService.log try/catch'li).
+    await this.auditService.log({
+      tenantId,
+      action: "UPDATE",
+      entityType: "CASE",
+      entityId: caseId,
+      userId,
+      oldValues: {
+        responsibleLawyerId: kase.responsibleLawyerId,
+        responsibleStaffId: kase.responsibleStaffId,
+      },
+      newValues: {
+        responsibleLawyerId: resolved.responsibleLawyerId,
+        responsibleStaffId: resolved.responsibleStaffId,
+      },
+      metadata: { changeType: "OPERATION_OWNER", source: "PATCH /cases/:id/responsible-person" },
+    });
+
     return resolved;
   }
 }

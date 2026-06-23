@@ -77,16 +77,19 @@ export class CaseController {
   }
 
   // M2-G3a: Dosya Sorumlusu (gerçek kişi) atama. İzole servise delege; case.service.ts'e dokunmadan.
+  // WP-1a: userId (actor) servise geçer → owner-change audit "kim değiştirdi" alanını doldurur.
   @Patch(":id/responsible-person")
   assignResponsiblePerson(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Body() dto: AssignResponsiblePersonDto
   ) {
     return this.responsibleCandidatesService.assignResponsiblePerson(
       tenantId,
       id,
-      dto
+      dto,
+      userId
     );
   }
 
