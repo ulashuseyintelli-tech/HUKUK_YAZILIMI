@@ -8,6 +8,8 @@ import { PrismaService } from "@/prisma/prisma.service";
 import { normalizePersonName } from "@/common/name-match.util";
 // RFA-006: adres dedup (normalize + hash); tüm write yolları ortak helper kullanır.
 import { computeAddressHash, findOrCreateDebtorAddress } from "@/common/address-hash.util";
+// Gate-4: TCKN/VKN format+checksum (tek-kaynak; OCR/import/Party Registry ile ortak helper).
+import { isValidTckn, isValidVkn } from "@/common/identity-validation.util";
 import { CaseDebtorLifecycleGuardService } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.service";
 import {
   CreateDebtorDto,
@@ -544,6 +546,10 @@ export class DebtorService {
     const newType = dto.type || existing.type;
     if (dto.type) {
       this.validateDebtorByType({ ...dto, type: newType } as CreateDebtorDto);
+    } else if (dto.tckn || dto.vkn) {
+      // Gate-4: tip değişmese de payload'daki kimlik formatı doğrulanır (yalnız payload alanı;
+      // eski bozuk veri için alakasız güncelleme bloklanmaz).
+      this.validateIdentityFormat(newType as DebtorType, { tckn: dto.tckn, vkn: dto.vkn });
     }
 
     // Check for duplicates if identity number is changing
@@ -1277,6 +1283,44 @@ export class DebtorService {
           throw new BadRequestException("Tereke için en az bir mirasçı girilmelidir");
         }
         break;
+    }
+
+    // Gate-4: kimlik FORMAT + tip-katı doğrulama (payload'da bulunan tckn/vkn için).
+    this.validateIdentityFormat(dto.type, { tckn: dto.tckn, vkn: dto.vkn });
+  }
+
+  /**
+   * Gate-4: kimlik FORMAT + tip-katı doğrulama. Yalnız payload'da BULUNAN alanlar denetlenir
+   * (update'te eski bozuk veri için alakasız güncelleme bloklanmaz). Checksum: common/
+   * identity-validation.util (isValidTckn/isValidVkn) reuse — OCR/import/HTTP tek-kaynak.
+   *
+   * Kurallar (ürün): TCKN yalnız INDIVIDUAL; VKN INDIVIDUAL'a yasak (COMPANY/kamu/tüzel serbest).
+   * DETSIS/MERSIS/deceasedTckn KAPSAM DIŞI (format belirsiz / ayrı alan → ayrı ele alınacak).
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - DebtorService.validateDebtorByType() → create + update(tip değişimi) kimlik formatı
+   * - DebtorService.update() → tip değişmeden kimlik güncellemesinde format
+   * </remarks>
+   */
+  private validateIdentityFormat(
+    type: DebtorType | undefined,
+    ids: { tckn?: string | null; vkn?: string | null }
+  ): void {
+    if (ids.tckn) {
+      if (type !== DebtorType.INDIVIDUAL) {
+        throw new BadRequestException("TCKN yalnızca gerçek kişi (INDIVIDUAL) için girilebilir");
+      }
+      if (!isValidTckn(ids.tckn)) {
+        throw new BadRequestException("Geçersiz TCKN (11 hane + doğrulama hanesi)");
+      }
+    }
+    if (ids.vkn) {
+      if (type === DebtorType.INDIVIDUAL) {
+        throw new BadRequestException("Gerçek kişiye (INDIVIDUAL) VKN girilemez");
+      }
+      if (!isValidVkn(ids.vkn)) {
+        throw new BadRequestException("Geçersiz VKN (10 hane + doğrulama hanesi)");
+      }
     }
   }
 

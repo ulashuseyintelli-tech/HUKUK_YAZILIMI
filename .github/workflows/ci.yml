@@ -99,17 +99,18 @@ jobs:
       # TEST-INFRA-1: Gate-1 (tenant-boundary) + Gate-2 (passive-writer) güvenlik spec'leri yukarıdaki
       # dar pattern'lerin dışında kalıyordu → CI'da koşmuyordu. Ayrı/açık step ile koşturulur.
       # passWithNoTests YOK + önce dosya-varlığı pre-check: rename/silme veya 0-eşleşme → CI RED.
-      - name: Security boundary tests (Gate-1 tenant + Gate-2/Gate-3 passive-writer)
+      - name: Security boundary tests (Gate-1 tenant + Gate-2/3 passive-writer + Gate-4 identity)
         run: |
           cd apps/api
           for f in src/modules/address-discovery/confidence-score.tenant-boundary.spec.ts \
                    src/modules/debtor/ihbarname-summary.tenant-boundary.spec.ts \
                    src/modules/debtor/third-party-passive-writer.spec.ts \
-                   src/modules/debtor/quick-note-passive-writer.spec.ts; do
+                   src/modules/debtor/quick-note-passive-writer.spec.ts \
+                   src/modules/debtor/debtor-identity-format.spec.ts; do
             test -f "$f" || { echo "MISSING security spec: $f"; exit 1; }
           done
           npx jest --ci --forceExit \
-            --testPathPattern="(confidence-score\.tenant-boundary|ihbarname-summary\.tenant-boundary|third-party-passive-writer|quick-note-passive-writer)\.spec\.ts$" \
+            --testPathPattern="(confidence-score\.tenant-boundary|ihbarname-summary\.tenant-boundary|third-party-passive-writer|quick-note-passive-writer|debtor-identity-format)\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
 
