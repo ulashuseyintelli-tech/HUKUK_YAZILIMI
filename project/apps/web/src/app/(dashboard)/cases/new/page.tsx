@@ -1049,7 +1049,7 @@ export default function NewCasePage() {
     if (currentStep === 1 && !caseData.takipTuruId) { setError("Takip türü zorunludur"); return; }
     // M2-G3c: Dosya Sorumlusu (gerçek kişi) zorunlu — adım-1 İleri'de de enforce (eskiden yalnız
     // final-submit validateCaseCreation/MISSING_RESPONSIBLE bloklıyordu; * işaretiyle tutarsızdı).
-    if (currentStep === 1 && !responsiblePerson) { setError("Dosya Sorumlusu seçilmelidir"); return; }
+    if (currentStep === 1 && !responsiblePerson) { setError("Dosya Operasyon Sorumlusu seçilmelidir"); return; }
     setError(""); setCurrentStep(prev => Math.min(prev + 1, steps.length - 1));
   };
 
@@ -1614,7 +1614,7 @@ export default function NewCasePage() {
                 <div><label className="block text-xs font-medium mb-0.5">Takip Türü <span className="text-red-500">*</span></label><select name="takipTuruId" value={caseData.takipTuruId} onChange={(e) => handleTakipTuruChange(e.target.value)} className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary"><option value="">Seçiniz</option>{lookups.takipTuru.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
                 {/* A4 (Dosya Sorumlusu): dropdown yalnız aktif + VIEWER olmayan kullanıcıları gösterir; zaten atanmış değer korunur */}
                 {/* M2-G3c: Dosya Sorumlusu = gerçek kişi (Lawyer/StaffMember) picker. User dropdown'unun yerine; zorunlu. */}
-                <div><label className="block text-xs font-medium mb-0.5">Dosya Sorumlusu <span className="text-red-500">*</span></label><ResponsibleCandidateSelect value={responsiblePerson} onChange={setResponsiblePerson} disabled={loading} /></div>
+                <div><label className="block text-xs font-medium mb-0.5">Dosya Operasyon Sorumlusu <span className="text-red-500">*</span></label><ResponsibleCandidateSelect value={responsiblePerson} onChange={setResponsiblePerson} disabled={loading} /><p className="text-[10px] text-muted-foreground mt-0.5">Dosyanın günlük takibini yürütecek gerçek kişi (avukat veya personel). Hukuki Sorumlu Avukat ile aynı kavram değildir.</p></div>
                 <div><label className="block text-xs font-medium mb-0.5">Aşama</label><select name="asamaId" value={caseData.asamaId} onChange={handleCaseDataChange} className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary"><option value="">Seçiniz</option>{lookups.asama.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
                 <div><label className="block text-xs font-medium mb-0.5">Mahiyet Tipi</label><select name="mahiyetTipiId" value={caseData.mahiyetTipiId} onChange={(e) => { const selectedId = e.target.value; const selectedItem = lookups.mahiyetTipi.find(m => m.id === selectedId); setCaseData(prev => ({ ...prev, mahiyetTipiId: selectedId, mahiyetKodu: selectedItem?.code || '' })); }} className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary"><option value="">Seçiniz</option>{lookups.mahiyetTipi.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></div>
                 <div><label className="block text-xs font-medium mb-0.5">Mahiyet Kodu</label><input type="text" name="mahiyetKodu" value={caseData.mahiyetKodu} onChange={handleCaseDataChange} placeholder="KIRA, AIDAT" className="w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary" /></div>
@@ -2939,7 +2939,7 @@ function SelectedLawyerCard({
               onChange={() => onUpdate("isResponsible", true)} 
               className="w-3.5 h-3.5 text-indigo-600" 
             />
-            <span className={lawyer.isResponsible ? "font-medium text-indigo-700" : ""}>Sorumlu Avukat</span>
+            <span className={lawyer.isResponsible ? "font-medium text-indigo-700" : ""}>Hukuki Sorumlu Avukat</span>
           </label>
           <label className="flex items-center gap-1.5 cursor-pointer text-xs">
             <input 

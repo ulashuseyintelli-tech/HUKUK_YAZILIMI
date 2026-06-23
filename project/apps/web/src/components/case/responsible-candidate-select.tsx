@@ -59,7 +59,7 @@ export function ResponsibleCandidateSelect({
   return (
     <select
       name="responsiblePerson"
-      aria-label="Dosya Sorumlusu seç"
+      aria-label="Dosya Operasyon Sorumlusu seç"
       value={selected}
       disabled={disabled || loading}
       onChange={(e) => {

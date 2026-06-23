@@ -2812,7 +2812,7 @@ export default function CaseDetailPage() {
                       setLawyerPermissions(newPermissions);
                     }}
                   >
-                    <option value="RESPONSIBLE">Sorumlu Avukat</option>
+                    <option value="RESPONSIBLE">Hukuki Sorumlu Avukat</option>
                     <option value="ASSIGNED">Yetkili Avukat</option>
                     <option value="ASSISTANT">Yardımcı Avukat</option>
                     <option value="INTERN">Stajyer Avukat</option>

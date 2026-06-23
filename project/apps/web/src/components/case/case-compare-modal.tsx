@@ -261,7 +261,7 @@ export function CaseCompareModal({ isOpen, onClose, currentCaseId, currentCaseNu
                         { label: 'Durum', key: 'status' as const },
                         { label: 'Risk', key: 'riskName' as const },
                         { label: 'Durum Etiketi', key: 'durumEtiketi' as const },
-                        { label: 'Dosya Sorumlusu', key: 'sorumlu' as const },
+                        { label: 'Dosya Operasyon Sorumlusu', key: 'sorumlu' as const },
                         { label: 'Ana Para', key: 'principalAmount' as const, format: formatCurrency },
                         { label: 'Faiz Oranı', key: 'interestRate' as const, format: (v?: number) => v ? `%${v}` : '-' },
                         { label: 'Takip Tarihi', key: 'caseDate' as const, format: formatDate },
