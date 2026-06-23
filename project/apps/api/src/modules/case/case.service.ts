@@ -806,8 +806,8 @@ export class CaseService {
     }
   }
 
-  async findAll(tenantId: string, params?: { status?: string; expenseRequestStatus?: string; clientId?: string; noOwner?: boolean; responsibleLawyerId?: string; responsibleStaffId?: string; page?: number; limit?: number }) {
-    const { status, expenseRequestStatus, clientId, noOwner, responsibleLawyerId, responsibleStaffId, page = 1, limit = 20 } = params || {};
+  async findAll(tenantId: string, params?: { status?: string; expenseRequestStatus?: string; clientId?: string; noOwner?: boolean; legalResponsibleMissing?: boolean; responsibleLawyerId?: string; responsibleStaffId?: string; page?: number; limit?: number }) {
+    const { status, expenseRequestStatus, clientId, noOwner, legalResponsibleMissing, responsibleLawyerId, responsibleStaffId, page = 1, limit = 20 } = params || {};
 
     const where: any = { tenantId };
     if (status) where.status = status;
@@ -821,6 +821,13 @@ export class CaseService {
     // G5a: açık person owner filtreleri — her param KENDİ kolonuna (K1 bridge yok → cross-fallback yok).
     if (responsibleLawyerId) where.responsibleLawyerId = responsibleLawyerId;
     if (responsibleStaffId) where.responsibleStaffId = responsibleStaffId;
+    // WP-3a: LEGAL_RESPONSIBLE_MISSING filtresi — aktif hukuki dosyada operasyon owner personel ama
+    // hukuki sorumlu avukat yok. getStats sayacıyla AYNI koşul. Warn/report; status'u ACTIVE'e sabitler.
+    if (legalResponsibleMissing) {
+      where.status = "ACTIVE";
+      where.responsibleStaffId = { not: null };
+      where.lawyers = { none: { isResponsible: true } };
+    }
     
     // Masraf talebi durumuna göre filtreleme
     if (expenseRequestStatus) {
@@ -2159,7 +2166,7 @@ export class CaseService {
   }
 
   async getStats(tenantId: string) {
-    const [total, active, closed, thisMonth, ownerless] = await Promise.all([
+    const [total, active, closed, thisMonth, ownerless, legalResponsibleMissing] = await Promise.all([
       this.prisma.case.count({ where: { tenantId } }),
       this.prisma.case.count({ where: { tenantId, status: "ACTIVE" } }),
       this.prisma.case.count({ where: { tenantId, status: "CLOSED" } }),
@@ -2173,9 +2180,20 @@ export class CaseService {
       }),
       // M2-G5c: Sahipsiz = gerçek-kişi owner yok (responsibleLawyer/Staff ikisi de null); legacy sorumluPersonelId sayılmaz.
       this.prisma.case.count({ where: { tenantId, responsibleLawyerId: null, responsibleStaffId: null } }),
+      // WP-3a: LEGAL_RESPONSIBLE_MISSING — aktif (status=ACTIVE) hukuki dosyada operasyon owner PERSONEL
+      // (responsibleStaffId dolu) AMA hukuki sorumlu avukat YOK (CaseLawyer.isResponsible=true hiç yok).
+      // Warn/report sinyali (kırmızı bayrak); BLOCK YOK. Legacy sorumluPersonelId bu sayıma girmez.
+      this.prisma.case.count({
+        where: {
+          tenantId,
+          status: "ACTIVE",
+          responsibleStaffId: { not: null },
+          lawyers: { none: { isResponsible: true } },
+        },
+      }),
     ]);
 
-    return { total, active, closed, thisMonth, ownerless };
+    return { total, active, closed, thisMonth, ownerless, legalResponsibleMissing };
   }
 
   // Sıradaki dosya numarasını al
