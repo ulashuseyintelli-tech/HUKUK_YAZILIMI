@@ -69,6 +69,32 @@ export interface CaseBalancePerCurrencyDiagnostic {
   message: string;
 }
 
+export interface CaseBalanceHeldOverpayment {
+  id: string;
+  collectionId: string;
+  sourceLedgerEntryId: string | null;
+  amount: number;
+  remainingAmount: number;
+  currency: string;
+  status: string;
+}
+
+export interface CaseBalanceBlockedOverpaymentReason {
+  reason: string;
+  message?: string;
+  details?: Record<string, unknown>;
+}
+
+export interface CaseBalanceBlockedOverpaymentDiagnostic {
+  id: string;
+  collectionId?: string;
+  sourceLedgerEntryId?: string;
+  attemptedOverpaymentAmount: number;
+  currency: string;
+  blockedReasons: CaseBalanceBlockedOverpaymentReason[];
+  createdAt?: string;
+}
+
 export interface CaseBalanceResult {
   asOfDate: string;
   source: PaymentSource;
@@ -85,6 +111,10 @@ export interface CaseBalanceResult {
     currency: CurrencyGroupDiagnostic[];
     perCurrency: CaseBalancePerCurrencyDiagnostic[];
   };
+  overpayments: {
+    held: CaseBalanceHeldOverpayment[];
+    blocked: CaseBalanceBlockedOverpaymentDiagnostic[];
+  };
 }
 
 /** Decimal|null → number|null (read boundary; money 15,2). */
@@ -97,6 +127,34 @@ function toNum(v: unknown): number | null {
 function toISO(d: Date | null | undefined): string | null {
   if (!d) return null;
   return (d instanceof Date ? d : new Date(d)).toISOString().slice(0, 10);
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null;
+}
+
+function asString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function normalizeBlockedReasons(value: unknown): CaseBalanceBlockedOverpaymentReason[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => {
+      const rec = asRecord(item);
+      const reason = asString(rec?.reason);
+      if (!reason) return null;
+      const message = asString(rec?.message);
+      const details = asRecord(rec?.details);
+      return {
+        reason,
+        ...(message ? { message } : {}),
+        ...(details ? { details } : {}),
+      };
+    })
+    .filter((item): item is CaseBalanceBlockedOverpaymentReason => item != null);
 }
 
 /** RateProvider RateEntry → engine entity RateEntry (alan adı/şekil köprüsü). */
@@ -129,6 +187,7 @@ export class CaseBalanceService {
    * <remarks>
    * Çağrıldığı yerler:
    * - InterestEngineController.getCaseBalance() → GET /interest-engine/case/:caseId/balance (read-only bakiye endpoint)
+   * - InterestEngineController.getCaseBalanceDisplay() → GET /interest-engine/case/:caseId/balance/display (backend display contract)
    * - BalanceShadowCompareService.compare() → summary-engine vs computeBalance read-only gözlem
    * - CaseService.getCalculationSummary() → GET /cases/:id/calculation-summary (canonicalShadow diagnostic)
    * </remarks>
@@ -144,6 +203,7 @@ export class CaseBalanceService {
       currencyResults: [],
       projections: { costs: {}, ancillaries: {} },
       diagnostics: { fatal: [], assembler: [], payments: [], currency: [], perCurrency: [] },
+      overpayments: { held: [], blocked: [] },
     };
 
     // 1. Case (tenant-scoped) — faiz fallback kaynağı + varlık kontrolü
@@ -157,12 +217,14 @@ export class CaseBalanceService {
     }
 
     // 2. READ-ONLY okumalar (tenant-scoped)
-    const [claimItems, ledgerRows, collections] = await Promise.all([
+    const [claimItems, ledgerRows, collections, heldOverpayments, blockedOverpayments] = await Promise.all([
       this.prisma.claimItem.findMany({
         where: { caseId, tenantId, status: { not: ClaimItemStatus.CANCELLED } },
       }),
       this.prisma.ledgerEntry.findMany({ where: { caseId, tenantId, entryType: 'PAYMENT' } }),
       this.prisma.collection.findMany({ where: { caseId, tenantId } }),
+      this.readHeldOverpayments(tenantId, caseId),
+      this.readBlockedOverpaymentDiagnostics(tenantId, caseId),
     ]);
 
     // 3. Assemble (G4a)
@@ -260,7 +322,75 @@ export class CaseBalanceService {
         currency: grouped.diagnostics,
         perCurrency,
       },
+      overpayments: { held: heldOverpayments, blocked: blockedOverpayments },
     };
+  }
+
+  private async readHeldOverpayments(
+    tenantId: string,
+    caseId: string,
+  ): Promise<CaseBalanceHeldOverpayment[]> {
+    const client = (this.prisma as any).collectionOverpayment;
+    if (!client?.findMany) return [];
+
+    const rows = await client.findMany({
+      where: { tenantId, caseId, status: 'HELD' },
+      select: {
+        id: true,
+        collectionId: true,
+        sourceLedgerEntryId: true,
+        amount: true,
+        remainingAmount: true,
+        currency: true,
+        status: true,
+      },
+    });
+
+    return rows
+      .map((row: any) => ({
+        id: String(row.id),
+        collectionId: String(row.collectionId),
+        sourceLedgerEntryId: row.sourceLedgerEntryId == null ? null : String(row.sourceLedgerEntryId),
+        amount: toNum(row.amount) ?? 0,
+        remainingAmount: toNum(row.remainingAmount) ?? 0,
+        currency: String(row.currency || 'TRY'),
+        status: String(row.status || 'HELD'),
+      }))
+      .filter((row: CaseBalanceHeldOverpayment) => row.remainingAmount > 0);
+  }
+
+  private async readBlockedOverpaymentDiagnostics(
+    tenantId: string,
+    caseId: string,
+  ): Promise<CaseBalanceBlockedOverpaymentDiagnostic[]> {
+    const client = (this.prisma as any).icrabotTimelineEntry;
+    if (!client?.findMany) return [];
+
+    const rows = await client.findMany({
+      where: { tenantId, caseId, type: 'OVERPAYMENT_BLOCKED' },
+      select: { id: true, body: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+
+    return rows
+      .map((row: any) => {
+        const body = asRecord(row.body);
+        const payload = asRecord(body?.payload) ?? {};
+        const attemptedOverpaymentAmount = toNum(payload.attemptedOverpaymentAmount) ?? 0;
+        return {
+          id: String(row.id),
+          ...(asString(payload.collectionId) ? { collectionId: asString(payload.collectionId) as string } : {}),
+          ...(asString(payload.sourceLedgerEntryId)
+            ? { sourceLedgerEntryId: asString(payload.sourceLedgerEntryId) as string }
+            : {}),
+          attemptedOverpaymentAmount,
+          currency: asString(payload.currency) ?? 'UNKNOWN',
+          blockedReasons: normalizeBlockedReasons(payload.blockedReasons),
+          ...(row.createdAt ? { createdAt: new Date(row.createdAt).toISOString() } : {}),
+        };
+      })
+      .filter((row: CaseBalanceBlockedOverpaymentDiagnostic) => row.attemptedOverpaymentAmount > 0);
   }
 
   /**
