@@ -1,24 +1,28 @@
 /**
- * BALANCE-DISPLAY PR-1: computeCaseBalance (CaseBalanceResult) → panel-facing CaseBalanceDisplay DTO.
+ * BALANCE-DISPLAY PR-1 (+PR-1b): computeCaseBalance (CaseBalanceResult) → panel-facing CaseBalanceDisplay DTO.
  *
  * Amaç: stabil UI sözleşmesi; ham engine shape'i panelden SIZMASIN. SAF (side-effect yok), ADDITIVE.
  *
  * KIRMIZI ÇİZGİ — UYDURMA YOK: yalnız engine çıktısında DOĞRULANMIŞ alanlar map'lenir.
- *  - `interest`        = CalculationResult.totalInterest  → BRÜT işlemiş faiz (segment'lerden; ödeme tahsisinden BAĞIMSIZ).
- *  - `claimRemaining`  = CalculationResult.totalDue        → ödeme TAHSİSİ sonrası NET kalan alacak (anapara+faiz, claim-only).
+ *  - `grossAccruedInterest`  = CalculationResult.totalInterest → işleyen BRÜT faiz (segment'lerden; ödeme tahsisinden BAĞIMSIZ).
+ *  - `remainingPrincipal` / `remainingInterest` = CalculationResult.remainingPrincipal / .remainingInterest
+ *    (PR-1b: engine finalDebtStates'ten expose; allocation SONRASI kalan / ödeme yoksa brüt). GERÇEK, türetilmemiş.
+ *  - `claimRemaining`  = CalculationResult.totalDue → kalan alacak (anapara+faiz, claim-only). INVARIANT: ≈ remainingPrincipal + remainingInterest.
  *  - `costs`/`ancillaries` = Σ CaseBalanceResult.projections.costs / .ancillaries (CASE-level; currency-split DEĞİL).
  *  - `collected`       = best-effort: ödeme-bazında dedup Σ allocations.paymentAmount (ödeme yoksa 0).
- *  Standalone "kalan anapara" satırı EXPOSE EDİLMEZ: engine CalculationResult finalDebtStates taşımaz
- *  (totalDue = anapara+faiz). `totalDue − totalInterest` GÜVENSİZ (farklı baz: net totalDue vs brüt faiz) → yapılmaz.
  */
 
 import type { CaseBalanceResult } from './case-balance.service';
 
 export interface CaseBalanceDisplayCurrency {
   currency: string;
-  /** BRÜT işlemiş faiz (totalInterest; ödeme tahsisinden bağımsız). */
-  interest: number;
-  /** NET kalan alacak (anapara+faiz, ödeme tahsisi sonrası, claim-only) = totalDue. */
+  /** İşleyen BRÜT faiz (totalInterest; ödeme tahsisinden bağımsız). */
+  grossAccruedInterest: number;
+  /** Kalan anapara (allocation sonrası; ödeme yoksa brüt) = CalculationResult.remainingPrincipal. */
+  remainingPrincipal: number;
+  /** Kalan faiz (allocation sonrası; ödeme yoksa brüt; ≤ grossAccruedInterest) = CalculationResult.remainingInterest. */
+  remainingInterest: number;
+  /** Kalan alacak (anapara+faiz, claim-only) = totalDue. INVARIANT: ≈ remainingPrincipal + remainingInterest. */
   claimRemaining: number;
   /** Best-effort tahsilat: ödeme-bazında dedup Σ allocations.paymentAmount (ödeme yoksa 0). */
   collected: number;
@@ -52,9 +56,9 @@ const sumRecord = (rec: Partial<Record<string, number>> | undefined): number => 
 };
 
 const DISPLAY_NOTES: string[] = [
-  'interest = BRÜT işlemiş faiz (totalInterest); claimRemaining = ödeme tahsisi sonrası NET kalan alacak (totalDue) — farklı baz.',
-  'Standalone kalan-anapara satırı YOK: engine finalDebtStates expose etmiyor (totalDue = anapara+faiz). Ayrı anapara = follow-up.',
-  "costs/ancillaries CASE-level projeksiyon; currency-split DEĞİL.",
+  'grossAccruedInterest = işleyen BRÜT faiz (totalInterest); remainingInterest = allocation sonrası KALAN faiz (≤ brüt). Ödeme yoksa remaining == brüt.',
+  'INVARIANT: claimRemaining (totalDue) ≈ remainingPrincipal + remainingInterest (claim-only; costs/ancillaries AYRI projeksiyon).',
+  'costs/ancillaries CASE-level projeksiyon; currency-split DEĞİL.',
   'collected = best-effort (ödeme-bazında dedup Σ allocations.paymentAmount).',
 ];
 
@@ -79,7 +83,9 @@ export function toCaseBalanceDisplay(caseId: string, balance: CaseBalanceResult)
 
   const currencies: CaseBalanceDisplayCurrency[] = (balance.currencyResults ?? []).map((cr) => ({
     currency: cr.currency,
-    interest: round2(cr.result?.totalInterest ?? 0),
+    grossAccruedInterest: round2(cr.result?.totalInterest ?? 0),
+    remainingPrincipal: round2(cr.result?.remainingPrincipal ?? 0),
+    remainingInterest: round2(cr.result?.remainingInterest ?? 0),
     claimRemaining: round2(cr.result?.totalDue ?? 0),
     collected: round2(sumCollected(cr.result?.allocations)),
     skipped: cr.result == null,
