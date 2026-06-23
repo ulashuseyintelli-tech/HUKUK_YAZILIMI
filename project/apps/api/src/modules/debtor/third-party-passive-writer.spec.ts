@@ -1,4 +1,4 @@
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, NotFoundException } from "@nestjs/common";
 import { ThirdPartyService } from "./third-party.service";
 
 /**
@@ -22,12 +22,14 @@ describe("ThirdPartyService — Gate-2 passive writer hardening", () => {
     return {
       thirdParty: {
         findFirst: jest.fn(),
+        create: jest.fn().mockResolvedValue({ id: "tp1" }),
         update: jest.fn().mockResolvedValue({ id: "tp1" }),
         delete: jest.fn().mockResolvedValue({ id: "tp1" }),
         findMany: jest.fn().mockResolvedValue([]),
       },
       externalCase: {
         findFirst: jest.fn(),
+        create: jest.fn().mockResolvedValue({ id: "ec1" }),
         update: jest.fn().mockResolvedValue({ id: "ec1" }),
         delete: jest.fn().mockResolvedValue({ id: "ec1" }),
       },
@@ -143,5 +145,84 @@ describe("ThirdPartyService — Gate-2 passive writer hardening", () => {
     await svc.addExternalCaseCollection(TENANT, "ec1", { amount: 50, syncToMainCase: false });
     // Bilinçli: bu metoda Gate-2 guard'ı EKLENMEDİ (finansal late-result; bloklama vs istisna kararı ulas'ta).
     expect(guard.assertActiveByCaseDebtorId).not.toHaveBeenCalled();
+  });
+
+  // ─── caseDebtorId-bazlı create'ler (zaten guard'lıydı; spec gereği explicit kapsam) ───
+  describe("create (ThirdParty) — caseDebtorId üzerinden", () => {
+    it("NEGATIF: PASSIVE → reddedilir + thirdParty.create çağrılmaz", async () => {
+      const prisma = makePrisma();
+      const guard = makeGuard(true);
+      const svc = makeService(prisma, guard);
+
+      await expect(
+        svc.create(TENANT, CD, { name: "Banka X", type: "BANKA" } as any),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(guard.assertActiveByCaseDebtorId).toHaveBeenCalledWith(TENANT, CD);
+      expect(prisma.thirdParty.create).not.toHaveBeenCalled();
+    });
+
+    it("POZİTİF: ACTIVE → mevcut davranış (create çağrılır)", async () => {
+      const prisma = makePrisma();
+      prisma.caseDebtor.findFirst.mockResolvedValue({ id: CD, case: { tenantId: TENANT } });
+      prisma.thirdParty.findMany.mockResolvedValue([]); // dedup: sibling yok
+      const guard = makeGuard(false);
+      const svc = makeService(prisma, guard);
+
+      await svc.create(TENANT, CD, { name: "Banka X", type: "BANKA" } as any);
+      expect(guard.assertActiveByCaseDebtorId).toHaveBeenCalledWith(TENANT, CD);
+      expect(prisma.thirdParty.create).toHaveBeenCalled();
+    });
+  });
+
+  describe("createExternalCase — caseDebtorId üzerinden", () => {
+    it("NEGATIF: PASSIVE → reddedilir + externalCase.create çağrılmaz", async () => {
+      const prisma = makePrisma();
+      const guard = makeGuard(true);
+      const svc = makeService(prisma, guard);
+
+      await expect(
+        svc.createExternalCase(TENANT, CD, { externalCaseNo: "2024/1", counterpartyName: "Y", claimAmount: 100 }),
+      ).rejects.toBeInstanceOf(BadRequestException);
+      expect(guard.assertActiveByCaseDebtorId).toHaveBeenCalledWith(TENANT, CD);
+      expect(prisma.externalCase.create).not.toHaveBeenCalled();
+    });
+
+    it("POZİTİF: ACTIVE → mevcut davranış (create çağrılır)", async () => {
+      const prisma = makePrisma();
+      prisma.caseDebtor.findFirst.mockResolvedValue({ id: CD, case: { tenantId: TENANT } });
+      const guard = makeGuard(false);
+      const svc = makeService(prisma, guard);
+
+      await svc.createExternalCase(TENANT, CD, { externalCaseNo: "2024/1", counterpartyName: "Y", claimAmount: 100 });
+      expect(guard.assertActiveByCaseDebtorId).toHaveBeenCalledWith(TENANT, CD);
+      expect(prisma.externalCase.create).toHaveBeenCalled();
+    });
+  });
+
+  // ─── Cross-tenant güvenlik bozulmadı: yabancı kayıt → 404, guard'a inilmez ───
+  it("CROSS-TENANT: yabancı thirdPartyId → NotFoundException (lifecycle guard'a İNİLMEZ, mutation YOK)", async () => {
+    const prisma = makePrisma();
+    prisma.thirdParty.findFirst.mockResolvedValue(null); // findFirst({id, tenantId}) → başka tenant'ta bulunamaz
+    const guard = makeGuard(false);
+    const svc = makeService(prisma, guard);
+
+    await expect(
+      svc.update(TENANT, "foreign-tp", { name: "X" } as any),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(guard.assertActiveByCaseDebtorId).not.toHaveBeenCalled();
+    expect(prisma.thirdParty.update).not.toHaveBeenCalled();
+  });
+
+  it("CROSS-TENANT: yabancı externalCaseId → NotFoundException (guard'a İNİLMEZ, mutation YOK)", async () => {
+    const prisma = makePrisma();
+    prisma.externalCase.findFirst.mockResolvedValue(null);
+    const guard = makeGuard(false);
+    const svc = makeService(prisma, guard);
+
+    await expect(
+      svc.updateExternalCase(TENANT, "foreign-ec", { notes: "x" }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(guard.assertActiveByCaseDebtorId).not.toHaveBeenCalled();
+    expect(prisma.externalCase.update).not.toHaveBeenCalled();
   });
 });
