@@ -216,10 +216,11 @@ audit.log({
 | WP | İş | Tip | Migration | Blast | Bağımlılık |
 |---|---|---|---|---|---|
 | **WP-0** | Bu design doc | docs | yok | — | — (commit+PR önce) |
-| **WP-1a** | `assignResponsiblePerson` + create → failing test, sonra owner-change audit (K2/K3 old→new + userId + source) | davranış | **yok** | küçük | WP-0 |
+| **WP-1a** ✅ MERGED #410 | `assignResponsiblePerson` (PATCH /responsible-person) owner-change audit (K2 old→new + userId + source). **Create ilk-owner audit ERTELENDİ → WP-1d-pre.** | davranış | yok | küçük | WP-0 |
 | **WP-1b** | `Case.createdById` (additive FK; create'te doldur; backfill yok) | migration | additive | küçük | — |
 | **WP-1c** | `userId` sweep — user-driven audit call-site'larda actor doldur (case create/update/delete, batchUpdate old-values) = AUDIT-USERID-HARDENING | davranış | yok | **büyük** | WP-1a |
-| **WP-1d** | Temporal sorumluluk read-model/rapor (ufuk-uyarılı, §5.2) | davranış | yok | orta | WP-1a, WP-1c |
+| **WP-1d-pre** | **Create initial canonical operation owner audit** — `create` akışında ilk-atama owner audit'i (post-commit; tx-complete test harness'i gerektirir). Temporal için ZORUNLU ön-koşul: yoksa creation-anı owner'ı yalnız current snapshot / legacy alandan INFERRED'dır (kesin tarihsel event değil; §5.2). WP-1a'da fragile full-tx mock'tan kaçınmak için bilinçli ayrıldı. | davranış | yok | orta | WP-1a |
+| **WP-1d** | Temporal sorumluluk read-model/rapor (ufuk-uyarılı, §5.2) | davranış | yok | orta | WP-1a, WP-1c, **WP-1d-pre** |
 | **WP-2** | Terminoloji kilidi (UI etiketleri; §6.1) | frontend | yok | orta | WP-0 |
 | **WP-3** | Staff-owner LEGAL_RESPONSIBLE_MISSING guard (warn-first→block-later, G5.1) | davranış | yok | küçük | WP-1a |
 | **WP-4** | Görev devir ekranı + `TASK_TRANSFER_DECISION_RECORDED` audit | davranış | yok | orta | WP-1a |
@@ -229,16 +230,17 @@ audit.log({
 | **WP-8** | İzin/ayrılma/pasife alma + vekil/backup devri | davranış | belki | orta | WP-4 |
 | **WP-9** | Legacy `sorumluPersonelId` cleanup (anlam temizliği önce; §6.2) | karma | evet | büyük | WP-1c, WP-1d |
 
-**İlk iş = WP-1a.** Doğrulanmış tek blind spot (K2), en küçük blast-radius, additive (migration yok),
-mevcut `AuditService` + `@CurrentUser("id")` (`case.controller.ts:105` deseni) + `case-assignment-audit.spec.ts`
-test desenini reuse eder.
+**İlk iş = WP-1a (✅ TESLİM — #410).** Doğrulanmış tek blind spot (K2), en küçük blast-radius, additive
+(migration yok), mevcut `AuditService` + `@CurrentUser("id")` (`case.controller.ts:105` deseni) reuse edildi.
 
-### WP-1a net kapsam
-1. **Önce failing test:** `assignResponsiblePerson` gerçek-kişi owner değişiminde old→new + actor(`userId`) + tenant audit'i bekle — şu an YOK, test kırmızı olmalı.
-2. `case.controller.ts:81` → `@CurrentUser("id") userId` ekle, servise geçir.
-3. `ResponsibleCandidatesService` → `AuditService` inject; update ÖNCESİ eski owner'ı (3 alan) oku → update → audit (§5.1).
-4. Create yolu (`case.service.ts:1497`) ilk-owner audit'i (kardeş).
-5. Yeşil test + tsc.prod + (varsa) canlı DB e2e. Ayrı worktree; canonical `main` dokunulmaz; tek-CI; PR.
+### WP-1a net kapsam (✅ teslim — #410)
+1. ✅ Failing test → yeşil: `assignResponsiblePerson` owner değişiminde old→new + actor(`userId`) + tenant audit.
+2. ✅ `case.controller.ts` → `@CurrentUser("id") userId` servise geçer.
+3. ✅ `ResponsibleCandidatesService` → `AuditService` inject; update ÖNCESİ eski owner oku → update → audit (§5.1).
+4. ⏸️ **Create yolu ilk-owner audit'i ERTELENDİ → WP-1d-pre** — post-commit audit `create`'in `STOP`-sentinel
+   test deseniyle erişilemiyor; tx-complete harness'i gerektirir. WP-1a'yı fragile full-tx mock ile
+   kirletmemek için bilinçli ayrıldı. Temporal dürüstlük: ilk-atama audit'i gelene dek creation-anı owner'ı INFERRED (§5.2).
+5. ✅ `responsible-candidates.spec` 21/21 + tüm `case` suite 289 pass + `tsc.prod` 0 hata. Canlı e2e ertelendi.
 
 ### 6.1. Terminoloji kilidi (WP-2)
 
