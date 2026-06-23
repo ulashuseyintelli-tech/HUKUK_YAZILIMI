@@ -9,6 +9,7 @@ import {
   selectBackPages,
   BACK_ENDORSEMENT_PROMPT,
   EndorsementExtractor,
+  isBankStampName,
 } from "../endorsement-extractor";
 import { Instrument, PageCandidate } from "../debt-instrument.types";
 import { Page } from "../pdf-segmentation";
@@ -214,5 +215,72 @@ describe("applyEndorsementPass", () => {
     await applyEndorsementPass([inst], [backCand(2)], [emptyPage], ex);
     expect(called).toBe(false);
     expect(inst.endorsementNames).toBeUndefined();
+  });
+});
+
+describe("isBankStampName (DAR banka denylist — ciranta DEĞİL)", () => {
+  it("CANLI ÖRNEK: 'T.C. Ziraat Bankası A.Ş.' → true (banka kaşesi)", () => {
+    expect(isBankStampName("T.C. Ziraat Bankası A.Ş.")).toBe(true);
+  });
+
+  it("listelenen bankalar → true", () => {
+    for (const b of [
+      "QNB",
+      "QNB Finansbank A.Ş.",
+      "Halk Bankası",
+      "Türkiye Halk Bankası A.Ş.",
+      "İş Bankası",
+      "Türkiye İş Bankası A.Ş.",
+      "Garanti BBVA",
+      "Garanti Bankası",
+      "Yapı Kredi",
+      "VakıfBank",
+      "Akbank",
+      "DenizBank",
+      "TEB",
+      "Türk Ekonomi Bankası",
+    ]) {
+      expect(isBankStampName(b)).toBe(true);
+    }
+  });
+
+  it("GERÇEK cirantalar → false (banka değil; over-generalize YOK)", () => {
+    for (const c of [
+      "İŞIKLA YAKKABI SANAYİ VE TİCARET LTD. ŞTİ.",
+      "SÜNGERSAN PLASTİK VE KAUÇUK SANAYİ TİCARET LTD. ŞTİ.",
+      "İPEKBOY TEKSTİL SAN. TİC. LTD. ŞTİ.",
+      "GÜLERSOY GIDA A.Ş.",
+      "Şükrü Akdoğan",
+      "Ahmet Yılmaz",
+      "Gorka Kozmetik Sanayi ve Ticaret A.Ş.",
+    ]) {
+      expect(isBankStampName(c)).toBe(false);
+    }
+  });
+});
+
+describe("applyEndorsementPass — banka kaşesi filtresi (yalnız endorsementNames temizliği)", () => {
+  it("CANLI SENARYO: ['Şükrü Akdoğan','T.C. Ziraat Bankası A.Ş.'] → yalnız ['Şükrü Akdoğan'] (Ziraat elenir)", async () => {
+    const inst = cek({ sourcePages: [2] });
+    await applyEndorsementPass([inst], [backCand(2)], [imgPage(2)], names(["Şükrü Akdoğan", "T.C. Ziraat Bankası A.Ş."]));
+    expect(inst.endorsementNames).toEqual(["Şükrü Akdoğan"]);
+  });
+
+  it("yalnız banka kaşesi → endorsementNames YAZILMAZ + whiteEndorsement SET EDİLMEZ (banka ≠ beyaz ciro)", async () => {
+    const inst = cek({ sourcePages: [2] });
+    await applyEndorsementPass([inst], [backCand(2)], [imgPage(2)], names(["T.C. Ziraat Bankası A.Ş."]));
+    expect(inst.endorsementNames).toBeUndefined();
+    expect(inst.whiteEndorsementDetected).toBeUndefined();
+  });
+
+  it("gerçek ciranta + banka karışık → yalnız gerçek cirantalar kalır (sıra korunur)", async () => {
+    const inst = cek({ sourcePages: [2] });
+    await applyEndorsementPass(
+      [inst],
+      [backCand(2)],
+      [imgPage(2)],
+      names(["İŞIKLA YAKKABI SAN. TİC. LTD. ŞTİ.", "Halk Bankası", "GÜLERSOY GIDA A.Ş.", "QNB"]),
+    );
+    expect(inst.endorsementNames).toEqual(["İŞIKLA YAKKABI SAN. TİC. LTD. ŞTİ.", "GÜLERSOY GIDA A.Ş."]);
   });
 });
