@@ -61,7 +61,6 @@ describe("ThirdPartyService — Gate-2 passive writer hardening", () => {
     ["update", (s: ThirdPartyService) => s.update(TENANT, "tp1", { name: "X" } as any), "thirdParty", "update"],
     ["delete", (s: ThirdPartyService) => s.delete(TENANT, "tp1"), "thirdParty", "delete"],
     ["recordIhbarname", (s: ThirdPartyService) => s.recordIhbarname(TENANT, "tp1", { ihbarnameType: "89_1", date: "2026-01-01" } as any), "thirdParty", "update"],
-    ["recordResponse", (s: ThirdPartyService) => s.recordResponse(TENANT, "tp1", { responseDate: "2026-01-01", responseContent: "ok" } as any), "thirdParty", "update"],
     ["sendNextIhbarname", (s: ThirdPartyService) => s.sendNextIhbarname(TENANT, "tp1"), "thirdParty", "update"],
   ])("%s (ThirdParty)", (_name, call, model, mutateFn) => {
     it("NEGATIF: PASSIVE → reddedilir + mutation çağrılmaz + guard doğru caseDebtorId ile çağrılır", async () => {
@@ -84,6 +83,33 @@ describe("ThirdPartyService — Gate-2 passive writer hardening", () => {
       await call(svc);
       expect(guard.assertActiveByCaseDebtorId).toHaveBeenCalledWith(TENANT, CD);
       expect(prisma[model][mutateFn]).toHaveBeenCalled();
+    });
+  });
+
+  // ─── recordResponse: late-result İSTİSNASI (ürün kararı) → PASSIVE'de BLOKLANMAZ ───
+  describe("recordResponse (ThirdParty) — late-result istisnası", () => {
+    const tpResp = { id: "tp1", tenantId: TENANT, caseDebtorId: CD, ihbarname89_1_date: new Date() };
+
+    it("PASSIVE: recordResponse ÇALIŞIR — lifecycle guard ÇAĞRILMAZ + update çağrılır", async () => {
+      const prisma = makePrisma();
+      prisma.thirdParty.findFirst.mockResolvedValue({ ...tpResp });
+      const guard = makeGuard(true); // guard PASSIVE olsa bile çağrılmamalı (kaldırıldı)
+      const svc = makeService(prisma, guard);
+
+      await svc.recordResponse(TENANT, "tp1", { responseDate: "2026-01-01", responseContent: "ok" } as any);
+      expect(guard.assertActiveByCaseDebtorId).not.toHaveBeenCalled();
+      expect(prisma.thirdParty.update).toHaveBeenCalled();
+    });
+
+    it("ACTIVE: recordResponse çalışır (guard yine çağrılmaz)", async () => {
+      const prisma = makePrisma();
+      prisma.thirdParty.findFirst.mockResolvedValue({ ...tpResp });
+      const guard = makeGuard(false);
+      const svc = makeService(prisma, guard);
+
+      await svc.recordResponse(TENANT, "tp1", { responseDate: "2026-01-01", responseContent: "ok" } as any);
+      expect(guard.assertActiveByCaseDebtorId).not.toHaveBeenCalled();
+      expect(prisma.thirdParty.update).toHaveBeenCalled();
     });
   });
 

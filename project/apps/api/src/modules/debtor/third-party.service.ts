@@ -160,9 +160,9 @@ export class ThirdPartyService {
       throw new NotFoundException("Üçüncü şahıs bulunamadı");
     }
 
-    // Gate-2: pasif CaseDebtor üzerinde operasyonel write engellenir (late-result NOTU: 3. şahıs
-    // cevabı pasifleştirme SONRASI gelirse kayıt yapılamaz; ürün kararı raporlandı).
-    await this.caseDebtorLifecycleGuard.assertActiveByCaseDebtorId(tenantId, thirdParty.caseDebtorId);
+    // Gate-2 ÜRÜN KARARI: recordResponse = 3. şahıstan gelen CEVAP = "late-result" (dış sistem
+    // sonucu). Pasifleştirme SONRASI gelen cevap kaydedilebilmeli → lifecycle guard BİLİNÇLİ
+    // EKLENMEZ (diğer operasyonel write'lar bloklu; bkz. update/delete/recordIhbarname/sendNext).
 
     // Update the latest ihbarname status to CEVAP_ALINDI
     const updateData: any = {
