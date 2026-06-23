@@ -24,6 +24,7 @@ const fakeResult: CaseBalanceResult = {
   currencyResults: [],
   projections: { costs: {}, ancillaries: {} },
   diagnostics: { fatal: [], assembler: [], payments: [], currency: [], perCurrency: [] },
+  overpayments: { held: [], blocked: [] },
 };
 
 describe('InterestEngineController.getCaseBalance (G4c-2)', () => {
@@ -57,5 +58,33 @@ describe('InterestEngineController.getCaseBalance (G4c-2)', () => {
 
     // computeCaseBalance'a giden tenantId = decorator'dan gelen argüman
     expect(compute.mock.calls[0][0]).toBe('tenant-AUTH');
+  });
+
+  it('display contract tenantId auth-context argümanını taşır', async () => {
+    const compute = jest.fn().mockResolvedValue({
+      ...fakeResult,
+      asOfDate: '2025-06-01',
+      currencyResults: [
+        {
+          currency: 'TRY',
+          result: {
+            totalInterest: 0,
+            totalDue: 0,
+            allocations: [],
+            engineVersion: 'engine-v1',
+            segments: [],
+          },
+        },
+      ],
+    });
+    const controller = makeController(compute);
+
+    const res = await controller.getCaseBalanceDisplay('tenant-AUTH', 'case-9', '2025-06-01');
+
+    expect(compute).toHaveBeenCalledWith('tenant-AUTH', 'case-9', '2025-06-01');
+    expect(res.tenantId).toBe('tenant-AUTH');
+    expect(res.caseId).toBe('case-9');
+    expect(res.authority).toBe('SHADOW_ONLY');
+    expect(res.provenance.legacyCalculationSummaryUsed).toBe(false);
   });
 });

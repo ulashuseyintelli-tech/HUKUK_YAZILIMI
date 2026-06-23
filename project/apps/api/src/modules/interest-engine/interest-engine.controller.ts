@@ -153,7 +153,7 @@ export class InterestEngineController {
   ): Promise<CaseBalanceDisplay> {
     const date = asOfDate ?? new Date().toISOString().slice(0, 10);
     const balance = await this.caseBalance.computeCaseBalance(tenantId, caseId, date);
-    return toCaseBalanceDisplay(caseId, balance);
+    return toCaseBalanceDisplay({ tenantId, caseId, balance });
   }
 
   /**
