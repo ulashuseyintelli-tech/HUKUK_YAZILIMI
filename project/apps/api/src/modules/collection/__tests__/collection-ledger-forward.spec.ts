@@ -8,14 +8,17 @@
  */
 
 import { CollectionService } from '../collection.service';
-import { CollectionType } from '../dto/collection.dto';
+import { CollectionChannel, CollectionSource, CollectionType } from '../dto/collection.dto';
 import { BadRequestException } from '@nestjs/common';
 
-function setup(opts: { summaryEngine?: any } = {}) {
+function setup(opts: { summaryEngine?: any; caseRecord?: any } = {}) {
   const tx: any = {
-    case: { findFirst: jest.fn(async () => ({ id: 'c1', caseStatus: 'DERDEST' })) },
+    case: {
+      findFirst: jest.fn(async () => opts.caseRecord ?? ({ id: 'c1', caseStatus: 'DERDEST', currency: 'TRY' })),
+    },
     collection: { create: jest.fn(async () => ({ id: 'col1' })), findFirst: jest.fn() },
     collectionAllocation: { create: jest.fn() },
+    collectionOverpayment: { create: jest.fn() },
   };
   const prisma: any = {
     $transaction: jest.fn(async (fn: any) => fn(tx)),
@@ -72,7 +75,11 @@ describe('CollectionService.create — G3a ledger forward write', () => {
 
   it('ClaimItem varsa: ledger çağrılır + Collection/event korunur + CollectionAllocation compat', async () => {
     const summaryEngine = {
-      allocatePaymentToLedgerInTx: jest.fn(async () => ({ allocated: true, ledgerEntry: { id: 'le1' }, allocations: [] })),
+      allocatePaymentToLedgerInTx: jest.fn(async () => ({
+        allocated: true,
+        ledgerEntry: { id: 'le1' },
+        allocations: [{ amount: 1000 }],
+      })),
     };
     const { svc, tx, domainEvent, autoSpy, warnSpy } = setup({ summaryEngine });
 
@@ -88,8 +95,72 @@ describe('CollectionService.create — G3a ledger forward write', () => {
     );
     expect(tx.collection.create).toHaveBeenCalled();
     expect(domainEvent.appendInTransaction).toHaveBeenCalled();
+    expect(
+      domainEvent.appendInTransaction.mock.calls.some(([, event]: any[]) => event.header.eventType === 'OVERPAYMENT_RECORDED'),
+    ).toBe(false);
+    expect(tx.collectionOverpayment.create).not.toHaveBeenCalled();
     expect(autoSpy).toHaveBeenCalled(); // S2 compat korunur
     expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('not ledger-allocated'));
+  });
+
+  it('overpayment varsa CollectionOverpayment HELD projection ve event yazar', async () => {
+    const summaryEngine = {
+      allocatePaymentToLedgerInTx: jest.fn(async () => ({
+        allocated: true,
+        ledgerEntry: { id: 'le-overpay', tenantId: 't1', caseId: 'c1', currency: 'TRY' },
+        allocations: [{ amount: 700 }, { amount: 300 }],
+        diagnostics: [],
+        excludedOutstanding: 0,
+        unsafeForOverpayment: false,
+      })),
+    };
+    const { svc, tx, domainEvent } = setup({ summaryEngine });
+
+    await svc.create('t1', { ...dto, amount: 1200, currency: 'TRY' }, 'u1');
+
+    expect(tx.collectionOverpayment.create).toHaveBeenCalledWith({
+      data: {
+        tenantId: 't1',
+        caseId: 'c1',
+        collectionId: 'col1',
+        sourceLedgerEntryId: 'le-overpay',
+        amount: 200,
+        remainingAmount: 200,
+        currency: 'TRY',
+        status: 'HELD',
+        createdById: 'u1',
+        metadata: {
+          collectionAmount: 1200,
+          allocatedAmount: 1000,
+        },
+      },
+    });
+
+    expect(domainEvent.appendInTransaction).toHaveBeenCalledTimes(2);
+    const paymentEvent = domainEvent.appendInTransaction.mock.calls[0][1];
+    const overpaymentEvent = domainEvent.appendInTransaction.mock.calls[1][1];
+    expect(paymentEvent.header.eventType).toBe('PAYMENT_RECEIVED');
+    expect(overpaymentEvent.header).toMatchObject({
+      aggregateType: 'Case',
+      aggregateId: 'c1',
+      eventType: 'OVERPAYMENT_RECORDED',
+      occurredAtConfidence: 'SYSTEM_VERIFIED',
+      tenantId: 't1',
+      causedBy: paymentEvent.header.eventId,
+    });
+    expect(overpaymentEvent.header.actor).toMatchObject({
+      type: 'SYSTEM',
+      reason: 'COLLECTION_OVERPAYMENT_PROJECTION',
+    });
+    expect(overpaymentEvent.payload).toMatchObject({
+      collectionId: 'col1',
+      sourceLedgerEntryId: 'le-overpay',
+      amount: 200,
+      remainingAmount: 200,
+      currency: 'TRY',
+      collectionAmount: 1200,
+      allocatedAmount: 1000,
+    });
   });
 
   it('ClaimItem yoksa: diagnostic warn, akış kırılmaz, THROW yok', async () => {
@@ -108,6 +179,10 @@ describe('CollectionService.create — G3a ledger forward write', () => {
     expect(res).toBeDefined();
     expect(tx.collection.create).toHaveBeenCalled();
     expect(domainEvent.appendInTransaction).toHaveBeenCalled();
+    expect(
+      domainEvent.appendInTransaction.mock.calls.some(([, event]: any[]) => event.header.eventType === 'OVERPAYMENT_RECORDED'),
+    ).toBe(false);
+    expect(tx.collectionOverpayment.create).not.toHaveBeenCalled();
     expect(autoSpy).toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('payment not ledger-allocated'));
   });
@@ -119,5 +194,159 @@ describe('CollectionService.create — G3a ledger forward write', () => {
 
     expect(tx.collection.create).toHaveBeenCalled();
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('SummaryEngine not injected'));
+  });
+  it('excluded outstanding varsa overpayment projection yazmaz ve diagnostic event üretir', async () => {
+    const summaryEngine = {
+      allocatePaymentToLedgerInTx: jest.fn(async () => ({
+        allocated: true,
+        ledgerEntry: { id: 'le-unsafe', tenantId: 't1', caseId: 'c1', currency: 'TRY' },
+        allocations: [{ amount: 1000 }],
+        diagnostics: [
+          {
+            code: 'EXCLUDED_OUTSTANDING',
+            reason: 'TAX_ITEM_WITHOUT_VALID_PARENT',
+            claimItemId: 'tax1',
+            itemType: 'TAX_KDV',
+            amount: 100,
+            message: 'TAX item has no valid taxParentCategory and was excluded from allocation.',
+          },
+        ],
+        excludedOutstanding: 100,
+        unsafeForOverpayment: true,
+      })),
+    };
+    const { svc, tx, domainEvent, warnSpy } = setup({ summaryEngine });
+
+    await svc.create('t1', { ...dto, amount: 1200, currency: 'TRY' }, 'u1');
+
+    expect(tx.collectionOverpayment.create).not.toHaveBeenCalled();
+    expect(domainEvent.appendInTransaction).toHaveBeenCalledTimes(2);
+    const paymentEvent = domainEvent.appendInTransaction.mock.calls[0][1];
+    const blockedEvent = domainEvent.appendInTransaction.mock.calls[1][1];
+    expect(blockedEvent.header).toMatchObject({
+      aggregateType: 'Case',
+      aggregateId: 'c1',
+      eventType: 'OVERPAYMENT_BLOCKED',
+      occurredAtConfidence: 'SYSTEM_VERIFIED',
+      tenantId: 't1',
+      causedBy: paymentEvent.header.eventId,
+    });
+    expect(blockedEvent.payload).toMatchObject({
+      collectionId: 'col1',
+      sourceLedgerEntryId: 'le-unsafe',
+      collectionAmount: 1200,
+      allocatedAmount: 1000,
+      attemptedOverpaymentAmount: 200,
+      currency: 'TRY',
+      unsafeForOverpayment: true,
+      blockedReasons: [
+        expect.objectContaining({
+          reason: 'EXCLUDED_OUTSTANDING',
+          details: expect.objectContaining({
+            excludedOutstanding: 100,
+            diagnostics: [expect.objectContaining({ claimItemId: 'tax1' })],
+          }),
+        }),
+      ],
+    });
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('overpayment blocked'));
+  });
+
+  it('currency mismatch varsa overpayment projection yazmaz', async () => {
+    const summaryEngine = {
+      allocatePaymentToLedgerInTx: jest.fn(async () => ({
+        allocated: true,
+        ledgerEntry: { id: 'le-currency', tenantId: 't1', caseId: 'c1', currency: 'TRY' },
+        allocations: [{ amount: 1000 }],
+        diagnostics: [],
+        excludedOutstanding: 0,
+        unsafeForOverpayment: false,
+      })),
+    };
+    const { svc, tx, domainEvent } = setup({ summaryEngine });
+
+    await svc.create('t1', { ...dto, amount: 1200, currency: 'USD' }, 'u1');
+
+    expect(tx.collectionOverpayment.create).not.toHaveBeenCalled();
+    const blockedEvent = domainEvent.appendInTransaction.mock.calls[1][1];
+    expect(blockedEvent.header.eventType).toBe('OVERPAYMENT_BLOCKED');
+    expect(blockedEvent.payload.blockedReasons).toEqual([
+      expect.objectContaining({
+        reason: 'CURRENCY_MISMATCH',
+        details: {
+          collectionCurrency: 'USD',
+          caseCurrency: 'TRY',
+          ledgerCurrency: 'TRY',
+        },
+      }),
+    ]);
+  });
+
+  it('ledger tenant/case context mismatch varsa overpayment projection yazmaz', async () => {
+    const summaryEngine = {
+      allocatePaymentToLedgerInTx: jest.fn(async () => ({
+        allocated: true,
+        ledgerEntry: { id: 'le-cross', tenantId: 'other-tenant', caseId: 'c1', currency: 'TRY' },
+        allocations: [{ amount: 1000 }],
+        diagnostics: [],
+        excludedOutstanding: 0,
+        unsafeForOverpayment: false,
+      })),
+    };
+    const { svc, tx, domainEvent } = setup({ summaryEngine });
+
+    await svc.create('t1', { ...dto, amount: 1200, currency: 'TRY' }, 'u1');
+
+    expect(tx.collectionOverpayment.create).not.toHaveBeenCalled();
+    const blockedEvent = domainEvent.appendInTransaction.mock.calls[1][1];
+    expect(blockedEvent.header.eventType).toBe('OVERPAYMENT_BLOCKED');
+    expect(blockedEvent.payload.blockedReasons).toEqual([
+      expect.objectContaining({
+        reason: 'LEDGER_CONTEXT_MISMATCH',
+        details: expect.objectContaining({
+          collectionTenantId: 't1',
+          ledgerTenantId: 'other-tenant',
+        }),
+      }),
+    ]);
+  });
+
+  it('restricted/earmarked sinyal varsa PaymentDesignation olmadan overpayment projection yazmaz', async () => {
+    const summaryEngine = {
+      allocatePaymentToLedgerInTx: jest.fn(async () => ({
+        allocated: true,
+        ledgerEntry: { id: 'le-restricted', tenantId: 't1', caseId: 'c1', currency: 'TRY' },
+        allocations: [{ amount: 1000 }],
+        diagnostics: [],
+        excludedOutstanding: 0,
+        unsafeForOverpayment: false,
+      })),
+    };
+    const { svc, tx, domainEvent } = setup({ summaryEngine });
+
+    await svc.create(
+      't1',
+      {
+        ...dto,
+        amount: 1200,
+        currency: 'TRY',
+        sourceType: CollectionSource.SALARY_SEIZURE,
+        channel: CollectionChannel.HACIZ,
+      },
+      'u1',
+    );
+
+    expect(tx.collectionOverpayment.create).not.toHaveBeenCalled();
+    const blockedEvent = domainEvent.appendInTransaction.mock.calls[1][1];
+    expect(blockedEvent.header.eventType).toBe('OVERPAYMENT_BLOCKED');
+    expect(blockedEvent.payload.blockedReasons).toEqual([
+      expect.objectContaining({
+        reason: 'RESTRICTED_PAYMENT_UNSUPPORTED',
+        details: expect.objectContaining({
+          sourceType: CollectionSource.SALARY_SEIZURE,
+          channel: CollectionChannel.HACIZ,
+        }),
+      }),
+    ]);
   });
 });

@@ -77,13 +77,24 @@ describe('D K2 — TAX parent-category tier routing', () => {
 
   it('5) TAX metadata YOK → warn + DIŞLA (debtState\'e girmez, ledger satırı yok)', async () => {
     const { svc, tx, created, warn, getDebt } = build([tax(null)]);
-    await svc.allocatePaymentToLedgerInTx(tx, 't1', 'c1', 100);
+    const result = await svc.allocatePaymentToLedgerInTx(tx, 't1', 'c1', 100);
     const debt = getDebt();
     expect(debt.principal).toBe(0);
     expect(debt.accruedInterest).toBe(0);
     expect(debt.costs.size).toBe(0);
     expect(debt.ancillaries.size).toBe(0);
     expect(created.find((a) => a.claimItemId === 'tax1')).toBeUndefined();
+    expect(result.excludedOutstanding).toBe(100);
+    expect(result.unsafeForOverpayment).toBe(true);
+    expect(result.diagnostics).toEqual([
+      expect.objectContaining({
+        code: 'EXCLUDED_OUTSTANDING',
+        reason: 'TAX_ITEM_WITHOUT_VALID_PARENT',
+        claimItemId: 'tax1',
+        itemType: 'TAX_KDV',
+        amount: 100,
+      }),
+    ]);
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('TAX item without valid taxParentCategory'));
   });
 

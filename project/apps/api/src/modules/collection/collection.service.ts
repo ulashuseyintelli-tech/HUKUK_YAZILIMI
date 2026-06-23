@@ -14,6 +14,7 @@ import {
   CancelCollectionDto,
   CollectionStatus,
   CollectionSource,
+  CollectionChannel,
   AllocationType,
   CoverCalculation,
   CollectionSummary,
@@ -41,6 +42,50 @@ const EXTERNAL_SOURCES = new Set<string>([
   ...EXTERNAL_SIGNED_SOURCES,
   CollectionSource.THIRD_PARTY,
 ]);
+
+function toFiniteAmount(value: unknown): number {
+  const amount = Number(value);
+  return Number.isFinite(amount) ? amount : 0;
+}
+
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function sumAmounts(rows: Array<{ amount: unknown }>): number {
+  return roundMoney(rows.reduce((sum, row) => sum + toFiniteAmount(row.amount), 0));
+}
+
+type OverpaymentBlockReason =
+  | 'EXCLUDED_OUTSTANDING'
+  | 'CURRENCY_MISMATCH'
+  | 'RESTRICTED_PAYMENT_UNSUPPORTED'
+  | 'LEDGER_CONTEXT_MISMATCH';
+
+interface OverpaymentBlock {
+  reason: OverpaymentBlockReason;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+const RESTRICTED_OVERPAYMENT_SOURCES = new Set<string>([
+  CollectionSource.BANK_SEIZURE,
+  CollectionSource.SALARY_SEIZURE,
+  CollectionSource.AUCTION,
+]);
+
+const RESTRICTED_OVERPAYMENT_CHANNELS = new Set<string>([
+  CollectionChannel.HACIZ,
+  CollectionChannel.ICRA_DAIRESI,
+]);
+
+function hasUnsupportedRestrictedPaymentSignal(dto: CreateCollectionDto): boolean {
+  return Boolean(
+    dto.caseDebtorId ||
+    (dto.sourceType && RESTRICTED_OVERPAYMENT_SOURCES.has(dto.sourceType)) ||
+    (dto.channel && RESTRICTED_OVERPAYMENT_CHANNELS.has(dto.channel)),
+  );
+}
 
 function mapSourceToActor(sourceType: CollectionSource | undefined, userId?: string): { type: ActorType; userId?: string; externalSystem?: string } {
   if (!sourceType || sourceType === CollectionSource.MANUAL || sourceType === CollectionSource.SETTLEMENT) {
@@ -72,6 +117,53 @@ export class CollectionService {
     // atlanır + diagnostic (akış kırılmaz; test/araç bağlamları için).
     @Optional() private readonly summaryEngine?: SummaryEngineService,
   ) {}
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CollectionService.create() → POST /collections (overpayment guard diagnostic event)
+  /// </remarks>
+  private async appendOverpaymentBlockedDiagnosticInTx(
+    tx: any,
+    input: {
+      tenantId: string;
+      caseId: string;
+      collectionId: string;
+      paymentEventId: string;
+      sourceLedgerEntryId?: string;
+      collectionAmount: number;
+      allocatedAmount: number;
+      attemptedOverpaymentAmount: number;
+      currency: string;
+      blocks: OverpaymentBlock[];
+    },
+  ) {
+    await this.domainEventIngestService.appendInTransaction(tx, {
+      header: {
+        eventId: randomUUID(),
+        aggregateType: 'Case',
+        aggregateId: input.caseId,
+        eventType: 'OVERPAYMENT_BLOCKED',
+        occurredAt: new Date().toISOString(),
+        occurredAtConfidence: 'SYSTEM_VERIFIED',
+        actor: {
+          type: 'SYSTEM',
+          reason: 'COLLECTION_OVERPAYMENT_GUARD',
+        },
+        causedBy: input.paymentEventId,
+        tenantId: input.tenantId,
+      },
+      payload: {
+        collectionId: input.collectionId,
+        sourceLedgerEntryId: input.sourceLedgerEntryId,
+        collectionAmount: input.collectionAmount,
+        allocatedAmount: input.allocatedAmount,
+        attemptedOverpaymentAmount: input.attemptedOverpaymentAmount,
+        currency: input.currency,
+        unsafeForOverpayment: true,
+        blockedReasons: input.blocks,
+      },
+    });
+  }
 
   /**
    * Otomatik mahsup - Yasal sıraya göre (transaction-aware)
@@ -269,7 +361,7 @@ export class CollectionService {
       // ── 1. Case status check (closed-case reject) ───────────────────────
       const caseData = await tx.case.findFirst({
         where: { id: dto.caseId, tenantId },
-        select: { id: true, caseStatus: true },
+        select: { id: true, caseStatus: true, currency: true },
       });
 
       if (!caseData) {
@@ -330,10 +422,11 @@ export class CollectionService {
       // ── 4. PAYMENT_RECEIVED event append (HR-39: same-tx) ───────────────
       const confidence = mapSourceToConfidence(dto.sourceType as CollectionSource);
       const actor = mapSourceToActor(dto.sourceType as CollectionSource, userId);
+      const paymentEventId = randomUUID();
 
       await this.domainEventIngestService.appendInTransaction(tx, {
         header: {
-          eventId: randomUUID(),
+          eventId: paymentEventId,
           aggregateType: 'Case',
           aggregateId: dto.caseId,
           eventType: 'PAYMENT_RECEIVED',
@@ -376,6 +469,126 @@ export class CollectionService {
             collectionId: collection.id,
           },
         );
+        if (ledger.allocated && ledger.ledgerEntry) {
+          const allocatedAmount = sumAmounts(ledger.allocations || []);
+          const overpaymentAmount = roundMoney(toFiniteAmount(dto.amount) - allocatedAmount);
+
+          if (overpaymentAmount > 0) {
+            const blocks: OverpaymentBlock[] = [];
+            const excludedOutstanding = toFiniteAmount((ledger as any).excludedOutstanding);
+            if ((ledger as any).unsafeForOverpayment || excludedOutstanding > 0) {
+              blocks.push({
+                reason: 'EXCLUDED_OUTSTANDING',
+                message: 'Allocator excluded legitimate outstanding debt; overpayment cannot be trusted.',
+                details: {
+                  excludedOutstanding,
+                  diagnostics: (ledger as any).diagnostics || [],
+                },
+              });
+            }
+
+            const caseCurrency = String(caseData.currency || 'TRY');
+            const ledgerCurrency = ledger.ledgerEntry.currency ? String(ledger.ledgerEntry.currency) : currency;
+            if (currency !== caseCurrency || ledgerCurrency !== caseCurrency || ledgerCurrency !== currency) {
+              blocks.push({
+                reason: 'CURRENCY_MISMATCH',
+                message: 'Collection, case, and ledger currencies are not aligned.',
+                details: { collectionCurrency: currency, caseCurrency, ledgerCurrency },
+              });
+            }
+
+            if (
+              (ledger.ledgerEntry.tenantId && ledger.ledgerEntry.tenantId !== tenantId) ||
+              (ledger.ledgerEntry.caseId && ledger.ledgerEntry.caseId !== dto.caseId)
+            ) {
+              blocks.push({
+                reason: 'LEDGER_CONTEXT_MISMATCH',
+                message: 'Ledger entry tenant/case context does not match the collection.',
+                details: {
+                  collectionTenantId: tenantId,
+                  collectionCaseId: dto.caseId,
+                  ledgerTenantId: ledger.ledgerEntry.tenantId,
+                  ledgerCaseId: ledger.ledgerEntry.caseId,
+                },
+              });
+            }
+
+            if (hasUnsupportedRestrictedPaymentSignal(dto)) {
+              blocks.push({
+                reason: 'RESTRICTED_PAYMENT_UNSUPPORTED',
+                message: 'Payment may be restricted/earmarked, but PaymentDesignation is not implemented yet.',
+                details: {
+                  caseDebtorId: dto.caseDebtorId,
+                  sourceType: dto.sourceType,
+                  channel: dto.channel,
+                },
+              });
+            }
+
+            if (blocks.length > 0) {
+              this.logger.warn(
+                `overpayment blocked; allocation unsafe ` +
+                  `(case=${dto.caseId}, collection=${collection.id}, reasons=${blocks.map((b) => b.reason).join(',')})`,
+              );
+              await this.appendOverpaymentBlockedDiagnosticInTx(tx, {
+                tenantId,
+                caseId: dto.caseId,
+                collectionId: collection.id,
+                paymentEventId,
+                sourceLedgerEntryId: ledger.ledgerEntry.id,
+                collectionAmount: toFiniteAmount(dto.amount),
+                allocatedAmount,
+                attemptedOverpaymentAmount: overpaymentAmount,
+                currency,
+                blocks,
+              });
+            } else {
+              await (tx as any).collectionOverpayment.create({
+                data: {
+                  tenantId,
+                  caseId: dto.caseId,
+                  collectionId: collection.id,
+                  sourceLedgerEntryId: ledger.ledgerEntry.id,
+                  amount: overpaymentAmount,
+                  remainingAmount: overpaymentAmount,
+                  currency,
+                  status: 'HELD',
+                  createdById: userId,
+                  metadata: {
+                    collectionAmount: toFiniteAmount(dto.amount),
+                    allocatedAmount,
+                  },
+                },
+              });
+
+              await this.domainEventIngestService.appendInTransaction(tx, {
+                header: {
+                  eventId: randomUUID(),
+                  aggregateType: 'Case',
+                  aggregateId: dto.caseId,
+                  eventType: 'OVERPAYMENT_RECORDED',
+                  occurredAt: new Date().toISOString(),
+                  occurredAtConfidence: 'SYSTEM_VERIFIED',
+                  actor: {
+                    type: 'SYSTEM',
+                    reason: 'COLLECTION_OVERPAYMENT_PROJECTION',
+                  },
+                  causedBy: paymentEventId,
+                  tenantId,
+                },
+                payload: {
+                  collectionId: collection.id,
+                  sourceLedgerEntryId: ledger.ledgerEntry.id,
+                  amount: overpaymentAmount,
+                  remainingAmount: overpaymentAmount,
+                  currency,
+                  collectionAmount: toFiniteAmount(dto.amount),
+                  allocatedAmount,
+                },
+              });
+            }
+          }
+        }
         if (!ledger.allocated) {
           this.logger.warn(
             `case has no claimItems; payment not ledger-allocated ` +
@@ -576,6 +789,20 @@ export class CollectionService {
             });
           }
         }
+
+        await (tx as any).collectionOverpayment.updateMany({
+          where: {
+            tenantId,
+            caseId: collection.caseId,
+            collectionId: collection.id,
+            status: 'HELD',
+          },
+          data: {
+            status: 'REVERSED',
+            remainingAmount: 0,
+            reversedAt: new Date(),
+          },
+        });
 
         return cancelledCollection;
       });

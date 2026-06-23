@@ -36,6 +36,9 @@ function buildTx(opts: {
     claimItem: {
       updateMany: jest.fn(async () => ({ count: 1 })),
     },
+    collectionOverpayment: {
+      updateMany: jest.fn(async () => ({ count: 1 })),
+    },
   };
 }
 
@@ -143,6 +146,19 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     });
     expect(tx.claimItem.updateMany).toHaveBeenCalledTimes(4);
     expect(tx.ledgerEntry.update).not.toHaveBeenCalled();
+    expect(tx.collectionOverpayment.updateMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: 't1',
+        caseId: 'case1',
+        collectionId: 'col1',
+        status: 'HELD',
+      },
+      data: {
+        status: 'REVERSED',
+        remainingAmount: 0,
+        reversedAt: expect.any(Date),
+      },
+    });
   });
 
   it('kısmi PAYMENT cancel edilince allocation mirror ve projection rollback aynı tutarda olur', async () => {
@@ -226,7 +242,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     });
   });
 
-  it('linked ledger yoksa sadece Collection cancel eder, reversal yazmaz', async () => {
+  it('linked ledger yoksa REVERSAL yazmaz ama HELD overpayment projection kapatilir', async () => {
     const tx = buildTx({ originalLedger: null });
     const { service } = buildService(tx);
 
@@ -235,6 +251,19 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     expect(tx.collection.update).toHaveBeenCalledTimes(1);
     expect(tx.ledgerEntry.create).not.toHaveBeenCalled();
     expect(tx.claimItem.updateMany).not.toHaveBeenCalled();
+    expect(tx.collectionOverpayment.updateMany).toHaveBeenCalledWith({
+      where: {
+        tenantId: 't1',
+        caseId: 'case1',
+        collectionId: 'col1',
+        status: 'HELD',
+      },
+      data: {
+        status: 'REVERSED',
+        remainingAmount: 0,
+        reversedAt: expect.any(Date),
+      },
+    });
   });
 
   it('Collection zaten CANCELLED ise ikinci reversal yazmaz', async () => {
@@ -254,6 +283,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     expect(tx.collection.update).not.toHaveBeenCalled();
     expect(tx.ledgerEntry.create).not.toHaveBeenCalled();
     expect(tx.claimItem.updateMany).not.toHaveBeenCalled();
+    expect(tx.collectionOverpayment.updateMany).not.toHaveBeenCalled();
   });
 
   it('tenant guard fail-closed: collection bulunmazsa yazma yapmaz', async () => {
@@ -266,6 +296,7 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     expect(tx.collection.update).not.toHaveBeenCalled();
     expect(tx.ledgerEntry.create).not.toHaveBeenCalled();
     expect(tx.claimItem.updateMany).not.toHaveBeenCalled();
+    expect(tx.collectionOverpayment.updateMany).not.toHaveBeenCalled();
   });
 
   it('existing reversedByLedgerEntry varsa duplicate REVERSAL yazmaz', async () => {

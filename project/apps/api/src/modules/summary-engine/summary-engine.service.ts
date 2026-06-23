@@ -164,6 +164,27 @@ export interface ClaimItemSummary {
   status: string;
 }
 
+export type LedgerAllocationDiagnosticCode = 'EXCLUDED_OUTSTANDING';
+
+export interface LedgerAllocationDiagnostic {
+  code: LedgerAllocationDiagnosticCode;
+  reason: string;
+  claimItemId: string;
+  itemType: string;
+  amount: number;
+  message: string;
+}
+
+interface LedgerAllocationComputation {
+  allocations: Array<{ claimItemId: string; amount: number; allocationOrder: number }>;
+  diagnostics: LedgerAllocationDiagnostic[];
+  excludedOutstanding: number;
+}
+
+function roundMoney(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 // ============================================================
 // SERVICE
 // ============================================================
@@ -554,9 +575,20 @@ export class SummaryEngineService implements OnModuleInit {
     reason?: 'NO_CLAIM_ITEMS' | 'LEDGER_DISABLED';
     ledgerEntry: any | null;
     allocations: any[];
+    diagnostics: LedgerAllocationDiagnostic[];
+    excludedOutstanding: number;
+    unsafeForOverpayment: boolean;
   }> {
     if (!this.rules?.ledger_allocation?.enabled) {
-      return { allocated: false, reason: 'LEDGER_DISABLED', ledgerEntry: null, allocations: [] };
+      return {
+        allocated: false,
+        reason: 'LEDGER_DISABLED',
+        ledgerEntry: null,
+        allocations: [],
+        diagnostics: [],
+        excludedOutstanding: 0,
+        unsafeForOverpayment: false,
+      };
     }
 
     // Dosya ve aktif kalemleri getir (çağıranın tx'i ile)
@@ -577,13 +609,26 @@ export class SummaryEngineService implements OnModuleInit {
     const items = caseRecord.claimItems;
     if (items.length === 0) {
       // S5(i): mahsup edilecek kalem yok → ledger YAZMA, diagnostic döndür.
-      return { allocated: false, reason: 'NO_CLAIM_ITEMS', ledgerEntry: null, allocations: [] };
+      return {
+        allocated: false,
+        reason: 'NO_CLAIM_ITEMS',
+        ledgerEntry: null,
+        allocations: [],
+        diagnostics: [],
+        excludedOutstanding: 0,
+        unsafeForOverpayment: false,
+      };
     }
 
     let allocations: Array<{ claimItemId: string; amount: number; allocationOrder: number }> = [];
+    let diagnostics: LedgerAllocationDiagnostic[] = [];
+    let excludedOutstanding = 0;
     // TBK 100 Allocator varsa kullan (TEK KAYNAK). Sıra = allocator'ın mevcut hâli (PR-AO ayrı).
     if (this.tbk100Allocator) {
-      allocations = this.allocateWithTBK100(items, amount);
+      const computation = this.allocateWithTBK100(items, amount);
+      allocations = computation.allocations;
+      diagnostics = computation.diagnostics;
+      excludedOutstanding = computation.excludedOutstanding;
     } else {
       // Legacy fallback (deprecated)
       this.logger.warn('⚠️ Using legacy allocation order. Inject TBK100AllocatorService for correct TBK 100.');
@@ -626,7 +671,14 @@ export class SummaryEngineService implements OnModuleInit {
       });
     }
 
-    return { allocated: true, ledgerEntry, allocations: ledgerEntry.allocations };
+    return {
+      allocated: true,
+      ledgerEntry,
+      allocations: ledgerEntry.allocations,
+      diagnostics,
+      excludedOutstanding,
+      unsafeForOverpayment: excludedOutstanding > 0,
+    };
   }
 
   /**
@@ -636,12 +688,14 @@ export class SummaryEngineService implements OnModuleInit {
   private allocateWithTBK100(
     items: any[],
     paymentAmount: number,
-  ): Array<{ claimItemId: string; amount: number; allocationOrder: number }> {
+  ): LedgerAllocationComputation {
     // DebtState oluştur
     let principal = 0;
     let accruedInterest = 0;
     const costs = new Map<AncillaryType, number>();
     const ancillaries = new Map<AncillaryType, number>();
+    const diagnostics: LedgerAllocationDiagnostic[] = [];
+    let excludedOutstanding = 0;
     
     // Item ID'lerini kategoriye göre grupla
     const itemsByCategory = new Map<string, { id: string; remaining: number }[]>();
@@ -679,6 +733,15 @@ export class SummaryEngineService implements OnModuleInit {
             `TAX item without valid taxParentCategory; excluded from allocation ` +
               `(item=${item.id}, itemType=${itemType}, parent=${pc})`,
           );
+          excludedOutstanding = roundMoney(excludedOutstanding + remaining);
+          diagnostics.push({
+            code: 'EXCLUDED_OUTSTANDING',
+            reason: 'TAX_ITEM_WITHOUT_VALID_PARENT',
+            claimItemId: item.id,
+            itemType,
+            amount: remaining,
+            message: 'TAX item has no valid taxParentCategory and was excluded from allocation.',
+          });
           continue;
         }
         if (!itemsByCategory.has(taxKey)) itemsByCategory.set(taxKey, []);
@@ -707,6 +770,16 @@ export class SummaryEngineService implements OnModuleInit {
           } else {
             ancillaries.set(ancType, (ancillaries.get(ancType) || 0) + remaining);
           }
+        } else {
+          excludedOutstanding = roundMoney(excludedOutstanding + remaining);
+          diagnostics.push({
+            code: 'EXCLUDED_OUTSTANDING',
+            reason: 'UNMAPPED_CLAIM_ITEM_TYPE',
+            claimItemId: item.id,
+            itemType,
+            amount: remaining,
+            message: 'ClaimItem type is not mapped to a TBK100 debt component and was excluded from allocation.',
+          });
         }
       }
     }
@@ -769,7 +842,11 @@ export class SummaryEngineService implements OnModuleInit {
       remainingByResultCategory.set(resultCat, avail);
     }
 
-    return allocations;
+    return {
+      allocations,
+      diagnostics,
+      excludedOutstanding,
+    };
   }
 
   /**
