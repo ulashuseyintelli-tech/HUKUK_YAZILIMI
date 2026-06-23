@@ -12,6 +12,7 @@ import { ClientModule } from "../client/client.module";
 import { LawyerModule } from "../lawyer/lawyer.module";
 import { DebtorModule } from "../debtor/debtor.module";
 import { ResponsibleCandidatesService } from "./responsible-candidates.service";
+import { TemporalResponsibilityService } from "./temporal-responsibility.service";
 
 @Module({
   imports: [
@@ -29,7 +30,7 @@ import { ResponsibleCandidatesService } from "./responsible-candidates.service";
     DebtorModule,
   ],
   controllers: [CaseController],
-  providers: [CaseService, ResponsibleCandidatesService],
-  exports: [CaseService],
+  providers: [CaseService, ResponsibleCandidatesService, TemporalResponsibilityService],
+  exports: [CaseService, TemporalResponsibilityService],
 })
 export class CaseModule {}
