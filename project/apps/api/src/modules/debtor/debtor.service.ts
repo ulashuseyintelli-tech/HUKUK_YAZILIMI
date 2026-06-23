@@ -1586,6 +1586,14 @@ export class DebtorService {
       throw new NotFoundException("Borçlu bulunamadı");
     }
 
+    // Gate-3: pasif CaseDebtor üzerinde operasyonel not yazımı engellenir (tarihsel read serbest).
+    // updateCaseDebtor/updateServiceStatus pasif-bloğunun ikizi (caseDebtor alan mutasyonu, sonuç-kaydı değil).
+    await this.requireCaseDebtorLifecycleGuard().assertActiveByCaseDebtorId(
+      tenantId,
+      caseDebtorId,
+      { expectedCaseId: caseId }
+    );
+
     // Validate length
     if (text && text.length > 240) {
       throw new BadRequestException("Not en fazla 240 karakter olabilir");
