@@ -5,6 +5,7 @@ import { runBatched } from './scheduler-batch.helper';
 import { SchedulerMetricsService } from './scheduler-metrics.service';
 import { TebligatService } from '../tebligat/tebligat.service'; // PR-S2: tebligat sonuç senkronu ortak kapı
 import { TebligatPttResult } from '../tebligat/dto/tebligat.dto';
+import { DueType } from '@prisma/client';
 
 /**
  * Zamanlayıcı Servisi
@@ -132,6 +133,11 @@ export class SchedulerService {
    * Her ayın 1'inde saat 08:00'da çalışır
    * Nafaka dosyalarına yeni dönem alacağı ekler
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - SchedulerController.checkNafaka() → POST /scheduler/check/nafaka (manuel nafaka dönem kontrolü)
+  /// - SchedulerService.processNafakaPeriods() → @Cron('0 8 1 * *') (aylık otomatik nafaka dönem kontrolü)
+  /// </remarks>
   @Cron('0 8 1 * *') // Her ayın 1'i saat 08:00
   async processNafakaPeriods() {
     if (this.isRunning_processNafakaPeriods) {
@@ -173,7 +179,20 @@ export class SchedulerService {
   /**
    * Nafaka dosyasına yeni dönem ekle
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - SchedulerService.processNafakaPeriods() → aylık nafaka dosyaları için dönem borcu üretimi
+  /// </remarks>
   private async addNafakaPeriod(caseData: any, period: string) {
+    const description = `${period} Nafaka`;
+    const existingPeriodDue = caseData.dues?.find((d: any) => d.description === description);
+    if (existingPeriodDue) {
+      this.logger.log(
+        `⏭️ ${caseData.fileNumber} - ${period} nafaka zaten mevcut: ${existingPeriodDue.type}`,
+      );
+      return;
+    }
+
     // Aylık nafaka tutarını bul (metadata'dan veya son due'dan)
     const monthlyAmount = (caseData.metadata as any)?.monthlyNafaka || 
       caseData.dues?.find((d: any) => d.description?.includes('Aylık'))?.amount ||
@@ -188,8 +207,8 @@ export class SchedulerService {
     await this.db.due.create({
       data: {
         caseId: caseData.id,
-        type: 'PRINCIPAL',
-        description: `${period} Nafaka`,
+        type: DueType.NAFAKA,
+        description,
         amount: monthlyAmount,
         dueDate: new Date(),
       },
