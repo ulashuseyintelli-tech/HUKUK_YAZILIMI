@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { AddressSource } from '@prisma/client';
 
@@ -56,6 +56,43 @@ export class ConfidenceScoreService {
   private readonly logger = new Logger(ConfidenceScoreService.name);
 
   constructor(private prisma: PrismaService) {}
+
+  /**
+   * Tenant sınırı: addressId GERÇEKTEN bu tenant'ın bir borçlusuna ait mi?
+   * Confidence uçları ham addressId aldığı için her erişimde ownership doğrulanmalı
+   * (aksi halde başka tenant'ın adresi okunur/güncellenir). Bulunamazsa 404.
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - AddressDiscoveryController.getConfidenceScore() → GET /address-discovery/confidence/:addressId
+   * - AddressDiscoveryController.getConfidenceScoreBreakdown() → GET /address-discovery/confidence/:addressId/breakdown
+   * </remarks>
+   */
+  async assertAddressBelongsToTenant(tenantId: string, addressId: string): Promise<void> {
+    const owned = await this.prisma.debtorAddress.findFirst({
+      where: { id: addressId, debtor: { tenantId } },
+      select: { id: true },
+    });
+    if (!owned) {
+      throw new NotFoundException('Adres bulunamadı');
+    }
+  }
+
+  /**
+   * Tenant sınırı: debtorId bu tenant'a ait mi? Bulunamazsa 404.
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - AddressDiscoveryController.updateAllScoresForDebtor() → POST /address-discovery/confidence/debtor/:debtorId/update-all
+   * </remarks>
+   */
+  async assertDebtorBelongsToTenant(tenantId: string, debtorId: string): Promise<void> {
+    const owned = await this.prisma.debtor.findFirst({
+      where: { id: debtorId, tenantId },
+      select: { id: true },
+    });
+    if (!owned) {
+      throw new NotFoundException('Borçlu bulunamadı');
+    }
+  }
 
   /**
    * Adres için güven skoru hesapla
