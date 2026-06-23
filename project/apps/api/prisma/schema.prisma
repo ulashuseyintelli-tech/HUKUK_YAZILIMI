@@ -309,6 +309,7 @@ model User {
   createdIntelligence DebtorIntelligence[] @relation("IntelligenceCreator")
   statusChanges CaseStatusHistory[] @relation("StatusChangedBy")
   sorumluCases  Case[]              @relation("SorumluPersonel")
+  createdCases  Case[]              @relation("CaseCreatedBy") // WP-1b: oluşturduğu dosyalar (creator)
 
   // Address Discovery
   uyapQueriesRequested      UyapQuery[]         @relation("UyapQueryRequester")
@@ -965,6 +966,12 @@ model Case {
   responsibleStaffId  String?
   responsibleStaff    StaffMember? @relation("CaseResponsibleStaff", fields: [responsibleStaffId], references: [id])
 
+  // WP-1b: dosyayı OLUŞTURAN kullanıcı (creator attribution). Additive nullable; yeni create'lerde
+  // userId'ye set edilir (create userId-zorunlu). Eski kayıtlar NULL = "bilinmiyor" — backfill YOK,
+  // audit/legacy'den tahmin ÜRETİLMEZ. Temporal sorumluluk sorgusu (WP-1d) için creation-anı sinyali.
+  createdById String?
+  createdBy   User?   @relation("CaseCreatedBy", fields: [createdById], references: [id])
+
   // Ek Bilgi Alanları
   dahiliNot              String? // Müvekkile gitmez
   muvekkilNotu           String? // Raporlarda görünür
@@ -1091,6 +1098,7 @@ model Case {
   @@index([responsibleLawyerId])
   @@index([responsibleStaffId])
   @@index([clientId])
+  @@index([createdById])
 }
 
 // Statü Değişim Geçmişi (B.18)

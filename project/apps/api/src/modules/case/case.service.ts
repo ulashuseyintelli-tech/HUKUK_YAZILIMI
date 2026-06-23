@@ -1627,6 +1627,9 @@ export class CaseService {
             // none → ikisi de null (sahipsiz, meşru); DB CHECK both-set'i ayrıca engeller.
             responsibleLawyerId: resolvedResponsible.responsibleLawyerId,
             responsibleStaffId: resolvedResponsible.responsibleStaffId,
+            // WP-1b: dosyayı oluşturan kullanıcı (creator attribution). userId yukarıda zorunlu;
+            // eski null kayıtlar için backfill YOK (ayrı/yok). Operasyon owner'dan AYRI kavram.
+            createdById: userId,
           },
         });
 
