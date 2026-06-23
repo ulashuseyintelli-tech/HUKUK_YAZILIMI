@@ -38,7 +38,7 @@ describe('CASE-UPDATE-FK-TENANT update() — clientId/courtId tenant guard', () 
   it('same-tenant clientId+courtId → persist (FK tenant-scope ile doğrulanır)', async () => {
     const { service, clientFindFirst, courtFindFirst, caseUpdate } = setup();
 
-    await service.update('tenant-1', 'case-1', { clientId: 'cli-1', courtId: 'crt-1', notes: 'x' } as any);
+    await service.update('tenant-1', 'case-1', { clientId: 'cli-1', courtId: 'crt-1', notes: 'x' } as any, 'user-1');
 
     expect(clientFindFirst).toHaveBeenCalledWith({ where: { id: 'cli-1', tenantId: 'tenant-1' }, select: { id: true } });
     expect(courtFindFirst).toHaveBeenCalledWith({ where: { id: 'crt-1', tenantId: 'tenant-1' }, select: { id: true } });
@@ -52,7 +52,7 @@ describe('CASE-UPDATE-FK-TENANT update() — clientId/courtId tenant guard', () 
     (service as any).prisma.client.findFirst = jest.fn(async () => null);
 
     await expect(
-      service.update('tenant-1', 'case-1', { clientId: 'foreign' } as any),
+      service.update('tenant-1', 'case-1', { clientId: 'foreign' } as any, 'user-1'),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(caseUpdate).not.toHaveBeenCalled();
   });
@@ -62,7 +62,7 @@ describe('CASE-UPDATE-FK-TENANT update() — clientId/courtId tenant guard', () 
     (service as any).prisma.court.findFirst = jest.fn(async () => null);
 
     await expect(
-      service.update('tenant-1', 'case-1', { clientId: 'cli-1', courtId: 'foreign' } as any),
+      service.update('tenant-1', 'case-1', { clientId: 'cli-1', courtId: 'foreign' } as any, 'user-1'),
     ).rejects.toBeInstanceOf(BadRequestException);
     expect(caseUpdate).not.toHaveBeenCalled();
   });
@@ -70,7 +70,7 @@ describe('CASE-UPDATE-FK-TENANT update() — clientId/courtId tenant guard', () 
   it('FK yoksa (yalnız notes) → guard çalışmaz, case.update yapılır', async () => {
     const { service, clientFindFirst, courtFindFirst, caseUpdate } = setup();
 
-    await service.update('tenant-1', 'case-1', { notes: 'sadece not' } as any);
+    await service.update('tenant-1', 'case-1', { notes: 'sadece not' } as any, 'user-1');
 
     expect(clientFindFirst).not.toHaveBeenCalled();
     expect(courtFindFirst).not.toHaveBeenCalled();
