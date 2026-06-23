@@ -53,6 +53,7 @@ import { FaizDokumuPanel } from "@/components/interest";
 import { OperationDeck } from "@/components/case-detail";
 import IntakeLinksCard from "@/components/case/IntakeLinksCard";
 import { ClaimItemPanel } from "@/components/claim-item";
+import { HacizHistoryCard } from "@/components/case/HacizHistoryCard";
 import { ResponsiblePersonPicker } from "@/components/case/responsible-person-picker";
 
 // ============================================
@@ -2481,6 +2482,9 @@ export default function CaseDetailPage() {
                 </div>
               )}
             </div>
+
+            {/* CASEDETAILTABS-MIGRATION-C1: #123 Haciz Gönderim Geçmişi — collapsible + lazy (kapalı gelir; salt görüntü) */}
+            <HacizHistoryCard caseId={caseData.id} />
 
             {/* Operasyon Masası - Accordion Paneller */}
             <div className="flex-1 overflow-hidden flex flex-col bg-white border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
