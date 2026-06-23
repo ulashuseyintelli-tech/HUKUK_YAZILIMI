@@ -174,7 +174,11 @@ export const CalculationResultSchema = z.object({
   totalDue: z.number(),
   preEnforcementInterest: z.number().optional(),
   postEnforcementInterest: z.number().optional(),
-  
+  // PR-1b: kalan-durum breakdown (ADDITIVE optional; geriye uyumlu). totalDue = remainingPrincipal + remainingInterest [+ remainingCosts].
+  //   remainingInterest = allocation SONRASI kalan faiz (≤ totalInterest brüt). Ödeme yoksa remaining == brüt.
+  remainingPrincipal: z.number().optional(),
+  remainingInterest: z.number().optional(),
+
   // Details
   segments: z.array(SegmentSchema),
   allocations: z.array(AllocationStepSchema).optional(),

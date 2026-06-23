@@ -183,6 +183,8 @@ export class InterestEngineService {
 
     const allSegments = this.collectAllSegments(segmentResults);
     const totalDue = this.calculateTotalDue(request.claimBuckets, totalInterest, allocationResult);
+    // PR-1b: kalan-durum breakdown expose (ADDITIVE). totalDue satırı DEĞİŞMEZ — aynı helper, aynı toplam.
+    const remainingBreakdown = this.computeRemainingBreakdown(request.claimBuckets, totalInterest, allocationResult);
 
     // 11. Generate result
     const result: CalculationResult = {
@@ -193,6 +195,8 @@ export class InterestEngineService {
       totalDue,
       preEnforcementInterest,
       postEnforcementInterest,
+      remainingPrincipal: remainingBreakdown.remainingPrincipal,
+      remainingInterest: remainingBreakdown.remainingInterest,
       segments: allSegments,
       allocations: allocationResult?.steps,
       policyWarnings: policyResult.warnings,
@@ -393,15 +397,18 @@ export class InterestEngineService {
     return allSegments;
   }
 
-  private calculateTotalDue(
+  /**
+   * PR-1b: kalan-durum breakdown (anapara/faiz/masraf-fer'i bileşenleri). SAF.
+   * Mantık eskiden calculateTotalDue İÇİNDEYDİ (toplanıp atılıyordu) — yalnız bileşenleri DÖNDÜRÜR.
+   * Ödeme VARSA finalDebtStates (allocation sonrası kalan); YOKSA brüt (anapara=Σclaims.amount, faiz=totalInterest).
+   */
+  private computeRemainingBreakdown(
     claims: ClaimBucket[],
     totalInterest: number,
     allocationResult?: { steps: AllocationStep[]; finalDebtStates: ClaimDebtState[] },
-  ): number {
-    const totalPrincipal = claims.reduce((sum, c) => sum + c.amount, 0);
-
+  ): { remainingPrincipal: number; remainingInterest: number; remainingCosts: number } {
     if (allocationResult) {
-      // Calculate remaining debt after allocations (PR-X1: cost/ancillary DAHİL)
+      // Allocation sonrası kalan borç (PR-X1: cost/ancillary DAHİL)
       let remainingPrincipal = 0;
       let remainingInterest = 0;
       let remainingCosts = 0;
@@ -413,15 +420,26 @@ export class InterestEngineService {
         for (const v of state.debtState.ancillaries.values()) remainingCosts += v;
       }
 
-      return remainingPrincipal + remainingInterest + remainingCosts;
+      return { remainingPrincipal, remainingInterest, remainingCosts };
     }
 
-    // PR-X1: ödeme yoksa toplam = anapara + faiz + masraf + fer'i
-    const totalCosts = claims.reduce(
+    // PR-X1: ödeme yoksa kalan = anapara + faiz + masraf + fer'i (brüt = kalan)
+    const remainingPrincipal = claims.reduce((sum, c) => sum + c.amount, 0);
+    const remainingCosts = claims.reduce(
       (sum, c) => sum + this.sumMapValues(c.costs) + this.sumMapValues(c.ancillaries),
       0,
     );
-    return totalPrincipal + totalInterest + totalCosts;
+    return { remainingPrincipal, remainingInterest: totalInterest, remainingCosts };
+  }
+
+  /** DAVRANIŞ KORUNUR: totalDue = remainingPrincipal + remainingInterest + remainingCosts (eski mantıkla birebir). */
+  private calculateTotalDue(
+    claims: ClaimBucket[],
+    totalInterest: number,
+    allocationResult?: { steps: AllocationStep[]; finalDebtStates: ClaimDebtState[] },
+  ): number {
+    const b = this.computeRemainingBreakdown(claims, totalInterest, allocationResult);
+    return b.remainingPrincipal + b.remainingInterest + b.remainingCosts;
   }
 
   /** PR-X1: opsiyonel cost/ancillary map'inin değerlerini toplar (yoksa 0). */

@@ -143,6 +143,24 @@ describe('CaseBalanceService (G4c-1)', () => {
     );
   });
 
+  it('PR-1b: ödeme YOK → remainingPrincipal=brüt anapara, remainingInterest=brüt faiz, invariant totalDue', async () => {
+    const { service } = setup({ claimItems: [principal()], collections: [], rates: legalRate() });
+    const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+    const r = res.currencyResults[0].result!;
+    expect(r.remainingPrincipal).toBeCloseTo(10000, 5); // ödeme yok → kalan anapara = brüt anapara
+    expect(r.remainingInterest).toBeCloseTo(r.totalInterest, 5); // ödeme yok → kalan faiz = brüt faiz
+    expect(r.remainingPrincipal! + r.remainingInterest!).toBeCloseTo(r.totalDue, 5); // claim-only invariant
+  });
+
+  it('PR-1b: ödeme VAR (faize tahsis) → remainingInterest < grossAccruedInterest; invariant korunur', async () => {
+    const { service } = setup({ claimItems: [principal()], collections: [collection({ amount: 2000 })], rates: legalRate() });
+    const res = await service.computeCaseBalance('t1', 'case1', '2025-06-01');
+    const r = res.currencyResults[0].result!;
+    expect(r.totalInterest).toBeGreaterThan(0); // anlamlı vaka: işlemiş faiz var
+    expect(r.remainingInterest!).toBeLessThan(r.totalInterest); // tahsilat faizi azaltır → kalan < brüt
+    expect(r.remainingPrincipal! + r.remainingInterest!).toBeCloseTo(r.totalDue, 5); // invariant korunur
+  });
+
   it('çok-currency: USD payment-only → NO_BUCKETS skip + CURRENCY_MISMATCH', async () => {
     const { service } = setup({
       claimItems: [principal()],
