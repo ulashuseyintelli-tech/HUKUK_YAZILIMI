@@ -663,7 +663,7 @@ export class ReportService {
 
     // Tahsilatları ayrı sorgula
     const collections = await (this.prisma.collection as any).findMany({
-      where: { caseId, status: 'CONFIRMED' },
+      where: { tenantId, caseId, status: 'CONFIRMED' },
       include: { allocations: true },
     });
 
