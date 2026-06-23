@@ -2488,8 +2488,8 @@ export default function CaseDetailPage() {
             {/* CASEDETAILTABS-MIGRATION-C1: #123 Haciz Gönderim Geçmişi — collapsible + lazy (kapalı gelir; salt görüntü) */}
             <HacizHistoryCard caseId={caseData.id} />
 
-            {/* CASEDETAILTABS-MIGRATION-C2a: Tebligat — salt-okuma collapsible + lazy (dosya-seviyesi; mutation yok) */}
-            <TebligatCard caseId={caseData.id} />
+            {/* CASEDETAILTABS-MIGRATION-C2b-manuel: Tebligat — manuel write açık (oluştur/gönder/PTT/MERNİS); UETS/KEP elektronik UI'ya bağlı DEĞİL (guardrail) */}
+            <TebligatCard caseId={caseData.id} readOnly={false} />
 
             {/* CASEDETAILTABS-MIGRATION-C3a: #116 Haciz Öncesi Risk — salt-okuma collapsible + lazy (UYAP gönderimi YOK) */}
             <PreHacizRiskCard caseId={caseData.id} />
