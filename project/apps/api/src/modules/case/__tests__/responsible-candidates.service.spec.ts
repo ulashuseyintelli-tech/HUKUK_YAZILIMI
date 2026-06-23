@@ -8,7 +8,7 @@ describe("ResponsibleCandidatesService (M2-G2)", () => {
       lawyer: { findMany: jest.fn((..._a: any[]) => Promise.resolve(lawyers)) },
       staffMember: { findMany: jest.fn((..._a: any[]) => Promise.resolve(staff)) },
     } as any;
-    return { service: new ResponsibleCandidatesService(prisma), prisma };
+    return { service: new ResponsibleCandidatesService(prisma, { log: jest.fn() } as any), prisma };
   };
 
   it("aktif avukat + aktif personeli doğru shape ile aday döndürür", async () => {
@@ -71,24 +71,29 @@ describe("ResponsibleCandidatesService (M2-G2)", () => {
 });
 
 describe("ResponsibleCandidatesService.assignResponsiblePerson (M2-G3a)", () => {
-  // case varsayılan: var ({id:"c1"}); lawyer/staff varsayılan: null (aday değil)
+  // case varsayılan: var ({id:"c1", owner null/null}); lawyer/staff varsayılan: null (aday değil)
   const makeAssign = (opts: { case?: any; lawyer?: any; staff?: any } = {}) => {
+    const audit = { log: jest.fn(async () => undefined) };
     const prisma = {
       case: {
         findFirst: jest.fn((..._a: any[]) =>
-          Promise.resolve("case" in opts ? opts.case : { id: "c1" })
+          Promise.resolve(
+            "case" in opts
+              ? opts.case
+              : { id: "c1", responsibleLawyerId: null, responsibleStaffId: null }
+          )
         ),
         update: jest.fn((..._a: any[]) => Promise.resolve({})),
       },
       lawyer: { findFirst: jest.fn((..._a: any[]) => Promise.resolve(opts.lawyer ?? null)) },
       staffMember: { findFirst: jest.fn((..._a: any[]) => Promise.resolve(opts.staff ?? null)) },
     } as any;
-    return { service: new ResponsibleCandidatesService(prisma), prisma };
+    return { service: new ResponsibleCandidatesService(prisma, audit as any), prisma, audit };
   };
 
   it("LAWYER set → responsibleLawyerId yazılır, responsibleStaffId null'lanır", async () => {
     const { service, prisma } = makeAssign({ lawyer: { id: "L1" } });
-    const out = await service.assignResponsiblePerson("t1", "c1", { responsibleLawyerId: "L1" });
+    const out = await service.assignResponsiblePerson("t1", "c1", { responsibleLawyerId: "L1" }, "u1");
     expect(out).toEqual({ responsibleLawyerId: "L1", responsibleStaffId: null });
     expect(prisma.case.update).toHaveBeenCalledWith({
       where: { id: "c1" },
@@ -98,7 +103,7 @@ describe("ResponsibleCandidatesService.assignResponsiblePerson (M2-G3a)", () => 
 
   it("STAFF set → responsibleStaffId yazılır, responsibleLawyerId null'lanır", async () => {
     const { service, prisma } = makeAssign({ staff: { id: "S1" } });
-    const out = await service.assignResponsiblePerson("t1", "c1", { responsibleStaffId: "S1" });
+    const out = await service.assignResponsiblePerson("t1", "c1", { responsibleStaffId: "S1" }, "u1");
     expect(out).toEqual({ responsibleLawyerId: null, responsibleStaffId: "S1" });
     expect(prisma.case.update).toHaveBeenCalledWith({
       where: { id: "c1" },
@@ -109,16 +114,16 @@ describe("ResponsibleCandidatesService.assignResponsiblePerson (M2-G3a)", () => 
   it("ikisi birden → 400 (BadRequest), update çağrılmaz", async () => {
     const { service, prisma } = makeAssign();
     await expect(
-      service.assignResponsiblePerson("t1", "c1", { responsibleLawyerId: "L1", responsibleStaffId: "S1" })
+      service.assignResponsiblePerson("t1", "c1", { responsibleLawyerId: "L1", responsibleStaffId: "S1" }, "u1")
     ).rejects.toThrow(BadRequestException);
     expect(prisma.case.update).not.toHaveBeenCalled();
   });
 
   it("hiçbiri → 400 (BadRequest), update çağrılmaz", async () => {
     const { service, prisma } = makeAssign();
-    await expect(service.assignResponsiblePerson("t1", "c1", {})).rejects.toThrow(BadRequestException);
+    await expect(service.assignResponsiblePerson("t1", "c1", {}, "u1")).rejects.toThrow(BadRequestException);
     await expect(
-      service.assignResponsiblePerson("t1", "c1", { responsibleLawyerId: "  ", responsibleStaffId: "" })
+      service.assignResponsiblePerson("t1", "c1", { responsibleLawyerId: "  ", responsibleStaffId: "" }, "u1")
     ).rejects.toThrow(BadRequestException);
     expect(prisma.case.update).not.toHaveBeenCalled();
   });
@@ -126,7 +131,7 @@ describe("ResponsibleCandidatesService.assignResponsiblePerson (M2-G3a)", () => 
   it("pasif/aday-olmayan avukat → 400, update çağrılmaz", async () => {
     const { service, prisma } = makeAssign({ lawyer: null });
     await expect(
-      service.assignResponsiblePerson("t1", "c1", { responsibleLawyerId: "Lx" })
+      service.assignResponsiblePerson("t1", "c1", { responsibleLawyerId: "Lx" }, "u1")
     ).rejects.toThrow(BadRequestException);
     expect(prisma.case.update).not.toHaveBeenCalled();
   });
@@ -134,7 +139,7 @@ describe("ResponsibleCandidatesService.assignResponsiblePerson (M2-G3a)", () => 
   it("pasif/aday-olmayan personel → 400, update çağrılmaz", async () => {
     const { service, prisma } = makeAssign({ staff: null });
     await expect(
-      service.assignResponsiblePerson("t1", "c1", { responsibleStaffId: "Sx" })
+      service.assignResponsiblePerson("t1", "c1", { responsibleStaffId: "Sx" }, "u1")
     ).rejects.toThrow(BadRequestException);
     expect(prisma.case.update).not.toHaveBeenCalled();
   });
@@ -142,20 +147,49 @@ describe("ResponsibleCandidatesService.assignResponsiblePerson (M2-G3a)", () => 
   it("dosya bu tenant'ta yok → 404 (NotFound)", async () => {
     const { service } = makeAssign({ case: null, lawyer: { id: "L1" } });
     await expect(
-      service.assignResponsiblePerson("t1", "cX", { responsibleLawyerId: "L1" })
+      service.assignResponsiblePerson("t1", "cX", { responsibleLawyerId: "L1" }, "u1")
     ).rejects.toThrow(NotFoundException);
   });
 
   it("cross-tenant aday reddedilir (aday sorgusu tenantId ile scoped → eşleşmez → 400)", async () => {
     const { service, prisma } = makeAssign({ lawyer: null });
     await expect(
-      service.assignResponsiblePerson("tA", "c1", { responsibleLawyerId: "Lother" })
+      service.assignResponsiblePerson("tA", "c1", { responsibleLawyerId: "Lother" }, "u1")
     ).rejects.toThrow(BadRequestException);
     expect(prisma.lawyer.findFirst).toHaveBeenCalledWith(
       expect.objectContaining({
         where: expect.objectContaining({ id: "Lother", tenantId: "tA", isActive: true, canBeResponsible: true }),
       })
     );
+  });
+
+  // WP-1a (Responsibility Audit Hardening): gerçek-kişi Dosya Operasyon Sorumlusu (K2) değişimi
+  // AuditLog'a old→new + actor(userId) + tenant ile yazılır. Bu test, değişiklik-öncesi kodda KIRMIZIYDI
+  // (assignResponsiblePerson audit üretmiyordu = K2 blind spot); WP-1a impl ile yeşil.
+  it("owner değişince CASE UPDATE audit (old→new owner + actor userId + tenant + changeType)", async () => {
+    const { service, audit } = makeAssign({
+      case: { id: "c1", responsibleLawyerId: null, responsibleStaffId: "S_OLD" },
+      lawyer: { id: "L1" },
+    });
+    await service.assignResponsiblePerson("t1", "c1", { responsibleLawyerId: "L1" }, "u99");
+    expect(audit.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        tenantId: "t1",
+        action: "UPDATE",
+        entityType: "CASE",
+        entityId: "c1",
+        userId: "u99",
+        oldValues: { responsibleLawyerId: null, responsibleStaffId: "S_OLD" },
+        newValues: { responsibleLawyerId: "L1", responsibleStaffId: null },
+        metadata: expect.objectContaining({ changeType: "OPERATION_OWNER" }),
+      })
+    );
+  });
+
+  it("geçersiz seçim (400) → audit YAZILMAZ (DB'ye dokunulmadan reddedildi)", async () => {
+    const { service, audit } = makeAssign();
+    await expect(service.assignResponsiblePerson("t1", "c1", {}, "u1")).rejects.toThrow(BadRequestException);
+    expect(audit.log).not.toHaveBeenCalled();
   });
 });
 
@@ -164,7 +198,7 @@ describe("ResponsibleCandidatesService.getCaseResponsiblePerson (M2-G3b)", () =>
     const prisma = {
       case: { findFirst: jest.fn((..._a: any[]) => Promise.resolve(kase)) },
     } as any;
-    return { service: new ResponsibleCandidatesService(prisma), prisma };
+    return { service: new ResponsibleCandidatesService(prisma, { log: jest.fn() } as any), prisma };
   };
 
   it("responsibleLawyer → LAWYER, isLegacy=false, 'Av.' formatı + rank subtitle", async () => {
