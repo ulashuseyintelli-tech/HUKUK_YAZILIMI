@@ -1439,6 +1439,7 @@ export class CaseService {
     tenantId: string,
     caseId: string,
     assigned: { staffMemberId: string; roleOnCase: string }[],
+    userId: string, // WP-1c-1: user-driven create-path → actor zorunlu
   ): Promise<void> {
     if (assigned.length === 0) return;
     await this.auditService.log({
@@ -1446,6 +1447,7 @@ export class CaseService {
       action: 'CREATE',
       entityType: 'CASE_STAFF',
       entityId: caseId,
+      userId, // WP-1c-1
       newValues: { staff: assigned },
       description: `Dosyaya ${assigned.length} personel atandı`,
     });
@@ -1957,7 +1959,7 @@ export class CaseService {
       // ASSIGN-2a: seçimle atanan personel için audit (yalnız dto.staff verildiğinde; default
       // yol mevcut davranışı AYNEN korur → ek audit üretmez). Tx commit sonrası.
       if (result.staffResult.selectionProvided) {
-        await this.auditStaffAssignment(tenantId, result.case?.id ?? '', result.staffResult.assigned);
+        await this.auditStaffAssignment(tenantId, result.case?.id ?? '', result.staffResult.assigned, userId);
       }
 
       // 7. Vekalet kontrolü (transaction dışında)
@@ -1992,6 +1994,7 @@ export class CaseService {
           action: 'CREATE',
           entityType: 'CASE',
           entityId: result.case.id,
+          userId, // WP-1c-1: create user-driven → actor zorunlu
           newValues: { fileNumber: result.case.fileNumber, type: result.case.type },
           description: `Yeni takip oluşturuldu: ${result.case.fileNumber}`,
         });
@@ -2030,6 +2033,7 @@ export class CaseService {
             action: 'UPDATE',
             entityType: 'CASE_LAWYER',
             entityId: result.responsibleKeptId,
+            userId, // WP-1c-1: create içi oto-dedupe yine user-driven create → actor zorunlu
             newValues: { isResponsible: true, role: 'RESPONSIBLE', demotedCaseLawyerIds: result.responsibleDemotedIds, reason: 'CREATE_DEDUPE' },
             description: `Takip oluşturulurken fazla sorumlu avukat düşürüldü (${result.responsibleDemotedIds.length})`,
           });
