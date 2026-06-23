@@ -15,6 +15,7 @@
 
 import { Instrument, PageCandidate, InstrumentType } from "./debt-instrument.types";
 import { Page } from "./pdf-segmentation";
+import { foldTurkishUpper } from "../../common/identity-validation.util";
 
 /** Ciro/kaşe isimleri olan kambiyo evrak tipleri. FATURA/DIGER hariç. */
 const KAMBIYO_TYPES = new Set<InstrumentType>(["CEK", "SENET", "POLICE"]);
@@ -22,6 +23,28 @@ const KAMBIYO_TYPES = new Set<InstrumentType>(["CEK", "SENET", "POLICE"]);
 const ENDORSEMENT_EVIDENCE_MAX = 240; // kısa kanıt alıntısı üst sınırı
 const MAX_ENDORSEMENT_NAMES = 20; // enstrüman başına isim adayı cap (garbage-in koruması)
 const MAX_NAME_LEN = 120; // tek isim uzunluk cap
+
+// BANKA KAŞESİ GÜRÜLTÜ FİLTRESİ (DAR denylist — "banka asla ciranta olamaz" GENELLEMESİ DEĞİL).
+// Arka yüzde banka işlem/protesto/ibraz kaşeleri endorsementNames'e sızıyor (CANLI kanıt:
+// "T.C. Ziraat Bankası A.Ş." ciranta sanıldı). Bunlar ciranta DEĞİL → endorsementNames'ten çıkarılır.
+// YALNIZ listelenen bankalar + banka-bağlamlı token; listede olmayan banka KAÇAR (bilinçli dar;
+// sonradan eklenir). El-yazısı isim misread'i (Şükrü→Süleyman) KAPSAM DIŞI (= Faz 3 kalite işi).
+const BANK_STAMP_RE =
+  /(ZIRAAT BANKAS|HALK ?BANKAS|HALKBANK|TURKIYE IS BANKAS|\bIS BANKAS|GARANTI BBVA|GARANTI BANKAS|YAPI ?KREDI|VAKIF(LAR)? ?BANKAS|VAKIFBANK|AKBANK|DENIZBANK|TURK EKONOMI BANKAS|\bQNB\b|\bTEB\b)/;
+
+/**
+ * Bir endorsementNames satırı tipik BANKA KAŞESİ mi (ciranta DEĞİL)? DAR denylist (ulas kararı):
+ * Ziraat/QNB/Halk/İş/Garanti/Yapı Kredi/Vakıf/Akbank/DenizBank/TEB — banka-bağlamlı token.
+ * "banka" geçen HER ŞEYİ değil; yalnız listelenenleri yakalar (false-positive'i düşük tutar).
+ * foldTurkishUpper ile normalize (İ/Ş/Ç/Ğ/Ü/Ö → ASCII büyük); REUSE.
+ *
+ * @remarks Çağrıldığı yerler:
+ * - applyEndorsementPass() (aynı dosya) → endorsementNames'ten banka kaşesi gürültüsünü çıkarır
+ * - __tests__/endorsement-extractor.spec.ts → birim test (canlı Ziraat örneği dahil)
+ */
+export function isBankStampName(name: string): boolean {
+  return BANK_STAMP_RE.test(foldTurkishUpper(name));
+}
 
 /**
  * Arka-yüz isim çıkarımı için system prompt. Yalnız BU arka sayfayı işler; sıra/zincir kurmaz,
@@ -153,11 +176,17 @@ export async function applyEndorsementPass(
     }
 
     if (collected.length > 0) {
-      // YALNIZ endorsementNames yazılır — başka alana DOKUNULMAZ.
-      inst.endorsementNames = dedupeNames([...(inst.endorsementNames ?? []), ...collected]).slice(
-        0,
-        MAX_ENDORSEMENT_NAMES,
-      );
+      // BANKA KAŞESİ GÜRÜLTÜSÜNÜ çıkar (ciranta DEĞİL); yalnız gerçek ciranta adayları kalır.
+      // Filtre beyaz-ciro kararından SONRA: collected>0 olduğu için else'e DÜŞMEZ → hepsi banka
+      // kaşesiyse endorsementNames YAZILMAZ + whiteEndorsement de SET EDİLMEZ (banka kaşesi ≠ beyaz ciro).
+      const realEndorsers = collected.filter((n) => !isBankStampName(n));
+      if (realEndorsers.length > 0) {
+        // YALNIZ endorsementNames yazılır — başka alana DOKUNULMAZ.
+        inst.endorsementNames = dedupeNames([...(inst.endorsementNames ?? []), ...realEndorsers]).slice(
+          0,
+          MAX_ENDORSEMENT_NAMES,
+        );
+      }
     } else if (read) {
       // BEYAZ CİRO SİNYALİ: arka-yüz markeri VAR + sayfa BAŞARIYLA okundu (read) ama hiç İSİM çıkmadı
       // → muhtemel beyaz/hamiline ciro. (AI hata / içeriksiz sayfa → read=false → flag YOK; "okunamadı"
