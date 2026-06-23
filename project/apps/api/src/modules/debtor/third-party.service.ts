@@ -428,8 +428,17 @@ export class ThirdPartyService {
    * Dosya için 89 ihbarname özeti
    */
   async getIhbarnameSummary(tenantId: string, caseId: string) {
+    // Tenant boundary: caseId bilinse bile başka tenant dosyasının özeti okunamasın.
+    const caseRow = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+      select: { id: true },
+    });
+    if (!caseRow) {
+      throw new NotFoundException("Dosya bulunamadı");
+    }
+
     const caseDebtors = await this.prisma.caseDebtor.findMany({
-      where: { caseId },
+      where: { caseId, case: { tenantId } },
       include: {
         thirdParties: true,
         debtor: { select: { id: true, name: true } },

@@ -177,6 +177,8 @@ export class AddressDiscoveryController {
     @Request() req: any,
     @Param('addressId') addressId: string,
   ) {
+    // Tenant boundary: ham addressId başka tenant'ın adresine erişemesin (cross-tenant okuma+yazma engeli).
+    await this.confidenceScoreService.assertAddressBelongsToTenant(req.user.tenantId, addressId);
     const score = await this.confidenceScoreService.updateAddressScore(addressId);
     return { score };
   }
@@ -189,6 +191,8 @@ export class AddressDiscoveryController {
     @Request() req: any,
     @Param('addressId') addressId: string,
   ) {
+    // Tenant boundary: ham addressId başka tenant'ın adresine erişemesin.
+    await this.confidenceScoreService.assertAddressBelongsToTenant(req.user.tenantId, addressId);
     // Önce adresi al
     const address = await this.confidenceScoreService['prisma'].debtorAddress.findUnique({
       where: { id: addressId },
@@ -224,6 +228,8 @@ export class AddressDiscoveryController {
     @Request() req: any,
     @Param('debtorId') debtorId: string,
   ) {
+    // Tenant boundary: ham debtorId başka tenant'ın borçlusuna erişemesin (cross-tenant yazma engeli).
+    await this.confidenceScoreService.assertDebtorBelongsToTenant(req.user.tenantId, debtorId);
     await this.confidenceScoreService.updateAllScoresForDebtor(debtorId);
     return { success: true };
   }
