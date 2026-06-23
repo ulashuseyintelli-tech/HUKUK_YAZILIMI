@@ -55,6 +55,44 @@ describe("PR-RE2 report passive policy", () => {
     });
   });
 
+  it("case debt report collection sorgusunu tenant ve case scope ile yapar", async () => {
+    const scopedCollectionService = {
+      getCollectedBreakdown: jest.fn().mockResolvedValue({ PRINCIPAL: 40 }),
+    };
+    const prisma: any = {
+      case: {
+        findFirst: jest.fn().mockResolvedValue({
+          id: "case-1",
+          fileNumber: "2026/1",
+          executionFileNumber: null,
+          client: { displayName: "Alacakli", name: "Alacakli" },
+          caseStatus: "DERDEST",
+          caseDate: new Date("2026-01-01"),
+          createdAt: new Date("2026-01-01"),
+          principalAmount: 100,
+          interestRate: 0,
+          currency: "TRY",
+          debtors: [],
+        }),
+      },
+      collection: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: "col-1", amount: 40, date: new Date("2026-01-02"), allocations: [] },
+        ]),
+      },
+    };
+    const service = new ReportService(prisma, scopedCollectionService as any, validationGate as any);
+
+    const result = await service.getCaseDebtReport("tenant-1", "case-1");
+
+    expect(prisma.collection.findMany).toHaveBeenCalledWith({
+      where: { tenantId: "tenant-1", caseId: "case-1", status: "CONFIRMED" },
+      include: { allocations: true },
+    });
+    expect(result.collectionDetails.totalCollected).toBe(40);
+    expect(result.balance.remainingDebt).toBe(60);
+  });
+
   it("collection history PASSIVE kaydi saklar ve lifecycle metadata ekler", async () => {
     const prisma: any = {
       collection: {
