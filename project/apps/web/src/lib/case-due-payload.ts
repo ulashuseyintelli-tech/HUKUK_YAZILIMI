@@ -198,14 +198,49 @@ export function mapClaimKalemTuruToDueType(kalemTuru?: string): ClaimDueType {
  * Diğer durumda MEVCUT davranış korunur: geçerli tip ya da varsayılan 'YASAL'
  * (PRINCIPAL akışı DEĞİŞMEZ; hiçbir ana kalemTuru faizTuru='YOK' değil).
  */
-export type DueInterestType = 'YASAL' | 'TICARI' | 'AVANS' | 'TEMERRUT';
+// Backend InterestType enum (case.dto.ts) ile birebir — frontend hedef sözleşmesi.
+export type DueInterestType = 'YASAL' | 'TICARI' | 'SABIT' | 'AVANS' | 'TEMERRUT' | 'YOKSUN';
+
+/**
+ * BUG-FIX (F-2): FaizTuruSelector value → backend InterestType enum mapping.
+ * Eskiden selector value'su (TICARI_DEGISEN/AKDI/BANKA_TL...) cast ile AYNEN geçiyordu → backend reddediyordu
+ * (dues.N.interestType must be one of YASAL/TICARI/SABIT/AVANS/TEMERRUT/YOKSUN). Domain kararı (Ulaş 2026-06-23):
+ *   YOK→YOKSUN · YASAL→YASAL · TICARI_DEGISEN→AVANS · TICARI_SABIT→TICARI · AKDI→SABIT · BANKA_TL→AVANS · KAMU_BANKA_TL→AVANS.
+ * Rich faiz tipi engine config'inde (engineType) korunur; Due.interestType yalnız KABA kategori etiketi.
+ */
+export const FAIZ_TURU_TO_DUE_INTEREST: Record<string, DueInterestType> = {
+  YOK: 'YOKSUN',
+  YASAL: 'YASAL',
+  TICARI_DEGISEN: 'AVANS',
+  TICARI_SABIT: 'TICARI',
+  AKDI: 'SABIT',
+  BANKA_TL: 'AVANS',
+  KAMU_BANKA_TL: 'AVANS',
+};
+
+const VALID_DUE_INTEREST = new Set<DueInterestType>(['YASAL', 'TICARI', 'SABIT', 'AVANS', 'TEMERRUT', 'YOKSUN']);
 
 export function resolveDueInterestType(dueType: ClaimDueType, takipOncesiFaiz?: string): DueInterestType | undefined {
-  if (dueType === 'INTEREST') return undefined;
-  if (takipOncesiFaiz === 'YOK') return undefined;
-  // takipOncesiFaiz mevcut sistemde config.faizTuru'dan gelir (örn. TICARI_DEGISEN/AKDI de olabilir);
-  // eski davranış `item:any` üzerinden bu değeri aynen geçiriyordu → cast ile birebir korunur.
-  return (takipOncesiFaiz || 'YASAL') as DueInterestType;
+  if (dueType === 'INTEREST') return undefined; // işlemiş faiz kalemin KENDİSİ → ayrı faiz tipi yok
+  if (!takipOncesiFaiz) return 'YASAL'; // unset → varsayılan yasal (mevcut davranış)
+  // Zaten geçerli backend enum ise aynen geç (eski data / doğrudan değer):
+  if (VALID_DUE_INTEREST.has(takipOncesiFaiz as DueInterestType)) return takipOncesiFaiz as DueInterestType;
+  // Selector value → backend enum'una MAP; bilinmeyen → güvenli varsayılan YASAL (ham selector value ASLA sızmaz).
+  return FAIZ_TURU_TO_DUE_INTEREST[takipOncesiFaiz] ?? 'YASAL';
+}
+
+/**
+ * BUG-FIX (F-3): ham backend `dues.N.interestType` validation mesajını okunur Türkçe mesaja çevirir.
+ * Kalıba uymuyorsa null (çağıran ham mesaja/fallback'e düşer). Kalem no'ları 1-based gösterilir.
+ */
+export function humanizeDuesValidationError(rawMessage: string): string | null {
+  const idx = new Set<number>();
+  const re = /dues\.(\d+)\.interestType/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(rawMessage)) !== null) idx.add(Number(m[1]) + 1);
+  if (idx.size === 0) return null;
+  const nums = [...idx].sort((a, b) => a - b).join(', ');
+  return `${nums} numaralı alacak kalem${idx.size > 1 ? 'lerinde' : 'inde'} geçerli bir faiz türü seçiniz.`;
 }
 
 /**

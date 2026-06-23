@@ -6,7 +6,7 @@ import Link from "next/link";
 import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculator, TrendingUp, Receipt, Banknote, FileCheck, Calendar, XCircle, Info, Search, Users, Building2, Landmark, Edit2, Trash2, Phone, Mail, AlertCircle, Settings } from "lucide-react";
 import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
-import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, mapClaimKalemTuruToDueType, resolveDueInterestType, flattenNestedYanAlacaklarRaws } from "@/lib/case-due-payload";
+import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, mapClaimKalemTuruToDueType, resolveDueInterestType, flattenNestedYanAlacaklarRaws, humanizeDuesValidationError, type DueInterestType } from "@/lib/case-due-payload";
 import { isPoaDuplicateSuppressed } from "@/lib/poa-ux";
 import { resolveLawyerIdsFromScan } from "@/lib/lawyer-match";
 import { buildStaffPayload } from "@/lib/case-staff-payload";
@@ -134,7 +134,7 @@ interface DueItem {
   amount: string; 
   dueDate: string;
   // Faiz hesaplama için ek alanlar
-  interestType?: "YASAL" | "TICARI" | "AVANS" | "TEMERRUT";
+  interestType?: DueInterestType; // BUG-FIX F-2: backend InterestType ile tek-kaynak (SABIT/YOKSUN dahil)
   interestRate?: number;
   interestAmount?: number;
   interestStartDate?: string;
@@ -1297,7 +1297,15 @@ export default function NewCasePage() {
       clearCaseWizardDraftState({ tenantId: wizardTenantId, userId: wizardUserId });
       // Yeni takip oluşturuldu - belgeler sekmesine yönlendir
       router.push(`/cases/${response.id}?tab=documents`);
-    } catch (err: any) { setError(err.message || "Takip oluşturulurken bir hata oluştu"); } finally { setLoading(false); }
+    } catch (err: any) {
+      // BUG-FIX (F-3): ham backend validation (dues.N.interestType) yerine okunur mesaj; teknik detay console'a.
+      const raw = Array.isArray(err?.response?.data?.message)
+        ? err.response.data.message.join(', ')
+        : (err?.response?.data?.message || err?.message || '');
+      const friendly = humanizeDuesValidationError(String(raw));
+      if (friendly && raw) console.error('[createCase] validation:', raw);
+      setError(friendly || err?.message || "Takip oluşturulurken bir hata oluştu");
+    } finally { setLoading(false); }
   };
 
   const filteredForms = filterFormsByCategory(categoryFilter === "ALL" ? null : categoryFilter);
@@ -1967,6 +1975,19 @@ export default function NewCasePage() {
                     </li>
                   ))}
                 </ul>
+                {/* BUG-FIX (F-1): eklenen kalemlerin CANLI toplamı (özet form-state'e değil listeye bağlı). */}
+                {(() => {
+                  const toplamTakip = claimDraftItems.reduce((sum, ci: any) => {
+                    const tt = ci.raw?.hesapOzeti?.find((s: any) => s.key === 'takip_tutari')?.tutar;
+                    return sum + (typeof tt === 'number' ? tt : Number(ci.raw?.bakiyeTutar) || 0);
+                  }, 0);
+                  return (
+                    <div className="mt-2 pt-2 border-t border-blue-200 flex items-center justify-between text-sm font-semibold">
+                      <span className="text-gray-700">Toplam Takip Tutarı ({claimDraftItems.length} kalem)</span>
+                      <span className="text-blue-700">{toplamTakip.toLocaleString('tr-TR', { minimumFractionDigits: 2 })} ₺</span>
+                    </div>
+                  );
+                })()}
               </div>
             )}
             <ProfessionalClaimItemForm
