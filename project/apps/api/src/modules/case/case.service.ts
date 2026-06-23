@@ -2034,6 +2034,7 @@ export class CaseService {
             entityType: 'CASE_LAWYER',
             entityId: result.responsibleKeptId,
             userId, // WP-1c-1: create içi oto-dedupe yine user-driven create → actor zorunlu
+            metadata: { caseId: result.case.id }, // WP-1d-2-pre: legal-responsible temporal için caseId
             newValues: { isResponsible: true, role: 'RESPONSIBLE', demotedCaseLawyerIds: result.responsibleDemotedIds, reason: 'CREATE_DEDUPE' },
             description: `Takip oluşturulurken fazla sorumlu avukat düşürüldü (${result.responsibleDemotedIds.length})`,
           });
@@ -2818,6 +2819,7 @@ export class CaseService {
       entityType: 'CASE_LAWYER',
       entityId: caseLawyerId,
       userId, // WP-1c-3
+      metadata: { caseId }, // WP-1d-2-pre: legal-responsible temporal için caseId
       newValues: demoteIds.length > 0 ? { ...updateData, demotedCaseLawyerIds: demoteIds } : updateData,
       description: `Avukat yetkileri güncellendi: ${caseLawyer.lawyer.name} ${caseLawyer.lawyer.surname}`,
     });
@@ -2983,6 +2985,7 @@ export class CaseService {
       entityType: 'CASE_LAWYER',
       entityId: caseLawyer.id,
       userId, // WP-1c-3
+      metadata: { caseId }, // WP-1d-2-pre: legal-responsible temporal için caseId
       newValues: { lawyerId: caseLawyer.lawyerId, role: caseLawyer.role, isResponsible: caseLawyer.isResponsible },
       description: `Dosyaya avukat eklendi: ${caseLawyer.lawyer.name} ${caseLawyer.lawyer.surname}`,
     });
@@ -2995,6 +2998,7 @@ export class CaseService {
         entityType: 'CASE_LAWYER',
         entityId: caseLawyer.id,
         userId, // WP-1c-3
+        metadata: { caseId }, // WP-1d-2-pre: legal-responsible temporal için caseId
         newValues: { isResponsible: true, role: 'RESPONSIBLE', demotedCaseLawyerIds: demotedIds },
         description: `Yeni sorumlu avukat atandı; ${demotedIds.length} eski sorumlu düşürüldü`,
       });
@@ -3061,6 +3065,7 @@ export class CaseService {
       entityType: 'CASE_LAWYER',
       entityId: caseLawyerId,
       userId, // WP-1c-3
+      metadata: { caseId }, // WP-1d-2-pre: legal-responsible temporal için caseId
       oldValues: { lawyerId: caseLawyer.lawyerId, role: caseLawyer.role, isResponsible: caseLawyer.isResponsible },
       description: 'Dosyadan avukat çıkarıldı',
     });
@@ -3073,6 +3078,7 @@ export class CaseService {
         entityType: 'CASE_LAWYER',
         entityId: promotedId,
         userId, // WP-1c-3
+        metadata: { caseId }, // WP-1d-2-pre: legal-responsible temporal için caseId
         newValues: { isResponsible: true, role: 'RESPONSIBLE', reason: 'RESPONSIBLE_REMOVED_AUTO_PROMOTE' },
         description: 'Sorumlu avukat silindi; otomatik yeni sorumlu avukat atandı',
       });
