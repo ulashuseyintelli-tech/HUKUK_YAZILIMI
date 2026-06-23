@@ -149,6 +149,7 @@ export function TebligatPanel({ caseId, caseDebtorId, debtorName, readOnly = fal
   const [loading, setLoading] = useState(true);
   const [showNewModal, setShowNewModal] = useState(false);
   const [showPttResultModal, setShowPttResultModal] = useState(false);
+  const [showMernisModal, setShowMernisModal] = useState(false);
   const [selectedTebligat, setSelectedTebligat] = useState<Tebligat | null>(null);
 
   useEffect(() => {
@@ -444,8 +445,8 @@ export function TebligatPanel({ caseId, caseDebtorId, debtorName, readOnly = fal
                   <button
                     type="button"
                     onClick={() => {
-                      // MERNİS tebligatı oluştur
-                      alert("MERNİS tebligatı oluşturma modal'ı açılacak");
+                      setSelectedTebligat(t);
+                      setShowMernisModal(true);
                     }}
                     className="px-3 py-1.5 bg-indigo-500 text-white text-xs rounded-lg hover:bg-indigo-600 flex items-center gap-1"
                   >
@@ -483,6 +484,22 @@ export function TebligatPanel({ caseId, caseDebtorId, debtorName, readOnly = fal
           }}
           onSaved={() => {
             setShowPttResultModal(false);
+            setSelectedTebligat(null);
+            loadData();
+          }}
+        />
+      )}
+
+      {/* MERNİS Tebligatı Modal — C2b-manuel: başarısız tebligat → MERNİS adresine yeni tebligat (POST /:id/create-mernis) */}
+      {showMernisModal && selectedTebligat && !readOnly && (
+        <MernisTebligatModal
+          tebligat={selectedTebligat}
+          onClose={() => {
+            setShowMernisModal(false);
+            setSelectedTebligat(null);
+          }}
+          onSaved={() => {
+            setShowMernisModal(false);
             setSelectedTebligat(null);
             loadData();
           }}
@@ -653,7 +670,8 @@ function NewTebligatModal({ caseId, caseDebtorId, priorityCheck, onClose, onSave
             />
           </div>
 
-          {/* Kanal */}
+          {/* Kanal — C2b-manuel (K2=A): YALNIZ fiziksel kanallar. UETS/KEP elektronik gönderim,
+              gerçek entegrasyon + hukuki onaya kadar UI'ya BAĞLANMAZ (stub sahte-başarı riski). */}
           <div>
             <label className="block text-sm font-medium mb-1">Tebligat Kanalı</label>
             <select
@@ -662,8 +680,6 @@ function NewTebligatModal({ caseId, caseDebtorId, priorityCheck, onClose, onSave
               className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-indigo-500"
             >
               <option value="PTT">PTT (Fiziki Tebligat)</option>
-              <option value="KEP">KEP (Kayıtlı Elektronik Posta)</option>
-              <option value="UETS">UETS (Ulusal Elektronik Tebligat)</option>
               <option value="ILANEN">İlanen Tebligat</option>
               <option value="ELDEN">Elden Tebligat</option>
             </select>
@@ -931,6 +947,98 @@ function PttResultModal({ tebligat, onClose, onSaved }: PttResultModalProps) {
                 </>
               ) : (
                 "Kaydet"
+              )}
+            </button>
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2.5 border border-gray-300 rounded-lg hover:bg-gray-50"
+            >
+              İptal
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
+
+// MERNİS Tebligatı Modal — C2b-manuel: başarısız (adreste bulunamadı vb.) tebligat için MERNİS
+// adresine TK 21/2 prosedürüyle yeni tebligat oluşturur. Saf manuel kayıt (POST /:id/create-mernis);
+// elektronik gönderim/sorgu YOK.
+interface MernisTebligatModalProps {
+  tebligat: Tebligat;
+  onClose: () => void;
+  onSaved: () => void;
+}
+
+function MernisTebligatModal({ tebligat, onClose, onSaved }: MernisTebligatModalProps) {
+  const [saving, setSaving] = useState(false);
+  const [mernisAddress, setMernisAddress] = useState("");
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!mernisAddress.trim()) {
+      alert("Lütfen MERNİS adresini girin");
+      return;
+    }
+    try {
+      setSaving(true);
+      await api.post(`/tebligat/${tebligat.id}/create-mernis`, { mernisAddress });
+      onSaved();
+    } catch (err: any) {
+      alert(err.message || "MERNİS tebligatı oluşturulamadı");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-xl shadow-xl w-full max-w-lg">
+        <div className="flex items-center justify-between p-4 border-b">
+          <div>
+            <h3 className="font-semibold text-lg">MERNİS Tebligatı Oluştur</h3>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              {TebligatTypeLabels[tebligat.tebligatType]} - {tebligat.recipientName}
+            </p>
+          </div>
+          <button onClick={onClose} className="p-1 hover:bg-gray-100 rounded-lg">
+            <XCircle className="h-5 w-5" />
+          </button>
+        </div>
+        <form onSubmit={handleSubmit} className="p-4 space-y-4">
+          <div className="p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm text-blue-700">
+            Başarısız tebligat için MERNİS adresine TK 21/2 prosedürüyle (ihbar + 15 gün) yeni tebligat oluşturulur.
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">MERNİS Adresi *</label>
+            <textarea
+              value={mernisAddress}
+              onChange={(e) => setMernisAddress(e.target.value)}
+              placeholder="MERNİS'ten alınan tam adres"
+              rows={3}
+              className="w-full px-3 py-2 border rounded-lg focus:outline-none focus:border-indigo-500 resize-none"
+              required
+            />
+          </div>
+          <div className="flex gap-2 pt-2">
+            <button
+              type="submit"
+              disabled={saving}
+              className="flex-1 px-4 py-2.5 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {saving ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Oluşturuluyor...
+                </>
+              ) : (
+                <>
+                  <Building2 className="h-4 w-4" />
+                  MERNİS Tebligatı Oluştur
+                </>
               )}
             </button>
             <button
