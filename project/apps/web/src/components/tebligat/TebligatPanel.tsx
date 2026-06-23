@@ -416,7 +416,8 @@ export function TebligatPanel({ caseId, caseDebtorId, debtorName, readOnly = fal
                 </div>
               )}
 
-              {/* Aksiyonlar */}
+              {/* Aksiyonlar — C2a: readOnly salt-okuma yüzeyinde TÜM mutation aksiyonları (gönder/PTT/MERNİS) gizlenir */}
+              {!readOnly && (
               <div className="flex items-center justify-end gap-2 pt-2 border-t">
                 {t.status === "HAZIRLANDI" && (
                   <button
@@ -452,6 +453,7 @@ export function TebligatPanel({ caseId, caseDebtorId, debtorName, readOnly = fal
                   </button>
                 )}
               </div>
+              )}
             </div>
           ))}
         </div>
