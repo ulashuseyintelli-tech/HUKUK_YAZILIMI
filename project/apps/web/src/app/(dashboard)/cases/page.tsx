@@ -1663,11 +1663,12 @@ export default function CasesPage() {
         {/* WP-3a: izole "Hukuki Sorumlu Eksik" chip — aktif dosyada operasyon owner personel ama
             hukuki sorumlu avukat yok. sayı=getStats.legalResponsibleMissing; tık→server-side filtre. Warn/report. */}
         <QuickFilterChip
-          label="Hukuki Sorumlu Eksik"
+          label="Hukuki Sorumlu Avukat Eksik"
           count={legalResponsibleMissingCount}
           isActive={filters.legalResponsibleMissing}
           onClick={() => setFilters(prev => ({ ...prev, legalResponsibleMissing: !prev.legalResponsibleMissing }))}
           color="warning"
+          title="Operasyon sorumlusu personel olan, ancak Hukuki Sorumlu Avukat atanmamış aktif dosyalar."
         />
         {visibleFilterIds.map((filterId) => {
           const qf = allQuickFilters.find(f => f.id === filterId);
@@ -2050,7 +2051,7 @@ export default function CasesPage() {
 
             {/* M2-G5d-1b: "Dosya Sorumlusu" filtresi = gerçek kişi (server-side responsibleLawyerId/StaffId). */}
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">Dosya Sorumlusu</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Dosya Operasyon Sorumlusu</label>
               <ResponsibleCandidateSelect
                 value={ownerFilter}
                 onChange={setOwnerFilter}
@@ -2198,7 +2199,7 @@ export default function CasesPage() {
               className="inline-flex items-center gap-1 px-3 py-1.5 text-sm bg-white border rounded-lg hover:bg-muted"
             >
               <UserCheck className="h-4 w-4" />
-              Dosya Sorumlusu Ata
+              Dosya Operasyon Sorumlusu Ata
             </button>
 
             {/* SMS Gönder */}
@@ -2758,14 +2759,14 @@ export default function CasesPage() {
       {showBulkAssignModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold mb-4">Toplu Dosya Sorumlusu Atama</h3>
+            <h3 className="text-lg font-semibold mb-4">Toplu Dosya Operasyon Sorumlusu Atama</h3>
             <p className="text-muted-foreground mb-4">
-              <strong>{selectedCases.length}</strong> dosyaya Dosya Sorumlusu atayın:
+              <strong>{selectedCases.length}</strong> dosyaya Dosya Operasyon Sorumlusu atayın:
             </p>
             <div className="space-y-3 mb-4">
               {/* M2-G5d-2: gerçek kişi (avukat/personel) seçici — responsible-candidates. */}
               <div>
-                <label className="text-sm text-muted-foreground mb-1 block">Dosya Sorumlusu (gerçek kişi)</label>
+                <label className="text-sm text-muted-foreground mb-1 block">Dosya Operasyon Sorumlusu (gerçek kişi)</label>
                 <ResponsibleCandidateSelect
                   value={bulkOwner}
                   onChange={(v) => { setBulkOwner(v); setBulkResult(null); }}
