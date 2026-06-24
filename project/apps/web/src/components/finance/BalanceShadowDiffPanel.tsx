@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useRef } from "react";
 import { AlertTriangle, CheckCircle2, Info, RefreshCw } from "lucide-react";
 import { useBalanceShadowDiff } from "@/hooks/useBalanceShadowDiff";
 import type {
@@ -12,6 +13,7 @@ interface BalanceShadowDiffPanelProps {
   caseId: string;
   asOfDate?: string;
   enabled: boolean;
+  refreshKey?: number | string;
 }
 
 function formatAmount(amount: number | null, currency: string | null): string {
@@ -91,8 +93,18 @@ export function BalanceShadowDiffPanel({
   caseId,
   asOfDate,
   enabled,
+  refreshKey,
 }: BalanceShadowDiffPanelProps) {
   const { data, loading, error, refetch } = useBalanceShadowDiff({ caseId, asOfDate, enabled });
+  const lastRefreshKeyRef = useRef<BalanceShadowDiffPanelProps["refreshKey"]>(refreshKey);
+
+  useEffect(() => {
+    if (refreshKey === undefined) return;
+    if (lastRefreshKeyRef.current === refreshKey) return;
+
+    lastRefreshKeyRef.current = refreshKey;
+    refetch();
+  }, [refetch, refreshKey]);
 
   if (!enabled) return null;
 

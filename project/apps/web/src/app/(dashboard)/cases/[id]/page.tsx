@@ -826,6 +826,7 @@ export default function CaseDetailPage() {
   const [dues, setDues] = useState<any[]>([]);
   const [collections, setCollections] = useState<any[]>([]);
   const [loadingFinance, setLoadingFinance] = useState(false);
+  const [financialSummaryRefreshKey, setFinancialSummaryRefreshKey] = useState(0);
   
   // Due Modal State
   const [dueModalOpen, setDueModalOpen] = useState(false);
@@ -981,6 +982,12 @@ export default function CaseDetailPage() {
       setLoadingFinance(false);
     }
   }, [params.id]);
+
+  const refreshCollectionDependentViews = useCallback(() => {
+    setFinancialSummaryRefreshKey((key) => key + 1);
+    void fetchFinanceData();
+    void fetchCase();
+  }, [fetchCase, fetchFinanceData]);
 
   // Fetch address tasks and notes for OperationDeck
   const fetchAddressTasksAndNotes = useCallback(async () => {
@@ -2469,7 +2476,7 @@ export default function CaseDetailPage() {
                                   if (!confirm('Bu tahsilatı silmek istediğinize emin misiniz?')) return;
                                   try {
                                     await api.deleteCollection(caseData.id, col.id);
-                                    fetchFinanceData();
+                                    refreshCollectionDependentViews();
                                   } catch (err: any) {
                                     alert(`Silme hatası: ${err?.message || 'Bilinmeyen hata'}`);
                                   }
@@ -2691,11 +2698,13 @@ export default function CaseDetailPage() {
               debtorCount={caseData.debtors?.length || 1}
               guardedPrimaryPilotEnabled={guardedPrimaryPilotEnabled}
               guardedPrimaryPilotAsOfDate={guardedPrimaryDisplayDate ?? balanceShadowDisplayDate}
+              refreshKey={financialSummaryRefreshKey}
             />
             <BalanceShadowDiffPanel
               caseId={caseData.id}
               asOfDate={balanceShadowDisplayDate}
               enabled={showBalanceShadowDisplay}
+              refreshKey={financialSummaryRefreshKey}
             />
           </div>
         </div>
@@ -3666,7 +3675,7 @@ export default function CaseDetailPage() {
           onClose={() => { setCollectionModalOpen(false); setEditingCollection(null); }}
           caseId={caseData.id}
           collection={editingCollection}
-          onSuccess={fetchFinanceData}
+          onSuccess={refreshCollectionDependentViews}
         />
       )}
 

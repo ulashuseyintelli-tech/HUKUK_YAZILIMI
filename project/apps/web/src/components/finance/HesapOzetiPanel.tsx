@@ -41,6 +41,7 @@ interface Props {
   debtorCount?: number;
   compact?: boolean;
   className?: string;
+  refreshKey?: number | string;
   guardedPrimaryPilotEnabled?: boolean;
   guardedPrimaryPilotAsOfDate?: string;
 }
@@ -54,15 +55,17 @@ export function HesapOzetiPanel({
   debtorCount = 1,
   compact = false,
   className = "",
+  refreshKey,
   guardedPrimaryPilotEnabled = false,
   guardedPrimaryPilotAsOfDate,
 }: Props) {
   const [hesapTarihi, setHesapTarihi] = useState(() => calculationDate || new Date().toISOString().split("T")[0]);
   const [faizDokumuVisible, setFaizDokumuVisible] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lastRefreshKeyRef = useRef<Props["refreshKey"]>(refreshKey);
   
   // Backend'den hesap özeti al
-  const { data: hesap, loading, error, refetch } = useCaseCalculation({
+  const { data: hesap, loading, error, refetch: refetchCalculation } = useCaseCalculation({
     caseId,
     calculationDate: hesapTarihi,
     autoFetch: true,
@@ -71,6 +74,7 @@ export function HesapOzetiPanel({
     data: guardedPrimaryReport,
     loading: guardedPrimaryLoading,
     error: guardedPrimaryError,
+    refetch: refetchGuardedPrimaryReport,
   } = useBalanceShadowDiff({
     caseId,
     asOfDate: guardedPrimaryPilotAsOfDate ?? hesapTarihi,
@@ -85,11 +89,28 @@ export function HesapOzetiPanel({
   }, [calculationDate]);
   
   // Tarih değişikliğinde yeniden hesapla
+  useEffect(() => {
+    if (refreshKey === undefined) return;
+    if (lastRefreshKeyRef.current === refreshKey) return;
+
+    lastRefreshKeyRef.current = refreshKey;
+    refetchCalculation(hesapTarihi);
+    if (guardedPrimaryPilotEnabled) {
+      refetchGuardedPrimaryReport();
+    }
+  }, [
+    guardedPrimaryPilotEnabled,
+    hesapTarihi,
+    refetchCalculation,
+    refetchGuardedPrimaryReport,
+    refreshKey,
+  ]);
+
   const handleDateChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const newDate = e.target.value;
     if (newDate) {
       setHesapTarihi(newDate);
-      refetch(newDate);
+      refetchCalculation(newDate);
     }
   };
   
@@ -121,7 +142,7 @@ export function HesapOzetiPanel({
           <span className="text-sm">{error}</span>
         </div>
         <button 
-          onClick={() => refetch(hesapTarihi)}
+          onClick={() => refetchCalculation(hesapTarihi)}
           className="mt-2 text-sm text-blue-600 hover:underline"
         >
           Tekrar Dene
@@ -171,7 +192,7 @@ export function HesapOzetiPanel({
             className="border rounded px-2 py-1 text-xs w-32 cursor-pointer"
             style={{ colorScheme: 'light' }}
           />
-          <button onClick={() => refetch(hesapTarihi)} className="p-1 hover:bg-gray-100 rounded">
+          <button onClick={() => refetchCalculation(hesapTarihi)} className="p-1 hover:bg-gray-100 rounded">
             <RefreshCw className="h-3.5 w-3.5 text-gray-500" />
           </button>
         </div>
