@@ -65,22 +65,27 @@ describe("WP-1d-3 TemporalResponsibilityService.getResponsibilityAt", () => {
 });
 
 // ---- Controller: asOf parse + delegation ----
+// NOT: WP-4d-1 getResponsibilityAt'e userId (2. param) + warnOnlyAudit ctor arg'ı, WP-4e-1 ise
+// permissionHardGuard ctor arg'ı ekledi. Bu yardımcılar getResponsibilityAt'i etkilemez (yalnız delete +
+// warn-only emit) ama ctor/çağrı imzaları güncel tutulmalı (aksi halde bu spec kırılır).
 function makeController(getResp = jest.fn(async () => ({ ok: true }))) {
   const temporal = { getResponsibilityAt: getResp } as any;
-  const controller = new CaseController({} as any, {} as any, {} as any, temporal);
+  const warnOnly = { recordWouldDeny: jest.fn().mockResolvedValue(undefined) } as any;
+  const hardGuard = { assertBridgeAdmin: jest.fn().mockResolvedValue(undefined) } as any;
+  const controller = new CaseController({} as any, {} as any, {} as any, temporal, warnOnly, hardGuard);
   return { controller, getResp };
 }
 
 describe("WP-1d-3 CaseController.getResponsibilityAt (endpoint)", () => {
   it("explicit asOf → service parsed Date ile çağrılır", async () => {
     const { controller, getResp } = makeController();
-    await controller.getResponsibilityAt("t1", "c1", "2026-06-15T00:00:00.000Z");
+    await controller.getResponsibilityAt("t1", "u1", "c1", "2026-06-15T00:00:00.000Z");
     expect(getResp).toHaveBeenCalledWith("t1", "c1", new Date("2026-06-15T00:00:00.000Z"));
   });
 
   it("asOf yok → new Date() (Date instance) ile çağrılır", async () => {
     const { controller, getResp } = makeController();
-    await controller.getResponsibilityAt("t1", "c1", undefined);
+    await controller.getResponsibilityAt("t1", "u1", "c1", undefined);
     const passed = getResp.mock.calls[0][2];
     expect(passed).toBeInstanceOf(Date);
     expect(Number.isNaN(passed.getTime())).toBe(false);
@@ -88,7 +93,7 @@ describe("WP-1d-3 CaseController.getResponsibilityAt (endpoint)", () => {
 
   it("invalid asOf → BadRequestException, service çağrılmaz", async () => {
     const { controller, getResp } = makeController();
-    await expect(controller.getResponsibilityAt("t1", "c1", "not-a-date")).rejects.toBeInstanceOf(BadRequestException);
+    await expect(controller.getResponsibilityAt("t1", "u1", "c1", "not-a-date")).rejects.toBeInstanceOf(BadRequestException);
     expect(getResp).not.toHaveBeenCalled();
   });
 });

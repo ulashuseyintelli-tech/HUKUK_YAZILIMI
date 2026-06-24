@@ -20,6 +20,7 @@ import { ResponsibleCandidatesService } from "./responsible-candidates.service";
 import { TemporalResponsibilityService } from "./temporal-responsibility.service";
 import { AssignResponsiblePersonDto } from "./dto/responsible-person.dto";
 import { WarnOnlyAuditService } from "../permission-diagnostics/warn-only-audit.service";
+import { PermissionHardGuardService } from "../permission-diagnostics/permission-hard-guard.service";
 
 @Controller("cases")
 @UseGuards(JwtAuthGuard)
@@ -29,7 +30,8 @@ export class CaseController {
     private ocrService: OcrService,
     private responsibleCandidatesService: ResponsibleCandidatesService,
     private temporalResponsibilityService: TemporalResponsibilityService,
-    private warnOnlyAudit: WarnOnlyAuditService
+    private warnOnlyAudit: WarnOnlyAuditService,
+    private permissionHardGuard: PermissionHardGuardService
   ) {}
 
   @Get()
@@ -158,11 +160,21 @@ export class CaseController {
   }
 
   @Delete(":id")
-  delete(
+  async delete(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("id") userId: string,
+    @CurrentUser("role") role: string,
     @Param("id") id: string
   ) {
+    // WP-4e-1: Phase 3 İLK hard guard (geçici ADMIN-only bridge). Non-ADMIN → 403 + PERMISSION_DENIED.
+    // ADMIN ise success path mevcut silme davranışıyla AYNEN devam eder.
+    await this.permissionHardGuard.assertBridgeAdmin("cases.delete", {
+      tenantId,
+      actorUserId: userId,
+      role,
+      entityId: id,
+      requestPath: "/cases/:id",
+    });
     return this.caseService.delete(tenantId, id, userId);
   }
 
