@@ -157,3 +157,103 @@ CaseStaff "SORUMLU" rolünü canonical owner'la karıştıracak bir rename yapma
 - **Liveness teyidi:** `CasePartiesSection`, `bulk-case-assignment`, `cases/[id]` v2/page-new varyantları canlı mı?
   Ölü ise temizlik (ayrı dead-code işi), canlı ise rename kapsamına alma kararı.
 - **Task closer kolonu (ileride):** "Görevi Kapatan" UI'ı eklenirse AUTO_SYSTEM-bilinçli tasarla (insan gibi gösterme).
+
+---
+
+## 9. Model Decision — CaseStaff.roleOnCase (KİLİTLİ)
+
+> **Durum:** Ürün/model kararı **kilitlendi** (Ulaş, 2026-06-24). Bu yalnız karar kaydıdır — kod YOK, UI rename YOK,
+> DB migration YOK. WP-2c-2'nin (`NEEDS_MODEL_CONFIRMATION`) ön-koşulunu kapatır.
+
+### 9.1 Karar özeti
+
+- `CaseStaff.roleOnCase`, **Dosya Operasyon Sorumlusu DEĞİLDİR.**
+- `CaseStaff.roleOnCase`, dosya ekibindeki personelin **dosya içi ekip rolünü** ifade eder.
+- **"Sorumlu Personel" etiketi emekliye ayrılır** — canonical owner alanlarıyla (legacy `sorumluPersonelId` ve
+  canonical `responsibleStaffId`) sözel olarak karıştığı için.
+- **Kanonik ad:** alan grubu = **"Dosya Ekibi Rolü"**; `SORUMLU` değeri için kullanıcı etiketi = **"Dosya Ekibi Sorumlusu"**.
+
+### 9.2 Beş kavram ayrı tutulur
+
+| Kavram | Alan | Kullanıcı etiketi |
+|---|---|---|
+| Hukuki sorumlu avukat | `CaseLawyer.isResponsible` | Hukuki Sorumlu Avukat |
+| Canonical operation owner | `Case.responsibleLawyerId` / `Case.responsibleStaffId` | Dosya Operasyon Sorumlusu |
+| Legacy owner | `Case.sorumluPersonelId` | Eski Sorumlu Personel |
+| Case staff ekip rolü (alan grubu) | `CaseStaff.roleOnCase` | Dosya Ekibi Rolü |
+| Case staff `roleOnCase = SORUMLU` | `CaseStaff.roleOnCase` | **Dosya Ekibi Sorumlusu** |
+
+### 9.3 Soru 1 — Kanonik değer kümesi
+
+**DB enum migration YOK.** Alan `String` kalır. UI ve docs tarafında kanonik değer kümesi:
+
+```ts
+type CaseStaffRoleOnCase =
+  | "EKIP_SORUMLUSU"
+  | "YARDIMCI_PERSONEL"
+  | "TAKIP_PERSONELI"
+  | "STAJYER"
+  | "KONTROL"
+  | "YAZI_ISLERI"
+  | "MUHASEBE"
+  | "TEBLIGAT"
+  | "ARSIV";
+```
+
+**Legacy token → kanonik değer eşlemesi:**
+
+| Legacy token | Kanonik değer |
+|---|---|
+| `SORUMLU` | `EKIP_SORUMLUSU` |
+| `YARDIMCI` | `YARDIMCI_PERSONEL` |
+| `TAKIPCI` | `TAKIP_PERSONELI` |
+| `TEBLIGAT_SORUMLUSU` | `TEBLIGAT` |
+
+### 9.4 Soru 2 — İki ekran birleşsin mi?
+
+**Evet.** Detay-düzenleme ekranı ve yeni-dava sihirbazı **aynı shared label-map / option-list** kullanacak.
+Mevcut üç farklı sözlük (detay: `SORUMLU/YARDIMCI/TAKIPCI` · sihirbaz: `STAJYER/KONTROL/YAZI_ISLERI/MUHASEBE/TEBLIGAT_SORUMLUSU`
+· şema yorumu: farklı liste) **sürdürülemez** ve tek shared sözlüğe çekilir. **DB migration yok** (yalnız UI sözlüğü).
+
+### 9.5 Soru 3 — Ham token yerine label-map?
+
+**Evet.** Kullanıcıya **ham token gösterilmeyecek**; ham token render edilen her yerde display label kullanılır.
+
+**Display label-map (kanonik değer → kullanıcı etiketi):**
+
+| Kanonik değer | Kullanıcı etiketi |
+|---|---|
+| `EKIP_SORUMLUSU` | Dosya Ekibi Sorumlusu |
+| `YARDIMCI_PERSONEL` | Yardımcı Personel |
+| `TAKIP_PERSONELI` | Takip Personeli |
+| `STAJYER` | Stajyer |
+| `KONTROL` | Kontrol |
+| `YAZI_ISLERI` | Yazı İşleri |
+| `MUHASEBE` | Muhasebe |
+| `TEBLIGAT` | Tebligat |
+| `ARSIV` | Arşiv |
+
+**Legacy token doğrudan display (geri-uyum, eski satırlar için):**
+
+| Legacy token | Kullanıcı etiketi |
+|---|---|
+| `SORUMLU` | Dosya Ekibi Sorumlusu |
+| `YARDIMCI` | Yardımcı Personel |
+| `TAKIPCI` | Takip Personeli |
+| `TEBLIGAT_SORUMLUSU` | Tebligat |
+
+### 9.6 Soru 4 — "Sorumlu Personel" etiketi korunsun mu?
+
+**Hayır.** Korunmayacak. Yeni kullanıcı etiketi: **"Dosya Ekibi Sorumlusu"**.
+Gerekçe: "Sorumlu Personel" ifadesi legacy owner (`sorumluPersonelId`) veya canonical `responsibleStaffId` ile karışıyor.
+`CaseStaff.roleOnCase = SORUMLU` yalnızca dosya ekibi içindeki rolü anlatır; dosyanın operasyon owner'ı olduğunu **göstermez**.
+
+### 9.7 Bu kararın etkilediği envanter satırları
+
+- **S1** (`cases/[id]/page.tsx:3047` "Sorumlu Personel" dropdown) → "Dosya Ekibi Sorumlusu" (WP-2c-1).
+- **S4 / D2** (`page.tsx:2099`, `CasePartiesSection.tsx:155` ham `roleOnCase` token) → display label-map (WP-2c-1).
+- **S5** (`cases/new/page.tsx:2539` farklı sözlük) → shared option-list'e birleştir (WP-2c-1).
+- Bu satırların `NEEDS_MODEL_CONFIRMATION` durumu artık **çözüldü → RENAME (WP-2c-1)** olarak okunur.
+
+> **Sonraki kod gate:** **WP-2c-1 — CaseStaff role label-map + raw token display cleanup.**
+> Bu karar docs PR'ı **merge edilmeden WP-2c-1'e başlanmaz.** DB migration / şema / audit içermez (yalnız UI sözlüğü + display).
