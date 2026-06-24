@@ -70,6 +70,10 @@ import {
   getBalanceShadowDisplayDate,
   shouldShowBalanceShadowDisplay,
 } from "@/lib/balance-shadow-display";
+import {
+  getGuardedPrimaryDisplayDate,
+  shouldEnableGuardedPrimaryDisplayPilot,
+} from "@/lib/guarded-primary-display";
 
 // ============================================
 // TİPLER
@@ -679,6 +683,8 @@ export default function CaseDetailPage() {
   const fromFilter = searchParams.get('fromFilter');
   const showBalanceShadowDisplay = shouldShowBalanceShadowDisplay(searchParams);
   const balanceShadowDisplayDate = getBalanceShadowDisplayDate(searchParams);
+  const guardedPrimaryPilotEnabled = shouldEnableGuardedPrimaryDisplayPilot(searchParams);
+  const guardedPrimaryDisplayDate = getGuardedPrimaryDisplayDate(searchParams);
   
   const [caseData, setCaseData] = useState<CaseDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2683,6 +2689,8 @@ export default function CaseDetailPage() {
             <HesapOzetiPanel
               caseId={caseData.id}
               debtorCount={caseData.debtors?.length || 1}
+              guardedPrimaryPilotEnabled={guardedPrimaryPilotEnabled}
+              guardedPrimaryPilotAsOfDate={guardedPrimaryDisplayDate ?? balanceShadowDisplayDate}
             />
             <BalanceShadowDiffPanel
               caseId={caseData.id}

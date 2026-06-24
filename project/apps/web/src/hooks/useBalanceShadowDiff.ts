@@ -23,6 +23,7 @@ interface UseBalanceShadowDiffReturn {
  * <remarks>
  * Çağrıldığı yerler:
  * - BalanceShadowDiffPanel() → GET /interest-engine/case/:caseId/balance/display/shadow-diff (audit-only UI paneli)
+ * - HesapOzetiPanel() → GET /interest-engine/case/:caseId/balance/display/shadow-diff (guarded primary pilot eligibility)
  * </remarks>
  */
 export function useBalanceShadowDiff({

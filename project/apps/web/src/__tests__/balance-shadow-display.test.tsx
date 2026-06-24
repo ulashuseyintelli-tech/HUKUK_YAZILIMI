@@ -6,6 +6,10 @@ import {
   getBalanceShadowDisplayDate,
   shouldShowBalanceShadowDisplay,
 } from "@/lib/balance-shadow-display";
+import {
+  evaluateGuardedPrimaryDisplayPilot,
+  shouldEnableGuardedPrimaryDisplayPilot,
+} from "@/lib/guarded-primary-display";
 import { apiClient } from "@/lib/api/client";
 import type { BalanceDisplayShadowDiffReport } from "@/lib/api/balance-shadow-diff";
 
@@ -189,6 +193,75 @@ function makeReport(
   };
 }
 
+function makeEligibleGuardedPrimaryReport(): BalanceDisplayShadowDiffReport {
+  return makeReport({
+    comparability: {
+      comparable: true,
+      classification: "EXACT_MATCH",
+      severity: "GREEN",
+      blockers: [],
+      warnings: [],
+    },
+    totals: {
+      legacy: {
+        currency: "TRY",
+        totalDebtAmount: 980,
+        totalPaidAmount: 0,
+        outstandingAmount: 980,
+        interestAmount: 0,
+        costsAmount: 0,
+        attorneyFeeAmount: 0,
+        raw: {},
+      },
+      canonical: {
+        currency: "TRY",
+        totalDebtAmount: 980,
+        totalPaidAmount: 0,
+        outstandingAmount: 980,
+        interestAmount: 0,
+        costsAmount: 0,
+        attorneyFeeAmount: 0,
+        raw: {},
+      },
+      diffs: [],
+    },
+    bucketDiffs: [
+      {
+        code: "PRINCIPAL_MATCH",
+        label: "Principal",
+        classification: "EXACT_MATCH",
+        legacyField: "asilAlacak",
+        canonicalField: "bucket.PRINCIPAL",
+        legacyAmount: 980,
+        canonicalAmount: 980,
+        delta: 0,
+        deltaPercent: 0,
+        status: "MATCH",
+        severity: "GREEN",
+        explanation: "Principal exact match.",
+        bucket: "PRINCIPAL",
+        canonicalDisplayable: true,
+      },
+    ],
+    diagnostics: [],
+    cutoverReadiness: {
+      safeForPrimaryDisplay: true,
+      safeForOptInShadow: true,
+      blockers: [],
+      nextRequiredEvidence: [],
+    },
+    provenance: {
+      legacyCalculationSummaryUsed: true,
+      canonicalBalanceDisplayUsed: true,
+      computeBalanceUsed: true,
+      finalDebtStatesAvailable: true,
+      claimItemCollectedAmountUsedAsAuthority: false,
+      overpaymentHeldAvailable: false,
+      blockedOverpaymentDiagnosticsAvailable: false,
+    },
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
 });
@@ -204,6 +277,155 @@ describe("balance shadow display opt-in gate", () => {
   it("opsiyonel shadow tarihini query'den okur", () => {
     expect(getBalanceShadowDisplayDate(new URLSearchParams("balanceShadowDate=2026-06-24"))).toBe("2026-06-24");
     expect(getBalanceShadowDisplayDate(new URLSearchParams(""))).toBeUndefined();
+  });
+});
+
+describe("guarded primary display pilot gate", () => {
+  it("env flag true ve guardedPrimary=1 birlikte olmadan pilot acilmaz", () => {
+    expect(shouldEnableGuardedPrimaryDisplayPilot(new URLSearchParams("guardedPrimary=1"), true)).toBe(true);
+    expect(shouldEnableGuardedPrimaryDisplayPilot(new URLSearchParams("guardedPrimary=1"), false)).toBe(false);
+    expect(shouldEnableGuardedPrimaryDisplayPilot(new URLSearchParams("guardedPrimary=true"), true)).toBe(false);
+    expect(shouldEnableGuardedPrimaryDisplayPilot(new URLSearchParams(""), true)).toBe(false);
+  });
+
+  it("flag off ise eligible evidence olsa bile legacy fallback secer", () => {
+    const decision = evaluateGuardedPrimaryDisplayPilot(makeEligibleGuardedPrimaryReport(), {
+      featureFlagEnabled: false,
+    });
+
+    expect(decision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
+    expect(decision.reasonCodes).toContain("FEATURE_FLAG_OFF");
+  });
+
+  it("flag on ve eligible evidence varsa canonical primary candidate secer", () => {
+    const decision = evaluateGuardedPrimaryDisplayPilot(makeEligibleGuardedPrimaryReport(), {
+      featureFlagEnabled: true,
+    });
+
+    expect(decision).toEqual({
+      primarySource: "CANONICAL_PRIMARY_CANDIDATE",
+      reasonCodes: [],
+    });
+  });
+
+  it("flag on ama finalDebtStates missing ise legacy fallback secer", () => {
+    const decision = evaluateGuardedPrimaryDisplayPilot(
+      makeReport({
+        diagnostics: [
+          {
+            code: "FINAL_DEBT_STATES_MISSING",
+            classification: "BLOCKER",
+            severity: "RED",
+            message: "Final debt states missing.",
+          },
+        ],
+        cutoverReadiness: {
+          safeForPrimaryDisplay: false,
+          safeForOptInShadow: true,
+          blockers: ["FINAL_DEBT_STATES_MISSING"],
+          nextRequiredEvidence: [],
+        },
+        provenance: {
+          ...makeReport().provenance,
+          finalDebtStatesAvailable: false,
+        },
+      }),
+      { featureFlagEnabled: true },
+    );
+
+    expect(decision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
+    expect(decision.reasonCodes).toEqual(expect.arrayContaining([
+      "FINAL_DEBT_STATES_MISSING",
+      "FINAL_DEBT_STATES_REQUIRED",
+    ]));
+  });
+
+  it("currency veya context mismatch varsa amount comparison primary yapilmaz", () => {
+    const currencyDecision = evaluateGuardedPrimaryDisplayPilot(
+      makeReport({
+        currency: null,
+        comparability: {
+          comparable: false,
+          classification: "CURRENCY_MISMATCH",
+          severity: "RED",
+          blockers: [
+            {
+              code: "CURRENCY_MISMATCH",
+              classification: "CURRENCY_MISMATCH",
+              severity: "RED",
+              message: "Currencies differ.",
+            },
+          ],
+          warnings: [],
+        },
+      }),
+      { featureFlagEnabled: true },
+    );
+    const contextDecision = evaluateGuardedPrimaryDisplayPilot(
+      makeReport({
+        comparability: {
+          comparable: false,
+          classification: "CONTEXT_MISMATCH",
+          severity: "RED",
+          blockers: [
+            {
+              code: "CONTEXT_MISMATCH",
+              classification: "CONTEXT_MISMATCH",
+              severity: "RED",
+              message: "Context mismatch.",
+            },
+          ],
+          warnings: [],
+        },
+      }),
+      { featureFlagEnabled: true },
+    );
+
+    expect(currencyDecision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
+    expect(currencyDecision.reasonCodes).toEqual(expect.arrayContaining(["CURRENCY_MISMATCH", "NOT_COMPARABLE"]));
+    expect(contextDecision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
+    expect(contextDecision.reasonCodes).toEqual(expect.arrayContaining(["CONTEXT_MISMATCH", "NOT_COMPARABLE"]));
+  });
+
+  it("ClaimItem contamination, blocked overpayment, restricted payment ve periodic unsupported hallerinde legacy fallback secer", () => {
+    const claimDecision = evaluateGuardedPrimaryDisplayPilot(
+      makeEligibleGuardedPrimaryReport(),
+      { featureFlagEnabled: true, claimItemAuthorityContaminated: true },
+    );
+    const blockedDecision = evaluateGuardedPrimaryDisplayPilot(
+      makeReport({
+        diagnostics: [
+          {
+            code: "OVERPAYMENT_BLOCKED",
+            classification: "CANONICAL_UNSAFE",
+            severity: "YELLOW",
+            message: "Blocked overpayment is diagnostic evidence.",
+          },
+          {
+            code: "RESTRICTED_PAYMENT_DISPLAY_UNSAFE",
+            classification: "CANONICAL_UNSAFE",
+            severity: "YELLOW",
+            message: "Restricted payment scope is unresolved.",
+          },
+        ],
+      }),
+      { featureFlagEnabled: true, paymentDesignationRequired: true },
+    );
+    const periodicDecision = evaluateGuardedPrimaryDisplayPilot(
+      makeEligibleGuardedPrimaryReport(),
+      { featureFlagEnabled: true, unsupportedPeriodicObligation: true },
+    );
+
+    expect(claimDecision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
+    expect(claimDecision.reasonCodes).toContain("CLAIM_ITEM_AUTHORITY_CONTAMINATION");
+    expect(blockedDecision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
+    expect(blockedDecision.reasonCodes).toEqual(expect.arrayContaining([
+      "OVERPAYMENT_BLOCKED",
+      "PAYMENT_DESIGNATION_REQUIRED",
+      "RESTRICTED_PAYMENT_DISPLAY_UNSAFE",
+    ]));
+    expect(periodicDecision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
+    expect(periodicDecision.reasonCodes).toContain("UNSUPPORTED_PERIODIC_OBLIGATION");
   });
 });
 
@@ -259,6 +481,83 @@ describe("BalanceShadowDiffPanel", () => {
     );
     expect(screen.getAllByText("1.234,00 TL").length).toBeGreaterThan(0);
     expect((await screen.findAllByText("₺980,00")).length).toBeGreaterThan(0);
+  });
+
+  it("guarded primary pilot flag on ve eligible evidence varsa canonical candidate degerlerini gosterir", async () => {
+    apiGet.mockResolvedValue({ data: makeEligibleGuardedPrimaryReport() });
+
+    render(
+      <HesapOzetiPanel
+        caseId="case-1"
+        guardedPrimaryPilotEnabled
+        guardedPrimaryPilotAsOfDate="2026-06-24"
+      />,
+    );
+
+    await waitFor(() =>
+      expect(apiGet).toHaveBeenCalledWith(
+        "/interest-engine/case/case-1/balance/display/shadow-diff?asOfDate=2026-06-24",
+      ),
+    );
+    expect(await screen.findByText("Guarded canonical primary candidate")).toBeInTheDocument();
+    expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent("ELIGIBLE");
+    expect(screen.getAllByText("980,00 TL").length).toBeGreaterThan(0);
+    expect(screen.queryByText("1.234,00 TL")).not.toBeInTheDocument();
+  });
+
+  it("guarded primary pilot hard no-go diagnostic varsa legacy fallback degerlerini korur", async () => {
+    apiGet.mockResolvedValue({
+      data: makeReport({
+        diagnostics: [
+          {
+            code: "FINAL_DEBT_STATES_MISSING",
+            classification: "BLOCKER",
+            severity: "RED",
+            message: "Final debt states missing.",
+          },
+        ],
+        cutoverReadiness: {
+          safeForPrimaryDisplay: false,
+          safeForOptInShadow: true,
+          blockers: ["FINAL_DEBT_STATES_MISSING"],
+          nextRequiredEvidence: [],
+        },
+        provenance: {
+          ...makeReport().provenance,
+          finalDebtStatesAvailable: false,
+        },
+      }),
+    });
+
+    render(
+      <HesapOzetiPanel
+        caseId="case-1"
+        guardedPrimaryPilotEnabled
+        guardedPrimaryPilotAsOfDate="2026-06-24"
+      />,
+    );
+
+    expect(await screen.findByText("Legacy calculation-summary fallback")).toBeInTheDocument();
+    expect(screen.getByTestId("guarded-primary-display-reasons").textContent).toContain("FINAL_DEBT_STATES_MISSING");
+    expect(screen.getAllByText("1.234,00 TL").length).toBeGreaterThan(0);
+  });
+
+  it("guarded primary pilot shadow source failure durumunda legacy fallback degerlerini korur", async () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    apiGet.mockRejectedValue(new Error("shadow unavailable"));
+
+    render(
+      <HesapOzetiPanel
+        caseId="case-1"
+        guardedPrimaryPilotEnabled
+        guardedPrimaryPilotAsOfDate="2026-06-24"
+      />,
+    );
+
+    expect(await screen.findByText("Legacy calculation-summary fallback")).toBeInTheDocument();
+    expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent("SHADOW_OR_CANONICAL_SOURCE_FAILURE");
+    expect(screen.getAllByText("1.234,00 TL").length).toBeGreaterThan(0);
+    consoleError.mockRestore();
   });
 
   it("shadow endpoint hata verirse audit error gosterir ve primary display kirilmaz", async () => {
