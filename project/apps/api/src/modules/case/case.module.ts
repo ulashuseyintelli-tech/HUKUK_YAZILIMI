@@ -14,6 +14,7 @@ import { DebtorModule } from "../debtor/debtor.module";
 import { ResponsibleCandidatesService } from "./responsible-candidates.service";
 import { TemporalResponsibilityService } from "./temporal-responsibility.service";
 import { ResponsibilityHistoryService } from "./responsibility-history.service";
+import { LegalResponsibleLawyerService } from "./legal-responsible-lawyer.service";
 // WP-4d-1: warn-only diagnostic audit (PERMISSION_WOULD_DENY) için.
 import { PermissionDiagnosticsModule } from "../permission-diagnostics/permission-diagnostics.module";
 
@@ -34,7 +35,7 @@ import { PermissionDiagnosticsModule } from "../permission-diagnostics/permissio
     DebtorModule,
   ],
   controllers: [CaseController],
-  providers: [CaseService, ResponsibleCandidatesService, TemporalResponsibilityService, ResponsibilityHistoryService],
+  providers: [CaseService, ResponsibleCandidatesService, TemporalResponsibilityService, ResponsibilityHistoryService, LegalResponsibleLawyerService],
   exports: [CaseService, TemporalResponsibilityService, ResponsibilityHistoryService],
 })
 export class CaseModule {}

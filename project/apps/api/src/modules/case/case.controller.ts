@@ -22,6 +22,8 @@ import { ResponsibilityHistoryService, type HistoryEventType } from "./responsib
 import { AssignResponsiblePersonDto } from "./dto/responsible-person.dto";
 import { WarnOnlyAuditService } from "../permission-diagnostics/warn-only-audit.service";
 import { PermissionHardGuardService } from "../permission-diagnostics/permission-hard-guard.service";
+import { LegalResponsibleLawyerService } from "./legal-responsible-lawyer.service";
+import { ChangeLegalResponsibleLawyerDto } from "./dto/legal-responsible-lawyer.dto";
 
 @Controller("cases")
 @UseGuards(JwtAuthGuard)
@@ -33,7 +35,8 @@ export class CaseController {
     private temporalResponsibilityService: TemporalResponsibilityService,
     private warnOnlyAudit: WarnOnlyAuditService,
     private permissionHardGuard: PermissionHardGuardService,
-    private responsibilityHistoryService: ResponsibilityHistoryService
+    private responsibilityHistoryService: ResponsibilityHistoryService,
+    private legalResponsibleLawyerService: LegalResponsibleLawyerService
   ) {}
 
   @Get()
@@ -164,6 +167,28 @@ export class CaseController {
       dto,
       userId
     );
+  }
+
+  // WP-1d-5-4: Hukuki Sorumlu Avukat KONTROLLÜ değişikliği (devir DEĞİL — kayıt kurallı değiştirilir).
+  // ADMIN-only hard guard servis İÇİNDE; izole servise delege. CaseLawyer.isResponsible⇔role coupling +
+  // tek CASE_LAWYER audit (changeType=LEGAL_RESPONSIBLE_LAWYER_CHANGED) → history EVENT_CONFIRMED. Sözleşme #473.
+  // Operation owner / sorumluPersonelId / CaseStaff.roleOnCase / Task alanlarına DOKUNMAZ.
+  @Patch(":id/legal-responsible-lawyer")
+  async changeLegalResponsibleLawyer(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @CurrentUser("role") role: string,
+    @Param("id") id: string,
+    @Body() dto: ChangeLegalResponsibleLawyerDto
+  ) {
+    const data = await this.legalResponsibleLawyerService.changeLegalResponsibleLawyer(
+      tenantId,
+      id,
+      dto,
+      userId,
+      role
+    );
+    return { data };
   }
 
   @Get("next-file-number")
