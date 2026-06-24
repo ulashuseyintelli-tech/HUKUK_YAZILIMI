@@ -566,9 +566,11 @@ export default function ReportsPage() {
                     </select>
 
                     {/* M2-G5d-1: gerçek kişi owner filtresi (responsible-candidates; responsibleLawyerId/StaffId). */}
+                    {/* WP-2b: filtre canonical Dosya Operasyon Sorumlusu'na bağlı; placeholder ile legacy "Eski Sorumlu Personel" kolonundan ayrışır (B1). */}
                     <ResponsibleCandidateSelect
                       value={ownerFilter}
                       onChange={setOwnerFilter}
+                      placeholder="Dosya Operasyon Sorumlusu"
                       className="rounded-lg border px-2 py-2 text-sm outline-none focus:border-primary"
                     />
 
@@ -666,7 +668,13 @@ export default function ReportsPage() {
                       <th className="text-left px-4 py-3 text-sm font-medium">Mahiyet</th>
                       <th className="text-left px-4 py-3 text-sm font-medium">Risk</th>
                       <th className="text-left px-4 py-3 text-sm font-medium">Durum</th>
-                      <th className="text-left px-4 py-3 text-sm font-medium">Sorumlu</th>
+                      {/* WP-2b: legacy sorumluPersonel alanı (canonical Dosya Operasyon Sorumlusu DEĞİL). */}
+                      <th
+                        className="text-left px-4 py-3 text-sm font-medium"
+                        title="Geçiş dönemi legacy alanıdır. Yeni kanonik Dosya Operasyon Sorumlusu ile aynı kavram değildir."
+                      >
+                        Eski Sorumlu Personel
+                      </th>
                       <th className="text-center px-4 py-3 text-sm font-medium">Grup</th>
                       <th className="text-left px-4 py-3 text-sm font-medium min-w-[250px]">Raporlama Özeti</th>
                     </tr>
@@ -762,8 +770,9 @@ export default function ReportsPage() {
               <div className="space-y-6">
                 {realPersons.length > 0 && (
                   <PersonelReportSection
-                    title="Gerçek Kişi Sahipliği"
-                    subtitle="Avukat ve personel (Dosya Sorumlusu)"
+                    title="Dosya Operasyon Sorumluluğu"
+                    subtitle="Avukat ve personel (Dosya Operasyon Sorumlusu)"
+                    titleTooltip="Dosyanın günlük operasyonel takibini üstlenen gerçek kişi. Avukat veya personel olabilir."
                     rows={realPersons}
                   />
                 )}
@@ -843,7 +852,13 @@ export default function ReportsPage() {
                       {group.cases.slice(0, 5).map((c: any, j: number) => (
                         <div key={j} className="flex items-center justify-between text-sm py-1 border-t">
                           <span>{c.fileNumber}</span>
-                          <span className="text-muted-foreground">{c.sorumlu || '-'}</span>
+                          {/* WP-2b: legacy sorumluPersonel (Eski Sorumlu Personel); canonical Dosya Operasyon Sorumlusu DEĞİL. */}
+                          <span
+                            className="text-muted-foreground"
+                            title="Eski Sorumlu Personel — geçiş dönemi legacy alanıdır. Yeni kanonik Dosya Operasyon Sorumlusu ile aynı kavram değildir."
+                          >
+                            {c.sorumlu || '-'}
+                          </span>
                         </div>
                       ))}
                       {group.cases.length > 5 && (
@@ -907,7 +922,13 @@ export default function ReportsPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1">Sorumlu Personel</label>
+                {/* WP-2b: legacy sorumluPersonelId yazar (canonical Dosya Operasyon Sorumlusu ataması DEĞİL). */}
+                <label
+                  className="block text-sm font-medium mb-1"
+                  title="Geçiş dönemi legacy alanıdır. Yeni kanonik Dosya Operasyon Sorumlusu ile aynı kavram değildir."
+                >
+                  Eski Sorumlu Personel
+                </label>
                 <select
                   value={batchUpdates.sorumluPersonelId}
                   onChange={(e) => setBatchUpdates((prev) => ({ ...prev, sorumluPersonelId: e.target.value }))}
@@ -963,15 +984,17 @@ export default function ReportsPage() {
 function PersonelReportSection({
   title,
   subtitle,
+  titleTooltip,
   rows,
 }: {
   title: string;
   subtitle: string;
+  titleTooltip?: string;
   rows: PersonelReport[];
 }) {
   return (
     <div className="bg-white rounded-xl border overflow-hidden">
-      <div className="px-4 py-3 border-b bg-gray-50">
+      <div className="px-4 py-3 border-b bg-gray-50" title={titleTooltip}>
         <h3 className="font-semibold text-sm">{title}</h3>
         <p className="text-xs text-muted-foreground">{subtitle}</p>
       </div>
