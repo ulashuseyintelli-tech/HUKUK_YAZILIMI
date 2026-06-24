@@ -139,3 +139,22 @@ GET /cases/:id/responsibility-history
   - Mevcut `temporal-responsibility.service` mantığıyla tutarlı; ortak yardımcılar reuse.
   - **UI YOK.** Bu doc (WP-1d-4c-0) merge edilmeden başlanmaz.
 - Sonra (opsiyonel, ayrı): WP-1d-4c-2 frontend timeline UI (panelin yanında).
+
+## 13. WP-1d-4c-3 — Timeline filtre kontrolleri (frontend, scope kilidi)
+
+WP-1d-4c-3, mevcut `GET /cases/:id/responsibility-history` endpoint'inin **zaten var olan**
+parametreleri için **client-side filtre kontrolleri** ekler:
+
+- `type` ∈ `"all" | "operationOwner" | "legalResponsibleLawyer"` (backend enum'undan ayrılmaz)
+- `from` (opsiyonel)
+- `to` (opsiyonel)
+- `includeInferred` (mevcut checkbox; korunur)
+
+**Tarih formatı kuralı:** `date` input'undan gelen `YYYY-MM-DD` değeri backend'e **aynen** gönderilir.
+Client tarafında timezone yorumu / `00:00` / `23:59` / local-time dönüştürmesi **yapılmaz**
+(backend `parseHistoryDate` = `new Date(value)`; gün-sonu işlemez). Boş alan → ilgili query param gönderilmez.
+
+**Bu gate; backend reconstruction semantiğini, confidence semantiğini, authorization'ı,
+audit yazımını veya sorumluluk atama davranışını DEĞİŞTİRMEZ.** Ayrıca: yeni endpoint yok,
+migration/schema yok, permission/RBAC yok, URL query sync yok, pagination yok, export yok,
+responsibility-at panel refactor yok.
