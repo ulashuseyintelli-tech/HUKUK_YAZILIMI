@@ -27,11 +27,13 @@ export function ResponsibleCandidateSelect({
   onChange,
   disabled,
   className,
+  placeholder,
 }: {
   value: ResponsibleSelection | null;
   onChange: (v: ResponsibleSelection | null) => void;
   disabled?: boolean;
   className?: string; // G5d-1: filtre çubuğu gibi farklı bağlamlarda stil override'ı
+  placeholder?: string; // WP-2b: boş-seçim etiketi (reports filtresinde "Dosya Operasyon Sorumlusu"); varsayılan "Seçiniz"
 }) {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,7 +75,7 @@ export function ResponsibleCandidateSelect({
       }}
       className={className ?? "w-full rounded border px-2 py-1.5 text-xs outline-none focus:border-primary disabled:opacity-60"}
     >
-      <option value="">{loading ? "Yükleniyor…" : "Seçiniz"}</option>
+      <option value="">{loading ? "Yükleniyor…" : (placeholder ?? "Seçiniz")}</option>
       {lawyers.length > 0 && (
         <optgroup label="Avukatlar">
           {lawyers.map((c) => (
