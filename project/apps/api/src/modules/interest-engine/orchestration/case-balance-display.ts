@@ -279,11 +279,11 @@ function buildDiagnostics(
     });
   }
 
-  if (currency === 'MULTI') {
+  if (currency === 'MULTI' || currency === 'UNKNOWN') {
     diagnostics.push({
       code: 'MULTI_CURRENCY_DISPLAY_UNSAFE',
       severity: 'WARNING',
-      message: 'Birden cok para birimi var; top-level toplamlar null birakildi, currency bazli satirlar dikkate alinmali.',
+      message: 'Top-level display currency tekil/guvenli degil; top-level toplamlar null birakildi, currency bazli satirlar dikkate alinmali.',
     });
   }
 
@@ -336,6 +336,13 @@ function buildUnsafeSources(diagnostics: BalanceDisplayDiagnostic[]): BalanceDis
       code: 'FINAL_DEBT_STATES_CURRENCY_MISMATCH',
       source: 'CalculationResult.finalDebtStates',
       reason: 'PRINCIPAL kovasi yalniz display currency ile eslesen finalDebtStates snapshotindan turetilir.',
+    });
+  }
+  if (diagnostics.some((d) => d.code === 'MULTI_CURRENCY_DISPLAY_UNSAFE')) {
+    sources.push({
+      code: 'MULTI_CURRENCY_DISPLAY_UNSAFE',
+      source: 'CaseBalanceResult.currencyResults',
+      reason: 'Top-level display tutarlari tek currency authority olmadan primary display icin guvenli degildir.',
     });
   }
   if (diagnostics.some((d) => d.code === 'RESTRICTED_PAYMENT_DISPLAY_UNSAFE')) {

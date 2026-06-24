@@ -394,6 +394,20 @@ describe('BalanceDisplayShadowDiffService', () => {
         deltaPercent: null,
       }),
     ]));
+    for (const diff of [...report.totals.diffs, ...report.bucketDiffs]) {
+      expect(diff).toMatchObject({
+        classification: 'CURRENCY_MISMATCH',
+        severity: 'RED',
+        status: 'NOT_COMPARABLE',
+        legacyAmount: null,
+        canonicalAmount: null,
+        delta: null,
+        deltaPercent: null,
+      });
+    }
+    expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
+    expect(report.cutoverReadiness.safeForOptInShadow).toBe(false);
+    expect(report.cutoverReadiness.blockers).toContain('CURRENCY_MISMATCH');
   });
 
   it('tenant/case mismatch varsa cross-context veriyi sessizce comparable yapmaz', async () => {
@@ -419,6 +433,124 @@ describe('BalanceDisplayShadowDiffService', () => {
         status: 'NOT_COMPARABLE',
       }),
     ]));
+    for (const diff of [...report.totals.diffs, ...report.bucketDiffs]) {
+      expect(diff).toMatchObject({
+        classification: 'CONTEXT_MISMATCH',
+        severity: 'RED',
+        status: 'NOT_COMPARABLE',
+        legacyAmount: null,
+        canonicalAmount: null,
+        delta: null,
+        deltaPercent: null,
+      });
+    }
+    expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
+    expect(report.cutoverReadiness.safeForOptInShadow).toBe(false);
+    expect(report.cutoverReadiness.blockers).toContain('CONTEXT_MISMATCH');
+  });
+
+  it('canonical top-level multi-currency unsafe ise amount comparison yapmaz', async () => {
+    const { service } = makeService(
+      legacySummary({ currency: 'TRY' }),
+      canonicalBalance({
+        currencyResults: [
+          {
+            currency: 'TRY',
+            result: {
+              engineVersion: 'engine-v1',
+              totalDue: 900,
+              totalInterest: 25,
+              allocations: [{ paymentId: 'pay-1', paymentAmount: 100 }],
+              segments: [{ id: 'seg-1' }],
+            } as any,
+          },
+          {
+            currency: 'USD',
+            result: {
+              engineVersion: 'engine-v1',
+              totalDue: 50,
+              totalInterest: 5,
+              allocations: [],
+              segments: [{ id: 'seg-usd' }],
+            } as any,
+          },
+        ],
+        overpayments: { held: [], blocked: [] },
+      }),
+    );
+
+    const report = await service.compare('tenant-1', 'case-1', '2026-06-24', GENERATED_AT);
+
+    expect(report.comparability).toMatchObject({
+      comparable: false,
+      classification: 'CANONICAL_UNSAFE',
+      severity: 'RED',
+    });
+    expect(report.comparability.blockers).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'CANONICAL_CURRENCY_UNSAFE',
+        classification: 'CANONICAL_UNSAFE',
+        severity: 'RED',
+      }),
+    ]));
+    expect(report.sources.canonicalBalanceDisplay.diagnostics).toContain('MULTI_CURRENCY_DISPLAY_UNSAFE');
+    expect(report.sources.canonicalBalanceDisplay.unsafeSources).toContain('MULTI_CURRENCY_DISPLAY_UNSAFE');
+    for (const diff of [...report.totals.diffs, ...report.bucketDiffs]) {
+      expect(diff).toMatchObject({
+        classification: 'CANONICAL_UNSAFE',
+        severity: 'RED',
+        status: 'NOT_COMPARABLE',
+        legacyAmount: null,
+        canonicalAmount: null,
+        delta: null,
+        deltaPercent: null,
+      });
+    }
+    expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
+    expect(report.cutoverReadiness.safeForOptInShadow).toBe(false);
+    expect(report.cutoverReadiness.blockers).toContain('CANONICAL_CURRENCY_UNSAFE');
+  });
+
+  it('canonical top-level unknown currency unsafe ise amount comparison yapmaz', async () => {
+    const { service } = makeService(
+      legacySummary({ currency: 'TRY' }),
+      canonicalBalance({
+        currencyResults: [],
+        overpayments: { held: [], blocked: [] },
+      }),
+    );
+
+    const report = await service.compare('tenant-1', 'case-1', '2026-06-24', GENERATED_AT);
+
+    expect(report.comparability).toMatchObject({
+      comparable: false,
+      classification: 'CANONICAL_UNSAFE',
+      severity: 'RED',
+    });
+    expect(report.comparability.blockers).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'CANONICAL_CURRENCY_UNSAFE',
+        classification: 'CANONICAL_UNSAFE',
+        severity: 'RED',
+      }),
+    ]));
+    expect(report.currency).toBe('UNKNOWN');
+    expect(report.sources.canonicalBalanceDisplay.diagnostics).toContain('MULTI_CURRENCY_DISPLAY_UNSAFE');
+    expect(report.sources.canonicalBalanceDisplay.unsafeSources).toContain('MULTI_CURRENCY_DISPLAY_UNSAFE');
+    for (const diff of [...report.totals.diffs, ...report.bucketDiffs]) {
+      expect(diff).toMatchObject({
+        classification: 'CANONICAL_UNSAFE',
+        severity: 'RED',
+        status: 'NOT_COMPARABLE',
+        legacyAmount: null,
+        canonicalAmount: null,
+        delta: null,
+        deltaPercent: null,
+      });
+    }
+    expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
+    expect(report.cutoverReadiness.safeForOptInShadow).toBe(false);
+    expect(report.cutoverReadiness.blockers).toContain('CANONICAL_CURRENCY_UNSAFE');
   });
 
   it('OVERPAYMENT_BLOCKED borç/totals kalemi değil diagnostic ve cutover blocker olarak kalır', async () => {

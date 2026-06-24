@@ -423,18 +423,116 @@ describe('BalanceDisplayShadowDiff readiness audit matrix', () => {
   it('currency ve tenant/case mismatch amount diff yerine canonical blocker olarak siniflanir', async () => {
     const currencyMismatch = makeService(legacySummary({ currency: 'USD' }), canonicalBalance());
     const contextMismatch = makeService(legacySummary({ tenantId: 'tenant-x', caseId: 'case-x' }), canonicalBalance());
+    const canonicalCurrencyUnsafe = makeService(
+      legacySummary({ currency: 'TRY' }),
+      canonicalBalance({
+        currencyResults: [
+          {
+            currency: 'TRY',
+            result: {
+              engineVersion: 'engine-v1',
+              totalDue: 900,
+              totalInterest: 25,
+              allocations: [{ paymentId: 'pay-1', paymentAmount: 100 }],
+              segments: [{ id: 'seg-1' }],
+            } as any,
+          },
+          {
+            currency: 'USD',
+            result: {
+              engineVersion: 'engine-v1',
+              totalDue: 50,
+              totalInterest: 5,
+              allocations: [],
+              segments: [{ id: 'seg-usd' }],
+            } as any,
+          },
+        ],
+      }),
+    );
+    const canonicalCurrencyUnknown = makeService(
+      legacySummary({ currency: 'TRY' }),
+      canonicalBalance({ currencyResults: [] }),
+    );
 
     const currencyReport = await currencyMismatch.service.compare('tenant-1', 'case-1', '2026-06-24', GENERATED_AT);
     const contextReport = await contextMismatch.service.compare('tenant-1', 'case-1', '2026-06-24', GENERATED_AT);
+    const canonicalCurrencyReport = await canonicalCurrencyUnsafe.service.compare(
+      'tenant-1',
+      'case-1',
+      '2026-06-24',
+      GENERATED_AT,
+    );
+    const canonicalCurrencyUnknownReport = await canonicalCurrencyUnknown.service.compare(
+      'tenant-1',
+      'case-1',
+      '2026-06-24',
+      GENERATED_AT,
+    );
 
     expect(classifyReadiness(currencyReport)).toBe('CANONICAL_BLOCKER');
     expect(classifyReadiness(contextReport)).toBe('CANONICAL_BLOCKER');
+    expect(classifyReadiness(canonicalCurrencyReport)).toBe('CANONICAL_BLOCKER');
+    expect(classifyReadiness(canonicalCurrencyUnknownReport)).toBe('CANONICAL_BLOCKER');
     expect(currencyReport.totals.diffs).toEqual(expect.arrayContaining([
       expect.objectContaining({ status: 'NOT_COMPARABLE', delta: null, classification: 'CURRENCY_MISMATCH' }),
     ]));
     expect(contextReport.bucketDiffs).toEqual(expect.arrayContaining([
       expect.objectContaining({ status: 'NOT_COMPARABLE', classification: 'CONTEXT_MISMATCH' }),
     ]));
+    for (const diff of [...currencyReport.totals.diffs, ...currencyReport.bucketDiffs]) {
+      expect(diff).toMatchObject({
+        classification: 'CURRENCY_MISMATCH',
+        status: 'NOT_COMPARABLE',
+        legacyAmount: null,
+        canonicalAmount: null,
+        delta: null,
+        deltaPercent: null,
+      });
+    }
+    for (const diff of [...contextReport.totals.diffs, ...contextReport.bucketDiffs]) {
+      expect(diff).toMatchObject({
+        classification: 'CONTEXT_MISMATCH',
+        status: 'NOT_COMPARABLE',
+        legacyAmount: null,
+        canonicalAmount: null,
+        delta: null,
+        deltaPercent: null,
+      });
+    }
+    expect(currencyReport.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
+    expect(currencyReport.cutoverReadiness.safeForOptInShadow).toBe(false);
+    expect(currencyReport.cutoverReadiness.blockers).toContain('CURRENCY_MISMATCH');
+    expect(contextReport.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
+    expect(contextReport.cutoverReadiness.safeForOptInShadow).toBe(false);
+    expect(contextReport.cutoverReadiness.blockers).toContain('CONTEXT_MISMATCH');
+    for (const diff of [...canonicalCurrencyReport.totals.diffs, ...canonicalCurrencyReport.bucketDiffs]) {
+      expect(diff).toMatchObject({
+        classification: 'CANONICAL_UNSAFE',
+        status: 'NOT_COMPARABLE',
+        legacyAmount: null,
+        canonicalAmount: null,
+        delta: null,
+        deltaPercent: null,
+      });
+    }
+    expect(canonicalCurrencyReport.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
+    expect(canonicalCurrencyReport.cutoverReadiness.safeForOptInShadow).toBe(false);
+    expect(canonicalCurrencyReport.cutoverReadiness.blockers).toContain('CANONICAL_CURRENCY_UNSAFE');
+    for (const diff of [...canonicalCurrencyUnknownReport.totals.diffs, ...canonicalCurrencyUnknownReport.bucketDiffs]) {
+      expect(diff).toMatchObject({
+        classification: 'CANONICAL_UNSAFE',
+        status: 'NOT_COMPARABLE',
+        legacyAmount: null,
+        canonicalAmount: null,
+        delta: null,
+        deltaPercent: null,
+      });
+    }
+    expect(canonicalCurrencyUnknownReport.currency).toBe('UNKNOWN');
+    expect(canonicalCurrencyUnknownReport.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
+    expect(canonicalCurrencyUnknownReport.cutoverReadiness.safeForOptInShadow).toBe(false);
+    expect(canonicalCurrencyUnknownReport.cutoverReadiness.blockers).toContain('CANONICAL_CURRENCY_UNSAFE');
   });
 
   it('go/no-go sonucu kanit olmadan READY_FOR_CUTOVER uretmez', async () => {
