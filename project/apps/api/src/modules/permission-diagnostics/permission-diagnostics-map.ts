@@ -51,6 +51,13 @@ export const PERMISSION_DIAGNOSTICS_MAP: Record<string, DiagnosticMapEntry> = {
     requiredScope: "OFFICE",
     currentGuard: "ADMIN_HARD_GUARD", // controller'da role==='ADMIN' hardcoded
   },
+  "reports.dashboard": {
+    operation: "reports.dashboard",
+    endpoint: "GET /reports/dashboard",
+    requiredPermission: "reports.view",
+    requiredScope: "OFFICE",
+    currentGuard: "TENANT_ONLY",
+  },
   "reports.exportCases": {
     operation: "reports.exportCases",
     endpoint: "GET /reports/export/cases",
