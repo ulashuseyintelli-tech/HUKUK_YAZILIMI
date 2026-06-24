@@ -21,7 +21,7 @@ Bu doküman #470 contract ve #471 matrix üzerine **karar notudur** — implemen
 | **D1** | Operation owner re-clear (sahipsiz'e geri çekme) | ŞİMDİLİK YOK | `DECIDED_NO_FOR_NOW` | **NO** | (ileride ayrı ürün kararı, gerekirse) |
 | **D2** | Hukuki sorumlu avukat değişimi | İZİN VAR, ama "devir" değil — kontrollü kayıt değişikliği | `DECIDED_ALLOWED_AS_CONTROLLED_RECORD_CHANGE` | **NO** | WP-1d-5-3 endpoint/audit contract (docs) |
 | **D3** | Birinci-sınıf legal-responsible endpoint | EVET, gerekli (D2 contract sonrası) | `DECIDED_YES_AFTER_D2_CONTRACT` | **NO** | WP-1d-5-3 endpoint/audit contract (docs) |
-| **D4** | DB-level exactly-one hardening | ŞİMDİLİK YOK / defer | `DEFERRED_PENDING_DATA_AND_MIGRATION_DESIGN` | **NO** | (ileride) DB invariant hardening forensic + migration design |
+| **D4** | DB-level exactly-one hardening *(ERRATA: at-most-one DB'de ZATEN var, bkz §7)* | Kısmen zaten DB-hardened | `PARTIALLY_ALREADY_HARDENED_AT_DB_LEVEL` + `DEFERRED_FOR_ZERO_RESPONSIBLE_DATA_AUDIT_AND_EXACTLY_ONE_DESIGN` | **NO** | (ileride) zero-responsible data audit + exactly-one design |
 
 ## 4. D1 — Operation Owner Re-Clear
 
@@ -66,11 +66,21 @@ Sonraki olası gate: **WP-1d-5-3 — endpoint/audit contract (DOCS-ONLY)**. Impl
 
 ## 7. D4 — DB-Level Exactly-One Hardening
 
-**Karar:** `DEFERRED_PENDING_DATA_AND_MIGRATION_DESIGN`. **Implementation allowed now: NO.**
+> **ERRATA (2026-06-25, WP-1d-5-4 koddan tespit edildi):** Bu kararın orijinal premisi ("DB unique YOK") **YANLIŞTI.**
+> DB **zaten** dosya başına **en fazla bir** responsible CaseLawyer'ı partial unique index ile zorluyor:
+> `case_lawyer_one_responsible_per_case (caseId) WHERE isResponsible=true` (#229, migration
+> `20260619000000_case_lawyer_one_responsible_per_case`). Karar buna göre güncellendi.
 
-- mevcut **app-layer tam-1 invariant** (`planResponsible` + drift-fix) korunur;
-- DB `@@unique`/partial-unique **şimdi açılmaz** (migration + runtime data audit + DB-specific partial-unique tasarım gerekir; mevcut veride çoklu/sıfır responsible kalıntısı bilinmeden riskli);
-- ileride ayrı gate olabilir: **WP-1d-5-x DB invariant hardening forensic + migration design** — şimdi değil.
+**UPDATED_DECISION:** `PARTIALLY_ALREADY_HARDENED_AT_DB_LEVEL` + `DEFERRED_FOR_ZERO_RESPONSIBLE_DATA_AUDIT_AND_EXACTLY_ONE_DESIGN`. **Implementation allowed now: NO.**
+
+**Kritik ayrım:**
+- **DB partial unique index = at-most-one** (dosya başına en fazla bir responsible) → **ZATEN VAR.**
+- **App-layer invariant (`planResponsible` + drift-fix) = exactly-one** (tam bir; "≥1 sorumlu" fallback dahil) → korunur.
+- **Zero-responsible** durumu hâlâ **ayrı bir veri/invariant sorusudur** (partial unique index sıfır-responsible'ı engellemez).
+
+Kalan D4 sorusu artık "sıfırdan DB unique ekle" **değildir**; gerçek soru: **exactly-one** semantiği için ek
+sertleştirme/veri-denetimi gerekli mi — özellikle **zero-responsible dosyalar** ve migration/veri tutarlılığı.
+İleride ayrı gate olabilir: **WP-1d-5-x — zero-responsible data audit + exactly-one design** (forensic; migration yalnız gerekirse) — şimdi değil.
 
 ## 8. Authorization Stance
 
@@ -103,7 +113,7 @@ Kod YOK · endpoint implementation YOK · UI YOK · mutation YOK · migration YO
 
 ## DECISION
 
-**`DECISIONS_RECORDED`** — D1 (`DECIDED_NO_FOR_NOW`) · D2 (`DECIDED_ALLOWED_AS_CONTROLLED_RECORD_CHANGE`) · D3 (`DECIDED_YES_AFTER_D2_CONTRACT`) · D4 (`DEFERRED_PENDING_DATA_AND_MIGRATION_DESIGN`).
+**`DECISIONS_RECORDED`** — D1 (`DECIDED_NO_FOR_NOW`) · D2 (`DECIDED_ALLOWED_AS_CONTROLLED_RECORD_CHANGE`) · D3 (`DECIDED_YES_AFTER_D2_CONTRACT`) · D4 (`PARTIALLY_ALREADY_HARDENED_AT_DB_LEVEL` + `DEFERRED_FOR_ZERO_RESPONSIBLE_DATA_AUDIT_AND_EXACTLY_ONE_DESIGN` — bkz §7 ERRATA).
 
 **`IMPLEMENTATION_STILL_BLOCKED_PENDING_ENDPOINT_AUDIT_CONTRACT`** — hiçbir write/endpoint/UI/migration/audit-impl başlatılmaz; sıradaki adım (yalnız onayla) docs-only WP-1d-5-3 endpoint/audit contract'tır.
 
