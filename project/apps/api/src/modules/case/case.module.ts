@@ -13,10 +13,13 @@ import { LawyerModule } from "../lawyer/lawyer.module";
 import { DebtorModule } from "../debtor/debtor.module";
 import { ResponsibleCandidatesService } from "./responsible-candidates.service";
 import { TemporalResponsibilityService } from "./temporal-responsibility.service";
+// WP-4d-1: warn-only diagnostic audit (PERMISSION_WOULD_DENY) için.
+import { PermissionDiagnosticsModule } from "../permission-diagnostics/permission-diagnostics.module";
 
 @Module({
   imports: [
     OcrModule,
+    PermissionDiagnosticsModule,
     forwardRef(() => AddressDiscoveryModule),
     forwardRef(() => InterestEngineModule),
     forwardRef(() => ExpenseRequestModule),
