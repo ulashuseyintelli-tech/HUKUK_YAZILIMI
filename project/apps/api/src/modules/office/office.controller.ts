@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   UseGuards,
+  ForbiddenException,
 } from "@nestjs/common";
 import { OfficeService } from "./office.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -17,6 +18,17 @@ import { StaffType } from "@prisma/client";
 @UseGuards(JwtAuthGuard)
 export class OfficeController {
   constructor(private officeService: OfficeService) {}
+
+  // WP-4c-hotfix-1: ofis kimlik bilgisi (SMTP/SMS) GÜNCELLEME yalnız ADMIN.
+  // WP-4c-0 envanteri bu uçları TENANT_ONLY (tenant içi herkes değiştirebilir) olarak işaretledi.
+  // Minimal hard guard; mevcut report.controller ADMIN-gate deseniyle aynı. Genel RBAC framework DEĞİL.
+  private assertCredentialAdmin(role: string) {
+    if (role !== "ADMIN") {
+      throw new ForbiddenException(
+        "Ofis kimlik bilgisi (SMTP/SMS) ayarlarını yalnız yönetici (ADMIN) güncelleyebilir"
+      );
+    }
+  }
 
   // Büro bilgilerini getir
   @Get()
@@ -98,6 +110,7 @@ export class OfficeController {
   @Put("smtp-settings")
   updateSmtpSettings(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("role") role: string,
     @Body()
     data: {
       smtpHost?: string;
@@ -109,6 +122,7 @@ export class OfficeController {
       smtpFromEmail?: string;
     }
   ) {
+    this.assertCredentialAdmin(role);
     return this.officeService.updateSmtpSettings(tenantId, data);
   }
 
@@ -122,6 +136,7 @@ export class OfficeController {
   @Put("sms-settings")
   updateSmsSettings(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("role") role: string,
     @Body()
     data: {
       smsProvider?: string;
@@ -130,6 +145,7 @@ export class OfficeController {
       smsSender?: string;
     }
   ) {
+    this.assertCredentialAdmin(role);
     return this.officeService.updateSmsSettings(tenantId, data);
   }
 
