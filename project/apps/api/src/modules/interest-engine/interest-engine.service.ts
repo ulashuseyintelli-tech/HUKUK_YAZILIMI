@@ -18,10 +18,11 @@ import { Injectable, Optional } from '@nestjs/common';
 import {
   CalculationRequest,
   CalculationResult,
+  type FinalDebtState,
   generateInputHash,
   DEFAULT_INTERPRETATION_PROFILE_ID,
 } from './types/calculation.types';
-import { ClaimBucket, Segment, AllocationStep, InterestTypeCode } from './types/domain.types';
+import { ClaimBucket, Segment, AllocationStep, InterestTypeCode, AncillaryType } from './types/domain.types';
 // E-G2a: fixedRate zorunluluk predicate'i + % → 0-1 dönüştürücü (TEK kaynak, packages/types).
 import { requiresFixedRate, percentToRate } from '@shared/types';
 import { CalculationMode, RoundingMode, RoundingScope, SameDayPaymentRule } from './types/common.types';
@@ -110,6 +111,7 @@ export class InterestEngineService {
    * @remarks
    * Çağrıldığı yerler:
    * - InterestEngineService.calculate() → orkestratör (audit ile).
+   * - CaseBalanceService.computeCaseBalance() → backend balance/display ve shadow evidence icin read-only hesap.
    * - (gelecek) preview / case_balance_view projection → audit'siz saf hesap (D-E).
    */
   computeBalance(
@@ -183,6 +185,7 @@ export class InterestEngineService {
 
     const allSegments = this.collectAllSegments(segmentResults);
     const totalDue = this.calculateTotalDue(request.claimBuckets, totalInterest, allocationResult);
+    const finalDebtStates = this.toFinalDebtStates(request.claimBuckets, segmentResults, allocationResult);
 
     // 11. Generate result
     const result: CalculationResult = {
@@ -195,6 +198,7 @@ export class InterestEngineService {
       postEnforcementInterest,
       segments: allSegments,
       allocations: allocationResult?.steps,
+      finalDebtStates,
       policyWarnings: policyResult.warnings,
       legalText: this.generateLegalText(request, allSegments),
       interestType: request.claimBuckets[0].interestType,
@@ -391,6 +395,57 @@ export class InterestEngineService {
       allSegments.push(...result.segments);
     }
     return allSegments;
+  }
+
+  private toFinalDebtStates(
+    claims: ClaimBucket[],
+    segmentResults: Map<string, SegmentBuildResult>,
+    allocationResult?: { steps: AllocationStep[]; finalDebtStates: ClaimDebtState[] },
+  ): FinalDebtState[] {
+    if (allocationResult) {
+      return allocationResult.finalDebtStates.map((state) => this.toFinalDebtStateSnapshot(state));
+    }
+
+    return claims.map((claim) => {
+      const segments = segmentResults.get(claim.id)?.segments ?? [];
+      const accruedInterest = segments.reduce((sum, segment) => sum + segment.segmentInterest, 0);
+      return {
+        claimId: claim.id,
+        currency: claim.currency,
+        principal: claim.amount,
+        accruedInterest,
+        costs: this.normalizeAncillaryRecord(claim.costs),
+        ancillaries: this.normalizeAncillaryRecord(claim.ancillaries),
+      };
+    });
+  }
+
+  private toFinalDebtStateSnapshot(state: ClaimDebtState): FinalDebtState {
+    return {
+      claimId: state.claimId,
+      currency: state.claim.currency,
+      principal: state.debtState.principal,
+      accruedInterest: state.debtState.accruedInterest,
+      costs: this.mapToAncillaryRecord(state.debtState.costs),
+      ancillaries: this.mapToAncillaryRecord(state.debtState.ancillaries),
+    };
+  }
+
+  private normalizeAncillaryRecord(rec?: Record<string, number | undefined>): Record<AncillaryType, number> {
+    const out: Partial<Record<AncillaryType, number>> = {};
+    if (!rec) return out as Record<AncillaryType, number>;
+    for (const [key, value] of Object.entries(rec)) {
+      if (value != null) out[key as AncillaryType] = value;
+    }
+    return out as Record<AncillaryType, number>;
+  }
+
+  private mapToAncillaryRecord(map: Map<AncillaryType, number>): Record<AncillaryType, number> {
+    const out: Partial<Record<AncillaryType, number>> = {};
+    for (const [key, value] of map.entries()) {
+      out[key] = value;
+    }
+    return out as Record<AncillaryType, number>;
   }
 
   private calculateTotalDue(

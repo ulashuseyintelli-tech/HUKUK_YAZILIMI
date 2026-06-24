@@ -355,6 +355,8 @@ function buildBucketDiffs(
   comparisonBlockedBy?: ShadowDiffClassification,
 ): ShadowBucketDiff[] {
   const legacyInterest = legacy ? sumNumbers(numberField(legacy, 'takipOncesiFaiz'), numberField(legacy, 'takipSonrasiFaiz')) : null;
+  const principalBucket = findBucket(display, 'PRINCIPAL');
+  const principalAvailable = principalBucket?.displayable === true && principalBucket.amount != null;
   const specs: Array<{
     bucket: string;
     legacyField: string;
@@ -371,9 +373,9 @@ function buildBucketDiffs(
       canonicalField: 'canonical.bucket.PRINCIPAL',
       legacyAmount: legacy ? numberField(legacy, 'asilAlacak') : null,
       canonicalCode: 'PRINCIPAL',
-      explanation: 'Canonical display finalDebtStates yokken PRINCIPAL kovası uydurmaz.',
-      classificationOverride: 'MISSING_CANONICAL_FIELD',
-      severityOverride: 'YELLOW',
+      explanation: 'Canonical display PRINCIPAL kovasını yalnız finalDebtStates authority varsa doldurur; yoksa uydurmaz.',
+      classificationOverride: principalAvailable ? undefined : 'MISSING_CANONICAL_FIELD',
+      severityOverride: principalAvailable ? undefined : 'YELLOW',
     },
     {
       bucket: 'ACCRUED_INTEREST',
@@ -608,6 +610,7 @@ function classificationForDiagnosticCode(code: string): ShadowDiffClassification
   }
   if (
     code === 'FINAL_DEBT_STATES_MISSING' ||
+    code === 'FINAL_DEBT_STATES_CURRENCY_MISMATCH' ||
     code === 'CANONICAL_UNAVAILABLE' ||
     code === 'CANONICAL_DISPLAY_UNAVAILABLE'
   ) {
@@ -691,6 +694,9 @@ function cutoverReadiness(input: {
   const blockerCodes = [...input.blockers.map((blocker) => blocker.code), ...diffBlockers];
   if (input.display?.diagnostics.some((diagnostic) => diagnostic.code === 'FINAL_DEBT_STATES_MISSING')) {
     blockerCodes.push('FINAL_DEBT_STATES_MISSING');
+  }
+  if (input.display?.diagnostics.some((diagnostic) => diagnostic.code === 'FINAL_DEBT_STATES_CURRENCY_MISMATCH')) {
+    blockerCodes.push('FINAL_DEBT_STATES_CURRENCY_MISMATCH');
   }
   if (input.display?.diagnostics.some((diagnostic) => diagnostic.code === 'OVERPAYMENT_BLOCKED')) {
     blockerCodes.push('OVERPAYMENT_BLOCKED');

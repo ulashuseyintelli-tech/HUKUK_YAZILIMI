@@ -13,6 +13,7 @@
  */
 
 import { AncillaryType } from '../types/domain.types';
+import type { FinalDebtState } from '../types/calculation.types';
 import type { CaseBalanceResult } from './case-balance.service';
 
 export interface CaseBalanceDisplayCurrency {
@@ -44,6 +45,7 @@ export type BalanceDisplayBucketCode =
 
 export type BalanceDisplayBucketSource =
   | 'COMPUTE_BALANCE_GROSS'
+  | 'COMPUTE_BALANCE_FINAL_DEBT_STATE'
   | 'CASE_LEVEL_PROJECTION'
   | 'OVERPAYMENT_PROJECTION'
   | 'UNAVAILABLE';
@@ -51,6 +53,7 @@ export type BalanceDisplayBucketSource =
 export type BalanceDisplayDiagnosticCode =
   | 'LEGACY_CALCULATION_SUMMARY_LIVE'
   | 'FINAL_DEBT_STATES_MISSING'
+  | 'FINAL_DEBT_STATES_CURRENCY_MISMATCH'
   | 'CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY'
   | 'INTEREST_STUB_OR_EMPTY'
   | 'OVERPAYMENT_HELD_NOT_DISPLAYED'
@@ -154,7 +157,7 @@ const valueOfRecord = (rec: Partial<Record<string, number>> | undefined, key: st
 
 const DISPLAY_NOTES: string[] = [
   'interest = BRÜT işlemiş faiz (totalInterest); claimRemaining = ödeme tahsisi sonrası NET kalan alacak (totalDue) — farklı baz.',
-  'Standalone kalan-anapara satırı YOK: engine finalDebtStates expose etmiyor (totalDue = anapara+faiz). Ayrı anapara = follow-up.',
+  'Standalone kalan-anapara satırı yalnız CalculationResult.finalDebtStates varsa gösterilir; yoksa uydurma principal yoktur.',
   "costs/ancillaries CASE-level projeksiyon; currency-split DEĞİL.",
   'collected = best-effort (ödeme-bazında dedup Σ allocations.paymentAmount).',
 ];
@@ -208,6 +211,23 @@ function hasInterestEvidence(balance: CaseBalanceResult): boolean {
   });
 }
 
+function finalDebtStates(balance: CaseBalanceResult): FinalDebtState[] {
+  return (balance.currencyResults ?? []).flatMap((cr) => cr.result?.finalDebtStates ?? []);
+}
+
+function finalDebtPrincipal(balance: CaseBalanceResult, currency: string): number | null {
+  const states = finalDebtStates(balance).filter((state) => state.currency === currency);
+  if (states.length === 0) return null;
+  return round2(states.reduce((sum, state) => sum + state.principal, 0));
+}
+
+function hasFinalDebtStateCurrencyMismatch(balance: CaseBalanceResult, currency: string): boolean {
+  const states = finalDebtStates(balance);
+  return states.length > 0 && currency !== 'MULTI' && currency !== 'UNKNOWN'
+    ? states.some((state) => state.currency !== currency)
+    : false;
+}
+
 function blockedReasons(balance: CaseBalanceResult): string[] {
   const reasons = new Set<string>();
   for (const row of balance.overpayments?.blocked ?? []) {
@@ -222,6 +242,10 @@ function buildDiagnostics(
   balance: CaseBalanceResult,
   currency: string,
   blockedTotal: number,
+  finalDebtStatesStatus: {
+    present: boolean;
+    currencyMismatch: boolean;
+  },
 ): BalanceDisplayDiagnostic[] {
   const diagnostics: BalanceDisplayDiagnostic[] = [
     {
@@ -230,16 +254,30 @@ function buildDiagnostics(
       message: 'Live HesapOzetiPanel halen legacy calculation-summary hattini kullanir; bu response shadow/cutover adayidir.',
     },
     {
-      code: 'FINAL_DEBT_STATES_MISSING',
-      severity: 'WARNING',
-      message: 'CalculationResult finalDebtStates tasimadigi icin standalone principal/outstanding kategori authority uretilmez.',
-    },
-    {
       code: 'CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY',
       severity: 'INFO',
       message: 'ClaimItem.collectedAmount display authority olarak kullanilmiyor; tahsilat payment/ledger hattindan okunur.',
     },
   ];
+
+  if (!finalDebtStatesStatus.present) {
+    diagnostics.push({
+      code: 'FINAL_DEBT_STATES_MISSING',
+      severity: 'WARNING',
+      message: 'CalculationResult finalDebtStates tasimadigi icin standalone principal/outstanding kategori authority uretilmez.',
+    });
+  }
+  if (finalDebtStatesStatus.currencyMismatch) {
+    diagnostics.push({
+      code: 'FINAL_DEBT_STATES_CURRENCY_MISMATCH',
+      severity: 'BLOCKER',
+      message: 'finalDebtStates currency bilgisi display currency ile eslesmiyor; principal bucket primary authority olamaz.',
+      details: {
+        displayCurrency: currency,
+        finalDebtStateCurrencies: [...new Set(finalDebtStates(balance).map((state) => state.currency))].sort(),
+      },
+    });
+  }
 
   if (currency === 'MULTI') {
     diagnostics.push({
@@ -293,6 +331,13 @@ function buildUnsafeSources(diagnostics: BalanceDisplayDiagnostic[]): BalanceDis
       reason: 'PRINCIPAL kovasi finalDebtStates olmadan turetilmez.',
     });
   }
+  if (diagnostics.some((d) => d.code === 'FINAL_DEBT_STATES_CURRENCY_MISMATCH')) {
+    sources.push({
+      code: 'FINAL_DEBT_STATES_CURRENCY_MISMATCH',
+      source: 'CalculationResult.finalDebtStates',
+      reason: 'PRINCIPAL kovasi yalniz display currency ile eslesen finalDebtStates snapshotindan turetilir.',
+    });
+  }
   if (diagnostics.some((d) => d.code === 'RESTRICTED_PAYMENT_DISPLAY_UNSAFE')) {
     sources.push({
       code: 'RESTRICTED_PAYMENT_DISPLAY_UNSAFE',
@@ -310,6 +355,9 @@ function buildBuckets(
     interest: number;
     attorneyFee: number;
     otherAncillary: number;
+    principal: number | null;
+    principalAuthorityAvailable: boolean;
+    principalDiagnosticCodes?: BalanceDisplayDiagnosticCode[];
     heldOverpayment: number | null;
   },
 ): BalanceDisplayBucket[] {
@@ -355,10 +403,12 @@ function buildBuckets(
     {
       code: 'PRINCIPAL',
       currency,
-      amount: null,
-      displayable: false,
-      source: 'UNAVAILABLE',
-      diagnosticCodes: ['FINAL_DEBT_STATES_MISSING'],
+      amount: totals.principalAuthorityAvailable && currencyIsSafe ? totals.principal : null,
+      displayable: totals.principalAuthorityAvailable && currencyIsSafe && totals.principal != null,
+      source: totals.principalAuthorityAvailable ? 'COMPUTE_BALANCE_FINAL_DEBT_STATE' : 'UNAVAILABLE',
+      ...(totals.principalAuthorityAvailable
+        ? (currencyDiagnostic ? { diagnosticCodes: currencyDiagnostic } : {})
+        : { diagnosticCodes: totals.principalDiagnosticCodes ?? ['FINAL_DEBT_STATES_MISSING'] }),
     },
     {
       code: 'HELD_OVERPAYMENT',
@@ -395,13 +445,20 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
   const interest = round2(currencies.reduce((sum, c) => sum + c.interest, 0));
   const claimRemaining = round2(currencies.reduce((sum, c) => sum + c.claimRemaining, 0));
   const collected = round2(currencies.reduce((sum, c) => sum + c.collected, 0));
+  const finalDebtStatesPresent = finalDebtStates(balance).length > 0;
+  const finalDebtStatesCurrencyMismatch = hasFinalDebtStateCurrencyMismatch(balance, displayCurrency);
+  const principalAuthorityAvailable = finalDebtStatesPresent && !finalDebtStatesCurrencyMismatch;
+  const principal = singleCurrency ? finalDebtPrincipal(balance, displayCurrency) : null;
   const heldOverpayment = round2(
     (balance.overpayments?.held ?? []).reduce((sum, row) => sum + (row.remainingAmount ?? 0), 0),
   );
   const blockedOverpayment = round2(
     (balance.overpayments?.blocked ?? []).reduce((sum, row) => sum + (row.attemptedOverpaymentAmount ?? 0), 0),
   );
-  const diagnostics = buildDiagnostics(balance, displayCurrency, blockedOverpayment);
+  const diagnostics = buildDiagnostics(balance, displayCurrency, blockedOverpayment, {
+    present: finalDebtStatesPresent,
+    currencyMismatch: finalDebtStatesCurrencyMismatch,
+  });
   const unsafeSources = buildUnsafeSources(diagnostics);
 
   const outstandingAmount = singleCurrency ? round2(claimRemaining + costs + ancillaries) : null;
@@ -431,6 +488,11 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
       interest,
       attorneyFee,
       otherAncillary,
+      principal,
+      principalAuthorityAvailable,
+      principalDiagnosticCodes: finalDebtStatesCurrencyMismatch
+        ? ['FINAL_DEBT_STATES_CURRENCY_MISMATCH']
+        : undefined,
       heldOverpayment: singleCurrency ? heldOverpayment : null,
     }),
     totals,
@@ -440,7 +502,7 @@ export function toCaseBalanceDisplay(input: ToCaseBalanceDisplayInput): CaseBala
       computeBalanceUsed: true,
       legacyCalculationSummaryUsed: false,
       claimItemCollectedAmountUsedAsAuthority: false,
-      finalDebtStatesAvailable: false,
+      finalDebtStatesAvailable: principalAuthorityAvailable,
       overpaymentProjectionUsed: (balance.overpayments?.held?.length ?? 0) > 0,
       blockedOverpaymentDiagnosticsUsed: (balance.overpayments?.blocked?.length ?? 0) > 0,
     },

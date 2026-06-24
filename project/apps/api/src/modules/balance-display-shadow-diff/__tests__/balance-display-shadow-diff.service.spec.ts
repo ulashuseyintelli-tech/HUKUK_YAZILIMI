@@ -234,6 +234,96 @@ describe('BalanceDisplayShadowDiffService', () => {
     ]));
   });
 
+  it('CB-01: finalDebtStates varsa PRINCIPAL canonical diff final debt state authority ile karsilastirilir', async () => {
+    const { service } = makeService(
+      legacySummary({ asilAlacak: 750 }),
+      canonicalBalance({
+        currencyResults: [
+          {
+            currency: 'TRY',
+            result: {
+              engineVersion: 'engine-v1',
+              totalDue: 775,
+              totalInterest: 25,
+              allocations: [{ paymentId: 'pay-1', paymentAmount: 100 }],
+              segments: [{ id: 'seg-1' }],
+              finalDebtStates: [
+                {
+                  claimId: 'p1',
+                  currency: 'TRY',
+                  principal: 750,
+                  accruedInterest: 25,
+                  costs: {},
+                  ancillaries: {},
+                },
+              ],
+            } as any,
+          },
+        ],
+        overpayments: { held: [], blocked: [] },
+      }),
+    );
+
+    const report = await service.compare('tenant-1', 'case-1', '2026-06-24', GENERATED_AT);
+
+    expect(report.provenance.finalDebtStatesAvailable).toBe(true);
+    expect(report.sources.canonicalBalanceDisplay.diagnostics).not.toContain('FINAL_DEBT_STATES_MISSING');
+    expect(report.cutoverReadiness.blockers).not.toContain('FINAL_DEBT_STATES_MISSING');
+    expect(report.bucketDiffs.find((diff) => diff.bucket === 'PRINCIPAL')).toMatchObject({
+      legacyAmount: 750,
+      canonicalAmount: 750,
+      canonicalDisplayable: true,
+      status: 'MATCH',
+      classification: 'EXACT_MATCH',
+      severity: 'GREEN',
+    });
+  });
+
+  it('CB-01: legacy ve canonical principal farkliysa deterministic amount diff uretir', async () => {
+    const { service } = makeService(
+      legacySummary({ asilAlacak: 900 }),
+      canonicalBalance({
+        currencyResults: [
+          {
+            currency: 'TRY',
+            result: {
+              engineVersion: 'engine-v1',
+              totalDue: 775,
+              totalInterest: 25,
+              allocations: [{ paymentId: 'pay-1', paymentAmount: 100 }],
+              segments: [{ id: 'seg-1' }],
+              finalDebtStates: [
+                {
+                  claimId: 'p1',
+                  currency: 'TRY',
+                  principal: 750,
+                  accruedInterest: 25,
+                  costs: {},
+                  ancillaries: {},
+                },
+              ],
+            } as any,
+          },
+        ],
+        overpayments: { held: [], blocked: [] },
+      }),
+    );
+
+    const report = await service.compare('tenant-1', 'case-1', '2026-06-24', GENERATED_AT);
+
+    expect(report.bucketDiffs.find((diff) => diff.bucket === 'PRINCIPAL')).toMatchObject({
+      legacyAmount: 900,
+      canonicalAmount: 750,
+      canonicalDisplayable: true,
+      status: 'MAJOR_DELTA',
+      classification: 'EXPECTED_CANONICAL_DIVERGENCE',
+      severity: 'RED',
+      delta: -150,
+    });
+    expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
+    expect(report.cutoverReadiness.blockers).not.toContain('FINAL_DEBT_STATES_MISSING');
+  });
+
   it('legacy canonicalShadow alanını canonical source olarak kullanmaz; sadece diagnostic/provenance işareti yapar', async () => {
     const { service, caseBalance } = makeService(legacySummary({
       canonicalShadow: {
