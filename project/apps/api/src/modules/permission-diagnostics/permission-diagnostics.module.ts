@@ -2,10 +2,11 @@
 import { Module } from "@nestjs/common";
 import { PermissionDiagnosticsController } from "./permission-diagnostics.controller";
 import { PermissionDiagnosticsService } from "./permission-diagnostics.service";
+import { WarnOnlyAuditService } from "./warn-only-audit.service";
 
 @Module({
   controllers: [PermissionDiagnosticsController],
-  providers: [PermissionDiagnosticsService],
-  exports: [PermissionDiagnosticsService],
+  providers: [PermissionDiagnosticsService, WarnOnlyAuditService],
+  exports: [PermissionDiagnosticsService, WarnOnlyAuditService],
 })
 export class PermissionDiagnosticsModule {}

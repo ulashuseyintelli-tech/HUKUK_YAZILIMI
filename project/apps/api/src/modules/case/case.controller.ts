@@ -19,6 +19,7 @@ import { OcrService } from "../ocr/ocr.service";
 import { ResponsibleCandidatesService } from "./responsible-candidates.service";
 import { TemporalResponsibilityService } from "./temporal-responsibility.service";
 import { AssignResponsiblePersonDto } from "./dto/responsible-person.dto";
+import { WarnOnlyAuditService } from "../permission-diagnostics/warn-only-audit.service";
 
 @Controller("cases")
 @UseGuards(JwtAuthGuard)
@@ -27,7 +28,8 @@ export class CaseController {
     private caseService: CaseService,
     private ocrService: OcrService,
     private responsibleCandidatesService: ResponsibleCandidatesService,
-    private temporalResponsibilityService: TemporalResponsibilityService
+    private temporalResponsibilityService: TemporalResponsibilityService,
+    private warnOnlyAudit: WarnOnlyAuditService
   ) {}
 
   @Get()
@@ -87,6 +89,7 @@ export class CaseController {
   @Get(":id/responsibility-at")
   async getResponsibilityAt(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Query("asOf") asOf?: string
   ) {
@@ -96,10 +99,19 @@ export class CaseController {
     } else {
       asOfDate = new Date(asOf);
       if (Number.isNaN(asOfDate.getTime())) {
+        // Geçersiz asOf → mevcut error path korunur; warn-only event YAZILMAZ.
         throw new BadRequestException("Geçersiz asOf tarihi (ISO 8601 bekleniyor).");
       }
     }
-    return this.temporalResponsibilityService.getResponsibilityAt(tenantId, id, asOfDate);
+    const result = await this.temporalResponsibilityService.getResponsibilityAt(tenantId, id, asOfDate);
+    // WP-4d-1: Phase 2 warn-only — response AYNEN döner; ek olarak diagnostic audit (best-effort, block YOK).
+    await this.warnOnlyAudit.recordWouldDeny("cases.responsibilityAt", {
+      tenantId,
+      actorUserId: userId,
+      entityId: id,
+      requestPath: "/cases/:id/responsibility-at",
+    });
+    return result;
   }
 
   // M2-G3a: Dosya Sorumlusu (gerçek kişi) atama. İzole servise delege; case.service.ts'e dokunmadan.

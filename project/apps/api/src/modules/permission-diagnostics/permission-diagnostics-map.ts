@@ -41,7 +41,7 @@ export const PERMISSION_DIAGNOSTICS_MAP: Record<string, DiagnosticMapEntry> = {
     operation: "cases.responsibilityAt",
     endpoint: "GET /cases/:id/responsibility-at",
     requiredPermission: "cases.viewResponsibilityHistory",
-    requiredScope: "OWN",
+    requiredScope: "OFFICE", // WP-4d-1 kararı: dosya sorumluluk geçmişi ofis-kapsamlı okuma
     currentGuard: "TENANT_ONLY",
   },
   "reports.taskPerformance": {
