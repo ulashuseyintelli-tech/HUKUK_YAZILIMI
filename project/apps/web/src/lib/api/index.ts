@@ -26,6 +26,15 @@ export { icrabotApi } from './icrabot';
 export * as officeApi from './office';
 export { interestEngineApi } from './interest-engine';
 export * from './interest-engine';
+export { balanceShadowDiffApi } from './balance-shadow-diff';
+export type {
+  BalanceDisplayShadowDiffReport,
+  ShadowAmountDiff,
+  ShadowBucketDiff,
+  ShadowDiffDiagnostic,
+  ShadowDiffIssue,
+  ShadowDiffSeverity,
+} from './balance-shadow-diff';
 
 // Core Engine API Clients (TEK KAYNAK)
 export { feeEngineApi, formatFee } from './fee-engine';

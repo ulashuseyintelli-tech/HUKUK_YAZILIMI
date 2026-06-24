@@ -48,7 +48,7 @@ import { ExpenseRequestModal, BalanceWidget, ExpenseRequestList } from "@/compon
 import { SendMessageModal } from "@/components/message/SendMessageModal";
 import { DebtorsSummaryBar, DebtorRow, ServiceStatusBadge, AlertBadge, DebtorDetailDrawer } from "@/components/debtor";
 import { UyapExportButton } from "@/components/uyap-export/UyapExportButton";
-import { DueModal, CollectionModal, HesapOzetiPanel } from "@/components/finance";
+import { DueModal, CollectionModal, HesapOzetiPanel, BalanceShadowDiffPanel } from "@/components/finance";
 import { FaizDokumuPanel } from "@/components/interest";
 import { OperationDeck } from "@/components/case-detail";
 import IntakeLinksCard from "@/components/case/IntakeLinksCard";
@@ -57,6 +57,10 @@ import { HacizHistoryCard } from "@/components/case/HacizHistoryCard";
 import { TebligatCard } from "@/components/case/TebligatCard";
 import { PreHacizRiskCard } from "@/components/case/PreHacizRiskCard";
 import { ResponsiblePersonPicker } from "@/components/case/responsible-person-picker";
+import {
+  getBalanceShadowDisplayDate,
+  shouldShowBalanceShadowDisplay,
+} from "@/lib/balance-shadow-display";
 
 // ============================================
 // TİPLER
@@ -664,6 +668,8 @@ export default function CaseDetailPage() {
   const { user } = useAuth();
   const fixParam = searchParams.get('fix');
   const fromFilter = searchParams.get('fromFilter');
+  const showBalanceShadowDisplay = shouldShowBalanceShadowDisplay(searchParams);
+  const balanceShadowDisplayDate = getBalanceShadowDisplayDate(searchParams);
   
   const [caseData, setCaseData] = useState<CaseDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -2658,10 +2664,15 @@ export default function CaseDetailPage() {
           </div>
 
           {/* SAĞ - Hesap Özeti */}
-          <div className="w-80 flex-shrink-0 sticky top-4">
+          <div className="w-80 flex-shrink-0 sticky top-4 space-y-3">
             <HesapOzetiPanel
               caseId={caseData.id}
               debtorCount={caseData.debtors?.length || 1}
+            />
+            <BalanceShadowDiffPanel
+              caseId={caseData.id}
+              asOfDate={balanceShadowDisplayDate}
+              enabled={showBalanceShadowDisplay}
             />
           </div>
         </div>
