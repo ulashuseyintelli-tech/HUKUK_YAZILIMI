@@ -1,5 +1,6 @@
 import type { InstrumentChain, ChainAnalysis } from "./instrument-chain";
 import { buildResponsibilityAtPath, type CombinedResponsibilityResult } from "./responsibility-at";
+import { buildResponsibilityHistoryPath, type ResponsibilityHistoryResult, type ResponsibilityHistoryParams } from "./responsibility-history";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -223,6 +224,11 @@ class ApiClient {
   // WP-1d-4a: read-only temporal sorumluluk (asOf tarihinde owner + hukuki sorumlu avukat).
   async getCaseResponsibilityAt(caseId: string, asOf?: string) {
     return this.request<CombinedResponsibilityResult>(buildResponsibilityAtPath(caseId, asOf));
+  }
+
+  // WP-1d-4c-2: read-only sorumluluk değişim geçmişi (timeline).
+  async getCaseResponsibilityHistory(caseId: string, params: ResponsibilityHistoryParams = {}) {
+    return this.request<ResponsibilityHistoryResult>(buildResponsibilityHistoryPath(caseId, params));
   }
 
   // Debtors
