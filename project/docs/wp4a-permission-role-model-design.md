@@ -76,9 +76,11 @@ API (case/debtor/client) bunları kullanmaz.
 4. **Tek-otorite eksikliği:** `User.role` (global) ile atama-rolleri (CaseLawyer/CaseStaff) ayrı; senkron değil →
    "etkin yetki" hesaplanmıyor.
 5. **Temporal kapsam yok:** CaseStaff/CaseLawyer ataması süresiz; start/end tarihi yok (WP-1d temporal çizgisiyle çelişir).
-6. **Doğrulanacak çelişki:** Bu tarama `Case.responsibleLawyerId XOR responsibleStaffId` için **DB CHECK YOK** diyor
-   (yalnız uygulama katmanı). Önceki notlar CHECK olduğunu söylüyordu → **kod-doğrulaması gereken açık madde** (yanlış
-   kesinlik vermeden). Permission tasarımından bağımsız ama kayda alınır.
+6. **Çözüldü (kod-doğrulaması yapıldı):** `Case.responsibleLawyerId`/`responsibleStaffId` için **DB CHECK VARDIR** —
+   migration `20260621020000_m2g1_responsible_person_fks/migration.sql:25`:
+   `CHECK (NOT ("responsibleLawyerId" IS NOT NULL AND "responsibleStaffId" IS NOT NULL))` (ikisi birden dolu olamaz;
+   ikisi de NULL olabilir). Haritalama ajanının "CHECK yok" bulgusu **YANLIŞ**tı; önceki notlar doğruydu. (Ders:
+   ajan iddiası migration SQL'den doğrulanmadan kesin kabul edilmez — [[verify-live-not-just-code]].)
 
 ---
 
@@ -145,7 +147,7 @@ API (case/debtor/client) bunları kullanmaz.
 - Temporal sorumluluk UI (WP-1d) ve reports/task/staff terminolojisi.
 - Break-glass/diagnostics guard mimarisi (yalnız tutarlılık notu).
 
-## 9. Doğrulanacak açık madde (kod-doğrulaması)
+## 9. Kod-doğrulaması (çözüldü)
 
-- `Case.responsibleLawyerId XOR responsibleStaffId` için DB CHECK var mı? (Tarama "yok" diyor; önceki notlar "var"
-  diyordu.) Migration SQL'den teyit edilecek — bu tasarımın ön-koşulu değil ama enforcement kararını etkiler.
+- `Case.responsibleLawyerId XOR responsibleStaffId` DB CHECK'i **VAR** (migration `20260621020000:25`). §3.6'ya bakınız.
+  Yani "ikisi birden dolu" şema düzeyinde zaten engelli; enforcement tasarımı bunu güvenle varsayabilir.
