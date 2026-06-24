@@ -269,6 +269,9 @@ describe('BalanceDisplayShadowDiffService', () => {
     expect(report.provenance.finalDebtStatesAvailable).toBe(true);
     expect(report.sources.canonicalBalanceDisplay.diagnostics).not.toContain('FINAL_DEBT_STATES_MISSING');
     expect(report.cutoverReadiness.blockers).not.toContain('FINAL_DEBT_STATES_MISSING');
+    expect(report.cutoverReadiness.blockers).toContain('CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY');
+    expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
+    expect(report.cutoverReadiness.safeForOptInShadow).toBe(true);
     expect(report.bucketDiffs.find((diff) => diff.bucket === 'PRINCIPAL')).toMatchObject({
       legacyAmount: 750,
       canonicalAmount: 750,
@@ -277,6 +280,123 @@ describe('BalanceDisplayShadowDiffService', () => {
       classification: 'EXACT_MATCH',
       severity: 'GREEN',
     });
+  });
+
+  it('CB-04: ClaimItem authority riski temiz amount match olsa bile primary-ready uretmez', async () => {
+    const canonical = canonicalBalance({
+      currencyResults: [
+        {
+          currency: 'TRY',
+          result: {
+            engineVersion: 'engine-v1',
+            totalDue: 900,
+            totalInterest: 25,
+            allocations: [{ paymentId: 'pay-1', paymentAmount: 100 }],
+            segments: [{ id: 'seg-1' }],
+            finalDebtStates: [
+              {
+                claimId: 'p1',
+                currency: 'TRY',
+                principal: 750,
+                accruedInterest: 25,
+                costs: {},
+                ancillaries: {},
+              },
+            ],
+          } as any,
+        },
+      ],
+      overpayments: { held: [], blocked: [] },
+    }) as CaseBalanceResult & {
+      claimItems?: Array<{ demandedAmount: number; collectedAmount: number; remainingAmount: number }>;
+    };
+    canonical.claimItems = [{ demandedAmount: 1000, collectedAmount: 999, remainingAmount: 1 }];
+    const { service } = makeService(
+      legacySummary({
+        asilAlacak: 750,
+        takipOncesiFaiz: 0,
+        takipSonrasiFaiz: 25,
+        faizSegmentleri: { takipOncesi: [], takipSonrasi: [{ id: 'legacy-post' }] },
+        toplamTahsilat: 100,
+        kalanBorc: 1100,
+        icraMasraflari: 50,
+        vekaletUcreti: 150,
+      }),
+      canonical,
+    );
+
+    const report = await service.compare('tenant-1', 'case-1', '2026-06-24', GENERATED_AT);
+
+    expect(report.provenance.claimItemCollectedAmountUsedAsAuthority).toBe(false);
+    expect(report.bucketDiffs.find((diff) => diff.bucket === 'PRINCIPAL')).toMatchObject({
+      legacyAmount: 750,
+      canonicalAmount: 750,
+      canonicalDisplayable: true,
+      status: 'MATCH',
+      classification: 'EXACT_MATCH',
+      severity: 'GREEN',
+    });
+    expect(report.totals.diffs.filter((diff) => diff.severity === 'RED')).toEqual([]);
+    expect(report.bucketDiffs.filter((diff) => diff.severity === 'RED')).toEqual([]);
+    expect(report.diagnostics).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        code: 'CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY',
+        classification: 'LEGACY_AUTHORITY_RISK',
+      }),
+    ]));
+    expect(report.cutoverReadiness.blockers).toContain('CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY');
+    expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
+    expect(report.cutoverReadiness.safeForOptInShadow).toBe(true);
+  });
+
+  it('CB-04: finalDebtStates yokken ClaimItem derived remaining principal yerine kullanilmaz', async () => {
+    const canonical = canonicalBalance({
+      currencyResults: [
+        {
+          currency: 'TRY',
+          result: {
+            engineVersion: 'engine-v1',
+            totalDue: 1,
+            totalInterest: 0,
+            allocations: [],
+            segments: [],
+          } as any,
+        },
+      ],
+      projections: { costs: {}, ancillaries: {} },
+      overpayments: { held: [], blocked: [] },
+    }) as CaseBalanceResult & {
+      claimItems?: Array<{ demandedAmount: number; collectedAmount: number; remainingAmount: number }>;
+    };
+    canonical.claimItems = [{ demandedAmount: 1000, collectedAmount: 999, remainingAmount: 1 }];
+    const { service } = makeService(
+      legacySummary({
+        asilAlacak: 1,
+        takipOncesiFaiz: 0,
+        takipSonrasiFaiz: 0,
+        toplamTahsilat: 0,
+        kalanBorc: 1,
+        icraMasraflari: 0,
+        vekaletUcreti: 0,
+      }),
+      canonical,
+    );
+
+    const report = await service.compare('tenant-1', 'case-1', '2026-06-24', GENERATED_AT);
+
+    expect(report.provenance.claimItemCollectedAmountUsedAsAuthority).toBe(false);
+    expect(report.provenance.finalDebtStatesAvailable).toBe(false);
+    expect(report.bucketDiffs.find((diff) => diff.bucket === 'PRINCIPAL')).toMatchObject({
+      legacyAmount: 1,
+      canonicalAmount: null,
+      canonicalDisplayable: false,
+      status: 'LEGACY_ONLY',
+      classification: 'MISSING_CANONICAL_FIELD',
+    });
+    expect(report.cutoverReadiness.blockers).toEqual(expect.arrayContaining([
+      'FINAL_DEBT_STATES_MISSING',
+      'CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY',
+    ]));
   });
 
   it('CB-01: legacy ve canonical principal farkliysa deterministic amount diff uretir', async () => {

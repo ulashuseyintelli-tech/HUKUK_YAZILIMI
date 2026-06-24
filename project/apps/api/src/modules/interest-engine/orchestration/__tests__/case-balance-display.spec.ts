@@ -162,6 +162,77 @@ describe('toCaseBalanceDisplay — BALANCE-DISPLAY PR-1 (saf mapper)', () => {
     expect(d.unsafeSources?.map((source) => source.code) ?? []).not.toContain('FINAL_DEBT_STATES_MISSING');
   });
 
+  it('CB-04: finalDebtStates varken ClaimItem collected/remaining benzeri projection principal authority olamaz', () => {
+    const balance = makeBalance({
+      currencyResults: [
+        currencyResult('TRY', {
+          totalInterest: 25,
+          totalDue: 775,
+          allocations: [],
+          engineVersion: 'engine-v1',
+          segments: [{ id: 's1' }],
+          finalDebtStates: [
+            {
+              claimId: 'p1',
+              currency: 'TRY',
+              principal: 750,
+              accruedInterest: 25,
+              costs: {},
+              ancillaries: {},
+            },
+          ],
+        }),
+      ] as any,
+    }) as CaseBalanceResult & {
+      claimItems?: Array<{ demandedAmount: number; collectedAmount: number; remainingAmount: number }>;
+    };
+    balance.claimItems = [{ demandedAmount: 1000, collectedAmount: 999, remainingAmount: 1 }];
+
+    const d = toCaseBalanceDisplay({ tenantId: 'tenant-1', caseId: 'case-1', balance, generatedAt: GENERATED_AT });
+    const principalBucket = d.buckets.find((bucket) => bucket.code === 'PRINCIPAL');
+
+    expect(principalBucket).toMatchObject({
+      amount: 750,
+      displayable: true,
+      source: 'COMPUTE_BALANCE_FINAL_DEBT_STATE',
+    });
+    expect(principalBucket?.amount).not.toBe(1);
+    expect(d.provenance.claimItemCollectedAmountUsedAsAuthority).toBe(false);
+    expect(d.diagnostics.map((diag) => diag.code)).toContain('CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY');
+  });
+
+  it('CB-04: finalDebtStates yokken ClaimItem derived remaining fallback PRINCIPAL bucket uretmez', () => {
+    const balance = makeBalance({
+      currencyResults: [
+        currencyResult('TRY', {
+          totalInterest: 0,
+          totalDue: 1,
+          allocations: [],
+          engineVersion: 'engine-v1',
+          segments: [],
+        }),
+      ] as any,
+    }) as CaseBalanceResult & {
+      claimItems?: Array<{ demandedAmount: number; collectedAmount: number; remainingAmount: number }>;
+    };
+    balance.claimItems = [{ demandedAmount: 1000, collectedAmount: 999, remainingAmount: 1 }];
+
+    const d = toCaseBalanceDisplay({ tenantId: 'tenant-1', caseId: 'case-1', balance, generatedAt: GENERATED_AT });
+    const principalBucket = d.buckets.find((bucket) => bucket.code === 'PRINCIPAL');
+
+    expect(principalBucket).toMatchObject({
+      amount: null,
+      displayable: false,
+      source: 'UNAVAILABLE',
+      diagnosticCodes: ['FINAL_DEBT_STATES_MISSING'],
+    });
+    expect(d.provenance.claimItemCollectedAmountUsedAsAuthority).toBe(false);
+    expect(d.provenance.finalDebtStatesAvailable).toBe(false);
+    expect(d.diagnostics.map((diag) => diag.code)).toEqual(
+      expect.arrayContaining(['CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY', 'FINAL_DEBT_STATES_MISSING']),
+    );
+  });
+
   it('CB-01: finalDebtStates currency display currency ile uyusmazsa PRINCIPAL bucket dolmaz', () => {
     const balance = makeBalance({
       currencyResults: [

@@ -699,6 +699,9 @@ function cutoverReadiness(input: {
   if (input.display?.diagnostics.some((diagnostic) => diagnostic.code === 'FINAL_DEBT_STATES_CURRENCY_MISMATCH')) {
     blockerCodes.push('FINAL_DEBT_STATES_CURRENCY_MISMATCH');
   }
+  if (input.display?.diagnostics.some((diagnostic) => diagnostic.code === 'CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY')) {
+    blockerCodes.push('CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY');
+  }
   if (input.display?.diagnostics.some((diagnostic) => diagnostic.code === 'OVERPAYMENT_BLOCKED')) {
     blockerCodes.push('OVERPAYMENT_BLOCKED');
   }
