@@ -10,6 +10,7 @@ import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocu
 import { isPoaDuplicateSuppressed } from "@/lib/poa-ux";
 import { resolveLawyerIdsFromScan } from "@/lib/lawyer-match";
 import { buildStaffPayload } from "@/lib/case-staff-payload";
+import { CASE_STAFF_ROLE_OPTIONS, CASE_STAFF_ROLE_GROUP_LABEL, CASE_STAFF_ROLE_HELP_TEXT, normalizeCaseStaffRole } from "@/lib/case-staff-role";
 import { FormMetadata, SubFormMetadata, FormCategory } from "@/types/form-metadata";
 import { WizardAnswers } from "@/types/wizard";
 import { formMetadata, filterFormsByCategory } from "@/config/form-metadata";
@@ -2536,14 +2537,6 @@ function StaffSelectionStep({
     ARSIV: "Arşiv",
   };
 
-  const roleOnCaseOptions = [
-    { value: "STAJYER", label: "Stajyer" },
-    { value: "KONTROL", label: "Kontrol" },
-    { value: "YAZI_ISLERI", label: "Yazı İşleri" },
-    { value: "MUHASEBE", label: "Muhasebe" },
-    { value: "TEBLIGAT_SORUMLUSU", label: "Tebligat Sorumlusu" },
-  ];
-
   const filteredStaff = existingStaff.filter(s =>
     s.firstName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
     s.lastName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -2669,17 +2662,19 @@ function StaffSelectionStep({
                   {/* Rol ve Yetkiler */}
                   <div className="space-y-2">
                     <div>
-                      <label className="block text-xs font-medium mb-1">Dosyadaki Rolü</label>
+                      {/* WP-2c-1: CaseStaff.roleOnCase = "Dosya Ekibi Rolü" (shared option-list); owner DEĞİL. */}
+                      <label className="block text-xs font-medium mb-1">{CASE_STAFF_ROLE_GROUP_LABEL}</label>
                       <select
-                        value={staff.roleOnCase || ""}
+                        value={normalizeCaseStaffRole(staff.roleOnCase)}
                         onChange={(e) => onUpdateStaff(index, "roleOnCase", e.target.value)}
                         className="w-full rounded border px-2 py-1 text-xs"
                       >
                         <option value="">Seçiniz</option>
-                        {roleOnCaseOptions.map(opt => (
+                        {CASE_STAFF_ROLE_OPTIONS.map(opt => (
                           <option key={opt.value} value={opt.value}>{opt.label}</option>
                         ))}
                       </select>
+                      <p className="mt-1 text-[10px] text-gray-400">{CASE_STAFF_ROLE_HELP_TEXT}</p>
                     </div>
                     
                     <div className="flex flex-wrap gap-3">

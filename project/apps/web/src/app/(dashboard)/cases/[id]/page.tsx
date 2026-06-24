@@ -42,6 +42,13 @@ import {
 } from "lucide-react";
 import { api, DebtorListItemDTO, DebtorsSummaryDTO, DebtorDetailDTO } from "@/lib/api";
 import { caseStaffEditFields, buildCaseStaffPatch } from "@/lib/case-staff-edit";
+import {
+  CASE_STAFF_ROLE_OPTIONS,
+  CASE_STAFF_ROLE_GROUP_LABEL,
+  CASE_STAFF_ROLE_HELP_TEXT,
+  caseStaffRoleLabel,
+  normalizeCaseStaffRole,
+} from "@/lib/case-staff-role";
 import { useAuth } from "@/lib/auth-context";
 import { PaymentInstructionModal } from "@/components/payment/PaymentInstructionModal";
 import { ExpenseRequestModal, BalanceWidget, ExpenseRequestList } from "@/components/expense";
@@ -2096,7 +2103,7 @@ export default function CaseDetailPage() {
                         <p className="font-medium text-[11px] truncate group-hover:text-purple-700">{se.staffMember.firstName} {se.staffMember.lastName}{se.staffMember.isActive === false && <span className="ml-1 px-1 rounded bg-gray-200 text-gray-600 text-[9px] font-normal align-middle">Pasif</span>}</p>
                       </div>
                       <div className="flex items-center gap-1">
-                        <span className="text-[8px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded font-medium">{se.roleOnCase || se.staffMember.staffType || 'Personel'}</span>
+                        <span className="text-[8px] bg-purple-100 text-purple-700 px-1 py-0.5 rounded font-medium">{caseStaffRoleLabel(se.roleOnCase) || se.staffMember.staffType || 'Personel'}</span>
                         <ChevronRight className="h-3 w-3 text-gray-400 opacity-0 group-hover:opacity-100" />
                       </div>
                     </div>
@@ -3037,17 +3044,19 @@ export default function CaseDetailPage() {
               <h4 className="text-xs font-semibold text-gray-600 uppercase">Bu Dosyadaki Bilgiler</h4>
               <div className="bg-gray-50 rounded-lg p-3 space-y-3">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Dosyadaki Rol</label>
+                  {/* WP-2c-1: CaseStaff.roleOnCase = "Dosya Ekibi Rolü" (shared option-list); owner DEĞİL. */}
+                  <label className="block text-xs text-gray-500 mb-1">{CASE_STAFF_ROLE_GROUP_LABEL}</label>
                   <select
                     className="w-full border rounded-lg px-3 py-2 text-sm"
-                    value={selectedStaff.roleOnCase || ''}
+                    value={normalizeCaseStaffRole(selectedStaff.roleOnCase)}
                     onChange={(e) => setSelectedStaff({...selectedStaff, roleOnCase: e.target.value})}
                   >
                     <option value="">Belirtilmemiş</option>
-                    <option value="SORUMLU">Sorumlu Personel</option>
-                    <option value="YARDIMCI">Yardımcı Personel</option>
-                    <option value="TAKIPCI">Takipçi</option>
+                    {CASE_STAFF_ROLE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
                   </select>
+                  <p className="mt-1 text-[10px] text-gray-400">{CASE_STAFF_ROLE_HELP_TEXT}</p>
                 </div>
                 {/* PR-ASSIGN-3b: "İmza Yetkisi" (canSign) toggle KALDIRILDI — personel imzacı değil
                     (avukat kavramı; CaseStaff modelinde alan yok). */}
