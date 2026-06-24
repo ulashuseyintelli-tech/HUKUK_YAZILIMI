@@ -155,6 +155,7 @@ function amountDiff(input: {
   classificationOverride?: ShadowDiffClassification;
   severityOverride?: ShadowDiffSeverity;
 }): ShadowAmountDiff {
+  const comparisonBlocked = Boolean(input.comparisonBlockedBy);
   const classified = input.comparisonBlockedBy
     ? {
         classification: input.comparisonBlockedBy,
@@ -167,15 +168,15 @@ function amountDiff(input: {
   return {
     code: input.code,
     label: input.label,
-    classification: input.classificationOverride ?? classified.classification,
+    classification: comparisonBlocked ? classified.classification : input.classificationOverride ?? classified.classification,
     legacyField: input.legacyField,
     canonicalField: input.canonicalField,
-    legacyAmount: input.legacyAmount,
-    canonicalAmount: input.canonicalAmount,
+    legacyAmount: comparisonBlocked ? null : input.legacyAmount,
+    canonicalAmount: comparisonBlocked ? null : input.canonicalAmount,
     delta: classified.delta,
     deltaPercent: classified.deltaPercent,
     status: classified.status,
-    severity: input.severityOverride ?? classified.severity,
+    severity: comparisonBlocked ? classified.severity : input.severityOverride ?? classified.severity,
     explanation: input.explanation,
   };
 }
@@ -562,11 +563,11 @@ function buildComparability(input: {
     ));
   }
   if (canonicalCurrency === 'MULTI' || canonicalCurrency === 'UNKNOWN') {
-    warnings.push(issue<ShadowDiffWarning>(
+    blockers.push(issue<ShadowDiffBlocker>(
       'CANONICAL_CURRENCY_UNSAFE',
       'CANONICAL_UNSAFE',
-      'YELLOW',
-      'Canonical display top-level currency primary display için güvenli değil.',
+      'RED',
+      'Canonical display top-level currency primary display ve amount comparison icin guvenli degil.',
       { canonicalCurrency },
     ));
   }
@@ -705,9 +706,19 @@ function cutoverReadiness(input: {
     blockerCodes.push('NAFAKA_PRINCIPAL_DISPLAY_RISK');
   }
 
+  const optInShadowBlockers = new Set([
+    'LEGACY_UNAVAILABLE',
+    'CANONICAL_DISPLAY_UNAVAILABLE',
+    'CANONICAL_DISPLAY_STATUS_UNAVAILABLE',
+    'CANONICAL_UNSAFE_FOR_PRIMARY_DISPLAY',
+    'CANONICAL_CURRENCY_UNSAFE',
+    'CURRENCY_MISMATCH',
+    'CONTEXT_MISMATCH',
+  ]);
+
   return {
     safeForPrimaryDisplay: blockerCodes.length === 0,
-    safeForOptInShadow: Boolean(input.display) && input.blockers.every((blocker) => blocker.code !== 'LEGACY_UNAVAILABLE'),
+    safeForOptInShadow: Boolean(input.display) && input.blockers.every((blocker) => !optInShadowBlockers.has(blocker.code)),
     blockers: [...new Set(blockerCodes)],
     nextRequiredEvidence: [
       'Legacy/canonical fixture coverage: genel ilamsiz, kambiyo, kira, nafaka, ilam, fatura, rehin/ipotek.',
@@ -762,7 +773,12 @@ export class BalanceDisplayShadowDiffService {
       legacyCurrency: legacyTotals?.currency ?? null,
     });
     const comparisonBlockedBy = compare.blockers.find((blocker) =>
-      blocker.classification === 'CURRENCY_MISMATCH' || blocker.classification === 'CONTEXT_MISMATCH',
+      blocker.classification === 'CURRENCY_MISMATCH' ||
+      blocker.classification === 'CONTEXT_MISMATCH' ||
+      blocker.code === 'CANONICAL_CURRENCY_UNSAFE' ||
+      blocker.code === 'CANONICAL_DISPLAY_UNAVAILABLE' ||
+      blocker.code === 'CANONICAL_DISPLAY_STATUS_UNAVAILABLE' ||
+      blocker.code === 'CANONICAL_UNSAFE_FOR_PRIMARY_DISPLAY',
     )?.classification;
     const totalDiffs = buildTotalDiffs(legacyTotals, canonicalTotals, comparisonBlockedBy);
     const bucketDiffs = buildBucketDiffs(legacy, display, comparisonBlockedBy);

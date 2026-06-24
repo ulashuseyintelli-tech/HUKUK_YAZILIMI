@@ -322,6 +322,7 @@ describe('toCaseBalanceDisplay — BALANCE-DISPLAY PR-1 (saf mapper)', () => {
     expect(d.currency).toBe('MULTI');
     expect(d.totals.outstandingAmount).toBeNull();
     expect(d.diagnostics.map((diag) => diag.code)).toContain('MULTI_CURRENCY_DISPLAY_UNSAFE');
+    expect(d.unsafeSources?.map((source) => source.code)).toContain('MULTI_CURRENCY_DISPLAY_UNSAFE');
   });
 
   it('boş: currencyResults yoksa OK + currencies []', () => {
@@ -330,5 +331,11 @@ describe('toCaseBalanceDisplay — BALANCE-DISPLAY PR-1 (saf mapper)', () => {
     expect(d.currencies).toEqual([]);
     expect(d.source).toBe('NONE');
     expect(d.currency).toBe('UNKNOWN');
+    expect(d.diagnostics.map((diag) => diag.code)).toContain('MULTI_CURRENCY_DISPLAY_UNSAFE');
+    expect(d.unsafeSources?.map((source) => source.code)).toContain('MULTI_CURRENCY_DISPLAY_UNSAFE');
+    expect(d.buckets.find((bucket) => bucket.code === 'PRINCIPAL')).toMatchObject({
+      amount: null,
+      displayable: false,
+    });
   });
 });
