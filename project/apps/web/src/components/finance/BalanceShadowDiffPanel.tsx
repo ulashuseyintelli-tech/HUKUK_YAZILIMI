@@ -57,6 +57,36 @@ function pickVisibleDiffs(report: BalanceDisplayShadowDiffReport): ShadowAmountD
     .slice(0, 5);
 }
 
+function diffLabel(diff: ShadowAmountDiff): string {
+  if (diff.code === "HELD_OVERPAYMENT_DIFF" || diff.canonicalField === "canonical.bucket.HELD_OVERPAYMENT") {
+    return "Held outside debt total";
+  }
+  return diff.label;
+}
+
+function diffDetail(diff: ShadowAmountDiff): string | null {
+  if (diff.code === "HELD_OVERPAYMENT_DIFF" || diff.canonicalField === "canonical.bucket.HELD_OVERPAYMENT") {
+    return "Separate evidence; not subtracted from outstanding or applied to another scope.";
+  }
+  return null;
+}
+
+function diagnosticCopy(code: string): { label: string; detail?: string } {
+  if (code === "OVERPAYMENT_BLOCKED") {
+    return {
+      label: "Blocked allocation evidence",
+      detail: "Diagnostic only; not a debt, payment, or unrestricted overpayment.",
+    };
+  }
+  if (code === "RESTRICTED_PAYMENT_DISPLAY_UNSAFE") {
+    return {
+      label: "Restricted payment scope unresolved",
+      detail: "PaymentDesignation is required before this can be shown as surplus or applied elsewhere.",
+    };
+  }
+  return { label: code };
+}
+
 export function BalanceShadowDiffPanel({
   caseId,
   asOfDate,
@@ -146,10 +176,15 @@ export function BalanceShadowDiffPanel({
               value={formatAmount(data.totals.canonical?.outstandingAmount ?? null, data.currency)}
             />
             {(data.totals.canonical?.heldOverpaymentAmount ?? null) !== null && (
-              <MetaRow
-                label="Held overpayment"
-                value={formatAmount(data.totals.canonical?.heldOverpaymentAmount ?? null, data.currency)}
-              />
+              <div data-testid="held-overpayment-wording" className="space-y-0.5">
+                <MetaRow
+                  label="Held outside debt total"
+                  value={formatAmount(data.totals.canonical?.heldOverpaymentAmount ?? null, data.currency)}
+                />
+                <p className="text-[10px] text-slate-500">
+                  Not subtracted from outstanding; not applied to another scope.
+                </p>
+              </div>
             )}
           </div>
 
@@ -186,13 +221,24 @@ export function BalanceShadowDiffPanel({
                 Diagnostics
               </div>
               <div className="space-y-1">
-                {data.diagnostics.map((diagnostic) => (
-                  <div key={`${diagnostic.code}-${diagnostic.severity}`} className="text-[10px] text-slate-500">
-                    <span className="font-medium text-slate-700">{diagnostic.code}</span>
-                    {" - "}
-                    {diagnostic.severity}
-                  </div>
-                ))}
+                {data.diagnostics.map((diagnostic) => {
+                  const copy = diagnosticCopy(diagnostic.code);
+                  return (
+                    <div key={`${diagnostic.code}-${diagnostic.severity}`} className="text-[10px] text-slate-500">
+                      <span className="font-medium text-slate-700">{copy.label}</span>
+                      {copy.label !== diagnostic.code && (
+                        <span className="ml-1 text-slate-400">{diagnostic.code}</span>
+                      )}
+                      {" - "}
+                      {diagnostic.severity}
+                      {copy.detail && (
+                        <div className="mt-0.5 text-slate-500">
+                          {copy.detail}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
           )}
@@ -232,7 +278,7 @@ function DiffList({ diffs, currency }: { diffs: ShadowAmountDiff[]; currency: st
         {diffs.map((diff) => (
           <div key={diff.code} className="text-[10px]">
             <div className="flex items-center justify-between gap-2">
-              <span className="min-w-0 truncate font-medium text-slate-700">{diff.label}</span>
+              <span className="min-w-0 truncate font-medium text-slate-700">{diffLabel(diff)}</span>
               <span className={`rounded border px-1 py-0.5 text-[9px] ${severityClass(diff.severity)}`}>
                 {diff.severity}
               </span>
@@ -241,6 +287,9 @@ function DiffList({ diffs, currency }: { diffs: ShadowAmountDiff[]; currency: st
               <span>{formatAmount(diff.legacyAmount, currency)}</span>
               <span>{formatAmount(diff.canonicalAmount, currency)}</span>
             </div>
+            {diffDetail(diff) && (
+              <div className="mt-0.5 text-slate-500">{diffDetail(diff)}</div>
+            )}
           </div>
         ))}
       </div>

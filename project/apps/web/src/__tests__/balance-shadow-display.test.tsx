@@ -368,7 +368,7 @@ describe("BalanceShadowDiffPanel", () => {
     expect(screen.queryByText("Visible diffs")).not.toBeInTheDocument();
   });
 
-  it("HELD overpayment ve OVERPAYMENT_BLOCKED bilgisini debt gibi degil evidence/diagnostic olarak gosterir", async () => {
+  it("HELD ve OVERPAYMENT_BLOCKED bilgisini settlement gibi degil audit wording ile gosterir", async () => {
     apiGet.mockResolvedValue({
       data: makeReport({
         totals: {
@@ -403,14 +403,45 @@ describe("BalanceShadowDiffPanel", () => {
             severity: "YELLOW",
             message: "Blocked overpayment is diagnostic evidence.",
           },
+          {
+            code: "RESTRICTED_PAYMENT_DISPLAY_UNSAFE",
+            classification: "CANONICAL_UNSAFE",
+            severity: "YELLOW",
+            message: "Restricted payment scope is unresolved.",
+          },
         ],
       }),
     });
 
     render(<BalanceShadowDiffPanel caseId="case-1" enabled />);
 
-    expect((await screen.findAllByText("Held overpayment")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("Held outside debt total")).length).toBeGreaterThan(0);
+    expect(screen.getByText("Not subtracted from outstanding; not applied to another scope.")).toBeInTheDocument();
+    expect(screen.getByText("Separate evidence; not subtracted from outstanding or applied to another scope.")).toBeInTheDocument();
     expect(screen.getByText("OVERPAYMENT_BLOCKED")).toBeInTheDocument();
+    expect(screen.getByText("Blocked allocation evidence")).toBeInTheDocument();
+    expect(screen.getByText("Diagnostic only; not a debt, payment, or unrestricted overpayment.")).toBeInTheDocument();
+    expect(screen.getByText("RESTRICTED_PAYMENT_DISPLAY_UNSAFE")).toBeInTheDocument();
+    expect(screen.getByText("Restricted payment scope unresolved")).toBeInTheDocument();
+    expect(screen.getByText("PaymentDesignation is required before this can be shown as surplus or applied elsewhere.")).toBeInTheDocument();
+    const panelText = screen.getByTestId("balance-shadow-diff-panel").textContent ?? "";
+    expect(panelText).not.toContain("debt closed");
+    expect(panelText).not.toContain("paid");
+    expect(panelText).not.toContain("applied to debt");
+    expect(panelText).not.toContain("confirmed overpayment");
+    expect(panelText).not.toContain("settled");
+    expect(panelText).not.toContain("refund available");
+    expect(panelText).not.toContain("transfer available");
+    expect(panelText).not.toContain("borc kapandi");
+    expect(panelText).not.toContain("borctan dusuldu");
+    expect(panelText).not.toContain("odendi");
+    expect(panelText).not.toContain("mahsup edildi");
+    expect(panelText).not.toContain("kesin fazla tahsilat");
+    expect(panelText).not.toContain("fazla tahsilat olustu");
+    expect(panelText).not.toContain("dosya kapandi");
+    expect(panelText).not.toContain("alacak kapandi");
+    expect(panelText).not.toContain("tahsilat islendi");
+    expect(panelText).not.toContain("serbest fazla tahsilat");
     expect(screen.getAllByText("₺75,00").length).toBeGreaterThan(0);
   });
 
