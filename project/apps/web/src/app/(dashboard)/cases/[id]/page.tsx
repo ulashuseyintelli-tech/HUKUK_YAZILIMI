@@ -49,6 +49,7 @@ import {
   caseStaffRoleLabel,
   normalizeCaseStaffRole,
 } from "@/lib/case-staff-role";
+import { ResponsibilityAtPanel } from "@/components/case/responsibility-at-panel";
 import { useAuth } from "@/lib/auth-context";
 import { PaymentInstructionModal } from "@/components/payment/PaymentInstructionModal";
 import { ExpenseRequestModal, BalanceWidget, ExpenseRequestList } from "@/components/expense";
@@ -2114,6 +2115,9 @@ export default function CaseDetailPage() {
                 )}
               </div>
             </div>
+
+            {/* WP-1d-4a: Sorumluluk Geçmişi (read-only temporal panel; mevcut responsibility-at endpoint). */}
+            <ResponsibilityAtPanel caseId={caseData.id} />
 
             {/* Müvekkiller */}
             <div className="bg-white border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)] overflow-hidden">
