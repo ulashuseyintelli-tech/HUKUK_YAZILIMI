@@ -128,6 +128,42 @@ describe('InterestEngineService.calculate() — determinism + audit contract (ch
     expect(cb1).toEqual(cb2);
   });
 
+  it('7a) CB-01: computeBalance JSON-safe finalDebtStates snapshot tasir', () => {
+    const fixedNow = '2025-08-15T10:00:00.000Z';
+    const result = engine.computeBalance(buildRequest('cb-final-states'), rates, fixedNow, DEFAULT_INTERPRETATION_PROFILE_ID);
+    const serialized = JSON.stringify(result);
+    const parsed = JSON.parse(serialized) as CalculationResult;
+
+    expect(result.finalDebtStates).toEqual([
+      expect.objectContaining({
+        claimId: 'c1',
+        currency: 'TRY',
+        principal: 100000,
+        costs: {},
+        ancillaries: {},
+      }),
+    ]);
+    expect(result.finalDebtStates?.[0].accruedInterest).toBeCloseTo(result.totalInterest, 2);
+    expect(parsed.finalDebtStates).toEqual(result.finalDebtStates);
+    expect(parsed.finalDebtStates?.[0].costs).toEqual({});
+    expect(parsed.finalDebtStates?.[0].ancillaries).toEqual({});
+  });
+
+  it('7aa) CB-01: partial payment sonrasi finalDebtStates outstanding negatif olmaz', () => {
+    const req = buildRequest('cb-final-states-payment');
+    req.payments = [{ id: 'pay-1', date: '2025-08-15', amount: 50000, currency: 'TRY' }];
+
+    const result = engine.computeBalance(req, rates, NOW, P);
+    const state = result.finalDebtStates?.[0];
+
+    expect(state).toBeDefined();
+    expect(state!.principal).toBeGreaterThanOrEqual(0);
+    expect(state!.principal).toBeLessThan(100000);
+    expect(state!.accruedInterest).toBe(0);
+    const stateTotal = state!.principal + state!.accruedInterest;
+    expect(result.totalDue).toBeCloseTo(stateTotal, 2);
+  });
+
   it('7b) computeBalance saf çekirdeği calculate() ile aynı sonucu üretir (audit/now hariç)', async () => {
     const cb = engine.computeBalance(buildRequest('cb-1b'), rates, '2025-08-15T10:00:00.000Z', DEFAULT_INTERPRETATION_PROFILE_ID);
     const r = await engine.calculate(buildRequest('cb-1b'), rates, TENANT);

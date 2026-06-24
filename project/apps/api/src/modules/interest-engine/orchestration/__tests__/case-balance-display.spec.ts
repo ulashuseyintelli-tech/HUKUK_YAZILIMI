@@ -127,6 +127,77 @@ describe('toCaseBalanceDisplay — BALANCE-DISPLAY PR-1 (saf mapper)', () => {
     expect(d.unsafeSources?.map((source) => source.code)).toContain('RESTRICTED_PAYMENT_DISPLAY_UNSAFE');
   });
 
+  it('CB-01: finalDebtStates varsa PRINCIPAL bucket yalniz final debt state authority ile dolar', () => {
+    const balance = makeBalance({
+      currencyResults: [
+        currencyResult('TRY', {
+          totalInterest: 25,
+          totalDue: 775,
+          allocations: [],
+          engineVersion: 'engine-v1',
+          segments: [{ id: 's1' }],
+          finalDebtStates: [
+            {
+              claimId: 'p1',
+              currency: 'TRY',
+              principal: 750,
+              accruedInterest: 25,
+              costs: {},
+              ancillaries: {},
+            },
+          ],
+        }),
+      ] as any,
+    });
+
+    const d = toCaseBalanceDisplay({ tenantId: 'tenant-1', caseId: 'case-1', balance, generatedAt: GENERATED_AT });
+
+    expect(d.buckets.find((bucket) => bucket.code === 'PRINCIPAL')).toMatchObject({
+      amount: 750,
+      displayable: true,
+      source: 'COMPUTE_BALANCE_FINAL_DEBT_STATE',
+    });
+    expect(d.provenance.finalDebtStatesAvailable).toBe(true);
+    expect(d.diagnostics.map((diag) => diag.code)).not.toContain('FINAL_DEBT_STATES_MISSING');
+    expect(d.unsafeSources?.map((source) => source.code) ?? []).not.toContain('FINAL_DEBT_STATES_MISSING');
+  });
+
+  it('CB-01: finalDebtStates currency display currency ile uyusmazsa PRINCIPAL bucket dolmaz', () => {
+    const balance = makeBalance({
+      currencyResults: [
+        currencyResult('TRY', {
+          totalInterest: 25,
+          totalDue: 775,
+          allocations: [],
+          engineVersion: 'engine-v1',
+          segments: [{ id: 's1' }],
+          finalDebtStates: [
+            {
+              claimId: 'p1',
+              currency: 'USD',
+              principal: 750,
+              accruedInterest: 25,
+              costs: {},
+              ancillaries: {},
+            },
+          ],
+        }),
+      ] as any,
+    });
+
+    const d = toCaseBalanceDisplay({ tenantId: 'tenant-1', caseId: 'case-1', balance, generatedAt: GENERATED_AT });
+
+    expect(d.buckets.find((bucket) => bucket.code === 'PRINCIPAL')).toMatchObject({
+      amount: null,
+      displayable: false,
+      source: 'UNAVAILABLE',
+      diagnosticCodes: ['FINAL_DEBT_STATES_CURRENCY_MISMATCH'],
+    });
+    expect(d.provenance.finalDebtStatesAvailable).toBe(false);
+    expect(d.diagnostics.map((diag) => diag.code)).toContain('FINAL_DEBT_STATES_CURRENCY_MISMATCH');
+    expect(d.unsafeSources?.map((source) => source.code)).toContain('FINAL_DEBT_STATES_CURRENCY_MISMATCH');
+  });
+
   it('collected: aynı paymentId çoklu adımda DEDUP (çift saymaz)', () => {
     const balance = makeBalance({
       currencyResults: [

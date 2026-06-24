@@ -276,6 +276,7 @@ function classifyReadiness(report: BalanceDisplayShadowDiffReport): ReadinessCla
     codes.has('CANONICAL_DISPLAY_STATUS_UNAVAILABLE') ||
     codes.has('CANONICAL_UNSAFE_FOR_PRIMARY_DISPLAY') ||
     codes.has('FINAL_DEBT_STATES_MISSING') ||
+    codes.has('FINAL_DEBT_STATES_CURRENCY_MISMATCH') ||
     codes.has('OVERPAYMENT_BLOCKED') ||
     codes.has('RESTRICTED_PAYMENT_DISPLAY_UNSAFE')
   ) {
@@ -321,6 +322,45 @@ describe('BalanceDisplayShadowDiff readiness audit matrix', () => {
     expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
     expect(report.cutoverReadiness.blockers).toContain('FINAL_DEBT_STATES_MISSING');
     expect(issueCodes(report)).toContain('CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY');
+  });
+
+  it('CB-01 finalDebtStates authority geldiyse finalDebtStates blocker kapanir ama primary cutover otomatik onaylanmaz', async () => {
+    const { service } = makeService(
+      legacySummary({ asilAlacak: 750 }),
+      canonicalBalance({
+        currencyResults: [
+          {
+            currency: 'TRY',
+            result: {
+              engineVersion: 'engine-v1',
+              totalDue: 775,
+              totalInterest: 25,
+              allocations: [{ paymentId: 'pay-1', paymentAmount: 100 }],
+              segments: [{ id: 'seg-1' }],
+              finalDebtStates: [
+                {
+                  claimId: 'p1',
+                  currency: 'TRY',
+                  principal: 750,
+                  accruedInterest: 25,
+                  costs: {},
+                  ancillaries: {},
+                },
+              ],
+            } as any,
+          },
+        ],
+        overpayments: { held: [], blocked: [] },
+      }),
+    );
+
+    const report = await service.compare('tenant-1', 'case-1', '2026-06-24', GENERATED_AT);
+
+    expect(issueCodes(report)).not.toContain('FINAL_DEBT_STATES_MISSING');
+    expect(report.cutoverReadiness.blockers).not.toContain('FINAL_DEBT_STATES_MISSING');
+    expect(report.provenance.finalDebtStatesAvailable).toBe(true);
+    expect(classifyReadiness(report)).toBe('LEGACY_AUTHORITY_RISK');
+    expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
   });
 
   it('HELD overpayment canonical divergence olarak gorunur fakat borctan dusulmez', async () => {
