@@ -25,6 +25,11 @@ import {
   RefreshCw,
 } from "lucide-react";
 import { useCaseCalculation, formatTL, formatDate, CaseCalculationResult, FaizSegment, MahsupDetay } from "@/hooks/useCaseCalculation";
+import { useBalanceShadowDiff } from "@/hooks/useBalanceShadowDiff";
+import {
+  buildGuardedPrimaryCalculationResult,
+  evaluateGuardedPrimaryDisplayPilot,
+} from "@/lib/guarded-primary-display";
 
 // ============================================================================
 // TYPES
@@ -36,6 +41,8 @@ interface Props {
   debtorCount?: number;
   compact?: boolean;
   className?: string;
+  guardedPrimaryPilotEnabled?: boolean;
+  guardedPrimaryPilotAsOfDate?: string;
 }
 
 // ============================================================================
@@ -47,6 +54,8 @@ export function HesapOzetiPanel({
   debtorCount = 1,
   compact = false,
   className = "",
+  guardedPrimaryPilotEnabled = false,
+  guardedPrimaryPilotAsOfDate,
 }: Props) {
   const [hesapTarihi, setHesapTarihi] = useState(() => calculationDate || new Date().toISOString().split("T")[0]);
   const [faizDokumuVisible, setFaizDokumuVisible] = useState(false);
@@ -57,6 +66,15 @@ export function HesapOzetiPanel({
     caseId,
     calculationDate: hesapTarihi,
     autoFetch: true,
+  });
+  const {
+    data: guardedPrimaryReport,
+    loading: guardedPrimaryLoading,
+    error: guardedPrimaryError,
+  } = useBalanceShadowDiff({
+    caseId,
+    asOfDate: guardedPrimaryPilotAsOfDate ?? hesapTarihi,
+    enabled: guardedPrimaryPilotEnabled,
   });
   
   // calculationDate prop değiştiğinde state'i güncelle
@@ -123,10 +141,19 @@ export function HesapOzetiPanel({
       </div>
     );
   }
+
+  const guardedPrimaryDecision = guardedPrimaryPilotEnabled
+    ? evaluateGuardedPrimaryDisplayPilot(guardedPrimaryReport, { featureFlagEnabled: true })
+    : null;
+  const guardedPrimaryHesap = guardedPrimaryDecision && guardedPrimaryReport
+    ? buildGuardedPrimaryCalculationResult(hesap, guardedPrimaryReport, guardedPrimaryDecision)
+    : null;
+  const displayHesap = guardedPrimaryHesap ?? hesap;
+  const guardedPrimarySelected = Boolean(guardedPrimaryHesap);
   
-  const kalemLabel = hesap.kalemTuru === 'CEK' ? 'Çek' : 
-                     hesap.kalemTuru === 'SENET' ? 'Senet' : 
-                     hesap.kalemTuru === 'FATURA' ? 'Fatura' : 'Asıl Alacak';
+  const kalemLabel = displayHesap.kalemTuru === 'CEK' ? 'Çek' :
+                     displayHesap.kalemTuru === 'SENET' ? 'Senet' :
+                     displayHesap.kalemTuru === 'FATURA' ? 'Fatura' : 'Asıl Alacak';
   
   return (
     <div className={`bg-white border rounded-lg flex flex-col ${className}`}>
@@ -152,89 +179,113 @@ export function HesapOzetiPanel({
       
       {/* Tarih bilgisi */}
       <div className="px-3 py-1 text-[10px] text-gray-400 border-b flex-shrink-0">
-        Takip: {formatDate(hesap.takipTarihi)} → Hesap: {formatDate(hesap.hesapTarihi)}
+        Takip: {formatDate(displayHesap.takipTarihi)} → Hesap: {formatDate(displayHesap.hesapTarihi)}
       </div>
+
+      {guardedPrimaryPilotEnabled && (
+        <div
+          data-testid="guarded-primary-display-pilot"
+          className={`border-b px-3 py-1.5 text-[10px] ${
+            guardedPrimarySelected
+              ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+              : "border-slate-200 bg-slate-50 text-slate-600"
+          }`}
+        >
+          <div className="font-semibold">
+            {guardedPrimarySelected
+              ? "Guarded canonical primary candidate"
+              : "Legacy calculation-summary fallback"}
+          </div>
+          <div data-testid="guarded-primary-display-reasons" className="mt-0.5">
+            {guardedPrimaryLoading
+              ? "SHADOW_OR_CANONICAL_SOURCE_PENDING"
+              : guardedPrimaryError
+                ? "SHADOW_OR_CANONICAL_SOURCE_FAILURE"
+                : guardedPrimaryDecision?.reasonCodes.join(", ") || "ELIGIBLE"}
+          </div>
+        </div>
+      )}
       
       {/* İçerik */}
       <div ref={scrollRef} className="px-3 py-2 space-y-0.5 text-xs">
         {/* Asıl Alacak */}
-        <Row label={kalemLabel} value={hesap.asilAlacak} />
+        <Row label={kalemLabel} value={displayHesap.asilAlacak} />
         
         {/* Tazminat ve Komisyon (Çek için) */}
-        {hesap.tazminat > 0 && <Row label="Karşılıksız Çek Tazminatı (%10)" value={hesap.tazminat} />}
-        {hesap.komisyon > 0 && <Row label="Komisyon" value={hesap.komisyon} />}
+        {displayHesap.tazminat > 0 && <Row label="Karşılıksız Çek Tazminatı (%10)" value={displayHesap.tazminat} />}
+        {displayHesap.komisyon > 0 && <Row label="Komisyon" value={displayHesap.komisyon} />}
         
         {/* Takip Öncesi Faiz */}
-        {hesap.takipOncesiFaiz > 0 && <Row label="Takip Öncesi Faiz" value={hesap.takipOncesiFaiz} />}
+        {displayHesap.takipOncesiFaiz > 0 && <Row label="Takip Öncesi Faiz" value={displayHesap.takipOncesiFaiz} />}
         
         {/* TAKİP TUTARI */}
         <div className="flex justify-between py-1.5 px-2 -mx-2 mt-1.5 border-t-2 border-blue-300 bg-blue-50 rounded">
           <span className="font-semibold text-blue-800">TAKİP TUTARI</span>
-          <span className="font-bold text-blue-700">{formatTL(hesap.takipTutari)}</span>
+          <span className="font-bold text-blue-700">{formatTL(displayHesap.takipTutari)}</span>
         </div>
         
         {/* İcra Masrafları Detay */}
-        <Row label="Başvurma Harcı" value={hesap.basvurmaHarci} light />
-        <Row label="Vekalet Harcı" value={hesap.vekaletHarci} light />
-        <Row label="Peşin Harç" value={hesap.pesinHarc} light />
-        <Row label="Dosya Gideri" value={hesap.dosyaGideri} light />
-        <Row label={`Tebligat Gideri (${debtorCount} borçlu)`} value={hesap.tebligatGideri} light />
-        <Row label="Vekalet Pulu" value={hesap.vekaletPulu} light />
+        <Row label="Başvurma Harcı" value={displayHesap.basvurmaHarci} light />
+        <Row label="Vekalet Harcı" value={displayHesap.vekaletHarci} light />
+        <Row label="Peşin Harç" value={displayHesap.pesinHarc} light />
+        <Row label="Dosya Gideri" value={displayHesap.dosyaGideri} light />
+        <Row label={`Tebligat Gideri (${debtorCount} borçlu)`} value={displayHesap.tebligatGideri} light />
+        <Row label="Vekalet Pulu" value={displayHesap.vekaletPulu} light />
         
         {/* İCRA MASRAFLARI */}
         <div className="flex justify-between py-1.5 px-2 -mx-2 mt-1 border-t border-gray-300 bg-gray-100 rounded">
           <span className="font-semibold text-gray-700">İCRA MASRAFLARI</span>
-          <span className="font-semibold text-gray-700">{formatTL(hesap.icraMasraflari)}</span>
+          <span className="font-semibold text-gray-700">{formatTL(displayHesap.icraMasraflari)}</span>
         </div>
         
         {/* Tahsil Harçları */}
-        <Row label="Peşin Harç Dahil Tahsil Harcı" value={hesap.pesinHarcDahilTahsilHarci} light muted />
-        <Row label="Peşin Harç Hariç Tahsil Harcı" value={hesap.pesinHarcHaricTahsilHarci} light muted />
+        <Row label="Peşin Harç Dahil Tahsil Harcı" value={displayHesap.pesinHarcDahilTahsilHarci} light muted />
+        <Row label="Peşin Harç Hariç Tahsil Harcı" value={displayHesap.pesinHarcHaricTahsilHarci} light muted />
         
         {/* Vekalet Ücreti */}
         <div className="flex justify-between py-1 border-t border-gray-200 mt-1">
           <span className="font-medium text-gray-700">Vekalet Ücreti =</span>
-          <span className="font-semibold">{formatTL(hesap.vekaletUcreti)}</span>
+          <span className="font-semibold">{formatTL(displayHesap.vekaletUcreti)}</span>
         </div>
         
         {/* Takip Sonrası Faiz */}
         <div className="flex justify-between py-1 border-t border-gray-200">
           <span className="font-medium text-gray-700">Takip Sonrası Faiz =</span>
-          <span className="font-semibold">{formatTL(hesap.takipSonrasiFaiz)}</span>
+          <span className="font-semibold">{formatTL(displayHesap.takipSonrasiFaiz)}</span>
         </div>
         
         {/* TOPLAM BORÇ */}
         <div className="flex justify-between py-1.5 px-2 -mx-2 mt-1.5 border-t-2 border-blue-400 bg-blue-100 rounded">
           <span className="font-bold text-blue-900">TOPLAM BORÇ</span>
-          <span className="font-bold text-blue-800">{formatTL(hesap.toplamBorc)}</span>
+          <span className="font-bold text-blue-800">{formatTL(displayHesap.toplamBorc)}</span>
         </div>
         
         {/* SON BORÇ */}
         <div className="flex justify-between py-2.5 px-2 -mx-2 mt-1.5 border-t-2 border-green-400 bg-green-100 rounded">
           <span className="font-bold text-green-900">SON BORÇ</span>
-          <span className="font-bold text-xl text-green-700">{formatTL(hesap.sonBorc)}</span>
+          <span className="font-bold text-xl text-green-700">{formatTL(displayHesap.sonBorc)}</span>
         </div>
         
         {/* Tahsilat Düşümü ve Kalan Borç */}
-        {hesap.toplamTahsilat > 0 && (
+        {displayHesap.toplamTahsilat > 0 && (
           <div className="pt-2 mt-2 border-t border-gray-200">
             <div className="flex justify-between py-1">
               <span className="text-gray-600">Tahsilat Düşümü</span>
-              <span className="text-red-600 font-medium">- {formatTL(hesap.toplamTahsilat)}</span>
+              <span className="text-red-600 font-medium">- {formatTL(displayHesap.toplamTahsilat)}</span>
             </div>
             
             {/* TBK m.100 Mahsup Detayları */}
-            {hesap.mahsupDetaylari && hesap.mahsupDetaylari.length > 0 && (
+            {displayHesap.mahsupDetaylari && displayHesap.mahsupDetaylari.length > 0 && (
               <MahsupDetayPanel 
-                mahsupDetaylari={hesap.mahsupDetaylari} 
-                asilAlacak={hesap.asilAlacak}
-                kalanAnapara={hesap.kalanAnapara}
+                mahsupDetaylari={displayHesap.mahsupDetaylari}
+                asilAlacak={displayHesap.asilAlacak}
+                kalanAnapara={displayHesap.kalanAnapara}
               />
             )}
             
             <div className="flex justify-between py-1.5 px-2 -mx-2 mt-1 border-t border-orange-300 bg-orange-50 rounded">
               <span className="font-bold text-orange-900">KALAN BORÇ</span>
-              <span className="font-bold text-orange-700">{formatTL(hesap.kalanBorc)}</span>
+              <span className="font-bold text-orange-700">{formatTL(displayHesap.kalanBorc)}</span>
             </div>
           </div>
         )}
@@ -242,7 +293,7 @@ export function HesapOzetiPanel({
         {/* Tahsil Harcı Oranlarına Göre Son Borç */}
         <div className="pt-2 mt-2 border-t-2 border-gray-300">
           <p className="text-[10px] font-medium text-gray-500 mb-1">Tahsil Harcı Oranlarına Göre Son Borç</p>
-          {hesap.tahsilOranlari.map((t, i) => (
+          {displayHesap.tahsilOranlari.map((t, i) => (
             <div key={i} className="flex justify-between py-0.5 text-gray-500">
               <span>%{t.label}</span>
               <span>{formatTL(t.tutar)}</span>
@@ -251,7 +302,7 @@ export function HesapOzetiPanel({
         </div>
         
         {/* Faiz Dökümü */}
-        {(hesap.faizSegmentleri.takipOncesi.length > 0 || hesap.faizSegmentleri.takipSonrasi.length > 0) && (
+        {(displayHesap.faizSegmentleri.takipOncesi.length > 0 || displayHesap.faizSegmentleri.takipSonrasi.length > 0) && (
           <div className="pt-2 mt-2 border-t">
             <button
               onClick={() => setFaizDokumuVisible(!faizDokumuVisible)}
@@ -266,11 +317,11 @@ export function HesapOzetiPanel({
             
             {faizDokumuVisible && (
               <div className="mt-2 space-y-2">
-                {hesap.faizSegmentleri.takipOncesi.length > 0 && (
-                  <SegmentTable title="Takip Öncesi Faiz" segments={hesap.faizSegmentleri.takipOncesi} />
+                {displayHesap.faizSegmentleri.takipOncesi.length > 0 && (
+                  <SegmentTable title="Takip Öncesi Faiz" segments={displayHesap.faizSegmentleri.takipOncesi} />
                 )}
-                {hesap.faizSegmentleri.takipSonrasi.length > 0 && (
-                  <SegmentTable title="Takip Sonrası Faiz" segments={hesap.faizSegmentleri.takipSonrasi} color="orange" />
+                {displayHesap.faizSegmentleri.takipSonrasi.length > 0 && (
+                  <SegmentTable title="Takip Sonrası Faiz" segments={displayHesap.faizSegmentleri.takipSonrasi} color="orange" />
                 )}
               </div>
             )}

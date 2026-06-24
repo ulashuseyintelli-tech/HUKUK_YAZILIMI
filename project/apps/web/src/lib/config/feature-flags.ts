@@ -161,6 +161,16 @@ export const FEATURE_FLAGS = {
    * shadow-diff endpoint'i okunur. Ana hesap ozeti calculation-summary hattinda kalir.
    */
   BALANCE_SHADOW_DISPLAY: process.env.NEXT_PUBLIC_BALANCE_SHADOW_DISPLAY === 'true',
+
+  /**
+   * Guarded primary balance display pilot.
+   *
+   * Varsayilan KAPALI. Sadece bu flag true ve URL'de guardedPrimary=1 varsa
+   * HesapOzetiPanel canonical balance/display adayini dener. Hard no-go,
+   * unsupported veya source failure durumunda legacy calculation-summary
+   * primary olarak kalir.
+   */
+  GUARDED_PRIMARY_DISPLAY_PILOT: process.env.NEXT_PUBLIC_GUARDED_PRIMARY_DISPLAY_PILOT === 'true',
 } as const;
 
 // ============================================================================
