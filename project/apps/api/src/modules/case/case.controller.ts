@@ -18,6 +18,7 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { OcrService } from "../ocr/ocr.service";
 import { ResponsibleCandidatesService } from "./responsible-candidates.service";
 import { TemporalResponsibilityService } from "./temporal-responsibility.service";
+import { ResponsibilityHistoryService, type HistoryEventType } from "./responsibility-history.service";
 import { AssignResponsiblePersonDto } from "./dto/responsible-person.dto";
 import { WarnOnlyAuditService } from "../permission-diagnostics/warn-only-audit.service";
 import { PermissionHardGuardService } from "../permission-diagnostics/permission-hard-guard.service";
@@ -31,7 +32,8 @@ export class CaseController {
     private responsibleCandidatesService: ResponsibleCandidatesService,
     private temporalResponsibilityService: TemporalResponsibilityService,
     private warnOnlyAudit: WarnOnlyAuditService,
-    private permissionHardGuard: PermissionHardGuardService
+    private permissionHardGuard: PermissionHardGuardService,
+    private responsibilityHistoryService: ResponsibilityHistoryService
   ) {}
 
   @Get()
@@ -114,6 +116,37 @@ export class CaseController {
       requestPath: "/cases/:id/responsibility-at",
     });
     return result;
+  }
+
+  // WP-1d-4c-1: Sorumluluk DEĞİŞİM geçmişi (timeline) — READ-ONLY. Mevcut responsibility-at (point-in-time) DEĞİŞMEZ.
+  @Get(":id/responsibility-history")
+  async getResponsibilityHistory(
+    @CurrentUser("tenantId") tenantId: string,
+    @Param("id") id: string,
+    @Query("from") from?: string,
+    @Query("to") to?: string,
+    @Query("includeInferred") includeInferred?: string,
+    @Query("type") type?: string
+  ) {
+    const fromDate = this.parseHistoryDate(from, "from");
+    const toDate = this.parseHistoryDate(to, "to");
+    const typeOpt: HistoryEventType | "all" =
+      type === "operationOwner" || type === "legalResponsibleLawyer" ? type : "all";
+    return this.responsibilityHistoryService.getResponsibilityHistory(tenantId, id, {
+      from: fromDate,
+      to: toDate,
+      includeInferred: includeInferred === undefined ? true : includeInferred !== "false",
+      type: typeOpt,
+    });
+  }
+
+  private parseHistoryDate(value: string | undefined, label: string): Date | undefined {
+    if (value === undefined || value === "") return undefined;
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) {
+      throw new BadRequestException(`Geçersiz ${label} tarihi (ISO 8601 bekleniyor).`);
+    }
+    return d;
   }
 
   // M2-G3a: Dosya Sorumlusu (gerçek kişi) atama. İzole servise delege; case.service.ts'e dokunmadan.
