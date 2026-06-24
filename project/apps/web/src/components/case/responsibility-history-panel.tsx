@@ -1,6 +1,7 @@
 "use client";
 
 // WP-1d-4c-2: Case detail "Sorumluluk Değişim Geçmişi" timeline (READ-ONLY).
+// WP-1d-4c-3: tür + tarih aralığı filtre kontrolleri (mevcut endpoint parametreleri; yeni backend YOK).
 // Mevcut endpoint: GET /cases/:id/responsibility-history. Mutasyon/atama/devir YOK.
 // Mevcut "Sorumluluk Geçmişi" (point-in-time) panelini DEĞİŞTİRMEZ; bu ayrı bir liste bölümüdür.
 
@@ -9,6 +10,8 @@ import { api } from "@/lib/api";
 import { confidenceLabel, confidenceTooltip, confidenceBadgeClass } from "@/lib/responsibility-at";
 import {
   type ResponsibilityHistoryResult,
+  type HistoryEventType,
+  HISTORY_CHANGE_TYPE_LABEL,
   changeTypeLabel,
   formatParty,
 } from "@/lib/responsibility-history";
@@ -20,8 +23,14 @@ function formatDateTime(iso?: string | null): string {
   return d.toLocaleString("tr-TR");
 }
 
+type TypeFilter = HistoryEventType | "all";
+
 export function ResponsibilityHistoryPanel({ caseId }: { caseId: string }) {
   const [includeInferred, setIncludeInferred] = useState(true);
+  const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
+  // Tarih input'ları ham YYYY-MM-DD tutulur; backend'e timezone yorumu OLMADAN aynen gönderilir.
+  const [fromDate, setFromDate] = useState("");
+  const [toDate, setToDate] = useState("");
   const [data, setData] = useState<ResponsibilityHistoryResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -54,13 +63,18 @@ export function ResponsibilityHistoryPanel({ caseId }: { caseId: string }) {
     };
   }, []);
 
-  // includeInferred değişince (mount dahil) yeniden çek.
+  // Filtre/checkbox değişince (mount dahil) yeniden çek. Boş tarih → ilgili param GÖNDERİLMEZ.
   useEffect(() => {
     let active = true;
     setLoading(true);
     setError(null);
     api
-      .getCaseResponsibilityHistory(caseId, { type: "all", includeInferred })
+      .getCaseResponsibilityHistory(caseId, {
+        type: typeFilter,
+        includeInferred,
+        ...(fromDate ? { from: fromDate } : {}),
+        ...(toDate ? { to: toDate } : {}),
+      })
       .then((res) => {
         if (active) setData(res);
       })
@@ -73,12 +87,15 @@ export function ResponsibilityHistoryPanel({ caseId }: { caseId: string }) {
     return () => {
       active = false;
     };
-  }, [caseId, includeInferred]);
+  }, [caseId, includeInferred, typeFilter, fromDate, toDate]);
 
   const changedByName = (uid?: string | null): string => {
     if (!uid) return "—";
     return userById[uid] ?? "Kullanıcı kaydı";
   };
+
+  // Filtre aktif mi? (boş sonuç metnini dürüstçe seçmek için)
+  const filterActive = typeFilter !== "all" || !!fromDate || !!toDate || !includeInferred;
 
   return (
     <div className="bg-white border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)] overflow-hidden">
@@ -101,6 +118,52 @@ export function ResponsibilityHistoryPanel({ caseId }: { caseId: string }) {
         </label>
       </div>
 
+      {/* WP-1d-4c-3: tür + tarih aralığı filtreleri (mevcut endpoint parametreleri). */}
+      <div className="px-2 py-1.5 border-b border-slate-100 flex flex-wrap items-end gap-2">
+        <div className="flex flex-col gap-0.5">
+          <label className="text-[9px] text-gray-500" htmlFor="rhist-type">
+            Değişiklik türü
+          </label>
+          <select
+            id="rhist-type"
+            aria-label="Değişiklik türü filtresi"
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value as TypeFilter)}
+            className="rounded border border-gray-300 px-1.5 py-1 text-[10px] outline-none focus:border-primary"
+          >
+            <option value="all">Tüm değişiklikler</option>
+            <option value="operationOwner">{HISTORY_CHANGE_TYPE_LABEL.operationOwner}</option>
+            <option value="legalResponsibleLawyer">{HISTORY_CHANGE_TYPE_LABEL.legalResponsibleLawyer}</option>
+          </select>
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <label className="text-[9px] text-gray-500" htmlFor="rhist-from">
+            Başlangıç tarihi
+          </label>
+          <input
+            id="rhist-from"
+            type="date"
+            aria-label="Başlangıç tarihi"
+            value={fromDate}
+            onChange={(e) => setFromDate(e.target.value)}
+            className="rounded border border-gray-300 px-1.5 py-1 text-[10px] outline-none focus:border-primary"
+          />
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <label className="text-[9px] text-gray-500" htmlFor="rhist-to">
+            Bitiş tarihi
+          </label>
+          <input
+            id="rhist-to"
+            type="date"
+            aria-label="Bitiş tarihi"
+            value={toDate}
+            onChange={(e) => setToDate(e.target.value)}
+            className="rounded border border-gray-300 px-1.5 py-1 text-[10px] outline-none focus:border-primary"
+          />
+        </div>
+      </div>
+
       <div className="p-2 space-y-2">
         {loading && <div className="text-[11px] text-gray-400 py-2">Yükleniyor…</div>}
 
@@ -110,7 +173,9 @@ export function ResponsibilityHistoryPanel({ caseId }: { caseId: string }) {
 
         {!loading && !error && data && data.events.length === 0 && (
           <div className="text-[11px] text-gray-500 py-2">
-            Bu dosya için sorumluluk değişim kaydı bulunamadı.
+            {filterActive
+              ? "Seçili filtrelerle eşleşen sorumluluk değişim kaydı bulunamadı."
+              : "Bu dosya için sorumluluk değişim kaydı bulunamadı."}
             {!includeInferred && (
               <p className="text-[10px] text-gray-400 mt-1">
                 Çıkarımsal kayıtlar gizlendiği için bazı eski kayıtlar görünmeyebilir.
