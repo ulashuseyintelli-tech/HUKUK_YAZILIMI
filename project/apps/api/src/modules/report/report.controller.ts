@@ -2,16 +2,29 @@ import { Controller, Get, Query, Param, UseGuards, ForbiddenException } from '@n
 import { ReportService } from './report.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { WarnOnlyAuditService } from '../permission-diagnostics/warn-only-audit.service';
 
 @Controller('reports')
 @UseGuards(JwtAuthGuard)
 export class ReportController {
-  constructor(private readonly service: ReportService) {}
+  constructor(
+    private readonly service: ReportService,
+    private readonly warnOnlyAudit: WarnOnlyAuditService,
+  ) {}
 
   // Dashboard istatistikleri
   @Get('dashboard')
-  async getDashboard(@CurrentUser('tenantId') tenantId: string) {
+  async getDashboard(
+    @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') userId: string,
+  ) {
     const data = await this.service.getDashboardStats(tenantId);
+    // WP-4d-2: Phase 2 warn-only — response AYNEN döner; ek olarak diagnostic audit (best-effort, block YOK).
+    await this.warnOnlyAudit.recordWouldDeny('reports.dashboard', {
+      tenantId,
+      actorUserId: userId,
+      requestPath: '/reports/dashboard',
+    });
     return { success: true, data };
   }
 
@@ -147,6 +160,7 @@ export class ReportController {
   @Get('export/cases')
   async exportCases(
     @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') userId: string,
     @Query('takipTuruId') takipTuruId?: string,
     @Query('mahiyetTipiId') mahiyetTipiId?: string,
     @Query('riskId') riskId?: string,
@@ -165,6 +179,12 @@ export class ReportController {
       responsibleLawyerId,
       responsibleStaffId,
       caseStatus,
+    });
+    // WP-4d-2: Phase 2 warn-only — response AYNEN döner; ek olarak diagnostic audit (best-effort, block YOK).
+    await this.warnOnlyAudit.recordWouldDeny('reports.exportCases', {
+      tenantId,
+      actorUserId: userId,
+      requestPath: '/reports/export/cases',
     });
     return { success: true, data: csvData, contentType: 'text/csv' };
   }
