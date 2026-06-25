@@ -1,4 +1,4 @@
-import { BalanceDisplayShadowDiffService } from '../balance-display-shadow-diff.service';
+import { BalanceDisplayShadowDiffService, cutoverReadiness } from '../balance-display-shadow-diff.service';
 import type { CaseService } from '../../case/case.service';
 import type { CaseBalanceService, CaseBalanceResult } from '../../interest-engine/orchestration/case-balance.service';
 import { AncillaryType } from '../../interest-engine/types/domain.types';
@@ -269,7 +269,7 @@ describe('BalanceDisplayShadowDiffService', () => {
     expect(report.provenance.finalDebtStatesAvailable).toBe(true);
     expect(report.sources.canonicalBalanceDisplay.diagnostics).not.toContain('FINAL_DEBT_STATES_MISSING');
     expect(report.cutoverReadiness.blockers).not.toContain('FINAL_DEBT_STATES_MISSING');
-    expect(report.cutoverReadiness.blockers).toContain('CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY');
+    expect(report.cutoverReadiness.blockers).not.toContain('CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY');
     expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
     expect(report.cutoverReadiness.safeForOptInShadow).toBe(true);
     expect(report.bucketDiffs.find((diff) => diff.bucket === 'PRINCIPAL')).toMatchObject({
@@ -282,7 +282,7 @@ describe('BalanceDisplayShadowDiffService', () => {
     });
   });
 
-  it('documents current overbroad ClaimItem diagnostic blocker behavior', async () => {
+  it('keeps ClaimItem informational diagnostic out of primary readiness blockers', async () => {
     const { service } = makeService(
       legacySummary({
         asilAlacak: 750,
@@ -328,14 +328,31 @@ describe('BalanceDisplayShadowDiffService', () => {
     expect(report.provenance.claimItemCollectedAmountUsedAsAuthority).toBe(false);
     expect(report.sources.canonicalBalanceDisplay.diagnostics).toContain('CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY');
     expect(report.sources.canonicalBalanceDisplay.diagnostics).not.toContain('FINAL_DEBT_STATES_MISSING');
-    expect(report.cutoverReadiness.blockers).toEqual(['CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY']);
-    expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
+    expect(report.cutoverReadiness.blockers).toEqual([]);
+    expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(true);
     expect(report.cutoverReadiness.safeForOptInShadow).toBe(true);
     expect(report.totals.diffs.filter((diff) => diff.severity === 'RED')).toEqual([]);
     expect(report.bucketDiffs.filter((diff) => diff.severity === 'RED')).toEqual([]);
   });
 
-  it('CB-04: ClaimItem authority riski temiz amount match olsa bile primary-ready uretmez', async () => {
+  it('blocks primary readiness when actual ClaimItem authority contamination is proven', () => {
+    const readiness = cutoverReadiness({
+      display: {
+        diagnostics: [],
+        provenance: {
+          claimItemCollectedAmountUsedAsAuthority: true,
+        },
+      } as any,
+      blockers: [],
+      totalDiffs: [],
+      bucketDiffs: [],
+    });
+
+    expect(readiness.blockers).toEqual(['CLAIM_ITEM_AUTHORITY_CONTAMINATION']);
+    expect(readiness.safeForPrimaryDisplay).toBe(false);
+  });
+
+  it('CB-04: ClaimItem informational diagnostic temiz amount match varken primary-ready engellemez', async () => {
     const canonical = canonicalBalance({
       currencyResults: [
         {
@@ -397,8 +414,8 @@ describe('BalanceDisplayShadowDiffService', () => {
         classification: 'LEGACY_AUTHORITY_RISK',
       }),
     ]));
-    expect(report.cutoverReadiness.blockers).toContain('CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY');
-    expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
+    expect(report.cutoverReadiness.blockers).not.toContain('CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY');
+    expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(true);
     expect(report.cutoverReadiness.safeForOptInShadow).toBe(true);
   });
 
@@ -446,10 +463,8 @@ describe('BalanceDisplayShadowDiffService', () => {
       status: 'LEGACY_ONLY',
       classification: 'MISSING_CANONICAL_FIELD',
     });
-    expect(report.cutoverReadiness.blockers).toEqual(expect.arrayContaining([
-      'FINAL_DEBT_STATES_MISSING',
-      'CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY',
-    ]));
+    expect(report.cutoverReadiness.blockers).toEqual(['FINAL_DEBT_STATES_MISSING']);
+    expect(report.diagnostics.map((diagnostic) => diagnostic.code)).toContain('CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY');
   });
 
   it('CB-01: legacy ve canonical principal farkliysa deterministic amount diff uretir', async () => {
