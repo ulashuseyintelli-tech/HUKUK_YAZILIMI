@@ -25,7 +25,7 @@ function formatDateTime(iso?: string | null): string {
 
 type TypeFilter = HistoryEventType | "all";
 
-export function ResponsibilityHistoryPanel({ caseId }: { caseId: string }) {
+export function ResponsibilityHistoryPanel({ caseId, reloadToken }: { caseId: string; reloadToken?: number }) {
   const [includeInferred, setIncludeInferred] = useState(true);
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   // Tarih input'ları ham YYYY-MM-DD tutulur; backend'e timezone yorumu OLMADAN aynen gönderilir.
@@ -87,7 +87,8 @@ export function ResponsibilityHistoryPanel({ caseId }: { caseId: string }) {
     return () => {
       active = false;
     };
-  }, [caseId, includeInferred, typeFilter, fromDate, toDate]);
+    // reloadToken: dış mutasyon (hukuki sorumlu değişikliği) sonrası yeniden çek.
+  }, [caseId, includeInferred, typeFilter, fromDate, toDate, reloadToken]);
 
   const changedByName = (uid?: string | null): string => {
     if (!uid) return "—";

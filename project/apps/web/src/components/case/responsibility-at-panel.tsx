@@ -30,7 +30,7 @@ function formatDateTime(iso?: string | null): string {
 
 const TYPE_LABEL: Record<string, string> = { LAWYER: "Avukat", STAFF: "Personel" };
 
-export function ResponsibilityAtPanel({ caseId }: { caseId: string }) {
+export function ResponsibilityAtPanel({ caseId, reloadToken }: { caseId: string; reloadToken?: number }) {
   const [asOfLocal, setAsOfLocal] = useState<string>(nowLocalInput());
   const [data, setData] = useState<CombinedResponsibilityResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -84,7 +84,8 @@ export function ResponsibilityAtPanel({ caseId }: { caseId: string }) {
     return () => {
       active = false;
     };
-  }, [caseId, asOfLocal]);
+    // reloadToken: dış mutasyon (hukuki sorumlu değişikliği) sonrası yeniden çek.
+  }, [caseId, asOfLocal, reloadToken]);
 
   // İsim DÜRÜSTÇE confidence-first çözülür: UNKNOWN_BEFORE_HORIZON'da "Atanmamış"/"—" gösterilemez
   // (atanmış olabilir, bilmiyoruz). NONE (gerçekten atanmamış) ile UNKNOWN (bilinemez) ayrı tutulur.

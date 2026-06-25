@@ -51,6 +51,7 @@ import {
 } from "@/lib/case-staff-role";
 import { ResponsibilityAtPanel } from "@/components/case/responsibility-at-panel";
 import { ResponsibilityHistoryPanel } from "@/components/case/responsibility-history-panel";
+import { LegalResponsibleLawyerModal } from "@/components/case/LegalResponsibleLawyerModal";
 import { useAuth } from "@/lib/auth-context";
 import { PaymentInstructionModal } from "@/components/payment/PaymentInstructionModal";
 import { ExpenseRequestModal, BalanceWidget, ExpenseRequestList } from "@/components/expense";
@@ -842,6 +843,9 @@ export default function CaseDetailPage() {
   // Collection Modal State
   const [collectionModalOpen, setCollectionModalOpen] = useState(false);
   const [editingCollection, setEditingCollection] = useState<any>(null);
+  // WP-1d-5-5: Hukuki Sorumlu Avukat kaydı değişikliği modalı + sorumluluk panellerini yenileme sinyali.
+  const [legalResponsibleModalOpen, setLegalResponsibleModalOpen] = useState(false);
+  const [responsibilityReloadToken, setResponsibilityReloadToken] = useState(0);
   
   // Address Task State (Yapılacaklar ve Notlar için)
   const [addressTasks, setAddressTasks] = useState<any[]>([]);
@@ -2123,11 +2127,21 @@ export default function CaseDetailPage() {
               </div>
             </div>
 
+            {/* WP-1d-5-5: Hukuki Sorumlu Avukat kaydı değişikliği (ADMIN-only affordance; güvenlik backend hard guard'da). */}
+            {user?.role === "ADMIN" && (caseData.lawyers?.length ?? 0) > 0 && (
+              <button
+                onClick={() => setLegalResponsibleModalOpen(true)}
+                className="w-full text-[11px] text-blue-700 border border-blue-200 bg-blue-50 hover:bg-blue-100 rounded px-2 py-1.5"
+              >
+                Hukuki Sorumlu Avukat Kaydını Değiştir
+              </button>
+            )}
+
             {/* WP-1d-4a: Sorumluluk Geçmişi (read-only temporal panel; mevcut responsibility-at endpoint). */}
-            <ResponsibilityAtPanel caseId={caseData.id} />
+            <ResponsibilityAtPanel caseId={caseData.id} reloadToken={responsibilityReloadToken} />
 
             {/* WP-1d-4c-2: Sorumluluk Değişim Geçmişi (read-only timeline; responsibility-history endpoint). */}
-            <ResponsibilityHistoryPanel caseId={caseData.id} />
+            <ResponsibilityHistoryPanel caseId={caseData.id} reloadToken={responsibilityReloadToken} />
 
             {/* Müvekkiller */}
             <div className="bg-white border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)] overflow-hidden">
@@ -3667,6 +3681,20 @@ export default function CaseDetailPage() {
           caseId={caseData.id}
           collection={editingCollection}
           onSuccess={fetchFinanceData}
+        />
+      )}
+
+      {/* WP-1d-5-5: Hukuki Sorumlu Avukat kaydı değişikliği modalı (ADMIN-only; mevcut backend endpoint). */}
+      {caseData && (
+        <LegalResponsibleLawyerModal
+          isOpen={legalResponsibleModalOpen}
+          onClose={() => setLegalResponsibleModalOpen(false)}
+          caseId={caseData.id}
+          lawyers={caseData.lawyers || []}
+          onSuccess={() => {
+            fetchCase();
+            setResponsibilityReloadToken((t) => t + 1);
+          }}
         />
       )}
 
