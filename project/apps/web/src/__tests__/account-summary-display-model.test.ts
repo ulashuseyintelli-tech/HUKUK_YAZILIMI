@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   buildAccountSummaryDisplayModel,
+  evaluateAccountSummarySourceAuthorityPolicy,
+  type AccountSummaryDisplayModel,
   type AccountSummaryRowId,
 } from "@/lib/account-summary-display-model";
 import type { CaseCalculationResult } from "@/hooks/useCaseCalculation";
@@ -190,5 +192,120 @@ describe("account summary source-aware display model", () => {
     expect(model.rows.asilAlacak.value).toBe(legacySummary.asilAlacak);
     expect(model.rows.toplamBorc.value).toBe(legacySummary.toplamBorc);
     expect(model.rows.mahsupDetayPanelContext.derivedFrom).toEqual(["LEGACY"]);
+  });
+});
+describe("account summary source authority policy", () => {
+  function guardedModel() {
+    return buildAccountSummaryDisplayModel({
+      legacy: legacySummary,
+      display: guardedSummary,
+      guardedPrimarySelected: true,
+    });
+  }
+
+  function blockerRowIds(model: AccountSummaryDisplayModel) {
+    return evaluateAccountSummarySourceAuthorityPolicy(model).blockers.map((blocker) => blocker.rowId);
+  }
+
+  it("current guarded selected mixed authority model controlled cutover icin ready degildir", () => {
+    const model = guardedModel();
+    const result = evaluateAccountSummarySourceAuthorityPolicy(model);
+
+    expect(result.readyForControlledCutover).toBe(false);
+    expect(result.blockers.length).toBeGreaterThan(0);
+    expect(blockerRowIds(model)).toEqual(expect.arrayContaining([
+      "tazminat",
+      "komisyon",
+      "takipOncesiFaiz",
+      "basvurmaHarci",
+      "pesinHarcDahilTahsilHarci",
+      "mahsupDetaylari",
+      "mahsupDetayPanelContext",
+    ]));
+  });
+
+  it("canonical-required guarded rows CANONICAL ise blocker uretmez", () => {
+    const result = evaluateAccountSummarySourceAuthorityPolicy(guardedModel());
+    const blockerIds = result.blockers.map((blocker) => blocker.rowId);
+
+    for (const rowId of canonicalRowIds) {
+      expect(blockerIds).not.toContain(rowId);
+    }
+  });
+
+  it.each(["LEGACY", "DERIVED", "UNKNOWN"] as const)(
+    "canonical-required row %s olursa blocker uretir",
+    (sourceAuthority) => {
+      const model = guardedModel();
+      model.rows.asilAlacak = {
+        ...model.rows.asilAlacak,
+        sourceAuthority,
+      };
+
+      const result = evaluateAccountSummarySourceAuthorityPolicy(model);
+
+      expect(result.readyForControlledCutover).toBe(false);
+      expect(result.blockers).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          rowId: "asilAlacak",
+          sourceAuthority,
+          policy: "CANONICAL_REQUIRED",
+          reason: expect.stringContaining("Canonical-required row"),
+        }),
+      ]));
+    },
+  );
+
+  it("fallback legacy display safe davranistir ama controlled cutover candidate degildir", () => {
+    const model = buildAccountSummaryDisplayModel({
+      legacy: legacySummary,
+      display: legacySummary,
+      guardedPrimarySelected: false,
+    });
+    const result = evaluateAccountSummarySourceAuthorityPolicy(model);
+
+    expect(result.readyForControlledCutover).toBe(false);
+    expect(result.blockers).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        rowId: "displaySurface",
+        sourceAuthority: "LEGACY",
+        policy: "CONTROLLED_CUTOVER_CANDIDATE_REQUIRED",
+      }),
+    ]));
+  });
+
+  it("DERIVED MahsupDetayPanel context controlled cutover icin blocker kalir", () => {
+    const result = evaluateAccountSummarySourceAuthorityPolicy(guardedModel());
+
+    expect(result.blockers).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        rowId: "mahsupDetayPanelContext",
+        sourceAuthority: "DERIVED",
+        policy: "DERIVED_REQUIRES_SOURCE_MODEL",
+        reason: expect.stringContaining("Derived or mixed row"),
+      }),
+    ]));
+  });
+
+  it("synthetic all-canonical row set controlled cutover policy gateinden gecebilir", () => {
+    const model = guardedModel();
+    const allCanonicalModel: AccountSummaryDisplayModel = {
+      ...model,
+      rows: Object.fromEntries(
+        Object.entries(model.rows).map(([rowId, row]) => [
+          rowId,
+          {
+            ...row,
+            sourceAuthority: "CANONICAL",
+            cutoverPolicy: "CANONICAL_REQUIRED",
+          },
+        ]),
+      ) as AccountSummaryDisplayModel["rows"],
+    };
+
+    const result = evaluateAccountSummarySourceAuthorityPolicy(allCanonicalModel);
+
+    expect(result.readyForControlledCutover).toBe(true);
+    expect(result.blockers).toEqual([]);
   });
 });

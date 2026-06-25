@@ -54,6 +54,19 @@ export interface AccountSummaryDisplayModel {
   rows: Record<AccountSummaryRowId, AccountSummaryDisplayRow>;
 }
 
+export interface AccountSummarySourcePolicyViolation {
+  rowId: AccountSummaryRowId | 'displaySurface';
+  sourceAuthority: AccountSummarySourceAuthority;
+  policy: AccountSummaryCutoverPolicy | 'CONTROLLED_CUTOVER_CANDIDATE_REQUIRED';
+  reason: string;
+}
+
+export interface AccountSummarySourcePolicyResult {
+  readyForControlledCutover: boolean;
+  blockers: AccountSummarySourcePolicyViolation[];
+  warnings: AccountSummarySourcePolicyViolation[];
+}
+
 interface BuildAccountSummaryDisplayModelInput {
   legacy: CaseCalculationResult;
   display: CaseCalculationResult;
@@ -235,5 +248,83 @@ export function buildAccountSummaryDisplayModel({
         derivedFrom: guardedPrimarySelected ? ['CANONICAL', 'LEGACY'] : ['LEGACY'],
       },
     },
+  };
+}
+function sourcePolicyViolation(
+  row: AccountSummaryDisplayRow,
+  reason: string,
+): AccountSummarySourcePolicyViolation {
+  return {
+    rowId: row.id,
+    sourceAuthority: row.sourceAuthority,
+    policy: row.cutoverPolicy,
+    reason,
+  };
+}
+
+/**
+ * Source-aware Hesap Ozeti modelini controlled cutover acisindan degerlendirir.
+ *
+ * Runtime UI davranisini degistirmez; sadece TM10 modelinden policy raporu uretir.
+ */
+export function evaluateAccountSummarySourceAuthorityPolicy(
+  model: AccountSummaryDisplayModel,
+): AccountSummarySourcePolicyResult {
+  const blockers: AccountSummarySourcePolicyViolation[] = [];
+  const warnings: AccountSummarySourcePolicyViolation[] = [];
+
+  if (!model.guardedPrimarySelected) {
+    blockers.push({
+      rowId: 'displaySurface',
+      sourceAuthority: 'LEGACY',
+      policy: 'CONTROLLED_CUTOVER_CANDIDATE_REQUIRED',
+      reason: 'Legacy fallback display is safe behavior, not a controlled cutover candidate.',
+    });
+  }
+
+  for (const row of Object.values(model.rows)) {
+    if (row.cutoverPolicy === 'CANONICAL_REQUIRED' && row.sourceAuthority !== 'CANONICAL') {
+      blockers.push(sourcePolicyViolation(
+        row,
+        'Canonical-required row must use CANONICAL source authority.',
+      ));
+      continue;
+    }
+
+    if (row.cutoverPolicy === 'UNKNOWN_BLOCKS_CUTOVER') {
+      blockers.push(sourcePolicyViolation(
+        row,
+        'Row source is not approved for controlled cutover.',
+      ));
+      continue;
+    }
+
+    if (row.cutoverPolicy === 'DERIVED_REQUIRES_SOURCE_MODEL') {
+      blockers.push(sourcePolicyViolation(
+        row,
+        'Derived or mixed row requires explicit source modeling before controlled cutover.',
+      ));
+      continue;
+    }
+
+    if (row.cutoverPolicy === 'LEGACY_ALLOWED_DIAGNOSTIC' && row.sourceAuthority === 'LEGACY') {
+      if (model.guardedPrimarySelected) {
+        blockers.push(sourcePolicyViolation(
+          row,
+          'Legacy row is still inside the same primary Hesap Ozeti surface.',
+        ));
+      } else {
+        warnings.push(sourcePolicyViolation(
+          row,
+          'Legacy diagnostic row remains visible only in fallback display.',
+        ));
+      }
+    }
+  }
+
+  return {
+    readyForControlledCutover: blockers.length === 0,
+    blockers,
+    warnings,
   };
 }
