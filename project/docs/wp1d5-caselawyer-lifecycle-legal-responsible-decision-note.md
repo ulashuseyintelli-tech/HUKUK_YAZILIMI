@@ -172,3 +172,22 @@ Bağlı/ilişkili açık soru: D4 zero-responsible data audit + exactly-one desi
 KURULDU (#474). **Lifecycle add/remove istisnaları ayrıca karar bekliyor (bu not).** "Tek write-path
 tamamen kanonik oldu" demek henüz erken; doğrusu: *generic update kapandı, lifecycle istisnaları
 sınıflandırıldı ve karara hazır.*
+
+---
+
+## 10. WP-1d-5-9 — Seçilen Kararlar (uygulandı)
+
+Ulaş §7 kararını verdi (2026-06-25); WP-1d-5-9 backend gate ile **koda döküldü** (test-first; UI/migration/schema YOK):
+
+| Karar | Kod | Davranış (uygulandı) |
+|---|:--:|---|
+| **L1** create() dedupe | YOK | `ACCEPT_AS_INVARIANT_MAINTENANCE` — açılış tam-1 normalizasyonu korunur. |
+| **L2** addCaseLawyer initial (mevcut sorumlu YOK) | YOK | `LIFECYCLE_EXCEPTION_ACCEPTED_FOR_INITIALIZATION` — ilk responsible (rank-default/explicit) korunur. |
+| **L3** addCaseLawyer, mevcut sorumlu VARKEN explicit RESPONSIBLE | EVET | `BLOCK_AND_REQUIRE_CANONICAL_ENDPOINT` — `400 [LEGAL_RESPONSIBLE_CHANGE_REQUIRES_CANONICAL_ENDPOINT]`. |
+| **L4** addCaseLawyer, rank-default ile örtük replacement | EVET | `BLOCK_IMPLICIT_RESPONSIBLE_REPLACEMENT` — mevcut sorumlu varken rank-default RESPONSIBLE `ASSIGNED`'a indirilir; eski sorumlu KORUNUR (demote YOK). |
+| **L5** removeCaseLawyer, mevcut responsible silme | EVET | `BLOCK_REMOVE_CURRENT_RESPONSIBLE_UNTIL_CANONICAL_REPLACEMENT` — `400 [LEGAL_RESPONSIBLE_REMOVAL_REQUIRES_CANONICAL_REPLACEMENT]`; auto-promote KALDIRILDI. |
+| **L6** removeCaseLawyer, non-responsible silme | YOK | `ALLOW` — mevcut akış (delete + DELETE audit) korunur. |
+
+**Kanonik operasyon sırası (bundan sonra):** Bir hukuki sorumlu avukatı dosyadan çıkarmak için → (1) `PATCH /cases/:id/legal-responsible-lawyer` ile reason/audit'li yeni sorumlu ata → (2) eski avukatı `removeCaseLawyer` ile çıkar.
+
+**Uygulama:** `case.service.ts` `addCaseLawyer` (L3/L4) + `removeCaseLawyer` (L5); ölü demote/promote/$transaction makinesi kaldırıldı. Test: `case-responsible-invariant.spec.ts` (add/remove describe'leri yeniden yazıldı) + 3 audit/assignment spec mock'u doğrudan `count`/`create`/`delete`'e güncellendi. **Bu, WP-1d-5 lifecycle hattını kapatır; geriye D4 zero-responsible data audit + exactly-one design açık kalır.**

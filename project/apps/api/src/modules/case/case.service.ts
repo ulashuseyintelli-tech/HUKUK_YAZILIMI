@@ -2640,9 +2640,9 @@ export class CaseService {
    *
    * Saf/yan-etkisiz çevirici: Hata NESNESİ döndürür (atmaz); çağıran `throw`'lar.
    *
-   * @remarks Çağrıldığı yerler:
-   * - CaseService.updateCaseLawyer() → PATCH /cases/:id/lawyers/:caseLawyerId ($transaction .catch)
-   * - CaseService.addCaseLawyer() → POST /cases/:id/lawyers ($transaction .catch)
+   * @remarks Çağrıldığı yerler (WP-1d-5-7/9 sonrası: doğrudan update/create .catch; $transaction YOK):
+   * - CaseService.updateCaseLawyer() → PATCH /cases/:id/lawyers/:caseLawyerId (caseLawyer.update .catch)
+   * - CaseService.addCaseLawyer() → POST /cases/:id/lawyers (caseLawyer.create .catch)
    */
   private toCaseLawyerConflict(error: unknown): Error {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -2847,8 +2847,10 @@ export class CaseService {
   /**
    * Dosyaya avukat ekle.
    *
-   * ASSIGN-4b: yeni eklenen avukat RESPONSIBLE ise eski sorumlular düşürülür (tam 1);
-   * ekleme + demote tek $transaction'da atomik.
+   * WP-1d-5-9 (L2/L3/L4): Hukuki Sorumlu Avukat ekseni lifecycle ekleme yoluyla DEĞİŞTİRİLEMEZ.
+   * - Mevcut sorumlu YOKSA: ilk responsible initialization korunur (rank-default/explicit RESPONSIBLE olabilir).
+   * - Mevcut sorumlu VARSA: explicit RESPONSIBLE reddedilir (kanonik uç); rank-default RESPONSIBLE ASSIGNED'a indirilir.
+   *   Eski sorumlu KORUNUR; ekleme yoluyla demote YOK.
    *
    * @remarks Çağrıldığı yerler:
    * - CaseController.addCaseLawyer() → POST /cases/:id/lawyers
@@ -2876,6 +2878,20 @@ export class CaseService {
     });
     if (existing) throw new BadRequestException("Bu avukat zaten dosyaya ekli");
 
+    // WP-1d-5-9 (L3/L4): mevcut Hukuki Sorumlu Avukat varsa lifecycle ekleme onu DEĞİŞTİREMEZ.
+    // (at-most-one DB partial unique index → mevcut sorumlu sayısı 0 ya da 1.)
+    const existingResponsibleCount = await this.prisma.caseLawyer.count({
+      where: { caseId, isResponsible: true },
+    });
+    const hasResponsible = existingResponsibleCount > 0;
+
+    // L3: mevcut sorumlu varken EXPLICIT RESPONSIBLE ekleme → reddet (kanonik uç).
+    if (hasResponsible && data.role === 'RESPONSIBLE') {
+      throw new BadRequestException(
+        'Dosyada zaten hukuki sorumlu avukat var; yeni avukat ekleme yoluyla hukuki sorumlu yapılamaz. "Hukuki Sorumlu Avukat Kaydını Değiştir" akışını kullanın. [LEGAL_RESPONSIBLE_CHANGE_REQUIRES_CANONICAL_ENDPOINT]',
+      );
+    }
+
     // LawyerRank'e göre varsayılan rol belirle
     let role = data.role;
     if (!role) {
@@ -2895,51 +2911,38 @@ export class CaseService {
       }
     }
 
+    // L4: mevcut sorumlu varken rank-default (PARTNER/MANAGER) yeni avukatı SESSİZCE sorumlu yapamaz →
+    // ASSIGNED'a indir (örtük replacement engellenir; eski sorumlu KORUNUR).
+    if (hasResponsible && role === 'RESPONSIBLE') {
+      role = 'ASSIGNED';
+    }
+
+    // L2: hiç sorumlu yokken ilk responsible initialization KORUNUR → willBeResponsible yalnız burada true.
     const willBeResponsible = role === 'RESPONSIBLE';
 
-    // Ekle — atomik tek transaction. ASSIGN-4b/index-safety: yeni satır sorumluysa ÖNCE mevcut
-    // sorumluları düşür, SONRA oluştur → tx içinde hiçbir an >1 isResponsible=true olmaz (PR-C
-    // kısmi tekil index ile uyumlu).
-    const { caseLawyer, demotedIds } = await this.prisma
-      .$transaction(async (tx) => {
-        // ASSIGN-4b: yeni eklenen sorumluysa mevcut sorumluları düşür (tam 1). create ÖNCESİ
-        // çalışır → yeni satır henüz yok, NOT filtresine gerek yok.
-        let demotedIds: string[] = [];
-        if (willBeResponsible) {
-          const others = await tx.caseLawyer.findMany({
-            where: { caseId, isResponsible: true },
-            select: { id: true },
-          });
-          demotedIds = others.map((o) => o.id);
-          for (const demoteId of demotedIds) {
-            await tx.caseLawyer.update({
-              where: { id: demoteId },
-              data: { isResponsible: false, role: 'ASSIGNED' },
-            });
-          }
-        }
-
-        const created = await tx.caseLawyer.create({
-          data: {
-            caseId,
-            lawyerId: data.lawyerId,
-            role,
-            canSign: data.canSign ?? (lawyer.lawyerRank !== 'INTERN'),
-            isResponsible: willBeResponsible,
-          },
-          include: {
-            lawyer: {
-              select: {
-                id: true,
-                name: true,
-                surname: true,
-                barNumber: true,
-                lawyerRank: true,
-              },
+    // Ekle. WP-1d-5-9: lifecycle ekleme artık mevcut sorumluyu DEMOTE ETMEZ (willBeResponsible yalnız
+    // hasResponsible=false iken → demote edilecek kimse yok) → demote/$transaction gerekmez.
+    // P2002 → 409 dönüşümü defansif korunur.
+    const caseLawyer = await this.prisma.caseLawyer
+      .create({
+        data: {
+          caseId,
+          lawyerId: data.lawyerId,
+          role,
+          canSign: data.canSign ?? (lawyer.lawyerRank !== 'INTERN'),
+          isResponsible: willBeResponsible,
+        },
+        include: {
+          lawyer: {
+            select: {
+              id: true,
+              name: true,
+              surname: true,
+              barNumber: true,
+              lawyerRank: true,
             },
           },
-        });
-        return { caseLawyer: created, demotedIds };
+        },
       })
       .catch((e) => {
         throw this.toCaseLawyerConflict(e);
@@ -2957,29 +2960,15 @@ export class CaseService {
       description: `Dosyaya avukat eklendi: ${caseLawyer.lawyer.name} ${caseLawyer.lawyer.surname}`,
     });
 
-    // ASSIGN-4b: otomatik demote'u CASE_LAWYER UPDATE olarak audit'le (ekleme=CREATE audit'i 4c).
-    if (demotedIds.length > 0) {
-      await this.auditService.log({
-        tenantId,
-        action: 'UPDATE',
-        entityType: 'CASE_LAWYER',
-        entityId: caseLawyer.id,
-        userId, // WP-1c-3
-        metadata: { caseId }, // WP-1d-2-pre: legal-responsible temporal için caseId
-        newValues: { isResponsible: true, role: 'RESPONSIBLE', demotedCaseLawyerIds: demotedIds },
-        description: `Yeni sorumlu avukat atandı; ${demotedIds.length} eski sorumlu düşürüldü`,
-      });
-    }
-
     return caseLawyer;
   }
 
   /**
    * Dosyadan avukat çıkar.
    *
-   * ASSIGN-4b: silinen avukat sorumluysa ve başka avukat varsa, kalanlar arasından
-   * önceliğe göre yeni sorumlu yükseltilir (tam 1); son avukatsa dosya avukatsız kalabilir.
-   * Silme + yeniden-yükseltme tek $transaction'da atomik.
+   * WP-1d-5-9 (L5/L6): Mevcut Hukuki Sorumlu Avukat lifecycle silme yoluyla ÇIKARILAMAZ
+   * (otomatik promote ile sessiz sorumlu değişimi engellenir) → 400. Önce kanonik uçtan başka avukat
+   * hukuki sorumlu yapılmalı (reason+audit), SONRA bu avukat silinebilir. Sorumlu-OLMAYAN avukat silme serbest.
    *
    * @remarks Çağrıldığı yerler:
    * - CaseController.removeCaseLawyer() → DELETE /cases/:id/lawyers/:caseLawyerId
@@ -2997,33 +2986,18 @@ export class CaseService {
     });
     if (!caseLawyer) throw new NotFoundException("Avukat ataması bulunamadı");
 
-    // ASSIGN-4b: sorumlu silinirse ve başka avukat varsa yeni sorumlu seç (tam 1).
-    const wasResponsible = caseLawyer.isResponsible;
-    const { promotedId } = await this.prisma.$transaction(async (tx) => {
-      await tx.caseLawyer.delete({ where: { id: caseLawyerId } });
-      let promotedId: string | null = null;
-      if (wasResponsible) {
-        const remaining = await tx.caseLawyer.findMany({
-          where: { caseId },
-          select: { id: true, isResponsible: true, lawyer: { select: { lawyerRank: true } } },
-        });
-        const promote = resolveResponsiblePromotion(
-          remaining.map((r) => ({
-            id: r.id,
-            lawyerRank: r.lawyer.lawyerRank,
-            isResponsible: r.isResponsible,
-          })),
-        );
-        if (promote) {
-          await tx.caseLawyer.update({
-            where: { id: promote },
-            data: { isResponsible: true, role: 'RESPONSIBLE' },
-          });
-          promotedId = promote;
-        }
-      }
-      return { promotedId };
-    });
+    // WP-1d-5-9 (L5): Mevcut Hukuki Sorumlu Avukat lifecycle silme yoluyla ÇIKARILAMAZ (otomatik
+    // promote ile sessiz sorumlu değişimi engellenir). Önce kanonik uçtan başka avukat hukuki sorumlu
+    // yapılmalı, SONRA bu avukat silinebilir.
+    if (caseLawyer.isResponsible) {
+      throw new BadRequestException(
+        'Hukuki sorumlu avukat dosyadan çıkarılmadan önce başka bir avukat hukuki sorumlu yapılmalıdır. "Hukuki Sorumlu Avukat Kaydını Değiştir" akışını kullanın. [LEGAL_RESPONSIBLE_REMOVAL_REQUIRES_CANONICAL_REPLACEMENT]',
+      );
+    }
+
+    // L6: sorumlu-OLMAYAN avukat silme — mevcut akış. WP-1d-5-9: otomatik promote YOK (responsible
+    // silinmiyor) → demote/$transaction gerekmez; tek delete.
+    await this.prisma.caseLawyer.delete({ where: { id: caseLawyerId } });
 
     // ASSIGN-4c: avukat çıkarması CASE_LAWYER DELETE olarak audit'lenir (oldValues silinen kayıttan).
     await this.auditService.log({
@@ -3036,20 +3010,6 @@ export class CaseService {
       oldValues: { lawyerId: caseLawyer.lawyerId, role: caseLawyer.role, isResponsible: caseLawyer.isResponsible },
       description: 'Dosyadan avukat çıkarıldı',
     });
-
-    // ASSIGN-4b: otomatik yeni sorumlu atandıysa CASE_LAWYER UPDATE audit'i (silme=DELETE audit'i 4c).
-    if (promotedId) {
-      await this.auditService.log({
-        tenantId,
-        action: 'UPDATE',
-        entityType: 'CASE_LAWYER',
-        entityId: promotedId,
-        userId, // WP-1c-3
-        metadata: { caseId }, // WP-1d-2-pre: legal-responsible temporal için caseId
-        newValues: { isResponsible: true, role: 'RESPONSIBLE', reason: 'RESPONSIBLE_REMOVED_AUTO_PROMOTE' },
-        description: 'Sorumlu avukat silindi; otomatik yeni sorumlu avukat atandı',
-      });
-    }
 
     return { success: true };
   }

@@ -4,8 +4,8 @@
  * Saf karar: planResponsible (keepId + demoteIds).
  * Servis akışları (mock prisma + $transaction passthrough + auditService override):
  * - updateCaseLawyer: WP-1d-5-7 — hukuki sorumlu ekseni (RESPONSIBLE/isResponsible/mevcut-sorumlu demote) REDDEDİLİR (kanonik uç); sorumlu-dışı rol/yetki güncellenir
- * - addCaseLawyer: yeni RESPONSIBLE → eski demote · audit
- * - removeCaseLawyer: sorumlu silinince fallback promote · son avukatsa izinli · audit
+ * - addCaseLawyer: WP-1d-5-9 — mevcut sorumlu varken RESPONSIBLE reddedilir / rank-default ASSIGNED'a indirilir (demote YOK); sorumlu yokken initialization korunur
+ * - removeCaseLawyer: WP-1d-5-9 — mevcut sorumlu silme reddedilir (kanonik replacement); non-responsible silme serbest (auto-promote YOK)
  *
  * create() dedupe kararı planResponsible ("çoklu responsible → tek sorumlu") ile kanıtlanır;
  * create() wiring'i tek-satır (tx içi planResponsible + update) ve canlı/CI e2e ile doğrulanır
@@ -159,123 +159,120 @@ describe('WP-1d-5-7 CaseService.updateCaseLawyer (hukuki sorumlu ekseni kanonik-
   });
 });
 
-describe('ASSIGN-4b CaseService.addCaseLawyer (tam-1 invariant)', () => {
-  function setup(opts: { role?: string; otherResponsible: { id: string }[] }) {
+describe('WP-1d-5-9 CaseService.addCaseLawyer (lifecycle — mevcut sorumlu korunur)', () => {
+  // WP-1d-5-9: addCaseLawyer artık mevcut sorumluyu demote ETMEZ → $transaction/findMany/update yok.
+  // Mock: caseLawyer.count (mevcut responsible sayısı) + caseLawyer.create (doğrudan).
+  function setup(opts: { existingResponsible: number; lawyerRank?: string }) {
     const service = makeService();
-    const txCreate = jest.fn(async ({ data }: any) => ({
+    const create = jest.fn(async ({ data }: any) => ({
       id: 'cl-new',
       ...data,
-      lawyer: { id: data.lawyerId, name: 'Yeni', surname: 'Av', barNumber: '9', lawyerRank: 'PARTNER' },
+      lawyer: { id: data.lawyerId, name: 'Yeni', surname: 'Av', barNumber: '9', lawyerRank: opts.lawyerRank ?? 'PARTNER' },
     }));
-    const txFindMany = jest.fn(async () => opts.otherResponsible);
-    const txUpdate = jest.fn(async () => ({}));
+    const count = jest.fn(async () => opts.existingResponsible);
     const auditLog = jest.fn(async () => undefined);
     const mockPrisma = {
       case: { findFirst: jest.fn(async () => ({ id: 'case-1', tenantId: 'tenant-1' })) },
-      lawyer: { findFirst: jest.fn(async () => ({ id: 'law-1', tenantId: 'tenant-1', lawyerRank: 'PARTNER' })) },
-      caseLawyer: { findFirst: jest.fn(async () => null) }, // henüz ekli değil
-      $transaction: jest.fn(async (cb: any) =>
-        cb({ caseLawyer: { create: txCreate, findMany: txFindMany, update: txUpdate } }),
-      ),
+      lawyer: { findFirst: jest.fn(async () => ({ id: 'law-1', tenantId: 'tenant-1', lawyerRank: opts.lawyerRank ?? 'PARTNER' })) },
+      caseLawyer: {
+        findFirst: jest.fn(async () => null), // henüz ekli değil
+        count,
+        create,
+      },
     };
     (service as any).prisma = mockPrisma;
     (service as any).auditService = { log: auditLog };
-    return { service, txCreate, txFindMany, txUpdate, auditLog };
+    return { service, create, count, auditLog };
   }
 
-  it('yeni eklenen RESPONSIBLE → eski sorumlu demote + audit', async () => {
-    const { service, txUpdate, auditLog } = setup({ otherResponsible: [{ id: 'cl-0' }] });
+  const add = (service: any, data: any) => service.addCaseLawyer('tenant-1', 'case-1', data, 'actor-1');
+  const CANONICAL_REQ = /LEGAL_RESPONSIBLE_CHANGE_REQUIRES_CANONICAL_ENDPOINT/;
 
-    await (service as any).addCaseLawyer('tenant-1', 'case-1', { lawyerId: 'law-1', role: 'RESPONSIBLE' });
+  it('L3: mevcut sorumlu VARKEN role=RESPONSIBLE → reddedilir, create YOK', async () => {
+    const { service, create } = setup({ existingResponsible: 1 });
+    await expect(add(service, { lawyerId: 'law-1', role: 'RESPONSIBLE' })).rejects.toThrow(CANONICAL_REQ);
+    expect(create).not.toHaveBeenCalled();
+  });
 
-    expect(txUpdate).toHaveBeenCalledWith({ where: { id: 'cl-0' }, data: { isResponsible: false, role: 'ASSIGNED' } });
-    expect(auditLog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: 'UPDATE',
-        entityType: 'CASE_LAWYER',
-        newValues: expect.objectContaining({ demotedCaseLawyerIds: ['cl-0'] }),
-      }),
+  it('L4: mevcut sorumlu VARKEN rank-default PARTNER (rol verilmedi) → ASSIGNED ile eklenir; eski sorumlu KORUNUR (demote yok)', async () => {
+    const { service, create } = setup({ existingResponsible: 1, lawyerRank: 'PARTNER' });
+    await add(service, { lawyerId: 'law-1' });
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ role: 'ASSIGNED', isResponsible: false }) }),
     );
   });
 
-  it('yeni eklenen RESPONSIBLE ama mevcut sorumlu yok → demote yok (demote-audit yok)', async () => {
-    const { service, txUpdate, auditLog } = setup({ otherResponsible: [] });
+  it('L2: mevcut sorumlu YOKKEN role=RESPONSIBLE → ilk responsible (initialization)', async () => {
+    const { service, create } = setup({ existingResponsible: 0 });
+    await add(service, { lawyerId: 'law-1', role: 'RESPONSIBLE' });
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ role: 'RESPONSIBLE', isResponsible: true }) }),
+    );
+  });
 
-    await (service as any).addCaseLawyer('tenant-1', 'case-1', { lawyerId: 'law-1', role: 'RESPONSIBLE' });
+  it('L2: mevcut sorumlu YOKKEN rank-default PARTNER → ilk responsible (initialization)', async () => {
+    const { service, create } = setup({ existingResponsible: 0, lawyerRank: 'PARTNER' });
+    await add(service, { lawyerId: 'law-1' });
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ role: 'RESPONSIBLE', isResponsible: true }) }),
+    );
+  });
 
-    expect(txUpdate).not.toHaveBeenCalled();
-    // ASSIGN-4c: ekleme artık her zaman CREATE audit'ler; burada 4b DEMOTE-UPDATE audit'i OLMAMALI.
-    expect(auditLog).not.toHaveBeenCalledWith(
-      expect.objectContaining({ newValues: expect.objectContaining({ demotedCaseLawyerIds: expect.anything() }) }),
+  it('mevcut sorumlu VARKEN explicit role=ASSIGNED → non-responsible eklenir (serbest)', async () => {
+    const { service, create } = setup({ existingResponsible: 1 });
+    await add(service, { lawyerId: 'law-1', role: 'ASSIGNED' });
+    expect(create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ role: 'ASSIGNED', isResponsible: false }) }),
     );
   });
 });
 
-describe('ASSIGN-4b CaseService.removeCaseLawyer (tam-1 invariant)', () => {
-  function setup(opts: { removedResponsible: boolean; remaining: { id: string; isResponsible: boolean; lawyer: { lawyerRank: string | null } }[] }) {
+describe('WP-1d-5-9 CaseService.removeCaseLawyer (lifecycle — mevcut sorumlu silinemez)', () => {
+  // WP-1d-5-9: removeCaseLawyer mevcut sorumluyu silmeyi reddeder → auto-promote/$transaction yok.
+  // Mock: caseLawyer.findFirst + caseLawyer.delete (doğrudan).
+  function setup(opts: { removedResponsible: boolean }) {
     const service = makeService();
-    const txDelete = jest.fn(async () => ({}));
-    const txFindMany = jest.fn(async () => opts.remaining);
-    const txUpdate = jest.fn(async () => ({}));
+    const del = jest.fn(async () => ({}));
     const auditLog = jest.fn(async () => undefined);
     const mockPrisma = {
       case: { findFirst: jest.fn(async () => ({ id: 'case-1', tenantId: 'tenant-1' })) },
       caseLawyer: {
-        findFirst: jest.fn(async () => ({ id: 'cl-1', caseId: 'case-1', isResponsible: opts.removedResponsible })),
+        findFirst: jest.fn(async () => ({
+          id: 'cl-1',
+          caseId: 'case-1',
+          lawyerId: 'law-1',
+          role: opts.removedResponsible ? 'RESPONSIBLE' : 'ASSIGNED',
+          isResponsible: opts.removedResponsible,
+        })),
+        delete: del,
       },
-      $transaction: jest.fn(async (cb: any) =>
-        cb({ caseLawyer: { delete: txDelete, findMany: txFindMany, update: txUpdate } }),
-      ),
     };
     (service as any).prisma = mockPrisma;
     (service as any).auditService = { log: auditLog };
-    return { service, txDelete, txUpdate, auditLog };
+    return { service, del, auditLog };
   }
 
-  it('sorumlu silinince ve başka avukat varsa → fallback promote + audit', async () => {
-    const { service, txDelete, txUpdate, auditLog } = setup({
-      removedResponsible: true,
-      remaining: [{ id: 'cl-2', isResponsible: false, lawyer: { lawyerRank: 'LAWYER' } }],
-    });
+  const remove = (service: any) => service.removeCaseLawyer('tenant-1', 'case-1', 'cl-1', 'actor-1');
+  const REMOVAL_REQ = /LEGAL_RESPONSIBLE_REMOVAL_REQUIRES_CANONICAL_REPLACEMENT/;
 
-    const res = await (service as any).removeCaseLawyer('tenant-1', 'case-1', 'cl-1');
+  it('L5: mevcut hukuki sorumlu silme → reddedilir; delete YOK, audit YOK', async () => {
+    const { service, del, auditLog } = setup({ removedResponsible: true });
+    await expect(remove(service)).rejects.toThrow(REMOVAL_REQ);
+    expect(del).not.toHaveBeenCalled();
+    expect(auditLog).not.toHaveBeenCalled();
+  });
 
-    expect(txDelete).toHaveBeenCalledWith({ where: { id: 'cl-1' } });
-    expect(txUpdate).toHaveBeenCalledWith({ where: { id: 'cl-2' }, data: { isResponsible: true, role: 'RESPONSIBLE' } });
+  it('L6: sorumlu-OLMAYAN avukat silme → delete + DELETE audit; auto-promote YOK', async () => {
+    const { service, del, auditLog } = setup({ removedResponsible: false });
+    const res = await remove(service);
+    expect(del).toHaveBeenCalledWith({ where: { id: 'cl-1' } });
     expect(auditLog).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'UPDATE', entityType: 'CASE_LAWYER', entityId: 'cl-2' }),
+      expect.objectContaining({ action: 'DELETE', entityType: 'CASE_LAWYER', entityId: 'cl-1' }),
     );
-    expect(res).toEqual({ success: true });
-  });
-
-  it('son avukatsa (kalan yok) → avukatsız kalabilir, promote yok (promote-audit yok)', async () => {
-    const { service, txDelete, txUpdate, auditLog } = setup({ removedResponsible: true, remaining: [] });
-
-    const res = await (service as any).removeCaseLawyer('tenant-1', 'case-1', 'cl-1');
-
-    expect(txDelete).toHaveBeenCalledWith({ where: { id: 'cl-1' } });
-    expect(txUpdate).not.toHaveBeenCalled();
-    // ASSIGN-4c: silme artık her zaman DELETE audit'ler; burada 4b PROMOTE-UPDATE audit'i OLMAMALI.
     expect(auditLog).not.toHaveBeenCalledWith(
       expect.objectContaining({ newValues: expect.objectContaining({ reason: 'RESPONSIBLE_REMOVED_AUTO_PROMOTE' }) }),
     );
     expect(res).toEqual({ success: true });
-  });
-
-  it('sorumlu-olmayan avukat silinince → promote yok (mevcut sorumlu korunur)', async () => {
-    const { service, txDelete, txUpdate, auditLog } = setup({
-      removedResponsible: false,
-      remaining: [{ id: 'cl-2', isResponsible: true, lawyer: { lawyerRank: 'LAWYER' } }],
-    });
-
-    await (service as any).removeCaseLawyer('tenant-1', 'case-1', 'cl-1');
-
-    expect(txDelete).toHaveBeenCalledWith({ where: { id: 'cl-1' } });
-    expect(txUpdate).not.toHaveBeenCalled();
-    // ASSIGN-4c: silme her zaman DELETE audit'ler; 4b PROMOTE-UPDATE audit'i OLMAMALI.
-    expect(auditLog).not.toHaveBeenCalledWith(
-      expect.objectContaining({ newValues: expect.objectContaining({ reason: 'RESPONSIBLE_REMOVED_AUTO_PROMOTE' }) }),
-    );
   });
 });
 
@@ -285,32 +282,7 @@ describe('ASSIGN-4b CaseService.removeCaseLawyer (tam-1 invariant)', () => {
 // tetiklenir. Sorumlu değişikliğinin clear-before-set sırası + audit'i kanonik serviste test edilir:
 // legal-responsible-lawyer-change.service.spec.ts.
 
-describe('ASSIGN-4b-DB addCaseLawyer — reorder', () => {
-  it('mevcut sorumlu ÖNCE düşürülür (NOT filtresiz), yeni satır SONRA create edilir', async () => {
-    const service = makeService();
-    const txCreate = jest.fn(async ({ data }: any) => ({
-      id: 'cl-new', ...data,
-      lawyer: { id: data.lawyerId, name: 'Yeni', surname: 'Av', barNumber: '9', lawyerRank: 'PARTNER' },
-    }));
-    const txFindMany = jest.fn(async () => [{ id: 'cl-0' }]);
-    const txUpdate = jest.fn(async () => ({}));
-    (service as any).prisma = {
-      case: { findFirst: jest.fn(async () => ({ id: 'case-1', tenantId: 'tenant-1' })) },
-      lawyer: { findFirst: jest.fn(async () => ({ id: 'law-1', tenantId: 'tenant-1', lawyerRank: 'PARTNER' })) },
-      caseLawyer: { findFirst: jest.fn(async () => null) },
-      $transaction: jest.fn(async (cb: any) =>
-        cb({ caseLawyer: { create: txCreate, findMany: txFindMany, update: txUpdate } }),
-      ),
-    };
-    (service as any).auditService = { log: jest.fn(async () => undefined) };
-
-    await (service as any).addCaseLawyer('tenant-1', 'case-1', { lawyerId: 'law-1', role: 'RESPONSIBLE' });
-
-    // demote update, create'DEN ÖNCE çağrıldı
-    expect(txUpdate.mock.invocationCallOrder[0]).toBeLessThan(txCreate.mock.invocationCallOrder[0]);
-    // findMany NOT filtresi olmadan çağrıldı (yeni satır henüz yok)
-    expect(txFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { caseId: 'case-1', isResponsible: true } }),
-    );
-  });
-});
+// WP-1d-5-9: ASSIGN-4b-DB addCaseLawyer reorder (demote-before-create) testi KALDIRILDI.
+// Gerekçe: addCaseLawyer artık mevcut sorumlu varken yeni avukatı RESPONSIBLE YAPMAZ (L3 reddeder /
+// L4 ASSIGNED'a indirir) → demote/reorder bu yoldan tetiklenmez. Sorumlu değişikliği kanonik
+// LegalResponsibleLawyerService'tedir (clear-before-set orada test edilir).

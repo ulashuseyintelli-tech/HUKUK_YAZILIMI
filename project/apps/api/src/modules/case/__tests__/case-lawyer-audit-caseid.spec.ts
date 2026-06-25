@@ -39,8 +39,8 @@ describe("WP-1d-2-pre — CASE_LAWYER audit metadata.caseId", () => {
     (service as any).prisma = {
       case: { findFirst: jest.fn(async () => ({ id: CASE_ID, tenantId: "t1" })) },
       lawyer: { findFirst: jest.fn(async () => ({ id: "law-1", tenantId: "t1", lawyerRank: "LAWYER" })) },
-      caseLawyer: { findFirst: jest.fn(async () => null) },
-      $transaction: jest.fn(async (cb: any) => cb({ caseLawyer: { create: txCreate, findMany: jest.fn(async () => []), update: jest.fn() } })),
+      // WP-1d-5-9: addCaseLawyer count + doğrudan create (eski $transaction yok).
+      caseLawyer: { findFirst: jest.fn(async () => null), count: jest.fn(async () => 0), create: txCreate },
     };
     await (service as any).addCaseLawyer("t1", CASE_ID, { lawyerId: "law-1", role: "ASSIGNED" }, "u1");
     expect(auditLog).toHaveBeenCalledWith(lawyerAudit("CREATE"));
@@ -50,8 +50,11 @@ describe("WP-1d-2-pre — CASE_LAWYER audit metadata.caseId", () => {
     const { service, auditLog } = makeService();
     (service as any).prisma = {
       case: { findFirst: jest.fn(async () => ({ id: CASE_ID, tenantId: "t1" })) },
-      caseLawyer: { findFirst: jest.fn(async () => ({ id: "cl-1", caseId: CASE_ID, lawyerId: "law-1", role: "ASSIGNED", isResponsible: false })) },
-      $transaction: jest.fn(async (cb: any) => cb({ caseLawyer: { delete: jest.fn(async () => ({})), findMany: jest.fn(async () => []), update: jest.fn() } })),
+      // WP-1d-5-9: non-responsible silme doğrudan delete (eski $transaction/auto-promote yok).
+      caseLawyer: {
+        findFirst: jest.fn(async () => ({ id: "cl-1", caseId: CASE_ID, lawyerId: "law-1", role: "ASSIGNED", isResponsible: false })),
+        delete: jest.fn(async () => ({})),
+      },
     };
     await (service as any).removeCaseLawyer("t1", CASE_ID, "cl-1", "u1");
     expect(auditLog).toHaveBeenCalledWith(lawyerAudit("DELETE"));

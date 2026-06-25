@@ -30,10 +30,8 @@ describe('ASSIGN-4c CaseService.addCaseLawyer — CASE_LAWYER CREATE audit', () 
     (service as any).prisma = {
       case: { findFirst: jest.fn(async () => ({ id: 'case-1', tenantId: 'tenant-1' })) },
       lawyer: { findFirst: jest.fn(async () => ({ id: 'law-1', tenantId: 'tenant-1', lawyerRank: 'LAWYER' })) },
-      caseLawyer: { findFirst: jest.fn(async () => null) },
-      $transaction: jest.fn(async (cb: any) =>
-        cb({ caseLawyer: { create: txCreate, findMany: jest.fn(async () => []), update: jest.fn() } }),
-      ),
+      // WP-1d-5-9: addCaseLawyer count + doğrudan create (eski $transaction yok).
+      caseLawyer: { findFirst: jest.fn(async () => null), count: jest.fn(async () => 0), create: txCreate },
     };
     (service as any).auditService = { log: auditLog };
 
@@ -65,10 +63,9 @@ describe('ASSIGN-4c CaseService.removeCaseLawyer — CASE_LAWYER DELETE audit', 
           role: 'ASSIGNED',
           isResponsible: false,
         })),
+        // WP-1d-5-9: non-responsible silme doğrudan delete (eski $transaction/auto-promote yok).
+        delete: jest.fn(async () => ({})),
       },
-      $transaction: jest.fn(async (cb: any) =>
-        cb({ caseLawyer: { delete: jest.fn(async () => ({})), findMany: jest.fn(async () => []), update: jest.fn() } }),
-      ),
     };
     (service as any).auditService = { log: auditLog };
 
