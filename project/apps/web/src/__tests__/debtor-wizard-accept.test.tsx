@@ -18,10 +18,13 @@ import { useState } from 'react';
 // DEĞİL). Fix İKİ KATMAN: (1) per-wait ASYNC_WAIT ceiling (#488); (2) it()-seviye testTimeout
 // (#489-FU). #488 yalnız (1)'i yaptı ama 3 ardışık waitFor'un KÜMÜLATİF süresi vitest default
 // 5000ms TEST-timeout'unu aşabiliyor (#489'da "Test timed out in 5000ms" @5006ms gözlendi) →
-// per-wait ceiling TEK BAŞINA yetmez. it()-seviye 20000ms (ref #462 ölçülü precedent) kümülatifi
-// kapsar; SINIRLI olduğu için test hang edemez. Kapsam/assertion zayıflatılmadı.
-const ASYNC_WAIT = { timeout: 5000 } as const;
-const TEST_TIMEOUT = 20000;
+// per-wait ceiling TEK BAŞINA yetmez. #490 it()-seviye 20000ms ekledi AMA #491'de İKİNCİ mod görüldü:
+// count=2 waitFor'un KENDİ 5000ms ceiling'i (ASYNC_WAIT) yük altında yetmedi (count '0'da kaldı; rerun
+// DA kırmızı). Bu yüzden HER İKİ knob cömertçe yükseltildi: per-wait 15000ms (count=2 async zinciri için
+// bol headroom) + it()-seviye 60000ms (worst-case 3×15000=45000'i kapsar). SINIRLI → test hang edemez;
+// kapsam/assertion zayıflatılmadı. (İzole koşu ~300ms; bu yalnız CI paralel-yük contention payı.)
+const ASYNC_WAIT = { timeout: 15000 } as const;
+const TEST_TIMEOUT = 60000;
 
 const apiGet = vi.fn();
 const apiPost = vi.fn();
