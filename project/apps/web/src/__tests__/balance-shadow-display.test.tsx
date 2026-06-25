@@ -555,7 +555,9 @@ describe("BalanceShadowDiffPanel", () => {
     );
 
     expect(await screen.findByText("Legacy calculation-summary fallback")).toBeInTheDocument();
-    expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent("SHADOW_OR_CANONICAL_SOURCE_FAILURE");
+    await waitFor(() => {
+      expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent("SHADOW_OR_CANONICAL_SOURCE_FAILURE");
+    });
     expect(screen.getAllByText("1.234,00 TL").length).toBeGreaterThan(0);
     consoleError.mockRestore();
   });
