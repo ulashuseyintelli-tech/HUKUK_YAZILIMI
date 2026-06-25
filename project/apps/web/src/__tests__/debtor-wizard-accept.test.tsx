@@ -15,10 +15,13 @@ import { useState } from 'react';
 // HEADROOM: yüklü CI runner'da (paralel vitest worker'ları + disk/CPU contention) worker
 // descheduled olup @testing-library default 1000ms ceiling'i aşabiliyor → "expected '0'
 // to be '2'" + waitFor timeout (gözlenen: 2026-06-25 PR #486; rerun temiz = ürün bug'ı
-// DEĞİL). Fix: kapsamı/assertion'ı zayıflatmadan ölçülü, açık ve SINIRLI timeout (test
-// hang edemez). 5000ms = default'un 5×'i + repo'daki mevcut precedent (cases/new/page.tsx
-// `{ timeout: 5000 }`); contention'ın güvenli üstü.
+// DEĞİL). Fix İKİ KATMAN: (1) per-wait ASYNC_WAIT ceiling (#488); (2) it()-seviye testTimeout
+// (#489-FU). #488 yalnız (1)'i yaptı ama 3 ardışık waitFor'un KÜMÜLATİF süresi vitest default
+// 5000ms TEST-timeout'unu aşabiliyor (#489'da "Test timed out in 5000ms" @5006ms gözlendi) →
+// per-wait ceiling TEK BAŞINA yetmez. it()-seviye 20000ms (ref #462 ölçülü precedent) kümülatifi
+// kapsar; SINIRLI olduğu için test hang edemez. Kapsam/assertion zayıflatılmadı.
 const ASYNC_WAIT = { timeout: 5000 } as const;
+const TEST_TIMEOUT = 20000;
 
 const apiGet = vi.fn();
 const apiPost = vi.fn();
@@ -94,7 +97,7 @@ describe('BUG-2b DebtorStep bulk accept', () => {
     // KRİTİK: ikisi de korunmalı (eski stale-closure 1 bırakırdı)
     await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'), ASYNC_WAIT);
     expect(apiPost).toHaveBeenCalledTimes(2);
-  });
+  }, TEST_TIMEOUT);
 
   it('TEK KELİME isim → "Ekle" POST ETMEZ + hata GÖRÜNÜR + listeye eklenmez', async () => {
     const single = {
@@ -121,5 +124,5 @@ describe('BUG-2b DebtorStep bulk accept', () => {
     expect(await screen.findByText(/ad ve soyad ayrıştırılamadı/, undefined, ASYNC_WAIT)).toBeTruthy();
     expect(apiPost).not.toHaveBeenCalled();
     expect(screen.getByTestId('count').textContent).toBe('0');
-  });
+  }, TEST_TIMEOUT);
 });
