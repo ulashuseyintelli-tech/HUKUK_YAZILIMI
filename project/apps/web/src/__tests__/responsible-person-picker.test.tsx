@@ -96,6 +96,26 @@ describe("ResponsiblePersonPicker (M2-G3b)", () => {
     expect(select().value).toBe("");
   });
 
+  it("WP-1d-5-6: başarılı PATCH sonrası onChanged tetiklenir (sorumluluk panelleri refresh sinyali)", async () => {
+    mockGet(null);
+    const onChanged = vi.fn();
+    render(<ResponsiblePersonPicker caseId="c1" onChanged={onChanged} />);
+    await ready();
+    fireEvent.change(select(), { target: { value: "LAWYER:L1" } });
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+  });
+
+  it("PATCH başarısızsa onChanged tetiklenmez (panel yanlış refresh olmaz)", async () => {
+    mockGet(null);
+    patch.mockRejectedValueOnce(new Error("Geçersiz"));
+    const onChanged = vi.fn();
+    render(<ResponsiblePersonPicker caseId="c1" onChanged={onChanged} />);
+    await ready();
+    fireEvent.change(select(), { target: { value: "LAWYER:L1" } });
+    await waitFor(() => expect(screen.getByRole("alert")).toBeTruthy());
+    expect(onChanged).not.toHaveBeenCalled();
+  });
+
   it("başarısız sonra başarılı PATCH → uyarı temizlenir", async () => {
     mockGet(null);
     patch.mockRejectedValueOnce(new Error("Geçici hata"));

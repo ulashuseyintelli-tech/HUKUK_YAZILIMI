@@ -119,6 +119,20 @@ describe("LegalResponsibleLawyerModal (WP-1d-5-5)", () => {
     fireEvent.click(screen.getByText("Kaydı Değiştir"));
     expect(await screen.findByText("Hukuki sorumlu avukat kaydı tutarsız olduğu için işlem yapılamadı.")).toBeTruthy();
   });
+
+  it("WP-1d-5-6: initialLawyerId verilince hedef avukat ön-seçili gelir (drawer'dan açılış)", () => {
+    renderModal({ initialLawyerId: "L1" });
+    const select = screen.getByLabelText("Yeni Hukuki Sorumlu Avukat") as HTMLSelectElement;
+    expect(select.value).toBe("L1");
+  });
+
+  it("WP-1d-5-6: ön-seçili avukatla (reason ile) submit → o lawyerId kanonik uca gönderilir", async () => {
+    renderModal({ initialLawyerId: "L1" });
+    fireEvent.change(screen.getByLabelText("Değişiklik Nedeni"), { target: { value: "neden" } });
+    fireEvent.click(screen.getByText("Kaydı Değiştir"));
+    await waitFor(() => expect(changeFn).toHaveBeenCalledTimes(1));
+    expect(changeFn.mock.calls[0][1].lawyerId).toBe("L1");
+  });
 });
 
 describe("mapLegalResponsibleError", () => {

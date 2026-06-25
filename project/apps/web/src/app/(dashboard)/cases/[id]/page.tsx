@@ -52,6 +52,7 @@ import {
 import { ResponsibilityAtPanel } from "@/components/case/responsibility-at-panel";
 import { ResponsibilityHistoryPanel } from "@/components/case/responsibility-history-panel";
 import { LegalResponsibleLawyerModal } from "@/components/case/LegalResponsibleLawyerModal";
+import { LegalResponsibleDrawerAction } from "@/components/case/legal-responsible-drawer-action";
 import { useAuth } from "@/lib/auth-context";
 import { PaymentInstructionModal } from "@/components/payment/PaymentInstructionModal";
 import { ExpenseRequestModal, BalanceWidget, ExpenseRequestList } from "@/components/expense";
@@ -847,6 +848,9 @@ export default function CaseDetailPage() {
   // WP-1d-5-5: Hukuki Sorumlu Avukat kaydı değişikliği modalı + sorumluluk panellerini yenileme sinyali.
   const [legalResponsibleModalOpen, setLegalResponsibleModalOpen] = useState(false);
   const [responsibilityReloadToken, setResponsibilityReloadToken] = useState(0);
+  // WP-1d-5-6: mutasyon sonrası point-in-time panelini "şimdi"ye çekme sinyali + modal'ı ön-seçili açacak avukat.
+  const [responsibilityAsOfNowToken, setResponsibilityAsOfNowToken] = useState(0);
+  const [legalResponsibleInitialLawyerId, setLegalResponsibleInitialLawyerId] = useState<string | undefined>(undefined);
   
   // Address Task State (Yapılacaklar ve Notlar için)
   const [addressTasks, setAddressTasks] = useState<any[]>([]);
@@ -1497,8 +1501,12 @@ export default function CaseDetailPage() {
   const handleSaveCasePermissions = async () => {
     if (!selectedLawyer || !caseData) return;
     try {
+      // WP-1d-5-6: Hukuki sorumlu avukat kaydı YALNIZ kanonik uçtan (reason zorunlu) değişir.
+      // Mevcut hukuki sorumlu için generic update'te `role: 'RESPONSIBLE'` GÖNDERİLMEZ — aksi halde
+      // bu yol reason'sız/audit'siz bir RESPONSIBLE yazımı (ve no-op timeline kirliliği) üretirdi.
+      const isCurrentResponsible = selectedLawyer.caseRole === 'RESPONSIBLE';
       await api.updateCaseLawyer(caseData.id, selectedLawyer.caseLawyerId, {
-        role: selectedLawyer.caseRole,
+        ...(isCurrentResponsible ? {} : { role: selectedLawyer.caseRole }),
         canSign: selectedLawyer.canSign,
         casePermissions: lawyerPermissions,
         receiveNotifications: lawyerPermissions.receivesNotifications,
@@ -1509,6 +1517,14 @@ export default function CaseDetailPage() {
       console.error('Yetki kaydetme hatası:', error);
       alert('Yetki kaydetme başarısız');
     }
+  };
+
+  // WP-1d-5-6: sorumluluk yazımı (hukuki sorumlu / operasyon sorumlusu) sonrası panelleri yenile +
+  // point-in-time panelini "şimdi"ye çek. Tek ortak helper; büyük state refactor yok.
+  const refreshResponsibilityPanels = () => {
+    fetchCase();
+    setResponsibilityReloadToken((t) => t + 1);
+    setResponsibilityAsOfNowToken((t) => t + 1);
   };
 
   // Avukat profili kaydet (global)
@@ -2042,7 +2058,7 @@ export default function CaseDetailPage() {
               </div>
               <div className="divide-y max-h-48 overflow-y-auto">
                 {/* M2-G3b: Dosya Sorumlusu = gerçek kişi seçici (aday GET + mevcut GET + PATCH). A3 statik satırının yerine. */}
-                <ResponsiblePersonPicker caseId={caseData.id} />
+                <ResponsiblePersonPicker caseId={caseData.id} onChanged={refreshResponsibilityPanels} />
                 {/* Yetkili Avukatlar Başlık */}
                 {(caseData.lawyers?.filter(le => le.lawyer.lawyerRank !== 'INTERN' && !le.lawyer.barNumber?.startsWith('STJ'))?.length || 0) > 0 && (
                   <div className="px-2 py-1 bg-blue-50/50">
@@ -2132,22 +2148,13 @@ export default function CaseDetailPage() {
                   <p className="text-[10px] text-gray-400 text-center py-2">—</p>
                 )}
               </div>
-              {/* WP-1d-5-5: Hukuki Sorumlu Avukat kaydı değişikliği — Dosya Ekibi panel footer'ı (grid hücresi DEĞİL,
-                  düzen bozulmaz). ADMIN-only affordance; güvenlik backend hard guard'da. */}
-              {user?.role === "ADMIN" && (caseData.lawyers?.length ?? 0) > 0 && (
-                <div className="px-2 py-1.5 border-t border-blue-100">
-                  <button
-                    onClick={() => setLegalResponsibleModalOpen(true)}
-                    className="w-full text-[11px] text-blue-700 border border-blue-200 bg-blue-50 hover:bg-blue-100 rounded px-2 py-1"
-                  >
-                    Hukuki Sorumlu Avukat Kaydını Değiştir
-                  </button>
-                </div>
-              )}
+              {/* WP-1d-5-6: standalone "Hukuki Sorumlu Avukat Kaydını Değiştir" butonu KALDIRILDI.
+                  Kanonik aksiyon artık ilgili avukatın drawer'ı içinde (LegalResponsibleDrawerAction);
+                  drawer'dan reason zorunlu modal açılır. Ayrı full-width buton ana UX değildir. */}
             </div>
 
             {/* WP-1d-4a: Sorumluluk Geçmişi (read-only temporal panel; mevcut responsibility-at endpoint). */}
-            <ResponsibilityAtPanel caseId={caseData.id} reloadToken={responsibilityReloadToken} />
+            <ResponsibilityAtPanel caseId={caseData.id} reloadToken={responsibilityReloadToken} asOfResetToken={responsibilityAsOfNowToken} />
 
             {/* WP-1d-4c-2: Sorumluluk Değişim Geçmişi (read-only timeline; responsibility-history endpoint). */}
             <ResponsibilityHistoryPanel caseId={caseData.id} reloadToken={responsibilityReloadToken} />
@@ -2790,35 +2797,24 @@ export default function CaseDetailPage() {
                   </div>
                 )}
 
-                {/* Rol Seçimi */}
+                {/* Rol Seçimi — WP-1d-5-6: generic dropdown'dan RESPONSIBLE'a GEÇİŞ kaldırıldı.
+                    Mevcut hukuki sorumlu avukat salt-okunur (disabled) gösterilir; kayıt yalnız aşağıdaki kanonik aksiyonla değişir. */}
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">Bu Dosyadaki Rol</label>
-                  <select 
-                    className="w-full border rounded-lg px-3 py-2 text-sm"
+                  <select
+                    className="w-full border rounded-lg px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-600"
                     value={selectedLawyer.caseRole || 'ASSIGNED'}
+                    disabled={selectedLawyer.caseRole === 'RESPONSIBLE'}
                     onChange={(e) => {
-                      const newRole = e.target.value as 'RESPONSIBLE' | 'ASSIGNED' | 'ASSISTANT' | 'INTERN';
+                      const newRole = e.target.value as 'ASSIGNED' | 'ASSISTANT' | 'INTERN';
                       setSelectedLawyer({...selectedLawyer, caseRole: newRole});
-                      
+
                       // Rol değiştiğinde varsayılan yetkileri ayarla
                       // Önce büro ayarlarındaki defaultPermissions'ı kontrol et
                       const lawyerDefaults = selectedLawyer.permissions;
-                      
+
                       let newPermissions = { ...lawyerPermissions };
                       switch (newRole) {
-                        case 'RESPONSIBLE':
-                          // Sorumlu avukat - tüm yetkiler açık
-                          newPermissions = {
-                            canEditCase: true,
-                            canGenerateDocs: true,
-                            canSyncUYAP: true,
-                            canViewFinance: true,
-                            canEditFinance: true,
-                            canChangeStatus: true,
-                            canEditParties: true,
-                            receivesNotifications: true,
-                          };
-                          break;
                         case 'ASSIGNED':
                           // Yetkili avukat - büro ayarlarından veya geniş yetkiler
                           newPermissions = lawyerDefaults ? {
@@ -2871,15 +2867,32 @@ export default function CaseDetailPage() {
                       setLawyerPermissions(newPermissions);
                     }}
                   >
-                    <option value="RESPONSIBLE">Hukuki Sorumlu Avukat</option>
+                    {selectedLawyer.caseRole === 'RESPONSIBLE' && (
+                      <option value="RESPONSIBLE" disabled>Hukuki Sorumlu Avukat</option>
+                    )}
                     <option value="ASSIGNED">Yetkili Avukat</option>
                     <option value="ASSISTANT">Yardımcı Avukat</option>
                     <option value="INTERN">Stajyer Avukat</option>
                   </select>
                   <p className="text-[10px] text-gray-500 mt-1">
-                    Rol değiştiğinde yetkiler otomatik ayarlanır. Manuel olarak da değiştirebilirsiniz.
+                    {selectedLawyer.caseRole === 'RESPONSIBLE'
+                      ? 'Hukuki sorumlu avukat kaydı bu menüden değiştirilmez; aşağıdaki kurallı aksiyonla değiştirilir.'
+                      : 'Rol değiştiğinde yetkiler otomatik ayarlanır. Manuel olarak da değiştirebilirsiniz.'}
                   </p>
                 </div>
+
+                {/* WP-1d-5-6 (F3): Hukuki Sorumlu Avukat kaydı KANONİK aksiyonu (ADMIN-only; reason zorunlu modal).
+                    Generic "Bu dosya için kaydet" ile RESPONSIBLE yazılmaz; değişiklik yalnız buradan tetiklenir. */}
+                {user?.role === 'ADMIN' && (
+                  <LegalResponsibleDrawerAction
+                    isCurrentResponsible={selectedLawyer.caseRole === 'RESPONSIBLE'}
+                    onChangeRequest={() => {
+                      setLegalResponsibleInitialLawyerId(selectedLawyer.lawyerId);
+                      setLawyerDrawerOpen(false);
+                      setLegalResponsibleModalOpen(true);
+                    }}
+                  />
+                )}
 
                 {/* Yetkiler */}
                 <div>
@@ -3702,10 +3715,8 @@ export default function CaseDetailPage() {
           onClose={() => setLegalResponsibleModalOpen(false)}
           caseId={caseData.id}
           lawyers={caseData.lawyers || []}
-          onSuccess={() => {
-            fetchCase();
-            setResponsibilityReloadToken((t) => t + 1);
-          }}
+          initialLawyerId={legalResponsibleInitialLawyerId}
+          onSuccess={refreshResponsibilityPanels}
         />
       )}
 

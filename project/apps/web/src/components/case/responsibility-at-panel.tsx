@@ -30,7 +30,15 @@ function formatDateTime(iso?: string | null): string {
 
 const TYPE_LABEL: Record<string, string> = { LAWYER: "Avukat", STAFF: "Personel" };
 
-export function ResponsibilityAtPanel({ caseId, reloadToken }: { caseId: string; reloadToken?: number }) {
+export function ResponsibilityAtPanel({
+  caseId,
+  reloadToken,
+  asOfResetToken,
+}: {
+  caseId: string;
+  reloadToken?: number;
+  asOfResetToken?: number;
+}) {
   const [asOfLocal, setAsOfLocal] = useState<string>(nowLocalInput());
   const [data, setData] = useState<CombinedResponsibilityResult | null>(null);
   const [loading, setLoading] = useState(true);
@@ -63,6 +71,14 @@ export function ResponsibilityAtPanel({ caseId, reloadToken }: { caseId: string;
       active = false;
     };
   }, []);
+
+  // WP-1d-5-6: mutasyon (hukuki sorumlu / operasyon sorumlusu değişikliği) sonrası point-in-time görünümünü
+  // "şimdi"ye çek. Aksi halde panel eski asOf'ta kalıp yeni yapılan değişikliği gizler (backend asOf<=now filtreler).
+  useEffect(() => {
+    if (asOfResetToken && asOfResetToken > 0) {
+      setAsOfLocal(nowLocalInput());
+    }
+  }, [asOfResetToken]);
 
   // asOf değişince (mount dahil) yeniden çek.
   useEffect(() => {

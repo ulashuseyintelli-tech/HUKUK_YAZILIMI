@@ -35,6 +35,7 @@ interface Props {
   caseId: string;
   lawyers: any[]; // caseData.lawyers (CaseLawyer[]; le.lawyer.{id,name,surname}, le.role/isResponsible)
   onSuccess: () => void;
+  initialLawyerId?: string; // WP-1d-5-6: drawer'dan ön-seçili açılış (avukata tıkla → bu avukatı hedefle)
 }
 
 function buildOptions(lawyers: any[]): CaseLawyerOption[] {
@@ -51,7 +52,7 @@ function buildOptions(lawyers: any[]): CaseLawyerOption[] {
     });
 }
 
-export function LegalResponsibleLawyerModal({ isOpen, onClose, caseId, lawyers, onSuccess }: Props) {
+export function LegalResponsibleLawyerModal({ isOpen, onClose, caseId, lawyers, onSuccess, initialLawyerId }: Props) {
   const [lawyerId, setLawyerId] = useState("");
   const [reason, setReason] = useState("");
   const [note, setNote] = useState("");
@@ -59,17 +60,17 @@ export function LegalResponsibleLawyerModal({ isOpen, onClose, caseId, lawyers, 
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
-  // Açılışta formu sıfırla.
+  // Açılışta formu sıfırla. initialLawyerId verilmişse (drawer'dan açılış) hedef avukatı ön-seç.
   useEffect(() => {
     if (isOpen) {
-      setLawyerId("");
+      setLawyerId(initialLawyerId ?? "");
       setReason("");
       setNote("");
       setError(null);
       setSuccess(false);
       setLoading(false);
     }
-  }, [isOpen]);
+  }, [isOpen, initialLawyerId]);
 
   if (!isOpen) return null;
 

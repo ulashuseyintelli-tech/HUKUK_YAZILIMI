@@ -81,4 +81,21 @@ describe("ResponsibilityAtPanel (read-only temporal panel)", () => {
     render(<ResponsibilityAtPanel caseId="c1" />);
     expect(await screen.findByText("Sunucu hatası X")).toBeTruthy();
   });
+
+  it("WP-1d-5-6: asOfResetToken artınca asOf 'şimdi'ye çekilir + yeniden çekilir (mutasyon sonrası bayatlık fix)", async () => {
+    getResp.mockResolvedValue(result());
+    const { rerender } = render(<ResponsibilityAtPanel caseId="c1" asOfResetToken={0} />);
+    await waitFor(() => expect(getResp).toHaveBeenCalledTimes(1));
+
+    // Kullanıcı geçmiş bir tarih seçer (point-in-time görünüm).
+    fireEvent.change(screen.getByLabelText("Sorumluluk tarihi"), { target: { value: "2026-05-01T12:00" } });
+    await waitFor(() => expect(getResp).toHaveBeenCalledTimes(2));
+    const input = screen.getByLabelText("Sorumluluk tarihi") as HTMLInputElement;
+    expect(input.value).toBe("2026-05-01T12:00");
+
+    // Mutasyon → asOfResetToken artar → asOf "şimdi"ye döner + tekrar çekilir (eski tarihte kalmaz).
+    rerender(<ResponsibilityAtPanel caseId="c1" asOfResetToken={1} />);
+    await waitFor(() => expect(getResp).toHaveBeenCalledTimes(3));
+    expect(input.value).not.toBe("2026-05-01T12:00");
+  });
 });
