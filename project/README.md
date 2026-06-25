@@ -109,6 +109,13 @@ pnpm dev
 - **Frontend:** http://localhost:3000
 - **API:** http://localhost:8080
 
+API'yi tek başına build/start ile doğrulamak için:
+```powershell
+pnpm --filter @hukuk/api db:generate
+pnpm --filter @hukuk/api build
+pnpm --filter @hukuk/api start
+```
+
 ### 🔑 Varsayılan Kullanıcılar
 | E-posta | Şifre | Rol |
 |---------|-------|-----|
