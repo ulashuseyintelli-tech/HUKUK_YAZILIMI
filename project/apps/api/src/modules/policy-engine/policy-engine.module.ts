@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { ScheduleModule } from '@nestjs/schedule';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { CasePolicyEngine } from './case-policy-engine.service';
+import { EffectivePermissionResolver } from './effective-permission-resolver.service';
 import { PolicyEngineController } from './policy-engine.controller';
 import { FactStoreService, ComputedFactRegistry, UyapAvailabilityService } from './fact-store';
 import { DecisionLoggerService, ExecutionRecorderService, DecisionLogRetentionService } from './decision-logger';
@@ -42,7 +43,9 @@ import { DeprecatedUsageTrackerService } from './deprecated-usage-tracker.servic
   providers: [
     // Core services
     CasePolicyEngine,
-    
+    // P2a: per-user Guided-Open resolver (observe core; hiçbir controller/guard çağırmaz)
+    EffectivePermissionResolver,
+
     // Fact Store
     FactStoreService,
     ComputedFactRegistry,
@@ -70,6 +73,7 @@ import { DeprecatedUsageTrackerService } from './deprecated-usage-tracker.servic
   ],
   exports: [
     CasePolicyEngine,
+    EffectivePermissionResolver,
     FactStoreService,
     StateMachineService,
     GateCheckerService,
