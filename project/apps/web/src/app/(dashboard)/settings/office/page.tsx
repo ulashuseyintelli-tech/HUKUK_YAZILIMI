@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Building2, Users, Plus, Pencil, Trash2, Check, X, Star, CreditCard, Loader2, Mail, MessageSquare, GripVertical, Gift, Clock } from "lucide-react";
 import { api } from "@/lib/api";
-import { SettingsShell, SettingsNav, SettingsDetailBody } from "@/components/settings/settings-shell";
+import { SettingsShell, SettingsNav, SettingsDetailBody, SettingsSection, WorkbenchHeader } from "@/components/settings/settings-shell";
 
 interface BankAccount { id: string; bankName: string; branchName?: string; iban: string; accountName?: string; isDefault: boolean; }
 interface Lawyer { 
@@ -92,6 +92,7 @@ function OfficeSettingsInner() {
   // PR-U3: personel UPDATE-path benzer-isim review — 2 buton (güncelle/vazgeç). Create'ten ayrı.
   const [staffUpdateReview, setStaffUpdateReview] = useState<{ candidates: { id: string; name: string }[]; data: any } | null>(null);
   const [officeForm, setOfficeForm] = useState({ name: "", address: "", city: "", district: "", phone: "", email: "", barAssociation: "" });
+  const [officeInitial, setOfficeInitial] = useState({ name: "", address: "", city: "", district: "", phone: "", email: "", barAssociation: "" });
   const [smtpForm, setSmtpForm] = useState<SmtpSettings>({ smtpHost: "", smtpPort: 587, smtpUser: "", smtpPass: "", smtpSecure: false, smtpFromName: "", smtpFromEmail: "" });
   const [smsForm, setSmsForm] = useState({ smsProvider: "", smsApiKey: "", smsApiSecret: "", smsSender: "" });
   const [greetingForm, setGreetingForm] = useState({ autoGreetingEnabled: true, autoGreetingTime: "09:00" });
@@ -123,11 +124,13 @@ function OfficeSettingsInner() {
     try {
       const res = await api.get("/office");
       setOffice(res.data);
-      setOfficeForm({
+      const officeInit = {
         name: res.data?.name || "", address: res.data?.address || "", city: res.data?.city || "",
         district: res.data?.district || "", phone: res.data?.phone || "", email: res.data?.email || "",
         barAssociation: res.data?.barAssociation || "",
-      });
+      };
+      setOfficeForm(officeInit);
+      setOfficeInitial(officeInit);
       // SMTP ayarlarını yükle
       const smtpRes = await api.get("/office/smtp-settings");
       setSmtpForm({
@@ -180,6 +183,7 @@ function OfficeSettingsInner() {
     setOfficeStatus(null); // yeni denemede önceki (özellikle error) temizlenir
     try {
       await api.put("/office", officeForm);
+      setOfficeInitial(officeForm);
       showSaved();
       setOfficeStatus({ ok: true, msg: "Kaydedildi" });
       // success 3 sn sonra kaybolur; bu sırada gelen bir error'ı SİLME (yalnız ok ise temizle)
@@ -373,6 +377,9 @@ function OfficeSettingsInner() {
     ] },
   ];
 
+  const officeDirty = JSON.stringify(officeForm) !== JSON.stringify(officeInitial);
+  const resetOffice = () => setOfficeForm(officeInitial);
+
   if (loading) return <div className="flex items-center justify-center h-full"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
 
   return (
@@ -390,31 +397,65 @@ function OfficeSettingsInner() {
       <SettingsShell nav={<SettingsNav groups={navGroups} active={activeSection} onSelect={goSection} />}>
         <SettingsDetailBody>
         {activeSection === "office" && (
-        <div className="bg-white rounded-lg border p-3 flex flex-col">
-          <h2 className="text-sm font-semibold mb-2 flex items-center gap-1"><Building2 className="h-4 w-4 text-blue-500" />Büro Bilgileri</h2>
-          <div className="flex-1 space-y-2 text-xs">
-            <div className="grid grid-cols-2 gap-2">
-              <div><label className="text-muted-foreground">Büro Adı</label><input value={officeForm.name} onChange={e => setOfficeForm({...officeForm, name: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
-              <div><label className="text-muted-foreground">Baro</label><input value={officeForm.barAssociation} onChange={e => setOfficeForm({...officeForm, barAssociation: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
+        <div className="h-full flex flex-col bg-white">
+          <WorkbenchHeader
+            title="Büro Bilgileri"
+            description="Kurumsal kimlik, iletişim ve adres bilgileri"
+            dirty={officeDirty}
+            saving={saving}
+            onSave={handleSaveOffice}
+            onReset={resetOffice}
+            status={officeStatus}
+          />
+          <div className="flex gap-6 px-5 py-4">
+            <div className="w-full max-w-[740px]">
+              <SettingsSection title="RESMİ KİMLİK">
+                <div style={{ width: 360 }}>
+                  <label className="block text-[11px] text-gray-500 mb-1">Büro adı</label>
+                  <input value={officeForm.name} onChange={e => setOfficeForm({ ...officeForm, name: e.target.value })} className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-[13px]" />
+                </div>
+                <div style={{ width: 240 }}>
+                  <label className="block text-[11px] text-gray-500 mb-1">Baro</label>
+                  <input value={officeForm.barAssociation} onChange={e => setOfficeForm({ ...officeForm, barAssociation: e.target.value })} className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-[13px]" />
+                </div>
+              </SettingsSection>
+              <SettingsSection title="İLETİŞİM">
+                <div style={{ width: 200 }}>
+                  <label className="block text-[11px] text-gray-500 mb-1">Telefon</label>
+                  <input value={officeForm.phone} onChange={e => setOfficeForm({ ...officeForm, phone: e.target.value })} className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-[13px]" />
+                </div>
+                <div style={{ width: 340 }}>
+                  <label className="block text-[11px] text-gray-500 mb-1">E-posta</label>
+                  <input value={officeForm.email} onChange={e => setOfficeForm({ ...officeForm, email: e.target.value })} className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-[13px]" />
+                </div>
+              </SettingsSection>
+              <SettingsSection title="ADRES">
+                <div style={{ width: "100%" }}>
+                  <label className="block text-[11px] text-gray-500 mb-1">Adres</label>
+                  <input value={officeForm.address} onChange={e => setOfficeForm({ ...officeForm, address: e.target.value })} className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-[13px]" />
+                </div>
+                <div style={{ width: 180 }}>
+                  <label className="block text-[11px] text-gray-500 mb-1">İl</label>
+                  <input value={officeForm.city} onChange={e => setOfficeForm({ ...officeForm, city: e.target.value })} className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-[13px]" />
+                </div>
+                <div style={{ width: 180 }}>
+                  <label className="block text-[11px] text-gray-500 mb-1">İlçe</label>
+                  <input value={officeForm.district} onChange={e => setOfficeForm({ ...officeForm, district: e.target.value })} className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-[13px]" />
+                </div>
+              </SettingsSection>
             </div>
-            <div><label className="text-muted-foreground">Adres</label><input value={officeForm.address} onChange={e => setOfficeForm({...officeForm, address: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
-            <div className="grid grid-cols-3 gap-2">
-              <div><label className="text-muted-foreground">İl</label><input value={officeForm.city} onChange={e => setOfficeForm({...officeForm, city: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
-              <div><label className="text-muted-foreground">İlçe</label><input value={officeForm.district} onChange={e => setOfficeForm({...officeForm, district: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
-              <div><label className="text-muted-foreground">Telefon</label><input value={officeForm.phone} onChange={e => setOfficeForm({...officeForm, phone: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
-            </div>
-            <div><label className="text-muted-foreground">E-posta</label><input value={officeForm.email} onChange={e => setOfficeForm({...officeForm, email: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
-          </div>
-          <div className="mt-2 flex items-center gap-2">
-            <button onClick={handleSaveOffice} disabled={saving} className="px-3 py-1 bg-primary text-white text-xs rounded hover:bg-primary/90 disabled:opacity-50">
-              {saving ? "..." : "Kaydet"}
-            </button>
-            {officeStatus && (
-              <span className={`text-xs inline-flex items-center gap-1 ${officeStatus.ok ? "text-green-600" : "text-red-600"}`}>
-                {officeStatus.ok ? <Check className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
-                {officeStatus.ok ? "Kaydedildi" : `Kaydedilemedi: ${officeStatus.msg}`}
-              </span>
-            )}
+            <aside className="hidden min-[1600px]:block w-[300px] shrink-0">
+              <div className="rounded-lg border border-gray-200 bg-slate-50 p-3 text-[11px]">
+                <p className="text-[10px] font-semibold tracking-wide text-slate-600 mb-2">KAYIT ÖZETİ</p>
+                <div className="flex justify-between text-slate-600 mb-1"><span>Değiştiren</span><span>Admin</span></div>
+                <div className="flex justify-between text-slate-600 mb-3"><span>Durum</span><span className={officeDirty ? "text-amber-700" : "text-green-700"}>{officeDirty ? "Kaydedilmemiş" : "Güncel"}</span></div>
+                <p className="text-[10px] font-semibold tracking-wide text-slate-600 mb-2">NEREDE KULLANILIR</p>
+                <p className="text-slate-500 mb-1">Evrak şablonları</p>
+                <p className="text-slate-500 mb-1">Takip çıktıları</p>
+                <p className="text-slate-500 mb-1">Portal iletişim</p>
+                <p className="text-slate-500">Bildirim gönderici adı</p>
+              </div>
+            </aside>
           </div>
         </div>
         )}
