@@ -117,3 +117,33 @@ kanonikleşir. `ServiceHistory`/`Tebligat` `addressType` ayrı + aktiftir.
 > **Kayıt:** Deprecated `DebtorAddress.addressType`/`isMernis` kolonları **app-ölü** (okuma/yazma kesilmiş, test-garantili).
 > Aynı isimli DTO alanları ayrı bir aktif API sözleşmesidir ve bu temizlikle karışmaz. Güvenli kaldırma; (a) prod residual
 > sorgusu, (b) ayrı DTO/test taşıması, (c) ayrı drop migration sırasını gerektirir. Karar: `SCHEMA_PRESENT_BUT_APP_DEAD`.
+
+---
+
+## 9. ADDR-1-FU — Residual run + refined decision (2026-06-25, main `a451058`)
+
+ADDR-1 sonrası load-bearing dosyalar **değişmedi** (pickaxe: `isMernis`/`addressType` string'lerine dokunan tek commit ADDR-1'in kendi doc PR'ı `9bc2245`; yeni debtor/address kaynak dosyası yok) → §1-§8 birebir geçerli.
+
+### 9.1. Residual run (read-only, tek DB; ayrı prod YOK)
+§6'daki residual sorgusu (standalone read-only Prisma, parola `.env`'den, script silindi) bu deployment'ın tek DB'sinde koşuldu:
+
+```
+totalAddresses: 10 · isMernisTrue: 0 · addressTypeNotNull: 0
+distinct addressType: {null: 10} · distinct canonical type: {DECLARED: 10}
+residualUnderived (type='DECLARED' AND (isMernis=true OR addressType IN MERNIS/IS/KEP)): 0
+```
+
+**Sonuç: residual = 0.** Hiçbir adres deprecated kolonlarda kanonik `type`'a yansımamış bilgi taşımıyor. **Drop veri-açısından GÜVENLİ.** Caveat: 10 adres = küçük/test verisi; tek DB (ayrı prod yok) → bu deployment için ön-koşul karşılandı; gerçek üretim verisi oluşursa sorgu tekrar koşulmalı.
+
+### 9.2. Refined finding — DB KOLONU ≠ DTO ALANI (önemli ayrım)
+- **DB kolonları** `DebtorAddress.addressType`/`isMernis`: **app-ölü** (yazılmaz, okunmaz). DROP hedefi bunlardır.
+- **DTO alanları** `CreateDebtorAddressDto.addressType` (**zorunlu**, `@IsEnum`) + `isMernis` (opsiyonel): **CANLI GİRDİ.** `mapAddressTypeToCanonical(dto.addressType, dto.isMernis)` (debtor.service.ts:38-46) bunları okuyup kanonik `type`/`source` **TÜRETİR**; `addAddress`/`updateAddress`/`reportAddresses` bunları girdi alır (sonra `_at/_im` ile kolona-yazımdan dışlar). → DTO alanları **ölü taşıma değil; birincil adres-tipi girdi sözleşmesidir.**
+
+**Düzeltme (ADDR-1 §6'ya göre):** "(b) DTO/test taşıma" **dead-field removal DEĞİL** → frontend'i kanonik `type`/`source` girdisine taşıyan **canlı girdi-sözleşmesi + UX migrasyonu**. İşlevsel fayda düşük (mevcut akış doğru çalışıyor; yalnız adlandırma "deprecated"). **Öneri: DTO girdi sözleşmesi OLDUĞU GİBİ bırakılabilir; gerçek dead-cleanup hedefi yalnız DB kolonlarıdır.**
+
+### 9.3. Gate durumları (güncel)
+1. **Prod-residual ön-koşulu:** ✅ KARŞILANDI (residual=0, bu deployment).
+2. **DB kolon DROP gate** (gerçek temizlik): schema.prisma'dan 2 `@deprecated` alan kaldırma + `ALTER TABLE "DebtorAddress" DROP COLUMN "addressType", DROP COLUMN "isMernis"` migration + `debtor-address-canonical.spec` kolon-assertion güncellemesi. **BLOKER:** uygulama `prisma migrate*` gerektirir → settings.json **deny-list'te** + geri-alınamaz şema değişikliği + psql yok. → **owner-run veya açık deny-lift + onay gerekir** (Claude auto-uygulayamaz). Migration SQL hazırlanabilir.
+3. **DTO girdi-sözleşmesi migrasyonu** (eski (b)): canlı girdi + UX değişikliği → düşük-fayda, ayrı tasarım gate; **opsiyonel, önerilmez** (bırakılabilir).
+
+**Net:** ADDR-1'in app-dead kararı + residual=0 ile DB kolonları **drop'a hazır**; tek engel `prisma migrate` deny-list'i + geri-alınamazlık (owner aksiyonu). DTO "temizliği" gereksiz/opsiyonel olarak yeniden sınıflandı. Bu FU'da yine kod/migration/schema/DB-write YOK.
