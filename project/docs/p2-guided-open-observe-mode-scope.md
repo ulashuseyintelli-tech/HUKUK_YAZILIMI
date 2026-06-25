@@ -7,6 +7,11 @@
 
 ---
 
+> **🚦 KESİN KURAL (en üstte, tartışmasız):**
+> **P2 hiçbir kullanıcı aksiyonunu engellemez. P2 sadece resolver kararını hesaplar, diagnostic/audit üretir
+> ve mevcut davranışı korur.** İleride `CONFIRM_REQUIRED` / `ROUTE_REQUIRED` / `APPROVAL_REQUIRED` /
+> `HARDWARE_REQUIRED` sonuçları **hesaplanacak** ama bu fazda **canlı engele dönüştürülmeyecek** (o P3+).
+
 ## 1. P2 amacı
 
 Tek merkezi **`EffectivePermissionResolver`** kur: bir (user, case, action) için Guided-Open modeline göre
