@@ -282,6 +282,59 @@ describe('BalanceDisplayShadowDiffService', () => {
     });
   });
 
+  it('documents current overbroad ClaimItem diagnostic blocker behavior', async () => {
+    const { service } = makeService(
+      legacySummary({
+        asilAlacak: 750,
+        takipOncesiFaiz: 0,
+        takipSonrasiFaiz: 25,
+        faizSegmentleri: { takipOncesi: [], takipSonrasi: [{ id: 'legacy-post' }] },
+        toplamTahsilat: 100,
+        kalanBorc: 1100,
+        icraMasraflari: 50,
+        vekaletUcreti: 150,
+      }),
+      canonicalBalance({
+        currencyResults: [
+          {
+            currency: 'TRY',
+            result: {
+              engineVersion: 'engine-v1',
+              totalDue: 900,
+              totalInterest: 25,
+              allocations: [{ paymentId: 'pay-1', paymentAmount: 100 }],
+              segments: [{ id: 'seg-1' }],
+              finalDebtStates: [
+                {
+                  claimId: 'p1',
+                  currency: 'TRY',
+                  principal: 750,
+                  accruedInterest: 25,
+                  costs: {},
+                  ancillaries: {},
+                },
+              ],
+            } as any,
+          },
+        ],
+        overpayments: { held: [], blocked: [] },
+      }),
+    );
+
+    const report = await service.compare('tenant-1', 'case-1', '2026-06-24', GENERATED_AT);
+
+    expect(report.comparability.comparable).toBe(true);
+    expect(report.provenance.finalDebtStatesAvailable).toBe(true);
+    expect(report.provenance.claimItemCollectedAmountUsedAsAuthority).toBe(false);
+    expect(report.sources.canonicalBalanceDisplay.diagnostics).toContain('CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY');
+    expect(report.sources.canonicalBalanceDisplay.diagnostics).not.toContain('FINAL_DEBT_STATES_MISSING');
+    expect(report.cutoverReadiness.blockers).toEqual(['CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY']);
+    expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
+    expect(report.cutoverReadiness.safeForOptInShadow).toBe(true);
+    expect(report.totals.diffs.filter((diff) => diff.severity === 'RED')).toEqual([]);
+    expect(report.bucketDiffs.filter((diff) => diff.severity === 'RED')).toEqual([]);
+  });
+
   it('CB-04: ClaimItem authority riski temiz amount match olsa bile primary-ready uretmez', async () => {
     const canonical = canonicalBalance({
       currencyResults: [
