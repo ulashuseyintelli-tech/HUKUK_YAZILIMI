@@ -314,10 +314,14 @@ describe("guarded primary display pilot gate", () => {
 
   it("zero canonical monetary values valid guarded primary payload olarak kabul edilir", () => {
     const report = makeEligibleGuardedPrimaryReport();
-    report.totals.legacy.totalDebtAmount = 0;
-    report.totals.legacy.outstandingAmount = 0;
+    report.totals.legacy!.totalDebtAmount = 0;
+    report.totals.legacy!.outstandingAmount = 0;
     report.totals.canonical!.totalDebtAmount = 0;
     report.totals.canonical!.outstandingAmount = 0;
+    report.totals.canonical!.totalPaidAmount = 0;
+    report.totals.canonical!.interestAmount = 0;
+    report.totals.canonical!.costsAmount = 0;
+    report.totals.canonical!.attorneyFeeAmount = 0;
     report.bucketDiffs[0].legacyAmount = 0;
     report.bucketDiffs[0].canonicalAmount = 0;
 
@@ -337,10 +341,14 @@ describe("guarded primary display pilot gate", () => {
 
   it("finite negative canonical monetary values mevcut guard tarafindan domain disi diye reddedilmez", () => {
     const report = makeEligibleGuardedPrimaryReport();
-    report.totals.legacy.totalDebtAmount = -50;
-    report.totals.legacy.outstandingAmount = -50;
+    report.totals.legacy!.totalDebtAmount = -50;
+    report.totals.legacy!.outstandingAmount = -50;
     report.totals.canonical!.totalDebtAmount = -50;
     report.totals.canonical!.outstandingAmount = -50;
+    report.totals.canonical!.totalPaidAmount = -50;
+    report.totals.canonical!.interestAmount = -50;
+    report.totals.canonical!.costsAmount = -50;
+    report.totals.canonical!.attorneyFeeAmount = -50;
     report.bucketDiffs[0].legacyAmount = -50;
     report.bucketDiffs[0].canonicalAmount = -50;
 
@@ -349,6 +357,42 @@ describe("guarded primary display pilot gate", () => {
     expect(decision.primarySource).toBe("CANONICAL_PRIMARY_CANDIDATE");
     expect(decision.reasonCodes).toEqual([]);
   });
+
+  it.each([
+    ["totalPaidAmount", undefined],
+    ["totalPaidAmount", null],
+    ["totalPaidAmount", "0"],
+    ["totalPaidAmount", Number.NaN],
+    ["totalPaidAmount", Number.POSITIVE_INFINITY],
+    ["interestAmount", undefined],
+    ["interestAmount", null],
+    ["interestAmount", "0"],
+    ["interestAmount", Number.NaN],
+    ["interestAmount", Number.POSITIVE_INFINITY],
+    ["costsAmount", undefined],
+    ["costsAmount", null],
+    ["costsAmount", "0"],
+    ["costsAmount", Number.NaN],
+    ["costsAmount", Number.POSITIVE_INFINITY],
+    ["attorneyFeeAmount", undefined],
+    ["attorneyFeeAmount", null],
+    ["attorneyFeeAmount", "0"],
+    ["attorneyFeeAmount", Number.NaN],
+    ["attorneyFeeAmount", Number.POSITIVE_INFINITY],
+  ] as const)(
+    "%s malformed oldugunda guarded primary fallback secer",
+    (field, value) => {
+      const report = makeEligibleGuardedPrimaryReport();
+      report.totals.canonical![field] = value as unknown as number;
+
+      const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+      const guardedResult = buildGuardedPrimaryCalculationResult(legacyCalculationSummary, report, decision);
+
+      expect(decision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
+      expect(decision.reasonCodes).toContain("CANONICAL_DISPLAYED_AMOUNT_UNAVAILABLE");
+      expect(guardedResult).toBeNull();
+    },
+  );
 
   it("principal bucket displayable degilse guarded primary fallback secer", () => {
     const report = makeEligibleGuardedPrimaryReport();
@@ -581,6 +625,25 @@ describe("BalanceShadowDiffPanel", () => {
     expect(screen.getByText(/alacak/)).toBeInTheDocument();
   });
 
+  it("guarded primary pilot malformed displayed canonical amount durumunda legacy fallback degerlerini korur", async () => {
+    const report = makeEligibleGuardedPrimaryReport();
+    report.totals.canonical!.interestAmount = Number.POSITIVE_INFINITY;
+    apiGet.mockResolvedValue({ data: report });
+
+    render(
+      <HesapOzetiPanel
+        caseId="case-1"
+        guardedPrimaryPilotEnabled
+        guardedPrimaryPilotAsOfDate="2026-06-24"
+      />,
+    );
+
+    expect(await screen.findByText("Legacy calculation-summary fallback")).toBeInTheDocument();
+    expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent(
+      "CANONICAL_DISPLAYED_AMOUNT_UNAVAILABLE",
+    );
+    expect(screen.getAllByText("1.234,00 TL").length).toBeGreaterThan(0);
+  });
   it("guarded primary pilot malformed display field durumunda crash olmadan legacy fallback degerlerini korur", async () => {
     const report = makeEligibleGuardedPrimaryReport();
     report.totals.canonical!.outstandingAmount = Number.POSITIVE_INFINITY;
