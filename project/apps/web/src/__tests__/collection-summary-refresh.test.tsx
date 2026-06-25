@@ -75,7 +75,7 @@ function makeCalculationSummary() {
   };
 }
 
-function CaseFinanceRefreshHarness() {
+function CaseFinanceRefreshHarness({ collection }: { collection?: any }) {
   const [refreshKey, setRefreshKey] = useState(0);
 
   return (
@@ -85,6 +85,7 @@ function CaseFinanceRefreshHarness() {
         isOpen
         onClose={vi.fn()}
         caseId="case-1"
+        collection={collection}
         onSuccess={() => setRefreshKey((key) => key + 1)}
       />
     </>
@@ -126,6 +127,68 @@ describe("collection summary refresh", () => {
         "case-1",
         expect.objectContaining({ amount: 100000 }),
       );
+    });
+    await waitFor(() => {
+      expect(refetchCalculation).toHaveBeenCalledTimes(1);
+    });
+    expect(refetchShadowDiff).not.toHaveBeenCalled();
+  });
+
+  it("tahsilat guncelleme basarili olunca stale hesap ozetini refetch eder", async () => {
+    render(
+      <CaseFinanceRefreshHarness
+        collection={{
+          id: "collection-1",
+          type: "TAHSILAT",
+          channel: "BANKA",
+          amount: 50000,
+          date: "2026-06-25",
+          currency: "TRY",
+        }}
+      />,
+    );
+
+    expect(refetchCalculation).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByPlaceholderText("0.00"), {
+      target: { value: "125000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Güncelle$/ }));
+
+    await waitFor(() => {
+      expect(apiMock.updateCollection).toHaveBeenCalledWith(
+        "case-1",
+        "collection-1",
+        expect.objectContaining({ amount: 125000 }),
+      );
+    });
+    await waitFor(() => {
+      expect(refetchCalculation).toHaveBeenCalledTimes(1);
+    });
+    expect(refetchShadowDiff).not.toHaveBeenCalled();
+  });
+
+  it("tahsilat silme basarili olunca stale hesap ozetini refetch eder", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(
+      <CaseFinanceRefreshHarness
+        collection={{
+          id: "collection-1",
+          type: "TAHSILAT",
+          channel: "BANKA",
+          amount: 50000,
+          date: "2026-06-25",
+          currency: "TRY",
+        }}
+      />,
+    );
+
+    expect(refetchCalculation).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTitle("Sil"));
+
+    await waitFor(() => {
+      expect(apiMock.deleteCollection).toHaveBeenCalledWith("case-1", "collection-1");
     });
     await waitFor(() => {
       expect(refetchCalculation).toHaveBeenCalledTimes(1);

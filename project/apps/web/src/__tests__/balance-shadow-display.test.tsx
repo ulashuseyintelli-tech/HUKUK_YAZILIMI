@@ -7,11 +7,13 @@ import {
   shouldShowBalanceShadowDisplay,
 } from "@/lib/balance-shadow-display";
 import {
+  buildGuardedPrimaryCalculationResult,
   evaluateGuardedPrimaryDisplayPilot,
   shouldEnableGuardedPrimaryDisplayPilot,
 } from "@/lib/guarded-primary-display";
 import { apiClient } from "@/lib/api/client";
 import type { BalanceDisplayShadowDiffReport } from "@/lib/api/balance-shadow-diff";
+import { useCaseCalculation } from "@/hooks/useCaseCalculation";
 
 vi.mock("@/lib/api/client", () => ({
   apiClient: {
@@ -20,12 +22,7 @@ vi.mock("@/lib/api/client", () => ({
 }));
 
 vi.mock("@/hooks/useCaseCalculation", () => ({
-  useCaseCalculation: vi.fn(() => ({
-    data: legacyCalculationSummary,
-    loading: false,
-    error: null,
-    refetch: vi.fn(),
-  })),
+  useCaseCalculation: vi.fn(),
   formatTL: (amount: number) =>
     `${amount.toLocaleString("tr-TR", {
       minimumFractionDigits: 2,
@@ -35,6 +32,7 @@ vi.mock("@/hooks/useCaseCalculation", () => ({
 }));
 
 const apiGet = apiClient.get as unknown as ReturnType<typeof vi.fn>;
+const useCaseCalculationMock = useCaseCalculation as unknown as ReturnType<typeof vi.fn>;
 
 const legacyCalculationSummary = {
   caseId: "case-1",
@@ -264,6 +262,12 @@ function makeEligibleGuardedPrimaryReport(): BalanceDisplayShadowDiffReport {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  useCaseCalculationMock.mockReturnValue({
+    data: legacyCalculationSummary,
+    loading: false,
+    error: null,
+    refetch: vi.fn(),
+  });
 });
 
 describe("balance shadow display opt-in gate", () => {
@@ -306,6 +310,70 @@ describe("guarded primary display pilot gate", () => {
       primarySource: "CANONICAL_PRIMARY_CANDIDATE",
       reasonCodes: [],
     });
+  });
+
+  it("zero canonical monetary values valid guarded primary payload olarak kabul edilir", () => {
+    const report = makeEligibleGuardedPrimaryReport();
+    report.totals.legacy.totalDebtAmount = 0;
+    report.totals.legacy.outstandingAmount = 0;
+    report.totals.canonical!.totalDebtAmount = 0;
+    report.totals.canonical!.outstandingAmount = 0;
+    report.bucketDiffs[0].legacyAmount = 0;
+    report.bucketDiffs[0].canonicalAmount = 0;
+
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const guardedResult = buildGuardedPrimaryCalculationResult(legacyCalculationSummary, report, decision);
+
+    expect(decision.primarySource).toBe("CANONICAL_PRIMARY_CANDIDATE");
+    expect(decision.reasonCodes).toEqual([]);
+    expect(guardedResult).toEqual(expect.objectContaining({
+      asilAlacak: 0,
+      takipTutari: 0,
+      toplamBorc: 0,
+      sonBorc: 0,
+      kalanBorc: 0,
+    }));
+  });
+
+  it("finite negative canonical monetary values mevcut guard tarafindan domain disi diye reddedilmez", () => {
+    const report = makeEligibleGuardedPrimaryReport();
+    report.totals.legacy.totalDebtAmount = -50;
+    report.totals.legacy.outstandingAmount = -50;
+    report.totals.canonical!.totalDebtAmount = -50;
+    report.totals.canonical!.outstandingAmount = -50;
+    report.bucketDiffs[0].legacyAmount = -50;
+    report.bucketDiffs[0].canonicalAmount = -50;
+
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+
+    expect(decision.primarySource).toBe("CANONICAL_PRIMARY_CANDIDATE");
+    expect(decision.reasonCodes).toEqual([]);
+  });
+
+  it("principal bucket displayable degilse guarded primary fallback secer", () => {
+    const report = makeEligibleGuardedPrimaryReport();
+    report.bucketDiffs[0].canonicalDisplayable = false;
+
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+
+    expect(decision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
+    expect(decision.reasonCodes).toContain("CANONICAL_PRINCIPAL_UNAVAILABLE");
+  });
+
+  it.each([
+    ["missing totalDebtAmount", undefined],
+    ["null totalDebtAmount", null],
+    ["string totalDebtAmount", "980"],
+    ["NaN totalDebtAmount", Number.NaN],
+    ["Infinity totalDebtAmount", Number.POSITIVE_INFINITY],
+  ])("%s durumunda guarded primary fallback secer", (_label, totalDebtAmount) => {
+    const report = makeEligibleGuardedPrimaryReport();
+    report.totals.canonical!.totalDebtAmount = totalDebtAmount as unknown as number;
+
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+
+    expect(decision.primarySource).toBe("LEGACY_CALCULATION_SUMMARY");
+    expect(decision.reasonCodes).toContain("CANONICAL_PRINCIPAL_UNAVAILABLE");
   });
 
   it("flag on ama finalDebtStates missing ise legacy fallback secer", () => {
@@ -481,6 +549,54 @@ describe("BalanceShadowDiffPanel", () => {
     );
     expect(screen.getAllByText("1.234,00 TL").length).toBeGreaterThan(0);
     expect((await screen.findAllByText("₺980,00")).length).toBeGreaterThan(0);
+  });
+
+  it("HesapOzetiPanel loading, error ve empty states render etmeye devam eder", () => {
+    useCaseCalculationMock.mockReturnValueOnce({
+      data: null,
+      loading: true,
+      error: null,
+      refetch: vi.fn(),
+    });
+    const { rerender } = render(<HesapOzetiPanel caseId="case-1" />);
+    expect(screen.getByText(/Hesaplan/)).toBeInTheDocument();
+
+    useCaseCalculationMock.mockReturnValueOnce({
+      data: null,
+      loading: false,
+      error: "boom",
+      refetch: vi.fn(),
+    });
+    rerender(<HesapOzetiPanel caseId="case-1" />);
+    expect(screen.getByText("boom")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Tekrar Dene" })).toBeInTheDocument();
+
+    useCaseCalculationMock.mockReturnValueOnce({
+      data: null,
+      loading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    rerender(<HesapOzetiPanel caseId="case-1" />);
+    expect(screen.getByText(/alacak/)).toBeInTheDocument();
+  });
+
+  it("guarded primary pilot malformed display field durumunda crash olmadan legacy fallback degerlerini korur", async () => {
+    const report = makeEligibleGuardedPrimaryReport();
+    report.totals.canonical!.outstandingAmount = Number.POSITIVE_INFINITY;
+    apiGet.mockResolvedValue({ data: report });
+
+    render(
+      <HesapOzetiPanel
+        caseId="case-1"
+        guardedPrimaryPilotEnabled
+        guardedPrimaryPilotAsOfDate="2026-06-24"
+      />,
+    );
+
+    expect(await screen.findByText("Legacy calculation-summary fallback")).toBeInTheDocument();
+    expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent("CANONICAL_PRINCIPAL_UNAVAILABLE");
+    expect(screen.getAllByText("1.234,00 TL").length).toBeGreaterThan(0);
   });
 
   it("guarded primary pilot flag on ve eligible evidence varsa canonical candidate degerlerini gosterir", async () => {
