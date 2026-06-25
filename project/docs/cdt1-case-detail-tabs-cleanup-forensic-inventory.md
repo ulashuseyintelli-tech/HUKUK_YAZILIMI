@@ -102,3 +102,25 @@ UYAP). Dürüstlük kuralı gereği toptan silme şu an güvenli değil.
 > **Kayıt:** CaseDetailTabs unmounted/ölü. İçindeki 2 panel (TebligatPanel, CaseHistoryPanel) re-wire edilmiş ve canlı →
 > korunur. Kalan 12 panel yalnız-CDT ve canlı eşdeğeri yok (özellikle UYAP) → toptan silme **işlevsel kayıp riski** taşır.
 > Karar: `REWIRE_REQUIRED_BEFORE_CLEANUP`. Gerçek silme, UYAP re-wire + orphaned-feature ürün kararı + ayrı temizlik gate'ine bağlı.
+
+---
+
+## 10. Re-verification (2026-06-25 · main `cb2203c`)
+
+> **Tür:** docs-only re-verify şerhi. Kod/silme/refactor/re-wire YOK. Yeni forensic üretilmedi — bu bölüm yalnız §1-9'un
+> hâlâ geçerli olduğunu mevcut main karşısında teyit eder.
+
+Bu envanter `9bc2245`'te yazıldı. **`cb2203c`'de (88 commit sonra) tekrar doğrulandı; bulgular değişmedi:**
+
+- **`<CaseDetailTabs>` JSX mount = 0** — kod tabanında hiçbir mount/direct import yok (yalnız bu doc + barrel `index.ts:68`
+  re-export + 3 canlı kartın yorumları). → still dead/unmounted.
+- **14 panel listesi değişmedi** — `CaseDetailTabs.tsx:23-36` aynı 14 paneli import ediyor.
+- **2 canlı panel korunuyor** — `TebligatPanel` (→TebligatCard) · `CaseHistoryPanel` (→HacizHistoryCard).
+- **12 orphan panel hâlâ orphan** — her birinin tek referansı kendi tanım dosyası + barrel re-export; `components/case`
+  dışında hiçbir canlı mount kazanmadılar (UyapPanel dahil elle teyit).
+- **Delta kanıtı:** `9bc2245..cb2203c` arasında `components/case` + `components/case-detail`'i değiştiren yalnız 2 commit
+  (#479, #476 — legal-responsible) var; **ikisi de CaseDetailTabs'a veya 14 panelden herhangi birine dokunmadı.**
+  CaseDetailTabs.tsx en son `407e3e2` (#123) ile değişti (migration öncesi).
+
+**Verdict değişmedi: `REWIRE_REQUIRED_BEFORE_CLEANUP`.** §9'daki sıralı gate'ler (C3 UYAP kararı → orphaned-feature ürün
+kararı → ayrı temizlik gate'i) geçerli. Bu re-verify hiçbir gate'i açmaz.
