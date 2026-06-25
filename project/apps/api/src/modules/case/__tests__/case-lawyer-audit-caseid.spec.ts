@@ -61,8 +61,11 @@ describe("WP-1d-2-pre — CASE_LAWYER audit metadata.caseId", () => {
     const { service, auditLog } = makeService();
     (service as any).prisma = {
       case: { findFirst: jest.fn(async () => ({ id: CASE_ID, tenantId: "t1" })) },
-      caseLawyer: { findFirst: jest.fn(async () => ({ id: "cl-1", caseId: CASE_ID, lawyer: { name: "Ada", surname: "Av" } })) },
-      $transaction: jest.fn(async (cb: any) => cb({ caseLawyer: { update: jest.fn(async () => ({ lawyer: { name: "Ada", surname: "Av" } })) } })),
+      caseLawyer: {
+        findFirst: jest.fn(async () => ({ id: "cl-1", caseId: CASE_ID, isResponsible: false, lawyer: { name: "Ada", surname: "Av" } })),
+        // WP-1d-5-7: updateCaseLawyer doğrudan caseLawyer.update çağırır (eski $transaction yok).
+        update: jest.fn(async () => ({ id: "cl-1", role: "ASSIGNED", casePermissions: null, lawyer: { name: "Ada", surname: "Av" } })),
+      },
     };
     await (service as any).updateCaseLawyer("t1", CASE_ID, "cl-1", { canSign: true }, "u1");
     expect(auditLog).toHaveBeenCalledWith(lawyerAudit("UPDATE"));
