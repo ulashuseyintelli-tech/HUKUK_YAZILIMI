@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Building2, Users, Plus, Pencil, Trash2, Check, X, Star, CreditCard, Loader2, Mail, MessageSquare, GripVertical } from "lucide-react";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { Building2, Users, Plus, Pencil, Trash2, Check, X, Star, CreditCard, Loader2, Mail, MessageSquare, GripVertical, Gift, Clock } from "lucide-react";
 import { api } from "@/lib/api";
+import { SettingsShell, SettingsNav, SettingsDetailBody } from "@/components/settings/settings-shell";
 
 interface BankAccount { id: string; bankName: string; branchName?: string; iban: string; accountName?: string; isDefault: boolean; }
 interface Lawyer { 
@@ -58,7 +60,18 @@ const TITLE_OPTIONS = [
   { value: "Huk. Müş.", label: "Huk. Müş." }, { value: "İcra Kat.", label: "İcra Kat." },
 ];
 
+const OFFICE_SECTIONS = ["office", "bank", "lawyers", "staff", "smtp", "sms", "greeting", "escalation"] as const;
+type OfficeSection = (typeof OFFICE_SECTIONS)[number];
+
 export default function OfficeSettingsPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-full"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>}>
+      <OfficeSettingsInner />
+    </Suspense>
+  );
+}
+
+function OfficeSettingsInner() {
   const [office, setOffice] = useState<Office | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -335,6 +348,31 @@ export default function OfficeSettingsPage() {
   const getStaffTypeLabel = (type: string) => STAFF_TYPES.find(t => t.value === type)?.label || type;
   const getStaffTypeColor = (type: string) => STAFF_TYPES.find(t => t.value === type)?.color || "bg-gray-100";
 
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const sectionParam = searchParams.get("section");
+  const activeSection: OfficeSection = (OFFICE_SECTIONS as readonly string[]).includes(sectionParam ?? "")
+    ? (sectionParam as OfficeSection)
+    : "office";
+  const goSection = (key: string) => router.push(`${pathname}?section=${key}`);
+  const navGroups = [
+    { label: "Büro", items: [
+      { key: "office", label: "Büro Bilgileri", icon: Building2 },
+      { key: "bank", label: "Banka Hesapları", icon: CreditCard, badge: office?.bankAccounts?.length },
+    ] },
+    { label: "Kadro", items: [
+      { key: "lawyers", label: "Avukatlar", icon: Users, badge: office?.lawyers?.length },
+      { key: "staff", label: "Personel", icon: Users, badge: staffList.length },
+    ] },
+    { label: "Sistem Konsolu", items: [
+      { key: "smtp", label: "SMTP", icon: Mail },
+      { key: "sms", label: "SMS", icon: MessageSquare },
+      { key: "greeting", label: "Otomatik Tebrik", icon: Gift },
+      { key: "escalation", label: "Görev & Eskalasyon", icon: Clock },
+    ] },
+  ];
+
   if (loading) return <div className="flex items-center justify-center h-full"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
 
   return (
@@ -348,9 +386,10 @@ export default function OfficeSettingsPage() {
         {saved && <span className="text-green-600 text-xs flex items-center gap-1"><Check className="h-3 w-3" />Kaydedildi</span>}
       </div>
 
-      {/* 5 Kolon Layout */}
-      <div className="flex-1 grid grid-cols-5 gap-2 min-h-0">
-        {/* Büro Bilgileri */}
+      {/* Settings Shell (A-1): sol kategori nav + sağ aktif kategori detayı */}
+      <SettingsShell nav={<SettingsNav groups={navGroups} active={activeSection} onSelect={goSection} />}>
+        <SettingsDetailBody>
+        {activeSection === "office" && (
         <div className="bg-white rounded-lg border p-3 flex flex-col">
           <h2 className="text-sm font-semibold mb-2 flex items-center gap-1"><Building2 className="h-4 w-4 text-blue-500" />Büro Bilgileri</h2>
           <div className="flex-1 space-y-2 text-xs">
@@ -378,8 +417,8 @@ export default function OfficeSettingsPage() {
             )}
           </div>
         </div>
-
-        {/* Banka Hesapları */}
+        )}
+        {activeSection === "bank" && (
         <div className="bg-white rounded-lg border p-3 flex flex-col">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold flex items-center gap-1"><CreditCard className="h-4 w-4 text-green-500" />Banka Hesapları</h2>
@@ -401,8 +440,8 @@ export default function OfficeSettingsPage() {
             {(!office?.bankAccounts || office.bankAccounts.length === 0) && <p className="text-xs text-muted-foreground text-center py-4">Hesap yok</p>}
           </div>
         </div>
-
-        {/* Avukatlar */}
+        )}
+        {activeSection === "lawyers" && (
         <div className="bg-white rounded-lg border p-3 flex flex-col">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold flex items-center gap-1"><Users className="h-4 w-4 text-purple-500" />Avukatlar</h2>
@@ -489,8 +528,8 @@ export default function OfficeSettingsPage() {
             💡 Sürükle-bırak ile sıralayın. "⭐ Varsayılan" avukatlar yeni takiplerde otomatik seçilir.
           </div>
         </div>
-
-        {/* Personel */}
+        )}
+        {activeSection === "staff" && (
         <div className="bg-white rounded-lg border p-3 flex flex-col">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold flex items-center gap-1"><Users className="h-4 w-4 text-orange-500" />Personel</h2>
@@ -593,11 +632,9 @@ export default function OfficeSettingsPage() {
             💡 Sürükle-bırak ile sıralayın. "⭐ Varsayılan" personeller yeni takiplerde otomatik seçilir.
           </div>
         </div>
-
-        {/* İletişim Ayarları (E-posta + SMS) */}
-        <div className="bg-white rounded-lg border p-3 flex flex-col">
-          <h2 className="text-sm font-semibold mb-2 flex items-center gap-1"><Mail className="h-4 w-4 text-red-500" />İletişim Ayarları</h2>
-          <div className="flex-1 space-y-3 text-xs overflow-auto">
+        )}
+        {activeSection === "smtp" && (
+        <div className="bg-white rounded-lg border p-3 flex flex-col text-xs">
             {/* E-posta (SMTP) */}
             <div className="p-2 border rounded bg-gray-50">
               <p className="font-medium text-gray-700 mb-2">📧 E-posta (SMTP)</p>
@@ -619,6 +656,10 @@ export default function OfficeSettingsPage() {
                 </div>
               </div>
             </div>
+        </div>
+        )}
+        {activeSection === "sms" && (
+        <div className="bg-white rounded-lg border p-3 flex flex-col text-xs">
             {/* SMS */}
             <div className="p-2 border rounded bg-gray-50">
               <p className="font-medium text-gray-700 mb-2">📱 SMS</p>
@@ -638,6 +679,10 @@ export default function OfficeSettingsPage() {
                 </div>
               </div>
             </div>
+        </div>
+        )}
+        {activeSection === "greeting" && (
+        <div className="bg-white rounded-lg border p-3 flex flex-col text-xs">
             {/* Otomatik Tebrik */}
             <div className="p-2 border rounded bg-purple-50">
               <p className="font-medium text-purple-700 mb-2">🎂 Otomatik Tebrik</p>
@@ -665,9 +710,9 @@ export default function OfficeSettingsPage() {
                 <button onClick={handleSaveGreeting} disabled={saving} className="w-full px-2 py-1 bg-purple-500 text-white text-xs rounded disabled:opacity-50">{saving ? "..." : "Kaydet"}</button>
               </div>
             </div>
-          </div>
-
-        {/* Görev ve Eskalasyon Ayarları */}
+        </div>
+        )}
+        {activeSection === "escalation" && (
         <div className="bg-white rounded-lg border p-3 flex flex-col">
           <h2 className="text-sm font-semibold mb-2 flex items-center gap-1">⏱️ Görev ve Eskalasyon Ayarları</h2>
           <div className="flex-1 space-y-3 text-xs">
@@ -774,8 +819,9 @@ export default function OfficeSettingsPage() {
             <button onClick={handleSaveEscalation} disabled={saving} className="w-full px-2 py-1 bg-blue-600 text-white text-xs rounded disabled:opacity-50">{saving ? "..." : "Kaydet"}</button>
           </div>
         </div>
-        </div>
-      </div>
+        )}
+        </SettingsDetailBody>
+      </SettingsShell>
 
       {/* Modals */}
       {showLawyerModal && <LawyerModal lawyer={editingLawyer} onSave={handleSaveLawyer} onClose={() => { setShowLawyerModal(false); setEditingLawyer(null); }} saving={saving} />}
