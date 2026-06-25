@@ -94,12 +94,21 @@ describe('BUG-2b DebtorStep bulk accept', () => {
     // Tara → fetch (mock) → wizardResult
     fireEvent.click(await screen.findByText('Tara', undefined, ASYNC_WAIT));
 
-    // Sonuç paneli render olunca tümünü ekle
-    fireEvent.click(await screen.findByText('Tümünü Ekle', undefined, ASYNC_WAIT));
+    // DETERMİNİSTİK ÖNKOŞUL (flake kök-nedeni — #486/#489/#491): "Tümünü Ekle" butonu wizardResult set
+    // olunca render olur, AMA handleAcceptAllDebtors'un iterate ettiği partyRows AYRI bir
+    // useEffect([wizardResult]) ile dolar (DebtorStep.tsx ~286 + 525-536). Buton görünür görünmez tıklamak →
+    // partyRows henüz BOŞ → targets=[] → 0 POST → count '0'da kalır (yük altında 15s+ rağmen). Çözüm: zamanla
+    // DEĞİL OLAYLA bekle — parti satırları render olana dek bekle, SONRA tıkla. Parti adı <input value>
+    // olarak render olur (DebtorStep.tsx:821) → findByText değil findByDisplayValue.
+    await screen.findByDisplayValue('Şükrü Akdoğan', undefined, ASYNC_WAIT);
+    await screen.findByDisplayValue('Mehmet Demir', undefined, ASYNC_WAIT);
 
-    // KRİTİK: ikisi de korunmalı (eski stale-closure 1 bırakırdı)
+    fireEvent.click(screen.getByText('Tümünü Ekle'));
+
+    // Önce mock milestone (2 POST gitti), SONRA UI count — ikisi de zamanla değil olay-tamamlanmasıyla.
+    // KRİTİK: ikisi de korunmalı (eski stale-closure 1 bırakırdı).
+    await waitFor(() => expect(apiPost).toHaveBeenCalledTimes(2), ASYNC_WAIT);
     await waitFor(() => expect(screen.getByTestId('count').textContent).toBe('2'), ASYNC_WAIT);
-    expect(apiPost).toHaveBeenCalledTimes(2);
   }, TEST_TIMEOUT);
 
   it('TEK KELİME isim → "Ekle" POST ETMEZ + hata GÖRÜNÜR + listeye eklenmez', async () => {
