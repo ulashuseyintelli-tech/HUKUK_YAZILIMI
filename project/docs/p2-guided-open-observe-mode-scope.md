@@ -156,13 +156,122 @@ Hiçbir migration yok → geri alma = flag + revert PR. Kalıcı şema riski yok
 
 ---
 
+## 11. P2 Execution Mini-Plan (kod yok — P2a/P2b'yi kilitler)
+
+> **🚦 KESİN KURAL (yinelenir):** P2 hiçbir kullanıcı aksiyonunu engellemez; yalnız resolver kararını hesaplar,
+> diagnostic/audit üretir ve mevcut davranışı korur.
+
+### 11.1 Mimari netlik — ÜÇ AYRI KATMAN (karıştırma yasağı)
+
+1. **CasePolicyEngine** (`policy-engine/case-policy-engine.service.ts:70` → `canPerformAction(caseId, actionCode, ctx)`)
+   = case-policy / fact gating (UYAP-outage, case-status). **PER-USER DEĞİL.** CpeRequiredGuard ile 2 finans op
+   enforce eder. **P2'de DOKUNULMAZ.**
+2. **`permission-diagnostics/`** (`warn-only-audit.service.ts` → `recordWouldDeny` = PERMISSION_WOULD_DENY observe
+   deseni, best-effort; `permission-hard-guard`, `permission-diagnostics-map`). **P2'de yalnız OBSERVE ADAPTER.**
+3. **EffectivePermissionResolver (P2 YENİ)** = per-user Guided-Open karar motoru (capacity × case-grant ×
+   fullAuthority × action-class → Decision). CPE'yi REPLACE ETMEZ; onunla **composes**.
+
+### 11.2 Konum (REVİZYON 1)
+
+Resolver core **`permission-diagnostics` ALTINDA DEĞİL** — diagnostic değil, **domain karar motoru** (P3/P4'te
+route/confirm/approval'ın çekirdeği olacak). Konum:
+```
+policy-engine/effective-permission-resolver.service.ts   (veya authorization/effective-permission-resolver.service.ts)
+policy-engine/types/effective-permission.types.ts        (Decision / decision_source / action_class)
+permission-diagnostics/guided-open-observe.service.ts     (yalnız observe adapter — best-effort diagnostic/audit)
+```
+> Resolver = domain karar motoru · Observe service = diagnostic/audit adaptörü. Bu ayrım, resolver'ı ileride
+> enforcement'a taşırken import karmaşasını engeller.
+
+### 11.3 7 sorunun cevabı (revize)
+
+1. **Hangi dosya?** §11.2 + ActionCode additive (`policy-engine/types/action-code.enum.ts`) + capacity reader
+   (lawyerRank/staffType) + case-grant reader (casePermissions / CaseStaff.can*).
+2. **Nereye bağlanır?** ActionCode enum reuse; CasePolicyEngine + CpeRequiredGuard + 2 finans op **DOKUNULMAZ**;
+   observe çağrısı warn-only call-site deseniyle (`case.controller.ts:115` / `report.controller.ts:23,184`).
+3. **Flag?** `GUIDED_OPEN_AUTHZ_MODE` env (`off | observe`), guided-open-observe.service'te okunur. **Default off.**
+4. **Diagnostic kim yazar?** guided-open-observe.service, best-effort try/catch (warn-only garantisiyle).
+   **(REVİZYON 2)** Eğer `PERMISSION_OBSERVED` mevcut AuditLog şemasında **migration gerektirmeden** yazılamıyorsa
+   **KULLANILMAZ**; mevcut `PERMISSION_WOULD_DENY` / generic diagnostic / structured log deseni kullanılır. **Yeni DB enum/migration YOK.**
+5. **İlk pilot?** §12 (P2b-1 dar).
+6. **Testler?** §11.5.
+7. **Davranış değişmedi kanıtı?** observe best-effort (asla throw etmez) + resolver sonucu engellemede KULLANILMAZ
+   + flag default off + regression test (status+body aynı).
+
+### 11.4 Karar modeli + kayıt alanları (REVİZYON 3 + 5)
+
+```
+Decision ∈ { ALLOW · CONFIRM_REQUIRED · ROUTE_REQUIRED · APPROVAL_REQUIRED · HARDWARE_REQUIRED · DENY_TENANT_BOUNDARY }
+decision_source ∈ { OPEN · CASE_GRANT · OFFICE_DEFAULT · FULL_AUTHORITY · CONFIRM_REQUIRED · VALIDITY_ROUTE · APPROVAL_REQUIRED · HARDWARE · TENANT_BOUNDARY }
+
+resolve({ actorUserId, tenantId, caseId?, actionCode, context })   ← REVİZYON 5: caseId OPSİYONEL (office-wide action'lar)
+
+Kayıt alanları (REVİZYON 3 — would_block SABİT DEĞİL; enforced sabit):
+  actor_user_id (GERÇEK) · tenant_id · case_id? · action_code · decision · decision_source · action_class (L0-L4)
+  mode = observe · enforced = false   ← P2'de HER ZAMAN sabit
+  would_require_confirm / would_require_route / would_require_approval / would_require_hardware / would_deny_tenant_boundary
+  reason · created_at
+```
+
+### 11.5 ActionCode v1 mapping (REVİZYON 4 — snapshot + duplicate yok)
+
+```
+canEditCase→EDIT_CASE · canGenerateDocs→GENERATE_DOC · canSyncUYAP→SYNC_UYAP · canViewFinance→VIEW_FINANCE
+canEditFinance→EDIT_FINANCE · canChangeStatus→CHANGE_STATUS · canEditParties→EDIT_PARTIES · hasSignatureAuthority→SIGN
+receiveNotifications → permission DEĞİL (notification subscription)
+```
+**Mevcut enum SNAPSHOT (25 leaf, `action-code.enum.ts`):** UYAP_SEND/UYAP_QUERY · REQUEST_EXPENSE/APPROVE_EXPENSE/
+RECORD_EXPENSE_PAYMENT · SEND_NOTIFICATION/SEND_DEBTOR_MSG/SEND_PAYMENT_ORDER/NOTIFICATION_DELIVERED ·
+QUERY_ASSETS/QUERY_BANK_ACCOUNTS/QUERY_VEHICLES · TRIGGER_HACIZ/REQUEST_SALE/REQUEST_ENFORCEMENT/
+PROCEED_TO_ENFORCEMENT/EVICTION_REQUEST · CLOSE_CASE/FINALIZE_CASE/ARCHIVE_CASE/REOPEN_CASE/CONVERT_FROM_MTS/
+RECORD_COLLECTION/RECORD_PAYMENT · ADD_NAFAKA_PERIOD/UPDATE_EXCHANGE_RATE.
+**P2a kuralları:** (a) enum snapshot PR diff'inde AÇIKÇA gösterilir; (b) var olan yaprak tekrar eklenmez;
+(c) yakın-anlamlı mevcut enum varsa duplicate YOK → alias/mapping tercih (**özellikle `GENERATE_DOC` ve `SYNC_UYAP`
+iki kez kontrol** — UYAP_SEND/UYAP_QUERY zaten var); (d) eklenen her leaf `ACTION_RISK_LEVELS`'a da girer (Record exhaustive → TS zorlar).
+
+## 12. P2a / P2b Implementation Split
+
+### P2a — resolver CORE (endpoint'e BAĞLANMAZ; üretim davranışı HİÇ değişmez)
+
+İçerik: ActionCode v1 additive + `ACTION_RISK_LEVELS` · `effective-permission.types` · `EffectivePermissionResolver`
+(policy-engine/ veya authorization/) + capacity reader + case-grant reader + **unit testler + mapping testleri.**
+**P2a'da KESİNLİKLE YOK:** controller hook · observe service · AuditService yazımı · frontend · migration · yeni 403 ·
+guard/decorator · P3/P4 enforcement. *(Resolver hiç çağrılmadığı için üretim davranışı değişmez.)*
+
+### P2b — observe HOOK (ayrı PR; iki dar alt-parça)
+
+- **P2b-1 (ilk DAR pilot):** `guided-open-observe.service` + `GUIDED_OPEN_AUTHZ_MODE` flag (default off) + best-effort
+  diagnostic + regression test; pilot = **cases.delete · legal-responsible-lawyer · credential management** (zaten
+  guard'lı / düşük davranış riski).
+- **P2b-2:** CHANGE_STATUS · EDIT_PARTIES · SEND_NOTIFICATION ailesi · UYAP_SEND · bank.transfer. *(Tek PR'da
+  hepsini bağlama — log-noise + context-bug riski.)*
+- **P2b kırmızı çizgisi:** resolver sonucu endpoint kararında KULLANILMAZ · response status/body DEĞİŞMEZ · hata
+  olursa observe service YUTAR.
+
+### 11.5 test kriterleri (özet)
+
+unit (resolver L0-L4 + decision_source) · mapping (casePermissions→ActionCode) · observe (CONFIRM_REQUIRED dönse
+bile response değişmez) · best-effort (observe throw etse bile akış kırılmaz) · regression (API davranışı aynı) ·
+audit (actor_user_id GERÇEK · mode=observe · enforced=false).
+
+---
+
+> **P2 EXECUTION PLAN KARARI (kayıt):** `EffectivePermissionResolver` diagnostic katmanı DEĞİL, **domain karar
+> motorudur** → `policy-engine/` (veya `authorization/`) altında; `permission-diagnostics` yalnız observe adapter +
+> best-effort audit/diagnostic yazımı. **P2a** endpoint'e bağlanmaz, üretim davranışını değiştirmez, yalnız resolver
+> core + ActionCode mapping + unit/mapping testleri. **P2b** observe-mode hook fazıdır; `GUIDED_OPEN_AUTHZ_MODE`
+> varsayılan **off**; açık olsa bile kullanıcı aksiyonu engellenmez, yeni 403 üretilmez, response değişmez. Eğer
+> `PERMISSION_OBSERVED` AuditLog'a migration gerektiriyorsa **kullanılmaz** (mevcut warn-only/generic diagnostic
+> deseni). P2 kayıtlarında **enforced=false sabittir**; would_require_confirm/route/approval/hardware alanları
+> ilerideki guarded-edge davranışını ölçmek için hesaplanır.
+
 ## Kesin sıra (P2 ve sonrası)
 
 ```
-1. (TAMAM) #500 final + #502 pointer merged → doküman tek-kaynak.
-2. Bu P2 mini-scope docs PR  ← şu an
-3. P2 scope ONAYI (Ulaş)     ← bekleniyor
-4. P2 observe-mode KOD PR (ayrı onay)
+1. (TAMAM) #500 final + #502 pointer + #503 P2 scope merged → doküman tek-kaynak.
+2. (BU PR) P2 execution mini-plan §11/§12 (6 revizyonla).
+3. P2a kod PR (resolver core; endpoint'e BAĞLANMAZ; üretim davranışı değişmez)   ← sırada
+4. P2b-1 (dar pilot) → P2b-2 observe hook PR'ları (ayrı onay)
 5. P2 gözlem raporu
 6. P3 protected-action (route/confirm/approval) enforcement TASARIMI
 ```
