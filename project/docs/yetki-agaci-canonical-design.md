@@ -4,6 +4,11 @@
 > **Tür:** docs-only mimari/karar sayfası (P0). **Kod yok; her uygulama fazı ayrı gate + açık onay.**
 > **Tarih:** 2026-06-25 · **Yöntem:** 9-altsistem grounded map (gerçek koda karşı, kanıtlı) + hibrit uzlaşma.
 > **Hibrit uzlaşma:** *Kavram sözlüğü/çerçeve* ürün analizinden; *uygulama stratejisi* kod gerçekliğinden.
+>
+> **🔁 NİHAİLEŞTİRME (2026-06-26):** Bu P0 sayfası gerçek-durum haritası + 9-altsistem forensic'i için
+> referanstır; ancak **nihai uygulama stratejisi** (özellikle §1 "Case-Scoped Permission Enforcement v1 /
+> warn-only→hard-enforce") [`yetki-agaci-guided-open-final.md`](./yetki-agaci-guided-open-final.md) ile
+> **revize edilmiştir.** Çelişki halinde **son kaynak = guided-open-final** (Guided-Open + Guarded Edges).
 
 ---
 
