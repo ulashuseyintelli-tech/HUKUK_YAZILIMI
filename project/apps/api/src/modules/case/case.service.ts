@@ -2713,13 +2713,26 @@ export class CaseService {
     });
     if (!caseLawyer) throw new NotFoundException("Avukat kaydı bulunamadı");
 
+    // WP-1d-5-7: Hukuki Sorumlu Avukat (isResponsible / role==='RESPONSIBLE') ekseni YALNIZ kanonik uçtan
+    // değiştirilir: PATCH /cases/:id/legal-responsible-lawyer (ADMIN + reason zorunlu + changeType audit).
+    // Bu generic uç o ekseni DEĞİŞTİREMEZ: ne promote (RESPONSIBLE/isResponsible yükseltme) ne de mevcut
+    // sorumlunun rolünü değiştirme (demote). Yalnız sorumlu-DIŞI rol + yetki/imza/bildirim güncellenir.
+    const touchesResponsibleAxis =
+      data.isResponsible !== undefined ||
+      data.role === "RESPONSIBLE" ||
+      (data.role !== undefined && caseLawyer.isResponsible === true);
+    if (touchesResponsibleAxis) {
+      throw new BadRequestException(
+        'Hukuki sorumlu avukat kaydı bu uçtan değiştirilemez; "Hukuki Sorumlu Avukat Kaydını Değiştir" akışını kullanın. [LEGAL_RESPONSIBLE_CHANGE_VIA_CANONICAL_ENDPOINT_ONLY]',
+      );
+    }
+
     // Güncelleme verisi hazırla
     const updateData: any = {};
     
     if (data.role !== undefined) {
+      // WP-1d-5-7: guard üstte RESPONSIBLE'ı + mevcut sorumlunun rol değişimini eledi → isResponsible bu uçtan DEĞİŞMEZ.
       updateData.role = data.role;
-      // RESPONSIBLE rolü seçilirse isResponsible'ı da güncelle
-      updateData.isResponsible = data.role === 'RESPONSIBLE';
     }
     
     if (data.canSign !== undefined) {
@@ -2732,13 +2745,8 @@ export class CaseService {
       updateData.canSign = data.hasSignatureAuthority;
     }
     
-    if (data.isResponsible !== undefined) {
-      updateData.isResponsible = data.isResponsible;
-      if (data.isResponsible) {
-        updateData.role = 'RESPONSIBLE';
-      }
-    }
-    
+    // WP-1d-5-7: isResponsible alanı bu uçtan kabul edilmez (guard üstte reddeder) → eski handler kaldırıldı.
+
     if (data.casePermissions !== undefined) {
       updateData.casePermissions = data.casePermissions;
       updateData.permissionSource = 'CUSTOM';
@@ -2748,71 +2756,30 @@ export class CaseService {
       updateData.receiveNotifications = data.receiveNotifications;
     }
 
-    // ASSIGN-4b: "tam 1 sorumlu" invariant'ı. Yalnız sorumluluğu DEĞİŞTİREN güncellemelerde
-    // çalışır (salt yetki/canSign güncellemesi ekstra sorgu/yazım üretmez).
-    const willBeResponsible = data.isResponsible === true || data.role === 'RESPONSIBLE';
-    const willDropResponsible =
-      data.isResponsible === false || (data.role !== undefined && data.role !== 'RESPONSIBLE');
-
-    let demoteIds: string[] = [];
-    if (willBeResponsible || willDropResponsible) {
-      // Dosyadaki mevcut sorumlular (block-last + demote için).
-      const caseLawyersForInvariant = await this.prisma.caseLawyer.findMany({
-        where: { caseId },
-        select: { id: true, isResponsible: true },
-      });
-      const responsibleIds = caseLawyersForInvariant
-        .filter((cl) => cl.isResponsible)
-        .map((cl) => cl.id);
-      const isCurrentlyResponsible = responsibleIds.includes(caseLawyerId);
-
-      // Son sorumluyu (başka biri yükseltilmeden) düşürme girişimi → engelle.
-      if (isCurrentlyResponsible && willDropResponsible && !willBeResponsible) {
-        const otherResponsibles = responsibleIds.filter((id) => id !== caseLawyerId);
-        if (otherResponsibles.length === 0) {
-          throw new BadRequestException(
-            'Dosyada en az bir sorumlu avukat olmalı; önce başka bir avukatı sorumlu yapın.',
-          );
-        }
-      }
-
-      // Bu avukat sorumlu yapılıyorsa diğer tüm sorumluları düşür (tam 1).
-      demoteIds = willBeResponsible ? responsibleIds.filter((id) => id !== caseLawyerId) : [];
-    }
-
-    // Güncelle — atomik tek transaction. ASSIGN-4b/index-safety: ÖNCE diğer sorumluları düşür,
-    // SONRA hedefi güncelle → tx içinde hiçbir an >1 isResponsible=true olmaz (PR-C kısmi tekil
-    // index ile uyumlu). Final durum sıradan bağımsız aynı; yalnız ara-adım sırası değişti.
-    const updated = await this.prisma
-      .$transaction(async (tx) => {
-        for (const demoteId of demoteIds) {
-          await tx.caseLawyer.update({
-            where: { id: demoteId },
-            data: { isResponsible: false, role: 'ASSIGNED' },
-          });
-        }
-        const u = await tx.caseLawyer.update({
-          where: { id: caseLawyerId },
-          data: updateData,
-          include: {
-            lawyer: {
-              select: {
-                id: true,
-                name: true,
-                surname: true,
-                barNumber: true,
-                lawyerRank: true,
-              },
+    // WP-1d-5-7: bu uç artık sorumluluk eksenine DOKUNMAZ (guard üstte) → eski ASSIGN-4b tam-1
+    // demote/promote mantığı GEREKMEZ. Sorumlu değişikliği yalnız kanonik LegalResponsibleLawyerService'tedir
+    // (clear-before-set + changeType audit). Burada tek kayıt güncellemesi; P2002 → 409 defansif korunur.
+    const updated = await this.prisma.caseLawyer
+      .update({
+        where: { id: caseLawyerId },
+        data: updateData,
+        include: {
+          lawyer: {
+            select: {
+              id: true,
+              name: true,
+              surname: true,
+              barNumber: true,
+              lawyerRank: true,
             },
           },
-        });
-        return u;
+        },
       })
       .catch((e) => {
         throw this.toCaseLawyerConflict(e);
       });
 
-    // Audit log (ASSIGN-4b: otomatik demote edilenler de newValues'a yazılır)
+    // Audit log
     await this.auditService.log({
       tenantId,
       action: 'UPDATE',
@@ -2820,7 +2787,7 @@ export class CaseService {
       entityId: caseLawyerId,
       userId, // WP-1c-3
       metadata: { caseId }, // WP-1d-2-pre: legal-responsible temporal için caseId
-      newValues: demoteIds.length > 0 ? { ...updateData, demotedCaseLawyerIds: demoteIds } : updateData,
+      newValues: updateData,
       description: `Avukat yetkileri güncellendi: ${caseLawyer.lawyer.name} ${caseLawyer.lawyer.surname}`,
     });
 

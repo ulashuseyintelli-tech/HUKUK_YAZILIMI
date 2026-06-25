@@ -71,14 +71,13 @@ describe('WP-1c-3 — CASE_LAWYER/CASE_STAFF audit actor userId', () => {
     (service as any).prisma = {
       case: { findFirst: jest.fn(async () => ({ id: 'case-1', tenantId: 'tenant-1' })) },
       caseLawyer: {
-        findFirst: jest.fn(async () => ({ id: 'cl-1', caseId: 'case-1', lawyer: { name: 'Ada', surname: 'Av' } })),
+        findFirst: jest.fn(async () => ({ id: 'cl-1', caseId: 'case-1', isResponsible: false, lawyer: { name: 'Ada', surname: 'Av' } })),
+        // WP-1d-5-7: updateCaseLawyer artık doğrudan caseLawyer.update çağırır (eski $transaction/demote-loop yok).
+        update: jest.fn(async () => ({ id: 'cl-1', role: 'ASSIGNED', casePermissions: null, lawyer: { name: 'Ada', surname: 'Av' } })),
       },
-      $transaction: jest.fn(async (cb: any) =>
-        cb({ caseLawyer: { update: jest.fn(async () => ({ lawyer: { name: 'Ada', surname: 'Av' } })) } }),
-      ),
     };
 
-    // canSign-only → sorumluluk değişmez → demote/findMany yolu atlanır
+    // canSign-only → sorumluluk değişmez (guard tetiklenmez) → tek update
     await (service as any).updateCaseLawyer('tenant-1', 'case-1', 'cl-1', { canSign: true }, ACTOR);
 
     expect(auditLog).toHaveBeenCalledWith(

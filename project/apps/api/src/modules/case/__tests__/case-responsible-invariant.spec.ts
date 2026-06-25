@@ -3,7 +3,7 @@
  *
  * Saf karar: planResponsible (keepId + demoteIds).
  * Servis akışları (mock prisma + $transaction passthrough + auditService override):
- * - updateCaseLawyer: yeni RESPONSIBLE → eski demote · son sorumluyu düşürme → BadRequest · audit
+ * - updateCaseLawyer: WP-1d-5-7 — hukuki sorumlu ekseni (RESPONSIBLE/isResponsible/mevcut-sorumlu demote) REDDEDİLİR (kanonik uç); sorumlu-dışı rol/yetki güncellenir
  * - addCaseLawyer: yeni RESPONSIBLE → eski demote · audit
  * - removeCaseLawyer: sorumlu silinince fallback promote · son avukatsa izinli · audit
  *
@@ -12,8 +12,7 @@
  * (mevcut B5/D test deseni — saf karar test edilir, dev DB wiring ayrı).
  */
 
-import { BadRequestException, ConflictException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { BadRequestException } from '@nestjs/common';
 import { CaseService, planResponsible } from '../case.service';
 
 // ============================ SAF HELPER: planResponsible ============================
@@ -78,10 +77,12 @@ const makeService = () => {
   return new CaseService(stub, stub, stub, stub, stub, stub, stub, stub, stub, stub);
 };
 
-describe('ASSIGN-4b CaseService.updateCaseLawyer (tam-1 invariant)', () => {
-  function setup(opts: { targetResponsible: boolean; caseLawyers: { id: string; isResponsible: boolean }[] }) {
+describe('WP-1d-5-7 CaseService.updateCaseLawyer (hukuki sorumlu ekseni kanonik-uç-only)', () => {
+  // Bu uç artık sorumluluk eksenine (RESPONSIBLE/isResponsible) dokunmaz → tek prisma.caseLawyer.update
+  // (eski $transaction/demote-loop yok). Mock buna göre: caseLawyer.update doğrudan mock'lanır.
+  function setup(opts: { targetResponsible: boolean }) {
     const service = makeService();
-    const txUpdate = jest.fn(async ({ data }: any) => ({
+    const update = jest.fn(async ({ data }: any) => ({
       id: 'cl-1',
       role: data.role ?? 'ASSIGNED',
       casePermissions: null,
@@ -98,94 +99,63 @@ describe('ASSIGN-4b CaseService.updateCaseLawyer (tam-1 invariant)', () => {
           isResponsible: opts.targetResponsible,
           lawyer: { name: 'Av', surname: 'X' },
         })),
-        findMany: jest.fn(async () => opts.caseLawyers),
+        update,
       },
-      $transaction: jest.fn(async (cb: any) => cb({ caseLawyer: { update: txUpdate } })),
     };
     (service as any).prisma = mockPrisma;
     (service as any).auditService = { log: auditLog };
-    return { service, txUpdate, auditLog };
+    return { service, update, auditLog };
   }
 
-  const call = (service: any, data: any) => service.updateCaseLawyer('tenant-1', 'case-1', 'cl-1', data);
+  const call = (service: any, data: any) =>
+    service.updateCaseLawyer('tenant-1', 'case-1', 'cl-1', data, 'actor-1');
 
-  it('yeni RESPONSIBLE → eski sorumlu(lar) demote (isResponsible=false + role=ASSIGNED)', async () => {
-    const { service, txUpdate } = setup({
-      targetResponsible: false,
-      caseLawyers: [
-        { id: 'cl-0', isResponsible: true }, // mevcut sorumlu
-        { id: 'cl-1', isResponsible: false }, // hedef (sorumlu yapılacak)
-      ],
-    });
+  const CANONICAL_ONLY = /LEGAL_RESPONSIBLE_CHANGE_VIA_CANONICAL_ENDPOINT_ONLY/;
 
-    await call(service, { role: 'RESPONSIBLE' });
+  it("role:'RESPONSIBLE' (promote) → reddedilir (kanonik uç) + yazım yok", async () => {
+    const { service, update } = setup({ targetResponsible: false });
+    await expect(call(service, { role: 'RESPONSIBLE' })).rejects.toThrow(CANONICAL_ONLY);
+    expect(update).not.toHaveBeenCalled();
+  });
 
-    // hedef güncellendi + eski sorumlu demote edildi
-    expect(txUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'cl-1' }, data: expect.objectContaining({ role: 'RESPONSIBLE', isResponsible: true }) }),
+  it('isResponsible:true → reddedilir + yazım yok', async () => {
+    const { service, update } = setup({ targetResponsible: false });
+    await expect(call(service, { isResponsible: true })).rejects.toThrow(BadRequestException);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('isResponsible:false → reddedilir (eksen bu uçtan kapalı) + yazım yok', async () => {
+    const { service, update } = setup({ targetResponsible: false });
+    await expect(call(service, { isResponsible: false })).rejects.toThrow(BadRequestException);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it("mevcut sorumluyu role:'ASSIGNED' ile düşürme (demote) → reddedilir + yazım yok", async () => {
+    const { service, update } = setup({ targetResponsible: true });
+    await expect(call(service, { role: 'ASSIGNED' })).rejects.toThrow(CANONICAL_ONLY);
+    expect(update).not.toHaveBeenCalled();
+  });
+
+  it('sorumlu-OLMAYAN avukatın rolü ASSIGNED→ASSISTANT → izinli; isResponsible bu uçtan YAZILMAZ', async () => {
+    const { service, update } = setup({ targetResponsible: false });
+    await call(service, { role: 'ASSISTANT' });
+    expect(update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'cl-1' }, data: expect.objectContaining({ role: 'ASSISTANT' }) }),
     );
-    expect(txUpdate).toHaveBeenCalledWith({ where: { id: 'cl-0' }, data: { isResponsible: false, role: 'ASSIGNED' } });
+    expect(update.mock.calls[0][0].data).not.toHaveProperty('isResponsible');
   });
 
-  it('son sorumluyu düşürme (başka sorumlu yok) → BadRequest, yazım yok', async () => {
-    const { service, txUpdate } = setup({
-      targetResponsible: true,
-      caseLawyers: [{ id: 'cl-1', isResponsible: true }], // tek sorumlu = hedef
-    });
-
-    await expect(call(service, { role: 'ASSIGNED' })).rejects.toThrow(BadRequestException);
-    expect(txUpdate).not.toHaveBeenCalled();
-  });
-
-  it('başka sorumlu varken hedefi düşürmek serbest (BadRequest YOK)', async () => {
-    const { service, txUpdate } = setup({
-      targetResponsible: true,
-      caseLawyers: [
-        { id: 'cl-1', isResponsible: true },
-        { id: 'cl-2', isResponsible: true }, // drift: 2 sorumlu → birini düşürmek serbest
-      ],
-    });
-
-    await call(service, { role: 'ASSIGNED' });
-    expect(txUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'cl-1' }, data: expect.objectContaining({ role: 'ASSIGNED', isResponsible: false }) }),
-    );
-  });
-
-  it('audit: demote edilenler newValues.demotedCaseLawyerIds içinde', async () => {
-    const { service, auditLog } = setup({
-      targetResponsible: false,
-      caseLawyers: [
-        { id: 'cl-0', isResponsible: true },
-        { id: 'cl-1', isResponsible: false },
-      ],
-    });
-
-    await call(service, { isResponsible: true });
-
-    expect(auditLog).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: 'UPDATE',
-        entityType: 'CASE_LAWYER',
-        entityId: 'cl-1',
-        newValues: expect.objectContaining({ demotedCaseLawyerIds: ['cl-0'] }),
-      }),
-    );
-  });
-
-  it('sorumlu-dışı alan güncellemesi (canSign) → invariant tetiklenmez, demote yok', async () => {
-    const { service, txUpdate } = setup({
-      targetResponsible: false,
-      caseLawyers: [
-        { id: 'cl-0', isResponsible: true },
-        { id: 'cl-1', isResponsible: false },
-      ],
-    });
-
+  it('sorumlu-dışı alan (canSign) → izinli, tek update', async () => {
+    const { service, update } = setup({ targetResponsible: false });
     await call(service, { canSign: true });
-    // yalnız hedef güncellenir, cl-0 demote EDİLMEZ
-    expect(txUpdate).toHaveBeenCalledTimes(1);
-    expect(txUpdate).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'cl-1' } }));
+    expect(update).toHaveBeenCalledTimes(1);
+    expect(update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'cl-1' } }));
+  });
+
+  it('mevcut sorumlunun yalnız yetki/bildirim güncellemesi (rol YOK) → izinli', async () => {
+    const { service, update } = setup({ targetResponsible: true });
+    await call(service, { canSign: true, receiveNotifications: false });
+    expect(update).toHaveBeenCalledTimes(1);
   });
 });
 
@@ -309,70 +279,11 @@ describe('ASSIGN-4b CaseService.removeCaseLawyer (tam-1 invariant)', () => {
   });
 });
 
-// =============== ASSIGN-4b-DB (PR-A): reorder (clear-before-set) + P2002→409 ===============
-// Reorder amacı: tx içinde HİÇBİR an >1 isResponsible=true olmasın → PR-C kısmi tekil index
-// (CaseLawyer_one_responsible_per_case) ile uyumlu. Testler "düşürme ÖNCE, sorumlu-yapma SONRA"
-// çağrı SIRASINI kilitler + P2002→409 dormant çevirisini doğrular.
-describe('ASSIGN-4b-DB updateCaseLawyer — reorder + conflict', () => {
-  const makeMocks = (opts: { txUpdate: jest.Mock; caseLawyers: { id: string; isResponsible: boolean }[] }) => ({
-    case: { findFirst: jest.fn(async () => ({ id: 'case-1', tenantId: 'tenant-1' })) },
-    caseLawyer: {
-      findFirst: jest.fn(async () => ({
-        id: 'cl-1', caseId: 'case-1', isResponsible: false, lawyer: { name: 'Av', surname: 'X' },
-      })),
-      findMany: jest.fn(async () => opts.caseLawyers),
-    },
-    $transaction: jest.fn(async (cb: any) => cb({ caseLawyer: { update: opts.txUpdate } })),
-  });
-
-  it('eski sorumlu ÖNCE düşürülür, hedef SONRA sorumlu yapılır (mid-tx >1 YOK)', async () => {
-    const service = makeService();
-    const txUpdate = jest.fn(async ({ data }: any) => ({
-      id: 'cl-1', role: data.role ?? 'ASSIGNED', ...data,
-      lawyer: { id: 'l-1', name: 'Av', surname: 'X', barNumber: '1', lawyerRank: 'LAWYER' },
-    }));
-    (service as any).prisma = makeMocks({
-      txUpdate,
-      caseLawyers: [{ id: 'cl-0', isResponsible: true }, { id: 'cl-1', isResponsible: false }],
-    });
-    (service as any).auditService = { log: jest.fn(async () => undefined) };
-
-    await (service as any).updateCaseLawyer('tenant-1', 'case-1', 'cl-1', { role: 'RESPONSIBLE' });
-
-    const order = txUpdate.mock.calls.map((c: any) => c[0].where.id);
-    expect(order.indexOf('cl-0')).toBeGreaterThanOrEqual(0);
-    expect(order.indexOf('cl-0')).toBeLessThan(order.indexOf('cl-1')); // demote ÖNCE, hedef SONRA
-    expect(txUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'cl-1' }, data: expect.objectContaining({ isResponsible: true }) }),
-    );
-  });
-
-  it('P2002 (sorumlu index) → 409 ConflictException', async () => {
-    const service = makeService();
-    const p2002 = new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
-      code: 'P2002', clientVersion: '5.8.0', meta: { target: 'CaseLawyer_one_responsible_per_case' },
-    });
-    const txUpdate = jest.fn(async () => { throw p2002; });
-    (service as any).prisma = makeMocks({ txUpdate, caseLawyers: [{ id: 'cl-1', isResponsible: false }] });
-    (service as any).auditService = { log: jest.fn(async () => undefined) };
-
-    await expect(
-      (service as any).updateCaseLawyer('tenant-1', 'case-1', 'cl-1', { role: 'RESPONSIBLE' }),
-    ).rejects.toThrow(ConflictException);
-  });
-
-  it('P2002-dışı hata AYNEN yeniden fırlatılır (maskeleme yok)', async () => {
-    const service = makeService();
-    const boom = new Error('db-down');
-    const txUpdate = jest.fn(async () => { throw boom; });
-    (service as any).prisma = makeMocks({ txUpdate, caseLawyers: [{ id: 'cl-1', isResponsible: false }] });
-    (service as any).auditService = { log: jest.fn(async () => undefined) };
-
-    await expect(
-      (service as any).updateCaseLawyer('tenant-1', 'case-1', 'cl-1', { role: 'RESPONSIBLE' }),
-    ).rejects.toThrow('db-down');
-  });
-});
+// WP-1d-5-7: ASSIGN-4b-DB updateCaseLawyer reorder + P2002→409 testleri KALDIRILDI.
+// Gerekçe: updateCaseLawyer artık sorumluluk eksenini (RESPONSIBLE/isResponsible) DEĞİŞTİRMEZ
+// (yukarıdaki guard reddeder) → ne demote/promote reorder ne de kısmi-tekil-index P2002 bu uçtan
+// tetiklenir. Sorumlu değişikliğinin clear-before-set sırası + audit'i kanonik serviste test edilir:
+// legal-responsible-lawyer-change.service.spec.ts.
 
 describe('ASSIGN-4b-DB addCaseLawyer — reorder', () => {
   it('mevcut sorumlu ÖNCE düşürülür (NOT filtresiz), yeni satır SONRA create edilir', async () => {
