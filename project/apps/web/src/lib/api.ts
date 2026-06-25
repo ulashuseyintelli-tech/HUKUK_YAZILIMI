@@ -231,6 +231,19 @@ class ApiClient {
     return this.request<ResponsibilityHistoryResult>(buildResponsibilityHistoryPath(caseId, params));
   }
 
+  // WP-1d-5-5: Hukuki Sorumlu Avukat KONTROLLÜ değişikliği. Mevcut #474 backend endpoint'ini tüketir
+  // (ADMIN-only hard guard + validasyon + audit + tek-tx BACKEND'de). Frontend yalnız çağırır.
+  // "Devir" DEĞİL — hukuki sorumlu avukat kaydı kurallı şekilde değiştirilir.
+  async changeLegalResponsibleLawyer(
+    caseId: string,
+    payload: { lawyerId: string; reason: string; note?: string }
+  ) {
+    return this.request(`/cases/${caseId}/legal-responsible-lawyer`, {
+      method: "PATCH",
+      body: JSON.stringify(payload),
+    });
+  }
+
   // Debtors
   async getDebtors(params?: { page?: number; limit?: number; search?: string }) {
     const query = new URLSearchParams();
