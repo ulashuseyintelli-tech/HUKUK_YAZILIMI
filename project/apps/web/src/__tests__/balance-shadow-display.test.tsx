@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { BalanceShadowDiffPanel } from "@/components/finance/BalanceShadowDiffPanel";
 import { HesapOzetiPanel } from "@/components/finance/HesapOzetiPanel";
 import {
@@ -260,6 +260,83 @@ function makeEligibleGuardedPrimaryReport(): BalanceDisplayShadowDiffReport {
   });
 }
 
+function makeMixedAuthorityLegacySummary() {
+  return {
+    ...legacyCalculationSummary,
+    asilAlacak: 90001,
+    tazminat: 111,
+    komisyon: 222,
+    takipOncesiFaiz: 333,
+    takipTutari: 90001,
+    basvurmaHarci: 444,
+    vekaletHarci: 555,
+    pesinHarc: 666,
+    dosyaGideri: 777,
+    tebligatGideri: 888,
+    vekaletPulu: 999,
+    icraMasraflari: 90002,
+    pesinHarcDahilTahsilHarci: 1001,
+    pesinHarcHaricTahsilHarci: 1002,
+    vekaletUcreti: 90003,
+    takipSonrasiFaiz: 90004,
+    toplamBorc: 90005,
+    sonBorc: 90006,
+    toplamTahsilat: 90007,
+    kalanBorc: 90008,
+    kalanAnapara: 90009,
+    mahsupDetaylari: [
+      {
+        tarih: "2026-06-10",
+        tahsilatTutar: 123,
+        mahsupMasraf: 124,
+        mahsupVekalet: 125,
+        mahsupTakipOncesiFaiz: 126,
+        mahsupFaiz: 127,
+        mahsupAnapara: 128,
+        kalanAnapara: 129,
+      },
+    ],
+    faizSegmentleri: {
+      takipOncesi: [
+        {
+          baslangic: "2026-01-01",
+          bitis: "2026-01-02",
+          gun: 1,
+          oran: 9,
+          faiz: 1004,
+        },
+      ],
+      takipSonrasi: [
+        {
+          baslangic: "2026-02-01",
+          bitis: "2026-02-02",
+          gun: 1,
+          oran: 10,
+          faiz: 1005,
+        },
+      ],
+    },
+    tahsilOranlari: [
+      {
+        oran: 5,
+        label: "legacy oran",
+        tutar: 1003,
+      },
+    ],
+  };
+}
+
+function makeMixedAuthorityCanonicalReport(): BalanceDisplayShadowDiffReport {
+  const report = makeEligibleGuardedPrimaryReport();
+  report.bucketDiffs[0].canonicalAmount = 10001;
+  report.totals.canonical!.totalDebtAmount = 20002;
+  report.totals.canonical!.outstandingAmount = 30003;
+  report.totals.canonical!.totalPaidAmount = 4004;
+  report.totals.canonical!.interestAmount = 505;
+  report.totals.canonical!.costsAmount = 606;
+  report.totals.canonical!.attorneyFeeAmount = 707;
+  return report;
+}
 beforeEach(() => {
   vi.clearAllMocks();
   useCaseCalculationMock.mockReturnValue({
@@ -358,6 +435,43 @@ describe("guarded primary display pilot gate", () => {
     expect(decision.reasonCodes).toEqual([]);
   });
 
+
+  it("guarded primary calculation result canonical alanlari override eder ama legacy-only satirlari korur", () => {
+    const legacy = makeMixedAuthorityLegacySummary();
+    const report = makeMixedAuthorityCanonicalReport();
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const guardedResult = buildGuardedPrimaryCalculationResult(legacy, report, decision);
+
+    expect(decision.primarySource).toBe("CANONICAL_PRIMARY_CANDIDATE");
+    expect(guardedResult).toEqual(expect.objectContaining({
+      asilAlacak: 10001,
+      takipTutari: 10001,
+      takipSonrasiFaiz: 505,
+      icraMasraflari: 606,
+      vekaletUcreti: 707,
+      toplamBorc: 20002,
+      sonBorc: 30003,
+      toplamTahsilat: 4004,
+      kalanBorc: 30003,
+      kalanAnapara: 10001,
+    }));
+    expect(guardedResult).toEqual(expect.objectContaining({
+      tazminat: 111,
+      komisyon: 222,
+      takipOncesiFaiz: 333,
+      basvurmaHarci: 444,
+      vekaletHarci: 555,
+      pesinHarc: 666,
+      dosyaGideri: 777,
+      tebligatGideri: 888,
+      vekaletPulu: 999,
+      pesinHarcDahilTahsilHarci: 1001,
+      pesinHarcHaricTahsilHarci: 1002,
+      tahsilOranlari: legacy.tahsilOranlari,
+      mahsupDetaylari: legacy.mahsupDetaylari,
+      faizSegmentleri: legacy.faizSegmentleri,
+    }));
+  });
   it.each([
     ["totalPaidAmount", undefined],
     ["totalPaidAmount", null],
@@ -684,6 +798,66 @@ describe("BalanceShadowDiffPanel", () => {
     expect(screen.queryByText("1.234,00 TL")).not.toBeInTheDocument();
   });
 
+  it("guarded primary pilot mixed authority satirlarini current behavior olarak karakterize eder", async () => {
+    useCaseCalculationMock.mockReturnValue({
+      data: makeMixedAuthorityLegacySummary(),
+      loading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    apiGet.mockResolvedValue({ data: makeMixedAuthorityCanonicalReport() });
+
+    render(
+      <HesapOzetiPanel
+        caseId="case-1"
+        guardedPrimaryPilotEnabled
+        guardedPrimaryPilotAsOfDate="2026-06-24"
+      />,
+    );
+
+    expect(await screen.findByText("Guarded canonical primary candidate")).toBeInTheDocument();
+    expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent("ELIGIBLE");
+
+    expect(screen.getAllByText("10.001,00 TL").length).toBeGreaterThan(0);
+    expect(screen.getByText("20.002,00 TL")).toBeInTheDocument();
+    expect(screen.getAllByText("30.003,00 TL").length).toBeGreaterThan(0);
+    expect(screen.getByText("- 4.004,00 TL")).toBeInTheDocument();
+    expect(screen.getByText("505,00 TL")).toBeInTheDocument();
+    expect(screen.getByText("606,00 TL")).toBeInTheDocument();
+    expect(screen.getByText("707,00 TL")).toBeInTheDocument();
+
+    expect(screen.queryByText("90.001,00 TL")).not.toBeInTheDocument();
+    expect(screen.queryByText("90.005,00 TL")).not.toBeInTheDocument();
+    expect(screen.queryByText("90.006,00 TL")).not.toBeInTheDocument();
+    expect(screen.queryByText("90.007,00 TL")).not.toBeInTheDocument();
+    expect(screen.queryByText("90.008,00 TL")).not.toBeInTheDocument();
+
+    expect(screen.getByText("111,00 TL")).toBeInTheDocument();
+    expect(screen.getByText("222,00 TL")).toBeInTheDocument();
+    expect(screen.getByText("333,00 TL")).toBeInTheDocument();
+    expect(screen.getByText("444,00 TL")).toBeInTheDocument();
+    expect(screen.getByText("555,00 TL")).toBeInTheDocument();
+    expect(screen.getByText("666,00 TL")).toBeInTheDocument();
+    expect(screen.getByText("777,00 TL")).toBeInTheDocument();
+    expect(screen.getByText("888,00 TL")).toBeInTheDocument();
+    expect(screen.getByText("999,00 TL")).toBeInTheDocument();
+    expect(screen.getByText("1.001,00 TL")).toBeInTheDocument();
+    expect(screen.getByText("1.002,00 TL")).toBeInTheDocument();
+    expect(screen.getByText("%legacy oran")).toBeInTheDocument();
+    expect(screen.getByText("1.003,00 TL")).toBeInTheDocument();
+    expect(screen.getByText(/2026-06-10/)).toBeInTheDocument();
+    expect(screen.getByText("Masraf: 124,00 TL")).toBeInTheDocument();
+    expect(screen.getByText("Vekalet: 125,00 TL")).toBeInTheDocument();
+    expect(screen.getByText(/126,00 TL/)).toBeInTheDocument();
+    expect(screen.getByText(/127,00 TL/)).toBeInTheDocument();
+    expect(screen.getByText("Anapara: 128,00 TL")).toBeInTheDocument();
+    expect(screen.getByText("Kalan Anapara: 129,00 TL")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Faiz/ }));
+
+    expect(screen.getByText("1.004,00 TL")).toBeInTheDocument();
+    expect(screen.getByText("1.005,00 TL")).toBeInTheDocument();
+  });
   it("guarded primary pilot hard no-go diagnostic varsa legacy fallback degerlerini korur", async () => {
     apiGet.mockResolvedValue({
       data: makeReport({
