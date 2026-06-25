@@ -2132,17 +2132,19 @@ export default function CaseDetailPage() {
                   <p className="text-[10px] text-gray-400 text-center py-2">—</p>
                 )}
               </div>
+              {/* WP-1d-5-5: Hukuki Sorumlu Avukat kaydı değişikliği — Dosya Ekibi panel footer'ı (grid hücresi DEĞİL,
+                  düzen bozulmaz). ADMIN-only affordance; güvenlik backend hard guard'da. */}
+              {user?.role === "ADMIN" && (caseData.lawyers?.length ?? 0) > 0 && (
+                <div className="px-2 py-1.5 border-t border-blue-100">
+                  <button
+                    onClick={() => setLegalResponsibleModalOpen(true)}
+                    className="w-full text-[11px] text-blue-700 border border-blue-200 bg-blue-50 hover:bg-blue-100 rounded px-2 py-1"
+                  >
+                    Hukuki Sorumlu Avukat Kaydını Değiştir
+                  </button>
+                </div>
+              )}
             </div>
-
-            {/* WP-1d-5-5: Hukuki Sorumlu Avukat kaydı değişikliği (ADMIN-only affordance; güvenlik backend hard guard'da). */}
-            {user?.role === "ADMIN" && (caseData.lawyers?.length ?? 0) > 0 && (
-              <button
-                onClick={() => setLegalResponsibleModalOpen(true)}
-                className="w-full text-[11px] text-blue-700 border border-blue-200 bg-blue-50 hover:bg-blue-100 rounded px-2 py-1.5"
-              >
-                Hukuki Sorumlu Avukat Kaydını Değiştir
-              </button>
-            )}
 
             {/* WP-1d-4a: Sorumluluk Geçmişi (read-only temporal panel; mevcut responsibility-at endpoint). */}
             <ResponsibilityAtPanel caseId={caseData.id} reloadToken={responsibilityReloadToken} />
