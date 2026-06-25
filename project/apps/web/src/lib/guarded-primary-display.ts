@@ -34,6 +34,19 @@ interface CanonicalPrimaryAmounts {
   attorneyFeeAmount: number;
 }
 
+type CanonicalDisplayedAmountField =
+  | 'totalPaidAmount'
+  | 'interestAmount'
+  | 'costsAmount'
+  | 'attorneyFeeAmount';
+
+const CANONICAL_DISPLAYED_AMOUNT_FIELDS: readonly CanonicalDisplayedAmountField[] = [
+  'totalPaidAmount',
+  'interestAmount',
+  'costsAmount',
+  'attorneyFeeAmount',
+];
+
 const HARD_NO_GO_CODES = [
   'FINAL_DEBT_STATES_MISSING',
   'FINAL_DEBT_STATES_CURRENCY_MISMATCH',
@@ -64,6 +77,15 @@ function principalBucket(report: BalanceDisplayShadowDiffReport): ShadowBucketDi
   return report.bucketDiffs.find((diff) => diff.bucket === 'PRINCIPAL');
 }
 
+function invalidDisplayedCanonicalAmountFields(
+  report: BalanceDisplayShadowDiffReport,
+): CanonicalDisplayedAmountField[] {
+  const canonical = report.totals.canonical;
+  if (!canonical) return [];
+
+  return CANONICAL_DISPLAYED_AMOUNT_FIELDS.filter((field) => !isFiniteNumber(canonical[field]));
+}
+
 export function shouldEnableGuardedPrimaryDisplayPilot(
   searchParams: SearchParamsLike,
   flagEnabled = FEATURE_FLAGS.GUARDED_PRIMARY_DISPLAY_PILOT,
@@ -82,18 +104,30 @@ export function canonicalPrimaryAmounts(
   const principal = principalBucket(report);
 
   if (!canonical || !principal?.canonicalDisplayable) return null;
+
+  const totalDebtAmount = canonical.totalDebtAmount;
+  const outstandingAmount = canonical.outstandingAmount;
+  const totalPaidAmount = canonical.totalPaidAmount;
+  const interestAmount = canonical.interestAmount;
+  const costsAmount = canonical.costsAmount;
+  const attorneyFeeAmount = canonical.attorneyFeeAmount;
+
   if (!isFiniteNumber(principal.canonicalAmount)) return null;
-  if (!isFiniteNumber(canonical.totalDebtAmount)) return null;
-  if (!isFiniteNumber(canonical.outstandingAmount)) return null;
+  if (!isFiniteNumber(totalDebtAmount)) return null;
+  if (!isFiniteNumber(outstandingAmount)) return null;
+  if (!isFiniteNumber(totalPaidAmount)) return null;
+  if (!isFiniteNumber(interestAmount)) return null;
+  if (!isFiniteNumber(costsAmount)) return null;
+  if (!isFiniteNumber(attorneyFeeAmount)) return null;
 
   return {
     principalAmount: principal.canonicalAmount,
-    totalDebtAmount: canonical.totalDebtAmount,
-    outstandingAmount: canonical.outstandingAmount,
-    totalPaidAmount: isFiniteNumber(canonical.totalPaidAmount) ? canonical.totalPaidAmount : 0,
-    interestAmount: isFiniteNumber(canonical.interestAmount) ? canonical.interestAmount : 0,
-    costsAmount: isFiniteNumber(canonical.costsAmount) ? canonical.costsAmount : 0,
-    attorneyFeeAmount: isFiniteNumber(canonical.attorneyFeeAmount) ? canonical.attorneyFeeAmount : 0,
+    totalDebtAmount,
+    outstandingAmount,
+    totalPaidAmount,
+    interestAmount,
+    costsAmount,
+    attorneyFeeAmount,
   };
 }
 
@@ -132,8 +166,12 @@ export function evaluateGuardedPrimaryDisplayPilot(
   if (report.provenance.claimItemCollectedAmountUsedAsAuthority) {
     reasonCodes.push('CLAIM_ITEM_AUTHORITY_CONTAMINATION');
   }
+  const displayedAmountFailures = invalidDisplayedCanonicalAmountFields(report);
   if (!canonicalPrimaryAmounts(report)) {
     reasonCodes.push('CANONICAL_PRINCIPAL_UNAVAILABLE');
+    if (displayedAmountFailures.length > 0) {
+      reasonCodes.push('CANONICAL_DISPLAYED_AMOUNT_UNAVAILABLE');
+    }
   }
 
   for (const code of HARD_NO_GO_CODES) {
