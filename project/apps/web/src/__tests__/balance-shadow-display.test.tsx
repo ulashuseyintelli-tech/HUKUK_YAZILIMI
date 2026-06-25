@@ -753,8 +753,13 @@ describe("BalanceShadowDiffPanel", () => {
     );
 
     expect(await screen.findByText("Legacy calculation-summary fallback")).toBeInTheDocument();
-    expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent(
-      "CANONICAL_DISPLAYED_AMOUNT_UNAVAILABLE",
+    // "Legacy calculation-summary fallback" basligi shadow-diff fetch'i PENDING iken de gorunur;
+    // reason kodlari ise ancak fetch cozulunce dolar. Bu yuzden basligi beklemek tek basina
+    // yetmez — reason metni populate olana kadar waitFor ile bekle (render timing flake'ini giderir).
+    await waitFor(() =>
+      expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent(
+        "CANONICAL_DISPLAYED_AMOUNT_UNAVAILABLE",
+      ),
     );
     expect(screen.getAllByText("1.234,00 TL").length).toBeGreaterThan(0);
   });
@@ -772,7 +777,12 @@ describe("BalanceShadowDiffPanel", () => {
     );
 
     expect(await screen.findByText("Legacy calculation-summary fallback")).toBeInTheDocument();
-    expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent("CANONICAL_PRINCIPAL_UNAVAILABLE");
+    // Ayni race: fallback basligi PENDING render'da da gorunur, reason metni sonradan dolar.
+    await waitFor(() =>
+      expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent(
+        "CANONICAL_PRINCIPAL_UNAVAILABLE",
+      ),
+    );
     expect(screen.getAllByText("1.234,00 TL").length).toBeGreaterThan(0);
   });
 
