@@ -34,10 +34,8 @@ describe('WP-1c-3 — CASE_LAWYER/CASE_STAFF audit actor userId', () => {
     (service as any).prisma = {
       case: { findFirst: jest.fn(async () => ({ id: 'case-1', tenantId: 'tenant-1' })) },
       lawyer: { findFirst: jest.fn(async () => ({ id: 'law-1', tenantId: 'tenant-1', lawyerRank: 'LAWYER' })) },
-      caseLawyer: { findFirst: jest.fn(async () => null) },
-      $transaction: jest.fn(async (cb: any) =>
-        cb({ caseLawyer: { create: txCreate, findMany: jest.fn(async () => []), update: jest.fn() } }),
-      ),
+      // WP-1d-5-9: addCaseLawyer count (mevcut responsible) + doğrudan create (eski $transaction yok).
+      caseLawyer: { findFirst: jest.fn(async () => null), count: jest.fn(async () => 0), create: txCreate },
     };
 
     await (service as any).addCaseLawyer('tenant-1', 'case-1', { lawyerId: 'law-1', role: 'ASSIGNED' }, ACTOR);
@@ -53,10 +51,9 @@ describe('WP-1c-3 — CASE_LAWYER/CASE_STAFF audit actor userId', () => {
       case: { findFirst: jest.fn(async () => ({ id: 'case-1', tenantId: 'tenant-1' })) },
       caseLawyer: {
         findFirst: jest.fn(async () => ({ id: 'cl-1', caseId: 'case-1', lawyerId: 'law-1', role: 'ASSIGNED', isResponsible: false })),
+        // WP-1d-5-9: non-responsible silme doğrudan delete (eski $transaction/auto-promote yok).
+        delete: jest.fn(async () => ({})),
       },
-      $transaction: jest.fn(async (cb: any) =>
-        cb({ caseLawyer: { delete: jest.fn(async () => ({})), findMany: jest.fn(async () => []), update: jest.fn() } }),
-      ),
     };
 
     await (service as any).removeCaseLawyer('tenant-1', 'case-1', 'cl-1', ACTOR);
