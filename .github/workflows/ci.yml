@@ -135,3 +135,10 @@ jobs:
       - name: Web vitest (jsdom)
         run: pnpm --filter @hukuk/web test
         working-directory: project
+      # SB-013: next build gate — vitest geçse de route/slug/tip build kırıklarını yakalar (#185 dersi:
+      # /intake/[token] vs (dashboard)/intake/[id] slug conflict CI yeşilken web BOOT olmamıştı).
+      # DB/prisma/API/env GEREKMEZ (next build = statik derleme + type-check + lint + route-collect;
+      # lokal doğrulandı: BUILD_EXIT=0). package.json değişmedi; mevcut build script'i (next build) kullanılır.
+      - name: Web build (next build)
+        run: pnpm --filter @hukuk/web build
+        working-directory: project
