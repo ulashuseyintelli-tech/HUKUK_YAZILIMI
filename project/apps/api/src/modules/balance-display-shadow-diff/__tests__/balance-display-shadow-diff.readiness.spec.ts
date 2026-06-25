@@ -358,7 +358,8 @@ describe('BalanceDisplayShadowDiff readiness audit matrix', () => {
 
     expect(issueCodes(report)).not.toContain('FINAL_DEBT_STATES_MISSING');
     expect(report.cutoverReadiness.blockers).not.toContain('FINAL_DEBT_STATES_MISSING');
-    expect(report.cutoverReadiness.blockers).toContain('CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY');
+    expect(report.cutoverReadiness.blockers).not.toContain('CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY');
+    expect(issueCodes(report)).toContain('CLAIM_ITEM_COLLECTED_AMOUNT_NOT_AUTHORITY');
     expect(report.provenance.finalDebtStatesAvailable).toBe(true);
     expect(classifyReadiness(report)).toBe('LEGACY_AUTHORITY_RISK');
     expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
