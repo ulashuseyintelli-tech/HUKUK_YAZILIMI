@@ -14,7 +14,10 @@ import {
   shouldEnableGuardedPrimaryDisplayPilot,
 } from "@/lib/guarded-primary-display";
 import { apiClient } from "@/lib/api/client";
-import type { BalanceDisplayShadowDiffReport } from "@/lib/api/balance-shadow-diff";
+import type {
+  BalanceDisplayShadowDiffReport,
+  CanonicalSummaryShadowRow,
+} from "@/lib/api/balance-shadow-diff";
 import { useCaseCalculation } from "@/hooks/useCaseCalculation";
 
 vi.mock("@/lib/api/client", () => ({
@@ -35,6 +38,20 @@ vi.mock("@/hooks/useCaseCalculation", () => ({
 
 const apiGet = apiClient.get as unknown as ReturnType<typeof vi.fn>;
 const useCaseCalculationMock = useCaseCalculation as unknown as ReturnType<typeof vi.fn>;
+
+function unsupportedCanonicalSummaryRows(): readonly CanonicalSummaryShadowRow[] {
+  return (["tazminat", "komisyon", "takipOncesiFaiz"] as const).map((rowId) => ({
+    rowId,
+    status: "UNSUPPORTED",
+    amount: null,
+    currency: null,
+    sourceAuthority: "UNKNOWN",
+    affectsPaymentAllocation: false,
+    allocationCategory: "UNSUPPORTED",
+    primaryEligible: false,
+    contractVersion: "canonical-summary-rows.shadow-status.v1",
+  }));
+}
 
 const legacyCalculationSummary = {
   caseId: "case-1",
@@ -1166,6 +1183,36 @@ describe("BalanceShadowDiffPanel", () => {
     expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent("ELIGIBLE");
     expect(screen.getAllByText("980,00 TL").length).toBeGreaterThan(0);
     expect(screen.queryByText("1.234,00 TL")).not.toBeInTheDocument();
+  });
+
+  it("canonicalSummaryRows shadow metadata guarded primary render output'una sizmaz", async () => {
+    apiGet.mockResolvedValue({
+      data: {
+        ...makeEligibleGuardedPrimaryReport(),
+        canonicalSummaryRows: unsupportedCanonicalSummaryRows(),
+      },
+    });
+
+    render(
+      <HesapOzetiPanel
+        caseId="case-1"
+        guardedPrimaryPilotEnabled
+        guardedPrimaryPilotAsOfDate="2026-06-24"
+      />,
+    );
+
+    expect(await screen.findByText("Guarded canonical primary candidate")).toBeInTheDocument();
+    expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent("ELIGIBLE");
+    expect(screen.getAllByText("980,00 TL").length).toBeGreaterThan(0);
+    expect(screen.queryByText("1.234,00 TL")).not.toBeInTheDocument();
+
+    const renderedText = document.body.textContent ?? "";
+    expect(renderedText).not.toContain("canonical-summary-rows.shadow-status.v1");
+    expect(renderedText).not.toContain("UNSUPPORTED");
+    expect(renderedText).not.toContain("tazminat");
+    expect(renderedText).not.toContain("komisyon");
+    expect(renderedText).not.toContain("takipOncesiFaiz");
+    expect(screen.queryByText("Komisyon")).not.toBeInTheDocument();
   });
 
   it("guarded primary pilot mixed authority satirlarini current behavior olarak karakterize eder", async () => {
