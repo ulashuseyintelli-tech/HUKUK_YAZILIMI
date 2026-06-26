@@ -2411,7 +2411,7 @@ export default function CaseDetailPage() {
                                   if (confirm('Bu alacak kalemini silmek istediğinize emin misiniz?')) {
                                     try {
                                       await api.deleteDue(caseData.id, due.id);
-                                      fetchFinanceData();
+                                      refreshCollectionDependentViews();
                                     } catch (err) {
                                       console.error('Silme hatası:', err);
                                       alert('Silme işlemi başarısız oldu');
@@ -3693,7 +3693,7 @@ export default function CaseDetailPage() {
           onClose={() => { setDueModalOpen(false); setEditingDue(null); }}
           caseId={caseData.id}
           due={editingDue}
-          onSuccess={fetchFinanceData}
+          onSuccess={refreshCollectionDependentViews}
         />
       )}
 

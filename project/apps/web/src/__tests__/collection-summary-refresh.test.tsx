@@ -1,7 +1,8 @@
+import { readFileSync } from "node:fs";
 import { useState } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { BalanceShadowDiffPanel, CollectionModal, HesapOzetiPanel } from "@/components/finance";
+import { BalanceShadowDiffPanel, CollectionModal, DueModal, HesapOzetiPanel } from "@/components/finance";
 import { api } from "@/lib/api";
 import { useBalanceShadowDiff } from "@/hooks/useBalanceShadowDiff";
 import { useCaseCalculation } from "@/hooks/useCaseCalculation";
@@ -11,6 +12,9 @@ vi.mock("@/lib/api", () => ({
     createCollection: vi.fn(),
     updateCollection: vi.fn(),
     deleteCollection: vi.fn(),
+    createDue: vi.fn(),
+    updateDue: vi.fn(),
+    deleteDue: vi.fn(),
   },
 }));
 
@@ -32,6 +36,9 @@ const apiMock = api as unknown as {
   createCollection: ReturnType<typeof vi.fn>;
   updateCollection: ReturnType<typeof vi.fn>;
   deleteCollection: ReturnType<typeof vi.fn>;
+  createDue: ReturnType<typeof vi.fn>;
+  updateDue: ReturnType<typeof vi.fn>;
+  deleteDue: ReturnType<typeof vi.fn>;
 };
 const useCaseCalculationMock = useCaseCalculation as unknown as ReturnType<typeof vi.fn>;
 const useBalanceShadowDiffMock = useBalanceShadowDiff as unknown as ReturnType<typeof vi.fn>;
@@ -92,12 +99,35 @@ function CaseFinanceRefreshHarness({ collection }: { collection?: any }) {
   );
 }
 
+function CaseDueRefreshHarness({ due }: { due?: any }) {
+  const [refreshKey, setRefreshKey] = useState(0);
+
+  return (
+    <>
+      <HesapOzetiPanel caseId="case-1" refreshKey={refreshKey} />
+      <DueModal
+        isOpen
+        onClose={vi.fn()}
+        caseId="case-1"
+        due={due}
+        onSuccess={() => setRefreshKey((key) => key + 1)}
+      />
+    </>
+  );
+}
+
+function readCasePageSource() {
+  return readFileSync("src/app/(dashboard)/cases/[id]/page.tsx", "utf8");
+}
 describe("collection summary refresh", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     apiMock.createCollection.mockResolvedValue({ id: "collection-1" });
     apiMock.updateCollection.mockResolvedValue({ id: "collection-1" });
     apiMock.deleteCollection.mockResolvedValue({ success: true });
+    apiMock.createDue.mockResolvedValue({ id: "due-1" });
+    apiMock.updateDue.mockResolvedValue({ id: "due-1" });
+    apiMock.deleteDue.mockResolvedValue({ success: true });
     useCaseCalculationMock.mockReturnValue({
       data: makeCalculationSummary(),
       loading: false,
@@ -196,6 +226,108 @@ describe("collection summary refresh", () => {
     expect(refetchShadowDiff).not.toHaveBeenCalled();
   });
 
+  it("alacak kalemi kaydi basarili olunca stale hesap ozetini refetch eder", async () => {
+    render(<CaseDueRefreshHarness />);
+
+    expect(refetchCalculation).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByPlaceholderText("0.00"), {
+      target: { value: "150000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /^Ekle$/ }));
+
+    await waitFor(() => {
+      expect(apiMock.createDue).toHaveBeenCalledWith(
+        "case-1",
+        expect.objectContaining({ amount: 150000 }),
+      );
+    });
+    await waitFor(() => {
+      expect(refetchCalculation).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("alacak kalemi guncelleme basarili olunca stale hesap ozetini refetch eder", async () => {
+    render(
+      <CaseDueRefreshHarness
+        due={{
+          id: "due-1",
+          type: "PRINCIPAL",
+          description: "Ana alacak",
+          amount: 50000,
+          dueDate: "2026-06-25",
+          currency: "TRY",
+          interestType: "YASAL",
+        }}
+      />,
+    );
+
+    expect(refetchCalculation).not.toHaveBeenCalled();
+
+    fireEvent.change(screen.getByPlaceholderText("0.00"), {
+      target: { value: "175000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /ncelle$/ }));
+
+    await waitFor(() => {
+      expect(apiMock.updateDue).toHaveBeenCalledWith(
+        "case-1",
+        "due-1",
+        expect.objectContaining({ amount: 175000 }),
+      );
+    });
+    await waitFor(() => {
+      expect(refetchCalculation).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("alacak kalemi modal silme basarili olunca stale hesap ozetini refetch eder", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(
+      <CaseDueRefreshHarness
+        due={{
+          id: "due-1",
+          type: "PRINCIPAL",
+          description: "Ana alacak",
+          amount: 50000,
+          dueDate: "2026-06-25",
+          currency: "TRY",
+          interestType: "YASAL",
+        }}
+      />,
+    );
+
+    expect(refetchCalculation).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByTitle("Sil"));
+
+    await waitFor(() => {
+      expect(apiMock.deleteDue).toHaveBeenCalledWith("case-1", "due-1");
+    });
+    await waitFor(() => {
+      expect(refetchCalculation).toHaveBeenCalledTimes(1);
+    });
+
+    confirmSpy.mockRestore();
+  });
+
+  it("case page DueModal success dependent finance summary refresh helperini kullanir", () => {
+    const source = readCasePageSource();
+    const dueModalStart = source.indexOf("<DueModal");
+    const dueModalBlock = source.slice(dueModalStart, source.indexOf("/>", dueModalStart) + 2);
+
+    expect(dueModalBlock).toContain("onSuccess={refreshCollectionDependentViews}");
+    expect(dueModalBlock).not.toContain("onSuccess={fetchFinanceData}");
+  });
+
+  it("inline alacak kalemi silme dependent finance summary refresh helperini kullanir", () => {
+    const source = readCasePageSource();
+    const deleteDueStart = source.indexOf("await api.deleteDue");
+    const deleteDueBlock = source.slice(deleteDueStart, source.indexOf("} catch", deleteDueStart));
+
+    expect(deleteDueBlock).toContain("refreshCollectionDependentViews();");
+    expect(deleteDueBlock).not.toContain("fetchFinanceData();");
+  });
   it("opt-in shadow panel aciksa refresh key degisiminde shadow diff refetch eder", async () => {
     const { rerender } = render(
       <BalanceShadowDiffPanel caseId="case-1" enabled refreshKey={0} />,
@@ -208,4 +340,5 @@ describe("collection summary refresh", () => {
     await waitFor(() => {
       expect(refetchShadowDiff).toHaveBeenCalledTimes(1);
     });
-  });});
+  });
+});
