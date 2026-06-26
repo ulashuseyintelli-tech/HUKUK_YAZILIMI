@@ -91,8 +91,8 @@ function OfficeSettingsInner() {
   const [staffSimilar, setStaffSimilar] = useState<{ candidates: { id: string; name: string }[]; data: any } | null>(null);
   // PR-U3: personel UPDATE-path benzer-isim review — 2 buton (güncelle/vazgeç). Create'ten ayrı.
   const [staffUpdateReview, setStaffUpdateReview] = useState<{ candidates: { id: string; name: string }[]; data: any } | null>(null);
-  const [officeForm, setOfficeForm] = useState({ name: "", address: "", city: "", district: "", phone: "", email: "", barAssociation: "" });
-  const [officeInitial, setOfficeInitial] = useState({ name: "", address: "", city: "", district: "", phone: "", email: "", barAssociation: "" });
+  const [officeForm, setOfficeForm] = useState({ name: "", address: "", city: "", district: "", postalCode: "", phone: "", fax: "", email: "", website: "", barAssociation: "" });
+  const [officeInitial, setOfficeInitial] = useState({ name: "", address: "", city: "", district: "", postalCode: "", phone: "", fax: "", email: "", website: "", barAssociation: "" });
   const [smtpForm, setSmtpForm] = useState<SmtpSettings>({ smtpHost: "", smtpPort: 587, smtpUser: "", smtpPass: "", smtpSecure: false, smtpFromName: "", smtpFromEmail: "" });
   const [smsForm, setSmsForm] = useState({ smsProvider: "", smsApiKey: "", smsApiSecret: "", smsSender: "" });
   const [greetingForm, setGreetingForm] = useState({ autoGreetingEnabled: true, autoGreetingTime: "09:00" });
@@ -126,8 +126,9 @@ function OfficeSettingsInner() {
       setOffice(res.data);
       const officeInit = {
         name: res.data?.name || "", address: res.data?.address || "", city: res.data?.city || "",
-        district: res.data?.district || "", phone: res.data?.phone || "", email: res.data?.email || "",
-        barAssociation: res.data?.barAssociation || "",
+        district: res.data?.district || "", postalCode: res.data?.postalCode || "",
+        phone: res.data?.phone || "", fax: res.data?.fax || "", email: res.data?.email || "",
+        website: res.data?.website || "", barAssociation: res.data?.barAssociation || "",
       };
       setOfficeForm(officeInit);
       setOfficeInitial(officeInit);
@@ -578,6 +579,14 @@ function OfficeSettingsInner() {
                   <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">E-posta</label>
                   <input value={officeForm.email} onChange={e => setOfficeForm({ ...officeForm, email: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
                 </div>
+                <div style={{ width: 240 }}>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Web sitesi</label>
+                  <input value={officeForm.website} onChange={e => setOfficeForm({ ...officeForm, website: e.target.value })} placeholder="www.buro.av.tr" className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div style={{ width: 160 }}>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Faks</label>
+                  <input value={officeForm.fax} onChange={e => setOfficeForm({ ...officeForm, fax: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
+                </div>
               </SettingsSection>
               <SettingsSection title="ADRES">
                 <div style={{ width: "100%" }}>
@@ -591,6 +600,10 @@ function OfficeSettingsInner() {
                 <div style={{ width: 180 }}>
                   <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">İlçe</label>
                   <input value={officeForm.district} onChange={e => setOfficeForm({ ...officeForm, district: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div style={{ width: 140 }}>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Posta kodu</label>
+                  <input value={officeForm.postalCode} onChange={e => setOfficeForm({ ...officeForm, postalCode: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
                 </div>
               </SettingsSection>
             </div>
