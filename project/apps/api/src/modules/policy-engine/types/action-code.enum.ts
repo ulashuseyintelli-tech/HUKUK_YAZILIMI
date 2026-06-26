@@ -158,6 +158,17 @@ export enum ActionCode {
 
   /** Ofis kimlik bilgisi (SMTP/SMS) yönetimi - HIGH risk, güvenlik (credential) */
   MANAGE_OFFICE_CREDENTIALS = 'MANAGE_OFFICE_CREDENTIALS',
+
+  // ============================================
+  // Guided-Open P2b-2 pilot leaves (observe hook; ADDITIVE)
+  // ============================================
+
+  /**
+   * Banka EFT/Havale (para hareketi) gönderimi - HIGH risk, geri-alınamaz para çıkışı.
+   * NOT: SEND_PAYMENT_ORDER (UYAP ödeme emri TEBLİGATI) ile KARIŞTIRILMAZ; bu gerçek banka transferidir.
+   * Guarded-edge APPROVAL (para hareketi confirm'den güçlü iç onay ister). Codex finans domeni — observe-only.
+   */
+  BANK_TRANSFER = 'BANK_TRANSFER',
 }
 
 /**
@@ -222,6 +233,9 @@ export const ACTION_RISK_LEVELS: Record<ActionCode, RiskLevel> = {
   [ActionCode.DELETE_CASE]: RiskLevel.HIGH,
   [ActionCode.ASSIGN_LEGAL_RESPONSIBLE]: RiskLevel.HIGH,
   [ActionCode.MANAGE_OFFICE_CREDENTIALS]: RiskLevel.HIGH,
+
+  // Guided-Open P2b-2 pilot (Record exhaustive zorunlu)
+  [ActionCode.BANK_TRANSFER]: RiskLevel.HIGH,
 };
 
 /**

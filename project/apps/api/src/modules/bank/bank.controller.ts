@@ -2,11 +2,17 @@ import { Controller, Get, Post, Put, Delete, Body, Param, Query, UseGuards, Req 
 import { BankService } from './bank.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { GuidedOpenObserveService } from '../permission-diagnostics/guided-open-observe.service';
+import { ActionCode } from '../policy-engine/types/action-code.enum';
 
 @Controller('bank')
 @UseGuards(JwtAuthGuard)
 export class BankController {
-  constructor(private bankService: BankService) {}
+  constructor(
+    private bankService: BankService,
+    // P2b-2: Guided-Open observe adapter (diagnostic only; engelleme yok; finansal mantığa DOKUNMAZ)
+    private guidedOpenObserve: GuidedOpenObserveService,
+  ) {}
 
   // ==================== HESAP YÖNETİMİ ====================
 
@@ -138,6 +144,7 @@ export class BankController {
   @Post('transfer')
   async sendTransfer(
     @CurrentUser('tenantId') tenantId: string,
+    @CurrentUser('id') userId: string,
     @Body() body: {
       fromIban: string;
       toIban: string;
@@ -147,6 +154,14 @@ export class BankController {
       referenceNo?: string;
     },
   ) {
+    // P2b-2 observe (PRE-action; JwtAuthGuard'dan SONRA, business transferden ÖNCE; engelleme YOK).
+    // BANK_TRANSFER = guarded-edge APPROVAL → diagnostic yalnız wouldRequireApproval=true yazar.
+    // GİZLİLİK: IBAN/tutar/açıklama/referenceNo/alıcı observe'a ASLA geçmez; caseId yok (account-scoped).
+    await this.guidedOpenObserve.observe({
+      actorUserId: userId,
+      tenantId,
+      actionCode: ActionCode.BANK_TRANSFER,
+    });
     return this.bankService.sendTransfer(tenantId, {
       fromIban: body.fromIban,
       toIban: body.toIban,

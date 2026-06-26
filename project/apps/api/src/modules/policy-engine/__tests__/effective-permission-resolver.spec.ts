@@ -1,5 +1,5 @@
 import { EffectivePermissionResolver } from '../effective-permission-resolver.service';
-import { ActionCode } from '../types/action-code.enum';
+import { ActionCode, ACTION_RISK_LEVELS, RiskLevel } from '../types/action-code.enum';
 import {
   ActionClass,
   Capacity,
@@ -12,6 +12,7 @@ import {
   classifyAction,
   decide,
   DecideParams,
+  GUARDED_EDGE_APPROVAL,
   isOfficeAdminCapacity,
   isQualifiedForValidity,
 } from '../effective-permission-mapping';
@@ -78,6 +79,12 @@ describe('decide() — saf 4-katman karar', () => {
     expect(r.decision).toBe(GuidedOpenDecision.APPROVAL_REQUIRED);
   });
 
+  it('P2b-2: BANK_TRANSFER → APPROVAL_REQUIRED (para hareketi guarded-edge approval)', () => {
+    const r = decide(baseDecide({ actionCode: ActionCode.BANK_TRANSFER, actionClass: ActionClass.L3 }));
+    expect(r.decision).toBe(GuidedOpenDecision.APPROVAL_REQUIRED);
+    expect(r.decisionSource).toBe(DecisionSource.APPROVAL_REQUIRED);
+  });
+
   it('CLOSE_CASE → CONFIRM_REQUIRED', () => {
     const r = decide(baseDecide({ actionCode: ActionCode.CLOSE_CASE, actionClass: ActionClass.L3 }));
     expect(r.decision).toBe(GuidedOpenDecision.CONFIRM_REQUIRED);
@@ -112,13 +119,31 @@ describe('classifyAction()', () => {
     [ActionCode.UYAP_SEND, ActionClass.L4],
     [ActionCode.TRIGGER_HACIZ, ActionClass.L4],
     [ActionCode.APPROVE_EXPENSE, ActionClass.L3],
+    [ActionCode.BANK_TRANSFER, ActionClass.L3],
     [ActionCode.CLOSE_CASE, ActionClass.L3],
+    [ActionCode.SEND_NOTIFICATION, ActionClass.L3],
     [ActionCode.CHANGE_STATUS, ActionClass.L2],
     [ActionCode.EDIT_PARTIES, ActionClass.L2],
     [ActionCode.EDIT_CASE, ActionClass.L1],
     [ActionCode.UYAP_QUERY, ActionClass.L1],
   ])('%s → %s', (action, cls) => {
     expect(classifyAction(action)).toBe(cls);
+  });
+});
+
+describe('P2b-2 — yeni/kullanılan ActionCode mapping (observe genişletme)', () => {
+  it('BANK_TRANSFER GUARDED_EDGE_APPROVAL set üyesi', () => {
+    expect(GUARDED_EDGE_APPROVAL.has(ActionCode.BANK_TRANSFER)).toBe(true);
+  });
+
+  it('BANK_TRANSFER ACTION_RISK_LEVELS içinde tanımlı (Record exhaustive) ve HIGH', () => {
+    expect(ACTION_RISK_LEVELS[ActionCode.BANK_TRANSFER]).toBe(RiskLevel.HIGH);
+  });
+
+  it('P2b-2 pilot kodları enum’da mevcut (SEND_NOTIFICATION/UYAP_SEND zaten var, BANK_TRANSFER eklendi)', () => {
+    expect(ActionCode.SEND_NOTIFICATION).toBe('SEND_NOTIFICATION');
+    expect(ActionCode.UYAP_SEND).toBe('UYAP_SEND');
+    expect(ActionCode.BANK_TRANSFER).toBe('BANK_TRANSFER');
   });
 });
 
@@ -207,6 +232,32 @@ describe('EffectivePermissionResolver.resolve() — mock Prisma (observe-mode)',
     expect(d.decision).toBe(GuidedOpenDecision.CONFIRM_REQUIRED);
     expect(d.capacity).toBe('SEKRETER');
     expect(d.hasCaseMembership).toBe(false);
+  });
+
+  it('P2b-2: UYAP_SEND → HARDWARE_REQUIRED + wouldRequireHardware=true (enforced=false)', async () => {
+    const prisma = makePrisma();
+    prisma.user.findUnique.mockResolvedValue({ id: 'u8', tenantId: 't1', lawyer: { id: 'law8', lawyerRank: 'PARTNER' }, staffMember: null });
+    prisma.caseLawyer.findFirst.mockResolvedValue(null);
+    const r = new EffectivePermissionResolver(prisma as any);
+    const d = await r.resolve({ actorUserId: 'u8', tenantId: 't1', caseId: 'c1', actionCode: ActionCode.UYAP_SEND });
+    expect(d.decision).toBe(GuidedOpenDecision.HARDWARE_REQUIRED);
+    expect(d.wouldRequireHardware).toBe(true);
+    expect(d.wouldRequireApproval).toBe(false);
+    expect(d.enforced).toBe(false);
+  });
+
+  it('P2b-2: BANK_TRANSFER (caseId yok, office-wide) → APPROVAL_REQUIRED + wouldRequireApproval=true (enforced=false)', async () => {
+    const prisma = makePrisma();
+    prisma.user.findUnique.mockResolvedValue({ id: 'u9', tenantId: 't1', lawyer: null, staffMember: { id: 'st9', staffType: 'MUHASEBE' } });
+    const r = new EffectivePermissionResolver(prisma as any);
+    const d = await r.resolve({ actorUserId: 'u9', tenantId: 't1', actionCode: ActionCode.BANK_TRANSFER });
+    expect(d.decision).toBe(GuidedOpenDecision.APPROVAL_REQUIRED);
+    expect(d.wouldRequireApproval).toBe(true);
+    expect(d.wouldRequireHardware).toBe(false);
+    expect(d.enforced).toBe(false);
+    expect(d.mode).toBe('observe');
+    // caseId yok → üyelik sorgusu yapılmaz
+    expect(prisma.caseLawyer.findFirst).not.toHaveBeenCalled();
   });
 
   it('office-wide action (caseId yok) → üyelik aranmaz; L1 ALLOW/OPEN', async () => {

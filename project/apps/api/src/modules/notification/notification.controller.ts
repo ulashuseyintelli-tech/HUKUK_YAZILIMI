@@ -10,12 +10,19 @@ import {
 } from "@nestjs/common";
 import { NotificationService } from "./notification.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
+import { CurrentUser } from "../auth/decorators/current-user.decorator";
+import { GuidedOpenObserveService } from "../permission-diagnostics/guided-open-observe.service";
+import { ActionCode } from "../policy-engine/types/action-code.enum";
 import { NotificationStatus } from "@prisma/client";
 
 @Controller("notifications")
 @UseGuards(JwtAuthGuard)
 export class NotificationController {
-  constructor(private notificationService: NotificationService) {}
+  constructor(
+    private notificationService: NotificationService,
+    // P2b-2: Guided-Open observe adapter (diagnostic only; engelleme yok)
+    private guidedOpenObserve: GuidedOpenObserveService,
+  ) {}
 
   // Dosya için tebligatları getir
   @Get("case/:caseId")
@@ -59,18 +66,38 @@ export class NotificationController {
   // SMS gönder
   @Post("case/:caseId/sms")
   async sendSMS(
+    @CurrentUser("id") userId: string,
+    @CurrentUser("tenantId") tenantId: string,
     @Param("caseId") caseId: string,
     @Body() body: { phone: string; message: string }
   ) {
+    // P2b-2 observe (PRE-action; JwtAuthGuard'dan SONRA; engelleme YOK, response değişmez).
+    // GİZLİLİK: body.phone / body.message observe'a GEÇMEZ (yalnız actionCode + caseId referansı).
+    await this.guidedOpenObserve.observe({
+      actorUserId: userId,
+      tenantId,
+      caseId,
+      actionCode: ActionCode.SEND_NOTIFICATION,
+    });
     return this.notificationService.sendSMS(caseId, body.phone, body.message);
   }
 
   // Email gönder
   @Post("case/:caseId/email")
   async sendEmail(
+    @CurrentUser("id") userId: string,
+    @CurrentUser("tenantId") tenantId: string,
     @Param("caseId") caseId: string,
     @Body() body: { email: string; subject: string; content: string }
   ) {
+    // P2b-2 observe (PRE-action; JwtAuthGuard'dan SONRA; engelleme YOK, response değişmez).
+    // GİZLİLİK: body.email / subject / content observe'a GEÇMEZ (yalnız actionCode + caseId referansı).
+    await this.guidedOpenObserve.observe({
+      actorUserId: userId,
+      tenantId,
+      caseId,
+      actionCode: ActionCode.SEND_NOTIFICATION,
+    });
     return this.notificationService.sendEmail(
       caseId,
       body.email,
