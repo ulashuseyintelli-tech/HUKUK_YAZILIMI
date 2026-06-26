@@ -13,11 +13,17 @@ import { OfficeService } from "./office.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
 import { CurrentUser } from "../auth/decorators/current-user.decorator";
 import { StaffType } from "@prisma/client";
+import { GuidedOpenObserveService } from "../permission-diagnostics/guided-open-observe.service";
+import { ActionCode } from "../policy-engine/types/action-code.enum";
 
 @Controller("office")
 @UseGuards(JwtAuthGuard)
 export class OfficeController {
-  constructor(private officeService: OfficeService) {}
+  constructor(
+    private officeService: OfficeService,
+    // P2b-1: Guided-Open observe adapter (credential pilot; engelleme yok)
+    private guidedOpenObserve: GuidedOpenObserveService
+  ) {}
 
   // WP-4c-hotfix-1: ofis kimlik bilgisi (SMTP/SMS) GÜNCELLEME yalnız ADMIN.
   // WP-4c-0 envanteri bu uçları TENANT_ONLY (tenant içi herkes değiştirebilir) olarak işaretledi.
@@ -108,9 +114,10 @@ export class OfficeController {
 
   // SMTP ayarlarını güncelle
   @Put("smtp-settings")
-  updateSmtpSettings(
+  async updateSmtpSettings(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("role") role: string,
+    @CurrentUser("id") userId: string,
     @Body()
     data: {
       smtpHost?: string;
@@ -123,6 +130,12 @@ export class OfficeController {
     }
   ) {
     this.assertCredentialAdmin(role);
+    // P2b-1 observe (best-effort; ADMIN guard'dan SONRA; engelleme YOK, response değişmez)
+    await this.guidedOpenObserve.observe({
+      actorUserId: userId,
+      tenantId,
+      actionCode: ActionCode.MANAGE_OFFICE_CREDENTIALS,
+    });
     return this.officeService.updateSmtpSettings(tenantId, data);
   }
 

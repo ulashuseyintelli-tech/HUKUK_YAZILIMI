@@ -69,6 +69,10 @@ export const GUARDED_EDGE_CONFIRM: ReadonlySet<ActionCode> = new Set([
   ActionCode.SEND_NOTIFICATION,
   ActionCode.SEND_PAYMENT_ORDER,
   ActionCode.SEND_DEBTOR_MSG,
+  // P2b-1 pilot (geri-alınamaz / hukuki / güvenlik → guarded-edge confirm)
+  ActionCode.DELETE_CASE,
+  ActionCode.ASSIGN_LEGAL_RESPONSIBLE,
+  ActionCode.MANAGE_OFFICE_CREDENTIALS,
 ]);
 
 /** L2 hassas mutation: case-member ise allow, değilse confirm+notify. */

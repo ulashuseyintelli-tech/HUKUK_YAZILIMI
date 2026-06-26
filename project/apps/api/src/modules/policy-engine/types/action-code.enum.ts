@@ -145,6 +145,19 @@ export enum ActionCode {
 
   /** İmza yetkisi - HIGH risk, hukuki geçerlilik (hasSignatureAuthority → validity-route) */
   SIGN = 'SIGN',
+
+  // ============================================
+  // Guided-Open P2b-1 pilot leaves (observe hook; ADDITIVE)
+  // ============================================
+
+  /** Dosya (hard) silme - HIGH risk, geri-alınamaz (cases.delete) */
+  DELETE_CASE = 'DELETE_CASE',
+
+  /** Hukuki sorumlu avukat atama/değiştirme - HIGH risk, kanonik+ADMIN (legal-responsible) */
+  ASSIGN_LEGAL_RESPONSIBLE = 'ASSIGN_LEGAL_RESPONSIBLE',
+
+  /** Ofis kimlik bilgisi (SMTP/SMS) yönetimi - HIGH risk, güvenlik (credential) */
+  MANAGE_OFFICE_CREDENTIALS = 'MANAGE_OFFICE_CREDENTIALS',
 }
 
 /**
@@ -204,6 +217,11 @@ export const ACTION_RISK_LEVELS: Record<ActionCode, RiskLevel> = {
   [ActionCode.EDIT_PARTIES]: RiskLevel.MEDIUM,
   [ActionCode.SYNC_UYAP]: RiskLevel.LOW,
   [ActionCode.VIEW_FINANCE]: RiskLevel.LOW,
+
+  // Guided-Open P2b-1 pilot (Record exhaustive zorunlu)
+  [ActionCode.DELETE_CASE]: RiskLevel.HIGH,
+  [ActionCode.ASSIGN_LEGAL_RESPONSIBLE]: RiskLevel.HIGH,
+  [ActionCode.MANAGE_OFFICE_CREDENTIALS]: RiskLevel.HIGH,
 };
 
 /**

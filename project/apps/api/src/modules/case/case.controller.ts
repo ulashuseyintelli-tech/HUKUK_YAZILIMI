@@ -24,6 +24,8 @@ import { WarnOnlyAuditService } from "../permission-diagnostics/warn-only-audit.
 import { PermissionHardGuardService } from "../permission-diagnostics/permission-hard-guard.service";
 import { LegalResponsibleLawyerService } from "./legal-responsible-lawyer.service";
 import { ChangeLegalResponsibleLawyerDto } from "./dto/legal-responsible-lawyer.dto";
+import { GuidedOpenObserveService } from "../permission-diagnostics/guided-open-observe.service";
+import { ActionCode } from "../policy-engine/types/action-code.enum";
 
 @Controller("cases")
 @UseGuards(JwtAuthGuard)
@@ -36,7 +38,9 @@ export class CaseController {
     private warnOnlyAudit: WarnOnlyAuditService,
     private permissionHardGuard: PermissionHardGuardService,
     private responsibilityHistoryService: ResponsibilityHistoryService,
-    private legalResponsibleLawyerService: LegalResponsibleLawyerService
+    private legalResponsibleLawyerService: LegalResponsibleLawyerService,
+    // P2b-1: Guided-Open observe adapter (diagnostic only; engelleme yok)
+    private guidedOpenObserve: GuidedOpenObserveService
   ) {}
 
   @Get()
@@ -188,6 +192,13 @@ export class CaseController {
       userId,
       role
     );
+    // P2b-1 observe (best-effort; engelleme YOK, response/akış değişmez)
+    await this.guidedOpenObserve.observe({
+      actorUserId: userId,
+      tenantId,
+      caseId: id,
+      actionCode: ActionCode.ASSIGN_LEGAL_RESPONSIBLE,
+    });
     return { data };
   }
 
@@ -232,6 +243,13 @@ export class CaseController {
       role,
       entityId: id,
       requestPath: "/cases/:id",
+    });
+    // P2b-1 observe (best-effort; ADMIN guard'dan SONRA; engelleme YOK, response değişmez)
+    await this.guidedOpenObserve.observe({
+      actorUserId: userId,
+      tenantId,
+      caseId: id,
+      actionCode: ActionCode.DELETE_CASE,
     });
     return this.caseService.delete(tenantId, id, userId);
   }
