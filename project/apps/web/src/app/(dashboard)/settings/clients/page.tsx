@@ -583,6 +583,46 @@ export default function ClientsSettingsPage() {
 }
 
 // Müvekkil Modal - Çoklu telefon/email/adres destekli + Vekaletname tarama
+// Faz-B (PR-5): forma girilen özel-gün tarihleri + tebrik tercihlerinden "sıradaki tebrik"i
+// salt-okuma hesaplar (backend yok). Büro otomatik tebriği (global) açıksa gönderilir; bu
+// yalnız per-client planı gösterir. Doğum günü / kuruluş / vekalet yıldönümü yinelenir;
+// bayram tebriği tarih-tabanlı olduğundan ayrı not olarak belirtilir.
+function computeNextGreeting(form: any, isPerson: boolean): { label: string; dateLabel: string; daysUntil: number } | null {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const TR_MONTHS = ["Oca", "Şub", "Mar", "Nis", "May", "Haz", "Tem", "Ağu", "Eyl", "Eki", "Kas", "Ara"];
+  const nextOccurrence = (iso: string): Date | null => {
+    if (!iso || typeof iso !== "string") return null;
+    const parts = iso.split("-");
+    if (parts.length < 3) return null;
+    const m = parseInt(parts[1], 10) - 1;
+    const d = parseInt(parts[2], 10);
+    if (isNaN(m) || isNaN(d)) return null;
+    let occ = new Date(today.getFullYear(), m, d);
+    occ.setHours(0, 0, 0, 0);
+    if (occ.getTime() < today.getTime()) occ = new Date(today.getFullYear() + 1, m, d);
+    return occ;
+  };
+  const candidates: { label: string; date: Date }[] = [];
+  if (isPerson && form.sendBirthdayGreeting) {
+    const dt = nextOccurrence(form.birthDate);
+    if (dt) candidates.push({ label: "Doğum günü", date: dt });
+  }
+  if (!isPerson && form.sendAnniversaryGreeting) {
+    const dt = nextOccurrence(form.foundingDate);
+    if (dt) candidates.push({ label: "Kuruluş yıldönümü", date: dt });
+  }
+  if (form.sendAnniversaryGreeting) {
+    const dt = nextOccurrence(form.poaStartDate);
+    if (dt) candidates.push({ label: "Vekalet yıldönümü", date: dt });
+  }
+  if (candidates.length === 0) return null;
+  candidates.sort((a, b) => a.date.getTime() - b.date.getTime());
+  const next = candidates[0];
+  const daysUntil = Math.round((next.date.getTime() - today.getTime()) / 86400000);
+  return { label: next.label, dateLabel: `${next.date.getDate()} ${TR_MONTHS[next.date.getMonth()]}`, daysUntil };
+}
+
 function ClientModal({ client, scannedData, onSave, onClose, saving }: { client: any; scannedData?: any; onSave: (data: any) => void; onClose: () => void; saving: boolean }) {
   const [form, setForm] = useState({
     type: scannedData?.clientType || client?.type || "PERSON",
@@ -1076,6 +1116,29 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
                 <span className="text-sm">Bayram tebriği</span>
               </label>
             </div>
+            {(() => {
+              const ng = computeNextGreeting(form, isPerson);
+              const channelLabel = form.greetingChannel === "SMS" ? "SMS" : form.greetingChannel === "BOTH" ? "E-posta + SMS" : "E-posta";
+              return (
+                <div className="mt-3 pt-2 border-t border-green-200 text-xs text-green-900">
+                  {ng ? (
+                    <span>
+                      <span className="font-semibold">Sıradaki tebrik:</span> {ng.label} — {ng.dateLabel}{" "}
+                      <span className="text-green-700">({ng.daysUntil === 0 ? "bugün" : `${ng.daysUntil} gün sonra`})</span>
+                      {" · "}{channelLabel}
+                      {form.sendHolidayGreeting && <span className="text-green-700"> · bayramlarda</span>}
+                    </span>
+                  ) : (
+                    <span className="text-green-700">
+                      {form.sendHolidayGreeting
+                        ? "Yalnız bayram tebriği planlı (özel gün tarihi/tercihi yok)."
+                        : "Tebrik planlanmadı — tarih veya tercih eksik."}
+                    </span>
+                  )}
+                  <span className="block text-[10px] text-green-600 mt-0.5">Büro otomatik tebriği açıksa gönderilir (Büro Ayarları).</span>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Notlar */}
