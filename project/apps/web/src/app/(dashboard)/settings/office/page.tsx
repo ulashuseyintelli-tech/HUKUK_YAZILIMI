@@ -91,8 +91,8 @@ function OfficeSettingsInner() {
   const [staffSimilar, setStaffSimilar] = useState<{ candidates: { id: string; name: string }[]; data: any } | null>(null);
   // PR-U3: personel UPDATE-path benzer-isim review — 2 buton (güncelle/vazgeç). Create'ten ayrı.
   const [staffUpdateReview, setStaffUpdateReview] = useState<{ candidates: { id: string; name: string }[]; data: any } | null>(null);
-  const [officeForm, setOfficeForm] = useState({ name: "", address: "", city: "", district: "", postalCode: "", phone: "", fax: "", email: "", website: "", barAssociation: "" });
-  const [officeInitial, setOfficeInitial] = useState({ name: "", address: "", city: "", district: "", postalCode: "", phone: "", fax: "", email: "", website: "", barAssociation: "" });
+  const [officeForm, setOfficeForm] = useState({ name: "", address: "", city: "", district: "", postalCode: "", phone: "", fax: "", email: "", website: "", barAssociation: "", vergiNo: "", vergiDairesi: "", mersisNo: "", kepAddress: "" });
+  const [officeInitial, setOfficeInitial] = useState({ name: "", address: "", city: "", district: "", postalCode: "", phone: "", fax: "", email: "", website: "", barAssociation: "", vergiNo: "", vergiDairesi: "", mersisNo: "", kepAddress: "" });
   const [smtpForm, setSmtpForm] = useState<SmtpSettings>({ smtpHost: "", smtpPort: 587, smtpUser: "", smtpPass: "", smtpSecure: false, smtpFromName: "", smtpFromEmail: "" });
   const [smsForm, setSmsForm] = useState({ smsProvider: "", smsApiKey: "", smsApiSecret: "", smsSender: "" });
   const [greetingForm, setGreetingForm] = useState({ autoGreetingEnabled: true, autoGreetingTime: "09:00" });
@@ -129,6 +129,8 @@ function OfficeSettingsInner() {
         district: res.data?.district || "", postalCode: res.data?.postalCode || "",
         phone: res.data?.phone || "", fax: res.data?.fax || "", email: res.data?.email || "",
         website: res.data?.website || "", barAssociation: res.data?.barAssociation || "",
+        vergiNo: res.data?.vergiNo || "", vergiDairesi: res.data?.vergiDairesi || "",
+        mersisNo: res.data?.mersisNo || "", kepAddress: res.data?.kepAddress || "",
       };
       setOfficeForm(officeInit);
       setOfficeInitial(officeInit);
@@ -568,6 +570,24 @@ function OfficeSettingsInner() {
                 <div style={{ width: 240 }}>
                   <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Baro</label>
                   <input value={officeForm.barAssociation} onChange={e => setOfficeForm({ ...officeForm, barAssociation: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
+                </div>
+              </SettingsSection>
+              <SettingsSection title="YASAL KİMLİK" description="Fatura / serbest meslek makbuzu ve resmi yazışma için">
+                <div style={{ width: 180 }}>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Vergi no</label>
+                  <input value={officeForm.vergiNo} onChange={e => setOfficeForm({ ...officeForm, vergiNo: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div style={{ width: 200 }}>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Vergi dairesi</label>
+                  <input value={officeForm.vergiDairesi} onChange={e => setOfficeForm({ ...officeForm, vergiDairesi: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div style={{ width: 200 }}>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">MERSİS no</label>
+                  <input value={officeForm.mersisNo} onChange={e => setOfficeForm({ ...officeForm, mersisNo: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div style={{ width: 240 }}>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">KEP adresi</label>
+                  <input value={officeForm.kepAddress} onChange={e => setOfficeForm({ ...officeForm, kepAddress: e.target.value })} placeholder="buro@hs01.kep.tr" className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
                 </div>
               </SettingsSection>
               <SettingsSection title="İLETİŞİM">
