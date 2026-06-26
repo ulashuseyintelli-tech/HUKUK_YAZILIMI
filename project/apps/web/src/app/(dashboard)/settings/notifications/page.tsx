@@ -1,233 +1,234 @@
 'use client';
 
+// Bildirim KONTROL MERKEZİ (PR-N1: dürüstleştirme + gerçek motorlarla birleştirme).
+// Eski hali localStorage'a yazan dekoratif bir tercih ekranıydı (backend yok, gönderen
+// hiçbir ayarı okumuyordu). Artık: bildirimleri GERÇEKTEN gönderen motorların (Büro
+// Ayarları SMTP/SMS/Eskalasyon + vekalet sistem görevi) canlı durumunu gösterir ve
+// yönetim için ilgili drawer'lara yönlendirir. Yeni preference modeli/endpoint YOK;
+// fake "kaydedildi" YOK; motoru olmayan özellikler "Planlandı" alanında, toggle'sız.
+
 import { useState, useEffect } from 'react';
-import { Bell, Mail, MessageSquare, Clock, Save, Check } from 'lucide-react';
+import Link from 'next/link';
+import {
+  Bell, Mail, MessageSquare, AlarmClock, Gift, ShieldAlert,
+  ChevronRight, CheckCircle2, AlertCircle, Clock,
+} from 'lucide-react';
 import { api } from '@/lib/api';
 
-interface NotificationPreferences {
-  emailEnabled: boolean;
-  smsEnabled: boolean;
-  
-  // E-posta bildirimleri
-  emailPoaExpiring: boolean;
-  emailCaseUpdate: boolean;
-  emailTaskReminder: boolean;
-  emailDailyDigest: boolean;
-  
-  // SMS bildirimleri
-  smsUrgentOnly: boolean;
-  smsPoaExpiring: boolean;
-  smsCaseUpdate: boolean;
-  
-  // Zamanlama
-  digestTime: string; // "09:00"
-  reminderDaysBefore: number;
-}
-
-const DEFAULT_PREFS: NotificationPreferences = {
-  emailEnabled: true,
-  smsEnabled: false,
-  emailPoaExpiring: true,
-  emailCaseUpdate: true,
-  emailTaskReminder: true,
-  emailDailyDigest: false,
-  smsUrgentOnly: true,
-  smsPoaExpiring: false,
-  smsCaseUpdate: false,
-  digestTime: '09:00',
-  reminderDaysBefore: 7,
+const PROVIDER_LABEL: Record<string, string> = {
+  NETGSM: 'NetGSM',
+  ILETI_MERKEZI: 'İleti Merkezi',
 };
 
+function StatusBadge({ ok, okText, offText }: { ok: boolean; okText: string; offText: string }) {
+  return ok ? (
+    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full whitespace-nowrap">
+      <CheckCircle2 className="h-3 w-3" />{okText}
+    </span>
+  ) : (
+    <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 px-2 py-0.5 rounded-full whitespace-nowrap">
+      <AlertCircle className="h-3 w-3" />{offText}
+    </span>
+  );
+}
+
+function Row({ label, value }: { label: string; value: React.ReactNode }) {
+  return (
+    <div className="flex items-center justify-between gap-3 min-w-0">
+      <span className="text-gray-500 shrink-0">{label}</span>
+      <span className="font-medium text-gray-900 truncate">{value}</span>
+    </div>
+  );
+}
+
 export default function NotificationSettingsPage() {
-  const [prefs, setPrefs] = useState<NotificationPreferences>(DEFAULT_PREFS);
+  const [smtp, setSmtp] = useState<any>(null);
+  const [sms, setSms] = useState<any>(null);
+  const [esc, setEsc] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
-    loadPreferences();
-  }, []);
+  useEffect(() => { load(); }, []);
 
-  const loadPreferences = async () => {
+  const load = async () => {
     try {
-      // localStorage'dan yükle (backend entegrasyonu sonra eklenebilir)
-      const stored = localStorage.getItem('notification_prefs');
-      if (stored) {
-        setPrefs({ ...DEFAULT_PREFS, ...JSON.parse(stored) });
-      }
-    } catch (e) {
-      console.error(e);
+      const [a, b, c] = await Promise.all([
+        api.get('/office/smtp-settings').then(r => r.data).catch(() => null),
+        api.get('/office/sms-settings').then(r => r.data).catch(() => null),
+        api.get('/office/escalation-settings').then(r => r.data).catch(() => null),
+      ]);
+      setSmtp(a); setSms(b); setEsc(c);
     } finally {
       setLoading(false);
     }
   };
 
-  const savePreferences = async () => {
-    setSaving(true);
-    try {
-      localStorage.setItem('notification_prefs', JSON.stringify(prefs));
-      // Backend'e de kaydet (opsiyonel)
-      // await api.put('/user/notification-preferences', prefs);
-      setSaved(true);
-      setTimeout(() => setSaved(false), 2000);
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const updatePref = (key: keyof NotificationPreferences, value: any) => {
-    setPrefs(prev => ({ ...prev, [key]: value }));
-  };
-
   if (loading) {
-    return <div className="flex items-center justify-center h-64">Yükleniyor...</div>;
+    return <div className="flex items-center justify-center h-64 text-sm text-muted-foreground">Yükleniyor...</div>;
   }
 
+  const smtpReady = !!smtp?.smtpHost;
+  const smsReady = !!sms?.smsProvider;
+  const escAssigned =
+    (esc?.escalationManagerLawyerIds?.length || 0) + (esc?.escalationFounderLawyerIds?.length || 0);
+  const escChannel = esc
+    ? [esc.opEmailEnabled && 'E-posta', esc.opSmsEnabled && 'SMS'].filter(Boolean).join(' + ') || '—'
+    : '—';
+
   return (
-    <div className="max-w-2xl mx-auto space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="p-2 bg-blue-100 rounded-lg">
-            <Bell className="h-5 w-5 text-blue-600" />
-          </div>
-          <div>
-            <h1 className="text-lg font-bold">Bildirim Ayarları</h1>
-            <p className="text-xs text-muted-foreground">E-posta ve SMS bildirim tercihlerinizi yönetin</p>
-          </div>
-        </div>
-        <button
-          onClick={savePreferences}
-          disabled={saving}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-        >
-          {saved ? <Check className="h-4 w-4" /> : <Save className="h-4 w-4" />}
-          {saved ? 'Kaydedildi' : saving ? 'Kaydediliyor...' : 'Kaydet'}
-        </button>
-      </div>
-
-      {/* E-posta Bildirimleri */}
-      <div className="bg-white rounded-lg border p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <Mail className="h-5 w-5 text-gray-600" />
-            <h2 className="font-semibold">E-posta Bildirimleri</h2>
-          </div>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <span className="text-sm text-gray-600">Aktif</span>
-            <input
-              type="checkbox"
-              checked={prefs.emailEnabled}
-              onChange={(e) => updatePref('emailEnabled', e.target.checked)}
-              className="w-5 h-5 rounded"
-            />
-          </label>
-        </div>
-        
-        <div className={`space-y-3 ${!prefs.emailEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
-          <label className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-            <div>
-              <p className="font-medium text-sm">Vekalet Süresi Uyarıları</p>
-              <p className="text-xs text-gray-500">Süresi dolmak üzere olan vekaletler için bildirim</p>
-            </div>
-            <input type="checkbox" checked={prefs.emailPoaExpiring} onChange={(e) => updatePref('emailPoaExpiring', e.target.checked)} className="w-5 h-5 rounded" />
-          </label>
-          
-          <label className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-            <div>
-              <p className="font-medium text-sm">Dosya Güncellemeleri</p>
-              <p className="text-xs text-gray-500">Takip dosyalarındaki önemli değişiklikler</p>
-            </div>
-            <input type="checkbox" checked={prefs.emailCaseUpdate} onChange={(e) => updatePref('emailCaseUpdate', e.target.checked)} className="w-5 h-5 rounded" />
-          </label>
-          
-          <label className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-            <div>
-              <p className="font-medium text-sm">Görev Hatırlatıcıları</p>
-              <p className="text-xs text-gray-500">Yaklaşan görevler ve son tarihler</p>
-            </div>
-            <input type="checkbox" checked={prefs.emailTaskReminder} onChange={(e) => updatePref('emailTaskReminder', e.target.checked)} className="w-5 h-5 rounded" />
-          </label>
-          
-          <label className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-            <div>
-              <p className="font-medium text-sm">Günlük Özet</p>
-              <p className="text-xs text-gray-500">Her gün belirlenen saatte özet e-posta</p>
-            </div>
-            <input type="checkbox" checked={prefs.emailDailyDigest} onChange={(e) => updatePref('emailDailyDigest', e.target.checked)} className="w-5 h-5 rounded" />
-          </label>
+    <div className="max-w-3xl mx-auto space-y-5 pb-10">
+      {/* Header */}
+      <div className="flex items-center gap-3">
+        <div className="p-2 bg-blue-100 rounded-lg"><Bell className="h-5 w-5 text-blue-600" /></div>
+        <div>
+          <h1 className="text-lg font-bold text-gray-900">Bildirim Ayarları</h1>
+          <p className="text-xs text-muted-foreground">Bildirim altyapısının durumu ve yönetim noktaları</p>
         </div>
       </div>
 
-      {/* SMS Bildirimleri */}
-      <div className="bg-white rounded-lg border p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-3">
-            <MessageSquare className="h-5 w-5 text-gray-600" />
-            <h2 className="font-semibold">SMS Bildirimleri</h2>
+      {/* Açıklama */}
+      <div className="rounded-lg border border-blue-200 bg-blue-50/60 px-4 py-3 text-[12.5px] leading-relaxed text-blue-900">
+        Bu sayfa bir <span className="font-semibold">kontrol merkezidir</span>. Bildirimler aşağıdaki gerçek çalışan
+        motorlar üzerinden gönderilir; ayarları ilgili kartın bağlantısından <span className="font-medium">Büro Ayarları</span>'nda
+        yönetirsiniz. Burada doğrudan kaydedilen bir tercih yoktur.
+      </div>
+
+      {/* E-posta (SMTP) */}
+      <div className="rounded-xl border bg-white p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-teal-100/70 shrink-0"><Mail className="h-4 w-4 text-teal-600" /></span>
+            <div className="min-w-0">
+              <h2 className="text-[14px] font-semibold text-gray-900">E-posta Kanalı (SMTP)</h2>
+              <p className="text-[11px] text-gray-500">Tebrik, eskalasyon ve vekalet uyarıları bu sunucudan gönderilir</p>
+            </div>
           </div>
-          <label className="flex items-center gap-2 cursor-pointer">
-            <span className="text-sm text-gray-600">Aktif</span>
-            <input
-              type="checkbox"
-              checked={prefs.smsEnabled}
-              onChange={(e) => updatePref('smsEnabled', e.target.checked)}
-              className="w-5 h-5 rounded"
-            />
-          </label>
+          <StatusBadge ok={smtpReady} okText="Yapılandırıldı" offText="Eksik" />
         </div>
-        
-        <div className={`space-y-3 ${!prefs.smsEnabled ? 'opacity-50 pointer-events-none' : ''}`}>
-          <label className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-            <div>
-              <p className="font-medium text-sm">Sadece Acil Bildirimler</p>
-              <p className="text-xs text-gray-500">Yalnızca kritik durumlar için SMS gönder</p>
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-[12.5px]">
+          <Row label="Sunucu" value={smtp?.smtpHost || '—'} />
+          <Row label="Gönderen" value={smtp?.smtpFromEmail || smtp?.smtpUser || '—'} />
+        </div>
+        <Link href="/settings/office?section=smtp" className="mt-3 inline-flex items-center gap-1 text-[12.5px] font-medium text-teal-700 hover:text-teal-800">
+          SMTP ayarlarını aç <ChevronRight className="h-3.5 w-3.5" />
+        </Link>
+      </div>
+
+      {/* SMS */}
+      <div className="rounded-xl border bg-white p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-teal-100/70 shrink-0"><MessageSquare className="h-4 w-4 text-teal-600" /></span>
+            <div className="min-w-0">
+              <h2 className="text-[14px] font-semibold text-gray-900">SMS Kanalı</h2>
+              <p className="text-[11px] text-gray-500">Eskalasyon SMS'leri ve müvekkil SMS'leri bu sağlayıcıdan gider</p>
             </div>
-            <input type="checkbox" checked={prefs.smsUrgentOnly} onChange={(e) => updatePref('smsUrgentOnly', e.target.checked)} className="w-5 h-5 rounded" />
-          </label>
-          
-          <label className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-            <div>
-              <p className="font-medium text-sm">Vekalet Süresi (SMS)</p>
-              <p className="text-xs text-gray-500">Vekalet süresi dolmadan SMS uyarısı</p>
+          </div>
+          <StatusBadge ok={smsReady} okText="Yapılandırıldı" offText="Seçilmedi" />
+        </div>
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-[12.5px]">
+          <Row label="Sağlayıcı" value={smsReady ? (PROVIDER_LABEL[sms.smsProvider] || sms.smsProvider) : 'Seçilmedi'} />
+          <Row label="Başlık" value={sms?.smsSender || '—'} />
+        </div>
+        <Link href="/settings/office?section=sms" className="mt-3 inline-flex items-center gap-1 text-[12.5px] font-medium text-teal-700 hover:text-teal-800">
+          SMS ayarlarını aç <ChevronRight className="h-3.5 w-3.5" />
+        </Link>
+      </div>
+
+      {/* Görev & Eskalasyon — gerçek çalışan motor */}
+      <div className="rounded-xl border bg-white p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-indigo-100/70 shrink-0"><AlarmClock className="h-4 w-4 text-indigo-600" /></span>
+            <div className="min-w-0">
+              <h2 className="text-[14px] font-semibold text-gray-900">Görev &amp; Eskalasyon</h2>
+              <p className="text-[11px] text-gray-500">Geciken görevler büro politikasına göre kademeli bildirilir</p>
             </div>
-            <input type="checkbox" checked={prefs.smsPoaExpiring} onChange={(e) => updatePref('smsPoaExpiring', e.target.checked)} className="w-5 h-5 rounded" />
-          </label>
+          </div>
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full whitespace-nowrap"><CheckCircle2 className="h-3 w-3" />Aktif motor</span>
+        </div>
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-[12.5px]">
+          <Row label="İlk hatırlatma" value={esc?.opReminderDays != null ? `${esc.opReminderDays} gün` : '—'} />
+          <Row label="Kurucu eskalasyonu" value={esc?.opFounderDays != null ? `${esc.opFounderDays} gün` : '—'} />
+          <Row label="Kanal" value={escChannel} />
+          <Row label="Atanan sorumlu" value={`${escAssigned} kişi`} />
+        </div>
+        <Link href="/settings/office?section=escalation" className="mt-3 inline-flex items-center gap-1 text-[12.5px] font-medium text-indigo-700 hover:text-indigo-800">
+          Görev eskalasyonunu aç <ChevronRight className="h-3.5 w-3.5" />
+        </Link>
+      </div>
+
+      {/* Tebrik */}
+      <div className="rounded-xl border bg-white p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-rose-100/70 shrink-0"><Gift className="h-4 w-4 text-rose-500" /></span>
+            <div className="min-w-0">
+              <h2 className="text-[14px] font-semibold text-gray-900">Tebrik Bildirimleri</h2>
+              <p className="text-[11px] text-gray-500">Doğum günü, kuruluş ve vekalet yıldönümü, bayram tebrikleri</p>
+            </div>
+          </div>
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-green-700 bg-green-50 px-2 py-0.5 rounded-full whitespace-nowrap"><CheckCircle2 className="h-3 w-3" />Aktif motor</span>
+        </div>
+        <p className="mt-2 text-[12px] text-gray-600 leading-relaxed">
+          Global zamanlama (gönderim saati, aç/kapa) <span className="font-medium">Büro Ayarları</span>'nda; kişiye özel
+          tercihler (kanal, hangi tebrik) her <span className="font-medium">müvekkil kartında</span> yönetilir.
+        </p>
+        <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1">
+          <Link href="/settings/office?section=greeting" className="inline-flex items-center gap-1 text-[12.5px] font-medium text-rose-600 hover:text-rose-700">
+            Büro tebrik ayarları <ChevronRight className="h-3.5 w-3.5" />
+          </Link>
+          <Link href="/settings/clients" className="inline-flex items-center gap-1 text-[12.5px] font-medium text-rose-600 hover:text-rose-700">
+            Müvekkil kartları <ChevronRight className="h-3.5 w-3.5" />
+          </Link>
         </div>
       </div>
 
-      {/* Zamanlama */}
-      <div className="bg-white rounded-lg border p-6">
-        <div className="flex items-center gap-3 mb-4">
-          <Clock className="h-5 w-5 text-gray-600" />
-          <h2 className="font-semibold">Zamanlama</h2>
-        </div>
-        
-        <div className="grid grid-cols-2 gap-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Günlük Özet Saati</label>
-            <input
-              type="time"
-              value={prefs.digestTime}
-              onChange={(e) => updatePref('digestTime', e.target.value)}
-              className="w-full border rounded-lg px-3 py-2"
-            />
+      {/* Vekalet Süresi Uyarısı — read-only sistem görevi durumu */}
+      <div className="rounded-xl border bg-white p-4">
+        <div className="flex items-start justify-between gap-3">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-amber-100/70 shrink-0"><ShieldAlert className="h-4 w-4 text-amber-600" /></span>
+            <div className="min-w-0">
+              <h2 className="text-[14px] font-semibold text-gray-900">Vekalet Süresi Uyarısı</h2>
+              <p className="text-[11px] text-gray-500">Süresi dolmak üzere olan vekaletler için otomatik uyarı</p>
+            </div>
           </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Hatırlatma (Gün Önce)</label>
-            <select
-              value={prefs.reminderDaysBefore}
-              onChange={(e) => updatePref('reminderDaysBefore', parseInt(e.target.value))}
-              className="w-full border rounded-lg px-3 py-2"
-            >
-              <option value={3}>3 gün</option>
-              <option value={7}>7 gün</option>
-              <option value={14}>14 gün</option>
-              <option value={30}>30 gün</option>
-            </select>
-          </div>
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full whitespace-nowrap"><Clock className="h-3 w-3" />Sistem görevi</span>
         </div>
+        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-[12.5px]">
+          <Row label="Durum" value="Aktif" />
+          <Row label="Çalışma" value="Her gün 09:00" />
+          <Row label="Kanal" value="E-posta" />
+          <Row label="Eşik" value="30 gün" />
+          <Row label="Alıcı" value="Yönetici" />
+        </div>
+        <p className="mt-3 text-[11px] text-gray-500 leading-relaxed">
+          Bu uyarı büro-geneli bir sistem görevidir (sabit eşik/kanal). Özelleştirilebilir eşik, alıcı ve SMS varyantı
+          sonraki faza planlıdır — bu yüzden burada açıp kapatılan bir anahtar yoktur.
+        </p>
+      </div>
+
+      {/* Henüz aktif değil — planlandı */}
+      <div className="rounded-xl border border-dashed border-gray-300 bg-gray-50/60 p-4">
+        <h3 className="text-[12.5px] font-semibold text-gray-700">Henüz aktif değil — planlandı</h3>
+        <p className="mt-1 text-[11px] text-gray-500 leading-relaxed">
+          Aşağıdaki bildirimlerin henüz çalışan bir göndericisi yok. Sahte bir anahtar koymamak için burada
+          yalnızca listeleniyorlar; hazır olduklarında bu sayfadan yönetilecekler.
+        </p>
+        <ul className="mt-3 space-y-1.5 text-[12px] text-gray-600">
+          {[
+            'Günlük özet e-postası (belirlenen saatte)',
+            'Dosya güncelleme bildirimleri',
+            'Yaklaşan görev hatırlatıcıları (şu an yalnız geciken görev eskalasyonu çalışır)',
+            'SMS uyarı varyantları (vekalet/dosya)',
+            'Kişiye özel bildirim tercihleri (per-user aç/kapa)',
+          ].map((t) => (
+            <li key={t} className="flex items-center justify-between gap-3">
+              <span>{t}</span>
+              <span className="text-[10.5px] font-medium text-gray-400 bg-gray-200/70 px-2 py-0.5 rounded-full whitespace-nowrap shrink-0">Planlandı</span>
+            </li>
+          ))}
+        </ul>
       </div>
     </div>
   );
