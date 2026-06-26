@@ -1,10 +1,68 @@
 import { Injectable, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 import { StaffType } from "@prisma/client";
+import { AuditService } from "../audit/audit.service";
 
 @Injectable()
 export class OfficeService {
-  constructor(private prisma: PrismaService) {}
+  // GET /office gibi GENEL uçlarda asla düz-metin dönmemesi gereken secret alanlar.
+  private static readonly SECRET_FIELDS: string[] = [
+    "smtpPass",
+    "smsApiKey",
+    "smsApiSecret",
+  ];
+
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService
+  ) {}
+
+  // Secret alanları maskele (düz-metin sızıntısını önler). Internal gönderim
+  // yolları (getFullSmtpSettings/getFullSmsSettings) ham değeri okumaya devam eder.
+  private redactOfficeSecrets<T extends Record<string, any>>(office: T): T {
+    const masked: Record<string, any> = { ...office };
+    for (const f of OfficeService.SECRET_FIELDS) {
+      if (f in masked) masked[f] = masked[f] ? "********" : null;
+    }
+    return masked as T;
+  }
+
+  // Büro bilgilerini GENEL uç için getir (secret'lar maskeli). getOrCreate
+  // internal kullanım için saf (ham) kalır.
+  async getPublicOffice(tenantId: string) {
+    const office = await this.getOrCreate(tenantId);
+    return this.redactOfficeSecrets(office);
+  }
+
+  // Ayar değişikliğini AuditLog'a yaz: yalnız gönderilen alanların eski/yeni
+  // değeri, secret'lar maskeli (AuditLog ikinci bir sızıntı kanalı olmasın).
+  // audit.log hatayı içeride yutar → ayar güncellemesini bozmaz.
+  private async logSettingsChange(
+    tenantId: string,
+    userId: string | undefined,
+    section: string,
+    before: Record<string, any>,
+    data: Record<string, any>
+  ) {
+    const oldValues: Record<string, any> = {};
+    const newValues: Record<string, any> = {};
+    for (const k of Object.keys(data)) {
+      const isSecret = OfficeService.SECRET_FIELDS.includes(k);
+      oldValues[k] = isSecret ? (before?.[k] ? "********" : null) : before?.[k];
+      newValues[k] = isSecret ? (data[k] ? "********" : null) : data[k];
+    }
+    await this.audit.log({
+      tenantId,
+      action: "UPDATE",
+      entityType: "OFFICE_SETTINGS",
+      entityId: before?.id,
+      userId,
+      description: `Büro ayarları güncellendi (${section})`,
+      oldValues,
+      newValues,
+      metadata: { section },
+    });
+  }
 
   // Büro bilgilerini getir (yoksa oluştur)
   async getOrCreate(tenantId: string) {
@@ -61,11 +119,12 @@ export class OfficeService {
       website?: string;
       barAssociation?: string;
       defaultExecutionOfficeId?: string;
-    }
+    },
+    userId?: string
   ) {
     const office = await this.getOrCreate(tenantId);
 
-    return this.prisma.office.update({
+    const updated = await this.prisma.office.update({
       where: { id: office.id },
       data,
       include: {
@@ -78,6 +137,8 @@ export class OfficeService {
         },
       },
     });
+    await this.logSettingsChange(tenantId, userId, "OFFICE", office, data);
+    return updated;
   }
 
   // Banka hesabı ekle
@@ -174,14 +235,17 @@ export class OfficeService {
       smtpSecure?: boolean;
       smtpFromName?: string;
       smtpFromEmail?: string;
-    }
+    },
+    userId?: string
   ) {
     const office = await this.getOrCreate(tenantId);
 
-    return this.prisma.office.update({
+    const updated = await this.prisma.office.update({
       where: { id: office.id },
       data,
     });
+    await this.logSettingsChange(tenantId, userId, "SMTP", office, data);
+    return updated;
   }
 
   // SMTP ayarlarını getir
@@ -206,14 +270,17 @@ export class OfficeService {
       smsApiKey?: string;
       smsApiSecret?: string;
       smsSender?: string;
-    }
+    },
+    userId?: string
   ) {
     const office = await this.getOrCreate(tenantId);
 
-    return this.prisma.office.update({
+    const updated = await this.prisma.office.update({
       where: { id: office.id },
       data,
     });
+    await this.logSettingsChange(tenantId, userId, "SMS", office, data);
+    return updated;
   }
 
   // Tam SMTP ayarlarını getir (e-posta gönderimi için - internal)
@@ -267,14 +334,17 @@ export class OfficeService {
     data: {
       autoGreetingEnabled?: boolean;
       autoGreetingTime?: string;
-    }
+    },
+    userId?: string
   ) {
     const office = await this.getOrCreate(tenantId);
 
-    return this.prisma.office.update({
+    const updated = await this.prisma.office.update({
       where: { id: office.id },
       data,
     });
+    await this.logSettingsChange(tenantId, userId, "GREETING", office, data);
+    return updated;
   }
 
   // İİK 78 ayarlarını getir (pasifleşme süresi)
@@ -292,14 +362,17 @@ export class OfficeService {
     data: {
       inactivityThresholdDays?: number;
       inactivityWarningDays?: number;
-    }
+    },
+    userId?: string
   ) {
     const office = await this.getOrCreate(tenantId);
 
-    return this.prisma.office.update({
+    const updated = await this.prisma.office.update({
       where: { id: office.id },
       data,
     });
+    await this.logSettingsChange(tenantId, userId, "IIK78", office, data);
+    return updated;
   }
 
   // Görev & Eskalasyon ayarlarını getir (büro-geneli politika; motor PR-3b okur)
@@ -338,13 +411,16 @@ export class OfficeService {
       caseTaskOwnerDays?: number;
       caseTaskTeamLeadDays?: number;
       caseTaskManagerDays?: number;
-    }
+    },
+    userId?: string
   ) {
     const office = await this.getOrCreate(tenantId);
 
-    return this.prisma.office.update({
+    const updated = await this.prisma.office.update({
       where: { id: office.id },
       data,
     });
+    await this.logSettingsChange(tenantId, userId, "ESCALATION", office, data);
+    return updated;
   }
 }

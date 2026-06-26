@@ -39,13 +39,16 @@ export class OfficeController {
   // Büro bilgilerini getir
   @Get()
   getOffice(@CurrentUser("tenantId") tenantId: string) {
-    return this.officeService.getOrCreate(tenantId);
+    // Güvenlik: GENEL büro yanıtında SMTP/SMS secret'ları maskeli döner
+    // (düz-metin sızıntısı kapatıldı). Internal gönderim yolları ham değeri okur.
+    return this.officeService.getPublicOffice(tenantId);
   }
 
   // Büro bilgilerini güncelle
   @Put()
   updateOffice(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Body()
     data: {
       name?: string;
@@ -61,7 +64,7 @@ export class OfficeController {
       defaultExecutionOfficeId?: string;
     }
   ) {
-    return this.officeService.update(tenantId, data);
+    return this.officeService.update(tenantId, data, userId);
   }
 
   // Banka hesabı ekle
@@ -136,7 +139,7 @@ export class OfficeController {
       tenantId,
       actionCode: ActionCode.MANAGE_OFFICE_CREDENTIALS,
     });
-    return this.officeService.updateSmtpSettings(tenantId, data);
+    return this.officeService.updateSmtpSettings(tenantId, data, userId);
   }
 
   // SMS ayarlarını getir
@@ -150,6 +153,7 @@ export class OfficeController {
   updateSmsSettings(
     @CurrentUser("tenantId") tenantId: string,
     @CurrentUser("role") role: string,
+    @CurrentUser("id") userId: string,
     @Body()
     data: {
       smsProvider?: string;
@@ -159,7 +163,7 @@ export class OfficeController {
     }
   ) {
     this.assertCredentialAdmin(role);
-    return this.officeService.updateSmsSettings(tenantId, data);
+    return this.officeService.updateSmsSettings(tenantId, data, userId);
   }
 
   // Otomatik tebrik ayarlarını getir
@@ -172,13 +176,14 @@ export class OfficeController {
   @Put("greeting-settings")
   updateGreetingSettings(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Body()
     data: {
       autoGreetingEnabled?: boolean;
       autoGreetingTime?: string;
     }
   ) {
-    return this.officeService.updateGreetingSettings(tenantId, data);
+    return this.officeService.updateGreetingSettings(tenantId, data, userId);
   }
 
   // İİK 78 ayarlarını getir (pasifleşme süresi)
@@ -191,13 +196,14 @@ export class OfficeController {
   @Put("iik78-settings")
   updateIik78Settings(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Body()
     data: {
       inactivityThresholdDays?: number;
       inactivityWarningDays?: number;
     }
   ) {
-    return this.officeService.updateIik78Settings(tenantId, data);
+    return this.officeService.updateIik78Settings(tenantId, data, userId);
   }
 
   // Görev & Eskalasyon ayarlarını getir
@@ -210,6 +216,7 @@ export class OfficeController {
   @Put("escalation-settings")
   updateEscalationSettings(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Body()
     data: {
       escalationManagerLawyerIds?: string[];
@@ -227,6 +234,6 @@ export class OfficeController {
       caseTaskManagerDays?: number;
     }
   ) {
-    return this.officeService.updateEscalationSettings(tenantId, data);
+    return this.officeService.updateEscalationSettings(tenantId, data, userId);
   }
 }
