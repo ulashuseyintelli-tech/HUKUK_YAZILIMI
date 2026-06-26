@@ -1066,6 +1066,28 @@ describe("BalanceShadowDiffPanel", () => {
     expect(screen.getByText("Primary display unchanged: true")).toBeInTheDocument();
   });
 
+  it("canonicalSummaryRows shadow metadata BalanceShadowDiffPanel render yuzeyine sizmaz", async () => {
+    apiGet.mockResolvedValue({
+      data: makeReport({
+        canonicalSummaryRows: unsupportedCanonicalSummaryRows(),
+      }),
+    });
+
+    render(<BalanceShadowDiffPanel caseId="case-1" enabled />);
+
+    expect(await screen.findByText("Shadow Balance Diff")).toBeInTheDocument();
+    expect(screen.getByText("audit only")).toBeInTheDocument();
+    expect(screen.getByText("Primary display unchanged: true")).toBeInTheDocument();
+
+    const panelText = screen.getByTestId("balance-shadow-diff-panel").textContent ?? "";
+    expect(panelText).not.toContain("canonicalSummaryRows");
+    expect(panelText).not.toContain("canonical-summary-rows.shadow-status.v1");
+    expect(panelText).not.toContain("UNSUPPORTED");
+    expect(panelText).not.toContain("tazminat");
+    expect(panelText).not.toContain("komisyon");
+    expect(panelText).not.toContain("takipOncesiFaiz");
+  });
+
   it("shadow degeri farkli olsa bile primary HesapOzetiPanel legacy summary degerini korur", async () => {
     apiGet.mockResolvedValue({ data: makeReport() });
 
