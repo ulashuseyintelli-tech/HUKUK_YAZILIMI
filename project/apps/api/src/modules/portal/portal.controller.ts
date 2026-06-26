@@ -132,7 +132,8 @@ export class PortalController {
       body.clientId,
       body.email,
       body.password,
-      req.user.tenantId
+      req.user.tenantId,
+      { userId: req.user.sub }
     );
   }
 
@@ -146,7 +147,7 @@ export class PortalController {
     @Request() req: any,
     @Body() body: { clientId: string }
   ) {
-    return this.portalService.disablePortalUser(body.clientId, req.user.tenantId);
+    return this.portalService.disablePortalUser(body.clientId, req.user.tenantId, { userId: req.user.sub });
   }
 
   // ==================== BİLDİRİM ENDPOINTS ====================

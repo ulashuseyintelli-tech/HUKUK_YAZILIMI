@@ -4,10 +4,12 @@ import { PortalController } from "./portal.controller";
 import { PortalService } from "./portal.service";
 import { PortalAuthGuard } from "./portal-auth.guard";
 import { PrismaModule } from "../../prisma/prisma.module";
+import { AuditModule } from "../audit/audit.module";
 
 @Module({
   imports: [
     PrismaModule,
+    AuditModule,
     JwtModule.register({
       secret: process.env.JWT_SECRET || "portal-secret-key",
       signOptions: { expiresIn: "7d" },
