@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 
 export interface AuditLogInput {
@@ -43,6 +44,34 @@ export class AuditService {
     } catch (error) {
       this.logger.error(`Audit log failed: ${error.message}`, error.stack);
     }
+  }
+
+  /**
+   * Transaction-içi audit yazımı (C0-a). log()'tan farkı: hata YUTMAZ — çağıran
+   * mutation ile AYNI $transaction içinde tx.auditLog.create yapar; audit yazılamazsa
+   * exception fırlatır → çağıran transaction ROLLBACK olur (audit'siz mutation kalmaz).
+   * Mevcut log() davranışı DEĞİŞMEZ (diğer çağıranlar etkilenmez).
+   *
+   * Çağrıldığı yerler:
+   *  - ClientService.create/update/remove() → client mutasyonu + audit aynı tx içinde
+   */
+  async logInTransaction(tx: Prisma.TransactionClient, input: AuditLogInput): Promise<void> {
+    await tx.auditLog.create({
+      data: {
+        tenantId: input.tenantId,
+        action: input.action,
+        entityType: input.entityType,
+        entityId: input.entityId,
+        userId: input.userId,
+        userName: input.userName,
+        userIp: input.userIp,
+        userAgent: input.userAgent,
+        oldValues: input.oldValues,
+        newValues: input.newValues,
+        description: input.description,
+        metadata: input.metadata,
+      },
+    });
   }
 
   async getLogs(
