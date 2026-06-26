@@ -289,7 +289,9 @@ model User {
   tenantId     String
   tenant       Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   email        String
-  passwordHash String
+  // K1-7: güvenli login provisioning — pending/davetli kullanıcı parolasız var olabilir.
+  // null = henüz parola belirlenmemiş (davet kabul edilmemiş). login null-guard ile reddeder.
+  passwordHash String?
   name         String
   surname      String
   role         UserRole @default(USER)
@@ -321,8 +323,34 @@ model User {
   // Icrabot
   botTasksApproved BotTask[] @relation("BotTaskApprover")
 
+  // K1-7: güvenli login provisioning davetleri
+  userInvites UserInvite[] @relation("UserInviteTarget")
+  invitesSent UserInvite[] @relation("UserInviteIssuer")
+
   @@unique([tenantId, email])
   @@index([tenantId])
+}
+
+/// K1-7: Güvenli login provisioning daveti. Pending User + tek-kullanımlık SHA256-hashed token.
+/// Ham token YALNIZ bir kez e-posta linkinde görünür; DB'de yalnız tokenHash saklanır.
+model UserInvite {
+  id          String    @id @default(cuid())
+  tenantId    String
+  userId      String
+  user        User      @relation("UserInviteTarget", fields: [userId], references: [id], onDelete: Cascade)
+  email       String
+  tokenHash   String    @unique
+  expiresAt   DateTime
+  consumedAt  DateTime?
+  revokedAt   DateTime?
+  invitedById String?
+  invitedBy   User?     @relation("UserInviteIssuer", fields: [invitedById], references: [id], onDelete: SetNull)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([tenantId, userId])
+  @@index([tenantId, email])
+  @@index([expiresAt])
 }
 
 // ==================== İCRA DAİRESİ ====================
