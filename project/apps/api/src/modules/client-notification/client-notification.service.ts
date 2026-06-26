@@ -101,6 +101,205 @@ export class ClientNotificationService {
     private officeService: OfficeService
   ) {}
 
+  /**
+   * Bildirim Kontrol Merkezi — büro bildirim altyapısının CANLI sağlık/teşhis özeti.
+   *
+   * Yalnızca GERÇEKTEN gönderim yapan kaynaklardan beslenir:
+   *  - ClientNotification: tebrik motoru + manuel müvekkil e-posta/SMS (son 24s sayaç, son gönderimler, hata grupları)
+   *  - EscalationEvent: geciken görev eskalasyonu bildirim sonuçları (AYRI sayaç — ClientNotification yazmaz, çift sayım yok)
+   *  - Office ayarları: SMTP/SMS/tebrik/eskalasyon "hazır mı" bilgisi (sırlar OKUNMAZ)
+   *
+   * Hukuki e-tebligat NotificationQueue (simüle statü + teslimatsız) BİLİNÇLİ olarak DIŞARIDA bırakılır;
+   * dahil edilse sahte metrik üretirdi. Sırlar (smtpPass/smsApiKey/smsApiSecret) response'a KONMAZ —
+   * burada yalnız host/gönderen/sağlayıcı/başlık okunur.
+   *
+   * /// <remarks>
+   * Çağrıldığı yerler:
+   * - ClientNotificationController.getOverview() → GET /client-notifications/overview (ADMIN-gate) — Bildirim Kontrol Merkezi sayfası
+   * </remarks>
+   */
+  async getNotificationOverview(tenantId: string) {
+    const now = new Date();
+    const since24h = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+    const since7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    // Kanal/motor hazır-mı bilgisi (office getter'ları sırları zaten redakte eder)
+    const [smtp, sms, greeting, escalation] = await Promise.all([
+      this.officeService.getSmtpSettings(tenantId),
+      this.officeService.getSmsSettings(tenantId),
+      this.officeService.getGreetingSettings(tenantId),
+      this.officeService.getEscalationSettings(tenantId),
+    ]);
+
+    const [cnStatusGroups, escDeliveryGroups, recentRows, failedRows] = await Promise.all([
+      // Son 24 saat: gerçek müvekkil/tebrik gönderimleri, status bazında
+      this.prisma.clientNotification.groupBy({
+        by: ["status"],
+        where: { tenantId, createdAt: { gte: since24h } },
+        _count: { _all: true },
+      }),
+      // Son 24 saat: eskalasyon bildirim sonuçları (ClientNotification'dan AYRI kaynak)
+      this.prisma.escalationEvent.groupBy({
+        by: ["deliveryStatus"],
+        where: {
+          tenantId,
+          createdAt: { gte: since24h },
+          eventType: { in: ["NOTIFICATION_SENT", "NOTIFICATION_FAILED"] },
+        },
+        _count: { _all: true },
+      }),
+      // Son gönderimler (en yeni 20) — "gitti mi?" sorusu
+      this.prisma.clientNotification.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: {
+          id: true,
+          createdAt: true,
+          channel: true,
+          type: true,
+          status: true,
+          subject: true,
+          errorMessage: true,
+          client: {
+            select: { displayName: true, firstName: true, lastName: true, companyName: true },
+          },
+        },
+      }),
+      // "Neden gitmedi?" — son 7 günün başarısızları (hata mesajına göre gruplanır)
+      this.prisma.clientNotification.findMany({
+        where: { tenantId, status: "FAILED", createdAt: { gte: since7d } },
+        orderBy: { createdAt: "desc" },
+        take: 200,
+        select: { errorMessage: true, channel: true, createdAt: true },
+      }),
+    ]);
+
+    const sumGroup = (
+      groups: Array<Record<string, any>>,
+      key: string,
+      value: string
+    ) => groups.filter((g) => g[key] === value).reduce((s, g) => s + (g._count?._all ?? 0), 0);
+
+    const last24hSent = sumGroup(cnStatusGroups as any, "status", "SENT");
+    const last24hFailed = sumGroup(cnStatusGroups as any, "status", "FAILED");
+    const last24hPending = sumGroup(cnStatusGroups as any, "status", "PENDING");
+    const last24hEscalationSent = sumGroup(escDeliveryGroups as any, "deliveryStatus", "SENT");
+    const last24hEscalationFailed = sumGroup(escDeliveryGroups as any, "deliveryStatus", "FAILED");
+
+    // Hata teşhisi: aynı hata mesajını grupla (neden gitmedi?)
+    const failureMap = new Map<
+      string,
+      { reason: string; count: number; channel: string | null; lastSeenAt: Date }
+    >();
+    for (const r of failedRows) {
+      const reason = (r.errorMessage || "Bilinmeyen hata").trim();
+      const existing = failureMap.get(reason);
+      if (existing) {
+        existing.count += 1;
+        if (r.createdAt > existing.lastSeenAt) existing.lastSeenAt = r.createdAt;
+      } else {
+        failureMap.set(reason, { reason, count: 1, channel: r.channel ?? null, lastSeenAt: r.createdAt });
+      }
+    }
+    const failureGroups = Array.from(failureMap.values())
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 10)
+      .map((f) => ({
+        reason: f.reason,
+        count: f.count,
+        channel: f.channel,
+        lastSeenAt: f.lastSeenAt.toISOString(),
+      }));
+
+    const displayNameOf = (c: any): string | null =>
+      c?.displayName ||
+      [c?.firstName, c?.lastName].filter(Boolean).join(" ").trim() ||
+      c?.companyName ||
+      null;
+
+    const recentDeliveries = recentRows.map((r) => ({
+      id: r.id,
+      createdAt: r.createdAt.toISOString(),
+      channel: r.channel,
+      type: r.type,
+      status: r.status,
+      subject: r.subject,
+      recipientName: displayNameOf((r as any).client),
+      errorMessage: r.errorMessage,
+    }));
+
+    // Motor durumları — gerçeğe sadık (POA "teslimat eksik" = kuyruğa yazılıyor, gönderen yok)
+    const escChannels = [
+      escalation.opEmailEnabled && "EMAIL",
+      escalation.opSmsEnabled && "SMS",
+    ].filter(Boolean) as string[];
+    const escAssignees =
+      (escalation.escalationManagerLawyerIds?.length || 0) +
+      (escalation.escalationFounderLawyerIds?.length || 0);
+
+    const engines = {
+      greeting: {
+        key: "greeting",
+        status: greeting.autoGreetingEnabled ? "ACTIVE" : "OFF",
+        time: greeting.autoGreetingTime || null,
+      },
+      escalation: {
+        key: "escalation",
+        status: "ACTIVE", // operasyonel eskalasyon cron'u koşulsuz çalışır
+        reminderDays: escalation.opReminderDays ?? null,
+        founderDays: escalation.opFounderDays ?? null,
+        channels: escChannels,
+        assignees: escAssignees,
+        last24hSent: last24hEscalationSent,
+        last24hFailed: last24hEscalationFailed,
+      },
+      poa: {
+        key: "poa",
+        status: "ATTENTION", // teslimat eksik: NotificationQueue'ya yazılıyor ama gönderen motor yok
+        reason: "DELIVERY_NOT_WIRED",
+      },
+    };
+
+    const channels = {
+      email: {
+        configured: !!smtp.smtpHost,
+        host: smtp.smtpHost || null,
+        sender: smtp.smtpFromEmail || smtp.smtpUser || null,
+      },
+      sms: {
+        configured: !!sms.smsProvider,
+        provider: sms.smsProvider || null,
+        title: sms.smsSender || null,
+      },
+    };
+
+    const activeEngines = [engines.greeting, engines.escalation].filter(
+      (e) => e.status === "ACTIVE"
+    ).length;
+    const attentionEngines = [engines.poa].filter((e) => e.status === "ATTENTION").length;
+    // Planlandı listesi statiktir (motoru olmayan, sahte aktiflik gösterilmeyen özellikler)
+    const plannedEngines = 5;
+
+    return {
+      generatedAt: now.toISOString(),
+      channels,
+      engines,
+      stats: {
+        last24hSent,
+        last24hFailed,
+        last24hPending,
+        last24hEscalationSent,
+        last24hEscalationFailed,
+        activeEngines,
+        attentionEngines,
+        plannedEngines,
+      },
+      recentDeliveries,
+      failureGroups,
+    };
+  }
+
   // E-posta gönder
   async sendEmail(tenantId: string, userId: string, dto: SendEmailDto) {
     // Müvekkil bilgilerini al
