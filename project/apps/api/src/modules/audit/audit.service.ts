@@ -103,4 +103,51 @@ export class AuditService {
       orderBy: { createdAt: 'desc' },
     });
   }
+
+  /**
+   * P3-1b — Guided-Open confirm-token REPLAY tespiti (best-effort, salt-okuma).
+   *
+   * Aynı nonce ile DAHA ÖNCE başarıyla tüketilmiş (result='CONSUMED') bir
+   * CONFIRM_TOKEN_CONSUMED kaydı var mı? Yalnız indeksli kolonlarla (tenantId/action/
+   * entityType/entityId=targetRef) sorgular, nonce/result/actionCode'u metadata'dan tarar.
+   * ŞEMA DEĞİŞİKLİĞİ YOK; yeni tablo YOK.
+   *
+   * Best-effort sözleşme: katı tek-kullanımlık DB-unique garantisi DEĞİL. Okuma hatası
+   * akışı bozmaz → "önceki tüketim yok" (false) döner + loglar (kısa TTL + binding korur).
+   *
+   * Çağrıldığı yerler:
+   *  - ConfirmationTokenService.consume (P3-1b; henüz hiçbir route'a bağlı değil)
+   */
+  async hasPriorConfirmTokenConsumption(input: {
+    tenantId: string;
+    targetRef: string;
+    nonce: string;
+    actionCode: string;
+  }): Promise<boolean> {
+    try {
+      const rows = await this.prisma.auditLog.findMany({
+        where: {
+          tenantId: input.tenantId,
+          action: 'CONFIRM_TOKEN_CONSUMED',
+          entityType: 'GUIDED_OPEN_CONFIRM',
+          entityId: input.targetRef,
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 200,
+      });
+      return rows.some((row) => {
+        const meta = (row.metadata ?? {}) as Record<string, unknown>;
+        return (
+          meta.nonce === input.nonce &&
+          meta.result === 'CONSUMED' &&
+          meta.actionCode === input.actionCode
+        );
+      });
+    } catch (error) {
+      this.logger.error(
+        `confirm-token replay read failed: ${(error as Error)?.message ?? error}`,
+      );
+      return false;
+    }
+  }
 }
