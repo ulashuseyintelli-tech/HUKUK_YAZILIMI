@@ -11,7 +11,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import {
   Bell, Mail, MessageSquare, AlarmClock, Gift, ShieldAlert,
-  ChevronRight, CheckCircle2, AlertCircle, Clock,
+  ChevronRight, CheckCircle2, AlertCircle,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 
@@ -183,29 +183,41 @@ export default function NotificationSettingsPage() {
         </div>
       </div>
 
-      {/* Vekalet Süresi Uyarısı — read-only sistem görevi durumu */}
-      <div className="rounded-xl border bg-white p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div className="flex items-center gap-2.5 min-w-0">
-            <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-amber-100/70 shrink-0"><ShieldAlert className="h-4 w-4 text-amber-600" /></span>
-            <div className="min-w-0">
-              <h2 className="text-[14px] font-semibold text-gray-900">Vekalet Süresi Uyarısı</h2>
-              <p className="text-[11px] text-gray-500">Süresi dolmak üzere olan vekaletler için otomatik uyarı</p>
+      {/* Dikkat Gerekiyor — yarım bağlı / teslimatsız motorlar (PR-N1.5 dürüstlük düzeltmesi) */}
+      <div className="pt-1">
+        <h3 className="mb-2 flex items-center gap-1.5 text-[12.5px] font-semibold text-amber-700">
+          <AlertCircle className="h-3.5 w-3.5" /> Dikkat Gerekiyor
+        </h3>
+
+        {/* Vekalet Süresi Uyarısı — TESLİMAT EKSİK.
+            Cron her gün 09:00'da NotificationQueue'ya PENDING kayıt yazıyor; ancak bu kuyruğu boşaltan
+            bir gönderici yok ve gönderim simülasyon. Yani uyarı kimseye ulaşmıyor → "Aktif" göstermek yanlış. */}
+        <div className="rounded-xl border border-amber-300 bg-amber-50/50 p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-amber-100 shrink-0"><ShieldAlert className="h-4 w-4 text-amber-600" /></span>
+              <div className="min-w-0">
+                <h2 className="text-[14px] font-semibold text-gray-900">Vekalet Süresi Uyarısı</h2>
+                <p className="text-[11px] text-gray-500">Süresi dolmak üzere olan vekaletler için otomatik uyarı</p>
+              </div>
             </div>
+            <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-800 bg-amber-100 px-2 py-0.5 rounded-full whitespace-nowrap"><AlertCircle className="h-3 w-3" />Teslimat eksik</span>
           </div>
-          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full whitespace-nowrap"><Clock className="h-3 w-3" />Sistem görevi</span>
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-[12.5px]">
+            <Row label="Durum" value={<span className="text-amber-800">Teslimat eksik</span>} />
+            <Row label="Kanal" value="Henüz bağlı değil" />
+            <Row label="Çalışma" value="Her gün 09:00 hesaplama" />
+            <Row label="Eşik" value="30 gün" />
+            <Row label="Alıcı" value="—" />
+          </div>
+          <p className="mt-3 text-[11.5px] leading-relaxed text-amber-900/80">
+            Süresi yaklaşan vekaletler hesaplanıyor ve kuyruğa yazılıyor; ancak bu kayıtlardan e-posta/SMS gönderen
+            <span className="font-medium"> teslimat motoru henüz aktif değil</span>. Bu yüzden uyarı şu an kimseye ulaşmıyor.
+          </p>
+          <p className="mt-2 text-[11px] font-medium text-amber-700">
+            Sonraki adım: vekalet (POA) teslimat motorunu etkinleştir
+          </p>
         </div>
-        <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-[12.5px]">
-          <Row label="Durum" value="Aktif" />
-          <Row label="Çalışma" value="Her gün 09:00" />
-          <Row label="Kanal" value="E-posta" />
-          <Row label="Eşik" value="30 gün" />
-          <Row label="Alıcı" value="Yönetici" />
-        </div>
-        <p className="mt-3 text-[11px] text-gray-500 leading-relaxed">
-          Bu uyarı büro-geneli bir sistem görevidir (sabit eşik/kanal). Özelleştirilebilir eşik, alıcı ve SMS varyantı
-          sonraki faza planlıdır — bu yüzden burada açıp kapatılan bir anahtar yoktur.
-        </p>
       </div>
 
       {/* Henüz aktif değil — planlandı */}
