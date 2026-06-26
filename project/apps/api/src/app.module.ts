@@ -83,6 +83,7 @@ import { AddressDiscoveryModule } from "./modules/address-discovery/address-disc
 import { AssetQueryModule } from "./modules/asset-query/asset-query.module";
 import { UyapExportModule } from "./modules/uyap-export/uyap-export.module";
 import { V28EngineModule } from "./modules/icrabot/v28-engine/v28-engine.module";
+import { ClientSettlementModule } from "./modules/client-settlement/client-settlement.module";
 import { InterestEngineModule } from "./modules/interest-engine/interest-engine.module";
 import { AddressTaskModule } from "./modules/address-task/address-task.module";
 import { PolicyEngineModule } from "./modules/policy-engine/policy-engine.module";
@@ -216,6 +217,7 @@ function getConditionalImports(): Type<unknown>[] {
     AssetQueryModule,
     UyapExportModule,
     V28EngineModule,
+    ClientSettlementModule,
     InterestEngineModule,
     AddressTaskModule,
     PolicyEngineModule,
