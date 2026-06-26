@@ -83,6 +83,26 @@ describe("GuidedOpenObserveService — observe-mode (P2b-1)", () => {
     expect(arg.metadata.wouldRequireConfirm).toBe(true);
   });
 
+  it("P2b-2b-1: opts.targetRef verilince audit metadata.targetRef + entityId=targetRef (caseId YOKKEN)", async () => {
+    process.env.GUIDED_OPEN_AUTHZ_MODE = "observe";
+    const { svc, audit } = make();
+    await svc.observe({ actorUserId: "u1", tenantId: "t1", actionCode: ActionCode.EDIT_PARTIES }, { targetRef: "cd-9" });
+    const arg = audit.log.mock.calls[0][0];
+    expect(arg.entityId).toBe("cd-9"); // caseId yok → targetRef
+    expect(arg.metadata.targetRef).toBe("cd-9");
+    expect(arg.metadata.caseId).toBeNull();
+    expect(arg.metadata.actionCode).toBe(ActionCode.EDIT_PARTIES);
+  });
+
+  it("P2b-2b-1: opts geçilmezse targetRef metadata'da YOK + entityId=caseId (mevcut pilot audit şekli korunur)", async () => {
+    process.env.GUIDED_OPEN_AUTHZ_MODE = "observe";
+    const { svc, audit } = make();
+    await svc.observe({ actorUserId: "u1", tenantId: "t1", caseId: "c1", actionCode: ActionCode.DELETE_CASE });
+    const arg = audit.log.mock.calls[0][0];
+    expect(arg.entityId).toBe("c1");
+    expect("targetRef" in arg.metadata).toBe(false); // additive alan eklenmedi → geriye uyumlu
+  });
+
   it("best-effort: audit.log THROW etse bile observe THROW ETMEZ", async () => {
     process.env.GUIDED_OPEN_AUTHZ_MODE = "observe";
     const resolver = { resolve: jest.fn().mockResolvedValue(sampleDecision) };

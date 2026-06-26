@@ -11,10 +11,12 @@ import { AddressService } from "./address.service";
 import { AddressController } from "./address.controller";
 import { CollectionModule } from "../collection/collection.module";
 import { CaseDebtorLifecycleGuardModule } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.module";
+import { PermissionDiagnosticsModule } from "../permission-diagnostics/permission-diagnostics.module";
 
 @Module({
   // G3d: ThirdPartyService alacak haczi tahsilatını kanonik CollectionService'ten yansıtır.
-  imports: [CollectionModule, CaseDebtorLifecycleGuardModule],
+  // P2b-2b-1: CaseDebtorController'da EDIT_PARTIES observe hook için GuidedOpenObserveService.
+  imports: [CollectionModule, CaseDebtorLifecycleGuardModule, PermissionDiagnosticsModule],
   controllers: [
     DebtorController,
     CaseDebtorController,
