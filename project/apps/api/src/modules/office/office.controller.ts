@@ -61,6 +61,10 @@ export class OfficeController {
       email?: string;
       website?: string;
       barAssociation?: string;
+      vergiNo?: string;
+      vergiDairesi?: string;
+      mersisNo?: string;
+      kepAddress?: string;
       defaultExecutionOfficeId?: string;
     }
   ) {

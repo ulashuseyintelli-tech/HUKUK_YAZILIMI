@@ -1699,6 +1699,12 @@ model Office {
   // Baro Bilgisi
   barAssociation String? // Bağlı olduğu baro
 
+  // Yasal / Resmi Kimlik (Faz-B) — büro tüzel/ticari kimliği (fatura, resmi yazışma)
+  vergiNo      String? // Vergi numarası (serbest meslek makbuzu / fatura)
+  vergiDairesi String? // Bağlı vergi dairesi
+  mersisNo     String? // MERSİS no (şirket / avukatlık ortaklığı ise)
+  kepAddress   String? // KEP adresi (resmi e-yazışma / UYAP)
+
   // Varsayılan İcra Dairesi
   defaultExecutionOfficeId String?
 
