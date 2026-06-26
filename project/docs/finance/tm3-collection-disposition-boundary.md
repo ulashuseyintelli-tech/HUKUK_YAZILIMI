@@ -75,7 +75,7 @@ Köprü  = PAYMENT_RECEIVED / PAYMENT_REVERSED outbox event'i + CollectionDispos
 
 ## 5. Claude sorumlulukları
 
-**YAPAR:** outbox consumer + `CollectionDisposition` taslağı · dağıtım posting (`BalanceLedger`/`ClientStatementLine`) · payout · müvekkil masraf-avans tarafı · client audit (`client.service.ts`) · CPE forensic.
+**YAPAR:** outbox consumer + `CollectionDisposition` taslağı · disposition posting **→ `ClientStatementLine` üretir** (`BalanceLedger` YALNIZ masraf-avansı / expense-advance etkili satırlarda kullanılır — bkz §5.1; normal proceeds, `CLIENT_PAYABLE` ve payout BalanceLedger'a YAZILMAZ) · payout (proceeds-tarafı) · müvekkil masraf-avans tarafı · client audit (`client.service.ts`) · CPE forensic.
 
 **YAPMAZ:** `CollectionService.create/cancel` · `case.service` collection delete/update fix (CODEX TM3-S1) · legal allocation · `Collection` şeması · event'e `clientId` varsayımı.
 
@@ -173,7 +173,8 @@ Claude (consumer):
 | `src/modules/policy-engine/*` (CpeRequiredGuard) | **policy/authz** | C0 forensic OKUMA; aktivasyon YOK |
 | `src/modules/client/client.service.ts` (64/192/464) | **Claude** | C0 audit |
 | `src/modules/audit/audit.service.ts` | **Claude (tüketir)** | `.log()` |
-| `src/modules/client-statement/*` + `BalanceLedger` | **Claude** | M2 yazım |
+| `src/modules/client-statement/*` | **Claude** | proceeds/disposition ekstre (`ClientStatementLine`) yazımı |
+| `BalanceLedger` (yazım) | **Claude** | YALNIZ masraf-avansı / `OFFSET_CLIENT_ADVANCE` / expense-advance etkili satırlar (proceeds/payout YAZILMAZ) |
 | **NEW** `src/modules/client-settlement/` (disposition + consumer handler) | **Claude** | M1/M2 |
 | `prisma/schema.prisma` | **ORTAK — migration koordine** | yalnız Claude model ekler (CODEX TM3 persist eklemez) |
 
