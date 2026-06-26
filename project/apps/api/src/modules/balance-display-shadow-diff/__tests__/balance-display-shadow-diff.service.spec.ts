@@ -1,9 +1,11 @@
 import { BalanceDisplayShadowDiffService, cutoverReadiness } from '../balance-display-shadow-diff.service';
+import type { BalanceDisplayShadowDiffReport } from '../balance-display-shadow-diff.types';
 import type { CaseService } from '../../case/case.service';
 import type { CaseBalanceService, CaseBalanceResult } from '../../interest-engine/orchestration/case-balance.service';
 import { AncillaryType } from '../../interest-engine/types/domain.types';
 
 const GENERATED_AT = '2026-06-24T10:00:00.000Z';
+const TARGET_LEGACY_FINANCIAL_ROWS = ['tazminat', 'komisyon', 'takipOncesiFaiz'] as const;
 
 function legacySummary(overrides: Record<string, unknown> = {}) {
   return {
@@ -118,6 +120,61 @@ function makeService(
   };
 }
 
+function expectShadowClassificationToRemainShadowOnly(report: BalanceDisplayShadowDiffReport) {
+  expect(report.mode).toBe('SHADOW_ONLY');
+  expect(report.sources.canonicalBalanceDisplay.authority).toBe('SHADOW_ONLY');
+  expect(report.provenance.canonicalBalanceDisplayUsed).toBe(true);
+}
+
+function expectPrimaryDisplayToRemainUnchanged(report: BalanceDisplayShadowDiffReport) {
+  expect(report.primaryDisplayUnchanged).toBe(true);
+  expect(report.cutoverReadiness.safeForPrimaryDisplay).toBe(false);
+  expect(report.sources.legacyCalculationSummary.authority).toBe('LEGACY_DISPLAY');
+  expect(report.provenance.legacyCalculationSummaryUsed).toBe(true);
+}
+
+function collectStringTerms(value: unknown): string[] {
+  if (typeof value === 'string') return [value];
+  if (!value || typeof value !== 'object') return [];
+  if (Array.isArray(value)) return value.flatMap(collectStringTerms);
+
+  return Object.entries(value as Record<string, unknown>).flatMap(([key, nested]) => [key, ...collectStringTerms(nested)]);
+}
+
+function collectCanonicalAuthorityTerms(report: BalanceDisplayShadowDiffReport): string[] {
+  const topLevelCanonicalSurfaces = Object.entries(report as unknown as Record<string, unknown>)
+    .filter(([key]) => key.toLowerCase().includes('canonical'))
+    .flatMap(([key, value]) => [key, ...collectStringTerms(value)]);
+
+  return [
+    ...topLevelCanonicalSurfaces,
+    ...collectStringTerms(report.sources.canonicalBalanceDisplay),
+    ...Object.keys(report.totals.canonical?.raw ?? {}),
+    ...report.totals.diffs.map((diff) => diff.canonicalField),
+    ...report.bucketDiffs.flatMap((diff) => [diff.bucket, diff.canonicalField]),
+  ];
+}
+
+function expectCanonicalAuthorityNotToContainTargetRows(report: BalanceDisplayShadowDiffReport) {
+  const canonicalAuthorityTerms = collectCanonicalAuthorityTerms(report);
+
+  for (const rowId of TARGET_LEGACY_FINANCIAL_ROWS) {
+    expect(canonicalAuthorityTerms.some((term) => term.includes(rowId))).toBe(false);
+  }
+}
+
+function expectLegacyRawNotPromotedToCanonicalRows(report: BalanceDisplayShadowDiffReport) {
+  expect(Object.keys(report.totals.legacy?.raw ?? {})).toContain('takipOncesiFaiz');
+
+  const legacyInterestDiff = report.totals.diffs.find((diff) => diff.code === 'INTEREST_DELTA');
+  expect(legacyInterestDiff?.legacyField).toContain('takipOncesiFaiz');
+  expect(legacyInterestDiff?.canonicalField).toBe('canonical.bucket.ACCRUED_INTEREST');
+
+  for (const rowId of TARGET_LEGACY_FINANCIAL_ROWS) {
+    expect(report.bucketDiffs.find((diff) => diff.bucket === rowId)).toBeUndefined();
+  }
+}
+
 describe('BalanceDisplayShadowDiffService', () => {
   it('legacy calculation-summary ile hardened balance/display DTOsunu shadow-only raporda yan yana üretir', async () => {
     const { service, caseService, caseBalance } = makeService();
@@ -187,6 +244,22 @@ describe('BalanceDisplayShadowDiffService', () => {
         classification: 'LEGACY_AUTHORITY_RISK',
       }),
     ]));
+  });
+
+  it('balance-display-shadow-diff keeps target legacy financial rows outside canonical row authority while shadow remains shadow-only and primary display is unchanged', async () => {
+    const legacy = legacySummary({
+      tazminat: 321,
+      komisyon: 654,
+      takipOncesiFaiz: 987,
+    });
+    const { service } = makeService(legacy);
+
+    const report = await service.compare('tenant-1', 'case-1', '2026-06-24', GENERATED_AT);
+
+    expectShadowClassificationToRemainShadowOnly(report);
+    expectPrimaryDisplayToRemainUnchanged(report);
+    expectCanonicalAuthorityNotToContainTargetRows(report);
+    expectLegacyRawNotPromotedToCanonicalRows(report);
   });
 
   it('HELD overpaymenti outstanding borçtan düşmeden ayrı evidence olarak taşır', async () => {
