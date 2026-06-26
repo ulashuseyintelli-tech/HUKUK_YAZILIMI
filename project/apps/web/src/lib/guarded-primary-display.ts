@@ -109,6 +109,11 @@ export interface GuardedSummaryRuntimeBoundaryPlan {
   };
 }
 
+export interface GuardedPrimaryCalculationResultWithBoundaryPlan {
+  guardedPrimaryHesap: CaseCalculationResult | null;
+  boundaryPlan: GuardedSummaryRuntimeBoundaryPlan;
+}
+
 const GUARDED_SUMMARY_CANONICAL_PRIMARY_OVERRIDE_ROW_IDS: readonly GuardedSummaryRuntimeBoundaryRowId[] = [
   'asilAlacak',
   'takipTutari',
@@ -386,5 +391,20 @@ export function buildGuardedPrimaryCalculationResult(
     toplamTahsilat: amounts.totalPaidAmount,
     kalanBorc: amounts.outstandingAmount,
     kalanAnapara: amounts.principalAmount,
+  };
+}
+
+export function buildGuardedPrimaryCalculationResultWithBoundaryPlan(
+  legacy: CaseCalculationResult,
+  report: BalanceDisplayShadowDiffReport,
+  decision: GuardedPrimaryDisplayDecision,
+): GuardedPrimaryCalculationResultWithBoundaryPlan {
+  const guardedPrimaryHesap = buildGuardedPrimaryCalculationResult(legacy, report, decision);
+
+  return {
+    guardedPrimaryHesap,
+    boundaryPlan: buildGuardedSummaryRuntimeBoundaryPlan({
+      guardedPrimarySelected: guardedPrimaryHesap !== null,
+    }),
   };
 }
