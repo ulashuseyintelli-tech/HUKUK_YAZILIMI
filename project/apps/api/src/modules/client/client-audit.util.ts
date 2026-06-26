@@ -12,6 +12,8 @@
  *  - ClientService.create()  → CLIENT_CREATE / CLIENT_REACTIVATE audit snapshot
  *  - ClientService.update()  → CLIENT_UPDATE field + contact diff
  *  - ClientService.remove()  → CLIENT_DELETE old snapshot (sanitized)
+ *  - PortalService.createPortalUser()/disablePortalUser() → CLIENT_PORTAL_ACCESS_ENABLE/DISABLE
+ *      (ClientService DIŞI client.update bypass'ı; portal erişim-bayrağı diff'i PORTAL_ACCESS_FIELDS ile)
  */
 import { createHash } from 'crypto';
 
@@ -42,6 +44,8 @@ const PLAIN_FIELDS = new Set([
   'type', 'canCollect', 'canWaive', 'canSettle', 'canRelease', 'isActive',
   'isForeigner', 'nationality', 'companyType', 'taxOffice', 'region', 'city', 'district',
   'greetingChannel', 'sendBirthdayGreeting', 'sendAnniversaryGreeting', 'sendHolidayGreeting',
+  // C0 bypass (portal.service.ts) — operasyonel portal erişim bayrakları (PII DEĞİL).
+  'hasPortalAccess', 'portalUserId',
 ]);
 /** Yapısal PII — mask (son haneler). */
 const MASK_TAIL_FIELDS = new Set(['tckn', 'vkn', 'identityNo', 'phone', 'mersisNo', 'ticaretSicilNo']);
@@ -67,6 +71,13 @@ const TRACKED_FIELDS = [
   'greetingChannel', 'sendBirthdayGreeting', 'sendAnniversaryGreeting', 'sendHolidayGreeting',
 ];
 
+/**
+ * Portal erişim-bayrağı alanları (C0 bypass — ClientService DIŞINDA, portal.service.ts).
+ * Operasyonel/PII-değil. TRACKED_FIELDS'e EKLENMEZ → C0-a CLIENT_CREATE/UPDATE diff çıktısı
+ * AYNEN korunur; yalnız portal erişim aç/kapa audit'i bu dar listeyle diff alır.
+ */
+export const PORTAL_ACCESS_FIELDS = ['hasPortalAccess', 'portalUserId'] as const;
+
 export interface FieldDiffEntry {
   field: string;
   changed: boolean;
@@ -78,9 +89,10 @@ export interface FieldDiffEntry {
 export function buildClientFieldDiff(
   oldRow: Record<string, any> | null,
   newRow: Record<string, any>,
+  fields: readonly string[] = TRACKED_FIELDS,
 ): FieldDiffEntry[] {
   const diff: FieldDiffEntry[] = [];
-  for (const field of TRACKED_FIELDS) {
+  for (const field of fields) {
     const oldVal = oldRow ? oldRow[field] : undefined;
     const newVal = newRow[field];
     const oldNorm = oldVal === undefined ? null : oldVal;

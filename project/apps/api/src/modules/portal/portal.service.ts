@@ -2,6 +2,9 @@ import { Injectable, Logger, UnauthorizedException, BadRequestException, NotFoun
 import { JwtService } from "@nestjs/jwt";
 import { PrismaService } from "../../prisma/prisma.service";
 import { maskEmail } from "../../common/pii-mask.util";
+import { AuditService } from "../audit/audit.service";
+import { buildClientFieldDiff, PORTAL_ACCESS_FIELDS } from "../client/client-audit.util";
+import type { AuditActor } from "../client/client.service";
 import * as bcrypt from "bcrypt";
 import * as crypto from "crypto";
 
@@ -11,13 +14,21 @@ export class PortalService {
 
   constructor(
     private prisma: PrismaService,
-    private jwtService: JwtService
+    private jwtService: JwtService,
+    private audit: AuditService
   ) {}
 
   /**
    * Portal kullanıcısı oluştur
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * /// - PortalController.createPortalUser() → POST /api/portal/admin/create-user (JwtAuthGuard; büro/admin portal hesabı aç/yeniden-aktifle)
+   * /// actor: YALNIZ auth context (req.user.sub). body/payload'dan ASLA türetilmez.
+   * /// C0: client.update (hasPortalAccess/portalUserId) ClientService DIŞI bypass → audit AYNI tx içinde.
+   * /// </remarks>
    */
-  async createPortalUser(clientId: string, email: string, password: string, tenantId: string) {
+  async createPortalUser(clientId: string, email: string, password: string, tenantId: string, actor?: AuditActor) {
     // Müvekkil kontrolü
     const client = await this.prisma.client.findFirst({
       where: { id: clientId, tenantId },
@@ -50,35 +61,74 @@ export class PortalService {
       if (existing.isActive) {
         throw new ConflictException("Bu müvekkil için portal hesabı zaten mevcut");
       }
-      await this.prisma.clientPortalUser.update({
-        where: { id: existing.id },
-        data: { isActive: true, email, passwordHash, resetToken: null, resetTokenExp: null },
-      });
-      await this.prisma.client.update({
-        where: { id: clientId },
-        data: { hasPortalAccess: true, portalUserId: existing.id },
+      // C0 bypass fix: portalUser reactivate + client erişim-bayrağı + audit AYNI transaction.
+      // before/after diff snapshot'ı da tx içinde okunur (atomik boundary, race azaltır); audit
+      // yazılamazsa rollback → audit'siz erişim açma kalmaz (C0-a deseni).
+      await this.prisma.$transaction(async (tx) => {
+        const before = await tx.client.findUniqueOrThrow({
+          where: { id: clientId },
+          select: { id: true, hasPortalAccess: true, portalUserId: true },
+        });
+        await tx.clientPortalUser.update({
+          where: { id: existing.id },
+          data: { isActive: true, email, passwordHash, resetToken: null, resetTokenExp: null },
+        });
+        const after = await tx.client.update({
+          where: { id: clientId },
+          data: { hasPortalAccess: true, portalUserId: existing.id },
+        });
+        await this.audit.logInTransaction(tx, {
+          tenantId,
+          action: "CLIENT_PORTAL_ACCESS_ENABLE",
+          entityType: "CLIENT",
+          entityId: clientId,
+          userId: actor?.userId,
+          metadata: {
+            portalAction: "REACTIVATE",
+            portalUserId: existing.id,
+            fieldDiff: buildClientFieldDiff(before, after, PORTAL_ACCESS_FIELDS),
+          },
+        });
       });
       this.logger.log(`Portal kullanıcısı yeniden aktifleştirildi: ${maskEmail(email)} (Client: ${clientId})`);
       return { success: true, portalUserId: existing.id, _reactivated: true };
     }
 
-    const portalUser = await this.prisma.clientPortalUser.create({
-      data: {
-        clientId,
-        email,
-        passwordHash,
-      },
-    });
-
-    // Müvekkil kaydını güncelle
-    await this.prisma.client.update({
-      where: { id: clientId },
-      data: { hasPortalAccess: true, portalUserId: portalUser.id },
+    // C0 bypass fix: portalUser create + client erişim-bayrağı + audit AYNI transaction.
+    const portalUserId = await this.prisma.$transaction(async (tx) => {
+      const before = await tx.client.findUniqueOrThrow({
+        where: { id: clientId },
+        select: { id: true, hasPortalAccess: true, portalUserId: true },
+      });
+      const portalUser = await tx.clientPortalUser.create({
+        data: {
+          clientId,
+          email,
+          passwordHash,
+        },
+      });
+      const after = await tx.client.update({
+        where: { id: clientId },
+        data: { hasPortalAccess: true, portalUserId: portalUser.id },
+      });
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: "CLIENT_PORTAL_ACCESS_ENABLE",
+        entityType: "CLIENT",
+        entityId: clientId,
+        userId: actor?.userId,
+        metadata: {
+          portalAction: "CREATE",
+          portalUserId: portalUser.id,
+          fieldDiff: buildClientFieldDiff(before, after, PORTAL_ACCESS_FIELDS),
+        },
+      });
+      return portalUser.id;
     });
 
     this.logger.log(`Portal kullanıcısı oluşturuldu: ${maskEmail(email)} (Client: ${clientId})`);
 
-    return { success: true, portalUserId: portalUser.id };
+    return { success: true, portalUserId };
   }
 
 
@@ -312,8 +362,15 @@ export class PortalService {
 
   /**
    * Portal kullanıcısını devre dışı bırak
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * /// - PortalController.disablePortalUser() → POST /api/portal/admin/disable-user (JwtAuthGuard; büro/admin portal erişimini kapat)
+   * /// actor: YALNIZ auth context (req.user.sub). body/payload'dan ASLA türetilmez.
+   * /// C0: client.update (hasPortalAccess=false) ClientService DIŞI bypass → audit AYNI tx içinde.
+   * /// </remarks>
    */
-  async disablePortalUser(clientId: string, tenantId: string) {
+  async disablePortalUser(clientId: string, tenantId: string, actor?: AuditActor) {
     const client = await this.prisma.client.findFirst({
       where: { id: clientId, tenantId },
     });
@@ -322,14 +379,31 @@ export class PortalService {
       throw new NotFoundException("Müvekkil bulunamadı");
     }
 
-    await this.prisma.clientPortalUser.updateMany({
-      where: { clientId },
-      data: { isActive: false },
-    });
-
-    await this.prisma.client.update({
-      where: { id: clientId },
-      data: { hasPortalAccess: false },
+    // C0 bypass fix: portal kullanıcıları pasifle + client erişim-bayrağı kapat + audit AYNI transaction.
+    await this.prisma.$transaction(async (tx) => {
+      const before = await tx.client.findUniqueOrThrow({
+        where: { id: clientId },
+        select: { id: true, hasPortalAccess: true, portalUserId: true },
+      });
+      await tx.clientPortalUser.updateMany({
+        where: { clientId },
+        data: { isActive: false },
+      });
+      const after = await tx.client.update({
+        where: { id: clientId },
+        data: { hasPortalAccess: false },
+      });
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: "CLIENT_PORTAL_ACCESS_DISABLE",
+        entityType: "CLIENT",
+        entityId: clientId,
+        userId: actor?.userId,
+        metadata: {
+          portalAction: "DISABLE",
+          fieldDiff: buildClientFieldDiff(before, after, PORTAL_ACCESS_FIELDS),
+        },
+      });
     });
 
     return { success: true };
