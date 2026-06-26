@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { LegalCaseStatus } from '@prisma/client';
 
@@ -80,24 +80,31 @@ export class CaseStatusService {
     }
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseStatusController.changeStatus() → POST /case-status/:caseId/change
+  /// P2b-2c-1 hardening: tenant-scoped lookup (cross-tenant/missing → NotFound 404) + truthful actorUserId = changedById.
+  /// </remarks>
   // Statü değiştir (B.17)
   async changeStatus(
+    tenantId: string,
     caseId: string,
     newStatus: LegalCaseStatus,
-    userId?: string,
+    actorUserId: string,
     reason?: string,
   ): Promise<any> {
-    const caseData = await this.prisma.case.findUnique({
-      where: { id: caseId },
+    // P2b-2c-1: TENANT-SCOPED lookup. Cross-tenant veya yok → NotFound (404; varlık sızdırma yok).
+    const caseData = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
       select: { caseStatus: true, isAutomationEnabled: true },
     });
 
     if (!caseData) {
-      throw new Error('Case not found');
+      throw new NotFoundException('Dosya bulunamadı');
     }
 
     const oldStatus = caseData.caseStatus;
-    
+
     // Statü geçişini doğrula (B.6)
     this.validateStatusTransition(oldStatus, newStatus);
     const automationMode = STATUS_AUTOMATION_CONFIG[newStatus];
@@ -124,7 +131,7 @@ export class CaseStatusService {
           fromStatus: oldStatus,
           toStatus: newStatus,
           reason,
-          changedById: userId,
+          changedById: actorUserId, // P2b-2c-1: truthful authenticated User.id (body.userId DEĞİL)
           automationWasEnabled: automationChanged ? shouldEnableAutomation : null,
         },
       });
