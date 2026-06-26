@@ -2,9 +2,9 @@
 
 import { useState, useEffect, Suspense } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { Building2, Users, Plus, Pencil, Trash2, Check, X, Star, CreditCard, Loader2, Mail, MessageSquare, GripVertical, Gift, Clock } from "lucide-react";
+import { Building2, Users, Plus, Pencil, Trash2, Check, X, Star, CreditCard, Loader2, Mail, MessageSquare, GripVertical, Clock, ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
-import { SettingsShell, SettingsNav, SettingsDetailBody, SettingsSection, WorkbenchHeader } from "@/components/settings/settings-shell";
+import { SettingsSection, WorkbenchHeader, SettingsDrawer } from "@/components/settings/settings-shell";
 
 interface BankAccount { id: string; bankName: string; branchName?: string; iban: string; accountName?: string; isDefault: boolean; }
 interface Lawyer { 
@@ -351,52 +351,202 @@ function OfficeSettingsInner() {
   const roleLabels: Record<string, string> = { OWNER: "Sahip", PARTNER: "Ortak", EMPLOYEE: "Avukat", INTERN: "Stajyer" };
   const getStaffTypeLabel = (type: string) => STAFF_TYPES.find(t => t.value === type)?.label || type;
   const getStaffTypeColor = (type: string) => STAFF_TYPES.find(t => t.value === type)?.color || "bg-gray-100";
+  const lawyerRankLabel = (l: any): string => {
+    const rankMap: Record<string, string> = { PARTNER: "Ortak", MANAGER: "Yönetici", AUTHORIZED: "Yetkili", LAWYER: "Avukat", INTERN: "Stajyer" };
+    if (l?.lawyerRank && rankMap[l.lawyerRank]) return rankMap[l.lawyerRank];
+    return roleLabels[l?.role] || "Avukat";
+  };
+  const roleBadgeClass = (label: string): string => {
+    switch (label) {
+      case "Sahip": case "Kurucu": case "Ortak": return "bg-amber-50 text-amber-800 border border-amber-200";
+      case "Yönetici": return "bg-blue-50 text-blue-800 border border-blue-200";
+      case "Yetkili": return "bg-emerald-50 text-emerald-800 border border-emerald-200";
+      case "Stajyer": case "Stajyer Av.": return "bg-sky-50 text-sky-800 border border-sky-200";
+      case "Sekreter": return "bg-rose-50 text-rose-800 border border-rose-200";
+      case "Muhasebe": return "bg-orange-50 text-orange-800 border border-orange-200";
+      case "Ofis Katibi": case "Adli Katip": return "bg-violet-50 text-violet-800 border border-violet-200";
+      default: return "bg-slate-100 text-slate-600 border border-slate-200";
+    }
+  };
 
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const sectionParam = searchParams.get("section");
-  const activeSection: OfficeSection = (OFFICE_SECTIONS as readonly string[]).includes(sectionParam ?? "")
+  const drawerSection: OfficeSection | null = (OFFICE_SECTIONS as readonly string[]).includes(sectionParam ?? "")
     ? (sectionParam as OfficeSection)
-    : "office";
+    : null;
   const goSection = (key: string) => router.push(`${pathname}?section=${key}`);
-  const navGroups = [
-    { label: "Büro", items: [
-      { key: "office", label: "Büro Bilgileri", icon: Building2 },
-      { key: "bank", label: "Banka Hesapları", icon: CreditCard, badge: office?.bankAccounts?.length },
-    ] },
-    { label: "Kadro", items: [
-      { key: "lawyers", label: "Avukatlar", icon: Users, badge: office?.lawyers?.length },
-      { key: "staff", label: "Personel", icon: Users, badge: staffList.length },
-    ] },
-    { label: "Sistem Konsolu", items: [
-      { key: "smtp", label: "SMTP", icon: Mail },
-      { key: "sms", label: "SMS", icon: MessageSquare },
-      { key: "greeting", label: "Otomatik Tebrik", icon: Gift },
-      { key: "escalation", label: "Görev & Eskalasyon", icon: Clock },
-    ] },
-  ];
+  const closeDrawer = () => router.push(pathname);
+  const DRAWER_TITLE: Record<string, string> = {
+    office: "Büro Bilgileri", bank: "Banka Hesapları", lawyers: "Avukatlar", staff: "Personel",
+    smtp: "SMTP", sms: "SMS", greeting: "Otomatik Tebrik", escalation: "Görev & Eskalasyon",
+  };
 
   const officeDirty = JSON.stringify(officeForm) !== JSON.stringify(officeInitial);
   const resetOffice = () => setOfficeForm(officeInitial);
 
+  const lawyers = office?.lawyers ?? [];
+  const officeFilledCount = [office?.name, office?.barAssociation, office?.email, office?.phone, office?.city, office?.address].filter(Boolean).length;
+  const lawyerRoleCounts = lawyers.reduce<Record<string, number>>((a, l) => { const k = lawyerRankLabel(l); a[k] = (a[k] || 0) + 1; return a; }, {});
+  const lawyerDist = Object.keys(lawyerRoleCounts).length > 1 ? Object.entries(lawyerRoleCounts).map(([k, v]) => `${v} ${k}`).join(" · ") : "";
+  const staffDist = Object.entries(staffList.reduce<Record<string, number>>((a, s) => { const k = getStaffTypeLabel(s.staffType); a[k] = (a[k] || 0) + 1; return a; }, {})).map(([k, v]) => `${v} ${k}`).join(" · ");
+  const escAssignedCount = (escalationForm.escalationManagerLawyerIds?.length ?? 0) + (escalationForm.escalationFounderLawyerIds?.length ?? 0);
+
   if (loading) return <div className="flex items-center justify-center h-full"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
 
   return (
-    <div className="h-full flex flex-col gap-3 p-1">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Building2 className="h-5 w-5 text-primary" />
-          <h1 className="text-lg font-bold">Büro Ayarları</h1>
+    <div className="h-full flex flex-col p-1">
+      {/* A-3a Visual Accent Pass: gruplara muted renk kimliği + üst accent çizgisi */}
+      <div className="flex-1 min-h-0 overflow-auto">
+        <div className="w-full max-w-[1500px] mx-auto flex flex-col gap-4 py-0.5">
+          {/* Header — dashboard ile aynı sol hizada */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-primary" />
+              <h1 className="text-lg font-bold">Büro Ayarları</h1>
+            </div>
+            {saved && <span className="text-green-600 text-xs flex items-center gap-1"><Check className="h-3 w-3" />Kaydedildi</span>}
+          </div>
+          <div className="flex gap-4">
+            {/* Büro & Banka — mavi/kurumsal */}
+            <div className="flex-1 min-w-0 bg-blue-50/30 border border-slate-200 border-t-[3px] border-t-blue-500 rounded-2xl p-4 shadow-sm">
+              <p className="flex items-center gap-2 text-[12px] font-semibold tracking-wide text-blue-800 mb-3"><span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500" />BÜRO &amp; BANKA</p>
+              <div className="flex gap-4">
+                <button onClick={() => goSection("office")} className="group flex-1 min-w-0 text-left bg-white border border-blue-200 rounded-xl overflow-hidden hover:border-blue-400 hover:shadow-md transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+                  <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-stone-200 bg-stone-50/60">
+                    <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-blue-100/70"><Building2 className="h-4 w-4 text-blue-600" /></span>
+                    <span className="text-[14px] font-semibold text-gray-800">Büro Bilgileri</span>
+                  </div>
+                  <div className="px-4 py-3 text-[13px] space-y-1.5">
+                    <div className="flex justify-between gap-3"><span className="text-stone-500">Büro adı</span><span className="font-medium text-gray-900 truncate">{office?.name || "—"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-stone-500">Baro</span><span className="font-medium text-gray-900 truncate">{office?.barAssociation || "—"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-stone-500">E-posta</span><span className="font-medium text-gray-900 truncate">{office?.email || "—"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-stone-500">Telefon</span><span className="font-medium text-gray-900 truncate">{office?.phone || "—"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-stone-500">İl / İlçe</span><span className="font-medium text-gray-900 truncate">{[office?.city, office?.district].filter(Boolean).join(" / ") || "—"}</span></div>
+                  </div>
+                  <div className="flex items-center justify-between px-4 py-2.5 border-t border-stone-200 bg-stone-50/40">
+                    <span className="text-[12px] text-stone-500">Profil tamamlığı {officeFilledCount}/6</span>
+                    <span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-blue-700">Düzenle <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span>
+                  </div>
+                </button>
+                <div className="flex-1 min-w-0 bg-white border border-blue-200 rounded-xl overflow-hidden flex flex-col">
+                  <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-stone-200 bg-stone-50/60">
+                    <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-blue-100/70"><CreditCard className="h-4 w-4 text-blue-600" /></span>
+                    <span className="text-[14px] font-semibold text-gray-800">Banka Hesapları</span>
+                    {(office?.bankAccounts?.length ?? 0) > 0 && <span className="text-[11px] text-stone-600 bg-stone-100 rounded-full px-2 py-0.5">{office?.bankAccounts?.length}</span>}
+                    <button onClick={() => { setEditingBank(null); setShowBankModal(true); }} className="ml-auto inline-flex items-center gap-1 text-[13px] font-medium text-blue-700"><Plus className="h-3.5 w-3.5" />Ekle</button>
+                  </div>
+                  <button onClick={() => goSection("bank")} className="flex-1 text-left px-4 py-3 hover:bg-blue-50/40 transition cursor-pointer">
+                    {office?.bankAccounts?.[0]
+                      ? <div className="space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-[13px] font-medium text-gray-900"><Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" />{office.bankAccounts[0].bankName}</div>
+                          <div className="text-[12px] text-stone-500 font-mono">IBAN ···{office.bankAccounts[0].iban?.slice(-6)}</div>
+                          <div className="text-[12px] text-stone-500">{office.bankAccounts.length} hesap</div>
+                        </div>
+                      : <span className="text-[13px] text-stone-400">Hesap yok</span>}
+                  </button>
+                  <button onClick={() => goSection("bank")} className="group flex items-center justify-between px-4 py-2.5 border-t border-stone-200 bg-stone-50/40 text-left"><span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-blue-700">Ayrıntıları aç <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span></button>
+                </div>
+              </div>
+            </div>
+            {/* Bildirim Kanalları — emerald/bağlantı */}
+            <div className="flex-1 min-w-0 bg-teal-50/30 border border-slate-200 border-t-[3px] border-t-teal-500 rounded-2xl p-4 shadow-sm">
+              <p className="flex items-center gap-2 text-[12px] font-semibold tracking-wide text-teal-800 mb-3"><span className="inline-block w-1.5 h-1.5 rounded-full bg-teal-500" />BİLDİRİM KANALLARI</p>
+              <div className="flex gap-4">
+                <button onClick={() => goSection("smtp")} className="group flex-1 min-w-0 text-left bg-white border border-teal-200 rounded-xl overflow-hidden hover:border-teal-400 hover:shadow-md transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300">
+                  <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-stone-200 bg-stone-50/60">
+                    <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-teal-100/70"><Mail className="h-4 w-4 text-teal-600" /></span>
+                    <span className="text-[14px] font-semibold text-gray-800">SMTP</span>
+                    <span className={`ml-auto text-[11px] rounded-full px-2 py-0.5 border ${smtpForm.smtpHost ? "text-emerald-800 bg-emerald-50 border-emerald-200" : "text-amber-800 bg-amber-50 border-amber-200"}`}>{smtpForm.smtpHost ? "Tanımlı" : "Eksik"}</span>
+                  </div>
+                  <div className="px-4 py-3 text-[13px] space-y-1.5">
+                    <div className="flex justify-between gap-3"><span className="text-stone-500">Sunucu</span><span className="font-medium text-gray-900 truncate">{smtpForm.smtpHost || "—"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-stone-500">Gönderen</span><span className="font-medium text-gray-900 truncate">{smtpForm.smtpFromEmail || smtpForm.smtpUser || "—"}</span></div>
+                  </div>
+                  <div className="flex items-center justify-end px-4 py-2.5 border-t border-stone-200 bg-stone-50/40"><span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-teal-700">Düzenle · Test et <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span></div>
+                </button>
+                <button onClick={() => goSection("sms")} className="group flex-1 min-w-0 text-left bg-white border border-teal-200 rounded-xl overflow-hidden hover:border-teal-400 hover:shadow-md transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300">
+                  <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-stone-200 bg-stone-50/60">
+                    <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-teal-100/70"><MessageSquare className="h-4 w-4 text-teal-600" /></span>
+                    <span className="text-[14px] font-semibold text-gray-800">SMS</span>
+                    <span className={`ml-auto text-[11px] rounded-full px-2 py-0.5 border ${smsForm.smsProvider ? "text-emerald-800 bg-emerald-50 border-emerald-200" : "text-stone-500 bg-stone-100 border-stone-200"}`}>{smsForm.smsProvider ? "Seçildi" : "Seçilmedi"}</span>
+                  </div>
+                  <div className="px-4 py-3 text-[13px] space-y-1.5">
+                    <div className="flex justify-between gap-3"><span className="text-stone-500">Sağlayıcı</span><span className="font-medium text-gray-900 truncate">{smsForm.smsProvider || "—"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-stone-500">Başlık</span><span className="font-medium text-gray-900 truncate">{smsForm.smsSender || "—"}</span></div>
+                  </div>
+                  <div className="flex items-center justify-end px-4 py-2.5 border-t border-stone-200 bg-stone-50/40"><span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-teal-700">Düzenle · Test et <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span></div>
+                </button>
+              </div>
+            </div>
+          </div>
+          {/* Kadro & Operasyon — indigo/operasyon */}
+          <div className="bg-indigo-50/30 border border-slate-200 border-t-[3px] border-t-indigo-500 rounded-2xl p-4 shadow-sm">
+            <p className="flex items-center gap-2 text-[12px] font-semibold tracking-wide text-indigo-800 mb-3"><span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500" />KADRO &amp; OPERASYON</p>
+            <div className="flex gap-4 items-start">
+              <div className="flex-1 min-w-0 bg-white border border-indigo-200 rounded-xl overflow-hidden flex flex-col">
+                <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-stone-200 bg-stone-50/60">
+                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-100/70"><Users className="h-4 w-4 text-indigo-600" /></span>
+                  <span className="text-[14px] font-semibold text-gray-800">Avukatlar</span>
+                  {lawyers.length > 0 && <span className="text-[11px] text-stone-600 bg-stone-100 rounded-full px-2 py-0.5">{lawyers.length}</span>}
+                  <button onClick={() => { setEditingLawyer(null); setShowLawyerModal(true); }} className="ml-auto inline-flex items-center gap-1 text-[13px] font-medium text-indigo-700"><Plus className="h-3.5 w-3.5" />Ekle</button>
+                </div>
+                {lawyerDist && <div className="px-4 py-2 text-[12px] text-stone-500 border-b border-stone-100">{lawyerDist}</div>}
+                <div className="max-h-[300px] overflow-auto">
+                  {lawyers.map((l) => { const rl = lawyerRankLabel(l); return (
+                    <button key={l.id} onClick={() => { setEditingLawyer(l); setShowLawyerModal(true); }} className="w-full text-left flex items-center gap-2 px-4 py-2 border-b border-stone-100 hover:bg-indigo-50/40 transition">
+                      <span className="text-[13px] font-medium text-gray-900 truncate flex-1">{(l as any).title || "Av."} {l.name} {l.surname}</span>
+                      <span className={`text-[11px] font-medium rounded-full px-2 py-0.5 ${roleBadgeClass(rl)}`}>{rl}</span>
+                    </button>
+                  ); })}
+                  {lawyers.length === 0 && <p className="text-[13px] text-stone-400 text-center py-6">Avukat yok</p>}
+                </div>
+                <button onClick={() => goSection("lawyers")} className="group flex items-center justify-between text-left px-4 py-2.5 border-t border-stone-200 bg-stone-50/40"><span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-indigo-700">Ayrıntıları aç <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span></button>
+              </div>
+              <div className="flex-1 min-w-0 bg-white border border-indigo-200 rounded-xl overflow-hidden flex flex-col">
+                <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-stone-200 bg-stone-50/60">
+                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-100/70"><Users className="h-4 w-4 text-indigo-600" /></span>
+                  <span className="text-[14px] font-semibold text-gray-800">Personel</span>
+                  {staffList.length > 0 && <span className="text-[11px] text-stone-600 bg-stone-100 rounded-full px-2 py-0.5">{staffList.length}</span>}
+                  <button onClick={() => { setEditingStaff(null); setShowStaffModal(true); }} className="ml-auto inline-flex items-center gap-1 text-[13px] font-medium text-indigo-700"><Plus className="h-3.5 w-3.5" />Ekle</button>
+                </div>
+                {staffDist && <div className="px-4 py-2 text-[12px] text-stone-500 border-b border-stone-100">{staffDist}</div>}
+                <div className="max-h-[300px] overflow-auto">
+                  {staffList.map((s) => { const rl = getStaffTypeLabel(s.staffType); return (
+                    <button key={s.id} onClick={() => { setEditingStaff(s); setShowStaffModal(true); }} className="w-full text-left flex items-center gap-2 px-4 py-2 border-b border-stone-100 hover:bg-indigo-50/40 transition">
+                      <span className="text-[13px] font-medium text-gray-900 truncate flex-1">{s.firstName} {s.lastName}</span>
+                      <span className={`text-[11px] font-medium rounded-full px-2 py-0.5 ${roleBadgeClass(rl)}`}>{rl}</span>
+                    </button>
+                  ); })}
+                  {staffList.length === 0 && <p className="text-[13px] text-stone-400 text-center py-6">Personel yok</p>}
+                </div>
+                <button onClick={() => goSection("staff")} className="group flex items-center justify-between text-left px-4 py-2.5 border-t border-stone-200 bg-stone-50/40"><span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-indigo-700">Ayrıntıları aç <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span></button>
+              </div>
+              <button onClick={() => goSection("escalation")} className="group flex-1 min-w-0 text-left bg-white border border-indigo-200 rounded-xl overflow-hidden hover:border-indigo-400 hover:shadow-md transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 flex flex-col">
+                <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-stone-200 bg-stone-50/60">
+                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-100/70"><Clock className="h-4 w-4 text-indigo-600" /></span>
+                  <span className="text-[14px] font-semibold text-gray-800">Görev &amp; Eskalasyon</span>
+                </div>
+                <p className="px-4 pt-2.5 text-[12px] text-stone-500 leading-snug">Geciken görevler büro politikasına göre kullanıcı → yönetici → kurucu hattında bildirilir.</p>
+                <div className="px-4 pt-2 pb-3 text-[13px] space-y-1.5">
+                  <div className="flex justify-between gap-3"><span className="text-stone-500">İlk hatırlatma</span><span className="font-medium text-gray-900">{escalationForm.opReminderDays} gün</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-stone-500">Kurucu eskalasyonu</span><span className="font-medium text-gray-900">{escalationForm.opFounderDays} gün</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-stone-500">Periyot</span><span className="font-medium text-gray-900">{escalationForm.opRepeatMonths} ay</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-stone-500">Kanal</span><span className="font-medium text-gray-900">{[escalationForm.opEmailEnabled && "E-posta", escalationForm.opSmsEnabled && "SMS"].filter(Boolean).join(" + ") || "—"}</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-stone-500">Atanan sorumlu</span><span className="font-medium text-gray-900">{escAssignedCount} kişi</span></div>
+                </div>
+                <div className="flex items-center justify-end px-4 py-2.5 border-t border-stone-200 bg-stone-50/40"><span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-indigo-700">Görev ağacını aç <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span></div>
+              </button>
+            </div>
+          </div>
         </div>
-        {saved && <span className="text-green-600 text-xs flex items-center gap-1"><Check className="h-3 w-3" />Kaydedildi</span>}
       </div>
 
-      {/* Settings Shell (A-1): sol kategori nav + sağ aktif kategori detayı */}
-      <SettingsShell nav={<SettingsNav groups={navGroups} active={activeSection} onSelect={goSection} />}>
-        <SettingsDetailBody>
-        {activeSection === "office" && (
+      {/* A-3a: aktif bölüm → sağ drawer (içerik = mevcut bölüm, A-2 workbench karakteri) */}
+      {drawerSection && (
+        <SettingsDrawer title={DRAWER_TITLE[drawerSection]} onClose={closeDrawer}>
+        {drawerSection === "office" && (
         <div className="h-full flex flex-col bg-white">
           <WorkbenchHeader
             title="Büro Bilgileri"
@@ -459,7 +609,7 @@ function OfficeSettingsInner() {
           </div>
         </div>
         )}
-        {activeSection === "bank" && (
+        {drawerSection === "bank" && (
         <div className="bg-white rounded-lg border p-3 flex flex-col">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold flex items-center gap-1"><CreditCard className="h-4 w-4 text-green-500" />Banka Hesapları</h2>
@@ -482,7 +632,7 @@ function OfficeSettingsInner() {
           </div>
         </div>
         )}
-        {activeSection === "lawyers" && (
+        {drawerSection === "lawyers" && (
         <div className="bg-white rounded-lg border p-3 flex flex-col">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold flex items-center gap-1"><Users className="h-4 w-4 text-purple-500" />Avukatlar</h2>
@@ -570,7 +720,7 @@ function OfficeSettingsInner() {
           </div>
         </div>
         )}
-        {activeSection === "staff" && (
+        {drawerSection === "staff" && (
         <div className="bg-white rounded-lg border p-3 flex flex-col">
           <div className="flex items-center justify-between mb-2">
             <h2 className="text-sm font-semibold flex items-center gap-1"><Users className="h-4 w-4 text-orange-500" />Personel</h2>
@@ -674,7 +824,7 @@ function OfficeSettingsInner() {
           </div>
         </div>
         )}
-        {activeSection === "smtp" && (
+        {drawerSection === "smtp" && (
         <div className="bg-white rounded-lg border p-3 flex flex-col text-xs">
             {/* E-posta (SMTP) */}
             <div className="p-2 border rounded bg-gray-50">
@@ -699,7 +849,7 @@ function OfficeSettingsInner() {
             </div>
         </div>
         )}
-        {activeSection === "sms" && (
+        {drawerSection === "sms" && (
         <div className="bg-white rounded-lg border p-3 flex flex-col text-xs">
             {/* SMS */}
             <div className="p-2 border rounded bg-gray-50">
@@ -722,7 +872,7 @@ function OfficeSettingsInner() {
             </div>
         </div>
         )}
-        {activeSection === "greeting" && (
+        {drawerSection === "greeting" && (
         <div className="bg-white rounded-lg border p-3 flex flex-col text-xs">
             {/* Otomatik Tebrik */}
             <div className="p-2 border rounded bg-purple-50">
@@ -753,7 +903,7 @@ function OfficeSettingsInner() {
             </div>
         </div>
         )}
-        {activeSection === "escalation" && (
+        {drawerSection === "escalation" && (
         <div className="bg-white rounded-lg border p-3 flex flex-col">
           <h2 className="text-sm font-semibold mb-2 flex items-center gap-1">⏱️ Görev ve Eskalasyon Ayarları</h2>
           <div className="flex-1 space-y-3 text-xs">
@@ -861,8 +1011,8 @@ function OfficeSettingsInner() {
           </div>
         </div>
         )}
-        </SettingsDetailBody>
-      </SettingsShell>
+        </SettingsDrawer>
+      )}
 
       {/* Modals */}
       {showLawyerModal && <LawyerModal lawyer={editingLawyer} onSave={handleSaveLawyer} onClose={() => { setShowLawyerModal(false); setEditingLawyer(null); }} saving={saving} />}

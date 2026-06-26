@@ -106,6 +106,22 @@ export function SettingsScrollArea({ children, className }: { children: ReactNod
   return <div className={`min-h-0 overflow-auto ${className ?? ""}`}>{children}</div>;
 }
 
+// A-3a: sağdan açılan işlem paneli (drawer). Dashboard üstünde overlay; içerik = ilgili bölüm.
+export function SettingsDrawer({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-40" role="dialog" aria-modal="true">
+      <div className="absolute inset-0 bg-black/30" onClick={onClose} />
+      <div className="absolute right-0 top-0 h-full w-[680px] max-w-[94vw] bg-white shadow-2xl flex flex-col">
+        <div className="flex-none flex items-center gap-3 px-4 py-2.5 border-b bg-gray-50">
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-lg leading-none" aria-label="Kapat">×</button>
+          <h2 className="text-sm font-semibold text-gray-800 truncate">{title}</h2>
+        </div>
+        <div className="flex-1 min-h-0 overflow-auto">{children}</div>
+      </div>
+    </div>
+  );
+}
+
 // A-2: Workbench detail primitifleri.
 // Section = "form kartı" değil, "belge bölümü": başlık + ince ayraç + content-width satırlar.
 export function SettingsSection({
