@@ -72,6 +72,11 @@ describe("GuidedOpenObserveService — observe-mode (P2b-1)", () => {
     expect(arg.userId).toBe("u7");
     expect(arg.metadata.enforced).toBe(false);
     expect(arg.metadata.mode).toBe("observe");
+    expect(arg.metadata.observePhase).toBe("pre_action");
+    // domain success bayrakları OLMAMALI (observe ≠ business audit)
+    expect(arg.metadata.success).toBeUndefined();
+    expect(arg.metadata.completed).toBeUndefined();
+    expect(arg.metadata.deleted).toBeUndefined();
     expect(arg.metadata.actorUserId).toBe("u7");
     expect(arg.metadata.actionCode).toBe(ActionCode.DELETE_CASE);
     expect(arg.metadata.decision).toBe(GuidedOpenDecision.CONFIRM_REQUIRED);

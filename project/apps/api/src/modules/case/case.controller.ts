@@ -185,6 +185,13 @@ export class CaseController {
     @Param("id") id: string,
     @Body() dto: ChangeLegalResponsibleLawyerDto
   ) {
+    // P2b-1 observe (PRE-action; best-effort; engelleme YOK, response/akış değişmez)
+    await this.guidedOpenObserve.observe({
+      actorUserId: userId,
+      tenantId,
+      caseId: id,
+      actionCode: ActionCode.ASSIGN_LEGAL_RESPONSIBLE,
+    });
     const data = await this.legalResponsibleLawyerService.changeLegalResponsibleLawyer(
       tenantId,
       id,
@@ -192,13 +199,6 @@ export class CaseController {
       userId,
       role
     );
-    // P2b-1 observe (best-effort; engelleme YOK, response/akış değişmez)
-    await this.guidedOpenObserve.observe({
-      actorUserId: userId,
-      tenantId,
-      caseId: id,
-      actionCode: ActionCode.ASSIGN_LEGAL_RESPONSIBLE,
-    });
     return { data };
   }
 

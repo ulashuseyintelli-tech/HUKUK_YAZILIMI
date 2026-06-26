@@ -53,6 +53,8 @@ export class GuidedOpenObserveService {
           event: "PERMISSION_OBSERVED",
           mode: "observe",
           enforced: false,
+          // authz diagnostic — domain action audit DEĞİL. Business success/fail İDDİA ETMEZ.
+          observePhase: "pre_action",
           // truthful: butona basan GERÇEK kullanıcı (iç tek-asıl felsefe kaydı değiştirmez)
           actorUserId: input.actorUserId,
           caseId: input.caseId ?? null,
