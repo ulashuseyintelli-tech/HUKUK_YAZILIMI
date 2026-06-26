@@ -8,6 +8,14 @@ export type AccountSummaryCutoverPolicy =
   | 'DERIVED_REQUIRES_SOURCE_MODEL'
   | 'UNKNOWN_BLOCKS_CUTOVER';
 
+export type AccountSummarySourcePlacement =
+  | 'PRIMARY_CANONICAL_ELIGIBLE'
+  | 'DIAGNOSTIC_LEGACY_ALLOWED'
+  | 'DIAGNOSTIC_DERIVED_ALLOWED'
+  | 'BACKEND_CONTRACT_REQUIRED'
+  | 'BLOCKED_UNKNOWN_SOURCE'
+  | 'BLOCKED_MIXED_AUTHORITY';
+
 export type AccountSummaryRowId =
   | 'asilAlacak'
   | 'takipTutari'
@@ -67,6 +75,26 @@ export interface AccountSummarySourcePolicyResult {
   warnings: AccountSummarySourcePolicyViolation[];
 }
 
+export interface AccountSummarySourcePlacementDecision {
+  rowId: AccountSummaryRowId;
+  sourceAuthority: AccountSummarySourceAuthority;
+  cutoverPolicy: AccountSummaryCutoverPolicy;
+  placement: AccountSummarySourcePlacement;
+  reason: string;
+}
+
+export interface AccountSummarySourcePlacementPlan {
+  guardedPrimarySelected: boolean;
+  placements: AccountSummarySourcePlacementDecision[];
+  summary: {
+    primaryCanonicalEligibleRowIds: AccountSummaryRowId[];
+    diagnosticLegacyRowIds: AccountSummaryRowId[];
+    diagnosticDerivedRowIds: AccountSummaryRowId[];
+    backendContractRequiredRowIds: AccountSummaryRowId[];
+    blockedRowIds: AccountSummaryRowId[];
+  };
+}
+
 interface BuildAccountSummaryDisplayModelInput {
   legacy: CaseCalculationResult;
   display: CaseCalculationResult;
@@ -98,6 +126,36 @@ const LEGACY_MONETARY_ROW_IDS = [
   'vekaletPulu',
   'pesinHarcDahilTahsilHarci',
   'pesinHarcHaricTahsilHarci',
+] as const satisfies readonly AccountSummaryRowId[];
+
+const BACKEND_CONTRACT_REQUIRED_ROW_IDS = [
+  'tazminat',
+  'komisyon',
+  'takipOncesiFaiz',
+] as const satisfies readonly AccountSummaryRowId[];
+
+const DIAGNOSTIC_LEGACY_ALLOWED_ROW_IDS = [
+  'basvurmaHarci',
+  'vekaletHarci',
+  'pesinHarc',
+  'dosyaGideri',
+  'tebligatGideri',
+  'vekaletPulu',
+  'pesinHarcDahilTahsilHarci',
+  'pesinHarcHaricTahsilHarci',
+  'tahsilOranlari',
+  'mahsupDetaylari',
+  'faizSegmentleri',
+  'takipTarihi',
+  'kalemTuru',
+] as const satisfies readonly AccountSummaryRowId[];
+
+const DIAGNOSTIC_DERIVED_ALLOWED_ROW_IDS = [
+  'hesapTarihi',
+] as const satisfies readonly AccountSummaryRowId[];
+
+const BLOCKED_MIXED_AUTHORITY_ROW_IDS = [
+  'mahsupDetayPanelContext',
 ] as const satisfies readonly AccountSummaryRowId[];
 
 const ROW_LABELS: Record<AccountSummaryRowId, string> = {
@@ -159,6 +217,13 @@ function metadataRow(
     sourceAuthority,
     cutoverPolicy,
   };
+}
+
+function rowIdIn<const T extends readonly AccountSummaryRowId[]>(
+  rowId: AccountSummaryRowId,
+  rowIds: T,
+): rowId is T[number] {
+  return (rowIds as readonly AccountSummaryRowId[]).includes(rowId);
 }
 
 /**
@@ -326,5 +391,120 @@ export function evaluateAccountSummarySourceAuthorityPolicy(
     readyForControlledCutover: blockers.length === 0,
     blockers,
     warnings,
+  };
+}
+function classifyAccountSummarySourcePlacement(
+  row: AccountSummaryDisplayRow,
+): AccountSummarySourcePlacementDecision {
+  if (row.sourceAuthority === 'UNKNOWN') {
+    return {
+      rowId: row.id,
+      sourceAuthority: row.sourceAuthority,
+      cutoverPolicy: row.cutoverPolicy,
+      placement: 'BLOCKED_UNKNOWN_SOURCE',
+      reason: 'Unknown source authority cannot be placed in primary or diagnostic surfaces.',
+    };
+  }
+
+  if (rowIdIn(row.id, CANONICAL_REQUIRED_ROW_IDS)) {
+    if (row.sourceAuthority === 'CANONICAL') {
+      return {
+        rowId: row.id,
+        sourceAuthority: row.sourceAuthority,
+        cutoverPolicy: row.cutoverPolicy,
+        placement: 'PRIMARY_CANONICAL_ELIGIBLE',
+        reason: 'Row is explicitly eligible for the primary canonical surface.',
+      };
+    }
+
+    return {
+      rowId: row.id,
+      sourceAuthority: row.sourceAuthority,
+      cutoverPolicy: row.cutoverPolicy,
+      placement: 'BLOCKED_MIXED_AUTHORITY',
+      reason: 'Primary candidate row requires CANONICAL source authority.',
+    };
+  }
+
+  if (rowIdIn(row.id, BACKEND_CONTRACT_REQUIRED_ROW_IDS)) {
+    return {
+      rowId: row.id,
+      sourceAuthority: row.sourceAuthority,
+      cutoverPolicy: row.cutoverPolicy,
+      placement: 'BACKEND_CONTRACT_REQUIRED',
+      reason: 'Row needs an explicit backend canonical contract before primary placement.',
+    };
+  }
+
+  if (rowIdIn(row.id, DIAGNOSTIC_LEGACY_ALLOWED_ROW_IDS)) {
+    return {
+      rowId: row.id,
+      sourceAuthority: row.sourceAuthority,
+      cutoverPolicy: row.cutoverPolicy,
+      placement: 'DIAGNOSTIC_LEGACY_ALLOWED',
+      reason: 'Row may remain visible only in a separated legacy diagnostic surface.',
+    };
+  }
+
+  if (rowIdIn(row.id, DIAGNOSTIC_DERIVED_ALLOWED_ROW_IDS)) {
+    return {
+      rowId: row.id,
+      sourceAuthority: row.sourceAuthority,
+      cutoverPolicy: row.cutoverPolicy,
+      placement: 'DIAGNOSTIC_DERIVED_ALLOWED',
+      reason: 'Derived metadata row may remain visible only in a separated diagnostic surface.',
+    };
+  }
+
+  if (rowIdIn(row.id, BLOCKED_MIXED_AUTHORITY_ROW_IDS)) {
+    return {
+      rowId: row.id,
+      sourceAuthority: row.sourceAuthority,
+      cutoverPolicy: row.cutoverPolicy,
+      placement: 'BLOCKED_MIXED_AUTHORITY',
+      reason: 'Mixed authority context requires an explicit source model before placement.',
+    };
+  }
+
+  return {
+    rowId: row.id,
+    sourceAuthority: row.sourceAuthority,
+    cutoverPolicy: row.cutoverPolicy,
+    placement: 'BLOCKED_MIXED_AUTHORITY',
+    reason: 'Row has no approved source placement mapping.',
+  };
+}
+
+/**
+ * Source-aware Hesap Ozeti row'lari icin future placement planini uretir.
+ *
+ * Runtime UI davranisini degistirmez; primary, diagnostic ve blocked placement
+ * kararlarini sadece test edilebilir metadata olarak dondurur.
+ */
+export function buildAccountSummarySourcePlacementPlan(
+  model: AccountSummaryDisplayModel,
+): AccountSummarySourcePlacementPlan {
+  const placements = Object.values(model.rows).map(classifyAccountSummarySourcePlacement);
+
+  return {
+    guardedPrimarySelected: model.guardedPrimarySelected,
+    placements,
+    summary: {
+      primaryCanonicalEligibleRowIds: placements
+        .filter((placement) => placement.placement === 'PRIMARY_CANONICAL_ELIGIBLE')
+        .map((placement) => placement.rowId),
+      diagnosticLegacyRowIds: placements
+        .filter((placement) => placement.placement === 'DIAGNOSTIC_LEGACY_ALLOWED')
+        .map((placement) => placement.rowId),
+      diagnosticDerivedRowIds: placements
+        .filter((placement) => placement.placement === 'DIAGNOSTIC_DERIVED_ALLOWED')
+        .map((placement) => placement.rowId),
+      backendContractRequiredRowIds: placements
+        .filter((placement) => placement.placement === 'BACKEND_CONTRACT_REQUIRED')
+        .map((placement) => placement.rowId),
+      blockedRowIds: placements
+        .filter((placement) => placement.placement.startsWith('BLOCKED_'))
+        .map((placement) => placement.rowId),
+    },
   };
 }
