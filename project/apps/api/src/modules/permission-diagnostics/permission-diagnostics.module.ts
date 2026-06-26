@@ -4,10 +4,14 @@ import { PermissionDiagnosticsController } from "./permission-diagnostics.contro
 import { PermissionDiagnosticsService } from "./permission-diagnostics.service";
 import { WarnOnlyAuditService } from "./warn-only-audit.service";
 import { PermissionHardGuardService } from "./permission-hard-guard.service";
+import { GuidedOpenObserveService } from "./guided-open-observe.service";
+import { PolicyEngineModule } from "../policy-engine/policy-engine.module";
 
 @Module({
+  // P2b-1: GuidedOpenObserveService, EffectivePermissionResolver'a (policy-engine) bağlı.
+  imports: [PolicyEngineModule],
   controllers: [PermissionDiagnosticsController],
-  providers: [PermissionDiagnosticsService, WarnOnlyAuditService, PermissionHardGuardService],
-  exports: [PermissionDiagnosticsService, WarnOnlyAuditService, PermissionHardGuardService],
+  providers: [PermissionDiagnosticsService, WarnOnlyAuditService, PermissionHardGuardService, GuidedOpenObserveService],
+  exports: [PermissionDiagnosticsService, WarnOnlyAuditService, PermissionHardGuardService, GuidedOpenObserveService],
 })
 export class PermissionDiagnosticsModule {}
