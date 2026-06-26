@@ -225,6 +225,28 @@ describe('ClientStatementService', () => {
       await expect(service.findOne(TENANT, 'st-1')).rejects.toThrow(NotFoundException);
     });
 
+    it('çoklu-alacaklı: create() OTOMATİK-SUPERSEDE YAPMAZ; snapshot clientId-scoped (A/B çakışmaz)', async () => {
+      // ClientStatement header clientId taşır (caseId+clientId = caseClientId-eşdeğeri, CaseClient @@unique).
+      // create() case+period ile otomatik-supersede YAPMAZ → B'nin collect'i A snapshot'ını bozmaz.
+      mockPrisma.case.findFirst.mockResolvedValue({ id: CASE });
+      mockPrisma.caseBalance.findFirst.mockResolvedValue(null);
+      mockPrisma.expenseRequest.findMany.mockResolvedValue([]);
+      mockPrisma.caseClient.findFirst.mockResolvedValue(null);
+      mockPrisma.clientStatement.create.mockResolvedValue({ id: 'st-x' });
+      mockPrisma.clientStatement.findFirst.mockResolvedValue({ id: 'st-x', lines: [] });
+
+      mockPrisma.client.findFirst.mockResolvedValue({ id: 'A' });
+      await service.create(TENANT, CASE, USER, { ...dto, clientId: 'A' });
+      mockPrisma.client.findFirst.mockResolvedValue({ id: 'B' });
+      await service.create(TENANT, CASE, USER, { ...dto, clientId: 'B' });
+
+      // create() hiçbir statement'ı SUPERSEDED yapmadı (case+period otomatik-supersede YOK)
+      expect(mockPrisma.clientStatement.update).not.toHaveBeenCalled();
+      // header clientId-scoped
+      expect(mockPrisma.clientStatement.create.mock.calls[0][0].data.clientId).toBe('A');
+      expect(mockPrisma.clientStatement.create.mock.calls[1][0].data.clientId).toBe('B');
+    });
+
     it('servis içerik update/delete metodu SUNMAZ', () => {
       expect((service as any).update).toBeUndefined();
       expect((service as any).delete).toBeUndefined();

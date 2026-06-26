@@ -15,7 +15,7 @@ const DISP_SINGLE = {
   caseClientId: 'cc-A', totalAmount: D(100), currency: 'TRY', status: 'HELD_PENDING_DISTRIBUTION',
 };
 
-function buildPrisma(opts: { disp?: any; col?: any } = {}) {
+function buildPrisma(opts: { disp?: any; col?: any; validCaseClients?: any[] } = {}) {
   const tx = {
     collectionDispositionLine: {
       deleteMany: jest.fn().mockResolvedValue({}),
@@ -28,6 +28,7 @@ function buildPrisma(opts: { disp?: any; col?: any } = {}) {
   const prisma: any = {
     collectionDisposition: { findFirst: jest.fn().mockResolvedValue(opts.disp === undefined ? DISP_SINGLE : opts.disp) },
     collection: { findFirst: jest.fn().mockResolvedValue(opts.col === undefined ? { status: 'CONFIRMED' } : opts.col) },
+    caseClient: { findMany: jest.fn().mockResolvedValue(opts.validCaseClients ?? [{ id: 'cc-A' }]) },
     $transaction: jest.fn().mockImplementation(async (cb: any) => cb(tx)),
   };
   return { prisma, tx };
@@ -101,6 +102,15 @@ describe('DispositionPostingService.post', () => {
         data: expect.objectContaining({ type: 'CREDIT', source: expect.stringContaining('disposition_line:') }),
       }),
     );
+  });
+
+  it('yabancı/uygunsuz caseClientId → reject (foreign-case veya rol değil)', async () => {
+    const disp = { ...DISP_SINGLE, beneficiaryScope: 'CASE_CREDITOR_CLUSTER', caseClientId: null };
+    const { prisma } = buildPrisma({ disp, validCaseClients: [] }); // findMany boş → eligible değil
+    await expect(
+      svc(prisma).post('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '100', caseClientId: 'cc-FOREIGN' }] }, {}),
+    ).rejects.toThrow(/geçersiz\/yabancı|uygun rolde/);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
   it('disposition bulunamazsa → NotFound', async () => {

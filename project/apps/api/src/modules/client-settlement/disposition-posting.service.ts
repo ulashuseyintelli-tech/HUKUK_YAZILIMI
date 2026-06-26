@@ -97,6 +97,26 @@ export class DispositionPostingService {
       );
     }
 
+    // caseClientId foreign-case/role doğrulaması: her satır caseClientId'si BU case'in eligible
+    // alacaklısı (ALACAKLI/ORTAK_ALACAKLI) olmalı. Başka dosyanın CaseClient'ı veya uygunsuz rol reddedilir.
+    const caseClientIds = [...new Set(resolved.map((r) => r.caseClientId).filter((x): x is string => !!x))];
+    if (caseClientIds.length > 0) {
+      const valid = await this.prisma.caseClient.findMany({
+        where: {
+          id: { in: caseClientIds },
+          caseId: disp.caseId,
+          role: { in: ['ALACAKLI', 'ORTAK_ALACAKLI'] },
+          client: { tenantId },
+        },
+        select: { id: true },
+      });
+      const validSet = new Set(valid.map((v) => v.id));
+      const foreign = caseClientIds.find((id) => !validSet.has(id));
+      if (foreign) {
+        throw new BadRequestException(`caseClientId geçersiz/yabancı veya uygun rolde değil (ALACAKLI/ORTAK_ALACAKLI): ${foreign}`);
+      }
+    }
+
     await this.prisma.$transaction(async (tx) => {
       // M1 default HELD satırını (ve varsa eskileri) replace et.
       await tx.collectionDispositionLine.deleteMany({ where: { dispositionId } });
