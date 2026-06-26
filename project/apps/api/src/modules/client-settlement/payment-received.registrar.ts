@@ -23,8 +23,8 @@ export class PaymentReceivedRegistrar implements OnModuleInit {
   onModuleInit(): void {
     this.actionHandler.register(
       'EVENT_PUBLISHED:PAYMENT_RECEIVED',
-      async (payload, caseId) =>
-        this.dispositionService.createDraftFromPaymentReceived(payload, caseId),
+      async (payload, caseId, context) =>
+        this.dispositionService.createDraftFromPaymentReceived(payload, caseId, context),
     );
     this.logger.log(
       'Registered handler: EVENT_PUBLISHED:PAYMENT_RECEIVED → CollectionDisposition draft',

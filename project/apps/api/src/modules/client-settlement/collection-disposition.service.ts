@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import type { ActionHandlerContext } from '../icrabot/v28-engine/action-handler.service';
 
 export interface CreateDraftResult {
   created: boolean;
@@ -35,7 +36,13 @@ export class CollectionDispositionService {
   async createDraftFromPaymentReceived(
     payload: Record<string, any>,
     caseId: string,
+    context?: ActionHandlerContext,
   ): Promise<CreateDraftResult> {
+    // Boundary invariant: tenantId outbox satırından (IcrabotOutboxAction.tenantId) thread edilir.
+    const tenantId = context?.tenantId;
+    if (!tenantId) {
+      throw new Error('outbox context.tenantId yok — tenant doğrulanmadan disposition üretilmez');
+    }
     const collectionId: string | undefined = payload?.collectionId;
     if (!collectionId) {
       // payload kontratı bozuksa controlled failure (dead-letter reason); sessiz yutma yok.
@@ -51,18 +58,16 @@ export class CollectionDispositionService {
       return { created: false, dispositionId: existing.id, skipped: 'already-exists' };
     }
 
-    // Collection CANONICAL DB'den (payload'a güvenme); tenantId buradan (tenant-safe).
-    const collection = await this.prisma.collection.findUnique({
-      where: { id: collectionId },
+    // Collection CANONICAL DB'den + TENANT/CASE SCOPED (boundary invariant): outbox satırının
+    // tenantId'si + event caseId ile sınırlı okunur. Cross-tenant VEYA case mismatch → null → draft yok.
+    const collection = await this.prisma.collection.findFirst({
+      where: { id: collectionId, caseId, tenantId },
       select: { id: true, tenantId: true, caseId: true, amount: true, currency: true, status: true },
     });
     if (!collection) {
-      throw new Error(`Collection bulunamadı: ${collectionId}`);
-    }
-    // case mismatch guard (event aggregateId ile collection.caseId aynı olmalı)
-    if (collection.caseId !== caseId) {
+      // not-found / cross-tenant / case mismatch — hepsi controlled failure (dead-letter görünürlüğü).
       throw new Error(
-        `Case mismatch: event caseId=${caseId} != collection.caseId=${collection.caseId}`,
+        `Collection scope dışı: collectionId=${collectionId} tenant=${tenantId} case=${caseId} (yok veya tenant/case mismatch)`,
       );
     }
     // status guard: yalnız CONFIRMED'de draft (PENDING/CANCELLED/REFUNDED → aktif draft yok)
@@ -89,7 +94,7 @@ export class CollectionDispositionService {
     try {
       const disposition = await this.prisma.collectionDisposition.create({
         data: {
-          tenantId: collection.tenantId,
+          tenantId, // outbox context tenantId (scoped read ile == collection.tenantId garanti)
           caseId: collection.caseId,
           collectionId: collection.id,
           beneficiaryScope: beneficiaryScope as Prisma.CollectionDispositionCreateInput['beneficiaryScope'],
