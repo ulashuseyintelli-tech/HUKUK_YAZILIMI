@@ -8,6 +8,7 @@ import {
 } from "@/lib/balance-shadow-display";
 import {
   buildGuardedPrimaryCalculationResult,
+  buildGuardedPrimaryCalculationResultWithBoundaryPlan,
   buildGuardedSummaryRuntimeBoundaryPlan,
   evaluateGuardedPrimaryDisplayPilot,
   shouldEnableGuardedPrimaryDisplayPilot,
@@ -917,6 +918,92 @@ describe("guarded summary runtime boundary plan", () => {
     expect(guardedResult!.mahsupDetaylari).toBe(legacy.mahsupDetaylari);
     expect(guardedResult!.faizSegmentleri).toBe(legacy.faizSegmentleri);
     expect(guardedResult!.tahsilOranlari).toBe(legacy.tahsilOranlari);
+  });
+
+  it("runtime boundary wrapper guarded calculation result ile boundary plan'i birlikte tasir", () => {
+    const legacy = makeMixedAuthorityLegacySummary();
+    const report = makeMixedAuthorityCanonicalReport();
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const guardedResult = buildGuardedPrimaryCalculationResult(legacy, report, decision);
+    const wrapper = buildGuardedPrimaryCalculationResultWithBoundaryPlan(legacy, report, decision);
+
+    expect(wrapper.guardedPrimaryHesap).toEqual(guardedResult);
+    expect(wrapper.boundaryPlan).toEqual(
+      buildGuardedSummaryRuntimeBoundaryPlan({ guardedPrimarySelected: true }),
+    );
+    expect(Object.keys(wrapper).sort()).toEqual(["boundaryPlan", "guardedPrimaryHesap"]);
+  });
+
+  it("runtime boundary wrapper inputlari mutate etmez", () => {
+    const legacy = makeMixedAuthorityLegacySummary();
+    const report = makeMixedAuthorityCanonicalReport();
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const legacyBefore = JSON.parse(JSON.stringify(legacy));
+    const reportBefore = JSON.parse(JSON.stringify(report));
+    const decisionBefore = JSON.parse(JSON.stringify(decision));
+
+    buildGuardedPrimaryCalculationResultWithBoundaryPlan(legacy, report, decision);
+
+    expect(legacy).toEqual(legacyBefore);
+    expect(report).toEqual(reportBefore);
+    expect(decision).toEqual(decisionBefore);
+  });
+
+  it("runtime boundary wrapper ayni input icin deterministic kalir", () => {
+    const legacy = makeMixedAuthorityLegacySummary();
+    const report = makeMixedAuthorityCanonicalReport();
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+
+    expect(buildGuardedPrimaryCalculationResultWithBoundaryPlan(legacy, report, decision)).toEqual(
+      buildGuardedPrimaryCalculationResultWithBoundaryPlan(legacy, report, decision),
+    );
+  });
+
+  it("runtime boundary wrapper fallback modda legacy boundary plan dondurur", () => {
+    const legacy = makeMixedAuthorityLegacySummary();
+    const report = makeMixedAuthorityCanonicalReport();
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: false });
+    const wrapper = buildGuardedPrimaryCalculationResultWithBoundaryPlan(legacy, report, decision);
+
+    expect(wrapper.guardedPrimaryHesap).toBeNull();
+    expect(wrapper.boundaryPlan).toEqual(
+      buildGuardedSummaryRuntimeBoundaryPlan({ guardedPrimarySelected: false }),
+    );
+    expect(wrapper.boundaryPlan.guardedPrimarySelected).toBe(false);
+    expect(wrapper.boundaryPlan.summary.canonicalPrimaryOverrideRowIds).toEqual([]);
+    expect(wrapper.boundaryPlan.summary.fallbackLegacyRowIds).toEqual([
+      ...canonicalPrimaryOverrideRowIds,
+      ...backendContractRequiredRowIds,
+      ...legacyDiagnosticRetainedRowIds,
+      ...mixedAuthorityBlockedRowIds,
+    ]);
+  });
+
+  it("runtime boundary wrapper guarded selected modda TM15 row setlerini korur", () => {
+    const legacy = makeMixedAuthorityLegacySummary();
+    const report = makeMixedAuthorityCanonicalReport();
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const wrapper = buildGuardedPrimaryCalculationResultWithBoundaryPlan(legacy, report, decision);
+
+    expect(wrapper.guardedPrimaryHesap).not.toBeNull();
+    expect(wrapper.boundaryPlan.guardedPrimarySelected).toBe(true);
+    expect(wrapper.boundaryPlan.summary.canonicalPrimaryOverrideRowIds).toEqual(canonicalPrimaryOverrideRowIds);
+    expect(wrapper.boundaryPlan.summary.backendContractRequiredRowIds).toEqual(backendContractRequiredRowIds);
+    expect(wrapper.boundaryPlan.summary.legacyDiagnosticRetainedRowIds).toEqual(legacyDiagnosticRetainedRowIds);
+    expect(wrapper.boundaryPlan.summary.mixedAuthorityBlockedRowIds).toEqual(mixedAuthorityBlockedRowIds);
+    expect(wrapper.boundaryPlan.summary.fallbackLegacyRowIds).toEqual([]);
+  });
+
+  it("runtime boundary wrapper guarded result shape'ine boundary metadata eklemez", () => {
+    const legacy = makeMixedAuthorityLegacySummary();
+    const report = makeMixedAuthorityCanonicalReport();
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const wrapper = buildGuardedPrimaryCalculationResultWithBoundaryPlan(legacy, report, decision);
+
+    expect(wrapper.guardedPrimaryHesap).not.toBeNull();
+    for (const key of boundaryMetadataKeys) {
+      expect(wrapper.guardedPrimaryHesap).not.toHaveProperty(key);
+    }
   });
 
   it("boundary plan ayni input icin deterministic kalir", () => {
