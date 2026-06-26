@@ -66,6 +66,36 @@ export interface ShadowBucketDiff extends ShadowAmountDiff {
   canonicalDisplayable: boolean;
 }
 
+export type CanonicalSummaryRowId = 'tazminat' | 'komisyon' | 'takipOncesiFaiz';
+
+export type CanonicalSummaryRowStatus = 'SUPPORTED' | 'NOT_APPLICABLE' | 'UNSUPPORTED' | 'ERROR';
+
+export type CanonicalSummaryRowSourceAuthority = 'CANONICAL' | 'LEGACY' | 'DERIVED' | 'UNKNOWN';
+
+export type CanonicalSummaryRowAllocationCategory =
+  | 'EXPENSE'
+  | 'ACCRUED_INTEREST'
+  | 'ATTORNEY_FEE'
+  | 'OTHER_ANCILLARY'
+  | 'PRINCIPAL'
+  | 'OVERPAYMENT'
+  | 'UNSUPPORTED'
+  | 'UNKNOWN';
+
+export type CanonicalSummaryRowsContractVersion = 'canonical-summary-rows.shadow-status.v1';
+
+export interface CanonicalSummaryShadowRow {
+  readonly rowId: CanonicalSummaryRowId;
+  readonly status: CanonicalSummaryRowStatus;
+  readonly amount: number | null;
+  readonly currency: string | null;
+  readonly sourceAuthority: CanonicalSummaryRowSourceAuthority;
+  readonly affectsPaymentAllocation: boolean;
+  readonly allocationCategory: CanonicalSummaryRowAllocationCategory;
+  readonly primaryEligible: boolean;
+  readonly contractVersion: CanonicalSummaryRowsContractVersion;
+}
+
 export interface BalanceDisplayShadowDiffReport {
   tenantId: string;
   caseId: string;
@@ -74,6 +104,7 @@ export interface BalanceDisplayShadowDiffReport {
   sourceVersion: string;
   mode: 'SHADOW_ONLY';
   primaryDisplayUnchanged: true;
+  readonly canonicalSummaryRows?: readonly CanonicalSummaryShadowRow[];
   sources: {
     legacyCalculationSummary: {
       available: boolean;
