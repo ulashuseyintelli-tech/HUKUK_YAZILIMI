@@ -109,4 +109,19 @@ describe("OfficeService Faz-B security: GET maskeleme + audit", () => {
     expect(prisma.office.update).toHaveBeenCalledTimes(1);
     expect(out.name).toBe("Yeni Ad"); // dönüş = güncellenmiş satır
   });
+
+  it("update() yeni yasal alanları (vergiNo/kepAddress vb.) prisma.update'e ve audit'e taşır (secret değil → gerçek değer)", async () => {
+    const { service, prisma, audit } = makeService(ROW);
+    await service.update(
+      "t1",
+      { vergiNo: "1234567890", vergiDairesi: "Beşiktaş", mersisNo: "0000000000000001", kepAddress: "buro@hs01.kep.tr" },
+      "user-1"
+    );
+    const updateArg = prisma.office.update.mock.calls[0][0];
+    expect(updateArg.data.vergiNo).toBe("1234567890");
+    expect(updateArg.data.kepAddress).toBe("buro@hs01.kep.tr");
+    const auditArg = audit.log.mock.calls[0][0];
+    expect(auditArg.newValues.vergiNo).toBe("1234567890"); // yasal alan secret değil → audit'te gerçek değer
+    expect(auditArg.newValues.mersisNo).toBe("0000000000000001");
+  });
 });

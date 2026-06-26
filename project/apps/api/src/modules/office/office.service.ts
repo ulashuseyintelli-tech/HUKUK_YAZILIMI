@@ -118,6 +118,10 @@ export class OfficeService {
       email?: string;
       website?: string;
       barAssociation?: string;
+      vergiNo?: string;
+      vergiDairesi?: string;
+      mersisNo?: string;
+      kepAddress?: string;
       defaultExecutionOfficeId?: string;
     },
     userId?: string
