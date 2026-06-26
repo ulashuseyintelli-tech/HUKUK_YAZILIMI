@@ -12,7 +12,7 @@ import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import {
   Bell, Mail, MessageSquare, AlarmClock, Gift, ShieldAlert,
-  ChevronRight, CheckCircle2, AlertCircle, RefreshCw, Activity, XCircle, Clock, Inbox,
+  ChevronRight, CheckCircle2, AlertCircle, RefreshCw, Activity, XCircle, Clock, Inbox, Send,
 } from 'lucide-react';
 import { api } from '@/lib/api';
 
@@ -27,6 +27,7 @@ const TYPE_LABEL: Record<string, string> = {
   RAPOR: 'Rapor',
   HATIRLATMA: 'Hatırlatma',
   TEBRIK: 'Tebrik',
+  TEST: 'Test',
   DIGER: 'Diğer',
 };
 
@@ -158,22 +159,39 @@ export default function NotificationControlCenterPage() {
   const [adminOnly, setAdminOnly] = useState(false);
   const [error, setError] = useState(false);
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(false);
-    setAdminOnly(false);
+  // PR-N3: Gerçek Test Gönderimi durumu
+  const [clients, setClients] = useState<any[]>([]);
+  const [testClientId, setTestClientId] = useState('');
+  const [testConfirm, setTestConfirm] = useState(false);
+  const [testSending, setTestSending] = useState<null | 'EMAIL' | 'SMS'>(null);
+  const [testResult, setTestResult] = useState<
+    null | { success: boolean; channel: string; status: string; recipient?: string; errorMessage?: string }
+  >(null);
+
+  const load = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent;
+    if (!silent) { setLoading(true); setError(false); setAdminOnly(false); }
     try {
       const r = await api.get('/client-notifications/overview');
       setData((r.data?.data ?? r.data) as Overview);
     } catch (e: any) {
-      if (e?.response?.status === 403) setAdminOnly(true);
-      else setError(true);
+      if (!silent) {
+        if (e?.response?.status === 403) setAdminOnly(true);
+        else setError(true);
+      }
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  // Müvekkil listesi (test gönderimi seçici). Arama YOK ki contacts[] gelsin (has-email/phone türetimi için).
+  useEffect(() => {
+    api.get('/clients')
+      .then((r) => setClients((r.data?.data ?? r.data) || []))
+      .catch(() => setClients([]));
+  }, []);
 
   if (loading) {
     return <div className="flex items-center justify-center h-64 text-sm text-muted-foreground">Yükleniyor...</div>;
@@ -194,7 +212,7 @@ export default function NotificationControlCenterPage() {
   if (error || !data) {
     return (
       <div className="max-w-3xl mx-auto space-y-5 pb-10">
-        <PageHeader onRefresh={load} />
+        <PageHeader onRefresh={() => load()} />
         <div className="rounded-xl border border-red-200 bg-red-50/60 px-4 py-4 text-[13px] leading-relaxed text-red-900">
           Bildirim durumu yüklenemedi. Lütfen tekrar deneyin.
         </div>
@@ -206,9 +224,47 @@ export default function NotificationControlCenterPage() {
   const emailReady = channels.email.configured;
   const smsReady = channels.sms.configured;
 
+  // PR-N3 yardımcılar — müvekkil iletişim türetme (liste payload yeterli) + UI maskeleme
+  const contactEmail = (c: any): string =>
+    c?.email || c?.contacts?.find((x: any) => x.type === 'EMAIL')?.value || '';
+  const contactPhone = (c: any): string =>
+    c?.phone || c?.contacts?.find((x: any) => ['MOBILE', 'HOME_PHONE', 'WORK_PHONE'].includes(x.type))?.value || '';
+  const clientName = (c: any): string =>
+    c?.displayName || c?.name || [c?.firstName, c?.lastName].filter(Boolean).join(' ').trim() || c?.companyName || '—';
+  const maskEmailUi = (e: string): string => {
+    if (!e) return '—';
+    const [u, d] = e.split('@');
+    if (!d) return '***';
+    return `${(u || '').slice(0, 2) || '*'}***@${d}`;
+  };
+  const maskPhoneUi = (p: string): string => {
+    if (!p) return '—';
+    const digits = p.replace(/\D/g, '');
+    return digits.length > 4 ? `*** *** ** ${digits.slice(-2)}` : '***';
+  };
+
+  const selectedClient = clients.find((c) => c.id === testClientId);
+  const selEmail = contactEmail(selectedClient);
+  const selPhone = contactPhone(selectedClient);
+
+  const doTestSend = async (channel: 'EMAIL' | 'SMS') => {
+    if (!testClientId || !testConfirm || testSending) return;
+    setTestSending(channel);
+    setTestResult(null);
+    try {
+      const r = await api.post('/client-notifications/test-send', { clientId: testClientId, channel, confirm: true });
+      setTestResult((r.data?.data ?? r.data));
+      await load({ silent: true }); // Son Gönderimler'i sessizce tazele (sayfa "Yükleniyor"a düşmeden)
+    } catch (e: any) {
+      setTestResult({ success: false, channel, status: 'FAILED', errorMessage: e?.response?.data?.message || 'Gönderim başarısız' });
+    } finally {
+      setTestSending(null);
+    }
+  };
+
   return (
     <div className="max-w-3xl mx-auto space-y-5 pb-10">
-      <PageHeader onRefresh={load} />
+      <PageHeader onRefresh={() => load()} />
 
       {/* Açıklama */}
       <div className="rounded-lg border border-blue-200 bg-blue-50/60 px-4 py-3 text-[12.5px] leading-relaxed text-blue-900">
@@ -376,6 +432,83 @@ export default function NotificationControlCenterPage() {
         </div>
       )}
 
+      {/* === GERÇEK TEST GÖNDERİMİ (PR-N3) === */}
+      <div>
+        <h3 className="mb-2 flex items-center gap-1.5 text-[12.5px] font-semibold text-gray-700">
+          <Send className="h-3.5 w-3.5" /> Gerçek Test Gönderimi
+        </h3>
+        <div className="rounded-xl border bg-white p-4 space-y-3">
+          <p className="text-[12px] text-gray-600 leading-relaxed">
+            Seçili müvekkilin <span className="font-medium">gerçek</span> iletişim adresine nötr bir <span className="font-medium">[TEST]</span> bildirimi gönderir
+            (bağlantı testinden farklıdır — gerçekten gönderir). Sonuç aşağıdaki <span className="font-medium">Son Gönderimler</span>'de görünür.
+          </p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <label className="text-[12px]">
+              <span className="block text-gray-500 mb-1">Müvekkil</span>
+              <select
+                value={testClientId}
+                onChange={(e) => { setTestClientId(e.target.value); setTestResult(null); }}
+                className="w-full border rounded-lg px-2.5 py-1.5 text-[12.5px] bg-white"
+              >
+                <option value="">Seçiniz…</option>
+                {clients.map((c) => (
+                  <option key={c.id} value={c.id}>{clientName(c)}</option>
+                ))}
+              </select>
+            </label>
+            {selectedClient && (
+              <div className="text-[12px] sm:pt-5 space-y-0.5">
+                <div className="flex items-center gap-2 text-gray-600">
+                  <Mail className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                  {selEmail ? maskEmailUi(selEmail) : <span className="text-amber-600">e-posta yok</span>}
+                </div>
+                <div className="flex items-center gap-2 text-gray-600">
+                  <MessageSquare className="h-3.5 w-3.5 text-gray-400 shrink-0" />
+                  {selPhone ? maskPhoneUi(selPhone) : <span className="text-amber-600">telefon yok</span>}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <label className="flex items-start gap-2 text-[12px] text-gray-700">
+            <input type="checkbox" checked={testConfirm} onChange={(e) => setTestConfirm(e.target.checked)} className="mt-0.5" />
+            <span>Bu işlemin seçili müvekkilin <span className="font-medium">gerçek</span> iletişim adresine test bildirimi göndereceğini anlıyorum.</span>
+          </label>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => doTestSend('EMAIL')}
+              disabled={!testClientId || !testConfirm || !emailReady || !selEmail || testSending !== null}
+              className="inline-flex items-center gap-1.5 text-[12.5px] font-medium px-3 py-1.5 rounded-lg bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <Mail className="h-3.5 w-3.5" />{testSending === 'EMAIL' ? 'Gönderiliyor…' : 'Gerçek test e-postası gönder'}
+            </button>
+            <button
+              onClick={() => doTestSend('SMS')}
+              disabled={!testClientId || !testConfirm || !smsReady || !selPhone || testSending !== null}
+              className="inline-flex items-center gap-1.5 text-[12.5px] font-medium px-3 py-1.5 rounded-lg bg-teal-600 text-white hover:bg-teal-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <MessageSquare className="h-3.5 w-3.5" />{testSending === 'SMS' ? 'Gönderiliyor…' : 'Gerçek test SMS gönder'}
+            </button>
+          </div>
+
+          <div className="text-[11px] text-gray-500 space-y-0.5">
+            <p>Bu işlem <span className="font-medium text-gray-700">gerçek bildirim</span> gönderir.</p>
+            {!smsReady && <p className="text-amber-600">SMS sağlayıcı seçili değil — SMS testi devre dışı.</p>}
+            <p className="text-amber-600">SMS gönderimi ücret doğurabilir.</p>
+          </div>
+
+          {testResult && (
+            <div className={`rounded-lg px-3 py-2 text-[12px] border ${testResult.success ? 'bg-green-50 text-green-800 border-green-200' : 'bg-red-50 text-red-800 border-red-200'}`}>
+              {testResult.success
+                ? <span><span className="font-medium">Gönderildi</span> ({CHANNEL_LABEL[testResult.channel] || testResult.channel}{testResult.recipient ? ` → ${testResult.recipient}` : ''}). Son Gönderimler'de görebilirsiniz.</span>
+                : <span><span className="font-medium">Gönderilemedi</span> ({CHANNEL_LABEL[testResult.channel] || testResult.channel}): {testResult.errorMessage || 'bilinmeyen hata'}</span>}
+            </div>
+          )}
+        </div>
+      </div>
+
       {/* === SON GÖNDERİMLER === */}
       <div>
         <h3 className="text-[12.5px] font-semibold text-gray-700 mb-2">Son Gönderimler</h3>
@@ -400,7 +533,12 @@ export default function NotificationControlCenterPage() {
                   {recentDeliveries.map((d) => (
                     <tr key={d.id} className="border-b last:border-0 align-top">
                       <td className="px-3 py-2 whitespace-nowrap text-gray-600">{fmtDateTime(d.createdAt)}</td>
-                      <td className="px-3 py-2 text-gray-900">{TYPE_LABEL[d.type] || d.type}</td>
+                      <td className="px-3 py-2 text-gray-900">
+                        {TYPE_LABEL[d.type] || d.type}
+                        {d.type === 'TEST' && (
+                          <span className="ml-1.5 text-[10px] font-semibold text-violet-700 bg-violet-100 px-1.5 py-0.5 rounded">Test</span>
+                        )}
+                      </td>
                       <td className="px-3 py-2 text-gray-600">{CHANNEL_LABEL[d.channel] || d.channel}</td>
                       <td className="px-3 py-2 text-gray-900 max-w-[160px] truncate">{d.recipientName || '—'}</td>
                       <td className="px-3 py-2">
@@ -453,7 +591,6 @@ export default function NotificationControlCenterPage() {
             'Dosya güncelleme bildirimleri',
             'Yaklaşan görev hatırlatıcıları (şu an yalnız geciken görev eskalasyonu çalışır)',
             'SMS uyarı varyantları (vekalet/dosya)',
-            'Gerçek test gönderimi (örnek e-posta/SMS) — ayrı, kontrollü adım',
             'Kişiye özel bildirim tercihleri (per-user aç/kapa)',
           ].map((t) => (
             <li key={t} className="flex items-center justify-between gap-3">

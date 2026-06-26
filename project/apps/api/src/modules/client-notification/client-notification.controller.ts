@@ -8,6 +8,7 @@ import {
   Query,
   UseGuards,
   ForbiddenException,
+  BadRequestException,
 } from "@nestjs/common";
 import { ClientNotificationService } from "./client-notification.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -145,6 +146,39 @@ export class ClientNotificationController {
   @Post("test-sms")
   testSmsConnection(@CurrentUser("tenantId") tenantId: string) {
     return this.service.testSmsConnection(tenantId);
+  }
+
+  // Gerçek Test Gönderimi — seçili müvekkile GERÇEK [TEST] bildirimi (bağlantı testinden AYRI).
+  // ADMIN gate + confirm zorunlu (yanlışlıkla gerçek gönderimi engeller). Mevcut send yolu kullanılır;
+  // sonuç ClientNotification'a loglanır ve "Son Gönderimler"de Test etiketiyle görünür.
+  @Post("test-send")
+  async testSend(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @CurrentUser("role") role: string,
+    @Body() body: { clientId?: string; channel?: "EMAIL" | "SMS"; confirm?: boolean }
+  ) {
+    if (role !== "ADMIN") {
+      throw new ForbiddenException(
+        "Gerçek test gönderimi yalnız yönetici (ADMIN) tarafından yapılabilir"
+      );
+    }
+    if (body?.confirm !== true) {
+      throw new BadRequestException(
+        "Onay gerekli: bu işlem seçili müvekkilin gerçek adresine GERÇEK bildirim gönderir"
+      );
+    }
+    if (!body?.clientId) {
+      throw new BadRequestException("Müvekkil seçilmedi");
+    }
+    if (body?.channel !== "EMAIL" && body?.channel !== "SMS") {
+      throw new BadRequestException("Geçersiz kanal (EMAIL veya SMS olmalı)");
+    }
+    const data = await this.service.testSend(tenantId, userId, {
+      clientId: body.clientId,
+      channel: body.channel,
+    });
+    return { success: data.success, data };
   }
 
   // Toplu e-posta gönder

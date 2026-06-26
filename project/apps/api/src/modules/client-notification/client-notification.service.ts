@@ -300,6 +300,90 @@ export class ClientNotificationService {
     };
   }
 
+  /**
+   * Bildirim Kontrol Merkezi — seçili GERÇEK müvekkile GERÇEK [TEST] bildirimi (PR-N3).
+   *
+   * Mevcut sendEmail/sendSms yolunu type:"TEST" + NÖTR içerikle yeniden kullanır:
+   * gerçek gönderim yapılır ve sonuç ClientNotification'a (SENT/FAILED) loglanır.
+   * Yeni model / migration / transport YOK; rastgele alıcı YOK (clientId zorunlu, tenant-scoped).
+   * Alıcı yanıtta maskelenir; sağlayıcı hata mesajı sır/uzunluk açısından sanitize edilir.
+   *
+   * /// <remarks>
+   * Çağrıldığı yerler:
+   * - ClientNotificationController.testSend() → POST /client-notifications/test-send (ADMIN) — Kontrol Merkezi "Gerçek Test Gönderimi"
+   * </remarks>
+   */
+  async testSend(
+    tenantId: string,
+    userId: string,
+    params: { clientId: string; channel: "EMAIL" | "SMS" }
+  ): Promise<{
+    success: boolean;
+    channel: "EMAIL" | "SMS";
+    status: "SENT" | "FAILED";
+    recipient?: string;
+    notificationId?: string;
+    errorMessage?: string;
+  }> {
+    const { clientId, channel } = params;
+    // Nötr, [TEST] etiketli içerik — dosya/borç/vekalet/müvekkil verisi İÇERMEZ.
+    const TEST_SUBJECT = "[TEST] Hukuk Platform Bildirim Testi";
+    const TEST_EMAIL_HTML =
+      "<p>Bu bir <strong>test bildirimidir</strong>.</p>" +
+      "<p>Bu mesaj, hukuk platformundaki e-posta bildirim kanalının çalıştığını doğrulamak " +
+      "amacıyla gönderilmiştir. Herhangi bir dosya, borç, vekalet veya hukuki işlem bildirimi değildir.</p>";
+    const TEST_SMS_TEXT =
+      "[TEST] Hukuk Platform test mesajıdır. Herhangi bir hukuki işlem bildirimi değildir.";
+
+    try {
+      if (channel === "EMAIL") {
+        const r = await this.sendEmail(tenantId, userId, {
+          clientId,
+          type: "TEST",
+          subject: TEST_SUBJECT,
+          body: TEST_EMAIL_HTML,
+        });
+        return {
+          success: true,
+          channel,
+          status: "SENT",
+          recipient: maskEmail(r.recipient),
+          notificationId: r.notificationId,
+        };
+      }
+      const r = await this.sendSms(tenantId, userId, {
+        clientId,
+        type: "TEST",
+        body: TEST_SMS_TEXT,
+      });
+      return {
+        success: true,
+        channel,
+        status: "SENT",
+        recipient: maskPhone(r.recipient),
+        notificationId: r.notificationId,
+      };
+    } catch (error: any) {
+      // sendEmail/sendSms başarısızlıkta BadRequestException FIRLATIR (ve gönderim-hatasında
+      // FAILED satırını zaten yazar). Burada dürüst bir FAILED sonucuna çeviriyoruz ki UI anında
+      // gösterebilsin; sağlayıcı ham mesajındaki olası sırları redakte ediyoruz.
+      return {
+        success: false,
+        channel,
+        status: "FAILED",
+        errorMessage: this.sanitizeTestError(error?.message),
+      };
+    }
+  }
+
+  /** Test gönderim hata mesajını UI'a vermeden önce sır/uzunluk açısından temizler. */
+  private sanitizeTestError(message?: string): string {
+    const raw = (message || "Gönderim başarısız").toString();
+    return raw
+      .replace(/\b(pass(?:word)?|secret|api[_-]?key|api[_-]?secret|token)\b\s*[:=]?\s*\S+/gi, "$1=***")
+      .slice(0, 300);
+  }
+
   // E-posta gönder
   async sendEmail(tenantId: string, userId: string, dto: SendEmailDto) {
     // Müvekkil bilgilerini al
