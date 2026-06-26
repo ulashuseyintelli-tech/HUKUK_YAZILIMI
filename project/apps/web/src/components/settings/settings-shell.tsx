@@ -152,6 +152,38 @@ export function SettingsSection({
   );
 }
 
+// A-3b: Collection drawer başlığı — WorkbenchHeader ile aynı sticky karakter,
+// ama "Kaydet" yerine sağda "+Ekle" birincil eylemi (kayıt/silme satır-içi/modal ile).
+export function CollectionHeader({
+  title,
+  description,
+  actionLabel,
+  onAction,
+}: {
+  title: string;
+  description?: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
+  return (
+    <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-gray-200 bg-white px-5 py-2.5">
+      <div className="min-w-0 flex-1">
+        <h2 className="text-[15px] font-bold text-gray-900 leading-tight truncate">{title}</h2>
+        {description && <p className="text-[11px] text-gray-500 truncate">{description}</p>}
+      </div>
+      {actionLabel && onAction && (
+        <button
+          onClick={onAction}
+          className="shrink-0 inline-flex items-center gap-1 text-[12px] px-3.5 py-1.5 rounded-md bg-primary text-white hover:bg-primary/90 whitespace-nowrap"
+        >
+          <span className="text-[15px] leading-none -mt-0.5">+</span>
+          {actionLabel}
+        </button>
+      )}
+    </div>
+  );
+}
+
 // Aktif detayın üstünde sticky kalan kontrol çubuğu (global header değil).
 export function WorkbenchHeader({
   title,

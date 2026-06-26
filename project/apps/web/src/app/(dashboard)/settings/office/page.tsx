@@ -4,7 +4,7 @@ import { useState, useEffect, Suspense } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Building2, Users, Plus, Pencil, Trash2, Check, X, Star, CreditCard, Loader2, Mail, MessageSquare, GripVertical, Clock, ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
-import { SettingsSection, WorkbenchHeader, SettingsDrawer } from "@/components/settings/settings-shell";
+import { SettingsSection, WorkbenchHeader, SettingsDrawer, CollectionHeader } from "@/components/settings/settings-shell";
 
 interface BankAccount { id: string; bankName: string; branchName?: string; iban: string; accountName?: string; isDefault: boolean; }
 interface Lawyer { 
@@ -598,217 +598,217 @@ function OfficeSettingsInner() {
         </div>
         )}
         {drawerSection === "bank" && (
-        <div className="bg-white rounded-lg border p-3 flex flex-col">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-semibold flex items-center gap-1"><CreditCard className="h-4 w-4 text-green-500" />Banka Hesapları</h2>
-            <button onClick={() => { setEditingBank(null); setShowBankModal(true); }} className="text-xs text-primary hover:underline flex items-center gap-0.5"><Plus className="h-3 w-3" />Ekle</button>
-          </div>
-          <div className="flex-1 space-y-1 overflow-auto">
-            {office?.bankAccounts?.map(acc => (
-              <div key={acc.id} className="flex items-center justify-between p-2 border rounded text-xs hover:bg-gray-50">
-                <div className="flex items-center gap-1">
-                  {acc.isDefault && <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />}
-                  <div><p className="font-medium">{acc.bankName}</p><p className="text-muted-foreground font-mono text-[10px]">{acc.iban}</p></div>
-                </div>
-                <div className="flex gap-1">
-                  <button onClick={() => { setEditingBank(acc); setShowBankModal(true); }} className="p-1 hover:bg-gray-200 rounded"><Pencil className="h-3 w-3 text-gray-500" /></button>
-                  <button onClick={() => handleDeleteBankAccount(acc.id)} className="p-1 hover:bg-red-100 rounded"><Trash2 className="h-3 w-3 text-red-500" /></button>
-                </div>
+        <div className="h-full flex flex-col bg-white">
+          <CollectionHeader title="Banka Hesapları" description="Tahsilat ve masraf için büro hesapları" actionLabel="Ekle" onAction={() => { setEditingBank(null); setShowBankModal(true); }} />
+          <div className="px-5 py-4">
+            <div className="rounded-xl border-2 border-blue-300 bg-blue-50/30 p-2">
+              <div className="divide-y divide-blue-100">
+                {office?.bankAccounts?.map(acc => (
+                  <div key={acc.id} className={`flex items-center justify-between gap-2 px-2.5 py-2 border-l-2 ${acc.isDefault ? "border-amber-400" : "border-transparent"} hover:bg-white/60 transition-colors`}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      {acc.isDefault && <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500 shrink-0" />}
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-semibold text-gray-900 truncate">{acc.bankName}</p>
+                        <p className="text-[11px] text-gray-500 font-mono truncate">{acc.iban}</p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => { setEditingBank(acc); setShowBankModal(true); }} className="p-1.5 hover:bg-blue-100 rounded-md" title="Düzenle"><Pencil className="h-3.5 w-3.5 text-gray-500" /></button>
+                      <button onClick={() => handleDeleteBankAccount(acc.id)} className="p-1.5 hover:bg-red-100 rounded-md" title="Sil"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
+                    </div>
+                  </div>
+                ))}
+                {(!office?.bankAccounts || office.bankAccounts.length === 0) && <p className="text-[12px] text-gray-400 text-center py-6">Henüz banka hesabı eklenmemiş</p>}
               </div>
-            ))}
-            {(!office?.bankAccounts || office.bankAccounts.length === 0) && <p className="text-xs text-muted-foreground text-center py-4">Hesap yok</p>}
+            </div>
           </div>
         </div>
         )}
         {drawerSection === "lawyers" && (
-        <div className="bg-white rounded-lg border p-3 flex flex-col">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-semibold flex items-center gap-1"><Users className="h-4 w-4 text-purple-500" />Avukatlar</h2>
-            <button onClick={() => { setEditingLawyer(null); setShowLawyerModal(true); }} className="text-xs text-primary hover:underline flex items-center gap-0.5"><Plus className="h-3 w-3" />Ekle</button>
-          </div>
-          <div className="flex-1 overflow-auto">
-            {office?.lawyers?.map((lawyer, index) => (
-              <div 
-                key={lawyer.id} 
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData('lawyerId', lawyer.id);
-                  e.dataTransfer.setData('lawyerIndex', index.toString());
-                  e.currentTarget.classList.add('opacity-50');
-                }}
-                onDragEnd={(e) => {
-                  e.currentTarget.classList.remove('opacity-50');
-                }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.currentTarget.classList.add('bg-purple-100', 'border-purple-400');
-                }}
-                onDragLeave={(e) => {
-                  e.currentTarget.classList.remove('bg-purple-100', 'border-purple-400');
-                }}
-                onDrop={async (e) => {
-                  e.preventDefault();
-                  e.currentTarget.classList.remove('bg-purple-100', 'border-purple-400');
-                  const draggedId = e.dataTransfer.getData('lawyerId');
-                  const draggedIndex = parseInt(e.dataTransfer.getData('lawyerIndex'));
-                  if (draggedId === lawyer.id) return;
-                  
-                  // Yeni sıralama oluştur
-                  const lawyers = [...(office?.lawyers || [])];
-                  const [draggedLawyer] = lawyers.splice(draggedIndex, 1);
-                  lawyers.splice(index, 0, draggedLawyer);
-                  
-                  // API'ye gönder
-                  try {
-                    await api.put('/lawyers/order/update', { lawyerIds: lawyers.map(l => l.id) });
-                    await loadOffice();
-                    showSaved();
-                  } catch (err) { console.error(err); }
-                }}
-                className={`flex items-center justify-between p-2 border-b text-xs hover:bg-gray-50 cursor-move transition-colors ${lawyer.isDefaultForNewCases ? 'bg-amber-50' : ''}`}
-              >
-                <div className="flex items-center gap-2">
-                  <GripVertical className="h-3 w-3 text-gray-400 cursor-grab active:cursor-grabbing" />
-                  <div className="flex-1">
-                    <div className="flex items-center gap-1">
-                      <p className="font-medium">{(lawyer as any).displayName || `${(lawyer as any).title || "Av."} ${lawyer.name} ${lawyer.surname}`}</p>
-                    </div>
-                    <p className="text-muted-foreground">{lawyer.barNumber || "-"} • <span className={`px-1 rounded ${lawyer.role === "OWNER" ? "bg-purple-100 text-purple-700" : "bg-gray-100"}`}>{roleLabels[lawyer.role]}</span></p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1">
-                  {/* Varsayılan Seç Butonu */}
-                  <button 
-                    onClick={async () => {
+        <div className="h-full flex flex-col bg-white">
+          <CollectionHeader title="Avukatlar" description="Büro avukatları — sıra ve yeni-takip varsayılanı" actionLabel="Ekle" onAction={() => { setEditingLawyer(null); setShowLawyerModal(true); }} />
+          <div className="px-5 py-4">
+            <div className="rounded-xl border-2 border-indigo-300 bg-indigo-50/30 p-2">
+              <div className="divide-y divide-indigo-100">
+                {office?.lawyers?.map((lawyer, index) => (
+                  <div
+                    key={lawyer.id}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('lawyerId', lawyer.id);
+                      e.dataTransfer.setData('lawyerIndex', index.toString());
+                      e.currentTarget.classList.add('opacity-50');
+                    }}
+                    onDragEnd={(e) => {
+                      e.currentTarget.classList.remove('opacity-50');
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.currentTarget.classList.add('bg-indigo-100');
+                    }}
+                    onDragLeave={(e) => {
+                      e.currentTarget.classList.remove('bg-indigo-100');
+                    }}
+                    onDrop={async (e) => {
+                      e.preventDefault();
+                      e.currentTarget.classList.remove('bg-indigo-100');
+                      const draggedId = e.dataTransfer.getData('lawyerId');
+                      const draggedIndex = parseInt(e.dataTransfer.getData('lawyerIndex'));
+                      if (draggedId === lawyer.id) return;
+
+                      // Yeni sıralama oluştur
+                      const lawyers = [...(office?.lawyers || [])];
+                      const [draggedLawyer] = lawyers.splice(draggedIndex, 1);
+                      lawyers.splice(index, 0, draggedLawyer);
+
+                      // API'ye gönder
                       try {
-                        await api.put(`/lawyers/${lawyer.id}`, { isDefaultForNewCases: !lawyer.isDefaultForNewCases });
+                        await api.put('/lawyers/order/update', { lawyerIds: lawyers.map(l => l.id) });
                         await loadOffice();
                         showSaved();
-                      } catch (e) { console.error(e); }
+                      } catch (err) { console.error(err); }
                     }}
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
-                      lawyer.isDefaultForNewCases 
-                        ? 'bg-amber-500 text-white hover:bg-amber-600' 
-                        : 'bg-gray-100 text-gray-600 hover:bg-amber-100 hover:text-amber-700'
-                    }`}
-                    title={lawyer.isDefaultForNewCases ? "Varsayılandan çıkar" : "Varsayılan yap"}
+                    className={`flex items-center justify-between gap-2 px-2.5 py-2 border-l-2 ${lawyer.isDefaultForNewCases ? 'border-amber-400' : 'border-transparent'} hover:bg-white/60 cursor-move transition-colors`}
                   >
-                    {lawyer.isDefaultForNewCases ? '⭐ Varsayılan' : '☆ Seç'}
-                  </button>
-                  <button onClick={() => { setEditingLawyer(lawyer); setShowLawyerModal(true); }} className="p-1 hover:bg-gray-200 rounded"><Pencil className="h-3 w-3 text-gray-500" /></button>
-                  <button onClick={() => handleDeleteLawyer(lawyer.id)} className="p-1 hover:bg-red-100 rounded"><Trash2 className="h-3 w-3 text-red-500" /></button>
-                </div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <GripVertical className="h-3.5 w-3.5 text-gray-400 cursor-grab active:cursor-grabbing shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-semibold text-gray-900 truncate">{(lawyer as any).displayName || `${(lawyer as any).title || "Av."} ${lawyer.name} ${lawyer.surname}`}</p>
+                        <p className="text-[11px] text-gray-500 truncate">{lawyer.barNumber || "-"} • <span className={`px-1.5 py-0.5 rounded text-[10.5px] font-medium ${roleBadgeClass(lawyerRankLabel(lawyer))}`}>{lawyerRankLabel(lawyer)}</span></p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {/* Varsayılan Seç Butonu */}
+                      <button
+                        onClick={async () => {
+                          try {
+                            await api.put(`/lawyers/${lawyer.id}`, { isDefaultForNewCases: !lawyer.isDefaultForNewCases });
+                            await loadOffice();
+                            showSaved();
+                          } catch (e) { console.error(e); }
+                        }}
+                        className={`px-2 py-1 rounded-md text-[10.5px] font-medium transition-colors ${
+                          lawyer.isDefaultForNewCases
+                            ? 'bg-amber-500 text-white hover:bg-amber-600'
+                            : 'bg-gray-100 text-gray-600 hover:bg-amber-100 hover:text-amber-700'
+                        }`}
+                        title={lawyer.isDefaultForNewCases ? "Varsayılandan çıkar" : "Varsayılan yap"}
+                      >
+                        {lawyer.isDefaultForNewCases ? '⭐ Varsayılan' : '☆ Seç'}
+                      </button>
+                      <button onClick={() => { setEditingLawyer(lawyer); setShowLawyerModal(true); }} className="p-1.5 hover:bg-indigo-100 rounded-md" title="Düzenle"><Pencil className="h-3.5 w-3.5 text-gray-500" /></button>
+                      <button onClick={() => handleDeleteLawyer(lawyer.id)} className="p-1.5 hover:bg-red-100 rounded-md" title="Sil"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
+                    </div>
+                  </div>
+                ))}
+                {(!office?.lawyers || office.lawyers.length === 0) && <p className="text-[12px] text-gray-400 text-center py-6">Henüz avukat eklenmemiş</p>}
               </div>
-            ))}
-            {(!office?.lawyers || office.lawyers.length === 0) && <p className="text-xs text-muted-foreground text-center py-4">Avukat yok</p>}
-          </div>
-          {/* Sıralama ve varsayılan bilgisi */}
-          <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-[10px] text-blue-700">
-            💡 Sürükle-bırak ile sıralayın. "⭐ Varsayılan" avukatlar yeni takiplerde otomatik seçilir.
+            </div>
+            {/* Sıralama ve varsayılan bilgisi */}
+            <p className="mt-2.5 px-1 text-[11px] text-gray-500">💡 Sürükle-bırak ile sıralayın. <span className="font-medium text-amber-700">⭐ Varsayılan</span> avukatlar yeni takiplerde otomatik seçilir.</p>
           </div>
         </div>
         )}
         {drawerSection === "staff" && (
-        <div className="bg-white rounded-lg border p-3 flex flex-col">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-semibold flex items-center gap-1"><Users className="h-4 w-4 text-orange-500" />Personel</h2>
-            <button onClick={() => { setEditingStaff(null); setShowStaffModal(true); }} className="text-xs text-primary hover:underline flex items-center gap-0.5"><Plus className="h-3 w-3" />Ekle</button>
-          </div>
-          <div className="flex-1 overflow-auto">
-            {staffList.map((staff, index) => (
-              <div 
-                key={staff.id} 
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData('staffId', staff.id);
-                  e.dataTransfer.setData('staffIndex', index.toString());
-                  e.currentTarget.classList.add('opacity-50');
-                }}
-                onDragEnd={(e) => {
-                  e.currentTarget.classList.remove('opacity-50');
-                }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.currentTarget.classList.add('bg-orange-100', 'border-orange-400');
-                }}
-                onDragLeave={(e) => {
-                  e.currentTarget.classList.remove('bg-orange-100', 'border-orange-400');
-                }}
-                onDrop={async (e) => {
-                  e.preventDefault();
-                  e.currentTarget.classList.remove('bg-orange-100', 'border-orange-400');
-                  const draggedId = e.dataTransfer.getData('staffId');
-                  const draggedIndex = parseInt(e.dataTransfer.getData('staffIndex'));
-                  if (draggedId === staff.id) return;
-                  
-                  // Yeni sıralama oluştur
-                  const newList = [...staffList];
-                  const [draggedStaff] = newList.splice(draggedIndex, 1);
-                  newList.splice(index, 0, draggedStaff);
-                  
-                  // Optimistic update
-                  setStaffList(newList);
-                  
-                  // API'ye gönder
-                  try {
-                    await api.put('/staff/order/update', { staffIds: newList.map(s => s.id) });
-                    showSaved();
-                  } catch (err) { 
-                    console.error(err); 
-                    // Hata durumunda geri al
-                    await loadStaff();
-                  }
-                }}
-                className={`flex items-center justify-between p-2 border-b text-xs hover:bg-gray-50 cursor-move transition-colors ${staff.isDefaultForNewCases ? 'bg-amber-50' : ''}`}
-              >
-                <div className="flex items-center gap-2">
-                  <GripVertical className="h-3 w-3 text-gray-400 cursor-grab active:cursor-grabbing" />
-                  <div>
-                    <p className="font-medium">{staff.firstName} {staff.lastName}</p>
-                    <p className="text-muted-foreground"><span className={`px-1 rounded ${getStaffTypeColor(staff.staffType)}`}>{getStaffTypeLabel(staff.staffType)}</span></p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-1">
-                  {/* Varsayılan Seç Butonu */}
-                  <button 
-                    onClick={async () => {
-                      const newValue = !staff.isDefaultForNewCases;
-                      
+        <div className="h-full flex flex-col bg-white">
+          <CollectionHeader title="Personel" description="Büro personeli — sıra ve yeni-takip varsayılanı" actionLabel="Ekle" onAction={() => { setEditingStaff(null); setShowStaffModal(true); }} />
+          <div className="px-5 py-4">
+            <div className="rounded-xl border-2 border-indigo-300 bg-indigo-50/30 p-2">
+              <div className="divide-y divide-indigo-100">
+                {staffList.map((staff, index) => (
+                  <div
+                    key={staff.id}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('staffId', staff.id);
+                      e.dataTransfer.setData('staffIndex', index.toString());
+                      e.currentTarget.classList.add('opacity-50');
+                    }}
+                    onDragEnd={(e) => {
+                      e.currentTarget.classList.remove('opacity-50');
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.currentTarget.classList.add('bg-indigo-100');
+                    }}
+                    onDragLeave={(e) => {
+                      e.currentTarget.classList.remove('bg-indigo-100');
+                    }}
+                    onDrop={async (e) => {
+                      e.preventDefault();
+                      e.currentTarget.classList.remove('bg-indigo-100');
+                      const draggedId = e.dataTransfer.getData('staffId');
+                      const draggedIndex = parseInt(e.dataTransfer.getData('staffIndex'));
+                      if (draggedId === staff.id) return;
+
+                      // Yeni sıralama oluştur
+                      const newList = [...staffList];
+                      const [draggedStaff] = newList.splice(draggedIndex, 1);
+                      newList.splice(index, 0, draggedStaff);
+
                       // Optimistic update
-                      setStaffList(prev => prev.map(s => 
-                        s.id === staff.id ? { ...s, isDefaultForNewCases: newValue } : s
-                      ));
-                      
+                      setStaffList(newList);
+
+                      // API'ye gönder
                       try {
-                        await api.put(`/staff/${staff.id}`, { isDefaultForNewCases: newValue });
+                        await api.put('/staff/order/update', { staffIds: newList.map(s => s.id) });
                         showSaved();
-                      } catch (e) { 
-                        console.error(e);
+                      } catch (err) {
+                        console.error(err);
                         // Hata durumunda geri al
-                        setStaffList(prev => prev.map(s => 
-                          s.id === staff.id ? { ...s, isDefaultForNewCases: !newValue } : s
-                        ));
+                        await loadStaff();
                       }
                     }}
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
-                      staff.isDefaultForNewCases 
-                        ? 'bg-amber-500 text-white hover:bg-amber-600' 
-                        : 'bg-gray-100 text-gray-600 hover:bg-amber-100 hover:text-amber-700'
-                    }`}
-                    title={staff.isDefaultForNewCases ? "Varsayılandan çıkar" : "Varsayılan yap"}
+                    className={`flex items-center justify-between gap-2 px-2.5 py-2 border-l-2 ${staff.isDefaultForNewCases ? 'border-amber-400' : 'border-transparent'} hover:bg-white/60 cursor-move transition-colors`}
                   >
-                    {staff.isDefaultForNewCases ? '⭐ Varsayılan' : '☆ Seç'}
-                  </button>
-                  <button onClick={() => { setEditingStaff(staff); setShowStaffModal(true); }} className="p-1 hover:bg-gray-200 rounded"><Pencil className="h-3 w-3 text-gray-500" /></button>
-                  <button onClick={() => handleDeleteStaff(staff.id)} className="p-1 hover:bg-red-100 rounded"><Trash2 className="h-3 w-3 text-red-500" /></button>
-                </div>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <GripVertical className="h-3.5 w-3.5 text-gray-400 cursor-grab active:cursor-grabbing shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-semibold text-gray-900 truncate">{staff.firstName} {staff.lastName}</p>
+                        <p className="text-[11px] text-gray-500 truncate"><span className={`px-1.5 py-0.5 rounded text-[10.5px] font-medium ${getStaffTypeColor(staff.staffType)}`}>{getStaffTypeLabel(staff.staffType)}</span></p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {/* Varsayılan Seç Butonu */}
+                      <button
+                        onClick={async () => {
+                          const newValue = !staff.isDefaultForNewCases;
+
+                          // Optimistic update
+                          setStaffList(prev => prev.map(s =>
+                            s.id === staff.id ? { ...s, isDefaultForNewCases: newValue } : s
+                          ));
+
+                          try {
+                            await api.put(`/staff/${staff.id}`, { isDefaultForNewCases: newValue });
+                            showSaved();
+                          } catch (e) {
+                            console.error(e);
+                            // Hata durumunda geri al
+                            setStaffList(prev => prev.map(s =>
+                              s.id === staff.id ? { ...s, isDefaultForNewCases: !newValue } : s
+                            ));
+                          }
+                        }}
+                        className={`px-2 py-1 rounded-md text-[10.5px] font-medium transition-colors ${
+                          staff.isDefaultForNewCases
+                            ? 'bg-amber-500 text-white hover:bg-amber-600'
+                            : 'bg-gray-100 text-gray-600 hover:bg-amber-100 hover:text-amber-700'
+                        }`}
+                        title={staff.isDefaultForNewCases ? "Varsayılandan çıkar" : "Varsayılan yap"}
+                      >
+                        {staff.isDefaultForNewCases ? '⭐ Varsayılan' : '☆ Seç'}
+                      </button>
+                      <button onClick={() => { setEditingStaff(staff); setShowStaffModal(true); }} className="p-1.5 hover:bg-indigo-100 rounded-md" title="Düzenle"><Pencil className="h-3.5 w-3.5 text-gray-500" /></button>
+                      <button onClick={() => handleDeleteStaff(staff.id)} className="p-1.5 hover:bg-red-100 rounded-md" title="Sil"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
+                    </div>
+                  </div>
+                ))}
+                {staffList.length === 0 && <p className="text-[12px] text-gray-400 text-center py-6">Henüz personel eklenmemiş</p>}
               </div>
-            ))}
-            {staffList.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">Personel yok</p>}
-          </div>
-          {/* Sıralama ve varsayılan bilgisi */}
-          <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-[10px] text-blue-700">
-            💡 Sürükle-bırak ile sıralayın. "⭐ Varsayılan" personeller yeni takiplerde otomatik seçilir.
+            </div>
+            {/* Sıralama ve varsayılan bilgisi */}
+            <p className="mt-2.5 px-1 text-[11px] text-gray-500">💡 Sürükle-bırak ile sıralayın. <span className="font-medium text-amber-700">⭐ Varsayılan</span> personeller yeni takiplerde otomatik seçilir.</p>
           </div>
         </div>
         )}
