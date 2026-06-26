@@ -55,7 +55,11 @@ export const HARDWARE_ACTIONS: ReadonlySet<ActionCode> = new Set([
 ]);
 
 /** Guarded-edge: onay gerektiren (geri-alınamaz finans onayı vb.). */
-export const GUARDED_EDGE_APPROVAL: ReadonlySet<ActionCode> = new Set([ActionCode.APPROVE_EXPENSE]);
+export const GUARDED_EDGE_APPROVAL: ReadonlySet<ActionCode> = new Set([
+  ActionCode.APPROVE_EXPENSE,
+  // P2b-2 pilot: banka para hareketi → confirm'den güçlü iç onay (observe-only ölçüm).
+  ActionCode.BANK_TRANSFER,
+]);
 
 /** Guarded-edge: tek-yön / dış-etki → confirm. */
 export const GUARDED_EDGE_CONFIRM: ReadonlySet<ActionCode> = new Set([
