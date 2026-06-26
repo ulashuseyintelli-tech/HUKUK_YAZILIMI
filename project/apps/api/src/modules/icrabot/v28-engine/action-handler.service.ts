@@ -31,7 +31,23 @@ import { TimelineService } from './timeline.service';
 import { FactStoreService } from './factstore.service';
 import { maskPhone } from '../../../common/pii-mask.util';
 
-export type ActionHandler = (payload: Record<string, any>, caseId: string) => Promise<Record<string, any> | void>;
+/**
+ * TM3 M1: handler'a outbox satır bağlamı. Consumer'ın IcrabotOutboxAction.tenantId'yi
+ * satırdan thread edip cross-tenant doğrulaması için. Geriye uyumlu (opsiyonel 3. param —
+ * mevcut handler'lar yok sayar). Domain logic action-handler'a KONMAZ; yalnız bağlam iletilir.
+ */
+export interface ActionHandlerContext {
+  actionId: string;
+  tenantId: string;
+  actionType: string;
+  idempotencyKey?: string;
+}
+
+export type ActionHandler = (
+  payload: Record<string, any>,
+  caseId: string,
+  context?: ActionHandlerContext,
+) => Promise<Record<string, any> | void>;
 
 export interface ActionDispatchResult {
   success: boolean;
@@ -111,8 +127,15 @@ export class ActionHandlerService {
     await this.outbox.markSent(actionId);
 
     try {
-      // Handler may return a result object
-      const handlerResult = await handler(action.payload, action.caseId);
+      // Handler may return a result object.
+      // TM3 M1: outbox satır bağlamı (tenantId/actionId) handler'a thread edilir → consumer
+      // cross-tenant doğrulaması yapar. Domain logic burada DEĞİL; yalnız context iletimi.
+      const handlerResult = await handler(action.payload, action.caseId, {
+        actionId,
+        tenantId: effectiveTenantId,
+        actionType: action.actionType,
+        idempotencyKey: action.idempotencyKey,
+      });
       await this.outbox.markDone(actionId);
 
       // Timeline: OUTCOME success

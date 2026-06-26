@@ -7524,3 +7524,76 @@ model EscalationStateRecord {
 
   @@map("escalation_state")
 }
+
+// ============================================================
+// TM3 M1 — Tahsilat Dağıtımı (Müvekkil Settlement Bridge)
+// CollectionDisposition: borçlu tahsilatının (Collection) müvekkile/ofise/masrafa/emanete
+// dağıtım TASLAĞI. PAYMENT_RECEIVED outbox event'i tüketilince HELD_PENDING_DISTRIBUTION
+// draft'ı açılır (OTOMATİK DAĞITIM YOK — kullanıcı onayı M2). clientId YOK → caseClientId
+// (CaseClient) veya çoklu-alacaklıda CASE_CREDITOR_CLUSTER. Scalar FK (back-relation YOK):
+// Collection/Case/CaseClient (CODEX/shared) modelleri DOKUNULMAZ. Tutar Decimal(15,2)
+// (Collection.amount ile aynı; bigint dönüşümü YOK). collectionId @unique = idempotency.
+// ============================================================
+enum CollectionDispositionStatus {
+  HELD_PENDING_DISTRIBUTION // Dağıtım bekliyor (default draft)
+  POSTED // Dağıtım onaylandı (M2)
+  CANCELLED
+  REVERSED // Bağlı collection reversed (sonraki faz)
+}
+
+enum CollectionDispositionBeneficiaryScope {
+  SINGLE_CASE_CLIENT // Tek alacaklı → caseClientId dolu
+  CASE_CREDITOR_CLUSTER // Çoklu alacaklı → caseClientId null (implicit havuz)
+}
+
+enum CollectionDispositionLineType {
+  CLIENT_PAYABLE
+  CONTRACTUAL_FEE_WITHHELD
+  FIRM_EXPENSE_REIMBURSEMENT
+  CLIENT_EXPENSE_REIMBURSEMENT
+  OFFSET_CLIENT_ADVANCE
+  HELD_PENDING_DISTRIBUTION
+  OTHER
+}
+
+model CollectionDisposition {
+  id           String @id @default(cuid())
+  tenantId     String
+  caseId       String
+  collectionId String @unique // idempotency: 1 collection = 1 disposition
+
+  beneficiaryScope CollectionDispositionBeneficiaryScope
+  caseClientId     String? // SINGLE ise dolu (CaseClient.id); CLUSTER ise null
+
+  status      CollectionDispositionStatus @default(HELD_PENDING_DISTRIBUTION)
+  totalAmount Decimal                     @db.Decimal(15, 2)
+  currency    String                      @default("TRY")
+
+  sourcePaymentEventId String? // PAYMENT_RECEIVED eventId (scalar, FK YOK)
+  createdById          String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  lines CollectionDispositionLine[]
+
+  @@index([tenantId, caseId])
+  @@index([tenantId, status])
+  @@index([caseClientId])
+}
+
+model CollectionDispositionLine {
+  id            String                @id @default(cuid())
+  dispositionId String
+  disposition   CollectionDisposition @relation(fields: [dispositionId], references: [id], onDelete: Cascade)
+
+  type         CollectionDispositionLineType
+  amount       Decimal                       @db.Decimal(15, 2)
+  caseClientId String? // CLUSTER'da satır-bazlı alacaklı (M2); M1 default null
+
+  note      String?
+  createdAt DateTime @default(now())
+
+  @@index([dispositionId])
+  @@index([type])
+}
