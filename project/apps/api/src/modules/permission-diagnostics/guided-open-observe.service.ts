@@ -38,8 +38,14 @@ export class GuidedOpenObserveService {
    *   - flag off  → erken döner; resolver ÇAĞRILMAZ, log YAZILMAZ, response/latency DEĞİŞMEZ.
    *   - flag observe → resolver.resolve + best-effort PERMISSION_OBSERVED audit; işlem ENGELLENMEZ.
    *   - resolver/audit hata verse bile ASLA throw etmez (asıl endpoint akışı korunur).
+   * opts.targetRef (OPSİYONEL): caseId path'te OLMAYAN aksiyonlarda hedef referansı (ör. caseDebtorId).
+   *   YALNIZ verilince audit'e eklenir; mevcut caseId'li pilotlar opts GEÇMEZ → audit şekli BİREBİR korunur.
+   *
+   * Çağrıldığı yerler:
+   *  - notification/bank/uyap/office/case controller (P2b-1/P2b-2 observe pilotları; caseId'li, opts yok)
+   *  - case-debtor.controller (P2b-2b-1 EDIT_PARTIES observe: add/bulk → caseId; update/remove → opts.targetRef=caseDebtorId)
    */
-  async observe(input: EffectivePermissionInput): Promise<void> {
+  async observe(input: EffectivePermissionInput, opts?: { targetRef?: string }): Promise<void> {
     if (this.mode() !== "observe") return; // off → no-op
     try {
       const d = await this.resolver.resolve(input);
@@ -47,7 +53,7 @@ export class GuidedOpenObserveService {
         tenantId: input.tenantId,
         action: "PERMISSION_OBSERVED",
         entityType: "PERMISSION",
-        entityId: input.caseId ?? input.actionCode,
+        entityId: input.caseId ?? opts?.targetRef ?? input.actionCode,
         userId: input.actorUserId,
         metadata: {
           event: "PERMISSION_OBSERVED",
@@ -58,6 +64,9 @@ export class GuidedOpenObserveService {
           // truthful: butona basan GERÇEK kullanıcı (iç tek-asıl felsefe kaydı değiştirmez)
           actorUserId: input.actorUserId,
           caseId: input.caseId ?? null,
+          // opsiyonel hedef referansı (caseId path'te yokken ör. caseDebtorId); YALNIZ verilince eklenir →
+          // mevcut pilotlar (caseId'li, opts geçmez) audit şekli BİREBİR korunur.
+          ...(opts?.targetRef ? { targetRef: opts.targetRef } : {}),
           actionCode: input.actionCode,
           decision: d.decision,
           decisionSource: d.decisionSource,
