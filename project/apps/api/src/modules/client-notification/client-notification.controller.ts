@@ -7,6 +7,7 @@ import {
   Param,
   Query,
   UseGuards,
+  ForbiddenException,
 } from "@nestjs/common";
 import { ClientNotificationService } from "./client-notification.service";
 import { JwtAuthGuard } from "../auth/guards/jwt-auth.guard";
@@ -16,6 +17,22 @@ import { CurrentUser } from "../auth/decorators/current-user.decorator";
 @UseGuards(JwtAuthGuard)
 export class ClientNotificationController {
   constructor(private service: ClientNotificationService) {}
+
+  // Bildirim Kontrol Merkezi — sağlık/özet/teşhis. ADMIN gate: teslimat istatistiği ve hata
+  // mesajları operasyonel/hassas veridir, salt-JWT yetmez (office.controller / reports ile aynı çizgi).
+  @Get("overview")
+  async getOverview(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("role") role: string
+  ) {
+    if (role !== "ADMIN") {
+      throw new ForbiddenException(
+        "Bildirim Kontrol Merkezi'ne yalnız yönetici (ADMIN) erişebilir"
+      );
+    }
+    const data = await this.service.getNotificationOverview(tenantId);
+    return { success: true, data };
+  }
 
   // E-posta gönder
   @Post("send-email")
