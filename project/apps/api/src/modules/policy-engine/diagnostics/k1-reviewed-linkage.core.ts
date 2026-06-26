@@ -6,9 +6,12 @@
  * TAHMİN ÜRETMEZ; yalnız İNSAN-İNCELEMELİ (human-reviewed) bir linkage manifest'ini DOĞRULAR
  * ve sayım-temelli (counts-only) bir plan üretir. IO YOK (Prisma yok), MUTATION YOK.
  *
- * K1-2 KAPSAM SINIRI (KESİN):
- *  - Bu çekirdek YALNIZ "validate + plan" yapar. APPLY YOK (apply/write fonksiyonu DIŞARI VERİLMEZ).
- *    Gerçek yazma (User oluşturma / Lawyer.userId / StaffMember.userId güncelleme) K1-3'e (guarded apply) ertelendi.
+ * K1-2 (validate+plan) + K1-3 (guarded apply) KAPSAM SINIRI (KESİN):
+ *  - K1-2 yüzeyi: validateManifest/planLinkage/formatPlan/generateManifestTemplate/parseManifest (SAF, write yok).
+ *  - K1-3 yüzeyi (dosyanın altı): evaluateApplyGuards/planApply/applyLinkages/verifyAppliedState/formatApplyReport.
+ *    İzin verilen TEK write: Lawyer.userId / StaffMember.userId set (LINK_EXISTING_USER). CREATE_LOGIN_USER güvenli
+ *    UYGULANAMAZ → CREATE_BLOCKED_NOT_IMPLEMENTED (passwordHash NOT NULL; otomatik parola yasak). Gerçek Prisma/
+ *    $transaction yalnız script'te; bu çekirdek hâlâ IO'suz (applyLinkages injected tx alır).
  *  - TAHMİN YASAK: isim-benzerliği / telefon / rol-tahmini / tenant-inference / hardcoded gizli map / fuzzy match
  *    HİÇBİR YERDE kullanılmaz. Karar yalnız manifest'te AÇIKÇA yazılı alanlardan + referans kimlik
  *    gerçeklerinden (profile.userId, user.tenantId, mevcut köprüler) çıkar.
@@ -637,4 +640,349 @@ export function parseManifest(raw: unknown): ReviewedLinkageManifest {
     throw new Error("manifest.entries: dizi olmalı");
   }
   return obj as unknown as ReviewedLinkageManifest;
+}
+
+// ============================================================================
+// K1-3 — GUARDED APPLY (doğrulanmış manifest'i transaction-safe uygula)
+// ============================================================================
+//
+// K1-3, K1-2'nin ÜSTÜNE oturur: K1-2 doğrular+planlar, K1-3 AÇIK/GUARD'LI uygular.
+// Eklenen her şey ya SAF (planApply/verify/format/guards) ya da INJECTED-tx (applyLinkages);
+// GERÇEK Prisma bağlantısı/$transaction script'tedir (k1-reviewed-linkage.ts). Bu çekirdek IO'suzdur.
+//
+// KESİN K1-3 ÇİZGİLERİ:
+//  - İzin verilen TEK write: Lawyer.userId set + StaffMember.userId set (yalnız LINK_EXISTING_USER).
+//  - CREATE_LOGIN_USER GÜVENLİ UYGULANAMAZ → CREATE_BLOCKED_NOT_IMPLEMENTED. Sebep: User.passwordHash
+//    NOT NULL; tek user-create yolu auth.register = bcrypt.hash(GERÇEK parola). Otomatik CLI'nin güvenli
+//    parola edinme yolu YOK; rastgele/default/tahmin parola YASAK → user create HİÇ YAPILMAZ (kod yok).
+//  - Partial apply YOK: herhangi bir genuine block/conflict → SIFIR write (preflight hard-stop).
+//  - Idempotent: profile zaten HEDEF userId'ye bağlıysa ALREADY_APPLIED (no-op); BAŞKA user/profile → CONFLICT.
+
+/** DB hedef sınıflandırması: prod İŞARETİ → stop; açık non-prod gerekir; aksi UNKNOWN → stop. */
+export type DbTargetClass = "missing" | "prod" | "non-prod" | "unknown";
+
+export function classifyDbTarget(databaseUrl: string | undefined): DbTargetClass {
+  if (databaseUrl == null || databaseUrl.trim().length === 0) return "missing";
+  const u = databaseUrl.toLowerCase();
+  // prod İŞARETİ her yerde → stop (fail-safe; ÖNCE kontrol edilir).
+  if (/prod|live|customer|staging/.test(u)) return "prod";
+  // non-prod KANITI YALNIZ açık LOOPBACK HOST'tan gelir. DB ADI (hukuk_db) veya 'dev'/'local' substring'i
+  // KANIT DEĞİLDİR: uzak bir PROD DB de `hukuk_db` adını taşıyabilir. Host loopback değilse → unknown → stop.
+  const host = u.match(/^[a-z0-9+.\-]+:\/\/(?:[^@/]*@)?([^:/?#]+)/)?.[1] ?? "";
+  if (host === "localhost" || host === "::1" || host === "[::1]" || /^127\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(host)) {
+    return "non-prod";
+  }
+  return "unknown";
+}
+
+/**
+ * Hata metninden bağlantı dizgisi (postgresql://...) ve secret token'larını maskeler (SAF).
+ * Catch bloklarında ham DATABASE_URL / Prisma init/constraint detayının basılmasını ÖNLER
+ * (spec: ham DATABASE_URL hiçbir yolda basılmaz).
+ *
+ * Çağrıldığı yerler:
+ *  - scripts/k1-reviewed-linkage.ts → 3 catch sink (parse / apply-failure / top-level)
+ *  - __tests__/k1-reviewed-linkage.core.spec.ts
+ */
+export function redactSecrets(s: string): string {
+  return String(s)
+    .replace(/[a-z][a-z0-9+.\-]*:\/\/[^\s'"]+/gi, "[redacted-url]")
+    .replace(/\b(password|pass|pwd|secret|token|apikey|api_key)\s*[=:]\s*[^\s&'"]+/gi, "$1=[redacted]");
+}
+
+export interface ApplyGuardInput {
+  apply: boolean;
+  allowDevDbWrite: boolean;
+  confirmManifestReviewed: boolean;
+  nodeEnv: string | undefined;
+  databaseUrl: string | undefined;
+}
+
+export interface ApplyGuardResult {
+  mode: "dry-run" | "apply";
+  canApply: boolean;
+  hardStops: string[];
+  dbTarget: DbTargetClass;
+}
+
+/**
+ * Guarded apply için ÜÇLÜ-KAPI + env/DB değerlendirmesi (SAF). Varsayılan dry-run.
+ * Üçlü kapı: --apply + --allow-dev-db-write + --confirm-manifest-reviewed (üçü de gerekir).
+ * Prod hard-stop: NODE_ENV=production / DATABASE_URL prod|live|customer|staging / eksik / unknown hedef.
+ *
+ * Çağrıldığı yerler:
+ *  - scripts/k1-reviewed-linkage.ts → --apply yolu
+ *  - __tests__/k1-reviewed-linkage.core.spec.ts
+ */
+export function evaluateApplyGuards(input: ApplyGuardInput): ApplyGuardResult {
+  const dbTarget = classifyDbTarget(input.databaseUrl);
+  if (!input.apply) {
+    return { mode: "dry-run", canApply: false, hardStops: [], dbTarget };
+  }
+  const hardStops: string[] = [];
+  if (!input.allowDevDbWrite) hardStops.push("--allow-dev-db-write yok → yazma reddedildi");
+  if (!input.confirmManifestReviewed) hardStops.push("--confirm-manifest-reviewed yok → insan-onayı teyidi reddedildi");
+  if ((input.nodeEnv ?? "").trim().toLowerCase().startsWith("prod")) hardStops.push("NODE_ENV=prod* → apply yasak");
+  if (dbTarget === "missing") hardStops.push("DATABASE_URL yok → apply yasak");
+  if (dbTarget === "prod") hardStops.push("DATABASE_URL prod/live/customer/staging içeriyor → apply yasak");
+  if (dbTarget === "unknown") hardStops.push("DB hedefi açıkça non-prod değil (unknown) → apply yasak");
+  return { mode: "apply", canApply: hardStops.length === 0, hardStops, dbTarget };
+}
+
+export type ApplyEntryStatus =
+  | "APPLY_LINK" // LINK; profile.userId null + güvenli → yazılacak
+  | "ALREADY_APPLIED" // LINK; profile zaten HEDEF userId'ye bağlı → no-op (idempotent)
+  | "CONFLICT" // LINK; profile/user başka bağ → hard stop (idempotent DEĞİL)
+  | "BLOCKED" // K1-2 genuine validation hatası (tenant/duplicate/missing/not-found/...)
+  | "CREATE_BLOCKED_NOT_IMPLEMENTED" // CREATE_LOGIN_USER → güvenli user-create yok
+  | "SKIP"; // SKIP_MANUAL → write yok
+
+export interface ApplyEntryPlan {
+  index: number;
+  profileType?: ProfileType;
+  profileId?: string;
+  status: ApplyEntryStatus;
+  userId?: string; // LINK hedefi (yalnız APPLY_LINK/ALREADY_APPLIED/CONFLICT anlamlı)
+  reason: string; // PII yok
+}
+
+export interface ApplyOperation {
+  profileType: ProfileType;
+  profileId: string;
+  userId: string;
+}
+
+export interface ApplyPlan {
+  entries: ApplyEntryPlan[];
+  operations: ApplyOperation[]; // YALNIZ APPLY_LINK (yazılacaklar)
+  counts: {
+    applyLink: number;
+    alreadyApplied: number;
+    conflict: number;
+    blocked: number;
+    createBlockedNotImplemented: number;
+    skip: number;
+  };
+  hardStops: string[]; // blocked + conflict + manifest-level → varsa SIFIR write
+  canApply: boolean; // hardStops.length === 0 (CREATE-blocked TEK BAŞINA durdurmaz; ayrı raporlanır)
+}
+
+/**
+ * Doğrulanmış manifest'ten APPLY planı üretir (SAF; idempotency-farkında). K1-2 validateManifest'i
+ * yeniden kullanır; yalnız "already-linked" boyutunu idempotency için yeniden sınıflandırır.
+ * APPLY YAPMAZ — yalnız ne yazılacağını belirler. CREATE her zaman not-implemented.
+ *
+ * Çağrıldığı yerler:
+ *  - scripts/k1-reviewed-linkage.ts → preflight (--apply ve dry-run)
+ *  - __tests__/k1-reviewed-linkage.core.spec.ts
+ */
+export function planApply(manifest: ReviewedLinkageManifest, reference: ReferenceData): ApplyPlan {
+  const v = validateManifest(manifest, reference);
+  const entries = Array.isArray(manifest?.entries) ? manifest.entries : [];
+
+  const lawyerById = new Map<string, LawyerRow>();
+  for (const l of reference.lawyers) lawyerById.set(l.id, l);
+  const staffById = new Map<string, StaffRow>();
+  for (const s of reference.staff) staffById.set(s.id, s);
+  // userId → bağlı olduğu TÜM profiller ("TYPE|id"[]); çift-sahiplik (dual ownership) tespiti için.
+  // Map<string,string> last-writer-wins olurdu → bir user'ın iki profile bağlı olması (tek-asıl ihlali)
+  // gizlenirdi. Dizi tutarak bunu CONFLICT olarak yüzeye çıkarırız.
+  const userOwners = new Map<string, string[]>();
+  const addOwner = (uid: string, key: string) => {
+    const arr = userOwners.get(uid);
+    if (arr) arr.push(key);
+    else userOwners.set(uid, [key]);
+  };
+  for (const l of reference.lawyers) if (l.userId) addOwner(l.userId, `LAWYER|${l.id}`);
+  for (const s of reference.staff) if (s.userId) addOwner(s.userId, `STAFF|${s.id}`);
+
+  const plan: ApplyEntryPlan[] = entries.map((e, i) => {
+    const ev = v.entries[i];
+    const profileType = ev.profileType;
+    const profileId = ev.profileId;
+    const base = { index: i, profileType, profileId };
+
+    if (e?.strategy === "SKIP_MANUAL") {
+      if (ev.errors.length > 0) return { ...base, status: "BLOCKED", reason: "skip entry geçersiz (review alanları)" };
+      return { ...base, status: "SKIP", reason: "manuel takip; write yok" };
+    }
+    if (e?.strategy === "CREATE_LOGIN_USER") {
+      return { ...base, status: "CREATE_BLOCKED_NOT_IMPLEMENTED", reason: "güvenli login-user create yok (passwordHash NOT NULL; otomatik parola yasak)" };
+    }
+    if (e?.strategy === "LINK_EXISTING_USER") {
+      // PROFILE_ALREADY_LINKED / USER_ALREADY_LINKED dışındaki HER hata genuine block (idempotency dışı)
+      const nonIdem = ev.errors.filter((x) => x.code !== "PROFILE_ALREADY_LINKED" && x.code !== "USER_ALREADY_LINKED");
+      if (nonIdem.length > 0) return { ...base, status: "BLOCKED", reason: "K1-2 validation block" };
+      const userId = String(e.userId);
+      const prof: LawyerRow | StaffRow | undefined =
+        profileType === "LAWYER" ? lawyerById.get(profileId as string) : staffById.get(profileId as string);
+      if (!prof || !profileType || !profileId) return { ...base, status: "BLOCKED", reason: "profile çözülemedi" };
+      const thisKey = `${profileType}|${profileId}`;
+      const otherOwners = (userOwners.get(userId) ?? []).filter((o) => o !== thisKey);
+      if (prof.userId == null) {
+        // profile boş; hedef user BAŞKA herhangi bir profile bağlıysa → conflict (yazma yok)
+        if (otherOwners.length > 0) return { ...base, userId, status: "CONFLICT", reason: "hedef user başka profile'a bağlı" };
+        return { ...base, userId, status: "APPLY_LINK", reason: "link yazılacak" };
+      }
+      if (prof.userId === userId) {
+        // idempotent SADECE hedef user'ın TEK sahibi bu profile ise; başka profile de sahipse → çift-sahiplik CONFLICT
+        if (otherOwners.length > 0) return { ...base, userId, status: "CONFLICT", reason: "hedef user birden çok profile'a bağlı (çift-sahiplik)" };
+        return { ...base, userId, status: "ALREADY_APPLIED", reason: "profile zaten hedef user'a bağlı (idempotent)" };
+      }
+      return { ...base, userId, status: "CONFLICT", reason: "profile başka user'a bağlı" };
+    }
+    return { ...base, status: "BLOCKED", reason: "geçersiz strategy" };
+  });
+
+  const by = (s: ApplyEntryStatus) => plan.filter((p) => p.status === s).length;
+  const counts = {
+    applyLink: by("APPLY_LINK"),
+    alreadyApplied: by("ALREADY_APPLIED"),
+    conflict: by("CONFLICT"),
+    blocked: by("BLOCKED"),
+    createBlockedNotImplemented: by("CREATE_BLOCKED_NOT_IMPLEMENTED"),
+    skip: by("SKIP"),
+  };
+
+  const hardStops: string[] = [];
+  if (v.manifestErrors.length > 0) hardStops.push(`manifest-level: ${v.manifestErrors.map((x) => x.code).join(",")}`);
+  if (counts.blocked > 0) hardStops.push(`${counts.blocked} blocked entry`);
+  if (counts.conflict > 0) hardStops.push(`${counts.conflict} conflict entry`);
+
+  const operations: ApplyOperation[] = plan
+    .filter((p) => p.status === "APPLY_LINK" && p.profileType && p.profileId && p.userId)
+    .map((p) => ({ profileType: p.profileType as ProfileType, profileId: p.profileId as string, userId: p.userId as string }));
+
+  return { entries: plan, operations, counts, hardStops, canApply: hardStops.length === 0 };
+}
+
+/** INJECTED transaction arayüzü: izin verilen TEK iki yazma. Gerçek impl script'te ($transaction içinde). */
+export interface LinkageApplyTx {
+  setLawyerUserId(profileId: string, userId: string): Promise<void>;
+  setStaffUserId(profileId: string, userId: string): Promise<void>;
+}
+
+export interface ApplyExecutionResult {
+  lawyerLinks: number;
+  staffLinks: number;
+  applied: ApplyOperation[];
+}
+
+/**
+ * Operasyonları INJECTED tx üzerinden uygular. FAIL-FAST: bir op throw ederse döngü durur, hata yukarı
+ * gider → script'teki prisma.$transaction ROLLBACK eder (partial state YOK). İzin verilen TEK yazma:
+ * Lawyer.userId / StaffMember.userId set. User create / role / email / başka tablo YOK.
+ *
+ * Çağrıldığı yerler:
+ *  - scripts/k1-reviewed-linkage.ts → prisma.$transaction(ptx => applyLinkages(ops, txAdapter))
+ *  - __tests__/k1-reviewed-linkage.core.spec.ts (mock tx; rollback/no-forbidden-write)
+ */
+export async function applyLinkages(operations: ApplyOperation[], tx: LinkageApplyTx): Promise<ApplyExecutionResult> {
+  const applied: ApplyOperation[] = [];
+  let lawyerLinks = 0;
+  let staffLinks = 0;
+  for (const op of operations) {
+    if (op.profileType === "LAWYER") {
+      await tx.setLawyerUserId(op.profileId, op.userId);
+      lawyerLinks++;
+    } else {
+      await tx.setStaffUserId(op.profileId, op.userId);
+      staffLinks++;
+    }
+    applied.push(op);
+  }
+  return { lawyerLinks, staffLinks, applied };
+}
+
+export interface ApplyVerification {
+  expected: number;
+  verified: number;
+  mismatches: Array<{ profileType: ProfileType; profileId: string }>;
+}
+
+/**
+ * Apply SONRASI doğrulama (SAF): operasyonların hedef profile.userId'lerinin gerçekten set olduğunu
+ * YENİDEN-OKUNMUŞ referanstan teyit eder. PII yok (yalnız opak id + sayım).
+ *
+ * Çağrıldığı yerler:
+ *  - scripts/k1-reviewed-linkage.ts → apply sonrası re-read
+ *  - __tests__/k1-reviewed-linkage.core.spec.ts
+ */
+export function verifyAppliedState(operations: ApplyOperation[], postReference: ReferenceData): ApplyVerification {
+  const lawyerById = new Map<string, LawyerRow>();
+  for (const l of postReference.lawyers) lawyerById.set(l.id, l);
+  const staffById = new Map<string, StaffRow>();
+  for (const s of postReference.staff) staffById.set(s.id, s);
+  const mismatches: Array<{ profileType: ProfileType; profileId: string }> = [];
+  let verified = 0;
+  for (const op of operations) {
+    const prof = op.profileType === "LAWYER" ? lawyerById.get(op.profileId) : staffById.get(op.profileId);
+    if (prof && prof.userId === op.userId) verified++;
+    else mismatches.push({ profileType: op.profileType, profileId: op.profileId });
+  }
+  return { expected: operations.length, verified, mismatches };
+}
+
+export interface ApplyReportInput {
+  env: { head: string; dbTargetMasked: string; nodeEnv: string; manifest: string; applyMode: "dry-run" | "apply" | "refused" };
+  plan: ApplyPlan;
+  transactionStarted: boolean;
+  execution: ApplyExecutionResult | null; // null = dry-run / refused / no-ops
+  verification: ApplyVerification | null;
+  failed: number;
+}
+
+/**
+ * Apply raporunu "K1 GUARDED APPLY REPORT" düzenine render eder (SAF; PII yok, yalnız sayım + maskeli meta).
+ *
+ * Çağrıldığı yerler:
+ *  - scripts/k1-reviewed-linkage.ts → stdout
+ *  - __tests__/k1-reviewed-linkage.core.spec.ts
+ */
+export function formatApplyReport(inp: ApplyReportInput): string {
+  const c = inp.plan.counts;
+  const exec = inp.execution;
+  const ver = inp.verification;
+  const appliedLinks = exec ? exec.applied.length : 0;
+  const unknownRemaining = inp.plan.entries.length - (appliedLinks + c.alreadyApplied);
+  const repair = appliedLinks > 0 ? (c.createBlockedNotImplemented > 0 ? "partial (LINK only)" : "yes") : "no";
+  return [
+    "K1 GUARDED APPLY REPORT",
+    "",
+    "Environment:",
+    `- HEAD: ${inp.env.head}`,
+    `- DB target masked: ${inp.env.dbTargetMasked}`,
+    `- NODE_ENV: ${inp.env.nodeEnv}`,
+    `- manifest: ${inp.env.manifest}`,
+    `- apply mode: ${inp.env.applyMode}`,
+    "",
+    "Preflight:",
+    `- entries: ${inp.plan.entries.length}`,
+    `- link existing: ${c.applyLink}`,
+    `- create login user: ${c.createBlockedNotImplemented}   // BLOCKED_NOT_IMPLEMENTED`,
+    `- skip manual: ${c.skip}`,
+    `- blocked: ${c.blocked}`,
+    `- unsafe: ${c.conflict}`,
+    "",
+    "Apply:",
+    `- transaction started: ${inp.transactionStarted ? "yes" : "no"}`,
+    `- users created: 0   // CREATE_LOGIN_USER not implemented (no password path)`,
+    `- lawyer links updated: ${exec ? exec.lawyerLinks : 0}`,
+    `- staff links updated: ${exec ? exec.staffLinks : 0}`,
+    `- already applied: ${c.alreadyApplied}`,
+    `- skipped manual: ${c.skip}`,
+    `- failed: ${inp.failed}`,
+    "",
+    "Post-verify:",
+    `- expected links: ${ver ? ver.expected : 0}`,
+    `- verified links: ${ver ? ver.verified : 0}`,
+    `- mismatches: ${ver ? ver.mismatches.length : 0}`,
+    `- unknown capacity remaining for covered entries: ${unknownRemaining}`,
+    "",
+    "Conclusion:",
+    `- apply completed: ${exec ? "yes" : "no"}`,
+    `- partial writes?: no`,
+    `- K1 repair performed?: ${repair}`,
+    `- P3 enforcement ready?: no`,
+  ].join("\n");
 }

@@ -1,16 +1,22 @@
 /**
- * K1-2 — reviewed-linkage STRATEGY validate + plan (thin shell). APPLY YOK (K1-3'e ertelendi).
+ * K1-2 (validate+plan) + K1-3 (guarded apply) — reviewed-linkage CLI (thin shell).
  *
  * Tüm karar mantığı SAF çekirdektedir:
  *   src/modules/policy-engine/diagnostics/k1-reviewed-linkage.core.ts
- * Bu dosya YALNIZ PrismaClient'i bağlar (READ-ONLY), manifest dosyasını okur, doğrular ve
- * sayım-temelli planı basar. HİÇBİR YAZMA yapmaz — ne User oluşturur ne Lawyer/StaffMember.userId set eder.
+ * Bu dosya YALNIZ PrismaClient'i bağlar, okur ve (yalnız üçlü-kapı + env/DB guard geçerse) tek
+ * transaction içinde GÜVENLİ link yazar. İzin verilen TEK write: Lawyer.userId / StaffMember.userId.
+ * CREATE_LOGIN_USER UYGULANMAZ (güvenli parola yolu yok → BLOCKED_NOT_IMPLEMENTED). User create YOK.
  *
- * Çalıştırma (DATABASE_URL gerekir; Prisma .env'i otomatik yükler):
- *   npx --yes tsx scripts/k1-reviewed-linkage.ts --template --tenant <tenantId>          # iskelet üret (PII yok)
- *   npx --yes tsx scripts/k1-reviewed-linkage.ts --template --tenant <id> --verbose      # + _emailHint (PII; opt-in)
- *   npx --yes tsx scripts/k1-reviewed-linkage.ts --manifest ./k1-manifest.json           # validate + plan (counts-only)
- *   npx --yes tsx scripts/k1-reviewed-linkage.ts --manifest ./k1-manifest.json --json    # + makine-okur JSON (PII yok)
+ * Çalıştırma (DATABASE_URL gerekir):
+ *   ... --template --tenant <tenantId>                       # iskelet üret (PII yok)
+ *   ... --manifest ./k1-manifest.json                        # validate + plan (dry-run, counts-only)
+ *   ... --manifest ./k1-manifest.json --json                 # + makine-okur JSON (PII yok)
+ *   ... --manifest ./k1-manifest.json --apply \              # GUARDED APPLY (yalnız LINK_EXISTING_USER)
+ *         --allow-dev-db-write --confirm-manifest-reviewed
+ *
+ * Apply ÜÇLÜ KAPI (üçü de gerekir): --apply + --allow-dev-db-write + --confirm-manifest-reviewed.
+ * Prod hard-stop: NODE_ENV=production / DATABASE_URL prod|live|customer|staging / eksik / unknown hedef.
+ * Preflight hard-stop (zero-write): blocked/conflict/manifest-level hata varsa HİÇBİR yazma.
  *
  * Çağrıldığı yerler:
  *  - manuel operatör CLI (geliştirici/DBA); HTTP/Nest call-site YOK → runtime davranışı DEĞİŞMEZ.
@@ -24,8 +30,16 @@ import {
   formatPlan,
   generateManifestTemplate,
   parseManifest,
+  evaluateApplyGuards,
+  planApply,
+  applyLinkages,
+  verifyAppliedState,
+  formatApplyReport,
+  redactSecrets,
   ReferenceData,
   ReviewedLinkageManifest,
+  LinkageApplyTx,
+  ApplyExecutionResult,
 } from "../src/modules/policy-engine/diagnostics/k1-reviewed-linkage.core";
 
 const prisma = new PrismaClient();
@@ -54,14 +68,11 @@ async function main(): Promise<void> {
   const asJson = argv.includes("--json");
   const verbose = argv.includes("--verbose");
   const templateMode = argv.includes("--template");
+  const applyMode = argv.includes("--apply");
+  const allowDevDbWrite = argv.includes("--allow-dev-db-write");
+  const confirmManifestReviewed = argv.includes("--confirm-manifest-reviewed");
   const manifestPath = argValue(argv, "--manifest");
   const tenantId = argValue(argv, "--tenant");
-
-  if (argv.includes("--apply")) {
-    console.error("HATA: --apply bu araçta YOKTUR. K1-2 yalnız validate+plan üretir; gerçek yazma K1-3 (guarded apply).");
-    process.exitCode = 1;
-    return;
-  }
 
   const reference = await loadReference();
 
@@ -89,11 +100,18 @@ async function main(): Promise<void> {
     const raw = JSON.parse(readFileSync(manifestPath, "utf8"));
     manifest = parseManifest(raw);
   } catch (e) {
-    console.error("HATA: manifest okunamadı/çözümlenemedi: " + (e instanceof Error ? e.message : String(e)));
+    console.error("HATA: manifest okunamadı/çözümlenemedi: " + redactSecrets(e instanceof Error ? e.message : String(e)));
     process.exitCode = 1;
     return;
   }
 
+  // ---- APPLY yolu (K1-3 guarded) ----
+  if (applyMode) {
+    await runGuardedApply(manifest, reference, { allowDevDbWrite, confirmManifestReviewed });
+    return;
+  }
+
+  // ---- validate + plan (K1-2 dry-run) ----
   const validation = validateManifest(manifest, reference);
   const plan = planLinkage(manifest, reference);
 
@@ -101,10 +119,10 @@ async function main(): Promise<void> {
   console.log("");
   console.log(
     validation.ok
-      ? "VALIDATION: OK — tüm entry'ler geçerli (apply K1-3'e ertelendi; bu araç YAZMAZ)."
-      : `VALIDATION: ${plan.plan.blockedEntries} blocked entry — apply edilmeden önce düzeltilmeli. (bu araç YAZMAZ)`,
+      ? "VALIDATION: OK — tüm entry'ler geçerli."
+      : `VALIDATION: ${plan.plan.blockedEntries} blocked entry — apply edilmeden önce düzeltilmeli.`,
   );
-  console.log("MODE: validate+plan only — HİÇBİR yazma. --apply yoktur (K1-3 guarded apply).");
+  console.log("MODE: validate+plan only (dry-run) — HİÇBİR yazma. Apply için: --apply --allow-dev-db-write --confirm-manifest-reviewed");
 
   if (asJson) {
     // PII güvenliği: yalnız opak id + kod + sınıf; email/isim DEĞERLERİ basılmaz.
@@ -123,9 +141,99 @@ async function main(): Promise<void> {
   }
 }
 
+/**
+ * K1-3 GUARDED APPLY — üçlü kapı + env/DB guard + preflight (idempotency-aware) + tek transaction + post-verify.
+ * İzin verilen TEK write: Lawyer.userId / StaffMember.userId set. CREATE_LOGIN_USER asla uygulanmaz.
+ */
+async function runGuardedApply(
+  manifest: ReviewedLinkageManifest,
+  reference: ReferenceData,
+  opts: { allowDevDbWrite: boolean; confirmManifestReviewed: boolean },
+): Promise<void> {
+  const guard = evaluateApplyGuards({
+    apply: true,
+    allowDevDbWrite: opts.allowDevDbWrite,
+    confirmManifestReviewed: opts.confirmManifestReviewed,
+    nodeEnv: process.env.NODE_ENV,
+    databaseUrl: process.env.DATABASE_URL,
+  });
+
+  // PII/secret güvenliği: ham DATABASE_URL ASLA basılmaz; yalnız sınıflandırma.
+  const envMeta = {
+    head: process.env.K1_APPLY_HEAD ?? "(n/a)",
+    dbTargetMasked: guard.dbTarget,
+    nodeEnv: process.env.NODE_ENV ?? "(unset)",
+    manifest: "(operator file)",
+    applyMode: "apply" as "dry-run" | "apply" | "refused",
+  };
+
+  const aplan = planApply(manifest, reference);
+
+  // (a) env/üçlü-kapı guard
+  if (!guard.canApply) {
+    console.log(formatApplyReport({ env: { ...envMeta, applyMode: "refused" }, plan: aplan, transactionStarted: false, execution: null, verification: null, failed: 0 }));
+    console.log("");
+    console.log("APPLY REFUSED (guard hard-stop — HİÇBİR yazma):");
+    for (const h of guard.hardStops) console.log("  ✗ " + h);
+    process.exitCode = 1;
+    return;
+  }
+
+  // (b) preflight hard-stop (blocked/conflict/manifest-level → zero write)
+  if (!aplan.canApply) {
+    console.log(formatApplyReport({ env: { ...envMeta, applyMode: "refused" }, plan: aplan, transactionStarted: false, execution: null, verification: null, failed: 0 }));
+    console.log("");
+    console.log("APPLY REFUSED (preflight hard-stop — partial apply YOK, HİÇBİR yazma):");
+    for (const h of aplan.hardStops) console.log("  ✗ " + h);
+    process.exitCode = 1;
+    return;
+  }
+
+  // (c) yazılacak yeni link yoksa (hepsi already-applied/skip/create-blocked) → no-op
+  if (aplan.operations.length === 0) {
+    console.log(formatApplyReport({ env: envMeta, plan: aplan, transactionStarted: false, execution: { lawyerLinks: 0, staffLinks: 0, applied: [] }, verification: { expected: 0, verified: 0, mismatches: [] }, failed: 0 }));
+    console.log("");
+    console.log("APPLY: yazılacak yeni link yok (already-applied / skip / create-blocked). HİÇBİR yazma yapıldı.");
+    return;
+  }
+
+  // (d) tek transaction içinde uygula (fail → rollback, partial YOK)
+  let execution: ApplyExecutionResult;
+  try {
+    execution = await prisma.$transaction(async (ptx) => {
+      const tx: LinkageApplyTx = {
+        setLawyerUserId: async (profileId, userId) => {
+          await ptx.lawyer.update({ where: { id: profileId }, data: { userId } });
+        },
+        setStaffUserId: async (profileId, userId) => {
+          await ptx.staffMember.update({ where: { id: profileId }, data: { userId } });
+        },
+      };
+      return applyLinkages(aplan.operations, tx);
+    });
+  } catch (e) {
+    console.error("APPLY FAILED (transaction ROLLED BACK; partial state YOK): " + redactSecrets(e instanceof Error ? e.message : String(e)));
+    console.log(formatApplyReport({ env: envMeta, plan: aplan, transactionStarted: true, execution: null, verification: null, failed: aplan.operations.length }));
+    process.exitCode = 1;
+    return;
+  }
+
+  // (e) post-verify (re-read)
+  const postReference = await loadReference();
+  const verification = verifyAppliedState(aplan.operations, postReference);
+
+  console.log(formatApplyReport({ env: envMeta, plan: aplan, transactionStarted: true, execution, verification, failed: 0 }));
+  if (verification.mismatches.length > 0) {
+    console.log("");
+    console.log(`UYARI: ${verification.mismatches.length} link post-verify'da doğrulanamadı.`);
+    process.exitCode = 1;
+  }
+}
+
 main()
   .catch((err) => {
-    console.error("K1-2 reviewed-linkage FAILED:", err);
+    // Ham err nesnesi (stack/connection-string içerebilir) BASILMAZ → yalnız maskeli ad+mesaj.
+    console.error("K1 reviewed-linkage FAILED: " + redactSecrets(err instanceof Error ? `${err.name}: ${err.message}` : String(err)));
     process.exitCode = 1;
   })
   .finally(async () => {

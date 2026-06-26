@@ -5,9 +5,19 @@ import {
   formatPlan,
   generateManifestTemplate,
   parseManifest,
+  evaluateApplyGuards,
+  classifyDbTarget,
+  planApply,
+  applyLinkages,
+  verifyAppliedState,
+  formatApplyReport,
+  redactSecrets,
   ManifestEntry,
   ReviewedLinkageManifest,
   ReferenceData,
+  ApplyOperation,
+  ApplyPlan,
+  LinkageApplyTx,
 } from "../k1-reviewed-linkage.core";
 import { UserRow, LawyerRow, StaffRow } from "../k1-capacity-linkage.core";
 
@@ -353,5 +363,391 @@ describe("K1-2 ek — manualFollowUp tutarlılığı (over/under-count düzeltme
     const r = ref([U("u1", "t1", "a@x.com")], [L("l1", "t1", null)], []);
     const m = manifest("t1", [entry({ profileId: "l1", strategy: "LINK_EXISTING_USER", userId: "u1" })]);
     expect(planLinkage(m, r).conclusion.manualFollowUp).toBe(0);
+  });
+});
+
+// ============================================================================
+// K1-3 — GUARDED APPLY testleri (SAF + injected mock tx; LİVE DB YOK)
+// ============================================================================
+
+const DEV_URL = "postgresql://localhost:5432/hukuk_db";
+
+/** In-memory mock tx (gerçek Prisma yok). failAt = o sıradaki çağrı throw eder (rollback/fail-fast testi). */
+function mockTx(failAt?: number): { tx: LinkageApplyTx; calls: string[] } {
+  const calls: string[] = [];
+  let n = 0;
+  const guard = () => {
+    if (failAt === n) {
+      n++;
+      throw new Error("mid-apply failure");
+    }
+    n++;
+  };
+  return {
+    calls,
+    tx: {
+      setLawyerUserId: async (profileId, userId) => {
+        guard();
+        calls.push(`lawyer:${profileId}:${userId}`);
+      },
+      setStaffUserId: async (profileId, userId) => {
+        guard();
+        calls.push(`staff:${profileId}:${userId}`);
+      },
+    },
+  };
+}
+
+const reportInput = (plan: ApplyPlan, over: Partial<Parameters<typeof formatApplyReport>[0]> = {}) =>
+  formatApplyReport({
+    env: { head: "abc123", dbTargetMasked: "non-prod", nodeEnv: "development", manifest: "(operator file)", applyMode: "apply" },
+    plan,
+    transactionStarted: false,
+    execution: null,
+    verification: null,
+    failed: 0,
+    ...over,
+  });
+
+describe("K1-3 (1) dry-run salt-okuma kalır", () => {
+  it("apply yokken mode=dry-run, canApply false, hardStop yok", () => {
+    const g = evaluateApplyGuards({ apply: false, allowDevDbWrite: true, confirmManifestReviewed: true, nodeEnv: "development", databaseUrl: DEV_URL });
+    expect(g.mode).toBe("dry-run");
+    expect(g.canApply).toBe(false);
+    expect(g.hardStops).toEqual([]);
+  });
+});
+
+describe("K1-3 (2) --apply + --allow-dev-db-write yok → hard-fail", () => {
+  it("allow-dev-db-write eksik → canApply false", () => {
+    const g = evaluateApplyGuards({ apply: true, allowDevDbWrite: false, confirmManifestReviewed: true, nodeEnv: "development", databaseUrl: DEV_URL });
+    expect(g.canApply).toBe(false);
+    expect(g.hardStops.some((h) => h.includes("allow-dev-db-write"))).toBe(true);
+  });
+});
+
+describe("K1-3 (3) --confirm-manifest-reviewed yok → hard-fail", () => {
+  it("confirm eksik → canApply false", () => {
+    const g = evaluateApplyGuards({ apply: true, allowDevDbWrite: true, confirmManifestReviewed: false, nodeEnv: "development", databaseUrl: DEV_URL });
+    expect(g.canApply).toBe(false);
+    expect(g.hardStops.some((h) => h.includes("confirm-manifest-reviewed"))).toBe(true);
+  });
+});
+
+describe("K1-3 (4) NODE_ENV=production → hard-fail", () => {
+  it("production → canApply false", () => {
+    const g = evaluateApplyGuards({ apply: true, allowDevDbWrite: true, confirmManifestReviewed: true, nodeEnv: "production", databaseUrl: DEV_URL });
+    expect(g.canApply).toBe(false);
+    expect(g.hardStops.some((h) => h.includes("prod"))).toBe(true);
+  });
+});
+
+describe("K1-3 (5) prod/live/customer DATABASE_URL → hard-fail", () => {
+  it("prod URL → dbTarget=prod, canApply false", () => {
+    const g = evaluateApplyGuards({ apply: true, allowDevDbWrite: true, confirmManifestReviewed: true, nodeEnv: "development", databaseUrl: "postgresql://prod-db.customer.live/app" });
+    expect(g.dbTarget).toBe("prod");
+    expect(g.canApply).toBe(false);
+  });
+  it("temiz dev + üçlü kapı → canApply true", () => {
+    const g = evaluateApplyGuards({ apply: true, allowDevDbWrite: true, confirmManifestReviewed: true, nodeEnv: "development", databaseUrl: DEV_URL });
+    expect(g.dbTarget).toBe("non-prod");
+    expect(g.canApply).toBe(true);
+    expect(g.hardStops).toEqual([]);
+  });
+});
+
+describe("K1-3 (6) blocked manifest → zero writes", () => {
+  it("eksik review alanı → blocked, canApply false, operations boş", () => {
+    const r = ref([U("u1", "t1", "a@x.com")], [L("l1", "t1", null)], []);
+    const m = manifest("t1", [entry({ profileId: "l1", strategy: "LINK_EXISTING_USER", userId: "u1", reviewedBy: "", reviewNote: "" })]);
+    const p = planApply(m, r);
+    expect(p.canApply).toBe(false);
+    expect(p.operations).toHaveLength(0);
+    expect(p.counts.blocked).toBe(1);
+  });
+});
+
+describe("K1-3 (7) unsafe (conflict) manifest → zero writes", () => {
+  it("profile başka user'a bağlı → conflict, canApply false, operations boş", () => {
+    const r = ref([U("u1", "t1", "a@x.com")], [L("l1", "t1", null, "LAWYER", "u9")], []);
+    const m = manifest("t1", [entry({ profileId: "l1", strategy: "LINK_EXISTING_USER", userId: "u1" })]);
+    const p = planApply(m, r);
+    expect(p.counts.conflict).toBe(1);
+    expect(p.canApply).toBe(false);
+    expect(p.operations).toHaveLength(0);
+  });
+});
+
+describe("K1-3 (8) LINK → doğru Lawyer.userId uygular", () => {
+  it("operation üretir + mock tx lawyer linkini yazar", async () => {
+    const r = ref([U("u1", "t1", "a@x.com")], [L("l1", "t1", null)], []);
+    const m = manifest("t1", [entry({ profileType: "LAWYER", profileId: "l1", strategy: "LINK_EXISTING_USER", userId: "u1" })]);
+    const p = planApply(m, r);
+    expect(p.operations).toEqual([{ profileType: "LAWYER", profileId: "l1", userId: "u1" }]);
+    const mt = mockTx();
+    const res = await applyLinkages(p.operations, mt.tx);
+    expect(res.lawyerLinks).toBe(1);
+    expect(res.staffLinks).toBe(0);
+    expect(mt.calls).toEqual(["lawyer:l1:u1"]);
+  });
+});
+
+describe("K1-3 (9) LINK → doğru StaffMember.userId uygular", () => {
+  it("operation üretir + mock tx staff linkini yazar", async () => {
+    const r = ref([U("u1", "t1", "a@x.com")], [], [S("s1", "t1", null)]);
+    const m = manifest("t1", [entry({ profileType: "STAFF", profileId: "s1", strategy: "LINK_EXISTING_USER", userId: "u1" })]);
+    const p = planApply(m, r);
+    expect(p.operations).toEqual([{ profileType: "STAFF", profileId: "s1", userId: "u1" }]);
+    const mt = mockTx();
+    const res = await applyLinkages(p.operations, mt.tx);
+    expect(res.staffLinks).toBe(1);
+    expect(mt.calls).toEqual(["staff:s1:u1"]);
+  });
+});
+
+describe("K1-3 (10) duplicate/conflicting state → preflight zero writes", () => {
+  it("hedef user başka profile'a bağlı → conflict, operations boş", () => {
+    const r = ref([U("u1", "t1", "a@x.com")], [L("lOther", "t1", null, "LAWYER", "u1")], [S("s1", "t1", null)]);
+    const m = manifest("t1", [entry({ profileType: "STAFF", profileId: "s1", strategy: "LINK_EXISTING_USER", userId: "u1" })]);
+    const p = planApply(m, r);
+    expect(p.counts.conflict).toBe(1);
+    expect(p.canApply).toBe(false);
+    expect(p.operations).toHaveLength(0);
+  });
+});
+
+describe("K1-3 (11) transaction rollback / fail-fast", () => {
+  it("ortada bir op throw → applyLinkages reddeder, sonraki op denenmez", async () => {
+    const ops: ApplyOperation[] = [
+      { profileType: "LAWYER", profileId: "l1", userId: "u1" },
+      { profileType: "LAWYER", profileId: "l2", userId: "u2" },
+      { profileType: "LAWYER", profileId: "l3", userId: "u3" },
+    ];
+    const mt = mockTx(1); // 2. op patlar
+    await expect(applyLinkages(ops, mt.tx)).rejects.toThrow("mid-apply failure");
+    expect(mt.calls).toEqual(["lawyer:l1:u1"]); // yalnız op0 denendi; op1 patladı, op2 HİÇ denenmedi (fail-fast → tx rollback)
+  });
+});
+
+describe("K1-3 (12) idempotent already-applied → no-op", () => {
+  it("profile zaten HEDEF user'a bağlı → ALREADY_APPLIED, operations boş, canApply true", () => {
+    const r = ref([U("u1", "t1", "a@x.com")], [L("l1", "t1", null, "LAWYER", "u1")], []);
+    const m = manifest("t1", [entry({ profileId: "l1", strategy: "LINK_EXISTING_USER", userId: "u1" })]);
+    const p = planApply(m, r);
+    expect(p.counts.alreadyApplied).toBe(1);
+    expect(p.counts.conflict).toBe(0);
+    expect(p.operations).toHaveLength(0);
+    expect(p.canApply).toBe(true);
+  });
+});
+
+describe("K1-3 (13) CREATE_LOGIN_USER → açıkça blocked (not implemented)", () => {
+  it("CREATE → BLOCKED_NOT_IMPLEMENTED, hiçbir operation, user create yok", () => {
+    const r = ref([], [], [S("s1", "t1", null)]);
+    const m = manifest("t1", [entry({ profileType: "STAFF", profileId: "s1", strategy: "CREATE_LOGIN_USER", email: "yeni@x.com", role: "USER" })]);
+    const p = planApply(m, r);
+    expect(p.counts.createBlockedNotImplemented).toBe(1);
+    expect(p.entries[0].status).toBe("CREATE_BLOCKED_NOT_IMPLEMENTED");
+    expect(p.operations).toHaveLength(0);
+  });
+});
+
+describe("K1-3 (14) apply raporu default PII-safe", () => {
+  it("formatApplyReport email/isim sızdırmaz; DB hedefi maskeli (sınıf, URL değil)", () => {
+    const r = ref([U("u1", "t1", "gizli@x.com")], [L("l1", "t1", "gizli2@x.com")], []);
+    const m = manifest("t1", [entry({ profileId: "l1", strategy: "LINK_EXISTING_USER", userId: "u1" })]);
+    const text = reportInput(planApply(m, r));
+    expect(text).toContain("K1 GUARDED APPLY REPORT");
+    expect(text).toContain("DB target masked: non-prod");
+    expect(text).not.toContain("gizli@x.com");
+    expect(text).not.toContain("gizli2@x.com");
+    expect(text).not.toContain("postgresql://"); // ham URL asla
+  });
+});
+
+describe("K1-3 (15) yasak write yok — yalnız iki link metodu", () => {
+  it("applyLinkages YALNIZ setLawyerUserId/setStaffUserId çağırır; başka mutation export'u yok", async () => {
+    const ops: ApplyOperation[] = [
+      { profileType: "LAWYER", profileId: "l1", userId: "u1" },
+      { profileType: "STAFF", profileId: "s1", userId: "u2" },
+    ];
+    const seen: string[] = [];
+    const tx: LinkageApplyTx = {
+      setLawyerUserId: async () => { seen.push("setLawyerUserId"); },
+      setStaffUserId: async () => { seen.push("setStaffUserId"); },
+    };
+    await applyLinkages(ops, tx);
+    expect(new Set(seen)).toEqual(new Set(["setLawyerUserId", "setStaffUserId"]));
+    // yasak yazma yüzeyleri export edilmez
+    for (const name of ["createUser", "createLoginUser", "updateUserRole", "updateUserEmail", "deleteLawyer", "deleteStaff"]) {
+      expect((Core as Record<string, unknown>)[name]).toBeUndefined();
+    }
+  });
+});
+
+// ---- K1-3 ek kapsama ----
+
+describe("K1-3 ek — classifyDbTarget", () => {
+  it("localhost/hukuk_db → non-prod; prod/live/customer/staging → prod; boş → missing; tanınmaz → unknown", () => {
+    expect(classifyDbTarget("postgresql://localhost:5432/hukuk_db")).toBe("non-prod");
+    expect(classifyDbTarget("postgresql://prod-host/app")).toBe("prod");
+    expect(classifyDbTarget("postgresql://staging-host/app")).toBe("prod");
+    expect(classifyDbTarget("")).toBe("missing");
+    expect(classifyDbTarget(undefined)).toBe("missing");
+    expect(classifyDbTarget("postgresql://10.20.30.40:5432/appdb")).toBe("unknown");
+  });
+  it("unknown DB hedefi → apply hard-fail", () => {
+    const g = evaluateApplyGuards({ apply: true, allowDevDbWrite: true, confirmManifestReviewed: true, nodeEnv: "development", databaseUrl: "postgresql://10.20.30.40/appdb" });
+    expect(g.dbTarget).toBe("unknown");
+    expect(g.canApply).toBe(false);
+  });
+});
+
+describe("K1-3 ek — verifyAppliedState", () => {
+  it("post-ref link set → verified; set değil → mismatch", () => {
+    const ops: ApplyOperation[] = [{ profileType: "LAWYER", profileId: "l1", userId: "u1" }];
+    const okRef = ref([], [L("l1", "t1", null, "LAWYER", "u1")], []);
+    const v1 = verifyAppliedState(ops, okRef);
+    expect(v1.verified).toBe(1);
+    expect(v1.mismatches).toHaveLength(0);
+    const badRef = ref([], [L("l1", "t1", null, "LAWYER", null)], []);
+    const v2 = verifyAppliedState(ops, badRef);
+    expect(v2.verified).toBe(0);
+    expect(v2.mismatches).toEqual([{ profileType: "LAWYER", profileId: "l1" }]);
+  });
+});
+
+describe("K1-3 ek — mixed manifest preflight (LINK uygulanır, CREATE blocked, SKIP atlanır)", () => {
+  it("3 strateji bir arada: applyLink=1, createBlocked=1, skip=1, canApply true", () => {
+    const r = ref([U("u1", "t1", "a@x.com")], [L("l1", "t1", null), L("l2", "t1", null)], [S("s1", "t1", null)]);
+    const m = manifest("t1", [
+      entry({ profileType: "LAWYER", profileId: "l1", strategy: "LINK_EXISTING_USER", userId: "u1" }),
+      entry({ profileType: "STAFF", profileId: "s1", strategy: "CREATE_LOGIN_USER", email: "n@x.com", role: "USER" }),
+      entry({ profileType: "LAWYER", profileId: "l2", strategy: "SKIP_MANUAL" }),
+    ]);
+    const p = planApply(m, r);
+    expect(p.counts.applyLink).toBe(1);
+    expect(p.counts.createBlockedNotImplemented).toBe(1);
+    expect(p.counts.skip).toBe(1);
+    expect(p.canApply).toBe(true); // CREATE-blocked tek başına durdurmaz; LINK uygulanır
+    expect(p.operations).toEqual([{ profileType: "LAWYER", profileId: "l1", userId: "u1" }]);
+  });
+});
+
+// ---- Adversarial verify follow-up (K1-3): prod-bypass / dual-ownership / secret-leak fix'leri ----
+
+describe("K1-3 fix — classifyDbTarget HOST-tabanlı (DB adı non-prod KANITI değil)", () => {
+  it("uzak host + DB adı hukuk_db → unknown (non-prod DEĞİL); localhost → non-prod", () => {
+    expect(classifyDbTarget("postgresql://u:p@app.cluster-xyz.rds.amazonaws.com:5432/hukuk_db")).toBe("unknown");
+    expect(classifyDbTarget("postgresql://postgres.default.svc:5432/hukuk_db?sslmode=require")).toBe("unknown");
+    expect(classifyDbTarget("postgresql://u:p@localhost:5432/hukuk_db")).toBe("non-prod");
+    expect(classifyDbTarget("postgresql://u:p@127.0.0.1:5432/hukuk_db")).toBe("non-prod");
+  });
+  it("uzak prod-adlı hukuk_db full-gate ile bile → apply REDDEDİLİR (unknown)", () => {
+    const g = evaluateApplyGuards({ apply: true, allowDevDbWrite: true, confirmManifestReviewed: true, nodeEnv: "development", databaseUrl: "postgresql://u:p@app.rds.amazonaws.com:5432/hukuk_db" });
+    expect(g.dbTarget).toBe("unknown");
+    expect(g.canApply).toBe(false);
+  });
+});
+
+describe("K1-3 fix — NODE_ENV prod* (whitespace/kısaltma) yakalanır", () => {
+  it("' production ' ve 'prod' → hard-stop", () => {
+    for (const ne of [" production ", "production\n", "prod", "PRODUCTION"]) {
+      const g = evaluateApplyGuards({ apply: true, allowDevDbWrite: true, confirmManifestReviewed: true, nodeEnv: ne, databaseUrl: DEV_URL });
+      expect(g.canApply).toBe(false);
+    }
+  });
+});
+
+describe("K1-3 fix — missing DATABASE_URL guard üzerinden hard-stop", () => {
+  it("databaseUrl undefined/'' → canApply false, 'DATABASE_URL yok'", () => {
+    for (const url of [undefined, ""]) {
+      const g = evaluateApplyGuards({ apply: true, allowDevDbWrite: true, confirmManifestReviewed: true, nodeEnv: "development", databaseUrl: url });
+      expect(g.dbTarget).toBe("missing");
+      expect(g.canApply).toBe(false);
+      expect(g.hardStops.some((h) => h.includes("DATABASE_URL yok"))).toBe(true);
+    }
+  });
+});
+
+describe("K1-3 fix — dual-ownership (çift-sahiplik) CONFLICT, idempotent SAYILMAZ", () => {
+  it("user u0 hem lawyer hem staff'a bağlı → eşleşen entry CONFLICT (ALREADY_APPLIED değil)", () => {
+    const r = ref([U("u0", "t1", "a@x.com")], [L("l0", "t1", null, "LAWYER", "u0")], [S("s0", "t1", null, "SEKRETER", "u0")]);
+    const m = manifest("t1", [entry({ profileType: "STAFF", profileId: "s0", strategy: "LINK_EXISTING_USER", userId: "u0" })]);
+    const p = planApply(m, r);
+    expect(p.entries[0].status).toBe("CONFLICT");
+    expect(p.counts.alreadyApplied).toBe(0);
+    expect(p.canApply).toBe(false);
+    expect(p.operations).toHaveLength(0);
+  });
+  it("çift-sahiplik entry + temiz LINK karışık → canApply false, SIFIR write (co-entry commit etmez)", () => {
+    const r = ref(
+      [U("u0", "t1", "a@x.com"), U("u1", "t1", "b@x.com")],
+      [L("l0", "t1", null, "LAWYER", "u0"), L("lClean", "t1", null)],
+      [S("s0", "t1", null, "SEKRETER", "u0")],
+    );
+    const m = manifest("t1", [
+      entry({ profileType: "STAFF", profileId: "s0", strategy: "LINK_EXISTING_USER", userId: "u0" }), // çift-sahiplik → conflict
+      entry({ profileType: "LAWYER", profileId: "lClean", strategy: "LINK_EXISTING_USER", userId: "u1" }), // temiz
+    ]);
+    const p = planApply(m, r);
+    expect(p.counts.conflict).toBe(1);
+    expect(p.canApply).toBe(false); // → script preflight zero-write: HİÇBİR yazma (temiz co-entry dahil)
+    expect(p.counts.applyLink).toBe(1); // temiz entry plan'da APPLY_LINK ama canApply=false → uygulanmaz
+  });
+});
+
+describe("K1-3 fix — redactSecrets exception sink'leri maskeler", () => {
+  it("connection string + secret token → maskeli (ham URL/parola sızmaz)", () => {
+    const msg = "PrismaClientInitializationError: can't reach postgresql://app:s3cr3t@db.prod.internal:5432/hukuk_db?password=topsecret";
+    const out = redactSecrets(msg);
+    expect(out).not.toContain("postgresql://");
+    expect(out).not.toContain("s3cr3t");
+    expect(out).not.toContain("db.prod.internal");
+    expect(out).toContain("[redacted-url]");
+  });
+  it("URL içermeyen düz mesaj korunur", () => {
+    expect(redactSecrets("blocked entry preflight failed")).toBe("blocked entry preflight failed");
+  });
+});
+
+describe("K1-3 fix — apply raporu math (repair partial/yes/no)", () => {
+  it("applied>0 + create-blocked → 'partial (LINK only)'", () => {
+    const r = ref([U("u1", "t1", "a@x.com")], [L("l1", "t1", null)], [S("s1", "t1", null)]);
+    const m = manifest("t1", [
+      entry({ profileType: "LAWYER", profileId: "l1", strategy: "LINK_EXISTING_USER", userId: "u1" }),
+      entry({ profileType: "STAFF", profileId: "s1", strategy: "CREATE_LOGIN_USER", email: "n@x.com", role: "USER" }),
+    ]);
+    const p = planApply(m, r);
+    const text = formatApplyReport({
+      env: { head: "h", dbTargetMasked: "non-prod", nodeEnv: "development", manifest: "(operator file)", applyMode: "apply" },
+      plan: p,
+      transactionStarted: true,
+      execution: { lawyerLinks: 1, staffLinks: 0, applied: [{ profileType: "LAWYER", profileId: "l1", userId: "u1" }] },
+      verification: { expected: 1, verified: 1, mismatches: [] },
+      failed: 0,
+    });
+    expect(text).toContain("K1 repair performed?: partial (LINK only)");
+    expect(text).toContain("apply completed: yes");
+    expect(text).toContain("lawyer links updated: 1");
+  });
+});
+
+describe("K1-3 W1 — zaten-bağlı + hedef user silinmiş → BLOCKED (USER_NOT_FOUND), idempotent DEĞİL", () => {
+  // İdempotency muafiyeti YALNIZ PROFILE_ALREADY_LINKED + USER_ALREADY_LINKED'i kapsar (core ~satır 814).
+  // Hedef user users[]'tan silinmişse USER_NOT_FOUND elenmez → re-run güvenle BLOCKED kalır; profile
+  // "zaten u1'e bağlı" görünse bile sahte ALREADY_APPLIED no-op'una düşmez. Bu test, ileride planApply'da
+  // `prof.userId === userId` kısa-devresinin validation hatalarından ÖNCE konmasına karşı regresyon guard'ıdır.
+  it("LINK re-run; l1 zaten u1'e bağlı ama u1 users[]'tan silinmiş → BLOCKED, alreadyApplied=0, write yok", () => {
+    const r = ref([], [L("l1", "t1", null, "LAWYER", "u1")], []); // u1 users[]'ta YOK (silinmiş)
+    const m = manifest("t1", [entry({ profileId: "l1", strategy: "LINK_EXISTING_USER", userId: "u1" })]);
+    const p = planApply(m, r);
+    expect(p.entries[0].status).toBe("BLOCKED");
+    expect(p.counts.alreadyApplied).toBe(0);
+    expect(p.counts.blocked).toBe(1);
+    expect(p.canApply).toBe(false);
+    expect(p.operations).toHaveLength(0);
+    // kök sebep: USER_NOT_FOUND (idempotency muafiyetinde değil)
+    expect(codesOf(validateManifest(m, r).entries[0].errors)).toContain("USER_NOT_FOUND");
   });
 });
