@@ -1,5 +1,12 @@
 import { Injectable, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AuditService } from '../audit/audit.service';
+import { buildClientFieldDiff, buildContactsDiff, buildClientRemoveSnapshot } from './client-audit.util';
+
+/** C0-a: audit actor — YALNIZ auth context'ten (req.user.id); body/data'dan ASLA türetilmez. */
+export interface AuditActor {
+  userId?: string;
+}
 
 // ── Operasyonel iletişim eksiği takibi (PR-1, saf yardımcılar) ──
 
@@ -23,7 +30,10 @@ export function computeMissingContactFields(client: { phone?: string | null; ema
 
 @Injectable()
 export class ClientService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+  ) {}
 
   // Tüm müvekkilleri listele
   async findAll(tenantId: string, type?: string) {
@@ -61,7 +71,7 @@ export class ClientService {
   }
 
   // Yeni müvekkil oluştur
-  async create(tenantId: string, data: any) {
+  async create(tenantId: string, data: any, actor?: AuditActor) {
     // TCKN veya VKN ile duplicate kontrolü
     const identityNo = data.tckn || data.vkn;
     if (identityNo) {
@@ -82,7 +92,18 @@ export class ClientService {
         // eskiden kaydı isActive=false bırakıyordu → findAll (isActive=true) gizliyordu (vekaletleri olsa da).
         const wasReactivated = existing.isActive === false;
         if (wasReactivated) {
-          await this.prisma.client.update({ where: { id: existing.id }, data: { isActive: true } });
+          // C0-a: reaktivasyon mutation + audit AYNI transaction; CLIENT_CREATE'ten ayrı action.
+          await this.prisma.$transaction(async (tx) => {
+            await tx.client.update({ where: { id: existing.id }, data: { isActive: true } });
+            await this.audit.logInTransaction(tx, {
+              tenantId,
+              action: 'CLIENT_REACTIVATE',
+              entityType: 'CLIENT',
+              entityId: existing.id,
+              userId: actor?.userId,
+              metadata: { reactivatedFromDedupe: true },
+            });
+          });
           console.log(`[ClientService] Soft-deleted müvekkil reaktive edildi: ${existing.id} (${existing.displayName})`);
         } else {
           console.log(`[ClientService] Duplicate müvekkil bulundu: ${existing.id} (${existing.displayName})`);
@@ -108,7 +129,9 @@ export class ClientService {
       ? [primaryAddress.street, primaryAddress.district, primaryAddress.city].filter(Boolean).join(', ')
       : [data.address, data.district, data.city].filter(Boolean).join(', ') || undefined;
 
-    const client = await this.prisma.client.create({
+    // C0-a: client + contact yazımı + audit AYNI transaction (audit yazılamazsa create rollback).
+    const client = await this.prisma.$transaction(async (tx) => {
+      const createdClient = await tx.client.create({
       data: {
         tenantId,
         type: data.type || 'PERSON',
@@ -153,9 +176,9 @@ export class ClientService {
 
     // Çoklu telefon kaydet
     if (data.phones?.length > 0) {
-      await this.prisma.clientContact.createMany({
+      await tx.clientContact.createMany({
         data: data.phones.map((p: any, idx: number) => ({
-          clientId: client.id,
+          clientId: createdClient.id,
           type: p.type || 'MOBILE',
           value: p.value,
           label: p.label,
@@ -166,9 +189,9 @@ export class ClientService {
 
     // Çoklu email kaydet
     if (data.emails?.length > 0) {
-      await this.prisma.clientContact.createMany({
+      await tx.clientContact.createMany({
         data: data.emails.map((e: any, idx: number) => ({
-          clientId: client.id,
+          clientId: createdClient.id,
           type: 'EMAIL',
           value: e.value,
           label: e.label,
@@ -177,7 +200,22 @@ export class ClientService {
       });
     }
 
-    // PR-1: operasyonel iletişim eksiği görevini senkronla (yeni müvekkil → henüz WAIVED olamaz)
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CLIENT_CREATE',
+        entityType: 'CLIENT',
+        entityId: createdClient.id,
+        userId: actor?.userId,
+        metadata: {
+          fieldDiff: buildClientFieldDiff(null, createdClient),
+          contactsDiff: buildContactsDiff([], data.phones, data.emails),
+        },
+      });
+
+      return createdClient;
+    });
+
+    // PR-1: operasyonel iletişim eksiği görevini senkronla (YAN ETKİ → transaction DIŞINDA)
     await this.syncContactFollowUpTaskSafe(tenantId, {
       id: client.id,
       phone: primaryPhone,
@@ -189,8 +227,12 @@ export class ClientService {
   }
 
   // Müvekkil güncelle
-  async update(id: string, tenantId: string, data: any) {
-    const existing = await this.prisma.client.findFirst({ where: { id, tenantId } });
+  async update(id: string, tenantId: string, data: any, actor?: AuditActor) {
+    // C0-a (acceptance #2): contacts diff için old snapshot CONTACTS ile alınır.
+    const existing = await this.prisma.client.findFirst({
+      where: { id, tenantId },
+      include: { contacts: true },
+    });
     if (!existing) throw new Error('Müvekkil bulunamadı');
 
     // PR-U4: UPDATE-PATH kimlik-block (önce guard YOKTU). Müvekkilde TCKN zorunlu/kesin ayrıştırıcı →
@@ -230,7 +272,9 @@ export class ClientService {
       ? [primaryAddress.street, primaryAddress.district, primaryAddress.city].filter(Boolean).join(', ')
       : [data.address, data.district, data.city].filter(Boolean).join(', ') || undefined;
 
-    await this.prisma.client.update({
+    // C0-a: client + contact yazımı + audit AYNI transaction.
+    await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.client.update({
       where: { id },
       data: {
         type: data.type,
@@ -268,7 +312,7 @@ export class ClientService {
 
     // Contacts güncelle (sil ve yeniden oluştur)
     if (data.phones || data.emails) {
-      await this.prisma.clientContact.deleteMany({ where: { clientId: id } });
+      await tx.clientContact.deleteMany({ where: { clientId: id } });
       
       const contacts: any[] = [];
       if (data.phones?.length > 0) {
@@ -294,9 +338,24 @@ export class ClientService {
         });
       }
       if (contacts.length > 0) {
-        await this.prisma.clientContact.createMany({ data: contacts });
+        await tx.clientContact.createMany({ data: contacts });
       }
     }
+
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CLIENT_UPDATE',
+        entityType: 'CLIENT',
+        entityId: id,
+        userId: actor?.userId,
+        metadata: {
+          fieldDiff: buildClientFieldDiff(existing, updated),
+          contactsDiff: (data.phones || data.emails)
+            ? buildContactsDiff((existing as any).contacts, data.phones, data.emails)
+            : { changed: false },
+        },
+      });
+    });
 
     // PR-1: operasyonel iletişim eksiği görevini senkronla (WAIVED kararı 'existing'ten gelir)
     await this.syncContactFollowUpTaskSafe(tenantId, {
@@ -458,10 +517,22 @@ export class ClientService {
   }
 
   // Müvekkil sil (soft delete)
-  async remove(id: string, tenantId: string) {
+  async remove(id: string, tenantId: string, actor?: AuditActor) {
     const existing = await this.prisma.client.findFirst({ where: { id, tenantId } });
     if (!existing) throw new Error('Müvekkil bulunamadı');
-    return this.prisma.client.update({ where: { id }, data: { isActive: false } });
+    // C0-a: soft-delete + audit AYNI transaction (old snapshot delete ÖNCESİ alındı).
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.client.update({ where: { id }, data: { isActive: false } });
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CLIENT_DELETE',
+        entityType: 'CLIENT',
+        entityId: id,
+        userId: actor?.userId,
+        metadata: { softDelete: true, oldSnapshot: buildClientRemoveSnapshot(existing) },
+      });
+      return updated;
+    });
   }
 
   // Arama

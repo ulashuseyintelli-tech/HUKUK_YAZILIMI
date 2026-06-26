@@ -2,6 +2,11 @@ import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Qu
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ClientService } from './client.service';
 
+/** C0-a: actor compile-time shape — req.user JWT validate'ten gelen User; id+tenantId auth context. */
+interface AuthRequest {
+  user: { id: string; tenantId: string; role?: string };
+}
+
 @Controller('clients')
 @UseGuards(JwtAuthGuard)
 export class ClientController {
@@ -28,10 +33,11 @@ export class ClientController {
 
   // Yeni müvekkil oluştur
   @Post()
-  async create(@Request() req: any, @Body() body: any) {
+  async create(@Request() req: AuthRequest, @Body() body: any) {
     const tenantId = req.user.tenantId;
     try {
-      const client = await this.clientService.create(tenantId, body);
+      // C0-a: actor YALNIZ req.user.id (auth); body'den userId ASLA okunmaz.
+      const client = await this.clientService.create(tenantId, body, { userId: req.user.id });
       return { data: client };
     } catch (error: any) {
       return { error: error.message };
@@ -50,10 +56,10 @@ export class ClientController {
 
   // Müvekkil güncelle
   @Put(':id')
-  async update(@Request() req: any, @Param('id') id: string, @Body() body: any) {
+  async update(@Request() req: AuthRequest, @Param('id') id: string, @Body() body: any) {
     const tenantId = req.user.tenantId;
     try {
-      const client = await this.clientService.update(id, tenantId, body);
+      const client = await this.clientService.update(id, tenantId, body, { userId: req.user.id });
       return { data: client };
     } catch (error: any) {
       // PR-U4: yapısal HttpException (409 DUPLICATE_IDENTITY) frontend'e olduğu gibi geçmeli.
@@ -64,10 +70,10 @@ export class ClientController {
 
   // Müvekkil sil
   @Delete(':id')
-  async remove(@Request() req: any, @Param('id') id: string) {
+  async remove(@Request() req: AuthRequest, @Param('id') id: string) {
     const tenantId = req.user.tenantId;
     try {
-      await this.clientService.remove(id, tenantId);
+      await this.clientService.remove(id, tenantId, { userId: req.user.id });
       return { success: true };
     } catch (error: any) {
       return { error: error.message };
