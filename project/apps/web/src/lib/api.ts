@@ -108,6 +108,14 @@ class ApiClient {
     return this.request<{ user: any }>("/auth/me");
   }
 
+  // K1-7: davet kabul — ham token + kullanıcının belirlediği parola. Auth gerekmez.
+  async acceptInvite(token: string, password: string) {
+    return this.request<{ ok: boolean; userId: string }>("/auth/accept-invite", {
+      method: "POST",
+      body: JSON.stringify({ token, password }),
+    });
+  }
+
   // Cases
   async getCases(params?: { status?: string; clientId?: string; noOwner?: boolean; legalResponsibleMissing?: boolean; responsibleLawyerId?: string; responsibleStaffId?: string; page?: number; limit?: number }) {
     const query = new URLSearchParams();

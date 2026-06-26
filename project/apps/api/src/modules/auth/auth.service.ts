@@ -85,6 +85,12 @@ export class AuthService {
       throw new UnauthorizedException("Geçersiz e-posta veya şifre");
     }
 
+    // K1-7: passwordHash artık nullable (pending/davetli kullanıcı parolasız var olabilir).
+    // Parolası belirlenmemiş kullanıcı login OLAMAZ; bcrypt.compare(plain, null) crash etmesin.
+    if (!user.passwordHash) {
+      throw new UnauthorizedException("Geçersiz e-posta veya şifre");
+    }
+
     const isPasswordValid = await bcrypt.compare(dto.password, user.passwordHash);
 
     if (!isPasswordValid) {

@@ -7,6 +7,9 @@ import { AuthController } from "./auth.controller";
 import { JwtStrategy } from "./strategies/jwt.strategy";
 import { UserModule } from "../user/user.module";
 import { TenantModule } from "../tenant/tenant.module";
+import { NotificationModule } from "../notification/notification.module";
+import { UserInviteService } from "./invite/user-invite.service";
+import { UserInviteController } from "./invite/user-invite.controller";
 
 @Module({
   imports: [
@@ -22,9 +25,12 @@ import { TenantModule } from "../tenant/tenant.module";
     }),
     UserModule,
     TenantModule,
+    // K1-7: invite e-postası için EmailProviderService (NotificationModule export eder).
+    // AuditService global (AuditModule @Global), ConfigService global → ek import gerekmez.
+    NotificationModule,
   ],
-  controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  controllers: [AuthController, UserInviteController],
+  providers: [AuthService, JwtStrategy, UserInviteService],
   exports: [AuthService],
 })
 export class AuthModule {}
