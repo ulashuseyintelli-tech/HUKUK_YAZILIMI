@@ -16,6 +16,24 @@ Onay almadan kodlamaya geçme ne yapacağını söyle onay aldıktan sonra devam
 
 Daha önce bir yeri yaparken başka yeri bozduğun için bu kuralları otomatik yaptık ki aynı şeyi yapma diye.
 
+## Model / Effort önerisi
+
+Her yeni işin başında, işe başlamadan önce önerilen çalışma seviyesini bildir.
+
+- PR merge, branch/worktree cleanup, git işlemleri: low / Faster yeterlidir.
+- Sadece kod okuma, "şu nerede", kavramsal soru-cevap, mevcut akışı açıklama: low / Faster yeterlidir.
+- Kod değişikliği, backend akış değişikliği, controller/service/repository davranışı: yüksek/extra öner.
+- Migration, finansal hesaplama, multitenant etki, veri bütünlüğü, ödeme/tahsilat/borç-alacak mantığı: ultra/code öner.
+- Otomatik geçiş yapılamazsa kullanıcıya öneri olarak bildir.
+
+### Varsayılan iş akışı (A şıkkı aktif)
+
+- Slider/Ultracode kullanıcının oturum ayarıdır; ajan bunu otomatik değiştiremez ve değiştirmeye çalışmaz.
+- Varsayılan tercih A şıkkıdır: slider açık kalsa bile basit işlerde çok-ajan akışı açılmaz.
+- Git işleri, branch/worktree cleanup, salt kod okuma, "şu nerede" ve kavramsal soru-cevapta solo çalış; kısa "Faster yeter" uyarısı ver.
+- Esaslı işlerde (feature, forensic, backend davranış değişikliği, multitenant, migration, finans, veri bütünlüğü, ödeme/tahsilat/borç-alacak) derin analiz yap ve "Ultra/code önerilir" diye bildir.
+- Kullanıcıdan manuel kademe değiştirmesini isteme; yalnız işin riski gerçekten değiştiyse öneri ver.
+
 ## Repository discipline
 
 Kanonik repo:
