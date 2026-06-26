@@ -3746,8 +3746,11 @@ model ClientStatementLine {
   lineDate DateTime
   lineType ClientStatementLineType
 
-  refType String? // 'BalanceLedger' | 'ExpenseRequest' | 'ExpensePayment'
+  refType String? // 'BalanceLedger' | 'ExpenseRequest' | 'ExpensePayment' | 'CollectionDispositionLine'
   refId   String? // kaynak kayıt id (snapshot anındaki)
+
+  // M2: proceeds satırının atfedildiği alacaklı (CaseClient.id) — client-level okuma + çoklu-alacaklı scope.
+  caseClientId String?
 
   debit          Decimal @default(0) @db.Decimal(15, 2)
   credit         Decimal @default(0) @db.Decimal(15, 2)
@@ -3759,6 +3762,7 @@ model ClientStatementLine {
   @@index([statementId])
   @@index([lineType])
   @@index([lineDate])
+  @@index([caseClientId])
 }
 
 enum ClientStatementStatus {
@@ -3774,6 +3778,14 @@ enum ClientStatementLineType {
   EXPENSE_REQUESTED // Masraf talebi (ExpenseRequest) — BİLGİ, bakiyeyi oynatmaz
   REFUND // İade (BalanceLedger REFUND)
   ADJUST // Manuel düzeltme (BalanceLedger ADJUST)
+
+  // M2 — Tahsilat dağıtımı proceeds satırları (CollectionDispositionLine kaynaklı).
+  CASE_COLLECTION_PAYABLE // CLIENT_PAYABLE → müvekkile aktarılacak (credit +)
+  CONTRACTUAL_FEE_WITHHELD // ofis sözleşmesel ücreti (BİLGİ, 0)
+  FIRM_EXPENSE_REIMBURSEMENT // ofis masraf iadesi (BİLGİ, 0)
+  CLIENT_EXPENSE_REIMBURSEMENT // müvekkile masraf iadesi (credit +)
+  COLLECTION_OFFSET_ADVANCE // avans mahsubu (BİLGİ; bakiye etkisi BalanceLedger'dan, çift-sayım yok)
+  // NOT: CLIENT_PAYOUT_SENT M3 payout settlement'ta eklenecek (M2'de YOK).
 }
 
 // ============================================================
@@ -7571,6 +7583,10 @@ model CollectionDisposition {
 
   sourcePaymentEventId String? // PAYMENT_RECEIVED eventId (scalar, FK YOK)
   createdById          String?
+
+  // M2 posting (kullanıcı onayı): HELD → POSTED damgası + actor.
+  postedAt   DateTime?
+  postedById String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

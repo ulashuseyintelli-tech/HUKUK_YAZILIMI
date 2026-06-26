@@ -16,9 +16,11 @@ const USER = 'user-1';
 const mockPrisma: any = {
   case: { findFirst: jest.fn() },
   client: { findFirst: jest.fn() },
+  caseClient: { findFirst: jest.fn() }, // M2: resolveCaseClientId
   caseBalance: { findFirst: jest.fn() },
   balanceLedger: { aggregate: jest.fn(), findMany: jest.fn() },
   expenseRequest: { findMany: jest.fn() },
+  collectionDisposition: { findMany: jest.fn() }, // M2: POSTED proceeds
   clientStatement: { create: jest.fn(), update: jest.fn(), findFirst: jest.fn(), findMany: jest.fn() },
   clientStatementLine: { createMany: jest.fn() },
   $transaction: jest.fn((fn: any) => fn(mockPrisma)),
@@ -227,6 +229,78 @@ describe('ClientStatementService', () => {
       expect((service as any).update).toBeUndefined();
       expect((service as any).delete).toBeUndefined();
       expect((service as any).patchContent).toBeUndefined();
+    });
+  });
+
+  describe('M2 proceeds — POSTED disposition (model A)', () => {
+    beforeEach(() => {
+      mockPrisma.case.findFirst.mockResolvedValue({ id: CASE });
+      mockPrisma.client.findFirst.mockResolvedValue({ id: CLIENT });
+      mockPrisma.caseClient.findFirst.mockResolvedValue({ id: 'cc-A' }); // statement'ın alacaklısı
+      mockPrisma.caseBalance.findFirst.mockResolvedValue(null); // opening 0
+      mockPrisma.expenseRequest.findMany.mockResolvedValue([]);
+      mockPrisma.clientStatement.create.mockResolvedValue({ id: 'st-1' });
+      mockPrisma.clientStatement.findFirst.mockResolvedValue({ id: 'st-1', lines: [] });
+    });
+
+    it('CLIENT_PAYABLE → CASE_COLLECTION_PAYABLE credit+; FEE → bilgi(0); closing doğru', async () => {
+      mockPrisma.collectionDisposition.findMany.mockResolvedValue([
+        { postedAt: new Date(3000), lines: [
+          { id: 'dl1', type: 'CLIENT_PAYABLE', amount: D(60), caseClientId: 'cc-A' },
+          { id: 'dl2', type: 'CONTRACTUAL_FEE_WITHHELD', amount: D(40), caseClientId: 'cc-A' },
+        ] },
+      ]);
+      await service.create(TENANT, CASE, USER, dto);
+
+      const lines = mockPrisma.clientStatementLine.createMany.mock.calls[0][0].data;
+      const payable = lines.find((l: any) => l.refId === 'dl1');
+      expect(payable.lineType).toBe('CASE_COLLECTION_PAYABLE');
+      expect(payable.credit.toString()).toBe('60');
+      expect(payable.runningBalance.toString()).toBe('60');
+      expect(payable.caseClientId).toBe('cc-A');
+      expect(payable.refType).toBe('CollectionDispositionLine');
+
+      const fee = lines.find((l: any) => l.refId === 'dl2');
+      expect(fee.lineType).toBe('CONTRACTUAL_FEE_WITHHELD');
+      expect(fee.credit.toString()).toBe('0'); // ofis payı bakiyeyi oynatmaz
+      expect(fee.runningBalance.toString()).toBe('60');
+
+      expect(mockPrisma.clientStatement.create.mock.calls[0][0].data.closingBalance.toString()).toBe('60');
+    });
+
+    it('OFFSET çift-sayım YOK: BalanceLedger CREDIT bir kez oynatır, proceeds OFFSET = bilgi(0)', async () => {
+      mockPrisma.caseBalance.findFirst.mockResolvedValue({ id: 'cb-1' });
+      mockPrisma.balanceLedger.aggregate.mockResolvedValue({ _sum: { amount: D(0) } });
+      mockPrisma.balanceLedger.findMany.mockResolvedValue([
+        { id: 'bl1', amount: D(100), type: 'CREDIT', description: 'avans mahsubu', createdAt: new Date(2000) },
+      ]);
+      mockPrisma.collectionDisposition.findMany.mockResolvedValue([
+        { postedAt: new Date(3000), lines: [
+          { id: 'dl-off', type: 'OFFSET_CLIENT_ADVANCE', amount: D(100), caseClientId: 'cc-A' },
+        ] },
+      ]);
+      await service.create(TENANT, CASE, USER, dto);
+
+      // Toplam etki = +100 (yalnız BalanceLedger'dan); 200 OLMAYACAK.
+      expect(mockPrisma.clientStatement.create.mock.calls[0][0].data.closingBalance.toString()).toBe('100');
+      const lines = mockPrisma.clientStatementLine.createMany.mock.calls[0][0].data;
+      const off = lines.find((l: any) => l.refId === 'dl-off');
+      expect(off.lineType).toBe('COLLECTION_OFFSET_ADVANCE');
+      expect(off.credit.toString()).toBe('0');
+    });
+
+    it('cross-client: başka caseClientId proceeds satırı bu ekstreye GİRMEZ', async () => {
+      mockPrisma.collectionDisposition.findMany.mockResolvedValue([
+        { postedAt: new Date(3000), lines: [
+          { id: 'dl-other', type: 'CLIENT_PAYABLE', amount: D(99), caseClientId: 'cc-OTHER' },
+        ] },
+      ]);
+      await service.create(TENANT, CASE, USER, dto);
+
+      const call = mockPrisma.clientStatementLine.createMany.mock.calls[0];
+      const lines = call ? call[0].data : [];
+      expect(lines.find((l: any) => l.refId === 'dl-other')).toBeUndefined();
+      expect(mockPrisma.clientStatement.create.mock.calls[0][0].data.closingBalance.toString()).toBe('0');
     });
   });
 });
