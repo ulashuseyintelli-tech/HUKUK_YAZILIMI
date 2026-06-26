@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   buildAccountSummaryDisplayModel,
+  buildAccountSummarySourcePlacementPlan,
   evaluateAccountSummarySourceAuthorityPolicy,
   type AccountSummaryDisplayModel,
   type AccountSummaryRowId,
@@ -307,5 +308,185 @@ describe("account summary source authority policy", () => {
 
     expect(result.readyForControlledCutover).toBe(true);
     expect(result.blockers).toEqual([]);
+  });
+});
+describe("account summary source placement policy", () => {
+  function guardedModel() {
+    return buildAccountSummaryDisplayModel({
+      legacy: legacySummary,
+      display: guardedSummary,
+      guardedPrimarySelected: true,
+    });
+  }
+
+  function placementFor(rowId: AccountSummaryRowId, model = guardedModel()) {
+    const plan = buildAccountSummarySourcePlacementPlan(model);
+    const placement = plan.placements.find((item) => item.rowId === rowId);
+    expect(placement).toBeDefined();
+    return placement!;
+  }
+
+  it("current guarded selected model icin row-by-row placement plan uretir", () => {
+    const model = guardedModel();
+    const plan = buildAccountSummarySourcePlacementPlan(model);
+
+    expect(plan.guardedPrimarySelected).toBe(true);
+    expect(plan.placements).toHaveLength(Object.keys(model.rows).length);
+    expect(plan.placements[0]).toEqual(expect.objectContaining({
+      rowId: expect.any(String),
+      sourceAuthority: expect.any(String),
+      cutoverPolicy: expect.any(String),
+      placement: expect.any(String),
+      reason: expect.any(String),
+    }));
+  });
+
+  it("current primary canonical rows PRIMARY_CANONICAL_ELIGIBLE olarak siniflanir", () => {
+    const plan = buildAccountSummarySourcePlacementPlan(guardedModel());
+
+    expect(plan.summary.primaryCanonicalEligibleRowIds).toEqual([...canonicalRowIds]);
+    for (const rowId of canonicalRowIds) {
+      expect(placementFor(rowId)).toEqual(expect.objectContaining({
+        rowId,
+        sourceAuthority: "CANONICAL",
+        cutoverPolicy: "CANONICAL_REQUIRED",
+        placement: "PRIMARY_CANONICAL_ELIGIBLE",
+      }));
+    }
+  });
+
+  it("tazminat komisyon ve takipOncesiFaiz backend contract gerektirir", () => {
+    for (const rowId of ["tazminat", "komisyon", "takipOncesiFaiz"] as const) {
+      expect(placementFor(rowId)).toEqual(expect.objectContaining({
+        rowId,
+        sourceAuthority: "LEGACY",
+        placement: "BACKEND_CONTRACT_REQUIRED",
+      }));
+    }
+  });
+
+  it("fee cost ve harc detay rows DIAGNOSTIC_LEGACY_ALLOWED olarak siniflanir", () => {
+    const rowIds: AccountSummaryRowId[] = [
+      "basvurmaHarci",
+      "vekaletHarci",
+      "pesinHarc",
+      "dosyaGideri",
+      "tebligatGideri",
+      "vekaletPulu",
+    ];
+
+    for (const rowId of rowIds) {
+      expect(placementFor(rowId)).toEqual(expect.objectContaining({
+        rowId,
+        sourceAuthority: "LEGACY",
+        placement: "DIAGNOSTIC_LEGACY_ALLOWED",
+      }));
+    }
+  });
+
+  it("collection fee harc alternative projection rows DIAGNOSTIC_LEGACY_ALLOWED olarak siniflanir", () => {
+    for (const rowId of ["pesinHarcDahilTahsilHarci", "pesinHarcHaricTahsilHarci"] as const) {
+      expect(placementFor(rowId)).toEqual(expect.objectContaining({
+        rowId,
+        sourceAuthority: "LEGACY",
+        placement: "DIAGNOSTIC_LEGACY_ALLOWED",
+      }));
+    }
+  });
+
+  it("legacy explanatory rows DIAGNOSTIC_LEGACY_ALLOWED olarak siniflanir", () => {
+    for (const rowId of ["tahsilOranlari", "faizSegmentleri", "takipTarihi", "kalemTuru"] as const) {
+      expect(placementFor(rowId)).toEqual(expect.objectContaining({
+        rowId,
+        sourceAuthority: "LEGACY",
+        placement: "DIAGNOSTIC_LEGACY_ALLOWED",
+      }));
+    }
+  });
+
+  it("mahsupDetaylari source LEGACY kaldigi surece DIAGNOSTIC_LEGACY_ALLOWED olur", () => {
+    expect(placementFor("mahsupDetaylari")).toEqual(expect.objectContaining({
+      rowId: "mahsupDetaylari",
+      sourceAuthority: "LEGACY",
+      placement: "DIAGNOSTIC_LEGACY_ALLOWED",
+    }));
+    expect(placementFor("mahsupDetaylari").placement).not.toBe("DIAGNOSTIC_DERIVED_ALLOWED");
+  });
+
+  it("hesapTarihi DIAGNOSTIC_DERIVED_ALLOWED olarak siniflanir", () => {
+    expect(placementFor("hesapTarihi")).toEqual(expect.objectContaining({
+      rowId: "hesapTarihi",
+      sourceAuthority: "DERIVED",
+      placement: "DIAGNOSTIC_DERIVED_ALLOWED",
+    }));
+  });
+
+  it("mahsupDetayPanelContext BLOCKED_MIXED_AUTHORITY olarak siniflanir", () => {
+    const plan = buildAccountSummarySourcePlacementPlan(guardedModel());
+
+    expect(placementFor("mahsupDetayPanelContext")).toEqual(expect.objectContaining({
+      rowId: "mahsupDetayPanelContext",
+      sourceAuthority: "DERIVED",
+      placement: "BLOCKED_MIXED_AUTHORITY",
+    }));
+    expect(plan.summary.blockedRowIds).toContain("mahsupDetayPanelContext");
+  });
+
+  it("UNKNOWN source authority BLOCKED_UNKNOWN_SOURCE olarak siniflanir", () => {
+    const model = guardedModel();
+    model.rows.asilAlacak = {
+      ...model.rows.asilAlacak,
+      sourceAuthority: "UNKNOWN",
+    };
+
+    const plan = buildAccountSummarySourcePlacementPlan(model);
+
+    expect(placementFor("asilAlacak", model)).toEqual(expect.objectContaining({
+      rowId: "asilAlacak",
+      sourceAuthority: "UNKNOWN",
+      placement: "BLOCKED_UNKNOWN_SOURCE",
+    }));
+    expect(plan.summary.blockedRowIds).toContain("asilAlacak");
+  });
+
+  it("canonical source tek basina primary placement icin yeterli degildir", () => {
+    const model = guardedModel();
+    model.rows.tazminat = {
+      ...model.rows.tazminat,
+      sourceAuthority: "CANONICAL",
+    };
+
+    const placement = placementFor("tazminat", model);
+
+    expect(placement.sourceAuthority).toBe("CANONICAL");
+    expect(placement.placement).toBe("BACKEND_CONTRACT_REQUIRED");
+    expect(placement.placement).not.toBe("PRIMARY_CANONICAL_ELIGIBLE");
+  });
+
+  it("fallback legacy state controlled primary cutover readiness ile karistirilmaz", () => {
+    const model = buildAccountSummaryDisplayModel({
+      legacy: legacySummary,
+      display: legacySummary,
+      guardedPrimarySelected: false,
+    });
+    const plan = buildAccountSummarySourcePlacementPlan(model);
+    const result = evaluateAccountSummarySourceAuthorityPolicy(model);
+
+    expect(plan.summary.primaryCanonicalEligibleRowIds).not.toContain("asilAlacak");
+    expect(plan.summary.blockedRowIds).toEqual(expect.arrayContaining(["asilAlacak"]));
+    expect(result.readyForControlledCutover).toBe(false);
+    expect(result.blockers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ rowId: "displaySurface" }),
+    ]));
+  });
+
+  it("TM11 evaluator readiness semantics degismeden conservative kalir", () => {
+    const result = evaluateAccountSummarySourceAuthorityPolicy(guardedModel());
+
+    expect(result.readyForControlledCutover).toBe(false);
+    expect(result.blockers).toEqual(expect.arrayContaining([
+      expect.objectContaining({ rowId: "tazminat" }),
+      expect.objectContaining({ rowId: "mahsupDetayPanelContext" }),
+    ]));
   });
 });
