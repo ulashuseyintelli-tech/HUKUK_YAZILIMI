@@ -201,12 +201,17 @@ async function runGuardedApply(
   let execution: ApplyExecutionResult;
   try {
     execution = await prisma.$transaction(async (ptx) => {
+      // KOŞULLU yazma (optimistic concurrency): yalnız userId HÂLÂ NULL ise güncelle. snapshot'tan beri
+      // profile başka user'a bağlanmış/silinmişse count=0 → applyLinkages fail-fast → tüm $transaction
+      // ROLLBACK (sessiz üzerine-yazma YOK; read-time preflight'a ek olarak yazma anında da korur).
       const tx: LinkageApplyTx = {
         setLawyerUserId: async (profileId, userId) => {
-          await ptx.lawyer.update({ where: { id: profileId }, data: { userId } });
+          const res = await ptx.lawyer.updateMany({ where: { id: profileId, userId: null }, data: { userId } });
+          return res.count;
         },
         setStaffUserId: async (profileId, userId) => {
-          await ptx.staffMember.update({ where: { id: profileId }, data: { userId } });
+          const res = await ptx.staffMember.updateMany({ where: { id: profileId, userId: null }, data: { userId } });
+          return res.count;
         },
       };
       return applyLinkages(aplan.operations, tx);

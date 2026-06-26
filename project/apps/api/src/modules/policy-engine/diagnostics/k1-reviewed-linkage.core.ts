@@ -856,10 +856,15 @@ export function planApply(manifest: ReviewedLinkageManifest, reference: Referenc
   return { entries: plan, operations, counts, hardStops, canApply: hardStops.length === 0 };
 }
 
-/** INJECTED transaction arayüzü: izin verilen TEK iki yazma. Gerçek impl script'te ($transaction içinde). */
+/**
+ * INJECTED transaction arayüzü: izin verilen TEK iki yazma. Gerçek impl script'te ($transaction içinde).
+ * Yazmalar KOŞULLUDUR (optimistic concurrency): yalnız `userId IS NULL` satırı güncellenir ve metod
+ * ETKİLENEN SATIR SAYISINI döner. count !== 1 → snapshot'tan beri profile başka user'a bağlanmış/silinmiş
+ * → applyLinkages fail-fast atar → $transaction ROLLBACK (sessiz üzerine-yazma YOK; snapshot yarışı dahil).
+ */
 export interface LinkageApplyTx {
-  setLawyerUserId(profileId: string, userId: string): Promise<void>;
-  setStaffUserId(profileId: string, userId: string): Promise<void>;
+  setLawyerUserId(profileId: string, userId: string): Promise<number>;
+  setStaffUserId(profileId: string, userId: string): Promise<number>;
 }
 
 export interface ApplyExecutionResult {
@@ -869,26 +874,35 @@ export interface ApplyExecutionResult {
 }
 
 /**
- * Operasyonları INJECTED tx üzerinden uygular. FAIL-FAST: bir op throw ederse döngü durur, hata yukarı
- * gider → script'teki prisma.$transaction ROLLBACK eder (partial state YOK). İzin verilen TEK yazma:
- * Lawyer.userId / StaffMember.userId set. User create / role / email / başka tablo YOK.
+ * Operasyonları INJECTED tx üzerinden uygular. FAIL-FAST: bir op throw ederse (veya koşullu yazma
+ * 1 satır ETKİLEMEZSE) döngü durur, hata yukarı gider → script'teki prisma.$transaction ROLLBACK eder
+ * (partial state YOK). Yazma KOŞULLUDUR (userId IS NULL); affected !== 1 → eşzamanlı değişiklik →
+ * rollback (sessiz üzerine-yazma YOK). İzin verilen TEK yazma: Lawyer.userId / StaffMember.userId set.
+ * User create / role / email / başka tablo YOK.
  *
  * Çağrıldığı yerler:
  *  - scripts/k1-reviewed-linkage.ts → prisma.$transaction(ptx => applyLinkages(ops, txAdapter))
- *  - __tests__/k1-reviewed-linkage.core.spec.ts (mock tx; rollback/no-forbidden-write)
+ *  - __tests__/k1-reviewed-linkage.core.spec.ts (mock tx; rollback/no-forbidden-write/optimistic-guard)
  */
 export async function applyLinkages(operations: ApplyOperation[], tx: LinkageApplyTx): Promise<ApplyExecutionResult> {
   const applied: ApplyOperation[] = [];
   let lawyerLinks = 0;
   let staffLinks = 0;
   for (const op of operations) {
-    if (op.profileType === "LAWYER") {
-      await tx.setLawyerUserId(op.profileId, op.userId);
-      lawyerLinks++;
-    } else {
-      await tx.setStaffUserId(op.profileId, op.userId);
-      staffLinks++;
+    const affected =
+      op.profileType === "LAWYER"
+        ? await tx.setLawyerUserId(op.profileId, op.userId)
+        : await tx.setStaffUserId(op.profileId, op.userId);
+    // Optimistic concurrency guard: koşullu yazma (userId IS NULL) tam 1 satır etkilemeliydi.
+    // affected !== 1 → snapshot ile yazma arasında profile eşzamanlı bağlanmış/silinmiş → FAIL-FAST:
+    // hata yukarı → $transaction ROLLBACK; sessiz üzerine-yazma YOK, partial state YOK.
+    if (affected !== 1) {
+      throw new Error(
+        `optimistic guard: ${op.profileType} ${op.profileId} userId artık NULL değil (affected=${affected}) — eşzamanlı değişiklik, rollback`,
+      );
     }
+    if (op.profileType === "LAWYER") lawyerLinks++;
+    else staffLinks++;
     applied.push(op);
   }
   return { lawyerLinks, staffLinks, applied };
