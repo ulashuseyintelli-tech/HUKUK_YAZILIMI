@@ -6,7 +6,13 @@ import { ClientNotificationService } from "./client-notification.service";
  * başarı SENT + maskelenmiş alıcı döner; fırlatılan hata dürüst FAILED'e çevrilir ve sır sızmaz.
  */
 describe("ClientNotificationService.testSend (PR-N3)", () => {
-  const svc = () => new ClientNotificationService({} as any, {} as any);
+  // prisma.client.findFirst: testSend önce müvekkilin tenant'ta var olduğunu doğrular (404 guard)
+  const svc = (clientExists = true) => {
+    const prisma: any = {
+      client: { findFirst: jest.fn().mockResolvedValue(clientExists ? { id: "c1" } : null) },
+    };
+    return new ClientNotificationService(prisma, {} as any);
+  };
 
   it("EMAIL: sendEmail'i type=TEST + [TEST] içerikle çağırır, SENT + maskeli alıcı döner", async () => {
     const s = svc();
@@ -67,5 +73,16 @@ describe("ClientNotificationService.testSend (PR-N3)", () => {
     const out = await s.testSend("t1", "u1", { clientId: "c1", channel: "SMS" });
     expect(out.success).toBe(false);
     expect(out.errorMessage).toBe("Gönderim başarısız");
+  });
+
+  it("geçersiz/cross-tenant clientId → NotFoundException, gönderim DENENMEZ", async () => {
+    const s = svc(false); // müvekkil bu tenant'ta yok
+    const emailSpy = jest.spyOn(s, "sendEmail");
+    const smsSpy = jest.spyOn(s, "sendSms");
+    await expect(
+      s.testSend("t1", "u1", { clientId: "nope", channel: "EMAIL" })
+    ).rejects.toThrow(/bulunamadı/i);
+    expect(emailSpy).not.toHaveBeenCalled();
+    expect(smsSpy).not.toHaveBeenCalled();
   });
 });

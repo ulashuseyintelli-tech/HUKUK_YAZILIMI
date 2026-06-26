@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException } from "@nestjs/common";
+import { Injectable, Logger, BadRequestException, NotFoundException } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
 import { OfficeService } from "../office/office.service";
 import { fetchWithTimeout } from "../../common/fetch-with-timeout.util";
@@ -326,6 +326,17 @@ export class ClientNotificationService {
     errorMessage?: string;
   }> {
     const { clientId, channel } = params;
+
+    // Müvekkil bu tenant'ta gerçekten var mı? Yoksa 404 — gönderim DENENMEZ
+    // (cross-tenant / geçersiz id engellenir, hiçbir gerçek mesaj çıkmaz).
+    const exists = await this.prisma.client.findFirst({
+      where: { id: clientId, tenantId },
+      select: { id: true },
+    });
+    if (!exists) {
+      throw new NotFoundException("Müvekkil bulunamadı");
+    }
+
     // Nötr, [TEST] etiketli içerik — dosya/borç/vekalet/müvekkil verisi İÇERMEZ.
     const TEST_SUBJECT = "[TEST] Hukuk Platform Bildirim Testi";
     const TEST_EMAIL_HTML =
