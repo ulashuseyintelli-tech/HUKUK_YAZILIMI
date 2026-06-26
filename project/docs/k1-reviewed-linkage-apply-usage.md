@@ -46,9 +46,13 @@ npx --yes tsx scripts/k1-reviewed-linkage.ts --manifest ./k1-manifest.json \
 - Profile/hedef-user **başka** bir bağa sahipse → `CONFLICT` (hard stop; sessiz üzerine-yazma yok).
 - Aynı manifest'i ikinci kez çalıştırmak güvenlidir: uygulanmışlar no-op, çakışanlar bloklanır.
 
+## Eşzamanlılık / sessiz üzerine-yazma yok (optimistic guard)
+
+Preflight kararı transaction-öncesi bir snapshot'tan verilir; snapshot ile yazma arasında başka bir yazıcı aynı profile'ı bağlayabilir. Bu yüzden gerçek yazma **koşulludur**: `UPDATE ... WHERE id = ? AND userId IS NULL`. Yazma **1 satır etkilemezse** (profile bu arada bağlanmış/silinmiş) apply **fail-fast** atar ve tüm `$transaction` **rollback** olur. Böylece "sessiz üzerine-yazma yok" garantisi yalnız read-time preflight'a değil, yazma anındaki koşula da dayanır (snapshot yarışı kapatılır).
+
 ## Transaction
 
-Tüm yazmalar tek `prisma.$transaction` içindedir. Apply ortasında bir hata olursa **tam rollback** (yarı-uygulanmış durum oluşmaz).
+Tüm yazmalar tek `prisma.$transaction` içindedir. Apply ortasında bir hata olursa (koşullu yazma 1 satır etkilemezse dahil) **tam rollback** (yarı-uygulanmış durum oluşmaz).
 
 ## Çıktı güvenliği
 

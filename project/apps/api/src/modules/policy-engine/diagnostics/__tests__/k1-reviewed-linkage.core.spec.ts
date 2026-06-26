@@ -389,10 +389,12 @@ function mockTx(failAt?: number): { tx: LinkageApplyTx; calls: string[] } {
       setLawyerUserId: async (profileId, userId) => {
         guard();
         calls.push(`lawyer:${profileId}:${userId}`);
+        return 1; // koşullu yazma 1 satır etkiledi (happy path)
       },
       setStaffUserId: async (profileId, userId) => {
         guard();
         calls.push(`staff:${profileId}:${userId}`);
+        return 1;
       },
     },
   };
@@ -573,8 +575,8 @@ describe("K1-3 (15) yasak write yok — yalnız iki link metodu", () => {
     ];
     const seen: string[] = [];
     const tx: LinkageApplyTx = {
-      setLawyerUserId: async () => { seen.push("setLawyerUserId"); },
-      setStaffUserId: async () => { seen.push("setStaffUserId"); },
+      setLawyerUserId: async () => { seen.push("setLawyerUserId"); return 1; },
+      setStaffUserId: async () => { seen.push("setStaffUserId"); return 1; },
     };
     await applyLinkages(ops, tx);
     expect(new Set(seen)).toEqual(new Set(["setLawyerUserId", "setStaffUserId"]));
@@ -749,5 +751,34 @@ describe("K1-3 W1 — zaten-bağlı + hedef user silinmiş → BLOCKED (USER_NOT
     expect(p.operations).toHaveLength(0);
     // kök sebep: USER_NOT_FOUND (idempotency muafiyetinde değil)
     expect(codesOf(validateManifest(m, r).entries[0].errors)).toContain("USER_NOT_FOUND");
+  });
+});
+
+describe("K1-3 W1b — koşullu yazma (optimistic guard): affected=0 → reject + fail-fast (rollback)", () => {
+  // [1] TOCTOU fix regresyon guard'ı: gerçek yazma KOŞULLU (userId IS NULL). Snapshot ile yazma arasında
+  // profile eşzamanlı bağlanmışsa adapter count=0 döner → applyLinkages atar → $transaction ROLLBACK;
+  // sessiz üzerine-yazma YOK ve sonraki op HİÇ denenmez (fail-fast).
+  it("yazma anında profile artık userId-null değil → applyLinkages reddeder, sonraki op denenmez", async () => {
+    const ops: ApplyOperation[] = [
+      { profileType: "LAWYER", profileId: "l1", userId: "u1" },
+      { profileType: "STAFF", profileId: "s1", userId: "u2" },
+    ];
+    const seen: string[] = [];
+    const tx: LinkageApplyTx = {
+      setLawyerUserId: async (profileId) => { seen.push(`lawyer:${profileId}`); return 0; }, // koşul tutmadı (eşzamanlı bağlanmış)
+      setStaffUserId: async (profileId) => { seen.push(`staff:${profileId}`); return 1; },
+    };
+    await expect(applyLinkages(ops, tx)).rejects.toThrow(/optimistic guard/);
+    expect(seen).toEqual(["lawyer:l1"]); // op0 denendi (0 döndü → throw); op1 fail-fast → HİÇ denenmedi
+  });
+  it("affected=1 → normal başarı (link sayılır, applied dolu)", async () => {
+    const ops: ApplyOperation[] = [{ profileType: "LAWYER", profileId: "l1", userId: "u1" }];
+    const tx: LinkageApplyTx = {
+      setLawyerUserId: async () => 1,
+      setStaffUserId: async () => 1,
+    };
+    const res = await applyLinkages(ops, tx);
+    expect(res.lawyerLinks).toBe(1);
+    expect(res.applied).toHaveLength(1);
   });
 });
