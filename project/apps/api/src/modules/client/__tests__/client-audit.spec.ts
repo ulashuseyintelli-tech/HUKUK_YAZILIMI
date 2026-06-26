@@ -66,6 +66,15 @@ describe("ClientService.create — audit", () => {
     expect(auditInput(audit).userId).toBe("u-real");
     expect(auditJson(audit)).not.toContain("HACKER");
   });
+
+  it("audit yazılamazsa mutation ROLLBACK — logInTransaction reddederse create reddeder", async () => {
+    const { svc, audit } = buildHarness({ created: { id: "c1", type: "PERSON", tckn: "123" } });
+    (audit.logInTransaction as jest.Mock).mockRejectedValueOnce(new Error("audit db down"));
+    // logInTransaction $transaction callback'i içinde → reddi callback'i reddeder → Prisma rollback.
+    await expect(
+      svc.create("t1", { type: "PERSON", tckn: "123" }, { userId: "u-real" }),
+    ).rejects.toThrow("audit db down");
+  });
 });
 
 describe("ClientService.update — audit", () => {
