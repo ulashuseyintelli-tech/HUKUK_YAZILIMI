@@ -369,6 +369,12 @@ describe("guarded primary display pilot gate", () => {
     expect(shouldEnableGuardedPrimaryDisplayPilot(new URLSearchParams(""), true)).toBe(false);
   });
 
+  it("balanceShadow=1 tek basina guarded primary pilot acmaz", () => {
+    const params = new URLSearchParams("balanceShadow=1");
+
+    expect(shouldShowBalanceShadowDisplay(params, true)).toBe(true);
+    expect(shouldEnableGuardedPrimaryDisplayPilot(params, true)).toBe(false);
+  });
   it("flag off ise eligible evidence olsa bile legacy fallback secer", () => {
     const decision = evaluateGuardedPrimaryDisplayPilot(makeEligibleGuardedPrimaryReport(), {
       featureFlagEnabled: false,
@@ -862,6 +868,87 @@ describe("BalanceShadowDiffPanel", () => {
     expect(screen.getByText(/127,00 TL/)).toBeInTheDocument();
     expect(screen.getByText("Anapara: 128,00 TL")).toBeInTheDocument();
     expect(screen.getByText("Kalan Anapara: 129,00 TL")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Faiz/ }));
+
+    expect(screen.getByText("1.004,00 TL")).toBeInTheDocument();
+    expect(screen.getByText("1.005,00 TL")).toBeInTheDocument();
+  });
+  it("guarded primary selected yuzeyde canonical ana satirlar ile legacy diagnostic satirlar birlikte kalir", async () => {
+    useCaseCalculationMock.mockReturnValue({
+      data: makeMixedAuthorityLegacySummary(),
+      loading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    apiGet.mockResolvedValue({ data: makeMixedAuthorityCanonicalReport() });
+
+    render(
+      <HesapOzetiPanel
+        caseId="case-1"
+        guardedPrimaryPilotEnabled
+        guardedPrimaryPilotAsOfDate="2026-06-24"
+      />,
+    );
+
+    expect(await screen.findByText("Guarded canonical primary candidate")).toBeInTheDocument();
+    expect(screen.getByTestId("guarded-primary-display-reasons")).toHaveTextContent("ELIGIBLE");
+
+    expect(screen.getByText(/2026-06-01.*2026-06-24/)).toBeInTheDocument();
+    expect(screen.getByText("Asıl Alacak")).toBeInTheDocument();
+
+    for (const canonicalValue of [
+      "10.001,00 TL",
+      "20.002,00 TL",
+      "30.003,00 TL",
+      "- 4.004,00 TL",
+      "505,00 TL",
+      "606,00 TL",
+      "707,00 TL",
+    ]) {
+      expect(screen.getAllByText(canonicalValue).length).toBeGreaterThan(0);
+    }
+
+    for (const replacedLegacyValue of [
+      "90.001,00 TL",
+      "90.002,00 TL",
+      "90.003,00 TL",
+      "90.004,00 TL",
+      "90.005,00 TL",
+      "90.006,00 TL",
+      "90.007,00 TL",
+      "90.008,00 TL",
+      "90.009,00 TL",
+    ]) {
+      expect(screen.queryByText(replacedLegacyValue)).not.toBeInTheDocument();
+    }
+
+    for (const legacyOnlyValue of [
+      "111,00 TL",
+      "222,00 TL",
+      "333,00 TL",
+      "444,00 TL",
+      "555,00 TL",
+      "666,00 TL",
+      "777,00 TL",
+      "888,00 TL",
+      "999,00 TL",
+      "1.001,00 TL",
+      "1.002,00 TL",
+      "1.003,00 TL",
+    ]) {
+      expect(screen.getByText(legacyOnlyValue)).toBeInTheDocument();
+    }
+
+    expect(screen.getByText("%legacy oran")).toBeInTheDocument();
+    expect(screen.getByText(/2026-06-10/)).toBeInTheDocument();
+    expect(screen.getByText("Masraf: 124,00 TL")).toBeInTheDocument();
+    expect(screen.getByText("Vekalet: 125,00 TL")).toBeInTheDocument();
+    expect(screen.getByText(/126,00 TL/)).toBeInTheDocument();
+    expect(screen.getByText(/127,00 TL/)).toBeInTheDocument();
+    expect(screen.getByText("Anapara: 128,00 TL")).toBeInTheDocument();
+    expect(screen.getByText("Kalan Anapara: 129,00 TL")).toBeInTheDocument();
+    expect(screen.queryByText(/Faiz Matrah/)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: /Faiz/ }));
 
