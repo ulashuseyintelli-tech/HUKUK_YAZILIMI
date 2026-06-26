@@ -1,0 +1,379 @@
+/**
+ * K1-1 — User ↔ Lawyer/StaffMember "capacity linkage" DIAGNOSTIC core (SAF / test edilebilir).
+ *
+ * Bağlam: EffectivePermissionResolver.readCapacity, User.lawyer.lawyerRank XOR
+ * User.staffMember.staffType okuyor. K1 köprüsü (Lawyer.userId / StaffMember.userId) şema-only:
+ * hiçbir kod yolu set etmiyor → tüm User'lar capacity=UNKNOWN. Bu çekirdek, köprü durumunu ÖLÇER
+ * ve YALNIZ deterministik exact-email-match ile güvenli onarım adaylarını üretir. IO YOK (Prisma yok).
+ *
+ * KESİN KURALLAR (K1-1):
+ *  - Varsayılan davranış: HİÇBİR yazma. Bu çekirdek hiçbir mutation yapmaz; yalnız hesaplar.
+ *  - Eşleşme YALNIZ deterministik: normalize(user.email) === normalize(profile.email) + AYNI tenant.
+ *    İsim-benzerliği / fuzzy / telefon / rol-tahmini / tenant-inference / hardcoded map YOK.
+ *  - User.email yalnız (tenantId,email) içinde unique → eşleşme tenant-scoped olmak ZORUNDA.
+ *  - Lawyer.email / StaffMember.email nullable + non-unique → güvenilir join anahtarı DEĞİL;
+ *    çoklu/eksik durumlar ambiguous/blocked olarak işaretlenir, asla tahmin edilmez.
+ *  - "Yanlış kullanıcıyı profile bağlamak enforcement'tan tehlikelidir" → şüpheli = manual_review.
+ */
+
+export interface UserRow {
+  id: string;
+  tenantId: string;
+  email: string; // User.email NOT NULL (şema)
+}
+
+export interface LawyerRow {
+  id: string;
+  tenantId: string;
+  email: string | null; // nullable
+  lawyerRank: string; // LawyerRank enum değeri
+  userId: string | null; // K1 FK (null = bağlı değil)
+}
+
+export interface StaffRow {
+  id: string;
+  tenantId: string;
+  email: string | null; // nullable
+  staffType: string; // StaffType enum değeri
+  userId: string | null; // K1 FK
+}
+
+export interface LinkageInput {
+  users: UserRow[];
+  lawyers: LawyerRow[];
+  staff: StaffRow[];
+}
+
+export type MatchKind = "lawyer" | "staff";
+
+export type Classification =
+  | "SAFE" // tek-tek exact match, güvenli auto-link adayı
+  | "ALREADY_LINKED" // profile.userId zaten dolu (işlem gerekmez)
+  | "NO_USER_MATCH" // bu email'e sahip login User yok → manual_review
+  | "AMBIGUOUS_DUPLICATE_EMAIL" // aynı tenant+email'i paylaşan ≥2 aynı-tip profil
+  | "AMBIGUOUS_BOTH_TYPES" // aynı tenant+email'de hem lawyer hem staff → hangi köprü belirsiz
+  | "BLOCKED_USER_ALREADY_LINKED"; // eşleşen User başka bir profile zaten bağlı
+
+export interface MatchCandidate {
+  kind: MatchKind;
+  profileId: string;
+  tenantId: string;
+  capacityValue: string; // lawyerRank | staffType
+  matchedUserId: string | null; // eşleşen User (NO_USER_MATCH ise null)
+  classification: Classification;
+  reason: string;
+}
+
+export interface K1LinkageReport {
+  users: {
+    total: number;
+    withLawyerProfile: number;
+    withStaffProfile: number;
+    withNeither: number;
+    withBoth: number; // anomali: aynı User hem lawyer hem staff'a bağlı
+  };
+  lawyers: {
+    total: number;
+    linkedToUser: number;
+    unlinked: number;
+    duplicateEmailCandidates: number; // aynı tenant+email'i paylaşan lawyer sayısı
+  };
+  staff: {
+    total: number;
+    linkedToUser: number;
+    unlinked: number;
+    duplicateEmailCandidates: number;
+  };
+  capacity: {
+    // link SONRASI projeksiyon (mevcut hepsi UNKNOWN). "FULL_AUTHORITY" literal capacity DEĞİL;
+    // lawyer-capacity (PARTNER/MANAGER/AUTHORIZED/LAWYER/INTERN) ailesini temsil eder.
+    fullAuthorityCandidates: number; // safe lawyer-match'i olan distinct User
+    staffCapacityCandidates: number; // safe staff-match'i olan distinct User
+    unknownUsers: number; // çözümlenemeyen (bağlı değil + güvenli eşleşme yok) User
+    ambiguousUsers: number; // herhangi bir AMBIGUOUS_* içinde geçen distinct User
+    blockedRepairCandidates: number; // BLOCKED_* aday sayısı
+  };
+  exactMatch: {
+    userEqLawyerEmail: number; // user.email === lawyer.email (eşleşen User bulunan lawyer adayı)
+    userEqStaffEmail: number;
+    oneToOne: number; // SAFE aday
+    ambiguous: number; // AMBIGUOUS_* aday
+    unsafe: number; // BLOCKED_* aday
+  };
+  conclusion: {
+    safeAutoLinkCandidates: number; // SAFE aday
+    manualReviewRequired: number; // NO_USER_MATCH + AMBIGUOUS_* + BLOCKED_*
+  };
+  flags: {
+    hasAmbiguous: boolean;
+    hasDuplicateEmail: boolean;
+    hasBothType: boolean;
+  };
+  candidates: MatchCandidate[];
+}
+
+/** Email normalizasyonu: trim + lowercase; boş/null → null. İki taraf da bununla karşılaştırılır. */
+export function normalizeEmail(email: string | null | undefined): string | null {
+  if (email == null) return null;
+  const t = email.trim().toLowerCase();
+  return t.length > 0 ? t : null;
+}
+
+const tk = (tenantId: string, normEmail: string): string => `${tenantId} ${normEmail}`;
+
+function pushTo<T>(map: Map<string, T[]>, k: string, v: T): void {
+  const arr = map.get(k);
+  if (arr) arr.push(v);
+  else map.set(k, [v]);
+}
+
+/**
+ * K1 köprü durumunu ölçer + deterministik exact-match onarım adaylarını sınıflandırır.
+ * SAF: yalnız verilen düz satırlardan hesaplar; hiçbir IO/mutation yok.
+ */
+export function analyzeLinkage(input: LinkageInput): K1LinkageReport {
+  const { users, lawyers, staff } = input;
+
+  // (tenant,normEmail) → User[] (şema @@unique([tenantId,email]) ⇒ normalde ≤1; savunmacı çoklu tutarız)
+  const userByKey = new Map<string, UserRow[]>();
+  for (const u of users) {
+    const e = normalizeEmail(u.email);
+    if (e) pushTo(userByKey, tk(u.tenantId, e), u);
+  }
+  const lawyersByKey = new Map<string, LawyerRow[]>();
+  for (const l of lawyers) {
+    const e = normalizeEmail(l.email);
+    if (e) pushTo(lawyersByKey, tk(l.tenantId, e), l);
+  }
+  const staffByKey = new Map<string, StaffRow[]>();
+  for (const s of staff) {
+    const e = normalizeEmail(s.email);
+    if (e) pushTo(staffByKey, tk(s.tenantId, e), s);
+  }
+
+  // Mevcut köprü durumu (User tarafı)
+  const lawyerLinkedUserIds = new Set<string>();
+  for (const l of lawyers) if (l.userId) lawyerLinkedUserIds.add(l.userId);
+  const staffLinkedUserIds = new Set<string>();
+  for (const s of staff) if (s.userId) staffLinkedUserIds.add(s.userId);
+  const anyLinkedUserIds = new Set<string>([...lawyerLinkedUserIds, ...staffLinkedUserIds]);
+
+  const candidates: MatchCandidate[] = [];
+
+  const classifyProfile = (
+    kind: MatchKind,
+    profileId: string,
+    tenantId: string,
+    normEmail: string | null,
+    capacityValue: string,
+    profileUserId: string | null,
+  ): MatchCandidate => {
+    if (profileUserId) {
+      return { kind, profileId, tenantId, capacityValue, matchedUserId: profileUserId, classification: "ALREADY_LINKED", reason: "profile.userId zaten dolu" };
+    }
+    if (!normEmail) {
+      return { kind, profileId, tenantId, capacityValue, matchedUserId: null, classification: "NO_USER_MATCH", reason: "profil email boş/null → join anahtarı yok" };
+    }
+    const k = tk(tenantId, normEmail);
+    const matchedUsers = userByKey.get(k) ?? [];
+    if (matchedUsers.length === 0) {
+      return { kind, profileId, tenantId, capacityValue, matchedUserId: null, classification: "NO_USER_MATCH", reason: "bu tenant+email'e sahip login User yok" };
+    }
+    // (savunmacı) User @@unique ihlali — birden çok user aynı (tenant,email)
+    if (matchedUsers.length > 1) {
+      return { kind, profileId, tenantId, capacityValue, matchedUserId: null, classification: "AMBIGUOUS_DUPLICATE_EMAIL", reason: "aynı tenant+email'de birden çok User (beklenmez)" };
+    }
+    const sameType = (kind === "lawyer" ? lawyersByKey : staffByKey).get(k) ?? [];
+    if (sameType.length > 1) {
+      return { kind, profileId, tenantId, capacityValue, matchedUserId: null, classification: "AMBIGUOUS_DUPLICATE_EMAIL", reason: "aynı tenant+email'i paylaşan birden çok aynı-tip profil" };
+    }
+    const bothTypes = (lawyersByKey.get(k)?.length ?? 0) > 0 && (staffByKey.get(k)?.length ?? 0) > 0;
+    if (bothTypes) {
+      return { kind, profileId, tenantId, capacityValue, matchedUserId: null, classification: "AMBIGUOUS_BOTH_TYPES", reason: "aynı tenant+email'de hem lawyer hem staff" };
+    }
+    const u = matchedUsers[0];
+    if (anyLinkedUserIds.has(u.id)) {
+      return { kind, profileId, tenantId, capacityValue, matchedUserId: u.id, classification: "BLOCKED_USER_ALREADY_LINKED", reason: "eşleşen User başka bir profile zaten bağlı" };
+    }
+    return { kind, profileId, tenantId, capacityValue, matchedUserId: u.id, classification: "SAFE", reason: "tek-tek exact email match; güvenli auto-link adayı" };
+  };
+
+  for (const l of lawyers) {
+    candidates.push(classifyProfile("lawyer", l.id, l.tenantId, normalizeEmail(l.email), l.lawyerRank, l.userId));
+  }
+  for (const s of staff) {
+    candidates.push(classifyProfile("staff", s.id, s.tenantId, normalizeEmail(s.email), s.staffType, s.userId));
+  }
+
+  // ---- Aggregations ----
+  const isAmbiguous = (c: MatchCandidate) => c.classification === "AMBIGUOUS_DUPLICATE_EMAIL" || c.classification === "AMBIGUOUS_BOTH_TYPES";
+  const isBlocked = (c: MatchCandidate) => c.classification === "BLOCKED_USER_ALREADY_LINKED";
+  const safe = candidates.filter((c) => c.classification === "SAFE");
+  const ambiguousC = candidates.filter(isAmbiguous);
+  const blockedC = candidates.filter(isBlocked);
+  const noUserC = candidates.filter((c) => c.classification === "NO_USER_MATCH");
+
+  // duplicate-email sayıları (aynı tenant+email'i paylaşan profiller)
+  const dupCount = (byKey: Map<string, unknown[]>) => {
+    let n = 0;
+    for (const arr of byKey.values()) if (arr.length > 1) n += arr.length;
+    return n;
+  };
+
+  const fullAuthorityUsers = new Set(safe.filter((c) => c.kind === "lawyer" && c.matchedUserId).map((c) => c.matchedUserId!));
+  const staffCapacityUsers = new Set(safe.filter((c) => c.kind === "staff" && c.matchedUserId).map((c) => c.matchedUserId!));
+  const ambiguousUsers = new Set(ambiguousC.map((c) => c.matchedUserId).filter((x): x is string => !!x));
+  const resolvableUserIds = new Set<string>([...anyLinkedUserIds, ...fullAuthorityUsers, ...staffCapacityUsers]);
+  const unknownUsers = users.filter((u) => !resolvableUserIds.has(u.id)).length;
+
+  const usersWithLawyer = users.filter((u) => lawyerLinkedUserIds.has(u.id)).length;
+  const usersWithStaff = users.filter((u) => staffLinkedUserIds.has(u.id)).length;
+  const usersWithBoth = users.filter((u) => lawyerLinkedUserIds.has(u.id) && staffLinkedUserIds.has(u.id)).length;
+  const usersWithNeither = users.filter((u) => !lawyerLinkedUserIds.has(u.id) && !staffLinkedUserIds.has(u.id)).length;
+
+  const hasDuplicateEmail = candidates.some((c) => c.classification === "AMBIGUOUS_DUPLICATE_EMAIL");
+  const hasBothType = candidates.some((c) => c.classification === "AMBIGUOUS_BOTH_TYPES");
+
+  return {
+    users: {
+      total: users.length,
+      withLawyerProfile: usersWithLawyer,
+      withStaffProfile: usersWithStaff,
+      withNeither: usersWithNeither,
+      withBoth: usersWithBoth,
+    },
+    lawyers: {
+      total: lawyers.length,
+      linkedToUser: lawyers.filter((l) => l.userId).length,
+      unlinked: lawyers.filter((l) => !l.userId).length,
+      duplicateEmailCandidates: dupCount(lawyersByKey),
+    },
+    staff: {
+      total: staff.length,
+      linkedToUser: staff.filter((s) => s.userId).length,
+      unlinked: staff.filter((s) => !s.userId).length,
+      duplicateEmailCandidates: dupCount(staffByKey),
+    },
+    capacity: {
+      fullAuthorityCandidates: fullAuthorityUsers.size,
+      staffCapacityCandidates: staffCapacityUsers.size,
+      unknownUsers,
+      ambiguousUsers: ambiguousUsers.size,
+      blockedRepairCandidates: blockedC.length,
+    },
+    exactMatch: {
+      userEqLawyerEmail: candidates.filter((c) => c.kind === "lawyer" && c.matchedUserId && c.classification !== "ALREADY_LINKED").length,
+      userEqStaffEmail: candidates.filter((c) => c.kind === "staff" && c.matchedUserId && c.classification !== "ALREADY_LINKED").length,
+      oneToOne: safe.length,
+      ambiguous: ambiguousC.length,
+      unsafe: blockedC.length,
+    },
+    conclusion: {
+      safeAutoLinkCandidates: safe.length,
+      manualReviewRequired: noUserC.length + ambiguousC.length + blockedC.length,
+    },
+    flags: {
+      hasAmbiguous: ambiguousC.length > 0,
+      hasDuplicateEmail,
+      hasBothType,
+    },
+    candidates,
+  };
+}
+
+/** SAFE adayları yazma listesine indirger (yalnız --apply yolunda kullanılır). */
+export function selectSafeWrites(report: K1LinkageReport): Array<{ kind: MatchKind; profileId: string; userId: string }> {
+  return report.candidates
+    .filter((c) => c.classification === "SAFE" && c.matchedUserId)
+    .map((c) => ({ kind: c.kind, profileId: c.profileId, userId: c.matchedUserId! }));
+}
+
+export interface ApplyGuardInput {
+  apply: boolean;
+  allowDevDbWrite: boolean;
+  nodeEnv: string | undefined;
+  databaseUrl: string | undefined;
+  flags: K1LinkageReport["flags"];
+}
+
+export interface ApplyGuardResult {
+  mode: "dry-run" | "apply";
+  canApply: boolean;
+  hardStops: string[];
+}
+
+/**
+ * --apply için hard guard değerlendirmesi (SAF). Varsayılan dry-run.
+ * Herhangi bir ambiguous/duplicate/both VARSA tüm apply durdurulur (global hard-stop) —
+ * yanlış-bağlama riski enforcement'tan tehlikeli.
+ */
+export function evaluateApplyGuards(input: ApplyGuardInput): ApplyGuardResult {
+  if (!input.apply) {
+    return { mode: "dry-run", canApply: false, hardStops: [] };
+  }
+  const hardStops: string[] = [];
+  if ((input.nodeEnv ?? "").toLowerCase() === "production") {
+    hardStops.push("NODE_ENV=production → apply yasak");
+  }
+  if (input.databaseUrl && /prod|live|customer/i.test(input.databaseUrl)) {
+    hardStops.push("DATABASE_URL prod/live/customer içeriyor → apply yasak");
+  }
+  if (!input.allowDevDbWrite) {
+    hardStops.push("--allow-dev-db-write yok → dev yazımı bile açık onay ister");
+  }
+  if (input.flags.hasAmbiguous) {
+    hardStops.push("ambiguous match var → apply tümden durur");
+  }
+  if (input.flags.hasDuplicateEmail) {
+    hardStops.push("duplicate email var → apply tümden durur");
+  }
+  if (input.flags.hasBothType) {
+    hardStops.push("lawyer+staff (both) çakışması var → apply tümden durur");
+  }
+  return { mode: "apply", canApply: hardStops.length === 0, hardStops };
+}
+
+/** Raporu K1 CAPACITY LINKAGE REPORT metin düzenine render eder (SAF; PII yok, yalnız sayım). */
+export function formatReport(report: K1LinkageReport): string {
+  const r = report;
+  return [
+    "K1 CAPACITY LINKAGE REPORT",
+    "",
+    "Users:",
+    `- total users: ${r.users.total}`,
+    `- users with lawyer profile: ${r.users.withLawyerProfile}`,
+    `- users with staff profile: ${r.users.withStaffProfile}`,
+    `- users with neither: ${r.users.withNeither}`,
+    `- users with both:   ${r.users.withBoth}   // hard anomaly`,
+    "",
+    "Lawyers:",
+    `- total lawyers: ${r.lawyers.total}`,
+    `- linked to user: ${r.lawyers.linkedToUser}`,
+    `- unlinked: ${r.lawyers.unlinked}`,
+    `- duplicate email candidates: ${r.lawyers.duplicateEmailCandidates}`,
+    "",
+    "StaffMembers:",
+    `- total staff: ${r.staff.total}`,
+    `- linked to user: ${r.staff.linkedToUser}`,
+    `- unlinked: ${r.staff.unlinked}`,
+    `- duplicate email candidates: ${r.staff.duplicateEmailCandidates}`,
+    "",
+    "Capacity:  (link sonrası projeksiyon; mevcut hepsi UNKNOWN — FULL_AUTHORITY=lawyer-capacity ailesi, literal capacity değil)",
+    `- FULL_AUTHORITY candidates: ${r.capacity.fullAuthorityCandidates}`,
+    `- STAFF_CAPACITY candidates: ${r.capacity.staffCapacityCandidates}`,
+    `- UNKNOWN users: ${r.capacity.unknownUsers}`,
+    `- ambiguous users: ${r.capacity.ambiguousUsers}`,
+    `- blocked repair candidates: ${r.capacity.blockedRepairCandidates}`,
+    "",
+    "Exact-match dry-run:",
+    `- user.email == lawyer.email: ${r.exactMatch.userEqLawyerEmail}`,
+    `- user.email == staff.email: ${r.exactMatch.userEqStaffEmail}`,
+    `- one-to-one matches: ${r.exactMatch.oneToOne}`,
+    `- ambiguous matches: ${r.exactMatch.ambiguous}`,
+    `- unsafe matches: ${r.exactMatch.unsafe}`,
+    "",
+    "Conclusion:",
+    `- safe auto-link candidates: ${r.conclusion.safeAutoLinkCandidates}`,
+    `- manual review required: ${r.conclusion.manualReviewRequired}`,
+  ].join("\n");
+}
