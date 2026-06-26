@@ -2,6 +2,10 @@ import { BalanceDisplayShadowDiffService, cutoverReadiness } from '../balance-di
 import type { BalanceDisplayShadowDiffReport } from '../balance-display-shadow-diff.types';
 import type { CaseService } from '../../case/case.service';
 import type { CaseBalanceService, CaseBalanceResult } from '../../interest-engine/orchestration/case-balance.service';
+import {
+  CANONICAL_SUMMARY_ROWS_CONTRACT_VERSION,
+  CANONICAL_SUMMARY_TARGET_ROW_IDS,
+} from '../../interest-engine/orchestration/canonical-summary-rows';
 import { AncillaryType } from '../../interest-engine/types/domain.types';
 
 const GENERATED_AT = '2026-06-24T10:00:00.000Z';
@@ -143,7 +147,7 @@ function collectStringTerms(value: unknown): string[] {
 
 function collectCanonicalAuthorityTerms(report: BalanceDisplayShadowDiffReport): string[] {
   const topLevelCanonicalSurfaces = Object.entries(report as unknown as Record<string, unknown>)
-    .filter(([key]) => key.toLowerCase().includes('canonical'))
+    .filter(([key]) => key.toLowerCase().includes('canonical') && key !== 'canonicalSummaryRows')
     .flatMap(([key, value]) => [key, ...collectStringTerms(value)]);
 
   return [
@@ -160,6 +164,25 @@ function expectCanonicalAuthorityNotToContainTargetRows(report: BalanceDisplaySh
 
   for (const rowId of TARGET_LEGACY_FINANCIAL_ROWS) {
     expect(canonicalAuthorityTerms.some((term) => term.includes(rowId))).toBe(false);
+  }
+}
+
+function expectCanonicalSummaryRowsToRemainUnsupportedShadowStatus(report: BalanceDisplayShadowDiffReport) {
+  expect(report.canonicalSummaryRows).toHaveLength(CANONICAL_SUMMARY_TARGET_ROW_IDS.length);
+  expect(new Set(report.canonicalSummaryRows.map((row) => row.rowId))).toEqual(
+    new Set(CANONICAL_SUMMARY_TARGET_ROW_IDS),
+  );
+
+  for (const row of report.canonicalSummaryRows) {
+    expect(row.status).toBe('UNSUPPORTED');
+    expect(row.amount).toBeNull();
+    expect(row.amount).not.toBe(0);
+    expect(row.currency).toBeNull();
+    expect(row.sourceAuthority).toBe('UNKNOWN');
+    expect(row.affectsPaymentAllocation).toBe(false);
+    expect(row.allocationCategory).toBe('UNSUPPORTED');
+    expect(row.primaryEligible).toBe(false);
+    expect(row.contractVersion).toBe(CANONICAL_SUMMARY_ROWS_CONTRACT_VERSION);
   }
 }
 
@@ -246,6 +269,22 @@ describe('BalanceDisplayShadowDiffService', () => {
     ]));
   });
 
+  it('exposes canonicalSummaryRows as unsupported shadow-only status rows without changing primary display', async () => {
+    const legacy = legacySummary({
+      tazminat: 321,
+      komisyon: 654,
+      takipOncesiFaiz: 987,
+    });
+    const { service } = makeService(legacy);
+
+    const report = await service.compare('tenant-1', 'case-1', '2026-06-24', GENERATED_AT);
+
+    expectShadowClassificationToRemainShadowOnly(report);
+    expectPrimaryDisplayToRemainUnchanged(report);
+    expectCanonicalSummaryRowsToRemainUnsupportedShadowStatus(report);
+    expectLegacyRawNotPromotedToCanonicalRows(report);
+  });
+
   it('balance-display-shadow-diff keeps target legacy financial rows outside canonical row authority while shadow remains shadow-only and primary display is unchanged', async () => {
     const legacy = legacySummary({
       tazminat: 321,
@@ -258,6 +297,7 @@ describe('BalanceDisplayShadowDiffService', () => {
 
     expectShadowClassificationToRemainShadowOnly(report);
     expectPrimaryDisplayToRemainUnchanged(report);
+    expectCanonicalSummaryRowsToRemainUnsupportedShadowStatus(report);
     expectCanonicalAuthorityNotToContainTargetRows(report);
     expectLegacyRawNotPromotedToCanonicalRows(report);
   });

@@ -1,3 +1,5 @@
+import type { CanonicalSummaryShadowStatusRow } from '../interest-engine/orchestration/canonical-summary-rows';
+
 export type ShadowDiffClassification =
   | 'EXACT_MATCH'
   | 'EXPECTED_CANONICAL_DIVERGENCE'
@@ -76,6 +78,7 @@ export interface BalanceDisplayShadowDiffReport {
   sourceVersion: string;
   mode: 'SHADOW_ONLY';
   primaryDisplayUnchanged: true;
+  canonicalSummaryRows: CanonicalSummaryShadowStatusRow[];
   sources: {
     legacyCalculationSummary: {
       available: boolean;
