@@ -122,22 +122,30 @@ export function SettingsDrawer({ title, onClose, children }: { title: string; on
   );
 }
 
-// A-2: Workbench detail primitifleri.
-// Section = "form kartı" değil, "belge bölümü": başlık + ince ayraç + content-width satırlar.
+// A-2/A-3b: Workbench section — grup rengine göre kalın renkli çerçeveli kart.
+const SECTION_ACCENT: Record<string, { box: string; divider: string; title: string }> = {
+  blue: { box: "border-blue-300 bg-blue-50/30", divider: "border-blue-200", title: "text-blue-800" },
+  teal: { box: "border-teal-300 bg-teal-50/30", divider: "border-teal-200", title: "text-teal-800" },
+  indigo: { box: "border-indigo-300 bg-indigo-50/30", divider: "border-indigo-200", title: "text-indigo-800" },
+};
+
 export function SettingsSection({
   title,
   description,
   children,
+  accent = "blue",
 }: {
   title: string;
   description?: string;
   children: ReactNode;
+  accent?: "blue" | "teal" | "indigo";
 }) {
+  const a = SECTION_ACCENT[accent] ?? SECTION_ACCENT.blue;
   return (
-    <section className="mb-7 last:mb-0">
-      <div className="mb-3 border-b border-gray-100 pb-1.5">
-        <h3 className="text-[10.5px] font-semibold tracking-wide text-slate-600">{title}</h3>
-        {description && <p className="text-[11px] text-gray-400 mt-0.5">{description}</p>}
+    <section className={`mb-4 last:mb-0 rounded-xl border-2 ${a.box} p-4`}>
+      <div className={`mb-3 border-b-2 ${a.divider} pb-2`}>
+        <h3 className={`text-[12.5px] font-bold tracking-wide ${a.title}`}>{title}</h3>
+        {description && <p className="text-[11px] text-gray-500 mt-0.5">{description}</p>}
       </div>
       <div className="flex flex-wrap gap-x-4 gap-y-3">{children}</div>
     </section>
@@ -165,7 +173,7 @@ export function WorkbenchHeader({
   return (
     <div className="sticky top-0 z-10 flex items-center gap-3 border-b border-gray-200 bg-white px-5 py-2.5">
       <div className="min-w-0 flex-1">
-        <h2 className="text-sm font-semibold text-gray-800 leading-tight truncate">{title}</h2>
+        <h2 className="text-[15px] font-bold text-gray-900 leading-tight truncate">{title}</h2>
         {description && <p className="text-[11px] text-gray-500 truncate">{description}</p>}
       </div>
       <div className="flex items-center gap-3 shrink-0">

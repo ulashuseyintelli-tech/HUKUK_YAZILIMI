@@ -557,55 +557,43 @@ function OfficeSettingsInner() {
             onReset={resetOffice}
             status={officeStatus}
           />
-          <div className="flex gap-6 px-5 py-4">
+          <div className="px-5 py-4">
             <div className="w-full max-w-[740px]">
               <SettingsSection title="RESMİ KİMLİK">
                 <div style={{ width: 360 }}>
-                  <label className="block text-[11px] text-gray-500 mb-1">Büro adı</label>
-                  <input value={officeForm.name} onChange={e => setOfficeForm({ ...officeForm, name: e.target.value })} className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-[13px]" />
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Büro adı</label>
+                  <input value={officeForm.name} onChange={e => setOfficeForm({ ...officeForm, name: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
                 </div>
                 <div style={{ width: 240 }}>
-                  <label className="block text-[11px] text-gray-500 mb-1">Baro</label>
-                  <input value={officeForm.barAssociation} onChange={e => setOfficeForm({ ...officeForm, barAssociation: e.target.value })} className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-[13px]" />
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Baro</label>
+                  <input value={officeForm.barAssociation} onChange={e => setOfficeForm({ ...officeForm, barAssociation: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
                 </div>
               </SettingsSection>
               <SettingsSection title="İLETİŞİM">
                 <div style={{ width: 200 }}>
-                  <label className="block text-[11px] text-gray-500 mb-1">Telefon</label>
-                  <input value={officeForm.phone} onChange={e => setOfficeForm({ ...officeForm, phone: e.target.value })} className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-[13px]" />
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Telefon</label>
+                  <input value={officeForm.phone} onChange={e => setOfficeForm({ ...officeForm, phone: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
                 </div>
                 <div style={{ width: 340 }}>
-                  <label className="block text-[11px] text-gray-500 mb-1">E-posta</label>
-                  <input value={officeForm.email} onChange={e => setOfficeForm({ ...officeForm, email: e.target.value })} className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-[13px]" />
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">E-posta</label>
+                  <input value={officeForm.email} onChange={e => setOfficeForm({ ...officeForm, email: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
                 </div>
               </SettingsSection>
               <SettingsSection title="ADRES">
                 <div style={{ width: "100%" }}>
-                  <label className="block text-[11px] text-gray-500 mb-1">Adres</label>
-                  <input value={officeForm.address} onChange={e => setOfficeForm({ ...officeForm, address: e.target.value })} className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-[13px]" />
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Adres</label>
+                  <input value={officeForm.address} onChange={e => setOfficeForm({ ...officeForm, address: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
                 </div>
                 <div style={{ width: 180 }}>
-                  <label className="block text-[11px] text-gray-500 mb-1">İl</label>
-                  <input value={officeForm.city} onChange={e => setOfficeForm({ ...officeForm, city: e.target.value })} className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-[13px]" />
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">İl</label>
+                  <input value={officeForm.city} onChange={e => setOfficeForm({ ...officeForm, city: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
                 </div>
                 <div style={{ width: 180 }}>
-                  <label className="block text-[11px] text-gray-500 mb-1">İlçe</label>
-                  <input value={officeForm.district} onChange={e => setOfficeForm({ ...officeForm, district: e.target.value })} className="w-full border border-gray-300 rounded-md px-2.5 py-1.5 text-[13px]" />
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">İlçe</label>
+                  <input value={officeForm.district} onChange={e => setOfficeForm({ ...officeForm, district: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
                 </div>
               </SettingsSection>
             </div>
-            <aside className="hidden min-[1600px]:block w-[300px] shrink-0">
-              <div className="rounded-lg border border-gray-200 bg-slate-50 p-3 text-[11px]">
-                <p className="text-[10px] font-semibold tracking-wide text-slate-600 mb-2">KAYIT ÖZETİ</p>
-                <div className="flex justify-between text-slate-600 mb-1"><span>Değiştiren</span><span>Admin</span></div>
-                <div className="flex justify-between text-slate-600 mb-3"><span>Durum</span><span className={officeDirty ? "text-amber-700" : "text-green-700"}>{officeDirty ? "Kaydedilmemiş" : "Güncel"}</span></div>
-                <p className="text-[10px] font-semibold tracking-wide text-slate-600 mb-2">NEREDE KULLANILIR</p>
-                <p className="text-slate-500 mb-1">Evrak şablonları</p>
-                <p className="text-slate-500 mb-1">Takip çıktıları</p>
-                <p className="text-slate-500 mb-1">Portal iletişim</p>
-                <p className="text-slate-500">Bildirim gönderici adı</p>
-              </div>
-            </aside>
           </div>
         </div>
         )}
@@ -825,51 +813,73 @@ function OfficeSettingsInner() {
         </div>
         )}
         {drawerSection === "smtp" && (
-        <div className="bg-white rounded-lg border p-3 flex flex-col text-xs">
-            {/* E-posta (SMTP) */}
-            <div className="p-2 border rounded bg-gray-50">
-              <p className="font-medium text-gray-700 mb-2">📧 E-posta (SMTP)</p>
-              <div className="space-y-1">
-                <div className="grid grid-cols-2 gap-1">
-                  <input value={smtpForm.smtpHost || ""} onChange={e => setSmtpForm({...smtpForm, smtpHost: e.target.value})} placeholder="SMTP Sunucu" className="border rounded px-2 py-1 text-xs" />
-                  <input type="number" value={smtpForm.smtpPort || 587} onChange={e => setSmtpForm({...smtpForm, smtpPort: parseInt(e.target.value)})} placeholder="Port" className="border rounded px-2 py-1 text-xs" />
-                </div>
-                <input value={smtpForm.smtpUser || ""} onChange={e => setSmtpForm({...smtpForm, smtpUser: e.target.value})} placeholder="Kullanıcı (E-posta)" className="w-full border rounded px-2 py-1 text-xs" />
-                <input type="password" value={smtpForm.smtpPass || ""} onChange={e => setSmtpForm({...smtpForm, smtpPass: e.target.value})} placeholder="Şifre" className="w-full border rounded px-2 py-1 text-xs" />
-                <div className="grid grid-cols-2 gap-1">
-                  <input value={smtpForm.smtpFromName || ""} onChange={e => setSmtpForm({...smtpForm, smtpFromName: e.target.value})} placeholder="Gönderen Adı" className="border rounded px-2 py-1 text-xs" />
-                  <input value={smtpForm.smtpFromEmail || ""} onChange={e => setSmtpForm({...smtpForm, smtpFromEmail: e.target.value})} placeholder="Gönderen E-posta" className="border rounded px-2 py-1 text-xs" />
-                </div>
-                {smtpTestResult && <div className={`p-1 rounded text-xs ${smtpTestResult.success ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{smtpTestResult.message}</div>}
-                <div className="flex gap-1">
-                  <button onClick={handleTestSmtp} disabled={testingSmtp || !smtpForm.smtpHost} className="flex-1 px-2 py-1 border text-xs rounded hover:bg-white disabled:opacity-50">{testingSmtp ? "..." : "Test"}</button>
-                  <button onClick={handleSaveSmtp} disabled={saving} className="flex-1 px-2 py-1 bg-blue-500 text-white text-xs rounded disabled:opacity-50">{saving ? "..." : "Kaydet"}</button>
-                </div>
+        <div className="h-full flex flex-col bg-white">
+          <WorkbenchHeader title="SMTP" description="E-posta gönderim sunucusu" saving={saving} onSave={handleSaveSmtp} status={smtpTestResult ? { ok: smtpTestResult.success, msg: smtpTestResult.message } : null} />
+          <div className="px-5 py-4">
+            <SettingsSection title="E-POSTA (SMTP)" accent="teal">
+              <div style={{ width: 280 }}>
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">SMTP Sunucu</label>
+                <input value={smtpForm.smtpHost || ""} onChange={e => setSmtpForm({ ...smtpForm, smtpHost: e.target.value })} placeholder="srvc...com" className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none" />
               </div>
+              <div style={{ width: 120 }}>
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Port</label>
+                <input type="number" value={smtpForm.smtpPort || 587} onChange={e => setSmtpForm({ ...smtpForm, smtpPort: parseInt(e.target.value) })} className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none" />
+              </div>
+              <div style={{ width: 280 }}>
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Kullanıcı (E-posta)</label>
+                <input value={smtpForm.smtpUser || ""} onChange={e => setSmtpForm({ ...smtpForm, smtpUser: e.target.value })} className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none" />
+              </div>
+              <div style={{ width: 200 }}>
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Şifre</label>
+                <input type="password" value={smtpForm.smtpPass || ""} onChange={e => setSmtpForm({ ...smtpForm, smtpPass: e.target.value })} placeholder="••••••••" className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none" />
+              </div>
+              <div style={{ width: 220 }}>
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Gönderen Adı</label>
+                <input value={smtpForm.smtpFromName || ""} onChange={e => setSmtpForm({ ...smtpForm, smtpFromName: e.target.value })} className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none" />
+              </div>
+              <div style={{ width: 280 }}>
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Gönderen E-posta</label>
+                <input value={smtpForm.smtpFromEmail || ""} onChange={e => setSmtpForm({ ...smtpForm, smtpFromEmail: e.target.value })} className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none" />
+              </div>
+            </SettingsSection>
+            <div className="flex items-center gap-3 px-1">
+              <button onClick={handleTestSmtp} disabled={testingSmtp || !smtpForm.smtpHost} className="px-3.5 py-1.5 rounded-md border border-gray-300 text-[13px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">{testingSmtp ? "..." : "Test et"}</button>
+              {smtpTestResult && <span className={`text-[12px] font-medium ${smtpTestResult.success ? "text-green-700" : "text-red-700"}`}>{smtpTestResult.message}</span>}
             </div>
+          </div>
         </div>
         )}
         {drawerSection === "sms" && (
-        <div className="bg-white rounded-lg border p-3 flex flex-col text-xs">
-            {/* SMS */}
-            <div className="p-2 border rounded bg-gray-50">
-              <p className="font-medium text-gray-700 mb-2">📱 SMS</p>
-              <div className="space-y-1">
-                <select value={smsForm.smsProvider} onChange={e => setSmsForm({...smsForm, smsProvider: e.target.value})} className="w-full border rounded px-2 py-1 text-xs">
-                  <option value="">SMS Sağlayıcı Seçin</option>
+        <div className="h-full flex flex-col bg-white">
+          <WorkbenchHeader title="SMS" description="SMS sağlayıcı ayarları" saving={saving} onSave={handleSaveSms} />
+          <div className="px-5 py-4">
+            <SettingsSection title="SMS SAĞLAYICI" accent="teal">
+              <div style={{ width: 240 }}>
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Sağlayıcı</label>
+                <select value={smsForm.smsProvider} onChange={e => setSmsForm({ ...smsForm, smsProvider: e.target.value })} className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none">
+                  <option value="">Seçiniz</option>
                   <option value="NETGSM">NetGSM</option>
                   <option value="ILETI_MERKEZI">İleti Merkezi</option>
                 </select>
-                <input value={smsForm.smsApiKey} onChange={e => setSmsForm({...smsForm, smsApiKey: e.target.value})} placeholder="API Key / Kullanıcı Kodu" className="w-full border rounded px-2 py-1 text-xs" />
-                <input type="password" value={smsForm.smsApiSecret} onChange={e => setSmsForm({...smsForm, smsApiSecret: e.target.value})} placeholder="API Secret / Şifre" className="w-full border rounded px-2 py-1 text-xs" />
-                <input value={smsForm.smsSender} onChange={e => setSmsForm({...smsForm, smsSender: e.target.value})} placeholder="Gönderen Adı (Başlık)" className="w-full border rounded px-2 py-1 text-xs" />
-                {smsTestResult && <div className={`p-1 rounded text-xs ${smsTestResult.status === "verified" ? "bg-green-100 text-green-700" : smsTestResult.status === "unverified" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>{smsTestResult.message}</div>}
-                <div className="flex gap-1">
-                  <button onClick={handleTestSms} disabled={testingSms || !smsForm.smsProvider} className="flex-1 px-2 py-1 border text-xs rounded hover:bg-white disabled:opacity-50">{testingSms ? "..." : "Test"}</button>
-                  <button onClick={handleSaveSms} disabled={saving} className="flex-1 px-2 py-1 bg-green-500 text-white text-xs rounded disabled:opacity-50">{saving ? "..." : "Kaydet"}</button>
-                </div>
               </div>
+              <div style={{ width: 240 }}>
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">API Key / Kullanıcı Kodu</label>
+                <input value={smsForm.smsApiKey} onChange={e => setSmsForm({ ...smsForm, smsApiKey: e.target.value })} className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none" />
+              </div>
+              <div style={{ width: 240 }}>
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">API Secret / Şifre</label>
+                <input type="password" value={smsForm.smsApiSecret} onChange={e => setSmsForm({ ...smsForm, smsApiSecret: e.target.value })} className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none" />
+              </div>
+              <div style={{ width: 220 }}>
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Gönderen Adı (Başlık)</label>
+                <input value={smsForm.smsSender} onChange={e => setSmsForm({ ...smsForm, smsSender: e.target.value })} className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none" />
+              </div>
+            </SettingsSection>
+            <div className="flex items-center gap-3 px-1">
+              <button onClick={handleTestSms} disabled={testingSms || !smsForm.smsProvider} className="px-3.5 py-1.5 rounded-md border border-gray-300 text-[13px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">{testingSms ? "..." : "Test et"}</button>
+              {smsTestResult && <span className={`text-[12px] font-medium ${smsTestResult.status === "verified" ? "text-green-700" : smsTestResult.status === "unverified" ? "text-amber-700" : "text-red-700"}`}>{smsTestResult.message}</span>}
             </div>
+          </div>
         </div>
         )}
         {drawerSection === "greeting" && (
@@ -904,81 +914,82 @@ function OfficeSettingsInner() {
         </div>
         )}
         {drawerSection === "escalation" && (
-        <div className="bg-white rounded-lg border p-3 flex flex-col">
-          <h2 className="text-sm font-semibold mb-2 flex items-center gap-1">⏱️ Görev ve Eskalasyon Ayarları</h2>
-          <div className="flex-1 space-y-3 text-xs">
-            <p className="text-[10px] text-gray-500">Operasyonel eksik görevleri (ör. müvekkil iletişim bilgisi) zamanında çözülmezse büro-geneli politikaya göre eskale edilir. (Motor sonraki sürümde aktifleşir.)</p>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block font-medium text-gray-700 mb-0.5">Yönetici Avukat(lar)</label>
-                <div className="border rounded p-1.5 max-h-28 overflow-auto space-y-0.5">
-                  {(office?.lawyers || []).length === 0 && <p className="text-gray-400">Avukat yok</p>}
-                  {(office?.lawyers || []).map((l: any) => (
-                    <label key={l.id} className="flex items-center gap-1.5">
-                      <input type="checkbox" checked={escalationForm.escalationManagerLawyerIds.includes(l.id)} onChange={e => {
-                        setEscalationForm(prev => ({ ...prev, escalationManagerLawyerIds: e.target.checked ? [...prev.escalationManagerLawyerIds, l.id] : prev.escalationManagerLawyerIds.filter(id => id !== l.id) }));
-                      }} />
-                      {l.name} {l.surname}
-                    </label>
-                  ))}
+        <div className="h-full flex flex-col bg-white">
+          <WorkbenchHeader title="Görev & Eskalasyon" description="Geciken görevlerin kademeli bildirim politikası" saving={saving} onSave={handleSaveEscalation} status={escalationStatus} />
+          <div className="px-5 py-4 space-y-4 text-[13px]">
+            <div className="rounded-xl border-2 border-indigo-300 bg-indigo-50/30 p-4 space-y-3">
+              <h3 className="text-[12.5px] font-bold tracking-wide text-indigo-800 border-b-2 border-indigo-200 pb-2">OPERASYONEL GÖREV ESKALASYONU</h3>
+              <p className="text-[11px] text-gray-500">Müvekkil iletişim bilgisi gibi eksik operasyonel görevler zamanında çözülmezse büro-geneli politikaya göre eskale edilir. (Motor sonraki sürümde aktifleşir.)</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Yönetici Avukat(lar)</label>
+                  <div className="border-2 border-indigo-200 rounded-md p-2 max-h-32 overflow-auto space-y-0.5 bg-white">
+                    {(office?.lawyers || []).length === 0 && <p className="text-gray-400">Avukat yok</p>}
+                    {(office?.lawyers || []).map((l: any) => (
+                      <label key={l.id} className="flex items-center gap-1.5">
+                        <input type="checkbox" checked={escalationForm.escalationManagerLawyerIds.includes(l.id)} onChange={e => {
+                          setEscalationForm(prev => ({ ...prev, escalationManagerLawyerIds: e.target.checked ? [...prev.escalationManagerLawyerIds, l.id] : prev.escalationManagerLawyerIds.filter(id => id !== l.id) }));
+                        }} />
+                        {l.name} {l.surname}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Kurucu/Ortak(lar)</label>
+                  <div className="border-2 border-indigo-200 rounded-md p-2 max-h-32 overflow-auto space-y-0.5 bg-white">
+                    {(office?.lawyers || []).length === 0 && <p className="text-gray-400">Avukat yok</p>}
+                    {(office?.lawyers || []).map((l: any) => (
+                      <label key={l.id} className="flex items-center gap-1.5">
+                        <input type="checkbox" checked={escalationForm.escalationFounderLawyerIds.includes(l.id)} onChange={e => {
+                          setEscalationForm(prev => ({ ...prev, escalationFounderLawyerIds: e.target.checked ? [...prev.escalationFounderLawyerIds, l.id] : prev.escalationFounderLawyerIds.filter(id => id !== l.id) }));
+                        }} />
+                        {l.name} {l.surname}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">İlk hatırlatma (gün)</label>
+                  <input type="number" min={1} value={escalationForm.opReminderDays} onChange={e => setEscalationForm({...escalationForm, opReminderDays: parseInt(e.target.value) || 0})} className="w-full border-2 border-indigo-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-indigo-500 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Kurucu eskalasyonu (gün)</label>
+                  <input type="number" min={1} value={escalationForm.opFounderDays} onChange={e => setEscalationForm({...escalationForm, opFounderDays: parseInt(e.target.value) || 0})} className="w-full border-2 border-indigo-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-indigo-500 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Periyodik tekrar (ay)</label>
+                  <input type="number" min={1} value={escalationForm.opRepeatMonths} onChange={e => setEscalationForm({...escalationForm, opRepeatMonths: parseInt(e.target.value) || 0})} className="w-full border-2 border-indigo-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-indigo-500 focus:outline-none" />
                 </div>
               </div>
               <div>
-                <label className="block font-medium text-gray-700 mb-0.5">Kurucu/Ortak(lar)</label>
-                <div className="border rounded p-1.5 max-h-28 overflow-auto space-y-0.5">
-                  {(office?.lawyers || []).length === 0 && <p className="text-gray-400">Avukat yok</p>}
-                  {(office?.lawyers || []).map((l: any) => (
-                    <label key={l.id} className="flex items-center gap-1.5">
-                      <input type="checkbox" checked={escalationForm.escalationFounderLawyerIds.includes(l.id)} onChange={e => {
-                        setEscalationForm(prev => ({ ...prev, escalationFounderLawyerIds: e.target.checked ? [...prev.escalationFounderLawyerIds, l.id] : prev.escalationFounderLawyerIds.filter(id => id !== l.id) }));
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Operasyonel Görev Alıcıları (ilk sahip)</label>
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  {STAFF_TYPES.filter(t => t.value !== "DIGER").map(t => (
+                    <label key={t.value} className="flex items-center gap-1.5">
+                      <input type="checkbox" checked={escalationForm.opStaffTypes.includes(t.value)} onChange={e => {
+                        setEscalationForm(prev => ({ ...prev, opStaffTypes: e.target.checked ? [...prev.opStaffTypes, t.value] : prev.opStaffTypes.filter(v => v !== t.value) }));
                       }} />
-                      {l.name} {l.surname}
+                      {t.label}
                     </label>
                   ))}
                 </div>
+                <p className="text-[11px] text-gray-500 mt-1">Operasyonel eksik görevini önce bu personel türleri görür / bildirim alır (motor PR-3b'de).</p>
+              </div>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-1.5"><input type="checkbox" checked={escalationForm.opEmailEnabled} onChange={e => setEscalationForm({...escalationForm, opEmailEnabled: e.target.checked})} /> E-posta aktif</label>
+                <label className="flex items-center gap-1.5"><input type="checkbox" checked={escalationForm.opSmsEnabled} onChange={e => setEscalationForm({...escalationForm, opSmsEnabled: e.target.checked})} /> SMS aktif</label>
+                <label className="flex items-center gap-1.5 text-gray-400" title="WhatsApp gönderimi yakında"><input type="checkbox" disabled /> WhatsApp (yakında)</label>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-xl border-2 border-indigo-300 bg-indigo-50/30 p-4">
+              <h3 className="text-[12.5px] font-bold tracking-wide text-indigo-800 border-b-2 border-indigo-200 pb-2 mb-3">📁 DOSYA GÖREVİ ESKALASYONU</h3>
+              <p className="text-[11px] text-gray-500 mb-3">Dosyaya bağlı otomatik görevler (ör. tebligat iade, ihbarname, masraf takibi) önce Dosya Sorumlusu'na, çözülmezse sırasıyla Takım Lideri → Yönetici Avukat → Kurucu'ya bildirilir. (Motor şu an kapalı; bu ayarlar açıldığında geçerli olur.)</p>
               <div>
-                <label className="block font-medium text-gray-700 mb-0.5">İlk hatırlatma (gün)</label>
-                <input type="number" min={1} value={escalationForm.opReminderDays} onChange={e => setEscalationForm({...escalationForm, opReminderDays: parseInt(e.target.value) || 0})} className="w-full border rounded px-2 py-1 text-xs" />
-              </div>
-              <div>
-                <label className="block font-medium text-gray-700 mb-0.5">Kurucu eskalasyonu (gün)</label>
-                <input type="number" min={1} value={escalationForm.opFounderDays} onChange={e => setEscalationForm({...escalationForm, opFounderDays: parseInt(e.target.value) || 0})} className="w-full border rounded px-2 py-1 text-xs" />
-              </div>
-              <div>
-                <label className="block font-medium text-gray-700 mb-0.5">Periyodik tekrar (ay)</label>
-                <input type="number" min={1} value={escalationForm.opRepeatMonths} onChange={e => setEscalationForm({...escalationForm, opRepeatMonths: parseInt(e.target.value) || 0})} className="w-full border rounded px-2 py-1 text-xs" />
-              </div>
-            </div>
-            <div>
-              <label className="block font-medium text-gray-700 mb-1">Operasyonel Görev Alıcıları (ilk sahip)</label>
-              <div className="flex flex-wrap gap-x-4 gap-y-1">
-                {STAFF_TYPES.filter(t => t.value !== "DIGER").map(t => (
-                  <label key={t.value} className="flex items-center gap-1.5">
-                    <input type="checkbox" checked={escalationForm.opStaffTypes.includes(t.value)} onChange={e => {
-                      setEscalationForm(prev => ({ ...prev, opStaffTypes: e.target.checked ? [...prev.opStaffTypes, t.value] : prev.opStaffTypes.filter(v => v !== t.value) }));
-                    }} />
-                    {t.label}
-                  </label>
-                ))}
-              </div>
-              <p className="text-[10px] text-gray-500 mt-0.5">Operasyonel eksik görevini önce bu personel türleri görür / bildirim alır (motor PR-3b'de).</p>
-            </div>
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-1.5"><input type="checkbox" checked={escalationForm.opEmailEnabled} onChange={e => setEscalationForm({...escalationForm, opEmailEnabled: e.target.checked})} /> E-posta aktif</label>
-              <label className="flex items-center gap-1.5"><input type="checkbox" checked={escalationForm.opSmsEnabled} onChange={e => setEscalationForm({...escalationForm, opSmsEnabled: e.target.checked})} /> SMS aktif</label>
-              <label className="flex items-center gap-1.5 text-gray-400" title="WhatsApp gönderimi yakında"><input type="checkbox" disabled /> WhatsApp (yakında)</label>
-            </div>
-
-            {/* D-G5: Dosya Görevi Eskalasyonu (case-task; operasyonel bölümden AYRI). Motor flag ile kapalı. */}
-            <div className="border-t pt-2 mt-1">
-              <h3 className="font-semibold text-gray-700 mb-1 flex items-center gap-1">📁 Dosya Görevi Eskalasyonu</h3>
-              <p className="text-[10px] text-gray-500 mb-2">Dosyaya bağlı otomatik görevler (ör. tebligat iade, ihbarname, masraf takibi) önce Dosya Sorumlusu'na, çözülmezse sırasıyla Takım Lideri → Yönetici Avukat → Kurucu'ya bildirilir. (Motor şu an kapalı; bu ayarlar açıldığında geçerli olur.)</p>
-              <div>
-                <label className="block font-medium text-gray-700 mb-0.5">Takım Lideri Avukat(lar)</label>
-                <div className="border rounded p-1.5 max-h-28 overflow-auto space-y-0.5">
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Takım Lideri Avukat(lar)</label>
+                <div className="border-2 border-indigo-200 rounded-md p-2 max-h-32 overflow-auto space-y-0.5 bg-white">
                   {(office?.lawyers || []).length === 0 && <p className="text-gray-400">Avukat yok</p>}
                   {(office?.lawyers || []).map((l: any) => (
                     <label key={l.id} className="flex items-center gap-1.5">
@@ -989,25 +1000,23 @@ function OfficeSettingsInner() {
                     </label>
                   ))}
                 </div>
-                <p className="text-[10px] text-gray-500 mt-0.5">Boş bırakılırsa Takım Lideri kademesi atlanır → doğrudan Yönetici Avukat'a geçilir.</p>
+                <p className="text-[11px] text-gray-500 mt-1">Boş bırakılırsa Takım Lideri kademesi atlanır → doğrudan Yönetici Avukat'a geçilir.</p>
               </div>
-              <div className="grid grid-cols-3 gap-2 mt-2">
+              <div className="grid grid-cols-3 gap-3 mt-3">
                 <div>
-                  <label className="block font-medium text-gray-700 mb-0.5">Sorumlu → Lider (gün)</label>
-                  <input type="number" min={1} value={escalationForm.caseTaskOwnerDays} onChange={e => setEscalationForm({...escalationForm, caseTaskOwnerDays: parseInt(e.target.value) || 0})} className="w-full border rounded px-2 py-1 text-xs" />
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Sorumlu → Lider (gün)</label>
+                  <input type="number" min={1} value={escalationForm.caseTaskOwnerDays} onChange={e => setEscalationForm({...escalationForm, caseTaskOwnerDays: parseInt(e.target.value) || 0})} className="w-full border-2 border-indigo-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-indigo-500 focus:outline-none" />
                 </div>
                 <div>
-                  <label className="block font-medium text-gray-700 mb-0.5">Lider → Yönetici (gün)</label>
-                  <input type="number" min={1} value={escalationForm.caseTaskTeamLeadDays} onChange={e => setEscalationForm({...escalationForm, caseTaskTeamLeadDays: parseInt(e.target.value) || 0})} className="w-full border rounded px-2 py-1 text-xs" />
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Lider → Yönetici (gün)</label>
+                  <input type="number" min={1} value={escalationForm.caseTaskTeamLeadDays} onChange={e => setEscalationForm({...escalationForm, caseTaskTeamLeadDays: parseInt(e.target.value) || 0})} className="w-full border-2 border-indigo-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-indigo-500 focus:outline-none" />
                 </div>
                 <div>
-                  <label className="block font-medium text-gray-700 mb-0.5">Yönetici → Kurucu (gün)</label>
-                  <input type="number" min={1} value={escalationForm.caseTaskManagerDays} onChange={e => setEscalationForm({...escalationForm, caseTaskManagerDays: parseInt(e.target.value) || 0})} className="w-full border rounded px-2 py-1 text-xs" />
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Yönetici → Kurucu (gün)</label>
+                  <input type="number" min={1} value={escalationForm.caseTaskManagerDays} onChange={e => setEscalationForm({...escalationForm, caseTaskManagerDays: parseInt(e.target.value) || 0})} className="w-full border-2 border-indigo-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-indigo-500 focus:outline-none" />
                 </div>
               </div>
             </div>
-            {escalationStatus && <div className={`p-1 rounded text-xs text-center ${escalationStatus.ok ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{escalationStatus.msg}</div>}
-            <button onClick={handleSaveEscalation} disabled={saving} className="w-full px-2 py-1 bg-blue-600 text-white text-xs rounded disabled:opacity-50">{saving ? "..." : "Kaydet"}</button>
           </div>
         </div>
         )}
