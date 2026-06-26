@@ -2,11 +2,17 @@ import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/co
 import { CaseStatusService } from './case-status.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { GuidedOpenObserveService } from '../permission-diagnostics/guided-open-observe.service';
+import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { LegalCaseStatus } from '@prisma/client';
 
 @Controller('case-status')
 export class CaseStatusController {
-  constructor(private readonly caseStatusService: CaseStatusService) {}
+  constructor(
+    private readonly caseStatusService: CaseStatusService,
+    // P2b-2c-2: CHANGE_STATUS Guided-Open observe adapter (diagnostic only; engelleme yok)
+    private readonly guidedOpenObserve: GuidedOpenObserveService,
+  ) {}
 
   // Tüm statüleri listele
   @Get('list')
@@ -21,6 +27,7 @@ export class CaseStatusController {
   /// Çağrıldığı yerler:
   /// - CaseStatusController.changeStatus() → POST /case-status/:caseId/change (frontend BulkOperationsPanel → api.changeCaseStatus)
   /// P2b-2c-1 hardening: METHOD-level JwtAuthGuard + truthful @CurrentUser actor/tenant; body.userId YOK SAYILIR; cross-tenant → 404.
+  /// P2b-2c-2: PRE-action CHANGE_STATUS observe (diagnostic only; enforced=false, best-effort; mutation davranışı/response DEĞİŞMEDİ).
   /// </remarks>
   // Dosya statüsünü değiştir
   @Post(':caseId/change')
@@ -32,6 +39,14 @@ export class CaseStatusController {
     // body.userId DEPRECATED: artık OTORİTER DEĞİL, YOK SAYILIR (truthful actor @CurrentUser("id")'dan gelir).
     @Body() body: { status: LegalCaseStatus; reason?: string; userId?: string },
   ) {
+    // P2b-2c-2 CHANGE_STATUS observe (PRE-action; JwtAuthGuard'dan SONRA; enforced=false, best-effort, engelleme YOK).
+    // GİZLİLİK: body.status/reason observe'a GEÇMEZ (yalnız actionCode + caseId). body.userId YOK SAYILIR.
+    await this.guidedOpenObserve.observe({
+      actorUserId,
+      tenantId,
+      caseId,
+      actionCode: ActionCode.CHANGE_STATUS,
+    });
     const result = await this.caseStatusService.changeStatus(
       tenantId,
       caseId,

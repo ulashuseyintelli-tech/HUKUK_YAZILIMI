@@ -6,6 +6,8 @@ import * as request from "supertest";
 import { CaseStatusService } from "../case-status.service";
 import { CaseStatusController } from "../case-status.controller";
 import { JwtAuthGuard } from "../../auth/guards/jwt-auth.guard";
+import { GuidedOpenObserveService } from "../../permission-diagnostics/guided-open-observe.service";
+import { ActionCode } from "../../policy-engine/types/action-code.enum";
 
 /**
  * P2b-2c-1 — CHANGE_STATUS hardening (Option A) testleri.
@@ -70,8 +72,20 @@ describe("P2b-2c-1 — CaseStatusService.changeStatus hardening", () => {
 describe("P2b-2c-1 — CaseStatusController.changeStatus hardening", () => {
   const mk = () => {
     const service = { changeStatus: jest.fn().mockResolvedValue({ id: "c1", caseStatus: "ISLEMDE" }) };
-    return { controller: new CaseStatusController(service as unknown as CaseStatusService), service };
+    const observe = { observe: jest.fn().mockResolvedValue(undefined) };
+    const controller = new CaseStatusController(
+      service as unknown as CaseStatusService,
+      observe as unknown as GuidedOpenObserveService,
+    );
+    return { controller, service, observe };
   };
+
+  const prevMode = process.env.GUIDED_OPEN_AUTHZ_MODE;
+  afterEach(() => {
+    if (prevMode === undefined) delete process.env.GUIDED_OPEN_AUTHZ_MODE;
+    else process.env.GUIDED_OPEN_AUTHZ_MODE = prevMode;
+    jest.clearAllMocks();
+  });
 
   it("6. actor=@CurrentUser('id') service'e geçer; body.userId YOK SAYILIR", async () => {
     const { controller, service } = mk();
@@ -102,9 +116,31 @@ describe("P2b-2c-1 — CaseStatusController.changeStatus hardening", () => {
     expect(Reflect.getMetadata("__guards__", CaseStatusController.prototype.getStatusHistory)).toBeUndefined();
   });
 
-  it("10. observe/permission hook YOK — controller yalnız CaseStatusService bağımlılığı alır", () => {
-    const c = new CaseStatusController({ changeStatus: jest.fn() } as unknown as CaseStatusService);
-    expect(c).toBeInstanceOf(CaseStatusController); // tek bağımlılık = service (GuidedOpenObserve/Resolver enjekte edilmez)
+  it("P2b-2c-2 (observe 1/2/4/5/6/7): CHANGE_STATUS observe PRE-action (actionCode/actor/tenant/caseId); body observe'a SIZMAZ", async () => {
+    const { controller, service, observe } = mk();
+    await controller.changeStatus("real-user", "tenant-1", "c1", { status: "ISLEMDE" as never, reason: "gizli-reason", userId: "SPOOF" });
+    expect(observe.observe).toHaveBeenCalledTimes(1);
+    const [input, opts] = observe.observe.mock.calls[0];
+    expect(input).toEqual({ actorUserId: "real-user", tenantId: "tenant-1", caseId: "c1", actionCode: ActionCode.CHANGE_STATUS });
+    expect(opts).toBeUndefined();
+    const ic = JSON.stringify(input);
+    expect(ic).not.toContain("SPOOF"); // body.userId observe'a geçmez
+    expect(ic).not.toContain("ISLEMDE"); // status observe'a geçmez
+    expect(ic).not.toContain("gizli-reason"); // reason observe'a geçmez
+    expect(service.changeStatus).toHaveBeenCalledTimes(1); // mutation yine yapıldı
+  });
+
+  it("P2b-2c-2 (observe 8): observe FAILURE status mutation'ı ENGELLEMEZ (gerçek observe servisi best-effort)", async () => {
+    process.env.GUIDED_OPEN_AUTHZ_MODE = "observe"; // afterEach geri yükler
+    const service = { changeStatus: jest.fn().mockResolvedValue({ id: "c1", caseStatus: "ISLEMDE" }) };
+    const realObserve = new GuidedOpenObserveService(
+      { resolve: jest.fn().mockRejectedValue(new Error("resolver boom")) } as never,
+      { log: jest.fn().mockRejectedValue(new Error("audit boom")) } as never,
+    );
+    const controller = new CaseStatusController(service as unknown as CaseStatusService, realObserve);
+    const res = await controller.changeStatus("u1", "t1", "c1", { status: "ISLEMDE" as never, reason: "r" });
+    expect(service.changeStatus).toHaveBeenCalledTimes(1); // observe hata verse de mutation engellenmedi
+    expect(res.success).toBe(true);
   });
 });
 
@@ -117,11 +153,15 @@ describe("P2b-2c-1 — CHANGE_STATUS HTTP binding (decorator/guard runtime)", ()
     getStatusList: jest.fn(),
     getStatusHistory: jest.fn(),
   };
+  const observe = { observe: jest.fn().mockResolvedValue(undefined) };
 
   const buildApp = async (authedUser: { id: string; tenantId: string } | null): Promise<INestApplication> => {
     const moduleRef = await Test.createTestingModule({
       controllers: [CaseStatusController],
-      providers: [{ provide: CaseStatusService, useValue: service }],
+      providers: [
+        { provide: CaseStatusService, useValue: service },
+        { provide: GuidedOpenObserveService, useValue: observe },
+      ],
     })
       .overrideGuard(JwtAuthGuard)
       .useValue({
@@ -152,6 +192,8 @@ describe("P2b-2c-1 — CHANGE_STATUS HTTP binding (decorator/guard runtime)", ()
     // id↔tenantId decorator swap olsaydı bu arg sırası ("tenant-1","c1","ISLEMDE","real-user","Toplu işlem") bozulurdu
     expect(service.changeStatus).toHaveBeenCalledWith("tenant-1", "c1", "ISLEMDE", "real-user", "Toplu işlem");
     expect(JSON.stringify(service.changeStatus.mock.calls[0])).not.toContain("SPOOF");
+    // P2b-2c-2: observe HTTP yolunda truthful actor/tenant/caseId + CHANGE_STATUS ile çağrıldı (decorator binding kanıtı)
+    expect(observe.observe).toHaveBeenCalledWith({ actorUserId: "real-user", tenantId: "tenant-1", caseId: "c1", actionCode: ActionCode.CHANGE_STATUS });
     expect(res.body).toEqual({ success: true, data: { id: "c1", caseStatus: "ISLEMDE" }, message: "Statü başarıyla değiştirildi" });
   });
 
@@ -162,5 +204,6 @@ describe("P2b-2c-1 — CHANGE_STATUS HTTP binding (decorator/guard runtime)", ()
       .send({ status: "ISLEMDE", reason: "r" })
       .expect(403);
     expect(service.changeStatus).not.toHaveBeenCalled();
+    expect(observe.observe).not.toHaveBeenCalled(); // guard handler'dan ÖNCE engeller → observe de çağrılmaz
   });
 });
