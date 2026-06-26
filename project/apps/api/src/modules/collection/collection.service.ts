@@ -19,6 +19,12 @@ import {
   CoverCalculation,
   CollectionSummary,
 } from "./dto/collection.dto";
+import {
+  assertCollectionPublicUpdateAllowed,
+  COLLECTION_METADATA_UPDATE_FIELDS,
+  COLLECTION_STATUS_PENDING,
+  pickDefinedCollectionUpdateData,
+} from "./collection-safety.helper";
 import { DomainEventIngestService } from "../icrabot/domain-event-ingest";
 import { OccurredAtConfidence, ActorType } from "../icrabot/domain-event-ingest/domain-event-ingest.types";
 import { SummaryEngineService } from "../summary-engine/summary-engine.service";
@@ -663,25 +669,30 @@ export class CollectionService {
     });
   }
 
-  /**
-   * Tahsilat güncelle
-   */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CollectionController.update() → PUT /collections/:id (doğrudan tahsilat metadata güncelleme)
+  /// </remarks>
   async update(tenantId: string, id: string, dto: UpdateCollectionDto) {
     const collection = await this.findById(tenantId, id);
 
-    if (collection.status === CollectionStatus.CANCELLED) {
-      throw new BadRequestException("İptal edilmiş tahsilat güncellenemez");
+    assertCollectionPublicUpdateAllowed(String(collection.status), dto as Record<string, unknown>);
+
+    const updateData = pickDefinedCollectionUpdateData(
+      dto as Record<string, unknown>,
+      collection.status === COLLECTION_STATUS_PENDING
+        ? ["amount", "date", ...COLLECTION_METADATA_UPDATE_FIELDS]
+        : COLLECTION_METADATA_UPDATE_FIELDS,
+      ["date"],
+    );
+
+    if (Object.keys(updateData).length === 0) {
+      return collection;
     }
 
     return (this.prisma.collection as any).update({
       where: { id },
-      data: {
-        amount: dto.amount,
-        date: dto.date ? new Date(dto.date) : undefined,
-        description: dto.description,
-        receiptNo: dto.receiptNo,
-        notes: dto.notes,
-      },
+      data: updateData,
       include: {
         allocations: true,
       },

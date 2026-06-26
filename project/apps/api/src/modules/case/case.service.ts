@@ -21,6 +21,15 @@ import { validateResponsibleSelection } from "./responsible-candidates.service";
 import { ExpenseRequestService } from "../expense-request/expense-request.service";
 import { DomainEventIngestService } from "../icrabot/domain-event-ingest";
 import { CollectionService } from "../collection/collection.service";
+import {
+  assertCollectionPublicUpdateAllowed,
+  collectionDeleteDisabled,
+  collectionRequiresReversal,
+  COLLECTION_METADATA_UPDATE_FIELDS,
+  COLLECTION_REQUIRES_REVERSAL_DELETE_MESSAGE,
+  COLLECTION_STATUS_PENDING,
+  pickDefinedCollectionUpdateData,
+} from "../collection/collection-safety.helper";
 // RFA-016: case.create içindeki inline taraf oluşturma artık bu guard'lı servislere devredilir
 // (tx.client/lawyer/debtor.create duplicate guard'ı atlıyordu → Şükrü-deseninin dış-kapı hali).
 import { ClientService } from "../client/client.service";
@@ -3435,9 +3444,10 @@ export class CaseService {
     );
   }
 
-  /**
-   * Tahsilat güncelle
-   */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseController.updateCollection() → PATCH /cases/:id/collections/:collectionId (dosya detayından tahsilat metadata güncelleme)
+  /// </remarks>
   async updateCollection(
     tenantId: string,
     caseId: string,
@@ -3453,6 +3463,9 @@ export class CaseService {
       bankName?: string;
       notes?: string;
       status?: string;
+      currency?: string;
+      paymentDate?: string;
+      collectionDate?: string;
     }
   ) {
     const collection = await this.prisma.collection.findFirst({
@@ -3460,33 +3473,24 @@ export class CaseService {
     });
     if (!collection) throw new NotFoundException("Tahsilat bulunamadı");
 
-    const updated = await this.prisma.collection.update({
+    assertCollectionPublicUpdateAllowed(String(collection.status), data as Record<string, unknown>);
+
+    const updateData = pickDefinedCollectionUpdateData(
+      data as Record<string, unknown>,
+      collection.status === COLLECTION_STATUS_PENDING
+        ? ["amount", "type", "channel", "date", "valueDate", "description", "receiptNo", "bankName", "notes"]
+        : COLLECTION_METADATA_UPDATE_FIELDS,
+      ["date", "valueDate"],
+    );
+
+    if (Object.keys(updateData).length === 0) {
+      return collection;
+    }
+
+    return this.prisma.collection.update({
       where: { id: collectionId },
-      data: {
-        amount: data.amount,
-        type: data.type as any,
-        channel: data.channel as any,
-        date: data.date ? new Date(data.date) : undefined,
-        valueDate: data.valueDate ? new Date(data.valueDate) : undefined,
-        description: data.description,
-        receiptNo: data.receiptNo,
-        bankName: data.bankName,
-        notes: data.notes,
-        status: data.status as any,
-      },
+      data: updateData,
     });
-
-    // Tahsilat güncellendikten sonra faiz hesaplamasını yeniden tetikle
-    // TODO: interest-engine entegrasyonu tamamlandığında aktif edilecek
-    // try {
-    //   const today = new Date().toISOString().split('T')[0];
-    //   await this.interestEngineService.recalculateForCase(caseId, today, tenantId);
-    //   this.logger.debug(`Interest recalculated after collection update for case ${caseId}`);
-    // } catch (error) {
-    //   this.logger.warn(`Failed to recalculate interest after collection update: ${error.message}`);
-    // }
-
-    return updated;
   }
 
   /**
@@ -3499,28 +3503,21 @@ export class CaseService {
     });
   }
 
-  /**
-   * Tahsilat sil
-   */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseController.deleteCollection() → DELETE /cases/:id/collections/:collectionId (dosya detayından fiziksel tahsilat silme isteği; TM3-S1 hard-delete kapalı)
+  /// </remarks>
   async deleteCollection(tenantId: string, caseId: string, collectionId: string) {
     const collection = await this.prisma.collection.findFirst({
       where: { id: collectionId, caseId, tenantId },
     });
     if (!collection) throw new NotFoundException("Tahsilat bulunamadı");
 
-    await this.prisma.collection.delete({ where: { id: collectionId } });
+    if (collection.status !== COLLECTION_STATUS_PENDING) {
+      throw collectionRequiresReversal(COLLECTION_REQUIRES_REVERSAL_DELETE_MESSAGE);
+    }
 
-    // Tahsilat silindikten sonra faiz hesaplamasını yeniden tetikle
-    // TODO: interest-engine entegrasyonu tamamlandığında aktif edilecek
-    // try {
-    //   const today = new Date().toISOString().split('T')[0];
-    //   await this.interestEngineService.recalculateForCase(caseId, today, tenantId);
-    //   this.logger.debug(`Interest recalculated after collection delete for case ${caseId}`);
-    // } catch (error) {
-    //   this.logger.warn(`Failed to recalculate interest after collection delete: ${error.message}`);
-    // }
-
-    return { success: true };
+    throw collectionDeleteDisabled();
   }
 
   /**
