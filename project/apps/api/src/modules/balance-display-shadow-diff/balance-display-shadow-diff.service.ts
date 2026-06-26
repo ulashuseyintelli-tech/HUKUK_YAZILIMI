@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { CaseService } from '../case/case.service';
 import { CaseBalanceService } from '../interest-engine/orchestration/case-balance.service';
 import type { CaseBalanceResult } from '../interest-engine/orchestration/case-balance.service';
+import { buildCanonicalSummaryShadowStatusRows } from '../interest-engine/orchestration/canonical-summary-rows';
 import { toCaseBalanceDisplay } from '../interest-engine/orchestration/case-balance-display';
 import type {
   CaseBalanceDisplay,
@@ -808,6 +809,7 @@ export class BalanceDisplayShadowDiffService {
       sourceVersion: display?.sourceVersion ?? 'balance-display:unavailable',
       mode: 'SHADOW_ONLY',
       primaryDisplayUnchanged: true,
+      canonicalSummaryRows: buildCanonicalSummaryShadowStatusRows(),
       sources: {
         legacyCalculationSummary: {
           available: Boolean(legacy),
