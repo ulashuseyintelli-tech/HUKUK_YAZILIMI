@@ -1,7 +1,7 @@
 # ADR — POA (Vekalet) Süre Dolumu Bildirim Motoru (P0 Karar Belgesi)
 
 - **Durum:** PROPOSED (P0). **Kod yok.** Bu ADR onaylanmadan P2 motor uygulamasına başlanmaz.
-- **Tarih:** 2026-06-27 · **Revizyon:** v2 (dedupe rezervasyon düzeltmesi + alıcı/model netleştirme; bkz. §11)
+- **Tarih:** 2026-06-27 · **Revizyon:** v3 (atomik retry edinimi + exactly-once sınır notu; v2: dedupe rezervasyon; bkz. §11)
 - **Sahiplik / domain:** P2 motor (`automation.service` + cron + scheduler) **CODEX/automation alanı**dır. Claude bu ADR'yi ve (istenirse) Bildirim Kontrol Merkezi'nin kart-okuma kısmını yazabilir; cron/teslimat yeniden yazımı Codex veya açık owner yönlendirmesi ile yapılır.
 - **İlgili:** Bildirim Kontrol Merkezi (N1.5/N2/N3 — PR #530, #534). Bu motor, Bildirim Merkezi'ndeki amber **"Vekalet Süresi Uyarısı → Teslimat eksik"** kartını gerçekten yeşile çevirmeyi hedefler.
 
@@ -114,14 +114,35 @@ PoaExpiryNotificationDelivery
    - status=SENT     → ATLA (zaten gönderilmiş)
    - status=PENDING  → başka worker rezerve etmiş/gönderiyor → ATLA
                        (reservedAt çok eskiyse = stale/crash → kurtarma: yeniden rezerve; eşik P2 detayı)
-   - status=FAILED   → retry politikası: nextRetryAt geçmişse AYNI satır üzerinden yeniden dene
-                       (attemptCount++, status=PENDING, reservedAt=now). YENİ duplicate kayıt OLUŞTURMA.
+   - status=FAILED   → retry edinimi ATOMİK olmalı (aşağıdaki conditional update; check-then-act YASAK).
+                       AYNI satır üzerinden; YENİ duplicate kayıt OLUŞTURMA.
 3. Yalnız rezervasyonu (PENDING insert/claim) BAŞARIYLA alan worker gerçek e-postayı gönderir
    (TenantNotifierService).
 4. Gönderim sonucu AYNI satıra yazılır:
    - başarı      → status=SENT, sentAt=now
    - başarısızlık → status=FAILED, errorMessage, attemptCount++, lastAttemptAt, nextRetryAt
 ```
+
+**Retry edinimi — ATOMİK (compare-and-set; check-then-act YASAK):**
+
+> FAILED bir satırın retry'ı da yarışa düşebilir: iki worker aynı anda "FAILED + `nextRetryAt` geçmiş" görüp ikisi de gönderebilir. Bu yüzden retry hakkı **atomik conditional update** ile kazanılır; gönderimi **yalnız** güncellemeyi kazanan worker yapar.
+
+```
+// Retry hakkını atomik al: FAILED → PENDING (yalnız retryable; tam 1 satır eşleşir)
+const count = await prisma.poaExpiryNotificationDelivery.updateMany({
+  where: { dedupeKey, status: 'FAILED', nextRetryAt: { lte: now } },
+  data:  { status: 'PENDING', reservedAt: now, lastAttemptAt: now, attemptCount: { increment: 1 } },
+});
+if (count !== 1) {
+  // başka worker retry hakkını kaptı VEYA satır artık retryable değil → ATLA
+} else {
+  // yalnız bu worker gönderir → TenantNotifierService → sonra SENT/FAILED güncelle
+}
+```
+
+SQL eşdeğeri: `UPDATE PoaExpiryNotificationDelivery SET status='PENDING', reservedAt=now(), lastAttemptAt=now(), attemptCount=attemptCount+1 WHERE dedupeKey=? AND status='FAILED' AND nextRetryAt<=now();` → yalnız **affected rows = 1** olan worker gönderir.
+
+**Gerçeklik / sınır — exactly-once DEĞİL:** Bu tasarım **eşzamanlı çift-gönderimi** (concurrent duplicate) engeller. Ancak dış e-posta/SMS sağlayıcılarıyla **mutlak exactly-once GARANTİ ETMEZ**: worker e-postayı gönderip provider kabul ettikten **sonra** DB'ye SENT yazamadan **crash** olursa, sonradan stale PENDING/retry ikinci bir e-posta gönderebilir. Bu **crash-after-send-before-SENT** penceresi **kabul edilen, sınırlı bir risktir** — P2'de "matematiksel exactly-once" **varsayılmaz**.
 
 **Neden çift-gönderim engellenir:** iki worker aynı anda INSERT dener; UNIQUE yüzünden **yalnız biri** PENDING satırı yaratır (kilidi kazanır), diğeri conflict alıp "PENDING var → atla" der. Kilit gönderimden **önce** alındığı için yalnız **tek** e-posta çıkar.
 
@@ -188,6 +209,7 @@ P2 motor = `automation.service` + cron + scheduler = **CODEX/automation** alanı
 
 ## 11. Revizyon notu
 
+- **v3 (2026-06-27):** FAILED **retry edinimi de atomik** yapıldı — conditional `updateMany` (FAILED→PENDING, `nextRetryAt<=now`); yalnız `count===1` olan worker gönderir; retry'da check-then-act **YASAK** (aksi halde aynı yarış geri gelir, iki e-posta). Ayrıca **exactly-once sınır notu** eklendi: tasarım concurrent duplicate'i engeller ama external provider ile mutlak exactly-once garanti etmez; **crash-after-send-before-SENT** penceresi kabul edilen sınırlı risktir.
 - **v2 (2026-06-27):** Dedupe algoritması **check-then-act → REZERVASYON-tabanlı** olarak düzeltildi (race-condition: unique constraint logu tekilleştiriyor ama gönderimi engellemiyordu; iki e-posta riski). `status`'a `PENDING` eklendi; `attemptCount/reservedAt/lastAttemptAt/nextRetryAt` alanları eklendi; FAILED retry **aynı dedupeKey satırı** üzerinden. `dedupeKey` **alıcı + kanal** içerecek şekilde genişletildi (`...:{channel}:{recipientType}:{recipientRef}`); `validUntilDate` `YYYY-MM-DD` normalize. Alıcı algoritması netleştirildi (MVP: primary varsa yalnız primary). P2 MVP'de Office ayarı **eklenmeyecek** (sabit); ayarlar P3/P4. Raw alıcı e-postası DB'ye yazılmayacak (maskeli + ref).
 
 ## 12. Onay
