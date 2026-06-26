@@ -1,4 +1,4 @@
-import { Module, forwardRef } from "@nestjs/common";
+﻿import { Module, forwardRef } from "@nestjs/common";
 import { ScheduleModule } from "@nestjs/schedule";
 import { PrismaModule } from "../../prisma/prisma.module";
 import { AutomationService } from "./automation.service";
@@ -7,17 +7,19 @@ import { RuleEngine } from "./rule-engine.service";
 import { AutomationController } from "./automation.controller";
 import { ExpenseRequestModule } from "../expense-request/expense-request.module";
 import { PolicyEngineModule } from "../policy-engine/policy-engine.module";
+import { EscalationModule } from "../escalation/escalation.module";
+import { PoaExpiryDeliveryService } from "./poa-expiry-delivery.service";
 
 /**
  * Automation Module
  * 
- * Otomatik iş akışı yönetimi.
+ * Otomatik iÅŸ akÄ±ÅŸÄ± yÃ¶netimi.
  * 
  * CPE Entegrasyonu:
- * - WorkflowEngine tüm otomatik aksiyonlar için CPE gate kontrolü yapar
- * - HIGH risk aksiyonlar (haciz, satış) için CPE onayı zorunludur
+ * - WorkflowEngine tÃ¼m otomatik aksiyonlar iÃ§in CPE gate kontrolÃ¼ yapar
+ * - HIGH risk aksiyonlar (haciz, satÄ±ÅŸ) iÃ§in CPE onayÄ± zorunludur
  * 
- * @deprecated RuleEngine (automation) → CPE RuleEngine'e taşındı
+ * @deprecated RuleEngine (automation) â†’ CPE RuleEngine'e taÅŸÄ±ndÄ±
  * @see ARCHITECTURE.md
  */
 @Module({
@@ -25,10 +27,11 @@ import { PolicyEngineModule } from "../policy-engine/policy-engine.module";
     ScheduleModule.forRoot(),
     PrismaModule,
     forwardRef(() => ExpenseRequestModule),
-    forwardRef(() => PolicyEngineModule), // CPE entegrasyonu için
+    forwardRef(() => PolicyEngineModule), // CPE entegrasyonu iÃ§in
+    EscalationModule,
   ],
   controllers: [AutomationController],
-  providers: [AutomationService, WorkflowEngine, RuleEngine],
+  providers: [AutomationService, WorkflowEngine, RuleEngine, PoaExpiryDeliveryService],
   exports: [AutomationService, WorkflowEngine],
 })
 export class AutomationModule {}

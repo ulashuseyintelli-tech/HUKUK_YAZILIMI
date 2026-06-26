@@ -5,6 +5,14 @@ import { fetchWithTimeout } from "../../common/fetch-with-timeout.util";
 import { maskEmail, maskPhone } from "../../common/pii-mask.util";
 import * as nodemailer from "nodemailer";
 
+interface PoaRecentDeliveryOverviewRow {
+  id: string;
+  createdAt: Date;
+  status: string;
+  recipientEmail: string | null;
+  lastError: string | null;
+}
+
 export interface SendEmailDto {
   clientId: string;
   caseId?: string;
@@ -175,6 +183,43 @@ export class ClientNotificationService {
       }),
     ]);
 
+    const [poaStatusGroups, poaRecentRows, poaFailedRows, poaLastSent, poaLastFailed] = await Promise.all([
+      (this.prisma as any).poaExpiryNotificationDelivery.groupBy({
+        by: ["status"],
+        where: { tenantId },
+        _count: { _all: true },
+      }),
+      (this.prisma as any).poaExpiryNotificationDelivery.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+        select: {
+          id: true,
+          createdAt: true,
+          status: true,
+          recipientEmail: true,
+          recipientSource: true,
+          lastError: true,
+          client: { select: { displayName: true, firstName: true, lastName: true, companyName: true } },
+        },
+      }),
+      (this.prisma as any).poaExpiryNotificationDelivery.findMany({
+        where: { tenantId, status: "FAILED", updatedAt: { gte: since7d } },
+        orderBy: { updatedAt: "desc" },
+        take: 200,
+        select: { lastError: true, updatedAt: true },
+      }),
+      (this.prisma as any).poaExpiryNotificationDelivery.findFirst({
+        where: { tenantId, status: "SENT" },
+        orderBy: { sentAt: "desc" },
+        select: { sentAt: true, updatedAt: true },
+      }),
+      (this.prisma as any).poaExpiryNotificationDelivery.findFirst({
+        where: { tenantId, status: "FAILED" },
+        orderBy: { updatedAt: "desc" },
+        select: { updatedAt: true },
+      }),
+    ]);
     const sumGroup = (
       groups: Array<Record<string, any>>,
       key: string,
@@ -186,6 +231,14 @@ export class ClientNotificationService {
     const last24hPending = sumGroup(cnStatusGroups as any, "status", "PENDING");
     const last24hEscalationSent = sumGroup(escDeliveryGroups as any, "deliveryStatus", "SENT");
     const last24hEscalationFailed = sumGroup(escDeliveryGroups as any, "deliveryStatus", "FAILED");
+
+    const poaExpiry = {
+      pending: sumGroup(poaStatusGroups as any, "status", "PENDING"),
+      sent: sumGroup(poaStatusGroups as any, "status", "SENT"),
+      failed: sumGroup(poaStatusGroups as any, "status", "FAILED"),
+      lastSentAt: poaLastSent?.sentAt ? poaLastSent.sentAt.toISOString() : null,
+      lastFailureAt: poaLastFailed?.updatedAt ? poaLastFailed.updatedAt.toISOString() : null,
+    };
 
     // Hata teşhisi: aynı hata mesajını grupla (neden gitmedi?)
     const failureMap = new Map<
@@ -200,6 +253,16 @@ export class ClientNotificationService {
         if (r.createdAt > existing.lastSeenAt) existing.lastSeenAt = r.createdAt;
       } else {
         failureMap.set(reason, { reason, count: 1, channel: r.channel ?? null, lastSeenAt: r.createdAt });
+      }
+    }
+    for (const r of poaFailedRows) {
+      const reason = (r.lastError || "POA teslimat hatasi").trim();
+      const existing = failureMap.get(reason);
+      if (existing) {
+        existing.count += 1;
+        if (r.updatedAt > existing.lastSeenAt) existing.lastSeenAt = r.updatedAt;
+      } else {
+        failureMap.set(reason, { reason, count: 1, channel: "EMAIL", lastSeenAt: r.updatedAt });
       }
     }
     const failureGroups = Array.from(failureMap.values())
@@ -218,7 +281,7 @@ export class ClientNotificationService {
       c?.companyName ||
       null;
 
-    const recentDeliveries = recentRows.map((r) => ({
+    const clientRecentDeliveries = recentRows.map((r) => ({
       id: r.id,
       createdAt: r.createdAt.toISOString(),
       channel: r.channel,
@@ -229,7 +292,22 @@ export class ClientNotificationService {
       errorMessage: r.errorMessage,
     }));
 
-    // Motor durumları — gerçeğe sadık (POA "teslimat eksik" = kuyruğa yazılıyor, gönderen yok)
+    const poaRecentDeliveries = (poaRecentRows as PoaRecentDeliveryOverviewRow[]).map((r) => ({
+      id: r.id,
+      createdAt: r.createdAt.toISOString(),
+      channel: "EMAIL",
+      type: "POA_EXPIRY",
+      status: r.status,
+      subject: "Vekalet süresi uyarısı",
+      recipientName: maskEmail(r.recipientEmail),
+      errorMessage: r.lastError,
+    }));
+
+    const recentDeliveries = [...clientRecentDeliveries, ...poaRecentDeliveries]
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+      .slice(0, 20);
+
+    // Motor durumları — gerçeğe sadık (POA artık gerçek delivery tablosundan beslenir)
     const escChannels = [
       escalation.opEmailEnabled && "EMAIL",
       escalation.opSmsEnabled && "SMS",
@@ -256,8 +334,9 @@ export class ClientNotificationService {
       },
       poa: {
         key: "poa",
-        status: "ATTENTION", // teslimat eksik: NotificationQueue'ya yazılıyor ama gönderen motor yok
-        reason: "DELIVERY_NOT_WIRED",
+        status: "ACTIVE",
+        reason: "DELIVERY_WIRED",
+        poaExpiry,
       },
     };
 
@@ -274,10 +353,10 @@ export class ClientNotificationService {
       },
     };
 
-    const activeEngines = [engines.greeting, engines.escalation].filter(
+    const activeEngines = [engines.greeting, engines.escalation, engines.poa].filter(
       (e) => e.status === "ACTIVE"
     ).length;
-    const attentionEngines = [engines.poa].filter((e) => e.status === "ATTENTION").length;
+    const attentionEngines = 0;
     // Planlandı listesi statiktir (motoru olmayan, sahte aktiflik gösterilmeyen özellikler)
     const plannedEngines = 5;
 
