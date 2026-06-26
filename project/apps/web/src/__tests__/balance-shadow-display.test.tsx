@@ -8,6 +8,7 @@ import {
 } from "@/lib/balance-shadow-display";
 import {
   buildGuardedPrimaryCalculationResult,
+  buildGuardedSummaryRuntimeBoundaryPlan,
   evaluateGuardedPrimaryDisplayPilot,
   shouldEnableGuardedPrimaryDisplayPilot,
 } from "@/lib/guarded-primary-display";
@@ -661,6 +662,137 @@ describe("guarded primary display pilot gate", () => {
   });
 });
 
+describe("guarded summary runtime boundary plan", () => {
+  const canonicalPrimaryOverrideRowIds = [
+    "asilAlacak",
+    "takipTutari",
+    "takipSonrasiFaiz",
+    "icraMasraflari",
+    "vekaletUcreti",
+    "toplamBorc",
+    "sonBorc",
+    "toplamTahsilat",
+    "kalanBorc",
+    "kalanAnapara",
+  ];
+
+  const backendContractRequiredRowIds = [
+    "tazminat",
+    "komisyon",
+    "takipOncesiFaiz",
+  ];
+
+  const legacyDiagnosticRetainedRowIds = [
+    "basvurmaHarci",
+    "vekaletHarci",
+    "pesinHarc",
+    "dosyaGideri",
+    "tebligatGideri",
+    "vekaletPulu",
+    "pesinHarcDahilTahsilHarci",
+    "pesinHarcHaricTahsilHarci",
+    "tahsilOranlari",
+    "mahsupDetaylari",
+    "faizSegmentleri",
+    "takipTarihi",
+    "kalemTuru",
+  ];
+
+  it("guardedPrimarySelected=false durumunu fallback legacy boundary olarak raporlar", () => {
+    const plan = buildGuardedSummaryRuntimeBoundaryPlan({ guardedPrimarySelected: false });
+
+    expect(plan.guardedPrimarySelected).toBe(false);
+    expect(plan.summary.canonicalPrimaryOverrideRowIds).toEqual([]);
+    expect(plan.summary.backendContractRequiredRowIds).toEqual([]);
+    expect(plan.summary.legacyDiagnosticRetainedRowIds).toEqual([]);
+    expect(plan.summary.mixedAuthorityBlockedRowIds).toEqual([]);
+    expect(plan.summary.fallbackLegacyRowIds).toEqual([
+      ...canonicalPrimaryOverrideRowIds,
+      ...backendContractRequiredRowIds,
+      ...legacyDiagnosticRetainedRowIds,
+      "mahsupDetayPanelContext",
+    ]);
+    expect(plan.decisions.every((decision) =>
+      decision.runtimeSource === "LEGACY_FALLBACK" &&
+      decision.placement === "FALLBACK_LEGACY_SURFACE",
+    )).toBe(true);
+  });
+
+  it("guardedPrimarySelected=true canonical primary override rowlarini exact raporlar", () => {
+    const plan = buildGuardedSummaryRuntimeBoundaryPlan({ guardedPrimarySelected: true });
+
+    expect(plan.summary.canonicalPrimaryOverrideRowIds).toEqual(canonicalPrimaryOverrideRowIds);
+    for (const rowId of canonicalPrimaryOverrideRowIds) {
+      expect(plan.decisions).toContainEqual(expect.objectContaining({
+        rowId,
+        runtimeSource: "CANONICAL_PRIMARY_OVERRIDE",
+        placement: "PRIMARY_CANONICAL_OVERRIDE",
+      }));
+    }
+  });
+
+  it("backend contract required retained rowlarini exact raporlar", () => {
+    const plan = buildGuardedSummaryRuntimeBoundaryPlan({ guardedPrimarySelected: true });
+
+    expect(plan.summary.backendContractRequiredRowIds).toEqual(backendContractRequiredRowIds);
+    for (const rowId of backendContractRequiredRowIds) {
+      expect(plan.decisions).toContainEqual(expect.objectContaining({
+        rowId,
+        runtimeSource: "LEGACY_BACKEND_CONTRACT_RETAINED",
+        placement: "BACKEND_CONTRACT_REQUIRED_RETAINED",
+      }));
+    }
+  });
+
+  it("legacy diagnostic detail ve projection retained rowlarini raporlar", () => {
+    const plan = buildGuardedSummaryRuntimeBoundaryPlan({ guardedPrimarySelected: true });
+
+    expect(plan.summary.legacyDiagnosticRetainedRowIds).toEqual(legacyDiagnosticRetainedRowIds);
+    for (const rowId of legacyDiagnosticRetainedRowIds) {
+      expect(plan.decisions).toContainEqual(expect.objectContaining({
+        rowId,
+        runtimeSource: "LEGACY_DIAGNOSTIC_RETAINED",
+        placement: "LEGACY_DIAGNOSTIC_RETAINED",
+      }));
+    }
+  });
+
+  it("MahsupDetayPanel context bilgisini mixed authority blocked olarak raporlar", () => {
+    const plan = buildGuardedSummaryRuntimeBoundaryPlan({ guardedPrimarySelected: true });
+
+    expect(plan.summary.mixedAuthorityBlockedRowIds).toEqual(["mahsupDetayPanelContext"]);
+    expect(plan.decisions).toContainEqual(expect.objectContaining({
+      rowId: "mahsupDetayPanelContext",
+      runtimeSource: "MIXED_CANONICAL_LEGACY_CONTEXT",
+      placement: "MIXED_AUTHORITY_BLOCKED",
+    }));
+  });
+
+  it("boundary plan buildGuardedPrimaryCalculationResult runtime overwrite siniri ile uyumludur", () => {
+    const legacy = makeMixedAuthorityLegacySummary();
+    const report = makeMixedAuthorityCanonicalReport();
+    const decision = evaluateGuardedPrimaryDisplayPilot(report, { featureFlagEnabled: true });
+    const guardedResult = buildGuardedPrimaryCalculationResult(legacy, report, decision);
+    const plan = buildGuardedSummaryRuntimeBoundaryPlan({ guardedPrimarySelected: Boolean(guardedResult) });
+
+    expect(guardedResult).not.toBeNull();
+    expect(plan.summary.canonicalPrimaryOverrideRowIds).toEqual(canonicalPrimaryOverrideRowIds);
+    expect(plan.summary.backendContractRequiredRowIds).toEqual(backendContractRequiredRowIds);
+    expect(plan.summary.legacyDiagnosticRetainedRowIds).toEqual(legacyDiagnosticRetainedRowIds);
+    expect(plan.summary.mixedAuthorityBlockedRowIds).toEqual(["mahsupDetayPanelContext"]);
+
+    for (const rowId of canonicalPrimaryOverrideRowIds) {
+      expect(guardedResult![rowId as keyof typeof guardedResult]).not.toBe(legacy[rowId as keyof typeof legacy]);
+    }
+
+    for (const rowId of [
+      ...backendContractRequiredRowIds,
+      ...legacyDiagnosticRetainedRowIds,
+    ]) {
+      expect(guardedResult![rowId as keyof typeof guardedResult]).toBe(legacy[rowId as keyof typeof legacy]);
+    }
+  });
+});
 describe("BalanceShadowDiffPanel", () => {
   it("kapaliyken render ve fetch yapmaz", () => {
     render(<BalanceShadowDiffPanel caseId="case-1" enabled={false} />);

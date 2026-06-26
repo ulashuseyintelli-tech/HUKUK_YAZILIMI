@@ -47,6 +47,184 @@ const CANONICAL_DISPLAYED_AMOUNT_FIELDS: readonly CanonicalDisplayedAmountField[
   'attorneyFeeAmount',
 ];
 
+export type GuardedSummaryRuntimeBoundarySource =
+  | 'CANONICAL_PRIMARY_OVERRIDE'
+  | 'LEGACY_BACKEND_CONTRACT_RETAINED'
+  | 'LEGACY_DIAGNOSTIC_RETAINED'
+  | 'MIXED_CANONICAL_LEGACY_CONTEXT'
+  | 'LEGACY_FALLBACK';
+
+export type GuardedSummaryRuntimeBoundaryPlacement =
+  | 'PRIMARY_CANONICAL_OVERRIDE'
+  | 'BACKEND_CONTRACT_REQUIRED_RETAINED'
+  | 'LEGACY_DIAGNOSTIC_RETAINED'
+  | 'MIXED_AUTHORITY_BLOCKED'
+  | 'FALLBACK_LEGACY_SURFACE';
+
+export type GuardedSummaryRuntimeBoundaryRowId =
+  | 'asilAlacak'
+  | 'takipTutari'
+  | 'takipSonrasiFaiz'
+  | 'icraMasraflari'
+  | 'vekaletUcreti'
+  | 'toplamBorc'
+  | 'sonBorc'
+  | 'toplamTahsilat'
+  | 'kalanBorc'
+  | 'kalanAnapara'
+  | 'tazminat'
+  | 'komisyon'
+  | 'takipOncesiFaiz'
+  | 'basvurmaHarci'
+  | 'vekaletHarci'
+  | 'pesinHarc'
+  | 'dosyaGideri'
+  | 'tebligatGideri'
+  | 'vekaletPulu'
+  | 'pesinHarcDahilTahsilHarci'
+  | 'pesinHarcHaricTahsilHarci'
+  | 'tahsilOranlari'
+  | 'mahsupDetaylari'
+  | 'faizSegmentleri'
+  | 'takipTarihi'
+  | 'kalemTuru'
+  | 'mahsupDetayPanelContext';
+
+export interface GuardedSummaryRuntimeBoundaryDecision {
+  rowId: GuardedSummaryRuntimeBoundaryRowId;
+  runtimeSource: GuardedSummaryRuntimeBoundarySource;
+  placement: GuardedSummaryRuntimeBoundaryPlacement;
+  reason: string;
+}
+
+export interface GuardedSummaryRuntimeBoundaryPlan {
+  guardedPrimarySelected: boolean;
+  decisions: GuardedSummaryRuntimeBoundaryDecision[];
+  summary: {
+    canonicalPrimaryOverrideRowIds: GuardedSummaryRuntimeBoundaryRowId[];
+    legacyDiagnosticRetainedRowIds: GuardedSummaryRuntimeBoundaryRowId[];
+    backendContractRequiredRowIds: GuardedSummaryRuntimeBoundaryRowId[];
+    mixedAuthorityBlockedRowIds: GuardedSummaryRuntimeBoundaryRowId[];
+    fallbackLegacyRowIds: GuardedSummaryRuntimeBoundaryRowId[];
+  };
+}
+
+const GUARDED_SUMMARY_CANONICAL_PRIMARY_OVERRIDE_ROW_IDS: readonly GuardedSummaryRuntimeBoundaryRowId[] = [
+  'asilAlacak',
+  'takipTutari',
+  'takipSonrasiFaiz',
+  'icraMasraflari',
+  'vekaletUcreti',
+  'toplamBorc',
+  'sonBorc',
+  'toplamTahsilat',
+  'kalanBorc',
+  'kalanAnapara',
+];
+
+const GUARDED_SUMMARY_BACKEND_CONTRACT_REQUIRED_ROW_IDS: readonly GuardedSummaryRuntimeBoundaryRowId[] = [
+  'tazminat',
+  'komisyon',
+  'takipOncesiFaiz',
+];
+
+const GUARDED_SUMMARY_LEGACY_DIAGNOSTIC_RETAINED_ROW_IDS: readonly GuardedSummaryRuntimeBoundaryRowId[] = [
+  'basvurmaHarci',
+  'vekaletHarci',
+  'pesinHarc',
+  'dosyaGideri',
+  'tebligatGideri',
+  'vekaletPulu',
+  'pesinHarcDahilTahsilHarci',
+  'pesinHarcHaricTahsilHarci',
+  'tahsilOranlari',
+  'mahsupDetaylari',
+  'faizSegmentleri',
+  'takipTarihi',
+  'kalemTuru',
+];
+
+const GUARDED_SUMMARY_MIXED_AUTHORITY_BLOCKED_ROW_IDS: readonly GuardedSummaryRuntimeBoundaryRowId[] = [
+  'mahsupDetayPanelContext',
+];
+
+const GUARDED_SUMMARY_RUNTIME_ROW_IDS: readonly GuardedSummaryRuntimeBoundaryRowId[] = [
+  ...GUARDED_SUMMARY_CANONICAL_PRIMARY_OVERRIDE_ROW_IDS,
+  ...GUARDED_SUMMARY_BACKEND_CONTRACT_REQUIRED_ROW_IDS,
+  ...GUARDED_SUMMARY_LEGACY_DIAGNOSTIC_RETAINED_ROW_IDS,
+  ...GUARDED_SUMMARY_MIXED_AUTHORITY_BLOCKED_ROW_IDS,
+];
+
+function runtimeBoundaryDecision(
+  rowId: GuardedSummaryRuntimeBoundaryRowId,
+  runtimeSource: GuardedSummaryRuntimeBoundarySource,
+  placement: GuardedSummaryRuntimeBoundaryPlacement,
+  reason: string,
+): GuardedSummaryRuntimeBoundaryDecision {
+  return { rowId, runtimeSource, placement, reason };
+}
+
+export function buildGuardedSummaryRuntimeBoundaryPlan({
+  guardedPrimarySelected,
+}: {
+  guardedPrimarySelected: boolean;
+}): GuardedSummaryRuntimeBoundaryPlan {
+  if (!guardedPrimarySelected) {
+    return {
+      guardedPrimarySelected: false,
+      decisions: GUARDED_SUMMARY_RUNTIME_ROW_IDS.map((rowId) => runtimeBoundaryDecision(
+        rowId,
+        'LEGACY_FALLBACK',
+        'FALLBACK_LEGACY_SURFACE',
+        'Guarded primary is not selected; the runtime surface remains legacy calculation-summary.',
+      )),
+      summary: {
+        canonicalPrimaryOverrideRowIds: [],
+        legacyDiagnosticRetainedRowIds: [],
+        backendContractRequiredRowIds: [],
+        mixedAuthorityBlockedRowIds: [],
+        fallbackLegacyRowIds: [...GUARDED_SUMMARY_RUNTIME_ROW_IDS],
+      },
+    };
+  }
+
+  return {
+    guardedPrimarySelected: true,
+    decisions: [
+      ...GUARDED_SUMMARY_CANONICAL_PRIMARY_OVERRIDE_ROW_IDS.map((rowId) => runtimeBoundaryDecision(
+        rowId,
+        'CANONICAL_PRIMARY_OVERRIDE',
+        'PRIMARY_CANONICAL_OVERRIDE',
+        'Overridden by buildGuardedPrimaryCalculationResult when guarded primary is selected.',
+      )),
+      ...GUARDED_SUMMARY_BACKEND_CONTRACT_REQUIRED_ROW_IDS.map((rowId) => runtimeBoundaryDecision(
+        rowId,
+        'LEGACY_BACKEND_CONTRACT_RETAINED',
+        'BACKEND_CONTRACT_REQUIRED_RETAINED',
+        'Retained from legacy calculation-summary until a canonical backend contract exists.',
+      )),
+      ...GUARDED_SUMMARY_LEGACY_DIAGNOSTIC_RETAINED_ROW_IDS.map((rowId) => runtimeBoundaryDecision(
+        rowId,
+        'LEGACY_DIAGNOSTIC_RETAINED',
+        'LEGACY_DIAGNOSTIC_RETAINED',
+        'Retained as legacy diagnostic/detail/projection data; not canonical primary authority.',
+      )),
+      ...GUARDED_SUMMARY_MIXED_AUTHORITY_BLOCKED_ROW_IDS.map((rowId) => runtimeBoundaryDecision(
+        rowId,
+        'MIXED_CANONICAL_LEGACY_CONTEXT',
+        'MIXED_AUTHORITY_BLOCKED',
+        'Represents a mixed canonical primary and legacy diagnostic context; blocked for controlled cutover.',
+      )),
+    ],
+    summary: {
+      canonicalPrimaryOverrideRowIds: [...GUARDED_SUMMARY_CANONICAL_PRIMARY_OVERRIDE_ROW_IDS],
+      legacyDiagnosticRetainedRowIds: [...GUARDED_SUMMARY_LEGACY_DIAGNOSTIC_RETAINED_ROW_IDS],
+      backendContractRequiredRowIds: [...GUARDED_SUMMARY_BACKEND_CONTRACT_REQUIRED_ROW_IDS],
+      mixedAuthorityBlockedRowIds: [...GUARDED_SUMMARY_MIXED_AUTHORITY_BLOCKED_ROW_IDS],
+      fallbackLegacyRowIds: [],
+    },
+  };
+}
 const HARD_NO_GO_CODES = [
   'FINAL_DEBT_STATES_MISSING',
   'FINAL_DEBT_STATES_CURRENCY_MISMATCH',
