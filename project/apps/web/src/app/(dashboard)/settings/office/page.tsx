@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Building2, Users, Plus, Pencil, Trash2, Check, X, Star, CreditCard, Loader2, Mail, MessageSquare, GripVertical } from "lucide-react";
+import { useState, useEffect, Suspense } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { Building2, Users, Plus, Pencil, Trash2, Check, X, Star, CreditCard, Loader2, Mail, MessageSquare, GripVertical, Clock, ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
+import { SettingsSection, WorkbenchHeader, SettingsDrawer, CollectionHeader } from "@/components/settings/settings-shell";
 
 interface BankAccount { id: string; bankName: string; branchName?: string; iban: string; accountName?: string; isDefault: boolean; }
 interface Lawyer { 
@@ -58,7 +60,18 @@ const TITLE_OPTIONS = [
   { value: "Huk. Müş.", label: "Huk. Müş." }, { value: "İcra Kat.", label: "İcra Kat." },
 ];
 
+const OFFICE_SECTIONS = ["office", "bank", "lawyers", "staff", "smtp", "sms", "greeting", "escalation"] as const;
+type OfficeSection = (typeof OFFICE_SECTIONS)[number];
+
 export default function OfficeSettingsPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-full"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>}>
+      <OfficeSettingsInner />
+    </Suspense>
+  );
+}
+
+function OfficeSettingsInner() {
   const [office, setOffice] = useState<Office | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -78,7 +91,8 @@ export default function OfficeSettingsPage() {
   const [staffSimilar, setStaffSimilar] = useState<{ candidates: { id: string; name: string }[]; data: any } | null>(null);
   // PR-U3: personel UPDATE-path benzer-isim review — 2 buton (güncelle/vazgeç). Create'ten ayrı.
   const [staffUpdateReview, setStaffUpdateReview] = useState<{ candidates: { id: string; name: string }[]; data: any } | null>(null);
-  const [officeForm, setOfficeForm] = useState({ name: "", address: "", city: "", district: "", phone: "", email: "", barAssociation: "" });
+  const [officeForm, setOfficeForm] = useState({ name: "", address: "", city: "", district: "", postalCode: "", phone: "", fax: "", email: "", website: "", barAssociation: "", vergiNo: "", vergiDairesi: "", mersisNo: "", kepAddress: "" });
+  const [officeInitial, setOfficeInitial] = useState({ name: "", address: "", city: "", district: "", postalCode: "", phone: "", fax: "", email: "", website: "", barAssociation: "", vergiNo: "", vergiDairesi: "", mersisNo: "", kepAddress: "" });
   const [smtpForm, setSmtpForm] = useState<SmtpSettings>({ smtpHost: "", smtpPort: 587, smtpUser: "", smtpPass: "", smtpSecure: false, smtpFromName: "", smtpFromEmail: "" });
   const [smsForm, setSmsForm] = useState({ smsProvider: "", smsApiKey: "", smsApiSecret: "", smsSender: "" });
   const [greetingForm, setGreetingForm] = useState({ autoGreetingEnabled: true, autoGreetingTime: "09:00" });
@@ -110,11 +124,16 @@ export default function OfficeSettingsPage() {
     try {
       const res = await api.get("/office");
       setOffice(res.data);
-      setOfficeForm({
+      const officeInit = {
         name: res.data?.name || "", address: res.data?.address || "", city: res.data?.city || "",
-        district: res.data?.district || "", phone: res.data?.phone || "", email: res.data?.email || "",
-        barAssociation: res.data?.barAssociation || "",
-      });
+        district: res.data?.district || "", postalCode: res.data?.postalCode || "",
+        phone: res.data?.phone || "", fax: res.data?.fax || "", email: res.data?.email || "",
+        website: res.data?.website || "", barAssociation: res.data?.barAssociation || "",
+        vergiNo: res.data?.vergiNo || "", vergiDairesi: res.data?.vergiDairesi || "",
+        mersisNo: res.data?.mersisNo || "", kepAddress: res.data?.kepAddress || "",
+      };
+      setOfficeForm(officeInit);
+      setOfficeInitial(officeInit);
       // SMTP ayarlarını yükle
       const smtpRes = await api.get("/office/smtp-settings");
       setSmtpForm({
@@ -167,6 +186,7 @@ export default function OfficeSettingsPage() {
     setOfficeStatus(null); // yeni denemede önceki (özellikle error) temizlenir
     try {
       await api.put("/office", officeForm);
+      setOfficeInitial(officeForm);
       showSaved();
       setOfficeStatus({ ok: true, msg: "Kaydedildi" });
       // success 3 sn sonra kaybolur; bu sırada gelen bir error'ı SİLME (yalnız ok ise temizle)
@@ -334,310 +354,569 @@ export default function OfficeSettingsPage() {
   const roleLabels: Record<string, string> = { OWNER: "Sahip", PARTNER: "Ortak", EMPLOYEE: "Avukat", INTERN: "Stajyer" };
   const getStaffTypeLabel = (type: string) => STAFF_TYPES.find(t => t.value === type)?.label || type;
   const getStaffTypeColor = (type: string) => STAFF_TYPES.find(t => t.value === type)?.color || "bg-gray-100";
+  const lawyerRankLabel = (l: any): string => {
+    const rankMap: Record<string, string> = { PARTNER: "Ortak", MANAGER: "Yönetici", AUTHORIZED: "Yetkili", LAWYER: "Avukat", INTERN: "Stajyer" };
+    if (l?.lawyerRank && rankMap[l.lawyerRank]) return rankMap[l.lawyerRank];
+    return roleLabels[l?.role] || "Avukat";
+  };
+  const roleBadgeClass = (label: string): string => {
+    switch (label) {
+      case "Sahip": case "Kurucu": case "Ortak": return "bg-amber-50 text-amber-800 border border-amber-200";
+      case "Yönetici": return "bg-blue-50 text-blue-800 border border-blue-200";
+      case "Yetkili": return "bg-emerald-50 text-emerald-800 border border-emerald-200";
+      case "Stajyer": case "Stajyer Av.": return "bg-sky-50 text-sky-800 border border-sky-200";
+      case "Sekreter": return "bg-rose-50 text-rose-800 border border-rose-200";
+      case "Muhasebe": return "bg-orange-50 text-orange-800 border border-orange-200";
+      case "Ofis Katibi": case "Adli Katip": return "bg-violet-50 text-violet-800 border border-violet-200";
+      default: return "bg-slate-100 text-slate-600 border border-slate-200";
+    }
+  };
+
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const sectionParam = searchParams.get("section");
+  const drawerSection: OfficeSection | null = (OFFICE_SECTIONS as readonly string[]).includes(sectionParam ?? "")
+    ? (sectionParam as OfficeSection)
+    : null;
+  const goSection = (key: string) => router.push(`${pathname}?section=${key}`);
+  const closeDrawer = () => router.push(pathname);
+  const DRAWER_TITLE: Record<string, string> = {
+    office: "Büro Bilgileri", bank: "Banka Hesapları", lawyers: "Avukatlar", staff: "Personel",
+    smtp: "SMTP", sms: "SMS", greeting: "Otomatik Tebrik", escalation: "Görev & Eskalasyon",
+  };
+
+  const officeDirty = JSON.stringify(officeForm) !== JSON.stringify(officeInitial);
+  const resetOffice = () => setOfficeForm(officeInitial);
+
+  const lawyers = office?.lawyers ?? [];
+  const officeFilledCount = [office?.name, office?.barAssociation, office?.email, office?.phone, office?.city, office?.address].filter(Boolean).length;
+  const lawyerRoleCounts = lawyers.reduce<Record<string, number>>((a, l) => { const k = lawyerRankLabel(l); a[k] = (a[k] || 0) + 1; return a; }, {});
+  const lawyerDist = Object.keys(lawyerRoleCounts).length > 1 ? Object.entries(lawyerRoleCounts).map(([k, v]) => `${v} ${k}`).join(" · ") : "";
+  const staffDist = Object.entries(staffList.reduce<Record<string, number>>((a, s) => { const k = getStaffTypeLabel(s.staffType); a[k] = (a[k] || 0) + 1; return a; }, {})).map(([k, v]) => `${v} ${k}`).join(" · ");
+  const escAssignedCount = (escalationForm.escalationManagerLawyerIds?.length ?? 0) + (escalationForm.escalationFounderLawyerIds?.length ?? 0);
 
   if (loading) return <div className="flex items-center justify-center h-full"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>;
 
   return (
-    <div className="h-full flex flex-col gap-3 p-1">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Building2 className="h-5 w-5 text-primary" />
-          <h1 className="text-lg font-bold">Büro Ayarları</h1>
+    <div className="h-full flex flex-col p-1">
+      {/* A-3a Visual Accent Pass: gruplara muted renk kimliği + üst accent çizgisi */}
+      <div className="flex-1 min-h-0 overflow-auto">
+        <div className="w-full max-w-[1500px] mx-auto flex flex-col gap-4 py-0.5">
+          {/* Header — dashboard ile aynı sol hizada */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Building2 className="h-5 w-5 text-primary" />
+              <h1 className="text-lg font-bold">Büro Ayarları</h1>
+            </div>
+            {saved && <span className="text-green-600 text-xs flex items-center gap-1"><Check className="h-3 w-3" />Kaydedildi</span>}
+          </div>
+          <div className="flex gap-4">
+            {/* Büro & Banka — mavi/kurumsal */}
+            <div className="flex-1 min-w-0 bg-blue-50/30 border border-slate-200 border-t-[3px] border-t-blue-500 rounded-2xl p-4 shadow-sm">
+              <p className="flex items-center gap-2 text-[12px] font-semibold tracking-wide text-blue-800 mb-3"><span className="inline-block w-1.5 h-1.5 rounded-full bg-blue-500" />BÜRO &amp; BANKA</p>
+              <div className="flex gap-4">
+                <button onClick={() => goSection("office")} className="group flex-1 min-w-0 text-left bg-white border border-blue-200 rounded-xl overflow-hidden hover:border-blue-400 hover:shadow-md transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-300">
+                  <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-stone-200 bg-stone-50/60">
+                    <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-blue-100/70"><Building2 className="h-4 w-4 text-blue-600" /></span>
+                    <span className="text-[14px] font-semibold text-gray-800">Büro Bilgileri</span>
+                  </div>
+                  <div className="px-4 py-3 text-[13px] space-y-1.5">
+                    <div className="flex justify-between gap-3"><span className="text-stone-500">Büro adı</span><span className="font-medium text-gray-900 truncate">{office?.name || "—"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-stone-500">Baro</span><span className="font-medium text-gray-900 truncate">{office?.barAssociation || "—"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-stone-500">E-posta</span><span className="font-medium text-gray-900 truncate">{office?.email || "—"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-stone-500">Telefon</span><span className="font-medium text-gray-900 truncate">{office?.phone || "—"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-stone-500">İl / İlçe</span><span className="font-medium text-gray-900 truncate">{[office?.city, office?.district].filter(Boolean).join(" / ") || "—"}</span></div>
+                  </div>
+                  <div className="flex items-center justify-between px-4 py-2.5 border-t border-stone-200 bg-stone-50/40">
+                    <span className="text-[12px] text-stone-500">Profil tamamlığı {officeFilledCount}/6</span>
+                    <span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-blue-700">Düzenle <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span>
+                  </div>
+                </button>
+                <div className="flex-1 min-w-0 bg-white border border-blue-200 rounded-xl overflow-hidden flex flex-col">
+                  <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-stone-200 bg-stone-50/60">
+                    <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-blue-100/70"><CreditCard className="h-4 w-4 text-blue-600" /></span>
+                    <span className="text-[14px] font-semibold text-gray-800">Banka Hesapları</span>
+                    {(office?.bankAccounts?.length ?? 0) > 0 && <span className="text-[11px] text-stone-600 bg-stone-100 rounded-full px-2 py-0.5">{office?.bankAccounts?.length}</span>}
+                    <button onClick={() => { setEditingBank(null); setShowBankModal(true); }} className="ml-auto inline-flex items-center gap-1 text-[13px] font-medium text-blue-700"><Plus className="h-3.5 w-3.5" />Ekle</button>
+                  </div>
+                  <button onClick={() => goSection("bank")} className="flex-1 text-left px-4 py-3 hover:bg-blue-50/40 transition cursor-pointer">
+                    {office?.bankAccounts?.[0]
+                      ? <div className="space-y-1.5">
+                          <div className="flex items-center gap-1.5 text-[13px] font-medium text-gray-900"><Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500" />{office.bankAccounts[0].bankName}</div>
+                          <div className="text-[12px] text-stone-500 font-mono">IBAN ···{office.bankAccounts[0].iban?.slice(-6)}</div>
+                          <div className="text-[12px] text-stone-500">{office.bankAccounts.length} hesap</div>
+                        </div>
+                      : <span className="text-[13px] text-stone-400">Hesap yok</span>}
+                  </button>
+                  <button onClick={() => goSection("bank")} className="group flex items-center justify-between px-4 py-2.5 border-t border-stone-200 bg-stone-50/40 text-left"><span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-blue-700">Ayrıntıları aç <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span></button>
+                </div>
+              </div>
+            </div>
+            {/* Bildirim Kanalları — emerald/bağlantı */}
+            <div className="flex-1 min-w-0 bg-teal-50/30 border border-slate-200 border-t-[3px] border-t-teal-500 rounded-2xl p-4 shadow-sm">
+              <p className="flex items-center gap-2 text-[12px] font-semibold tracking-wide text-teal-800 mb-3"><span className="inline-block w-1.5 h-1.5 rounded-full bg-teal-500" />BİLDİRİM KANALLARI</p>
+              <div className="flex gap-4">
+                <button onClick={() => goSection("smtp")} className="group flex-1 min-w-0 text-left bg-white border border-teal-200 rounded-xl overflow-hidden hover:border-teal-400 hover:shadow-md transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300">
+                  <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-stone-200 bg-stone-50/60">
+                    <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-teal-100/70"><Mail className="h-4 w-4 text-teal-600" /></span>
+                    <span className="text-[14px] font-semibold text-gray-800">SMTP</span>
+                    <span className={`ml-auto text-[11px] rounded-full px-2 py-0.5 border ${smtpForm.smtpHost ? "text-emerald-800 bg-emerald-50 border-emerald-200" : "text-amber-800 bg-amber-50 border-amber-200"}`}>{smtpForm.smtpHost ? "Tanımlı" : "Eksik"}</span>
+                  </div>
+                  <div className="px-4 py-3 text-[13px] space-y-1.5">
+                    <div className="flex justify-between gap-3"><span className="text-stone-500">Sunucu</span><span className="font-medium text-gray-900 truncate">{smtpForm.smtpHost || "—"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-stone-500">Gönderen</span><span className="font-medium text-gray-900 truncate">{smtpForm.smtpFromEmail || smtpForm.smtpUser || "—"}</span></div>
+                  </div>
+                  <div className="flex items-center justify-end px-4 py-2.5 border-t border-stone-200 bg-stone-50/40"><span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-teal-700">Düzenle · Test et <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span></div>
+                </button>
+                <button onClick={() => goSection("sms")} className="group flex-1 min-w-0 text-left bg-white border border-teal-200 rounded-xl overflow-hidden hover:border-teal-400 hover:shadow-md transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-300">
+                  <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-stone-200 bg-stone-50/60">
+                    <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-teal-100/70"><MessageSquare className="h-4 w-4 text-teal-600" /></span>
+                    <span className="text-[14px] font-semibold text-gray-800">SMS</span>
+                    <span className={`ml-auto text-[11px] rounded-full px-2 py-0.5 border ${smsForm.smsProvider ? "text-emerald-800 bg-emerald-50 border-emerald-200" : "text-stone-500 bg-stone-100 border-stone-200"}`}>{smsForm.smsProvider ? "Seçildi" : "Seçilmedi"}</span>
+                  </div>
+                  <div className="px-4 py-3 text-[13px] space-y-1.5">
+                    <div className="flex justify-between gap-3"><span className="text-stone-500">Sağlayıcı</span><span className="font-medium text-gray-900 truncate">{smsForm.smsProvider || "—"}</span></div>
+                    <div className="flex justify-between gap-3"><span className="text-stone-500">Başlık</span><span className="font-medium text-gray-900 truncate">{smsForm.smsSender || "—"}</span></div>
+                  </div>
+                  <div className="flex items-center justify-end px-4 py-2.5 border-t border-stone-200 bg-stone-50/40"><span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-teal-700">Düzenle · Test et <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span></div>
+                </button>
+              </div>
+            </div>
+          </div>
+          {/* Kadro & Operasyon — indigo/operasyon */}
+          <div className="bg-indigo-50/30 border border-slate-200 border-t-[3px] border-t-indigo-500 rounded-2xl p-4 shadow-sm">
+            <p className="flex items-center gap-2 text-[12px] font-semibold tracking-wide text-indigo-800 mb-3"><span className="inline-block w-1.5 h-1.5 rounded-full bg-indigo-500" />KADRO &amp; OPERASYON</p>
+            <div className="flex gap-4 items-start">
+              <div className="flex-1 min-w-0 bg-white border border-indigo-200 rounded-xl overflow-hidden flex flex-col">
+                <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-stone-200 bg-stone-50/60">
+                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-100/70"><Users className="h-4 w-4 text-indigo-600" /></span>
+                  <span className="text-[14px] font-semibold text-gray-800">Avukatlar</span>
+                  {lawyers.length > 0 && <span className="text-[11px] text-stone-600 bg-stone-100 rounded-full px-2 py-0.5">{lawyers.length}</span>}
+                  <button onClick={() => { setEditingLawyer(null); setShowLawyerModal(true); }} className="ml-auto inline-flex items-center gap-1 text-[13px] font-medium text-indigo-700"><Plus className="h-3.5 w-3.5" />Ekle</button>
+                </div>
+                {lawyerDist && <div className="px-4 py-2 text-[12px] text-stone-500 border-b border-stone-100">{lawyerDist}</div>}
+                <div className="max-h-[300px] overflow-auto">
+                  {lawyers.map((l) => { const rl = lawyerRankLabel(l); return (
+                    <button key={l.id} onClick={() => { setEditingLawyer(l); setShowLawyerModal(true); }} className="w-full text-left flex items-center gap-2 px-4 py-2 border-b border-stone-100 hover:bg-indigo-50/40 transition">
+                      <span className="text-[13px] font-medium text-gray-900 truncate flex-1">{(l as any).title || "Av."} {l.name} {l.surname}</span>
+                      <span className={`text-[11px] font-medium rounded-full px-2 py-0.5 ${roleBadgeClass(rl)}`}>{rl}</span>
+                    </button>
+                  ); })}
+                  {lawyers.length === 0 && <p className="text-[13px] text-stone-400 text-center py-6">Avukat yok</p>}
+                </div>
+                <button onClick={() => goSection("lawyers")} className="group flex items-center justify-between text-left px-4 py-2.5 border-t border-stone-200 bg-stone-50/40"><span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-indigo-700">Ayrıntıları aç <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span></button>
+              </div>
+              <div className="flex-1 min-w-0 bg-white border border-indigo-200 rounded-xl overflow-hidden flex flex-col">
+                <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-stone-200 bg-stone-50/60">
+                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-100/70"><Users className="h-4 w-4 text-indigo-600" /></span>
+                  <span className="text-[14px] font-semibold text-gray-800">Personel</span>
+                  {staffList.length > 0 && <span className="text-[11px] text-stone-600 bg-stone-100 rounded-full px-2 py-0.5">{staffList.length}</span>}
+                  <button onClick={() => { setEditingStaff(null); setShowStaffModal(true); }} className="ml-auto inline-flex items-center gap-1 text-[13px] font-medium text-indigo-700"><Plus className="h-3.5 w-3.5" />Ekle</button>
+                </div>
+                {staffDist && <div className="px-4 py-2 text-[12px] text-stone-500 border-b border-stone-100">{staffDist}</div>}
+                <div className="max-h-[300px] overflow-auto">
+                  {staffList.map((s) => { const rl = getStaffTypeLabel(s.staffType); return (
+                    <button key={s.id} onClick={() => { setEditingStaff(s); setShowStaffModal(true); }} className="w-full text-left flex items-center gap-2 px-4 py-2 border-b border-stone-100 hover:bg-indigo-50/40 transition">
+                      <span className="text-[13px] font-medium text-gray-900 truncate flex-1">{s.firstName} {s.lastName}</span>
+                      <span className={`text-[11px] font-medium rounded-full px-2 py-0.5 ${roleBadgeClass(rl)}`}>{rl}</span>
+                    </button>
+                  ); })}
+                  {staffList.length === 0 && <p className="text-[13px] text-stone-400 text-center py-6">Personel yok</p>}
+                </div>
+                <button onClick={() => goSection("staff")} className="group flex items-center justify-between text-left px-4 py-2.5 border-t border-stone-200 bg-stone-50/40"><span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-indigo-700">Ayrıntıları aç <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span></button>
+              </div>
+              <button onClick={() => goSection("escalation")} className="group flex-1 min-w-0 text-left bg-white border border-indigo-200 rounded-xl overflow-hidden hover:border-indigo-400 hover:shadow-md transition cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 flex flex-col">
+                <div className="flex items-center gap-2.5 px-4 py-2.5 border-b border-stone-200 bg-stone-50/60">
+                  <span className="inline-flex items-center justify-center w-7 h-7 rounded-lg bg-indigo-100/70"><Clock className="h-4 w-4 text-indigo-600" /></span>
+                  <span className="text-[14px] font-semibold text-gray-800">Görev &amp; Eskalasyon</span>
+                </div>
+                <p className="px-4 pt-2.5 text-[12px] text-stone-500 leading-snug">Geciken görevler büro politikasına göre kullanıcı → yönetici → kurucu hattında bildirilir.</p>
+                <div className="px-4 pt-2 pb-3 text-[13px] space-y-1.5">
+                  <div className="flex justify-between gap-3"><span className="text-stone-500">İlk hatırlatma</span><span className="font-medium text-gray-900">{escalationForm.opReminderDays} gün</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-stone-500">Kurucu eskalasyonu</span><span className="font-medium text-gray-900">{escalationForm.opFounderDays} gün</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-stone-500">Periyot</span><span className="font-medium text-gray-900">{escalationForm.opRepeatMonths} ay</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-stone-500">Kanal</span><span className="font-medium text-gray-900">{[escalationForm.opEmailEnabled && "E-posta", escalationForm.opSmsEnabled && "SMS"].filter(Boolean).join(" + ") || "—"}</span></div>
+                  <div className="flex justify-between gap-3"><span className="text-stone-500">Atanan sorumlu</span><span className="font-medium text-gray-900">{escAssignedCount} kişi</span></div>
+                </div>
+                <div className="flex items-center justify-end px-4 py-2.5 border-t border-stone-200 bg-stone-50/40"><span className="inline-flex items-center gap-0.5 text-[13px] font-semibold text-indigo-700">Görev ağacını aç <ChevronRight className="h-3.5 w-3.5 group-hover:translate-x-0.5 transition" /></span></div>
+              </button>
+            </div>
+          </div>
         </div>
-        {saved && <span className="text-green-600 text-xs flex items-center gap-1"><Check className="h-3 w-3" />Kaydedildi</span>}
       </div>
 
-      {/* 5 Kolon Layout */}
-      <div className="flex-1 grid grid-cols-5 gap-2 min-h-0">
-        {/* Büro Bilgileri */}
-        <div className="bg-white rounded-lg border p-3 flex flex-col">
-          <h2 className="text-sm font-semibold mb-2 flex items-center gap-1"><Building2 className="h-4 w-4 text-blue-500" />Büro Bilgileri</h2>
-          <div className="flex-1 space-y-2 text-xs">
-            <div className="grid grid-cols-2 gap-2">
-              <div><label className="text-muted-foreground">Büro Adı</label><input value={officeForm.name} onChange={e => setOfficeForm({...officeForm, name: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
-              <div><label className="text-muted-foreground">Baro</label><input value={officeForm.barAssociation} onChange={e => setOfficeForm({...officeForm, barAssociation: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
+      {/* A-3a: aktif bölüm → sağ drawer (içerik = mevcut bölüm, A-2 workbench karakteri) */}
+      {drawerSection && (
+        <SettingsDrawer title={DRAWER_TITLE[drawerSection]} onClose={closeDrawer}>
+        {drawerSection === "office" && (
+        <div className="h-full flex flex-col bg-white">
+          <WorkbenchHeader
+            title="Büro Bilgileri"
+            description="Kurumsal kimlik, iletişim ve adres bilgileri"
+            dirty={officeDirty}
+            saving={saving}
+            onSave={handleSaveOffice}
+            onReset={resetOffice}
+            status={officeStatus}
+          />
+          <div className="px-5 py-4">
+            <div className="w-full max-w-[740px]">
+              <SettingsSection title="RESMİ KİMLİK">
+                <div style={{ width: 360 }}>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Büro adı</label>
+                  <input value={officeForm.name} onChange={e => setOfficeForm({ ...officeForm, name: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div style={{ width: 240 }}>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Baro</label>
+                  <input value={officeForm.barAssociation} onChange={e => setOfficeForm({ ...officeForm, barAssociation: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
+                </div>
+              </SettingsSection>
+              <SettingsSection title="YASAL KİMLİK" description="Fatura / serbest meslek makbuzu ve resmi yazışma için">
+                <div style={{ width: 180 }}>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Vergi no</label>
+                  <input value={officeForm.vergiNo} onChange={e => setOfficeForm({ ...officeForm, vergiNo: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div style={{ width: 200 }}>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Vergi dairesi</label>
+                  <input value={officeForm.vergiDairesi} onChange={e => setOfficeForm({ ...officeForm, vergiDairesi: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div style={{ width: 200 }}>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">MERSİS no</label>
+                  <input value={officeForm.mersisNo} onChange={e => setOfficeForm({ ...officeForm, mersisNo: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div style={{ width: 240 }}>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">KEP adresi</label>
+                  <input value={officeForm.kepAddress} onChange={e => setOfficeForm({ ...officeForm, kepAddress: e.target.value })} placeholder="buro@hs01.kep.tr" className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
+                </div>
+              </SettingsSection>
+              <SettingsSection title="İLETİŞİM">
+                <div style={{ width: 200 }}>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Telefon</label>
+                  <input value={officeForm.phone} onChange={e => setOfficeForm({ ...officeForm, phone: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div style={{ width: 340 }}>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">E-posta</label>
+                  <input value={officeForm.email} onChange={e => setOfficeForm({ ...officeForm, email: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div style={{ width: 240 }}>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Web sitesi</label>
+                  <input value={officeForm.website} onChange={e => setOfficeForm({ ...officeForm, website: e.target.value })} placeholder="www.buro.av.tr" className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div style={{ width: 160 }}>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Faks</label>
+                  <input value={officeForm.fax} onChange={e => setOfficeForm({ ...officeForm, fax: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
+                </div>
+              </SettingsSection>
+              <SettingsSection title="ADRES">
+                <div style={{ width: "100%" }}>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Adres</label>
+                  <input value={officeForm.address} onChange={e => setOfficeForm({ ...officeForm, address: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div style={{ width: 180 }}>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">İl</label>
+                  <input value={officeForm.city} onChange={e => setOfficeForm({ ...officeForm, city: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div style={{ width: 180 }}>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">İlçe</label>
+                  <input value={officeForm.district} onChange={e => setOfficeForm({ ...officeForm, district: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
+                </div>
+                <div style={{ width: 140 }}>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Posta kodu</label>
+                  <input value={officeForm.postalCode} onChange={e => setOfficeForm({ ...officeForm, postalCode: e.target.value })} className="w-full border-2 border-blue-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-blue-500 focus:outline-none" />
+                </div>
+              </SettingsSection>
             </div>
-            <div><label className="text-muted-foreground">Adres</label><input value={officeForm.address} onChange={e => setOfficeForm({...officeForm, address: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
-            <div className="grid grid-cols-3 gap-2">
-              <div><label className="text-muted-foreground">İl</label><input value={officeForm.city} onChange={e => setOfficeForm({...officeForm, city: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
-              <div><label className="text-muted-foreground">İlçe</label><input value={officeForm.district} onChange={e => setOfficeForm({...officeForm, district: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
-              <div><label className="text-muted-foreground">Telefon</label><input value={officeForm.phone} onChange={e => setOfficeForm({...officeForm, phone: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
-            </div>
-            <div><label className="text-muted-foreground">E-posta</label><input value={officeForm.email} onChange={e => setOfficeForm({...officeForm, email: e.target.value})} className="w-full border rounded px-2 py-1" /></div>
-          </div>
-          <div className="mt-2 flex items-center gap-2">
-            <button onClick={handleSaveOffice} disabled={saving} className="px-3 py-1 bg-primary text-white text-xs rounded hover:bg-primary/90 disabled:opacity-50">
-              {saving ? "..." : "Kaydet"}
-            </button>
-            {officeStatus && (
-              <span className={`text-xs inline-flex items-center gap-1 ${officeStatus.ok ? "text-green-600" : "text-red-600"}`}>
-                {officeStatus.ok ? <Check className="h-3.5 w-3.5" /> : <X className="h-3.5 w-3.5" />}
-                {officeStatus.ok ? "Kaydedildi" : `Kaydedilemedi: ${officeStatus.msg}`}
-              </span>
-            )}
           </div>
         </div>
-
-        {/* Banka Hesapları */}
-        <div className="bg-white rounded-lg border p-3 flex flex-col">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-semibold flex items-center gap-1"><CreditCard className="h-4 w-4 text-green-500" />Banka Hesapları</h2>
-            <button onClick={() => { setEditingBank(null); setShowBankModal(true); }} className="text-xs text-primary hover:underline flex items-center gap-0.5"><Plus className="h-3 w-3" />Ekle</button>
-          </div>
-          <div className="flex-1 space-y-1 overflow-auto">
-            {office?.bankAccounts?.map(acc => (
-              <div key={acc.id} className="flex items-center justify-between p-2 border rounded text-xs hover:bg-gray-50">
-                <div className="flex items-center gap-1">
-                  {acc.isDefault && <Star className="h-3 w-3 text-yellow-500 fill-yellow-500" />}
-                  <div><p className="font-medium">{acc.bankName}</p><p className="text-muted-foreground font-mono text-[10px]">{acc.iban}</p></div>
-                </div>
-                <div className="flex gap-1">
-                  <button onClick={() => { setEditingBank(acc); setShowBankModal(true); }} className="p-1 hover:bg-gray-200 rounded"><Pencil className="h-3 w-3 text-gray-500" /></button>
-                  <button onClick={() => handleDeleteBankAccount(acc.id)} className="p-1 hover:bg-red-100 rounded"><Trash2 className="h-3 w-3 text-red-500" /></button>
-                </div>
-              </div>
-            ))}
-            {(!office?.bankAccounts || office.bankAccounts.length === 0) && <p className="text-xs text-muted-foreground text-center py-4">Hesap yok</p>}
-          </div>
-        </div>
-
-        {/* Avukatlar */}
-        <div className="bg-white rounded-lg border p-3 flex flex-col">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-semibold flex items-center gap-1"><Users className="h-4 w-4 text-purple-500" />Avukatlar</h2>
-            <button onClick={() => { setEditingLawyer(null); setShowLawyerModal(true); }} className="text-xs text-primary hover:underline flex items-center gap-0.5"><Plus className="h-3 w-3" />Ekle</button>
-          </div>
-          <div className="flex-1 overflow-auto">
-            {office?.lawyers?.map((lawyer, index) => (
-              <div 
-                key={lawyer.id} 
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData('lawyerId', lawyer.id);
-                  e.dataTransfer.setData('lawyerIndex', index.toString());
-                  e.currentTarget.classList.add('opacity-50');
-                }}
-                onDragEnd={(e) => {
-                  e.currentTarget.classList.remove('opacity-50');
-                }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.currentTarget.classList.add('bg-purple-100', 'border-purple-400');
-                }}
-                onDragLeave={(e) => {
-                  e.currentTarget.classList.remove('bg-purple-100', 'border-purple-400');
-                }}
-                onDrop={async (e) => {
-                  e.preventDefault();
-                  e.currentTarget.classList.remove('bg-purple-100', 'border-purple-400');
-                  const draggedId = e.dataTransfer.getData('lawyerId');
-                  const draggedIndex = parseInt(e.dataTransfer.getData('lawyerIndex'));
-                  if (draggedId === lawyer.id) return;
-                  
-                  // Yeni sıralama oluştur
-                  const lawyers = [...(office?.lawyers || [])];
-                  const [draggedLawyer] = lawyers.splice(draggedIndex, 1);
-                  lawyers.splice(index, 0, draggedLawyer);
-                  
-                  // API'ye gönder
-                  try {
-                    await api.put('/lawyers/order/update', { lawyerIds: lawyers.map(l => l.id) });
-                    await loadOffice();
-                    showSaved();
-                  } catch (err) { console.error(err); }
-                }}
-                className={`flex items-center justify-between p-2 border-b text-xs hover:bg-gray-50 cursor-move transition-colors ${lawyer.isDefaultForNewCases ? 'bg-amber-50' : ''}`}
-              >
-                <div className="flex items-center gap-2">
-                  <GripVertical className="h-3 w-3 text-gray-400 cursor-grab active:cursor-grabbing" />
-                  <div className="flex-1">
-                    <div className="flex items-center gap-1">
-                      <p className="font-medium">{(lawyer as any).displayName || `${(lawyer as any).title || "Av."} ${lawyer.name} ${lawyer.surname}`}</p>
+        )}
+        {drawerSection === "bank" && (
+        <div className="h-full flex flex-col bg-white">
+          <CollectionHeader title="Banka Hesapları" description="Tahsilat ve masraf için büro hesapları" actionLabel="Ekle" onAction={() => { setEditingBank(null); setShowBankModal(true); }} />
+          <div className="px-5 py-4">
+            <div className="rounded-xl border-2 border-blue-300 bg-blue-50/30 p-2">
+              <div className="divide-y divide-blue-100">
+                {office?.bankAccounts?.map(acc => (
+                  <div key={acc.id} className={`flex items-center justify-between gap-2 px-2.5 py-2 border-l-2 ${acc.isDefault ? "border-amber-400" : "border-transparent"} hover:bg-white/60 transition-colors`}>
+                    <div className="flex items-center gap-2 min-w-0">
+                      {acc.isDefault && <Star className="h-3.5 w-3.5 text-amber-500 fill-amber-500 shrink-0" />}
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-semibold text-gray-900 truncate">{acc.bankName}</p>
+                        <p className="text-[11px] text-gray-500 font-mono truncate">{acc.iban}</p>
+                      </div>
                     </div>
-                    <p className="text-muted-foreground">{lawyer.barNumber || "-"} • <span className={`px-1 rounded ${lawyer.role === "OWNER" ? "bg-purple-100 text-purple-700" : "bg-gray-100"}`}>{roleLabels[lawyer.role]}</span></p>
+                    <div className="flex items-center gap-1 shrink-0">
+                      <button onClick={() => { setEditingBank(acc); setShowBankModal(true); }} className="p-1.5 hover:bg-blue-100 rounded-md" title="Düzenle"><Pencil className="h-3.5 w-3.5 text-gray-500" /></button>
+                      <button onClick={() => handleDeleteBankAccount(acc.id)} className="p-1.5 hover:bg-red-100 rounded-md" title="Sil"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-1">
-                  {/* Varsayılan Seç Butonu */}
-                  <button 
-                    onClick={async () => {
+                ))}
+                {(!office?.bankAccounts || office.bankAccounts.length === 0) && <p className="text-[12px] text-gray-400 text-center py-6">Henüz banka hesabı eklenmemiş</p>}
+              </div>
+            </div>
+          </div>
+        </div>
+        )}
+        {drawerSection === "lawyers" && (
+        <div className="h-full flex flex-col bg-white">
+          <CollectionHeader title="Avukatlar" description="Büro avukatları — sıra ve yeni-takip varsayılanı" actionLabel="Ekle" onAction={() => { setEditingLawyer(null); setShowLawyerModal(true); }} />
+          <div className="px-5 py-4">
+            <div className="rounded-xl border-2 border-indigo-300 bg-indigo-50/30 p-2">
+              <div className="divide-y divide-indigo-100">
+                {office?.lawyers?.map((lawyer, index) => (
+                  <div
+                    key={lawyer.id}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('lawyerId', lawyer.id);
+                      e.dataTransfer.setData('lawyerIndex', index.toString());
+                      e.currentTarget.classList.add('opacity-50');
+                    }}
+                    onDragEnd={(e) => {
+                      e.currentTarget.classList.remove('opacity-50');
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.currentTarget.classList.add('bg-indigo-100');
+                    }}
+                    onDragLeave={(e) => {
+                      e.currentTarget.classList.remove('bg-indigo-100');
+                    }}
+                    onDrop={async (e) => {
+                      e.preventDefault();
+                      e.currentTarget.classList.remove('bg-indigo-100');
+                      const draggedId = e.dataTransfer.getData('lawyerId');
+                      const draggedIndex = parseInt(e.dataTransfer.getData('lawyerIndex'));
+                      if (draggedId === lawyer.id) return;
+
+                      // Yeni sıralama oluştur
+                      const lawyers = [...(office?.lawyers || [])];
+                      const [draggedLawyer] = lawyers.splice(draggedIndex, 1);
+                      lawyers.splice(index, 0, draggedLawyer);
+
+                      // API'ye gönder
                       try {
-                        await api.put(`/lawyers/${lawyer.id}`, { isDefaultForNewCases: !lawyer.isDefaultForNewCases });
+                        await api.put('/lawyers/order/update', { lawyerIds: lawyers.map(l => l.id) });
                         await loadOffice();
                         showSaved();
-                      } catch (e) { console.error(e); }
+                      } catch (err) { console.error(err); }
                     }}
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
-                      lawyer.isDefaultForNewCases 
-                        ? 'bg-amber-500 text-white hover:bg-amber-600' 
-                        : 'bg-gray-100 text-gray-600 hover:bg-amber-100 hover:text-amber-700'
-                    }`}
-                    title={lawyer.isDefaultForNewCases ? "Varsayılandan çıkar" : "Varsayılan yap"}
+                    className={`flex items-center justify-between gap-2 px-2.5 py-2 border-l-2 ${lawyer.isDefaultForNewCases ? 'border-amber-400' : 'border-transparent'} hover:bg-white/60 cursor-move transition-colors`}
                   >
-                    {lawyer.isDefaultForNewCases ? '⭐ Varsayılan' : '☆ Seç'}
-                  </button>
-                  <button onClick={() => { setEditingLawyer(lawyer); setShowLawyerModal(true); }} className="p-1 hover:bg-gray-200 rounded"><Pencil className="h-3 w-3 text-gray-500" /></button>
-                  <button onClick={() => handleDeleteLawyer(lawyer.id)} className="p-1 hover:bg-red-100 rounded"><Trash2 className="h-3 w-3 text-red-500" /></button>
-                </div>
-              </div>
-            ))}
-            {(!office?.lawyers || office.lawyers.length === 0) && <p className="text-xs text-muted-foreground text-center py-4">Avukat yok</p>}
-          </div>
-          {/* Sıralama ve varsayılan bilgisi */}
-          <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-[10px] text-blue-700">
-            💡 Sürükle-bırak ile sıralayın. "⭐ Varsayılan" avukatlar yeni takiplerde otomatik seçilir.
-          </div>
-        </div>
-
-        {/* Personel */}
-        <div className="bg-white rounded-lg border p-3 flex flex-col">
-          <div className="flex items-center justify-between mb-2">
-            <h2 className="text-sm font-semibold flex items-center gap-1"><Users className="h-4 w-4 text-orange-500" />Personel</h2>
-            <button onClick={() => { setEditingStaff(null); setShowStaffModal(true); }} className="text-xs text-primary hover:underline flex items-center gap-0.5"><Plus className="h-3 w-3" />Ekle</button>
-          </div>
-          <div className="flex-1 overflow-auto">
-            {staffList.map((staff, index) => (
-              <div 
-                key={staff.id} 
-                draggable
-                onDragStart={(e) => {
-                  e.dataTransfer.setData('staffId', staff.id);
-                  e.dataTransfer.setData('staffIndex', index.toString());
-                  e.currentTarget.classList.add('opacity-50');
-                }}
-                onDragEnd={(e) => {
-                  e.currentTarget.classList.remove('opacity-50');
-                }}
-                onDragOver={(e) => {
-                  e.preventDefault();
-                  e.currentTarget.classList.add('bg-orange-100', 'border-orange-400');
-                }}
-                onDragLeave={(e) => {
-                  e.currentTarget.classList.remove('bg-orange-100', 'border-orange-400');
-                }}
-                onDrop={async (e) => {
-                  e.preventDefault();
-                  e.currentTarget.classList.remove('bg-orange-100', 'border-orange-400');
-                  const draggedId = e.dataTransfer.getData('staffId');
-                  const draggedIndex = parseInt(e.dataTransfer.getData('staffIndex'));
-                  if (draggedId === staff.id) return;
-                  
-                  // Yeni sıralama oluştur
-                  const newList = [...staffList];
-                  const [draggedStaff] = newList.splice(draggedIndex, 1);
-                  newList.splice(index, 0, draggedStaff);
-                  
-                  // Optimistic update
-                  setStaffList(newList);
-                  
-                  // API'ye gönder
-                  try {
-                    await api.put('/staff/order/update', { staffIds: newList.map(s => s.id) });
-                    showSaved();
-                  } catch (err) { 
-                    console.error(err); 
-                    // Hata durumunda geri al
-                    await loadStaff();
-                  }
-                }}
-                className={`flex items-center justify-between p-2 border-b text-xs hover:bg-gray-50 cursor-move transition-colors ${staff.isDefaultForNewCases ? 'bg-amber-50' : ''}`}
-              >
-                <div className="flex items-center gap-2">
-                  <GripVertical className="h-3 w-3 text-gray-400 cursor-grab active:cursor-grabbing" />
-                  <div>
-                    <p className="font-medium">{staff.firstName} {staff.lastName}</p>
-                    <p className="text-muted-foreground"><span className={`px-1 rounded ${getStaffTypeColor(staff.staffType)}`}>{getStaffTypeLabel(staff.staffType)}</span></p>
+                    <div className="flex items-center gap-2 min-w-0">
+                      <GripVertical className="h-3.5 w-3.5 text-gray-400 cursor-grab active:cursor-grabbing shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-semibold text-gray-900 truncate">{(lawyer as any).displayName || `${(lawyer as any).title || "Av."} ${lawyer.name} ${lawyer.surname}`}</p>
+                        <p className="text-[11px] text-gray-500 truncate">{lawyer.barNumber || "-"} • <span className={`px-1.5 py-0.5 rounded text-[10.5px] font-medium ${roleBadgeClass(lawyerRankLabel(lawyer))}`}>{lawyerRankLabel(lawyer)}</span></p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {/* Varsayılan Seç Butonu */}
+                      <button
+                        onClick={async () => {
+                          try {
+                            await api.put(`/lawyers/${lawyer.id}`, { isDefaultForNewCases: !lawyer.isDefaultForNewCases });
+                            await loadOffice();
+                            showSaved();
+                          } catch (e) { console.error(e); }
+                        }}
+                        className={`px-2 py-1 rounded-md text-[10.5px] font-medium transition-colors ${
+                          lawyer.isDefaultForNewCases
+                            ? 'bg-amber-500 text-white hover:bg-amber-600'
+                            : 'bg-gray-100 text-gray-600 hover:bg-amber-100 hover:text-amber-700'
+                        }`}
+                        title={lawyer.isDefaultForNewCases ? "Varsayılandan çıkar" : "Varsayılan yap"}
+                      >
+                        {lawyer.isDefaultForNewCases ? '⭐ Varsayılan' : '☆ Seç'}
+                      </button>
+                      <button onClick={() => { setEditingLawyer(lawyer); setShowLawyerModal(true); }} className="p-1.5 hover:bg-indigo-100 rounded-md" title="Düzenle"><Pencil className="h-3.5 w-3.5 text-gray-500" /></button>
+                      <button onClick={() => handleDeleteLawyer(lawyer.id)} className="p-1.5 hover:bg-red-100 rounded-md" title="Sil"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
+                    </div>
                   </div>
-                </div>
-                <div className="flex items-center gap-1">
-                  {/* Varsayılan Seç Butonu */}
-                  <button 
-                    onClick={async () => {
-                      const newValue = !staff.isDefaultForNewCases;
-                      
-                      // Optimistic update
-                      setStaffList(prev => prev.map(s => 
-                        s.id === staff.id ? { ...s, isDefaultForNewCases: newValue } : s
-                      ));
-                      
-                      try {
-                        await api.put(`/staff/${staff.id}`, { isDefaultForNewCases: newValue });
-                        showSaved();
-                      } catch (e) { 
-                        console.error(e);
-                        // Hata durumunda geri al
-                        setStaffList(prev => prev.map(s => 
-                          s.id === staff.id ? { ...s, isDefaultForNewCases: !newValue } : s
-                        ));
-                      }
-                    }}
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-medium transition-colors ${
-                      staff.isDefaultForNewCases 
-                        ? 'bg-amber-500 text-white hover:bg-amber-600' 
-                        : 'bg-gray-100 text-gray-600 hover:bg-amber-100 hover:text-amber-700'
-                    }`}
-                    title={staff.isDefaultForNewCases ? "Varsayılandan çıkar" : "Varsayılan yap"}
-                  >
-                    {staff.isDefaultForNewCases ? '⭐ Varsayılan' : '☆ Seç'}
-                  </button>
-                  <button onClick={() => { setEditingStaff(staff); setShowStaffModal(true); }} className="p-1 hover:bg-gray-200 rounded"><Pencil className="h-3 w-3 text-gray-500" /></button>
-                  <button onClick={() => handleDeleteStaff(staff.id)} className="p-1 hover:bg-red-100 rounded"><Trash2 className="h-3 w-3 text-red-500" /></button>
-                </div>
-              </div>
-            ))}
-            {staffList.length === 0 && <p className="text-xs text-muted-foreground text-center py-4">Personel yok</p>}
-          </div>
-          {/* Sıralama ve varsayılan bilgisi */}
-          <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-[10px] text-blue-700">
-            💡 Sürükle-bırak ile sıralayın. "⭐ Varsayılan" personeller yeni takiplerde otomatik seçilir.
-          </div>
-        </div>
-
-        {/* İletişim Ayarları (E-posta + SMS) */}
-        <div className="bg-white rounded-lg border p-3 flex flex-col">
-          <h2 className="text-sm font-semibold mb-2 flex items-center gap-1"><Mail className="h-4 w-4 text-red-500" />İletişim Ayarları</h2>
-          <div className="flex-1 space-y-3 text-xs overflow-auto">
-            {/* E-posta (SMTP) */}
-            <div className="p-2 border rounded bg-gray-50">
-              <p className="font-medium text-gray-700 mb-2">📧 E-posta (SMTP)</p>
-              <div className="space-y-1">
-                <div className="grid grid-cols-2 gap-1">
-                  <input value={smtpForm.smtpHost || ""} onChange={e => setSmtpForm({...smtpForm, smtpHost: e.target.value})} placeholder="SMTP Sunucu" className="border rounded px-2 py-1 text-xs" />
-                  <input type="number" value={smtpForm.smtpPort || 587} onChange={e => setSmtpForm({...smtpForm, smtpPort: parseInt(e.target.value)})} placeholder="Port" className="border rounded px-2 py-1 text-xs" />
-                </div>
-                <input value={smtpForm.smtpUser || ""} onChange={e => setSmtpForm({...smtpForm, smtpUser: e.target.value})} placeholder="Kullanıcı (E-posta)" className="w-full border rounded px-2 py-1 text-xs" />
-                <input type="password" value={smtpForm.smtpPass || ""} onChange={e => setSmtpForm({...smtpForm, smtpPass: e.target.value})} placeholder="Şifre" className="w-full border rounded px-2 py-1 text-xs" />
-                <div className="grid grid-cols-2 gap-1">
-                  <input value={smtpForm.smtpFromName || ""} onChange={e => setSmtpForm({...smtpForm, smtpFromName: e.target.value})} placeholder="Gönderen Adı" className="border rounded px-2 py-1 text-xs" />
-                  <input value={smtpForm.smtpFromEmail || ""} onChange={e => setSmtpForm({...smtpForm, smtpFromEmail: e.target.value})} placeholder="Gönderen E-posta" className="border rounded px-2 py-1 text-xs" />
-                </div>
-                {smtpTestResult && <div className={`p-1 rounded text-xs ${smtpTestResult.success ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{smtpTestResult.message}</div>}
-                <div className="flex gap-1">
-                  <button onClick={handleTestSmtp} disabled={testingSmtp || !smtpForm.smtpHost} className="flex-1 px-2 py-1 border text-xs rounded hover:bg-white disabled:opacity-50">{testingSmtp ? "..." : "Test"}</button>
-                  <button onClick={handleSaveSmtp} disabled={saving} className="flex-1 px-2 py-1 bg-blue-500 text-white text-xs rounded disabled:opacity-50">{saving ? "..." : "Kaydet"}</button>
-                </div>
+                ))}
+                {(!office?.lawyers || office.lawyers.length === 0) && <p className="text-[12px] text-gray-400 text-center py-6">Henüz avukat eklenmemiş</p>}
               </div>
             </div>
-            {/* SMS */}
-            <div className="p-2 border rounded bg-gray-50">
-              <p className="font-medium text-gray-700 mb-2">📱 SMS</p>
-              <div className="space-y-1">
-                <select value={smsForm.smsProvider} onChange={e => setSmsForm({...smsForm, smsProvider: e.target.value})} className="w-full border rounded px-2 py-1 text-xs">
-                  <option value="">SMS Sağlayıcı Seçin</option>
+            {/* Sıralama ve varsayılan bilgisi */}
+            <p className="mt-2.5 px-1 text-[11px] text-gray-500">💡 Sürükle-bırak ile sıralayın. <span className="font-medium text-amber-700">⭐ Varsayılan</span> avukatlar yeni takiplerde otomatik seçilir.</p>
+          </div>
+        </div>
+        )}
+        {drawerSection === "staff" && (
+        <div className="h-full flex flex-col bg-white">
+          <CollectionHeader title="Personel" description="Büro personeli — sıra ve yeni-takip varsayılanı" actionLabel="Ekle" onAction={() => { setEditingStaff(null); setShowStaffModal(true); }} />
+          <div className="px-5 py-4">
+            <div className="rounded-xl border-2 border-indigo-300 bg-indigo-50/30 p-2">
+              <div className="divide-y divide-indigo-100">
+                {staffList.map((staff, index) => (
+                  <div
+                    key={staff.id}
+                    draggable
+                    onDragStart={(e) => {
+                      e.dataTransfer.setData('staffId', staff.id);
+                      e.dataTransfer.setData('staffIndex', index.toString());
+                      e.currentTarget.classList.add('opacity-50');
+                    }}
+                    onDragEnd={(e) => {
+                      e.currentTarget.classList.remove('opacity-50');
+                    }}
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      e.currentTarget.classList.add('bg-indigo-100');
+                    }}
+                    onDragLeave={(e) => {
+                      e.currentTarget.classList.remove('bg-indigo-100');
+                    }}
+                    onDrop={async (e) => {
+                      e.preventDefault();
+                      e.currentTarget.classList.remove('bg-indigo-100');
+                      const draggedId = e.dataTransfer.getData('staffId');
+                      const draggedIndex = parseInt(e.dataTransfer.getData('staffIndex'));
+                      if (draggedId === staff.id) return;
+
+                      // Yeni sıralama oluştur
+                      const newList = [...staffList];
+                      const [draggedStaff] = newList.splice(draggedIndex, 1);
+                      newList.splice(index, 0, draggedStaff);
+
+                      // Optimistic update
+                      setStaffList(newList);
+
+                      // API'ye gönder
+                      try {
+                        await api.put('/staff/order/update', { staffIds: newList.map(s => s.id) });
+                        showSaved();
+                      } catch (err) {
+                        console.error(err);
+                        // Hata durumunda geri al
+                        await loadStaff();
+                      }
+                    }}
+                    className={`flex items-center justify-between gap-2 px-2.5 py-2 border-l-2 ${staff.isDefaultForNewCases ? 'border-amber-400' : 'border-transparent'} hover:bg-white/60 cursor-move transition-colors`}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      <GripVertical className="h-3.5 w-3.5 text-gray-400 cursor-grab active:cursor-grabbing shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-[13px] font-semibold text-gray-900 truncate">{staff.firstName} {staff.lastName}</p>
+                        <p className="text-[11px] text-gray-500 truncate"><span className={`px-1.5 py-0.5 rounded text-[10.5px] font-medium ${getStaffTypeColor(staff.staffType)}`}>{getStaffTypeLabel(staff.staffType)}</span></p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1 shrink-0">
+                      {/* Varsayılan Seç Butonu */}
+                      <button
+                        onClick={async () => {
+                          const newValue = !staff.isDefaultForNewCases;
+
+                          // Optimistic update
+                          setStaffList(prev => prev.map(s =>
+                            s.id === staff.id ? { ...s, isDefaultForNewCases: newValue } : s
+                          ));
+
+                          try {
+                            await api.put(`/staff/${staff.id}`, { isDefaultForNewCases: newValue });
+                            showSaved();
+                          } catch (e) {
+                            console.error(e);
+                            // Hata durumunda geri al
+                            setStaffList(prev => prev.map(s =>
+                              s.id === staff.id ? { ...s, isDefaultForNewCases: !newValue } : s
+                            ));
+                          }
+                        }}
+                        className={`px-2 py-1 rounded-md text-[10.5px] font-medium transition-colors ${
+                          staff.isDefaultForNewCases
+                            ? 'bg-amber-500 text-white hover:bg-amber-600'
+                            : 'bg-gray-100 text-gray-600 hover:bg-amber-100 hover:text-amber-700'
+                        }`}
+                        title={staff.isDefaultForNewCases ? "Varsayılandan çıkar" : "Varsayılan yap"}
+                      >
+                        {staff.isDefaultForNewCases ? '⭐ Varsayılan' : '☆ Seç'}
+                      </button>
+                      <button onClick={() => { setEditingStaff(staff); setShowStaffModal(true); }} className="p-1.5 hover:bg-indigo-100 rounded-md" title="Düzenle"><Pencil className="h-3.5 w-3.5 text-gray-500" /></button>
+                      <button onClick={() => handleDeleteStaff(staff.id)} className="p-1.5 hover:bg-red-100 rounded-md" title="Sil"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
+                    </div>
+                  </div>
+                ))}
+                {staffList.length === 0 && <p className="text-[12px] text-gray-400 text-center py-6">Henüz personel eklenmemiş</p>}
+              </div>
+            </div>
+            {/* Sıralama ve varsayılan bilgisi */}
+            <p className="mt-2.5 px-1 text-[11px] text-gray-500">💡 Sürükle-bırak ile sıralayın. <span className="font-medium text-amber-700">⭐ Varsayılan</span> personeller yeni takiplerde otomatik seçilir.</p>
+          </div>
+        </div>
+        )}
+        {drawerSection === "smtp" && (
+        <div className="h-full flex flex-col bg-white">
+          <WorkbenchHeader title="SMTP" description="E-posta gönderim sunucusu" saving={saving} onSave={handleSaveSmtp} status={smtpTestResult ? { ok: smtpTestResult.success, msg: smtpTestResult.message } : null} />
+          <div className="px-5 py-4">
+            <SettingsSection title="E-POSTA (SMTP)" accent="teal">
+              <div style={{ width: 280 }}>
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">SMTP Sunucu</label>
+                <input value={smtpForm.smtpHost || ""} onChange={e => setSmtpForm({ ...smtpForm, smtpHost: e.target.value })} placeholder="srvc...com" className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none" />
+              </div>
+              <div style={{ width: 120 }}>
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Port</label>
+                <input type="number" value={smtpForm.smtpPort || 587} onChange={e => setSmtpForm({ ...smtpForm, smtpPort: parseInt(e.target.value) })} className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none" />
+              </div>
+              <div style={{ width: 280 }}>
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Kullanıcı (E-posta)</label>
+                <input value={smtpForm.smtpUser || ""} onChange={e => setSmtpForm({ ...smtpForm, smtpUser: e.target.value })} className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none" />
+              </div>
+              <div style={{ width: 200 }}>
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Şifre</label>
+                <input type="password" value={smtpForm.smtpPass || ""} onChange={e => setSmtpForm({ ...smtpForm, smtpPass: e.target.value })} placeholder="••••••••" className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none" />
+              </div>
+              <div style={{ width: 220 }}>
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Gönderen Adı</label>
+                <input value={smtpForm.smtpFromName || ""} onChange={e => setSmtpForm({ ...smtpForm, smtpFromName: e.target.value })} className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none" />
+              </div>
+              <div style={{ width: 280 }}>
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Gönderen E-posta</label>
+                <input value={smtpForm.smtpFromEmail || ""} onChange={e => setSmtpForm({ ...smtpForm, smtpFromEmail: e.target.value })} className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none" />
+              </div>
+            </SettingsSection>
+            <div className="flex items-center gap-3 px-1">
+              <button onClick={handleTestSmtp} disabled={testingSmtp || !smtpForm.smtpHost} className="px-3.5 py-1.5 rounded-md border border-gray-300 text-[13px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">{testingSmtp ? "..." : "Test et"}</button>
+              {smtpTestResult && <span className={`text-[12px] font-medium ${smtpTestResult.success ? "text-green-700" : "text-red-700"}`}>{smtpTestResult.message}</span>}
+            </div>
+          </div>
+        </div>
+        )}
+        {drawerSection === "sms" && (
+        <div className="h-full flex flex-col bg-white">
+          <WorkbenchHeader title="SMS" description="SMS sağlayıcı ayarları" saving={saving} onSave={handleSaveSms} />
+          <div className="px-5 py-4">
+            <SettingsSection title="SMS SAĞLAYICI" accent="teal">
+              <div style={{ width: 240 }}>
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Sağlayıcı</label>
+                <select value={smsForm.smsProvider} onChange={e => setSmsForm({ ...smsForm, smsProvider: e.target.value })} className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none">
+                  <option value="">Seçiniz</option>
                   <option value="NETGSM">NetGSM</option>
                   <option value="ILETI_MERKEZI">İleti Merkezi</option>
                 </select>
-                <input value={smsForm.smsApiKey} onChange={e => setSmsForm({...smsForm, smsApiKey: e.target.value})} placeholder="API Key / Kullanıcı Kodu" className="w-full border rounded px-2 py-1 text-xs" />
-                <input type="password" value={smsForm.smsApiSecret} onChange={e => setSmsForm({...smsForm, smsApiSecret: e.target.value})} placeholder="API Secret / Şifre" className="w-full border rounded px-2 py-1 text-xs" />
-                <input value={smsForm.smsSender} onChange={e => setSmsForm({...smsForm, smsSender: e.target.value})} placeholder="Gönderen Adı (Başlık)" className="w-full border rounded px-2 py-1 text-xs" />
-                {smsTestResult && <div className={`p-1 rounded text-xs ${smsTestResult.status === "verified" ? "bg-green-100 text-green-700" : smsTestResult.status === "unverified" ? "bg-amber-100 text-amber-700" : "bg-red-100 text-red-700"}`}>{smsTestResult.message}</div>}
-                <div className="flex gap-1">
-                  <button onClick={handleTestSms} disabled={testingSms || !smsForm.smsProvider} className="flex-1 px-2 py-1 border text-xs rounded hover:bg-white disabled:opacity-50">{testingSms ? "..." : "Test"}</button>
-                  <button onClick={handleSaveSms} disabled={saving} className="flex-1 px-2 py-1 bg-green-500 text-white text-xs rounded disabled:opacity-50">{saving ? "..." : "Kaydet"}</button>
-                </div>
               </div>
+              <div style={{ width: 240 }}>
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">API Key / Kullanıcı Kodu</label>
+                <input value={smsForm.smsApiKey} onChange={e => setSmsForm({ ...smsForm, smsApiKey: e.target.value })} className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none" />
+              </div>
+              <div style={{ width: 240 }}>
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">API Secret / Şifre</label>
+                <input type="password" value={smsForm.smsApiSecret} onChange={e => setSmsForm({ ...smsForm, smsApiSecret: e.target.value })} className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none" />
+              </div>
+              <div style={{ width: 220 }}>
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Gönderen Adı (Başlık)</label>
+                <input value={smsForm.smsSender} onChange={e => setSmsForm({ ...smsForm, smsSender: e.target.value })} className="w-full border-2 border-teal-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-teal-500 focus:outline-none" />
+              </div>
+            </SettingsSection>
+            <div className="flex items-center gap-3 px-1">
+              <button onClick={handleTestSms} disabled={testingSms || !smsForm.smsProvider} className="px-3.5 py-1.5 rounded-md border border-gray-300 text-[13px] font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">{testingSms ? "..." : "Test et"}</button>
+              {smsTestResult && <span className={`text-[12px] font-medium ${smsTestResult.status === "verified" ? "text-green-700" : smsTestResult.status === "unverified" ? "text-amber-700" : "text-red-700"}`}>{smsTestResult.message}</span>}
             </div>
+          </div>
+        </div>
+        )}
+        {drawerSection === "greeting" && (
+        <div className="bg-white rounded-lg border p-3 flex flex-col text-xs">
             {/* Otomatik Tebrik */}
             <div className="p-2 border rounded bg-purple-50">
               <p className="font-medium text-purple-700 mb-2">🎂 Otomatik Tebrik</p>
@@ -665,84 +944,85 @@ export default function OfficeSettingsPage() {
                 <button onClick={handleSaveGreeting} disabled={saving} className="w-full px-2 py-1 bg-purple-500 text-white text-xs rounded disabled:opacity-50">{saving ? "..." : "Kaydet"}</button>
               </div>
             </div>
-          </div>
-
-        {/* Görev ve Eskalasyon Ayarları */}
-        <div className="bg-white rounded-lg border p-3 flex flex-col">
-          <h2 className="text-sm font-semibold mb-2 flex items-center gap-1">⏱️ Görev ve Eskalasyon Ayarları</h2>
-          <div className="flex-1 space-y-3 text-xs">
-            <p className="text-[10px] text-gray-500">Operasyonel eksik görevleri (ör. müvekkil iletişim bilgisi) zamanında çözülmezse büro-geneli politikaya göre eskale edilir. (Motor sonraki sürümde aktifleşir.)</p>
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <label className="block font-medium text-gray-700 mb-0.5">Yönetici Avukat(lar)</label>
-                <div className="border rounded p-1.5 max-h-28 overflow-auto space-y-0.5">
-                  {(office?.lawyers || []).length === 0 && <p className="text-gray-400">Avukat yok</p>}
-                  {(office?.lawyers || []).map((l: any) => (
-                    <label key={l.id} className="flex items-center gap-1.5">
-                      <input type="checkbox" checked={escalationForm.escalationManagerLawyerIds.includes(l.id)} onChange={e => {
-                        setEscalationForm(prev => ({ ...prev, escalationManagerLawyerIds: e.target.checked ? [...prev.escalationManagerLawyerIds, l.id] : prev.escalationManagerLawyerIds.filter(id => id !== l.id) }));
-                      }} />
-                      {l.name} {l.surname}
-                    </label>
-                  ))}
+        </div>
+        )}
+        {drawerSection === "escalation" && (
+        <div className="h-full flex flex-col bg-white">
+          <WorkbenchHeader title="Görev & Eskalasyon" description="Geciken görevlerin kademeli bildirim politikası" saving={saving} onSave={handleSaveEscalation} status={escalationStatus} />
+          <div className="px-5 py-4 space-y-4 text-[13px]">
+            <div className="rounded-xl border-2 border-indigo-300 bg-indigo-50/30 p-4 space-y-3">
+              <h3 className="text-[12.5px] font-bold tracking-wide text-indigo-800 border-b-2 border-indigo-200 pb-2">OPERASYONEL GÖREV ESKALASYONU</h3>
+              <p className="text-[11px] text-gray-500">Müvekkil iletişim bilgisi gibi eksik operasyonel görevler zamanında çözülmezse büro-geneli politikaya göre eskale edilir. (Motor sonraki sürümde aktifleşir.)</p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Yönetici Avukat(lar)</label>
+                  <div className="border-2 border-indigo-200 rounded-md p-2 max-h-32 overflow-auto space-y-0.5 bg-white">
+                    {(office?.lawyers || []).length === 0 && <p className="text-gray-400">Avukat yok</p>}
+                    {(office?.lawyers || []).map((l: any) => (
+                      <label key={l.id} className="flex items-center gap-1.5">
+                        <input type="checkbox" checked={escalationForm.escalationManagerLawyerIds.includes(l.id)} onChange={e => {
+                          setEscalationForm(prev => ({ ...prev, escalationManagerLawyerIds: e.target.checked ? [...prev.escalationManagerLawyerIds, l.id] : prev.escalationManagerLawyerIds.filter(id => id !== l.id) }));
+                        }} />
+                        {l.name} {l.surname}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Kurucu/Ortak(lar)</label>
+                  <div className="border-2 border-indigo-200 rounded-md p-2 max-h-32 overflow-auto space-y-0.5 bg-white">
+                    {(office?.lawyers || []).length === 0 && <p className="text-gray-400">Avukat yok</p>}
+                    {(office?.lawyers || []).map((l: any) => (
+                      <label key={l.id} className="flex items-center gap-1.5">
+                        <input type="checkbox" checked={escalationForm.escalationFounderLawyerIds.includes(l.id)} onChange={e => {
+                          setEscalationForm(prev => ({ ...prev, escalationFounderLawyerIds: e.target.checked ? [...prev.escalationFounderLawyerIds, l.id] : prev.escalationFounderLawyerIds.filter(id => id !== l.id) }));
+                        }} />
+                        {l.name} {l.surname}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">İlk hatırlatma (gün)</label>
+                  <input type="number" min={1} value={escalationForm.opReminderDays} onChange={e => setEscalationForm({...escalationForm, opReminderDays: parseInt(e.target.value) || 0})} className="w-full border-2 border-indigo-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-indigo-500 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Kurucu eskalasyonu (gün)</label>
+                  <input type="number" min={1} value={escalationForm.opFounderDays} onChange={e => setEscalationForm({...escalationForm, opFounderDays: parseInt(e.target.value) || 0})} className="w-full border-2 border-indigo-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-indigo-500 focus:outline-none" />
+                </div>
+                <div>
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Periyodik tekrar (ay)</label>
+                  <input type="number" min={1} value={escalationForm.opRepeatMonths} onChange={e => setEscalationForm({...escalationForm, opRepeatMonths: parseInt(e.target.value) || 0})} className="w-full border-2 border-indigo-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-indigo-500 focus:outline-none" />
                 </div>
               </div>
               <div>
-                <label className="block font-medium text-gray-700 mb-0.5">Kurucu/Ortak(lar)</label>
-                <div className="border rounded p-1.5 max-h-28 overflow-auto space-y-0.5">
-                  {(office?.lawyers || []).length === 0 && <p className="text-gray-400">Avukat yok</p>}
-                  {(office?.lawyers || []).map((l: any) => (
-                    <label key={l.id} className="flex items-center gap-1.5">
-                      <input type="checkbox" checked={escalationForm.escalationFounderLawyerIds.includes(l.id)} onChange={e => {
-                        setEscalationForm(prev => ({ ...prev, escalationFounderLawyerIds: e.target.checked ? [...prev.escalationFounderLawyerIds, l.id] : prev.escalationFounderLawyerIds.filter(id => id !== l.id) }));
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Operasyonel Görev Alıcıları (ilk sahip)</label>
+                <div className="flex flex-wrap gap-x-4 gap-y-1">
+                  {STAFF_TYPES.filter(t => t.value !== "DIGER").map(t => (
+                    <label key={t.value} className="flex items-center gap-1.5">
+                      <input type="checkbox" checked={escalationForm.opStaffTypes.includes(t.value)} onChange={e => {
+                        setEscalationForm(prev => ({ ...prev, opStaffTypes: e.target.checked ? [...prev.opStaffTypes, t.value] : prev.opStaffTypes.filter(v => v !== t.value) }));
                       }} />
-                      {l.name} {l.surname}
+                      {t.label}
                     </label>
                   ))}
                 </div>
+                <p className="text-[11px] text-gray-500 mt-1">Operasyonel eksik görevini önce bu personel türleri görür / bildirim alır (motor PR-3b'de).</p>
+              </div>
+              <div className="flex items-center gap-4">
+                <label className="flex items-center gap-1.5"><input type="checkbox" checked={escalationForm.opEmailEnabled} onChange={e => setEscalationForm({...escalationForm, opEmailEnabled: e.target.checked})} /> E-posta aktif</label>
+                <label className="flex items-center gap-1.5"><input type="checkbox" checked={escalationForm.opSmsEnabled} onChange={e => setEscalationForm({...escalationForm, opSmsEnabled: e.target.checked})} /> SMS aktif</label>
+                <label className="flex items-center gap-1.5 text-gray-400" title="WhatsApp gönderimi yakında"><input type="checkbox" disabled /> WhatsApp (yakında)</label>
               </div>
             </div>
-            <div className="grid grid-cols-3 gap-2">
+            <div className="rounded-xl border-2 border-indigo-300 bg-indigo-50/30 p-4">
+              <h3 className="text-[12.5px] font-bold tracking-wide text-indigo-800 border-b-2 border-indigo-200 pb-2 mb-3">📁 DOSYA GÖREVİ ESKALASYONU</h3>
+              <p className="text-[11px] text-gray-500 mb-3">Dosyaya bağlı otomatik görevler (ör. tebligat iade, ihbarname, masraf takibi) önce Dosya Sorumlusu'na, çözülmezse sırasıyla Takım Lideri → Yönetici Avukat → Kurucu'ya bildirilir. (Motor şu an kapalı; bu ayarlar açıldığında geçerli olur.)</p>
               <div>
-                <label className="block font-medium text-gray-700 mb-0.5">İlk hatırlatma (gün)</label>
-                <input type="number" min={1} value={escalationForm.opReminderDays} onChange={e => setEscalationForm({...escalationForm, opReminderDays: parseInt(e.target.value) || 0})} className="w-full border rounded px-2 py-1 text-xs" />
-              </div>
-              <div>
-                <label className="block font-medium text-gray-700 mb-0.5">Kurucu eskalasyonu (gün)</label>
-                <input type="number" min={1} value={escalationForm.opFounderDays} onChange={e => setEscalationForm({...escalationForm, opFounderDays: parseInt(e.target.value) || 0})} className="w-full border rounded px-2 py-1 text-xs" />
-              </div>
-              <div>
-                <label className="block font-medium text-gray-700 mb-0.5">Periyodik tekrar (ay)</label>
-                <input type="number" min={1} value={escalationForm.opRepeatMonths} onChange={e => setEscalationForm({...escalationForm, opRepeatMonths: parseInt(e.target.value) || 0})} className="w-full border rounded px-2 py-1 text-xs" />
-              </div>
-            </div>
-            <div>
-              <label className="block font-medium text-gray-700 mb-1">Operasyonel Görev Alıcıları (ilk sahip)</label>
-              <div className="flex flex-wrap gap-x-4 gap-y-1">
-                {STAFF_TYPES.filter(t => t.value !== "DIGER").map(t => (
-                  <label key={t.value} className="flex items-center gap-1.5">
-                    <input type="checkbox" checked={escalationForm.opStaffTypes.includes(t.value)} onChange={e => {
-                      setEscalationForm(prev => ({ ...prev, opStaffTypes: e.target.checked ? [...prev.opStaffTypes, t.value] : prev.opStaffTypes.filter(v => v !== t.value) }));
-                    }} />
-                    {t.label}
-                  </label>
-                ))}
-              </div>
-              <p className="text-[10px] text-gray-500 mt-0.5">Operasyonel eksik görevini önce bu personel türleri görür / bildirim alır (motor PR-3b'de).</p>
-            </div>
-            <div className="flex items-center gap-4">
-              <label className="flex items-center gap-1.5"><input type="checkbox" checked={escalationForm.opEmailEnabled} onChange={e => setEscalationForm({...escalationForm, opEmailEnabled: e.target.checked})} /> E-posta aktif</label>
-              <label className="flex items-center gap-1.5"><input type="checkbox" checked={escalationForm.opSmsEnabled} onChange={e => setEscalationForm({...escalationForm, opSmsEnabled: e.target.checked})} /> SMS aktif</label>
-              <label className="flex items-center gap-1.5 text-gray-400" title="WhatsApp gönderimi yakında"><input type="checkbox" disabled /> WhatsApp (yakında)</label>
-            </div>
-
-            {/* D-G5: Dosya Görevi Eskalasyonu (case-task; operasyonel bölümden AYRI). Motor flag ile kapalı. */}
-            <div className="border-t pt-2 mt-1">
-              <h3 className="font-semibold text-gray-700 mb-1 flex items-center gap-1">📁 Dosya Görevi Eskalasyonu</h3>
-              <p className="text-[10px] text-gray-500 mb-2">Dosyaya bağlı otomatik görevler (ör. tebligat iade, ihbarname, masraf takibi) önce Dosya Sorumlusu'na, çözülmezse sırasıyla Takım Lideri → Yönetici Avukat → Kurucu'ya bildirilir. (Motor şu an kapalı; bu ayarlar açıldığında geçerli olur.)</p>
-              <div>
-                <label className="block font-medium text-gray-700 mb-0.5">Takım Lideri Avukat(lar)</label>
-                <div className="border rounded p-1.5 max-h-28 overflow-auto space-y-0.5">
+                <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Takım Lideri Avukat(lar)</label>
+                <div className="border-2 border-indigo-200 rounded-md p-2 max-h-32 overflow-auto space-y-0.5 bg-white">
                   {(office?.lawyers || []).length === 0 && <p className="text-gray-400">Avukat yok</p>}
                   {(office?.lawyers || []).map((l: any) => (
                     <label key={l.id} className="flex items-center gap-1.5">
@@ -753,29 +1033,28 @@ export default function OfficeSettingsPage() {
                     </label>
                   ))}
                 </div>
-                <p className="text-[10px] text-gray-500 mt-0.5">Boş bırakılırsa Takım Lideri kademesi atlanır → doğrudan Yönetici Avukat'a geçilir.</p>
+                <p className="text-[11px] text-gray-500 mt-1">Boş bırakılırsa Takım Lideri kademesi atlanır → doğrudan Yönetici Avukat'a geçilir.</p>
               </div>
-              <div className="grid grid-cols-3 gap-2 mt-2">
+              <div className="grid grid-cols-3 gap-3 mt-3">
                 <div>
-                  <label className="block font-medium text-gray-700 mb-0.5">Sorumlu → Lider (gün)</label>
-                  <input type="number" min={1} value={escalationForm.caseTaskOwnerDays} onChange={e => setEscalationForm({...escalationForm, caseTaskOwnerDays: parseInt(e.target.value) || 0})} className="w-full border rounded px-2 py-1 text-xs" />
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Sorumlu → Lider (gün)</label>
+                  <input type="number" min={1} value={escalationForm.caseTaskOwnerDays} onChange={e => setEscalationForm({...escalationForm, caseTaskOwnerDays: parseInt(e.target.value) || 0})} className="w-full border-2 border-indigo-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-indigo-500 focus:outline-none" />
                 </div>
                 <div>
-                  <label className="block font-medium text-gray-700 mb-0.5">Lider → Yönetici (gün)</label>
-                  <input type="number" min={1} value={escalationForm.caseTaskTeamLeadDays} onChange={e => setEscalationForm({...escalationForm, caseTaskTeamLeadDays: parseInt(e.target.value) || 0})} className="w-full border rounded px-2 py-1 text-xs" />
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Lider → Yönetici (gün)</label>
+                  <input type="number" min={1} value={escalationForm.caseTaskTeamLeadDays} onChange={e => setEscalationForm({...escalationForm, caseTaskTeamLeadDays: parseInt(e.target.value) || 0})} className="w-full border-2 border-indigo-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-indigo-500 focus:outline-none" />
                 </div>
                 <div>
-                  <label className="block font-medium text-gray-700 mb-0.5">Yönetici → Kurucu (gün)</label>
-                  <input type="number" min={1} value={escalationForm.caseTaskManagerDays} onChange={e => setEscalationForm({...escalationForm, caseTaskManagerDays: parseInt(e.target.value) || 0})} className="w-full border rounded px-2 py-1 text-xs" />
+                  <label className="block text-[11.5px] font-semibold text-gray-700 mb-1">Yönetici → Kurucu (gün)</label>
+                  <input type="number" min={1} value={escalationForm.caseTaskManagerDays} onChange={e => setEscalationForm({...escalationForm, caseTaskManagerDays: parseInt(e.target.value) || 0})} className="w-full border-2 border-indigo-200 rounded-md px-2.5 py-1.5 text-[13px] font-medium text-gray-900 focus:border-indigo-500 focus:outline-none" />
                 </div>
               </div>
             </div>
-            {escalationStatus && <div className={`p-1 rounded text-xs text-center ${escalationStatus.ok ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>{escalationStatus.msg}</div>}
-            <button onClick={handleSaveEscalation} disabled={saving} className="w-full px-2 py-1 bg-blue-600 text-white text-xs rounded disabled:opacity-50">{saving ? "..." : "Kaydet"}</button>
           </div>
         </div>
-        </div>
-      </div>
+        )}
+        </SettingsDrawer>
+      )}
 
       {/* Modals */}
       {showLawyerModal && <LawyerModal lawyer={editingLawyer} onSave={handleSaveLawyer} onClose={() => { setShowLawyerModal(false); setEditingLawyer(null); }} saving={saving} />}
