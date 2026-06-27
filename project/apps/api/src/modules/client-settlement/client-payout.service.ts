@@ -1,4 +1,4 @@
-import { Injectable, Logger, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger, BadRequestException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateClientPayoutDto } from './dto/create-client-payout.dto';
@@ -58,12 +58,13 @@ export class ClientPayoutService {
       throw new BadRequestException('caseClientId geçersiz/yabancı veya uygun rolde değil (ALACAKLI/ORTAK_ALACAKLI)');
     }
 
-    // Idempotent replay (lock öncesi hızlı yol): aynı (tenant, idempotencyKey) varsa same-result.
+    // Idempotent replay (lock öncesi hızlı yol): aynı (tenant, idempotencyKey).
+    // AYNI payload → replay; FARKLI payload → ConflictException (sessiz eski-payout dönme YOK).
     const existing = await this.prisma.clientPayout.findUnique({
       where: { tenantId_idempotencyKey: { tenantId, idempotencyKey: dto.idempotencyKey } },
-      select: { id: true },
+      select: { id: true, caseId: true, caseClientId: true, amount: true, currency: true },
     });
-    if (existing) return { created: false, payoutId: existing.id, idempotentReplay: true };
+    if (existing) return this.replayOrConflict(existing, dto, amount, currency);
 
     try {
       return await this.prisma.$transaction(async (tx) => {
@@ -72,12 +73,12 @@ export class ClientPayoutService {
         const lockKey = `payout:${tenantId}:${dto.caseId}:${dto.caseClientId}:${currency}`;
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`;
 
-        // Idempotent re-check (lock altında, race)
+        // Idempotent re-check (lock altında, race) — payload-conflict guard ile.
         const dup = await tx.clientPayout.findUnique({
           where: { tenantId_idempotencyKey: { tenantId, idempotencyKey: dto.idempotencyKey } },
-          select: { id: true },
+          select: { id: true, caseId: true, caseClientId: true, amount: true, currency: true },
         });
-        if (dup) return { created: false, payoutId: dup.id, idempotentReplay: true };
+        if (dup) return this.replayOrConflict(dup, dto, amount, currency);
 
         const outstanding = await this.computeOutstanding(tx, tenantId, dto.caseId, dto.caseClientId, currency);
         if (amount.gt(outstanding)) {
@@ -106,12 +107,37 @@ export class ClientPayoutService {
       if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2002') {
         const row = await this.prisma.clientPayout.findUnique({
           where: { tenantId_idempotencyKey: { tenantId, idempotencyKey: dto.idempotencyKey } },
-          select: { id: true },
+          select: { id: true, caseId: true, caseClientId: true, amount: true, currency: true },
         });
-        if (row) return { created: false, payoutId: row.id, idempotentReplay: true };
+        if (row) return this.replayOrConflict(row, dto, amount, currency);
       }
       throw e;
     }
+  }
+
+  /**
+   * Aynı (tenant, idempotencyKey): payload (caseId/caseClientId/amount/currency) eşleşiyorsa
+   * idempotent replay (existing payout); FARKLIYSA ConflictException — sessiz eski-payout dönme YOK
+   * (finansal güvenlik: çağıran 500 ödediğini sanıp 300'lük eski kaydı almasın).
+   */
+  private replayOrConflict(
+    existing: { id: string; caseId: string; caseClientId: string; amount: Prisma.Decimal; currency: string },
+    dto: CreateClientPayoutDto,
+    amount: Prisma.Decimal,
+    currency: string,
+  ): CreatePayoutResult {
+    const same =
+      existing.caseId === dto.caseId &&
+      existing.caseClientId === dto.caseClientId &&
+      existing.currency === currency &&
+      existing.amount.equals(amount);
+    if (!same) {
+      throw new ConflictException({
+        code: 'IDEMPOTENCY_KEY_CONFLICT',
+        message: 'Aynı idempotencyKey farklı payload ile kullanıldı (amount/caseId/caseClientId/currency)',
+      });
+    }
+    return { created: false, payoutId: existing.id, idempotentReplay: true };
   }
 
   /**

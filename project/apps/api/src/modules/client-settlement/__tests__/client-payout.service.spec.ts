@@ -71,17 +71,34 @@ describe('ClientPayoutService.create', () => {
     await expect(svc(prisma).create('t1', DTO({ amount: '100' }), ACTOR)).rejects.toThrow(/aşamaz/);
   });
 
-  it('idempotency (pre-check): existing payout → created:false replay, transaction açılmaz', async () => {
-    const { prisma } = buildPrisma({ existing: { id: 'old-payout' } });
+  it('idempotency (pre-check, AYNI payload): replay, transaction açılmaz', async () => {
+    const { prisma } = buildPrisma({ existing: { id: 'old-payout', caseId: 'case1', caseClientId: 'cc-A', amount: D(400), currency: 'TRY' } });
     const res = await svc(prisma).create('t1', DTO(), ACTOR);
     expect(res).toEqual({ created: false, payoutId: 'old-payout', idempotentReplay: true });
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('idempotency (in-tx race): dup lock altında → replay', async () => {
-    const { prisma } = buildPrisma({ ...OUT_1000, dupInTx: { id: 'race-payout' } });
+  it('idempotency (in-tx race, AYNI payload): replay', async () => {
+    const { prisma } = buildPrisma({ ...OUT_1000, dupInTx: { id: 'race-payout', caseId: 'case1', caseClientId: 'cc-A', amount: D(400), currency: 'TRY' } });
     const res = await svc(prisma).create('t1', DTO(), ACTOR);
     expect(res).toEqual({ created: false, payoutId: 'race-payout', idempotentReplay: true });
+  });
+
+  it('idempotency reuse FARKLI amount → IDEMPOTENCY_KEY_CONFLICT (sessiz eski dönme YOK)', async () => {
+    const { prisma } = buildPrisma({ existing: { id: 'old', caseId: 'case1', caseClientId: 'cc-A', amount: D(300), currency: 'TRY' } });
+    await expect(svc(prisma).create('t1', DTO({ amount: '400' }), ACTOR)).rejects.toThrow(/farklı payload/i);
+  });
+
+  it('idempotency reuse FARKLI caseClientId → conflict', async () => {
+    const { prisma } = buildPrisma({ existing: { id: 'old', caseId: 'case1', caseClientId: 'cc-OTHER', amount: D(400), currency: 'TRY' } });
+    await expect(svc(prisma).create('t1', DTO(), ACTOR)).rejects.toThrow(/farklı payload/i);
+  });
+
+  it('FARKLI tenant aynı key → izinli (tenant-scoped unique; existing yok → create)', async () => {
+    const { prisma, tx } = buildPrisma({ ...OUT_1000, existing: null });
+    const res = await svc(prisma).create('t2', DTO(), ACTOR);
+    expect(res.created).toBe(true);
+    expect(tx.clientPayout.create).toHaveBeenCalled();
   });
 
   it('foreign/wrong-role caseClientId → reject', async () => {
