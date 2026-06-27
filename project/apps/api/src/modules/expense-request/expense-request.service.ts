@@ -934,9 +934,12 @@ export class ExpenseRequestService {
   /**
    * Dosya için masraf özeti getir
    */
-  async getExpenseSummaryForCase(tenantId: string, caseId: string): Promise<ExpenseSummary> {
+  async getExpenseSummaryForCase(tenantId: string, caseId: string, clientId?: string): Promise<ExpenseSummary> {
+    // TM3 Faz7-V: opsiyonel clientId → seçili müvekkile filtreli özet (çoklu-alacaklı dosyada
+    // dosya-geneli yerine müvekkil-bazlı "talep/tahsil edilen masraf"). Salt-okuma; varsayılan
+    // davranış (clientId yok) dosya-geneli kalır → mevcut çağıranlar etkilenmez.
     const requests = await this.prisma.expenseRequest.findMany({
-      where: { tenantId, caseId, status: { not: 'CANCELLED' } },
+      where: { tenantId, caseId, status: { not: 'CANCELLED' }, ...(clientId ? { clientId } : {}) },
     });
 
     const summary: ExpenseSummary = {
