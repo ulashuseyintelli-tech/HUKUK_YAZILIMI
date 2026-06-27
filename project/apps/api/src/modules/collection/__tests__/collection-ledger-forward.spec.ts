@@ -103,6 +103,37 @@ describe('CollectionService.create — G3a ledger forward write', () => {
     expect(warnSpy).not.toHaveBeenCalledWith(expect.stringContaining('not ledger-allocated'));
   });
 
+  it('PAYMENT_RECEIVED payload kontratı client/disposition/accounting alanları olmadan korunur', async () => {
+    const { svc, domainEvent } = setup();
+
+    await svc.create('t1', { ...dto, amount: 1234, currency: 'TRY', description: 'dekont', receiptNo: 'R-1' }, 'u1');
+
+    const paymentCall = domainEvent.appendInTransaction.mock.calls.find(
+      ([, event]: any[]) => event.header.eventType === 'PAYMENT_RECEIVED',
+    );
+    expect(paymentCall).toBeDefined();
+    const paymentEvent = paymentCall![1];
+
+    expect(paymentEvent.header).toMatchObject({
+      aggregateType: 'Case',
+      aggregateId: 'c1',
+      eventType: 'PAYMENT_RECEIVED',
+      tenantId: 't1',
+    });
+    expect(paymentEvent.payload).toMatchObject({
+      collectionId: 'col1',
+      amount: 1234,
+      currency: 'TRY',
+      description: 'dekont',
+      receiptNo: 'R-1',
+    });
+    expect(paymentEvent.payload.clientId).toBeUndefined();
+    expect(paymentEvent.payload.allocationBreakdown).toBeUndefined();
+    expect(paymentEvent.payload.collectionDispositionId).toBeUndefined();
+    expect(paymentEvent.payload.clientStatementId).toBeUndefined();
+    expect(paymentEvent.payload.balanceLedgerId).toBeUndefined();
+    expect(paymentEvent.payload.payoutId).toBeUndefined();
+  });
   it('overpayment varsa CollectionOverpayment HELD projection ve event yazar', async () => {
     const summaryEngine = {
       allocatePaymentToLedgerInTx: jest.fn(async () => ({

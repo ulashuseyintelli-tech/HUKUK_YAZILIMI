@@ -81,15 +81,46 @@ describe('CaseService collection delegation (G3d)', () => {
     );
   });
 
-  it('T4: cancelCollection -> collectionService.cancel(tenantId, collectionId, {cancelReason})', async () => {
+  it('T4: cancelCollection route caseId + tenant guard sonrası collectionService.cancel delegasyonu yapar', async () => {
     const coll = { create: jest.fn(), cancel: jest.fn(async () => ({ id: 'col1' })) };
-    const svc = buildService(coll);
+    const prisma = buildPrisma({ id: 'col1', tenantId: 't1', caseId: 'c1', status: 'CONFIRMED' });
+    const svc = buildService(coll, prisma);
 
     await svc.cancelCollection('t1', 'c1', 'col1', 'iptal nedeni');
 
+    expect(prisma.collection.findFirst).toHaveBeenCalledWith({
+      where: { id: 'col1', caseId: 'c1', tenantId: 't1' },
+      select: { id: true },
+    });
     expect(coll.cancel).toHaveBeenCalledWith('t1', 'col1', { cancelReason: 'iptal nedeni' });
   });
 
+  it('TM3-S2: cancelCollection wrong route caseId fail-closed olur ve cancel delegasyonu yapmaz', async () => {
+    const coll = { create: jest.fn(), cancel: jest.fn(async () => ({ id: 'col1' })) };
+    const prisma = buildPrisma(null);
+    const svc = buildService(coll, prisma);
+
+    await expect(svc.cancelCollection('t1', 'wrong-case', 'col1', 'iptal nedeni')).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(prisma.collection.findFirst).toHaveBeenCalledWith({
+      where: { id: 'col1', caseId: 'wrong-case', tenantId: 't1' },
+      select: { id: true },
+    });
+    expect(coll.cancel).not.toHaveBeenCalled();
+  });
+  it('TM3-S2: cancelCollection tenant mismatch fail-closed olur ve cancel/event yolu başlamaz', async () => {
+    const coll = { create: jest.fn(), cancel: jest.fn(async () => ({ id: 'col1' })) };
+    const prisma = buildPrisma(null);
+    const svc = buildService(coll, prisma);
+
+    await expect(svc.cancelCollection('tenant-a', 'case-a', 'collection-b', 'iptal nedeni')).rejects.toBeInstanceOf(NotFoundException);
+
+    expect(prisma.collection.findFirst).toHaveBeenCalledWith({
+      where: { id: 'collection-b', caseId: 'case-a', tenantId: 'tenant-a' },
+      select: { id: true },
+    });
+    expect(coll.cancel).not.toHaveBeenCalled();
+  });
   it('TM3-S1: posted/confirmed delete returns reversal-required conflict and does not hard-delete', async () => {
     const prisma = buildPrisma({ id: 'col1', tenantId: 't1', caseId: 'c1', status: 'CONFIRMED' });
     const svc = buildService({}, prisma);
