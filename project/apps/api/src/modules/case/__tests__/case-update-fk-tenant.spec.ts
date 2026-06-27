@@ -100,10 +100,10 @@ describe('CASE-UPDATE-FK-TENANT patchFlags() — executionOfficeId tenant guard'
     expect(caseUpdate).not.toHaveBeenCalled();
   });
 
-  it('executionOfficeId yoksa (yalnız caseStatus) → guard çalışmaz, case.update yapılır', async () => {
+  it('executionOfficeId yoksa (yalnız notes) → guard çalışmaz, case.update yapılır', async () => {
     const { service, officeFindFirst, caseUpdate } = setup();
 
-    await service.patchFlags('tenant-1', 'case-1', { caseStatus: 'DERDEST' } as any);
+    await service.patchFlags('tenant-1', 'case-1', { notes: 'sadece not' } as any);
 
     expect(officeFindFirst).not.toHaveBeenCalled();
     expect(caseUpdate).toHaveBeenCalled();
