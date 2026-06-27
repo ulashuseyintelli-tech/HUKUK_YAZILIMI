@@ -2097,7 +2097,7 @@ export class CaseService {
   }
 
   async update(tenantId: string, id: string, dto: UpdateCaseDto, userId: string) {
-    await this.findOne(tenantId, id);
+    const existing = await this.findOne(tenantId, id);
 
     // Boş string'leri undefined'a çevir
     const data: any = { ...dto };
@@ -2120,6 +2120,17 @@ export class CaseService {
         data[key] = undefined;
       }
     });
+
+    // P3-2B-3: STATÜ YAN-KAPISI KAPALI. Statü değişimi YALNIZCA kanonik POST /case-status/:caseId/change'ten
+    // yapılır (history/decisionLog/observe orada yazılır). Farklı statü → 400; aynı statü (FE'nin "değişmeyen
+    // statü" PUT'u) → no-op (write'tan çıkar, hata yok). Statü generic update ile HİÇBİR ZAMAN yazılmaz.
+    const currentStatus = (existing as any)?.caseStatus;
+    if (data.caseStatus !== undefined && data.caseStatus !== currentStatus) {
+      throw new BadRequestException(
+        "Statü değişimi generic güncelleme ile yapılamaz; POST /case-status/:caseId/change kullanın.",
+      );
+    }
+    delete data.caseStatus;
 
     // İcra dairesi değiştiyse ve UYAP kodu yoksa, icra dairesinden al
     if (data.executionOfficeId && !data.uyapBirimKodu) {
@@ -2247,6 +2258,14 @@ export class CaseService {
   async patchFlags(tenantId: string, id: string, dto: Partial<UpdateCaseDto>) {
     await this.findOne(tenantId, id);
 
+    // P3-2B-3: caseStatus yan-kapısı KAPALI. Statü değişimi YALNIZCA POST /case-status/:caseId/change'ten
+    // (allowedFlags'ten çıkarıldı; gelirse sessizce yutmak yerine açıkça reddedilir).
+    if ((dto as any).caseStatus) {
+      throw new BadRequestException(
+        "Statü değişimi PATCH ile yapılamaz; POST /case-status/:caseId/change kullanın.",
+      );
+    }
+
     // Sadece izin verilen flag'leri güncelle
     const allowedFlags = [
       'isArchived',
@@ -2257,7 +2276,6 @@ export class CaseService {
       'automationConfig',
       // Düzenlenebilir alanlar
       'executionFileNumber',
-      'caseStatus',
       'executionPath',
       'subCategory',
       'notes',
