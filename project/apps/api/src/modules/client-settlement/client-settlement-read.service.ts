@@ -109,12 +109,14 @@ export class ClientSettlementReadService {
   /**
    * Outstanding payable (TEK KAYNAK, drift yok): Σ POSTED CLIENT_PAYABLE (underlying Collection
    * CONFIRMED) − Σ RECORDED ClientPayout. Scope tenant+case+caseClientId+currency.
+   * manualReversalRequiredAt dolu POSTED disposition payout/outstanding uygunluguna dahil degil.
    * HELD/CONTRACTUAL_FEE/FIRM_REIMB/OFFSET/OTHER ve BalanceLedger DAHİL DEĞİL.
    *
    * @param db PrismaService (read) veya tx (ClientPayoutService transaction içi).
    * Çağrıldığı yerler:
    *  - ClientPayoutService.create() (db=tx, advisory-lock altında)
    *  - ClientSettlementReadService.getOutstanding() (db=this.prisma)
+   *  - ClientSettlementReadService.getClientAccountingSummary() (payableNet hesaplamasi)
    */
   async computeOutstanding(
     db: Prisma.TransactionClient,
@@ -127,7 +129,7 @@ export class ClientSettlementReadService {
       where: {
         type: 'CLIENT_PAYABLE',
         caseClientId,
-        disposition: { tenantId, caseId, currency, status: 'POSTED' },
+        disposition: { tenantId, caseId, currency, status: 'POSTED', manualReversalRequiredAt: null },
       },
       select: { amount: true, disposition: { select: { collectionId: true } } },
     });
