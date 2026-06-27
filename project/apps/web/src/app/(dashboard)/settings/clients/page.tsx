@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import { Plus, X, Search, Building2, User, Landmark, Edit2, Trash2, Loader2, Mail, Send, MessageSquare, Download, Upload, FileSpreadsheet, FileText, FileCheck, AlertTriangle, Clock, CheckCircle, Globe, Users, ChevronUp, ChevronDown, ChevronsUpDown } from "lucide-react";
+import Link from "next/link";
+import { Plus, X, Search, Building2, User, Landmark, Edit2, Trash2, Loader2, Mail, Send, MessageSquare, Download, Upload, FileSpreadsheet, FileText, FileCheck, AlertTriangle, Clock, CheckCircle, Globe, Users, ChevronUp, ChevronDown, ChevronsUpDown, Wallet } from "lucide-react";
 import { api } from "@/lib/api";
 import { isPoaDuplicateSuppressed, POA_DUPLICATE_MESSAGE } from "@/lib/poa-ux";
 import { PoaScannerWizard } from "@/components/client/PoaScannerWizard";
@@ -475,6 +476,9 @@ export default function ClientsSettingsPage() {
                     </td>
                     <td className="px-3 py-2 text-right">
                       <div className="flex justify-end gap-1">
+                        <Link href={`/clients/${client.id}/accounting`} className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded" title="Müvekkil Muhasebesi">
+                          <Wallet className="h-4 w-4" />
+                        </Link>
                         <button onClick={() => { setPoaClient(client); setShowPoaModal(true); }} className="p-1.5 text-amber-500 hover:bg-amber-50 rounded" title="Vekaletler">
                           <FileCheck className="h-4 w-4" />
                         </button>
