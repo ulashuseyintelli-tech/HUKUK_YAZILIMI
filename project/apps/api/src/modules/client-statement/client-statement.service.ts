@@ -5,6 +5,7 @@ import {
   BalanceLedgerType,
   ClientStatementStatus,
   ClientStatementLineType,
+  CollectionDispositionLineType,
 } from '@prisma/client';
 import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
 import { OfficeService } from '@/modules/office/office.service';
@@ -21,6 +22,7 @@ interface LineDraft {
   lineType: ClientStatementLineType;
   refType: string;
   refId: string;
+  caseClientId: string | null; // M2: proceeds satırının alacaklı atfı (BalanceLedger/ExpenseRequest'te null)
   debit: Prisma.Decimal;
   credit: Prisma.Decimal;
   runningBalance: Prisma.Decimal;
@@ -63,7 +65,8 @@ export class ClientStatementService {
     const { periodStart, periodEnd } = this.parsePeriod(dto.periodStart, dto.periodEnd);
     await this.assertCaseAndClient(tenantId, caseId, dto.clientId);
 
-    const snap = await this.collect(tenantId, caseId, periodStart, periodEnd, dto.includeRequests ?? true);
+    const caseClientId = await this.resolveCaseClientId(tenantId, caseId, dto.clientId);
+    const snap = await this.collect(tenantId, caseId, periodStart, periodEnd, dto.includeRequests ?? true, caseClientId);
 
     const created = await this.prisma.$transaction((tx) =>
       this.persist(tx, {
@@ -100,7 +103,8 @@ export class ClientStatementService {
       throw new BadRequestException(`Yalnız ACTIVE ekstre supersede edilebilir (durum: ${old.status})`);
     }
     const { periodStart, periodEnd } = this.parsePeriod(dto.periodStart, dto.periodEnd);
-    const snap = await this.collect(tenantId, old.caseId, periodStart, periodEnd, dto.includeRequests ?? true);
+    const caseClientId = await this.resolveCaseClientId(tenantId, old.caseId, old.clientId);
+    const snap = await this.collect(tenantId, old.caseId, periodStart, periodEnd, dto.includeRequests ?? true, caseClientId);
 
     const created = await this.prisma.$transaction(async (tx) => {
       const fresh = await this.persist(tx, {
@@ -266,6 +270,7 @@ export class ClientStatementService {
     periodStart: Date,
     periodEnd: Date,
     includeRequests: boolean,
+    statementCaseClientId: string | null,
   ): Promise<{ opening: Prisma.Decimal; closing: Prisma.Decimal; lines: LineDraft[] }> {
     let opening = ZERO;
     let ledgerRows: { id: string; amount: Prisma.Decimal; type: BalanceLedgerType; description: string | null; createdAt: Date }[] = [];
@@ -296,9 +301,31 @@ export class ClientStatementService {
       });
     }
 
+    // M2 (model A): POSTED CollectionDisposition proceeds satırları — YALNIZ bu ekstrenin
+    // alacaklısına (caseClientId) ait satırlar. Office-share (fee/firm) BİLGİ(0);
+    // OFFSET_CLIENT_ADVANCE BİLGİ(0) → bakiye etkisi korelasyonlu BalanceLedger'dan (çift-sayım yok).
+    let dispositionRows: {
+      id: string; type: CollectionDispositionLineType; amount: Prisma.Decimal; caseClientId: string | null; postedAt: Date;
+    }[] = [];
+    if (statementCaseClientId) {
+      const posted = await this.prisma.collectionDisposition.findMany({
+        where: { tenantId, caseId, status: 'POSTED', postedAt: { gte: periodStart, lte: periodEnd } },
+        select: { postedAt: true, lines: { select: { id: true, type: true, amount: true, caseClientId: true } } },
+      });
+      for (const d of posted) {
+        if (!d.postedAt) continue;
+        for (const ln of d.lines) {
+          if (ln.caseClientId === statementCaseClientId) {
+            dispositionRows.push({ id: ln.id, type: ln.type, amount: ln.amount, caseClientId: ln.caseClientId, postedAt: d.postedAt });
+          }
+        }
+      }
+    }
+
     const items = [
       ...ledgerRows.map((l) => ({ kind: 'money' as const, date: l.createdAt, l })),
       ...requestRows.map((r) => ({ kind: 'info' as const, date: r.createdAt, r })),
+      ...dispositionRows.map((d) => ({ kind: 'proceeds' as const, date: d.postedAt, d })),
     ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
     let running = opening;
@@ -312,21 +339,38 @@ export class ClientStatementService {
           lineType: this.mapLedgerType(it.l.type),
           refType: 'BalanceLedger',
           refId: it.l.id,
+          caseClientId: null, // BalanceLedger case-level (avans defteri)
           debit: amt.lt(ZERO) ? amt.abs() : ZERO,
           credit: amt.gt(ZERO) ? amt : ZERO,
           runningBalance: running,
           note: it.l.description ?? null,
         });
-      } else {
+      } else if (it.kind === 'info') {
         lines.push({
           lineDate: it.r.createdAt,
           lineType: ClientStatementLineType.EXPENSE_REQUESTED,
           refType: 'ExpenseRequest',
           refId: it.r.id,
+          caseClientId: null,
           debit: ZERO,
           credit: ZERO,
           runningBalance: running, // BİLGİ satırı — bakiyeyi oynatmaz
           note: `Talep: ${it.r.totalAmount} ${it.r.currency} (${it.r.status})`,
+        });
+      } else {
+        // proceeds — POSTED CollectionDispositionLine (model A). Sign convention mapDispositionLine'da.
+        const m = this.mapDispositionLine(it.d.type, it.d.amount);
+        running = running.plus(m.credit); // payable/clientReimb → +amount; ofis-payı/OFFSET → 0
+        lines.push({
+          lineDate: it.d.postedAt,
+          lineType: m.lineType,
+          refType: 'CollectionDispositionLine',
+          refId: it.d.id,
+          caseClientId: it.d.caseClientId,
+          debit: ZERO,
+          credit: m.credit,
+          runningBalance: running,
+          note: m.note,
         });
       }
     }
@@ -346,6 +390,42 @@ export class ClientStatementService {
       default:
         return ClientStatementLineType.ADJUST;
     }
+  }
+
+  /**
+   * M2 proceeds satırı → ClientStatementLineType + bakiye etkisi (credit). Sign convention (KİLİTLİ):
+   * CLIENT_PAYABLE/CLIENT_EXPENSE_REIMBURSEMENT → credit + (müvekkil lehine);
+   * CONTRACTUAL_FEE_WITHHELD/FIRM_EXPENSE_REIMBURSEMENT/OTHER → BİLGİ (0, ofis payı/diğer);
+   * OFFSET_CLIENT_ADVANCE → BİLGİ (0): bakiye etkisi YALNIZ korelasyonlu BalanceLedger'dan (çift-sayım yok).
+   */
+  private mapDispositionLine(
+    t: CollectionDispositionLineType,
+    amount: Prisma.Decimal,
+  ): { lineType: ClientStatementLineType; credit: Prisma.Decimal; note: string | null } {
+    switch (t) {
+      case CollectionDispositionLineType.CLIENT_PAYABLE:
+        return { lineType: ClientStatementLineType.CASE_COLLECTION_PAYABLE, credit: amount, note: 'Tahsilattan müvekkile ayrılan' };
+      case CollectionDispositionLineType.CLIENT_EXPENSE_REIMBURSEMENT:
+        return { lineType: ClientStatementLineType.CLIENT_EXPENSE_REIMBURSEMENT, credit: amount, note: 'Müvekkile masraf iadesi' };
+      case CollectionDispositionLineType.CONTRACTUAL_FEE_WITHHELD:
+        return { lineType: ClientStatementLineType.CONTRACTUAL_FEE_WITHHELD, credit: ZERO, note: 'Avukatlık/ücret kesintisi (ofis payı)' };
+      case CollectionDispositionLineType.FIRM_EXPENSE_REIMBURSEMENT:
+        return { lineType: ClientStatementLineType.FIRM_EXPENSE_REIMBURSEMENT, credit: ZERO, note: 'Ofis masraf iadesi' };
+      case CollectionDispositionLineType.OFFSET_CLIENT_ADVANCE:
+        return { lineType: ClientStatementLineType.COLLECTION_OFFSET_ADVANCE, credit: ZERO, note: 'Avans mahsubu (bakiye avans defterinden)' };
+      case CollectionDispositionLineType.OTHER:
+      default:
+        return { lineType: ClientStatementLineType.ADJUST, credit: ZERO, note: 'Tahsilat dağıtımı (diğer)' };
+    }
+  }
+
+  /** Statement'ın alacaklısı (CaseClient.id) — proceeds filtre + atıf için (yoksa null = aggregate/yok). */
+  private async resolveCaseClientId(tenantId: string, caseId: string, clientId: string): Promise<string | null> {
+    const cc = await this.prisma.caseClient.findFirst({
+      where: { caseId, clientId, client: { tenantId } },
+      select: { id: true },
+    });
+    return cc?.id ?? null;
   }
 
   private async persist(
