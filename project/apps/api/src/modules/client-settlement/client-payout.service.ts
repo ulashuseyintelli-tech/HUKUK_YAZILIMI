@@ -2,8 +2,7 @@ import { Injectable, Logger, BadRequestException, ConflictException } from '@nes
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateClientPayoutDto } from './dto/create-client-payout.dto';
-
-const ZERO = new Prisma.Decimal(0);
+import { ClientSettlementReadService } from './client-settlement-read.service';
 
 export interface CreatePayoutResult {
   created: boolean;
@@ -30,7 +29,10 @@ export interface CreatePayoutResult {
 export class ClientPayoutService {
   private readonly logger = new Logger(ClientPayoutService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly readService: ClientSettlementReadService,
+  ) {}
 
   /**
    * Çağrıldığı yerler:
@@ -49,14 +51,8 @@ export class ClientPayoutService {
     if (amount.lte(0)) throw new BadRequestException('tutar pozitif olmalı');
     const currency = dto.currency || 'TRY';
 
-    // caseClientId doğrulama (M2 deseni): tenant+case+role. clientId ile authz YOK.
-    const cc = await this.prisma.caseClient.findFirst({
-      where: { id: dto.caseClientId, caseId: dto.caseId, role: { in: ['ALACAKLI', 'ORTAK_ALACAKLI'] }, client: { tenantId } },
-      select: { id: true },
-    });
-    if (!cc) {
-      throw new BadRequestException('caseClientId geçersiz/yabancı veya uygun rolde değil (ALACAKLI/ORTAK_ALACAKLI)');
-    }
+    // caseClientId doğrulama (ortak read-service): tenant+case+role. clientId ile authz YOK.
+    await this.readService.assertEligibleCaseClient(tenantId, dto.caseId, dto.caseClientId);
 
     // Idempotent replay (lock öncesi hızlı yol): aynı (tenant, idempotencyKey).
     // AYNI payload → replay; FARKLI payload → ConflictException (sessiz eski-payout dönme YOK).
@@ -80,7 +76,7 @@ export class ClientPayoutService {
         });
         if (dup) return this.replayOrConflict(dup, dto, amount, currency);
 
-        const outstanding = await this.computeOutstanding(tx, tenantId, dto.caseId, dto.caseClientId, currency);
+        const outstanding = await this.readService.computeOutstanding(tx, tenantId, dto.caseId, dto.caseClientId, currency);
         if (amount.gt(outstanding)) {
           throw new BadRequestException(`payout (${amount.toString()}) outstanding'i (${outstanding.toString()}) aşamaz`);
         }
@@ -140,47 +136,4 @@ export class ClientPayoutService {
     return { created: false, payoutId: existing.id, idempotentReplay: true };
   }
 
-  /**
-   * Outstanding payable (per caseClientId): Σ POSTED CLIENT_PAYABLE (underlying Collection CONFIRMED)
-   * − Σ RECORDED ClientPayout. Scope tenant+case+caseClientId+currency. HELD/fee/firm/offset/other DAHİL DEĞİL.
-   */
-  private async computeOutstanding(
-    tx: Prisma.TransactionClient,
-    tenantId: string,
-    caseId: string,
-    caseClientId: string,
-    currency: string,
-  ): Promise<Prisma.Decimal> {
-    const payableLines = await tx.collectionDispositionLine.findMany({
-      where: {
-        type: 'CLIENT_PAYABLE',
-        caseClientId,
-        disposition: { tenantId, caseId, currency, status: 'POSTED' },
-      },
-      select: { amount: true, disposition: { select: { collectionId: true } } },
-    });
-
-    // underlying Collection CONFIRMED filtresi (posting sonrası iptal edilen tahsilatın payable'ı sayılmaz)
-    const collectionIds = [...new Set(payableLines.map((l) => l.disposition.collectionId))];
-    let confirmed = new Set<string>();
-    if (collectionIds.length > 0) {
-      const rows = await tx.collection.findMany({
-        where: { id: { in: collectionIds }, tenantId, caseId, status: 'CONFIRMED' },
-        select: { id: true },
-      });
-      confirmed = new Set(rows.map((r) => r.id));
-    }
-    let payable = ZERO;
-    for (const l of payableLines) {
-      if (confirmed.has(l.disposition.collectionId)) payable = payable.plus(l.amount);
-    }
-
-    const paidAgg = await tx.clientPayout.aggregate({
-      _sum: { amount: true },
-      where: { tenantId, caseId, caseClientId, currency, status: 'RECORDED' },
-    });
-    const paid = paidAgg._sum.amount ?? ZERO;
-
-    return payable.minus(paid);
-  }
 }
