@@ -11,7 +11,7 @@
  * idempotency-conflict, scope doğrulaması backend'de).
  */
 
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
 import { Button, Spinner } from '@hukuk/ui';
 import { X, AlertCircle, Wallet } from 'lucide-react';
@@ -53,8 +53,14 @@ export function PayoutCreateModal({
   onClose,
   onSuccess,
 }: PayoutCreateModalProps) {
-  // Tek idempotencyKey (modal oturumu boyunca sabit) → retry'lar aynı kaydı tekrar açmaz.
-  const idempotencyKeyRef = useRef<string>(genIdempotencyKey());
+  // idempotencyKey YAŞAM DÖNGÜSÜ:
+  //  - Lazy initializer (genIdempotencyKey FONKSİYON referansı) → MOUNT başına BİR KEZ üretilir
+  //    (her render'da değil). Aynı submit/retry boyunca SABİT kalır → aynı payload retry idempotent.
+  //  - Bu modal page'de KOŞULLU render edilir ({showPayoutModal && ...}); başarı/iptal sonrası
+  //    setShowPayoutModal(false) → UNMOUNT. Bir sonraki "Ödeme Kaydet" → fresh MOUNT → YENİ key.
+  //  - Sonuç: aynı sayfa oturumunda ikinci ödeme ESKİ key'i KULLANMAZ → hatalı
+  //    IDEMPOTENCY_KEY_CONFLICT ile yanlışlıkla bloke OLMAZ. (kanıt: payout-create-modal-idempotency.test.tsx)
+  const [idempotencyKey] = useState<string>(genIdempotencyKey);
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [step, setStep] = useState<'form' | 'confirm'>('form');
@@ -71,7 +77,7 @@ export function PayoutCreateModal({
         amount: amount.replace(',', '.'),
         currency,
         note: note.trim() || undefined,
-        idempotencyKey: idempotencyKeyRef.current,
+        idempotencyKey,
       }),
     onSuccess: (result) => onSuccess(result),
   });
