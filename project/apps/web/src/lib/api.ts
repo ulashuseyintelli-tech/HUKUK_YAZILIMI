@@ -116,6 +116,45 @@ class ApiClient {
     });
   }
 
+  // K1-7-4: admin login-davet yönetimi (self-service). Tümü ADMIN + JWT gerektirir
+  // (backend: JwtAuthGuard + AdminGuard + LOGIN_INVITE_PROVISIONING_ENABLED). Ham token
+  // asla bu yanıtlarda dönmez; e-posta backend tarafından otomatik gönderilir.
+  async createInvite(data: { email: string; name: string; surname?: string; role?: string }) {
+    return this.request<{ inviteId: string; userId: string; email: string; expiresAt: string }>(
+      "/auth/invites",
+      { method: "POST", body: JSON.stringify(data) }
+    );
+  }
+
+  async listInvites(status?: string) {
+    const query = status ? `?status=${encodeURIComponent(status)}` : "";
+    return this.request<
+      Array<{
+        inviteId: string;
+        userId: string;
+        email: string;
+        expiresAt: string;
+        createdAt: string;
+        consumed: boolean;
+        revoked: boolean;
+      }>
+    >(`/auth/invites${query}`);
+  }
+
+  async resendInvite(inviteId: string) {
+    return this.request<{ inviteId: string; expiresAt: string }>(
+      `/auth/invites/${inviteId}/resend`,
+      { method: "POST" }
+    );
+  }
+
+  async revokeInvite(inviteId: string) {
+    return this.request<{ inviteId: string; revoked: boolean }>(
+      `/auth/invites/${inviteId}/revoke`,
+      { method: "POST" }
+    );
+  }
+
   // Cases
   async getCases(params?: { status?: string; clientId?: string; noOwner?: boolean; legalResponsibleMissing?: boolean; responsibleLawyerId?: string; responsibleStaffId?: string; page?: number; limit?: number }) {
     const query = new URLSearchParams();
