@@ -78,9 +78,15 @@ interface Props {
   readOnly?: boolean;
   /** PR-5c: per-item metadata-only düzenleme (amount/itemType kilitli; readOnly ile kompoze edilir). */
   metadataEdit?: boolean;
+  onMetadataEditSuccess?: () => void | Promise<void>;
 }
 
-export function ClaimItemPanel({ caseId, readOnly = false, metadataEdit = false }: Props) {
+export function ClaimItemPanel({
+  caseId,
+  readOnly = false,
+  metadataEdit = false,
+  onMetadataEditSuccess,
+}: Props) {
   const [items, setItems] = useState<ClaimItem[]>([]);
   const [summary, setSummary] = useState<ClaimSummary | null>(null);
   const [loading, setLoading] = useState(true);
@@ -381,7 +387,11 @@ export function ClaimItemPanel({ caseId, readOnly = false, metadataEdit = false 
         <EditMetadataModal
           item={editItem}
           onClose={() => setEditItem(null)}
-          onSuccess={() => { setEditItem(null); loadData(); }}
+          onSuccess={async () => {
+            setEditItem(null);
+            await loadData();
+            await onMetadataEditSuccess?.();
+          }}
         />
       )}
     </div>
@@ -560,7 +570,7 @@ function EditMetadataModal({
 }: {
   item: ClaimItem;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: () => void | Promise<void>;
 }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -597,7 +607,7 @@ function EditMetadataModal({
         sortOrder: form.sortOrder !== "" ? parseInt(form.sortOrder, 10) : undefined,
       };
       await api.put(`/claim-items/${item.id}`, payload);
-      onSuccess();
+      await onSuccess();
     } catch (err: any) {
       console.error("Metadata güncelleme hatası:", err);
       setError(err?.response?.data?.message || "Güncelleme sırasında bir hata oluştu");
