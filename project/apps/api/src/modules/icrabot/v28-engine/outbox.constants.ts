@@ -1,6 +1,7 @@
 export const DEFAULT_ICRABOT_OUTBOX_MAX_ATTEMPTS = 8;
 export const DEFAULT_ICRABOT_OUTBOX_BATCH_SIZE = 50;
 export const DEFAULT_ICRABOT_OUTBOX_RETRY_BASE_MS = 60_000;
+export const DEFAULT_ICRABOT_OUTBOX_STALE_CLAIM_MS = 600_000;
 
 function parsePositiveIntegerEnv(name: string, fallback: number): number {
   const raw = process.env[name];
@@ -28,6 +29,13 @@ export function getIcrabotOutboxRetryBaseMs(): number {
   return parsePositiveIntegerEnv(
     'ICRABOT_OUTBOX_RETRY_BASE_MS',
     DEFAULT_ICRABOT_OUTBOX_RETRY_BASE_MS,
+  );
+}
+
+export function getIcrabotOutboxStaleClaimMs(): number {
+  return parsePositiveIntegerEnv(
+    'ICRABOT_OUTBOX_STALE_CLAIM_MS',
+    DEFAULT_ICRABOT_OUTBOX_STALE_CLAIM_MS,
   );
 }
 

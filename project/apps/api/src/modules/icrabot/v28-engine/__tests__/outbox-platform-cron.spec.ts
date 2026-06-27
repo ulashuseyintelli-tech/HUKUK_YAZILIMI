@@ -1,6 +1,7 @@
 import { ActionHandlerService } from '../action-handler.service';
 import {
   DEFAULT_ICRABOT_OUTBOX_MAX_ATTEMPTS,
+  DEFAULT_ICRABOT_OUTBOX_STALE_CLAIM_MS,
   getIcrabotOutboxMaxAttempts,
 } from '../outbox.constants';
 import { OutboxCronService } from '../outbox-cron.service';
@@ -15,6 +16,7 @@ describe('Icrabot v28 platform outbox cron + retry contract', () => {
     delete process.env.ICRABOT_OUTBOX_CRON_ENABLED;
     delete process.env.ICRABOT_OUTBOX_BATCH_SIZE;
     delete process.env.ICRABOT_OUTBOX_MAX_ATTEMPTS;
+    delete process.env.ICRABOT_OUTBOX_STALE_CLAIM_MS;
   });
 
   afterEach(() => {
@@ -25,6 +27,36 @@ describe('Icrabot v28 platform outbox cron + retry contract', () => {
   });
 
   describe('OutboxService retry lifecycle', () => {
+    const buildRecoveryService = (rows: any[]) => {
+      const updateMany = jest.fn(async ({ where, data }: any) => {
+        let count = 0;
+
+        for (const row of rows) {
+          const statusMatches = where.status === undefined || row.status === where.status;
+          const updatedAtMatches =
+            where.updatedAt?.lte === undefined || row.updatedAt <= where.updatedAt.lte;
+          const attemptGte = where.attemptCount?.gte;
+          const attemptLt = where.attemptCount?.lt;
+          const attemptMatches =
+            (attemptGte === undefined || row.attemptCount >= attemptGte) &&
+            (attemptLt === undefined || row.attemptCount < attemptLt);
+
+          if (!statusMatches || !updatedAtMatches || !attemptMatches) continue;
+
+          row.status = data.status;
+          row.attemptCount += data.attemptCount?.increment ?? 0;
+          row.lastError = data.lastError;
+          row.nextRetryAt = data.nextRetryAt;
+          count += 1;
+        }
+
+        return { count };
+      });
+      const prisma = { icrabotOutboxAction: { updateMany } };
+
+      return { service: new OutboxService(prisma as any), updateMany };
+    };
+
     it('retryable sorgu failed + due + attempts < shared max sözleşmesini kullanır', async () => {
       const findMany = jest.fn().mockResolvedValue([]);
       const prisma = { icrabotOutboxAction: { findMany } };
@@ -81,6 +113,122 @@ describe('Icrabot v28 platform outbox cron + retry contract', () => {
       expect(update.mock.calls[0][0].data.status).toBe('dead');
       expect(update.mock.calls[0][0].data.nextRetryAt).toBeNull();
       expect(getIcrabotOutboxMaxAttempts()).toBe(DEFAULT_ICRABOT_OUTBOX_MAX_ATTEMPTS);
+    });
+
+    it('stale sent claimi failed olarak geri alir ve tenantId korur', async () => {
+      const now = new Date('2026-06-27T12:00:00.000Z');
+      const row = {
+        id: 'a-stale',
+        status: 'sent',
+        updatedAt: new Date(now.getTime() - DEFAULT_ICRABOT_OUTBOX_STALE_CLAIM_MS - 1),
+        attemptCount: 2,
+        tenantId: 'tenant-original',
+        nextRetryAt: null,
+      };
+      const { service } = buildRecoveryService([row]);
+
+      const result = await service.recoverStaleProcessingActions(now);
+
+      expect(result).toEqual({
+        recoveredCount: 1,
+        failedCount: 1,
+        deadCount: 0,
+        cutoff: new Date(now.getTime() - DEFAULT_ICRABOT_OUTBOX_STALE_CLAIM_MS),
+      });
+      expect(row.status).toBe('failed');
+      expect(row.attemptCount).toBe(3);
+      expect(row.nextRetryAt).toEqual(now);
+      expect(row.tenantId).toBe('tenant-original');
+      expect(row.lastError).toEqual(
+        expect.objectContaining({
+          error: 'STALE_OUTBOX_CLAIM_RECOVERED',
+          previousStatus: 'sent',
+        }),
+      );
+    });
+
+    it('stale olmayan sent claimi korur', async () => {
+      const now = new Date('2026-06-27T12:00:00.000Z');
+      const row = {
+        id: 'a-fresh',
+        status: 'sent',
+        updatedAt: new Date(now.getTime() - DEFAULT_ICRABOT_OUTBOX_STALE_CLAIM_MS + 1),
+        attemptCount: 2,
+        tenantId: 'tenant-original',
+        nextRetryAt: null,
+      };
+      const { service } = buildRecoveryService([row]);
+
+      const result = await service.recoverStaleProcessingActions(now);
+
+      expect(result.recoveredCount).toBe(0);
+      expect(row.status).toBe('sent');
+      expect(row.attemptCount).toBe(2);
+      expect(row.nextRetryAt).toBeNull();
+      expect(row.tenantId).toBe('tenant-original');
+    });
+
+    it('stale sent claim max attempt esiginde dead terminal durumuna alir', async () => {
+      const now = new Date('2026-06-27T12:00:00.000Z');
+      const row = {
+        id: 'a-dead',
+        status: 'sent',
+        updatedAt: new Date(now.getTime() - DEFAULT_ICRABOT_OUTBOX_STALE_CLAIM_MS - 1),
+        attemptCount: DEFAULT_ICRABOT_OUTBOX_MAX_ATTEMPTS - 1,
+        tenantId: 'tenant-original',
+        nextRetryAt: new Date('2026-06-27T13:00:00.000Z'),
+      };
+      const { service } = buildRecoveryService([row]);
+
+      const result = await service.recoverStaleProcessingActions(now);
+
+      expect(result.recoveredCount).toBe(1);
+      expect(result.failedCount).toBe(0);
+      expect(result.deadCount).toBe(1);
+      expect(row.status).toBe('dead');
+      expect(row.attemptCount).toBe(DEFAULT_ICRABOT_OUTBOX_MAX_ATTEMPTS);
+      expect(row.nextRetryAt).toBeNull();
+    });
+
+    it('terminal done statusunu stale olsa bile korur', async () => {
+      const now = new Date('2026-06-27T12:00:00.000Z');
+      const row = {
+        id: 'a-done',
+        status: 'done',
+        updatedAt: new Date(now.getTime() - DEFAULT_ICRABOT_OUTBOX_STALE_CLAIM_MS - 1),
+        attemptCount: 2,
+        tenantId: 'tenant-original',
+        nextRetryAt: null,
+      };
+      const { service } = buildRecoveryService([row]);
+
+      const result = await service.recoverStaleProcessingActions(now);
+
+      expect(result.recoveredCount).toBe(0);
+      expect(row.status).toBe('done');
+      expect(row.attemptCount).toBe(2);
+      expect(row.tenantId).toBe('tenant-original');
+    });
+
+    it('tenantId uretmez veya fallback tenant yazmaz', async () => {
+      const now = new Date('2026-06-27T12:00:00.000Z');
+      const row = {
+        id: 'a-null-tenant',
+        status: 'sent',
+        updatedAt: new Date(now.getTime() - DEFAULT_ICRABOT_OUTBOX_STALE_CLAIM_MS - 1),
+        attemptCount: 0,
+        tenantId: null,
+        nextRetryAt: null,
+      };
+      const { service, updateMany } = buildRecoveryService([row]);
+
+      await service.recoverStaleProcessingActions(now);
+
+      expect(row.status).toBe('failed');
+      expect(row.tenantId).toBeNull();
+      for (const call of updateMany.mock.calls) {
+        expect(call[0].data).not.toHaveProperty('tenantId');
+      }
     });
   });
 
@@ -231,36 +379,67 @@ describe('Icrabot v28 platform outbox cron + retry contract', () => {
   });
 
   describe('OutboxCronService', () => {
-    it('env kapalıyken hiçbir işlem yapmaz', async () => {
+    const buildCronOutbox = (overrides: Record<string, any> = {}) => ({
+      recoverStaleProcessingActions: jest.fn().mockResolvedValue({
+        recoveredCount: 0,
+        failedCount: 0,
+        deadCount: 0,
+        cutoff: new Date(),
+      }),
+      ...overrides,
+    });
+
+    it('env kapaliyken recovery dahil hicbir islem yapmaz', async () => {
       process.env.ICRABOT_OUTBOX_CRON_ENABLED = 'false';
       const actionHandler = {
         processPendingActions: jest.fn(),
         processRetryableActions: jest.fn(),
       };
-      const service = new OutboxCronService(actionHandler as any);
+      const outbox = buildCronOutbox();
+      const service = new OutboxCronService(actionHandler as any, outbox as any);
 
       await service.processOutboxActions();
 
+      expect(outbox.recoverStaleProcessingActions).not.toHaveBeenCalled();
       expect(actionHandler.processPendingActions).not.toHaveBeenCalled();
       expect(actionHandler.processRetryableActions).not.toHaveBeenCalled();
     });
 
-    it('env açıkken pending ve retryable batchlerini aynı limit ile işler', async () => {
+    it('env acikken once recovery sonra pending ve retryable batchlerini ayni limit ile isler', async () => {
       process.env.ICRABOT_OUTBOX_CRON_ENABLED = 'true';
       process.env.ICRABOT_OUTBOX_BATCH_SIZE = '3';
+      const calls: string[] = [];
+      const outbox = buildCronOutbox({
+        recoverStaleProcessingActions: jest.fn(async () => {
+          calls.push('recover');
+          return {
+            recoveredCount: 1,
+            failedCount: 1,
+            deadCount: 0,
+            cutoff: new Date(),
+          };
+        }),
+      });
       const actionHandler = {
-        processPendingActions: jest.fn().mockResolvedValue([{ actionId: 'p1' }]),
-        processRetryableActions: jest.fn().mockResolvedValue([{ actionId: 'r1' }]),
+        processPendingActions: jest.fn(async () => {
+          calls.push('pending');
+          return [{ actionId: 'p1' }];
+        }),
+        processRetryableActions: jest.fn(async () => {
+          calls.push('retryable');
+          return [{ actionId: 'r1' }];
+        }),
       };
-      const service = new OutboxCronService(actionHandler as any);
+      const service = new OutboxCronService(actionHandler as any, outbox as any);
 
       await service.processOutboxActions();
 
+      expect(calls).toEqual(['recover', 'pending', 'retryable']);
       expect(actionHandler.processPendingActions).toHaveBeenCalledWith(3);
       expect(actionHandler.processRetryableActions).toHaveBeenCalledWith(3);
     });
 
-    it('önceki run bitmeden ikinci run başlamaz', async () => {
+    it('onceki run bitmeden ikinci run baslamaz', async () => {
       process.env.ICRABOT_OUTBOX_CRON_ENABLED = 'true';
       let releasePending!: (value: any[]) => void;
       const pendingRun = new Promise<any[]>((resolve) => {
@@ -270,12 +449,14 @@ describe('Icrabot v28 platform outbox cron + retry contract', () => {
         processPendingActions: jest.fn().mockReturnValue(pendingRun),
         processRetryableActions: jest.fn().mockResolvedValue([]),
       };
-      const service = new OutboxCronService(actionHandler as any);
+      const outbox = buildCronOutbox();
+      const service = new OutboxCronService(actionHandler as any, outbox as any);
 
       const firstRun = service.processOutboxActions();
       await Promise.resolve();
       await service.processOutboxActions();
 
+      expect(outbox.recoverStaleProcessingActions).toHaveBeenCalledTimes(1);
       expect(actionHandler.processPendingActions).toHaveBeenCalledTimes(1);
       expect(actionHandler.processRetryableActions).not.toHaveBeenCalled();
 

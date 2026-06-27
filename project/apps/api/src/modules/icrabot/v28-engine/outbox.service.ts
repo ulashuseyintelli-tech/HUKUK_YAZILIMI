@@ -17,6 +17,7 @@ import { PrismaService } from '../../../prisma/prisma.service';
 import {
   getIcrabotOutboxMaxAttempts,
   getIcrabotOutboxRetryBaseMs,
+  getIcrabotOutboxStaleClaimMs,
 } from './outbox.constants';
 
 export type OutboxStatus = 'pending' | 'sent' | 'done' | 'failed' | 'dead';
@@ -25,6 +26,13 @@ export interface OutboxFailureMarkResult {
   status: Extract<OutboxStatus, 'failed' | 'dead'>;
   attemptCount: number;
   nextRetryAt: Date | null;
+}
+
+export interface OutboxStaleRecoveryResult {
+  recoveredCount: number;
+  failedCount: number;
+  deadCount: number;
+  cutoff: Date;
 }
 
 export interface CreateOutboxActionParams {
@@ -61,6 +69,7 @@ export class OutboxService {
   private readonly logger = new Logger(OutboxService.name);
   private readonly maxAttempts = getIcrabotOutboxMaxAttempts();
   private readonly retryBaseMs = getIcrabotOutboxRetryBaseMs();
+  private readonly staleClaimMs = getIcrabotOutboxStaleClaimMs();
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -173,6 +182,61 @@ export class OutboxService {
     });
 
     return result.count === 1;
+  }
+
+  /**
+   * Stale claim durumunda kalan sent outbox action'larını retry/dead-letter akışına geri alır.
+   * Dedicated lockedAt/claimedAt/sentAt alanı olmadığı için cutoff updatedAt üzerinden hesaplanır.
+   * TenantId alanına dokunmaz; satırdaki tenantId aynen korunur.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * /// - OutboxCronService.processOutboxActions() → @Cron(EVERY_MINUTE) pending/retryable tüketimden önce stale claim recovery
+   * /// </remarks>
+   */
+  async recoverStaleProcessingActions(now = new Date()): Promise<OutboxStaleRecoveryResult> {
+    const cutoff = new Date(now.getTime() - this.staleClaimMs);
+    const lastError = {
+      error: 'STALE_OUTBOX_CLAIM_RECOVERED',
+      previousStatus: 'sent',
+      recoveredAt: now.toISOString(),
+      cutoff: cutoff.toISOString(),
+    };
+
+    const dead = await (this.prisma as any).icrabotOutboxAction.updateMany({
+      where: {
+        status: 'sent',
+        updatedAt: { lte: cutoff },
+        attemptCount: { gte: this.maxAttempts - 1 },
+      },
+      data: {
+        status: 'dead',
+        attemptCount: { increment: 1 },
+        lastError,
+        nextRetryAt: null,
+      },
+    });
+
+    const failed = await (this.prisma as any).icrabotOutboxAction.updateMany({
+      where: {
+        status: 'sent',
+        updatedAt: { lte: cutoff },
+        attemptCount: { lt: this.maxAttempts - 1 },
+      },
+      data: {
+        status: 'failed',
+        attemptCount: { increment: 1 },
+        lastError,
+        nextRetryAt: now,
+      },
+    });
+
+    return {
+      recoveredCount: dead.count + failed.count,
+      failedCount: failed.count,
+      deadCount: dead.count,
+      cutoff,
+    };
   }
   /**
    * Action'ı başarılı olarak işaretler.
