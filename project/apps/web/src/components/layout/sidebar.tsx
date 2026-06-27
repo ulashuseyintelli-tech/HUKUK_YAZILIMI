@@ -23,11 +23,9 @@ import {
   AlertTriangle,
   FileCode,
   Inbox,
-  UserPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useUserSettings } from "@/lib/user-settings";
-import { useAuth } from "@/lib/auth-context";
 
 const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard, disabled: false },
@@ -51,18 +49,12 @@ const navigation = [
   { name: "Hata Logları", href: "/settings/error-logs", icon: AlertTriangle, disabled: false },
   { name: "Bildirim Merkezi", href: "/settings/notifications", icon: Bell, disabled: false },
   { name: "Büro Ayarları", href: "/settings/office", icon: Settings, disabled: false },
-  // K1-7-4: login-davet yönetimi — yalnız ADMIN'e görünür (sayfa + backend ayrıca korur).
-  { name: "Personel Erişimi", href: "/settings/personel-erisim", icon: UserPlus, disabled: false, adminOnly: true },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const router = useRouter();
   const { settings, updateSettings, loaded } = useUserSettings();
-  const { user } = useAuth();
-
-  // adminOnly girişler yalnız ADMIN'e gösterilir (sayfa + backend de ayrıca korur).
-  const visibleNav = navigation.filter((n) => !(n as any).adminOnly || user?.role === "ADMIN");
 
   const handleWizardToggle = () => {
     updateSettings({ showWizardOnNewCase: !settings.showWizardOnNewCase });
@@ -83,7 +75,7 @@ export function Sidebar() {
     const path = href.split("?")[0];
     return pathname === path || pathname.startsWith(path + "/") ? path.length : -1;
   };
-  const bestMatchLength = Math.max(...visibleNav.map((n) => matchLength(n.href)));
+  const bestMatchLength = Math.max(...navigation.map((n) => matchLength(n.href)));
 
   return (
     <aside className="fixed inset-y-0 left-0 z-50 hidden sm:flex w-56 md:w-60 lg:w-64 flex-col border-r bg-white">
@@ -95,7 +87,7 @@ export function Sidebar() {
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 p-2 lg:p-4 overflow-y-auto">
-        {visibleNav.map((item) => {
+        {navigation.map((item) => {
           const len = matchLength(item.href);
           const isActive = len > 0 && len === bestMatchLength;
 

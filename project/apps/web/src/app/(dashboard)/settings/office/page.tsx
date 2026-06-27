@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Building2, Users, Plus, Pencil, Trash2, Check, X, Star, CreditCard, Loader2, Mail, MessageSquare, GripVertical, Clock, ChevronRight } from "lucide-react";
 import { api } from "@/lib/api";
 import { SettingsSection, WorkbenchHeader, SettingsDrawer, CollectionHeader } from "@/components/settings/settings-shell";
+import { PersonAccessInviteCard } from "@/components/settings/person-access-invite-card";
 
 interface BankAccount { id: string; bankName: string; branchName?: string; iban: string; accountName?: string; isDefault: boolean; }
 interface Lawyer { 
@@ -1194,6 +1195,11 @@ function LawyerModal({ lawyer, onSave, onClose, saving }: { lawyer: any; onSave:
     },
   });
 
+  // K1-7-4B: kaydedilmemiş değişiklik tespiti (davet KAYDEDİLMİŞ kişi bilgisinden üretilir).
+  const lawyerInitialJson = useRef<string | null>(null);
+  if (lawyerInitialJson.current === null) lawyerInitialJson.current = JSON.stringify(form);
+  const isLawyerDirty = lawyerInitialJson.current !== JSON.stringify(form);
+
   // Avukat tipine göre varsayılan yetkileri ayarla
   const handleRankChange = (rank: string) => {
     let defaultPerms = { ...form.defaultPermissions };
@@ -1388,6 +1394,16 @@ function LawyerModal({ lawyer, onSave, onClose, saving }: { lawyer: any; onSave:
               </label>
             </div>
           </div>
+          {lawyer?.id && (
+            <PersonAccessInviteCard
+              personType="lawyer"
+              personId={lawyer.id}
+              firstName={lawyer.name}
+              lastName={lawyer.surname}
+              email={lawyer.email}
+              formDirty={isLawyerDirty}
+            />
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="px-3 py-1 border rounded">İptal</button>
             <button type="submit" disabled={saving} className="px-3 py-1 bg-primary text-white rounded disabled:opacity-50">{saving ? "..." : "Kaydet"}</button>
@@ -1444,6 +1460,11 @@ function StaffModal({ staff, onSave, onClose, saving }: { staff: any; onSave: (d
     canSeeFinance: staff?.canSeeFinance || false, canApproveFinance: staff?.canApproveFinance || false,
     isDefaultForNewCases: staff?.isDefaultForNewCases || false,
   });
+
+  // K1-7-4B: kaydedilmemiş değişiklik tespiti (davet KAYDEDİLMİŞ kişi bilgisinden üretilir).
+  const staffInitialJson = useRef<string | null>(null);
+  if (staffInitialJson.current === null) staffInitialJson.current = JSON.stringify(form);
+  const isStaffDirty = staffInitialJson.current !== JSON.stringify(form);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -1504,6 +1525,16 @@ function StaffModal({ staff, onSave, onClose, saving }: { staff: any; onSave: (d
               </div>
             </label>
           </div>
+          {staff?.id && (
+            <PersonAccessInviteCard
+              personType="staff"
+              personId={staff.id}
+              firstName={staff.firstName}
+              lastName={staff.lastName}
+              email={staff.email}
+              formDirty={isStaffDirty}
+            />
+          )}
           <div className="flex justify-end gap-2 pt-2">
             <button type="button" onClick={onClose} className="px-3 py-1 border rounded">İptal</button>
             <button type="submit" disabled={saving} className="px-3 py-1 bg-primary text-white rounded disabled:opacity-50">{saving ? "..." : "Kaydet"}</button>
