@@ -40,6 +40,7 @@ import { EngineRunService } from './engine-run.service';
 import { SeedService } from './seed.service';
 import { ScenarioHarnessService } from './scenario-harness.service';
 import { ActionFeedbackService } from './action-feedback.service';
+import { OutboxCronService } from './outbox-cron.service';
 
 // Controllers
 import {
@@ -86,6 +87,7 @@ import {
     SeedService,
     ScenarioHarnessService,
     ActionFeedbackService,
+    OutboxCronService,
   ],
   exports: [
     FactStoreService,
@@ -101,6 +103,7 @@ import {
     SeedService,
     ScenarioHarnessService,
     ActionFeedbackService,
+    OutboxCronService,
   ],
 })
 export class V28EngineModule {}
