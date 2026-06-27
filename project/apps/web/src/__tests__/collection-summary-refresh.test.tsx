@@ -328,6 +328,31 @@ describe("collection summary refresh", () => {
     expect(deleteDueBlock).toContain("refreshCollectionDependentViews();");
     expect(deleteDueBlock).not.toContain("fetchFinanceData();");
   });
+  it("case page takip tarihi kaydi dependent finance summary refresh keyini artirir", () => {
+    const source = readCasePageSource();
+    const saveCaseDateStart = source.indexOf("const handleSaveCaseDate");
+    const saveCaseDateBlock = source.slice(
+      saveCaseDateStart,
+      source.indexOf("  // Takip stat", saveCaseDateStart),
+    );
+
+    expect(saveCaseDateBlock).toContain("await api.updateCase(params.id as string, { caseDate: caseDateValue });");
+    expect(saveCaseDateBlock).toContain("await fetchCase();");
+    expect(saveCaseDateBlock).toContain("setFinancialSummaryRefreshKey((key) => key + 1);");
+  });
+
+  it("case page takip statusu kaydi dependent finance summary refresh keyini artirmaz", () => {
+    const source = readCasePageSource();
+    const saveCaseStatusStart = source.indexOf("const handleSaveCaseStatus");
+    const saveCaseStatusBlock = source.slice(
+      saveCaseStatusStart,
+      source.indexOf("  // Fetch case debtors", saveCaseStatusStart),
+    );
+
+    expect(saveCaseStatusBlock).toContain("await api.updateCase(params.id as string, { caseStatus: caseStatusValue });");
+    expect(saveCaseStatusBlock).toContain("await fetchCase();");
+    expect(saveCaseStatusBlock).not.toContain("setFinancialSummaryRefreshKey");
+  });
   it("opt-in shadow panel aciksa refresh key degisiminde shadow diff refetch eder", async () => {
     const { rerender } = render(
       <BalanceShadowDiffPanel caseId="case-1" enabled refreshKey={0} />,
