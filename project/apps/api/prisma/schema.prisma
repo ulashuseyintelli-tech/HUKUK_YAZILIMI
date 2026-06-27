@@ -7588,6 +7588,13 @@ model CollectionDisposition {
   postedAt   DateTime?
   postedById String?
 
+  // M1R-FU1: POSTED disposition'a PAYMENT_REVERSED geldiğinde marker. status POSTED KALIR;
+  // finansal reversal (ClientStatement/BalanceLedger/payout) YAZILMAZ — yalnız operasyonel
+  // görünürlük için manuel-reversal-gerekli işareti persist edilir. İdempotent: bir kez set.
+  manualReversalRequiredAt     DateTime?
+  manualReversalReason         String?
+  manualReversalSourceActionId String? // tetikleyen PAYMENT_REVERSED outbox action id (scalar, FK YOK)
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -7596,6 +7603,8 @@ model CollectionDisposition {
   @@index([tenantId, caseId])
   @@index([tenantId, status])
   @@index([caseClientId])
+  // Açık marker takibi: manuel reversal bekleyen POSTED disposition'ları listelemek için.
+  @@index([tenantId, manualReversalRequiredAt])
 }
 
 model CollectionDispositionLine {

@@ -23,7 +23,9 @@ export interface ReverseResult {
   previousStatus?: string;
   /** POSTED senaryosu: finansal reversal M1R kapsamı DIŞI → manuel işlem sinyali. */
   manualReversalRequired?: boolean;
-  /** Reversal'ı tetikleyen outbox action id (provenance — şemaya kolon EKLENMEDEN log/feedback izi). */
+  /** FU1: POSTED marker ZATEN konmuştu (ikinci PAYMENT_REVERSED) → idempotent, overwrite YOK. */
+  alreadyMarked?: boolean;
+  /** Reversal'ı tetikleyen outbox action id (provenance). FU1'den itibaren POSTED'de kalıcı kolona da yazılır. */
   reversalSourceEventId?: string;
 }
 
@@ -36,19 +38,21 @@ export interface ReverseResult {
  * "no-handler" yoluna düşüp sonsuz retry-poison üretmesin (handler yoksa dispatch erken success:false
  * döner ve action attemptCount artmadan pending kalır → processPendingActions tekrar tekrar seçer).
  *
- * KİLİTLİ KARAR (Ulaş, 2026-06-27): POSTED disposition KÖR ŞEKİLDE `REVERSED` YAPILMAZ.
- * POSTED, M2'nin proceeds satırlarını (ve ClientStatement okumasını) ürettiği anlamına gelebilir;
- * yalnız status değiştirmek finansal hakikati düzeltmez (ekstre hâlâ alacak/borç satırını gösterir).
+ * KİLİTLİ KARAR (Ulaş, 2026-06-27): POSTED disposition KÖR ŞEKİLDE `REVERSED` YAPILMAZ ve status
+ * DEĞİŞMEZ (POSTED kalır). POSTED, M2'nin proceeds satırlarını (ve ClientStatement okumasını) ürettiği
+ * anlamına gelebilir; yalnız status değiştirmek finansal hakikati düzeltmez (ekstre hâlâ satırı gösterir).
  * Bu yüzden POSTED → handled consume + "manual-reversal-required" sinyali; finansal reversal YOK.
+ * FU1 (2026-06-27): bu sinyal artık KALICI kolona persist edilir (manualReversalRequiredAt/Reason/
+ * SourceActionId) → operasyonel görünürlük (takip kaçağı önlenir); idempotent (bir kez işaretlenir).
  *
- * Sınır (boundary §1-12 + M1R contract):
+ * Sınır (boundary §1-12 + M1R/FU1 contract):
  *  - ClientStatement / BalanceLedger / payout / legal allocation (TBK100) tarafına DOKUNMAZ.
  *  - CollectionService.create/cancel davranışını DEĞİŞTİRMEZ; PAYMENT_RECEIVED payload kontratını bozmaz.
  *  - clientId VARSAYMAZ; CASE_CREDITOR_CLUSTER kuralına dokunmaz.
  *  - tenantId zorunlu (outbox satırından); collectionId @unique ile disposition bulunur; tenant/case
  *    uyuşmazlığı fail-closed (mutasyon YOK, görünür hata → dead-letter).
- *  - Migration YOK: yalnız `status = REVERSED` set edilir (DRAFT/HELD = kanonik enum
- *    HELD_PENDING_DISTRIBUTION). Reversal provenance kolon EKLENMEDEN log + dönüş değerinde taşınır.
+ *  - HELD_PENDING_DISTRIBUTION → yalnız `status = REVERSED` (DRAFT/HELD = kanonik enum). POSTED →
+ *    status KORUNUR, yalnız FU1 marker alanları yazılır (additive migration: FU1).
  */
 @Injectable()
 export class CollectionReversalService {
@@ -88,7 +92,8 @@ export class CollectionReversalService {
     // sonra tenant/case kodda karşılaştırılır.
     const disp = await this.prisma.collectionDisposition.findUnique({
       where: { collectionId },
-      select: { id: true, tenantId: true, caseId: true, status: true },
+      // FU1: manualReversalRequiredAt POSTED idempotency kontrolü için seçilir (zaten işaretliyse overwrite YOK).
+      select: { id: true, tenantId: true, caseId: true, status: true, manualReversalRequiredAt: true },
     });
 
     if (!disp) {
@@ -143,15 +148,42 @@ export class CollectionReversalService {
         return { outcome: 'skip-already-cancelled', dispositionId: disp.id, previousStatus: disp.status };
 
       case 'POSTED': {
-        // KİLİTLİ: POSTED kör REVERSED YAPILMAZ. M2 ClientStatementLine üretmiş olabilir; status
-        // değiştirmek finansal hakikati düzeltmez. M1R finansal reversal (ClientStatement/BalanceLedger/
-        // payout) YAZMAZ → handled consume (poison YOK) + yüksek seviye "manuel reversal gerekli" sinyali.
-        // (Şemada manualReversalRequiredAt/Reason kolonu yok — migration M1R kapsamı DIŞI; sinyal log +
-        //  dönüş değeri ile taşınır. İleride ayrı milestone kolon ekleyebilir.)
+        // KİLİTLİ: POSTED kör REVERSED YAPILMAZ ve status DEĞİŞMEZ (POSTED kalır). M2
+        // ClientStatementLine üretmiş olabilir; status değiştirmek finansal hakikati düzeltmez.
+        // M1R/FU1 finansal reversal (ClientStatement/BalanceLedger/payout) YAZMAZ. FU1: manuel
+        // reversal sinyali artık KALICI kolona persist edilir (operasyonel görünürlük — takip kaçağı önlenir).
+        if (disp.manualReversalRequiredAt) {
+          // İdempotent: marker ZATEN konmuş (ör. ikinci PAYMENT_REVERSED). Overwrite YOK — ilk
+          // tetikleyen kayıt (zaman/sebep/sourceActionId) korunur.
+          this.logger.warn(
+            `MANUAL_REVERSAL_REQUIRED (zaten işaretli): POSTED disposition ${disp.id} ` +
+              `(collection=${collectionId}, srcEvent=${context?.actionId}) — idempotent no-op, marker korundu.`,
+          );
+          return {
+            outcome: 'posted-manual-reversal-required',
+            dispositionId: disp.id,
+            previousStatus: disp.status,
+            manualReversalRequired: true,
+            alreadyMarked: true,
+          };
+        }
+
+        const reason =
+          'PAYMENT_REVERSED POSTED disposition\'a geldi — finansal reversal (ClientStatement/' +
+          'BalanceLedger/payout) manuel gerekir; M1R/FU1 otomatik yazmaz, status POSTED kalır.';
+        // status ALANI data'da YOK → POSTED korunur; yalnız marker alanları set edilir.
+        await this.prisma.collectionDisposition.update({
+          where: { id: disp.id },
+          data: {
+            manualReversalRequiredAt: new Date(),
+            manualReversalReason: reason,
+            manualReversalSourceActionId: context?.actionId ?? null,
+          },
+        });
         this.logger.warn(
           `MANUAL_REVERSAL_REQUIRED: POSTED disposition ${disp.id} (collection=${collectionId}, ` +
-            `srcEvent=${context?.actionId}) — PAYMENT_REVERSED consume edildi; finansal reversal M1R ` +
-            `kapsamı DIŞI (ClientStatement/BalanceLedger/payout). Manuel düzeltme gerekir.`,
+            `srcEvent=${context?.actionId}) — PAYMENT_REVERSED consume edildi; status POSTED korundu, ` +
+            `kalıcı marker yazıldı. Finansal reversal manuel.`,
         );
         return {
           outcome: 'posted-manual-reversal-required',
