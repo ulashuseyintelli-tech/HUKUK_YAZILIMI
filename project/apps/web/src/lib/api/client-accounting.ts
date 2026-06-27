@@ -142,6 +142,65 @@ export interface ClientAccountingSummary {
   caseBreakdown: ClientCaseBreakdownItem[];
 }
 
+/** Faz A-MOV — birleşik hareket kaynak tipleri (backend ile aynı). */
+export type MovementSourceType =
+  | 'COLLECTION'
+  | 'COLLECTION_DISPOSITION'
+  | 'CLIENT_PAYOUT'
+  | 'EXPENSE_REQUEST'
+  | 'EXPENSE_PAYMENT'
+  | 'CASE_BALANCE';
+
+export type MovementScopeGroup = 'CLIENT_SPECIFIC' | 'CASE_CONTEXT';
+
+export type MovementClientEffect =
+  | 'INCREASE_CLIENT_PAYABLE'
+  | 'DECREASE_CLIENT_PAYABLE'
+  | 'INCREASE_CLIENT_EXPENSE_DEBT'
+  | 'DECREASE_CLIENT_EXPENSE_DEBT'
+  | 'NO_DIRECT_CLIENT_EFFECT';
+
+/**
+ * Faz A-MOV — tek birleşik hareket satırı (read-only). `amount` her zaman pozitif Decimal-string;
+ * yön `clientEffect` ile gelir (running balance YOK). CASE_CONTEXT satırları NO_DIRECT_CLIENT_EFFECT
+ * (dosya geneli, müvekkile atfedilmez). UI bu değerleri HESAPLAMAZ, yalnız gösterir.
+ */
+export interface ClientAccountingMovement {
+  id: string;
+  sourceType: MovementSourceType;
+  sourceId: string;
+  scopeGroup: MovementScopeGroup;
+  occurredAt: string; // ISO
+  caseId: string;
+  caseNo: string;
+  caseClientId: string | null;
+  label: string;
+  description: string | null;
+  amount: string; // Decimal string (pozitif)
+  currency: string;
+  clientEffect: MovementClientEffect;
+  status: string;
+  needsReview?: boolean;
+}
+
+export interface ClientMovementsResult {
+  items: ClientAccountingMovement[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface MovementsParams {
+  scope?: 'client' | 'case';
+  caseId?: string;
+  group?: MovementScopeGroup;
+  currency?: string;
+  page?: number;
+  pageSize?: number;
+  from?: string;
+  to?: string;
+}
+
 export const clientAccountingApi = {
   /** Müvekkilin (eligible) dosyaları + caseClientId resolve. */
   async getCases(clientId: string): Promise<ClientAccountingCase[]> {
@@ -192,6 +251,27 @@ export const clientAccountingApi = {
     const qs = new URLSearchParams({ currency });
     const resp = await apiClient.get<{ data: ClientAccountingSummary }>(
       `/clients/${clientId}/accounting/summary?${qs.toString()}`,
+    );
+    return resp.data.data;
+  },
+
+  /**
+   * Faz A-MOV — Müvekkil Genel Cari birleşik hareket listesi (read-only). Çift zarf (response.data.data).
+   * scope=client (tüm eligible dosyalar) | case (tek dosya). group A/B izole eder. Tutarlar backend'den
+   * (UI HESAPLAMAZ). Mahsup/ekstre/export YOK; bu yalnız hareket görüntüsüdür.
+   */
+  async getMovements(clientId: string, params: MovementsParams = {}): Promise<ClientMovementsResult> {
+    const qs = new URLSearchParams();
+    if (params.scope) qs.set('scope', params.scope);
+    if (params.caseId) qs.set('caseId', params.caseId);
+    if (params.group) qs.set('group', params.group);
+    qs.set('currency', params.currency ?? 'TRY');
+    if (params.page) qs.set('page', String(params.page));
+    if (params.pageSize) qs.set('pageSize', String(params.pageSize));
+    if (params.from) qs.set('from', params.from);
+    if (params.to) qs.set('to', params.to);
+    const resp = await apiClient.get<{ data: ClientMovementsResult }>(
+      `/clients/${clientId}/accounting/movements?${qs.toString()}`,
     );
     return resp.data.data;
   },

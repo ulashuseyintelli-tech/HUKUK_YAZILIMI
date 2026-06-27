@@ -1,0 +1,270 @@
+'use client';
+
+/**
+ * TM3 Faz A-MOV-FE — Müvekkil Genel Cari "Birleşik Hareketler" tablosu (READ-ONLY).
+ *
+ * Backend GET /clients/:clientId/accounting/movements'i besler. UI HESAP MOTORU DEĞİL:
+ * tutarlar/yön backend'den gelir, running balance YOK. Mahsup/genel-ekstre/export butonu YOK.
+ *
+ * KİLİT: CASE_CONTEXT (dosya geneli) satırları "müvekkile gelen para" gibi GÖSTERİLMEZ —
+ * nötr renkte + "Dosya geneli (müvekkile etki yok)" etiketiyle ayrılır. Yalnız CLIENT_SPECIFIC
+ * satırları müvekkil carisine yön (↑/↓) taşır.
+ */
+
+import { useState } from 'react';
+import { useQuery, keepPreviousData } from '@tanstack/react-query';
+import { Card, Badge, Spinner } from '@hukuk/ui';
+import { ArrowLeftRight, AlertCircle, Filter } from 'lucide-react';
+import {
+  clientAccountingApi,
+  formatMoneyString,
+  type MovementScopeGroup,
+  type MovementClientEffect,
+} from '@/lib/api/client-accounting';
+
+const MOV_PAGE_SIZE = 25;
+
+const GROUP_LABEL: Record<MovementScopeGroup, string> = {
+  CLIENT_SPECIFIC: 'Müvekkile Özgü',
+  CASE_CONTEXT: 'Dosya Geneli',
+};
+
+/** clientEffect → etiket + işaret + renk. CASE_CONTEXT = nötr (işaretsiz, gri). */
+const EFFECT_META: Record<MovementClientEffect, { label: string; sign: '+' | '−' | ''; cls: string }> = {
+  INCREASE_CLIENT_PAYABLE: { label: 'Müvekkile borç doğdu', sign: '+', cls: 'text-emerald-700' },
+  DECREASE_CLIENT_PAYABLE: { label: 'Müvekkile ödeme', sign: '−', cls: 'text-green-700' },
+  INCREASE_CLIENT_EXPENSE_DEBT: { label: 'Masraf borcu', sign: '+', cls: 'text-amber-700' },
+  DECREASE_CLIENT_EXPENSE_DEBT: { label: 'Masraf tahsil edildi', sign: '−', cls: 'text-green-700' },
+  NO_DIRECT_CLIENT_EFFECT: { label: 'Dosya geneli (müvekkile etki yok)', sign: '', cls: 'text-gray-400' },
+};
+
+interface ClientMovementsTableProps {
+  clientId: string;
+  currency?: string;
+  /** Dosya filtresi için Genel Cari kırılımındaki dosyalar (ekstra sorgu yok). */
+  cases: { caseId: string; caseNumber: string }[];
+}
+
+export function ClientMovementsTable({ clientId, currency = 'TRY', cases }: ClientMovementsTableProps) {
+  const [group, setGroup] = useState<'' | MovementScopeGroup>('');
+  const [caseFilter, setCaseFilter] = useState<string>('');
+  const [from, setFrom] = useState<string>('');
+  const [to, setTo] = useState<string>('');
+  const [page, setPage] = useState(1);
+
+  const scope: 'client' | 'case' = caseFilter ? 'case' : 'client';
+  const filtersActive = !!group || !!caseFilter || !!from || !!to;
+
+  const movQ = useQuery({
+    queryKey: ['client-cari-movements', clientId, currency, group, caseFilter, from, to, page],
+    queryFn: () =>
+      clientAccountingApi.getMovements(clientId, {
+        scope,
+        caseId: caseFilter || undefined,
+        group: group || undefined,
+        currency,
+        page,
+        pageSize: MOV_PAGE_SIZE,
+        // Gün-granülerliği + SİMETRİK sınır: from=gün başı, to=gün sonu (ikisi de aynı yerel çerçeve).
+        // (Çıplak 'YYYY-MM-DD' backend new Date() ile UTC gece-yarısı olarak parse edilir → asimetri olurdu.)
+        from: from ? `${from}T00:00:00.000` : undefined,
+        to: to ? `${to}T23:59:59.999` : undefined,
+      }),
+    enabled: !!clientId,
+    placeholderData: keepPreviousData,
+  });
+
+  const resetPage = () => setPage(1);
+  const clearFilters = () => {
+    setGroup('');
+    setCaseFilter('');
+    setFrom('');
+    setTo('');
+    setPage(1);
+  };
+
+  const data = movQ.data;
+  const totalPages = data ? Math.max(1, Math.ceil(data.total / MOV_PAGE_SIZE)) : 1;
+
+  return (
+    <Card className="p-4">
+      <div className="flex items-center gap-2 mb-3">
+        <ArrowLeftRight className="w-5 h-5 text-gray-600" />
+        <h2 className="font-medium text-gray-900">Birleşik Hareketler</h2>
+        {data && (
+          <Badge variant="secondary" className="ml-1">
+            {data.total} hareket
+          </Badge>
+        )}
+        {movQ.isFetching && <Spinner className="w-4 h-4 ml-1" />}
+      </div>
+
+      {/* Filtreler */}
+      <div className="flex flex-wrap items-end gap-3 mb-3">
+        <div className="flex flex-col">
+          <label className="text-[11px] text-gray-500 mb-1 flex items-center gap-1">
+            <Filter className="w-3 h-3" /> Kapsam
+          </label>
+          <select
+            value={group}
+            onChange={(e) => {
+              setGroup(e.target.value as '' | MovementScopeGroup);
+              resetPage();
+            }}
+            className="border rounded px-2 py-1.5 text-sm min-w-[160px]"
+          >
+            <option value="">Tüm Hareketler</option>
+            <option value="CLIENT_SPECIFIC">Müvekkile Özgü</option>
+            <option value="CASE_CONTEXT">Dosya Geneli</option>
+          </select>
+        </div>
+
+        <div className="flex flex-col">
+          <label className="text-[11px] text-gray-500 mb-1">Dosya</label>
+          <select
+            value={caseFilter}
+            onChange={(e) => {
+              setCaseFilter(e.target.value);
+              resetPage();
+            }}
+            className="border rounded px-2 py-1.5 text-sm min-w-[200px]"
+          >
+            <option value="">Tüm Dosyalar</option>
+            {cases.map((c) => (
+              <option key={c.caseId} value={c.caseId}>
+                {c.caseNumber}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col">
+          <label className="text-[11px] text-gray-500 mb-1">Başlangıç</label>
+          <input
+            type="date"
+            value={from}
+            onChange={(e) => {
+              setFrom(e.target.value);
+              resetPage();
+            }}
+            className="border rounded px-2 py-1.5 text-sm"
+          />
+        </div>
+
+        <div className="flex flex-col">
+          <label className="text-[11px] text-gray-500 mb-1">Bitiş</label>
+          <input
+            type="date"
+            value={to}
+            onChange={(e) => {
+              setTo(e.target.value);
+              resetPage();
+            }}
+            className="border rounded px-2 py-1.5 text-sm"
+          />
+        </div>
+
+        {filtersActive && (
+          <button
+            onClick={clearFilters}
+            className="px-3 py-1.5 text-sm border rounded text-gray-600 hover:bg-gray-50"
+          >
+            Filtreleri temizle
+          </button>
+        )}
+      </div>
+
+      {/* Durumlar */}
+      {movQ.isLoading ? (
+        <div className="flex items-center justify-center py-8">
+          <Spinner className="w-6 h-6" />
+        </div>
+      ) : movQ.isError ? (
+        <div className="flex items-center gap-2 text-red-600 text-sm py-6">
+          <AlertCircle className="w-4 h-4" />
+          <span>Hareketler yüklenemedi.</span>
+        </div>
+      ) : !data || data.items.length === 0 ? (
+        <div className="text-sm text-gray-500 py-6 text-center">
+          {filtersActive ? 'Seçili filtrelere uyan hareket yok.' : 'Bu müvekkil için hareket bulunmuyor.'}
+        </div>
+      ) : (
+        <>
+          <div className="overflow-auto border rounded-lg">
+            <table className="w-full text-xs">
+              <thead className="bg-gray-50">
+                <tr className="border-b text-left">
+                  <th className="px-2 py-2 whitespace-nowrap">Tarih</th>
+                  <th className="px-2 py-2 whitespace-nowrap">Dosya</th>
+                  <th className="px-2 py-2">Açıklama</th>
+                  <th className="px-2 py-2">Kapsam</th>
+                  <th className="px-2 py-2 text-right whitespace-nowrap">Tutar</th>
+                  <th className="px-2 py-2">Yön</th>
+                  <th className="px-2 py-2">Durum</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {data.items.map((m) => {
+                  const eff = EFFECT_META[m.clientEffect];
+                  const isContext = m.scopeGroup === 'CASE_CONTEXT';
+                  return (
+                    <tr key={m.id} className={`hover:bg-gray-50 ${isContext ? 'bg-slate-50/40' : ''}`}>
+                      <td className="px-2 py-2 whitespace-nowrap text-gray-600">
+                        {new Date(m.occurredAt).toLocaleDateString('tr-TR')}
+                      </td>
+                      <td className="px-2 py-2 whitespace-nowrap">{m.caseNo || '—'}</td>
+                      <td className="px-2 py-2">
+                        <div className="text-gray-900">{m.label}</div>
+                        {m.description && <div className="text-[10px] text-gray-400">{m.description}</div>}
+                      </td>
+                      <td className="px-2 py-2 whitespace-nowrap">
+                        <Badge variant="secondary" className={isContext ? 'opacity-70' : ''}>
+                          {GROUP_LABEL[m.scopeGroup]}
+                        </Badge>
+                      </td>
+                      <td className={`px-2 py-2 text-right whitespace-nowrap font-medium ${eff.cls}`}>
+                        {eff.sign && <span className="mr-0.5">{eff.sign}</span>}
+                        {formatMoneyString(m.amount, m.currency || currency)}
+                      </td>
+                      <td className={`px-2 py-2 whitespace-nowrap ${eff.cls}`}>{eff.label}</td>
+                      <td className="px-2 py-2 whitespace-nowrap text-gray-500">{m.status}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          {totalPages > 1 && (
+            <div className="flex items-center justify-end gap-2 mt-3 text-sm">
+              <button
+                className="px-2 py-1 border rounded disabled:opacity-40"
+                disabled={page <= 1 || movQ.isFetching}
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+              >
+                Önceki
+              </button>
+              <span className="text-gray-500">
+                {page} / {totalPages}
+              </span>
+              <button
+                className="px-2 py-1 border rounded disabled:opacity-40"
+                disabled={page >= totalPages || movQ.isFetching}
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              >
+                Sonraki
+              </button>
+            </div>
+          )}
+        </>
+      )}
+
+      <p className="mt-2 text-[11px] text-gray-400">
+        Birleşik hareket görünümüdür; tek bir yürüyen bakiye değildir. <strong>Dosya geneli</strong> satırlar
+        (borçlu tahsilatı, masraf/avans hareketi) çoklu alacaklıda doğrudan müvekkile atfedilmez.
+      </p>
+    </Card>
+  );
+}
+
+export default ClientMovementsTable;
