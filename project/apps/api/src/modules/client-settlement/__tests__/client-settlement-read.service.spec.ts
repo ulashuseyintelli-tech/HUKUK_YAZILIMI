@@ -225,3 +225,121 @@ describe('ClientSettlementReadService.listPayouts', () => {
     expect(res.page).toBe(1);
   });
 });
+
+// Faz A — Müvekkil Genel Cari (client-level projection). computeOutstanding spy'lanır (izole rollup).
+function buildSummaryPrisma(o: {
+  ccRows: any[];
+  payoutByCc?: Record<string, Prisma.Decimal>;
+  collectionByCase?: Record<string, Prisma.Decimal>;
+  postedDispByCase?: Record<string, Prisma.Decimal>;
+  balanceByCase?: Record<string, Prisma.Decimal>;
+  expenseRows?: any[];
+}) {
+  return {
+    caseClient: { findMany: jest.fn().mockResolvedValue(o.ccRows) },
+    clientPayout: {
+      aggregate: jest.fn().mockImplementation(({ where }: any) =>
+        Promise.resolve({ _sum: { amount: o.payoutByCc?.[where.caseClientId] ?? null } }),
+      ),
+    },
+    collection: {
+      aggregate: jest.fn().mockImplementation(({ where }: any) =>
+        Promise.resolve({ _sum: { amount: o.collectionByCase?.[where.caseId] ?? null } }),
+      ),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
+    collectionDisposition: {
+      aggregate: jest.fn().mockImplementation(({ where }: any) =>
+        Promise.resolve({ _sum: { totalAmount: o.postedDispByCase?.[where.caseId] ?? null } }),
+      ),
+    },
+    caseBalance: {
+      findFirst: jest.fn().mockImplementation(({ where }: any) =>
+        Promise.resolve(o.balanceByCase?.[where.caseId] != null ? { balance: o.balanceByCase[where.caseId] } : null),
+      ),
+    },
+    expenseRequest: { findMany: jest.fn().mockResolvedValue(o.expenseRows ?? []) },
+    collectionDispositionLine: { findMany: jest.fn().mockResolvedValue([]) },
+  } as any;
+}
+
+describe('ClientSettlementReadService.getClientAccountingSummary (Faz A)', () => {
+  it('A/B grup toplamı + caseBreakdown + netPosition (2 dosya)', async () => {
+    const prisma = buildSummaryPrisma({
+      ccRows: [
+        { id: 'cc1', caseId: 'caseA', role: 'ALACAKLI', case: { fileNumber: '2026/1', executionFileNumber: null } },
+        { id: 'cc2', caseId: 'caseB', role: 'ALACAKLI', case: { fileNumber: '2026/2', executionFileNumber: null } },
+      ],
+      payoutByCc: { cc1: D(400), cc2: D(0) },
+      collectionByCase: { caseA: D(1000), caseB: D(0) },
+      postedDispByCase: { caseA: D(400), caseB: D(0) },
+      balanceByCase: { caseA: D(50), caseB: D(0) },
+      expenseRows: [{ caseId: 'caseA', totalAmount: D(1431.1), paidTotal: D(0) }],
+    });
+    const svc = read(prisma);
+    jest.spyOn(svc, 'computeOutstanding').mockImplementation(async (_db: any, _t: any, caseId: any) =>
+      caseId === 'caseA' ? D(600) : D(0),
+    );
+
+    const res = await svc.getClientAccountingSummary('t1', 'client-1', 'TRY');
+
+    // A grubu (müvekkile özgü)
+    expect(res.clientScoped.payableNet).toBe('600');
+    expect(res.clientScoped.paidToClient).toBe('400');
+    expect(res.clientScoped.expenseRequested).toBe('1431.1');
+    expect(res.clientScoped.expensePaid).toBe('0');
+    expect(res.clientScoped.expenseUnpaid).toBe('1431.1');
+    expect(res.clientScoped.offsettableNetPosition).toBe('-831.1'); // 600 − 1431.1 (bilgi)
+    // B grubu (dosya geneli, distinct caseId)
+    expect(res.caseScopedContext.debtorCollection).toBe('1000');
+    expect(res.caseScopedContext.pendingDistribution).toBe('600'); // 1000 − 400
+    expect(res.caseScopedContext.advanceBalance).toBe('50');
+    expect(res.needsReview).toBe(false);
+    // breakdown
+    expect(res.caseBreakdown).toHaveLength(2);
+    const a = res.caseBreakdown.find((x) => x.caseId === 'caseA')!;
+    expect(a.payableNet).toBe('600');
+    expect(a.debtorCollection).toBe('1000');
+    expect(a.pendingDistribution).toBe('600');
+    expect(a.expenseRequested).toBe('1431.1');
+  });
+
+  it('pendingDistribution negatif → needsReview true (sessiz sıfırlama YOK)', async () => {
+    const prisma = buildSummaryPrisma({
+      ccRows: [{ id: 'cc1', caseId: 'caseA', role: 'ALACAKLI', case: { fileNumber: '2026/1', executionFileNumber: null } }],
+      payoutByCc: { cc1: D(0) },
+      collectionByCase: { caseA: D(100) },
+      postedDispByCase: { caseA: D(300) },
+      balanceByCase: { caseA: D(0) },
+      expenseRows: [],
+    });
+    const svc = read(prisma);
+    jest.spyOn(svc, 'computeOutstanding').mockResolvedValue(D(0));
+
+    const res = await svc.getClientAccountingSummary('t1', 'client-1');
+    expect(res.caseScopedContext.pendingDistribution).toBe('-200');
+    expect(res.needsReview).toBe(true);
+    expect(res.caseBreakdown[0].needsReview).toBe(true);
+  });
+
+  it('aynı caseId iki CaseClient → B grubu DISTINCT caseId ile bir kez sayılır (çift sayma yok)', async () => {
+    const prisma = buildSummaryPrisma({
+      ccRows: [
+        { id: 'cc1', caseId: 'caseA', role: 'ALACAKLI', case: { fileNumber: '2026/1', executionFileNumber: null } },
+        { id: 'cc2', caseId: 'caseA', role: 'ORTAK_ALACAKLI', case: { fileNumber: '2026/1', executionFileNumber: null } },
+      ],
+      payoutByCc: { cc1: D(0), cc2: D(0) },
+      collectionByCase: { caseA: D(1000) },
+      postedDispByCase: { caseA: D(0) },
+      balanceByCase: { caseA: D(0) },
+      expenseRows: [],
+    });
+    const svc = read(prisma);
+    jest.spyOn(svc, 'computeOutstanding').mockResolvedValue(D(0));
+
+    const res = await svc.getClientAccountingSummary('t1', 'client-1');
+    expect(res.caseScopedContext.debtorCollection).toBe('1000'); // 2000 DEĞİL
+    expect(res.caseBreakdown).toHaveLength(1);
+    expect(prisma.collection.aggregate).toHaveBeenCalledTimes(1); // distinct caseId
+  });
+});
