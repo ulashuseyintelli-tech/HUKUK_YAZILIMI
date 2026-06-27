@@ -149,14 +149,14 @@ describe('ClientSettlementReadService.listClientCases', () => {
   it('müvekkilin dosyaları + caseClientId resolve (caseNumber=fileNumber)', async () => {
     const prisma = buildPrisma({
       cases: [
-        { id: 'cc-A', caseId: 'case1', role: 'ALACAKLI', case: { fileNumber: '2024/1', executionFileNumber: 'E-1' } },
-        { id: 'cc-B', caseId: 'case2', role: 'ORTAK_ALACAKLI', case: { fileNumber: '2024/2', executionFileNumber: null } },
+        { id: 'cc-A', caseId: 'case1', role: 'ALACAKLI', case: { fileNumber: '2024/1', executionFileNumber: 'E-1', caseDate: new Date('2026-01-15T00:00:00.000Z') } },
+        { id: 'cc-B', caseId: 'case2', role: 'ORTAK_ALACAKLI', case: { fileNumber: '2024/2', executionFileNumber: null, caseDate: null } },
       ],
     });
     const res = await read(prisma).listClientCases('t1', 'client-1');
     expect(res.items).toEqual([
-      { caseId: 'case1', caseClientId: 'cc-A', role: 'ALACAKLI', caseNumber: '2024/1', executionFileNumber: 'E-1', currency: 'TRY' },
-      { caseId: 'case2', caseClientId: 'cc-B', role: 'ORTAK_ALACAKLI', caseNumber: '2024/2', executionFileNumber: null, currency: 'TRY' },
+      { caseId: 'case1', caseClientId: 'cc-A', role: 'ALACAKLI', caseNumber: '2024/1', executionFileNumber: 'E-1', currency: 'TRY', caseOpenedAt: '2026-01-15T00:00:00.000Z' },
+      { caseId: 'case2', caseClientId: 'cc-B', role: 'ORTAK_ALACAKLI', caseNumber: '2024/2', executionFileNumber: null, currency: 'TRY', caseOpenedAt: null },
     ]);
   });
 

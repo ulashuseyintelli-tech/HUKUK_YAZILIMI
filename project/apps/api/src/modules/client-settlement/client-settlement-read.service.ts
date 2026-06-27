@@ -12,6 +12,8 @@ export interface ClientAccountingCaseItem {
   caseNumber: string;
   executionFileNumber: string | null;
   currency: string;
+  /** Takip başlangıç tarihi (case.caseDate) ISO — Faz7-E ekstre default period fallback'i için. */
+  caseOpenedAt: string | null;
 }
 
 export interface ClientPayoutListItem {
@@ -133,7 +135,7 @@ export class ClientSettlementReadService {
         id: true,
         caseId: true,
         role: true,
-        case: { select: { fileNumber: true, executionFileNumber: true } },
+        case: { select: { fileNumber: true, executionFileNumber: true, caseDate: true } },
       },
       orderBy: { assignedAt: 'desc' },
     });
@@ -145,6 +147,7 @@ export class ClientSettlementReadService {
         caseNumber: r.case?.fileNumber ?? '',
         executionFileNumber: r.case?.executionFileNumber ?? null,
         currency: 'TRY',
+        caseOpenedAt: r.case?.caseDate ? r.case.caseDate.toISOString() : null,
       })),
     };
   }
