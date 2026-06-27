@@ -947,7 +947,8 @@ export default function CaseDetailPage() {
     if (!caseStatusValue || !params.id) return;
     try {
       setSavingCaseStatus(true);
-      await api.updateCase(params.id as string, { caseStatus: caseStatusValue });
+      // P3-2B-2: statü değişimi kanonik route'tan (generic /cases PUT yerine) — history/decisionLog/observe yazar.
+      await api.changeCaseStatus(params.id as string, caseStatusValue, "Statü güncellendi");
       // Veriyi yenile
       await fetchCase();
       setEditingCaseStatus(false);
