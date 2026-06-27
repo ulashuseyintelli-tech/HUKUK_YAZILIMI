@@ -126,6 +126,14 @@ export class DomainEventIngestService {
         `outbox_tenant_required: domain-event-ingest tenantId olmadan outbox yazamaz (eventId=${event.header.eventId})`,
       );
     }
+    const eventPayload =
+      event.payload && typeof event.payload === 'object' && !Array.isArray(event.payload)
+        ? (event.payload as Record<string, unknown>)
+        : {};
+    const collectionId =
+      typeof eventPayload.collectionId === 'string' && eventPayload.collectionId.trim()
+        ? eventPayload.collectionId
+        : undefined;
     await (tx as any).icrabotOutboxAction.create({
       data: {
         caseId: event.header.aggregateId,
@@ -133,9 +141,11 @@ export class DomainEventIngestService {
         actionType: `EVENT_PUBLISHED:${event.header.eventType}`,
         idempotencyKey,
         payload: {
+          ...(collectionId ? { collectionId } : {}),
           eventId: event.header.eventId,
           eventType: event.header.eventType,
           aggregateId: event.header.aggregateId,
+          caseId: event.header.aggregateId,
           aggregateVersion: Number(nextVersion),
           occurredAt: event.header.occurredAt,
           tenantId: event.header.tenantId,

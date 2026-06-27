@@ -357,5 +357,36 @@ describe('DomainEventIngestService — Validation', () => {
         .data;
       expect(data.actionType).toBe('EVENT_PUBLISHED:PAYMENT_RECEIVED');
     });
+
+    it('outbox payload carries collectionId and header-scoped tenant/case metadata', async () => {
+      const { tx, calls } = createMockTx();
+      const event = buildEvent({
+        eventId: 'evt-payment-1',
+        aggregateId: 'case-001',
+        tenantId: 'tenant-header',
+      });
+      event.payload = {
+        amount: 1000,
+        currency: 'TRY',
+        collectionId: 'col-1',
+        tenantId: 'tenant-payload-ignored',
+        caseId: 'case-payload-ignored',
+      };
+
+      await service.appendInTransaction(tx as never, event);
+
+      const outboxCall = calls.find((c) => c.method === 'outbox.create');
+      const data = (outboxCall!.args[0] as { data: { payload: Record<string, unknown> } }).data;
+      expect(data.payload).toMatchObject({
+        collectionId: 'col-1',
+        eventId: 'evt-payment-1',
+        eventType: 'PAYMENT_RECEIVED',
+        aggregateId: 'case-001',
+        caseId: 'case-001',
+        tenantId: 'tenant-header',
+      });
+      expect(data.payload.amount).toBeUndefined();
+      expect(data.payload.currency).toBeUndefined();
+    });
   });
 });

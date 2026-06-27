@@ -7,7 +7,7 @@ import {
   Optional,
 } from "@nestjs/common";
 import { PrismaService } from "../../prisma/prisma.service";
-import { randomUUID } from "crypto";
+import { createHash, randomUUID } from "crypto";
 import {
   CreateCollectionDto,
   UpdateCollectionDto,
@@ -48,6 +48,46 @@ const EXTERNAL_SOURCES = new Set<string>([
   ...EXTERNAL_SIGNED_SOURCES,
   CollectionSource.THIRD_PARTY,
 ]);
+
+const PAYMENT_REVERSED_EVENT_NAMESPACE = 'PAYMENT_REVERSED:v1';
+const PAYMENT_RECEIVED_EVENT_NOT_FOUND = 'PAYMENT_RECEIVED_EVENT_NOT_FOUND';
+const PAYMENT_RECEIVED_EVENT_NOT_FOUND_MESSAGE =
+  'Original PAYMENT_RECEIVED event not found for collection reversal.';
+
+function deterministicUuid(...parts: string[]): string {
+  const bytes = createHash('sha256').update(parts.join('\u001f')).digest();
+  bytes[6] = (bytes[6] & 0x0f) | 0x50;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = bytes.subarray(0, 16).toString('hex');
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20, 32),
+  ].join('-');
+}
+
+function paymentReversedEventId(tenantId: string, collectionId: string): string {
+  return deterministicUuid(PAYMENT_REVERSED_EVENT_NAMESPACE, tenantId, collectionId);
+}
+
+function paymentReceivedEventNotFound(): ConflictException {
+  return new ConflictException({
+    errorCode: PAYMENT_RECEIVED_EVENT_NOT_FOUND,
+    message: PAYMENT_RECEIVED_EVENT_NOT_FOUND_MESSAGE,
+  });
+}
+
+function getTimelineEventBody(event: any): { header?: Record<string, unknown>; payload?: Record<string, unknown> } {
+  if (!event?.body || typeof event.body !== 'object') return {};
+  return event.body as { header?: Record<string, unknown>; payload?: Record<string, unknown> };
+}
+
+function getTimelineEventId(event: any): string | undefined {
+  const eventId = getTimelineEventBody(event).header?.eventId;
+  return typeof eventId === 'string' && eventId.trim() ? eventId : undefined;
+}
 
 function toFiniteAmount(value: unknown): number {
   const amount = Number(value);
@@ -719,6 +759,23 @@ export class CollectionService {
           throw new BadRequestException("Tahsilat zaten iptal edilmiş");
         }
 
+        const originalPaymentEvent = await (tx.icrabotTimelineEntry as any).findFirst({
+          where: {
+            tenantId,
+            caseId: collection.caseId,
+            type: 'PAYMENT_RECEIVED',
+            body: {
+              path: ['payload', 'collectionId'],
+              equals: collection.id,
+            },
+          },
+          orderBy: { createdAt: 'asc' },
+        });
+        const originalPaymentEventId = getTimelineEventId(originalPaymentEvent);
+        if (!originalPaymentEventId) {
+          throw paymentReceivedEventNotFound();
+        }
+
         const originalLedger = await (tx.ledgerEntry as any).findFirst({
           where: {
             tenantId,
@@ -734,11 +791,12 @@ export class CollectionService {
           orderBy: { createdAt: 'asc' },
         });
 
+        const cancelledAt = new Date();
         const cancelledCollection = await (tx.collection as any).update({
           where: { id },
           data: {
             status: CollectionStatus.CANCELLED,
-            cancelledAt: new Date(),
+            cancelledAt,
             cancelReason: dto.cancelReason,
           },
         });
@@ -811,7 +869,31 @@ export class CollectionService {
           data: {
             status: 'REVERSED',
             remainingAmount: 0,
-            reversedAt: new Date(),
+            reversedAt: cancelledAt,
+          },
+        });
+
+        await this.domainEventIngestService.appendInTransaction(tx, {
+          header: {
+            eventId: paymentReversedEventId(tenantId, collection.id),
+            aggregateType: 'Case',
+            aggregateId: collection.caseId,
+            eventType: 'PAYMENT_REVERSED',
+            occurredAt: cancelledAt.toISOString(),
+            occurredAtConfidence: 'SYSTEM_VERIFIED',
+            actor: {
+              type: 'SYSTEM',
+              reason: 'COLLECTION_CANCEL',
+            },
+            causedBy: originalPaymentEventId,
+            tenantId,
+          },
+          payload: {
+            tenantId,
+            caseId: collection.caseId,
+            collectionId: collection.id,
+            reversedAt: cancelledAt.toISOString(),
+            cancelReason: dto.cancelReason,
           },
         });
 

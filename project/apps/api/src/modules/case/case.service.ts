@@ -3493,11 +3493,18 @@ export class CaseService {
     });
   }
 
-  /**
-   * Tahsilat iptal et
-   */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseController.cancelCollection() → POST /cases/:id/collections/:collectionId/cancel (dosya detayından tahsilat iptali; route caseId + tenant guard)
+  /// </remarks>
   async cancelCollection(tenantId: string, caseId: string, collectionId: string, reason?: string) {
-    // G3d: kanonik cancel'a delege (tenant doğrulaması collection.service.cancel içinde).
+    const collection = await this.prisma.collection.findFirst({
+      where: { id: collectionId, caseId, tenantId },
+      select: { id: true },
+    });
+    if (!collection) throw new NotFoundException("Tahsilat bulunamadı");
+
+    // G3d: kanonik cancel'a delege; route caseId + tenant guard bu katmanda fail-closed uygulanır.
     return this.collectionService.cancel(tenantId, collectionId, {
       cancelReason: reason || "",
     });
