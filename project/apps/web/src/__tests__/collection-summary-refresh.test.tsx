@@ -442,7 +442,9 @@ describe("collection summary refresh", () => {
       source.indexOf("  // Fetch case debtors", saveCaseStatusStart),
     );
 
-    expect(saveCaseStatusBlock).toContain('await api.changeCaseStatus(params.id as string, caseStatusValue, "Statü güncellendi");');
+    // P3-2C-FE: kanonik changeCaseStatus çağrısı guarded-edge consumer (runGuardedStatus) ile sarıldı + confirmationToken retry argümanı eklendi.
+    expect(saveCaseStatusBlock).toContain("await runGuardedStatus(");
+    expect(saveCaseStatusBlock).toContain('api.changeCaseStatus(params.id as string, caseStatusValue, "Statü güncellendi", confirmation?.token)');
     expect(saveCaseStatusBlock).toContain("await fetchCase();");
     expect(saveCaseStatusBlock).not.toContain("setFinancialSummaryRefreshKey");
   });

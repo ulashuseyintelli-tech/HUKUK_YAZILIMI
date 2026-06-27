@@ -664,10 +664,12 @@ class ApiClient {
     return this.request<any>("/case-status/list");
   }
 
-  async changeCaseStatus(caseId: string, status: string, reason?: string) {
+  // P3-2C-FE: confirmationToken OPSİYONEL — guarded-edge CONFIRM_REQUIRED retry'ında envelope.confirmation.token
+  // body'ye eklenir (backend P3-2C consume eder). Verilmezse mevcut davranış AYNEN (backend default OFF → zarf dönmez).
+  async changeCaseStatus(caseId: string, status: string, reason?: string, confirmationToken?: string) {
     return this.request<any>(`/case-status/${caseId}/change`, {
       method: "POST",
-      body: JSON.stringify({ status, reason }),
+      body: JSON.stringify({ status, reason, ...(confirmationToken ? { confirmationToken } : {}) }),
     });
   }
 

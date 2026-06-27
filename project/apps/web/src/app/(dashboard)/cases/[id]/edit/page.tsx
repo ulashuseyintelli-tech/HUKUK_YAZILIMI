@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useGuardedAction } from "@/components/guarded-edge/use-guarded-action";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Save, Loader2, AlertCircle, Check } from "lucide-react";
@@ -58,6 +59,8 @@ export default function EditCasePage() {
   const [success, setSuccess] = useState(false);
   const [caseData, setCaseData] = useState<CaseData | null>(null);
   const [originalStatus, setOriginalStatus] = useState<string | undefined>(undefined);
+  // P3-2C-FE: edit-form statü değişimini guarded-edge consumer ile sar (flag OFF → modal hiç açılmaz, davranış değişmez).
+  const { run: runGuardedStatus, modal: guardedStatusModal } = useGuardedAction();
   const [executionOffices, setExecutionOffices] = useState<ExecutionOffice[]>([]);
   const [selectedCity, setSelectedCity] = useState("");
 
@@ -113,7 +116,15 @@ export default function EditCasePage() {
       });
 
       if (statusChanged && caseData.caseStatus) {
-        await api.changeCaseStatus(caseId, caseData.caseStatus, "Dosya düzenleme formundan statü güncellendi");
+        // P3-2C-FE: kanonik statü değişimi guarded-edge consumer ile sarıldı. Flag OFF → run normal {ok}, modal açılmaz.
+        // CONFIRM_REQUIRED'da vazgeçilirse: edit (PUT) zaten yazıldı ama statü DEĞİŞMEZ → başarı ekranına geçme, formda kal.
+        const statusToSet = caseData.caseStatus;
+        const result = await runGuardedStatus((confirmation) =>
+          api.changeCaseStatus(caseId, statusToSet, "Dosya düzenleme formundan statü güncellendi", confirmation?.token),
+        );
+        if (result.status === "cancelled") {
+          return; // finally setSaving(false) çalışır; formda kalır
+        }
       }
 
       setSuccess(true);
@@ -353,6 +364,9 @@ export default function EditCasePage() {
           </button>
         </div>
       </form>
+
+      {/* P3-2C-FE: guarded-edge confirm modalı (yalnız backend CONFIRM_REQUIRED dönerse görünür; flag OFF → null) */}
+      {guardedStatusModal}
     </div>
   );
 }
