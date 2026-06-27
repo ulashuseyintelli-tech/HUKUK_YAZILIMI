@@ -25,6 +25,7 @@ const mockPrisma: any = {
   clientPayout: { findMany: jest.fn() }, // M3: RECORDED payouts
   clientStatement: { create: jest.fn(), update: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   clientStatementLine: { createMany: jest.fn() },
+  $executeRaw: jest.fn().mockResolvedValue(1), // pg_advisory_xact_lock (Faz 7-E concurrency guard)
   $transaction: jest.fn((fn: any) => fn(mockPrisma)),
 };
 const mockDispatcher: any = { dispatch: jest.fn().mockResolvedValue({ status: 'sent' }) };
@@ -386,6 +387,12 @@ describe('ClientStatementService', () => {
       expect(mockPrisma.clientStatement.create).toHaveBeenCalledTimes(1);
     });
 
+    it('create path advisory lock alır (tx.$executeRaw — concurrency guard)', async () => {
+      mockPrisma.clientStatement.count.mockResolvedValueOnce(0);
+      await service.create(TENANT, CASE, USER, dto);
+      expect(mockPrisma.$executeRaw).toHaveBeenCalled();
+    });
+
     it('create → CLIENT_STATEMENT_GENERATED audit (aynı tx)', async () => {
       mockPrisma.clientStatement.count.mockResolvedValueOnce(0);
       await service.create(TENANT, CASE, USER, dto);
@@ -419,6 +426,7 @@ describe('ClientStatementService', () => {
 
       await service.supersede(TENANT, 'old-1', USER, { periodStart: dto.periodStart, periodEnd: dto.periodEnd });
 
+      expect(mockPrisma.$executeRaw).toHaveBeenCalled(); // supersede path advisory lock
       expect(mockAudit.logInTransaction).toHaveBeenCalledWith(
         mockPrisma,
         expect.objectContaining({
@@ -426,6 +434,7 @@ describe('ClientStatementService', () => {
           entityType: 'ClientStatement',
           entityId: 'old-1',
           userId: USER,
+          metadata: expect.objectContaining({ oldStatementId: 'old-1', newStatementId: 'new-1' }),
         }),
       );
     });

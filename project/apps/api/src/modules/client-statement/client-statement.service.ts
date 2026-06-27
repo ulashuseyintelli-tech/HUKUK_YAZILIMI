@@ -72,8 +72,11 @@ export class ClientStatementService {
 
     const created = await this.prisma.$transaction(async (tx) => {
       // Q7: PERIOD-scoped tek-ACTIVE guard (tenant+case+client+periodStart+periodEnd). Global tek-ACTIVE
-      // DEĞİL → farklı dönemler aynı anda ACTIVE olabilir. @@unique YOK; tx-içi kontrol race'i daraltır
-      // (migration eklenmedi — karar Ulaş). Aynı dönem zaten ACTIVE ise create reddedilir (→ supersede).
+      // DEĞİL → farklı dönemler aynı anda ACTIVE olabilir. @@unique YOK (migration istenmedi); bu yüzden
+      // CONCURRENCY için advisory xact lock (ClientPayout deseni): count+create aynı tx'te SERIALIZE olur →
+      // iki eşzamanlı istek ikisi de count=0 görüp çift ACTIVE üretemez. Aynı dönem ACTIVE varsa → supersede.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${this.activeLockKey(tenantId, caseId, dto.clientId, periodStart, periodEnd)}))`;
+
       const activeCount = await tx.clientStatement.count({
         where: {
           tenantId,
@@ -147,7 +150,11 @@ export class ClientStatementService {
 
     const created = await this.prisma.$transaction(async (tx) => {
       // Q7: yeni dönem, supersede edilen DIŞINDA bir ACTIVE ile çakışmamalı (period-scoped tek-ACTIVE).
-      // Dönem korunuyorsa (newPeriod == old.period) tek ACTIVE = old → id:{not:old.id} ile elenir, çakışma yok.
+      // Concurrency: create() ile AYNI advisory lock anahtarı (tenant+case+client+period) → eşzamanlı
+      // create/supersede serialize olur (count+yazma aynı tx). Dönem korunuyorsa tek ACTIVE = old →
+      // id:{not:old.id} ile elenir, çakışma yok.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${this.activeLockKey(tenantId, old.caseId, old.clientId, periodStart, periodEnd)}))`;
+
       const activeCount = await tx.clientStatement.count({
         where: {
           tenantId,
@@ -191,9 +198,11 @@ export class ClientStatementService {
         entityType: 'ClientStatement',
         entityId: old.id,
         userId,
-        description: `Müvekkil ekstresi yenilendi (yeni ekstre: ${fresh.id})`,
+        description: `Müvekkil ekstresi yenilendi (eski: ${old.id} → yeni: ${fresh.id})`,
         metadata: {
-          supersededById: fresh.id,
+          oldStatementId: old.id,
+          newStatementId: fresh.id,
+          supersededById: fresh.id, // geriye-uyum (eski alan adı)
           periodStart: periodStart.toISOString(),
           periodEnd: periodEnd.toISOString(),
         },
@@ -333,6 +342,14 @@ export class ClientStatementService {
       throw new BadRequestException('periodStart, periodEnd’ten sonra olamaz');
     }
     return { periodStart, periodEnd };
+  }
+
+  /**
+   * Period-scoped tek-ACTIVE advisory-lock anahtarı. create() ve supersede() AYNI anahtarı kullanır →
+   * aynı tenant+case+client+dönem için eşzamanlı istekler tx süresince serialize olur (çift ACTIVE engellenir).
+   */
+  private activeLockKey(tenantId: string, caseId: string, clientId: string, periodStart: Date, periodEnd: Date): string {
+    return `client-statement:${tenantId}:${caseId}:${clientId}:${periodStart.toISOString()}:${periodEnd.toISOString()}`;
   }
 
   private async assertCaseAndClient(tenantId: string, caseId: string, clientId: string) {
