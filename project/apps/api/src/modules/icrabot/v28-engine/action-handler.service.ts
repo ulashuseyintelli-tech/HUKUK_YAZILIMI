@@ -30,6 +30,10 @@ import { OutboxService } from './outbox.service';
 import { TimelineService } from './timeline.service';
 import { FactStoreService } from './factstore.service';
 import { maskPhone } from '../../../common/pii-mask.util';
+import {
+  getIcrabotOutboxMaxAttempts,
+  getIcrabotOutboxRetryBaseMs,
+} from './outbox.constants';
 
 /**
  * TM3 M1: handler'a outbox satır bağlamı. Consumer'ın IcrabotOutboxAction.tenantId'yi
@@ -58,6 +62,7 @@ export interface ActionDispatchResult {
   retryScheduled?: boolean;
   deadLettered?: boolean;
   feedbackWritten?: boolean;
+  skipped?: boolean;
 }
 
 export interface LockInfo {
@@ -71,8 +76,8 @@ export class ActionHandlerService {
   private readonly logger = new Logger(ActionHandlerService.name);
   private readonly handlers: Map<string, ActionHandler> = new Map();
   private readonly locks: Map<string, LockInfo> = new Map(); // In-memory lock (dev only)
-  private readonly MAX_ATTEMPTS = 8;
-  private readonly RETRY_BASE_SECONDS = 60;
+  private readonly maxAttempts = getIcrabotOutboxMaxAttempts();
+  private readonly retryBaseMs = getIcrabotOutboxRetryBaseMs();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -109,6 +114,48 @@ export class ActionHandlerService {
       };
     }
 
+    const claimForProcessing = async (): Promise<boolean> => {
+      const maybeOutbox = this.outbox as any;
+      if (typeof maybeOutbox.claimForProcessing === 'function') {
+        return maybeOutbox.claimForProcessing(actionId);
+      }
+
+      await this.outbox.markSent(actionId);
+      return true;
+    };
+
+    // outbox.tenantId DB-NOT NULL olmalı; mock/eski satır null ise tenant fallback YOK.
+    const effectiveTenantId = action.tenantId;
+    if (!effectiveTenantId) {
+      const claimed = await claimForProcessing();
+      if (!claimed) {
+        return {
+          success: false,
+          actionId,
+          actionType: action.actionType,
+          error: `Action not claimable: ${actionId}`,
+          skipped: true,
+        };
+      }
+
+      const errorCode = 'MISSING_TENANT_ID';
+      const maybeOutbox = this.outbox as any;
+      if (typeof maybeOutbox.markDeadLetter === 'function') {
+        await maybeOutbox.markDeadLetter(actionId, { error: errorCode });
+      } else {
+        await this.outbox.markFailed(actionId, errorCode);
+      }
+
+      this.logger.error(`Outbox action dead-lettered without tenantId: ${actionId}`);
+      return {
+        success: false,
+        actionId,
+        actionType: action.actionType,
+        error: errorCode,
+        deadLettered: true,
+      };
+    }
+
     const handler = this.handlers.get(action.actionType);
     if (!handler) {
       return {
@@ -119,13 +166,16 @@ export class ActionHandlerService {
       };
     }
 
-    // outbox.tenantId DB-NOT NULL (Adım B) → her satır tenant taşır. caseId→tenant fallback
-    // KALDIRILDI (Adım C / bridge full removal); yakalanan tenant'a doğrudan güvenilir.
-    const effectiveTenantId = action.tenantId;
-
-    // Mark as sent (processing)
-    await this.outbox.markSent(actionId);
-
+    const claimed = await claimForProcessing();
+    if (!claimed) {
+      return {
+        success: false,
+        actionId,
+        actionType: action.actionType,
+        error: `Action not claimable: ${actionId}`,
+        skipped: true,
+      };
+    }
     try {
       // Handler may return a result object.
       // TM3 M1: outbox satır bağlamı (tenantId/actionId) handler'a thread edilir → consumer
@@ -175,16 +225,14 @@ export class ActionHandlerService {
       };
 
     } catch (error: any) {
-      // Get updated action to check attempt count
+      // OutboxService tek retry/dead-letter sözleşmesini uygular; fake test double'lar için fallback korunur.
       const updatedAction = await (this.prisma as any).icrabotOutboxAction.findUnique({
         where: { id: actionId },
       });
-      
-      const newAttemptCount = (updatedAction?.attemptCount || 0) + 1;
-      const isDead = newAttemptCount >= this.MAX_ATTEMPTS;
-
-      await this.outbox.markFailed(actionId, error.message);
-
+      const fallbackAttemptCount = (updatedAction?.attemptCount || 0) + 1;
+      const failure = await this.outbox.markFailed(actionId, error.message, this.retryBaseMs);
+      const newAttemptCount = failure?.attemptCount ?? fallbackAttemptCount;
+      const isDead = failure?.status === 'dead' || newAttemptCount >= this.maxAttempts;
       if (isDead) {
         // Timeline: OUTCOME dead-lettered
         await this.timeline.addEntry({
@@ -225,8 +273,7 @@ export class ActionHandlerService {
         };
       } else {
         // Timeline: OUTCOME failed (will retry)
-        const retryDelayMs = this.RETRY_BASE_SECONDS * 1000 * Math.pow(2, newAttemptCount - 1);
-        const nextRetryAt = new Date(Date.now() + retryDelayMs);
+        const nextRetryAt = failure?.nextRetryAt ?? new Date(Date.now() + this.retryBaseMs * Math.pow(2, newAttemptCount - 1));
         
         await this.timeline.addEntry({
           caseId: action.caseId,
@@ -237,7 +284,7 @@ export class ActionHandlerService {
           body: { 
             action_id: actionId, 
             action_type: action.actionType,
-            status: 'pending',
+            status: 'failed',
             last_error: { error: error.message },
             attempt_count: newAttemptCount,
             next_retry_at: nextRetryAt.toISOString(),
@@ -340,7 +387,13 @@ export class ActionHandlerService {
   }
 
   /**
-   * Pending action'ları işler (Python dispatch_outbox.py pattern)
+   * Pending action'ları işler (Python dispatch_outbox.py pattern).
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * /// - OutboxController.processPending() → POST /icrabot/v28/outbox/process (manuel pending tüketim)
+   * /// - OutboxCronService.processOutboxActions() → @Cron(EVERY_MINUTE) platform pending tüketim
+   * /// </remarks>
    */
   async processPendingActions(limit = 10): Promise<ActionDispatchResult[]> {
     const actions = await this.outbox.getPendingActions(limit);
@@ -357,23 +410,19 @@ export class ActionHandlerService {
 
     return results;
   }
-
   /**
-   * Retry edilebilir action'ları işler
+   * Retry edilebilir action'ları işler.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * /// - OutboxController.processRetryable() → POST /icrabot/v28/outbox/process-retryable (manuel retry tüketim)
+   * /// - OutboxCronService.processOutboxActions() → @Cron(EVERY_MINUTE) platform retry tüketim
+   * /// </remarks>
    */
   async processRetryableActions(limit = 10): Promise<ActionDispatchResult[]> {
-    const now = new Date();
-    const actions = await (this.prisma as any).icrabotOutboxAction.findMany({
-      where: {
-        status: 'pending',
-        nextRetryAt: { lte: now },
-        attemptCount: { lt: this.MAX_ATTEMPTS },
-      },
-      orderBy: { nextRetryAt: 'asc' },
-      take: limit,
-    });
-
+    const actions = await this.outbox.getRetryableActions(limit);
     const results: ActionDispatchResult[] = [];
+
     for (const action of actions) {
       const result = await this.dispatch(action.id);
       results.push(result);
@@ -381,7 +430,6 @@ export class ActionHandlerService {
 
     return results;
   }
-
   /**
    * Varsayılan handler'ları register eder
    */
