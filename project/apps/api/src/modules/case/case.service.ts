@@ -3507,7 +3507,7 @@ export class CaseService {
     // G3d: kanonik cancel'a delege; route caseId + tenant guard bu katmanda fail-closed uygulanır.
     return this.collectionService.cancel(tenantId, collectionId, {
       cancelReason: reason || "",
-    });
+    }, caseId);
   }
 
   /// <remarks>

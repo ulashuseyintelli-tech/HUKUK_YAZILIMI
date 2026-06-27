@@ -651,6 +651,22 @@ describe('CollectionService.cancel — reversal ledger write', () => {
     expect(domainEvent.appendInTransaction).not.toHaveBeenCalled();
   });
 
+  it('case route boundary guard: expectedCaseId ile lookup case-scoped olur ve mismatch yazma yapmaz', async () => {
+    const tx = buildTx({ collection: null });
+    const { service } = buildService(tx);
+
+    await expect(
+      service.cancel('t1', 'col1', { cancelReason: 'wrong case' } as any, 'case-a'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(tx.collection.findFirst).toHaveBeenCalledWith({
+      where: { id: 'col1', tenantId: 't1', caseId: 'case-a' },
+    });
+    expect(tx.collection.update).not.toHaveBeenCalled();
+    expect(tx.ledgerEntry.create).not.toHaveBeenCalled();
+    expect(tx.claimItem.updateMany).not.toHaveBeenCalled();
+    expect(tx.collectionOverpayment.updateMany).not.toHaveBeenCalled();
+  });
+
   it('existing reversedByLedgerEntry varsa duplicate REVERSAL yazmaz', async () => {
     const tx = buildTx({
       originalLedger: {

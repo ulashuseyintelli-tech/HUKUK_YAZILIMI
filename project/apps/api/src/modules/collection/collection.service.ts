@@ -742,13 +742,13 @@ export class CollectionService {
   /// <remarks>
   /// Çağrıldığı yerler:
   /// - CollectionController.cancel() → POST /collections/:id/cancel (doğrudan tahsilat iptali)
-  /// - CaseService.cancelCollection() → POST /cases/:id/collections/:collectionId/cancel (dosya detayından tahsilat iptali)
+  /// - CaseService.cancelCollection() → POST /cases/:id/collections/:collectionId/cancel (dosya detayından tahsilat iptali; caseId boundary guard)
   /// </remarks>
-  async cancel(tenantId: string, id: string, dto: CancelCollectionDto) {
+  async cancel(tenantId: string, id: string, dto: CancelCollectionDto, expectedCaseId?: string) {
     try {
       return await this.prisma.$transaction(async (tx) => {
         const collection = await (tx.collection as any).findFirst({
-          where: { id, tenantId },
+          where: { id, tenantId, ...(expectedCaseId ? { caseId: expectedCaseId } : {}) },
         });
 
         if (!collection) {
