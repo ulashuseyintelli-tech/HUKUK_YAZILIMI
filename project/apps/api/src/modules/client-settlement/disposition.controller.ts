@@ -2,6 +2,7 @@ import { Controller, Get, Post, Param, Query, Body, Request, UseGuards } from '@
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DispositionPostingService } from './disposition-posting.service';
+import { ClientSettlementReadService } from './client-settlement-read.service';
 import { PostDispositionDto } from './dto/post-disposition.dto';
 
 /** actor compile-time shape — req.user.id auth context (body'den ASLA). */
@@ -15,6 +16,7 @@ export class DispositionController {
   constructor(
     private readonly posting: DispositionPostingService,
     private readonly prisma: PrismaService,
+    private readonly readService: ClientSettlementReadService,
   ) {}
 
   /** Dosya bazlı dağıtım listesi (review UI; default tüm statüler). */
@@ -30,6 +32,18 @@ export class DispositionController {
       include: { lines: true },
       orderBy: { createdAt: 'desc' },
     });
+    return { data };
+  }
+
+  /** Müvekkile borç (outstanding) — read. UI HESAPLAMAZ; otorite backend (tek computeOutstanding). */
+  @Get('case/:caseId/outstanding')
+  async outstanding(
+    @Request() req: AuthRequest,
+    @Param('caseId') caseId: string,
+    @Query('caseClientId') caseClientId: string,
+    @Query('currency') currency?: string,
+  ) {
+    const data = await this.readService.getOutstanding(req.user.tenantId, caseId, caseClientId, currency || 'TRY');
     return { data };
   }
 

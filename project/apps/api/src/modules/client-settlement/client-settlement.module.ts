@@ -9,6 +9,8 @@ import { DispositionPostingService } from './disposition-posting.service';
 import { DispositionController } from './disposition.controller';
 import { ClientPayoutService } from './client-payout.service';
 import { ClientPayoutController } from './client-payout.controller';
+import { ClientSettlementReadService } from './client-settlement-read.service';
+import { ClientAccountingController } from './client-accounting.controller';
 
 /**
  * TM3 M1/M2/M3/M1R — Müvekkil Settlement Bridge (Claude domaini).
@@ -21,7 +23,7 @@ import { ClientPayoutController } from './client-payout.controller';
  */
 @Module({
   imports: [PrismaModule, V28EngineModule],
-  controllers: [DispositionController, ClientPayoutController],
+  controllers: [DispositionController, ClientPayoutController, ClientAccountingController],
   providers: [
     CollectionDispositionService,
     PaymentReceivedRegistrar,
@@ -29,6 +31,7 @@ import { ClientPayoutController } from './client-payout.controller';
     PaymentReversedRegistrar,
     DispositionPostingService,
     ClientPayoutService,
+    ClientSettlementReadService,
   ],
   exports: [CollectionDispositionService, CollectionReversalService],
 })

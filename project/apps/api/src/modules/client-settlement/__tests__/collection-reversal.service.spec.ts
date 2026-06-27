@@ -1,10 +1,11 @@
 /**
- * TM3 M1R — CollectionReversalService testleri.
+ * TM3 M1R (+FU1) — CollectionReversalService testleri.
  * Davranış matrisi (Ulaş contract 2026-06-27):
  *  - HELD_PENDING_DISTRIBUTION → REVERSED (success)
  *  - REVERSED / CANCELLED → idempotent skip (success)
  *  - no disposition → handled skip (success)
- *  - POSTED → KÖR REVERSED YOK; manuel-reversal-required + finansal dokunma YOK (success)
+ *  - POSTED (FU1) → status POSTED KALIR; kalıcı marker persist; idempotent (zaten işaretliyse update YOK);
+ *    finansal dokunma YOK (success)
  *  - missing collectionId → handled no-op (success, throw YOK — poison engeli)
  *  - missing tenantId / tenant mismatch / wrong caseId → fail-closed (throw, mutasyon YOK)
  *  - ClientStatement / BalanceLedger / payout YAZILMAZ; clientId VARSAYILMAZ.
@@ -80,14 +81,36 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     expectNoFinancialMutation(prisma);
   });
 
-  it('POSTED → KÖR REVERSED YAPMA: manuel-reversal-required + update YOK + finansal dokunma YOK', async () => {
-    const prisma = buildPrisma({ id: 'disp1', tenantId: 't1', caseId: 'case1', status: 'POSTED' });
+  it('POSTED (FU1) → status POSTED KALIR; marker alanları persist; finansal dokunma YOK', async () => {
+    const prisma = buildPrisma({ id: 'disp1', tenantId: 't1', caseId: 'case1', status: 'POSTED', manualReversalRequiredAt: null });
     const res = await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
 
     expect(res.outcome).toBe('posted-manual-reversal-required');
     expect(res.manualReversalRequired).toBe(true);
     expect(res.previousStatus).toBe('POSTED');
-    // En kritik invariant: POSTED status DEĞİŞMEZ (REVERSED'e çekilmez).
+    expect(res.reversalSourceEventId).toBe('evt-rev-1');
+    // En kritik invariant: update çağrılır AMA status DEĞİŞMEZ (data'da status YOK → POSTED kalır).
+    expect(prisma.collectionDisposition.update).toHaveBeenCalledTimes(1);
+    const call = prisma.collectionDisposition.update.mock.calls[0][0];
+    expect(call.where).toEqual({ id: 'disp1' });
+    expect(call.data.status).toBeUndefined(); // POSTED → REVERSED'e ÇEKİLMEZ
+    expect(call.data.manualReversalRequiredAt).toBeInstanceOf(Date);
+    expect(typeof call.data.manualReversalReason).toBe('string');
+    expect(call.data.manualReversalSourceActionId).toBe('evt-rev-1');
+    expectNoFinancialMutation(prisma);
+  });
+
+  it('POSTED (FU1) idempotent: marker ZATEN varsa update YOK, marker korunur (alreadyMarked)', async () => {
+    const prisma = buildPrisma({
+      id: 'disp1', tenantId: 't1', caseId: 'case1', status: 'POSTED',
+      manualReversalRequiredAt: new Date('2026-06-27T00:00:00Z'),
+    });
+    const res = await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', { ...CTX, actionId: 'evt-rev-2' });
+
+    expect(res.outcome).toBe('posted-manual-reversal-required');
+    expect(res.manualReversalRequired).toBe(true);
+    expect(res.alreadyMarked).toBe(true);
+    // İkinci PAYMENT_REVERSED ilk marker'ı OVERWRITE ETMEZ.
     expect(prisma.collectionDisposition.update).not.toHaveBeenCalled();
     expectNoFinancialMutation(prisma);
   });
