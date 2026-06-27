@@ -3400,20 +3400,58 @@ export class CaseService {
   // ==================== TAHSİLATLAR (COLLECTIONS) ====================
 
   /**
-   * Dosyanın tahsilatlarını getir
+   * Dosyanın tahsilatlarını getir.
    */
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseController.getCaseCollections() → GET /cases/:id/collections (dosya detayından tahsilat listesi ve muhasebe/disposition görünürlüğü)
+  /// </remarks>
   async getCaseCollections(tenantId: string, caseId: string) {
     const caseExists = await this.prisma.case.findFirst({
       where: { id: caseId, tenantId },
     });
     if (!caseExists) throw new NotFoundException("Dosya bulunamadı");
 
-    return this.prisma.collection.findMany({
+    const collections = await this.prisma.collection.findMany({
       where: { caseId, tenantId },
       orderBy: { date: "desc" },
       include: {
         case: { select: { id: true, fileNumber: true } },
       },
+    });
+
+    if (collections.length === 0) return collections;
+
+    const dispositions = await this.prisma.collectionDisposition.findMany({
+      where: {
+        tenantId,
+        caseId,
+        collectionId: { in: collections.map((collection) => collection.id) },
+      },
+      select: {
+        collectionId: true,
+        status: true,
+        postedAt: true,
+        manualReversalRequiredAt: true,
+        manualReversalReason: true,
+      },
+    });
+
+    const dispositionByCollectionId = new Map(
+      dispositions.map((disposition) => [disposition.collectionId, disposition]),
+    );
+
+    return collections.map((collection) => {
+      const disposition = dispositionByCollectionId.get(collection.id);
+      if (!disposition) return collection;
+
+      return {
+        ...collection,
+        accountingDispositionStatus: disposition.status,
+        accountingPostedAt: disposition.postedAt,
+        manualReversalRequiredAt: disposition.manualReversalRequiredAt,
+        manualReversalReason: disposition.manualReversalReason,
+      };
     });
   }
 

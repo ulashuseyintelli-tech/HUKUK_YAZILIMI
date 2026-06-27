@@ -40,7 +40,7 @@ interface ClientRequest {
 // Muhasebe Kaydı
 interface AccountingRecord {
   id: string;
-  type: "MASRAF_TALEBI_GONDERILDI" | "ODEME_BEKLENIYOR" | "ODEME_ALINDI" | "MAHSUP" | "IADE";
+  type: "MASRAF_TALEBI_GONDERILDI" | "ODEME_BEKLENIYOR" | "ODEME_ALINDI" | "MAHSUP" | "IADE" | "DAGITIM_BEKLIYOR" | "MANUEL_REVERSAL_GEREKLI";
   description: string;
   amount?: number;
   createdAt: string;
@@ -107,6 +107,7 @@ interface OperationDeckProps {
   icraNotlar?: IcraNote[];
   muvekkilTalepleri?: ClientRequest[];
   muhasebeKayitlari?: AccountingRecord[];
+  accountingEmptyMessage?: string;
   tasks?: Task[];
   financeItems?: FinanceItem[];
   uyapQueries?: UyapQuery[];
@@ -146,6 +147,26 @@ const panels = [
 const formatDate = (d: string) => d ? new Date(d).toLocaleDateString("tr-TR") : "-";
 const formatDateTime = (d: string) => d ? new Date(d).toLocaleString("tr-TR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-";
 const formatTL = (n: number) => n.toLocaleString("tr-TR", { minimumFractionDigits: 0 }) + " ₺";
+
+const accountingTypeLabels: Record<AccountingRecord["type"], string> = {
+  MASRAF_TALEBI_GONDERILDI: "Talep Gönderildi",
+  ODEME_BEKLENIYOR: "Ödeme Bekleniyor",
+  ODEME_ALINDI: "Muhasebeye İşlendi",
+  MAHSUP: "Mahsup",
+  IADE: "İptal/Reversal",
+  DAGITIM_BEKLIYOR: "Dağıtım Bekliyor",
+  MANUEL_REVERSAL_GEREKLI: "Manuel Takip Gerekli",
+};
+
+const accountingTypeColors: Record<AccountingRecord["type"], string> = {
+  MASRAF_TALEBI_GONDERILDI: "bg-blue-100 text-blue-700",
+  ODEME_BEKLENIYOR: "bg-amber-100 text-amber-700",
+  ODEME_ALINDI: "bg-emerald-100 text-emerald-700",
+  MAHSUP: "bg-slate-100 text-slate-600",
+  IADE: "bg-slate-100 text-slate-600",
+  DAGITIM_BEKLIYOR: "bg-amber-100 text-amber-700",
+  MANUEL_REVERSAL_GEREKLI: "bg-orange-100 text-orange-700",
+};
 
 const priorityColors = {
   HIGH: "bg-red-100 text-red-700 border-red-200",
@@ -189,6 +210,7 @@ export function OperationDeck({
   icraNotlar = [],
   muvekkilTalepleri = [],
   muhasebeKayitlari = [],
+  accountingEmptyMessage = "Bu dosyada henüz muhasebe hareketi oluşmamış.",
   tasks = [],
   financeItems = [],
   uyapQueries = [],
@@ -783,8 +805,9 @@ export function OperationDeck({
               <div className="mb-3 p-2 bg-teal-50 rounded-lg">
                 <p className="text-[10px] text-teal-600 uppercase tracking-wide flex items-center gap-1">
                   <Wallet className="w-3 h-3" />
-                  Parasal olayların kaydı • Sadece muhasebe ve yetkili görür
+                  Parasal olay kayıtları
                 </p>
+                <p className="mt-1 text-[11px] text-teal-700">Bu alan hassas finans/muhasebe kayıtlarını içerir.</p>
               </div>
               <div className="space-y-2 max-h-[250px] overflow-y-auto">
                 {muhasebeKayitlari.map(record => (
@@ -792,16 +815,8 @@ export function OperationDeck({
                     <div className="flex items-center gap-2 mb-1">
                       <Wallet className="w-3 h-3 text-teal-500" />
                       <span className="text-[10px] text-slate-400">{formatDateTime(record.createdAt)}</span>
-                      <span className={`ml-auto px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                        record.type === "ODEME_ALINDI" ? "bg-emerald-100 text-emerald-700" :
-                        record.type === "ODEME_BEKLENIYOR" ? "bg-amber-100 text-amber-700" :
-                        record.type === "MASRAF_TALEBI_GONDERILDI" ? "bg-blue-100 text-blue-700" :
-                        "bg-slate-100 text-slate-600"
-                      }`}>
-                        {record.type === "MASRAF_TALEBI_GONDERILDI" ? "Talep Gönderildi" :
-                         record.type === "ODEME_BEKLENIYOR" ? "Ödeme Bekleniyor" :
-                         record.type === "ODEME_ALINDI" ? "Ödeme Alındı" :
-                         record.type === "MAHSUP" ? "Mahsup" : "İade"}
+                      <span className={`ml-auto px-1.5 py-0.5 rounded text-[10px] font-medium ${accountingTypeColors[record.type]}`}>
+                        {accountingTypeLabels[record.type]}
                       </span>
                     </div>
                     <p className="text-sm text-slate-700">{record.description}</p>
@@ -817,7 +832,7 @@ export function OperationDeck({
                 {muhasebeKayitlari.length === 0 && (
                   <div className="text-center py-6 text-slate-400">
                     <Wallet className="w-8 h-8 mx-auto mb-2 opacity-50" />
-                    <p className="text-sm">Henüz muhasebe kaydı yok</p>
+                    <p className="text-sm">{accountingEmptyMessage}</p>
                   </div>
                 )}
               </div>

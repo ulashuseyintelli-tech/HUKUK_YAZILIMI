@@ -2701,6 +2701,19 @@ class ApiClient {
   }
 
   /**
+   * Dosyanın muhasebe/dağıtım kayıtlarını getir.
+   * Çağrıldığı yerler:
+   * - CaseDetailPage.fetchFinanceData() → GET /collection-dispositions/case/:caseId (OperationDeck muhasebe paneli)
+   */
+  async getCollectionDispositionsByCase(caseId: string, status?: CollectionDispositionStatus) {
+    const query = status ? `?status=${encodeURIComponent(status)}` : "";
+    const response = await this.request<{ data: CollectionDispositionDTO[] }>(
+      `/collection-dispositions/case/${caseId}${query}`,
+    );
+    return response.data || [];
+  }
+
+  /**
    * Tahsilat ekle
    */
   async createCollection(caseId: string, data: CreateCollectionDTO) {
@@ -4860,6 +4873,7 @@ export const DueTypeLabels: Record<DueType, string> = {
 export type CollectionType = 'PRINCIPAL' | 'INTEREST' | 'EXPENSE' | 'FEE' | 'PARTIAL' | 'FULL' | 'OTHER';
 export type CollectionChannel = 'NAKIT' | 'BANKA' | 'CEK' | 'SENET' | 'KREDI_KARTI' | 'ICRA_DAIRESI' | 'HACIZ' | 'DIGER';
 export type CollectionStatus = 'PENDING' | 'CONFIRMED' | 'CANCELLED';
+export type CollectionDispositionStatus = 'HELD_PENDING_DISTRIBUTION' | 'POSTED' | 'CANCELLED' | 'REVERSED';
 
 export interface CollectionDTO {
   id: string;
@@ -4880,9 +4894,53 @@ export interface CollectionDTO {
   status: CollectionStatus;
   cancelledAt?: string;
   cancelReason?: string;
+  accountingDispositionStatus?: CollectionDispositionStatus;
+  accountingPostedAt?: string;
+  manualReversalRequiredAt?: string;
+  manualReversalReason?: string;
   createdAt: string;
   updatedAt: string;
   debtor?: { id: string; name: string };
+}
+
+export type CollectionDispositionLineType =
+  | 'CLIENT_PAYABLE'
+  | 'CONTRACTUAL_FEE_WITHHELD'
+  | 'FIRM_EXPENSE_REIMBURSEMENT'
+  | 'CLIENT_EXPENSE_REIMBURSEMENT'
+  | 'OFFSET_CLIENT_ADVANCE'
+  | 'HELD_PENDING_DISTRIBUTION'
+  | 'OTHER';
+
+export interface CollectionDispositionLineDTO {
+  id: string;
+  dispositionId: string;
+  type: CollectionDispositionLineType | string;
+  amount: string | number;
+  caseClientId?: string | null;
+  note?: string | null;
+  createdAt: string;
+}
+
+export interface CollectionDispositionDTO {
+  id: string;
+  tenantId: string;
+  caseId: string;
+  collectionId: string;
+  beneficiaryScope: string;
+  caseClientId?: string | null;
+  status: CollectionDispositionStatus;
+  totalAmount: string | number;
+  currency: string;
+  sourcePaymentEventId?: string | null;
+  createdById?: string | null;
+  postedAt?: string | null;
+  postedById?: string | null;
+  manualReversalRequiredAt?: string | null;
+  manualReversalReason?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  lines?: CollectionDispositionLineDTO[];
 }
 
 export interface CreateCollectionDTO {
