@@ -33,7 +33,15 @@ function buildPrisma(
       findFirst: jest.fn().mockResolvedValue(opts.cc === undefined ? { id: 'cc-A' } : opts.cc),
       findMany: jest.fn().mockResolvedValue(opts.cases ?? []),
     },
-    collectionDispositionLine: { findMany: jest.fn().mockResolvedValue(opts.payableLines ?? []) },
+    collectionDispositionLine: {
+      findMany: jest.fn().mockImplementation((args?: any) => {
+        const rows = opts.payableLines ?? [];
+        if (args?.where?.disposition?.manualReversalRequiredAt === null) {
+          return Promise.resolve(rows.filter((row) => row.disposition?.manualReversalRequiredAt == null));
+        }
+        return Promise.resolve(rows);
+      }),
+    },
     collection: { findMany: jest.fn().mockResolvedValue(opts.confirmedCollections ?? []) },
     clientPayout: {
       aggregate: jest.fn().mockResolvedValue({ _sum: { amount: opts.paid ?? null } }),
@@ -56,6 +64,16 @@ describe('ClientSettlementReadService.computeOutstanding', () => {
     expect(out.equals(D(600))).toBe(true);
   });
 
+  it('manualReversalRequiredAt null POSTED CLIENT_PAYABLE outstanding icinde kalir', async () => {
+    const prisma = buildPrisma({
+      payableLines: [{ amount: D(1000), disposition: { collectionId: 'col1', manualReversalRequiredAt: null } }],
+      confirmedCollections: [{ id: 'col1' }],
+      paid: null,
+    });
+    const out = await read(prisma).computeOutstanding(prisma, 't1', 'case1', 'cc-A', 'TRY');
+    expect(out.equals(D(1000))).toBe(true);
+  });
+
   it('yalnız type=CLIENT_PAYABLE + disposition POSTED + scope tenant/case/currency sorgulanır (HELD/fee/firm hariç)', async () => {
     const prisma = buildPrisma();
     await read(prisma).computeOutstanding(prisma, 't1', 'case1', 'cc-A', 'TRY');
@@ -63,7 +81,7 @@ describe('ClientSettlementReadService.computeOutstanding', () => {
     expect(where.type).toBe('CLIENT_PAYABLE');
     expect(where.caseClientId).toBe('cc-A');
     expect(where.disposition).toEqual(
-      expect.objectContaining({ tenantId: 't1', caseId: 'case1', currency: 'TRY', status: 'POSTED' }),
+      expect.objectContaining({ tenantId: 't1', caseId: 'case1', currency: 'TRY', status: 'POSTED', manualReversalRequiredAt: null }),
     );
   });
 
@@ -75,6 +93,19 @@ describe('ClientSettlementReadService.computeOutstanding', () => {
     });
     const out = await read(prisma).computeOutstanding(prisma, 't1', 'case1', 'cc-A', 'TRY');
     expect(out.equals(D(0))).toBe(true);
+  });
+
+  it('manualReversalRequiredAt dolu POSTED CLIENT_PAYABLE outstanding disinda kalir', async () => {
+    const prisma = buildPrisma({
+      payableLines: [
+        { amount: D(1000), disposition: { collectionId: 'col1', manualReversalRequiredAt: new Date('2026-06-27T00:00:00.000Z') } },
+        { amount: D(250), disposition: { collectionId: 'col2', manualReversalRequiredAt: null } },
+      ],
+      confirmedCollections: [{ id: 'col1' }, { id: 'col2' }],
+      paid: null,
+    });
+    const out = await read(prisma).computeOutstanding(prisma, 't1', 'case1', 'cc-A', 'TRY');
+    expect(out.equals(D(250))).toBe(true);
   });
 
   it('payout aggregate where: tenant+case+caseClientId+currency+RECORDED (currency separation)', async () => {
