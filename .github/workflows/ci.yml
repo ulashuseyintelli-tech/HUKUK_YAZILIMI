@@ -113,6 +113,19 @@ jobs:
             --testPathPattern="(confidence-score\.tenant-boundary|ihbarname-summary\.tenant-boundary|third-party-passive-writer|quick-note-passive-writer|debtor-identity-format)\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
+      # PR-1 (error-logs güvenlik): RBAC (yalnız ADMIN) + metadata redaction + source/tenant/level
+      # spoof engeli. Dosya-varlığı pre-check (rename/silme → CI RED) + passWithNoTests YOK.
+      - name: Error-log security tests (PR-1)
+        run: |
+          cd apps/api
+          for f in src/modules/error-log/__tests__/error-log.sanitize.spec.ts \
+                   src/modules/error-log/__tests__/error-log.controller.spec.ts; do
+            test -f "$f" || { echo "MISSING error-log spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit \
+            --testPathPattern="error-log/__tests__/(error-log\.sanitize|error-log\.controller)\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
 
   # Frontend (apps/web) vitest — jsdom unit/component testleri. DB/prisma GEREKMEZ.
   # RFA-018: web testleri artık CI'da; kırmızı web testi merge'i bloklar.

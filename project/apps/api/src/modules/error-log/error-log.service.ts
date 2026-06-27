@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
-interface LogErrorParams {
+export interface LogErrorParams {
   tenantId?: string;
   level: 'ERROR' | 'WARN' | 'INFO' | 'DEBUG';
   source: string;
