@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import {
   Prisma,
@@ -9,6 +9,7 @@ import {
 } from '@prisma/client';
 import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
 import { OfficeService } from '@/modules/office/office.service';
+import { AuditService } from '@/modules/audit/audit.service';
 import {
   CreateClientStatementDto,
   SupersedeClientStatementDto,
@@ -51,6 +52,7 @@ export class ClientStatementService {
     private prisma: PrismaService,
     private dispatcher: NotificationDispatcherService,
     private office: OfficeService,
+    private audit: AuditService,
   ) {}
 
   /**
@@ -68,8 +70,28 @@ export class ClientStatementService {
     const caseClientId = await this.resolveCaseClientId(tenantId, caseId, dto.clientId);
     const snap = await this.collect(tenantId, caseId, periodStart, periodEnd, dto.includeRequests ?? true, caseClientId);
 
-    const created = await this.prisma.$transaction((tx) =>
-      this.persist(tx, {
+    const created = await this.prisma.$transaction(async (tx) => {
+      // Q7: PERIOD-scoped tek-ACTIVE guard (tenant+case+client+periodStart+periodEnd). Global tek-ACTIVE
+      // DEĞİL → farklı dönemler aynı anda ACTIVE olabilir. @@unique YOK (migration istenmedi); bu yüzden
+      // CONCURRENCY için advisory xact lock (ClientPayout deseni): count+create aynı tx'te SERIALIZE olur →
+      // iki eşzamanlı istek ikisi de count=0 görüp çift ACTIVE üretemez. Aynı dönem ACTIVE varsa → supersede.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${this.activeLockKey(tenantId, caseId, dto.clientId, periodStart, periodEnd)}))`;
+
+      const activeCount = await tx.clientStatement.count({
+        where: {
+          tenantId,
+          caseId,
+          clientId: dto.clientId,
+          periodStart,
+          periodEnd,
+          status: ClientStatementStatus.ACTIVE,
+        },
+      });
+      if (activeCount > 0) {
+        throw new ConflictException('Bu dönem için aktif ekstre zaten var. Yenilemek için Supersede kullanın.');
+      }
+
+      const fresh = await this.persist(tx, {
         tenantId,
         caseId,
         clientId: dto.clientId,
@@ -79,8 +101,28 @@ export class ClientStatementService {
         closing: snap.closing,
         note: dto.note ?? null,
         userId,
-      }, snap.lines),
-    );
+      }, snap.lines);
+
+      // Q5: mutation audit (aynı tx; logInTransaction hata yutmaz → audit yazılamazsa create rollback).
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CLIENT_STATEMENT_GENERATED',
+        entityType: 'ClientStatement',
+        entityId: fresh.id,
+        userId,
+        description: `Müvekkil ekstresi oluşturuldu (${periodStart.toISOString().slice(0, 10)} – ${periodEnd.toISOString().slice(0, 10)})`,
+        metadata: {
+          caseId,
+          clientId: dto.clientId,
+          periodStart: periodStart.toISOString(),
+          periodEnd: periodEnd.toISOString(),
+          closingBalance: snap.closing.toString(),
+          lineCount: snap.lines.length,
+        },
+      });
+
+      return fresh;
+    });
 
     const result = await this.findOne(tenantId, created.id);
     // State commit edildi → "ekstre hazır" maili BEST-EFFORT (yalnız create — m34-1; supersede/void mail YOK)
@@ -107,6 +149,27 @@ export class ClientStatementService {
     const snap = await this.collect(tenantId, old.caseId, periodStart, periodEnd, dto.includeRequests ?? true, caseClientId);
 
     const created = await this.prisma.$transaction(async (tx) => {
+      // Q7: yeni dönem, supersede edilen DIŞINDA bir ACTIVE ile çakışmamalı (period-scoped tek-ACTIVE).
+      // Concurrency: create() ile AYNI advisory lock anahtarı (tenant+case+client+period) → eşzamanlı
+      // create/supersede serialize olur (count+yazma aynı tx). Dönem korunuyorsa tek ACTIVE = old →
+      // id:{not:old.id} ile elenir, çakışma yok.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${this.activeLockKey(tenantId, old.caseId, old.clientId, periodStart, periodEnd)}))`;
+
+      const activeCount = await tx.clientStatement.count({
+        where: {
+          tenantId,
+          caseId: old.caseId,
+          clientId: old.clientId,
+          periodStart,
+          periodEnd,
+          status: ClientStatementStatus.ACTIVE,
+          id: { not: old.id },
+        },
+      });
+      if (activeCount > 0) {
+        throw new ConflictException('Bu dönem için başka bir aktif ekstre var; önce onu yenileyin/void edin.');
+      }
+
       const fresh = await this.persist(tx, {
         tenantId,
         caseId: old.caseId,
@@ -127,6 +190,24 @@ export class ClientStatementService {
           supersededAt: new Date(),
         },
       });
+
+      // Q5: supersede audit (aynı tx). Yalnız verilen old.id SUPERSEDED olur; entityId=old.id.
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CLIENT_STATEMENT_SUPERSEDED',
+        entityType: 'ClientStatement',
+        entityId: old.id,
+        userId,
+        description: `Müvekkil ekstresi yenilendi (eski: ${old.id} → yeni: ${fresh.id})`,
+        metadata: {
+          oldStatementId: old.id,
+          newStatementId: fresh.id,
+          supersededById: fresh.id, // geriye-uyum (eski alan adı)
+          periodStart: periodStart.toISOString(),
+          periodEnd: periodEnd.toISOString(),
+        },
+      });
+
       return fresh;
     });
 
@@ -146,14 +227,26 @@ export class ClientStatementService {
     if (existing.status !== ClientStatementStatus.ACTIVE) {
       throw new BadRequestException(`Yalnız ACTIVE ekstre void edilebilir (durum: ${existing.status})`);
     }
-    await this.prisma.clientStatement.update({
-      where: { id },
-      data: {
-        status: ClientStatementStatus.VOID,
-        voidedAt: new Date(),
-        voidedById: userId,
-        voidNote: note ?? null,
-      },
+    await this.prisma.$transaction(async (tx) => {
+      await tx.clientStatement.update({
+        where: { id },
+        data: {
+          status: ClientStatementStatus.VOID,
+          voidedAt: new Date(),
+          voidedById: userId,
+          voidNote: note ?? null,
+        },
+      });
+      // Q5: void audit (aynı tx; hata yutmaz).
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'CLIENT_STATEMENT_VOIDED',
+        entityType: 'ClientStatement',
+        entityId: id,
+        userId,
+        description: 'Müvekkil ekstresi geçersiz kılındı (VOID)',
+        metadata: { note: note ?? null },
+      });
     });
     return this.findOne(tenantId, id);
   }
@@ -249,6 +342,14 @@ export class ClientStatementService {
       throw new BadRequestException('periodStart, periodEnd’ten sonra olamaz');
     }
     return { periodStart, periodEnd };
+  }
+
+  /**
+   * Period-scoped tek-ACTIVE advisory-lock anahtarı. create() ve supersede() AYNI anahtarı kullanır →
+   * aynı tenant+case+client+dönem için eşzamanlı istekler tx süresince serialize olur (çift ACTIVE engellenir).
+   */
+  private activeLockKey(tenantId: string, caseId: string, clientId: string, periodStart: Date, periodEnd: Date): string {
+    return `client-statement:${tenantId}:${caseId}:${clientId}:${periodStart.toISOString()}:${periodEnd.toISOString()}`;
   }
 
   private async assertCaseAndClient(tenantId: string, caseId: string, clientId: string) {
