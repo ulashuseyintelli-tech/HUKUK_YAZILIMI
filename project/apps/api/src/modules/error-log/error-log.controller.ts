@@ -1,13 +1,17 @@
 import { Controller, Get, Post, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { ErrorLogService } from './error-log.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { AdminGuard } from '../auth/guards/admin.guard';
+import { buildClientLogEntry } from './error-log.sanitize';
 
 @Controller('error-logs')
 @UseGuards(JwtAuthGuard)
 export class ErrorLogController {
   constructor(private readonly errorLogService: ErrorLogService) {}
 
+  // PR-1: Hata logları + stack trace + metadata hassas → yalnız ADMIN okuyabilir.
   @Get()
+  @UseGuards(AdminGuard)
   async getLogs(
     @Request() req: any,
     @Query('level') level?: string,
@@ -24,20 +28,29 @@ export class ErrorLogController {
   }
 
   @Get('stats')
+  @UseGuards(AdminGuard)
   async getStats(@Request() req: any) {
     return this.errorLogService.getStats(req.user.tenantId);
   }
 
   @Post(':id/resolve')
+  @UseGuards(AdminGuard)
   async resolve(
     @Param('id') id: string,
-    @Body() body: { userId: string; resolution: string },
+    @Request() req: any,
+    @Body() body: { resolution?: string },
   ) {
-    return this.errorLogService.resolve(id, body.userId, body.resolution);
+    // PR-1: resolvedBy AUTH oturumundan alınır; body.userId YOK SAYILIR (spoof engeli).
+    return this.errorLogService.resolve(id, req.user.id, body?.resolution ?? '');
   }
 
+  // PR-1: Dış istemci/frontend endpoint'i — JwtAuthGuard yeterli (ADMIN gerekmez), AMA gövde
+  // sertleştirilir: source DAİMA FRONTEND, level ERROR/WARN, tenantId/userId AUTH'tan,
+  // metadata whitelist+sanitize, ham body YAZILMAZ. (buildClientLogEntry içinde.)
   @Post('log')
   async logError(@Request() req: any, @Body() body: any) {
-    return this.errorLogService.log({ ...body, tenantId: req.user.tenantId });
+    return this.errorLogService.log(
+      buildClientLogEntry(body, { tenantId: req.user.tenantId, userId: req.user.id }),
+    );
   }
 }
