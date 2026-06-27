@@ -49,7 +49,13 @@ export class ApiClient {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || "Bir hata oluştu");
+      // P3-2B: 4xx/5xx hata GÖVDESİNİ KORU (eski sadece-.message regresyonu giderildi). Caller'lar .message
+      // okumaya devam edebilir; ek olarak .body (structured) + .status erişilebilir. NOT: structured-200
+      // Guarded-Edge zarfı buraya GİRMEZ (response.ok=true → json döner, detektör ele alır), error'a çevrilmez.
+      const e = new Error((error && error.message) || "Bir hata oluştu") as Error & { body?: unknown; status?: number };
+      e.body = error;
+      e.status = response.status;
+      throw e;
     }
 
     return response.json();
@@ -69,7 +75,11 @@ export class ApiClient {
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));
-      throw new Error(error.message || "Bir hata oluştu");
+      // P3-2B: hata gövdesini KORU (request() ile aynı; .body + .status).
+      const e = new Error((error && error.message) || "Bir hata oluştu") as Error & { body?: unknown; status?: number };
+      e.body = error;
+      e.status = response.status;
+      throw e;
     }
 
     return response.blob();
