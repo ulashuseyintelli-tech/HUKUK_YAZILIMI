@@ -103,6 +103,45 @@ export interface CaseBalanceInfo {
   currency: string;
 }
 
+/** Faz A — Genel Cari dosya kırılımı satırı (Decimal string). A=müvekkile özgü, B=dosya geneli. */
+export interface ClientCaseBreakdownItem {
+  caseId: string;
+  caseNumber: string;
+  executionFileNumber: string | null;
+  role: string;
+  // A — müvekkile özgü
+  payableNet: string;
+  paidToClient: string;
+  expenseRequested: string;
+  expensePaid: string;
+  // B — dosya geneli / paylaşılan bağlam (müvekkile atfedilmez)
+  debtorCollection: string;
+  pendingDistribution: string;
+  advanceBalance: string;
+  needsReview: boolean;
+}
+
+/** Faz A — Müvekkil Genel Cari (client-level read-only projection). Tutarlar Decimal-string. */
+export interface ClientAccountingSummary {
+  clientId: string;
+  currency: string;
+  clientScoped: {
+    payableNet: string;
+    paidToClient: string;
+    expenseRequested: string;
+    expensePaid: string;
+    expenseUnpaid: string;
+    offsettableNetPosition: string; // BİLGİ; defter kaydı değil
+  };
+  caseScopedContext: {
+    debtorCollection: string;
+    pendingDistribution: string;
+    advanceBalance: string;
+  };
+  needsReview: boolean;
+  caseBreakdown: ClientCaseBreakdownItem[];
+}
+
 export const clientAccountingApi = {
   /** Müvekkilin (eligible) dosyaları + caseClientId resolve. */
   async getCases(clientId: string): Promise<ClientAccountingCase[]> {
@@ -142,6 +181,18 @@ export const clientAccountingApi = {
    */
   async createPayout(input: CreatePayoutInput): Promise<CreatePayoutResult> {
     const resp = await apiClient.post<{ data: CreatePayoutResult }>('/client-payouts', input);
+    return resp.data.data;
+  },
+
+  /**
+   * Faz A — Müvekkil Genel Cari (client-level read-only projection). scope=client.
+   * A grubu müvekkile özgü, B grubu dosya geneli + dosya kırılımı. Çift zarf (response.data.data).
+   */
+  async getClientSummary(clientId: string, currency = 'TRY'): Promise<ClientAccountingSummary> {
+    const qs = new URLSearchParams({ currency });
+    const resp = await apiClient.get<{ data: ClientAccountingSummary }>(
+      `/clients/${clientId}/accounting/summary?${qs.toString()}`,
+    );
     return resp.data.data;
   },
 
