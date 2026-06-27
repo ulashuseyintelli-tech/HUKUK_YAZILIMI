@@ -29,6 +29,7 @@ import {
 } from '@/lib/api/client-accounting';
 import { PayoutCreateModal } from '@/components/client-accounting/PayoutCreateModal';
 import { StatementSection } from '@/components/client-accounting/StatementSection';
+import { ClientCariView } from '@/components/client-accounting/ClientCariView';
 
 const PAGE_SIZE = 20;
 
@@ -51,8 +52,12 @@ export default function ClientAccountingPage() {
   });
 
   const cases = casesQ.data ?? [];
-  const selected: ClientAccountingCase | undefined =
-    cases.find((c) => c.caseId === caseIdParam) ?? cases[0];
+  // scope=case YALNIZ geçerli bir dosya seçiliyse; aksi halde (caseId yok/geçersiz) scope=client
+  // (Genel Cari / Tüm Dosyalar = DEFAULT). Müvekkil kartına girince önce genel cari gelir.
+  const selected: ClientAccountingCase | undefined = caseIdParam
+    ? cases.find((c) => c.caseId === caseIdParam)
+    : undefined;
+  const scope: 'client' | 'case' = selected ? 'case' : 'client';
   const caseId = selected?.caseId;
   const caseClientId = selected?.caseClientId;
   const currency = selected?.currency ?? 'TRY';
@@ -101,7 +106,11 @@ export default function ClientAccountingPage() {
 
   const onSelectCase = (newCaseId: string) => {
     setPage(1);
-    router.replace(`${pathname}?caseId=${encodeURIComponent(newCaseId)}`);
+    if (!newCaseId) {
+      router.replace(pathname); // "Genel Cari / Tüm Dosyalar" → scope=client
+    } else {
+      router.replace(`${pathname}?caseId=${encodeURIComponent(newCaseId)}`);
+    }
   };
 
   // ── Loading / empty (dosya yok) durumları ──────────────────────────────────
@@ -144,13 +153,14 @@ export default function ClientAccountingPage() {
 
       {/* Dosya seçici */}
       <Card className="p-4">
-        <label className="block text-xs font-medium text-gray-500 mb-1">Dosya</label>
+        <label className="block text-xs font-medium text-gray-500 mb-1">Kapsam / Dosya</label>
         <div className="flex items-center gap-3 flex-wrap">
           <select
-            value={selected?.caseId ?? ''}
+            value={scope === 'client' ? '' : (selected?.caseId ?? '')}
             onChange={(e) => onSelectCase(e.target.value)}
             className="border rounded px-3 py-2 text-sm min-w-[280px]"
           >
+            <option value="">Genel Cari / Tüm Dosyalar</option>
             {cases.map((c) => (
               <option key={c.caseId} value={c.caseId}>
                 {c.caseNumber}
@@ -158,12 +168,20 @@ export default function ClientAccountingPage() {
               </option>
             ))}
           </select>
-          {selected && (
+          {scope === 'case' && selected ? (
             <Badge variant="secondary">{ROLE_LABELS[selected.role] ?? selected.role}</Badge>
+          ) : (
+            <Badge variant="secondary">Genel Cari</Badge>
           )}
         </div>
       </Card>
 
+      {/* Genel Cari (client scope) — DEFAULT görünüm */}
+      {scope === 'client' && <ClientCariView clientId={clientId} currency="TRY" />}
+
+      {/* Dosya bazlı muhasebe (case scope) — dosya seçilince mevcut 5-kart + payout + ekstre */}
+      {scope === 'case' && selected && caseId && caseClientId && (
+        <>
       {/* 5 PARA GERÇEĞİ — ayrı kutular (karışmasın) */}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
         {/* 1 — Müvekkile Borç (Net) / proceeds + Ödeme Kaydet (Faz7 #559) */}
@@ -351,6 +369,8 @@ export default function ClientAccountingPage() {
           }}
         />
       )}
+        </>
+      )}
     </div>
   );
 }
@@ -418,8 +438,8 @@ function PageHeader() {
     <div>
       <h1 className="text-xl font-semibold text-gray-900">Müvekkil Muhasebesi</h1>
       <p className="text-sm text-gray-500">
-        Dosya bazında 5 para gerçeği ayrı ayrı: müvekkile borç (net), müvekkilden talep/tahsil edilen masraf,
-        masraf/avans bakiyesi ve borçlu tahsilatı.
+        Varsayılan: <strong>Genel Cari</strong> (müvekkilin tüm dosyaları). Bir dosya seçince o dosyanın
+        bazlı muhasebesine (5 para gerçeği + ekstre) inilir.
       </p>
     </div>
   );
