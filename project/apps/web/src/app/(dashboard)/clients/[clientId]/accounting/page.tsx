@@ -1,23 +1,26 @@
 'use client';
 
 /**
- * TM3 Faz 7 — Müvekkil Muhasebesi (read-only) sayfası.  Route: /clients/:clientId/accounting?caseId=
+ * TM3 Faz 7 — Müvekkil Muhasebesi sayfası.  Route: /clients/:clientId/accounting?caseId=
  *
- * Tasarım kilitleri (Ulaş, 9 şart):
- *  - UI bir HESAP MOTORU DEĞİLDİR. Müvekkile-borç (outstanding) backend'de hesaplanır (PR #554);
- *    burada client-side bakiye hesabı YOKTUR (mock/flag de yok — gerçek endpoint).
- *  - Finansal scope `caseClientId`'dir, `clientId` DEĞİL. clientId yalnız sayfa bağlamı.
- *  - HELD (emanet) / sözleşmesel ücret / büro masrafı kesintisi / masraf-avansı (BalanceLedger cari)
- *    müvekkile-borç DEĞİLDİR ve outstanding'e girmez (kullanıcıya açıkça belirtilir).
- *  - Sayfa okur + müvekkile ödeme kaydı (POST /client-payouts) yapar. Disposition POSTING (onay)
- *    bu sayfada YOKTUR; outstanding'i UI HESAPLAMAZ (backend otorite).
+ * Tasarım kilitleri (Ulaş):
+ *  - UI bir HESAP MOTORU DEĞİLDİR. Her kart backend'in döndürdüğü tek alanı gösterir; UI hiçbir
+ *    bakiye/borç toplamı HESAPLAMAZ (otorite backend). Tek birleşik "balance" YOKTUR.
+ *  - Faz 7-V: 5 PARA GERÇEĞİ ayrı kutularda — karışmasın:
+ *      1) Müvekkile Borç (Net)  = proceeds (POSTED CLIENT_PAYABLE − RECORDED ClientPayout)
+ *      2) Müvekkilden Talep Edilen Masraf  = ExpenseRequest (seçili müvekkil) — müvekkile borç DEĞİL
+ *      3) Müvekkilden Tahsil Edilen Masraf = ExpenseRequest ödenen
+ *      4) Masraf/Avans Bakiyesi = CaseBalance/BalanceLedger — payout defteri DEĞİL
+ *      5) Borçlu Tahsilatı = dosyaya borçludan gelen tahsilat — otomatik müvekkile borç DEĞİL
+ *  - Finansal scope: proceeds/payout = caseClientId; masraf = seçili clientId; avans/tahsilat = dosya.
+ *  - Ekstre (ClientStatement) üret/yenile bu sayfada YOK (ayrı mutation gate = Faz 7-E).
  */
 
-import { useState } from 'react';
+import { useState, type ComponentType, type ReactNode } from 'react';
 import { useParams, useSearchParams, useRouter, usePathname } from 'next/navigation';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Card, Badge, Spinner, Button } from '@hukuk/ui';
-import { Wallet, Info, FolderOpen, FileText, AlertCircle, Plus } from 'lucide-react';
+import { Wallet, Send, CheckCircle, Landmark, Building2, FileText, FolderOpen, AlertCircle, Plus } from 'lucide-react';
 import {
   clientAccountingApi,
   formatMoneyString,
@@ -53,14 +56,35 @@ export default function ClientAccountingPage() {
   const caseClientId = selected?.caseClientId;
   const currency = selected?.currency ?? 'TRY';
 
-  // 2) Seçili dosya/alacaklı için müvekkile-borç (backend otorite)
+  // Kart 1 — Müvekkile Borç (Net) / proceeds (caseClientId-scope, backend otorite)
   const outstandingQ = useQuery({
     queryKey: ['client-accounting-outstanding', caseId, caseClientId, currency],
     queryFn: () => clientAccountingApi.getOutstanding(caseId!, caseClientId!, currency),
     enabled: !!caseId && !!caseClientId,
   });
 
-  // 3) Müvekkile yapılan ödemeler (paginated)
+  // Kart 2/3 — Seçili müvekkilin masraf özeti (ExpenseRequest, clientId filtreli)
+  const expenseQ = useQuery({
+    queryKey: ['client-accounting-expense', caseId, clientId],
+    queryFn: () => clientAccountingApi.getExpenseSummary(caseId!, clientId),
+    enabled: !!caseId && !!clientId,
+  });
+
+  // Kart 4 — Masraf/Avans bakiyesi (CaseBalance, dosya-level)
+  const balanceQ = useQuery({
+    queryKey: ['client-accounting-balance', caseId],
+    queryFn: () => clientAccountingApi.getCaseBalance(caseId!),
+    enabled: !!caseId,
+  });
+
+  // Kart 5 — Borçlu tahsilatı (calculation-summary.toplamTahsilat, dosya-level)
+  const collectionQ = useQuery({
+    queryKey: ['client-accounting-debtor-collection', caseId],
+    queryFn: () => clientAccountingApi.getDebtorCollectionTotal(caseId!),
+    enabled: !!caseId,
+  });
+
+  // Müvekkile yapılan ödemeler (paginated)
   const payoutsQ = useQuery({
     queryKey: ['client-accounting-payouts', caseId, caseClientId, currency, page],
     queryFn: () =>
@@ -139,47 +163,83 @@ export default function ClientAccountingPage() {
         </div>
       </Card>
 
-      {/* Müvekkile borç (outstanding) */}
-      <Card className="p-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Wallet className="w-5 h-5 text-emerald-600" />
-            <h2 className="font-medium text-gray-900">Müvekkile Borç (Net)</h2>
-          </div>
-          <div className="flex items-center gap-2">
-            {outstandingQ.isFetching && <Spinner className="w-4 h-4" />}
+      {/* 5 PARA GERÇEĞİ — ayrı kutular (karışmasın) */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+        {/* 1 — Müvekkile Borç (Net) / proceeds + Ödeme Kaydet (Faz7 #559) */}
+        <SummaryCard
+          icon={Wallet}
+          accent="text-emerald-600"
+          valueAccent="text-emerald-700"
+          title="Müvekkile Borç (Net)"
+          loading={outstandingQ.isLoading}
+          error={outstandingQ.isError}
+          fetching={outstandingQ.isFetching}
+          value={outstandingQ.data ? formatMoneyString(outstandingQ.data.outstanding, currency) : null}
+          note={
+            <>
+              Müvekkile ödenecek proceeds bakiyesi. Masraf talepleri bu tutara <strong>dâhil değildir</strong>.
+            </>
+          }
+          action={
             <Button size="sm" onClick={() => setShowPayoutModal(true)} disabled={!caseId || !caseClientId}>
               <Plus className="w-4 h-4 mr-1" /> Ödeme Kaydet
             </Button>
-          </div>
-        </div>
+          }
+        />
 
-        <div className="mt-3">
-          {outstandingQ.isError ? (
-            <div className="flex items-center gap-2 text-red-600 text-sm">
-              <AlertCircle className="w-4 h-4" />
-              <span>Tutar hesaplanamadı.</span>
-            </div>
-          ) : outstandingQ.data ? (
-            <div className="text-3xl font-semibold text-emerald-700">
-              {formatMoneyString(outstandingQ.data.outstanding, outstandingQ.data.currency)}
-            </div>
-          ) : (
-            <Spinner className="w-5 h-5" />
-          )}
-        </div>
+        {/* 2 — Müvekkilden Talep Edilen Masraf */}
+        <SummaryCard
+          icon={Send}
+          accent="text-amber-600"
+          valueAccent="text-amber-700"
+          title="Müvekkilden Talep Edilen Masraf"
+          loading={expenseQ.isLoading}
+          error={expenseQ.isError}
+          fetching={expenseQ.isFetching}
+          value={expenseQ.data ? formatMoneyString(String(expenseQ.data.totalRequested), currency) : null}
+          sub={expenseQ.data ? `Ödenmemiş: ${formatMoneyString(String(expenseQ.data.totalPending), currency)}` : undefined}
+          note="Müvekkilden istenen masraf/avans tutarı. Müvekkile borç değildir."
+        />
 
-        {/* Tanım notu — UI yanıltmasın */}
-        <div className="mt-3 flex items-start gap-2 rounded-md bg-blue-50 border border-blue-100 p-3 text-xs text-blue-800">
-          <Info className="w-4 h-4 mt-0.5 shrink-0" />
-          <div>
-            <strong>Müvekkile borç</strong> = onaylanmış (POSTED) müvekkil-payı dağıtım satırları (tahsilatı
-            onaylı/CONFIRMED) − müvekkile yapılan ödemeler. <br />
-            Emanette tutulan tutar (HELD), sözleşmesel vekâlet ücreti kesintisi, büro masrafı kesintisi ve
-            masraf-avansı (cari/BalanceLedger) bu tutara <strong>dâhil değildir</strong>.
-          </div>
-        </div>
-      </Card>
+        {/* 3 — Müvekkilden Tahsil Edilen Masraf */}
+        <SummaryCard
+          icon={CheckCircle}
+          accent="text-green-600"
+          valueAccent="text-green-700"
+          title="Müvekkilden Tahsil Edilen Masraf"
+          loading={expenseQ.isLoading}
+          error={expenseQ.isError}
+          fetching={expenseQ.isFetching}
+          value={expenseQ.data ? formatMoneyString(String(expenseQ.data.totalPaid), currency) : null}
+          note="Müvekkilin ödediği masraf/avans tutarı."
+        />
+
+        {/* 4 — Masraf/Avans Bakiyesi */}
+        <SummaryCard
+          icon={Landmark}
+          accent="text-slate-600"
+          valueAccent="text-slate-800"
+          title="Masraf/Avans Bakiyesi"
+          loading={balanceQ.isLoading}
+          error={balanceQ.isError}
+          fetching={balanceQ.isFetching}
+          value={balanceQ.data ? formatMoneyString(balanceQ.data.balance, balanceQ.data.currency) : null}
+          note="BalanceLedger/CaseBalance kaynaklı avans hareketleri. Payout defteri değildir."
+        />
+
+        {/* 5 — Borçlu Tahsilatı */}
+        <SummaryCard
+          icon={Building2}
+          accent="text-indigo-600"
+          valueAccent="text-indigo-700"
+          title="Borçlu Tahsilatı"
+          loading={collectionQ.isLoading}
+          error={collectionQ.isError}
+          fetching={collectionQ.isFetching}
+          value={collectionQ.data != null ? formatMoneyString(String(collectionQ.data), currency) : null}
+          note="Borçludan dosyaya gelen tahsilatlar. Otomatik olarak müvekkile borç anlamına gelmez."
+        />
+      </div>
 
       {/* Ödeme geçmişi */}
       <Card className="p-4">
@@ -259,6 +319,17 @@ export default function ClientAccountingPage() {
         )}
       </Card>
 
+      {/* Müvekkil Ekstresi — boş-state (ekstre üret/yenile ayrı fazda = Faz 7-E) */}
+      <Card className="p-4">
+        <div className="flex items-center gap-2 mb-1">
+          <FileText className="w-5 h-5 text-gray-600" />
+          <h2 className="font-medium text-gray-900">Müvekkil Ekstresi</h2>
+        </div>
+        <p className="text-sm text-gray-500">
+          Henüz ekstre oluşturulmamış. Ekstre oluşturma/yenileme işlemi ayrı fazda açılacak.
+        </p>
+      </Card>
+
       {showPayoutModal && selected && caseId && caseClientId && (
         <PayoutCreateModal
           caseId={caseId}
@@ -284,12 +355,71 @@ export default function ClientAccountingPage() {
   );
 }
 
+/** Tek para gerçeği kartı — backend'in döndürdüğü değeri gösterir; UI hesap YAPMAZ. */
+function SummaryCard({
+  icon: Icon,
+  accent,
+  valueAccent,
+  title,
+  value,
+  sub,
+  note,
+  loading,
+  error,
+  fetching,
+  action,
+}: {
+  icon: ComponentType<{ className?: string }>;
+  accent: string;
+  valueAccent: string;
+  title: string;
+  value: string | null;
+  sub?: string;
+  note: ReactNode;
+  loading?: boolean;
+  error?: boolean;
+  fetching?: boolean;
+  action?: ReactNode;
+}) {
+  return (
+    <Card className="p-4 flex flex-col">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Icon className={`w-5 h-5 ${accent}`} />
+          <h2 className="font-medium text-gray-900 text-sm">{title}</h2>
+        </div>
+        <div className="flex items-center gap-2">
+          {fetching && <Spinner className="w-4 h-4" />}
+          {action}
+        </div>
+      </div>
+
+      <div className="mt-2">
+        {error ? (
+          <div className="flex items-center gap-2 text-red-600 text-sm">
+            <AlertCircle className="w-4 h-4" />
+            <span>Yüklenemedi.</span>
+          </div>
+        ) : loading || value === null ? (
+          <Spinner className="w-5 h-5" />
+        ) : (
+          <div className={`text-2xl font-semibold ${valueAccent}`}>{value}</div>
+        )}
+        {sub && !error && value !== null && <div className="text-xs text-gray-500 mt-0.5">{sub}</div>}
+      </div>
+
+      <div className="mt-2 text-[11px] text-gray-500 leading-snug">{note}</div>
+    </Card>
+  );
+}
+
 function PageHeader() {
   return (
     <div>
       <h1 className="text-xl font-semibold text-gray-900">Müvekkil Muhasebesi</h1>
       <p className="text-sm text-gray-500">
-        Dosya bazında müvekkile borç (net) ve müvekkile yapılan ödemeler.
+        Dosya bazında 5 para gerçeği ayrı ayrı: müvekkile borç (net), müvekkilden talep/tahsil edilen masraf,
+        masraf/avans bakiyesi ve borçlu tahsilatı.
       </p>
     </div>
   );

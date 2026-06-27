@@ -1076,3 +1076,53 @@ describe('Property 6: Task Completion on Payment', () => {
     expect(mockPrismaService.task.update).not.toHaveBeenCalled();
   });
 });
+
+
+describe('getExpenseSummaryForCase - clientId filtresi (TM3 Faz7-V)', () => {
+  let service: ExpenseRequestService;
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        ExpenseRequestService,
+        ExpenseGateService,
+        ExpenseCalculatorService,
+        { provide: PrismaService, useValue: mockPrismaService },
+        { provide: CaseBalanceService, useValue: mockCaseBalanceService },
+        { provide: TariffService, useValue: mockTariffService },
+        { provide: ExpenseNotificationService, useValue: mockExpenseNotificationService },
+        { provide: NotificationDispatcherService, useValue: mockDispatcher },
+        { provide: OfficeService, useValue: mockOffice },
+      ],
+    }).compile();
+    service = module.get<ExpenseRequestService>(ExpenseRequestService);
+  });
+
+  it('clientId verilince where.clientId ile filtreler (seçili müvekkil masrafı)', async () => {
+    mockPrismaService.expenseRequest.findMany.mockResolvedValue([
+      { totalAmount: new Decimal(1431.1), paidTotal: new Decimal(0), status: 'PENDING', gateType: 'BLOCKING' },
+    ]);
+
+    const res = await service.getExpenseSummaryForCase('t1', 'case-1', 'client-1');
+
+    expect(mockPrismaService.expenseRequest.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ tenantId: 't1', caseId: 'case-1', clientId: 'client-1', status: { not: 'CANCELLED' } }),
+      }),
+    );
+    expect(res.totalRequested).toBeCloseTo(1431.1, 2);
+    expect(res.totalPaid).toBe(0);
+    expect(res.totalPending).toBeCloseTo(1431.1, 2);
+  });
+
+  it('clientId verilmeyince where.clientId YOK (dosya-geneli, geri uyumlu)', async () => {
+    mockPrismaService.expenseRequest.findMany.mockResolvedValue([]);
+
+    await service.getExpenseSummaryForCase('t1', 'case-1');
+
+    const where = mockPrismaService.expenseRequest.findMany.mock.calls[0][0].where;
+    expect(where).toMatchObject({ tenantId: 't1', caseId: 'case-1' });
+    expect(where.clientId).toBeUndefined();
+  });
+});

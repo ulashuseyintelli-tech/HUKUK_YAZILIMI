@@ -187,8 +187,13 @@ export class ExpenseRequestController {
    * GET /expense-requests/case/:caseId/summary
    */
   @Get('case/:caseId/summary')
-  async getExpenseSummary(@Req() req: AuthRequest, @Param('caseId') caseId: string) {
-    return this.service.getExpenseSummaryForCase(req.user.tenantId, caseId);
+  async getExpenseSummary(
+    @Req() req: AuthRequest,
+    @Param('caseId') caseId: string,
+    @Query('clientId') clientId?: string,
+  ) {
+    // clientId opsiyonel → seçili müvekkile filtreli masraf özeti (TM3 Faz7-V). Salt-okuma.
+    return this.service.getExpenseSummaryForCase(req.user.tenantId, caseId, clientId);
   }
 
   /**

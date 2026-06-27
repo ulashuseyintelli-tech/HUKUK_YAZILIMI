@@ -84,6 +84,23 @@ export interface CreatePayoutResult {
   idempotentReplay?: boolean;
 }
 
+/** ExpenseRequest dosya/müvekkil masraf özeti. Tutarlar number (backend toplar; UI hesaplamaz). */
+export interface ExpenseCaseSummary {
+  totalRequested: number;
+  totalPaid: number;
+  totalPending: number;
+  requestCount: number;
+  paidCount: number;
+  pendingCount: number;
+  blockingUnpaid: number;
+}
+
+/** Masraf-avansı (CaseBalance) bakiyesi. balance Decimal-string. */
+export interface CaseBalanceInfo {
+  balance: string;
+  currency: string;
+}
+
 export const clientAccountingApi = {
   /** Müvekkilin (eligible) dosyaları + caseClientId resolve. */
   async getCases(clientId: string): Promise<ClientAccountingCase[]> {
@@ -124,6 +141,36 @@ export const clientAccountingApi = {
   async createPayout(input: CreatePayoutInput): Promise<CreatePayoutResult> {
     const resp = await apiClient.post<{ data: CreatePayoutResult }>('/client-payouts', input);
     return resp.data.data;
+  },
+
+  /**
+   * Faz7-V — SEÇİLİ müvekkilin bu dosyadaki masraf özeti (ExpenseRequest, clientId filtreli).
+   * "Müvekkilden Talep Edilen / Tahsil Edilen Masraf" kartlarını besler. Backend toplar; UI
+   * liste çekip kendi toplamını HESAPLAMAZ. NOT: expense-request controller payload'u DOĞRUDAN
+   * döner → tek zarf (response.data), client-settlement'taki çift zarf DEĞİL.
+   */
+  async getExpenseSummary(caseId: string, clientId: string): Promise<ExpenseCaseSummary> {
+    const qs = new URLSearchParams({ clientId });
+    const resp = await apiClient.get<ExpenseCaseSummary>(
+      `/expense-requests/case/${caseId}/summary?${qs.toString()}`,
+    );
+    return resp.data;
+  },
+
+  /** Faz7-V — masraf/avans bakiyesi (CaseBalance). Tek zarf (response.data). Payout defteri DEĞİL. */
+  async getCaseBalance(caseId: string): Promise<CaseBalanceInfo> {
+    const resp = await apiClient.get<{ balance?: string | number; currency?: string }>(
+      `/cases/${caseId}/balance`,
+    );
+    return { balance: String(resp.data?.balance ?? '0'), currency: resp.data?.currency ?? 'TRY' };
+  },
+
+  /** Faz7-V — borçludan dosyaya gelen toplam tahsilat (calculation-summary.toplamTahsilat). Tek zarf. */
+  async getDebtorCollectionTotal(caseId: string): Promise<number> {
+    const resp = await apiClient.get<{ toplamTahsilat?: number }>(
+      `/cases/${caseId}/calculation-summary`,
+    );
+    return Number(resp.data?.toplamTahsilat ?? 0);
   },
 };
 
