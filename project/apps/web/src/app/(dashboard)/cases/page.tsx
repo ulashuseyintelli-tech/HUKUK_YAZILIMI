@@ -10,6 +10,7 @@ import {
   Calendar, DollarSign, Star, MoreHorizontal, UserCheck,
   ChevronsUpDown, Users
 } from "lucide-react";
+import { CASE_STATUS_OPTIONS } from "@/lib/case-statuses";
 import { Badge } from "@hukuk/ui";
 import { api } from "@/lib/api";
 import { bulkAssignResponsible, type BulkAssignResult } from "@/lib/bulk-assign-responsible";
@@ -1404,8 +1405,9 @@ export default function CasesPage() {
     if (selectedCases.length === 0 || !bulkStatus) return;
     try {
       setProcessingIds(selectedCases);
+      // P3-2B-2: her case için kanonik route (generic PATCH /cases yerine). Atomik değil: ilk hatada durur (mevcut davranış korundu).
       for (const caseId of selectedCases) {
-        await api.patch(`/cases/${caseId}`, { caseStatus: bulkStatus });
+        await api.changeCaseStatus(caseId, bulkStatus, "Toplu statü güncelleme");
       }
       fetchCases();
       setSelectedCases([]);
@@ -2731,10 +2733,9 @@ export default function CasesPage() {
               className="w-full px-3 py-2 border rounded-lg mb-4"
             >
               <option value="">Statü Seçin</option>
-              <option value="DERDEST">Derdest</option>
-              <option value="KAPALI">Kapalı</option>
-              <option value="ASKIDA">Askıda</option>
-              <option value="ARSIV">Arşiv</option>
+              {CASE_STATUS_OPTIONS.map((s) => (
+                <option key={s.value} value={s.value}>{s.label}</option>
+              ))}
             </select>
             <div className="flex justify-end gap-2">
               <button

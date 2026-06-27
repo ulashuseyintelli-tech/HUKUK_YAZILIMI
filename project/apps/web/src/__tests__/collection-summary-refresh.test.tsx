@@ -349,7 +349,7 @@ describe("collection summary refresh", () => {
       source.indexOf("  // Fetch case debtors", saveCaseStatusStart),
     );
 
-    expect(saveCaseStatusBlock).toContain("await api.updateCase(params.id as string, { caseStatus: caseStatusValue });");
+    expect(saveCaseStatusBlock).toContain('await api.changeCaseStatus(params.id as string, caseStatusValue, "Statü güncellendi");');
     expect(saveCaseStatusBlock).toContain("await fetchCase();");
     expect(saveCaseStatusBlock).not.toContain("setFinancialSummaryRefreshKey");
   });
