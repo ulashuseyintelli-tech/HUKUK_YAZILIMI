@@ -39,4 +39,35 @@ export class ClientAccountingController {
     const data = await this.readService.getClientAccountingSummary(req.user.tenantId, clientId, currency || 'TRY');
     return { data };
   }
+
+  /**
+   * Faz A-MOV — Müvekkil Genel Cari birleşik hareket listesi (read-only projection).
+   * Summary'deki A/B (CLIENT_SPECIFIC / CASE_CONTEXT) ayrımı korunur; yeni defter/mutation YOK.
+   * GET /clients/:clientId/accounting/movements?scope=client|case&caseId=&group=&currency=&page=&pageSize=&from=&to=
+   */
+  @Get('movements')
+  async movements(
+    @Request() req: AuthRequest,
+    @Param('clientId') clientId: string,
+    @Query('scope') scope?: 'client' | 'case',
+    @Query('caseId') caseId?: string,
+    @Query('group') group?: 'CLIENT_SPECIFIC' | 'CASE_CONTEXT',
+    @Query('currency') currency?: string,
+    @Query('page') page?: string,
+    @Query('pageSize') pageSize?: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    const data = await this.readService.getClientAccountingMovements(req.user.tenantId, clientId, {
+      scope,
+      caseId,
+      group,
+      currency: currency || 'TRY',
+      page: page ? Number(page) : undefined,
+      pageSize: pageSize ? Number(pageSize) : undefined,
+      from,
+      to,
+    });
+    return { data };
+  }
 }
