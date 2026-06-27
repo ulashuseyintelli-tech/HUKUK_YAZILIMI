@@ -1,6 +1,6 @@
 /** @jest-environment node */
 import "reflect-metadata";
-import { NotFoundException, INestApplication } from "@nestjs/common";
+import { NotFoundException, BadRequestException, INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import * as request from "supertest";
 import { CaseStatusService } from "../case-status.service";
@@ -61,10 +61,46 @@ describe("P2b-2c-1 — CaseStatusService.changeStatus hardening", () => {
     expect(tx.decisionLog.create.mock.calls[0][0].data.changedById).toBeUndefined();
   });
 
-  it("status transition validation korunur (closing→closing throw, lookup'tan sonra)", async () => {
-    const { prisma } = mkPrisma({ caseStatus: "HITAM", isAutomationEnabled: false });
-    await expect(new CaseStatusService(prisma).changeStatus("t1", "c1", "INFAZ" as never, "u1")).rejects.toThrow();
+  it("P3-2B-1: kapanış→kapanış artık YASAK DEĞİL (HITAM→INFAZ başarılı; transaction + history yazılır)", async () => {
+    const { tx, prisma } = mkPrisma({ caseStatus: "HITAM", isAutomationEnabled: false });
+    await expect(
+      new CaseStatusService(prisma).changeStatus("t1", "c1", "INFAZ" as never, "u1", "yeniden sınıflandırma"),
+    ).resolves.toBeDefined();
+    expect((prisma as any).$transaction).toHaveBeenCalledTimes(1);
+    expect(tx.caseStatusHistory.create).toHaveBeenCalledTimes(1);
+    expect(tx.caseStatusHistory.create.mock.calls[0][0].data.fromStatus).toBe("HITAM");
+    expect(tx.caseStatusHistory.create.mock.calls[0][0].data.toStatus).toBe("INFAZ");
+  });
+});
+
+describe("P3-2B-1 — CaseStatusService canonical safety patch", () => {
+  it("geçersiz statü değeri → BadRequestException (400); lookup ve transaction YOK", async () => {
+    const { prisma } = mkPrisma({ caseStatus: "DERDEST", isAutomationEnabled: true });
+    await expect(
+      new CaseStatusService(prisma).changeStatus("t1", "c1", "NOPE" as never, "u1"),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect((prisma as any).case.findFirst).not.toHaveBeenCalled();
     expect((prisma as any).$transaction).not.toHaveBeenCalled();
+  });
+
+  it("automation: kapanış statüsüne geçiş otomasyonu KAPATIR + nextActionAt=null", async () => {
+    const { tx, prisma } = mkPrisma({ caseStatus: "DERDEST", isAutomationEnabled: true });
+    await new CaseStatusService(prisma).changeStatus("t1", "c1", "HITAM" as never, "u1");
+    const data = tx.case.update.mock.calls[0][0].data;
+    expect(data.isAutomationEnabled).toBe(false);
+    expect(data.nextActionAt).toBeNull();
+  });
+
+  it("automation: aktif statüye geçiş manuel KAPALI otomasyonu AÇMAZ (manuel tercih korunur)", async () => {
+    const { tx, prisma } = mkPrisma({ caseStatus: "HITAM", isAutomationEnabled: false });
+    await new CaseStatusService(prisma).changeStatus("t1", "c1", "DERDEST" as never, "u1");
+    expect(tx.case.update.mock.calls[0][0].data.isAutomationEnabled).toBe(false);
+  });
+
+  it("automation: aktif statüde zaten AÇIK otomasyon AÇIK kalır", async () => {
+    const { tx, prisma } = mkPrisma({ caseStatus: "DERDEST", isAutomationEnabled: true });
+    await new CaseStatusService(prisma).changeStatus("t1", "c1", "ISLEMDE" as never, "u1");
+    expect(tx.case.update.mock.calls[0][0].data.isAutomationEnabled).toBe(true);
   });
 });
 
