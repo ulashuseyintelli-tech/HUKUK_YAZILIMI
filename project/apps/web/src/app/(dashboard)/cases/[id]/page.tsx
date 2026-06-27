@@ -932,6 +932,7 @@ export default function CaseDetailPage() {
       await api.updateCase(params.id as string, { caseDate: caseDateValue });
       // Veriyi yenile
       await fetchCase();
+      setFinancialSummaryRefreshKey((key) => key + 1);
       setEditingCaseDate(false);
     } catch (error) {
       console.error("Takip tarihi güncellenemedi:", error);
