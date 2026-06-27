@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useGuardedAction } from "@/components/guarded-edge/use-guarded-action";
 import { useParams, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import {
@@ -823,6 +824,8 @@ export default function CaseDetailPage() {
   const [editingCaseStatus, setEditingCaseStatus] = useState(false);
   const [caseStatusValue, setCaseStatusValue] = useState('');
   const [savingCaseStatus, setSavingCaseStatus] = useState(false);
+  // P3-2C-FE: kanonik statü değişimini guarded-edge consumer ile sar (flag OFF → modal hiç açılmaz, davranış değişmez).
+  const { run: runGuardedStatus, modal: guardedStatusModal } = useGuardedAction();
   
   // Alacak Kalemleri ve Tahsilatlar State
   const [dues, setDues] = useState<any[]>([]);
@@ -949,7 +952,14 @@ export default function CaseDetailPage() {
     try {
       setSavingCaseStatus(true);
       // P3-2B-2: statü değişimi kanonik route'tan (generic /cases PUT yerine) — history/decisionLog/observe yazar.
-      await api.changeCaseStatus(params.id as string, caseStatusValue, "Statü güncellendi");
+      // P3-2C-FE: guarded-edge consumer ile sarıldı. Flag OFF → backend zarf dönmez → run normal {ok} verir,
+      // modal açılmaz (mevcut davranış aynen). CONFIRM_REQUIRED → modal; vazgeç → retry yok/UI eski; onayla → confirmationToken ile tek retry.
+      const result = await runGuardedStatus((confirmation) =>
+        api.changeCaseStatus(params.id as string, caseStatusValue, "Statü güncellendi", confirmation?.token),
+      );
+      if (result.status === "cancelled") {
+        return; // kullanıcı vazgeçti: başarı işleme yok, UI eski durumda kalır (finally setSavingCaseStatus(false))
+      }
       // Veriyi yenile
       await fetchCase();
       setEditingCaseStatus(false);
@@ -959,7 +969,7 @@ export default function CaseDetailPage() {
     } finally {
       setSavingCaseStatus(false);
     }
-  }, [caseStatusValue, params.id, fetchCase]);
+  }, [caseStatusValue, params.id, fetchCase, runGuardedStatus]);
 
   // Fetch case debtors with summary (FAZ 1)
   const fetchCaseDebtors = useCallback(async () => {
@@ -4039,6 +4049,8 @@ export default function CaseDetailPage() {
         />
       )}
 
+      {/* P3-2C-FE: guarded-edge confirm modalı (yalnız backend CONFIRM_REQUIRED dönerse görünür; flag OFF → null) */}
+      {guardedStatusModal}
     </div>
   );
 }

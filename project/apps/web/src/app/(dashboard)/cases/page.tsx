@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useGuardedAction } from "@/components/guarded-edge/use-guarded-action";
 import { useSearchParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { 
@@ -799,6 +800,8 @@ export default function CasesPage() {
   const [showBulkStatusModal, setShowBulkStatusModal] = useState(false);
   const [showBulkAssignModal, setShowBulkAssignModal] = useState(false);
   const [bulkStatus, setBulkStatus] = useState("");
+  // P3-2C-FE: toplu statü değişimini guarded-edge consumer ile sar (flag OFF → modal hiç açılmaz, davranış değişmez).
+  const { run: runGuardedStatus, modal: guardedStatusModal } = useGuardedAction();
   // M2-G5d-2: toplu gerçek-kişi Dosya Sorumlusu atama (multi-PATCH). Seçilen owner + sonuç.
   const [bulkOwner, setBulkOwner] = useState<ResponsibleSelection | null>(null);
   const [bulkResult, setBulkResult] = useState<BulkAssignResult | null>(null);
@@ -1406,8 +1409,15 @@ export default function CasesPage() {
     try {
       setProcessingIds(selectedCases);
       // P3-2B-2: her case için kanonik route (generic PATCH /cases yerine). Atomik değil: ilk hatada durur (mevcut davranış korundu).
+      // P3-2C-FE: her çağrı guarded-edge consumer ile sarıldı. Flag OFF → run normal {ok}, modal açılmaz (davranış aynen).
+      // Hata (exception) hâlâ döngüyü durdurur → catch (ilk-hata-durur korundu). CONFIRM_REQUIRED'da kullanıcı vazgeçerse döngü durur.
       for (const caseId of selectedCases) {
-        await api.changeCaseStatus(caseId, bulkStatus, "Toplu statü güncelleme");
+        const result = await runGuardedStatus((confirmation) =>
+          api.changeCaseStatus(caseId, bulkStatus, "Toplu statü güncelleme", confirmation?.token),
+        );
+        if (result.status === "cancelled") {
+          break; // kullanıcı bu case için vazgeçti → kalan case'ler işlenmez (graceful stop)
+        }
       }
       fetchCases();
       setSelectedCases([]);
@@ -2857,10 +2867,13 @@ export default function CasesPage() {
       {/* Click outside to close action menu */}
       {actionMenuOpen && (
         <div 
-          className="fixed inset-0 z-0" 
+          className="fixed inset-0 z-0"
           onClick={() => setActionMenuOpen(null)}
         />
       )}
+
+      {/* P3-2C-FE: guarded-edge confirm modalı (yalnız backend CONFIRM_REQUIRED dönerse görünür; flag OFF → null) */}
+      {guardedStatusModal}
     </div>
   );
 }
