@@ -76,6 +76,69 @@ export interface ClientAccountingSummary {
   caseBreakdown: ClientCaseBreakdownItem[];
 }
 
+/** TM3 Faz A-MOV — birleşik hareket projection kaynak tipleri. */
+export type MovementSourceType =
+  | 'COLLECTION'
+  | 'COLLECTION_DISPOSITION'
+  | 'CLIENT_PAYOUT'
+  | 'EXPENSE_REQUEST'
+  | 'EXPENSE_PAYMENT'
+  | 'CASE_BALANCE';
+
+/** A grubu (müvekkile özgü) vs B grubu (dosya geneli / paylaşılan bağlam). */
+export type MovementScopeGroup = 'CLIENT_SPECIFIC' | 'CASE_CONTEXT';
+
+/**
+ * Hareketin müvekkilin carisine yönü — yalnız ETİKET/BİLGİ. Defter kaydı veya mahsup DEĞİL.
+ * CASE_CONTEXT hareketleri her zaman NO_DIRECT_CLIENT_EFFECT (dosya geneli, müvekkile atfedilmez).
+ */
+export type MovementClientEffect =
+  | 'INCREASE_CLIENT_PAYABLE'
+  | 'DECREASE_CLIENT_PAYABLE'
+  | 'INCREASE_CLIENT_EXPENSE_DEBT'
+  | 'DECREASE_CLIENT_EXPENSE_DEBT'
+  | 'NO_DIRECT_CLIENT_EFFECT';
+
+/**
+ * Tek bir birleşik hareket satırı (read-only projection). Hiçbir kayıt yaratmaz/değiştirmez.
+ * `amount` her zaman pozitif tutar string'i; yön `clientEffect` ile taşınır (running balance YOK — v1).
+ */
+export interface ClientAccountingMovement {
+  id: string; // projection-stable: `${prefix}:${sourceId}`
+  sourceType: MovementSourceType;
+  sourceId: string;
+  scopeGroup: MovementScopeGroup;
+  occurredAt: string; // ISO
+  caseId: string;
+  caseNo: string;
+  caseClientId: string | null;
+  label: string;
+  description: string | null;
+  amount: string; // Decimal string (pozitif)
+  currency: string;
+  clientEffect: MovementClientEffect;
+  status: string;
+  needsReview?: boolean;
+}
+
+export interface ClientMovementsResult {
+  items: ClientAccountingMovement[];
+  page: number;
+  pageSize: number;
+  total: number;
+}
+
+export interface ClientMovementsOptions {
+  scope?: 'client' | 'case';
+  caseId?: string;
+  group?: MovementScopeGroup;
+  currency?: string;
+  page?: number;
+  pageSize?: number;
+  from?: string; // ISO/parse-edilebilir tarih (alt sınır, dahil)
+  to?: string; // ISO/parse-edilebilir tarih (üst sınır, dahil)
+}
+
 /**
  * TM3 Faz 7 read addendum — müvekkil muhasebesi READ contract'ı (mutation YOK).
  *
@@ -380,5 +443,251 @@ export class ClientSettlementReadService {
       needsReview: anyNeedsReview,
       caseBreakdown,
     };
+  }
+
+  /**
+   * Faz A-MOV — Müvekkil Genel Cari için BİRLEŞİK HAREKET projection (read-only). YENİ defter/
+   * entity/migration/mutation YOK; mevcut kayıtlardan event listesi türetir. Running balance YOK (v1).
+   *
+   * Summary'deki A/B ayrımı AYNEN korunur:
+   *  - A grubu (CLIENT_SPECIFIC, müvekkile özgü): POSTED CLIENT_PAYABLE disposition satırları (caseClientId,
+   *    computeOutstanding ile birebir scope) · RECORDED ClientPayout · ExpenseRequest (clientId+gerçek caseId) ·
+   *    ExpensePayment (expenseRequest.clientId). clientEffect borç yönünü ETİKETLER (defter/mahsup DEĞİL).
+   *  - B grubu (CASE_CONTEXT, dosya geneli — müvekkile ATFEDİLMEZ): Collection (CONFIRMED/CANCELLED/REFUNDED) ·
+   *    BalanceLedger (caseBalance.caseId DISTINCT). Hepsi NO_DIRECT_CLIENT_EFFECT.
+   *
+   * Sıralama deterministik: occurredAt desc, eşitlikte sourceType → sourceId (stabil sayfalama).
+   * scope=case yalnız tek dosyaya daraltır (client'ın eligible dosyası değilse doğal olarak boş).
+   * Çağrıldığı yer: ClientAccountingController.movements() → GET /clients/:clientId/accounting/movements
+   */
+  async getClientAccountingMovements(
+    tenantId: string,
+    clientId: string,
+    opts: ClientMovementsOptions = {},
+  ): Promise<ClientMovementsResult> {
+    const currency = opts.currency || 'TRY';
+    const page = Math.max(Number(opts.page) || 1, 1);
+    const pageSize = Math.min(Math.max(Number(opts.pageSize) || 50, 1), 200);
+    const scope: 'client' | 'case' = opts.scope === 'case' && opts.caseId ? 'case' : 'client';
+    const from = opts.from ? new Date(opts.from) : null;
+    const to = opts.to ? new Date(opts.to) : null;
+    const inDate = (d: Date | null | undefined): boolean =>
+      !!d && (!from || d.getTime() >= from.getTime()) && (!to || d.getTime() <= to.getTime());
+
+    // Müvekkilin eligible CaseClient bağları (A grubu scope) + DISTINCT caseId (B grubu, çift sayma yok).
+    const ccRows = await this.prisma.caseClient.findMany({
+      where: { clientId, role: { in: ELIGIBLE_ROLES }, client: { tenantId } },
+      select: { id: true, caseId: true, case: { select: { fileNumber: true } } },
+    });
+    let clientCaseClientIds = ccRows.map((r) => r.id);
+    let distinctCaseIds = [...new Set(ccRows.map((r) => r.caseId))];
+    if (scope === 'case') {
+      clientCaseClientIds = ccRows.filter((r) => r.caseId === opts.caseId).map((r) => r.id);
+      distinctCaseIds = distinctCaseIds.filter((c) => c === opts.caseId);
+    }
+    const caseNo = new Map<string, string>();
+    for (const r of ccRows) if (!caseNo.has(r.caseId)) caseNo.set(r.caseId, r.case?.fileNumber ?? '');
+
+    const movements: ClientAccountingMovement[] = [];
+
+    // ---- A grubu: CLIENT_SPECIFIC ----
+    if (clientCaseClientIds.length > 0) {
+      // 1) POSTED CLIENT_PAYABLE disposition satırları — borç DOĞDU. caseClientId line-level
+      //    (computeOutstanding ile birebir scope). disposition POSTED + tenant + currency.
+      const lines = await this.prisma.collectionDispositionLine.findMany({
+        where: {
+          type: 'CLIENT_PAYABLE',
+          caseClientId: { in: clientCaseClientIds },
+          disposition: { tenantId, currency, status: 'POSTED' },
+        },
+        select: {
+          id: true,
+          amount: true,
+          caseClientId: true,
+          note: true,
+          disposition: { select: { caseId: true, postedAt: true } },
+        },
+      });
+      for (const l of lines) {
+        const occ = l.disposition.postedAt;
+        if (!inDate(occ)) continue;
+        movements.push({
+          id: `disp-line:${l.id}`,
+          sourceType: 'COLLECTION_DISPOSITION',
+          sourceId: l.id,
+          scopeGroup: 'CLIENT_SPECIFIC',
+          occurredAt: occ!.toISOString(),
+          caseId: l.disposition.caseId,
+          caseNo: caseNo.get(l.disposition.caseId) ?? '',
+          caseClientId: l.caseClientId ?? null,
+          label: 'Müvekkile borç doğdu (dağıtım)',
+          description: l.note ?? null,
+          amount: l.amount.toString(),
+          currency,
+          clientEffect: 'INCREASE_CLIENT_PAYABLE',
+          status: 'POSTED',
+        });
+      }
+
+      // 2) RECORDED ClientPayout — müvekkile ödeme yapıldı (borç azalır).
+      const payouts = await this.prisma.clientPayout.findMany({
+        where: { tenantId, caseClientId: { in: clientCaseClientIds }, currency, status: 'RECORDED' },
+        select: { id: true, amount: true, paidAt: true, caseId: true, caseClientId: true, note: true },
+      });
+      for (const p of payouts) {
+        if (!inDate(p.paidAt)) continue;
+        movements.push({
+          id: `payout:${p.id}`,
+          sourceType: 'CLIENT_PAYOUT',
+          sourceId: p.id,
+          scopeGroup: 'CLIENT_SPECIFIC',
+          occurredAt: p.paidAt.toISOString(),
+          caseId: p.caseId,
+          caseNo: caseNo.get(p.caseId) ?? '',
+          caseClientId: p.caseClientId,
+          label: 'Müvekkile ödeme yapıldı',
+          description: p.note ?? null,
+          amount: p.amount.toString(),
+          currency,
+          clientEffect: 'DECREASE_CLIENT_PAYABLE',
+          status: 'RECORDED',
+        });
+      }
+    }
+
+    // 3) ExpenseRequest — clientId scope (gerçek caseId). currency summary ile parite için filtrelenmez.
+    const erWhere: Prisma.ExpenseRequestWhereInput = { tenantId, clientId, status: { not: 'CANCELLED' } };
+    if (scope === 'case') erWhere.caseId = opts.caseId;
+    const ers = await this.prisma.expenseRequest.findMany({
+      where: erWhere,
+      select: { id: true, caseId: true, totalAmount: true, currency: true, status: true, createdAt: true, case: { select: { fileNumber: true } } },
+    });
+    for (const e of ers) {
+      if (!inDate(e.createdAt)) continue;
+      movements.push({
+        id: `er:${e.id}`,
+        sourceType: 'EXPENSE_REQUEST',
+        sourceId: e.id,
+        scopeGroup: 'CLIENT_SPECIFIC',
+        occurredAt: e.createdAt.toISOString(),
+        caseId: e.caseId,
+        caseNo: e.case?.fileNumber ?? caseNo.get(e.caseId) ?? '',
+        caseClientId: null,
+        label: 'Müvekkilden masraf talep edildi',
+        description: null,
+        amount: e.totalAmount.toString(),
+        currency: e.currency ?? currency,
+        clientEffect: 'INCREASE_CLIENT_EXPENSE_DEBT',
+        status: e.status,
+      });
+    }
+
+    // 4) ExpensePayment — expenseRequest.clientId üstünden (masraf tahsil edildi → borç azalır).
+    const epWhere: Prisma.ExpensePaymentWhereInput = { expenseRequest: { tenantId, clientId } };
+    if (scope === 'case') epWhere.expenseRequest = { tenantId, clientId, caseId: opts.caseId };
+    const eps = await this.prisma.expensePayment.findMany({
+      where: epWhere,
+      select: {
+        id: true,
+        amount: true,
+        paymentDate: true,
+        reference: true,
+        expenseRequest: { select: { caseId: true, currency: true, case: { select: { fileNumber: true } } } },
+      },
+    });
+    for (const p of eps) {
+      if (!inDate(p.paymentDate)) continue;
+      const cid = p.expenseRequest.caseId;
+      movements.push({
+        id: `ep:${p.id}`,
+        sourceType: 'EXPENSE_PAYMENT',
+        sourceId: p.id,
+        scopeGroup: 'CLIENT_SPECIFIC',
+        occurredAt: p.paymentDate.toISOString(),
+        caseId: cid,
+        caseNo: p.expenseRequest.case?.fileNumber ?? caseNo.get(cid) ?? '',
+        caseClientId: null,
+        label: 'Müvekkilden masraf tahsil edildi',
+        description: p.reference ?? null,
+        amount: p.amount.toString(),
+        currency: p.expenseRequest.currency ?? currency,
+        clientEffect: 'DECREASE_CLIENT_EXPENSE_DEBT',
+        status: 'PAID',
+      });
+    }
+
+    // ---- B grubu: CASE_CONTEXT (dosya geneli — müvekkile atfedilmez; DISTINCT caseId, çift sayma yok) ----
+    if (distinctCaseIds.length > 0) {
+      // 5) Collection — borçludan tahsilat (CONFIRMED) + iptal/iade. Müvekkil carisine DOĞRUDAN etki yok.
+      const colls = await this.prisma.collection.findMany({
+        where: { tenantId, caseId: { in: distinctCaseIds }, currency, status: { in: ['CONFIRMED', 'CANCELLED', 'REFUNDED'] } },
+        select: { id: true, amount: true, date: true, caseId: true, status: true, description: true },
+      });
+      for (const c of colls) {
+        if (!inDate(c.date)) continue;
+        const label =
+          c.status === 'CONFIRMED' ? 'Borçlu tahsilatı (dosya geneli)' : c.status === 'REFUNDED' ? 'Tahsilat iadesi (dosya geneli)' : 'Tahsilat iptali (dosya geneli)';
+        movements.push({
+          id: `coll:${c.id}`,
+          sourceType: 'COLLECTION',
+          sourceId: c.id,
+          scopeGroup: 'CASE_CONTEXT',
+          occurredAt: c.date.toISOString(),
+          caseId: c.caseId,
+          caseNo: caseNo.get(c.caseId) ?? '',
+          caseClientId: null,
+          label,
+          description: c.description ?? null,
+          amount: c.amount.toString(),
+          currency,
+          clientEffect: 'NO_DIRECT_CLIENT_EFFECT',
+          status: c.status,
+        });
+      }
+
+      // 6) BalanceLedger — dosya masraf/avans hareketi (CaseBalance.caseId üstünden). Müvekkile atfedilmez.
+      const ledger = await this.prisma.balanceLedger.findMany({
+        where: { tenantId, currency, caseBalance: { caseId: { in: distinctCaseIds } } },
+        select: { id: true, amount: true, type: true, createdAt: true, description: true, caseBalance: { select: { caseId: true } } },
+      });
+      for (const g of ledger) {
+        if (!inDate(g.createdAt)) continue;
+        const cid = g.caseBalance.caseId;
+        movements.push({
+          id: `bl:${g.id}`,
+          sourceType: 'CASE_BALANCE',
+          sourceId: g.id,
+          scopeGroup: 'CASE_CONTEXT',
+          occurredAt: g.createdAt.toISOString(),
+          caseId: cid,
+          caseNo: caseNo.get(cid) ?? '',
+          caseClientId: null,
+          label: 'Masraf/avans hareketi (dosya geneli)',
+          description: g.description ?? null,
+          amount: g.amount.toString(),
+          currency,
+          clientEffect: 'NO_DIRECT_CLIENT_EFFECT',
+          status: g.type,
+        });
+      }
+    }
+
+    // group filtresi (opsiyonel) — A veya B'yi izole et.
+    let filtered = movements;
+    if (opts.group === 'CLIENT_SPECIFIC' || opts.group === 'CASE_CONTEXT') {
+      filtered = movements.filter((m) => m.scopeGroup === opts.group);
+    }
+
+    // Deterministik sıralama: occurredAt desc, eşitlikte sourceType → sourceId.
+    filtered.sort(
+      (a, b) =>
+        b.occurredAt.localeCompare(a.occurredAt) ||
+        a.sourceType.localeCompare(b.sourceType) ||
+        a.sourceId.localeCompare(b.sourceId),
+    );
+
+    const total = filtered.length;
+    const start = (page - 1) * pageSize;
+    return { items: filtered.slice(start, start + pageSize), page, pageSize, total };
   }
 }
