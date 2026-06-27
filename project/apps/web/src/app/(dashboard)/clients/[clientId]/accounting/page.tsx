@@ -9,20 +9,22 @@
  *  - Finansal scope `caseClientId`'dir, `clientId` DEĞİL. clientId yalnız sayfa bağlamı.
  *  - HELD (emanet) / sözleşmesel ücret / büro masrafı kesintisi / masraf-avansı (BalanceLedger cari)
  *    müvekkile-borç DEĞİLDİR ve outstanding'e girmez (kullanıcıya açıkça belirtilir).
- *  - Bu sayfa SADECE okur (payout kaydı/posting bu PR'de yoktur).
+ *  - Sayfa okur + müvekkile ödeme kaydı (POST /client-payouts) yapar. Disposition POSTING (onay)
+ *    bu sayfada YOKTUR; outstanding'i UI HESAPLAMAZ (backend otorite).
  */
 
 import { useState } from 'react';
 import { useParams, useSearchParams, useRouter, usePathname } from 'next/navigation';
-import { useQuery } from '@tanstack/react-query';
-import { Card, Badge, Spinner } from '@hukuk/ui';
-import { Wallet, Info, FolderOpen, FileText, AlertCircle } from 'lucide-react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { Card, Badge, Spinner, Button } from '@hukuk/ui';
+import { Wallet, Info, FolderOpen, FileText, AlertCircle, Plus } from 'lucide-react';
 import {
   clientAccountingApi,
   formatMoneyString,
   ROLE_LABELS,
   type ClientAccountingCase,
 } from '@/lib/api/client-accounting';
+import { PayoutCreateModal } from '@/components/client-accounting/PayoutCreateModal';
 
 const PAGE_SIZE = 20;
 
@@ -34,6 +36,8 @@ export default function ClientAccountingPage() {
   const pathname = usePathname();
   const caseIdParam = searchParams.get('caseId');
   const [page, setPage] = useState(1);
+  const [showPayoutModal, setShowPayoutModal] = useState(false);
+  const queryClient = useQueryClient();
 
   // 1) Müvekkilin dosyaları (+ caseClientId resolve)
   const casesQ = useQuery({
@@ -142,7 +146,12 @@ export default function ClientAccountingPage() {
             <Wallet className="w-5 h-5 text-emerald-600" />
             <h2 className="font-medium text-gray-900">Müvekkile Borç (Net)</h2>
           </div>
-          {outstandingQ.isFetching && <Spinner className="w-4 h-4" />}
+          <div className="flex items-center gap-2">
+            {outstandingQ.isFetching && <Spinner className="w-4 h-4" />}
+            <Button size="sm" onClick={() => setShowPayoutModal(true)} disabled={!caseId || !caseClientId}>
+              <Plus className="w-4 h-4 mr-1" /> Ödeme Kaydet
+            </Button>
+          </div>
         </div>
 
         <div className="mt-3">
@@ -249,6 +258,28 @@ export default function ClientAccountingPage() {
           </>
         )}
       </Card>
+
+      {showPayoutModal && selected && caseId && caseClientId && (
+        <PayoutCreateModal
+          caseId={caseId}
+          caseClientId={caseClientId}
+          currency={currency}
+          outstanding={outstandingQ.data?.outstanding ?? null}
+          caseLabel={`${selected.caseNumber}${selected.executionFileNumber ? ` — İcra: ${selected.executionFileNumber}` : ''}`}
+          onClose={() => setShowPayoutModal(false)}
+          onSuccess={(result) => {
+            setShowPayoutModal(false);
+            setPage(1);
+            // Outstanding + ödeme listesi + (varsa) ekstre query'lerini tazele → drift yok.
+            queryClient.invalidateQueries({ queryKey: ['client-accounting-outstanding'] });
+            queryClient.invalidateQueries({ queryKey: ['client-accounting-payouts'] });
+            queryClient.invalidateQueries({ queryKey: ['client-statement'] });
+            if (result.idempotentReplay) {
+              alert('Bu ödeme zaten kayıtlıydı; tekrar oluşturulmadı (idempotent).');
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -67,6 +67,23 @@ export interface ListPayoutsParams {
   limit?: number;
 }
 
+export interface CreatePayoutInput {
+  caseId: string;
+  caseClientId: string;
+  /** Pozitif; backend Decimal(15,2). amount<=outstanding ön-kontrol UI'da, OTORİTE backend. */
+  amount: number | string;
+  currency?: string;
+  note?: string;
+  /** Tenant-scoped duplicate guard; client-side üretilir (her gönderim oturumu için tek). */
+  idempotencyKey: string;
+}
+
+export interface CreatePayoutResult {
+  created: boolean;
+  payoutId: string;
+  idempotentReplay?: boolean;
+}
+
 export const clientAccountingApi = {
   /** Müvekkilin (eligible) dosyaları + caseClientId resolve. */
   async getCases(clientId: string): Promise<ClientAccountingCase[]> {
@@ -96,6 +113,16 @@ export const clientAccountingApi = {
     if (params.page) qs.set('page', String(params.page));
     if (params.limit) qs.set('limit', String(params.limit));
     const resp = await apiClient.get<{ data: PaginatedPayouts }>(`/client-payouts?${qs.toString()}`);
+    return resp.data.data;
+  },
+
+  /**
+   * Müvekkile ödeme kaydı (POST /client-payouts). D1: ClientPayout + CLIENT_PAYOUT_SENT;
+   * masraf-avansı defterine YAZILMAZ. Over-payout / idempotency-conflict / scope hatalarını
+   * backend döner (UI yalnız iletir, hesap yapmaz).
+   */
+  async createPayout(input: CreatePayoutInput): Promise<CreatePayoutResult> {
+    const resp = await apiClient.post<{ data: CreatePayoutResult }>('/client-payouts', input);
     return resp.data.data;
   },
 };
