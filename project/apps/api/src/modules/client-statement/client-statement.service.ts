@@ -322,10 +322,21 @@ export class ClientStatementService {
       }
     }
 
+    // M3: müvekkile ödemeler (ClientPayout RECORDED) — CLIENT_PAYOUT_SENT (debit −). YALNIZ bu alacaklı.
+    let payoutRows: { id: string; amount: Prisma.Decimal; paidAt: Date }[] = [];
+    if (statementCaseClientId) {
+      const payouts = await this.prisma.clientPayout.findMany({
+        where: { tenantId, caseId, caseClientId: statementCaseClientId, status: 'RECORDED', paidAt: { gte: periodStart, lte: periodEnd } },
+        select: { id: true, amount: true, paidAt: true },
+      });
+      payoutRows = payouts.map((p) => ({ id: p.id, amount: p.amount, paidAt: p.paidAt }));
+    }
+
     const items = [
       ...ledgerRows.map((l) => ({ kind: 'money' as const, date: l.createdAt, l })),
       ...requestRows.map((r) => ({ kind: 'info' as const, date: r.createdAt, r })),
       ...dispositionRows.map((d) => ({ kind: 'proceeds' as const, date: d.postedAt, d })),
+      ...payoutRows.map((p) => ({ kind: 'payout' as const, date: p.paidAt, p })),
     ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
     let running = opening;
@@ -357,7 +368,7 @@ export class ClientStatementService {
           runningBalance: running, // BİLGİ satırı — bakiyeyi oynatmaz
           note: `Talep: ${it.r.totalAmount} ${it.r.currency} (${it.r.status})`,
         });
-      } else {
+      } else if (it.kind === 'proceeds') {
         // proceeds — POSTED CollectionDispositionLine (model A). Sign convention mapDispositionLine'da.
         const m = this.mapDispositionLine(it.d.type, it.d.amount);
         running = running.plus(m.credit); // payable/clientReimb → +amount; ofis-payı/OFFSET → 0
@@ -371,6 +382,20 @@ export class ClientStatementService {
           credit: m.credit,
           runningBalance: running,
           note: m.note,
+        });
+      } else {
+        // M3 payout — ClientPayout RECORDED → CLIENT_PAYOUT_SENT (debit −). BalanceLedger DEĞİL (D1).
+        running = running.minus(it.p.amount);
+        lines.push({
+          lineDate: it.p.paidAt,
+          lineType: ClientStatementLineType.CLIENT_PAYOUT_SENT,
+          refType: 'ClientPayout',
+          refId: it.p.id,
+          caseClientId: statementCaseClientId,
+          debit: it.p.amount,
+          credit: ZERO,
+          runningBalance: running,
+          note: 'Müvekkile ödeme',
         });
       }
     }
