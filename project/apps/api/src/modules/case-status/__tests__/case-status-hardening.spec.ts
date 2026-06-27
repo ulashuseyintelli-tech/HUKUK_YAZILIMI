@@ -7,7 +7,11 @@ import { CaseStatusService } from "../case-status.service";
 import { CaseStatusController } from "../case-status.controller";
 import { JwtAuthGuard } from "../../auth/guards/jwt-auth.guard";
 import { GuidedOpenObserveService } from "../../permission-diagnostics/guided-open-observe.service";
+import { GuidedEdgeGateService } from "../../permission-diagnostics/guided-edge/guided-edge-gate.service";
 import { ActionCode } from "../../policy-engine/types/action-code.enum";
+
+// P3-2C: gate mock — VARSAYILAN OFF davranışı (her zaman PROCEED → mevcut hardening testleri AYNEN geçer).
+const mkGateProceed = () => ({ evaluate: jest.fn().mockResolvedValue({ kind: "PROCEED" }) });
 
 /**
  * P2b-2c-1 — CHANGE_STATUS hardening (Option A) testleri.
@@ -109,11 +113,13 @@ describe("P2b-2c-1 — CaseStatusController.changeStatus hardening", () => {
   const mk = () => {
     const service = { changeStatus: jest.fn().mockResolvedValue({ id: "c1", caseStatus: "ISLEMDE" }) };
     const observe = { observe: jest.fn().mockResolvedValue(undefined) };
+    const gate = mkGateProceed();
     const controller = new CaseStatusController(
       service as unknown as CaseStatusService,
       observe as unknown as GuidedOpenObserveService,
+      gate as unknown as GuidedEdgeGateService,
     );
-    return { controller, service, observe };
+    return { controller, service, observe, gate };
   };
 
   const prevMode = process.env.GUIDED_OPEN_AUTHZ_MODE;
@@ -135,7 +141,7 @@ describe("P2b-2c-1 — CaseStatusController.changeStatus hardening", () => {
     const { controller, service } = mk();
     const res = await controller.changeStatus("u1", "t1", "c1", { status: "ISLEMDE" as never, reason: "Toplu işlem" });
     expect(service.changeStatus).toHaveBeenCalledWith("t1", "c1", "ISLEMDE", "u1", "Toplu işlem");
-    expect(res.success).toBe(true);
+    expect((res as { success: boolean }).success).toBe(true); // P3-2C: dönüş artık union (envelope|normal); PROCEED → normal
   });
 
   it("8. response shape değişmedi (success/data/message)", async () => {
@@ -173,10 +179,74 @@ describe("P2b-2c-1 — CaseStatusController.changeStatus hardening", () => {
       { resolve: jest.fn().mockRejectedValue(new Error("resolver boom")) } as never,
       { log: jest.fn().mockRejectedValue(new Error("audit boom")) } as never,
     );
-    const controller = new CaseStatusController(service as unknown as CaseStatusService, realObserve);
+    const controller = new CaseStatusController(service as unknown as CaseStatusService, realObserve, mkGateProceed() as unknown as GuidedEdgeGateService);
     const res = await controller.changeStatus("u1", "t1", "c1", { status: "ISLEMDE" as never, reason: "r" });
     expect(service.changeStatus).toHaveBeenCalledTimes(1); // observe hata verse de mutation engellenmedi
-    expect(res.success).toBe(true);
+    expect((res as { success: boolean }).success).toBe(true); // P3-2C: union dönüş; PROCEED → normal
+  });
+});
+
+// ---- P3-2C: controller↔gate entegrasyonu (gate'in İÇİ guided-edge-gate.service.spec.ts'te; burada SADECE kontrolcü davranışı) ----
+describe("P3-2C — CaseStatusController ↔ guarded-edge gate entegrasyonu", () => {
+  const mkG = (gate: { evaluate: jest.Mock }) => {
+    const service = { changeStatus: jest.fn().mockResolvedValue({ id: "c1", caseStatus: "ISLEMDE" }) };
+    const observe = { observe: jest.fn().mockResolvedValue(undefined) };
+    const controller = new CaseStatusController(
+      service as unknown as CaseStatusService,
+      observe as unknown as GuidedOpenObserveService,
+      gate as unknown as GuidedEdgeGateService,
+    );
+    return { controller, service, observe, gate };
+  };
+  afterEach(() => jest.clearAllMocks());
+
+  it("gate PROCEED (default OFF) → service.changeStatus ÇAĞRILIR, normal {success,data,message} döner", async () => {
+    const gate = { evaluate: jest.fn().mockResolvedValue({ kind: "PROCEED" }) };
+    const { controller, service } = mkG(gate);
+    const res = await controller.changeStatus("u1", "t1", "c1", { status: "ISLEMDE" as never, reason: "r" });
+    expect(service.changeStatus).toHaveBeenCalledTimes(1);
+    expect(res).toEqual({ success: true, data: { id: "c1", caseStatus: "ISLEMDE" }, message: "Statü başarıyla değiştirildi" });
+  });
+
+  it("gate ENVELOPE (flag açık + CONFIRM_REQUIRED) → service.changeStatus ÇAĞRILMAZ, envelope AYNEN döner (statü değişmez)", async () => {
+    const envelope = {
+      axis: "GUIDED_OPEN_PERMISSION",
+      outcome: "CONFIRM_REQUIRED",
+      actionCode: ActionCode.CHANGE_STATUS,
+      target: { resourceType: "LegalCase", caseId: "c1" },
+      message: "Bu statü değişikliği için onay gerekiyor.",
+      confirmation: { token: "go.confirm.v1.X.Y", expiresAt: "2030-01-01T00:00:00.000Z", bindingHash: "bh" },
+    };
+    const gate = { evaluate: jest.fn().mockResolvedValue({ kind: "ENVELOPE", envelope }) };
+    const { controller, service } = mkG(gate);
+    const res = await controller.changeStatus("u1", "t1", "c1", { status: "HITAM" as never, reason: "r" });
+    expect(service.changeStatus).not.toHaveBeenCalled(); // statü DEĞİŞMEDİ
+    expect(res).toBe(envelope); // structured-200 envelope aynen
+  });
+
+  it("gate'e payload {status, reason} + caseId + surface + confirmationToken geçer; observe'den SONRA çağrılır", async () => {
+    const gate = { evaluate: jest.fn().mockResolvedValue({ kind: "PROCEED" }) };
+    const { controller, observe } = mkG(gate);
+    await controller.changeStatus("real-user", "tenant-1", "c1", { status: "ISLEMDE" as never, reason: "gerekçe", confirmationToken: "tok-123" });
+    expect(observe.observe).toHaveBeenCalledTimes(1);
+    expect(gate.evaluate).toHaveBeenCalledTimes(1);
+    const arg = gate.evaluate.mock.calls[0][0];
+    expect(arg).toMatchObject({
+      actorUserId: "real-user",
+      tenantId: "tenant-1",
+      caseId: "c1",
+      actionCode: ActionCode.CHANGE_STATUS,
+      surface: "POST /case-status/:caseId/change",
+      payload: { status: "ISLEMDE", reason: "gerekçe" },
+      confirmationToken: "tok-123",
+    });
+  });
+
+  it("reason yoksa gate payload.reason=null (issue↔consume hash deterministik)", async () => {
+    const gate = { evaluate: jest.fn().mockResolvedValue({ kind: "PROCEED" }) };
+    const { controller } = mkG(gate);
+    await controller.changeStatus("u1", "t1", "c1", { status: "ISLEMDE" as never });
+    expect(gate.evaluate.mock.calls[0][0].payload).toEqual({ status: "ISLEMDE", reason: null });
   });
 });
 
@@ -190,6 +260,7 @@ describe("P2b-2c-1 — CHANGE_STATUS HTTP binding (decorator/guard runtime)", ()
     getStatusHistory: jest.fn(),
   };
   const observe = { observe: jest.fn().mockResolvedValue(undefined) };
+  const gate = { evaluate: jest.fn().mockResolvedValue({ kind: "PROCEED" }) }; // P3-2C: default OFF → PROCEED
 
   const buildApp = async (authedUser: { id: string; tenantId: string } | null): Promise<INestApplication> => {
     const moduleRef = await Test.createTestingModule({
@@ -197,6 +268,7 @@ describe("P2b-2c-1 — CHANGE_STATUS HTTP binding (decorator/guard runtime)", ()
       providers: [
         { provide: CaseStatusService, useValue: service },
         { provide: GuidedOpenObserveService, useValue: observe },
+        { provide: GuidedEdgeGateService, useValue: gate },
       ],
     })
       .overrideGuard(JwtAuthGuard)
