@@ -21,6 +21,7 @@ const mockPrisma: any = {
   balanceLedger: { aggregate: jest.fn(), findMany: jest.fn() },
   expenseRequest: { findMany: jest.fn() },
   collectionDisposition: { findMany: jest.fn() }, // M2: POSTED proceeds
+  clientPayout: { findMany: jest.fn() }, // M3: RECORDED payouts
   clientStatement: { create: jest.fn(), update: jest.fn(), findFirst: jest.fn(), findMany: jest.fn() },
   clientStatementLine: { createMany: jest.fn() },
   $transaction: jest.fn((fn: any) => fn(mockPrisma)),
@@ -261,6 +262,7 @@ describe('ClientStatementService', () => {
       mockPrisma.caseClient.findFirst.mockResolvedValue({ id: 'cc-A' }); // statement'ın alacaklısı
       mockPrisma.caseBalance.findFirst.mockResolvedValue(null); // opening 0
       mockPrisma.expenseRequest.findMany.mockResolvedValue([]);
+      mockPrisma.clientPayout.findMany.mockResolvedValue([]); // M3: default payout yok
       mockPrisma.clientStatement.create.mockResolvedValue({ id: 'st-1' });
       mockPrisma.clientStatement.findFirst.mockResolvedValue({ id: 'st-1', lines: [] });
     });
@@ -323,6 +325,26 @@ describe('ClientStatementService', () => {
       const lines = call ? call[0].data : [];
       expect(lines.find((l: any) => l.refId === 'dl-other')).toBeUndefined();
       expect(mockPrisma.clientStatement.create.mock.calls[0][0].data.closingBalance.toString()).toBe('0');
+    });
+
+    it('M3 payout: CLIENT_PAYABLE 1000 + ClientPayout 400 → net 600; CLIENT_PAYOUT_SENT debit; collect read-only', async () => {
+      mockPrisma.collectionDisposition.findMany.mockResolvedValue([
+        { postedAt: new Date(3000), lines: [{ id: 'dl1', type: 'CLIENT_PAYABLE', amount: D(1000), caseClientId: 'cc-A' }] },
+      ]);
+      mockPrisma.clientPayout.findMany.mockResolvedValue([
+        { id: 'po1', amount: D(400), paidAt: new Date(4000) },
+      ]);
+      await service.create(TENANT, CASE, USER, dto);
+
+      const lines = mockPrisma.clientStatementLine.createMany.mock.calls[0][0].data;
+      expect(lines.find((l: any) => l.refId === 'dl1').credit.toString()).toBe('1000');
+      const payout = lines.find((l: any) => l.refId === 'po1');
+      expect(payout.lineType).toBe('CLIENT_PAYOUT_SENT');
+      expect(payout.refType).toBe('ClientPayout');
+      expect(payout.debit.toString()).toBe('400');
+      expect(payout.credit.toString()).toBe('0');
+      // net müvekkile-borç = 1000 − 400 = 600
+      expect(mockPrisma.clientStatement.create.mock.calls[0][0].data.closingBalance.toString()).toBe('600');
     });
   });
 });

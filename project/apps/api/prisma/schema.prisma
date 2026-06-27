@@ -3785,7 +3785,7 @@ enum ClientStatementLineType {
   FIRM_EXPENSE_REIMBURSEMENT // ofis masraf iadesi (BİLGİ, 0)
   CLIENT_EXPENSE_REIMBURSEMENT // müvekkile masraf iadesi (credit +)
   COLLECTION_OFFSET_ADVANCE // avans mahsubu (BİLGİ; bakiye etkisi BalanceLedger'dan, çift-sayım yok)
-  // NOT: CLIENT_PAYOUT_SENT M3 payout settlement'ta eklenecek (M2'de YOK).
+  CLIENT_PAYOUT_SENT // M3 payout: müvekkile fiili ödeme (debit −; ClientPayout kaynaklı, BalanceLedger DEĞİL)
 }
 
 // ============================================================
@@ -7612,4 +7612,39 @@ model CollectionDispositionLine {
 
   @@index([dispositionId])
   @@index([type])
+}
+
+// ============================================================
+// TM3 M3 — Müvekkile Ödeme (ClientPayout). DAR model: "müvekkile ödeme yapıldı/kaydedildi".
+// Banka talimatı/dekont/IBAN/onay-workflow/iptal-reversal YOK (lifecycle büyürse genişler).
+// LEDGER DEĞİLDİR — proceeds (CollectionDisposition CLIENT_PAYABLE) settlement KAYDIdır.
+// D1: payout = ClientPayout + ClientStatementLineType.CLIENT_PAYOUT_SENT; BalanceLedger'a YAZILMAZ.
+// Outstanding (per caseClientId) = Σ POSTED CLIENT_PAYABLE (collection CONFIRMED) − Σ RECORDED ClientPayout.
+// Idempotency tenant-scoped (@@unique [tenantId, idempotencyKey]); concurrency advisory-lock (servis).
+// ============================================================
+model ClientPayout {
+  id           String @id @default(cuid())
+  tenantId     String
+  caseId       String
+  caseClientId String
+
+  amount   Decimal            @db.Decimal(15, 2)
+  currency String             @default("TRY")
+  status   ClientPayoutStatus @default(RECORDED)
+
+  idempotencyKey String
+  paidAt         DateTime @default(now())
+  paidById       String
+  note           String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, caseId, caseClientId])
+  @@index([tenantId, caseId, paidAt])
+}
+
+enum ClientPayoutStatus {
+  RECORDED // Müvekkile ödeme kaydedildi (banka transfer lifecycle YOK)
 }
