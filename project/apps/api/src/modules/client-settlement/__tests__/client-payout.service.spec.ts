@@ -7,6 +7,7 @@
 import { BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { ClientPayoutService } from '../client-payout.service';
+import { ClientSettlementReadService } from '../client-settlement-read.service';
 
 const D = (n: number) => new Prisma.Decimal(n);
 
@@ -35,7 +36,7 @@ function buildPrisma(opts: {
   };
   return { prisma, tx };
 }
-const svc = (p: any) => new ClientPayoutService(p);
+const svc = (p: any) => new ClientPayoutService(p, new ClientSettlementReadService(p));
 const DTO = (over: any = {}) => ({ caseId: 'case1', caseClientId: 'cc-A', amount: '400', idempotencyKey: 'k1', ...over });
 const ACTOR = { userId: 'u1' };
 
