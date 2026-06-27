@@ -998,6 +998,10 @@ export default function CaseDetailPage() {
     void fetchCase();
   }, [fetchCase, fetchFinanceData]);
 
+  const refreshClaimItemMetadataDependentViews = useCallback(() => {
+    setFinancialSummaryRefreshKey((key) => key + 1);
+  }, []);
+
   // Fetch address tasks and notes for OperationDeck
   const fetchAddressTasksAndNotes = useCallback(async () => {
     if (!params.id) return;
@@ -2538,7 +2542,12 @@ export default function CaseDetailPage() {
               </button>
               {showCanonicalClaims && (
                 <div className="mt-2">
-                  <ClaimItemPanel caseId={caseData.id} readOnly metadataEdit />
+                  <ClaimItemPanel
+                    caseId={caseData.id}
+                    readOnly
+                    metadataEdit
+                    onMetadataEditSuccess={refreshClaimItemMetadataDependentViews}
+                  />
                 </div>
               )}
             </div>
