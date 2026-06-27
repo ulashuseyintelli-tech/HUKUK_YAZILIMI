@@ -26,7 +26,15 @@ function buildPrisma(opts: {
       aggregate: jest.fn().mockResolvedValue({ _sum: { amount: opts.paid ?? null } }),
       create: jest.fn().mockResolvedValue({ id: 'payout-1' }),
     },
-    collectionDispositionLine: { findMany: jest.fn().mockResolvedValue(opts.payableLines ?? []) },
+    collectionDispositionLine: {
+      findMany: jest.fn().mockImplementation((args?: any) => {
+        const rows = opts.payableLines ?? [];
+        if (args?.where?.disposition?.manualReversalRequiredAt === null) {
+          return Promise.resolve(rows.filter((row) => row.disposition?.manualReversalRequiredAt == null));
+        }
+        return Promise.resolve(rows);
+      }),
+    },
     collection: { findMany: jest.fn().mockResolvedValue(opts.confirmedCollections ?? []) },
   };
   const prisma: any = {
@@ -41,7 +49,7 @@ const DTO = (over: any = {}) => ({ caseId: 'case1', caseClientId: 'cc-A', amount
 const ACTOR = { userId: 'u1' };
 
 // outstanding=1000 senaryosu: 1 payable line (collection CONFIRMED), paid yok
-const OUT_1000 = { payableLines: [{ amount: D(1000), disposition: { collectionId: 'col1' } }], confirmedCollections: [{ id: 'col1' }] };
+const OUT_1000 = { payableLines: [{ amount: D(1000), disposition: { collectionId: 'col1', manualReversalRequiredAt: null } }], confirmedCollections: [{ id: 'col1' }] };
 
 describe('ClientPayoutService.create', () => {
   it('happy: amount<=outstanding → RECORDED + advisory-lock + create', async () => {
@@ -70,6 +78,18 @@ describe('ClientPayoutService.create', () => {
   it('collection CONFIRMED değil → payable outstanding\'e girmez (amount>0 reject)', async () => {
     const { prisma } = buildPrisma({ payableLines: [{ amount: D(1000), disposition: { collectionId: 'col1' } }], confirmedCollections: [] });
     await expect(svc(prisma).create('t1', DTO({ amount: '100' }), ACTOR)).rejects.toThrow(/aşamaz/);
+  });
+
+  it('manualReversalRequiredAt dolu POSTED payable yeni payout eligibility disinda kalir', async () => {
+    const { prisma, tx } = buildPrisma({
+      payableLines: [{ amount: D(1000), disposition: { collectionId: 'col1', manualReversalRequiredAt: new Date('2026-06-27T00:00:00.000Z') } }],
+      confirmedCollections: [{ id: 'col1' }],
+    });
+    await expect(svc(prisma).create('t1', DTO({ amount: '100' }), ACTOR)).rejects.toThrow(/outstanding/i);
+    expect(tx.clientPayout.create).not.toHaveBeenCalled();
+    expect(tx.collectionDispositionLine.findMany.mock.calls[0][0].where.disposition).toEqual(
+      expect.objectContaining({ manualReversalRequiredAt: null }),
+    );
   });
 
   it('idempotency (pre-check, AYNI payload): replay, transaction açılmaz', async () => {
