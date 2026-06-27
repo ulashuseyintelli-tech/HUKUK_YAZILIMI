@@ -4,6 +4,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
 import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
 import { OfficeService } from '@/modules/office/office.service';
+import { AuditService } from '@/modules/audit/audit.service';
 import { ClientStatementService } from './client-statement.service';
 import { CreateClientStatementDto } from './dto/client-statement.dto';
 
@@ -22,12 +23,15 @@ const mockPrisma: any = {
   expenseRequest: { findMany: jest.fn() },
   collectionDisposition: { findMany: jest.fn() }, // M2: POSTED proceeds
   clientPayout: { findMany: jest.fn() }, // M3: RECORDED payouts
-  clientStatement: { create: jest.fn(), update: jest.fn(), findFirst: jest.fn(), findMany: jest.fn() },
+  clientStatement: { create: jest.fn(), update: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   clientStatementLine: { createMany: jest.fn() },
   $transaction: jest.fn((fn: any) => fn(mockPrisma)),
 };
 const mockDispatcher: any = { dispatch: jest.fn().mockResolvedValue({ status: 'sent' }) };
 const mockOffice: any = { getOrCreate: jest.fn().mockResolvedValue({ name: 'Test Büro' }) };
+// Faz 7-E: audit mock — logInTransaction (mutation ile aynı tx). clearAllMocks implementasyonu silmez
+// ama count default'unu da korur; logInTransaction no-op (hata yutmaz davranışı testte ayrıca kontrol edilmez).
+const mockAudit: any = { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn() };
 
 describe('ClientStatementService', () => {
   let service: ClientStatementService;
@@ -42,6 +46,7 @@ describe('ClientStatementService', () => {
         { provide: PrismaService, useValue: mockPrisma },
         { provide: NotificationDispatcherService, useValue: mockDispatcher },
         { provide: OfficeService, useValue: mockOffice },
+        { provide: AuditService, useValue: mockAudit },
       ],
     }).compile();
     service = module.get(ClientStatementService);
@@ -345,6 +350,95 @@ describe('ClientStatementService', () => {
       expect(payout.credit.toString()).toBe('0');
       // net müvekkile-borç = 1000 − 400 = 600
       expect(mockPrisma.clientStatement.create.mock.calls[0][0].data.closingBalance.toString()).toBe('600');
+    });
+  });
+
+  describe('Faz 7-E — period-scoped tek-ACTIVE guard + audit', () => {
+    beforeEach(() => {
+      mockPrisma.case.findFirst.mockResolvedValue({ id: CASE });
+      mockPrisma.client.findFirst.mockResolvedValue({ id: CLIENT });
+      mockPrisma.caseClient.findFirst.mockResolvedValue(null);
+      mockPrisma.caseBalance.findFirst.mockResolvedValue(null); // opening 0, ledger okunmaz
+      mockPrisma.expenseRequest.findMany.mockResolvedValue([]);
+      mockPrisma.collectionDisposition.findMany.mockResolvedValue([]);
+      mockPrisma.clientPayout.findMany.mockResolvedValue([]);
+      mockPrisma.clientStatement.create.mockResolvedValue({ id: 'st-1' });
+      mockPrisma.clientStatement.findFirst.mockResolvedValue({ id: 'st-1', lines: [] });
+    });
+
+    it('aynı case+client+period için ACTIVE varsa create REDDEDİLİR (count>0)', async () => {
+      mockPrisma.clientStatement.count.mockResolvedValueOnce(1);
+      await expect(service.create(TENANT, CASE, USER, dto)).rejects.toThrow(/aktif ekstre zaten var/i);
+      // guard tx içinde → persist (create) çağrılmadı
+      expect(mockPrisma.clientStatement.create).not.toHaveBeenCalled();
+      // count period-scoped where ile sorgulandı
+      const where = mockPrisma.clientStatement.count.mock.calls[0][0].where;
+      expect(where).toEqual(
+        expect.objectContaining({ tenantId: TENANT, caseId: CASE, clientId: CLIENT, status: 'ACTIVE' }),
+      );
+      expect(where.periodStart).toBeInstanceOf(Date);
+      expect(where.periodEnd).toBeInstanceOf(Date);
+    });
+
+    it('farklı dönem (bu period için ACTIVE yok, count=0) → create İZİNLİ', async () => {
+      mockPrisma.clientStatement.count.mockResolvedValueOnce(0);
+      await service.create(TENANT, CASE, USER, dto);
+      expect(mockPrisma.clientStatement.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('create → CLIENT_STATEMENT_GENERATED audit (aynı tx)', async () => {
+      mockPrisma.clientStatement.count.mockResolvedValueOnce(0);
+      await service.create(TENANT, CASE, USER, dto);
+      expect(mockAudit.logInTransaction).toHaveBeenCalledWith(
+        mockPrisma, // tx (mock $transaction tx=mockPrisma)
+        expect.objectContaining({
+          action: 'CLIENT_STATEMENT_GENERATED',
+          entityType: 'ClientStatement',
+          entityId: 'st-1',
+          userId: USER,
+          tenantId: TENANT,
+        }),
+      );
+    });
+
+    it('boş ekstre (hareket yok) İZİNLİ — create REDDEDİLMEZ', async () => {
+      mockPrisma.clientStatement.count.mockResolvedValueOnce(0);
+      await service.create(TENANT, CASE, USER, dto);
+      // hiç satır yok ama statement yine de oluşturuldu
+      expect(mockPrisma.clientStatement.create).toHaveBeenCalledTimes(1);
+      const lineCall = mockPrisma.clientStatementLine.createMany.mock.calls[0];
+      if (lineCall) expect(lineCall[0].data).toHaveLength(0);
+    });
+
+    it('supersede → CLIENT_STATEMENT_SUPERSEDED audit (entityId = eski id)', async () => {
+      mockPrisma.clientStatement.findFirst
+        .mockResolvedValueOnce({ id: 'old-1', status: 'ACTIVE', caseId: CASE, clientId: CLIENT }) // findOwned
+        .mockResolvedValue({ id: 'new-1', lines: [] }); // findOne
+      mockPrisma.clientStatement.create.mockResolvedValue({ id: 'new-1' });
+      mockPrisma.clientStatement.count.mockResolvedValueOnce(0); // yeni dönem çakışması yok
+
+      await service.supersede(TENANT, 'old-1', USER, { periodStart: dto.periodStart, periodEnd: dto.periodEnd });
+
+      expect(mockAudit.logInTransaction).toHaveBeenCalledWith(
+        mockPrisma,
+        expect.objectContaining({
+          action: 'CLIENT_STATEMENT_SUPERSEDED',
+          entityType: 'ClientStatement',
+          entityId: 'old-1',
+          userId: USER,
+        }),
+      );
+    });
+
+    it('void → CLIENT_STATEMENT_VOIDED audit', async () => {
+      mockPrisma.clientStatement.findFirst
+        .mockResolvedValueOnce({ id: 'st-1', status: 'ACTIVE', caseId: CASE, clientId: CLIENT })
+        .mockResolvedValue({ id: 'st-1', lines: [] });
+      await service.void(TENANT, 'st-1', USER, 'gerekçe');
+      expect(mockAudit.logInTransaction).toHaveBeenCalledWith(
+        mockPrisma,
+        expect.objectContaining({ action: 'CLIENT_STATEMENT_VOIDED', entityType: 'ClientStatement', entityId: 'st-1', userId: USER }),
+      );
     });
   });
 });
