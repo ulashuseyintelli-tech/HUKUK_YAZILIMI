@@ -27,6 +27,8 @@ export interface ClientAccountingCase {
   caseNumber: string;
   executionFileNumber: string | null;
   currency: string;
+  /** Takip başlangıç tarihi (ISO) — ekstre default period fallback'i için (Faz7-E). */
+  caseOpenedAt: string | null;
 }
 
 export interface OutstandingResult {

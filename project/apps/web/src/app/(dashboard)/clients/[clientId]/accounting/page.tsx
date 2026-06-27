@@ -28,6 +28,7 @@ import {
   type ClientAccountingCase,
 } from '@/lib/api/client-accounting';
 import { PayoutCreateModal } from '@/components/client-accounting/PayoutCreateModal';
+import { StatementSection } from '@/components/client-accounting/StatementSection';
 
 const PAGE_SIZE = 20;
 
@@ -319,16 +320,15 @@ export default function ClientAccountingPage() {
         )}
       </Card>
 
-      {/* Müvekkil Ekstresi — boş-state (ekstre üret/yenile ayrı fazda = Faz 7-E) */}
-      <Card className="p-4">
-        <div className="flex items-center gap-2 mb-1">
-          <FileText className="w-5 h-5 text-gray-600" />
-          <h2 className="font-medium text-gray-900">Müvekkil Ekstresi</h2>
-        </div>
-        <p className="text-sm text-gray-500">
-          Henüz ekstre oluşturulmamış. Ekstre oluşturma/yenileme işlemi ayrı fazda açılacak.
-        </p>
-      </Card>
+      {/* Müvekkil Ekstresi — Faz 7-E: liste + Oluştur/Yenile (immutable snapshot, period-scoped) */}
+      {caseId && (
+        <StatementSection
+          caseId={caseId}
+          clientId={clientId}
+          currency={currency}
+          caseOpenedAt={selected?.caseOpenedAt ?? null}
+        />
+      )}
 
       {showPayoutModal && selected && caseId && caseClientId && (
         <PayoutCreateModal
