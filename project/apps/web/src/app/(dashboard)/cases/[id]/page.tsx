@@ -827,6 +827,7 @@ export default function CaseDetailPage() {
   // Alacak Kalemleri ve Tahsilatlar State
   const [dues, setDues] = useState<any[]>([]);
   const [collections, setCollections] = useState<any[]>([]);
+  const [collectionDispositions, setCollectionDispositions] = useState<any[]>([]);
   const [loadingFinance, setLoadingFinance] = useState(false);
   const [financialSummaryRefreshKey, setFinancialSummaryRefreshKey] = useState(0);
   
@@ -980,12 +981,17 @@ export default function CaseDetailPage() {
     if (!params.id) return;
     try {
       setLoadingFinance(true);
-      const [duesRes, collectionsRes] = await Promise.all([
+      const [duesRes, collectionsRes, dispositionsRes] = await Promise.all([
         api.getCaseDues(params.id as string),
         api.getCaseCollections(params.id as string),
+        api.getCollectionDispositionsByCase(params.id as string).catch((error) => {
+          console.warn("Muhasebe kayıtları yüklenemedi:", error);
+          return [];
+        }),
       ]);
       setDues(duesRes || []);
       setCollections(collectionsRes || []);
+      setCollectionDispositions(dispositionsRes || []);
     } catch (error) {
       console.error("Finans verileri yüklenemedi:", error);
     } finally {
@@ -998,6 +1004,105 @@ export default function CaseDetailPage() {
     void fetchFinanceData();
     void fetchCase();
   }, [fetchCase, fetchFinanceData]);
+
+  const getCollectionStatus = (collection: any) =>
+    String(collection?.status || "").toUpperCase();
+
+  const getCollectionDispositionStatus = (collection: any) =>
+    String(
+      collection?.accountingDispositionStatus ||
+      collection?.dispositionStatus ||
+      "",
+    ).toUpperCase();
+
+  const isDraftCollection = (collection: any) =>
+    ["PENDING", "DRAFT"].includes(getCollectionStatus(collection));
+
+  const isCancelledCollection = (collection: any) =>
+    getCollectionStatus(collection) === "CANCELLED";
+
+  const isPostedCollection = (collection: any) =>
+    getCollectionDispositionStatus(collection) === "POSTED";
+
+  const operationAccountingRecords = useMemo<any[]>(() => {
+    const collectionById = new Map(collections.map((collection: any) => [collection.id, collection]));
+    const statusLabels: Record<string, string> = {
+      POSTED: "Muhasebeye işlendi",
+      HELD_PENDING_DISTRIBUTION: "Dağıtım bekliyor",
+      CANCELLED: "İptal edildi",
+      REVERSED: "Reversed",
+    };
+
+    return collectionDispositions.map((disposition: any) => {
+      const sourceCollection = collectionById.get(disposition.collectionId);
+      const status = String(disposition.status || "").toUpperCase();
+      const hasManualReversal = Boolean(disposition.manualReversalRequiredAt);
+      let recordType = "DAGITIM_BEKLIYOR";
+
+      if (status === "POSTED") {
+        recordType = hasManualReversal ? "MANUEL_REVERSAL_GEREKLI" : "ODEME_ALINDI";
+      } else if (["CANCELLED", "REVERSED"].includes(status)) {
+        recordType = "IADE";
+      }
+
+      const lineTypes = Array.from(new Set(
+        (disposition.lines || []).map((line: any) => line.type).filter(Boolean),
+      ));
+      const statusLabel = hasManualReversal
+        ? "Manuel muhasebe takibi gerekli"
+        : statusLabels[status] || status || "Muhasebe kaydı";
+      const description = [
+        sourceCollection?.description || "Tahsilat",
+        `Durum: ${statusLabel}`,
+        lineTypes.length > 0 ? `Satırlar: ${lineTypes.join(", ")}` : null,
+      ].filter(Boolean).join(" - ");
+
+      return {
+        id: disposition.id,
+        type: recordType,
+        description,
+        amount: Number(disposition.totalAmount ?? sourceCollection?.amount ?? 0),
+        createdAt: disposition.postedAt || disposition.updatedAt || disposition.createdAt || sourceCollection?.createdAt || "",
+        relatedRequestId: disposition.collectionId,
+      };
+    });
+  }, [collectionDispositions, collections]);
+
+  const operationAccountingEmptyMessage = useMemo(() => {
+    const activeCollectionCount = collections.filter((collection: any) =>
+      String(collection?.status || "").toUpperCase() !== "CANCELLED",
+    ).length;
+
+    return activeCollectionCount > 0
+      ? "Tahsilat finans özetinde görünüyor; muhasebe hareketi henüz oluşturulmamış."
+      : "Bu dosyada henüz muhasebe hareketi oluşmamış.";
+  }, [collections]);
+
+  const handleCancelCollection = async (collection: any) => {
+    if (!caseData?.id || !collection?.id) return;
+
+    const reason = window.prompt("Tahsilatı iptal etme sebebini yazın:");
+    if (reason === null) return;
+
+    const trimmedReason = reason.trim();
+    if (!trimmedReason) {
+      alert("İptal sebebi girilmeden tahsilat iptal edilemez.");
+      return;
+    }
+
+    const confirmMessage = isPostedCollection(collection)
+      ? "Bu tahsilat muhasebe/posting etkisi içeriyor; iptal sonrası manuel muhasebe takibi gerekebilir. Devam edilsin mi?"
+      : "Bu tahsilatı iptal etmek istediğinize emin misiniz?";
+
+    if (!confirm(confirmMessage)) return;
+
+    try {
+      await api.cancelCollection(caseData.id, collection.id, trimmedReason);
+      refreshCollectionDependentViews();
+    } catch (err: any) {
+      alert(`İptal hatası: ${err?.message || "Bilinmeyen hata"}`);
+    }
+  };
 
   const refreshClaimItemMetadataDependentViews = useCallback(() => {
     setFinancialSummaryRefreshKey((key) => key + 1);
@@ -2459,16 +2564,15 @@ export default function CaseDetailPage() {
                       className="text-[9px] text-green-600 hover:text-green-800 hover:underline"
                       onClick={() => { setEditingCollection(null); setCollectionModalOpen(true); }}
                     >
-                      + Düzenle
+                      + Yeni Ödeme
                     </button>
                   </div>
                   <div className="bg-[#FAFAFB] border border-[#E5E7EB] rounded-lg p-2 min-h-[80px] max-h-[150px] overflow-y-auto">
                     {loadingFinance ? (
                       <p className="text-[9px] text-gray-400 text-center py-2">Yükleniyor...</p>
-                    ) : collections.filter((c: any) => c.status !== 'CANCELLED').length > 0 ? (
+                    ) : collections.length > 0 ? (
                       <div className="space-y-1">
-                        {collections
-                          .filter((c: any) => c.status !== 'CANCELLED')
+                        {[...collections]
                           .sort((a: any, b: any) => new Date(a.date || 0).getTime() - new Date(b.date || 0).getTime())
                           .map((col: any) => {
                           const typeLabels: Record<string, string> = {
@@ -2482,10 +2586,24 @@ export default function CaseDetailPage() {
                             CHECK: 'Çek',
                           };
                           const colDate = col.date ? new Date(col.date).toLocaleDateString('tr-TR') : '';
+                          const status = getCollectionStatus(col);
+                          const cancelled = isCancelledCollection(col);
+                          const draft = isDraftCollection(col);
+                          const posted = isPostedCollection(col);
+                          const statusLabel = cancelled
+                            ? 'İptal edildi'
+                            : posted
+                              ? 'Muhasebeye işlendi'
+                              : status === 'CONFIRMED'
+                                ? 'Onaylandı'
+                                : status === 'PENDING'
+                                  ? 'Hazırlık'
+                                  : status;
+                          const cancelledDate = col.cancelledAt ? new Date(col.cancelledAt).toLocaleString('tr-TR') : '';
                           return (
                           <div 
                             key={col.id} 
-                            className="flex justify-between items-center text-[10px] group hover:bg-green-50 rounded px-1 -mx-1 py-0.5"
+                            className={`flex justify-between items-center text-[10px] group hover:bg-green-50 rounded px-1 -mx-1 py-0.5 ${cancelled ? "opacity-70 bg-red-50/60" : ""}`}
                           >
                             <div 
                               className="flex flex-col min-w-0 flex-1 cursor-pointer"
@@ -2495,26 +2613,40 @@ export default function CaseDetailPage() {
                                 {typeLabels[col.type] || col.type}
                               </span>
                               <span className="text-[9px] text-gray-400">{colDate}</span>
+                              <span className={`text-[9px] ${cancelled ? "text-red-500" : posted ? "text-amber-600" : "text-gray-400"}`}>
+                                {statusLabel}
+                              </span>
+                              {cancelled && (cancelledDate || col.cancelReason) && (
+                                <span className="text-[9px] text-red-500 truncate">
+                                  {cancelledDate ? `İptal: ${cancelledDate}` : "İptal edildi"}
+                                  {col.cancelReason ? ` - ${col.cancelReason}` : ""}
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center gap-1">
                               <span className="font-medium text-green-700 flex-shrink-0">+{Number(col.amount || 0).toLocaleString('tr-TR')} ₺</span>
-                              <button
-                                onClick={async (e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  if (!confirm('Bu tahsilatı silmek istediğinize emin misiniz?')) return;
-                                  try {
-                                    await api.deleteCollection(caseData.id, col.id);
-                                    refreshCollectionDependentViews();
-                                  } catch (err: any) {
-                                    alert(`Silme hatası: ${err?.message || 'Bilinmeyen hata'}`);
-                                  }
-                                }}
-                                className="opacity-0 group-hover:opacity-100 p-0.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-opacity"
-                                title="Sil"
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
+                              {draft ? (
+                                <button
+                                  type="button"
+                                  disabled
+                                  className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-400 cursor-not-allowed rounded transition-opacity"
+                                  title="Taslak tahsilat silme bu sürümde devre dışı; ayrı void/discard akışı gerekiyor."
+                                >
+                                  <Info className="h-3 w-3" />
+                                </button>
+                              ) : !cancelled ? (
+                                <button
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    void handleCancelCollection(col);
+                                  }}
+                                  className="opacity-0 group-hover:opacity-100 p-0.5 text-amber-500 hover:text-amber-700 hover:bg-amber-50 rounded transition-opacity"
+                                  title={posted ? "Tahsilatı İptal Et / Reversal" : "Tahsilatı İptal Et"}
+                                >
+                                  <XCircle className="h-3 w-3" />
+                                </button>
+                              ) : null}
                             </div>
                           </div>
                         );
@@ -2566,6 +2698,8 @@ export default function CaseDetailPage() {
             <div className="flex-1 overflow-hidden flex flex-col bg-white border border-[#E5E7EB] rounded-lg shadow-[0_1px_2px_rgba(0,0,0,0.04)]">
               <OperationDeck
                 caseId={caseData.id}
+                muhasebeKayitlari={operationAccountingRecords}
+                accountingEmptyMessage={operationAccountingEmptyMessage}
                 // Müvekkil Talepleri - AddressAuditLog + Expense Requests
                 muvekkilTalepleri={[
                   // Adres talepleri

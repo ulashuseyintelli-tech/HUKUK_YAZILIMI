@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Loader2, Trash2 } from "lucide-react";
+import { X, Loader2, XCircle } from "lucide-react";
 import { api } from "@/lib/api";
 
 const COLLECTION_TYPES = [
@@ -33,7 +33,7 @@ interface CollectionModalProps {
 
 export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess }: CollectionModalProps) {
   const [loading, setLoading] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [canceling, setCanceling] = useState(false);
   const [form, setForm] = useState({
     type: "TAHSILAT",
     channel: "BANKA",
@@ -67,10 +67,19 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
     }
   }, [collection, isOpen]);
 
+  const collectionStatus = String(collection?.status || "").toUpperCase();
+  const dispositionStatus = String(
+    collection?.accountingDispositionStatus || collection?.dispositionStatus || "",
+  ).toUpperCase();
+  const isDraftCollection = ["PENDING", "DRAFT"].includes(collectionStatus);
+  const isCancelledCollection = collectionStatus === "CANCELLED";
+  const isPostedCollection = dispositionStatus === "POSTED";
+
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.amount || !form.type) return;
+    if (isCancelledCollection) return;
 
     setLoading(true);
     try {
@@ -98,23 +107,38 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
     }
   };
 
-  const handleDelete = async () => {
-    if (!collection?.id) return;
-    if (!confirm("Bu ödemeyi silmek istediğinize emin misiniz?")) return;
 
-    setDeleting(true);
+
+  const handleCancel = async () => {
+    if (!collection?.id || isDraftCollection || isCancelledCollection) return;
+
+    const reason = window.prompt("Tahsilatı iptal etme sebebini yazın:");
+    if (reason === null) return;
+
+    const trimmedReason = reason.trim();
+    if (!trimmedReason) {
+      alert("İptal sebebi girilmeden tahsilat iptal edilemez.");
+      return;
+    }
+
+    const confirmMessage = isPostedCollection
+      ? "Bu tahsilat muhasebe/posting etkisi içeriyor; iptal sonrası manuel muhasebe takibi gerekebilir. Devam edilsin mi?"
+      : "Bu tahsilatı iptal etmek istediğinize emin misiniz?";
+
+    if (!confirm(confirmMessage)) return;
+
+    setCanceling(true);
     try {
-      await api.deleteCollection(caseId, collection.id);
+      await api.cancelCollection(caseId, collection.id, trimmedReason);
       onSuccess();
       onClose();
     } catch (error: any) {
-      console.error("Silme hatası:", error);
-      alert(`Silme başarısız: ${error?.message || 'Bilinmeyen hata'}`);
+      console.error("İptal hatası:", error);
+      alert(`İptal başarısız: ${error?.message || "Bilinmeyen hata"}`);
     } finally {
-      setDeleting(false);
+      setCanceling(false);
     }
   };
-
   if (!isOpen) return null;
 
   return (
@@ -126,14 +150,14 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
             {collection ? "Ödeme Düzenle" : "Yeni Ödeme"}
           </h3>
           <div className="flex items-center gap-2">
-            {collection?.id && (
-              <button 
-                onClick={handleDelete} 
-                disabled={deleting}
-                className="text-red-500 hover:text-red-700 p-1"
-                title="Sil"
+            {collection?.id && !isDraftCollection && !isCancelledCollection && (
+              <button
+                onClick={handleCancel}
+                disabled={canceling}
+                className="text-amber-600 hover:text-amber-800 p-1 disabled:opacity-50"
+                title="Tahsilatı İptal Et"
               >
-                {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+                {canceling ? <Loader2 className="h-4 w-4 animate-spin" /> : <XCircle className="h-4 w-4" />}
               </button>
             )}
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
@@ -143,6 +167,25 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
         </div>
 
         <form onSubmit={handleSubmit} className="p-4 space-y-3">
+          {isDraftCollection && !isCancelledCollection && (
+            <div className="rounded-md border border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-600">
+              Taslak tahsilat silme bu sürümde devre dışı; ayrı void/discard akışı gerekiyor.
+            </div>
+          )}
+          {isCancelledCollection && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              <p>
+                İptal edildi
+                {collection?.cancelledAt ? ` (${new Date(collection.cancelledAt).toLocaleString("tr-TR")})` : ""}
+              </p>
+              {collection?.cancelReason && <p className="mt-1">Sebep: {collection.cancelReason}</p>}
+            </div>
+          )}
+          {isPostedCollection && !isCancelledCollection && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              Bu tahsilat muhasebe/posting etkisi içeriyor; iptal sonrası manuel muhasebe takibi gerekebilir.
+            </div>
+          )}
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Tür *</label>
             <select
@@ -233,7 +276,7 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
             </button>
             <button
               type="submit"
-              disabled={loading || !form.amount}
+              disabled={loading || !form.amount || isCancelledCollection}
               className="px-4 py-2 text-sm bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 flex items-center gap-2"
             >
               {loading && <Loader2 className="h-4 w-4 animate-spin" />}

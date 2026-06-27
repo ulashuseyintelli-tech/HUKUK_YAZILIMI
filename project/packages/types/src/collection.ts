@@ -1,12 +1,12 @@
 /**
  * Collection (Tahsilat) Domain Types
- * 
+ *
  * Tüm tahsilat ile ilgili tipler burada tanımlı.
- * 
+ *
  * ⚠️ ÖNEMLİ: Tahsilat dağıtımı (allocation) hesabı
  * SADECE interest-engine/TBK100AllocatorService tarafından yapılır.
  * Bu modül sadece event store ve projection görevi görür.
- * 
+ *
  * @see ARCHITECTURE.md - Shared Contracts
  * @see interest-engine/allocation/tbk100-allocator.service.ts
  */
@@ -42,6 +42,12 @@ export enum CollectionChannelEnum {
   PTT = 'PTT',
   OTHER = 'OTHER',
 }
+
+export type CollectionDispositionStatus =
+  | 'HELD_PENDING_DISTRIBUTION'
+  | 'POSTED'
+  | 'CANCELLED'
+  | 'REVERSED';
 
 /**
  * TBK 100 Mahsup Sırası
@@ -100,7 +106,7 @@ export const AllocationTypeLabels: Record<AllocationTypeEnum, string> = {
 
 /**
  * Allocation (Mahsup) DTO
- * 
+ *
  * ⚠️ Bu değerler interest-engine/TBK100AllocatorService tarafından hesaplanır.
  * Collection modülü sadece sonucu saklar.
  */
@@ -110,7 +116,7 @@ export interface AllocationDTO {
   allocationType: AllocationTypeEnum;
   amount: Money;
   description?: string;
-  
+
   /** Hesaplama kaynağı - her zaman 'interest-engine' olmalı */
   source: 'interest-engine' | 'legacy';
 }
@@ -123,48 +129,54 @@ export interface CollectionDTO {
   tenantId: TenantId;
   caseId: CaseId;
   caseDebtorId?: string;
-  
+
   /** Tahsilat tutarı */
   amount: Money;
-  
+
   /** Tahsilat tipi */
   type: CollectionTypeEnum;
-  
+
   /** Tahsilat kanalı */
   channel: CollectionChannelEnum;
-  
+
   /** Durum */
   status: CollectionStatusEnum;
-  
+
   /** Tahsilat tarihi - ISO 8601 (YYYY-MM-DD) */
   date: string;
-  
+
   /** Valör tarihi */
   valueDate?: string;
-  
+
   /** Makbuz/Dekont no */
   receiptNo?: string;
-  
+
   /** Banka bilgileri */
   bankName?: string;
   accountNo?: string;
-  
+
   /** Açıklama */
   description?: string;
-  
+
   /** Notlar */
   notes?: string;
-  
+
   /**
    * Mahsup dağılımı - ÇEKİRDEKTEN GELİR
    * interest-engine/TBK100AllocatorService tarafından hesaplanır
    */
   allocations: AllocationDTO[];
-  
+
   /** İptal bilgileri */
   cancelledAt?: string;
   cancelReason?: string;
-  
+
+  /** Muhasebe/dağıtım görünürlüğü - CollectionDisposition read-model */
+  accountingDispositionStatus?: CollectionDispositionStatus;
+  accountingPostedAt?: string;
+  manualReversalRequiredAt?: string;
+  manualReversalReason?: string;
+
   createdAt: string;
   updatedAt: string;
 }
@@ -185,7 +197,7 @@ export interface CreateCollectionRequest {
   accountNo?: string;
   description?: string;
   notes?: string;
-  
+
   /**
    * Otomatik mahsup yapılsın mı?
    * true: interest-engine/TBK100AllocatorService çağrılır
@@ -231,53 +243,53 @@ export interface CollectionSummaryDTO {
  */
 export interface CaseCollectionSummary {
   caseId: CaseId;
-  
+
   /** Toplam onaylı tahsilat */
   totalConfirmed: Money;
-  
+
   /** Bekleyen tahsilat */
   totalPending: Money;
-  
+
   /** İptal edilen tahsilat */
   totalCancelled: Money;
-  
+
   /** Tahsilat sayısı */
   collectionCount: number;
-  
+
   /** Son tahsilat tarihi */
   lastCollectionDate?: string;
-  
+
   /** Kanala göre dağılım */
   byChannel: Record<CollectionChannelEnum, Money>;
-  
+
   /** Tipe göre dağılım */
   byType: Record<CollectionTypeEnum, Money>;
 }
 
 /**
  * Allocation sonucu - interest-engine'den döner
- * 
+ *
  * @see interest-engine/allocation/tbk100-allocator.service.ts
  */
 export interface AllocationResult {
   /** Tahsilat ID */
   collectionId: CollectionId;
-  
+
   /** Tahsilat tutarı */
   paymentAmount: Money;
-  
+
   /** Dağıtım detayları */
   allocations: AllocationDTO[];
-  
+
   /** Tahsilat sonrası kalan borç */
   remainingDebt: Money;
-  
+
   /** Tahsilat sonrası kalan anapara */
   remainingPrincipal: Money;
-  
+
   /** Hesaplama tarihi */
   calculatedAt: string;
-  
+
   /** Hesaplama kaynağı */
   source: 'interest-engine';
 }

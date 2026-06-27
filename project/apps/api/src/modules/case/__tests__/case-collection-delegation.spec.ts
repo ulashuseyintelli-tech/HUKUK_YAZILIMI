@@ -81,6 +81,54 @@ describe('CaseService collection delegation (G3d)', () => {
     );
   });
 
+  it('S4-1: getCaseCollections muhasebe/disposition gorunurlugunu tenant+case scope ile ekler', async () => {
+    const postedAt = new Date('2026-06-27T10:00:00Z');
+    const manualReversalRequiredAt = new Date('2026-06-27T11:00:00Z');
+    const collections = [
+      { id: 'col-posted', tenantId: 't1', caseId: 'c1', status: 'CONFIRMED' },
+      { id: 'col-plain', tenantId: 't1', caseId: 'c1', status: 'CONFIRMED' },
+    ];
+    const prisma = {
+      case: { findFirst: jest.fn(async () => ({ id: 'c1' })) },
+      collection: { findMany: jest.fn(async () => collections) },
+      collectionDisposition: {
+        findMany: jest.fn(async () => [
+          {
+            collectionId: 'col-posted',
+            status: 'POSTED',
+            postedAt,
+            manualReversalRequiredAt,
+            manualReversalReason: 'manual takip',
+          },
+        ]),
+      },
+    };
+    const svc = buildService({}, prisma);
+
+    const result = await svc.getCaseCollections('t1', 'c1') as any[];
+
+    expect(prisma.case.findFirst).toHaveBeenCalledWith({ where: { id: 'c1', tenantId: 't1' } });
+    expect(prisma.collection.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { caseId: 'c1', tenantId: 't1' } }));
+    expect(prisma.collectionDisposition.findMany).toHaveBeenCalledWith({
+      where: { tenantId: 't1', caseId: 'c1', collectionId: { in: ['col-posted', 'col-plain'] } },
+      select: {
+        collectionId: true,
+        status: true,
+        postedAt: true,
+        manualReversalRequiredAt: true,
+        manualReversalReason: true,
+      },
+    });
+    expect(result[0]).toMatchObject({
+      id: 'col-posted',
+      accountingDispositionStatus: 'POSTED',
+      accountingPostedAt: postedAt,
+      manualReversalRequiredAt,
+      manualReversalReason: 'manual takip',
+    });
+    expect(result[1]).toEqual(collections[1]);
+  });
+
   it('T4: cancelCollection route caseId + tenant guard sonrası collectionService.cancel delegasyonu yapar', async () => {
     const coll = { create: jest.fn(), cancel: jest.fn(async () => ({ id: 'col1' })) };
     const prisma = buildPrisma({ id: 'col1', tenantId: 't1', caseId: 'c1', status: 'CONFIRMED' });

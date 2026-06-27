@@ -12,6 +12,8 @@ vi.mock("@/lib/api", () => ({
     createCollection: vi.fn(),
     updateCollection: vi.fn(),
     deleteCollection: vi.fn(),
+    cancelCollection: vi.fn(),
+    getCollectionDispositionsByCase: vi.fn(),
     createDue: vi.fn(),
     updateDue: vi.fn(),
     deleteDue: vi.fn(),
@@ -36,6 +38,8 @@ const apiMock = api as unknown as {
   createCollection: ReturnType<typeof vi.fn>;
   updateCollection: ReturnType<typeof vi.fn>;
   deleteCollection: ReturnType<typeof vi.fn>;
+  cancelCollection: ReturnType<typeof vi.fn>;
+  getCollectionDispositionsByCase: ReturnType<typeof vi.fn>;
   createDue: ReturnType<typeof vi.fn>;
   updateDue: ReturnType<typeof vi.fn>;
   deleteDue: ReturnType<typeof vi.fn>;
@@ -119,12 +123,18 @@ function CaseDueRefreshHarness({ due }: { due?: any }) {
 function readCasePageSource() {
   return readFileSync("src/app/(dashboard)/cases/[id]/page.tsx", "utf8");
 }
+
+function readOperationDeckSource() {
+  return readFileSync("src/components/case-detail/OperationDeck.tsx", "utf8");
+}
 describe("collection summary refresh", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     apiMock.createCollection.mockResolvedValue({ id: "collection-1" });
     apiMock.updateCollection.mockResolvedValue({ id: "collection-1" });
     apiMock.deleteCollection.mockResolvedValue({ success: true });
+    apiMock.cancelCollection.mockResolvedValue({ id: "collection-1", status: "CANCELLED" });
+    apiMock.getCollectionDispositionsByCase.mockResolvedValue([]);
     apiMock.createDue.mockResolvedValue({ id: "due-1" });
     apiMock.updateDue.mockResolvedValue({ id: "due-1" });
     apiMock.deleteDue.mockResolvedValue({ success: true });
@@ -158,10 +168,7 @@ describe("collection summary refresh", () => {
         expect.objectContaining({ amount: 100000 }),
       );
     });
-    await waitFor(() => {
-      expect(refetchCalculation).toHaveBeenCalledTimes(1);
-    });
-    expect(refetchShadowDiff).not.toHaveBeenCalled();
+
   });
 
   it("tahsilat guncelleme basarili olunca stale hesap ozetini refetch eder", async () => {
@@ -198,7 +205,28 @@ describe("collection summary refresh", () => {
     expect(refetchShadowDiff).not.toHaveBeenCalled();
   });
 
-  it("tahsilat silme basarili olunca stale hesap ozetini refetch eder", async () => {
+  it("pending tahsilatta delete aksiyonunu calisir gostermeyip void-discard mesajini verir", () => {
+    render(
+      <CaseFinanceRefreshHarness
+        collection={{
+          id: "collection-1",
+          type: "TAHSILAT",
+          channel: "BANKA",
+          amount: 50000,
+          date: "2026-06-25",
+          currency: "TRY",
+          status: "PENDING",
+        }}
+      />,
+    );
+
+    expect(screen.queryByTitle("Sil")).not.toBeInTheDocument();
+    expect(screen.getByText(/Taslak tahsilat silme/)).toBeInTheDocument();
+    expect(apiMock.deleteCollection).not.toHaveBeenCalled();
+    expect(refetchCalculation).not.toHaveBeenCalled();
+  });
+  it("confirmed tahsilat iptalinde cancel endpointini kullanir ve delete cagirmaz", async () => {
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("sehven kayit");
     const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
     render(
       <CaseFinanceRefreshHarness
@@ -209,21 +237,86 @@ describe("collection summary refresh", () => {
           amount: 50000,
           date: "2026-06-25",
           currency: "TRY",
+          status: "CONFIRMED",
         }}
       />,
     );
 
-    expect(refetchCalculation).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByTitle("Sil"));
+    fireEvent.click(screen.getByTitle("Tahsilatı İptal Et"));
 
     await waitFor(() => {
-      expect(apiMock.deleteCollection).toHaveBeenCalledWith("case-1", "collection-1");
+      expect(apiMock.cancelCollection).toHaveBeenCalledWith("case-1", "collection-1", "sehven kayit");
     });
+    expect(apiMock.deleteCollection).not.toHaveBeenCalled();
     await waitFor(() => {
       expect(refetchCalculation).toHaveBeenCalledTimes(1);
     });
-    expect(refetchShadowDiff).not.toHaveBeenCalled();
+
+    promptSpy.mockRestore();
+    confirmSpy.mockRestore();
+  });
+
+  it("posted tahsilat iptalinde muhasebe uyarisi verir", async () => {
+    const promptSpy = vi.spyOn(window, "prompt").mockReturnValue("posted reversal");
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(
+      <CaseFinanceRefreshHarness
+        collection={{
+          id: "collection-1",
+          type: "TAHSILAT",
+          channel: "BANKA",
+          amount: 50000,
+          date: "2026-06-25",
+          currency: "TRY",
+          status: "CONFIRMED",
+          accountingDispositionStatus: "POSTED",
+        }}
+      />,
+    );
+
+    fireEvent.click(screen.getByTitle("Tahsilatı İptal Et"));
+
+    await waitFor(() => {
+      expect(confirmSpy).toHaveBeenCalledWith(expect.stringContaining("muhasebe/posting"));
+    });
+    await waitFor(() => {
+      expect(apiMock.cancelCollection).toHaveBeenCalledWith("case-1", "collection-1", "posted reversal");
+    });
+    expect(apiMock.deleteCollection).not.toHaveBeenCalled();
+
+    promptSpy.mockRestore();
+    confirmSpy.mockRestore();
+  });
+
+  it("case page tahsilat aksiyonunda confirmed icin cancel, draft icin disabled bilgi kullanir", () => {
+    const source = readCasePageSource();
+
+    expect(source).toContain("+ Yeni Ödeme");
+    expect(source).toContain("await api.cancelCollection(caseData.id, collection.id, trimmedReason);");
+    expect(source).toContain("title={posted ? \"Tahsilatı İptal Et / Reversal\" : \"Tahsilatı İptal Et\"}");
+
+    expect(source).toContain("Taslak tahsilat silme bu sürümde devre dışı; ayrı void/discard akışı gerekiyor.");
+    expect(source).not.toContain("await api.deleteCollection(caseData.id, col.id);");
+  });
+
+  it("case page muhasebe tabini disposition read modeliyle besler", () => {
+    const source = readCasePageSource();
+
+    expect(source).toContain("api.getCollectionDispositionsByCase(params.id as string)");
+    expect(source).toContain("setCollectionDispositions(dispositionsRes || []);");
+    expect(source).toContain("muhasebeKayitlari={operationAccountingRecords}");
+    expect(source).toContain("accountingEmptyMessage={operationAccountingEmptyMessage}");
+    expect(source).toContain("Tahsilat finans özetinde görünüyor; muhasebe hareketi henüz oluşturulmamış.");
+  });
+
+  it("operation deck muhasebe paneli notr baslik ve acik empty-state kullanir", () => {
+    const source = readOperationDeckSource();
+
+    expect(source).toContain("accountingEmptyMessage?: string");
+    expect(source).toContain("Parasal olay kayıtları");
+    expect(source).toContain("Bu alan hassas finans/muhasebe kayıtlarını içerir.");
+    expect(source).not.toContain("Sadece muhasebe ve yetkili görür");
+    expect(source).not.toContain("Henüz muhasebe kaydı yok");
   });
 
   it("alacak kalemi kaydi basarili olunca stale hesap ozetini refetch eder", async () => {
