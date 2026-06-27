@@ -296,6 +296,43 @@ describe('ClientStatementService', () => {
       expect(fee.runningBalance.toString()).toBe('60');
 
       expect(mockPrisma.clientStatement.create.mock.calls[0][0].data.closingBalance.toString()).toBe('60');
+      expect(mockPrisma.collectionDisposition.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: TENANT,
+          caseId: CASE,
+          status: 'POSTED',
+          manualReversalRequiredAt: null,
+        }),
+      }));
+    });
+
+    it('manualReversalRequiredAt dolu POSTED disposition yeni normal statement snapshotina GIRMEZ', async () => {
+      const sourceRows = [
+        {
+          postedAt: new Date(3000),
+          manualReversalRequiredAt: null,
+          lines: [{ id: 'dl-ok', type: 'CLIENT_PAYABLE', amount: D(60), caseClientId: 'cc-A' }],
+        },
+        {
+          postedAt: new Date(3500),
+          manualReversalRequiredAt: new Date('2026-06-27T00:00:00Z'),
+          lines: [{ id: 'dl-blocked', type: 'CLIENT_PAYABLE', amount: D(90), caseClientId: 'cc-A' }],
+        },
+      ];
+      mockPrisma.collectionDisposition.findMany.mockImplementation(async (args: any) => sourceRows
+        .filter((row) => (args.where.manualReversalRequiredAt === null ? row.manualReversalRequiredAt === null : true))
+        .map((row) => ({ postedAt: row.postedAt, lines: row.lines })));
+
+      await service.create(TENANT, CASE, USER, dto);
+
+      expect(mockPrisma.collectionDisposition.findMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: expect.objectContaining({ tenantId: TENANT, caseId: CASE, status: 'POSTED', manualReversalRequiredAt: null }),
+      }));
+      const lines = mockPrisma.clientStatementLine.createMany.mock.calls[0][0].data;
+      expect(lines.find((l: any) => l.refId === 'dl-ok')).toBeDefined();
+      expect(lines.find((l: any) => l.refId === 'dl-blocked')).toBeUndefined();
+      expect(mockPrisma.clientStatement.create.mock.calls[0][0].data.closingBalance.toString()).toBe('60');
+      expect(mockPrisma.clientStatement.update).not.toHaveBeenCalled();
     });
 
     it('OFFSET çift-sayım YOK: BalanceLedger CREDIT bir kez oynatır, proceeds OFFSET = bilgi(0)', async () => {

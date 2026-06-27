@@ -364,6 +364,12 @@ export class ClientStatementService {
    * dönem-içi para hareketleri (BalanceLedger) + bilgi satırları (ExpenseRequest),
    * tarihe göre sıralı runningBalance. Para hareketi işaretli amount ile yürür;
    * bilgi satırı bakiyeyi oynatmaz.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ClientStatementService.create() → Yeni ACTIVE statement snapshot üretimi
+   * - ClientStatementService.supersede() → Eski ACTIVE statement yerine yeni snapshot üretimi
+   * </remarks>
    */
   private async collect(
     tenantId: string,
@@ -410,7 +416,7 @@ export class ClientStatementService {
     }[] = [];
     if (statementCaseClientId) {
       const posted = await this.prisma.collectionDisposition.findMany({
-        where: { tenantId, caseId, status: 'POSTED', postedAt: { gte: periodStart, lte: periodEnd } },
+        where: { tenantId, caseId, status: 'POSTED', manualReversalRequiredAt: null, postedAt: { gte: periodStart, lte: periodEnd } },
         select: { postedAt: true, lines: { select: { id: true, type: true, amount: true, caseClientId: true } } },
       });
       for (const d of posted) {
