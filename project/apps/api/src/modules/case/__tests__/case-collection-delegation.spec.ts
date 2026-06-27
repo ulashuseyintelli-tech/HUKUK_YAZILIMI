@@ -92,7 +92,7 @@ describe('CaseService collection delegation (G3d)', () => {
       where: { id: 'col1', caseId: 'c1', tenantId: 't1' },
       select: { id: true },
     });
-    expect(coll.cancel).toHaveBeenCalledWith('t1', 'col1', { cancelReason: 'iptal nedeni' });
+    expect(coll.cancel).toHaveBeenCalledWith('t1', 'col1', { cancelReason: 'iptal nedeni' }, 'c1');
   });
 
   it('TM3-S2: cancelCollection wrong route caseId fail-closed olur ve cancel delegasyonu yapmaz', async () => {
