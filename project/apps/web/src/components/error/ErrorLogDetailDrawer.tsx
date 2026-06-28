@@ -1,9 +1,13 @@
 "use client";
 
-// PR-5: Hata logu detay drawer'ı. Tüm alanlar + metadata viewer (GÜVENLİ JSON: <pre>, max-height,
-// overflow, HTML render YOK → React text-escape) + requestId üst alanda. Çözülmemişse resolve formu.
+// PR-5 + polish: Hata logu detay drawer'ı. Tüm alanlar + metadata viewer (GÜVENLİ JSON: <pre>,
+// max-height, overflow, HTML render YOK → React text-escape) + requestId üstte. Çözülmemişse resolve formu.
+// Polish: requestId/stack/metadata copy butonları · firstSeen/lastSeen/resolvedAt göreli zaman (absolute=title)
+// · uzun message taşmadan sarılır. KORUNAN: metadata/stack yalnız text/pre; resolve akışı; alan semantiği.
 import { type ErrorLogRecord } from "@/lib/api";
+import { relativeTime } from "@/lib/relative-time";
 import { ResolveErrorLogForm } from "./ResolveErrorLogForm";
+import { CopyButton } from "./CopyButton";
 
 interface Props {
   log: ErrorLogRecord | null;
@@ -24,7 +28,18 @@ function Field({ label, value, mono }: { label: string; value: string; mono?: bo
   return (
     <div className="mb-3">
       <div className="text-xs text-gray-500 mb-0.5">{label}</div>
-      <div className={`text-sm break-words ${mono ? "font-mono" : ""}`}>{value}</div>
+      <div className={`text-sm break-words whitespace-pre-wrap ${mono ? "font-mono" : ""}`}>{value}</div>
+    </div>
+  );
+}
+
+function TimeField({ label, value }: { label: string; value?: string | null }) {
+  return (
+    <div className="mb-3">
+      <div className="text-xs text-gray-500 mb-0.5">{label}</div>
+      <div className="text-sm" title={fmt(value)}>
+        {relativeTime(value)}
+      </div>
     </div>
   );
 }
@@ -32,6 +47,7 @@ function Field({ label, value, mono }: { label: string; value: string; mono?: bo
 export function ErrorLogDetailDrawer({ log, onClose, onResolved }: Props) {
   if (!log) return null;
   const requestId = log.metadata && typeof log.metadata === "object" ? (log.metadata as any).requestId : undefined;
+  const metadataJson = log.metadata ? JSON.stringify(log.metadata, null, 2) : "";
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-label="Hata log detayı">
@@ -50,9 +66,21 @@ export function ErrorLogDetailDrawer({ log, onClose, onResolved }: Props) {
           <span className={`px-2 py-0.5 rounded ${log.isResolved ? "bg-green-100 text-green-700" : "bg-amber-100 text-amber-700"}`}>
             {log.isResolved ? "Çözüldü" : "Açık"}
           </span>
+          {(log.occurrenceCount ?? 1) > 1 && (
+            <span className="px-2 py-0.5 rounded bg-gray-100 text-gray-600">×{log.occurrenceCount}</span>
+          )}
         </div>
 
-        {requestId && <Field label="Request ID" value={String(requestId)} mono />}
+        {requestId && (
+          <div className="mb-3">
+            <div className="flex items-center justify-between mb-0.5">
+              <span className="text-xs text-gray-500">Request ID</span>
+              <CopyButton value={String(requestId)} ariaLabel="Request ID kopyala" />
+            </div>
+            <div className="text-sm font-mono break-all">{String(requestId)}</div>
+          </div>
+        )}
+
         <Field label="Mesaj" value={log.message} />
         {log.endpoint && (
           <Field
@@ -61,23 +89,27 @@ export function ErrorLogDetailDrawer({ log, onClose, onResolved }: Props) {
           />
         )}
         <Field label="Tekrar" value={String(log.occurrenceCount ?? 1)} />
-        <Field label="İlk görülme" value={fmt(log.firstSeenAt ?? log.createdAt)} />
-        <Field label="Son görülme" value={fmt(log.lastSeenAt ?? log.createdAt)} />
+        <TimeField label="İlk görülme" value={log.firstSeenAt ?? log.createdAt} />
+        <TimeField label="Son görülme" value={log.lastSeenAt ?? log.createdAt} />
         {log.userId && <Field label="Kullanıcı" value={log.userId} mono />}
 
         {log.stack && (
           <div className="mb-3">
-            <div className="text-xs text-gray-500 mb-1">Stack</div>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-gray-500">Stack</span>
+              <CopyButton value={log.stack} ariaLabel="Stack kopyala" />
+            </div>
             <pre className="max-h-64 overflow-auto bg-gray-900 text-gray-100 text-xs p-3 rounded">{log.stack}</pre>
           </div>
         )}
 
         {log.metadata && (
           <div className="mb-3">
-            <div className="text-xs text-gray-500 mb-1">Metadata</div>
-            <pre className="max-h-64 overflow-auto bg-gray-50 text-xs p-3 rounded border">
-              {JSON.stringify(log.metadata, null, 2)}
-            </pre>
+            <div className="flex items-center justify-between mb-1">
+              <span className="text-xs text-gray-500">Metadata</span>
+              <CopyButton value={metadataJson} ariaLabel="Metadata kopyala" />
+            </div>
+            <pre className="max-h-64 overflow-auto bg-gray-50 text-xs p-3 rounded border">{metadataJson}</pre>
           </div>
         )}
 
@@ -86,7 +118,7 @@ export function ErrorLogDetailDrawer({ log, onClose, onResolved }: Props) {
             <div className="text-green-700 font-medium text-sm mb-2">Çözüldü</div>
             {log.resolution && <Field label="Açıklama" value={log.resolution} />}
             {log.resolvedBy && <Field label="Çözen" value={log.resolvedBy} mono />}
-            {log.resolvedAt && <Field label="Çözüm zamanı" value={fmt(log.resolvedAt)} />}
+            {log.resolvedAt && <TimeField label="Çözüm zamanı" value={log.resolvedAt} />}
           </div>
         ) : (
           <div className="mt-4 border-t pt-4">
