@@ -3806,6 +3806,60 @@ enum ClientStatementLineType {
   CLIENT_EXPENSE_REIMBURSEMENT // müvekkile masraf iadesi (credit +)
   COLLECTION_OFFSET_ADVANCE // avans mahsubu (BİLGİ; bakiye etkisi BalanceLedger'dan, çift-sayım yok)
   CLIENT_PAYOUT_SENT // M3 payout: müvekkile fiili ödeme (debit −; ClientPayout kaynaklı, BalanceLedger DEĞİL)
+
+  // Faz C — Cross-ledger offset (mahsup) satırları (ClientOffset kaynaklı; APPLY+REVERSAL toplam delta 0).
+  // ADR: docs/finance/adr-client-offset-cross-ledger-settlement.md. C-0=yalnız enum; üretim/etki LOGIC'i C-1.
+  CLIENT_OFFSET_PAYABLE_APPLIED // mahsup: müvekkile borç azaldı (debit −)
+  CLIENT_OFFSET_EXPENSE_APPLIED // mahsup: müvekkilin masraf borcu azaldı (credit +)
+  CLIENT_OFFSET_PAYABLE_REVERSED // mahsup iptali: müvekkile borç geri yüklendi (credit +)
+  CLIENT_OFFSET_EXPENSE_REVERSED // mahsup iptali: masraf borcu geri yüklendi (debit −)
+}
+
+// ============================================================
+// TM3 Faz C — Müvekkil Mahsubu (ClientOffset). IMMUTABLE event: müvekkile-özgü İKİ KARŞIT brüt bakiyeyi
+// (payable proceeds + masraf borcu) AYNI tutarda, nakit-hareketsiz kapatır; net pozisyon DEĞİŞMEZ.
+// kind=APPLY|REVERSAL — orijinal APPLY ASLA update edilmez; reversal AYRI immutable kayıt (reversesOffsetId).
+// Scalar alanlar (ClientPayout/CollectionDisposition deseni; @relation YOK). Cross-tenant/client/currency YASAK
+// (C-1 service enforce). C-0 = YALNIZ persistence: apply/reverse/outstanding/statement/audit/approval LOGIC YOK.
+// ADR: docs/finance/adr-client-offset-cross-ledger-settlement.md
+// ============================================================
+model ClientOffset {
+  id       String           @id @default(cuid())
+  tenantId String
+  clientId String
+
+  amount   Decimal          @db.Decimal(15, 2)
+  currency String           @default("TRY")
+  kind     ClientOffsetKind
+
+  // payable leg — proceeds payable (kanonik bağ caseClientId; çoklu-alacaklıda doğru kişi)
+  payableCaseId       String
+  payableCaseClientId String
+
+  // expense leg — masraf borcu (ExpenseRequest clientId+caseId-scoped → satır pinlenir; caseClientId YOK)
+  expenseCaseId    String
+  expenseRequestId String
+
+  idempotencyKey   String
+  approvalRef      String? // confirm-token / approval kayıt id (ham token DEĞİL)
+  createdById      String
+  approvedById     String?
+  reason           String? // REVERSAL'da ZORUNLU (min 10 char) — C-1 service enforce; şema nullable
+  reversesOffsetId String? // APPLY→null; REVERSAL→orijinal APPLY id (self-ref scalar, FK gevşek)
+
+  createdAt DateTime @default(now())
+
+  @@unique([tenantId, idempotencyKey])
+  @@unique([tenantId, reversesOffsetId]) // double-reversal guard (Postgres: NULL'lar distinct → APPLY'lar çakışmaz)
+  @@index([tenantId, clientId, currency, kind])
+  @@index([payableCaseClientId])
+  @@index([expenseRequestId])
+  @@index([createdAt])
+}
+
+enum ClientOffsetKind {
+  APPLY // mahsup uygulandı
+  REVERSAL // mahsup iptali (orijinali update ETMEZ; ayrı immutable kayıt)
 }
 
 // ============================================================
