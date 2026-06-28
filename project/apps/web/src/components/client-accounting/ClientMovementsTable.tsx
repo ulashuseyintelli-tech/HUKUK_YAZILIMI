@@ -20,6 +20,7 @@ import {
   formatMoneyString,
   type MovementScopeGroup,
   type MovementClientEffect,
+  type MovementSourceType,
 } from '@/lib/api/client-accounting';
 
 const MOV_PAGE_SIZE = 25;
@@ -29,12 +30,48 @@ const GROUP_LABEL: Record<MovementScopeGroup, string> = {
   CASE_CONTEXT: 'Dosya Geneli',
 };
 
-/** clientEffect → etiket + işaret + renk. CASE_CONTEXT = nötr (işaretsiz, gri). */
+/** sourceType → hukuk bürosu diline çevrilmiş İŞLEM tipi (yalnız label katmanı; backend aynı). */
+const SOURCE_TYPE_LABEL: Record<MovementSourceType, string> = {
+  EXPENSE_REQUEST: 'Müvekkilden Masraf Talep Edildi',
+  EXPENSE_PAYMENT: 'Masraf Tahsil Edildi',
+  CLIENT_PAYOUT: 'Müvekkile Ödeme Yapıldı',
+  COLLECTION_DISPOSITION: 'Müvekkile Borç Oluştu',
+  COLLECTION: 'Borçludan Tahsilat Geldi',
+  CASE_BALANCE: 'Dosya Avans Hareketi',
+};
+
+/** Teknik durum kodları → Türkçe. Bilinmeyen değer ham gösterilir (sızıntı değil, güvenli fallback). */
+const STATUS_LABEL: Record<string, string> = {
+  POSTED: 'İşlendi',
+  RECORDED: 'Kayıtlı',
+  CONFIRMED: 'Onaylı',
+  CANCELLED: 'İptal',
+  REFUNDED: 'İade',
+  PENDING: 'Beklemede',
+  SENT: 'Gönderildi',
+  REMINDED: 'Hatırlatıldı',
+  PARTIAL: 'Kısmi',
+  RECEIVED: 'Alındı',
+  PAID: 'Ödendi',
+  LAWYER_PAID: 'Avukat Ödedi',
+  OVERDUE: 'Gecikmiş',
+  DEBIT: 'Borç',
+  CREDIT: 'Alacak',
+  ADJUST: 'Düzeltme',
+  REFUND: 'İade',
+};
+
+/** Kaynak kayıt referansı (ileride satır→kart link'i için): kısa id + tam id title'da. */
+function sourceRef(sourceId: string): { short: string; full: string } {
+  return { short: `#${sourceId.slice(-6)}`, full: sourceId };
+}
+
+/** clientEffect → YÖN etiketi + işaret + renk. CASE_CONTEXT = nötr (işaretsiz, gri, müvekkile atfedilmez). */
 const EFFECT_META: Record<MovementClientEffect, { label: string; sign: '+' | '−' | ''; cls: string }> = {
-  INCREASE_CLIENT_PAYABLE: { label: 'Müvekkile borç doğdu', sign: '+', cls: 'text-emerald-700' },
-  DECREASE_CLIENT_PAYABLE: { label: 'Müvekkile ödeme', sign: '−', cls: 'text-green-700' },
-  INCREASE_CLIENT_EXPENSE_DEBT: { label: 'Masraf borcu', sign: '+', cls: 'text-amber-700' },
-  DECREASE_CLIENT_EXPENSE_DEBT: { label: 'Masraf tahsil edildi', sign: '−', cls: 'text-green-700' },
+  INCREASE_CLIENT_PAYABLE: { label: 'Müvekkile borç ↑', sign: '+', cls: 'text-emerald-700' },
+  DECREASE_CLIENT_PAYABLE: { label: 'Müvekkile borç ↓', sign: '−', cls: 'text-green-700' },
+  INCREASE_CLIENT_EXPENSE_DEBT: { label: 'Masraf borcu ↑', sign: '+', cls: 'text-amber-700' },
+  DECREASE_CLIENT_EXPENSE_DEBT: { label: 'Masraf borcu ↓', sign: '−', cls: 'text-green-700' },
   NO_DIRECT_CLIENT_EFFECT: { label: 'Dosya geneli (müvekkile etki yok)', sign: '', cls: 'text-gray-400' },
 };
 
@@ -195,28 +232,30 @@ export function ClientMovementsTable({ clientId, currency = 'TRY', cases }: Clie
               <thead className="bg-gray-50">
                 <tr className="border-b text-left">
                   <th className="px-2 py-2 whitespace-nowrap">Tarih</th>
+                  <th className="px-2 py-2">İşlem</th>
                   <th className="px-2 py-2 whitespace-nowrap">Dosya</th>
-                  <th className="px-2 py-2">Açıklama</th>
                   <th className="px-2 py-2">Kapsam</th>
                   <th className="px-2 py-2 text-right whitespace-nowrap">Tutar</th>
                   <th className="px-2 py-2">Yön</th>
                   <th className="px-2 py-2">Durum</th>
+                  <th className="px-2 py-2 whitespace-nowrap">Kaynak</th>
                 </tr>
               </thead>
               <tbody className="divide-y">
                 {data.items.map((m) => {
                   const eff = EFFECT_META[m.clientEffect];
                   const isContext = m.scopeGroup === 'CASE_CONTEXT';
+                  const ref = sourceRef(m.sourceId);
                   return (
                     <tr key={m.id} className={`hover:bg-gray-50 ${isContext ? 'bg-slate-50/40' : ''}`}>
                       <td className="px-2 py-2 whitespace-nowrap text-gray-600">
                         {new Date(m.occurredAt).toLocaleDateString('tr-TR')}
                       </td>
-                      <td className="px-2 py-2 whitespace-nowrap">{m.caseNo || '—'}</td>
                       <td className="px-2 py-2">
-                        <div className="text-gray-900">{m.label}</div>
+                        <div className="text-gray-900">{SOURCE_TYPE_LABEL[m.sourceType]}</div>
                         {m.description && <div className="text-[10px] text-gray-400">{m.description}</div>}
                       </td>
+                      <td className="px-2 py-2 whitespace-nowrap">{m.caseNo || '—'}</td>
                       <td className="px-2 py-2 whitespace-nowrap">
                         <Badge variant="secondary" className={isContext ? 'opacity-70' : ''}>
                           {GROUP_LABEL[m.scopeGroup]}
@@ -227,7 +266,15 @@ export function ClientMovementsTable({ clientId, currency = 'TRY', cases }: Clie
                         {formatMoneyString(m.amount, m.currency || currency)}
                       </td>
                       <td className={`px-2 py-2 whitespace-nowrap ${eff.cls}`}>{eff.label}</td>
-                      <td className="px-2 py-2 whitespace-nowrap text-gray-500">{m.status}</td>
+                      <td className="px-2 py-2 whitespace-nowrap text-gray-500">
+                        {STATUS_LABEL[m.status] ?? m.status}
+                      </td>
+                      <td
+                        className="px-2 py-2 whitespace-nowrap font-mono text-[10px] text-gray-400"
+                        title={`${SOURCE_TYPE_LABEL[m.sourceType]} · ${ref.full}`}
+                      >
+                        {ref.short}
+                      </td>
                     </tr>
                   );
                 })}

@@ -71,15 +71,31 @@ describe('ClientMovementsTable (Faz A-MOV-FE)', () => {
 
   it('satırları + kapsam etiketlerini render eder; CASE_CONTEXT nötr "etki yok"', async () => {
     renderTable();
-    expect(await screen.findByText('Müvekkilden masraf talep edildi')).toBeInTheDocument();
-    // tablo içine scope'la ("Müvekkile Özgü"/"Dosya Geneli" filtre option'larında da geçer)
+    // İŞLEM = domain-dili sourceType etiketi (teknik isim DEĞİL)
+    expect(await screen.findByText('Müvekkilden Masraf Talep Edildi')).toBeInTheDocument();
     const table = screen.getByRole('table');
-    expect(within(table).getByText('Borçlu tahsilatı (dosya geneli)')).toBeInTheDocument();
+    expect(within(table).getByText('Borçludan Tahsilat Geldi')).toBeInTheDocument();
+    // Kapsam badge ("Müvekkile Özgü"/"Dosya Geneli" filtre option'larında da geçer → tabloya scope'la)
     expect(within(table).getByText('Müvekkile Özgü')).toBeInTheDocument();
     expect(within(table).getByText('Dosya Geneli')).toBeInTheDocument();
-    // CASE_CONTEXT → işaretsiz nötr etiket (müvekkile gelen para gibi gösterilmez)
+    // CASE_CONTEXT → işaretsiz nötr yön etiketi (müvekkile gelen para gibi gösterilmez)
     expect(within(table).getByText('Dosya geneli (müvekkile etki yok)')).toBeInTheDocument();
     expect(screen.getByText('2 hareket')).toBeInTheDocument();
+  });
+
+  it('domain etiket katmanı: teknik sourceType/status SIZMAZ (İşlem + Durum Türkçe), Kaynak referansı var', async () => {
+    renderTable();
+    await screen.findByText('Müvekkilden Masraf Talep Edildi');
+    const table = screen.getByRole('table');
+    // Durum teknik kod DEĞİL → Türkçe (PENDING→Beklemede, CONFIRMED→Onaylı)
+    expect(within(table).getByText('Beklemede')).toBeInTheDocument();
+    expect(within(table).getByText('Onaylı')).toBeInTheDocument();
+    // Ham teknik isimler tabloda görünmemeli
+    for (const tech of ['EXPENSE_REQUEST', 'COLLECTION', 'PENDING', 'CONFIRMED', 'CLIENT_SPECIFIC', 'CASE_CONTEXT']) {
+      expect(within(table).queryByText(tech)).toBeNull();
+    }
+    // Kaynak sütunu: her satırda '#' ile başlayan kısa referans (ileride satır→kart link'i için)
+    expect(within(table).getAllByText(/^#/).length).toBe(2);
   });
 
   it('Kapsam filtresi → group param (Müvekkile Özgü = CLIENT_SPECIFIC)', async () => {
