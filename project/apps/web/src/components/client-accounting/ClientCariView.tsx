@@ -14,6 +14,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Card, Badge, Spinner } from '@hukuk/ui';
 import { Wallet, Send, CheckCircle, Landmark, Building2, Info, AlertCircle, Scale, AlertTriangle } from 'lucide-react';
 import { clientAccountingApi, formatMoneyString } from '@/lib/api/client-accounting';
+import { ClientMovementsTable } from './ClientMovementsTable';
 
 interface ClientCariViewProps {
   clientId: string;
@@ -71,7 +72,7 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
           <Metric
             icon={Scale}
             accent="text-gray-700"
-            label="Mahsup Edilebilir Net Pozisyon"
+            label="Bilgi Amaçlı Net Pozisyon"
             value={M(s.clientScoped.offsettableNetPosition)}
             note="Bilgi amaçlıdır; defter kaydı/mahsup DEĞİLDİR."
           />
@@ -171,6 +172,13 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
           Bekleyen/Masraf-Avans) dosya genelidir ve çoklu alacaklıda müvekkile atfedilmez.
         </p>
       </Card>
+
+      {/* Birleşik Hareketler — Faz A-MOV (read-only; mahsup/ekstre/export YOK, running balance YOK) */}
+      <ClientMovementsTable
+        clientId={clientId}
+        currency={cur}
+        cases={s.caseBreakdown.map((b) => ({ caseId: b.caseId, caseNumber: b.caseNumber }))}
+      />
     </div>
   );
 }
