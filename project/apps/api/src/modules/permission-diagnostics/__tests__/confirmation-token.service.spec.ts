@@ -197,3 +197,25 @@ describe('ConfirmationTokenService (P3-1b substrate)', () => {
     expect(log).not.toHaveBeenCalled(); // hiçbir yan etki yok
   });
 });
+
+describe('ConfirmationTokenService.isSecretConfigured (P3-2D-0; THROW ETMEZ)', () => {
+  it('GUIDED_OPEN_CONFIRM_TOKEN_SECRET varsa → true', () => {
+    const { svc } = makeService({ GUIDED_OPEN_CONFIRM_TOKEN_SECRET: 's' });
+    expect(svc.isSecretConfigured()).toBe(true);
+  });
+
+  it('yalnız JWT_SECRET varsa (fallback) → true', () => {
+    const { svc } = makeService({ JWT_SECRET: 'jwt' });
+    expect(svc.isSecretConfigured()).toBe(true);
+  });
+
+  it('hiçbiri yoksa → false (THROW ETMEZ — secret() aksine)', () => {
+    const { svc } = makeService({});
+    expect(svc.isSecretConfigured()).toBe(false);
+  });
+
+  it('boş/whitespace secret → false', () => {
+    expect(makeService({ GUIDED_OPEN_CONFIRM_TOKEN_SECRET: '' }).svc.isSecretConfigured()).toBe(false);
+    expect(makeService({ JWT_SECRET: '   ' }).svc.isSecretConfigured()).toBe(false);
+  });
+});
