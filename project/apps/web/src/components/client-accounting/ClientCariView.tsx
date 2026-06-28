@@ -7,7 +7,8 @@
  *  A) Müvekkile Özgü — temiz toplanır (caseClientId/clientId scope).
  *  B) Dosya Geneli / Paylaşılan Bağlam — müvekkile ATFEDİLMEZ (distinct caseId). Açık uyarı.
  * UI HESAP MOTORU DEĞİL: değerler backend'den (offsettableNetPosition yalnız BİLGİ).
- * Genel ekstre / mahsup butonu YOK (Faz B/C). Yeni mutation YOK.
+ * Faz B-2: client-level immutable "Genel Ekstre" (Oluştur/Yenile) bu ekranda eklendi (yalnız CLIENT_SPECIFIC).
+ * Mahsup butonu hâlâ YOK (Faz C). Summary/movements salt-okuma kalır.
  */
 
 import { useQuery } from '@tanstack/react-query';
@@ -15,6 +16,7 @@ import { Card, Badge, Spinner } from '@hukuk/ui';
 import { Wallet, Send, CheckCircle, Landmark, Building2, Info, AlertCircle, Scale, AlertTriangle } from 'lucide-react';
 import { clientAccountingApi, formatMoneyString } from '@/lib/api/client-accounting';
 import { ClientMovementsTable } from './ClientMovementsTable';
+import { ClientLevelStatementSection } from './ClientLevelStatementSection';
 
 interface ClientCariViewProps {
   clientId: string;
@@ -175,6 +177,13 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
 
       {/* Birleşik Hareketler — Faz A-MOV (read-only; mahsup/ekstre/export YOK, running balance YOK) */}
       <ClientMovementsTable
+        clientId={clientId}
+        currency={cur}
+        cases={s.caseBreakdown.map((b) => ({ caseId: b.caseId, caseNumber: b.caseNumber }))}
+      />
+
+      {/* Müvekkil Genel Ekstresi — Faz B-2 (client-level immutable; yalnız CLIENT_SPECIFIC, mahsup YOK) */}
+      <ClientLevelStatementSection
         clientId={clientId}
         currency={cur}
         cases={s.caseBreakdown.map((b) => ({ caseId: b.caseId, caseNumber: b.caseNumber }))}
