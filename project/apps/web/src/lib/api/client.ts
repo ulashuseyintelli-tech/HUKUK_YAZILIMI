@@ -1,6 +1,7 @@
 /**
  * API Client - Base HTTP client with authentication
  */
+import { reportClientError, shouldReportNetworkError } from "../error-reporter"; // PR-4: yalnız network-failure
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -42,10 +43,25 @@ export class ApiClient {
       ...options.headers,
     };
 
-    const response = await fetch(`${API_URL}/api${endpoint}`, {
-      ...options,
-      headers,
-    });
+    let response: Response;
+    try {
+      response = await fetch(`${API_URL}/api${endpoint}`, {
+        ...options,
+        headers,
+      });
+    } catch (err: any) {
+      // PR-4: yalnız gerçek ağ hatası raporlanır (HTTP response DEĞİL → backend loglar; /error-logs/log self-skip).
+      if (shouldReportNetworkError(err, endpoint)) {
+        reportClientError({
+          level: "ERROR",
+          message: `Network error: ${err?.message ?? "fetch failed"}`,
+          stack: err?.stack,
+          endpoint: `web:apiClient ${endpoint}`,
+          metadata: { safeErrorCode: "NETWORK_ERROR" },
+        });
+      }
+      throw err;
+    }
 
     if (!response.ok) {
       const error = await response.json().catch(() => ({}));

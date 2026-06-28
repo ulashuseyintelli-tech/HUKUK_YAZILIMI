@@ -1,6 +1,7 @@
 import type { InstrumentChain, ChainAnalysis } from "./instrument-chain";
 import { buildResponsibilityAtPath, type CombinedResponsibilityResult } from "./responsibility-at";
 import { buildResponsibilityHistoryPath, type ResponsibilityHistoryResult, type ResponsibilityHistoryParams } from "./responsibility-history";
+import { reportClientError, shouldReportNetworkError } from "./error-reporter"; // PR-4: yalnız network-failure
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
@@ -62,6 +63,17 @@ class ApiClient {
 
       return response.json();
     } catch (err: any) {
+      // PR-4: YALNIZ gerçek ağ hatası ErrorLog'a (HTTP response hatası DEĞİL → backend zaten loglar;
+      // /error-logs/log self-skip). best-effort, davranış değişmez (aşağıdaki rethrow korunur).
+      if (shouldReportNetworkError(err, endpoint)) {
+        reportClientError({
+          level: 'ERROR',
+          message: `Network error: ${err?.message ?? 'fetch failed'}`,
+          stack: err?.stack,
+          endpoint: `web:api ${endpoint}`,
+          metadata: { safeErrorCode: 'NETWORK_ERROR' },
+        });
+      }
       // Network hatası - API'ye bağlanılamıyor
       if (err.name === 'TypeError' && err.message === 'Failed to fetch') {
         throw new Error('API sunucusuna bağlanılamıyor. Lütfen API\'nin çalıştığından emin olun (http://localhost:8080). Terminalde "pnpm run dev" komutunu çalıştırın.');
