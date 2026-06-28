@@ -27,6 +27,7 @@ const mockPrisma: any = {
   collectionDisposition: { findMany: jest.fn() }, // M2 case-level: POSTED proceeds (disposition+lines)
   collectionDispositionLine: { findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) }, // Faz B client-level
   clientPayout: { findMany: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) }, // M3 RECORDED payouts
+  clientOffset: { findMany: jest.fn().mockResolvedValue([]) }, // TM3 Faz C C-1 — offset satırları (default: yok)
   clientStatement: { create: jest.fn(), update: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   clientStatementLine: { createMany: jest.fn() },
   $executeRaw: jest.fn().mockResolvedValue(1), // pg_advisory_xact_lock (Faz 7-E concurrency guard)

@@ -48,6 +48,11 @@ function buildPrisma(
       findMany: jest.fn().mockResolvedValue(opts.payouts ?? []),
       count: jest.fn().mockResolvedValue(opts.total ?? (opts.payouts?.length ?? 0)),
     },
+    // TM3 Faz C C-1 — offset no-op (yokken sonuç birebir aynı): aggregate→null, findMany→[]
+    clientOffset: {
+      aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }),
+      findMany: jest.fn().mockResolvedValue([]),
+    },
   } as any;
 }
 
@@ -291,6 +296,8 @@ function buildSummaryPrisma(o: {
     },
     expenseRequest: { findMany: jest.fn().mockResolvedValue(o.expenseRows ?? []) },
     collectionDispositionLine: { findMany: jest.fn().mockResolvedValue([]) },
+    // TM3 Faz C C-1 — getClientAccountingSummary offset offRows fetch (default: yok → offsetNet 0, sonuç değişmez).
+    clientOffset: { findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) },
   } as any;
 }
 

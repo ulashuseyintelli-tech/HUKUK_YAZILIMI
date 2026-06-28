@@ -39,6 +39,10 @@ export interface ClientCaseBreakdownItem {
   paidToClient: string;
   expenseRequested: string;
   expensePaid: string;
+  /** TM3 Faz C C-1 — net ClientOffset (APPLY−REVERSAL) payable bacağı (payableCaseId). payableNet'e ZATEN yansıdı (bilgi). */
+  offsetPayableApplied: string;
+  /** TM3 Faz C C-1 — net ClientOffset (APPLY−REVERSAL) masraf bacağı (expenseCaseId). expense unpaid'i düşürür. */
+  offsetExpenseApplied: string;
   // B — dosya geneli / paylaşılan bağlam (caseId scope — müvekkile atfedilmez)
   debtorCollection: string;
   pendingDistribution: string;
@@ -62,8 +66,10 @@ export interface ClientAccountingSummary {
     paidToClient: string; // Σ ClientPayout RECORDED (caseClientId)
     expenseRequested: string; // Σ ExpenseRequest.totalAmount (clientId)
     expensePaid: string; // Σ ExpenseRequest.paidTotal (clientId)
-    expenseUnpaid: string; // requested − paid
-    offsettableNetPosition: string; // payableNet − expenseUnpaid — BİLGİ; defter kaydı DEĞİL
+    expenseUnpaid: string; // requested − paid − net ClientOffset (masraf bacağı)
+    /** TM3 Faz C C-1 — Σ net ClientOffset (APPLY−REVERSAL). Payable+expense bacaklarını AYNI tutarda düşürür → netPosition DEĞİŞMEZ. */
+    offsetApplied: string;
+    offsettableNetPosition: string; // payableNet − expenseUnpaid — BİLGİ; defter kaydı DEĞİL (offset'ten BAĞIMSIZ invariant)
   };
   /** B grubu — DOSYA GENELİ / paylaşılan bağlam (müvekkile atfedilmez), distinct caseId toplamı. */
   caseScopedContext: {
@@ -171,9 +177,10 @@ export class ClientSettlementReadService {
 
   /**
    * Outstanding payable (TEK KAYNAK, drift yok): Σ POSTED CLIENT_PAYABLE (underlying Collection
-   * CONFIRMED) − Σ RECORDED ClientPayout. Scope tenant+case+caseClientId+currency.
-   * manualReversalRequiredAt dolu POSTED disposition payout/outstanding uygunluguna dahil degil.
-   * HELD/CONTRACTUAL_FEE/FIRM_REIMB/OFFSET/OTHER ve BalanceLedger DAHİL DEĞİL.
+   * CONFIRMED) − Σ RECORDED ClientPayout − Σ APPLY ClientOffset(payable leg) + Σ REVERSAL ClientOffset.
+   * Scope tenant+case+caseClientId+currency. manualReversalRequiredAt dolu POSTED disposition dahil değil.
+   * HELD/CONTRACTUAL_FEE/FIRM_REIMB/CollectionDispositionLine-tipi-OFFSET/OTHER ve BalanceLedger DAHİL DEĞİL.
+   * (ClientOffset ≠ CollectionDispositionLine.type 'OFFSET'; ClientOffset Faz C C-1 read-time uygulanır, MUTATE etmez.)
    *
    * @param db PrismaService (read) veya tx (ClientPayoutService transaction içi).
    * Çağrıldığı yerler:
@@ -215,7 +222,22 @@ export class ClientSettlementReadService {
       _sum: { amount: true },
       where: { tenantId, caseId, caseClientId, currency, status: 'RECORDED' },
     });
-    return payable.minus(paidAgg._sum.amount ?? ZERO);
+
+    // TM3 Faz C C-1 — ClientOffset (payable leg) read-time subtraction. Kayıt MUTATE edilmez; APPLY uygulanan
+    // mahsubu düşer, REVERSAL geri ekler (net etki = aktif APPLY − reverse). Offset yokken sonuç birebir aynı.
+    const offApply = await db.clientOffset.aggregate({
+      _sum: { amount: true },
+      where: { tenantId, currency, kind: 'APPLY', payableCaseId: caseId, payableCaseClientId: caseClientId },
+    });
+    const offReversal = await db.clientOffset.aggregate({
+      _sum: { amount: true },
+      where: { tenantId, currency, kind: 'REVERSAL', payableCaseId: caseId, payableCaseClientId: caseClientId },
+    });
+
+    return payable
+      .minus(paidAgg._sum.amount ?? ZERO)
+      .minus(offApply._sum.amount ?? ZERO)
+      .plus(offReversal._sum.amount ?? ZERO);
   }
 
   /**
@@ -392,7 +414,24 @@ export class ClientSettlementReadService {
       const prev = expByCase.get(e.caseId) ?? { requested: ZERO, paid: ZERO };
       expByCase.set(e.caseId, { requested: prev.requested.plus(e.totalAmount), paid: prev.paid.plus(e.paidTotal) });
     }
-    const expUnpaid = expRequested.minus(expPaid);
+
+    // TM3 Faz C C-1 — net ClientOffset (APPLY−REVERSAL). Payable bacağı ZATEN computeOutstanding üzerinden
+    // payableNet'e yansıdı; burada (a) masraf unpaid'i düş (b) breakdown için iki bacağı caseId bazında ayır.
+    // offsetNet payable+expense'i AYNI tutarda düşürdüğü için offsettableNetPosition DEĞİŞMEZ (locked invariant).
+    const offRows = await this.prisma.clientOffset.findMany({
+      where: { tenantId, clientId, currency },
+      select: { amount: true, kind: true, payableCaseId: true, expenseCaseId: true },
+    });
+    let offsetNet = ZERO; // Σ APPLY − Σ REVERSAL
+    const offPayableByCase = new Map<string, Prisma.Decimal>();
+    const offExpenseByCase = new Map<string, Prisma.Decimal>();
+    for (const o of offRows) {
+      const signed = o.kind === 'APPLY' ? o.amount : o.amount.negated();
+      offsetNet = offsetNet.plus(signed);
+      offPayableByCase.set(o.payableCaseId, (offPayableByCase.get(o.payableCaseId) ?? ZERO).plus(signed));
+      offExpenseByCase.set(o.expenseCaseId, (offExpenseByCase.get(o.expenseCaseId) ?? ZERO).plus(signed));
+    }
+    const expUnpaid = expRequested.minus(expPaid).minus(offsetNet);
 
     // caseBreakdown — distinct caseId (ccRows sırası korunur)
     const caseMeta = new Map<string, { caseNumber: string; executionFileNumber: string | null; role: string }>();
@@ -419,6 +458,8 @@ export class ClientSettlementReadService {
         paidToClient: a.paid.toString(),
         expenseRequested: e.requested.toString(),
         expensePaid: e.paid.toString(),
+        offsetPayableApplied: (offPayableByCase.get(caseId) ?? ZERO).toString(),
+        offsetExpenseApplied: (offExpenseByCase.get(caseId) ?? ZERO).toString(),
         debtorCollection: b.debtorCollection.toString(),
         pendingDistribution: b.pendingDist.toString(),
         advanceBalance: b.advance.toString(),
@@ -435,6 +476,7 @@ export class ClientSettlementReadService {
         expenseRequested: expRequested.toString(),
         expensePaid: expPaid.toString(),
         expenseUnpaid: expUnpaid.toString(),
+        offsetApplied: offsetNet.toString(),
         offsettableNetPosition: totalPayableNet.minus(expUnpaid).toString(),
       },
       caseScopedContext: {
