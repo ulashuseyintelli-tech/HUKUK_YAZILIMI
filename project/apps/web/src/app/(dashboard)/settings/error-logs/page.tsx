@@ -1,104 +1,104 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { AlertTriangle, AlertCircle, Info, Bug, CheckCircle, RefreshCw, Filter, Search } from "lucide-react";
+import { useState, useEffect, useCallback, type ReactNode } from "react";
+import { AlertCircle, AlertTriangle, Info, Bug, CheckCircle, RefreshCw } from "lucide-react";
+import { api, type ErrorLogRecord, type ErrorLogStats } from "@/lib/api";
+import { ErrorLogDetailDrawer } from "@/components/error/ErrorLogDetailDrawer";
 
-interface ErrorLog {
-  id: string;
-  level: string;
-  source: string;
-  message: string;
-  stack?: string;
-  endpoint?: string;
-  method?: string;
-  statusCode?: number;
-  userId?: string;
-  isResolved: boolean;
-  createdAt: string;
-}
-
-const levelConfig: Record<string, { icon: React.ReactNode; color: string; bg: string }> = {
+const levelConfig: Record<string, { icon: ReactNode; color: string; bg: string }> = {
   ERROR: { icon: <AlertCircle className="w-4 h-4" />, color: "text-red-600", bg: "bg-red-100" },
   WARN: { icon: <AlertTriangle className="w-4 h-4" />, color: "text-yellow-600", bg: "bg-yellow-100" },
   INFO: { icon: <Info className="w-4 h-4" />, color: "text-blue-600", bg: "bg-blue-100" },
   DEBUG: { icon: <Bug className="w-4 h-4" />, color: "text-gray-600", bg: "bg-gray-100" },
 };
 
+const PAGE_SIZE = 50;
+
 export default function ErrorLogsPage() {
-  const [logs, setLogs] = useState<ErrorLog[]>([]);
+  const [logs, setLogs] = useState<ErrorLogRecord[]>([]);
+  const [stats, setStats] = useState<ErrorLogStats>({ total: 0, errors: 0, warnings: 0, unresolved: 0 });
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ total: 0, errors: 0, warnings: 0, unresolved: 0 });
+  const [forbidden, setForbidden] = useState(false);
   const [levelFilter, setLevelFilter] = useState("");
   const [sourceFilter, setSourceFilter] = useState("");
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const [selected, setSelected] = useState<ErrorLogRecord | null>(null);
 
-  const fetchLogs = async () => {
+  const fetchData = useCallback(async () => {
     setLoading(true);
+    setForbidden(false);
     try {
-      const token = localStorage.getItem("token");
-      const params = new URLSearchParams();
-      if (levelFilter) params.append("level", levelFilter);
-      if (sourceFilter) params.append("source", sourceFilter);
-      
-      const [logsRes, statsRes] = await Promise.all([
-        fetch(`http://localhost:8080/api/error-logs?${params}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
-        fetch("http://localhost:8080/api/error-logs/stats", {
-          headers: { Authorization: `Bearer ${token}` },
-        }),
+      const [list, st] = await Promise.all([
+        api.getErrorLogs({ level: levelFilter || undefined, source: sourceFilter || undefined, page, limit: PAGE_SIZE }),
+        api.getErrorLogStats(),
       ]);
-      
-      const logsData = await logsRes.json();
-      const statsData = await statsRes.json();
-      setLogs(logsData.logs || []);
-      setStats(statsData);
-    } catch (e) {
-      console.error("Error fetching logs:", e);
+      setLogs(list.logs ?? []);
+      setTotalPages(list.totalPages ?? 1);
+      setStats(st);
+    } catch (e: any) {
+      if (e?.status === 403) {
+        setForbidden(true);
+        setLogs([]);
+      } else {
+        console.error("Error fetching logs:", e);
+      }
     } finally {
       setLoading(false);
     }
+  }, [levelFilter, sourceFilter, page]);
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  const handleResolved = (updated: ErrorLogRecord) => {
+    setSelected(updated);
+    setLogs((prev) => prev.map((l) => (l.id === updated.id ? updated : l)));
+    api.getErrorLogStats().then(setStats).catch(() => undefined);
   };
 
-  useEffect(() => { fetchLogs(); }, [levelFilter, sourceFilter]);
+  const onFilter = (setter: (v: string) => void) => (v: string) => {
+    setter(v);
+    setPage(1);
+  };
+
+  if (forbidden) {
+    return (
+      <div className="p-6">
+        <h1 className="text-2xl font-bold mb-4">Hata Logları</h1>
+        <div className="bg-white rounded-lg border p-8 text-center text-gray-600">
+          Bu sayfayı görüntüleme yetkiniz yok.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-6">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold">Hata Logları</h1>
-        <button onClick={fetchLogs} className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm">
+        <button onClick={fetchData} className="flex items-center gap-2 px-3 py-2 bg-blue-600 text-white rounded-lg text-sm">
           <RefreshCw className="w-4 h-4" /> Yenile
         </button>
       </div>
 
       <div className="grid grid-cols-4 gap-4 mb-6">
-        <div className="bg-white rounded-lg border p-4">
-          <div className="text-2xl font-bold">{stats.total}</div>
-          <div className="text-sm text-gray-500">Toplam Log</div>
-        </div>
-        <div className="bg-red-50 rounded-lg border border-red-200 p-4">
-          <div className="text-2xl font-bold text-red-600">{stats.errors}</div>
-          <div className="text-sm text-red-500">Hata</div>
-        </div>
-        <div className="bg-yellow-50 rounded-lg border border-yellow-200 p-4">
-          <div className="text-2xl font-bold text-yellow-600">{stats.warnings}</div>
-          <div className="text-sm text-yellow-500">Uyarı</div>
-        </div>
-        <div className="bg-orange-50 rounded-lg border border-orange-200 p-4">
-          <div className="text-2xl font-bold text-orange-600">{stats.unresolved}</div>
-          <div className="text-sm text-orange-500">Çözülmemiş</div>
-        </div>
+        <StatCard value={stats.total} label="Toplam Log" />
+        <StatCard value={stats.errors} label="Hata" tone="red" />
+        <StatCard value={stats.warnings} label="Uyarı" tone="yellow" />
+        <StatCard value={stats.unresolved} label="Çözülmemiş" tone="orange" />
       </div>
 
       <div className="flex gap-3 mb-4">
-        <select value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)} className="border rounded-lg px-3 py-2 text-sm">
+        <select value={levelFilter} onChange={(e) => onFilter(setLevelFilter)(e.target.value)} aria-label="Seviye filtresi" className="border rounded-lg px-3 py-2 text-sm">
           <option value="">Tüm Seviyeler</option>
           <option value="ERROR">Hata</option>
           <option value="WARN">Uyarı</option>
           <option value="INFO">Bilgi</option>
           <option value="DEBUG">Debug</option>
         </select>
-        <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} className="border rounded-lg px-3 py-2 text-sm">
+        <select value={sourceFilter} onChange={(e) => onFilter(setSourceFilter)(e.target.value)} aria-label="Kaynak filtresi" className="border rounded-lg px-3 py-2 text-sm">
           <option value="">Tüm Kaynaklar</option>
           <option value="API">API</option>
           <option value="FRONTEND">Frontend</option>
@@ -117,32 +117,57 @@ export default function ErrorLogsPage() {
             {logs.map((log) => {
               const config = levelConfig[log.level] || levelConfig.INFO;
               return (
-                <div key={log.id} className="p-4">
-                  <div className="flex items-start gap-3 cursor-pointer" onClick={() => setExpandedId(expandedId === log.id ? null : log.id)}>
-                    <div className={`p-2 rounded-lg ${config.bg} ${config.color}`}>{config.icon}</div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-xs px-2 py-0.5 rounded ${config.bg} ${config.color}`}>{log.level}</span>
-                        <span className="text-xs text-gray-500">{log.source}</span>
-                        {log.isResolved && <CheckCircle className="w-4 h-4 text-green-500" />}
-                      </div>
-                      <div className="font-medium mt-1 truncate">{log.message}</div>
-                      <div className="text-xs text-gray-400 mt-1">
-                        {new Date(log.createdAt).toLocaleString("tr-TR")}
-                        {log.endpoint && <span className="ml-2">{log.method} {log.endpoint}</span>}
-                        {log.statusCode && <span className="ml-2">({log.statusCode})</span>}
-                      </div>
+                <button key={log.id} type="button" onClick={() => setSelected(log)} className="w-full text-left p-4 hover:bg-gray-50 flex items-start gap-3">
+                  <div className={`p-2 rounded-lg ${config.bg} ${config.color}`}>{config.icon}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs px-2 py-0.5 rounded ${config.bg} ${config.color}`}>{log.level}</span>
+                      <span className="text-xs text-gray-500">{log.source}</span>
+                      {(log.occurrenceCount ?? 1) > 1 && (
+                        <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">×{log.occurrenceCount}</span>
+                      )}
+                      {log.isResolved && <CheckCircle className="w-4 h-4 text-green-500" />}
+                    </div>
+                    <div className="font-medium mt-1 truncate">{log.message}</div>
+                    <div className="text-xs text-gray-400 mt-1">
+                      {new Date(log.lastSeenAt ?? log.createdAt).toLocaleString("tr-TR")}
+                      {log.endpoint && <span className="ml-2">{log.method} {log.endpoint}</span>}
+                      {log.statusCode && <span className="ml-2">({log.statusCode})</span>}
                     </div>
                   </div>
-                  {expandedId === log.id && log.stack && (
-                    <pre className="mt-3 p-3 bg-gray-900 text-gray-100 text-xs rounded-lg overflow-x-auto">{log.stack}</pre>
-                  )}
-                </div>
+                </button>
               );
             })}
           </div>
         )}
       </div>
+
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-3 mt-4 text-sm">
+          <button type="button" disabled={page <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))} className="px-3 py-1.5 border rounded disabled:opacity-50">
+            Önceki
+          </button>
+          <span className="text-gray-500">Sayfa {page} / {totalPages}</span>
+          <button type="button" disabled={page >= totalPages} onClick={() => setPage((p) => Math.min(totalPages, p + 1))} className="px-3 py-1.5 border rounded disabled:opacity-50">
+            Sonraki
+          </button>
+        </div>
+      )}
+
+      <ErrorLogDetailDrawer log={selected} onClose={() => setSelected(null)} onResolved={handleResolved} />
+    </div>
+  );
+}
+
+function StatCard({ value, label, tone }: { value: number; label: string; tone?: "red" | "yellow" | "orange" }) {
+  const card =
+    tone === "red" ? "bg-red-50 border-red-200" : tone === "yellow" ? "bg-yellow-50 border-yellow-200" : tone === "orange" ? "bg-orange-50 border-orange-200" : "bg-white";
+  const num = tone === "red" ? "text-red-600" : tone === "yellow" ? "text-yellow-600" : tone === "orange" ? "text-orange-600" : "";
+  const lbl = tone === "red" ? "text-red-500" : tone === "yellow" ? "text-yellow-500" : tone === "orange" ? "text-orange-500" : "text-gray-500";
+  return (
+    <div className={`rounded-lg border p-4 ${card}`}>
+      <div className={`text-2xl font-bold ${num}`}>{value}</div>
+      <div className={`text-sm ${lbl}`}>{label}</div>
     </div>
   );
 }
