@@ -66,7 +66,7 @@ describe("AllExceptionsFilter", () => {
     expect(res.status).toHaveBeenCalledWith(500);
   });
 
-  it("FLOOD GUARD: aynı 500 pencere içinde iki kez → yalnız 1 kez loglanır", () => {
+  it("PR-2b: aynı 500 iki kez → DB log HER İKİSİNDE çağrılır (dedupe ARTIK serviste, filter yutmaz)", () => {
     const svc = { log: jest.fn().mockResolvedValue({}) } as any;
     const guard = new ErrorFloodGuard();
     guard.setClockForTest(() => 1000);
@@ -75,7 +75,8 @@ describe("AllExceptionsFilter", () => {
     const req = { url: "/api/cases", method: "POST", user: { tenantId: "t1" } };
     filter.catch(exc, host(req, mockRes()));
     filter.catch(exc, host(req, mockRes()));
-    expect(svc.log).toHaveBeenCalledTimes(1);
+    // FloodGuard artık yalnız konsol throttle eder; DB persistence kararını VERMEZ.
+    expect(svc.log).toHaveBeenCalledTimes(2);
   });
 
   it("headersSent ise tekrar yanıt göndermez", () => {

@@ -42,25 +42,26 @@ export class AllExceptionsFilter implements ExceptionFilter {
         const message: string | undefined = err?.message;
         const isPrisma = typeof name === "string" && name.startsWith("PrismaClient");
         const tenantId: string | undefined = req?.user?.tenantId;
-        const fingerprint = computeFingerprint({ tenantId, source: "API", statusCode: status, name, stack });
-        if (this.floodGuard.shouldPersist(fingerprint)) {
-          const entry = buildServerLogEntry({
-            status,
-            route: req?.url,
-            method: req?.method,
-            tenantId,
-            userId: req?.user?.id,
-            requestId: req?.requestId,
-            fingerprint,
-            name,
-            message,
-            stack,
-            isPrisma,
-          });
-          // Ops görünürlüğü için kısa, PII'siz konsol satırı (flood-guard'lı).
-          this.fallback.error(`HTTP ${status} ${req?.method ?? ""} ${redactPii(req?.url) ?? ""} [fp:${fingerprint}]`);
-          // LOGGING ISOLATION: fire-and-forget + swallow; servis zaten kendi içinde try/catch'li.
-          void this.errorLogService.log(entry).catch(() => undefined);
+        const entry = buildServerLogEntry({
+          status,
+          route: req?.url,
+          method: req?.method,
+          tenantId,
+          userId: req?.user?.id,
+          requestId: req?.requestId,
+          errorName: name,
+          message,
+          stack,
+          isPrisma,
+        });
+        // PR-2b: DB persistence HER ZAMAN. Dedupe/sayım ErrorLogService.log içinde upsert ile yapılır
+        // (aynı aktif olay → occurrenceCount++). FloodGuard ARTIK DB kararını VERMEZ — yoksa sayılması
+        // gereken tekrarları yutardı. LOGGING ISOLATION: fire-and-forget + swallow.
+        void this.errorLogService.log(entry).catch(() => undefined);
+        // FloodGuard yalnız KONSOL gürültüsünü kısar (DB kararı DEĞİL).
+        const consoleFp = computeFingerprint({ tenantId, source: "API", statusCode: status, name, stack });
+        if (this.floodGuard.shouldPersist(consoleFp)) {
+          this.fallback.error(`HTTP ${status} ${req?.method ?? ""} ${redactPii(req?.url) ?? ""}`);
         }
       } catch (e) {
         // Loglama hattındaki hata asıl yanıtı BOZMAMALI.
