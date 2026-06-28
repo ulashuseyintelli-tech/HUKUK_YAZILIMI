@@ -117,7 +117,7 @@ jobs:
       # PR-2a (observability): global ExceptionFilter + requestId + fingerprint + flood-guard
       # + server-log builder (≥500 logging, 4xx noise exclusion, logging isolation).
       # Dosya-varlığı pre-check (rename/silme → CI RED) + passWithNoTests YOK.
-      - name: Error-log security & observability tests (PR-1/2a/2b)
+      - name: Error-log security & observability tests (PR-1/2a/2b/3)
         run: |
           cd apps/api
           for f in src/modules/error-log/__tests__/error-log.sanitize.spec.ts \
@@ -127,7 +127,8 @@ jobs:
                    src/modules/error-log/__tests__/server-log.builder.spec.ts \
                    src/modules/error-log/__tests__/all-exceptions.filter.spec.ts \
                    src/modules/error-log/__tests__/error-dedupe-key.spec.ts \
-                   src/modules/error-log/__tests__/error-log.dedupe.service.spec.ts; do
+                   src/modules/error-log/__tests__/error-log.dedupe.service.spec.ts \
+                   src/modules/error-log/__tests__/error-reporter.spec.ts; do
             test -f "$f" || { echo "MISSING error-log spec: $f"; exit 1; }
           done
           npx jest --ci --forceExit \
