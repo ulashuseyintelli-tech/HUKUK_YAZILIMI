@@ -3701,8 +3701,10 @@ model ClientStatement {
   id       String @id @default(cuid())
   tenantId String
 
-  caseId String
-  case   Case   @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  // Faz B-0: client-level ekstre için NULLABLE. caseId=null → client-level (müvekkilin tüm dosyaları);
+  // dolu → case-level (MEVCUT davranış, değişmez). FK KORUNUR (yalnız non-null satırlarda uygulanır).
+  caseId String?
+  case   Case?   @relation(fields: [caseId], references: [id], onDelete: Restrict)
 
   clientId String
   client   Client @relation(fields: [clientId], references: [id], onDelete: Restrict)
@@ -3751,6 +3753,12 @@ model ClientStatementLine {
 
   // M2: proceeds satırının atfedildiği alacaklı (CaseClient.id) — client-level okuma + çoklu-alacaklı scope.
   caseClientId String?
+
+  // Faz B-0: satırın geldiği dosya. parent.caseId=null (client-level ekstre) olduğunda satır hangi
+  // dosyadan üretildiğini taşır. Şema NULLABLE (case-level satırlarda null kalır; parent zaten dosyayı verir).
+  // DAVRANIŞ KURALI (B-1 + test ile kilitlenecek): client-level satır üretilirken ZORUNLU doldurulur.
+  // Scalar (FK YOK — refType/refId/caseClientId gibi gevşek tarihsel ref; index YOK).
+  caseId String?
 
   debit          Decimal @default(0) @db.Decimal(15, 2)
   credit         Decimal @default(0) @db.Decimal(15, 2)
