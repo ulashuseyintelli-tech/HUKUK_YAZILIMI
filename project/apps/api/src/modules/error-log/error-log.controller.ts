@@ -3,6 +3,7 @@ import { ErrorLogService } from './error-log.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AdminGuard } from '../auth/guards/admin.guard';
 import { buildClientLogEntry } from './error-log.sanitize';
+import { ResolveErrorLogDto } from './dto/resolve-error-log.dto';
 
 @Controller('error-logs')
 @UseGuards(JwtAuthGuard)
@@ -38,10 +39,11 @@ export class ErrorLogController {
   async resolve(
     @Param('id') id: string,
     @Request() req: any,
-    @Body() body: { resolution?: string },
+    @Body() dto: ResolveErrorLogDto,
   ) {
-    // PR-1: resolvedBy AUTH oturumundan alınır; body.userId YOK SAYILIR (spoof engeli).
-    return this.errorLogService.resolve(id, req.user.id, body?.resolution ?? '');
+    // PR-1: resolvedBy AUTH oturumundan alınır (spoof engeli).
+    // PR-6A: resolution ZORUNLU + trim>=10 → DTO + global ValidationPipe (transform/validate).
+    return this.errorLogService.resolve(id, req.user.id, dto.resolution);
   }
 
   // PR-1: Dış istemci/frontend endpoint'i — JwtAuthGuard yeterli (ADMIN gerekmez), AMA gövde
