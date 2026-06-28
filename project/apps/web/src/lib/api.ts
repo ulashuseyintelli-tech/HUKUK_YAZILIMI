@@ -10,6 +10,51 @@ if (typeof window !== "undefined") {
   console.log("[API] Base URL:", API_URL);
 }
 
+// PR-5: ErrorLog UI tipleri (backend ErrorLog modeliyle hizalı; metadata backend-redacted gelir).
+export interface ErrorLogRecord {
+  id: string;
+  tenantId?: string | null;
+  level: string;
+  source: string;
+  message: string;
+  stack?: string | null;
+  endpoint?: string | null;
+  method?: string | null;
+  statusCode?: number | null;
+  userId?: string | null;
+  userIp?: string | null;
+  userAgent?: string | null;
+  metadata?: Record<string, unknown> | null;
+  isResolved: boolean;
+  resolvedAt?: string | null;
+  resolvedBy?: string | null;
+  resolution?: string | null;
+  createdAt: string;
+  fingerprint?: string | null;
+  occurrenceCount?: number | null;
+  firstSeenAt?: string | null;
+  lastSeenAt?: string | null;
+}
+export interface ErrorLogListResponse {
+  logs: ErrorLogRecord[];
+  total: number;
+  page: number;
+  limit: number;
+  totalPages: number;
+}
+export interface ErrorLogStats {
+  total: number;
+  errors: number;
+  warnings: number;
+  unresolved: number;
+}
+export interface ErrorLogQuery {
+  level?: string;
+  source?: string;
+  page?: number;
+  limit?: number;
+}
+
 class ApiClient {
   private token: string | null = null;
 
@@ -118,6 +163,28 @@ class ApiClient {
 
   async me() {
     return this.request<{ user: any }>("/auth/me");
+  }
+
+  // ErrorLog (PR-5). Backend AdminGuard; non-admin → request() .status=403 fırlatır.
+  async getErrorLogs(params: ErrorLogQuery = {}): Promise<ErrorLogListResponse> {
+    const q = new URLSearchParams();
+    if (params.level) q.set("level", params.level);
+    if (params.source) q.set("source", params.source);
+    if (params.page) q.set("page", String(params.page));
+    if (params.limit) q.set("limit", String(params.limit));
+    const qs = q.toString();
+    return this.request<ErrorLogListResponse>(`/error-logs${qs ? `?${qs}` : ""}`);
+  }
+
+  async getErrorLogStats(): Promise<ErrorLogStats> {
+    return this.request<ErrorLogStats>("/error-logs/stats");
+  }
+
+  async resolveErrorLog(id: string, resolution: string): Promise<ErrorLogRecord> {
+    return this.request<ErrorLogRecord>(`/error-logs/${id}/resolve`, {
+      method: "POST",
+      body: JSON.stringify({ resolution }),
+    });
   }
 
   // K1-7: davet kabul — ham token + kullanıcının belirlediği parola. Auth gerekmez.
