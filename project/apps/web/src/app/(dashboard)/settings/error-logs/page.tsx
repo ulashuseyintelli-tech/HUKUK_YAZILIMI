@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { AlertCircle, AlertTriangle, Info, Bug, CheckCircle, RefreshCw } from "lucide-react";
 import { api, type ErrorLogRecord, type ErrorLogStats } from "@/lib/api";
 import { ErrorLogDetailDrawer } from "@/components/error/ErrorLogDetailDrawer";
+import { relativeTime } from "@/lib/relative-time";
 
 const levelConfig: Record<string, { icon: ReactNode; color: string; bg: string }> = {
   ERROR: { icon: <AlertCircle className="w-4 h-4" />, color: "text-red-600", bg: "bg-red-100" },
@@ -130,7 +131,9 @@ export default function ErrorLogsPage() {
                     </div>
                     <div className="font-medium mt-1 truncate">{log.message}</div>
                     <div className="text-xs text-gray-400 mt-1">
-                      {new Date(log.lastSeenAt ?? log.createdAt).toLocaleString("tr-TR")}
+                      <span title={new Date(log.lastSeenAt ?? log.createdAt).toLocaleString("tr-TR")}>
+                        {relativeTime(log.lastSeenAt ?? log.createdAt)}
+                      </span>
                       {log.endpoint && <span className="ml-2">{log.method} {log.endpoint}</span>}
                       {log.statusCode && <span className="ml-2">({log.statusCode})</span>}
                     </div>
