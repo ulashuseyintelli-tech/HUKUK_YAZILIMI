@@ -995,7 +995,7 @@ export default function CaseDetailPage() {
         api.getCaseDues(params.id as string),
         api.getCaseCollections(params.id as string),
         api.getCollectionDispositionsByCase(params.id as string).catch((error) => {
-          console.warn("Muhasebe kayıtları yüklenemedi:", error);
+          console.warn("Dağıtım ve mutabakat kayıtları yüklenemedi:", error);
           return [];
         }),
       ]);
@@ -1037,7 +1037,7 @@ export default function CaseDetailPage() {
   const operationAccountingRecords = useMemo<any[]>(() => {
     const collectionById = new Map(collections.map((collection: any) => [collection.id, collection]));
     const statusLabels: Record<string, string> = {
-      POSTED: "Muhasebeye işlendi",
+      POSTED: "Dağıtım Kesinleşti",
       HELD_PENDING_DISTRIBUTION: "Dağıtım bekliyor",
       CANCELLED: "İptal edildi",
       REVERSED: "Reversed",
@@ -1059,8 +1059,8 @@ export default function CaseDetailPage() {
         (disposition.lines || []).map((line: any) => line.type).filter(Boolean),
       ));
       const statusLabel = hasManualReversal
-        ? "Manuel muhasebe takibi gerekli"
-        : statusLabels[status] || status || "Muhasebe kaydı";
+        ? "Manuel takip gerekli"
+        : statusLabels[status] || status || "Dağıtım/mutabakat kaydı";
       const description = [
         sourceCollection?.description || "Tahsilat",
         `Durum: ${statusLabel}`,
@@ -1084,8 +1084,8 @@ export default function CaseDetailPage() {
     ).length;
 
     return activeCollectionCount > 0
-      ? "Tahsilat finans özetinde görünüyor; muhasebe hareketi henüz oluşturulmamış."
-      : "Bu dosyada henüz muhasebe hareketi oluşmamış.";
+      ? "Tahsilat finans özetinde görünüyor; dağıtım/mutabakat kaydı henüz oluşturulmamış."
+      : "Bu dosyada henüz dağıtım/mutabakat kaydı yok.";
   }, [collections]);
 
   const handleCancelCollection = async (collection: any) => {
@@ -2603,7 +2603,7 @@ export default function CaseDetailPage() {
                           const statusLabel = cancelled
                             ? 'İptal edildi'
                             : posted
-                              ? 'Muhasebeye işlendi'
+                              ? 'Dağıtım kesinleşti'
                               : status === 'CONFIRMED'
                                 ? 'Onaylandı'
                                 : status === 'PENDING'
