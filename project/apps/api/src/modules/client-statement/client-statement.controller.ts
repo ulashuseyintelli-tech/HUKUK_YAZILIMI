@@ -5,6 +5,7 @@ import { ClientStatementStatus } from '@prisma/client';
 import { ClientStatementService } from './client-statement.service';
 import {
   CreateClientStatementDto,
+  CreateClientLevelStatementDto,
   SupersedeClientStatementDto,
   VoidClientStatementDto,
 } from './dto/client-statement.dto';
@@ -31,6 +32,19 @@ export class ClientStatementController {
     @Body() dto: CreateClientStatementDto,
   ) {
     return this.service.create(req.user.tenantId, caseId, req.user.id, dto);
+  }
+
+  /**
+   * Faz B — CLIENT-LEVEL (genel) ekstre üret (caseId=null; tüm eligible dosyalar, yalnız CLIENT_SPECIFIC).
+   * POST /client-statements/client/:clientId  (':id/...' route'larından ÖNCE; static 'client' segment ayırır)
+   */
+  @Post('client/:clientId')
+  async createClientLevel(
+    @Req() req: AuthRequest,
+    @Param('clientId') clientId: string,
+    @Body() dto: CreateClientLevelStatementDto,
+  ) {
+    return this.service.createClientLevel(req.user.tenantId, clientId, req.user.id, dto);
   }
 
   /** Supersede (eskisi SUPERSEDED + yeni ACTIVE) — POST /client-statements/:id/supersede */
@@ -61,6 +75,19 @@ export class ClientStatementController {
     @Query('status') status?: ClientStatementStatus,
   ) {
     return this.service.listByCase(req.user.tenantId, caseId, status);
+  }
+
+  /**
+   * Faz B — CLIENT-LEVEL (genel) ekstre listesi (caseId=null; default ACTIVE) — GET /client-statements/client/:clientId?status=
+   * (':id' detay route'undan ÖNCE; 'client' static segment iki-segment match ile ayırır.)
+   */
+  @Get('client/:clientId')
+  async listByClient(
+    @Req() req: AuthRequest,
+    @Param('clientId') clientId: string,
+    @Query('status') status?: ClientStatementStatus,
+  ) {
+    return this.service.listByClient(req.user.tenantId, clientId, status);
   }
 
   /** Detay + satırlar — GET /client-statements/:id */
