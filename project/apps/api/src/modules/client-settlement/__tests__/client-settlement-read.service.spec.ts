@@ -69,6 +69,20 @@ describe('ClientSettlementReadService.computeOutstanding', () => {
     expect(out.equals(D(600))).toBe(true);
   });
 
+  it('C-1 offset: payable − Σ APPLY + Σ REVERSAL read-time düşülür (1000 − 200 + 50 = 850)', async () => {
+    const prisma = buildPrisma({
+      payableLines: [{ amount: D(1000), disposition: { collectionId: 'col1' } }],
+      confirmedCollections: [{ id: 'col1' }],
+      paid: D(0),
+    });
+    // kind'e göre APPLY=200 / REVERSAL=50; payableCaseId scope'lu sorgu
+    prisma.clientOffset.aggregate = jest.fn().mockImplementation((args: any) =>
+      Promise.resolve({ _sum: { amount: args.where?.kind === 'APPLY' ? D(200) : D(50) } }),
+    );
+    const out = await read(prisma).computeOutstanding(prisma, 't1', 'case1', 'cc-A', 'TRY');
+    expect(out.equals(D(850))).toBe(true);
+  });
+
   it('manualReversalRequiredAt null POSTED CLIENT_PAYABLE outstanding icinde kalir', async () => {
     const prisma = buildPrisma({
       payableLines: [{ amount: D(1000), disposition: { collectionId: 'col1', manualReversalRequiredAt: null } }],
@@ -340,6 +354,34 @@ describe('ClientSettlementReadService.getClientAccountingSummary (Faz A)', () =>
     expect(a.debtorCollection).toBe('1000');
     expect(a.pendingDistribution).toBe('600');
     expect(a.expenseRequested).toBe('1431.1');
+  });
+
+  it('C-1 INVARIANT: APPLY offset payableNet ve expenseUnpaid\'i AYNI tutarda düşürür → offsettableNetPosition DEĞİŞMEZ', async () => {
+    // No-offset referans (test #303 ile aynı veri): payableNet=600, expUnpaid=1431.1 → position=-831.1
+    // APPLY 300: computeOutstanding ZATEN 300'e düşmüş döner (offset payable bacağı); summary expense bacağını düşer.
+    const prisma = buildSummaryPrisma({
+      ccRows: [{ id: 'cc1', caseId: 'caseA', role: 'ALACAKLI', case: { fileNumber: '2026/1', executionFileNumber: null } }],
+      payoutByCc: { cc1: D(0) },
+      collectionByCase: { caseA: D(0) },
+      postedDispByCase: { caseA: D(0) },
+      balanceByCase: { caseA: D(0) },
+      expenseRows: [{ caseId: 'caseA', totalAmount: D(1431.1), paidTotal: D(0) }],
+    });
+    prisma.clientOffset.findMany = jest.fn().mockResolvedValue([
+      { amount: D(300), kind: 'APPLY', payableCaseId: 'caseA', expenseCaseId: 'caseA' },
+    ]);
+    const svc = read(prisma);
+    // computeOutstanding offset-düşülmüş payableNet döner (600 − 300 = 300)
+    jest.spyOn(svc, 'computeOutstanding').mockResolvedValue(D(300));
+
+    const res = await svc.getClientAccountingSummary('t1', 'client-1', 'TRY');
+    expect(res.clientScoped.payableNet).toBe('300');          // 600 − 300 (offset payable bacağı)
+    expect(res.clientScoped.expenseUnpaid).toBe('1131.1');     // 1431.1 − 300 (offset masraf bacağı)
+    expect(res.clientScoped.offsetApplied).toBe('300');        // Σ net offset (APPLY − REVERSAL)
+    expect(res.clientScoped.offsettableNetPosition).toBe('-831.1'); // INVARIANT: no-offset (#303) ile AYNI
+    const a = res.caseBreakdown.find((x) => x.caseId === 'caseA')!;
+    expect(a.offsetPayableApplied).toBe('300');
+    expect(a.offsetExpenseApplied).toBe('300');
   });
 
   it('pendingDistribution negatif → needsReview true (sessiz sıfırlama YOK)', async () => {
