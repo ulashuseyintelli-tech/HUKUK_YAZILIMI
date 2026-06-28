@@ -113,17 +113,23 @@ jobs:
             --testPathPattern="(confidence-score\.tenant-boundary|ihbarname-summary\.tenant-boundary|third-party-passive-writer|quick-note-passive-writer|debtor-identity-format)\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
-      # PR-1 (error-logs güvenlik): RBAC (yalnız ADMIN) + metadata redaction + source/tenant/level
-      # spoof engeli. Dosya-varlığı pre-check (rename/silme → CI RED) + passWithNoTests YOK.
-      - name: Error-log security tests (PR-1)
+      # PR-1 (güvenlik): RBAC + metadata redaction + source/tenant/level spoof engeli.
+      # PR-2a (observability): global ExceptionFilter + requestId + fingerprint + flood-guard
+      # + server-log builder (≥500 logging, 4xx noise exclusion, logging isolation).
+      # Dosya-varlığı pre-check (rename/silme → CI RED) + passWithNoTests YOK.
+      - name: Error-log security & observability tests (PR-1/2a)
         run: |
           cd apps/api
           for f in src/modules/error-log/__tests__/error-log.sanitize.spec.ts \
-                   src/modules/error-log/__tests__/error-log.controller.spec.ts; do
+                   src/modules/error-log/__tests__/error-log.controller.spec.ts \
+                   src/modules/error-log/__tests__/error-fingerprint.spec.ts \
+                   src/modules/error-log/__tests__/error-flood-guard.spec.ts \
+                   src/modules/error-log/__tests__/server-log.builder.spec.ts \
+                   src/modules/error-log/__tests__/all-exceptions.filter.spec.ts; do
             test -f "$f" || { echo "MISSING error-log spec: $f"; exit 1; }
           done
           npx jest --ci --forceExit \
-            --testPathPattern="error-log/__tests__/(error-log\.sanitize|error-log\.controller)\.spec\.ts$" \
+            --testPathPattern="error-log/__tests__/.*\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
 
