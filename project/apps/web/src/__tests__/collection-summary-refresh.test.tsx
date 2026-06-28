@@ -3,6 +3,7 @@ import { useState } from "react";
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BalanceShadowDiffPanel, CollectionModal, DueModal, HesapOzetiPanel } from "@/components/finance";
+import { OperationDeck } from "@/components/case-detail/OperationDeck";
 import { api } from "@/lib/api";
 import { useBalanceShadowDiff } from "@/hooks/useBalanceShadowDiff";
 import { useCaseCalculation } from "@/hooks/useCaseCalculation";
@@ -14,6 +15,7 @@ vi.mock("@/lib/api", () => ({
     deleteCollection: vi.fn(),
     cancelCollection: vi.fn(),
     getCollectionDispositionsByCase: vi.fn(),
+    postCollectionDisposition: vi.fn(),
     createDue: vi.fn(),
     updateDue: vi.fn(),
     deleteDue: vi.fn(),
@@ -40,6 +42,7 @@ const apiMock = api as unknown as {
   deleteCollection: ReturnType<typeof vi.fn>;
   cancelCollection: ReturnType<typeof vi.fn>;
   getCollectionDispositionsByCase: ReturnType<typeof vi.fn>;
+  postCollectionDisposition: ReturnType<typeof vi.fn>;
   createDue: ReturnType<typeof vi.fn>;
   updateDue: ReturnType<typeof vi.fn>;
   deleteDue: ReturnType<typeof vi.fn>;
@@ -127,6 +130,31 @@ function readCasePageSource() {
 function readOperationDeckSource() {
   return readFileSync("src/components/case-detail/OperationDeck.tsx", "utf8");
 }
+
+function readApiSource() {
+  return readFileSync("src/lib/api.ts", "utf8");
+}
+
+function makeDispositionAccountingRecord(status = "HELD_PENDING_DISTRIBUTION") {
+  return {
+    id: "disp-1",
+    type: status === "POSTED" ? "ODEME_ALINDI" : "DAGITIM_BEKLIYOR",
+    description: "Tahsilat - Durum: Dağıtım bekliyor",
+    amount: 100,
+    createdAt: "2026-06-25T10:00:00.000Z",
+    relatedRequestId: "collection-1",
+    disposition: {
+      id: "disp-1",
+      collectionId: "collection-1",
+      status,
+      totalAmount: "100.00",
+      currency: "TRY",
+      beneficiaryScope: "CASE_CLIENT",
+      caseClientId: null,
+      manualReversalRequiredAt: null,
+    },
+  } as any;
+}
 describe("collection summary refresh", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -135,6 +163,7 @@ describe("collection summary refresh", () => {
     apiMock.deleteCollection.mockResolvedValue({ success: true });
     apiMock.cancelCollection.mockResolvedValue({ id: "collection-1", status: "CANCELLED" });
     apiMock.getCollectionDispositionsByCase.mockResolvedValue([]);
+    apiMock.postCollectionDisposition.mockResolvedValue({ posted: true, dispositionId: "disp-1", lineCount: 1 });
     apiMock.createDue.mockResolvedValue({ id: "due-1" });
     apiMock.updateDue.mockResolvedValue({ id: "due-1" });
     apiMock.deleteDue.mockResolvedValue({ success: true });
@@ -306,6 +335,11 @@ describe("collection summary refresh", () => {
     expect(source).toContain("setCollectionDispositions(dispositionsRes || []);");
     expect(source).toContain("muhasebeKayitlari={operationAccountingRecords}");
     expect(source).toContain("accountingEmptyMessage={operationAccountingEmptyMessage}");
+    expect(source).toContain("eligibleDispositionClients={eligibleDispositionClients}");
+    expect(source).toContain("postingDispositionId={postingDispositionId}");
+    expect(source).toContain("onPostDisposition={handlePostCollectionDisposition}");
+    expect(source).toContain("await api.postCollectionDisposition(disposition.id, { lines });");
+    expect(source).toContain("refreshCollectionDependentViews();");
     expect(source).toContain("Tahsilat finans özetinde görünüyor; dağıtım/mutabakat kaydı henüz oluşturulmamış.");
     expect(source).toContain("Dağıtım/mutabakat kaydı");
   });
@@ -319,6 +353,78 @@ describe("collection summary refresh", () => {
     expect(source).toContain("Tahsilatların müvekkil payı, ücret/masraf mahsubu ve payout öncesi dağıtım durumunu gösterir.");
     expect(source).not.toContain("Sadece muhasebe ve yetkili görür");
     expect(source).not.toContain("Henüz muhasebe kaydı yok");
+  });
+
+  it("api helper bekleyen disposition posting endpointini POST ile cagirir", () => {
+    const source = readApiSource();
+
+    expect(source).toContain("async postCollectionDisposition(dispositionId: string, payload: PostCollectionDispositionDTO)");
+    expect(source).toContain("`/collection-dispositions/${dispositionId}/post`");
+    expect(source).toContain('method: "POST"');
+  });
+
+  it("held pending distribution ve tek alacaklida dagitimi kesinlestirme payloadini hazirlar", async () => {
+    const postDisposition = vi.fn().mockResolvedValue(undefined);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(
+      <OperationDeck
+        caseId="case-1"
+        muhasebeKayitlari={[makeDispositionAccountingRecord()]}
+        eligibleDispositionClients={[{ id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" }]}
+        onPostDisposition={postDisposition}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtımı Kesinleştir/ }));
+
+    await waitFor(() => {
+      expect(postDisposition).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "disp-1", status: "HELD_PENDING_DISTRIBUTION" }),
+        [{ type: "CLIENT_PAYABLE", amount: "100.00", caseClientId: "case-client-1" }],
+      );
+    });
+    expect(confirmSpy).toHaveBeenCalled();
+
+    confirmSpy.mockRestore();
+  });
+
+  it("coklu alacaklida otomatik post yapmaz ve secim gerektigini gosterir", async () => {
+    const postDisposition = vi.fn();
+
+    render(
+      <OperationDeck
+        caseId="case-1"
+        muhasebeKayitlari={[makeDispositionAccountingRecord()]}
+        eligibleDispositionClients={[
+          { id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" },
+          { id: "case-client-2", name: "Alacaklı B", role: "ORTAK_ALACAKLI" },
+        ]}
+        onPostDisposition={postDisposition}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtımı Kesinleştir/ }));
+
+    expect(await screen.findByText("Çoklu alacaklı dosyada dağıtım için alacaklı seçimi gerekir.")).toBeInTheDocument();
+    expect(postDisposition).not.toHaveBeenCalled();
+  });
+
+  it("posted disposition kaydinda dagitimi kesinlestirme aksiyonu gostermez", () => {
+    render(
+      <OperationDeck
+        caseId="case-1"
+        muhasebeKayitlari={[makeDispositionAccountingRecord("POSTED")]}
+        eligibleDispositionClients={[{ id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" }]}
+        onPostDisposition={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
+
+    expect(screen.queryByRole("button", { name: /Dağıtımı Kesinleştir/ })).not.toBeInTheDocument();
   });
 
   it("alacak kalemi kaydi basarili olunca stale hesap ozetini refetch eder", async () => {

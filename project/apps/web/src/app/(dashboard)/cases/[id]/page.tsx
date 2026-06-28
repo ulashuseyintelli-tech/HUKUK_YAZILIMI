@@ -41,7 +41,7 @@ import {
   PauseCircle,
   Search,
 } from "lucide-react";
-import { api, DebtorListItemDTO, DebtorsSummaryDTO, DebtorDetailDTO } from "@/lib/api";
+import { api, DebtorListItemDTO, DebtorsSummaryDTO, DebtorDetailDTO, CollectionDispositionDTO, PostCollectionDispositionLineDTO } from "@/lib/api";
 import { caseStaffEditFields, buildCaseStaffPatch } from "@/lib/case-staff-edit";
 import {
   CASE_STAFF_ROLE_OPTIONS,
@@ -830,7 +830,8 @@ export default function CaseDetailPage() {
   // Alacak Kalemleri ve Tahsilatlar State
   const [dues, setDues] = useState<any[]>([]);
   const [collections, setCollections] = useState<any[]>([]);
-  const [collectionDispositions, setCollectionDispositions] = useState<any[]>([]);
+  const [collectionDispositions, setCollectionDispositions] = useState<CollectionDispositionDTO[]>([]);
+  const [postingDispositionId, setPostingDispositionId] = useState<string | null>(null);
   const [loadingFinance, setLoadingFinance] = useState(false);
   const [financialSummaryRefreshKey, setFinancialSummaryRefreshKey] = useState(0);
   
@@ -1015,6 +1016,36 @@ export default function CaseDetailPage() {
     void fetchCase();
   }, [fetchCase, fetchFinanceData]);
 
+  const eligibleDispositionClients = useMemo(() => {
+    const eligibleRoles = new Set(["ALACAKLI", "ORTAK_ALACAKLI"]);
+    return (caseData?.caseClients || [])
+      .filter((caseClient) => !caseClient.role || eligibleRoles.has(String(caseClient.role).toUpperCase()))
+      .map((caseClient) => ({
+        id: caseClient.id,
+        name: caseClient.client.displayName || caseClient.client.name || "Müvekkil",
+        role: caseClient.role,
+      }));
+  }, [caseData?.caseClients]);
+
+  const handlePostCollectionDisposition = useCallback(async (
+    disposition: Pick<CollectionDispositionDTO, "id">,
+    lines: PostCollectionDispositionLineDTO[],
+  ) => {
+    if (!disposition?.id) return;
+
+    setPostingDispositionId(disposition.id);
+    try {
+      await api.postCollectionDisposition(disposition.id, { lines });
+      refreshCollectionDependentViews();
+    } catch (error: any) {
+      const message = error?.message || "Dağıtım kesinleştirilemedi.";
+      alert(message);
+      throw error;
+    } finally {
+      setPostingDispositionId(null);
+    }
+  }, [refreshCollectionDependentViews]);
+
   const getCollectionStatus = (collection: any) =>
     String(collection?.status || "").toUpperCase();
 
@@ -1074,6 +1105,16 @@ export default function CaseDetailPage() {
         amount: Number(disposition.totalAmount ?? sourceCollection?.amount ?? 0),
         createdAt: disposition.postedAt || disposition.updatedAt || disposition.createdAt || sourceCollection?.createdAt || "",
         relatedRequestId: disposition.collectionId,
+        disposition: {
+          id: disposition.id,
+          collectionId: disposition.collectionId,
+          status,
+          totalAmount: disposition.totalAmount ?? sourceCollection?.amount ?? 0,
+          currency: disposition.currency || sourceCollection?.currency || "TRY",
+          beneficiaryScope: disposition.beneficiaryScope || "",
+          caseClientId: disposition.caseClientId ?? null,
+          manualReversalRequiredAt: disposition.manualReversalRequiredAt ?? null,
+        },
       };
     });
   }, [collectionDispositions, collections]);
@@ -2710,6 +2751,9 @@ export default function CaseDetailPage() {
                 caseId={caseData.id}
                 muhasebeKayitlari={operationAccountingRecords}
                 accountingEmptyMessage={operationAccountingEmptyMessage}
+                eligibleDispositionClients={eligibleDispositionClients}
+                postingDispositionId={postingDispositionId}
+                onPostDisposition={handlePostCollectionDisposition}
                 // Müvekkil Talepleri - AddressAuditLog + Expense Requests
                 muvekkilTalepleri={[
                   // Adres talepleri
