@@ -1,23 +1,34 @@
-// P4-2 — OfficeApprovalShadowService (CHANGE_STATUS approval SHADOW; observe-only).
+// P4-2/P4-3A — OfficeApprovalShadowService (CHANGE_STATUS approval gate; tek flag, üç mod).
 //
-// CHANGE_STATUS için approval kararını HESAPLAR ve OFFICE_APPROVAL_SHADOW_EVALUATED audit'i yazar.
-// KESİN — P4-2 KAPSAMI (Ulaş kilidi):
-//  - effectiveDecision DEĞİŞMEZ: bu yalnız GÖLGE hesap. Official statü değiştirmez, response/akış değiştirmez.
-//  - OfficeApprovalRequest OLUŞTURMAZ (DB'ye approval kaydı yazmaz; prisma.officeApprovalRequest'e HİÇ dokunmaz).
-//  - ENFORCE ETMEZ. Flag yalnız 'observe' iken aktif; 'off'/unset/'enforce'/diğer → no-op (enforce P4-3'te).
-//  - Hata → best-effort yutulur (mutation/akış ASLA bozulmaz).
+// CHANGE_STATUS için approval kararını HESAPLAR. Tek flag (OFFICE_APPROVAL_CHANGE_STATUS_GATE) üç mod:
+//  - off  (varsayılan/unset/bilinmeyen) → NO-OP: hesap/audit/DB YOK; effectiveDecision DEĞİŞMEZ.
+//  - observe (P4-2) → GÖLGE: kararı hesaplar + OFFICE_APPROVAL_SHADOW_EVALUATED audit yazar; OfficeApprovalRequest
+//    OLUŞTURMAZ, statü/akış/response DEĞİŞTİRMEZ; hata best-effort yutulur (akış ASLA bozulmaz).
+//  - create (P4-3A) → PERSIST-ONLY (BEST-EFFORT; BLOK YOK, API contract DEĞİŞMEZ):
+//      * PARTNER (self-authority) → ALLOW: request YOK.
+//      * non-PARTNER (avukat / delege / personel / linksiz / çözülemeyen) → OfficeApprovalRequest PENDING_APPROVAL
+//        CREATE (idempotent). SADECE persist — controller dönüşü KULLANMAZ, statü yine değişir, response AYNI kalır.
+//    Hata best-effort yutulur → mevcut CHANGE_STATUS akışı BOZULMAZ.
 //
-// Karar: PARTNER = self-authority → ALLOW (kendi işlemi için approval gerekmez). Diğer herkes (non-PARTNER avukat /
-// delege onaycı / personel / linksiz / çözülemeyen) → WOULD_REQUIRE_APPROVAL. Delege onaycı (canApproveOfficeActions)
-// BAŞKASININ talebini onaylayabilir ama KENDİ talebini değil → o da WOULD_REQUIRE_APPROVAL.
+// KESİN FAZ SINIRI (Ulaş kilidi): bu faz BLOKLAMAZ ve typed APPROVAL_REQUIRED response DÖNDÜRMEZ. İşlemi durdurma +
+//   typed response + fail-closed = 'enforce' (P4-6); 'enforce' adı/değeri BU FAZDA KULLANILMAZ (reserved). Approve/inbox/
+//   executor/deferred-execution P4-4/P4-5. ClientApprovalRequest'e DOKUNMAZ; RBAC/PermissionCatalog'a DOKUNMAZ; migration YOK.
+//
+// Karar matrisi (computeDecision): PARTNER → ALLOW; diğer herkes → WOULD_REQUIRE_APPROVAL. Delege onaycı
+// (canApproveOfficeActions) BAŞKASININ talebini onaylayabilir ama KENDİ talebini değil → o da WOULD_REQUIRE_APPROVAL.
+//
+// Multitenant: tüm okuma/yazma input.tenantId (truthful @CurrentUser) ile sınırlı; computeDecision actor'ı tenant-doğrular,
+// createPendingRequest tenant-scoped kayıt açar → çapraz-tenant kaçak YOK.
 
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
+import { OfficeApprovalService } from './office-approval.service';
 
 export type OfficeApprovalShadowDecision = 'ALLOW' | 'WOULD_REQUIRE_APPROVAL';
+export type OfficeApprovalGateMode = 'off' | 'observe' | 'create';
 
 export interface OfficeApprovalShadowInput {
   actorUserId: string;
@@ -29,11 +40,13 @@ export interface OfficeApprovalShadowInput {
 }
 
 export interface OfficeApprovalShadowResult {
-  flagMode: 'off' | 'observe';
+  flagMode: OfficeApprovalGateMode;
   evaluated: boolean;
   decision?: OfficeApprovalShadowDecision;
   reasonCode?: string;
   requesterCapacity?: string;
+  /** create + non-PARTNER: oluşturulan OfficeApprovalRequest.id (idempotent). Controller bunu KULLANMAZ (persist-only). */
+  requestId?: string;
 }
 
 @Injectable()
@@ -42,41 +55,87 @@ export class OfficeApprovalShadowService {
     private readonly config: ConfigService,
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    // P4-3A: 'create' modunda OfficeApprovalRequest oluşturmak için (P4-1 substrate; idempotency + savedIntent + leak-free audit hazır).
+    private readonly officeApproval: OfficeApprovalService,
   ) {}
 
-  /** Yalnız 'observe' aktif. 'off'/unset/'enforce'/diğer → no-op (enforce P4-3; P4-2'de davranış değişmez). */
-  private flagMode(): 'off' | 'observe' {
+  /**
+   * off (varsayılan) | observe (P4-2 gölge) | create (P4-3A persist-only).
+   * 'observe'/'create' dışındaki her şey (unset/bilinmeyen/'on'/'enforce'/…) → off.
+   * NOT: 'enforce' BİLEREK off'a düşer — bloklama + typed response P4-6'ya rezerve (bu faz BLOKLAMAZ).
+   */
+  private flagMode(): OfficeApprovalGateMode {
     const v = String(this.config.get('OFFICE_APPROVAL_CHANGE_STATUS_GATE') ?? '').trim().toLowerCase();
-    return v === 'observe' ? 'observe' : 'off';
+    if (v === 'observe') return 'observe';
+    if (v === 'create') return 'create';
+    return 'off';
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  ///  - CaseStatusController.changeStatus() → POST /case-status/:caseId/change (observe hook'tan SONRA, P3 confirm gate ÖNCESİ).
+  ///    Controller dönüş değerini KULLANMAZ (await edip discard eder) → 'create' modunda request persist edilir ama
+  ///    response/akış/statü DEĞİŞMEZ. (Bloklama + typed response P4-6.)
+  /// </remarks>
   async evaluate(input: OfficeApprovalShadowInput): Promise<OfficeApprovalShadowResult> {
     const flagMode = this.flagMode();
     if (flagMode === 'off') return { flagMode: 'off', evaluated: false }; // no-op: hesap/audit/DB YOK
+
+    if (flagMode === 'observe') {
+      // P4-2 — GÖLGE: best-effort. OfficeApprovalRequest OLUŞTURMAZ, akış/statü DEĞİŞMEZ.
+      try {
+        const { decision, reasonCode, capacity } = await this.computeDecision(input.actorUserId, input.tenantId);
+        await this.audit.log({
+          tenantId: input.tenantId,
+          action: 'OFFICE_APPROVAL_SHADOW_EVALUATED',
+          entityType: 'OFFICE_APPROVAL_SHADOW',
+          entityId: input.targetRef,
+          userId: input.actorUserId, // truthful requester (system/unknown DEĞİL)
+          metadata: {
+            actionCode: input.actionCode,
+            targetType: input.targetType,
+            targetRef: input.targetRef,
+            requesterUserId: input.actorUserId,
+            requesterCapacity: capacity,
+            decision,
+            reasonCode,
+            flagMode,
+            // GİZLİLİK: ham payload (status/reason) audit'e YAZILMAZ; yalnız payloadHash.
+            ...(input.payload !== undefined ? { payloadHash: stableJsonHash(input.payload) } : {}),
+          },
+        });
+        return { flagMode, evaluated: true, decision, reasonCode, requesterCapacity: capacity };
+      } catch {
+        // observe ASLA akışı/mutation'ı bozmaz (best-effort)
+        return { flagMode, evaluated: false };
+      }
+    }
+
+    // flagMode === 'create' — P4-3A PERSIST-ONLY. BEST-EFFORT: hata YUTULUR → mevcut CHANGE_STATUS akışı BOZULMAZ.
+    // (Controller sonucu zaten discard ediyor; burada da throw etmeyiz → response/statü davranışı AYNEN.)
     try {
       const { decision, reasonCode, capacity } = await this.computeDecision(input.actorUserId, input.tenantId);
-      await this.audit.log({
+      if (decision === 'ALLOW') {
+        // PARTNER self-authority → kendi işlemi için approval gerekmez → request OLUŞTURULMAZ.
+        return { flagMode, evaluated: true, decision, reasonCode, requesterCapacity: capacity };
+      }
+      // non-PARTNER → OfficeApprovalRequest PENDING_APPROVAL create (idempotent). savedIntent = ham CHANGE_STATUS niyeti
+      // (P4-5 deferred-exec için saklanır). idempotencyKey deterministik: aynı (aksiyon+hedef+aktör+niyet) tekrarı
+      // YENİ talep ÜRETMEZ (createPendingRequest mevcut PENDING'i döner; P2002-race güvenli). Audit yalnız payloadHash.
+      const savedIntent = input.payload ?? null;
+      const idempotencyKey = `${input.actionCode}|${input.targetRef}|${input.actorUserId}|${stableJsonHash(savedIntent)}`;
+      const request = await this.officeApproval.createPendingRequest({
         tenantId: input.tenantId,
-        action: 'OFFICE_APPROVAL_SHADOW_EVALUATED',
-        entityType: 'OFFICE_APPROVAL_SHADOW',
-        entityId: input.targetRef,
-        userId: input.actorUserId, // truthful requester (system/unknown DEĞİL)
-        metadata: {
-          actionCode: input.actionCode,
-          targetType: input.targetType,
-          targetRef: input.targetRef,
-          requesterUserId: input.actorUserId,
-          requesterCapacity: capacity,
-          decision,
-          reasonCode,
-          flagMode,
-          // GİZLİLİK: ham payload (status/reason) audit'e YAZILMAZ; yalnız payloadHash.
-          ...(input.payload !== undefined ? { payloadHash: stableJsonHash(input.payload) } : {}),
-        },
+        actionCode: input.actionCode,
+        targetType: input.targetType,
+        targetRef: input.targetRef,
+        requesterUserId: input.actorUserId,
+        savedIntent,
+        idempotencyKey,
       });
-      return { flagMode, evaluated: true, decision, reasonCode, requesterCapacity: capacity };
+      return { flagMode, evaluated: true, decision, reasonCode, requesterCapacity: capacity, requestId: request.id };
     } catch {
-      // observe ASLA akışı/mutation'ı bozmaz (best-effort)
+      // P4-3A BLOKLAMAZ: persist hatası mevcut akışı BOZMAZ (fail-closed P4-6'da, bloklama ile birlikte gelir).
       return { flagMode, evaluated: false };
     }
   }

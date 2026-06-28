@@ -37,6 +37,8 @@ export class CaseStatusController {
   /// - CaseStatusController.changeStatus() → POST /case-status/:caseId/change (frontend BulkOperationsPanel → api.changeCaseStatus)
   /// P2b-2c-1 hardening: METHOD-level JwtAuthGuard + truthful @CurrentUser actor/tenant; body.userId YOK SAYILIR; cross-tenant → 404.
   /// P2b-2c-2: PRE-action CHANGE_STATUS observe (diagnostic only; enforced=false, best-effort; mutation davranışı/response DEĞİŞMEDİ).
+  /// P4-3A: OfficeApproval 'create' modu — non-PARTNER requester'da OfficeApprovalRequest PENDING PERSIST edilir (best-effort);
+  ///        SADECE persist → response/statü/akış DEĞİŞMEZ (dönüş discard). Bloklama + typed APPROVAL_REQUIRED = P4-6.
   /// </remarks>
   // Dosya statüsünü değiştir
   @Post(':caseId/change')
@@ -57,8 +59,12 @@ export class CaseStatusController {
       caseId,
       actionCode: ActionCode.CHANGE_STATUS,
     });
-    // P4-2: OfficeApproval SHADOW (flag OFF→no-op; 'observe'→approval kararını HESAPLA+logla). effectiveDecision
-    // DEĞİŞMEZ — OfficeApprovalRequest OLUŞTURMAZ, statü değiştirmez, enforce etmez (best-effort, akışı bozmaz).
+    // P4-2/P4-3A: OfficeApproval gate (flag OFFICE_APPROVAL_CHANGE_STATUS_GATE; observe'den SONRA, P3 confirm gate ÖNCESİ).
+    //  - off (varsayılan) → no-op → mevcut davranış AYNEN.
+    //  - observe (P4-2)   → GÖLGE: kararı hesaplar + SHADOW_EVALUATED audit; akış/statü DEĞİŞMEZ.
+    //  - create (P4-3A)   → PERSIST-ONLY: non-PARTNER için OfficeApprovalRequest PENDING oluşturulur (best-effort).
+    //                       SADECE persist — DÖNÜŞ KULLANILMAZ (bilinçli discard); response/statü/akış DEĞİŞMEZ.
+    // KESİN: bu hat BLOKLAMAZ ve typed response DÖNDÜRMEZ (bloklama + APPROVAL_REQUIRED = P4-6). Dönüşü bilerek discard ediyoruz.
     // GİZLİLİK: ham status/reason audit'e GİRMEZ (yalnız payloadHash).
     await this.officeApprovalShadow.evaluate({
       actorUserId,
