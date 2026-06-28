@@ -28,6 +28,7 @@ import { GroupModule } from "./modules/group/group.module";
 import { ReportModule } from "./modules/report/report.module";
 import { OfficeModule } from "./modules/office/office.module";
 import { PermissionDiagnosticsModule } from "./modules/permission-diagnostics/permission-diagnostics.module";
+import { OfficeApprovalModule } from "./modules/office-approval/office-approval.module";
 import { StaffModule } from "./modules/staff/staff.module";
 import { ClientNotificationModule } from "./modules/client-notification/client-notification.module";
 import { GreetingModule } from "./modules/greeting/greeting.module";
@@ -166,6 +167,7 @@ function getConditionalImports(): Type<unknown>[] {
     ReportModule,
     OfficeModule,
     PermissionDiagnosticsModule,
+    OfficeApprovalModule,
     StaffModule,
     ClientNotificationModule,
     GreetingModule,
