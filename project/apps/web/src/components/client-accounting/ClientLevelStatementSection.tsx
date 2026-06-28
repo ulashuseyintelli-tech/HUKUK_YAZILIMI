@@ -9,11 +9,14 @@
  * UI HESAP MOTORU DEĞİL: borç/alacak/bakiye backend'den. runningBalance = "Ekstre Net Bakiyesi"
  * (müvekkile özgü net pozisyon) — "genel bakiye/gerçek borç" gibi iddialı isim KULLANILMAZ.
  * Satır tipi etiketleri KİLİTLİ (CLIENT_PAYMENT = "Masraf Tahsil Edildi", müvekkile ödeme DEĞİL).
+ *
+ * B-2.2 (frontend-only): AccountingPanel kontratı — başlık+Oluştur SABİT, açıklama SABİT (subHeader),
+ * ekstre listesi kendi içinde scroll (sticky thead). Modal panel dışında. Mantık/label DEĞİŞMEDİ.
  */
 
 import { useMemo, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Card, Badge, Spinner, Button } from '@hukuk/ui';
+import { Badge, Spinner, Button } from '@hukuk/ui';
 import { FileText, Plus, AlertCircle, X, Info, ChevronDown, ChevronUp } from 'lucide-react';
 import { formatMoneyString } from '@/lib/api/client-accounting';
 import {
@@ -24,17 +27,20 @@ import {
   CLIENT_STATEMENT_LINE_LABELS,
   type ClientStatement,
 } from '@/lib/api/client-statement';
+import { AccountingPanel } from './AccountingPanel';
 
 interface ClientLevelStatementSectionProps {
   clientId: string;
   currency: string;
   /** Satır "Dosya" kolonu için (caseId → dosya no); Genel Cari kırılımından, ekstra sorgu yok. */
   cases: { caseId: string; caseNumber: string }[];
+  /** Dashboard grid item sizing (min-h-0/min-w-0) için panel köküne geçer. */
+  className?: string;
 }
 
 type ModalState = null | { mode: 'create' } | { mode: 'supersede'; target: ClientStatement };
 
-export function ClientLevelStatementSection({ clientId, currency, cases }: ClientLevelStatementSectionProps) {
+export function ClientLevelStatementSection({ clientId, currency, cases, className }: ClientLevelStatementSectionProps) {
   const queryClient = useQueryClient();
   const [modal, setModal] = useState<ModalState>(null);
   const [detailId, setDetailId] = useState<string | null>(null);
@@ -58,40 +64,46 @@ export function ClientLevelStatementSection({ clientId, currency, cases }: Clien
   };
 
   return (
-    <Card className="p-4">
-      <div className="flex items-center justify-between mb-1">
-        <div className="flex items-center gap-2">
-          <FileText className="w-5 h-5 text-gray-600" />
-          <h2 className="font-medium text-gray-900">Müvekkil Genel Ekstresi</h2>
-          {statementsQ.data && (
-            <Badge variant="secondary" className="ml-1">
-              {statements.length} aktif
-            </Badge>
-          )}
-          {statementsQ.isFetching && <Spinner className="w-4 h-4 ml-1" />}
-        </div>
-        <Button size="sm" onClick={() => setModal({ mode: 'create' })} disabled={!clientId}>
-          <Plus className="w-4 h-4 mr-1" /> Genel Ekstre Oluştur
-        </Button>
-      </div>
-      <p className="text-[11px] text-gray-400 mb-3">
-        Müvekkilin tüm dosyalarındaki müvekkile özgü hareketlerin immutable dönem snapshot'ı. Dosya geneli
-        (borçlu tahsilatı/avans) tutarlar bu ekstreye <strong>girmez</strong>.
-      </p>
-
-      {statementsQ.isError ? (
-        <div className="flex items-center gap-2 text-red-600 text-sm py-4">
-          <AlertCircle className="w-4 h-4" />
-          <span>Genel ekstreler yüklenemedi.</span>
-        </div>
-      ) : statements.length === 0 ? (
-        <div className="text-sm text-gray-500 py-6 text-center">
-          Henüz genel ekstre yok. Bir dönem seçip <strong>Genel Ekstre Oluştur</strong> ile immutable snapshot üretebilirsiniz.
-        </div>
-      ) : (
-        <div className="overflow-auto border rounded-lg">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50">
+    <>
+      <AccountingPanel
+        ariaLabel="Müvekkil genel ekstresi tablosu"
+        className={className}
+        title={
+          <>
+            <FileText className="h-5 w-5 shrink-0 text-gray-600" />
+            <h2 className="text-[15px] font-bold text-gray-900">Müvekkil Genel Ekstresi</h2>
+            {statementsQ.data && (
+              <Badge variant="secondary" className="ml-1">
+                {statements.length} aktif
+              </Badge>
+            )}
+            {statementsQ.isFetching && <Spinner className="ml-1 h-4 w-4" />}
+          </>
+        }
+        actions={
+          <Button size="sm" onClick={() => setModal({ mode: 'create' })} disabled={!clientId}>
+            <Plus className="mr-1 h-4 w-4" /> Genel Ekstre Oluştur
+          </Button>
+        }
+        subHeader={
+          <p className="text-[11px] text-gray-400">
+            Müvekkilin tüm dosyalarındaki müvekkile özgü hareketlerin immutable dönem snapshot'ı. Dosya geneli
+            (borçlu tahsilatı/avans) tutarlar bu ekstreye <strong>girmez</strong>.
+          </p>
+        }
+      >
+        {statementsQ.isError ? (
+          <div className="flex items-center gap-2 px-4 py-4 text-sm text-red-600">
+            <AlertCircle className="h-4 w-4" />
+            <span>Genel ekstreler yüklenemedi.</span>
+          </div>
+        ) : statements.length === 0 ? (
+          <div className="px-4 py-6 text-center text-sm text-gray-500">
+            Henüz genel ekstre yok. Bir dönem seçip <strong>Genel Ekstre Oluştur</strong> ile immutable snapshot üretebilirsiniz.
+          </div>
+        ) : (
+          <table className="w-full text-sm tabular-nums">
+            <thead className="sticky top-0 z-10 bg-gray-50 [&_th]:font-semibold">
               <tr className="border-b text-left">
                 <th className="px-3 py-2">Dönem</th>
                 <th className="px-3 py-2 text-right">Ekstre Net Bakiyesi</th>
@@ -113,8 +125,8 @@ export function ClientLevelStatementSection({ clientId, currency, cases }: Clien
               ))}
             </tbody>
           </table>
-        </div>
-      )}
+        )}
+      </AccountingPanel>
 
       {modal && (
         <StatementFormModal
@@ -126,7 +138,7 @@ export function ClientLevelStatementSection({ clientId, currency, cases }: Clien
           onDone={onDone}
         />
       )}
-    </Card>
+    </>
   );
 }
 
@@ -156,7 +168,7 @@ function StatementRow({
     <>
       <tr className="hover:bg-gray-50">
         <td className="px-3 py-2 whitespace-nowrap">{period}</td>
-        <td className="px-3 py-2 text-right font-medium whitespace-nowrap">
+        <td className="px-3 py-2 text-right font-semibold whitespace-nowrap">
           {formatMoneyString(statement.closingBalance, statement.currency || currency)}
         </td>
         <td className="px-3 py-2">

@@ -148,11 +148,18 @@ export default function ClientAccountingPage() {
   const totalPages = payoutsQ.data ? Math.max(1, Math.ceil(payoutsQ.data.total / PAGE_SIZE)) : 1;
 
   return (
-    <div className="h-full flex flex-col overflow-auto p-4 gap-4">
+    // B-2.2: Genel Cari (scope=client) = fixed-viewport dashboard (>=xl: overflow-hidden, panel iç scroll).
+    // Case-scope DOKUNULMADI: klasik sayfa scroll'u korunur (overflow-auto). Yükseklik dashboard
+    // layout'tan gelir (main = flex-1 overflow-auto); burada 100dvh calc YOK.
+    <div
+      className={`h-full min-h-0 flex flex-col p-4 gap-4 ${
+        scope === 'client' ? 'overflow-auto xl:overflow-hidden' : 'overflow-auto'
+      }`}
+    >
       <PageHeader />
 
       {/* Dosya seçici */}
-      <Card className="p-4">
+      <Card className="p-4 shrink-0">
         <label className="block text-xs font-medium text-gray-500 mb-1">Kapsam / Dosya</label>
         <div className="flex items-center gap-3 flex-wrap">
           <select
@@ -435,8 +442,8 @@ function SummaryCard({
 
 function PageHeader() {
   return (
-    <div>
-      <h1 className="text-xl font-semibold text-gray-900">Müvekkil Muhasebesi</h1>
+    <div className="shrink-0">
+      <h1 className="text-xl font-bold text-gray-900">Müvekkil Muhasebesi</h1>
       <p className="text-sm text-gray-500">
         Varsayılan: <strong>Genel Cari</strong> (müvekkilin tüm dosyaları). Bir dosya seçince o dosyanın
         bazlı muhasebesine (5 para gerçeği + ekstre) inilir.
