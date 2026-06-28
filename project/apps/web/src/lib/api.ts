@@ -2716,6 +2716,22 @@ class ApiClient {
   }
 
   /**
+   * Bekleyen tahsilat dağıtım kaydını kesinleştir.
+   * Çağrıldığı yerler:
+   * - CaseDetailPage.handlePostCollectionDisposition() → POST /collection-dispositions/:id/post (OperationDeck dağıtım aksiyonu)
+   */
+  async postCollectionDisposition(dispositionId: string, payload: PostCollectionDispositionDTO) {
+    const response = await this.request<{ data: PostCollectionDispositionResultDTO }>(
+      `/collection-dispositions/${dispositionId}/post`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+    );
+    return response.data;
+  }
+
+  /**
    * Tahsilat ekle
    */
   async createCollection(caseId: string, data: CreateCollectionDTO) {
@@ -4943,6 +4959,23 @@ export interface CollectionDispositionDTO {
   createdAt: string;
   updatedAt: string;
   lines?: CollectionDispositionLineDTO[];
+}
+
+export interface PostCollectionDispositionLineDTO {
+  type: Exclude<CollectionDispositionLineType, "HELD_PENDING_DISTRIBUTION">;
+  amount: string | number;
+  caseClientId?: string | null;
+  note?: string;
+}
+
+export interface PostCollectionDispositionDTO {
+  lines: PostCollectionDispositionLineDTO[];
+}
+
+export interface PostCollectionDispositionResultDTO {
+  posted: boolean;
+  dispositionId: string;
+  lineCount: number;
 }
 
 export interface CreateCollectionDTO {

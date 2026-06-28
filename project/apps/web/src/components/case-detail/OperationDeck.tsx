@@ -45,6 +45,39 @@ interface AccountingRecord {
   amount?: number;
   createdAt: string;
   relatedRequestId?: string; // İlişkili talep
+  disposition?: DispositionPostingRecord;
+}
+
+type DispositionPostingLineType =
+  | "CLIENT_PAYABLE"
+  | "CONTRACTUAL_FEE_WITHHELD"
+  | "FIRM_EXPENSE_REIMBURSEMENT"
+  | "CLIENT_EXPENSE_REIMBURSEMENT"
+  | "OFFSET_CLIENT_ADVANCE"
+  | "OTHER";
+
+interface DispositionPostingLineInput {
+  type: DispositionPostingLineType;
+  amount: string | number;
+  caseClientId?: string | null;
+  note?: string;
+}
+
+interface DispositionPostingRecord {
+  id: string;
+  collectionId: string;
+  status: string;
+  totalAmount: string | number;
+  currency: string;
+  beneficiaryScope: string;
+  caseClientId?: string | null;
+  manualReversalRequiredAt?: string | null;
+}
+
+interface EligibleDispositionClient {
+  id: string;
+  name: string;
+  role?: string;
 }
 
 // Eski Note tipi (geriye uyumluluk)
@@ -108,6 +141,9 @@ interface OperationDeckProps {
   muvekkilTalepleri?: ClientRequest[];
   muhasebeKayitlari?: AccountingRecord[];
   accountingEmptyMessage?: string;
+  eligibleDispositionClients?: EligibleDispositionClient[];
+  postingDispositionId?: string | null;
+  onPostDisposition?: (disposition: DispositionPostingRecord, lines: DispositionPostingLineInput[]) => Promise<void> | void;
   tasks?: Task[];
   financeItems?: FinanceItem[];
   uyapQueries?: UyapQuery[];
@@ -211,6 +247,9 @@ export function OperationDeck({
   muvekkilTalepleri = [],
   muhasebeKayitlari = [],
   accountingEmptyMessage = "Bu dosyada henüz dağıtım/mutabakat kaydı yok.",
+  eligibleDispositionClients = [],
+  postingDispositionId = null,
+  onPostDisposition,
   tasks = [],
   financeItems = [],
   uyapQueries = [],
@@ -229,9 +268,46 @@ export function OperationDeck({
   addressWorkflowLoading = false,
 }: OperationDeckProps) {
   const [activePanel, setActivePanel] = useState<PanelId>(null);
+  const [postingActionMessage, setPostingActionMessage] = useState<string | null>(null);
 
   const togglePanel = (id: PanelId) => {
     setActivePanel(activePanel === id ? null : id);
+  };
+
+  const handlePostDispositionClick = async (record: AccountingRecord) => {
+    const disposition = record.disposition;
+    if (!disposition || String(disposition.status || "").toUpperCase() !== "HELD_PENDING_DISTRIBUTION") return;
+
+    setPostingActionMessage(null);
+    const totalAmount = Number(disposition.totalAmount ?? record.amount ?? 0);
+    if (!Number.isFinite(totalAmount) || totalAmount <= 0) {
+      setPostingActionMessage("Dağıtım tutarı geçerli değil.");
+      return;
+    }
+
+    const eligibleClients = eligibleDispositionClients.filter((client) => Boolean(client.id));
+    if (eligibleClients.length > 1) {
+      setPostingActionMessage("Çoklu alacaklı dosyada dağıtım için alacaklı seçimi gerekir.");
+      return;
+    }
+    if (eligibleClients.length === 0) {
+      setPostingActionMessage("Dağıtımı kesinleştirmek için uygun alacaklı bulunamadı.");
+      return;
+    }
+    if (!onPostDisposition) {
+      setPostingActionMessage("Dağıtım kesinleştirme aksiyonu bu görünümde kullanılamıyor.");
+      return;
+    }
+
+    const confirmed = typeof window === "undefined" || window.confirm("Bu dağıtımı kesinleştirmek istediğinize emin misiniz? Payout öncesi mutabakat durumu güncellenecek.");
+    if (!confirmed) return;
+
+    const payloadAmount = typeof disposition.totalAmount === "string" ? disposition.totalAmount : totalAmount.toFixed(2);
+    try {
+      await onPostDisposition(disposition, [{ type: "CLIENT_PAYABLE", amount: payloadAmount, caseClientId: eligibleClients[0].id }]);
+    } catch (error: any) {
+      setPostingActionMessage(error?.message || "Dağıtım kesinleştirilemedi.");
+    }
   };
 
   // Counts for badges
@@ -809,6 +885,11 @@ export function OperationDeck({
                 </p>
                 <p className="mt-1 text-[11px] text-teal-700">Tahsilatların müvekkil payı, ücret/masraf mahsubu ve payout öncesi dağıtım durumunu gösterir.</p>
               </div>
+              {postingActionMessage && (
+                <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  {postingActionMessage}
+                </div>
+              )}
               <div className="space-y-2 max-h-[250px] overflow-y-auto">
                 {muhasebeKayitlari.map(record => (
                   <div key={record.id} className="p-3 rounded-lg border border-slate-200 bg-white">
@@ -826,6 +907,25 @@ export function OperationDeck({
                       }`}>
                         {record.type === "ODEME_ALINDI" ? "+" : ""}{record.amount.toLocaleString("tr-TR")} ₺
                       </p>
+                    )}
+                    {String(record.disposition?.status || "").toUpperCase() === "HELD_PENDING_DISTRIBUTION" && (
+                      <button
+                        type="button"
+                        onClick={() => handlePostDispositionClick(record)}
+                        disabled={
+                          postingDispositionId === record.disposition?.id ||
+                          !Number.isFinite(Number(record.disposition?.totalAmount ?? record.amount ?? 0)) ||
+                          Number(record.disposition?.totalAmount ?? record.amount ?? 0) <= 0
+                        }
+                        className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {postingDispositionId === record.disposition?.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <Check className="h-3 w-3" />
+                        )}
+                        Dağıtımı Kesinleştir
+                      </button>
                     )}
                   </div>
                 ))}
