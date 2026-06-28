@@ -2,6 +2,41 @@ import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { ActionHandlerContext } from '../icrabot/v28-engine/action-handler.service';
 
+interface ExactPayoutAllocation {
+  id: string;
+  tenantId: string;
+  caseId: string;
+  caseClientId: string;
+  clientPayoutId: string;
+  collectionId: string;
+  collectionDispositionId: string;
+  collectionDispositionLineId: string;
+  amount: unknown;
+  currency: string;
+}
+
+interface PostedDispositionForReversal {
+  id: string;
+  tenantId: string;
+  caseId: string;
+  caseClientId: string | null;
+  collectionId: string;
+  status: string;
+  currency: string;
+  manualReversalRequiredAt: Date | null;
+}
+
+interface ManualReversalTransaction {
+  collectionDisposition: {
+    update(args: unknown): Promise<unknown>;
+  };
+  clientPayoutAllocation: {
+    findMany(args: unknown): Promise<ExactPayoutAllocation[]>;
+  };
+  clientPayoutManualReversal: {
+    upsert(args: unknown): Promise<unknown>;
+  };
+}
 /**
  * M1R reversal sonucu. `outcome` davranış matrisini birebir yansıtır; handler bu nesneyi
  * döndürür → ActionHandlerService dispatch'i markDone (success:true) yapar ve sonucu
@@ -62,7 +97,7 @@ export class CollectionReversalService {
 
   /**
    * Çağrıldığı yerler:
-   *  - PaymentReversedRegistrar → ActionHandlerService 'EVENT_PUBLISHED:PAYMENT_REVERSED' handler
+   *  - PaymentReversedRegistrar.onModuleInit() → ActionHandlerService 'EVENT_PUBLISHED:PAYMENT_REVERSED' handler (collection cancel downstream reversal consume)
    */
   async reverseFromPaymentReversed(
     payload: Record<string, any>,
@@ -93,7 +128,16 @@ export class CollectionReversalService {
     const disp = await this.prisma.collectionDisposition.findUnique({
       where: { collectionId },
       // FU1: manualReversalRequiredAt POSTED idempotency kontrolü için seçilir (zaten işaretliyse overwrite YOK).
-      select: { id: true, tenantId: true, caseId: true, status: true, manualReversalRequiredAt: true },
+      select: {
+        id: true,
+        tenantId: true,
+        caseId: true,
+        caseClientId: true,
+        collectionId: true,
+        status: true,
+        currency: true,
+        manualReversalRequiredAt: true,
+      },
     });
 
     if (!disp) {
@@ -152,38 +196,53 @@ export class CollectionReversalService {
         // ClientStatementLine üretmiş olabilir; status değiştirmek finansal hakikati düzeltmez.
         // M1R/FU1 finansal reversal (ClientStatement/BalanceLedger/payout) YAZMAZ. FU1: manuel
         // reversal sinyali artık KALICI kolona persist edilir (operasyonel görünürlük — takip kaçağı önlenir).
+        const alreadyMarked = Boolean(disp.manualReversalRequiredAt);
+        const workflowCount = await this.prisma.$transaction(async (tx) => {
+          if (!disp.manualReversalRequiredAt) {
+            const reason =
+              'PAYMENT_REVERSED POSTED disposition\'a geldi — finansal reversal (ClientStatement/' +
+              'BalanceLedger/payout) manuel gerekir; M1R/FU1 otomatik yazmaz, status POSTED kalır.';
+            // status ALANI data'da YOK → POSTED korunur; yalnız marker alanları set edilir.
+            await (tx as ManualReversalTransaction).collectionDisposition.update({
+              where: { id: disp.id },
+              data: {
+                manualReversalRequiredAt: new Date(),
+                manualReversalReason: reason,
+                manualReversalSourceActionId: context?.actionId ?? null,
+              },
+            });
+          }
+
+          return this.createExactPriorPayoutManualReversals(
+            tx as ManualReversalTransaction,
+            disp as PostedDispositionForReversal,
+            collectionId,
+            context,
+          );
+        });
+
         if (disp.manualReversalRequiredAt) {
           // İdempotent: marker ZATEN konmuş (ör. ikinci PAYMENT_REVERSED). Overwrite YOK — ilk
-          // tetikleyen kayıt (zaman/sebep/sourceActionId) korunur.
+          // tetikleyen kayıt (zaman/sebep/sourceActionId) korunur; TM47D-3 yine de eksik exact
+          // prior-payout workflow kaydını dedupeKey ile idempotent şekilde açabilir.
           this.logger.warn(
             `MANUAL_REVERSAL_REQUIRED (zaten işaretli): POSTED disposition ${disp.id} ` +
-              `(collection=${collectionId}, srcEvent=${context?.actionId}) — idempotent no-op, marker korundu.`,
+              `(collection=${collectionId}, srcEvent=${context?.actionId}, exactWorkflows=${workflowCount}) — ` +
+              `marker korundu, exact workflow idempotent kontrol edildi.`,
           );
           return {
             outcome: 'posted-manual-reversal-required',
             dispositionId: disp.id,
             previousStatus: disp.status,
             manualReversalRequired: true,
-            alreadyMarked: true,
+            alreadyMarked,
           };
         }
 
-        const reason =
-          'PAYMENT_REVERSED POSTED disposition\'a geldi — finansal reversal (ClientStatement/' +
-          'BalanceLedger/payout) manuel gerekir; M1R/FU1 otomatik yazmaz, status POSTED kalır.';
-        // status ALANI data'da YOK → POSTED korunur; yalnız marker alanları set edilir.
-        await this.prisma.collectionDisposition.update({
-          where: { id: disp.id },
-          data: {
-            manualReversalRequiredAt: new Date(),
-            manualReversalReason: reason,
-            manualReversalSourceActionId: context?.actionId ?? null,
-          },
-        });
         this.logger.warn(
           `MANUAL_REVERSAL_REQUIRED: POSTED disposition ${disp.id} (collection=${collectionId}, ` +
             `srcEvent=${context?.actionId}) — PAYMENT_REVERSED consume edildi; status POSTED korundu, ` +
-            `kalıcı marker yazıldı. Finansal reversal manuel.`,
+            `kalıcı marker yazıldı, exactWorkflows=${workflowCount}. Finansal reversal manuel.`,
         );
         return {
           outcome: 'posted-manual-reversal-required',
@@ -202,5 +261,84 @@ export class CollectionReversalService {
         );
         return { outcome: 'skip-unsupported-status', dispositionId: disp.id, previousStatus: disp.status };
     }
+  }
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CollectionReversalService.reverseFromPaymentReversed() → PAYMENT_REVERSED POSTED disposition exact prior payout workflow creation
+  /// </remarks>
+  private async createExactPriorPayoutManualReversals(
+    tx: ManualReversalTransaction,
+    disp: PostedDispositionForReversal,
+    collectionId: string,
+    context?: ActionHandlerContext,
+  ): Promise<number> {
+    const allocationWhere: Record<string, unknown> = {
+      tenantId: disp.tenantId,
+      caseId: disp.caseId,
+      collectionId,
+      collectionDispositionId: disp.id,
+      currency: disp.currency,
+      clientPayout: { status: 'RECORDED' },
+    };
+    if (disp.caseClientId) {
+      allocationWhere.caseClientId = disp.caseClientId;
+    }
+
+    const allocations = await tx.clientPayoutAllocation.findMany({
+      where: allocationWhere,
+      select: {
+        id: true,
+        tenantId: true,
+        caseId: true,
+        caseClientId: true,
+        clientPayoutId: true,
+        collectionId: true,
+        collectionDispositionId: true,
+        collectionDispositionLineId: true,
+        amount: true,
+        currency: true,
+      },
+      orderBy: [{ clientPayoutId: 'asc' }, { collectionDispositionLineId: 'asc' }],
+    });
+
+    for (const allocation of allocations) {
+      const dedupeKey = this.exactManualReversalDedupeKey(allocation.tenantId, collectionId, allocation.id);
+      await tx.clientPayoutManualReversal.upsert({
+        where: { dedupeKey },
+        update: {},
+        create: {
+          tenantId: allocation.tenantId,
+          caseId: allocation.caseId,
+          caseClientId: allocation.caseClientId,
+          amount: allocation.amount,
+          currency: allocation.currency,
+          status: 'OPEN',
+          confidence: 'EXACT',
+          dedupeKey,
+          sourceActionId: context?.actionId ?? null,
+          collectionId: allocation.collectionId,
+          collectionDispositionId: allocation.collectionDispositionId,
+          collectionDispositionLineId: allocation.collectionDispositionLineId,
+          clientPayoutId: allocation.clientPayoutId,
+          clientPayoutAllocationId: allocation.id,
+          openedById: null,
+          note: 'PAYMENT_REVERSED sonrası exact prior payout manual reversal workflow.',
+          metadata: {
+            source: 'PAYMENT_REVERSED',
+            actionType: context?.actionType ?? null,
+          },
+        },
+      });
+    }
+
+    return allocations.length;
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CollectionReversalService.createExactPriorPayoutManualReversals() → ClientPayoutManualReversal unique dedupe key üretimi
+  /// </remarks>
+  private exactManualReversalDedupeKey(tenantId: string, collectionId: string, allocationId: string): string {
+    return `payment-reversed:exact:${tenantId}:${collectionId}:${allocationId}`;
   }
 }
