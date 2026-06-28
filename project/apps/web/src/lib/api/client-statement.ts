@@ -18,6 +18,8 @@ export interface ClientStatementLine {
   lineType: string;
   refType: string;
   refId: string;
+  /** Faz B: client-level ekstre satırında DOLU (kaynak dosya); case-level'da null. */
+  caseId: string | null;
   caseClientId: string | null;
   /** Decimal string. */
   debit: string;
@@ -28,7 +30,8 @@ export interface ClientStatementLine {
 
 export interface ClientStatement {
   id: string;
-  caseId: string;
+  /** Faz B: client-level ekstrede null (tüm dosyalar); case-level'da dolu. */
+  caseId: string | null;
   clientId: string;
   periodStart: string;
   periodEnd: string;
@@ -58,6 +61,13 @@ export interface SupersedeStatementInput {
   note?: string;
 }
 
+/** Faz B — client-level (genel) ekstre üretimi. clientId URL'den; caseId/includeRequests YOK. */
+export interface CreateClientLevelStatementInput {
+  periodStart: string;
+  periodEnd: string;
+  note?: string;
+}
+
 export const clientStatementApi = {
   /** Dosya bazlı liste (default ACTIVE). */
   async list(caseId: string): Promise<ClientStatement[]> {
@@ -77,9 +87,24 @@ export const clientStatementApi = {
     return resp.data;
   },
 
-  /** Ekstreyi yenile = supersede (eski SUPERSEDED + yeni ACTIVE). */
+  /** Ekstreyi yenile = supersede (eski SUPERSEDED + yeni ACTIVE). Client-level ekstrede de aynı endpoint
+   *  (backend old.caseId=null → client-level dalı). */
   async supersede(id: string, input: SupersedeStatementInput): Promise<ClientStatement> {
     const resp = await apiClient.post<ClientStatement>(`/client-statements/${id}/supersede`, input);
+    return resp.data;
+  },
+
+  // ── Faz B: CLIENT-LEVEL (genel) ekstre ──
+
+  /** Müvekkilin genel (client-level, caseId=null) ekstreleri (default ACTIVE). */
+  async listByClient(clientId: string): Promise<ClientStatement[]> {
+    const resp = await apiClient.get<ClientStatement[]>(`/client-statements/client/${clientId}`);
+    return resp.data;
+  },
+
+  /** Genel ekstre üret (MUTATION; yalnız CLIENT_SPECIFIC hareketler). Aynı dönem ACTIVE varsa → supersede. */
+  async createClientLevel(clientId: string, input: CreateClientLevelStatementInput): Promise<ClientStatement> {
+    const resp = await apiClient.post<ClientStatement>(`/client-statements/client/${clientId}`, input);
     return resp.data;
   },
 };
@@ -100,4 +125,16 @@ export const STATEMENT_STATUS_LABELS: Record<string, string> = {
   ACTIVE: 'Aktif',
   SUPERSEDED: 'Yenilendi',
   VOID: 'Geçersiz',
+};
+
+/**
+ * Faz B — client-level ekstre satır tipi → hukuk bürosu dili (KİLİTLİ; Ulaş).
+ * DİKKAT: CLIENT_PAYMENT burada "müvekkilden masraf tahsilatı"dır → "Masraf Tahsil Edildi"
+ * (ASLA "müvekkile ödeme" DEĞİL; o CLIENT_PAYOUT_SENT'tir). Bilinmeyen tip ham gösterilir.
+ */
+export const CLIENT_STATEMENT_LINE_LABELS: Record<string, string> = {
+  CASE_COLLECTION_PAYABLE: 'Müvekkile Borç Oluştu',
+  CLIENT_PAYOUT_SENT: 'Müvekkile Ödeme Yapıldı',
+  EXPENSE_REQUESTED: 'Müvekkilden Masraf Talep Edildi',
+  CLIENT_PAYMENT: 'Masraf Tahsil Edildi',
 };
