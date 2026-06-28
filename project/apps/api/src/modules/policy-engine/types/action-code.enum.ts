@@ -169,6 +169,22 @@ export enum ActionCode {
    * Guarded-edge APPROVAL (para hareketi confirm'den güçlü iç onay ister). Codex finans domeni — observe-only.
    */
   BANK_TRANSFER = 'BANK_TRANSFER',
+
+  // ============================================
+  // Client Offset Actions (TM3 Faz C C-1)
+  // ============================================
+
+  /**
+   * Müvekkil mahsubu uygula (ClientOffset kind=APPLY) - HIGH risk, müvekkil bakiyesi etkiler.
+   * C-1 v1: yetki ClientOffsetService'te explicit enforce (PARTNER/MANAGER-only). @CpeRequired YALNIZ
+   * future-compat metadata; CpeRequiredGuard dormant olduğundan güvenlik buna bağlı DEĞİL.
+   */
+  CLIENT_OFFSET_APPLY = 'CLIENT_OFFSET_APPLY',
+
+  /**
+   * Müvekkil mahsubu iptali (ClientOffset kind=REVERSAL) - HIGH risk. Aynı explicit PARTNER/MANAGER gate + reason.
+   */
+  CLIENT_OFFSET_REVERSE = 'CLIENT_OFFSET_REVERSE',
 }
 
 /**
@@ -236,6 +252,10 @@ export const ACTION_RISK_LEVELS: Record<ActionCode, RiskLevel> = {
 
   // Guided-Open P2b-2 pilot (Record exhaustive zorunlu)
   [ActionCode.BANK_TRANSFER]: RiskLevel.HIGH,
+
+  // TM3 Faz C C-1 — Müvekkil Mahsubu (Record exhaustive zorunlu)
+  [ActionCode.CLIENT_OFFSET_APPLY]: RiskLevel.HIGH,
+  [ActionCode.CLIENT_OFFSET_REVERSE]: RiskLevel.HIGH,
 };
 
 /**

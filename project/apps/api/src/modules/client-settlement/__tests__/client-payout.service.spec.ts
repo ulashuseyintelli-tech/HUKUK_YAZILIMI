@@ -59,6 +59,8 @@ function buildPrisma(opts: {
       }),
     },
     collection: { findMany: jest.fn().mockResolvedValue(opts.confirmedCollections ?? []) },
+    // TM3 Faz C C-1 — computeOutstanding artık offset okur (tx içinde); no-op (yokken sonuç birebir aynı).
+    clientOffset: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }), findMany: jest.fn().mockResolvedValue([]) },
   };
   const prisma: any = {
     caseClient: { findFirst: jest.fn().mockResolvedValue(opts.cc === undefined ? { id: 'cc-A' } : opts.cc) },

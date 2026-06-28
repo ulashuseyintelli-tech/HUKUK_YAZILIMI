@@ -27,6 +27,7 @@ const mockPrisma: any = {
   collectionDisposition: { findMany: jest.fn() }, // M2 case-level: POSTED proceeds (disposition+lines)
   collectionDispositionLine: { findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) }, // Faz B client-level
   clientPayout: { findMany: jest.fn(), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) }, // M3 RECORDED payouts
+  clientOffset: { findMany: jest.fn().mockResolvedValue([]) }, // TM3 Faz C C-1 — offset satırları (default: yok)
   clientStatement: { create: jest.fn(), update: jest.fn(), findFirst: jest.fn(), findMany: jest.fn(), count: jest.fn().mockResolvedValue(0) },
   clientStatementLine: { createMany: jest.fn() },
   $executeRaw: jest.fn().mockResolvedValue(1), // pg_advisory_xact_lock (Faz 7-E concurrency guard)
@@ -43,6 +44,8 @@ describe('ClientStatementService', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    // clearAllMocks implementasyonu silmez → offset testleri findMany'yi override eder; her test [] ile başlasın (leak-guard).
+    mockPrisma.clientOffset.findMany.mockResolvedValue([]);
     mockDispatcher.dispatch.mockResolvedValue({ status: 'sent' });
     mockOffice.getOrCreate.mockResolvedValue({ name: 'Test Büro' });
     const module: TestingModule = await Test.createTestingModule({
@@ -308,6 +311,33 @@ describe('ClientStatementService', () => {
           manualReversalRequiredAt: null,
         }),
       }));
+    });
+
+    it('C-1 mahsup APPLY (case-level): payable bacağı bakiyeyi OYNATIR (debit), expense bacağı BİLGİ(0)', async () => {
+      mockPrisma.collectionDisposition.findMany.mockResolvedValue([]); // proceeds yok → yalnız offset
+      mockPrisma.clientOffset.findMany.mockResolvedValue([
+        // her iki bacak da bu dosya (payableCaseId=CASE & payableCaseClientId=cc-A & expenseCaseId=CASE)
+        { id: 'off1', amount: D(300), kind: 'APPLY', payableCaseId: CASE, payableCaseClientId: 'cc-A', expenseCaseId: CASE, createdAt: new Date('2026-06-15T00:00:00Z') },
+      ]);
+      await service.create(TENANT, CASE, USER, dto);
+
+      const lines = mockPrisma.clientStatementLine.createMany.mock.calls[0][0].data;
+      const pay = lines.find((l: any) => l.lineType === 'CLIENT_OFFSET_PAYABLE_APPLIED');
+      const exp = lines.find((l: any) => l.lineType === 'CLIENT_OFFSET_EXPENSE_APPLIED');
+      // payable bacağı: proceeds gibi bakiyeyi düşürür (debit, running −300)
+      expect(pay).toBeDefined();
+      expect(pay.debit.toString()).toBe('300');
+      expect(pay.credit.toString()).toBe('0');
+      expect(pay.runningBalance.toString()).toBe('-300');
+      expect(pay.caseClientId).toBe('cc-A');
+      expect(pay.refType).toBe('ClientOffset');
+      // expense bacağı: case-level masraf bakiyeye girmez → BİLGİ(0), running değişmez
+      expect(exp).toBeDefined();
+      expect(exp.debit.toString()).toBe('0');
+      expect(exp.credit.toString()).toBe('0');
+      expect(exp.runningBalance.toString()).toBe('-300');
+      // closing = payable bacağı etkisi (case-level net pozisyon −300)
+      expect(mockPrisma.clientStatement.create.mock.calls[0][0].data.closingBalance.toString()).toBe('-300');
     });
 
     it('manualReversalRequiredAt dolu POSTED disposition yeni normal statement snapshotina GIRMEZ', async () => {
@@ -576,6 +606,58 @@ describe('ClientStatementService', () => {
       expect(lines.find((l: any) => l.refId === 'po1').debit.toString()).toBe('400');
       expect(lines.find((l: any) => l.refId === 'er1').debit.toString()).toBe('300');
       expect(lines.find((l: any) => l.refId === 'ep1').credit.toString()).toBe('100');
+    });
+
+    /** C-1 offset için tüm CLIENT_SPECIFIC kaynakları boşalt (order-independent), yalnız offset kalsın. */
+    function seedOnlyOffset(rows: any[]) {
+      mockPrisma.collectionDispositionLine.findMany.mockResolvedValue([]);
+      mockPrisma.clientPayout.findMany.mockResolvedValue([]);
+      mockPrisma.expenseRequest.findMany.mockResolvedValue([]);
+      mockPrisma.expensePayment.findMany.mockResolvedValue([]);
+      mockPrisma.clientOffset.findMany.mockResolvedValue(rows);
+    }
+
+    it('C-1 mahsup APPLY (client-level): payable bacağı debit + expense bacağı credit → NET 0; closing değişmez', async () => {
+      seedOnlyOffset([
+        { id: 'off1', amount: D(300), kind: 'APPLY', payableCaseId: 'caseX', payableCaseClientId: 'cc-A', expenseCaseId: 'caseX', createdAt: new Date('2026-06-15T00:00:00Z') },
+      ]);
+      await service.createClientLevel(TENANT, CLIENT, USER, CL_DTO);
+      const lines = mockPrisma.clientStatementLine.createMany.mock.calls[0][0].data;
+      expect(lines).toHaveLength(2);
+      const pay = lines.find((l: any) => l.lineType === 'CLIENT_OFFSET_PAYABLE_APPLIED');
+      const exp = lines.find((l: any) => l.lineType === 'CLIENT_OFFSET_EXPENSE_APPLIED');
+      expect(pay).toBeDefined();
+      expect(exp).toBeDefined();
+      // payable bacağı: müvekkile-alacak azalır → debit (net −X)
+      expect(pay.debit.toString()).toBe('300');
+      expect(pay.credit.toString()).toBe('0');
+      expect(pay.refType).toBe('ClientOffset');
+      expect(pay.refId).toBe('off1');
+      expect(pay.caseId).toBe('caseX');
+      expect(pay.caseClientId).toBe('cc-A');
+      // expense bacağı: masraf borcu azalır → credit (net +X)
+      expect(exp.debit.toString()).toBe('0');
+      expect(exp.credit.toString()).toBe('300');
+      // NET ETKİ 0 → başka hareket yok → closing == opening (0); INVARIANT korunur
+      expect(mockPrisma.clientStatement.create.mock.calls[0][0].data.closingBalance.toString()).toBe('0');
+    });
+
+    it('C-1 mahsup REVERSAL (client-level): payable credit + expense debit → NET 0 (APPLY\'ın tersi)', async () => {
+      seedOnlyOffset([
+        { id: 'rev1', amount: D(300), kind: 'REVERSAL', payableCaseId: 'caseX', payableCaseClientId: 'cc-A', expenseCaseId: 'caseX', createdAt: new Date('2026-06-16T00:00:00Z') },
+      ]);
+      await service.createClientLevel(TENANT, CLIENT, USER, CL_DTO);
+      const lines = mockPrisma.clientStatementLine.createMany.mock.calls[0][0].data;
+      expect(lines).toHaveLength(2);
+      const pay = lines.find((l: any) => l.lineType === 'CLIENT_OFFSET_PAYABLE_REVERSED');
+      const exp = lines.find((l: any) => l.lineType === 'CLIENT_OFFSET_EXPENSE_REVERSED');
+      expect(pay).toBeDefined();
+      expect(exp).toBeDefined();
+      expect(pay.credit.toString()).toBe('300'); // payable geri (+X)
+      expect(pay.debit.toString()).toBe('0');
+      expect(exp.debit.toString()).toBe('300'); // expense borç geri (−X)
+      expect(exp.credit.toString()).toBe('0');
+      expect(mockPrisma.clientStatement.create.mock.calls[0][0].data.closingBalance.toString()).toBe('0');
     });
 
     it('6+7. aynı client+period 2. ACTIVE client-level ENGELLENİR; guard caseId:null scope', async () => {

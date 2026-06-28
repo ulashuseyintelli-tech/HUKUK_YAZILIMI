@@ -635,6 +635,51 @@ export class ClientStatementService {
       });
     }
 
+    // TM3 Faz C C-1 — ClientOffset (Müvekkil Mahsubu). Her offset İKİ satır (payable + expense bacağı):
+    //   APPLY  → payable bacağı debit (net −X) + expense bacağı credit (net +X)  → net delta 0
+    //   REVERSAL→ payable bacağı credit (net +X) + expense bacağı debit (net −X)  → net delta 0
+    // opening/closing offset'e DUYARSIZ (iki bacak sıfırlanır; dönem öncesi offset de net 0 → opening doğru).
+    // Satırlar yalnız GÖRÜNÜRLÜK. Period dahil = ClientOffset.createdAt. Mevcut statement MUTATE EDİLMEZ (yeni snapshot).
+    const offsets = await this.prisma.clientOffset.findMany({
+      where: { tenantId, clientId, createdAt: { gte: periodStart, lte: periodEnd } },
+      select: { id: true, amount: true, kind: true, payableCaseId: true, payableCaseClientId: true, expenseCaseId: true, createdAt: true },
+    });
+    for (const o of offsets) {
+      const isApply = o.kind === 'APPLY';
+      // payable bacağı
+      items.push({
+        date: o.createdAt,
+        effect: isApply ? o.amount.negated() : o.amount,
+        draft: {
+          lineDate: o.createdAt,
+          lineType: isApply ? ClientStatementLineType.CLIENT_OFFSET_PAYABLE_APPLIED : ClientStatementLineType.CLIENT_OFFSET_PAYABLE_REVERSED,
+          refType: 'ClientOffset',
+          refId: o.id,
+          caseId: o.payableCaseId,
+          caseClientId: o.payableCaseClientId,
+          debit: isApply ? o.amount : ZERO,
+          credit: isApply ? ZERO : o.amount,
+          note: isApply ? 'Mahsup — alacak bacağı' : 'Mahsup iptali — alacak bacağı',
+        },
+      });
+      // expense bacağı
+      items.push({
+        date: o.createdAt,
+        effect: isApply ? o.amount : o.amount.negated(),
+        draft: {
+          lineDate: o.createdAt,
+          lineType: isApply ? ClientStatementLineType.CLIENT_OFFSET_EXPENSE_APPLIED : ClientStatementLineType.CLIENT_OFFSET_EXPENSE_REVERSED,
+          refType: 'ClientOffset',
+          refId: o.id,
+          caseId: o.expenseCaseId,
+          caseClientId: null,
+          debit: isApply ? ZERO : o.amount,
+          credit: isApply ? o.amount : ZERO,
+          note: isApply ? 'Mahsup — masraf bacağı' : 'Mahsup iptali — masraf bacağı',
+        },
+      });
+    }
+
     items.sort((a, b) => a.date.getTime() - b.date.getTime());
     let running = opening;
     const lines: LineDraft[] = [];
@@ -725,11 +770,34 @@ export class ClientStatementService {
       payoutRows = payouts.map((p) => ({ id: p.id, amount: p.amount, paidAt: p.paidAt }));
     }
 
+    // TM3 Faz C C-1 — ClientOffset bacakları (yalnız bu dosyaya ait). payable bacağı (payableCaseId==caseId &&
+    // payableCaseClientId==statementCaseClientId) proceeds gibi case-level bakiyeyi OYNATIR; expense bacağı
+    // (expenseCaseId==caseId) case-level'da BİLGİ(0) — EXPENSE_REQUESTED ile aynı (masraf case-level bakiyeye girmez).
+    const offsetRows = await this.prisma.clientOffset.findMany({
+      where: {
+        tenantId,
+        createdAt: { gte: periodStart, lte: periodEnd },
+        OR: [
+          ...(statementCaseClientId ? [{ payableCaseId: caseId, payableCaseClientId: statementCaseClientId }] : []),
+          { expenseCaseId: caseId },
+        ],
+      },
+      select: { id: true, amount: true, kind: true, payableCaseId: true, payableCaseClientId: true, expenseCaseId: true, createdAt: true },
+    });
+    const offsetPayableItems = offsetRows
+      .filter((o) => !!statementCaseClientId && o.payableCaseId === caseId && o.payableCaseClientId === statementCaseClientId)
+      .map((o) => ({ kind: 'offsetPayable' as const, date: o.createdAt, o }));
+    const offsetExpenseItems = offsetRows
+      .filter((o) => o.expenseCaseId === caseId)
+      .map((o) => ({ kind: 'offsetExpense' as const, date: o.createdAt, o }));
+
     const items = [
       ...ledgerRows.map((l) => ({ kind: 'money' as const, date: l.createdAt, l })),
       ...requestRows.map((r) => ({ kind: 'info' as const, date: r.createdAt, r })),
       ...dispositionRows.map((d) => ({ kind: 'proceeds' as const, date: d.postedAt, d })),
       ...payoutRows.map((p) => ({ kind: 'payout' as const, date: p.paidAt, p })),
+      ...offsetPayableItems,
+      ...offsetExpenseItems,
     ].sort((a, b) => a.date.getTime() - b.date.getTime());
 
     let running = opening;
@@ -779,7 +847,7 @@ export class ClientStatementService {
           runningBalance: running,
           note: m.note,
         });
-      } else {
+      } else if (it.kind === 'payout') {
         // M3 payout — ClientPayout RECORDED → CLIENT_PAYOUT_SENT (debit −). BalanceLedger DEĞİL (D1).
         running = running.minus(it.p.amount);
         lines.push({
@@ -793,6 +861,41 @@ export class ClientStatementService {
           credit: ZERO,
           runningBalance: running,
           note: 'Müvekkile ödeme',
+        });
+      } else if (it.kind === 'offsetPayable') {
+        // Mahsup payable bacağı — proceeds payable azalır. APPLY → debit (running −X); REVERSAL → credit (running +X).
+        const isApply = it.o.kind === 'APPLY';
+        running = isApply ? running.minus(it.o.amount) : running.plus(it.o.amount);
+        lines.push({
+          lineDate: it.o.createdAt,
+          lineType: isApply
+            ? ClientStatementLineType.CLIENT_OFFSET_PAYABLE_APPLIED
+            : ClientStatementLineType.CLIENT_OFFSET_PAYABLE_REVERSED,
+          refType: 'ClientOffset',
+          refId: it.o.id,
+          caseId: null, // case-level ekstre satırı
+          caseClientId: it.o.payableCaseClientId,
+          debit: isApply ? it.o.amount : ZERO,
+          credit: isApply ? ZERO : it.o.amount,
+          runningBalance: running,
+          note: isApply ? 'Mahsup — alacak bacağı (proceeds azaltıldı)' : 'Mahsup iptali — alacak bacağı',
+        });
+      } else {
+        // Mahsup masraf bacağı (offsetExpense) — case-level masraf bakiyeye girmez → BİLGİ(0), EXPENSE_REQUESTED gibi.
+        const isApply = it.o.kind === 'APPLY';
+        lines.push({
+          lineDate: it.o.createdAt,
+          lineType: isApply
+            ? ClientStatementLineType.CLIENT_OFFSET_EXPENSE_APPLIED
+            : ClientStatementLineType.CLIENT_OFFSET_EXPENSE_REVERSED,
+          refType: 'ClientOffset',
+          refId: it.o.id,
+          caseId: null,
+          caseClientId: null,
+          debit: ZERO,
+          credit: ZERO,
+          runningBalance: running, // BİLGİ satırı — bakiyeyi oynatmaz (masraf case-level'da info)
+          note: isApply ? 'Mahsup — masraf bacağı (bilgi)' : 'Mahsup iptali — masraf bacağı (bilgi)',
         });
       }
     }
