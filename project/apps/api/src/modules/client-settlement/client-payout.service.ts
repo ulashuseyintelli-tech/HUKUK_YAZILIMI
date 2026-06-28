@@ -10,6 +10,60 @@ export interface CreatePayoutResult {
   idempotentReplay?: boolean;
 }
 
+interface AllocationSourceLine {
+  id: string;
+  dispositionId: string;
+  amount: Prisma.Decimal;
+  disposition: {
+    id: string;
+    collectionId: string;
+    postedAt: Date | null;
+    manualReversalRequiredAt: Date | null;
+  };
+}
+
+interface PlannedPayoutAllocation {
+  collectionId: string;
+  collectionDispositionId: string;
+  collectionDispositionLineId: string;
+  amount: Prisma.Decimal;
+}
+
+interface ClientPayoutAllocationCreateManyArgs {
+  data: Array<{
+    tenantId: string;
+    caseId: string;
+    caseClientId: string;
+    clientPayoutId: string;
+    collectionId: string;
+    collectionDispositionId: string;
+    collectionDispositionLineId: string;
+    amount: Prisma.Decimal;
+    currency: string;
+    allocatedById: string;
+  }>;
+}
+
+type PayoutAllocationTransaction = Prisma.TransactionClient & {
+  clientPayoutAllocation: {
+    createMany(args: ClientPayoutAllocationCreateManyArgs): Promise<{ count: number }>;
+  };
+};
+
+const ZERO = new Prisma.Decimal(0);
+
+function minDecimal(a: Prisma.Decimal, b: Prisma.Decimal): Prisma.Decimal {
+  return a.lte(b) ? a : b;
+}
+
+function compareAllocationSourceLines(a: AllocationSourceLine, b: AllocationSourceLine): number {
+  const postedDelta = (a.disposition.postedAt?.getTime() ?? 0) - (b.disposition.postedAt?.getTime() ?? 0);
+  if (postedDelta !== 0) return postedDelta;
+  const dispositionDelta = a.dispositionId.localeCompare(b.dispositionId);
+  if (dispositionDelta !== 0) return dispositionDelta;
+  return a.id.localeCompare(b.id);
+}
+
 /**
  * TM3 M3 — Müvekkile Ödeme (ClientPayout).
  *
@@ -36,7 +90,7 @@ export class ClientPayoutService {
 
   /**
    * Çağrıldığı yerler:
-   *  - ClientPayoutController.create() → POST /client-payouts
+   *  - ClientPayoutController.create() → POST /client-payouts (müvekkile payout kaydı ve allocation source-link yazımı)
    */
   async create(tenantId: string, dto: CreateClientPayoutDto, actor?: { userId?: string }): Promise<CreatePayoutResult> {
     const userId = actor?.userId;
@@ -81,6 +135,8 @@ export class ClientPayoutService {
           throw new BadRequestException(`payout (${amount.toString()}) outstanding'i (${outstanding.toString()}) aşamaz`);
         }
 
+        const allocationPlan = await this.planPayoutAllocations(tx, tenantId, dto.caseId, dto.caseClientId, currency, amount);
+
         const payout = await tx.clientPayout.create({
           data: {
             tenantId,
@@ -95,6 +151,26 @@ export class ClientPayoutService {
           },
           select: { id: true },
         });
+        const allocationResult = await (tx as PayoutAllocationTransaction).clientPayoutAllocation.createMany({
+          data: allocationPlan.map((allocation) => ({
+            tenantId,
+            caseId: dto.caseId,
+            caseClientId: dto.caseClientId,
+            clientPayoutId: payout.id,
+            collectionId: allocation.collectionId,
+            collectionDispositionId: allocation.collectionDispositionId,
+            collectionDispositionLineId: allocation.collectionDispositionLineId,
+            amount: allocation.amount,
+            currency,
+            allocatedById: userId,
+          })),
+        });
+        if (allocationResult.count !== allocationPlan.length) {
+          throw new ConflictException({
+            code: 'PAYOUT_ALLOCATION_WRITE_MISMATCH',
+            message: 'Payout allocation source-link yazımı beklenen satır sayısıyla eşleşmedi',
+          });
+        }
         this.logger.log(`ClientPayout RECORDED: ${payout.id} (caseClient=${dto.caseClientId}, amount=${amount.toString()})`);
         return { created: true, payoutId: payout.id };
       });
@@ -109,6 +185,98 @@ export class ClientPayoutService {
       }
       throw e;
     }
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - ClientPayoutService.create() → POST /client-payouts allocation source-link planı
+  /// </remarks>
+  private async planPayoutAllocations(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    caseId: string,
+    caseClientId: string,
+    currency: string,
+    payoutAmount: Prisma.Decimal,
+  ): Promise<PlannedPayoutAllocation[]> {
+    const sourceLines = await tx.collectionDispositionLine.findMany({
+      where: {
+        type: 'CLIENT_PAYABLE',
+        caseClientId,
+        disposition: {
+          tenantId,
+          caseId,
+          currency,
+          status: 'POSTED',
+          manualReversalRequiredAt: null,
+        },
+      },
+      select: {
+        id: true,
+        dispositionId: true,
+        amount: true,
+        disposition: {
+          select: {
+            id: true,
+            collectionId: true,
+            postedAt: true,
+            manualReversalRequiredAt: true,
+          },
+        },
+      },
+      orderBy: [{ disposition: { postedAt: 'asc' } }, { dispositionId: 'asc' }, { id: 'asc' }],
+    });
+
+    const collectionIds = Array.from(new Set(sourceLines.map((line) => line.disposition.collectionId)));
+    const confirmedCollections = collectionIds.length
+      ? await tx.collection.findMany({
+          where: { id: { in: collectionIds }, tenantId, caseId, status: 'CONFIRMED' },
+          select: { id: true },
+        })
+      : [];
+    const confirmedCollectionIds = new Set(confirmedCollections.map((collection) => collection.id));
+    const eligibleLines = (sourceLines as AllocationSourceLine[])
+      .filter((line) => confirmedCollectionIds.has(line.disposition.collectionId))
+      .sort(compareAllocationSourceLines);
+
+    const paidAgg = await tx.clientPayout.aggregate({
+      _sum: { amount: true },
+      where: { tenantId, caseId, caseClientId, currency, status: 'RECORDED' },
+    });
+
+    let remainingPriorPaid = paidAgg._sum.amount ?? ZERO;
+    let remainingPayout = payoutAmount;
+    const allocations: PlannedPayoutAllocation[] = [];
+
+    for (const line of eligibleLines) {
+      let remainingLineCapacity = line.amount;
+
+      if (remainingPriorPaid.gt(ZERO)) {
+        const consumedPrior = minDecimal(remainingLineCapacity, remainingPriorPaid);
+        remainingLineCapacity = remainingLineCapacity.minus(consumedPrior);
+        remainingPriorPaid = remainingPriorPaid.minus(consumedPrior);
+      }
+
+      if (remainingPayout.lte(ZERO) || remainingLineCapacity.lte(ZERO)) continue;
+
+      const allocated = minDecimal(remainingLineCapacity, remainingPayout);
+      allocations.push({
+        collectionId: line.disposition.collectionId,
+        collectionDispositionId: line.dispositionId,
+        collectionDispositionLineId: line.id,
+        amount: allocated,
+      });
+      remainingPayout = remainingPayout.minus(allocated);
+    }
+
+    if (remainingPayout.gt(ZERO)) {
+      throw new ConflictException({
+        code: 'PAYOUT_ALLOCATION_PLAN_MISMATCH',
+        message: 'Payout allocation planı payout tutarıyla eşleşmedi',
+      });
+    }
+
+    return allocations;
   }
 
   /**
