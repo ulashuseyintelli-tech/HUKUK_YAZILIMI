@@ -61,3 +61,37 @@ export class OffsetEligibilityQueryDto {
   @IsOptional()
   currency?: string;
 }
+
+/**
+ * TM3 Faz C C-2a — non-persistent mahsup önizleme (D3+D4). CreateClientOffsetDto ile aynı leg seçimi,
+ * idempotencyKey YOK (mutate etmez). tenantId/actor req.user'dan; preview ClientOffset YARATMAZ/audit yazmaz.
+ */
+export class PreviewClientOffsetDto {
+  @IsString()
+  @MinLength(1)
+  clientId: string;
+
+  @IsString()
+  @MinLength(1)
+  currency: string;
+
+  @IsString()
+  @MinLength(1)
+  payableCaseId: string;
+
+  @IsString()
+  @MinLength(1)
+  payableCaseClientId: string;
+
+  @IsString()
+  @MinLength(1)
+  expenseCaseId: string;
+
+  @IsString()
+  @MinLength(1)
+  expenseRequestId: string;
+
+  /** Pozitif Decimal-string. amount<=min(payableBefore,expenseBefore); aşarsa OFFSET_EXCEEDS_AVAILABLE. */
+  @IsNumberString()
+  amount: string;
+}
