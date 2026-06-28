@@ -296,8 +296,8 @@ describe("P4-2 — CaseStatusController ↔ OfficeApproval shadow", () => {
   });
 });
 
-// ---- P4-3: controller↔OfficeApproval ENFORCE (non-PARTNER → APPROVAL_REQUIRED; statü DEĞİŞMEZ, P3 confirm'e gidilmez) ----
-describe("P4-3 — CaseStatusController ↔ OfficeApproval enforce", () => {
+// ---- P4-3A: controller↔OfficeApproval CREATE (persist-only; controller dönüşü DISCARD eder → response/statü DEĞİŞMEZ) ----
+describe("P4-3A — CaseStatusController ↔ OfficeApproval create (persist-only)", () => {
   const mkP43 = (shadowResult: unknown) => {
     const service = { changeStatus: jest.fn().mockResolvedValue({ id: "c1", caseStatus: "ISLEMDE" }) };
     const observe = { observe: jest.fn().mockResolvedValue(undefined) };
@@ -313,33 +313,28 @@ describe("P4-3 — CaseStatusController ↔ OfficeApproval enforce", () => {
   };
   afterEach(() => jest.clearAllMocks());
 
-  const approvalEnvelope = {
-    axis: "GUIDED_OPEN_PERMISSION",
-    outcome: "APPROVAL_REQUIRED",
-    actionCode: ActionCode.CHANGE_STATUS,
-    target: { resourceType: "LegalCase", caseId: "c1" },
-    reasonCode: "NON_AUTHORITY_LAWYER",
-    message: "Bu statü değişikliği için yetkili onayı gerekiyor; talep onaya gönderildi.",
-    approval: { requestId: "req-9", status: "PENDING_APPROVAL" },
-  };
-
-  it("enforce + non-PARTNER (shadow envelope döner) → controller envelope AYNEN döner; changeStatus ÇAĞRILMAZ + gate'e GİDİLMEZ (statü DEĞİŞMEZ)", async () => {
-    const { controller, service, gate } = mkP43({ flagMode: "enforce", evaluated: true, decision: "WOULD_REQUIRE_APPROVAL", requestId: "req-9", envelope: approvalEnvelope });
+  it("create + non-PARTNER (shadow requestId döner) → controller dönüşü KULLANMAZ: gate + changeStatus YİNE çağrılır, response AYNEN (BLOK YOK)", async () => {
+    const { controller, service, gate } = mkP43({ flagMode: "create", evaluated: true, decision: "WOULD_REQUIRE_APPROVAL", requestId: "req-9" });
     const res = await controller.changeStatus("u1", "t1", "c1", { status: "ACIZ" as never, reason: "r" });
-    expect(res).toBe(approvalEnvelope); // typed APPROVAL_REQUIRED; statü DEĞİŞMEDİ, onay talebi oluştu
-    expect(service.changeStatus).not.toHaveBeenCalled(); // official mutation YOK
-    expect(gate.evaluate).not.toHaveBeenCalled(); // P3 confirm'e GİDİLMEZ (shadow envelope'tan önce dönülür)
+    expect(gate.evaluate).toHaveBeenCalledTimes(1); // dönüş discard → akış sürer
+    expect(service.changeStatus).toHaveBeenCalledTimes(1); // official mutation AYNEN (P4-3A BLOKLAMAZ)
+    expect(res).toEqual({ success: true, data: { id: "c1", caseStatus: "ISLEMDE" }, message: "Statü başarıyla değiştirildi" });
   });
 
-  it("enforce + PARTNER (ALLOW, envelope YOK) → mevcut akış sürer: gate çağrılır + changeStatus çağrılır", async () => {
-    const { controller, service, gate } = mkP43({ flagMode: "enforce", evaluated: true, decision: "ALLOW", reasonCode: "PARTNER_SELF_AUTHORITY" });
+  it("create + PARTNER (requestId yok) → davranış AYNEN (gate + changeStatus çağrılır)", async () => {
+    const { controller, service, gate } = mkP43({ flagMode: "create", evaluated: true, decision: "ALLOW", reasonCode: "PARTNER_SELF_AUTHORITY" });
+    await controller.changeStatus("u1", "t1", "c1", { status: "ISLEMDE" as never });
+    expect(gate.evaluate).toHaveBeenCalledTimes(1);
+    expect(service.changeStatus).toHaveBeenCalledTimes(1);
+  });
+
+  it("controller shadow dönüşünü HİÇ kullanmaz: requestId taşıyan sonuç response contract'ına SIZMAZ", async () => {
+    const { controller } = mkP43({ flagMode: "create", evaluated: true, decision: "WOULD_REQUIRE_APPROVAL", requestId: "req-SECRET" });
     const res = await controller.changeStatus("u1", "t1", "c1", { status: "ISLEMDE" as never });
-    expect(gate.evaluate).toHaveBeenCalledTimes(1); // envelope yok → düşülür → gate (mevcut akış)
-    expect(service.changeStatus).toHaveBeenCalledTimes(1); // PARTNER: mevcut CHANGE_STATUS çalışır
-    expect((res as { success: boolean }).success).toBe(true);
+    expect(JSON.stringify(res)).not.toContain("req-SECRET"); // dönüş public response'a SIZMAZ (contract değişmez)
   });
 
-  it("off/observe (envelope YOK) → controller davranışı AYNEN (changeStatus çağrılır)", async () => {
+  it("off/observe → controller davranışı AYNEN (changeStatus çağrılır)", async () => {
     for (const sr of [{ flagMode: "off", evaluated: false }, { flagMode: "observe", evaluated: true, decision: "WOULD_REQUIRE_APPROVAL" }]) {
       const { controller, service } = mkP43(sr);
       await controller.changeStatus("u1", "t1", "c1", { status: "ISLEMDE" as never });

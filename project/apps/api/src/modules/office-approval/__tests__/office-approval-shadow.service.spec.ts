@@ -4,10 +4,11 @@ import { OfficeApprovalShadowService } from '../office-approval-shadow.service';
 import { stableJsonHash } from '../../permission-diagnostics/guided-edge/canonical-json';
 
 /**
- * P4-2/P4-3 — OfficeApprovalShadowService testleri.
+ * P4-2/P4-3A — OfficeApprovalShadowService testleri.
  * P4-2 (off/observe): PARTNER→ALLOW · diğer→WOULD_REQUIRE_APPROVAL · off→no-op · observe→audit+karar (create YOK·leak yok·best-effort).
- * P4-3 (enforce): PARTNER→ALLOW (create YOK·envelope YOK) · non-PARTNER→OfficeApprovalRequest create + APPROVAL_REQUIRED envelope ·
- *   savedIntent=ham niyet · idempotencyKey deterministik · leak yok · FAIL-CLOSED (create hatası YUTULMAZ).
+ * P4-3A (create, PERSIST-ONLY): PARTNER→ALLOW (create YOK) · non-PARTNER→OfficeApprovalRequest create (idempotent) ·
+ *   envelope YOK · response/akış DEĞİŞMEZ (controller discard) · BEST-EFFORT (create hatası YUTULUR, THROW ETMEZ).
+ *   NOT: 'enforce' BU FAZDA off'a düşer (bloklama + typed response P4-6'ya rezerve).
  */
 
 const baseInput = {
@@ -56,9 +57,9 @@ const lawyerPlain = () => u({ lawyer: { lawyerRank: 'LAWYER', canApproveOfficeAc
 const delegated = () => u({ lawyer: { lawyerRank: 'AUTHORIZED', canApproveOfficeActions: true } });
 const staff = () => u({ staffMember: { staffType: 'SEKRETER' } });
 
-describe('P4-2 OfficeApprovalShadowService — flag', () => {
-  it("flag 'off'/unset/bilinmeyen → no-op (evaluated:false; user-lookup/audit/create ÇAĞRILMAZ). 'enforce' artık AKTİF (no-op değil).", async () => {
-    for (const flag of [undefined, 'off', 'ON', 'xyz', 'OBSERVED', 'ENFORCED']) {
+describe('P4-2/P4-3A OfficeApprovalShadowService — flag', () => {
+  it("flag 'off'/unset/bilinmeyen/'enforce' → no-op (evaluated:false; user-lookup/audit/create ÇAĞRILMAZ). 'enforce' off'a düşer (P4-6 rezerve).", async () => {
+    for (const flag of [undefined, 'off', 'ON', 'xyz', 'enforce', 'ENFORCE', 'OBSERVED', 'CREATED']) {
       const { svc, prisma, audit, officeApproval } = make({ flag });
       const res = await svc.evaluate({ ...baseInput, payload: undefined });
       expect(res).toEqual({ flagMode: 'off', evaluated: false });
@@ -131,12 +132,11 @@ describe('P4-2 OfficeApprovalShadowService — observe: audit + no-side-effect +
     expect(a.metadata.payloadHash).toBe(stableJsonHash({ status: 'ACIZ', reason: 'x' }));
   });
 
-  it('observe: OfficeApprovalRequest OLUŞTURMAZ (createPendingRequest ve prisma.create çağrılmaz) + envelope YOK', async () => {
+  it('observe: OfficeApprovalRequest OLUŞTURMAZ (createPendingRequest ve prisma.create çağrılmaz)', async () => {
     const { svc, prisma, officeApproval } = make({ flag: 'observe', user: staff() });
     const r = await svc.evaluate(baseInput);
     expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
     expect(prisma.officeApprovalRequest.create).not.toHaveBeenCalled();
-    expect(r.envelope).toBeUndefined();
     expect(r.requestId).toBeUndefined();
   });
 
@@ -163,69 +163,63 @@ describe('P4-2 OfficeApprovalShadowService — observe: audit + no-side-effect +
   });
 });
 
-describe('P4-3 OfficeApprovalShadowService — enforce (CHANGE_STATUS approval CREATE path)', () => {
-  it('flag enforce → flagMode "enforce" (off DEĞİL)', async () => {
-    const { svc } = make({ flag: 'enforce', user: partner() });
+describe('P4-3A OfficeApprovalShadowService — create (PERSIST-ONLY; blok YOK, contract YOK)', () => {
+  it('flag create → flagMode "create"', async () => {
+    const { svc } = make({ flag: 'create', user: partner() });
     const r = await svc.evaluate(baseInput);
-    expect(r.flagMode).toBe('enforce');
+    expect(r.flagMode).toBe('create');
   });
 
-  // Acceptance 1: PARTNER requester → ALLOW → request YOK → mevcut CHANGE_STATUS çalışır (envelope YOK)
-  it('PARTNER → ALLOW: createPendingRequest ÇAĞRILMAZ, envelope/requestId YOK, audit YOK', async () => {
-    const { svc, officeApproval, audit } = make({ flag: 'enforce', user: partner() });
+  // PARTNER requester → ALLOW → request YOK
+  it('PARTNER → ALLOW: createPendingRequest ÇAĞRILMAZ, requestId YOK, shadow audit YOK', async () => {
+    const { svc, officeApproval, audit } = make({ flag: 'create', user: partner() });
     const r = await svc.evaluate(baseInput);
-    expect(r).toMatchObject({ flagMode: 'enforce', evaluated: true, decision: 'ALLOW', reasonCode: 'PARTNER_SELF_AUTHORITY' });
-    expect(r.envelope).toBeUndefined();
+    expect(r).toMatchObject({ flagMode: 'create', evaluated: true, decision: 'ALLOW', reasonCode: 'PARTNER_SELF_AUTHORITY' });
     expect(r.requestId).toBeUndefined();
     expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
-    expect(audit.log).not.toHaveBeenCalled(); // shadow audit yalnız observe'de
+    expect(audit.log).not.toHaveBeenCalled(); // shadow kendi audit'ini yazmaz (createPendingRequest kendi audit'ini yazar)
   });
 
-  // Acceptance 2: non-PARTNER lawyer → OfficeApprovalRequest PENDING_APPROVAL create + APPROVAL_REQUIRED envelope
-  it('non-PARTNER avukat → OfficeApprovalRequest create (PENDING) + APPROVAL_REQUIRED envelope', async () => {
-    const { svc, officeApproval } = make({ flag: 'enforce', user: lawyerPlain(), createReturns: { id: 'req-42', status: 'PENDING_APPROVAL' } });
+  // non-PARTNER lawyer → OfficeApprovalRequest PENDING create; ENVELOPE YOK (persist-only)
+  it('non-PARTNER avukat → OfficeApprovalRequest create (PENDING); envelope YOK, response davranışı için dönüş sade', async () => {
+    const { svc, officeApproval } = make({ flag: 'create', user: lawyerPlain(), createReturns: { id: 'req-42', status: 'PENDING_APPROVAL' } });
     const r = await svc.evaluate(baseInput);
     expect(officeApproval.createPendingRequest).toHaveBeenCalledTimes(1);
     const arg = officeApproval.createPendingRequest.mock.calls[0][0];
     expect(arg).toMatchObject({ tenantId: 't1', actionCode: 'CHANGE_STATUS', targetType: 'LegalCase', targetRef: 'c1', requesterUserId: 'u1' });
-    expect(arg.savedIntent).toEqual({ status: 'ACIZ', reason: 'x' }); // Acceptance 5: savedIntent = ham niyet (immutable iletilir)
-    expect(typeof arg.idempotencyKey).toBe('string'); // Acceptance 7
+    expect(arg.savedIntent).toEqual({ status: 'ACIZ', reason: 'x' }); // savedIntent = ham niyet (immutable iletilir)
+    expect(typeof arg.idempotencyKey).toBe('string');
     expect(r.requestId).toBe('req-42');
     expect(r.decision).toBe('WOULD_REQUIRE_APPROVAL');
-    expect(r.envelope).toBeDefined();
-    expect(r.envelope!.outcome).toBe('APPROVAL_REQUIRED');
-    expect(r.envelope!.axis).toBe('GUIDED_OPEN_PERMISSION');
-    expect(r.envelope!.actionCode).toBe('CHANGE_STATUS');
-    expect(r.envelope!.approval).toEqual({ requestId: 'req-42', status: 'PENDING_APPROVAL' });
-    expect(r.envelope!.target).toMatchObject({ resourceType: 'LegalCase', caseId: 'c1' });
+    expect('envelope' in r).toBe(false); // KESİN: typed envelope YOK (P4-6'ya rezerve)
   });
 
-  // Acceptance 3: delegated non-PARTNER → kendi talebinde yine request create
+  // delegated non-PARTNER → kendi talebinde yine create
   it('delege non-PARTNER (canApprove true) → KENDİ talebinde yine create (bypass YOK)', async () => {
-    const { svc, officeApproval } = make({ flag: 'enforce', user: delegated() });
+    const { svc, officeApproval } = make({ flag: 'create', user: delegated() });
     const r = await svc.evaluate(baseInput);
     expect(officeApproval.createPendingRequest).toHaveBeenCalledTimes(1);
-    expect(r.envelope!.reasonCode).toBe('DELEGATED_NO_SELF_APPROVE');
+    expect(r.reasonCode).toBe('DELEGATED_NO_SELF_APPROVE');
   });
 
-  // Acceptance 4: staff / unlinked → request create
-  it('staff → create + envelope (STAFF_NOT_APPROVER)', async () => {
-    const { svc, officeApproval } = make({ flag: 'enforce', user: staff() });
+  // staff / unlinked → create
+  it('staff → create (STAFF_NOT_APPROVER)', async () => {
+    const { svc, officeApproval } = make({ flag: 'create', user: staff() });
     const r = await svc.evaluate(baseInput);
     expect(officeApproval.createPendingRequest).toHaveBeenCalledTimes(1);
-    expect(r.envelope!.reasonCode).toBe('STAFF_NOT_APPROVER');
+    expect(r.reasonCode).toBe('STAFF_NOT_APPROVER');
   });
 
-  it('unlinked → create + envelope (UNLINKED) [non-ALLOW her zaman create]', async () => {
-    const { svc, officeApproval } = make({ flag: 'enforce', user: u() });
+  it('unlinked → create (UNLINKED) [non-ALLOW her zaman create]', async () => {
+    const { svc, officeApproval } = make({ flag: 'create', user: u() });
     const r = await svc.evaluate(baseInput);
     expect(officeApproval.createPendingRequest).toHaveBeenCalledTimes(1);
-    expect(r.envelope!.reasonCode).toBe('UNLINKED');
+    expect(r.reasonCode).toBe('UNLINKED');
   });
 
-  // Acceptance 7: idempotencyKey deterministik
+  // idempotencyKey deterministik
   it('idempotency: aynı (aktör+hedef+niyet) → AYNI idempotencyKey', async () => {
-    const { svc, officeApproval } = make({ flag: 'enforce', user: lawyerPlain() });
+    const { svc, officeApproval } = make({ flag: 'create', user: lawyerPlain() });
     await svc.evaluate(baseInput);
     await svc.evaluate(baseInput);
     const k1 = officeApproval.createPendingRequest.mock.calls[0][0].idempotencyKey;
@@ -234,7 +228,7 @@ describe('P4-3 OfficeApprovalShadowService — enforce (CHANGE_STATUS approval C
   });
 
   it('idempotency: farklı niyet (status değişir) → FARKLI idempotencyKey', async () => {
-    const { svc, officeApproval } = make({ flag: 'enforce', user: lawyerPlain() });
+    const { svc, officeApproval } = make({ flag: 'create', user: lawyerPlain() });
     await svc.evaluate(baseInput);
     await svc.evaluate({ ...baseInput, payload: { status: 'BATAK', reason: 'x' } });
     const k1 = officeApproval.createPendingRequest.mock.calls[0][0].idempotencyKey;
@@ -242,18 +236,24 @@ describe('P4-3 OfficeApprovalShadowService — enforce (CHANGE_STATUS approval C
     expect(k1).not.toBe(k2);
   });
 
-  // Acceptance 9: envelope/result ham reason/savedIntent SIZDIRMAZ
-  it('GİZLİLİK: envelope ham reason/savedIntent İÇERMEZ', async () => {
-    const { svc } = make({ flag: 'enforce', user: lawyerPlain() });
-    const r = await svc.evaluate({ ...baseInput, payload: { status: 'ACIZ', reason: 'GIZLI_GEREKCE' } });
-    const blob = JSON.stringify(r.envelope);
-    expect(blob).not.toContain('GIZLI_GEREKCE');
-    expect(blob).not.toContain('savedIntent');
+  // create modunda shadow KENDİ audit'ini yazmaz (createPendingRequest kendi leak-free audit'ini yazar — P4-1)
+  it("create: shadow OFFICE_APPROVAL_SHADOW_EVALUATED audit YAZMAZ (yalnız createPendingRequest kendi audit'ini yazar)", async () => {
+    const { svc, audit } = make({ flag: 'create', user: lawyerPlain() });
+    await svc.evaluate(baseInput);
+    expect(audit.log).not.toHaveBeenCalled();
   });
 
-  // FAIL-CLOSED: create hata verirse enforce THROW eder (observe gibi YUTMAZ → sessizce mutasyona düşülmez)
-  it('FAIL-CLOSED: createPendingRequest hata verirse enforce THROW eder (yutmaz)', async () => {
-    const { svc } = make({ flag: 'enforce', user: lawyerPlain(), createThrows: true });
-    await expect(svc.evaluate(baseInput)).rejects.toThrow('create boom');
+  // BEST-EFFORT: createPendingRequest hata verirse YUTULUR (THROW ETMEZ; akış bozulmaz). Fail-closed P4-6.
+  it('BEST-EFFORT: createPendingRequest hata verirse THROW ETMEZ → {flagMode:create, evaluated:false}', async () => {
+    const { svc } = make({ flag: 'create', user: lawyerPlain(), createThrows: true });
+    const r = await svc.evaluate(baseInput);
+    expect(r).toEqual({ flagMode: 'create', evaluated: false });
+  });
+
+  it('BEST-EFFORT: user-lookup hata verirse (create) → {flagMode:create, evaluated:false}, THROW ETMEZ', async () => {
+    const { svc, officeApproval } = make({ flag: 'create', userThrows: true });
+    const r = await svc.evaluate(baseInput);
+    expect(r).toEqual({ flagMode: 'create', evaluated: false });
+    expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
   });
 });
