@@ -4201,11 +4201,24 @@ model ErrorLog {
 
   createdAt DateTime @default(now())
 
+  // PR-2b: kalıcı dedupe. fingerprint = hata kimliği (analitik/gruplama, endpoint-bağımsız).
+  // activeDedupeKey = AKTİF olay kimliği; YALNIZ unresolved kayıtta dolu, resolve'da NULL yapılır.
+  // PostgreSQL nullable-unique (NULLS DISTINCT) → çözülmüş N kayıt null key ile yan yana durur;
+  // aynı hata çözülüp tekrar patlarsa eski resolved'a gömülmez, YENİ aktif kayıt açılır.
+  fingerprint     String?
+  activeDedupeKey String?   @unique
+  occurrenceCount Int       @default(1)
+  firstSeenAt     DateTime?
+  lastSeenAt      DateTime?
+
   @@index([tenantId])
   @@index([level])
   @@index([source])
   @@index([createdAt])
   @@index([isResolved])
+  @@index([tenantId, source, isResolved, lastSeenAt])
+  @@index([source, fingerprint, lastSeenAt])
+  @@index([lastSeenAt])
 }
 
 // ==================== DENETİM KAYITLARI (AUDIT LOG) ====================

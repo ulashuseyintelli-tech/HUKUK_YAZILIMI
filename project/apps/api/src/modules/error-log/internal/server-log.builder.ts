@@ -1,6 +1,6 @@
-// PR-2a: Backend internal (ExceptionFilter) → güvenli ErrorLog kaydı. İSTEMCİ değil sunucu
-// kaynaklı olduğu için source burada API/CRON/UYAP olabilir (default API). message/stack PII'den
-// arındırılır; metadata yalnız güvenli internal alanlar (requestId/fingerprint) — ham body YOK.
+// PR-2a/2b: Backend internal (ExceptionFilter) → güvenli ErrorLog girdisi. source=API/level=ERROR.
+// message/stack PII'den arındırılır. fingerprint/activeDedupeKey ARTIK ErrorLogService.log içinde
+// hesaplanır (kolon); builder yalnız errorName'i taşır. metadata büyütülmez (requestId + isPrisma).
 import type { LogErrorParams } from "../error-log.service";
 import { redactPii } from "../error-log.sanitize";
 
@@ -11,8 +11,7 @@ export interface ServerLogInput {
   tenantId?: string;
   userId?: string;
   requestId?: string;
-  fingerprint: string;
-  name?: string;
+  errorName?: string;
   message?: string;
   stack?: string;
   source?: string; // default 'API'
@@ -20,12 +19,13 @@ export interface ServerLogInput {
 }
 
 export function buildServerLogEntry(input: ServerLogInput): LogErrorParams {
-  const rawMessage = input.message && input.message.length ? input.message : input.name;
+  const rawMessage = input.message && input.message.length ? input.message : input.errorName;
   return {
     tenantId: input.tenantId,
     userId: input.userId,
     source: input.source ?? "API",
     level: "ERROR",
+    errorName: input.errorName,
     message: redactPii(rawMessage) || "(no message)",
     stack: redactPii(input.stack),
     endpoint: redactPii(input.route ? input.route.slice(0, 300) : undefined),
@@ -33,7 +33,6 @@ export function buildServerLogEntry(input: ServerLogInput): LogErrorParams {
     statusCode: input.status,
     metadata: {
       requestId: input.requestId,
-      fingerprint: input.fingerprint,
       ...(input.isPrisma ? { prisma: true } : {}),
     },
   };
