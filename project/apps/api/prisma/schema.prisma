@@ -1869,6 +1869,11 @@ model Lawyer {
   // Avukat Tipi (Hiyerarşi)
   lawyerRank LawyerRank @default(LAWYER) // PARTNER, MANAGER, AUTHORIZED, LAWYER
 
+  // P4 Approval Engine (K-2): kurumsal onay yetkisi. PARTNER doğal approver'dır; bu bayrak
+  // PARTNER-dışı bir avukata patron tarafından AÇIK olarak verilmiş delege onay yetkisidir.
+  // RBAC/PermissionCatalog DEĞİL; tekil kurumsal onay bayrağı. Henüz hiçbir akışa bağlı DEĞİL (P4-1 substrate).
+  canApproveOfficeActions Boolean @default(false)
+
   // Varsayılan Yetkiler (Büro genelinde - yeni dosyalara otomatik uygulanır)
   defaultPermissions Json? // { canEditCase, canGenerateDocs, canSyncUYAP, ... }
 
@@ -7798,4 +7803,60 @@ model ClientPayoutManualReversal {
   @@index([clientPayoutAllocationId])
   @@index([openedAt])
   @@index([closedAt])
+}
+
+/// P4-1 — Office (kurumsal) Approval Engine substrate (salt-veri omurgası; henüz HİÇBİR akışa bağlı DEĞİL).
+/// İÇ kurumsal onay kaydı: requester (işlemi başlatan) ≠ approver (PARTNER veya canApproveOfficeActions delege avukat).
+/// ClientApprovalRequest (müvekkil/DIŞ onayı) ile AYRI domain — KARIŞTIRILMAZ. savedIntent = onaylanınca requester
+/// adına idempotent yürütülecek niyet (deferred execution P4-3); payloadHash bütünlük + idempotency. EventStore YOK
+/// → olgusal kayıt AuditLog'da (OFFICE_APPROVAL_*). FK relation YOK (String-ref, substrate; davranış değişmez).
+model OfficeApprovalRequest {
+  id       String @id @default(cuid())
+  tenantId String
+
+  actionCode String // ActionCode enum değeri (string olarak; substrate tek modüle bağımlı kalmasın)
+  targetType String // ör. "LegalCase"
+  targetRef  String // hedef kaydın id'si (ör. caseId)
+
+  requesterUserId String // işlemi başlatan (User.id)
+  approverUserId  String? // kararı veren (User.id); PENDING iken null
+
+  status          OfficeApprovalStatus          @default(PENDING_APPROVAL)
+  executionStatus OfficeApprovalExecutionStatus @default(NOT_RUN)
+
+  savedIntent Json // onaylanınca yürütülecek niyet payload'ı (ham girdi; kod/closure DEĞİL)
+  payloadHash String // stableJsonHash(savedIntent) — bütünlük + idempotency
+
+  reason       String? // requester gerekçesi
+  decisionNote String? // approver karar notu (reject'te zorunlu, approve'da opsiyonel)
+
+  idempotencyKey String? // aynı niyetin çift-talebini engeller (verilirse unique)
+
+  createdAt  DateTime  @default(now())
+  decidedAt  DateTime? // approve/reject anı
+  executedAt DateTime? // deferred execution tamamlanma anı
+  expiresAt  DateTime?
+
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, status])
+  @@index([tenantId, approverUserId, status])
+  @@index([tenantId, requesterUserId])
+  @@index([targetType, targetRef])
+  @@index([expiresAt])
+}
+
+enum OfficeApprovalStatus {
+  PENDING_APPROVAL
+  APPROVED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+enum OfficeApprovalExecutionStatus {
+  NOT_RUN
+  RUNNING
+  SUCCEEDED
+  FAILED
+  STALE
 }
