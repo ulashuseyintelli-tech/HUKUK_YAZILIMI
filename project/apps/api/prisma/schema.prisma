@@ -7824,11 +7824,16 @@ model OfficeApprovalRequest {
   status          OfficeApprovalStatus          @default(PENDING_APPROVAL)
   executionStatus OfficeApprovalExecutionStatus @default(NOT_RUN)
 
-  savedIntent Json // onaylanınca yürütülecek niyet payload'ı (ham girdi; kod/closure DEĞİL)
+  savedIntent Json // requester'ın ORİJİNAL niyeti (ASLA ezilmez; kod/closure değil, ham girdi)
   payloadHash String // stableJsonHash(savedIntent) — bütünlük + idempotency
 
+  // P4-1A — "değiştirerek onayla" (APPROVED_WITH_CHANGES): approver'ın DEĞİŞTİRİLMİŞ niyeti AYRI iz olarak tutulur.
+  // Orijinal savedIntent korunur (audit çizgisi bozulmaz); execution (P4-3) varsa replacement'ı, yoksa orijinali kullanır.
+  replacementSavedIntent Json? // approver'ın değiştirilmiş kararı (yalnız APPROVED_WITH_CHANGES'te)
+  replacementPayloadHash String? // stableJsonHash(replacementSavedIntent)
+
   reason       String? // requester gerekçesi
-  decisionNote String? // approver karar notu (reject'te zorunlu, approve'da opsiyonel)
+  decisionNote String? // approver karar notu (reject/revision'da zorunlu, approve'da opsiyonel)
 
   idempotencyKey String? // aynı niyetin çift-talebini engeller (verilirse unique)
 
@@ -7848,6 +7853,8 @@ model OfficeApprovalRequest {
 enum OfficeApprovalStatus {
   PENDING_APPROVAL
   APPROVED
+  APPROVED_WITH_CHANGES // approver işlemi DEĞİŞTİREREK kesinleştirir (ör. ACIZ→BATAK); replacementSavedIntent dolar
+  REVISION_REQUESTED // approver "düzelt ve tekrar gönder" der (≠ REJECTED); decisionNote zorunlu
   REJECTED
   CANCELLED
   EXPIRED

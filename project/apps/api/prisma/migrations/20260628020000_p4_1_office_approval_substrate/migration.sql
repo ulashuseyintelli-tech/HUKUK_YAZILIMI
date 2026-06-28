@@ -1,8 +1,10 @@
 -- P4-1 — Office (kurumsal) Approval Engine substrate (ADDITIVE; geri-uyumlu, eski API kırılmaz).
 -- DROP / mevcut-kolon-ALTER YOK. Henüz hiçbir akışa bağlı DEĞİL (substrate-only).
+-- P4-1A: status enum 7 değer (APPROVED_WITH_CHANGES + REVISION_REQUESTED dahil) tek CREATE TYPE ile
+--        (ALTER TYPE ADD VALUE yok → Postgres-11 tek-tx kısıtı tetiklenmez) + replacementSavedIntent/Hash kolonları.
 
 -- CreateEnum
-CREATE TYPE "OfficeApprovalStatus" AS ENUM ('PENDING_APPROVAL', 'APPROVED', 'REJECTED', 'CANCELLED', 'EXPIRED');
+CREATE TYPE "OfficeApprovalStatus" AS ENUM ('PENDING_APPROVAL', 'APPROVED', 'APPROVED_WITH_CHANGES', 'REVISION_REQUESTED', 'REJECTED', 'CANCELLED', 'EXPIRED');
 
 -- CreateEnum
 CREATE TYPE "OfficeApprovalExecutionStatus" AS ENUM ('NOT_RUN', 'RUNNING', 'SUCCEEDED', 'FAILED', 'STALE');
@@ -23,6 +25,8 @@ CREATE TABLE "OfficeApprovalRequest" (
     "executionStatus" "OfficeApprovalExecutionStatus" NOT NULL DEFAULT 'NOT_RUN',
     "savedIntent" JSONB NOT NULL,
     "payloadHash" TEXT NOT NULL,
+    "replacementSavedIntent" JSONB,
+    "replacementPayloadHash" TEXT,
     "reason" TEXT,
     "decisionNote" TEXT,
     "idempotencyKey" TEXT,

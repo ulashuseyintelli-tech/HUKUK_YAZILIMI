@@ -1,6 +1,7 @@
 /** @jest-environment node */
 import 'reflect-metadata';
 import { BadRequestException, ForbiddenException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { OfficeApprovalService } from '../office-approval.service';
 import { stableJsonHash } from '../../permission-diagnostics/guided-edge/canonical-json';
 
@@ -216,5 +217,93 @@ describe('P4-1 OfficeApprovalService — audit gizlilik', () => {
     expect(blob).not.toContain('GIZLI_GEREKCE'); // ham reason audit'e girmez
     expect(blob).not.toContain('savedIntent'); // savedIntent anahtarı metadata'da yok
     expect(meta.requesterUserId).toBe(REQUESTER); // truthful actor alanları
+  });
+});
+
+describe('P4-1A OfficeApprovalService — approveWithChanges / requestRevision', () => {
+  it('approveWithChanges: PENDING→APPROVED_WITH_CHANGES + replacementPayloadHash + audit; orijinal savedIntent EZİLMEZ', async () => {
+    const { svc, prisma, audit } = make({ reqSeq: [mkReq(), mkReq({ status: 'APPROVED_WITH_CHANGES', approverUserId: APPROVER, replacementPayloadHash: stableJsonHash({ status: 'BATAK', reason: 'düzeltme' }) })], approverUser: partner() });
+    const res = await svc.approveWithChanges('oar-1', APPROVER, { status: 'BATAK', reason: 'düzeltme' }, 'değiştirdim');
+    const data = prisma.officeApprovalRequest.updateMany.mock.calls[0][0].data;
+    expect(data.status).toBe('APPROVED_WITH_CHANGES');
+    expect(data.replacementPayloadHash).toBe(stableJsonHash({ status: 'BATAK', reason: 'düzeltme' }));
+    expect('savedIntent' in data).toBe(false); // ORİJİNAL niyet update'te YOK → ezilmiyor (audit çizgisi korunur)
+    expect(res.status).toBe('APPROVED_WITH_CHANGES');
+    expect(audit.log.mock.calls[0][0].action).toBe('OFFICE_APPROVAL_APPROVED_WITH_CHANGES');
+  });
+
+  it('approveWithChanges: replacementSavedIntent YOK → BadRequest', async () => {
+    const { svc } = make({ reqSeq: [] });
+    await expect(svc.approveWithChanges('oar-1', APPROVER, null as never)).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('approveWithChanges: self (approver===requester) → BadRequest', async () => {
+    const { svc, prisma } = make({ reqSeq: [mkReq()] });
+    await expect(svc.approveWithChanges('oar-1', REQUESTER, { status: 'BATAK' })).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.officeApprovalRequest.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('approveWithChanges: yetkisiz approver → Forbidden', async () => {
+    const { svc } = make({ reqSeq: [mkReq()], approverUser: { id: APPROVER, isActive: true, tenantId: TENANT, lawyer: { lawyerRank: 'LAWYER', canApproveOfficeActions: false } } });
+    await expect(svc.approveWithChanges('oar-1', APPROVER, { status: 'BATAK' })).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('requestRevision: notsuz → BadRequest', async () => {
+    const { svc } = make({ reqSeq: [] });
+    await expect(svc.requestRevision('oar-1', APPROVER, '   ')).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('requestRevision: PENDING→REVISION_REQUESTED + audit (REJECTED DEĞİL)', async () => {
+    const { svc, audit } = make({ reqSeq: [mkReq(), mkReq({ status: 'REVISION_REQUESTED', approverUserId: APPROVER, decisionNote: 'açıklamayı düzelt' })], approverUser: partner() });
+    const res = await svc.requestRevision('oar-1', APPROVER, 'açıklamayı düzelt');
+    expect(res.status).toBe('REVISION_REQUESTED');
+    expect(audit.log.mock.calls[0][0].action).toBe('OFFICE_APPROVAL_REVISION_REQUESTED');
+  });
+
+  it('requestRevision: self → BadRequest', async () => {
+    const { svc } = make({ reqSeq: [mkReq()] });
+    await expect(svc.requestRevision('oar-1', REQUESTER, 'düzelt')).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('execution: APPROVED_WITH_CHANGES talep de yürütülebilir', async () => {
+    const { svc } = make({ reqSeq: [mkReq({ status: 'APPROVED_WITH_CHANGES' }), mkReq({ status: 'APPROVED_WITH_CHANGES', executionStatus: 'SUCCEEDED' })] });
+    const res = await svc.markExecutionSucceeded('oar-1', APPROVER);
+    expect(res.executionStatus).toBe('SUCCEEDED');
+  });
+
+  it('audit gizlilik: APPROVED_WITH_CHANGES ham replacement değeri SIZDIRMAZ (yalnız replacementPayloadHash)', async () => {
+    const updated = mkReq({ status: 'APPROVED_WITH_CHANGES', approverUserId: APPROVER, replacementPayloadHash: stableJsonHash({ status: 'BATAK', reason: 'GIZLI_REPLACEMENT' }) });
+    const { svc, audit } = make({ reqSeq: [mkReq(), updated], approverUser: partner() });
+    await svc.approveWithChanges('oar-1', APPROVER, { status: 'BATAK', reason: 'GIZLI_REPLACEMENT' }, 'not');
+    const blob = JSON.stringify(audit.log.mock.calls[0][0]);
+    expect(blob).not.toContain('GIZLI_REPLACEMENT'); // ham replacement audit'e SIZMAZ
+    expect(audit.log.mock.calls[0][0].metadata.replacementPayloadHash).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe('P4-1A OfficeApprovalService — idempotency P2002 race', () => {
+  it('eşzamanlı çift-talep: create P2002 → mevcut kaydı döner (idempotent), audit YAZMAZ', async () => {
+    const existing = mkReq({ id: 'oar-race', idempotencyKey: 'kRace' });
+    const findUnique = jest.fn().mockResolvedValueOnce(null).mockResolvedValueOnce(existing); // pre-check null, P2002 sonrası existing
+    const p2002 = new Prisma.PrismaClientKnownRequestError('unique violation', { code: 'P2002', clientVersion: '5.22.0' });
+    const prisma = {
+      officeApprovalRequest: { findUnique, create: jest.fn().mockRejectedValue(p2002), updateMany: jest.fn() },
+      user: { findUnique: jest.fn() },
+    };
+    const audit = { log: jest.fn().mockResolvedValue(undefined) };
+    const svc = new OfficeApprovalService(prisma as never, audit as never);
+    const res = await svc.createPendingRequest({ tenantId: TENANT, actionCode: 'X', targetType: 'LegalCase', targetRef: 'c', requesterUserId: REQUESTER, savedIntent: {}, idempotencyKey: 'kRace' });
+    expect(res).toBe(existing);
+    expect(audit.log).not.toHaveBeenCalled();
+  });
+
+  it('P2002 ama idempotencyKey YOK → hata yeniden fırlatılır (gerçek hata yutulmaz)', async () => {
+    const p2002 = new Prisma.PrismaClientKnownRequestError('unique violation', { code: 'P2002', clientVersion: '5.22.0' });
+    const prisma = {
+      officeApprovalRequest: { findUnique: jest.fn(), create: jest.fn().mockRejectedValue(p2002), updateMany: jest.fn() },
+      user: { findUnique: jest.fn() },
+    };
+    const svc = new OfficeApprovalService(prisma as never, { log: jest.fn() } as never);
+    await expect(svc.createPendingRequest({ tenantId: TENANT, actionCode: 'X', targetType: 'LegalCase', targetRef: 'c', requesterUserId: REQUESTER, savedIntent: {} })).rejects.toBe(p2002);
   });
 });

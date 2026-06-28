@@ -20,6 +20,7 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import {
+  Prisma,
   OfficeApprovalRequest,
   OfficeApprovalStatus,
   OfficeApprovalExecutionStatus,
@@ -56,22 +57,38 @@ export class OfficeApprovalService {
       if (existing) return existing; // idempotent: aynı niyet tekrar gelirse mevcut talep
     }
     const payloadHash = stableJsonHash(input.savedIntent);
-    const created = await this.prisma.officeApprovalRequest.create({
-      data: {
-        tenantId: input.tenantId,
-        actionCode: input.actionCode,
-        targetType: input.targetType,
-        targetRef: input.targetRef,
-        requesterUserId: input.requesterUserId,
-        savedIntent: input.savedIntent as object,
-        payloadHash,
-        reason: input.reason ?? null,
-        idempotencyKey: input.idempotencyKey ?? null,
-        expiresAt: input.expiresAt ?? null,
-        status: OfficeApprovalStatus.PENDING_APPROVAL,
-        executionStatus: OfficeApprovalExecutionStatus.NOT_RUN,
-      },
-    });
+    let created: OfficeApprovalRequest;
+    try {
+      created = await this.prisma.officeApprovalRequest.create({
+        data: {
+          tenantId: input.tenantId,
+          actionCode: input.actionCode,
+          targetType: input.targetType,
+          targetRef: input.targetRef,
+          requesterUserId: input.requesterUserId,
+          savedIntent: input.savedIntent as object,
+          payloadHash,
+          reason: input.reason ?? null,
+          idempotencyKey: input.idempotencyKey ?? null,
+          expiresAt: input.expiresAt ?? null,
+          status: OfficeApprovalStatus.PENDING_APPROVAL,
+          executionStatus: OfficeApprovalExecutionStatus.NOT_RUN,
+        },
+      });
+    } catch (e) {
+      // P4-1A: eşzamanlı çift-talep yarışı → unique(tenantId,idempotencyKey) ihlali (P2002) → mevcut kaydı dön (idempotent).
+      if (
+        input.idempotencyKey &&
+        e instanceof Prisma.PrismaClientKnownRequestError &&
+        e.code === 'P2002'
+      ) {
+        const existing = await this.prisma.officeApprovalRequest.findUnique({
+          where: { tenantId_idempotencyKey: { tenantId: input.tenantId, idempotencyKey: input.idempotencyKey } },
+        });
+        if (existing) return existing;
+      }
+      throw e;
+    }
     await this.auditLog('OFFICE_APPROVAL_REQUESTED', created, input.requesterUserId);
     return created;
   }
@@ -93,6 +110,48 @@ export class OfficeApprovalService {
     this.assertNotSelfApproval(req, approverUserId);
     await this.assertApproverEligible(approverUserId, req.tenantId);
     return this.commitDecision(id, OfficeApprovalStatus.REJECTED, approverUserId, note, 'OFFICE_APPROVAL_REJECTED');
+  }
+
+  /**
+   * P4-1A — "Değiştirerek onayla": approver requester'ın önerisini DEĞİŞTİREREK kesinleştirir (ör. ACIZ→BATAK).
+   * Orijinal savedIntent ASLA ezilmez; approver'ın kararı replacementSavedIntent + replacementPayloadHash olarak
+   * AYRI iz bırakır (audit çizgisi korunur). status → APPROVED_WITH_CHANGES.
+   */
+  async approveWithChanges(
+    id: string,
+    approverUserId: string,
+    replacementSavedIntent: unknown,
+    note?: string,
+  ): Promise<OfficeApprovalRequest> {
+    if (replacementSavedIntent === undefined || replacementSavedIntent === null) {
+      throw new BadRequestException('Değiştirilmiş niyet (replacementSavedIntent) zorunludur.');
+    }
+    const req = await this.requireRequest(id);
+    this.assertStatus(req, OfficeApprovalStatus.PENDING_APPROVAL);
+    this.assertNotSelfApproval(req, approverUserId);
+    await this.assertApproverEligible(approverUserId, req.tenantId);
+    const replacementPayloadHash = stableJsonHash(replacementSavedIntent);
+    return this.commitDecision(
+      id,
+      OfficeApprovalStatus.APPROVED_WITH_CHANGES,
+      approverUserId,
+      note ?? null,
+      'OFFICE_APPROVAL_APPROVED_WITH_CHANGES',
+      { replacementSavedIntent: replacementSavedIntent as object, replacementPayloadHash },
+    );
+  }
+
+  /**
+   * P4-1A — "Düzelt ve tekrar gönder": REJECTED DEĞİL (farklı kurumsal karar). Revizyon notu ZORUNLU.
+   * status → REVISION_REQUESTED. (Resubmit akışı P4-2+; bu substrate yalnız kararı kaydeder.)
+   */
+  async requestRevision(id: string, approverUserId: string, note: string): Promise<OfficeApprovalRequest> {
+    if (!note || !note.trim()) throw new BadRequestException('Revizyon notu zorunludur.');
+    const req = await this.requireRequest(id);
+    this.assertStatus(req, OfficeApprovalStatus.PENDING_APPROVAL);
+    this.assertNotSelfApproval(req, approverUserId);
+    await this.assertApproverEligible(approverUserId, req.tenantId);
+    return this.commitDecision(id, OfficeApprovalStatus.REVISION_REQUESTED, approverUserId, note, 'OFFICE_APPROVAL_REVISION_REQUESTED');
   }
 
   /** Talep sahibi (requester) kendi PENDING talebini geri çeker → CANCELLED. */
@@ -167,10 +226,12 @@ export class OfficeApprovalService {
     approverUserId: string,
     note: string | null,
     auditAction: string,
+    extra: Record<string, unknown> = {},
   ): Promise<OfficeApprovalRequest> {
     const res = await this.prisma.officeApprovalRequest.updateMany({
       where: { id, status: OfficeApprovalStatus.PENDING_APPROVAL },
-      data: { status: next, approverUserId, decidedAt: new Date(), decisionNote: note },
+      // NOT: savedIntent (orijinal niyet) burada ASLA güncellenmez; approver değişikliği yalnız extra (replacement*) ile gelir.
+      data: { status: next, approverUserId, decidedAt: new Date(), decisionNote: note, ...extra },
     });
     if (res.count === 0) throw new ConflictException('Talep eşzamanlı değiştirildi; karar uygulanmadı.');
     const updated = await this.requireRequest(id);
@@ -187,13 +248,16 @@ export class OfficeApprovalService {
     setExecutedAt: boolean,
   ): Promise<OfficeApprovalRequest> {
     const req = await this.requireRequest(id);
-    if (req.status !== OfficeApprovalStatus.APPROVED) {
-      throw new ConflictException('Yalnız APPROVED talep yürütülebilir/işaretlenebilir.');
+    // APPROVED ve APPROVED_WITH_CHANGES yürütülebilir onay durumlarıdır (ikisi de "onaylandı").
+    const executable =
+      req.status === OfficeApprovalStatus.APPROVED || req.status === OfficeApprovalStatus.APPROVED_WITH_CHANGES;
+    if (!executable) {
+      throw new ConflictException('Yalnız APPROVED/APPROVED_WITH_CHANGES talep yürütülebilir/işaretlenebilir.');
     }
     const res = await this.prisma.officeApprovalRequest.updateMany({
       where: {
         id,
-        status: OfficeApprovalStatus.APPROVED,
+        status: { in: [OfficeApprovalStatus.APPROVED, OfficeApprovalStatus.APPROVED_WITH_CHANGES] },
         executionStatus: { in: [OfficeApprovalExecutionStatus.NOT_RUN, OfficeApprovalExecutionStatus.RUNNING] },
       },
       data: { executionStatus: next, ...(setExecutedAt ? { executedAt: new Date() } : {}) },
@@ -219,8 +283,10 @@ export class OfficeApprovalService {
         status: req.status,
         executionStatus: req.executionStatus,
         payloadHash: req.payloadHash, // HASH only — ham savedIntent/payload audit'e SIZMAZ
+        ...(req.replacementPayloadHash ? { replacementPayloadHash: req.replacementPayloadHash } : {}), // yalnız hash
         requesterUserId: req.requesterUserId,
         ...(req.approverUserId ? { approverUserId: req.approverUserId } : {}),
+        // NOT: ham decisionNote/reason/savedIntent/replacementSavedIntent audit metadata'ya YAZILMAZ (yalnız DB alanları).
       },
     });
   }
