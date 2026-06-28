@@ -1,6 +1,7 @@
 import { Module, forwardRef } from "@nestjs/common";
 import { CaseService } from "./case.service";
 import { CaseController } from "./case.controller";
+import { CasePaymentPreviewController } from "./case-payment-preview.controller";
 import { OcrModule } from "../ocr/ocr.module";
 import { AddressDiscoveryModule } from "../address-discovery/address-discovery.module";
 import { InterestEngineModule } from "../interest-engine/interest-engine.module";
@@ -15,6 +16,7 @@ import { ResponsibleCandidatesService } from "./responsible-candidates.service";
 import { TemporalResponsibilityService } from "./temporal-responsibility.service";
 import { ResponsibilityHistoryService } from "./responsibility-history.service";
 import { LegalResponsibleLawyerService } from "./legal-responsible-lawyer.service";
+import { CasePaymentPreviewService } from "./case-payment-preview.service";
 // WP-4d-1: warn-only diagnostic audit (PERMISSION_WOULD_DENY) için.
 import { PermissionDiagnosticsModule } from "../permission-diagnostics/permission-diagnostics.module";
 
@@ -34,8 +36,8 @@ import { PermissionDiagnosticsModule } from "../permission-diagnostics/permissio
     LawyerModule,
     DebtorModule,
   ],
-  controllers: [CaseController],
-  providers: [CaseService, ResponsibleCandidatesService, TemporalResponsibilityService, ResponsibilityHistoryService, LegalResponsibleLawyerService],
+  controllers: [CaseController, CasePaymentPreviewController],
+  providers: [CaseService, CasePaymentPreviewService, ResponsibleCandidatesService, TemporalResponsibilityService, ResponsibilityHistoryService, LegalResponsibleLawyerService],
   exports: [CaseService, TemporalResponsibilityService, ResponsibilityHistoryService],
 })
 export class CaseModule {}
