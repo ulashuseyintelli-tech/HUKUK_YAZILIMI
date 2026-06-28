@@ -10,7 +10,7 @@
 //   Guided-Open: hard-deny YOK (unlinked/unknown user engellenmez); yalnız CONFIRM_REQUIRED zarflanır, gerisi PROCEED.
 //   Validity (AXIS-V/CPE) ile ALAKASIZ; hukuki geçerlilik bu hatta KARIŞMAZ.
 
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, BadRequestException, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EffectivePermissionResolver } from '../../policy-engine/effective-permission-resolver.service';
 import { GuidedOpenDecision } from '../../policy-engine/types/effective-permission.types';
@@ -71,6 +71,8 @@ export class GuidedEdgeGateService {
 
     // RETRY/CONSUME: token geldiyse doğrula. CONSUMED → PROCEED; aksi (EXPIRED/MISMATCH/FORGED/REPLAY) → typed 400.
     if (input.confirmationToken) {
+      // P3-2D-0: consume secret gerektirir; secret yoksa plain 500 yerine typed 503.
+      this.assertSecretConfigured();
       const res = await this.tokens.consume(input.confirmationToken, binding);
       if (res.ok) return { kind: 'PROCEED' };
       throw new BadRequestException(`Onay doğrulanamadı (${res.result}); işlem yapılmadı.`);
@@ -89,6 +91,8 @@ export class GuidedEdgeGateService {
       return { kind: 'PROCEED' };
     }
 
+    // P3-2D-0: issue secret gerektirir; secret yoksa plain 500 yerine typed 503.
+    this.assertSecretConfigured();
     const issued = await this.tokens.issue(binding, {
       decisionSource: String(decision.decisionSource),
       outcome: String(decision.decision),
@@ -102,5 +106,17 @@ export class GuidedEdgeGateService {
       confirmation: { token: issued.token, expiresAt: issued.expiresAt, bindingHash: issued.bindingHash },
     });
     return { kind: 'ENVELOPE', envelope };
+  }
+
+  /**
+   * P3-2D-0 (enable preflight): confirm-token secret yapılandırılmamışsa issue/consume plain 500 fırlatır.
+   * Token-yolu (issue/consume) ÖNCESİ çağrılır → eksikse typed 503 (ServiceUnavailableException).
+   * Gate OFF veya ALLOW (token üretilmeyen) yolunda HİÇ çağrılmaz → gereksiz 503 üretmez.
+   * Secret DEĞERİ okunmaz/loglanmaz; mesaj sabit ve güvenli.
+   */
+  private assertSecretConfigured(): void {
+    if (!this.tokens.isSecretConfigured()) {
+      throw new ServiceUnavailableException('Confirmation token secret is not configured');
+    }
   }
 }

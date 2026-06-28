@@ -1,6 +1,6 @@
 /** @jest-environment node */
 import "reflect-metadata";
-import { BadRequestException } from "@nestjs/common";
+import { BadRequestException, ServiceUnavailableException } from "@nestjs/common";
 import { GuidedEdgeGateService } from "../guided-edge-gate.service";
 import { GuidedOpenDecision } from "../../../policy-engine/types/effective-permission.types";
 import { ActionCode } from "../../../policy-engine/types/action-code.enum";
@@ -23,6 +23,7 @@ const make = (opts: {
   flag?: string;
   decision?: GuidedOpenDecision;
   consume?: { ok: boolean; result: string };
+  secret?: boolean; // P3-2D-0: isSecretConfigured() dönüşü (varsayılan true = secret yapılandırılmış)
 }) => {
   const config = {
     get: jest.fn().mockImplementation((k: string) => (k === "GUIDED_OPEN_CONFIRM_GATE" ? opts.flag : undefined)),
@@ -36,6 +37,7 @@ const make = (opts: {
   const tokens = {
     issue: jest.fn().mockResolvedValue(ISSUED),
     consume: jest.fn().mockResolvedValue(opts.consume ?? { ok: true, result: "CONSUMED" }),
+    isSecretConfigured: jest.fn().mockReturnValue(opts.secret ?? true),
   };
   const svc = new GuidedEdgeGateService(config as never, resolver as never, tokens as never);
   return { svc, config, resolver, tokens };
@@ -170,5 +172,56 @@ describe("P3-2C — GuidedEdgeGateService.evaluate CONSUME yolu (retry)", () => 
   it("geçersiz token mesajı sonuç kodunu taşır (teşhis edilebilir 400)", async () => {
     const { svc } = make({ flag: "on", consume: { ok: false, result: "EXPIRED" } });
     await expect(svc.evaluate({ ...baseInput, confirmationToken: "bad" })).rejects.toThrow(/EXPIRED/);
+  });
+});
+
+describe("P3-2D-0 — missing-secret typed guard (enable preflight)", () => {
+  it("gate OFF + secret YOK → PROCEED; isSecretConfigured HİÇ çağrılmaz (off davranışı değişmez)", async () => {
+    const { svc, tokens } = make({ flag: undefined, secret: false });
+    const res = await svc.evaluate(baseInput);
+    expect(res).toEqual({ kind: "PROCEED" });
+    expect(tokens.isSecretConfigured).not.toHaveBeenCalled();
+  });
+
+  it("gate ON + ALLOW + secret YOK → PROCEED; token üretilmez, secret kontrolü ÇAĞRILMAZ (gereksiz 503 yok)", async () => {
+    const { svc, tokens } = make({ flag: "on", decision: GuidedOpenDecision.ALLOW, secret: false });
+    const res = await svc.evaluate(baseInput);
+    expect(res).toEqual({ kind: "PROCEED" });
+    expect(tokens.isSecretConfigured).not.toHaveBeenCalled();
+    expect(tokens.issue).not.toHaveBeenCalled();
+  });
+
+  it("gate ON + CONFIRM_REQUIRED + secret YOK → ServiceUnavailableException (503); issue ÇAĞRILMAZ (plain 500 yok)", async () => {
+    const { svc, tokens } = make({ flag: "on", decision: GuidedOpenDecision.CONFIRM_REQUIRED, secret: false });
+    await expect(svc.evaluate(baseInput)).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(tokens.issue).not.toHaveBeenCalled();
+  });
+
+  it("gate ON + consume (token) + secret YOK → ServiceUnavailableException (503); consume ÇAĞRILMAZ", async () => {
+    const { svc, tokens } = make({ flag: "on", secret: false });
+    await expect(
+      svc.evaluate({ ...baseInput, confirmationToken: "go.confirm.v1.A.B" }),
+    ).rejects.toBeInstanceOf(ServiceUnavailableException);
+    expect(tokens.consume).not.toHaveBeenCalled();
+  });
+
+  it("503 mesajı güvenli/sabit; secret değeri SIZMAZ", async () => {
+    const { svc } = make({ flag: "on", decision: GuidedOpenDecision.CONFIRM_REQUIRED, secret: false });
+    await expect(svc.evaluate(baseInput)).rejects.toThrow("Confirmation token secret is not configured");
+  });
+
+  it("gate ON + CONFIRM_REQUIRED + secret VAR → ENVELOPE (mevcut davranış bozulmaz); isSecretConfigured çağrılır", async () => {
+    const { svc, tokens } = make({ flag: "on", decision: GuidedOpenDecision.CONFIRM_REQUIRED, secret: true });
+    const res = await svc.evaluate(baseInput);
+    expect(res.kind).toBe("ENVELOPE");
+    expect(tokens.isSecretConfigured).toHaveBeenCalled();
+    expect(tokens.issue).toHaveBeenCalledTimes(1);
+  });
+
+  it("gate ON + consume + secret VAR → PROCEED (mevcut consume davranışı bozulmaz)", async () => {
+    const { svc, tokens } = make({ flag: "on", secret: true, consume: { ok: true, result: "CONSUMED" } });
+    const res = await svc.evaluate({ ...baseInput, confirmationToken: "go.confirm.v1.A.B" });
+    expect(res).toEqual({ kind: "PROCEED" });
+    expect(tokens.consume).toHaveBeenCalledTimes(1);
   });
 });

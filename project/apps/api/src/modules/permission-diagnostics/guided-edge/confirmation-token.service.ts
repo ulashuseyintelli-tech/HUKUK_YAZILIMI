@@ -262,6 +262,18 @@ export class ConfirmationTokenService {
     };
   }
 
+  /**
+   * P3-2D-0 (enable preflight): secret (GUIDED_OPEN_CONFIRM_TOKEN_SECRET → JWT_SECRET fallback) yapılandırılmış mı?
+   * THROW ETMEZ; yalnız boolean. Caller (gate) eksikse typed 503 üretir (plain 500 yerine).
+   * Secret DEĞERİ döndürülmez/loglanmaz.
+   */
+  isSecretConfigured(): boolean {
+    const s =
+      this.config.get<string>('GUIDED_OPEN_CONFIRM_TOKEN_SECRET') ??
+      this.config.get<string>('JWT_SECRET');
+    return typeof s === 'string' && s.trim().length > 0;
+  }
+
   /** Secret kaynağı: tercihen GUIDED_OPEN_CONFIRM_TOKEN_SECRET, geri-düşüş JWT_SECRET. */
   private secret(): string {
     const s =
