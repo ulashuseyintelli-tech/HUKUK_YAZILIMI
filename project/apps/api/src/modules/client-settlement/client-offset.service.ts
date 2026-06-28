@@ -5,10 +5,20 @@ import { AuditService } from '../audit/audit.service';
 import { isOfficeAdminCapacity } from '../policy-engine/effective-permission-mapping';
 import { Capacity } from '../policy-engine/types/effective-permission.types';
 import { ClientSettlementReadService } from './client-settlement-read.service';
-import { CreateClientOffsetDto, ReverseClientOffsetDto } from './dto/client-offset.dto';
+import { CreateClientOffsetDto, ReverseClientOffsetDto, PreviewClientOffsetDto } from './dto/client-offset.dto';
 
 const ZERO = new Prisma.Decimal(0);
 const ELIGIBLE_ROLES = ['ALACAKLI', 'ORTAK_ALACAKLI'];
+
+/** createOffset + previewOffset ORTAK leg seçimi (idempotencyKey/amount hariç). Cross-* doğrulaması bu alanlardan. */
+interface OffsetLegSelection {
+  clientId: string;
+  currency: string;
+  payableCaseId: string;
+  payableCaseClientId: string;
+  expenseCaseId: string;
+  expenseRequestId: string;
+}
 
 export interface EligiblePayableBucket {
   payableCaseId: string;
@@ -31,8 +41,22 @@ export interface EligibleExpenseRequest {
 export interface OffsetEligibility {
   clientId: string;
   currency: string;
+  /** C-2a: actor mahsup uygulayabilir mi (isOfficeAdminCapacity). YALNIZ UX (drawer read-only); GÜVENLİK DEĞİL. */
+  canApply: boolean;
   eligiblePayableBuckets: EligiblePayableBucket[];
   eligibleExpenseRequests: EligibleExpenseRequest[];
+}
+
+/** C-2a non-persistent önizleme sonucu. Hesap BACKEND'de yapılır; FE yalnız render eder. */
+export interface OffsetPreview {
+  payableBefore: string;
+  payableAfter: string;
+  expenseBefore: string;
+  expenseAfter: string;
+  netBefore: string;
+  netAfter: string;
+  maxAmount: string;
+  netUnchanged: boolean;
 }
 
 /**
@@ -61,13 +85,29 @@ export class ClientOffsetService {
    * bu gate'e tabi. Canonical capacity okuması (EffectivePermissionResolver.readCapacity ile aynı mantık;
    * resolve() observe-only/enforce-etmez olduğu için BURADA enforce edilir).
    */
-  private async assertOfficeAdmin(actorUserId: string, action: 'CLIENT_OFFSET_APPLY' | 'CLIENT_OFFSET_REVERSE'): Promise<void> {
+  /** Canonical capacity okuması (Lawyer.lawyerRank ?? StaffMember.staffType ?? UNKNOWN). EffectivePermissionResolver ile aynı. */
+  private async readActorCapacity(actorUserId: string): Promise<Capacity> {
     const user = await this.prisma.user.findUnique({
       where: { id: actorUserId },
       include: { lawyer: { select: { lawyerRank: true } }, staffMember: { select: { staffType: true } } },
     });
-    const capacity = (user?.lawyer?.lawyerRank ?? user?.staffMember?.staffType ?? 'UNKNOWN') as Capacity;
-    if (!isOfficeAdminCapacity(capacity)) {
+    return (user?.lawyer?.lawyerRank ?? user?.staffMember?.staffType ?? 'UNKNOWN') as Capacity;
+  }
+
+  /**
+   * C-2a: capability'nin read-only sonucu (canApply UX flag kaynağı). GÜVENLİK DEĞİL — gerçek enforcement
+   * assertOfficeAdmin'de. canApply=true spoof'lansa bile createOffset/reverseOffset yine assertOfficeAdmin'den geçer.
+   */
+  private async isActorOfficeAdmin(actorUserId: string): Promise<boolean> {
+    return isOfficeAdminCapacity(await this.readActorCapacity(actorUserId));
+  }
+
+  /**
+   * C-1 v1 hard gate: actor PARTNER/MANAGER (office-admin) DEĞİLSE 403. apply+reverse+cross-case+same-case HEPSİ
+   * bu gate'e tabi. resolve() observe-only/enforce-etmez olduğu için yetki BURADA explicit enforce edilir.
+   */
+  private async assertOfficeAdmin(actorUserId: string, action: 'CLIENT_OFFSET_APPLY' | 'CLIENT_OFFSET_REVERSE'): Promise<void> {
+    if (!(await this.isActorOfficeAdmin(actorUserId))) {
       throw new ForbiddenException({
         code: 'CLIENT_OFFSET_FORBIDDEN',
         message: `Mahsup işlemi için PARTNER/MANAGER (office-admin) yetkisi gerekir (${action})`,
@@ -83,7 +123,8 @@ export class ClientOffsetService {
    * iki liste + max bilgisi (kullanıcı manuel seçer). Same tenant/client/currency; availableOutstanding>0 / unpaid>0.
    * <remarks>ClientOffsetController.eligibility() → GET /client-offsets/client/:clientId/eligibility</remarks>
    */
-  async getEligibility(tenantId: string, clientId: string, currency = 'TRY'): Promise<OffsetEligibility> {
+  async getEligibility(tenantId: string, actorUserId: string, clientId: string, currency = 'TRY'): Promise<OffsetEligibility> {
+    const canApply = await this.isActorOfficeAdmin(actorUserId); // C-2a UX flag (güvenlik DEĞİL)
     const ccRows = await this.prisma.caseClient.findMany({
       where: { clientId, role: { in: ELIGIBLE_ROLES }, client: { tenantId } },
       select: { id: true, caseId: true, role: true, case: { select: { fileNumber: true } } },
@@ -127,7 +168,7 @@ export class ClientOffsetService {
       }
     }
 
-    return { clientId, currency, eligiblePayableBuckets, eligibleExpenseRequests };
+    return { clientId, currency, canApply, eligiblePayableBuckets, eligibleExpenseRequests };
   }
 
   /** ExpenseRequest kalan ödenmemiş = totalAmount − paidTotal − Σ APPLY offset(expenseRequestId) + Σ REVERSAL. */
@@ -141,6 +182,82 @@ export class ClientOffsetService {
     const apply = await db.clientOffset.aggregate({ _sum: { amount: true }, where: { tenantId, expenseRequestId, kind: 'APPLY' } });
     const rev = await db.clientOffset.aggregate({ _sum: { amount: true }, where: { tenantId, expenseRequestId, kind: 'REVERSAL' } });
     return totalAmount.minus(paidTotal).minus(apply._sum.amount ?? ZERO).plus(rev._sum.amount ?? ZERO);
+  }
+
+  /**
+   * Leg sahipliği + same tenant/client/currency doğrula (createOffset + previewOffset ORTAK; duplicate logic yok).
+   * Cross-tenant/client/currency YASAK. expense leg total/paid döner (availability için).
+   */
+  private async validateLegs(
+    db: Prisma.TransactionClient,
+    tenantId: string,
+    dto: OffsetLegSelection,
+  ): Promise<{ totalAmount: Prisma.Decimal; paidTotal: Prisma.Decimal }> {
+    const cc = await db.caseClient.findFirst({
+      where: { id: dto.payableCaseClientId, caseId: dto.payableCaseId, clientId: dto.clientId, role: { in: ELIGIBLE_ROLES }, client: { tenantId } },
+      select: { id: true },
+    });
+    if (!cc) throw new BadRequestException('payable leg geçersiz/yabancı (caseClientId/case/client/tenant/rol uyuşmuyor)');
+    const er = await db.expenseRequest.findFirst({
+      where: { id: dto.expenseRequestId, caseId: dto.expenseCaseId, clientId: dto.clientId, tenantId, status: { not: 'CANCELLED' } },
+      select: { totalAmount: true, paidTotal: true, currency: true },
+    });
+    if (!er) throw new BadRequestException('expense leg geçersiz/yabancı veya CANCELLED (expenseRequestId/case/client/tenant uyuşmuyor)');
+    if ((er.currency ?? 'TRY') !== dto.currency) throw new BadRequestException('Cross-currency mahsup yasak (expense leg currency uyuşmuyor)');
+    return { totalAmount: er.totalAmount, paidTotal: er.paidTotal };
+  }
+
+  /**
+   * payableAvailable / expenseUnpaid / max — createOffset re-validate + previewOffset ORTAK canonical hesap reuse.
+   * payableAvailable = computeOutstanding (−ΣAPPLY+ΣREVERSAL dahil); expenseUnpaid = computeExpenseRequestUnpaid.
+   */
+  private async computeAvailability(
+    db: Prisma.TransactionClient,
+    tenantId: string,
+    dto: OffsetLegSelection,
+    er: { totalAmount: Prisma.Decimal; paidTotal: Prisma.Decimal },
+  ): Promise<{ payableAvailable: Prisma.Decimal; expenseUnpaid: Prisma.Decimal; max: Prisma.Decimal }> {
+    const payableAvailable = await this.readService.computeOutstanding(db, tenantId, dto.payableCaseId, dto.payableCaseClientId, dto.currency);
+    const expenseUnpaid = await this.computeExpenseRequestUnpaid(db, tenantId, dto.expenseRequestId, er.totalAmount, er.paidTotal);
+    const max = payableAvailable.lt(expenseUnpaid) ? payableAvailable : expenseUnpaid;
+    return { payableAvailable, expenseUnpaid, max };
+  }
+
+  // ==================== preview (C-2a, non-persistent) ====================
+
+  /**
+   * Non-persistent mahsup önizlemesi (D3+D4). MUTATE/CREATE/AUDIT/IDEMPOTENCY/LOCK YOK. JWT-only read
+   * (apply yetkisi GEREKMEZ — eligibility gibi; gerçek apply yine PARTNER/MANAGER). createOffset ile AYNI
+   * validateLegs + computeAvailability (duplicate business logic yok). amount>max → OFFSET_EXCEEDS_AVAILABLE.
+   * HESAP BACKEND'de: after=before−amount · net=payable−expense · netUnchanged. FE yalnız RENDER eder (D3).
+   * <remarks>ClientOffsetController.preview() → POST /client-offsets/preview</remarks>
+   */
+  async previewOffset(tenantId: string, _actorUserId: string, dto: PreviewClientOffsetDto): Promise<OffsetPreview> {
+    const amount = this.parsePositiveAmount(dto.amount);
+    const er = await this.validateLegs(this.prisma, tenantId, dto);
+    const { payableAvailable, expenseUnpaid, max } = await this.computeAvailability(this.prisma, tenantId, dto, er);
+    if (amount.gt(max)) {
+      throw new BadRequestException({
+        code: 'OFFSET_EXCEEDS_AVAILABLE',
+        message: `Mahsup tutarı uygun bakiyeyi aşıyor (amount=${amount}, payableAvailable=${payableAvailable}, expenseUnpaid=${expenseUnpaid})`,
+      });
+    }
+    const payableBefore = payableAvailable;
+    const expenseBefore = expenseUnpaid;
+    const payableAfter = payableBefore.minus(amount);
+    const expenseAfter = expenseBefore.minus(amount);
+    const netBefore = payableBefore.minus(expenseBefore);
+    const netAfter = payableAfter.minus(expenseAfter);
+    return {
+      payableBefore: payableBefore.toString(),
+      payableAfter: payableAfter.toString(),
+      expenseBefore: expenseBefore.toString(),
+      expenseAfter: expenseAfter.toString(),
+      netBefore: netBefore.toString(),
+      netAfter: netAfter.toString(),
+      maxAmount: max.toString(),
+      netUnchanged: netBefore.equals(netAfter),
+    };
   }
 
   // ==================== create (APPLY) ====================
@@ -161,18 +278,8 @@ export class ClientOffsetService {
     });
     if (pre) return this.replayOrConflict(pre, { tenantId, dto, amount, kind: 'APPLY', reversesOffsetId: null });
 
-    // Leg sahipliği + same tenant/client/currency (cross-tenant/client/currency YASAK).
-    const cc = await this.prisma.caseClient.findFirst({
-      where: { id: dto.payableCaseClientId, caseId: dto.payableCaseId, clientId: dto.clientId, role: { in: ELIGIBLE_ROLES }, client: { tenantId } },
-      select: { id: true },
-    });
-    if (!cc) throw new BadRequestException('payable leg geçersiz/yabancı (caseClientId/case/client/tenant/rol uyuşmuyor)');
-    const er = await this.prisma.expenseRequest.findFirst({
-      where: { id: dto.expenseRequestId, caseId: dto.expenseCaseId, clientId: dto.clientId, tenantId, status: { not: 'CANCELLED' } },
-      select: { id: true, totalAmount: true, paidTotal: true, currency: true },
-    });
-    if (!er) throw new BadRequestException('expense leg geçersiz/yabancı veya CANCELLED (expenseRequestId/case/client/tenant uyuşmuyor)');
-    if ((er.currency ?? 'TRY') !== dto.currency) throw new BadRequestException('Cross-currency mahsup yasak (expense leg currency uyuşmuyor)');
+    // Leg sahipliği + same tenant/client/currency (cross-tenant/client/currency YASAK). previewOffset ile ORTAK.
+    const er = await this.validateLegs(this.prisma, tenantId, dto);
 
     const created = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${this.lockKey(tenantId, dto.clientId, dto.currency)}))`;
@@ -183,10 +290,8 @@ export class ClientOffsetService {
       });
       if (dup) return this.replayOrConflict(dup, { tenantId, dto, amount, kind: 'APPLY', reversesOffsetId: null });
 
-      // RE-VALIDATE (lock altında; bayat-approval reddi). computeOutstanding offset terimlerini içerir.
-      const payableAvailable = await this.readService.computeOutstanding(tx, tenantId, dto.payableCaseId, dto.payableCaseClientId, dto.currency);
-      const expenseUnpaid = await this.computeExpenseRequestUnpaid(tx, tenantId, dto.expenseRequestId, er.totalAmount, er.paidTotal);
-      const max = payableAvailable.lt(expenseUnpaid) ? payableAvailable : expenseUnpaid;
+      // RE-VALIDATE (lock altında; bayat-approval reddi). computeOutstanding offset terimlerini içerir. previewOffset ile ORTAK.
+      const { payableAvailable, expenseUnpaid, max } = await this.computeAvailability(tx, tenantId, dto, er);
       if (amount.gt(max)) {
         throw new BadRequestException({
           code: 'OFFSET_EXCEEDS_AVAILABLE',

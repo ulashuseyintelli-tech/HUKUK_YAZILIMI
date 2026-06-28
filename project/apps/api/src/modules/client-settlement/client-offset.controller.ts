@@ -3,7 +3,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CpeRequired } from '../policy-engine/decorators/cpe-required.decorator';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { ClientOffsetService } from './client-offset.service';
-import { CreateClientOffsetDto, ReverseClientOffsetDto } from './dto/client-offset.dto';
+import { CreateClientOffsetDto, ReverseClientOffsetDto, PreviewClientOffsetDto } from './dto/client-offset.dto';
 
 interface AuthRequest {
   user: { id: string; tenantId: string };
@@ -21,10 +21,19 @@ interface AuthRequest {
 export class ClientOffsetController {
   constructor(private readonly service: ClientOffsetService) {}
 
-  /** Mahsuba uygun payable bucket'lar + ödenmemiş ExpenseRequest'ler (read-only; otomatik eşleme YOK). */
+  /** Mahsuba uygun payable bucket'lar + ödenmemiş ExpenseRequest'ler + canApply (read-only; otomatik eşleme YOK). */
   @Get('client/:clientId/eligibility')
   async eligibility(@Request() req: AuthRequest, @Param('clientId') clientId: string, @Query('currency') currency?: string) {
-    return this.service.getEligibility(req.user.tenantId, clientId, currency || 'TRY');
+    return this.service.getEligibility(req.user.tenantId, req.user.id, clientId, currency || 'TRY');
+  }
+
+  /**
+   * C-2a — non-persistent mahsup önizlemesi (D3+D4). MUTATE/CREATE/AUDIT YOK; JWT-only read. Hesap backend'de
+   * (after/net/netUnchanged); FE yalnız render. amount>max → OFFSET_EXCEEDS_AVAILABLE. Apply yetkisi GEREKMEZ.
+   */
+  @Post('preview')
+  async preview(@Request() req: AuthRequest, @Body() dto: PreviewClientOffsetDto) {
+    return this.service.previewOffset(req.user.tenantId, req.user.id, dto);
   }
 
   /** Müvekkilin mahsupları (APPLY+REVERSAL). */

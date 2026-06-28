@@ -245,7 +245,7 @@ describe('ClientOffsetService.getEligibility', () => {
       confirmed: [{ id: 'col1' }],
       erList: [{ id: 'er-1', caseId: 'case-E', totalAmount: D(300), paidTotal: D(0), currency: 'TRY', status: 'PENDING', case: { fileNumber: '2026/2' } }],
     });
-    const res = await svc(db).service.getEligibility('t1', 'cl-1', 'TRY');
+    const res = await svc(db).service.getEligibility('t1', 'u1', 'cl-1', 'TRY');
     expect(res.eligiblePayableBuckets).toHaveLength(1);
     expect(res.eligiblePayableBuckets[0]).toEqual(expect.objectContaining({ payableCaseClientId: 'cc-A', availableOutstanding: '500' }));
     expect(res.eligibleExpenseRequests).toHaveLength(1);
@@ -262,9 +262,28 @@ describe('ClientOffsetService.getEligibility', () => {
         { id: 'er-paid', caseId: 'case-E', totalAmount: D(300), paidTotal: D(300), currency: 'TRY', status: 'PENDING', case: { fileNumber: '2026/3' } },
       ],
     });
-    const res = await svc(db).service.getEligibility('t1', 'cl-1', 'TRY');
+    const res = await svc(db).service.getEligibility('t1', 'u1', 'cl-1', 'TRY');
     expect(res.eligiblePayableBuckets).toHaveLength(0);
     expect(res.eligibleExpenseRequests).toHaveLength(0);
+  });
+
+  // C-2a — canApply UX flag (güvenlik DEĞİL)
+  it('canApply true (PARTNER)', async () => {
+    const db = makeDb({ user: PARTNER });
+    const res = await svc(db).service.getEligibility('t1', 'u1', 'cl-1', 'TRY');
+    expect(res.canApply).toBe(true);
+  });
+
+  it('canApply true (MANAGER staffType)', async () => {
+    const db = makeDb({ user: MANAGER });
+    const res = await svc(db).service.getEligibility('t1', 'u1', 'cl-1', 'TRY');
+    expect(res.canApply).toBe(true);
+  });
+
+  it('canApply false (non-admin)', async () => {
+    const db = makeDb({ user: PLAIN_LAWYER });
+    const res = await svc(db).service.getEligibility('t1', 'u1', 'cl-1', 'TRY');
+    expect(res.canApply).toBe(false);
   });
 });
 
@@ -276,6 +295,75 @@ describe('ClientOffsetService.listOffsets', () => {
     expect(db.clientOffset.findMany).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ tenantId: 't1', clientId: 'cl-1', currency: 'TRY', kind: 'APPLY' }) }),
     );
+  });
+});
+
+const PREVIEW = (over: any = {}) => ({
+  clientId: 'cl-1',
+  currency: 'TRY',
+  payableCaseId: 'case-P',
+  payableCaseClientId: 'cc-A',
+  expenseCaseId: 'case-E',
+  expenseRequestId: 'er-1',
+  amount: '400',
+  ...over,
+});
+
+describe('ClientOffsetService.previewOffset (C-2a, non-persistent)', () => {
+  it('before/after/net/max/netUnchanged döner; hesap BACKEND\'de (after=before−amount, net korunur)', async () => {
+    // payable 1000, expense unpaid 600 → max 600; amount 400
+    const db = makeDb({ er: { id: 'er-1', totalAmount: D(600), paidTotal: D(0), currency: 'TRY' } });
+    const res = await svc(db).service.previewOffset('t1', 'u1', PREVIEW({ amount: '400' }));
+    expect(res).toEqual({
+      payableBefore: '1000',
+      payableAfter: '600',
+      expenseBefore: '600',
+      expenseAfter: '200',
+      netBefore: '400',
+      netAfter: '400',
+      maxAmount: '600',
+      netUnchanged: true,
+    });
+  });
+
+  it('amount > max → OFFSET_EXCEEDS_AVAILABLE (BadRequest)', async () => {
+    const db = makeDb({ er: { id: 'er-1', totalAmount: D(300), paidTotal: D(0), currency: 'TRY' } });
+    await expect(svc(db).service.previewOffset('t1', 'u1', PREVIEW({ amount: '500' }))).rejects.toThrow(BadRequestException);
+  });
+
+  it('MUTATE YOK: ClientOffset create EDİLMEZ', async () => {
+    const db = makeDb();
+    await svc(db).service.previewOffset('t1', 'u1', PREVIEW({ amount: '400' }));
+    expect(db.clientOffset.create).not.toHaveBeenCalled();
+    expect(db.$executeRaw).not.toHaveBeenCalled(); // advisory-lock yok (non-persistent)
+  });
+
+  it('AUDIT YOK: logInTransaction çağrılmaz', async () => {
+    const db = makeDb();
+    const { service, audit: a } = svc(db);
+    await service.previewOffset('t1', 'u1', PREVIEW({ amount: '400' }));
+    expect(a.logInTransaction).not.toHaveBeenCalled();
+  });
+
+  it('cross-currency (expense leg currency≠dto.currency) → BadRequest', async () => {
+    const db = makeDb({ er: { id: 'er-1', totalAmount: D(1000), paidTotal: D(0), currency: 'USD' } });
+    await expect(svc(db).service.previewOffset('t1', 'u1', PREVIEW({ currency: 'TRY' }))).rejects.toThrow(/[Cc]ross-currency/);
+  });
+
+  it('createOffset ile AYNI canonical kaynak: prior APPLY payableBefore\'ı düşürür (computeOutstanding reuse)', async () => {
+    // payable gross 1000, prior APPLY 700 → payableBefore 300 (computeOutstanding offset term reuse)
+    const db = makeDb({ offPayApply: D(700) });
+    const res = await svc(db).service.previewOffset('t1', 'u1', PREVIEW({ amount: '100' }));
+    expect(res.payableBefore).toBe('300');
+    expect(res.maxAmount).toBe('300'); // min(300, 1000)
+  });
+
+  it('non-admin preview YAPABİLİR (read) ama apply YAPAMAZ (403)', async () => {
+    const previewDb = makeDb({ user: PLAIN_LAWYER });
+    const res = await svc(previewDb).service.previewOffset('t1', 'u1', PREVIEW({ amount: '400' }));
+    expect(res.netUnchanged).toBe(true); // preview başarılı (admin değil)
+    const applyDb = makeDb({ user: PLAIN_LAWYER });
+    await expect(svc(applyDb).service.createOffset('t1', 'u1', CREATE())).rejects.toThrow(ForbiddenException);
   });
 });
 
