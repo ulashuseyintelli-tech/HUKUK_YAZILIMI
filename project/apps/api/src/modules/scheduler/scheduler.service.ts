@@ -6,6 +6,7 @@ import { SchedulerMetricsService } from './scheduler-metrics.service';
 import { TebligatService } from '../tebligat/tebligat.service'; // PR-S2: tebligat sonuç senkronu ortak kapı
 import { TebligatPttResult } from '../tebligat/dto/tebligat.dto';
 import { DueType } from '@prisma/client';
+import { IntegrationErrorReporter } from '../error-log/integration-error-reporter'; // PR-3
 
 /**
  * Zamanlayıcı Servisi
@@ -33,7 +34,13 @@ export class SchedulerService {
     private prisma: PrismaService,
     private readonly schedulerMetrics: SchedulerMetricsService,
     private readonly tebligatService: TebligatService, // PR-S2: cron tebligat sonuçları ortak sync yoluna bağlandı
+    private readonly errorReporter: IntegrationErrorReporter, // PR-3: cron hataları → ErrorLog (source=CRON)
   ) {}
+
+  /** PR-3: cron hatasını ErrorLog'a düşür (source=CRON). fire-and-forget + swallow → davranış DEĞİŞMEZ. */
+  private reportCronError(operation: string, error: unknown): void {
+    void this.errorReporter.report({ source: 'CRON', operation: `scheduler.${operation}`, error });
+  }
 
   // --- isRunning guards ---
   private isRunning_checkPaymentOrderDeadlines = false;
@@ -81,6 +88,7 @@ export class SchedulerService {
       this.logger.log(`📋 ${result.processed} dosyada süre dolmuş (truncated: ${result.truncated})`);
     } catch (error) {
       this.logger.error('Ödeme emri kontrolü hatası:', error);
+      this.reportCronError('checkPaymentOrderDeadlines', error);
     } finally {
       this.isRunning_checkPaymentOrderDeadlines = false;
     }
@@ -171,6 +179,7 @@ export class SchedulerService {
       this.logger.log(`📋 ${result.processed} nafaka dosyası işlendi (truncated: ${result.truncated})`);
     } catch (error) {
       this.logger.error('Nafaka dönem kontrolü hatası:', error);
+      this.reportCronError('processNafakaPeriods', error);
     } finally {
       this.isRunning_processNafakaPeriods = false;
     }
@@ -266,6 +275,7 @@ export class SchedulerService {
       this.logger.log(`📋 ${result.processed} MTS dosyasında süre dolmuş (truncated: ${result.truncated})`);
     } catch (error) {
       this.logger.error('MTS kontrolü hatası:', error);
+      this.reportCronError('checkMtsReturns', error);
     } finally {
       this.isRunning_checkMtsReturns = false;
     }
@@ -352,6 +362,7 @@ export class SchedulerService {
       this.logger.log(`📋 ${result.processed} başarısız istek retry'a alındı (truncated: ${result.truncated})`);
     } catch (error) {
       this.logger.error('UYAP retry hatası:', error);
+      this.reportCronError('retryFailedUyapRequests', error);
     } finally {
       this.isRunning_retryFailedUyapRequests = false;
     }
@@ -386,6 +397,7 @@ export class SchedulerService {
       this.logger.log(`   - Bugünkü otomatik işlemler: ${automationStats}`);
     } catch (error) {
       this.logger.error('İstatistik hesaplama hatası:', error);
+      this.reportCronError('calculateDailyStats', error);
     }
   }
 
@@ -412,6 +424,7 @@ export class SchedulerService {
       }
     } catch (error) {
       this.logger.error('Görev kontrolü hatası:', error);
+      this.reportCronError('checkUpcomingTasks', error);
     }
   }
 
@@ -504,6 +517,7 @@ export class SchedulerService {
       this.logger.log(`📋 89/1 süresi dolan: ${result89_1.processed}, 89/2 süresi dolan: ${result89_2.processed} (truncated: ${anyTruncated})`);
     } catch (error) {
       this.logger.error('89 İhbarname kontrolü hatası:', error);
+      this.reportCronError('checkIhbarnameDeadlines', error);
     } finally {
       this.isRunning_checkIhbarnameDeadlines = false;
     }
@@ -585,6 +599,7 @@ export class SchedulerService {
       this.logger.log(`📋 ${result.processed} dış dosya takip edildi (truncated: ${result.truncated})`);
     } catch (error) {
       this.logger.error('Alacak haczi takip kontrolü hatası:', error);
+      this.reportCronError('checkExternalCaseFollowups', error);
     } finally {
       this.isRunning_checkExternalCaseFollowups = false;
     }
@@ -748,6 +763,7 @@ export class SchedulerService {
       );
     } catch (error) {
       this.logger.error('Tebligat kontrolü hatası:', error);
+      this.reportCronError('checkTebligatStatus', error);
     } finally {
       this.isRunning_checkTebligatStatus = false;
     }

@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { ActionHandlerService } from './action-handler.service';
 import { OutboxService } from './outbox.service';
+import { IntegrationErrorReporter } from '../../error-log/integration-error-reporter';
 import {
   getIcrabotOutboxBatchSize,
   isIcrabotOutboxCronEnabled,
@@ -21,6 +22,7 @@ export class OutboxCronService {
   constructor(
     private readonly actionHandlerService: ActionHandlerService,
     private readonly outboxService: OutboxService,
+    private readonly errorReporter: IntegrationErrorReporter,
   ) {}
 
   /**
@@ -52,6 +54,11 @@ export class OutboxCronService {
           `[outbox-cron] processed recovered=${recovered.recoveredCount}, failedRecovered=${recovered.failedCount}, deadRecovered=${recovered.deadCount}, pending=${pending.length}, retryable=${retryable.length}`,
         );
       }
+    } catch (error) {
+      // PR-3: outbox cron hatasını ErrorLog'a düşür (source=CRON). Davranış KORUNUR → rethrow
+      // (Nest yine yükseltir/loglar). report() fire-and-forget + swallow → akışı bozmaz.
+      void this.errorReporter.report({ source: 'CRON', operation: 'outbox.processOutboxActions', error });
+      throw error;
     } finally {
       this.running = false;
     }
