@@ -647,6 +647,9 @@ model CaseClient {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  clientPayoutAllocations     ClientPayoutAllocation[]
+  clientPayoutManualReversals ClientPayoutManualReversal[]
+
   @@unique([caseId, clientId])
   @@index([caseId])
   @@index([clientId])
@@ -1066,6 +1069,8 @@ model Case {
   expenseBlockReasons ExpenseBlockReason[] // "Ödeme/onay yok → işlem yapılmadı" savunma kayıtları (PR-1)
   clientApprovalRequests ClientApprovalRequest[] // Müvekkil onay defteri (PR-2)
   clientStatements ClientStatement[] // Müvekkil ekstresi (PR-3)
+  clientPayoutAllocations     ClientPayoutAllocation[]
+  clientPayoutManualReversals ClientPayoutManualReversal[]
   clientIntelStatements ClientIntelStatement[] // Müvekkil yumuşak-istihbarat beyanı (Faz 4.0)
   clientIntakeLinks ClientIntakeLink[] // Müvekkil dış-form intake linkleri (Faz 4.2)
   clientIntakeSubmissions ClientIntakeSubmission[] // Müvekkil dış-form gönderimleri (Faz 4.2)
@@ -2091,6 +2096,8 @@ model Collection {
   // Mahsup Bilgileri
   allocations   CollectionAllocation[]
   ledgerEntries LedgerEntry[]
+  clientPayoutAllocations     ClientPayoutAllocation[]
+  clientPayoutManualReversals ClientPayoutManualReversal[]
   overpayment   CollectionOverpayment?
 
   // Açıklama ve Notlar
@@ -7620,6 +7627,8 @@ model CollectionDisposition {
   updatedAt DateTime @updatedAt
 
   lines CollectionDispositionLine[]
+  clientPayoutAllocations     ClientPayoutAllocation[]
+  clientPayoutManualReversals ClientPayoutManualReversal[]
 
   @@index([tenantId, caseId])
   @@index([tenantId, status])
@@ -7639,6 +7648,9 @@ model CollectionDispositionLine {
 
   note      String?
   createdAt DateTime @default(now())
+
+  clientPayoutAllocations     ClientPayoutAllocation[]
+  clientPayoutManualReversals ClientPayoutManualReversal[]
 
   @@index([dispositionId])
   @@index([type])
@@ -7670,6 +7682,9 @@ model ClientPayout {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  allocations     ClientPayoutAllocation[]
+  manualReversals ClientPayoutManualReversal[]
+
   @@unique([tenantId, idempotencyKey])
   @@index([tenantId, caseId, caseClientId])
   @@index([tenantId, caseId, paidAt])
@@ -7677,4 +7692,110 @@ model ClientPayout {
 
 enum ClientPayoutStatus {
   RECORDED // Müvekkile ödeme kaydedildi (banka transfer lifecycle YOK)
+}
+enum ClientPayoutManualReversalStatus {
+  OPEN
+  CLOSED
+  CANCELLED
+}
+
+enum ClientPayoutManualReversalClosureMethod {
+  REFUND
+  OFFSET
+  WAIVER
+}
+
+enum ClientPayoutManualReversalSourceConfidence {
+  EXACT
+  AGGREGATE_ONLY
+  UNKNOWN
+}
+
+model ClientPayoutAllocation {
+  id                          String @id @default(cuid())
+  tenantId                    String
+  caseId                      String
+  caseClientId                String
+  clientPayoutId              String
+  collectionId                String
+  collectionDispositionId     String
+  collectionDispositionLineId String
+
+  amount   Decimal @db.Decimal(15, 2)
+  currency String  @default("TRY")
+
+  allocatedAt   DateTime @default(now())
+  allocatedById String?
+  createdAt     DateTime @default(now())
+
+  case                      Case                      @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  caseClient                CaseClient                @relation(fields: [caseClientId], references: [id], onDelete: Restrict)
+  clientPayout              ClientPayout              @relation(fields: [clientPayoutId], references: [id], onDelete: Restrict)
+  collection                Collection                @relation(fields: [collectionId], references: [id], onDelete: Restrict)
+  collectionDisposition     CollectionDisposition     @relation(fields: [collectionDispositionId], references: [id], onDelete: Restrict)
+  collectionDispositionLine CollectionDispositionLine @relation(fields: [collectionDispositionLineId], references: [id], onDelete: Restrict)
+  manualReversals           ClientPayoutManualReversal[]
+
+  @@unique([clientPayoutId, collectionDispositionLineId], map: "client_payout_allocation_source_unique")
+  @@index([tenantId, caseId, caseClientId, currency], map: "client_payout_allocation_scope_idx")
+  @@index([clientPayoutId])
+  @@index([collectionDispositionId])
+  @@index([collectionDispositionLineId])
+  @@index([allocatedAt])
+}
+
+model ClientPayoutManualReversal {
+  id           String @id @default(cuid())
+  tenantId     String
+  caseId       String
+  caseClientId String
+
+  amount   Decimal @db.Decimal(15, 2)
+  currency String  @default("TRY")
+
+  status        ClientPayoutManualReversalStatus           @default(OPEN)
+  closureMethod ClientPayoutManualReversalClosureMethod?
+  confidence    ClientPayoutManualReversalSourceConfidence @default(UNKNOWN)
+
+  dedupeKey      String  @unique
+  sourceActionId String?
+
+  collectionId                String?
+  collectionDispositionId     String?
+  collectionDispositionLineId String?
+  clientPayoutId              String?
+  clientPayoutAllocationId    String?
+
+  openedAt      DateTime @default(now())
+  openedById    String?
+  closedAt      DateTime?
+  closedById    String?
+  cancelledAt   DateTime?
+  cancelledById String?
+
+  note        String?
+  closureNote String?
+  evidenceRef String?
+  metadata    Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  case                      Case                       @relation(fields: [caseId], references: [id], onDelete: Restrict)
+  caseClient                CaseClient                 @relation(fields: [caseClientId], references: [id], onDelete: Restrict)
+  collection                Collection?                @relation(fields: [collectionId], references: [id], onDelete: Restrict)
+  collectionDisposition     CollectionDisposition?     @relation(fields: [collectionDispositionId], references: [id], onDelete: Restrict)
+  collectionDispositionLine CollectionDispositionLine? @relation(fields: [collectionDispositionLineId], references: [id], onDelete: Restrict)
+  clientPayout              ClientPayout?              @relation(fields: [clientPayoutId], references: [id], onDelete: Restrict)
+  clientPayoutAllocation    ClientPayoutAllocation?    @relation(fields: [clientPayoutAllocationId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId, caseId, caseClientId, currency, status], map: "client_payout_manual_reversal_scope_status_idx")
+  @@index([tenantId, status, openedAt])
+  @@index([tenantId, closureMethod, status])
+  @@index([collectionDispositionId])
+  @@index([collectionDispositionLineId])
+  @@index([clientPayoutId])
+  @@index([clientPayoutAllocationId])
+  @@index([openedAt])
+  @@index([closedAt])
 }
