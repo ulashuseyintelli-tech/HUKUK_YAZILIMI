@@ -299,22 +299,24 @@ describe("collection summary refresh", () => {
     expect(source).not.toContain("await api.deleteCollection(caseData.id, col.id);");
   });
 
-  it("case page muhasebe tabini disposition read modeliyle besler", () => {
+  it("case page dağıtım/mutabakat panelini disposition read modeliyle besler", () => {
     const source = readCasePageSource();
 
     expect(source).toContain("api.getCollectionDispositionsByCase(params.id as string)");
     expect(source).toContain("setCollectionDispositions(dispositionsRes || []);");
     expect(source).toContain("muhasebeKayitlari={operationAccountingRecords}");
     expect(source).toContain("accountingEmptyMessage={operationAccountingEmptyMessage}");
-    expect(source).toContain("Tahsilat finans özetinde görünüyor; muhasebe hareketi henüz oluşturulmamış.");
+    expect(source).toContain("Tahsilat finans özetinde görünüyor; dağıtım/mutabakat kaydı henüz oluşturulmamış.");
+    expect(source).toContain("Dağıtım/mutabakat kaydı");
   });
 
-  it("operation deck muhasebe paneli notr baslik ve acik empty-state kullanir", () => {
+  it("operation deck dağıtım/mutabakat paneli net baslik ve acik empty-state kullanir", () => {
     const source = readOperationDeckSource();
 
     expect(source).toContain("accountingEmptyMessage?: string");
-    expect(source).toContain("Parasal olay kayıtları");
-    expect(source).toContain("Bu alan hassas finans/muhasebe kayıtlarını içerir.");
+    expect(source).toContain("Dağıtım & Mutabakat");
+    expect(source).toContain("Tahsilat dağıtım kayıtları");
+    expect(source).toContain("Tahsilatların müvekkil payı, ücret/masraf mahsubu ve payout öncesi dağıtım durumunu gösterir.");
     expect(source).not.toContain("Sadece muhasebe ve yetkili görür");
     expect(source).not.toContain("Henüz muhasebe kaydı yok");
   });

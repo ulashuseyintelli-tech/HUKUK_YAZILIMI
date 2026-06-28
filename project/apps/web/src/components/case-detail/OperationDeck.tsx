@@ -37,7 +37,7 @@ interface ClientRequest {
   responseNote?: string;
 }
 
-// Muhasebe Kaydı
+// Dağıtım/Mutabakat Kaydı
 interface AccountingRecord {
   id: string;
   type: "MASRAF_TALEBI_GONDERILDI" | "ODEME_BEKLENIYOR" | "ODEME_ALINDI" | "MAHSUP" | "IADE" | "DAGITIM_BEKLIYOR" | "MANUEL_REVERSAL_GEREKLI";
@@ -137,7 +137,7 @@ const panels = [
   { id: "related" as PanelId, label: "İlişkili", icon: FolderOpen, color: "text-purple-600", bg: "bg-purple-50" },
   { id: "icra-notes" as PanelId, label: "İcra Notları", icon: Scale, color: "text-slate-600", bg: "bg-slate-50" },
   { id: "client-requests" as PanelId, label: "Müvekkil Talepleri", icon: Users, color: "text-indigo-600", bg: "bg-indigo-50" },
-  { id: "accounting" as PanelId, label: "Muhasebe", icon: Wallet, color: "text-teal-600", bg: "bg-teal-50" },
+  { id: "accounting" as PanelId, label: "Dağıtım & Mutabakat", icon: Wallet, color: "text-teal-600", bg: "bg-teal-50" },
 ];
 
 // ============================================================================
@@ -151,7 +151,7 @@ const formatTL = (n: number) => n.toLocaleString("tr-TR", { minimumFractionDigit
 const accountingTypeLabels: Record<AccountingRecord["type"], string> = {
   MASRAF_TALEBI_GONDERILDI: "Talep Gönderildi",
   ODEME_BEKLENIYOR: "Ödeme Bekleniyor",
-  ODEME_ALINDI: "Muhasebeye İşlendi",
+  ODEME_ALINDI: "Dağıtım Kesinleşti",
   MAHSUP: "Mahsup",
   IADE: "İptal/Reversal",
   DAGITIM_BEKLIYOR: "Dağıtım Bekliyor",
@@ -210,7 +210,7 @@ export function OperationDeck({
   icraNotlar = [],
   muvekkilTalepleri = [],
   muhasebeKayitlari = [],
-  accountingEmptyMessage = "Bu dosyada henüz muhasebe hareketi oluşmamış.",
+  accountingEmptyMessage = "Bu dosyada henüz dağıtım/mutabakat kaydı yok.",
   tasks = [],
   financeItems = [],
   uyapQueries = [],
@@ -798,16 +798,16 @@ export function OperationDeck({
           )}
 
           {/* ═══════════════════════════════════════════════════════════════════
-              MUHASEBE KAYITLARI PANELİ
+              DAĞITIM & MUTABAKAT PANELİ
           ═══════════════════════════════════════════════════════════════════ */}
           {activePanel === "accounting" && (
             <div className="p-4">
               <div className="mb-3 p-2 bg-teal-50 rounded-lg">
                 <p className="text-[10px] text-teal-600 uppercase tracking-wide flex items-center gap-1">
                   <Wallet className="w-3 h-3" />
-                  Parasal olay kayıtları
+                  Tahsilat dağıtım kayıtları
                 </p>
-                <p className="mt-1 text-[11px] text-teal-700">Bu alan hassas finans/muhasebe kayıtlarını içerir.</p>
+                <p className="mt-1 text-[11px] text-teal-700">Tahsilatların müvekkil payı, ücret/masraf mahsubu ve payout öncesi dağıtım durumunu gösterir.</p>
               </div>
               <div className="space-y-2 max-h-[250px] overflow-y-auto">
                 {muhasebeKayitlari.map(record => (
