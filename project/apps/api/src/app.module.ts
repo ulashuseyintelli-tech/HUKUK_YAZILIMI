@@ -91,6 +91,7 @@ import { CalcPreviewModule } from "./modules/calc-preview/calc-preview.module";
 import { MetricsAggregatorModule } from "./modules/metrics-aggregator/metrics-aggregator.module";
 import { MetricsRegistryModule } from "./modules/metrics-registry/metrics-registry.module";
 import { HttpMetricsMiddleware } from "./modules/metrics-registry/http-metrics.middleware";
+import { RequestIdMiddleware } from "./common/request-id.middleware";
 // TODO: IcrabotModule geçici olarak devre dışı - Prisma client regenerate gerekli
 // import { IcrabotModule } from "./modules/icrabot/icrabot.module";
 
@@ -231,6 +232,8 @@ function getConditionalImports(): Type<unknown>[] {
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer) {
-    consumer.apply(HttpMetricsMiddleware).forRoutes('*');
+    // PR-2a: RequestIdMiddleware ÖNCE çalışır → x-request-id tüm downstream (metrics + ExceptionFilter)
+    // tarafından görülür.
+    consumer.apply(RequestIdMiddleware, HttpMetricsMiddleware).forRoutes('*');
   }
 }
