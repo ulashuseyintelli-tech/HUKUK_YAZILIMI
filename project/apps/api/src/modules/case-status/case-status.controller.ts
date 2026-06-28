@@ -4,6 +4,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { GuidedOpenObserveService } from '../permission-diagnostics/guided-open-observe.service';
 import { GuidedEdgeGateService } from '../permission-diagnostics/guided-edge/guided-edge-gate.service';
+import { OfficeApprovalShadowService } from '../office-approval/office-approval-shadow.service';
 import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { LegalCaseStatus } from '@prisma/client';
 
@@ -18,6 +19,8 @@ export class CaseStatusController {
     private readonly guidedOpenObserve: GuidedOpenObserveService,
     // P3-2C: guarded-edge confirm gate (VARSAYILAN OFF → PROCEED → mevcut davranış)
     private readonly guidedEdgeGate: GuidedEdgeGateService,
+    // P4-2: OfficeApproval shadow (observe-only; davranış DEĞİŞTİRMEZ, OfficeApprovalRequest OLUŞTURMAZ)
+    private readonly officeApprovalShadow: OfficeApprovalShadowService,
   ) {}
 
   // Tüm statüleri listele
@@ -53,6 +56,17 @@ export class CaseStatusController {
       tenantId,
       caseId,
       actionCode: ActionCode.CHANGE_STATUS,
+    });
+    // P4-2: OfficeApproval SHADOW (flag OFF→no-op; 'observe'→approval kararını HESAPLA+logla). effectiveDecision
+    // DEĞİŞMEZ — OfficeApprovalRequest OLUŞTURMAZ, statü değiştirmez, enforce etmez (best-effort, akışı bozmaz).
+    // GİZLİLİK: ham status/reason audit'e GİRMEZ (yalnız payloadHash).
+    await this.officeApprovalShadow.evaluate({
+      actorUserId,
+      tenantId,
+      actionCode: ActionCode.CHANGE_STATUS,
+      targetType: 'LegalCase',
+      targetRef: caseId,
+      payload: { status: body.status, reason: body.reason ?? null },
     });
     // P3-2C: guarded-edge confirm gate. VARSAYILAN OFF → {kind:'PROCEED'} → statü AYNEN değişir (davranış değişmez).
     // Flag AÇIKKEN: CONFIRM_REQUIRED → structured-200 envelope (statü DEĞİŞMEZ, token issue edilir);

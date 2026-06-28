@@ -8,10 +8,13 @@ import { CaseStatusController } from "../case-status.controller";
 import { JwtAuthGuard } from "../../auth/guards/jwt-auth.guard";
 import { GuidedOpenObserveService } from "../../permission-diagnostics/guided-open-observe.service";
 import { GuidedEdgeGateService } from "../../permission-diagnostics/guided-edge/guided-edge-gate.service";
+import { OfficeApprovalShadowService } from "../../office-approval/office-approval-shadow.service";
 import { ActionCode } from "../../policy-engine/types/action-code.enum";
 
 // P3-2C: gate mock — VARSAYILAN OFF davranışı (her zaman PROCEED → mevcut hardening testleri AYNEN geçer).
 const mkGateProceed = () => ({ evaluate: jest.fn().mockResolvedValue({ kind: "PROCEED" }) });
+// P4-2: shadow mock — VARSAYILAN OFF (no-op → davranış/akış değişmez; mevcut testler AYNEN geçer).
+const mkShadowOff = () => ({ evaluate: jest.fn().mockResolvedValue({ flagMode: "off", evaluated: false }) });
 
 /**
  * P2b-2c-1 — CHANGE_STATUS hardening (Option A) testleri.
@@ -114,12 +117,14 @@ describe("P2b-2c-1 — CaseStatusController.changeStatus hardening", () => {
     const service = { changeStatus: jest.fn().mockResolvedValue({ id: "c1", caseStatus: "ISLEMDE" }) };
     const observe = { observe: jest.fn().mockResolvedValue(undefined) };
     const gate = mkGateProceed();
+    const shadow = mkShadowOff();
     const controller = new CaseStatusController(
       service as unknown as CaseStatusService,
       observe as unknown as GuidedOpenObserveService,
       gate as unknown as GuidedEdgeGateService,
+      shadow as unknown as OfficeApprovalShadowService,
     );
-    return { controller, service, observe, gate };
+    return { controller, service, observe, gate, shadow };
   };
 
   const prevMode = process.env.GUIDED_OPEN_AUTHZ_MODE;
@@ -179,7 +184,7 @@ describe("P2b-2c-1 — CaseStatusController.changeStatus hardening", () => {
       { resolve: jest.fn().mockRejectedValue(new Error("resolver boom")) } as never,
       { log: jest.fn().mockRejectedValue(new Error("audit boom")) } as never,
     );
-    const controller = new CaseStatusController(service as unknown as CaseStatusService, realObserve, mkGateProceed() as unknown as GuidedEdgeGateService);
+    const controller = new CaseStatusController(service as unknown as CaseStatusService, realObserve, mkGateProceed() as unknown as GuidedEdgeGateService, mkShadowOff() as unknown as OfficeApprovalShadowService);
     const res = await controller.changeStatus("u1", "t1", "c1", { status: "ISLEMDE" as never, reason: "r" });
     expect(service.changeStatus).toHaveBeenCalledTimes(1); // observe hata verse de mutation engellenmedi
     expect((res as { success: boolean }).success).toBe(true); // P3-2C: union dönüş; PROCEED → normal
@@ -195,6 +200,7 @@ describe("P3-2C — CaseStatusController ↔ guarded-edge gate entegrasyonu", ()
       service as unknown as CaseStatusService,
       observe as unknown as GuidedOpenObserveService,
       gate as unknown as GuidedEdgeGateService,
+      mkShadowOff() as unknown as OfficeApprovalShadowService,
     );
     return { controller, service, observe, gate };
   };
@@ -250,6 +256,46 @@ describe("P3-2C — CaseStatusController ↔ guarded-edge gate entegrasyonu", ()
   });
 });
 
+// ---- P4-2: controller↔OfficeApproval shadow (observe-only; effectiveDecision DEĞİŞMEZ) ----
+describe("P4-2 — CaseStatusController ↔ OfficeApproval shadow", () => {
+  const mkP4 = () => {
+    const service = { changeStatus: jest.fn().mockResolvedValue({ id: "c1", caseStatus: "ISLEMDE" }) };
+    const observe = { observe: jest.fn().mockResolvedValue(undefined) };
+    const gate = { evaluate: jest.fn().mockResolvedValue({ kind: "PROCEED" }) };
+    // shadow WOULD_REQUIRE_APPROVAL döner (en sert gölge karar) — yine de akış DEĞİŞMEMELİ
+    const shadow = { evaluate: jest.fn().mockResolvedValue({ flagMode: "observe", evaluated: true, decision: "WOULD_REQUIRE_APPROVAL" }) };
+    const controller = new CaseStatusController(
+      service as unknown as CaseStatusService,
+      observe as unknown as GuidedOpenObserveService,
+      gate as unknown as GuidedEdgeGateService,
+      shadow as unknown as OfficeApprovalShadowService,
+    );
+    return { controller, service, observe, gate, shadow };
+  };
+  afterEach(() => jest.clearAllMocks());
+
+  it("shadow.evaluate çağrılır (actor/tenant/CHANGE_STATUS/LegalCase/caseId/payload); effectiveDecision DEĞİŞMEZ", async () => {
+    const { controller, shadow, service } = mkP4();
+    const res = await controller.changeStatus("real-user", "t1", "c1", { status: "ISLEMDE" as never, reason: "gerekçe" });
+    expect(shadow.evaluate).toHaveBeenCalledTimes(1);
+    expect(shadow.evaluate.mock.calls[0][0]).toMatchObject({
+      actorUserId: "real-user", tenantId: "t1", actionCode: ActionCode.CHANGE_STATUS,
+      targetType: "LegalCase", targetRef: "c1", payload: { status: "ISLEMDE", reason: "gerekçe" },
+    });
+    // KESİN: shadow WOULD_REQUIRE_APPROVAL dese de statü yine değişir, normal response döner (davranış değişmedi)
+    expect(service.changeStatus).toHaveBeenCalledTimes(1);
+    expect(res).toEqual({ success: true, data: { id: "c1", caseStatus: "ISLEMDE" }, message: "Statü başarıyla değiştirildi" });
+  });
+
+  it("shadow throw etse bile (best-effort) controller akışı kırılmaz — service.changeStatus yine çağrılır", async () => {
+    const { controller, service } = mkP4();
+    // controller shadow.evaluate'i await ediyor; servis best-effort olduğu için throw etmez, ama yine de güvence:
+    expect(service.changeStatus).toHaveBeenCalledTimes(0);
+    await controller.changeStatus("u1", "t1", "c1", { status: "ISLEMDE" as never });
+    expect(service.changeStatus).toHaveBeenCalledTimes(1);
+  });
+});
+
 // ---- HTTP binding (Nest TestingModule + supertest): @CurrentUser→param eşlemesini ve guard yolunu KİLİTLER ----
 // Adversarial verify MAJOR'ını kapatır: unit testler positional çağırıyordu → id↔tenantId decorator swap'ı yakalanmıyordu.
 describe("P2b-2c-1 — CHANGE_STATUS HTTP binding (decorator/guard runtime)", () => {
@@ -261,6 +307,7 @@ describe("P2b-2c-1 — CHANGE_STATUS HTTP binding (decorator/guard runtime)", ()
   };
   const observe = { observe: jest.fn().mockResolvedValue(undefined) };
   const gate = { evaluate: jest.fn().mockResolvedValue({ kind: "PROCEED" }) }; // P3-2C: default OFF → PROCEED
+  const shadow = { evaluate: jest.fn().mockResolvedValue({ flagMode: "off", evaluated: false }) }; // P4-2: default OFF → no-op
 
   const buildApp = async (authedUser: { id: string; tenantId: string } | null): Promise<INestApplication> => {
     const moduleRef = await Test.createTestingModule({
@@ -269,6 +316,7 @@ describe("P2b-2c-1 — CHANGE_STATUS HTTP binding (decorator/guard runtime)", ()
         { provide: CaseStatusService, useValue: service },
         { provide: GuidedOpenObserveService, useValue: observe },
         { provide: GuidedEdgeGateService, useValue: gate },
+        { provide: OfficeApprovalShadowService, useValue: shadow },
       ],
     })
       .overrideGuard(JwtAuthGuard)
