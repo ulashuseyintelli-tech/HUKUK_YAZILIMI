@@ -296,6 +296,58 @@ describe("P4-2 — CaseStatusController ↔ OfficeApproval shadow", () => {
   });
 });
 
+// ---- P4-3: controller↔OfficeApproval ENFORCE (non-PARTNER → APPROVAL_REQUIRED; statü DEĞİŞMEZ, P3 confirm'e gidilmez) ----
+describe("P4-3 — CaseStatusController ↔ OfficeApproval enforce", () => {
+  const mkP43 = (shadowResult: unknown) => {
+    const service = { changeStatus: jest.fn().mockResolvedValue({ id: "c1", caseStatus: "ISLEMDE" }) };
+    const observe = { observe: jest.fn().mockResolvedValue(undefined) };
+    const gate = { evaluate: jest.fn().mockResolvedValue({ kind: "PROCEED" }) };
+    const shadow = { evaluate: jest.fn().mockResolvedValue(shadowResult) };
+    const controller = new CaseStatusController(
+      service as unknown as CaseStatusService,
+      observe as unknown as GuidedOpenObserveService,
+      gate as unknown as GuidedEdgeGateService,
+      shadow as unknown as OfficeApprovalShadowService,
+    );
+    return { controller, service, observe, gate, shadow };
+  };
+  afterEach(() => jest.clearAllMocks());
+
+  const approvalEnvelope = {
+    axis: "GUIDED_OPEN_PERMISSION",
+    outcome: "APPROVAL_REQUIRED",
+    actionCode: ActionCode.CHANGE_STATUS,
+    target: { resourceType: "LegalCase", caseId: "c1" },
+    reasonCode: "NON_AUTHORITY_LAWYER",
+    message: "Bu statü değişikliği için yetkili onayı gerekiyor; talep onaya gönderildi.",
+    approval: { requestId: "req-9", status: "PENDING_APPROVAL" },
+  };
+
+  it("enforce + non-PARTNER (shadow envelope döner) → controller envelope AYNEN döner; changeStatus ÇAĞRILMAZ + gate'e GİDİLMEZ (statü DEĞİŞMEZ)", async () => {
+    const { controller, service, gate } = mkP43({ flagMode: "enforce", evaluated: true, decision: "WOULD_REQUIRE_APPROVAL", requestId: "req-9", envelope: approvalEnvelope });
+    const res = await controller.changeStatus("u1", "t1", "c1", { status: "ACIZ" as never, reason: "r" });
+    expect(res).toBe(approvalEnvelope); // typed APPROVAL_REQUIRED; statü DEĞİŞMEDİ, onay talebi oluştu
+    expect(service.changeStatus).not.toHaveBeenCalled(); // official mutation YOK
+    expect(gate.evaluate).not.toHaveBeenCalled(); // P3 confirm'e GİDİLMEZ (shadow envelope'tan önce dönülür)
+  });
+
+  it("enforce + PARTNER (ALLOW, envelope YOK) → mevcut akış sürer: gate çağrılır + changeStatus çağrılır", async () => {
+    const { controller, service, gate } = mkP43({ flagMode: "enforce", evaluated: true, decision: "ALLOW", reasonCode: "PARTNER_SELF_AUTHORITY" });
+    const res = await controller.changeStatus("u1", "t1", "c1", { status: "ISLEMDE" as never });
+    expect(gate.evaluate).toHaveBeenCalledTimes(1); // envelope yok → düşülür → gate (mevcut akış)
+    expect(service.changeStatus).toHaveBeenCalledTimes(1); // PARTNER: mevcut CHANGE_STATUS çalışır
+    expect((res as { success: boolean }).success).toBe(true);
+  });
+
+  it("off/observe (envelope YOK) → controller davranışı AYNEN (changeStatus çağrılır)", async () => {
+    for (const sr of [{ flagMode: "off", evaluated: false }, { flagMode: "observe", evaluated: true, decision: "WOULD_REQUIRE_APPROVAL" }]) {
+      const { controller, service } = mkP43(sr);
+      await controller.changeStatus("u1", "t1", "c1", { status: "ISLEMDE" as never });
+      expect(service.changeStatus).toHaveBeenCalledTimes(1);
+    }
+  });
+});
+
 // ---- HTTP binding (Nest TestingModule + supertest): @CurrentUser→param eşlemesini ve guard yolunu KİLİTLER ----
 // Adversarial verify MAJOR'ını kapatır: unit testler positional çağırıyordu → id↔tenantId decorator swap'ı yakalanmıyordu.
 describe("P2b-2c-1 — CHANGE_STATUS HTTP binding (decorator/guard runtime)", () => {
