@@ -255,3 +255,84 @@ describe('P4-5A executor — sequence ordering + leak-free (K8) + route-yok (acc
     expect(Reflect.getMetadata('method', OfficeApprovalExecutorService.prototype.execute)).toBeUndefined();
   });
 });
+
+describe('P4-5B executor — reconcileStuckRunning (age-blind; case.caseStatus=hakikat; R2)', () => {
+  const runningReq = (over: Record<string, unknown> = {}) => mkReq({ executionStatus: 'RUNNING', ...over });
+
+  it('RUNNING + caseStatus === intent.status (applied-but-unmarked) → markExecutionSucceeded (re-apply YOK)', async () => {
+    const { svc, officeApproval, caseStatus } = mk(runningReq({ savedIntent: { status: 'BATAK' } }), {
+      prisma: { case: { findFirst: jest.fn().mockResolvedValue({ caseStatus: 'BATAK' }) } },
+    });
+    const res = await svc.reconcileStuckRunning('r1', 't1');
+    expect(officeApproval.markExecutionSucceeded).toHaveBeenCalledWith('r1', 'appr-u');
+    expect(officeApproval.markExecutionStale).not.toHaveBeenCalled();
+    expect(caseStatus.changeStatus).not.toHaveBeenCalled(); // reconcile ASLA re-apply etmez
+    expect(officeApproval.markExecutionRunning).not.toHaveBeenCalled(); // claim-lock'a dokunmaz
+    expect(res.executionStatus).toBe('SUCCEEDED');
+  });
+
+  it('3c RUNNING + caseStatus !== intent.status (not-applied) → markExecutionStale (reset-to-NOT_RUN DEĞİL)', async () => {
+    const { svc, officeApproval, caseStatus } = mk(runningReq({ savedIntent: { status: 'BATAK' } }), {
+      prisma: { case: { findFirst: jest.fn().mockResolvedValue({ caseStatus: 'DERDEST' }) } },
+    });
+    const res = await svc.reconcileStuckRunning('r1', 't1');
+    expect(officeApproval.markExecutionStale).toHaveBeenCalledWith('r1', 'appr-u');
+    expect(officeApproval.markExecutionSucceeded).not.toHaveBeenCalled();
+    expect(caseStatus.changeStatus).not.toHaveBeenCalled();
+    expect(res.executionStatus).toBe('STALE');
+  });
+
+  it('RUNNING + case YOK → markExecutionStale', async () => {
+    const { svc, officeApproval } = mk(runningReq(), {
+      prisma: { case: { findFirst: jest.fn().mockResolvedValue(null) } },
+    });
+    await svc.reconcileStuckRunning('r1', 't1');
+    expect(officeApproval.markExecutionStale).toHaveBeenCalledWith('r1', 'appr-u');
+  });
+
+  it('RUNNING (APPROVED_WITH_CHANGES) → replacementSavedIntent.status hakikat ile karşılaştırılır', async () => {
+    const { svc, officeApproval } = mk(
+      runningReq({ status: 'APPROVED_WITH_CHANGES', savedIntent: { status: 'ACIZ' }, replacementSavedIntent: { status: 'MAHSUP' } }),
+      { prisma: { case: { findFirst: jest.fn().mockResolvedValue({ caseStatus: 'MAHSUP' }) } } },
+    );
+    await svc.reconcileStuckRunning('r1', 't1');
+    expect(officeApproval.markExecutionSucceeded).toHaveBeenCalledWith('r1', 'appr-u'); // replacement hedefi tutmuş
+  });
+
+  it('RUNNING + malformed intent → markExecutionStale (no-replay)', async () => {
+    const { svc, officeApproval, prisma } = mk(runningReq({ savedIntent: { reason: 'status yok' } }));
+    await svc.reconcileStuckRunning('r1', 't1');
+    expect(officeApproval.markExecutionStale).toHaveBeenCalledWith('r1', 'appr-u');
+    expect(prisma.case.findFirst).not.toHaveBeenCalled(); // intent yok → case okumaya gerek yok
+  });
+
+  it.each(['NOT_RUN', 'SUCCEEDED', 'FAILED', 'STALE'])(
+    'RUNNING DIŞI (executionStatus=%s) → ConflictException; mark YOK (reconcile etmez)',
+    async (es) => {
+      const { svc, officeApproval } = mk(runningReq({ executionStatus: es }));
+      await expect(svc.reconcileStuckRunning('r1', 't1')).rejects.toThrow(ConflictException);
+      noMarks(officeApproval);
+    },
+  );
+
+  it('RUNNING ama approverUserId null (bozuk) → ConflictException; mark YOK', async () => {
+    const { svc, officeApproval } = mk(runningReq({ approverUserId: null }));
+    await expect(svc.reconcileStuckRunning('r1', 't1')).rejects.toThrow(ConflictException);
+    noMarks(officeApproval);
+  });
+
+  it('idempotent CAS: canlı executor önce terminalize etti → markExecution* count=0 Conflict → reconcile propagate (cron yutar)', async () => {
+    const { svc } = mk(runningReq({ savedIntent: { status: 'BATAK' } }), {
+      prisma: { case: { findFirst: jest.fn().mockResolvedValue({ caseStatus: 'BATAK' }) } },
+      officeApproval: { markExecutionSucceeded: jest.fn().mockRejectedValue(new ConflictException('Yürütme zaten sonlanmış')) },
+    });
+    await expect(svc.reconcileStuckRunning('r1', 't1')).rejects.toThrow(ConflictException);
+  });
+
+  it('load: getByIdForTenant 404 (çapraz-tenant/yok) → propagate', async () => {
+    const { svc } = mk(runningReq(), {
+      officeApproval: { getByIdForTenant: jest.fn().mockRejectedValue(new NotFoundException()) },
+    });
+    await expect(svc.reconcileStuckRunning('r1', 't-OTHER')).rejects.toThrow(NotFoundException);
+  });
+});
