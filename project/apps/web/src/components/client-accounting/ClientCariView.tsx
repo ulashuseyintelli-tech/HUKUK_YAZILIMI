@@ -17,12 +17,12 @@
  *  - Muhasebe davranışı, label'lar, scope ayrımı, API DEĞİŞMEDİ.
  */
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, Badge, Spinner, Button } from '@hukuk/ui';
-import { Wallet, Send, CheckCircle, Landmark, Building2, Info, AlertCircle, Scale, AlertTriangle, ArrowLeftRight, HelpCircle } from 'lucide-react';
+import { Wallet, Send, CheckCircle, Landmark, Building2, Info, AlertCircle, Scale, AlertTriangle, ArrowLeftRight, HelpCircle, Lightbulb } from 'lucide-react';
 import { clientAccountingApi, formatMoneyString } from '@/lib/api/client-accounting';
-import { clientOffsetApi, type OffsetEligibility } from '@/lib/api/client-offset';
+import { clientOffsetApi, buildOffsetRecommendation, type OffsetEligibility, type OffsetRecommendation } from '@/lib/api/client-offset';
 import { AccountingPanel } from './AccountingPanel';
 import { AccountingTable } from './AccountingTable';
 import { ClientMovementsTable } from './ClientMovementsTable';
@@ -47,6 +47,8 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
     enabled: !!clientId,
   });
   const [mahsupOpen, setMahsupOpen] = useState(false); // C-2b Mahsup Side Drawer (hook early-return'den ÖNCE)
+  // S8-A — kart "İncele ve Hazırla" ile drawer'a verilecek ön-seçim (plain Mahsup butonunda null).
+  const [suggestion, setSuggestion] = useState<{ payableCaseClientId?: string; expenseRequestId?: string; amount?: string } | null>(null);
   // UX-v2a (DASH-5) — mahsup uygunluk rozeti: summary-level eligibility (drawer ile AYNI key → react-query dedupe).
   // YALNIZ UX flag; backend enforcement (PARTNER/MANAGER → 403) DEĞİŞMEZ.
   const eligQ = useQuery({
@@ -54,6 +56,8 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
     queryFn: () => clientOffsetApi.getEligibility(clientId, currency),
     enabled: !!clientId,
   });
+  // S8-A — Mahsup Önerisi (FE-only; eligibility'den türetilir; pairing SIRALANMAZ; pendingDistribution ASLA kaynak değil).
+  const reco = useMemo(() => buildOffsetRecommendation(eligQ.data), [eligQ.data]);
 
   if (summaryQ.isLoading) {
     return (
@@ -93,8 +97,8 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
             {/* UX-v2a — Finans Durum Rozeti (DASH-5, sol) + primary Mahsup butonu (DASH-4, sağ) */}
             <div className="flex items-center gap-2">
               <OffsetStatusBadge elig={eligQ.data} loading={eligQ.isLoading} />
-              {/* C-2b — Mahsup Side Drawer tetikleyici (yetki backend; yetkisiz drawer read-only açılır) */}
-              <Button variant="default" size="lg" onClick={() => setMahsupOpen(true)}>
+              {/* C-2b — Mahsup Side Drawer tetikleyici (yetki backend; yetkisiz drawer read-only açılır). Plain buton = ön-seçimsiz. */}
+              <Button variant="default" size="lg" onClick={() => { setSuggestion(null); setMahsupOpen(true); }}>
                 <ArrowLeftRight className="mr-1.5 h-4 w-4" /> Mahsup
               </Button>
             </div>
@@ -113,6 +117,22 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
               note="Bilgi amaçlıdır; defter kaydı/mahsup DEĞİLDİR."
             />
           </div>
+          {/* S8-A — Mahsup Önerisi kartı (yalnız mahsuba uygun çift varsa). Pairing seçmez/sıralamaz; drawer'ı ön-doldurur. */}
+          {reco && (
+            <OffsetRecommendationCard
+              reco={reco}
+              canApply={eligQ.data?.canApply === true}
+              currency={cur}
+              onPrepare={() => {
+                setSuggestion({
+                  payableCaseClientId: reco.payableCaseClientId,
+                  expenseRequestId: reco.expenseRequestId,
+                  amount: reco.amount,
+                });
+                setMahsupOpen(true);
+              }}
+            />
+          )}
         </Card>
 
         {/* B — Dosya Geneli / Paylaşılan Bağlam */}
@@ -240,7 +260,14 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
       </div>
 
       {/* C-2b — Mahsup Side Drawer (D1: overlay; layout etkilemez). Başarı→query invalidation + kapanış drawer içinde. */}
-      <OffsetDrawer clientId={clientId} currency={cur} isOpen={mahsupOpen} onClose={() => setMahsupOpen(false)} />
+      {/* S8-A — kart "Hazırla" ile initialSelection; kapanışta ön-seçim temizlenir (plain buton tekrar boş açar). */}
+      <OffsetDrawer
+        clientId={clientId}
+        currency={cur}
+        isOpen={mahsupOpen}
+        initialSelection={suggestion ?? undefined}
+        onClose={() => { setMahsupOpen(false); setSuggestion(null); }}
+      />
     </div>
   );
 }
@@ -267,6 +294,52 @@ function Metric({
       {/* UX-v2b (DASH-3): kart para 24px/700/tabular-nums — finans panelinde rakam metinden önemli. */}
       <div className={`mt-0.5 whitespace-nowrap text-2xl font-bold tabular-nums ${accent}`}>{value}</div>
       {note && <div className="mt-1 text-[11px] text-gray-400">{note}</div>}
+    </div>
+  );
+}
+
+/**
+ * S8-A — Mahsup Önerisi kartı (FE-only). Rozetten farkı: somut tutar/sayı + ön-doldurulmuş drawer girişi.
+ * KURAL: pairing seçmez/sıralamaz (yalnız tek-seçenekli bacak ön-seçilir); tutar bağlayıcı değil (backend preview doğrular);
+ * kaynak yalnız mevcut alacak (CLIENT_PAYABLE) — "dağıtım bekleyen" ASLA. canApply=false → CTA "İncele" (uygulama vaadi yok).
+ */
+function OffsetRecommendationCard({
+  reco,
+  canApply,
+  currency,
+  onPrepare,
+}: {
+  reco: OffsetRecommendation;
+  canApply: boolean;
+  currency: string;
+  onPrepare: () => void;
+}) {
+  const M = (v: string) => formatMoneyString(v, currency);
+  // CTA: yetkisiz→"İncele" (uygulama vaadi yok) · 1×1→"İncele ve Hazırla" · çoklu→"Mahsup Hazırla".
+  const cta = !canApply ? 'İncele' : reco.mode === 'exact' ? 'İncele ve Hazırla' : 'Mahsup Hazırla';
+  return (
+    <div className="mt-2.5 flex items-center justify-between gap-3 rounded-lg border border-indigo-100 bg-indigo-50/50 px-3 py-2">
+      <div className="flex min-w-0 items-start gap-2">
+        <Lightbulb className="mt-0.5 h-4 w-4 shrink-0 text-indigo-600" />
+        <div className="min-w-0 text-[12px] leading-snug">
+          {reco.mode === 'exact' ? (
+            <>
+              {/* 1×1: somut tutar = min(backend string); ASLA toplam masraf (₺9.201,60) "mahsup edilebilir" denmez. */}
+              <div className="font-semibold text-indigo-800">{M(reco.suggestedAmount!)} mahsup için hazır</div>
+              <div className="text-gray-500">Önizlemede doğrulanır.{!canApply && ' · yalnız Partner/Manager uygular'}</div>
+            </>
+          ) : (
+            <>
+              {/* Çoklu: yalnız SAYI (kaynak/masraf); tutar/sıralama yok — sistem eşleştirme yapmaz. */}
+              <div className="font-semibold text-indigo-800">Mahsup Hazırlanabilir · {reco.bucketCount} kaynak · {reco.expenseCount} masraf</div>
+              <div className="text-gray-500">Mevcut müvekkile borçtan masraf kapatmak için mahsup hazırlanabilir.{!canApply && ' · yalnız Partner/Manager uygular'}</div>
+            </>
+          )}
+        </div>
+      </div>
+      <Button variant="outline" size="sm" className="shrink-0" onClick={onPrepare}>
+        {cta}
+      </Button>
     </div>
   );
 }

@@ -32,13 +32,13 @@ const BUCKET = { payableCaseId: 'case-P', payableCaseClientId: 'cc-A', clientId:
 const EXPENSE = { expenseCaseId: 'case-E', expenseRequestId: 'er-1', clientId: 'cl-1', currency: 'TRY', unpaidAmount: '2000', caseNumber: '2026/2', requestStatus: 'PENDING' };
 const PREVIEW = { payableBefore: '10000', payableAfter: '8000', expenseBefore: '2000', expenseAfter: '0', netBefore: '8000', netAfter: '8000', maxAmount: '2000', netUnchanged: true };
 
-function renderDrawer(eligibility: any, history: any[] = []) {
+function renderDrawer(eligibility: any, history: any[] = [], initialSelection?: any) {
   api.getEligibility.mockResolvedValue(eligibility);
   api.list.mockResolvedValue(history);
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
-      <OffsetDrawer clientId="cl-1" currency="TRY" isOpen onClose={vi.fn()} />
+      <OffsetDrawer clientId="cl-1" currency="TRY" isOpen onClose={vi.fn()} initialSelection={initialSelection} />
     </QueryClientProvider>,
   );
 }
@@ -123,6 +123,39 @@ describe('OffsetDrawer — D3/D4 preview-driven (FE hesaplamaz)', () => {
     const k2 = api.create.mock.calls[1][0].idempotencyKey;
     expect(k1).toBeTruthy();
     expect(k1).toEqual(k2);
+  });
+});
+
+describe('OffsetDrawer — S8-A initialSelection ön-doldurma', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('initialSelection iki bacağı + tutarı seed eder; Uygula yine preview ÖNCESİ pasif (D4 korunur)', async () => {
+    api.preview.mockResolvedValue(PREVIEW);
+    renderDrawer(
+      { clientId: 'cl-1', currency: 'TRY', canApply: true, eligiblePayableBuckets: [BUCKET], eligibleExpenseRequests: [EXPENSE] },
+      [],
+      { payableCaseClientId: 'cc-A', expenseRequestId: 'er-1', amount: '2000' },
+    );
+    await waitFor(() => expect((screen.getAllByRole('combobox')[0] as HTMLSelectElement).value).toBe('cc-A'));
+    const selects = screen.getAllByRole('combobox') as HTMLSelectElement[];
+    expect(selects[1].value).toBe('er-1');
+    expect((screen.getByPlaceholderText('0,00') as HTMLInputElement).value).toBe('2000');
+    // D4: önizleme yapılmadan Uygula pasif (seed, preview gate'ini ATLAMAZ)
+    expect((screen.getByRole('button', { name: /^Uygula$/ }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole('button', { name: /^Önizle$/ }));
+    await waitFor(() => expect(api.preview).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect((screen.getByRole('button', { name: /^Uygula$/ }) as HTMLButtonElement).disabled).toBe(false));
+  });
+
+  it('uygun-olmayan payable preset seed edilmez (bayat preset sessizce düşer; tutar da seed edilmez)', async () => {
+    renderDrawer(
+      { clientId: 'cl-1', currency: 'TRY', canApply: true, eligiblePayableBuckets: [BUCKET], eligibleExpenseRequests: [EXPENSE] },
+      [],
+      { payableCaseClientId: 'cc-GHOST', expenseRequestId: 'er-1', amount: '2000' },
+    );
+    await waitFor(() => expect((screen.getAllByRole('combobox')[1] as HTMLSelectElement).value).toBe('er-1'));
+    expect((screen.getAllByRole('combobox')[0] as HTMLSelectElement).value).toBe(''); // ghost seed edilmedi
+    expect((screen.getByPlaceholderText('0,00') as HTMLInputElement).value).toBe(''); // iki bacak geçerli değil → tutar yok
   });
 });
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, Badge, Spinner } from '@hukuk/ui';
 import { X, ArrowLeftRight, AlertCircle, Lock, CheckCircle2 } from 'lucide-react';
@@ -21,6 +21,12 @@ interface OffsetDrawerProps {
   onClose: () => void;
   /** Başarılı apply sonrası (parent query invalidation + drawer kapatma için). */
   onApplied?: () => void;
+  /**
+   * S8-A — Mahsup Önerisi ön-doldurma. YALNIZ kolaylık: backend DEĞİŞMEZ, kullanıcı yine Önizle→Uygula yapar.
+   * Yalnız eligibility'de GERÇEKTEN var olan id'ler seed edilir (bayat preset sessizce düşer); seed sonrası
+   * preview null'lanır → D4 zorunlu önizleme korunur. amount = backend decimal-string'inin birebir kopyası.
+   */
+  initialSelection?: { payableCaseClientId?: string; expenseRequestId?: string; amount?: string };
 }
 
 function genIdempotencyKey(): string {
@@ -46,7 +52,7 @@ const OFFSET_INVALIDATE_KEYS = [
  * "İptal" (reverse) yalnız PARTNER/MANAGER (canApply) — reason≥10 modal; backend 403/409 friendly. Reverse=ters AYRI kayıt
  * (orijinal değişmez). KALICI yeni panel YOK (drawer içi sekme); B-2.3 FocusDrawer ile karışmaz; UI HESAPLAMAZ.
  */
-export function OffsetDrawer({ clientId, currency, isOpen, onClose, onApplied }: OffsetDrawerProps) {
+export function OffsetDrawer({ clientId, currency, isOpen, onClose, onApplied, initialSelection }: OffsetDrawerProps) {
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<'new' | 'history'>('new');
   const [payableCcId, setPayableCcId] = useState('');
@@ -55,6 +61,8 @@ export function OffsetDrawer({ clientId, currency, isOpen, onClose, onApplied }:
   // Önizlenen offset: data + ona kilitli idempotencyKey + input snapshot. Girdi değişince null'lanır (re-preview zorunlu).
   const [preview, setPreview] = useState<{ data: OffsetPreview; key: string; input: CreateOffsetInput } | null>(null);
   const [reverseTarget, setReverseTarget] = useState<ClientOffsetRecord | null>(null);
+  // S8-A — initialSelection seed'i açılış başına TEK kez (kullanıcı düzenlemesini ezmemek için).
+  const seededRef = useRef(false);
 
   const eligQ = useQuery({
     queryKey: ['client-offset-eligibility', clientId, currency],
@@ -74,6 +82,29 @@ export function OffsetDrawer({ clientId, currency, isOpen, onClose, onApplied }:
   const expenses = eligQ.data?.eligibleExpenseRequests ?? [];
   const selectedBucket = buckets.find((b) => b.payableCaseClientId === payableCcId) ?? null;
   const selectedExpense = expenses.find((e) => e.expenseRequestId === expenseReqId) ?? null;
+
+  // S8-A — Mahsup Önerisi ön-doldurma (best-effort, FE-only):
+  // Açılışta + eligibility hazır olunca TEK kez seed eder; YALNIZ eligibility'de var olan id'leri (bayat preset düşer).
+  // Seed sonrası preview null + 'Yeni Mahsup' sekmesi; kullanıcı yine Önizle→Uygula yapar (D4 backend otoritesi korunur).
+  useEffect(() => {
+    if (!isOpen) {
+      seededRef.current = false; // kapanışta sıfırla → yeniden açılışta yeni öneri seed edilebilir
+      return;
+    }
+    if (seededRef.current || !eligQ.data || !initialSelection) return;
+    const wantP = initialSelection.payableCaseClientId;
+    const wantE = initialSelection.expenseRequestId;
+    const hasP = !!wantP && buckets.some((b) => b.payableCaseClientId === wantP);
+    const hasE = !!wantE && expenses.some((e) => e.expenseRequestId === wantE);
+    if (hasP) setPayableCcId(wantP!);
+    if (hasE) setExpenseReqId(wantE!);
+    // tutar yalnız her iki bacak da geçerliyse seed edilir (öksüz tutar bırakma); faithful backend string.
+    if (hasP && hasE && initialSelection.amount) setAmount(initialSelection.amount);
+    setPreview(null);
+    setTab('new');
+    seededRef.current = true;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, eligQ.data, initialSelection]);
 
   const parsedAmount = Number((amount || '').replace(',', '.'));
   const amountValid = amount.trim() !== '' && Number.isFinite(parsedAmount) && parsedAmount > 0;

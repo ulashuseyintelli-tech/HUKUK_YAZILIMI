@@ -34,6 +34,78 @@ export interface OffsetEligibility {
   eligibleExpenseRequests: EligibleExpenseRequest[];
 }
 
+// ===== S8-A — Mahsup Önerisi (Client Offset Recommendation) =====
+/**
+ * S8-A: mevcut eligibility'den mahsup ÖNERİSİ türetir. KURALLAR (design-gate):
+ *  - Kaynak YALNIZCA eligiblePayableBuckets (mevcut CLIENT_PAYABLE). "Dağıtım Bekleyen"/pendingDistribution ASLA.
+ *  - OTOMATİK EŞLEME YOK: yalnız tek-seçenekli bacak ön-seçilir (1 kaynak / 1 masraf); birden çoksa o tarafı kullanıcı seçer.
+ *    Pairing SIRALANMAZ/SEÇİLMEZ (ADR "otomatik eşleme YOK" korunur).
+ *  - UI HESAPLAMAZ: önerilen tutar bağlayıcı değil; backend preview + apply re-validate otoritedir. Sonuç tutarı
+ *    iki backend decimal-string'inden BİREBİR küçüğüdür (float aritmetiği YOK → drawer preview byte-eşleşmesi bozulmaz).
+ */
+export interface OffsetRecommendation {
+  mode: 'exact' | 'multi';
+  /** ön-seç (yalnız tek-seçenekli bacak). */
+  payableCaseClientId?: string;
+  expenseRequestId?: string;
+  /** yalnız mode==='exact' (1×1): drawer'a verilecek faithful decimal-string. */
+  amount?: string;
+  /** gösterim (exact). */
+  suggestedAmount?: string;
+  sourceLabel?: string;
+  bucketCount: number;
+  expenseCount: number;
+  currency: string;
+}
+
+/**
+ * İki decimal-string'in numerik olarak küçüğünü ORİJİNAL string olarak döndürür.
+ * Number YALNIZ karşılaştırma içindir; sonuç float aritmetiğiyle ÜRETİLMEZ (gönderilen tutar backend string'inin birebir kopyası).
+ */
+export function minDecimalString(a: string, b: string): string {
+  const na = Number(a);
+  const nb = Number(b);
+  if (Number.isFinite(na) && Number.isFinite(nb)) return na <= nb ? a : b;
+  return Number.isFinite(na) ? a : b;
+}
+
+export function buildOffsetRecommendation(elig?: OffsetEligibility | null): OffsetRecommendation | null {
+  if (!elig) return null;
+  const buckets = elig.eligiblePayableBuckets ?? [];
+  const expenses = elig.eligibleExpenseRequests ?? [];
+  if (buckets.length === 0 || expenses.length === 0) return null; // mahsuba uygun çift yok
+  const currency = elig.currency || 'TRY';
+  const payableSeed = buckets.length === 1 ? buckets[0] : null;
+  const expenseSeed = expenses.length === 1 ? expenses[0] : null;
+
+  if (payableSeed && expenseSeed) {
+    // Tutar = iki backend decimal-string'inden BİREBİR küçüğü (float/Number ile para HESABI YOK; yalnız karşılaştırma).
+    const amount = minDecimalString(payableSeed.availableOutstanding, expenseSeed.unpaidAmount);
+    if (!(Number(amount) >= 0.01)) return null; // sub-cent eşik kontrolü (karşılaştırma; tutar üretmez) → kart gizlenir
+    return {
+      mode: 'exact',
+      payableCaseClientId: payableSeed.payableCaseClientId,
+      expenseRequestId: expenseSeed.expenseRequestId,
+      amount,
+      suggestedAmount: amount,
+      sourceLabel: `${payableSeed.caseNumber || payableSeed.payableCaseId} (${payableSeed.role})`,
+      bucketCount: 1,
+      expenseCount: 1,
+      currency,
+    };
+  }
+
+  // Çoklu: pairing SEÇİLMEZ/SIRALANMAZ; yalnız tek-seçenekli bacak (varsa) ön-seçilir, tutar önerilmez.
+  return {
+    mode: 'multi',
+    payableCaseClientId: payableSeed?.payableCaseClientId,
+    expenseRequestId: expenseSeed?.expenseRequestId,
+    bucketCount: buckets.length,
+    expenseCount: expenses.length,
+    currency,
+  };
+}
+
 // ===== preview (non-persistent; hesap BACKEND'de) =====
 export interface OffsetPreview {
   payableBefore: string;
