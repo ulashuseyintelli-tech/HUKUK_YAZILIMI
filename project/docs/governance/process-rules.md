@@ -132,3 +132,17 @@ Bekleyen Mimari Kararlar:
 
 ══════════════════════════════
 ```
+
+## Worktree / Branch Cleanup Safety
+
+Windows junction + pnpm hardlink/store + çoklu oturum nedeniyle worktree/branch temizliği bağlayıcı kurallara tabidir. Detay: `docs/runbooks/worktree-cleanup.md`.
+
+**Yasak (kesin):** `cmd rd /s /q` · PowerShell `Remove-Item -Recurse` · `rm -rf <worktree>` · `[System.IO.Directory]::Delete(path,true)` · `.git/config` elle rewrite · paralel branch/worktree/config mutasyonu. (Hepsi junction/hardlink'i takip edip canonical'ı sessizce bozabilir veya config torn-write üretir; reparse audit "temiz" dese bile risk kalır.)
+
+**Worktree kaldırma:** YALNIZ `git worktree remove --force <path>` → `git worktree prune`. "Directory not empty" (node_modules) kalırsa fiziksel silme YOK → `ORPHANED_WORKTREE_DIR` olarak raporla, owner manuel temizler.
+
+**Branch kaldırma:** önce gh ile PR-merged + açık-PR-yok doğrula (squash-merge git ancestry'yi bozar → GitHub PR state esas). Sonra `git branch -D` (local) + `git push origin --delete` (remote). Branch ops junction-risksizdir.
+
+**Her cleanup sonrası canonical integrity check ZORUNLU:** git status · `git config --list` parse · origin/main==local main · root/apps-api/apps-web `node_modules/.bin` sayıları · nest/prisma/jest/tsc/next shim · owner `HUKUK_main_dev` .bin · pnpm store. Bozulma → `pnpm install --force`; asla sessiz geçme.
+
+**`.git/config` torn-write:** `bad config line` = stop condition. Read-only teşhis → bekle+tekrar-oku (paralel oturum kendiliğinden onarabilir) → onarılmazsa owner manuel. Ajan `.git/config` rewrite ETMEZ.

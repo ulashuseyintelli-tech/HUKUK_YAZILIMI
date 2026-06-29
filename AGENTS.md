@@ -233,7 +233,7 @@ C:\Users\ulas.htelli\Desktop\HUKUK_PROJE\HUKUK_YAZILIMI
   - active branch
   - HEAD
   - git worktree list
-- İş bitince geçici worktree `git worktree remove` ile temizlenmelidir; `rm -rf` kullanılmamalıdır.
+- İş bitince geçici worktree `git worktree remove --force` ile temizlenmelidir; recursive fiziksel silme (`rm -rf`, `cmd rd /s /q`, PowerShell `Remove-Item -Recurse`, `.NET Directory.Delete(path,true)`) YASAKTIR (Windows junction/pnpm hardlink canonical'ı sessizce bozar). "Directory not empty" kalırsa ORPHANED_WORKTREE_DIR olarak bırakılır (owner manuel). Branch silmeden önce gh PR-merged doğrulanır (squash→git ancestry güvenilmez). Her cleanup sonrası canonical integrity check + `.git/config` torn-write stop-condition. Detay: `project/docs/runbooks/worktree-cleanup.md`.
 - Aktif WIP worktree silinmemelidir.
 - Localhost çalışan servislerin hangi worktree’den servis edildiği riskli UI/API doğrulamalarından önce kontrol edilmelidir.
 
