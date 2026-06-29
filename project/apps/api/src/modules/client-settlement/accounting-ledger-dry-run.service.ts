@@ -441,8 +441,6 @@ export function buildAccountingLedgerDryRunReport(sources: AccountingLedgerDryRu
 
   for (const offset of sources.clientOffsets) {
     const isApply = offset.kind === 'APPLY';
-    const debitAccount: AccountingDryRunAccountCode = isApply ? 'CLIENT_PAYABLE' : 'CLIENT_EXPENSE_RECEIVABLE';
-    const creditAccount: AccountingDryRunAccountCode = isApply ? 'CLIENT_EXPENSE_RECEIVABLE' : 'CLIENT_PAYABLE';
     pushEntry({
       idempotencyKey: accountingDryRunIdempotencyKey('CLIENT_OFFSET', offset.id, offset.kind.toLowerCase()),
       sourceType: 'CLIENT_OFFSET',
@@ -452,15 +450,14 @@ export function buildAccountingLedgerDryRunReport(sources: AccountingLedgerDryRu
       currency: offset.currency,
       effectiveAt: null,
       lines: [
-        dryRunLine(debitAccount, 'DEBIT', offset.amount, sources.tenantId, offset.payableCaseId, offset.currency, {
+        dryRunLine('CLIENT_PAYABLE', isApply ? 'DEBIT' : 'CREDIT', offset.amount, sources.tenantId, offset.payableCaseId, offset.currency, {
           clientId: offset.clientId,
           offsetId: offset.id,
           caseClientId: offset.payableCaseClientId,
         }),
-        dryRunLine(creditAccount, 'CREDIT', offset.amount, sources.tenantId, offset.expenseCaseId, offset.currency, {
+        dryRunLine('CLIENT_EXPENSE_RECEIVABLE', isApply ? 'CREDIT' : 'DEBIT', offset.amount, sources.tenantId, offset.expenseCaseId, offset.currency, {
           clientId: offset.clientId,
           offsetId: offset.id,
-          caseClientId: offset.payableCaseClientId,
         }),
       ],
     });
