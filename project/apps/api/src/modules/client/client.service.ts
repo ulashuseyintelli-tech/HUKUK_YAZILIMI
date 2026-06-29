@@ -1,4 +1,4 @@
-import { Injectable, ConflictException } from '@nestjs/common';
+import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { buildClientFieldDiff, buildContactsDiff, buildClientRemoveSnapshot } from './client-audit.util';
@@ -158,6 +158,9 @@ export class ClientService {
         companyType: data.companyType,
         mersisNo: data.mersisNo,
         ticaretSicilNo: data.ticaretSicilNo,
+        // P0.7: gender (Excel import row 5 gönderiyor) + detsisNo create'te map'lenmiyordu → sessiz veri kaybı.
+        gender: data.gender,
+        detsisNo: data.detsisNo,
         canCollect: data.canCollect ?? true,
         canWaive: data.canWaive ?? false,
         canSettle: data.canSettle ?? false,
@@ -233,7 +236,7 @@ export class ClientService {
       where: { id, tenantId },
       include: { contacts: true },
     });
-    if (!existing) throw new Error('Müvekkil bulunamadı');
+    if (!existing) throw new NotFoundException('Müvekkil bulunamadı');
 
     // PR-U4: UPDATE-PATH kimlik-block (önce guard YOKTU). Müvekkilde TCKN zorunlu/kesin ayrıştırıcı →
     // isim-review YOK (false-positive riski); yalnız kesin kimlik (TCKN/VKN) collision block.
@@ -274,8 +277,9 @@ export class ClientService {
 
     // C0-a: client + contact yazımı + audit AYNI transaction.
     await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.client.update({
-      where: { id },
+      // P0.5: tenant-scoped write — update() whereUnique tenantId taşıyamaz; updateMany {id,tenantId} guard.
+      const { count } = await tx.client.updateMany({
+      where: { id, tenantId },
       data: {
         type: data.type,
         displayName: displayName,
@@ -299,6 +303,15 @@ export class ClientService {
         canRelease: data.canRelease,
         notes: data.notes,
         isActive: data.isActive,
+        // P0.7: create paritesi — create'te map'lenip update'te DÜŞEN alanlar (sessiz veri kaybı önlenir).
+        postalCode: data.postalCode,
+        isForeigner: data.isForeigner ?? undefined,
+        nationality: data.nationality,
+        companyType: data.companyType,
+        mersisNo: data.mersisNo,
+        ticaretSicilNo: data.ticaretSicilNo,
+        gender: data.gender,
+        detsisNo: data.detsisNo,
         // Tebrik alanları
         birthDate: data.birthDate ? new Date(data.birthDate) : undefined,
         foundingDate: data.foundingDate ? new Date(data.foundingDate) : undefined,
@@ -309,6 +322,9 @@ export class ClientService {
         greetingChannel: data.greetingChannel,
       },
     });
+      if (count === 0) throw new NotFoundException('Müvekkil bulunamadı');
+      const updated = await tx.client.findFirst({ where: { id, tenantId } });
+      if (!updated) throw new NotFoundException('Müvekkil bulunamadı');
 
     // Contacts güncelle (sil ve yeniden oluştur)
     if (data.phones || data.emails) {
@@ -519,10 +535,12 @@ export class ClientService {
   // Müvekkil sil (soft delete)
   async remove(id: string, tenantId: string, actor?: AuditActor) {
     const existing = await this.prisma.client.findFirst({ where: { id, tenantId } });
-    if (!existing) throw new Error('Müvekkil bulunamadı');
+    if (!existing) throw new NotFoundException('Müvekkil bulunamadı');
     // C0-a: soft-delete + audit AYNI transaction (old snapshot delete ÖNCESİ alındı).
     return this.prisma.$transaction(async (tx) => {
-      const updated = await tx.client.update({ where: { id }, data: { isActive: false } });
+      // P0.5: tenant-scoped soft-delete (updateMany {id,tenantId}).
+      const { count } = await tx.client.updateMany({ where: { id, tenantId }, data: { isActive: false } });
+      if (count === 0) throw new NotFoundException('Müvekkil bulunamadı');
       await this.audit.logInTransaction(tx, {
         tenantId,
         action: 'CLIENT_DELETE',
@@ -531,7 +549,7 @@ export class ClientService {
         userId: actor?.userId,
         metadata: { softDelete: true, oldSnapshot: buildClientRemoveSnapshot(existing) },
       });
-      return updated;
+      return { ...existing, isActive: false };
     });
   }
 

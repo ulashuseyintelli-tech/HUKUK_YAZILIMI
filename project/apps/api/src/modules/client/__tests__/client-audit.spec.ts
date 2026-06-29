@@ -15,6 +15,9 @@ function buildHarness(opts: { existing?: any; created?: any; updated?: any } = {
     client: {
       create: jest.fn().mockResolvedValue(opts.created ?? { id: "c1" }),
       update: jest.fn().mockResolvedValue(opts.updated ?? { id: "c1" }),
+      // P0.5: update/remove artık tenant-scoped updateMany + re-fetch findFirst kullanıyor.
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+      findFirst: jest.fn().mockResolvedValue(opts.updated ?? { id: "c1" }),
     },
     clientContact: { createMany: jest.fn().mockResolvedValue({}), deleteMany: jest.fn().mockResolvedValue({}) },
   };
@@ -102,7 +105,7 @@ describe("ClientService.remove — audit", () => {
 
     await svc.remove("c1", "t1", { userId: "u-real" });
 
-    expect(tx.client.update).toHaveBeenCalledWith({ where: { id: "c1" }, data: { isActive: false } });
+    expect(tx.client.updateMany).toHaveBeenCalledWith({ where: { id: "c1", tenantId: "t1" }, data: { isActive: false } });
     const input = auditInput(audit);
     expect(input.action).toBe("CLIENT_DELETE");
     expect(input.userId).toBe("u-real");

@@ -1,0 +1,104 @@
+/**
+ * P0.4–P0.7 — Client-core low-risk patch testleri (Task 1).
+ * - P0.5 tenant-scoped write: update/remove `updateMany {id,tenantId}`; eşleşme yoksa NotFoundException.
+ * - P0.7 create/update map parity: create'te map'lenip update'te DÜŞEN alanlar (postalCode, isForeigner,
+ *   nationality, companyType, mersisNo, ticaretSicilNo, gender, detsisNo) artık update payload'unda.
+ * (P0.4 HTTP error contract = controller seviyesinde hata yutma kaldırıldı; servis NotFoundException
+ *  fırlatır, controller try/catch'siz propagate eder.)
+ */
+import { NotFoundException } from "@nestjs/common";
+import { ClientService } from "../client.service";
+
+function buildHarness(opts: { existing?: any; updateCount?: number; updated?: any } = {}) {
+  const tx = {
+    client: {
+      create: jest.fn().mockResolvedValue({ id: "c1" }),
+      updateMany: jest.fn().mockResolvedValue({ count: opts.updateCount ?? 1 }),
+      findFirst: jest.fn().mockResolvedValue(opts.updated ?? { id: "c1", isActive: true }),
+    },
+    clientContact: { createMany: jest.fn().mockResolvedValue({}), deleteMany: jest.fn().mockResolvedValue({}) },
+  };
+  const prisma: any = {
+    client: {
+      findFirst: jest.fn().mockResolvedValue(
+        opts.existing ?? { id: "c1", tenantId: "t1", isActive: true, contacts: [] },
+      ),
+    },
+    $transaction: jest.fn().mockImplementation(async (cb: any) => cb(tx)),
+  };
+  const audit = { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn() };
+  const svc = new ClientService(prisma, audit as any);
+  jest.spyOn(svc as any, "syncContactFollowUpTaskSafe").mockResolvedValue(undefined);
+  return { svc, prisma, tx, audit };
+}
+
+describe("ClientService.update — P0.5 tenant-scoped + P0.7 parity", () => {
+  it("P0.5: updateMany where {id, tenantId} ile yazar (tenant-scoped write)", async () => {
+    const { svc, tx } = buildHarness();
+    await svc.update("c1", "t1", { type: "PERSON", firstName: "A", lastName: "B" }, { userId: "u1" });
+    expect(tx.client.updateMany).toHaveBeenCalledTimes(1);
+    expect(tx.client.updateMany.mock.calls[0][0].where).toEqual({ id: "c1", tenantId: "t1" });
+  });
+
+  it("P0.7: create'te map'lenen 8 alan update payload'unda taşınır (sessiz veri kaybı yok)", async () => {
+    const { svc, tx } = buildHarness();
+    await svc.update(
+      "c1",
+      "t1",
+      {
+        type: "COMPANY",
+        companyName: "ACME",
+        postalCode: "34000",
+        isForeigner: true,
+        nationality: "Alman",
+        companyType: "Anonim",
+        mersisNo: "M1",
+        ticaretSicilNo: "TS1",
+        gender: "E",
+        detsisNo: "D1",
+      },
+      { userId: "u1" },
+    );
+    const data = tx.client.updateMany.mock.calls[0][0].data;
+    expect(data.postalCode).toBe("34000");
+    expect(data.isForeigner).toBe(true);
+    expect(data.nationality).toBe("Alman");
+    expect(data.companyType).toBe("Anonim");
+    expect(data.mersisNo).toBe("M1");
+    expect(data.ticaretSicilNo).toBe("TS1");
+    expect(data.gender).toBe("E");
+    expect(data.detsisNo).toBe("D1");
+  });
+
+  it("P0.4/P0.5: updateMany count=0 (cross-tenant/yarış) → NotFoundException", async () => {
+    const { svc } = buildHarness({ updateCount: 0 });
+    await expect(
+      svc.update("c1", "t1", { type: "PERSON", firstName: "A", lastName: "B" }, { userId: "u1" }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+
+  it("P0.4: pre-check existing yoksa NotFoundException (eski: düz Error)", async () => {
+    const { svc, prisma } = buildHarness();
+    (prisma.client.findFirst as jest.Mock).mockResolvedValueOnce(null);
+    await expect(
+      svc.update("cX", "t1", { type: "PERSON" }, { userId: "u1" }),
+    ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe("ClientService.remove — P0.5 tenant-scoped soft-delete", () => {
+  it("P0.5: updateMany {id, tenantId} ile soft-delete (isActive=false)", async () => {
+    const { svc, tx } = buildHarness({ existing: { id: "c1", tenantId: "t1", isActive: true } });
+    await svc.remove("c1", "t1", { userId: "u1" });
+    expect(tx.client.updateMany).toHaveBeenCalledWith({
+      where: { id: "c1", tenantId: "t1" },
+      data: { isActive: false },
+    });
+  });
+
+  it("P0.4: pre-check existing yoksa NotFoundException", async () => {
+    const { svc, prisma } = buildHarness();
+    (prisma.client.findFirst as jest.Mock).mockResolvedValueOnce(null);
+    await expect(svc.remove("cX", "t1", { userId: "u1" })).rejects.toBeInstanceOf(NotFoundException);
+  });
+});

@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query, ForbiddenException, HttpException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ClientService } from './client.service';
 
@@ -27,7 +27,8 @@ export class ClientController {
   async findOne(@Request() req: any, @Param('id') id: string) {
     const tenantId = req.user.tenantId;
     const client = await this.clientService.findOne(id, tenantId);
-    if (!client) return { error: 'Müvekkil bulunamadı' };
+    // P0.4: bulunamayan kayıt 404 (eski: HTTP 200 + {error} → FE !response.ok kontrolü "başarı" sanıyordu).
+    if (!client) throw new NotFoundException('Müvekkil bulunamadı');
     return { data: client };
   }
 
@@ -35,13 +36,10 @@ export class ClientController {
   @Post()
   async create(@Request() req: AuthRequest, @Body() body: any) {
     const tenantId = req.user.tenantId;
-    try {
-      // C0-a: actor YALNIZ req.user.id (auth); body'den userId ASLA okunmaz.
-      const client = await this.clientService.create(tenantId, body, { userId: req.user.id });
-      return { data: client };
-    } catch (error: any) {
-      return { error: error.message };
-    }
+    // C0-a: actor YALNIZ req.user.id (auth); body'den userId ASLA okunmaz.
+    // P0.4: hata yutma YOK — service exception'ları (NotFound/Conflict/500) gerçek HTTP status ile FE'ye gider.
+    const client = await this.clientService.create(tenantId, body, { userId: req.user.id });
+    return { data: client };
   }
 
   // TEK SEFERLİK BAKIM (admin): özellik öncesi oluşmuş eksik müvekkillere görev/rozet üret.
@@ -58,25 +56,18 @@ export class ClientController {
   @Put(':id')
   async update(@Request() req: AuthRequest, @Param('id') id: string, @Body() body: any) {
     const tenantId = req.user.tenantId;
-    try {
-      const client = await this.clientService.update(id, tenantId, body, { userId: req.user.id });
-      return { data: client };
-    } catch (error: any) {
-      // PR-U4: yapısal HttpException (409 DUPLICATE_IDENTITY) frontend'e olduğu gibi geçmeli.
-      if (error instanceof HttpException) throw error;
-      return { error: error.message };
-    }
+    // P0.4: hata yutma YOK. PR-U4 409 DUPLICATE_IDENTITY (ConflictException) ve 404 NotFound
+    // doğrudan gerçek HTTP status ile FE'ye gider (eski catch HTTP 200 {error} üretiyordu).
+    const client = await this.clientService.update(id, tenantId, body, { userId: req.user.id });
+    return { data: client };
   }
 
   // Müvekkil sil
   @Delete(':id')
   async remove(@Request() req: AuthRequest, @Param('id') id: string) {
     const tenantId = req.user.tenantId;
-    try {
-      await this.clientService.remove(id, tenantId, { userId: req.user.id });
-      return { success: true };
-    } catch (error: any) {
-      return { error: error.message };
-    }
+    // P0.4: hata yutma YOK — bulunamayan kayıt gerçek HTTP status (404) döner.
+    await this.clientService.remove(id, tenantId, { userId: req.user.id });
+    return { success: true };
   }
 }
