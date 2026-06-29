@@ -1,10 +1,12 @@
-import { Controller, Get, Post, Param, Query, Body, Request, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Param, Query, Body, Request, UseGuards, Header } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { PrismaService } from '../../prisma/prisma.service';
 import { DispositionPostingService } from './disposition-posting.service';
 import { ClientSettlementReadService } from './client-settlement-read.service';
+import { DistributionRecommendationService } from './distribution-recommendation.service';
 import { PostDispositionDto } from './dto/post-disposition.dto';
 import { ApproveDispositionDto } from './dto/approve-disposition.dto';
+import { GenerateDistributionRecommendationDto } from './dto/distribution-recommendation.dto';
 
 /** actor compile-time shape — req.user.id auth context (body'den ASLA). */
 interface AuthRequest {
@@ -18,7 +20,24 @@ export class DispositionController {
     private readonly posting: DispositionPostingService,
     private readonly prisma: PrismaService,
     private readonly readService: ClientSettlementReadService,
+    private readonly distribution: DistributionRecommendationService,
   ) {}
+
+  /**
+   * S8-B FAZ-1a — Dağıtım önerisi üreteci (PREVIEW). recommend-ONLY: persist YOK · P4 YOK · finansal
+   * etki YOK. Üretilen satırlar FE'de pre-fill edilir → kullanıcı düzenler → mevcut :id/recommend persist eder.
+   * actor = req.user (canonical unpaid masraf adayları için).
+   */
+  @Post(':id/distribution-recommendation')
+  @Header('Cache-Control', 'no-store') // preview · kullanıcı-girdisine bağlı · cache'lenmemeli
+  async distributionRecommendation(
+    @Request() req: AuthRequest,
+    @Param('id') id: string,
+    @Body() body: GenerateDistributionRecommendationDto,
+  ) {
+    const data = await this.distribution.generate(req.user.tenantId, id, body ?? {}, { userId: req.user.id });
+    return { data };
+  }
 
   /** Dosya bazlı dağıtım listesi (review UI; default tüm statüler). */
   @Get('case/:caseId')

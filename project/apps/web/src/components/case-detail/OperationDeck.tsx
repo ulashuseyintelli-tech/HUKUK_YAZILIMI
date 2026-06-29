@@ -74,6 +74,26 @@ interface DispositionPostingRecord {
   manualReversalRequiredAt?: string | null;
 }
 
+// S8-B FAZ-1a — Dağıtım önerisi (advisory-only preview). Üretilen satırlar pre-fill edilir; otorite recommend().
+interface DistributionRecommendationInput {
+  attorneyFee?: { mode: "AMOUNT"; amount: string; note?: string };
+}
+interface DistributionRecommendationResult {
+  suggestedLines: Array<{
+    // Advisory kaynaktan gelir (CollectionDispositionLineType geniş kümesi); FAZ-1a yalnız
+    // CONTRACTUAL_FEE_WITHHELD | CLIENT_PAYABLE döner — modal'a yazarken DispositionPostingLineType'a cast edilir.
+    type: string;
+    amount: string;
+    caseClientId: string | null;
+    origin?: string;
+    note?: string;
+  }>;
+  warnings: string[];
+  expenseModule: {
+    candidates: Array<{ expenseRequestId: string; caseId: string; status: string; remaining: string }>;
+  };
+}
+
 interface EligibleDispositionClient {
   id: string;
   name: string;
@@ -155,6 +175,11 @@ interface OperationDeckProps {
   onRecommendDisposition?: (disposition: DispositionPostingRecord, lines: DispositionPostingLineInput[]) => Promise<void> | void;
   onApproveDisposition?: (disposition: DispositionPostingRecord) => Promise<void> | void;
   onPostDisposition?: (disposition: DispositionPostingRecord) => Promise<void> | void;
+  // S8-B FAZ-1a — Dağıtım önerisi üreteci (preview; persist YOK). Üretilen satırlar modal'a pre-fill edilir.
+  onPrepareDistributionRecommendation?: (
+    dispositionId: string,
+    input: DistributionRecommendationInput,
+  ) => Promise<DistributionRecommendationResult>;
   tasks?: Task[];
   financeItems?: FinanceItem[];
   uyapQueries?: UyapQuery[];
@@ -299,6 +324,7 @@ export function OperationDeck({
   onRecommendDisposition,
   onApproveDisposition,
   onPostDisposition,
+  onPrepareDistributionRecommendation,
   tasks = [],
   financeItems = [],
   uyapQueries = [],
@@ -321,6 +347,22 @@ export function OperationDeck({
   const [distributionModalRecord, setDistributionModalRecord] = useState<AccountingRecord | null>(null);
   const [distributionLines, setDistributionLines] = useState<DistributionDecisionLineState[]>([]);
   const [distributionSubmitError, setDistributionSubmitError] = useState<string | null>(null);
+  // S8-B FAZ-1a — dağıtım önerisi (advisory preview) state'i
+  const [distributionFeeInput, setDistributionFeeInput] = useState("");
+  const [recommendationLoading, setRecommendationLoading] = useState(false);
+  const [recommendationWarnings, setRecommendationWarnings] = useState<string[]>([]);
+  const [recommendationCandidates, setRecommendationCandidates] = useState<
+    DistributionRecommendationResult["expenseModule"]["candidates"]
+  >([]);
+  const [recommendationError, setRecommendationError] = useState<string | null>(null);
+
+  const resetRecommendationState = () => {
+    setDistributionFeeInput("");
+    setRecommendationWarnings([]);
+    setRecommendationCandidates([]);
+    setRecommendationError(null);
+    setRecommendationLoading(false);
+  };
 
   const eligibleClientsForDisposition = eligibleDispositionClients.filter((client) => Boolean(client.id));
 
@@ -350,6 +392,7 @@ export function OperationDeck({
 
     setPostingActionMessage(null);
     setDistributionSubmitError(null);
+    resetRecommendationState();
     setDistributionModalRecord(record);
     setDistributionLines([createInitialDistributionLine(record)]);
   };
@@ -358,6 +401,7 @@ export function OperationDeck({
     setDistributionModalRecord(null);
     setDistributionLines([]);
     setDistributionSubmitError(null);
+    resetRecommendationState();
   };
 
   const updateDistributionLine = (lineId: string, updates: Partial<DistributionDecisionLineState>) => {
@@ -459,6 +503,40 @@ export function OperationDeck({
       closeDistributionDecisionModal();
     } catch (error: any) {
       setDistributionSubmitError(error?.message || "Dağıtım önerisi kaydedilemedi.");
+    }
+  };
+
+  // S8-B FAZ-1a — Dağıtım önerisi hazırla: BE generator'dan suggestedLines al → modal'a pre-fill et (advisory; persist YOK).
+  // FE HESAPLAMAZ: tutarlar BE Decimal'inden gelir; yalnız mevcut format util'leriyle input'a normalize edilir.
+  const handlePrepareRecommendation = async () => {
+    const disposition = distributionModalRecord?.disposition;
+    if (!disposition?.id || !onPrepareDistributionRecommendation) return;
+    setRecommendationError(null);
+    setRecommendationLoading(true);
+    try {
+      const feeRaw = distributionFeeInput.trim();
+      const input: DistributionRecommendationInput = feeRaw
+        ? { attorneyFee: { mode: "AMOUNT", amount: formatAmountInput(parseAmountCents(feeRaw)) } }
+        : {};
+      const rec = await onPrepareDistributionRecommendation(disposition.id, input);
+      if (rec.suggestedLines.length > 0) {
+        setDistributionLines(
+          rec.suggestedLines.map((line) => ({
+            id: createDistributionLineId(),
+            type: line.type as DispositionPostingLineType,
+            amount: formatAmountInput(parseAmountCents(line.amount)),
+            caseClientId: line.caseClientId ?? "",
+            note: line.note ?? "",
+          })),
+        );
+      }
+      setRecommendationWarnings(rec.warnings ?? []);
+      setRecommendationCandidates(rec.expenseModule?.candidates ?? []);
+      setDistributionSubmitError(null);
+    } catch (error: any) {
+      setRecommendationError(error?.message || "Dağıtım önerisi alınamadı.");
+    } finally {
+      setRecommendationLoading(false);
     }
   };
 
@@ -1245,6 +1323,69 @@ export function OperationDeck({
                   </p>
                 </div>
               </div>
+
+              {onPrepareDistributionRecommendation && (
+                <div className="mb-4 rounded-lg border border-indigo-100 bg-indigo-50/60 p-3">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                    <label className="text-xs font-medium text-slate-600">
+                      Avukatlık ücreti (opsiyonel)
+                      <input
+                        aria-label="Avukatlık ücreti"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={distributionFeeInput}
+                        onChange={(event) => setDistributionFeeInput(event.target.value)}
+                        placeholder="0.00"
+                        className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500 sm:w-44"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={handlePrepareRecommendation}
+                      disabled={recommendationLoading}
+                      className="inline-flex items-center justify-center gap-2 rounded-md border border-indigo-300 bg-white px-3 py-2 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {recommendationLoading && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                      Dağıtım Önerisi Hazırla
+                    </button>
+                  </div>
+                  <p className="mt-2 text-[11px] text-slate-500">
+                    Brüt → ücret → müvekkile kalan satırlarını önerir. Satırlar düzenlenebilir; kesinleşmeden önce yetkili onayı gerekir.
+                  </p>
+                  {recommendationError && (
+                    <p className="mt-2 text-xs text-red-600">{recommendationError}</p>
+                  )}
+                  {recommendationWarnings.length > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {recommendationWarnings.map((warning, warnIndex) => (
+                        <li key={warnIndex} className="flex items-start gap-1 text-[11px] text-amber-700">
+                          <AlertTriangle className="mt-0.5 h-3 w-3 shrink-0" />
+                          <span>{warning}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  {recommendationCandidates.length > 0 && (
+                    <div className="mt-2 rounded-md border border-slate-200 bg-white p-2">
+                      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                        Masraf adayları (yalnız bilgi — otomatik uygulanmaz)
+                      </p>
+                      <ul className="mt-1 space-y-1">
+                        {recommendationCandidates.map((candidate) => (
+                          <li
+                            key={candidate.expenseRequestId}
+                            className="flex items-center justify-between gap-2 text-[11px] text-slate-600"
+                          >
+                            <span className="truncate">{candidate.expenseRequestId} · {candidate.status}</span>
+                            <span className="font-medium text-slate-700">{candidate.remaining}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
 
               <div className="space-y-3">
                 {distributionLines.map((line, index) => {

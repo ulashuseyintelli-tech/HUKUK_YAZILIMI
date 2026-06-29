@@ -7,6 +7,7 @@ import { PaymentReceivedRegistrar } from './payment-received.registrar';
 import { CollectionReversalService } from './collection-reversal.service';
 import { PaymentReversedRegistrar } from './payment-reversed.registrar';
 import { DispositionPostingService } from './disposition-posting.service';
+import { DistributionRecommendationService } from './distribution-recommendation.service';
 import { DispositionController } from './disposition.controller';
 import { ClientPayoutService } from './client-payout.service';
 import { ClientPayoutController } from './client-payout.controller';
@@ -43,6 +44,7 @@ import { FinanceRiskEngine } from './finance-risk.engine';
     CollectionReversalService,
     PaymentReversedRegistrar,
     DispositionPostingService,
+    DistributionRecommendationService,
     FinanceRiskEngine,
     FinanceApprovalIntentBuilder,
     ClientPayoutService,

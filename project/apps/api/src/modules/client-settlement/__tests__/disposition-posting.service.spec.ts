@@ -97,6 +97,20 @@ describe('DispositionPostingService.recommend', () => {
     expect(tx.collectionDispositionLine.create).toHaveBeenCalledTimes(5);
   });
 
+  it('Q3: SINGLE scope fee (CONTRACTUAL_FEE_WITHHELD) caseClientId=null KALIR; CLIENT_PAYABLE cc-A alır', async () => {
+    const { prisma, tx } = buildPrisma();
+    await svc(prisma).recommend('t1', 'd1', {
+      lines: [{ type: 'CONTRACTUAL_FEE_WITHHELD', amount: '30' }, { type: 'CLIENT_PAYABLE', amount: '70' }],
+    }, { userId: 'u1' });
+    const created = tx.collectionDispositionLine.create.mock.calls.map(
+      ([a]: any[]) => ({ type: a.data.type, caseClientId: a.data.caseClientId }),
+    );
+    // Büro geliri client-attributed DEĞİL → SINGLE scope'ta dahi caseClientId null kalmalı (Q3).
+    expect(created).toContainEqual({ type: 'CONTRACTUAL_FEE_WITHHELD', caseClientId: null });
+    // Müvekkil payı client-attributed → tek-alacaklının caseClientId'sini devralır.
+    expect(created).toContainEqual({ type: 'CLIENT_PAYABLE', caseClientId: 'cc-A' });
+  });
+
   it('OTHER bucket -> MANUAL_REVIEW; OfficeApprovalRequest yaratılmaz ve transaction açılmaz', async () => {
     const { prisma } = buildPrisma();
     const approval = buildApproval();
