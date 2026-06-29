@@ -7748,6 +7748,8 @@ model EscalationStateRecord {
 // ============================================================
 enum CollectionDispositionStatus {
   HELD_PENDING_DISTRIBUTION // Dağıtım bekliyor (default draft)
+  DISTRIBUTION_RECOMMENDED // S8-B FAZ-0: dağıtım önerisi yazıldı (line'lar var) — finansal etki YOK
+  DISTRIBUTION_APPROVED // S8-B FAZ-0: Partner/Manager onayladı (P4) — line'lar dondu, finansal etki YOK
   POSTED // Dağıtım onaylandı (M2)
   CANCELLED
   REVERSED // Bağlı collection reversed (sonraki faz)
@@ -7784,7 +7786,15 @@ model CollectionDisposition {
   sourcePaymentEventId String? // PAYMENT_RECEIVED eventId (scalar, FK YOK)
   createdById          String?
 
-  // M2 posting (kullanıcı onayı): HELD → POSTED damgası + actor.
+  // S8-B FAZ-0 — Dağıtım onay yaşam döngüsü: HELD → DISTRIBUTION_RECOMMENDED → DISTRIBUTION_APPROVED → POSTED.
+  // recommend: line'lar yazıldı (finansal etki yok) · approve: Partner/Manager (P4) onayı (line'lar dondu) · post: finansal etki.
+  recommendedAt     DateTime?
+  recommendedById   String?
+  approvedAt        DateTime?
+  approvedById      String?
+  approvalRequestId String? // P4 OfficeApprovalRequest.id (scalar, FK YOK — boundary: cross-module FK kurmaz)
+
+  // M2 posting (kullanıcı onayı): DISTRIBUTION_APPROVED → POSTED damgası + actor.
   postedAt   DateTime?
   postedById String?
 

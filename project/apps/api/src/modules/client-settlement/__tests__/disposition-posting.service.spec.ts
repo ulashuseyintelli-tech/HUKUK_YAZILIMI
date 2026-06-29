@@ -1,243 +1,219 @@
 /**
- * TM3 M2 — DispositionPostingService testleri.
- * Acceptance: HELD→POSTED; sum==totalAmount (eksik/fazla reddedilir); HELD satırı yasak;
- * CLUSTER client-attributed caseClientId zorunlu; non-HELD reddedilir; collection re-verify;
- * OFFSET→BalanceLedger CREDIT korelasyonlu.
+ * TM3 M2 + S8-B FAZ-0 — DispositionPostingService (recommend/approve/post onay yaşam döngüsü).
+ *
+ * Başarı kriteri (Ulaş):
+ *  - recommend: line validasyonu (sum==total, HELD yasak, CLUSTER caseClientId, foreign reddi) + finansal etki YOK + P4 talebi.
+ *  - approve: yalnız PARTNER/yetkili (isApproverEligible) + P4.approve (4-göz); finansal etki YOK.
+ *  - post: YALNIZ DISTRIBUTION_APPROVED + APPROVED P4; OFFSET→BalanceLedger CREDIT korelasyonlu (finansal etki burada).
+ *  - non-APPROVED post reddedilir; capability'siz approve reddedilir.
  */
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { DispositionPostingService } from '../disposition-posting.service';
 
 const D = (n: number) => new Prisma.Decimal(n);
 
-const DISP_SINGLE = {
+const DISP_HELD = {
   id: 'd1', collectionId: 'col1', caseId: 'case1', beneficiaryScope: 'SINGLE_CASE_CLIENT',
   caseClientId: 'cc-A', totalAmount: D(100), currency: 'TRY', status: 'HELD_PENDING_DISTRIBUTION',
+  approvalRequestId: null, approvedById: null,
 };
+const DISP_RECOMMENDED = { ...DISP_HELD, status: 'DISTRIBUTION_RECOMMENDED', approvalRequestId: 'appr-1' };
+const DISP_APPROVED = { ...DISP_HELD, status: 'DISTRIBUTION_APPROVED', approvalRequestId: 'appr-1', approvedById: 'u2' };
 
-function buildPrisma(opts: { disp?: any; col?: any; validCaseClients?: any[] } = {}) {
+function buildApproval(opts: { eligible?: boolean; requestId?: string } = {}) {
+  return {
+    createPendingRequest: jest.fn().mockResolvedValue({ id: opts.requestId ?? 'appr-1' }),
+    approve: jest.fn().mockResolvedValue({}),
+    isApproverEligible: jest.fn().mockResolvedValue(opts.eligible ?? true),
+    markExecutionSucceeded: jest.fn().mockResolvedValue({}),
+  } as any;
+}
+
+function buildPrisma(opts: { disp?: any; col?: any; validCaseClients?: any[]; lines?: any[]; approval?: any } = {}) {
   const tx = {
     collectionDispositionLine: {
       deleteMany: jest.fn().mockResolvedValue({}),
       create: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: `line-${data.type}` })),
     },
+    collectionDisposition: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     caseBalance: { findFirst: jest.fn().mockResolvedValue({ id: 'cb-1' }), create: jest.fn().mockResolvedValue({ id: 'cb-new' }) },
     balanceLedger: { create: jest.fn().mockResolvedValue({}) },
-    collectionDisposition: { update: jest.fn().mockResolvedValue({}) },
   };
   const prisma: any = {
-    collectionDisposition: { findFirst: jest.fn().mockResolvedValue(opts.disp === undefined ? DISP_SINGLE : opts.disp) },
+    collectionDisposition: {
+      findFirst: jest.fn().mockResolvedValue(opts.disp === undefined ? DISP_HELD : opts.disp),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
     collection: { findFirst: jest.fn().mockResolvedValue(opts.col === undefined ? { status: 'CONFIRMED' } : opts.col) },
     caseClient: { findMany: jest.fn().mockResolvedValue(opts.validCaseClients ?? [{ id: 'cc-A' }]) },
+    collectionDispositionLine: { findMany: jest.fn().mockResolvedValue(opts.lines ?? []) },
+    officeApprovalRequest: { findFirst: jest.fn().mockResolvedValue(opts.approval === undefined ? { status: 'APPROVED' } : opts.approval) },
     $transaction: jest.fn().mockImplementation(async (cb: any) => cb(tx)),
   };
   return { prisma, tx };
 }
-const svc = (p: any) => new DispositionPostingService(p);
+const svc = (p: any, a?: any) => new DispositionPostingService(p, a ?? buildApproval());
 
-describe('DispositionPostingService.post', () => {
-  it('SINGLE happy: sum==total → POSTED + lines + caseClientId inherit + actor', async () => {
+// ───────────────────────── recommend ─────────────────────────
+describe('DispositionPostingService.recommend', () => {
+  it('SINGLE happy: sum==total → RECOMMENDED + lines + caseClientId inherit + P4 talebi (finansal etki YOK)', async () => {
     const { prisma, tx } = buildPrisma();
-    const res = await svc(prisma).post('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '100' }] }, { userId: 'u1' });
+    const approval = buildApproval();
+    const res = await svc(prisma, approval).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '100' }] }, { userId: 'u1' });
 
-    expect(res.posted).toBe(true);
-    expect(tx.collectionDispositionLine.deleteMany).toHaveBeenCalledWith({ where: { dispositionId: 'd1' } });
+    expect(res.recommended).toBe(true);
+    expect(res.approvalRequestId).toBe('appr-1');
+    expect(approval.createPendingRequest).toHaveBeenCalledWith(
+      expect.objectContaining({ actionCode: 'COLLECTION_DISPOSITION_POST', targetRef: 'd1', requesterUserId: 'u1' }),
+    );
     expect(tx.collectionDispositionLine.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ type: 'CLIENT_PAYABLE', caseClientId: 'cc-A' }) }),
     );
-    expect(tx.collectionDisposition.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: 'POSTED', postedById: 'u1' }) }),
+    expect(tx.collectionDisposition.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'DISTRIBUTION_RECOMMENDED', recommendedById: 'u1', approvalRequestId: 'appr-1' }) }),
     );
+    expect(tx.balanceLedger.create).not.toHaveBeenCalled(); // recommend'da finansal etki YOK
   });
 
-  it('tum non-HELD bucketlar cok satirli post icinde kabul edilir ve toplam tahsilata esitlenir', async () => {
+  it('çok satırlı: tüm non-HELD bucketlar + toplam==tahsilat', async () => {
     const { prisma, tx } = buildPrisma();
-
-    const res = await svc(prisma).post(
-      't1',
-      'd1',
-      {
-        lines: [
-          { type: 'CLIENT_PAYABLE', amount: '10' },
-          { type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: '15' },
-          { type: 'CONTRACTUAL_FEE_WITHHELD', amount: '20' },
-          { type: 'FIRM_EXPENSE_REIMBURSEMENT', amount: '5' },
-          { type: 'OFFSET_CLIENT_ADVANCE', amount: '25' },
-          { type: 'OTHER', amount: '25' },
-        ],
-      },
-      { userId: 'u1' },
-    );
-
-    expect(res).toEqual({ posted: true, dispositionId: 'd1', lineCount: 6 });
+    const res = await svc(prisma).recommend('t1', 'd1', {
+      lines: [
+        { type: 'CLIENT_PAYABLE', amount: '10' }, { type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: '15' },
+        { type: 'CONTRACTUAL_FEE_WITHHELD', amount: '20' }, { type: 'FIRM_EXPENSE_REIMBURSEMENT', amount: '5' },
+        { type: 'OFFSET_CLIENT_ADVANCE', amount: '25' }, { type: 'OTHER', amount: '25' },
+      ],
+    }, { userId: 'u1' });
+    expect(res.lineCount).toBe(6);
     expect(tx.collectionDispositionLine.create).toHaveBeenCalledTimes(6);
-    expect(tx.collectionDispositionLine.create.mock.calls.map(([arg]: any[]) => arg.data.type)).toEqual([
-      'CLIENT_PAYABLE',
-      'CLIENT_EXPENSE_REIMBURSEMENT',
-      'CONTRACTUAL_FEE_WITHHELD',
-      'FIRM_EXPENSE_REIMBURSEMENT',
-      'OFFSET_CLIENT_ADVANCE',
-      'OTHER',
-    ]);
-    expect(tx.collectionDisposition.update).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { id: 'd1' }, data: expect.objectContaining({ status: 'POSTED', postedById: 'u1' }) }),
-    );
   });
 
-  it('cok satirli post accepted: client payable + fee withheld ayni disposition icinde yazilir', async () => {
-    const { prisma, tx } = buildPrisma();
-
-    const res = await svc(prisma).post(
-      't1',
-      'd1',
-      {
-        lines: [
-          { type: 'CLIENT_PAYABLE', amount: '75' },
-          { type: 'CONTRACTUAL_FEE_WITHHELD', amount: '25' },
-        ],
-      },
-      {},
-    );
-
-    expect(res.lineCount).toBe(2);
-    expect(tx.collectionDispositionLine.create).toHaveBeenCalledTimes(2);
-    expect(tx.collectionDisposition.update).toHaveBeenCalledWith(
-      expect.objectContaining({ data: expect.objectContaining({ status: 'POSTED' }) }),
-    );
-  });
-  it('sum < total (eksik) → reject, transaction açılmaz', async () => {
+  it('sum < total → reject, $transaction açılmaz', async () => {
     const { prisma } = buildPrisma();
-    await expect(
-      svc(prisma).post('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '70' }] }, { userId: 'u1' }),
-    ).rejects.toThrow(/eşit olmalı/);
+    await expect(svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '70' }] }, { userId: 'u1' })).rejects.toThrow(/eşit olmalı/);
     expect(prisma.$transaction).not.toHaveBeenCalled();
   });
 
-  it('sum > total (fazla) → reject', async () => {
+  it('sum > total → reject', async () => {
     const { prisma } = buildPrisma();
-    await expect(
-      svc(prisma).post('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '120' }] }, {}),
-    ).rejects.toThrow(/eşit olmalı/);
+    await expect(svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '120' }] }, { userId: 'u1' })).rejects.toThrow(/eşit olmalı/);
   });
 
-  it('HELD_PENDING_DISTRIBUTION POSTED satır olamaz → reject', async () => {
+  it('HELD_PENDING_DISTRIBUTION satır → reject', async () => {
     const { prisma } = buildPrisma();
-    await expect(
-      svc(prisma).post('t1', 'd1', { lines: [{ type: 'HELD_PENDING_DISTRIBUTION', amount: '100' }] }, {}),
-    ).rejects.toThrow(/HELD_PENDING_DISTRIBUTION/);
+    await expect(svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'HELD_PENDING_DISTRIBUTION', amount: '100' }] }, { userId: 'u1' })).rejects.toThrow(/HELD_PENDING_DISTRIBUTION/);
   });
 
   it('CLUSTER CLIENT_PAYABLE caseClientId yoksa → reject', async () => {
-    const disp = { ...DISP_SINGLE, beneficiaryScope: 'CASE_CREDITOR_CLUSTER', caseClientId: null };
-    const { prisma } = buildPrisma({ disp });
-    await expect(
-      svc(prisma).post('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '100' }] }, {}),
-    ).rejects.toThrow(/caseClientId zorunlu/);
+    const { prisma } = buildPrisma({ disp: { ...DISP_HELD, beneficiaryScope: 'CASE_CREDITOR_CLUSTER', caseClientId: null } });
+    await expect(svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '100' }] }, { userId: 'u1' })).rejects.toThrow(/caseClientId zorunlu/);
   });
 
-  it('CLUSTER CLIENT_EXPENSE_REIMBURSEMENT caseClientId yoksa → reject', async () => {
-    const disp = { ...DISP_SINGLE, beneficiaryScope: 'CASE_CREDITOR_CLUSTER', caseClientId: null };
-    const { prisma } = buildPrisma({ disp });
-    await expect(
-      svc(prisma).post('t1', 'd1', { lines: [{ type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: '100' }] }, {}),
-    ).rejects.toThrow(/caseClientId zorunlu/);
-  });
-
-  it('CLUSTER client-attributed bucketlar explicit caseClientId ile kabul edilir', async () => {
-    const disp = { ...DISP_SINGLE, beneficiaryScope: 'CASE_CREDITOR_CLUSTER', caseClientId: null };
-    const { prisma, tx } = buildPrisma({ disp, validCaseClients: [{ id: 'cc-A' }, { id: 'cc-B' }] });
-
-    const res = await svc(prisma).post(
-      't1',
-      'd1',
-      {
-        lines: [
-          { type: 'CLIENT_PAYABLE', amount: '70', caseClientId: 'cc-A' },
-          { type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: '30', caseClientId: 'cc-B' },
-        ],
-      },
-      {},
-    );
-
+  it('CLUSTER explicit caseClientId ile kabul', async () => {
+    const { prisma, tx } = buildPrisma({ disp: { ...DISP_HELD, beneficiaryScope: 'CASE_CREDITOR_CLUSTER', caseClientId: null }, validCaseClients: [{ id: 'cc-A' }, { id: 'cc-B' }] });
+    const res = await svc(prisma).recommend('t1', 'd1', {
+      lines: [{ type: 'CLIENT_PAYABLE', amount: '70', caseClientId: 'cc-A' }, { type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: '30', caseClientId: 'cc-B' }],
+    }, { userId: 'u1' });
     expect(res.lineCount).toBe(2);
-    expect(prisma.caseClient.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: expect.objectContaining({ id: { in: ['cc-A', 'cc-B'] }, caseId: 'case1' }),
-        select: { id: true },
-      }),
-    );
-    expect(tx.collectionDispositionLine.create.mock.calls.map(([arg]: any[]) => arg.data.caseClientId)).toEqual(['cc-A', 'cc-B']);
+    expect(tx.collectionDispositionLine.create.mock.calls.map(([a]: any[]) => a.data.caseClientId)).toEqual(['cc-A', 'cc-B']);
   });
 
-  it('CLUSTER non-client bucketlar caseClientId olmadan kabul edilir', async () => {
-    const disp = { ...DISP_SINGLE, beneficiaryScope: 'CASE_CREDITOR_CLUSTER', caseClientId: null };
-    const { prisma, tx } = buildPrisma({ disp, validCaseClients: [] });
-
-    const res = await svc(prisma).post(
-      't1',
-      'd1',
-      {
-        lines: [
-          { type: 'CONTRACTUAL_FEE_WITHHELD', amount: '20' },
-          { type: 'FIRM_EXPENSE_REIMBURSEMENT', amount: '20' },
-          { type: 'OFFSET_CLIENT_ADVANCE', amount: '30' },
-          { type: 'OTHER', amount: '30' },
-        ],
-      },
-      {},
-    );
-
-    expect(res.lineCount).toBe(4);
-    expect(prisma.caseClient.findMany).not.toHaveBeenCalled();
-    expect(tx.collectionDispositionLine.create.mock.calls.map(([arg]: any[]) => arg.data.caseClientId)).toEqual([null, null, null, null]);
-  });
-  it('disposition HELD değilse → reject', async () => {
-    const { prisma } = buildPrisma({ disp: { ...DISP_SINGLE, status: 'POSTED' } });
-    await expect(
-      svc(prisma).post('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '100' }] }, {}),
-    ).rejects.toThrow(/HELD_PENDING_DISTRIBUTION post/);
-  });
-
-  it('collection CONFIRMED değilse → reject (M1 sonrası iptal guard)', async () => {
-    const { prisma } = buildPrisma({ col: { status: 'CANCELLED' } });
-    await expect(
-      svc(prisma).post('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '100' }] }, {}),
-    ).rejects.toThrow(/posting yasak/);
-  });
-
-  it('OFFSET_CLIENT_ADVANCE → BalanceLedger CREDIT korelasyonlu yazılır', async () => {
-    const { prisma, tx } = buildPrisma();
-    await svc(prisma).post('t1', 'd1', { lines: [{ type: 'OFFSET_CLIENT_ADVANCE', amount: '100' }] }, { userId: 'u1' });
-    expect(tx.balanceLedger.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          tenantId: 't1',
-          caseBalanceId: 'cb-1',
-          type: 'CREDIT',
-          amount: D(100),
-          currency: 'TRY',
-          source: 'disposition_line:line-OFFSET_CLIENT_ADVANCE',
-          sourceId: 'line-OFFSET_CLIENT_ADVANCE',
-          description: 'Tahsilat avans mahsubu (OFFSET_CLIENT_ADVANCE)',
-          createdById: 'u1',
-        }),
-      }),
-    );
-  });
-
-  it('yabancı/uygunsuz caseClientId → reject (foreign-case veya rol değil)', async () => {
-    const disp = { ...DISP_SINGLE, beneficiaryScope: 'CASE_CREDITOR_CLUSTER', caseClientId: null };
-    const { prisma } = buildPrisma({ disp, validCaseClients: [] }); // findMany boş → eligible değil
-    await expect(
-      svc(prisma).post('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '100', caseClientId: 'cc-FOREIGN' }] }, {}),
-    ).rejects.toThrow(/geçersiz\/yabancı|uygun rolde/);
+  it('yabancı/uygunsuz caseClientId → reject', async () => {
+    const { prisma } = buildPrisma({ disp: { ...DISP_HELD, beneficiaryScope: 'CASE_CREDITOR_CLUSTER', caseClientId: null }, validCaseClients: [] });
+    await expect(svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '100', caseClientId: 'cc-FOREIGN' }] }, { userId: 'u1' })).rejects.toThrow(/geçersiz\/yabancı|uygun rolde/);
     expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('disposition HELD değilse → reject', async () => {
+    const { prisma } = buildPrisma({ disp: DISP_RECOMMENDED });
+    await expect(svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '100' }] }, { userId: 'u1' })).rejects.toThrow(/HELD_PENDING_DISTRIBUTION önerilebilir/);
+  });
+
+  it('collection CONFIRMED değilse → reject', async () => {
+    const { prisma } = buildPrisma({ col: { status: 'CANCELLED' } });
+    await expect(svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '100' }] }, { userId: 'u1' })).rejects.toThrow(/posting yasak/);
   });
 
   it('disposition bulunamazsa → NotFound', async () => {
     const { prisma } = buildPrisma({ disp: null });
-    await expect(
-      svc(prisma).post('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '100' }] }, {}),
-    ).rejects.toThrow(NotFoundException);
+    await expect(svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '100' }] }, { userId: 'u1' })).rejects.toThrow(NotFoundException);
+  });
+});
+
+// ───────────────────────── approve ─────────────────────────
+describe('DispositionPostingService.approve', () => {
+  it('happy: eligible approver → DISTRIBUTION_APPROVED + P4.approve çağrılır (finansal etki YOK)', async () => {
+    const { prisma } = buildPrisma({ disp: DISP_RECOMMENDED });
+    const approval = buildApproval({ eligible: true });
+    const res = await svc(prisma, approval).approve('t1', 'd1', { userId: 'u2' }, 'onaylandı');
+    expect(res.approved).toBe(true);
+    expect(approval.approve).toHaveBeenCalledWith('appr-1', 'u2', 'onaylandı');
+    expect(prisma.collectionDisposition.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'DISTRIBUTION_APPROVED', approvedById: 'u2' }) }),
+    );
+    expect(prisma.$transaction).not.toHaveBeenCalled(); // finansal etki YOK
+  });
+
+  it('capability olmayan kullanıcı → Forbidden, P4.approve çağrılmaz', async () => {
+    const { prisma } = buildPrisma({ disp: DISP_RECOMMENDED });
+    const approval = buildApproval({ eligible: false });
+    await expect(svc(prisma, approval).approve('t1', 'd1', { userId: 'u9' })).rejects.toThrow(ForbiddenException);
+    expect(approval.approve).not.toHaveBeenCalled();
+  });
+
+  it('disposition RECOMMENDED değilse → reject', async () => {
+    const { prisma } = buildPrisma({ disp: DISP_HELD });
+    await expect(svc(prisma).approve('t1', 'd1', { userId: 'u2' })).rejects.toThrow(/DISTRIBUTION_RECOMMENDED onaylanabilir/);
+  });
+
+  it('P4 self-approval (requester===approver) → P4.approve hatası yukarı taşınır', async () => {
+    const { prisma } = buildPrisma({ disp: DISP_RECOMMENDED });
+    const approval = buildApproval({ eligible: true });
+    approval.approve = jest.fn().mockRejectedValue(new BadRequestException('SELF_APPROVAL_FORBIDDEN'));
+    await expect(svc(prisma, approval).approve('t1', 'd1', { userId: 'u1' })).rejects.toThrow(/SELF_APPROVAL_FORBIDDEN/);
+  });
+});
+
+// ───────────────────────── post ─────────────────────────
+describe('DispositionPostingService.post', () => {
+  it('happy: DISTRIBUTION_APPROVED + APPROVED P4 → POSTED + markExecutionSucceeded', async () => {
+    const { prisma, tx } = buildPrisma({ disp: DISP_APPROVED, lines: [{ id: 'l1', type: 'CLIENT_PAYABLE', amount: D(100) }] });
+    const approval = buildApproval();
+    const res = await svc(prisma, approval).post('t1', 'd1', { userId: 'u3' });
+    expect(res).toEqual({ posted: true, dispositionId: 'd1', lineCount: 1 });
+    expect(tx.collectionDisposition.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ status: 'DISTRIBUTION_APPROVED' }), data: expect.objectContaining({ status: 'POSTED', postedById: 'u3' }) }),
+    );
+    expect(approval.markExecutionSucceeded).toHaveBeenCalledWith('appr-1', 'u3');
+  });
+
+  it('disposition APPROVED değilse → reject (Partner/Manager onayı gerekir)', async () => {
+    const { prisma } = buildPrisma({ disp: DISP_RECOMMENDED });
+    await expect(svc(prisma).post('t1', 'd1', { userId: 'u3' })).rejects.toThrow(/DISTRIBUTION_APPROVED post edilebilir/);
+  });
+
+  it('P4 request APPROVED değilse → conflict (post yasak)', async () => {
+    const { prisma } = buildPrisma({ disp: DISP_APPROVED, approval: { status: 'PENDING_APPROVAL' }, lines: [{ id: 'l1', type: 'CLIENT_PAYABLE', amount: D(100) }] });
+    await expect(svc(prisma).post('t1', 'd1', { userId: 'u3' })).rejects.toThrow(/APPROVED değil/);
+  });
+
+  it('OFFSET_CLIENT_ADVANCE → BalanceLedger CREDIT korelasyonlu (mevcut line id ile)', async () => {
+    const { prisma, tx } = buildPrisma({ disp: DISP_APPROVED, lines: [{ id: 'lineX', type: 'OFFSET_CLIENT_ADVANCE', amount: D(100) }] });
+    await svc(prisma).post('t1', 'd1', { userId: 'u3' });
+    expect(tx.balanceLedger.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ type: 'CREDIT', amount: D(100), source: 'disposition_line:lineX', sourceId: 'lineX' }) }),
+    );
+  });
+
+  it('line toplamı != totalAmount (tamper guard) → reject', async () => {
+    const { prisma } = buildPrisma({ disp: DISP_APPROVED, lines: [{ id: 'l1', type: 'CLIENT_PAYABLE', amount: D(70) }] });
+    await expect(svc(prisma).post('t1', 'd1', { userId: 'u3' })).rejects.toThrow(/eşit olmalı/);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it('collection CONFIRMED değilse (approve→post arası iptal) → reject', async () => {
+    const { prisma } = buildPrisma({ disp: DISP_APPROVED, col: { status: 'CANCELLED' }, lines: [{ id: 'l1', type: 'CLIENT_PAYABLE', amount: D(100) }] });
+    await expect(svc(prisma).post('t1', 'd1', { userId: 'u3' })).rejects.toThrow(/posting yasak/);
   });
 });

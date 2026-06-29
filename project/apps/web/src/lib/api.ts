@@ -2795,17 +2795,40 @@ class ApiClient {
   }
 
   /**
-   * Bekleyen tahsilat dağıtım kaydını kesinleştir.
+   * S8-B FAZ-0 — Dağıtım önerisi (line'lar yazılır, finansal etki YOK; P4 onay talebi açılır). HELD → DISTRIBUTION_RECOMMENDED.
+   * Çağrıldığı yerler:
+   * - CaseDetailPage.handleRecommendCollectionDisposition() → POST /collection-dispositions/:id/recommend (OperationDeck)
+   */
+  async recommendCollectionDisposition(dispositionId: string, payload: PostCollectionDispositionDTO) {
+    const response = await this.request<{ data: { recommended: boolean; dispositionId: string; lineCount: number; approvalRequestId: string } }>(
+      `/collection-dispositions/${dispositionId}/recommend`,
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+    return response.data;
+  }
+
+  /**
+   * S8-B FAZ-0 — Dağıtım onayı (yalnız Partner/Manager + P4 4-göz). DISTRIBUTION_RECOMMENDED → DISTRIBUTION_APPROVED.
+   * Çağrıldığı yerler:
+   * - CaseDetailPage.handleApproveCollectionDisposition() → POST /collection-dispositions/:id/approve (OperationDeck)
+   */
+  async approveCollectionDisposition(dispositionId: string, payload: { note?: string } = {}) {
+    const response = await this.request<{ data: { approved: boolean; dispositionId: string } }>(
+      `/collection-dispositions/${dispositionId}/approve`,
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+    return response.data;
+  }
+
+  /**
+   * S8-B FAZ-0 — Dağıtımı muhasebeleştir (YALNIZ DISTRIBUTION_APPROVED; finansal etki burada). DISTRIBUTION_APPROVED → POSTED.
    * Çağrıldığı yerler:
    * - CaseDetailPage.handlePostCollectionDisposition() → POST /collection-dispositions/:id/post (OperationDeck dağıtım aksiyonu)
    */
-  async postCollectionDisposition(dispositionId: string, payload: PostCollectionDispositionDTO) {
+  async postCollectionDisposition(dispositionId: string) {
     const response = await this.request<{ data: PostCollectionDispositionResultDTO }>(
       `/collection-dispositions/${dispositionId}/post`,
-      {
-        method: "POST",
-        body: JSON.stringify(payload),
-      },
+      { method: "POST" },
     );
     return response.data;
   }

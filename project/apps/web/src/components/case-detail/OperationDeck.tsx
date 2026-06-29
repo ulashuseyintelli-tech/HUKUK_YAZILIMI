@@ -151,7 +151,10 @@ interface OperationDeckProps {
   accountingEmptyMessage?: string;
   eligibleDispositionClients?: EligibleDispositionClient[];
   postingDispositionId?: string | null;
-  onPostDisposition?: (disposition: DispositionPostingRecord, lines: DispositionPostingLineInput[]) => Promise<void> | void;
+  // S8-B FAZ-0 — onay yaşam döngüsü: öner (HELD→RECOMMENDED) → onayla (→APPROVED) → kesinleştir (→POSTED).
+  onRecommendDisposition?: (disposition: DispositionPostingRecord, lines: DispositionPostingLineInput[]) => Promise<void> | void;
+  onApproveDisposition?: (disposition: DispositionPostingRecord) => Promise<void> | void;
+  onPostDisposition?: (disposition: DispositionPostingRecord) => Promise<void> | void;
   tasks?: Task[];
   financeItems?: FinanceItem[];
   uyapQueries?: UyapQuery[];
@@ -293,6 +296,8 @@ export function OperationDeck({
   accountingEmptyMessage = "Bu dosyada henüz dağıtım/mutabakat kaydı yok.",
   eligibleDispositionClients = [],
   postingDispositionId = null,
+  onRecommendDisposition,
+  onApproveDisposition,
   onPostDisposition,
   tasks = [],
   financeItems = [],
@@ -395,7 +400,7 @@ export function OperationDeck({
   const getDistributionValidationMessage = () => {
     const disposition = distributionModalRecord?.disposition;
     if (!distributionModalRecord || !disposition) return "Dağıtım kaydı bulunamadı.";
-    if (!onPostDisposition) return "Dağıtım belirleme aksiyonu bu görünümde kullanılamıyor.";
+    if (!onRecommendDisposition) return "Dağıtım önerme aksiyonu bu görünümde kullanılamıyor.";
     if (String(disposition.status || "").toUpperCase() !== "HELD_PENDING_DISTRIBUTION") {
       return "Yalnız bekleyen dağıtım kayıtları kesinleştirilebilir.";
     }
@@ -432,7 +437,7 @@ export function OperationDeck({
     }
 
     const disposition = distributionModalRecord?.disposition;
-    if (!disposition || !onPostDisposition) return;
+    if (!disposition || !onRecommendDisposition) return;
 
     const payloadLines: DispositionPostingLineInput[] = distributionLines.map((line) => {
       const payloadLine: DispositionPostingLineInput = {
@@ -449,15 +454,16 @@ export function OperationDeck({
     });
 
     try {
-      await onPostDisposition(disposition, payloadLines);
-      setPostingActionMessage("Dağıtım kararı kaydedildi.");
+      await onRecommendDisposition(disposition, payloadLines);
+      setPostingActionMessage("Dağıtım önerisi kaydedildi — onay bekliyor.");
       closeDistributionDecisionModal();
     } catch (error: any) {
-      setDistributionSubmitError(error?.message || "Dağıtım kararı kaydedilemedi.");
+      setDistributionSubmitError(error?.message || "Dağıtım önerisi kaydedilemedi.");
     }
   };
 
-  const handlePostDispositionClick = async (record: AccountingRecord) => {
+  // S8-B FAZ-0 — Hızlı öner: tek satır CLIENT_PAYABLE = tahsilatın tamamı → DISTRIBUTION_RECOMMENDED (onay bekler; finansal etki YOK).
+  const handleRecommendShortcut = async (record: AccountingRecord) => {
     const disposition = record.disposition;
     if (!disposition || String(disposition.status || "").toUpperCase() !== "HELD_PENDING_DISTRIBUTION") return;
 
@@ -470,24 +476,59 @@ export function OperationDeck({
 
     const eligibleClients = eligibleClientsForDisposition;
     if (eligibleClients.length > 1) {
-      setPostingActionMessage("Çoklu alacaklı dosyada dağıtım için alacaklı seçimi gerekir.");
+      setPostingActionMessage("Çoklu alacaklı dosyada 'Dağıtımı Belirle' ile alacaklı seçimi gerekir.");
       return;
     }
     if (eligibleClients.length === 0) {
-      setPostingActionMessage("Dağıtımı kesinleştirmek için uygun alacaklı bulunamadı.");
+      setPostingActionMessage("Dağıtım önermek için uygun alacaklı bulunamadı.");
       return;
     }
-    if (!onPostDisposition) {
-      setPostingActionMessage("Dağıtım kesinleştirme aksiyonu bu görünümde kullanılamıyor.");
+    if (!onRecommendDisposition) {
+      setPostingActionMessage("Dağıtım önerme aksiyonu bu görünümde kullanılamıyor.");
       return;
     }
-
-    const confirmed = typeof window === "undefined" || window.confirm("Bu dağıtımı kesinleştirmek istediğinize emin misiniz? Payout öncesi mutabakat durumu güncellenecek.");
-    if (!confirmed) return;
 
     const payloadAmount = typeof disposition.totalAmount === "string" ? disposition.totalAmount : totalAmount.toFixed(2);
     try {
-      await onPostDisposition(disposition, [{ type: "CLIENT_PAYABLE", amount: payloadAmount, caseClientId: eligibleClients[0].id }]);
+      await onRecommendDisposition(disposition, [{ type: "CLIENT_PAYABLE", amount: payloadAmount, caseClientId: eligibleClients[0].id }]);
+      setPostingActionMessage("Dağıtım önerisi kaydedildi — onay bekliyor.");
+    } catch (error: any) {
+      setPostingActionMessage(error?.message || "Dağıtım önerisi kaydedilemedi.");
+    }
+  };
+
+  // S8-B FAZ-0 — Onayla: DISTRIBUTION_RECOMMENDED → DISTRIBUTION_APPROVED (yalnız Partner/Manager; yetki backend + P4'te).
+  const handleApproveDispositionClick = async (record: AccountingRecord) => {
+    const disposition = record.disposition;
+    if (!disposition || String(disposition.status || "").toUpperCase() !== "DISTRIBUTION_RECOMMENDED") return;
+    if (!onApproveDisposition) {
+      setPostingActionMessage("Onay aksiyonu bu görünümde kullanılamıyor.");
+      return;
+    }
+    const confirmed = typeof window === "undefined" || window.confirm("Bu dağıtım önerisini onaylıyor musunuz? Onay yetkisi yalnız Partner/Manager'dadır.");
+    if (!confirmed) return;
+    setPostingActionMessage(null);
+    try {
+      await onApproveDisposition(disposition);
+      setPostingActionMessage("Dağıtım onaylandı — kesinleştirilebilir.");
+    } catch (error: any) {
+      setPostingActionMessage(error?.message || "Dağıtım onaylanamadı.");
+    }
+  };
+
+  // S8-B FAZ-0 — Kesinleştir: DISTRIBUTION_APPROVED → POSTED (finansal etki burada doğar).
+  const handlePostApprovedClick = async (record: AccountingRecord) => {
+    const disposition = record.disposition;
+    if (!disposition || String(disposition.status || "").toUpperCase() !== "DISTRIBUTION_APPROVED") return;
+    if (!onPostDisposition) {
+      setPostingActionMessage("Kesinleştirme aksiyonu bu görünümde kullanılamıyor.");
+      return;
+    }
+    const confirmed = typeof window === "undefined" || window.confirm("Onaylı dağıtımı muhasebeleştirmek istediğinize emin misiniz? Müvekkile borç / mahsup kaynağı bu işlemle oluşur.");
+    if (!confirmed) return;
+    setPostingActionMessage(null);
+    try {
+      await onPostDisposition(disposition);
     } catch (error: any) {
       setPostingActionMessage(error?.message || "Dağıtım kesinleştirilemedi.");
     }
@@ -1103,40 +1144,59 @@ export function OperationDeck({
                         {record.type === "ODEME_ALINDI" ? "+" : ""}{record.amount.toLocaleString("tr-TR")} ₺
                       </p>
                     )}
-                    {String(record.disposition?.status || "").toUpperCase() === "HELD_PENDING_DISTRIBUTION" && (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        <button
-                          type="button"
-                          onClick={() => handlePostDispositionClick(record)}
-                          disabled={
-                            postingDispositionId === record.disposition?.id ||
-                            !Number.isFinite(Number(record.disposition?.totalAmount ?? record.amount ?? 0)) ||
-                            Number(record.disposition?.totalAmount ?? record.amount ?? 0) <= 0
-                          }
-                          className="inline-flex items-center gap-1.5 rounded-md border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {postingDispositionId === record.disposition?.id ? (
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                          ) : (
-                            <Check className="h-3 w-3" />
-                          )}
-                          Dağıtımı Kesinleştir
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => openDistributionDecisionModal(record)}
-                          disabled={
-                            postingDispositionId === record.disposition?.id ||
-                            !Number.isFinite(Number(record.disposition?.totalAmount ?? record.amount ?? 0)) ||
-                            Number(record.disposition?.totalAmount ?? record.amount ?? 0) <= 0
-                          }
-                          className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-teal-300 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          <ListTodo className="h-3 w-3" />
-                          Dağıtımı Belirle
-                        </button>
-                      </div>
-                    )}                  </div>
+                    {(() => {
+                      const dispId = record.disposition?.id;
+                      const st = String(record.disposition?.status || "").toUpperCase();
+                      const busy = postingDispositionId === dispId;
+                      const amt = Number(record.disposition?.totalAmount ?? record.amount ?? 0);
+                      const amtOk = Number.isFinite(amt) && amt > 0;
+                      const spin = busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />;
+                      // S8-B FAZ-0 — HELD → öner; RECOMMENDED → onayla; APPROVED → kesinleştir; POSTED → dağıtıldı.
+                      if (st === "HELD_PENDING_DISTRIBUTION") {
+                        return (
+                          <div className="mt-2 flex flex-wrap gap-2">
+                            <button type="button" onClick={() => handleRecommendShortcut(record)} disabled={busy || !amtOk}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60">
+                              {spin} Dağıtım Öner
+                            </button>
+                            <button type="button" onClick={() => openDistributionDecisionModal(record)} disabled={busy || !amtOk}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-teal-300 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-60">
+                              <ListTodo className="h-3 w-3" /> Dağıtımı Belirle
+                            </button>
+                          </div>
+                        );
+                      }
+                      if (st === "DISTRIBUTION_RECOMMENDED") {
+                        return (
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">Öneri — onay bekliyor</span>
+                            <button type="button" onClick={() => handleApproveDispositionClick(record)} disabled={busy}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:cursor-not-allowed disabled:opacity-60">
+                              {spin} Onayla
+                            </button>
+                          </div>
+                        );
+                      }
+                      if (st === "DISTRIBUTION_APPROVED") {
+                        return (
+                          <div className="mt-2 flex flex-wrap items-center gap-2">
+                            <span className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700">Onaylandı</span>
+                            <button type="button" onClick={() => handlePostApprovedClick(record)} disabled={busy}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-teal-300 bg-teal-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60">
+                              {spin} Kesinleştir (Muhasebeleştir)
+                            </button>
+                          </div>
+                        );
+                      }
+                      if (st === "POSTED") {
+                        return (
+                          <div className="mt-2">
+                            <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">Dağıtıldı</span>
+                          </div>
+                        );
+                      }
+                      return null;
+                    })()}                  </div>
                 ))}
                 {muhasebeKayitlari.length === 0 && (
                   <div className="text-center py-6 text-slate-400">
@@ -1306,7 +1366,7 @@ export function OperationDeck({
                 className="inline-flex items-center justify-center gap-2 rounded-md bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {isDistributionSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
-                Dağıtımı Kaydet
+                Dağıtım Önerisini Kaydet
               </button>
             </div>
           </div>
