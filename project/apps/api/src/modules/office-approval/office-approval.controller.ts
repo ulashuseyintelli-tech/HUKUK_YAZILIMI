@@ -19,15 +19,15 @@ import {
   RequestRevisionOfficeApprovalDto,
   ApproveWithChangesOfficeApprovalDto,
   toSummaryDto,
-  toDetailDto,
 } from './dto/office-approval.dto';
+import { toDetailDtoForViewer } from './office-approval-detail.presenter';
 
 // P4-4 — OfficeApprovalController (Inbox / Approve API). KESİN (Ulaş kilidi):
 //  - DECISION-ONLY: approve/reject/revision/approve-with-changes/cancel yalnız STATUS GEÇİŞİ yapar; EXECUTION TETİKLEMEZ
 //    (executionStatus NOT_RUN kalır; deferred execution P4-5). markExecution* PUBLIC ROUTE EDİLMEZ (executor-internal).
 //  - Yetki/guard SERVİS-İÇİNDE (assertApproverEligible/self-approval/PENDING/tenant); controller truthful-actor adapter (actor=@CurrentUser, body.userId YOK SAYILIR).
 //  - READ tenant-scoped: inbox/mine tenant filtreli; detail getByIdForTenant (çapraz-tenant→404) + görünürlük (requester ∨ eligible-approver).
-//  - Yanıt her zaman { success, data: toSummaryDto/toDetailDto } — raw Prisma entity ASLA dönmez. AuditLog'a ham alan girmez (servis hash-only).
+//  - Yanıt her zaman { success, data: toSummaryDto/toDetailDtoForViewer } — raw Prisma entity ASLA dönmez. AuditLog'a ham alan girmez (servis hash-only).
 //
 // /// <remarks>
 // /// Çağrıldığı yerler (HTTP, frontend inbox UI SONRA):
@@ -94,8 +94,11 @@ export class OfficeApprovalController {
     if (!isRequester && !(await this.service.isApproverEligible(actorUserId, tenantId))) {
       throw new NotFoundException('Onay talebi bulunamadı.'); // ilgisiz aynı-tenant kullanıcı → 404
     }
-    // Ulaş kilidi: DETAIL ham savedIntent + replacementSavedIntent + decisionNote EXPOSE (approver gördüğünü onaylar).
-    return { success: true, data: toDetailDto(req) };
+    // Finance approval detail payloads are masked server-side when the savedIntent contract requires it.
+    return {
+      success: true,
+      data: toDetailDtoForViewer(req, { actorUserId, tenantId, isRequester, isEligibleApprover: !isRequester }),
+    };
   }
 
   // Approve — status→APPROVED; EXECUTION TETİKLEMEZ (executionStatus NOT_RUN kalır → P4-5).
@@ -106,7 +109,12 @@ export class OfficeApprovalController {
     @Body() dto: ApproveOfficeApprovalDto,
   ) {
     const r = await this.service.approve(id, actorUserId, dto.note);
-    return { success: true, data: toDetailDto(r) };
+    return { success: true, data: toDetailDtoForViewer(r, {
+        actorUserId,
+        tenantId: r.tenantId,
+        isRequester: r.requesterUserId === actorUserId,
+        isEligibleApprover: r.requesterUserId !== actorUserId,
+      }) };
   }
 
   // Reject — gerekçe ZORUNLU (DTO @MinLength + servis throw).
@@ -117,7 +125,12 @@ export class OfficeApprovalController {
     @Body() dto: RejectOfficeApprovalDto,
   ) {
     const r = await this.service.reject(id, actorUserId, dto.note);
-    return { success: true, data: toDetailDto(r) };
+    return { success: true, data: toDetailDtoForViewer(r, {
+        actorUserId,
+        tenantId: r.tenantId,
+        isRequester: r.requesterUserId === actorUserId,
+        isEligibleApprover: r.requesterUserId !== actorUserId,
+      }) };
   }
 
   // Request-revision — revizyon notu ZORUNLU; REVISION_REQUESTED ≠ REJECTED.
@@ -128,7 +141,12 @@ export class OfficeApprovalController {
     @Body() dto: RequestRevisionOfficeApprovalDto,
   ) {
     const r = await this.service.requestRevision(id, actorUserId, dto.note);
-    return { success: true, data: toDetailDto(r) };
+    return { success: true, data: toDetailDtoForViewer(r, {
+        actorUserId,
+        tenantId: r.tenantId,
+        isRequester: r.requesterUserId === actorUserId,
+        isEligibleApprover: r.requesterUserId !== actorUserId,
+      }) };
   }
 
   // Approve-with-changes — replacementSavedIntent ZORUNLU (opaque); orijinal savedIntent ASLA ezilmez; status→APPROVED_WITH_CHANGES, execution YOK.
@@ -139,13 +157,26 @@ export class OfficeApprovalController {
     @Body() dto: ApproveWithChangesOfficeApprovalDto,
   ) {
     const r = await this.service.approveWithChanges(id, actorUserId, dto.replacementSavedIntent, dto.note);
-    return { success: true, data: toDetailDto(r) };
+    return { success: true, data: toDetailDtoForViewer(r, {
+        actorUserId,
+        tenantId: r.tenantId,
+        isRequester: r.requesterUserId === actorUserId,
+        isEligibleApprover: r.requesterUserId !== actorUserId,
+      }) };
   }
 
   // Cancel — YALNIZ requester (servis ForbiddenException ile enforce); PENDING dışında 409. Execution yok.
   @Post(':id/cancel')
   async cancel(@CurrentUser('id') actorUserId: string, @Param('id') id: string) {
     const r = await this.service.cancel(id, actorUserId);
-    return { success: true, data: toDetailDto(r) };
+    return {
+      success: true,
+      data: toDetailDtoForViewer(r, {
+        actorUserId,
+        tenantId: r.tenantId,
+        isRequester: r.requesterUserId === actorUserId,
+        isEligibleApprover: false,
+      }),
+    };
   }
 }

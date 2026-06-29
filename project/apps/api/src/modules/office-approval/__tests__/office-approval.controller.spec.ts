@@ -147,3 +147,116 @@ describe('P4-4 OfficeApprovalController — guard', () => {
     expect(guards).toContain(JwtAuthGuard);
   });
 });
+
+
+const s9hFinanceIntent = (over: Record<string, unknown> = {}) => ({
+  version: 'S9H_COLLECTION_DISPOSITION_POST_INTENT_V1',
+  policyVersion: 'S9H-1',
+  actionCode: 'COLLECTION_DISPOSITION_POST',
+  targetType: 'COLLECTION_DISPOSITION',
+  targetRef: 'disp-1',
+  tenantId: 't1',
+  caseId: 'case-1',
+  collectionId: 'col-1',
+  dispositionId: 'disp-1',
+  totalAmount: '100',
+  currency: 'TRY',
+  lines: [{ type: 'CLIENT_PAYABLE', amount: '100', caseClientId: 'cc-1', note: 'SECRET_FEE_NOTE' }],
+  risk: {
+    decision: 'REQUIRE_APPROVAL',
+    reasons: [{ code: 'POLICY_REQUIRES_APPROVAL', publicMessage: 'approval required', privateExplanation: 'PRIVATE_REASON', internalMessage: 'INTERNAL_REASON' }],
+  },
+  policy: { thresholdValues: { highValue: '1000' } },
+  journalPreview: { debit: 'SECRET_JOURNAL_PREVIEW' },
+  attorneyFeeRevenue: 'SECRET_REVENUE',
+  visibility: {
+    version: 'S9H_FINANCE_APPROVAL_DETAIL_MASKING_V1',
+    summaryContainsRawSavedIntent: false,
+    detailRequiresServerSideMasking: true,
+  },
+  ...over,
+});
+
+const s9hFinanceReq = (over: Record<string, unknown> = {}) => mkReq({
+  actionCode: 'COLLECTION_DISPOSITION_POST',
+  targetType: 'COLLECTION_DISPOSITION',
+  targetRef: 'disp-1',
+  savedIntent: s9hFinanceIntent(),
+  payloadHash: 'f'.repeat(64),
+  ...over,
+});
+
+describe('S9H-MASK OfficeApprovalController - finance detail projection', () => {
+  it('summary response savedIntent dondurmez', async () => {
+    const { ctrl } = mk({ isApproverEligible: jest.fn().mockResolvedValue(true), listForTenant: jest.fn().mockResolvedValue([s9hFinanceReq()]) });
+    const res: any = await ctrl.inbox('appr', 't1', undefined);
+    expect(res.data[0]).not.toHaveProperty('savedIntent');
+    expect(res.data[0]).not.toHaveProperty('replacementSavedIntent');
+  });
+
+  it('finance detail requester MASKED/SUMMARY projection gorur; raw savedIntent sizmaz', async () => {
+    const { ctrl } = mk({ getByIdForTenant: jest.fn().mockResolvedValue(s9hFinanceReq({ requesterUserId: 'u1' })) });
+    const res: any = await ctrl.detail('u1', 't1', 'r1');
+    const blob = JSON.stringify(res.data);
+
+    expect(res.data.financeVisibility).toMatchObject({ applied: true, level: 'MASKED' });
+    expect(res.data.savedIntent).toMatchObject({ totalAmount: '100', currency: 'TRY', lineCount: 1 });
+    expect(res.data.savedIntent).not.toHaveProperty('lines');
+    expect(blob).not.toContain('SECRET_FEE_NOTE');
+    expect(blob).not.toContain('PRIVATE_REASON');
+    expect(blob).not.toContain('INTERNAL_REASON');
+    expect(blob).not.toContain('SECRET_JOURNAL_PREVIEW');
+    expect(blob).not.toContain('SECRET_REVENUE');
+  });
+
+  it('finance detail eligible approver CONTROLLED_FULL projection gorur; lines.note raw donmez', async () => {
+    const { ctrl } = mk({
+      getByIdForTenant: jest.fn().mockResolvedValue(s9hFinanceReq({ requesterUserId: 'someone-else' })),
+      isApproverEligible: jest.fn().mockResolvedValue(true),
+    });
+    const res: any = await ctrl.detail('appr', 't1', 'r1');
+    const blob = JSON.stringify(res.data);
+
+    expect(res.data.financeVisibility).toMatchObject({ applied: true, level: 'CONTROLLED_FULL' });
+    expect(res.data.savedIntent.lines[0]).toMatchObject({ type: 'CLIENT_PAYABLE', amount: '100', caseClientId: 'cc-1', note: '[MASKED]' });
+    expect(blob).not.toContain('SECRET_FEE_NOTE');
+    expect(blob).not.toContain('PRIVATE_REASON');
+    expect(blob).not.toContain('INTERNAL_REASON');
+    expect(blob).not.toContain('SECRET_JOURNAL_PREVIEW');
+    expect(blob).not.toContain('SECRET_REVENUE');
+  });
+
+  it('finance action responses raw savedIntent sizdirmaz', async () => {
+    const { ctrl } = mk({
+      approve: jest.fn().mockResolvedValue(s9hFinanceReq({ status: 'APPROVED', approverUserId: 'appr' })),
+      reject: jest.fn().mockResolvedValue(s9hFinanceReq({ status: 'REJECTED', approverUserId: 'appr' })),
+      requestRevision: jest.fn().mockResolvedValue(s9hFinanceReq({ status: 'REVISION_REQUESTED', approverUserId: 'appr' })),
+      approveWithChanges: jest.fn().mockResolvedValue(s9hFinanceReq({
+        status: 'APPROVED_WITH_CHANGES',
+        approverUserId: 'appr',
+        replacementSavedIntent: s9hFinanceIntent({ lines: [{ type: 'CLIENT_PAYABLE', amount: '100', caseClientId: 'cc-1', note: 'REPLACEMENT_SECRET_NOTE' }] }),
+        replacementPayloadHash: 'b'.repeat(64),
+      })),
+      cancel: jest.fn().mockResolvedValue(s9hFinanceReq({ status: 'CANCELLED', requesterUserId: 'req-user' })),
+    });
+
+    const responses: any[] = [
+      await ctrl.approve('appr', 'r1', { note: 'ok' }),
+      await ctrl.reject('appr', 'r1', { note: 'gerekce' }),
+      await ctrl.requestRevision('appr', 'r1', { note: 'revize et' }),
+      await ctrl.approveWithChanges('appr', 'r1', { replacementSavedIntent: s9hFinanceIntent(), note: 'degistir' }),
+      await ctrl.cancel('req-user', 'r1'),
+    ];
+
+    for (const response of responses) {
+      const blob = JSON.stringify(response.data);
+      expect(response.data.financeVisibility.applied).toBe(true);
+      expect(blob).not.toContain('SECRET_FEE_NOTE');
+      expect(blob).not.toContain('REPLACEMENT_SECRET_NOTE');
+      expect(blob).not.toContain('PRIVATE_REASON');
+      expect(blob).not.toContain('INTERNAL_REASON');
+      expect(blob).not.toContain('SECRET_JOURNAL_PREVIEW');
+      expect(blob).not.toContain('SECRET_REVENUE');
+    }
+  });
+});
