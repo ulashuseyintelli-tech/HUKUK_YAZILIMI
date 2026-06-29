@@ -176,8 +176,15 @@ export class OfficeApprovalService {
     return this.markExecution(id, OfficeApprovalExecutionStatus.SUCCEEDED, 'OFFICE_APPROVAL_EXECUTION_SUCCEEDED', byUserId, true);
   }
 
+  /**
+   * P4-5C-1: FAILED işaretler + retry metadata yazar (retryCount++ , lastRetryAt=now). Bu metadata 5C-1'de yalnız KAYDEDİLİR
+   * (tüketen retry yolu 5C-2'de). reconcile'ın not-applied dalı da buraya gelir → orphan da retryCount'a sayılır (sonsuz-döngü önlenir).
+   */
   markExecutionFailed(id: string, byUserId: string): Promise<OfficeApprovalRequest> {
-    return this.markExecution(id, OfficeApprovalExecutionStatus.FAILED, 'OFFICE_APPROVAL_EXECUTION_FAILED', byUserId, false);
+    return this.markExecution(id, OfficeApprovalExecutionStatus.FAILED, 'OFFICE_APPROVAL_EXECUTION_FAILED', byUserId, false, {
+      retryCount: { increment: 1 },
+      lastRetryAt: new Date(),
+    });
   }
 
   /** Bayat-onay: APPROVED ama yürütme anında ön-koşul tutmadı → STALE (otomatik replay YOK). */
@@ -209,7 +216,8 @@ export class OfficeApprovalService {
         status: { in: [OfficeApprovalStatus.APPROVED, OfficeApprovalStatus.APPROVED_WITH_CHANGES] },
         executionStatus: OfficeApprovalExecutionStatus.NOT_RUN, // STRICT: yalnız NOT_RUN → RUNNING (çift-claim fence)
       },
-      data: { executionStatus: OfficeApprovalExecutionStatus.RUNNING },
+      // P4-5C-1: runningStartedAt=claim anı → precise stuck-RUNNING timeout (reconcile yaşa bakar; age-blind değil).
+      data: { executionStatus: OfficeApprovalExecutionStatus.RUNNING, runningStartedAt: new Date() },
     });
     if (res.count === 0) throw new ConflictException('Yürütme zaten talep edilmiş veya sonlanmış (RUNNING-lock).');
     const updated = await this.requireRequest(id);
@@ -333,6 +341,7 @@ export class OfficeApprovalService {
     auditAction: string,
     byUserId: string,
     setExecutedAt: boolean,
+    extraData: Prisma.OfficeApprovalRequestUpdateManyMutationInput = {}, // P4-5C-1: FAILED'de retryCount/lastRetryAt için
   ): Promise<OfficeApprovalRequest> {
     const req = await this.requireRequest(id);
     // APPROVED ve APPROVED_WITH_CHANGES yürütülebilir onay durumlarıdır (ikisi de "onaylandı").
@@ -347,7 +356,7 @@ export class OfficeApprovalService {
         status: { in: [OfficeApprovalStatus.APPROVED, OfficeApprovalStatus.APPROVED_WITH_CHANGES] },
         executionStatus: { in: [OfficeApprovalExecutionStatus.NOT_RUN, OfficeApprovalExecutionStatus.RUNNING] },
       },
-      data: { executionStatus: next, ...(setExecutedAt ? { executedAt: new Date() } : {}) },
+      data: { executionStatus: next, ...(setExecutedAt ? { executedAt: new Date() } : {}), ...extraData },
     });
     if (res.count === 0) throw new ConflictException('Yürütme zaten sonlanmış (idempotent guard).');
     const updated = await this.requireRequest(id);

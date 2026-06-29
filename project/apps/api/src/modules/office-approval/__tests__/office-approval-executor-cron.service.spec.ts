@@ -73,6 +73,11 @@ describe('P4-5B cron — scanner + pass ordering (flag ON)', () => {
     });
     expect(calls[0][0].take).toBe(50);
     expect(calls[0][0].select).toEqual({ id: true, tenantId: true }); // yalnız id+tenantId forward
+    // P4-5C-1 precise age-gate: yalnız stuck (runningStartedAt<=cutoff) veya pre-migration orphan (null)
+    expect(calls[0][0].where.OR).toEqual([
+      { runningStartedAt: { lte: expect.any(Date) } },
+      { runningStartedAt: null },
+    ]);
     // PASS-2 = NOT_RUN (FAILED DEĞİL → R1=A)
     expect(calls[1][0].where.executionStatus).toBe('NOT_RUN');
     expect(calls[1][0].where.executionStatus).not.toBe('FAILED');
@@ -80,8 +85,8 @@ describe('P4-5B cron — scanner + pass ordering (flag ON)', () => {
     const reconcileOrder = executor.reconcileStuckRunning.mock.invocationCallOrder[0];
     const executeOrder = executor.execute.mock.invocationCallOrder[0];
     expect(reconcileOrder).toBeLessThan(executeOrder);
-    // her satır KENDİ tenantId'siyle (cross-tenant); cron-actor SYSTEM_CRON
-    expect(executor.reconcileStuckRunning).toHaveBeenCalledWith('run1', 'tA');
+    // her satır KENDİ tenantId'siyle (cross-tenant) + stuckCutoff (Date); cron-actor SYSTEM_CRON
+    expect(executor.reconcileStuckRunning).toHaveBeenCalledWith('run1', 'tA', expect.any(Date));
     expect(executor.execute).toHaveBeenCalledWith('pen1', 'tB', 'SYSTEM_CRON');
   });
 

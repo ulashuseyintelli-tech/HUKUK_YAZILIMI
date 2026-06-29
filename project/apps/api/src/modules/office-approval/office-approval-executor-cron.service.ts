@@ -67,16 +67,23 @@ export class OfficeApprovalExecutorCronService {
     let stale = 0;
     let reconciled = 0;
 
-    // PASS-1 — RUNNING reconcile (age-blind; önceki tick crash'i yeni iş ÖNCESİ temizlenir).
+    // PASS-1 — RUNNING reconcile (P4-5C-1 PRECISE: runningStartedAt stuckCutoff'tan eski olanlar; taze in-flight claim ATLANIR).
+    //   runningStartedAt=null → pre-migration orphan → eligible. stuckCutoff = now - STUCK_TIMEOUT.
+    const stuckCutoff = new Date(Date.now() - config.stuckTimeoutMinutes * 60_000);
     const running = await this.prisma.officeApprovalRequest.findMany({
-      where: { status: { in: EXECUTABLE_STATUSES }, executionStatus: OfficeApprovalExecutionStatus.RUNNING, ...SCOPE },
+      where: {
+        status: { in: EXECUTABLE_STATUSES },
+        executionStatus: OfficeApprovalExecutionStatus.RUNNING,
+        ...SCOPE,
+        OR: [{ runningStartedAt: { lte: stuckCutoff } }, { runningStartedAt: null }],
+      },
       select: { id: true, tenantId: true },
       orderBy: { createdAt: 'asc' },
       take: config.batchSize,
     });
     for (const row of running) {
       try {
-        await this.executor.reconcileStuckRunning(row.id, row.tenantId);
+        await this.executor.reconcileStuckRunning(row.id, row.tenantId, stuckCutoff);
         reconciled++;
       } catch (e) {
         // beklenen yarış: canlı executor önce terminalize etti → markExecution* count=0 Conflict → logla+devam.

@@ -256,83 +256,108 @@ describe('P4-5A executor — sequence ordering + leak-free (K8) + route-yok (acc
   });
 });
 
-describe('P4-5B executor — reconcileStuckRunning (age-blind; case.caseStatus=hakikat; R2)', () => {
-  const runningReq = (over: Record<string, unknown> = {}) => mkReq({ executionStatus: 'RUNNING', ...over });
+describe('P4-5C-1 executor — reconcileStuckRunning (PRECISE age-gate; case.caseStatus=hakikat; R2/lock7)', () => {
+  // CUTOFF = now - STUCK_TIMEOUT. runningStartedAt > CUTOFF → henüz stuck değil; <= CUTOFF veya null → eligible.
+  const CUTOFF = new Date(2026, 5, 29, 12, 0, 0);
+  const OLD = new Date(2026, 5, 29, 11, 0, 0); // CUTOFF'tan eski → stuck (eligible)
+  const FRESH = new Date(2026, 5, 29, 12, 5, 0); // CUTOFF'tan sonra → taze in-flight (skip)
+  const runningReq = (over: Record<string, unknown> = {}) =>
+    mkReq({ executionStatus: 'RUNNING', runningStartedAt: OLD, ...over });
 
-  it('RUNNING + caseStatus === intent.status (applied-but-unmarked) → markExecutionSucceeded (re-apply YOK)', async () => {
+  it('caseStatus === intent.status (applied-but-unmarked) → markExecutionSucceeded (re-apply YOK)', async () => {
     const { svc, officeApproval, caseStatus } = mk(runningReq({ savedIntent: { status: 'BATAK' } }), {
       prisma: { case: { findFirst: jest.fn().mockResolvedValue({ caseStatus: 'BATAK' }) } },
     });
-    const res = await svc.reconcileStuckRunning('r1', 't1');
+    const res = await svc.reconcileStuckRunning('r1', 't1', CUTOFF);
     expect(officeApproval.markExecutionSucceeded).toHaveBeenCalledWith('r1', 'appr-u');
     expect(officeApproval.markExecutionStale).not.toHaveBeenCalled();
+    expect(officeApproval.markExecutionFailed).not.toHaveBeenCalled();
     expect(caseStatus.changeStatus).not.toHaveBeenCalled(); // reconcile ASLA re-apply etmez
     expect(officeApproval.markExecutionRunning).not.toHaveBeenCalled(); // claim-lock'a dokunmaz
     expect(res.executionStatus).toBe('SUCCEEDED');
   });
 
-  it('3c RUNNING + caseStatus !== intent.status (not-applied) → markExecutionStale (reset-to-NOT_RUN DEĞİL)', async () => {
+  it('lock7: caseStatus !== intent.status (not-applied) → markExecutionFailed (P4-5B STALE → P4-5C FAILED; bounded-retry havuzu)', async () => {
     const { svc, officeApproval, caseStatus } = mk(runningReq({ savedIntent: { status: 'BATAK' } }), {
       prisma: { case: { findFirst: jest.fn().mockResolvedValue({ caseStatus: 'DERDEST' }) } },
     });
-    const res = await svc.reconcileStuckRunning('r1', 't1');
-    expect(officeApproval.markExecutionStale).toHaveBeenCalledWith('r1', 'appr-u');
+    const res = await svc.reconcileStuckRunning('r1', 't1', CUTOFF);
+    expect(officeApproval.markExecutionFailed).toHaveBeenCalledWith('r1', 'appr-u'); // retryCount artar (orphan sayılır)
+    expect(officeApproval.markExecutionStale).not.toHaveBeenCalled();
     expect(officeApproval.markExecutionSucceeded).not.toHaveBeenCalled();
     expect(caseStatus.changeStatus).not.toHaveBeenCalled();
-    expect(res.executionStatus).toBe('STALE');
+    expect(res.executionStatus).toBe('FAILED');
   });
 
-  it('RUNNING + case YOK → markExecutionStale', async () => {
+  it('case YOK → markExecutionStale (hedef yok, başarı iddia edilemez)', async () => {
     const { svc, officeApproval } = mk(runningReq(), {
       prisma: { case: { findFirst: jest.fn().mockResolvedValue(null) } },
     });
-    await svc.reconcileStuckRunning('r1', 't1');
+    await svc.reconcileStuckRunning('r1', 't1', CUTOFF);
     expect(officeApproval.markExecutionStale).toHaveBeenCalledWith('r1', 'appr-u');
+    expect(officeApproval.markExecutionFailed).not.toHaveBeenCalled();
   });
 
-  it('RUNNING (APPROVED_WITH_CHANGES) → replacementSavedIntent.status hakikat ile karşılaştırılır', async () => {
+  it('APPROVED_WITH_CHANGES → replacementSavedIntent.status hakikat ile karşılaştırılır', async () => {
     const { svc, officeApproval } = mk(
       runningReq({ status: 'APPROVED_WITH_CHANGES', savedIntent: { status: 'ACIZ' }, replacementSavedIntent: { status: 'MAHSUP' } }),
       { prisma: { case: { findFirst: jest.fn().mockResolvedValue({ caseStatus: 'MAHSUP' }) } } },
     );
-    await svc.reconcileStuckRunning('r1', 't1');
-    expect(officeApproval.markExecutionSucceeded).toHaveBeenCalledWith('r1', 'appr-u'); // replacement hedefi tutmuş
+    await svc.reconcileStuckRunning('r1', 't1', CUTOFF);
+    expect(officeApproval.markExecutionSucceeded).toHaveBeenCalledWith('r1', 'appr-u');
   });
 
-  it('RUNNING + malformed intent → markExecutionStale (no-replay)', async () => {
+  it('malformed intent → markExecutionStale (hedef belirsiz, asla başaramaz → retry havuzuna SOKMA)', async () => {
     const { svc, officeApproval, prisma } = mk(runningReq({ savedIntent: { reason: 'status yok' } }));
-    await svc.reconcileStuckRunning('r1', 't1');
+    await svc.reconcileStuckRunning('r1', 't1', CUTOFF);
     expect(officeApproval.markExecutionStale).toHaveBeenCalledWith('r1', 'appr-u');
-    expect(prisma.case.findFirst).not.toHaveBeenCalled(); // intent yok → case okumaya gerek yok
+    expect(officeApproval.markExecutionFailed).not.toHaveBeenCalled();
+    expect(prisma.case.findFirst).not.toHaveBeenCalled();
+  });
+
+  // PRECISE age-gate (P4-5C-1 yeni): taze in-flight claim YANLIŞ reconcile edilmez.
+  it('age-gate: runningStartedAt > stuckCutoff (taze claim) → ConflictException; mark YOK; case OKUNMAZ', async () => {
+    const { svc, officeApproval, prisma } = mk(runningReq({ runningStartedAt: FRESH }));
+    await expect(svc.reconcileStuckRunning('r1', 't1', CUTOFF)).rejects.toThrow(ConflictException);
+    noMarks(officeApproval);
+    expect(prisma.case.findFirst).not.toHaveBeenCalled();
+  });
+
+  it('age-gate: runningStartedAt = null (pre-migration orphan) → eligible (reconcile devam eder)', async () => {
+    const { svc, officeApproval } = mk(runningReq({ runningStartedAt: null, savedIntent: { status: 'BATAK' } }), {
+      prisma: { case: { findFirst: jest.fn().mockResolvedValue({ caseStatus: 'BATAK' }) } },
+    });
+    await svc.reconcileStuckRunning('r1', 't1', CUTOFF);
+    expect(officeApproval.markExecutionSucceeded).toHaveBeenCalledWith('r1', 'appr-u');
   });
 
   it.each(['NOT_RUN', 'SUCCEEDED', 'FAILED', 'STALE'])(
-    'RUNNING DIŞI (executionStatus=%s) → ConflictException; mark YOK (reconcile etmez)',
+    'RUNNING DIŞI (executionStatus=%s) → ConflictException; mark YOK',
     async (es) => {
       const { svc, officeApproval } = mk(runningReq({ executionStatus: es }));
-      await expect(svc.reconcileStuckRunning('r1', 't1')).rejects.toThrow(ConflictException);
+      await expect(svc.reconcileStuckRunning('r1', 't1', CUTOFF)).rejects.toThrow(ConflictException);
       noMarks(officeApproval);
     },
   );
 
   it('RUNNING ama approverUserId null (bozuk) → ConflictException; mark YOK', async () => {
     const { svc, officeApproval } = mk(runningReq({ approverUserId: null }));
-    await expect(svc.reconcileStuckRunning('r1', 't1')).rejects.toThrow(ConflictException);
+    await expect(svc.reconcileStuckRunning('r1', 't1', CUTOFF)).rejects.toThrow(ConflictException);
     noMarks(officeApproval);
   });
 
-  it('idempotent CAS: canlı executor önce terminalize etti → markExecution* count=0 Conflict → reconcile propagate (cron yutar)', async () => {
+  it('idempotent CAS: canlı executor önce terminalize etti → markExecution* count=0 Conflict → propagate (cron yutar)', async () => {
     const { svc } = mk(runningReq({ savedIntent: { status: 'BATAK' } }), {
       prisma: { case: { findFirst: jest.fn().mockResolvedValue({ caseStatus: 'BATAK' }) } },
       officeApproval: { markExecutionSucceeded: jest.fn().mockRejectedValue(new ConflictException('Yürütme zaten sonlanmış')) },
     });
-    await expect(svc.reconcileStuckRunning('r1', 't1')).rejects.toThrow(ConflictException);
+    await expect(svc.reconcileStuckRunning('r1', 't1', CUTOFF)).rejects.toThrow(ConflictException);
   });
 
   it('load: getByIdForTenant 404 (çapraz-tenant/yok) → propagate', async () => {
     const { svc } = mk(runningReq(), {
       officeApproval: { getByIdForTenant: jest.fn().mockRejectedValue(new NotFoundException()) },
     });
-    await expect(svc.reconcileStuckRunning('r1', 't-OTHER')).rejects.toThrow(NotFoundException);
+    await expect(svc.reconcileStuckRunning('r1', 't-OTHER', CUTOFF)).rejects.toThrow(NotFoundException);
   });
 });
