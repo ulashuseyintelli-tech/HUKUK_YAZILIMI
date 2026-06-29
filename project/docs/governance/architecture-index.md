@@ -12,4 +12,4 @@ Kurallar:
 
 | ID | Title | Authoritative Source | Status | Notes |
 |---|---|---|---|---|
-| TBD | TBD | TBD | LOCKED | İlk doldurma ayrı onaylı governance işidir. |
+| ADR-009 | Universal Office Approval — durum-değiştiren mutation'lar patron/kurucu-ortak onayından geçer | `docs/adr/ADR-009-UNIVERSAL-OFFICE-APPROVAL.md` | LOCKED | Bilgi girişi doğrudan; durum-değiştiren işlem `OfficeApprovalRequest` (PENDING→kurucu ortak→executor). `OfficeApprovalRequest`(iç) ≠ `ClientApprovalRequest`(dış). Generalization per-action backend (P4/Codex); engine core P4-5C/3B önce. |
