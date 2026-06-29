@@ -185,6 +185,49 @@ export class OfficeApprovalService {
     return this.markExecution(id, OfficeApprovalExecutionStatus.STALE, 'OFFICE_APPROVAL_EXECUTION_STALE', byUserId, false);
   }
 
+  // ───────────────────────── P4-4 read (Inbox/Detail; TENANT-SCOPED) ─────────────────────────
+
+  /**
+   * P4-4 — Inbox/Mine listesi (tenant-scoped). view='inbox' → tenant'ın PENDING havuzu, requester'ın KENDİ talebi HARİÇ
+   * (self-approval paritesi); view='mine' → caller'ın KENDİ talepleri (tüm statüler). status verilirse filtreler.
+   * NOT: inbox eligibility KONTROLÜ controller'da (yetkisiz→boş liste); bu metod yalnız tenant+view filtresi uygular.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - OfficeApprovalController.inbox()/mine() → GET /office-approvals/inbox · GET /office-approvals/mine.
+   * /// </remarks>
+   */
+  async listForTenant(
+    tenantId: string,
+    opts: { view: 'inbox' | 'mine'; callerUserId: string; status?: OfficeApprovalStatus },
+  ): Promise<OfficeApprovalRequest[]> {
+    const where: Prisma.OfficeApprovalRequestWhereInput = { tenantId };
+    if (opts.view === 'inbox') {
+      where.status = opts.status ?? OfficeApprovalStatus.PENDING_APPROVAL; // default: bekleyenler
+      where.requesterUserId = { not: opts.callerUserId }; // KENDİ talebini onaylama paritesi → inbox'ta gösterme
+    } else {
+      where.requesterUserId = opts.callerUserId; // mine: yalnız kendi talepleri
+      if (opts.status) where.status = opts.status;
+    }
+    return this.prisma.officeApprovalRequest.findMany({ where, orderBy: { createdAt: 'desc' } });
+  }
+
+  /**
+   * P4-4 — DETAIL için TENANT-SCOPED tek kayıt. private requireRequest TENANT-FİLTRESİZ olduğundan HTTP'ye AÇILMAZ;
+   * bu metod where:{id,tenantId} ile çapraz-tenant okumayı engeller → mismatch'te 404 (existence-oracle yok).
+   * (Görünürlük [requester ∨ eligible-approver] kontrolü controller'da.)
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - OfficeApprovalController.detail() → GET /office-approvals/:id.
+   * /// </remarks>
+   */
+  async getByIdForTenant(id: string, tenantId: string): Promise<OfficeApprovalRequest> {
+    const req = await this.prisma.officeApprovalRequest.findFirst({ where: { id, tenantId } });
+    if (!req) throw new NotFoundException('Onay talebi bulunamadı.');
+    return req;
+  }
+
   // ───────────────────────── internals ─────────────────────────
 
   private async requireRequest(id: string): Promise<OfficeApprovalRequest> {
@@ -205,18 +248,30 @@ export class OfficeApprovalService {
     }
   }
 
-  /** Approver yeterliliği: aktif + aynı tenant + linkli Lawyer + (PARTNER veya canApproveOfficeActions). Staff DEĞİL. */
-  private async assertApproverEligible(approverUserId: string, tenantId: string): Promise<void> {
+  /**
+   * Approver yeterliliği PREDİKATI (paylaşılan; P4-4 inbox filtresi + assertApproverEligible + shadow service aynı
+   * lawyerRank/canApproveOfficeActions kuralını kullansın → drift YOK). aktif + aynı tenant + linkli Lawyer +
+   * (PARTNER veya canApproveOfficeActions). Staff DEĞİL (Lawyer linki yok). THROW ETMEZ → bool döner.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - OfficeApprovalService.assertApproverEligible() (karar metodları) · OfficeApprovalController (inbox eligibility + detail visibility).
+   * /// </remarks>
+   */
+  async isApproverEligible(userId: string, tenantId: string): Promise<boolean> {
     const user = await this.prisma.user.findUnique({
-      where: { id: approverUserId },
+      where: { id: userId },
       include: { lawyer: { select: { lawyerRank: true, canApproveOfficeActions: true } } },
     });
-    if (!user || !user.isActive) throw new ForbiddenException('Onaylayan kullanıcı bulunamadı veya aktif değil.');
-    if (user.tenantId !== tenantId) throw new ForbiddenException('Onaylayan farklı tenant — onay verilemez.');
+    if (!user || !user.isActive || user.tenantId !== tenantId) return false;
     const lw = user.lawyer;
-    const eligible = !!lw && (lw.lawyerRank === 'PARTNER' || lw.canApproveOfficeActions === true);
-    if (!eligible) {
-      throw new ForbiddenException('Onay yetkisi yok (PARTNER veya yetkilendirilmiş avukat gerekir).');
+    return !!lw && (lw.lawyerRank === 'PARTNER' || lw.canApproveOfficeActions === true);
+  }
+
+  /** Approver yeterliliği — değilse 403. (Predikat isApproverEligible'da; karar metodları bunu çağırır.) */
+  private async assertApproverEligible(approverUserId: string, tenantId: string): Promise<void> {
+    if (!(await this.isApproverEligible(approverUserId, tenantId))) {
+      throw new ForbiddenException('Onay yetkisi yok (aktif, aynı tenant, PARTNER veya yetkilendirilmiş avukat gerekir).');
     }
   }
 
