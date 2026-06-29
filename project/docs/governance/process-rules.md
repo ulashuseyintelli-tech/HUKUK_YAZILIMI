@@ -69,8 +69,28 @@ NEXT RECOMMENDED STEP
 Dur
 ```
 
-GO-COMPLETE verilmişse merge, cleanup, main sync, final verification ve checkpoint tek operasyon sayılır. Stop condition oluşursa ajan durur.
+GO-COMPLETE verilmişse merge, cleanup, main sync, final verification ve checkpoint tek operasyon sayılır. Kullanıcı bir görev için `GO-COMPLETE` verdiyse ve stop condition oluşmadıysa ajan zincir içinde tekrar onay istemez. Merge, remote branch cleanup, local branch cleanup, worktree cleanup, main sync, final verification ve checkpoint bu zincirde tek operasyonel bütündür. Bu zincirde `Onay Bekleniyor: YES` yazılmaz. Yalnız stop condition oluşursa ajan durur, sebebi raporlar ve `Onay Bekleniyor: YES` yazar.
 
+## Approval Reporting Semantics
+
+- `GO-ANALYZE` sonunda `Onay Bekleniyor: YES` yazılır; çünkü analizden sonra kullanıcı karar verir.
+- `GO-IMPLEMENT` sonunda `Onay Bekleniyor: YES` yazılır; çünkü commit / PR / merge için kullanıcı karar verir.
+- `GO-COMPLETE` sonunda stop condition yoksa `Onay Bekleniyor: NO` yazılır; çünkü kullanıcı baştan operasyon zincirini tamamlama yetkisi vermiştir.
+- `GO-COMPLETE` sırasında stop condition varsa `Onay Bekleniyor: YES` yazılır; çünkü kullanıcı kararı gerekir.
+
+## CI WAIT / POLLING RULE
+
+Bu kural yalnız `GO-COMPLETE` için geçerlidir. `GO-ANALYZE` ve `GO-IMPLEMENT` sonunda ajan kullanıcıya rapor verir; CI bekleme zinciri otomatik merge anlamına gelmez.
+
+`GO-COMPLETE` sırasında CI durumu `IN_PROGRESS` ise ajan hemen kullanıcıya dönmez. CI durumunu otomatik olarak belirli aralıklarla yeniden kontrol eder.
+
+- Önerilen polling aralığı: 60 saniyede bir.
+- Önerilen maksimum bekleme: 20 dakika.
+- Bu süre içinde CI `SUCCESS` olursa GO-COMPLETE zinciri devam eder; merge → cleanup → main sync → final verification → checkpoint tamamlanır.
+- CI `FAIL` olursa ajan durur, merge yapmaz, cleanup yapmaz ve `Onay Bekleniyor: YES` yazar.
+- CI 20 dakika sonunda hâlâ `IN_PROGRESS` ise ajan durur, merge yapmaz, cleanup yapmaz, timeout raporu verir ve `Onay Bekleniyor: YES` yazar.
+- CI bitmediği için `mergeStateStatus` `BLOCKED` ise bu tek başına stop condition sayılmaz; CI tamamlandıktan sonra `mergeStateStatus` yeniden sorgulanır.
+- CI bittikten sonra `mergeStateStatus` `CLEAN` değilse ajan durur, merge yapmaz, cleanup yapmaz ve `Onay Bekleniyor: YES` yazar.
 ## Stop Conditions
 
 - CI başarısız
