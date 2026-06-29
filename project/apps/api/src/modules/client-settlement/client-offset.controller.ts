@@ -47,6 +47,14 @@ export class ClientOffsetController {
     return this.service.listOffsets(req.user.tenantId, clientId, { currency, kind });
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - OffsetDrawer detail panel → GET /client-offsets/:offsetId/detail (read-only audit/source projection)
+  /// </remarks>
+  @Get(':offsetId/detail')
+  async detail(@Request() req: AuthRequest, @Param('offsetId') offsetId: string) {
+    return this.service.getOffsetDetail(req.user.tenantId, offsetId);
+  }
   /** Mahsup uygula (kind=APPLY). Service-level PARTNER/MANAGER enforce (CLIENT_OFFSET_APPLY). */
   @Post()
   @CpeRequired(ActionCode.CLIENT_OFFSET_APPLY)

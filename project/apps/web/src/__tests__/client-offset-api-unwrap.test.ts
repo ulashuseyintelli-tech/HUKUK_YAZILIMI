@@ -67,4 +67,11 @@ describe('clientOffsetApi — tek-zarf (raw) unwrap = resp.data (undefined DÖNM
     expect(r).not.toBeUndefined();
     expect(r.reversesOffsetId).toBe('off-1');
   });
+  it('detail: raw projection → obje ve doğru endpoint', async () => {
+    get.mockResolvedValue({ data: { offset: { id: 'off-1' }, sourceSummary: { payable: {}, expense: {} }, auditEvents: [] } });
+    const r = await clientOffsetApi.detail('off-1');
+    expect(r).not.toBeUndefined();
+    expect(r.offset.id).toBe('off-1');
+    expect(get).toHaveBeenCalledWith('/client-offsets/off-1/detail');
+  });
 });
