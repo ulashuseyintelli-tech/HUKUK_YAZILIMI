@@ -63,6 +63,11 @@ function balanceLedger(overrides: any = {}) {
   };
 }
 
+function offsetJournalEntry(report: ReturnType<typeof buildAccountingLedgerDryRunReport>, offsetId: string) {
+  const entry = report.entries.find((row) => row.sourceType === 'CLIENT_OFFSET' && row.sourceId === offsetId);
+  expect(entry).toBeDefined();
+  return entry!;
+}
 describe('AccountingLedgerDryRunService', () => {
   it('yalniz izin verilen source tablolarindan okur ve DB write yapmaz', async () => {
     const forbiddenRead = jest.fn();
@@ -95,7 +100,15 @@ describe('AccountingLedgerDryRunService', () => {
       }),
     );
     expect(prisma.clientPayout.findMany).toHaveBeenCalled();
-    expect(prisma.clientOffset.findMany).toHaveBeenCalled();
+    expect(prisma.clientOffset.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          tenantId: 'tenant-1',
+          currency: 'TRY',
+          OR: [{ payableCaseId: 'case-1' }, { expenseCaseId: 'case-1' }],
+        }),
+      }),
+    );
     expect(prisma.balanceLedger.findMany).toHaveBeenCalled();
     expect(forbiddenRead).not.toHaveBeenCalled();
     expect(report.entries).toHaveLength(1);
@@ -152,6 +165,79 @@ describe('buildAccountingLedgerDryRunReport', () => {
     ]);
   });
 
+  it('CLIENT_OFFSET APPLY same-case accounting rule: payable DEBIT keeps caseClientId, expense CREDIT has null caseClientId', () => {
+    const report = buildAccountingLedgerDryRunReport({
+      tenantId: 'tenant-1',
+      dispositionLines: [],
+      clientPayouts: [],
+      clientOffsets: [offset({ id: 'off-apply-same', amount: D(20), kind: 'APPLY', payableCaseId: 'case-1', expenseCaseId: 'case-1', payableCaseClientId: 'cc-payable' })],
+      balanceLedgerRows: [],
+    });
+
+    const entry = offsetJournalEntry(report, 'off-apply-same');
+    expect(entry.lines).toEqual([
+      expect.objectContaining({ accountCode: 'CLIENT_PAYABLE', direction: 'DEBIT', amount: '20', caseId: 'case-1', clientId: 'client-1', caseClientId: 'cc-payable', offsetId: 'off-apply-same' }),
+      expect.objectContaining({ accountCode: 'CLIENT_EXPENSE_RECEIVABLE', direction: 'CREDIT', amount: '20', caseId: 'case-1', clientId: 'client-1', caseClientId: null, offsetId: 'off-apply-same' }),
+    ]);
+    expect(report.debitCreditBalance).toEqual({ balanced: true, unbalancedIdempotencyKeys: [] });
+  });
+
+  it('CLIENT_OFFSET APPLY cross-case accounting rule: payable DEBIT uses payable case, expense CREDIT uses expense case and null caseClientId', () => {
+    const report = buildAccountingLedgerDryRunReport({
+      tenantId: 'tenant-1',
+      dispositionLines: [],
+      clientPayouts: [],
+      clientOffsets: [offset({ id: 'off-apply-cross', amount: D(30), kind: 'APPLY', payableCaseId: 'case-payable', expenseCaseId: 'case-expense', payableCaseClientId: 'cc-payable' })],
+      balanceLedgerRows: [],
+    });
+
+    const entry = offsetJournalEntry(report, 'off-apply-cross');
+    expect(entry.lines).toEqual([
+      expect.objectContaining({ accountCode: 'CLIENT_PAYABLE', direction: 'DEBIT', amount: '30', caseId: 'case-payable', clientId: 'client-1', caseClientId: 'cc-payable', offsetId: 'off-apply-cross' }),
+      expect.objectContaining({ accountCode: 'CLIENT_EXPENSE_RECEIVABLE', direction: 'CREDIT', amount: '30', caseId: 'case-expense', clientId: 'client-1', caseClientId: null, offsetId: 'off-apply-cross' }),
+    ]);
+    expect(report.totalsByTenantCaseCurrency).toEqual([
+      expect.objectContaining({ tenantId: 'tenant-1', caseId: 'case-expense', currency: 'TRY', debit: '0', credit: '30', balanced: false }),
+      expect.objectContaining({ tenantId: 'tenant-1', caseId: 'case-payable', currency: 'TRY', debit: '30', credit: '0', balanced: false }),
+    ]);
+  });
+
+  it('CLIENT_OFFSET REVERSAL same-case accounting rule: payable CREDIT keeps caseClientId, expense DEBIT has null caseClientId', () => {
+    const report = buildAccountingLedgerDryRunReport({
+      tenantId: 'tenant-1',
+      dispositionLines: [],
+      clientPayouts: [],
+      clientOffsets: [offset({ id: 'off-reversal-same', amount: D(20), kind: 'REVERSAL', payableCaseId: 'case-1', expenseCaseId: 'case-1', payableCaseClientId: 'cc-payable' })],
+      balanceLedgerRows: [],
+    });
+
+    const entry = offsetJournalEntry(report, 'off-reversal-same');
+    expect(entry.lines).toEqual([
+      expect.objectContaining({ accountCode: 'CLIENT_PAYABLE', direction: 'CREDIT', amount: '20', caseId: 'case-1', clientId: 'client-1', caseClientId: 'cc-payable', offsetId: 'off-reversal-same' }),
+      expect.objectContaining({ accountCode: 'CLIENT_EXPENSE_RECEIVABLE', direction: 'DEBIT', amount: '20', caseId: 'case-1', clientId: 'client-1', caseClientId: null, offsetId: 'off-reversal-same' }),
+    ]);
+    expect(report.debitCreditBalance).toEqual({ balanced: true, unbalancedIdempotencyKeys: [] });
+  });
+
+  it('CLIENT_OFFSET REVERSAL cross-case accounting rule: payable CREDIT uses payable case, expense DEBIT uses expense case and null caseClientId', () => {
+    const report = buildAccountingLedgerDryRunReport({
+      tenantId: 'tenant-1',
+      dispositionLines: [],
+      clientPayouts: [],
+      clientOffsets: [offset({ id: 'off-reversal-cross', amount: D(30), kind: 'REVERSAL', payableCaseId: 'case-payable', expenseCaseId: 'case-expense', payableCaseClientId: 'cc-payable' })],
+      balanceLedgerRows: [],
+    });
+
+    const entry = offsetJournalEntry(report, 'off-reversal-cross');
+    expect(entry.lines).toEqual([
+      expect.objectContaining({ accountCode: 'CLIENT_PAYABLE', direction: 'CREDIT', amount: '30', caseId: 'case-payable', clientId: 'client-1', caseClientId: 'cc-payable', offsetId: 'off-reversal-cross' }),
+      expect.objectContaining({ accountCode: 'CLIENT_EXPENSE_RECEIVABLE', direction: 'DEBIT', amount: '30', caseId: 'case-expense', clientId: 'client-1', caseClientId: null, offsetId: 'off-reversal-cross' }),
+    ]);
+    expect(report.totalsByTenantCaseCurrency).toEqual([
+      expect.objectContaining({ tenantId: 'tenant-1', caseId: 'case-expense', currency: 'TRY', debit: '30', credit: '0', balanced: false }),
+      expect.objectContaining({ tenantId: 'tenant-1', caseId: 'case-payable', currency: 'TRY', debit: '0', credit: '30', balanced: false }),
+    ]);
+  });
   it('OTHER bucket satirlarini suspense/manual review listesine alir ve journal entry uretmez', () => {
     const report = buildAccountingLedgerDryRunReport({
       tenantId: 'tenant-1',
