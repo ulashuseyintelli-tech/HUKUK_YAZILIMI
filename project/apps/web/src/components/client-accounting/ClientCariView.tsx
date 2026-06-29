@@ -26,7 +26,6 @@ import { AccountingPanel } from './AccountingPanel';
 import { ClientMovementsTable } from './ClientMovementsTable';
 import { ClientLevelStatementSection } from './ClientLevelStatementSection';
 import { OffsetDrawer } from './OffsetDrawer';
-import { OffsetHistoryPanel } from './OffsetHistoryPanel';
 
 interface ClientCariViewProps {
   clientId: string;
@@ -207,8 +206,8 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
           )}
         </AccountingPanel>
 
-        {/* Satır 2 — Birleşik Hareketler (sol) + Müvekkil Genel Ekstresi (orta) + Mahsup Geçmişi (sağ, C-2b) */}
-        <div className="grid min-h-0 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)] lg:grid-rows-1">
+        {/* Satır 2 — Birleşik Hareketler (sol) + Müvekkil Genel Ekstresi (sağ). Mahsup Geçmişi+reverse → C-2C. */}
+        <div className="grid min-h-0 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.9fr)_minmax(0,1fr)] lg:grid-rows-1">
           {/* Birleşik Hareketler — Faz A-MOV (read-only; mahsup/ekstre/export YOK, running balance YOK) */}
           <ClientMovementsTable
             clientId={clientId}
@@ -219,14 +218,6 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
 
           {/* Müvekkil Genel Ekstresi — Faz B-2 (client-level immutable; yalnız CLIENT_SPECIFIC, mahsup YOK) */}
           <ClientLevelStatementSection
-            clientId={clientId}
-            currency={cur}
-            cases={s.caseBreakdown.map((b) => ({ caseId: b.caseId, caseNumber: b.caseNumber }))}
-            className="min-h-0 min-w-0"
-          />
-
-          {/* Mahsup Geçmişi — Faz C C-2b (D6: ayrı panel; APPLY+REVERSAL, İptal=PARTNER/MANAGER) */}
-          <OffsetHistoryPanel
             clientId={clientId}
             currency={cur}
             cases={s.caseBreakdown.map((b) => ({ caseId: b.caseId, caseNumber: b.caseNumber }))}

@@ -54,6 +54,13 @@ export function OffsetDrawer({ clientId, currency, isOpen, onClose, onApplied }:
   const parsedAmount = Number((amount || '').replace(',', '.'));
   const amountValid = amount.trim() !== '' && Number.isFinite(parsedAmount) && parsedAmount > 0;
   const legsSelected = !!selectedBucket && !!selectedExpense;
+  // C-2A: seçili bacakların backend-sağladığı azami mahsup = min(payable available, expense unpaid).
+  // SADECE UX uyarısı; nihai otorite backend (400 OFFSET_EXCEEDS_AVAILABLE korunur). FE muhasebe HESAPLAMAZ.
+  const selectedMax =
+    selectedBucket && selectedExpense
+      ? Math.min(Number(selectedBucket.availableOutstanding), Number(selectedExpense.unpaidAmount))
+      : null;
+  const exceedsMax = selectedMax != null && Number.isFinite(selectedMax) && amountValid && parsedAmount > selectedMax;
 
   function buildInput(): CreateOffsetInput | null {
     if (!selectedBucket || !selectedExpense || !amountValid) return null;
@@ -90,9 +97,10 @@ export function OffsetDrawer({ clientId, currency, isOpen, onClose, onApplied }:
   const applyMut = useMutation({
     mutationFn: () => clientOffsetApi.create({ ...preview!.input, idempotencyKey: preview!.key }),
     onSuccess: () => {
-      // Mahsup payable+expense+geçmiş+cari+ekstre+hareketleri etkiler → ilgili query'leri tazele.
-      ['client-offset-eligibility', 'client-offset-history', 'client-accounting-summary', 'client-cari-movements',
-        'client-level-statements', 'client-accounting-outstanding'].forEach((k) =>
+      // Mahsup payable+cari+ekstre+hareketleri etkiler → DOĞRU Genel Cari query key'lerini tazele.
+      // (FIX: summary key 'client-cari-summary' — 'client-accounting-summary' hiçbir query'ye karşılık gelmiyordu;
+      //  case-scope 'client-accounting-outstanding' Genel Cari ile alakasız → çıkarıldı.)
+      ['client-offset-eligibility', 'client-cari-summary', 'client-cari-movements', 'client-level-statements'].forEach((k) =>
         queryClient.invalidateQueries({ queryKey: [k] }),
       );
       resetForm();
@@ -191,6 +199,12 @@ export function OffsetDrawer({ clientId, currency, isOpen, onClose, onApplied }:
                   placeholder="0,00"
                   className="w-full rounded border px-3 py-2 text-sm disabled:bg-gray-100"
                 />
+                {exceedsMax && selectedMax != null && (
+                  <p className="mt-1 flex items-start gap-1 text-[11px] text-amber-600">
+                    <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+                    Tutar, seçili bacakların azami mahsup edilebilir tutarını ({formatMoneyString(String(selectedMax), currency)}) aşıyor. Nihai kontrol backend'dedir; aşan tutar reddedilir.
+                  </p>
+                )}
               </div>
 
               {/* Önizle */}
