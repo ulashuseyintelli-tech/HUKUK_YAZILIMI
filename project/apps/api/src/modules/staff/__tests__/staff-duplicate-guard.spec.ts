@@ -95,7 +95,9 @@ describe("LawyerService.create — duplicate guard", () => {
       },
       office: { findUnique: jest.fn().mockResolvedValue({ id: "o1" }) },
     };
-    return { svc: new LawyerService(prisma), prisma };
+    // K1-4b: LawyerService artık AuditService de alıyor; create duplicate-guard testleri delegation'a dokunmaz → audit mock yeter.
+    const audit: any = { log: jest.fn().mockResolvedValue(undefined) };
+    return { svc: new LawyerService(prisma, audit), prisma };
   };
 
   it("aynı ad-soyad → yeni AÇMAZ, mevcut + bayrak", async () => {
