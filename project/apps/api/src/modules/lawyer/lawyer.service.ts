@@ -1,7 +1,16 @@
-import { Injectable, NotFoundException, ConflictException } from "@nestjs/common";
+import { Injectable, NotFoundException, ConflictException, ForbiddenException } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 import { LawyerRole, LawyerRank } from "@prisma/client";
 import { normalizePersonName } from "@/common/name-match.util";
+import { AuditService } from "../audit/audit.service";
+
+// K1-4b: Office Approval delegation flag'ini (canApproveOfficeActions) değiştirme yetkisi olan aktör.
+//  - userId: truthful @CurrentUser("id").  role: @CurrentUser("role") (ADMIN kısa-yolu).
+//  - Yalnız ADMIN VEYA linkli PARTNER avukat bu flag'i değiştirebilir (assertCanManageOfficeApprovalDelegation).
+export interface LawyerUpdateActor {
+  userId?: string;
+  role?: string;
+}
 
 // Rol'e göre varsayılan unvan/sıfat
 const DEFAULT_TITLES: Record<string, string> = {
@@ -55,7 +64,11 @@ export function withDisplayNames<T extends { name: string; surname: string; titl
 
 @Injectable()
 export class LawyerService {
-  constructor(private prisma: PrismaService) {}
+  // K1-4b: AuditService @Global (AuditModule) — ek import gerekmez; office-approval delegation değişimini loglar.
+  constructor(
+    private prisma: PrismaService,
+    private audit: AuditService,
+  ) {}
 
   // Tüm avukatları getir (displayName ile birlikte)
   async findAll(tenantId: string, search?: string, includeInactive = false) {
@@ -244,7 +257,11 @@ export class LawyerService {
       canModifyOtherPermissions?: boolean;
       // PR-U1: isim benzerliği review'ını bilinçli geç ("Benzerliğe rağmen güncelle").
       confirmSimilarNameUpdate?: boolean;
-    }
+      // K1-4b: Office Approval delegation flag. YALNIZ ADMIN/PARTNER yazabilir (assertCanManageOfficeApprovalDelegation);
+      // değer DEĞİŞİRSE AuditLog yazılır. Approver eligibility runtime'da ayrıca kontrol edilir (aktif+linkli+same-tenant).
+      canApproveOfficeActions?: boolean;
+    },
+    actor?: LawyerUpdateActor,
   ) {
     // Avukatın bu tenant'a ait olduğunu kontrol et
     const existing = await this.findOne(tenantId, id);
@@ -293,13 +310,75 @@ export class LawyerService {
     }
 
     // confirmSimilarNameUpdate transient → prisma'ya YAZILMAZ.
-    const { confirmSimilarNameUpdate, ...writeData } = data;
+    // K1-4b: canApproveOfficeActions'ı generic write'tan AYIR; yalnız DEĞİŞİYORSA yetki kontrolü + audit ile yaz.
+    const { confirmSimilarNameUpdate, canApproveOfficeActions, ...writeData } = data;
+
+    let delegationChange: { from: boolean; to: boolean } | null = null;
+    if (
+      canApproveOfficeActions !== undefined &&
+      canApproveOfficeActions !== (existing as { canApproveOfficeActions?: boolean }).canApproveOfficeActions
+    ) {
+      // K1-4b GUARD: office-approval delegation'ı yalnız ADMIN veya linkli PARTNER avukat değiştirebilir.
+      await this.assertCanManageOfficeApprovalDelegation(actor, tenantId);
+      (writeData as { canApproveOfficeActions?: boolean }).canApproveOfficeActions = canApproveOfficeActions;
+      delegationChange = {
+        from: !!(existing as { canApproveOfficeActions?: boolean }).canApproveOfficeActions,
+        to: canApproveOfficeActions,
+      };
+    }
+
     const lawyer = await this.prisma.lawyer.update({
       where: { id },
       data: writeData,
     });
 
+    // K1-4b: delegation GERÇEKTEN değiştiyse olgusal AuditLog (entityType LAWYER; ham PII yok, yalnız from/to bool).
+    if (delegationChange) {
+      await this.audit.log({
+        tenantId,
+        action: "LAWYER_OFFICE_APPROVAL_DELEGATION_CHANGED",
+        entityType: "LAWYER",
+        entityId: id,
+        userId: actor?.userId, // truthful actor
+        metadata: { lawyerId: id, canApproveOfficeActions: delegationChange },
+      });
+    }
+
     return withDisplayName(lawyer);
+  }
+
+  /**
+   * K1-4b — Office Approval delegation (canApproveOfficeActions) DEĞİŞTİRME yetkisi.
+   * YALNIZ: ADMIN (User.role) VEYA aktif + same-tenant + linkli PARTNER avukat. Diğer herkes (staff/non-PARTNER/linksiz) → 403.
+   * NOT: bu YALNIZ flag'i değiştirme yetkisidir; bir avukatın approver GEÇERLİLİĞİ runtime'da
+   *      OfficeApprovalService.assertApproverEligible (aktif+linkli+same-tenant+[PARTNER∨canApprove]) ile ayrıca denetlenir.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - LawyerService.update() → canApproveOfficeActions DEĞİŞTİĞİNDE (PUT/PATCH /lawyers/:id; actor=@CurrentUser).
+   * /// </remarks>
+   */
+  private async assertCanManageOfficeApprovalDelegation(
+    actor: LawyerUpdateActor | undefined,
+    tenantId: string,
+  ): Promise<void> {
+    if (!actor?.userId) {
+      throw new ForbiddenException("Office approval delegation değiştirme yetkisi yok (kimlik çözülemedi).");
+    }
+    if (actor.role === "ADMIN") return; // ADMIN kısa-yolu (lawyer zaten tenant-scoped findOne ile alındı)
+    const actorUser = await this.prisma.user.findUnique({
+      where: { id: actor.userId },
+      select: { tenantId: true, isActive: true, lawyer: { select: { lawyerRank: true } } },
+    });
+    if (
+      actorUser &&
+      actorUser.isActive &&
+      actorUser.tenantId === tenantId &&
+      actorUser.lawyer?.lawyerRank === "PARTNER"
+    ) {
+      return;
+    }
+    throw new ForbiddenException("Office approval delegation yalnız PARTNER veya ADMIN tarafından değiştirilebilir.");
   }
 
   // Avukat sil (kalıcı silme)

@@ -97,6 +97,9 @@ export class LawyerController {
   @Put(":id")
   update(
     @CurrentUser("tenantId") tenantId: string,
+    // K1-4b: actor kimliği (canApproveOfficeActions guard + audit için). body.userId DEĞİL, truthful @CurrentUser.
+    @CurrentUser("id") actorUserId: string,
+    @CurrentUser("role") actorRole: string,
     @Param("id") id: string,
     @Body()
     data: {
@@ -135,15 +138,20 @@ export class LawyerController {
       defaultPermissions?: any;
       permissionsLocked?: boolean;
       canModifyOtherPermissions?: boolean;
+      // K1-4b: Office Approval delegation flag — yalnız ADMIN/PARTNER yazabilir (service'te guard + audit).
+      canApproveOfficeActions?: boolean;
     }
   ) {
-    return this.lawyerService.update(tenantId, id, data);
+    return this.lawyerService.update(tenantId, id, data, { userId: actorUserId, role: actorRole });
   }
 
   // Avukat kısmi güncelle (PATCH)
   @Patch(":id")
   patch(
     @CurrentUser("tenantId") tenantId: string,
+    // K1-4b: actor — PATCH yolundan da canApproveOfficeActions gelirse aynı guard/audit uygulansın.
+    @CurrentUser("id") actorUserId: string,
+    @CurrentUser("role") actorRole: string,
     @Param("id") id: string,
     @Body()
     data: {
@@ -153,9 +161,11 @@ export class LawyerController {
       bankName?: string;
       branchName?: string;
       iban?: string;
+      // K1-4b: delegation flag PATCH ile de gelebilir; service guard+audit uygular.
+      canApproveOfficeActions?: boolean;
     }
   ) {
-    return this.lawyerService.update(tenantId, id, data);
+    return this.lawyerService.update(tenantId, id, data, { userId: actorUserId, role: actorRole });
   }
 
   // Avukat sil
