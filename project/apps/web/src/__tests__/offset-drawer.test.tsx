@@ -1,10 +1,10 @@
 /**
- * TM3 Faz C C-2A — OffsetDrawer davranış kanıtı (Mahsup eligibility + minimal apply).
+ * TM3 Faz C C-2A/C-2C — OffsetDrawer davranış kanıtı (Mahsup eligibility + apply + Geçmiş/reverse).
  * Doğrulanan kontrat:
  *  - D5: canApply=false → read-only (form disabled, "Partner/Manager" notu, Uygula yok).
  *  - D3/D4: preview kartı BACKEND değerlerini render eder (FE hesaplamaz); Uygula preview'dan ÖNCE pasif.
  *  - idempotency: apply retry boyunca AYNI key (preview'a kilitli).
- *  (History + reverse C-2C'ye ertelendi → bu PR'da YOK.)
+ *  - C-2C: Geçmiş sekmesi read-only (herkese); İptal=reverse yalnız PARTNER/MANAGER (canApply) + reason≥10 modal.
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -32,8 +32,9 @@ const BUCKET = { payableCaseId: 'case-P', payableCaseClientId: 'cc-A', clientId:
 const EXPENSE = { expenseCaseId: 'case-E', expenseRequestId: 'er-1', clientId: 'cl-1', currency: 'TRY', unpaidAmount: '2000', caseNumber: '2026/2', requestStatus: 'PENDING' };
 const PREVIEW = { payableBefore: '10000', payableAfter: '8000', expenseBefore: '2000', expenseAfter: '0', netBefore: '8000', netAfter: '8000', maxAmount: '2000', netUnchanged: true };
 
-function renderDrawer(eligibility: any) {
+function renderDrawer(eligibility: any, history: any[] = []) {
   api.getEligibility.mockResolvedValue(eligibility);
+  api.list.mockResolvedValue(history);
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
   return render(
     <QueryClientProvider client={qc}>
@@ -125,4 +126,50 @@ describe('OffsetDrawer — D3/D4 preview-driven (FE hesaplamaz)', () => {
   });
 });
 
-// History + reverse (OffsetHistoryPanel) C-2C'ye ertelendi → testleri bu PR'dan çıkarıldı.
+const APPLY_ROW = (over: any = {}) => ({ id: 'a1', clientId: 'cl-1', currency: 'TRY', amount: '500', kind: 'APPLY', payableCaseId: 'case-P', payableCaseClientId: 'cc-A', expenseCaseId: 'case-E', expenseRequestId: 'er-1', reversesOffsetId: null, reason: null, createdAt: '2026-06-20T00:00:00.000Z', ...over });
+const REVERSAL_ROW = (over: any = {}) => ({ ...APPLY_ROW(), id: 'r1', kind: 'REVERSAL', reversesOffsetId: 'a1', reason: 'düzeltme yapıldı', ...over });
+
+async function gotoHistory() {
+  fireEvent.click(await screen.findByRole('tab', { name: /Geçmiş/ }));
+}
+
+describe('OffsetDrawer — C-2C Geçmiş + reverse', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('Geçmiş: reverse-edilmiş APPLY → "İptal edildi" + İptal disabled; REVERSAL → "İptal (geri alma)"', async () => {
+    renderDrawer({ clientId: 'cl-1', currency: 'TRY', canApply: true, eligiblePayableBuckets: [], eligibleExpenseRequests: [] }, [APPLY_ROW(), REVERSAL_ROW()]);
+    await gotoHistory();
+    await waitFor(() => expect(screen.getByText('İptal edildi')).toBeTruthy());
+    expect(screen.getByText('İptal (geri alma)')).toBeTruthy();
+    // a1 zaten reverse edilmiş → İptal disabled
+    expect((screen.getByRole('button', { name: /^İptal$/ }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('canApply + reverse-edilmemiş APPLY → İptal aktif; reason≥10 modal ile reverse(offsetId, {reason}) çağrılır', async () => {
+    api.reverse.mockResolvedValue({ created: true, offsetId: 'r9', reversesOffsetId: 'a2' });
+    renderDrawer({ clientId: 'cl-1', currency: 'TRY', canApply: true, eligiblePayableBuckets: [], eligibleExpenseRequests: [] }, [APPLY_ROW({ id: 'a2' })]);
+    await gotoHistory();
+    await waitFor(() => expect(screen.getByText('Uygulandı')).toBeTruthy());
+    const iptal = screen.getByRole('button', { name: /^İptal$/ }) as HTMLButtonElement;
+    expect(iptal.disabled).toBe(false);
+    fireEvent.click(iptal);
+    const submit = () => screen.getByRole('button', { name: /Mahsubu İptal Et/ }) as HTMLButtonElement;
+    await waitFor(() => expect(submit()).toBeTruthy());
+    // reason<10 → submit pasif; ≥10 → aktif
+    fireEvent.change(screen.getByPlaceholderText('Gerekçe…'), { target: { value: 'kısa' } });
+    expect(submit().disabled).toBe(true);
+    fireEvent.change(screen.getByPlaceholderText('Gerekçe…'), { target: { value: 'yeterince uzun gerekçe' } });
+    expect(submit().disabled).toBe(false);
+    fireEvent.click(submit());
+    await waitFor(() => expect(api.reverse).toHaveBeenCalledTimes(1));
+    expect(api.reverse.mock.calls[0][0]).toBe('a2');
+    expect(api.reverse.mock.calls[0][1].reason).toMatch(/yeterince uzun/);
+  });
+
+  it('canApply=false → Geçmiş görünür ama İptal disabled (READ tenant-level; mutation gated)', async () => {
+    renderDrawer({ clientId: 'cl-1', currency: 'TRY', canApply: false, eligiblePayableBuckets: [], eligibleExpenseRequests: [] }, [APPLY_ROW({ id: 'a3' })]);
+    await gotoHistory();
+    await waitFor(() => expect(screen.getByText('Uygulandı')).toBeTruthy());
+    expect((screen.getByRole('button', { name: /^İptal$/ }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
