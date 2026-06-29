@@ -16,7 +16,12 @@ describe("ClientService.update — kimlik-block (PR-U4)", () => {
   };
   const build = (dup: any = null) => {
     const tx = {
-      client: { update: jest.fn().mockResolvedValue({}) },
+      client: {
+        update: jest.fn().mockResolvedValue({}),
+        // Task1 (#656): update() artık tenant-scoped updateMany + re-fetch findFirst kullanıyor.
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findFirst: jest.fn().mockResolvedValue({ id: "self" }),
+      },
       clientContact: { deleteMany: jest.fn().mockResolvedValue({}), createMany: jest.fn().mockResolvedValue({}) },
     };
     const prisma: any = {
@@ -58,7 +63,7 @@ describe("ClientService.update — kimlik-block (PR-U4)", () => {
   it("kimlik değişti ama başka eşleşme yok (self hariç) → güncellenir (tx + audit)", async () => {
     const { svc, tx, audit } = build(null);
     await svc.update("self", "t1", { type: "INDIVIDUAL", tckn: "22222222222" });
-    expect(tx.client.update).toHaveBeenCalled();
+    expect(tx.client.updateMany).toHaveBeenCalled();
     expect(audit.logInTransaction).toHaveBeenCalledWith(
       tx,
       expect.objectContaining({ action: "CLIENT_UPDATE", entityId: "self" }),
@@ -68,12 +73,12 @@ describe("ClientService.update — kimlik-block (PR-U4)", () => {
   it("kimlik değişmedi (yalnız telefon) → guard tetiklenmez, güncellenir", async () => {
     const { svc, tx } = build({ id: "o1" });
     await svc.update("self", "t1", { type: "INDIVIDUAL", phone: "05551112233" });
-    expect(tx.client.update).toHaveBeenCalled();
+    expect(tx.client.updateMany).toHaveBeenCalled();
   });
 
   it("isim değişti ama kimlik aynı → MÜVEKKİLDE isim-review YOK → güncellenir", async () => {
     const { svc, tx } = build({ id: "o1" });
     await svc.update("self", "t1", { type: "INDIVIDUAL", firstName: "Yeni", lastName: "Isim", tckn: "11111111111" });
-    expect(tx.client.update).toHaveBeenCalled();
+    expect(tx.client.updateMany).toHaveBeenCalled();
   });
 });
