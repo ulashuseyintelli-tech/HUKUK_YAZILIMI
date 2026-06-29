@@ -84,10 +84,10 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
       <div className="grid shrink-0 gap-3 xl:grid-cols-[1.5fr_1fr]">
         {/* A — Müvekkile Özgü Cari */}
         <Card className="p-3">
-          <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
               <Wallet className="h-5 w-5 text-emerald-600" />
-              <h2 className="text-[15px] font-bold text-gray-900">Müvekkile Özgü Cari</h2>
+              <h2 className="text-base font-bold text-gray-900">Müvekkile Özgü Cari</h2>
               {summaryQ.isFetching && <Spinner className="ml-1 h-4 w-4" />}
             </div>
             {/* UX-v2a — Finans Durum Rozeti (DASH-5, sol) + primary Mahsup butonu (DASH-4, sağ) */}
@@ -119,7 +119,7 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
         <Card className="p-3">
           <div className="mb-1 flex items-center gap-2">
             <Landmark className="h-5 w-5 text-slate-600" />
-            <h2 className="text-[15px] font-bold text-gray-900">Dosya Geneli / Paylaşılan Bağlam</h2>
+            <h2 className="text-base font-bold text-gray-900">Dosya Geneli / Paylaşılan Bağlam</h2>
           </div>
           <div className="mb-2.5 flex items-start gap-2 rounded-md border border-blue-100 bg-blue-50 p-2 text-[11px] text-blue-800">
             <Info className="mt-0.5 h-4 w-4 shrink-0" />
@@ -154,7 +154,7 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
           title={
             <>
               <Building2 className="h-5 w-5 shrink-0 text-gray-600" />
-              <h2 className="text-[15px] font-bold text-gray-900">Dosya Kırılımı</h2>
+              <h2 className="text-base font-bold text-gray-900">Dosya Kırılımı</h2>
               <Badge variant="secondary" className="ml-1">
                 {s.caseBreakdown.length} dosya
               </Badge>
@@ -264,8 +264,9 @@ function Metric({
         <Icon className={`h-4 w-4 ${accent}`} />
         {label}
       </div>
-      <div className={`mt-0.5 whitespace-nowrap text-xl font-bold tabular-nums ${accent}`}>{value}</div>
-      {note && <div className="mt-1 text-[10px] text-gray-400">{note}</div>}
+      {/* UX-v2b (DASH-3): kart para 24px/700/tabular-nums — finans panelinde rakam metinden önemli. */}
+      <div className={`mt-0.5 whitespace-nowrap text-2xl font-bold tabular-nums ${accent}`}>{value}</div>
+      {note && <div className="mt-1 text-[11px] text-gray-400">{note}</div>}
     </div>
   );
 }

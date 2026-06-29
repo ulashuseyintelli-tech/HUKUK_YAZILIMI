@@ -73,7 +73,7 @@ export function ClientLevelStatementSection({ clientId, currency, cases, classNa
         title={
           <>
             <FileText className="h-5 w-5 shrink-0 text-gray-600" />
-            <h2 className="text-[15px] font-bold text-gray-900">Müvekkil Genel Ekstresi</h2>
+            <h2 className="text-base font-bold text-gray-900">Müvekkil Genel Ekstresi</h2>
             {statementsQ.data && (
               <Badge variant="secondary" className="ml-1">
                 {statements.length} aktif

@@ -25,7 +25,8 @@ export interface AccountingTableProps {
 export function AccountingTable({ head, children, className, headRowClassName }: AccountingTableProps) {
   return (
     <table
-      className={`w-full text-[13px] tabular-nums [&_td]:px-2.5 [&_td]:py-2.5 [&_th]:px-2.5 [&_th]:py-2.5 [&_td.text-right]:whitespace-nowrap [&_td.text-right]:font-semibold ${className ?? ''}`}
+      // UX-v2b (DASH-3 tablo standardı): 14px (text-sm) · sağ-para font-semibold (600) · tabular-nums · ortak ritim py-2.5.
+      className={`w-full text-sm tabular-nums [&_td]:px-2.5 [&_td]:py-2.5 [&_th]:px-2.5 [&_th]:py-2.5 [&_td.text-right]:whitespace-nowrap [&_td.text-right]:font-semibold ${className ?? ''}`}
     >
       <thead className="sticky top-0 z-10 bg-gray-50 [&_th]:font-semibold">
         <tr className={`border-b text-left ${headRowClassName ?? ''}`}>{head}</tr>
