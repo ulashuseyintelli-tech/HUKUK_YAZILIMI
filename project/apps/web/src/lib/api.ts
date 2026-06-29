@@ -3227,7 +3227,26 @@ export interface PromoteAddressResult {
 // PR-D4e-4: haciz öncesi risk seviyesi (read-model; blok değil, karar destek).
 export type PreHacizRiskLevel = "YOK" | "DUSUK" | "ORTA" | "YUKSEK";
 
-// PR-D4e-7: haciz gönderim karar-anı audit snapshot'ı (AuditLog.metadata şekli).
+// PR-D4e-7/C2D-PD-1E-1: haciz gönderim karar-anı audit safe projection.
+export interface HacizAuditSafeProjection {
+  action: "HACIZ_REQUEST_SUBMITTED";
+  targetType: { code: string; label: string };
+  overallLevel: { code: PreHacizRiskLevel; label: string };
+  createdAt?: string | null;
+  actor: { id: string | null; displayName: string | null };
+  uyapRequestId: string | null;
+  cpeTraceId: string | null;
+  cpeWarningsPresent: boolean;
+  cpeWarningsCount: number;
+  debtors: Array<{
+    debtorReference: string | null;
+    displayLabel: string;
+    level: { code: PreHacizRiskLevel; label: string };
+    reasonIds: string[];
+    reasons: Array<{ id: string; label: string }>;
+  }>;
+}
+
 export interface HacizAuditLog {
   id: string;
   action: string;
@@ -3237,6 +3256,7 @@ export interface HacizAuditLog {
   userName?: string | null;
   description?: string | null;
   createdAt: string;
+  hacizSafeProjection?: HacizAuditSafeProjection | null;
   metadata?: {
     targetType?: string;
     amount?: number;
@@ -3247,7 +3267,6 @@ export interface HacizAuditLog {
     cpeWarnings?: any[];
   } | null;
 }
-
 export interface ValidationError {
   code: string;
   message: string;
