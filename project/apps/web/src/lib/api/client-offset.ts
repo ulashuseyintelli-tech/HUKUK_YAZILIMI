@@ -95,28 +95,28 @@ export interface ReverseOffsetResult {
 export const clientOffsetApi = {
   /** Uygun payable bucket + ödenmemiş ExpenseRequest + canApply (read-only; otomatik eşleme YOK). */
   async getEligibility(clientId: string, currency = 'TRY'): Promise<OffsetEligibility> {
-    const resp = await apiClient.get<{ data: OffsetEligibility }>(
+    const resp = await apiClient.get<OffsetEligibility>(
       `/client-offsets/client/${clientId}/eligibility?currency=${encodeURIComponent(currency)}`,
     );
-    return resp.data.data;
+    return resp.data;
   },
 
   /** Non-persistent önizleme (D4). Hesap backend'de; FE yalnız render eder (D3). */
   async preview(input: PreviewOffsetInput): Promise<OffsetPreview> {
-    const resp = await apiClient.post<{ data: OffsetPreview }>('/client-offsets/preview', input);
-    return resp.data.data;
+    const resp = await apiClient.post<OffsetPreview>('/client-offsets/preview', input);
+    return resp.data;
   },
 
   /** Mahsup uygula (kind=APPLY). PARTNER/MANAGER-only (backend 403). */
   async create(input: CreateOffsetInput): Promise<CreateOffsetResult> {
-    const resp = await apiClient.post<{ data: CreateOffsetResult }>('/client-offsets', input);
-    return resp.data.data;
+    const resp = await apiClient.post<CreateOffsetResult>('/client-offsets', input);
+    return resp.data;
   },
 
   /** Mahsup iptali (kind=REVERSAL). PARTNER/MANAGER-only + reason≥10. */
   async reverse(offsetId: string, input: ReverseOffsetInput): Promise<ReverseOffsetResult> {
-    const resp = await apiClient.post<{ data: ReverseOffsetResult }>(`/client-offsets/${offsetId}/reverse`, input);
-    return resp.data.data;
+    const resp = await apiClient.post<ReverseOffsetResult>(`/client-offsets/${offsetId}/reverse`, input);
+    return resp.data;
   },
 
   /** Müvekkilin mahsupları (APPLY+REVERSAL). */
@@ -125,8 +125,8 @@ export const clientOffsetApi = {
     if (filters.currency) qs.set('currency', filters.currency);
     if (filters.kind) qs.set('kind', filters.kind);
     const suffix = qs.toString() ? `?${qs.toString()}` : '';
-    const resp = await apiClient.get<{ data: ClientOffsetRecord[] }>(`/client-offsets/client/${clientId}${suffix}`);
-    return resp.data.data;
+    const resp = await apiClient.get<ClientOffsetRecord[]>(`/client-offsets/client/${clientId}${suffix}`);
+    return resp.data;
   },
 };
 
