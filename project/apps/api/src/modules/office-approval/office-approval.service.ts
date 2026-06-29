@@ -185,6 +185,38 @@ export class OfficeApprovalService {
     return this.markExecution(id, OfficeApprovalExecutionStatus.STALE, 'OFFICE_APPROVAL_EXECUTION_STALE', byUserId, false);
   }
 
+  /**
+   * P4-5A — Yürütme KİLİDİ (compare-and-set): yalnız NOT_RUN → RUNNING. Deferred executor APPLY'dan ÖNCE çağırır;
+   * eşzamanlı/ikinci claim (zaten RUNNING ya da terminal) → updateMany count 0 → ConflictException (çift-apply fence).
+   * NOT: terminal markExecution* {NOT_RUN,RUNNING} kabul eder; bu marker STRICT NOT_RUN-only — RUNNING re-claim'i de fence'ler.
+   * Geçiş tek yerde (compare-and-set otoritesi bu sınıfta); executor kendi updateMany'ini kopyalamaz (K3-3a).
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - OfficeApprovalExecutorService.execute() → CHANGE_STATUS deferred executor (P4-5A; route/cron YOK).
+   * /// </remarks>
+   */
+  async markExecutionRunning(id: string, byUserId: string): Promise<OfficeApprovalRequest> {
+    const req = await this.requireRequest(id);
+    const executable =
+      req.status === OfficeApprovalStatus.APPROVED || req.status === OfficeApprovalStatus.APPROVED_WITH_CHANGES;
+    if (!executable) {
+      throw new ConflictException('Yalnız APPROVED/APPROVED_WITH_CHANGES talep yürütülebilir/işaretlenebilir.');
+    }
+    const res = await this.prisma.officeApprovalRequest.updateMany({
+      where: {
+        id,
+        status: { in: [OfficeApprovalStatus.APPROVED, OfficeApprovalStatus.APPROVED_WITH_CHANGES] },
+        executionStatus: OfficeApprovalExecutionStatus.NOT_RUN, // STRICT: yalnız NOT_RUN → RUNNING (çift-claim fence)
+      },
+      data: { executionStatus: OfficeApprovalExecutionStatus.RUNNING },
+    });
+    if (res.count === 0) throw new ConflictException('Yürütme zaten talep edilmiş veya sonlanmış (RUNNING-lock).');
+    const updated = await this.requireRequest(id);
+    await this.auditLog('OFFICE_APPROVAL_EXECUTION_STARTED', updated, byUserId);
+    return updated;
+  }
+
   // ───────────────────────── P4-4 read (Inbox/Detail; TENANT-SCOPED) ─────────────────────────
 
   /**
