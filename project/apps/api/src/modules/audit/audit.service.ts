@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { projectAuditLogSafe } from './audit-safe-projection';
 
 export interface AuditLogInput {
   tenantId: string;
@@ -74,6 +75,10 @@ export class AuditService {
     });
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AuditController.getLogs() → GET /audit/logs (sayfalı audit kayıtlarını döndürür)
+  /// </remarks>
   async getLogs(
     tenantId: string,
     filters?: {
@@ -109,21 +114,36 @@ export class AuditService {
       this.prisma.auditLog.count({ where }),
     ]);
 
-    return { logs, total, page, limit, totalPages: Math.ceil(total / limit) };
+    return {
+      logs: logs.map((log) => this.withSafeProjection(log)),
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
+    };
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AuditController.getEntityHistory() → GET /audit/entity-history (tek entity audit geçmişini döndürür)
+  /// </remarks>
   async getEntityHistory(tenantId: string, entityType: string, entityId: string) {
-    return this.prisma.auditLog.findMany({
+    const logs = await this.prisma.auditLog.findMany({
       where: { tenantId, entityType, entityId },
       orderBy: { createdAt: 'desc' },
     });
+    return logs.map((log) => this.withSafeProjection(log));
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - AuditController.getUserActivity() → GET /audit/user-activity (kullanıcı aktivite audit kayıtlarını döndürür)
+  /// </remarks>
   async getUserActivity(tenantId: string, userId: string, days = 30) {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
 
-    return this.prisma.auditLog.findMany({
+    const logs = await this.prisma.auditLog.findMany({
       where: {
         tenantId,
         userId,
@@ -131,6 +151,7 @@ export class AuditService {
       },
       orderBy: { createdAt: 'desc' },
     });
+    return logs.map((log) => this.withSafeProjection(log));
   }
 
   /**
@@ -178,5 +199,11 @@ export class AuditService {
       );
       return false;
     }
+  }
+
+  private withSafeProjection<T extends Parameters<typeof projectAuditLogSafe>[0]>(
+    log: T,
+  ): T & { safeProjection: ReturnType<typeof projectAuditLogSafe> } {
+    return { ...log, safeProjection: projectAuditLogSafe(log) };
   }
 }
