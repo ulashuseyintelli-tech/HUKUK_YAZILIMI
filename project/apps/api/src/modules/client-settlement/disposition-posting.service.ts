@@ -3,6 +3,9 @@ import { Prisma, CollectionDispositionLineType, OfficeApprovalStatus } from '@pr
 import { PrismaService } from '../../prisma/prisma.service';
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
 import { PostDispositionDto } from './dto/post-disposition.dto';
+import { FinanceApprovalIntentBuilder } from './finance-approval-intent.builder';
+import { FinanceRiskEngine } from './finance-risk.engine';
+import { FinanceRiskCollectionDispositionInput, FinanceRiskDecision, FinanceRiskEvaluation } from './finance-risk.types';
 
 const HELD = CollectionDispositionLineType.HELD_PENDING_DISTRIBUTION;
 /** CLUSTER'da caseClientId zorunlu olan müvekkile-atfedilen tipler. */
@@ -43,6 +46,8 @@ export class DispositionPostingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly officeApproval: OfficeApprovalService,
+    private readonly financeRisk: FinanceRiskEngine = new FinanceRiskEngine(),
+    private readonly approvalIntentBuilder: FinanceApprovalIntentBuilder = new FinanceApprovalIntentBuilder(),
   ) {}
 
   /**
@@ -68,21 +73,26 @@ export class DispositionPostingService {
     const resolved = this.resolveLines(disp, dto?.lines ?? []);
     await this.assertCaseClientRoles(tenantId, disp.caseId, resolved);
 
-    // P4 onay talebi: 4-göz (requester onaylayamaz). idempotencyKey = disposition başına tek (re-recommend yok; HELD-gated).
+    const riskInput = this.toRiskInput(tenantId, disp, resolved);
+    const recommendRisk = this.financeRisk.evaluateCollectionDispositionRecommend(riskInput);
+    this.assertRiskAllowsDomainMutation(recommendRisk);
+
+    const postRisk = this.financeRisk.evaluateCollectionDispositionPost(riskInput);
+    this.assertRiskRequiresApprovalRequest(postRisk);
+    const savedIntent = this.approvalIntentBuilder.buildCollectionDispositionPostIntent({
+      ...riskInput,
+      riskEvaluation: postRisk,
+    });
+
+    // P4 onay talebi: 4-goz (requester onaylayamaz). OfficeApproval risk motoru degil; REQUIRE_APPROVAL tuketicisidir.
     const approval = await this.officeApproval.createPendingRequest({
       tenantId,
       actionCode: APPROVAL_ACTION_CODE,
       targetType: APPROVAL_TARGET_TYPE,
       targetRef: dispositionId,
       requesterUserId: actor.userId,
-      savedIntent: {
-        dispositionId,
-        caseId: disp.caseId,
-        collectionId: disp.collectionId,
-        totalAmount: disp.totalAmount.toString(),
-        currency: disp.currency,
-        lines: resolved.map((r) => ({ type: r.type, amount: r.amount.toString(), caseClientId: r.caseClientId, note: r.note })),
-      },
+      savedIntent,
+      reason: this.approvalIntentBuilder.buildOfficeApprovalReason(postRisk),
       idempotencyKey: `collection-disposition-recommend:${dispositionId}`,
     });
 
@@ -192,6 +202,9 @@ export class DispositionPostingService {
       throw new BadRequestException(`POSTED dağıtım toplamı (${sum.toString()}) tahsilat tutarına (${disp.totalAmount.toString()}) eşit olmalı`);
     }
 
+    const postRisk = this.financeRisk.evaluateCollectionDispositionPost(this.toRiskInput(tenantId, disp, lines));
+    this.assertRiskAllowsFinancialPosting(postRisk);
+
     await this.prisma.$transaction(async (tx) => {
       let caseBalanceId: string | null = null;
       for (const l of lines) {
@@ -238,13 +251,77 @@ export class DispositionPostingService {
 
   // ───────────────────────── internals ─────────────────────────
 
+  private toRiskInput(
+    tenantId: string,
+    disp: {
+      id: string;
+      collectionId: string;
+      caseId: string;
+      totalAmount: Prisma.Decimal;
+      currency: string;
+      status: string;
+      manualReversalRequiredAt?: Date | null;
+    },
+    lines: Array<{
+      id?: string;
+      type: CollectionDispositionLineType;
+      amount: Prisma.Decimal;
+      caseClientId?: string | null;
+      note?: string | null;
+    }>,
+  ): FinanceRiskCollectionDispositionInput {
+    return {
+      tenantId,
+      dispositionId: disp.id,
+      caseId: disp.caseId,
+      collectionId: disp.collectionId,
+      status: disp.status,
+      totalAmount: disp.totalAmount.toString(),
+      currency: disp.currency,
+      manualReversalRequiredAt: disp.manualReversalRequiredAt ?? null,
+      lines: lines.map((line) => ({
+        id: line.id,
+        type: line.type,
+        amount: line.amount.toString(),
+        caseClientId: line.caseClientId ?? null,
+        note: line.note ?? null,
+      })),
+    };
+  }
+
+  private assertRiskRequiresApprovalRequest(evaluation: FinanceRiskEvaluation): void {
+    if (evaluation.decision === FinanceRiskDecision.REQUIRE_APPROVAL) return;
+    this.throwForRiskDecision(evaluation, 'Onay talebi olusturulamaz');
+  }
+
+  private assertRiskAllowsDomainMutation(evaluation: FinanceRiskEvaluation): void {
+    if (evaluation.decision === FinanceRiskDecision.ALLOW_DIRECT || evaluation.decision === FinanceRiskDecision.REQUIRE_APPROVAL) return;
+    this.throwForRiskDecision(evaluation, 'Dagitim onerisi uygulanamaz');
+  }
+
+  private assertRiskAllowsFinancialPosting(evaluation: FinanceRiskEvaluation): void {
+    if (evaluation.decision === FinanceRiskDecision.ALLOW_DIRECT || evaluation.decision === FinanceRiskDecision.REQUIRE_APPROVAL) return;
+    this.throwForRiskDecision(evaluation, 'Dagitim kesinlestirilemez');
+  }
+
+  private throwForRiskDecision(evaluation: FinanceRiskEvaluation, prefix: string): never {
+    const message = `${prefix}: ${this.riskPublicMessage(evaluation)}`;
+    if (evaluation.decision === FinanceRiskDecision.BLOCK) throw new BadRequestException(message);
+    if (evaluation.decision === FinanceRiskDecision.MANUAL_REVIEW) throw new ConflictException(message);
+    throw new ConflictException(message);
+  }
+
+  private riskPublicMessage(evaluation: FinanceRiskEvaluation): string {
+    const messages = evaluation.reasons.map((reason) => reason.publicMessage).filter(Boolean);
+    return messages.length > 0 ? messages.join(' | ') : evaluation.decision;
+  }
   private async requireDisposition(tenantId: string, dispositionId: string) {
     const disp = await this.prisma.collectionDisposition.findFirst({
       where: { id: dispositionId, tenantId },
       select: {
         id: true, collectionId: true, caseId: true, beneficiaryScope: true,
         caseClientId: true, totalAmount: true, currency: true, status: true,
-        approvalRequestId: true, approvedById: true,
+        approvalRequestId: true, approvedById: true, manualReversalRequiredAt: true,
       },
     });
     if (!disp) throw new NotFoundException('Dağıtım kaydı bulunamadı');

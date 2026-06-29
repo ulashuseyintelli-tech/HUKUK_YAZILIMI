@@ -16,6 +16,8 @@ import { ClientOffsetService } from './client-offset.service';
 import { ClientOffsetController } from './client-offset.controller';
 import { ClientPayoutManualReversalController } from './client-payout-manual-reversal.controller';
 import { ClientPayoutManualReversalService } from './client-payout-manual-reversal.service';
+import { FinanceApprovalIntentBuilder } from './finance-approval-intent.builder';
+import { FinanceRiskEngine } from './finance-risk.engine';
 
 /**
  * TM3 M1/M2/M3/M1R — Müvekkil Settlement Bridge (Claude domaini).
@@ -41,6 +43,8 @@ import { ClientPayoutManualReversalService } from './client-payout-manual-revers
     CollectionReversalService,
     PaymentReversedRegistrar,
     DispositionPostingService,
+    FinanceRiskEngine,
+    FinanceApprovalIntentBuilder,
     ClientPayoutService,
     ClientSettlementReadService,
     ClientOffsetService,
