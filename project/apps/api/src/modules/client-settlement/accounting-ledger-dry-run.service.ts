@@ -91,6 +91,36 @@ export interface AccountingDryRunOffsetDoubleCountCandidate {
   reason: 'OFFSET_CLIENT_ADVANCE_BALANCE_LEDGER_MATCH';
 }
 
+export interface AccountingDryRunSuppressedBalanceLedgerSource {
+  dispositionLineId: string;
+  balanceLedgerId: string;
+  caseId: string;
+  currency: string;
+  amount: string;
+  reason: 'CORRELATED_OFFSET_CLIENT_ADVANCE';
+}
+
+export type AccountingDryRunMismatchWarningReason =
+  | 'MISSING_CORRELATION'
+  | 'AMOUNT_MISMATCH'
+  | 'CURRENCY_MISMATCH'
+  | 'CASE_MISMATCH'
+  | 'TENANT_MISMATCH'
+  | 'DUPLICATE_SOURCE'
+  | 'MANUAL_REVERSAL_MARKER'
+  | 'OTHER_SUSPENSE_MANUAL_REVIEW';
+
+export interface AccountingDryRunMismatchWarning {
+  reason: AccountingDryRunMismatchWarningReason;
+  sourceType: AccountingDryRunSourceType;
+  sourceId: string;
+  dispositionLineId: string | null;
+  balanceLedgerId: string | null;
+  expected: string | null;
+  actual: string | null;
+  message: string;
+}
+
 export interface AccountingDryRunOutstandingComparison {
   tenantId: string;
   caseId: string;
@@ -113,6 +143,8 @@ export interface AccountingLedgerDryRunReport {
   };
   duplicateIdempotencyKeys: string[];
   offsetDoubleCountCandidates: AccountingDryRunOffsetDoubleCountCandidate[];
+  suppressedBalanceLedgerSources: AccountingDryRunSuppressedBalanceLedgerSource[];
+  mismatchWarnings: AccountingDryRunMismatchWarning[];
   manualReversalDispositionLines: AccountingDryRunManualReversalItem[];
   suspenseItems: AccountingDryRunSuspenseItem[];
   sourceCoverage: {
@@ -166,6 +198,7 @@ interface ClientOffsetSource {
 
 interface BalanceLedgerSource {
   id: string;
+  tenantId: string;
   amount: Prisma.Decimal;
   currency: string;
   type: string;
@@ -192,7 +225,7 @@ export class AccountingLedgerDryRunService {
 
   /// <remarks>
   /// Çağrıldığı yerler:
-  /// - AccountingLedgerDryRunService.buildReport() → S9B dry-run utility; runtime HTTP endpoint yok, test/future admin job tarafından çağrılacak.
+  /// - AccountingLedgerDryRunService.buildReport() → S9B/S9D dry-run utility; runtime HTTP endpoint yok, test/future admin job tarafından çağrılacak.
   /// </remarks>
   async buildReport(tenantId: string, options: AccountingLedgerDryRunOptions = {}): Promise<AccountingLedgerDryRunReport> {
     const dispositionWhere: Prisma.CollectionDispositionLineWhereInput = {
@@ -261,6 +294,7 @@ export class AccountingLedgerDryRunService {
         where: balanceWhere,
         select: {
           id: true,
+          tenantId: true,
           amount: true,
           currency: true,
           type: true,
@@ -292,7 +326,10 @@ export function buildAccountingLedgerDryRunReport(sources: AccountingLedgerDryRu
   const manualReversalDispositionLines: AccountingDryRunManualReversalItem[] = [];
   const suspenseItems: AccountingDryRunSuspenseItem[] = [];
   const offsetDoubleCountCandidates: AccountingDryRunOffsetDoubleCountCandidate[] = [];
+  const suppressedBalanceLedgerSources: AccountingDryRunSuppressedBalanceLedgerSource[] = [];
+  const mismatchWarnings: AccountingDryRunMismatchWarning[] = [];
   const offsetDispositionLines = new Map<string, DispositionLineSource>();
+  const matchedOffsetDispositionLineIds = new Set<string>();
   const clientAccountingExpected = new Map<string, Prisma.Decimal>();
 
   const pushEntry = (entry: AccountingDryRunJournalEntry) => {
@@ -310,6 +347,16 @@ export function buildAccountingLedgerDryRunReport(sources: AccountingLedgerDryRu
         type: line.type,
         manualReversalRequiredAt: line.disposition.manualReversalRequiredAt.toISOString(),
       });
+      mismatchWarnings.push({
+        reason: 'MANUAL_REVERSAL_MARKER',
+        sourceType: 'COLLECTION_DISPOSITION_LINE',
+        sourceId: line.id,
+        dispositionLineId: line.id,
+        balanceLedgerId: null,
+        expected: null,
+        actual: line.disposition.manualReversalRequiredAt.toISOString(),
+        message: `Disposition line ${line.id} manual reversal marker nedeniyle dry-run journal disinda tutuldu.`,
+      });
       continue;
     }
 
@@ -322,12 +369,21 @@ export function buildAccountingLedgerDryRunReport(sources: AccountingLedgerDryRu
         amount: line.amount.toString(),
         reason: 'OTHER_BUCKET',
       });
+      mismatchWarnings.push({
+        reason: 'OTHER_SUSPENSE_MANUAL_REVIEW',
+        sourceType: 'COLLECTION_DISPOSITION_LINE',
+        sourceId: line.id,
+        dispositionLineId: line.id,
+        balanceLedgerId: null,
+        expected: 'explicit-account-mapping',
+        actual: 'OTHER',
+        message: `Disposition line ${line.id} OTHER bucket oldugu icin auto-post edilmedi; manuel review gerekir.`,
+      });
       continue;
     }
 
     if (line.type === 'OFFSET_CLIENT_ADVANCE') {
       offsetDispositionLines.set(line.id, line);
-      continue;
     }
 
     const creditAccount = dispositionCreditAccount(line.type);
@@ -419,6 +475,31 @@ export function buildAccountingLedgerDryRunReport(sources: AccountingLedgerDryRu
   }
 
   for (const ledger of sources.balanceLedgerRows) {
+    const sourceLineId = parseDispositionLineCorrelation(ledger);
+    if (sourceLineId && offsetDispositionLines.has(sourceLineId)) {
+      const offsetLine = offsetDispositionLines.get(sourceLineId)!;
+      matchedOffsetDispositionLineIds.add(sourceLineId);
+      mismatchWarnings.push(...collectOffsetBalanceLedgerMismatchWarnings(sources.tenantId, offsetLine, ledger));
+      offsetDoubleCountCandidates.push({
+        dispositionLineId: offsetLine.id,
+        balanceLedgerId: ledger.id,
+        caseId: ledger.caseBalance.caseId,
+        currency: ledger.currency,
+        dispositionAmount: offsetLine.amount.toString(),
+        balanceLedgerAmount: ledger.amount.toString(),
+        reason: 'OFFSET_CLIENT_ADVANCE_BALANCE_LEDGER_MATCH',
+      });
+      suppressedBalanceLedgerSources.push({
+        dispositionLineId: offsetLine.id,
+        balanceLedgerId: ledger.id,
+        caseId: ledger.caseBalance.caseId,
+        currency: ledger.currency,
+        amount: ledger.amount.toString(),
+        reason: 'CORRELATED_OFFSET_CLIENT_ADVANCE',
+      });
+      continue;
+    }
+
     const isIncrease = ledger.type === 'CREDIT' || ledger.type === 'ADJUST';
     pushEntry({
       idempotencyKey: accountingDryRunIdempotencyKey('BALANCE_LEDGER', ledger.id, 'posted'),
@@ -437,29 +518,30 @@ export function buildAccountingLedgerDryRunReport(sources: AccountingLedgerDryRu
         }),
       ],
     });
+  }
 
-    const sourceLineId = ledger.sourceId ?? parseDispositionLineSource(ledger.source);
-    if (sourceLineId && offsetDispositionLines.has(sourceLineId)) {
-      const offsetLine = offsetDispositionLines.get(sourceLineId)!;
-      offsetDoubleCountCandidates.push({
-        dispositionLineId: offsetLine.id,
-        balanceLedgerId: ledger.id,
-        caseId: ledger.caseBalance.caseId,
-        currency: ledger.currency,
-        dispositionAmount: offsetLine.amount.toString(),
-        balanceLedgerAmount: ledger.amount.toString(),
-        reason: 'OFFSET_CLIENT_ADVANCE_BALANCE_LEDGER_MATCH',
-      });
-    }
+  for (const offsetLine of offsetDispositionLines.values()) {
+    if (matchedOffsetDispositionLineIds.has(offsetLine.id)) continue;
+    mismatchWarnings.push({
+      reason: 'MISSING_CORRELATION',
+      sourceType: 'COLLECTION_DISPOSITION_LINE',
+      sourceId: offsetLine.id,
+      dispositionLineId: offsetLine.id,
+      balanceLedgerId: null,
+      expected: `BalanceLedger.source/sourceId=disposition_line:${offsetLine.id}`,
+      actual: null,
+      message: `OFFSET_CLIENT_ADVANCE disposition line ${offsetLine.id} icin korelasyonlu BalanceLedger bulunamadi.`,
+    });
   }
 
   const duplicateIdempotencyKeys = duplicated(entries.map((entry) => entry.idempotencyKey));
+  mismatchWarnings.push(...duplicateIdempotencyWarnings(duplicateIdempotencyKeys));
   const totalsByTenantCaseCurrency = buildTotals(entries);
   const unbalancedIdempotencyKeys = entries
     .filter((entry) => !entryBalanced(entry))
     .map((entry) => entry.idempotencyKey);
   const projectedSourceRows = entries.length;
-  const reportedOnlySourceRows = manualReversalDispositionLines.length + suspenseItems.length + offsetDispositionLines.size;
+  const reportedOnlySourceRows = manualReversalDispositionLines.length + suspenseItems.length + suppressedBalanceLedgerSources.length;
   const totalSourceRows =
     sources.dispositionLines.length +
     sources.clientPayouts.length +
@@ -483,6 +565,8 @@ export function buildAccountingLedgerDryRunReport(sources: AccountingLedgerDryRu
     },
     duplicateIdempotencyKeys,
     offsetDoubleCountCandidates,
+    suppressedBalanceLedgerSources,
+    mismatchWarnings,
     manualReversalDispositionLines,
     suspenseItems,
     sourceCoverage: {
@@ -510,6 +594,8 @@ function dispositionCreditAccount(type: string): AccountingDryRunAccountCode | n
       return 'ATTORNEY_FEE_REVENUE';
     case 'FIRM_EXPENSE_REIMBURSEMENT':
       return 'FIRM_EXPENSE_REIMBURSEMENT';
+    case 'OFFSET_CLIENT_ADVANCE':
+      return 'CLIENT_ADVANCE_BALANCE';
     default:
       return null;
   }
@@ -544,6 +630,81 @@ function dryRunLine(
 function parseDispositionLineSource(source: string | null): string | null {
   const prefix = 'disposition_line:';
   return source?.startsWith(prefix) ? source.slice(prefix.length) : null;
+}
+
+function parseDispositionLineCorrelation(ledger: Pick<BalanceLedgerSource, 'source' | 'sourceId'>): string | null {
+  return parseDispositionLineSource(ledger.sourceId) ?? parseDispositionLineSource(ledger.source) ?? (ledger.source === 'disposition_line' ? ledger.sourceId : null);
+}
+
+function collectOffsetBalanceLedgerMismatchWarnings(
+  tenantId: string,
+  offsetLine: DispositionLineSource,
+  ledger: BalanceLedgerSource,
+): AccountingDryRunMismatchWarning[] {
+  const warnings: AccountingDryRunMismatchWarning[] = [];
+  const common = {
+    sourceType: 'BALANCE_LEDGER' as const,
+    sourceId: ledger.id,
+    dispositionLineId: offsetLine.id,
+    balanceLedgerId: ledger.id,
+  };
+  if (ledger.tenantId !== tenantId) {
+    warnings.push({
+      ...common,
+      reason: 'TENANT_MISMATCH',
+      expected: tenantId,
+      actual: ledger.tenantId,
+      message: `BalanceLedger ${ledger.id} tenant scope ${ledger.tenantId}; expected ${tenantId}.`,
+    });
+  }
+  if (!ledger.amount.equals(offsetLine.amount)) {
+    warnings.push({
+      ...common,
+      reason: 'AMOUNT_MISMATCH',
+      expected: offsetLine.amount.toString(),
+      actual: ledger.amount.toString(),
+      message: `BalanceLedger ${ledger.id} amount ${ledger.amount.toString()} != OFFSET_CLIENT_ADVANCE line ${offsetLine.id} amount ${offsetLine.amount.toString()}.`,
+    });
+  }
+  if (ledger.currency !== offsetLine.disposition.currency) {
+    warnings.push({
+      ...common,
+      reason: 'CURRENCY_MISMATCH',
+      expected: offsetLine.disposition.currency,
+      actual: ledger.currency,
+      message: `BalanceLedger ${ledger.id} currency ${ledger.currency} != disposition line ${offsetLine.id} currency ${offsetLine.disposition.currency}.`,
+    });
+  }
+  if (ledger.caseBalance.caseId !== offsetLine.disposition.caseId) {
+    warnings.push({
+      ...common,
+      reason: 'CASE_MISMATCH',
+      expected: offsetLine.disposition.caseId,
+      actual: ledger.caseBalance.caseId,
+      message: `BalanceLedger ${ledger.id} case ${ledger.caseBalance.caseId} != disposition line ${offsetLine.id} case ${offsetLine.disposition.caseId}.`,
+    });
+  }
+  return warnings;
+}
+
+function duplicateIdempotencyWarnings(keys: string[]): AccountingDryRunMismatchWarning[] {
+  return keys.map((key) => ({
+    reason: 'DUPLICATE_SOURCE',
+    sourceType: sourceTypeFromIdempotencyKey(key),
+    sourceId: key,
+    dispositionLineId: null,
+    balanceLedgerId: null,
+    expected: 'unique idempotency key',
+    actual: key,
+    message: `Duplicate accounting dry-run idempotency key: ${key}`,
+  }));
+}
+
+function sourceTypeFromIdempotencyKey(key: string): AccountingDryRunSourceType {
+  if (key.startsWith('client_payout:')) return 'CLIENT_PAYOUT';
+  if (key.startsWith('client_offset:')) return 'CLIENT_OFFSET';
+  if (key.startsWith('balance_ledger:')) return 'BALANCE_LEDGER';
+  return 'COLLECTION_DISPOSITION_LINE';
 }
 
 function addOutstanding(
