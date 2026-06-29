@@ -135,6 +135,25 @@ jobs:
             --testPathPattern="error-log/__tests__/.*\.spec\.ts$" \
             --testPathIgnorePatterns="node_modules|dist|integration"
         working-directory: project
+      # CLIENT-LANE-1: client modülü saf unit spec'leri (mock prisma, DB GEREKMEZ) yukarıdaki dar
+      # pattern'lerin dışında kalıyordu → CI'da koşmuyordu (#656 client-update-duplicate-guard false-green
+      # ile merge oldu; #661 harness'i düzeltti). Ayrı/açık step ile koşturulur.
+      # Dosya-varlığı pre-check (rename/silme veya 0-eşleşme → CI RED) + passWithNoTests YOK.
+      - name: Client module tests (client-lane false-green guard)
+        run: |
+          cd apps/api
+          for f in src/modules/client/__tests__/client-core-p0.spec.ts \
+                   src/modules/client/__tests__/client-update-duplicate-guard.spec.ts \
+                   src/modules/client/__tests__/client-audit.spec.ts \
+                   src/modules/client/__tests__/client-reactivate.spec.ts \
+                   src/modules/client/__tests__/contact-followup.spec.ts \
+                   src/modules/client/__tests__/client-controller-validation.spec.ts; do
+            test -f "$f" || { echo "MISSING client spec: $f"; exit 1; }
+          done
+          npx jest --ci --forceExit \
+            --testPathPattern="src/modules/client/__tests__/.*\.spec\.ts$" \
+            --testPathIgnorePatterns="node_modules|dist|integration"
+        working-directory: project
 
   # Frontend (apps/web) vitest — jsdom unit/component testleri. DB/prisma GEREKMEZ.
   # RFA-018: web testleri artık CI'da; kırmızı web testi merge'i bloklar.
