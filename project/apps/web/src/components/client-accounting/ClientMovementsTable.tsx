@@ -137,7 +137,7 @@ export function ClientMovementsTable({ clientId, currency = 'TRY', cases, classN
       title={
         <>
           <ArrowLeftRight className="h-5 w-5 shrink-0 text-gray-600" />
-          <h2 className="text-[15px] font-bold text-gray-900">Birleşik Hareketler</h2>
+          <h2 className="text-base font-bold text-gray-900">Birleşik Hareketler</h2>
           {data && (
             <Badge variant="secondary" className="ml-1">
               {data.total} hareket
