@@ -69,4 +69,16 @@ export const clientIntelStatementApi = {
     const resp = await apiClient.get<ClientIntelStatement>(`/client-intel-statements/${id}`);
     return resp.data;
   },
+
+  /**
+   * Dosya için TÜM statülerdeki kayıtlar (READ-ONLY): ACTIVE + RETRACTED + FALSE_POSITIVE +
+   * SUPERSEDED. Backend "all" endpoint'i YOK → mevcut listByCase status başına paralel çağrılır
+   * ve birleştirilir. Yeni endpoint / mutation EKLENMEZ (4.7d-2a inactive görünürlük).
+   * <remarks>N× GET /client-intel-statements/case/:caseId?status=</remarks>
+   */
+  async listByCaseAllStatuses(caseId: string): Promise<ClientIntelStatement[]> {
+    const statuses: ClientIntelStatus[] = ['ACTIVE', 'RETRACTED', 'FALSE_POSITIVE', 'SUPERSEDED'];
+    const groups = await Promise.all(statuses.map((s) => clientIntelStatementApi.listByCase(caseId, s)));
+    return groups.flat();
+  },
 };
