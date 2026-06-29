@@ -85,7 +85,7 @@ Depends On: P4 engine core hardening (P4-5C retry/stuck, P4-3B enforce)
 Unlock Condition: Engine core hardened + aksiyon-bazlı tasarım (intel → dosya → finansal sırası)
 Estimated Size: XL (çok-fazlı, P4/Codex backend; Claude payı = FE request/Inbox UI)
 Related Modules: office-approval, client-intel-statement, case-status, client-settlement
-Status: BACKLOG
+Status: DEFERRED (ADR-009 ön-koşulları MET — P4-5C/P4-3B kapandı — ama POST-P4 ana eksen Accounting Engine'e çevrildi (ADR-010); authz generalization eksen sonrası tekrar sıralanır)
 
 ID: INTAKE-4.7d-2a
 Title: Intel inactive visibility + status badge (read-only)
@@ -97,7 +97,7 @@ Depends On: —
 Unlock Condition: — (ADR-009'dan bağımsız; hazır)
 Estimated Size: S (FE-only)
 Related Modules: components/case/IntelStatementSection, lib/api/client-intel-statement
-Status: READY
+Status: DONE (shipped #642 → c4cb2e10; case-level inactive visibility + status badge READ-ONLY canlı)
 
 ID: INTAKE-4.7d-2bc
 Title: Intel mutation UI (retract / false-positive / supersede) — approval-backed
@@ -109,7 +109,7 @@ Depends On: UA-1 (intel-action approval backend)
 Unlock Condition: Intel retract/false-positive/supersede için approval create-path + executor hazır
 Estimated Size: M
 Related Modules: office-approval (backend), components/case/IntelStatementSection (FE)
-Status: BLOCKED
+Status: BLOCKED (UA-1 DEFERRED'e bağlı; POST-P4 ana eksen Accounting Engine → bu da ertelendi)
 
 ---
 
@@ -171,4 +171,96 @@ Depends On: C-2D closed
 Unlock Condition: Product/security decision on whether user-authored audit descriptions may be shown, redacted, or mapped to action-only labels.
 Estimated Size: S (decision) / M (if implementation follows)
 Related Modules: AuditLog, ClientOffsetService.getOffsetDetail, future audit projections
+Status: BACKLOG
+
+---
+
+## Accounting Engine — POST-P4 Ana Eksen (ADR-010)
+
+Bu maddeler POST-P4 ana eksenidir (decision-log 2026-06-29; ADR-010). Sıra `active-roadmap.md` PHASE 1..7 ile birebirdir. Accounting backend = Codex domain; Claude payı = FE yüzeyleri + Approval UI (P4-6). Her madde execution-öncesi design-gate-first.
+
+---
+
+ID: ACCT-1
+Title: Accounting Journal Engine (PHASE 1)
+Problem: #645 (S9F) persisted double-entry journal ŞEMASI MERGED ama UNWIRED (posting service/controller/endpoint yok). Tahsilat/distribution/offset/payout olayları kanonik muhasebe kaydına yazılmıyor.
+Business Value: Read-time türetilen cari → kanonik POSTED ledger; trial balance / ekstre / firma-geneli mutabakat açılır.
+Technical Value: Posting + Reversal + Idempotency (idempotencyKey @@unique) + Reconciliation (computeOutstanding) + Validation (Σdebit=Σcredit) + Event Mapping. Mevcut accounting-ledger-dry-run.service mapping/invariant'ı posting kaynağı. DEFAULT-OFF flag + SHADOW-mode.
+Priority: HIGH
+Depends On: #645 şema (MET); ADR-010 SoT north-star
+Unlock Condition: Posting-rules + account-mapping design-gate owner onayı (kod öncesi); #645 migration apply teyidi
+Estimated Size: L (Codex BE; design-gate-first; behavior-changing)
+Related Modules: client-settlement, AccountingJournalEntry/AccountingJournalLine, accounting-ledger-dry-run.service
+Status: READY
+
+ID: ACCT-2
+Title: Trial Balance (PHASE 2)
+Problem: Journal'ın doğru yazıldığını doğrulayacak hızlı kontrol ekranı yok; SoT geçişi için faithfulness kanıtı gerekli.
+Business Value: Journal doğruluk güvencesi + ileride SoT cutover kanıtı.
+Technical Value: Σdebit=Σcredit kitap-geneli + account bakiye mutabakatı; journal-bakiyeleri == legal-ledger-türevi karşılaştırma (balance-shadow-compare reuse). Raporlama değil, TEST aracı.
+Priority: HIGH
+Depends On: ACCT-1 (journal SHADOW yazıyor)
+Unlock Condition: Journal Engine SHADOW canlı
+Estimated Size: M (Codex BE + Claude FE view)
+Related Modules: accounting journal, balance-shadow-compare, FE TrialBalance view
+Status: BACKLOG
+
+ID: ACCT-3
+Title: Distribution Recommendation (PHASE 3 / S8-B)
+Problem: HELD→POSTED satır bölme (fee% / client-payable / reimbursement) operatöre boş tipli form; advisory öneri yok.
+Business Value: Boş form yerine ön-doldurulmuş öneri; journal'a girecek veriyi besler.
+Technical Value: Legal allocation/TBK100 + fee agreement okuyan advisory engine (S8-A offset-rec analoğu); manuel-onay korunur. FE pre-fill OffsetDrawer.initialSelection deseni.
+Priority: HIGH
+Depends On: ACCT-1 event-mapping contract
+Unlock Condition: —
+Estimated Size: M-L (Codex BE → Claude FE pre-fill)
+Related Modules: client-settlement disposition, OperationDeck (FE pre-fill)
+Status: FAZ-0 LANDED · advisory engine BACKLOG (#647 = disposition approval LIFECYCLE recommend/approve/post state-machine + P4 gating + additive migration MERGED — bu LIFECYCLE'dir; ADVISORY auto-split öneri motoru henüz BAŞLAMADI)
+
+ID: ACCT-4
+Title: Offset / Payout Integration (PHASE 4)
+Problem: Offset apply/reverse + payout olayları journal'a bağlanmalı (CLIENT_OFFSET_APPLIED/REVERSED, CLIENT_PAYOUT_RECORDED).
+Business Value: Mahsup ve ödeme olayları kanonik journal'da; tam muhasebe kapsaması.
+Technical Value: Mevcut ClientOffset/payout event'lerinden journal posting branch'leri (ACCT-1 deseni).
+Priority: MEDIUM
+Depends On: ACCT-1
+Unlock Condition: Journal Engine posting çekirdeği hazır
+Estimated Size: M (Codex BE)
+Related Modules: client-settlement (offset/payout), accounting journal
+Status: BACKLOG
+
+ID: ACCT-5
+Title: Financial Statements (PHASE 5)
+Problem: Cari/ekstre/finansal tablolar journal-türevi üretilmeli (bugün read-time türetiliyor).
+Business Value: Tutarlı, kanonik kaynaklı müvekkil/firma finansal tabloları.
+Technical Value: Journal-türevi projection okuyucuları; ADR-010 SoT yönüne hizalı.
+Priority: MEDIUM
+Depends On: ACCT-1, ACCT-2
+Unlock Condition: Journal + Trial Balance faithfulness kanıtlandı
+Estimated Size: M-L (Codex BE → Claude FE)
+Related Modules: accounting journal, client-accounting, FE statements
+Status: BACKLOG
+
+ID: ACCT-6
+Title: Reporting (PHASE 6)
+Problem: Firma-geneli muhasebe raporlaması yok.
+Business Value: Yönetim görünürlüğü; firma-geneli finansal raporlar.
+Technical Value: Journal/statement projeksiyonları üzerine raporlama katmanı.
+Priority: MEDIUM
+Depends On: ACCT-5
+Unlock Condition: Statements hazır
+Estimated Size: M (Codex BE → Claude FE)
+Related Modules: accounting journal, reporting, FE reporting
+Status: BACKLOG
+
+ID: P4-6
+Title: Office-Approval Inbox / Approve FE UI (PHASE 7)
+Problem: P4 enforce açılınca PENDING CHANGE_STATUS talepleri oluşur ama görüntüley/onaylayacak ekran yok; runGuarded approval_pending döner ama inbox yok.
+Business Value: P4 motorunu kullanılır kılar (eksenin destekleyici kapağı).
+Technical Value: Generic /office-approvals controller (inbox/mine/:id/approve/reject/request-revision/approve-with-changes/cancel) HAZIR; FE-only, sıfır backend bağımlılık. guarded-edge APPROVAL_REQUIRED envelope reuse.
+Priority: LOW (demand-gated — eksenin SONU)
+Depends On: —
+Unlock Condition: Gerçek approval hacmi (mutation/accounting yüzeyleri canlı)
+Estimated Size: M (Claude FE-only)
+Related Modules: web components/office-approval, lib/api/office-approval, guarded-edge
 Status: BACKLOG
