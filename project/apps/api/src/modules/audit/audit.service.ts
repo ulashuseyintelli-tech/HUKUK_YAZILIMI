@@ -342,7 +342,7 @@ export class AuditService {
 
 type HacizRiskLevel = 'YOK' | 'DUSUK' | 'ORTA' | 'YUKSEK';
 
-interface HacizAuditSafeProjection {
+export interface HacizAuditSafeProjection {
   action: 'HACIZ_REQUEST_SUBMITTED';
   targetType: { code: string; label: string };
   overallLevel: { code: HacizRiskLevel; label: string };
