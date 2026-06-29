@@ -52,6 +52,7 @@ function offset(overrides: any = {}) {
 function balanceLedger(overrides: any = {}) {
   return {
     id: overrides.id ?? 'bl-1',
+    tenantId: overrides.tenantId ?? 'tenant-1',
     amount: overrides.amount ?? D(25),
     currency: overrides.currency ?? 'TRY',
     type: overrides.type ?? 'CREDIT',
@@ -88,6 +89,11 @@ describe('AccountingLedgerDryRunService', () => {
         }),
       }),
     );
+    expect(prisma.balanceLedger.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({ tenantId: true, source: true, sourceId: true }),
+      }),
+    );
     expect(prisma.clientPayout.findMany).toHaveBeenCalled();
     expect(prisma.clientOffset.findMany).toHaveBeenCalled();
     expect(prisma.balanceLedger.findMany).toHaveBeenCalled();
@@ -110,6 +116,13 @@ describe('buildAccountingLedgerDryRunReport', () => {
     });
 
     expect(report.duplicateIdempotencyKeys).toEqual(['client_payout:pay-1:recorded']);
+    expect(report.mismatchWarnings).toEqual([
+      expect.objectContaining({
+        reason: 'DUPLICATE_SOURCE',
+        sourceType: 'CLIENT_PAYOUT',
+        sourceId: 'client_payout:pay-1:recorded',
+      }),
+    ]);
   });
 
   it('expected journal projection icin debit/credit dengesi ve outstanding farkini raporlar', () => {
@@ -152,6 +165,13 @@ describe('buildAccountingLedgerDryRunReport', () => {
     expect(report.suspenseItems).toEqual([
       expect.objectContaining({ dispositionLineId: 'dl-other', amount: '15', reason: 'OTHER_BUCKET' }),
     ]);
+    expect(report.mismatchWarnings).toEqual([
+      expect.objectContaining({
+        reason: 'OTHER_SUSPENSE_MANUAL_REVIEW',
+        sourceType: 'COLLECTION_DISPOSITION_LINE',
+        dispositionLineId: 'dl-other',
+      }),
+    ]);
     expect(report.sourceCoverage).toEqual({ totalSourceRows: 1, projectedSourceRows: 0, reportedOnlySourceRows: 1, coverageRatio: '1' });
   });
 
@@ -172,9 +192,16 @@ describe('buildAccountingLedgerDryRunReport', () => {
         manualReversalRequiredAt: markerAt.toISOString(),
       }),
     ]);
+    expect(report.mismatchWarnings).toEqual([
+      expect.objectContaining({
+        reason: 'MANUAL_REVERSAL_MARKER',
+        sourceType: 'COLLECTION_DISPOSITION_LINE',
+        dispositionLineId: 'dl-reversal',
+      }),
+    ]);
   });
 
-  it('OFFSET_CLIENT_ADVANCE ile korelasyonlu BalanceLedger icin double-count adayini raporlar', () => {
+  it('OFFSET_CLIENT_ADVANCE journal kaynagini disposition line yapar ve korelasyonlu BalanceLedger kaynagini suppress eder', () => {
     const report = buildAccountingLedgerDryRunReport({
       tenantId: 'tenant-1',
       dispositionLines: [dispositionLine({ id: 'dl-offset', type: 'OFFSET_CLIENT_ADVANCE', amount: D(30), caseClientId: null })],
@@ -184,6 +211,18 @@ describe('buildAccountingLedgerDryRunReport', () => {
     });
 
     expect(report.entries).toHaveLength(1);
+    expect(report.entries[0]).toEqual(
+      expect.objectContaining({
+        idempotencyKey: 'collection_disposition_line:dl-offset:posted',
+        sourceType: 'COLLECTION_DISPOSITION_LINE',
+        sourceId: 'dl-offset',
+      }),
+    );
+    expect(report.entries.some((entry) => entry.idempotencyKey === 'balance_ledger:bl-offset:posted')).toBe(false);
+    expect(report.entries[0].lines).toEqual([
+      expect.objectContaining({ accountCode: 'CASH_CLEARING', direction: 'DEBIT', amount: '30', dispositionLineId: 'dl-offset' }),
+      expect.objectContaining({ accountCode: 'CLIENT_ADVANCE_BALANCE', direction: 'CREDIT', amount: '30', dispositionLineId: 'dl-offset' }),
+    ]);
     expect(report.offsetDoubleCountCandidates).toEqual([
       {
         dispositionLineId: 'dl-offset',
@@ -194,6 +233,105 @@ describe('buildAccountingLedgerDryRunReport', () => {
         balanceLedgerAmount: '30',
         reason: 'OFFSET_CLIENT_ADVANCE_BALANCE_LEDGER_MATCH',
       },
+    ]);
+    expect(report.suppressedBalanceLedgerSources).toEqual([
+      {
+        dispositionLineId: 'dl-offset',
+        balanceLedgerId: 'bl-offset',
+        caseId: 'case-1',
+        currency: 'TRY',
+        amount: '30',
+        reason: 'CORRELATED_OFFSET_CLIENT_ADVANCE',
+      },
+    ]);
+    expect(report.sourceCoverage).toEqual({ totalSourceRows: 2, projectedSourceRows: 1, reportedOnlySourceRows: 1, coverageRatio: '1' });
+  });
+
+  it('sourceId icindeki disposition_line korelasyonunu da suppress eder', () => {
+    const report = buildAccountingLedgerDryRunReport({
+      tenantId: 'tenant-1',
+      dispositionLines: [dispositionLine({ id: 'dl-offset', type: 'OFFSET_CLIENT_ADVANCE', amount: D(30), caseClientId: null })],
+      clientPayouts: [],
+      clientOffsets: [],
+      balanceLedgerRows: [balanceLedger({ id: 'bl-offset', sourceId: 'disposition_line:dl-offset' })],
+    });
+
+    expect(report.suppressedBalanceLedgerSources).toEqual([expect.objectContaining({ balanceLedgerId: 'bl-offset', dispositionLineId: 'dl-offset' })]);
+    expect(report.entries.some((entry) => entry.idempotencyKey === 'balance_ledger:bl-offset:posted')).toBe(false);
+  });
+
+  it('unlinked BalanceLedger source satirini reconciliation journal adayi olarak birakir', () => {
+    const report = buildAccountingLedgerDryRunReport({
+      tenantId: 'tenant-1',
+      dispositionLines: [],
+      clientPayouts: [],
+      clientOffsets: [],
+      balanceLedgerRows: [balanceLedger({ id: 'bl-unlinked', amount: D(25), source: 'manual_adjust' })],
+    });
+
+    expect(report.entries).toEqual([
+      expect.objectContaining({
+        idempotencyKey: 'balance_ledger:bl-unlinked:posted',
+        sourceType: 'BALANCE_LEDGER',
+        sourceId: 'bl-unlinked',
+      }),
+    ]);
+    expect(report.suppressedBalanceLedgerSources).toEqual([]);
+  });
+
+  it('OFFSET_CLIENT_ADVANCE korelasyonunda amount mismatch warning uretir', () => {
+    const report = buildAccountingLedgerDryRunReport({
+      tenantId: 'tenant-1',
+      dispositionLines: [dispositionLine({ id: 'dl-offset', type: 'OFFSET_CLIENT_ADVANCE', amount: D(30), caseClientId: null })],
+      clientPayouts: [],
+      clientOffsets: [],
+      balanceLedgerRows: [balanceLedger({ id: 'bl-offset', amount: D(31), source: 'disposition_line:dl-offset' })],
+    });
+
+    expect(report.mismatchWarnings).toEqual([
+      expect.objectContaining({
+        reason: 'AMOUNT_MISMATCH',
+        sourceType: 'BALANCE_LEDGER',
+        dispositionLineId: 'dl-offset',
+        balanceLedgerId: 'bl-offset',
+        expected: '30',
+        actual: '31',
+      }),
+    ]);
+    expect(report.suppressedBalanceLedgerSources).toEqual([expect.objectContaining({ balanceLedgerId: 'bl-offset' })]);
+  });
+
+  it('OFFSET_CLIENT_ADVANCE korelasyonunda currency ve case mismatch warning uretir', () => {
+    const report = buildAccountingLedgerDryRunReport({
+      tenantId: 'tenant-1',
+      dispositionLines: [dispositionLine({ id: 'dl-offset', type: 'OFFSET_CLIENT_ADVANCE', amount: D(30), currency: 'TRY', caseId: 'case-1', caseClientId: null })],
+      clientPayouts: [],
+      clientOffsets: [],
+      balanceLedgerRows: [balanceLedger({ id: 'bl-offset', amount: D(30), currency: 'USD', caseId: 'case-2', source: 'disposition_line:dl-offset' })],
+    });
+
+    expect(report.mismatchWarnings).toEqual([
+      expect.objectContaining({ reason: 'CURRENCY_MISMATCH', expected: 'TRY', actual: 'USD' }),
+      expect.objectContaining({ reason: 'CASE_MISMATCH', expected: 'case-1', actual: 'case-2' }),
+    ]);
+  });
+
+  it('OFFSET_CLIENT_ADVANCE icin korelasyon eksigini mismatch warning olarak raporlar', () => {
+    const report = buildAccountingLedgerDryRunReport({
+      tenantId: 'tenant-1',
+      dispositionLines: [dispositionLine({ id: 'dl-offset', type: 'OFFSET_CLIENT_ADVANCE', amount: D(30), caseClientId: null })],
+      clientPayouts: [],
+      clientOffsets: [],
+      balanceLedgerRows: [],
+    });
+
+    expect(report.entries).toEqual([expect.objectContaining({ idempotencyKey: 'collection_disposition_line:dl-offset:posted' })]);
+    expect(report.mismatchWarnings).toEqual([
+      expect.objectContaining({
+        reason: 'MISSING_CORRELATION',
+        sourceType: 'COLLECTION_DISPOSITION_LINE',
+        dispositionLineId: 'dl-offset',
+      }),
     ]);
   });
 });
