@@ -110,3 +110,65 @@ Unlock Condition: Intel retract/false-positive/supersede için approval create-p
 Estimated Size: M
 Related Modules: office-approval (backend), components/case/IntelStatementSection (FE)
 Status: BLOCKED
+
+---
+
+ID: C2D-POLISH-1
+Title: Offset detail row button copy toggle
+Problem: The history row detail button always says `Detay`; when expanded, the user may not immediately see that the same control collapses the row.
+Business Value: Slightly clearer operations UX for reviewing offset audit details.
+Technical Value: Small frontend-only polish; no API or accounting change.
+Priority: LOW
+Depends On: C-2D closed
+Unlock Condition: Owner chooses to prioritize C-2D polish.
+Estimated Size: XS
+Related Modules: OffsetDrawer
+Status: BACKLOG
+
+ID: C2D-POLISH-2
+Title: Seeded live browser screenshot smoke for offset detail drawer
+Problem: Component tests verify behavior, but there is no stable seeded browser screenshot smoke for visual QA of the detail drawer.
+Business Value: Higher visual confidence before demos or release checks.
+Technical Value: QA-only validation; should not change production behavior.
+Priority: LOW
+Depends On: Stable seeded QA fixture
+Unlock Condition: Disposable/seeded QA environment available.
+Estimated Size: S
+Related Modules: OffsetDrawer, client-offset test/QA fixtures
+Status: BACKLOG
+
+ID: C2D-DEFER-1
+Title: Offset audit timeline pagination/grouping
+Problem: Current detail projection returns a simple one-offset audit timeline. Long audit histories may become noisy later.
+Business Value: Better readability if real offset timelines become long.
+Technical Value: Future read-model optimization; not needed until data volume justifies it.
+Priority: LOW
+Depends On: C-2D closed
+Unlock Condition: Real audit timelines show length/readability pressure.
+Estimated Size: M
+Related Modules: ClientOffsetService.getOffsetDetail, OffsetDrawer
+Status: BACKLOG
+
+ID: C2D-DEFER-2
+Title: Richer offset source label rules
+Problem: Current source labels use case/expense/payable summary. More business-specific labels may be desired later.
+Business Value: Better operator comprehension in complex case/expense contexts.
+Technical Value: Presentation/read-model improvement; requires product display rules first.
+Priority: LOW
+Depends On: C-2D closed
+Unlock Condition: Product defines richer label rules and examples.
+Estimated Size: S/M
+Related Modules: ClientOffsetService.getOffsetDetail, OffsetDrawer
+Status: BACKLOG
+
+ID: C2D-PD-1
+Title: Future user-authored audit description sanitization policy
+Problem: C-2D safely hides raw audit metadata, and current ClientOffset audit descriptions are system-generated. If future audit descriptions include user-authored text, rendering `description` as `safeSummary` may become a privacy/security/legal risk.
+Business Value: Prevents accidental exposure of sensitive free text in audit detail UI.
+Technical Value: Establishes a clear safe-summary policy before adding richer audit projections.
+Priority: MEDIUM
+Depends On: C-2D closed
+Unlock Condition: Product/security decision on whether user-authored audit descriptions may be shown, redacted, or mapped to action-only labels.
+Estimated Size: S (decision) / M (if implementation follows)
+Related Modules: AuditLog, ClientOffsetService.getOffsetDetail, future audit projections
+Status: BACKLOG
