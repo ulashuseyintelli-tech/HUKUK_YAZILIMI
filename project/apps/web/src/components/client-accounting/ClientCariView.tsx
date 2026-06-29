@@ -17,13 +17,16 @@
  *  - Muhasebe davranışı, label'lar, scope ayrımı, API DEĞİŞMEDİ.
  */
 
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Card, Badge, Spinner } from '@hukuk/ui';
-import { Wallet, Send, CheckCircle, Landmark, Building2, Info, AlertCircle, Scale, AlertTriangle } from 'lucide-react';
+import { Card, Badge, Spinner, Button } from '@hukuk/ui';
+import { Wallet, Send, CheckCircle, Landmark, Building2, Info, AlertCircle, Scale, AlertTriangle, ArrowLeftRight } from 'lucide-react';
 import { clientAccountingApi, formatMoneyString } from '@/lib/api/client-accounting';
 import { AccountingPanel } from './AccountingPanel';
 import { ClientMovementsTable } from './ClientMovementsTable';
 import { ClientLevelStatementSection } from './ClientLevelStatementSection';
+import { OffsetDrawer } from './OffsetDrawer';
+import { OffsetHistoryPanel } from './OffsetHistoryPanel';
 
 interface ClientCariViewProps {
   clientId: string;
@@ -42,6 +45,7 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
     queryFn: () => clientAccountingApi.getClientSummary(clientId, currency),
     enabled: !!clientId,
   });
+  const [mahsupOpen, setMahsupOpen] = useState(false); // C-2b Mahsup Side Drawer (hook early-return'den ÖNCE)
 
   if (summaryQ.isLoading) {
     return (
@@ -72,10 +76,16 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
       <div className="grid shrink-0 gap-3 xl:grid-cols-[1.5fr_1fr]">
         {/* A — Müvekkile Özgü Cari */}
         <Card className="p-3">
-          <div className="mb-2 flex items-center gap-2">
-            <Wallet className="h-5 w-5 text-emerald-600" />
-            <h2 className="text-[15px] font-bold text-gray-900">Müvekkile Özgü Cari</h2>
-            {summaryQ.isFetching && <Spinner className="ml-1 h-4 w-4" />}
+          <div className="mb-2 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <Wallet className="h-5 w-5 text-emerald-600" />
+              <h2 className="text-[15px] font-bold text-gray-900">Müvekkile Özgü Cari</h2>
+              {summaryQ.isFetching && <Spinner className="ml-1 h-4 w-4" />}
+            </div>
+            {/* C-2b — Mahsup Side Drawer tetikleyici (yetki backend; yetkisiz drawer read-only açılır) */}
+            <Button variant="outline" size="sm" onClick={() => setMahsupOpen(true)}>
+              <ArrowLeftRight className="mr-1 h-4 w-4" /> Mahsup
+            </Button>
           </div>
           <div className="grid grid-cols-2 gap-2.5 xl:grid-cols-3">
             <Metric icon={Wallet} accent="text-emerald-700" label="Müvekkile Borç (Net)" value={M(s.clientScoped.payableNet)} />
@@ -197,8 +207,8 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
           )}
         </AccountingPanel>
 
-        {/* Satır 2 — Birleşik Hareketler (sol, geniş) + Müvekkil Genel Ekstresi (sağ) */}
-        <div className="grid min-h-0 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.9fr)_minmax(0,1fr)] lg:grid-rows-1">
+        {/* Satır 2 — Birleşik Hareketler (sol) + Müvekkil Genel Ekstresi (orta) + Mahsup Geçmişi (sağ, C-2b) */}
+        <div className="grid min-h-0 grid-cols-1 gap-3 lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)_minmax(0,1fr)] lg:grid-rows-1">
           {/* Birleşik Hareketler — Faz A-MOV (read-only; mahsup/ekstre/export YOK, running balance YOK) */}
           <ClientMovementsTable
             clientId={clientId}
@@ -214,8 +224,19 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
             cases={s.caseBreakdown.map((b) => ({ caseId: b.caseId, caseNumber: b.caseNumber }))}
             className="min-h-0 min-w-0"
           />
+
+          {/* Mahsup Geçmişi — Faz C C-2b (D6: ayrı panel; APPLY+REVERSAL, İptal=PARTNER/MANAGER) */}
+          <OffsetHistoryPanel
+            clientId={clientId}
+            currency={cur}
+            cases={s.caseBreakdown.map((b) => ({ caseId: b.caseId, caseNumber: b.caseNumber }))}
+            className="min-h-0 min-w-0"
+          />
         </div>
       </div>
+
+      {/* C-2b — Mahsup Side Drawer (D1: overlay; layout etkilemez). Başarı→query invalidation + kapanış drawer içinde. */}
+      <OffsetDrawer clientId={clientId} currency={cur} isOpen={mahsupOpen} onClose={() => setMahsupOpen(false)} />
     </div>
   );
 }
