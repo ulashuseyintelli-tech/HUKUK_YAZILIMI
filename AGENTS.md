@@ -135,6 +135,19 @@ GO-COMPLETE açıkça verilmişse merge, cleanup, main sync, final verification 
 - `GO-COMPLETE` sonunda stop condition yoksa `Onay Bekleniyor: NO` yazılır; çünkü kullanıcı baştan operasyon zincirini tamamlama yetkisi vermiştir.
 - `GO-COMPLETE` sırasında stop condition varsa `Onay Bekleniyor: YES` yazılır; çünkü kullanıcı kararı gerekir.
 
+### 6.2 CI WAIT / POLLING RULE
+
+Bu kural yalnız `GO-COMPLETE` için geçerlidir. `GO-ANALYZE` ve `GO-IMPLEMENT` sonunda ajan kullanıcıya rapor verir; CI bekleme zinciri otomatik merge anlamına gelmez.
+
+`GO-COMPLETE` sırasında CI durumu `IN_PROGRESS` ise ajan hemen kullanıcıya dönmez. CI durumunu otomatik olarak belirli aralıklarla yeniden kontrol eder.
+
+- Önerilen polling aralığı: 60 saniyede bir.
+- Önerilen maksimum bekleme: 20 dakika.
+- Bu süre içinde CI `SUCCESS` olursa GO-COMPLETE zinciri devam eder; merge → cleanup → main sync → final verification → checkpoint tamamlanır.
+- CI `FAIL` olursa ajan durur, merge yapmaz, cleanup yapmaz ve `Onay Bekleniyor: YES` yazar.
+- CI 20 dakika sonunda hâlâ `IN_PROGRESS` ise ajan durur, merge yapmaz, cleanup yapmaz, timeout raporu verir ve `Onay Bekleniyor: YES` yazar.
+- CI bitmediği için `mergeStateStatus` `BLOCKED` ise bu tek başına stop condition sayılmaz; CI tamamlandıktan sonra `mergeStateStatus` yeniden sorgulanır.
+- CI bittikten sonra `mergeStateStatus` `CLEAN` değilse ajan durur, merge yapmaz, cleanup yapmaz ve `Onay Bekleniyor: YES` yazar.
 ### 7. Operational Stop Conditions
 
 Ajan yalnız aşağıdaki durumlarda durur:
