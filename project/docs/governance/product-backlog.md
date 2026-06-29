@@ -215,7 +215,7 @@ Depends On: ACCT-1 event-mapping contract
 Unlock Condition: —
 Estimated Size: M-L (Codex BE → Claude FE pre-fill)
 Related Modules: client-settlement disposition, OperationDeck (FE pre-fill)
-Status: IN PROGRESS (S8-B FAZ-0 lifecycle recommend/approve/post #647 MERGED; recommendation engine devam)
+Status: FAZ-0 LANDED · advisory engine BACKLOG (#647 = disposition approval LIFECYCLE recommend/approve/post state-machine + P4 gating + additive migration MERGED — bu LIFECYCLE'dir; ADVISORY auto-split öneri motoru henüz BAŞLAMADI)
 
 ID: ACCT-4
 Title: Offset / Payout Integration (PHASE 4)

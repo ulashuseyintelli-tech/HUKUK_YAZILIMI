@@ -5,6 +5,8 @@
 **Deciders:** Owner — Ulaş (kurucu ortak)
 **Related:** #645 (S9F `AccountingJournalEntry`/`AccountingJournalLine` şema contract), `docs/governance/decision-log.md`, `docs/governance/active-roadmap.md` (PHASE 1-7 Accounting Engine), `docs/governance/product-backlog.md` (ACCT-1..6), ADR-009 (Universal Office Approval), TBK100 legal decisions, `balance-display-shadow-diff` / `balance-shadow-compare` modülleri
 
+> **Okuma notu (yön kararı):** Bu ADR bir north-star / yön kararıdır; mevcut mimariyi **BUGÜN DEĞİŞTİRMEZ**. #645 additive-only contract yürürlükte kalır; SoT geçişi yalnız faz-bazlı design-gate + shadow / prove / legal-signoff ile gelir. Buradaki "Accepted" = bu YÖNÜN kabulüdür, **immediate architecture change DEĞİL**.
+
 ## Context
 
 P4 Approval Engine kapandıktan sonra ürünün ana ekseni Accounting Engine'e çevrildi (decision-log 2026-06-29). Bu eksende en kritik mimari soru:

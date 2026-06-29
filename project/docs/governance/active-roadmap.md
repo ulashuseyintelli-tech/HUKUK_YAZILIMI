@@ -25,7 +25,7 @@ Owner kilidi = 7 faz. Accounting backend = Codex domain; Claude payı = her back
 |---|---|---|---|---|---|
 | PHASE 1 | Accounting Journal Engine | Posting · Reversal · Idempotency · Reconciliation · Validation · Event Mapping (şema #645 MERGED·UNWIRED) | Codex (BE) | NEXT · design-gate-first | Behavior-changing; DEFAULT-OFF flag + SHADOW başlar; ADR-010 SoT north-star'a uyumlu (legal-ledger otoritesi KAYMAZ). Önkoşul: #645 migration apply teyidi. → ACCT-1 |
 | PHASE 2 | Trial Balance | Journal doğruluk harness'ı (Σdebit=Σcredit + bakiye mutabakatı); SoT faithfulness kanıtı | Codex (BE) → Claude (FE view) | PLANNED | Raporlama DEĞİL, journal'ın TEST aracı; Distribution'dan önce. → ACCT-2 |
-| PHASE 3 | Distribution Recommendation | HELD→POSTED satır bölme önerisi (S8-B); journal'a girecek veriyi üretir | Codex (BE) → Claude (FE pre-fill) | IN PROGRESS (FAZ-0) | S8-B FAZ-0 lifecycle (#647) MERGED; recommendation engine devam. → ACCT-3 |
+| PHASE 3 | Distribution Recommendation | HELD→POSTED satır bölme için ADVISORY öneri motoru (S8-B); journal'a girecek veriyi üretir | Codex (BE) → Claude (FE pre-fill) | FAZ-0 zemin indi · advisory engine AÇIK | #647 = disposition approval LIFECYCLE (recommend/approve/post state-machine + P4 gating + additive migration) MERGED — bu LIFECYCLE'dir, advisory ÖNERİ motoru DEĞİL; auto-split öneri motoru henüz başlamadı. → ACCT-3 |
 | PHASE 4 | Offset / Payout Integration | Offset apply/reverse + payout journal bağları | Codex (BE) | PLANNED | → ACCT-4 |
 | PHASE 5 | Financial Statements | Cari/ekstre/finansal tablolar journal-türevi | Codex (BE) → Claude (FE) | PLANNED | → ACCT-5 |
 | PHASE 6 | Reporting | Firma-geneli raporlama | Codex (BE) → Claude (FE) | PLANNED | → ACCT-6 |
