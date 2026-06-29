@@ -16,6 +16,8 @@ export interface ErrorLogPresentation {
   technicalMessage: string;
   technicalCode: string;
   endpointLabel: string;
+  /** Okunur Türkçe sayfa adı (route'tan). Tanınmayan route → undefined (ham yol gösterilir). */
+  pageLabel?: string;
 }
 
 const LEVEL_LABELS: Record<string, string> = {
@@ -142,6 +144,63 @@ function endpointLabel(endpoint?: string | null): string {
   return endpoint;
 }
 
+// Route → okunur Türkçe sayfa adı. Anahtarlar normalize edilmiş yol (:id ile). Kaynak: gerçek
+// (dashboard) route klasörleri (recon ile doğrulandı). Tanınmayan route → undefined.
+const ROUTE_LABELS: Record<string, string> = {
+  "/dashboard": "Dashboard",
+  "/cases": "Takipler (Eski Takipler)",
+  "/cases/new": "Yeni Takip",
+  "/cases/:id": "Takip detayı",
+  "/cases/:id/edit": "Takip düzenleme",
+  "/cases/:id/v2": "Takip detayı",
+  "/debtors": "Borçlular",
+  "/clients": "Müvekkiller",
+  "/clients/:id/accounting": "Müvekkil Muhasebe",
+  "/reports": "Raporlar",
+  "/tasks": "Görevler",
+  "/tasks/kanban": "Görevler (Kanban)",
+  "/calendar": "Takvim",
+  "/ai-tools": "AI Araçları",
+  "/uyap-export": "UYAP Export",
+  "/client-intake": "Bilgi Formları",
+  "/client-intake/:id": "Bilgi Formu detayı",
+  "/client-intake/:id/promote": "Bilgi Formu aktarma",
+  "/admin/execution-offices": "İcra Daireleri",
+  "/onboarding": "Kurulum",
+  "/settings": "Ayarlar",
+  "/settings/audit": "Audit Log",
+  "/settings/portal": "Portal Yönetimi",
+  "/settings/clients": "Müvekkiller (Ayarlar)",
+  "/settings/error-logs": "Hata Logları",
+  "/settings/notifications": "Bildirim Merkezi",
+  "/settings/office": "Büro Ayarları",
+};
+
+// Endpoint'ten gerçek uygulama yolunu çıkar (web:rejection/web:window öneki + query atılır).
+function extractPath(endpoint?: string | null): string | undefined {
+  if (!endpoint) return undefined;
+  let p = endpoint;
+  if (p.startsWith("web:rejection ")) p = p.slice("web:rejection ".length);
+  else if (p.startsWith("web:window ")) p = p.slice("web:window ".length);
+  p = p.trim().split("?")[0];
+  return p.startsWith("/") ? p : undefined;
+}
+
+// id segmentlerini :id'ye indir — saf sayısal VEYA cuid benzeri (>=16 alfanümerik, tire yok).
+// Gerçek route kelimeleri (en uzun "notifications"=13) yanlışlıkla :id olmaz.
+function normalizePath(path: string): string {
+  return path
+    .split("/")
+    .map((seg) => (/^\d+$/.test(seg) || /^[a-z0-9]{16,}$/i.test(seg) ? ":id" : seg))
+    .join("/");
+}
+
+function pageLabelOf(endpoint?: string | null): string | undefined {
+  const path = extractPath(endpoint);
+  if (!path) return undefined;
+  return ROUTE_LABELS[normalizePath(path)];
+}
+
 function safeErrorCodeOf(log: ErrorLogRecord): string | undefined {
   const md = log.metadata;
   if (md && typeof md === "object") {
@@ -166,5 +225,6 @@ export function getErrorLogPresentation(log: ErrorLogRecord): ErrorLogPresentati
     technicalMessage: log.message,
     technicalCode: code ?? "—",
     endpointLabel: endpointLabel(log.endpoint),
+    pageLabel: pageLabelOf(log.endpoint),
   };
 }

@@ -83,4 +83,29 @@ describe("getErrorLogPresentation — humanized + remediation", () => {
     // tanınmayan endpoint → ham korunur
     expect(getErrorLogPresentation(log({ endpoint: "/api/cases" })).endpointLabel).toBe("/api/cases");
   });
+
+  it("pageLabel: route → okunur Türkçe sayfa adı (cuid/sayısal id normalize)", () => {
+    // cuid'li gerçek yol → eşleşir
+    expect(getErrorLogPresentation(log({ endpoint: "web:rejection /clients/cmqp16a8f000rne1l4p0zjsft/accounting" })).pageLabel)
+      .toBe("Müvekkil Muhasebe");
+    expect(getErrorLogPresentation(log({ endpoint: "web:rejection /cases/cmqpl7tb300021zfni38hq9j8" })).pageLabel)
+      .toBe("Takip detayı");
+    // sayısal id de normalize olur
+    expect(getErrorLogPresentation(log({ endpoint: "web:window /cases/123/edit" })).pageLabel)
+      .toBe("Takip düzenleme");
+    // id'siz sabit route
+    expect(getErrorLogPresentation(log({ endpoint: "web:rejection /debtors" })).pageLabel).toBe("Borçlular");
+    expect(getErrorLogPresentation(log({ endpoint: "web:rejection /settings/error-logs" })).pageLabel).toBe("Hata Logları");
+  });
+
+  it("pageLabel: tanınmayan/eksik route → undefined (ham yol UI'da korunur)", () => {
+    expect(getErrorLogPresentation(log({ endpoint: "web:rejection /bilinmeyen/yol" })).pageLabel).toBeUndefined();
+    expect(getErrorLogPresentation(log({ endpoint: "/api/cases" })).pageLabel).toBeUndefined();
+    expect(getErrorLogPresentation(log({ endpoint: undefined })).pageLabel).toBeUndefined();
+  });
+
+  it("pageLabel: gerçek route kelimesi (notifications=13 harf) yanlışlıkla :id olmaz", () => {
+    expect(getErrorLogPresentation(log({ endpoint: "web:rejection /settings/notifications" })).pageLabel)
+      .toBe("Bildirim Merkezi");
+  });
 });

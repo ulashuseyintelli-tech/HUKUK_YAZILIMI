@@ -41,7 +41,7 @@ describe("ErrorLogsPage (PR-5)", () => {
           isResolved: false,
           createdAt: "2026-06-28T00:00:00Z",
           occurrenceCount: 1,
-          endpoint: "web:rejection /clients/x/accounting",
+          endpoint: "web:rejection /clients/cmqp16a8f000rne1l4p0zjsft/accounting",
           metadata: { requestId: "req-1", safeErrorCode: "UNHANDLED_REJECTION" },
         },
       ],
@@ -54,6 +54,8 @@ describe("ErrorLogsPage (PR-5)", () => {
     // Liste başlığı humanized: "Arayüz İşlem Hatası" (ham "Unhandled promise rejection" DEĞİL)
     await waitFor(() => expect(screen.getByText("Arayüz İşlem Hatası")).toBeInTheDocument());
     expect(screen.queryByText("Unhandled promise rejection")).toBeNull();
+    // "Sorunlu sayfa" okunur Türkçe sayfa adı (cuid'li ham yol DEĞİL)
+    expect(screen.getByText("Müvekkil Muhasebe")).toBeInTheDocument();
     fireEvent.click(screen.getByText("Arayüz İşlem Hatası"));
     expect(screen.getByText("Hata Detayı")).toBeInTheDocument(); // drawer açıldı
     expect(screen.getByText("Bu hata ne anlama geliyor?")).toBeInTheDocument();

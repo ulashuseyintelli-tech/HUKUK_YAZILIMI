@@ -134,6 +134,11 @@ export default function ErrorLogsPage() {
                     </div>
                     <div className="font-medium mt-1 truncate">{p.title}</div>
                     <div className="text-sm text-gray-500 truncate">{p.summary}</div>
+                    {p.pageLabel && (
+                      <div className="text-xs text-gray-700 mt-1 truncate">
+                        <span className="text-gray-500">Sorunlu sayfa:</span> {p.pageLabel}
+                      </div>
+                    )}
                     <div className="text-xs text-gray-400 mt-1">
                       <span title={new Date(log.lastSeenAt ?? log.createdAt).toLocaleString("tr-TR")}>
                         {relativeTime(log.lastSeenAt ?? log.createdAt)}

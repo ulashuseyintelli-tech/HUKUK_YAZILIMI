@@ -94,6 +94,13 @@ export function ErrorLogDetailDrawer({ log, onClose, onResolved }: Props) {
           <div className="text-base font-semibold text-gray-900">{p.title}</div>
           <div className="text-sm text-gray-700 mt-1">{p.summary}</div>
 
+          {p.pageLabel && (
+            <div className="mt-3 rounded-md bg-white/70 border border-blue-100 px-3 py-2">
+              <span className="text-xs font-medium text-gray-500">Sorunlu Sayfa: </span>
+              <span className="text-sm font-semibold text-gray-900">{p.pageLabel}</span>
+            </div>
+          )}
+
           <div className="mt-3">
             <div className="text-xs font-medium text-gray-500">Muhtemel Etki</div>
             <div className="text-sm text-gray-700 mt-0.5">{p.impact}</div>
