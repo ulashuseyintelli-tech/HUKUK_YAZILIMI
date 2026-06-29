@@ -20,15 +20,21 @@
 // Multitenant: tüm okuma/yazma input.tenantId (truthful @CurrentUser) ile sınırlı; computeDecision actor'ı tenant-doğrular,
 // createPendingRequest tenant-scoped kayıt açar → çapraz-tenant kaçak YOK.
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { stableJsonHash } from '../permission-diagnostics/guided-edge/canonical-json';
+import {
+  buildGuardedEdgeOutcome,
+  type GuardedEdgeOutcomeEnvelope,
+} from '../permission-diagnostics/guided-edge/guarded-edge-outcome.envelope';
+import { GuidedOpenDecision } from '../policy-engine/types/effective-permission.types';
+import { ActionCode } from '../policy-engine/types/action-code.enum';
 import { OfficeApprovalService } from './office-approval.service';
 
 export type OfficeApprovalShadowDecision = 'ALLOW' | 'WOULD_REQUIRE_APPROVAL';
-export type OfficeApprovalGateMode = 'off' | 'observe' | 'create';
+export type OfficeApprovalGateMode = 'off' | 'observe' | 'create' | 'enforce';
 
 export interface OfficeApprovalShadowInput {
   actorUserId: string;
@@ -45,8 +51,12 @@ export interface OfficeApprovalShadowResult {
   decision?: OfficeApprovalShadowDecision;
   reasonCode?: string;
   requesterCapacity?: string;
-  /** create + non-PARTNER: oluşturulan OfficeApprovalRequest.id (idempotent). Controller bunu KULLANMAZ (persist-only). */
+  /** create + non-PARTNER: oluşturulan OfficeApprovalRequest.id (idempotent). create'te controller KULLANMAZ; enforce'ta DÖNER. */
   requestId?: string;
+  /** P4-3B enforce + non-PARTNER → true: controller envelope'u DÖNDÜRÜR + changeStatus'u ÇAĞIRMAZ. off/observe/create → undefined. */
+  block?: boolean;
+  /** P4-3B enforce + non-PARTNER: typed APPROVAL_REQUIRED zarfı (structured-200). */
+  envelope?: GuardedEdgeOutcomeEnvelope;
 }
 
 @Injectable()
@@ -60,14 +70,14 @@ export class OfficeApprovalShadowService {
   ) {}
 
   /**
-   * off (varsayılan) | observe (P4-2 gölge) | create (P4-3A persist-only).
-   * 'observe'/'create' dışındaki her şey (unset/bilinmeyen/'on'/'enforce'/…) → off.
-   * NOT: 'enforce' BİLEREK off'a düşer — bloklama + typed response P4-6'ya rezerve (bu faz BLOKLAMAZ).
+   * off (varsayılan) | observe (P4-2 gölge) | create (P4-3A persist-only) | enforce (P4-3B blok + typed APPROVAL_REQUIRED).
+   * Bunların dışındaki her şey (unset/bilinmeyen/'on'/…) → off (fail-safe dormant; default DEĞİŞMEZ).
    */
   private flagMode(): OfficeApprovalGateMode {
     const v = String(this.config.get('OFFICE_APPROVAL_CHANGE_STATUS_GATE') ?? '').trim().toLowerCase();
     if (v === 'observe') return 'observe';
     if (v === 'create') return 'create';
+    if (v === 'enforce') return 'enforce';
     return 'off';
   }
 
@@ -109,6 +119,55 @@ export class OfficeApprovalShadowService {
         // observe ASLA akışı/mutation'ı bozmaz (best-effort)
         return { flagMode, evaluated: false };
       }
+    }
+
+    if (flagMode === 'enforce') {
+      // P4-3B — ENFORCE: BLOK + typed APPROVAL_REQUIRED + FAIL-CLOSED. PARTNER → ALLOW (PROCEED); non-PARTNER → request CREATE
+      //   + block (controller envelope döner, changeStatus ÇAĞIRMAZ). FAIL-CLOSED: create/compute throw → typed 5xx propagate
+      //   (changeStatus'a DÜŞMEZ; statü DEĞİŞMEZ) — P4-3A best-effort SWALLOW'u enforce'ta MİRAS ALINMAZ.
+      // ⚠️ Acceptance#10 — ENFORCE YALNIZ CHANGE_STATUS: başka actionCode (POST_DISPOSITION/CLIENT_PAYOUT/…) flag açık olsa bile
+      //   enforce EDİLMEZ → no-op (eski davranış). (evaluate zaten yalnız CHANGE_STATUS controller'ından çağrılır; bu defansif guard.)
+      if (input.actionCode !== ActionCode.CHANGE_STATUS) {
+        return { flagMode, evaluated: false }; // CHANGE_STATUS dışı → enforce kapsamı DIŞI, akış DEĞİŞMEZ
+      }
+      let computed;
+      try {
+        computed = await this.computeDecision(input.actorUserId, input.tenantId);
+      } catch {
+        throw new ServiceUnavailableException('Onay değerlendirmesi başarısız; statü değiştirilmedi.');
+      }
+      const { decision, reasonCode, capacity } = computed;
+      if (decision === 'ALLOW') {
+        // PARTNER self-authority → ALLOW: controller normal changeStatus'u çalıştırır, request YOK.
+        return { flagMode, evaluated: true, decision, reasonCode, requesterCapacity: capacity };
+      }
+      // non-PARTNER → request CREATE (idempotent) + BLOCK + typed APPROVAL_REQUIRED. Hata YUTULMAZ (fail-closed → typed 5xx).
+      const savedIntent = input.payload ?? null;
+      const idempotencyKey = `${input.actionCode}|${input.targetRef}|${input.actorUserId}|${stableJsonHash(savedIntent)}`;
+      let request;
+      try {
+        request = await this.officeApproval.createPendingRequest({
+          tenantId: input.tenantId,
+          actionCode: input.actionCode,
+          targetType: input.targetType,
+          targetRef: input.targetRef,
+          requesterUserId: input.actorUserId,
+          savedIntent,
+          idempotencyKey,
+        });
+      } catch {
+        throw new ServiceUnavailableException('Onay talebi oluşturulamadı; statü değiştirilmedi.');
+      }
+      // typed APPROVAL_REQUIRED zarfı (structured-200): yalnız requestId+PENDING_APPROVAL (ham savedIntent YOK — leak-free).
+      const envelope = buildGuardedEdgeOutcome({
+        outcome: GuidedOpenDecision.APPROVAL_REQUIRED,
+        actionCode: ActionCode.CHANGE_STATUS,
+        target: { resourceType: input.targetType, caseId: input.targetRef },
+        reasonCode,
+        message: 'Onay talebi oluşturuldu, yetkili onayı bekleniyor.',
+        approval: { requestId: request.id, status: 'PENDING_APPROVAL' },
+      });
+      return { flagMode, evaluated: true, decision, reasonCode, requesterCapacity: capacity, requestId: request.id, block: true, envelope };
     }
 
     // flagMode === 'create' — P4-3A PERSIST-ONLY. BEST-EFFORT: hata YUTULUR → mevcut CHANGE_STATUS akışı BOZULMAZ.

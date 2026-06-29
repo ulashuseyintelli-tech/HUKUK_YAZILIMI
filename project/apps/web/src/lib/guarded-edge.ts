@@ -30,6 +30,12 @@ export interface GuardedEdgeConfirmation {
   bindingHash: string;
 }
 
+/** P4-3B — APPROVAL_REQUIRED onay-talebi referansı (backend GuardedEdgeApproval ile birebir; ham savedIntent İÇERMEZ). */
+export interface GuardedEdgeApproval {
+  requestId: string;
+  status: string; // 'PENDING_APPROVAL'
+}
+
 export interface GuardedEdgeOutcomeEnvelope {
   axis: "GUIDED_OPEN_PERMISSION";
   outcome: GuidedOpenOutcome;
@@ -42,6 +48,7 @@ export interface GuardedEdgeOutcomeEnvelope {
   decisionId?: string;
   auditRef?: string;
   confirmation?: GuardedEdgeConfirmation;
+  approval?: GuardedEdgeApproval; // P4-3B — yalnız APPROVAL_REQUIRED'da
 }
 
 const OUTCOMES: ReadonlySet<string> = new Set<string>([
@@ -73,29 +80,45 @@ export function isConfirmRequiredEnvelope(
   return isGuardedEdgeOutcomeEnvelope(x) && x.outcome === "CONFIRM_REQUIRED";
 }
 
+/**
+ * P4-3B — APPROVAL_REQUIRED zarfı mı? CONFIRM_REQUIRED'dan farklı: TERMİNALDİR (token yok, retry yok); işlem onay-talebine
+ * yönlendi, statü DEĞİŞMEDİ. runGuarded bunu 'approval_pending' olarak döndürür → çağıran asla başarı SANMAZ.
+ */
+export function isApprovalRequiredEnvelope(
+  x: unknown,
+): x is GuardedEdgeOutcomeEnvelope & { outcome: "APPROVAL_REQUIRED" } {
+  return isGuardedEdgeOutcomeEnvelope(x) && x.outcome === "APPROVAL_REQUIRED";
+}
+
 /** Zarftan confirmation bloğunu çıkarır (yoksa null). */
 export function extractConfirmation(env: GuardedEdgeOutcomeEnvelope): GuardedEdgeConfirmation | null {
   return env.confirmation ?? null;
 }
 
-export type GuardedRunResult<T> = { status: "ok"; data: T } | { status: "cancelled" };
+export type GuardedRunResult<T> =
+  | { status: "ok"; data: T }
+  | { status: "cancelled" }
+  // P4-3B — TERMİNAL: işlem APPROVAL_REQUIRED'a yönlendi (onay-talebi oluştu, statü DEĞİŞMEDİ). Retry YOK; çağıran başarı SANMAZ.
+  | { status: "approval_pending"; envelope: GuardedEdgeOutcomeEnvelope };
 
 /**
  * Saf orchestration (React'tan bağımsız → kolay test edilir):
  *  1) requestFn() çalıştır.
- *  2) Yanıt CONFIRM_REQUIRED zarfı DEĞİLse → { ok, data } (normal akış; davranış değişmez).
- *  3) CONFIRM_REQUIRED ise → askConfirm(env) ile kullanıcıya sor.
- *     - vazgeç → { cancelled } (retry YOK).
- *     - onayla → requestFn(confirmation) ile TEK retry → { ok, data }.
+ *  2) Yanıt APPROVAL_REQUIRED zarfı ise → { approval_pending, envelope } (TERMİNAL; retry YOK; statü DEĞİŞMEDİ — P4-3B).
+ *  3) CONFIRM_REQUIRED zarfı DEĞİLse → { ok, data } (normal akış; davranış değişmez).
+ *  4) CONFIRM_REQUIRED ise → askConfirm(env) → vazgeç={cancelled} / onayla=TEK retry → { ok, data }.
  *
- * NOT: confirmation requestFn'e GEÇİRİLİR ama backend consume binding'i (token'ı hangi header/body alanına
- * koyacağı) P3-2C'de bağlanır; bu fazda requestFn confirmation'ı yok sayabilir (backend henüz consume etmiyor).
+ * ⚠️ APPROVAL_REQUIRED kontrolü CONFIRM'den ÖNCE ve ok'tan ÖNCE yapılır → APPROVAL_REQUIRED yanlışlıkla 'ok' (false-success)
+ *    olarak dönmez (aksi halde çağıran statü değişti sanıp refresh ederdi).
  */
 export async function runGuarded<T>(
   requestFn: (confirmation?: GuardedEdgeConfirmation) => Promise<T>,
   askConfirm: (env: GuardedEdgeOutcomeEnvelope) => Promise<boolean>,
 ): Promise<GuardedRunResult<T>> {
   const first = await requestFn();
+  if (isApprovalRequiredEnvelope(first)) {
+    return { status: "approval_pending", envelope: first }; // terminal; askConfirm YOK, retry YOK
+  }
   if (!isConfirmRequiredEnvelope(first)) {
     return { status: "ok", data: first };
   }
