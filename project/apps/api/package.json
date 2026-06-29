@@ -20,6 +20,7 @@
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
     "seed:rates": "ts-node scripts/seed-interest-rates.ts",
+    "seed:tm47d-happy-path": "npx --yes tsx src/scripts/tm47d-happy-path-seed.ts",
     "backfill:due-claimitem": "npx --yes tsx scripts/backfill-due-to-claimitem.ts",
     "clean": "rm -rf dist .turbo node_modules"
   },
