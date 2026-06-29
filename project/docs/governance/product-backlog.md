@@ -183,7 +183,43 @@ Depends On: C2D-PD-1A
 Unlock Condition: ADR-011 accepted and merged.
 Estimated Size: M
 Related Modules: AuditLog, AuditService, ClientOffsetService.getOffsetDetail, future audit projections
+Status: DONE
+
+ID: C2D-PD-1C
+Title: Wire Safe Audit Projection to Generic Audit Endpoints
+Problem: The safe audit projection helper exists, but generic audit read endpoints do not expose it for backward-compatible consumers.
+Business Value: Gives audit UIs a safe projection path without breaking existing operational screens that still depend on raw audit fields.
+Technical Value: Wires ADR-011 policy into the read surface additively; preserves raw contract while enabling staged UI migration.
+Priority: MEDIUM
+Depends On: C2D-PD-1B
+Unlock Condition: Safe helper merged and tested.
+Estimated Size: S
+Related Modules: AuditService, AuditController, AuditLog
+Status: DONE
+
+ID: C2D-PD-1D
+Title: Settings Audit UI safeProjection migration
+Problem: Settings audit detail UI can still render raw oldValues/newValues JSON even after safeProjection is available.
+Business Value: Reduces privacy/security/legal exposure in the admin audit screen.
+Technical Value: Frontend-only migration to consume safeProjection while preserving backend raw compatibility.
+Priority: MEDIUM
+Depends On: C2D-PD-1C
+Unlock Condition: Generic audit endpoints expose additive safeProjection.
+Estimated Size: S
+Related Modules: settings/audit page, AuditService safeProjection response
 Status: READY
+
+ID: C2D-PD-1E
+Title: Haciz audit action-specific safe projection review
+Problem: Haciz history consumes action-specific audit metadata such as debtor summaries and risk labels; generic safe projection intentionally drops non-whitelisted raw metadata.
+Business Value: Keeps haciz history useful without leaking unsafe raw audit payloads.
+Technical Value: Design-gate for dedicated or action-specific safe read projection before changing UI consumption.
+Priority: MEDIUM
+Depends On: C2D-PD-1C
+Unlock Condition: Product confirms which haciz audit labels are safe system facts.
+Estimated Size: S/M
+Related Modules: getCaseHacizAudits, CaseHistoryPanel, HacizHistoryCard, AuditService
+Status: BACKLOG
 
 ---
 
