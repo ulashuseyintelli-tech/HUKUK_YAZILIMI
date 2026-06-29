@@ -153,6 +153,57 @@ export class OfficeApprovalExecutorService {
     return this.officeApproval.markExecutionSucceeded(requestId, approverUserId);
   }
 
+  /**
+   * P4-5B — STUCK-RUNNING RECONCILE (age-blind; hakikat kaynağı = case.caseStatus). Cron'un reconcile-pass'i çağırır.
+   * Crash sonrası orphan RUNNING (executor RUNNING-lock aldı ama terminal işaretlemeden düştü) çözer — NO-MIGRATION:
+   * "ne zamandır RUNNING" timestamp'i YOK → yaşa BAKMAZ, case.caseStatus okuyarak karar verir (R2 kilidi):
+   *   - case YOK → STALE (hedef yok; başarı iddia edilemez)
+   *   - caseStatus === effective intent.status → SUCCEEDED (mutation OLMUŞ = applied-but-unmarked crash; DÜRÜST, RE-APPLY YOK)
+   *   - caseStatus !== intent.status → STALE (mutation OLMAMIŞ; muhafazakâr no-replay; reset/retry AYRI operatör kararı = P4-5C)
+   * markExecutionStale/Succeeded zaten WHERE {NOT_RUN,RUNNING} → RUNNING'i doğrudan terminal'e sürer; canlı executor önce
+   * terminalize ettiyse updateMany count===0 → ConflictException = idempotent no-op (çift-yazma yok). actor=approverUserId (K4).
+   * markExecutionRunning ÇAĞRILMAZ → strict NOT_RUN-only claim-lock korunur. RUNNING dışı satır → ConflictException (reconcile etmez).
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler: OfficeApprovalExecutorCronService.runSweep() reconcile-pass (P4-5B; internal; route YOK).
+   * /// </remarks>
+   */
+  async reconcileStuckRunning(requestId: string, tenantId: string): Promise<OfficeApprovalRequest> {
+    const req = await this.officeApproval.getByIdForTenant(requestId, tenantId);
+    if (req.executionStatus !== OfficeApprovalExecutionStatus.RUNNING) {
+      throw new ConflictException(`Reconcile yalnız RUNNING satır için; '${req.executionStatus}' uygun değil.`);
+    }
+    const approverUserId = req.approverUserId;
+    if (!approverUserId) {
+      throw new ConflictException('RUNNING satırda approver kimliği yok (bozuk kayıt); reconcile edilemez.');
+    }
+    // effective intent: execute() ile AYNI seçim + parse (drift YOK). RUNNING satırın claim-anında intent'i geçerliydi;
+    // yine de malformed/AWC-missing'e karşı defansif → hedef belirsiz → STALE (no-replay).
+    const rawIntent =
+      req.status === OfficeApprovalStatus.APPROVED_WITH_CHANGES ? req.replacementSavedIntent : req.savedIntent;
+    const intent = this.parseChangeStatusIntent(rawIntent);
+    if (!intent) {
+      this.logger.warn(`reconcile(${requestId}): RUNNING ama intent geçersiz → STALE`);
+      return this.officeApproval.markExecutionStale(requestId, approverUserId);
+    }
+    const current = await this.prisma.case.findFirst({
+      where: { id: req.targetRef, tenantId: req.tenantId },
+      select: { caseStatus: true },
+    });
+    if (!current) {
+      this.logger.warn(`reconcile(${requestId}): case YOK → STALE`);
+      return this.officeApproval.markExecutionStale(requestId, approverUserId);
+    }
+    if (current.caseStatus === intent.status) {
+      // applied-but-unmarked (crash sub-case B): mutation gerçekten oldu → SUCCEEDED (dürüst; re-apply YOK).
+      this.logger.warn(`reconcile(${requestId}): caseStatus zaten ${intent.status} (applied-but-unmarked) → SUCCEEDED`);
+      return this.officeApproval.markExecutionSucceeded(requestId, approverUserId);
+    }
+    // not-applied (crash sub-case A): muhafazakâr no-replay → STALE (reset/retry = P4-5C operatör kararı).
+    this.logger.warn(`reconcile(${requestId}): caseStatus ${current.caseStatus} != ${intent.status} (not-applied) → STALE`);
+    return this.officeApproval.markExecutionStale(requestId, approverUserId);
+  }
+
   /** savedIntent/replacementSavedIntent (untyped Json) → {status, reason} ya da null (malformed; → FAILED). */
   private parseChangeStatusIntent(raw: unknown): ChangeStatusIntent | null {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
