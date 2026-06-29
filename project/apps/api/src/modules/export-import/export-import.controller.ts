@@ -166,6 +166,7 @@ export class ExportImportController {
   @UseInterceptors(FileInterceptor("file"))
   async importClients(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId: string,
     @UploadedFile() file: Express.Multer.File
   ) {
     if (!file) {
@@ -176,7 +177,7 @@ export class ExportImportController {
       throw new BadRequestException("Sadece Excel dosyaları (.xlsx, .xls) desteklenir");
     }
 
-    const result = await this.exportImportService.importClientsFromExcel(tenantId, file.buffer);
+    const result = await this.exportImportService.importClientsFromExcel(tenantId, file.buffer, actorUserId);
 
     return {
       message: `${result.success} müvekkil başarıyla içe aktarıldı`,
