@@ -49,4 +49,19 @@ describe('clientIntelStatementApi — tek-zarf (raw) unwrap = resp.data', () => 
     expect(r.id).toBe('cis-9');
     expect(get).toHaveBeenCalledWith('/client-intel-statements/cis-9');
   });
+
+  it('listByCaseAllStatuses: 4 statü paralel çağrılır + birleşir (read-only)', async () => {
+    get
+      .mockResolvedValueOnce({ data: [{ id: 'a', status: 'ACTIVE' }] })
+      .mockResolvedValueOnce({ data: [{ id: 'r', status: 'RETRACTED' }] })
+      .mockResolvedValueOnce({ data: [{ id: 'f', status: 'FALSE_POSITIVE' }] })
+      .mockResolvedValueOnce({ data: [{ id: 's', status: 'SUPERSEDED' }] });
+    const r = await clientIntelStatementApi.listByCaseAllStatuses('case-1');
+    expect(r).toHaveLength(4);
+    expect(r.map((x) => x.status).sort()).toEqual(['ACTIVE', 'FALSE_POSITIVE', 'RETRACTED', 'SUPERSEDED']);
+    expect(get).toHaveBeenCalledWith('/client-intel-statements/case/case-1?status=ACTIVE');
+    expect(get).toHaveBeenCalledWith('/client-intel-statements/case/case-1?status=RETRACTED');
+    expect(get).toHaveBeenCalledWith('/client-intel-statements/case/case-1?status=FALSE_POSITIVE');
+    expect(get).toHaveBeenCalledWith('/client-intel-statements/case/case-1?status=SUPERSEDED');
+  });
 });
