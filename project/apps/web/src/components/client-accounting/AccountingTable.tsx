@@ -28,8 +28,10 @@ export function AccountingTable({ head, children, className, headRowClassName }:
       // UX-v2b (DASH-3 tablo standardı): 14px (text-sm) · sağ-para font-semibold (600) · tabular-nums · ortak ritim py-2.5.
       className={`w-full text-sm tabular-nums [&_td]:px-2.5 [&_td]:py-2.5 [&_th]:px-2.5 [&_th]:py-2.5 [&_td.text-right]:whitespace-nowrap [&_td.text-right]:font-semibold ${className ?? ''}`}
     >
-      <thead className="sticky top-0 z-10 bg-gray-50 [&_th]:font-semibold">
-        <tr className={`border-b text-left ${headRowClassName ?? ''}`}>{head}</tr>
+      {/* UX-v2c (DASH-2 korunur — yeni sticky sistemi YOK): mevcut sticky thead + scroll'da kalıcı 1px ayraç.
+          border-b row-sticky'de bazı tarayıcılarda kaybolabildiği için th hücresine inset gölge (kayma sırasında durur). */}
+      <thead className="sticky top-0 z-10 bg-gray-50 [&_th]:font-semibold [&_th]:shadow-[inset_0_-1px_0_0_#e5e7eb]">
+        <tr className={`text-left ${headRowClassName ?? ''}`}>{head}</tr>
       </thead>
       <tbody className="divide-y">{children}</tbody>
     </table>
