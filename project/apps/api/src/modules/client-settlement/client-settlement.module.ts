@@ -14,16 +14,17 @@ import { ClientAccountingController } from './client-accounting.controller';
 import { ClientOffsetService } from './client-offset.service';
 import { ClientOffsetController } from './client-offset.controller';
 import { ClientPayoutManualReversalController } from './client-payout-manual-reversal.controller';
+import { ClientPayoutManualReversalReadService } from './client-payout-manual-reversal-read.service';
 import { ClientPayoutManualReversalService } from './client-payout-manual-reversal.service';
 
 /**
- * TM3 M1/M2/M3/M1R — Müvekkil Settlement Bridge (Claude domaini).
- * M1:  PAYMENT_RECEIVED outbox event'i → CollectionDisposition draft (handler registration; D2).
- * M2:  disposition posting (kullanıcı onayı → POSTED). ClientStatementLine yazımı M2'de DEĞİL —
- *      ClientStatement.collect() POSTED disposition line'larını okur (model A).
- * M3:  ClientPayout (CLIENT_PAYABLE settlement → CLIENT_PAYOUT_SENT). LEDGER DEĞİL; BalanceLedger'a yazmaz (D1).
- * M1R: PAYMENT_REVERSED outbox event'i → aktif (HELD) disposition'ı REVERSED yapar / POSTED'i
- *      manuel-reversal-required olarak consume eder (ayrı exact key; M1 handler'ına dokunmaz).
+ * TM3 M1/M2/M3/M1R - Muvekkil Settlement Bridge (Claude domaini).
+ * M1:  PAYMENT_RECEIVED outbox event'i -> CollectionDisposition draft (handler registration; D2).
+ * M2:  disposition posting (kullanici onayi -> POSTED). ClientStatementLine yazimi M2'de DEGIL -
+ *      ClientStatement.collect() POSTED disposition line'larini okur (model A).
+ * M3:  ClientPayout (CLIENT_PAYABLE settlement -> CLIENT_PAYOUT_SENT). LEDGER DEGIL; BalanceLedger'a yazmaz (D1).
+ * M1R: PAYMENT_REVERSED outbox event'i -> aktif (HELD) disposition'i REVERSED yapar / POSTED'i
+ *      manuel-reversal-required olarak consume eder (ayri exact key; M1 handler'ina dokunmaz).
  */
 @Module({
   imports: [PrismaModule, V28EngineModule],
@@ -44,6 +45,7 @@ import { ClientPayoutManualReversalService } from './client-payout-manual-revers
     ClientSettlementReadService,
     ClientOffsetService,
     ClientPayoutManualReversalService,
+    ClientPayoutManualReversalReadService,
   ],
   exports: [CollectionDispositionService, CollectionReversalService],
 })
