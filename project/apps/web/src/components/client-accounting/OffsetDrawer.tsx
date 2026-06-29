@@ -123,6 +123,18 @@ export function OffsetDrawer({ clientId, currency, isOpen, onClose, onApplied, i
     () => new Set(rows.filter((r) => r.kind === 'REVERSAL' && r.reversesOffsetId).map((r) => r.reversesOffsetId as string)),
     [rows],
   );
+  const historyStats = useMemo(() => {
+    const applyCount = rows.filter((r) => r.kind === 'APPLY').length;
+    const reversalCount = rows.filter((r) => r.kind === 'REVERSAL').length;
+    const reversedApplyCount = rows.filter((r) => r.kind === 'APPLY' && reversedApplyIds.has(r.id)).length;
+
+    return {
+      applyCount,
+      activeApplyCount: applyCount - reversedApplyCount,
+      reversedApplyCount,
+      reversalCount,
+    };
+  }, [reversedApplyIds, rows]);
 
   function buildInput(): CreateOffsetInput | null {
     if (!selectedBucket || !selectedExpense || !amountValid) return null;
@@ -363,10 +375,11 @@ export function OffsetDrawer({ clientId, currency, isOpen, onClose, onApplied, i
                     <Lock className="mt-0.5 h-3 w-3 shrink-0" /> Mahsup iptali yalnız Partner / Manager tarafından yapılabilir.
                   </p>
                 )}
+                <HistorySummary stats={historyStats} />
                 <AccountingTable
                   head={
                     <>
-                      <th className="whitespace-nowrap">Tarih</th>
+                      <th className="whitespace-nowrap">Kayıt</th>
                       <th className="text-right">Tutar</th>
                       <th>Durum</th>
                       <th className="text-right">İşlem</th>
@@ -378,7 +391,12 @@ export function OffsetDrawer({ clientId, currency, isOpen, onClose, onApplied, i
                     const alreadyReversed = r.kind === 'APPLY' && reversedApplyIds.has(r.id);
                     return (
                       <tr key={r.id} className={`hover:bg-gray-50 ${isReversal ? 'bg-slate-50/50' : ''}`}>
-                        <td className="whitespace-nowrap text-gray-600">{new Date(r.createdAt).toLocaleDateString('tr-TR')}</td>
+                        <td className="min-w-[132px] text-gray-600">
+                          <div className="whitespace-nowrap">{formatOffsetDate(r.createdAt)}</div>
+                          <div className="mt-0.5 text-[11px] text-gray-400">
+                            {isReversal ? `Geri alma - ${shortOffsetId(r.reversesOffsetId)}` : `Mahsup - ${shortOffsetId(r.id)}`}
+                          </div>
+                        </td>
                         <td className="text-right">{formatMoneyString(r.amount, r.currency)}</td>
                         <td className="whitespace-nowrap">
                           {isReversal ? (
@@ -428,6 +446,27 @@ export function OffsetDrawer({ clientId, currency, isOpen, onClose, onApplied, i
   );
 }
 
+function HistorySummary({ stats }: {
+  stats: { applyCount: number; activeApplyCount: number; reversedApplyCount: number; reversalCount: number };
+}) {
+  return (
+    <div className="mb-3 grid grid-cols-3 gap-2 text-[11px]" aria-label="Mahsup geçmiş özeti">
+      <div className="rounded-md border border-emerald-100 bg-emerald-50 px-2 py-1.5" aria-label={`Aktif mahsup: ${stats.activeApplyCount}`}>
+        <div className="text-gray-500">Aktif</div>
+        <div className="font-semibold text-emerald-700">{stats.activeApplyCount}</div>
+      </div>
+      <div className="rounded-md border border-amber-100 bg-amber-50 px-2 py-1.5" aria-label={`İptal edilen mahsup: ${stats.reversedApplyCount}`}>
+        <div className="text-gray-500">İptal edilen</div>
+        <div className="font-semibold text-amber-700">{stats.reversedApplyCount}</div>
+      </div>
+      <div className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5" aria-label={`Geri alma kaydı: ${stats.reversalCount}`}>
+        <div className="text-gray-500">Geri alma</div>
+        <div className="font-semibold text-slate-700">{stats.reversalCount}</div>
+      </div>
+    </div>
+  );
+}
+
 function TabButton({ active, onClick, children }: { active: boolean; onClick: () => void; children: React.ReactNode }) {
   return (
     <button
@@ -442,6 +481,16 @@ function TabButton({ active, onClick, children }: { active: boolean; onClick: ()
       {children}
     </button>
   );
+}
+
+function formatOffsetDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString('tr-TR', { dateStyle: 'short', timeStyle: 'short' });
+}
+
+function shortOffsetId(value: string | null | undefined) {
+  return value ? value.slice(0, 8) : '-';
 }
 
 function PreviewRow({ label, before, after, currency, bold }: { label: string; before: string | null; after: string | null; currency: string; bold?: boolean }) {
@@ -464,7 +513,8 @@ function ReverseModal({ offset, currency, onClose, onReversed }: {
 }) {
   const [reason, setReason] = useState('');
   const [idempotencyKey] = useState<string>(genIdempotencyKey);
-  const reasonValid = reason.trim().length >= 10;
+  const trimmedReasonLength = reason.trim().length;
+  const reasonValid = trimmedReasonLength >= 10;
 
   const mut = useMutation({
     mutationFn: () => clientOffsetApi.reverse(offset.id, { reason: reason.trim(), idempotencyKey }),
@@ -473,23 +523,35 @@ function ReverseModal({ offset, currency, onClose, onReversed }: {
 
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
-      <div className="w-full max-w-md rounded-lg bg-white" onClick={(e) => e.stopPropagation()}>
+      <div
+        className="w-full max-w-md rounded-lg bg-white"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="offset-reverse-title"
+        aria-describedby="offset-reverse-description"
+        onClick={(e) => e.stopPropagation()}
+      >
         <div className="flex items-center justify-between border-b p-4">
-          <h3 className="font-semibold text-gray-900">Mahsup İptali</h3>
+          <h3 id="offset-reverse-title" className="font-semibold text-gray-900">Mahsup İptali</h3>
           <button onClick={onClose} aria-label="Kapat" className="rounded p-1 hover:bg-gray-100"><X className="h-5 w-5" /></button>
         </div>
         <div className="space-y-3 p-4">
-          <div className="rounded-md border bg-gray-50 p-3 text-[13px] text-gray-700">
+          <div id="offset-reverse-description" className="rounded-md border bg-gray-50 p-3 text-[13px] text-gray-700">
             İptal edilecek mahsup: <span className="font-semibold">{formatMoneyString(offset.amount, offset.currency || currency)}</span>
             <div className="mt-1 text-[11px] text-gray-500">İptal, ters yönlü AYRI bir kayıt oluşturur; orijinal mahsup değiştirilmez.</div>
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-gray-600">İptal Gerekçesi (en az 10 karakter)</label>
+            <label htmlFor="offset-reverse-reason" className="mb-1 block text-xs font-medium text-gray-600">İptal Gerekçesi (en az 10 karakter)</label>
             <textarea
+              id="offset-reverse-reason"
               value={reason} onChange={(e) => setReason(e.target.value)} rows={3}
+              aria-invalid={reason.length > 0 && !reasonValid}
+              aria-describedby="offset-reverse-reason-help"
               className="w-full rounded border px-3 py-2 text-sm" placeholder="Gerekçe…" autoFocus
             />
-            {!reasonValid && reason.length > 0 && <p className="mt-1 text-[11px] text-amber-600">En az 10 karakter gerekli.</p>}
+            <p id="offset-reverse-reason-help" className={`mt-1 text-[11px] ${reasonValid ? 'text-gray-500' : 'text-amber-600'}`}>
+              {trimmedReasonLength}/10 karakter. Gerekçe backend tarafından da doğrulanır.
+            </p>
           </div>
           {mut.isError && (
             <div className="flex items-start gap-2 text-[12px] text-red-600">

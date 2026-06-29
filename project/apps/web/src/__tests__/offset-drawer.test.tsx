@@ -174,8 +174,24 @@ describe('OffsetDrawer — C-2C Geçmiş + reverse', () => {
     await gotoHistory();
     await waitFor(() => expect(screen.getByText('İptal edildi')).toBeTruthy());
     expect(screen.getByText('İptal (geri alma)')).toBeTruthy();
+    expect(screen.getByLabelText('Aktif mahsup: 0')).toBeTruthy();
+    expect(screen.getByLabelText('İptal edilen mahsup: 1')).toBeTruthy();
+    expect(screen.getByLabelText('Geri alma kaydı: 1')).toBeTruthy();
+    expect(screen.getByText('Mahsup - a1')).toBeTruthy();
+    expect(screen.getByText('Geri alma - a1')).toBeTruthy();
     // a1 zaten reverse edilmiş → İptal disabled
     expect((screen.getByRole('button', { name: /^İptal$/ }) as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it('Geçmiş özeti aktif APPLY ile reversal kaydını ayrı sayar', async () => {
+    renderDrawer(
+      { clientId: 'cl-1', currency: 'TRY', canApply: true, eligiblePayableBuckets: [], eligibleExpenseRequests: [] },
+      [APPLY_ROW(), APPLY_ROW({ id: 'a2' }), REVERSAL_ROW()],
+    );
+    await gotoHistory();
+    await waitFor(() => expect(screen.getByLabelText('Aktif mahsup: 1')).toBeTruthy());
+    expect(screen.getByLabelText('İptal edilen mahsup: 1')).toBeTruthy();
+    expect(screen.getByLabelText('Geri alma kaydı: 1')).toBeTruthy();
   });
 
   it('canApply + reverse-edilmemiş APPLY → İptal aktif; reason≥10 modal ile reverse(offsetId, {reason}) çağrılır', async () => {
@@ -186,6 +202,8 @@ describe('OffsetDrawer — C-2C Geçmiş + reverse', () => {
     const iptal = screen.getByRole('button', { name: /^İptal$/ }) as HTMLButtonElement;
     expect(iptal.disabled).toBe(false);
     fireEvent.click(iptal);
+    expect(await screen.findByRole('dialog', { name: /Mahsup/ })).toBeTruthy();
+    expect(screen.getByText(/0\/10 karakter/)).toBeTruthy();
     const submit = () => screen.getByRole('button', { name: /Mahsubu İptal Et/ }) as HTMLButtonElement;
     await waitFor(() => expect(submit()).toBeTruthy());
     // reason<10 → submit pasif; ≥10 → aktif
