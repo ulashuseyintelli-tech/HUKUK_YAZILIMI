@@ -16,7 +16,7 @@ const D = (n: number) => new Prisma.Decimal(n);
 const DISP_HELD = {
   id: 'd1', collectionId: 'col1', caseId: 'case1', beneficiaryScope: 'SINGLE_CASE_CLIENT',
   caseClientId: 'cc-A', totalAmount: D(100), currency: 'TRY', status: 'HELD_PENDING_DISTRIBUTION',
-  approvalRequestId: null, approvedById: null,
+  approvalRequestId: null, approvedById: null, manualReversalRequiredAt: null,
 };
 const DISP_RECOMMENDED = { ...DISP_HELD, status: 'DISTRIBUTION_RECOMMENDED', approvalRequestId: 'appr-1' };
 const DISP_APPROVED = { ...DISP_HELD, status: 'DISTRIBUTION_APPROVED', approvalRequestId: 'appr-1', approvedById: 'u2' };
@@ -67,6 +67,14 @@ describe('DispositionPostingService.recommend', () => {
     expect(approval.createPendingRequest).toHaveBeenCalledWith(
       expect.objectContaining({ actionCode: 'COLLECTION_DISPOSITION_POST', targetRef: 'd1', requesterUserId: 'u1' }),
     );
+    const pendingArg = approval.createPendingRequest.mock.calls[0][0];
+    expect(pendingArg.reason).toContain('Dagitim kesinlesmeden once yetkili onayi gerekir.');
+    expect(pendingArg.savedIntent).toEqual(expect.objectContaining({
+      version: 'S9H_COLLECTION_DISPOSITION_POST_INTENT_V1',
+      risk: expect.objectContaining({ decision: 'REQUIRE_APPROVAL' }),
+      visibility: expect.objectContaining({ detailRequiresServerSideMasking: true }),
+    }));
+    expect(JSON.stringify(pendingArg.savedIntent)).not.toContain('internalMessage');
     expect(tx.collectionDispositionLine.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ type: 'CLIENT_PAYABLE', caseClientId: 'cc-A' }) }),
     );
@@ -76,19 +84,28 @@ describe('DispositionPostingService.recommend', () => {
     expect(tx.balanceLedger.create).not.toHaveBeenCalled(); // recommend'da finansal etki YOK
   });
 
-  it('çok satırlı: tüm non-HELD bucketlar + toplam==tahsilat', async () => {
+  it('çok satırlı: auto-postable bucketlar + toplam==tahsilat', async () => {
     const { prisma, tx } = buildPrisma();
     const res = await svc(prisma).recommend('t1', 'd1', {
       lines: [
         { type: 'CLIENT_PAYABLE', amount: '10' }, { type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: '15' },
         { type: 'CONTRACTUAL_FEE_WITHHELD', amount: '20' }, { type: 'FIRM_EXPENSE_REIMBURSEMENT', amount: '5' },
-        { type: 'OFFSET_CLIENT_ADVANCE', amount: '25' }, { type: 'OTHER', amount: '25' },
+        { type: 'OFFSET_CLIENT_ADVANCE', amount: '50' },
       ],
     }, { userId: 'u1' });
-    expect(res.lineCount).toBe(6);
-    expect(tx.collectionDispositionLine.create).toHaveBeenCalledTimes(6);
+    expect(res.lineCount).toBe(5);
+    expect(tx.collectionDispositionLine.create).toHaveBeenCalledTimes(5);
   });
 
+  it('OTHER bucket -> MANUAL_REVIEW; OfficeApprovalRequest yaratılmaz ve transaction açılmaz', async () => {
+    const { prisma } = buildPrisma();
+    const approval = buildApproval();
+    await expect(svc(prisma, approval).recommend('t1', 'd1', {
+      lines: [{ type: 'CLIENT_PAYABLE', amount: '75' }, { type: 'OTHER', amount: '25' }],
+    }, { userId: 'u1' })).rejects.toThrow(/manuel inceleme|OTHER/);
+    expect(approval.createPendingRequest).not.toHaveBeenCalled();
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
   it('sum < total → reject, $transaction açılmaz', async () => {
     const { prisma } = buildPrisma();
     await expect(svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_PAYABLE', amount: '70' }] }, { userId: 'u1' })).rejects.toThrow(/eşit olmalı/);
@@ -198,6 +215,16 @@ describe('DispositionPostingService.post', () => {
     await expect(svc(prisma).post('t1', 'd1', { userId: 'u3' })).rejects.toThrow(/APPROVED değil/);
   });
 
+  it('manualReversalRequiredAt marker taşıyan disposition post edilmez; manual review olur ve mutation yoktur', async () => {
+    const { prisma } = buildPrisma({
+      disp: { ...DISP_APPROVED, manualReversalRequiredAt: new Date('2026-06-27T00:00:00.000Z') },
+      lines: [{ id: 'l1', type: 'CLIENT_PAYABLE', amount: D(100) }],
+    });
+    const approval = buildApproval();
+    await expect(svc(prisma, approval).post('t1', 'd1', { userId: 'u3' })).rejects.toThrow(/manuel reversal|inceleme/);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(approval.markExecutionSucceeded).not.toHaveBeenCalled();
+  });
   it('OFFSET_CLIENT_ADVANCE → BalanceLedger CREDIT korelasyonlu (mevcut line id ile)', async () => {
     const { prisma, tx } = buildPrisma({ disp: DISP_APPROVED, lines: [{ id: 'lineX', type: 'OFFSET_CLIENT_ADVANCE', amount: D(100) }] });
     await svc(prisma).post('t1', 'd1', { userId: 'u3' });
