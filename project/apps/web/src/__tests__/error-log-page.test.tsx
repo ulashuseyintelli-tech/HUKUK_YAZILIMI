@@ -30,18 +30,19 @@ describe("ErrorLogsPage (PR-5)", () => {
     expect(screen.queryByText("Bu sayfayı görüntüleme yetkiniz yok.")).toBeNull();
   });
 
-  it("dolu liste → mesaj render + satıra tıklayınca drawer açılır", async () => {
+  it("dolu liste → humanized başlık (raw mesaj DEĞİL) + tıklayınca drawer açılır", async () => {
     (api.getErrorLogs as any).mockResolvedValue({
       logs: [
         {
           id: "l1",
           level: "ERROR",
-          source: "API",
-          message: "kayıt mesajı",
+          source: "FRONTEND",
+          message: "Unhandled promise rejection",
           isResolved: false,
           createdAt: "2026-06-28T00:00:00Z",
           occurrenceCount: 1,
-          metadata: { requestId: "req-1" },
+          endpoint: "web:rejection /clients/x/accounting",
+          metadata: { requestId: "req-1", safeErrorCode: "UNHANDLED_REJECTION" },
         },
       ],
       total: 1,
@@ -50,8 +51,11 @@ describe("ErrorLogsPage (PR-5)", () => {
       totalPages: 1,
     });
     render(<ErrorLogsPage />);
-    await waitFor(() => expect(screen.getByText("kayıt mesajı")).toBeInTheDocument());
-    fireEvent.click(screen.getByText("kayıt mesajı"));
+    // Liste başlığı humanized: "Arayüz İşlem Hatası" (ham "Unhandled promise rejection" DEĞİL)
+    await waitFor(() => expect(screen.getByText("Arayüz İşlem Hatası")).toBeInTheDocument());
+    expect(screen.queryByText("Unhandled promise rejection")).toBeNull();
+    fireEvent.click(screen.getByText("Arayüz İşlem Hatası"));
     expect(screen.getByText("Hata Detayı")).toBeInTheDocument(); // drawer açıldı
+    expect(screen.getByText("Bu hata ne anlama geliyor?")).toBeInTheDocument();
   });
 });

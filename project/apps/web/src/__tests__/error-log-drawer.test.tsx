@@ -28,13 +28,19 @@ describe("ErrorLogDetailDrawer (PR-5)", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("requestId (üst alan) + message + stack + metadata JSON + occurrenceCount render eder", () => {
+  it("humanized bölümler + KORUNAN teknik detay render eder", () => {
     render(<ErrorLogDetailDrawer log={baseLog} onClose={vi.fn()} onResolved={vi.fn()} />);
-    expect(screen.getByText("req-xyz")).toBeInTheDocument(); // requestId üst alan (exact)
-    expect(screen.getByText(/boom error message/)).toBeInTheDocument();
+    // Katman 1 — humanized (NETWORK_ERROR → Bağlantı Hatası)
+    expect(screen.getByText("Bu hata ne anlama geliyor?")).toBeInTheDocument();
+    expect(screen.getByText("Bağlantı Hatası")).toBeInTheDocument();
+    expect(screen.getByText("Teknik ekip için çözüm notu")).toBeInTheDocument();
+    // Katman 2 — korunan teknik detay
+    expect(screen.getByText("İşlem Kimliği")).toBeInTheDocument(); // RequestId türkçe label
+    expect(screen.getByText("req-xyz")).toBeInTheDocument(); // değer korunur
+    expect(screen.getByText(/boom error message/)).toBeInTheDocument(); // ham mesaj KAYBOLMAZ
     expect(screen.getByText(/at handler/)).toBeInTheDocument(); // stack <pre>
-    expect(screen.getByText(/NETWORK_ERROR/)).toBeInTheDocument(); // metadata JSON <pre>
-    expect(screen.getByText("3")).toBeInTheDocument(); // occurrenceCount
+    expect(screen.getAllByText(/NETWORK_ERROR/).length).toBeGreaterThan(0); // Teknik Kod + metadata JSON
+    expect(screen.getByText("3")).toBeInTheDocument(); // occurrenceCount (Tekrar)
   });
 
   it("çözülmemiş → resolve formu görünür", () => {
