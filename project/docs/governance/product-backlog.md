@@ -161,17 +161,29 @@ Estimated Size: S/M
 Related Modules: ClientOffsetService.getOffsetDetail, OffsetDrawer
 Status: BACKLOG
 
-ID: C2D-PD-1
-Title: Future user-authored audit description sanitization policy
-Problem: C-2D safely hides raw audit metadata, and current ClientOffset audit descriptions are system-generated. If future audit descriptions include user-authored text, rendering `description` as `safeSummary` may become a privacy/security/legal risk.
-Business Value: Prevents accidental exposure of sensitive free text in audit detail UI.
-Technical Value: Establishes a clear safe-summary policy before adding richer audit projections.
+ID: C2D-PD-1A
+Title: Audit Description Sanitization ADR
+Problem: C-2D safely hides raw audit metadata, but future audit-rich UIs need a canonical product/security/legal policy for user-authored audit descriptions.
+Business Value: Prevents accidental exposure of sensitive free text in audit detail UI and preserves legal distinction between system facts and user statements.
+Technical Value: Locks the architecture decision before implementation; prevents ad-hoc safe-summary rules.
 Priority: MEDIUM
 Depends On: C-2D closed
-Unlock Condition: Product/security decision on whether user-authored audit descriptions may be shown, redacted, or mapped to action-only labels.
-Estimated Size: S (decision) / M (if implementation follows)
-Related Modules: AuditLog, ClientOffsetService.getOffsetDetail, future audit projections
-Status: BACKLOG
+Unlock Condition: C2D-PD-1 analysis completed.
+Estimated Size: S
+Related Modules: AuditLog, AuditService, future audit projections
+Status: DONE
+
+ID: C2D-PD-1B
+Title: Audit Safe Projection Helper
+Problem: ADR-011 policy needs a narrow technical helper so future audit projections do not treat user-authored text as safe summaries.
+Business Value: Reduces privacy/security/legal risk in audit UIs while preserving operational visibility.
+Technical Value: Centralizes safe-summary behavior with tests; avoids repeating action-specific sanitization logic.
+Priority: MEDIUM
+Depends On: C2D-PD-1A
+Unlock Condition: ADR-011 accepted and merged.
+Estimated Size: M
+Related Modules: AuditLog, AuditService, ClientOffsetService.getOffsetDetail, future audit projections
+Status: READY
 
 ---
 
