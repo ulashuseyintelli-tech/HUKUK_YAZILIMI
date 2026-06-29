@@ -3863,6 +3863,119 @@ enum ClientOffsetKind {
 }
 
 // ============================================================
+// S9F - Accounting journal contract. Additive persistence only:
+// no live posting service, no controller, no endpoint, no backfill.
+// Existing LedgerEntry/LedgerAllocation remain the TBK100/legal ledger.
+// Source references are scalar dimensions to avoid changing owner tables.
+// ============================================================
+enum AccountingJournalEntryType {
+  COLLECTION_DISTRIBUTION_POSTED
+  CLIENT_PAYOUT_RECORDED
+  CLIENT_OFFSET_APPLIED
+  CLIENT_OFFSET_REVERSED
+  CLIENT_ADVANCE_LEDGER_RECORDED
+  ACCOUNTING_JOURNAL_REVERSAL
+}
+
+enum AccountingJournalSourceType {
+  COLLECTION_DISPOSITION_LINE
+  CLIENT_PAYOUT
+  CLIENT_OFFSET
+  BALANCE_LEDGER
+  ACCOUNTING_JOURNAL_ENTRY
+}
+
+enum AccountingAccountCode {
+  CASH_CLEARING
+  CLIENT_PAYABLE
+  CLIENT_EXPENSE_REIMBURSEMENT_PAYABLE
+  CLIENT_EXPENSE_RECEIVABLE
+  ATTORNEY_FEE_REVENUE
+  FIRM_EXPENSE_REIMBURSEMENT
+  CLIENT_ADVANCE_BALANCE
+}
+
+enum AccountingJournalDirection {
+  DEBIT
+  CREDIT
+}
+
+model AccountingJournalEntry {
+  id       String @id @default(cuid())
+  tenantId String
+
+  // Header dimension. Some source events, such as ClientOffset, can carry
+  // multi-case lines; line-level dimensions remain canonical for reporting.
+  caseId   String?
+  currency String  @default("TRY")
+
+  entryType    AccountingJournalEntryType
+  sourceType   AccountingJournalSourceType
+  sourceId     String
+  sourceAction String
+
+  idempotencyKey String
+  sourceHash     String?
+  metadata       Json?
+
+  sourceOccurredAt DateTime?
+  postedAt         DateTime @default(now())
+  postedById       String?
+
+  reversalOfEntryId String?                 @unique
+  reversalOfEntry   AccountingJournalEntry? @relation("AccountingJournalEntryReversal", fields: [reversalOfEntryId], references: [id], onDelete: Restrict)
+  reversedByEntry   AccountingJournalEntry? @relation("AccountingJournalEntryReversal")
+
+  createdAt DateTime @default(now())
+
+  lines AccountingJournalLine[]
+
+  @@unique([tenantId, idempotencyKey])
+  @@unique([tenantId, sourceType, sourceId, sourceAction], map: "accounting_journal_entry_source_unique")
+  @@index([tenantId, caseId, currency])
+  @@index([tenantId, entryType])
+  @@index([tenantId, sourceType, sourceId])
+  @@index([tenantId, postedAt])
+  @@index([reversalOfEntryId])
+}
+
+model AccountingJournalLine {
+  id             String                 @id @default(cuid())
+  tenantId       String
+  journalEntryId String
+  journalEntry   AccountingJournalEntry @relation(fields: [journalEntryId], references: [id], onDelete: Cascade)
+
+  lineNo      Int
+  accountCode AccountingAccountCode
+  direction   AccountingJournalDirection
+
+  amount   Decimal @db.Decimal(15, 2)
+  currency String  @default("TRY")
+
+  caseId            String?
+  clientId          String?
+  caseClientId      String?
+  collectionId      String?
+  dispositionLineId String?
+  payoutId          String?
+  offsetId          String?
+  balanceLedgerId   String?
+
+  createdAt DateTime @default(now())
+
+  @@unique([journalEntryId, lineNo])
+  @@index([tenantId, caseId, currency])
+  @@index([tenantId, accountCode])
+  @@index([tenantId, caseClientId])
+  @@index([tenantId, clientId])
+  @@index([collectionId])
+  @@index([dispositionLineId])
+  @@index([payoutId])
+  @@index([offsetId])
+  @@index([balanceLedgerId])
+}
+
+// ============================================================
 // MÜVEKKİL İSTİHBARAT BEYANI (Faz 4.0) — yalnız YUMUŞAK istihbarat
 // (gelir/ticari/aile/dijital/tahsilat-beyanı/strateji). Adres→DebtorAddress,
 // varlık→Asset, iletişim→Debtor BU MODELE YAZILMAZ (anti-tekrar).
