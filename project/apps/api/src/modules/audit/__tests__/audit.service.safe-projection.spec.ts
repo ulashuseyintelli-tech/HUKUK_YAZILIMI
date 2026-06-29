@@ -38,6 +38,9 @@ describe('AuditService safe projection reads', () => {
       findMany: jest.Mock;
       count: jest.Mock;
     };
+    caseDebtor: {
+      findMany: jest.Mock;
+    };
   };
   let service: AuditService;
 
@@ -47,6 +50,9 @@ describe('AuditService safe projection reads', () => {
       auditLog: {
         findMany: jest.fn(),
         count: jest.fn(),
+      },
+      caseDebtor: {
+        findMany: jest.fn(),
       },
     };
     service = new AuditService(prisma as any);
@@ -168,5 +174,89 @@ describe('AuditService safe projection reads', () => {
     expect(result[0].description).toBe('Client status changed for ada.lovelace@example.com');
     expect(result[0].safeProjection.description).toContain('ad****@example.com');
     expect(result[0].safeProjection.description).not.toContain('ada.lovelace@example.com');
+  });
+  it('getLogs returns action-specific hacizSafeProjection without exposing raw haciz metadata labels', async () => {
+    const hacizLog = {
+      id: 'haciz-audit-1',
+      tenantId: 'tenant-1',
+      action: 'HACIZ_REQUEST_SUBMITTED',
+      entityType: 'CASE',
+      entityId: 'case-1',
+      userId: 'user-1',
+      userName: 'Av. Operator',
+      userIp: '127.0.0.1',
+      userAgent: 'jest',
+      description: 'Haciz talebi gönderildi (BANK). Karar-anı risk: YUKSEK.',
+      metadata: {
+        targetType: 'BANK',
+        amount: 1000,
+        uyapRequestId: 'uyap-req-1',
+        cpeTraceId: 'trace-1',
+        overallLevel: 'YUKSEK',
+        debtors: [
+          { debtorId: 'debtor-1', name: 'RAW SNAPSHOT BORCLU 1', level: 'YUKSEK', reasonIds: ['INTEL_NO_ADDRESS'] },
+          { debtorId: 'debtor-2', name: 'RAW SNAPSHOT BORCLU 2', level: 'ORTA', reasonIds: ['INTEL_90D_MISSING'] },
+        ],
+        cpeWarnings: [{ secret: 'RAW CPE WARNING' }],
+      },
+      oldValues: null,
+      newValues: null,
+      createdAt,
+    };
+    prisma.auditLog.findMany.mockResolvedValue([hacizLog]);
+    prisma.auditLog.count.mockResolvedValue(1);
+    prisma.caseDebtor.findMany.mockResolvedValue([
+      { caseId: 'case-1', debtorId: 'debtor-1', debtor: { name: 'Current Domain Debtor' } },
+    ]);
+
+    const result = await service.getLogs(
+      'tenant-1',
+      { action: 'HACIZ_REQUEST_SUBMITTED', entityType: 'CASE', entityId: 'case-1' },
+      1,
+      20,
+    );
+
+    expect(prisma.caseDebtor.findMany).toHaveBeenCalledWith({
+      where: {
+        caseId: { in: ['case-1'] },
+        debtorId: { in: ['debtor-1', 'debtor-2'] },
+        case: { is: { tenantId: 'tenant-1' } },
+        debtor: { is: { tenantId: 'tenant-1' } },
+      },
+      select: {
+        caseId: true,
+        debtorId: true,
+        debtor: { select: { name: true } },
+      },
+    });
+
+    const projection = result.logs[0].hacizSafeProjection;
+    expect(projection).toMatchObject({
+      action: 'HACIZ_REQUEST_SUBMITTED',
+      targetType: { code: 'BANK', label: 'Banka' },
+      overallLevel: { code: 'YUKSEK', label: 'Yüksek' },
+      actor: { id: 'user-1', displayName: 'Av. Operator' },
+      uyapRequestId: 'uyap-req-1',
+      cpeTraceId: 'trace-1',
+      cpeWarningsPresent: true,
+      cpeWarningsCount: 1,
+    });
+    expect(projection?.debtors[0]).toMatchObject({
+      debtorReference: 'debtor-1',
+      displayLabel: 'Current Domain Debtor',
+      level: { code: 'YUKSEK', label: 'Yüksek' },
+      reasons: [{ id: 'INTEL_NO_ADDRESS', label: 'Borçlunun kayıtlı adresi yok' }],
+    });
+    expect(projection?.debtors[1]).toMatchObject({
+      debtorReference: 'debtor-2',
+      displayLabel: 'Borçlu #2',
+      level: { code: 'ORTA', label: 'Orta' },
+      reasons: [{ id: 'INTEL_90D_MISSING', label: 'Son 90 günde doğrulanmış saha istihbaratı yok' }],
+    });
+
+    const serializedProjection = JSON.stringify(projection);
+    expect(serializedProjection).not.toContain('RAW SNAPSHOT BORCLU');
+    expect(serializedProjection).not.toContain('RAW CPE WARNING');
+    expect(result.logs[0].metadata).toEqual(hacizLog.metadata);
   });
 });
