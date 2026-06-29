@@ -16,6 +16,165 @@ Onay almadan kodlamaya geçme ne yapacağını söyle onay aldıktan sonra devam
 
 Daha önce bir yeri yaparken başka yeri bozduğun için bu kuralları otomatik yaptık ki aynı şeyi yapma diye.
 
+## AGENT OPERATING STANDARD v1.0
+
+Bu standart HUKUK_YAZILIMI projesinde çalışan tüm ajanlar (Codex, Claude, ChatGPT vb.) için varsayılan çalışma biçimidir. AGENTS.md ana ve bağlayıcı ajan standardıdır; `project/docs/governance/` ise roadmap, backlog, karar ve süreç kayıtlarının tutulduğu governance alanıdır. Çift kural seti oluşturulmaz.
+
+### 1. Çalışma Seviyesi
+
+Her yeni görev şu formatla başlar:
+
+```text
+ÇALIŞMA SEVİYESİ ÖNERİSİ
+
+- Faster
+- Normal
+- High
+- Ultra
+
+Neden: ...
+```
+
+Seçilen seviye tek cümleyle gerekçelendirilir. Mevcut Model / Effort önerisi bu dört seviyeye yorumlanır: basit okuma/git işleri `Faster`, olağan docs veya düşük riskli değişiklikler `Normal`, backend davranış değişikliği `High`, migration/finans/multitenant/veri bütünlüğü işleri `Ultra`.
+
+### 2. Ön Analiz Zorunludur
+
+Kod yazmadan önce mutlaka ön analiz yapılır. En az şu başlıklar raporlanır:
+
+- Çağıran yerler
+- Impact Scope
+- Multitenant etkisi
+- Tablo ilişkileri
+- Schema etkisi
+- Migration etkisi
+- Runtime etkisi
+- Güvenlik etkisi
+- Mevcut mimariyle uyumu
+
+Docs-only işlerde bu başlıklar "YOK" veya "etkisi yok" şeklinde kapatılabilir; ancak bilinçli olarak değerlendirilmeden geçilmez.
+
+### 3. Scope Protection ve Backlog Triage
+
+Hiçbir görev kendi kapsamını büyütemez. Yeni fikir bulunduğunda önce değerlendirilir:
+
+- Mevcut fazın parçası mı?
+- Yeni schema/migration gerektiriyor mu?
+- Mevcut mimariyi değiştiriyor mu?
+- Active Roadmap içinde mi?
+
+Mevcut fazın parçası değilse implementasyon yapılmaz; Product Backlog maddesi önerilir. Hiçbir fikir doğrudan implementasyona girmez.
+
+Akış:
+
+```text
+Yeni fikir
+↓
+Triage
+↓
+Product Backlog
+↓
+READY
+↓
+Active Roadmap
+↓
+Implementation
+```
+
+### 4. Architecture Decisions
+
+Kesinleşmiş mimari kararlar tekrar tartışılmaz. Yeni görev mevcut Architecture Decision'ı bozuyorsa ajan durur, etkiyi raporlar ve kullanıcı kararı ister.
+
+### 5. Worktree / Branch
+
+Her implementasyon ayrı branch ve ayrı worktree üzerinde yapılır. Aşağıdaki Worktree Isolation Protocol korunur ve bu standartla birlikte uygulanır.
+
+### 6. Görev Yetkileri
+
+```text
+GO-ANALYZE
+↓
+Yalnız analiz
+Yalnız rapor
+Kod yok
+```
+
+```text
+GO-IMPLEMENT
+↓
+Kod / dokümantasyon değişikliği
+Test / validation
+CI gerekiyorsa çalıştır
+Dur
+Merge yok
+Commit/PR yalnız ayrıca istenirse yapılır
+```
+
+```text
+GO-COMPLETE
+↓
+Kod / dokümantasyon değişikliği
+Test
+CI
+Merge
+Remote Branch Cleanup
+Local Branch Cleanup
+Worktree Cleanup
+Main Sync
+Final Verification
+Checkpoint
+NEXT RECOMMENDED STEP
+Dur
+```
+
+GO-COMPLETE açıkça verilmişse merge, cleanup, main sync, final verification ve checkpoint tek operasyon sayılır; ayrıca merge onayı istenmez. Stop condition oluşursa operasyon durur ve raporlanır.
+
+### 7. Operational Stop Conditions
+
+Ajan yalnız aşağıdaki durumlarda durur:
+
+- CI başarısız
+- Merge conflict
+- Scope değişti
+- Mimari değişti
+- Beklenmeyen dosyalar oluştu
+- Schema değişti
+- Migration değişti
+- Güvenlik riski oluştu
+- Kullanıcı kararı gerekiyor
+- Yeni Product Backlog oluştu
+- Active Roadmap değişmeli
+- Beklenmeyen teknik risk oluştu
+
+Bu durumlar dışında, verilen görev yetkisi sınırları içinde operasyon kesilmez.
+
+### 8. Backlog Review
+
+Her faz sonunda Backlog Review zorunludur. Product Backlog maddeleri tek tek değerlendirilir; bağımlılığı tamamlanan maddeler için `BACKLOG → READY` önerisi raporlanır. Kullanıcı onayı olmadan READY maddesi Active Roadmap'e taşınmaz ve implementasyon başlamaz.
+
+### 9. Rapor Sonu Formatı
+
+Her önemli rapor ve görev kapanışı şu blokla biter:
+
+```text
+══════════════════════════════
+
+NEXT RECOMMENDED STEP
+
+Aktif Faz:
+
+Önerilen Sonraki İş:
+
+Backlog Review Gerekli mi?
+YES / NO
+
+READY Durumuna Geçen Maddeler:
+
+Yeni Eklenen Product Backlog Maddeleri:
+
+Bekleyen Mimari Kararlar:
+
+══════════════════════════════
+```
 ## Model / Effort önerisi
 
 Her yeni işin başında, işe başlamadan önce önerilen çalışma seviyesini bildir.
