@@ -2834,6 +2834,23 @@ class ApiClient {
   }
 
   /**
+   * S8-B FAZ-1a — Dağıtım önerisi üreteci (PREVIEW; persist YOK, P4 YOK, finansal etki YOK).
+   * Üretilen suggestedLines FE'de pre-fill edilir → kullanıcı düzenler → recommendCollectionDisposition persist eder.
+   * Çağrıldığı yerler:
+   * - OperationDeck "Dağıtım Önerisi Hazırla" → POST \collection-dispositions:id/distribution-recommendation
+   */
+  async getDistributionRecommendation(
+    dispositionId: string,
+    payload: GenerateDistributionRecommendationDTO = {},
+  ) {
+    const response = await this.request<{ data: DistributionRecommendationDTO }>(
+      `/collection-dispositions/${dispositionId}/distribution-recommendation`,
+      { method: "POST", body: JSON.stringify(payload) },
+    );
+    return response.data;
+  }
+
+  /**
    * Tahsilat/odeme onizlemesi. DB'ye kayit yazmaz.
    * Cagrildigi yerler:
    * - CollectionModal.handlePreview() -> POST /cases/:caseId/payment-preview (tahsilat formundan non-persistent onizleme)
@@ -5090,6 +5107,49 @@ export interface PostCollectionDispositionResultDTO {
   posted: boolean;
   dispositionId: string;
   lineCount: number;
+}
+
+// ── S8-B FAZ-1a — Distribution Recommendation (advisory-only preview) ──
+export interface AttorneyFeeInputDTO {
+  mode: "AMOUNT"; // FAZ-1a yalnız AMOUNT; oran modeli FAZ-2
+  amount: string; // faithful decimal-string
+  note?: string;
+}
+export interface GenerateDistributionRecommendationDTO {
+  attorneyFee?: AttorneyFeeInputDTO;
+}
+export interface SuggestedDistributionLineDTO {
+  type: CollectionDispositionLineType;
+  amount: string;
+  caseClientId: string | null;
+  origin: "FEE_MANUAL" | "CLIENT_PAYABLE_RESIDUAL";
+  editable: true;
+  note?: string;
+}
+export interface DistributionExpenseCandidateDTO {
+  expenseRequestId: string;
+  caseId: string;
+  status: string;
+  remaining: string;
+  applied: false;
+  note: string;
+}
+export interface DistributionRecommendationDTO {
+  dispositionId: string;
+  status: "HELD_PENDING_DISTRIBUTION";
+  currency: string;
+  gross: string;
+  beneficiaryScope: string;
+  recommendOnly: true;
+  financialEffect: false;
+  suggestedLines: SuggestedDistributionLineDTO[];
+  sumCheck: { sum: string; equalsGross: boolean };
+  expenseModule: {
+    autoApplyEnabled: false;
+    disabledReason: "EXPENSE_APPROVAL_FIELD_MISSING";
+    candidates: DistributionExpenseCandidateDTO[];
+  };
+  warnings: string[];
 }
 
 export interface PaymentPreviewRequestDTO {

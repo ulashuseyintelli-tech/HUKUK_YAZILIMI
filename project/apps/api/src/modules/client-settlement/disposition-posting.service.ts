@@ -361,7 +361,13 @@ export class DispositionPostingService {
 
       let caseClientId: string | null;
       if (disp.beneficiaryScope === 'SINGLE_CASE_CLIENT') {
-        caseClientId = disp.caseClientId ?? ln.caseClientId ?? null;
+        // Q3: yalnız müvekkile-atfedilen tipler (CLIENT_PAYABLE, CLIENT_EXPENSE_REIMBURSEMENT) tek-alacaklının
+        // caseClientId'sini devralır. Büro-geliri/firm tipleri (CONTRACTUAL_FEE_WITHHELD, OFFSET_CLIENT_ADVANCE,
+        // FIRM_EXPENSE_REIMBURSEMENT, OTHER) client-attributed DEĞİLDİR → caseClientId null kalır (fee = büro geliri,
+        // müvekkil alacağı değil; SINGLE scope'ta dahi client'a override edilmez).
+        caseClientId = CLIENT_ATTRIBUTED.has(ln.type)
+          ? (disp.caseClientId ?? ln.caseClientId ?? null)
+          : (ln.caseClientId ?? null);
       } else {
         caseClientId = ln.caseClientId ?? null;
         if (CLIENT_ATTRIBUTED.has(ln.type) && !caseClientId) {

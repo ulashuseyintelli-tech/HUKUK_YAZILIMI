@@ -41,7 +41,7 @@ import {
   PauseCircle,
   Search,
 } from "lucide-react";
-import { api, DebtorListItemDTO, DebtorsSummaryDTO, DebtorDetailDTO, CollectionDispositionDTO, PostCollectionDispositionLineDTO } from "@/lib/api";
+import { api, DebtorListItemDTO, DebtorsSummaryDTO, DebtorDetailDTO, CollectionDispositionDTO, PostCollectionDispositionLineDTO, GenerateDistributionRecommendationDTO } from "@/lib/api";
 import { caseStaffEditFields, buildCaseStaffPatch } from "@/lib/case-staff-edit";
 import {
   CASE_STAFF_ROLE_OPTIONS,
@@ -1045,6 +1045,13 @@ export default function CaseDetailPage() {
       setPostingDispositionId(null);
     }
   }, [refreshCollectionDependentViews]);
+
+  // S8-B FAZ-1a — Dağıtım önerisi üreteci (preview; persist YOK, finansal etki YOK). Üretilen satırlar OperationDeck'te pre-fill edilir.
+  const handlePrepareDistributionRecommendation = useCallback(
+    (dispositionId: string, input: GenerateDistributionRecommendationDTO) =>
+      api.getDistributionRecommendation(dispositionId, input),
+    [],
+  );
 
   // S8-B FAZ-0 — Dağıtım onayı (RECOMMENDED → APPROVED; yalnız Partner/Manager + P4 4-göz).
   const handleApproveCollectionDisposition = useCallback(async (
@@ -2796,6 +2803,7 @@ export default function CaseDetailPage() {
                 onRecommendDisposition={handleRecommendCollectionDisposition}
                 onApproveDisposition={handleApproveCollectionDisposition}
                 onPostDisposition={handlePostCollectionDisposition}
+                onPrepareDistributionRecommendation={handlePrepareDistributionRecommendation}
                 // Müvekkil Talepleri - AddressAuditLog + Expense Requests
                 muvekkilTalepleri={[
                   // Adres talepleri

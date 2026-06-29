@@ -757,6 +757,85 @@ describe("collection summary refresh", () => {
     expect(screen.queryByRole("dialog", { name: /Dağıtımı Belirle/ })).not.toBeInTheDocument();
     expect(screen.getByText("Dağıtım önerisi kaydedildi — onay bekliyor.")).toBeInTheDocument();
   });
+
+  it("FAZ-1a: dağıtım önerisi hazırla suggestedLines'ı modal satırlarına pre-fill eder (ücret + residual)", async () => {
+    const prepare = vi.fn().mockResolvedValue({
+      suggestedLines: [
+        { type: "CONTRACTUAL_FEE_WITHHELD", amount: "30.00", caseClientId: null, origin: "FEE_MANUAL" },
+        { type: "CLIENT_PAYABLE", amount: "70.00", caseClientId: "case-client-1", origin: "CLIENT_PAYABLE_RESIDUAL" },
+      ],
+      warnings: [],
+      expenseModule: { candidates: [] },
+    });
+
+    render(
+      <OperationDeck
+        caseId="case-1"
+        muhasebeKayitlari={[makeDispositionAccountingRecord()]}
+        eligibleDispositionClients={[{ id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" }]}
+        onRecommendDisposition={vi.fn()}
+        onPrepareDistributionRecommendation={prepare}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtımı Belirle/ }));
+    fireEvent.change(screen.getByLabelText(/Avukatlık ücreti/), { target: { value: "30" } });
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım Önerisi Hazırla/ }));
+
+    await waitFor(() => {
+      expect(prepare).toHaveBeenCalledWith("disp-1", { attorneyFee: { mode: "AMOUNT", amount: "30.00" } });
+    });
+    await waitFor(() => {
+      const amounts = screen.getAllByLabelText(/Dağıtım tutarı/);
+      expect(amounts).toHaveLength(2);
+      expect(amounts[0]).toHaveValue(30);
+      expect(amounts[1]).toHaveValue(70);
+    });
+  });
+
+  it("FAZ-1a: ücretsiz öneri attorneyFee göndermez, uyarı+masraf adayı gösterir, candidate satır olmaz", async () => {
+    const prepare = vi.fn().mockResolvedValue({
+      suggestedLines: [
+        { type: "CLIENT_PAYABLE", amount: "100.00", caseClientId: "case-client-1", origin: "CLIENT_PAYABLE_RESIDUAL" },
+      ],
+      warnings: ["Masraf onay alanı henüz yok; otomatik masraf önerisi devre dışı (FAZ-1b). Adaylar yalnızca bilgi amaçlı listelenir."],
+      expenseModule: { candidates: [{ expenseRequestId: "er-1", caseId: "case-1", status: "SENT", remaining: "5000" }] },
+    });
+
+    render(
+      <OperationDeck
+        caseId="case-1"
+        muhasebeKayitlari={[makeDispositionAccountingRecord()]}
+        eligibleDispositionClients={[{ id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" }]}
+        onRecommendDisposition={vi.fn()}
+        onPrepareDistributionRecommendation={prepare}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtımı Belirle/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım Önerisi Hazırla/ }));
+
+    await waitFor(() => {
+      expect(prepare).toHaveBeenCalledWith("disp-1", {});
+    });
+    expect(await screen.findByText(/otomatik masraf önerisi devre dışı/)).toBeInTheDocument();
+    expect(screen.getByText(/er-1/)).toBeInTheDocument();
+    expect(screen.getAllByLabelText(/Dağıtım tutarı/)).toHaveLength(1); // candidate editöre eklenmez
+  });
+
+  it("FAZ-1a: api helper + page wiring distribution-recommendation endpointini POST ile besler", () => {
+    const apiSource = readApiSource();
+    expect(apiSource).toContain("async getDistributionRecommendation(");
+    expect(apiSource).toContain("`/collection-dispositions/${dispositionId}/distribution-recommendation`");
+    expect(apiSource).toContain('method: "POST"');
+
+    const pageSource = readCasePageSource();
+    expect(pageSource).toContain("onPrepareDistributionRecommendation={handlePrepareDistributionRecommendation}");
+    expect(pageSource).toContain("api.getDistributionRecommendation(dispositionId, input)");
+  });
+
   it("alacak kalemi kaydi basarili olunca stale hesap ozetini refetch eder", async () => {
     render(<CaseDueRefreshHarness />);
 
