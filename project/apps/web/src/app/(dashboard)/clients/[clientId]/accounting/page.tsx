@@ -30,6 +30,7 @@ import {
 import { PayoutCreateModal } from '@/components/client-accounting/PayoutCreateModal';
 import { StatementSection } from '@/components/client-accounting/StatementSection';
 import { ClientCariView } from '@/components/client-accounting/ClientCariView';
+import { AccountingTable } from '@/components/client-accounting/AccountingTable';
 
 const PAGE_SIZE = 20;
 
@@ -271,7 +272,7 @@ export default function ClientAccountingPage() {
       <Card className="p-4">
         <div className="flex items-center gap-2 mb-3">
           <FileText className="w-5 h-5 text-gray-600" />
-          <h2 className="font-medium text-gray-900">Müvekkile Ödemeler</h2>
+          <h2 className="text-base font-bold text-gray-900">Müvekkile Ödemeler</h2>
           {payoutsQ.data && (
             <Badge variant="secondary" className="ml-1">
               {payoutsQ.data.total} kayıt
@@ -291,33 +292,30 @@ export default function ClientAccountingPage() {
           </div>
         ) : (
           <>
-            <div className="overflow-auto border rounded-lg">
-              <table className="w-full text-sm">
-                <thead className="bg-gray-50">
-                  <tr className="border-b text-left">
-                    <th className="px-3 py-2">Tarih</th>
-                    <th className="px-3 py-2 text-right">Tutar</th>
-                    <th className="px-3 py-2">Durum</th>
-                    <th className="px-3 py-2">Not</th>
+            {/* UX-v2c (DASH-8 tutarlılık): payouts tablosu da paylaşılan AccountingTable kabuğunu kullanır
+                (14px tabular-nums · sağ-para font-semibold · sticky thead) + thin-scrollbar. Veri/davranış AYNI. */}
+            <div className="thin-scrollbar overflow-auto rounded-lg border">
+              <AccountingTable
+                head={
+                  <>
+                    <th>Tarih</th>
+                    <th className="text-right">Tutar</th>
+                    <th>Durum</th>
+                    <th>Not</th>
+                  </>
+                }
+              >
+                {payoutsQ.data.items.map((p) => (
+                  <tr key={p.id} className="hover:bg-gray-50">
+                    <td className="whitespace-nowrap text-gray-600">{new Date(p.paidAt).toLocaleString('tr-TR')}</td>
+                    <td className="text-right">{formatMoneyString(p.amount, p.currency)}</td>
+                    <td>
+                      <Badge variant="secondary">{p.status === 'RECORDED' ? 'Kaydedildi' : p.status}</Badge>
+                    </td>
+                    <td className="text-gray-600">{p.note ?? '—'}</td>
                   </tr>
-                </thead>
-                <tbody className="divide-y">
-                  {payoutsQ.data.items.map((p) => (
-                    <tr key={p.id} className="hover:bg-gray-50">
-                      <td className="px-3 py-2 whitespace-nowrap">
-                        {new Date(p.paidAt).toLocaleString('tr-TR')}
-                      </td>
-                      <td className="px-3 py-2 text-right font-medium whitespace-nowrap">
-                        {formatMoneyString(p.amount, p.currency)}
-                      </td>
-                      <td className="px-3 py-2">
-                        <Badge variant="secondary">{p.status === 'RECORDED' ? 'Kaydedildi' : p.status}</Badge>
-                      </td>
-                      <td className="px-3 py-2 text-gray-600">{p.note ?? '—'}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                ))}
+              </AccountingTable>
             </div>
 
             {totalPages > 1 && (
@@ -413,7 +411,8 @@ function SummaryCard({
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2">
           <Icon className={`w-5 h-5 ${accent}`} />
-          <h2 className="font-medium text-gray-900 text-sm">{title}</h2>
+          {/* UX-v2c (DASH-3): case-scope kart başlığı da client-scope ile aynı — 16px/700. */}
+          <h2 className="text-base font-bold text-gray-900">{title}</h2>
         </div>
         <div className="flex items-center gap-2">
           {fetching && <Spinner className="w-4 h-4" />}
@@ -430,7 +429,8 @@ function SummaryCard({
         ) : loading || value === null ? (
           <Spinner className="w-5 h-5" />
         ) : (
-          <div className={`text-2xl font-semibold ${valueAccent}`}>{value}</div>
+          // UX-v2c (DASH-3): kart para 24px/700/tabular-nums — client-scope Metric ile birebir aynı standart.
+          <div className={`text-2xl font-bold tabular-nums ${valueAccent}`}>{value}</div>
         )}
         {sub && !error && value !== null && <div className="text-xs text-gray-500 mt-0.5">{sub}</div>}
       </div>

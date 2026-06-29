@@ -86,7 +86,7 @@ export function AccountingPanel({
           <div className="shrink-0 border-b bg-gray-50/50 px-4 py-2.5">{subHeader}</div>
         ) : null}
         <div
-          className={`min-h-0 flex-1 overflow-auto ${bodyClassName ?? ''}`}
+          className={`thin-scrollbar min-h-0 flex-1 overflow-auto ${bodyClassName ?? ''}`}
           style={{ scrollbarGutter: 'stable' }}
           tabIndex={0}
           role="region"
