@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query, ForbiddenException, NotFoundException, ValidationPipe } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ClientService } from './client.service';
+import { CreateClientDto, UpdateClientDto } from './dto/create-client.dto';
 
 /** C0-a: actor compile-time shape — req.user JWT validate'ten gelen User; id+tenantId auth context. */
 interface AuthRequest {
@@ -11,6 +12,18 @@ interface AuthRequest {
 @UseGuards(JwtAuthGuard)
 export class ClientController {
   constructor(private clientService: ClientService) {}
+
+  // Task 2 (owner-locked 2026-06-30): client gövde doğrulaması GÜVENLİ/KADEMELİ.
+  // app.main.ts global ValidationPipe forbidNonWhitelisted:true → route-level pipe onu OVERRIDE EDEMEZ
+  // (NestJS global+local ikisi de çalışır). Bu yüzden @Body() any KASITLI (global pipe inert) + bu lenient
+  // pipe MANUEL invoke edilir: whitelist:true (fazla alan düşer), forbidNonWhitelisted:false (fazla alan
+  // 400 SEBEBİ DEĞİL). Strict forbid + TCKN/VKN mod-10/11 checksum = ayrı "Client DTO Strictness Audit".
+  private readonly clientBodyPipe = new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: false,
+    transform: true,
+    skipMissingProperties: true,
+  });
 
   // Tüm müvekkilleri listele
   @Get()
@@ -36,9 +49,11 @@ export class ClientController {
   @Post()
   async create(@Request() req: AuthRequest, @Body() body: any) {
     const tenantId = req.user.tenantId;
+    // Task 2: tip/format doğrulaması (lenient — fazla alan 400 değil, düşer). @Body() any → global pipe inert.
+    const dto = await this.clientBodyPipe.transform(body, { type: 'body', metatype: CreateClientDto });
     // C0-a: actor YALNIZ req.user.id (auth); body'den userId ASLA okunmaz.
     // P0.4: hata yutma YOK — service exception'ları (NotFound/Conflict/500) gerçek HTTP status ile FE'ye gider.
-    const client = await this.clientService.create(tenantId, body, { userId: req.user.id });
+    const client = await this.clientService.create(tenantId, dto, { userId: req.user.id });
     return { data: client };
   }
 
@@ -56,9 +71,11 @@ export class ClientController {
   @Put(':id')
   async update(@Request() req: AuthRequest, @Param('id') id: string, @Body() body: any) {
     const tenantId = req.user.tenantId;
+    // Task 2: tip/format doğrulaması (lenient). UpdateClientDto = CreateClientDto + isActive.
+    const dto = await this.clientBodyPipe.transform(body, { type: 'body', metatype: UpdateClientDto });
     // P0.4: hata yutma YOK. PR-U4 409 DUPLICATE_IDENTITY (ConflictException) ve 404 NotFound
     // doğrudan gerçek HTTP status ile FE'ye gider (eski catch HTTP 200 {error} üretiyordu).
-    const client = await this.clientService.update(id, tenantId, body, { userId: req.user.id });
+    const client = await this.clientService.update(id, tenantId, dto, { userId: req.user.id });
     return { data: client };
   }
 
