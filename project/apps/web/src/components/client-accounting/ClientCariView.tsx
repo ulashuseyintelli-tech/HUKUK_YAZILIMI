@@ -149,6 +149,7 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
         {/* Satır 1 — Dosya Kırılımı (full width; kendi içinde scroll + sticky header) */}
         <AccountingPanel
           ariaLabel="Dosya kırılımı tablosu"
+          focusable
           className="min-h-0 min-w-0"
           title={
             <>
