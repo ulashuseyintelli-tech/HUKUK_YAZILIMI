@@ -537,12 +537,12 @@ export class ClientSettlementReadService {
     // ---- A grubu: CLIENT_SPECIFIC ----
     if (clientCaseClientIds.length > 0) {
       // 1) POSTED CLIENT_PAYABLE disposition satırları — borç DOĞDU. caseClientId line-level
-      //    (computeOutstanding ile birebir scope). disposition POSTED + tenant + currency.
+      //    (computeOutstanding ile birebir scope). disposition POSTED + tenant + currency + manual reversal marker yok.
       const lines = await this.prisma.collectionDispositionLine.findMany({
         where: {
           type: 'CLIENT_PAYABLE',
           caseClientId: { in: clientCaseClientIds },
-          disposition: { tenantId, currency, status: 'POSTED' },
+          disposition: { tenantId, currency, status: 'POSTED', manualReversalRequiredAt: null },
         },
         select: {
           id: true,
