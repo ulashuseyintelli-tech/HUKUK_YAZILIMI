@@ -2,7 +2,31 @@
 
 import { useState, useEffect } from 'react';
 import { api } from '@/lib/api';
-import { Shield, Search, Filter, User, Clock, FileText, RefreshCw } from 'lucide-react';
+import { Shield, User, Clock, FileText, RefreshCw } from 'lucide-react';
+
+type AuditSafeScalar = string | number | boolean | null;
+type AuditSafeValue = AuditSafeScalar | AuditSafeValue[] | { [key: string]: AuditSafeValue };
+
+interface AuditSafeProjection {
+  id?: string;
+  action: string;
+  entityType: string;
+  entityId: string | null;
+  actor: {
+    id: string | null;
+    displayName: string | null;
+  };
+  description: string | null;
+  metadata?: Record<string, AuditSafeValue>;
+  oldValues?: Record<string, AuditSafeValue>;
+  newValues?: Record<string, AuditSafeValue>;
+  rawValuePresence: {
+    metadata: boolean;
+    oldValues: boolean;
+    newValues: boolean;
+  };
+  createdAt?: string | null;
+}
 
 interface AuditLog {
   id: string;
@@ -13,8 +37,10 @@ interface AuditLog {
   userName?: string;
   userIp?: string;
   description?: string;
-  oldValues?: Record<string, any>;
-  newValues?: Record<string, any>;
+  metadata?: Record<string, unknown>;
+  oldValues?: Record<string, unknown>;
+  newValues?: Record<string, unknown>;
+  safeProjection?: AuditSafeProjection | null;
   createdAt: string;
 }
 
@@ -36,6 +62,97 @@ const entityLabels: Record<string, string> = {
   TASK: 'Görev',
   DOCUMENT: 'Belge',
 };
+
+function labelAction(action: string): string {
+  return actionLabels[action]?.label || action;
+}
+
+function labelEntity(entityType: string): string {
+  return entityLabels[entityType] || entityType;
+}
+
+function safeSummary(log: AuditLog): string {
+  return log.safeProjection?.description || `${labelAction(log.action)} - ${labelEntity(log.entityType)}`;
+}
+
+function safeActor(log: AuditLog): string {
+  return log.safeProjection?.actor.displayName || log.safeProjection?.actor.id || '-';
+}
+
+function hasSafeFields(fields?: Record<string, AuditSafeValue>): boolean {
+  return !!fields && Object.keys(fields).length > 0;
+}
+
+function formatSafeValue(value: AuditSafeValue): string {
+  if (value === null) return 'null';
+  if (typeof value === 'boolean') return value ? 'true' : 'false';
+  if (typeof value === 'number') return value.toLocaleString('tr-TR');
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map(formatSafeValue).join(', ');
+  return Object.entries(value)
+    .map(([key, nestedValue]) => `${key}: ${formatSafeValue(nestedValue)}`)
+    .join(', ');
+}
+
+function SafeFieldList({
+  title,
+  fields,
+  tone,
+}: {
+  title: string;
+  fields?: Record<string, AuditSafeValue>;
+  tone: 'neutral' | 'old' | 'new';
+}) {
+  if (!hasSafeFields(fields)) return null;
+
+  const toneClass =
+    tone === 'old'
+      ? 'border-red-100 bg-red-50'
+      : tone === 'new'
+        ? 'border-green-100 bg-green-50'
+        : 'border-slate-100 bg-slate-50';
+
+  return (
+    <div>
+      <label className="text-xs text-gray-500">{title}</label>
+      <dl className={`mt-1 rounded border ${toneClass} divide-y divide-white/70 text-xs`}>
+        {Object.entries(fields ?? {}).map(([key, value]) => (
+          <div key={key} className="grid grid-cols-[minmax(7rem,0.38fr)_1fr] gap-3 px-3 py-2">
+            <dt className="font-medium text-gray-600 break-all">{key}</dt>
+            <dd className="text-gray-800 break-words">{formatSafeValue(value)}</dd>
+          </div>
+        ))}
+      </dl>
+    </div>
+  );
+}
+
+function SafeUnavailableNotice({ log }: { log: AuditLog }) {
+  if (log.safeProjection) return null;
+  return (
+    <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+      Safe audit summary unavailable. Ham audit JSON bu görünümde gösterilmez.
+    </div>
+  );
+}
+
+function SafePresenceNotice({ projection }: { projection?: AuditSafeProjection | null }) {
+  if (!projection) return null;
+
+  const hiddenRawSections = [
+    projection.rawValuePresence.metadata && !hasSafeFields(projection.metadata) ? 'metadata' : null,
+    projection.rawValuePresence.oldValues && !hasSafeFields(projection.oldValues) ? 'eski değerler' : null,
+    projection.rawValuePresence.newValues && !hasSafeFields(projection.newValues) ? 'yeni değerler' : null,
+  ].filter(Boolean);
+
+  if (hiddenRawSections.length === 0) return null;
+
+  return (
+    <div className="rounded border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+      Ham {hiddenRawSections.join(', ')} mevcut; güvenli projeksiyona uygun alan olmadığı için içerik gösterilmedi.
+    </div>
+  );
+}
 
 export default function AuditLogPage() {
   const [logs, setLogs] = useState<AuditLog[]>([]);
@@ -105,9 +222,9 @@ export default function AuditLogPage() {
         </button>
       </div>
 
-      {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-4 p-3 bg-white rounded-lg border">
         <select
+          aria-label="İşlem filtresi"
           value={filters.action}
           onChange={(e) => { setFilters({ ...filters, action: e.target.value }); setPage(1); }}
           className="px-3 py-2 text-sm border rounded-lg"
@@ -121,6 +238,7 @@ export default function AuditLogPage() {
           <option value="EXPORT">Dışa Aktarma</option>
         </select>
         <select
+          aria-label="Varlık filtresi"
           value={filters.entityType}
           onChange={(e) => { setFilters({ ...filters, entityType: e.target.value }); setPage(1); }}
           className="px-3 py-2 text-sm border rounded-lg"
@@ -135,7 +253,6 @@ export default function AuditLogPage() {
         </select>
       </div>
 
-      {/* Logs Table */}
       <div className="flex-1 bg-white rounded-lg border overflow-hidden">
         <div className="overflow-auto h-full">
           <table className="w-full text-sm">
@@ -145,7 +262,7 @@ export default function AuditLogPage() {
                 <th className="text-left p-3 font-medium">İşlem</th>
                 <th className="text-left p-3 font-medium">Varlık</th>
                 <th className="text-left p-3 font-medium">Kullanıcı</th>
-                <th className="text-left p-3 font-medium">Açıklama</th>
+                <th className="text-left p-3 font-medium">Güvenli Özet</th>
                 <th className="text-left p-3 font-medium">Detay</th>
               </tr>
             </thead>
@@ -173,23 +290,23 @@ export default function AuditLogPage() {
                     </td>
                     <td className="p-3">
                       <span className={`px-2 py-1 rounded text-xs font-medium ${actionLabels[log.action]?.color || 'bg-gray-100'}`}>
-                        {actionLabels[log.action]?.label || log.action}
+                        {labelAction(log.action)}
                       </span>
                     </td>
                     <td className="p-3">
                       <div className="flex items-center gap-2">
                         <FileText className="h-4 w-4 text-gray-400" />
-                        <span>{entityLabels[log.entityType] || log.entityType}</span>
+                        <span>{labelEntity(log.entityType)}</span>
                       </div>
                     </td>
                     <td className="p-3">
                       <div className="flex items-center gap-2">
                         <User className="h-4 w-4 text-gray-400" />
-                        <span>{log.userName || '-'}</span>
+                        <span>{safeActor(log)}</span>
                       </div>
                     </td>
                     <td className="p-3 max-w-xs truncate">
-                      {log.description || '-'}
+                      {safeSummary(log)}
                     </td>
                     <td className="p-3">
                       <button
@@ -207,7 +324,6 @@ export default function AuditLogPage() {
         </div>
       </div>
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-center gap-2 mt-4">
           <button
@@ -228,13 +344,18 @@ export default function AuditLogPage() {
         </div>
       )}
 
-      {/* Detail Modal */}
       {selectedLog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
           <div className="bg-white rounded-xl w-full max-w-lg mx-4 max-h-[80vh] overflow-auto">
             <div className="p-4 border-b flex items-center justify-between">
               <h3 className="font-semibold">İşlem Detayı</h3>
-              <button onClick={() => setSelectedLog(null)} className="text-gray-500 hover:text-gray-700">✕</button>
+              <button
+                aria-label="Detayı kapat"
+                onClick={() => setSelectedLog(null)}
+                className="text-gray-500 hover:text-gray-700"
+              >
+                ×
+              </button>
             </div>
             <div className="p-4 space-y-4">
               <div className="grid grid-cols-2 gap-4 text-sm">
@@ -245,48 +366,38 @@ export default function AuditLogPage() {
                 <div>
                   <label className="text-xs text-gray-500">İşlem</label>
                   <p><span className={`px-2 py-1 rounded text-xs ${actionLabels[selectedLog.action]?.color}`}>
-                    {actionLabels[selectedLog.action]?.label || selectedLog.action}
+                    {labelAction(selectedLog.action)}
                   </span></p>
                 </div>
                 <div>
                   <label className="text-xs text-gray-500">Varlık Tipi</label>
-                  <p className="font-medium">{entityLabels[selectedLog.entityType] || selectedLog.entityType}</p>
+                  <p className="font-medium">{labelEntity(selectedLog.entityType)}</p>
                 </div>
                 <div>
                   <label className="text-xs text-gray-500">Varlık ID</label>
-                  <p className="font-mono text-xs">{selectedLog.entityId || '-'}</p>
+                  <p className="font-mono text-xs">{selectedLog.safeProjection?.entityId || selectedLog.entityId || '-'}</p>
                 </div>
                 <div>
                   <label className="text-xs text-gray-500">Kullanıcı</label>
-                  <p className="font-medium">{selectedLog.userName || '-'}</p>
+                  <p className="font-medium">{safeActor(selectedLog)}</p>
                 </div>
                 <div>
                   <label className="text-xs text-gray-500">IP Adresi</label>
                   <p className="font-mono text-xs">{selectedLog.userIp || '-'}</p>
                 </div>
               </div>
-              {selectedLog.description && (
-                <div>
-                  <label className="text-xs text-gray-500">Açıklama</label>
-                  <p className="text-sm mt-1">{selectedLog.description}</p>
-                </div>
-              )}
-              {selectedLog.oldValues && Object.keys(selectedLog.oldValues).length > 0 && (
-                <div>
-                  <label className="text-xs text-gray-500">Eski Değerler</label>
-                  <pre className="mt-1 p-2 bg-red-50 rounded text-xs overflow-auto">
-                    {JSON.stringify(selectedLog.oldValues, null, 2)}
-                  </pre>
-                </div>
-              )}
-              {selectedLog.newValues && Object.keys(selectedLog.newValues).length > 0 && (
-                <div>
-                  <label className="text-xs text-gray-500">Yeni Değerler</label>
-                  <pre className="mt-1 p-2 bg-green-50 rounded text-xs overflow-auto">
-                    {JSON.stringify(selectedLog.newValues, null, 2)}
-                  </pre>
-                </div>
-              )}
+
+              <SafeUnavailableNotice log={selectedLog} />
+
+              <div>
+                <label className="text-xs text-gray-500">Güvenli Özet</label>
+                <p className="text-sm mt-1">{selectedLog.safeProjection?.description || 'Safe audit summary unavailable'}</p>
+              </div>
+
+              <SafeFieldList title="Güvenli Metadata" fields={selectedLog.safeProjection?.metadata} tone="neutral" />
+              <SafeFieldList title="Güvenli Eski Değerler" fields={selectedLog.safeProjection?.oldValues} tone="old" />
+              <SafeFieldList title="Güvenli Yeni Değerler" fields={selectedLog.safeProjection?.newValues} tone="new" />
+              <SafePresenceNotice projection={selectedLog.safeProjection} />
             </div>
           </div>
         </div>
