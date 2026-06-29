@@ -463,8 +463,10 @@ describe("collection summary refresh", () => {
     expect(source).toContain("accountingEmptyMessage={operationAccountingEmptyMessage}");
     expect(source).toContain("eligibleDispositionClients={eligibleDispositionClients}");
     expect(source).toContain("postingDispositionId={postingDispositionId}");
+    expect(source).toContain("onRecommendDisposition={handleRecommendCollectionDisposition}");
+    expect(source).toContain("onApproveDisposition={handleApproveCollectionDisposition}");
     expect(source).toContain("onPostDisposition={handlePostCollectionDisposition}");
-    expect(source).toContain("await api.postCollectionDisposition(disposition.id, { lines });");
+    expect(source).toContain("await api.recommendCollectionDisposition(disposition.id, { lines });");
     expect(source).toContain("refreshCollectionDependentViews();");
     expect(source).toContain("Tahsilat finans özetinde görünüyor; dağıtım/mutabakat kaydı henüz oluşturulmamış.");
     expect(source).toContain("Dağıtım/mutabakat kaydı");
@@ -481,43 +483,43 @@ describe("collection summary refresh", () => {
     expect(source).not.toContain("Henüz muhasebe kaydı yok");
   });
 
-  it("api helper bekleyen disposition posting endpointini POST ile cagirir", () => {
+  it("api helper recommend/approve/post endpointlerini POST ile cagirir (S8-B onay yasam dongusu)", () => {
     const source = readApiSource();
 
-    expect(source).toContain("async postCollectionDisposition(dispositionId: string, payload: PostCollectionDispositionDTO)");
+    expect(source).toContain("async recommendCollectionDisposition(dispositionId: string, payload: PostCollectionDispositionDTO)");
+    expect(source).toContain("`/collection-dispositions/${dispositionId}/recommend`");
+    expect(source).toContain("async approveCollectionDisposition(dispositionId: string");
+    expect(source).toContain("`/collection-dispositions/${dispositionId}/approve`");
+    expect(source).toContain("async postCollectionDisposition(dispositionId: string)");
     expect(source).toContain("`/collection-dispositions/${dispositionId}/post`");
     expect(source).toContain('method: "POST"');
   });
 
-  it("held pending distribution ve tek alacaklida dagitimi kesinlestirme payloadini hazirlar", async () => {
-    const postDisposition = vi.fn().mockResolvedValue(undefined);
-    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+  it("held pending distribution ve tek alacaklida dagitim onerisi (recommend) payloadini hazirlar", async () => {
+    const recommendDisposition = vi.fn().mockResolvedValue(undefined);
 
     render(
       <OperationDeck
         caseId="case-1"
         muhasebeKayitlari={[makeDispositionAccountingRecord()]}
         eligibleDispositionClients={[{ id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" }]}
-        onPostDisposition={postDisposition}
+        onRecommendDisposition={recommendDisposition}
       />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Dağıtımı Kesinleştir/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım Öner/ }));
 
     await waitFor(() => {
-      expect(postDisposition).toHaveBeenCalledWith(
+      expect(recommendDisposition).toHaveBeenCalledWith(
         expect.objectContaining({ id: "disp-1", status: "HELD_PENDING_DISTRIBUTION" }),
         [{ type: "CLIENT_PAYABLE", amount: "100.00", caseClientId: "case-client-1" }],
       );
     });
-    expect(confirmSpy).toHaveBeenCalled();
-
-    confirmSpy.mockRestore();
   });
 
-  it("coklu alacaklida otomatik post yapmaz ve secim gerektigini gosterir", async () => {
-    const postDisposition = vi.fn();
+  it("coklu alacaklida otomatik oner yapmaz ve secim gerektigini gosterir", async () => {
+    const recommendDisposition = vi.fn();
 
     render(
       <OperationDeck
@@ -527,16 +529,62 @@ describe("collection summary refresh", () => {
           { id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" },
           { id: "case-client-2", name: "Alacaklı B", role: "ORTAK_ALACAKLI" },
         ]}
+        onRecommendDisposition={recommendDisposition}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım Öner/ }));
+
+    expect(await screen.findByText("Çoklu alacaklı dosyada 'Dağıtımı Belirle' ile alacaklı seçimi gerekir.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Dağıtımı Belirle/ })).toBeInTheDocument();
+    expect(recommendDisposition).not.toHaveBeenCalled();
+  });
+
+  it("S8-B: DISTRIBUTION_RECOMMENDED kaydinda 'Onayla' gosterir ve onApproveDisposition cagirir", async () => {
+    const approveDisposition = vi.fn().mockResolvedValue(undefined);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(
+      <OperationDeck
+        caseId="case-1"
+        muhasebeKayitlari={[makeDispositionAccountingRecord("DISTRIBUTION_RECOMMENDED")]}
+        eligibleDispositionClients={[{ id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" }]}
+        onApproveDisposition={approveDisposition}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
+    expect(screen.queryByRole("button", { name: /Dağıtım Öner/ })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /^Onayla$/ }));
+
+    await waitFor(() =>
+      expect(approveDisposition).toHaveBeenCalledWith(expect.objectContaining({ id: "disp-1", status: "DISTRIBUTION_RECOMMENDED" })),
+    );
+    confirmSpy.mockRestore();
+  });
+
+  it("S8-B: DISTRIBUTION_APPROVED kaydinda 'Kesinlestir' gosterir ve onPostDisposition'i lines'siz cagirir", async () => {
+    const postDisposition = vi.fn().mockResolvedValue(undefined);
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+
+    render(
+      <OperationDeck
+        caseId="case-1"
+        muhasebeKayitlari={[makeDispositionAccountingRecord("DISTRIBUTION_APPROVED")]}
+        eligibleDispositionClients={[{ id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" }]}
         onPostDisposition={postDisposition}
       />,
     );
 
     fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
-    fireEvent.click(screen.getByRole("button", { name: /Dağıtımı Kesinleştir/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Kesinleştir/ }));
 
-    expect(await screen.findByText("Çoklu alacaklı dosyada dağıtım için alacaklı seçimi gerekir.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Dağıtımı Belirle/ })).toBeInTheDocument();
-    expect(postDisposition).not.toHaveBeenCalled();
+    await waitFor(() =>
+      expect(postDisposition).toHaveBeenCalledWith(expect.objectContaining({ id: "disp-1", status: "DISTRIBUTION_APPROVED" })),
+    );
+    expect(postDisposition.mock.calls[0]).toHaveLength(1); // post() artık lines almaz
+    confirmSpy.mockRestore();
   });
 
   it("posted disposition kaydinda dagitimi kesinlestirme aksiyonu gostermez", () => {
@@ -610,7 +658,7 @@ describe("collection summary refresh", () => {
         caseId="case-1"
         muhasebeKayitlari={[makeDispositionAccountingRecord()]}
         eligibleDispositionClients={[{ id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" }]}
-        onPostDisposition={vi.fn()}
+        onRecommendDisposition={vi.fn()}
       />,
     );
 
@@ -619,7 +667,7 @@ describe("collection summary refresh", () => {
     fireEvent.change(screen.getByLabelText(/Dağıtım tutarı/), { target: { value: "90.00" } });
 
     expect(screen.getByText("Dağıtım toplamı tahsilat tutarıyla birebir eşit olmalı.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Dağıtımı Kaydet/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Dağıtım Önerisini Kaydet/ })).toBeDisabled();
   });
 
   it("cluster client bucket icin caseClientId secimi zorunlu tutar", () => {
@@ -631,7 +679,7 @@ describe("collection summary refresh", () => {
           { id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" },
           { id: "case-client-2", name: "Alacaklı B", role: "ORTAK_ALACAKLI" },
         ]}
-        onPostDisposition={vi.fn()}
+        onRecommendDisposition={vi.fn()}
       />,
     );
 
@@ -639,16 +687,16 @@ describe("collection summary refresh", () => {
     fireEvent.click(screen.getByRole("button", { name: /Dağıtımı Belirle/ }));
 
     expect(screen.getByText("Müvekkil payı ve müvekkil masraf iadesi için alacaklı seçimi zorunlu.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Dağıtımı Kaydet/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Dağıtım Önerisini Kaydet/ })).toBeDisabled();
 
     fireEvent.change(screen.getByLabelText(/Alacaklı seçimi/), { target: { value: "case-client-2" } });
 
     expect(screen.queryByText("Müvekkil payı ve müvekkil masraf iadesi için alacaklı seçimi zorunlu.")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: /Dağıtımı Kaydet/ })).not.toBeDisabled();
+    expect(screen.getByRole("button", { name: /Dağıtım Önerisini Kaydet/ })).not.toBeDisabled();
   });
 
-  it("non-client bucket caseClientId olmadan submit edilebilir", async () => {
-    const postDisposition = vi.fn().mockResolvedValue(undefined);
+  it("non-client bucket caseClientId olmadan oneri (recommend) edilebilir", async () => {
+    const recommendDisposition = vi.fn().mockResolvedValue(undefined);
 
     render(
       <OperationDeck
@@ -658,7 +706,7 @@ describe("collection summary refresh", () => {
           { id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" },
           { id: "case-client-2", name: "Alacaklı B", role: "ORTAK_ALACAKLI" },
         ]}
-        onPostDisposition={postDisposition}
+        onRecommendDisposition={recommendDisposition}
       />,
     );
 
@@ -667,25 +715,25 @@ describe("collection summary refresh", () => {
     fireEvent.change(screen.getByLabelText(/Dağıtım kalemi türü/), { target: { value: "CONTRACTUAL_FEE_WITHHELD" } });
 
     expect(screen.getByText("Bu bucket için caseClientId gerekmez.")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Dağıtımı Kaydet/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım Önerisini Kaydet/ }));
 
     await waitFor(() => {
-      expect(postDisposition).toHaveBeenCalledWith(
+      expect(recommendDisposition).toHaveBeenCalledWith(
         expect.objectContaining({ id: "disp-1", status: "HELD_PENDING_DISTRIBUTION" }),
         [{ type: "CONTRACTUAL_FEE_WITHHELD", amount: "100.00" }],
       );
     });
   });
 
-  it("cok satirli dagitim payloadini dogru gonderir ve basarida paneli kapatir", async () => {
-    const postDisposition = vi.fn().mockResolvedValue(undefined);
+  it("cok satirli dagitim onerisini dogru gonderir ve basarida paneli kapatir", async () => {
+    const recommendDisposition = vi.fn().mockResolvedValue(undefined);
 
     render(
       <OperationDeck
         caseId="case-1"
         muhasebeKayitlari={[makeDispositionAccountingRecord()]}
         eligibleDispositionClients={[{ id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" }]}
-        onPostDisposition={postDisposition}
+        onRecommendDisposition={recommendDisposition}
       />,
     );
 
@@ -695,10 +743,10 @@ describe("collection summary refresh", () => {
     fireEvent.click(screen.getByRole("button", { name: /Satır Ekle/ }));
 
     expect(screen.getAllByLabelText(/Dağıtım tutarı/)[1]).toHaveValue(30);
-    fireEvent.click(screen.getByRole("button", { name: /Dağıtımı Kaydet/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım Önerisini Kaydet/ }));
 
     await waitFor(() => {
-      expect(postDisposition).toHaveBeenCalledWith(
+      expect(recommendDisposition).toHaveBeenCalledWith(
         expect.objectContaining({ id: "disp-1", status: "HELD_PENDING_DISTRIBUTION" }),
         [
           { type: "CLIENT_PAYABLE", amount: "70.00", caseClientId: "case-client-1" },
@@ -707,7 +755,7 @@ describe("collection summary refresh", () => {
       );
     });
     expect(screen.queryByRole("dialog", { name: /Dağıtımı Belirle/ })).not.toBeInTheDocument();
-    expect(screen.getByText("Dağıtım kararı kaydedildi.")).toBeInTheDocument();
+    expect(screen.getByText("Dağıtım önerisi kaydedildi — onay bekliyor.")).toBeInTheDocument();
   });
   it("alacak kalemi kaydi basarili olunca stale hesap ozetini refetch eder", async () => {
     render(<CaseDueRefreshHarness />);

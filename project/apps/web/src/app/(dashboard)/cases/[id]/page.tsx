@@ -1028,19 +1028,52 @@ export default function CaseDetailPage() {
       }));
   }, [caseData?.caseClients]);
 
-  const handlePostCollectionDisposition = useCallback(async (
+  // S8-B FAZ-0 — Dağıtım önerisi (HELD → RECOMMENDED; finansal etki yok, P4 onay talebi açılır).
+  const handleRecommendCollectionDisposition = useCallback(async (
     disposition: Pick<CollectionDispositionDTO, "id">,
     lines: PostCollectionDispositionLineDTO[],
   ) => {
     if (!disposition?.id) return;
-
     setPostingDispositionId(disposition.id);
     try {
-      await api.postCollectionDisposition(disposition.id, { lines });
+      await api.recommendCollectionDisposition(disposition.id, { lines });
       refreshCollectionDependentViews();
     } catch (error: any) {
-      const message = error?.message || "Dağıtım kesinleştirilemedi.";
-      alert(message);
+      alert(error?.message || "Dağıtım önerisi kaydedilemedi.");
+      throw error;
+    } finally {
+      setPostingDispositionId(null);
+    }
+  }, [refreshCollectionDependentViews]);
+
+  // S8-B FAZ-0 — Dağıtım onayı (RECOMMENDED → APPROVED; yalnız Partner/Manager + P4 4-göz).
+  const handleApproveCollectionDisposition = useCallback(async (
+    disposition: Pick<CollectionDispositionDTO, "id">,
+  ) => {
+    if (!disposition?.id) return;
+    setPostingDispositionId(disposition.id);
+    try {
+      await api.approveCollectionDisposition(disposition.id);
+      refreshCollectionDependentViews();
+    } catch (error: any) {
+      alert(error?.message || "Dağıtım onaylanamadı.");
+      throw error;
+    } finally {
+      setPostingDispositionId(null);
+    }
+  }, [refreshCollectionDependentViews]);
+
+  // S8-B FAZ-0 — Dağıtımı muhasebeleştir (YALNIZ APPROVED → POSTED; finansal etki burada).
+  const handlePostCollectionDisposition = useCallback(async (
+    disposition: Pick<CollectionDispositionDTO, "id">,
+  ) => {
+    if (!disposition?.id) return;
+    setPostingDispositionId(disposition.id);
+    try {
+      await api.postCollectionDisposition(disposition.id);
+      refreshCollectionDependentViews();
+    } catch (error: any) {
+      alert(error?.message || "Dağıtım kesinleştirilemedi.");
       throw error;
     } finally {
       setPostingDispositionId(null);
@@ -2760,6 +2793,8 @@ export default function CaseDetailPage() {
                 accountingEmptyMessage={operationAccountingEmptyMessage}
                 eligibleDispositionClients={eligibleDispositionClients}
                 postingDispositionId={postingDispositionId}
+                onRecommendDisposition={handleRecommendCollectionDisposition}
+                onApproveDisposition={handleApproveCollectionDisposition}
                 onPostDisposition={handlePostCollectionDisposition}
                 // Müvekkil Talepleri - AddressAuditLog + Expense Requests
                 muvekkilTalepleri={[

@@ -164,9 +164,14 @@ export class CollectionReversalService {
 
     switch (disp.status) {
       // Kanonik enum'da ayrı 'DRAFT'/'HELD' YOK; aktif taslak durumu = HELD_PENDING_DISTRIBUTION.
-      case 'HELD_PENDING_DISTRIBUTION': {
-        // Aktif taslak → güvenli REVERSED. Finansal taraf YOK (M2 henüz çalışmamış: proceeds satırı,
-        // ClientStatementLine, BalanceLedger, payout YAZILMAMIŞ). Yalnız status set edilir (migration YOK).
+      // S8-B FAZ-0: DISTRIBUTION_RECOMMENDED/APPROVED de POSTED-öncesi (post() henüz çalışmamış) → HELD ile aynı:
+      // güvenli REVERSED, finansal yan etki YOK. (P4 onay talebi PENDING/APPROVED kalsa da post() disp.status'a
+      // bağlı olduğundan artık çalışamaz → orphan zararsız.)
+      case 'HELD_PENDING_DISTRIBUTION':
+      case 'DISTRIBUTION_RECOMMENDED':
+      case 'DISTRIBUTION_APPROVED': {
+        // Aktif taslak/öneri/onay (POSTED öncesi) → güvenli REVERSED. Finansal taraf YOK (post henüz çalışmamış:
+        // proceeds satırı, ClientStatementLine, BalanceLedger, payout YAZILMAMIŞ). Yalnız status set edilir (migration YOK).
         await this.prisma.collectionDisposition.update({
           where: { id: disp.id },
           data: { status: 'REVERSED' },

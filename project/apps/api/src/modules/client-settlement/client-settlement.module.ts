@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { V28EngineModule } from '../icrabot/v28-engine/v28-engine.module';
+import { OfficeApprovalModule } from '../office-approval/office-approval.module';
 import { CollectionDispositionService } from './collection-disposition.service';
 import { PaymentReceivedRegistrar } from './payment-received.registrar';
 import { CollectionReversalService } from './collection-reversal.service';
@@ -26,7 +27,7 @@ import { ClientPayoutManualReversalService } from './client-payout-manual-revers
  *      manuel-reversal-required olarak consume eder (ayrı exact key; M1 handler'ına dokunmaz).
  */
 @Module({
-  imports: [PrismaModule, V28EngineModule],
+  imports: [PrismaModule, V28EngineModule, OfficeApprovalModule],
   controllers: [
     DispositionController,
     ClientPayoutController,

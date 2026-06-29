@@ -95,6 +95,24 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     expectNoForbiddenFinancialMutation(prisma);
   });
 
+  it('S8-B FAZ-0: DISTRIBUTION_RECOMMENDED → status REVERSED (POSTED öncesi, finansal yan-etki YOK)', async () => {
+    const prisma = buildPrisma(disposition({ status: 'DISTRIBUTION_RECOMMENDED' }));
+    const res = await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
+    expect(res.outcome).toBe('reversed');
+    expect(prisma.collectionDisposition.update).toHaveBeenCalledWith({ where: { id: 'disp1' }, data: { status: 'REVERSED' } });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expectNoForbiddenFinancialMutation(prisma);
+  });
+
+  it('S8-B FAZ-0: DISTRIBUTION_APPROVED → status REVERSED (post() çalışmamış, finansal yan-etki YOK)', async () => {
+    const prisma = buildPrisma(disposition({ status: 'DISTRIBUTION_APPROVED' }));
+    const res = await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
+    expect(res.outcome).toBe('reversed');
+    expect(prisma.collectionDisposition.update).toHaveBeenCalledWith({ where: { id: 'disp1' }, data: { status: 'REVERSED' } });
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expectNoForbiddenFinancialMutation(prisma);
+  });
+
   it('zaten REVERSED → idempotent skip, update YOK', async () => {
     const prisma = buildPrisma(disposition({ status: 'REVERSED' }));
     const res = await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);

@@ -1,6 +1,7 @@
-import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
-import { Prisma, CollectionDispositionLineType } from '@prisma/client';
+import { Injectable, Logger, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
+import { Prisma, CollectionDispositionLineType, OfficeApprovalStatus } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { OfficeApprovalService } from '../office-approval/office-approval.service';
 import { PostDispositionDto } from './dto/post-disposition.dto';
 
 const HELD = CollectionDispositionLineType.HELD_PENDING_DISTRIBUTION;
@@ -10,63 +11,267 @@ const CLIENT_ATTRIBUTED = new Set<CollectionDispositionLineType>([
   CollectionDispositionLineType.CLIENT_EXPENSE_REIMBURSEMENT,
 ]);
 
+/** P4 OfficeApprovalRequest action sözleşmesi (disposition post onayı). */
+const APPROVAL_ACTION_CODE = 'COLLECTION_DISPOSITION_POST';
+const APPROVAL_TARGET_TYPE = 'COLLECTION_DISPOSITION';
+
+interface ResolvedLine {
+  type: CollectionDispositionLineType;
+  amount: Prisma.Decimal;
+  caseClientId: string | null;
+  note: string | null;
+}
+
 /**
- * TM3 M2 — Disposition Posting (kullanıcı onaylı dağıtım).
+ * TM3 M2 + S8-B FAZ-0 — Disposition Approval Lifecycle (Claude domaini).
  *
- * HELD_PENDING_DISTRIBUTION draft → kullanıcı gerçek dağıtım satırlarını girer → POSTED.
- * Posting ANINDA ClientStatementLine YAZILMAZ (model A): proceeds defteri = bu lines;
- * ClientStatement.collect() POSTED line'ları okuyup immutable snapshot üretir.
+ * Politikanın çekirdek vaadi: **Partner/Manager onayı olmadan disposition POSTED olamaz.**
+ * Akış: HELD_PENDING_DISTRIBUTION → recommend() → DISTRIBUTION_RECOMMENDED → approve() (P4 + capability)
+ *       → DISTRIBUTION_APPROVED → post() → POSTED (finansal etki YALNIZ burada).
  *
- * İnvariantlar: POSTED toplam == totalAmount (para kaybolmaz); tutarlar pozitif Decimal;
- * HELD satırı POSTED dağıtımda olamaz; CLUSTER'da client-attributed satır caseClientId ister;
- * collection posting anında YENİDEN CONFIRMED doğrulanır; OFFSET_CLIENT_ADVANCE bakiye etkisi
- * YALNIZ BalanceLedger'dan (CREDIT, korelasyonlu) → collect() çift saymaz.
+ * - recommend(): kullanıcı dağıtım satırlarını yazar; line'lar DB'ye yazılır AMA finansal etki YOK;
+ *   P4 OfficeApprovalRequest (PENDING) açılır (4-göz: requester onaylayamaz).
+ * - approve(): yalnız PARTNER/yetkilendirilmiş avukat (isApproverEligible) + P4.approve (requester≠approver);
+ *   line'lar bu noktadan sonra DONDU; finansal etki YOK.
+ * - post(): yalnız DISTRIBUTION_APPROVED + APPROVED P4 request; OFFSET_CLIENT_ADVANCE→BalanceLedger CREDIT
+ *   ve status→POSTED bu tek $transaction'da. İnvariantlar: sum==totalAmount; collection CONFIRMED; çift-sayım yok.
  */
 @Injectable()
 export class DispositionPostingService {
   private readonly logger = new Logger(DispositionPostingService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly officeApproval: OfficeApprovalService,
+  ) {}
 
   /**
-   * Çağrıldığı yerler:
-   *  - DispositionController.post() → POST /collection-dispositions/:id/post
+   * S8-B FAZ-0 — Dağıtım önerisi: line'ları yazar (finansal etki YOK) + P4 onay talebi açar. HELD → DISTRIBUTION_RECOMMENDED.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - DispositionController.recommend() → POST /collection-dispositions/:id/recommend
+   * /// </remarks>
+   */
+  async recommend(
+    tenantId: string,
+    dispositionId: string,
+    dto: PostDispositionDto,
+    actor: { userId: string },
+  ): Promise<{ recommended: boolean; dispositionId: string; lineCount: number; approvalRequestId: string }> {
+    if (!actor?.userId) throw new BadRequestException('recommend için actor (requester) gerekir');
+    const disp = await this.requireDisposition(tenantId, dispositionId);
+    if (disp.status !== 'HELD_PENDING_DISTRIBUTION') {
+      throw new BadRequestException(`Yalnız HELD_PENDING_DISTRIBUTION önerilebilir (durum: ${disp.status})`);
+    }
+    await this.assertCollectionConfirmed(disp);
+    const resolved = this.resolveLines(disp, dto?.lines ?? []);
+    await this.assertCaseClientRoles(tenantId, disp.caseId, resolved);
+
+    // P4 onay talebi: 4-göz (requester onaylayamaz). idempotencyKey = disposition başına tek (re-recommend yok; HELD-gated).
+    const approval = await this.officeApproval.createPendingRequest({
+      tenantId,
+      actionCode: APPROVAL_ACTION_CODE,
+      targetType: APPROVAL_TARGET_TYPE,
+      targetRef: dispositionId,
+      requesterUserId: actor.userId,
+      savedIntent: {
+        dispositionId,
+        caseId: disp.caseId,
+        collectionId: disp.collectionId,
+        totalAmount: disp.totalAmount.toString(),
+        currency: disp.currency,
+        lines: resolved.map((r) => ({ type: r.type, amount: r.amount.toString(), caseClientId: r.caseClientId, note: r.note })),
+      },
+      idempotencyKey: `collection-disposition-recommend:${dispositionId}`,
+    });
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.collectionDispositionLine.deleteMany({ where: { dispositionId } });
+      for (const r of resolved) {
+        await tx.collectionDispositionLine.create({
+          data: { dispositionId, type: r.type, amount: r.amount, caseClientId: r.caseClientId, note: r.note },
+        });
+      }
+      // Yalnız HELD ise RECOMMENDED yap (yarış-güvenli; eşzamanlı recommend/post fence).
+      const upd = await tx.collectionDisposition.updateMany({
+        where: { id: dispositionId, tenantId, status: 'HELD_PENDING_DISTRIBUTION' },
+        data: {
+          status: 'DISTRIBUTION_RECOMMENDED',
+          recommendedAt: new Date(),
+          recommendedById: actor.userId,
+          approvalRequestId: approval.id,
+        },
+      });
+      if (upd.count === 0) throw new ConflictException('Disposition eşzamanlı değişti (HELD değil); öneri uygulanmadı');
+    });
+
+    this.logger.log(`CollectionDisposition RECOMMENDED: ${dispositionId} (${resolved.length} satır, approval=${approval.id})`);
+    return { recommended: true, dispositionId, lineCount: resolved.length, approvalRequestId: approval.id };
+  }
+
+  /**
+   * S8-B FAZ-0 — Onay: yalnız PARTNER/yetkilendirilmiş avukat + P4.approve (4-göz). DISTRIBUTION_RECOMMENDED → DISTRIBUTION_APPROVED.
+   * Finansal etki YOK; line'lar bu noktadan sonra dondu.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - DispositionController.approve() → POST /collection-dispositions/:id/approve
+   * /// </remarks>
+   */
+  async approve(
+    tenantId: string,
+    dispositionId: string,
+    actor: { userId: string },
+    note?: string,
+  ): Promise<{ approved: boolean; dispositionId: string; approvalRequestId: string }> {
+    if (!actor?.userId) throw new BadRequestException('approve için actor (approver) gerekir');
+    const disp = await this.requireDisposition(tenantId, dispositionId);
+    if (disp.status !== 'DISTRIBUTION_RECOMMENDED') {
+      throw new BadRequestException(`Yalnız DISTRIBUTION_RECOMMENDED onaylanabilir (durum: ${disp.status})`);
+    }
+    if (!disp.approvalRequestId) throw new ConflictException('Onay talebi bulunamadı (approvalRequestId yok)');
+
+    // K2: capability guard = bypass engeli (P4 da ayrıca enforce eder; defense-in-depth).
+    if (!(await this.officeApproval.isApproverEligible(actor.userId, tenantId))) {
+      throw new ForbiddenException('Onay yetkisi yok (PARTNER veya yetkilendirilmiş avukat gerekir)');
+    }
+    // K2: P4 approval = business karar kaydı (4-göz: requester onaylayamaz → SELF_APPROVAL_FORBIDDEN). Dış-etki YÜRÜTÜLMEZ.
+    await this.officeApproval.approve(disp.approvalRequestId, actor.userId, note);
+
+    const upd = await this.prisma.collectionDisposition.updateMany({
+      where: { id: dispositionId, tenantId, status: 'DISTRIBUTION_RECOMMENDED' },
+      data: { status: 'DISTRIBUTION_APPROVED', approvedAt: new Date(), approvedById: actor.userId },
+    });
+    if (upd.count === 0) throw new ConflictException('Disposition eşzamanlı değişti (RECOMMENDED değil); onay uygulanmadı');
+
+    this.logger.log(`CollectionDisposition APPROVED: ${dispositionId} (approver=${actor.userId})`);
+    return { approved: true, dispositionId, approvalRequestId: disp.approvalRequestId };
+  }
+
+  /**
+   * TM3 M2 + S8-B FAZ-0 — Finansal post: YALNIZ DISTRIBUTION_APPROVED + APPROVED P4 request. DISTRIBUTION_APPROVED → POSTED.
+   * Finansal etki (OFFSET_CLIENT_ADVANCE→BalanceLedger CREDIT, proceeds line'ları) BU adımda doğar.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * ///  - DispositionController.post() → POST /collection-dispositions/:id/post
+   * /// </remarks>
    */
   async post(
     tenantId: string,
     dispositionId: string,
-    dto: PostDispositionDto,
     actor?: { userId?: string },
   ): Promise<{ posted: boolean; dispositionId: string; lineCount: number }> {
+    const disp = await this.requireDisposition(tenantId, dispositionId);
+    if (disp.status !== 'DISTRIBUTION_APPROVED') {
+      throw new BadRequestException(`Yalnız DISTRIBUTION_APPROVED post edilebilir — Partner/Manager onayı gerekir (durum: ${disp.status})`);
+    }
+    if (!disp.approvalRequestId) throw new ConflictException('Onay talebi bulunamadı (approvalRequestId yok)');
+
+    // P4 approval kaydını TÜKET: gerçekten APPROVED mı (disp.status ile P4 arasında drift guard).
+    const approval = await this.prisma.officeApprovalRequest.findFirst({
+      where: { id: disp.approvalRequestId, tenantId },
+      select: { status: true },
+    });
+    if (!approval || (approval.status !== OfficeApprovalStatus.APPROVED && approval.status !== OfficeApprovalStatus.APPROVED_WITH_CHANGES)) {
+      throw new ConflictException('Onay kaydı APPROVED değil — post yasak');
+    }
+
+    // Posting anında collection YENİDEN doğrulanır (approve→post arası iptal/değişim guard).
+    await this.assertCollectionConfirmed(disp);
+
+    // Line'lar recommend'da yazıldı + approve'da donduruldu. Defense-in-depth: sum==totalAmount yeniden doğrula.
+    const lines = await this.prisma.collectionDispositionLine.findMany({
+      where: { dispositionId },
+      select: { id: true, type: true, amount: true },
+    });
+    if (lines.length === 0) throw new BadRequestException('Dağıtım satırı yok');
+    const sum = lines.reduce((acc, l) => acc.plus(new Prisma.Decimal(l.amount)), new Prisma.Decimal(0));
+    if (!sum.equals(disp.totalAmount)) {
+      throw new BadRequestException(`POSTED dağıtım toplamı (${sum.toString()}) tahsilat tutarına (${disp.totalAmount.toString()}) eşit olmalı`);
+    }
+
+    await this.prisma.$transaction(async (tx) => {
+      let caseBalanceId: string | null = null;
+      for (const l of lines) {
+        // OFFSET_CLIENT_ADVANCE → bakiye etkisi YALNIZ BalanceLedger'dan (avans defteri; çift-sayım yok).
+        // Yön CREDIT(+): borçlu tahsilatı müvekkilin avansladığı masrafı geri ödüyor → avans havuzuna para döner.
+        if (l.type === CollectionDispositionLineType.OFFSET_CLIENT_ADVANCE) {
+          if (!caseBalanceId) {
+            const cb = await tx.caseBalance.findFirst({ where: { caseId: disp.caseId, tenantId }, select: { id: true } });
+            caseBalanceId = cb?.id
+              ?? (await tx.caseBalance.create({ data: { tenantId, caseId: disp.caseId, currency: disp.currency }, select: { id: true } })).id;
+          }
+          await tx.balanceLedger.create({
+            data: {
+              tenantId,
+              caseBalanceId,
+              type: 'CREDIT',
+              amount: new Prisma.Decimal(l.amount),
+              currency: disp.currency,
+              source: `disposition_line:${l.id}`,
+              sourceId: l.id,
+              description: 'Tahsilat avans mahsubu (OFFSET_CLIENT_ADVANCE)',
+              createdById: actor?.userId,
+            },
+          });
+        }
+      }
+      const upd = await tx.collectionDisposition.updateMany({
+        where: { id: dispositionId, tenantId, status: 'DISTRIBUTION_APPROVED' },
+        data: { status: 'POSTED', postedAt: new Date(), postedById: actor?.userId },
+      });
+      if (upd.count === 0) throw new ConflictException('Disposition eşzamanlı değişti (APPROVED değil); post uygulanmadı');
+    });
+
+    // P4 yürütme işaretleyici (bookkeeping; finansal truth zaten commit). Hata olursa post'u bozma — reconcile sonradan.
+    try {
+      await this.officeApproval.markExecutionSucceeded(disp.approvalRequestId, actor?.userId ?? disp.approvedById ?? '');
+    } catch (e) {
+      this.logger.warn(`markExecutionSucceeded başarısız (post commit edildi): ${dispositionId} — ${(e as Error).message}`);
+    }
+
+    this.logger.log(`CollectionDisposition POSTED: ${dispositionId} (${lines.length} satır)`);
+    return { posted: true, dispositionId, lineCount: lines.length };
+  }
+
+  // ───────────────────────── internals ─────────────────────────
+
+  private async requireDisposition(tenantId: string, dispositionId: string) {
     const disp = await this.prisma.collectionDisposition.findFirst({
       where: { id: dispositionId, tenantId },
       select: {
         id: true, collectionId: true, caseId: true, beneficiaryScope: true,
         caseClientId: true, totalAmount: true, currency: true, status: true,
+        approvalRequestId: true, approvedById: true,
       },
     });
     if (!disp) throw new NotFoundException('Dağıtım kaydı bulunamadı');
-    if (disp.status !== 'HELD_PENDING_DISTRIBUTION') {
-      throw new BadRequestException(`Yalnız HELD_PENDING_DISTRIBUTION post edilebilir (durum: ${disp.status})`);
-    }
+    return disp;
+  }
 
-    // Posting anında collection YENİDEN doğrulanır (M1 draft'tan sonra iptal/değişim guard).
+  private async assertCollectionConfirmed(disp: { collectionId: string; caseId: string }) {
     const col = await this.prisma.collection.findFirst({
-      where: { id: disp.collectionId, caseId: disp.caseId, tenantId },
+      where: { id: disp.collectionId, caseId: disp.caseId },
       select: { status: true },
     });
     if (!col) throw new BadRequestException('Tahsilat scope dışı (tenant/case/collection mismatch)');
     if (col.status !== 'CONFIRMED') {
       throw new BadRequestException(`Tahsilat ${col.status} — posting yasak (CONFIRMED değil)`);
     }
+  }
 
-    const lines = dto?.lines ?? [];
-    if (lines.length === 0) throw new BadRequestException('En az bir dağıtım satırı gerekir');
-
+  /** Line validasyonu + çözümleme (sum==totalAmount; pozitif; HELD yasak; caseClientId scope). */
+  private resolveLines(
+    disp: { beneficiaryScope: string; caseClientId: string | null; totalAmount: Prisma.Decimal },
+    lines: PostDispositionDto['lines'],
+  ): ResolvedLine[] {
+    if (!lines || lines.length === 0) throw new BadRequestException('En az bir dağıtım satırı gerekir');
     let sum = new Prisma.Decimal(0);
     const resolved = lines.map((ln, i) => {
       if (ln.type === HELD) {
-        throw new BadRequestException(`Satır ${i}: HELD_PENDING_DISTRIBUTION POSTED dağıtım satırı olamaz`);
+        throw new BadRequestException(`Satır ${i}: HELD_PENDING_DISTRIBUTION dağıtım satırı olamaz`);
       }
       let amount: Prisma.Decimal;
       try {
@@ -77,7 +282,6 @@ export class DispositionPostingService {
       if (amount.lte(0)) throw new BadRequestException(`Satır ${i}: tutar pozitif olmalı`);
       sum = sum.plus(amount);
 
-      // caseClientId: SINGLE → disposition.caseClientId; CLUSTER → satır caseClientId.
       let caseClientId: string | null;
       if (disp.beneficiaryScope === 'SINGLE_CASE_CLIENT') {
         caseClientId = disp.caseClientId ?? ln.caseClientId ?? null;
@@ -89,78 +293,26 @@ export class DispositionPostingService {
       }
       return { type: ln.type, amount, caseClientId, note: ln.note ?? null };
     });
-
-    // POSTED kuralı: line toplamı == totalAmount (eksik/fazla yasak → sessiz "kalan para" yok).
     if (!sum.equals(disp.totalAmount)) {
       throw new BadRequestException(
-        `POSTED dağıtım toplamı (${sum.toString()}) tahsilat tutarına (${disp.totalAmount.toString()}) eşit olmalı`,
+        `Dağıtım toplamı (${sum.toString()}) tahsilat tutarına (${disp.totalAmount.toString()}) eşit olmalı`,
       );
     }
+    return resolved;
+  }
 
-    // caseClientId foreign-case/role doğrulaması: her satır caseClientId'si BU case'in eligible
-    // alacaklısı (ALACAKLI/ORTAK_ALACAKLI) olmalı. Başka dosyanın CaseClient'ı veya uygunsuz rol reddedilir.
+  /** Her caseClientId BU case'in eligible alacaklısı (ALACAKLI/ORTAK_ALACAKLI) olmalı; yabancı/uygunsuz rol reddedilir. */
+  private async assertCaseClientRoles(tenantId: string, caseId: string, resolved: ResolvedLine[]): Promise<void> {
     const caseClientIds = [...new Set(resolved.map((r) => r.caseClientId).filter((x): x is string => !!x))];
-    if (caseClientIds.length > 0) {
-      const valid = await this.prisma.caseClient.findMany({
-        where: {
-          id: { in: caseClientIds },
-          caseId: disp.caseId,
-          role: { in: ['ALACAKLI', 'ORTAK_ALACAKLI'] },
-          client: { tenantId },
-        },
-        select: { id: true },
-      });
-      const validSet = new Set(valid.map((v) => v.id));
-      const foreign = caseClientIds.find((id) => !validSet.has(id));
-      if (foreign) {
-        throw new BadRequestException(`caseClientId geçersiz/yabancı veya uygun rolde değil (ALACAKLI/ORTAK_ALACAKLI): ${foreign}`);
-      }
-    }
-
-    await this.prisma.$transaction(async (tx) => {
-      // M1 default HELD satırını (ve varsa eskileri) replace et.
-      await tx.collectionDispositionLine.deleteMany({ where: { dispositionId } });
-
-      let caseBalanceId: string | null = null;
-      for (const r of resolved) {
-        const created = await tx.collectionDispositionLine.create({
-          data: { dispositionId, type: r.type, amount: r.amount, caseClientId: r.caseClientId, note: r.note },
-          select: { id: true },
-        });
-
-        // OFFSET_CLIENT_ADVANCE → bakiye etkisi YALNIZ BalanceLedger'dan (avans defteri).
-        // Yön CREDIT(+): borçlu tahsilatı müvekkilin avansladığı masrafı geri ödüyor → avans havuzuna
-        // para döner (BalanceLedgerType.CREDIT = "Avans/ödeme geldi"). Korelasyon source=disposition_line:<id>
-        // → collect() proceeds satırını BİLGİ(0) gösterir, bakiye yalnız bu BalanceLedger'dan oynar (çift-sayım yok).
-        if (r.type === CollectionDispositionLineType.OFFSET_CLIENT_ADVANCE) {
-          if (!caseBalanceId) {
-            const cb = await tx.caseBalance.findFirst({ where: { caseId: disp.caseId, tenantId }, select: { id: true } });
-            caseBalanceId = cb?.id
-              ?? (await tx.caseBalance.create({ data: { tenantId, caseId: disp.caseId, currency: disp.currency }, select: { id: true } })).id;
-          }
-          await tx.balanceLedger.create({
-            data: {
-              tenantId,
-              caseBalanceId,
-              type: 'CREDIT',
-              amount: r.amount,
-              currency: disp.currency,
-              source: `disposition_line:${created.id}`,
-              sourceId: created.id,
-              description: 'Tahsilat avans mahsubu (OFFSET_CLIENT_ADVANCE)',
-              createdById: actor?.userId,
-            },
-          });
-        }
-      }
-
-      await tx.collectionDisposition.update({
-        where: { id: dispositionId },
-        data: { status: 'POSTED', postedAt: new Date(), postedById: actor?.userId },
-      });
+    if (caseClientIds.length === 0) return;
+    const valid = await this.prisma.caseClient.findMany({
+      where: { id: { in: caseClientIds }, caseId, role: { in: ['ALACAKLI', 'ORTAK_ALACAKLI'] }, client: { tenantId } },
+      select: { id: true },
     });
-
-    this.logger.log(`CollectionDisposition POSTED: ${dispositionId} (${resolved.length} satır)`);
-    return { posted: true, dispositionId, lineCount: resolved.length };
+    const validSet = new Set(valid.map((v) => v.id));
+    const foreign = caseClientIds.find((id) => !validSet.has(id));
+    if (foreign) {
+      throw new BadRequestException(`caseClientId geçersiz/yabancı veya uygun rolde değil (ALACAKLI/ORTAK_ALACAKLI): ${foreign}`);
+    }
   }
 }

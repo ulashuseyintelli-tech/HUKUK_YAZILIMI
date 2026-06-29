@@ -4,6 +4,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { DispositionPostingService } from './disposition-posting.service';
 import { ClientSettlementReadService } from './client-settlement-read.service';
 import { PostDispositionDto } from './dto/post-disposition.dto';
+import { ApproveDispositionDto } from './dto/approve-disposition.dto';
 
 /** actor compile-time shape — req.user.id auth context (body'den ASLA). */
 interface AuthRequest {
@@ -47,10 +48,24 @@ export class DispositionController {
     return { data };
   }
 
-  /** Dağıtım kararını POSTED yap (kullanıcı onayı). actor = req.user.id. */
+  /** S8-B FAZ-0 — Dağıtım önerisi: line'lar yazılır (finansal etki YOK) + P4 onay talebi açılır. actor = requester. */
+  @Post(':id/recommend')
+  async recommend(@Request() req: AuthRequest, @Param('id') id: string, @Body() body: PostDispositionDto) {
+    const data = await this.posting.recommend(req.user.tenantId, id, body, { userId: req.user.id });
+    return { data };
+  }
+
+  /** S8-B FAZ-0 — Dağıtım onayı: yalnız PARTNER/yetkilendirilmiş avukat + P4 4-göz (requester onaylayamaz). actor = approver. */
+  @Post(':id/approve')
+  async approve(@Request() req: AuthRequest, @Param('id') id: string, @Body() body: ApproveDispositionDto) {
+    const data = await this.posting.approve(req.user.tenantId, id, { userId: req.user.id }, body?.note);
+    return { data };
+  }
+
+  /** Dağıtım kararını POSTED yap — YALNIZ DISTRIBUTION_APPROVED (Partner/Manager onayı sonrası). actor = req.user.id. */
   @Post(':id/post')
-  async post(@Request() req: AuthRequest, @Param('id') id: string, @Body() body: PostDispositionDto) {
-    const data = await this.posting.post(req.user.tenantId, id, body, { userId: req.user.id });
+  async post(@Request() req: AuthRequest, @Param('id') id: string) {
+    const data = await this.posting.post(req.user.tenantId, id, { userId: req.user.id });
     return { data };
   }
 }
