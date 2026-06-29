@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, Badge, Spinner } from '@hukuk/ui';
-import { X, ArrowLeftRight, AlertCircle, Lock, CheckCircle2 } from 'lucide-react';
+import { X, ArrowLeftRight, AlertCircle, Lock, CheckCircle2, Info } from 'lucide-react';
 import { formatMoneyString } from '@/lib/api/client-accounting';
 import {
   clientOffsetApi,
@@ -11,6 +11,7 @@ import {
   type OffsetPreview,
   type CreateOffsetInput,
   type ClientOffsetRecord,
+  type ClientOffsetDetail,
 } from '@/lib/api/client-offset';
 import { AccountingTable } from './AccountingTable';
 
@@ -38,6 +39,7 @@ function genIdempotencyKey(): string {
 const OFFSET_INVALIDATE_KEYS = [
   'client-offset-eligibility',
   'client-offset-history',
+  'client-offset-detail',
   'client-cari-summary',
   'client-cari-movements',
   'client-level-statements',
@@ -61,6 +63,7 @@ export function OffsetDrawer({ clientId, currency, isOpen, onClose, onApplied, i
   // Önizlenen offset: data + ona kilitli idempotencyKey + input snapshot. Girdi değişince null'lanır (re-preview zorunlu).
   const [preview, setPreview] = useState<{ data: OffsetPreview; key: string; input: CreateOffsetInput } | null>(null);
   const [reverseTarget, setReverseTarget] = useState<ClientOffsetRecord | null>(null);
+  const [detailTargetId, setDetailTargetId] = useState<string | null>(null);
   // S8-A — initialSelection seed'i açılış başına TEK kez (kullanıcı düzenlemesini ezmemek için).
   const seededRef = useRef(false);
 
@@ -77,6 +80,12 @@ export function OffsetDrawer({ clientId, currency, isOpen, onClose, onApplied, i
     enabled: isOpen && !!clientId,
   });
 
+  // C-2D-1 — satır bazlı read-only audit/source detail projection. Mutation yok; raw audit metadata render edilmez.
+  const detailQ = useQuery({
+    queryKey: ['client-offset-detail', detailTargetId],
+    queryFn: () => clientOffsetApi.detail(detailTargetId as string),
+    enabled: isOpen && tab === 'history' && !!detailTargetId,
+  });
   const canApply = eligQ.data?.canApply === true;
   const buckets = eligQ.data?.eligiblePayableBuckets ?? [];
   const expenses = eligQ.data?.eligibleExpenseRequests ?? [];
@@ -389,39 +398,58 @@ export function OffsetDrawer({ clientId, currency, isOpen, onClose, onApplied, i
                   {rows.map((r) => {
                     const isReversal = r.kind === 'REVERSAL';
                     const alreadyReversed = r.kind === 'APPLY' && reversedApplyIds.has(r.id);
+                    const detailOpen = detailTargetId === r.id;
                     return (
-                      <tr key={r.id} className={`hover:bg-gray-50 ${isReversal ? 'bg-slate-50/50' : ''}`}>
-                        <td className="min-w-[132px] text-gray-600">
-                          <div className="whitespace-nowrap">{formatOffsetDate(r.createdAt)}</div>
-                          <div className="mt-0.5 text-[11px] text-gray-400">
-                            {isReversal ? `Geri alma - ${shortOffsetId(r.reversesOffsetId)}` : `Mahsup - ${shortOffsetId(r.id)}`}
-                          </div>
-                        </td>
-                        <td className="text-right">{formatMoneyString(r.amount, r.currency)}</td>
-                        <td className="whitespace-nowrap">
-                          {isReversal ? (
-                            <Badge variant="secondary">İptal (geri alma)</Badge>
-                          ) : alreadyReversed ? (
-                            <Badge variant="warning">İptal edildi</Badge>
-                          ) : (
-                            <Badge variant="success">Uygulandı</Badge>
-                          )}
-                        </td>
-                        <td className="text-right">
-                          {r.kind === 'APPLY' ? (
-                            <Button
-                              variant="ghost" size="sm"
-                              disabled={!canApply || alreadyReversed}
-                              title={alreadyReversed ? 'Bu mahsup zaten iptal edilmiş' : !canApply ? 'Yalnız Partner/Manager' : undefined}
-                              onClick={() => setReverseTarget(r)}
-                            >
-                              İptal
-                            </Button>
-                          ) : (
-                            <span className="text-[11px] text-gray-400">—</span>
-                          )}
-                        </td>
-                      </tr>
+                      <Fragment key={r.id}>
+                        <tr className={`hover:bg-gray-50 ${isReversal ? 'bg-slate-50/50' : ''}`}>
+                          <td className="min-w-[132px] text-gray-600">
+                            <div className="whitespace-nowrap">{formatOffsetDate(r.createdAt)}</div>
+                            <div className="mt-0.5 text-[11px] text-gray-400">
+                              {isReversal ? `Geri alma - ${shortOffsetId(r.reversesOffsetId)}` : `Mahsup - ${shortOffsetId(r.id)}`}
+                            </div>
+                          </td>
+                          <td className="text-right">{formatMoneyString(r.amount, r.currency)}</td>
+                          <td className="whitespace-nowrap">
+                            {isReversal ? (
+                              <Badge variant="secondary">İptal (geri alma)</Badge>
+                            ) : alreadyReversed ? (
+                              <Badge variant="warning">İptal edildi</Badge>
+                            ) : (
+                              <Badge variant="success">Uygulandı</Badge>
+                            )}
+                          </td>
+                          <td className="text-right">
+                            <div className="flex justify-end gap-1">
+                              <Button
+                                variant="ghost" size="sm"
+                                aria-expanded={detailOpen}
+                                onClick={() => setDetailTargetId(detailOpen ? null : r.id)}
+                              >
+                                Detay
+                              </Button>
+                              {r.kind === 'APPLY' ? (
+                                <Button
+                                  variant="ghost" size="sm"
+                                  disabled={!canApply || alreadyReversed}
+                                  title={alreadyReversed ? 'Bu mahsup zaten iptal edilmiş' : !canApply ? 'Yalnız Partner/Manager' : undefined}
+                                  onClick={() => setReverseTarget(r)}
+                                >
+                                  İptal
+                                </Button>
+                              ) : (
+                                <span className="self-center text-[11px] text-gray-400">—</span>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+                        {detailOpen && (
+                          <tr className="bg-slate-50/60">
+                            <td colSpan={4} className="p-0">
+                              <OffsetDetailPanel detail={detailQ.data} isLoading={detailQ.isLoading} isError={detailQ.isError} />
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
                     );
                   })}
                 </AccountingTable>
@@ -446,6 +474,58 @@ export function OffsetDrawer({ clientId, currency, isOpen, onClose, onApplied, i
   );
 }
 
+function OffsetDetailPanel({ detail, isLoading, isError }: { detail?: ClientOffsetDetail; isLoading: boolean; isError: boolean }) {
+  if (isLoading) {
+    return <div className="flex items-center gap-2 px-3 py-3 text-[12px] text-gray-500"><Spinner className="h-4 w-4" /> Detay yükleniyor</div>;
+  }
+  if (isError) {
+    return <div className="flex items-center gap-2 px-3 py-3 text-[12px] text-red-600"><AlertCircle className="h-4 w-4" /> Detay alınamadı.</div>;
+  }
+  if (!detail) return null;
+
+  return (
+    <div className="space-y-3 border-t border-slate-200 px-3 py-3 text-[12px] text-gray-700" aria-label="Mahsup detay projeksiyonu">
+      <div className="flex items-center gap-1.5 font-semibold text-gray-800">
+        <Info className="h-3.5 w-3.5 text-indigo-600" /> Denetim detayı
+      </div>
+      <div className="grid gap-1.5">
+        <DetailRow label="İşlemi yapan" value={detail.offset.createdBy.displayName} />
+        <DetailRow label="Alacak kaynağı" value={detail.sourceSummary.payable.label} />
+        <DetailRow label="Masraf kaynağı" value={detail.sourceSummary.expense.label} />
+        {detail.offset.reversesOffsetId && <DetailRow label="Geri alınan kayıt" value={shortOffsetId(detail.offset.reversesOffsetId)} />}
+        {detail.offset.reversedByOffsetId && <DetailRow label="Geri alan kayıt" value={shortOffsetId(detail.offset.reversedByOffsetId)} />}
+        {detail.offset.reason && <DetailRow label="Gerekçe" value={detail.offset.reason} />}
+      </div>
+      <div>
+        <div className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-500">Audit geçmişi</div>
+        {detail.auditEvents.length === 0 ? (
+          <div className="rounded border border-slate-200 bg-white px-2 py-1.5 text-gray-500">Audit kaydı yok.</div>
+        ) : (
+          <div className="space-y-1">
+            {detail.auditEvents.map((event, index) => (
+              <div key={`${event.action}-${event.createdAt}-${index}`} className="rounded border border-slate-200 bg-white px-2 py-1.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-medium text-gray-800">{event.safeSummary}</span>
+                  <span className="text-[11px] text-gray-400">{formatOffsetDate(event.createdAt)}</span>
+                </div>
+                <div className="mt-0.5 text-[11px] text-gray-500">{event.actor.displayName} · {event.action}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DetailRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex justify-between gap-3">
+      <span className="text-gray-500">{label}</span>
+      <span className="text-right font-medium text-gray-800">{value}</span>
+    </div>
+  );
+}
 function HistorySummary({ stats }: {
   stats: { applyCount: number; activeApplyCount: number; reversedApplyCount: number; reversalCount: number };
 }) {

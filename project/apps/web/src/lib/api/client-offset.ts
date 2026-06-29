@@ -134,6 +134,52 @@ export interface ClientOffsetRecord {
   createdAt: string;
 }
 
+
+export interface OffsetActorProjection {
+  id: string | null;
+  displayName: string;
+}
+
+export interface ClientOffsetAuditEventProjection {
+  action: string;
+  actor: OffsetActorProjection;
+  createdAt: string;
+  safeSummary: string;
+}
+
+export interface ClientOffsetDetail {
+  offset: {
+    id: string;
+    clientId: string;
+    kind: 'APPLY' | 'REVERSAL';
+    amount: string;
+    currency: string;
+    reason: string | null;
+    createdAt: string;
+    createdBy: OffsetActorProjection;
+    reversesOffsetId: string | null;
+    reversedByOffsetId: string | null;
+  };
+  sourceSummary: {
+    payable: {
+      caseId: string;
+      caseNumber: string | null;
+      caseLabel: string;
+      caseClientId: string;
+      role: string | null;
+      label: string;
+    };
+    expense: {
+      caseId: string;
+      caseNumber: string | null;
+      caseLabel: string;
+      expenseRequestId: string;
+      status: string | null;
+      label: string;
+    };
+  };
+  auditEvents: ClientOffsetAuditEventProjection[];
+}
 export interface OffsetLegSelectionInput {
   clientId: string;
   currency: string;
@@ -198,6 +244,11 @@ export const clientOffsetApi = {
     if (filters.kind) qs.set('kind', filters.kind);
     const suffix = qs.toString() ? `?${qs.toString()}` : '';
     const resp = await apiClient.get<ClientOffsetRecord[]>(`/client-offsets/client/${clientId}${suffix}`);
+    return resp.data;
+  },
+  /** Tek mahsup için read-only source/audit detail projection. */
+  async detail(offsetId: string): Promise<ClientOffsetDetail> {
+    const resp = await apiClient.get<ClientOffsetDetail>(`/client-offsets/${offsetId}/detail`);
     return resp.data;
   },
 };

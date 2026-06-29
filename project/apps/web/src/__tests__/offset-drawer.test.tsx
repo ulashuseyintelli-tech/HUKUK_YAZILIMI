@@ -22,6 +22,7 @@ vi.mock('@/lib/api/client-offset', async (importOriginal) => {
       create: vi.fn(),
       reverse: vi.fn(),
       list: vi.fn(),
+      detail: vi.fn(),
     },
   };
 });
@@ -161,6 +162,26 @@ describe('OffsetDrawer — S8-A initialSelection ön-doldurma', () => {
 
 const APPLY_ROW = (over: any = {}) => ({ id: 'a1', clientId: 'cl-1', currency: 'TRY', amount: '500', kind: 'APPLY', payableCaseId: 'case-P', payableCaseClientId: 'cc-A', expenseCaseId: 'case-E', expenseRequestId: 'er-1', reversesOffsetId: null, reason: null, createdAt: '2026-06-20T00:00:00.000Z', ...over });
 const REVERSAL_ROW = (over: any = {}) => ({ ...APPLY_ROW(), id: 'r1', kind: 'REVERSAL', reversesOffsetId: 'a1', reason: 'düzeltme yapıldı', ...over });
+const OFFSET_DETAIL = {
+  offset: {
+    ...APPLY_ROW({ id: 'a2' }),
+    createdBy: { id: 'u1', displayName: 'Ayşe Yılmaz' },
+    reversedByOffsetId: null,
+  },
+  sourceSummary: {
+    payable: { caseId: 'case-P', caseNumber: '2026/1', caseLabel: '2026/1', caseClientId: 'cc-A', role: 'ALACAKLI', label: '2026/1 · ALACAKLI' },
+    expense: { caseId: 'case-E', caseNumber: '2026/2', caseLabel: '2026/2', expenseRequestId: 'er-1', status: 'PENDING', label: '2026/2 · Peşin harç' },
+  },
+  auditEvents: [
+    {
+      action: 'CLIENT_OFFSET_CREATED',
+      actor: { id: 'u1', displayName: 'Ayşe Yılmaz' },
+      createdAt: '2026-06-20T10:00:00.000Z',
+      safeSummary: 'Müvekkil mahsubu uygulandı (500 TRY)',
+      metadata: { authorizationMode: 'DIRECT_CAPABILITY' },
+    },
+  ],
+};
 
 async function gotoHistory() {
   fireEvent.click(await screen.findByRole('tab', { name: /Geçmiş/ }));
@@ -222,5 +243,25 @@ describe('OffsetDrawer — C-2C Geçmiş + reverse', () => {
     await gotoHistory();
     await waitFor(() => expect(screen.getByText('Uygulandı')).toBeTruthy());
     expect((screen.getByRole('button', { name: /^İptal$/ }) as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe('OffsetDrawer — C-2D detail projection', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('Detay expand: lazy API çağırır, source/audit projection gösterir ve raw metadata render etmez', async () => {
+    api.detail.mockResolvedValue(OFFSET_DETAIL);
+    renderDrawer({ clientId: 'cl-1', currency: 'TRY', canApply: true, eligiblePayableBuckets: [], eligibleExpenseRequests: [] }, [APPLY_ROW({ id: 'a2' })]);
+
+    await gotoHistory();
+    fireEvent.click(await screen.findByRole('button', { name: /^Detay$/ }));
+
+    await waitFor(() => expect(api.detail).toHaveBeenCalledWith('a2'));
+    expect(await screen.findByText(/Denetim detayı/)).toBeTruthy();
+    expect(screen.getAllByText(/Ayşe Yılmaz/).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/2026\/1 · ALACAKLI/)).toBeTruthy();
+    expect(screen.getByText(/2026\/2 · Peşin harç/)).toBeTruthy();
+    expect(screen.getByText(/Müvekkil mahsubu uygulandı/)).toBeTruthy();
+    expect(screen.queryByText(/DIRECT_CAPABILITY/)).toBeNull();
   });
 });

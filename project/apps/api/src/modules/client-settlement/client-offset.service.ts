@@ -58,6 +58,51 @@ export interface OffsetPreview {
   maxAmount: string;
   netUnchanged: boolean;
 }
+export interface OffsetActorProjection {
+  id: string | null;
+  displayName: string;
+}
+
+export interface ClientOffsetAuditEventProjection {
+  action: string;
+  actor: OffsetActorProjection;
+  createdAt: Date;
+  safeSummary: string;
+}
+
+export interface ClientOffsetDetailProjection {
+  offset: {
+    id: string;
+    clientId: string;
+    kind: string;
+    amount: string;
+    currency: string;
+    reason: string | null;
+    createdAt: Date;
+    createdBy: OffsetActorProjection;
+    reversesOffsetId: string | null;
+    reversedByOffsetId: string | null;
+  };
+  sourceSummary: {
+    payable: {
+      caseId: string;
+      caseNumber: string | null;
+      caseLabel: string;
+      caseClientId: string;
+      role: string | null;
+      label: string;
+    };
+    expense: {
+      caseId: string;
+      caseNumber: string | null;
+      caseLabel: string;
+      expenseRequestId: string;
+      status: string | null;
+      label: string;
+    };
+  };
+  auditEvents: ClientOffsetAuditEventProjection[];
+}
 
 /**
  * TM3 Faz C C-1 — Müvekkil Mahsubu (ClientOffset) service. ADR: docs/finance/adr-client-offset-cross-ledger-settlement.md
@@ -455,8 +500,194 @@ export class ClientOffsetService {
     });
   }
 
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - ClientOffsetController.detail() → GET /client-offsets/:offsetId/detail (read-only offset source/audit projection)
+  /// </remarks>
+  async getOffsetDetail(tenantId: string, offsetId: string): Promise<ClientOffsetDetailProjection> {
+    const offset = await this.prisma.clientOffset.findFirst({
+      where: { id: offsetId, tenantId },
+      select: {
+        id: true,
+        clientId: true,
+        amount: true,
+        currency: true,
+        kind: true,
+        payableCaseId: true,
+        payableCaseClientId: true,
+        expenseCaseId: true,
+        expenseRequestId: true,
+        createdById: true,
+        reason: true,
+        reversesOffsetId: true,
+        createdAt: true,
+      },
+    });
+    if (!offset) throw new NotFoundException('Mahsup kaydı bulunamadı');
+
+    const [
+      createdBy,
+      payableCase,
+      expenseCase,
+      payableCaseClient,
+      expenseRequest,
+      reversedBy,
+      auditRows,
+    ] = await Promise.all([
+      this.prisma.user.findFirst({
+        where: { id: offset.createdById, tenantId },
+        select: { id: true, name: true, surname: true },
+      }),
+      this.prisma.case.findFirst({
+        where: { id: offset.payableCaseId, tenantId },
+        select: { id: true, fileNumber: true, executionFileNumber: true },
+      }),
+      this.prisma.case.findFirst({
+        where: { id: offset.expenseCaseId, tenantId },
+        select: { id: true, fileNumber: true, executionFileNumber: true },
+      }),
+      this.prisma.caseClient.findFirst({
+        where: {
+          id: offset.payableCaseClientId,
+          caseId: offset.payableCaseId,
+          clientId: offset.clientId,
+          case: { tenantId },
+          client: { tenantId },
+        },
+        select: { id: true, role: true },
+      }),
+      this.prisma.expenseRequest.findFirst({
+        where: {
+          id: offset.expenseRequestId,
+          tenantId,
+          clientId: offset.clientId,
+          caseId: offset.expenseCaseId,
+        },
+        select: {
+          id: true,
+          status: true,
+          packageCode: true,
+          stageCode: true,
+          requestItems: {
+            orderBy: { sortOrder: 'asc' },
+            take: 1,
+            select: { label: true },
+          },
+        },
+      }),
+      offset.kind === 'APPLY'
+        ? this.prisma.clientOffset.findFirst({
+            where: { tenantId, kind: 'REVERSAL', reversesOffsetId: offset.id },
+            select: { id: true },
+          })
+        : Promise.resolve(null),
+      this.prisma.auditLog.findMany({
+        where: { tenantId, entityType: 'ClientOffset', entityId: offset.id },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          action: true,
+          userId: true,
+          userName: true,
+          description: true,
+          createdAt: true,
+        },
+      }),
+    ]);
+
+    const auditUserIds = Array.from(
+      new Set(auditRows.map((row) => row.userId).filter((id): id is string => !!id)),
+    );
+    const auditUsers = auditUserIds.length
+      ? await this.prisma.user.findMany({
+          where: { tenantId, id: { in: auditUserIds } },
+          select: { id: true, name: true, surname: true },
+        })
+      : [];
+    const auditUserMap = new Map(auditUsers.map((user) => [user.id, user]));
+
+    const payableCaseLabel = this.caseLabel(payableCase, offset.payableCaseId);
+    const expenseCaseLabel = this.caseLabel(expenseCase, offset.expenseCaseId);
+    const expenseFirstItemLabel = expenseRequest?.requestItems?.[0]?.label ?? null;
+    const expenseLabel =
+      expenseFirstItemLabel ??
+      expenseRequest?.packageCode ??
+      expenseRequest?.stageCode ??
+      `Masraf talebi ${this.shortId(offset.expenseRequestId)}`;
+
+    return {
+      offset: {
+        id: offset.id,
+        clientId: offset.clientId,
+        kind: offset.kind,
+        amount: offset.amount.toString(),
+        currency: offset.currency,
+        reason: offset.reason,
+        createdAt: offset.createdAt,
+        createdBy: {
+          id: offset.createdById,
+          displayName: this.userDisplay(createdBy, null, offset.createdById),
+        },
+        reversesOffsetId: offset.reversesOffsetId,
+        reversedByOffsetId: reversedBy?.id ?? null,
+      },
+      sourceSummary: {
+        payable: {
+          caseId: offset.payableCaseId,
+          caseNumber: payableCase?.fileNumber ?? null,
+          caseLabel: payableCaseLabel,
+          caseClientId: offset.payableCaseClientId,
+          role: payableCaseClient?.role ?? null,
+          label: `${payableCaseLabel} · ${payableCaseClient?.role ?? 'payable'}`,
+        },
+        expense: {
+          caseId: offset.expenseCaseId,
+          caseNumber: expenseCase?.fileNumber ?? null,
+          caseLabel: expenseCaseLabel,
+          expenseRequestId: offset.expenseRequestId,
+          status: expenseRequest?.status ?? null,
+          label: `${expenseCaseLabel} · ${expenseLabel}`,
+        },
+      },
+      auditEvents: auditRows.map((row) => ({
+        action: row.action,
+        actor: {
+          id: row.userId ?? null,
+          displayName: this.userDisplay(row.userId ? auditUserMap.get(row.userId) : null, row.userName, row.userId ?? null),
+        },
+        createdAt: row.createdAt,
+        safeSummary: this.offsetAuditSummary(row.action, row.description),
+      })),
+    };
+  }
+
   // ==================== helpers ====================
 
+  private caseLabel(row: { fileNumber: string | null; executionFileNumber?: string | null } | null, fallbackId: string): string {
+    return row?.fileNumber || row?.executionFileNumber || `Dosya ${this.shortId(fallbackId)}`;
+  }
+
+  private userDisplay(
+    row: { name?: string | null; surname?: string | null } | null | undefined,
+    fallbackName: string | null | undefined,
+    fallbackId: string | null | undefined,
+  ): string {
+    const fullName = [row?.name, row?.surname].filter(Boolean).join(' ').trim();
+    if (fullName) return fullName;
+    if (fallbackName?.trim()) return fallbackName.trim();
+    return fallbackId ? `Kullanıcı ${this.shortId(fallbackId)}` : 'Bilinmeyen kullanıcı';
+  }
+
+  private shortId(value: string): string {
+    return value.slice(0, 8);
+  }
+
+  private offsetAuditSummary(action: string, description: string | null): string {
+    if (description?.trim()) return description.trim();
+    if (action === 'CLIENT_OFFSET_CREATED') return 'Müvekkil mahsubu uygulandı';
+    if (action === 'CLIENT_OFFSET_REVERSED') return 'Müvekkil mahsubu iptal edildi';
+    return action;
+  }
   private lockKey(tenantId: string, clientId: string, currency: string): string {
     return `client-offset:${tenantId}:${clientId}:${currency}`;
   }

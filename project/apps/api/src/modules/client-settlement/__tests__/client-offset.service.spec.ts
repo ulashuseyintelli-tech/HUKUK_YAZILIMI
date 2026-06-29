@@ -28,14 +28,25 @@ const PLAIN_LAWYER = { lawyer: { lawyerRank: 'LAWYER' }, staffMember: null };
 // payable=1000 (1 confirmed CLIENT_PAYABLE line), expense unpaid=1000 (ER total 1000 / paid 0)
 function makeDb(opts: any = {}) {
   const db: any = {
-    user: { findUnique: jest.fn().mockResolvedValue('user' in opts ? opts.user : PARTNER) },
+    user: {
+      findUnique: jest.fn().mockResolvedValue('user' in opts ? opts.user : PARTNER),
+      findFirst: jest.fn().mockResolvedValue(opts.userDetail ?? { id: 'u1', name: 'Ayşe', surname: 'Yılmaz' }),
+      findMany: jest.fn().mockResolvedValue(opts.auditUsers ?? [{ id: 'u1', name: 'Ayşe', surname: 'Yılmaz' }]),
+    },
     caseClient: {
-      findFirst: jest.fn().mockResolvedValue('cc' in opts ? opts.cc : { id: 'cc-A' }),
+      findFirst: jest.fn().mockResolvedValue('cc' in opts ? opts.cc : { id: 'cc-A', role: 'ALACAKLI' }),
       findMany: jest.fn().mockResolvedValue(opts.ccList ?? []),
+    },
+    case: {
+      findFirst: jest.fn().mockImplementation((args: any) => {
+        if (args.where?.id === 'case-P') return Promise.resolve(opts.payableCase ?? { id: 'case-P', fileNumber: '2026/1', executionFileNumber: '2026/EX-1' });
+        if (args.where?.id === 'case-E') return Promise.resolve(opts.expenseCase ?? { id: 'case-E', fileNumber: '2026/2', executionFileNumber: '2026/EX-2' });
+        return Promise.resolve(null);
+      }),
     },
     expenseRequest: {
       findFirst: jest.fn().mockResolvedValue(
-        'er' in opts ? opts.er : { id: 'er-1', totalAmount: D(1000), paidTotal: D(0), currency: 'TRY' },
+        'er' in opts ? opts.er : { id: 'er-1', totalAmount: D(1000), paidTotal: D(0), currency: 'TRY', status: 'PENDING', packageCode: 'UYAP_PRE', stageCode: 'OPENING', requestItems: [{ label: 'Peşin harç' }] },
       ),
       findMany: jest.fn().mockResolvedValue(opts.erList ?? []),
     },
@@ -59,6 +70,9 @@ function makeDb(opts: any = {}) {
         }
         return Promise.resolve({ _sum: { amount: null } });
       }),
+    },
+    auditLog: {
+      findMany: jest.fn().mockResolvedValue(opts.auditRows ?? []),
     },
     $executeRaw: jest.fn().mockResolvedValue(1),
   };
@@ -409,5 +423,70 @@ describe('ClientOffsetService — GÜVENLİK (explicit PARTNER/MANAGER; dormant 
   it('@CpeRequired future-metadata controller\'da MEVCUT ama service-level guard bağımsız çalışır', () => {
     expect(Reflect.getMetadata(CPE_ACTION_CODE_KEY, ClientOffsetController.prototype.create)).toBe(ActionCode.CLIENT_OFFSET_APPLY);
     expect(Reflect.getMetadata(CPE_ACTION_CODE_KEY, ClientOffsetController.prototype.reverse)).toBe(ActionCode.CLIENT_OFFSET_REVERSE);
+  });
+});
+
+describe('ClientOffsetService.getOffsetDetail', () => {
+  it('tenant-scoped detail: source labels + actor + sanitized audit döner; raw metadata/canReverse/alreadyReversed üretmez', async () => {
+    const db = makeDb({
+      auditRows: [
+        {
+          action: 'CLIENT_OFFSET_CREATED',
+          userId: 'u1',
+          userName: null,
+          description: 'Müvekkil mahsubu uygulandı (400 TRY)',
+          createdAt: new Date('2026-06-20T10:00:00.000Z'),
+          metadata: { authorizationMode: 'DIRECT_CAPABILITY', reason: 'raw metadata görünmemeli' },
+        },
+      ],
+    });
+    db.clientOffset.findFirst
+      .mockResolvedValueOnce(APPLY_ROW({ id: 'off-1', createdById: 'u1', createdAt: new Date('2026-06-20T09:00:00.000Z'), reason: null }))
+      .mockResolvedValueOnce({ id: 'rev-1' });
+
+    const { service, audit: a } = svc(db);
+    const res = await service.getOffsetDetail('t1', 'off-1');
+
+    expect(db.clientOffset.findFirst).toHaveBeenNthCalledWith(1, expect.objectContaining({ where: { id: 'off-1', tenantId: 't1' } }));
+    expect(db.case.findFirst).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'case-P', tenantId: 't1' } }));
+    expect(db.caseClient.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ id: 'cc-A', client: { tenantId: 't1' }, case: { tenantId: 't1' } }) }),
+    );
+    expect(db.auditLog.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { tenantId: 't1', entityType: 'ClientOffset', entityId: 'off-1' } }),
+    );
+    expect(res.offset).toEqual(expect.objectContaining({ id: 'off-1', amount: '400', createdBy: { id: 'u1', displayName: 'Ayşe Yılmaz' }, reversedByOffsetId: 'rev-1' }));
+    expect(res.sourceSummary.payable).toEqual(expect.objectContaining({ caseNumber: '2026/1', role: 'ALACAKLI', label: '2026/1 · ALACAKLI' }));
+    expect(res.sourceSummary.expense).toEqual(expect.objectContaining({ caseNumber: '2026/2', status: 'PENDING', label: '2026/2 · Peşin harç' }));
+    expect(res.auditEvents[0]).toEqual(
+      expect.objectContaining({ action: 'CLIENT_OFFSET_CREATED', actor: { id: 'u1', displayName: 'Ayşe Yılmaz' }, safeSummary: 'Müvekkil mahsubu uygulandı (400 TRY)' }),
+    );
+    const serialized = JSON.stringify(res);
+    expect(serialized).not.toContain('authorizationMode');
+    expect(serialized).not.toContain('raw metadata görünmemeli');
+    expect(res as any).not.toHaveProperty('canReverse');
+    expect(res as any).not.toHaveProperty('alreadyReversed');
+    expect(db.clientOffset.create).not.toHaveBeenCalled();
+    expect(a.logInTransaction).not.toHaveBeenCalled();
+  });
+
+  it('cross-tenant veya bulunmayan offset için hard NotFound döner ve source/audit okunmaz', async () => {
+    const db = makeDb();
+    db.clientOffset.findFirst.mockResolvedValueOnce(null);
+
+    await expect(svc(db).service.getOffsetDetail('tenant-A', 'foreign-offset')).rejects.toThrow(NotFoundException);
+    expect(db.case.findFirst).not.toHaveBeenCalled();
+    expect(db.auditLog.findMany).not.toHaveBeenCalled();
+  });
+});
+
+describe('ClientOffsetController.detail', () => {
+  it('tenantId request contextten alınır ve service detail projection çağrılır', async () => {
+    const service = { getOffsetDetail: jest.fn().mockResolvedValue({ offset: { id: 'off-1' }, sourceSummary: {}, auditEvents: [] }) } as any;
+    const controller = new ClientOffsetController(service);
+
+    await controller.detail({ user: { tenantId: 't1', id: 'u1' } }, 'off-1');
+
+    expect(service.getOffsetDetail).toHaveBeenCalledWith('t1', 'off-1');
   });
 });
