@@ -133,6 +133,7 @@ export function ClientMovementsTable({ clientId, currency = 'TRY', cases, classN
   return (
     <AccountingPanel
       ariaLabel="Birleşik hareketler tablosu"
+      focusable
       className={className}
       title={
         <>

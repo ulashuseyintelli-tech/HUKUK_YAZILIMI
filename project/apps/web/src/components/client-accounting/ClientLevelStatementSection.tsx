@@ -68,6 +68,7 @@ export function ClientLevelStatementSection({ clientId, currency, cases, classNa
     <>
       <AccountingPanel
         ariaLabel="Müvekkil genel ekstresi tablosu"
+        focusable
         className={className}
         title={
           <>
