@@ -1,16 +1,15 @@
 /**
- * TM3 Faz C C-2b — OffsetDrawer + OffsetHistoryPanel davranış kanıtı.
+ * TM3 Faz C C-2A — OffsetDrawer davranış kanıtı (Mahsup eligibility + minimal apply).
  * Doğrulanan kontrat:
  *  - D5: canApply=false → read-only (form disabled, "Partner/Manager" notu, Uygula yok).
  *  - D3/D4: preview kartı BACKEND değerlerini render eder (FE hesaplamaz); Uygula preview'dan ÖNCE pasif.
  *  - idempotency: apply retry boyunca AYNI key (preview'a kilitli).
- *  - History: REVERSAL→"İptal edildi" badge + İptal pasif; reverse modal reason≥10.
+ *  (History + reverse C-2C'ye ertelendi → bu PR'da YOK.)
  */
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { OffsetDrawer } from '@/components/client-accounting/OffsetDrawer';
-import { OffsetHistoryPanel } from '@/components/client-accounting/OffsetHistoryPanel';
 import { clientOffsetApi } from '@/lib/api/client-offset';
 
 vi.mock('@/lib/api/client-offset', async (importOriginal) => {
@@ -119,54 +118,4 @@ describe('OffsetDrawer — D3/D4 preview-driven (FE hesaplamaz)', () => {
   });
 });
 
-function renderHistory(list: any[], canApply = true) {
-  api.list.mockResolvedValue(list);
-  api.getEligibility.mockResolvedValue({ clientId: 'cl-1', currency: 'TRY', canApply, eligiblePayableBuckets: [], eligibleExpenseRequests: [] });
-  const qc = new QueryClient({ defaultOptions: { queries: { retry: false }, mutations: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <OffsetHistoryPanel clientId="cl-1" currency="TRY" cases={[{ caseId: 'case-P', caseNumber: '2026/1' }, { caseId: 'case-E', caseNumber: '2026/2' }]} />
-    </QueryClientProvider>,
-  );
-}
-
-const APPLY_ROW = (over: any = {}) => ({ id: 'a1', clientId: 'cl-1', currency: 'TRY', amount: '500', kind: 'APPLY', payableCaseId: 'case-P', payableCaseClientId: 'cc-A', expenseCaseId: 'case-E', expenseRequestId: 'er-1', reversesOffsetId: null, reason: null, createdAt: '2026-06-20T00:00:00.000Z', ...over });
-const REVERSAL_ROW = (over: any = {}) => ({ ...APPLY_ROW(), id: 'r1', kind: 'REVERSAL', reversesOffsetId: 'a1', reason: 'düzeltme yapıldı', ...over });
-
-describe('OffsetHistoryPanel — D6 geçmiş + reverse', () => {
-  beforeEach(() => vi.clearAllMocks());
-
-  it('reverse-edilmiş APPLY → "İptal edildi" badge + İptal butonu pasif; REVERSAL → "İptal (geri alma)"', async () => {
-    renderHistory([APPLY_ROW(), REVERSAL_ROW()], true);
-    await waitFor(() => expect(screen.getByText('İptal edildi')).toBeTruthy());
-    expect(screen.getByText('İptal (geri alma)')).toBeTruthy();
-    const btn = screen.getByRole('button', { name: /^İptal$/ }) as HTMLButtonElement;
-    expect(btn.disabled).toBe(true); // a1 zaten reverse edilmiş
-  });
-
-  it('reverse-edilmemiş APPLY + canApply → İptal aktif; modal reason≥10 ile reverse çağrılır', async () => {
-    api.reverse.mockResolvedValue({ created: true, offsetId: 'r9', reversesOffsetId: 'a2' });
-    renderHistory([APPLY_ROW({ id: 'a2' })], true);
-    await waitFor(() => expect(screen.getByText('Uygulandı')).toBeTruthy());
-    const btn = screen.getByRole('button', { name: /^İptal$/ }) as HTMLButtonElement;
-    expect(btn.disabled).toBe(false);
-    fireEvent.click(btn);
-    // modal açıldı; reason<10 → submit pasif
-    const submit = () => screen.getByRole('button', { name: /Mahsubu İptal Et/ }) as HTMLButtonElement;
-    await waitFor(() => expect(submit()).toBeTruthy());
-    fireEvent.change(screen.getByPlaceholderText('Gerekçe…'), { target: { value: 'kısa' } });
-    expect(submit().disabled).toBe(true);
-    fireEvent.change(screen.getByPlaceholderText('Gerekçe…'), { target: { value: 'yeterince uzun gerekçe' } });
-    expect(submit().disabled).toBe(false);
-    fireEvent.click(submit());
-    await waitFor(() => expect(api.reverse).toHaveBeenCalledTimes(1));
-    expect(api.reverse.mock.calls[0][0]).toBe('a2'); // offsetId
-    expect(api.reverse.mock.calls[0][1].reason).toMatch(/yeterince uzun/);
-  });
-
-  it('canApply=false → İptal butonu pasif (yetkisiz)', async () => {
-    renderHistory([APPLY_ROW({ id: 'a3' })], false);
-    await waitFor(() => expect(screen.getByText('Uygulandı')).toBeTruthy());
-    expect((screen.getByRole('button', { name: /^İptal$/ }) as HTMLButtonElement).disabled).toBe(true);
-  });
-});
+// History + reverse (OffsetHistoryPanel) C-2C'ye ertelendi → testleri bu PR'dan çıkarıldı.
