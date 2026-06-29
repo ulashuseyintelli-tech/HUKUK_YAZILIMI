@@ -2811,6 +2811,18 @@ class ApiClient {
   }
 
   /**
+   * Tahsilat/odeme onizlemesi. DB'ye kayit yazmaz.
+   * Cagrildigi yerler:
+   * - CollectionModal.handlePreview() -> POST /cases/:caseId/payment-preview (tahsilat formundan non-persistent onizleme)
+   */
+  async previewCasePayment(caseId: string, payload: PaymentPreviewRequestDTO) {
+    return this.request<PaymentPreviewResponseDTO>(`/cases/${caseId}/payment-preview`, {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  }
+
+  /**
    * Tahsilat ekle
    */
   async createCollection(caseId: string, data: CreateCollectionDTO) {
@@ -5055,6 +5067,60 @@ export interface PostCollectionDispositionResultDTO {
   posted: boolean;
   dispositionId: string;
   lineCount: number;
+}
+
+export interface PaymentPreviewRequestDTO {
+  amount: number;
+  paymentDate?: string;
+  currency?: string;
+  paymentMethod?: string;
+  caseDebtorId?: string;
+}
+
+export type PaymentPreviewDistributionSource =
+  | "SINGLE_CASE_CLIENT"
+  | "CASE_CREDITOR_CLUSTER"
+  | "UNKNOWN";
+
+export type PaymentPreviewDistributionStatus =
+  | "HELD_PENDING_DISTRIBUTION"
+  | "MANUAL_REQUIRED"
+  | "BLOCKED";
+
+export interface PaymentPreviewResponseDTO {
+  nonPersistent: true;
+  caseId: string;
+  input: {
+    amount: number;
+    paymentDate?: string;
+    currency?: string;
+    paymentMethod?: string;
+    caseDebtorId?: string | null;
+  };
+  acceptance: {
+    wouldAccept: boolean;
+    blockingReasons: string[];
+    warnings: string[];
+  };
+  balanceImpact: {
+    currentOutstandingAmount: number;
+    paymentAmount: number;
+    appliedAmount: number;
+    overpaymentAmount: number;
+    projectedOutstandingAmount: number;
+  };
+  distributionPreview: {
+    source: PaymentPreviewDistributionSource;
+    status: PaymentPreviewDistributionStatus;
+    totalAmount: number;
+    requiresClientSelection: boolean;
+    lines: Array<{
+      type: "CLIENT_PAYABLE";
+      amount: number;
+      caseClientId?: string;
+      clientName?: string;
+    }>;
+  };
 }
 
 export interface CreateCollectionDTO {
