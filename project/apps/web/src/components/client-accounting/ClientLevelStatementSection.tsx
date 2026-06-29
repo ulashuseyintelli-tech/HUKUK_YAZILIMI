@@ -28,6 +28,7 @@ import {
   type ClientStatement,
 } from '@/lib/api/client-statement';
 import { AccountingPanel } from './AccountingPanel';
+import { AccountingTable } from './AccountingTable';
 
 interface ClientLevelStatementSectionProps {
   clientId: string;
@@ -102,29 +103,28 @@ export function ClientLevelStatementSection({ clientId, currency, cases, classNa
             Henüz genel ekstre yok. Bir dönem seçip <strong>Genel Ekstre Oluştur</strong> ile immutable snapshot üretebilirsiniz.
           </div>
         ) : (
-          <table className="w-full text-sm tabular-nums">
-            <thead className="sticky top-0 z-10 bg-gray-50 [&_th]:font-semibold">
-              <tr className="border-b text-left">
-                <th className="px-3 py-2">Dönem</th>
-                <th className="px-3 py-2 text-right">Ekstre Net Bakiyesi</th>
-                <th className="px-3 py-2">Durum</th>
-                <th className="px-3 py-2 text-right">İşlem</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y">
-              {statements.map((s) => (
-                <StatementRow
-                  key={s.id}
-                  statement={s}
-                  currency={currency}
-                  caseNo={caseNo}
-                  expanded={detailId === s.id}
-                  onToggle={() => setDetailId(detailId === s.id ? null : s.id)}
-                  onRenew={() => setModal({ mode: 'supersede', target: s })}
-                />
-              ))}
-            </tbody>
-          </table>
+          <AccountingTable
+            head={
+              <>
+                <th>Dönem</th>
+                <th className="text-right">Ekstre Net Bakiyesi</th>
+                <th>Durum</th>
+                <th className="text-right">İşlem</th>
+              </>
+            }
+          >
+            {statements.map((s) => (
+              <StatementRow
+                key={s.id}
+                statement={s}
+                currency={currency}
+                caseNo={caseNo}
+                expanded={detailId === s.id}
+                onToggle={() => setDetailId(detailId === s.id ? null : s.id)}
+                onRenew={() => setModal({ mode: 'supersede', target: s })}
+              />
+            ))}
+          </AccountingTable>
         )}
       </AccountingPanel>
 

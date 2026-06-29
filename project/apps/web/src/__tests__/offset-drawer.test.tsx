@@ -58,6 +58,13 @@ describe('OffsetDrawer — D5 read-only capability', () => {
 describe('OffsetDrawer — D3/D4 preview-driven (FE hesaplamaz)', () => {
   beforeEach(() => vi.clearAllMocks());
 
+  it('DASH-7: preview kartı HER ZAMAN görünür — seçim/önizleme yokken placeholder', async () => {
+    renderDrawer({ clientId: 'cl-1', currency: 'TRY', canApply: true, eligiblePayableBuckets: [BUCKET], eligibleExpenseRequests: [EXPENSE] });
+    // Önizle'ye basılmadan: kart başlığı + placeholder metni görünür (boş beyaz alan değil)
+    await waitFor(() => expect(screen.getByText(/Mahsup Önizleme/)).toBeTruthy());
+    expect(screen.getByText(/Bir mahsup seçildiğinde önizleme burada oluşacaktır/)).toBeTruthy();
+  });
+
   it('Uygula preview ÖNCESİ pasif; Önizle → backend preview kartı render → Uygula aktif', async () => {
     api.preview.mockResolvedValue(PREVIEW);
     renderDrawer({ clientId: 'cl-1', currency: 'TRY', canApply: true, eligiblePayableBuckets: [BUCKET], eligibleExpenseRequests: [EXPENSE] });
