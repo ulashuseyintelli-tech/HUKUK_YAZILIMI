@@ -5,6 +5,7 @@ import { AlertCircle, AlertTriangle, Info, Bug, CheckCircle, RefreshCw } from "l
 import { api, type ErrorLogRecord, type ErrorLogStats } from "@/lib/api";
 import { ErrorLogDetailDrawer } from "@/components/error/ErrorLogDetailDrawer";
 import { relativeTime } from "@/lib/relative-time";
+import { getErrorLogPresentation } from "@/lib/error-log-presentation";
 
 const levelConfig: Record<string, { icon: ReactNode; color: string; bg: string }> = {
   ERROR: { icon: <AlertCircle className="w-4 h-4" />, color: "text-red-600", bg: "bg-red-100" },
@@ -117,25 +118,27 @@ export default function ErrorLogsPage() {
           <div className="divide-y">
             {logs.map((log) => {
               const config = levelConfig[log.level] || levelConfig.INFO;
+              // Humanized liste: rozet + başlık Türkçe presentation'dan; ham mesaj başlık DEĞİL.
+              const p = getErrorLogPresentation(log);
               return (
                 <button key={log.id} type="button" onClick={() => setSelected(log)} className="w-full text-left p-4 hover:bg-gray-50 flex items-start gap-3">
                   <div className={`p-2 rounded-lg ${config.bg} ${config.color}`}>{config.icon}</div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className={`text-xs px-2 py-0.5 rounded ${config.bg} ${config.color}`}>{log.level}</span>
-                      <span className="text-xs text-gray-500">{log.source}</span>
+                      <span className={`text-xs px-2 py-0.5 rounded ${config.bg} ${config.color}`}>{p.levelLabel}</span>
+                      <span className="text-xs text-gray-500">{p.sourceLabel}</span>
                       {(log.occurrenceCount ?? 1) > 1 && (
                         <span className="text-xs px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">×{log.occurrenceCount}</span>
                       )}
                       {log.isResolved && <CheckCircle className="w-4 h-4 text-green-500" />}
                     </div>
-                    <div className="font-medium mt-1 truncate">{log.message}</div>
+                    <div className="font-medium mt-1 truncate">{p.title}</div>
+                    <div className="text-sm text-gray-500 truncate">{p.summary}</div>
                     <div className="text-xs text-gray-400 mt-1">
                       <span title={new Date(log.lastSeenAt ?? log.createdAt).toLocaleString("tr-TR")}>
                         {relativeTime(log.lastSeenAt ?? log.createdAt)}
                       </span>
-                      {log.endpoint && <span className="ml-2">{log.method} {log.endpoint}</span>}
-                      {log.statusCode && <span className="ml-2">({log.statusCode})</span>}
+                      {log.endpoint && <span className="ml-2">· {p.endpointLabel || log.endpoint}</span>}
                     </div>
                   </div>
                 </button>

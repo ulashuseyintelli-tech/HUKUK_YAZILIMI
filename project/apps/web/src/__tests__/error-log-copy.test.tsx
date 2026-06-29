@@ -45,7 +45,7 @@ describe("Drawer copy butonları", () => {
   it("requestId / stack / metadata copy → writeText ilgili değerle çağrılır", async () => {
     render(<ErrorLogDetailDrawer log={log} onClose={vi.fn()} onResolved={vi.fn()} />);
 
-    fireEvent.click(screen.getByLabelText("Request ID kopyala"));
+    fireEvent.click(screen.getByLabelText("İşlem Kimliği kopyala"));
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("req-zzz"));
 
     fireEvent.click(screen.getByLabelText("Stack kopyala"));
