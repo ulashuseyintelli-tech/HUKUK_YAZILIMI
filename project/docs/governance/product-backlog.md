@@ -207,7 +207,7 @@ Depends On: C2D-PD-1C
 Unlock Condition: Generic audit endpoints expose additive safeProjection.
 Estimated Size: S
 Related Modules: settings/audit page, AuditService safeProjection response
-Status: READY
+Status: DONE
 
 ID: C2D-PD-1E
 Title: Haciz audit action-specific safe projection review
