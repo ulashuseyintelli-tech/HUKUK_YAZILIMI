@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { useState } from "react";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { BalanceShadowDiffPanel, CollectionModal, DueModal, HesapOzetiPanel } from "@/components/finance";
 import { OperationDeck } from "@/components/case-detail/OperationDeck";
@@ -158,6 +158,16 @@ function makeDispositionAccountingRecord(status = "HELD_PENDING_DISTRIBUTION") {
   } as any;
 }
 
+function makeClusterDispositionAccountingRecord(status = "HELD_PENDING_DISTRIBUTION") {
+  const record = makeDispositionAccountingRecord(status);
+  return {
+    ...record,
+    disposition: {
+      ...record.disposition,
+      beneficiaryScope: "CASE_CREDITOR_CLUSTER",
+    },
+  } as any;
+}
 function makePaymentPreviewResponse(overrides: any = {}) {
   const base = {
     nonPersistent: true,
@@ -525,6 +535,7 @@ describe("collection summary refresh", () => {
     fireEvent.click(screen.getByRole("button", { name: /Dağıtımı Kesinleştir/ }));
 
     expect(await screen.findByText("Çoklu alacaklı dosyada dağıtım için alacaklı seçimi gerekir.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Dağıtımı Belirle/ })).toBeInTheDocument();
     expect(postDisposition).not.toHaveBeenCalled();
   });
 
@@ -541,8 +552,163 @@ describe("collection summary refresh", () => {
     fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
 
     expect(screen.queryByRole("button", { name: /Dağıtımı Kesinleştir/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Dağıtımı Belirle/ })).not.toBeInTheDocument();
   });
 
+  it("dagitim belirle modalini acar ve held bucket secenegini gostermez", () => {
+    render(
+      <OperationDeck
+        caseId="case-1"
+        muhasebeKayitlari={[makeDispositionAccountingRecord()]}
+        eligibleDispositionClients={[{ id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" }]}
+        onPostDisposition={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtımı Belirle/ }));
+
+    const dialog = screen.getByRole("dialog", { name: /Dağıtımı Belirle/ });
+    expect(dialog).toBeInTheDocument();
+
+    const optionValues = within(dialog).getAllByRole("option").map((option) => option.getAttribute("value"));
+    expect(optionValues).toEqual(expect.arrayContaining([
+      "CLIENT_PAYABLE",
+      "CLIENT_EXPENSE_REIMBURSEMENT",
+      "CONTRACTUAL_FEE_WITHHELD",
+      "FIRM_EXPENSE_REIMBURSEMENT",
+      "OFFSET_CLIENT_ADVANCE",
+      "OTHER",
+    ]));
+    expect(optionValues).not.toContain("HELD_PENDING_DISTRIBUTION");
+  });
+
+  it("dagitim modalinda satir ekler ve siler", () => {
+    render(
+      <OperationDeck
+        caseId="case-1"
+        muhasebeKayitlari={[makeDispositionAccountingRecord()]}
+        eligibleDispositionClients={[{ id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" }]}
+        onPostDisposition={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtımı Belirle/ }));
+
+    expect(screen.getAllByLabelText(/Dağıtım tutarı/)).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: /Satır Ekle/ }));
+    expect(screen.getAllByLabelText(/Dağıtım tutarı/)).toHaveLength(2);
+
+    fireEvent.click(screen.getAllByRole("button", { name: /Satırı Sil/ })[0]);
+    expect(screen.getAllByLabelText(/Dağıtım tutarı/)).toHaveLength(1);
+  });
+
+  it("dagitim toplami tahsilat tutariyla eslesmezse submit disable olur", () => {
+    render(
+      <OperationDeck
+        caseId="case-1"
+        muhasebeKayitlari={[makeDispositionAccountingRecord()]}
+        eligibleDispositionClients={[{ id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" }]}
+        onPostDisposition={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtımı Belirle/ }));
+    fireEvent.change(screen.getByLabelText(/Dağıtım tutarı/), { target: { value: "90.00" } });
+
+    expect(screen.getByText("Dağıtım toplamı tahsilat tutarıyla birebir eşit olmalı.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Dağıtımı Kaydet/ })).toBeDisabled();
+  });
+
+  it("cluster client bucket icin caseClientId secimi zorunlu tutar", () => {
+    render(
+      <OperationDeck
+        caseId="case-1"
+        muhasebeKayitlari={[makeClusterDispositionAccountingRecord()]}
+        eligibleDispositionClients={[
+          { id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" },
+          { id: "case-client-2", name: "Alacaklı B", role: "ORTAK_ALACAKLI" },
+        ]}
+        onPostDisposition={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtımı Belirle/ }));
+
+    expect(screen.getByText("Müvekkil payı ve müvekkil masraf iadesi için alacaklı seçimi zorunlu.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Dağıtımı Kaydet/ })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText(/Alacaklı seçimi/), { target: { value: "case-client-2" } });
+
+    expect(screen.queryByText("Müvekkil payı ve müvekkil masraf iadesi için alacaklı seçimi zorunlu.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Dağıtımı Kaydet/ })).not.toBeDisabled();
+  });
+
+  it("non-client bucket caseClientId olmadan submit edilebilir", async () => {
+    const postDisposition = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <OperationDeck
+        caseId="case-1"
+        muhasebeKayitlari={[makeClusterDispositionAccountingRecord()]}
+        eligibleDispositionClients={[
+          { id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" },
+          { id: "case-client-2", name: "Alacaklı B", role: "ORTAK_ALACAKLI" },
+        ]}
+        onPostDisposition={postDisposition}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtımı Belirle/ }));
+    fireEvent.change(screen.getByLabelText(/Dağıtım kalemi türü/), { target: { value: "CONTRACTUAL_FEE_WITHHELD" } });
+
+    expect(screen.getByText("Bu bucket için caseClientId gerekmez.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtımı Kaydet/ }));
+
+    await waitFor(() => {
+      expect(postDisposition).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "disp-1", status: "HELD_PENDING_DISTRIBUTION" }),
+        [{ type: "CONTRACTUAL_FEE_WITHHELD", amount: "100.00" }],
+      );
+    });
+  });
+
+  it("cok satirli dagitim payloadini dogru gonderir ve basarida paneli kapatir", async () => {
+    const postDisposition = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <OperationDeck
+        caseId="case-1"
+        muhasebeKayitlari={[makeDispositionAccountingRecord()]}
+        eligibleDispositionClients={[{ id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" }]}
+        onPostDisposition={postDisposition}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtımı Belirle/ }));
+    fireEvent.change(screen.getByLabelText(/Dağıtım tutarı/), { target: { value: "70.00" } });
+    fireEvent.click(screen.getByRole("button", { name: /Satır Ekle/ }));
+
+    expect(screen.getAllByLabelText(/Dağıtım tutarı/)[1]).toHaveValue(30);
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtımı Kaydet/ }));
+
+    await waitFor(() => {
+      expect(postDisposition).toHaveBeenCalledWith(
+        expect.objectContaining({ id: "disp-1", status: "HELD_PENDING_DISTRIBUTION" }),
+        [
+          { type: "CLIENT_PAYABLE", amount: "70.00", caseClientId: "case-client-1" },
+          { type: "OTHER", amount: "30.00" },
+        ],
+      );
+    });
+    expect(screen.queryByRole("dialog", { name: /Dağıtımı Belirle/ })).not.toBeInTheDocument();
+    expect(screen.getByText("Dağıtım kararı kaydedildi.")).toBeInTheDocument();
+  });
   it("alacak kalemi kaydi basarili olunca stale hesap ozetini refetch eder", async () => {
     render(<CaseDueRefreshHarness />);
 

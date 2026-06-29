@@ -5,7 +5,7 @@ import {
   FileText, ListTodo, Receipt, Database, FolderOpen, MessageSquare,
   ChevronDown, Plus, AlertTriangle, Clock, Zap, User, Check, X,
   ArrowRight, Calendar, Tag, ExternalLink, MapPin, Loader2,
-  Scale, Users, Wallet, Send, FileCheck, HourglassIcon, DollarSign
+  Scale, Users, Wallet, Send, FileCheck, HourglassIcon, DollarSign, Trash2
 } from "lucide-react";
 
 // ============================================================================
@@ -78,6 +78,14 @@ interface EligibleDispositionClient {
   id: string;
   name: string;
   role?: string;
+}
+
+interface DistributionDecisionLineState {
+  id: string;
+  type: DispositionPostingLineType;
+  amount: string;
+  caseClientId: string;
+  note: string;
 }
 
 // Eski Note tipi (geriye uyumluluk)
@@ -183,6 +191,42 @@ const panels = [
 const formatDate = (d: string) => d ? new Date(d).toLocaleDateString("tr-TR") : "-";
 const formatDateTime = (d: string) => d ? new Date(d).toLocaleString("tr-TR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "-";
 const formatTL = (n: number) => n.toLocaleString("tr-TR", { minimumFractionDigits: 0 }) + " ₺";
+const distributionBucketOptions: Array<{ type: DispositionPostingLineType; label: string; description: string }> = [
+  { type: "CLIENT_PAYABLE", label: "Müvekkile Ödenecek", description: "Müvekkil payı" },
+  { type: "CLIENT_EXPENSE_REIMBURSEMENT", label: "Müvekkil Masraf İadesi", description: "Müvekkile iade edilecek masraf" },
+  { type: "CONTRACTUAL_FEE_WITHHELD", label: "Sözleşmesel Ücret Mahsubu", description: "Avukatlık/firmaya kalan ücret" },
+  { type: "FIRM_EXPENSE_REIMBURSEMENT", label: "Firma Masraf Mahsubu", description: "Firma tarafından karşılanan masraf" },
+  { type: "OFFSET_CLIENT_ADVANCE", label: "Müvekkil Avans Mahsubu", description: "Mevcut avans bakiyesine mahsup" },
+  { type: "OTHER", label: "Diğer", description: "Sınıflandırılmamış dağıtım satırı" },
+];
+
+const clientAttributedDistributionTypes = new Set<DispositionPostingLineType>([
+  "CLIENT_PAYABLE",
+  "CLIENT_EXPENSE_REIMBURSEMENT",
+]);
+
+const isClientAttributedDistributionType = (type: DispositionPostingLineType) =>
+  clientAttributedDistributionTypes.has(type);
+
+const parseAmountCents = (value: string | number | null | undefined) => {
+  if (value === null || value === undefined || value === "") return 0;
+  const numericValue = typeof value === "number" ? value : Number(String(value).replace(",", "."));
+  if (!Number.isFinite(numericValue)) return Number.NaN;
+  return Math.round(numericValue * 100);
+};
+
+const formatAmountInput = (cents: number) => (cents / 100).toFixed(2);
+
+const formatCents = (cents: number, currency = "TRY") =>
+  (cents / 100).toLocaleString("tr-TR", {
+    style: "currency",
+    currency,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
+
+const createDistributionLineId = () =>
+  `distribution-line-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 
 const accountingTypeLabels: Record<AccountingRecord["type"], string> = {
   MASRAF_TALEBI_GONDERILDI: "Talep Gönderildi",
@@ -269,9 +313,148 @@ export function OperationDeck({
 }: OperationDeckProps) {
   const [activePanel, setActivePanel] = useState<PanelId>(null);
   const [postingActionMessage, setPostingActionMessage] = useState<string | null>(null);
+  const [distributionModalRecord, setDistributionModalRecord] = useState<AccountingRecord | null>(null);
+  const [distributionLines, setDistributionLines] = useState<DistributionDecisionLineState[]>([]);
+  const [distributionSubmitError, setDistributionSubmitError] = useState<string | null>(null);
+
+  const eligibleClientsForDisposition = eligibleDispositionClients.filter((client) => Boolean(client.id));
 
   const togglePanel = (id: PanelId) => {
     setActivePanel(activePanel === id ? null : id);
+  };
+
+  const getDispositionTotalCents = (record: AccountingRecord | null) =>
+    parseAmountCents(record?.disposition?.totalAmount ?? record?.amount ?? 0);
+
+  const createInitialDistributionLine = (record: AccountingRecord): DistributionDecisionLineState => {
+    const totalCents = getDispositionTotalCents(record);
+    const singleClientId = eligibleClientsForDisposition.length === 1 ? eligibleClientsForDisposition[0].id : "";
+    const defaultType: DispositionPostingLineType = eligibleClientsForDisposition.length > 0 ? "CLIENT_PAYABLE" : "OTHER";
+
+    return {
+      id: createDistributionLineId(),
+      type: defaultType,
+      amount: totalCents > 0 ? formatAmountInput(totalCents) : "",
+      caseClientId: singleClientId,
+      note: "",
+    };
+  };
+
+  const openDistributionDecisionModal = (record: AccountingRecord) => {
+    if (!record.disposition || String(record.disposition.status || "").toUpperCase() !== "HELD_PENDING_DISTRIBUTION") return;
+
+    setPostingActionMessage(null);
+    setDistributionSubmitError(null);
+    setDistributionModalRecord(record);
+    setDistributionLines([createInitialDistributionLine(record)]);
+  };
+
+  const closeDistributionDecisionModal = () => {
+    setDistributionModalRecord(null);
+    setDistributionLines([]);
+    setDistributionSubmitError(null);
+  };
+
+  const updateDistributionLine = (lineId: string, updates: Partial<DistributionDecisionLineState>) => {
+    setDistributionLines((lines) =>
+      lines.map((line) => {
+        if (line.id !== lineId) return line;
+        const nextLine = { ...line, ...updates };
+        if (updates.type && !isClientAttributedDistributionType(updates.type)) {
+          nextLine.caseClientId = "";
+        }
+        return nextLine;
+      }),
+    );
+    setDistributionSubmitError(null);
+  };
+
+  const addDistributionLine = () => {
+    const targetCents = getDispositionTotalCents(distributionModalRecord);
+    const currentTotalCents = distributionLines.reduce((sum, line) => sum + parseAmountCents(line.amount), 0);
+    const remainingCents = targetCents - currentTotalCents;
+
+    setDistributionLines((lines) => [
+      ...lines,
+      {
+        id: createDistributionLineId(),
+        type: "OTHER",
+        amount: remainingCents > 0 ? formatAmountInput(remainingCents) : "",
+        caseClientId: "",
+        note: "",
+      },
+    ]);
+    setDistributionSubmitError(null);
+  };
+
+  const removeDistributionLine = (lineId: string) => {
+    setDistributionLines((lines) => (lines.length > 1 ? lines.filter((line) => line.id !== lineId) : lines));
+    setDistributionSubmitError(null);
+  };
+
+  const getDistributionValidationMessage = () => {
+    const disposition = distributionModalRecord?.disposition;
+    if (!distributionModalRecord || !disposition) return "Dağıtım kaydı bulunamadı.";
+    if (!onPostDisposition) return "Dağıtım belirleme aksiyonu bu görünümde kullanılamıyor.";
+    if (String(disposition.status || "").toUpperCase() !== "HELD_PENDING_DISTRIBUTION") {
+      return "Yalnız bekleyen dağıtım kayıtları kesinleştirilebilir.";
+    }
+
+    const targetCents = getDispositionTotalCents(distributionModalRecord);
+    if (!Number.isFinite(targetCents) || targetCents <= 0) return "Dağıtım tutarı geçerli değil.";
+    if (distributionLines.length === 0) return "En az bir dağıtım satırı gerekir.";
+
+    const requiresClientSelection =
+      eligibleClientsForDisposition.length > 1 ||
+      String(disposition.beneficiaryScope || "").toUpperCase().includes("CLUSTER");
+
+    for (const line of distributionLines) {
+      const lineAmountCents = parseAmountCents(line.amount);
+      if (!Number.isFinite(lineAmountCents) || lineAmountCents <= 0) {
+        return "Tüm dağıtım satırlarında geçerli tutar olmalı.";
+      }
+      if (requiresClientSelection && isClientAttributedDistributionType(line.type) && !line.caseClientId) {
+        return "Müvekkil payı ve müvekkil masraf iadesi için alacaklı seçimi zorunlu.";
+      }
+    }
+
+    const totalCents = distributionLines.reduce((sum, line) => sum + parseAmountCents(line.amount), 0);
+    if (totalCents !== targetCents) return "Dağıtım toplamı tahsilat tutarıyla birebir eşit olmalı.";
+
+    return null;
+  };
+
+  const handleDistributionDecisionSubmit = async () => {
+    const validationMessage = getDistributionValidationMessage();
+    if (validationMessage) {
+      setDistributionSubmitError(validationMessage);
+      return;
+    }
+
+    const disposition = distributionModalRecord?.disposition;
+    if (!disposition || !onPostDisposition) return;
+
+    const payloadLines: DispositionPostingLineInput[] = distributionLines.map((line) => {
+      const payloadLine: DispositionPostingLineInput = {
+        type: line.type,
+        amount: formatAmountInput(parseAmountCents(line.amount)),
+      };
+      if (isClientAttributedDistributionType(line.type) && line.caseClientId) {
+        payloadLine.caseClientId = line.caseClientId;
+      }
+      if (line.note.trim()) {
+        payloadLine.note = line.note.trim();
+      }
+      return payloadLine;
+    });
+
+    try {
+      await onPostDisposition(disposition, payloadLines);
+      setPostingActionMessage("Dağıtım kararı kaydedildi.");
+      closeDistributionDecisionModal();
+    } catch (error: any) {
+      setDistributionSubmitError(error?.message || "Dağıtım kararı kaydedilemedi.");
+    }
   };
 
   const handlePostDispositionClick = async (record: AccountingRecord) => {
@@ -285,7 +468,7 @@ export function OperationDeck({
       return;
     }
 
-    const eligibleClients = eligibleDispositionClients.filter((client) => Boolean(client.id));
+    const eligibleClients = eligibleClientsForDisposition;
     if (eligibleClients.length > 1) {
       setPostingActionMessage("Çoklu alacaklı dosyada dağıtım için alacaklı seçimi gerekir.");
       return;
@@ -309,6 +492,18 @@ export function OperationDeck({
       setPostingActionMessage(error?.message || "Dağıtım kesinleştirilemedi.");
     }
   };
+
+  const activeDistributionDisposition = distributionModalRecord?.disposition ?? null;
+  const activeDistributionCurrency = activeDistributionDisposition?.currency || "TRY";
+  const activeDistributionTargetCents = getDispositionTotalCents(distributionModalRecord);
+  const activeDistributionLineTotalCents = distributionLines.reduce((sum, line) => sum + parseAmountCents(line.amount), 0);
+  const activeDistributionDifferenceCents = activeDistributionTargetCents - activeDistributionLineTotalCents;
+  const distributionValidationMessage = distributionModalRecord ? getDistributionValidationMessage() : null;
+  const distributionFeedbackMessage = distributionSubmitError || distributionValidationMessage;
+  const isDistributionSubmitting = Boolean(
+    activeDistributionDisposition?.id && postingDispositionId === activeDistributionDisposition.id,
+  );
+  const canSubmitDistributionDecision = Boolean(distributionModalRecord) && !distributionValidationMessage && !isDistributionSubmitting;
 
   // Counts for badges
   const pendingTasks = tasks.filter(t => t.status === "BEKLIYOR").length;
@@ -909,25 +1104,39 @@ export function OperationDeck({
                       </p>
                     )}
                     {String(record.disposition?.status || "").toUpperCase() === "HELD_PENDING_DISTRIBUTION" && (
-                      <button
-                        type="button"
-                        onClick={() => handlePostDispositionClick(record)}
-                        disabled={
-                          postingDispositionId === record.disposition?.id ||
-                          !Number.isFinite(Number(record.disposition?.totalAmount ?? record.amount ?? 0)) ||
-                          Number(record.disposition?.totalAmount ?? record.amount ?? 0) <= 0
-                        }
-                        className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
-                      >
-                        {postingDispositionId === record.disposition?.id ? (
-                          <Loader2 className="h-3 w-3 animate-spin" />
-                        ) : (
-                          <Check className="h-3 w-3" />
-                        )}
-                        Dağıtımı Kesinleştir
-                      </button>
-                    )}
-                  </div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handlePostDispositionClick(record)}
+                          disabled={
+                            postingDispositionId === record.disposition?.id ||
+                            !Number.isFinite(Number(record.disposition?.totalAmount ?? record.amount ?? 0)) ||
+                            Number(record.disposition?.totalAmount ?? record.amount ?? 0) <= 0
+                          }
+                          className="inline-flex items-center gap-1.5 rounded-md border border-teal-200 bg-teal-50 px-2.5 py-1 text-xs font-medium text-teal-700 hover:bg-teal-100 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          {postingDispositionId === record.disposition?.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Check className="h-3 w-3" />
+                          )}
+                          Dağıtımı Kesinleştir
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => openDistributionDecisionModal(record)}
+                          disabled={
+                            postingDispositionId === record.disposition?.id ||
+                            !Number.isFinite(Number(record.disposition?.totalAmount ?? record.amount ?? 0)) ||
+                            Number(record.disposition?.totalAmount ?? record.amount ?? 0) <= 0
+                          }
+                          className="inline-flex items-center gap-1.5 rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:border-teal-300 hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-60"
+                        >
+                          <ListTodo className="h-3 w-3" />
+                          Dağıtımı Belirle
+                        </button>
+                      </div>
+                    )}                  </div>
                 ))}
                 {muhasebeKayitlari.length === 0 && (
                   <div className="text-center py-6 text-slate-400">
@@ -938,6 +1147,169 @@ export function OperationDeck({
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {distributionModalRecord?.disposition && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 px-4 py-6" role="dialog" aria-modal="true" aria-labelledby="distribution-decision-title">
+          <div className="w-full max-w-4xl overflow-hidden rounded-lg bg-white shadow-xl">
+            <div className="flex items-start justify-between border-b border-slate-200 px-5 py-4">
+              <div>
+                <h2 id="distribution-decision-title" className="text-base font-semibold text-slate-900">Dağıtımı Belirle</h2>
+                <p className="mt-1 text-sm text-slate-500">Tahsilat tutarını müvekkil payı, ücret/masraf mahsubu ve diğer dağıtım satırlarına ayırın.</p>
+              </div>
+              <button
+                type="button"
+                onClick={closeDistributionDecisionModal}
+                className="rounded-md p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                aria-label="Kapat"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <div className="max-h-[70vh] overflow-y-auto px-5 py-4">
+              <div className="mb-4 grid gap-3 rounded-lg border border-teal-100 bg-teal-50 p-3 text-sm text-teal-900 sm:grid-cols-3">
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-teal-600">Tahsilat toplamı</p>
+                  <p className="mt-1 font-semibold">{formatCents(activeDistributionTargetCents, activeDistributionCurrency)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-teal-600">Dağıtılan</p>
+                  <p className="mt-1 font-semibold">{formatCents(activeDistributionLineTotalCents, activeDistributionCurrency)}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-teal-600">Kalan fark</p>
+                  <p className={`mt-1 font-semibold ${activeDistributionDifferenceCents === 0 ? "text-teal-700" : "text-amber-700"}`}>
+                    {formatCents(activeDistributionDifferenceCents, activeDistributionCurrency)}
+                  </p>
+                </div>
+              </div>
+
+              <div className="space-y-3">
+                {distributionLines.map((line, index) => {
+                  const requiresClientField = isClientAttributedDistributionType(line.type);
+
+                  return (
+                    <div key={line.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+                      <div className="mb-2 flex items-center justify-between gap-2">
+                        <span className="text-xs font-semibold text-slate-600">Satır {index + 1}</span>
+                        <button
+                          type="button"
+                          onClick={() => removeDistributionLine(line.id)}
+                          disabled={distributionLines.length === 1}
+                          className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs text-slate-500 hover:bg-white hover:text-red-600 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <Trash2 className="h-3 w-3" />
+                          Satırı Sil
+                        </button>
+                      </div>
+
+                      <div className="grid gap-3 md:grid-cols-[1.5fr_1fr_1.3fr]">
+                        <label className="text-xs font-medium text-slate-600">
+                          Bucket
+                          <select
+                            aria-label="Dağıtım kalemi türü"
+                            value={line.type}
+                            onChange={(event) => updateDistributionLine(line.id, { type: event.target.value as DispositionPostingLineType })}
+                            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-sm text-slate-800 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                          >
+                            {distributionBucketOptions.map((option) => (
+                              <option key={option.type} value={option.type}>
+                                {option.label}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label className="text-xs font-medium text-slate-600">
+                          Tutar
+                          <input
+                            aria-label="Dağıtım tutarı"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            value={line.amount}
+                            onChange={(event) => updateDistributionLine(line.id, { amount: event.target.value })}
+                            className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-sm text-slate-800 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                          />
+                        </label>
+
+                        {requiresClientField ? (
+                          <label className="text-xs font-medium text-slate-600">
+                            Alacaklı
+                            <select
+                              aria-label="Alacaklı seçimi"
+                              value={line.caseClientId}
+                              onChange={(event) => updateDistributionLine(line.id, { caseClientId: event.target.value })}
+                              className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-sm text-slate-800 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                            >
+                              <option value="">Alacaklı seçin</option>
+                              {eligibleClientsForDisposition.map((client) => (
+                                <option key={client.id} value={client.id}>
+                                  {client.name}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                        ) : (
+                          <div className="rounded-md border border-slate-200 bg-white px-2 py-2 text-xs text-slate-500">
+                            <span className="font-medium text-slate-600">Alacaklı</span>
+                            <p className="mt-1">Bu bucket için caseClientId gerekmez.</p>
+                          </div>
+                        )}
+                      </div>
+
+                      <label className="mt-3 block text-xs font-medium text-slate-600">
+                        Not
+                        <input
+                          aria-label="Dağıtım notu"
+                          value={line.note}
+                          onChange={(event) => updateDistributionLine(line.id, { note: event.target.value })}
+                          className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-sm text-slate-800 focus:border-teal-500 focus:outline-none focus:ring-1 focus:ring-teal-500"
+                          placeholder="Opsiyonel"
+                        />
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                onClick={addDistributionLine}
+                className="mt-3 inline-flex items-center gap-1.5 rounded-md border border-dashed border-slate-300 px-3 py-2 text-xs font-medium text-slate-600 hover:border-teal-300 hover:text-teal-700"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Satır Ekle
+              </button>
+
+              {distributionFeedbackMessage && (
+                <div className="mt-4 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                  {distributionFeedbackMessage}
+                </div>
+              )}
+            </div>
+
+            <div className="flex flex-col gap-2 border-t border-slate-200 px-5 py-4 sm:flex-row sm:items-center sm:justify-end">
+              <button
+                type="button"
+                onClick={closeDistributionDecisionModal}
+                className="rounded-md border border-slate-300 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              >
+                Vazgeç
+              </button>
+              <button
+                type="button"
+                onClick={handleDistributionDecisionSubmit}
+                disabled={!canSubmitDistributionDecision}
+                className="inline-flex items-center justify-center gap-2 rounded-md bg-teal-600 px-4 py-2 text-sm font-medium text-white hover:bg-teal-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {isDistributionSubmitting && <Loader2 className="h-4 w-4 animate-spin" />}
+                Dağıtımı Kaydet
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
