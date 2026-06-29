@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, mapClaimKalemTuruToDueType, resolveDueInterestType, flattenNestedYanAlacaklarRaws } from '../lib/case-due-payload';
+import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, mapClaimKalemTuruToDueType, resolveDueInterestType, flattenNestedYanAlacaklarRaws, humanizeDuesValidationError } from '../lib/case-due-payload';
 
 describe('buildCreateCaseDuesPayload', () => {
   it('create-case payload alacak faiz alanlarini dusurmez', () => {
@@ -205,20 +205,52 @@ describe("resolveDueInterestType (PR-i2 — fer'i faiz uygunlaştırma)", () => 
     expect(resolveDueInterestType('INTEREST', undefined)).toBeUndefined();
   });
 
-  it('"YOK" → undefined (geçersiz tip payload\'a sızmaz)', () => {
-    expect(resolveDueInterestType('EXPENSE', 'YOK')).toBeUndefined();
-    expect(resolveDueInterestType('PRINCIPAL', 'YOK')).toBeUndefined();
+  it('"YOK" → YOKSUN (BUG-FIX F-2: artık geçerli backend enum, undefined değil)', () => {
+    expect(resolveDueInterestType('EXPENSE', 'YOK')).toBe('YOKSUN');
+    expect(resolveDueInterestType('PRINCIPAL', 'YOK')).toBe('YOKSUN');
   });
 
-  it("fer'i geçerli tip korunur", () => {
+  it('zaten geçerli backend enum aynen geçer', () => {
     expect(resolveDueInterestType('EXPENSE', 'YASAL')).toBe('YASAL');
     expect(resolveDueInterestType('VEKALET_UCRETI', 'YASAL')).toBe('YASAL');
+    expect(resolveDueInterestType('PRINCIPAL', 'TICARI')).toBe('TICARI');
+    expect(resolveDueInterestType('PRINCIPAL', 'AVANS')).toBe('AVANS');
+    expect(resolveDueInterestType('PRINCIPAL', 'TEMERRUT')).toBe('TEMERRUT');
   });
 
-  it('PRINCIPAL mevcut davranış korunur (raw geçer · undefined→YASAL)', () => {
-    expect(resolveDueInterestType('PRINCIPAL', 'TICARI')).toBe('TICARI');
+  it('unset/boş → YASAL (varsayılan)', () => {
     expect(resolveDueInterestType('PRINCIPAL', undefined)).toBe('YASAL');
     expect(resolveDueInterestType('PRINCIPAL', '')).toBe('YASAL');
+  });
+
+  // 🔒 BUG-FIX F-2: FaizTuruSelector value → backend InterestType (domain kararı, Ulaş 2026-06-23).
+  it('FaizTuruSelector value → backend InterestType (domain mapping KİLİT)', () => {
+    expect(resolveDueInterestType('PRINCIPAL', 'TICARI_DEGISEN')).toBe('AVANS'); // 🔒 KİLİT
+    expect(resolveDueInterestType('PRINCIPAL', 'AKDI')).toBe('SABIT'); // 🔒 KİLİT
+    expect(resolveDueInterestType('PRINCIPAL', 'TICARI_SABIT')).toBe('TICARI');
+    expect(resolveDueInterestType('PRINCIPAL', 'BANKA_TL')).toBe('AVANS');
+    expect(resolveDueInterestType('PRINCIPAL', 'KAMU_BANKA_TL')).toBe('AVANS');
+  });
+
+  it('bilinmeyen değer → güvenli YASAL; ham selector value ASLA dönmez', () => {
+    expect(resolveDueInterestType('PRINCIPAL', 'BILINMEYEN_TIP')).toBe('YASAL');
+    expect(resolveDueInterestType('PRINCIPAL', 'TICARI_DEGISEN')).not.toBe('TICARI_DEGISEN');
+  });
+});
+
+describe('humanizeDuesValidationError (BUG-FIX F-3 — okunur faiz-türü hatası)', () => {
+  it('dues.N.interestType hatası → okunur Türkçe (1-based, çoğul)', () => {
+    const raw = 'dues.0.interestType must be one of the following values: YASAL, TICARI, dues.1.interestType must be one of the following values: YASAL';
+    expect(humanizeDuesValidationError(raw)).toBe('1, 2 numaralı alacak kalemlerinde geçerli bir faiz türü seçiniz.');
+  });
+
+  it('tek kalem → tekil ek', () => {
+    expect(humanizeDuesValidationError('dues.0.interestType must be one of ...')).toBe('1 numaralı alacak kaleminde geçerli bir faiz türü seçiniz.');
+  });
+
+  it("kalıba uymayan mesaj → null (çağıran fallback'e düşer)", () => {
+    expect(humanizeDuesValidationError('Some other backend error')).toBeNull();
+    expect(humanizeDuesValidationError('')).toBeNull();
   });
 });
 
