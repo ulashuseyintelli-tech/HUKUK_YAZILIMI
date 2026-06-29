@@ -225,6 +225,40 @@ export class OfficeApprovalService {
     return updated;
   }
 
+  /**
+   * P4-5C-2 — RETRY KİLİDİ (compare-and-set): FAILED → RUNNING, yalnız retryCount < maxAttempts (BOUNDED). Cron PASS-FAILED
+   * (executeRetry) APPLY'dan ÖNCE çağırır. count===0 → ConflictException (FAILED değil / retryCount>=MAX / eşzamanlı claim).
+   * runningStartedAt=now (yeni claim anı → precise stuck-timeout retry'da da geçerli). retryCount BURADA artmaz (fail'de artar).
+   * markExecutionRunning'den AYRI metod (NOT_RUN-only claim'i bozmaz); markExecution helper'ı da genişletilmez.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler: OfficeApprovalExecutorService.executeRetry() → cron PASS-FAILED bounded retry (P4-5C-2; internal; route YOK).
+   * /// </remarks>
+   */
+  async markExecutionRetrying(id: string, byUserId: string, maxAttempts: number): Promise<OfficeApprovalRequest> {
+    const req = await this.requireRequest(id);
+    const executable =
+      req.status === OfficeApprovalStatus.APPROVED || req.status === OfficeApprovalStatus.APPROVED_WITH_CHANGES;
+    if (!executable) {
+      throw new ConflictException('Yalnız APPROVED/APPROVED_WITH_CHANGES talep yürütülebilir/işaretlenebilir.');
+    }
+    const res = await this.prisma.officeApprovalRequest.updateMany({
+      where: {
+        id,
+        status: { in: [OfficeApprovalStatus.APPROVED, OfficeApprovalStatus.APPROVED_WITH_CHANGES] },
+        executionStatus: OfficeApprovalExecutionStatus.FAILED, // STRICT: yalnız FAILED → RUNNING (retry claim)
+        retryCount: { lt: maxAttempts }, // BOUNDED: tükenmiş satır (retryCount>=MAX) yarışta bile re-claim edilemez
+      },
+      data: { executionStatus: OfficeApprovalExecutionStatus.RUNNING, runningStartedAt: new Date() },
+    });
+    if (res.count === 0) {
+      throw new ConflictException('Retry claim alınamadı (FAILED değil / retryCount>=MAX / eşzamanlı claim).');
+    }
+    const updated = await this.requireRequest(id);
+    await this.auditLog('OFFICE_APPROVAL_EXECUTION_RETRYING', updated, byUserId);
+    return updated;
+  }
+
   // ───────────────────────── P4-4 read (Inbox/Detail; TENANT-SCOPED) ─────────────────────────
 
   /**

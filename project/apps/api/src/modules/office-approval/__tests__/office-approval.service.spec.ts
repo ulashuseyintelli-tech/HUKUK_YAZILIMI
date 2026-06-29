@@ -212,6 +212,29 @@ describe('P4-1 OfficeApprovalService — execution markers', () => {
     expect(data.executedAt).toBeUndefined(); // FAILED'de executedAt YAZILMAZ (P4-5B davranışı korunur)
   });
 
+  it('P4-5C-2 markExecutionRetrying: FAILED→RUNNING (retryCount<MAX CAS) + runningStartedAt + RETRYING audit', async () => {
+    const { svc, prisma, audit } = make({
+      reqSeq: [mkReq({ status: 'APPROVED', executionStatus: 'FAILED' }), mkReq({ status: 'APPROVED', executionStatus: 'RUNNING' })],
+    });
+    await svc.markExecutionRetrying('oar-1', APPROVER, 3);
+    const call = prisma.officeApprovalRequest.updateMany.mock.calls[0][0];
+    expect(call.where.executionStatus).toBe('FAILED'); // STRICT FAILED→RUNNING
+    expect(call.where.retryCount).toEqual({ lt: 3 }); // bounded
+    expect(call.data.executionStatus).toBe('RUNNING');
+    expect(call.data.runningStartedAt).toBeInstanceOf(Date);
+    expect(audit.log.mock.calls[0][0].action).toBe('OFFICE_APPROVAL_EXECUTION_RETRYING');
+  });
+
+  it('P4-5C-2 markExecutionRetrying: count=0 (FAILED değil / retryCount>=MAX / yarış) → Conflict', async () => {
+    const { svc } = make({ reqSeq: [mkReq({ status: 'APPROVED', executionStatus: 'FAILED' })], updateCount: 0 });
+    await expect(svc.markExecutionRetrying('oar-1', APPROVER, 3)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('P4-5C-2 markExecutionRetrying: APPROVED dışı (PENDING) → Conflict (executable değil)', async () => {
+    const { svc } = make({ reqSeq: [mkReq({ status: 'PENDING_APPROVAL', executionStatus: 'FAILED' })] });
+    await expect(svc.markExecutionRetrying('oar-1', APPROVER, 3)).rejects.toBeInstanceOf(ConflictException);
+  });
+
   it('execution yalnız APPROVED: PENDING talep yürütme işareti → Conflict', async () => {
     const { svc } = make({ reqSeq: [mkReq({ status: 'PENDING_APPROVAL' })] });
     await expect(svc.markExecutionSucceeded('oar-1', APPROVER)).rejects.toBeInstanceOf(ConflictException);
