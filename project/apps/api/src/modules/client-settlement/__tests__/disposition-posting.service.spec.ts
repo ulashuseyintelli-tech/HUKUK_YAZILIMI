@@ -50,6 +50,61 @@ describe('DispositionPostingService.post', () => {
     );
   });
 
+  it('tum non-HELD bucketlar cok satirli post icinde kabul edilir ve toplam tahsilata esitlenir', async () => {
+    const { prisma, tx } = buildPrisma();
+
+    const res = await svc(prisma).post(
+      't1',
+      'd1',
+      {
+        lines: [
+          { type: 'CLIENT_PAYABLE', amount: '10' },
+          { type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: '15' },
+          { type: 'CONTRACTUAL_FEE_WITHHELD', amount: '20' },
+          { type: 'FIRM_EXPENSE_REIMBURSEMENT', amount: '5' },
+          { type: 'OFFSET_CLIENT_ADVANCE', amount: '25' },
+          { type: 'OTHER', amount: '25' },
+        ],
+      },
+      { userId: 'u1' },
+    );
+
+    expect(res).toEqual({ posted: true, dispositionId: 'd1', lineCount: 6 });
+    expect(tx.collectionDispositionLine.create).toHaveBeenCalledTimes(6);
+    expect(tx.collectionDispositionLine.create.mock.calls.map(([arg]: any[]) => arg.data.type)).toEqual([
+      'CLIENT_PAYABLE',
+      'CLIENT_EXPENSE_REIMBURSEMENT',
+      'CONTRACTUAL_FEE_WITHHELD',
+      'FIRM_EXPENSE_REIMBURSEMENT',
+      'OFFSET_CLIENT_ADVANCE',
+      'OTHER',
+    ]);
+    expect(tx.collectionDisposition.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'd1' }, data: expect.objectContaining({ status: 'POSTED', postedById: 'u1' }) }),
+    );
+  });
+
+  it('cok satirli post accepted: client payable + fee withheld ayni disposition icinde yazilir', async () => {
+    const { prisma, tx } = buildPrisma();
+
+    const res = await svc(prisma).post(
+      't1',
+      'd1',
+      {
+        lines: [
+          { type: 'CLIENT_PAYABLE', amount: '75' },
+          { type: 'CONTRACTUAL_FEE_WITHHELD', amount: '25' },
+        ],
+      },
+      {},
+    );
+
+    expect(res.lineCount).toBe(2);
+    expect(tx.collectionDispositionLine.create).toHaveBeenCalledTimes(2);
+    expect(tx.collectionDisposition.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ status: 'POSTED' }) }),
+    );
+  });
   it('sum < total (eksik) → reject, transaction açılmaz', async () => {
     const { prisma } = buildPrisma();
     await expect(
@@ -80,6 +135,62 @@ describe('DispositionPostingService.post', () => {
     ).rejects.toThrow(/caseClientId zorunlu/);
   });
 
+  it('CLUSTER CLIENT_EXPENSE_REIMBURSEMENT caseClientId yoksa → reject', async () => {
+    const disp = { ...DISP_SINGLE, beneficiaryScope: 'CASE_CREDITOR_CLUSTER', caseClientId: null };
+    const { prisma } = buildPrisma({ disp });
+    await expect(
+      svc(prisma).post('t1', 'd1', { lines: [{ type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: '100' }] }, {}),
+    ).rejects.toThrow(/caseClientId zorunlu/);
+  });
+
+  it('CLUSTER client-attributed bucketlar explicit caseClientId ile kabul edilir', async () => {
+    const disp = { ...DISP_SINGLE, beneficiaryScope: 'CASE_CREDITOR_CLUSTER', caseClientId: null };
+    const { prisma, tx } = buildPrisma({ disp, validCaseClients: [{ id: 'cc-A' }, { id: 'cc-B' }] });
+
+    const res = await svc(prisma).post(
+      't1',
+      'd1',
+      {
+        lines: [
+          { type: 'CLIENT_PAYABLE', amount: '70', caseClientId: 'cc-A' },
+          { type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: '30', caseClientId: 'cc-B' },
+        ],
+      },
+      {},
+    );
+
+    expect(res.lineCount).toBe(2);
+    expect(prisma.caseClient.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ id: { in: ['cc-A', 'cc-B'] }, caseId: 'case1' }),
+        select: { id: true },
+      }),
+    );
+    expect(tx.collectionDispositionLine.create.mock.calls.map(([arg]: any[]) => arg.data.caseClientId)).toEqual(['cc-A', 'cc-B']);
+  });
+
+  it('CLUSTER non-client bucketlar caseClientId olmadan kabul edilir', async () => {
+    const disp = { ...DISP_SINGLE, beneficiaryScope: 'CASE_CREDITOR_CLUSTER', caseClientId: null };
+    const { prisma, tx } = buildPrisma({ disp, validCaseClients: [] });
+
+    const res = await svc(prisma).post(
+      't1',
+      'd1',
+      {
+        lines: [
+          { type: 'CONTRACTUAL_FEE_WITHHELD', amount: '20' },
+          { type: 'FIRM_EXPENSE_REIMBURSEMENT', amount: '20' },
+          { type: 'OFFSET_CLIENT_ADVANCE', amount: '30' },
+          { type: 'OTHER', amount: '30' },
+        ],
+      },
+      {},
+    );
+
+    expect(res.lineCount).toBe(4);
+    expect(prisma.caseClient.findMany).not.toHaveBeenCalled();
+    expect(tx.collectionDispositionLine.create.mock.calls.map(([arg]: any[]) => arg.data.caseClientId)).toEqual([null, null, null, null]);
+  });
   it('disposition HELD değilse → reject', async () => {
     const { prisma } = buildPrisma({ disp: { ...DISP_SINGLE, status: 'POSTED' } });
     await expect(
@@ -99,7 +210,17 @@ describe('DispositionPostingService.post', () => {
     await svc(prisma).post('t1', 'd1', { lines: [{ type: 'OFFSET_CLIENT_ADVANCE', amount: '100' }] }, { userId: 'u1' });
     expect(tx.balanceLedger.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: expect.objectContaining({ type: 'CREDIT', source: expect.stringContaining('disposition_line:') }),
+        data: expect.objectContaining({
+          tenantId: 't1',
+          caseBalanceId: 'cb-1',
+          type: 'CREDIT',
+          amount: D(100),
+          currency: 'TRY',
+          source: 'disposition_line:line-OFFSET_CLIENT_ADVANCE',
+          sourceId: 'line-OFFSET_CLIENT_ADVANCE',
+          description: 'Tahsilat avans mahsubu (OFFSET_CLIENT_ADVANCE)',
+          createdById: 'u1',
+        }),
       }),
     );
   });
