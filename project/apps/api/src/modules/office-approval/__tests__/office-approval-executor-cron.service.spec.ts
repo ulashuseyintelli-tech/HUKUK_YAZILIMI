@@ -23,6 +23,7 @@ const disable = () => { delete process.env.OFFICE_APPROVAL_EXECUTOR_ENABLED; };
 const mk = (over: any = {}) => {
   const executor: any = {
     execute: jest.fn().mockResolvedValue({ executionStatus: 'SUCCEEDED' }),
+    executeRetry: jest.fn().mockResolvedValue({ executionStatus: 'SUCCEEDED' }),
     reconcileStuckRunning: jest.fn().mockResolvedValue({ executionStatus: 'STALE' }),
     ...(over.executor || {}),
   };
@@ -33,19 +34,26 @@ const mk = (over: any = {}) => {
   const svc = new OfficeApprovalExecutorCronService(prisma, executor);
   return { svc, executor, prisma };
 };
-// findMany'i iki pass için ayrı döndüren yardımcı (1=RUNNING reconcile, 2=NOT_RUN scan).
-const twoPass = (runningRows: any[], pendingRows: any[]) => ({
-  prisma: { officeApprovalRequest: { findMany: jest.fn().mockResolvedValueOnce(runningRows).mockResolvedValueOnce(pendingRows) } },
+// findMany'i 3 pass için ayrı döndüren yardımcı (1=RUNNING reconcile, 2=NOT_RUN scan, 3=FAILED retry).
+const threePass = (runningRows: any[], pendingRows: any[], failedRows: any[] = []) => ({
+  prisma: {
+    officeApprovalRequest: {
+      findMany: jest.fn().mockResolvedValueOnce(runningRows).mockResolvedValueOnce(pendingRows).mockResolvedValueOnce(failedRows),
+    },
+  },
 });
+// Geriye dönük: PASS-FAILED boş (eski 2-pass testleri için).
+const twoPass = (runningRows: any[], pendingRows: any[]) => threePass(runningRows, pendingRows, []);
 
 describe('P4-5B cron — config gate (default OFF)', () => {
   it("flag-off (default) → no-op: prisma'ya HİÇ dokunmaz, enabled:false sıfırlar", async () => {
     disable();
     const { svc, executor, prisma } = mk();
     const res = await svc.runSweep();
-    expect(res).toEqual({ enabled: false, scanned: 0, applied: 0, failed: 0, stale: 0, reconciled: 0 });
+    expect(res).toEqual({ enabled: false, scanned: 0, applied: 0, failed: 0, stale: 0, reconciled: 0, retried: 0 });
     expect(prisma.officeApprovalRequest.findMany).not.toHaveBeenCalled();
     expect(executor.execute).not.toHaveBeenCalled();
+    expect(executor.executeRetry).not.toHaveBeenCalled();
     expect(executor.reconcileStuckRunning).not.toHaveBeenCalled();
   });
 
@@ -92,7 +100,7 @@ describe('P4-5B cron — scanner + pass ordering (flag ON)', () => {
 
   it('counts: applied(SUCCEEDED) / failed(FAILED) / stale(STALE) / reconciled + summary döner', async () => {
     enable();
-    const { svc } = mk({
+    const { svc, executor } = mk({
       ...twoPass([{ id: 'run1', tenantId: 't' }], [
         { id: 'a', tenantId: 't' }, { id: 'b', tenantId: 't' }, { id: 'c', tenantId: 't' },
       ]),
@@ -105,7 +113,57 @@ describe('P4-5B cron — scanner + pass ordering (flag ON)', () => {
       },
     });
     const res = await svc.runSweep();
-    expect(res).toEqual({ enabled: true, scanned: 3, applied: 1, failed: 1, stale: 1, reconciled: 1 });
+    expect(res).toEqual({ enabled: true, scanned: 3, applied: 1, failed: 1, stale: 1, reconciled: 1, retried: 0 });
+    expect(executor.executeRetry).not.toHaveBeenCalled(); // FAILED pass boş → retry yok
+  });
+
+  it('PASS-FAILED: FAILED + retryCount<MAX + backoff-elapsed → executeRetry; exhausted/backoff-bekleyen ENUMERATE/atla', async () => {
+    enable();
+    const old = new Date(Date.now() - 90 * 60_000); // 90dk önce → her retryCount için backoff dolmuş
+    const fresh = new Date(Date.now() - 1 * 60_000); // 1dk önce → backoff dolmamış (base 15dk)
+    const { svc, prisma, executor } = mk({
+      ...threePass([], [], [
+        { id: 'f1', tenantId: 'tA', retryCount: 1, lastRetryAt: old }, // eligible
+        { id: 'f2', tenantId: 'tB', retryCount: 1, lastRetryAt: fresh }, // backoff dolmadı → atla
+      ]),
+      executor: {
+        execute: jest.fn(),
+        reconcileStuckRunning: jest.fn(),
+        executeRetry: jest.fn().mockResolvedValue({ executionStatus: 'SUCCEEDED' }),
+      },
+    });
+    const res = await svc.runSweep();
+    // PASS-FAILED query: FAILED + retryCount<MAX(3) + (lastRetryAt<=now-base ∨ null) — exhausted (>=MAX) ENUMERATE EDİLMEZ
+    const failedCall = prisma.officeApprovalRequest.findMany.mock.calls[2][0];
+    expect(failedCall.where.executionStatus).toBe('FAILED');
+    expect(failedCall.where.retryCount).toEqual({ lt: 3 });
+    expect(failedCall.where.OR).toEqual([{ lastRetryAt: { lte: expect.any(Date) } }, { lastRetryAt: null }]);
+    // yalnız f1 (backoff dolmuş) retry edildi; f2 (taze) atlandı
+    expect(executor.executeRetry).toHaveBeenCalledTimes(1);
+    expect(executor.executeRetry).toHaveBeenCalledWith('f1', 'tA', 'SYSTEM_CRON', 3);
+    expect(res.retried).toBe(1);
+    expect(res.applied).toBe(1); // retry SUCCEEDED → applied'e katılır
+  });
+
+  it('PASS-FAILED per-row isolation: bir executeRetry throw → diğeri devam, tick DÜŞMEZ', async () => {
+    enable();
+    const old = new Date(Date.now() - 90 * 60_000);
+    const { svc, executor } = mk({
+      ...threePass([], [], [
+        { id: 'f1', tenantId: 't', retryCount: 1, lastRetryAt: old },
+        { id: 'f2', tenantId: 't', retryCount: 2, lastRetryAt: old },
+      ]),
+      executor: {
+        execute: jest.fn(),
+        reconcileStuckRunning: jest.fn(),
+        executeRetry: jest.fn()
+          .mockRejectedValueOnce(new ConflictException('yarış'))
+          .mockResolvedValueOnce({ executionStatus: 'SUCCEEDED' }),
+      },
+    });
+    const res = await svc.runSweep(); // throw etmemeli
+    expect(res.retried).toBe(2); // ikisi de denendi
+    expect(res.applied).toBe(1); // f2 başarılı (f1 atlandı)
   });
 });
 

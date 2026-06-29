@@ -39,6 +39,7 @@ const mk = (reqRow: Record<string, unknown>, over: any = {}) => {
   const officeApproval: any = {
     getByIdForTenant: jest.fn().mockResolvedValue(reqRow),
     markExecutionRunning: jest.fn().mockResolvedValue({ ...reqRow, executionStatus: 'RUNNING' }),
+    markExecutionRetrying: jest.fn().mockResolvedValue({ ...reqRow, executionStatus: 'RUNNING' }),
     markExecutionSucceeded: jest.fn().mockResolvedValue({ ...reqRow, executionStatus: 'SUCCEEDED' }),
     markExecutionFailed: jest.fn().mockResolvedValue({ ...reqRow, executionStatus: 'FAILED' }),
     markExecutionStale: jest.fn().mockResolvedValue({ ...reqRow, executionStatus: 'STALE' }),
@@ -359,5 +360,76 @@ describe('P4-5C-1 executor — reconcileStuckRunning (PRECISE age-gate; case.cas
       officeApproval: { getByIdForTenant: jest.fn().mockRejectedValue(new NotFoundException()) },
     });
     await expect(svc.reconcileStuckRunning('r1', 't-OTHER', CUTOFF)).rejects.toThrow(NotFoundException);
+  });
+});
+
+describe('P4-5C-2 executor — executeRetry (bounded FAILED-retry; FAILED-entry; execute()-AYRI)', () => {
+  const failedReq = (over: Record<string, unknown> = {}) =>
+    mkReq({ executionStatus: 'FAILED', retryCount: 1, ...over });
+
+  it('FAILED + retryCount<MAX + geçerli intent → markExecutionRetrying claim + changeStatus + SUCCEEDED (markExecutionRunning DEĞİL)', async () => {
+    const { svc, officeApproval, caseStatus } = mk(failedReq({ savedIntent: { status: 'BATAK', reason: 'tahsil imkansız' } }));
+    const res = await svc.executeRetry('r1', 't1', 'SYSTEM_CRON', 3);
+    expect(officeApproval.markExecutionRetrying).toHaveBeenCalledWith('r1', 'appr-u', 3);
+    expect(officeApproval.markExecutionRunning).not.toHaveBeenCalled(); // retry, NOT_RUN-claim DEĞİL
+    expect(caseStatus.changeStatus).toHaveBeenCalledWith('t1', 'case-1', 'BATAK', 'appr-u', 'tahsil imkansız');
+    expect(officeApproval.markExecutionSucceeded).toHaveBeenCalledWith('r1', 'appr-u');
+    expect(res.executionStatus).toBe('SUCCEEDED');
+  });
+
+  it('exhausted: retryCount>=MAX → ConflictException; claim YOK, mutation YOK', async () => {
+    const { svc, officeApproval, caseStatus } = mk(failedReq({ retryCount: 3 }));
+    await expect(svc.executeRetry('r1', 't1', 'SYSTEM_CRON', 3)).rejects.toThrow(ConflictException);
+    expect(officeApproval.markExecutionRetrying).not.toHaveBeenCalled();
+    expect(caseStatus.changeStatus).not.toHaveBeenCalled();
+  });
+
+  it.each(['NOT_RUN', 'RUNNING', 'SUCCEEDED', 'STALE'])(
+    'FAILED DIŞI (executionStatus=%s) → ConflictException; claim YOK',
+    async (es) => {
+      const { svc, officeApproval } = mk(failedReq({ executionStatus: es }));
+      await expect(svc.executeRetry('r1', 't1', 'SYSTEM_CRON', 3)).rejects.toThrow(ConflictException);
+      expect(officeApproval.markExecutionRetrying).not.toHaveBeenCalled();
+    },
+  );
+
+  it('scope guard: actionCode!=CHANGE_STATUS → BadRequest; claim YOK', async () => {
+    const { svc, officeApproval, caseStatus } = mk(failedReq({ actionCode: 'CREATE_CLIENT' }));
+    await expect(svc.executeRetry('r1', 't1', 'SYSTEM_CRON', 3)).rejects.toThrow(BadRequestException);
+    expect(officeApproval.markExecutionRetrying).not.toHaveBeenCalled();
+    expect(caseStatus.changeStatus).not.toHaveBeenCalled();
+  });
+
+  it('approverUserId null (bozuk) → ConflictException; claim YOK', async () => {
+    const { svc, officeApproval } = mk(failedReq({ approverUserId: null }));
+    await expect(svc.executeRetry('r1', 't1', 'SYSTEM_CRON', 3)).rejects.toThrow(ConflictException);
+    expect(officeApproval.markExecutionRetrying).not.toHaveBeenCalled();
+  });
+
+  it('claim sonrası changeStatus throw → markExecutionFailed (retryCount++ via 5C-1; bounded)', async () => {
+    const { svc, officeApproval } = mk(failedReq(), {
+      caseStatus: { changeStatus: jest.fn().mockRejectedValue(new Error('boom')) },
+    });
+    const res = await svc.executeRetry('r1', 't1', 'SYSTEM_CRON', 3);
+    expect(officeApproval.markExecutionRetrying).toHaveBeenCalledWith('r1', 'appr-u', 3);
+    expect(officeApproval.markExecutionFailed).toHaveBeenCalledWith('r1', 'appr-u');
+    expect(res.executionStatus).toBe('FAILED');
+  });
+
+  it('claim sonrası already-at-target → markExecutionStale (re-apply YOK)', async () => {
+    const { svc, officeApproval, caseStatus } = mk(failedReq({ savedIntent: { status: 'BATAK' } }), {
+      prisma: { case: { findFirst: jest.fn().mockResolvedValue({ caseStatus: 'BATAK' }) } },
+    });
+    await svc.executeRetry('r1', 't1', 'SYSTEM_CRON', 3);
+    expect(officeApproval.markExecutionStale).toHaveBeenCalledWith('r1', 'appr-u');
+    expect(caseStatus.changeStatus).not.toHaveBeenCalled();
+  });
+
+  it('claim conflict (markExecutionRetrying count=0 yarış) → propagate (cron yutar)', async () => {
+    const { svc, caseStatus } = mk(failedReq(), {
+      officeApproval: { markExecutionRetrying: jest.fn().mockRejectedValue(new ConflictException('retry claim alınamadı')) },
+    });
+    await expect(svc.executeRetry('r1', 't1', 'SYSTEM_CRON', 3)).rejects.toThrow(ConflictException);
+    expect(caseStatus.changeStatus).not.toHaveBeenCalled();
   });
 });

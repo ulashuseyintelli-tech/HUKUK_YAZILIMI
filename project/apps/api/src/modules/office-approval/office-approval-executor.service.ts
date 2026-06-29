@@ -95,62 +95,129 @@ export class OfficeApprovalExecutorService {
       throw new ConflictException('Onaylı talepte approver kimliği yok (bozuk kayıt); yürütülemez.');
     }
 
-    // 5) EFFECTIVE INTENT (K2) — APPROVED→savedIntent · APPROVED_WITH_CHANGES→replacementSavedIntent.
-    //    AWC ama replacement YOK → uygulanabilir niyet yapısal olarak yok = STALE (execute hatası DEĞİL).
+    // 5-7) EFFECTIVE INTENT + SHAPE + STALENESS (salt-okuma; resolveExecutableIntent — executeRetry ile PAYLAŞILIR, drift YOK).
+    //    AWC-missing/already-target/case-yok → stale · malformed → failed · aksi → apply. (Marking BURADA; row NOT_RUN.)
+    const resolved = await this.resolveExecutableIntent(req);
+    if (resolved.kind === 'stale') {
+      this.logger.warn(`execute(${requestId}): intent/staleness → STALE`);
+      return this.officeApproval.markExecutionStale(requestId, approverUserId);
+    }
+    if (resolved.kind === 'failed') {
+      this.logger.warn(`execute(${requestId}): geçersiz CHANGE_STATUS intent → FAILED`);
+      return this.officeApproval.markExecutionFailed(requestId, approverUserId);
+    }
+
+    // 8) RUNNING-LOCK CLAIM (K3) — NOT_RUN→RUNNING compare-and-set. Eşzamanlı/çift executor → ConflictException (propagate).
+    await this.officeApproval.markExecutionRunning(requestId, approverUserId);
+
+    // 9) APPLY + MARK (PAYLAŞILAN applyValidatedIntent — PURE changeStatus controller-BYPASS; actor=approverUserId K4).
+    return this.applyValidatedIntent(req, approverUserId, resolved.intent, executorUserId);
+  }
+
+  /**
+   * P4-5C-2 — FAILED satırı BOUNDED retry ile yeniden yürütür (cron PASS-FAILED çağırır). execute()'tan AYRI giriş:
+   * entry guard = FAILED + retryCount<maxAttempts (execute() NOT_RUN-only KALIR, K6). Claim FAILED→RUNNING (markExecutionRetrying),
+   * sonra ORTAK resolveExecutableIntent + applyValidatedIntent (drift YOK; row RUNNING → markStale/Failed çalışır).
+   * Backoff eligibility CRON'da kontrol edilir (burada DEĞİL). actor=approverUserId (K4). Apply tekrar fail → markExecutionFailed
+   * retryCount++ → eninde-sonunda retryCount>=MAX (cron enumerate etmez) = sonsuz-döngü YOK.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler: OfficeApprovalExecutorCronService.runSweep() PASS-FAILED (P4-5C-2; internal; route YOK).
+   * /// </remarks>
+   */
+  async executeRetry(
+    requestId: string,
+    tenantId: string,
+    executorUserId: string,
+    maxAttempts: number,
+  ): Promise<OfficeApprovalRequest> {
+    const req = await this.officeApproval.getByIdForTenant(requestId, tenantId);
+    // SCOPE GUARD (K7) — yabancı action → executionStatus'a dokunma, typed refusal.
+    if (req.actionCode !== 'CHANGE_STATUS' || req.targetType !== 'LegalCase') {
+      throw new BadRequestException(
+        `UNSUPPORTED_ACTION_CODE: Executor kapsamı CHANGE_STATUS/LegalCase; '${req.actionCode}/${req.targetType}' yürütülmez.`,
+      );
+    }
+    // STATUS GUARD
+    const executable =
+      req.status === OfficeApprovalStatus.APPROVED || req.status === OfficeApprovalStatus.APPROVED_WITH_CHANGES;
+    if (!executable) {
+      throw new ConflictException(
+        `Retry yürütülemez: talep '${req.status}' durumunda (APPROVED/APPROVED_WITH_CHANGES bekleniyor).`,
+      );
+    }
+    // ENTRY GUARD — yalnız FAILED (retry-only; execute() NOT_RUN-only ile AYRI).
+    if (req.executionStatus !== OfficeApprovalExecutionStatus.FAILED) {
+      throw new ConflictException(`executeRetry yalnız FAILED için; '${req.executionStatus}' uygun değil.`);
+    }
+    // EXHAUSTED GUARD — retryCount < maxAttempts (markExecutionRetrying CAS'inde de re-check edilir).
+    if (req.retryCount >= maxAttempts) {
+      throw new ConflictException(`retryCount ${req.retryCount} >= MAX ${maxAttempts}; tükendi (re-enumerate edilmez).`);
+    }
+    const approverUserId = req.approverUserId;
+    if (!approverUserId) {
+      throw new ConflictException('FAILED satırda approver kimliği yok (bozuk kayıt); retry edilemez.');
+    }
+    // CLAIM (FAILED→RUNNING; retryCount<maxAttempts). Sonra resolve+apply ROW=RUNNING üzerinden.
+    await this.officeApproval.markExecutionRetrying(requestId, approverUserId, maxAttempts);
+    const resolved = await this.resolveExecutableIntent(req);
+    if (resolved.kind === 'stale') {
+      this.logger.warn(`retry(${requestId}): intent/staleness → STALE`);
+      return this.officeApproval.markExecutionStale(requestId, approverUserId);
+    }
+    if (resolved.kind === 'failed') {
+      this.logger.warn(`retry(${requestId}): geçersiz CHANGE_STATUS intent → FAILED`);
+      return this.officeApproval.markExecutionFailed(requestId, approverUserId);
+    }
+    return this.applyValidatedIntent(req, approverUserId, resolved.intent, executorUserId);
+  }
+
+  /**
+   * P4-5C-2 — effective intent seç + shape-validate + staleness probe (SALT-OKUMA; marking YOK → çağıran row-state'ine göre işaretler).
+   * execute() (NOT_RUN'da) + executeRetry() (claim sonrası RUNNING'de) PAYLAŞIR → drift YOK. (reconcileStuckRunning AYRI karar
+   * tablosu kullanır → onu paylaşmaz.) AWC-missing/case-yok/already-target → stale · malformed → failed · aksi → apply.
+   */
+  private async resolveExecutableIntent(
+    req: OfficeApprovalRequest,
+  ): Promise<{ kind: 'stale' } | { kind: 'failed' } | { kind: 'apply'; intent: ChangeStatusIntent }> {
     const rawIntent =
       req.status === OfficeApprovalStatus.APPROVED_WITH_CHANGES ? req.replacementSavedIntent : req.savedIntent;
     if (
       req.status === OfficeApprovalStatus.APPROVED_WITH_CHANGES &&
       (rawIntent === null || rawIntent === undefined)
     ) {
-      this.logger.warn(`execute(${requestId}): APPROVED_WITH_CHANGES replacement yok → STALE`);
-      return this.officeApproval.markExecutionStale(requestId, approverUserId);
+      return { kind: 'stale' }; // AWC ama replacement yok = uygulanabilir niyet yapısal yok
     }
-
-    // 6) INTENT-SHAPE (acceptance #6) — effective intent {status: <geçerli LegalCaseStatus>} olmalı; malformed → FAILED
-    //    (mutation hiç açılmaz; changeStatus'un 400'üne güvenme → FAILED deterministik olsun).
     const intent = this.parseChangeStatusIntent(rawIntent);
-    if (!intent) {
-      this.logger.warn(`execute(${requestId}): geçersiz CHANGE_STATUS intent → FAILED`);
-      return this.officeApproval.markExecutionFailed(requestId, approverUserId);
-    }
-
-    // 7) STALENESS PROBE (K5) — target case'i oku (caseId = targetRef; savedIntent'e ASLA güvenme). STALE iff:
-    //    (1) case YOK (silinmiş/çapraz-tenant) ∨ (2) caseStatus ZATEN intent.status. Guided-Open → transition-conflict YOK.
+    if (!intent) return { kind: 'failed' }; // malformed → FAILED
+    // STALENESS PROBE (K5): case YOK ∨ caseStatus ZATEN intent.status → STALE (Guided-Open → transition-conflict YOK).
     const current = await this.prisma.case.findFirst({
       where: { id: req.targetRef, tenantId: req.tenantId },
       select: { caseStatus: true },
     });
-    if (!current || current.caseStatus === intent.status) {
-      this.logger.warn(
-        `execute(${requestId}): staleness (${!current ? 'case YOK' : 'zaten ' + intent.status}) → STALE`,
-      );
-      return this.officeApproval.markExecutionStale(requestId, approverUserId);
-    }
+    if (!current || current.caseStatus === intent.status) return { kind: 'stale' };
+    return { kind: 'apply', intent };
+  }
 
-    // 8) RUNNING-LOCK CLAIM (K3) — NOT_RUN→RUNNING compare-and-set. Eşzamanlı/çift executor → ConflictException (propagate).
-    await this.officeApproval.markExecutionRunning(requestId, approverUserId);
-
-    // 9) APPLY + MARK — PURE service.changeStatus (controller BYPASS). actor=approverUserId (K4). Sonra Succeeded/Failed.
-    //    NOT: changeStatus kendi $transaction'ında; mark ayrı tx (changeStatus tx-injectable değil → outer-tx YOK — kasıtlı).
+  /**
+   * P4-5C-2 — onaylı niyeti uygular: PURE CaseStatusService.changeStatus (controller BYPASS) → markExecutionSucceeded;
+   * hata → markExecutionFailed (retryCount++ via 5C-1). execute() + executeRetry() PAYLAŞIR (row RUNNING; changeStatus/mark drift YOK).
+   * NOT: changeStatus kendi $transaction'ında; mark ayrı tx (changeStatus tx-injectable değil → outer-tx YOK — kasıtlı).
+   */
+  private async applyValidatedIntent(
+    req: OfficeApprovalRequest,
+    approverUserId: string,
+    intent: ChangeStatusIntent,
+    executorUserId: string,
+  ): Promise<OfficeApprovalRequest> {
     try {
-      await this.caseStatus.changeStatus(
-        req.tenantId,
-        req.targetRef,
-        intent.status,
-        approverUserId,
-        intent.reason,
-      );
+      await this.caseStatus.changeStatus(req.tenantId, req.targetRef, intent.status, approverUserId, intent.reason);
     } catch (err) {
-      this.logger.error(
-        `execute(${requestId}): changeStatus hata → FAILED: ${(err as Error)?.message ?? err}`,
-      );
-      return this.officeApproval.markExecutionFailed(requestId, approverUserId);
+      this.logger.error(`apply(${req.id}): changeStatus hata → FAILED: ${(err as Error)?.message ?? err}`);
+      return this.officeApproval.markExecutionFailed(req.id, approverUserId);
     }
-    this.logger.log(
-      `execute(${requestId}): CHANGE_STATUS uygulandı (→${intent.status}; trigger=${executorUserId}) → SUCCEEDED`,
-    );
-    return this.officeApproval.markExecutionSucceeded(requestId, approverUserId);
+    this.logger.log(`apply(${req.id}): CHANGE_STATUS uygulandı (→${intent.status}; trigger=${executorUserId}) → SUCCEEDED`);
+    return this.officeApproval.markExecutionSucceeded(req.id, approverUserId);
   }
 
   /**
