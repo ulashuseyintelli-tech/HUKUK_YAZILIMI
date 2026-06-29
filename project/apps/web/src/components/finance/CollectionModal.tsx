@@ -1,8 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Loader2, XCircle } from "lucide-react";
-import { api } from "@/lib/api";
+import { X, Loader2, XCircle, Eye } from "lucide-react";
+import { api, type PaymentPreviewResponseDTO } from "@/lib/api";
 
 const COLLECTION_TYPES = [
   { value: "TAHSILAT", label: "Tahsilat" },
@@ -22,6 +22,22 @@ const COLLECTION_CHANNELS = [
   { value: "HACIZ", label: "Haciz Yoluyla" },
   { value: "DIGER", label: "Diğer" },
 ];
+const PREVIEW_WARNING_LABELS: Record<string, string> = {
+  PAYMENT_EXCEEDS_CURRENT_OUTSTANDING: "Ödeme mevcut kalan borcu aşıyor.",
+  CLIENT_SELECTION_REQUIRED_FOR_DISTRIBUTION: "Çoklu alacaklı dosyada dağıtım için alacaklı seçimi gerekir.",
+  NO_ELIGIBLE_CASE_CLIENT_FOR_DISTRIBUTION: "Dağıtım için uygun alacaklı bulunamadı; manuel takip gerekir.",
+  CURRENT_BALANCE_UNAVAILABLE: "Güncel bakiye okunamadı; önizleme yedek verilerle hesaplandı.",
+  CURRENT_BALANCE_SERVICE_UNAVAILABLE: "Bakiye servisi erişilebilir değil; önizleme yedek verilerle hesaplandı.",
+  CLAIM_ITEM_READ_FALLBACK_USED: "Önizleme alacak kalemi okuma yedeğiyle hesaplandı.",
+};
+
+const PREVIEW_BLOCKING_LABELS: Record<string, string> = {
+  CASE_CLOSED_FOR_COLLECTION: "Dosya tahsilata kapalı görünüyor.",
+};
+
+function labelPreviewMessage(code: string, labels: Record<string, string>) {
+  return labels[code] || code;
+}
 
 interface CollectionModalProps {
   isOpen: boolean;
@@ -34,6 +50,9 @@ interface CollectionModalProps {
 export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess }: CollectionModalProps) {
   const [loading, setLoading] = useState(false);
   const [canceling, setCanceling] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewResult, setPreviewResult] = useState<PaymentPreviewResponseDTO | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [form, setForm] = useState({
     type: "TAHSILAT",
     channel: "BANKA",
@@ -67,6 +86,11 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
     }
   }, [collection, isOpen]);
 
+  useEffect(() => {
+    setPreviewResult(null);
+    setPreviewError(null);
+  }, [caseId, collection?.id, form.amount, form.date, form.currency, form.channel, isOpen]);
+
   const collectionStatus = String(collection?.status || "").toUpperCase();
   const dispositionStatus = String(
     collection?.accountingDispositionStatus || collection?.dispositionStatus || "",
@@ -74,8 +98,41 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
   const isDraftCollection = ["PENDING", "DRAFT"].includes(collectionStatus);
   const isCancelledCollection = collectionStatus === "CANCELLED";
   const isPostedCollection = dispositionStatus === "POSTED";
+  const previewAmount = Number.parseFloat(form.amount);
+  const hasPreviewAmount = Number.isFinite(previewAmount) && previewAmount > 0;
+  const formatPreviewAmount = (amount: number) =>
+    `${Number(amount || 0).toLocaleString("tr-TR", {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    })} ${previewResult?.input.currency || form.currency || "TRY"}`;
 
+  const handlePreview = async () => {
+    if (isCancelledCollection) return;
 
+    if (!hasPreviewAmount) {
+      setPreviewResult(null);
+      setPreviewError("Önizleme için pozitif bir tutar girin.");
+      return;
+    }
+
+    setPreviewLoading(true);
+    setPreviewError(null);
+    try {
+      const result = await api.previewCasePayment(caseId, {
+        amount: previewAmount,
+        paymentDate: form.date || undefined,
+        currency: form.currency || undefined,
+        paymentMethod: form.channel || undefined,
+      });
+      setPreviewResult(result);
+    } catch (error: any) {
+      console.error("Önizleme hatası:", error);
+      setPreviewResult(null);
+      setPreviewError(error?.message || "Önizleme alınamadı.");
+    } finally {
+      setPreviewLoading(false);
+    }
+  };
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.amount || !form.type) return;
@@ -266,7 +323,97 @@ export function CollectionModal({ isOpen, onClose, caseId, collection, onSuccess
             </div>
           </div>
 
+          {previewError && (
+            <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-700">
+              {previewError}
+            </div>
+          )}
+
+          {previewResult && (
+            <div className="rounded-md border border-blue-200 bg-blue-50 px-3 py-2 text-xs text-blue-900 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-semibold">Ödeme önizlemesi</span>
+                {previewResult.nonPersistent && (
+                  <span className="rounded bg-white/80 px-2 py-0.5 text-[10px] font-medium text-blue-700">
+                    Kayıt oluşturmaz
+                  </span>
+                )}
+              </div>
+
+              {!previewResult.acceptance.wouldAccept && (
+                <div className="rounded border border-red-200 bg-white px-2 py-1 text-red-700">
+                  {previewResult.acceptance.blockingReasons.length > 0
+                    ? previewResult.acceptance.blockingReasons
+                        .map((code) => labelPreviewMessage(code, PREVIEW_BLOCKING_LABELS))
+                        .join(" ")
+                    : "Bu ödeme şu anda kabul edilebilir görünmüyor."}
+                </div>
+              )}
+
+              {previewResult.acceptance.warnings.length > 0 && (
+                <div className="rounded border border-amber-200 bg-white px-2 py-1 text-amber-800 space-y-1">
+                  {previewResult.acceptance.warnings.map((warning) => (
+                    <p key={warning}>{labelPreviewMessage(warning, PREVIEW_WARNING_LABELS)}</p>
+                  ))}
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <div className="rounded bg-white px-2 py-1">
+                  <p className="text-gray-500">Mevcut kalan</p>
+                  <p className="font-medium">{formatPreviewAmount(previewResult.balanceImpact.currentOutstandingAmount)}</p>
+                </div>
+                <div className="rounded bg-white px-2 py-1">
+                  <p className="text-gray-500">Ödeme tutarı</p>
+                  <p className="font-medium">{formatPreviewAmount(previewResult.balanceImpact.paymentAmount)}</p>
+                </div>
+                <div className="rounded bg-white px-2 py-1">
+                  <p className="text-gray-500">Uygulanacak</p>
+                  <p className="font-medium">{formatPreviewAmount(previewResult.balanceImpact.appliedAmount)}</p>
+                </div>
+                <div className="rounded bg-white px-2 py-1">
+                  <p className="text-gray-500">Tahmini kalan</p>
+                  <p className="font-medium">{formatPreviewAmount(previewResult.balanceImpact.projectedOutstandingAmount)}</p>
+                </div>
+              </div>
+
+              {previewResult.balanceImpact.overpaymentAmount > 0 && (
+                <p className="rounded bg-white px-2 py-1 text-amber-800">
+                  Fazla ödeme: {formatPreviewAmount(previewResult.balanceImpact.overpaymentAmount)}
+                </p>
+              )}
+
+              <div className="rounded bg-white px-2 py-1">
+                <p className="font-medium">Dağıtım önizlemesi</p>
+                {previewResult.distributionPreview.requiresClientSelection ? (
+                  <p className="mt-1 text-amber-800">Çoklu alacaklı dosyada dağıtım için alacaklı seçimi gerekir.</p>
+                ) : previewResult.distributionPreview.status === "MANUAL_REQUIRED" ? (
+                  <p className="mt-1 text-amber-800">Dağıtım için manuel takip gerekir.</p>
+                ) : previewResult.distributionPreview.lines.length > 0 ? (
+                  <div className="mt-1 space-y-1">
+                    {previewResult.distributionPreview.lines.map((line, index) => (
+                      <div key={`${line.caseClientId || "line"}-${index}`} className="flex justify-between gap-2">
+                        <span className="truncate">{line.clientName || line.caseClientId || "Alacaklı"}</span>
+                        <span className="font-medium">{formatPreviewAmount(line.amount)}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-1 text-gray-600">Dağıtım satırı oluşmadı.</p>
+                )}
+              </div>
+            </div>
+          )}
           <div className="flex justify-end gap-2 pt-2">
+            <button
+              type="button"
+              onClick={handlePreview}
+              disabled={previewLoading || loading || !hasPreviewAmount || isCancelledCollection}
+              className="px-4 py-2 text-sm text-blue-700 border border-blue-200 rounded-lg hover:bg-blue-50 disabled:opacity-50 flex items-center gap-2"
+            >
+              {previewLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Eye className="h-4 w-4" />}
+              Önizleme
+            </button>
             <button
               type="button"
               onClick={onClose}

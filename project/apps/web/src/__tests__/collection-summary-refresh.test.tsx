@@ -16,6 +16,7 @@ vi.mock("@/lib/api", () => ({
     cancelCollection: vi.fn(),
     getCollectionDispositionsByCase: vi.fn(),
     postCollectionDisposition: vi.fn(),
+    previewCasePayment: vi.fn(),
     createDue: vi.fn(),
     updateDue: vi.fn(),
     deleteDue: vi.fn(),
@@ -43,6 +44,7 @@ const apiMock = api as unknown as {
   cancelCollection: ReturnType<typeof vi.fn>;
   getCollectionDispositionsByCase: ReturnType<typeof vi.fn>;
   postCollectionDisposition: ReturnType<typeof vi.fn>;
+  previewCasePayment: ReturnType<typeof vi.fn>;
   createDue: ReturnType<typeof vi.fn>;
   updateDue: ReturnType<typeof vi.fn>;
   deleteDue: ReturnType<typeof vi.fn>;
@@ -155,6 +157,56 @@ function makeDispositionAccountingRecord(status = "HELD_PENDING_DISTRIBUTION") {
     },
   } as any;
 }
+
+function makePaymentPreviewResponse(overrides: any = {}) {
+  const base = {
+    nonPersistent: true,
+    caseId: "case-1",
+    input: {
+      amount: 100000,
+      paymentDate: "2026-06-25",
+      currency: "TRY",
+      paymentMethod: "BANKA",
+      caseDebtorId: null,
+    },
+    acceptance: {
+      wouldAccept: true,
+      blockingReasons: [],
+      warnings: [],
+    },
+    balanceImpact: {
+      currentOutstandingAmount: 200000,
+      paymentAmount: 100000,
+      appliedAmount: 100000,
+      overpaymentAmount: 0,
+      projectedOutstandingAmount: 100000,
+    },
+    distributionPreview: {
+      source: "SINGLE_CASE_CLIENT",
+      status: "HELD_PENDING_DISTRIBUTION",
+      totalAmount: 100000,
+      requiresClientSelection: false,
+      lines: [
+        {
+          type: "CLIENT_PAYABLE",
+          amount: 100000,
+          caseClientId: "case-client-1",
+          clientName: "Muvekkil A",
+        },
+      ],
+    },
+  };
+
+  return {
+    ...base,
+    ...overrides,
+    input: { ...base.input, ...(overrides.input || {}) },
+    acceptance: { ...base.acceptance, ...(overrides.acceptance || {}) },
+    balanceImpact: { ...base.balanceImpact, ...(overrides.balanceImpact || {}) },
+    distributionPreview: { ...base.distributionPreview, ...(overrides.distributionPreview || {}) },
+  };
+}
+
 describe("collection summary refresh", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -164,6 +216,7 @@ describe("collection summary refresh", () => {
     apiMock.cancelCollection.mockResolvedValue({ id: "collection-1", status: "CANCELLED" });
     apiMock.getCollectionDispositionsByCase.mockResolvedValue([]);
     apiMock.postCollectionDisposition.mockResolvedValue({ posted: true, dispositionId: "disp-1", lineCount: 1 });
+    apiMock.previewCasePayment.mockResolvedValue(makePaymentPreviewResponse());
     apiMock.createDue.mockResolvedValue({ id: "due-1" });
     apiMock.updateDue.mockResolvedValue({ id: "due-1" });
     apiMock.deleteDue.mockResolvedValue({ success: true });
@@ -200,6 +253,69 @@ describe("collection summary refresh", () => {
 
   });
 
+  it("payment preview helper endpointini POST ile cagirir", () => {
+    const source = readApiSource();
+
+    expect(source).toContain("async previewCasePayment(caseId: string, payload: PaymentPreviewRequestDTO)");
+    expect(source).toContain("`/cases/${caseId}/payment-preview`");
+    expect(source).toContain('method: "POST"');
+  });
+
+  it("tahsilat onizlemesi create/update cagirmadan preview endpointini kullanir", async () => {
+    render(<CaseFinanceRefreshHarness />);
+
+    fireEvent.change(screen.getByPlaceholderText("0.00"), {
+      target: { value: "100000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Önizleme/ }));
+
+    await waitFor(() => {
+      expect(apiMock.previewCasePayment).toHaveBeenCalledWith(
+        "case-1",
+        expect.objectContaining({
+          amount: 100000,
+          currency: "TRY",
+          paymentMethod: "BANKA",
+        }),
+      );
+    });
+
+    expect(apiMock.createCollection).not.toHaveBeenCalled();
+    expect(apiMock.updateCollection).not.toHaveBeenCalled();
+    expect(refetchCalculation).not.toHaveBeenCalled();
+    expect(await screen.findByText(/Kayıt oluşturmaz/)).toBeInTheDocument();
+    expect(screen.getByText("Muvekkil A")).toBeInTheDocument();
+  });
+
+  it("coklu alacakli payment preview otomatik kayit acmaz ve secim mesajini gosterir", async () => {
+    apiMock.previewCasePayment.mockResolvedValueOnce(
+      makePaymentPreviewResponse({
+        acceptance: {
+          warnings: ["CLIENT_SELECTION_REQUIRED_FOR_DISTRIBUTION"],
+        },
+        distributionPreview: {
+          source: "CASE_CREDITOR_CLUSTER",
+          status: "HELD_PENDING_DISTRIBUTION",
+          requiresClientSelection: true,
+          lines: [],
+        },
+      }),
+    );
+
+    render(<CaseFinanceRefreshHarness />);
+
+    fireEvent.change(screen.getByPlaceholderText("0.00"), {
+      target: { value: "75000" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Önizleme/ }));
+
+    await waitFor(() => {
+      expect(apiMock.previewCasePayment).toHaveBeenCalledTimes(1);
+    });
+    expect(await screen.findAllByText(/Çoklu alacaklı dosyada dağıtım için alacaklı seçimi gerekir/)).not.toHaveLength(0);
+    expect(apiMock.createCollection).not.toHaveBeenCalled();
+    expect(apiMock.updateCollection).not.toHaveBeenCalled();
+  });
   it("tahsilat guncelleme basarili olunca stale hesap ozetini refetch eder", async () => {
     render(
       <CaseFinanceRefreshHarness
