@@ -26,6 +26,7 @@ import {
   type MovementSourceType,
 } from '@/lib/api/client-accounting';
 import { AccountingPanel } from './AccountingPanel';
+import { AccountingTable } from './AccountingTable';
 
 const MOV_PAGE_SIZE = 25;
 
@@ -264,20 +265,20 @@ export function ClientMovementsTable({ clientId, currency = 'TRY', cases, classN
           {filtersActive ? 'Seçili filtrelere uyan hareket yok.' : 'Bu müvekkil için hareket bulunmuyor.'}
         </div>
       ) : (
-        <table className="w-full text-[13px] tabular-nums [&_td]:py-2.5 [&_td.text-right]:font-semibold [&_th]:py-2.5">
-          <thead className="sticky top-0 z-10 bg-gray-50 [&_th]:font-semibold">
-            <tr className="border-b text-left">
-              <th className="px-2 whitespace-nowrap">Tarih</th>
-              <th className="px-2">İşlem</th>
-              <th className="px-2 whitespace-nowrap">Dosya</th>
-              <th className="px-2">Kapsam</th>
-              <th className="px-2 text-right whitespace-nowrap">Tutar</th>
-              <th className="px-2">Yön</th>
-              <th className="px-2">Durum</th>
-              <th className="px-2 whitespace-nowrap">Kaynak</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y">
+        <AccountingTable
+          head={
+            <>
+              <th className="whitespace-nowrap">Tarih</th>
+              <th>İşlem</th>
+              <th className="whitespace-nowrap">Dosya</th>
+              <th>Kapsam</th>
+              <th className="text-right whitespace-nowrap">Tutar</th>
+              <th>Yön</th>
+              <th>Durum</th>
+              <th className="whitespace-nowrap">Kaynak</th>
+            </>
+          }
+        >
             {data.items.map((m) => {
               const eff = EFFECT_META[m.clientEffect];
               const isContext = m.scopeGroup === 'CASE_CONTEXT';
@@ -314,8 +315,7 @@ export function ClientMovementsTable({ clientId, currency = 'TRY', cases, classN
                 </tr>
               );
             })}
-          </tbody>
-        </table>
+        </AccountingTable>
       )}
     </AccountingPanel>
   );

@@ -223,22 +223,39 @@ export function OffsetDrawer({ clientId, currency, isOpen, onClose, onApplied }:
                 </div>
               )}
 
-              {/* D4 — Preview kartı (hesap backend'den; FE render eder) */}
-              {preview && previewMatchesCurrent && (
-                <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
-                  <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">Mahsup Önizleme</div>
-                  <PreviewRow label="Müvekkile Borç" before={preview.data.payableBefore} after={preview.data.payableAfter} currency={currency} />
-                  <PreviewRow label="Masraf Borcu" before={preview.data.expenseBefore} after={preview.data.expenseAfter} currency={currency} />
-                  <div className="my-1.5 border-t border-indigo-100" />
-                  <PreviewRow label="Net Pozisyon" before={preview.data.netBefore} after={preview.data.netAfter} currency={currency} bold />
-                  <div className={`mt-2 flex items-center gap-1.5 text-[12px] ${preview.data.netUnchanged ? 'text-emerald-700' : 'text-red-600'}`}>
-                    {preview.data.netUnchanged
-                      ? <><CheckCircle2 className="h-4 w-4" /> Net pozisyon değişmeyecek.</>
-                      : <><AlertCircle className="h-4 w-4" /> Net pozisyon değişiyor — beklenmedik durum.</>}
-                  </div>
-                  <p className="mt-1 text-[11px] text-gray-500">Azami tutar: {formatMoneyString(preview.data.maxAmount, currency)}</p>
-                </div>
-              )}
+              {/* DASH-7 — Preview kartı HER ZAMAN görünür (boşken placeholder; seçim+önizleme sonrası backend sonucu).
+                  Hesap BACKEND'den; FE render eder. "Net pozisyon değişmeyecek" mesajı belirgin yeşil şerit. */}
+              <div className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
+                <div className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-indigo-700">Mahsup Önizleme</div>
+                {preview && previewMatchesCurrent ? (
+                  <>
+                    <PreviewRow label="Müvekkile Borç" before={preview.data.payableBefore} after={preview.data.payableAfter} currency={currency} />
+                    <PreviewRow label="Masraf Borcu" before={preview.data.expenseBefore} after={preview.data.expenseAfter} currency={currency} />
+                    <div className="my-1.5 border-t border-indigo-100" />
+                    <PreviewRow label="Net Pozisyon" before={preview.data.netBefore} after={preview.data.netAfter} currency={currency} bold />
+                    <div
+                      className={`mt-2 flex items-center justify-center gap-1.5 rounded-md px-2 py-1.5 text-[13px] font-semibold ${
+                        preview.data.netUnchanged ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
+                      }`}
+                    >
+                      {preview.data.netUnchanged ? (
+                        <><CheckCircle2 className="h-4 w-4 shrink-0" /> Net pozisyon değişmeyecek</>
+                      ) : (
+                        <><AlertCircle className="h-4 w-4 shrink-0" /> Net pozisyon değişiyor — beklenmedik durum</>
+                      )}
+                    </div>
+                    <p className="mt-1 text-[11px] text-gray-500">Azami tutar: {formatMoneyString(preview.data.maxAmount, currency)}</p>
+                  </>
+                ) : (
+                  <>
+                    <PreviewRow label="Müvekkile Borç" before={null} after={null} currency={currency} />
+                    <PreviewRow label="Masraf Borcu" before={null} after={null} currency={currency} />
+                    <div className="my-1.5 border-t border-indigo-100" />
+                    <PreviewRow label="Net Pozisyon" before={null} after={null} currency={currency} bold />
+                    <p className="mt-2 text-center text-[12px] text-gray-500">Bir mahsup seçildiğinde önizleme burada oluşacaktır.</p>
+                  </>
+                )}
+              </div>
 
               {/* Uygula (preview zorunlu) */}
               {canApply && (
@@ -267,14 +284,15 @@ export function OffsetDrawer({ clientId, currency, isOpen, onClose, onApplied }:
   );
 }
 
-function PreviewRow({ label, before, after, currency, bold }: { label: string; before: string; after: string; currency: string; bold?: boolean }) {
+function PreviewRow({ label, before, after, currency, bold }: { label: string; before: string | null; after: string | null; currency: string; bold?: boolean }) {
+  const fmt = (v: string | null) => (v == null ? '—' : formatMoneyString(v, currency));
   return (
     <div className={`flex items-center justify-between py-0.5 text-[13px] ${bold ? 'font-semibold text-gray-900' : 'text-gray-700'}`}>
       <span>{label}</span>
       <span className="tabular-nums">
-        <span className="text-gray-500">{formatMoneyString(before, currency)}</span>
+        <span className="text-gray-500">{fmt(before)}</span>
         <span className="mx-1.5 text-gray-400">→</span>
-        <span>{formatMoneyString(after, currency)}</span>
+        <span>{fmt(after)}</span>
       </span>
     </div>
   );

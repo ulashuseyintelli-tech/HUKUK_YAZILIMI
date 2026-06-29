@@ -20,9 +20,11 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Card, Badge, Spinner, Button } from '@hukuk/ui';
-import { Wallet, Send, CheckCircle, Landmark, Building2, Info, AlertCircle, Scale, AlertTriangle, ArrowLeftRight } from 'lucide-react';
+import { Wallet, Send, CheckCircle, Landmark, Building2, Info, AlertCircle, Scale, AlertTriangle, ArrowLeftRight, HelpCircle } from 'lucide-react';
 import { clientAccountingApi, formatMoneyString } from '@/lib/api/client-accounting';
+import { clientOffsetApi, type OffsetEligibility } from '@/lib/api/client-offset';
 import { AccountingPanel } from './AccountingPanel';
+import { AccountingTable } from './AccountingTable';
 import { ClientMovementsTable } from './ClientMovementsTable';
 import { ClientLevelStatementSection } from './ClientLevelStatementSection';
 import { OffsetDrawer } from './OffsetDrawer';
@@ -45,6 +47,13 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
     enabled: !!clientId,
   });
   const [mahsupOpen, setMahsupOpen] = useState(false); // C-2b Mahsup Side Drawer (hook early-return'den ÖNCE)
+  // UX-v2a (DASH-5) — mahsup uygunluk rozeti: summary-level eligibility (drawer ile AYNI key → react-query dedupe).
+  // YALNIZ UX flag; backend enforcement (PARTNER/MANAGER → 403) DEĞİŞMEZ.
+  const eligQ = useQuery({
+    queryKey: ['client-offset-eligibility', clientId, currency],
+    queryFn: () => clientOffsetApi.getEligibility(clientId, currency),
+    enabled: !!clientId,
+  });
 
   if (summaryQ.isLoading) {
     return (
@@ -81,10 +90,14 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
               <h2 className="text-[15px] font-bold text-gray-900">Müvekkile Özgü Cari</h2>
               {summaryQ.isFetching && <Spinner className="ml-1 h-4 w-4" />}
             </div>
-            {/* C-2b — Mahsup Side Drawer tetikleyici (yetki backend; yetkisiz drawer read-only açılır) */}
-            <Button variant="outline" size="sm" onClick={() => setMahsupOpen(true)}>
-              <ArrowLeftRight className="mr-1 h-4 w-4" /> Mahsup
-            </Button>
+            {/* UX-v2a — Finans Durum Rozeti (DASH-5, sol) + primary Mahsup butonu (DASH-4, sağ) */}
+            <div className="flex items-center gap-2">
+              <OffsetStatusBadge elig={eligQ.data} loading={eligQ.isLoading} />
+              {/* C-2b — Mahsup Side Drawer tetikleyici (yetki backend; yetkisiz drawer read-only açılır) */}
+              <Button variant="default" size="lg" onClick={() => setMahsupOpen(true)}>
+                <ArrowLeftRight className="mr-1.5 h-4 w-4" /> Mahsup
+              </Button>
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-2.5 xl:grid-cols-3">
             <Metric icon={Wallet} accent="text-emerald-700" label="Müvekkile Borç (Net)" value={M(s.clientScoped.payableNet)} />
@@ -156,9 +169,9 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
           {s.caseBreakdown.length === 0 ? (
             <div className="px-4 py-6 text-center text-sm text-gray-500">Muhasebeye konu dosya yok.</div>
           ) : (
-            <table className="w-full text-[13px] tabular-nums [&_td]:px-2.5 [&_td]:py-2.5 [&_td.text-right]:whitespace-nowrap [&_td.text-right]:font-semibold [&_th]:px-2.5 [&_th]:py-2.5">
-              <thead className="sticky top-0 z-10 bg-gray-50 [&_th]:font-semibold">
-                <tr className="border-b text-left">
+            <AccountingTable
+              head={
+                <>
                   <th>Dosya</th>
                   <th>Rol</th>
                   <th className="text-right">Müv. Borç Net</th>
@@ -170,39 +183,38 @@ export function ClientCariView({ clientId, currency = 'TRY' }: ClientCariViewPro
                   <th className="text-right">Dağıtım Bekleyen</th>
                   <th className="text-right">Masraf/Avans</th>
                   <th>Kontrol</th>
+                </>
+              }
+            >
+              {s.caseBreakdown.map((r) => (
+                <tr key={r.caseId} className={`hover:bg-gray-50 ${r.needsReview ? 'bg-red-50' : ''}`}>
+                  {/* A — müvekkile özgü */}
+                  <td className="whitespace-nowrap">{r.caseNumber}</td>
+                  <td className="whitespace-nowrap">{r.role}</td>
+                  <td className="text-right">{M(r.payableNet)}</td>
+                  <td className="text-right">{M(r.paidToClient)}</td>
+                  <td className="text-right">{M(r.expenseRequested)}</td>
+                  <td className="text-right">{M(r.expensePaid)}</td>
+                  <td className="text-right">{diffMoney(r.expenseRequested, r.expensePaid, cur)}</td>
+                  {/* B — dosya geneli (nötr renk) */}
+                  <td className="text-right text-gray-500">{M(r.debtorCollection)}</td>
+                  <td className="text-right text-gray-500">{M(r.pendingDistribution)}</td>
+                  <td className="text-right text-gray-500">{M(r.advanceBalance)}</td>
+                  <td>
+                    {r.needsReview ? (
+                      <span
+                        className="inline-flex items-center gap-1 text-red-700"
+                        title="Dağıtım bekleyen tutar negatif hesaplandı. Tahsilat/disposition kayıtları kontrol edilmeli."
+                      >
+                        <AlertTriangle className="h-3 w-3" /> Kontrol gerekli
+                      </span>
+                    ) : (
+                      <span className="text-gray-400">—</span>
+                    )}
+                  </td>
                 </tr>
-              </thead>
-              <tbody className="divide-y">
-                {s.caseBreakdown.map((r) => (
-                  <tr key={r.caseId} className={`hover:bg-gray-50 ${r.needsReview ? 'bg-red-50' : ''}`}>
-                    {/* A — müvekkile özgü */}
-                    <td className="whitespace-nowrap">{r.caseNumber}</td>
-                    <td className="whitespace-nowrap">{r.role}</td>
-                    <td className="text-right">{M(r.payableNet)}</td>
-                    <td className="text-right">{M(r.paidToClient)}</td>
-                    <td className="text-right">{M(r.expenseRequested)}</td>
-                    <td className="text-right">{M(r.expensePaid)}</td>
-                    <td className="text-right">{diffMoney(r.expenseRequested, r.expensePaid, cur)}</td>
-                    {/* B — dosya geneli (nötr renk) */}
-                    <td className="text-right text-gray-500">{M(r.debtorCollection)}</td>
-                    <td className="text-right text-gray-500">{M(r.pendingDistribution)}</td>
-                    <td className="text-right text-gray-500">{M(r.advanceBalance)}</td>
-                    <td>
-                      {r.needsReview ? (
-                        <span
-                          className="inline-flex items-center gap-1 text-red-700"
-                          title="Dağıtım bekleyen tutar negatif hesaplandı. Tahsilat/disposition kayıtları kontrol edilmeli."
-                        >
-                          <AlertTriangle className="h-3 w-3" /> Kontrol gerekli
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">—</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              ))}
+            </AccountingTable>
           )}
         </AccountingPanel>
 
@@ -254,6 +266,63 @@ function Metric({
       <div className={`mt-0.5 whitespace-nowrap text-xl font-bold tabular-nums ${accent}`}>{value}</div>
       {note && <div className="mt-1 text-[10px] text-gray-400">{note}</div>}
     </div>
+  );
+}
+
+/**
+ * UX-v2a (DASH-5) — Finans Durum Rozeti: mahsup uygunluğunu drawer AÇMADAN gösterir (4-state + nokta + tooltip).
+ * YALNIZ UX flag (eligibility'den türetilir); backend enforcement (create/reverse PARTNER/MANAGER 403) DEĞİŞMEZ.
+ */
+export function OffsetStatusBadge({ elig, loading }: { elig?: OffsetEligibility; loading: boolean }) {
+  let label: string;
+  let dot: string;
+  let cls: string;
+  let tip: string;
+  if (loading || !elig) {
+    label = 'Kontrol ediliyor…';
+    dot = 'bg-gray-300';
+    cls = 'text-gray-500 border-gray-200 bg-gray-50';
+    tip = 'Mahsup uygunluğu kontrol ediliyor.';
+  } else if (!elig.canApply) {
+    label = 'Yetki Yok';
+    dot = 'bg-gray-400';
+    cls = 'text-gray-600 border-gray-200 bg-gray-50';
+    tip = 'Mahsup yalnız Partner/Manager tarafından yapılabilir. (Görünüm salt-okunur.)';
+  } else {
+    const hasPayable = (elig.eligiblePayableBuckets?.length ?? 0) > 0;
+    const hasExpense = (elig.eligibleExpenseRequests?.length ?? 0) > 0;
+    if (hasPayable && hasExpense) {
+      label = 'Mahsup Yapılabilir';
+      dot = 'bg-emerald-500';
+      cls = 'text-emerald-700 border-emerald-200 bg-emerald-50';
+      tip = 'Müvekkile ödenecek kesinleşmiş alacak ve ödenmemiş masraf borcu var; mahsup yapılabilir.';
+    } else if (!hasPayable && !hasExpense) {
+      label = 'Uygun Kalem Yok';
+      dot = 'bg-amber-500';
+      cls = 'text-amber-700 border-amber-200 bg-amber-50';
+      tip = 'Mahsup için ne kesinleşmiş alacak ne de ödenmemiş masraf borcu bulunuyor.';
+    } else if (!hasPayable) {
+      label = 'Alacak Kaynağı Yok';
+      dot = 'bg-amber-500';
+      cls = 'text-amber-700 border-amber-200 bg-amber-50';
+      tip = 'Mahsup yapılabilmesi için müvekkile ödenecek kesinleşmiş bir alacak (proceeds) bulunmalıdır.';
+    } else {
+      label = 'Masraf Borcu Yok';
+      dot = 'bg-amber-500';
+      cls = 'text-amber-700 border-amber-200 bg-amber-50';
+      tip = 'Mahsup yapılabilmesi için ödenmemiş bir masraf borcu bulunmalıdır.';
+    }
+  }
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium ${cls}`}
+      title={tip}
+      aria-label={`Mahsup durumu: ${label}`}
+    >
+      <span className={`h-2 w-2 rounded-full ${dot}`} aria-hidden />
+      {label}
+      <HelpCircle className="h-3 w-3 opacity-60" aria-hidden />
+    </span>
   );
 }
 
