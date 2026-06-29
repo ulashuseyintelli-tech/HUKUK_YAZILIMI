@@ -7896,6 +7896,12 @@ model OfficeApprovalRequest {
   executedAt DateTime? // deferred execution tamamlanma anı
   expiresAt  DateTime?
 
+  // P4-5C-1 — yürütme retry/stuck metadata (kolonlar EKLENDİ; runtime DORMANT). Tüketim:
+  //  runningStartedAt → precise stuck-RUNNING timeout (P4-5C-1) · retryCount/lastRetryAt → bounded FAILED-retry + backoff (P4-5C-2).
+  runningStartedAt DateTime? // NOT_RUN→RUNNING claim anı (markExecutionRunning/Retrying yazar); precise stuck-age
+  retryCount       Int       @default(0) // FAILED deneme sayacı (markExecutionFailed artırır); bounded-retry sınırı (5C-2)
+  lastRetryAt      DateTime? // son FAILED anı (markExecutionFailed yazar); backoff saati (5C-2)
+
   @@unique([tenantId, idempotencyKey])
   @@index([tenantId, status])
   @@index([tenantId, approverUserId, status])

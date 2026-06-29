@@ -7,10 +7,12 @@ export interface OfficeApprovalExecutorConfig {
   enabled: boolean;
   /** Tick başına taranacak satır üst sınırı (reconcile-pass + scan-pass ayrı ayrı uygular). */
   batchSize: number;
+  /** P4-5C-1: precise stuck-RUNNING timeout (dakika). runningStartedAt bundan eski RUNNING satırlar reconcile edilir. */
+  stuckTimeoutMinutes: number;
 }
 
-// Default'lar (env verilmezse). batchSize=50 (R5; ilk-tick blast'ı sınırlar, gerekirse env ile artırılır).
-const DEFAULTS = { batchSize: 50 } as const;
+// Default'lar (env verilmezse). batchSize=50 (R5); stuckTimeoutMinutes=10 (changeStatus tek küçük $tx; 30dk tick altı).
+const DEFAULTS = { batchSize: 50, stuckTimeoutMinutes: 10 } as const;
 
 /** Pozitif tam sayı parse; geçersiz/eksik/<=0/ondalık → fallback. */
 function parsePositiveInt(raw: string | undefined, fallback: number): number {
@@ -32,5 +34,9 @@ export function readOfficeApprovalExecutorConfig(
   return {
     enabled: parseBool(env.OFFICE_APPROVAL_EXECUTOR_ENABLED),
     batchSize: parsePositiveInt(env.OFFICE_APPROVAL_EXECUTOR_BATCH_SIZE, DEFAULTS.batchSize),
+    stuckTimeoutMinutes: parsePositiveInt(
+      env.OFFICE_APPROVAL_EXECUTOR_STUCK_TIMEOUT_MINUTES,
+      DEFAULTS.stuckTimeoutMinutes,
+    ),
   };
 }

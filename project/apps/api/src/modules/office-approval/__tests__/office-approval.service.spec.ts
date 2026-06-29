@@ -195,6 +195,23 @@ describe('P4-1 OfficeApprovalService — execution markers', () => {
     expect(audit.log.mock.calls[0][0].action).toBe('OFFICE_APPROVAL_EXECUTION_STALE');
   });
 
+  it('P4-5C-1 markExecutionRunning: NOT_RUN→RUNNING + runningStartedAt=now yazılır (precise stuck-timeout temeli)', async () => {
+    const { svc, prisma } = make({ reqSeq: [mkReq({ status: 'APPROVED' }), mkReq({ status: 'APPROVED', executionStatus: 'RUNNING' })] });
+    await svc.markExecutionRunning('oar-1', APPROVER);
+    const data = prisma.officeApprovalRequest.updateMany.mock.calls[0][0].data;
+    expect(data.executionStatus).toBe('RUNNING');
+    expect(data.runningStartedAt).toBeInstanceOf(Date);
+  });
+
+  it('P4-5C-1 markExecutionFailed: retryCount increment + lastRetryAt yazılır (orphan/fail sayacı; executedAt YAZILMAZ)', async () => {
+    const { svc, prisma } = make({ reqSeq: [mkReq({ status: 'APPROVED' }), mkReq({ status: 'APPROVED', executionStatus: 'FAILED' })] });
+    await svc.markExecutionFailed('oar-1', APPROVER);
+    const data = prisma.officeApprovalRequest.updateMany.mock.calls[0][0].data;
+    expect(data.retryCount).toEqual({ increment: 1 });
+    expect(data.lastRetryAt).toBeInstanceOf(Date);
+    expect(data.executedAt).toBeUndefined(); // FAILED'de executedAt YAZILMAZ (P4-5B davranışı korunur)
+  });
+
   it('execution yalnız APPROVED: PENDING talep yürütme işareti → Conflict', async () => {
     const { svc } = make({ reqSeq: [mkReq({ status: 'PENDING_APPROVAL' })] });
     await expect(svc.markExecutionSucceeded('oar-1', APPROVER)).rejects.toBeInstanceOf(ConflictException);
