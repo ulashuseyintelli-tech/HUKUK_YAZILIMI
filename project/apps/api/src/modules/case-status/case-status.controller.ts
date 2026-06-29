@@ -59,14 +59,14 @@ export class CaseStatusController {
       caseId,
       actionCode: ActionCode.CHANGE_STATUS,
     });
-    // P4-2/P4-3A: OfficeApproval gate (flag OFFICE_APPROVAL_CHANGE_STATUS_GATE; observe'den SONRA, P3 confirm gate ÖNCESİ).
-    //  - off (varsayılan) → no-op → mevcut davranış AYNEN.
-    //  - observe (P4-2)   → GÖLGE: kararı hesaplar + SHADOW_EVALUATED audit; akış/statü DEĞİŞMEZ.
-    //  - create (P4-3A)   → PERSIST-ONLY: non-PARTNER için OfficeApprovalRequest PENDING oluşturulur (best-effort).
-    //                       SADECE persist — DÖNÜŞ KULLANILMAZ (bilinçli discard); response/statü/akış DEĞİŞMEZ.
-    // KESİN: bu hat BLOKLAMAZ ve typed response DÖNDÜRMEZ (bloklama + APPROVAL_REQUIRED = P4-6). Dönüşü bilerek discard ediyoruz.
-    // GİZLİLİK: ham status/reason audit'e GİRMEZ (yalnız payloadHash).
-    await this.officeApprovalShadow.evaluate({
+    // P4-2/P4-3A/P4-3B: OfficeApproval gate (flag OFFICE_APPROVAL_CHANGE_STATUS_GATE; observe'den SONRA, P3 confirm gate ÖNCESİ).
+    //  - off (varsayılan) → no-op → mevcut davranış AYNEN.   - observe (P4-2) → GÖLGE (audit; akış/statü DEĞİŞMEZ).
+    //  - create (P4-3A)   → PERSIST-ONLY: request PENDING oluşturulur, DÖNÜŞ KULLANILMAZ (statü yine değişir).
+    //  - enforce (P4-3B)  → BLOK: non-PARTNER → request CREATE + block → typed APPROVAL_REQUIRED envelope DÖNER, changeStatus
+    //                       ÇAĞRILMAZ (statü DEĞİŞMEZ). PARTNER → ALLOW → akış devam. FAIL-CLOSED: evaluate throw (typed 5xx) →
+    //                       changeStatus'a DÜŞMEZ (statü değişmez). Approval, P3 confirm gate'ten ÖNCE (yetkisiz aktör self-confirm edemez).
+    // GİZLİLİK: ham status/reason audit'e GİRMEZ (yalnız payloadHash); envelope'ta ham savedIntent YOK (yalnız requestId+status).
+    const shadow = await this.officeApprovalShadow.evaluate({
       actorUserId,
       tenantId,
       actionCode: ActionCode.CHANGE_STATUS,
@@ -74,6 +74,9 @@ export class CaseStatusController {
       targetRef: caseId,
       payload: { status: body.status, reason: body.reason ?? null },
     });
+    if (shadow.block && shadow.envelope) {
+      return shadow.envelope; // P4-3B enforce: structured-200 APPROVAL_REQUIRED; statü DEĞİŞMEDİ, changeStatus çağrılmadı
+    }
     // P3-2C: guarded-edge confirm gate. VARSAYILAN OFF → {kind:'PROCEED'} → statü AYNEN değişir (davranış değişmez).
     // Flag AÇIKKEN: CONFIRM_REQUIRED → structured-200 envelope (statü DEĞİŞMEZ, token issue edilir);
     //              geçerli token retry → consume → PROCEED; geçersiz/expired token → typed 400 (NO 500).

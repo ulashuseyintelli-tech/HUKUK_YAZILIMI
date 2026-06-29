@@ -34,6 +34,15 @@ export interface GuardedEdgeConfirmation {
   bindingHash: string;
 }
 
+/**
+ * P4-3B — APPROVAL_REQUIRED akışında istemciye dönen onay-talebi referansı. Oluşturulan OfficeApprovalRequest.id + durum.
+ * Ham savedIntent (status/reason) İÇERMEZ (leak-free). CONFIRM_REQUIRED'ın `confirmation` token'ı yoktur (terminal; retry yok).
+ */
+export interface GuardedEdgeApproval {
+  requestId: string;
+  status: string; // 'PENDING_APPROVAL'
+}
+
 /** Guarded-Edge outcome zarfı (GuidedOpenDecision'ın HTTP projeksiyonu). */
 export interface GuardedEdgeOutcomeEnvelope {
   axis: 'GUIDED_OPEN_PERMISSION';
@@ -47,6 +56,8 @@ export interface GuardedEdgeOutcomeEnvelope {
   decisionId?: string;
   auditRef?: string;
   confirmation?: GuardedEdgeConfirmation;
+  /** P4-3B — APPROVAL_REQUIRED'da oluşturulan onay-talebi referansı (requestId+status). Yalnız APPROVAL_REQUIRED'da. */
+  approval?: GuardedEdgeApproval;
 }
 
 export interface BuildGuardedEdgeOutcomeInput {
@@ -60,6 +71,7 @@ export interface BuildGuardedEdgeOutcomeInput {
   decisionId?: string;
   auditRef?: string;
   confirmation?: GuardedEdgeConfirmation;
+  approval?: GuardedEdgeApproval;
 }
 
 /** GuidedOpenDecision'ın geçerli değer kümesi (runtime guard için). */
@@ -105,5 +117,6 @@ export function buildGuardedEdgeOutcome(
     ...(input.decisionId !== undefined ? { decisionId: input.decisionId } : {}),
     ...(input.auditRef !== undefined ? { auditRef: input.auditRef } : {}),
     ...(input.confirmation !== undefined ? { confirmation: input.confirmation } : {}),
+    ...(input.approval !== undefined ? { approval: input.approval } : {}),
   };
 }

@@ -1,5 +1,6 @@
 /** @jest-environment node */
 import 'reflect-metadata';
+import { ServiceUnavailableException } from '@nestjs/common';
 import { OfficeApprovalShadowService } from '../office-approval-shadow.service';
 import { stableJsonHash } from '../../permission-diagnostics/guided-edge/canonical-json';
 
@@ -58,8 +59,8 @@ const delegated = () => u({ lawyer: { lawyerRank: 'AUTHORIZED', canApproveOffice
 const staff = () => u({ staffMember: { staffType: 'SEKRETER' } });
 
 describe('P4-2/P4-3A OfficeApprovalShadowService — flag', () => {
-  it("flag 'off'/unset/bilinmeyen/'enforce' → no-op (evaluated:false; user-lookup/audit/create ÇAĞRILMAZ). 'enforce' off'a düşer (P4-6 rezerve).", async () => {
-    for (const flag of [undefined, 'off', 'ON', 'xyz', 'enforce', 'ENFORCE', 'OBSERVED', 'CREATED']) {
+  it("flag 'off'/unset/bilinmeyen → no-op (evaluated:false; user-lookup/audit/create ÇAĞRILMAZ). [P4-3B: 'enforce' ARTIK off'a DÜŞMEZ]", async () => {
+    for (const flag of [undefined, 'off', 'ON', 'xyz', 'OBSERVED', 'CREATED']) {
       const { svc, prisma, audit, officeApproval } = make({ flag });
       const res = await svc.evaluate({ ...baseInput, payload: undefined });
       expect(res).toEqual({ flagMode: 'off', evaluated: false });
@@ -255,5 +256,90 @@ describe('P4-3A OfficeApprovalShadowService — create (PERSIST-ONLY; blok YOK, 
     const r = await svc.evaluate(baseInput);
     expect(r).toEqual({ flagMode: 'create', evaluated: false });
     expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('P4-3B OfficeApprovalShadowService — enforce (BLOK + typed APPROVAL_REQUIRED + FAIL-CLOSED)', () => {
+  it('flag enforce → flagMode "enforce"', async () => {
+    const { svc } = make({ flag: 'enforce', user: partner() });
+    const r = await svc.evaluate(baseInput);
+    expect(r.flagMode).toBe('enforce');
+  });
+
+  it('PARTNER → ALLOW: block YOK, envelope YOK, createPendingRequest YOK (controller changeStatus çalıştırır)', async () => {
+    const { svc, officeApproval } = make({ flag: 'enforce', user: partner() });
+    const r = await svc.evaluate(baseInput);
+    expect(r).toMatchObject({ flagMode: 'enforce', evaluated: true, decision: 'ALLOW', reasonCode: 'PARTNER_SELF_AUTHORITY' });
+    expect(r.block).toBeUndefined();
+    expect('envelope' in r).toBe(false);
+    expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
+  });
+
+  it('non-PARTNER → BLOCK + typed APPROVAL_REQUIRED envelope + createPendingRequest (idempotent)', async () => {
+    const { svc, officeApproval } = make({ flag: 'enforce', user: lawyerPlain(), createReturns: { id: 'req-99', status: 'PENDING_APPROVAL' } });
+    const r = await svc.evaluate(baseInput);
+    expect(officeApproval.createPendingRequest).toHaveBeenCalledTimes(1);
+    expect(r.block).toBe(true);
+    expect(r.requestId).toBe('req-99');
+    expect(r.envelope).toMatchObject({
+      axis: 'GUIDED_OPEN_PERMISSION',
+      outcome: 'APPROVAL_REQUIRED',
+      actionCode: 'CHANGE_STATUS',
+      target: { resourceType: 'LegalCase', caseId: 'c1' },
+      approval: { requestId: 'req-99', status: 'PENDING_APPROVAL' },
+    });
+    expect(r.envelope?.confirmation).toBeUndefined(); // terminal, token YOK
+  });
+
+  it('delege non-PARTNER → KENDİ talebinde yine BLOCK+create (bypass YOK; DELEGATED_NO_SELF_APPROVE)', async () => {
+    const { svc, officeApproval } = make({ flag: 'enforce', user: delegated() });
+    const r = await svc.evaluate(baseInput);
+    expect(r.block).toBe(true);
+    expect(officeApproval.createPendingRequest).toHaveBeenCalledTimes(1);
+    expect(r.reasonCode).toBe('DELEGATED_NO_SELF_APPROVE');
+  });
+
+  it('Acceptance#10: actionCode != CHANGE_STATUS (flag enforce olsa bile) → no-op (evaluated:false, block YOK, create YOK)', async () => {
+    const { svc, officeApproval, prisma } = make({ flag: 'enforce', user: lawyerPlain() });
+    const r = await svc.evaluate({ ...baseInput, actionCode: 'POST_DISPOSITION' });
+    expect(r).toEqual({ flagMode: 'enforce', evaluated: false });
+    expect(officeApproval.createPendingRequest).not.toHaveBeenCalled();
+    expect(prisma.user.findUnique).not.toHaveBeenCalled(); // computeDecision'a bile girmez
+  });
+
+  it('FAIL-CLOSED: createPendingRequest throw → ServiceUnavailableException (THROW; SWALLOW YOK → changeStatus çalışmaz)', async () => {
+    const { svc } = make({ flag: 'enforce', user: lawyerPlain(), createThrows: true });
+    await expect(svc.evaluate(baseInput)).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
+  it('FAIL-CLOSED: user-lookup throw → ServiceUnavailableException (THROW)', async () => {
+    const { svc } = make({ flag: 'enforce', userThrows: true });
+    await expect(svc.evaluate(baseInput)).rejects.toBeInstanceOf(ServiceUnavailableException);
+  });
+
+  it('LEAK-FREE: envelope ham savedIntent (status/reason) İÇERMEZ', async () => {
+    const { svc } = make({ flag: 'enforce', user: lawyerPlain() });
+    const r = await svc.evaluate({ ...baseInput, payload: { status: 'ACIZ', reason: 'GIZLI_GEREKCE' } });
+    const blob = JSON.stringify(r.envelope);
+    expect(blob).not.toContain('GIZLI_GEREKCE');
+    expect(blob).not.toContain('ACIZ');
+    expect(blob).not.toContain('savedIntent');
+  });
+
+  it('idempotency: aynı niyet (enforce) → AYNI idempotencyKey (create ile aynı türetim)', async () => {
+    const { svc, officeApproval } = make({ flag: 'enforce', user: lawyerPlain() });
+    await svc.evaluate(baseInput);
+    await svc.evaluate(baseInput);
+    const k1 = officeApproval.createPendingRequest.mock.calls[0][0].idempotencyKey;
+    const k2 = officeApproval.createPendingRequest.mock.calls[1][0].idempotencyKey;
+    expect(k1).toBe(k2);
+  });
+
+  it('ACTOR_NOT_RESOLVABLE (null user) → fail-closed: BLOCK+create (approval havuzuna; bypass YOK)', async () => {
+    const { svc, officeApproval } = make({ flag: 'enforce', user: null });
+    const r = await svc.evaluate(baseInput);
+    expect(r.block).toBe(true);
+    expect(r.reasonCode).toBe('ACTOR_NOT_RESOLVABLE');
+    expect(officeApproval.createPendingRequest).toHaveBeenCalledTimes(1);
   });
 });
