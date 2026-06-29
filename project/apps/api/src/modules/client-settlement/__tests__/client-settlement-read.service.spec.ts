@@ -438,7 +438,15 @@ function buildMovPrisma(
 ) {
   return {
     caseClient: { findMany: jest.fn().mockResolvedValue(o.ccRows ?? []) },
-    collectionDispositionLine: { findMany: jest.fn().mockResolvedValue(o.lines ?? []) },
+    collectionDispositionLine: {
+      findMany: jest.fn().mockImplementation((args?: any) => {
+        const rows = o.lines ?? [];
+        if (args?.where?.disposition?.manualReversalRequiredAt === null) {
+          return Promise.resolve(rows.filter((row) => row.disposition?.manualReversalRequiredAt == null));
+        }
+        return Promise.resolve(rows);
+      }),
+    },
     clientPayout: { findMany: jest.fn().mockResolvedValue(o.payouts ?? []) },
     expenseRequest: { findMany: jest.fn().mockResolvedValue(o.ers ?? []) },
     expensePayment: { findMany: jest.fn().mockResolvedValue(o.eps ?? []) },
@@ -498,7 +506,25 @@ describe('ClientSettlementReadService.getClientAccountingMovements (Faz A-MOV)',
     const where = prisma.collectionDispositionLine.findMany.mock.calls[0][0].where;
     expect(where.type).toBe('CLIENT_PAYABLE');
     expect(where.caseClientId).toEqual({ in: ['cc1'] });
-    expect(where.disposition).toEqual(expect.objectContaining({ tenantId: 't1', status: 'POSTED', currency: 'TRY' }));
+    expect(where.disposition).toEqual(expect.objectContaining({ tenantId: 't1', status: 'POSTED', currency: 'TRY', manualReversalRequiredAt: null }));
+  });
+  it('3b) manualReversalRequiredAt dolu POSTED CLIENT_PAYABLE hareket projection disinda kalir', async () => {
+    const prisma = buildMovPrisma({
+      ccRows: [CC_A],
+      lines: [
+        { id: 'l-ok', amount: D(250), caseClientId: 'cc1', note: 'aktif', disposition: { caseId: 'caseA', postedAt: new Date('2026-02-10T00:00:00.000Z'), manualReversalRequiredAt: null } },
+        { id: 'l-blocked', amount: D(900), caseClientId: 'cc1', note: 'manual reversal', disposition: { caseId: 'caseA', postedAt: new Date('2026-02-11T00:00:00.000Z'), manualReversalRequiredAt: new Date('2026-06-27T00:00:00.000Z') } },
+      ],
+    });
+
+    const res = await read(prisma).getClientAccountingMovements('t1', 'client-1');
+
+    expect(res.items.filter((m) => m.sourceType === 'COLLECTION_DISPOSITION')).toHaveLength(1);
+    expect(res.items[0].sourceId).toBe('l-ok');
+    expect(res.items[0].amount).toBe('250');
+    expect(prisma.collectionDispositionLine.findMany.mock.calls[0][0].where.disposition).toEqual(
+      expect.objectContaining({ manualReversalRequiredAt: null }),
+    );
   });
 
   it('4) RECORDED ClientPayout → CLIENT_SPECIFIC + DECREASE_CLIENT_PAYABLE', async () => {
