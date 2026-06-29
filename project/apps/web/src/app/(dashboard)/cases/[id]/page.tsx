@@ -64,6 +64,7 @@ import { DueModal, CollectionModal, HesapOzetiPanel, BalanceShadowDiffPanel } fr
 import { FaizDokumuPanel } from "@/components/interest";
 import { OperationDeck } from "@/components/case-detail";
 import IntakeLinksCard from "@/components/case/IntakeLinksCard";
+import { IntelStatementSection } from "@/components/case/IntelStatementSection";
 import { ClaimItemPanel } from "@/components/claim-item";
 import { HacizHistoryCard } from "@/components/case/HacizHistoryCard";
 import { TebligatCard } from "@/components/case/TebligatCard";
@@ -2493,6 +2494,12 @@ export default function CaseDetailPage() {
             client={caseData.client}
             caseClients={caseData.caseClients}
           />
+        </div>
+
+        {/* Müvekkil İstihbaratı (Client Intake 4.7d-1) — promote edilen ClientIntelStatement read-only görünürlüğü.
+            Additive; muhasebe/approval akışlarına dokunmaz. Mutation YOK (4.7d-2). */}
+        <div className="px-3 pt-3">
+          <IntelStatementSection caseId={caseData.id} />
         </div>
 
         {/* ALT İÇERİK - 2 Panel */}
