@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common';
+﻿import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { buildJournalIdempotencyKey } from '../accounting-journal';
 
 const ZERO = new Prisma.Decimal(0);
 
@@ -224,8 +225,8 @@ export class AccountingLedgerDryRunService {
   constructor(private readonly prisma: PrismaService) {}
 
   /// <remarks>
-  /// Çağrıldığı yerler:
-  /// - AccountingLedgerDryRunService.buildReport() → S9B/S9D dry-run utility; runtime HTTP endpoint yok, test/future admin job tarafından çağrılacak.
+  /// Ã‡aÄŸrÄ±ldÄ±ÄŸÄ± yerler:
+  /// - AccountingLedgerDryRunService.buildReport() â†’ S9B/S9D dry-run utility; runtime HTTP endpoint yok, test/future admin job tarafÄ±ndan Ã§aÄŸrÄ±lacak.
   /// </remarks>
   async buildReport(tenantId: string, options: AccountingLedgerDryRunOptions = {}): Promise<AccountingLedgerDryRunReport> {
     const dispositionWhere: Prisma.CollectionDispositionLineWhereInput = {
@@ -317,10 +318,35 @@ export class AccountingLedgerDryRunService {
   }
 }
 
-export function accountingDryRunIdempotencyKey(sourceType: AccountingDryRunSourceType, sourceId: string, action: string): string {
-  return `${sourceType.toLowerCase()}:${sourceId}:${action}`;
+export function accountingDryRunSourceVersion(sourceId: string, occurredAt?: Date | null): string {
+  return occurredAt ? `${occurredAt.toISOString()}:${sourceId}` : `dry-run:${sourceId}`;
 }
 
+export function accountingDryRunIdempotencyKey(
+  sourceType: AccountingDryRunSourceType,
+  tenantIdOrSourceId: string,
+  sourceIdOrAction: string,
+  action?: string,
+  sourceVersion?: string,
+): string {
+  if (sourceType === 'CLIENT_OFFSET') {
+    const sourceId = action === undefined ? tenantIdOrSourceId : sourceIdOrAction;
+    const sourceAction = action === undefined ? sourceIdOrAction : action;
+    return `client_offset:${sourceId}:${sourceAction}`;
+  }
+
+  const tenantId = tenantIdOrSourceId;
+  const sourceId = sourceIdOrAction;
+  if (!action) throw new Error('accountingDryRunIdempotencyKey requires action for non-CLIENT_OFFSET sources');
+
+  return buildJournalIdempotencyKey({
+    tenantId,
+    sourceType,
+    sourceId,
+    sourceAction: action,
+    sourceVersion: sourceVersion ?? sourceId,
+  });
+}
 export function buildAccountingLedgerDryRunReport(sources: AccountingLedgerDryRunSources): AccountingLedgerDryRunReport {
   const entries: AccountingDryRunJournalEntry[] = [];
   const manualReversalDispositionLines: AccountingDryRunManualReversalItem[] = [];
@@ -390,7 +416,7 @@ export function buildAccountingLedgerDryRunReport(sources: AccountingLedgerDryRu
     if (!creditAccount) continue;
 
     pushEntry({
-      idempotencyKey: accountingDryRunIdempotencyKey('COLLECTION_DISPOSITION_LINE', line.id, 'posted'),
+      idempotencyKey: accountingDryRunIdempotencyKey('COLLECTION_DISPOSITION_LINE', sources.tenantId, line.id, 'posted', accountingDryRunSourceVersion(line.id, line.disposition.postedAt)),
       sourceType: 'COLLECTION_DISPOSITION_LINE',
       sourceId: line.id,
       tenantId: sources.tenantId,
@@ -418,7 +444,7 @@ export function buildAccountingLedgerDryRunReport(sources: AccountingLedgerDryRu
 
   for (const payout of sources.clientPayouts) {
     pushEntry({
-      idempotencyKey: accountingDryRunIdempotencyKey('CLIENT_PAYOUT', payout.id, 'recorded'),
+      idempotencyKey: accountingDryRunIdempotencyKey('CLIENT_PAYOUT', sources.tenantId, payout.id, 'recorded', accountingDryRunSourceVersion(payout.id, payout.paidAt)),
       sourceType: 'CLIENT_PAYOUT',
       sourceId: payout.id,
       tenantId: sources.tenantId,
@@ -442,7 +468,7 @@ export function buildAccountingLedgerDryRunReport(sources: AccountingLedgerDryRu
   for (const offset of sources.clientOffsets) {
     const isApply = offset.kind === 'APPLY';
     pushEntry({
-      idempotencyKey: accountingDryRunIdempotencyKey('CLIENT_OFFSET', offset.id, offset.kind.toLowerCase()),
+      idempotencyKey: accountingDryRunIdempotencyKey('CLIENT_OFFSET', sources.tenantId, offset.id, offset.kind.toLowerCase()),
       sourceType: 'CLIENT_OFFSET',
       sourceId: offset.id,
       tenantId: sources.tenantId,
@@ -499,7 +525,7 @@ export function buildAccountingLedgerDryRunReport(sources: AccountingLedgerDryRu
 
     const isIncrease = ledger.type === 'CREDIT' || ledger.type === 'ADJUST';
     pushEntry({
-      idempotencyKey: accountingDryRunIdempotencyKey('BALANCE_LEDGER', ledger.id, 'posted'),
+      idempotencyKey: accountingDryRunIdempotencyKey('BALANCE_LEDGER', sources.tenantId, ledger.id, 'posted', accountingDryRunSourceVersion(ledger.id, ledger.createdAt)),
       sourceType: 'BALANCE_LEDGER',
       sourceId: ledger.id,
       tenantId: sources.tenantId,
@@ -698,9 +724,9 @@ function duplicateIdempotencyWarnings(keys: string[]): AccountingDryRunMismatchW
 }
 
 function sourceTypeFromIdempotencyKey(key: string): AccountingDryRunSourceType {
-  if (key.startsWith('client_payout:')) return 'CLIENT_PAYOUT';
-  if (key.startsWith('client_offset:')) return 'CLIENT_OFFSET';
-  if (key.startsWith('balance_ledger:')) return 'BALANCE_LEDGER';
+  if (key.includes(':CLIENT_PAYOUT:')) return 'CLIENT_PAYOUT';
+  if (key.includes(':CLIENT_OFFSET:')) return 'CLIENT_OFFSET';
+  if (key.includes(':BALANCE_LEDGER:')) return 'BALANCE_LEDGER';
   return 'COLLECTION_DISPOSITION_LINE';
 }
 

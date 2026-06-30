@@ -7,6 +7,8 @@ import type {
   AccountingAccountCode,
   ClientOffsetJournalSource,
   ClientOffsetJournalSourcePayload,
+  CollectionDispositionLineJournalSource,
+  CollectionDispositionLinePostedPayload,
   JournalEntryDraft,
   JournalMetadata,
   JournalValidationErrorCode,
@@ -281,5 +283,142 @@ describe('AccountingJournalBuilder contract skeleton', () => {
     expect(missingPayableResult.ok).toBe(false);
     if (missingPayableResult.ok) throw new Error('Expected business validation to fail.');
     expect(missingPayableResult.errors.map((error) => error.code)).toContain('MISSING_REQUIRED_DIMENSION');
+  });
+});
+
+interface CollectionDispositionLineSourceOverrides {
+  tenantId?: string;
+  sourceId?: string;
+  sourceVersion?: string;
+  occurredAt?: string;
+  effectiveDate?: string;
+  actorId?: string | null;
+  currency?: string;
+  sourceHash?: string | null;
+  metadata?: JournalMetadata;
+  payload?: Partial<CollectionDispositionLinePostedPayload>;
+}
+
+function collectionDispositionLineSource(overrides: CollectionDispositionLineSourceOverrides = {}): CollectionDispositionLineJournalSource {
+  const basePayload: CollectionDispositionLinePostedPayload = {
+    lineType: 'CLIENT_PAYABLE',
+    amount: '100.00',
+    caseId: 'case-1',
+    caseClientId: 'case-client-1',
+    clientId: 'client-1',
+    collectionId: 'collection-1',
+    dispositionLineId: overrides.sourceId ?? 'line-1',
+    creditAccountCode: 'CLIENT_PAYABLE',
+    manualReversalRequiredAt: null,
+  };
+
+  return {
+    tenantId: overrides.tenantId ?? 'tenant-1',
+    sourceType: 'COLLECTION_DISPOSITION_LINE',
+    sourceId: overrides.sourceId ?? 'line-1',
+    sourceVersion: overrides.sourceVersion ?? '2026-06-30T08:00:00.000Z:line-1',
+    sourceAction: 'posted',
+    occurredAt: overrides.occurredAt ?? '2026-06-30T08:00:00.000Z',
+    effectiveDate: overrides.effectiveDate ?? '2026-06-30',
+    actorId: overrides.actorId ?? 'user-1',
+    currency: overrides.currency ?? 'TRY',
+    sourceHash: overrides.sourceHash ?? null,
+    metadata: overrides.metadata ?? { sourceName: 'collection-disposition-line-test' },
+    payload: {
+      ...basePayload,
+      ...overrides.payload,
+      dispositionLineId: overrides.payload?.dispositionLineId ?? overrides.sourceId ?? basePayload.dispositionLineId,
+    },
+  };
+}
+
+function buildDispositionDraft(source: CollectionDispositionLineJournalSource = collectionDispositionLineSource()): JournalEntryDraft {
+  const result = buildAccountingJournal(source);
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(JSON.stringify(result.errors));
+  return result.draft;
+}
+
+describe('AccountingJournalBuilder CollectionDispositionLine posting contract', () => {
+  it('builds canonical live idempotency key with sourceVersion = postedAt ISO + line id', () => {
+    const source = collectionDispositionLineSource({
+      tenantId: 'tenant-live',
+      sourceId: 'line-live',
+      sourceVersion: '2026-06-30T09:10:11.000Z:line-live',
+    });
+
+    const draft = buildDispositionDraft(source);
+
+    expect(draft.idempotencyKey).toBe(
+      'acct-journal:v1:tenant-live:COLLECTION_DISPOSITION_LINE:line-live:posted:2026-06-30T09:10:11.000Z:line-live',
+    );
+    expect(validateJournalDraft(draft).ok).toBe(true);
+  });
+
+  it.each([
+    ['CLIENT_PAYABLE', 'CLIENT_PAYABLE'],
+    ['CLIENT_EXPENSE_REIMBURSEMENT', 'CLIENT_EXPENSE_REIMBURSEMENT_PAYABLE'],
+    ['CONTRACTUAL_FEE_WITHHELD', 'ATTORNEY_FEE_REVENUE'],
+    ['FIRM_EXPENSE_REIMBURSEMENT', 'FIRM_EXPENSE_REIMBURSEMENT'],
+    ['OFFSET_CLIENT_ADVANCE', 'CLIENT_ADVANCE_BALANCE'],
+  ] as const)('maps %s to CASH_CLEARING debit and %s credit', (lineType, creditAccountCode) => {
+    const source = collectionDispositionLineSource({
+      payload: {
+        lineType,
+        creditAccountCode,
+        caseClientId: lineType === 'CLIENT_PAYABLE' || lineType === 'CLIENT_EXPENSE_REIMBURSEMENT' ? 'cc-1' : null,
+      },
+    });
+
+    const draft = buildDispositionDraft(source);
+    const cash = lineByAccount(draft, 'CASH_CLEARING');
+    const credit = lineByAccount(draft, creditAccountCode);
+
+    expect(draft.entryType).toBe('COLLECTION_DISTRIBUTION_POSTED');
+    expect(cash).toEqual(expect.objectContaining({ direction: 'DEBIT', collectionId: 'collection-1', dispositionLineId: 'line-1' }));
+    expect(credit).toEqual(expect.objectContaining({ direction: 'CREDIT', collectionId: 'collection-1', dispositionLineId: 'line-1' }));
+    expect(validateJournalDraft(draft).ok).toBe(true);
+  });
+
+  it('rejects OTHER and manual reversal marker before live journal posting', () => {
+    const other = buildAccountingJournal(collectionDispositionLineSource({
+      payload: { lineType: 'OTHER', creditAccountCode: 'CLIENT_PAYABLE' },
+    }));
+    expect(other.ok).toBe(false);
+    if (other.ok) throw new Error('Expected OTHER to be rejected.');
+    expect(other.errors.map((error) => error.code)).toContain('UNMAPPED_SOURCE');
+
+    const manual = buildAccountingJournal(collectionDispositionLineSource({
+      payload: { manualReversalRequiredAt: '2026-06-30T10:00:00.000Z' },
+    }));
+    expect(manual.ok).toBe(false);
+    if (manual.ok) throw new Error('Expected manual reversal marker to be rejected.');
+    expect(manual.errors.map((error) => error.code)).toContain('INVALID_SOURCE_PAYLOAD');
+  });
+
+  it('business validator blocks missing caseClientId for client-attributed disposition buckets', () => {
+    const draft = buildDispositionDraft(collectionDispositionLineSource({ payload: { caseClientId: null } }));
+
+    const result = validateJournalBusiness(draft);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('Expected missing caseClientId to fail.');
+    expect(result.errors.map((error) => error.code)).toContain('MISSING_REQUIRED_DIMENSION');
+  });
+
+  it('business validator blocks case and dispositionLine dimension mismatches', () => {
+    const caseMismatch = buildDispositionDraft();
+    lineByAccount(caseMismatch, 'CASH_CLEARING').caseId = 'case-other';
+    const caseResult = validateJournalBusiness(caseMismatch);
+    expect(caseResult.ok).toBe(false);
+    if (caseResult.ok) throw new Error('Expected case mismatch to fail.');
+    expect(caseResult.errors.map((error) => error.code)).toContain('UNSUPPORTED_BUSINESS_RULE');
+
+    const sourceMismatch = buildDispositionDraft();
+    lineByAccount(sourceMismatch, 'CLIENT_PAYABLE').dispositionLineId = 'line-other';
+    const sourceResult = validateJournalBusiness(sourceMismatch);
+    expect(sourceResult.ok).toBe(false);
+    if (sourceResult.ok) throw new Error('Expected source dimension mismatch to fail.');
+    expect(sourceResult.errors.map((error) => error.code)).toContain('MISSING_REQUIRED_DIMENSION');
   });
 });

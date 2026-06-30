@@ -186,7 +186,7 @@ describe('AccountingLedgerDryRunService', () => {
 
 describe('buildAccountingLedgerDryRunReport', () => {
   it('deterministik idempotency key uretir ve duplicate riskini raporlar', () => {
-    expect(accountingDryRunIdempotencyKey('CLIENT_PAYOUT', 'pay-1', 'recorded')).toBe('client_payout:pay-1:recorded');
+    expect(accountingDryRunIdempotencyKey('CLIENT_PAYOUT', 'tenant-1', 'pay-1', 'recorded')).toBe('acct-journal:v1:tenant-1:CLIENT_PAYOUT:pay-1:recorded:pay-1');
 
     const report = buildAccountingLedgerDryRunReport({
       tenantId: 'tenant-1',
@@ -196,12 +196,12 @@ describe('buildAccountingLedgerDryRunReport', () => {
       balanceLedgerRows: [],
     });
 
-    expect(report.duplicateIdempotencyKeys).toEqual(['client_payout:pay-1:recorded']);
+    expect(report.duplicateIdempotencyKeys).toEqual(['acct-journal:v1:tenant-1:CLIENT_PAYOUT:pay-1:recorded:2026-06-29T11:00:00.000Z:pay-1']);
     expect(report.mismatchWarnings).toEqual([
       expect.objectContaining({
         reason: 'DUPLICATE_SOURCE',
         sourceType: 'CLIENT_PAYOUT',
-        sourceId: 'client_payout:pay-1:recorded',
+        sourceId: 'acct-journal:v1:tenant-1:CLIENT_PAYOUT:pay-1:recorded:2026-06-29T11:00:00.000Z:pay-1',
       }),
     ]);
   });
@@ -532,12 +532,12 @@ describe('buildAccountingLedgerDryRunReport', () => {
     expect(report.entries).toHaveLength(1);
     expect(report.entries[0]).toEqual(
       expect.objectContaining({
-        idempotencyKey: 'collection_disposition_line:dl-offset:posted',
+        idempotencyKey: 'acct-journal:v1:tenant-1:COLLECTION_DISPOSITION_LINE:dl-offset:posted:2026-06-29T10:00:00.000Z:dl-offset',
         sourceType: 'COLLECTION_DISPOSITION_LINE',
         sourceId: 'dl-offset',
       }),
     );
-    expect(report.entries.some((entry) => entry.idempotencyKey === 'balance_ledger:bl-offset:posted')).toBe(false);
+    expect(report.entries.some((entry) => entry.idempotencyKey === 'acct-journal:v1:tenant-1:BALANCE_LEDGER:bl-offset:posted:2026-06-29T12:00:00.000Z:bl-offset')).toBe(false);
     expect(report.entries[0].lines).toEqual([
       expect.objectContaining({ accountCode: 'CASH_CLEARING', direction: 'DEBIT', amount: '30', dispositionLineId: 'dl-offset' }),
       expect.objectContaining({ accountCode: 'CLIENT_ADVANCE_BALANCE', direction: 'CREDIT', amount: '30', dispositionLineId: 'dl-offset' }),
@@ -576,7 +576,7 @@ describe('buildAccountingLedgerDryRunReport', () => {
     });
 
     expect(report.suppressedBalanceLedgerSources).toEqual([expect.objectContaining({ balanceLedgerId: 'bl-offset', dispositionLineId: 'dl-offset' })]);
-    expect(report.entries.some((entry) => entry.idempotencyKey === 'balance_ledger:bl-offset:posted')).toBe(false);
+    expect(report.entries.some((entry) => entry.idempotencyKey === 'acct-journal:v1:tenant-1:BALANCE_LEDGER:bl-offset:posted:2026-06-29T12:00:00.000Z:bl-offset')).toBe(false);
   });
 
   it('unlinked BalanceLedger source satirini reconciliation journal adayi olarak birakir', () => {
@@ -590,7 +590,7 @@ describe('buildAccountingLedgerDryRunReport', () => {
 
     expect(report.entries).toEqual([
       expect.objectContaining({
-        idempotencyKey: 'balance_ledger:bl-unlinked:posted',
+        idempotencyKey: 'acct-journal:v1:tenant-1:BALANCE_LEDGER:bl-unlinked:posted:2026-06-29T12:00:00.000Z:bl-unlinked',
         sourceType: 'BALANCE_LEDGER',
         sourceId: 'bl-unlinked',
       }),
@@ -644,7 +644,7 @@ describe('buildAccountingLedgerDryRunReport', () => {
       balanceLedgerRows: [],
     });
 
-    expect(report.entries).toEqual([expect.objectContaining({ idempotencyKey: 'collection_disposition_line:dl-offset:posted' })]);
+    expect(report.entries).toEqual([expect.objectContaining({ idempotencyKey: 'acct-journal:v1:tenant-1:COLLECTION_DISPOSITION_LINE:dl-offset:posted:2026-06-29T10:00:00.000Z:dl-offset' })]);
     expect(report.mismatchWarnings).toEqual([
       expect.objectContaining({
         reason: 'MISSING_CORRELATION',

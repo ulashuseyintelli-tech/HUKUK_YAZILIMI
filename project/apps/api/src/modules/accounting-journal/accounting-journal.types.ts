@@ -84,6 +84,14 @@ export type ClientOffsetJournalSource = JournalSourceBase<
 >;
 
 export interface CollectionDispositionLinePostedPayload {
+  lineType:
+    | 'CLIENT_PAYABLE'
+    | 'CONTRACTUAL_FEE_WITHHELD'
+    | 'FIRM_EXPENSE_REIMBURSEMENT'
+    | 'CLIENT_EXPENSE_REIMBURSEMENT'
+    | 'OFFSET_CLIENT_ADVANCE'
+    | 'HELD_PENDING_DISTRIBUTION'
+    | 'OTHER';
   amount: MoneyAmount;
   caseId: string;
   caseClientId: string | null;
@@ -91,6 +99,7 @@ export interface CollectionDispositionLinePostedPayload {
   collectionId: string;
   dispositionLineId: string;
   creditAccountCode: AccountingAccountCode;
+  manualReversalRequiredAt: string | null;
 }
 
 export type CollectionDispositionLineJournalSource = JournalSourceBase<
