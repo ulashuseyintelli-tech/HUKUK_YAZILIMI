@@ -5,6 +5,8 @@ import {
 } from '../accounting-journal.builder';
 import type {
   AccountingAccountCode,
+  BalanceLedgerJournalSource,
+  BalanceLedgerRecordedPayload,
   ClientOffsetJournalSource,
   ClientOffsetJournalSourcePayload,
   ClientPayoutJournalSource,
@@ -612,5 +614,129 @@ describe('AccountingJournalBuilder ClientPayout recorded contract', () => {
     expect(result.ok).toBe(false);
     if (result.ok) throw new Error('Expected unrelated dimension to fail.');
     expect(result.errors.map((error) => error.code)).toContain('FORBIDDEN_SYNTHETIC_DIMENSION');
+  });
+});
+
+interface BalanceLedgerSourceOverrides {
+  tenantId?: string;
+  sourceId?: string;
+  sourceVersion?: string;
+  sourceAction?: BalanceLedgerJournalSource['sourceAction'];
+  occurredAt?: string;
+  effectiveDate?: string;
+  actorId?: string | null;
+  currency?: string;
+  sourceHash?: string | null;
+  metadata?: JournalMetadata;
+  payload?: Partial<BalanceLedgerRecordedPayload>;
+}
+
+function balanceLedgerSource(overrides: BalanceLedgerSourceOverrides = {}): BalanceLedgerJournalSource {
+  const ledgerId = overrides.sourceId ?? 'balance-ledger-1';
+  const payload: BalanceLedgerRecordedPayload = {
+    amount: '250.00',
+    caseId: 'case-advance-1',
+    balanceLedgerId: ledgerId,
+    ledgerType: 'CREDIT',
+    source: 'expense_request:expense-1',
+    sourceId: 'expense-1',
+    isIncrease: true,
+    ...(overrides.payload ?? {}),
+  };
+
+  return {
+    tenantId: overrides.tenantId ?? 'tenant-1',
+    sourceType: 'BALANCE_LEDGER',
+    sourceId: ledgerId,
+    sourceVersion: overrides.sourceVersion ?? `2026-06-30T08:00:00.000Z:${ledgerId}`,
+    sourceAction: overrides.sourceAction ?? 'posted',
+    occurredAt: overrides.occurredAt ?? '2026-06-30T08:00:00.000Z',
+    effectiveDate: overrides.effectiveDate ?? '2026-06-30',
+    actorId: overrides.actorId ?? 'user-1',
+    currency: overrides.currency ?? 'TRY',
+    sourceHash: overrides.sourceHash ?? null,
+    metadata: overrides.metadata ?? { sourceName: 'balance-ledger-test' },
+    payload,
+  };
+}
+
+function buildBalanceLedgerDraft(source: BalanceLedgerJournalSource = balanceLedgerSource()): JournalEntryDraft {
+  const result = buildAccountingJournal(source);
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(JSON.stringify(result.errors));
+  return result.draft;
+}
+
+describe('AccountingJournalBuilder BalanceLedger recorded contract', () => {
+  it('maps direct CREDIT BalanceLedger to CASH_CLEARING debit and CLIENT_ADVANCE_BALANCE credit', () => {
+    const draft = buildBalanceLedgerDraft(balanceLedgerSource({
+      tenantId: 'tenant-bl',
+      sourceId: 'bl-credit',
+      sourceVersion: '2026-06-30T09:10:11.000Z:bl-credit',
+      payload: { balanceLedgerId: 'bl-credit', ledgerType: 'CREDIT', isIncrease: true, amount: '100.00' },
+    }));
+
+    const cash = lineByAccount(draft, 'CASH_CLEARING');
+    const advance = lineByAccount(draft, 'CLIENT_ADVANCE_BALANCE');
+
+    expect(draft.entryType).toBe('CLIENT_ADVANCE_LEDGER_RECORDED');
+    expect(draft.idempotencyKey).toBe('acct-journal:v1:tenant-bl:BALANCE_LEDGER:bl-credit:posted:2026-06-30T09:10:11.000Z:bl-credit');
+    expect(cash).toEqual(expect.objectContaining({ direction: 'DEBIT', amount: '100.00', caseId: 'case-advance-1', balanceLedgerId: 'bl-credit' }));
+    expect(advance).toEqual(expect.objectContaining({ direction: 'CREDIT', amount: '100.00', caseId: 'case-advance-1', balanceLedgerId: 'bl-credit' }));
+    expect(validateJournalDraft(draft).ok).toBe(true);
+  });
+
+  it('maps direct DEBIT BalanceLedger to CLIENT_ADVANCE_BALANCE debit and CASH_CLEARING credit', () => {
+    const draft = buildBalanceLedgerDraft(balanceLedgerSource({
+      sourceId: 'bl-debit',
+      payload: {
+        amount: '75.25',
+        balanceLedgerId: 'bl-debit',
+        ledgerType: 'DEBIT',
+        source: 'operation:haciz',
+        sourceId: 'op-1',
+        isIncrease: false,
+      },
+    }));
+
+    const cash = lineByAccount(draft, 'CASH_CLEARING');
+    const advance = lineByAccount(draft, 'CLIENT_ADVANCE_BALANCE');
+
+    expect(advance).toEqual(expect.objectContaining({ direction: 'DEBIT', amount: '75.25', balanceLedgerId: 'bl-debit' }));
+    expect(cash).toEqual(expect.objectContaining({ direction: 'CREDIT', amount: '75.25', balanceLedgerId: 'bl-debit' }));
+    expect(validateJournalDraft(draft).ok).toBe(true);
+  });
+
+  it('rejects ADJUST/REFUND and correlated disposition_line BalanceLedger sources', () => {
+    const adjust = buildAccountingJournal(balanceLedgerSource({ payload: { ledgerType: 'ADJUST', isIncrease: true } }));
+    expect(adjust.ok).toBe(false);
+    if (adjust.ok) throw new Error('Expected ADJUST BalanceLedger to be rejected.');
+    expect(adjust.errors.map((error) => error.code)).toContain('UNMAPPED_SOURCE');
+
+    const refund = buildAccountingJournal(balanceLedgerSource({ payload: { ledgerType: 'REFUND', isIncrease: false } }));
+    expect(refund.ok).toBe(false);
+    if (refund.ok) throw new Error('Expected REFUND BalanceLedger to be rejected.');
+    expect(refund.errors.map((error) => error.code)).toContain('UNMAPPED_SOURCE');
+
+    const correlated = buildAccountingJournal(balanceLedgerSource({ payload: { source: 'disposition_line:line-1', sourceId: 'line-1' } }));
+    expect(correlated.ok).toBe(false);
+    if (correlated.ok) throw new Error('Expected correlated BalanceLedger to be rejected.');
+    expect(correlated.errors.map((error) => error.code)).toContain('UNMAPPED_SOURCE');
+  });
+
+  it('business validator requires balanceLedgerId dimension and rejects unrelated dimensions', () => {
+    const missingLedger = buildBalanceLedgerDraft();
+    lineByAccount(missingLedger, 'CASH_CLEARING').balanceLedgerId = null;
+    const missingResult = validateJournalBusiness(missingLedger);
+    expect(missingResult.ok).toBe(false);
+    if (missingResult.ok) throw new Error('Expected missing balanceLedgerId to fail.');
+    expect(missingResult.errors.map((error) => error.code)).toContain('MISSING_REQUIRED_DIMENSION');
+
+    const syntheticDimension = buildBalanceLedgerDraft();
+    lineByAccount(syntheticDimension, 'CLIENT_ADVANCE_BALANCE').caseClientId = 'case-client-synthetic';
+    const syntheticResult = validateJournalBusiness(syntheticDimension);
+    expect(syntheticResult.ok).toBe(false);
+    if (syntheticResult.ok) throw new Error('Expected synthetic dimension to fail.');
+    expect(syntheticResult.errors.map((error) => error.code)).toContain('FORBIDDEN_SYNTHETIC_DIMENSION');
   });
 });

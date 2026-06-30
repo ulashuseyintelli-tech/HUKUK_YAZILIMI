@@ -1,22 +1,32 @@
-import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
+﻿import { Injectable, NotFoundException, BadRequestException, ConflictException, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '@/prisma/prisma.service';
+import {
+  AccountingJournalWriterService,
+  buildAccountingJournal,
+  createCanonicalSourceHash,
+  validateJournalDraft,
+  type BalanceLedgerJournalSource,
+  type BalanceLedgerRecordedType,
+  type ValidatedJournalEntryDraft,
+} from '../accounting-journal';
 
 /**
- * Case Balance Service (Masraf Avansı Ledger)
+ * Case Balance Service (Masraf AvansÄ± Ledger)
  * 
- * Bu servis dosya bazlı masraf avansı takibi yapar:
- * - credit(): Müvekkilden avans alındı
- * - debit(): Masraf harcandı
- * - adjust(): Manuel düzeltme
+ * Bu servis dosya bazlÄ± masraf avansÄ± takibi yapar:
+ * - credit(): MÃ¼vekkilden avans alÄ±ndÄ±
+ * - debit(): Masraf harcandÄ±
+ * - adjust(): Manuel dÃ¼zeltme
  * 
- * NOT: Bu "alacak bakiyesi" DEĞİL, "masraf avansı bakiyesi"dir.
- * Alacak hesaplaması için interest-engine kullanın.
+ * NOT: Bu "alacak bakiyesi" DEÄÄ°L, "masraf avansÄ± bakiyesi"dir.
+ * Alacak hesaplamasÄ± iÃ§in interest-engine kullanÄ±n.
  * 
  * @alias AdvanceLedgerService (gelecekte rename edilecek)
  * @see ARCHITECTURE.md - Source of Truth Matrix
  */
 
-// Migration sonrası @prisma/client'tan import edilecek
+// Migration sonrasÄ± @prisma/client'tan import edilecek
 // import { BalanceLedgerType } from '@prisma/client';
 const BalanceLedgerType = {
   CREDIT: 'CREDIT',
@@ -39,6 +49,17 @@ export interface DebitBalanceDto {
   description?: string;
 }
 
+type JournalableBalanceLedgerRow = {
+  id: string;
+  tenantId: string;
+  type: BalanceLedgerRecordedType;
+  amount: Prisma.Decimal | number | string;
+  currency: string;
+  source: string;
+  sourceId: string | null;
+  createdById: string | null;
+  createdAt: Date | string;
+};
 /**
  * @alias AdvanceLedgerService
  */
@@ -46,21 +67,24 @@ export interface DebitBalanceDto {
 export class CaseBalanceService {
   private readonly logger = new Logger(CaseBalanceService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly journalWriter: AccountingJournalWriterService = new AccountingJournalWriterService(prisma),
+  ) {}
 
   /**
-   * Dosya bakiyesini getir veya oluştur
+   * Dosya bakiyesini getir veya oluÅŸtur
    */
   async getOrCreateBalance(tenantId: string, caseId: string) {
-    // Önce upsert ile oluştur veya getir
+    // Ã–nce upsert ile oluÅŸtur veya getir
     const balance = await this.prisma.caseBalance.upsert({
       where: { caseId },
-      update: {}, // Varsa güncelleme yapma
+      update: {}, // Varsa gÃ¼ncelleme yapma
       create: {
         tenantId,
         caseId,
         balance: 0,
-        lowThreshold: 500, // Varsayılan düşük bakiye eşiği
+        lowThreshold: 500, // VarsayÄ±lan dÃ¼ÅŸÃ¼k bakiye eÅŸiÄŸi
       },
     });
 
@@ -100,14 +124,22 @@ export class CaseBalanceService {
   }
 
   /**
-   * Bakiyeye kredi ekle (ödeme geldi)
+   * Bakiyeye kredi ekle (Ã¶deme geldi)
    */
+  /// <remarks>
+  /// Ã‡aÄŸrÄ±ldÄ±ÄŸÄ± yerler:
+  /// - CaseBalanceController.credit() â†’ POST /cases/:caseId/balance/credit (manuel/direct avans kredi)
+  /// - ExpenseRequestService.create() â†’ paidByLawyer expense_request kredi yolu
+  /// - ExpenseRequestService.createFromPackage() â†’ paidByLawyer package expense_request kredi yolu
+  /// - ExpenseRequestService.markAsReceived() â†’ expense_request Ã¶deme alÄ±ndÄ± kredi yolu
+  /// - ExpenseRequestService.recordPayment() â†’ expense_payment kredi yolu
+  /// </remarks>
   async credit(tenantId: string, caseId: string, dto: CreditBalanceDto, userId: string) {
     const balance = await this.getOrCreateBalance(tenantId, caseId);
 
-    // Transaction ile güncelle
+    // Transaction ile gÃ¼ncelle
     const result = await this.prisma.$transaction(async (tx) => {
-      // Ledger kaydı oluştur
+      // Ledger kaydÄ± oluÅŸtur
       const ledger = await tx.balanceLedger.create({
         data: {
           tenantId,
@@ -116,19 +148,22 @@ export class CaseBalanceService {
           amount: dto.amount,
           source: dto.source,
           sourceId: dto.sourceId,
-          description: dto.description || 'Masraf avansı alındı',
+          description: dto.description || 'Masraf avansÄ± alÄ±ndÄ±',
           createdById: userId,
         },
       });
 
-      // Bakiyeyi güncelle
+      // Bakiyeyi gÃ¼ncelle
       const updatedBalance = await tx.caseBalance.update({
         where: { id: balance.id },
         data: {
           balance: { increment: dto.amount },
         },
       });
-
+      const journalDraft = this.buildBalanceLedgerJournalDraft(tenantId, caseId, ledger as JournalableBalanceLedgerRow);
+      if (journalDraft) {
+        await this.writeBalanceLedgerJournal(tx, journalDraft);
+      }
       return { balance: updatedBalance, ledger };
     });
 
@@ -140,8 +175,12 @@ export class CaseBalanceService {
   }
 
   /**
-   * Bakiyeden düş (masraf yapıldı)
+   * Bakiyeden dÃ¼ÅŸ (masraf yapÄ±ldÄ±)
    */
+  /// <remarks>
+  /// Ã‡aÄŸrÄ±ldÄ±ÄŸÄ± yerler:
+  /// - CaseBalanceController.debit() â†’ POST /cases/:caseId/balance/debit (direct masraf/avans debit)
+  /// </remarks>
   async debit(tenantId: string, caseId: string, dto: DebitBalanceDto, userId: string) {
     const balance = await this.getOrCreateBalance(tenantId, caseId);
 
@@ -152,9 +191,9 @@ export class CaseBalanceService {
       );
     }
 
-    // Transaction ile güncelle
+    // Transaction ile gÃ¼ncelle
     const result = await this.prisma.$transaction(async (tx) => {
-      // Ledger kaydı oluştur (negatif tutar)
+      // Ledger kaydÄ± oluÅŸtur (negatif tutar)
       const ledger = await tx.balanceLedger.create({
         data: {
           tenantId,
@@ -163,19 +202,22 @@ export class CaseBalanceService {
           amount: -dto.amount, // Negatif
           source: dto.source,
           sourceId: dto.sourceId,
-          description: dto.description || 'Masraf harcandı',
+          description: dto.description || 'Masraf harcandÄ±',
           createdById: userId,
         },
       });
 
-      // Bakiyeyi güncelle
+      // Bakiyeyi gÃ¼ncelle
       const updatedBalance = await tx.caseBalance.update({
         where: { id: balance.id },
         data: {
           balance: { decrement: dto.amount },
         },
       });
-
+      const journalDraft = this.buildBalanceLedgerJournalDraft(tenantId, caseId, ledger as JournalableBalanceLedgerRow);
+      if (journalDraft) {
+        await this.writeBalanceLedgerJournal(tx, journalDraft);
+      }
       return { balance: updatedBalance, ledger };
     });
 
@@ -187,8 +229,119 @@ export class CaseBalanceService {
     };
   }
 
+  /// <remarks>
+  /// Ã‡aÄŸrÄ±ldÄ±ÄŸÄ± yerler:
+  /// - CaseBalanceService.credit() â†’ CREDIT BalanceLedger journal draft Ã¼retimi
+  /// - CaseBalanceService.debit() â†’ DEBIT BalanceLedger journal draft Ã¼retimi
+  /// </remarks>
+  private buildBalanceLedgerJournalDraft(
+    tenantId: string,
+    caseId: string,
+    ledger: JournalableBalanceLedgerRow,
+  ): ValidatedJournalEntryDraft | null {
+    if (ledger.type !== BalanceLedgerType.CREDIT && ledger.type !== BalanceLedgerType.DEBIT) {
+      return null;
+    }
+
+    if (this.isDispositionLineBalanceLedgerSource(ledger.source, ledger.sourceId)) {
+      return null;
+    }
+
+    const createdAt = ledger.createdAt instanceof Date ? ledger.createdAt : new Date(ledger.createdAt);
+    const createdAtIso = createdAt.toISOString();
+    const payload = {
+      amount: this.positiveJournalAmount(ledger.amount),
+      caseId,
+      balanceLedgerId: ledger.id,
+      ledgerType: ledger.type,
+      source: ledger.source,
+      sourceId: ledger.sourceId,
+      isIncrease: ledger.type === BalanceLedgerType.CREDIT,
+    } satisfies BalanceLedgerJournalSource['payload'];
+
+    const sourceVersion = `${createdAtIso}:${ledger.id}`;
+    const source: BalanceLedgerJournalSource = {
+      tenantId,
+      sourceType: 'BALANCE_LEDGER',
+      sourceId: ledger.id,
+      sourceVersion,
+      sourceAction: 'posted',
+      occurredAt: createdAtIso,
+      effectiveDate: createdAtIso.slice(0, 10),
+      actorId: ledger.createdById,
+      currency: ledger.currency,
+      sourceHash: createCanonicalSourceHash({
+        tenantId,
+        sourceType: 'BALANCE_LEDGER',
+        sourceId: ledger.id,
+        sourceAction: 'posted',
+        sourceVersion,
+        occurredAt: createdAtIso,
+        effectiveDate: createdAtIso.slice(0, 10),
+        actorId: ledger.createdById,
+        currency: ledger.currency,
+        payload,
+      }),
+      metadata: {
+        sourceName: 'balance-ledger',
+      },
+      payload,
+    };
+
+    const built = buildAccountingJournal(source);
+    if (!built.ok) {
+      throw new ConflictException(`BalanceLedger journal mapping failed: ${built.errors.map((error) => error.code).join(', ')}`);
+    }
+
+    const validated = validateJournalDraft(built.draft);
+    if (!validated.ok) {
+      throw new ConflictException(`BalanceLedger journal validation failed: ${validated.errors.map((error) => error.code).join(', ')}`);
+    }
+
+    return validated.draft;
+  }
+
+  /// <remarks>
+  /// Ã‡aÄŸrÄ±ldÄ±ÄŸÄ± yerler:
+  /// - CaseBalanceService.credit() â†’ tx-iÃ§i direct CREDIT BalanceLedger journal write
+  /// - CaseBalanceService.debit() â†’ tx-iÃ§i direct DEBIT BalanceLedger journal write
+  /// </remarks>
+  private async writeBalanceLedgerJournal(tx: Prisma.TransactionClient, draft: ValidatedJournalEntryDraft): Promise<void> {
+    const journalWrite = await this.journalWriter.write({ draft }, tx);
+    if (!journalWrite.ok) {
+      throw new ConflictException(`BalanceLedger journal write failed: ${journalWrite.errors.map((error) => error.code).join(', ')}`);
+    }
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseBalanceService.buildBalanceLedgerJournalDraft() → correlated disposition_line BalanceLedger suppress kontrolü
+  /// </remarks>
+  private isDispositionLineBalanceLedgerSource(source: string | null | undefined, sourceId: string | null | undefined): boolean {
+    return this.parseDispositionLineSource(source) !== null || this.parseDispositionLineSource(sourceId) !== null || source === 'disposition_line';
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseBalanceService.isDispositionLineBalanceLedgerSource() → disposition_line source format parse
+  /// </remarks>
+  private parseDispositionLineSource(value: string | null | undefined): string | null {
+    if (!value) return null;
+    const prefix = 'disposition_line:';
+    return value.startsWith(prefix) ? value.slice(prefix.length) : null;
+  }
+
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseBalanceService.buildBalanceLedgerJournalDraft() → journal amount normalize
+  /// </remarks>
+  private positiveJournalAmount(amount: Prisma.Decimal | number | string): string {
+    const decimal = new Prisma.Decimal(amount as Prisma.Decimal.Value);
+    return decimal.lt(0) ? decimal.mul(-1).toString() : decimal.toString();
+  }
+
   /**
-   * Manuel düzeltme
+   * Manuel dÃ¼zeltme
    */
   async adjust(tenantId: string, caseId: string, amount: number, reason: string, userId: string) {
     const balance = await this.getOrCreateBalance(tenantId, caseId);
@@ -224,7 +377,7 @@ export class CaseBalanceService {
   }
 
   /**
-   * Düşük bakiye eşiğini güncelle
+   * DÃ¼ÅŸÃ¼k bakiye eÅŸiÄŸini gÃ¼ncelle
    */
   async setLowThreshold(tenantId: string, caseId: string, threshold: number) {
     const balance = await this.getOrCreateBalance(tenantId, caseId);

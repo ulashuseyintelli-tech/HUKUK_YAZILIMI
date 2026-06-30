@@ -114,6 +114,8 @@ export function validateJournalBusiness(draft: JournalEntryDraft): JournalValida
       return validateCollectionDispositionLineBusiness(draft);
     case 'CLIENT_PAYOUT':
       return validateClientPayoutBusiness(draft);
+    case 'BALANCE_LEDGER':
+      return validateBalanceLedgerBusiness(draft);
     default:
       return { ok: true, draft };
   }
@@ -231,6 +233,107 @@ function validateCollectionDispositionLineDimensions(
   }
 }
 
+function validateBalanceLedgerBusiness(draft: JournalEntryDraft): JournalValidationResult {
+  const errors: JournalValidationError[] = [];
+
+  if (draft.sourceAction !== 'posted') {
+    errors.push(validationError('INVALID_SOURCE_ACTION', 'BalanceLedger sourceAction must be posted.', 'sourceAction', {
+      sourceAction: draft.sourceAction,
+    }));
+  }
+
+  if (draft.entryType !== 'CLIENT_ADVANCE_LEDGER_RECORDED') {
+    errors.push(validationError('INVALID_SOURCE_ACTION', 'BalanceLedger entryType must be CLIENT_ADVANCE_LEDGER_RECORDED.', 'entryType', {
+      entryType: draft.entryType,
+    }));
+  }
+
+  if (draft.metadata.ledgerType !== 'CREDIT' && draft.metadata.ledgerType !== 'DEBIT') {
+    errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'BalanceLedger ADJUST/REFUND is not approved for journal posting.', 'metadata.ledgerType', {
+      ledgerType: draft.metadata.ledgerType,
+    }));
+  }
+
+  if (isDispositionLineBalanceLedgerMetadata(draft.metadata.balanceLedgerSource, draft.metadata.balanceLedgerSourceId)) {
+    errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'Correlated disposition_line BalanceLedger must not be a direct journal source.', 'metadata.balanceLedgerSource', {
+      balanceLedgerSource: draft.metadata.balanceLedgerSource,
+      balanceLedgerSourceId: draft.metadata.balanceLedgerSourceId,
+    }));
+  }
+
+  if (typeof draft.metadata.isIncrease !== 'boolean') {
+    errors.push(validationError('MISSING_REQUIRED_FIELD', 'BalanceLedger journal metadata requires isIncrease.', 'metadata.isIncrease'));
+  }
+
+  if (draft.lines.length !== 2) {
+    errors.push(validationError('INVALID_LINE_SHAPE', 'BalanceLedger journal must contain exactly cash and client advance legs.', 'lines', {
+      lineCount: draft.lines.length,
+    }));
+  }
+
+  const cashLine = findSingleLine(errors, draft.lines, 'CASH_CLEARING', 'BalanceLedger cash leg');
+  const advanceLine = findSingleLine(errors, draft.lines, 'CLIENT_ADVANCE_BALANCE', 'BalanceLedger client advance leg');
+  const isIncrease = draft.metadata.isIncrease === true;
+
+  if (cashLine) validateBalanceLedgerLine(errors, draft, cashLine, isIncrease ? 'DEBIT' : 'CREDIT');
+  if (advanceLine) validateBalanceLedgerLine(errors, draft, advanceLine, isIncrease ? 'CREDIT' : 'DEBIT');
+
+  return errors.length === 0 ? { ok: true, draft } : { ok: false, errors };
+}
+
+function validateBalanceLedgerLine(
+  errors: JournalValidationError[],
+  draft: JournalEntryDraft,
+  line: JournalLineDraft,
+  expectedDirection: 'DEBIT' | 'CREDIT',
+) {
+  if (line.direction !== expectedDirection) {
+    errors.push(validationError('INVALID_ACCOUNT_DIRECTION', 'BalanceLedger journal leg has invalid direction.', `lines[${line.lineNo}].direction`, {
+      expectedDirection,
+      direction: line.direction,
+    }));
+  }
+
+  if (!line.caseId) {
+    errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'BalanceLedger journal line requires caseId.', `lines[${line.lineNo}].caseId`));
+  }
+
+  if (draft.caseId && line.caseId && line.caseId !== draft.caseId) {
+    errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'BalanceLedger journal line caseId must match entry caseId.', `lines[${line.lineNo}].caseId`, {
+      entryCaseId: draft.caseId,
+      lineCaseId: line.caseId,
+    }));
+  }
+
+  if (line.balanceLedgerId !== draft.sourceId) {
+    errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'BalanceLedger journal line must carry balanceLedgerId from sourceId.', `lines[${line.lineNo}].balanceLedgerId`, {
+      expectedBalanceLedgerId: draft.sourceId,
+      balanceLedgerId: line.balanceLedgerId,
+    }));
+  }
+
+  if (line.clientId || line.caseClientId || line.collectionId || line.dispositionLineId || line.payoutId || line.offsetId || line.expenseRequestId) {
+    errors.push(validationError('FORBIDDEN_SYNTHETIC_DIMENSION', 'BalanceLedger journal line must not carry unrelated source dimensions.', `lines[${line.lineNo}]`, {
+      clientId: line.clientId,
+      caseClientId: line.caseClientId,
+      collectionId: line.collectionId,
+      dispositionLineId: line.dispositionLineId,
+      payoutId: line.payoutId,
+      offsetId: line.offsetId,
+      expenseRequestId: line.expenseRequestId,
+    }));
+  }
+}
+
+function isDispositionLineBalanceLedgerMetadata(source: unknown, sourceId: unknown): boolean {
+  return parseDispositionLineMetadata(source) !== null || parseDispositionLineMetadata(sourceId) !== null || source === 'disposition_line';
+}
+
+function parseDispositionLineMetadata(value: unknown): string | null {
+  if (typeof value !== 'string') return null;
+  const prefix = 'disposition_line:';
+  return value.startsWith(prefix) ? value.slice(prefix.length) : null;
+}
 function validateClientPayoutBusiness(draft: JournalEntryDraft): JournalValidationResult {
   const errors: JournalValidationError[] = [];
 

@@ -118,10 +118,15 @@ export interface ClientPayoutRecordedPayload {
 
 export type ClientPayoutJournalSource = JournalSourceBase<'CLIENT_PAYOUT', 'recorded', ClientPayoutRecordedPayload>;
 
+export type BalanceLedgerRecordedType = 'CREDIT' | 'DEBIT' | 'ADJUST' | 'REFUND';
+
 export interface BalanceLedgerRecordedPayload {
   amount: MoneyAmount;
   caseId: string;
   balanceLedgerId: string;
+  ledgerType: BalanceLedgerRecordedType;
+  source: string;
+  sourceId: string | null;
   isIncrease: boolean;
 }
 

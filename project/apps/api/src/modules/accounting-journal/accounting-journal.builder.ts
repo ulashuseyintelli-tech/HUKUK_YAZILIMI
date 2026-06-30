@@ -1,4 +1,5 @@
 import type {
+  BalanceLedgerJournalSource,
   ClientPayoutJournalSource,
   ClientOffsetJournalSource,
   CollectionDispositionLineJournalSource,
@@ -43,6 +44,7 @@ export function buildAccountingJournal(source: JournalSource): JournalBuildResul
     case 'CLIENT_PAYOUT':
       return buildClientPayoutJournal(source);
     case 'BALANCE_LEDGER':
+      return buildBalanceLedgerJournal(source);
     case 'ACCOUNTING_JOURNAL_ENTRY':
       return buildError('UNMAPPED_SOURCE', `Journal builder skeleton does not yet map ${source.sourceType}.`, 'sourceType', {
         sourceType: source.sourceType,
@@ -138,6 +140,112 @@ function collectionDispositionLine(
   };
 }
 
+function buildBalanceLedgerJournal(source: BalanceLedgerJournalSource): JournalBuildResult {
+  if (source.sourceAction !== 'posted') {
+    return buildError('UNSUPPORTED_SOURCE_ACTION', 'BalanceLedger sourceAction must be posted.', 'sourceAction', {
+      sourceAction: source.sourceAction,
+    });
+  }
+
+  if (source.payload.ledgerType !== 'CREDIT' && source.payload.ledgerType !== 'DEBIT') {
+    return buildError('UNMAPPED_SOURCE', 'BalanceLedger ADJUST/REFUND is not approved for journal posting.', 'payload.ledgerType', {
+      ledgerType: source.payload.ledgerType,
+    });
+  }
+
+  if (isDispositionLineBalanceLedgerSource(source.payload.source, source.payload.sourceId)) {
+    return buildError('UNMAPPED_SOURCE', 'Correlated disposition_line BalanceLedger is reported-only; CollectionDispositionLine is the canonical journal source.', 'payload.source', {
+      source: source.payload.source,
+      sourceId: source.payload.sourceId,
+    });
+  }
+
+  const expectedIncrease = source.payload.ledgerType === 'CREDIT';
+  if (source.payload.isIncrease !== expectedIncrease) {
+    return buildError('INVALID_SOURCE_PAYLOAD', 'BalanceLedger isIncrease must match ledgerType.', 'payload.isIncrease', {
+      ledgerType: source.payload.ledgerType,
+      isIncrease: source.payload.isIncrease,
+    });
+  }
+
+  const idempotencyMaterial = journalIdempotencyMaterialFromSource(source);
+  const idempotencyKey = buildJournalIdempotencyKey(idempotencyMaterial);
+  if (!source.tenantId || !source.sourceId || !source.sourceAction || !source.sourceVersion) {
+    return buildError('INVALID_IDEMPOTENCY_MATERIAL', 'Journal source is missing idempotency material.', null, {
+      idempotencyKey,
+    });
+  }
+
+  const metadata: JournalMetadata = {
+    ...source.metadata,
+    description: 'Balance ledger recorded',
+    ledgerType: source.payload.ledgerType,
+    balanceLedgerSource: source.payload.source,
+    balanceLedgerSourceId: source.payload.sourceId,
+    isIncrease: source.payload.isIncrease,
+  };
+
+  const draft: JournalEntryDraft = {
+    tenantId: source.tenantId,
+    caseId: source.payload.caseId,
+    currency: source.currency,
+    entryType: 'CLIENT_ADVANCE_LEDGER_RECORDED',
+    sourceType: source.sourceType,
+    sourceId: source.sourceId,
+    sourceAction: source.sourceAction,
+    sourceVersion: source.sourceVersion,
+    idempotencyKey,
+    idempotencyMaterial,
+    sourceHash: source.sourceHash,
+    sourceOccurredAt: source.occurredAt,
+    effectiveDate: source.effectiveDate,
+    postedById: source.actorId,
+    description: null,
+    metadata,
+    reversalOf: null,
+    lines: [
+      balanceLedgerLine(source, 1, source.payload.isIncrease ? 'CASH_CLEARING' : 'CLIENT_ADVANCE_BALANCE', 'DEBIT'),
+      balanceLedgerLine(source, 2, source.payload.isIncrease ? 'CLIENT_ADVANCE_BALANCE' : 'CASH_CLEARING', 'CREDIT'),
+    ],
+  };
+
+  return { ok: true, draft };
+}
+
+function balanceLedgerLine(
+  source: BalanceLedgerJournalSource,
+  lineNo: number,
+  accountCode: JournalLineDraft['accountCode'],
+  direction: JournalLineDraft['direction'],
+): JournalLineDraft {
+  return {
+    lineNo,
+    tenantId: source.tenantId,
+    accountCode,
+    direction,
+    amount: source.payload.amount,
+    currency: source.currency,
+    caseId: source.payload.caseId,
+    clientId: null,
+    caseClientId: null,
+    collectionId: null,
+    dispositionLineId: null,
+    payoutId: null,
+    offsetId: null,
+    expenseRequestId: null,
+    balanceLedgerId: source.payload.balanceLedgerId,
+  };
+}
+
+function isDispositionLineBalanceLedgerSource(source: string | null | undefined, sourceId: string | null | undefined): boolean {
+  return parseDispositionLineSource(source) !== null || parseDispositionLineSource(sourceId) !== null || source === 'disposition_line';
+}
+
+function parseDispositionLineSource(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const prefix = 'disposition_line:';
+  return value.startsWith(prefix) ? value.slice(prefix.length) : null;
+}
 function buildClientPayoutJournal(source: ClientPayoutJournalSource): JournalBuildResult {
   if (source.sourceAction !== 'recorded') {
     return buildError('UNSUPPORTED_SOURCE_ACTION', 'ClientPayout sourceAction must be recorded.', 'sourceAction', {

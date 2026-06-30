@@ -1,4 +1,4 @@
-import { readFileSync } from 'fs';
+﻿import { readFileSync } from 'fs';
 import { join } from 'path';
 import { Prisma } from '@prisma/client';
 import {
@@ -643,6 +643,39 @@ describe('buildAccountingLedgerDryRunReport', () => {
     expect(report.suppressedBalanceLedgerSources).toEqual([]);
   });
 
+  it('ADJUST ve REFUND BalanceLedger satirlarini journal adayi yapmaz', () => {
+    const report = buildAccountingLedgerDryRunReport({
+      tenantId: 'tenant-1',
+      dispositionLines: [],
+      clientPayouts: [],
+      clientOffsets: [],
+      balanceLedgerRows: [
+        balanceLedger({ id: 'bl-adjust', type: 'ADJUST', amount: D(25), source: 'manual_adjust' }),
+        balanceLedger({ id: 'bl-refund', type: 'REFUND', amount: D(10), source: 'manual_refund' }),
+      ],
+    });
+
+    expect(report.entries).toEqual([]);
+    expect(report.mismatchWarnings).toEqual([
+      expect.objectContaining({
+        reason: 'OTHER_SUSPENSE_MANUAL_REVIEW',
+        sourceType: 'BALANCE_LEDGER',
+        sourceId: 'bl-adjust',
+        balanceLedgerId: 'bl-adjust',
+        expected: 'CREDIT or DEBIT',
+        actual: 'ADJUST',
+      }),
+      expect.objectContaining({
+        reason: 'OTHER_SUSPENSE_MANUAL_REVIEW',
+        sourceType: 'BALANCE_LEDGER',
+        sourceId: 'bl-refund',
+        balanceLedgerId: 'bl-refund',
+        expected: 'CREDIT or DEBIT',
+        actual: 'REFUND',
+      }),
+    ]);
+    expect(report.suppressedBalanceLedgerSources).toEqual([]);
+  });
   it('OFFSET_CLIENT_ADVANCE korelasyonunda amount mismatch warning uretir', () => {
     const report = buildAccountingLedgerDryRunReport({
       tenantId: 'tenant-1',
