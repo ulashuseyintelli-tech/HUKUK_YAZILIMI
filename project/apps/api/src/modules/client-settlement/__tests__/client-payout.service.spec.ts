@@ -131,6 +131,40 @@ describe('ClientPayoutService.create', () => {
     expect(tx.clientPayoutAllocation.createMany.mock.invocationCallOrder[0]).toBeLessThan(tx.accountingJournalEntry.create.mock.invocationCallOrder[0]);
   });
 
+  it('ACCT-1B-3A seam: current runtime always calls journal writer inside successful payout transaction', async () => {
+    const { prisma, tx } = buildPrisma(OUT_1000);
+
+    const res = await svc(prisma).create('t1', DTO({ amount: '400' }), ACTOR);
+
+    expect(res).toEqual({ created: true, payoutId: 'payout-1' });
+    expect(tx.clientPayout.create).toHaveBeenCalledTimes(1);
+    expect(tx.clientPayoutAllocation.createMany).toHaveBeenCalledTimes(1);
+    expect(tx.accountingJournalEntry.create).toHaveBeenCalledTimes(1);
+    expect(tx.clientPayoutAllocation.createMany.mock.invocationCallOrder[0]).toBeLessThan(
+      tx.accountingJournalEntry.create.mock.invocationCallOrder[0],
+    );
+    expect(tx.accountingJournalEntry.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          entryType: 'CLIENT_PAYOUT_RECORDED',
+          sourceType: 'CLIENT_PAYOUT',
+          sourceId: 'payout-1',
+          sourceAction: 'recorded',
+          idempotencyKey: 'acct-journal:v1:t1:CLIENT_PAYOUT:payout-1:recorded:2026-06-30T08:00:00.000Z:payout-1',
+        }),
+      }),
+    );
+  });
+
+  it('ACCT-1B-3A seam: current runtime remains fail-closed when journal writer fails', async () => {
+    const { prisma, tx } = buildPrisma({ ...OUT_1000, journalCreateError: new Error('journal db down') });
+
+    await expect(svc(prisma).create('t1', DTO({ amount: '400' }), ACTOR)).rejects.toThrow(/Accounting journal write failed/);
+
+    expect(tx.clientPayout.create).toHaveBeenCalledTimes(1);
+    expect(tx.clientPayoutAllocation.createMany).toHaveBeenCalledTimes(1);
+    expect(tx.accountingJournalEntry.create).toHaveBeenCalledTimes(1);
+  });
   it('over-payout: amount > outstanding → reject', async () => {
     const { prisma, tx } = buildPrisma(OUT_1000);
     await expect(svc(prisma).create('t1', DTO({ amount: '1500' }), ACTOR)).rejects.toThrow(/aşamaz/);
