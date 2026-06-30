@@ -17,31 +17,50 @@ const apiMock = api as unknown as {
   get: ReturnType<typeof vi.fn>;
 };
 
-const notification = (over: Record<string, unknown> = {}) => ({
+const timelineResponse = (items: Array<Record<string, unknown>> = []) => ({
+  data: {
+    data: items,
+    pageInfo: {
+      nextCursor: null,
+      hasNextPage: false,
+      limit: 25,
+    },
+  },
+});
+
+const notificationItem = (over: Record<string, unknown> = {}) => ({
   id: 'n-1',
-  tenantId: 't-1',
-  clientId: 'client-1',
-  caseId: null,
-  channel: 'EMAIL',
-  type: 'GENEL_BILGILENDIRME',
-  subject: 'Dosya bilgilendirmesi',
-  body: 'Bu alan UI tarafında gösterilmemeli',
+  source: 'client_notification',
+  eventType: 'NOTIFICATION_SENT',
+  title: 'Dosya bilgilendirmesi',
+  summary: 'Email notification: sent',
   status: 'SENT',
-  sentAt: '2026-06-21T09:00:00.000Z',
-  deliveredAt: null,
-  errorMessage: null,
-  sentById: 'u-1',
-  metadata: null,
-  dedupeKey: null,
-  createdAt: '2026-06-21T08:58:00.000Z',
-  updatedAt: '2026-06-21T09:00:00.000Z',
+  occurredAt: '2026-06-21T09:00:00.000Z',
+  caseId: null,
+  metadataSafe: {
+    channel: 'EMAIL',
+    notificationType: 'GENEL_BILGILENDIRME',
+  },
+  body: 'Bu alan UI taraf?nda g?sterilmemeli',
+  ...over,
+});
+
+const intakeItem = (over: Record<string, unknown> = {}) => ({
+  id: 'sub-1',
+  source: 'intake_submission',
+  eventType: 'INTAKE_SUBMITTED',
+  title: 'Intake submission received',
+  summary: 'Client submitted the canonical intake form.',
+  status: 'CLIENT_SUBMITTED',
+  occurredAt: '2026-06-22T10:30:00.000Z',
+  caseId: 'case-1',
   ...over,
 });
 
 describe('ClientActivityTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    apiMock.get.mockResolvedValue({ data: [] });
+    apiMock.get.mockResolvedValue(timelineResponse());
   });
 
   it('renders loading state while fetching', () => {
@@ -49,60 +68,74 @@ describe('ClientActivityTab', () => {
 
     render(<ClientActivityTab clientId="client-1" />);
 
-    expect(screen.getByText('Aktivite yükleniyor...')).toBeTruthy();
+    expect(screen.getByText('Aktivite y?kleniyor...')).toBeTruthy();
   });
 
-  it('renders empty state and calls client notification endpoint', async () => {
+  it('renders empty state and calls client timeline endpoint', async () => {
     render(<ClientActivityTab clientId="client-1" />);
 
     await waitFor(() => {
-      expect(screen.getByText('Bu müvekkil için kayıtlı bildirim aktivitesi yok.')).toBeTruthy();
+      expect(screen.getByText('Bu m?vekkil i?in kay?tl? bildirim aktivitesi yok.')).toBeTruthy();
     });
-    expect(apiMock.get).toHaveBeenCalledWith('/client-notifications/client/client-1');
+    expect(apiMock.get).toHaveBeenCalledWith(
+      '/clients/client-1/timeline?limit=25&sources=client_notification,intake_submission',
+    );
   });
 
-  it('renders notification summary rows without full body', async () => {
-    apiMock.get.mockResolvedValue({
-      data: [notification()],
-    });
+  it('renders notification timeline rows without full body', async () => {
+    apiMock.get.mockResolvedValue(timelineResponse([notificationItem()]));
 
     render(<ClientActivityTab clientId="client-1" />);
 
     await waitFor(() => expect(screen.getByText('Dosya bilgilendirmesi')).toBeTruthy());
+    expect(screen.getByText('Email notification: sent')).toBeTruthy();
     expect(screen.getByText('Bilgilendirme')).toBeTruthy();
     expect(screen.getByText('E-posta')).toBeTruthy();
-    expect(screen.getByText('Gönderildi')).toBeTruthy();
-    expect(screen.queryByText('Bu alan UI tarafında gösterilmemeli')).toBeNull();
+    expect(screen.getByText('G?nderildi')).toBeTruthy();
+    expect(screen.queryByText('Bu alan UI taraf?nda g?sterilmemeli')).toBeNull();
   });
 
-  it('renders failed notification error summary safely', async () => {
-    apiMock.get.mockResolvedValue({
-      data: [
-        notification({
-          id: 'n-failed',
-          channel: 'SMS',
-          type: 'HATIRLATMA',
-          subject: 'Gönderim hatası',
-          status: 'FAILED',
-          sentAt: null,
-          errorMessage: 'SMTP bağlantısı reddedildi',
-        }),
-      ],
-    });
+  it('renders intake submission items in the same activity list', async () => {
+    apiMock.get.mockResolvedValue(timelineResponse([notificationItem(), intakeItem()]));
 
     render(<ClientActivityTab clientId="client-1" />);
 
-    await waitFor(() => expect(screen.getByText('Gönderim hatası')).toBeTruthy());
-    expect(screen.getByText('Hatırlatma')).toBeTruthy();
+    await waitFor(() => expect(screen.getByText('Intake submission received')).toBeTruthy());
+    expect(screen.getByText('Client submitted the canonical intake form.')).toBeTruthy();
+    expect(screen.getByText('Intake')).toBeTruthy();
+    expect(screen.getByText('Yeni g?nderim')).toBeTruthy();
+    expect(screen.getByText('Dosya bilgilendirmesi')).toBeTruthy();
+  });
+
+  it('renders failed notification safely from timeline summary without errorMessage', async () => {
+    apiMock.get.mockResolvedValue(
+      timelineResponse([
+        notificationItem({
+          id: 'n-failed',
+          eventType: 'NOTIFICATION_FAILED',
+          title: 'G?nderim hatas?',
+          summary: 'SMS notification: failed',
+          status: 'FAILED',
+          metadataSafe: {
+            channel: 'SMS',
+            notificationType: 'HATIRLATMA',
+          },
+        }),
+      ]),
+    );
+
+    render(<ClientActivityTab clientId="client-1" />);
+
+    await waitFor(() => expect(screen.getByText('G?nderim hatas?')).toBeTruthy());
+    expect(screen.getByText('SMS notification: failed')).toBeTruthy();
+    expect(screen.getByText('Hat?rlatma')).toBeTruthy();
     expect(screen.getByText('SMS')).toBeTruthy();
-    expect(screen.getByText('Başarısız')).toBeTruthy();
-    expect(screen.getByText('SMTP bağlantısı reddedildi')).toBeTruthy();
+    expect(screen.getByText('Ba?ar?s?z')).toBeTruthy();
+    expect(screen.queryByText('SMTP ba?lant?s? reddedildi')).toBeNull();
   });
 
   it('does not introduce mutation controls', async () => {
-    apiMock.get.mockResolvedValue({
-      data: [notification()],
-    });
+    apiMock.get.mockResolvedValue(timelineResponse([notificationItem()]));
 
     render(<ClientActivityTab clientId="client-1" />);
 
