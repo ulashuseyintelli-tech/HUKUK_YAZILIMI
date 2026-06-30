@@ -48,13 +48,33 @@ export interface AccountingJournalTrialBalanceSourceBreakdown {
 
 export type AccountingJournalTrialBalanceWarningCode =
   | 'DIMENSION_SCOPED_IMBALANCE'
-  | 'NO_JOURNAL_LINES';
+  | 'NO_JOURNAL_LINES'
+  | 'TRIAL_BALANCE_IMBALANCE';
+
+export type AccountingJournalTrialBalanceEvidenceStatus =
+  | 'NO_LINES'
+  | 'BALANCED'
+  | 'IMBALANCED'
+  | 'DIMENSION_SCOPED';
+
+export interface AccountingJournalTrialBalanceUnbalancedCurrency {
+  currency: string;
+  debit: string;
+  credit: string;
+  difference: string;
+}
 
 export interface AccountingJournalTrialBalanceDiagnostics {
   balanced: boolean;
   dimensionScoped: boolean;
   partialEntryScope: boolean;
   dateBasis: 'postedAt';
+  generatedAt: string;
+  lineCount: number;
+  entryCount: number;
+  currencyCount: number;
+  evidenceStatus: AccountingJournalTrialBalanceEvidenceStatus;
+  unbalancedCurrencies: AccountingJournalTrialBalanceUnbalancedCurrency[];
   missingEffectiveDateColumn: true;
   missingSourceVersionColumn: true;
   warningCodes: AccountingJournalTrialBalanceWarningCode[];

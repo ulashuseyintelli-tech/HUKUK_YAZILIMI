@@ -1,33 +1,42 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import type {
   AccountingAccountCode,
   AccountingJournalDirection,
-  AccountingJournalEntryType,
   AccountingJournalSourceType,
 } from './accounting-journal.types';
 import type {
   AccountingJournalTrialBalanceCurrencyTotal,
   AccountingJournalTrialBalanceDiagnostics,
+  AccountingJournalTrialBalanceEvidenceStatus,
   AccountingJournalTrialBalanceFilters,
   AccountingJournalTrialBalanceReport,
   AccountingJournalTrialBalanceRow,
   AccountingJournalTrialBalanceSourceBreakdown,
+  AccountingJournalTrialBalanceUnbalancedCurrency,
   AccountingJournalTrialBalanceWarningCode,
 } from './accounting-journal-trial-balance.types';
 
-type TrialBalanceLineRow = {
-  accountCode: AccountingAccountCode;
+interface AggregateAmountGroup {
   direction: AccountingJournalDirection;
-  amount: Prisma.Decimal;
   currency: string;
-  journalEntry: {
-    tenantId: string;
-    sourceType: AccountingJournalSourceType;
-    sourceAction: string;
-    entryType: AccountingJournalEntryType;
-  };
+  _sum: { amount: Prisma.Decimal | null };
+  _count: { _all: number };
+}
+
+type AccountAggregateGroup = AggregateAmountGroup & {
+  accountCode: AccountingAccountCode;
+};
+
+type SourceAggregateGroup = AggregateAmountGroup & {
+  journalEntryId: string;
+};
+
+type SourceEntryRow = {
+  id: string;
+  sourceType: AccountingJournalSourceType;
+  sourceAction: string;
 };
 
 interface MutableTotal {
@@ -48,26 +57,42 @@ export class AccountingJournalTrialBalanceService {
   /// - Future AccountingJournalController.trialBalance() -> GET /accounting-journal/trial-balance (future, not wired in ACCT-2A-1).
   /// </remarks>
   async getTrialBalance(filters: AccountingJournalTrialBalanceFilters): Promise<AccountingJournalTrialBalanceReport> {
-    const rows = await this.prisma.accountingJournalLine.findMany({
-      where: this.buildWhere(filters),
-      select: {
-        accountCode: true,
-        direction: true,
-        amount: true,
-        currency: true,
-        journalEntry: {
-          select: {
-            tenantId: true,
-            sourceType: true,
-            sourceAction: true,
-            entryType: true,
-          },
-        },
-      },
-      orderBy: [{ accountCode: 'asc' }, { currency: 'asc' }, { lineNo: 'asc' }],
-    });
+    const normalizedFilters = normalizeFilters(filters);
+    const where = this.buildWhere(normalizedFilters);
 
-    return this.toReport(filters, rows as TrialBalanceLineRow[]);
+    const [accountGroups, sourceGroups] = await Promise.all([
+      this.prisma.accountingJournalLine.groupBy({
+        by: ['accountCode', 'currency', 'direction'],
+        where,
+        _sum: { amount: true },
+        _count: { _all: true },
+        orderBy: [{ accountCode: 'asc' }, { currency: 'asc' }, { direction: 'asc' }],
+      }),
+      this.prisma.accountingJournalLine.groupBy({
+        by: ['journalEntryId', 'currency', 'direction'],
+        where,
+        _sum: { amount: true },
+        _count: { _all: true },
+        orderBy: [{ journalEntryId: 'asc' }, { currency: 'asc' }, { direction: 'asc' }],
+      }),
+    ]);
+
+    const accountAggregateGroups = accountGroups as AccountAggregateGroup[];
+    const sourceAggregateGroups = sourceGroups as SourceAggregateGroup[];
+    const rows = rowsFromAccountGroups(accountAggregateGroups);
+    const totals = totalsFromAccountGroups(accountAggregateGroups);
+    const sourceBreakdown = await this.sourceBreakdownFromGroups(normalizedFilters.tenantId, sourceAggregateGroups);
+    const entryCount = uniqueEntryCount(sourceAggregateGroups);
+    const lineCount = lineCountFromGroups(accountAggregateGroups);
+
+    return {
+      tenantId: normalizedFilters.tenantId,
+      filters: normalizedFilters,
+      rows,
+      totals,
+      sourceBreakdown,
+      diagnostics: diagnostics(normalizedFilters, totals, lineCount, entryCount, new Date().toISOString()),
+    };
   }
 
   private buildWhere(filters: AccountingJournalTrialBalanceFilters): Prisma.AccountingJournalLineWhereInput {
@@ -91,36 +116,33 @@ export class AccountingJournalTrialBalanceService {
     };
   }
 
-  private toReport(
-    filters: AccountingJournalTrialBalanceFilters,
-    lines: TrialBalanceLineRow[],
-  ): AccountingJournalTrialBalanceReport {
-    const rowsByAccountCurrency = new Map<string, MutableTotal>();
-    const totalsByCurrency = new Map<string, MutableTotal>();
-    const sourceBreakdown = new Map<string, MutableTotal>();
+  private async sourceBreakdownFromGroups(
+    tenantId: string,
+    groups: SourceAggregateGroup[],
+  ): Promise<AccountingJournalTrialBalanceSourceBreakdown[]> {
+    const entryIds = uniqueEntryIds(groups);
+    if (entryIds.length === 0) return [];
 
-    for (const line of lines) {
-      addLine(rowsByAccountCurrency, `${line.accountCode}|${line.currency}`, line);
-      addLine(totalsByCurrency, line.currency, line);
-      addLine(
-        sourceBreakdown,
-        `${line.journalEntry.sourceType}|${line.journalEntry.sourceAction}|${line.currency}`,
-        line,
+    const entries = await this.prisma.accountingJournalEntry.findMany({
+      where: { tenantId, id: { in: entryIds } },
+      select: { id: true, sourceType: true, sourceAction: true },
+    });
+    const entryById = new Map((entries as SourceEntryRow[]).map((entry) => [entry.id, entry]));
+    const breakdown = new Map<string, MutableTotal>();
+
+    for (const group of groups) {
+      const entry = entryById.get(group.journalEntryId);
+      if (!entry) continue;
+      addAggregate(
+        breakdown,
+        `${entry.sourceType}|${entry.sourceAction}|${group.currency}`,
+        group.direction,
+        aggregateAmount(group),
+        aggregateLineCount(group),
       );
     }
 
-    const rows = [...rowsByAccountCurrency.entries()]
-      .map(([key, total]) => {
-        const [accountCode, currency] = key.split('|') as [AccountingAccountCode, string];
-        return rowFromTotal(accountCode, currency, total);
-      })
-      .sort((a, b) => a.accountCode.localeCompare(b.accountCode) || a.currency.localeCompare(b.currency));
-
-    const totals = [...totalsByCurrency.entries()]
-      .map(([currency, total]) => currencyTotalFromTotal(currency, total))
-      .sort((a, b) => a.currency.localeCompare(b.currency));
-
-    const breakdown = [...sourceBreakdown.entries()]
+    return [...breakdown.entries()]
       .map(([key, total]) => {
         const [sourceType, sourceAction, currency] = key.split('|') as [AccountingJournalSourceType, string, string];
         return sourceBreakdownFromTotal(sourceType, sourceAction, currency, total);
@@ -131,38 +153,78 @@ export class AccountingJournalTrialBalanceService {
           a.sourceAction.localeCompare(b.sourceAction) ||
           a.currency.localeCompare(b.currency),
       );
-
-    return {
-      tenantId: filters.tenantId,
-      filters,
-      rows,
-      totals,
-      sourceBreakdown: breakdown,
-      diagnostics: diagnostics(filters, totals, lines.length),
-    };
   }
+}
+
+function normalizeFilters(filters: AccountingJournalTrialBalanceFilters): AccountingJournalTrialBalanceFilters {
+  return {
+    ...filters,
+    ...(filters.postedFrom !== undefined ? { postedFrom: parseDateFilter('postedFrom', filters.postedFrom).toISOString() } : {}),
+    ...(filters.postedTo !== undefined ? { postedTo: parseDateFilter('postedTo', filters.postedTo).toISOString() } : {}),
+  };
 }
 
 function dateRange(
   postedFrom: AccountingJournalTrialBalanceFilters['postedFrom'],
   postedTo: AccountingJournalTrialBalanceFilters['postedTo'],
 ): Prisma.DateTimeFilter | null {
-  if (!postedFrom && !postedTo) return null;
+  if (postedFrom === undefined && postedTo === undefined) return null;
   return {
-    ...(postedFrom ? { gte: toDate(postedFrom) } : {}),
-    ...(postedTo ? { lte: toDate(postedTo) } : {}),
+    ...(postedFrom !== undefined ? { gte: parseDateFilter('postedFrom', postedFrom) } : {}),
+    ...(postedTo !== undefined ? { lte: parseDateFilter('postedTo', postedTo) } : {}),
   };
 }
 
-function toDate(value: string | Date): Date {
-  return value instanceof Date ? value : new Date(value);
+function parseDateFilter(field: 'postedFrom' | 'postedTo', value: string | Date): Date {
+  const date = value instanceof Date ? new Date(value.getTime()) : new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new BadRequestException(`${field} must be a valid ISO date or Date.`);
+  }
+  return date;
 }
 
-function addLine(map: Map<string, MutableTotal>, key: string, line: TrialBalanceLineRow): void {
+function rowsFromAccountGroups(groups: AccountAggregateGroup[]): AccountingJournalTrialBalanceRow[] {
+  const rowsByAccountCurrency = new Map<string, MutableTotal>();
+  for (const group of groups) {
+    addAggregate(
+      rowsByAccountCurrency,
+      `${group.accountCode}|${group.currency}`,
+      group.direction,
+      aggregateAmount(group),
+      aggregateLineCount(group),
+    );
+  }
+
+  return [...rowsByAccountCurrency.entries()]
+    .map(([key, total]) => {
+      const [accountCode, currency] = key.split('|') as [AccountingAccountCode, string];
+      return rowFromTotal(accountCode, currency, total);
+    })
+    .sort((a, b) => a.accountCode.localeCompare(b.accountCode) || a.currency.localeCompare(b.currency));
+}
+
+function totalsFromAccountGroups(groups: AccountAggregateGroup[]): AccountingJournalTrialBalanceCurrencyTotal[] {
+  const totalsByCurrency = new Map<string, MutableTotal>();
+  for (const group of groups) {
+    addAggregate(totalsByCurrency, group.currency, group.direction, aggregateAmount(group), aggregateLineCount(group));
+  }
+
+  return [...totalsByCurrency.entries()]
+    .map(([currency, total]) => currencyTotalFromTotal(currency, total))
+    .sort((a, b) => a.currency.localeCompare(b.currency));
+}
+
+function addAggregate(
+  map: Map<string, MutableTotal>,
+  key: string,
+  direction: AccountingJournalDirection,
+  amount: Prisma.Decimal,
+  lineCount: number,
+): void {
   const current = map.get(key) ?? { debit: ZERO, credit: ZERO, lineCount: 0 };
-  if (line.direction === 'DEBIT') current.debit = current.debit.plus(line.amount);
-  if (line.direction === 'CREDIT') current.credit = current.credit.plus(line.amount);
-  current.lineCount += 1;
+  if (direction === 'DEBIT') current.debit = current.debit.plus(amount);
+  if (direction === 'CREDIT') current.credit = current.credit.plus(amount);
+  current.lineCount += lineCount;
   map.set(key, current);
 }
 
@@ -214,22 +276,78 @@ function diagnostics(
   filters: AccountingJournalTrialBalanceFilters,
   totals: AccountingJournalTrialBalanceCurrencyTotal[],
   lineCount: number,
+  entryCount: number,
+  generatedAt: string,
 ): AccountingJournalTrialBalanceDiagnostics {
   const dimensionScoped = Boolean(filters.caseId || filters.clientId || filters.caseClientId || filters.accountCode);
   const balanced = totals.every((total) => total.balanced);
   const warningCodes: AccountingJournalTrialBalanceWarningCode[] = [];
   if (lineCount === 0) warningCodes.push('NO_JOURNAL_LINES');
   if (dimensionScoped && !balanced) warningCodes.push('DIMENSION_SCOPED_IMBALANCE');
+  if (!dimensionScoped && !balanced) warningCodes.push('TRIAL_BALANCE_IMBALANCE');
 
   return {
     balanced,
     dimensionScoped,
     partialEntryScope: dimensionScoped,
     dateBasis: 'postedAt',
+    generatedAt,
+    lineCount,
+    entryCount,
+    currencyCount: totals.length,
+    evidenceStatus: evidenceStatus(lineCount, balanced, dimensionScoped),
+    unbalancedCurrencies: unbalancedCurrencies(totals),
     missingEffectiveDateColumn: true,
     missingSourceVersionColumn: true,
     warningCodes,
   };
+}
+
+function evidenceStatus(
+  lineCount: number,
+  balanced: boolean,
+  dimensionScoped: boolean,
+): AccountingJournalTrialBalanceEvidenceStatus {
+  if (lineCount === 0) return 'NO_LINES';
+  if (balanced) return 'BALANCED';
+  return dimensionScoped ? 'DIMENSION_SCOPED' : 'IMBALANCED';
+}
+
+function unbalancedCurrencies(
+  totals: AccountingJournalTrialBalanceCurrencyTotal[],
+): AccountingJournalTrialBalanceUnbalancedCurrency[] {
+  return totals
+    .filter((total) => !total.balanced)
+    .map((total) => {
+      const debit = new Prisma.Decimal(total.debit);
+      const credit = new Prisma.Decimal(total.credit);
+      return {
+        currency: total.currency,
+        debit: total.debit,
+        credit: total.credit,
+        difference: money(debit.minus(credit)),
+      };
+    });
+}
+
+function lineCountFromGroups(groups: AggregateAmountGroup[]): number {
+  return groups.reduce((sum, group) => sum + aggregateLineCount(group), 0);
+}
+
+function uniqueEntryCount(groups: SourceAggregateGroup[]): number {
+  return uniqueEntryIds(groups).length;
+}
+
+function uniqueEntryIds(groups: SourceAggregateGroup[]): string[] {
+  return [...new Set(groups.map((group) => group.journalEntryId))].sort();
+}
+
+function aggregateLineCount(group: AggregateAmountGroup): number {
+  return group._count._all;
+}
+
+function aggregateAmount(group: AggregateAmountGroup): Prisma.Decimal {
+  return group._sum.amount ?? ZERO;
 }
 
 function money(value: Prisma.Decimal): string {
