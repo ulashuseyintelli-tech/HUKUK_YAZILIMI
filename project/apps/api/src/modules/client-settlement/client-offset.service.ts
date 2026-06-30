@@ -199,7 +199,7 @@ export class ClientOffsetService {
     const eligibleExpenseRequests: EligibleExpenseRequest[] = [];
     for (const e of ers) {
       if ((e.currency ?? 'TRY') !== currency) continue;
-      const unpaid = await this.computeExpenseRequestUnpaid(this.prisma, tenantId, e.id, e.totalAmount, e.paidTotal);
+      const unpaid = await this.readService.computeExpenseRemaining(this.prisma, tenantId, e.id, e.totalAmount, e.paidTotal);
       if (unpaid.gt(ZERO)) {
         eligibleExpenseRequests.push({
           expenseCaseId: e.caseId,
@@ -214,19 +214,6 @@ export class ClientOffsetService {
     }
 
     return { clientId, currency, canApply, eligiblePayableBuckets, eligibleExpenseRequests };
-  }
-
-  /** ExpenseRequest kalan ödenmemiş = totalAmount − paidTotal − Σ APPLY offset(expenseRequestId) + Σ REVERSAL. */
-  private async computeExpenseRequestUnpaid(
-    db: Prisma.TransactionClient,
-    tenantId: string,
-    expenseRequestId: string,
-    totalAmount: Prisma.Decimal,
-    paidTotal: Prisma.Decimal,
-  ): Promise<Prisma.Decimal> {
-    const apply = await db.clientOffset.aggregate({ _sum: { amount: true }, where: { tenantId, expenseRequestId, kind: 'APPLY' } });
-    const rev = await db.clientOffset.aggregate({ _sum: { amount: true }, where: { tenantId, expenseRequestId, kind: 'REVERSAL' } });
-    return totalAmount.minus(paidTotal).minus(apply._sum.amount ?? ZERO).plus(rev._sum.amount ?? ZERO);
   }
 
   /**
@@ -263,7 +250,7 @@ export class ClientOffsetService {
     er: { totalAmount: Prisma.Decimal; paidTotal: Prisma.Decimal },
   ): Promise<{ payableAvailable: Prisma.Decimal; expenseUnpaid: Prisma.Decimal; max: Prisma.Decimal }> {
     const payableAvailable = await this.readService.computeOutstanding(db, tenantId, dto.payableCaseId, dto.payableCaseClientId, dto.currency);
-    const expenseUnpaid = await this.computeExpenseRequestUnpaid(db, tenantId, dto.expenseRequestId, er.totalAmount, er.paidTotal);
+    const expenseUnpaid = await this.readService.computeExpenseRemaining(db, tenantId, dto.expenseRequestId, er.totalAmount, er.paidTotal);
     const max = payableAvailable.lt(expenseUnpaid) ? payableAvailable : expenseUnpaid;
     return { payableAvailable, expenseUnpaid, max };
   }

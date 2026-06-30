@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { ActionHandlerContext } from '../icrabot/v28-engine/action-handler.service';
 
@@ -218,6 +219,11 @@ export class CollectionReversalService {
             });
           }
 
+          // FAZ-1b: reimbursement application REVERSAL simetrisi — POSTED disposition reverse edilirken her APPLY
+          // için bir REVERSAL row (idempotent) → computeExpenseRemaining geri artar. Yalnız expense projection
+          // unwind; ExpenseRequest.paidTotal / payout / TM47 manual-reversal akışına DOKUNMAZ.
+          await this.createReimbursementReversals(tx, disp);
+
           return this.createExactPriorPayoutManualReversals(
             tx as ManualReversalTransaction,
             disp as PostedDispositionForReversal,
@@ -345,5 +351,49 @@ export class CollectionReversalService {
   /// </remarks>
   private exactManualReversalDedupeKey(tenantId: string, collectionId: string, allocationId: string): string {
     return `payment-reversed:exact:${tenantId}:${collectionId}:${allocationId}`;
+  }
+
+  /**
+   * FAZ-1b — POSTED disposition reverse: her APPLY reimbursement application için bir REVERSAL row.
+   * İdempotent (mevcut REVERSAL'lar pre-check + CDEApp_line_kind_key/CDEApp_reverses_key DB guard). Yalnız expense
+   * projection unwind → computeExpenseRemaining geri artar; ExpenseRequest.paidTotal / payout / BalanceLedger /
+   * ClientStatement / TM47 manual-reversal akışına DOKUNMAZ (Codex-adjacent sınır: payout reversal ayrı + manuel kalır).
+   */
+  private async createReimbursementReversals(
+    tx: Prisma.TransactionClient,
+    disp: { id: string; tenantId: string; caseId: string },
+  ): Promise<number> {
+    const applies = await tx.collectionDispositionExpenseApplication.findMany({
+      where: { tenantId: disp.tenantId, collectionDispositionId: disp.id, kind: 'APPLY' },
+      select: { id: true, expenseRequestId: true, collectionDispositionLineId: true, amount: true, currency: true, reimbursementScope: true },
+    });
+    if (applies.length === 0) return 0;
+    const existing = await tx.collectionDispositionExpenseApplication.findMany({
+      where: { tenantId: disp.tenantId, collectionDispositionId: disp.id, kind: 'REVERSAL' },
+      select: { reversesApplicationId: true },
+    });
+    const reversed = new Set(existing.map((r) => r.reversesApplicationId));
+    let count = 0;
+    for (const a of applies) {
+      if (reversed.has(a.id)) continue; // idempotent: bu APPLY zaten reverse edilmiş
+      await tx.collectionDispositionExpenseApplication.create({
+        data: {
+          tenantId: disp.tenantId,
+          caseId: disp.caseId,
+          expenseRequestId: a.expenseRequestId,
+          collectionDispositionId: disp.id,
+          collectionDispositionLineId: a.collectionDispositionLineId,
+          kind: 'REVERSAL',
+          amount: a.amount,
+          currency: a.currency,
+          reimbursementScope: a.reimbursementScope,
+          reversesApplicationId: a.id,
+          reason: 'PAYMENT_REVERSED — POSTED disposition reverse: reimbursement projection unwind (paidTotal/payout/TM47 dokunulmaz).',
+          createdById: null, // event-driven (PAYMENT_REVERSED); user actor yok
+        },
+      });
+      count++;
+    }
+    return count;
   }
 }

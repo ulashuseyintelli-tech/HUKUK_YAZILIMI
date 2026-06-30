@@ -241,6 +241,39 @@ export class ClientSettlementReadService {
   }
 
   /**
+   * S8-B FAZ-1b — ExpenseRequest kalan ödenmemiş (TEK KAYNAK · drift yok). ClientOffsetService'teki private
+   * computeExpenseRequestUnpaid'i REPLACE eder + reimbursement application terimlerini ekler. Tüketiciler:
+   * offset eligibility/availability, dağıtım öneri motoru, UYAP gate, summary, expense detail, distribution preview.
+   *
+   * remaining = totalAmount − paidTotal
+   *   − Σ ClientOffset(APPLY) + Σ ClientOffset(REVERSAL)
+   *   − Σ ExpenseApplication(APPLY) + Σ ExpenseApplication(REVERSAL)
+   *
+   * RAW döner (clamp YOK); negatif = over-application sinyali (caller display'de clamp eder, summary needsReview gibi).
+   * ⚠️ paidTotal ASLA mutate edilmez (projection-first); reimbursement kapanışı yalnız application satırlarından türer.
+   *
+   * @param db PrismaService (read) veya tx (post() advisory-lock altında re-validate).
+   */
+  async computeExpenseRemaining(
+    db: Prisma.TransactionClient,
+    tenantId: string,
+    expenseRequestId: string,
+    totalAmount: Prisma.Decimal,
+    paidTotal: Prisma.Decimal,
+  ): Promise<Prisma.Decimal> {
+    const offApply = await db.clientOffset.aggregate({ _sum: { amount: true }, where: { tenantId, expenseRequestId, kind: 'APPLY' } });
+    const offReversal = await db.clientOffset.aggregate({ _sum: { amount: true }, where: { tenantId, expenseRequestId, kind: 'REVERSAL' } });
+    const reimbApply = await db.collectionDispositionExpenseApplication.aggregate({ _sum: { amount: true }, where: { tenantId, expenseRequestId, kind: 'APPLY' } });
+    const reimbReversal = await db.collectionDispositionExpenseApplication.aggregate({ _sum: { amount: true }, where: { tenantId, expenseRequestId, kind: 'REVERSAL' } });
+    return totalAmount
+      .minus(paidTotal)
+      .minus(offApply._sum.amount ?? ZERO)
+      .plus(offReversal._sum.amount ?? ZERO)
+      .minus(reimbApply._sum.amount ?? ZERO)
+      .plus(reimbReversal._sum.amount ?? ZERO);
+  }
+
+  /**
    * GET outstanding — caseClientId doğrula + hesapla (read).
    * Çağrıldığı yerler:
    *  - DispositionController.outstanding() → GET /collection-dispositions/case/:caseId/outstanding
@@ -403,7 +436,7 @@ export class ClientSettlementReadService {
     // Masraf — clientId scope (ExpenseRequest hem clientId hem caseId taşır → breakdown gerçek caseId).
     const expRows = await this.prisma.expenseRequest.findMany({
       where: { tenantId, clientId, status: { not: 'CANCELLED' } },
-      select: { caseId: true, totalAmount: true, paidTotal: true },
+      select: { id: true, caseId: true, totalAmount: true, paidTotal: true },
     });
     let expRequested = ZERO;
     let expPaid = ZERO;
@@ -431,7 +464,12 @@ export class ClientSettlementReadService {
       offPayableByCase.set(o.payableCaseId, (offPayableByCase.get(o.payableCaseId) ?? ZERO).plus(signed));
       offExpenseByCase.set(o.expenseCaseId, (offExpenseByCase.get(o.expenseCaseId) ?? ZERO).plus(signed));
     }
-    const expUnpaid = expRequested.minus(expPaid).minus(offsetNet);
+    // S8-B FAZ-1b — expenseUnpaid TEK KAYNAK = Σ per-request computeExpenseRemaining (offset + reimbursement
+    // application terimleri dahil). offsetNet/byCase YALNIZ offsetApplied breakdown display için korunur (client-level toplam DEĞİL).
+    let expUnpaid = ZERO;
+    for (const e of expRows) {
+      expUnpaid = expUnpaid.plus(await this.computeExpenseRemaining(this.prisma, tenantId, e.id, e.totalAmount, e.paidTotal));
+    }
 
     // caseBreakdown — distinct caseId (ccRows sırası korunur)
     const caseMeta = new Map<string, { caseNumber: string; executionFileNumber: string | null; role: string }>();

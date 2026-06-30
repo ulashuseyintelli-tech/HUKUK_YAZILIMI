@@ -6,6 +6,7 @@ export interface PostDispositionLineInput {
   amount: string | number; // pozitif; Decimal(15,2)
   caseClientId?: string; // CLUSTER + client-attributed satırda zorunlu
   note?: string;
+  expenseRequestId?: string; // FAZ-1b: REIMBURSEMENT tiplerinde ZORUNLU (kapatılan ExpenseRequest; 1:1 binding)
 }
 
 export interface PostDispositionDto {

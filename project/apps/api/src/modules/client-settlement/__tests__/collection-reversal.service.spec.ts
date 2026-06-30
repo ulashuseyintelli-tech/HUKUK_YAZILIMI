@@ -62,6 +62,8 @@ function buildPrisma(disp: any | null, allocations: any[] = []) {
     clientStatementLine: { create: jest.fn(), createMany: jest.fn() },
     balanceLedger: { create: jest.fn() },
     clientPayout: { create: jest.fn() },
+    // FAZ-1b: reimbursement application REVERSAL — POSTED branch findMany(×2)/create çağırır (default: APPLY yok → no-op).
+    collectionDispositionExpenseApplication: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn().mockResolvedValue({ id: 'rev-app-1' }) },
   };
   prisma.$transaction = jest.fn(async (callback: (tx: any) => Promise<unknown>) => callback(prisma));
   return prisma;
@@ -315,6 +317,29 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
     expect(prisma.collectionDisposition.update).not.toHaveBeenCalled();
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expectNoForbiddenFinancialMutation(prisma);
+  });
+
+  it('FAZ-1b: POSTED reverse → her APPLY için REVERSAL application (simetri); finansal yan-etki YOK', async () => {
+    const prisma = buildPrisma(disposition()); // POSTED
+    prisma.collectionDispositionExpenseApplication.findMany = jest
+      .fn()
+      .mockResolvedValueOnce([{ id: 'app1', expenseRequestId: 'er1', collectionDispositionLineId: 'line1', amount: AMOUNT, currency: 'TRY', reimbursementScope: 'CLIENT_FRONTED' }]) // APPLY
+      .mockResolvedValueOnce([]); // mevcut REVERSAL yok
+    await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
+    expect(prisma.collectionDispositionExpenseApplication.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ kind: 'REVERSAL', reversesApplicationId: 'app1', expenseRequestId: 'er1' }) }),
+    );
+    expectNoForbiddenFinancialMutation(prisma); // projection unwind ≠ payout/ledger/statement
+  });
+
+  it('FAZ-1b: POSTED reverse idempotent — APPLY zaten REVERSAL\'lı ise yeni REVERSAL yazılmaz', async () => {
+    const prisma = buildPrisma(disposition());
+    prisma.collectionDispositionExpenseApplication.findMany = jest
+      .fn()
+      .mockResolvedValueOnce([{ id: 'app1', expenseRequestId: 'er1', collectionDispositionLineId: 'line1', amount: AMOUNT, currency: 'TRY', reimbursementScope: 'CLIENT_FRONTED' }]) // APPLY
+      .mockResolvedValueOnce([{ reversesApplicationId: 'app1' }]); // zaten reverse edilmiş → skip
+    await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
+    expect(prisma.collectionDispositionExpenseApplication.create).not.toHaveBeenCalled();
   });
 
   it('wrong caseId → fail-closed throw, mutasyon YOK', async () => {

@@ -1,5 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
+import { ClientSettlementReadService } from '@/modules/client-settlement/client-settlement-read.service';
+
+/**
+ * S8-B FAZ-1b — UYAP gate remaining-bazlı karar feature flag (default OFF). ON olunca BLOCKING masraf yalnız
+ * computeExpenseRemaining>0 ise bloklar (offset/reimbursement ile kapanmış masraf UYAP'ı AÇAR). OFF=legacy status-bazlı
+ * (davranış değişmez). Rollout: dual-eval + discrepancy log → flag flip sonrası authoritative.
+ */
+function isExpenseRemainingGateEnabled(): boolean {
+  return process.env.EXPENSE_REMAINING_GATE_ENABLED?.toLowerCase() === 'true';
+}
 
 export interface GateCheckResult {
   isBlocked: boolean;
@@ -38,7 +48,10 @@ export class ExpenseGateService {
   private cpeAdapter?: CpeAdapter;
   private useCpe = false; // Feature flag
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private readonly readService: ClientSettlementReadService,
+  ) {}
 
   /**
    * CPE Adapter'ı set et (opsiyonel)
@@ -54,7 +67,8 @@ export class ExpenseGateService {
    * Gate kontrolü - BLOCKING expense'ler ödenmemiş mi?
    */
   async checkGate(caseId: string): Promise<GateCheckResult> {
-    const blockingExpenses = await this.prisma.expenseRequest.findMany({
+    // Coarse pre-filter (BLOCKING + açık statü). Nihai blok kararı FAZ-1b flag'e göre: legacy (statü-bazlı) vs remaining-bazlı.
+    const candidates = await this.prisma.expenseRequest.findMany({
       where: {
         caseId,
         gateType: 'BLOCKING',
@@ -62,6 +76,7 @@ export class ExpenseGateService {
       },
       select: {
         id: true,
+        tenantId: true,
         stageCode: true,
         totalAmount: true,
         paidTotal: true,
@@ -69,28 +84,41 @@ export class ExpenseGateService {
       },
     });
 
-    const result: GateCheckResult = {
-      isBlocked: blockingExpenses.length > 0,
-      blockingExpenses: blockingExpenses.map(exp => ({
+    const flagOn = isExpenseRemainingGateEnabled();
+    const blockingExpenses: GateCheckResult['blockingExpenses'] = [];
+    for (const exp of candidates) {
+      // FAZ-1b dual-eval: legacy (totalAmount−paidTotal) vs true remaining (computeExpenseRemaining = +offset/reimbursement).
+      const legacyRemaining = exp.totalAmount.minus(exp.paidTotal);
+      const trueRemaining = await this.readService.computeExpenseRemaining(this.prisma, exp.tenantId, exp.id, exp.totalAmount, exp.paidTotal);
+      if (!legacyRemaining.equals(trueRemaining)) {
+        // Discrepancy: offset/reimbursement legacy'nin görmediği kapanışı gösterir (rollout gözlemi; act-on-legacy until flag).
+        this.logger.warn(
+          `[expense-gate] remaining discrepancy exp=${exp.id} legacy=${legacyRemaining.toString()} ` +
+            `true=${trueRemaining.toString()} flagOn=${flagOn}`,
+        );
+      }
+      // Karar: flagOn → yalnız trueRemaining>0 bloklar (kapanmış masraf UYAP'ı açar); flagOff → legacy (her aday bloklar).
+      const blocks = flagOn ? trueRemaining.gt(0) : true;
+      if (!blocks) continue;
+      const shownRemaining = flagOn ? trueRemaining : legacyRemaining;
+      blockingExpenses.push({
         id: exp.id,
         stageCode: exp.stageCode,
         totalAmount: exp.totalAmount.toNumber(),
         paidTotal: exp.paidTotal.toNumber(),
-        remaining: exp.totalAmount.toNumber() - exp.paidTotal.toNumber(),
+        remaining: shownRemaining.toNumber(),
         status: exp.status,
-      })),
-      totalPending: 0,
+      });
+    }
+
+    const result: GateCheckResult = {
+      isBlocked: blockingExpenses.length > 0,
+      blockingExpenses,
+      totalPending: blockingExpenses.reduce((sum, exp) => sum + exp.remaining, 0),
     };
-
-    result.totalPending = result.blockingExpenses.reduce(
-      (sum, exp) => sum + exp.remaining,
-      0
-    );
-
     if (result.isBlocked) {
       result.message = `${result.blockingExpenses.length} adet ödenmemiş masraf talebi var. Toplam: ${result.totalPending.toFixed(2)} TL`;
     }
-
     return result;
   }
 

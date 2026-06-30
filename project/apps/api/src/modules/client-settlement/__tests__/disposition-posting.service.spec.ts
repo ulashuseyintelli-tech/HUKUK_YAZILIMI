@@ -30,7 +30,7 @@ function buildApproval(opts: { eligible?: boolean; requestId?: string } = {}) {
   } as any;
 }
 
-function buildPrisma(opts: { disp?: any; col?: any; validCaseClients?: any[]; lines?: any[]; approval?: any } = {}) {
+function buildPrisma(opts: { disp?: any; col?: any; validCaseClients?: any[]; lines?: any[]; approval?: any; expenseRequest?: any } = {}) {
   const tx = {
     collectionDispositionLine: {
       deleteMany: jest.fn().mockResolvedValue({}),
@@ -39,6 +39,9 @@ function buildPrisma(opts: { disp?: any; col?: any; validCaseClients?: any[]; li
     collectionDisposition: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     caseBalance: { findFirst: jest.fn().mockResolvedValue({ id: 'cb-1' }), create: jest.fn().mockResolvedValue({ id: 'cb-new' }) },
     balanceLedger: { create: jest.fn().mockResolvedValue({}) },
+    // FAZ-1b reimbursement application + tx-içi expenseRequest doğrulaması
+    expenseRequest: { findFirst: jest.fn().mockResolvedValue(opts.expenseRequest ?? { totalAmount: D(50), paidTotal: D(0), currency: 'TRY', status: 'SENT', expenseApprovalStatus: 'APPROVED' }) },
+    collectionDispositionExpenseApplication: { create: jest.fn().mockResolvedValue({ id: 'app-1' }) },
   };
   const prisma: any = {
     collectionDisposition: {
@@ -53,7 +56,10 @@ function buildPrisma(opts: { disp?: any; col?: any; validCaseClients?: any[]; li
   };
   return { prisma, tx };
 }
-const svc = (p: any, a?: any) => new DispositionPostingService(p, a ?? buildApproval());
+function buildReadService(remaining?: any) {
+  return { computeExpenseRemaining: jest.fn().mockResolvedValue(remaining ?? D(1000000)) } as any;
+}
+const svc = (p: any, a?: any, r?: any) => new DispositionPostingService(p, a ?? buildApproval(), r ?? buildReadService());
 
 // ───────────────────────── recommend ─────────────────────────
 describe('DispositionPostingService.recommend', () => {
@@ -88,8 +94,8 @@ describe('DispositionPostingService.recommend', () => {
     const { prisma, tx } = buildPrisma();
     const res = await svc(prisma).recommend('t1', 'd1', {
       lines: [
-        { type: 'CLIENT_PAYABLE', amount: '10' }, { type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: '15' },
-        { type: 'CONTRACTUAL_FEE_WITHHELD', amount: '20' }, { type: 'FIRM_EXPENSE_REIMBURSEMENT', amount: '5' },
+        { type: 'CLIENT_PAYABLE', amount: '10' }, { type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: '15', expenseRequestId: 'er-c' },
+        { type: 'CONTRACTUAL_FEE_WITHHELD', amount: '20' }, { type: 'FIRM_EXPENSE_REIMBURSEMENT', amount: '5', expenseRequestId: 'er-f' },
         { type: 'OFFSET_CLIENT_ADVANCE', amount: '50' },
       ],
     }, { userId: 'u1' });
@@ -144,7 +150,7 @@ describe('DispositionPostingService.recommend', () => {
   it('CLUSTER explicit caseClientId ile kabul', async () => {
     const { prisma, tx } = buildPrisma({ disp: { ...DISP_HELD, beneficiaryScope: 'CASE_CREDITOR_CLUSTER', caseClientId: null }, validCaseClients: [{ id: 'cc-A' }, { id: 'cc-B' }] });
     const res = await svc(prisma).recommend('t1', 'd1', {
-      lines: [{ type: 'CLIENT_PAYABLE', amount: '70', caseClientId: 'cc-A' }, { type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: '30', caseClientId: 'cc-B' }],
+      lines: [{ type: 'CLIENT_PAYABLE', amount: '70', caseClientId: 'cc-A' }, { type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: '30', caseClientId: 'cc-B', expenseRequestId: 'er-b' }],
     }, { userId: 'u1' });
     expect(res.lineCount).toBe(2);
     expect(tx.collectionDispositionLine.create.mock.calls.map(([a]: any[]) => a.data.caseClientId)).toEqual(['cc-A', 'cc-B']);
@@ -256,5 +262,55 @@ describe('DispositionPostingService.post', () => {
   it('collection CONFIRMED değilse (approve→post arası iptal) → reject', async () => {
     const { prisma } = buildPrisma({ disp: DISP_APPROVED, col: { status: 'CANCELLED' }, lines: [{ id: 'l1', type: 'CLIENT_PAYABLE', amount: D(100) }] });
     await expect(svc(prisma).post('t1', 'd1', { userId: 'u3' })).rejects.toThrow(/posting yasak/);
+  });
+});
+
+// ───────────────────────── FAZ-1b reimbursement application ─────────────────────────
+describe('DispositionPostingService FAZ-1b reimbursement', () => {
+  it('recommend: REIMBURSEMENT satırı expenseRequestId taşımıyorsa → reject', async () => {
+    const { prisma } = buildPrisma();
+    await expect(
+      svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: '100' }] }, { userId: 'u1' }),
+    ).rejects.toThrow(/expenseRequestId zorunlu/);
+  });
+
+  it('recommend: REIMBURSEMENT satırı expenseRequestId line\'a yazılır', async () => {
+    const { prisma, tx } = buildPrisma();
+    await svc(prisma).recommend('t1', 'd1', { lines: [{ type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: '100', expenseRequestId: 'er1' }] }, { userId: 'u1' });
+    expect(tx.collectionDispositionLine.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ type: 'CLIENT_EXPENSE_REIMBURSEMENT', expenseRequestId: 'er1' }) }),
+    );
+  });
+
+  it('post: REIMBURSEMENT → APPLY application yazılır (CLIENT_FRONTED; paidTotal mutate YOK)', async () => {
+    const { prisma, tx } = buildPrisma({ disp: DISP_APPROVED, lines: [{ id: 'l1', type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: D(100), expenseRequestId: 'er1' }] });
+    await svc(prisma).post('t1', 'd1', { userId: 'u3' });
+    expect(tx.collectionDispositionExpenseApplication.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ expenseRequestId: 'er1', kind: 'APPLY', amount: D(100), reimbursementScope: 'CLIENT_FRONTED', collectionDispositionLineId: 'l1' }) }),
+    );
+    expect(tx.expenseRequest.update).toBeUndefined(); // projection-first: paidTotal mutate YOK (update yok)
+  });
+
+  it('post: FIRM_EXPENSE_REIMBURSEMENT → reimbursementScope FIRM_FRONTED', async () => {
+    const { prisma, tx } = buildPrisma({ disp: DISP_APPROVED, lines: [{ id: 'l1', type: 'FIRM_EXPENSE_REIMBURSEMENT', amount: D(100), expenseRequestId: 'er1' }] });
+    await svc(prisma).post('t1', 'd1', { userId: 'u3' });
+    expect(tx.collectionDispositionExpenseApplication.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ reimbursementScope: 'FIRM_FRONTED' }) }),
+    );
+  });
+
+  it('post: hedef masraf APPROVED değilse → reject (application yazılmaz)', async () => {
+    const { prisma, tx } = buildPrisma({
+      disp: DISP_APPROVED,
+      lines: [{ id: 'l1', type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: D(100), expenseRequestId: 'er1' }],
+      expenseRequest: { totalAmount: D(50), paidTotal: D(0), currency: 'TRY', status: 'SENT', expenseApprovalStatus: 'PENDING_APPROVAL' },
+    });
+    await expect(svc(prisma).post('t1', 'd1', { userId: 'u3' })).rejects.toThrow(/APPROVED/);
+    expect(tx.collectionDispositionExpenseApplication.create).not.toHaveBeenCalled();
+  });
+
+  it('post: reimbursement tutarı masraf kalanını aşarsa → reject', async () => {
+    const { prisma } = buildPrisma({ disp: DISP_APPROVED, lines: [{ id: 'l1', type: 'CLIENT_EXPENSE_REIMBURSEMENT', amount: D(100), expenseRequestId: 'er1' }] });
+    await expect(svc(prisma, undefined, buildReadService(D(40))).post('t1', 'd1', { userId: 'u3' })).rejects.toThrow(/aşamaz|kalanını/);
   });
 });
