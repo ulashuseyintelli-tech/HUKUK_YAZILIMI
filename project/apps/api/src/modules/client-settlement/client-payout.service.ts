@@ -1,6 +1,13 @@
 import { Injectable, Logger, BadRequestException, ConflictException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  AccountingJournalWriterService,
+  buildAccountingJournal,
+  validateJournalDraft,
+  type ClientPayoutJournalSource,
+  type ValidatedJournalEntryDraft,
+} from '../accounting-journal';
 import { CreateClientPayoutDto } from './dto/create-client-payout.dto';
 import { ClientSettlementReadService } from './client-settlement-read.service';
 
@@ -86,6 +93,7 @@ export class ClientPayoutService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly readService: ClientSettlementReadService,
+    private readonly journalWriter: AccountingJournalWriterService = new AccountingJournalWriterService(prisma),
   ) {}
 
   /**
@@ -149,7 +157,7 @@ export class ClientPayoutService {
             paidById: userId,
             note: dto.note ?? null,
           },
-          select: { id: true },
+          select: { id: true, paidAt: true },
         });
         const allocationResult = await (tx as PayoutAllocationTransaction).clientPayoutAllocation.createMany({
           data: allocationPlan.map((allocation) => ({
@@ -171,6 +179,22 @@ export class ClientPayoutService {
             message: 'Payout allocation source-link yazımı beklenen satır sayısıyla eşleşmedi',
           });
         }
+
+        const journalDraft = this.buildClientPayoutJournalDraft(
+          tenantId,
+          dto.caseId,
+          dto.caseClientId,
+          currency,
+          amount,
+          payout.id,
+          payout.paidAt,
+          userId,
+        );
+        const journalWrite = await this.journalWriter.write({ draft: journalDraft }, tx);
+        if (!journalWrite.ok) {
+          throw new ConflictException('Accounting journal write failed: ' + journalWrite.errors.map((error) => error.code).join(', '));
+        }
+
         this.logger.log(`ClientPayout RECORDED: ${payout.id} (caseClient=${dto.caseClientId}, amount=${amount.toString()})`);
         return { created: true, payoutId: payout.id };
       });
@@ -187,6 +211,54 @@ export class ClientPayoutService {
     }
   }
 
+  /// <remarks>
+  /// Cagrildigi yerler:
+  /// - ClientPayoutService.create() -> POST /client-payouts (RECORDED payout live AccountingJournal draft uretimi)
+  /// </remarks>
+  private buildClientPayoutJournalDraft(
+    tenantId: string,
+    caseId: string,
+    caseClientId: string,
+    currency: string,
+    amount: Prisma.Decimal,
+    payoutId: string,
+    paidAt: Date,
+    actorUserId: string,
+  ): ValidatedJournalEntryDraft {
+    const paidAtIso = paidAt.toISOString();
+    const source: ClientPayoutJournalSource = {
+      tenantId,
+      sourceType: 'CLIENT_PAYOUT',
+      sourceId: payoutId,
+      sourceVersion: `${paidAtIso}:${payoutId}`,
+      sourceAction: 'recorded',
+      occurredAt: paidAtIso,
+      effectiveDate: paidAtIso.slice(0, 10),
+      actorId: actorUserId,
+      currency,
+      sourceHash: null,
+      metadata: { status: 'RECORDED' },
+      payload: {
+        amount: amount.toString(),
+        caseId,
+        caseClientId,
+        clientId: null,
+        payoutId,
+      },
+    };
+
+    const built = buildAccountingJournal(source);
+    if (!built.ok) {
+      throw new ConflictException(`Accounting journal mapping failed: ${built.errors.map((error) => error.code).join(', ')}`);
+    }
+
+    const validated = validateJournalDraft(built.draft);
+    if (!validated.ok) {
+      throw new ConflictException(`Accounting journal validation failed: ${validated.errors.map((error) => error.code).join(', ')}`);
+    }
+
+    return validated.draft;
+  }
   /// <remarks>
   /// Çağrıldığı yerler:
   /// - ClientPayoutService.create() → POST /client-payouts allocation source-link planı

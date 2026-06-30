@@ -28,6 +28,7 @@ export class AccountingJournalWriterService {
   /// <remarks>
   /// Cagrildigi yerler:
   /// - DispositionPostingService.post() -> POST /collection-dispositions/:id/post (CollectionDispositionLine live journal write)
+  /// - ClientPayoutService.create() -> POST /client-payouts (ClientPayout RECORDED live journal write)
   /// </remarks>
   async write(input: JournalWriterInput, db: AccountingJournalWriteClient = this.prisma): Promise<JournalWriterResult> {
     return this.writeValidatedDraft(input.draft, db);

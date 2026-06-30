@@ -1,4 +1,5 @@
 import type {
+  ClientPayoutJournalSource,
   ClientOffsetJournalSource,
   CollectionDispositionLineJournalSource,
   JournalBuildError,
@@ -40,6 +41,7 @@ export function buildAccountingJournal(source: JournalSource): JournalBuildResul
     case 'COLLECTION_DISPOSITION_LINE':
       return buildCollectionDispositionLineJournal(source);
     case 'CLIENT_PAYOUT':
+      return buildClientPayoutJournal(source);
     case 'BALANCE_LEDGER':
     case 'ACCOUNTING_JOURNAL_ENTRY':
       return buildError('UNMAPPED_SOURCE', `Journal builder skeleton does not yet map ${source.sourceType}.`, 'sourceType', {
@@ -128,6 +130,78 @@ function collectionDispositionLine(
     collectionId: source.payload.collectionId,
     dispositionLineId: source.payload.dispositionLineId,
     payoutId: null,
+    offsetId: null,
+    expenseRequestId: null,
+    balanceLedgerId: null,
+  };
+}
+
+function buildClientPayoutJournal(source: ClientPayoutJournalSource): JournalBuildResult {
+  if (source.sourceAction !== 'recorded') {
+    return buildError('UNSUPPORTED_SOURCE_ACTION', 'ClientPayout sourceAction must be recorded.', 'sourceAction', {
+      sourceAction: source.sourceAction,
+    });
+  }
+
+  const idempotencyMaterial = journalIdempotencyMaterialFromSource(source);
+  const idempotencyKey = buildJournalIdempotencyKey(idempotencyMaterial);
+  if (!source.tenantId || !source.sourceId || !source.sourceAction || !source.sourceVersion) {
+    return buildError('INVALID_IDEMPOTENCY_MATERIAL', 'Journal source is missing idempotency material.', null, {
+      idempotencyKey,
+    });
+  }
+
+  const metadata: JournalMetadata = {
+    ...source.metadata,
+    description: 'Client payout recorded',
+  };
+
+  const draft: JournalEntryDraft = {
+    tenantId: source.tenantId,
+    caseId: source.payload.caseId,
+    currency: source.currency,
+    entryType: 'CLIENT_PAYOUT_RECORDED',
+    sourceType: source.sourceType,
+    sourceId: source.sourceId,
+    sourceAction: source.sourceAction,
+    sourceVersion: source.sourceVersion,
+    idempotencyKey,
+    idempotencyMaterial,
+    sourceHash: source.sourceHash,
+    sourceOccurredAt: source.occurredAt,
+    effectiveDate: source.effectiveDate,
+    postedById: source.actorId,
+    description: null,
+    metadata,
+    reversalOf: null,
+    lines: [
+      clientPayoutLine(source, 1, 'CLIENT_PAYABLE', 'DEBIT'),
+      clientPayoutLine(source, 2, 'CASH_CLEARING', 'CREDIT'),
+    ],
+  };
+
+  return { ok: true, draft };
+}
+
+function clientPayoutLine(
+  source: ClientPayoutJournalSource,
+  lineNo: number,
+  accountCode: JournalLineDraft['accountCode'],
+  direction: JournalLineDraft['direction'],
+): JournalLineDraft {
+  return {
+    lineNo,
+    tenantId: source.tenantId,
+    accountCode,
+    direction,
+    amount: source.payload.amount,
+    currency: source.currency,
+    caseId: source.payload.caseId,
+    clientId: source.payload.clientId,
+    caseClientId: source.payload.caseClientId,
+    collectionId: null,
+    dispositionLineId: null,
+    payoutId: source.payload.payoutId,
     offsetId: null,
     expenseRequestId: null,
     balanceLedgerId: null,

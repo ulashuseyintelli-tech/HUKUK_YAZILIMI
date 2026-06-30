@@ -1,5 +1,5 @@
 import { buildAccountingJournal } from '../accounting-journal.builder';
-import type { CollectionDispositionLineJournalSource, CollectionDispositionLinePostedPayload } from '../accounting-journal.types';
+import type { ClientPayoutJournalSource, CollectionDispositionLineJournalSource, CollectionDispositionLinePostedPayload } from '../accounting-journal.types';
 import { validateJournalDraft } from '../accounting-journal.validators';
 import { AccountingJournalWriterService } from '../accounting-journal.writer';
 
@@ -139,5 +139,63 @@ describe('AccountingJournalWriterService', () => {
 
     expect(result).toEqual({ ok: false, errors: [expect.objectContaining({ code: 'IDEMPOTENCY_CONFLICT' })] });
     expect(db.accountingJournalEntry.create).not.toHaveBeenCalled();
+  });
+});
+function payoutSource(): ClientPayoutJournalSource {
+  return {
+    tenantId: 'tenant-1',
+    sourceType: 'CLIENT_PAYOUT',
+    sourceId: 'payout-1',
+    sourceVersion: '2026-06-30T08:00:00.000Z:payout-1',
+    sourceAction: 'recorded',
+    occurredAt: '2026-06-30T08:00:00.000Z',
+    effectiveDate: '2026-06-30',
+    actorId: 'user-1',
+    currency: 'TRY',
+    sourceHash: null,
+    metadata: { test: true },
+    payload: {
+      amount: '400.00',
+      caseId: 'case-1',
+      caseClientId: 'cc-1',
+      clientId: null,
+      payoutId: 'payout-1',
+    },
+  };
+}
+
+function payoutDraft() {
+  const built = buildAccountingJournal(payoutSource());
+  expect(built.ok).toBe(true);
+  if (!built.ok) throw new Error('build failed');
+  const validated = validateJournalDraft(built.draft);
+  expect(validated.ok).toBe(true);
+  if (!validated.ok) throw new Error('validation failed');
+  return validated.draft;
+}
+
+describe('AccountingJournalWriterService ClientPayout source shape', () => {
+  it('creates payout journal lines with payoutId dimensions', async () => {
+    const db = dbMock();
+    db.accountingJournalEntry.findFirst.mockResolvedValue(null);
+    db.accountingJournalEntry.create.mockResolvedValue({ id: 'journal-payout', _count: { lines: 2 } });
+    const writer = new AccountingJournalWriterService({} as any);
+
+    const result = await writer.write({ draft: payoutDraft() }, db);
+
+    expect(result).toEqual({
+      ok: true,
+      output: expect.objectContaining({ status: 'CREATED', journalEntryId: 'journal-payout', lineCount: 2 }),
+    });
+    expect(db.accountingJournalEntry.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          sourceType: 'CLIENT_PAYOUT',
+          sourceId: 'payout-1',
+          sourceAction: 'recorded',
+          lines: { create: expect.arrayContaining([expect.objectContaining({ payoutId: 'payout-1' })]) },
+        }),
+      }),
+    );
   });
 });

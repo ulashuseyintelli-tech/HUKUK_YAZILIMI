@@ -112,6 +112,8 @@ export function validateJournalBusiness(draft: JournalEntryDraft): JournalValida
       return validateClientOffsetBusiness(draft);
     case 'COLLECTION_DISPOSITION_LINE':
       return validateCollectionDispositionLineBusiness(draft);
+    case 'CLIENT_PAYOUT':
+      return validateClientPayoutBusiness(draft);
     default:
       return { ok: true, draft };
   }
@@ -226,6 +228,81 @@ function validateCollectionDispositionLineDimensions(
 
   if (rule.requiresCaseClient && !line.caseClientId) {
     errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'Client-attributed disposition journal lines require caseClientId.', `lines[${line.lineNo}].caseClientId`));
+  }
+}
+
+function validateClientPayoutBusiness(draft: JournalEntryDraft): JournalValidationResult {
+  const errors: JournalValidationError[] = [];
+
+  if (draft.sourceAction !== 'recorded') {
+    errors.push(validationError('INVALID_SOURCE_ACTION', 'ClientPayout sourceAction must be recorded.', 'sourceAction', {
+      sourceAction: draft.sourceAction,
+    }));
+  }
+
+  if (draft.entryType !== 'CLIENT_PAYOUT_RECORDED') {
+    errors.push(validationError('INVALID_SOURCE_ACTION', 'ClientPayout entryType must be CLIENT_PAYOUT_RECORDED.', 'entryType', {
+      entryType: draft.entryType,
+    }));
+  }
+
+  if (draft.lines.length !== 2) {
+    errors.push(validationError('INVALID_LINE_SHAPE', 'ClientPayout journal must contain exactly payable and cash legs.', 'lines', {
+      lineCount: draft.lines.length,
+    }));
+  }
+
+  const payableLine = findSingleLine(errors, draft.lines, 'CLIENT_PAYABLE', 'ClientPayout payable leg');
+  const cashLine = findSingleLine(errors, draft.lines, 'CASH_CLEARING', 'ClientPayout cash leg');
+
+  if (payableLine) validateClientPayoutLine(errors, draft, payableLine, 'DEBIT');
+  if (cashLine) validateClientPayoutLine(errors, draft, cashLine, 'CREDIT');
+
+  return errors.length === 0 ? { ok: true, draft } : { ok: false, errors };
+}
+
+function validateClientPayoutLine(
+  errors: JournalValidationError[],
+  draft: JournalEntryDraft,
+  line: JournalLineDraft,
+  expectedDirection: 'DEBIT' | 'CREDIT',
+) {
+  if (line.direction !== expectedDirection) {
+    errors.push(validationError('INVALID_ACCOUNT_DIRECTION', 'ClientPayout journal leg has invalid direction.', `lines[${line.lineNo}].direction`, {
+      expectedDirection,
+      direction: line.direction,
+    }));
+  }
+
+  if (!line.caseId) {
+    errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'ClientPayout journal line requires caseId.', `lines[${line.lineNo}].caseId`));
+  }
+
+  if (draft.caseId && line.caseId && line.caseId !== draft.caseId) {
+    errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'ClientPayout journal line caseId must match entry caseId.', `lines[${line.lineNo}].caseId`, {
+      entryCaseId: draft.caseId,
+      lineCaseId: line.caseId,
+    }));
+  }
+
+  if (!line.caseClientId) {
+    errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'ClientPayout journal line requires caseClientId.', `lines[${line.lineNo}].caseClientId`));
+  }
+
+  if (line.payoutId !== draft.sourceId) {
+    errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'ClientPayout journal line must carry payoutId from sourceId.', `lines[${line.lineNo}].payoutId`, {
+      expectedPayoutId: draft.sourceId,
+      payoutId: line.payoutId,
+    }));
+  }
+
+  if (line.collectionId || line.dispositionLineId || line.offsetId || line.balanceLedgerId) {
+    errors.push(validationError('FORBIDDEN_SYNTHETIC_DIMENSION', 'ClientPayout journal line must not carry unrelated source dimensions.', `lines[${line.lineNo}]`, {
+      collectionId: line.collectionId,
+      dispositionLineId: line.dispositionLineId,
+      offsetId: line.offsetId,
+      balanceLedgerId: line.balanceLedgerId,
+    }));
   }
 }
 
