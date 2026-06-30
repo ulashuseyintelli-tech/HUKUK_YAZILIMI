@@ -99,6 +99,17 @@ const svc = (db: any, a: any = audit(), writer: any = journalWriter()) => ({
   journalWriter: writer,
 });
 
+function firstJournalDraft(writer: any) {
+  expect(writer.write).toHaveBeenCalledTimes(1);
+  return writer.write.mock.calls[0][0].draft;
+}
+
+function journalLine(draft: any, accountCode: string) {
+  const line = draft.lines.find((candidate: any) => candidate.accountCode === accountCode);
+  expect(line).toBeDefined();
+  return line;
+}
+
 const CREATE = (over: any = {}) => ({
   clientId: 'cl-1',
   currency: 'TRY',
@@ -153,10 +164,68 @@ describe('ClientOffsetService.createOffset', () => {
       }),
       db,
     );
+    const draft = firstJournalDraft(j);
+    expect(j.write.mock.calls[0][1]).toBe(db);
+    expect(draft).toEqual(
+      expect.objectContaining({
+        tenantId: 't1',
+        caseId: 'case-P',
+        currency: 'TRY',
+        entryType: 'CLIENT_OFFSET_APPLIED',
+        sourceType: 'CLIENT_OFFSET',
+        sourceId: 'off-new',
+        sourceAction: 'apply',
+        sourceVersion: '2026-06-21T10:00:00.000Z:off-new',
+        postedById: 'u1',
+        idempotencyKey: 'acct-journal:v1:t1:CLIENT_OFFSET:off-new:apply:2026-06-21T10:00:00.000Z:off-new',
+        idempotencyMaterial: {
+          tenantId: 't1',
+          sourceType: 'CLIENT_OFFSET',
+          sourceId: 'off-new',
+          sourceAction: 'apply',
+          sourceVersion: '2026-06-21T10:00:00.000Z:off-new',
+        },
+        reversalOf: null,
+      }),
+    );
+    expect(draft.metadata).toEqual(expect.objectContaining({ authorizationMode: 'DIRECT_CAPABILITY', description: 'Client offset applied' }));
+    expect(draft.lines).toHaveLength(2);
+    expect(journalLine(draft, 'CLIENT_PAYABLE')).toEqual(
+      expect.objectContaining({
+        lineNo: 1,
+        tenantId: 't1',
+        direction: 'DEBIT',
+        amount: '400.00',
+        currency: 'TRY',
+        caseId: 'case-P',
+        clientId: 'cl-1',
+        caseClientId: 'cc-A',
+        offsetId: 'off-new',
+        payoutId: null,
+        expenseRequestId: null,
+      }),
+    );
+    expect(journalLine(draft, 'CLIENT_EXPENSE_RECEIVABLE')).toEqual(
+      expect.objectContaining({
+        lineNo: 2,
+        tenantId: 't1',
+        direction: 'CREDIT',
+        amount: '400.00',
+        currency: 'TRY',
+        caseId: 'case-E',
+        clientId: 'cl-1',
+        caseClientId: null,
+        offsetId: 'off-new',
+        payoutId: null,
+        expenseRequestId: 'er-1',
+      }),
+    );
     expect(a.logInTransaction).toHaveBeenCalledWith(
       db,
       expect.objectContaining({ action: 'CLIENT_OFFSET_CREATED', metadata: expect.objectContaining({ authorizationMode: 'DIRECT_CAPABILITY' }) }),
     );
+    expect(db.clientOffset.create.mock.invocationCallOrder[0]).toBeLessThan(j.write.mock.invocationCallOrder[0]);
+    expect(j.write.mock.invocationCallOrder[0]).toBeLessThan(a.logInTransaction.mock.invocationCallOrder[0]);
   });
 
   it('amount > min(payable,expense) → BadRequest OFFSET_EXCEEDS_AVAILABLE (expense unpaid sınırlar)', async () => {
@@ -274,10 +343,75 @@ describe('ClientOffsetService.reverseOffset', () => {
       }),
       db,
     );
+    const draft = firstJournalDraft(j);
+    expect(j.write.mock.calls[0][1]).toBe(db);
+    expect(draft).toEqual(
+      expect.objectContaining({
+        tenantId: 't1',
+        caseId: 'case-P',
+        currency: 'TRY',
+        entryType: 'CLIENT_OFFSET_REVERSED',
+        sourceType: 'CLIENT_OFFSET',
+        sourceId: 'rev-new',
+        sourceAction: 'reversal',
+        sourceVersion: '2026-06-21T11:00:00.000Z:rev-new',
+        postedById: 'u1',
+        idempotencyKey: 'acct-journal:v1:t1:CLIENT_OFFSET:rev-new:reversal:2026-06-21T11:00:00.000Z:rev-new',
+        idempotencyMaterial: {
+          tenantId: 't1',
+          sourceType: 'CLIENT_OFFSET',
+          sourceId: 'rev-new',
+          sourceAction: 'reversal',
+          sourceVersion: '2026-06-21T11:00:00.000Z:rev-new',
+        },
+        reversalOf: {
+          sourceType: 'CLIENT_OFFSET',
+          sourceId: 'off-1',
+          sourceAction: 'apply',
+          sourceVersion: null,
+          journalEntryId: null,
+        },
+      }),
+    );
+    expect(draft.reversalOf.sourceId).not.toBe('rev-new');
+    expect(draft.metadata).toEqual(expect.objectContaining({ authorizationMode: 'DIRECT_CAPABILITY', description: 'Client offset reversed' }));
+    expect(draft.lines).toHaveLength(2);
+    expect(journalLine(draft, 'CLIENT_PAYABLE')).toEqual(
+      expect.objectContaining({
+        lineNo: 1,
+        tenantId: 't1',
+        direction: 'CREDIT',
+        amount: '400.00',
+        currency: 'TRY',
+        caseId: 'case-P',
+        clientId: 'cl-1',
+        caseClientId: 'cc-A',
+        offsetId: 'rev-new',
+        payoutId: null,
+        expenseRequestId: null,
+      }),
+    );
+    expect(journalLine(draft, 'CLIENT_EXPENSE_RECEIVABLE')).toEqual(
+      expect.objectContaining({
+        lineNo: 2,
+        tenantId: 't1',
+        direction: 'DEBIT',
+        amount: '400.00',
+        currency: 'TRY',
+        caseId: 'case-E',
+        clientId: 'cl-1',
+        caseClientId: null,
+        offsetId: 'rev-new',
+        payoutId: null,
+        expenseRequestId: 'er-1',
+      }),
+    );
     expect(a.logInTransaction).toHaveBeenCalledWith(
       db,
       expect.objectContaining({ action: 'CLIENT_OFFSET_REVERSED', metadata: expect.objectContaining({ authorizationMode: 'DIRECT_CAPABILITY' }) }),
     );
+    expect(db.clientOffset.create.mock.invocationCallOrder[0]).toBeLessThan(j.write.mock.invocationCallOrder[0]);
+    expect(j.write.mock.invocationCallOrder[0]).toBeLessThan(a.logInTransaction.mock.invocationCallOrder[0]);
   });
 
   it('reason <10 karakter → BadRequest', async () => {

@@ -58,6 +58,9 @@ function buildDb(opts: {
     collection: { update: jest.fn() },
     collectionDisposition: { update: jest.fn() },
     balanceLedger: { create: jest.fn() },
+    ledgerEntry: { create: jest.fn(), update: jest.fn() },
+    ledgerAllocation: { create: jest.fn(), createMany: jest.fn(), update: jest.fn() },
+    accountingJournalEntry: { findFirst: jest.fn(), create: jest.fn() },
     clientStatement: { update: jest.fn(), create: jest.fn() },
     clientOffset: { create: jest.fn(), findMany: jest.fn(), aggregate: jest.fn() },
   };
@@ -129,6 +132,8 @@ describe('ClientPayoutManualReversalService.close', () => {
     expect(db.tx.clientOffset.create).not.toHaveBeenCalled();
     expect(db.tx.clientOffset.findMany).not.toHaveBeenCalled();
     expect(db.tx.clientOffset.aggregate).not.toHaveBeenCalled();
+    expect(db.tx.accountingJournalEntry.findFirst).not.toHaveBeenCalled();
+    expect(db.tx.accountingJournalEntry.create).not.toHaveBeenCalled();
   });
 
   it('closes OPEN workflow with WAIVER when strong closure note is provided', async () => {
@@ -191,7 +196,7 @@ describe('ClientPayoutManualReversalService.close', () => {
     expect(db.audit.logInTransaction).toHaveBeenCalledWith(db.tx, expect.any(Object));
   });
 
-  it('does not mutate payout, allocation, collection, disposition marker, ledger, or statement records', async () => {
+  it('does not mutate payout, allocation, collection, disposition marker, journal, legal ledger, or statement records', async () => {
     const db = buildDb();
     await svc(db).close('t1', 'u1', 'mr-1', { closureMethod: 'REFUND', evidenceRef: 'ev-1' });
 
@@ -203,6 +208,13 @@ describe('ClientPayoutManualReversalService.close', () => {
     expect(db.tx.collection.update).not.toHaveBeenCalled();
     expect(db.tx.collectionDisposition.update).not.toHaveBeenCalled();
     expect(db.tx.balanceLedger.create).not.toHaveBeenCalled();
+    expect(db.tx.ledgerEntry.create).not.toHaveBeenCalled();
+    expect(db.tx.ledgerEntry.update).not.toHaveBeenCalled();
+    expect(db.tx.ledgerAllocation.create).not.toHaveBeenCalled();
+    expect(db.tx.ledgerAllocation.createMany).not.toHaveBeenCalled();
+    expect(db.tx.ledgerAllocation.update).not.toHaveBeenCalled();
+    expect(db.tx.accountingJournalEntry.findFirst).not.toHaveBeenCalled();
+    expect(db.tx.accountingJournalEntry.create).not.toHaveBeenCalled();
     expect(db.tx.clientStatement.update).not.toHaveBeenCalled();
     expect(db.tx.clientStatement.create).not.toHaveBeenCalled();
   });
