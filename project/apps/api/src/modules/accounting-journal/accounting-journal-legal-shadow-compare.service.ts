@@ -1,4 +1,4 @@
-﻿import { Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import type { AccountingAccountCode, AccountingJournalDirection } from './accounting-journal.types';
@@ -10,6 +10,11 @@ export type AccountingJournalLegalShadowMatchStatus =
   | 'ENGINE_ONLY';
 
 export type AccountingJournalLegalShadowSeverity = 'INFO' | 'YELLOW' | 'RED';
+
+export type AccountingJournalLegalSourcePolicyDecision =
+  | 'MAPPED'
+  | 'ACCEPTED_EXCLUSION'
+  | 'BLOCKED';
 
 export interface AccountingJournalLegalShadowCompareFilters {
   tenantId: string;
@@ -38,6 +43,8 @@ export interface AccountingJournalLegalShadowCompareRow {
   engineLineCount: number;
   summaryLineCount: number;
   blockerCodes: string[];
+  legalSourcePolicy?: AccountingJournalLegalSourcePolicyDecision;
+  legalSourcePolicyCode?: string;
 }
 
 export interface AccountingJournalLegalShadowIssue {
@@ -64,6 +71,9 @@ export interface AccountingJournalLegalShadowCoverage {
   divergentRows: number;
   summaryOnlyRows: number;
   engineOnlyRows: number;
+  legalMappedRows: number;
+  legalAcceptedExclusionRows: number;
+  legalBlockedRows: number;
 }
 
 export interface AccountingJournalLegalShadowCompareReport {
@@ -92,6 +102,8 @@ interface Contribution {
   clientId: string | null;
   caseClientId: string | null;
   blockerCodes?: string[];
+  legalSourcePolicy?: AccountingJournalLegalSourcePolicyDecision;
+  legalSourcePolicyCode?: string;
 }
 
 interface ShadowAccumulator extends Omit<Contribution, 'side' | 'amount' | 'blockerCodes'> {
@@ -101,6 +113,8 @@ interface ShadowAccumulator extends Omit<Contribution, 'side' | 'amount' | 'bloc
   engineLineCount: number;
   summaryLineCount: number;
   blockerCodes: Set<string>;
+  legalSourcePolicy?: AccountingJournalLegalSourcePolicyDecision;
+  legalSourcePolicyCode?: string;
 }
 
 type JournalLineRow = {
@@ -168,13 +182,28 @@ type LedgerEntryRow = {
   id: string;
   tenantId: string;
   caseId: string;
+  collectionId: string | null;
+  reversesLedgerEntryId: string | null;
   entryType: string;
   amount: Prisma.Decimal;
   currency: string;
+  sourceType: string | null;
+  sourceId: string | null;
   allocations: Array<{ amount: Prisma.Decimal }>;
 };
 
 const ZERO = new Prisma.Decimal(0);
+
+export const LEGAL_LEDGER_SOURCE_POLICY_MATRIX = {
+  mappedSourceTypes: {
+    COLLECTION_DISPOSITION_LINE: 'posted',
+    CLIENT_PAYOUT: 'recorded',
+    BALANCE_LEDGER: 'posted',
+  },
+  conditionalMappedSourceTypes: ['CLIENT_OFFSET'],
+  acceptedExclusionSourceTypes: ['MANUAL', 'MANUEL'],
+  unsupportedWorkflowSourceTypes: ['COLLECTION_CANCEL', 'COLLECTION_REVERSAL', 'COLLECTION_BACKFILL'],
+} as const;
 
 @Injectable()
 export class AccountingJournalLegalShadowCompareService {
@@ -402,9 +431,13 @@ export class AccountingJournalLegalShadowCompareService {
         id: true,
         tenantId: true,
         caseId: true,
+        collectionId: true,
+        reversesLedgerEntryId: true,
         entryType: true,
         amount: true,
         currency: true,
+        sourceType: true,
+        sourceId: true,
         allocations: { select: { amount: true } },
       },
     }) as Promise<LedgerEntryRow[]>;
@@ -608,13 +641,14 @@ function balanceLedgerContributions(ledger: BalanceLedgerRow): Contribution[] {
 }
 
 function ledgerEntryContribution(entry: LedgerEntryRow): Contribution {
+  const policy = legalLedgerSourcePolicy(entry);
   const allocationTotal = entry.allocations.reduce((sum, allocation) => sum.plus(allocation.amount), ZERO);
   const amount = allocationTotal.isZero() ? absoluteDecimal(entry.amount) : absoluteDecimal(allocationTotal);
   return summaryContribution({
-    domain: 'LEGAL_LEDGER',
-    sourceType: 'LEGAL_LEDGER',
-    sourceAction: String(entry.entryType).toLowerCase(),
-    sourceId: entry.id,
+    domain: policy.domain,
+    sourceType: policy.sourceType,
+    sourceAction: policy.sourceAction,
+    sourceId: policy.sourceId,
     accountCode: 'LEGAL_LEDGER_ALLOCATED_AMOUNT',
     direction: 'DEBIT',
     amount,
@@ -622,10 +656,100 @@ function ledgerEntryContribution(entry: LedgerEntryRow): Contribution {
     caseId: entry.caseId,
     clientId: null,
     caseClientId: null,
-    blockerCodes: ['LEGAL_LEDGER_ACCOUNTING_SOURCE_UNMAPPED'],
+    blockerCodes: policy.blockerCodes,
+    legalSourcePolicy: policy.decision,
+    legalSourcePolicyCode: policy.code,
   });
 }
 
+interface LegalLedgerSourcePolicy {
+  decision: AccountingJournalLegalSourcePolicyDecision;
+  code: string;
+  domain: string;
+  sourceType: string;
+  sourceAction: string;
+  sourceId: string;
+  blockerCodes: string[];
+}
+
+function legalLedgerSourcePolicy(entry: LedgerEntryRow): LegalLedgerSourcePolicy {
+  const normalizedSourceType = normalizeLegalSourceType(entry.sourceType);
+  const unsupportedWorkflow = unsupportedLegalWorkflowCode(entry, normalizedSourceType);
+  if (unsupportedWorkflow) {
+    return blockedLegalPolicy(entry, unsupportedWorkflow);
+  }
+
+  const mappedAction = mappedLegalSourceAction(normalizedSourceType, entry);
+  if (mappedAction && entry.sourceId) {
+    return {
+      decision: 'MAPPED',
+      code: 'LEGAL_LEDGER_SOURCE_MAPPED',
+      domain: domainForSource(normalizedSourceType as string),
+      sourceType: normalizedSourceType as string,
+      sourceAction: mappedAction,
+      sourceId: entry.sourceId,
+      blockerCodes: [],
+    };
+  }
+
+  if (isAcceptedLegalExclusion(normalizedSourceType, entry.sourceId)) {
+    return {
+      decision: 'ACCEPTED_EXCLUSION',
+      code: 'LEGAL_LEDGER_ACCEPTED_EXCLUSION',
+      domain: 'LEGAL_LEDGER',
+      sourceType: 'LEGAL_LEDGER',
+      sourceAction: String(entry.entryType).toLowerCase(),
+      sourceId: entry.id,
+      blockerCodes: ['LEGAL_LEDGER_ACCEPTED_EXCLUSION'],
+    };
+  }
+
+  return blockedLegalPolicy(entry, 'LEGAL_LEDGER_SOURCE_UNMAPPED');
+}
+
+function blockedLegalPolicy(entry: LedgerEntryRow, code: string): LegalLedgerSourcePolicy {
+  return {
+    decision: 'BLOCKED',
+    code,
+    domain: 'LEGAL_LEDGER',
+    sourceType: 'LEGAL_LEDGER',
+    sourceAction: String(entry.entryType).toLowerCase(),
+    sourceId: entry.id,
+    blockerCodes: ['LEGAL_LEDGER_ACCOUNTING_SOURCE_UNMAPPED', code],
+  };
+}
+
+function normalizeLegalSourceType(sourceType: string | null): string | null {
+  const normalized = sourceType?.trim().toUpperCase();
+  return normalized ? normalized : null;
+}
+
+function mappedLegalSourceAction(sourceType: string | null, entry: LedgerEntryRow): string | null {
+  if (!sourceType) return null;
+  if (sourceType === 'CLIENT_OFFSET') return entry.entryType === 'REVERSAL' ? 'reversal' : 'apply';
+  return LEGAL_LEDGER_SOURCE_POLICY_MATRIX.mappedSourceTypes[
+    sourceType as keyof typeof LEGAL_LEDGER_SOURCE_POLICY_MATRIX.mappedSourceTypes
+  ] ?? null;
+}
+
+function isAcceptedLegalExclusion(sourceType: string | null, sourceId: string | null): boolean {
+  if (!sourceType || !sourceId) return false;
+  return LEGAL_LEDGER_SOURCE_POLICY_MATRIX.acceptedExclusionSourceTypes.includes(
+    sourceType as typeof LEGAL_LEDGER_SOURCE_POLICY_MATRIX.acceptedExclusionSourceTypes[number],
+  );
+}
+
+function unsupportedLegalWorkflowCode(entry: LedgerEntryRow, sourceType: string | null): string | null {
+  if (sourceType && LEGAL_LEDGER_SOURCE_POLICY_MATRIX.unsupportedWorkflowSourceTypes.includes(
+    sourceType as typeof LEGAL_LEDGER_SOURCE_POLICY_MATRIX.unsupportedWorkflowSourceTypes[number],
+  )) {
+    return 'LEGAL_LEDGER_UNSUPPORTED_CANCEL_REVERSAL_BACKFILL';
+  }
+  if (!sourceType && (entry.entryType === 'REVERSAL' || entry.reversesLedgerEntryId)) {
+    return 'LEGAL_LEDGER_UNSUPPORTED_CANCEL_REVERSAL_BACKFILL';
+  }
+  return null;
+}
 function summaryContribution(input: Omit<Contribution, 'side' | 'amount'> & {
   amount: Prisma.Decimal | string | number;
 }): Contribution {
@@ -703,6 +827,8 @@ function addContribution(map: Map<string, ShadowAccumulator>, contribution: Cont
     engineLineCount: 0,
     summaryLineCount: 0,
     blockerCodes: new Set<string>(),
+    legalSourcePolicy: contribution.legalSourcePolicy,
+    legalSourcePolicyCode: contribution.legalSourcePolicyCode,
   };
 
   if (contribution.side === 'ENGINE') {
@@ -713,6 +839,8 @@ function addContribution(map: Map<string, ShadowAccumulator>, contribution: Cont
     current.summaryLineCount += 1;
   }
   for (const code of contribution.blockerCodes ?? []) current.blockerCodes.add(code);
+  if (contribution.legalSourcePolicy && !current.legalSourcePolicy) current.legalSourcePolicy = contribution.legalSourcePolicy;
+  if (contribution.legalSourcePolicyCode && !current.legalSourcePolicyCode) current.legalSourcePolicyCode = contribution.legalSourcePolicyCode;
   map.set(key, current);
 }
 
@@ -749,6 +877,8 @@ function rowFromAccumulator(acc: ShadowAccumulator): AccountingJournalLegalShado
     engineLineCount: acc.engineLineCount,
     summaryLineCount: acc.summaryLineCount,
     blockerCodes: [...blockerCodes].sort(),
+    ...(acc.legalSourcePolicy ? { legalSourcePolicy: acc.legalSourcePolicy } : {}),
+    ...(acc.legalSourcePolicyCode ? { legalSourcePolicyCode: acc.legalSourcePolicyCode } : {}),
   };
 }
 
@@ -776,7 +906,8 @@ function cutoverReadiness(
     safeForOptInShadow: rows.length > 0,
     blockers: blockerCodes,
     nextRequiredEvidence: [
-      'LedgerEntry/LedgerAllocation icin journal source mapping veya acik accepted exclusion.',
+      'LedgerEntry/LedgerAllocation icin MAPPED, ACCEPTED_EXCLUSION veya BLOCKED policy karari.',
+      'Accepted exclusion legal satirlari sessiz dusmeden raporda gorunur blocker olarak kalmali.',
       'CollectionDisposition/ClientPayout/ClientOffset/BalanceLedger fixture matrix: MATCH, DIVERGENT, SUMMARY_ONLY, ENGINE_ONLY.',
       'Cancel/reversal/backfill alanlari icin ya mapped compare ya fail-closed blocker.',
       'Feature flag ve legal sign-off olmadan primary cutover acma.',
@@ -801,6 +932,9 @@ function coverageFromRows(input: {
     divergentRows: input.rows.filter((row) => row.matchStatus === 'DIVERGENT').length,
     summaryOnlyRows: input.rows.filter((row) => row.matchStatus === 'SUMMARY_ONLY').length,
     engineOnlyRows: input.rows.filter((row) => row.matchStatus === 'ENGINE_ONLY').length,
+    legalMappedRows: input.rows.filter((row) => row.legalSourcePolicy === 'MAPPED').length,
+    legalAcceptedExclusionRows: input.rows.filter((row) => row.legalSourcePolicy === 'ACCEPTED_EXCLUSION').length,
+    legalBlockedRows: input.rows.filter((row) => row.legalSourcePolicy === 'BLOCKED').length,
   };
 }
 
@@ -913,6 +1047,9 @@ function severityForBlocker(code: string): AccountingJournalLegalShadowSeverity 
   if (code === 'SUMMARY_ONLY_SHADOW_ROW') return 'RED';
   if (code === 'DIVERGENT_SHADOW_ROW') return 'RED';
   if (code === 'LEGAL_LEDGER_ACCOUNTING_SOURCE_UNMAPPED') return 'RED';
+  if (code === 'LEGAL_LEDGER_SOURCE_UNMAPPED') return 'RED';
+  if (code === 'LEGAL_LEDGER_ACCEPTED_EXCLUSION') return 'YELLOW';
+  if (code === 'LEGAL_LEDGER_UNSUPPORTED_CANCEL_REVERSAL_BACKFILL') return 'RED';
   return 'RED';
 }
 
@@ -930,6 +1067,12 @@ function messageForBlocker(code: string): string {
       return 'AccountingJournal ile legal/projection tutarlari farkli.';
     case 'LEGAL_LEDGER_ACCOUNTING_SOURCE_UNMAPPED':
       return 'LedgerEntry/LedgerAllocation icin AccountingJournal source mapping henuz yok.';
+    case 'LEGAL_LEDGER_SOURCE_UNMAPPED':
+      return 'Legal ledger source AccountingJournal source identity olarak map edilemiyor.';
+    case 'LEGAL_LEDGER_ACCEPTED_EXCLUSION':
+      return 'Legal ledger source acik accepted exclusion kapsaminda; sessiz dusmez ve signoff kaniti ister.';
+    case 'LEGAL_LEDGER_UNSUPPORTED_CANCEL_REVERSAL_BACKFILL':
+      return 'Legal ledger cancel/reversal/backfill kaynagi AccountingJournal primary cutover kapsaminda desteklenmiyor.';
     case 'MANUAL_REVERSAL_DISPOSITION_LINE_UNMAPPED':
       return 'Manual reversal marker tasiyan disposition line auto-compare/cutover disinda.';
     case 'UNSUPPORTED_DISPOSITION_LINE_TYPE':

@@ -90,9 +90,13 @@ function ledgerEntry(overrides: any = {}) {
     id: overrides.id ?? 'le-1',
     tenantId: overrides.tenantId ?? 'tenant-1',
     caseId: overrides.caseId ?? 'case-legal',
+    collectionId: overrides.collectionId ?? null,
+    reversesLedgerEntryId: overrides.reversesLedgerEntryId ?? null,
     entryType: overrides.entryType ?? 'PAYMENT',
     amount: D(overrides.amount ?? '120.00'),
     currency: overrides.currency ?? 'TRY',
+    sourceType: overrides.sourceType ?? null,
+    sourceId: overrides.sourceId ?? null,
     allocations: overrides.allocations ?? [{ amount: D('120.00') }],
   };
 }
@@ -167,13 +171,97 @@ describe('AccountingJournalLegalShadowCompareService', () => {
         legalProjectionAmount: '120.00',
         journalAmount: null,
         matchStatus: 'SUMMARY_ONLY',
+        legalSourcePolicy: 'BLOCKED',
+        legalSourcePolicyCode: 'LEGAL_LEDGER_SOURCE_UNMAPPED',
       }),
     );
-    expect(legal?.blockerCodes).toEqual(expect.arrayContaining(['LEGAL_LEDGER_ACCOUNTING_SOURCE_UNMAPPED']));
-    expect(report.cutoverReadiness.blockers).toEqual(expect.arrayContaining(['LEGAL_LEDGER_ACCOUNTING_SOURCE_UNMAPPED']));
+    expect(legal?.blockerCodes).toEqual(expect.arrayContaining(['LEGAL_LEDGER_ACCOUNTING_SOURCE_UNMAPPED', 'LEGAL_LEDGER_SOURCE_UNMAPPED']));
+    expect(report.cutoverReadiness.blockers).toEqual(expect.arrayContaining(['LEGAL_LEDGER_ACCOUNTING_SOURCE_UNMAPPED', 'LEGAL_LEDGER_SOURCE_UNMAPPED']));
     expect(report.cutoverReadiness.safeForPrimaryCutover).toBe(false);
   });
 
+  it('classifies legal source policy matrix without silently dropping legal rows', async () => {
+    const prisma = prismaMock({
+      ledgerEntries: [
+        ledgerEntry({
+          id: 'le-mapped-payout',
+          sourceType: 'CLIENT_PAYOUT',
+          sourceId: 'payout-mapped',
+          amount: '45.00',
+          allocations: [{ amount: D('45.00') }],
+        }),
+        ledgerEntry({
+          id: 'le-manual',
+          sourceType: 'MANUEL',
+          sourceId: 'manual-1',
+          entryType: 'ADJUSTMENT',
+          amount: '10.00',
+          allocations: [{ amount: D('10.00') }],
+        }),
+        ledgerEntry({
+          id: 'le-null-source',
+          amount: '20.00',
+          allocations: [{ amount: D('20.00') }],
+        }),
+        ledgerEntry({
+          id: 'le-free-form',
+          sourceType: 'LEGACY_IMPORT',
+          sourceId: 'legacy-1',
+          amount: '30.00',
+          allocations: [{ amount: D('30.00') }],
+        }),
+        ledgerEntry({
+          id: 'le-cancel',
+          sourceType: 'COLLECTION_CANCEL',
+          sourceId: 'col-cancel',
+          entryType: 'REVERSAL',
+          reversesLedgerEntryId: 'le-original',
+          amount: '-40.00',
+          allocations: [{ amount: D('-40.00') }],
+        }),
+      ],
+    });
+
+    const report = await new AccountingJournalLegalShadowCompareService(prisma).compare({ tenantId: 'tenant-1' });
+    const byId = new Map(report.rows.map((row) => [row.sourceId, row]));
+
+    expect(report.coverage).toEqual(expect.objectContaining({
+      legalMappedRows: 1,
+      legalAcceptedExclusionRows: 1,
+      legalBlockedRows: 3,
+    }));
+    expect(byId.get('payout-mapped')).toEqual(expect.objectContaining({
+      sourceType: 'CLIENT_PAYOUT',
+      sourceAction: 'recorded',
+      legalSourcePolicy: 'MAPPED',
+      legalSourcePolicyCode: 'LEGAL_LEDGER_SOURCE_MAPPED',
+    }));
+    expect(byId.get('le-manual')).toEqual(expect.objectContaining({
+      sourceType: 'LEGAL_LEDGER',
+      legalSourcePolicy: 'ACCEPTED_EXCLUSION',
+      legalSourcePolicyCode: 'LEGAL_LEDGER_ACCEPTED_EXCLUSION',
+    }));
+    expect(byId.get('le-null-source')).toEqual(expect.objectContaining({
+      legalSourcePolicy: 'BLOCKED',
+      legalSourcePolicyCode: 'LEGAL_LEDGER_SOURCE_UNMAPPED',
+    }));
+    expect(byId.get('le-free-form')).toEqual(expect.objectContaining({
+      legalSourcePolicy: 'BLOCKED',
+      legalSourcePolicyCode: 'LEGAL_LEDGER_SOURCE_UNMAPPED',
+    }));
+    expect(byId.get('le-cancel')).toEqual(expect.objectContaining({
+      legalSourcePolicy: 'BLOCKED',
+      legalSourcePolicyCode: 'LEGAL_LEDGER_UNSUPPORTED_CANCEL_REVERSAL_BACKFILL',
+    }));
+    expect(report.rows).toHaveLength(5);
+    expect(report.cutoverReadiness.blockers).toEqual(expect.arrayContaining([
+      'LEGAL_LEDGER_ACCEPTED_EXCLUSION',
+      'LEGAL_LEDGER_SOURCE_UNMAPPED',
+      'LEGAL_LEDGER_UNSUPPORTED_CANCEL_REVERSAL_BACKFILL',
+      'SUMMARY_ONLY_SHADOW_ROW',
+    ]));
+    expect(report.cutoverReadiness.safeForPrimaryCutover).toBe(false);
+  });
   it('keeps unsupported sources as blockers and suppresses correlated disposition BalanceLedger rows', async () => {
     const prisma = prismaMock({
       dispositionLines: [
