@@ -243,6 +243,94 @@ describe('AccountingJournalBuilder contract skeleton', () => {
     expect(validateJournalDraft(draft).ok).toBe(true);
   });
 
+  it('CLIENT_OFFSET source invariant: APPLY rejects reversesOffsetId and REVERSAL requires original APPLY id', () => {
+    const applyWithReversalId = buildAccountingJournal(
+      clientOffsetSource({
+        payload: {
+          kind: 'APPLY',
+          reversesOffsetId: 'offset-original',
+        },
+      }),
+    );
+
+    expect(applyWithReversalId.ok).toBe(false);
+    if (applyWithReversalId.ok) throw new Error('Expected APPLY source payload validation to fail.');
+    expect(applyWithReversalId.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'INVALID_SOURCE_PAYLOAD', path: 'payload.reversesOffsetId' })]),
+    );
+
+    const reversalWithoutOriginal = buildAccountingJournal(
+      clientOffsetSource({
+        sourceAction: 'reversal',
+        payload: {
+          kind: 'REVERSAL',
+          reversesOffsetId: null,
+        },
+      }),
+    );
+
+    expect(reversalWithoutOriginal.ok).toBe(false);
+    if (reversalWithoutOriginal.ok) throw new Error('Expected REVERSAL source payload validation to fail.');
+    expect(reversalWithoutOriginal.errors).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'INVALID_SOURCE_PAYLOAD', path: 'payload.reversesOffsetId' })]),
+    );
+  });
+
+  it('business validator rule: enforces ClientOffset reversal reference shape on drafts', () => {
+    const applyDraft = buildDraft();
+    applyDraft.reversalOf = {
+      sourceType: 'CLIENT_OFFSET',
+      sourceId: 'offset-original',
+      sourceAction: 'apply',
+      sourceVersion: null,
+      journalEntryId: null,
+    };
+
+    const applyResult = validateJournalBusiness(applyDraft);
+    expect(applyResult.ok).toBe(false);
+    if (applyResult.ok) throw new Error('Expected APPLY reversal reference validation to fail.');
+    expect(applyResult.errors.map((error) => error.code)).toContain('UNSUPPORTED_BUSINESS_RULE');
+
+    const reversalDraft = buildDraft(
+      clientOffsetSource({
+        sourceId: 'offset-reversal-missing-ref',
+        sourceAction: 'reversal',
+        payload: {
+          kind: 'REVERSAL',
+          reversesOffsetId: 'offset-original',
+        },
+      }),
+    );
+    reversalDraft.reversalOf = null;
+
+    const missingReferenceResult = validateJournalBusiness(reversalDraft);
+    expect(missingReferenceResult.ok).toBe(false);
+    if (missingReferenceResult.ok) throw new Error('Expected REVERSAL missing reference validation to fail.');
+    expect(missingReferenceResult.errors.map((error) => error.code)).toContain('UNSUPPORTED_BUSINESS_RULE');
+
+    const selfReferenceDraft = buildDraft(
+      clientOffsetSource({
+        sourceId: 'offset-reversal-self-ref',
+        sourceAction: 'reversal',
+        payload: {
+          kind: 'REVERSAL',
+          reversesOffsetId: 'offset-original',
+        },
+      }),
+    );
+    selfReferenceDraft.reversalOf = {
+      sourceType: 'CLIENT_OFFSET',
+      sourceId: selfReferenceDraft.sourceId,
+      sourceAction: 'apply',
+      sourceVersion: null,
+      journalEntryId: null,
+    };
+
+    const selfReferenceResult = validateJournalBusiness(selfReferenceDraft);
+    expect(selfReferenceResult.ok).toBe(false);
+    if (selfReferenceResult.ok) throw new Error('Expected REVERSAL self-reference validation to fail.');
+    expect(selfReferenceResult.errors.map((error) => error.code)).toContain('UNSUPPORTED_BUSINESS_RULE');
+  });
   it('structural validator rule: rejects unbalanced, non-positive, cross-currency, precision, tenant mismatch and duplicate lineNo drafts', () => {
     expectStructuralError((draft) => {
       lineByAccount(draft, 'CLIENT_EXPENSE_RECEIVABLE').amount = '90.00';
