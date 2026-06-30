@@ -7,7 +7,7 @@
  * (gerçek entegrasyonu maskeliyordu). Artık kanonik `Client` (@/lib/api/client.types) + YALNIZ gerçek veri:
  *   - api.getClient(id)  → kimlik/iletişim/adres + powerOfAttorneys (POA sekmesi)
  *   - api.getCases({ clientId }) → Dosyalar sekmesi (findOne cases içermez)
- * v1 sekmeleri: Genel · Kimlik & İletişim · Dosyalar · Vekalet · İstihbarat.
+ * v1 sekmeleri: Genel · Kimlik & İletişim · Dosyalar · Vekalet · İstihbarat · Intake.
  * Muhasebe/Banka ayrı kapsamdır.
  * Mock fallback YOK; hata/boş durumları açıkça gösterilir.
  */
@@ -28,6 +28,7 @@ import {
 import { api } from '@/lib/api';
 import type { Client } from '@/lib/api/client.types';
 import { ClientIntelligenceTab } from '@/components/client/client-intelligence-tab';
+import { ClientIntakeTab } from '@/components/client/client-intake-tab';
 import {
   clientDisplayName,
   clientIdentity,
@@ -58,7 +59,7 @@ interface ClientPoaRow {
   status?: string | null;
 }
 
-type TabId = 'overview' | 'identity' | 'cases' | 'poa' | 'intelligence';
+type TabId = 'overview' | 'identity' | 'cases' | 'poa' | 'intelligence' | 'intake';
 
 interface ClientProfileProps {
   clientId: string;
@@ -161,6 +162,7 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
     { id: 'cases', label: 'Dosyalar', count: cases.length },
     { id: 'poa', label: 'Vekalet', count: poas.length },
     { id: 'intelligence', label: 'İstihbarat' },
+    { id: 'intake', label: 'Intake' },
   ];
 
   return (
@@ -355,6 +357,9 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
 
           {/* İstihbarat */}
           {tab === 'intelligence' && <ClientIntelligenceTab cases={cases} />}
+
+          {/* Intake */}
+          {tab === 'intake' && <ClientIntakeTab cases={cases} />}
         </div>
       </div>
     </div>
