@@ -28,6 +28,7 @@ const TYPE_LABEL: Record<string, string> = {
   HATIRLATMA: 'Hatırlatma',
   TEBRIK: 'Tebrik',
   TEST: 'Test',
+  POA_EXPIRY: 'Vekalet süresi',
   DIGER: 'Diğer',
 };
 
@@ -56,7 +57,17 @@ interface Overview {
       last24hSent: number;
       last24hFailed: number;
     };
-    poa: { status: EngineStatus; reason: string };
+    poa: {
+      status: EngineStatus;
+      reason: string;
+      poaExpiry?: {
+        pending: number;
+        sent: number;
+        failed: number;
+        lastSentAt: string | null;
+        lastFailureAt: string | null;
+      };
+    };
   };
   stats: {
     last24hSent: number;
@@ -393,6 +404,32 @@ export default function NotificationControlCenterPage() {
               </Link>
             </div>
           </div>
+          {engines.poa.status === 'ACTIVE' && engines.poa.poaExpiry && (
+            <div className="rounded-xl border bg-white p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <span className="inline-flex items-center justify-center w-8 h-8 rounded-lg bg-emerald-100/70 shrink-0"><ShieldAlert className="h-4 w-4 text-emerald-600" /></span>
+                  <div className="min-w-0">
+                    <h2 className="text-[14px] font-semibold text-gray-900">Vekalet Süresi Uyarısı</h2>
+                    <p className="text-[11px] text-gray-500">Süresi yaklaşan vekaletler gerçek e-posta teslimat motoruyla gönderilir</p>
+                  </div>
+                </div>
+                <Pill
+                  tone={engines.poa.poaExpiry.failed > 0 ? 'amber' : 'green'}
+                  icon={engines.poa.poaExpiry.failed > 0 ? AlertCircle : CheckCircle2}
+                  label={engines.poa.poaExpiry.failed > 0 ? 'Hata var' : 'Aktif motor'}
+                />
+              </div>
+              <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5 text-[12.5px]">
+                <Row label="Kanal" value="E-posta" />
+                <Row label="Bekleyen" value={`${engines.poa.poaExpiry.pending}`} />
+                <Row label="Gönderilen" value={`${engines.poa.poaExpiry.sent}`} />
+                <Row label="Başarısız" value={`${engines.poa.poaExpiry.failed}`} />
+                <Row label="Son gönderim" value={engines.poa.poaExpiry.lastSentAt ? fmtDateTime(engines.poa.poaExpiry.lastSentAt) : '—'} />
+                <Row label="Son hata" value={engines.poa.poaExpiry.lastFailureAt ? fmtDateTime(engines.poa.poaExpiry.lastFailureAt) : '—'} />
+              </div>
+            </div>
+          )}
         </div>
       </div>
 

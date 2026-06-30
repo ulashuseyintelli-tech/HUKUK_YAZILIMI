@@ -1,9 +1,9 @@
-import { ClientNotificationService } from "./client-notification.service";
+﻿import { ClientNotificationService } from "./client-notification.service";
 
 /**
- * Bildirim Kontrol Merkezi overview — birim testi (PR-N2).
- * Doğrular: tenant-scope her sorguda; YALNIZ gerçek kaynaklar (ClientNotification + EscalationEvent);
- * simüle NotificationQueue'ya ASLA dokunulmaz; sır sızmaz; hata gruplaması; POA = "teslimat eksik".
+ * Bildirim Kontrol Merkezi overview — birim testi (PR-N2/P2 POA delivery).
+ * Dogrular: tenant-scope her sorguda; yalniz gercek kaynaklar; simule NotificationQueue yok;
+ * POA karti yeni PoaExpiryNotificationDelivery logundan beslenir.
  */
 describe("ClientNotificationService.getNotificationOverview", () => {
   const tenantId = "t1";
@@ -18,7 +18,6 @@ describe("ClientNotificationService.getNotificationOverview", () => {
         ]),
         findMany: jest
           .fn()
-          // 1. çağrı = son gönderimler
           .mockResolvedValueOnce([
             {
               id: "n1",
@@ -31,7 +30,6 @@ describe("ClientNotificationService.getNotificationOverview", () => {
               client: { displayName: "Ada Lovelace", firstName: null, lastName: null, companyName: null },
             },
           ])
-          // 2. çağrı = başarısızlar (neden gitmedi)
           .mockResolvedValueOnce([
             { errorMessage: "SMTP auth failed", channel: "EMAIL", createdAt: new Date("2026-06-25T10:00:00.000Z") },
             { errorMessage: "SMTP auth failed", channel: "EMAIL", createdAt: new Date("2026-06-26T08:00:00.000Z") },
@@ -44,7 +42,33 @@ describe("ClientNotificationService.getNotificationOverview", () => {
           { deliveryStatus: "FAILED", _count: { _all: 1 } },
         ]),
       },
-      // TUZAK: simüle e-tebligat kuyruğu overview'a ASLA karışmamalı
+      poaExpiryNotificationDelivery: {
+        groupBy: jest.fn().mockResolvedValue([
+          { status: "PENDING", _count: { _all: 1 } },
+          { status: "SENT", _count: { _all: 2 } },
+          { status: "FAILED", _count: { _all: 1 } },
+        ]),
+        findMany: jest
+          .fn()
+          .mockResolvedValueOnce([
+            {
+              id: "poa-delivery-1",
+              createdAt: new Date("2026-06-24T09:00:00.000Z"),
+              status: "SENT",
+              recipientEmail: "lawyer@example.com",
+              recipientSource: "PRIMARY_ATTORNEY",
+              lastError: null,
+              client: { displayName: "POA Client", firstName: null, lastName: null, companyName: null },
+            },
+          ])
+          .mockResolvedValueOnce([
+            { lastError: "SMTP POA failed", updatedAt: new Date("2026-06-26T07:00:00.000Z") },
+          ]),
+        findFirst: jest
+          .fn()
+          .mockResolvedValueOnce({ sentAt: new Date("2026-06-24T09:00:00.000Z"), updatedAt: new Date("2026-06-24T09:00:00.000Z") })
+          .mockResolvedValueOnce({ updatedAt: new Date("2026-06-26T07:00:00.000Z") }),
+      },
       notificationQueue: { groupBy: jest.fn(), findMany: jest.fn(), count: jest.fn() },
       ...overrides?.prisma,
     };
@@ -72,7 +96,7 @@ describe("ClientNotificationService.getNotificationOverview", () => {
     return { service, prisma, officeService };
   }
 
-  it("gerçek ClientNotification + EscalationEvent sayaçlarını üretir ve tenant-scope uygular", async () => {
+  it("gercek ClientNotification + EscalationEvent sayaclarini uretir ve tenant-scope uygular", async () => {
     const { service, prisma } = buildService();
     const out = await service.getNotificationOverview(tenantId);
 
@@ -88,12 +112,18 @@ describe("ClientNotificationService.getNotificationOverview", () => {
     expect(prisma.escalationEvent.groupBy).toHaveBeenCalledWith(
       expect.objectContaining({ where: expect.objectContaining({ tenantId }) })
     );
+    expect(prisma.poaExpiryNotificationDelivery.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ tenantId }) })
+    );
     for (const call of prisma.clientNotification.findMany.mock.calls) {
+      expect(call[0].where).toEqual(expect.objectContaining({ tenantId }));
+    }
+    for (const call of prisma.poaExpiryNotificationDelivery.findMany.mock.calls) {
       expect(call[0].where).toEqual(expect.objectContaining({ tenantId }));
     }
   });
 
-  it("simüle NotificationQueue'ya ASLA dokunmaz (yalnız dürüst kaynak)", async () => {
+  it("simule NotificationQueue'ya ASLA dokunmaz", async () => {
     const { service, prisma } = buildService();
     await service.getNotificationOverview(tenantId);
     expect(prisma.notificationQueue.groupBy).not.toHaveBeenCalled();
@@ -101,7 +131,7 @@ describe("ClientNotificationService.getNotificationOverview", () => {
     expect(prisma.notificationQueue.count).not.toHaveBeenCalled();
   });
 
-  it("sır sızdırmaz; kanal hazır-mı bilgisini doğru verir", async () => {
+  it("sir sizdirmaz; kanal hazir-mi bilgisini dogru verir", async () => {
     const { service } = buildService();
     const out = await service.getNotificationOverview(tenantId);
     const json = JSON.stringify(out);
@@ -117,33 +147,37 @@ describe("ClientNotificationService.getNotificationOverview", () => {
     expect(out.channels.sms.title).toBe("BURO");
   });
 
-  it("başarısızları sebebe göre gruplar (neden gitmedi?)", async () => {
+  it("basarisizlari sebebe gore gruplar", async () => {
     const { service } = buildService();
     const out = await service.getNotificationOverview(tenantId);
 
-    const smtp = out.failureGroups.find((f) => f.reason === "SMTP auth failed");
-    expect(smtp?.count).toBe(2);
-    expect(smtp?.lastSeenAt).toBe(new Date("2026-06-26T08:00:00.000Z").toISOString());
+    expect(out.failureGroups.find((f) => f.reason === "SMTP auth failed")?.count).toBe(2);
     expect(out.failureGroups.find((f) => f.reason === "Telefon yok")?.count).toBe(1);
+    expect(out.failureGroups.find((f) => f.reason === "SMTP POA failed")?.count).toBe(1);
   });
 
-  it("POA motorunu 'teslimat eksik' (ATTENTION), tebriği ACTIVE işaretler", async () => {
+  it("POA motorunu yeni delivery logdan ACTIVE ve sayili besler", async () => {
     const { service } = buildService();
     const out = await service.getNotificationOverview(tenantId);
 
-    expect(out.engines.poa.status).toBe("ATTENTION");
-    expect(out.engines.poa.reason).toBe("DELIVERY_NOT_WIRED");
-    expect(out.engines.greeting.status).toBe("ACTIVE");
-    expect(out.engines.escalation.status).toBe("ACTIVE");
-    expect(out.stats.activeEngines).toBe(2);
-    expect(out.stats.attentionEngines).toBe(1);
+    expect(out.engines.poa.status).toBe("ACTIVE");
+    expect(out.engines.poa.reason).toBe("DELIVERY_WIRED");
+    expect(out.engines.poa.poaExpiry).toMatchObject({ pending: 1, sent: 2, failed: 1 });
+    expect(out.engines.poa.poaExpiry.lastSentAt).toBe(new Date("2026-06-24T09:00:00.000Z").toISOString());
+    expect(out.engines.poa.poaExpiry.lastFailureAt).toBe(new Date("2026-06-26T07:00:00.000Z").toISOString());
+    expect(out.stats.activeEngines).toBe(3);
+    expect(out.stats.attentionEngines).toBe(0);
   });
 
-  it("son gönderimlerde alıcı görünen adı çözer", async () => {
+  it("son gonderimlerde client ve POA delivery satirlarini birlikte gosterir", async () => {
     const { service } = buildService();
     const out = await service.getNotificationOverview(tenantId);
-    expect(out.recentDeliveries).toHaveLength(1);
-    expect(out.recentDeliveries[0].recipientName).toBe("Ada Lovelace");
-    expect(out.recentDeliveries[0].status).toBe("SENT");
+
+    expect(out.recentDeliveries).toHaveLength(2);
+    const clientDelivery = out.recentDeliveries.find((d) => d.id === "n1");
+    const poaDelivery = out.recentDeliveries.find((d) => d.id === "poa-delivery-1");
+    expect(clientDelivery?.recipientName).toBe("Ada Lovelace");
+    expect(clientDelivery?.status).toBe("SENT");
+    expect(poaDelivery).toMatchObject({ type: "POA_EXPIRY", channel: "EMAIL", status: "SENT" });
   });
 });
