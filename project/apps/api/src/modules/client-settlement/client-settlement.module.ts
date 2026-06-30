@@ -15,6 +15,7 @@ import { ClientPayoutService } from './client-payout.service';
 import { ClientPayoutController } from './client-payout.controller';
 import { ClientAccountingJournalMovementsReaderService } from './client-accounting-journal-movements-reader.service';
 import { ClientAccountingMovementsReadService } from './client-accounting-movements-read.service';
+import { ClientAccountingSummaryShadowReportService } from './client-accounting-summary-shadow-report.service';
 import { ClientSettlementReadService } from './client-settlement-read.service';
 import { ClientAccountingController } from './client-accounting.controller';
 import { ClientOffsetService } from './client-offset.service';
@@ -60,6 +61,11 @@ import { FinanceRiskEngine } from './finance-risk.engine';
     ClientPayoutManualReversalService,
   ],
   // FAZ-1b: ClientSettlementReadService export → expense-request modülü (UYAP gate) computeExpenseRemaining'i kullanır.
-  exports: [CollectionDispositionService, CollectionReversalService, ClientSettlementReadService],
+  exports: [
+    CollectionDispositionService,
+    CollectionReversalService,
+    ClientSettlementReadService,
+    ClientAccountingSummaryShadowReportService,
+  ],
 })
 export class ClientSettlementModule {}
