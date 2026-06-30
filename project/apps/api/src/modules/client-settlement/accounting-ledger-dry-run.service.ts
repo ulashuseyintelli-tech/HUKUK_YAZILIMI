@@ -523,7 +523,21 @@ export function buildAccountingLedgerDryRunReport(sources: AccountingLedgerDryRu
       continue;
     }
 
-    const isIncrease = ledger.type === 'CREDIT' || ledger.type === 'ADJUST';
+    if (ledger.type !== 'CREDIT' && ledger.type !== 'DEBIT') {
+      mismatchWarnings.push({
+        reason: 'OTHER_SUSPENSE_MANUAL_REVIEW',
+        sourceType: 'BALANCE_LEDGER',
+        sourceId: ledger.id,
+        dispositionLineId: null,
+        balanceLedgerId: ledger.id,
+        expected: 'CREDIT or DEBIT',
+        actual: ledger.type,
+        message: `BalanceLedger ${ledger.id} type ${ledger.type} is not approved for journal posting.`,
+      });
+      continue;
+    }
+
+    const isIncrease = ledger.type === 'CREDIT';
     pushEntry({
       idempotencyKey: accountingDryRunIdempotencyKey('BALANCE_LEDGER', sources.tenantId, ledger.id, 'posted', accountingDryRunSourceVersion(ledger.id, ledger.createdAt)),
       sourceType: 'BALANCE_LEDGER',
