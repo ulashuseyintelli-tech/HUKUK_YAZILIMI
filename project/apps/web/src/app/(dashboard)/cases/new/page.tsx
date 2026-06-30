@@ -7,7 +7,7 @@ import { ArrowLeft, ArrowRight, Loader2, Check, Plus, X, AlertTriangle, Calculat
 import { ProfessionalClaimItemForm } from "@/components/claim-item";
 import { api } from "@/lib/api";
 import { buildCreateCaseDuesPayload, faturaDueFieldsFromDebtInfo, buildClaimDocumentFields, mapClaimKalemTuruToDueType, resolveDueInterestType, flattenNestedYanAlacaklarRaws } from "@/lib/case-due-payload";
-import { isPoaDuplicateSuppressed } from "@/lib/poa-ux";
+import { isPoaDuplicateSuppressed, hasPoaInput, buildPoaCreatePayload, stripPoaFields } from "@/lib/poa-ux";
 import { resolveLawyerIdsFromScan } from "@/lib/lawyer-match";
 import { buildStaffPayload } from "@/lib/case-staff-payload";
 import { CASE_STAFF_ROLE_OPTIONS, CASE_STAFF_ROLE_GROUP_LABEL, CASE_STAFF_ROLE_HELP_TEXT, normalizeCaseStaffRole } from "@/lib/case-staff-role";
@@ -1780,6 +1780,9 @@ export default function NewCasePage() {
                   asButton={true}
                   onScanComplete={async (result) => {
                     try {
+                      // Vekaletname alanları /clients gövdesine konmaz (ClientService
+                      // okumaz, ValidationPipe düşürür); vekalet müvekkil oluşturulduktan
+                      // sonra kanonik POST /poa ile kaydedilir.
                       const clientData = {
                         type: result.clientType,
                         firstName: result.firstName,
@@ -1797,16 +1800,24 @@ export default function NewCasePage() {
                         canWaive: result.canWaive,
                         canSettle: result.canSettle,
                         canRelease: result.canRelease,
-                        poaNumber: result.poaNumber,
-                        poaDate: result.poaDate,
-                        notaryName: result.notaryName,
-                        notaryCity: result.notaryCity,
                       };
                       const response = await api.post("/clients", clientData);
-                      const saved = response.data || response;
+                      const savedClient = response.data?.data || response.data || response;
+                      // Taranan vekaletname bilgisi varsa kanonik /poa ile kaydet
+                      // (avukat eşleştirmesi tarama akışındaki #1 ile aynı).
+                      if (savedClient?.id && hasPoaInput(result)) {
+                        try {
+                          await api.post("/poa", {
+                            ...buildPoaCreatePayload(savedClient.id, result),
+                            lawyerIds: resolveLawyerIdsFromScan(result, existingLawyers),
+                          });
+                        } catch (poaErr) {
+                          console.warn("Vekalet oluşturulamadı:", poaErr);
+                        }
+                      }
                       const clientsRes = await api.get("/clients");
                       setExistingClients(clientsRes.data?.data || []);
-                      addExistingCreditor(saved);
+                      addExistingCreditor(savedClient);
                     } catch (err: any) {
                       alert(err.message || "Müvekkil kaydedilemedi");
                     }
@@ -2097,13 +2108,22 @@ export default function NewCasePage() {
           onSave={async (data) => {
             setSavingClient(true);
             try {
-              const response = await api.post("/clients", data);
-              const saved = response.data || response;
+              // Vekaletname alanları /clients gövdesine konmaz; vekalet ayrı
+              // kanonik POST /poa ile kaydedilir (giriliyor ama düşüyor tuzağını kapatır).
+              const response = await api.post("/clients", stripPoaFields(data));
+              const savedClient = response.data?.data || response.data || response;
+              if (savedClient?.id && hasPoaInput(data)) {
+                try {
+                  await api.post("/poa", buildPoaCreatePayload(savedClient.id, data));
+                } catch (poaErr) {
+                  console.warn("Vekalet oluşturulamadı:", poaErr);
+                }
+              }
               // Listeyi yenile
               const clientsRes = await api.get("/clients");
               setExistingClients(clientsRes.data?.data || []);
               // Yeni müvekkili seçili olarak ekle
-              addExistingCreditor(saved);
+              addExistingCreditor(savedClient);
               setShowNewClientModal(false);
             } catch (err: any) {
               alert(err.message || "Müvekkil kaydedilemedi");
