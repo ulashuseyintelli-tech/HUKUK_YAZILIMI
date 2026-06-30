@@ -172,17 +172,20 @@ export class SeedService {
 
 
   async seedClients(tenantId: string) {
+    // Task A/Faz 1 (seed kalite referansı): TCKN/VKN değerleri GEÇERLİ mod-10/11 checksum + benzersiz.
+    // (ClientService.create create-checksum kuralıyla tutarlı; seed düz prisma.client.create kullansa da
+    //  "kalite referansı" geçersiz kimlik üretmemeli.) Eski seri 12345678901-04 / 1234567891-95 geçersizdi.
     const clients = [
       { name: 'ABC Holding A.Ş.', displayName: 'ABC Holding A.Ş.', type: 'COMPANY', companyName: 'ABC Holding A.Ş.', vkn: '1234567890', identityNo: '1234567890', email: 'info@abcholding.com', phone: '02121234567', city: 'İstanbul' },
-      { name: 'XYZ Tekstil Ltd. Şti.', displayName: 'XYZ Tekstil Ltd. Şti.', type: 'COMPANY', companyName: 'XYZ Tekstil Ltd. Şti.', vkn: '1234567891', identityNo: '1234567891', email: 'info@xyztekstil.com', phone: '02121234568', city: 'Bursa' },
-      { name: 'Mehmet Akın', displayName: 'Mehmet Akın', type: 'PERSON', firstName: 'Mehmet', lastName: 'Akın', tckn: '12345678901', identityNo: '12345678901', email: 'mehmet@email.com', phone: '05351234567', city: 'Ankara' },
-      { name: 'Ayşe Yıldırım', displayName: 'Ayşe Yıldırım', type: 'PERSON', firstName: 'Ayşe', lastName: 'Yıldırım', tckn: '12345678902', identityNo: '12345678902', email: 'ayse@email.com', phone: '05351234568', city: 'İzmir' },
-      { name: 'Delta İnşaat A.Ş.', displayName: 'Delta İnşaat A.Ş.', type: 'COMPANY', companyName: 'Delta İnşaat A.Ş.', vkn: '1234567892', identityNo: '1234567892', email: 'info@deltainsaat.com', phone: '02121234569', city: 'İstanbul' },
-      { name: 'Gamma Otomotiv Ltd.', displayName: 'Gamma Otomotiv Ltd.', type: 'COMPANY', companyName: 'Gamma Otomotiv Ltd.', vkn: '1234567893', identityNo: '1234567893', email: 'info@gammaoto.com', phone: '02121234570', city: 'Kocaeli' },
-      { name: 'Ali Vural', displayName: 'Ali Vural', type: 'PERSON', firstName: 'Ali', lastName: 'Vural', tckn: '12345678903', identityNo: '12345678903', email: 'ali@email.com', phone: '05351234569', city: 'Antalya' },
-      { name: 'Omega Gıda San.', displayName: 'Omega Gıda San.', type: 'COMPANY', companyName: 'Omega Gıda San. Tic. A.Ş.', vkn: '1234567894', identityNo: '1234567894', email: 'info@omegagida.com', phone: '02121234571', city: 'Konya' },
-      { name: 'Fatma Demir', displayName: 'Fatma Demir', type: 'PERSON', firstName: 'Fatma', lastName: 'Demir', tckn: '12345678904', identityNo: '12345678904', email: 'fatma@email.com', phone: '05351234570', city: 'Adana' },
-      { name: 'Beta Enerji A.Ş.', displayName: 'Beta Enerji A.Ş.', type: 'COMPANY', companyName: 'Beta Enerji A.Ş.', vkn: '1234567895', identityNo: '1234567895', email: 'info@betaenerji.com', phone: '02121234572', city: 'Ankara' },
+      { name: 'XYZ Tekstil Ltd. Şti.', displayName: 'XYZ Tekstil Ltd. Şti.', type: 'COMPANY', companyName: 'XYZ Tekstil Ltd. Şti.', vkn: '1234567904', identityNo: '1234567904', email: 'info@xyztekstil.com', phone: '02121234568', city: 'Bursa' },
+      { name: 'Mehmet Akın', displayName: 'Mehmet Akın', type: 'PERSON', firstName: 'Mehmet', lastName: 'Akın', tckn: '12345678028', identityNo: '12345678028', email: 'mehmet@email.com', phone: '05351234567', city: 'Ankara' },
+      { name: 'Ayşe Yıldırım', displayName: 'Ayşe Yıldırım', type: 'PERSON', firstName: 'Ayşe', lastName: 'Yıldırım', tckn: '12345678196', identityNo: '12345678196', email: 'ayse@email.com', phone: '05351234568', city: 'İzmir' },
+      { name: 'Delta İnşaat A.Ş.', displayName: 'Delta İnşaat A.Ş.', type: 'COMPANY', companyName: 'Delta İnşaat A.Ş.', vkn: '1234567912', identityNo: '1234567912', email: 'info@deltainsaat.com', phone: '02121234569', city: 'İstanbul' },
+      { name: 'Gamma Otomotiv Ltd.', displayName: 'Gamma Otomotiv Ltd.', type: 'COMPANY', companyName: 'Gamma Otomotiv Ltd.', vkn: '1234567920', identityNo: '1234567920', email: 'info@gammaoto.com', phone: '02121234570', city: 'Kocaeli' },
+      { name: 'Ali Vural', displayName: 'Ali Vural', type: 'PERSON', firstName: 'Ali', lastName: 'Vural', tckn: '12345678264', identityNo: '12345678264', email: 'ali@email.com', phone: '05351234569', city: 'Antalya' },
+      { name: 'Omega Gıda San.', displayName: 'Omega Gıda San.', type: 'COMPANY', companyName: 'Omega Gıda San. Tic. A.Ş.', vkn: '1234567938', identityNo: '1234567938', email: 'info@omegagida.com', phone: '02121234571', city: 'Konya' },
+      { name: 'Fatma Demir', displayName: 'Fatma Demir', type: 'PERSON', firstName: 'Fatma', lastName: 'Demir', tckn: '12345678332', identityNo: '12345678332', email: 'fatma@email.com', phone: '05351234570', city: 'Adana' },
+      { name: 'Beta Enerji A.Ş.', displayName: 'Beta Enerji A.Ş.', type: 'COMPANY', companyName: 'Beta Enerji A.Ş.', vkn: '1234567945', identityNo: '1234567945', email: 'info@betaenerji.com', phone: '02121234572', city: 'Ankara' },
     ];
     let created = 0;
     for (const c of clients) {
