@@ -68,6 +68,74 @@ function offsetJournalEntry(report: ReturnType<typeof buildAccountingLedgerDryRu
   expect(entry).toBeDefined();
   return entry!;
 }
+
+interface ExpectedClientOffsetDryRunSeam {
+  id: string;
+  kind: 'APPLY' | 'REVERSAL';
+  amount: string;
+  payableCaseId: string;
+  expenseCaseId: string;
+  payableCaseClientId: string;
+  clientId?: string;
+  tenantId?: string;
+  currency?: string;
+}
+
+function expectClientOffsetDryRunSeam(
+  report: ReturnType<typeof buildAccountingLedgerDryRunReport>,
+  expected: ExpectedClientOffsetDryRunSeam,
+) {
+  const tenantId = expected.tenantId ?? 'tenant-1';
+  const clientId = expected.clientId ?? 'client-1';
+  const currency = expected.currency ?? 'TRY';
+  const action = expected.kind.toLowerCase();
+  const isApply = expected.kind === 'APPLY';
+  const entry = offsetJournalEntry(report, expected.id);
+
+  expect(entry).toEqual({
+    idempotencyKey: `client_offset:${expected.id}:${action}`,
+    sourceType: 'CLIENT_OFFSET',
+    sourceId: expected.id,
+    tenantId,
+    caseId: expected.payableCaseId,
+    currency,
+    effectiveAt: null,
+    lines: [
+      {
+        accountCode: 'CLIENT_PAYABLE',
+        direction: isApply ? 'DEBIT' : 'CREDIT',
+        amount: expected.amount,
+        tenantId,
+        caseId: expected.payableCaseId,
+        currency,
+        clientId,
+        caseClientId: expected.payableCaseClientId,
+        collectionId: null,
+        dispositionLineId: null,
+        payoutId: null,
+        offsetId: expected.id,
+        balanceLedgerId: null,
+      },
+      {
+        accountCode: 'CLIENT_EXPENSE_RECEIVABLE',
+        direction: isApply ? 'CREDIT' : 'DEBIT',
+        amount: expected.amount,
+        tenantId,
+        caseId: expected.expenseCaseId,
+        currency,
+        clientId,
+        caseClientId: null,
+        collectionId: null,
+        dispositionLineId: null,
+        payoutId: null,
+        offsetId: expected.id,
+        balanceLedgerId: null,
+      },
+    ],
+  });
+
+  return entry;
+}
 describe('AccountingLedgerDryRunService', () => {
   it('yalniz izin verilen source tablolarindan okur ve DB write yapmaz', async () => {
     const forbiddenRead = jest.fn();
@@ -138,6 +206,171 @@ describe('buildAccountingLedgerDryRunReport', () => {
     ]);
   });
 
+  it('CLIENT_OFFSET seam: existing idempotency key format remains client_offset:{id}:{action}', () => {
+    expect(accountingDryRunIdempotencyKey('CLIENT_OFFSET', 'off-seam-apply', 'apply')).toBe('client_offset:off-seam-apply:apply');
+    expect(accountingDryRunIdempotencyKey('CLIENT_OFFSET', 'off-seam-reversal', 'reversal')).toBe('client_offset:off-seam-reversal:reversal');
+  });
+
+  it('CLIENT_OFFSET seam same-case APPLY: exact dry-run output shape remains unchanged', () => {
+    const report = buildAccountingLedgerDryRunReport({
+      tenantId: 'tenant-1',
+      dispositionLines: [],
+      clientPayouts: [],
+      clientOffsets: [
+        offset({
+          id: 'off-seam-apply-same',
+          amount: D(20),
+          kind: 'APPLY',
+          payableCaseId: 'case-1',
+          expenseCaseId: 'case-1',
+          payableCaseClientId: 'cc-payable-same',
+        }),
+      ],
+      balanceLedgerRows: [],
+    });
+
+    expectClientOffsetDryRunSeam(report, {
+      id: 'off-seam-apply-same',
+      kind: 'APPLY',
+      amount: '20',
+      payableCaseId: 'case-1',
+      expenseCaseId: 'case-1',
+      payableCaseClientId: 'cc-payable-same',
+    });
+    expect(report.sourceCounts).toEqual({ COLLECTION_DISPOSITION_LINE: 0, CLIENT_PAYOUT: 0, CLIENT_OFFSET: 1, BALANCE_LEDGER: 0 });
+    expect(report.sourceCoverage).toEqual({ totalSourceRows: 1, projectedSourceRows: 1, reportedOnlySourceRows: 0, coverageRatio: '1' });
+    expect(report.duplicateIdempotencyKeys).toEqual([]);
+    expect(report.mismatchWarnings).toEqual([]);
+  });
+
+  it('CLIENT_OFFSET seam same-case REVERSAL: exact dry-run output shape remains unchanged', () => {
+    const report = buildAccountingLedgerDryRunReport({
+      tenantId: 'tenant-1',
+      dispositionLines: [],
+      clientPayouts: [],
+      clientOffsets: [
+        offset({
+          id: 'off-seam-reversal-same',
+          amount: D(20),
+          kind: 'REVERSAL',
+          payableCaseId: 'case-1',
+          expenseCaseId: 'case-1',
+          payableCaseClientId: 'cc-payable-same',
+        }),
+      ],
+      balanceLedgerRows: [],
+    });
+
+    expectClientOffsetDryRunSeam(report, {
+      id: 'off-seam-reversal-same',
+      kind: 'REVERSAL',
+      amount: '20',
+      payableCaseId: 'case-1',
+      expenseCaseId: 'case-1',
+      payableCaseClientId: 'cc-payable-same',
+    });
+    expect(report.sourceCounts.CLIENT_OFFSET).toBe(1);
+    expect(report.sourceCoverage).toEqual({ totalSourceRows: 1, projectedSourceRows: 1, reportedOnlySourceRows: 0, coverageRatio: '1' });
+    expect(report.duplicateIdempotencyKeys).toEqual([]);
+    expect(report.mismatchWarnings).toEqual([]);
+  });
+
+  it('CLIENT_OFFSET seam cross-case APPLY: exact dry-run output shape remains unchanged', () => {
+    const report = buildAccountingLedgerDryRunReport({
+      tenantId: 'tenant-1',
+      dispositionLines: [],
+      clientPayouts: [],
+      clientOffsets: [
+        offset({
+          id: 'off-seam-apply-cross',
+          amount: D(30),
+          kind: 'APPLY',
+          payableCaseId: 'case-payable',
+          expenseCaseId: 'case-expense',
+          payableCaseClientId: 'cc-payable-cross',
+        }),
+      ],
+      balanceLedgerRows: [],
+    });
+
+    expectClientOffsetDryRunSeam(report, {
+      id: 'off-seam-apply-cross',
+      kind: 'APPLY',
+      amount: '30',
+      payableCaseId: 'case-payable',
+      expenseCaseId: 'case-expense',
+      payableCaseClientId: 'cc-payable-cross',
+    });
+    expect(report.totalsByTenantCaseCurrency).toEqual([
+      expect.objectContaining({ tenantId: 'tenant-1', caseId: 'case-expense', currency: 'TRY', debit: '0', credit: '30', balanced: false }),
+      expect.objectContaining({ tenantId: 'tenant-1', caseId: 'case-payable', currency: 'TRY', debit: '30', credit: '0', balanced: false }),
+    ]);
+  });
+
+  it('CLIENT_OFFSET seam cross-case REVERSAL: exact dry-run output shape remains unchanged', () => {
+    const report = buildAccountingLedgerDryRunReport({
+      tenantId: 'tenant-1',
+      dispositionLines: [],
+      clientPayouts: [],
+      clientOffsets: [
+        offset({
+          id: 'off-seam-reversal-cross',
+          amount: D(30),
+          kind: 'REVERSAL',
+          payableCaseId: 'case-payable',
+          expenseCaseId: 'case-expense',
+          payableCaseClientId: 'cc-payable-cross',
+        }),
+      ],
+      balanceLedgerRows: [],
+    });
+
+    expectClientOffsetDryRunSeam(report, {
+      id: 'off-seam-reversal-cross',
+      kind: 'REVERSAL',
+      amount: '30',
+      payableCaseId: 'case-payable',
+      expenseCaseId: 'case-expense',
+      payableCaseClientId: 'cc-payable-cross',
+    });
+    expect(report.totalsByTenantCaseCurrency).toEqual([
+      expect.objectContaining({ tenantId: 'tenant-1', caseId: 'case-expense', currency: 'TRY', debit: '30', credit: '0', balanced: false }),
+      expect.objectContaining({ tenantId: 'tenant-1', caseId: 'case-payable', currency: 'TRY', debit: '0', credit: '30', balanced: false }),
+    ]);
+  });
+
+  it('CLIENT_OFFSET seam dimensions: expense leg caseClientId stays null and payable leg keeps payableCaseClientId', () => {
+    const cases = [
+      { id: 'off-dim-apply-same', kind: 'APPLY' as const, payableCaseId: 'case-1', expenseCaseId: 'case-1', caseClientId: 'cc-apply-same' },
+      { id: 'off-dim-reversal-same', kind: 'REVERSAL' as const, payableCaseId: 'case-1', expenseCaseId: 'case-1', caseClientId: 'cc-reversal-same' },
+      { id: 'off-dim-apply-cross', kind: 'APPLY' as const, payableCaseId: 'case-payable', expenseCaseId: 'case-expense', caseClientId: 'cc-apply-cross' },
+      { id: 'off-dim-reversal-cross', kind: 'REVERSAL' as const, payableCaseId: 'case-payable', expenseCaseId: 'case-expense', caseClientId: 'cc-reversal-cross' },
+    ];
+    const report = buildAccountingLedgerDryRunReport({
+      tenantId: 'tenant-1',
+      dispositionLines: [],
+      clientPayouts: [],
+      clientOffsets: cases.map((row) =>
+        offset({
+          id: row.id,
+          kind: row.kind,
+          payableCaseId: row.payableCaseId,
+          expenseCaseId: row.expenseCaseId,
+          payableCaseClientId: row.caseClientId,
+        }),
+      ),
+      balanceLedgerRows: [],
+    });
+
+    for (const row of cases) {
+      const entry = offsetJournalEntry(report, row.id);
+      const payable = entry.lines.find((line) => line.accountCode === 'CLIENT_PAYABLE');
+      const expense = entry.lines.find((line) => line.accountCode === 'CLIENT_EXPENSE_RECEIVABLE');
+
+      expect(payable).toEqual(expect.objectContaining({ caseId: row.payableCaseId, caseClientId: row.caseClientId }));
+      expect(expense).toEqual(expect.objectContaining({ caseId: row.expenseCaseId, caseClientId: null }));
+    }
+  });
   it('expected journal projection icin debit/credit dengesi ve outstanding farkini raporlar', () => {
     const report = buildAccountingLedgerDryRunReport({
       tenantId: 'tenant-1',
