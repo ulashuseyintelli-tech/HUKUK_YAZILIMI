@@ -38,16 +38,24 @@ function buildPrisma(opts: {
   payableLines?: any[];
   confirmedCollections?: any[];
   paid?: Prisma.Decimal | null;
+  journalCreateError?: Error;
 } = {}) {
   const tx = {
     $executeRaw: jest.fn().mockResolvedValue(1),
     clientPayout: {
       findUnique: jest.fn().mockResolvedValue(opts.dupInTx ?? null),
       aggregate: jest.fn().mockResolvedValue({ _sum: { amount: opts.paid ?? null } }),
-      create: jest.fn().mockResolvedValue({ id: 'payout-1' }),
+      create: jest.fn().mockResolvedValue({ id: 'payout-1', paidAt: new Date('2026-06-30T08:00:00.000Z') }),
     },
     clientPayoutAllocation: {
       createMany: jest.fn().mockImplementation((args: any) => Promise.resolve({ count: args.data.length })),
+    },
+    accountingJournalEntry: {
+      findFirst: jest.fn().mockResolvedValue(null),
+      create: jest.fn().mockImplementation(() => {
+        if (opts.journalCreateError) return Promise.reject(opts.journalCreateError);
+        return Promise.resolve({ id: 'journal-payout-1', _count: { lines: 2 } });
+      }),
     },
     collectionDispositionLine: {
       findMany: jest.fn().mockImplementation((args?: any) => {
@@ -103,18 +111,38 @@ describe('ClientPayoutService.create', () => {
       }),
     );
     expect(allocationRows[0].amount.equals(D(400))).toBe(true);
+    expect(tx.accountingJournalEntry.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          entryType: 'CLIENT_PAYOUT_RECORDED',
+          sourceType: 'CLIENT_PAYOUT',
+          sourceId: 'payout-1',
+          sourceAction: 'recorded',
+          idempotencyKey: 'acct-journal:v1:t1:CLIENT_PAYOUT:payout-1:recorded:2026-06-30T08:00:00.000Z:payout-1',
+          lines: {
+            create: expect.arrayContaining([
+              expect.objectContaining({ accountCode: 'CLIENT_PAYABLE', direction: 'DEBIT', payoutId: 'payout-1', caseClientId: 'cc-A' }),
+              expect.objectContaining({ accountCode: 'CASH_CLEARING', direction: 'CREDIT', payoutId: 'payout-1', caseClientId: 'cc-A' }),
+            ]),
+          },
+        }),
+      }),
+    );
+    expect(tx.clientPayoutAllocation.createMany.mock.invocationCallOrder[0]).toBeLessThan(tx.accountingJournalEntry.create.mock.invocationCallOrder[0]);
   });
 
   it('over-payout: amount > outstanding → reject', async () => {
     const { prisma, tx } = buildPrisma(OUT_1000);
     await expect(svc(prisma).create('t1', DTO({ amount: '1500' }), ACTOR)).rejects.toThrow(/aşamaz/);
     expect(tx.clientPayoutAllocation.createMany).not.toHaveBeenCalled();
+    expect(tx.accountingJournalEntry.create).not.toHaveBeenCalled();
   });
 
   it('partial: paid=600 → outstanding 400; amount 500 reject, 400 ok', async () => {
     const a = buildPrisma({ ...OUT_1000, paid: D(600) });
     await expect(svc(a.prisma).create('t1', DTO({ amount: '500' }), ACTOR)).rejects.toThrow(/aşamaz/);
     expect(a.tx.clientPayoutAllocation.createMany).not.toHaveBeenCalled();
+    expect(a.tx.accountingJournalEntry.create).not.toHaveBeenCalled();
     const b = buildPrisma({ ...OUT_1000, paid: D(600) });
     const res = await svc(b.prisma).create('t1', DTO({ amount: '400' }), ACTOR);
     expect(res.created).toBe(true);
@@ -122,6 +150,24 @@ describe('ClientPayoutService.create', () => {
     expect(allocationRows).toHaveLength(1);
     expect(allocationRows[0].collectionDispositionLineId).toBe('line-1');
     expect(allocationRows[0].amount.equals(D(400))).toBe(true);
+    expect(b.tx.accountingJournalEntry.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          entryType: 'CLIENT_PAYOUT_RECORDED',
+          sourceType: 'CLIENT_PAYOUT',
+          sourceId: 'payout-1',
+          sourceAction: 'recorded',
+          idempotencyKey: 'acct-journal:v1:t1:CLIENT_PAYOUT:payout-1:recorded:2026-06-30T08:00:00.000Z:payout-1',
+          lines: {
+            create: expect.arrayContaining([
+              expect.objectContaining({ accountCode: 'CLIENT_PAYABLE', direction: 'DEBIT', payoutId: 'payout-1', caseClientId: 'cc-A' }),
+              expect.objectContaining({ accountCode: 'CASH_CLEARING', direction: 'CREDIT', payoutId: 'payout-1', caseClientId: 'cc-A' }),
+            ]),
+          },
+        }),
+      }),
+    );
+    expect(b.tx.clientPayoutAllocation.createMany.mock.invocationCallOrder[0]).toBeLessThan(b.tx.accountingJournalEntry.create.mock.invocationCallOrder[0]);
   });
 
   it('allocation planning consumes prior aggregate paid before splitting new payout by source line order', async () => {
@@ -161,6 +207,7 @@ describe('ClientPayoutService.create', () => {
     await expect(svc(prisma).create('t1', DTO({ amount: '100' }), ACTOR)).rejects.toThrow(/outstanding/i);
     expect(tx.clientPayout.create).not.toHaveBeenCalled();
     expect(tx.clientPayoutAllocation.createMany).not.toHaveBeenCalled();
+    expect(tx.accountingJournalEntry.create).not.toHaveBeenCalled();
     expect(tx.collectionDispositionLine.findMany.mock.calls[0][0].where.disposition).toEqual(
       expect.objectContaining({ manualReversalRequiredAt: null }),
     );
@@ -172,6 +219,7 @@ describe('ClientPayoutService.create', () => {
     expect(res).toEqual({ created: false, payoutId: 'old-payout', idempotentReplay: true });
     expect(prisma.$transaction).not.toHaveBeenCalled();
     expect(tx.clientPayoutAllocation.createMany).not.toHaveBeenCalled();
+    expect(tx.accountingJournalEntry.create).not.toHaveBeenCalled();
   });
 
   it('idempotency (in-tx race, AYNI payload): replay', async () => {
@@ -179,6 +227,7 @@ describe('ClientPayoutService.create', () => {
     const res = await svc(prisma).create('t1', DTO(), ACTOR);
     expect(res).toEqual({ created: false, payoutId: 'race-payout', idempotentReplay: true });
     expect(tx.clientPayoutAllocation.createMany).not.toHaveBeenCalled();
+    expect(tx.accountingJournalEntry.create).not.toHaveBeenCalled();
   });
 
   it('idempotency reuse FARKLI amount → IDEMPOTENCY_KEY_CONFLICT (sessiz eski dönme YOK)', async () => {
@@ -213,6 +262,15 @@ describe('ClientPayoutService.create', () => {
     await expect(svc(prisma).create('t1', DTO({ idempotencyKey: '' }), ACTOR)).rejects.toThrow(/idempotencyKey/);
   });
 
+  it('journal writer failure rejects payout transaction', async () => {
+    const { prisma, tx } = buildPrisma({ ...OUT_1000, journalCreateError: new Error('journal db down') });
+
+    await expect(svc(prisma).create('t1', DTO({ amount: '400' }), ACTOR)).rejects.toThrow(/Accounting journal write failed/);
+
+    expect(tx.clientPayout.create).toHaveBeenCalled();
+    expect(tx.clientPayoutAllocation.createMany).toHaveBeenCalled();
+    expect(tx.accountingJournalEntry.create).toHaveBeenCalled();
+  });
   it('actor (req.user.id) yoksa → reject (body actor olamaz)', async () => {
     const { prisma } = buildPrisma(OUT_1000);
     await expect(svc(prisma).create('t1', DTO(), {})).rejects.toThrow(/actor/);

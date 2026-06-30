@@ -7,6 +7,8 @@ import type {
   AccountingAccountCode,
   ClientOffsetJournalSource,
   ClientOffsetJournalSourcePayload,
+  ClientPayoutJournalSource,
+  ClientPayoutRecordedPayload,
   CollectionDispositionLineJournalSource,
   CollectionDispositionLinePostedPayload,
   JournalEntryDraft,
@@ -420,5 +422,107 @@ describe('AccountingJournalBuilder CollectionDispositionLine posting contract', 
     expect(sourceResult.ok).toBe(false);
     if (sourceResult.ok) throw new Error('Expected source dimension mismatch to fail.');
     expect(sourceResult.errors.map((error) => error.code)).toContain('MISSING_REQUIRED_DIMENSION');
+  });
+});
+
+interface ClientPayoutSourceOverrides {
+  tenantId?: string;
+  sourceId?: string;
+  sourceVersion?: string;
+  sourceAction?: ClientPayoutJournalSource['sourceAction'];
+  occurredAt?: string;
+  effectiveDate?: string;
+  actorId?: string | null;
+  currency?: string;
+  sourceHash?: string | null;
+  metadata?: JournalMetadata;
+  payload?: Partial<ClientPayoutRecordedPayload>;
+}
+
+function clientPayoutSource(overrides: ClientPayoutSourceOverrides = {}): ClientPayoutJournalSource {
+  const payoutId = overrides.sourceId ?? 'payout-1';
+  const payload: ClientPayoutRecordedPayload = {
+    amount: '400.00',
+    caseId: 'case-1',
+    caseClientId: 'case-client-1',
+    clientId: 'client-1',
+    payoutId,
+    ...(overrides.payload ?? {}),
+  };
+
+  return {
+    tenantId: overrides.tenantId ?? 'tenant-1',
+    sourceType: 'CLIENT_PAYOUT',
+    sourceId: payoutId,
+    sourceVersion: overrides.sourceVersion ?? `2026-06-30T08:00:00.000Z:${payoutId}`,
+    sourceAction: overrides.sourceAction ?? 'recorded',
+    occurredAt: overrides.occurredAt ?? '2026-06-30T08:00:00.000Z',
+    effectiveDate: overrides.effectiveDate ?? '2026-06-30',
+    actorId: overrides.actorId ?? 'user-1',
+    currency: overrides.currency ?? 'TRY',
+    sourceHash: overrides.sourceHash ?? null,
+    metadata: overrides.metadata ?? { sourceName: 'client-payout-test' },
+    payload,
+  };
+}
+
+function buildPayoutDraft(source: ClientPayoutJournalSource = clientPayoutSource()): JournalEntryDraft {
+  const result = buildAccountingJournal(source);
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(JSON.stringify(result.errors));
+  return result.draft;
+}
+
+describe('AccountingJournalBuilder ClientPayout recorded contract', () => {
+  it('maps RECORDED payout to CLIENT_PAYABLE debit and CASH_CLEARING credit', () => {
+    const draft = buildPayoutDraft(clientPayoutSource({
+      tenantId: 'tenant-pay',
+      sourceId: 'payout-live',
+      sourceVersion: '2026-06-30T09:10:11.000Z:payout-live',
+    }));
+
+    const payable = lineByAccount(draft, 'CLIENT_PAYABLE');
+    const cash = lineByAccount(draft, 'CASH_CLEARING');
+
+    expect(draft.entryType).toBe('CLIENT_PAYOUT_RECORDED');
+    expect(draft.idempotencyKey).toBe('acct-journal:v1:tenant-pay:CLIENT_PAYOUT:payout-live:recorded:2026-06-30T09:10:11.000Z:payout-live');
+    expect(payable).toEqual(expect.objectContaining({ direction: 'DEBIT', amount: '400.00', payoutId: 'payout-live', caseClientId: 'case-client-1' }));
+    expect(cash).toEqual(expect.objectContaining({ direction: 'CREDIT', amount: '400.00', payoutId: 'payout-live', caseClientId: 'case-client-1' }));
+    expect(validateJournalDraft(draft).ok).toBe(true);
+  });
+
+  it('rejects unsupported payout source actions before live journal posting', () => {
+    const result = buildAccountingJournal(clientPayoutSource({ sourceAction: 'posted' as any }));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('Expected ClientPayout invalid action to be rejected.');
+    expect(result.errors.map((error) => error.code)).toContain('UNSUPPORTED_SOURCE_ACTION');
+  });
+
+  it('business validator requires caseClientId and payoutId dimensions', () => {
+    const missingClient = buildPayoutDraft();
+    lineByAccount(missingClient, 'CLIENT_PAYABLE').caseClientId = null;
+    const missingClientResult = validateJournalBusiness(missingClient);
+    expect(missingClientResult.ok).toBe(false);
+    if (missingClientResult.ok) throw new Error('Expected missing caseClientId to fail.');
+    expect(missingClientResult.errors.map((error) => error.code)).toContain('MISSING_REQUIRED_DIMENSION');
+
+    const missingPayout = buildPayoutDraft();
+    lineByAccount(missingPayout, 'CASH_CLEARING').payoutId = null;
+    const missingPayoutResult = validateJournalBusiness(missingPayout);
+    expect(missingPayoutResult.ok).toBe(false);
+    if (missingPayoutResult.ok) throw new Error('Expected missing payoutId to fail.');
+    expect(missingPayoutResult.errors.map((error) => error.code)).toContain('MISSING_REQUIRED_DIMENSION');
+  });
+
+  it('business validator blocks unrelated source dimensions on payout lines', () => {
+    const draft = buildPayoutDraft();
+    lineByAccount(draft, 'CLIENT_PAYABLE').dispositionLineId = 'line-foreign';
+
+    const result = validateJournalBusiness(draft);
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('Expected unrelated dimension to fail.');
+    expect(result.errors.map((error) => error.code)).toContain('FORBIDDEN_SYNTHETIC_DIMENSION');
   });
 });
