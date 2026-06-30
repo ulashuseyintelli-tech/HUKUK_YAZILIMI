@@ -1,14 +1,16 @@
-# ACCT-3D Distribution Recommendation Operator Usage
+# ACCT-3D Distribution Recommendation Debug Usage
 
-**Status:** Accepted operator/developer usage note for the ACCT-3 advisory endpoint.
+**Status:** Accepted internal/debug usage note for the ACCT-3 advisory endpoint.
 **Scope:** Documentation-only. No runtime behavior, schema, migration, controller, authorization, posting, writer, legal ledger, TBK100, or test logic change.
 **Related:** `acct-3a-distribution-recommendation-design-gate.md`, `tm3-collection-disposition-boundary.md`, `ADR-010-ACCOUNTING-JOURNAL-SOT-NORTH-STAR.md`.
 
 ## Purpose
 
-Distribution Recommendation gives the operator an editable preview for splitting a `HELD_PENDING_DISTRIBUTION` collection disposition into candidate distribution lines.
+Distribution Recommendation gives internal consumers an editable/debug preview for splitting a `HELD_PENDING_DISTRIBUTION` collection disposition into candidate distribution lines.
 
-It is an FE pre-fill / operator preview. It is not approval, posting, legal ledger output, TBK100 statement output, or an `AccountingJournal` write. Persisted distribution lines are created only through the existing `POST /collection-dispositions/:id/recommend` lifecycle action, and financial effect remains gated by the existing approve/post lifecycle.
+This document is not operator-facing UI copy. It is a usage boundary for developer/debug consumption so the endpoint is not mistaken for accounting evidence.
+
+The endpoint is an advisory FE pre-fill / debug preview. It is not approval, posting, legal ledger output, TBK100 statement output, legal projection, or an `AccountingJournal` write. Persisted distribution lines are created only through the existing `POST /collection-dispositions/:id/recommend` lifecycle action, and financial effect remains gated by the existing approve/post lifecycle.
 
 ## Endpoint
 
@@ -77,6 +79,16 @@ Expected advisory invariants:
 - `financialEffect=false`
 - No call to `recommend()`, `approve()`, `post()`, `AccountingJournalWriterService`, or journal write paths.
 - Suggested lines are operator-editable candidates; they do not become persisted distribution lines until the separate recommend lifecycle action.
+
+## Interpretation Boundaries
+
+The response is safe for read-only preview/debug consumption only:
+
+- `currency` is copied from the source disposition. The endpoint does not perform FX conversion, cross-currency reconciliation, or reporting-currency normalization.
+- There is no `period`, `asOf`, `postedAt`, or accounting cut-off field in the contract. The response must not be treated as a periodized report, trial-balance input, statement row, or closing-period artifact.
+- There is no recommendation confidence score. `warnings`, `sumCheck`, and `expenseModule` are advisory evidence, not probability, audit assurance, or legal/accounting sign-off.
+- `sumCheck.equalsGross` only describes the arithmetic of returned `suggestedLines` against the source gross amount. It does not prove collectability, legal entitlement, approval readiness, or journal correctness.
+- The endpoint may read tenant-scoped source disposition data and expense eligibility evidence, but it does not persist the recommendation or create ledger facts.
 
 ## Suggested Lines
 
