@@ -78,6 +78,18 @@ function buildPrisma(opts: {
   return { prisma, tx };
 }
 const svc = (p: any) => new ClientPayoutService(p, new ClientSettlementReadService(p));
+
+function firstJournalCreateData(tx: any) {
+  expect(tx.accountingJournalEntry.create).toHaveBeenCalledTimes(1);
+  return tx.accountingJournalEntry.create.mock.calls[0][0].data;
+}
+
+function persistedJournalLine(journalData: any, accountCode: string) {
+  const line = journalData.lines.create.find((candidate: any) => candidate.accountCode === accountCode);
+  expect(line).toBeDefined();
+  return line;
+}
+
 const DTO = (over: any = {}) => ({ caseId: 'case1', caseClientId: 'cc-A', amount: '400', idempotencyKey: 'k1', ...over });
 const ACTOR = { userId: 'u1' };
 
@@ -128,6 +140,76 @@ describe('ClientPayoutService.create', () => {
         }),
       }),
     );
+    const journalData = firstJournalCreateData(tx);
+    expect(journalData).toEqual(
+      expect.objectContaining({
+        tenantId: 't1',
+        caseId: 'case1',
+        currency: 'TRY',
+        entryType: 'CLIENT_PAYOUT_RECORDED',
+        sourceType: 'CLIENT_PAYOUT',
+        sourceId: 'payout-1',
+        sourceAction: 'recorded',
+        idempotencyKey: 'acct-journal:v1:t1:CLIENT_PAYOUT:payout-1:recorded:2026-06-30T08:00:00.000Z:payout-1',
+        sourceHash: null,
+        sourceOccurredAt: new Date('2026-06-30T08:00:00.000Z'),
+        postedAt: new Date('2026-06-30T08:00:00.000Z'),
+        postedById: 'u1',
+        reversalOfEntryId: null,
+      }),
+    );
+    expect(journalData.metadata).toEqual(
+      expect.objectContaining({
+        status: 'RECORDED',
+        description: 'Client payout recorded',
+        sourceVersion: '2026-06-30T08:00:00.000Z:payout-1',
+        effectiveDate: '2026-06-30',
+        idempotencyMaterial: {
+          tenantId: 't1',
+          sourceType: 'CLIENT_PAYOUT',
+          sourceId: 'payout-1',
+          sourceAction: 'recorded',
+          sourceVersion: '2026-06-30T08:00:00.000Z:payout-1',
+        },
+      }),
+    );
+    expect(journalData.lines.create).toHaveLength(2);
+    const payableJournalLine = persistedJournalLine(journalData, 'CLIENT_PAYABLE');
+    expect(payableJournalLine).toEqual(
+      expect.objectContaining({
+        lineNo: 1,
+        tenantId: 't1',
+        direction: 'DEBIT',
+        currency: 'TRY',
+        caseId: 'case1',
+        clientId: null,
+        caseClientId: 'cc-A',
+        collectionId: null,
+        dispositionLineId: null,
+        payoutId: 'payout-1',
+        offsetId: null,
+        balanceLedgerId: null,
+      }),
+    );
+    expect(payableJournalLine.amount.equals(D(400))).toBe(true);
+    const cashJournalLine = persistedJournalLine(journalData, 'CASH_CLEARING');
+    expect(cashJournalLine).toEqual(
+      expect.objectContaining({
+        lineNo: 2,
+        tenantId: 't1',
+        direction: 'CREDIT',
+        currency: 'TRY',
+        caseId: 'case1',
+        clientId: null,
+        caseClientId: 'cc-A',
+        collectionId: null,
+        dispositionLineId: null,
+        payoutId: 'payout-1',
+        offsetId: null,
+        balanceLedgerId: null,
+      }),
+    );
+    expect(cashJournalLine.amount.equals(D(400))).toBe(true);
     expect(tx.clientPayoutAllocation.createMany.mock.invocationCallOrder[0]).toBeLessThan(tx.accountingJournalEntry.create.mock.invocationCallOrder[0]);
   });
 
