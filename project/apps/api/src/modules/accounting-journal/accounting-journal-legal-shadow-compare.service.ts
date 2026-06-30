@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { createCanonicalSourceHash } from './accounting-journal-source-hash';
 import type { AccountingAccountCode, AccountingJournalDirection } from './accounting-journal.types';
 
 export type AccountingJournalLegalShadowMatchStatus =
@@ -68,11 +69,45 @@ export interface AccountingJournalLegalShadowTechnicalAcceptanceThresholds {
   diagnosticOnlyRows: AccountingJournalLegalShadowTechnicalAcceptanceThresholdResult;
 }
 
+export type AccountingJournalLegalShadowAcceptedExclusionSignoffStatus =
+  | 'NOT_REQUIRED'
+  | 'READY_FOR_SIGNOFF';
+
+export interface AccountingJournalLegalShadowAcceptedExclusionSignoffItem {
+  key: string;
+  domain: string;
+  sourceType: string;
+  sourceAction: string;
+  sourceId: string;
+  accountCode: string;
+  direction: AccountingJournalDirection;
+  currency: string;
+  caseId: string | null;
+  clientId: string | null;
+  caseClientId: string | null;
+  journalAmount: string | null;
+  legalProjectionAmount: string | null;
+  delta: string | null;
+  matchStatus: AccountingJournalLegalShadowMatchStatus;
+  zeroingDecision: AccountingJournalLegalShadowZeroingDecision;
+  zeroingReasonCode: string;
+  blockerCodes: string[];
+  legalSourcePolicy: AccountingJournalLegalSourcePolicyDecision | null;
+  legalSourcePolicyCode: string | null;
+}
+
 export interface AccountingJournalLegalShadowAcceptedExclusionSignoff {
+  status: AccountingJournalLegalShadowAcceptedExclusionSignoffStatus;
   required: boolean;
   rows: number;
   reasonCodes: string[];
   rowKeys: string[];
+  evidenceFingerprint: string | null;
+  items: AccountingJournalLegalShadowAcceptedExclusionSignoffItem[];
+  policyCodes: string[];
+  sourceTypes: string[];
+  sourceActions: string[];
+  retainedCutoverBlockerCodes: string[];
 }
 
 export interface AccountingJournalLegalShadowRedBlockerFamily {
@@ -1168,13 +1203,72 @@ function thresholdResult(
 function acceptedExclusionSignoffFromRows(
   rows: AccountingJournalLegalShadowCompareRow[],
 ): AccountingJournalLegalShadowAcceptedExclusionSignoff {
-  const acceptedRows = rows.filter((row) => row.zeroingDecision === 'ACCEPTED_EXCLUSION');
+  const items = rows
+    .filter((row) => row.zeroingDecision === 'ACCEPTED_EXCLUSION')
+    .map(acceptedExclusionSignoffItemFromRow)
+    .sort(compareAcceptedExclusionSignoffItems);
+  const required = items.length > 0;
+
   return {
-    required: acceptedRows.length > 0,
-    rows: acceptedRows.length,
-    reasonCodes: uniqueSorted(acceptedRows.map((row) => row.zeroingReasonCode)),
-    rowKeys: uniqueSorted(acceptedRows.map((row) => row.key)),
+    status: required ? 'READY_FOR_SIGNOFF' : 'NOT_REQUIRED',
+    required,
+    rows: items.length,
+    reasonCodes: uniqueSorted(items.map((item) => item.zeroingReasonCode)),
+    rowKeys: items.map((item) => item.key),
+    evidenceFingerprint: required ? acceptedExclusionEvidenceFingerprint(items) : null,
+    items,
+    policyCodes: uniqueSorted(items.map((item) => item.legalSourcePolicyCode).filter(isStringValue)),
+    sourceTypes: uniqueSorted(items.map((item) => item.sourceType)),
+    sourceActions: uniqueSorted(items.map((item) => item.sourceAction)),
+    retainedCutoverBlockerCodes: uniqueSorted(items.flatMap((item) => item.blockerCodes)),
   };
+}
+
+function acceptedExclusionSignoffItemFromRow(
+  row: AccountingJournalLegalShadowCompareRow,
+): AccountingJournalLegalShadowAcceptedExclusionSignoffItem {
+  return {
+    key: row.key,
+    domain: row.domain,
+    sourceType: row.sourceType,
+    sourceAction: row.sourceAction,
+    sourceId: row.sourceId,
+    accountCode: row.accountCode,
+    direction: row.direction,
+    currency: row.currency,
+    caseId: row.caseId,
+    clientId: row.clientId,
+    caseClientId: row.caseClientId,
+    journalAmount: row.journalAmount,
+    legalProjectionAmount: row.legalProjectionAmount,
+    delta: row.delta,
+    matchStatus: row.matchStatus,
+    zeroingDecision: row.zeroingDecision,
+    zeroingReasonCode: row.zeroingReasonCode,
+    blockerCodes: [...row.blockerCodes].sort(),
+    legalSourcePolicy: row.legalSourcePolicy ?? null,
+    legalSourcePolicyCode: row.legalSourcePolicyCode ?? null,
+  };
+}
+
+function compareAcceptedExclusionSignoffItems(
+  left: AccountingJournalLegalShadowAcceptedExclusionSignoffItem,
+  right: AccountingJournalLegalShadowAcceptedExclusionSignoffItem,
+): number {
+  return left.key.localeCompare(right.key)
+    || left.sourceType.localeCompare(right.sourceType)
+    || left.sourceAction.localeCompare(right.sourceAction)
+    || left.sourceId.localeCompare(right.sourceId)
+    || left.accountCode.localeCompare(right.accountCode);
+}
+
+function acceptedExclusionEvidenceFingerprint(
+  items: AccountingJournalLegalShadowAcceptedExclusionSignoffItem[],
+): string {
+  return createCanonicalSourceHash({
+    contract: 'PB-018F2A_ACCEPTED_EXCLUSION_SIGNOFF_V1',
+    items,
+  });
 }
 
 function technicalAcceptanceStatus(input: {
@@ -1286,6 +1380,10 @@ function evidenceField(field: string, rows: AccountingJournalLegalShadowCompareR
 
 function uniqueSorted(values: string[]): string[] {
   return [...new Set(values)].sort();
+}
+
+function isStringValue(value: string | null): value is string {
+  return typeof value === 'string' && value.length > 0;
 }
 function zeroingSummaryFromRows(rows: AccountingJournalLegalShadowCompareRow[]): AccountingJournalLegalShadowZeroingSummary {
   return {
