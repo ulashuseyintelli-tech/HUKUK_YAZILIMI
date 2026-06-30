@@ -1,7 +1,5 @@
-Bu dosya yerel Claude/Claude Code uyumluluğu için stub’dır.
+Bu dosya yerel Claude/Claude Code uyumlulugu icin stub'dir.
 
-Ana ve güncel agent talimatları repo kökündeki AGENTS.md dosyasındadır.
-
-Çalışmaya başlamadan AGENTS.md okunmalıdır.
-
-Repository root/worktree discipline dahil tüm kalıcı kurallar için AGENTS.md geçerlidir.
+Kanonik ve guncel agent talimatlari repo kokundeki `CLAUDE.md` dosyasindadir.
+Calismaya baslamadan repo kokundeki `CLAUDE.md` okunmalidir.
+Bir celiski gorulurse repo kokundeki `CLAUDE.md` takip edilir.
