@@ -52,6 +52,7 @@ import { FinanceRiskEngine } from './finance-risk.engine';
     ClientOffsetService,
     ClientPayoutManualReversalService,
   ],
-  exports: [CollectionDispositionService, CollectionReversalService],
+  // FAZ-1b: ClientSettlementReadService export → expense-request modülü (UYAP gate) computeExpenseRemaining'i kullanır.
+  exports: [CollectionDispositionService, CollectionReversalService, ClientSettlementReadService],
 })
 export class ClientSettlementModule {}

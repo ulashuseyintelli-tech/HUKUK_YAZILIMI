@@ -284,6 +284,7 @@ function buildSummaryPrisma(o: {
   postedDispByCase?: Record<string, Prisma.Decimal>;
   balanceByCase?: Record<string, Prisma.Decimal>;
   expenseRows?: any[];
+  expenseOffsetApply?: Record<string, Prisma.Decimal>; // FAZ-1b: per-request offset APPLY (expenseRequestId)
 }) {
   return {
     caseClient: { findMany: jest.fn().mockResolvedValue(o.ccRows) },
@@ -311,7 +312,15 @@ function buildSummaryPrisma(o: {
     expenseRequest: { findMany: jest.fn().mockResolvedValue(o.expenseRows ?? []) },
     collectionDispositionLine: { findMany: jest.fn().mockResolvedValue([]) },
     // TM3 Faz C C-1 — getClientAccountingSummary offset offRows fetch (default: yok → offsetNet 0, sonuç değişmez).
-    clientOffset: { findMany: jest.fn().mockResolvedValue([]), aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) },
+    clientOffset: {
+      findMany: jest.fn().mockResolvedValue([]),
+      // FAZ-1b: per-request computeExpenseRemaining offset bacağı (expenseRequestId APPLY → expenseOffsetApply).
+      aggregate: jest.fn().mockImplementation(({ where }: any) =>
+        Promise.resolve({ _sum: { amount: where?.expenseRequestId && where.kind === 'APPLY' ? (o.expenseOffsetApply?.[where.expenseRequestId] ?? null) : null } }),
+      ),
+    },
+    // FAZ-1b: reimbursement application terimi (default: yok → null = 0).
+    collectionDispositionExpenseApplication: { aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }) },
   } as any;
 }
 
@@ -326,7 +335,7 @@ describe('ClientSettlementReadService.getClientAccountingSummary (Faz A)', () =>
       collectionByCase: { caseA: D(1000), caseB: D(0) },
       postedDispByCase: { caseA: D(400), caseB: D(0) },
       balanceByCase: { caseA: D(50), caseB: D(0) },
-      expenseRows: [{ caseId: 'caseA', totalAmount: D(1431.1), paidTotal: D(0) }],
+      expenseRows: [{ id: 'er-A', caseId: 'caseA', totalAmount: D(1431.1), paidTotal: D(0) }],
     });
     const svc = read(prisma);
     jest.spyOn(svc, 'computeOutstanding').mockImplementation(async (_db: any, _t: any, caseId: any) =>
@@ -365,7 +374,8 @@ describe('ClientSettlementReadService.getClientAccountingSummary (Faz A)', () =>
       collectionByCase: { caseA: D(0) },
       postedDispByCase: { caseA: D(0) },
       balanceByCase: { caseA: D(0) },
-      expenseRows: [{ caseId: 'caseA', totalAmount: D(1431.1), paidTotal: D(0) }],
+      expenseRows: [{ id: 'er-A', caseId: 'caseA', totalAmount: D(1431.1), paidTotal: D(0) }],
+      expenseOffsetApply: { 'er-A': D(300) }, // FAZ-1b: per-request computeExpenseRemaining offset bacağı (expUnpaid 300 düşer)
     });
     prisma.clientOffset.findMany = jest.fn().mockResolvedValue([
       { amount: D(300), kind: 'APPLY', payableCaseId: 'caseA', expenseCaseId: 'caseA' },

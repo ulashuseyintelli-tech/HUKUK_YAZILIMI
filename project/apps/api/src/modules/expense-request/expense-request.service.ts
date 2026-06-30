@@ -411,6 +411,50 @@ export class ExpenseRequestService {
     });
   }
 
+  /**
+   * S8-B FAZ-1b — Masraf DAĞITIM-UYGUNLUĞU onayı (collection-lifecycle status'tan AYRI eksen). PENDING_APPROVAL → APPROVED.
+   * Yalnız APPROVED masraf otomatik dağıtıma (CollectionDisposition reimbursement) girer. finalizeAndSend (müvekkile
+   * gönder) ile KARIŞTIRILMAZ — bu iç dağıtım-onayı. İdempotent (zaten APPROVED → no-op).
+   */
+  async approveForDistribution(tenantId: string, id: string, userId: string) {
+    const existing = await this.findOne(tenantId, id);
+    if (existing.expenseApprovalStatus === 'APPROVED') return existing; // idempotent
+    if (existing.expenseApprovalStatus !== 'PENDING_APPROVAL') {
+      throw new BadRequestException(`Yalnız PENDING_APPROVAL masraf onaylanabilir (durum: ${existing.expenseApprovalStatus})`);
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.expenseRequest.update({
+        where: { id },
+        data: { expenseApprovalStatus: 'APPROVED', approvedAt: new Date(), approvedById: userId },
+      });
+      await tx.expenseAuditLog.create({
+        data: { expenseRequestId: id, action: 'APPROVAL_GRANTED', details: { scope: 'DISTRIBUTION' }, userId },
+      });
+      return updated;
+    });
+  }
+
+  /**
+   * S8-B FAZ-1b — Masraf dağıtım-onayını reddet. PENDING_APPROVAL → REJECTED. İdempotent (zaten REJECTED → no-op). Gerekçe opsiyonel.
+   */
+  async rejectForDistribution(tenantId: string, id: string, userId: string, note?: string) {
+    const existing = await this.findOne(tenantId, id);
+    if (existing.expenseApprovalStatus === 'REJECTED') return existing; // idempotent
+    if (existing.expenseApprovalStatus !== 'PENDING_APPROVAL') {
+      throw new BadRequestException(`Yalnız PENDING_APPROVAL masraf reddedilebilir (durum: ${existing.expenseApprovalStatus})`);
+    }
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.expenseRequest.update({
+        where: { id },
+        data: { expenseApprovalStatus: 'REJECTED', approvedAt: new Date(), approvedById: userId },
+      });
+      await tx.expenseAuditLog.create({
+        data: { expenseRequestId: id, action: 'APPROVAL_REJECTED', details: { scope: 'DISTRIBUTION', note: note ?? null }, userId },
+      });
+      return updated;
+    });
+  }
+
   async delete(tenantId: string, id: string) {
     const existing = await this.findOne(tenantId, id);
 

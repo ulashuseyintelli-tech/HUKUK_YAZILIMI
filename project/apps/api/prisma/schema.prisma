@@ -3373,6 +3373,13 @@ model PortalMessage {
 }
 
 // Masraf Talepleri
+// S8-B FAZ-1b — Masraf dağıtım-uygunluğu onay ekseni (collection-lifecycle status'tan AYRI).
+enum ExpenseApprovalStatus {
+  PENDING_APPROVAL // dağıtıma uygun değil (varsayılan)
+  APPROVED // yetkili onayladı → otomatik dağıtıma (reimbursement) uygun
+  REJECTED // reddedildi
+}
+
 model ExpenseRequest {
   id       String @id @default(cuid())
   tenantId String
@@ -3422,6 +3429,12 @@ model ExpenseRequest {
   // Durum Makinesi
   status ExpenseRequestStatus @default(PENDING)
 
+  // S8-B FAZ-1b — Dağıtım-uygunluğu onay ekseni (status=tahsilat lifecycle'dan AYRI).
+  // Yalnız APPROVED masraf otomatik dağıtıma (CollectionDisposition reimbursement) girer. Proxy YOK.
+  expenseApprovalStatus ExpenseApprovalStatus @default(PENDING_APPROVAL)
+  approvedAt            DateTime?
+  approvedById          String? // scalar, FK YOK (boundary)
+
   // Gönderim Bilgileri
   sentAt            DateTime?
   sentVia           String? // EMAIL, SMS, WHATSAPP
@@ -3467,6 +3480,7 @@ model ExpenseRequest {
   @@index([packageCode])
   @@index([createdAt])
   @@index([dueDate])
+  @@index([tenantId, expenseApprovalStatus, approvedAt]) // FAZ-1b: onay filtresi + "en eski ONAYLI önce" FIFO
 }
 
 // Masraf Talebi Kalemleri
@@ -7811,6 +7825,7 @@ model CollectionDisposition {
   lines CollectionDispositionLine[]
   clientPayoutAllocations     ClientPayoutAllocation[]
   clientPayoutManualReversals ClientPayoutManualReversal[]
+  expenseApplications         CollectionDispositionExpenseApplication[]
 
   @@index([tenantId, caseId])
   @@index([tenantId, status])
@@ -7828,14 +7843,64 @@ model CollectionDispositionLine {
   amount       Decimal                       @db.Decimal(15, 2)
   caseClientId String? // CLUSTER'da satır-bazlı alacaklı (M2); M1 default null
 
+  // S8-B FAZ-1b — REIMBURSEMENT satırının kapattığı ExpenseRequest (1:1; scalar, FK YOK).
+  // resolveLines: CLIENT_/FIRM_EXPENSE_REIMBURSEMENT tiplerinde ZORUNLU (service-validate, DB nullable).
+  expenseRequestId String?
+
   note      String?
   createdAt DateTime @default(now())
 
   clientPayoutAllocations     ClientPayoutAllocation[]
   clientPayoutManualReversals ClientPayoutManualReversal[]
+  expenseApplications         CollectionDispositionExpenseApplication[]
 
   @@index([dispositionId])
   @@index([type])
+  @@index([expenseRequestId])
+}
+
+// S8-B FAZ-1b — Dağıtım reimbursement satırının ExpenseRequest kapatma PROJECTION'ı (ClientOffset aynası).
+enum ExpenseApplicationKind {
+  APPLY // reimbursement uygulandı (remaining düşer)
+  REVERSAL // reimbursement iptali (orijinali update ETMEZ; ayrı immutable kayıt)
+}
+
+enum ExpenseReimbursementScope {
+  CLIENT_FRONTED // müvekkilin avansladığı masraf (CLIENT_EXPENSE_REIMBURSEMENT)
+  FIRM_FRONTED // büronun fronted ettiği masraf (FIRM_EXPENSE_REIMBURSEMENT)
+}
+
+// Kapanış DERİVE edilir (Σ APPLY − Σ REVERSAL); ExpenseRequest.paidTotal ASLA mutate edilmez (projection-first).
+model CollectionDispositionExpenseApplication {
+  id       String @id @default(cuid())
+  tenantId String
+  caseId   String // denormalize: tenant-scoped aggregate sorguları
+
+  // expense leg — kapatılan masraf (scalar ref, FK YOK; ClientOffset.expenseRequestId gibi)
+  expenseRequestId String
+
+  // reimbursement leg — aynı-aggregate sahipleri (FK @relation, onDelete Restrict → projection audit korunur)
+  collectionDispositionId     String
+  collectionDisposition       CollectionDisposition     @relation(fields: [collectionDispositionId], references: [id], onDelete: Restrict, map: "CDEApp_disposition_fkey")
+  collectionDispositionLineId String
+  collectionDispositionLine   CollectionDispositionLine @relation(fields: [collectionDispositionLineId], references: [id], onDelete: Restrict, map: "CDEApp_line_fkey")
+
+  kind               ExpenseApplicationKind
+  amount             Decimal                   @db.Decimal(15, 2)
+  currency           String                    @default("TRY")
+  reimbursementScope ExpenseReimbursementScope
+
+  reversesApplicationId String? // APPLY→null; REVERSAL→orijinal APPLY id (self-ref scalar, FK gevşek)
+  reason                String? // REVERSAL'da zorunlu (service enforce; şema nullable)
+  createdById           String? // actor; post()/reversal actoru opsiyonel olabilir (BalanceLedger gibi)
+  createdAt             DateTime @default(now())
+
+  @@unique([tenantId, collectionDispositionLineId, kind], map: "CDEApp_line_kind_key") // 1:1 line→expense + APPLY/REVERSAL idempotent
+  @@unique([tenantId, reversesApplicationId], map: "CDEApp_reverses_key") // double-reversal guard (Postgres NULL-distinct)
+  @@index([tenantId, expenseRequestId], map: "CDEApp_tenant_expense_idx") // Σ-aggregate hot path (computeExpenseRemaining)
+  @@index([collectionDispositionId], map: "CDEApp_disposition_idx")
+  @@index([collectionDispositionLineId], map: "CDEApp_line_idx")
+  @@index([createdAt], map: "CDEApp_createdAt_idx")
 }
 
 // ============================================================

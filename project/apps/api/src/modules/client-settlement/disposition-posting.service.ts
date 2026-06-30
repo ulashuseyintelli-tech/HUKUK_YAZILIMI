@@ -3,6 +3,7 @@ import { Prisma, CollectionDispositionLineType, OfficeApprovalStatus } from '@pr
 import { PrismaService } from '../../prisma/prisma.service';
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
 import { PostDispositionDto } from './dto/post-disposition.dto';
+import { ClientSettlementReadService } from './client-settlement-read.service';
 import { FinanceApprovalIntentBuilder } from './finance-approval-intent.builder';
 import { FinanceRiskEngine } from './finance-risk.engine';
 import { FinanceRiskCollectionDispositionInput, FinanceRiskDecision, FinanceRiskEvaluation } from './finance-risk.types';
@@ -12,6 +13,11 @@ const HELD = CollectionDispositionLineType.HELD_PENDING_DISTRIBUTION;
 const CLIENT_ATTRIBUTED = new Set<CollectionDispositionLineType>([
   CollectionDispositionLineType.CLIENT_PAYABLE,
   CollectionDispositionLineType.CLIENT_EXPENSE_REIMBURSEMENT,
+]);
+/** S8-B FAZ-1b — ExpenseRequest'i kapatan reimbursement satır tipleri (post()'ta APPLY application yazar). */
+const REIMBURSEMENT_TYPES = new Set<CollectionDispositionLineType>([
+  CollectionDispositionLineType.CLIENT_EXPENSE_REIMBURSEMENT,
+  CollectionDispositionLineType.FIRM_EXPENSE_REIMBURSEMENT,
 ]);
 
 /** P4 OfficeApprovalRequest action sözleşmesi (disposition post onayı). */
@@ -23,6 +29,7 @@ interface ResolvedLine {
   amount: Prisma.Decimal;
   caseClientId: string | null;
   note: string | null;
+  expenseRequestId: string | null; // FAZ-1b: REIMBURSEMENT tiplerinde dolu (kapatılan ExpenseRequest)
 }
 
 /**
@@ -46,6 +53,7 @@ export class DispositionPostingService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly officeApproval: OfficeApprovalService,
+    private readonly readService: ClientSettlementReadService,
     private readonly financeRisk: FinanceRiskEngine = new FinanceRiskEngine(),
     private readonly approvalIntentBuilder: FinanceApprovalIntentBuilder = new FinanceApprovalIntentBuilder(),
   ) {}
@@ -100,7 +108,7 @@ export class DispositionPostingService {
       await tx.collectionDispositionLine.deleteMany({ where: { dispositionId } });
       for (const r of resolved) {
         await tx.collectionDispositionLine.create({
-          data: { dispositionId, type: r.type, amount: r.amount, caseClientId: r.caseClientId, note: r.note },
+          data: { dispositionId, type: r.type, amount: r.amount, caseClientId: r.caseClientId, note: r.note, expenseRequestId: r.expenseRequestId },
         });
       }
       // Yalnız HELD ise RECOMMENDED yap (yarış-güvenli; eşzamanlı recommend/post fence).
@@ -194,7 +202,7 @@ export class DispositionPostingService {
     // Line'lar recommend'da yazıldı + approve'da donduruldu. Defense-in-depth: sum==totalAmount yeniden doğrula.
     const lines = await this.prisma.collectionDispositionLine.findMany({
       where: { dispositionId },
-      select: { id: true, type: true, amount: true },
+      select: { id: true, type: true, amount: true, expenseRequestId: true },
     });
     if (lines.length === 0) throw new BadRequestException('Dağıtım satırı yok');
     const sum = lines.reduce((acc, l) => acc.plus(new Prisma.Decimal(l.amount)), new Prisma.Decimal(0));
@@ -227,6 +235,37 @@ export class DispositionPostingService {
               sourceId: l.id,
               description: 'Tahsilat avans mahsubu (OFFSET_CLIENT_ADVANCE)',
               createdById: actor?.userId,
+            },
+          });
+        } else if (REIMBURSEMENT_TYPES.has(l.type)) {
+          // FAZ-1b: reimbursement → ExpenseRequest kapatma PROJECTION'ı (APPLY application). paidTotal MUTATE YOK
+          // (projection-first); kapanış computeExpenseRemaining tarafından Σ application'lardan türetilir.
+          if (!l.expenseRequestId) throw new BadRequestException(`Reimbursement satırı expenseRequestId taşımıyor (line ${l.id})`);
+          const er = await tx.expenseRequest.findFirst({
+            where: { id: l.expenseRequestId, tenantId, caseId: disp.caseId },
+            select: { totalAmount: true, paidTotal: true, currency: true, status: true, expenseApprovalStatus: true },
+          });
+          if (!er) throw new BadRequestException(`Reimbursement hedefi masraf bulunamadı/scope dışı (line ${l.id})`);
+          if (er.status === 'CANCELLED') throw new BadRequestException(`Reimbursement hedefi masraf CANCELLED (line ${l.id})`);
+          if (er.expenseApprovalStatus !== 'APPROVED') throw new BadRequestException(`Reimbursement hedefi masraf onaylı (APPROVED) değil (line ${l.id})`);
+          if ((er.currency ?? 'TRY') !== disp.currency) throw new BadRequestException(`Cross-currency reimbursement yasak (line ${l.id})`);
+          const remaining = await this.readService.computeExpenseRemaining(tx, tenantId, l.expenseRequestId, er.totalAmount, er.paidTotal);
+          const reimbAmount = new Prisma.Decimal(l.amount);
+          if (reimbAmount.gt(remaining)) {
+            throw new BadRequestException(`Reimbursement tutarı (${reimbAmount.toString()}) masraf kalanını (${remaining.toString()}) aşamaz (line ${l.id})`);
+          }
+          await tx.collectionDispositionExpenseApplication.create({
+            data: {
+              tenantId,
+              caseId: disp.caseId,
+              expenseRequestId: l.expenseRequestId,
+              collectionDispositionId: dispositionId,
+              collectionDispositionLineId: l.id,
+              kind: 'APPLY',
+              amount: reimbAmount,
+              currency: disp.currency,
+              reimbursementScope: l.type === CollectionDispositionLineType.CLIENT_EXPENSE_REIMBURSEMENT ? 'CLIENT_FRONTED' : 'FIRM_FRONTED',
+              createdById: actor?.userId ?? null,
             },
           });
         }
@@ -374,7 +413,17 @@ export class DispositionPostingService {
           throw new BadRequestException(`Satır ${i}: çoklu-alacaklı (CLUSTER) ${ln.type} için caseClientId zorunlu`);
         }
       }
-      return { type: ln.type, amount, caseClientId, note: ln.note ?? null };
+      // FAZ-1b: reimbursement satırı bir ExpenseRequest'i kapatır → expenseRequestId ZORUNLU (1:1 binding;
+      // hedef ExpenseRequest tam doğrulaması post()'ta finansal anda yapılır: APPROVED + remaining + currency).
+      let expenseRequestId: string | null = ln.expenseRequestId ?? null;
+      if (REIMBURSEMENT_TYPES.has(ln.type)) {
+        if (!expenseRequestId) {
+          throw new BadRequestException(`Satır ${i}: ${ln.type} için expenseRequestId zorunlu (kapatılan masraf)`);
+        }
+      } else {
+        expenseRequestId = null; // reimbursement-dışı satırlar masraf bağlamaz
+      }
+      return { type: ln.type, amount, caseClientId, note: ln.note ?? null, expenseRequestId };
     });
     if (!sum.equals(disp.totalAmount)) {
       throw new BadRequestException(

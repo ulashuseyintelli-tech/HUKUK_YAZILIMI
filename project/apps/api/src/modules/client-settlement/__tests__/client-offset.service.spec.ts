@@ -71,6 +71,10 @@ function makeDb(opts: any = {}) {
         return Promise.resolve({ _sum: { amount: null } });
       }),
     },
+    // FAZ-1b: computeExpenseRemaining reimbursement application terimleri (offset testlerinde application yok → null = 0).
+    collectionDispositionExpenseApplication: {
+      aggregate: jest.fn().mockResolvedValue({ _sum: { amount: null } }),
+    },
     auditLog: {
       findMany: jest.fn().mockResolvedValue(opts.auditRows ?? []),
     },
