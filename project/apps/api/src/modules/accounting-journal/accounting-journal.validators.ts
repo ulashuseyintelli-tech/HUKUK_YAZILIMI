@@ -107,11 +107,14 @@ export function validateJournalStructure(draft: JournalEntryDraft): JournalValid
 }
 
 export function validateJournalBusiness(draft: JournalEntryDraft): JournalValidationResult {
-  if (draft.sourceType !== 'CLIENT_OFFSET') {
-    return { ok: true, draft };
+  switch (draft.sourceType) {
+    case 'CLIENT_OFFSET':
+      return validateClientOffsetBusiness(draft);
+    case 'COLLECTION_DISPOSITION_LINE':
+      return validateCollectionDispositionLineBusiness(draft);
+    default:
+      return { ok: true, draft };
   }
-
-  return validateClientOffsetBusiness(draft);
 }
 
 export function validateJournalDraft(draft: JournalEntryDraft): JournalValidationResult<ValidatedJournalEntryDraft> {
@@ -131,6 +134,99 @@ export function validateJournalDraft(draft: JournalEntryDraft): JournalValidatio
       },
     },
   };
+}
+
+function validateCollectionDispositionLineBusiness(draft: JournalEntryDraft): JournalValidationResult {
+  const errors: JournalValidationError[] = [];
+
+  if (draft.sourceAction !== 'posted') {
+    errors.push(validationError('INVALID_SOURCE_ACTION', 'CollectionDispositionLine sourceAction must be posted.', 'sourceAction', {
+      sourceAction: draft.sourceAction,
+    }));
+  }
+
+  if (draft.entryType !== 'COLLECTION_DISTRIBUTION_POSTED') {
+    errors.push(validationError('INVALID_SOURCE_ACTION', 'CollectionDispositionLine entryType must be COLLECTION_DISTRIBUTION_POSTED.', 'entryType', {
+      entryType: draft.entryType,
+    }));
+  }
+
+  if (draft.metadata.manualReversalRequiredAt) {
+    errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'Manual reversal marker on disposition line is not eligible for journal posting.', 'metadata.manualReversalRequiredAt', {
+      manualReversalRequiredAt: draft.metadata.manualReversalRequiredAt,
+    }));
+  }
+
+  if (draft.metadata.lineType === 'OTHER' || draft.metadata.lineType === 'HELD_PENDING_DISTRIBUTION') {
+    errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'OTHER/HELD disposition line cannot be auto-posted.', 'metadata.lineType', {
+      lineType: draft.metadata.lineType,
+    }));
+  }
+
+  const cashLine = findSingleLine(errors, draft.lines, 'CASH_CLEARING', 'CollectionDispositionLine cash leg');
+  const creditLine = draft.lines.find((line) => line.direction === 'CREDIT' && line.accountCode !== 'CASH_CLEARING') ?? null;
+
+  if (draft.lines.length !== 2) {
+    errors.push(validationError('INVALID_LINE_SHAPE', 'CollectionDispositionLine journal must contain exactly cash and credit legs.', 'lines', {
+      lineCount: draft.lines.length,
+    }));
+  }
+
+  if (!creditLine) {
+    errors.push(validationError('INVALID_LINE_SHAPE', 'CollectionDispositionLine credit leg must be present.', 'lines'));
+  }
+
+  if (cashLine && cashLine.direction !== 'DEBIT') {
+    errors.push(validationError('INVALID_ACCOUNT_DIRECTION', 'CollectionDispositionLine cash leg must be DEBIT.', `lines[${cashLine.lineNo}].direction`, {
+      direction: cashLine.direction,
+    }));
+  }
+
+  if (creditLine && creditLine.direction !== 'CREDIT') {
+    errors.push(validationError('INVALID_ACCOUNT_DIRECTION', 'CollectionDispositionLine mapped account leg must be CREDIT.', `lines[${creditLine.lineNo}].direction`, {
+      direction: creditLine.direction,
+    }));
+  }
+
+  const requiresCaseClient = creditLine?.accountCode === 'CLIENT_PAYABLE' || creditLine?.accountCode === 'CLIENT_EXPENSE_REIMBURSEMENT_PAYABLE';
+  for (const line of draft.lines) {
+    validateCollectionDispositionLineDimensions(errors, draft, line, { requiresCaseClient });
+  }
+
+  return errors.length === 0 ? { ok: true, draft } : { ok: false, errors };
+}
+
+function validateCollectionDispositionLineDimensions(
+  errors: JournalValidationError[],
+  draft: JournalEntryDraft,
+  line: JournalLineDraft,
+  rule: { requiresCaseClient: boolean },
+) {
+  if (!line.caseId) {
+    errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'CollectionDispositionLine journal line requires caseId.', `lines[${line.lineNo}].caseId`));
+  }
+
+  if (draft.caseId && line.caseId && line.caseId !== draft.caseId) {
+    errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'CollectionDispositionLine journal line caseId must match entry caseId.', `lines[${line.lineNo}].caseId`, {
+      entryCaseId: draft.caseId,
+      lineCaseId: line.caseId,
+    }));
+  }
+
+  if (!line.collectionId) {
+    errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'CollectionDispositionLine journal line requires collectionId.', `lines[${line.lineNo}].collectionId`));
+  }
+
+  if (line.dispositionLineId !== draft.sourceId) {
+    errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'CollectionDispositionLine journal line must carry dispositionLineId from sourceId.', `lines[${line.lineNo}].dispositionLineId`, {
+      expectedDispositionLineId: draft.sourceId,
+      dispositionLineId: line.dispositionLineId,
+    }));
+  }
+
+  if (rule.requiresCaseClient && !line.caseClientId) {
+    errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'Client-attributed disposition journal lines require caseClientId.', `lines[${line.lineNo}].caseClientId`));
+  }
 }
 
 function validateClientOffsetBusiness(draft: JournalEntryDraft): JournalValidationResult {

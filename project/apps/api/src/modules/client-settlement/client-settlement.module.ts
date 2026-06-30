@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { V28EngineModule } from '../icrabot/v28-engine/v28-engine.module';
 import { OfficeApprovalModule } from '../office-approval/office-approval.module';
+import { AccountingJournalWriterService } from '../accounting-journal';
 import { CollectionDispositionService } from './collection-disposition.service';
 import { PaymentReceivedRegistrar } from './payment-received.registrar';
 import { CollectionReversalService } from './collection-reversal.service';
@@ -47,6 +48,7 @@ import { FinanceRiskEngine } from './finance-risk.engine';
     DistributionRecommendationService,
     FinanceRiskEngine,
     FinanceApprovalIntentBuilder,
+    AccountingJournalWriterService,
     ClientPayoutService,
     ClientSettlementReadService,
     ClientOffsetService,
