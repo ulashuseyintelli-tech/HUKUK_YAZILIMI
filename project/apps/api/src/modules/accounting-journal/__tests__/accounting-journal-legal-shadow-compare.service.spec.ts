@@ -125,7 +125,17 @@ describe('AccountingJournalLegalShadowCompareService', () => {
 
     expect(report.rows).toHaveLength(8);
     expect(report.rows.every((row) => row.matchStatus === 'MATCH')).toBe(true);
-    expect(report.coverage).toEqual(expect.objectContaining({ matchRows: 8, divergentRows: 0, summaryOnlyRows: 0, engineOnlyRows: 0 }));
+    expect(report.rows.every((row) => row.zeroingDecision === 'ZEROED')).toBe(true);
+    expect(report.coverage).toEqual(expect.objectContaining({
+      matchRows: 8,
+      divergentRows: 0,
+      summaryOnlyRows: 0,
+      engineOnlyRows: 0,
+      zeroedRows: 8,
+      acceptedExclusionRows: 0,
+      unsupportedBlockerRows: 0,
+      realMismatchRows: 0,
+    }));
     expect(report.cutoverReadiness.safeForOptInShadow).toBe(true);
     expect(report.cutoverReadiness.safeForPrimaryCutover).toBe(false);
     expect(report.cutoverReadiness.blockers).toContain('LEGAL_LEDGER_SAMPLE_MISSING');
@@ -147,6 +157,13 @@ describe('AccountingJournalLegalShadowCompareService', () => {
     expect(report.cutoverReadiness.blockers).toEqual(
       expect.arrayContaining(['DIVERGENT_SHADOW_ROW', 'SUMMARY_ONLY_SHADOW_ROW', 'ENGINE_ONLY_SHADOW_ROW']),
     );
+    expect(report.rows.every((row) => row.zeroingDecision === 'REAL_MISMATCH')).toBe(true);
+    expect(report.cutoverReadiness.zeroing).toEqual(expect.objectContaining({
+      realMismatchRows: 3,
+      blockingDivergentRows: 1,
+      blockingSummaryOnlyRows: 1,
+      blockingEngineOnlyRows: 1,
+    }));
     expect(report.cutoverReadiness.safeForPrimaryCutover).toBe(false);
   });
 
@@ -173,6 +190,9 @@ describe('AccountingJournalLegalShadowCompareService', () => {
         matchStatus: 'SUMMARY_ONLY',
         legalSourcePolicy: 'BLOCKED',
         legalSourcePolicyCode: 'LEGAL_LEDGER_SOURCE_UNMAPPED',
+        zeroingDecision: 'UNSUPPORTED_BLOCKER',
+        zeroingReasonCode: 'LEGAL_LEDGER_SOURCE_UNMAPPED',
+        zeroingBlocker: true,
       }),
     );
     expect(legal?.blockerCodes).toEqual(expect.arrayContaining(['LEGAL_LEDGER_ACCOUNTING_SOURCE_UNMAPPED', 'LEGAL_LEDGER_SOURCE_UNMAPPED']));
@@ -235,23 +255,33 @@ describe('AccountingJournalLegalShadowCompareService', () => {
       sourceAction: 'recorded',
       legalSourcePolicy: 'MAPPED',
       legalSourcePolicyCode: 'LEGAL_LEDGER_SOURCE_MAPPED',
+      zeroingDecision: 'REAL_MISMATCH',
+      zeroingReasonCode: 'SUMMARY_ONLY_SHADOW_ROW',
     }));
     expect(byId.get('le-manual')).toEqual(expect.objectContaining({
       sourceType: 'LEGAL_LEDGER',
       legalSourcePolicy: 'ACCEPTED_EXCLUSION',
       legalSourcePolicyCode: 'LEGAL_LEDGER_ACCEPTED_EXCLUSION',
+      zeroingDecision: 'ACCEPTED_EXCLUSION',
+      zeroingReasonCode: 'LEGAL_LEDGER_ACCEPTED_EXCLUSION',
     }));
     expect(byId.get('le-null-source')).toEqual(expect.objectContaining({
       legalSourcePolicy: 'BLOCKED',
       legalSourcePolicyCode: 'LEGAL_LEDGER_SOURCE_UNMAPPED',
+      zeroingDecision: 'UNSUPPORTED_BLOCKER',
+      zeroingReasonCode: 'LEGAL_LEDGER_SOURCE_UNMAPPED',
     }));
     expect(byId.get('le-free-form')).toEqual(expect.objectContaining({
       legalSourcePolicy: 'BLOCKED',
       legalSourcePolicyCode: 'LEGAL_LEDGER_SOURCE_UNMAPPED',
+      zeroingDecision: 'UNSUPPORTED_BLOCKER',
+      zeroingReasonCode: 'LEGAL_LEDGER_SOURCE_UNMAPPED',
     }));
     expect(byId.get('le-cancel')).toEqual(expect.objectContaining({
       legalSourcePolicy: 'BLOCKED',
       legalSourcePolicyCode: 'LEGAL_LEDGER_UNSUPPORTED_CANCEL_REVERSAL_BACKFILL',
+      zeroingDecision: 'UNSUPPORTED_BLOCKER',
+      zeroingReasonCode: 'LEGAL_LEDGER_UNSUPPORTED_CANCEL_REVERSAL_BACKFILL',
     }));
     expect(report.rows).toHaveLength(5);
     expect(report.cutoverReadiness.blockers).toEqual(expect.arrayContaining([
@@ -260,6 +290,12 @@ describe('AccountingJournalLegalShadowCompareService', () => {
       'LEGAL_LEDGER_UNSUPPORTED_CANCEL_REVERSAL_BACKFILL',
       'SUMMARY_ONLY_SHADOW_ROW',
     ]));
+    expect(report.cutoverReadiness.zeroing).toEqual(expect.objectContaining({
+      realMismatchRows: 1,
+      acceptedExclusionRows: 1,
+      unsupportedBlockerRows: 3,
+      blockingSummaryOnlyRows: 4,
+    }));
     expect(report.cutoverReadiness.safeForPrimaryCutover).toBe(false);
   });
   it('proves reversal, cancel and backfill fixture matrix stays fail-closed before zeroing', async () => {
@@ -351,6 +387,7 @@ describe('AccountingJournalLegalShadowCompareService', () => {
 
     expect(offsetProjectionRows).toHaveLength(2);
     expect(offsetProjectionRows.every((row) => row.matchStatus === 'MATCH')).toBe(true);
+    expect(offsetProjectionRows.every((row) => row.zeroingDecision === 'ZEROED')).toBe(true);
     expect(report.rows.find(
       (row) => row.sourceType === 'CLIENT_OFFSET'
         && row.sourceId === 'offset-reversal'
@@ -360,27 +397,40 @@ describe('AccountingJournalLegalShadowCompareService', () => {
       matchStatus: 'SUMMARY_ONLY',
       legalSourcePolicy: 'MAPPED',
       legalSourcePolicyCode: 'LEGAL_LEDGER_SOURCE_MAPPED',
+      zeroingDecision: 'REAL_MISMATCH',
+      zeroingReasonCode: 'SUMMARY_ONLY_SHADOW_ROW',
     }));
     expect(bySourceId.get('le-collection-cancel')).toEqual(expect.objectContaining({
       legalSourcePolicy: 'BLOCKED',
       legalSourcePolicyCode: 'LEGAL_LEDGER_UNSUPPORTED_CANCEL_REVERSAL_BACKFILL',
+      zeroingDecision: 'UNSUPPORTED_BLOCKER',
+      zeroingReasonCode: 'LEGAL_LEDGER_UNSUPPORTED_CANCEL_REVERSAL_BACKFILL',
     }));
     expect(bySourceId.get('le-payout-reversal')).toEqual(expect.objectContaining({
       legalSourcePolicy: 'BLOCKED',
       legalSourcePolicyCode: 'LEGAL_LEDGER_UNSUPPORTED_CLIENT_PAYOUT_REVERSAL_REFUND',
+      zeroingDecision: 'UNSUPPORTED_BLOCKER',
+      zeroingReasonCode: 'LEGAL_LEDGER_UNSUPPORTED_CLIENT_PAYOUT_REVERSAL_REFUND',
     }));
     expect(bySourceId.get('le-payout-refund')).toEqual(expect.objectContaining({
       legalSourcePolicy: 'BLOCKED',
       legalSourcePolicyCode: 'LEGAL_LEDGER_UNSUPPORTED_CLIENT_PAYOUT_REVERSAL_REFUND',
+      zeroingDecision: 'UNSUPPORTED_BLOCKER',
+      zeroingReasonCode: 'LEGAL_LEDGER_UNSUPPORTED_CLIENT_PAYOUT_REVERSAL_REFUND',
     }));
     expect(bySourceId.get('le-historical-backfill-missing')).toEqual(expect.objectContaining({
       legalSourcePolicy: 'BLOCKED',
       legalSourcePolicyCode: 'LEGAL_LEDGER_UNSUPPORTED_CANCEL_REVERSAL_BACKFILL',
+      zeroingDecision: 'UNSUPPORTED_BLOCKER',
+      zeroingReasonCode: 'LEGAL_LEDGER_UNSUPPORTED_CANCEL_REVERSAL_BACKFILL',
     }));
     expect(report.coverage).toEqual(expect.objectContaining({
       legalMappedRows: 1,
       legalBlockedRows: 4,
       matchRows: 2,
+      zeroedRows: 2,
+      realMismatchRows: 1,
+      unsupportedBlockerRows: 4,
     }));
     expect(report.cutoverReadiness.blockers).toEqual(expect.arrayContaining([
       'LEGAL_LEDGER_ACCOUNTING_SOURCE_UNMAPPED',
@@ -388,6 +438,12 @@ describe('AccountingJournalLegalShadowCompareService', () => {
       'LEGAL_LEDGER_UNSUPPORTED_CLIENT_PAYOUT_REVERSAL_REFUND',
       'SUMMARY_ONLY_SHADOW_ROW',
     ]));
+    expect(report.cutoverReadiness.zeroing).toEqual(expect.objectContaining({
+      zeroedRows: 2,
+      realMismatchRows: 1,
+      unsupportedBlockerRows: 4,
+      blockingSummaryOnlyRows: 5,
+    }));
     expect(report.cutoverReadiness.safeForPrimaryCutover).toBe(false);
   });
   it('keeps unsupported sources as blockers and suppresses correlated disposition BalanceLedger rows', async () => {

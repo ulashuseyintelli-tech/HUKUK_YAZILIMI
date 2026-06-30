@@ -16,6 +16,24 @@ export type AccountingJournalLegalSourcePolicyDecision =
   | 'ACCEPTED_EXCLUSION'
   | 'BLOCKED';
 
+export type AccountingJournalLegalShadowZeroingDecision =
+  | 'ZEROED'
+  | 'ACCEPTED_EXCLUSION'
+  | 'REAL_MISMATCH'
+  | 'UNSUPPORTED_BLOCKER'
+  | 'DIAGNOSTIC_ONLY';
+
+export interface AccountingJournalLegalShadowZeroingSummary {
+  zeroedRows: number;
+  acceptedExclusionRows: number;
+  unsupportedBlockerRows: number;
+  realMismatchRows: number;
+  diagnosticOnlyRows: number;
+  blockingDivergentRows: number;
+  blockingSummaryOnlyRows: number;
+  blockingEngineOnlyRows: number;
+}
+
 export interface AccountingJournalLegalShadowCompareFilters {
   tenantId: string;
   currency?: string;
@@ -43,6 +61,9 @@ export interface AccountingJournalLegalShadowCompareRow {
   engineLineCount: number;
   summaryLineCount: number;
   blockerCodes: string[];
+  zeroingDecision: AccountingJournalLegalShadowZeroingDecision;
+  zeroingReasonCode: string;
+  zeroingBlocker: boolean;
   legalSourcePolicy?: AccountingJournalLegalSourcePolicyDecision;
   legalSourcePolicyCode?: string;
 }
@@ -58,6 +79,7 @@ export interface AccountingJournalLegalShadowCutoverReadiness {
   safeForPrimaryCutover: boolean;
   safeForOptInShadow: boolean;
   blockers: string[];
+  zeroing: AccountingJournalLegalShadowZeroingSummary;
   nextRequiredEvidence: string[];
 }
 
@@ -74,6 +96,14 @@ export interface AccountingJournalLegalShadowCoverage {
   legalMappedRows: number;
   legalAcceptedExclusionRows: number;
   legalBlockedRows: number;
+  zeroedRows: number;
+  acceptedExclusionRows: number;
+  unsupportedBlockerRows: number;
+  realMismatchRows: number;
+  diagnosticOnlyRows: number;
+  blockingDivergentRows: number;
+  blockingSummaryOnlyRows: number;
+  blockingEngineOnlyRows: number;
 }
 
 export interface AccountingJournalLegalShadowCompareReport {
@@ -268,6 +298,7 @@ export class AccountingJournalLegalShadowCompareService {
     }
 
     const rows = rowsFromContributions(contributions);
+    const zeroing = zeroingSummaryFromRows(rows);
     const blockers = blockersFromRows(rows, ledgerEntries.length);
     const coverage = coverageFromRows({
       rows,
@@ -283,7 +314,7 @@ export class AccountingJournalLegalShadowCompareService {
       rows,
       blockers,
       diagnostics,
-      cutoverReadiness: cutoverReadiness(rows, blockers, ledgerEntries.length),
+      cutoverReadiness: cutoverReadiness(rows, blockers, ledgerEntries.length, zeroing),
       coverage,
     };
   }
@@ -874,6 +905,8 @@ function rowFromAccumulator(acc: ShadowAccumulator): AccountingJournalLegalShado
   if (matchStatus === 'SUMMARY_ONLY') blockerCodes.add('SUMMARY_ONLY_SHADOW_ROW');
   if (matchStatus === 'ENGINE_ONLY') blockerCodes.add('ENGINE_ONLY_SHADOW_ROW');
 
+  const zeroing = zeroingDecisionForRow(matchStatus, blockerCodes);
+
   return {
     key: acc.key,
     domain: acc.domain,
@@ -893,11 +926,71 @@ function rowFromAccumulator(acc: ShadowAccumulator): AccountingJournalLegalShado
     engineLineCount: acc.engineLineCount,
     summaryLineCount: acc.summaryLineCount,
     blockerCodes: [...blockerCodes].sort(),
+    zeroingDecision: zeroing.decision,
+    zeroingReasonCode: zeroing.reasonCode,
+    zeroingBlocker: zeroing.blocker,
     ...(acc.legalSourcePolicy ? { legalSourcePolicy: acc.legalSourcePolicy } : {}),
     ...(acc.legalSourcePolicyCode ? { legalSourcePolicyCode: acc.legalSourcePolicyCode } : {}),
   };
 }
 
+interface RowZeroingDecision {
+  decision: AccountingJournalLegalShadowZeroingDecision;
+  reasonCode: string;
+  blocker: boolean;
+}
+
+const ACCEPTED_EXCLUSION_ZEROING_CODES = new Set([
+  'LEGAL_LEDGER_ACCEPTED_EXCLUSION',
+]);
+
+const UNSUPPORTED_ZEROING_CODES = new Set([
+  'LEGAL_LEDGER_SOURCE_UNMAPPED',
+  'LEGAL_LEDGER_UNSUPPORTED_CANCEL_REVERSAL_BACKFILL',
+  'LEGAL_LEDGER_UNSUPPORTED_CLIENT_PAYOUT_REVERSAL_REFUND',
+  'MANUAL_REVERSAL_DISPOSITION_LINE_UNMAPPED',
+  'UNSUPPORTED_DISPOSITION_LINE_TYPE',
+  'UNSUPPORTED_BALANCE_LEDGER_TYPE',
+  'LEGAL_LEDGER_ACCOUNTING_SOURCE_UNMAPPED',
+]);
+
+function zeroingDecisionForRow(
+  matchStatus: AccountingJournalLegalShadowMatchStatus,
+  blockerCodes: Set<string>,
+): RowZeroingDecision {
+  const acceptedExclusionCode = firstMatchingCode(blockerCodes, ACCEPTED_EXCLUSION_ZEROING_CODES);
+  if (acceptedExclusionCode) {
+    return { decision: 'ACCEPTED_EXCLUSION', reasonCode: acceptedExclusionCode, blocker: true };
+  }
+
+  const unsupportedCode = firstMatchingCode(blockerCodes, UNSUPPORTED_ZEROING_CODES);
+  if (unsupportedCode) {
+    return { decision: 'UNSUPPORTED_BLOCKER', reasonCode: unsupportedCode, blocker: true };
+  }
+
+  if (matchStatus === 'MATCH') {
+    return { decision: 'ZEROED', reasonCode: 'MATCHED_SHADOW_ROW', blocker: false };
+  }
+
+  if (matchStatus === 'DIVERGENT') {
+    return { decision: 'REAL_MISMATCH', reasonCode: 'DIVERGENT_SHADOW_ROW', blocker: true };
+  }
+  if (matchStatus === 'SUMMARY_ONLY') {
+    return { decision: 'REAL_MISMATCH', reasonCode: 'SUMMARY_ONLY_SHADOW_ROW', blocker: true };
+  }
+  if (matchStatus === 'ENGINE_ONLY') {
+    return { decision: 'REAL_MISMATCH', reasonCode: 'ENGINE_ONLY_SHADOW_ROW', blocker: true };
+  }
+
+  return { decision: 'DIAGNOSTIC_ONLY', reasonCode: 'DIAGNOSTIC_ONLY_ROW', blocker: false };
+}
+
+function firstMatchingCode(codes: Set<string>, candidates: Set<string>): string | null {
+  for (const candidate of candidates) {
+    if (codes.has(candidate)) return candidate;
+  }
+  return null;
+}
 function blockersFromRows(
   rows: AccountingJournalLegalShadowCompareRow[],
   legalLedgerEntryCount: number,
@@ -915,19 +1008,35 @@ function cutoverReadiness(
   rows: AccountingJournalLegalShadowCompareRow[],
   blockers: AccountingJournalLegalShadowIssue[],
   legalLedgerEntryCount: number,
+  zeroing: AccountingJournalLegalShadowZeroingSummary,
 ): AccountingJournalLegalShadowCutoverReadiness {
   const blockerCodes = blockers.map((blocker) => blocker.code);
   return {
     safeForPrimaryCutover: rows.length > 0 && legalLedgerEntryCount > 0 && blockerCodes.length === 0,
     safeForOptInShadow: rows.length > 0,
     blockers: blockerCodes,
+    zeroing,
     nextRequiredEvidence: [
       'LedgerEntry/LedgerAllocation icin MAPPED, ACCEPTED_EXCLUSION veya BLOCKED policy karari.',
       'Accepted exclusion legal satirlari sessiz dusmeden raporda gorunur blocker olarak kalmali.',
       'CollectionDisposition/ClientPayout/ClientOffset/BalanceLedger fixture matrix: MATCH, DIVERGENT, SUMMARY_ONLY, ENGINE_ONLY.',
+      'Zeroing report: accepted exclusion, unsupported blocker ve real mismatch ayrimi sifirlanmali.',
       'Cancel/reversal/backfill ve payout refund alanlari icin ya mapped compare ya fail-closed blocker.',
       'Feature flag ve legal sign-off olmadan primary cutover acma.',
     ],
+  };
+}
+
+function zeroingSummaryFromRows(rows: AccountingJournalLegalShadowCompareRow[]): AccountingJournalLegalShadowZeroingSummary {
+  return {
+    zeroedRows: rows.filter((row) => row.zeroingDecision === 'ZEROED').length,
+    acceptedExclusionRows: rows.filter((row) => row.zeroingDecision === 'ACCEPTED_EXCLUSION').length,
+    unsupportedBlockerRows: rows.filter((row) => row.zeroingDecision === 'UNSUPPORTED_BLOCKER').length,
+    realMismatchRows: rows.filter((row) => row.zeroingDecision === 'REAL_MISMATCH').length,
+    diagnosticOnlyRows: rows.filter((row) => row.zeroingDecision === 'DIAGNOSTIC_ONLY').length,
+    blockingDivergentRows: rows.filter((row) => row.zeroingBlocker && row.zeroingDecision !== 'ACCEPTED_EXCLUSION' && row.matchStatus === 'DIVERGENT').length,
+    blockingSummaryOnlyRows: rows.filter((row) => row.zeroingBlocker && row.zeroingDecision !== 'ACCEPTED_EXCLUSION' && row.matchStatus === 'SUMMARY_ONLY').length,
+    blockingEngineOnlyRows: rows.filter((row) => row.zeroingBlocker && row.zeroingDecision !== 'ACCEPTED_EXCLUSION' && row.matchStatus === 'ENGINE_ONLY').length,
   };
 }
 
@@ -951,6 +1060,7 @@ function coverageFromRows(input: {
     legalMappedRows: input.rows.filter((row) => row.legalSourcePolicy === 'MAPPED').length,
     legalAcceptedExclusionRows: input.rows.filter((row) => row.legalSourcePolicy === 'ACCEPTED_EXCLUSION').length,
     legalBlockedRows: input.rows.filter((row) => row.legalSourcePolicy === 'BLOCKED').length,
+    ...zeroingSummaryFromRows(input.rows),
   };
 }
 
