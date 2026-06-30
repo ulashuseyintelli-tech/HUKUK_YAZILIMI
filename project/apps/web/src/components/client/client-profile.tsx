@@ -7,7 +7,7 @@
  * (gerçek entegrasyonu maskeliyordu). Artık kanonik `Client` (@/lib/api/client.types) + YALNIZ gerçek veri:
  *   - api.getClient(id)  → kimlik/iletişim/adres + powerOfAttorneys (POA sekmesi)
  *   - api.getCases({ clientId }) → Dosyalar sekmesi (findOne cases içermez)
- * v1 sekmeleri: Genel · Kimlik & İletişim · Dosyalar · Vekalet · İstihbarat · Intake.
+ * v1 sekmeleri: Genel · Kimlik & İletişim · Dosyalar · Vekalet · İstihbarat · Intake · Aktivite.
  * Muhasebe/Banka ayrı kapsamdır.
  * Mock fallback YOK; hata/boş durumları açıkça gösterilir.
  */
@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { Client } from '@/lib/api/client.types';
+import { ClientActivityTab } from '@/components/client/client-activity-tab';
 import { ClientIntelligenceTab } from '@/components/client/client-intelligence-tab';
 import { ClientIntakeTab } from '@/components/client/client-intake-tab';
 import {
@@ -59,7 +60,7 @@ interface ClientPoaRow {
   status?: string | null;
 }
 
-type TabId = 'overview' | 'identity' | 'cases' | 'poa' | 'intelligence' | 'intake';
+type TabId = 'overview' | 'identity' | 'cases' | 'poa' | 'intelligence' | 'intake' | 'activity';
 
 interface ClientProfileProps {
   clientId: string;
@@ -163,6 +164,7 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
     { id: 'poa', label: 'Vekalet', count: poas.length },
     { id: 'intelligence', label: 'İstihbarat' },
     { id: 'intake', label: 'Intake' },
+    { id: 'activity', label: 'Aktivite' },
   ];
 
   return (
@@ -360,6 +362,9 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
 
           {/* Intake */}
           {tab === 'intake' && <ClientIntakeTab cases={cases} />}
+
+          {/* Aktivite */}
+          {tab === 'activity' && <ClientActivityTab clientId={clientId} />}
         </div>
       </div>
     </div>
