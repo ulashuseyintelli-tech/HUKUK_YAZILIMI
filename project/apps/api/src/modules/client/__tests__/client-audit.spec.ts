@@ -62,20 +62,22 @@ describe("ClientService.create — audit", () => {
   });
 
   it("body/data.userId actor OLARAK kullanılmaz — yalnız geçilen actor", async () => {
-    const { svc, audit } = buildHarness({ created: { id: "c1", type: "PERSON", tckn: "123" } });
+    // 10000000146 = geçerli checksum (Task A/Faz 1: create artık checksum doğruluyor; eski dummy "123" kırardı).
+    const { svc, audit } = buildHarness({ created: { id: "c1", type: "PERSON", tckn: "10000000146" } });
 
-    await svc.create("t1", { type: "PERSON", tckn: "123", userId: "HACKER", createdById: "HACKER" } as any, { userId: "u-real" });
+    await svc.create("t1", { type: "PERSON", tckn: "10000000146", userId: "HACKER", createdById: "HACKER" } as any, { userId: "u-real" });
 
     expect(auditInput(audit).userId).toBe("u-real");
     expect(auditJson(audit)).not.toContain("HACKER");
   });
 
   it("audit yazılamazsa mutation ROLLBACK — logInTransaction reddederse create reddeder", async () => {
-    const { svc, audit } = buildHarness({ created: { id: "c1", type: "PERSON", tckn: "123" } });
+    // 10000000146 = geçerli checksum (Task A/Faz 1: create artık checksum doğruluyor; eski dummy "123" kırardı).
+    const { svc, audit } = buildHarness({ created: { id: "c1", type: "PERSON", tckn: "10000000146" } });
     (audit.logInTransaction as jest.Mock).mockRejectedValueOnce(new Error("audit db down"));
     // logInTransaction $transaction callback'i içinde → reddi callback'i reddeder → Prisma rollback.
     await expect(
-      svc.create("t1", { type: "PERSON", tckn: "123" }, { userId: "u-real" }),
+      svc.create("t1", { type: "PERSON", tckn: "10000000146" }, { userId: "u-real" }),
     ).rejects.toThrow("audit db down");
   });
 });

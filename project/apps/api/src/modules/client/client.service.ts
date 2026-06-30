@@ -2,6 +2,7 @@ import { Injectable, ConflictException, NotFoundException } from '@nestjs/common
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { buildClientFieldDiff, buildContactsDiff, buildClientRemoveSnapshot } from './client-audit.util';
+import { assertCreateIdentityChecksum } from './client-identity-checksum.util';
 
 /** C0-a: audit actor — YALNIZ auth context'ten (req.user.id); body/data'dan ASLA türetilmez. */
 export interface AuditActor {
@@ -114,6 +115,12 @@ export class ClientService {
         return { ...(result as any), _existingReturned: true, _reactivated: wasReactivated };
       }
     }
+
+    // Task A/Faz 1 (owner-locked 2026-06-30): GERÇEKTEN YENİ kayıt için TCKN/VKN mod-10/11 checksum zorunlu.
+    // Dedup/reactivate'TEN SONRA → legacy (geçersiz-checksum) müvekkilin yeniden-eklenmesi/reactivate'i
+    // KİLİTLENMEZ (eski veri dokunulmaz). Domain katmanı → tüm create yolları (modal·cases/new·Excel·seed)
+    // tutarlı. update() ETKİLENMEZ (Faz 4). Boş kimlik serbest; identityNo doğrulanmaz (util'e bkz).
+    assertCreateIdentityChecksum(data);
 
     const displayName = data.type === 'COMPANY' || data.type === 'PUBLIC'
       ? data.companyName
