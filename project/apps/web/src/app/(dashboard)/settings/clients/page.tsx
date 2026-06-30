@@ -667,8 +667,8 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
   // Eksik iletişim (telefon/e-posta) modalı: kaydı engellemez, ama görev üretimi öncesi sorar.
   const [missingContact, setMissingContact] = useState<string[] | null>(null);
   const firstPhoneRef = useRef<HTMLInputElement>(null);
-  const [addresses, setAddresses] = useState<{street: string; city: string; district: string; region: string; label: string; isPrimary: boolean}[]>([
-    { street: "", city: "", district: "", region: "", label: "", isPrimary: true }
+  const [addresses, setAddresses] = useState<{street: string; city: string; district: string; region: string; isPrimary: boolean}[]>([
+    { street: "", city: "", district: "", region: "", isPrimary: true }
   ]);
 
   useEffect(() => {
@@ -699,7 +699,6 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
           city: scannedData.city || "",
           district: scannedData.district || "",
           region: "",
-          label: "",
           isPrimary: true
         }]);
       }
@@ -756,12 +755,11 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
         : [{ value: client.email || "", label: "", isPrimary: true }]
       );
       setAddresses([{ 
-        street: client.address || "", 
-        city: client.city || "", 
-        district: client.district || "", 
-        region: client.region || "", 
-        label: "", 
-        isPrimary: true 
+        street: client.address || "",
+        city: client.city || "",
+        district: client.district || "",
+        region: client.region || "",
+        isPrimary: true
       }]);
     }
   }, [client]);
@@ -848,11 +846,11 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
   };
   
   // Adres ekleme/silme
-  const addAddress = () => setAddresses([...addresses, { street: "", city: "", district: "", region: "", label: "", isPrimary: false }]);
+  const addAddress = () => setAddresses([...addresses, { street: "", city: "", district: "", region: "", isPrimary: false }]);
   const removeAddress = (idx: number) => {
     const updated = addresses.filter((_, i) => i !== idx);
     if (updated.length > 0 && !updated.some(a => a.isPrimary)) updated[0].isPrimary = true;
-    setAddresses(updated.length > 0 ? updated : [{ street: "", city: "", district: "", region: "", label: "", isPrimary: true }]);
+    setAddresses(updated.length > 0 ? updated : [{ street: "", city: "", district: "", region: "", isPrimary: true }]);
   };
   const updateAddress = (idx: number, field: string, value: any) => {
     const updated = [...addresses];
@@ -993,7 +991,6 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
                 <div key={idx} className={`p-2 rounded border ${addr.isPrimary ? 'border-primary bg-primary/5' : 'border-gray-200'}`}>
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <input value={addr.label} onChange={e => updateAddress(idx, 'label', e.target.value)} placeholder="Etiket (Ev, İş...)" className="w-28 border rounded px-2 py-0.5 text-xs" />
                       <label className="flex items-center gap-1 cursor-pointer text-xs">
                         <input type="radio" name="primaryAddress" checked={addr.isPrimary} onChange={() => updateAddress(idx, 'isPrimary', true)} className="w-3 h-3" />
                         Birincil
