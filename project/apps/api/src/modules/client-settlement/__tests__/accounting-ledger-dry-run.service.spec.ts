@@ -70,6 +70,7 @@ function balanceLedger(overrides: any = {}) {
     source: overrides.source ?? null,
     sourceId: overrides.sourceId ?? null,
     createdAt: overrides.createdAt ?? new Date('2026-06-29T12:00:00.000Z'),
+    createdById: overrides.createdById ?? 'user-1',
     caseBalance: { caseId: overrides.caseId ?? 'case-1' },
   };
 }
@@ -623,6 +624,33 @@ describe('buildAccountingLedgerDryRunReport', () => {
     expect(report.suppressedBalanceLedgerSources).toEqual([expect.objectContaining({ balanceLedgerId: 'bl-offset', dispositionLineId: 'dl-offset' })]);
     expect(report.entries.some((entry) => entry.idempotencyKey === 'acct-journal:v1:tenant-1:BALANCE_LEDGER:bl-offset:posted:2026-06-29T12:00:00.000Z:bl-offset')).toBe(false);
   });
+  it('scope disindaki disposition_line korelasyonlu BalanceLedger satirini de suppress eder', () => {
+    const report = buildAccountingLedgerDryRunReport({
+      tenantId: 'tenant-1',
+      dispositionLines: [],
+      clientPayouts: [],
+      clientOffsets: [],
+      balanceLedgerRows: [balanceLedger({ id: 'bl-orphan-correlated', source: 'disposition_line:dl-missing', amount: D(30) })],
+    });
+
+    expect(report.entries).toEqual([]);
+    expect(report.suppressedBalanceLedgerSources).toEqual([
+      expect.objectContaining({
+        dispositionLineId: 'dl-missing',
+        balanceLedgerId: 'bl-orphan-correlated',
+        reason: 'CORRELATED_OFFSET_CLIENT_ADVANCE',
+      }),
+    ]);
+    expect(report.mismatchWarnings).toEqual([
+      expect.objectContaining({
+        reason: 'MISSING_CORRELATION',
+        sourceType: 'BALANCE_LEDGER',
+        sourceId: 'bl-orphan-correlated',
+        dispositionLineId: 'dl-missing',
+        balanceLedgerId: 'bl-orphan-correlated',
+      }),
+    ]);
+  });
 
   it('unlinked BalanceLedger source satirini reconciliation journal adayi olarak birakir', () => {
     const report = buildAccountingLedgerDryRunReport({
@@ -641,6 +669,60 @@ describe('buildAccountingLedgerDryRunReport', () => {
       }),
     ]);
     expect(report.suppressedBalanceLedgerSources).toEqual([]);
+  });
+  it('BalanceLedger DEBIT dry-run mapping live builder semantigiyle pozitif amount uretir', () => {
+    const report = buildAccountingLedgerDryRunReport({
+      tenantId: 'tenant-1',
+      dispositionLines: [],
+      clientPayouts: [],
+      clientOffsets: [],
+      balanceLedgerRows: [balanceLedger({ id: 'bl-debit', type: 'DEBIT', amount: D(-40), source: 'operation:haciz', sourceId: 'op-1' })],
+    });
+
+    expect(report.entries).toEqual([
+      {
+        idempotencyKey: 'acct-journal:v1:tenant-1:BALANCE_LEDGER:bl-debit:posted:2026-06-29T12:00:00.000Z:bl-debit',
+        sourceType: 'BALANCE_LEDGER',
+        sourceId: 'bl-debit',
+        tenantId: 'tenant-1',
+        caseId: 'case-1',
+        currency: 'TRY',
+        effectiveAt: '2026-06-29T12:00:00.000Z',
+        lines: [
+          {
+            accountCode: 'CLIENT_ADVANCE_BALANCE',
+            direction: 'DEBIT',
+            amount: '40',
+            tenantId: 'tenant-1',
+            caseId: 'case-1',
+            currency: 'TRY',
+            clientId: null,
+            caseClientId: null,
+            collectionId: null,
+            dispositionLineId: null,
+            payoutId: null,
+            offsetId: null,
+            balanceLedgerId: 'bl-debit',
+          },
+          {
+            accountCode: 'CASH_CLEARING',
+            direction: 'CREDIT',
+            amount: '40',
+            tenantId: 'tenant-1',
+            caseId: 'case-1',
+            currency: 'TRY',
+            clientId: null,
+            caseClientId: null,
+            collectionId: null,
+            dispositionLineId: null,
+            payoutId: null,
+            offsetId: null,
+            balanceLedgerId: 'bl-debit',
+          },
+        ],
+      },
+    ]);
+    expect(report.debitCreditBalance).toEqual({ balanced: true, unbalancedIdempotencyKeys: [] });
   });
 
   it('ADJUST ve REFUND BalanceLedger satirlarini journal adayi yapmaz', () => {

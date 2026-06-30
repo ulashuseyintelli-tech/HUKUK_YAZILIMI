@@ -69,7 +69,12 @@ describe('CaseBalanceService ACCT-1D-1 BalanceLedger journal wiring', () => {
           sourceType: 'BALANCE_LEDGER',
           sourceId: 'bl-credit',
           sourceAction: 'posted',
+          sourceVersion: '2026-06-30T09:10:11.000Z:bl-credit',
+          idempotencyKey: 'acct-journal:v1:tenant-1:BALANCE_LEDGER:bl-credit:posted:2026-06-30T09:10:11.000Z:bl-credit',
+          sourceOccurredAt: '2026-06-30T09:10:11.000Z',
+          effectiveDate: '2026-06-30',
           entryType: 'CLIENT_ADVANCE_LEDGER_RECORDED',
+          metadata: expect.objectContaining({ ledgerType: 'CREDIT', balanceLedgerSource: 'expense_request:expense-1', isIncrease: true }),
           lines: expect.arrayContaining([
             expect.objectContaining({ accountCode: 'CASH_CLEARING', direction: 'DEBIT', amount: '100', balanceLedgerId: 'bl-credit' }),
             expect.objectContaining({ accountCode: 'CLIENT_ADVANCE_BALANCE', direction: 'CREDIT', amount: '100', balanceLedgerId: 'bl-credit' }),
@@ -101,6 +106,9 @@ describe('CaseBalanceService ACCT-1D-1 BalanceLedger journal wiring', () => {
 
     expect(result).toEqual(expect.objectContaining({ success: true, newBalance: 960, ledgerId: 'bl-debit', isLow: false }));
     const draft = journalWriter.write.mock.calls[0][0].draft;
+    expect(draft.sourceVersion).toBe('2026-06-30T09:10:11.000Z:bl-debit');
+    expect(draft.idempotencyKey).toBe('acct-journal:v1:tenant-1:BALANCE_LEDGER:bl-debit:posted:2026-06-30T09:10:11.000Z:bl-debit');
+    expect(draft.metadata).toEqual(expect.objectContaining({ ledgerType: 'DEBIT', balanceLedgerSource: 'operation:haciz', isIncrease: false }));
     expect(draft.lines).toEqual(expect.arrayContaining([
       expect.objectContaining({ accountCode: 'CLIENT_ADVANCE_BALANCE', direction: 'DEBIT', amount: '40', balanceLedgerId: 'bl-debit' }),
       expect.objectContaining({ accountCode: 'CASH_CLEARING', direction: 'CREDIT', amount: '40', balanceLedgerId: 'bl-debit' }),
@@ -128,6 +136,27 @@ describe('CaseBalanceService ACCT-1D-1 BalanceLedger journal wiring', () => {
 
     expect(journalWriter.write).not.toHaveBeenCalled();
   });
+  it('does not journal disposition_line correlation carried by sourceId', async () => {
+    const { tx, journalWriter, service } = buildHarness();
+    tx.balanceLedger.create.mockResolvedValue({
+      id: 'bl-correlated-source-id',
+      tenantId: 'tenant-1',
+      caseBalanceId: 'case-balance-1',
+      type: 'CREDIT',
+      amount: D(50),
+      currency: 'TRY',
+      source: 'manual',
+      sourceId: 'disposition_line:line-1',
+      description: 'correlated via sourceId',
+      createdById: 'user-1',
+      createdAt: CREATED_AT,
+    });
+    tx.caseBalance.update.mockResolvedValue({ balance: D(1050), lowThreshold: D(500) });
+
+    await service.credit('tenant-1', 'case-1', { amount: 50, source: 'manual', sourceId: 'disposition_line:line-1' }, 'user-1');
+
+    expect(journalWriter.write).not.toHaveBeenCalled();
+  });
 
   it('does not journal ADJUST and propagates journal write failures for direct rows', async () => {
     const { tx, journalWriter, service } = buildHarness();
@@ -149,6 +178,19 @@ describe('CaseBalanceService ACCT-1D-1 BalanceLedger journal wiring', () => {
     await service.adjust('tenant-1', 'case-1', 10, 'manual', 'user-1');
     expect(journalWriter.write).not.toHaveBeenCalled();
 
+    const refundDraft = (service as any).buildBalanceLedgerJournalDraft('tenant-1', 'case-1', {
+      id: 'bl-refund',
+      tenantId: 'tenant-1',
+      type: 'REFUND',
+      amount: D(-10),
+      currency: 'TRY',
+      source: 'manual_refund',
+      sourceId: null,
+      createdById: 'user-1',
+      createdAt: CREATED_AT,
+    });
+    expect(refundDraft).toBeNull();
+
     tx.balanceLedger.create.mockResolvedValue({
       id: 'bl-credit-fail',
       tenantId: 'tenant-1',
@@ -165,5 +207,22 @@ describe('CaseBalanceService ACCT-1D-1 BalanceLedger journal wiring', () => {
     journalWriter.write.mockResolvedValueOnce({ ok: false, errors: [{ code: 'DB_WRITE_FAILED' }] });
 
     await expect(service.credit('tenant-1', 'case-1', { amount: 10, source: 'manual' }, 'user-1')).rejects.toBeInstanceOf(ConflictException);
+
+    tx.balanceLedger.create.mockResolvedValue({
+      id: 'bl-credit-throw',
+      tenantId: 'tenant-1',
+      caseBalanceId: 'case-balance-1',
+      type: 'CREDIT',
+      amount: D(10),
+      currency: 'TRY',
+      source: 'manual',
+      sourceId: null,
+      description: 'credit throws',
+      createdById: 'user-1',
+      createdAt: CREATED_AT,
+    });
+    journalWriter.write.mockRejectedValueOnce(new Error('journal writer down'));
+
+    await expect(service.credit('tenant-1', 'case-1', { amount: 10, source: 'manual' }, 'user-1')).rejects.toThrow('journal writer down');
   });
 });

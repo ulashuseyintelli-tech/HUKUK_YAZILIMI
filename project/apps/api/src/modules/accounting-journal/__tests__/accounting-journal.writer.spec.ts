@@ -1,5 +1,11 @@
+import { Prisma } from '@prisma/client';
 import { buildAccountingJournal } from '../accounting-journal.builder';
-import type { ClientPayoutJournalSource, CollectionDispositionLineJournalSource, CollectionDispositionLinePostedPayload } from '../accounting-journal.types';
+import type {
+  BalanceLedgerJournalSource,
+  ClientPayoutJournalSource,
+  CollectionDispositionLineJournalSource,
+  CollectionDispositionLinePostedPayload,
+} from '../accounting-journal.types';
 import { validateJournalDraft } from '../accounting-journal.validators';
 import { AccountingJournalWriterService } from '../accounting-journal.writer';
 
@@ -197,5 +203,94 @@ describe('AccountingJournalWriterService ClientPayout source shape', () => {
         }),
       }),
     );
+  });
+});
+
+function balanceLedgerSource(overrides: Partial<BalanceLedgerJournalSource> = {}): BalanceLedgerJournalSource {
+  const sourceId = overrides.sourceId ?? 'bl-1';
+  return {
+    tenantId: overrides.tenantId ?? 'tenant-1',
+    sourceType: 'BALANCE_LEDGER',
+    sourceId,
+    sourceVersion: overrides.sourceVersion ?? `2026-06-30T08:00:00.000Z:${sourceId}`,
+    sourceAction: 'posted',
+    occurredAt: overrides.occurredAt ?? '2026-06-30T08:00:00.000Z',
+    effectiveDate: overrides.effectiveDate ?? '2026-06-30',
+    actorId: overrides.actorId ?? 'user-1',
+    currency: overrides.currency ?? 'TRY',
+    sourceHash: overrides.sourceHash ?? 'hash-balance-ledger',
+    metadata: overrides.metadata ?? { sourceName: 'balance-ledger-test' },
+    payload: overrides.payload ?? {
+      amount: '40',
+      caseId: 'case-1',
+      balanceLedgerId: sourceId,
+      ledgerType: 'DEBIT',
+      source: 'operation:haciz',
+      sourceId: 'op-1',
+      isIncrease: false,
+    },
+  };
+}
+
+function balanceLedgerDraft() {
+  const built = buildAccountingJournal(balanceLedgerSource());
+  expect(built.ok).toBe(true);
+  if (!built.ok) throw new Error('build failed');
+  const validated = validateJournalDraft(built.draft);
+  expect(validated.ok).toBe(true);
+  if (!validated.ok) throw new Error('validation failed');
+  return validated.draft;
+}
+
+function uniqueConflict() {
+  return new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+    code: 'P2002',
+    clientVersion: 'test',
+    meta: { target: ['tenantId', 'idempotencyKey'] },
+  });
+}
+
+function existingFromDraft(d: ReturnType<typeof balanceLedgerDraft>, overrides: Partial<{ id: string; idempotencyKey: string; sourceHash: string | null }> = {}) {
+  return {
+    id: overrides.id ?? 'journal-existing-balance-ledger',
+    idempotencyKey: overrides.idempotencyKey ?? d.idempotencyKey,
+    sourceHash: Object.prototype.hasOwnProperty.call(overrides, 'sourceHash') ? overrides.sourceHash! : d.sourceHash,
+    sourceType: d.sourceType,
+    sourceId: d.sourceId,
+    sourceAction: d.sourceAction,
+    _count: { lines: 2 },
+  };
+}
+
+describe('AccountingJournalWriterService BalanceLedger duplicate safety', () => {
+  it('replays duplicate create race when source/action/idempotency match', async () => {
+    const db = dbMock();
+    const d = balanceLedgerDraft();
+    db.accountingJournalEntry.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(existingFromDraft(d));
+    db.accountingJournalEntry.create.mockRejectedValueOnce(uniqueConflict());
+    const writer = new AccountingJournalWriterService({} as any);
+
+    const result = await writer.write({ draft: d }, db);
+
+    expect(result).toEqual({
+      ok: true,
+      output: expect.objectContaining({ status: 'REPLAYED', journalEntryId: 'journal-existing-balance-ledger', lineCount: 2 }),
+    });
+    expect(db.accountingJournalEntry.create).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects BalanceLedger replay when source hash changed under same idempotency key', async () => {
+    const db = dbMock();
+    const d = balanceLedgerDraft();
+    db.accountingJournalEntry.findFirst.mockResolvedValueOnce(existingFromDraft(d, { sourceHash: 'old-hash' }));
+    const writer = new AccountingJournalWriterService({} as any);
+
+    const result = await writer.write({ draft: d }, db);
+
+    expect(result).toEqual({ ok: false, errors: [expect.objectContaining({ code: 'SOURCE_HASH_MISMATCH' })] });
+    expect(db.accountingJournalEntry.create).not.toHaveBeenCalled();
   });
 });

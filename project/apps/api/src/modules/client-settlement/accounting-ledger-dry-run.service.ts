@@ -5,7 +5,12 @@ import {
   buildAccountingJournal,
   buildJournalIdempotencyKey,
 } from '../accounting-journal/accounting-journal.builder';
-import type { JournalEntryDraft, JournalLineDraft } from '../accounting-journal/accounting-journal.types';
+import type {
+  BalanceLedgerJournalSource,
+  BalanceLedgerRecordedType,
+  JournalEntryDraft,
+  JournalLineDraft,
+} from '../accounting-journal/accounting-journal.types';
 import { validateJournalDraft } from '../accounting-journal/accounting-journal.validators';
 import {
   adaptClientOffsetSourceSnapshot,
@@ -220,6 +225,7 @@ interface BalanceLedgerSource {
   source: string | null;
   sourceId: string | null;
   createdAt: Date;
+  createdById: string | null;
   caseBalance: {
     caseId: string;
   };
@@ -321,6 +327,7 @@ export class AccountingLedgerDryRunService {
           source: true,
           sourceId: true,
           createdAt: true,
+          createdById: true,
           caseBalance: { select: { caseId: true } },
         },
       }),
@@ -499,21 +506,34 @@ export function buildAccountingLedgerDryRunReport(sources: AccountingLedgerDryRu
 
   for (const ledger of sources.balanceLedgerRows) {
     const sourceLineId = parseDispositionLineCorrelation(ledger);
-    if (sourceLineId && offsetDispositionLines.has(sourceLineId)) {
-      const offsetLine = offsetDispositionLines.get(sourceLineId)!;
-      matchedOffsetDispositionLineIds.add(sourceLineId);
-      mismatchWarnings.push(...collectOffsetBalanceLedgerMismatchWarnings(sources.tenantId, offsetLine, ledger));
-      offsetDoubleCountCandidates.push({
-        dispositionLineId: offsetLine.id,
-        balanceLedgerId: ledger.id,
-        caseId: ledger.caseBalance.caseId,
-        currency: ledger.currency,
-        dispositionAmount: offsetLine.amount.toString(),
-        balanceLedgerAmount: ledger.amount.toString(),
-        reason: 'OFFSET_CLIENT_ADVANCE_BALANCE_LEDGER_MATCH',
-      });
+    if (sourceLineId) {
+      if (offsetDispositionLines.has(sourceLineId)) {
+        const offsetLine = offsetDispositionLines.get(sourceLineId)!;
+        matchedOffsetDispositionLineIds.add(sourceLineId);
+        mismatchWarnings.push(...collectOffsetBalanceLedgerMismatchWarnings(sources.tenantId, offsetLine, ledger));
+        offsetDoubleCountCandidates.push({
+          dispositionLineId: offsetLine.id,
+          balanceLedgerId: ledger.id,
+          caseId: ledger.caseBalance.caseId,
+          currency: ledger.currency,
+          dispositionAmount: offsetLine.amount.toString(),
+          balanceLedgerAmount: ledger.amount.toString(),
+          reason: 'OFFSET_CLIENT_ADVANCE_BALANCE_LEDGER_MATCH',
+        });
+      } else {
+        mismatchWarnings.push({
+          reason: 'MISSING_CORRELATION',
+          sourceType: 'BALANCE_LEDGER',
+          sourceId: ledger.id,
+          dispositionLineId: sourceLineId,
+          balanceLedgerId: ledger.id,
+          expected: 'POSTED OFFSET_CLIENT_ADVANCE disposition line in dry-run scope',
+          actual: null,
+          message: `BalanceLedger ${ledger.id} disposition_line:${sourceLineId} korelasyonlu oldugu icin direct journal adayi yapilmadi; eslesen OFFSET_CLIENT_ADVANCE line dry-run scope disinda veya yok.`,
+        });
+      }
       suppressedBalanceLedgerSources.push({
-        dispositionLineId: offsetLine.id,
+        dispositionLineId: sourceLineId,
         balanceLedgerId: ledger.id,
         caseId: ledger.caseBalance.caseId,
         currency: ledger.currency,
@@ -537,24 +557,7 @@ export function buildAccountingLedgerDryRunReport(sources: AccountingLedgerDryRu
       continue;
     }
 
-    const isIncrease = ledger.type === 'CREDIT';
-    pushEntry({
-      idempotencyKey: accountingDryRunIdempotencyKey('BALANCE_LEDGER', sources.tenantId, ledger.id, 'posted', accountingDryRunSourceVersion(ledger.id, ledger.createdAt)),
-      sourceType: 'BALANCE_LEDGER',
-      sourceId: ledger.id,
-      tenantId: sources.tenantId,
-      caseId: ledger.caseBalance.caseId,
-      currency: ledger.currency,
-      effectiveAt: ledger.createdAt.toISOString(),
-      lines: [
-        dryRunLine(isIncrease ? 'CASH_CLEARING' : 'CLIENT_ADVANCE_BALANCE', 'DEBIT', ledger.amount, sources.tenantId, ledger.caseBalance.caseId, ledger.currency, {
-          balanceLedgerId: ledger.id,
-        }),
-        dryRunLine(isIncrease ? 'CLIENT_ADVANCE_BALANCE' : 'CASH_CLEARING', 'CREDIT', ledger.amount, sources.tenantId, ledger.caseBalance.caseId, ledger.currency, {
-          balanceLedgerId: ledger.id,
-        }),
-      ],
-    });
+    pushEntry(buildBalanceLedgerDryRunEntry(sources.tenantId, ledger));
   }
 
   for (const offsetLine of offsetDispositionLines.values()) {
@@ -734,6 +737,88 @@ function formatClientOffsetDraftForDryRun(draft: JournalEntryDraft): AccountingD
 }
 
 function formatClientOffsetLineForDryRun(line: JournalLineDraft, sourceId: string): AccountingDryRunJournalLine {
+  return {
+    accountCode: line.accountCode,
+    direction: line.direction,
+    amount: new Prisma.Decimal(line.amount).toString(),
+    tenantId: line.tenantId,
+    caseId: requiredDryRunDimension(line.caseId, `lines[${line.lineNo}].caseId`, sourceId),
+    currency: line.currency,
+    clientId: line.clientId,
+    caseClientId: line.caseClientId,
+    collectionId: line.collectionId,
+    dispositionLineId: line.dispositionLineId,
+    payoutId: line.payoutId,
+    offsetId: line.offsetId,
+    balanceLedgerId: line.balanceLedgerId,
+  };
+}
+
+function buildBalanceLedgerDryRunEntry(tenantId: string, ledger: BalanceLedgerSource): AccountingDryRunJournalEntry {
+  if (!isJournalableBalanceLedgerType(ledger.type)) {
+    throw new Error(`Unsupported BalanceLedger type for dry-run journal: ${ledger.type}`);
+  }
+
+  const sourceVersion = accountingDryRunSourceVersion(ledger.id, ledger.createdAt);
+  const source: BalanceLedgerJournalSource = {
+    tenantId,
+    sourceType: 'BALANCE_LEDGER',
+    sourceId: ledger.id,
+    sourceVersion,
+    sourceAction: 'posted',
+    occurredAt: ledger.createdAt.toISOString(),
+    effectiveDate: ledger.createdAt.toISOString().slice(0, 10),
+    actorId: ledger.createdById,
+    currency: ledger.currency,
+    sourceHash: null,
+    metadata: { sourceName: 'balance-ledger-dry-run' },
+    payload: {
+      amount: positiveDryRunAmount(ledger.amount),
+      caseId: ledger.caseBalance.caseId,
+      balanceLedgerId: ledger.id,
+      ledgerType: ledger.type,
+      source: ledger.source ?? '',
+      sourceId: ledger.sourceId,
+      isIncrease: ledger.type === 'CREDIT',
+    },
+  };
+
+  const built = buildAccountingJournal(source);
+  if (!built.ok) {
+    throw dryRunFailFast('BalanceLedger journal builder failed', ledger.id, built.errors);
+  }
+
+  const validated = validateJournalDraft(built.draft);
+  if (!validated.ok) {
+    throw dryRunFailFast('BalanceLedger journal validation failed', ledger.id, validated.errors);
+  }
+
+  return formatBalanceLedgerDraftForDryRun(validated.draft);
+}
+
+function isJournalableBalanceLedgerType(type: string): type is Extract<BalanceLedgerRecordedType, 'CREDIT' | 'DEBIT'> {
+  return type === 'CREDIT' || type === 'DEBIT';
+}
+
+function positiveDryRunAmount(amount: Prisma.Decimal): string {
+  return amount.lt(ZERO) ? amount.negated().toString() : amount.toString();
+}
+
+function formatBalanceLedgerDraftForDryRun(draft: JournalEntryDraft): AccountingDryRunJournalEntry {
+  const caseId = requiredDryRunDimension(draft.caseId, 'entry.caseId', draft.sourceId);
+  return {
+    idempotencyKey: draft.idempotencyKey,
+    sourceType: 'BALANCE_LEDGER',
+    sourceId: draft.sourceId,
+    tenantId: draft.tenantId,
+    caseId,
+    currency: draft.currency,
+    effectiveAt: draft.sourceOccurredAt,
+    lines: draft.lines.map((line) => formatBalanceLedgerLineForDryRun(line, draft.sourceId)),
+  };
+}
+
+function formatBalanceLedgerLineForDryRun(line: JournalLineDraft, sourceId: string): AccountingDryRunJournalLine {
   return {
     accountCode: line.accountCode,
     direction: line.direction,
