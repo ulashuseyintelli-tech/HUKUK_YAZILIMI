@@ -14,5 +14,6 @@ import { AccountingJournalTrialBalanceService } from './accounting-journal-trial
     AccountingJournalLegalShadowCompareService,
     AccountingJournalCutoverReadinessService,
   ],
+  exports: [AccountingJournalCutoverReadinessService],
 })
 export class AccountingJournalTrialBalanceModule {}

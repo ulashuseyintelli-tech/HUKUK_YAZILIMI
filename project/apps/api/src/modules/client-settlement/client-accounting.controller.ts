@@ -1,5 +1,6 @@
 import { Controller, Get, Param, Query, Request, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ClientAccountingMovementsReadService } from './client-accounting-movements-read.service';
 import { ClientSettlementReadService } from './client-settlement-read.service';
 
 /** actor compile-time shape — req.user.tenantId auth context. */
@@ -16,7 +17,10 @@ interface AuthRequest {
 @Controller('clients/:clientId/accounting')
 @UseGuards(JwtAuthGuard)
 export class ClientAccountingController {
-  constructor(private readonly readService: ClientSettlementReadService) {}
+  constructor(
+    private readonly readService: ClientSettlementReadService,
+    private readonly movementsReadService: ClientAccountingMovementsReadService,
+  ) {}
 
   /** Müvekkilin (eligible) dosyaları + caseClientId resolve. tenant-scoped. */
   @Get('cases')
@@ -58,7 +62,7 @@ export class ClientAccountingController {
     @Query('from') from?: string,
     @Query('to') to?: string,
   ) {
-    const data = await this.readService.getClientAccountingMovements(req.user.tenantId, clientId, {
+    const data = await this.movementsReadService.getClientAccountingMovements(req.user.tenantId, clientId, {
       scope,
       caseId,
       group,
