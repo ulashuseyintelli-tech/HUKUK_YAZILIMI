@@ -577,6 +577,13 @@ class ApiClient {
     return this.request<any>(`/clients${query}`);
   }
 
+  // Task 4A: tekil müvekkil (GET /clients/:id → { data: client }). Backend findOne soft-deleted'i
+  // hariç tutar (arşivlenmiş müvekkil 404). contacts + bankAccounts + powerOfAttorneys dahil;
+  // cases bu yanıtta YOK → ayrıca getCases({ clientId }) ile çekilir.
+  async getClient(id: string) {
+    return this.request<{ data: any }>(`/clients/${id}`);
+  }
+
   async createClient(data: any) {
     return this.request<any>("/clients", {
       method: "POST",

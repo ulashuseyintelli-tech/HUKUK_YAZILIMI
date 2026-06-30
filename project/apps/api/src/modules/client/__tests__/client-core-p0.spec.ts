@@ -102,3 +102,28 @@ describe("ClientService.remove — P0.5 tenant-scoped soft-delete", () => {
     await expect(svc.remove("cX", "t1", { userId: "u1" })).rejects.toBeInstanceOf(NotFoundException);
   });
 });
+
+describe("ClientService.findOne — Task 4A soft-delete default-exclude (owner karar #2)", () => {
+  it("default: where {id, tenantId, isActive:true} → arşivlenmiş müvekkil GET /clients/:id'de gelmez", async () => {
+    const { svc, prisma } = buildHarness();
+    await svc.findOne("c1", "t1");
+    const where = (prisma.client.findFirst as jest.Mock).mock.calls[0][0].where;
+    expect(where).toEqual({ id: "c1", tenantId: "t1", isActive: true });
+  });
+
+  it("includeInactive:true: where {id, tenantId} → iç mutasyon dönüşü soft-deleted'i de alır (davranış korunur)", async () => {
+    const { svc, prisma } = buildHarness();
+    await svc.findOne("c1", "t1", { includeInactive: true });
+    const where = (prisma.client.findFirst as jest.Mock).mock.calls[0][0].where;
+    expect(where).toEqual({ id: "c1", tenantId: "t1" });
+  });
+
+  it("update() arşivleme (isActive:false) sonrası kaydı yine döndürür (includeInactive ile)", async () => {
+    const { svc, prisma } = buildHarness({ updated: { id: "c1", isActive: false } });
+    const result = await svc.update("c1", "t1", { type: "PERSON", isActive: false }, { userId: "u1" });
+    // update sonu findOne(includeInactive:true) → soft-deleted kaydı döndürür (null değil).
+    expect(result).toBeTruthy();
+    const lastWhere = (prisma.client.findFirst as jest.Mock).mock.calls.at(-1)[0].where;
+    expect(lastWhere).toEqual({ id: "c1", tenantId: "t1" });
+  });
+});
