@@ -259,7 +259,7 @@ export type JournalValidationResult<TDraft extends JournalEntryDraft = JournalEn
   | { ok: false; errors: JournalValidationError[] };
 
 export interface JournalWriterInput {
-  draft: ValidatedJournalEntryDraft;
+  draft: JournalEntryDraft;
 }
 
 export type JournalWriterStatus = 'CREATED' | 'REPLAYED';
@@ -273,6 +273,7 @@ export interface JournalWriterOutput {
 }
 
 export type JournalWriterErrorCode =
+  | 'VALIDATION_FAILED'
   | 'IDEMPOTENCY_CONFLICT'
   | 'SOURCE_VERSION_STALE'
   | 'SOURCE_HASH_MISMATCH'

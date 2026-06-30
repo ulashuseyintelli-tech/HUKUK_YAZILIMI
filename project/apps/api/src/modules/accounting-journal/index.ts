@@ -1,4 +1,5 @@
 export * from './accounting-journal.builder';
+export * from './accounting-journal-writer.service';
 export * from './accounting-journal-source-hash';
 export * from './accounting-journal-source.types';
 export * from './accounting-journal.types';
