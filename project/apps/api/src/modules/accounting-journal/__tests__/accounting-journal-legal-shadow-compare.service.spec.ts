@@ -262,6 +262,134 @@ describe('AccountingJournalLegalShadowCompareService', () => {
     ]));
     expect(report.cutoverReadiness.safeForPrimaryCutover).toBe(false);
   });
+  it('proves reversal, cancel and backfill fixture matrix stays fail-closed before zeroing', async () => {
+    const prisma = prismaMock({
+      journalLines: [
+        journalLine({
+          sourceType: 'CLIENT_OFFSET',
+          sourceAction: 'reversal',
+          sourceId: 'offset-reversal',
+          accountCode: 'CLIENT_PAYABLE',
+          direction: 'CREDIT',
+          amount: '25.00',
+          caseId: 'case-payable-reversal',
+          clientId: 'client-1',
+          caseClientId: 'cc-payable-reversal',
+        }),
+        journalLine({
+          sourceType: 'CLIENT_OFFSET',
+          sourceAction: 'reversal',
+          sourceId: 'offset-reversal',
+          accountCode: 'CLIENT_EXPENSE_RECEIVABLE',
+          direction: 'DEBIT',
+          amount: '25.00',
+          caseId: 'case-expense-reversal',
+          clientId: 'client-1',
+          caseClientId: null,
+        }),
+      ],
+      clientOffsets: [clientOffset({
+        id: 'offset-reversal',
+        kind: 'REVERSAL',
+        amount: '25.00',
+        payableCaseId: 'case-payable-reversal',
+        payableCaseClientId: 'cc-payable-reversal',
+        expenseCaseId: 'case-expense-reversal',
+      })],
+      ledgerEntries: [
+        ledgerEntry({
+          id: 'le-collection-cancel',
+          sourceType: 'COLLECTION_CANCEL',
+          sourceId: 'collection-cancel-1',
+          entryType: 'REVERSAL',
+          reversesLedgerEntryId: 'le-original-payment',
+          amount: '-50.00',
+          allocations: [{ amount: D('-50.00') }],
+        }),
+        ledgerEntry({
+          id: 'le-payout-reversal',
+          sourceType: 'CLIENT_PAYOUT',
+          sourceId: 'payout-reversal-1',
+          entryType: 'REVERSAL',
+          amount: '-40.00',
+          allocations: [{ amount: D('-40.00') }],
+        }),
+        ledgerEntry({
+          id: 'le-payout-refund',
+          sourceType: 'CLIENT_PAYOUT',
+          sourceId: 'payout-refund-1',
+          entryType: 'REFUND',
+          amount: '-30.00',
+          allocations: [{ amount: D('-30.00') }],
+        }),
+        ledgerEntry({
+          id: 'le-offset-reversal',
+          sourceType: 'CLIENT_OFFSET',
+          sourceId: 'offset-reversal',
+          entryType: 'REVERSAL',
+          amount: '-25.00',
+          allocations: [{ amount: D('-25.00') }],
+        }),
+        ledgerEntry({
+          id: 'le-historical-backfill-missing',
+          sourceType: 'COLLECTION_BACKFILL',
+          sourceId: null,
+          entryType: 'PAYMENT',
+          amount: '60.00',
+          allocations: [{ amount: D('60.00') }],
+        }),
+      ],
+    });
+
+    const report = await new AccountingJournalLegalShadowCompareService(prisma).compare({ tenantId: 'tenant-1' });
+    const bySourceId = new Map(report.rows.map((row) => [row.sourceId, row]));
+    const offsetProjectionRows = report.rows.filter(
+      (row) => row.sourceType === 'CLIENT_OFFSET'
+        && row.sourceId === 'offset-reversal'
+        && row.accountCode !== 'LEGAL_LEDGER_ALLOCATED_AMOUNT',
+    );
+
+    expect(offsetProjectionRows).toHaveLength(2);
+    expect(offsetProjectionRows.every((row) => row.matchStatus === 'MATCH')).toBe(true);
+    expect(report.rows.find(
+      (row) => row.sourceType === 'CLIENT_OFFSET'
+        && row.sourceId === 'offset-reversal'
+        && row.accountCode === 'LEGAL_LEDGER_ALLOCATED_AMOUNT',
+    )).toEqual(expect.objectContaining({
+      sourceAction: 'reversal',
+      matchStatus: 'SUMMARY_ONLY',
+      legalSourcePolicy: 'MAPPED',
+      legalSourcePolicyCode: 'LEGAL_LEDGER_SOURCE_MAPPED',
+    }));
+    expect(bySourceId.get('le-collection-cancel')).toEqual(expect.objectContaining({
+      legalSourcePolicy: 'BLOCKED',
+      legalSourcePolicyCode: 'LEGAL_LEDGER_UNSUPPORTED_CANCEL_REVERSAL_BACKFILL',
+    }));
+    expect(bySourceId.get('le-payout-reversal')).toEqual(expect.objectContaining({
+      legalSourcePolicy: 'BLOCKED',
+      legalSourcePolicyCode: 'LEGAL_LEDGER_UNSUPPORTED_CLIENT_PAYOUT_REVERSAL_REFUND',
+    }));
+    expect(bySourceId.get('le-payout-refund')).toEqual(expect.objectContaining({
+      legalSourcePolicy: 'BLOCKED',
+      legalSourcePolicyCode: 'LEGAL_LEDGER_UNSUPPORTED_CLIENT_PAYOUT_REVERSAL_REFUND',
+    }));
+    expect(bySourceId.get('le-historical-backfill-missing')).toEqual(expect.objectContaining({
+      legalSourcePolicy: 'BLOCKED',
+      legalSourcePolicyCode: 'LEGAL_LEDGER_UNSUPPORTED_CANCEL_REVERSAL_BACKFILL',
+    }));
+    expect(report.coverage).toEqual(expect.objectContaining({
+      legalMappedRows: 1,
+      legalBlockedRows: 4,
+      matchRows: 2,
+    }));
+    expect(report.cutoverReadiness.blockers).toEqual(expect.arrayContaining([
+      'LEGAL_LEDGER_ACCOUNTING_SOURCE_UNMAPPED',
+      'LEGAL_LEDGER_UNSUPPORTED_CANCEL_REVERSAL_BACKFILL',
+      'LEGAL_LEDGER_UNSUPPORTED_CLIENT_PAYOUT_REVERSAL_REFUND',
+      'SUMMARY_ONLY_SHADOW_ROW',
+    ]));
+    expect(report.cutoverReadiness.safeForPrimaryCutover).toBe(false);
+  });
   it('keeps unsupported sources as blockers and suppresses correlated disposition BalanceLedger rows', async () => {
     const prisma = prismaMock({
       dispositionLines: [

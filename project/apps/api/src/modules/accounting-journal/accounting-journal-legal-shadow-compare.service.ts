@@ -201,6 +201,7 @@ export const LEGAL_LEDGER_SOURCE_POLICY_MATRIX = {
     BALANCE_LEDGER: 'posted',
   },
   conditionalMappedSourceTypes: ['CLIENT_OFFSET'],
+  unsupportedClientPayoutEntryTypes: ['REVERSAL', 'REFUND'],
   acceptedExclusionSourceTypes: ['MANUAL', 'MANUEL'],
   unsupportedWorkflowSourceTypes: ['COLLECTION_CANCEL', 'COLLECTION_REVERSAL', 'COLLECTION_BACKFILL'],
 } as const;
@@ -679,6 +680,11 @@ function legalLedgerSourcePolicy(entry: LedgerEntryRow): LegalLedgerSourcePolicy
     return blockedLegalPolicy(entry, unsupportedWorkflow);
   }
 
+  const unsupportedSourceAction = unsupportedLegalSourceActionCode(entry, normalizedSourceType);
+  if (unsupportedSourceAction) {
+    return blockedLegalPolicy(entry, unsupportedSourceAction);
+  }
+
   const mappedAction = mappedLegalSourceAction(normalizedSourceType, entry);
   if (mappedAction && entry.sourceId) {
     return {
@@ -739,6 +745,15 @@ function isAcceptedLegalExclusion(sourceType: string | null, sourceId: string | 
   );
 }
 
+function unsupportedLegalSourceActionCode(entry: LedgerEntryRow, sourceType: string | null): string | null {
+  if (sourceType === 'CLIENT_PAYOUT' && LEGAL_LEDGER_SOURCE_POLICY_MATRIX.unsupportedClientPayoutEntryTypes.includes(
+    entry.entryType as typeof LEGAL_LEDGER_SOURCE_POLICY_MATRIX.unsupportedClientPayoutEntryTypes[number],
+  )) {
+    return 'LEGAL_LEDGER_UNSUPPORTED_CLIENT_PAYOUT_REVERSAL_REFUND';
+  }
+  return null;
+}
+
 function unsupportedLegalWorkflowCode(entry: LedgerEntryRow, sourceType: string | null): string | null {
   if (sourceType && LEGAL_LEDGER_SOURCE_POLICY_MATRIX.unsupportedWorkflowSourceTypes.includes(
     sourceType as typeof LEGAL_LEDGER_SOURCE_POLICY_MATRIX.unsupportedWorkflowSourceTypes[number],
@@ -750,6 +765,7 @@ function unsupportedLegalWorkflowCode(entry: LedgerEntryRow, sourceType: string 
   }
   return null;
 }
+
 function summaryContribution(input: Omit<Contribution, 'side' | 'amount'> & {
   amount: Prisma.Decimal | string | number;
 }): Contribution {
@@ -909,7 +925,7 @@ function cutoverReadiness(
       'LedgerEntry/LedgerAllocation icin MAPPED, ACCEPTED_EXCLUSION veya BLOCKED policy karari.',
       'Accepted exclusion legal satirlari sessiz dusmeden raporda gorunur blocker olarak kalmali.',
       'CollectionDisposition/ClientPayout/ClientOffset/BalanceLedger fixture matrix: MATCH, DIVERGENT, SUMMARY_ONLY, ENGINE_ONLY.',
-      'Cancel/reversal/backfill alanlari icin ya mapped compare ya fail-closed blocker.',
+      'Cancel/reversal/backfill ve payout refund alanlari icin ya mapped compare ya fail-closed blocker.',
       'Feature flag ve legal sign-off olmadan primary cutover acma.',
     ],
   };
@@ -1050,6 +1066,7 @@ function severityForBlocker(code: string): AccountingJournalLegalShadowSeverity 
   if (code === 'LEGAL_LEDGER_SOURCE_UNMAPPED') return 'RED';
   if (code === 'LEGAL_LEDGER_ACCEPTED_EXCLUSION') return 'YELLOW';
   if (code === 'LEGAL_LEDGER_UNSUPPORTED_CANCEL_REVERSAL_BACKFILL') return 'RED';
+  if (code === 'LEGAL_LEDGER_UNSUPPORTED_CLIENT_PAYOUT_REVERSAL_REFUND') return 'RED';
   return 'RED';
 }
 
@@ -1073,6 +1090,8 @@ function messageForBlocker(code: string): string {
       return 'Legal ledger source acik accepted exclusion kapsaminda; sessiz dusmez ve signoff kaniti ister.';
     case 'LEGAL_LEDGER_UNSUPPORTED_CANCEL_REVERSAL_BACKFILL':
       return 'Legal ledger cancel/reversal/backfill kaynagi AccountingJournal primary cutover kapsaminda desteklenmiyor.';
+    case 'LEGAL_LEDGER_UNSUPPORTED_CLIENT_PAYOUT_REVERSAL_REFUND':
+      return 'ClientPayout reversal/refund legal ledger kaynagi AccountingJournal primary cutover kapsaminda desteklenmiyor.';
     case 'MANUAL_REVERSAL_DISPOSITION_LINE_UNMAPPED':
       return 'Manual reversal marker tasiyan disposition line auto-compare/cutover disinda.';
     case 'UNSUPPORTED_DISPOSITION_LINE_TYPE':
