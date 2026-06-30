@@ -25,6 +25,7 @@ import { ClientPayoutManualReversalReadService } from './client-payout-manual-re
 import { ClientPayoutManualReversalService } from './client-payout-manual-reversal.service';
 import { FinanceApprovalIntentBuilder } from './finance-approval-intent.builder';
 import { FinanceRiskEngine } from './finance-risk.engine';
+import { CaseFeeAgreementService } from './case-fee-agreement.service';
 
 /**
  * TM3 M1/M2/M3/M1R - Muvekkil Settlement Bridge (Claude domaini).
@@ -62,13 +63,16 @@ import { FinanceRiskEngine } from './finance-risk.engine';
     ClientOffsetService,
     ClientPayoutManualReversalService,
     ClientPayoutManualReversalReadService,
+    CaseFeeAgreementService,
   ],
   // FAZ-1b: ClientSettlementReadService export → expense-request modülü (UYAP gate) computeExpenseRemaining'i kullanır.
+  // FAZ-2: CaseFeeAgreementService export → PR-3 distribution-recommendation entegrasyonu tüketecek (şimdilik dormant).
   exports: [
     CollectionDispositionService,
     CollectionReversalService,
     ClientSettlementReadService,
     ClientAccountingSummaryShadowReportService,
+    CaseFeeAgreementService,
   ],
 })
 export class ClientSettlementModule {}
