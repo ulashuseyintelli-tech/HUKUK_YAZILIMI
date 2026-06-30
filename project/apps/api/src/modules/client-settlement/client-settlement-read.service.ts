@@ -87,6 +87,7 @@ export type MovementSourceType =
   | 'COLLECTION'
   | 'COLLECTION_DISPOSITION'
   | 'CLIENT_PAYOUT'
+  | 'CLIENT_OFFSET'
   | 'EXPENSE_REQUEST'
   | 'EXPENSE_PAYMENT'
   | 'CASE_BALANCE';

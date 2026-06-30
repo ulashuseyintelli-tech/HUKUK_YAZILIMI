@@ -3,6 +3,7 @@ import { PrismaModule } from '../../prisma/prisma.module';
 import { V28EngineModule } from '../icrabot/v28-engine/v28-engine.module';
 import { OfficeApprovalModule } from '../office-approval/office-approval.module';
 import { AccountingJournalWriterService } from '../accounting-journal';
+import { AccountingJournalTrialBalanceModule } from '../accounting-journal/accounting-journal-trial-balance.module';
 import { CollectionDispositionService } from './collection-disposition.service';
 import { PaymentReceivedRegistrar } from './payment-received.registrar';
 import { CollectionReversalService } from './collection-reversal.service';
@@ -12,6 +13,8 @@ import { DistributionRecommendationService } from './distribution-recommendation
 import { DispositionController } from './disposition.controller';
 import { ClientPayoutService } from './client-payout.service';
 import { ClientPayoutController } from './client-payout.controller';
+import { ClientAccountingJournalMovementsReaderService } from './client-accounting-journal-movements-reader.service';
+import { ClientAccountingMovementsReadService } from './client-accounting-movements-read.service';
 import { ClientSettlementReadService } from './client-settlement-read.service';
 import { ClientAccountingController } from './client-accounting.controller';
 import { ClientOffsetService } from './client-offset.service';
@@ -31,7 +34,7 @@ import { FinanceRiskEngine } from './finance-risk.engine';
  *      manuel-reversal-required olarak consume eder (ayrı exact key; M1 handler'ına dokunmaz).
  */
 @Module({
-  imports: [PrismaModule, V28EngineModule, OfficeApprovalModule],
+  imports: [PrismaModule, V28EngineModule, OfficeApprovalModule, AccountingJournalTrialBalanceModule],
   controllers: [
     DispositionController,
     ClientPayoutController,
@@ -51,6 +54,8 @@ import { FinanceRiskEngine } from './finance-risk.engine';
     AccountingJournalWriterService,
     ClientPayoutService,
     ClientSettlementReadService,
+    ClientAccountingJournalMovementsReaderService,
+    ClientAccountingMovementsReadService,
     ClientOffsetService,
     ClientPayoutManualReversalService,
   ],
