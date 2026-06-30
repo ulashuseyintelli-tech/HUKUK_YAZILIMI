@@ -99,6 +99,62 @@ The response includes `diagnostics` to describe the evidence quality of the retu
 | `missingSourceVersionColumn` | Explicit marker that source-version evidence is not part of the current persisted journal contract. |
 | `warningCodes` | Machine-readable warning codes, for example `NO_JOURNAL_LINES`, `TRIAL_BALANCE_IMBALANCE`, or `DIMENSION_SCOPED_IMBALANCE`. |
 
+## Reconciliation Evidence
+
+The response can include `reconciliation`, an additive evidence object that explains how the Trial Balance result was derived from persisted AccountingJournal data.
+
+`reconciliation` is admin diagnostic-only evidence. It is not a reporting surface, not a legal ledger view, and not an operator accounting statement. Do not present it as a financial statement or as proof that AccountingJournal has become authoritative. It supports ACCT-2 / ADR-010 faithfulness inspection before any future source-of-truth cutover decision.
+
+| Field | Meaning |
+|---|---|
+| `evidenceSource` | Evidence origin; currently `PERSISTED_ACCOUNTING_JOURNAL`. |
+| `aggregateBasis` | Aggregate strategy used by the read model; currently `DB_AGGREGATE`. |
+| `tenantScoped` | Confirms the evidence is scoped to the authenticated tenant. |
+| `dateBasis` | Date column used for filtering; currently always `postedAt`. |
+| `amountBasis` | Amount field used for totals; currently `AccountingJournalLine.amount`. |
+| `directionBasis` | Debit/credit field used for totals; currently `AccountingJournalLine.direction`. |
+| `entryJoinBasis` | Join used to connect lines to entry metadata. |
+| `balanced` | Whether total debit equals total credit for the returned evidence scope. |
+| `evidenceStatus` | Summary status mirrored from diagnostics: `NO_LINES`, `BALANCED`, `IMBALANCED`, or `DIMENSION_SCOPED`. |
+| `lineCount` | Number of journal lines included in the evidence scope. |
+| `entryCount` | Number of distinct journal entries represented by the evidence scope. |
+| `currencyCount` | Number of currencies represented by the evidence scope. |
+| `sourceCount` | Number of source buckets represented in source coverage. |
+| `sourceCoverage` | Per-source aggregate coverage; see below. |
+| `warnings` | Reconciliation warning objects with machine-readable `code` and human-readable `message`. |
+
+`sourceCoverage` rows are grouped by `sourceType` and `sourceAction`.
+
+| Field | Meaning |
+|---|---|
+| `sourceType` | Journal source type represented by the bucket. |
+| `sourceAction` | Source action represented by the bucket. |
+| `entryCount` | Number of journal entries in the bucket. |
+| `lineCount` | Number of journal lines in the bucket. |
+| `currencyCount` | Number of currencies in the bucket. |
+| `currencies` | Sorted list of currency codes represented by the bucket. |
+| `balanced` | Whether debit equals credit inside that source bucket for the returned scope. |
+
+### Reconciliation Warning Codes
+
+| Code | Meaning |
+|---|---|
+| `NO_JOURNAL_LINES` | No persisted journal lines matched the requested scope. |
+| `DIMENSION_SCOPED_IMBALANCE` | The requested dimension scope is imbalanced; this can happen when filters include only part of one or more entries. |
+| `TRIAL_BALANCE_IMBALANCE` | The unscoped returned evidence is imbalanced. |
+| `DIMENSION_SCOPED_EVIDENCE` | Filters narrow the journal evidence scope and may include partial entries. |
+| `MISSING_SOURCE_METADATA` | Some grouped journal line evidence did not have matching source metadata in the joined journal entries. |
+| `SOURCE_BREAKDOWN_IMBALANCE` | At least one source bucket is imbalanced within the returned evidence scope. |
+
+### Consumption Boundaries
+
+- Tenant scope comes only from the authenticated user context; `tenantId` query/body values are not authority.
+- Period scope uses `postedAt`; it is not an effective-date, legal-ledger, or TBK100 period projection.
+- Currency totals are aggregated per currency. There is no FX conversion and no single-currency statement view.
+- Dimension filters such as `caseId`, `clientId`, `caseClientId`, or `accountCode` can produce partial-entry evidence. Treat `DIMENSION_SCOPED_EVIDENCE` and `DIMENSION_SCOPED_IMBALANCE` as scope diagnostics, not automatic writer defects.
+- The evidence object intentionally does not expose raw source IDs, idempotency material, source hashes, metadata JSON, or actor/poster identifiers.
+- Future UI consumption should use a separate admin diagnostic projection. This response shape is not a customer-facing or operator accounting report contract.
+
 ## ADR-010 Faithfulness Role
 
 ADR-010 defines AccountingJournal as the north-star financial-event source of truth, but it does not move authority today. The current endpoint is part of the additive/shadow evidence path:
