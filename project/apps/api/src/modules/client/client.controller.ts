@@ -35,7 +35,19 @@ export class ClientController {
     return { data: await this.clientService.findAll(tenantId, type) };
   }
 
-  // Tek müvekkil getir
+  // Client Workspace timeline (read-only V1)
+  @Get(':clientId/timeline')
+  async timeline(
+    @Request() req: any,
+    @Param('clientId') clientId: string,
+    @Query('limit') limit?: string,
+    @Query('cursor') cursor?: string,
+    @Query('sources') sources?: string,
+  ) {
+    return this.clientService.getTimeline(clientId, req.user.tenantId, { limit, cursor, sources });
+  }
+
+  // Fetch one client
   @Get(':id')
   async findOne(@Request() req: any, @Param('id') id: string) {
     const tenantId = req.user.tenantId;
