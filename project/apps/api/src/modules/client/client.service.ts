@@ -1,4 +1,4 @@
-import { Injectable, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { buildClientFieldDiff, buildContactsDiff, buildClientRemoveSnapshot } from './client-audit.util';
@@ -12,6 +12,46 @@ export interface AuditActor {
 // ── Operasyonel iletişim eksiği takibi (PR-1, saf yardımcılar) ──
 
 export const CONTACT_TASK_DEDUPE_PREFIX = 'OPCOMP:CONTACT:';
+
+export type ClientTimelineSource = 'client_notification' | 'intake_submission';
+
+export interface ClientTimelineQuery {
+  limit?: string;
+  cursor?: string;
+  sources?: string;
+}
+
+export interface ClientTimelineItem {
+  id: string;
+  source: ClientTimelineSource;
+  eventType: string;
+  occurredAt: string;
+  title: string;
+  summary: string;
+  status: string;
+  caseId?: string | null;
+  metadataSafe?: Record<string, string | null>;
+}
+
+export interface ClientTimelineResponse {
+  data: ClientTimelineItem[];
+  pageInfo: {
+    nextCursor: string | null;
+    hasNextPage: boolean;
+    limit: number;
+  };
+}
+
+interface ClientTimelineCursor {
+  occurredAt: string;
+  source: ClientTimelineSource;
+  id: string;
+}
+
+const CLIENT_TIMELINE_DEFAULT_LIMIT = 25;
+const CLIENT_TIMELINE_MAX_LIMIT = 100;
+const CLIENT_TIMELINE_DEFAULT_SOURCES: ClientTimelineSource[] = ['client_notification', 'intake_submission'];
+const CLIENT_TIMELINE_ALLOWED_SOURCES = new Set<ClientTimelineSource>(CLIENT_TIMELINE_DEFAULT_SOURCES);
 
 /** Müvekkil için contact-task dedupe anahtarı (tek aktif görev garantisi). */
 export function contactTaskDedupeKey(clientId: string): string {
@@ -75,7 +115,164 @@ export class ClientService {
     });
   }
 
-  // Yeni müvekkil oluştur
+  /**
+   * Client Workspace unified timeline V1 (read-only).
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - ClientController.timeline() -> GET /clients/:clientId/timeline (Client Workspace read model)
+   * </remarks>
+   */
+  async getTimeline(id: string, tenantId: string, query: ClientTimelineQuery = {}): Promise<ClientTimelineResponse> {
+    const limit = this.parseTimelineLimit(query.limit);
+    const sources = this.parseTimelineSources(query.sources);
+    const cursor = this.parseTimelineCursor(query.cursor);
+
+    const client = await this.prisma.client.findFirst({
+      where: { id, tenantId, isActive: true },
+      select: { id: true },
+    });
+    if (!client) throw new NotFoundException('Client not found');
+
+    const scanTake = Math.min(Math.max(limit * 4, limit + 1), CLIENT_TIMELINE_MAX_LIMIT * 4);
+    const groups = await Promise.all([
+      sources.includes('client_notification')
+        ? this.prisma.clientNotification.findMany({
+            where: { tenantId, clientId: id },
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            take: scanTake,
+            select: {
+              id: true,
+              type: true,
+              channel: true,
+              subject: true,
+              status: true,
+              sentAt: true,
+              deliveredAt: true,
+              createdAt: true,
+              caseId: true,
+            },
+          })
+        : Promise.resolve([]),
+      sources.includes('intake_submission')
+        ? this.prisma.clientIntakeSubmission.findMany({
+            where: { tenantId, clientId: id },
+            orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+            take: scanTake,
+            select: {
+              id: true,
+              status: true,
+              submittedAt: true,
+              claimedAt: true,
+              reviewedAt: true,
+              createdAt: true,
+              caseId: true,
+            },
+          })
+        : Promise.resolve([]),
+    ]);
+
+    const items = [
+      ...groups[0].map((row: any) => this.notificationTimelineItem(row)),
+      ...groups[1].map((row: any) => this.intakeSubmissionTimelineItem(row)),
+    ]
+      .sort(compareTimelineItems)
+      .filter((item) => !cursor || isAfterCursor(item, cursor));
+
+    const page = items.slice(0, limit);
+    const hasNextPage = items.length > limit;
+
+    return {
+      data: page,
+      pageInfo: {
+        nextCursor: hasNextPage ? this.encodeTimelineCursor(page[page.length - 1]) : null,
+        hasNextPage,
+        limit,
+      },
+    };
+  }
+
+  private parseTimelineLimit(raw?: string): number {
+    if (raw === undefined || raw === '') return CLIENT_TIMELINE_DEFAULT_LIMIT;
+    if (!/^\d+$/.test(raw)) throw new BadRequestException('Invalid limit');
+    const limit = Number(raw);
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > CLIENT_TIMELINE_MAX_LIMIT) {
+      throw new BadRequestException('Invalid limit');
+    }
+    return limit;
+  }
+
+  private parseTimelineSources(raw?: string): ClientTimelineSource[] {
+    if (!raw || !raw.trim()) return CLIENT_TIMELINE_DEFAULT_SOURCES;
+    const values = raw.split(',').map((item) => item.trim()).filter(Boolean);
+    if (values.length === 0) return CLIENT_TIMELINE_DEFAULT_SOURCES;
+    for (const source of values) {
+      if (!CLIENT_TIMELINE_ALLOWED_SOURCES.has(source as ClientTimelineSource)) {
+        throw new BadRequestException(`Unknown timeline source: ${source}`);
+      }
+    }
+    return Array.from(new Set(values as ClientTimelineSource[]));
+  }
+
+  private parseTimelineCursor(raw?: string): ClientTimelineCursor | null {
+    if (!raw) return null;
+    try {
+      const decoded = Buffer.from(raw, 'base64url').toString('utf8');
+      const parsed = JSON.parse(decoded) as Partial<ClientTimelineCursor>;
+      if (
+        typeof parsed.occurredAt !== 'string' ||
+        typeof parsed.id !== 'string' ||
+        !CLIENT_TIMELINE_ALLOWED_SOURCES.has(parsed.source as ClientTimelineSource) ||
+        Number.isNaN(new Date(parsed.occurredAt).getTime())
+      ) {
+        throw new Error('invalid cursor');
+      }
+      return parsed as ClientTimelineCursor;
+    } catch {
+      throw new BadRequestException('Invalid cursor');
+    }
+  }
+
+  private encodeTimelineCursor(item: ClientTimelineItem): string {
+    return Buffer.from(JSON.stringify({ occurredAt: item.occurredAt, source: item.source, id: item.id })).toString('base64url');
+  }
+
+  private notificationTimelineItem(row: any): ClientTimelineItem {
+    const status = String(row.status ?? 'PENDING').toUpperCase();
+    const occurredAt = row.deliveredAt ?? row.sentAt ?? row.createdAt;
+    const eventType = `NOTIFICATION_${status}`;
+    const title = row.subject || notificationTypeLabel(row.type) || 'Client notification';
+    return {
+      id: row.id,
+      source: 'client_notification',
+      eventType,
+      occurredAt: toIso(occurredAt),
+      title,
+      summary: `${notificationChannelLabel(row.channel)} notification: ${notificationStatusLabel(status)}`,
+      status,
+      caseId: row.caseId ?? null,
+      metadataSafe: {
+        channel: row.channel ?? null,
+        notificationType: row.type ?? null,
+      },
+    };
+  }
+
+  private intakeSubmissionTimelineItem(row: any): ClientTimelineItem {
+    const status = String(row.status ?? 'CLIENT_SUBMITTED').toUpperCase();
+    const occurredAt = row.reviewedAt ?? row.claimedAt ?? row.submittedAt ?? row.createdAt;
+    return {
+      id: row.id,
+      source: 'intake_submission',
+      eventType: intakeEventType(status),
+      occurredAt: toIso(occurredAt),
+      title: intakeTitle(status),
+      summary: intakeSummary(status),
+      status,
+      caseId: row.caseId ?? null,
+    };
+  }
+  // Create client
   async create(tenantId: string, data: any, actor?: AuditActor) {
     // TCKN veya VKN ile duplicate kontrolü
     const identityNo = data.tckn || data.vkn;
@@ -583,4 +780,91 @@ export class ClientService {
       take: 20,
     });
   }
+}
+
+function compareTimelineItems(a: ClientTimelineItem, b: ClientTimelineItem): number {
+  const byDate = new Date(b.occurredAt).getTime() - new Date(a.occurredAt).getTime();
+  if (byDate !== 0) return byDate;
+  const bySource = a.source.localeCompare(b.source);
+  if (bySource !== 0) return bySource;
+  return b.id.localeCompare(a.id);
+}
+
+function isAfterCursor(item: ClientTimelineItem, cursor: ClientTimelineCursor): boolean {
+  return compareTimelineItems(item, {
+    id: cursor.id,
+    source: cursor.source,
+    occurredAt: cursor.occurredAt,
+    eventType: '',
+    title: '',
+    summary: '',
+    status: '',
+  }) > 0;
+}
+
+function toIso(value: Date | string): string {
+  const date = value instanceof Date ? value : new Date(value);
+  return date.toISOString();
+}
+
+function notificationTypeLabel(type?: string | null): string | null {
+  const labels: Record<string, string> = {
+    CLIENT_INFO: 'Client information',
+    INTAKE_LINK: 'Intake link notification',
+    MASRAF_ISTEK: 'Expense request',
+    GENEL_BILGILENDIRME: 'Information',
+    RAPOR: 'Report',
+    HATIRLATMA: 'Reminder',
+    TEST: 'Test notification',
+    DIGER: 'Notification',
+  };
+  return type ? labels[type] ?? type : null;
+}
+
+function notificationChannelLabel(channel?: string | null): string {
+  const labels: Record<string, string> = { EMAIL: 'Email', SMS: 'SMS', WHATSAPP: 'WhatsApp' };
+  return channel ? labels[channel] ?? channel : 'Notification';
+}
+
+function notificationStatusLabel(status: string): string {
+  const labels: Record<string, string> = {
+    PENDING: 'pending',
+    SENT: 'sent',
+    DELIVERED: 'delivered',
+    FAILED: 'failed',
+  };
+  return labels[status] ?? status;
+}
+
+function intakeEventType(status: string): string {
+  const map: Record<string, string> = {
+    CLIENT_SUBMITTED: 'INTAKE_SUBMITTED',
+    IN_REVIEW: 'INTAKE_CLAIMED',
+    PARTIALLY_PROMOTED: 'INTAKE_PARTIALLY_PROMOTED',
+    COMPLETED: 'INTAKE_COMPLETED',
+    REJECTED: 'INTAKE_REJECTED',
+  };
+  return map[status] ?? 'INTAKE_UPDATED';
+}
+
+function intakeTitle(status: string): string {
+  const map: Record<string, string> = {
+    CLIENT_SUBMITTED: 'Intake submission received',
+    IN_REVIEW: 'Intake review started',
+    PARTIALLY_PROMOTED: 'Intake partially processed',
+    COMPLETED: 'Intake completed',
+    REJECTED: 'Intake rejected',
+  };
+  return map[status] ?? 'Intake updated';
+}
+
+function intakeSummary(status: string): string {
+  const map: Record<string, string> = {
+    CLIENT_SUBMITTED: 'Client submitted the canonical intake form.',
+    IN_REVIEW: 'Intake submission entered review.',
+    PARTIALLY_PROMOTED: 'Some intake fields were promoted to canonical records.',
+    COMPLETED: 'Intake review completed.',
+    REJECTED: 'Intake submission rejected.',
+  };
+  return map[status] ?? 'Intake lifecycle status changed.';
 }
