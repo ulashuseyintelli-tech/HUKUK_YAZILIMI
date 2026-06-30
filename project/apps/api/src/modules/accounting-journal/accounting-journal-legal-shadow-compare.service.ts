@@ -34,6 +34,72 @@ export interface AccountingJournalLegalShadowZeroingSummary {
   blockingEngineOnlyRows: number;
 }
 
+export type AccountingJournalLegalShadowTechnicalAcceptanceStatus =
+  | 'BLOCKED'
+  | 'READY_FOR_LEGAL_SIGNOFF'
+  | 'READY_FOR_PRIMARY_CUTOVER';
+
+export type AccountingJournalLegalShadowTechnicalAcceptanceThresholdCode =
+  | 'LEGAL_SAMPLE_PRESENT'
+  | 'ROWS_PRODUCED'
+  | 'REAL_MISMATCH_ROWS_ZERO'
+  | 'UNSUPPORTED_BLOCKER_ROWS_ZERO'
+  | 'BLOCKING_DIVERGENT_ROWS_ZERO'
+  | 'BLOCKING_SUMMARY_ONLY_ROWS_ZERO'
+  | 'BLOCKING_ENGINE_ONLY_ROWS_ZERO'
+  | 'DIAGNOSTIC_ONLY_ROWS_ZERO';
+
+export interface AccountingJournalLegalShadowTechnicalAcceptanceThresholdResult {
+  code: AccountingJournalLegalShadowTechnicalAcceptanceThresholdCode;
+  passed: boolean;
+  actual: number;
+  expected: string;
+  blockerCode?: string;
+}
+
+export interface AccountingJournalLegalShadowTechnicalAcceptanceThresholds {
+  legalSamplePresent: AccountingJournalLegalShadowTechnicalAcceptanceThresholdResult;
+  rowsProduced: AccountingJournalLegalShadowTechnicalAcceptanceThresholdResult;
+  realMismatchRows: AccountingJournalLegalShadowTechnicalAcceptanceThresholdResult;
+  unsupportedBlockerRows: AccountingJournalLegalShadowTechnicalAcceptanceThresholdResult;
+  blockingDivergentRows: AccountingJournalLegalShadowTechnicalAcceptanceThresholdResult;
+  blockingSummaryOnlyRows: AccountingJournalLegalShadowTechnicalAcceptanceThresholdResult;
+  blockingEngineOnlyRows: AccountingJournalLegalShadowTechnicalAcceptanceThresholdResult;
+  diagnosticOnlyRows: AccountingJournalLegalShadowTechnicalAcceptanceThresholdResult;
+}
+
+export interface AccountingJournalLegalShadowAcceptedExclusionSignoff {
+  required: boolean;
+  rows: number;
+  reasonCodes: string[];
+  rowKeys: string[];
+}
+
+export interface AccountingJournalLegalShadowRedBlockerFamily {
+  family: string;
+  codes: string[];
+  rowCount: number;
+}
+
+export interface AccountingJournalLegalShadowTechnicalEvidenceField {
+  field: string;
+  available: boolean;
+}
+
+export interface AccountingJournalLegalShadowTechnicalEvidenceChecklist {
+  rowLevelFields: AccountingJournalLegalShadowTechnicalEvidenceField[];
+  sourceIdentityFields: AccountingJournalLegalShadowTechnicalEvidenceField[];
+}
+
+export interface AccountingJournalLegalShadowTechnicalAcceptanceReport {
+  status: AccountingJournalLegalShadowTechnicalAcceptanceStatus;
+  thresholds: AccountingJournalLegalShadowTechnicalAcceptanceThresholds;
+  failingThresholds: AccountingJournalLegalShadowTechnicalAcceptanceThresholdResult[];
+  acceptedExclusionSignoff: AccountingJournalLegalShadowAcceptedExclusionSignoff;
+  redBlockerFamilies: AccountingJournalLegalShadowRedBlockerFamily[];
+  evidenceChecklist: AccountingJournalLegalShadowTechnicalEvidenceChecklist;
+}
+
 export interface AccountingJournalLegalShadowCompareFilters {
   tenantId: string;
   currency?: string;
@@ -113,9 +179,10 @@ export interface AccountingJournalLegalShadowCompareReport {
   blockers: AccountingJournalLegalShadowIssue[];
   diagnostics: AccountingJournalLegalShadowIssue[];
   cutoverReadiness: AccountingJournalLegalShadowCutoverReadiness;
+  technicalAcceptanceStatus: AccountingJournalLegalShadowTechnicalAcceptanceStatus;
+  technicalAcceptance: AccountingJournalLegalShadowTechnicalAcceptanceReport;
   coverage: AccountingJournalLegalShadowCoverage;
 }
-
 type ContributionSide = 'ENGINE' | 'SUMMARY';
 
 interface Contribution {
@@ -300,6 +367,14 @@ export class AccountingJournalLegalShadowCompareService {
     const rows = rowsFromContributions(contributions);
     const zeroing = zeroingSummaryFromRows(rows);
     const blockers = blockersFromRows(rows, ledgerEntries.length);
+    const cutover = cutoverReadiness(rows, blockers, ledgerEntries.length, zeroing);
+    const technicalAcceptance = technicalAcceptanceReport({
+      rows,
+      blockers,
+      legalLedgerEntryCount: ledgerEntries.length,
+      zeroing,
+      cutoverReadiness: cutover,
+    });
     const coverage = coverageFromRows({
       rows,
       journalLineCount: journalLines.length,
@@ -314,7 +389,9 @@ export class AccountingJournalLegalShadowCompareService {
       rows,
       blockers,
       diagnostics,
-      cutoverReadiness: cutoverReadiness(rows, blockers, ledgerEntries.length, zeroing),
+      cutoverReadiness: cutover,
+      technicalAcceptanceStatus: technicalAcceptance.status,
+      technicalAcceptance,
       coverage,
     };
   }
@@ -1027,6 +1104,189 @@ function cutoverReadiness(
   };
 }
 
+function technicalAcceptanceReport(input: {
+  rows: AccountingJournalLegalShadowCompareRow[];
+  blockers: AccountingJournalLegalShadowIssue[];
+  legalLedgerEntryCount: number;
+  zeroing: AccountingJournalLegalShadowZeroingSummary;
+  cutoverReadiness: AccountingJournalLegalShadowCutoverReadiness;
+}): AccountingJournalLegalShadowTechnicalAcceptanceReport {
+  const thresholds = technicalAcceptanceThresholds(input);
+  const failingThresholds = Object.values(thresholds).filter((threshold) => !threshold.passed);
+  const acceptedExclusionSignoff = acceptedExclusionSignoffFromRows(input.rows);
+  const redBlockerFamilies = redBlockerFamiliesFromRows(input.rows, input.blockers);
+  const status = technicalAcceptanceStatus({
+    failingThresholds,
+    acceptedExclusionSignoff,
+    redBlockerFamilies,
+    cutoverReadiness: input.cutoverReadiness,
+  });
+
+  return {
+    status,
+    thresholds,
+    failingThresholds,
+    acceptedExclusionSignoff,
+    redBlockerFamilies,
+    evidenceChecklist: technicalEvidenceChecklist(input.rows),
+  };
+}
+
+function technicalAcceptanceThresholds(input: {
+  rows: AccountingJournalLegalShadowCompareRow[];
+  legalLedgerEntryCount: number;
+  zeroing: AccountingJournalLegalShadowZeroingSummary;
+}): AccountingJournalLegalShadowTechnicalAcceptanceThresholds {
+  return {
+    legalSamplePresent: thresholdResult('LEGAL_SAMPLE_PRESENT', input.legalLedgerEntryCount, '> 0', input.legalLedgerEntryCount > 0, 'LEGAL_LEDGER_SAMPLE_MISSING'),
+    rowsProduced: thresholdResult('ROWS_PRODUCED', input.rows.length, '> 0', input.rows.length > 0, 'NO_SHADOW_COMPARE_ROWS'),
+    realMismatchRows: thresholdResult('REAL_MISMATCH_ROWS_ZERO', input.zeroing.realMismatchRows, '0', input.zeroing.realMismatchRows === 0),
+    unsupportedBlockerRows: thresholdResult('UNSUPPORTED_BLOCKER_ROWS_ZERO', input.zeroing.unsupportedBlockerRows, '0', input.zeroing.unsupportedBlockerRows === 0),
+    blockingDivergentRows: thresholdResult('BLOCKING_DIVERGENT_ROWS_ZERO', input.zeroing.blockingDivergentRows, '0', input.zeroing.blockingDivergentRows === 0, 'DIVERGENT_SHADOW_ROW'),
+    blockingSummaryOnlyRows: thresholdResult('BLOCKING_SUMMARY_ONLY_ROWS_ZERO', input.zeroing.blockingSummaryOnlyRows, '0', input.zeroing.blockingSummaryOnlyRows === 0, 'SUMMARY_ONLY_SHADOW_ROW'),
+    blockingEngineOnlyRows: thresholdResult('BLOCKING_ENGINE_ONLY_ROWS_ZERO', input.zeroing.blockingEngineOnlyRows, '0', input.zeroing.blockingEngineOnlyRows === 0, 'ENGINE_ONLY_SHADOW_ROW'),
+    diagnosticOnlyRows: thresholdResult('DIAGNOSTIC_ONLY_ROWS_ZERO', input.zeroing.diagnosticOnlyRows, '0', input.zeroing.diagnosticOnlyRows === 0),
+  };
+}
+
+function thresholdResult(
+  code: AccountingJournalLegalShadowTechnicalAcceptanceThresholdCode,
+  actual: number,
+  expected: string,
+  passed: boolean,
+  blockerCode?: string,
+): AccountingJournalLegalShadowTechnicalAcceptanceThresholdResult {
+  return {
+    code,
+    passed,
+    actual,
+    expected,
+    ...(blockerCode ? { blockerCode } : {}),
+  };
+}
+
+function acceptedExclusionSignoffFromRows(
+  rows: AccountingJournalLegalShadowCompareRow[],
+): AccountingJournalLegalShadowAcceptedExclusionSignoff {
+  const acceptedRows = rows.filter((row) => row.zeroingDecision === 'ACCEPTED_EXCLUSION');
+  return {
+    required: acceptedRows.length > 0,
+    rows: acceptedRows.length,
+    reasonCodes: uniqueSorted(acceptedRows.map((row) => row.zeroingReasonCode)),
+    rowKeys: uniqueSorted(acceptedRows.map((row) => row.key)),
+  };
+}
+
+function technicalAcceptanceStatus(input: {
+  failingThresholds: AccountingJournalLegalShadowTechnicalAcceptanceThresholdResult[];
+  acceptedExclusionSignoff: AccountingJournalLegalShadowAcceptedExclusionSignoff;
+  redBlockerFamilies: AccountingJournalLegalShadowRedBlockerFamily[];
+  cutoverReadiness: AccountingJournalLegalShadowCutoverReadiness;
+}): AccountingJournalLegalShadowTechnicalAcceptanceStatus {
+  if (input.failingThresholds.length > 0 || input.redBlockerFamilies.length > 0) {
+    return 'BLOCKED';
+  }
+  if (input.acceptedExclusionSignoff.required || !input.cutoverReadiness.safeForPrimaryCutover) {
+    return 'READY_FOR_LEGAL_SIGNOFF';
+  }
+  return 'READY_FOR_PRIMARY_CUTOVER';
+}
+
+const RED_BLOCKER_FAMILY_BY_CODE: Record<string, string> = {
+  NO_SHADOW_COMPARE_ROWS: 'SAMPLE_READINESS',
+  ENGINE_ONLY_SHADOW_ROW: 'ROW_MISMATCH',
+  SUMMARY_ONLY_SHADOW_ROW: 'ROW_MISMATCH',
+  DIVERGENT_SHADOW_ROW: 'ROW_MISMATCH',
+  LEGAL_LEDGER_ACCOUNTING_SOURCE_UNMAPPED: 'LEGAL_SOURCE_MAPPING',
+  LEGAL_LEDGER_SOURCE_UNMAPPED: 'LEGAL_SOURCE_MAPPING',
+  LEGAL_LEDGER_UNSUPPORTED_CANCEL_REVERSAL_BACKFILL: 'UNSUPPORTED_CANCEL_REVERSAL_BACKFILL',
+  LEGAL_LEDGER_UNSUPPORTED_CLIENT_PAYOUT_REVERSAL_REFUND: 'UNSUPPORTED_CLIENT_PAYOUT_REVERSAL_REFUND',
+  MANUAL_REVERSAL_DISPOSITION_LINE_UNMAPPED: 'UNSUPPORTED_PROJECTION_SOURCE',
+  UNSUPPORTED_DISPOSITION_LINE_TYPE: 'UNSUPPORTED_PROJECTION_SOURCE',
+  UNSUPPORTED_BALANCE_LEDGER_TYPE: 'UNSUPPORTED_PROJECTION_SOURCE',
+};
+
+const ROW_LEVEL_RED_BLOCKER_CODES = new Set([
+  'ENGINE_ONLY_SHADOW_ROW',
+  'SUMMARY_ONLY_SHADOW_ROW',
+  'DIVERGENT_SHADOW_ROW',
+  'LEGAL_LEDGER_ACCOUNTING_SOURCE_UNMAPPED',
+  'LEGAL_LEDGER_SOURCE_UNMAPPED',
+  'LEGAL_LEDGER_UNSUPPORTED_CANCEL_REVERSAL_BACKFILL',
+  'LEGAL_LEDGER_UNSUPPORTED_CLIENT_PAYOUT_REVERSAL_REFUND',
+  'MANUAL_REVERSAL_DISPOSITION_LINE_UNMAPPED',
+  'UNSUPPORTED_DISPOSITION_LINE_TYPE',
+  'UNSUPPORTED_BALANCE_LEDGER_TYPE',
+]);
+
+function redBlockerFamiliesFromRows(
+  rows: AccountingJournalLegalShadowCompareRow[],
+  blockers: AccountingJournalLegalShadowIssue[],
+): AccountingJournalLegalShadowRedBlockerFamily[] {
+  const families = new Map<string, { codes: Set<string>; rowKeys: Set<string> }>();
+  for (const blocker of blockers.filter((candidate) => candidate.severity === 'RED')) {
+    const family = RED_BLOCKER_FAMILY_BY_CODE[blocker.code] ?? 'OTHER_RED_BLOCKER';
+    const blockerRows = rows.filter(
+      (row) => row.zeroingDecision !== 'ACCEPTED_EXCLUSION' && row.blockerCodes.includes(blocker.code),
+    );
+    if (ROW_LEVEL_RED_BLOCKER_CODES.has(blocker.code) && blockerRows.length === 0) continue;
+
+    const entry = families.get(family) ?? { codes: new Set<string>(), rowKeys: new Set<string>() };
+    entry.codes.add(blocker.code);
+    for (const row of blockerRows) entry.rowKeys.add(row.key);
+    families.set(family, entry);
+  }
+
+  return [...families.entries()]
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([family, entry]) => ({
+      family,
+      codes: [...entry.codes].sort(),
+      rowCount: entry.rowKeys.size,
+    }));
+}
+
+const ROW_LEVEL_EVIDENCE_FIELDS = [
+  'zeroingDecision',
+  'zeroingReasonCode',
+  'blockerCodes',
+  'journalAmount',
+  'legalProjectionAmount',
+  'delta',
+] as const;
+
+const SOURCE_IDENTITY_EVIDENCE_FIELDS = [
+  'domain',
+  'sourceType',
+  'sourceAction',
+  'sourceId',
+  'accountCode',
+  'direction',
+  'currency',
+  'caseId',
+  'clientId',
+  'caseClientId',
+] as const;
+
+function technicalEvidenceChecklist(
+  rows: AccountingJournalLegalShadowCompareRow[],
+): AccountingJournalLegalShadowTechnicalEvidenceChecklist {
+  return {
+    rowLevelFields: ROW_LEVEL_EVIDENCE_FIELDS.map((field) => evidenceField(field, rows)),
+    sourceIdentityFields: SOURCE_IDENTITY_EVIDENCE_FIELDS.map((field) => evidenceField(field, rows)),
+  };
+}
+
+function evidenceField(field: string, rows: AccountingJournalLegalShadowCompareRow[]): AccountingJournalLegalShadowTechnicalEvidenceField {
+  return {
+    field,
+    available: rows.length > 0 && rows.every((row) => Object.prototype.hasOwnProperty.call(row, field)),
+  };
+}
+
+function uniqueSorted(values: string[]): string[] {
+  return [...new Set(values)].sort();
+}
 function zeroingSummaryFromRows(rows: AccountingJournalLegalShadowCompareRow[]): AccountingJournalLegalShadowZeroingSummary {
   return {
     zeroedRows: rows.filter((row) => row.zeroingDecision === 'ZEROED').length,
