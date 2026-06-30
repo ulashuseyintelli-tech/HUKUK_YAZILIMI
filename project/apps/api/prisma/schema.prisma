@@ -7905,6 +7905,10 @@ model CollectionDispositionLine {
   // resolveLines: CLIENT_/FIRM_EXPENSE_REIMBURSEMENT tiplerinde ZORUNLU (service-validate, DB nullable).
   expenseRequestId String?
 
+  // S8-B FAZ-2 — provenance: bu fee line'ı türeten CaseFeeAgreement (scalar ref, FK YOK).
+  // Nullable: manuel/agreement-suz line'larda null. caseClientId=null fee kuralını (Q3) DEĞİŞTİRMEZ.
+  feeAgreementId String?
+
   note      String?
   createdAt DateTime @default(now())
 
@@ -7915,6 +7919,7 @@ model CollectionDispositionLine {
   @@index([dispositionId])
   @@index([type])
   @@index([expenseRequestId])
+  @@index([feeAgreementId])
 }
 
 // S8-B FAZ-1b — Dağıtım reimbursement satırının ExpenseRequest kapatma PROJECTION'ı (ClientOffset aynası).
@@ -7959,6 +7964,64 @@ model CollectionDispositionExpenseApplication {
   @@index([collectionDispositionId], map: "CDEApp_disposition_idx")
   @@index([collectionDispositionLineId], map: "CDEApp_line_idx")
   @@index([createdAt], map: "CDEApp_createdAt_idx")
+}
+
+// ============================================================
+// S8-B FAZ-2 — CaseFeeAgreement (Akdi Ücret Sözleşmesi). caseClient-scoped ücret KAYDI.
+// SÖZLEŞME KAYDIDIR: distribution-recommendation'a ücret AMOUNT'unu türeten kaynak olur;
+// KENDİSİ para hareketi YAPMAZ, yevmiye YAZMAZ. Journal mapping DEĞİŞMEZ — fee line yine
+// CONTRACTUAL_FEE_WITHHELD → ATTORNEY_FEE_REVENUE; caseClientId=null büro geliri (Q3 KORUNUR).
+// fee-engine (AAÜT statutory tarife) ile KARIŞTIRILMAZ — bu akdi büro↔müvekkil ücretidir.
+// SINIR (bu dilim = schema contract): YALNIZ model + enum + provenance kolonu. Dağıtım
+// entegrasyonu YOK · service YOK · flag YOK. Migration ADDITIVE; apply AYRI owner talimatı bekler.
+// caseClientId/createdById: scalar ref (CaseClient/User DOKUNULMAZ; FK YOK — modül sınır deseni).
+// Self-supersession relation MODEL-İÇİ (additive; shared model'e dokunmaz).
+// v1 ürün kuralı (service'te enforce — PR-2/PR-3): tek ACTIVE/(tenant,caseClient); GROSS-only
+// (NET_OF_EXPENSE enum'da TANIMLI ama FAZ-1b canlı olana dek service REDDEDER); FLAT|PERCENTAGE.
+// ============================================================
+enum FeeAgreementType {
+  FLAT_AMOUNT // maktu ücret → flatAmount (Decimal 15,2)
+  PERCENTAGE_OF_COLLECTION // oran → percentageBps (basis-points; float YOK)
+}
+
+enum FeeAgreementBase {
+  GROSS // v1 varsayılan: ücret brüt tahsilattan
+  NET_OF_EXPENSE // masraf sonrası taban — FAZ-1b expense auto-apply canlı olana dek service REDDEDER
+}
+
+enum FeeAgreementStatus {
+  DRAFT // taslak (henüz uygulanmaz)
+  ACTIVE // yürürlükte (tek ACTIVE/(tenant,caseClient) — service invariant)
+  SUPERSEDED // yeni sürümle değiştirildi (düzenleme = yeni satır + eski SUPERSEDED)
+  TERMINATED // feshedildi
+}
+
+model CaseFeeAgreement {
+  id           String @id @default(cuid())
+  tenantId     String
+  caseClientId String // scope = caseClient (scalar ref, FK YOK; CaseClient DOKUNULMAZ)
+
+  feeType       FeeAgreementType
+  flatAmount    Decimal?           @db.Decimal(15, 2) // FLAT_AMOUNT'ta dolu (service enforce; DB nullable)
+  percentageBps Int? // PERCENTAGE_OF_COLLECTION'da dolu; 0..10000 service-validate (float YOK)
+  feeBase       FeeAgreementBase   @default(GROSS)
+  status        FeeAgreementStatus @default(DRAFT)
+  effectiveFrom DateTime           @default(now())
+
+  note String?
+
+  // Versiyonlama: düzenleme = yeni satır; eski SUPERSEDED. Self-relation MODEL-İÇİ (shared'a dokunmaz).
+  supersedesId String?
+  supersedes   CaseFeeAgreement?  @relation("CaseFeeAgreementSupersession", fields: [supersedesId], references: [id], onDelete: SetNull)
+  supersededBy CaseFeeAgreement[] @relation("CaseFeeAgreementSupersession")
+
+  createdById String? // actor (scalar ref, FK YOK; User DOKUNULMAZ)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([tenantId, caseClientId, status])
+  @@index([tenantId, caseClientId, effectiveFrom])
+  @@index([supersedesId])
 }
 
 // ============================================================
