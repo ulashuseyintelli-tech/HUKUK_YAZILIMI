@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Plus, X, Search, Building2, User, Landmark, Edit2, Trash2, Loader2, Mail, Send, MessageSquare, Download, Upload, FileSpreadsheet, FileText, FileCheck, AlertTriangle, Clock, CheckCircle, Globe, Users, ChevronUp, ChevronDown, ChevronsUpDown, Wallet } from "lucide-react";
 import { api } from "@/lib/api";
-import { isPoaDuplicateSuppressed, POA_DUPLICATE_MESSAGE } from "@/lib/poa-ux";
+import { isPoaDuplicateSuppressed, POA_DUPLICATE_MESSAGE, stripPoaFields } from "@/lib/poa-ux";
 import { PoaScannerWizard } from "@/components/client/PoaScannerWizard";
 import { BulkEmailModal } from "@/components/bulk-email-modal";
 
@@ -81,13 +81,17 @@ export default function ClientsSettingsPage() {
     setSaving(true);
     try {
       let clientId: string;
-      
+
+      // Vekaletname alanları ClientPowerOfAttorney'e aittir; /clients gövdesine
+      // gönderilmez (ClientService okumaz, lenient ValidationPipe düşürür). Vekalet
+      // kaydı aşağıda kanonik POST /poa ile oluşturulur.
+      const clientPayload = stripPoaFields(data);
       let clientExisting = false;
       if (editingClient) {
-        await api.put(`/clients/${editingClient.id}`, data);
+        await api.put(`/clients/${editingClient.id}`, clientPayload);
         clientId = editingClient.id;
       } else {
-        const res = await api.post("/clients", data);
+        const res = await api.post("/clients", clientPayload);
         clientId = res.data?.id || res.data?.data?.id;
         // PR-AUDIT-1: mevcut TCKN/VKN ile manuel ekleme → backend yeni açmaz, mevcut kartı döndürür.
         // Sessiz kalmasın, kullanıcıya bildir (silinmişse "geri getirildi", aktifse "zaten kayıtlı").
@@ -782,11 +786,9 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
       city: validAddresses.find(a => a.isPrimary)?.city || validAddresses[0]?.city,
       district: validAddresses.find(a => a.isPrimary)?.district || validAddresses[0]?.district,
       region: validAddresses.find(a => a.isPrimary)?.region || validAddresses[0]?.region,
-      // Vekaletname bilgileri
-      poaNumber: form.poaNumber,
-      poaDate: form.poaDate,
-      notaryName: form.notaryName,
-      notaryCity: form.notaryCity,
+      // NOT: Vekaletname alanları (poaNumber/poaDate/notaryName/notaryCity) form'dan
+      // (...form) gelir ama /clients gövdesine GİTMEZ; handleSave bunları stripPoaFields
+      // ile ayıklar ve yalnız yeni müvekkilde kanonik POST /poa ile kaydeder.
     };
   };
 
@@ -1012,7 +1014,11 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
             </div>
           </div>
 
-          {/* Vekaletname Bilgileri */}
+          {/* Vekaletname Bilgileri — YALNIZ yeni müvekkilde gösterilir.
+              Düzenlemede vekalet, ayrı "Vekaletler" bölümünden (POST/PUT /poa) yönetilir;
+              bu modalda düzenlenebilir POA alanı göstermek "giriliyor ama kaydedilmiyor"
+              tuzağı yaratırdı (PUT /clients bu alanları düşürür). */}
+          {!client ? (
           <div className="border rounded-lg p-3 bg-blue-50">
             <div className="flex items-center justify-between mb-2">
               <p className="text-xs font-medium text-blue-800">Vekaletname Bilgileri</p>
@@ -1046,6 +1052,15 @@ function ClientModal({ client, scannedData, onSave, onClose, saving }: { client:
               </div>
             )}
           </div>
+          ) : (
+          <div className="border rounded-lg p-3 bg-blue-50">
+            <p className="text-xs font-medium text-blue-800 mb-1">Vekaletname Bilgileri</p>
+            <p className="text-xs text-blue-700">
+              Bu müvekkilin vekaletnameleri ayrı <span className="font-medium">&quot;Vekaletler&quot;</span> bölümünden yönetilir
+              (ekle / güncelle / dosya yükle). Vekalet bilgisi müvekkil düzenleme formundan değiştirilmez.
+            </p>
+          </div>
+          )}
 
           {/* Yetkiler */}
           <div className="p-3 bg-amber-50 rounded border border-amber-200">
