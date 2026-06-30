@@ -12,8 +12,11 @@ import type {
   AccountingJournalTrialBalanceEvidenceStatus,
   AccountingJournalTrialBalanceFilters,
   AccountingJournalTrialBalanceReport,
+  AccountingJournalTrialBalanceReconciliationEvidence,
+  AccountingJournalTrialBalanceReconciliationWarning,
   AccountingJournalTrialBalanceRow,
   AccountingJournalTrialBalanceSourceBreakdown,
+  AccountingJournalTrialBalanceSourceCoverage,
   AccountingJournalTrialBalanceUnbalancedCurrency,
   AccountingJournalTrialBalanceWarningCode,
 } from './accounting-journal-trial-balance.types';
@@ -39,10 +42,23 @@ type SourceEntryRow = {
   sourceAction: string;
 };
 
+interface SourceEvidenceResult {
+  sourceBreakdown: AccountingJournalTrialBalanceSourceBreakdown[];
+  sourceCoverage: AccountingJournalTrialBalanceSourceCoverage[];
+  missingSourceEntryCount: number;
+  missingSourceLineCount: number;
+}
+
 interface MutableTotal {
   debit: Prisma.Decimal;
   credit: Prisma.Decimal;
   lineCount: number;
+}
+
+interface MutableSourceCoverage {
+  entryIds: Set<string>;
+  lineCount: number;
+  currencies: Set<string>;
 }
 
 const ZERO = new Prisma.Decimal(0);
@@ -53,8 +69,8 @@ export class AccountingJournalTrialBalanceService {
 
   /// <remarks>
   /// Cagrildigi yerler:
-  /// - AccountingJournalTrialBalanceService.getTrialBalance() -> read-only service/test seam; controller henuz yok.
-  /// - Future AccountingJournalController.trialBalance() -> GET /accounting-journal/trial-balance (future, not wired in ACCT-2A-1).
+  /// - AccountingJournalTrialBalanceController.getTrialBalance() -> GET /accounting-journal/trial-balance (read-only admin diagnostic evidence).
+  /// - AccountingJournalTrialBalanceService tests -> read-only Trial Balance read model and reconciliation evidence seam.
   /// </remarks>
   async getTrialBalance(filters: AccountingJournalTrialBalanceFilters): Promise<AccountingJournalTrialBalanceReport> {
     const normalizedFilters = normalizeFilters(filters);
@@ -81,17 +97,19 @@ export class AccountingJournalTrialBalanceService {
     const sourceAggregateGroups = sourceGroups as SourceAggregateGroup[];
     const rows = rowsFromAccountGroups(accountAggregateGroups);
     const totals = totalsFromAccountGroups(accountAggregateGroups);
-    const sourceBreakdown = await this.sourceBreakdownFromGroups(normalizedFilters.tenantId, sourceAggregateGroups);
+    const sourceEvidence = await this.sourceEvidenceFromGroups(normalizedFilters.tenantId, sourceAggregateGroups);
     const entryCount = uniqueEntryCount(sourceAggregateGroups);
     const lineCount = lineCountFromGroups(accountAggregateGroups);
+    const reportDiagnostics = diagnostics(normalizedFilters, totals, lineCount, entryCount, new Date().toISOString());
 
     return {
       tenantId: normalizedFilters.tenantId,
       filters: normalizedFilters,
       rows,
       totals,
-      sourceBreakdown,
-      diagnostics: diagnostics(normalizedFilters, totals, lineCount, entryCount, new Date().toISOString()),
+      sourceBreakdown: sourceEvidence.sourceBreakdown,
+      diagnostics: reportDiagnostics,
+      reconciliation: reconciliationEvidence(reportDiagnostics, sourceEvidence),
     };
   }
 
@@ -116,12 +134,12 @@ export class AccountingJournalTrialBalanceService {
     };
   }
 
-  private async sourceBreakdownFromGroups(
+  private async sourceEvidenceFromGroups(
     tenantId: string,
     groups: SourceAggregateGroup[],
-  ): Promise<AccountingJournalTrialBalanceSourceBreakdown[]> {
+  ): Promise<SourceEvidenceResult> {
     const entryIds = uniqueEntryIds(groups);
-    if (entryIds.length === 0) return [];
+    if (entryIds.length === 0) return emptySourceEvidence();
 
     const entries = await this.prisma.accountingJournalEntry.findMany({
       where: { tenantId, id: { in: entryIds } },
@@ -129,20 +147,30 @@ export class AccountingJournalTrialBalanceService {
     });
     const entryById = new Map((entries as SourceEntryRow[]).map((entry) => [entry.id, entry]));
     const breakdown = new Map<string, MutableTotal>();
+    const coverage = new Map<string, MutableSourceCoverage>();
+    const missingSourceEntryIds = new Set<string>();
+    let missingSourceLineCount = 0;
 
     for (const group of groups) {
       const entry = entryById.get(group.journalEntryId);
-      if (!entry) continue;
+      const lineCount = aggregateLineCount(group);
+      if (!entry) {
+        missingSourceEntryIds.add(group.journalEntryId);
+        missingSourceLineCount += lineCount;
+        continue;
+      }
+
       addAggregate(
         breakdown,
-        `${entry.sourceType}|${entry.sourceAction}|${group.currency}`,
+        sourceBreakdownKey(entry.sourceType, entry.sourceAction, group.currency),
         group.direction,
         aggregateAmount(group),
-        aggregateLineCount(group),
+        lineCount,
       );
+      addSourceCoverage(coverage, entry, group.currency, lineCount);
     }
 
-    return [...breakdown.entries()]
+    const sourceBreakdown = [...breakdown.entries()]
       .map(([key, total]) => {
         const [sourceType, sourceAction, currency] = key.split('|') as [AccountingJournalSourceType, string, string];
         return sourceBreakdownFromTotal(sourceType, sourceAction, currency, total);
@@ -153,6 +181,13 @@ export class AccountingJournalTrialBalanceService {
           a.sourceAction.localeCompare(b.sourceAction) ||
           a.currency.localeCompare(b.currency),
       );
+
+    return {
+      sourceBreakdown,
+      sourceCoverage: sourceCoverageFromMaps(coverage, sourceBreakdown),
+      missingSourceEntryCount: missingSourceEntryIds.size,
+      missingSourceLineCount,
+    };
   }
 }
 
@@ -228,6 +263,64 @@ function addAggregate(
   map.set(key, current);
 }
 
+function addSourceCoverage(
+  map: Map<string, MutableSourceCoverage>,
+  entry: SourceEntryRow,
+  currency: string,
+  lineCount: number,
+): void {
+  const key = sourceCoverageKey(entry.sourceType, entry.sourceAction);
+  const current = map.get(key) ?? { entryIds: new Set<string>(), lineCount: 0, currencies: new Set<string>() };
+  current.entryIds.add(entry.id);
+  current.lineCount += lineCount;
+  current.currencies.add(currency);
+  map.set(key, current);
+}
+
+function sourceBreakdownKey(sourceType: AccountingJournalSourceType, sourceAction: string, currency: string): string {
+  return `${sourceType}|${sourceAction}|${currency}`;
+}
+
+function sourceCoverageKey(sourceType: AccountingJournalSourceType, sourceAction: string): string {
+  return `${sourceType}|${sourceAction}`;
+}
+
+function emptySourceEvidence(): SourceEvidenceResult {
+  return {
+    sourceBreakdown: [],
+    sourceCoverage: [],
+    missingSourceEntryCount: 0,
+    missingSourceLineCount: 0,
+  };
+}
+
+function sourceCoverageFromMaps(
+  coverage: Map<string, MutableSourceCoverage>,
+  sourceBreakdown: AccountingJournalTrialBalanceSourceBreakdown[],
+): AccountingJournalTrialBalanceSourceCoverage[] {
+  const balancedBySource = new Map<string, boolean>();
+  for (const row of sourceBreakdown) {
+    const key = sourceCoverageKey(row.sourceType, row.sourceAction);
+    balancedBySource.set(key, (balancedBySource.get(key) ?? true) && row.balanced);
+  }
+
+  return [...coverage.entries()]
+    .map(([key, total]) => {
+      const [sourceType, sourceAction] = key.split('|') as [AccountingJournalSourceType, string];
+      const currencies = [...total.currencies].sort();
+      return {
+        sourceType,
+        sourceAction,
+        entryCount: total.entryIds.size,
+        lineCount: total.lineCount,
+        currencyCount: currencies.length,
+        currencies,
+        balanced: balancedBySource.get(key) ?? true,
+      };
+    })
+    .sort((a, b) => a.sourceType.localeCompare(b.sourceType) || a.sourceAction.localeCompare(b.sourceAction));
+}
+
 function rowFromTotal(
   accountCode: AccountingAccountCode,
   currency: string,
@@ -301,6 +394,68 @@ function diagnostics(
     missingSourceVersionColumn: true,
     warningCodes,
   };
+}
+
+function reconciliationEvidence(
+  reportDiagnostics: AccountingJournalTrialBalanceDiagnostics,
+  sourceEvidence: SourceEvidenceResult,
+): AccountingJournalTrialBalanceReconciliationEvidence {
+  return {
+    evidenceSource: 'PERSISTED_ACCOUNTING_JOURNAL',
+    aggregateBasis: 'DB_AGGREGATE',
+    tenantScoped: true,
+    dateBasis: 'postedAt',
+    amountBasis: 'AccountingJournalLine.amount',
+    directionBasis: 'AccountingJournalLine.direction',
+    entryJoinBasis: 'AccountingJournalLine.journalEntryId -> AccountingJournalEntry.id',
+    balanced: reportDiagnostics.balanced,
+    evidenceStatus: reportDiagnostics.evidenceStatus,
+    lineCount: reportDiagnostics.lineCount,
+    entryCount: reportDiagnostics.entryCount,
+    currencyCount: reportDiagnostics.currencyCount,
+    sourceCount: sourceEvidence.sourceCoverage.length,
+    sourceCoverage: sourceEvidence.sourceCoverage,
+    warnings: reconciliationWarnings(reportDiagnostics, sourceEvidence),
+  };
+}
+
+function reconciliationWarnings(
+  reportDiagnostics: AccountingJournalTrialBalanceDiagnostics,
+  sourceEvidence: SourceEvidenceResult,
+): AccountingJournalTrialBalanceReconciliationWarning[] {
+  const warnings: AccountingJournalTrialBalanceReconciliationWarning[] = reportDiagnostics.warningCodes.map((code) => ({
+    code,
+    message: diagnosticsWarningMessage(code),
+  }));
+
+  if (reportDiagnostics.dimensionScoped) {
+    warnings.push({
+      code: 'DIMENSION_SCOPED_EVIDENCE',
+      message: 'Filters narrow the journal evidence scope and may include only part of one or more entries.',
+    });
+  }
+
+  if (sourceEvidence.sourceCoverage.some((source) => !source.balanced)) {
+    warnings.push({
+      code: 'SOURCE_BREAKDOWN_IMBALANCE',
+      message: 'At least one journal source bucket is not balanced within the returned evidence scope.',
+    });
+  }
+
+  if (sourceEvidence.missingSourceEntryCount > 0) {
+    warnings.push({
+      code: 'MISSING_SOURCE_METADATA',
+      message: `${sourceEvidence.missingSourceEntryCount} journal entries covering ${sourceEvidence.missingSourceLineCount} lines were missing source metadata.`,
+    });
+  }
+
+  return warnings;
+}
+
+function diagnosticsWarningMessage(code: AccountingJournalTrialBalanceWarningCode): string {
+  if (code === 'NO_JOURNAL_LINES') return 'No persisted journal lines matched the requested Trial Balance scope.';
+  if (code === 'DIMENSION_SCOPED_IMBALANCE') return 'The scoped journal evidence is imbalanced within the requested dimension.';
+  return 'The unscoped persisted journal evidence is imbalanced.';
 }
 
 function evidenceStatus(
