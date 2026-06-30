@@ -24,6 +24,8 @@ const D = (n: number) => new Prisma.Decimal(n);
 const PARTNER = { lawyer: { lawyerRank: 'PARTNER' }, staffMember: null };
 const MANAGER = { lawyer: null, staffMember: { staffType: 'MANAGER' } };
 const PLAIN_LAWYER = { lawyer: { lawyerRank: 'LAWYER' }, staffMember: null };
+const OFFSET_CREATED_AT = new Date('2026-06-21T10:00:00.000Z');
+const REVERSAL_CREATED_AT = new Date('2026-06-21T11:00:00.000Z');
 
 // payable=1000 (1 confirmed CLIENT_PAYABLE line), expense unpaid=1000 (ER total 1000 / paid 0)
 function makeDb(opts: any = {}) {
@@ -58,7 +60,7 @@ function makeDb(opts: any = {}) {
     clientOffset: {
       findUnique: jest.fn().mockResolvedValue(opts.existing ?? null),
       findFirst: jest.fn().mockResolvedValue(opts.alreadyReversed ?? null),
-      create: jest.fn().mockResolvedValue({ id: opts.newId ?? 'off-new' }),
+      create: jest.fn().mockResolvedValue({ id: opts.newId ?? 'off-new', createdAt: opts.createdAt ?? OFFSET_CREATED_AT }),
       findMany: jest.fn().mockResolvedValue(opts.offsetList ?? []),
       aggregate: jest.fn().mockImplementation((args: any) => {
         const w = args.where ?? {};
@@ -85,9 +87,16 @@ function makeDb(opts: any = {}) {
 }
 
 const audit = () => ({ logInTransaction: jest.fn().mockResolvedValue(undefined) }) as any;
-const svc = (db: any, a: any = audit()) => ({
-  service: new ClientOffsetService(db, a, new ClientSettlementReadService(db)),
+const journalWriter = () => ({
+  write: jest.fn().mockResolvedValue({
+    ok: true,
+    output: { status: 'CREATED', journalEntryId: 'journal-1', idempotencyKey: 'journal-key', sourceVersion: 'journal-version', lineCount: 2 },
+  }),
+}) as any;
+const svc = (db: any, a: any = audit(), writer: any = journalWriter()) => ({
+  service: new ClientOffsetService(db, a, new ClientSettlementReadService(db), writer),
   audit: a,
+  journalWriter: writer,
 });
 
 const CREATE = (over: any = {}) => ({
@@ -119,12 +128,28 @@ const APPLY_ROW = (over: any = {}) => ({
 describe('ClientOffsetService.createOffset', () => {
   it('happy APPLY: amount<=min(payable,expense) → created + advisory-lock + kind=APPLY + approvalRef=null + audit DIRECT_CAPABILITY', async () => {
     const db = makeDb();
-    const { service, audit: a } = svc(db);
+    const { service, audit: a, journalWriter: j } = svc(db);
     const res = await service.createOffset('t1', 'u1', CREATE({ amount: '400' }));
     expect(res).toEqual({ created: true, offsetId: 'off-new' });
     expect(db.$executeRaw).toHaveBeenCalled(); // pg_advisory_xact_lock
     expect(db.clientOffset.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ kind: 'APPLY', approvalRef: null, createdById: 'u1', amount: D(400), reversesOffsetId: null }) }),
+    );
+    expect(j.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        draft: expect.objectContaining({
+          sourceType: 'CLIENT_OFFSET',
+          sourceAction: 'apply',
+          entryType: 'CLIENT_OFFSET_APPLIED',
+          sourceId: 'off-new',
+          sourceVersion: '2026-06-21T10:00:00.000Z:off-new',
+          lines: expect.arrayContaining([
+            expect.objectContaining({ accountCode: 'CLIENT_PAYABLE', direction: 'DEBIT', offsetId: 'off-new', caseClientId: 'cc-A' }),
+            expect.objectContaining({ accountCode: 'CLIENT_EXPENSE_RECEIVABLE', direction: 'CREDIT', offsetId: 'off-new', caseClientId: null }),
+          ]),
+        }),
+      }),
+      db,
     );
     expect(a.logInTransaction).toHaveBeenCalledWith(
       db,
@@ -179,9 +204,11 @@ describe('ClientOffsetService.createOffset', () => {
 
   it('idempotency replay (pre-lock aynı payload) → created:false, create çağrılmaz', async () => {
     const db = makeDb({ existing: { ...APPLY_ROW(), id: 'off-existing' } });
-    const res = await svc(db).service.createOffset('t1', 'u1', CREATE({ amount: '400' }));
+    const { service, journalWriter: j } = svc(db);
+    const res = await service.createOffset('t1', 'u1', CREATE({ amount: '400' }));
     expect(res).toEqual({ created: false, offsetId: 'off-existing', idempotentReplay: true });
     expect(db.clientOffset.create).not.toHaveBeenCalled();
+    expect(j.write).not.toHaveBeenCalled();
   });
 
   it('idempotency conflict (aynı key farklı amount) → ConflictException', async () => {
@@ -195,9 +222,24 @@ describe('ClientOffsetService.createOffset', () => {
     db.clientOffset.findUnique
       .mockResolvedValueOnce(null) // pre-lock
       .mockResolvedValueOnce({ ...APPLY_ROW(), id: 'off-existing' }); // in-tx
-    const res = await svc(db).service.createOffset('t1', 'u1', CREATE({ amount: '400' }));
+    const { service, journalWriter: j } = svc(db);
+    const res = await service.createOffset('t1', 'u1', CREATE({ amount: '400' }));
     expect(res.created).toBe(false);
     expect(db.clientOffset.create).not.toHaveBeenCalled();
+    expect(j.write).not.toHaveBeenCalled();
+  });
+
+  it('journal writer failure rejects APPLY before audit commit path', async () => {
+    const db = makeDb();
+    const a = audit();
+    const j = journalWriter();
+    j.write.mockResolvedValueOnce({ ok: false, errors: [{ code: 'DB_WRITE_FAILED' }] });
+
+    await expect(new ClientOffsetService(db, a, new ClientSettlementReadService(db), j).createOffset('t1', 'u1', CREATE({ amount: '400' }))).rejects.toThrow(ConflictException);
+
+    expect(db.clientOffset.create).toHaveBeenCalled();
+    expect(j.write).toHaveBeenCalled();
+    expect(a.logInTransaction).not.toHaveBeenCalled();
   });
 });
 
@@ -205,12 +247,28 @@ describe('ClientOffsetService.reverseOffset', () => {
   it('happy REVERSAL: ayrı immutable row (kind=REVERSAL, reversesOffsetId, aynı amount) + audit DIRECT_CAPABILITY', async () => {
     const db = makeDb();
     db.clientOffset.findFirst.mockResolvedValueOnce(APPLY_ROW()).mockResolvedValueOnce(null); // original / not-already-reversed
-    db.clientOffset.create.mockResolvedValue({ id: 'rev-new' });
-    const { service, audit: a } = svc(db);
+    db.clientOffset.create.mockResolvedValue({ id: 'rev-new', createdAt: REVERSAL_CREATED_AT });
+    const { service, audit: a, journalWriter: j } = svc(db);
     const res = await service.reverseOffset('t1', 'u1', 'off-1', REVERSE());
     expect(res).toEqual({ created: true, offsetId: 'rev-new', reversesOffsetId: 'off-1' });
     expect(db.clientOffset.create).toHaveBeenCalledWith(
       expect.objectContaining({ data: expect.objectContaining({ kind: 'REVERSAL', reversesOffsetId: 'off-1', amount: D(400), approvalRef: null }) }),
+    );
+    expect(j.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        draft: expect.objectContaining({
+          sourceType: 'CLIENT_OFFSET',
+          sourceAction: 'reversal',
+          entryType: 'CLIENT_OFFSET_REVERSED',
+          sourceId: 'rev-new',
+          sourceVersion: '2026-06-21T11:00:00.000Z:rev-new',
+          lines: expect.arrayContaining([
+            expect.objectContaining({ accountCode: 'CLIENT_PAYABLE', direction: 'CREDIT', offsetId: 'rev-new', caseClientId: 'cc-A' }),
+            expect.objectContaining({ accountCode: 'CLIENT_EXPENSE_RECEIVABLE', direction: 'DEBIT', offsetId: 'rev-new', caseClientId: null }),
+          ]),
+        }),
+      }),
+      db,
     );
     expect(a.logInTransaction).toHaveBeenCalledWith(
       db,
@@ -249,9 +307,26 @@ describe('ClientOffsetService.reverseOffset', () => {
       id: 'rev-existing', clientId: 'cl-1', currency: 'TRY', payableCaseId: 'case-P', payableCaseClientId: 'cc-A',
       expenseCaseId: 'case-E', expenseRequestId: 'er-1', amount: D(400), kind: 'REVERSAL', reversesOffsetId: 'off-1',
     });
-    const res = await svc(db).service.reverseOffset('t1', 'u1', 'off-1', REVERSE());
+    const { service, journalWriter: j } = svc(db);
+    const res = await service.reverseOffset('t1', 'u1', 'off-1', REVERSE());
     expect(res.created).toBe(false);
     expect(db.clientOffset.create).not.toHaveBeenCalled();
+    expect(j.write).not.toHaveBeenCalled();
+  });
+
+  it('journal writer failure rejects REVERSAL before audit commit path', async () => {
+    const db = makeDb();
+    db.clientOffset.findFirst.mockResolvedValueOnce(APPLY_ROW()).mockResolvedValueOnce(null);
+    db.clientOffset.create.mockResolvedValue({ id: 'rev-new', createdAt: REVERSAL_CREATED_AT });
+    const a = audit();
+    const j = journalWriter();
+    j.write.mockResolvedValueOnce({ ok: false, errors: [{ code: 'DB_WRITE_FAILED' }] });
+
+    await expect(new ClientOffsetService(db, a, new ClientSettlementReadService(db), j).reverseOffset('t1', 'u1', 'off-1', REVERSE())).rejects.toThrow(ConflictException);
+
+    expect(db.clientOffset.create).toHaveBeenCalled();
+    expect(j.write).toHaveBeenCalled();
+    expect(a.logInTransaction).not.toHaveBeenCalled();
   });
 });
 

@@ -2,6 +2,13 @@ import { Injectable, BadRequestException, NotFoundException, ConflictException, 
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import {
+  AccountingJournalWriterService,
+  adaptClientOffsetSourceSnapshot,
+  buildAccountingJournal,
+  validateJournalDraft,
+  type ClientOffsetSourceSnapshot,
+} from '../accounting-journal';
 import { isOfficeAdminCapacity } from '../policy-engine/effective-permission-mapping';
 import { Capacity } from '../policy-engine/types/effective-permission.types';
 import { ClientSettlementReadService } from './client-settlement-read.service';
@@ -121,6 +128,7 @@ export class ClientOffsetService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly readService: ClientSettlementReadService,
+    private readonly journalWriter: AccountingJournalWriterService = new AccountingJournalWriterService(prisma),
   ) {}
 
   // ==================== authorization (explicit; dormant decorator'a güvenilmez) ====================
@@ -297,6 +305,7 @@ export class ClientOffsetService {
   /**
    * Mahsup uygula (kind=APPLY). PARTNER/MANAGER-only. tx içinde re-validate (advisory-lock altında yeniden hesap;
    * approval anındaki hesap BAYAT olabilir). amount <= min(payableOutstanding, expenseUnpaid). Idempotent.
+   * ACCT-1B: ClientOffset source row ve AccountingJournalEntry aynı transaction içinde fail-closed yazılır.
    * <remarks>ClientOffsetController.create() → POST /client-offsets</remarks>
    */
   async createOffset(tenantId: string, actorUserId: string, dto: CreateClientOffsetDto) {
@@ -347,7 +356,25 @@ export class ClientOffsetService {
           createdById: actorUserId,
           reversesOffsetId: null,
         },
-        select: { id: true },
+        select: { id: true, createdAt: true },
+      });
+
+      await this.writeClientOffsetJournal(tx, {
+        tenantId,
+        actorUserId,
+        offset: {
+          id: offset.id,
+          kind: 'APPLY',
+          amount,
+          currency: dto.currency,
+          clientId: dto.clientId,
+          payableCaseId: dto.payableCaseId,
+          payableCaseClientId: dto.payableCaseClientId,
+          expenseCaseId: dto.expenseCaseId,
+          expenseRequestId: dto.expenseRequestId,
+          reversesOffsetId: null,
+          createdAt: offset.createdAt,
+        },
       });
 
       await this.audit.logInTransaction(tx, {
@@ -380,6 +407,7 @@ export class ClientOffsetService {
   /**
    * Mahsup iptali (kind=REVERSAL). PARTNER/MANAGER-only + reason≥10. Orijinal APPLY UPDATE EDİLMEZ; AYRI immutable
    * kayıt (aynı amount/currency/legs, reversesOffsetId=orijinal). Double-reversal yasak (@@unique + explicit kontrol).
+   * ACCT-1B: reversal ClientOffset source row ve AccountingJournalEntry aynı transaction içinde fail-closed yazılır.
    * <remarks>ClientOffsetController.reverse() → POST /client-offsets/:offsetId/reverse</remarks>
    */
   async reverseOffset(tenantId: string, actorUserId: string, offsetId: string, dto: ReverseClientOffsetDto) {
@@ -447,7 +475,26 @@ export class ClientOffsetService {
           reason,
           reversesOffsetId: original.id,
         },
-        select: { id: true },
+        select: { id: true, createdAt: true },
+      });
+
+      await this.writeClientOffsetJournal(tx, {
+        tenantId,
+        actorUserId,
+        offset: {
+          id: reversal.id,
+          kind: 'REVERSAL',
+          amount: original.amount,
+          currency: original.currency,
+          clientId: original.clientId,
+          payableCaseId: original.payableCaseId,
+          payableCaseClientId: original.payableCaseClientId,
+          expenseCaseId: original.expenseCaseId,
+          expenseRequestId: original.expenseRequestId,
+          reversesOffsetId: original.id,
+          createdAt: reversal.createdAt,
+
+        },
       });
 
       await this.audit.logInTransaction(tx, {
@@ -674,6 +721,86 @@ export class ClientOffsetService {
     if (action === 'CLIENT_OFFSET_CREATED') return 'Müvekkil mahsubu uygulandı';
     if (action === 'CLIENT_OFFSET_REVERSED') return 'Müvekkil mahsubu iptal edildi';
     return action;
+  }
+
+  /// <remarks>
+  /// �a�r�ld��� yerler:
+  /// - ClientOffsetService.createOffset() -> POST /client-offsets (APPLY source row journal write)
+  /// - ClientOffsetService.reverseOffset() -> POST /client-offsets/:offsetId/reverse (REVERSAL source row journal write)
+  /// </remarks>
+  private async writeClientOffsetJournal(
+    tx: Prisma.TransactionClient,
+    params: {
+      tenantId: string;
+      actorUserId: string;
+      offset: {
+        id: string;
+        kind: 'APPLY' | 'REVERSAL';
+        amount: Prisma.Decimal;
+        currency: string;
+        clientId: string;
+        payableCaseId: string;
+        payableCaseClientId: string;
+        expenseCaseId: string;
+        expenseRequestId: string;
+        reversesOffsetId: string | null;
+        createdAt: Date;
+      };
+    },
+  ): Promise<void> {
+    const sourceVersion = this.clientOffsetJournalSourceVersion(params.offset.id, params.offset.createdAt);
+    const snapshot: ClientOffsetSourceSnapshot = {
+      identity: {
+        tenantId: params.tenantId,
+        sourceType: 'CLIENT_OFFSET',
+        sourceId: params.offset.id,
+        sourceAction: params.offset.kind === 'APPLY' ? 'apply' : 'reversal',
+        sourceVersion,
+      },
+      tenantId: params.tenantId,
+      occurredAt: params.offset.createdAt,
+      effectiveDate: params.offset.createdAt,
+      actorId: params.actorUserId,
+      currency: params.offset.currency,
+      metadata: {
+        authorizationMode: 'DIRECT_CAPABILITY',
+      },
+      payload: {
+        id: params.offset.id,
+        kind: params.offset.kind,
+        amount: params.offset.amount,
+        clientId: params.offset.clientId,
+        payableCaseId: params.offset.payableCaseId,
+        payableCaseClientId: params.offset.payableCaseClientId,
+        expenseCaseId: params.offset.expenseCaseId,
+        expenseRequestId: params.offset.expenseRequestId,
+        reversesOffsetId: params.offset.reversesOffsetId,
+      },
+    };
+
+    const adapted = adaptClientOffsetSourceSnapshot(snapshot);
+    if (!adapted.ok) {
+      throw new ConflictException(`ClientOffset journal source adapter failed: ${adapted.errors.map((error) => error.code).join(', ')}`);
+    }
+
+    const built = buildAccountingJournal(adapted.source);
+    if (!built.ok) {
+      throw new ConflictException(`ClientOffset journal mapping failed: ${built.errors.map((error) => error.code).join(', ')}`);
+    }
+
+    const validated = validateJournalDraft(built.draft);
+    if (!validated.ok) {
+      throw new ConflictException(`ClientOffset journal validation failed: ${validated.errors.map((error) => error.code).join(', ')}`);
+    }
+
+    const write = await this.journalWriter.write({ draft: validated.draft }, tx);
+    if (!write.ok) {
+      throw new ConflictException(`ClientOffset journal write failed: ${write.errors.map((error) => error.code).join(', ')}`);
+    }
+  }
+
+  private clientOffsetJournalSourceVersion(offsetId: string, createdAt: Date): string {
+    return `${createdAt.toISOString()}:${offsetId}`;
   }
   private lockKey(tenantId: string, clientId: string, currency: string): string {
     return `client-offset:${tenantId}:${clientId}:${currency}`;
