@@ -7,7 +7,8 @@
  * (gerçek entegrasyonu maskeliyordu). Artık kanonik `Client` (@/lib/api/client.types) + YALNIZ gerçek veri:
  *   - api.getClient(id)  → kimlik/iletişim/adres + powerOfAttorneys (POA sekmesi)
  *   - api.getCases({ clientId }) → Dosyalar sekmesi (findOne cases içermez)
- * v1 sekmeleri: Genel · Kimlik & İletişim · Dosyalar · Vekalet. Muhasebe/Banka/İstihbarat YOK (ayrı kapsam).
+ * v1 sekmeleri: Genel · Kimlik & İletişim · Dosyalar · Vekalet · İstihbarat.
+ * Muhasebe/Banka ayrı kapsamdır.
  * Mock fallback YOK; hata/boş durumları açıkça gösterilir.
  */
 import { useEffect, useState, type ReactNode } from 'react';
@@ -26,6 +27,7 @@ import {
 } from 'lucide-react';
 import { api } from '@/lib/api';
 import type { Client } from '@/lib/api/client.types';
+import { ClientIntelligenceTab } from '@/components/client/client-intelligence-tab';
 import {
   clientDisplayName,
   clientIdentity,
@@ -56,7 +58,7 @@ interface ClientPoaRow {
   status?: string | null;
 }
 
-type TabId = 'overview' | 'identity' | 'cases' | 'poa';
+type TabId = 'overview' | 'identity' | 'cases' | 'poa' | 'intelligence';
 
 interface ClientProfileProps {
   clientId: string;
@@ -158,6 +160,7 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
     { id: 'identity', label: 'Kimlik & İletişim' },
     { id: 'cases', label: 'Dosyalar', count: cases.length },
     { id: 'poa', label: 'Vekalet', count: poas.length },
+    { id: 'intelligence', label: 'İstihbarat' },
   ];
 
   return (
@@ -349,6 +352,9 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
               )}
             </div>
           )}
+
+          {/* İstihbarat */}
+          {tab === 'intelligence' && <ClientIntelligenceTab cases={cases} />}
         </div>
       </div>
     </div>
