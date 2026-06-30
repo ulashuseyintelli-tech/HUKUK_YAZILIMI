@@ -82,6 +82,28 @@ function trialBalanceReport(filters: AccountingJournalTrialBalanceFilters): Acco
       missingSourceVersionColumn: true,
       warningCodes: ['NO_JOURNAL_LINES'],
     },
+    reconciliation: {
+      evidenceSource: 'PERSISTED_ACCOUNTING_JOURNAL',
+      aggregateBasis: 'DB_AGGREGATE',
+      tenantScoped: true,
+      dateBasis: 'postedAt',
+      amountBasis: 'AccountingJournalLine.amount',
+      directionBasis: 'AccountingJournalLine.direction',
+      entryJoinBasis: 'AccountingJournalLine.journalEntryId -> AccountingJournalEntry.id',
+      balanced: true,
+      evidenceStatus: 'NO_LINES',
+      lineCount: 0,
+      entryCount: 0,
+      currencyCount: 0,
+      sourceCount: 0,
+      sourceCoverage: [],
+      warnings: [
+        {
+          code: 'NO_JOURNAL_LINES',
+          message: 'No persisted journal lines matched the requested Trial Balance scope.',
+        },
+      ],
+    },
   };
 }
 
@@ -148,7 +170,7 @@ describe('AccountingJournalTrialBalanceController HTTP smoke', () => {
     expect(service.getTrialBalance).not.toHaveBeenCalled();
   });
 
-  it('admin JWT ile 200 doner ve diagnostics contract temel alanlarini tasir', async () => {
+  it('admin JWT ile 200 doner ve diagnostics/reconciliation contract temel alanlarini tasir', async () => {
     const response = await request(app.getHttpServer())
       .get('/accounting-journal/trial-balance')
       .set('Authorization', `Bearer ${adminToken}`)
@@ -163,6 +185,19 @@ describe('AccountingJournalTrialBalanceController HTTP smoke', () => {
         entryCount: 0,
         currencyCount: 0,
         evidenceStatus: 'NO_LINES',
+      },
+      reconciliation: {
+        evidenceSource: 'PERSISTED_ACCOUNTING_JOURNAL',
+        aggregateBasis: 'DB_AGGREGATE',
+        tenantScoped: true,
+        dateBasis: 'postedAt',
+        evidenceStatus: 'NO_LINES',
+        lineCount: 0,
+        entryCount: 0,
+        currencyCount: 0,
+        sourceCount: 0,
+        sourceCoverage: [],
+        warnings: [expect.objectContaining({ code: 'NO_JOURNAL_LINES' })],
       },
     });
   });

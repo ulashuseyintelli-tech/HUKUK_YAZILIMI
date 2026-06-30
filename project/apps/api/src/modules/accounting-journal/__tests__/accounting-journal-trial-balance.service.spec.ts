@@ -240,7 +240,7 @@ describe('AccountingJournalTrialBalanceService', () => {
       expect.objectContaining({
         evidenceStatus: 'DIMENSION_SCOPED',
         sourceCoverage: [expect.objectContaining({ sourceType: 'CLIENT_OFFSET', sourceAction: 'apply', balanced: false })],
-        warnings: expect.arrayContaining([expect.objectContaining({ code: 'DIMENSION_SCOPED_EVIDENCE' }), expect.objectContaining({ code: 'SOURCE_BREAKDOWN_IMBALANCE' })]),
+        warnings: expect.arrayContaining([expect.objectContaining({ code: 'DIMENSION_SCOPED_IMBALANCE' }), expect.objectContaining({ code: 'DIMENSION_SCOPED_EVIDENCE' }), expect.objectContaining({ code: 'SOURCE_BREAKDOWN_IMBALANCE' })]),
       }),
     );
   });

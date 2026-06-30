@@ -17,6 +17,20 @@ GET /accounting-journal/trial-balance
 
 The endpoint has no body contract. All supported caller input is query-string based, except tenant identity, which is taken only from the authenticated user context.
 
+## Top-Level Response Contract
+
+The response is a diagnostic evidence contract. It is intentionally scoped to persisted journal evidence and should not be treated as a financial statement or legal ledger view.
+
+| Field | Meaning |
+|---|---|
+| `tenantId` | Authenticated tenant used for the read; this must match auth context, not caller-supplied query/body tenant data. |
+| `filters` | Normalized filters applied by the read model, including authenticated `tenantId` and any accepted query filters. |
+| `rows` | Account-code and currency-level Trial Balance rows. |
+| `totals` | Per-currency debit/credit totals for the returned evidence scope. |
+| `sourceBreakdown` | Per-source, per-currency aggregate rows derived from persisted journal entry source metadata. |
+| `diagnostics` | Evidence quality diagnostics for balance, scope, date basis, counts, and warning codes. |
+| `reconciliation` | Additive reconciliation evidence explaining persisted journal aggregate basis, source coverage, and warning details. |
+
 ## Auth And Tenant Boundary
 
 - JWT is required.
