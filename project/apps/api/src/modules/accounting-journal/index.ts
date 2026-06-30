@@ -1,4 +1,5 @@
 ﻿export * from './accounting-journal.builder';
+export * from './accounting-journal-legal-shadow-compare.service';
 export * from './accounting-journal-posting-mode';
 export * from './accounting-journal-source-hash';
 export * from './accounting-journal-source.types';
