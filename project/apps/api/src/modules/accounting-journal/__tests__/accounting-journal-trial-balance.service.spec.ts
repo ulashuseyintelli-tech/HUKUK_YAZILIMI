@@ -1,45 +1,66 @@
+import { BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { AccountingJournalTrialBalanceService } from '../accounting-journal-trial-balance.service';
 
 function prismaMock() {
   return {
     accountingJournalLine: {
+      groupBy: jest.fn(),
+    },
+    accountingJournalEntry: {
       findMany: jest.fn(),
     },
   } as any;
 }
 
-function line(overrides: Partial<{
+function accountGroup(overrides: Partial<{
   accountCode: string;
   direction: string;
   amount: string;
   currency: string;
-  tenantId: string;
-  caseId: string | null;
-  sourceType: string;
-  sourceAction: string;
-  entryType: string;
+  count: number;
 }> = {}) {
   return {
-    tenantId: overrides.tenantId ?? 'tenant-1',
     accountCode: overrides.accountCode ?? 'CLIENT_PAYABLE',
     direction: overrides.direction ?? 'DEBIT',
-    amount: new Prisma.Decimal(overrides.amount ?? '100.00'),
     currency: overrides.currency ?? 'TRY',
-    caseId: overrides.caseId ?? 'case-1',
-    journalEntry: {
-      tenantId: overrides.tenantId ?? 'tenant-1',
-      sourceType: overrides.sourceType ?? 'CLIENT_OFFSET',
-      sourceAction: overrides.sourceAction ?? 'apply',
-      entryType: overrides.entryType ?? 'CLIENT_OFFSET_APPLIED',
-    },
+    _sum: { amount: new Prisma.Decimal(overrides.amount ?? '100.00') },
+    _count: { _all: overrides.count ?? 1 },
+  };
+}
+
+function sourceGroup(overrides: Partial<{
+  journalEntryId: string;
+  direction: string;
+  amount: string;
+  currency: string;
+  count: number;
+}> = {}) {
+  return {
+    journalEntryId: overrides.journalEntryId ?? 'journal-1',
+    direction: overrides.direction ?? 'DEBIT',
+    currency: overrides.currency ?? 'TRY',
+    _sum: { amount: new Prisma.Decimal(overrides.amount ?? '100.00') },
+    _count: { _all: overrides.count ?? 1 },
+  };
+}
+
+function sourceEntry(overrides: Partial<{
+  id: string;
+  sourceType: string;
+  sourceAction: string;
+}> = {}) {
+  return {
+    id: overrides.id ?? 'journal-1',
+    sourceType: overrides.sourceType ?? 'CLIENT_OFFSET',
+    sourceAction: overrides.sourceAction ?? 'apply',
   };
 }
 
 describe('AccountingJournalTrialBalanceService', () => {
-  it('tenant rule: persisted journal line query is scoped by line tenantId and joined entry tenantId', async () => {
+  it('tenant rule: aggregate queries are scoped by line tenantId and joined entry tenantId', async () => {
     const prisma = prismaMock();
-    prisma.accountingJournalLine.findMany.mockResolvedValue([]);
+    prisma.accountingJournalLine.groupBy.mockResolvedValue([]);
     const service = new AccountingJournalTrialBalanceService(prisma);
 
     await service.getTrialBalance({
@@ -53,8 +74,10 @@ describe('AccountingJournalTrialBalanceService', () => {
       postedTo: '2026-06-30T23:59:59.999Z',
     });
 
-    expect(prisma.accountingJournalLine.findMany).toHaveBeenCalledWith(
+    expect(prisma.accountingJournalLine.groupBy).toHaveBeenNthCalledWith(
+      1,
       expect.objectContaining({
+        by: ['accountCode', 'currency', 'direction'],
         where: expect.objectContaining({
           tenantId: 'tenant-1',
           currency: 'TRY',
@@ -70,17 +93,35 @@ describe('AccountingJournalTrialBalanceService', () => {
             },
           }),
         }),
+        _sum: { amount: true },
+        _count: { _all: true },
       }),
     );
+    expect(prisma.accountingJournalLine.groupBy).toHaveBeenNthCalledWith(
+      2,
+      expect.objectContaining({
+        by: ['journalEntryId', 'currency', 'direction'],
+        where: expect.objectContaining({
+          tenantId: 'tenant-1',
+          journalEntry: expect.objectContaining({ tenantId: 'tenant-1' }),
+        }),
+      }),
+    );
+    expect(prisma.accountingJournalEntry.findMany).not.toHaveBeenCalled();
   });
 
-  it('trial balance rule: aggregates persisted journal lines by accountCode and currency', async () => {
+  it('trial balance rule: DB aggregates persisted journal lines by accountCode and currency', async () => {
     const prisma = prismaMock();
-    prisma.accountingJournalLine.findMany.mockResolvedValue([
-      line({ accountCode: 'CLIENT_PAYABLE', direction: 'DEBIT', amount: '40.00' }),
-      line({ accountCode: 'CLIENT_PAYABLE', direction: 'DEBIT', amount: '60.00' }),
-      line({ accountCode: 'CASH_CLEARING', direction: 'CREDIT', amount: '100.00' }),
-    ]);
+    prisma.accountingJournalLine.groupBy
+      .mockResolvedValueOnce([
+        accountGroup({ accountCode: 'CLIENT_PAYABLE', direction: 'DEBIT', amount: '100.00', count: 2 }),
+        accountGroup({ accountCode: 'CASH_CLEARING', direction: 'CREDIT', amount: '100.00', count: 1 }),
+      ])
+      .mockResolvedValueOnce([
+        sourceGroup({ journalEntryId: 'journal-1', direction: 'DEBIT', amount: '100.00', count: 2 }),
+        sourceGroup({ journalEntryId: 'journal-1', direction: 'CREDIT', amount: '100.00', count: 1 }),
+      ]);
+    prisma.accountingJournalEntry.findMany.mockResolvedValue([sourceEntry({ id: 'journal-1' })]);
     const service = new AccountingJournalTrialBalanceService(prisma);
 
     const report = await service.getTrialBalance({ tenantId: 'tenant-1', currency: 'TRY' });
@@ -97,35 +138,60 @@ describe('AccountingJournalTrialBalanceService', () => {
         balanced: true,
         dimensionScoped: false,
         dateBasis: 'postedAt',
+        generatedAt: expect.any(String),
+        lineCount: 3,
+        entryCount: 1,
+        currencyCount: 1,
+        evidenceStatus: 'BALANCED',
+        unbalancedCurrencies: [],
+        warningCodes: [],
         missingEffectiveDateColumn: true,
         missingSourceVersionColumn: true,
       }),
     );
   });
 
-  it('source breakdown rule: groups debit and credit totals by sourceType/sourceAction/currency', async () => {
+  it('source breakdown rule: aggregates by journalEntryId first and reads only entry source metadata', async () => {
     const prisma = prismaMock();
-    prisma.accountingJournalLine.findMany.mockResolvedValue([
-      line({ sourceType: 'CLIENT_OFFSET', sourceAction: 'apply', direction: 'DEBIT', amount: '30.00' }),
-      line({ sourceType: 'CLIENT_OFFSET', sourceAction: 'apply', direction: 'CREDIT', amount: '30.00' }),
-      line({ sourceType: 'CLIENT_PAYOUT', sourceAction: 'recorded', direction: 'DEBIT', amount: '15.00' }),
-      line({ sourceType: 'CLIENT_PAYOUT', sourceAction: 'recorded', direction: 'CREDIT', amount: '15.00' }),
+    prisma.accountingJournalLine.groupBy
+      .mockResolvedValueOnce([
+        accountGroup({ direction: 'DEBIT', amount: '45.00', count: 2 }),
+        accountGroup({ accountCode: 'CASH_CLEARING', direction: 'CREDIT', amount: '45.00', count: 2 }),
+      ])
+      .mockResolvedValueOnce([
+        sourceGroup({ journalEntryId: 'journal-offset', direction: 'DEBIT', amount: '30.00', count: 1 }),
+        sourceGroup({ journalEntryId: 'journal-offset', direction: 'CREDIT', amount: '30.00', count: 1 }),
+        sourceGroup({ journalEntryId: 'journal-payout', direction: 'DEBIT', amount: '15.00', count: 1 }),
+        sourceGroup({ journalEntryId: 'journal-payout', direction: 'CREDIT', amount: '15.00', count: 1 }),
+      ]);
+    prisma.accountingJournalEntry.findMany.mockResolvedValue([
+      sourceEntry({ id: 'journal-offset', sourceType: 'CLIENT_OFFSET', sourceAction: 'apply' }),
+      sourceEntry({ id: 'journal-payout', sourceType: 'CLIENT_PAYOUT', sourceAction: 'recorded' }),
     ]);
     const service = new AccountingJournalTrialBalanceService(prisma);
 
     const report = await service.getTrialBalance({ tenantId: 'tenant-1' });
 
+    expect(prisma.accountingJournalEntry.findMany).toHaveBeenCalledWith({
+      where: { tenantId: 'tenant-1', id: { in: ['journal-offset', 'journal-payout'] } },
+      select: { id: true, sourceType: true, sourceAction: true },
+    });
     expect(report.sourceBreakdown).toEqual([
-      expect.objectContaining({ sourceType: 'CLIENT_OFFSET', sourceAction: 'apply', currency: 'TRY', debit: '30.00', credit: '30.00', balanced: true }),
-      expect.objectContaining({ sourceType: 'CLIENT_PAYOUT', sourceAction: 'recorded', currency: 'TRY', debit: '15.00', credit: '15.00', balanced: true }),
+      expect.objectContaining({ sourceType: 'CLIENT_OFFSET', sourceAction: 'apply', currency: 'TRY', debit: '30.00', credit: '30.00', balanced: true, lineCount: 2 }),
+      expect.objectContaining({ sourceType: 'CLIENT_PAYOUT', sourceAction: 'recorded', currency: 'TRY', debit: '15.00', credit: '15.00', balanced: true, lineCount: 2 }),
     ]);
   });
 
   it('dimension rule: case-filtered cross-case lines can be imbalanced and are diagnosed as dimension-scoped', async () => {
     const prisma = prismaMock();
-    prisma.accountingJournalLine.findMany.mockResolvedValue([
-      line({ accountCode: 'CLIENT_PAYABLE', direction: 'DEBIT', amount: '30.00', caseId: 'case-payable' }),
-    ]);
+    prisma.accountingJournalLine.groupBy
+      .mockResolvedValueOnce([
+        accountGroup({ accountCode: 'CLIENT_PAYABLE', direction: 'DEBIT', amount: '30.00', count: 1 }),
+      ])
+      .mockResolvedValueOnce([
+        sourceGroup({ journalEntryId: 'journal-1', direction: 'DEBIT', amount: '30.00', count: 1 }),
+      ]);
+    prisma.accountingJournalEntry.findMany.mockResolvedValue([sourceEntry({ id: 'journal-1' })]);
     const service = new AccountingJournalTrialBalanceService(prisma);
 
     const report = await service.getTrialBalance({ tenantId: 'tenant-1', caseId: 'case-payable', currency: 'TRY' });
@@ -138,6 +204,10 @@ describe('AccountingJournalTrialBalanceService', () => {
         balanced: false,
         dimensionScoped: true,
         partialEntryScope: true,
+        lineCount: 1,
+        entryCount: 1,
+        evidenceStatus: 'DIMENSION_SCOPED',
+        unbalancedCurrencies: [{ currency: 'TRY', debit: '30.00', credit: '0.00', difference: '30.00' }],
         warningCodes: ['DIMENSION_SCOPED_IMBALANCE'],
       }),
     );
@@ -145,17 +215,72 @@ describe('AccountingJournalTrialBalanceService', () => {
 
   it('empty result rule: reports no journal lines without pretending to be balanced evidence', async () => {
     const prisma = prismaMock();
-    prisma.accountingJournalLine.findMany.mockResolvedValue([]);
+    prisma.accountingJournalLine.groupBy.mockResolvedValue([]);
     const service = new AccountingJournalTrialBalanceService(prisma);
 
     const report = await service.getTrialBalance({ tenantId: 'tenant-1', currency: 'TRY' });
 
     expect(report.rows).toEqual([]);
     expect(report.totals).toEqual([]);
+    expect(report.sourceBreakdown).toEqual([]);
     expect(report.diagnostics).toEqual(
       expect.objectContaining({
         balanced: true,
+        lineCount: 0,
+        entryCount: 0,
+        currencyCount: 0,
+        evidenceStatus: 'NO_LINES',
         warningCodes: ['NO_JOURNAL_LINES'],
+      }),
+    );
+    expect(prisma.accountingJournalEntry.findMany).not.toHaveBeenCalled();
+  });
+
+  it('validation rule: invalid posted date filters are rejected before DB aggregation', async () => {
+    const prisma = prismaMock();
+    const service = new AccountingJournalTrialBalanceService(prisma);
+
+    await expect(
+      service.getTrialBalance({ tenantId: 'tenant-1', postedFrom: 'not-a-date' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+    expect(prisma.accountingJournalLine.groupBy).not.toHaveBeenCalled();
+  });
+
+  it('imbalance rule: unscoped multi-currency imbalance is explicit evidence', async () => {
+    const prisma = prismaMock();
+    prisma.accountingJournalLine.groupBy
+      .mockResolvedValueOnce([
+        accountGroup({ accountCode: 'CLIENT_PAYABLE', direction: 'DEBIT', amount: '100.00', currency: 'TRY', count: 1 }),
+        accountGroup({ accountCode: 'CASH_CLEARING', direction: 'CREDIT', amount: '100.00', currency: 'TRY', count: 1 }),
+        accountGroup({ accountCode: 'CLIENT_PAYABLE', direction: 'DEBIT', amount: '20.00', currency: 'USD', count: 1 }),
+      ])
+      .mockResolvedValueOnce([
+        sourceGroup({ journalEntryId: 'journal-try', direction: 'DEBIT', amount: '100.00', currency: 'TRY', count: 1 }),
+        sourceGroup({ journalEntryId: 'journal-try', direction: 'CREDIT', amount: '100.00', currency: 'TRY', count: 1 }),
+        sourceGroup({ journalEntryId: 'journal-usd', direction: 'DEBIT', amount: '20.00', currency: 'USD', count: 1 }),
+      ]);
+    prisma.accountingJournalEntry.findMany.mockResolvedValue([
+      sourceEntry({ id: 'journal-try' }),
+      sourceEntry({ id: 'journal-usd' }),
+    ]);
+    const service = new AccountingJournalTrialBalanceService(prisma);
+
+    const report = await service.getTrialBalance({ tenantId: 'tenant-1' });
+
+    expect(report.totals).toEqual([
+      expect.objectContaining({ currency: 'TRY', debit: '100.00', credit: '100.00', balanced: true }),
+      expect.objectContaining({ currency: 'USD', debit: '20.00', credit: '0.00', balanced: false }),
+    ]);
+    expect(report.diagnostics).toEqual(
+      expect.objectContaining({
+        balanced: false,
+        dimensionScoped: false,
+        lineCount: 3,
+        entryCount: 2,
+        currencyCount: 2,
+        evidenceStatus: 'IMBALANCED',
+        unbalancedCurrencies: [{ currency: 'USD', debit: '20.00', credit: '0.00', difference: '20.00' }],
+        warningCodes: ['TRIAL_BALANCE_IMBALANCE'],
       }),
     );
   });
