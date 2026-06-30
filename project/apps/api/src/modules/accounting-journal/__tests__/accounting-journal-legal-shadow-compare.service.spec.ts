@@ -144,8 +144,15 @@ describe('AccountingJournalLegalShadowCompareService', () => {
     expect(report.technicalAcceptance.status).toBe('READY_FOR_PRIMARY_CUTOVER');
     expect(report.technicalAcceptance.failingThresholds).toEqual([]);
     expect(report.technicalAcceptance.acceptedExclusionSignoff).toEqual(expect.objectContaining({
+      status: 'NOT_REQUIRED',
       required: false,
       rows: 0,
+      evidenceFingerprint: null,
+      items: [],
+      policyCodes: [],
+      sourceTypes: [],
+      sourceActions: [],
+      retainedCutoverBlockerCodes: [],
     }));
     expect(report.technicalAcceptance.redBlockerFamilies).toEqual([]);
     expect(report.technicalAcceptance.thresholds).toEqual(expect.objectContaining({
@@ -188,6 +195,15 @@ describe('AccountingJournalLegalShadowCompareService', () => {
     });
 
     const report = await new AccountingJournalLegalShadowCompareService(prisma).compare({ tenantId: 'tenant-1' });
+    const repeatedReport = await new AccountingJournalLegalShadowCompareService(prismaMock({
+      ledgerEntries: [ledgerEntry({
+        id: 'le-manual-only',
+        sourceType: 'MANUAL',
+        sourceId: 'manual-ledger-note',
+        amount: '25.00',
+        allocations: [{ amount: D('25.00') }],
+      })],
+    })).compare({ tenantId: 'tenant-1' });
 
     expect(report.rows).toHaveLength(1);
     expect(report.rows[0]).toEqual(expect.objectContaining({
@@ -203,11 +219,36 @@ describe('AccountingJournalLegalShadowCompareService', () => {
     expect(report.technicalAcceptanceStatus).toBe('READY_FOR_LEGAL_SIGNOFF');
     expect(report.technicalAcceptance.failingThresholds).toEqual([]);
     expect(report.technicalAcceptance.acceptedExclusionSignoff).toEqual(expect.objectContaining({
+      status: 'READY_FOR_SIGNOFF',
       required: true,
       rows: 1,
       reasonCodes: ['LEGAL_LEDGER_ACCEPTED_EXCLUSION'],
+      policyCodes: ['LEGAL_LEDGER_ACCEPTED_EXCLUSION'],
+      sourceTypes: ['LEGAL_LEDGER'],
+      sourceActions: ['payment'],
+      retainedCutoverBlockerCodes: ['LEGAL_LEDGER_ACCEPTED_EXCLUSION', 'SUMMARY_ONLY_SHADOW_ROW'],
     }));
+    expect(report.technicalAcceptance.acceptedExclusionSignoff.evidenceFingerprint).toMatch(/^[a-f0-9]{64}$/);
+    expect(repeatedReport.technicalAcceptance.acceptedExclusionSignoff.evidenceFingerprint).toBe(
+      report.technicalAcceptance.acceptedExclusionSignoff.evidenceFingerprint,
+    );
     expect(report.technicalAcceptance.acceptedExclusionSignoff.rowKeys).toHaveLength(1);
+    expect(report.technicalAcceptance.acceptedExclusionSignoff.items).toEqual([
+      expect.objectContaining({
+        sourceType: 'LEGAL_LEDGER',
+        sourceAction: 'payment',
+        sourceId: 'le-manual-only',
+        accountCode: 'LEGAL_LEDGER_ALLOCATED_AMOUNT',
+        legalProjectionAmount: '25.00',
+        journalAmount: null,
+        delta: null,
+        zeroingDecision: 'ACCEPTED_EXCLUSION',
+        zeroingReasonCode: 'LEGAL_LEDGER_ACCEPTED_EXCLUSION',
+        blockerCodes: ['LEGAL_LEDGER_ACCEPTED_EXCLUSION', 'SUMMARY_ONLY_SHADOW_ROW'],
+        legalSourcePolicy: 'ACCEPTED_EXCLUSION',
+        legalSourcePolicyCode: 'LEGAL_LEDGER_ACCEPTED_EXCLUSION',
+      }),
+    ]);
     expect(report.technicalAcceptance.redBlockerFamilies).toEqual([]);
     expect(report.technicalAcceptance.thresholds.blockingSummaryOnlyRows).toEqual(expect.objectContaining({
       passed: true,
@@ -435,6 +476,19 @@ describe('AccountingJournalLegalShadowCompareService', () => {
     expect(report.technicalAcceptance.redBlockerFamilies).toEqual(expect.arrayContaining([
       expect.objectContaining({ family: 'LEGAL_SOURCE_MAPPING' }),
       expect.objectContaining({ family: 'UNSUPPORTED_CANCEL_REVERSAL_BACKFILL' }),
+    ]));
+    expect(report.technicalAcceptance.acceptedExclusionSignoff).toEqual(expect.objectContaining({
+      status: 'READY_FOR_SIGNOFF',
+      rows: 1,
+      evidenceFingerprint: expect.stringMatching(/^[a-f0-9]{64}$/),
+      retainedCutoverBlockerCodes: ['LEGAL_LEDGER_ACCEPTED_EXCLUSION', 'SUMMARY_ONLY_SHADOW_ROW'],
+    }));
+    expect(report.technicalAcceptance.acceptedExclusionSignoff.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        sourceId: 'le-manual',
+        zeroingDecision: 'ACCEPTED_EXCLUSION',
+        legalSourcePolicyCode: 'LEGAL_LEDGER_ACCEPTED_EXCLUSION',
+      }),
     ]));
   });
 
