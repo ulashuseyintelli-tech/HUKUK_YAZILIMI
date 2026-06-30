@@ -85,6 +85,8 @@ Yani: kanun kuralı SoT değişiminden etkilenmez; yalnız ledger'ın **DEPOLAMA
 - `balance-display-shadow-diff` / `balance-shadow-compare` (mevcut SoT-cutover deseni); `computeBalance` / `getCalculationSummary` (yarım balance cutover).
 - ADR-009 (Universal Office Approval) — approval artık accounting zincirinin destekleyicisidir.
 
+- `docs/acct-1d-balanceledger-journal-boundary.md` - ACCT-1D-0 BalanceLedger journal source suppression boundary for correlated `disposition_line:*` rows.
+
 ## Revision History
 | Date | Version | Change |
 |---|---|---|
