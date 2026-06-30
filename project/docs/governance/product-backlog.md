@@ -241,6 +241,29 @@ Estimated Size: L (Codex BE; design-gate-first; behavior-changing)
 Related Modules: client-settlement, AccountingJournalEntry/AccountingJournalLine, accounting-ledger-dry-run.service
 Status: READY
 
+ID: ACCT-1D-0
+Title: BalanceLedger Journal Boundary Decision Note
+Problem: `BalanceLedger` rows can be written in the same economic path as `CollectionDispositionLine(type=OFFSET_CLIENT_ADVANCE)`. Blind journal wiring would double count client advance movement.
+Business Value: Prevents duplicated accounting impact before direct BalanceLedger journal source coverage begins.
+Technical Value: Locks suppression rule for correlated `disposition_line:*` BalanceLedger rows and keeps BalanceLedger as reconciliation signal in that path.
+Priority: HIGH
+Depends On: ACCT-1 journal writer/posting foundation
+Unlock Condition: Docs boundary merged
+Estimated Size: XS (docs/governance only)
+Related Modules: BalanceLedger, CollectionDispositionLine, DispositionPostingService, accounting-ledger-dry-run.service, AccountingJournal
+Status: DONE
+
+ID: ACCT-1D-1
+Title: Direct BalanceLedger Journal Writer Wiring
+Problem: Direct/unlinked BalanceLedger movements are not yet journal sources, while correlated disposition-line BalanceLedger rows must be suppressed to avoid double counting.
+Business Value: Completes client advance journal coverage for direct BalanceLedger movements without corrupting offset/disposition posting accounting.
+Technical Value: Adds direct BalanceLedger source mapping while excluding correlated `disposition_line:*` rows; keeps `ADJUST` and `REFUND` out until product/accounting decision.
+Priority: HIGH
+Depends On: ACCT-1D-0, ACCT-1 writer foundation, client offset/payout journal wiring
+Unlock Condition: Confirm direct/unlinked BalanceLedger query paths and idempotency source keys; product/accounting decision for `ADJUST`/`REFUND` remains separate.
+Estimated Size: M (Codex BE; design-gate-first)
+Related Modules: CaseBalanceService, BalanceLedger, AccountingJournalWriterService, accounting-ledger-dry-run.service
+Status: READY
 ID: ACCT-2
 Title: Trial Balance (PHASE 2)
 Problem: Journal'ın doğru yazıldığını doğrulayacak hızlı kontrol ekranı yok; SoT geçişi için faithfulness kanıtı gerekli.
