@@ -102,6 +102,118 @@ function ledgerEntry(overrides: any = {}) {
 }
 
 describe('AccountingJournalLegalShadowCompareService', () => {
+  it('marks all-zero legal sample evidence as ready for primary cutover', async () => {
+    const prisma = prismaMock({
+      journalLines: [
+        journalLine({
+          sourceType: 'CLIENT_PAYOUT',
+          sourceAction: 'recorded',
+          sourceId: 'payout-legal',
+          accountCode: 'LEGAL_LEDGER_ALLOCATED_AMOUNT',
+          direction: 'DEBIT',
+          amount: '120.00',
+          caseId: 'case-legal',
+          caseClientId: null,
+        }),
+      ],
+      ledgerEntries: [
+        ledgerEntry({
+          id: 'le-primary-ready',
+          sourceType: 'CLIENT_PAYOUT',
+          sourceId: 'payout-legal',
+          amount: '120.00',
+          caseId: 'case-legal',
+          allocations: [{ amount: D('120.00') }],
+        }),
+      ],
+    });
+
+    const report = await new AccountingJournalLegalShadowCompareService(prisma).compare({ tenantId: 'tenant-1', currency: 'TRY' });
+
+    expect(report.rows).toHaveLength(1);
+    expect(report.rows[0]).toEqual(expect.objectContaining({
+      matchStatus: 'MATCH',
+      zeroingDecision: 'ZEROED',
+      journalAmount: '120.00',
+      legalProjectionAmount: '120.00',
+      delta: '0.00',
+    }));
+    expect(report.cutoverReadiness.safeForPrimaryCutover).toBe(true);
+    expect(report.cutoverReadiness.blockers).toEqual([]);
+    expect(report.technicalAcceptanceStatus).toBe('READY_FOR_PRIMARY_CUTOVER');
+    expect(report.technicalAcceptance.status).toBe('READY_FOR_PRIMARY_CUTOVER');
+    expect(report.technicalAcceptance.failingThresholds).toEqual([]);
+    expect(report.technicalAcceptance.acceptedExclusionSignoff).toEqual(expect.objectContaining({
+      required: false,
+      rows: 0,
+    }));
+    expect(report.technicalAcceptance.redBlockerFamilies).toEqual([]);
+    expect(report.technicalAcceptance.thresholds).toEqual(expect.objectContaining({
+      legalSamplePresent: expect.objectContaining({ passed: true, actual: 1 }),
+      rowsProduced: expect.objectContaining({ passed: true, actual: 1 }),
+      realMismatchRows: expect.objectContaining({ passed: true, actual: 0 }),
+      unsupportedBlockerRows: expect.objectContaining({ passed: true, actual: 0 }),
+      blockingDivergentRows: expect.objectContaining({ passed: true, actual: 0 }),
+      blockingSummaryOnlyRows: expect.objectContaining({ passed: true, actual: 0 }),
+      blockingEngineOnlyRows: expect.objectContaining({ passed: true, actual: 0 }),
+      diagnosticOnlyRows: expect.objectContaining({ passed: true, actual: 0 }),
+    }));
+    expect(report.technicalAcceptance.evidenceChecklist.rowLevelFields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'zeroingDecision', available: true }),
+      expect.objectContaining({ field: 'zeroingReasonCode', available: true }),
+      expect.objectContaining({ field: 'blockerCodes', available: true }),
+      expect.objectContaining({ field: 'journalAmount', available: true }),
+      expect.objectContaining({ field: 'legalProjectionAmount', available: true }),
+      expect.objectContaining({ field: 'delta', available: true }),
+    ]));
+    expect(report.technicalAcceptance.evidenceChecklist.sourceIdentityFields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: 'sourceType', available: true }),
+      expect.objectContaining({ field: 'sourceAction', available: true }),
+      expect.objectContaining({ field: 'sourceId', available: true }),
+      expect.objectContaining({ field: 'accountCode', available: true }),
+    ]));
+  });
+
+  it('marks accepted-exclusion-only evidence as ready for legal signoff', async () => {
+    const prisma = prismaMock({
+      ledgerEntries: [
+        ledgerEntry({
+          id: 'le-manual-only',
+          sourceType: 'MANUAL',
+          sourceId: 'manual-ledger-note',
+          amount: '25.00',
+          allocations: [{ amount: D('25.00') }],
+        }),
+      ],
+    });
+
+    const report = await new AccountingJournalLegalShadowCompareService(prisma).compare({ tenantId: 'tenant-1' });
+
+    expect(report.rows).toHaveLength(1);
+    expect(report.rows[0]).toEqual(expect.objectContaining({
+      matchStatus: 'SUMMARY_ONLY',
+      zeroingDecision: 'ACCEPTED_EXCLUSION',
+      zeroingReasonCode: 'LEGAL_LEDGER_ACCEPTED_EXCLUSION',
+    }));
+    expect(report.cutoverReadiness.safeForPrimaryCutover).toBe(false);
+    expect(report.cutoverReadiness.blockers).toEqual(expect.arrayContaining([
+      'LEGAL_LEDGER_ACCEPTED_EXCLUSION',
+      'SUMMARY_ONLY_SHADOW_ROW',
+    ]));
+    expect(report.technicalAcceptanceStatus).toBe('READY_FOR_LEGAL_SIGNOFF');
+    expect(report.technicalAcceptance.failingThresholds).toEqual([]);
+    expect(report.technicalAcceptance.acceptedExclusionSignoff).toEqual(expect.objectContaining({
+      required: true,
+      rows: 1,
+      reasonCodes: ['LEGAL_LEDGER_ACCEPTED_EXCLUSION'],
+    }));
+    expect(report.technicalAcceptance.acceptedExclusionSignoff.rowKeys).toHaveLength(1);
+    expect(report.technicalAcceptance.redBlockerFamilies).toEqual([]);
+    expect(report.technicalAcceptance.thresholds.blockingSummaryOnlyRows).toEqual(expect.objectContaining({
+      passed: true,
+      actual: 0,
+    }));
+  });
   it('produces MATCH rows for representative projection sources and blocks primary cutover without legal sample', async () => {
     const prisma = prismaMock({
       journalLines: [
@@ -139,6 +251,10 @@ describe('AccountingJournalLegalShadowCompareService', () => {
     expect(report.cutoverReadiness.safeForOptInShadow).toBe(true);
     expect(report.cutoverReadiness.safeForPrimaryCutover).toBe(false);
     expect(report.cutoverReadiness.blockers).toContain('LEGAL_LEDGER_SAMPLE_MISSING');
+    expect(report.technicalAcceptanceStatus).toBe('BLOCKED');
+    expect(report.technicalAcceptance.failingThresholds).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'LEGAL_SAMPLE_PRESENT', passed: false }),
+    ]));
   });
 
   it('classifies divergent, summary-only and engine-only rows fail-closed', async () => {
@@ -165,6 +281,19 @@ describe('AccountingJournalLegalShadowCompareService', () => {
       blockingEngineOnlyRows: 1,
     }));
     expect(report.cutoverReadiness.safeForPrimaryCutover).toBe(false);
+    expect(report.technicalAcceptanceStatus).toBe('BLOCKED');
+    expect(report.technicalAcceptance.failingThresholds).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'REAL_MISMATCH_ROWS_ZERO', actual: 3 }),
+      expect.objectContaining({ code: 'BLOCKING_DIVERGENT_ROWS_ZERO', actual: 1 }),
+      expect.objectContaining({ code: 'BLOCKING_SUMMARY_ONLY_ROWS_ZERO', actual: 1 }),
+      expect.objectContaining({ code: 'BLOCKING_ENGINE_ONLY_ROWS_ZERO', actual: 1 }),
+    ]));
+    expect(report.technicalAcceptance.redBlockerFamilies).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        family: 'ROW_MISMATCH',
+        codes: expect.arrayContaining(['DIVERGENT_SHADOW_ROW', 'SUMMARY_ONLY_SHADOW_ROW', 'ENGINE_ONLY_SHADOW_ROW']),
+      }),
+    ]));
   });
 
   it('reports LedgerEntry/LedgerAllocation as legal summary-only until journal source mapping exists', async () => {
@@ -297,7 +426,18 @@ describe('AccountingJournalLegalShadowCompareService', () => {
       blockingSummaryOnlyRows: 4,
     }));
     expect(report.cutoverReadiness.safeForPrimaryCutover).toBe(false);
+    expect(report.technicalAcceptanceStatus).toBe('BLOCKED');
+    expect(report.technicalAcceptance.failingThresholds).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'REAL_MISMATCH_ROWS_ZERO', actual: 1 }),
+      expect.objectContaining({ code: 'UNSUPPORTED_BLOCKER_ROWS_ZERO', actual: 3 }),
+      expect.objectContaining({ code: 'BLOCKING_SUMMARY_ONLY_ROWS_ZERO', actual: 4 }),
+    ]));
+    expect(report.technicalAcceptance.redBlockerFamilies).toEqual(expect.arrayContaining([
+      expect.objectContaining({ family: 'LEGAL_SOURCE_MAPPING' }),
+      expect.objectContaining({ family: 'UNSUPPORTED_CANCEL_REVERSAL_BACKFILL' }),
+    ]));
   });
+
   it('proves reversal, cancel and backfill fixture matrix stays fail-closed before zeroing', async () => {
     const prisma = prismaMock({
       journalLines: [
