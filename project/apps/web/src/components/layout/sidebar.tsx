@@ -48,7 +48,7 @@ const navigation: NavItem[] = [
   { name: "Takvim", href: "/calendar", icon: Calendar, disabled: false },
   { name: "AI Tools", href: "/ai-tools", icon: Sparkles, disabled: false },
   { name: "Borçlular", href: "/debtors", icon: Users, disabled: false },
-  { name: "Müvekkiller", href: "/clients", icon: Building2, disabled: true }, // Sayfa yok
+  { name: "Müvekkiller", href: "/clients", icon: Building2, disabled: false },
   { name: "Görevler", href: "/tasks", icon: CheckSquare, disabled: false },
   { name: "Bilgi Formları", href: "/client-intake", icon: Inbox, disabled: false },
   { name: "Bildirimler", href: "/notifications", icon: Bell, disabled: true }, // Sayfa yok

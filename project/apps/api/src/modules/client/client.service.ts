@@ -60,9 +60,13 @@ export class ClientService {
   }
 
   // Tek müvekkil getir
-  async findOne(id: string, tenantId: string) {
+  // Task 4A (owner-locked karar #2): findOne VARSAYILAN olarak soft-deleted (isActive:false)
+  // DÖNDÜRMEZ → GET /clients/:id arşivlenmiş müvekkili göstermez (findAll ile tutarlı). İç çağıranlar
+  // (create reactivate dönüşü, update dönüşü) mutasyon sonrası kaydı her durumda almak için
+  // includeInactive:true geçer → mevcut davranış korunur. Tek dış çağıran = ClientController GET (default).
+  async findOne(id: string, tenantId: string, opts: { includeInactive?: boolean } = {}) {
     return this.prisma.client.findFirst({
-      where: { id, tenantId },
+      where: { id, tenantId, ...(opts.includeInactive ? {} : { isActive: true }) },
       include: {
         contacts: true,
         bankAccounts: true,
@@ -111,7 +115,9 @@ export class ClientService {
         }
         // PR-AUDIT-1: duplicate'te SESSİZ döndürme yerine UX sinyali (POA deseni). Transient alanlar
         // (persist EDİLMEZ, kontrat bozulmaz) → frontend "zaten kayıtlı / geri getirildi" bildirir.
-        const result = await this.findOne(existing.id, tenantId);
+        // includeInactive: dedup hedefi (reactivate edilmemiş duplicate) soft-deleted olabilir;
+        // mutasyon-sonrası dönüş davranışı korunur (Task 4A findOne default-exclude'dan etkilenmez).
+        const result = await this.findOne(existing.id, tenantId, { includeInactive: true });
         return { ...(result as any), _existingReturned: true, _reactivated: wasReactivated };
       }
     }
@@ -233,7 +239,7 @@ export class ClientService {
       contactFollowUpStatus: null,
     });
 
-    return this.findOne(client.id, tenantId);
+    return this.findOne(client.id, tenantId, { includeInactive: true });
   }
 
   // Müvekkil güncelle
@@ -388,7 +394,8 @@ export class ClientService {
       contactFollowUpStatus: (existing as any).contactFollowUpStatus ?? null,
     });
 
-    return this.findOne(id, tenantId);
+    // includeInactive: update isActive:false yapmış olabilir (arşivleme); güncellenen kaydı yine döndür.
+    return this.findOne(id, tenantId, { includeInactive: true });
   }
 
   /**

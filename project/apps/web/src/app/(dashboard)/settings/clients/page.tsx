@@ -21,7 +21,8 @@ type SortDirection = "asc" | "desc" | null;
 export default function ClientsSettingsPage() {
   const searchParams = useSearchParams();
   const editClientId = searchParams.get("edit");
-  
+  const newParam = searchParams.get("new");
+
   const [clients, setClients] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -76,6 +77,17 @@ export default function ClientsSettingsPage() {
       setShowModal(true);
     })();
   }, [editClientId, clients]);
+
+  // Task 4A: /clients/new → /settings/clients?new=1 redirect'i create modalini OTOMATİK açar
+  // (native create formu v1'de YOK; ClientModal burada inline). Bir kez işlenir (ref guard).
+  const newClientHandledRef = useRef(false);
+  useEffect(() => {
+    if (newClientHandledRef.current || newParam !== "1") return;
+    newClientHandledRef.current = true;
+    setEditingClient(null);
+    setScannedData(null);
+    setShowModal(true);
+  }, [newParam]);
 
   const handleSave = async (data: any) => {
     setSaving(true);
