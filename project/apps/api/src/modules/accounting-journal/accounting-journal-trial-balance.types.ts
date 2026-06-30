@@ -80,6 +80,45 @@ export interface AccountingJournalTrialBalanceDiagnostics {
   warningCodes: AccountingJournalTrialBalanceWarningCode[];
 }
 
+export type AccountingJournalTrialBalanceReconciliationWarningCode =
+  | AccountingJournalTrialBalanceWarningCode
+  | 'DIMENSION_SCOPED_EVIDENCE'
+  | 'MISSING_SOURCE_METADATA'
+  | 'SOURCE_BREAKDOWN_IMBALANCE';
+
+export interface AccountingJournalTrialBalanceReconciliationWarning {
+  code: AccountingJournalTrialBalanceReconciliationWarningCode;
+  message: string;
+}
+
+export interface AccountingJournalTrialBalanceSourceCoverage {
+  sourceType: AccountingJournalSourceType;
+  sourceAction: string;
+  entryCount: number;
+  lineCount: number;
+  currencyCount: number;
+  currencies: string[];
+  balanced: boolean;
+}
+
+export interface AccountingJournalTrialBalanceReconciliationEvidence {
+  evidenceSource: 'PERSISTED_ACCOUNTING_JOURNAL';
+  aggregateBasis: 'DB_AGGREGATE';
+  tenantScoped: true;
+  dateBasis: 'postedAt';
+  amountBasis: 'AccountingJournalLine.amount';
+  directionBasis: 'AccountingJournalLine.direction';
+  entryJoinBasis: 'AccountingJournalLine.journalEntryId -> AccountingJournalEntry.id';
+  balanced: boolean;
+  evidenceStatus: AccountingJournalTrialBalanceEvidenceStatus;
+  lineCount: number;
+  entryCount: number;
+  currencyCount: number;
+  sourceCount: number;
+  sourceCoverage: AccountingJournalTrialBalanceSourceCoverage[];
+  warnings: AccountingJournalTrialBalanceReconciliationWarning[];
+}
+
 export interface AccountingJournalTrialBalanceReport {
   tenantId: string;
   filters: AccountingJournalTrialBalanceFilters;
@@ -87,4 +126,5 @@ export interface AccountingJournalTrialBalanceReport {
   totals: AccountingJournalTrialBalanceCurrencyTotal[];
   sourceBreakdown: AccountingJournalTrialBalanceSourceBreakdown[];
   diagnostics: AccountingJournalTrialBalanceDiagnostics;
+  reconciliation?: AccountingJournalTrialBalanceReconciliationEvidence;
 }

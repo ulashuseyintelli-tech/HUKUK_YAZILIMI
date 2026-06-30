@@ -149,6 +149,27 @@ describe('AccountingJournalTrialBalanceService', () => {
         missingSourceVersionColumn: true,
       }),
     );
+    expect(report.reconciliation).toEqual(
+      expect.objectContaining({
+        evidenceSource: 'PERSISTED_ACCOUNTING_JOURNAL',
+        aggregateBasis: 'DB_AGGREGATE',
+        tenantScoped: true,
+        dateBasis: 'postedAt',
+        amountBasis: 'AccountingJournalLine.amount',
+        directionBasis: 'AccountingJournalLine.direction',
+        entryJoinBasis: 'AccountingJournalLine.journalEntryId -> AccountingJournalEntry.id',
+        balanced: true,
+        evidenceStatus: 'BALANCED',
+        lineCount: 3,
+        entryCount: 1,
+        currencyCount: 1,
+        sourceCount: 1,
+        sourceCoverage: [
+          expect.objectContaining({ sourceType: 'CLIENT_OFFSET', sourceAction: 'apply', entryCount: 1, lineCount: 3, currencyCount: 1, currencies: ['TRY'], balanced: true }),
+        ],
+        warnings: [],
+      }),
+    );
   });
 
   it('source breakdown rule: aggregates by journalEntryId first and reads only entry source metadata', async () => {
@@ -179,6 +200,10 @@ describe('AccountingJournalTrialBalanceService', () => {
     expect(report.sourceBreakdown).toEqual([
       expect.objectContaining({ sourceType: 'CLIENT_OFFSET', sourceAction: 'apply', currency: 'TRY', debit: '30.00', credit: '30.00', balanced: true, lineCount: 2 }),
       expect.objectContaining({ sourceType: 'CLIENT_PAYOUT', sourceAction: 'recorded', currency: 'TRY', debit: '15.00', credit: '15.00', balanced: true, lineCount: 2 }),
+    ]);
+    expect(report.reconciliation?.sourceCoverage).toEqual([
+      expect.objectContaining({ sourceType: 'CLIENT_OFFSET', sourceAction: 'apply', entryCount: 1, lineCount: 2, currencies: ['TRY'], balanced: true }),
+      expect.objectContaining({ sourceType: 'CLIENT_PAYOUT', sourceAction: 'recorded', entryCount: 1, lineCount: 2, currencies: ['TRY'], balanced: true }),
     ]);
   });
 
@@ -211,6 +236,13 @@ describe('AccountingJournalTrialBalanceService', () => {
         warningCodes: ['DIMENSION_SCOPED_IMBALANCE'],
       }),
     );
+    expect(report.reconciliation).toEqual(
+      expect.objectContaining({
+        evidenceStatus: 'DIMENSION_SCOPED',
+        sourceCoverage: [expect.objectContaining({ sourceType: 'CLIENT_OFFSET', sourceAction: 'apply', balanced: false })],
+        warnings: expect.arrayContaining([expect.objectContaining({ code: 'DIMENSION_SCOPED_EVIDENCE' }), expect.objectContaining({ code: 'SOURCE_BREAKDOWN_IMBALANCE' })]),
+      }),
+    );
   });
 
   it('empty result rule: reports no journal lines without pretending to be balanced evidence', async () => {
@@ -233,7 +265,49 @@ describe('AccountingJournalTrialBalanceService', () => {
         warningCodes: ['NO_JOURNAL_LINES'],
       }),
     );
+    expect(report.reconciliation).toEqual(
+      expect.objectContaining({
+        evidenceStatus: 'NO_LINES',
+        lineCount: 0,
+        entryCount: 0,
+        sourceCount: 0,
+        warnings: [expect.objectContaining({ code: 'NO_JOURNAL_LINES' })],
+      }),
+    );
     expect(prisma.accountingJournalEntry.findMany).not.toHaveBeenCalled();
+  });
+
+  it('reconciliation rule: missing source metadata is surfaced without changing trial balance totals', async () => {
+    const prisma = prismaMock();
+    prisma.accountingJournalLine.groupBy
+      .mockResolvedValueOnce([
+        accountGroup({ accountCode: 'CLIENT_PAYABLE', direction: 'DEBIT', amount: '10.00', count: 1 }),
+        accountGroup({ accountCode: 'CASH_CLEARING', direction: 'CREDIT', amount: '10.00', count: 1 }),
+      ])
+      .mockResolvedValueOnce([
+        sourceGroup({ journalEntryId: 'journal-missing', direction: 'DEBIT', amount: '10.00', count: 1 }),
+        sourceGroup({ journalEntryId: 'journal-missing', direction: 'CREDIT', amount: '10.00', count: 1 }),
+      ]);
+    prisma.accountingJournalEntry.findMany.mockResolvedValue([]);
+    const service = new AccountingJournalTrialBalanceService(prisma);
+
+    const report = await service.getTrialBalance({ tenantId: 'tenant-1' });
+
+    expect(report.totals).toEqual([
+      expect.objectContaining({ currency: 'TRY', debit: '10.00', credit: '10.00', balanced: true, lineCount: 2 }),
+    ]);
+    expect(report.sourceBreakdown).toEqual([]);
+    expect(report.reconciliation).toEqual(
+      expect.objectContaining({
+        balanced: true,
+        evidenceStatus: 'BALANCED',
+        lineCount: 2,
+        entryCount: 1,
+        sourceCount: 0,
+        sourceCoverage: [],
+        warnings: [expect.objectContaining({ code: 'MISSING_SOURCE_METADATA' })],
+      }),
+    );
   });
 
   it('validation rule: invalid posted date filters are rejected before DB aggregation', async () => {
@@ -281,6 +355,13 @@ describe('AccountingJournalTrialBalanceService', () => {
         evidenceStatus: 'IMBALANCED',
         unbalancedCurrencies: [{ currency: 'USD', debit: '20.00', credit: '0.00', difference: '20.00' }],
         warningCodes: ['TRIAL_BALANCE_IMBALANCE'],
+      }),
+    );
+    expect(report.reconciliation).toEqual(
+      expect.objectContaining({
+        evidenceStatus: 'IMBALANCED',
+        sourceCoverage: [expect.objectContaining({ sourceType: 'CLIENT_OFFSET', sourceAction: 'apply', currencyCount: 2, currencies: ['TRY', 'USD'], balanced: false })],
+        warnings: expect.arrayContaining([expect.objectContaining({ code: 'TRIAL_BALANCE_IMBALANCE' }), expect.objectContaining({ code: 'SOURCE_BREAKDOWN_IMBALANCE' })]),
       }),
     );
   });
