@@ -325,6 +325,31 @@ function validateClientOffsetBusiness(draft: JournalEntryDraft): JournalValidati
     }));
   }
 
+  if (isApply && draft.reversalOf) {
+    errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'ClientOffset APPLY journal must not carry reversal reference.', 'reversalOf', {
+      reversalSourceType: draft.reversalOf.sourceType,
+      reversalSourceId: draft.reversalOf.sourceId,
+      reversalSourceAction: draft.reversalOf.sourceAction,
+    }));
+  }
+
+  if (isReversal) {
+    const invalidReversalReference =
+      !draft.reversalOf ||
+      draft.reversalOf.sourceType !== 'CLIENT_OFFSET' ||
+      draft.reversalOf.sourceAction !== 'apply' ||
+      !draft.reversalOf.sourceId ||
+      draft.reversalOf.sourceId === draft.sourceId;
+
+    if (invalidReversalReference) {
+      errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'ClientOffset REVERSAL journal must reference the original APPLY source.', 'reversalOf', {
+        reversalSourceType: draft.reversalOf?.sourceType ?? null,
+        reversalSourceId: draft.reversalOf?.sourceId ?? null,
+        reversalSourceAction: draft.reversalOf?.sourceAction ?? null,
+        sourceId: draft.sourceId,
+      }));
+    }
+  }
   const payableLine = findSingleLine(errors, draft.lines, 'CLIENT_PAYABLE', 'CLIENT_OFFSET payable leg');
   const expenseLine = findSingleLine(errors, draft.lines, 'CLIENT_EXPENSE_RECEIVABLE', 'CLIENT_OFFSET expense leg');
 

@@ -69,6 +69,8 @@ function buildCollectionDispositionLineJournal(source: CollectionDispositionLine
     });
   }
 
+
+
   const idempotencyMaterial = journalIdempotencyMaterialFromSource(source);
   const idempotencyKey = buildJournalIdempotencyKey(idempotencyMaterial);
   if (!source.tenantId || !source.sourceId || !source.sourceAction || !source.sourceVersion) {
@@ -142,6 +144,8 @@ function buildClientPayoutJournal(source: ClientPayoutJournalSource): JournalBui
       sourceAction: source.sourceAction,
     });
   }
+
+
 
   const idempotencyMaterial = journalIdempotencyMaterialFromSource(source);
   const idempotencyKey = buildJournalIdempotencyKey(idempotencyMaterial);
@@ -218,6 +222,19 @@ function buildClientOffsetJournal(source: ClientOffsetJournalSource): JournalBui
     });
   }
 
+
+
+  if (source.payload.kind === 'APPLY' && source.payload.reversesOffsetId) {
+    return buildError('INVALID_SOURCE_PAYLOAD', 'ClientOffset APPLY source must not carry reversesOffsetId.', 'payload.reversesOffsetId', {
+      reversesOffsetId: source.payload.reversesOffsetId,
+    });
+  }
+
+  if (source.payload.kind === 'REVERSAL' && !source.payload.reversesOffsetId) {
+    return buildError('INVALID_SOURCE_PAYLOAD', 'ClientOffset REVERSAL source requires reversesOffsetId.', 'payload.reversesOffsetId', {
+      sourceId: source.sourceId,
+    });
+  }
   const idempotencyMaterial = journalIdempotencyMaterialFromSource(source);
   const idempotencyKey = buildJournalIdempotencyKey(idempotencyMaterial);
   if (!source.tenantId || !source.sourceId || !source.sourceAction || !source.sourceVersion) {

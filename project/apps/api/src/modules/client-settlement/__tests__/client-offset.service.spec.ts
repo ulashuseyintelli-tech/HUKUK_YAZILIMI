@@ -143,6 +143,8 @@ describe('ClientOffsetService.createOffset', () => {
           entryType: 'CLIENT_OFFSET_APPLIED',
           sourceId: 'off-new',
           sourceVersion: '2026-06-21T10:00:00.000Z:off-new',
+          idempotencyKey: 'acct-journal:v1:t1:CLIENT_OFFSET:off-new:apply:2026-06-21T10:00:00.000Z:off-new',
+          reversalOf: null,
           lines: expect.arrayContaining([
             expect.objectContaining({ accountCode: 'CLIENT_PAYABLE', direction: 'DEBIT', offsetId: 'off-new', caseClientId: 'cc-A' }),
             expect.objectContaining({ accountCode: 'CLIENT_EXPENSE_RECEIVABLE', direction: 'CREDIT', offsetId: 'off-new', caseClientId: null }),
@@ -262,6 +264,8 @@ describe('ClientOffsetService.reverseOffset', () => {
           entryType: 'CLIENT_OFFSET_REVERSED',
           sourceId: 'rev-new',
           sourceVersion: '2026-06-21T11:00:00.000Z:rev-new',
+          idempotencyKey: 'acct-journal:v1:t1:CLIENT_OFFSET:rev-new:reversal:2026-06-21T11:00:00.000Z:rev-new',
+          reversalOf: expect.objectContaining({ sourceType: 'CLIENT_OFFSET', sourceId: 'off-1', sourceAction: 'apply' }),
           lines: expect.arrayContaining([
             expect.objectContaining({ accountCode: 'CLIENT_PAYABLE', direction: 'CREDIT', offsetId: 'rev-new', caseClientId: 'cc-A' }),
             expect.objectContaining({ accountCode: 'CLIENT_EXPENSE_RECEIVABLE', direction: 'DEBIT', offsetId: 'rev-new', caseClientId: null }),

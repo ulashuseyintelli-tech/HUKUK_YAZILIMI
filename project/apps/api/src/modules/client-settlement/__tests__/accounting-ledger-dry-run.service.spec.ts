@@ -40,20 +40,23 @@ function payout(overrides: any = {}) {
 }
 
 function offset(overrides: any = {}) {
+  const id = overrides.id ?? 'off-1';
+  const kind = overrides.kind ?? 'APPLY';
+
   return {
-    id: overrides.id ?? 'off-1',
+    id,
     tenantId: overrides.tenantId ?? 'tenant-1',
     clientId: overrides.clientId ?? 'client-1',
     amount: overrides.amount ?? D(10),
     currency: overrides.currency ?? 'TRY',
-    kind: overrides.kind ?? 'APPLY',
+    kind,
     payableCaseId: overrides.payableCaseId ?? 'case-1',
     payableCaseClientId: overrides.payableCaseClientId ?? 'cc-A',
     expenseCaseId: overrides.expenseCaseId ?? 'case-1',
     expenseRequestId: overrides.expenseRequestId ?? 'er-1',
     createdAt: overrides.createdAt ?? OFFSET_CREATED_AT,
     createdById: overrides.createdById ?? 'user-1',
-    reversesOffsetId: overrides.reversesOffsetId ?? null,
+    reversesOffsetId: overrides.reversesOffsetId ?? (kind === 'REVERSAL' ? `${id}-apply` : null),
   };
 }
 
@@ -87,6 +90,7 @@ interface ExpectedClientOffsetDryRunSeam {
   clientId?: string;
   tenantId?: string;
   currency?: string;
+  createdAt?: Date;
 }
 
 function expectClientOffsetDryRunSeam(
@@ -98,10 +102,11 @@ function expectClientOffsetDryRunSeam(
   const currency = expected.currency ?? 'TRY';
   const action = expected.kind.toLowerCase();
   const isApply = expected.kind === 'APPLY';
+  const sourceVersion = `${(expected.createdAt ?? OFFSET_CREATED_AT).toISOString()}:${expected.id}`;
   const entry = offsetJournalEntry(report, expected.id);
 
   expect(entry).toEqual({
-    idempotencyKey: `client_offset:${expected.id}:${action}`,
+    idempotencyKey: `acct-journal:v1:${tenantId}:CLIENT_OFFSET:${expected.id}:${action}:${sourceVersion}`,
     sourceType: 'CLIENT_OFFSET',
     sourceId: expected.id,
     tenantId,
@@ -221,12 +226,18 @@ describe('buildAccountingLedgerDryRunReport', () => {
     ]);
   });
 
-  it('CLIENT_OFFSET seam: existing idempotency key format remains client_offset:{id}:{action}', () => {
+  it('CLIENT_OFFSET dry-run idempotency: canonical key is primary and legacy seam remains explicit helper fallback', () => {
+    expect(accountingDryRunIdempotencyKey('CLIENT_OFFSET', 'tenant-1', 'off-seam-apply', 'apply', '2026-06-29T10:30:00.000Z:off-seam-apply')).toBe(
+      'acct-journal:v1:tenant-1:CLIENT_OFFSET:off-seam-apply:apply:2026-06-29T10:30:00.000Z:off-seam-apply',
+    );
+    expect(accountingDryRunIdempotencyKey('CLIENT_OFFSET', 'tenant-1', 'off-seam-reversal', 'reversal', '2026-06-29T10:30:00.000Z:off-seam-reversal')).toBe(
+      'acct-journal:v1:tenant-1:CLIENT_OFFSET:off-seam-reversal:reversal:2026-06-29T10:30:00.000Z:off-seam-reversal',
+    );
     expect(accountingDryRunIdempotencyKey('CLIENT_OFFSET', 'off-seam-apply', 'apply')).toBe('client_offset:off-seam-apply:apply');
     expect(accountingDryRunIdempotencyKey('CLIENT_OFFSET', 'off-seam-reversal', 'reversal')).toBe('client_offset:off-seam-reversal:reversal');
   });
 
-  it('CLIENT_OFFSET dry-run adapter reuse rule: builder idempotency key and writer dependency do not leak into report', () => {
+  it('CLIENT_OFFSET dry-run adapter reuse rule: canonical idempotency key and writer dependency do not leak into report', () => {
     const report = buildAccountingLedgerDryRunReport({
       tenantId: 'tenant-1',
       dispositionLines: [],
@@ -236,8 +247,8 @@ describe('buildAccountingLedgerDryRunReport', () => {
     });
 
     const entry = offsetJournalEntry(report, 'off-builder-key-guard');
-    expect(entry.idempotencyKey).toBe('client_offset:off-builder-key-guard:apply');
-    expect(entry.idempotencyKey).not.toContain('acct-journal:v1');
+    expect(entry.idempotencyKey).toBe('acct-journal:v1:tenant-1:CLIENT_OFFSET:off-builder-key-guard:apply:2026-06-29T10:30:00.000Z:off-builder-key-guard');
+    expect(entry.idempotencyKey).not.toContain('client_offset:');
 
     const serviceSource = readFileSync(join(__dirname, '../accounting-ledger-dry-run.service.ts'), 'utf8');
     expect(serviceSource).toContain('client-offset-journal-source.adapter');

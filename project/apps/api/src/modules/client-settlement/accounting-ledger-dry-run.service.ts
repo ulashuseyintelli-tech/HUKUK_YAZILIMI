@@ -1,4 +1,4 @@
-﻿import { Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -348,15 +348,15 @@ export function accountingDryRunIdempotencyKey(
   action?: string,
   sourceVersion?: string,
 ): string {
-  if (sourceType === 'CLIENT_OFFSET') {
-    const sourceId = action === undefined ? tenantIdOrSourceId : sourceIdOrAction;
-    const sourceAction = action === undefined ? sourceIdOrAction : action;
+  if (sourceType === 'CLIENT_OFFSET' && action === undefined) {
+    const sourceId = tenantIdOrSourceId;
+    const sourceAction = sourceIdOrAction;
     return `client_offset:${sourceId}:${sourceAction}`;
   }
 
   const tenantId = tenantIdOrSourceId;
   const sourceId = sourceIdOrAction;
-  if (!action) throw new Error('accountingDryRunIdempotencyKey requires action for non-CLIENT_OFFSET sources');
+  if (!action) throw new Error('accountingDryRunIdempotencyKey requires action for canonical sources');
 
   return buildJournalIdempotencyKey({
     tenantId,
@@ -708,7 +708,7 @@ function clientOffsetDryRunSourceAction(kind: ClientOffsetSource['kind']): 'appl
 function formatClientOffsetDraftForDryRun(draft: JournalEntryDraft): AccountingDryRunJournalEntry {
   const caseId = requiredDryRunDimension(draft.caseId, 'entry.caseId', draft.sourceId);
   return {
-    idempotencyKey: accountingDryRunIdempotencyKey('CLIENT_OFFSET', draft.tenantId, draft.sourceId, draft.sourceAction),
+    idempotencyKey: accountingDryRunIdempotencyKey('CLIENT_OFFSET', draft.tenantId, draft.sourceId, draft.sourceAction, draft.sourceVersion),
     sourceType: 'CLIENT_OFFSET',
     sourceId: draft.sourceId,
     tenantId: draft.tenantId,
