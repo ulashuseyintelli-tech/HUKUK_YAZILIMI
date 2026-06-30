@@ -1,7 +1,16 @@
 ﻿import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
-import { buildJournalIdempotencyKey } from '../accounting-journal';
+import {
+  buildAccountingJournal,
+  buildJournalIdempotencyKey,
+} from '../accounting-journal/accounting-journal.builder';
+import type { JournalEntryDraft, JournalLineDraft } from '../accounting-journal/accounting-journal.types';
+import { validateJournalDraft } from '../accounting-journal/accounting-journal.validators';
+import {
+  adaptClientOffsetSourceSnapshot,
+  type ClientOffsetSourceSnapshot,
+} from '../accounting-journal/client-offset-journal-source.adapter';
 
 const ZERO = new Prisma.Decimal(0);
 
@@ -188,13 +197,18 @@ interface ClientPayoutSource {
 
 interface ClientOffsetSource {
   id: string;
+  tenantId: string;
   clientId: string;
   amount: Prisma.Decimal;
   currency: string;
-  kind: string;
+  kind: 'APPLY' | 'REVERSAL';
   payableCaseId: string;
   payableCaseClientId: string;
   expenseCaseId: string;
+  expenseRequestId: string | null;
+  createdAt: Date;
+  createdById: string | null;
+  reversesOffsetId: string | null;
 }
 
 interface BalanceLedgerSource {
@@ -282,6 +296,7 @@ export class AccountingLedgerDryRunService {
         where: offsetWhere,
         select: {
           id: true,
+          tenantId: true,
           clientId: true,
           amount: true,
           currency: true,
@@ -289,6 +304,10 @@ export class AccountingLedgerDryRunService {
           payableCaseId: true,
           payableCaseClientId: true,
           expenseCaseId: true,
+          expenseRequestId: true,
+          createdAt: true,
+          createdById: true,
+          reversesOffsetId: true,
         },
       }),
       this.prisma.balanceLedger.findMany({
@@ -466,34 +485,15 @@ export function buildAccountingLedgerDryRunReport(sources: AccountingLedgerDryRu
   }
 
   for (const offset of sources.clientOffsets) {
-    const isApply = offset.kind === 'APPLY';
-    pushEntry({
-      idempotencyKey: accountingDryRunIdempotencyKey('CLIENT_OFFSET', sources.tenantId, offset.id, offset.kind.toLowerCase()),
-      sourceType: 'CLIENT_OFFSET',
-      sourceId: offset.id,
-      tenantId: sources.tenantId,
-      caseId: offset.payableCaseId,
-      currency: offset.currency,
-      effectiveAt: null,
-      lines: [
-        dryRunLine('CLIENT_PAYABLE', isApply ? 'DEBIT' : 'CREDIT', offset.amount, sources.tenantId, offset.payableCaseId, offset.currency, {
-          clientId: offset.clientId,
-          offsetId: offset.id,
-          caseClientId: offset.payableCaseClientId,
-        }),
-        dryRunLine('CLIENT_EXPENSE_RECEIVABLE', isApply ? 'CREDIT' : 'DEBIT', offset.amount, sources.tenantId, offset.expenseCaseId, offset.currency, {
-          clientId: offset.clientId,
-          offsetId: offset.id,
-        }),
-      ],
-    });
+    const dryRunEntry = buildClientOffsetDryRunEntry(sources.tenantId, offset);
+    pushEntry(dryRunEntry);
     addOutstanding(
       clientAccountingExpected,
       sources.tenantId,
       offset.payableCaseId,
       offset.payableCaseClientId,
       offset.currency,
-      isApply ? offset.amount.negated() : offset.amount,
+      offset.kind === 'APPLY' ? offset.amount.negated() : offset.amount,
     );
   }
 
@@ -648,6 +648,107 @@ function dryRunLine(
     offsetId: dimensions.offsetId ?? null,
     balanceLedgerId: dimensions.balanceLedgerId ?? null,
   };
+}
+
+function buildClientOffsetDryRunEntry(tenantId: string, offset: ClientOffsetSource): AccountingDryRunJournalEntry {
+  const snapshot = buildClientOffsetSourceSnapshot(tenantId, offset);
+  const adapted = adaptClientOffsetSourceSnapshot(snapshot);
+  if (!adapted.ok) {
+    throw dryRunFailFast('ClientOffset source adapter failed', offset.id, adapted.errors);
+  }
+
+  const built = buildAccountingJournal(adapted.source);
+  if (!built.ok) {
+    throw dryRunFailFast('ClientOffset journal builder failed', offset.id, built.errors);
+  }
+
+  const validated = validateJournalDraft(built.draft);
+  if (!validated.ok) {
+    throw dryRunFailFast('ClientOffset journal validation failed', offset.id, validated.errors);
+  }
+
+  return formatClientOffsetDraftForDryRun(validated.draft);
+}
+
+function buildClientOffsetSourceSnapshot(tenantId: string, offset: ClientOffsetSource): ClientOffsetSourceSnapshot {
+  return {
+    identity: {
+      tenantId,
+      sourceType: 'CLIENT_OFFSET',
+      sourceId: offset.id,
+      sourceAction: clientOffsetDryRunSourceAction(offset.kind),
+      sourceVersion: accountingDryRunSourceVersion(offset.id, offset.createdAt),
+    },
+    tenantId: offset.tenantId,
+    occurredAt: offset.createdAt,
+    effectiveDate: offset.createdAt,
+    actorId: offset.createdById,
+    currency: offset.currency,
+    metadata: {},
+    payload: {
+      id: offset.id,
+      kind: offset.kind,
+      amount: offset.amount,
+      clientId: offset.clientId,
+      payableCaseId: offset.payableCaseId,
+      payableCaseClientId: offset.payableCaseClientId,
+      expenseCaseId: offset.expenseCaseId,
+      expenseRequestId: offset.expenseRequestId,
+      reversesOffsetId: offset.reversesOffsetId,
+    },
+  };
+}
+
+function clientOffsetDryRunSourceAction(kind: ClientOffsetSource['kind']): 'apply' | 'reversal' {
+  if (kind === 'APPLY') return 'apply';
+  if (kind === 'REVERSAL') return 'reversal';
+  throw new Error(`Unsupported ClientOffset kind for dry-run journal: ${kind}`);
+}
+
+function formatClientOffsetDraftForDryRun(draft: JournalEntryDraft): AccountingDryRunJournalEntry {
+  const caseId = requiredDryRunDimension(draft.caseId, 'entry.caseId', draft.sourceId);
+  return {
+    idempotencyKey: accountingDryRunIdempotencyKey('CLIENT_OFFSET', draft.tenantId, draft.sourceId, draft.sourceAction),
+    sourceType: 'CLIENT_OFFSET',
+    sourceId: draft.sourceId,
+    tenantId: draft.tenantId,
+    caseId,
+    currency: draft.currency,
+    effectiveAt: null,
+    lines: draft.lines.map((line) => formatClientOffsetLineForDryRun(line, draft.sourceId)),
+  };
+}
+
+function formatClientOffsetLineForDryRun(line: JournalLineDraft, sourceId: string): AccountingDryRunJournalLine {
+  return {
+    accountCode: line.accountCode,
+    direction: line.direction,
+    amount: new Prisma.Decimal(line.amount).toString(),
+    tenantId: line.tenantId,
+    caseId: requiredDryRunDimension(line.caseId, `lines[${line.lineNo}].caseId`, sourceId),
+    currency: line.currency,
+    clientId: line.clientId,
+    caseClientId: line.caseClientId,
+    collectionId: line.collectionId,
+    dispositionLineId: line.dispositionLineId,
+    payoutId: line.payoutId,
+    offsetId: line.offsetId,
+    balanceLedgerId: line.balanceLedgerId,
+  };
+}
+
+function requiredDryRunDimension(value: string | null, path: string, sourceId: string): string {
+  if (value) return value;
+  throw new Error(`ClientOffset dry-run formatter missing required dimension ${path} for ${sourceId}`);
+}
+
+function dryRunFailFast(
+  stage: string,
+  sourceId: string,
+  errors: ReadonlyArray<{ code: string; message: string; path: string | null }>,
+): never {
+  const detail = errors.map((error) => `${error.code}${error.path ? ` at ${error.path}` : ''}: ${error.message}`).join('; ');
+  throw new Error(`${stage} for ${sourceId}: ${detail}`);
 }
 
 function parseDispositionLineSource(source: string | null): string | null {

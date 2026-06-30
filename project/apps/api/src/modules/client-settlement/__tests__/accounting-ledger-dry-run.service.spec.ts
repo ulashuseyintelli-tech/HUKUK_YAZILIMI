@@ -1,3 +1,5 @@
+import { readFileSync } from 'fs';
+import { join } from 'path';
 import { Prisma } from '@prisma/client';
 import {
   AccountingLedgerDryRunService,
@@ -7,6 +9,7 @@ import {
 
 const D = (n: number) => new Prisma.Decimal(n);
 const POSTED_AT = new Date('2026-06-29T10:00:00.000Z');
+const OFFSET_CREATED_AT = new Date('2026-06-29T10:30:00.000Z');
 
 function dispositionLine(overrides: any = {}) {
   return {
@@ -39,6 +42,7 @@ function payout(overrides: any = {}) {
 function offset(overrides: any = {}) {
   return {
     id: overrides.id ?? 'off-1',
+    tenantId: overrides.tenantId ?? 'tenant-1',
     clientId: overrides.clientId ?? 'client-1',
     amount: overrides.amount ?? D(10),
     currency: overrides.currency ?? 'TRY',
@@ -46,6 +50,10 @@ function offset(overrides: any = {}) {
     payableCaseId: overrides.payableCaseId ?? 'case-1',
     payableCaseClientId: overrides.payableCaseClientId ?? 'cc-A',
     expenseCaseId: overrides.expenseCaseId ?? 'case-1',
+    expenseRequestId: overrides.expenseRequestId ?? 'er-1',
+    createdAt: overrides.createdAt ?? OFFSET_CREATED_AT,
+    createdById: overrides.createdById ?? 'user-1',
+    reversesOffsetId: overrides.reversesOffsetId ?? null,
   };
 }
 
@@ -175,6 +183,13 @@ describe('AccountingLedgerDryRunService', () => {
           currency: 'TRY',
           OR: [{ payableCaseId: 'case-1' }, { expenseCaseId: 'case-1' }],
         }),
+        select: expect.objectContaining({
+          tenantId: true,
+          createdAt: true,
+          createdById: true,
+          expenseRequestId: true,
+          reversesOffsetId: true,
+        }),
       }),
     );
     expect(prisma.balanceLedger.findMany).toHaveBeenCalled();
@@ -209,6 +224,25 @@ describe('buildAccountingLedgerDryRunReport', () => {
   it('CLIENT_OFFSET seam: existing idempotency key format remains client_offset:{id}:{action}', () => {
     expect(accountingDryRunIdempotencyKey('CLIENT_OFFSET', 'off-seam-apply', 'apply')).toBe('client_offset:off-seam-apply:apply');
     expect(accountingDryRunIdempotencyKey('CLIENT_OFFSET', 'off-seam-reversal', 'reversal')).toBe('client_offset:off-seam-reversal:reversal');
+  });
+
+  it('CLIENT_OFFSET dry-run adapter reuse rule: builder idempotency key and writer dependency do not leak into report', () => {
+    const report = buildAccountingLedgerDryRunReport({
+      tenantId: 'tenant-1',
+      dispositionLines: [],
+      clientPayouts: [],
+      clientOffsets: [offset({ id: 'off-builder-key-guard', amount: D(25), kind: 'APPLY' })],
+      balanceLedgerRows: [],
+    });
+
+    const entry = offsetJournalEntry(report, 'off-builder-key-guard');
+    expect(entry.idempotencyKey).toBe('client_offset:off-builder-key-guard:apply');
+    expect(entry.idempotencyKey).not.toContain('acct-journal:v1');
+
+    const serviceSource = readFileSync(join(__dirname, '../accounting-ledger-dry-run.service.ts'), 'utf8');
+    expect(serviceSource).toContain('client-offset-journal-source.adapter');
+    expect(serviceSource).not.toContain('accounting-journal.writer');
+    expect(serviceSource).not.toContain("from '../accounting-journal'");
   });
 
   it('CLIENT_OFFSET seam same-case APPLY: exact dry-run output shape remains unchanged', () => {
