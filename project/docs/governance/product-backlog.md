@@ -219,7 +219,7 @@ Depends On: C2D-PD-1C
 Unlock Condition: Product confirms which haciz audit labels are safe system facts.
 Estimated Size: S/M
 Related Modules: getCaseHacizAudits, CaseHistoryPanel, HacizHistoryCard, AuditService
-Status: BACKLOG
+Status: DONE (shipped #663 -> a8d7468aacdc72289a261185bd53e695a96f1613; Haciz action-specific safe projection + UI migration completed, ADR-011 compliant)
 
 ---
 
