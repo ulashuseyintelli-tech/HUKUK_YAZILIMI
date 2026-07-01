@@ -146,7 +146,6 @@ const EXPENSE_COVERAGE_POLICY_ITEMS: ClientAccountingSummaryExpenseCoveragePolic
     requiredDimensions: ['tenantId', 'clientId', 'caseId', 'expenseRequestId', 'currency'],
     supportedSources: ['EXPENSE_REQUEST'],
     blockerCodes: [
-      'EXPENSE_REQUEST_LIVE_POSTING_MISSING',
       'EXPENSE_REQUEST_BACKFILL_MISSING',
       'EXPENSE_REQUEST_VALUE_SHADOW_MISSING',
       'EXPENSE_REQUEST_CANCEL_POLICY_BLOCKED',
@@ -178,7 +177,6 @@ const EXPENSE_COVERAGE_POLICY_ITEMS: ClientAccountingSummaryExpenseCoveragePolic
     requiredDimensions: ['tenantId', 'clientId', 'caseId', 'expenseRequestId', 'currency'],
     supportedSources: ['EXPENSE_REQUEST', 'EXPENSE_PAYMENT', 'CLIENT_OFFSET', 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION'],
     blockerCodes: [
-      'EXPENSE_REQUEST_LIVE_POSTING_MISSING',
       'EXPENSE_PAYMENT_LIVE_POSTING_MISSING',
       'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_WIRING_MISSING',
       'EXPENSE_SUMMARY_VALUE_SHADOW_MISSING',
@@ -253,7 +251,6 @@ const SUMMARY_COMPONENTS: ClientAccountingSummaryShadowComponent[] = [
     legacySources: ['ExpenseRequest'],
     journalSources: ['EXPENSE_REQUEST'],
     blockerCodes: [
-      'EXPENSE_REQUEST_LIVE_POSTING_MISSING',
       'EXPENSE_REQUEST_BACKFILL_MISSING',
       'EXPENSE_REQUEST_VALUE_SHADOW_MISSING',
     ],
@@ -282,7 +279,6 @@ const SUMMARY_COMPONENTS: ClientAccountingSummaryShadowComponent[] = [
     legacySources: ['ExpenseRequest', 'ClientOffset', 'CollectionDispositionExpenseApplication'],
     journalSources: ['EXPENSE_REQUEST', 'EXPENSE_PAYMENT', 'CLIENT_OFFSET', 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION'],
     blockerCodes: [
-      'EXPENSE_REQUEST_LIVE_POSTING_MISSING',
       'EXPENSE_PAYMENT_LIVE_POSTING_MISSING',
       'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_WIRING_MISSING',
       'EXPENSE_SUMMARY_VALUE_SHADOW_MISSING',
@@ -343,7 +339,7 @@ const SUMMARY_COMPONENTS: ClientAccountingSummaryShadowComponent[] = [
 ];
 
 const NEXT_IMPLEMENTATION_TASKS = [
-  'ACCT-CUTOVER-3C5 wire read-only/live-safe ExpenseRequest journal posting behind fail-closed journal writer tests',
+  'ACCT-CUTOVER-3C5B add ExpenseRequest backfill evidence and supported summary value shadow tests',
   'ACCT-CUTOVER-3D define case-context Collection and CaseBalance journal replay policy',
 ];
 

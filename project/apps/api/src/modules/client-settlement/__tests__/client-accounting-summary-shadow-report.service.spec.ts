@@ -132,7 +132,7 @@ describe('ClientAccountingSummaryShadowReportService', () => {
     expect(report.primarySwitchUnchanged).toBe(true);
     expect(report.blockerCodes).toEqual(
       expect.arrayContaining([
-        'EXPENSE_REQUEST_LIVE_POSTING_MISSING',
+        'EXPENSE_REQUEST_BACKFILL_MISSING',
         'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
         'CASE_BALANCE_SNAPSHOT_REPLAY_UNVERIFIED',
       ]),
@@ -147,7 +147,7 @@ describe('ClientAccountingSummaryShadowReportService', () => {
   });
 
 
-  it('recognizes ExpenseRequest contract and retains live posting blockers', () => {
+  it('recognizes ExpenseRequest live posting and retains backfill value and cancel blockers', () => {
     const report = buildReport();
     const item = expensePolicyItem(report, 'expenseRequested');
 
@@ -160,7 +160,6 @@ describe('ClientAccountingSummaryShadowReportService', () => {
         requiredDimensions: expect.arrayContaining(['tenantId', 'clientId', 'caseId', 'expenseRequestId', 'currency']),
         supportedSources: ['EXPENSE_REQUEST'],
         blockerCodes: expect.arrayContaining([
-          'EXPENSE_REQUEST_LIVE_POSTING_MISSING',
           'EXPENSE_REQUEST_BACKFILL_MISSING',
           'EXPENSE_REQUEST_VALUE_SHADOW_MISSING',
           'EXPENSE_REQUEST_CANCEL_POLICY_BLOCKED',
@@ -232,7 +231,7 @@ describe('ClientAccountingSummaryShadowReportService', () => {
     ]);
     expect(report.expenseCoveragePolicy.blockerCodes).toEqual(
       expect.arrayContaining([
-        'EXPENSE_REQUEST_LIVE_POSTING_MISSING',
+        'EXPENSE_REQUEST_BACKFILL_MISSING',
         'EXPENSE_PAYMENT_LIVE_POSTING_MISSING',
         'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_WIRING_MISSING',
       ]),
