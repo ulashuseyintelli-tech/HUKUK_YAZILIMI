@@ -4,7 +4,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { ClientIntakeLinkStatus } from '@prisma/client';
 import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
 import { OfficeService } from '@/modules/office/office.service';
-import { CreateClientIntakeLinkDto } from './dto/client-intake-link.dto';
+import { CreateClientIntakeLinkDto, CreateClientWorkspaceIntakeLinkDto } from './dto/client-intake-link.dto';
 
 // Liste/detayda DÖNDÜRÜLECEK alanlar — tokenHash ASLA dışa verilmez.
 const PUBLIC_SELECT = {
@@ -52,42 +52,33 @@ export class ClientIntakeLinkService {
    * </remarks>
    */
   async create(tenantId: string, caseId: string, userId: string, dto: CreateClientIntakeLinkDto) {
-    const caseItem = await this.prisma.case.findFirst({ where: { id: caseId, tenantId }, select: { id: true } });
-    if (!caseItem) throw new NotFoundException('Takip bulunamadı');
-
-    const client = await this.prisma.client.findFirst({ where: { id: dto.clientId, tenantId }, select: { id: true } });
-    if (!client) throw new NotFoundException('Müvekkil bulunamadı');
-
-    if (dto.expiresAt && new Date(dto.expiresAt).getTime() <= Date.now()) {
-      throw new BadRequestException('expiresAt gelecekte olmalı');
-    }
-
-    // Ham token + hash (ham token DB'de YOK)
-    const rawToken = randomBytes(32).toString('base64url');
-    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
-
-    const link = await this.prisma.clientIntakeLink.create({
-      data: {
-        tenantId,
-        caseId,
-        clientId: dto.clientId,
-        tokenHash,
-        status: ClientIntakeLinkStatus.ACTIVE,
-        scope: dto.scope,
-        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
-        maxUses: dto.maxUses ?? 1,
-        createdById: userId,
-      },
-      select: PUBLIC_SELECT,
-    });
-
-    const intakeUrl = this.buildUrl(rawToken);
+    await this.assertLegacyCreateBoundary(tenantId, caseId, dto.clientId);
+    const result = await this.createLinkRecord(tenantId, dto.clientId, caseId, userId, dto);
 
     // best-effort mail (state'i bozmaz)
-    await this.notifyLink(tenantId, userId, link.id, dto.clientId, caseId, intakeUrl, link.expiresAt);
+    await this.notifyLink(tenantId, userId, result.link.id, dto.clientId, caseId, result.intakeUrl, result.link.expiresAt);
 
     // rawToken + intakeUrl YALNIZ burada (tek sefer) döner; sonra erişilemez.
-    return { link, rawToken, intakeUrl };
+    return result;
+  }
+
+  /**
+   * Client Workspace Action Center create command: link üretir, dispatch yapmaz.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ClientController.createIntakeLink() -> POST /clients/:clientId/cases/:caseId/intake-links
+   * </remarks>
+   */
+  async createForClientWorkspace(
+    tenantId: string,
+    clientId: string,
+    caseId: string,
+    userId: string,
+    dto: CreateClientWorkspaceIntakeLinkDto,
+  ) {
+    await this.assertClientWorkspaceCreateBoundary(tenantId, clientId, caseId);
+    return this.createLinkRecord(tenantId, clientId, caseId, userId, dto);
   }
 
   /**
@@ -141,6 +132,62 @@ export class ClientIntakeLinkService {
     return record;
   }
 
+  private async assertLegacyCreateBoundary(tenantId: string, caseId: string, clientId: string): Promise<void> {
+    const caseItem = await this.prisma.case.findFirst({ where: { id: caseId, tenantId }, select: { id: true } });
+    if (!caseItem) throw new NotFoundException('Takip bulunamadı');
+
+    const client = await this.prisma.client.findFirst({ where: { id: clientId, tenantId }, select: { id: true } });
+    if (!client) throw new NotFoundException('Müvekkil bulunamadı');
+  }
+
+  private async assertClientWorkspaceCreateBoundary(tenantId: string, clientId: string, caseId: string): Promise<void> {
+    const caseItem = await this.prisma.case.findFirst({ where: { id: caseId, tenantId }, select: { id: true } });
+    if (!caseItem) throw new NotFoundException('Takip bulunamadı');
+
+    const client = await this.prisma.client.findFirst({ where: { id: clientId, tenantId, isActive: true }, select: { id: true } });
+    if (!client) throw new NotFoundException('Müvekkil bulunamadı');
+
+    const caseClient = await this.prisma.caseClient.findFirst({ where: { caseId, clientId }, select: { id: true } });
+    if (!caseClient) throw new NotFoundException('Takip/müvekkil ilişkisi bulunamadı');
+  }
+
+  private assertFutureExpiresAt(expiresAt?: string): void {
+    if (expiresAt && new Date(expiresAt).getTime() <= Date.now()) {
+      throw new BadRequestException('expiresAt gelecekte olmalı');
+    }
+  }
+
+  private async createLinkRecord(
+    tenantId: string,
+    clientId: string,
+    caseId: string,
+    userId: string,
+    dto: Pick<CreateClientIntakeLinkDto, 'scope' | 'expiresAt' | 'maxUses'>,
+  ) {
+    this.assertFutureExpiresAt(dto.expiresAt);
+
+    // Ham token + hash (ham token DB'de YOK)
+    const rawToken = randomBytes(32).toString('base64url');
+    const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+
+    const link = await this.prisma.clientIntakeLink.create({
+      data: {
+        tenantId,
+        caseId,
+        clientId,
+        tokenHash,
+        status: ClientIntakeLinkStatus.ACTIVE,
+        scope: dto.scope,
+        expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
+        maxUses: dto.maxUses ?? 1,
+        createdById: userId,
+      },
+      select: PUBLIC_SELECT,
+    });
+
+    const intakeUrl = this.buildUrl(rawToken);
+    return { link, rawToken, intakeUrl };
+  }
   // ==================== iç yardımcılar ====================
 
   private buildUrl(rawToken: string): string {
