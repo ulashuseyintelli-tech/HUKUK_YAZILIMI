@@ -316,7 +316,12 @@ export class ClientService {
         phone: true,
         email: true,
         contactFollowUpStatus: true,
-        _count: { select: { cases: true } },
+        caseClients: {
+          where: { case: { tenantId } },
+          orderBy: { createdAt: 'desc' },
+          take: 2,
+          select: { caseId: true },
+        },
       },
     });
     if (!client) throw new NotFoundException('Client not found');
@@ -1094,7 +1099,7 @@ interface ClientActionCatalogClientState {
   phone?: string | null;
   email?: string | null;
   contactFollowUpStatus?: string | null;
-  _count?: { cases?: number | null } | null;
+  caseClients?: Array<{ caseId: string | null }> | null;
 }
 
 interface ClientActionCatalogContext {
@@ -1117,7 +1122,17 @@ function normalizeClientActionRole(rawRole?: string | null): ClientActionRole {
 function buildClientActionCatalog(context: ClientActionCatalogContext): ClientActionCatalogItem[] {
   const clientId = context.client.id;
   const target = { clientId };
-  const relatedCaseCount = context.client._count?.cases ?? 0;
+  const relatedCaseIds = (context.client.caseClients ?? [])
+    .map((caseClient) => caseClient.caseId)
+    .filter((caseId): caseId is string => !!caseId);
+  const hasRelatedCase = relatedCaseIds.length > 0;
+  const singleRelatedCaseId = relatedCaseIds.length === 1 ? relatedCaseIds[0] : undefined;
+  const intakeCreateEnabled = !!singleRelatedCaseId;
+  const intakeCreateDisabledReason = intakeCreateEnabled
+    ? undefined
+    : hasRelatedCase
+      ? 'Select a related case before creating an intake link.'
+      : 'No related cases are linked to this client yet.';
   const missingContactFields = computeMissingContactFields(context.client);
   const contactState = context.client.contactFollowUpStatus === 'WAIVED'
     ? 'CONTACT_FOLLOW_UP_WAIVED'
@@ -1145,14 +1160,14 @@ function buildClientActionCatalog(context: ClientActionCatalogContext): ClientAc
       label: 'Open related cases',
       description: 'Open the cases tab for this client.',
       category: 'case',
-      enabled: relatedCaseCount > 0,
-      disabledReason: relatedCaseCount > 0 ? undefined : 'No related cases are linked to this client yet.',
+      enabled: hasRelatedCase,
+      disabledReason: hasRelatedCase ? undefined : 'No related cases are linked to this client yet.',
       visibility: 'visible',
       dangerLevel: 'low',
       requiredRole: 'VIEWER',
-      requiredState: relatedCaseCount > 0 ? 'RELATED_CASE_AVAILABLE' : 'RELATED_CASE_EMPTY',
+      requiredState: hasRelatedCase ? 'RELATED_CASE_AVAILABLE' : 'RELATED_CASE_EMPTY',
       target,
-      href: relatedCaseCount > 0 ? `/clients/${clientId}` : undefined,
+      href: hasRelatedCase ? `/clients/${clientId}` : undefined,
       order: 20,
     },
     {
@@ -1172,15 +1187,19 @@ function buildClientActionCatalog(context: ClientActionCatalogContext): ClientAc
     {
       key: 'intake.link.create',
       label: 'Create intake link',
-      description: 'Future typed command; V1 catalog only shows availability.',
+      description: 'Create a client intake link for the selected related case.',
       category: 'intake',
-      enabled: false,
-      disabledReason: 'Intake link creation requires a separate typed command contract.',
+      enabled: intakeCreateEnabled,
+      disabledReason: intakeCreateDisabledReason,
       visibility: 'visible',
       dangerLevel: 'medium',
       requiredRole: 'USER',
-      requiredState: 'INTAKE_COMMAND_CONTRACT_READY',
-      target,
+      requiredState: intakeCreateEnabled
+        ? 'INTAKE_CREATE_AVAILABLE'
+        : hasRelatedCase
+          ? 'INTAKE_CASE_SELECTION_REQUIRED'
+          : 'RELATED_CASE_EMPTY',
+      target: singleRelatedCaseId ? { ...target, caseId: singleRelatedCaseId } : target,
       order: 40,
     },
     {
