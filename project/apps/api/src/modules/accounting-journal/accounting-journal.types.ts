@@ -6,6 +6,7 @@ export type AccountingJournalEntryType =
   | 'CLIENT_ADVANCE_LEDGER_RECORDED'
   | 'EXPENSE_REQUEST_RECORDED'
   | 'EXPENSE_REQUEST_CANCELLED'
+  | 'EXPENSE_PAYMENT_RECORDED'
   | 'ACCOUNTING_JOURNAL_REVERSAL';
 
 export type AccountingJournalSourceType =
@@ -14,6 +15,7 @@ export type AccountingJournalSourceType =
   | 'CLIENT_OFFSET'
   | 'BALANCE_LEDGER'
   | 'EXPENSE_REQUEST'
+  | 'EXPENSE_PAYMENT'
   | 'ACCOUNTING_JOURNAL_ENTRY';
 
 export type AccountingAccountCode =
@@ -160,6 +162,17 @@ export type ExpenseRequestJournalSource = JournalSourceBase<
   ExpenseRequestJournalSourcePayload
 >;
 
+export interface ExpensePaymentRecordedPayload {
+  amount: MoneyAmount;
+  caseId: string;
+  clientId: string;
+  expenseRequestId: string;
+  expensePaymentId: string;
+  paymentMethod: string | null;
+  reference: string | null;
+}
+
+export type ExpensePaymentJournalSource = JournalSourceBase<'EXPENSE_PAYMENT', 'recorded', ExpensePaymentRecordedPayload>;
 export interface AccountingJournalReversalPayload {
   originalJournalEntryId: string;
   originalSourceType: AccountingJournalSourceType;
@@ -193,6 +206,7 @@ export type JournalSource =
   | ClientPayoutJournalSource
   | BalanceLedgerJournalSource
   | ExpenseRequestJournalSource
+  | ExpensePaymentJournalSource
   | AccountingJournalEntrySource;
 
 export interface JournalIdempotencyMaterial {

@@ -93,6 +93,7 @@ const SUPPORTED_SOURCE_TYPES: ReadonlyArray<AccountingJournalSourceType> = [
   'CLIENT_OFFSET',
   'BALANCE_LEDGER',
   'EXPENSE_REQUEST',
+  'EXPENSE_PAYMENT',
   'ACCOUNTING_JOURNAL_ENTRY',
 ];
 

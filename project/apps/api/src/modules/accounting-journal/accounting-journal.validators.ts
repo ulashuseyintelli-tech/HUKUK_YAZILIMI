@@ -118,6 +118,8 @@ export function validateJournalBusiness(draft: JournalEntryDraft): JournalValida
       return validateBalanceLedgerBusiness(draft);
     case 'EXPENSE_REQUEST':
       return validateExpenseRequestBusiness(draft);
+    case 'EXPENSE_PAYMENT':
+      return validateExpensePaymentBusiness(draft);
     default:
       return { ok: true, draft };
   }
@@ -459,6 +461,103 @@ function validateExpenseRequestLine(
       payoutId: line.payoutId,
       offsetId: line.offsetId,
       expensePaymentId: line.expensePaymentId,
+      expenseApplicationId: line.expenseApplicationId,
+      balanceLedgerId: line.balanceLedgerId,
+    }));
+  }
+}
+function validateExpensePaymentBusiness(draft: JournalEntryDraft): JournalValidationResult {
+  const errors: JournalValidationError[] = [];
+
+  if (draft.sourceAction !== 'recorded') {
+    errors.push(validationError('INVALID_SOURCE_ACTION', 'ExpensePayment sourceAction must be recorded.', 'sourceAction', {
+      sourceAction: draft.sourceAction,
+    }));
+  }
+
+  if (draft.entryType !== 'EXPENSE_PAYMENT_RECORDED') {
+    errors.push(validationError('INVALID_SOURCE_ACTION', 'ExpensePayment entryType must be EXPENSE_PAYMENT_RECORDED.', 'entryType', {
+      entryType: draft.entryType,
+    }));
+  }
+
+  if (draft.reversalOf) {
+    errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'ExpensePayment recorded journal must not carry reversal reference.', 'reversalOf', {
+      reversalSourceType: draft.reversalOf.sourceType,
+      reversalSourceId: draft.reversalOf.sourceId,
+      reversalSourceAction: draft.reversalOf.sourceAction,
+    }));
+  }
+
+  if (draft.lines.length !== 2) {
+    errors.push(validationError('INVALID_LINE_SHAPE', 'ExpensePayment journal must contain exactly cash and expense receivable legs.', 'lines', {
+      lineCount: draft.lines.length,
+    }));
+  }
+
+  const cashLine = findSingleLine(errors, draft.lines, 'CASH_CLEARING', 'ExpensePayment cash leg');
+  const receivableLine = findSingleLine(errors, draft.lines, 'CLIENT_EXPENSE_RECEIVABLE', 'ExpensePayment receivable leg');
+
+  if (cashLine) validateExpensePaymentLine(errors, draft, cashLine, 'DEBIT');
+  if (receivableLine) validateExpensePaymentLine(errors, draft, receivableLine, 'CREDIT');
+
+  return errors.length === 0 ? { ok: true, draft } : { ok: false, errors };
+}
+
+function validateExpensePaymentLine(
+  errors: JournalValidationError[],
+  draft: JournalEntryDraft,
+  line: JournalLineDraft,
+  expectedDirection: 'DEBIT' | 'CREDIT',
+) {
+  if (line.direction !== expectedDirection) {
+    errors.push(validationError('INVALID_ACCOUNT_DIRECTION', 'ExpensePayment journal leg has invalid direction.', `lines[${line.lineNo}].direction`, {
+      expectedDirection,
+      direction: line.direction,
+    }));
+  }
+
+  if (!line.caseId) {
+    errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'ExpensePayment journal line requires caseId.', `lines[${line.lineNo}].caseId`));
+  }
+
+  if (draft.caseId && line.caseId && line.caseId !== draft.caseId) {
+    errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'ExpensePayment journal line caseId must match entry caseId.', `lines[${line.lineNo}].caseId`, {
+      entryCaseId: draft.caseId,
+      lineCaseId: line.caseId,
+    }));
+  }
+
+  if (!line.clientId) {
+    errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'ExpensePayment journal line requires clientId.', `lines[${line.lineNo}].clientId`));
+  }
+
+  if (!line.expenseRequestId) {
+    errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'ExpensePayment journal line requires expenseRequestId.', `lines[${line.lineNo}].expenseRequestId`));
+  }
+
+  if (line.expensePaymentId !== draft.sourceId) {
+    errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'ExpensePayment journal line must carry expensePaymentId from sourceId.', `lines[${line.lineNo}].expensePaymentId`, {
+      expectedExpensePaymentId: draft.sourceId,
+      expensePaymentId: line.expensePaymentId,
+    }));
+  }
+
+  if (
+    line.caseClientId ||
+    line.collectionId ||
+    line.dispositionLineId ||
+    line.payoutId ||
+    line.offsetId ||
+    line.expenseApplicationId ||
+    line.balanceLedgerId
+  ) {
+    errors.push(validationError('FORBIDDEN_SYNTHETIC_DIMENSION', 'ExpensePayment journal line must not carry unrelated source dimensions.', `lines[${line.lineNo}]`, {
+      caseClientId: line.caseClientId,
+      collectionId: line.collectionId,
+      dispositionLineId: line.dispositionLineId,
+      payoutId: line.payoutId,
+      offsetId: line.offsetId,
       expenseApplicationId: line.expenseApplicationId,
       balanceLedgerId: line.balanceLedgerId,
     }));

@@ -73,6 +73,24 @@ describe('AccountingJournalTrialBalanceController', () => {
       entryType: 'EXPENSE_REQUEST_CANCELLED',
     });
   });
+
+  it('accepts ExpensePayment skeleton filters for trial balance diagnostics', async () => {
+    const service = serviceMock();
+    const controller = new AccountingJournalTrialBalanceController(service);
+
+    await controller.getTrialBalance('tenant-auth', {
+      sourceType: 'EXPENSE_PAYMENT',
+      sourceAction: 'recorded',
+      entryType: 'EXPENSE_PAYMENT_RECORDED',
+    });
+
+    expect(service.getTrialBalance).toHaveBeenCalledWith({
+      tenantId: 'tenant-auth',
+      sourceType: 'EXPENSE_PAYMENT',
+      sourceAction: 'recorded',
+      entryType: 'EXPENSE_PAYMENT_RECORDED',
+    });
+  });
   it('query tenant ignore: query tenantId cannot override the auth tenant', async () => {
     const service = serviceMock();
     const controller = new AccountingJournalTrialBalanceController(service);
