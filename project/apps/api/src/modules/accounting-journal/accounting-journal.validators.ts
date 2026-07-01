@@ -312,7 +312,17 @@ function validateBalanceLedgerLine(
     }));
   }
 
-  if (line.clientId || line.caseClientId || line.collectionId || line.dispositionLineId || line.payoutId || line.offsetId || line.expenseRequestId) {
+  if (
+    line.clientId ||
+    line.caseClientId ||
+    line.collectionId ||
+    line.dispositionLineId ||
+    line.payoutId ||
+    line.offsetId ||
+    line.expenseRequestId ||
+    line.expensePaymentId ||
+    line.expenseApplicationId
+  ) {
     errors.push(validationError('FORBIDDEN_SYNTHETIC_DIMENSION', 'BalanceLedger journal line must not carry unrelated source dimensions.', `lines[${line.lineNo}]`, {
       clientId: line.clientId,
       caseClientId: line.caseClientId,
@@ -321,6 +331,8 @@ function validateBalanceLedgerLine(
       payoutId: line.payoutId,
       offsetId: line.offsetId,
       expenseRequestId: line.expenseRequestId,
+      expensePaymentId: line.expensePaymentId,
+      expenseApplicationId: line.expenseApplicationId,
     }));
   }
 }
@@ -399,11 +411,14 @@ function validateClientPayoutLine(
     }));
   }
 
-  if (line.collectionId || line.dispositionLineId || line.offsetId || line.balanceLedgerId) {
+  if (line.collectionId || line.dispositionLineId || line.offsetId || line.expenseRequestId || line.expensePaymentId || line.expenseApplicationId || line.balanceLedgerId) {
     errors.push(validationError('FORBIDDEN_SYNTHETIC_DIMENSION', 'ClientPayout journal line must not carry unrelated source dimensions.', `lines[${line.lineNo}]`, {
       collectionId: line.collectionId,
       dispositionLineId: line.dispositionLineId,
       offsetId: line.offsetId,
+      expenseRequestId: line.expenseRequestId,
+      expensePaymentId: line.expensePaymentId,
+      expenseApplicationId: line.expenseApplicationId,
       balanceLedgerId: line.balanceLedgerId,
     }));
   }

@@ -2,6 +2,7 @@ import { Prisma } from '@prisma/client';
 import { buildAccountingJournal } from '../accounting-journal.builder';
 import type {
   BalanceLedgerJournalSource,
+  ClientOffsetJournalSource,
   ClientPayoutJournalSource,
   CollectionDispositionLineJournalSource,
   CollectionDispositionLinePostedPayload,
@@ -206,6 +207,75 @@ describe('AccountingJournalWriterService ClientPayout source shape', () => {
   });
 });
 
+function clientOffsetSource(): ClientOffsetJournalSource {
+  return {
+    tenantId: 'tenant-1',
+    sourceType: 'CLIENT_OFFSET',
+    sourceId: 'offset-1',
+    sourceVersion: '2026-06-30T08:00:00.000Z:offset-1',
+    sourceAction: 'apply',
+    occurredAt: '2026-06-30T08:00:00.000Z',
+    effectiveDate: '2026-06-30',
+    actorId: 'user-1',
+    currency: 'TRY',
+    sourceHash: 'hash-client-offset',
+    metadata: { test: true },
+    payload: {
+      kind: 'APPLY',
+      amount: '250.00',
+      clientId: 'client-1',
+      payableLeg: { caseId: 'case-payable-1', caseClientId: 'cc-payable-1' },
+      expenseLeg: { caseId: 'case-expense-1', caseClientId: null, expenseRequestId: 'expense-request-1' },
+      reversesOffsetId: null,
+    },
+  };
+}
+
+function clientOffsetDraft() {
+  const built = buildAccountingJournal(clientOffsetSource());
+  expect(built.ok).toBe(true);
+  if (!built.ok) throw new Error('build failed');
+  const validated = validateJournalDraft(built.draft);
+  expect(validated.ok).toBe(true);
+  if (!validated.ok) throw new Error('validation failed');
+  return validated.draft;
+}
+
+describe('AccountingJournalWriterService ClientOffset source shape', () => {
+  it('persists expense request dimensions on the expense leg', async () => {
+    const db = dbMock();
+    db.accountingJournalEntry.findFirst.mockResolvedValue(null);
+    db.accountingJournalEntry.create.mockResolvedValue({ id: 'journal-offset', _count: { lines: 2 } });
+    const writer = new AccountingJournalWriterService({} as any);
+
+    const result = await writer.write({ draft: clientOffsetDraft() }, db);
+
+    expect(result).toEqual({
+      ok: true,
+      output: expect.objectContaining({ status: 'CREATED', journalEntryId: 'journal-offset', lineCount: 2 }),
+    });
+    expect(db.accountingJournalEntry.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          sourceType: 'CLIENT_OFFSET',
+          sourceId: 'offset-1',
+          sourceAction: 'apply',
+          lines: {
+            create: expect.arrayContaining([
+              expect.objectContaining({
+                accountCode: 'CLIENT_EXPENSE_RECEIVABLE',
+                offsetId: 'offset-1',
+                expenseRequestId: 'expense-request-1',
+                expensePaymentId: null,
+                expenseApplicationId: null,
+              }),
+            ]),
+          },
+        }),
+      }),
+    );
+  });
+});
 function balanceLedgerSource(overrides: Partial<BalanceLedgerJournalSource> = {}): BalanceLedgerJournalSource {
   const sourceId = overrides.sourceId ?? 'bl-1';
   return {

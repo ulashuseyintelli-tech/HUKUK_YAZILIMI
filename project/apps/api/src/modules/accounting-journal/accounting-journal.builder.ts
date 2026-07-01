@@ -136,6 +136,8 @@ function collectionDispositionLine(
     payoutId: null,
     offsetId: null,
     expenseRequestId: null,
+    expensePaymentId: null,
+    expenseApplicationId: null,
     balanceLedgerId: null,
   };
 }
@@ -233,6 +235,8 @@ function balanceLedgerLine(
     payoutId: null,
     offsetId: null,
     expenseRequestId: null,
+    expensePaymentId: null,
+    expenseApplicationId: null,
     balanceLedgerId: source.payload.balanceLedgerId,
   };
 }
@@ -316,6 +320,8 @@ function clientPayoutLine(
     payoutId: source.payload.payoutId,
     offsetId: null,
     expenseRequestId: null,
+    expensePaymentId: null,
+    expenseApplicationId: null,
     balanceLedgerId: null,
   };
 }
@@ -422,6 +428,8 @@ function clientOffsetLine(
     payoutId: null,
     offsetId: source.sourceId,
     expenseRequestId: dimensions.expenseRequestId,
+    expensePaymentId: null,
+    expenseApplicationId: null,
     balanceLedgerId: null,
   };
 }
