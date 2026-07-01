@@ -5242,9 +5242,12 @@ export interface SuggestedDistributionLineDTO {
   type: CollectionDispositionLineType;
   amount: string;
   caseClientId: string | null;
-  origin: "FEE_MANUAL" | "CLIENT_PAYABLE_RESIDUAL";
+  // FAZ-2: 'FEE_AGREEMENT' — CaseFeeAgreement'tan hesaplanan ücret (flag-gated; manuel override yoksa).
+  origin: "FEE_MANUAL" | "FEE_AGREEMENT" | "CLIENT_PAYABLE_RESIDUAL";
   editable: true;
   note?: string;
+  /** FAZ-2 provenance: origin='FEE_AGREEMENT' ise kaynak CaseFeeAgreement id'si. */
+  feeAgreementId?: string;
 }
 export interface DistributionExpenseCandidateDTO {
   expenseRequestId: string;

@@ -87,6 +87,8 @@ interface DistributionRecommendationResult {
     caseClientId: string | null;
     origin?: string;
     note?: string;
+    // FAZ-2 provenance: origin='FEE_AGREEMENT' ise kaynak CaseFeeAgreement id'si.
+    feeAgreementId?: string;
   }>;
   warnings: string[];
   expenseModule: {
@@ -106,6 +108,9 @@ interface DistributionDecisionLineState {
   amount: string;
   caseClientId: string;
   note: string;
+  // FAZ-2 — backend provenance (yalnız recommend()'den prefill edilen satırlarda dolu; FE hesaplamaz).
+  origin?: "FEE_MANUAL" | "FEE_AGREEMENT" | "CLIENT_PAYABLE_RESIDUAL";
+  feeAgreementId?: string;
 }
 
 // Eski Note tipi (geriye uyumluluk)
@@ -527,6 +532,9 @@ export function OperationDeck({
             amount: formatAmountInput(parseAmountCents(line.amount)),
             caseClientId: line.caseClientId ?? "",
             note: line.note ?? "",
+            // FAZ-2 — backend provenance'ı aynen taşı (FE hesaplamaz, yalnız gösterir).
+            origin: line.origin as DistributionDecisionLineState["origin"],
+            feeAgreementId: line.feeAgreementId,
           })),
         );
       }
@@ -1394,7 +1402,17 @@ export function OperationDeck({
                   return (
                     <div key={line.id} className="rounded-lg border border-slate-200 bg-slate-50 p-3">
                       <div className="mb-2 flex items-center justify-between gap-2">
-                        <span className="text-xs font-semibold text-slate-600">Satır {index + 1}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs font-semibold text-slate-600">Satır {index + 1}</span>
+                          {line.origin === "FEE_AGREEMENT" && (
+                            <span
+                              className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-700"
+                              title={line.feeAgreementId ? `Ücret sözleşmesi: ${line.feeAgreementId}` : "Ücret sözleşmesinden hesaplandı"}
+                            >
+                              Sözleşmeden hesaplandı
+                            </span>
+                          )}
+                        </div>
                         <button
                           type="button"
                           onClick={() => removeDistributionLine(line.id)}
