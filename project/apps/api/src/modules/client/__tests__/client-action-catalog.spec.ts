@@ -6,7 +6,7 @@ const defaultClient = {
   phone: '5551112233',
   email: 'client@example.com',
   contactFollowUpStatus: null,
-  _count: { cases: 1 },
+  caseClients: [{ caseId: 'case-1' }],
 };
 
 function buildHarness(opts: { client?: any } = {}) {
@@ -57,7 +57,6 @@ function buildHarness(opts: { client?: any } = {}) {
 }
 
 const futureWriteKeys: ClientActionKey[] = [
-  'intake.link.create',
   'intake.link.send',
   'poa.reminder.send',
   'notification.template.send',
@@ -84,7 +83,12 @@ describe('ClientService.getActionCatalog', () => {
         phone: true,
         email: true,
         contactFollowUpStatus: true,
-        _count: { select: { cases: true } },
+        caseClients: {
+          where: { case: { tenantId: 'tenant-1' } },
+          orderBy: { createdAt: 'desc' },
+          take: 2,
+          select: { caseId: true },
+        },
       },
     });
     expect(result.data.map((item) => item.key)).toEqual([
@@ -135,8 +139,60 @@ describe('ClientService.getActionCatalog', () => {
     expect(byKey.get('case.open_related')?.requiredState).toBe('RELATED_CASE_AVAILABLE');
   });
 
+  it('enables intake link create when exactly one tenant-bound related case is available', async () => {
+    const { svc } = buildHarness();
+
+    const result = await svc.getActionCatalog('client-1', 'tenant-1');
+    const createAction = result.data.find((item) => item.key === 'intake.link.create');
+
+    expect(createAction).toMatchObject({
+      enabled: true,
+      visibility: 'visible',
+      requiredRole: 'USER',
+      requiredState: 'INTAKE_CREATE_AVAILABLE',
+      target: { clientId: 'client-1', caseId: 'case-1' },
+    });
+    expect(createAction?.disabledReason).toBeUndefined();
+    expect(createAction?.href).toBeUndefined();
+  });
+
+  it('keeps intake link create domain-disabled when no related case is available', async () => {
+    const { svc } = buildHarness({ client: { ...defaultClient, caseClients: [] } });
+
+    const result = await svc.getActionCatalog('client-1', 'tenant-1');
+    const createAction = result.data.find((item) => item.key === 'intake.link.create');
+
+    expect(createAction).toMatchObject({
+      enabled: false,
+      visibility: 'visible',
+      requiredState: 'RELATED_CASE_EMPTY',
+      target: { clientId: 'client-1' },
+      disabledReason: 'No related cases are linked to this client yet.',
+    });
+    expect(createAction?.target?.caseId).toBeUndefined();
+  });
+
+  it('keeps intake link create domain-disabled when case selection is ambiguous', async () => {
+    const { svc } = buildHarness({
+      client: { ...defaultClient, caseClients: [{ caseId: 'case-1' }, { caseId: 'case-2' }] },
+    });
+
+    const result = await svc.getActionCatalog('client-1', 'tenant-1');
+    const createAction = result.data.find((item) => item.key === 'intake.link.create');
+
+    expect(createAction).toMatchObject({
+      enabled: false,
+      visibility: 'visible',
+      requiredState: 'INTAKE_CASE_SELECTION_REQUIRED',
+      target: { clientId: 'client-1' },
+      disabledReason: 'Select a related case before creating an intake link.',
+    });
+    expect(JSON.stringify(createAction)).not.toContain('case-1');
+    expect(JSON.stringify(createAction)).not.toContain('case-2');
+  });
+
   it('returns domain-disabled actions as visible disabled items with explicit reasons', async () => {
-    const { svc } = buildHarness({ client: { ...defaultClient, _count: { cases: 0 } } });
+    const { svc } = buildHarness({ client: { ...defaultClient, caseClients: [] } });
 
     const result = await svc.getActionCatalog('client-1', 'tenant-1');
     const caseAction = result.data.find((item) => item.key === 'case.open_related');
@@ -150,7 +206,7 @@ describe('ClientService.getActionCatalog', () => {
     expect(caseAction?.href).toBeUndefined();
   });
 
-  it('keeps future write actions disabled with standardized explicit reasons', async () => {
+  it('keeps remaining future write actions disabled with standardized explicit reasons', async () => {
     const { svc } = buildHarness();
 
     const result = await svc.getActionCatalog('client-1', 'tenant-1');
@@ -176,7 +232,7 @@ describe('ClientService.getActionCatalog', () => {
     expect(keys).toEqual(['case.open_related', 'activity.view_timeline']);
     expect(result.data.every((item) => item.visibility === 'visible')).toBe(true);
     expect(serialized).not.toContain('forbidden');
-    expect(serialized).not.toContain('Intake link creation requires');
+    expect(serialized).not.toContain('Create intake link');
     expect(serialized).not.toContain('Template notification requires');
   });
 

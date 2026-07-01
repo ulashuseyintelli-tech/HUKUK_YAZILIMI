@@ -48,7 +48,7 @@ const ACTION_LABELS: Partial<Record<ClientActionCatalogItem['key'], string>> = {
 
 const ACTION_DESCRIPTIONS: Partial<Record<ClientActionCatalogItem['key'], string>> = {
   'contact.update_missing_info': 'Müvekkil kimlik ve iletişim ekranına gider.',
-  'intake.link.create': 'Komut sözleşmesi tamamlanınca aktifleşir.',
+  'intake.link.create': 'Uygun ilgili dosya için intake linki oluşturma hazırlığı.',
   'intake.link.send': 'Gerçek gönderim sonraki typed command fazında açılır.',
   'poa.reminder.send': 'Vekalet teslim motoru hazır olduğunda açılır.',
   'notification.template.send': 'Bildirim dispatch sözleşmesi hazır olduğunda açılır.',
