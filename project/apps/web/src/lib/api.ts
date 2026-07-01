@@ -664,6 +664,14 @@ class ApiClient {
   async getClientOperatingSnapshot(id: string) {
     return this.request<ClientOperatingSnapshotResponse>(`/clients/${id}/operating-snapshot`);
   }
+
+  async createClientWorkspaceIntakeLink(clientId: string, caseId: string, input: CreateClientWorkspaceIntakeLinkInput) {
+    const response = await this.request<{ data: CreateIntakeLinkResult }>(`/clients/${clientId}/cases/${caseId}/intake-links`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+    return response.data;
+  }
   async createClient(data: any) {
     return this.request<any>("/clients", {
       method: "POST",
@@ -3227,6 +3235,12 @@ export interface IntakeLink {
 
 export interface CreateIntakeLinkInput {
   clientId: string;
+  scope: IntakeFieldCategory[];
+  expiresAt?: string;
+  maxUses?: number;
+}
+
+export interface CreateClientWorkspaceIntakeLinkInput {
   scope: IntakeFieldCategory[];
   expiresAt?: string;
   maxUses?: number;
