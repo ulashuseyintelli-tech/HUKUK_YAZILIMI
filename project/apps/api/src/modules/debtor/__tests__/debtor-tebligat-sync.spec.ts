@@ -7,7 +7,7 @@ import { DebtorService } from "../debtor.service";
 
 describe("DebtorService.runServiceResultIntelligence (ORTAK istihbarat tetiği)", () => {
   const make = () => {
-    const svc = new DebtorService({} as any);
+    const svc = new DebtorService({} as any, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
     (svc as any).syncIntelligenceTaskSafe = jest.fn().mockResolvedValue(undefined);
     return svc;
   };
@@ -40,7 +40,7 @@ describe("DebtorService.syncServiceStatusInTx (Tebligat → CaseDebtor)", () => 
 
   it("DELIVERED → CaseDebtor.serviceStatus güncellenir + deliveredAt + ServiceHistory + debtorId döner", async () => {
     const tx = buildTx({ id: "cd1", serviceStatus: "SENT", selectedAddressId: "a1", debtor: { id: "d1" } });
-    const svc = new DebtorService({} as any);
+    const svc = new DebtorService({} as any, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
     const res = await svc.syncServiceStatusInTx(tx as any, { tenantId: "t1", caseDebtorId: "cd1", newStatus: "DELIVERED", channel: "NORMAL", addressId: "a1" });
 
@@ -53,7 +53,7 @@ describe("DebtorService.syncServiceStatusInTx (Tebligat → CaseDebtor)", () => 
 
   it("RETURNED + returnReason → returnedAt + returnReason yazılır", async () => {
     const tx = buildTx({ id: "cd1", serviceStatus: "SENT", selectedAddressId: "a1", debtor: { id: "d1" } });
-    const svc = new DebtorService({} as any);
+    const svc = new DebtorService({} as any, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
     await svc.syncServiceStatusInTx(tx as any, { tenantId: "t1", caseDebtorId: "cd1", newStatus: "RETURNED", returnReason: "MOVED", addressId: "a1" });
 
@@ -65,7 +65,7 @@ describe("DebtorService.syncServiceStatusInTx (Tebligat → CaseDebtor)", () => 
 
   it("CaseDebtor yoksa → NO-OP (null, update yok)", async () => {
     const tx = buildTx(null);
-    const svc = new DebtorService({} as any);
+    const svc = new DebtorService({} as any, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
     const res = await svc.syncServiceStatusInTx(tx as any, { tenantId: "t1", caseDebtorId: "cdX", newStatus: "DELIVERED" });
 

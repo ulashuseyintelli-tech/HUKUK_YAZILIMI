@@ -74,7 +74,12 @@ function makeDebtorService(
     $transaction: jest.fn(async (callback: any) => callback(tx)),
   };
 
-  const service = new DebtorService(prisma as any, guard as any);
+  const service = new DebtorService(
+    prisma as any,
+    { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any,
+    {} as any,
+    guard as any,
+  );
   jest.spyOn(service, "getCaseDebtorDetail").mockResolvedValue({ id: caseDebtorId } as any);
 
   return { service, prisma, tx, guard };
@@ -153,7 +158,12 @@ describe("PR-L6e manual CaseDebtor mutation passive guards", () => {
 
   it("syncServiceStatusInTx remains allowed as late-result history", async () => {
     const guard = activeGuard();
-    const service = new DebtorService({} as any, guard as any);
+    const service = new DebtorService(
+      {} as any,
+      { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any,
+      {} as any,
+      guard as any,
+    );
     const tx = {
       caseDebtor: {
         findFirst: jest.fn().mockResolvedValue(

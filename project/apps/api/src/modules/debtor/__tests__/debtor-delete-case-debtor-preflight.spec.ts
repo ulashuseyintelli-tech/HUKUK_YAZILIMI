@@ -1,9 +1,10 @@
-import { BadRequestException, NotFoundException } from "@nestjs/common";
+import { BadRequestException, ForbiddenException, NotFoundException } from "@nestjs/common";
 import { DebtorService } from "../debtor.service";
 
 describe("PR-D4 DebtorService.delete preflight expansion", () => {
   const tenantId = "tenant-1";
   const debtorId = "debtor-1";
+  const actor = { userId: "u-partner" };
 
   const dependencyDelegates = [
     "debtorAddress",
@@ -55,7 +56,8 @@ describe("PR-D4 DebtorService.delete preflight expansion", () => {
   }
 
   function makeService(
-    counts: Partial<Record<DependencyDelegate | "caseDebtor", number>> = {}
+    counts: Partial<Record<DependencyDelegate | "caseDebtor", number>> = {},
+    officeApprovalEligible = true
   ) {
     const prisma: any = {
       caseDebtor: countDelegate(counts.caseDebtor ?? 0),
@@ -63,21 +65,27 @@ describe("PR-D4 DebtorService.delete preflight expansion", () => {
         delete: jest.fn().mockResolvedValue({ id: debtorId }),
       },
     };
+    // Task D1A: delete() artık snapshot-audit + fiziksel-silme'yi $transaction'a sarıyor (C0-a
+    // deseni). Mock tx = prisma'nın KENDİSİ → mevcut `prisma.debtor.delete` assertion'ları AYNEN
+    // çalışır (tx.debtor.delete === prisma.debtor.delete, aynı jest.fn referansı).
+    prisma.$transaction = jest.fn().mockImplementation(async (cb: any) => cb(prisma));
 
     for (const delegate of dependencyDelegates) {
       prisma[delegate] = countDelegate(counts[delegate] ?? 0);
     }
 
-    const service = new DebtorService(prisma);
+    const audit = { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) };
+    const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(officeApprovalEligible) };
+    const service = new DebtorService(prisma, audit as any, officeApproval as any);
     jest.spyOn(service, "findOne").mockResolvedValue({ id: debtorId } as any);
 
-    return { service, prisma };
+    return { service, prisma, audit, officeApproval };
   }
 
   it("no blockers allows hard-delete", async () => {
     const { service, prisma } = makeService();
 
-    await expect(service.delete(tenantId, debtorId)).resolves.toEqual({
+    await expect(service.delete(tenantId, debtorId, actor)).resolves.toEqual({
       id: debtorId,
     });
 
@@ -103,7 +111,7 @@ describe("PR-D4 DebtorService.delete preflight expansion", () => {
   it("CaseDebtor blocks before dependency counts and delete", async () => {
     const { service, prisma } = makeService({ caseDebtor: 1 });
 
-    await expect(service.delete(tenantId, debtorId)).rejects.toBeInstanceOf(
+    await expect(service.delete(tenantId, debtorId, actor)).rejects.toBeInstanceOf(
       BadRequestException
     );
 
@@ -127,7 +135,7 @@ describe("PR-D4 DebtorService.delete preflight expansion", () => {
     async ({ delegate, expectedWhere }) => {
       const { service, prisma } = makeService({ [delegate]: 1 });
 
-      await expect(service.delete(tenantId, debtorId)).rejects.toBeInstanceOf(
+      await expect(service.delete(tenantId, debtorId, actor)).rejects.toBeInstanceOf(
         BadRequestException
       );
 
@@ -141,7 +149,7 @@ describe("PR-D4 DebtorService.delete preflight expansion", () => {
     async ({ delegate, expectedWhere }) => {
       const { service, prisma } = makeService({ [delegate]: 1 });
 
-      await expect(service.delete(tenantId, debtorId)).rejects.toBeInstanceOf(
+      await expect(service.delete(tenantId, debtorId, actor)).rejects.toBeInstanceOf(
         BadRequestException
       );
 
@@ -153,7 +161,7 @@ describe("PR-D4 DebtorService.delete preflight expansion", () => {
   it("PASSIVE CaseDebtor remains blocked by the any-CaseDebtor preflight", async () => {
     const { service, prisma } = makeService({ caseDebtor: 1 });
 
-    await expect(service.delete(tenantId, debtorId)).rejects.toThrow(
+    await expect(service.delete(tenantId, debtorId, actor)).rejects.toThrow(
       "Dosya bağlantısı veya tarihçe varken borçlu silinemez."
     );
 
@@ -169,7 +177,7 @@ describe("PR-D4 DebtorService.delete preflight expansion", () => {
   it("CaseDebtor with ServiceHistory remains blocked through parent cascade containment", async () => {
     const { service, prisma } = makeService({ caseDebtor: 1 });
 
-    await expect(service.delete(tenantId, debtorId)).rejects.toBeInstanceOf(
+    await expect(service.delete(tenantId, debtorId, actor)).rejects.toBeInstanceOf(
       BadRequestException
     );
 
@@ -179,7 +187,7 @@ describe("PR-D4 DebtorService.delete preflight expansion", () => {
   it("Collection and Tebligat attributions remain protected through CaseDebtor blocker", async () => {
     const { service, prisma } = makeService({ caseDebtor: 1 });
 
-    await expect(service.delete(tenantId, debtorId)).rejects.toBeInstanceOf(
+    await expect(service.delete(tenantId, debtorId, actor)).rejects.toBeInstanceOf(
       BadRequestException
     );
 
@@ -198,7 +206,7 @@ describe("PR-D4 DebtorService.delete preflight expansion", () => {
       new NotFoundException("Borçlu bulunamadı")
     );
 
-    await expect(service.delete("foreign-tenant", debtorId)).rejects.toBeInstanceOf(
+    await expect(service.delete("foreign-tenant", debtorId, actor)).rejects.toBeInstanceOf(
       NotFoundException
     );
 
@@ -208,5 +216,54 @@ describe("PR-D4 DebtorService.delete preflight expansion", () => {
       expect(prisma[delegate].count).not.toHaveBeenCalled();
     }
     expect(prisma.debtor.delete).not.toHaveBeenCalled();
+  });
+
+  // Task D1A — capability gate (owner-locked 2026-07-02, Option B).
+  describe("Task D1A: capability gate", () => {
+    it("eligible (PARTNER/delege avukat) → hard-delete izinli (13-katman guard AYNEN çalışır)", async () => {
+      const { service, prisma, officeApproval } = makeService({}, true);
+
+      await expect(service.delete(tenantId, debtorId, actor)).resolves.toEqual({ id: debtorId });
+      expect(officeApproval.isApproverEligible).toHaveBeenCalledWith("u-partner", tenantId);
+      expect(prisma.debtor.delete).toHaveBeenCalledWith({ where: { id: debtorId } });
+    });
+
+    it("ineligible (Staff/normal kullanıcı) → ForbiddenException, YAZMA/bağımlılık-sorgusu YAPILMAZ", async () => {
+      const { service, prisma, officeApproval } = makeService({}, false);
+
+      await expect(service.delete(tenantId, debtorId, { userId: "u-staff" })).rejects.toBeInstanceOf(
+        ForbiddenException,
+      );
+      expect(officeApproval.isApproverEligible).toHaveBeenCalledWith("u-staff", tenantId);
+      // Gate bağımlılık-kontrollerinden ÖNCE → yetkisiz aktöre borçlunun durumu bile sızmaz.
+      expect(prisma.caseDebtor.count).not.toHaveBeenCalled();
+      expect(prisma.debtor.delete).not.toHaveBeenCalled();
+    });
+
+    it("actor yoksa (userId yok) → ForbiddenException, fail-closed", async () => {
+      const { service, prisma } = makeService({}, true);
+
+      await expect(service.delete(tenantId, debtorId)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.debtor.delete).not.toHaveBeenCalled();
+    });
+
+    it("başarılı silmede DEBTOR_DELETE audit snapshot yazılır (eski-hâl + actor + hardDelete:true)", async () => {
+      const { service, audit } = makeService({}, true);
+      jest.spyOn(service, "findOne").mockResolvedValue({ id: debtorId, type: "INDIVIDUAL", name: "Test Borçlu", tckn: "10000000146" } as any);
+
+      await service.delete(tenantId, debtorId, actor);
+
+      expect(audit.logInTransaction).toHaveBeenCalledTimes(1);
+      const call = audit.logInTransaction.mock.calls[0][1];
+      expect(call.action).toBe("DEBTOR_DELETE");
+      expect(call.entityType).toBe("DEBTOR");
+      expect(call.entityId).toBe(debtorId);
+      expect(call.userId).toBe("u-partner");
+      expect(call.metadata.hardDelete).toBe(true);
+      expect(call.metadata.oldSnapshot).toBeTruthy();
+      expect(call.metadata.oldSnapshot.type).toBe("INDIVIDUAL");
+      // Ham PII (TCKN) audit'e SIZMAZ (KVKK) — yalnız maskelenmiş.
+      expect(JSON.stringify(call)).not.toContain("10000000146");
+    });
   });
 });

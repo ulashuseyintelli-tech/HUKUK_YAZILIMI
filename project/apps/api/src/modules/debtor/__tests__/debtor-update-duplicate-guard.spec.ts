@@ -23,7 +23,14 @@ describe("DebtorService.update — duplicate guard (PR-U2)", () => {
         update: jest.fn().mockImplementation(({ data }: any) => Promise.resolve({ id: "self", ...data })),
       },
     };
-    return { svc: new DebtorService(prisma), prisma };
+    return {
+      svc: new DebtorService(
+        prisma,
+        { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any,
+        {} as any,
+      ),
+      prisma,
+    };
   };
 
   it("isim değişti + başka kayıtta aynı isim + confirm yok → 409 SIMILAR_NAME_REVIEW", async () => {
