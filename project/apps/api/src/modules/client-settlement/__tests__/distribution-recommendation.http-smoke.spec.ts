@@ -10,6 +10,7 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { JwtStrategy } from '../../auth/strategies/jwt.strategy';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { ClientOffsetService } from '../client-offset.service';
+import { CaseFeeAgreementService } from '../case-fee-agreement.service';
 import { ClientSettlementReadService } from '../client-settlement-read.service';
 import { DispositionController } from '../disposition.controller';
 import { DispositionPostingService } from '../disposition-posting.service';
@@ -99,6 +100,7 @@ describe('DistributionRecommendationController HTTP smoke', () => {
   };
   let offset: { getEligibility: jest.Mock };
   let posting: { recommend: jest.Mock; approve: jest.Mock; post: jest.Mock };
+  let feeAgreements: { getActiveForCaseClient: jest.Mock };
 
   const adminToken = signToken(users.admin);
   const nonAdminToken = signToken(users.nonAdmin);
@@ -135,6 +137,11 @@ describe('DistributionRecommendationController HTTP smoke', () => {
       approve: jest.fn(),
       post: jest.fn(),
     };
+    // FAZ-2: DistributionRecommendationService'in 3. dep'i. Bu smoke suite manuel-fee/auth/tenant/400
+    // kontratını kapsar; agreement=null legacy davranışı (fee=0) korur, hiçbir assertion etkilenmez.
+    feeAgreements = {
+      getActiveForCaseClient: jest.fn(),
+    };
 
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [PassportModule.register({ defaultStrategy: 'jwt' })],
@@ -159,6 +166,7 @@ describe('DistributionRecommendationController HTTP smoke', () => {
         { provide: ClientOffsetService, useValue: offset },
         { provide: DispositionPostingService, useValue: posting },
         { provide: ClientSettlementReadService, useValue: { getOutstanding: jest.fn() } },
+        { provide: CaseFeeAgreementService, useValue: feeAgreements },
       ],
     }).compile();
 
@@ -175,6 +183,7 @@ describe('DistributionRecommendationController HTTP smoke', () => {
     prisma.collectionDisposition.findFirst.mockResolvedValue(defaultDisposition());
     prisma.caseClient.findFirst.mockResolvedValue({ client: { id: 'client-1' } });
     offset.getEligibility.mockResolvedValue({ eligibleExpenseRequests: [] });
+    feeAgreements.getActiveForCaseClient.mockResolvedValue(null);
   });
 
   function expectNoWriteOrPostingDelegation() {

@@ -1,7 +1,8 @@
 import { Injectable, Logger, NotFoundException, BadRequestException } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, FeeAgreementType, FeeAgreementBase } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ClientOffsetService } from './client-offset.service';
+import { CaseFeeAgreementService } from './case-fee-agreement.service';
 import {
   GenerateDistributionRecommendationDto,
   DistributionRecommendation,
@@ -14,6 +15,23 @@ const EXPENSE_DISABLED_WARNING =
 const CLUSTER_WARNING =
   'Çoklu-alacaklı (CASE_CREDITOR_CLUSTER) dağıtım önerisi FAZ-1a kapsamı dışı; satırları manuel girin.';
 const ZERO_RESIDUAL_WARNING = 'Müvekkile kalan ₺0 (ücret brüt tahsilata eşit).';
+
+/**
+ * S8-B FAZ-2 — CaseFeeAgreement recommendation entegrasyonu (default-OFF; flag OFF'ta davranış değişmez).
+ *
+ * FLAG POLİTİKASI:
+ *  - Local/dev: FEE_AGREEMENT_RECOMMENDATION_ENABLED=true serbestçe set edilebilir (agreement'ı
+ *    aktif test etmek için gerekli — kod/CI kısıtlaması YOK, bu bir dev-convenience switch'i).
+ *  - Production: flag ON AYRI owner/ops kararıdır (rollout-gate). Bu servis production'ı algılayıp
+ *    kendiliğinden kısıtlamaz — production'da açık tutulmama sorumluluğu deploy/ops disiplinindedir,
+ *    kod-seviyesinde enforce EDİLMEZ.
+ *  - Rollout gözlemi: yalnız flag OFF iken, ACTIVE bir agreement legacy(0)'dan farklı ücret önerirse
+ *    resolveFeeAttribution tek satır WARN loglar ("flag açılsaydı ne olurdu"). flag ON iken agreement
+ *    zaten normal şekilde uygulandığından ayrıca loglanmaz (gürültü değil, yalnız gerçek sinyal).
+ */
+function isFeeAgreementRecommendationEnabled(): boolean {
+  return process.env.FEE_AGREEMENT_RECOMMENDATION_ENABLED?.toLowerCase() === 'true';
+}
 
 /**
  * S8-B FAZ-1a — Dağıtım Önerisi Üreteci (advisory-only).
@@ -36,6 +54,7 @@ export class DistributionRecommendationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly offset: ClientOffsetService,
+    private readonly feeAgreements: CaseFeeAgreementService,
   ) {}
 
   /**
@@ -78,8 +97,9 @@ export class DistributionRecommendationService {
       return this.build(disp, gross, [], warnings, []);
     }
 
-    // 1) Avukatlık ücreti (manuel). FAZ-1a yalnız AMOUNT modu; oran modeli FAZ-2.
-    const fee = this.resolveFee(dto, gross);
+    // 1) Avukatlık ücreti: manuel (override, her zaman kazanır) veya FAZ-2 CaseFeeAgreement-türevi (flag-gated).
+    const feeResult = await this.resolveFeeAttribution(dto, gross, tenantId, disp.caseClientId);
+    const fee = feeResult.fee;
 
     // 2) Satırlar: ücret (varsa) + residual CLIENT_PAYABLE (varsa).
     const suggestedLines: SuggestedDistributionLine[] = [];
@@ -88,9 +108,10 @@ export class DistributionRecommendationService {
         type: 'CONTRACTUAL_FEE_WITHHELD',
         amount: fee.toString(),
         caseClientId: null, // büro geliri; client-attributed DEĞİL (Q3 LOCKED)
-        origin: 'FEE_MANUAL',
+        origin: feeResult.origin,
         editable: true,
-        note: dto?.attorneyFee?.note,
+        note: feeResult.origin === 'FEE_MANUAL' ? dto?.attorneyFee?.note : undefined,
+        feeAgreementId: feeResult.feeAgreementId,
       });
     }
     const residual = gross.minus(fee);
@@ -139,6 +160,59 @@ export class DistributionRecommendationService {
     }
     if (fee.gt(gross)) throw new BadRequestException('Ücret brüt tahsilatı aşamaz');
     return fee;
+  }
+
+  /**
+   * FAZ-2 — manuel/agreement ücret çözümü (flag FEE_AGREEMENT_RECOMMENDATION_ENABLED, default OFF).
+   * Manuel override HER ZAMAN kazanır (agreement'a hiç bakılmaz — mevcut davranış değişmez). Manuel
+   * yoksa + SINGLE_CASE_CLIENT (çağıran garanti eder) + ACTIVE + GROSS-only agreement varsa: flagOn →
+   * agreement-türevi fee kullanılır (feeAgreementId provenance); flagOff → mevcut (0) davranış korunur,
+   * yalnız dual-eval log (rollout gözlemi — legacy'den farklıysa).
+   */
+  private async resolveFeeAttribution(
+    dto: GenerateDistributionRecommendationDto,
+    gross: Prisma.Decimal,
+    tenantId: string,
+    caseClientId: string | null,
+  ): Promise<{ fee: Prisma.Decimal; origin: 'FEE_MANUAL' | 'FEE_AGREEMENT'; feeAgreementId?: string }> {
+    if (dto?.attorneyFee) {
+      return { fee: this.resolveFee(dto, gross), origin: 'FEE_MANUAL' };
+    }
+    const legacyFee = new Prisma.Decimal(0);
+    if (!caseClientId) return { fee: legacyFee, origin: 'FEE_MANUAL' };
+
+    const agreement = await this.feeAgreements.getActiveForCaseClient(tenantId, caseClientId);
+    // v1 GROSS-only: NET_OF_EXPENSE (FAZ-1b sonrası) burada asla oluşmamalı (service-write-time reddedilir);
+    // defense-in-depth — yine de rastlarsak agreement'ı uygulamadan legacy'ye düş (davranış bozulmaz).
+    if (!agreement || agreement.feeBase !== FeeAgreementBase.GROSS) {
+      return { fee: legacyFee, origin: 'FEE_MANUAL' };
+    }
+
+    const candidateFee =
+      agreement.feeType === FeeAgreementType.FLAT_AMOUNT
+        ? new Prisma.Decimal(agreement.flatAmount ?? 0)
+        : gross
+            .mul(agreement.percentageBps ?? 0)
+            .div(10000)
+            .toDecimalPlaces(2, Prisma.Decimal.ROUND_HALF_UP);
+
+    if (!isFeeAgreementRecommendationEnabled()) {
+      // Rollout gözlemi: yalnız flag OFF iken logla — flag ON'da agreement zaten normal uygulanıyor,
+      // "farklı" değil; her recommend() çağrısında WARN basmak gereksiz gürültü olurdu.
+      if (!candidateFee.equals(legacyFee)) {
+        this.logger.warn(
+          `[fee-agreement-recommendation] caseClientId=${caseClientId} agreement=${agreement.id} ` +
+            `legacyFee=${legacyFee.toString()} agreementFee=${candidateFee.toString()} (flag OFF — gözlem, uygulanmadı)`,
+        );
+      }
+      return { fee: legacyFee, origin: 'FEE_MANUAL' };
+    }
+
+    // Clamp YOK: manuel fee ile simetrik davranış (mevcut validation hatası korunur).
+    if (candidateFee.gt(gross)) {
+      throw new BadRequestException('Ücret brüt tahsilatı aşamaz');
+    }
+    return { fee: candidateFee, origin: 'FEE_AGREEMENT', feeAgreementId: agreement.id };
   }
 
   /** Aynı-dosya unpaid masraf adayları (canonical computeExpenseRequestUnpaid reuse via getEligibility). */
