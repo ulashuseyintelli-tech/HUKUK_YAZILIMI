@@ -102,58 +102,38 @@ export class AccountingJournalReversalService {
     await this.assertOfficeAdmin(normalized.tenantId, normalized.actorUserId);
 
     return this.prisma.$transaction(async (tx) => {
-      const original = await tx.accountingJournalEntry.findFirst({
-        where: { id: normalized.originalJournalEntryId, tenantId: normalized.tenantId },
-        select: ORIGINAL_JOURNAL_ENTRY_SELECT,
-      });
+      const txResult = await reverseAccountingJournalEntryInTransaction(
+        tx,
+        this.journalWriter,
+        normalized.tenantId,
+        normalized.actorUserId,
+        normalized.originalJournalEntryId,
+        { reason: normalized.reason, evidenceRef: normalized.evidenceRef },
+      );
 
-      if (!original) {
-        throw new NotFoundException({
-          code: 'ACCOUNTING_JOURNAL_REVERSAL_ORIGINAL_NOT_FOUND',
-          message: 'Accounting journal entry not found.',
-        });
-      }
-
-      assertReversibleSnapshot(original);
-
-      const source = buildReversalSource(original, normalized.actorUserId, normalized.reason, normalized.evidenceRef);
-      const draft = validateBuiltDraft(buildAccountingJournal(source));
-      const writeResult = await this.journalWriter.write({ draft }, tx);
-
-      if (!writeResult.ok) {
-        throw writerFailureToException(writeResult.errors);
-      }
-
-      if (writeResult.output.status === 'CREATED') {
+      if (txResult.status === 'CREATED') {
         await this.audit.logInTransaction(tx, {
           tenantId: normalized.tenantId,
           userId: normalized.actorUserId,
           action: 'ACCOUNTING_JOURNAL_ENTRY_REVERSED',
           entityType: 'AccountingJournalEntry',
-          entityId: writeResult.output.journalEntryId,
+          entityId: txResult.reversalJournalEntryId,
           metadata: {
             authorizationMode: REVERSAL_AUTHORIZATION_MODE,
             sourceName: REVERSAL_SOURCE_NAME,
-            originalJournalEntryId: original.id,
-            reversalJournalEntryId: writeResult.output.journalEntryId,
-            idempotencyKey: writeResult.output.idempotencyKey,
-            sourceVersion: writeResult.output.sourceVersion,
+            originalJournalEntryId: txResult.originalJournalEntryId,
+            reversalJournalEntryId: txResult.reversalJournalEntryId,
+            idempotencyKey: txResult.idempotencyKey,
+            sourceVersion: txResult.sourceVersion,
             reason: normalized.reason,
             evidenceRef: normalized.evidenceRef,
-            lineCount: writeResult.output.lineCount,
-            currency: original.currency,
+            lineCount: txResult.lineCount,
+            currency: txResult.originalCurrency,
           },
         });
       }
 
-      return {
-        status: writeResult.output.status,
-        originalJournalEntryId: original.id,
-        reversalJournalEntryId: writeResult.output.journalEntryId,
-        idempotencyKey: writeResult.output.idempotencyKey,
-        sourceVersion: writeResult.output.sourceVersion,
-        lineCount: writeResult.output.lineCount,
-      };
+      return toPublicReversalResult(txResult);
     });
   }
 
@@ -175,6 +155,63 @@ export class AccountingJournalReversalService {
       });
     }
   }
+}
+
+export interface AccountingJournalReversalInTransactionResult extends AccountingJournalReversalResult {
+  originalCurrency: string;
+}
+
+export async function reverseAccountingJournalEntryInTransaction(
+  tx: Prisma.TransactionClient,
+  journalWriter: AccountingJournalWriterService,
+  tenantId: string,
+  actorUserId: string,
+  originalJournalEntryId: string,
+  input: ReverseAccountingJournalEntryInput,
+): Promise<AccountingJournalReversalInTransactionResult> {
+  const normalized = normalizeInput(tenantId, actorUserId, originalJournalEntryId, input);
+  const original = await tx.accountingJournalEntry.findFirst({
+    where: { id: normalized.originalJournalEntryId, tenantId: normalized.tenantId },
+    select: ORIGINAL_JOURNAL_ENTRY_SELECT,
+  });
+
+  if (!original) {
+    throw new NotFoundException({
+      code: 'ACCOUNTING_JOURNAL_REVERSAL_ORIGINAL_NOT_FOUND',
+      message: 'Accounting journal entry not found.',
+    });
+  }
+
+  assertReversibleSnapshot(original);
+
+  const source = buildReversalSource(original, normalized.actorUserId, normalized.reason, normalized.evidenceRef);
+  const draft = validateBuiltDraft(buildAccountingJournal(source));
+  const writeResult = await journalWriter.write({ draft }, tx);
+
+  if (!writeResult.ok) {
+    throw writerFailureToException(writeResult.errors);
+  }
+
+  return {
+    status: writeResult.output.status,
+    originalJournalEntryId: original.id,
+    reversalJournalEntryId: writeResult.output.journalEntryId,
+    idempotencyKey: writeResult.output.idempotencyKey,
+    sourceVersion: writeResult.output.sourceVersion,
+    lineCount: writeResult.output.lineCount,
+    originalCurrency: original.currency,
+  };
+}
+
+function toPublicReversalResult(result: AccountingJournalReversalInTransactionResult): AccountingJournalReversalResult {
+  return {
+    status: result.status,
+    originalJournalEntryId: result.originalJournalEntryId,
+    reversalJournalEntryId: result.reversalJournalEntryId,
+    idempotencyKey: result.idempotencyKey,
+    sourceVersion: result.sourceVersion,
+    lineCount: result.lineCount,
+  };
 }
 
 interface NormalizedReverseInput {

@@ -49,6 +49,19 @@ export interface DebitBalanceDto {
   description?: string;
 }
 
+export interface ReverseExpensePaymentBalanceLedgerInput {
+  expensePaymentId: string;
+  originalBalanceLedgerId: string;
+  caseBalanceId: string;
+  amount: Prisma.Decimal | Prisma.Decimal.Value;
+  currency?: string | null;
+  description?: string;
+}
+
+export interface ReverseExpensePaymentBalanceLedgerResult {
+  ledgerId: string;
+  newBalance: number;
+}
 type JournalableBalanceLedgerRow = {
   id: string;
   tenantId: string;
@@ -229,6 +242,50 @@ export class CaseBalanceService {
     };
   }
 
+  /// <remarks>
+  /// Cagrildigi yerler:
+  /// - ExpenseRequestService.reversePayment() -> tx-ici expense_payment reversal debit; journal suppress korunur.
+  /// </remarks>
+  async reverseExpensePaymentCreditInTransaction(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    caseId: string,
+    input: ReverseExpensePaymentBalanceLedgerInput,
+    userId: string,
+  ): Promise<ReverseExpensePaymentBalanceLedgerResult> {
+    const amount = new Prisma.Decimal(input.amount as Prisma.Decimal.Value);
+    if (amount.lte(0)) {
+      throw new BadRequestException('ExpensePayment reversal ledger amount must be positive.');
+    }
+
+    const ledger = await tx.balanceLedger.create({
+      data: {
+        tenantId,
+        caseBalanceId: input.caseBalanceId,
+        type: BalanceLedgerType.DEBIT,
+        amount: amount.mul(-1),
+        currency: input.currency ?? 'TRY',
+        source: `expense_payment:${input.expensePaymentId}:reversal`,
+        sourceId: input.expensePaymentId,
+        description: input.description ?? 'Masraf odeme reversal',
+        createdById: userId,
+      },
+    });
+
+    const updatedBalance = await tx.caseBalance.update({
+      where: { id: input.caseBalanceId },
+      data: {
+        balance: { decrement: amount },
+      },
+    });
+
+    const journalDraft = this.buildBalanceLedgerJournalDraft(tenantId, caseId, ledger as JournalableBalanceLedgerRow);
+    if (journalDraft) {
+      await this.writeBalanceLedgerJournal(tx, journalDraft);
+    }
+
+    return { ledgerId: ledger.id, newBalance: Number(updatedBalance.balance) };
+  }
   /// <remarks>
   /// Çağrıldığı yerler:
   /// - CaseBalanceService.credit() → CREDIT BalanceLedger journal draft üretimi
