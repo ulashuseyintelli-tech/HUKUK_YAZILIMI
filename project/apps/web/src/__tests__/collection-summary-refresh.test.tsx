@@ -859,6 +859,193 @@ describe("collection summary refresh", () => {
     expect(screen.queryByText("Sözleşmeden hesaplandı")).not.toBeInTheDocument();
   });
 
+  it("FAZ-2 editör: aktif sözleşme yoksa 'Yeni Sözleşme' gösterir; oluşturma FLAT_AMOUNT ile doğru payload gönderir", async () => {
+    const fetchActive = vi.fn().mockResolvedValue(null);
+    const create = vi.fn().mockResolvedValue({ id: "cfa-1", feeType: "FLAT_AMOUNT", flatAmount: "15000.00", percentageBps: null, status: "ACTIVE" });
+
+    render(
+      <OperationDeck
+        caseId="case-1"
+        muhasebeKayitlari={[makeDispositionAccountingRecord()]}
+        eligibleDispositionClients={[{ id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" }]}
+        onFetchActiveFeeAgreement={fetchActive}
+        onCreateFeeAgreement={create}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
+    await waitFor(() => expect(fetchActive).toHaveBeenCalledWith("case-client-1"));
+    expect(await screen.findByText("Aktif ücret sözleşmesi yok.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Yeni Sözleşme/ }));
+    fireEvent.change(screen.getByLabelText("Ücret tutarı"), { target: { value: "15000" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Oluştur$/ }));
+
+    await waitFor(() => {
+      expect(create).toHaveBeenCalledWith("case-client-1", { feeType: "FLAT_AMOUNT", flatAmount: "15000.00", note: undefined });
+    });
+    // Başarı sonrası form kapanır, özet gösterilir.
+    expect(await screen.findByText(/Sabit ücret/)).toBeInTheDocument();
+    expect(screen.queryByLabelText("Ücret tutarı")).not.toBeInTheDocument();
+  });
+
+  it("FAZ-2 editör: aktif PERCENTAGE_OF_COLLECTION sözleşmesi özet + Düzenle/Sonlandır gösterir (yalnız ACTIVE düzenlenebilir)", async () => {
+    const fetchActive = vi.fn().mockResolvedValue({
+      id: "cfa-2", feeType: "PERCENTAGE_OF_COLLECTION", flatAmount: null, percentageBps: 1500, status: "ACTIVE",
+    });
+
+    render(
+      <OperationDeck
+        caseId="case-1"
+        muhasebeKayitlari={[makeDispositionAccountingRecord()]}
+        eligibleDispositionClients={[{ id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" }]}
+        onFetchActiveFeeAgreement={fetchActive}
+        onUpdateFeeAgreement={vi.fn()}
+        onTerminateFeeAgreement={vi.fn()}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
+    expect(await screen.findByText("Tahsilatın %15'i")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Düzenle/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Sonlandır/ })).toBeInTheDocument();
+    // "Yeni Sözleşme" ACTIVE sözleşme varken gösterilmez.
+    expect(screen.queryByRole("button", { name: /Yeni Sözleşme/ })).not.toBeInTheDocument();
+  });
+
+  it("FAZ-2 editör: Düzenle mevcut değerleri pre-fill eder, submit update'i agreementId ile çağırır", async () => {
+    const fetchActive = vi.fn().mockResolvedValue({
+      id: "cfa-2", feeType: "PERCENTAGE_OF_COLLECTION", flatAmount: null, percentageBps: 1500, status: "ACTIVE", note: "eski not",
+    });
+    const update = vi.fn().mockResolvedValue({ id: "cfa-3", feeType: "PERCENTAGE_OF_COLLECTION", flatAmount: null, percentageBps: 2000, status: "ACTIVE" });
+
+    render(
+      <OperationDeck
+        caseId="case-1"
+        muhasebeKayitlari={[makeDispositionAccountingRecord()]}
+        eligibleDispositionClients={[{ id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" }]}
+        onFetchActiveFeeAgreement={fetchActive}
+        onUpdateFeeAgreement={update}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
+    await screen.findByText("Tahsilatın %15'i");
+    fireEvent.click(screen.getByRole("button", { name: /Düzenle/ }));
+
+    expect(screen.getByLabelText("Ücret yüzdesi")).toHaveValue(15);
+    fireEvent.change(screen.getByLabelText("Ücret yüzdesi"), { target: { value: "20" } });
+    fireEvent.click(screen.getByRole("button", { name: /Kaydet \(yeni versiyon\)/ }));
+
+    await waitFor(() => {
+      expect(update).toHaveBeenCalledWith("cfa-2", { feeType: "PERCENTAGE_OF_COLLECTION", percentageBps: 2000, note: "eski not" });
+    });
+  });
+
+  it("FAZ-2 editör: Sonlandır confirm ister, onaylanınca terminate çağrılır ve kart 'Yeni Sözleşme'ye döner", async () => {
+    const confirmSpy = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const fetchActive = vi.fn().mockResolvedValue({
+      id: "cfa-2", feeType: "FLAT_AMOUNT", flatAmount: "5000.00", percentageBps: null, status: "ACTIVE",
+    });
+    const terminate = vi.fn().mockResolvedValue({ id: "cfa-2", feeType: "FLAT_AMOUNT", flatAmount: "5000.00", percentageBps: null, status: "TERMINATED" });
+
+    render(
+      <OperationDeck
+        caseId="case-1"
+        muhasebeKayitlari={[makeDispositionAccountingRecord()]}
+        eligibleDispositionClients={[{ id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" }]}
+        onFetchActiveFeeAgreement={fetchActive}
+        onTerminateFeeAgreement={terminate}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
+    await screen.findByText(/Sabit ücret/);
+    fireEvent.click(screen.getByRole("button", { name: /Sonlandır/ }));
+
+    await waitFor(() => expect(terminate).toHaveBeenCalledWith("cfa-2"));
+    expect(await screen.findByText("Aktif ücret sözleşmesi yok.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /Yeni Sözleşme/ })).toBeInTheDocument();
+    confirmSpy.mockRestore();
+  });
+
+  it("FAZ-2 editör: 409 tek-ACTIVE çakışması kullanıcı-dostu mesajla gösterilir, FE hesaplamaz/clamp yapmaz", async () => {
+    const fetchActive = vi.fn().mockResolvedValue(null);
+    const create = vi.fn().mockRejectedValue(new Error("Bu müvekkil için zaten ACTIVE ücret sözleşmesi var; güncelleyin (edit = yeni versiyon)"));
+
+    render(
+      <OperationDeck
+        caseId="case-1"
+        muhasebeKayitlari={[makeDispositionAccountingRecord()]}
+        eligibleDispositionClients={[{ id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" }]}
+        onFetchActiveFeeAgreement={fetchActive}
+        onCreateFeeAgreement={create}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
+    await screen.findByText("Aktif ücret sözleşmesi yok.");
+    fireEvent.click(screen.getByRole("button", { name: /Yeni Sözleşme/ }));
+    fireEvent.change(screen.getByLabelText("Ücret tutarı"), { target: { value: "1000" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Oluştur$/ }));
+
+    expect(await screen.findByText(/zaten aktif bir ücret sözleşmesi var/)).toBeInTheDocument();
+    // Form kapanmaz (kullanıcı tekrar deneyebilir); ham backend mesajı değil, dostça mesaj gösterildi.
+    expect(screen.getByLabelText("Ücret tutarı")).toBeInTheDocument();
+  });
+
+  it("FAZ-2 editör: submit sırasında buton disable olur (double-submit önlenir)", async () => {
+    const fetchActive = vi.fn().mockResolvedValue(null);
+    let resolveCreate: (value: unknown) => void = () => {};
+    const create = vi.fn().mockImplementation(() => new Promise((resolve) => { resolveCreate = resolve; }));
+
+    render(
+      <OperationDeck
+        caseId="case-1"
+        muhasebeKayitlari={[makeDispositionAccountingRecord()]}
+        eligibleDispositionClients={[{ id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" }]}
+        onFetchActiveFeeAgreement={fetchActive}
+        onCreateFeeAgreement={create}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
+    await screen.findByText("Aktif ücret sözleşmesi yok.");
+    fireEvent.click(screen.getByRole("button", { name: /Yeni Sözleşme/ }));
+    fireEvent.change(screen.getByLabelText("Ücret tutarı"), { target: { value: "1000" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Oluştur$/ }));
+
+    await waitFor(() => expect(create).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("button", { name: /^Oluştur$/ })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Vazgeç/ })).toBeDisabled();
+
+    resolveCreate({ id: "cfa-x", feeType: "FLAT_AMOUNT", flatAmount: "1000.00", percentageBps: null, status: "ACTIVE" });
+    await waitFor(() => expect(screen.queryByLabelText("Ücret tutarı")).not.toBeInTheDocument());
+  });
+
+  it("FAZ-2 editör: geçersiz/boş tutar client-side validation ile engellenir, backend çağrılmaz", async () => {
+    const fetchActive = vi.fn().mockResolvedValue(null);
+    const create = vi.fn();
+
+    render(
+      <OperationDeck
+        caseId="case-1"
+        muhasebeKayitlari={[makeDispositionAccountingRecord()]}
+        eligibleDispositionClients={[{ id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" }]}
+        onFetchActiveFeeAgreement={fetchActive}
+        onCreateFeeAgreement={create}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
+    await screen.findByText("Aktif ücret sözleşmesi yok.");
+    fireEvent.click(screen.getByRole("button", { name: /Yeni Sözleşme/ }));
+    fireEvent.click(screen.getByRole("button", { name: /^Oluştur$/ }));
+
+    expect(await screen.findByText("Geçerli bir pozitif tutar girin.")).toBeInTheDocument();
+    expect(create).not.toHaveBeenCalled();
+  });
+
   it("FAZ-1a: ücretsiz öneri attorneyFee göndermez, uyarı+masraf adayı gösterir, candidate satır olmaz", async () => {
     const prepare = vi.fn().mockResolvedValue({
       suggestedLines: [

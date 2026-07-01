@@ -2946,6 +2946,69 @@ class ApiClient {
   }
 
   /**
+   * S8-B FAZ-2 — caseClient için ACTIVE ücret sözleşmesi (yoksa null). Read-only; FE HESAPLAMAZ.
+   * Çağrıldığı yerler:
+   * - OperationDeck "Ücret Sözleşmesi" kartı → GET /case-fee-agreements/case-client/:caseClientId/active
+   */
+  async getActiveCaseFeeAgreement(caseClientId: string) {
+    const response = await this.request<{ data: CaseFeeAgreementDTO | null }>(
+      `/case-fee-agreements/case-client/${caseClientId}/active`,
+    );
+    return response.data;
+  }
+
+  /**
+   * S8-B FAZ-2 — caseClient sözleşme geçmişi (yeni → eski). Read-only.
+   * Çağrıldığı yerler:
+   * - (henüz YOK) geçmiş görünümü ayrı bir FE ihtiyacı olursa kullanılacak.
+   */
+  async listCaseFeeAgreements(caseClientId: string) {
+    const response = await this.request<{ data: CaseFeeAgreementDTO[] }>(
+      `/case-fee-agreements/case-client/${caseClientId}`,
+    );
+    return response.data;
+  }
+
+  /**
+   * S8-B FAZ-2 — yeni ücret sözleşmesi (ACTIVE). Aynı caseClient için zaten ACTIVE varsa 409.
+   * Çağrıldığı yerler:
+   * - OperationDeck "Yeni Sözleşme" → POST /case-fee-agreements
+   */
+  async createCaseFeeAgreement(input: CreateCaseFeeAgreementDTO) {
+    const response = await this.request<{ data: CaseFeeAgreementDTO }>(`/case-fee-agreements`, {
+      method: "POST",
+      body: JSON.stringify(input),
+    });
+    return response.data;
+  }
+
+  /**
+   * S8-B FAZ-2 — düzenleme = yeni versiyon (eski SUPERSEDED + yeni ACTIVE). Yalnız ACTIVE sözleşme düzenlenebilir (aksi 409).
+   * Çağrıldığı yerler:
+   * - OperationDeck "Düzenle" (yalnız ACTIVE satır) → POST /case-fee-agreements/:agreementId
+   */
+  async updateCaseFeeAgreement(agreementId: string, input: UpdateCaseFeeAgreementDTO) {
+    const response = await this.request<{ data: CaseFeeAgreementDTO }>(
+      `/case-fee-agreements/${agreementId}`,
+      { method: "POST", body: JSON.stringify(input) },
+    );
+    return response.data;
+  }
+
+  /**
+   * S8-B FAZ-2 — sözleşmeyi sonlandır: ACTIVE → TERMINATED. Yeni satır yazılmaz.
+   * Çağrıldığı yerler:
+   * - OperationDeck "Sonlandır" → POST /case-fee-agreements/:agreementId/terminate
+   */
+  async terminateCaseFeeAgreement(agreementId: string) {
+    const response = await this.request<{ data: CaseFeeAgreementDTO }>(
+      `/case-fee-agreements/${agreementId}/terminate`,
+      { method: "POST" },
+    );
+    return response.data;
+  }
+
+  /**
    * Tahsilat/odeme onizlemesi. DB'ye kayit yazmaz.
    * Cagrildigi yerler:
    * - CollectionModal.handlePreview() -> POST /cases/:caseId/payment-preview (tahsilat formundan non-persistent onizleme)
@@ -5273,6 +5336,34 @@ export interface DistributionRecommendationDTO {
     candidates: DistributionExpenseCandidateDTO[];
   };
   warnings: string[];
+}
+
+// ── S8-B FAZ-2 — CaseFeeAgreement (akdi ücret sözleşmesi) ──
+export interface CaseFeeAgreementDTO {
+  id: string;
+  caseClientId: string;
+  feeType: "FLAT_AMOUNT" | "PERCENTAGE_OF_COLLECTION";
+  flatAmount: string | null;
+  percentageBps: number | null;
+  feeBase: "GROSS" | "NET_OF_EXPENSE";
+  status: "DRAFT" | "ACTIVE" | "SUPERSEDED" | "TERMINATED";
+  effectiveFrom: string;
+  note?: string | null;
+}
+export interface CreateCaseFeeAgreementDTO {
+  caseClientId: string;
+  feeType: "FLAT_AMOUNT" | "PERCENTAGE_OF_COLLECTION";
+  /** FLAT_AMOUNT'ta ZORUNLU — faithful decimal-string (>0, ≤2 ondalık). */
+  flatAmount?: string;
+  /** PERCENTAGE_OF_COLLECTION'da ZORUNLU — basis-points int (1..10000). */
+  percentageBps?: number;
+  note?: string;
+}
+export interface UpdateCaseFeeAgreementDTO {
+  feeType: "FLAT_AMOUNT" | "PERCENTAGE_OF_COLLECTION";
+  flatAmount?: string;
+  percentageBps?: number;
+  note?: string;
 }
 
 export interface PaymentPreviewRequestDTO {

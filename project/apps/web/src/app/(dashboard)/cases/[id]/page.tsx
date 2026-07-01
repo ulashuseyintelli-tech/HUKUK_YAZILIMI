@@ -1053,6 +1053,30 @@ export default function CaseDetailPage() {
     [],
   );
 
+  // S8-B FAZ-2 — CaseFeeAgreement CRUD (ince delegate; try/catch OperationDeck içinde — hata burada yutulmaz, fırlatılır).
+  const handleFetchActiveFeeAgreement = useCallback(
+    (caseClientId: string) => api.getActiveCaseFeeAgreement(caseClientId),
+    [],
+  );
+  const handleCreateFeeAgreement = useCallback(
+    (
+      caseClientId: string,
+      input: { feeType: "FLAT_AMOUNT" | "PERCENTAGE_OF_COLLECTION"; flatAmount?: string; percentageBps?: number; note?: string },
+    ) => api.createCaseFeeAgreement({ caseClientId, ...input }),
+    [],
+  );
+  const handleUpdateFeeAgreement = useCallback(
+    (
+      agreementId: string,
+      input: { feeType: "FLAT_AMOUNT" | "PERCENTAGE_OF_COLLECTION"; flatAmount?: string; percentageBps?: number; note?: string },
+    ) => api.updateCaseFeeAgreement(agreementId, input),
+    [],
+  );
+  const handleTerminateFeeAgreement = useCallback(
+    (agreementId: string) => api.terminateCaseFeeAgreement(agreementId),
+    [],
+  );
+
   // S8-B FAZ-0 — Dağıtım onayı (RECOMMENDED → APPROVED; yalnız Partner/Manager + P4 4-göz).
   const handleApproveCollectionDisposition = useCallback(async (
     disposition: Pick<CollectionDispositionDTO, "id">,
@@ -2804,6 +2828,10 @@ export default function CaseDetailPage() {
                 onApproveDisposition={handleApproveCollectionDisposition}
                 onPostDisposition={handlePostCollectionDisposition}
                 onPrepareDistributionRecommendation={handlePrepareDistributionRecommendation}
+                onFetchActiveFeeAgreement={handleFetchActiveFeeAgreement}
+                onCreateFeeAgreement={handleCreateFeeAgreement}
+                onUpdateFeeAgreement={handleUpdateFeeAgreement}
+                onTerminateFeeAgreement={handleTerminateFeeAgreement}
                 // Müvekkil Talepleri - AddressAuditLog + Expense Requests
                 muvekkilTalepleri={[
                   // Adres talepleri
