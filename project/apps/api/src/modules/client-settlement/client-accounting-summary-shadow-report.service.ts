@@ -79,6 +79,7 @@ export interface ClientAccountingSummaryShadowValueComparison {
   delta: string | null;
   status: ClientAccountingSummaryShadowValueStatus;
   blockerCodes: string[];
+  blockerReason?: string | null;
 }
 
 export interface ClientAccountingSummaryShadowComponent {
@@ -102,6 +103,42 @@ export interface ClientAccountingSummaryShadowSupportedValueSummary {
   blockerCodes: string[];
 }
 
+export type ExpenseRequestBackfillEvidenceStatus =
+  | 'MATCHED'
+  | 'BACKFILL_REQUIRED'
+  | 'VALUE_MISMATCH'
+  | 'DIMENSION_MISMATCH'
+  | 'CANCELLED_SOURCE_BLOCKED'
+  | 'SETTLED_CANCEL_BLOCKED';
+
+export interface ExpenseRequestBackfillEvidenceItem {
+  expenseRequestId: string;
+  status: ExpenseRequestBackfillEvidenceStatus;
+  legacyValue: string | null;
+  journalValue: string | null;
+  delta: string | null;
+  blockerCodes: string[];
+  journalEntryId: string | null;
+  details: {
+    caseId: string | null;
+    clientId: string | null;
+    currency: string;
+    journalCaseId: string | null;
+    journalClientId: string | null;
+    journalCurrency: string | null;
+    settledActivityCount: number;
+  };
+}
+
+export interface ExpenseRequestBackfillEvidenceSummary {
+  sourceType: 'EXPENSE_REQUEST';
+  sourceAction: 'recorded';
+  sourceVersionEvidence: 'idempotencyKey/sourceHash/sourceTuple';
+  statusCounts: Record<ExpenseRequestBackfillEvidenceStatus, number>;
+  blockerCodes: string[];
+  items: ExpenseRequestBackfillEvidenceItem[];
+}
+
 export interface ClientAccountingSummaryShadowReport {
   tenantId: string;
   clientId: string;
@@ -115,6 +152,7 @@ export interface ClientAccountingSummaryShadowReport {
   components: ClientAccountingSummaryShadowComponent[];
   expenseCoveragePolicy: ClientAccountingSummaryExpenseCoveragePolicy;
   supportedValueSummary: ClientAccountingSummaryShadowSupportedValueSummary;
+  expenseRequestBackfillEvidence?: ExpenseRequestBackfillEvidenceSummary;
   blockerCodes: string[];
   gapCodes: string[];
   nextImplementationTasks: string[];
@@ -132,9 +170,45 @@ interface SupportedJournalLine {
   };
 }
 
+interface ExpenseRequestLegacyRow {
+  id: string;
+  caseId: string;
+  clientId: string;
+  totalAmount: { toString(): string };
+  currency: string;
+  status: string;
+}
+
+interface ExpenseRequestRecordedJournalEntryRow {
+  id: string;
+  sourceId: string;
+  sourceHash: string | null;
+  idempotencyKey: string;
+  lines: Array<{
+    accountCode: string;
+    direction: string;
+    amount: { toString(): string };
+    currency: string;
+    caseId: string | null;
+    clientId: string | null;
+    expenseRequestId: string | null;
+  }>;
+}
+
+interface ExpenseRequestShadowValues extends ClientAccountingSummaryShadowLegacyClientScopedValues {
+  expenseRequested: string;
+  expenseRequestedComparison: ClientAccountingSummaryShadowValueComparison;
+  expenseRequestBackfillEvidence: ExpenseRequestBackfillEvidenceSummary;
+}
+
 const ZERO = new Prisma.Decimal(0);
-const SUPPORTED_COMPONENT_KEYS = ['payableNet', 'paidToClient', 'offsetApplied'] as const;
+const SUPPORTED_COMPONENT_KEYS = ['payableNet', 'paidToClient', 'offsetApplied', 'expenseRequested'] as const;
 const VALUE_MISMATCH_BLOCKER = 'SUMMARY_SUPPORTED_COMPONENT_VALUE_MISMATCH';
+const EXPENSE_REQUEST_BACKFILL_MISSING = 'EXPENSE_REQUEST_BACKFILL_MISSING';
+const EXPENSE_REQUEST_VALUE_SHADOW_MISMATCH = 'EXPENSE_REQUEST_VALUE_SHADOW_MISMATCH';
+const EXPENSE_REQUEST_DIMENSION_MISMATCH = 'EXPENSE_REQUEST_DIMENSION_MISMATCH';
+const EXPENSE_REQUEST_CANCEL_POLICY_BLOCKED = 'EXPENSE_REQUEST_CANCEL_POLICY_BLOCKED';
+const EXPENSE_REQUEST_SETTLED_CANCEL_BLOCKED = 'EXPENSE_REQUEST_SETTLED_CANCEL_BLOCKED';
 
 const EXPENSE_COVERAGE_POLICY_ITEMS: ClientAccountingSummaryExpenseCoveragePolicyItem[] = [
   {
@@ -147,7 +221,6 @@ const EXPENSE_COVERAGE_POLICY_ITEMS: ClientAccountingSummaryExpenseCoveragePolic
     supportedSources: ['EXPENSE_REQUEST'],
     blockerCodes: [
       'EXPENSE_REQUEST_BACKFILL_MISSING',
-      'EXPENSE_REQUEST_VALUE_SHADOW_MISSING',
       'EXPENSE_REQUEST_CANCEL_POLICY_BLOCKED',
     ],
     gapCodes: [],
@@ -252,7 +325,7 @@ const SUMMARY_COMPONENTS: ClientAccountingSummaryShadowComponent[] = [
     journalSources: ['EXPENSE_REQUEST'],
     blockerCodes: [
       'EXPENSE_REQUEST_BACKFILL_MISSING',
-      'EXPENSE_REQUEST_VALUE_SHADOW_MISSING',
+      'EXPENSE_REQUEST_CANCEL_POLICY_BLOCKED',
     ],
     gapCodes: [],
   },
@@ -374,7 +447,7 @@ export class ClientAccountingSummaryShadowReportService {
 
   private async computeSupportedShadowValues(
     request: ClientAccountingSummaryShadowReportRequest,
-  ): Promise<ClientAccountingSummaryShadowLegacyClientScopedValues> {
+  ): Promise<ExpenseRequestShadowValues> {
     const currency = request.currency || 'TRY';
     const caseClients = (await this.prisma!.caseClient.findMany({
       where: { clientId: request.clientId, role: { in: ['ALACAKLI', 'ORTAK_ALACAKLI'] }, client: { tenantId: request.tenantId } },
@@ -383,7 +456,8 @@ export class ClientAccountingSummaryShadowReportService {
 
     const caseClientIds = caseClients.map((row) => row.id);
     if (caseClientIds.length === 0) {
-      return { payableNet: '0', paidToClient: '0', offsetApplied: '0' };
+      const expenseRequestShadow = await this.computeExpenseRequestShadowValues(request, currency);
+      return { payableNet: '0', paidToClient: '0', offsetApplied: '0', ...expenseRequestShadow };
     }
 
     const lines = (await this.prisma!.accountingJournalLine.findMany({
@@ -433,16 +507,114 @@ export class ClientAccountingSummaryShadowReportService {
       }
     }
 
+    const expenseRequestShadow = await this.computeExpenseRequestShadowValues(request, currency);
+
     return {
       payableNet: decimalToString(payableNet),
       paidToClient: decimalToString(paidToClient),
       offsetApplied: decimalToString(offsetApplied),
+      ...expenseRequestShadow,
     };
+  }
+
+  private async computeExpenseRequestShadowValues(
+    request: ClientAccountingSummaryShadowReportRequest,
+    currency: string,
+  ): Promise<Pick<ExpenseRequestShadowValues, 'expenseRequested' | 'expenseRequestedComparison' | 'expenseRequestBackfillEvidence'>> {
+    const activeRequests = (await this.prisma!.expenseRequest.findMany({
+      where: { tenantId: request.tenantId, clientId: request.clientId, currency, status: { not: 'CANCELLED' } },
+      select: { id: true, caseId: true, clientId: true, totalAmount: true, currency: true, status: true },
+    })) as ExpenseRequestLegacyRow[];
+    const cancelledRequests = (await this.prisma!.expenseRequest.findMany({
+      where: { tenantId: request.tenantId, clientId: request.clientId, currency, status: 'CANCELLED' },
+      select: { id: true, caseId: true, clientId: true, totalAmount: true, currency: true, status: true },
+    })) as ExpenseRequestLegacyRow[];
+    const activeIds = activeRequests.map((row) => row.id);
+    const cancelledIds = cancelledRequests.map((row) => row.id);
+    const allIds = [...activeIds, ...cancelledIds];
+    const journalEntries = allIds.length === 0 ? [] : (await this.prisma!.accountingJournalEntry.findMany({
+      where: {
+        tenantId: request.tenantId,
+        sourceType: 'EXPENSE_REQUEST',
+        sourceAction: 'recorded',
+        sourceId: { in: allIds },
+      },
+      select: {
+        id: true,
+        sourceId: true,
+        sourceHash: true,
+        idempotencyKey: true,
+        lines: {
+          select: {
+            accountCode: true,
+            direction: true,
+            amount: true,
+            currency: true,
+            caseId: true,
+            clientId: true,
+            expenseRequestId: true,
+          },
+        },
+      },
+    })) as ExpenseRequestRecordedJournalEntryRow[];
+    const settledCounts = await this.computeExpenseRequestSettledActivityCounts(request.tenantId, allIds);
+    const evidence = buildExpenseRequestBackfillEvidence(activeRequests, cancelledRequests, journalEntries, settledCounts);
+    const legacyValue = activeRequests.reduce((sum, row) => sum.plus(decimalOf(row.totalAmount)), ZERO);
+    const journalValue = evidence.items
+      .filter((item) => activeIds.includes(item.expenseRequestId))
+      .reduce((sum, item) => sum.plus(decimalOf(item.journalValue ?? '0')), ZERO);
+    const delta = journalValue.minus(legacyValue);
+    const blockerCodes = uniqueSorted([
+      ...evidence.blockerCodes,
+      ...(!delta.equals(ZERO) ? [EXPENSE_REQUEST_VALUE_SHADOW_MISMATCH] : []),
+    ]);
+
+    return {
+      expenseRequested: decimalToString(journalValue),
+      expenseRequestedComparison: {
+        legacyValue: decimalToString(legacyValue),
+        journalValue: decimalToString(journalValue),
+        delta: decimalToString(delta),
+        status: blockerCodes.includes(EXPENSE_REQUEST_VALUE_SHADOW_MISMATCH) ? 'MISMATCH' : 'MATCH',
+        blockerCodes,
+        blockerReason: blockerCodes[0] ?? null,
+      },
+      expenseRequestBackfillEvidence: evidence,
+    };
+  }
+
+  private async computeExpenseRequestSettledActivityCounts(
+    tenantId: string,
+    expenseRequestIds: string[],
+  ): Promise<Map<string, number>> {
+    const counts = new Map<string, number>();
+    if (expenseRequestIds.length === 0) return counts;
+
+    const [payments, offsets, applications] = await Promise.all([
+      this.prisma!.expensePayment.findMany({
+        where: { expenseRequestId: { in: expenseRequestIds } },
+        select: { expenseRequestId: true },
+      }),
+      this.prisma!.clientOffset.findMany({
+        where: { tenantId, expenseRequestId: { in: expenseRequestIds } },
+        select: { expenseRequestId: true },
+      }),
+      this.prisma!.collectionDispositionExpenseApplication.findMany({
+        where: { tenantId, expenseRequestId: { in: expenseRequestIds } },
+        select: { expenseRequestId: true },
+      }),
+    ]) as Array<Array<{ expenseRequestId: string }>>;
+
+    for (const row of [...payments, ...offsets, ...applications]) {
+      counts.set(row.expenseRequestId, (counts.get(row.expenseRequestId) ?? 0) + 1);
+    }
+
+    return counts;
   }
 
   private buildReport(
     request: ClientAccountingSummaryShadowReportRequest,
-    shadowValues: ClientAccountingSummaryShadowLegacyClientScopedValues | null,
+    shadowValues: ExpenseRequestShadowValues | null,
   ): ClientAccountingSummaryShadowReport {
     const components = SUMMARY_COMPONENTS.map((component) => cloneComponent(component));
     const expenseCoveragePolicy = buildExpenseCoveragePolicy();
@@ -462,10 +634,12 @@ export class ClientAccountingSummaryShadowReportService {
       components,
       expenseCoveragePolicy,
       supportedValueSummary,
+      expenseRequestBackfillEvidence: shadowValues?.expenseRequestBackfillEvidence,
       blockerCodes: uniqueSorted([
         ...components.flatMap((component) => component.blockerCodes),
         ...expenseCoveragePolicy.blockerCodes,
         ...supportedValueSummary.blockerCodes,
+        ...(shadowValues?.expenseRequestBackfillEvidence.blockerCodes ?? []),
       ]),
       gapCodes: uniqueSorted([
         ...components.flatMap((component) => component.gapCodes),
@@ -508,11 +682,27 @@ function cloneComponent(component: ClientAccountingSummaryShadowComponent): Clie
 function applySupportedValueComparisons(
   components: ClientAccountingSummaryShadowComponent[],
   legacyValues: ClientAccountingSummaryShadowLegacyClientScopedValues | undefined,
-  shadowValues: ClientAccountingSummaryShadowLegacyClientScopedValues | null,
+  shadowValues: ExpenseRequestShadowValues | null,
 ): void {
   for (const key of SUPPORTED_COMPONENT_KEYS) {
     const component = components.find((candidate) => candidate.key === key);
     if (!component) continue;
+
+    if (key === 'expenseRequested') {
+      if (shadowValues) {
+        component.valueComparison = { ...shadowValues.expenseRequestedComparison };
+        component.blockerCodes = uniqueSorted([...component.blockerCodes, ...shadowValues.expenseRequestedComparison.blockerCodes]);
+      } else {
+        component.valueComparison = {
+          legacyValue: null,
+          journalValue: null,
+          delta: null,
+          status: 'NOT_COMPUTED',
+          blockerCodes: [],
+        };
+      }
+      continue;
+    }
 
     if (!legacyValues || !shadowValues) {
       component.valueComparison = {
@@ -524,7 +714,6 @@ function applySupportedValueComparisons(
       };
       continue;
     }
-
     const legacyValue = decimalOf(legacyValues[key]);
     const journalValue = decimalOf(shadowValues[key]);
     const delta = journalValue.minus(legacyValue);
@@ -559,6 +748,127 @@ function summarizeSupportedValueComparisons(
     mismatchedCount,
     notComputedCount,
     blockerCodes,
+  };
+}
+
+function buildExpenseRequestBackfillEvidence(
+  activeRequests: ExpenseRequestLegacyRow[],
+  cancelledRequests: ExpenseRequestLegacyRow[],
+  journalEntries: ExpenseRequestRecordedJournalEntryRow[],
+  settledCounts: Map<string, number>,
+): ExpenseRequestBackfillEvidenceSummary {
+  const entriesBySourceId = new Map(journalEntries.map((entry) => [entry.sourceId, entry]));
+  const items = [
+    ...activeRequests.map((request) => buildActiveExpenseRequestEvidenceItem(request, entriesBySourceId.get(request.id))),
+    ...cancelledRequests.map((request) => buildCancelledExpenseRequestEvidenceItem(request, entriesBySourceId.get(request.id), settledCounts.get(request.id) ?? 0)),
+  ];
+  const statusCounts = emptyExpenseRequestEvidenceStatusCounts();
+
+  for (const item of items) {
+    statusCounts[item.status] += 1;
+  }
+
+  return {
+    sourceType: 'EXPENSE_REQUEST',
+    sourceAction: 'recorded',
+    sourceVersionEvidence: 'idempotencyKey/sourceHash/sourceTuple',
+    statusCounts,
+    blockerCodes: uniqueSorted(items.flatMap((item) => item.blockerCodes)),
+    items,
+  };
+}
+
+function buildActiveExpenseRequestEvidenceItem(
+  request: ExpenseRequestLegacyRow,
+  entry: ExpenseRequestRecordedJournalEntryRow | undefined,
+): ExpenseRequestBackfillEvidenceItem {
+  const legacyValue = decimalOf(request.totalAmount);
+  const receivableLine = entry?.lines.find((line) => (
+    line.accountCode === 'CLIENT_EXPENSE_RECEIVABLE' &&
+    line.direction === 'DEBIT' &&
+    line.expenseRequestId === request.id
+  ));
+  const journalValue = receivableLine ? decimalOf(receivableLine.amount) : ZERO;
+  const delta = journalValue.minus(legacyValue);
+
+  if (!entry || !receivableLine) {
+    return expenseRequestEvidenceItem(request, 'BACKFILL_REQUIRED', legacyValue, journalValue, delta, [EXPENSE_REQUEST_BACKFILL_MISSING], entry ?? null, receivableLine ?? null, 0);
+  }
+
+  const dimensionMismatch = receivableLine.caseId !== request.caseId ||
+    receivableLine.clientId !== request.clientId ||
+    receivableLine.currency !== request.currency;
+  if (dimensionMismatch) {
+    return expenseRequestEvidenceItem(request, 'DIMENSION_MISMATCH', legacyValue, journalValue, delta, [EXPENSE_REQUEST_DIMENSION_MISMATCH], entry, receivableLine, 0);
+  }
+
+  if (!delta.equals(ZERO)) {
+    return expenseRequestEvidenceItem(request, 'VALUE_MISMATCH', legacyValue, journalValue, delta, [EXPENSE_REQUEST_VALUE_SHADOW_MISMATCH], entry, receivableLine, 0);
+  }
+
+  return expenseRequestEvidenceItem(request, 'MATCHED', legacyValue, journalValue, delta, [], entry, receivableLine, 0);
+}
+
+function buildCancelledExpenseRequestEvidenceItem(
+  request: ExpenseRequestLegacyRow,
+  entry: ExpenseRequestRecordedJournalEntryRow | undefined,
+  settledActivityCount: number,
+): ExpenseRequestBackfillEvidenceItem {
+  const legacyValue = decimalOf(request.totalAmount);
+  const receivableLine = entry?.lines.find((line) => (
+    line.accountCode === 'CLIENT_EXPENSE_RECEIVABLE' &&
+    line.direction === 'DEBIT' &&
+    line.expenseRequestId === request.id
+  ));
+  const journalValue = receivableLine ? decimalOf(receivableLine.amount) : ZERO;
+  const delta = journalValue.minus(legacyValue);
+  const status: ExpenseRequestBackfillEvidenceStatus = settledActivityCount > 0 ? 'SETTLED_CANCEL_BLOCKED' : 'CANCELLED_SOURCE_BLOCKED';
+  const blockerCodes = settledActivityCount > 0
+    ? [EXPENSE_REQUEST_SETTLED_CANCEL_BLOCKED]
+    : [EXPENSE_REQUEST_CANCEL_POLICY_BLOCKED];
+
+  return expenseRequestEvidenceItem(request, status, legacyValue, journalValue, delta, blockerCodes, entry ?? null, receivableLine ?? null, settledActivityCount);
+}
+
+function expenseRequestEvidenceItem(
+  request: ExpenseRequestLegacyRow,
+  status: ExpenseRequestBackfillEvidenceStatus,
+  legacyValue: Prisma.Decimal,
+  journalValue: Prisma.Decimal,
+  delta: Prisma.Decimal,
+  blockerCodes: string[],
+  entry: ExpenseRequestRecordedJournalEntryRow | null,
+  line: ExpenseRequestRecordedJournalEntryRow['lines'][number] | null,
+  settledActivityCount: number,
+): ExpenseRequestBackfillEvidenceItem {
+  return {
+    expenseRequestId: request.id,
+    status,
+    legacyValue: decimalToString(legacyValue),
+    journalValue: decimalToString(journalValue),
+    delta: decimalToString(delta),
+    blockerCodes,
+    journalEntryId: entry?.id ?? null,
+    details: {
+      caseId: request.caseId,
+      clientId: request.clientId,
+      currency: request.currency,
+      journalCaseId: line?.caseId ?? null,
+      journalClientId: line?.clientId ?? null,
+      journalCurrency: line?.currency ?? null,
+      settledActivityCount,
+    },
+  };
+}
+
+function emptyExpenseRequestEvidenceStatusCounts(): Record<ExpenseRequestBackfillEvidenceStatus, number> {
+  return {
+    MATCHED: 0,
+    BACKFILL_REQUIRED: 0,
+    VALUE_MISMATCH: 0,
+    DIMENSION_MISMATCH: 0,
+    CANCELLED_SOURCE_BLOCKED: 0,
+    SETTLED_CANCEL_BLOCKED: 0,
   };
 }
 
