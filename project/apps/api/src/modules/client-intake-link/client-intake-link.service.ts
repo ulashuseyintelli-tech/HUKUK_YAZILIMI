@@ -1,8 +1,8 @@
 import { Injectable, NotFoundException, BadRequestException, Logger } from '@nestjs/common';
 import { randomBytes, createHash } from 'crypto';
 import { PrismaService } from '@/prisma/prisma.service';
-import { ClientIntakeLinkStatus } from '@prisma/client';
-import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
+import { ClientIntakeLinkDeliveryStatus, ClientIntakeLinkStatus, Prisma } from '@prisma/client';
+import { DispatchResult, NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
 import { OfficeService } from '@/modules/office/office.service';
 import { CreateClientIntakeLinkDto, CreateClientWorkspaceIntakeLinkDto } from './dto/client-intake-link.dto';
 
@@ -20,6 +20,33 @@ const PUBLIC_SELECT = {
   createdById: true,
   createdAt: true,
 } as const;
+
+const DELIVERY_SELECT = {
+  id: true,
+  tenantId: true,
+  clientId: true,
+  caseId: true,
+  intakeLinkId: true,
+  idempotencyKey: true,
+  dedupeKey: true,
+  channel: true,
+  status: true,
+  notificationId: true,
+  attemptCount: true,
+  lastError: true,
+  createdById: true,
+  createdAt: true,
+  updatedAt: true,
+} as const;
+
+const DELIVERY_WITH_LINK_SELECT = {
+  ...DELIVERY_SELECT,
+  intakeLink: { select: PUBLIC_SELECT },
+} as const;
+
+const REDACTED_INTAKE_URL = '[REDACTED_INTAKE_LINK]';
+
+type IntakeLinkWriteDb = Pick<PrismaService, 'clientIntakeLink'> | Prisma.TransactionClient;
 
 /**
  * Müvekkil İntake Linki servisi (Faz 4.3) — personel/JWT.
@@ -53,7 +80,7 @@ export class ClientIntakeLinkService {
    */
   async create(tenantId: string, caseId: string, userId: string, dto: CreateClientIntakeLinkDto) {
     await this.assertLegacyCreateBoundary(tenantId, caseId, dto.clientId);
-    const result = await this.createLinkRecord(tenantId, dto.clientId, caseId, userId, dto);
+    const result = await this.createLinkRecord(this.prisma, tenantId, dto.clientId, caseId, userId, dto);
 
     // best-effort mail (state'i bozmaz)
     await this.notifyLink(tenantId, userId, result.link.id, dto.clientId, caseId, result.intakeUrl, result.link.expiresAt);
@@ -78,7 +105,96 @@ export class ClientIntakeLinkService {
     dto: CreateClientWorkspaceIntakeLinkDto,
   ) {
     await this.assertClientWorkspaceCreateBoundary(tenantId, clientId, caseId);
-    return this.createLinkRecord(tenantId, clientId, caseId, userId, dto);
+    return this.createLinkRecord(this.prisma, tenantId, clientId, caseId, userId, dto);
+  }
+
+  /**
+   * Client Workspace Action Center create-and-deliver command: link üretir ve aynı request içinde delivery dener.
+   * Response raw token veya public form URL dönmez; persisted notification body redacted kalır.
+   *
+   * <remarks>
+   * Çağrıldığı yerler:
+   * - ClientController.createAndDeliverIntakeLink() -> POST /clients/:clientId/cases/:caseId/intake-links/create-and-deliver
+   * </remarks>
+   */
+  async createAndDeliverForClientWorkspace(
+    tenantId: string,
+    clientId: string,
+    caseId: string,
+    userId: string,
+    idempotencyKey: string | undefined,
+    dto: CreateClientWorkspaceIntakeLinkDto,
+  ) {
+    const normalizedIdempotencyKey = this.normalizeIdempotencyKey(idempotencyKey);
+    await this.assertClientWorkspaceCreateBoundary(tenantId, clientId, caseId);
+
+    const existing = await this.findDeliveryByIdempotencyKey(tenantId, normalizedIdempotencyKey);
+    if (existing) {
+      return { link: existing.intakeLink, delivery: this.toDeliveryResponse(existing) };
+    }
+
+    const dedupeKey = this.buildDeliveryDedupeKey(clientId, caseId, normalizedIdempotencyKey);
+    let created: { link: any; rawToken: string; intakeUrl: string; delivery: any };
+    try {
+      created = await this.prisma.$transaction(async (tx) => {
+        const result = await this.createLinkRecord(tx, tenantId, clientId, caseId, userId, dto);
+        const delivery = await tx.clientIntakeLinkDelivery.create({
+          data: {
+            tenantId,
+            clientId,
+            caseId,
+            intakeLinkId: result.link.id,
+            idempotencyKey: normalizedIdempotencyKey,
+            dedupeKey,
+            channel: 'EMAIL',
+            status: ClientIntakeLinkDeliveryStatus.PENDING,
+            attemptCount: 0,
+            createdById: userId,
+          },
+          select: DELIVERY_SELECT,
+        });
+        return { ...result, delivery };
+      });
+    } catch (error: any) {
+      if (this.isUniqueConstraintError(error)) {
+        const concurrent = await this.findDeliveryByIdempotencyKey(tenantId, normalizedIdempotencyKey);
+        if (concurrent) return { link: concurrent.intakeLink, delivery: this.toDeliveryResponse(concurrent) };
+      }
+      throw error;
+    }
+
+    await this.prisma.clientIntakeLinkDelivery.update({
+      where: { id: created.delivery.id },
+      data: {
+        status: ClientIntakeLinkDeliveryStatus.SENDING,
+        attemptCount: { increment: 1 },
+        lastError: null,
+      },
+      select: DELIVERY_SELECT,
+    });
+
+    const dispatch = await this.notifyLinkForCreateAndDeliver(
+      tenantId,
+      userId,
+      created.delivery.id,
+      created.delivery.dedupeKey,
+      clientId,
+      caseId,
+      created.intakeUrl,
+      created.link.expiresAt,
+    );
+    const failed = dispatch.status === 'failed';
+    const finalDelivery = await this.prisma.clientIntakeLinkDelivery.update({
+      where: { id: created.delivery.id },
+      data: {
+        status: failed ? ClientIntakeLinkDeliveryStatus.FAILED : ClientIntakeLinkDeliveryStatus.SENT,
+        notificationId: dispatch.notificationId,
+        lastError: failed ? this.sanitizeDeliveryError(dispatch.error) : null,
+      },
+      select: DELIVERY_SELECT,
+    });
+
+    return { link: created.link, delivery: this.toDeliveryResponse(finalDelivery) };
   }
 
   /**
@@ -132,6 +248,40 @@ export class ClientIntakeLinkService {
     return record;
   }
 
+  private normalizeIdempotencyKey(idempotencyKey?: string): string {
+    const normalized = (idempotencyKey || '').trim();
+    if (!normalized) throw new BadRequestException('Idempotency-Key header zorunludur');
+    if (normalized.length > 200) throw new BadRequestException('Idempotency-Key en fazla 200 karakter olabilir');
+    return normalized;
+  }
+
+  private buildDeliveryDedupeKey(clientId: string, caseId: string, idempotencyKey: string): string {
+    const keyHash = createHash('sha256').update(idempotencyKey).digest('hex');
+    return `INTAKE_LINK_DELIVERY:${clientId}:${caseId}:${keyHash}`;
+  }
+
+  private async findDeliveryByIdempotencyKey(tenantId: string, idempotencyKey: string) {
+    return this.prisma.clientIntakeLinkDelivery.findUnique({
+      where: { tenantId_idempotencyKey: { tenantId, idempotencyKey } },
+      select: DELIVERY_WITH_LINK_SELECT,
+    });
+  }
+
+  private toDeliveryResponse(delivery: any) {
+    return {
+      id: delivery.id,
+      status: String(delivery.status).toLowerCase(),
+      channel: delivery.channel,
+      notificationId: delivery.notificationId ?? undefined,
+      attemptCount: delivery.attemptCount,
+      error: delivery.lastError ?? undefined,
+    };
+  }
+
+  private isUniqueConstraintError(error: any): boolean {
+    return error?.code === 'P2002' || (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002');
+  }
+
   private async assertLegacyCreateBoundary(tenantId: string, caseId: string, clientId: string): Promise<void> {
     const caseItem = await this.prisma.case.findFirst({ where: { id: caseId, tenantId }, select: { id: true } });
     if (!caseItem) throw new NotFoundException('Takip bulunamadı');
@@ -158,6 +308,7 @@ export class ClientIntakeLinkService {
   }
 
   private async createLinkRecord(
+    db: IntakeLinkWriteDb,
     tenantId: string,
     clientId: string,
     caseId: string,
@@ -170,7 +321,7 @@ export class ClientIntakeLinkService {
     const rawToken = randomBytes(32).toString('base64url');
     const tokenHash = createHash('sha256').update(rawToken).digest('hex');
 
-    const link = await this.prisma.clientIntakeLink.create({
+    const link = await db.clientIntakeLink.create({
       data: {
         tenantId,
         caseId,
@@ -195,6 +346,66 @@ export class ClientIntakeLinkService {
     return `${base}/intake/${rawToken}`;
   }
 
+  private async buildLinkNotificationTokens(
+    tenantId: string,
+    clientId: string,
+    caseId: string,
+    intakeUrl: string,
+    expiresAt: Date | null,
+  ): Promise<Record<string, string>> {
+    const [client, kase, office] = await Promise.all([
+      this.prisma.client.findFirst({ where: { id: clientId, tenantId }, select: { displayName: true, name: true, firstName: true, lastName: true } }),
+      this.prisma.case.findFirst({ where: { id: caseId, tenantId }, select: { fileNumber: true, executionFileNumber: true } }),
+      this.office.getOrCreate(tenantId),
+    ]);
+
+    return {
+      clientName: client?.displayName || client?.name || [client?.firstName, client?.lastName].filter(Boolean).join(' ') || 'Müvekkil',
+      caseFileNumber: kase?.fileNumber ?? '',
+      executionFileNumber: kase?.executionFileNumber ?? '',
+      intakeUrl,
+      expiresAt: expiresAt ? expiresAt.toISOString().slice(0, 10) : 'süresiz',
+      officeName: office?.name ?? '',
+    };
+  }
+
+  private redactedTokens(tokens: Record<string, string>): Record<string, string> {
+    return { ...tokens, intakeUrl: REDACTED_INTAKE_URL };
+  }
+
+  private async notifyLinkForCreateAndDeliver(
+    tenantId: string,
+    userId: string,
+    deliveryId: string,
+    dedupeKey: string,
+    clientId: string,
+    caseId: string,
+    intakeUrl: string,
+    expiresAt: Date | null,
+  ): Promise<DispatchResult> {
+    try {
+      const tokens = await this.buildLinkNotificationTokens(tenantId, clientId, caseId, intakeUrl, expiresAt);
+
+      return this.dispatcher.dispatch(tenantId, userId, {
+        clientId,
+        caseId,
+        templateCode: 'INTAKE_LINK',
+        type: 'CLIENT_INFO',
+        tokens,
+        persistedTokens: this.redactedTokens(tokens),
+        refType: 'ClientIntakeLinkDelivery',
+        refId: deliveryId,
+        dedupeKey,
+      });
+    } catch (error: any) {
+      return { status: 'failed', dedupeKey, error: this.sanitizeDeliveryError(error?.message) };
+    }
+  }
+
+  private sanitizeDeliveryError(message?: string): string {
+    return (message || 'Intake link delivery failed').toString().replace(/https?:\/\/\S+/g, REDACTED_INTAKE_URL).slice(0, 500);
+  }
+
   /**
    * INTAKE_LINK maili — BEST-EFFORT. Token/URL app-log'una yazılmaz; tamamen try/catch.
    * Mail (veya token okuması) başarısız olsa bile link ACTIVE kalır, throw etmez.
@@ -209,20 +420,7 @@ export class ClientIntakeLinkService {
     expiresAt: Date | null,
   ): Promise<void> {
     try {
-      const [client, kase, office] = await Promise.all([
-        this.prisma.client.findFirst({ where: { id: clientId, tenantId }, select: { displayName: true, name: true, firstName: true, lastName: true } }),
-        this.prisma.case.findFirst({ where: { id: caseId, tenantId }, select: { fileNumber: true, executionFileNumber: true } }),
-        this.office.getOrCreate(tenantId),
-      ]);
-
-      const tokens: Record<string, string> = {
-        clientName: client?.displayName || client?.name || [client?.firstName, client?.lastName].filter(Boolean).join(' ') || 'Müvekkil',
-        caseFileNumber: kase?.fileNumber ?? '',
-        executionFileNumber: kase?.executionFileNumber ?? '',
-        intakeUrl,
-        expiresAt: expiresAt ? expiresAt.toISOString().slice(0, 10) : 'süresiz',
-        officeName: office?.name ?? '',
-      };
+      const tokens = await this.buildLinkNotificationTokens(tenantId, clientId, caseId, intakeUrl, expiresAt);
 
       await this.dispatcher.dispatch(tenantId, userId, {
         clientId,
@@ -230,12 +428,13 @@ export class ClientIntakeLinkService {
         templateCode: 'INTAKE_LINK',
         type: 'CLIENT_INFO',
         tokens,
+        persistedTokens: this.redactedTokens(tokens),
         refType: 'ClientIntakeLink',
         refId: linkId,
       });
     } catch (e: any) {
       // Token/URL HATA MESAJINA KOYULMAZ (sızıntı önleme).
-      this.logger.warn(`Intake link maili tetiklenemedi (link=${linkId}): ${e.message}`);
+      this.logger.warn(`Intake link maili tetiklenemedi (link=${linkId}): ${this.sanitizeDeliveryError(e.message)}`);
     }
   }
 }

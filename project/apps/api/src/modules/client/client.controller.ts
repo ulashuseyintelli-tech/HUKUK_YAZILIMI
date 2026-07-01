@@ -1,11 +1,11 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query, ForbiddenException, NotFoundException, ValidationPipe } from '@nestjs/common';
+import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query, ForbiddenException, NotFoundException, ValidationPipe, Headers } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ClientIntakeLinkService } from '../client-intake-link/client-intake-link.service';
 import { CreateClientWorkspaceIntakeLinkDto } from '../client-intake-link/dto/client-intake-link.dto';
 import { ClientService } from './client.service';
 import { CreateClientDto, UpdateClientDto } from './dto/create-client.dto';
 
-/** C0-a: actor compile-time shape — req.user JWT validate'ten gelen User; id+tenantId auth context. */
+/** C0-a: actor compile-time shape â€” req.user JWT validate'ten gelen User; id+tenantId auth context. */
 interface AuthRequest {
   user: { id: string; tenantId: string; role?: string };
 }
@@ -15,11 +15,11 @@ interface AuthRequest {
 export class ClientController {
   constructor(private clientService: ClientService, private clientIntakeLinkService: ClientIntakeLinkService) {}
 
-  // Task 2 (owner-locked 2026-06-30): client gövde doğrulaması GÜVENLİ/KADEMELİ.
-  // app.main.ts global ValidationPipe forbidNonWhitelisted:true → route-level pipe onu OVERRIDE EDEMEZ
-  // (NestJS global+local ikisi de çalışır). Bu yüzden @Body() any KASITLI (global pipe inert) + bu lenient
-  // pipe MANUEL invoke edilir: whitelist:true (fazla alan düşer), forbidNonWhitelisted:false (fazla alan
-  // 400 SEBEBİ DEĞİL). Strict forbid + TCKN/VKN mod-10/11 checksum = ayrı "Client DTO Strictness Audit".
+  // Task 2 (owner-locked 2026-06-30): client gÃ¶vde doÄŸrulamasÄ± GÃœVENLÄ°/KADEMELÄ°.
+  // app.main.ts global ValidationPipe forbidNonWhitelisted:true â†’ route-level pipe onu OVERRIDE EDEMEZ
+  // (NestJS global+local ikisi de Ã§alÄ±ÅŸÄ±r). Bu yÃ¼zden @Body() any KASITLI (global pipe inert) + bu lenient
+  // pipe MANUEL invoke edilir: whitelist:true (fazla alan dÃ¼ÅŸer), forbidNonWhitelisted:false (fazla alan
+  // 400 SEBEBÄ° DEÄÄ°L). Strict forbid + TCKN/VKN mod-10/11 checksum = ayrÄ± "Client DTO Strictness Audit".
   private readonly clientBodyPipe = new ValidationPipe({
     whitelist: true,
     forbidNonWhitelisted: false,
@@ -33,7 +33,7 @@ export class ClientController {
     transform: true,
   });
 
-  // Tüm müvekkilleri listele
+  // TÃ¼m mÃ¼vekkilleri listele
   @Get()
   async findAll(@Request() req: any, @Query('type') type?: string, @Query('search') search?: string) {
     const tenantId = req.user.tenantId;
@@ -91,55 +91,77 @@ export class ClientController {
     );
     return { data: result };
   }
+
+  // Client Workspace intake link create-and-deliver typed command (raw URL response yok)
+  @Post(':clientId/cases/:caseId/intake-links/create-and-deliver')
+  async createAndDeliverIntakeLink(
+    @Request() req: AuthRequest,
+    @Param('clientId') clientId: string,
+    @Param('caseId') caseId: string,
+    @Headers('idempotency-key') idempotencyKey: string | undefined,
+    @Body() body: any,
+  ) {
+    const dto = await this.intakeLinkBodyPipe.transform(body, { type: 'body', metatype: CreateClientWorkspaceIntakeLinkDto });
+    const result = await this.clientIntakeLinkService.createAndDeliverForClientWorkspace(
+      req.user.tenantId,
+      clientId,
+      caseId,
+      req.user.id,
+      idempotencyKey,
+      dto as CreateClientWorkspaceIntakeLinkDto,
+    );
+    return { data: result };
+  }
+
   // Fetch one client
   @Get(':id')
   async findOne(@Request() req: any, @Param('id') id: string) {
     const tenantId = req.user.tenantId;
     const client = await this.clientService.findOne(id, tenantId);
-    // P0.4: bulunamayan kayıt 404 (eski: HTTP 200 + {error} → FE !response.ok kontrolü "başarı" sanıyordu).
-    if (!client) throw new NotFoundException('Müvekkil bulunamadı');
+    // P0.4: bulunamayan kayÄ±t 404 (eski: HTTP 200 + {error} â†’ FE !response.ok kontrolÃ¼ "baÅŸarÄ±" sanÄ±yordu).
+    if (!client) throw new NotFoundException('MÃ¼vekkil bulunamadÄ±');
     return { data: client };
   }
 
-  // Yeni müvekkil oluştur
+  // Yeni mÃ¼vekkil oluÅŸtur
   @Post()
   async create(@Request() req: AuthRequest, @Body() body: any) {
     const tenantId = req.user.tenantId;
-    // Task 2: tip/format doğrulaması (lenient — fazla alan 400 değil, düşer). @Body() any → global pipe inert.
+    // Task 2: tip/format doÄŸrulamasÄ± (lenient â€” fazla alan 400 deÄŸil, dÃ¼ÅŸer). @Body() any â†’ global pipe inert.
     const dto = await this.clientBodyPipe.transform(body, { type: 'body', metatype: CreateClientDto });
     // C0-a: actor YALNIZ req.user.id (auth); body'den userId ASLA okunmaz.
-    // P0.4: hata yutma YOK — service exception'ları (NotFound/Conflict/500) gerçek HTTP status ile FE'ye gider.
+    // P0.4: hata yutma YOK â€” service exception'larÄ± (NotFound/Conflict/500) gerÃ§ek HTTP status ile FE'ye gider.
     const client = await this.clientService.create(tenantId, dto, { userId: req.user.id });
     return { data: client };
   }
 
-  // TEK SEFERLİK BAKIM (admin): özellik öncesi oluşmuş eksik müvekkillere görev/rozet üret.
-  // Idempotent; dedupeKey ile mükerrer görev oluşmaz.
+  // TEK SEFERLÄ°K BAKIM (admin): Ã¶zellik Ã¶ncesi oluÅŸmuÅŸ eksik mÃ¼vekkillere gÃ¶rev/rozet Ã¼ret.
+  // Idempotent; dedupeKey ile mÃ¼kerrer gÃ¶rev oluÅŸmaz.
   @Post('backfill-contact-followup')
   async backfillContactFollowUp(@Request() req: any) {
     if (req.user?.role !== 'ADMIN') {
-      throw new ForbiddenException('Bu işlem yalnızca admin tarafından yapılabilir');
+      throw new ForbiddenException('Bu iÅŸlem yalnÄ±zca admin tarafÄ±ndan yapÄ±labilir');
     }
     return this.clientService.backfillContactFollowUp(req.user.tenantId);
   }
 
-  // Müvekkil güncelle
+  // MÃ¼vekkil gÃ¼ncelle
   @Put(':id')
   async update(@Request() req: AuthRequest, @Param('id') id: string, @Body() body: any) {
     const tenantId = req.user.tenantId;
-    // Task 2: tip/format doğrulaması (lenient). UpdateClientDto = CreateClientDto + isActive.
+    // Task 2: tip/format doÄŸrulamasÄ± (lenient). UpdateClientDto = CreateClientDto + isActive.
     const dto = await this.clientBodyPipe.transform(body, { type: 'body', metatype: UpdateClientDto });
     // P0.4: hata yutma YOK. PR-U4 409 DUPLICATE_IDENTITY (ConflictException) ve 404 NotFound
-    // doğrudan gerçek HTTP status ile FE'ye gider (eski catch HTTP 200 {error} üretiyordu).
+    // doÄŸrudan gerÃ§ek HTTP status ile FE'ye gider (eski catch HTTP 200 {error} Ã¼retiyordu).
     const client = await this.clientService.update(id, tenantId, dto, { userId: req.user.id });
     return { data: client };
   }
 
-  // Müvekkil sil
+  // MÃ¼vekkil sil
   @Delete(':id')
   async remove(@Request() req: AuthRequest, @Param('id') id: string) {
     const tenantId = req.user.tenantId;
-    // P0.4: hata yutma YOK — bulunamayan kayıt gerçek HTTP status (404) döner.
+    // P0.4: hata yutma YOK â€” bulunamayan kayÄ±t gerÃ§ek HTTP status (404) dÃ¶ner.
     await this.clientService.remove(id, tenantId, { userId: req.user.id });
     return { success: true };
   }

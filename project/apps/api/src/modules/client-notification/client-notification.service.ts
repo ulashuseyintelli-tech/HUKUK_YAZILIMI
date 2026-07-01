@@ -19,6 +19,8 @@ export interface SendEmailDto {
   type: string; // MASRAF_ISTEK, GENEL_BILGILENDIRME, RAPOR, HATIRLATMA
   subject: string;
   body: string;
+  persistedSubject?: string; // Gonderilen subject farkli olabilir; DBde saklanacak safe subject.
+  persistedBody?: string; // Gonderilen body farkli olabilir; DBde saklanacak safe body.
   templateId?: string;
   dedupeKey?: string; // Faz 3 idempotency anahtarı (opsiyonel; ClientNotification.dedupeKey'e yazılır)
 }
@@ -525,8 +527,8 @@ export class ClientNotificationService {
         caseId: dto.caseId,
         channel: "EMAIL",
         type: dto.type,
-        subject: dto.subject,
-        body: dto.body,
+        subject: dto.persistedSubject ?? dto.subject,
+        body: dto.persistedBody ?? dto.body,
         status: "PENDING",
         sentById: userId,
         metadata: dto.templateId ? { templateId: dto.templateId } : undefined,

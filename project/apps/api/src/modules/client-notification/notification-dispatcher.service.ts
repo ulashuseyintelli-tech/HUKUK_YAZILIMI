@@ -9,6 +9,8 @@ export interface DispatchInput {
   templateCode: string; // MessageTemplate.code (EMAIL)
   type: string; // ClientNotification.type (ör. CLIENT_APPROVAL, STATEMENT_READY, PAYMENT_INFO)
   tokens: TemplateTokens; // çağıran doldurur (render motoru değişmez — m3a-4)
+  persistedTokens?: TemplateTokens; // DBde saklanacak subject/body icin redacted token seti.
+  dedupeKey?: string; // Cagiran typed command stable artifact dedupeKey'i verebilir.
   refType: string; // 'ClientApprovalRequest' | 'ClientStatement' | 'ExpenseRequest' ...
   refId: string;
   force?: boolean; // true → SENT idempotency kontrolünü atla (açık tekrar gönderim — m3a-2)
@@ -59,7 +61,7 @@ export class NotificationDispatcherService {
    * </remarks>
    */
   async dispatch(tenantId: string, userId: string, input: DispatchInput): Promise<DispatchResult> {
-    const dedupeKey = this.buildDedupeKey(input.templateCode, input.refType, input.refId);
+    const dedupeKey = input.dedupeKey ?? this.buildDedupeKey(input.templateCode, input.refType, input.refId);
 
     try {
       // 1) Idempotency: aynı dedupeKey için SENT var mı? (force değilse)
@@ -79,6 +81,9 @@ export class NotificationDispatcherService {
         { subject: template.subject, body: template.body },
         input.tokens,
       );
+      const persisted = input.persistedTokens
+        ? this.messageTemplate.renderTemplate({ subject: template.subject, body: template.body }, input.persistedTokens)
+        : undefined;
 
       // 3) Gönder (best-effort) — sendEmail başarısızsa ClientNotification FAILED yazar + throw eder
       const res = await this.clientNotification.sendEmail(tenantId, userId, {
@@ -87,6 +92,8 @@ export class NotificationDispatcherService {
         type: input.type,
         subject: subject || template.subject || '',
         body,
+        persistedSubject: persisted?.subject,
+        persistedBody: persisted?.body,
         templateId: template.id,
         dedupeKey,
       });
