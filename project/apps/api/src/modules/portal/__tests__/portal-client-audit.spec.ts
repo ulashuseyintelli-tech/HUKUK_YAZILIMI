@@ -13,6 +13,7 @@
  *  - ham e-posta / şifre / PII audit payload'una SIZMAZ (KVKK) — diff yalnız operasyonel bayraklar
  *  - audit yazımı THROW ederse service reject eder (audit fail = transaction rollback, C0-a deseni)
  */
+import { ForbiddenException } from '@nestjs/common';
 import { PortalService } from '../portal.service';
 
 const RAW_EMAIL = 'muvekkil.portal@example.com';
@@ -44,8 +45,11 @@ function build(over: any = {}) {
   if (over.client) Object.assign(prisma.client, over.client);
   const audit: any = { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn() };
   if (over.audit) Object.assign(audit, over.audit);
-  const svc = new PortalService(prisma as any, {} as any, audit as any);
-  return { svc, prisma, tx, audit };
+  // Task 10-S: officeApproval eligible:true varsayılan (bu dosyanın odağı audit davranışı, capability
+  // DEĞİL) — yalnız "actor yoksa" testi bilerek eligible kontrolüne HİÇ ULAŞMAZ (fail-closed önce).
+  const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
+  const svc = new PortalService(prisma as any, {} as any, audit as any, officeApproval as any);
+  return { svc, prisma, tx, audit, officeApproval };
 }
 
 const auditInput = (audit: any) => audit.logInTransaction.mock.calls[0][1];
@@ -83,13 +87,21 @@ describe('C0 bypass — createPortalUser audit', () => {
     expect(input.userId).toBe('u-admin');
   });
 
-  it('actor YALNIZ auth context — actor verilmezse userId undefined (clientId/email türetilmez)', async () => {
+  it('actor YALNIZ auth context — geçerli actor ile userId body/clientId/email\'den TÜRETİLMEZ', async () => {
     const { svc, audit } = build();
-    await svc.createPortalUser('c1', RAW_EMAIL, RAW_PASSWORD, 't1'); // actor YOK
+    await svc.createPortalUser('c1', RAW_EMAIL, RAW_PASSWORD, 't1', { userId: 'u-real' });
     const input = auditInput(audit);
-    expect(input.userId).toBeUndefined();
+    expect(input.userId).toBe('u-real');
     expect(input.userId).not.toBe('c1');
     expect(auditJson(audit)).not.toContain(RAW_EMAIL);
+  });
+
+  it('Task 10-S: actor verilmezse (userId yok) → ForbiddenException, fail-closed (audit ÇAĞRILMAZ)', async () => {
+    const { svc, audit } = build();
+    await expect(svc.createPortalUser('c1', RAW_EMAIL, RAW_PASSWORD, 't1')).rejects.toBeInstanceOf(
+      ForbiddenException,
+    );
+    expect(audit.logInTransaction).not.toHaveBeenCalled();
   });
 
   it('audit payload ham e-posta/şifre İÇERMEZ; diff yalnız operasyonel portal bayrakları (KVKK)', async () => {

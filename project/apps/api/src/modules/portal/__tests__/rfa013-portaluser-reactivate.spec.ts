@@ -36,7 +36,10 @@ function build(over: any = {}) {
   };
   if (over.client) Object.assign(prisma.client, over.client);
   const audit = { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn() };
-  const svc = new PortalService(prisma as any, {} as any, audit as any);
+  // Task 10-S: bu dosya createPortalUser'ı gerçekten çağırıyor → officeApproval eligible:true olmalı
+  // (bu testler dup/reactivate/conflict mantığını doğruluyor, capability'yi DEĞİL).
+  const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
+  const svc = new PortalService(prisma as any, {} as any, audit as any, officeApproval as any);
   return { svc, prisma, tx, audit };
 }
 
@@ -45,7 +48,7 @@ describe('RFA-013 createPortalUser reactivate', () => {
     const { svc, tx } = build({
       clientPortalUser: { findUnique: jest.fn().mockResolvedValue({ id: 'PU1', isActive: false, email: 'old@x.com' }) },
     });
-    const res: any = await svc.createPortalUser('c1', 'new@x.com', 'YeniSifre123', 't1');
+    const res: any = await svc.createPortalUser('c1', 'new@x.com', 'YeniSifre123', 't1', { userId: 'u-test' });
 
     expect(res._reactivated).toBe(true);
     expect(res.portalUserId).toBe('PU1');
@@ -65,7 +68,7 @@ describe('RFA-013 createPortalUser reactivate', () => {
     const { svc, tx } = build({
       clientPortalUser: { findUnique: jest.fn().mockResolvedValue({ id: 'PU2', isActive: true }) },
     });
-    await expect(svc.createPortalUser('c1', 'a@x.com', 'pw', 't1')).rejects.toBeInstanceOf(ConflictException);
+    await expect(svc.createPortalUser('c1', 'a@x.com', 'pw', 't1', { userId: 'u-test' })).rejects.toBeInstanceOf(ConflictException);
     expect(tx.clientPortalUser.create).not.toHaveBeenCalled();
     expect(tx.clientPortalUser.update).not.toHaveBeenCalled();
   });
@@ -74,7 +77,7 @@ describe('RFA-013 createPortalUser reactivate', () => {
     const { svc, prisma, tx } = build({
       clientPortalUser: { findFirst: jest.fn().mockResolvedValue({ id: 'OTHER', email: 'dup@x.com' }) },
     });
-    await expect(svc.createPortalUser('c1', 'dup@x.com', 'pw', 't1')).rejects.toBeInstanceOf(ConflictException);
+    await expect(svc.createPortalUser('c1', 'dup@x.com', 'pw', 't1', { userId: 'u-test' })).rejects.toBeInstanceOf(ConflictException);
     // email guard findUnique'ten ÖNCE → clientId create/update yok
     expect(tx.clientPortalUser.create).not.toHaveBeenCalled();
     // guard global + self hariç (clientId not c1)
@@ -83,7 +86,7 @@ describe('RFA-013 createPortalUser reactivate', () => {
 
   it('hiç mevcut yok → düz create', async () => {
     const { svc, tx } = build();
-    const res: any = await svc.createPortalUser('c1', 'fresh@x.com', 'pw', 't1');
+    const res: any = await svc.createPortalUser('c1', 'fresh@x.com', 'pw', 't1', { userId: 'u-test' });
     expect(tx.clientPortalUser.create).toHaveBeenCalledTimes(1);
     expect(res.portalUserId).toBe('NEWPU');
   });

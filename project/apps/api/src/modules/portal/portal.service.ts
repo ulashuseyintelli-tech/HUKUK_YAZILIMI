@@ -1,8 +1,9 @@
-import { Injectable, Logger, UnauthorizedException, BadRequestException, NotFoundException, ConflictException } from "@nestjs/common";
+import { Injectable, Logger, UnauthorizedException, BadRequestException, ForbiddenException, NotFoundException, ConflictException } from "@nestjs/common";
 import { JwtService } from "@nestjs/jwt";
 import { PrismaService } from "../../prisma/prisma.service";
 import { maskEmail } from "../../common/pii-mask.util";
 import { AuditService } from "../audit/audit.service";
+import { OfficeApprovalService } from "../office-approval/office-approval.service";
 import { buildClientFieldDiff, PORTAL_ACCESS_FIELDS } from "../client/client-audit.util";
 import type { AuditActor } from "../client/client.service";
 import * as bcrypt from "bcrypt";
@@ -15,8 +16,28 @@ export class PortalService {
   constructor(
     private prisma: PrismaService,
     private jwtService: JwtService,
-    private audit: AuditService
+    private audit: AuditService,
+    private officeApproval: OfficeApprovalService
   ) {}
+
+  /**
+   * Task 10-S (owner-locked 2026-07-02) — portal erişimi açma/kapatma mutasyon yetkisi.
+   * ClientService.assertCanManageLifecycle (Task 8A) ile BİREBİR desen (reuse, yeni altyapı YOK):
+   * PARTNER veya canApproveOfficeActions=true delege avukat. Staff/normal kullanıcı 403.
+   *
+   * /// <remarks>
+   * /// Çağrıldığı yerler:
+   * /// - PortalService.createPortalUser() → mutasyon/audit'ten ÖNCE
+   * /// - PortalService.disablePortalUser() → mutasyon/audit'ten ÖNCE
+   * /// </remarks>
+   */
+  private async assertCanManagePortalAccess(userId: string | undefined, tenantId: string): Promise<void> {
+    if (!userId || !(await this.officeApproval.isApproverEligible(userId, tenantId))) {
+      throw new ForbiddenException(
+        "Portal erişimi yönetimi için yetki yok (PARTNER veya yetkilendirilmiş avukat gerekir)"
+      );
+    }
+  }
 
   /**
    * Portal kullanıcısı oluştur
@@ -37,6 +58,9 @@ export class PortalService {
     if (!client) {
       throw new NotFoundException("Müvekkil bulunamadı");
     }
+
+    // Task 10-S: yetkisiz aktör hiçbir yazma yapmaz (mutasyondan/audit'ten ÖNCE).
+    await this.assertCanManagePortalAccess(actor?.userId, tenantId);
 
     // RFA-013: email collision guard — GLOBAL (login email-global çalışıyor; iki aktif kullanıcı
     // aynı email'de olursa login belirsizleşir = güvenlik kokusu). Başka AKTİF user aynı email → 409.
@@ -378,6 +402,9 @@ export class PortalService {
     if (!client) {
       throw new NotFoundException("Müvekkil bulunamadı");
     }
+
+    // Task 10-S: yetkisiz aktör hiçbir yazma yapmaz (mutasyondan/audit'ten ÖNCE).
+    await this.assertCanManagePortalAccess(actor?.userId, tenantId);
 
     // C0 bypass fix: portal kullanıcıları pasifle + client erişim-bayrağı kapat + audit AYNI transaction.
     await this.prisma.$transaction(async (tx) => {
