@@ -7,7 +7,9 @@
  * (gerçek entegrasyonu maskeliyordu). Artık kanonik `Client` (@/lib/api/client.types) + YALNIZ gerçek veri:
  *   - api.getClient(id)  → kimlik/iletişim/adres + powerOfAttorneys (POA sekmesi)
  *   - api.getCases({ clientId }) → Dosyalar sekmesi (findOne cases içermez)
- * v1 sekmeleri: Genel · Kimlik & İletişim · Dosyalar · Vekalet · İstihbarat · Intake · Aktivite.
+ * v1 sekmeleri: Genel · Kimlik & İletişim · Dosyalar · Vekalet · Bilgi Talepleri · İstihbarat ·
+ * Intake · İşlemler · Aktivite. Bilgi Talepleri (ClientInfoRequest) = legacy/email adapter kanalı,
+ * İstihbarat/Intake canonical'dır (kör merge yok; bkz. client-info-requests-tab.tsx).
  * Muhasebe/Banka ayrı kapsamdır.
  * Mock fallback YOK; hata/boş durumları açıkça gösterilir.
  */
@@ -31,6 +33,7 @@ import { ClientActivityTab } from '@/components/client/client-activity-tab';
 import { ClientActionsTab } from '@/components/client/client-actions-tab';
 import { ClientIntelligenceTab } from '@/components/client/client-intelligence-tab';
 import { ClientIntakeTab } from '@/components/client/client-intake-tab';
+import { ClientInfoRequestsTab } from '@/components/client/client-info-requests-tab';
 import {
   clientDisplayName,
   clientIdentity,
@@ -61,7 +64,16 @@ interface ClientPoaRow {
   status?: string | null;
 }
 
-type TabId = 'overview' | 'identity' | 'cases' | 'poa' | 'intelligence' | 'intake' | 'actions' | 'activity';
+type TabId =
+  | 'overview'
+  | 'identity'
+  | 'cases'
+  | 'poa'
+  | 'info-requests'
+  | 'intelligence'
+  | 'intake'
+  | 'actions'
+  | 'activity';
 
 interface ClientProfileProps {
   clientId: string;
@@ -163,6 +175,7 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
     { id: 'identity', label: 'Kimlik & İletişim' },
     { id: 'cases', label: 'Dosyalar', count: cases.length },
     { id: 'poa', label: 'Vekalet', count: poas.length },
+    { id: 'info-requests', label: 'Bilgi Talepleri' },
     { id: 'intelligence', label: 'İstihbarat' },
     { id: 'intake', label: 'Intake' },
     { id: 'actions', label: 'İşlemler' },
@@ -358,6 +371,9 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
               )}
             </div>
           )}
+
+          {/* Bilgi Talepleri */}
+          {tab === 'info-requests' && <ClientInfoRequestsTab cases={cases} />}
 
           {/* İstihbarat */}
           {tab === 'intelligence' && <ClientIntelligenceTab cases={cases} />}
