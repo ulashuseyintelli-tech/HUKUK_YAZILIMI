@@ -4,10 +4,40 @@ import { ExpenseGateService, GateCheckResult } from './expense-gate.service';
 import { ExpenseCalculatorService } from './expense-calculator.service';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CaseBalanceService } from '@/modules/case-balance/case-balance.service';
+import { AccountingJournalWriterService } from '@/modules/accounting-journal';
+import { ClientSettlementReadService } from '@/modules/client-settlement/client-settlement-read.service';
 import { NotificationDispatcherService } from '@/modules/client-notification/notification-dispatcher.service';
 import { OfficeService } from '@/modules/office/office.service';
 import { TariffService } from '@/modules/tariff/tariff.service';
 import { Decimal } from '@prisma/client/runtime/library';
+
+const CREATED_AT = new Date('2026-07-01T10:00:00.000Z');
+
+const defaultJournalWriteResult = {
+  ok: true,
+  output: {
+    status: 'CREATED',
+    journalEntryId: 'journal-entry-1',
+    idempotencyKey: 'journal-created-key',
+    sourceVersion: 'journal-created-version',
+    lineCount: 2,
+  },
+} as const;
+
+const replayedJournalWriteResult = {
+  ok: true,
+  output: {
+    status: 'REPLAYED',
+    journalEntryId: 'journal-entry-replay',
+    idempotencyKey: 'journal-replay-key',
+    sourceVersion: 'journal-replay-version',
+    lineCount: 2,
+  },
+} as const;
+
+function recordedSourceVersion(expenseRequestId: string): string {
+  return `${CREATED_AT.toISOString()}:${expenseRequestId}:RECORDED`;
+}
 
 // Mock data
 const mockExpenseRequest = {
@@ -18,6 +48,8 @@ const mockExpenseRequest = {
   stageCode: 'OPENING',
   gateType: 'BLOCKING',
   totalAmount: new Decimal(1500),
+  currency: 'TRY',
+  createdAt: CREATED_AT,
   paidTotal: new Decimal(0),
   status: 'PENDING',
 };
@@ -62,6 +94,16 @@ const mockCaseBalanceService = {
   credit: jest.fn(),
 };
 
+const mockJournalWriter = {
+  write: jest.fn(),
+};
+
+const mockClientSettlementReadService = {
+  computeExpenseRemaining: jest.fn((_prisma, _tenantId, _expenseRequestId, totalAmount, paidTotal) =>
+    Promise.resolve(totalAmount.minus(paidTotal)),
+  ),
+};
+
 // Faz 3.5: ödeme maili tetiği — best-effort dispatcher + office (mail finansal state'i etkilemez).
 const mockDispatcher = {
   dispatch: jest.fn().mockResolvedValue({ status: 'sent' }),
@@ -103,6 +145,8 @@ describe('ExpenseRequestService - Property Tests', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockJournalWriter.write.mockReset();
+    mockJournalWriter.write.mockResolvedValue(defaultJournalWriteResult);
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -110,7 +154,9 @@ describe('ExpenseRequestService - Property Tests', () => {
         ExpenseGateService,
         ExpenseCalculatorService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: ClientSettlementReadService, useValue: mockClientSettlementReadService },
         { provide: CaseBalanceService, useValue: mockCaseBalanceService },
+        { provide: AccountingJournalWriterService, useValue: mockJournalWriter },
         { provide: TariffService, useValue: mockTariffService },
         { provide: ExpenseNotificationService, useValue: mockExpenseNotificationService },
         { provide: NotificationDispatcherService, useValue: mockDispatcher },
@@ -122,6 +168,157 @@ describe('ExpenseRequestService - Property Tests', () => {
     gateService = module.get<ExpenseGateService>(ExpenseGateService);
   });
 
+  function expectLastRecordedJournalDraft(sourceId: string, amount: string): void {
+    const calls = mockJournalWriter.write.mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+
+    const [input, tx] = calls[calls.length - 1];
+    const draft = input.draft;
+    const sourceVersion = recordedSourceVersion(sourceId);
+
+    expect(tx).toBe(mockPrismaService);
+    expect(draft).toEqual(expect.objectContaining({
+      tenantId: 'tenant-1',
+      caseId: 'case-1',
+      currency: 'TRY',
+      entryType: 'EXPENSE_REQUEST_RECORDED',
+      sourceType: 'EXPENSE_REQUEST',
+      sourceAction: 'recorded',
+      sourceId,
+      sourceVersion,
+      sourceOccurredAt: CREATED_AT.toISOString(),
+      effectiveDate: '2026-07-01',
+      postedById: 'user-1',
+    }));
+    expect(draft.idempotencyKey).toBe(
+      `acct-journal:v1:tenant-1:EXPENSE_REQUEST:${sourceId}:recorded:${sourceVersion}`,
+    );
+    expect(draft.lines).toHaveLength(2);
+    expect(draft.lines).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        accountCode: 'CLIENT_EXPENSE_RECEIVABLE',
+        direction: 'DEBIT',
+        amount,
+        caseId: 'case-1',
+        clientId: 'client-1',
+        caseClientId: null,
+        expenseRequestId: sourceId,
+      }),
+      expect.objectContaining({
+        accountCode: 'FIRM_EXPENSE_REIMBURSEMENT',
+        direction: 'CREDIT',
+        amount,
+        caseId: 'case-1',
+        clientId: 'client-1',
+        caseClientId: null,
+        expenseRequestId: sourceId,
+      }),
+    ]));
+  }
+
+  describe('ExpenseRequest recorded journal wiring', () => {
+    it('writes recorded journal inside manual create transaction', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue(mockCase);
+      mockPrismaService.client.findFirst.mockResolvedValue({ id: 'client-1' });
+      mockPrismaService.expenseRequest.create.mockResolvedValue({
+        ...mockExpenseRequest,
+        id: 'manual-exp-1',
+        totalAmount: new Decimal(250),
+      });
+
+      const result = await service.create('tenant-1', 'user-1', {
+        caseId: 'case-1',
+        clientId: 'client-1',
+        items: [{ type: 'FILING', description: 'Filing', amount: 250 }],
+      });
+
+      expect(result.id).toBe('manual-exp-1');
+      expect(mockPrismaService.$transaction).toHaveBeenCalledTimes(1);
+      expectLastRecordedJournalDraft('manual-exp-1', '250');
+    });
+
+    it('writes recorded journal inside package create transaction', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue(mockCase);
+      mockPrismaService.client.findFirst.mockResolvedValue({ id: 'client-1' });
+      mockPrismaService.expenseRequest.create.mockResolvedValue({
+        ...mockExpenseRequest,
+        id: 'package-exp-1',
+        totalAmount: new Decimal(275),
+      });
+
+      const result = await service.createFromPackage('tenant-1', 'user-1', {
+        caseId: 'case-1',
+        clientId: 'client-1',
+        packageCode: 'OPENING',
+        items: [
+          { itemCode: 'FILING', label: 'Filing', suggestedAmount: 300, finalAmount: 275 },
+        ],
+      });
+
+      expect(result.id).toBe('package-exp-1');
+      expect(mockPrismaService.$transaction).toHaveBeenCalledTimes(1);
+      expectLastRecordedJournalDraft('package-exp-1', '275');
+    });
+
+    it('writes recorded journal inside stage expense set transaction', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue(mockCase);
+      mockPrismaService.expenseRequest.create.mockResolvedValue({
+        ...mockExpenseRequest,
+        id: 'stage-exp-1',
+        stageCode: 'SEIZURE',
+        totalAmount: new Decimal(300),
+      });
+
+      const result = await service.createStageExpenseSet('case-1', 'SEIZURE', 'tenant-1', 'user-1');
+
+      expect(result.id).toBe('stage-exp-1');
+      expect(mockPrismaService.expenseRequestItem.create).toHaveBeenCalled();
+      expectLastRecordedJournalDraft('stage-exp-1', '300');
+    });
+
+    it('fails closed and prevents post-create side effects when journal writer fails', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue(mockCase);
+      mockPrismaService.client.findFirst.mockResolvedValue({ id: 'client-1' });
+      mockPrismaService.expenseRequest.create.mockResolvedValue({
+        ...mockExpenseRequest,
+        id: 'manual-exp-fail',
+        totalAmount: new Decimal(250),
+      });
+      mockJournalWriter.write.mockResolvedValueOnce({
+        ok: false,
+        errors: [{ code: 'DB_WRITE_FAILED', message: 'journal write failed', path: null, details: {} }],
+      });
+
+      await expect(service.create('tenant-1', 'user-1', {
+        caseId: 'case-1',
+        clientId: 'client-1',
+        items: [{ type: 'FILING', description: 'Filing', amount: 250 }],
+        paidByLawyer: true,
+      })).rejects.toThrow('ExpenseRequest journal write failed: DB_WRITE_FAILED');
+
+      expect(mockCaseBalanceService.credit).not.toHaveBeenCalled();
+    });
+
+    it('accepts writer replay with deterministic idempotency key', async () => {
+      mockPrismaService.case.findFirst.mockResolvedValue(mockCase);
+      mockPrismaService.client.findFirst.mockResolvedValue({ id: 'client-1' });
+      mockPrismaService.expenseRequest.create.mockResolvedValue({
+        ...mockExpenseRequest,
+        id: 'manual-exp-replay',
+        totalAmount: new Decimal(250),
+      });
+      mockJournalWriter.write.mockResolvedValueOnce(replayedJournalWriteResult);
+
+      const result = await service.create('tenant-1', 'user-1', {
+        caseId: 'case-1',
+        clientId: 'client-1',
+        items: [{ type: 'FILING', description: 'Filing', amount: 250 }],
+      });
+
+      expect(result.id).toBe('manual-exp-replay');
+      expectLastRecordedJournalDraft('manual-exp-replay', '250');
+    });
+  });
   describe('Property 1: Case Creation Triggers Expense Set', () => {
     /**
      * Property: For any Case that transitions from DRAFT to CREATED status,
@@ -148,6 +345,7 @@ describe('ExpenseRequestService - Property Tests', () => {
       );
       // 6 items should be created
       expect(mockPrismaService.expenseRequestItem.create).toHaveBeenCalledTimes(6);
+      expectLastRecordedJournalDraft('new-exp-1', '1500');
     });
 
     it('should throw error if expense set already exists for OPENING stage', async () => {
@@ -342,6 +540,7 @@ describe('ExpenseGateService - Property Tests', () => {
       providers: [
         ExpenseGateService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: ClientSettlementReadService, useValue: mockClientSettlementReadService },
       ],
     }).compile();
 
@@ -488,6 +687,7 @@ describe('ExpenseNotificationService - Property Tests', () => {
       providers: [
         ExpenseNotificationService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: ClientSettlementReadService, useValue: mockClientSettlementReadService },
         { provide: EmailProviderService, useValue: mockEmailProviderService },
         { provide: ConfigService, useValue: mockConfigService },
       ],
@@ -744,6 +944,7 @@ describe('ExpenseViewService - Property Tests', () => {
       providers: [
         ExpenseViewService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: ClientSettlementReadService, useValue: mockClientSettlementReadService },
       ],
     }).compile();
 
@@ -961,7 +1162,9 @@ describe('Property 6: Task Completion on Payment', () => {
         ExpenseGateService,
         ExpenseCalculatorService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: ClientSettlementReadService, useValue: mockClientSettlementReadService },
         { provide: CaseBalanceService, useValue: mockCaseBalanceService },
+        { provide: AccountingJournalWriterService, useValue: mockJournalWriter },
         { provide: TariffService, useValue: mockTariffService },
         { provide: ExpenseNotificationService, useValue: mockExpenseNotificationService },
         { provide: NotificationDispatcherService, useValue: mockDispatcher },
@@ -1089,7 +1292,9 @@ describe('getExpenseSummaryForCase - clientId filtresi (TM3 Faz7-V)', () => {
         ExpenseGateService,
         ExpenseCalculatorService,
         { provide: PrismaService, useValue: mockPrismaService },
+        { provide: ClientSettlementReadService, useValue: mockClientSettlementReadService },
         { provide: CaseBalanceService, useValue: mockCaseBalanceService },
+        { provide: AccountingJournalWriterService, useValue: mockJournalWriter },
         { provide: TariffService, useValue: mockTariffService },
         { provide: ExpenseNotificationService, useValue: mockExpenseNotificationService },
         { provide: NotificationDispatcherService, useValue: mockDispatcher },
