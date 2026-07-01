@@ -31,6 +31,55 @@ type ExpenseRequestJournalMockRow = {
   expenseRequestId?: string | null;
 };
 
+type ReplayJournalMockRow = {
+  id?: string;
+  sourceType: 'COLLECTION_DISPOSITION_LINE' | 'BALANCE_LEDGER';
+  sourceAction?: 'posted';
+  sourceId: string;
+};
+
+type CollectionDispositionLineMockRow = {
+  id: string;
+  type?: string;
+  amount: string;
+  caseClientId?: string | null;
+  dispositionId?: string;
+  collectionId?: string;
+  caseId?: string;
+  currency?: string;
+  postedAt?: Date | null;
+  manualReversalRequiredAt?: Date | null;
+};
+
+type CollectionMockRow = {
+  id: string;
+  caseId?: string;
+  currency?: string;
+  status?: string;
+  date?: Date | null;
+};
+
+type CollectionDispositionMockRow = {
+  id: string;
+  caseId?: string;
+  currency?: string;
+  status?: string;
+  updatedAt?: Date | null;
+};
+
+type BalanceLedgerMockRow = {
+  id: string;
+  type?: string;
+  amount: string;
+  currency?: string;
+  source?: string | null;
+  sourceId?: string | null;
+  createdAt?: Date;
+  caseId?: string;
+};
+
+const DEFAULT_REPLAY_DATE = new Date('2026-01-01T00:00:00.000Z');
+
 function expenseRequest(row: ExpenseRequestMockRow) {
   return {
     caseId: 'case-1',
@@ -62,6 +111,65 @@ function expenseRequestJournal(row: ExpenseRequestJournalMockRow) {
   };
 }
 
+function replayJournal(row: ReplayJournalMockRow) {
+  return {
+    id: row.id ?? `journal-${row.sourceId}`,
+    sourceType: row.sourceType,
+    sourceAction: row.sourceAction ?? 'posted',
+    sourceId: row.sourceId,
+  };
+}
+
+function collectionDispositionLine(row: CollectionDispositionLineMockRow) {
+  return {
+    id: row.id,
+    type: row.type ?? 'CLIENT_PAYABLE',
+    amount: new Prisma.Decimal(row.amount),
+    caseClientId: row.caseClientId ?? 'case-client-1',
+    disposition: {
+      id: row.dispositionId ?? `disp-${row.id}`,
+      collectionId: row.collectionId ?? `collection-${row.id}`,
+      caseId: row.caseId ?? 'case-1',
+      currency: row.currency ?? 'TRY',
+      postedAt: row.postedAt === undefined ? DEFAULT_REPLAY_DATE : row.postedAt,
+      manualReversalRequiredAt: row.manualReversalRequiredAt ?? null,
+    },
+  };
+}
+
+function collection(row: CollectionMockRow) {
+  return {
+    caseId: 'case-1',
+    currency: 'TRY',
+    status: 'CONFIRMED',
+    date: DEFAULT_REPLAY_DATE,
+    ...row,
+  };
+}
+
+function collectionDisposition(row: CollectionDispositionMockRow) {
+  return {
+    caseId: 'case-1',
+    currency: 'TRY',
+    status: 'HELD_PENDING_DISTRIBUTION',
+    updatedAt: DEFAULT_REPLAY_DATE,
+    ...row,
+  };
+}
+
+function balanceLedger(row: BalanceLedgerMockRow) {
+  return {
+    id: row.id,
+    type: row.type ?? 'CREDIT',
+    amount: new Prisma.Decimal(row.amount),
+    currency: row.currency ?? 'TRY',
+    source: row.source ?? null,
+    sourceId: row.sourceId ?? null,
+    createdAt: row.createdAt ?? DEFAULT_REPLAY_DATE,
+    caseBalance: { caseId: row.caseId ?? 'case-1' },
+  };
+}
+
 function buildPrismaMock(
   lines: Array<{ sourceType: string; sourceAction: string; amount: string }>,
   expense?: {
@@ -72,10 +180,18 @@ function buildPrismaMock(
     offsets?: Array<{ expenseRequestId: string }>;
     applications?: Array<{ expenseRequestId: string }>;
   },
+  replay?: {
+    caseClients?: Array<{ id: string; caseId: string }>;
+    dispositionLines?: CollectionDispositionLineMockRow[];
+    collections?: CollectionMockRow[];
+    dispositions?: CollectionDispositionMockRow[];
+    balanceLedgers?: BalanceLedgerMockRow[];
+    journalEntries?: ReplayJournalMockRow[];
+  },
 ) {
   return {
     caseClient: {
-      findMany: jest.fn().mockResolvedValue([{ id: 'case-client-1' }]),
+      findMany: jest.fn().mockResolvedValue(replay?.caseClients ?? [{ id: 'case-client-1', caseId: 'case-1' }]),
     },
     accountingJournalLine: {
       findMany: jest.fn().mockResolvedValue(
@@ -94,7 +210,24 @@ function buildPrismaMock(
       }),
     },
     accountingJournalEntry: {
-      findMany: jest.fn().mockResolvedValue((expense?.journals ?? []).map(expenseRequestJournal)),
+      findMany: jest.fn().mockImplementation((args) => {
+        if (args.where?.sourceType === 'EXPENSE_REQUEST') {
+          return Promise.resolve((expense?.journals ?? []).map(expenseRequestJournal));
+        }
+        return Promise.resolve((replay?.journalEntries ?? []).map(replayJournal));
+      }),
+    },
+    collectionDispositionLine: {
+      findMany: jest.fn().mockResolvedValue((replay?.dispositionLines ?? []).map(collectionDispositionLine)),
+    },
+    collection: {
+      findMany: jest.fn().mockResolvedValue((replay?.collections ?? []).map(collection)),
+    },
+    collectionDisposition: {
+      findMany: jest.fn().mockResolvedValue((replay?.dispositions ?? []).map(collectionDisposition)),
+    },
+    balanceLedger: {
+      findMany: jest.fn().mockResolvedValue((replay?.balanceLedgers ?? []).map(balanceLedger)),
     },
     expensePayment: {
       findMany: jest.fn().mockResolvedValue(expense?.payments ?? []),
@@ -517,6 +650,163 @@ describe('ClientAccountingSummaryShadowReportService', () => {
       }),
     );
     expect(report.blockerCodes).toEqual(expect.arrayContaining(['EXPENSE_REQUEST_SETTLED_CANCEL_BLOCKED']));
+    expect(report.candidateStatus).toBe('BLOCKED');
+    expect(report.safeForPrimaryCutover).toBe(false);
+  });
+  it('reports CollectionDispositionLine replay eligibility and raw lifecycle blockers', async () => {
+    const prisma = buildPrismaMock([], undefined, {
+      dispositionLines: [{ id: 'line-1', type: 'CLIENT_PAYABLE', amount: '125' }],
+      collections: [{ id: 'collection-1', status: 'CONFIRMED' }],
+      dispositions: [{ id: 'disp-held', status: 'HELD_PENDING_DISTRIBUTION' }],
+      journalEntries: [{ sourceType: 'COLLECTION_DISPOSITION_LINE', sourceId: 'line-1', id: 'journal-line-1' }],
+    });
+
+    const report = await new ClientAccountingSummaryShadowReportService(prisma as never).getSummaryShadowReportWithSupportedValues({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      legacyClientScoped: { payableNet: '0', paidToClient: '0', offsetApplied: '0' },
+    });
+
+    expect(report.replayEvidence?.pendingDistribution).toEqual(
+      expect.objectContaining({
+        sourceType: 'COLLECTION_DISPOSITION_LINE',
+        sourceAction: 'posted',
+        sourceVersionEvidence: 'postedAt/sourceId/idempotencyKey',
+        statusCounts: expect.objectContaining({ REPLAY_ELIGIBLE: 1 }),
+        blockerCodes: expect.arrayContaining([
+          'COLLECTION_RAW_SOURCE_BLOCKED',
+          'COLLECTION_DISPOSITION_LIFECYCLE_BLOCKED',
+        ]),
+      }),
+    );
+    expect(report.replayEvidence?.pendingDistribution.lineItems[0]).toEqual(
+      expect.objectContaining({
+        dispositionLineId: 'line-1',
+        status: 'REPLAY_ELIGIBLE',
+        blockerCodes: [],
+        journalEntryId: 'journal-line-1',
+      }),
+    );
+    expect(report.replayEvidence?.pendingDistribution.blockerItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ sourceType: 'COLLECTION', blockerCodes: ['COLLECTION_RAW_SOURCE_BLOCKED'] }),
+        expect.objectContaining({ sourceType: 'COLLECTION_DISPOSITION', blockerCodes: ['COLLECTION_DISPOSITION_LIFECYCLE_BLOCKED'] }),
+      ]),
+    );
+    expect(component(report, 'pendingDistribution').blockerCodes).toEqual(
+      expect.arrayContaining([
+        'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
+        'COLLECTION_RAW_SOURCE_BLOCKED',
+        'COLLECTION_DISPOSITION_LIFECYCLE_BLOCKED',
+      ]),
+    );
+    expect(report.candidateStatus).toBe('BLOCKED');
+    expect(report.safeForPrimaryCutover).toBe(false);
+  });
+
+  it('blocks manual reversal and unmapped CollectionDispositionLine replay evidence', async () => {
+    const prisma = buildPrismaMock([], undefined, {
+      dispositionLines: [
+        {
+          id: 'line-manual',
+          type: 'CLIENT_PAYABLE',
+          amount: '50',
+          manualReversalRequiredAt: new Date('2026-02-01T00:00:00.000Z'),
+        },
+        { id: 'line-other', type: 'OTHER', amount: '25' },
+      ],
+    });
+
+    const report = await new ClientAccountingSummaryShadowReportService(prisma as never).getSummaryShadowReportWithSupportedValues({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      legacyClientScoped: { payableNet: '0', paidToClient: '0', offsetApplied: '0' },
+    });
+
+    expect(report.replayEvidence?.pendingDistribution.statusCounts).toEqual(
+      expect.objectContaining({ MANUAL_REVERSAL_BLOCKED: 1, UNMAPPED_LINE_BLOCKED: 1 }),
+    );
+    expect(report.replayEvidence?.pendingDistribution.lineItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          dispositionLineId: 'line-manual',
+          status: 'MANUAL_REVERSAL_BLOCKED',
+          blockerCodes: ['COLLECTION_DISPOSITION_LINE_MANUAL_REVERSAL_BLOCKED'],
+        }),
+        expect.objectContaining({
+          dispositionLineId: 'line-other',
+          status: 'UNMAPPED_LINE_BLOCKED',
+          blockerCodes: ['COLLECTION_DISPOSITION_LINE_UNMAPPED_BLOCKED'],
+        }),
+      ]),
+    );
+    expect(report.blockerCodes).toEqual(
+      expect.arrayContaining([
+        'COLLECTION_DISPOSITION_LINE_MANUAL_REVERSAL_BLOCKED',
+        'COLLECTION_DISPOSITION_LINE_UNMAPPED_BLOCKED',
+      ]),
+    );
+  });
+
+  it('reports BalanceLedger replay eligibility, correlated suppression, and unmapped blockers', async () => {
+    const prisma = buildPrismaMock([], undefined, {
+      balanceLedgers: [
+        { id: 'ledger-credit', type: 'CREDIT', amount: '100', source: 'manual', sourceId: 'manual-1' },
+        { id: 'ledger-debit', type: 'DEBIT', amount: '40', source: 'manual', sourceId: 'manual-2' },
+        { id: 'ledger-correlated', type: 'CREDIT', amount: '30', source: 'disposition_line:line-1', sourceId: 'line-1' },
+        { id: 'ledger-adjust', type: 'ADJUST', amount: '10', source: 'manual', sourceId: 'manual-3' },
+      ],
+      journalEntries: [
+        { sourceType: 'BALANCE_LEDGER', sourceId: 'ledger-credit', id: 'journal-ledger-credit' },
+        { sourceType: 'BALANCE_LEDGER', sourceId: 'ledger-debit', id: 'journal-ledger-debit' },
+      ],
+    });
+
+    const report = await new ClientAccountingSummaryShadowReportService(prisma as never).getSummaryShadowReportWithSupportedValues({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      legacyClientScoped: { payableNet: '0', paidToClient: '0', offsetApplied: '0' },
+    });
+
+    expect(report.replayEvidence?.advanceBalance).toEqual(
+      expect.objectContaining({
+        sourceType: 'BALANCE_LEDGER',
+        sourceAction: 'posted',
+        sourceVersionEvidence: 'createdAt/sourceId/idempotencyKey',
+        statusCounts: expect.objectContaining({
+          REPLAY_ELIGIBLE: 2,
+          CORRELATED_DISPOSITION_LINE_SUPPRESSED: 1,
+          UNMAPPED_LEDGER_BLOCKED: 1,
+        }),
+        blockerCodes: expect.arrayContaining([
+          'BALANCE_LEDGER_CORRELATED_DISPOSITION_LINE_SUPPRESSED',
+          'BALANCE_LEDGER_ADJUST_REFUND_UNMAPPED',
+        ]),
+      }),
+    );
+    expect(report.replayEvidence?.advanceBalance.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ balanceLedgerId: 'ledger-credit', status: 'REPLAY_ELIGIBLE', journalEntryId: 'journal-ledger-credit' }),
+        expect.objectContaining({ balanceLedgerId: 'ledger-debit', status: 'REPLAY_ELIGIBLE', journalEntryId: 'journal-ledger-debit' }),
+        expect.objectContaining({
+          balanceLedgerId: 'ledger-correlated',
+          status: 'CORRELATED_DISPOSITION_LINE_SUPPRESSED',
+          blockerCodes: ['BALANCE_LEDGER_CORRELATED_DISPOSITION_LINE_SUPPRESSED'],
+        }),
+        expect.objectContaining({
+          balanceLedgerId: 'ledger-adjust',
+          status: 'UNMAPPED_LEDGER_BLOCKED',
+          blockerCodes: ['BALANCE_LEDGER_ADJUST_REFUND_UNMAPPED'],
+        }),
+      ]),
+    );
+    expect(component(report, 'advanceBalance').blockerCodes).toEqual(
+      expect.arrayContaining([
+        'CASE_BALANCE_SNAPSHOT_REPLAY_UNVERIFIED',
+        'BALANCE_LEDGER_CORRELATED_DISPOSITION_LINE_SUPPRESSED',
+        'BALANCE_LEDGER_ADJUST_REFUND_UNMAPPED',
+      ]),
+    );
     expect(report.candidateStatus).toBe('BLOCKED');
     expect(report.safeForPrimaryCutover).toBe(false);
   });

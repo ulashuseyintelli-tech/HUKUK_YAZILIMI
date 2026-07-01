@@ -139,6 +139,88 @@ export interface ExpenseRequestBackfillEvidenceSummary {
   items: ExpenseRequestBackfillEvidenceItem[];
 }
 
+export type CollectionDispositionLineReplayEvidenceStatus =
+  | 'REPLAY_ELIGIBLE'
+  | 'MANUAL_REVERSAL_BLOCKED'
+  | 'UNMAPPED_LINE_BLOCKED';
+
+export interface CollectionDispositionLineReplayEvidenceItem {
+  dispositionLineId: string;
+  status: CollectionDispositionLineReplayEvidenceStatus;
+  blockerCodes: string[];
+  journalEntryId: string | null;
+  details: {
+    dispositionId: string;
+    collectionId: string;
+    caseId: string;
+    caseClientId: string | null;
+    lineType: string;
+    amount: string;
+    currency: string;
+    postedAt: string | null;
+    manualReversalRequiredAt: string | null;
+  };
+}
+
+export interface CollectionCaseContextBlockerItem {
+  sourceType: 'COLLECTION' | 'COLLECTION_DISPOSITION';
+  sourceId: string;
+  status: 'RAW_COLLECTION_BLOCKED' | 'LIFECYCLE_BLOCKED';
+  blockerCodes: string[];
+  details: {
+    caseId: string;
+    sourceStatus: string;
+    currency: string;
+    occurredAt: string | null;
+  };
+}
+
+export interface CollectionDispositionReplayEvidenceSummary {
+  sourceType: 'COLLECTION_DISPOSITION_LINE';
+  sourceAction: 'posted';
+  sourceVersionEvidence: 'postedAt/sourceId/idempotencyKey';
+  statusCounts: Record<CollectionDispositionLineReplayEvidenceStatus, number>;
+  blockerCodes: string[];
+  lineItems: CollectionDispositionLineReplayEvidenceItem[];
+  blockerItems: CollectionCaseContextBlockerItem[];
+}
+
+export type BalanceLedgerReplayEvidenceStatus =
+  | 'REPLAY_ELIGIBLE'
+  | 'CORRELATED_DISPOSITION_LINE_SUPPRESSED'
+  | 'UNMAPPED_LEDGER_BLOCKED';
+
+export interface BalanceLedgerReplayEvidenceItem {
+  balanceLedgerId: string;
+  status: BalanceLedgerReplayEvidenceStatus;
+  blockerCodes: string[];
+  journalEntryId: string | null;
+  details: {
+    caseId: string;
+    ledgerType: string;
+    amount: string;
+    currency: string;
+    source: string | null;
+    sourceId: string | null;
+    createdAt: string;
+  };
+}
+
+export interface BalanceLedgerReplayEvidenceSummary {
+  sourceType: 'BALANCE_LEDGER';
+  sourceAction: 'posted';
+  sourceVersionEvidence: 'createdAt/sourceId/idempotencyKey';
+  statusCounts: Record<BalanceLedgerReplayEvidenceStatus, number>;
+  blockerCodes: string[];
+  items: BalanceLedgerReplayEvidenceItem[];
+}
+
+export interface ClientAccountingSummaryReplayEvidenceReport {
+  sourceVersion: 'acct-cutover-3d1-replay-evidence-v1';
+  pendingDistribution: CollectionDispositionReplayEvidenceSummary;
+  advanceBalance: BalanceLedgerReplayEvidenceSummary;
+  blockerCodes: string[];
+}
 export interface ClientAccountingSummaryShadowReport {
   tenantId: string;
   clientId: string;
@@ -153,6 +235,7 @@ export interface ClientAccountingSummaryShadowReport {
   expenseCoveragePolicy: ClientAccountingSummaryExpenseCoveragePolicy;
   supportedValueSummary: ClientAccountingSummaryShadowSupportedValueSummary;
   expenseRequestBackfillEvidence?: ExpenseRequestBackfillEvidenceSummary;
+  replayEvidence?: ClientAccountingSummaryReplayEvidenceReport;
   blockerCodes: string[];
   gapCodes: string[];
   nextImplementationTasks: string[];
@@ -160,6 +243,7 @@ export interface ClientAccountingSummaryShadowReport {
 
 interface CaseClientRow {
   id: string;
+  caseId: string;
 }
 
 interface SupportedJournalLine {
@@ -195,10 +279,60 @@ interface ExpenseRequestRecordedJournalEntryRow {
   }>;
 }
 
+interface CollectionDispositionLineReplayRow {
+  id: string;
+  type: string;
+  amount: { toString(): string };
+  caseClientId: string | null;
+  disposition: {
+    id: string;
+    collectionId: string;
+    caseId: string;
+    currency: string;
+    postedAt: Date | null;
+    manualReversalRequiredAt: Date | null;
+  };
+}
+
+interface CollectionReplayRow {
+  id: string;
+  caseId: string;
+  currency: string;
+  status: string;
+  date: Date | null;
+}
+
+interface CollectionDispositionLifecycleReplayRow {
+  id: string;
+  caseId: string;
+  currency: string;
+  status: string;
+  updatedAt: Date | null;
+}
+
+interface BalanceLedgerReplayRow {
+  id: string;
+  type: string;
+  amount: { toString(): string };
+  currency: string;
+  source: string | null;
+  sourceId: string | null;
+  createdAt: Date;
+  caseBalance: { caseId: string };
+}
+
+interface ReplayJournalEntryRow {
+  id: string;
+  sourceType: string;
+  sourceId: string;
+  sourceAction: string;
+}
+
 interface ExpenseRequestShadowValues extends ClientAccountingSummaryShadowLegacyClientScopedValues {
   expenseRequested: string;
   expenseRequestedComparison: ClientAccountingSummaryShadowValueComparison;
   expenseRequestBackfillEvidence: ExpenseRequestBackfillEvidenceSummary;
+  replayEvidence: ClientAccountingSummaryReplayEvidenceReport;
 }
 
 const ZERO = new Prisma.Decimal(0);
@@ -209,6 +343,12 @@ const EXPENSE_REQUEST_VALUE_SHADOW_MISMATCH = 'EXPENSE_REQUEST_VALUE_SHADOW_MISM
 const EXPENSE_REQUEST_DIMENSION_MISMATCH = 'EXPENSE_REQUEST_DIMENSION_MISMATCH';
 const EXPENSE_REQUEST_CANCEL_POLICY_BLOCKED = 'EXPENSE_REQUEST_CANCEL_POLICY_BLOCKED';
 const EXPENSE_REQUEST_SETTLED_CANCEL_BLOCKED = 'EXPENSE_REQUEST_SETTLED_CANCEL_BLOCKED';
+const COLLECTION_RAW_SOURCE_BLOCKED = 'COLLECTION_RAW_SOURCE_BLOCKED';
+const COLLECTION_DISPOSITION_LIFECYCLE_BLOCKED = 'COLLECTION_DISPOSITION_LIFECYCLE_BLOCKED';
+const COLLECTION_DISPOSITION_LINE_MANUAL_REVERSAL_BLOCKED = 'COLLECTION_DISPOSITION_LINE_MANUAL_REVERSAL_BLOCKED';
+const COLLECTION_DISPOSITION_LINE_UNMAPPED_BLOCKED = 'COLLECTION_DISPOSITION_LINE_UNMAPPED_BLOCKED';
+const BALANCE_LEDGER_CORRELATED_DISPOSITION_LINE_SUPPRESSED = 'BALANCE_LEDGER_CORRELATED_DISPOSITION_LINE_SUPPRESSED';
+const BALANCE_LEDGER_ADJUST_REFUND_UNMAPPED = 'BALANCE_LEDGER_ADJUST_REFUND_UNMAPPED';
 
 const EXPENSE_COVERAGE_POLICY_ITEMS: ClientAccountingSummaryExpenseCoveragePolicyItem[] = [
   {
@@ -451,13 +591,15 @@ export class ClientAccountingSummaryShadowReportService {
     const currency = request.currency || 'TRY';
     const caseClients = (await this.prisma!.caseClient.findMany({
       where: { clientId: request.clientId, role: { in: ['ALACAKLI', 'ORTAK_ALACAKLI'] }, client: { tenantId: request.tenantId } },
-      select: { id: true },
+      select: { id: true, caseId: true },
     })) as CaseClientRow[];
 
     const caseClientIds = caseClients.map((row) => row.id);
+    const caseIds = uniqueSorted(caseClients.map((row) => row.caseId));
     if (caseClientIds.length === 0) {
       const expenseRequestShadow = await this.computeExpenseRequestShadowValues(request, currency);
-      return { payableNet: '0', paidToClient: '0', offsetApplied: '0', ...expenseRequestShadow };
+      const replayEvidence = await this.computeReplayEvidence(request.tenantId, currency, []);
+      return { payableNet: '0', paidToClient: '0', offsetApplied: '0', ...expenseRequestShadow, replayEvidence };
     }
 
     const lines = (await this.prisma!.accountingJournalLine.findMany({
@@ -508,13 +650,95 @@ export class ClientAccountingSummaryShadowReportService {
     }
 
     const expenseRequestShadow = await this.computeExpenseRequestShadowValues(request, currency);
+    const replayEvidence = await this.computeReplayEvidence(request.tenantId, currency, caseIds);
 
     return {
       payableNet: decimalToString(payableNet),
       paidToClient: decimalToString(paidToClient),
       offsetApplied: decimalToString(offsetApplied),
       ...expenseRequestShadow,
+      replayEvidence,
     };
+  }
+
+  private async computeReplayEvidence(
+    tenantId: string,
+    currency: string,
+    caseIds: string[],
+  ): Promise<ClientAccountingSummaryReplayEvidenceReport> {
+    if (caseIds.length === 0) {
+      return buildReplayEvidence([], [], [], [], []);
+    }
+
+    const [dispositionLines, collections, lifecycleDispositions, balanceLedgers] = await Promise.all([
+      this.prisma!.collectionDispositionLine.findMany({
+        where: { disposition: { tenantId, caseId: { in: caseIds }, currency, status: 'POSTED' } },
+        select: {
+          id: true,
+          type: true,
+          amount: true,
+          caseClientId: true,
+          disposition: {
+            select: {
+              id: true,
+              collectionId: true,
+              caseId: true,
+              currency: true,
+              postedAt: true,
+              manualReversalRequiredAt: true,
+            },
+          },
+        },
+      }),
+      this.prisma!.collection.findMany({
+        where: { tenantId, caseId: { in: caseIds }, currency, status: { in: ['CONFIRMED', 'CANCELLED', 'REFUNDED'] } },
+        select: { id: true, caseId: true, currency: true, status: true, date: true },
+      }),
+      this.prisma!.collectionDisposition.findMany({
+        where: { tenantId, caseId: { in: caseIds }, currency, status: { not: 'POSTED' } },
+        select: { id: true, caseId: true, currency: true, status: true, updatedAt: true },
+      }),
+      this.prisma!.balanceLedger.findMany({
+        where: { tenantId, currency, caseBalance: { caseId: { in: caseIds } } },
+        select: {
+          id: true,
+          type: true,
+          amount: true,
+          currency: true,
+          source: true,
+          sourceId: true,
+          createdAt: true,
+          caseBalance: { select: { caseId: true } },
+        },
+      }),
+    ]) as [
+      CollectionDispositionLineReplayRow[],
+      CollectionReplayRow[],
+      CollectionDispositionLifecycleReplayRow[],
+      BalanceLedgerReplayRow[],
+    ];
+
+    const lineIds = dispositionLines.map((line) => line.id);
+    const ledgerIds = balanceLedgers.map((ledger) => ledger.id);
+    const replayJournalSources: Prisma.AccountingJournalEntryWhereInput[] = [
+      ...(lineIds.length > 0
+        ? [{ sourceType: 'COLLECTION_DISPOSITION_LINE' as const, sourceAction: 'posted', sourceId: { in: lineIds } }]
+        : []),
+      ...(ledgerIds.length > 0
+        ? [{ sourceType: 'BALANCE_LEDGER' as const, sourceAction: 'posted', sourceId: { in: ledgerIds } }]
+        : []),
+    ];
+    const journalEntries = replayJournalSources.length === 0
+      ? []
+      : (await this.prisma!.accountingJournalEntry.findMany({
+          where: {
+            tenantId,
+            OR: replayJournalSources,
+          },
+          select: { id: true, sourceType: true, sourceId: true, sourceAction: true },
+        })) as ReplayJournalEntryRow[];
+
+    return buildReplayEvidence(dispositionLines, collections, lifecycleDispositions, balanceLedgers, journalEntries);
   }
 
   private async computeExpenseRequestShadowValues(
@@ -619,6 +843,7 @@ export class ClientAccountingSummaryShadowReportService {
     const components = SUMMARY_COMPONENTS.map((component) => cloneComponent(component));
     const expenseCoveragePolicy = buildExpenseCoveragePolicy();
     applySupportedValueComparisons(components, request.legacyClientScoped, shadowValues);
+    applyReplayEvidenceBreakdowns(components, shadowValues?.replayEvidence ?? null);
     const supportedValueSummary = summarizeSupportedValueComparisons(components);
 
     return {
@@ -635,11 +860,13 @@ export class ClientAccountingSummaryShadowReportService {
       expenseCoveragePolicy,
       supportedValueSummary,
       expenseRequestBackfillEvidence: shadowValues?.expenseRequestBackfillEvidence,
+      replayEvidence: shadowValues?.replayEvidence,
       blockerCodes: uniqueSorted([
         ...components.flatMap((component) => component.blockerCodes),
         ...expenseCoveragePolicy.blockerCodes,
         ...supportedValueSummary.blockerCodes,
         ...(shadowValues?.expenseRequestBackfillEvidence.blockerCodes ?? []),
+        ...(shadowValues?.replayEvidence.blockerCodes ?? []),
       ]),
       gapCodes: uniqueSorted([
         ...components.flatMap((component) => component.gapCodes),
@@ -730,6 +957,29 @@ function applySupportedValueComparisons(
   }
 }
 
+function applyReplayEvidenceBreakdowns(
+  components: ClientAccountingSummaryShadowComponent[],
+  replayEvidence: ClientAccountingSummaryReplayEvidenceReport | null,
+): void {
+  if (!replayEvidence) return;
+
+  const pendingDistribution = components.find((component) => component.key === 'pendingDistribution');
+  if (pendingDistribution) {
+    pendingDistribution.blockerCodes = uniqueSorted([
+      ...pendingDistribution.blockerCodes,
+      ...replayEvidence.pendingDistribution.blockerCodes,
+    ]);
+  }
+
+  const advanceBalance = components.find((component) => component.key === 'advanceBalance');
+  if (advanceBalance) {
+    advanceBalance.blockerCodes = uniqueSorted([
+      ...advanceBalance.blockerCodes,
+      ...replayEvidence.advanceBalance.blockerCodes,
+    ]);
+  }
+}
+
 function summarizeSupportedValueComparisons(
   components: ClientAccountingSummaryShadowComponent[],
 ): ClientAccountingSummaryShadowSupportedValueSummary {
@@ -748,6 +998,189 @@ function summarizeSupportedValueComparisons(
     mismatchedCount,
     notComputedCount,
     blockerCodes,
+  };
+}
+
+function buildReplayEvidence(
+  dispositionLines: CollectionDispositionLineReplayRow[],
+  collections: CollectionReplayRow[],
+  lifecycleDispositions: CollectionDispositionLifecycleReplayRow[],
+  balanceLedgers: BalanceLedgerReplayRow[],
+  journalEntries: ReplayJournalEntryRow[],
+): ClientAccountingSummaryReplayEvidenceReport {
+  const journalBySource = new Map(journalEntries.map((entry) => [`${entry.sourceType}:${entry.sourceAction}:${entry.sourceId}`, entry]));
+  const pendingDistribution = buildCollectionDispositionReplayEvidence(dispositionLines, collections, lifecycleDispositions, journalBySource);
+  const advanceBalance = buildBalanceLedgerReplayEvidence(balanceLedgers, journalBySource);
+
+  return {
+    sourceVersion: 'acct-cutover-3d1-replay-evidence-v1',
+    pendingDistribution,
+    advanceBalance,
+    blockerCodes: uniqueSorted([...pendingDistribution.blockerCodes, ...advanceBalance.blockerCodes]),
+  };
+}
+
+function buildCollectionDispositionReplayEvidence(
+  dispositionLines: CollectionDispositionLineReplayRow[],
+  collections: CollectionReplayRow[],
+  lifecycleDispositions: CollectionDispositionLifecycleReplayRow[],
+  journalBySource: Map<string, ReplayJournalEntryRow>,
+): CollectionDispositionReplayEvidenceSummary {
+  const lineItems = dispositionLines.map((line) => collectionDispositionLineReplayItem(line, journalBySource.get(`COLLECTION_DISPOSITION_LINE:posted:${line.id}`) ?? null));
+  const blockerItems: CollectionCaseContextBlockerItem[] = [
+    ...collections.map((collection) => ({
+      sourceType: 'COLLECTION' as const,
+      sourceId: collection.id,
+      status: 'RAW_COLLECTION_BLOCKED' as const,
+      blockerCodes: [COLLECTION_RAW_SOURCE_BLOCKED],
+      details: {
+        caseId: collection.caseId,
+        sourceStatus: collection.status,
+        currency: collection.currency,
+        occurredAt: collection.date?.toISOString() ?? null,
+      },
+    })),
+    ...lifecycleDispositions.map((disposition) => ({
+      sourceType: 'COLLECTION_DISPOSITION' as const,
+      sourceId: disposition.id,
+      status: 'LIFECYCLE_BLOCKED' as const,
+      blockerCodes: [COLLECTION_DISPOSITION_LIFECYCLE_BLOCKED],
+      details: {
+        caseId: disposition.caseId,
+        sourceStatus: disposition.status,
+        currency: disposition.currency,
+        occurredAt: disposition.updatedAt?.toISOString() ?? null,
+      },
+    })),
+  ];
+  const statusCounts = emptyCollectionDispositionLineReplayStatusCounts();
+
+  for (const item of lineItems) {
+    statusCounts[item.status] += 1;
+  }
+
+  return {
+    sourceType: 'COLLECTION_DISPOSITION_LINE',
+    sourceAction: 'posted',
+    sourceVersionEvidence: 'postedAt/sourceId/idempotencyKey',
+    statusCounts,
+    blockerCodes: uniqueSorted([
+      ...lineItems.flatMap((item) => item.blockerCodes),
+      ...blockerItems.flatMap((item) => item.blockerCodes),
+    ]),
+    lineItems,
+    blockerItems,
+  };
+}
+
+function collectionDispositionLineReplayItem(
+  line: CollectionDispositionLineReplayRow,
+  journalEntry: ReplayJournalEntryRow | null,
+): CollectionDispositionLineReplayEvidenceItem {
+  const manualReversalRequiredAt = line.disposition.manualReversalRequiredAt?.toISOString() ?? null;
+  const unmappedLineType = line.type === 'OTHER' || line.type === 'HELD_PENDING_DISTRIBUTION';
+  const status: CollectionDispositionLineReplayEvidenceStatus = manualReversalRequiredAt
+    ? 'MANUAL_REVERSAL_BLOCKED'
+    : unmappedLineType
+      ? 'UNMAPPED_LINE_BLOCKED'
+      : 'REPLAY_ELIGIBLE';
+  const blockerCodes = status === 'MANUAL_REVERSAL_BLOCKED'
+    ? [COLLECTION_DISPOSITION_LINE_MANUAL_REVERSAL_BLOCKED]
+    : status === 'UNMAPPED_LINE_BLOCKED'
+      ? [COLLECTION_DISPOSITION_LINE_UNMAPPED_BLOCKED]
+      : [];
+
+  return {
+    dispositionLineId: line.id,
+    status,
+    blockerCodes,
+    journalEntryId: journalEntry?.id ?? null,
+    details: {
+      dispositionId: line.disposition.id,
+      collectionId: line.disposition.collectionId,
+      caseId: line.disposition.caseId,
+      caseClientId: line.caseClientId,
+      lineType: line.type,
+      amount: line.amount.toString(),
+      currency: line.disposition.currency,
+      postedAt: line.disposition.postedAt?.toISOString() ?? null,
+      manualReversalRequiredAt,
+    },
+  };
+}
+
+function buildBalanceLedgerReplayEvidence(
+  balanceLedgers: BalanceLedgerReplayRow[],
+  journalBySource: Map<string, ReplayJournalEntryRow>,
+): BalanceLedgerReplayEvidenceSummary {
+  const items = balanceLedgers.map((ledger) => balanceLedgerReplayItem(ledger, journalBySource.get(`BALANCE_LEDGER:posted:${ledger.id}`) ?? null));
+  const statusCounts = emptyBalanceLedgerReplayStatusCounts();
+
+  for (const item of items) {
+    statusCounts[item.status] += 1;
+  }
+
+  return {
+    sourceType: 'BALANCE_LEDGER',
+    sourceAction: 'posted',
+    sourceVersionEvidence: 'createdAt/sourceId/idempotencyKey',
+    statusCounts,
+    blockerCodes: uniqueSorted(items.flatMap((item) => item.blockerCodes)),
+    items,
+  };
+}
+
+function balanceLedgerReplayItem(
+  ledger: BalanceLedgerReplayRow,
+  journalEntry: ReplayJournalEntryRow | null,
+): BalanceLedgerReplayEvidenceItem {
+  const correlatedDispositionLine = isDispositionLineSource(ledger.source) || isDispositionLineSource(ledger.sourceId) || ledger.source === 'disposition_line';
+  const unmappedType = ledger.type !== 'CREDIT' && ledger.type !== 'DEBIT';
+  const status: BalanceLedgerReplayEvidenceStatus = correlatedDispositionLine
+    ? 'CORRELATED_DISPOSITION_LINE_SUPPRESSED'
+    : unmappedType
+      ? 'UNMAPPED_LEDGER_BLOCKED'
+      : 'REPLAY_ELIGIBLE';
+  const blockerCodes = status === 'CORRELATED_DISPOSITION_LINE_SUPPRESSED'
+    ? [BALANCE_LEDGER_CORRELATED_DISPOSITION_LINE_SUPPRESSED]
+    : status === 'UNMAPPED_LEDGER_BLOCKED'
+      ? [BALANCE_LEDGER_ADJUST_REFUND_UNMAPPED]
+      : [];
+
+  return {
+    balanceLedgerId: ledger.id,
+    status,
+    blockerCodes,
+    journalEntryId: journalEntry?.id ?? null,
+    details: {
+      caseId: ledger.caseBalance.caseId,
+      ledgerType: ledger.type,
+      amount: ledger.amount.toString(),
+      currency: ledger.currency,
+      source: ledger.source,
+      sourceId: ledger.sourceId,
+      createdAt: ledger.createdAt.toISOString(),
+    },
+  };
+}
+
+function isDispositionLineSource(value: string | null | undefined): boolean {
+  return Boolean(value?.startsWith('disposition_line:'));
+}
+
+function emptyCollectionDispositionLineReplayStatusCounts(): Record<CollectionDispositionLineReplayEvidenceStatus, number> {
+  return {
+    REPLAY_ELIGIBLE: 0,
+    MANUAL_REVERSAL_BLOCKED: 0,
+    UNMAPPED_LINE_BLOCKED: 0,
+  };
+}
+
+function emptyBalanceLedgerReplayStatusCounts(): Record<BalanceLedgerReplayEvidenceStatus, number> {
+  return {
+    REPLAY_ELIGIBLE: 0,
+    CORRELATED_DISPOSITION_LINE_SUPPRESSED: 0,
+    UNMAPPED_LEDGER_BLOCKED: 0,
   };
 }
 
