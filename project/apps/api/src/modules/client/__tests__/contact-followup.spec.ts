@@ -48,7 +48,7 @@ describe('ClientService.syncContactFollowUpTask', () => {
     }) as any;
 
   const sync = (prisma: any, client: any) =>
-    (new ClientService(prisma, { logInTransaction: jest.fn() } as any) as any).syncContactFollowUpTask('t1', client);
+    (new ClientService(prisma, { logInTransaction: jest.fn() } as any, {} as any) as any).syncContactFollowUpTask('t1', client);
 
   it('eksik var + görev yok → OPERATIONAL_COMPLETENESS görevi oluşturur + client ACTIVE', async () => {
     const prisma = buildPrisma(null);
@@ -137,7 +137,7 @@ describe('ClientService.backfillContactFollowUp', () => {
       { id: 'c5', phone: '05321234567', email: 'a@b.com', contactFollowUpStatus: null }, // tam → atla
     ];
     const prisma = { client: { findMany: jest.fn().mockResolvedValue(clients) } } as any;
-    const svc = new ClientService(prisma, { logInTransaction: jest.fn() } as any);
+    const svc = new ClientService(prisma, { logInTransaction: jest.fn() } as any, {} as any);
     const syncSpy = jest.spyOn(svc as any, 'syncContactFollowUpTaskSafe').mockResolvedValue(undefined);
 
     const res = await svc.backfillContactFollowUp('t1');

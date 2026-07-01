@@ -30,7 +30,7 @@ describe("ClientService.create — soft-deleted reactivation (FIX A)", () => {
     const tx = buildTx();
     const prisma = buildPrisma({ id: "c1", isActive: false, displayName: "ŞÜKRÜ AKDOĞAN" }, tx) as any;
     const audit = buildAudit();
-    const svc = new ClientService(prisma, audit as any);
+    const svc = new ClientService(prisma, audit as any, {} as any);
 
     const res = await svc.create("t1", { tckn: "40294995552", firstName: "Ş", lastName: "A", type: "PERSON" });
 
@@ -48,7 +48,7 @@ describe("ClientService.create — soft-deleted reactivation (FIX A)", () => {
   it("duplicate AKTİF → reactivate YOK, mutation transaction'ı hiç açılmaz", async () => {
     const tx = buildTx();
     const prisma = buildPrisma({ id: "c2", isActive: true, displayName: "X" }, tx) as any;
-    const svc = new ClientService(prisma, buildAudit() as any);
+    const svc = new ClientService(prisma, buildAudit() as any, {} as any);
 
     const res = await svc.create("t1", { tckn: "123", type: "PERSON" });
 
@@ -62,7 +62,7 @@ describe("ClientService.create — soft-deleted reactivation (FIX A)", () => {
 describe("ClientService.findAll — aktif vekalet include (FIX B)", () => {
   it("powerOfAttorneys aktif filtreyle include edilir + tenant/isActive where", async () => {
     const prisma: any = { client: { findMany: jest.fn().mockResolvedValue([]) } };
-    const svc = new ClientService(prisma, { logInTransaction: jest.fn() } as any);
+    const svc = new ClientService(prisma, { logInTransaction: jest.fn() } as any, {} as any);
 
     await svc.findAll("t1");
 

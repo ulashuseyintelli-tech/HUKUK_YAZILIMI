@@ -33,7 +33,7 @@ describe("ClientService.update — kimlik-block (PR-U4)", () => {
       $transaction: jest.fn().mockImplementation(async (cb: any) => cb(tx)),
     };
     const audit = { logInTransaction: jest.fn().mockResolvedValue(undefined) };
-    return { svc: new ClientService(prisma, audit as any), prisma, tx, audit };
+    return { svc: new ClientService(prisma, audit as any, {} as any), prisma, tx, audit };
   };
 
   it("TCKN değişti + başka aktif müvekkilde var → 409 DUPLICATE_IDENTITY (mutation yok)", async () => {

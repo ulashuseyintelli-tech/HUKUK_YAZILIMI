@@ -31,7 +31,9 @@ function buildHarness(opts: { existing?: any; created?: any; updated?: any } = {
   };
   // syncContactFollowUpTaskSafe yan-etkisini sustur (tx dışı; audit testini ilgilendirmez)
   const audit = { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn() };
-  const svc = new ClientService(prisma, audit as any);
+  // Task 8A: bu dosya svc.remove() de test ediyor → officeApproval GERÇEK bir mock olmalı (eligible:true).
+  const officeApproval = { isApproverEligible: jest.fn().mockResolvedValue(true) };
+  const svc = new ClientService(prisma, audit as any, officeApproval as any);
   jest.spyOn(svc as any, "syncContactFollowUpTaskSafe").mockResolvedValue(undefined);
   return { svc, prisma, tx, audit };
 }

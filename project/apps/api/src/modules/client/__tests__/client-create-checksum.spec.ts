@@ -33,7 +33,7 @@ const buildAudit = () => ({ logInTransaction: jest.fn().mockResolvedValue(undefi
 function svcFor(existing: any) {
   const tx = buildTx();
   const prisma = buildPrisma(existing, tx) as any;
-  const svc = new ClientService(prisma, buildAudit() as any);
+  const svc = new ClientService(prisma, buildAudit() as any, {} as any);
   return { svc, tx, prisma };
 }
 
