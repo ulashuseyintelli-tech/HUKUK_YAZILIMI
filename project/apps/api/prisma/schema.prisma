@@ -465,6 +465,7 @@ model Client {
   cases                   Case[]
   tasks                   Task[]
   contacts                ClientContact[]
+  addresses               ClientAddress[]
   bankAccounts            ClientBankAccount[]
   powerOfAttorneys        ClientPowerOfAttorney[]
   poaExpiryDeliveries     PoaExpiryNotificationDelivery[]
@@ -529,6 +530,47 @@ model ClientContact {
 
   @@index([clientId])
   @@index([type])
+}
+
+// Müvekkil Adres Türü. ClientAddress'e özgü — DebtorAddress'in AddressType enum'u tebligat-hukuku
+// (TK m.10/m.21, KEP, BUSINESS_HQ/LEGAL_CENTER) odaklı, Client'ın ihtiyacıyla örtüşmüyor; bilerek
+// ayrı tutulur (owner Task4-0 kararı: MERNİS/ticari/tebligat/fatura/beyan ayrışımı).
+enum ClientAddressType {
+  MERNIS // MERNİS yerleşim adresi
+  TICARI // İşyeri/ticari adres
+  TEBLIGAT // Tebligata esas adres
+  FATURA // Fatura/muhasebe adresi
+  BEYAN // Müvekkil beyanı (varsayılan/bilinmeyen kaynak)
+}
+
+// Müvekkil Adresleri (Çoklu). DebtorAddress'ten YAPISAL İSKELET alınır (ayrı tablo + type +
+// isPrimary + isCurrent); hukuki/risk/doğrulama/güven-skoru alanları BİLEREK KOPYALANMAZ — Client
+// adresleri tebligat-hukuku değil, yazışma/fatura amaçlıdır. Client.address/city/district/
+// postalCode/region flat kolonları bu tablo yazılana dek KORUNUR (additive migration).
+model ClientAddress {
+  id       String @id @default(cuid())
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Cascade)
+
+  type ClientAddressType @default(BEYAN)
+
+  street     String?
+  city       String?
+  district   String?
+  region     String?
+  postalCode String?
+
+  isPrimary Boolean @default(false)
+  // "Eski adres" bir TİP değil bir DURUMDUR (DebtorAddress.isCurrent pattern'iyle tutarlı):
+  // false = artık geçerli değil ama kayıt korunur (arşiv), silinmez.
+  isCurrent Boolean @default(true)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([clientId])
+  @@index([type])
+  @@index([isCurrent])
 }
 
 // Müvekkil Banka Hesabı
