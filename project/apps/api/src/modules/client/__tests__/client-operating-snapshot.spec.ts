@@ -10,6 +10,7 @@ function buildHarness(opts: {
   latestSubmission?: any | null;
   latestLink?: any | null;
   latestNotification?: any | null;
+  latestDeliveryIssue?: any | null;
   openTasks?: any[];
 } = {}) {
   const prisma: any = {
@@ -45,6 +46,11 @@ function buildHarness(opts: {
       create: jest.fn(),
       update: jest.fn(),
     },
+    clientIntakeLinkDelivery: {
+      findFirst: jest.fn().mockResolvedValue(Object.prototype.hasOwnProperty.call(opts, 'latestDeliveryIssue') ? opts.latestDeliveryIssue : null),
+      create: jest.fn(),
+      update: jest.fn(),
+    },
     task: {
       findMany: jest.fn().mockResolvedValue(opts.openTasks ?? []),
       findUnique: jest.fn(),
@@ -74,6 +80,14 @@ describe('ClientService.getOperatingSnapshot', () => {
     expect(prisma.clientIntakeSubmission.findFirst.mock.calls[0][0].where).toEqual({ tenantId: 'tenant-1', clientId: 'client-1' });
     expect(prisma.clientIntakeLink.findFirst.mock.calls[0][0].where).toEqual({ tenantId: 'tenant-1', clientId: 'client-1' });
     expect(prisma.clientNotification.findFirst.mock.calls[0][0].where).toEqual({ tenantId: 'tenant-1', clientId: 'client-1' });
+    const deliveryWhere = prisma.clientIntakeLinkDelivery.findFirst.mock.calls[0][0].where;
+    expect(deliveryWhere).toMatchObject({ tenantId: 'tenant-1', clientId: 'client-1' });
+    expect(deliveryWhere.OR).toEqual(expect.arrayContaining([
+      { status: 'FAILED' },
+      { status: 'PENDING', updatedAt: { lt: expect.any(Date) } },
+      { status: 'SENDING', updatedAt: { lt: expect.any(Date) } },
+    ]));
+    expect(JSON.stringify(deliveryWhere.OR)).not.toContain('SENT');
     expect(prisma.task.findMany.mock.calls[0][0].where).toMatchObject({ tenantId: 'tenant-1', clientId: 'client-1', taskCategory: 'OPERATIONAL_COMPLETENESS' });
     expect(result.data).toMatchObject({
       clientId: 'client-1',
@@ -95,6 +109,7 @@ describe('ClientService.getOperatingSnapshot', () => {
     expect(prisma.clientIntakeSubmission.findFirst).not.toHaveBeenCalled();
     expect(prisma.clientIntakeLink.findFirst).not.toHaveBeenCalled();
     expect(prisma.clientNotification.findFirst).not.toHaveBeenCalled();
+    expect(prisma.clientIntakeLinkDelivery.findFirst).not.toHaveBeenCalled();
     expect(prisma.task.findMany).not.toHaveBeenCalled();
   });
 
@@ -131,6 +146,15 @@ describe('ClientService.getOperatingSnapshot', () => {
         body: 'unsafe body',
         errorMessage: 'provider secret',
       },
+      latestDeliveryIssue: {
+        id: 'delivery-1',
+        status: 'FAILED',
+        channel: 'EMAIL',
+        caseId: 'case-1',
+        updatedAt: d('2026-01-02T10:05:00.000Z'),
+        lastError: 'SMTP secret https://app.test/intake/raw-token',
+        dedupeKey: 'secret-dedupe-key',
+      },
       openTasks: [{ id: 'task-1', dueDate: daysFromNow(-1), escalationLevel: 'MANAGER', nextFollowUpAt: daysFromNow(-1), missingFields: ['phone'] }],
     });
 
@@ -149,12 +173,43 @@ describe('ClientService.getOperatingSnapshot', () => {
       'contact.follow_up_overdue',
       'poa.missing_or_inactive',
       'intake.pending_review',
+      'intake.delivery_failed',
       'notification.failed',
     ]));
     expect(serialized).not.toContain('unsafe body');
     expect(serialized).not.toContain('provider secret');
+    expect(serialized).not.toContain('SMTP secret');
+    expect(serialized).not.toContain('raw-token');
+    expect(serialized).not.toContain('secret-dedupe-key');
     expect(serialized).not.toContain('secret-token-hash');
     expect(serialized).not.toContain('rawIp');
+  });
+
+  it.each(['PENDING', 'SENDING'])('surfaces stale %s delivery as an attention signal without leaking delivery secrets', async (status) => {
+    const { svc } = buildHarness({
+      latestDeliveryIssue: {
+        id: 'delivery-stuck',
+        status,
+        channel: 'EMAIL',
+        caseId: 'case-1',
+        updatedAt: daysFromNow(-1),
+        lastError: 'provider secret https://app.test/intake/raw-token',
+      },
+    });
+
+    const result = await svc.getOperatingSnapshot('client-1', 'tenant-1');
+    const serialized = JSON.stringify(result);
+
+    expect(result.data.health).toBe('attention');
+    expect(result.data.riskLevel).toBe('medium');
+    expect(result.data.signals).toContainEqual(expect.objectContaining({
+      key: 'intake.delivery_stuck',
+      severity: 'warning',
+      actionKey: 'intake.link.create',
+      target: { clientId: 'client-1', caseId: 'case-1' },
+    }));
+    expect(serialized).not.toContain('provider secret');
+    expect(serialized).not.toContain('raw-token');
   });
 
   it('marks active POA as expiring when the nearest validUntil is within 30 days', async () => {
@@ -188,6 +243,8 @@ describe('ClientService.getOperatingSnapshot', () => {
     expect(prisma.clientIntakeSubmission.update).not.toHaveBeenCalled();
     expect(prisma.clientIntakeLink.create).not.toHaveBeenCalled();
     expect(prisma.clientIntakeLink.update).not.toHaveBeenCalled();
+    expect(prisma.clientIntakeLinkDelivery.create).not.toHaveBeenCalled();
+    expect(prisma.clientIntakeLinkDelivery.update).not.toHaveBeenCalled();
     expect(prisma.task.create).not.toHaveBeenCalled();
     expect(prisma.task.update).not.toHaveBeenCalled();
     expect(prisma.auditLog.create).not.toHaveBeenCalled();
