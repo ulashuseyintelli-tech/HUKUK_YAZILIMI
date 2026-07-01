@@ -107,10 +107,20 @@ export class CaseStatusController {
     };
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseStatusController.getStatusHistory() → GET /case-status/:caseId/history
+  /// H5 hardening: METHOD-level JwtAuthGuard + truthful @CurrentUser tenantId;
+  /// changeStatus (P2b-2c-1) ile aynı desen (önceden guard'sızdı).
+  /// </remarks>
   // Statü geçmişi
   @Get(':caseId/history')
-  async getStatusHistory(@Param('caseId') caseId: string) {
-    const history = await this.caseStatusService.getStatusHistory(caseId);
+  @UseGuards(JwtAuthGuard)
+  async getStatusHistory(
+    @CurrentUser('tenantId') tenantId: string,
+    @Param('caseId') caseId: string,
+  ) {
+    const history = await this.caseStatusService.getStatusHistory(tenantId, caseId);
     return {
       success: true,
       data: history,

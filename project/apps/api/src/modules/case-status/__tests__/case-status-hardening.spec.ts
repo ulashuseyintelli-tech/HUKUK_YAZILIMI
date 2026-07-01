@@ -28,10 +28,11 @@ const mkTx = () => ({
   caseStatusHistory: { create: jest.fn().mockResolvedValue({}) },
   decisionLog: { create: jest.fn().mockResolvedValue({}) },
 });
-const mkPrisma = (caseRow: unknown) => {
+const mkPrisma = (caseRow: unknown, historyRows: unknown[] = []) => {
   const tx = mkTx();
   const prisma = {
     case: { findFirst: jest.fn().mockResolvedValue(caseRow) },
+    caseStatusHistory: { findMany: jest.fn().mockResolvedValue(historyRows) },
     $transaction: jest.fn(async (cb: (t: ReturnType<typeof mkTx>) => unknown) => cb(tx)),
   };
   return { tx, prisma: prisma as unknown as ConstructorParameters<typeof CaseStatusService>[0] };
@@ -111,10 +112,42 @@ describe("P3-2B-1 — CaseStatusService canonical safety patch", () => {
   });
 });
 
+describe("H5 — CaseStatusService.getStatusHistory tenant hardening", () => {
+  it("lookup TENANT-SCOPED: findFirst({ id, tenantId }) (changeStatus/P2b-2c-1 ile aynı desen)", async () => {
+    const { prisma } = mkPrisma({ caseStatus: "DERDEST", isAutomationEnabled: true });
+    await new CaseStatusService(prisma).getStatusHistory("t1", "c1");
+    expect((prisma as any).case.findFirst).toHaveBeenCalledWith({
+      where: { id: "c1", tenantId: "t1" },
+      select: { id: true },
+    });
+  });
+
+  it("cross-tenant / yok → NotFoundException (404); history sorgulanmaz (sızdırma yok)", async () => {
+    const { prisma } = mkPrisma(null);
+    await expect(new CaseStatusService(prisma).getStatusHistory("t1", "c1")).rejects.toBeInstanceOf(NotFoundException);
+    expect((prisma as any).caseStatusHistory.findMany).not.toHaveBeenCalled();
+  });
+
+  it("same-tenant: history döner; sorgu şekli (caseId + changedBy include + desc) korunur", async () => {
+    const rows = [{ id: "h1", fromStatus: "DERDEST", toStatus: "ISLEMDE" }];
+    const { prisma } = mkPrisma({ caseStatus: "DERDEST", isAutomationEnabled: true }, rows);
+    const result = await new CaseStatusService(prisma).getStatusHistory("t1", "c1");
+    expect(result).toBe(rows);
+    expect((prisma as any).caseStatusHistory.findMany).toHaveBeenCalledWith({
+      where: { caseId: "c1" },
+      include: { changedBy: { select: { name: true, surname: true } } },
+      orderBy: { createdAt: "desc" },
+    });
+  });
+});
+
 // ---- Controller (mock service) ----
 describe("P2b-2c-1 — CaseStatusController.changeStatus hardening", () => {
   const mk = () => {
-    const service = { changeStatus: jest.fn().mockResolvedValue({ id: "c1", caseStatus: "ISLEMDE" }) };
+    const service = {
+      changeStatus: jest.fn().mockResolvedValue({ id: "c1", caseStatus: "ISLEMDE" }),
+      getStatusHistory: jest.fn().mockResolvedValue([{ id: "h1" }]),
+    };
     const observe = { observe: jest.fn().mockResolvedValue(undefined) };
     const gate = mkGateProceed();
     const shadow = mkShadowOff();
@@ -155,12 +188,20 @@ describe("P2b-2c-1 — CaseStatusController.changeStatus hardening", () => {
     expect(Object.keys(res)).toEqual(["success", "data", "message"]);
   });
 
-  it("1/2. JwtAuthGuard YALNIZ changeStatus route'una uygulanmış (list/history korunur)", () => {
+  it("1/2. JwtAuthGuard changeStatus VE (H5 hardening) history route'una uygulanmış; list guard'sız kalır", () => {
     const changeGuards = Reflect.getMetadata("__guards__", CaseStatusController.prototype.changeStatus) || [];
     expect(changeGuards).toContain(JwtAuthGuard); // unauth → JwtAuthGuard reddeder (401)
-    // scope: list + history HARDENING DIŞI (guard yok)
+    const historyGuards = Reflect.getMetadata("__guards__", CaseStatusController.prototype.getStatusHistory) || [];
+    expect(historyGuards).toContain(JwtAuthGuard); // H5: önceden guard'sızdı, artık changeStatus ile aynı korumada
+    // scope: statü listesi (statik enum, tenant verisi taşımaz) hardening dışı kalır
     expect(Reflect.getMetadata("__guards__", CaseStatusController.prototype.getStatusList)).toBeUndefined();
-    expect(Reflect.getMetadata("__guards__", CaseStatusController.prototype.getStatusHistory)).toBeUndefined();
+  });
+
+  it("H5. getStatusHistory: @CurrentUser('tenantId') service'e geçer; response shape {success,data}", async () => {
+    const { controller, service } = mk();
+    const res = await controller.getStatusHistory("t1", "c1");
+    expect(service.getStatusHistory).toHaveBeenCalledWith("t1", "c1");
+    expect(res).toEqual({ success: true, data: [{ id: "h1" }] });
   });
 
   it("P2b-2c-2 (observe 1/2/4/5/6/7): CHANGE_STATUS observe PRE-action (actionCode/actor/tenant/caseId); body observe'a SIZMAZ", async () => {
@@ -408,5 +449,25 @@ describe("P2b-2c-1 — CHANGE_STATUS HTTP binding (decorator/guard runtime)", ()
       .expect(403);
     expect(service.changeStatus).not.toHaveBeenCalled();
     expect(observe.observe).not.toHaveBeenCalled(); // guard handler'dan ÖNCE engeller → observe de çağrılmaz
+  });
+
+  // H5: GET /case-status/:caseId/history — önceden guard'sızdı; changeStatus ile AYNI HTTP-binding kanıtı.
+  it("H5 getStatusHistory authenticated: @CurrentUser('tenantId')→tenantId slotu KİLİTLİ", async () => {
+    app = await buildApp({ id: "real-user", tenantId: "tenant-1" });
+    (service.getStatusHistory as jest.Mock).mockResolvedValueOnce([{ id: "h1" }]);
+    const res = await request(app.getHttpServer())
+      .get("/case-status/c1/history")
+      .expect(200);
+    // id↔tenantId decorator swap olsaydı bu arg sırası ("tenant-1","c1") bozulurdu
+    expect(service.getStatusHistory).toHaveBeenCalledWith("tenant-1", "c1");
+    expect(res.body).toEqual({ success: true, data: [{ id: "h1" }] });
+  });
+
+  it("H5 getStatusHistory unauthenticated: guard erişimi ENGELLER (override→403; gerçek passport→401), service çağrılmaz", async () => {
+    app = await buildApp(null);
+    await request(app.getHttpServer())
+      .get("/case-status/c1/history")
+      .expect(403);
+    expect(service.getStatusHistory).not.toHaveBeenCalled();
   });
 });

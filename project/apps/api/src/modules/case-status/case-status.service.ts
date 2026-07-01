@@ -178,8 +178,23 @@ export class CaseStatusService {
     }));
   }
 
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - CaseStatusController.getStatusHistory() → GET /case-status/:caseId/history
+  /// H5 hardening: changeStatus (P2b-2c-1) ile AYNI tenant-scoped lookup deseni;
+  /// cross-tenant veya yok → NotFound (404; varlık sızdırma yok).
+  /// </remarks>
   // Statü geçmişi al
-  async getStatusHistory(caseId: string): Promise<any[]> {
+  async getStatusHistory(tenantId: string, caseId: string): Promise<any[]> {
+    const caseExists = await this.prisma.case.findFirst({
+      where: { id: caseId, tenantId },
+      select: { id: true },
+    });
+
+    if (!caseExists) {
+      throw new NotFoundException('Dosya bulunamadı');
+    }
+
     return this.prisma.caseStatusHistory.findMany({
       where: { caseId },
       include: {
