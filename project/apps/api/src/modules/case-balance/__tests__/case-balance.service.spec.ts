@@ -164,6 +164,56 @@ describe('CaseBalanceService ACCT-1D-1 BalanceLedger journal wiring', () => {
     }));
     expect(journalWriter.write).not.toHaveBeenCalled();
   });
+  it('reverses expense_payment credit inside caller transaction without BalanceLedger journal', async () => {
+    const { tx, journalWriter, service } = buildHarness();
+    tx.balanceLedger.create.mockResolvedValue({
+      id: 'bl-expense-payment-reversal',
+      tenantId: 'tenant-1',
+      caseBalanceId: 'case-balance-1',
+      type: 'DEBIT',
+      amount: D('-75'),
+      currency: 'TRY',
+      source: 'expense_payment:pay-1:reversal',
+      sourceId: 'pay-1',
+      description: 'expense payment reversal bridge',
+      createdById: 'user-1',
+      createdAt: CREATED_AT,
+    });
+    tx.caseBalance.update.mockResolvedValue({ balance: D(925), lowThreshold: D(500) });
+
+    const result = await service.reverseExpensePaymentCreditInTransaction(
+      tx as never,
+      'tenant-1',
+      'case-1',
+      {
+        expensePaymentId: 'pay-1',
+        originalBalanceLedgerId: 'bl-expense-payment',
+        caseBalanceId: 'case-balance-1',
+        amount: D(75),
+        currency: 'TRY',
+      },
+      'user-1',
+    );
+
+    expect(result).toEqual({ ledgerId: 'bl-expense-payment-reversal', newBalance: 925 });
+    expect(tx.balanceLedger.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        tenantId: 'tenant-1',
+        caseBalanceId: 'case-balance-1',
+        type: 'DEBIT',
+        source: 'expense_payment:pay-1:reversal',
+        sourceId: 'pay-1',
+        createdById: 'user-1',
+      }),
+    }));
+    expect(tx.balanceLedger.create.mock.calls[0][0].data.amount.toString()).toBe('-75');
+    expect(tx.caseBalance.update).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'case-balance-1' },
+      data: { balance: { decrement: expect.any(Prisma.Decimal) } },
+    }));
+    expect(tx.caseBalance.update.mock.calls[0][0].data.balance.decrement.toString()).toBe('75');
+    expect(journalWriter.write).not.toHaveBeenCalled();
+  });
   it('does not journal disposition_line correlation carried by sourceId', async () => {
     const { tx, journalWriter, service } = buildHarness();
     tx.balanceLedger.create.mockResolvedValue({
