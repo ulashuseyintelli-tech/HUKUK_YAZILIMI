@@ -653,7 +653,7 @@ describe('ClientAccountingSummaryShadowReportService', () => {
     expect(report.candidateStatus).toBe('BLOCKED');
     expect(report.safeForPrimaryCutover).toBe(false);
   });
-  it('reports CollectionDispositionLine replay eligibility and raw lifecycle blockers', async () => {
+  it('reports CollectionDispositionLine replay eligibility and informational lifecycle evidence', async () => {
     const prisma = buildPrismaMock([], undefined, {
       dispositionLines: [{ id: 'line-1', type: 'CLIENT_PAYABLE', amount: '125' }],
       collections: [{ id: 'collection-1', status: 'CONFIRMED' }],
@@ -673,10 +673,7 @@ describe('ClientAccountingSummaryShadowReportService', () => {
         sourceAction: 'posted',
         sourceVersionEvidence: 'postedAt/sourceId/idempotencyKey',
         statusCounts: expect.objectContaining({ REPLAY_ELIGIBLE: 1 }),
-        blockerCodes: expect.arrayContaining([
-          'COLLECTION_RAW_SOURCE_BLOCKED',
-          'COLLECTION_DISPOSITION_LIFECYCLE_BLOCKED',
-        ]),
+        blockerCodes: [],
       }),
     );
     expect(report.replayEvidence?.pendingDistribution.lineItems[0]).toEqual(
@@ -687,23 +684,67 @@ describe('ClientAccountingSummaryShadowReportService', () => {
         journalEntryId: 'journal-line-1',
       }),
     );
-    expect(report.replayEvidence?.pendingDistribution.blockerItems).toEqual(
+    expect(report.replayEvidence?.pendingDistribution.contextItems).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ sourceType: 'COLLECTION', blockerCodes: ['COLLECTION_RAW_SOURCE_BLOCKED'] }),
-        expect.objectContaining({ sourceType: 'COLLECTION_DISPOSITION', blockerCodes: ['COLLECTION_DISPOSITION_LIFECYCLE_BLOCKED'] }),
+        expect.objectContaining({
+          sourceType: 'COLLECTION',
+          status: 'BRIDGE_EVENT_ONLY',
+          blockerCodes: [],
+          details: expect.objectContaining({ effect: 'NO_DIRECT_CLIENT_EFFECT', sourceStatus: 'CONFIRMED' }),
+        }),
+        expect.objectContaining({
+          sourceType: 'COLLECTION_DISPOSITION',
+          status: 'NON_FINANCIAL_LIFECYCLE',
+          blockerCodes: [],
+          details: expect.objectContaining({ effect: 'NON_FINANCIAL_LIFECYCLE', sourceStatus: 'HELD_PENDING_DISTRIBUTION' }),
+        }),
       ]),
     );
-    expect(component(report, 'pendingDistribution').blockerCodes).toEqual(
+    expect(component(report, 'pendingDistribution').blockerCodes).toContain('CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING');
+    expect(component(report, 'pendingDistribution').blockerCodes).not.toEqual(
       expect.arrayContaining([
-        'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
         'COLLECTION_RAW_SOURCE_BLOCKED',
         'COLLECTION_DISPOSITION_LIFECYCLE_BLOCKED',
+        'COLLECTION_REFUND_POLICY_UNMAPPED',
       ]),
     );
     expect(report.candidateStatus).toBe('BLOCKED');
     expect(report.safeForPrimaryCutover).toBe(false);
   });
 
+  it('blocks refunded Collection lifecycle as unmapped refund policy evidence', async () => {
+    const prisma = buildPrismaMock([], undefined, {
+      collections: [{ id: 'collection-refund', status: 'REFUNDED' }],
+    });
+
+    const report = await new ClientAccountingSummaryShadowReportService(prisma as never).getSummaryShadowReportWithSupportedValues({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      legacyClientScoped: { payableNet: '0', paidToClient: '0', offsetApplied: '0' },
+    });
+
+    expect(report.replayEvidence?.pendingDistribution.blockerCodes).toEqual(['COLLECTION_REFUND_POLICY_UNMAPPED']);
+    expect(report.replayEvidence?.pendingDistribution.contextItems).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceType: 'COLLECTION',
+          sourceId: 'collection-refund',
+          status: 'REFUND_POLICY_BLOCKED',
+          blockerCodes: ['COLLECTION_REFUND_POLICY_UNMAPPED'],
+          details: expect.objectContaining({ effect: 'REFUND_POLICY_UNMAPPED', sourceStatus: 'REFUNDED' }),
+        }),
+      ]),
+    );
+    expect(component(report, 'pendingDistribution').blockerCodes).toEqual(
+      expect.arrayContaining([
+        'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
+        'COLLECTION_REFUND_POLICY_UNMAPPED',
+      ]),
+    );
+    expect(report.blockerCodes).toEqual(expect.arrayContaining(['COLLECTION_REFUND_POLICY_UNMAPPED']));
+    expect(report.candidateStatus).toBe('BLOCKED');
+    expect(report.safeForPrimaryCutover).toBe(false);
+  });
   it('blocks manual reversal and unmapped CollectionDispositionLine replay evidence', async () => {
     const prisma = buildPrismaMock([], undefined, {
       dispositionLines: [
@@ -755,6 +796,7 @@ describe('ClientAccountingSummaryShadowReportService', () => {
         { id: 'ledger-debit', type: 'DEBIT', amount: '40', source: 'manual', sourceId: 'manual-2' },
         { id: 'ledger-correlated', type: 'CREDIT', amount: '30', source: 'disposition_line:line-1', sourceId: 'line-1' },
         { id: 'ledger-adjust', type: 'ADJUST', amount: '10', source: 'manual', sourceId: 'manual-3' },
+        { id: 'ledger-refund', type: 'REFUND', amount: '15', source: 'manual', sourceId: 'manual-4' },
       ],
       journalEntries: [
         { sourceType: 'BALANCE_LEDGER', sourceId: 'ledger-credit', id: 'journal-ledger-credit' },
@@ -776,7 +818,7 @@ describe('ClientAccountingSummaryShadowReportService', () => {
         statusCounts: expect.objectContaining({
           REPLAY_ELIGIBLE: 2,
           CORRELATED_DISPOSITION_LINE_SUPPRESSED: 1,
-          UNMAPPED_LEDGER_BLOCKED: 1,
+          UNMAPPED_LEDGER_BLOCKED: 2,
         }),
         blockerCodes: expect.arrayContaining([
           'BALANCE_LEDGER_CORRELATED_DISPOSITION_LINE_SUPPRESSED',
@@ -795,6 +837,11 @@ describe('ClientAccountingSummaryShadowReportService', () => {
         }),
         expect.objectContaining({
           balanceLedgerId: 'ledger-adjust',
+          status: 'UNMAPPED_LEDGER_BLOCKED',
+          blockerCodes: ['BALANCE_LEDGER_ADJUST_REFUND_UNMAPPED'],
+        }),
+        expect.objectContaining({
+          balanceLedgerId: 'ledger-refund',
           status: 'UNMAPPED_LEDGER_BLOCKED',
           blockerCodes: ['BALANCE_LEDGER_ADJUST_REFUND_UNMAPPED'],
         }),
