@@ -89,6 +89,8 @@ export type ClientOperatingSignalKey =
   | 'poa.missing_or_inactive'
   | 'poa.expiring'
   | 'intake.pending_review'
+  | 'intake.delivery_failed'
+  | 'intake.delivery_stuck'
   | 'notification.failed';
 
 export interface ClientOperatingSignal {
@@ -161,6 +163,7 @@ const CLIENT_TIMELINE_DEFAULT_LIMIT = 25;
 const CLIENT_TIMELINE_MAX_LIMIT = 100;
 const CLIENT_TIMELINE_DEFAULT_SOURCES: ClientTimelineSource[] = ['client_notification', 'intake_submission'];
 const CLIENT_TIMELINE_ALLOWED_SOURCES = new Set<ClientTimelineSource>(CLIENT_TIMELINE_DEFAULT_SOURCES);
+const CLIENT_INTAKE_DELIVERY_STALE_MS = 15 * 60 * 1000;
 
 /** Müvekkil için contact-task dedupe anahtarı (tek aktif görev garantisi). */
 export function contactTaskDedupeKey(clientId: string): string {
@@ -370,7 +373,8 @@ export class ClientService {
     });
     if (!client) throw new NotFoundException('Client not found');
 
-    const [poas, latestSubmission, latestLink, latestNotification, openTasks] = await Promise.all([
+    const deliveryStaleBefore = new Date(Date.now() - CLIENT_INTAKE_DELIVERY_STALE_MS);
+    const [poas, latestSubmission, latestLink, latestNotification, latestDeliveryIssue, openTasks] = await Promise.all([
       this.prisma.clientPowerOfAttorney.findMany({
         where: { clientId: id, isActive: true },
         orderBy: [{ validUntil: 'asc' }, { createdAt: 'desc' }],
@@ -409,6 +413,25 @@ export class ClientService {
           caseId: true,
         },
       }),
+      this.prisma.clientIntakeLinkDelivery.findFirst({
+        where: {
+          tenantId,
+          clientId: id,
+          OR: [
+            { status: 'FAILED' },
+            { status: 'PENDING', updatedAt: { lt: deliveryStaleBefore } },
+            { status: 'SENDING', updatedAt: { lt: deliveryStaleBefore } },
+          ],
+        },
+        orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+        select: {
+          id: true,
+          status: true,
+          channel: true,
+          caseId: true,
+          updatedAt: true,
+        },
+      }),
       this.prisma.task.findMany({
         where: {
           tenantId,
@@ -429,7 +452,7 @@ export class ClientService {
     ]);
 
     return {
-      data: buildClientOperatingSnapshot(id, client, poas, latestSubmission, latestLink, latestNotification, openTasks),
+      data: buildClientOperatingSnapshot(id, client, poas, latestSubmission, latestLink, latestNotification, latestDeliveryIssue, openTasks),
     };
   }
 
@@ -1293,6 +1316,7 @@ function buildClientOperatingSnapshot(
   latestSubmission: any | null,
   latestLink: any | null,
   latestNotification: any | null,
+  latestDeliveryIssue: any | null,
   openTasks: Array<{ dueDate?: Date | string | null; escalationLevel?: string | null; nextFollowUpAt?: Date | string | null }>,
 ): ClientOperatingSnapshot {
   const now = new Date();
@@ -1368,6 +1392,27 @@ function buildClientOperatingSnapshot(
       description: 'Latest intake submission is not completed yet.',
       severity: 'warning',
       target: { clientId, caseId: latestSubmission?.caseId ?? null },
+    });
+  }
+
+  const deliveryIssueStatus = String(latestDeliveryIssue?.status ?? '').toUpperCase();
+  if (deliveryIssueStatus === 'FAILED') {
+    signals.push({
+      key: 'intake.delivery_failed',
+      label: 'Intake link delivery failed',
+      description: 'Latest intake link delivery failed and needs manual attention.',
+      severity: 'warning',
+      actionKey: 'intake.link.create',
+      target: { clientId, caseId: latestDeliveryIssue?.caseId ?? null },
+    });
+  } else if (deliveryIssueStatus === 'PENDING' || deliveryIssueStatus === 'SENDING') {
+    signals.push({
+      key: 'intake.delivery_stuck',
+      label: 'Intake link delivery is stuck',
+      description: 'Latest intake link delivery is not finalized after the safe processing window.',
+      severity: 'warning',
+      actionKey: 'intake.link.create',
+      target: { clientId, caseId: latestDeliveryIssue?.caseId ?? null },
     });
   }
 
