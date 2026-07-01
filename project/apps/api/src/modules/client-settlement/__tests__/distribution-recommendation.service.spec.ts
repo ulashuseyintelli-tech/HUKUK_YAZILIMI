@@ -1,4 +1,4 @@
-import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Logger, NotFoundException } from '@nestjs/common';
 import { DistributionRecommendationService } from '../distribution-recommendation.service';
 import type { DistributionRecommendation } from '../dto/distribution-recommendation.dto';
 
@@ -18,7 +18,13 @@ function defaultDisp(extra: Record<string, unknown> = {}) {
 }
 
 function makeService(
-  overrides: { disp?: unknown; eligibility?: unknown; caseClient?: unknown } = {},
+  overrides: {
+    disp?: unknown;
+    eligibility?: unknown;
+    caseClient?: unknown;
+    /** FAZ-2: getActiveForCaseClient dönüşü. Omit -> null (mevcut davranış; agreement yok). */
+    feeAgreement?: unknown;
+  } = {},
 ) {
   const prisma = {
     $transaction: jest.fn(),
@@ -54,8 +60,35 @@ function makeService(
       overrides.eligibility ?? { eligibleExpenseRequests: [] },
     ),
   };
-  const svc = new DistributionRecommendationService(prisma as never, offset as never);
-  return { svc, prisma, offset };
+  const feeAgreements = {
+    getActiveForCaseClient: jest.fn().mockResolvedValue(overrides.feeAgreement ?? null),
+  };
+  const svc = new DistributionRecommendationService(prisma as never, offset as never, feeAgreements as never);
+  return { svc, prisma, offset, feeAgreements };
+}
+
+function activeFlatAgreement(extra: Record<string, unknown> = {}) {
+  return {
+    id: 'cfa-1',
+    feeType: 'FLAT_AMOUNT',
+    flatAmount: '15000.00',
+    percentageBps: null,
+    feeBase: 'GROSS',
+    status: 'ACTIVE',
+    ...extra,
+  };
+}
+
+function activePercentageAgreement(extra: Record<string, unknown> = {}) {
+  return {
+    id: 'cfa-2',
+    feeType: 'PERCENTAGE_OF_COLLECTION',
+    flatAmount: null,
+    percentageBps: 1500, // %15
+    feeBase: 'GROSS',
+    status: 'ACTIVE',
+    ...extra,
+  };
 }
 
 function expectAdvisoryContract(
@@ -288,7 +321,7 @@ describe('DistributionRecommendationService (S8-B FAZ-1a)', () => {
   });
 
   it('CLUSTER remains manual advisory-only with no candidate or write delegation', async () => {
-    const { svc, prisma, offset } = makeService({
+    const { svc, prisma, offset, feeAgreements } = makeService({
       disp: defaultDisp({ beneficiaryScope: 'CASE_CREDITOR_CLUSTER', caseClientId: null }),
     });
     const r = await svc.generate('t1', 'disp-1', {}, ACTOR);
@@ -302,6 +335,113 @@ describe('DistributionRecommendationService (S8-B FAZ-1a)', () => {
     expect(r.warnings).toEqual([expect.stringContaining('CASE_CREDITOR_CLUSTER')]);
     expect(offset.getEligibility).not.toHaveBeenCalled();
     expect(prisma.caseClient.findFirst).not.toHaveBeenCalled();
+    // FAZ-2: CLUSTER erken döner (resolveFeeAttribution hiç çağrılmaz) -> agreement hiç okunmaz.
+    expect(feeAgreements.getActiveForCaseClient).not.toHaveBeenCalled();
     expectNoWriteDelegation(prisma);
+  });
+});
+
+describe('DistributionRecommendationService (S8-B FAZ-2 — CaseFeeAgreement recommendation)', () => {
+  const FLAG = 'FEE_AGREEMENT_RECOMMENDATION_ENABLED';
+  afterEach(() => {
+    delete process.env[FLAG];
+  });
+
+  it('flag OFF (default) + active agreement + manuel yok -> legacy (fee=0) korunur, agreement okunur ama uygulanmaz, WARN loglanır', async () => {
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { svc, feeAgreements } = makeService({ feeAgreement: activeFlatAgreement() });
+    const r = await svc.generate('t1', 'disp-1', {}, ACTOR);
+    expect(r.suggestedLines.map((l) => l.type)).toEqual(['CLIENT_PAYABLE']);
+    expect(r.suggestedLines.every((l) => l.origin !== 'FEE_AGREEMENT')).toBe(true);
+    // dual-eval: agreement OKUNUR (rollout gözlemi) ama flag OFF olduğu için uygulanmaz.
+    expect(feeAgreements.getActiveForCaseClient).toHaveBeenCalledWith('t1', 'cc-1');
+    // Politika: flag OFF + divergent agreement -> rollout-gözlem WARN'ı loglanır ("flag açılsaydı ne olurdu").
+    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('fee-agreement-recommendation'));
+    warnSpy.mockRestore();
+  });
+
+  it('flag ON + SINGLE_CASE_CLIENT + FLAT_AMOUNT agreement + manuel yok -> FEE_AGREEMENT line + feeAgreementId provenance, gereksiz WARN YOK', async () => {
+    process.env[FLAG] = 'true';
+    const warnSpy = jest.spyOn(Logger.prototype, 'warn').mockImplementation(() => undefined);
+    const { svc } = makeService({ feeAgreement: activeFlatAgreement() });
+    const r = await svc.generate('t1', 'disp-1', {}, ACTOR);
+    expect(r.suggestedLines.map((l) => [l.type, l.amount])).toEqual([
+      ['CONTRACTUAL_FEE_WITHHELD', '15000'],
+      ['CLIENT_PAYABLE', '85000'],
+    ]);
+    expect(r.suggestedLines[0]).toMatchObject({
+      origin: 'FEE_AGREEMENT',
+      feeAgreementId: 'cfa-1',
+      caseClientId: null,
+    });
+    expect(r.suggestedLines[1].feeAgreementId).toBeUndefined();
+    expect(r.sumCheck.equalsGross).toBe(true);
+    // Politika: flag ON -> agreement normal uygulanıyor, "farklı" değil; gereksiz dual-eval WARN'ı YOK.
+    expect(warnSpy).not.toHaveBeenCalled();
+    warnSpy.mockRestore();
+  });
+
+  it('flag ON + PERCENTAGE_OF_COLLECTION (%15 x 100000) -> faithful decimal hesap', async () => {
+    process.env[FLAG] = 'true';
+    const { svc } = makeService({ feeAgreement: activePercentageAgreement() });
+    const r = await svc.generate('t1', 'disp-1', {}, ACTOR);
+    expect(r.suggestedLines.map((l) => [l.type, l.amount])).toEqual([
+      ['CONTRACTUAL_FEE_WITHHELD', '15000'],
+      ['CLIENT_PAYABLE', '85000'],
+    ]);
+    expect(r.suggestedLines[0].feeAgreementId).toBe('cfa-2');
+  });
+
+  it('flag ON + PERCENTAGE_OF_COLLECTION rounding -> ROUND_HALF_UP 2dp (Decimal 15,2 uyumu)', async () => {
+    process.env[FLAG] = 'true';
+    // 100010 * 5 / 10000 = 50.005 -> HALF_UP -> 50.01
+    const { svc } = makeService({
+      disp: defaultDisp({ totalAmount: '100010' }),
+      feeAgreement: activePercentageAgreement({ id: 'cfa-round', percentageBps: 5 }),
+    });
+    const r = await svc.generate('t1', 'disp-1', {}, ACTOR);
+    expect(r.suggestedLines[0]).toMatchObject({ type: 'CONTRACTUAL_FEE_WITHHELD', amount: '50.01' });
+  });
+
+  it('flag ON + manuel attorneyFee VERİLMİŞ -> manuel override kazanır, agreement hiç okunmaz', async () => {
+    process.env[FLAG] = 'true';
+    const { svc, feeAgreements } = makeService({ feeAgreement: activeFlatAgreement() });
+    const r = await svc.generate(
+      't1',
+      'disp-1',
+      { attorneyFee: { mode: 'AMOUNT', amount: '5000' } },
+      ACTOR,
+    );
+    expect(r.suggestedLines[0]).toMatchObject({
+      type: 'CONTRACTUAL_FEE_WITHHELD',
+      amount: '5000',
+      origin: 'FEE_MANUAL',
+    });
+    expect(r.suggestedLines[0].feeAgreementId).toBeUndefined();
+    expect(feeAgreements.getActiveForCaseClient).not.toHaveBeenCalled();
+  });
+
+  it('flag ON + agreement feeBase=NET_OF_EXPENSE (defensive) -> agreement uygulanmaz, legacy (fee=0) korunur', async () => {
+    process.env[FLAG] = 'true';
+    const { svc } = makeService({
+      feeAgreement: activeFlatAgreement({ feeBase: 'NET_OF_EXPENSE' }),
+    });
+    const r = await svc.generate('t1', 'disp-1', {}, ACTOR);
+    expect(r.suggestedLines.map((l) => l.type)).toEqual(['CLIENT_PAYABLE']);
+  });
+
+  it('flag ON + agreement yok (null) -> legacy (fee=0) korunur, hata yok', async () => {
+    process.env[FLAG] = 'true';
+    const { svc } = makeService();
+    const r = await svc.generate('t1', 'disp-1', {}, ACTOR);
+    expect(r.suggestedLines.map((l) => l.type)).toEqual(['CLIENT_PAYABLE']);
+  });
+
+  it('flag ON + agreement-türevi fee > gross -> BadRequest, clamp YOK (manuel ile simetrik)', async () => {
+    process.env[FLAG] = 'true';
+    const { svc } = makeService({
+      feeAgreement: activeFlatAgreement({ flatAmount: '200000.00' }),
+    });
+    await expect(svc.generate('t1', 'disp-1', {}, ACTOR)).rejects.toBeInstanceOf(BadRequestException);
   });
 });
