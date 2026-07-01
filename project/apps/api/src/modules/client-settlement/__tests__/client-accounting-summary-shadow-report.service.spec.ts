@@ -846,7 +846,10 @@ describe('ClientAccountingSummaryShadowReportService', () => {
       expect.objectContaining({
         status: 'REVERSAL_REFUND_POLICY_BLOCKED',
         blockerCodes: ['EXPENSE_PAYMENT_REVERSAL_REFUND_POLICY_MISSING'],
-        details: expect.objectContaining({ sourceAction: 'refund' }),
+        details: expect.objectContaining({
+          sourceAction: 'refund',
+          policyReason: 'EXPENSE_PAYMENT_REVERSAL_REFUND_DOMAIN_POLICY_MISSING',
+        }),
       }),
     );
     expect(report.blockerCodes).toEqual(expect.arrayContaining(['EXPENSE_PAYMENT_REVERSAL_REFUND_POLICY_MISSING']));
@@ -868,7 +871,7 @@ describe('ClientAccountingSummaryShadowReportService', () => {
 
     expect(report.expensePaymentBackfillEvidence?.items[0]).toEqual(
       expect.objectContaining({
-        status: 'PARENT_CANCELLED_OR_SETTLED_BLOCKED',
+        status: 'PARENT_CANCELLED_BLOCKED',
         blockerCodes: ['EXPENSE_PAYMENT_PARENT_CANCELLED_BLOCKED'],
         details: expect.objectContaining({ parentStatus: 'CANCELLED' }),
       }),
