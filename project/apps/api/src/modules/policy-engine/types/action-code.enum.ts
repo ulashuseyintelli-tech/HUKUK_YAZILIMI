@@ -203,6 +203,18 @@ export enum ActionCode {
    * @CpeRequired is future-compat metadata only; dormant CPE guard is not the security boundary.
    */
   ACCOUNTING_JOURNAL_MANUAL_ADJUSTMENT = 'ACCOUNTING_JOURNAL_MANUAL_ADJUSTMENT',
+
+  // ============================================
+  // Case Fee Agreement Actions (S8-B FAZ-2)
+  // ============================================
+
+  /**
+   * Akdi ücret sözleşmesi yönetimi (CaseFeeAgreement create/update/terminate) - HIGH risk, dağıtım ücretini belirler.
+   * FAZ-2 v1: yetki CaseFeeAgreementService içinde explicit enforce (assertCanManage → isApproverEligible:
+   * PARTNER/canApproveOfficeActions-only; aksi 403). @CpeRequired YALNIZ future-compat metadata;
+   * CpeRequiredGuard dormant olduğundan güvenlik buna bağlı DEĞİL.
+   */
+  MANAGE_FEE_AGREEMENT = 'MANAGE_FEE_AGREEMENT',
 }
 
 /**
@@ -280,6 +292,9 @@ export const ACTION_RISK_LEVELS: Record<ActionCode, RiskLevel> = {
 
   // ACCT-1M - Manual accounting journal adjustment
   [ActionCode.ACCOUNTING_JOURNAL_MANUAL_ADJUSTMENT]: RiskLevel.HIGH,
+
+  // S8-B FAZ-2 - Akdi ücret sözleşmesi yönetimi
+  [ActionCode.MANAGE_FEE_AGREEMENT]: RiskLevel.HIGH,
 };
 
 /**
