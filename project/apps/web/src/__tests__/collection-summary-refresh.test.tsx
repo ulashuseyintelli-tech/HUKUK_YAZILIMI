@@ -794,6 +794,71 @@ describe("collection summary refresh", () => {
     });
   });
 
+  it("FAZ-2: origin='FEE_AGREEMENT' satırında sözleşme badge'i gösterir, residual satırda göstermez, FE hesaplamaz", async () => {
+    const prepare = vi.fn().mockResolvedValue({
+      suggestedLines: [
+        { type: "CONTRACTUAL_FEE_WITHHELD", amount: "15000.00", caseClientId: null, origin: "FEE_AGREEMENT", feeAgreementId: "cfa-1" },
+        { type: "CLIENT_PAYABLE", amount: "85000.00", caseClientId: "case-client-1", origin: "CLIENT_PAYABLE_RESIDUAL" },
+      ],
+      warnings: [],
+      expenseModule: { candidates: [] },
+    });
+
+    render(
+      <OperationDeck
+        caseId="case-1"
+        muhasebeKayitlari={[makeDispositionAccountingRecord()]}
+        eligibleDispositionClients={[{ id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" }]}
+        onRecommendDisposition={vi.fn()}
+        onPrepareDistributionRecommendation={prepare}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtımı Belirle/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım Önerisi Hazırla/ }));
+
+    await waitFor(() => {
+      const amounts = screen.getAllByLabelText(/Dağıtım tutarı/);
+      expect(amounts).toHaveLength(2);
+    });
+    // Backend provenance aynen gösterilir: FE hiçbir hesap yapmaz, yalnız badge render eder.
+    expect(screen.getAllByText("Sözleşmeden hesaplandı")).toHaveLength(1);
+    // Manuel override alanı (attorneyFee input) bozulmadan yerinde durur.
+    expect(screen.getByLabelText(/Avukatlık ücreti/)).toBeInTheDocument();
+  });
+
+  it("FAZ-2: origin='FEE_MANUAL' satırında sözleşme badge'i GÖSTERMEZ (manuel override korunur)", async () => {
+    const prepare = vi.fn().mockResolvedValue({
+      suggestedLines: [
+        { type: "CONTRACTUAL_FEE_WITHHELD", amount: "30.00", caseClientId: null, origin: "FEE_MANUAL" },
+        { type: "CLIENT_PAYABLE", amount: "70.00", caseClientId: "case-client-1", origin: "CLIENT_PAYABLE_RESIDUAL" },
+      ],
+      warnings: [],
+      expenseModule: { candidates: [] },
+    });
+
+    render(
+      <OperationDeck
+        caseId="case-1"
+        muhasebeKayitlari={[makeDispositionAccountingRecord()]}
+        eligibleDispositionClients={[{ id: "case-client-1", name: "Alacaklı A", role: "ALACAKLI" }]}
+        onRecommendDisposition={vi.fn()}
+        onPrepareDistributionRecommendation={prepare}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım & Mutabakat/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtımı Belirle/ }));
+    fireEvent.change(screen.getByLabelText(/Avukatlık ücreti/), { target: { value: "30" } });
+    fireEvent.click(screen.getByRole("button", { name: /Dağıtım Önerisi Hazırla/ }));
+
+    await waitFor(() => {
+      expect(screen.getAllByLabelText(/Dağıtım tutarı/)).toHaveLength(2);
+    });
+    expect(screen.queryByText("Sözleşmeden hesaplandı")).not.toBeInTheDocument();
+  });
+
   it("FAZ-1a: ücretsiz öneri attorneyFee göndermez, uyarı+masraf adayı gösterir, candidate satır olmaz", async () => {
     const prepare = vi.fn().mockResolvedValue({
       suggestedLines: [
