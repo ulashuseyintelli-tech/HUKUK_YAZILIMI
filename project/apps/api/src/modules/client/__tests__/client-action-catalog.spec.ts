@@ -52,7 +52,7 @@ function buildHarness(opts: { client?: any } = {}) {
     },
   };
   const audit = { logInTransaction: jest.fn(), log: jest.fn() };
-  const svc = new ClientService(prisma, audit as any);
+  const svc = new ClientService(prisma, audit as any, {} as any);
   return { svc, prisma, audit };
 }
 

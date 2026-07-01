@@ -4,9 +4,10 @@ import { ClientService } from './client.service';
 import { PrismaModule } from '../../prisma/prisma.module';
 import { AuditModule } from '../audit/audit.module';
 import { ClientIntakeLinkModule } from '../client-intake-link/client-intake-link.module';
+import { OfficeApprovalModule } from '../office-approval/office-approval.module';
 
 @Module({
-  imports: [PrismaModule, AuditModule, ClientIntakeLinkModule],
+  imports: [PrismaModule, AuditModule, ClientIntakeLinkModule, OfficeApprovalModule],
   controllers: [ClientController],
   providers: [ClientService],
   exports: [ClientService],

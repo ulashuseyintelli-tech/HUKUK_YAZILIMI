@@ -6,10 +6,12 @@
  * (P0.4 HTTP error contract = controller seviyesinde hata yutma kaldırıldı; servis NotFoundException
  *  fırlatır, controller try/catch'siz propagate eder.)
  */
-import { NotFoundException } from "@nestjs/common";
+import { ForbiddenException, NotFoundException } from "@nestjs/common";
 import { ClientService } from "../client.service";
 
-function buildHarness(opts: { existing?: any; updateCount?: number; updated?: any } = {}) {
+function buildHarness(
+  opts: { existing?: any; updateCount?: number; updated?: any; officeApprovalEligible?: boolean } = {},
+) {
   const tx = {
     client: {
       create: jest.fn().mockResolvedValue({ id: "c1" }),
@@ -27,9 +29,14 @@ function buildHarness(opts: { existing?: any; updateCount?: number; updated?: an
     $transaction: jest.fn().mockImplementation(async (cb: any) => cb(tx)),
   };
   const audit = { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn() };
-  const svc = new ClientService(prisma, audit as any);
+  // Task 8A: OfficeApprovalService.isApproverEligible — varsayılan eligible:true (mevcut testler
+  // capability'yi bilmez, bozulmasın); yalnız ineligible senaryosu explicit false geçer.
+  const officeApproval = {
+    isApproverEligible: jest.fn().mockResolvedValue(opts.officeApprovalEligible ?? true),
+  };
+  const svc = new ClientService(prisma, audit as any, officeApproval as any);
   jest.spyOn(svc as any, "syncContactFollowUpTaskSafe").mockResolvedValue(undefined);
-  return { svc, prisma, tx, audit };
+  return { svc, prisma, tx, audit, officeApproval };
 }
 
 describe("ClientService.update — P0.5 tenant-scoped + P0.7 parity", () => {
@@ -100,6 +107,56 @@ describe("ClientService.remove — P0.5 tenant-scoped soft-delete", () => {
     const { svc, prisma } = buildHarness();
     (prisma.client.findFirst as jest.Mock).mockResolvedValueOnce(null);
     await expect(svc.remove("cX", "t1", { userId: "u1" })).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe("ClientService.remove — Task 8A capability gate (owner-locked 2026-07-02)", () => {
+  it("eligible (PARTNER/delege avukat) kullanıcı silebilir", async () => {
+    const { svc, tx, officeApproval } = buildHarness({ officeApprovalEligible: true });
+    await expect(svc.remove("c1", "t1", { userId: "u1" })).resolves.toBeTruthy();
+    expect(officeApproval.isApproverEligible).toHaveBeenCalledWith("u1", "t1");
+    expect(tx.client.updateMany).toHaveBeenCalledWith({
+      where: { id: "c1", tenantId: "t1" },
+      data: { isActive: false },
+    });
+  });
+
+  it("ineligible (Staff/normal kullanıcı) → ForbiddenException, YAZMA YAPILMAZ", async () => {
+    const { svc, tx, prisma, officeApproval } = buildHarness({ officeApprovalEligible: false });
+    await expect(svc.remove("c1", "t1", { userId: "u2" })).rejects.toBeInstanceOf(ForbiddenException);
+    expect(officeApproval.isApproverEligible).toHaveBeenCalledWith("u2", "t1");
+    // Gate transaction'dan ÖNCE → yetkisizken hiçbir soft-delete/audit yazması olmaz.
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+    expect(tx.client.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("userId yoksa (actor eksik) → ForbiddenException (fail-closed)", async () => {
+    const { svc, prisma } = buildHarness();
+    await expect(svc.remove("c1", "t1", {})).rejects.toBeInstanceOf(ForbiddenException);
+    expect(prisma.$transaction).not.toHaveBeenCalled();
+  });
+
+  it("başarılı silmede audit davranışı DEĞİŞMEDİ (CLIENT_DELETE + eski-hâl snapshot + actor)", async () => {
+    const existing = { id: "c1", tenantId: "t1", isActive: true, displayName: "Test Müvekkil" };
+    const { svc, audit } = buildHarness({ existing, officeApprovalEligible: true });
+    await svc.remove("c1", "t1", { userId: "u1" });
+    expect(audit.logInTransaction).toHaveBeenCalledTimes(1);
+    const call = audit.logInTransaction.mock.calls[0][1];
+    expect(call.action).toBe("CLIENT_DELETE");
+    expect(call.entityType).toBe("CLIENT");
+    expect(call.entityId).toBe("c1");
+    expect(call.userId).toBe("u1");
+    expect(call.metadata.softDelete).toBe(true);
+    expect(call.metadata.oldSnapshot).toBeTruthy();
+  });
+
+  it("tenant-scoping DEĞİŞMEDİ: eligibility kontrolü DOĞRU tenantId ile çağrılır, cross-tenant sızmaz", async () => {
+    const { svc, officeApproval } = buildHarness({
+      existing: { id: "c1", tenantId: "t-real", isActive: true },
+    });
+    await svc.remove("c1", "t-real", { userId: "u1" });
+    expect(officeApproval.isApproverEligible).toHaveBeenCalledWith("u1", "t-real");
+    expect(officeApproval.isApproverEligible).not.toHaveBeenCalledWith("u1", "t-other");
   });
 });
 

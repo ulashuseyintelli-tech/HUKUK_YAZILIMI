@@ -1,6 +1,7 @@
-import { Injectable, BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
+import { Injectable, BadRequestException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
+import { OfficeApprovalService } from '../office-approval/office-approval.service';
 import { buildClientFieldDiff, buildContactsDiff, buildClientRemoveSnapshot } from './client-audit.util';
 import { assertCreateIdentityChecksum } from './client-identity-checksum.util';
 
@@ -182,7 +183,22 @@ export class ClientService {
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
+    private officeApproval: OfficeApprovalService,
   ) {}
+
+  /**
+   * Task 8A (owner-locked 2026-07-02) — müvekkil lifecycle (archive/delete) mutasyon yetkisi.
+   * case-fee-agreement.service.ts:assertCanManage ile BİREBİR desen (reuse, yeni altyapı YOK):
+   * PARTNER veya canApproveOfficeActions=true delege avukat. Staff/normal kullanıcı 403.
+   * Reactivate-via-create (dedup yan-etkisi) BU KAPSAM DIŞI — kasıtlı olarak dokunulmadı.
+   */
+  private async assertCanManageLifecycle(userId: string | undefined, tenantId: string): Promise<void> {
+    if (!userId || !(await this.officeApproval.isApproverEligible(userId, tenantId))) {
+      throw new ForbiddenException(
+        'Müvekkil arşivleme/silme için yetki yok (PARTNER veya yetkilendirilmiş avukat gerekir)',
+      );
+    }
+  }
 
   // Tüm müvekkilleri listele
   async findAll(tenantId: string, type?: string) {
@@ -972,6 +988,8 @@ export class ClientService {
   async remove(id: string, tenantId: string, actor?: AuditActor) {
     const existing = await this.prisma.client.findFirst({ where: { id, tenantId } });
     if (!existing) throw new NotFoundException('Müvekkil bulunamadı');
+    // Task 8A: lifecycle capability gate — transaction'dan ÖNCE (yetkisiz aktör hiçbir yazma yapmaz).
+    await this.assertCanManageLifecycle(actor?.userId, tenantId);
     // C0-a: soft-delete + audit AYNI transaction (old snapshot delete ÖNCESİ alındı).
     return this.prisma.$transaction(async (tx) => {
       // P0.5: tenant-scoped soft-delete (updateMany {id,tenantId}).
