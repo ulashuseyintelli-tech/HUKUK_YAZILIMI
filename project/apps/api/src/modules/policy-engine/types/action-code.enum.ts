@@ -187,7 +187,7 @@ export enum ActionCode {
   CLIENT_OFFSET_REVERSE = 'CLIENT_OFFSET_REVERSE',
 
   // ============================================
-  // Accounting Journal Actions (ACCT-1R)
+  // Accounting Journal Actions (ACCT-1R / ACCT-1M)
   // ============================================
 
   /**
@@ -196,6 +196,13 @@ export enum ActionCode {
    * @CpeRequired is future-compat metadata only; dormant CPE guard is not the security boundary.
    */
   ACCOUNTING_JOURNAL_REVERSE = 'ACCOUNTING_JOURNAL_REVERSE',
+
+  /**
+   * Manual accounting journal adjustment - HIGH risk accounting mutation.
+   * ACCT-1M-2 v1: authorization is enforced explicitly inside AccountingJournalManualAdjustmentService (PARTNER/MANAGER-only).
+   * @CpeRequired is future-compat metadata only; dormant CPE guard is not the security boundary.
+   */
+  ACCOUNTING_JOURNAL_MANUAL_ADJUSTMENT = 'ACCOUNTING_JOURNAL_MANUAL_ADJUSTMENT',
 }
 
 /**
@@ -270,6 +277,9 @@ export const ACTION_RISK_LEVELS: Record<ActionCode, RiskLevel> = {
 
   // ACCT-1R - Generic AccountingJournalEntry reversal
   [ActionCode.ACCOUNTING_JOURNAL_REVERSE]: RiskLevel.HIGH,
+
+  // ACCT-1M - Manual accounting journal adjustment
+  [ActionCode.ACCOUNTING_JOURNAL_MANUAL_ADJUSTMENT]: RiskLevel.HIGH,
 };
 
 /**
