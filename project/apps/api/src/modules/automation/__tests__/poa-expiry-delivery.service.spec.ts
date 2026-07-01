@@ -217,7 +217,15 @@ describe("PoaExpiryDeliveryService", () => {
 });
 
 describe("AutomationService POA queue bypass", () => {
-  it("sendExpiringPoaNotifications NotificationQueue yazmaz, PoaExpiryDeliveryService'e delege eder", async () => {
+  const originalFlag = process.env.POA_EXPIRY_NOTIFICATION_ENABLED;
+
+  afterEach(() => {
+    if (originalFlag === undefined) delete process.env.POA_EXPIRY_NOTIFICATION_ENABLED;
+    else process.env.POA_EXPIRY_NOTIFICATION_ENABLED = originalFlag;
+  });
+
+  it("sendExpiringPoaNotifications NotificationQueue yazmaz, PoaExpiryDeliveryService'e delege eder (flag ON)", async () => {
+    process.env.POA_EXPIRY_NOTIFICATION_ENABLED = "true";
     const prisma: any = { notificationQueue: { create: jest.fn() } };
     const poaDelivery: any = {
       sendExpiringPoaNotifications: jest.fn().mockResolvedValue({ scanned: 1, recipients: 1, sent: 1, failed: 0, skipped: 0 }),

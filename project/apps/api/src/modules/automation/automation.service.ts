@@ -8,9 +8,14 @@ import { CaseStatus, WorkflowStage, NotificationStatus, LegalCaseStatus, PoaStat
 // Otomasyon açık olan statüler (C.19)
 const AUTOMATION_ENABLED_STATUSES: LegalCaseStatus[] = [
   'DERDEST',
-  'ISLEMDE', 
+  'ISLEMDE',
   'DERKENAR',
 ];
+
+/** POA expiry bildirim cron'u default-OFF; owner explicit ON kararı bekler (migration deploy'dan bağımsız). */
+export function isPoaExpiryNotificationEnabled(): boolean {
+  return process.env.POA_EXPIRY_NOTIFICATION_ENABLED?.toLowerCase() === 'true';
+}
 
 @Injectable()
 export class AutomationService {
@@ -185,6 +190,8 @@ export class AutomationService {
   /// </remarks>
   @Cron(CronExpression.EVERY_DAY_AT_9AM)
   async sendExpiringPoaNotifications(): Promise<void> {
+    if (!isPoaExpiryNotificationEnabled()) return;
+
     this.logger.log("Checking for expiring powers of attorney to notify...");
 
     const result = await this.poaExpiryDeliveryService.sendExpiringPoaNotifications();
