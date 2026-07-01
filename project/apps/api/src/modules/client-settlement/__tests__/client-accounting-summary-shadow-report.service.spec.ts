@@ -88,6 +88,7 @@ function expenseRequest(row: ExpenseRequestMockRow) {
     status: 'PENDING',
     ...row,
     totalAmount: new Prisma.Decimal(row.totalAmount),
+    paidTotal: new Prisma.Decimal(row.paidTotal ?? '0'),
   };
 }
 
@@ -108,6 +109,53 @@ function expenseRequestJournal(row: ExpenseRequestJournalMockRow) {
         expenseRequestId: row.expenseRequestId ?? row.sourceId,
       },
     ],
+  };
+}
+
+function expensePayment(row: ExpensePaymentMockRow) {
+  return {
+    id: row.id,
+    expenseRequestId: row.expenseRequestId,
+    amount: new Prisma.Decimal(row.amount),
+    createdAt: DEFAULT_REPLAY_DATE,
+    paymentDate: DEFAULT_REPLAY_DATE,
+    expenseRequest: {
+      id: row.expenseRequestId,
+      caseId: row.caseId ?? 'case-1',
+      clientId: row.clientId ?? 'client-1',
+      currency: row.currency ?? 'TRY',
+      status: row.status ?? 'PENDING',
+    },
+  };
+}
+
+function expensePaymentJournal(row: ExpensePaymentJournalMockRow) {
+  return {
+    id: row.id ?? `journal-${row.sourceId}`,
+    sourceId: row.sourceId,
+    sourceAction: row.sourceAction ?? 'recorded',
+    sourceHash: `hash-${row.sourceId}`,
+    idempotencyKey: `EXPENSE_PAYMENT:${row.sourceId}:${row.sourceAction ?? 'recorded'}`,
+    lines: [
+      {
+        accountCode: 'CLIENT_EXPENSE_RECEIVABLE',
+        direction: 'CREDIT',
+        amount: new Prisma.Decimal(row.amount),
+        currency: row.currency ?? 'TRY',
+        caseId: row.caseId ?? 'case-1',
+        clientId: row.clientId ?? 'client-1',
+        expenseRequestId: row.expenseRequestId ?? `er-${row.sourceId}`,
+        expensePaymentId: row.expensePaymentId ?? row.sourceId,
+      },
+    ],
+  };
+}
+
+function expenseReceivableAdjustmentLine(row: ExpenseReceivableAdjustmentLineMockRow) {
+  return {
+    amount: new Prisma.Decimal(row.amount),
+    direction: row.direction,
+    journalEntry: { sourceType: row.sourceType, sourceAction: row.sourceAction },
   };
 }
 
@@ -194,14 +242,18 @@ function buildPrismaMock(
       findMany: jest.fn().mockResolvedValue(replay?.caseClients ?? [{ id: 'case-client-1', caseId: 'case-1' }]),
     },
     accountingJournalLine: {
-      findMany: jest.fn().mockResolvedValue(
-        lines.map((line) => ({
-          amount: new Prisma.Decimal(line.amount),
-          journalEntry: { sourceType: line.sourceType, sourceAction: line.sourceAction },
-        })),
-      ),
-    },
-    expenseRequest: {
+      findMany: jest.fn().mockImplementation((args) => {
+        if (args.where?.accountCode === 'CLIENT_EXPENSE_RECEIVABLE') {
+          return Promise.resolve((expense?.adjustmentLines ?? []).map(expenseReceivableAdjustmentLine));
+        }
+        return Promise.resolve(
+          lines.map((line) => ({
+            amount: new Prisma.Decimal(line.amount),
+            journalEntry: { sourceType: line.sourceType, sourceAction: line.sourceAction },
+          })),
+        );
+      }),
+    },    expenseRequest: {
       findMany: jest.fn().mockImplementation((args) => {
         if (args.where.status === 'CANCELLED') {
           return Promise.resolve((expense?.cancelled ?? []).map(expenseRequest));
@@ -214,10 +266,12 @@ function buildPrismaMock(
         if (args.where?.sourceType === 'EXPENSE_REQUEST') {
           return Promise.resolve((expense?.journals ?? []).map(expenseRequestJournal));
         }
+        if (args.where?.sourceType === 'EXPENSE_PAYMENT') {
+          return Promise.resolve((expense?.paymentJournals ?? []).map(expensePaymentJournal));
+        }
         return Promise.resolve((replay?.journalEntries ?? []).map(replayJournal));
       }),
-    },
-    collectionDispositionLine: {
+    },    collectionDispositionLine: {
       findMany: jest.fn().mockResolvedValue((replay?.dispositionLines ?? []).map(collectionDispositionLine)),
     },
     collection: {
@@ -230,9 +284,13 @@ function buildPrismaMock(
       findMany: jest.fn().mockResolvedValue((replay?.balanceLedgers ?? []).map(balanceLedger)),
     },
     expensePayment: {
-      findMany: jest.fn().mockResolvedValue(expense?.payments ?? []),
-    },
-    clientOffset: {
+      findMany: jest.fn().mockImplementation((args) => {
+        if (args.where?.expenseRequest) {
+          return Promise.resolve((expense?.paymentRows ?? []).map(expensePayment));
+        }
+        return Promise.resolve(expense?.payments ?? []);
+      }),
+    },    clientOffset: {
       findMany: jest.fn().mockResolvedValue(expense?.offsets ?? []),
     },
     collectionDispositionExpenseApplication: {
@@ -292,7 +350,7 @@ describe('ClientAccountingSummaryShadowReportService', () => {
       }),
     );
     expect(report.supportedValueSummary).toEqual(
-      expect.objectContaining({ status: 'NOT_COMPUTED', notComputedCount: 4 }),
+      expect.objectContaining({ status: 'NOT_COMPUTED', notComputedCount: 6 }),
     );
   });
 
@@ -304,7 +362,7 @@ describe('ClientAccountingSummaryShadowReportService', () => {
         coverage: 'BLOCKER',
         legacySources: ['ExpenseRequest', 'ExpensePayment'],
         journalSources: ['EXPENSE_PAYMENT'],
-        blockerCodes: expect.arrayContaining(['EXPENSE_PAYMENT_LIVE_POSTING_MISSING']),
+        blockerCodes: expect.arrayContaining(['EXPENSE_PAYMENT_BACKFILL_MISSING']),
         gapCodes: expect.not.arrayContaining(['EXPENSE_PAYMENT_JOURNAL_SOURCE_MISSING']),
       }),
     );
@@ -356,7 +414,7 @@ describe('ClientAccountingSummaryShadowReportService', () => {
         'CASE_BALANCE_SNAPSHOT_NOT_JOURNAL_DERIVED',
       ]),
     );
-    expect(report.nextImplementationTasks[0]).toContain('ACCT-CUTOVER-3C');
+    expect(report.nextImplementationTasks[0]).toContain('ACCT-CUTOVER-3E2B');
   });
 
 
@@ -394,9 +452,9 @@ describe('ClientAccountingSummaryShadowReportService', () => {
         requiredDimensions: expect.arrayContaining(['expenseRequestId', 'expensePaymentId']),
         supportedSources: ['EXPENSE_PAYMENT'],
         blockerCodes: expect.arrayContaining([
-          'EXPENSE_PAYMENT_LIVE_POSTING_MISSING',
           'EXPENSE_PAYMENT_BACKFILL_MISSING',
-          'EXPENSE_PAYMENT_VALUE_SHADOW_MISSING',
+          'EXPENSE_PAYMENT_BACKFILL_MISSING',
+          'EXPENSE_PAYMENT_VALUE_SHADOW_MISMATCH',
           'EXPENSE_PAYMENT_REVERSAL_REFUND_POLICY_MISSING',
         ]),
         gapCodes: ['EXPENSE_REQUEST_PAID_TOTAL_PROJECTION_ONLY'],
@@ -444,7 +502,7 @@ describe('ClientAccountingSummaryShadowReportService', () => {
     expect(report.expenseCoveragePolicy.blockerCodes).toEqual(
       expect.arrayContaining([
         'EXPENSE_REQUEST_BACKFILL_MISSING',
-        'EXPENSE_PAYMENT_LIVE_POSTING_MISSING',
+        'EXPENSE_PAYMENT_BACKFILL_MISSING',
         'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_WIRING_MISSING',
       ]),
     );
@@ -467,7 +525,7 @@ describe('ClientAccountingSummaryShadowReportService', () => {
     });
 
     expect(report.supportedValueSummary).toEqual(
-      expect.objectContaining({ status: 'MATCH', matchedCount: 4, mismatchedCount: 0, notComputedCount: 0 }),
+      expect.objectContaining({ status: 'MATCH', matchedCount: 6, mismatchedCount: 0, notComputedCount: 0 }),
     );
     expect(component(report, 'payableNet').valueComparison).toEqual(
       expect.objectContaining({ legacyValue: '125', journalValue: '125', delta: '0', status: 'MATCH' }),
@@ -501,7 +559,7 @@ describe('ClientAccountingSummaryShadowReportService', () => {
     expect(report.candidateStatus).toBe('BLOCKED');
     expect(report.safeForPrimaryCutover).toBe(false);
     expect(report.supportedValueSummary).toEqual(
-      expect.objectContaining({ status: 'MISMATCH', matchedCount: 3, mismatchedCount: 1 }),
+      expect.objectContaining({ status: 'MISMATCH', matchedCount: 5, mismatchedCount: 1, notComputedCount: 0 }),
     );
     expect(report.blockerCodes).toEqual(
       expect.arrayContaining(['SUMMARY_SUPPORTED_COMPONENT_VALUE_MISMATCH']),
@@ -650,6 +708,214 @@ describe('ClientAccountingSummaryShadowReportService', () => {
       }),
     );
     expect(report.blockerCodes).toEqual(expect.arrayContaining(['EXPENSE_REQUEST_SETTLED_CANCEL_BLOCKED']));
+    expect(report.candidateStatus).toBe('BLOCKED');
+    expect(report.safeForPrimaryCutover).toBe(false);
+  });
+  it('reports ExpensePayment backfill evidence as all matched and compares expensePaid/unpaid values', async () => {
+    const prisma = buildPrismaMock([], {
+      active: [{ id: 'er-paid', totalAmount: '100', paidTotal: '30' }],
+      journals: [{ sourceId: 'er-paid', amount: '100' }],
+      paymentRows: [{ id: 'ep-1', expenseRequestId: 'er-paid', amount: '30' }],
+      paymentJournals: [{ sourceId: 'ep-1', amount: '30', expenseRequestId: 'er-paid' }],
+    });
+
+    const report = await new ClientAccountingSummaryShadowReportService(prisma as never).getSummaryShadowReportWithSupportedValues({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      legacyClientScoped: { payableNet: '0', paidToClient: '0', offsetApplied: '0' },
+    });
+
+    expect(report.expensePaymentBackfillEvidence).toEqual(
+      expect.objectContaining({
+        sourceType: 'EXPENSE_PAYMENT',
+        sourceAction: 'recorded',
+        sourceVersionEvidence: 'idempotencyKey/sourceHash/sourceTuple',
+        statusCounts: expect.objectContaining({ MATCHED: 1, BACKFILL_REQUIRED: 0 }),
+        blockerCodes: [],
+      }),
+    );
+    expect(component(report, 'expensePaid').valueComparison).toEqual(
+      expect.objectContaining({ legacyValue: '30', journalValue: '30', delta: '0', status: 'MATCH', blockerCodes: [] }),
+    );
+    expect(component(report, 'expenseUnpaid').valueComparison).toEqual(
+      expect.objectContaining({ legacyValue: '70', journalValue: '70', delta: '0', status: 'MATCH' }),
+    );
+    expect(report.expenseUnpaidBreakdown).toEqual(
+      expect.objectContaining({ requestedJournalValue: '100', paidJournalValue: '30', journalValue: '70' }),
+    );
+    expect(report.candidateStatus).toBe('BLOCKED');
+    expect(report.safeForPrimaryCutover).toBe(false);
+  });
+
+  it('reports missing historical ExpensePayment journal as backfill required', async () => {
+    const prisma = buildPrismaMock([], {
+      active: [{ id: 'er-paid-missing', totalAmount: '80', paidTotal: '20' }],
+      journals: [{ sourceId: 'er-paid-missing', amount: '80' }],
+      paymentRows: [{ id: 'ep-missing', expenseRequestId: 'er-paid-missing', amount: '20' }],
+      paymentJournals: [],
+    });
+
+    const report = await new ClientAccountingSummaryShadowReportService(prisma as never).getSummaryShadowReportWithSupportedValues({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      legacyClientScoped: { payableNet: '0', paidToClient: '0', offsetApplied: '0' },
+    });
+
+    expect(report.expensePaymentBackfillEvidence?.items[0]).toEqual(
+      expect.objectContaining({
+        expensePaymentId: 'ep-missing',
+        status: 'BACKFILL_REQUIRED',
+        blockerCodes: ['EXPENSE_PAYMENT_BACKFILL_MISSING'],
+      }),
+    );
+    expect(component(report, 'expensePaid').valueComparison).toEqual(
+      expect.objectContaining({ legacyValue: '20', journalValue: '0', delta: '-20', status: 'MISMATCH' }),
+    );
+    expect(report.blockerCodes).toEqual(
+      expect.arrayContaining(['EXPENSE_PAYMENT_BACKFILL_MISSING', 'EXPENSE_PAYMENT_VALUE_SHADOW_MISMATCH']),
+    );
+  });
+
+  it('reports ExpensePayment value mismatch evidence and summary blocker', async () => {
+    const prisma = buildPrismaMock([], {
+      active: [{ id: 'er-paid-mismatch', totalAmount: '90', paidTotal: '25' }],
+      journals: [{ sourceId: 'er-paid-mismatch', amount: '90' }],
+      paymentRows: [{ id: 'ep-mismatch', expenseRequestId: 'er-paid-mismatch', amount: '25' }],
+      paymentJournals: [{ sourceId: 'ep-mismatch', amount: '15', expenseRequestId: 'er-paid-mismatch' }],
+    });
+
+    const report = await new ClientAccountingSummaryShadowReportService(prisma as never).getSummaryShadowReportWithSupportedValues({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      legacyClientScoped: { payableNet: '0', paidToClient: '0', offsetApplied: '0' },
+    });
+
+    expect(report.expensePaymentBackfillEvidence?.items[0]).toEqual(
+      expect.objectContaining({
+        status: 'VALUE_MISMATCH',
+        legacyValue: '25',
+        journalValue: '15',
+        delta: '-10',
+        blockerCodes: ['EXPENSE_PAYMENT_VALUE_SHADOW_MISMATCH'],
+      }),
+    );
+    expect(component(report, 'expensePaid').valueComparison).toEqual(
+      expect.objectContaining({ status: 'MISMATCH', blockerReason: 'EXPENSE_PAYMENT_VALUE_SHADOW_MISMATCH' }),
+    );
+  });
+
+  it('reports ExpensePayment dimension mismatch evidence', async () => {
+    const prisma = buildPrismaMock([], {
+      active: [{ id: 'er-paid-dimension', totalAmount: '70', paidTotal: '30' }],
+      journals: [{ sourceId: 'er-paid-dimension', amount: '70' }],
+      paymentRows: [{ id: 'ep-dimension', expenseRequestId: 'er-paid-dimension', amount: '30' }],
+      paymentJournals: [{ sourceId: 'ep-dimension', amount: '30', expenseRequestId: 'er-paid-dimension', clientId: 'client-other' }],
+    });
+
+    const report = await new ClientAccountingSummaryShadowReportService(prisma as never).getSummaryShadowReportWithSupportedValues({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      legacyClientScoped: { payableNet: '0', paidToClient: '0', offsetApplied: '0' },
+    });
+
+    expect(report.expensePaymentBackfillEvidence?.items[0]).toEqual(
+      expect.objectContaining({
+        status: 'DIMENSION_MISMATCH',
+        blockerCodes: ['EXPENSE_PAYMENT_DIMENSION_MISMATCH'],
+        details: expect.objectContaining({ clientId: 'client-1', journalClientId: 'client-other' }),
+      }),
+    );
+    expect(report.blockerCodes).toEqual(expect.arrayContaining(['EXPENSE_PAYMENT_DIMENSION_MISMATCH']));
+  });
+
+  it('blocks ExpensePayment reversal/refund policy evidence', async () => {
+    const prisma = buildPrismaMock([], {
+      active: [{ id: 'er-paid-refund', totalAmount: '60', paidTotal: '20' }],
+      journals: [{ sourceId: 'er-paid-refund', amount: '60' }],
+      paymentRows: [{ id: 'ep-refund', expenseRequestId: 'er-paid-refund', amount: '20' }],
+      paymentJournals: [{ sourceId: 'ep-refund', sourceAction: 'refund', amount: '20', expenseRequestId: 'er-paid-refund' }],
+    });
+
+    const report = await new ClientAccountingSummaryShadowReportService(prisma as never).getSummaryShadowReportWithSupportedValues({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      legacyClientScoped: { payableNet: '0', paidToClient: '0', offsetApplied: '0' },
+    });
+
+    expect(report.expensePaymentBackfillEvidence?.items[0]).toEqual(
+      expect.objectContaining({
+        status: 'REVERSAL_REFUND_POLICY_BLOCKED',
+        blockerCodes: ['EXPENSE_PAYMENT_REVERSAL_REFUND_POLICY_MISSING'],
+        details: expect.objectContaining({ sourceAction: 'refund' }),
+      }),
+    );
+    expect(report.blockerCodes).toEqual(expect.arrayContaining(['EXPENSE_PAYMENT_REVERSAL_REFUND_POLICY_MISSING']));
+  });
+
+  it('blocks ExpensePayment with cancelled parent request', async () => {
+    const prisma = buildPrismaMock([], {
+      cancelled: [{ id: 'er-cancelled-payment', totalAmount: '50', paidTotal: '20', status: 'CANCELLED' }],
+      journals: [{ sourceId: 'er-cancelled-payment', amount: '50' }],
+      paymentRows: [{ id: 'ep-cancelled-parent', expenseRequestId: 'er-cancelled-payment', amount: '20', status: 'CANCELLED' }],
+      paymentJournals: [{ sourceId: 'ep-cancelled-parent', amount: '20', expenseRequestId: 'er-cancelled-payment' }],
+    });
+
+    const report = await new ClientAccountingSummaryShadowReportService(prisma as never).getSummaryShadowReportWithSupportedValues({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      legacyClientScoped: { payableNet: '0', paidToClient: '0', offsetApplied: '0' },
+    });
+
+    expect(report.expensePaymentBackfillEvidence?.items[0]).toEqual(
+      expect.objectContaining({
+        status: 'PARENT_CANCELLED_OR_SETTLED_BLOCKED',
+        blockerCodes: ['EXPENSE_PAYMENT_PARENT_CANCELLED_BLOCKED'],
+        details: expect.objectContaining({ parentStatus: 'CANCELLED' }),
+      }),
+    );
+    expect(component(report, 'expensePaid').valueComparison).toEqual(
+      expect.objectContaining({ legacyValue: '0', journalValue: '0', delta: '0', status: 'MATCH' }),
+    );
+    expect(report.blockerCodes).toEqual(expect.arrayContaining(['EXPENSE_PAYMENT_PARENT_CANCELLED_BLOCKED']));
+  });
+
+  it('reports expenseUnpaid journal-derived offset and reimbursement breakdown', async () => {
+    const prisma = buildPrismaMock([], {
+      active: [{ id: 'er-unpaid', totalAmount: '100', paidTotal: '20' }],
+      journals: [{ sourceId: 'er-unpaid', amount: '100' }],
+      paymentRows: [{ id: 'ep-unpaid', expenseRequestId: 'er-unpaid', amount: '20' }],
+      paymentJournals: [{ sourceId: 'ep-unpaid', amount: '20', expenseRequestId: 'er-unpaid' }],
+      adjustmentLines: [
+        { sourceType: 'CLIENT_OFFSET', sourceAction: 'apply', direction: 'CREDIT', amount: '10' },
+        { sourceType: 'CLIENT_OFFSET', sourceAction: 'reversal', direction: 'DEBIT', amount: '2' },
+        { sourceType: 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION', sourceAction: 'apply', direction: 'CREDIT', amount: '5' },
+        { sourceType: 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION', sourceAction: 'reversal', direction: 'DEBIT', amount: '1' },
+      ],
+    });
+
+    const report = await new ClientAccountingSummaryShadowReportService(prisma as never).getSummaryShadowReportWithSupportedValues({
+      tenantId: 'tenant-1',
+      clientId: 'client-1',
+      legacyClientScoped: { payableNet: '0', paidToClient: '0', offsetApplied: '0' },
+    });
+
+    expect(report.expenseUnpaidBreakdown).toEqual(
+      expect.objectContaining({
+        legacyValue: '80',
+        requestedJournalValue: '100',
+        paidJournalValue: '20',
+        offsetAppliedJournalValue: '10',
+        offsetReversalJournalValue: '2',
+        reimbursementAppliedJournalValue: '5',
+        reimbursementReversalJournalValue: '1',
+        journalValue: '68',
+        delta: '-12',
+        blockerCodes: expect.arrayContaining(['EXPENSE_UNPAID_DERIVED_FROM_BLOCKED_EXPENSE_COMPONENTS']),
+      }),
+    );
+    expect(component(report, 'expenseUnpaid').valueComparison).toEqual(
+      expect.objectContaining({ legacyValue: '80', journalValue: '68', delta: '-12', status: 'MISMATCH' }),
+    );
     expect(report.candidateStatus).toBe('BLOCKED');
     expect(report.safeForPrimaryCutover).toBe(false);
   });
@@ -874,8 +1140,12 @@ describe('ClientAccountingSummaryShadowReportService', () => {
     expect(component(report, 'expenseRequested').valueComparison).toEqual(
       expect.objectContaining({ legacyValue: '0', journalValue: '0', delta: '0', status: 'MATCH' }),
     );
-    expect(component(report, 'expensePaid').valueComparison).toBeUndefined();
-    expect(component(report, 'expenseUnpaid').valueComparison).toBeUndefined();
+    expect(component(report, 'expensePaid').valueComparison).toEqual(
+      expect.objectContaining({ legacyValue: '0', journalValue: '0', delta: '0', status: 'MATCH' }),
+    );
+    expect(component(report, 'expenseUnpaid').valueComparison).toEqual(
+      expect.objectContaining({ legacyValue: '0', journalValue: '0', delta: '0', status: 'MATCH' }),
+    );
     expect(component(report, 'debtorCollection').valueComparison).toBeUndefined();
     expect(component(report, 'advanceBalance').valueComparison).toBeUndefined();
   });
