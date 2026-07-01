@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useState, type FormEvent, type ReactNode } from 'react';
 import {
   AlertCircle,
   ArrowRight,
@@ -17,7 +17,7 @@ import {
   ShieldAlert,
   UserRound,
 } from 'lucide-react';
-import { api, type ClientActionCatalogItem, type ClientOperatingSnapshot, type CreateIntakeLinkResult, type IntakeFieldCategory } from '@/lib/api';
+import { api, type ClientActionCatalogItem, type ClientOperatingSnapshot, type ClientWorkspaceCreateAndDeliverResult, type CreateClientWorkspaceIntakeLinkInput, type CreateIntakeLinkResult, type IntakeFieldCategory } from '@/lib/api';
 
 interface ClientActionsTabProps {
   clientId: string;
@@ -140,6 +140,13 @@ export function ClientActionsTab({ clientId, onNavigateActivity }: ClientActions
   const [actions, setActions] = useState<ClientActionCatalogItem[]>([]);
   const [snapshot, setSnapshot] = useState<ClientOperatingSnapshot | null>(null);
 
+  const refreshModels = useCallback(async () => {
+    const [catalog, snap] = await Promise.all([api.getClientActionCatalog(clientId), api.getClientOperatingSnapshot(clientId)]);
+    setActions(sortVisibleActions(catalog.data));
+    setSnapshot(snap.data);
+    setState('ready');
+  }, [clientId]);
+
   useEffect(() => {
     let active = true;
     setState('loading');
@@ -234,7 +241,7 @@ export function ClientActionsTab({ clientId, onNavigateActivity }: ClientActions
 
       <div className="grid gap-3 md:grid-cols-2">
         {actions.map((item) => (
-          <ActionItem key={item.key} item={item} onNavigateActivity={onNavigateActivity} />
+          <ActionItem key={item.key} item={item} onNavigateActivity={onNavigateActivity} onRefreshModels={refreshModels} />
         ))}
       </div>
     </div>
@@ -259,7 +266,32 @@ function endOfDayIso(dateStr: string): string {
   return new Date(year, month - 1, day, 23, 59, 59, 999).toISOString();
 }
 
-function ActionItem({ item, onNavigateActivity }: { item: ClientActionCatalogItem; onNavigateActivity?: () => void }) {
+function deliveryStatusText(result: ClientWorkspaceCreateAndDeliverResult) {
+  if (result.delivery.status === 'sent') return 'Link oluşturuldu ve e-posta gönderildi.';
+  if (result.delivery.status === 'failed') return 'Link oluşturuldu ancak e-posta gonderilemedi.';
+  if (result.delivery.status === 'sending') return 'Link oluşturuldu; e-posta gönderimi işleniyor.';
+  return 'Link oluşturuldu; e-posta gonderimi bekliyor.';
+}
+
+function deliveryStatusClass(status: ClientWorkspaceCreateAndDeliverResult['delivery']['status']) {
+  if (status === 'sent') return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+  if (status === 'failed') return 'border-red-200 bg-red-50 text-red-800';
+  return 'border-amber-200 bg-amber-50 text-amber-800';
+}
+
+function commandErrorMessage(error: unknown, fallback: string) {
+  return error instanceof Error && error.message ? error.message : fallback;
+}
+
+function ActionItem({
+  item,
+  onNavigateActivity,
+  onRefreshModels,
+}: {
+  item: ClientActionCatalogItem;
+  onNavigateActivity?: () => void;
+  onRefreshModels: () => Promise<void>;
+}) {
   const label = ACTION_LABELS[item.key] || item.label;
   const description = ACTION_DESCRIPTIONS[item.key] || item.description;
   const isActivity = item.key === 'activity.view_timeline';
@@ -270,9 +302,10 @@ function ActionItem({ item, onNavigateActivity }: { item: ClientActionCatalogIte
   const [scope, setScope] = useState<Set<IntakeFieldCategory>>(() => new Set(DEFAULT_INTAKE_SCOPE));
   const [expiresAt, setExpiresAt] = useState('');
   const [maxUses, setMaxUses] = useState('');
-  const [creating, setCreating] = useState(false);
+  const [runningCommand, setRunningCommand] = useState<'create' | 'deliver' | null>(null);
   const [commandError, setCommandError] = useState('');
   const [created, setCreated] = useState<CreateIntakeLinkResult | null>(null);
+  const [deliveryResult, setDeliveryResult] = useState<ClientWorkspaceCreateAndDeliverResult | null>(null);
   const [copied, setCopied] = useState(false);
 
   const resetCommandForm = () => {
@@ -291,37 +324,66 @@ function ActionItem({ item, onNavigateActivity }: { item: ClientActionCatalogIte
     });
   };
 
-  const handleCreateIntakeLink = async (event: FormEvent) => {
-    event.preventDefault();
-    if (!canCreateIntakeLink || !item.target?.caseId) return;
+  const buildInput = (): CreateClientWorkspaceIntakeLinkInput | null => {
     setCommandError('');
 
     if (scope.size === 0) {
       setCommandError('Lütfen en az bir kategori seçin.');
-      return;
+      return null;
     }
 
     const parsedMaxUses = maxUses.trim() ? Number.parseInt(maxUses, 10) : undefined;
     if (parsedMaxUses !== undefined && (!Number.isInteger(parsedMaxUses) || parsedMaxUses < 1)) {
       setCommandError('Maksimum kullanım 1 veya daha büyük olmalı.');
-      return;
+      return null;
     }
 
-    setCreating(true);
+    return {
+      scope: Array.from(scope),
+      expiresAt: expiresAt ? endOfDayIso(expiresAt) : undefined,
+      maxUses: parsedMaxUses,
+    };
+  };
+
+  const handleCreateIntakeLink = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!canCreateIntakeLink || !item.target?.caseId || runningCommand) return;
+    const input = buildInput();
+    if (!input) return;
+
+    setRunningCommand('create');
+    setDeliveryResult(null);
     try {
-      const result = await api.createClientWorkspaceIntakeLink(item.target.clientId, item.target.caseId, {
-        scope: Array.from(scope),
-        expiresAt: expiresAt ? endOfDayIso(expiresAt) : undefined,
-        maxUses: parsedMaxUses,
-      });
+      const result = await api.createClientWorkspaceIntakeLink(item.target.clientId, item.target.caseId, input);
       setCreated(result);
       setCopied(false);
       setFormOpen(false);
       resetCommandForm();
+      await onRefreshModels();
     } catch (error) {
-      setCommandError(error instanceof Error && error.message ? error.message : 'Intake linki oluşturulamadı.');
+      setCommandError(commandErrorMessage(error, 'Intake linki oluşturulamadı.'));
     } finally {
-      setCreating(false);
+      setRunningCommand(null);
+    }
+  };
+
+  const handleCreateAndDeliver = async () => {
+    if (!canCreateIntakeLink || !item.target?.caseId || runningCommand) return;
+    const input = buildInput();
+    if (!input) return;
+
+    setRunningCommand('deliver');
+    setCreated(null);
+    try {
+      const result = await api.createClientWorkspaceIntakeLinkAndDeliver(item.target.clientId, item.target.caseId, input);
+      setDeliveryResult(result);
+      setFormOpen(false);
+      resetCommandForm();
+      await onRefreshModels();
+    } catch (error) {
+      setCommandError(commandErrorMessage(error, 'Intake linki oluşturuldu/gönderildi durumu alınamadı.'));
+    } finally {
+      setRunningCommand(null);
     }
   };
 
@@ -336,6 +398,8 @@ function ActionItem({ item, onNavigateActivity }: { item: ClientActionCatalogIte
       setCopied(false);
     }
   };
+
+  const isBusy = runningCommand !== null;
 
   return (
     <div className="rounded-lg border p-4">
@@ -358,7 +422,7 @@ function ActionItem({ item, onNavigateActivity }: { item: ClientActionCatalogIte
             onClick={onNavigateActivity}
             className="inline-flex shrink-0 items-center gap-1 rounded-md border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50"
           >
-            Aç
+            Ac
             <ArrowRight className="h-3.5 w-3.5" />
           </button>
         ) : isLink ? (
@@ -366,7 +430,7 @@ function ActionItem({ item, onNavigateActivity }: { item: ClientActionCatalogIte
             href={item.href!}
             className="inline-flex shrink-0 items-center gap-1 rounded-md border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50"
           >
-            Aç
+            Ac
             <ArrowRight className="h-3.5 w-3.5" />
           </Link>
         ) : canCreateIntakeLink ? (
@@ -436,18 +500,27 @@ function ActionItem({ item, onNavigateActivity }: { item: ClientActionCatalogIte
           <div className="flex flex-wrap items-center gap-2">
             <button
               type="submit"
-              disabled={creating}
+              disabled={isBusy}
               className="rounded-md bg-blue-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-60"
             >
-              {creating ? 'Oluşturuluyor...' : 'Link oluştur'}
+              {runningCommand === 'create' ? 'Oluşturuluyor...' : 'Link oluştur'}
             </button>
             <button
               type="button"
+              disabled={isBusy}
+              onClick={handleCreateAndDeliver}
+              className="rounded-md bg-emerald-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-60"
+            >
+              {runningCommand === 'deliver' ? 'Gönderiliyor...' : 'Link oluştur ve e-posta ile gonder'}
+            </button>
+            <button
+              type="button"
+              disabled={isBusy}
               onClick={() => {
                 setFormOpen(false);
                 resetCommandForm();
               }}
-              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-white"
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-white disabled:opacity-60"
             >
               Vazgeç
             </button>
@@ -471,6 +544,16 @@ function ActionItem({ item, onNavigateActivity }: { item: ClientActionCatalogIte
               {copied ? 'Kopyalandı' : 'Kopyala'}
             </button>
           </div>
+        </div>
+      )}
+
+      {deliveryResult && (
+        <div className={`mt-4 rounded-lg border p-3 ${deliveryStatusClass(deliveryResult.delivery.status)}`}>
+          <p className="text-sm font-medium">{deliveryStatusText(deliveryResult)}</p>
+          <p className="mt-1 text-xs opacity-80">Gönderim komutu raw link döndürmez; link güvenlik nedeniyle bu ekranda gösterilmez.</p>
+          {deliveryResult.delivery.status === 'failed' && deliveryResult.delivery.error && (
+            <p className="mt-2 text-xs">{deliveryResult.delivery.error}</p>
+          )}
         </div>
       )}
     </div>

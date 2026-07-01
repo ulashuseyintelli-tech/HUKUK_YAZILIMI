@@ -5,6 +5,11 @@ import { reportClientError, shouldReportNetworkError } from "./error-reporter"; 
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
+function generateClientWorkspaceIdempotencyKey() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return `cw-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
 // Debug: Log API URL on client side
 if (typeof window !== "undefined") {
   console.log("[API] Base URL:", API_URL);
@@ -666,12 +671,32 @@ class ApiClient {
   }
 
   async createClientWorkspaceIntakeLink(clientId: string, caseId: string, input: CreateClientWorkspaceIntakeLinkInput) {
+    const body: CreateClientWorkspaceIntakeLinkInput = {
+      scope: input.scope,
+      expiresAt: input.expiresAt,
+      maxUses: input.maxUses,
+    };
     const response = await this.request<{ data: CreateIntakeLinkResult }>(`/clients/${clientId}/cases/${caseId}/intake-links`, {
       method: "POST",
-      body: JSON.stringify(input),
+      body: JSON.stringify(body),
     });
     return response.data;
   }
+
+  async createClientWorkspaceIntakeLinkAndDeliver(clientId: string, caseId: string, input: CreateClientWorkspaceIntakeLinkInput) {
+    const body: CreateClientWorkspaceIntakeLinkInput = {
+      scope: input.scope,
+      expiresAt: input.expiresAt,
+      maxUses: input.maxUses,
+    };
+    const response = await this.request<{ data: ClientWorkspaceCreateAndDeliverResult }>(`/clients/${clientId}/cases/${caseId}/intake-links/create-and-deliver`, {
+      method: "POST",
+      headers: { "Idempotency-Key": generateClientWorkspaceIdempotencyKey() },
+      body: JSON.stringify(body),
+    });
+    return response.data;
+  }
+
   async createClient(data: any) {
     return this.request<any>("/clients", {
       method: "POST",
@@ -3313,6 +3338,20 @@ export interface CreateIntakeLinkResult {
   link: IntakeLink;
   rawToken: string;
   intakeUrl: string;
+}
+
+export type ClientWorkspaceDeliveryStatus = 'pending' | 'sending' | 'sent' | 'failed';
+
+export interface ClientWorkspaceCreateAndDeliverResult {
+  link: IntakeLink;
+  delivery: {
+    id: string;
+    status: ClientWorkspaceDeliveryStatus;
+    channel: string;
+    notificationId?: string;
+    attemptCount: number;
+    error?: string;
+  };
 }
 
 // ============================================

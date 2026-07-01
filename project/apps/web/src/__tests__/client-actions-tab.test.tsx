@@ -11,6 +11,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
       getClientActionCatalog: vi.fn(),
       getClientOperatingSnapshot: vi.fn(),
       createClientWorkspaceIntakeLink: vi.fn(),
+      createClientWorkspaceIntakeLinkAndDeliver: vi.fn(),
     },
   };
 });
@@ -19,6 +20,7 @@ const apiMock = api as unknown as {
   getClientActionCatalog: ReturnType<typeof vi.fn>;
   getClientOperatingSnapshot: ReturnType<typeof vi.fn>;
   createClientWorkspaceIntakeLink: ReturnType<typeof vi.fn>;
+  createClientWorkspaceIntakeLinkAndDeliver: ReturnType<typeof vi.fn>;
 };
 
 const action = (over: Partial<ClientActionCatalogItem>): ClientActionCatalogItem => ({
@@ -87,6 +89,10 @@ describe('ClientActionsTab', () => {
       rawToken: 'raw-token',
       intakeUrl: 'https://form.example.com/intake/raw-token',
     });
+    apiMock.createClientWorkspaceIntakeLinkAndDeliver.mockResolvedValue({
+      link: { id: 'link-2', clientId: 'client-1', caseId: 'case-1', scope: ['ADDRESS'] },
+      delivery: { id: 'delivery-1', status: 'sent', channel: 'EMAIL', notificationId: 'notification-1', attemptCount: 1 },
+    });
     mockReady([
       action({ key: 'contact.update_missing_info', order: 10, href: '/clients/client-1/edit' }),
       action({ key: 'activity.view_timeline', category: 'activity', order: 20, href: '/clients/client-1' }),
@@ -120,7 +126,7 @@ describe('ClientActionsTab', () => {
 
     await waitFor(() => expect(screen.getByText(/leti.*im bilgilerini/i)).toBeTruthy());
 
-    expect(screen.getByText('Intake linki oluştur')).toBeTruthy();
+    expect(screen.getAllByText(/Intake linki olu/i)[0]).toBeTruthy();
     expect(screen.getByText('Intake link sending requires dispatch and idempotency contracts.')).toBeTruthy();
     expect(screen.getByRole('button', { name: /Kapal/i })).toBeTruthy();
     expect(screen.queryByText(/lgili dosyalar/i)).toBeNull();
@@ -141,10 +147,10 @@ describe('ClientActionsTab', () => {
   it('creates an intake link from the enabled action without body clientId', async () => {
     render(<ClientActionsTab clientId="client-1" />);
 
-    await waitFor(() => expect(screen.getByText('Intake linki oluştur')).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByText(/Intake linki olu/i)[0]).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: /Olu/i }));
     expect(screen.getByText(/stenen bilgi kategorileri/i)).toBeTruthy();
-    fireEvent.click(screen.getByRole('button', { name: /Link olu/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Link olu.tur$/i }));
 
     await waitFor(() => expect(apiMock.createClientWorkspaceIntakeLink).toHaveBeenCalledTimes(1));
     expect(apiMock.createClientWorkspaceIntakeLink).toHaveBeenCalledWith('client-1', 'case-1', {
@@ -154,15 +160,54 @@ describe('ClientActionsTab', () => {
     });
     expect(await screen.findByText('https://form.example.com/intake/raw-token')).toBeTruthy();
     expect(screen.getByRole('button', { name: /Kopyala/i })).toBeTruthy();
+    await waitFor(() => expect(apiMock.getClientActionCatalog).toHaveBeenCalledTimes(2));
+    expect(apiMock.getClientOperatingSnapshot).toHaveBeenCalledTimes(2);
+  });
+
+  it('creates and delivers an intake link without expecting raw URL in the response', async () => {
+    render(<ClientActionsTab clientId="client-1" />);
+
+    await waitFor(() => expect(screen.getAllByText(/Intake linki olu/i)[0]).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /Olu/i }));
+    fireEvent.click(screen.getByRole('button', { name: /e-posta ile g.nder/i }));
+
+    await waitFor(() => expect(apiMock.createClientWorkspaceIntakeLinkAndDeliver).toHaveBeenCalledTimes(1));
+    expect(apiMock.createClientWorkspaceIntakeLinkAndDeliver).toHaveBeenCalledWith('client-1', 'case-1', {
+      scope: ['ADDRESS'],
+      expiresAt: undefined,
+      maxUses: undefined,
+    });
+    expect(await screen.findByText(/e-posta g.nderildi/i)).toBeTruthy();
+    expect(screen.queryByText('https://form.example.com/intake/raw-token')).toBeNull();
+    await waitFor(() => expect(apiMock.getClientActionCatalog).toHaveBeenCalledTimes(2));
+    expect(apiMock.getClientOperatingSnapshot).toHaveBeenCalledTimes(2);
+  });
+
+  it('shows failed delivery status without optimistic success', async () => {
+    apiMock.createClientWorkspaceIntakeLinkAndDeliver.mockResolvedValueOnce({
+      link: { id: 'link-2', clientId: 'client-1', caseId: 'case-1', scope: ['ADDRESS'] },
+      delivery: { id: 'delivery-1', status: 'failed', channel: 'EMAIL', attemptCount: 1, error: 'SMTP unavailable' },
+    });
+
+    render(<ClientActionsTab clientId="client-1" />);
+
+    await waitFor(() => expect(screen.getAllByText(/Intake linki olu/i)[0]).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /Olu/i }));
+    fireEvent.click(screen.getByRole('button', { name: /e-posta ile g.nder/i }));
+
+    await waitFor(() => expect(apiMock.createClientWorkspaceIntakeLinkAndDeliver).toHaveBeenCalledTimes(1));
+    expect(await screen.findByText(/g.nderilemedi/i)).toBeTruthy();
+    expect(screen.getByText('SMTP unavailable')).toBeTruthy();
+    expect(screen.queryByText(/e-posta g.nderildi/i)).toBeNull();
   });
 
   it('validates empty intake scope before calling the command endpoint', async () => {
     render(<ClientActionsTab clientId="client-1" />);
 
-    await waitFor(() => expect(screen.getByText('Intake linki oluştur')).toBeTruthy());
+    await waitFor(() => expect(screen.getAllByText(/Intake linki olu/i)[0]).toBeTruthy());
     fireEvent.click(screen.getByRole('button', { name: /Olu/i }));
     fireEvent.click(screen.getByLabelText('Adres'));
-    fireEvent.click(screen.getByRole('button', { name: /Link olu/i }));
+    fireEvent.click(screen.getByRole('button', { name: /^Link olu.tur$/i }));
 
     await waitFor(() => expect(screen.getByText(/en az bir kategori/i)).toBeTruthy());
     expect(apiMock.createClientWorkspaceIntakeLink).not.toHaveBeenCalled();
