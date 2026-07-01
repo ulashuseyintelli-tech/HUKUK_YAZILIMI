@@ -162,16 +162,17 @@ export interface CollectionDispositionLineReplayEvidenceItem {
   };
 }
 
-export interface CollectionCaseContextBlockerItem {
+export interface CollectionCaseContextEvidenceItem {
   sourceType: 'COLLECTION' | 'COLLECTION_DISPOSITION';
   sourceId: string;
-  status: 'RAW_COLLECTION_BLOCKED' | 'LIFECYCLE_BLOCKED';
+  status: 'BRIDGE_EVENT_ONLY' | 'NON_FINANCIAL_LIFECYCLE' | 'REFUND_POLICY_BLOCKED';
   blockerCodes: string[];
   details: {
     caseId: string;
     sourceStatus: string;
     currency: string;
     occurredAt: string | null;
+    effect: 'NO_DIRECT_CLIENT_EFFECT' | 'NON_FINANCIAL_LIFECYCLE' | 'REFUND_POLICY_UNMAPPED';
   };
 }
 
@@ -182,7 +183,7 @@ export interface CollectionDispositionReplayEvidenceSummary {
   statusCounts: Record<CollectionDispositionLineReplayEvidenceStatus, number>;
   blockerCodes: string[];
   lineItems: CollectionDispositionLineReplayEvidenceItem[];
-  blockerItems: CollectionCaseContextBlockerItem[];
+  contextItems: CollectionCaseContextEvidenceItem[];
 }
 
 export type BalanceLedgerReplayEvidenceStatus =
@@ -343,8 +344,7 @@ const EXPENSE_REQUEST_VALUE_SHADOW_MISMATCH = 'EXPENSE_REQUEST_VALUE_SHADOW_MISM
 const EXPENSE_REQUEST_DIMENSION_MISMATCH = 'EXPENSE_REQUEST_DIMENSION_MISMATCH';
 const EXPENSE_REQUEST_CANCEL_POLICY_BLOCKED = 'EXPENSE_REQUEST_CANCEL_POLICY_BLOCKED';
 const EXPENSE_REQUEST_SETTLED_CANCEL_BLOCKED = 'EXPENSE_REQUEST_SETTLED_CANCEL_BLOCKED';
-const COLLECTION_RAW_SOURCE_BLOCKED = 'COLLECTION_RAW_SOURCE_BLOCKED';
-const COLLECTION_DISPOSITION_LIFECYCLE_BLOCKED = 'COLLECTION_DISPOSITION_LIFECYCLE_BLOCKED';
+const COLLECTION_REFUND_POLICY_UNMAPPED = 'COLLECTION_REFUND_POLICY_UNMAPPED';
 const COLLECTION_DISPOSITION_LINE_MANUAL_REVERSAL_BLOCKED = 'COLLECTION_DISPOSITION_LINE_MANUAL_REVERSAL_BLOCKED';
 const COLLECTION_DISPOSITION_LINE_UNMAPPED_BLOCKED = 'COLLECTION_DISPOSITION_LINE_UNMAPPED_BLOCKED';
 const BALANCE_LEDGER_CORRELATED_DISPOSITION_LINE_SUPPRESSED = 'BALANCE_LEDGER_CORRELATED_DISPOSITION_LINE_SUPPRESSED';
@@ -1027,31 +1027,9 @@ function buildCollectionDispositionReplayEvidence(
   journalBySource: Map<string, ReplayJournalEntryRow>,
 ): CollectionDispositionReplayEvidenceSummary {
   const lineItems = dispositionLines.map((line) => collectionDispositionLineReplayItem(line, journalBySource.get(`COLLECTION_DISPOSITION_LINE:posted:${line.id}`) ?? null));
-  const blockerItems: CollectionCaseContextBlockerItem[] = [
-    ...collections.map((collection) => ({
-      sourceType: 'COLLECTION' as const,
-      sourceId: collection.id,
-      status: 'RAW_COLLECTION_BLOCKED' as const,
-      blockerCodes: [COLLECTION_RAW_SOURCE_BLOCKED],
-      details: {
-        caseId: collection.caseId,
-        sourceStatus: collection.status,
-        currency: collection.currency,
-        occurredAt: collection.date?.toISOString() ?? null,
-      },
-    })),
-    ...lifecycleDispositions.map((disposition) => ({
-      sourceType: 'COLLECTION_DISPOSITION' as const,
-      sourceId: disposition.id,
-      status: 'LIFECYCLE_BLOCKED' as const,
-      blockerCodes: [COLLECTION_DISPOSITION_LIFECYCLE_BLOCKED],
-      details: {
-        caseId: disposition.caseId,
-        sourceStatus: disposition.status,
-        currency: disposition.currency,
-        occurredAt: disposition.updatedAt?.toISOString() ?? null,
-      },
-    })),
+  const contextItems: CollectionCaseContextEvidenceItem[] = [
+    ...collections.map(collectionContextEvidenceItem),
+    ...lifecycleDispositions.map(collectionDispositionLifecycleContextEvidenceItem),
   ];
   const statusCounts = emptyCollectionDispositionLineReplayStatusCounts();
 
@@ -1066,10 +1044,45 @@ function buildCollectionDispositionReplayEvidence(
     statusCounts,
     blockerCodes: uniqueSorted([
       ...lineItems.flatMap((item) => item.blockerCodes),
-      ...blockerItems.flatMap((item) => item.blockerCodes),
+      ...contextItems.flatMap((item) => item.blockerCodes),
     ]),
     lineItems,
-    blockerItems,
+    contextItems,
+  };
+}
+
+function collectionContextEvidenceItem(collection: CollectionReplayRow): CollectionCaseContextEvidenceItem {
+  const isRefunded = collection.status === 'REFUNDED';
+  return {
+    sourceType: 'COLLECTION',
+    sourceId: collection.id,
+    status: isRefunded ? 'REFUND_POLICY_BLOCKED' : 'BRIDGE_EVENT_ONLY',
+    blockerCodes: isRefunded ? [COLLECTION_REFUND_POLICY_UNMAPPED] : [],
+    details: {
+      caseId: collection.caseId,
+      sourceStatus: collection.status,
+      currency: collection.currency,
+      occurredAt: collection.date?.toISOString() ?? null,
+      effect: isRefunded ? 'REFUND_POLICY_UNMAPPED' : 'NO_DIRECT_CLIENT_EFFECT',
+    },
+  };
+}
+
+function collectionDispositionLifecycleContextEvidenceItem(
+  disposition: CollectionDispositionLifecycleReplayRow,
+): CollectionCaseContextEvidenceItem {
+  return {
+    sourceType: 'COLLECTION_DISPOSITION',
+    sourceId: disposition.id,
+    status: 'NON_FINANCIAL_LIFECYCLE',
+    blockerCodes: [],
+    details: {
+      caseId: disposition.caseId,
+      sourceStatus: disposition.status,
+      currency: disposition.currency,
+      occurredAt: disposition.updatedAt?.toISOString() ?? null,
+      effect: 'NON_FINANCIAL_LIFECYCLE',
+    },
   };
 }
 
