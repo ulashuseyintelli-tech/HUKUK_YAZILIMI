@@ -47,6 +47,15 @@ export class ClientController {
     return this.clientService.getTimeline(clientId, req.user.tenantId, { limit, cursor, sources });
   }
 
+  // Client Workspace action catalog (read-only V1)
+  @Get(':clientId/action-catalog')
+  async actionCatalog(
+    @Request() req: any,
+    @Param('clientId') clientId: string,
+  ) {
+    return this.clientService.getActionCatalog(clientId, req.user.tenantId);
+  }
+
   // Fetch one client
   @Get(':id')
   async findOne(@Request() req: any, @Param('id') id: string) {

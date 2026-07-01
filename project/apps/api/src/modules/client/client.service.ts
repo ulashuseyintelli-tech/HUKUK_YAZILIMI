@@ -42,6 +42,42 @@ export interface ClientTimelineResponse {
   };
 }
 
+export type ClientActionKey =
+  | 'contact.update_missing_info'
+  | 'intake.link.create'
+  | 'intake.link.send'
+  | 'poa.reminder.send'
+  | 'notification.template.send'
+  | 'case.open_related'
+  | 'activity.view_timeline';
+
+export type ClientActionCategory = 'intake' | 'poa' | 'notification' | 'document' | 'contact' | 'case' | 'activity';
+export type ClientActionVisibility = 'visible' | 'hidden' | 'forbidden';
+export type ClientActionDangerLevel = 'low' | 'medium' | 'high';
+
+export interface ClientActionCatalogItem {
+  key: ClientActionKey;
+  label: string;
+  description: string;
+  category: ClientActionCategory;
+  enabled: boolean;
+  disabledReason?: string;
+  visibility: ClientActionVisibility;
+  dangerLevel: ClientActionDangerLevel;
+  requiredRole?: string;
+  requiredState?: string;
+  target?: {
+    clientId: string;
+    caseId?: string;
+  };
+  href?: string;
+  order: number;
+}
+
+export interface ClientActionCatalogResponse {
+  data: ClientActionCatalogItem[];
+}
+
 interface ClientTimelineCursor {
   occurredAt: string;
   source: ClientTimelineSource;
@@ -189,6 +225,26 @@ export class ClientService {
         hasNextPage,
         limit,
       },
+    };
+  }
+
+  /**
+   * Client Workspace Action Catalog V1 (read-only).
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - ClientController.actionCatalog() -> GET /clients/:clientId/action-catalog (Client Workspace read model)
+   * </remarks>
+   */
+  async getActionCatalog(id: string, tenantId: string): Promise<ClientActionCatalogResponse> {
+    const client = await this.prisma.client.findFirst({
+      where: { id, tenantId, isActive: true },
+      select: { id: true },
+    });
+    if (!client) throw new NotFoundException('Client not found');
+
+    return {
+      data: buildClientActionCatalog(id),
     };
   }
 
@@ -867,4 +923,105 @@ function intakeSummary(status: string): string {
     REJECTED: 'Intake submission rejected.',
   };
   return map[status] ?? 'Intake lifecycle status changed.';
+}
+
+function buildClientActionCatalog(clientId: string): ClientActionCatalogItem[] {
+  const target = { clientId };
+  return [
+    {
+      key: 'contact.update_missing_info',
+      label: 'Update contact information',
+      description: 'Open the client identity and contact information screen.',
+      category: 'contact',
+      enabled: true,
+      visibility: 'visible',
+      dangerLevel: 'low',
+      requiredRole: 'USER',
+      target,
+      href: `/clients/${clientId}`,
+      order: 10,
+    },
+    {
+      key: 'case.open_related',
+      label: 'Open related cases',
+      description: 'Open the cases tab for this client.',
+      category: 'case',
+      enabled: true,
+      visibility: 'visible',
+      dangerLevel: 'low',
+      requiredRole: 'USER',
+      target,
+      href: `/clients/${clientId}`,
+      order: 20,
+    },
+    {
+      key: 'activity.view_timeline',
+      label: 'View activity timeline',
+      description: 'Open the safe client activity timeline.',
+      category: 'activity',
+      enabled: true,
+      visibility: 'visible',
+      dangerLevel: 'low',
+      requiredRole: 'USER',
+      target,
+      href: `/clients/${clientId}`,
+      order: 30,
+    },
+    {
+      key: 'intake.link.create',
+      label: 'Create intake link',
+      description: 'Future typed command; V1 catalog only shows availability.',
+      category: 'intake',
+      enabled: false,
+      disabledReason: 'Intake link creation requires a separate typed command contract.',
+      visibility: 'visible',
+      dangerLevel: 'medium',
+      requiredRole: 'USER',
+      requiredState: 'INTAKE_COMMAND_CONTRACT_READY',
+      target,
+      order: 40,
+    },
+    {
+      key: 'intake.link.send',
+      label: 'Send intake link',
+      description: 'Future typed command; real dispatch is outside V1 catalog scope.',
+      category: 'intake',
+      enabled: false,
+      disabledReason: 'Intake link sending requires dispatch and idempotency contracts.',
+      visibility: 'visible',
+      dangerLevel: 'medium',
+      requiredRole: 'USER',
+      requiredState: 'INTAKE_DISPATCH_CONTRACT_READY',
+      target,
+      order: 50,
+    },
+    {
+      key: 'poa.reminder.send',
+      label: 'Send POA reminder',
+      description: 'Future typed command; POA delivery motor is outside V1 catalog scope.',
+      category: 'poa',
+      enabled: false,
+      disabledReason: 'POA reminder requires delivery motor, dedupe, and retry contracts.',
+      visibility: 'visible',
+      dangerLevel: 'medium',
+      requiredRole: 'USER',
+      requiredState: 'POA_DELIVERY_MOTOR_READY',
+      target,
+      order: 60,
+    },
+    {
+      key: 'notification.template.send',
+      label: 'Send template notification',
+      description: 'Future typed command; V1 catalog does not create or send notifications.',
+      category: 'notification',
+      enabled: false,
+      disabledReason: 'Template notification requires a notification dispatch contract.',
+      visibility: 'visible',
+      dangerLevel: 'medium',
+      requiredRole: 'USER',
+      requiredState: 'NOTIFICATION_DISPATCH_CONTRACT_READY',
+      target,
+      order: 70,
+    },
+  ];
 }
