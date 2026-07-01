@@ -7,6 +7,8 @@ export type AccountingJournalEntryType =
   | 'EXPENSE_REQUEST_RECORDED'
   | 'EXPENSE_REQUEST_CANCELLED'
   | 'EXPENSE_PAYMENT_RECORDED'
+  | 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION_APPLIED'
+  | 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION_REVERSED'
   | 'ACCOUNTING_JOURNAL_REVERSAL';
 
 export type AccountingJournalSourceType =
@@ -16,6 +18,7 @@ export type AccountingJournalSourceType =
   | 'BALANCE_LEDGER'
   | 'EXPENSE_REQUEST'
   | 'EXPENSE_PAYMENT'
+  | 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION'
   | 'ACCOUNTING_JOURNAL_ENTRY';
 
 export type AccountingAccountCode =
@@ -173,6 +176,32 @@ export interface ExpensePaymentRecordedPayload {
 }
 
 export type ExpensePaymentJournalSource = JournalSourceBase<'EXPENSE_PAYMENT', 'recorded', ExpensePaymentRecordedPayload>;
+
+export type CollectionDispositionExpenseApplicationSourceAction = 'apply' | 'reversal';
+
+export type CollectionDispositionExpenseApplicationKind = 'APPLY' | 'REVERSAL';
+
+export type ExpenseApplicationReimbursementScope = 'CLIENT_FRONTED' | 'FIRM_FRONTED';
+
+export interface CollectionDispositionExpenseApplicationPayload {
+  kind: CollectionDispositionExpenseApplicationKind;
+  amount: MoneyAmount;
+  caseId: string;
+  clientId: string;
+  expenseRequestId: string;
+  expenseApplicationId: string;
+  collectionId: string | null;
+  collectionDispositionId: string;
+  collectionDispositionLineId: string;
+  reimbursementScope: ExpenseApplicationReimbursementScope;
+  reversesApplicationId: string | null;
+}
+
+export type CollectionDispositionExpenseApplicationJournalSource = JournalSourceBase<
+  'COLLECTION_DISPOSITION_EXPENSE_APPLICATION',
+  CollectionDispositionExpenseApplicationSourceAction,
+  CollectionDispositionExpenseApplicationPayload
+>;
 export interface AccountingJournalReversalPayload {
   originalJournalEntryId: string;
   originalSourceType: AccountingJournalSourceType;
@@ -207,6 +236,7 @@ export type JournalSource =
   | BalanceLedgerJournalSource
   | ExpenseRequestJournalSource
   | ExpensePaymentJournalSource
+  | CollectionDispositionExpenseApplicationJournalSource
   | AccountingJournalEntrySource;
 
 export interface JournalIdempotencyMaterial {

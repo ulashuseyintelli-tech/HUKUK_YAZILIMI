@@ -4,6 +4,7 @@ import type {
   BalanceLedgerJournalSource,
   ClientOffsetJournalSource,
   ClientPayoutJournalSource,
+  CollectionDispositionExpenseApplicationJournalSource,
   CollectionDispositionLineJournalSource,
   CollectionDispositionLinePostedPayload,
   ExpensePaymentJournalSource,
@@ -507,6 +508,87 @@ describe('AccountingJournalWriterService ExpensePayment source shape', () => {
                 expenseRequestId: 'expense-request-1',
                 expensePaymentId: 'expense-payment-1',
                 expenseApplicationId: null,
+              }),
+            ]),
+          },
+        }),
+      }),
+    );
+  });
+});
+function expenseApplicationSource(): CollectionDispositionExpenseApplicationJournalSource {
+  return {
+    tenantId: 'tenant-1',
+    sourceType: 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION',
+    sourceId: 'expense-application-1',
+    sourceVersion: '2026-07-01T12:00:00.000Z:expense-application-1:APPLY',
+    sourceAction: 'apply',
+    occurredAt: '2026-07-01T12:00:00.000Z',
+    effectiveDate: '2026-07-01',
+    actorId: 'user-1',
+    currency: 'TRY',
+    sourceHash: 'hash-expense-application',
+    metadata: { test: true },
+    payload: {
+      kind: 'APPLY',
+      amount: '80.00',
+      caseId: 'case-expense-application-1',
+      clientId: 'client-1',
+      expenseRequestId: 'expense-request-1',
+      expenseApplicationId: 'expense-application-1',
+      collectionId: 'collection-1',
+      collectionDispositionId: 'disposition-1',
+      collectionDispositionLineId: 'disposition-line-1',
+      reimbursementScope: 'CLIENT_FRONTED',
+      reversesApplicationId: null,
+    },
+  };
+}
+
+function expenseApplicationDraft() {
+  const built = buildAccountingJournal(expenseApplicationSource());
+  expect(built.ok).toBe(true);
+  if (!built.ok) throw new Error('build failed');
+  const validated = validateJournalDraft(built.draft);
+  expect(validated.ok).toBe(true);
+  if (!validated.ok) throw new Error('validation failed');
+  return validated.draft;
+}
+
+describe('AccountingJournalWriterService expense application source shape', () => {
+  it('persists expense request and application dimensions on both skeleton lines', async () => {
+    const db = dbMock();
+    db.accountingJournalEntry.findFirst.mockResolvedValue(null);
+    db.accountingJournalEntry.create.mockResolvedValue({ id: 'journal-expense-application', _count: { lines: 2 } });
+    const writer = new AccountingJournalWriterService({} as any);
+
+    const result = await writer.write({ draft: expenseApplicationDraft() }, db);
+
+    expect(result).toEqual({
+      ok: true,
+      output: expect.objectContaining({ status: 'CREATED', journalEntryId: 'journal-expense-application', lineCount: 2 }),
+    });
+    expect(db.accountingJournalEntry.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          sourceType: 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION',
+          sourceId: 'expense-application-1',
+          sourceAction: 'apply',
+          lines: {
+            create: expect.arrayContaining([
+              expect.objectContaining({
+                accountCode: 'CLIENT_EXPENSE_REIMBURSEMENT_PAYABLE',
+                dispositionLineId: 'disposition-line-1',
+                expenseRequestId: 'expense-request-1',
+                expensePaymentId: null,
+                expenseApplicationId: 'expense-application-1',
+              }),
+              expect.objectContaining({
+                accountCode: 'CLIENT_EXPENSE_RECEIVABLE',
+                dispositionLineId: 'disposition-line-1',
+                expenseRequestId: 'expense-request-1',
+                expensePaymentId: null,
+                expenseApplicationId: 'expense-application-1',
               }),
             ]),
           },
