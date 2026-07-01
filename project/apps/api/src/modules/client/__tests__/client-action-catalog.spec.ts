@@ -1,12 +1,20 @@
 import { NotFoundException } from '@nestjs/common';
 import { ClientService, type ClientActionKey } from '../client.service';
 
+const defaultClient = {
+  id: 'client-1',
+  phone: '5551112233',
+  email: 'client@example.com',
+  contactFollowUpStatus: null,
+  _count: { cases: 1 },
+};
+
 function buildHarness(opts: { client?: any } = {}) {
   const prisma: any = {
     client: {
       findFirst: jest
         .fn()
-        .mockResolvedValue(Object.prototype.hasOwnProperty.call(opts, 'client') ? opts.client : { id: 'client-1' }),
+        .mockResolvedValue(Object.prototype.hasOwnProperty.call(opts, 'client') ? opts.client : defaultClient),
       create: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
@@ -61,6 +69,8 @@ const navigationKeys: ClientActionKey[] = [
   'activity.view_timeline',
 ];
 
+const noTouchDomainPattern = /accounting|payment|kasa|settlement|debtor|uyap|icrabot/i;
+
 describe('ClientService.getActionCatalog', () => {
   it('returns the V1 action catalog after tenant-scoped client validation', async () => {
     const { svc, prisma } = buildHarness();
@@ -69,7 +79,13 @@ describe('ClientService.getActionCatalog', () => {
 
     expect(prisma.client.findFirst).toHaveBeenCalledWith({
       where: { id: 'client-1', tenantId: 'tenant-1', isActive: true },
-      select: { id: true },
+      select: {
+        id: true,
+        phone: true,
+        email: true,
+        contactFollowUpStatus: true,
+        _count: { select: { cases: true } },
+      },
     });
     expect(result.data.map((item) => item.key)).toEqual([
       'contact.update_missing_info',
@@ -93,7 +109,18 @@ describe('ClientService.getActionCatalog', () => {
     expect(prisma.clientIntakeLink.findMany).not.toHaveBeenCalled();
   });
 
-  it('enables only safe navigation/link actions in V1', async () => {
+  it('uses the validated client id and does not leak tenant identifiers into action targets or reasons', async () => {
+    const { svc } = buildHarness({ client: { ...defaultClient, id: 'validated-client' } });
+
+    const result = await svc.getActionCatalog('requested-client', 'tenant-secret');
+    const serialized = JSON.stringify(result);
+
+    expect(result.data.every((item) => item.target?.clientId === 'validated-client')).toBe(true);
+    expect(serialized).not.toContain('requested-client');
+    expect(serialized).not.toContain('tenant-secret');
+  });
+
+  it('enables safe navigation/link actions when their state allows it', async () => {
     const { svc } = buildHarness();
 
     const result = await svc.getActionCatalog('client-1', 'tenant-1');
@@ -102,10 +129,28 @@ describe('ClientService.getActionCatalog', () => {
     for (const key of navigationKeys) {
       expect(byKey.get(key)).toMatchObject({ enabled: true, dangerLevel: 'low' });
       expect(byKey.get(key)?.href).toEqual(expect.stringContaining('/clients/client-1'));
+      expect(byKey.get(key)?.disabledReason).toBeUndefined();
     }
+    expect(byKey.get('contact.update_missing_info')?.requiredState).toBe('CONTACT_INFO_COMPLETE');
+    expect(byKey.get('case.open_related')?.requiredState).toBe('RELATED_CASE_AVAILABLE');
   });
 
-  it('keeps future write actions disabled with explicit reasons', async () => {
+  it('returns domain-disabled actions as visible disabled items with explicit reasons', async () => {
+    const { svc } = buildHarness({ client: { ...defaultClient, _count: { cases: 0 } } });
+
+    const result = await svc.getActionCatalog('client-1', 'tenant-1');
+    const caseAction = result.data.find((item) => item.key === 'case.open_related');
+
+    expect(caseAction).toMatchObject({
+      enabled: false,
+      visibility: 'visible',
+      requiredState: 'RELATED_CASE_EMPTY',
+      disabledReason: 'No related cases are linked to this client yet.',
+    });
+    expect(caseAction?.href).toBeUndefined();
+  });
+
+  it('keeps future write actions disabled with standardized explicit reasons', async () => {
     const { svc } = buildHarness();
 
     const result = await svc.getActionCatalog('client-1', 'tenant-1');
@@ -113,10 +158,26 @@ describe('ClientService.getActionCatalog', () => {
 
     for (const key of futureWriteKeys) {
       expect(byKey.get(key)?.enabled).toBe(false);
+      expect(byKey.get(key)?.visibility).toBe('visible');
       expect(byKey.get(key)?.disabledReason).toEqual(expect.any(String));
+      expect(byKey.get(key)?.disabledReason?.trim()).not.toEqual('');
       expect(byKey.get(key)?.requiredState).toEqual(expect.any(String));
       expect(byKey.get(key)?.href).toBeUndefined();
     }
+  });
+
+  it('omits role-forbidden actions instead of returning disabled leakage', async () => {
+    const { svc } = buildHarness();
+
+    const result = await svc.getActionCatalog('client-1', 'tenant-1', 'VIEWER');
+    const keys = result.data.map((item) => item.key);
+    const serialized = JSON.stringify(result);
+
+    expect(keys).toEqual(['case.open_related', 'activity.view_timeline']);
+    expect(result.data.every((item) => item.visibility === 'visible')).toBe(true);
+    expect(serialized).not.toContain('forbidden');
+    expect(serialized).not.toContain('Intake link creation requires');
+    expect(serialized).not.toContain('Template notification requires');
   });
 
   it('does not perform mutation, audit, timeline, notification creation, or dispatch side effects', async () => {
@@ -152,6 +213,7 @@ describe('ClientService.getActionCatalog', () => {
 
     expect(serialized).not.toContain('demo');
     expect(serialized).not.toContain('fallback');
-    expect(keys).not.toMatch(/accounting|payment|kasa|settlement|debtor|uyap|icrabot/i);
+    expect(serialized).not.toMatch(noTouchDomainPattern);
+    expect(keys).not.toMatch(noTouchDomainPattern);
   });
 });
