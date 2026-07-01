@@ -37,7 +37,9 @@ export type ClientAccountingSummaryShadowJournalSource =
 
 export type ClientAccountingSummaryShadowValueStatus = 'MATCH' | 'MISMATCH' | 'NOT_COMPUTED';
 
-export type ClientAccountingSummaryExpensePolicyCoverage = 'MISSING_SOURCE' | 'MISSING_POLICY';
+export type ClientAccountingSummaryExpensePolicyCoverage =
+  | 'CONTRACT_EXISTS'
+  | 'MISSING_POLICY';
 
 export interface ClientAccountingSummaryExpenseCoveragePolicyItem {
   component: 'expenseRequested' | 'expensePaid' | 'expenseUnpaid' | 'reimbursementApplication';
@@ -138,44 +140,58 @@ const EXPENSE_COVERAGE_POLICY_ITEMS: ClientAccountingSummaryExpenseCoveragePolic
   {
     component: 'expenseRequested',
     responsePath: 'clientScoped.expenseRequested',
-    coverage: 'MISSING_SOURCE',
+    coverage: 'CONTRACT_EXISTS',
     requiredSources: ['EXPENSE_REQUEST'],
-    requiredActions: ['recorded'],
+    requiredActions: ['recorded', 'cancel'],
     requiredDimensions: ['tenantId', 'clientId', 'caseId', 'expenseRequestId', 'currency'],
-    supportedSources: [],
-    blockerCodes: ['EXPENSE_REQUEST_JOURNAL_COVERAGE_MISSING'],
-    gapCodes: ['EXPENSE_REQUEST_JOURNAL_SOURCE_MISSING'],
+    supportedSources: ['EXPENSE_REQUEST'],
+    blockerCodes: [
+      'EXPENSE_REQUEST_LIVE_POSTING_MISSING',
+      'EXPENSE_REQUEST_BACKFILL_MISSING',
+      'EXPENSE_REQUEST_VALUE_SHADOW_MISSING',
+      'EXPENSE_REQUEST_CANCEL_POLICY_BLOCKED',
+    ],
+    gapCodes: [],
   },
   {
     component: 'expensePaid',
     responsePath: 'clientScoped.expensePaid',
-    coverage: 'MISSING_SOURCE',
+    coverage: 'CONTRACT_EXISTS',
     requiredSources: ['EXPENSE_PAYMENT'],
     requiredActions: ['recorded'],
     requiredDimensions: ['tenantId', 'clientId', 'caseId', 'expenseRequestId', 'expensePaymentId', 'currency'],
-    supportedSources: [],
-    blockerCodes: ['EXPENSE_PAYMENT_JOURNAL_COVERAGE_MISSING'],
-    gapCodes: ['EXPENSE_PAYMENT_JOURNAL_SOURCE_MISSING', 'EXPENSE_REQUEST_PAID_TOTAL_PROJECTION_ONLY'],
+    supportedSources: ['EXPENSE_PAYMENT'],
+    blockerCodes: [
+      'EXPENSE_PAYMENT_LIVE_POSTING_MISSING',
+      'EXPENSE_PAYMENT_BACKFILL_MISSING',
+      'EXPENSE_PAYMENT_VALUE_SHADOW_MISSING',
+      'EXPENSE_PAYMENT_REVERSAL_REFUND_POLICY_MISSING',
+    ],
+    gapCodes: ['EXPENSE_REQUEST_PAID_TOTAL_PROJECTION_ONLY'],
   },
   {
     component: 'expenseUnpaid',
     responsePath: 'clientScoped.expenseUnpaid',
     coverage: 'MISSING_POLICY',
     requiredSources: ['EXPENSE_REQUEST', 'EXPENSE_PAYMENT', 'CLIENT_OFFSET', 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION'],
-    requiredActions: ['recorded', 'apply', 'reversal'],
+    requiredActions: ['recorded', 'cancel', 'apply', 'reversal'],
     requiredDimensions: ['tenantId', 'clientId', 'caseId', 'expenseRequestId', 'currency'],
-    supportedSources: ['CLIENT_OFFSET'],
+    supportedSources: ['EXPENSE_REQUEST', 'EXPENSE_PAYMENT', 'CLIENT_OFFSET', 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION'],
     blockerCodes: [
-      'EXPENSE_REQUEST_JOURNAL_COVERAGE_MISSING',
-      'EXPENSE_PAYMENT_JOURNAL_COVERAGE_MISSING',
-      'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_COVERAGE_MISSING',
+      'EXPENSE_REQUEST_LIVE_POSTING_MISSING',
+      'EXPENSE_PAYMENT_LIVE_POSTING_MISSING',
+      'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_WIRING_MISSING',
+      'EXPENSE_SUMMARY_VALUE_SHADOW_MISSING',
+      'EXPENSE_SUMMARY_BACKFILL_MISSING',
+      'EXPENSE_PAYMENT_REVERSAL_REFUND_POLICY_MISSING',
+      'EXPENSE_REQUEST_CANCEL_POLICY_BLOCKED',
     ],
-    gapCodes: ['EXPENSE_REQUEST_JOURNAL_SOURCE_MISSING', 'EXPENSE_PAYMENT_JOURNAL_SOURCE_MISSING'],
+    gapCodes: [],
   },
   {
     component: 'reimbursementApplication',
     responsePath: 'clientScoped.expenseUnpaid.reimbursementApplication',
-    coverage: 'MISSING_POLICY',
+    coverage: 'CONTRACT_EXISTS',
     requiredSources: ['COLLECTION_DISPOSITION_EXPENSE_APPLICATION'],
     requiredActions: ['apply', 'reversal'],
     requiredDimensions: [
@@ -188,12 +204,13 @@ const EXPENSE_COVERAGE_POLICY_ITEMS: ClientAccountingSummaryExpenseCoveragePolic
       'reimbursementScope',
       'currency',
     ],
-    supportedSources: ['COLLECTION_DISPOSITION_LINE'],
+    supportedSources: ['COLLECTION_DISPOSITION_EXPENSE_APPLICATION'],
     blockerCodes: [
-      'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_COVERAGE_MISSING',
-      'EXPENSE_REIMBURSEMENT_REVERSAL_JOURNAL_POLICY_MISSING',
+      'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_WIRING_MISSING',
+      'EXPENSE_REIMBURSEMENT_APPLICATION_BACKFILL_MISSING',
+      'EXPENSE_REIMBURSEMENT_APPLICATION_VALUE_SHADOW_MISSING',
     ],
-    gapCodes: ['EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_SOURCE_MISSING'],
+    gapCodes: [],
   },
 ];
 
@@ -232,21 +249,30 @@ const SUMMARY_COMPONENTS: ClientAccountingSummaryShadowComponent[] = [
     key: 'expenseRequested',
     responsePath: 'clientScoped.expenseRequested',
     group: 'CLIENT_SCOPED',
-    coverage: 'GAP',
+    coverage: 'BLOCKER',
     legacySources: ['ExpenseRequest'],
-    journalSources: [],
-    blockerCodes: ['EXPENSE_REQUEST_JOURNAL_COVERAGE_MISSING'],
-    gapCodes: ['EXPENSE_REQUEST_JOURNAL_SOURCE_MISSING'],
+    journalSources: ['EXPENSE_REQUEST'],
+    blockerCodes: [
+      'EXPENSE_REQUEST_LIVE_POSTING_MISSING',
+      'EXPENSE_REQUEST_BACKFILL_MISSING',
+      'EXPENSE_REQUEST_VALUE_SHADOW_MISSING',
+    ],
+    gapCodes: [],
   },
   {
     key: 'expensePaid',
     responsePath: 'clientScoped.expensePaid',
     group: 'CLIENT_SCOPED',
-    coverage: 'GAP',
+    coverage: 'BLOCKER',
     legacySources: ['ExpenseRequest', 'ExpensePayment'],
-    journalSources: [],
-    blockerCodes: ['EXPENSE_REQUEST_JOURNAL_COVERAGE_MISSING'],
-    gapCodes: ['EXPENSE_PAYMENT_JOURNAL_SOURCE_MISSING', 'EXPENSE_REQUEST_PAID_TOTAL_PROJECTION_ONLY'],
+    journalSources: ['EXPENSE_PAYMENT'],
+    blockerCodes: [
+      'EXPENSE_PAYMENT_LIVE_POSTING_MISSING',
+      'EXPENSE_PAYMENT_BACKFILL_MISSING',
+      'EXPENSE_PAYMENT_VALUE_SHADOW_MISSING',
+      'EXPENSE_PAYMENT_REVERSAL_REFUND_POLICY_MISSING',
+    ],
+    gapCodes: ['EXPENSE_REQUEST_PAID_TOTAL_PROJECTION_ONLY'],
   },
   {
     key: 'expenseUnpaid',
@@ -254,12 +280,15 @@ const SUMMARY_COMPONENTS: ClientAccountingSummaryShadowComponent[] = [
     group: 'CLIENT_SCOPED',
     coverage: 'BLOCKER',
     legacySources: ['ExpenseRequest', 'ClientOffset', 'CollectionDispositionExpenseApplication'],
-    journalSources: ['CLIENT_OFFSET'],
+    journalSources: ['EXPENSE_REQUEST', 'EXPENSE_PAYMENT', 'CLIENT_OFFSET', 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION'],
     blockerCodes: [
-      'EXPENSE_REQUEST_JOURNAL_COVERAGE_MISSING',
-      'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_COVERAGE_MISSING',
+      'EXPENSE_REQUEST_LIVE_POSTING_MISSING',
+      'EXPENSE_PAYMENT_LIVE_POSTING_MISSING',
+      'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_WIRING_MISSING',
+      'EXPENSE_SUMMARY_VALUE_SHADOW_MISSING',
+      'EXPENSE_SUMMARY_BACKFILL_MISSING',
     ],
-    gapCodes: ['EXPENSE_REQUEST_JOURNAL_SOURCE_MISSING'],
+    gapCodes: [],
   },
   {
     key: 'offsettableNetPosition',
@@ -314,7 +343,7 @@ const SUMMARY_COMPONENTS: ClientAccountingSummaryShadowComponent[] = [
 ];
 
 const NEXT_IMPLEMENTATION_TASKS = [
-  'ACCT-CUTOVER-3C define journal coverage for ExpenseRequest ExpensePayment and reimbursement applications',
+  'ACCT-CUTOVER-3C5 wire read-only/live-safe ExpenseRequest journal posting behind fail-closed journal writer tests',
   'ACCT-CUTOVER-3D define case-context Collection and CaseBalance journal replay policy',
 ];
 
