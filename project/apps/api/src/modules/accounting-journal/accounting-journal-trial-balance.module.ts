@@ -5,6 +5,7 @@ import { AccountingJournalCutoverReadinessService } from './accounting-journal-c
 import { AccountingJournalFinancialStatementController } from './accounting-journal-financial-statement.controller';
 import { AccountingJournalFinancialStatementProjectionService } from './accounting-journal-financial-statement.projection.service';
 import { AccountingJournalLegalShadowCompareService } from './accounting-journal-legal-shadow-compare.service';
+import { AccountingJournalReversalController } from './accounting-journal-reversal.controller';
 import { AccountingJournalReversalService } from './accounting-journal-reversal.service';
 import { AccountingJournalTrialBalanceController } from './accounting-journal-trial-balance.controller';
 import { AccountingJournalTrialBalanceService } from './accounting-journal-trial-balance.service';
@@ -16,6 +17,7 @@ import { AccountingJournalWriterService } from './accounting-journal.writer';
     AccountingJournalTrialBalanceController,
     AccountingJournalCutoverReadinessController,
     AccountingJournalFinancialStatementController,
+    AccountingJournalReversalController,
   ],
   providers: [
     AccountingJournalTrialBalanceService,

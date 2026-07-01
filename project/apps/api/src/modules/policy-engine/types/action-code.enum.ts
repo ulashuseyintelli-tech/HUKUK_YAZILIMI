@@ -185,6 +185,17 @@ export enum ActionCode {
    * Müvekkil mahsubu iptali (ClientOffset kind=REVERSAL) - HIGH risk. Aynı explicit PARTNER/MANAGER gate + reason.
    */
   CLIENT_OFFSET_REVERSE = 'CLIENT_OFFSET_REVERSE',
+
+  // ============================================
+  // Accounting Journal Actions (ACCT-1R)
+  // ============================================
+
+  /**
+   * Generic AccountingJournalEntry reversal - HIGH risk accounting mutation.
+   * ACCT-1R v1: authorization is enforced explicitly inside AccountingJournalReversalService (PARTNER/MANAGER-only).
+   * @CpeRequired is future-compat metadata only; dormant CPE guard is not the security boundary.
+   */
+  ACCOUNTING_JOURNAL_REVERSE = 'ACCOUNTING_JOURNAL_REVERSE',
 }
 
 /**
@@ -256,6 +267,9 @@ export const ACTION_RISK_LEVELS: Record<ActionCode, RiskLevel> = {
   // TM3 Faz C C-1 — Müvekkil Mahsubu (Record exhaustive zorunlu)
   [ActionCode.CLIENT_OFFSET_APPLY]: RiskLevel.HIGH,
   [ActionCode.CLIENT_OFFSET_REVERSE]: RiskLevel.HIGH,
+
+  // ACCT-1R - Generic AccountingJournalEntry reversal
+  [ActionCode.ACCOUNTING_JOURNAL_REVERSE]: RiskLevel.HIGH,
 };
 
 /**
