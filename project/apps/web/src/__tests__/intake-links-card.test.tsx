@@ -41,7 +41,7 @@ describe("IntakeLinksCard (link üret / listele / iptal)", () => {
     listIntakeLinks.mockResolvedValue([link()]);
     render(<IntakeLinksCard caseId="c1" client={clientProp} />);
     await waitFor(() => expect(listIntakeLinks).toHaveBeenCalledWith("c1"));
-    expect(screen.getByText("Aktif")).toBeTruthy();
+    expect(await screen.findByText("Aktif")).toBeTruthy();
   });
 
   it("güvenlik notu her zaman görünür", async () => {
