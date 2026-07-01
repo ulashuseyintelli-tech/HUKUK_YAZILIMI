@@ -5,6 +5,9 @@ import {
 } from '../accounting-journal.builder';
 import type {
   AccountingAccountCode,
+  AccountingJournalReversalLinePayload,
+  AccountingJournalReversalPayload,
+  AccountingJournalReversalSource,
   BalanceLedgerJournalSource,
   BalanceLedgerRecordedPayload,
   ClientOffsetJournalSource,
@@ -22,6 +25,7 @@ import type {
   JournalEntryDraft,
   JournalMetadata,
   JournalValidationErrorCode,
+  ManualAdjustmentJournalSource,
 } from '../accounting-journal.types';
 import {
   validateJournalBusiness,
@@ -120,6 +124,81 @@ function expectStructuralError(
   expect(result.errors.map((error) => error.code)).toEqual(expect.arrayContaining(expectedCodes));
 }
 
+function accountingJournalReversalLine(overrides: Partial<AccountingJournalReversalLinePayload> = {}): AccountingJournalReversalLinePayload {
+  return {
+    lineNo: overrides.lineNo ?? 1,
+    accountCode: overrides.accountCode ?? 'CLIENT_PAYABLE',
+    direction: overrides.direction ?? 'DEBIT',
+    amount: overrides.amount ?? '125.50',
+    currency: overrides.currency ?? 'TRY',
+    caseId: overrides.caseId ?? 'case-payable',
+    clientId: overrides.clientId ?? 'client-1',
+    caseClientId: overrides.caseClientId ?? 'case-client-payable',
+    collectionId: overrides.collectionId ?? 'collection-1',
+    dispositionLineId: overrides.dispositionLineId ?? 'disposition-line-1',
+    payoutId: overrides.payoutId ?? null,
+    offsetId: overrides.offsetId ?? null,
+    expenseRequestId: overrides.expenseRequestId ?? null,
+    expensePaymentId: overrides.expensePaymentId ?? null,
+    expenseApplicationId: overrides.expenseApplicationId ?? null,
+    balanceLedgerId: overrides.balanceLedgerId ?? null,
+  };
+}
+
+function accountingJournalReversalSource(
+  overrides: Partial<Omit<AccountingJournalReversalSource, 'payload' | 'sourceType' | 'sourceAction'>> & {
+    payload?: Partial<AccountingJournalReversalPayload>;
+  } = {},
+): AccountingJournalReversalSource {
+  const originalJournalEntryId = overrides.sourceId ?? overrides.payload?.originalJournalEntryId ?? 'journal-original-1';
+  const originalLines = overrides.payload?.originalLines ?? [
+    accountingJournalReversalLine({ lineNo: 1, accountCode: 'CLIENT_PAYABLE', direction: 'DEBIT', amount: '125.50' }),
+    accountingJournalReversalLine({
+      lineNo: 2,
+      accountCode: 'CASH_CLEARING',
+      direction: 'CREDIT',
+      amount: '125.50',
+      caseId: 'case-payable',
+      clientId: null,
+      caseClientId: null,
+      collectionId: null,
+      dispositionLineId: null,
+      payoutId: 'payout-1',
+    }),
+  ];
+  return {
+    tenantId: overrides.tenantId ?? 'tenant-1',
+    sourceType: 'ACCOUNTING_JOURNAL_ENTRY',
+    sourceId: originalJournalEntryId,
+    sourceVersion: overrides.sourceVersion ?? `2026-07-01T13:00:00.000Z:${originalJournalEntryId}:reversal`,
+    sourceAction: 'reversal',
+    occurredAt: overrides.occurredAt ?? '2026-07-01T13:00:00.000Z',
+    effectiveDate: overrides.effectiveDate ?? '2026-07-01',
+    actorId: overrides.actorId ?? 'user-1',
+    currency: overrides.currency ?? 'TRY',
+    sourceHash: overrides.sourceHash ?? 'hash-generic-reversal',
+    metadata: overrides.metadata ?? { sourceName: 'generic-reversal-test' },
+    payload: {
+      originalJournalEntryId,
+      originalEntryType: 'CLIENT_PAYOUT_RECORDED',
+      originalCaseId: 'case-payable',
+      originalCurrency: overrides.currency ?? 'TRY',
+      originalSourceType: 'CLIENT_PAYOUT',
+      originalSourceId: 'payout-1',
+      originalSourceAction: 'recorded',
+      originalSourceVersion: '2026-06-30T08:00:00.000Z:payout-1',
+      originalLines,
+      ...(overrides.payload ?? {}),
+    },
+  };
+}
+
+function buildAccountingJournalReversalDraft(source: AccountingJournalReversalSource = accountingJournalReversalSource()): JournalEntryDraft {
+  const result = buildAccountingJournal(source);
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(JSON.stringify(result.errors));
+  return result.draft;
+}
 describe('AccountingJournalBuilder contract skeleton', () => {
   it('builder purity rule: CLIENT_OFFSET draft is deterministic and source object is not mutated', () => {
     const source = clientOffsetSource();
@@ -1224,5 +1303,88 @@ describe('AccountingJournalBuilder expense application source skeleton', () => {
     expect(reversalMissingRefResult.ok).toBe(false);
     if (reversalMissingRefResult.ok) throw new Error('Expected missing reversal reference to fail.');
     expect(reversalMissingRefResult.errors.map((error) => error.code)).toContain('UNSUPPORTED_BUSINESS_RULE');
+  });
+});
+
+describe('AccountingJournalEntry generic reversal contract', () => {
+  it('maps ACCOUNTING_JOURNAL_ENTRY reversal to inverse lines and deterministic idempotency', () => {
+    const source = accountingJournalReversalSource();
+    const draft = buildAccountingJournalReversalDraft(source);
+
+    expect(draft.entryType).toBe('ACCOUNTING_JOURNAL_REVERSAL');
+    expect(draft.sourceType).toBe('ACCOUNTING_JOURNAL_ENTRY');
+    expect(draft.sourceId).toBe('journal-original-1');
+    expect(draft.idempotencyKey).toBe(buildJournalIdempotencyKey(journalIdempotencyMaterialFromSource(source)));
+    expect(draft.reversalOf).toEqual(expect.objectContaining({
+      sourceType: 'CLIENT_PAYOUT',
+      sourceId: 'payout-1',
+      sourceAction: 'recorded',
+      journalEntryId: 'journal-original-1',
+    }));
+
+    expect(lineByAccount(draft, 'CLIENT_PAYABLE')).toEqual(expect.objectContaining({
+      direction: 'CREDIT',
+      amount: '125.50',
+      caseId: 'case-payable',
+      clientId: 'client-1',
+      caseClientId: 'case-client-payable',
+      collectionId: 'collection-1',
+      dispositionLineId: 'disposition-line-1',
+    }));
+    expect(lineByAccount(draft, 'CASH_CLEARING')).toEqual(expect.objectContaining({
+      direction: 'DEBIT',
+      amount: '125.50',
+      payoutId: 'payout-1',
+    }));
+    expect(validateJournalDraft(draft).ok).toBe(true);
+  });
+
+  it('rejects mismatched original id, reversal-of-reversal, and manual adjustment mapping', () => {
+    const sourceMismatch = buildAccountingJournal(accountingJournalReversalSource({
+      sourceId: 'journal-original-1',
+      payload: { originalJournalEntryId: 'journal-other' },
+    }));
+    expect(sourceMismatch.ok).toBe(false);
+    if (sourceMismatch.ok) throw new Error('Expected source/original mismatch to fail.');
+    expect(sourceMismatch.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'INVALID_SOURCE_PAYLOAD', path: 'payload.originalJournalEntryId' }),
+    ]));
+
+    const reversalOfReversal = buildAccountingJournal(accountingJournalReversalSource({
+      payload: { originalEntryType: 'ACCOUNTING_JOURNAL_REVERSAL' },
+    }));
+    expect(reversalOfReversal.ok).toBe(false);
+    if (reversalOfReversal.ok) throw new Error('Expected reversal-of-reversal to fail.');
+    expect(reversalOfReversal.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'INVALID_SOURCE_PAYLOAD', path: 'payload.originalEntryType' }),
+    ]));
+
+    const manualAdjustment: ManualAdjustmentJournalSource = {
+      ...accountingJournalReversalSource(),
+      sourceAction: 'manual-adjustment',
+      payload: { amount: '10.00', reason: 'manual correction', lines: [] },
+    };
+    const manualResult = buildAccountingJournal(manualAdjustment);
+    expect(manualResult.ok).toBe(false);
+    if (manualResult.ok) throw new Error('Expected manual adjustment to remain unmapped.');
+    expect(manualResult.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'UNMAPPED_SOURCE', path: 'sourceAction' }),
+    ]));
+  });
+
+  it('business validator requires original journal reference for generic reversal drafts', () => {
+    const missingReference = buildAccountingJournalReversalDraft();
+    missingReference.reversalOf = null;
+    const missingReferenceResult = validateJournalBusiness(missingReference);
+    expect(missingReferenceResult.ok).toBe(false);
+    if (missingReferenceResult.ok) throw new Error('Expected missing generic reversal reference to fail.');
+    expect(missingReferenceResult.errors.map((error) => error.code)).toContain('UNSUPPORTED_BUSINESS_RULE');
+
+    const wrongEntryType = buildAccountingJournalReversalDraft();
+    wrongEntryType.entryType = 'CLIENT_PAYOUT_RECORDED';
+    const wrongEntryTypeResult = validateJournalBusiness(wrongEntryType);
+    expect(wrongEntryTypeResult.ok).toBe(false);
+    if (wrongEntryTypeResult.ok) throw new Error('Expected wrong generic reversal entryType to fail.');
+    expect(wrongEntryTypeResult.errors.map((error) => error.code)).toContain('INVALID_SOURCE_ACTION');
   });
 });
