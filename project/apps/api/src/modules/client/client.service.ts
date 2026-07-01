@@ -54,6 +54,7 @@ export type ClientActionKey =
 export type ClientActionCategory = 'intake' | 'poa' | 'notification' | 'document' | 'contact' | 'case' | 'activity';
 export type ClientActionVisibility = 'visible' | 'hidden' | 'forbidden';
 export type ClientActionDangerLevel = 'low' | 'medium' | 'high';
+export type ClientActionRole = 'ADMIN' | 'USER' | 'VIEWER';
 
 export interface ClientActionCatalogItem {
   key: ClientActionKey;
@@ -307,15 +308,24 @@ export class ClientService {
    * - ClientController.actionCatalog() -> GET /clients/:clientId/action-catalog (Client Workspace read model)
    * </remarks>
    */
-  async getActionCatalog(id: string, tenantId: string): Promise<ClientActionCatalogResponse> {
+  async getActionCatalog(id: string, tenantId: string, actorRole?: string | null): Promise<ClientActionCatalogResponse> {
     const client = await this.prisma.client.findFirst({
       where: { id, tenantId, isActive: true },
-      select: { id: true },
+      select: {
+        id: true,
+        phone: true,
+        email: true,
+        contactFollowUpStatus: true,
+        _count: { select: { cases: true } },
+      },
     });
     if (!client) throw new NotFoundException('Client not found');
 
     return {
-      data: buildClientActionCatalog(id),
+      data: buildClientActionCatalog({
+        actorRole: normalizeClientActionRole(actorRole),
+        client,
+      }),
     };
   }
 
@@ -1079,9 +1089,43 @@ function intakeSummary(status: string): string {
   return map[status] ?? 'Intake lifecycle status changed.';
 }
 
-function buildClientActionCatalog(clientId: string): ClientActionCatalogItem[] {
+interface ClientActionCatalogClientState {
+  id: string;
+  phone?: string | null;
+  email?: string | null;
+  contactFollowUpStatus?: string | null;
+  _count?: { cases?: number | null } | null;
+}
+
+interface ClientActionCatalogContext {
+  actorRole: ClientActionRole;
+  client: ClientActionCatalogClientState;
+}
+
+const CLIENT_ACTION_ROLE_RANK: Record<ClientActionRole, number> = {
+  VIEWER: 0,
+  USER: 1,
+  ADMIN: 2,
+};
+
+function normalizeClientActionRole(rawRole?: string | null): ClientActionRole {
+  const role = String(rawRole ?? 'USER').toUpperCase();
+  if (role === 'ADMIN' || role === 'USER' || role === 'VIEWER') return role;
+  return 'USER';
+}
+
+function buildClientActionCatalog(context: ClientActionCatalogContext): ClientActionCatalogItem[] {
+  const clientId = context.client.id;
   const target = { clientId };
-  return [
+  const relatedCaseCount = context.client._count?.cases ?? 0;
+  const missingContactFields = computeMissingContactFields(context.client);
+  const contactState = context.client.contactFollowUpStatus === 'WAIVED'
+    ? 'CONTACT_FOLLOW_UP_WAIVED'
+    : missingContactFields.length > 0
+      ? 'CONTACT_INFO_MISSING'
+      : 'CONTACT_INFO_COMPLETE';
+
+  const candidates: ClientActionCatalogItem[] = [
     {
       key: 'contact.update_missing_info',
       label: 'Update contact information',
@@ -1091,6 +1135,7 @@ function buildClientActionCatalog(clientId: string): ClientActionCatalogItem[] {
       visibility: 'visible',
       dangerLevel: 'low',
       requiredRole: 'USER',
+      requiredState: contactState,
       target,
       href: `/clients/${clientId}`,
       order: 10,
@@ -1100,12 +1145,14 @@ function buildClientActionCatalog(clientId: string): ClientActionCatalogItem[] {
       label: 'Open related cases',
       description: 'Open the cases tab for this client.',
       category: 'case',
-      enabled: true,
+      enabled: relatedCaseCount > 0,
+      disabledReason: relatedCaseCount > 0 ? undefined : 'No related cases are linked to this client yet.',
       visibility: 'visible',
       dangerLevel: 'low',
-      requiredRole: 'USER',
+      requiredRole: 'VIEWER',
+      requiredState: relatedCaseCount > 0 ? 'RELATED_CASE_AVAILABLE' : 'RELATED_CASE_EMPTY',
       target,
-      href: `/clients/${clientId}`,
+      href: relatedCaseCount > 0 ? `/clients/${clientId}` : undefined,
       order: 20,
     },
     {
@@ -1116,7 +1163,8 @@ function buildClientActionCatalog(clientId: string): ClientActionCatalogItem[] {
       enabled: true,
       visibility: 'visible',
       dangerLevel: 'low',
-      requiredRole: 'USER',
+      requiredRole: 'VIEWER',
+      requiredState: 'TIMELINE_READ_AVAILABLE',
       target,
       href: `/clients/${clientId}`,
       order: 30,
@@ -1178,6 +1226,28 @@ function buildClientActionCatalog(clientId: string): ClientActionCatalogItem[] {
       order: 70,
     },
   ];
+
+  return candidates
+    .map((item) => applyClientActionPolicy(item, context.actorRole))
+    .filter((item): item is ClientActionCatalogItem => item !== null)
+    .sort((a, b) => a.order - b.order);
+}
+
+function applyClientActionPolicy(item: ClientActionCatalogItem, actorRole: ClientActionRole): ClientActionCatalogItem | null {
+  if (item.visibility !== 'visible') return null;
+  const requiredRole = normalizeClientActionRole(item.requiredRole);
+  if (CLIENT_ACTION_ROLE_RANK[actorRole] < CLIENT_ACTION_ROLE_RANK[requiredRole]) return null;
+
+  if (item.enabled) {
+    const { disabledReason, ...enabledItem } = item;
+    return enabledItem;
+  }
+
+  return {
+    ...item,
+    disabledReason: item.disabledReason?.trim() || 'Action is disabled by current client workspace policy.',
+    href: undefined,
+  };
 }
 function buildClientOperatingSnapshot(
   clientId: string,

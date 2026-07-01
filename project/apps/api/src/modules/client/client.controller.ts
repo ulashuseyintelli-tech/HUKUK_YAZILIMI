@@ -53,7 +53,7 @@ export class ClientController {
     @Request() req: any,
     @Param('clientId') clientId: string,
   ) {
-    return this.clientService.getActionCatalog(clientId, req.user.tenantId);
+    return this.clientService.getActionCatalog(clientId, req.user.tenantId, req.user.role);
   }
 
   // Client Workspace operating snapshot (read-only V1)
