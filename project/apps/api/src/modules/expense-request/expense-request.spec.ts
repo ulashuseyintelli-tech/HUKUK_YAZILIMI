@@ -12,6 +12,8 @@ import { TariffService } from '@/modules/tariff/tariff.service';
 import { Decimal } from '@prisma/client/runtime/library';
 
 const CREATED_AT = new Date('2026-07-01T10:00:00.000Z');
+const PAYMENT_CREATED_AT = new Date('2026-07-01T11:00:00.000Z');
+const PAYMENT_DATE = new Date('2026-07-01T09:30:00.000Z');
 
 const defaultJournalWriteResult = {
   ok: true,
@@ -37,6 +39,10 @@ const replayedJournalWriteResult = {
 
 function recordedSourceVersion(expenseRequestId: string): string {
   return `${CREATED_AT.toISOString()}:${expenseRequestId}:RECORDED`;
+}
+
+function recordedPaymentSourceVersion(expensePaymentId: string, createdAt = PAYMENT_CREATED_AT): string {
+  return `${createdAt.toISOString()}:${expensePaymentId}:RECORDED`;
 }
 
 // Mock data
@@ -147,6 +153,7 @@ describe('ExpenseRequestService - Property Tests', () => {
     jest.clearAllMocks();
     mockJournalWriter.write.mockReset();
     mockJournalWriter.write.mockResolvedValue(defaultJournalWriteResult);
+    mockPrismaService.expensePayment.create.mockResolvedValue({ id: 'pay-default', createdAt: PAYMENT_CREATED_AT });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -212,6 +219,56 @@ describe('ExpenseRequestService - Property Tests', () => {
         clientId: 'client-1',
         caseClientId: null,
         expenseRequestId: sourceId,
+      }),
+    ]));
+  }
+
+  function expectLastRecordedPaymentJournalDraft(expensePaymentId: string, amount: string, paymentDate = PAYMENT_DATE, createdAt = PAYMENT_CREATED_AT): void {
+    const calls = mockJournalWriter.write.mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+
+    const [input, tx] = calls[calls.length - 1];
+    const draft = input.draft;
+    const sourceVersion = recordedPaymentSourceVersion(expensePaymentId, createdAt);
+
+    expect(tx).toBe(mockPrismaService);
+    expect(draft).toEqual(expect.objectContaining({
+      tenantId: 'tenant-1',
+      caseId: 'case-1',
+      currency: 'TRY',
+      entryType: 'EXPENSE_PAYMENT_RECORDED',
+      sourceType: 'EXPENSE_PAYMENT',
+      sourceAction: 'recorded',
+      sourceId: expensePaymentId,
+      sourceVersion,
+      sourceOccurredAt: paymentDate.toISOString(),
+      effectiveDate: paymentDate.toISOString().slice(0, 10),
+      postedById: 'user-1',
+    }));
+    expect(draft.idempotencyKey).toBe(
+      `acct-journal:v1:tenant-1:EXPENSE_PAYMENT:${expensePaymentId}:recorded:${sourceVersion}`,
+    );
+    expect(draft.lines).toHaveLength(2);
+    expect(draft.lines).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        accountCode: 'CASH_CLEARING',
+        direction: 'DEBIT',
+        amount,
+        caseId: 'case-1',
+        clientId: 'client-1',
+        caseClientId: null,
+        expenseRequestId: 'exp-1',
+        expensePaymentId,
+      }),
+      expect.objectContaining({
+        accountCode: 'CLIENT_EXPENSE_RECEIVABLE',
+        direction: 'CREDIT',
+        amount,
+        caseId: 'case-1',
+        clientId: 'client-1',
+        caseClientId: null,
+        expenseRequestId: 'exp-1',
+        expensePaymentId,
       }),
     ]));
   }
@@ -379,6 +436,14 @@ describe('ExpenseRequestService - Property Tests', () => {
         paidTotal: new Decimal(0),
       };
       mockPrismaService.expenseRequest.findFirst.mockResolvedValue(partialRequest);
+      mockPrismaService.expensePayment.create.mockResolvedValue({
+        id: 'pay-partial',
+        amount: new Decimal(500),
+        paymentDate: PAYMENT_DATE,
+        method: 'BANK_TRANSFER',
+        reference: 'DEKONT-PARTIAL',
+        createdAt: PAYMENT_CREATED_AT,
+      });
       mockPrismaService.expenseRequest.update.mockResolvedValue({
         ...partialRequest,
         paidTotal: new Decimal(500),
@@ -387,12 +452,14 @@ describe('ExpenseRequestService - Property Tests', () => {
 
       const payment: PaymentInput = {
         amount: 500,
-        paymentDate: new Date(),
+        paymentDate: PAYMENT_DATE,
         method: 'BANK_TRANSFER',
+        reference: 'DEKONT-PARTIAL',
       };
 
       const result = await service.recordPayment('tenant-1', 'exp-1', payment, 'user-1');
 
+      expect(result).toBeDefined();
       expect(mockPrismaService.expenseRequest.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -400,6 +467,17 @@ describe('ExpenseRequestService - Property Tests', () => {
             paidTotal: 500,
           }),
         })
+      );
+      expectLastRecordedPaymentJournalDraft('pay-partial', '500');
+      expect(mockCaseBalanceService.credit).toHaveBeenCalledWith(
+        'tenant-1',
+        'case-1',
+        expect.objectContaining({
+          amount: 500,
+          source: 'expense_payment:pay-partial',
+          sourceId: 'pay-partial',
+        }),
+        'user-1',
       );
     });
 
@@ -410,6 +488,14 @@ describe('ExpenseRequestService - Property Tests', () => {
         paidTotal: new Decimal(500),
       };
       mockPrismaService.expenseRequest.findFirst.mockResolvedValue(request);
+      mockPrismaService.expensePayment.create.mockResolvedValue({
+        id: 'pay-full',
+        amount: new Decimal(500),
+        paymentDate: PAYMENT_DATE,
+        method: 'BANK_TRANSFER',
+        reference: 'DEKONT-FULL',
+        createdAt: PAYMENT_CREATED_AT,
+      });
       mockPrismaService.expenseRequest.update.mockResolvedValue({
         ...request,
         paidTotal: new Decimal(1000),
@@ -418,8 +504,9 @@ describe('ExpenseRequestService - Property Tests', () => {
 
       const payment: PaymentInput = {
         amount: 500,
-        paymentDate: new Date(),
+        paymentDate: PAYMENT_DATE,
         method: 'BANK_TRANSFER',
+        reference: 'DEKONT-FULL',
       };
 
       await service.recordPayment('tenant-1', 'exp-1', payment, 'user-1');
@@ -432,6 +519,53 @@ describe('ExpenseRequestService - Property Tests', () => {
           }),
         })
       );
+      expectLastRecordedPaymentJournalDraft('pay-full', '500');
+    });
+
+    it('fails closed before status update when ExpensePayment journal writer fails', async () => {
+      const req = { ...mockExpenseRequest, totalAmount: new Decimal(1000), paidTotal: new Decimal(0), clientId: 'client-1', caseId: 'case-1' };
+      mockPrismaService.expenseRequest.findFirst.mockResolvedValue(req);
+      mockPrismaService.expensePayment.create.mockResolvedValue({
+        id: 'pay-fail',
+        amount: new Decimal(400),
+        paymentDate: PAYMENT_DATE,
+        method: 'BANK_TRANSFER',
+        reference: 'DEKONT-FAIL',
+        createdAt: PAYMENT_CREATED_AT,
+      });
+      mockJournalWriter.write.mockResolvedValueOnce({
+        ok: false,
+        errors: [{ code: 'DB_WRITE_FAILED', message: 'journal write failed', path: null, details: {} }],
+      });
+
+      await expect(
+        service.recordPayment('tenant-1', 'exp-1', { amount: 400, paymentDate: PAYMENT_DATE, method: 'BANK_TRANSFER' }, 'user-1'),
+      ).rejects.toThrow('ExpensePayment journal write failed: DB_WRITE_FAILED');
+
+      expect(mockPrismaService.expenseRequest.update).not.toHaveBeenCalled();
+      expect(mockPrismaService.expenseAuditLog.create).not.toHaveBeenCalled();
+      expect(mockCaseBalanceService.credit).not.toHaveBeenCalled();
+      expect(mockDispatcher.dispatch).not.toHaveBeenCalled();
+    });
+
+    it('accepts ExpensePayment writer replay with deterministic idempotency key', async () => {
+      const req = { ...mockExpenseRequest, totalAmount: new Decimal(1000), paidTotal: new Decimal(0), clientId: 'client-1', caseId: 'case-1' };
+      mockPrismaService.expenseRequest.findFirst.mockResolvedValue(req);
+      mockPrismaService.expensePayment.create.mockResolvedValue({
+        id: 'pay-replay',
+        amount: new Decimal(400),
+        paymentDate: PAYMENT_DATE,
+        method: 'BANK_TRANSFER',
+        reference: 'DEKONT-REPLAY',
+        createdAt: PAYMENT_CREATED_AT,
+      });
+      mockPrismaService.expenseRequest.update.mockResolvedValue({ ...req, paidTotal: new Decimal(400), status: 'PARTIAL' });
+      mockJournalWriter.write.mockResolvedValueOnce(replayedJournalWriteResult);
+
+      const result = await service.recordPayment('tenant-1', 'exp-1', { amount: 400, paymentDate: PAYMENT_DATE, method: 'BANK_TRANSFER' }, 'user-1');
+
+      expect(result).toBeDefined();
+      expectLastRecordedPaymentJournalDraft('pay-replay', '400');
     });
 
     // ===== Faz 3.5: ödeme maili tetiği (best-effort; ödeme state'ini etkilemez) =====
@@ -1155,6 +1289,9 @@ describe('Property 6: Task Completion on Payment', () => {
 
   beforeEach(async () => {
     jest.clearAllMocks();
+    mockJournalWriter.write.mockReset();
+    mockJournalWriter.write.mockResolvedValue(defaultJournalWriteResult);
+    mockPrismaService.expensePayment.create.mockResolvedValue({ id: 'pay-default', createdAt: PAYMENT_CREATED_AT });
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
