@@ -474,6 +474,7 @@ model Client {
   clientApprovalRequests  ClientApprovalRequest[] // Müvekkil onay defteri (PR-2)
   clientStatements        ClientStatement[] // Müvekkil ekstresi (PR-3)
   clientIntakeLinks       ClientIntakeLink[] // Müvekkil dış-form intake linkleri (Faz 4.2)
+  clientIntakeLinkDeliveries ClientIntakeLinkDelivery[] // Intake link create-and-deliver artifact kayıtları
   clientIntakeSubmissions ClientIntakeSubmission[] // Müvekkil dış-form gönderimleri (Faz 4.2)
   portalUser              ClientPortalUser?
 
@@ -1123,6 +1124,7 @@ model Case {
   clientPayoutManualReversals ClientPayoutManualReversal[]
   clientIntelStatements   ClientIntelStatement[] // Müvekkil yumuşak-istihbarat beyanı (Faz 4.0)
   clientIntakeLinks       ClientIntakeLink[] // Müvekkil dış-form intake linkleri (Faz 4.2)
+  clientIntakeLinkDeliveries ClientIntakeLinkDelivery[] // Intake link create-and-deliver artifact kayıtları
   clientIntakeSubmissions ClientIntakeSubmission[] // Müvekkil dış-form gönderimleri (Faz 4.2)
 
   // Address Discovery
@@ -3322,6 +3324,8 @@ model ClientNotification {
   // Aynı mailin iki kez gitmesini güvenilir engellemek için ayrı indexli kolon (JSON'a gömülmez).
   dedupeKey String?
 
+  intakeLinkDeliveries ClientIntakeLinkDelivery[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -4151,11 +4155,52 @@ model ClientIntakeLink {
   createdAt   DateTime @default(now())
 
   submissions ClientIntakeSubmission[]
+  deliveries  ClientIntakeLinkDelivery[]
 
   @@index([tenantId])
   @@index([caseId])
   @@index([clientId])
   @@index([tokenHash])
+  @@index([status])
+}
+
+// Intake link create-and-deliver typed command artifact.
+// Güvenlik: bearer secret saklanmaz; public form URL yalnız dispatch render aşamasında kullanılır.
+model ClientIntakeLinkDelivery {
+  id       String @id @default(cuid())
+  tenantId String
+
+  clientId String
+  client   Client @relation(fields: [clientId], references: [id], onDelete: Restrict)
+
+  caseId String
+  case   Case   @relation(fields: [caseId], references: [id], onDelete: Restrict)
+
+  intakeLinkId String
+  intakeLink   ClientIntakeLink @relation(fields: [intakeLinkId], references: [id], onDelete: Restrict)
+
+  idempotencyKey String
+  dedupeKey      String
+  channel        String                         @default("EMAIL")
+  status         ClientIntakeLinkDeliveryStatus @default(PENDING)
+
+  notificationId String?
+  notification   ClientNotification? @relation(fields: [notificationId], references: [id], onDelete: SetNull)
+
+  attemptCount Int     @default(0)
+  lastError    String? @db.Text
+  createdById  String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([tenantId, idempotencyKey])
+  @@unique([tenantId, dedupeKey])
+  @@unique([intakeLinkId, channel])
+  @@index([tenantId])
+  @@index([clientId])
+  @@index([caseId])
+  @@index([intakeLinkId])
+  @@index([notificationId])
   @@index([status])
 }
 
@@ -4221,6 +4266,13 @@ enum ClientIntakeLinkStatus {
   USED
   EXPIRED
   REVOKED
+}
+
+enum ClientIntakeLinkDeliveryStatus {
+  PENDING
+  SENDING
+  SENT
+  FAILED
 }
 
 enum ClientIntakeSubmissionStatus {
