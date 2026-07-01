@@ -2,9 +2,11 @@ import { readFileSync } from 'fs';
 import { join } from 'path';
 
 import type {
+  AccountingJournalEntryType,
   ClientOffsetJournalSource,
   ClientOffsetJournalSourcePayload,
   JournalSource,
+  ManualAdjustmentJournalPayload,
 } from '../accounting-journal.types';
 import {
   createJournalSourceError,
@@ -109,6 +111,38 @@ describe('Accounting journal source adapter contracts', () => {
     expect(validateJournalSourceIdentity(sourceIdentity({ sourceType: 'ACCOUNTING_JOURNAL_ENTRY', sourceAction: 'reversal' })).ok).toBe(true);
     expect(validateJournalSourceIdentity(sourceIdentity({ sourceType: 'ACCOUNTING_JOURNAL_ENTRY', sourceAction: 'manual-adjustment' })).ok).toBe(true);
   });
+
+  it('manual adjustment type contract exposes explicit entry type and payload shape', () => {
+    const entryType: AccountingJournalEntryType = 'ACCOUNTING_JOURNAL_MANUAL_ADJUSTMENT';
+    const payload: ManualAdjustmentJournalPayload = {
+      amount: '42.00',
+      reason: 'Manual opening balance correction',
+      evidenceRef: null,
+      lines: [
+        {
+          accountCode: 'CASH_CLEARING',
+          direction: 'DEBIT',
+          amount: '42.00',
+          caseId: 'case-manual-type',
+          clientId: 'client-manual-type',
+          caseClientId: 'case-client-manual-type',
+        },
+        {
+          accountCode: 'CLIENT_PAYABLE',
+          direction: 'CREDIT',
+          amount: '42.00',
+          caseId: 'case-manual-type',
+          clientId: 'client-manual-type',
+          caseClientId: 'case-client-manual-type',
+        },
+      ],
+    };
+
+    expect(entryType).toBe('ACCOUNTING_JOURNAL_MANUAL_ADJUSTMENT');
+    expect(payload.lines).toHaveLength(2);
+    expect(payload.reason).toBe('Manual opening balance correction');
+  });
+
   it('source loader contract: request shape is tenant-scoped and async without implementation coupling', async () => {
     const identity = sourceIdentity({ tenantId: 'tenant-scoped' });
     const loader: JournalSourceLoader = {
