@@ -1,21 +1,47 @@
-import { Body, Controller, Param, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Request, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ClientPayoutManualReversalReadService } from './client-payout-manual-reversal-read.service';
 import { ClientPayoutManualReversalService } from './client-payout-manual-reversal.service';
 import { CloseClientPayoutManualReversalDto } from './dto/close-client-payout-manual-reversal.dto';
+import { ListClientPayoutManualReversalsDto } from './dto/list-client-payout-manual-reversals.dto';
 
 interface AuthRequest {
   user: { id: string; tenantId: string };
 }
 
 /**
- * TM47D-4 — Client payout manual reversal closure endpoint.
+ * TM47D-4/TM47D-5A - Client payout manual reversal endpoints.
  *
- * Actor and tenant are always taken from JWT request context, never from request body.
+ * Actor and tenant are always taken from JWT request context, never from request body/query.
+ * TM47D-5A endpoints are read-only operational projections.
  */
 @Controller('client-payout-manual-reversals')
 @UseGuards(JwtAuthGuard)
 export class ClientPayoutManualReversalController {
-  constructor(private readonly service: ClientPayoutManualReversalService) {}
+  constructor(
+    private readonly service: ClientPayoutManualReversalService,
+    private readonly readService: ClientPayoutManualReversalReadService,
+  ) {}
+
+  /// <remarks>
+  /// Cagrildigi yerler:
+  /// - ClientPayoutManualReversalController.list() -> GET /client-payout-manual-reversals (manuel reversal operasyon listesi)
+  /// </remarks>
+  @Get()
+  async list(@Request() req: AuthRequest, @Query() query: ListClientPayoutManualReversalsDto) {
+    const data = await this.readService.list(req.user.tenantId, query ?? {});
+    return { data };
+  }
+
+  /// <remarks>
+  /// Cagrildigi yerler:
+  /// - ClientPayoutManualReversalController.detail() -> GET /client-payout-manual-reversals/:id (manuel reversal operasyon detayi)
+  /// </remarks>
+  @Get(':id')
+  async detail(@Request() req: AuthRequest, @Param('id') id: string) {
+    const data = await this.readService.detail(req.user.tenantId, id);
+    return { data };
+  }
 
   /// <remarks>
   /// Cagrildigi yerler:
