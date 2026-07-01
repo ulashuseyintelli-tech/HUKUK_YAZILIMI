@@ -197,6 +197,8 @@ export interface JournalLineDraft {
   payoutId: string | null;
   offsetId: string | null;
   expenseRequestId: string | null;
+  expensePaymentId: string | null;
+  expenseApplicationId: string | null;
   balanceLedgerId: string | null;
 }
 

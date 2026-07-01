@@ -4022,8 +4022,11 @@ model AccountingJournalLine {
   collectionId      String?
   dispositionLineId String?
   payoutId          String?
-  offsetId          String?
-  balanceLedgerId   String?
+  offsetId             String?
+  expenseRequestId     String?
+  expensePaymentId     String?
+  expenseApplicationId String?
+  balanceLedgerId      String?
 
   createdAt DateTime @default(now())
 
@@ -4036,6 +4039,9 @@ model AccountingJournalLine {
   @@index([dispositionLineId])
   @@index([payoutId])
   @@index([offsetId])
+  @@index([expenseRequestId])
+  @@index([expensePaymentId])
+  @@index([expenseApplicationId])
   @@index([balanceLedgerId])
 }
 
