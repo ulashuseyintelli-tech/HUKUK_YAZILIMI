@@ -166,11 +166,14 @@ export default function ClientsSettingsPage() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Bu müvekkili silmek istediğinize emin misiniz?")) return;
+    // Canonical karar (2026-07-02): Client kalıcı kimlik kaydıdır, sistemden silinmez — yalnız
+    // pasifleştirilir (isActive=false). Endpoint/davranış AYNI (DELETE /clients/:id = soft-delete);
+    // yalnız kullanıcıya doğru dili yansıtır.
+    if (!confirm("Bu müvekkili pasifleştirmek istediğinize emin misiniz? Bu müvekkil sistemden silinmez, yalnızca pasifleştirilir.")) return;
     try {
       await api.delete(`/clients/${id}`);
       await loadClients();
-    } catch (e: any) { alert(e.message || "Silinemedi"); }
+    } catch (e: any) { alert(e.message || "Pasifleştirilemedi"); }
   };
 
   const handleExport = async (format: "excel" | "pdf") => {
@@ -520,7 +523,7 @@ export default function ClientsSettingsPage() {
                         }} className="p-1.5 text-blue-500 hover:bg-blue-50 rounded" title="Düzenle">
                           <Edit2 className="h-4 w-4" />
                         </button>
-                        <button onClick={() => handleDelete(client.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Sil">
+                        <button onClick={() => handleDelete(client.id)} className="p-1.5 text-red-500 hover:bg-red-50 rounded" title="Pasifleştir">
                           <Trash2 className="h-4 w-4" />
                         </button>
                       </div>
