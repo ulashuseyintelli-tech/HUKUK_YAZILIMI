@@ -1,9 +1,15 @@
 # ACCT-5 Financial Statements Closure Gate
 
-**Status:** Ready for owner closure.
+**Status:** Closed by owner decision.
 **Scope:** Documentation/status-only closure review for ACCT-5 design gate and ACCT-5A through ACCT-5C. No code, schema, migration, UI, posting, writer, legal ledger, or TBK100 behavior change.
 **Reviewed on:** 2026-07-01.
 **Canonical HEAD reviewed:** `f1a5e212c4c2bb248de1bdb2b84fe5dc467f07a4`.
+
+## Decision
+
+ACCT-5 is **CLOSED** by owner decision. Owner karari: ACCT-5 fazi kapatildi. READY FOR OWNER CLOSURE -> CLOSED.
+
+No remaining ACCT-5-specific read-contract, projection-service, HTTP/controller-boundary, documentation, schema, migration, UI, posting, writer, legal-ledger, or TBK100 blocker was found.
 
 ## Purpose
 
