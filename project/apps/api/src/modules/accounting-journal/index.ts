@@ -3,6 +3,8 @@ export * from './accounting-journal-cutover-readiness.controller';
 export * from './accounting-journal-cutover-readiness.service';
 export * from './accounting-journal-cutover-readiness.types';
 export * from './accounting-journal-legal-shadow-compare.service';
+export * from './accounting-journal-manual-adjustment.controller';
+export * from './accounting-journal-manual-adjustment.service';
 export * from './accounting-journal-posting-mode';
 export * from './accounting-journal-reversal.controller';
 export * from './accounting-journal-reversal.service';
