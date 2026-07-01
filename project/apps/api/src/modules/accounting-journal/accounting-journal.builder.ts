@@ -174,6 +174,13 @@ function buildBalanceLedgerJournal(source: BalanceLedgerJournalSource): JournalB
     });
   }
 
+  if (isExpensePaymentBalanceLedgerSource(source.payload.source, source.payload.sourceId)) {
+    return buildError('UNMAPPED_SOURCE', 'Correlated expense_payment BalanceLedger is reported-only; ExpensePayment is the canonical journal source.', 'payload.source', {
+      source: source.payload.source,
+      sourceId: source.payload.sourceId,
+    });
+  }
+
   const expectedIncrease = source.payload.ledgerType === 'CREDIT';
   if (source.payload.isIncrease !== expectedIncrease) {
     return buildError('INVALID_SOURCE_PAYLOAD', 'BalanceLedger isIncrease must match ledgerType.', 'payload.isIncrease', {
@@ -260,6 +267,16 @@ function isDispositionLineBalanceLedgerSource(source: string | null | undefined,
 function parseDispositionLineSource(value: string | null | undefined): string | null {
   if (!value) return null;
   const prefix = 'disposition_line:';
+  return value.startsWith(prefix) ? value.slice(prefix.length) : null;
+}
+
+function isExpensePaymentBalanceLedgerSource(source: string | null | undefined, sourceId: string | null | undefined): boolean {
+  return parseExpensePaymentSource(source) !== null || parseExpensePaymentSource(sourceId) !== null || source === 'expense_payment';
+}
+
+function parseExpensePaymentSource(value: string | null | undefined): string | null {
+  if (!value) return null;
+  const prefix = 'expense_payment:';
   return value.startsWith(prefix) ? value.slice(prefix.length) : null;
 }
 function buildExpenseRequestJournal(source: ExpenseRequestJournalSource): JournalBuildResult {

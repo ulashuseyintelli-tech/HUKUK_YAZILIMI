@@ -10,6 +10,7 @@ import {
   AccountingJournalWriterService,
   buildAccountingJournal,
   createCanonicalSourceHash,
+  ExpensePaymentJournalSource,
   ExpenseRequestJournalSource,
   ValidatedJournalEntryDraft,
   validateJournalDraft,
@@ -52,6 +53,16 @@ type JournalableExpenseRequestRow = {
   clientId: string;
   totalAmount: Prisma.Decimal | Prisma.Decimal.Value;
   currency: string;
+  createdAt: Date | string;
+};
+
+type JournalableExpensePaymentRow = {
+  id: string;
+  expenseRequestId: string;
+  amount: Prisma.Decimal | Prisma.Decimal.Value;
+  paymentDate: Date | string;
+  method: string | null;
+  reference: string | null;
   createdAt: Date | string;
 };
 
@@ -411,13 +422,13 @@ export class ExpenseRequestService {
             amount: paidAmount,
             source: `expense_request:${id}`,
             sourceId: id,
-            description: `Masraf talebi ödemesi (${(existing as any).packageCode || 'manuel'})`,
+            description: `Masraf talebi �demesi (${(existing as any).packageCode || 'manuel'})`,
           },
           userId,
         );
       } catch (error) {
         console.error('Bakiye kredisi eklenemedi:', error);
-        // Hata olsa bile masraf talebi güncellendi, devam et
+        // Hata olsa bile masraf talebi g�ncellendi, devam et
       }
     }
 
@@ -850,6 +861,89 @@ export class ExpenseRequestService {
 
     return validated.draft;
   }
+  private async writeExpensePaymentRecordedJournal(
+    tx: Prisma.TransactionClient,
+    tenantId: string,
+    actorUserId: string,
+    expenseRequest: { id: string; caseId: string; clientId: string; currency: string },
+    expensePayment: JournalableExpensePaymentRow,
+  ): Promise<void> {
+    const draft = this.buildExpensePaymentRecordedJournalDraft(tenantId, actorUserId, expenseRequest, expensePayment);
+
+    try {
+      const write = await this.journalWriter.write({ draft }, tx);
+      if (!write.ok) {
+        throw new ConflictException(`ExpensePayment journal write failed: ${write.errors.map((error) => error.code).join(', ')}`);
+      }
+    } catch (error) {
+      if (error instanceof ConflictException) throw error;
+      const message = error instanceof Error ? error.message : 'unknown error';
+      throw new ConflictException(`ExpensePayment journal write failed: WRITER_EXCEPTION (${message})`);
+    }
+  }
+
+  private buildExpensePaymentRecordedJournalDraft(
+    tenantId: string,
+    actorUserId: string,
+    expenseRequest: { id: string; caseId: string; clientId: string; currency: string },
+    expensePayment: JournalableExpensePaymentRow,
+  ): ValidatedJournalEntryDraft {
+    const createdAt = expensePayment.createdAt instanceof Date ? expensePayment.createdAt : new Date(expensePayment.createdAt);
+    const paymentDate = expensePayment.paymentDate instanceof Date ? expensePayment.paymentDate : new Date(expensePayment.paymentDate);
+    const createdAtIso = createdAt.toISOString();
+    const paymentDateIso = paymentDate.toISOString();
+    const effectiveDate = paymentDateIso.slice(0, 10);
+    const sourceVersion = `${createdAtIso}:${expensePayment.id}:RECORDED`;
+    const payload: ExpensePaymentJournalSource['payload'] = {
+      amount: new Prisma.Decimal(expensePayment.amount as Prisma.Decimal.Value).toString(),
+      caseId: expenseRequest.caseId,
+      clientId: expenseRequest.clientId,
+      expenseRequestId: expenseRequest.id,
+      expensePaymentId: expensePayment.id,
+      paymentMethod: expensePayment.method,
+      reference: expensePayment.reference,
+    };
+    const source: ExpensePaymentJournalSource = {
+      tenantId,
+      sourceType: 'EXPENSE_PAYMENT',
+      sourceId: expensePayment.id,
+      sourceVersion,
+      sourceAction: 'recorded',
+      occurredAt: paymentDateIso,
+      effectiveDate,
+      actorId: actorUserId,
+      currency: expenseRequest.currency,
+      sourceHash: createCanonicalSourceHash({
+        tenantId,
+        sourceType: 'EXPENSE_PAYMENT',
+        sourceId: expensePayment.id,
+        sourceAction: 'recorded',
+        sourceVersion,
+        occurredAt: paymentDateIso,
+        effectiveDate,
+        actorId: actorUserId,
+        currency: expenseRequest.currency,
+        payload,
+      }),
+      metadata: {
+        sourceName: 'expense-payment',
+        status: 'RECORDED',
+      },
+      payload,
+    };
+
+    const built = buildAccountingJournal(source);
+    if (!built.ok) {
+      throw new ConflictException(`ExpensePayment journal mapping failed: ${built.errors.map((error) => error.code).join(', ')}`);
+    }
+
+    const validated = validateJournalDraft(built.draft);
+    if (!validated.ok) {
+      throw new ConflictException(`ExpensePayment journal validation failed: ${validated.errors.map((error) => error.code).join(', ')}`);
+    }
+
+    return validated.draft;
+  }
   /**
    * Ödeme kaydet ve durum güncelle
    */
@@ -899,6 +993,15 @@ export class ExpenseRequestService {
         },
       });
       paymentId = createdPayment?.id ?? null;
+      await this.writeExpensePaymentRecordedJournal(tx, tenantId, userId, request, {
+        id: createdPayment.id,
+        expenseRequestId: requestId,
+        amount: createdPayment.amount ?? payment.amount,
+        paymentDate: createdPayment.paymentDate ?? payment.paymentDate,
+        method: createdPayment.method ?? payment.method,
+        reference: createdPayment.reference ?? payment.reference ?? null,
+        createdAt: createdPayment.createdAt ?? payment.paymentDate,
+      });
 
       // ExpenseRequest güncelle
       const updated = await tx.expenseRequest.update({
@@ -953,14 +1056,15 @@ export class ExpenseRequestService {
     });
 
     // Bakiyeye kredi ekle
+    const balancePaymentSourceId = paymentId ?? requestId;
     try {
       await this.caseBalanceService.credit(
         tenantId,
         request.caseId,
         {
           amount: payment.amount,
-          source: `expense_payment:${requestId}`,
-          sourceId: requestId,
+          source: `expense_payment:${balancePaymentSourceId}`,
+          sourceId: balancePaymentSourceId,
           description: `Masraf ödemesi - ${payment.reference || 'Manuel'}`,
         },
         userId,

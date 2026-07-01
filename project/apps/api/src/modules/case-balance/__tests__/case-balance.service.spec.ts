@@ -136,6 +136,34 @@ describe('CaseBalanceService ACCT-1D-1 BalanceLedger journal wiring', () => {
 
     expect(journalWriter.write).not.toHaveBeenCalled();
   });
+  it('does not journal expense_payment BalanceLedger rows but keeps ledger and balance update', async () => {
+    const { tx, journalWriter, service } = buildHarness();
+    tx.balanceLedger.create.mockResolvedValue({
+      id: 'bl-expense-payment',
+      tenantId: 'tenant-1',
+      caseBalanceId: 'case-balance-1',
+      type: 'CREDIT',
+      amount: D(75),
+      currency: 'TRY',
+      source: 'expense_payment:pay-1',
+      sourceId: 'pay-1',
+      description: 'expense payment bridge',
+      createdById: 'user-1',
+      createdAt: CREATED_AT,
+    });
+    tx.caseBalance.update.mockResolvedValue({ balance: D(1075), lowThreshold: D(500) });
+
+    const result = await service.credit('tenant-1', 'case-1', { amount: 75, source: 'expense_payment:pay-1', sourceId: 'pay-1' }, 'user-1');
+
+    expect(result).toEqual(expect.objectContaining({ success: true, newBalance: 1075, ledgerId: 'bl-expense-payment' }));
+    expect(tx.balanceLedger.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ source: 'expense_payment:pay-1', sourceId: 'pay-1', amount: 75 }),
+    }));
+    expect(tx.caseBalance.update).toHaveBeenCalledWith(expect.objectContaining({
+      data: { balance: { increment: 75 } },
+    }));
+    expect(journalWriter.write).not.toHaveBeenCalled();
+  });
   it('does not journal disposition_line correlation carried by sourceId', async () => {
     const { tx, journalWriter, service } = buildHarness();
     tx.balanceLedger.create.mockResolvedValue({

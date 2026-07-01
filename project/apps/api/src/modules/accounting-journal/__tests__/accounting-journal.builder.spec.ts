@@ -849,7 +849,7 @@ describe('AccountingJournalBuilder BalanceLedger recorded contract', () => {
     expect(validateJournalDraft(draft).ok).toBe(true);
   });
 
-  it('rejects ADJUST/REFUND and correlated disposition_line BalanceLedger sources', () => {
+  it('rejects ADJUST/REFUND and correlated BalanceLedger sources', () => {
     const adjust = buildAccountingJournal(balanceLedgerSource({ payload: { ledgerType: 'ADJUST', isIncrease: true } }));
     expect(adjust.ok).toBe(false);
     if (adjust.ok) throw new Error('Expected ADJUST BalanceLedger to be rejected.');
@@ -864,6 +864,11 @@ describe('AccountingJournalBuilder BalanceLedger recorded contract', () => {
     expect(correlated.ok).toBe(false);
     if (correlated.ok) throw new Error('Expected correlated BalanceLedger to be rejected.');
     expect(correlated.errors.map((error) => error.code)).toContain('UNMAPPED_SOURCE');
+
+    const expensePayment = buildAccountingJournal(balanceLedgerSource({ payload: { source: 'expense_payment:pay-1', sourceId: 'pay-1' } }));
+    expect(expensePayment.ok).toBe(false);
+    if (expensePayment.ok) throw new Error('Expected expense_payment BalanceLedger to be rejected.');
+    expect(expensePayment.errors.map((error) => error.code)).toContain('UNMAPPED_SOURCE');
   });
 
   it('business validator requires balanceLedgerId dimension and rejects unrelated dimensions', () => {
