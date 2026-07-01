@@ -41,7 +41,7 @@ const notificationItem = (over: Record<string, unknown> = {}) => ({
     channel: 'EMAIL',
     notificationType: 'GENEL_BILGILENDIRME',
   },
-  body: 'Bu alan UI taraf?nda g?sterilmemeli',
+  body: 'Bu alan UI tarafında gösterilmemeli',
   ...over,
 });
 
@@ -68,14 +68,14 @@ describe('ClientActivityTab', () => {
 
     render(<ClientActivityTab clientId="client-1" />);
 
-    expect(screen.getByText('Aktivite y?kleniyor...')).toBeTruthy();
+    expect(screen.getByText('Aktivite yükleniyor...')).toBeTruthy();
   });
 
   it('renders empty state and calls client timeline endpoint', async () => {
     render(<ClientActivityTab clientId="client-1" />);
 
     await waitFor(() => {
-      expect(screen.getByText('Bu m?vekkil i?in kay?tl? bildirim aktivitesi yok.')).toBeTruthy();
+      expect(screen.getByText('Bu müvekkil için kayıtlı bildirim aktivitesi yok.')).toBeTruthy();
     });
     expect(apiMock.get).toHaveBeenCalledWith(
       '/clients/client-1/timeline?limit=25&sources=client_notification,intake_submission',
@@ -88,7 +88,7 @@ describe('ClientActivityTab', () => {
     render(<ClientActivityTab clientId="client-1" />);
 
     await waitFor(() => {
-      expect(screen.getByText('Bildirim aktivitesi y?klenemedi.')).toBeTruthy();
+      expect(screen.getByText('Bildirim aktivitesi yüklenemedi.')).toBeTruthy();
     });
   });
 
@@ -101,8 +101,8 @@ describe('ClientActivityTab', () => {
     expect(screen.getByText('Email notification: sent')).toBeTruthy();
     expect(screen.getByText('Bilgilendirme')).toBeTruthy();
     expect(screen.getByText('E-posta')).toBeTruthy();
-    expect(screen.getByText('G?nderildi')).toBeTruthy();
-    expect(screen.queryByText('Bu alan UI taraf?nda g?sterilmemeli')).toBeNull();
+    expect(screen.getByText('Gönderildi')).toBeTruthy();
+    expect(screen.queryByText('Bu alan UI tarafında gösterilmemeli')).toBeNull();
   });
 
   it('renders intake submission items in the same activity list', async () => {
@@ -113,7 +113,7 @@ describe('ClientActivityTab', () => {
     await waitFor(() => expect(screen.getByText('Intake submission received')).toBeTruthy());
     expect(screen.getByText('Client submitted the canonical intake form.')).toBeTruthy();
     expect(screen.getByText('Intake')).toBeTruthy();
-    expect(screen.getByText('Yeni g?nderim')).toBeTruthy();
+    expect(screen.getByText('Yeni gönderim')).toBeTruthy();
     expect(screen.getByText('Dosya bilgilendirmesi')).toBeTruthy();
   });
 
@@ -123,7 +123,7 @@ describe('ClientActivityTab', () => {
         notificationItem({
           id: 'n-failed',
           eventType: 'NOTIFICATION_FAILED',
-          title: 'G?nderim hatas?',
+          title: 'Gönderim hatası',
           summary: 'SMS notification: failed',
           status: 'FAILED',
           metadataSafe: {
@@ -136,12 +136,12 @@ describe('ClientActivityTab', () => {
 
     render(<ClientActivityTab clientId="client-1" />);
 
-    await waitFor(() => expect(screen.getByText('G?nderim hatas?')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Gönderim hatası')).toBeTruthy());
     expect(screen.getByText('SMS notification: failed')).toBeTruthy();
-    expect(screen.getByText('Hat?rlatma')).toBeTruthy();
+    expect(screen.getByText('Hatırlatma')).toBeTruthy();
     expect(screen.getByText('SMS')).toBeTruthy();
-    expect(screen.getByText('Ba?ar?s?z')).toBeTruthy();
-    expect(screen.queryByText('SMTP ba?lant?s? reddedildi')).toBeNull();
+    expect(screen.getByText('Başarısız')).toBeTruthy();
+    expect(screen.queryByText('SMTP bağlantısı reddedildi')).toBeNull();
   });
 
   it('does not introduce mutation controls', async () => {

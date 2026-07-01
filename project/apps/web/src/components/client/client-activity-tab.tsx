@@ -37,15 +37,15 @@ const SOURCE_LABELS: Record<ClientTimelineSource, string> = {
 };
 
 const TYPE_LABELS: Record<string, string> = {
-  MASRAF_ISTEK: 'Masraf iste?i',
+  MASRAF_ISTEK: 'Masraf isteği',
   GENEL_BILGILENDIRME: 'Bilgilendirme',
   RAPOR: 'Rapor',
-  HATIRLATMA: 'Hat?rlatma',
+  HATIRLATMA: 'Hatırlatma',
   TEBRIK: 'Tebrik',
   TEST: 'Test',
-  DIGER: 'Di?er',
+  DIGER: 'Diğer',
   INTAKE_LINK: 'Intake linki',
-  CLIENT_INFO: 'M?vekkil bilgisi',
+  CLIENT_INFO: 'Müvekkil bilgisi',
 };
 
 const CHANNEL_LABELS: Record<string, string> = {
@@ -56,13 +56,13 @@ const CHANNEL_LABELS: Record<string, string> = {
 
 const STATUS_LABELS: Record<string, string> = {
   PENDING: 'Bekliyor',
-  SENT: 'G?nderildi',
+  SENT: 'Gönderildi',
   DELIVERED: 'Teslim edildi',
-  FAILED: 'Ba?ar?s?z',
-  CLIENT_SUBMITTED: 'Yeni g?nderim',
-  IN_REVIEW: '?ncelemede',
-  PARTIALLY_PROMOTED: 'K?smen i?lendi',
-  COMPLETED: 'Tamamland?',
+  FAILED: 'Başarısız',
+  CLIENT_SUBMITTED: 'Yeni gönderim',
+  IN_REVIEW: 'İncelemede',
+  PARTIALLY_PROMOTED: 'Kısmen işlendi',
+  COMPLETED: 'Tamamlandı',
   REJECTED: 'Reddedildi',
 };
 
@@ -152,7 +152,7 @@ export function ClientActivityTab({ clientId }: ClientActivityTabProps) {
     return (
       <div className="flex items-center justify-center py-8 text-sm text-gray-500">
         <Clock className="mr-2 h-4 w-4 animate-spin" />
-        Aktivite y?kleniyor...
+        Aktivite yükleniyor...
       </div>
     );
   }
@@ -161,7 +161,7 @@ export function ClientActivityTab({ clientId }: ClientActivityTabProps) {
     return (
       <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
         <AlertCircle className="h-4 w-4 shrink-0" />
-        Bildirim aktivitesi y?klenemedi.
+        Bildirim aktivitesi yüklenemedi.
       </div>
     );
   }
@@ -169,7 +169,7 @@ export function ClientActivityTab({ clientId }: ClientActivityTabProps) {
   if (items.length === 0) {
     return (
       <p className="py-6 text-center text-sm text-gray-500">
-        Bu m?vekkil i?in kay?tl? bildirim aktivitesi yok.
+        Bu müvekkil için kayıtlı bildirim aktivitesi yok.
       </p>
     );
   }
