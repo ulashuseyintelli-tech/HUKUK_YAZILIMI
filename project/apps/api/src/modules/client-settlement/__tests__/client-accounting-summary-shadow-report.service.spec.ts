@@ -41,6 +41,18 @@ function component(
   return found;
 }
 
+function expensePolicyItem(
+  report: ClientAccountingSummaryShadowReport,
+  componentKey: string,
+) {
+  const found = report.expenseCoveragePolicy.items.find((item) => item.component === componentKey);
+
+  if (!found) {
+    throw new Error(`Missing expense coverage policy item ${componentKey}`);
+  }
+
+  return found;
+}
 describe('ClientAccountingSummaryShadowReportService', () => {
   it('reports journal-supported summary components', () => {
     const report = buildReport();
@@ -131,6 +143,93 @@ describe('ClientAccountingSummaryShadowReportService', () => {
       ]),
     );
     expect(report.nextImplementationTasks[0]).toContain('ACCT-CUTOVER-3C');
+  });
+
+
+  it('reports missing expense request source policy', () => {
+    const report = buildReport();
+    const item = expensePolicyItem(report, 'expenseRequested');
+
+    expect(item).toEqual(
+      expect.objectContaining({
+        responsePath: 'clientScoped.expenseRequested',
+        coverage: 'MISSING_SOURCE',
+        requiredSources: ['EXPENSE_REQUEST'],
+        requiredActions: ['recorded'],
+        requiredDimensions: expect.arrayContaining(['tenantId', 'clientId', 'caseId', 'expenseRequestId', 'currency']),
+        supportedSources: [],
+        blockerCodes: ['EXPENSE_REQUEST_JOURNAL_COVERAGE_MISSING'],
+        gapCodes: ['EXPENSE_REQUEST_JOURNAL_SOURCE_MISSING'],
+      }),
+    );
+  });
+
+  it('reports missing expense payment source policy', () => {
+    const report = buildReport();
+    const item = expensePolicyItem(report, 'expensePaid');
+
+    expect(item).toEqual(
+      expect.objectContaining({
+        responsePath: 'clientScoped.expensePaid',
+        coverage: 'MISSING_SOURCE',
+        requiredSources: ['EXPENSE_PAYMENT'],
+        requiredActions: ['recorded'],
+        requiredDimensions: expect.arrayContaining(['expenseRequestId', 'expensePaymentId']),
+        supportedSources: [],
+        blockerCodes: ['EXPENSE_PAYMENT_JOURNAL_COVERAGE_MISSING'],
+        gapCodes: expect.arrayContaining([
+          'EXPENSE_PAYMENT_JOURNAL_SOURCE_MISSING',
+          'EXPENSE_REQUEST_PAID_TOTAL_PROJECTION_ONLY',
+        ]),
+      }),
+    );
+  });
+
+  it('reports missing reimbursement application policy', () => {
+    const report = buildReport();
+    const item = expensePolicyItem(report, 'reimbursementApplication');
+
+    expect(item).toEqual(
+      expect.objectContaining({
+        responsePath: 'clientScoped.expenseUnpaid.reimbursementApplication',
+        coverage: 'MISSING_POLICY',
+        requiredSources: ['COLLECTION_DISPOSITION_EXPENSE_APPLICATION'],
+        requiredActions: ['apply', 'reversal'],
+        requiredDimensions: expect.arrayContaining([
+          'expenseRequestId',
+          'collectionDispositionId',
+          'collectionDispositionLineId',
+          'reimbursementScope',
+        ]),
+        supportedSources: ['COLLECTION_DISPOSITION_LINE'],
+        blockerCodes: expect.arrayContaining([
+          'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_COVERAGE_MISSING',
+          'EXPENSE_REIMBURSEMENT_REVERSAL_JOURNAL_POLICY_MISSING',
+        ]),
+        gapCodes: ['EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_SOURCE_MISSING'],
+      }),
+    );
+  });
+
+  it('keeps overall expense policy and summary primary readiness blocked', () => {
+    const report = buildReport();
+
+    expect(report.expenseCoveragePolicy.status).toBe('BLOCKED');
+    expect(report.expenseCoveragePolicy.items.map((item) => item.component)).toEqual([
+      'expenseRequested',
+      'expensePaid',
+      'expenseUnpaid',
+      'reimbursementApplication',
+    ]);
+    expect(report.expenseCoveragePolicy.blockerCodes).toEqual(
+      expect.arrayContaining([
+        'EXPENSE_REQUEST_JOURNAL_COVERAGE_MISSING',
+        'EXPENSE_PAYMENT_JOURNAL_COVERAGE_MISSING',
+        'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_COVERAGE_MISSING',
+      ]),
+    );
+    expect(report.candidateStatus).toBe('BLOCKED');
+    expect(report.safeForPrimaryCutover).toBe(false);
   });
 
   it('reports matched journal-derived values for supported summary components', async () => {

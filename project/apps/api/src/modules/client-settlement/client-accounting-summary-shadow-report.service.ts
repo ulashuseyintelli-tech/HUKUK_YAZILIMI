@@ -30,9 +30,33 @@ export type ClientAccountingSummaryShadowJournalSource =
   | 'COLLECTION_DISPOSITION_LINE'
   | 'CLIENT_PAYOUT'
   | 'CLIENT_OFFSET'
-  | 'BALANCE_LEDGER';
+  | 'BALANCE_LEDGER'
+  | 'EXPENSE_REQUEST'
+  | 'EXPENSE_PAYMENT'
+  | 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION';
 
 export type ClientAccountingSummaryShadowValueStatus = 'MATCH' | 'MISMATCH' | 'NOT_COMPUTED';
+
+export type ClientAccountingSummaryExpensePolicyCoverage = 'MISSING_SOURCE' | 'MISSING_POLICY';
+
+export interface ClientAccountingSummaryExpenseCoveragePolicyItem {
+  component: 'expenseRequested' | 'expensePaid' | 'expenseUnpaid' | 'reimbursementApplication';
+  responsePath: string;
+  coverage: ClientAccountingSummaryExpensePolicyCoverage;
+  requiredSources: ClientAccountingSummaryShadowJournalSource[];
+  requiredActions: string[];
+  requiredDimensions: string[];
+  supportedSources: ClientAccountingSummaryShadowJournalSource[];
+  blockerCodes: string[];
+  gapCodes: string[];
+}
+
+export interface ClientAccountingSummaryExpenseCoveragePolicy {
+  status: 'BLOCKED';
+  items: ClientAccountingSummaryExpenseCoveragePolicyItem[];
+  blockerCodes: string[];
+  gapCodes: string[];
+}
 
 export interface ClientAccountingSummaryShadowLegacyClientScopedValues {
   payableNet: string;
@@ -87,6 +111,7 @@ export interface ClientAccountingSummaryShadowReport {
   candidateStatus: ClientAccountingSummaryShadowCandidateStatus;
   safeForPrimaryCutover: false;
   components: ClientAccountingSummaryShadowComponent[];
+  expenseCoveragePolicy: ClientAccountingSummaryExpenseCoveragePolicy;
   supportedValueSummary: ClientAccountingSummaryShadowSupportedValueSummary;
   blockerCodes: string[];
   gapCodes: string[];
@@ -108,6 +133,69 @@ interface SupportedJournalLine {
 const ZERO = new Prisma.Decimal(0);
 const SUPPORTED_COMPONENT_KEYS = ['payableNet', 'paidToClient', 'offsetApplied'] as const;
 const VALUE_MISMATCH_BLOCKER = 'SUMMARY_SUPPORTED_COMPONENT_VALUE_MISMATCH';
+
+const EXPENSE_COVERAGE_POLICY_ITEMS: ClientAccountingSummaryExpenseCoveragePolicyItem[] = [
+  {
+    component: 'expenseRequested',
+    responsePath: 'clientScoped.expenseRequested',
+    coverage: 'MISSING_SOURCE',
+    requiredSources: ['EXPENSE_REQUEST'],
+    requiredActions: ['recorded'],
+    requiredDimensions: ['tenantId', 'clientId', 'caseId', 'expenseRequestId', 'currency'],
+    supportedSources: [],
+    blockerCodes: ['EXPENSE_REQUEST_JOURNAL_COVERAGE_MISSING'],
+    gapCodes: ['EXPENSE_REQUEST_JOURNAL_SOURCE_MISSING'],
+  },
+  {
+    component: 'expensePaid',
+    responsePath: 'clientScoped.expensePaid',
+    coverage: 'MISSING_SOURCE',
+    requiredSources: ['EXPENSE_PAYMENT'],
+    requiredActions: ['recorded'],
+    requiredDimensions: ['tenantId', 'clientId', 'caseId', 'expenseRequestId', 'expensePaymentId', 'currency'],
+    supportedSources: [],
+    blockerCodes: ['EXPENSE_PAYMENT_JOURNAL_COVERAGE_MISSING'],
+    gapCodes: ['EXPENSE_PAYMENT_JOURNAL_SOURCE_MISSING', 'EXPENSE_REQUEST_PAID_TOTAL_PROJECTION_ONLY'],
+  },
+  {
+    component: 'expenseUnpaid',
+    responsePath: 'clientScoped.expenseUnpaid',
+    coverage: 'MISSING_POLICY',
+    requiredSources: ['EXPENSE_REQUEST', 'EXPENSE_PAYMENT', 'CLIENT_OFFSET', 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION'],
+    requiredActions: ['recorded', 'apply', 'reversal'],
+    requiredDimensions: ['tenantId', 'clientId', 'caseId', 'expenseRequestId', 'currency'],
+    supportedSources: ['CLIENT_OFFSET'],
+    blockerCodes: [
+      'EXPENSE_REQUEST_JOURNAL_COVERAGE_MISSING',
+      'EXPENSE_PAYMENT_JOURNAL_COVERAGE_MISSING',
+      'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_COVERAGE_MISSING',
+    ],
+    gapCodes: ['EXPENSE_REQUEST_JOURNAL_SOURCE_MISSING', 'EXPENSE_PAYMENT_JOURNAL_SOURCE_MISSING'],
+  },
+  {
+    component: 'reimbursementApplication',
+    responsePath: 'clientScoped.expenseUnpaid.reimbursementApplication',
+    coverage: 'MISSING_POLICY',
+    requiredSources: ['COLLECTION_DISPOSITION_EXPENSE_APPLICATION'],
+    requiredActions: ['apply', 'reversal'],
+    requiredDimensions: [
+      'tenantId',
+      'clientId',
+      'caseId',
+      'expenseRequestId',
+      'collectionDispositionId',
+      'collectionDispositionLineId',
+      'reimbursementScope',
+      'currency',
+    ],
+    supportedSources: ['COLLECTION_DISPOSITION_LINE'],
+    blockerCodes: [
+      'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_COVERAGE_MISSING',
+      'EXPENSE_REIMBURSEMENT_REVERSAL_JOURNAL_POLICY_MISSING',
+    ],
+    gapCodes: ['EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_SOURCE_MISSING'],
+  },
+];
 
 const SUMMARY_COMPONENTS: ClientAccountingSummaryShadowComponent[] = [
   {
@@ -332,6 +420,7 @@ export class ClientAccountingSummaryShadowReportService {
     shadowValues: ClientAccountingSummaryShadowLegacyClientScopedValues | null,
   ): ClientAccountingSummaryShadowReport {
     const components = SUMMARY_COMPONENTS.map((component) => cloneComponent(component));
+    const expenseCoveragePolicy = buildExpenseCoveragePolicy();
     applySupportedValueComparisons(components, request.legacyClientScoped, shadowValues);
     const supportedValueSummary = summarizeSupportedValueComparisons(components);
 
@@ -346,15 +435,39 @@ export class ClientAccountingSummaryShadowReportService {
       candidateStatus: 'BLOCKED',
       safeForPrimaryCutover: false,
       components,
+      expenseCoveragePolicy,
       supportedValueSummary,
       blockerCodes: uniqueSorted([
         ...components.flatMap((component) => component.blockerCodes),
+        ...expenseCoveragePolicy.blockerCodes,
         ...supportedValueSummary.blockerCodes,
       ]),
-      gapCodes: uniqueSorted(components.flatMap((component) => component.gapCodes)),
+      gapCodes: uniqueSorted([
+        ...components.flatMap((component) => component.gapCodes),
+        ...expenseCoveragePolicy.gapCodes,
+      ]),
       nextImplementationTasks: [...NEXT_IMPLEMENTATION_TASKS],
     };
   }
+}
+
+function buildExpenseCoveragePolicy(): ClientAccountingSummaryExpenseCoveragePolicy {
+  const items = EXPENSE_COVERAGE_POLICY_ITEMS.map((item) => ({
+    ...item,
+    requiredSources: [...item.requiredSources],
+    requiredActions: [...item.requiredActions],
+    requiredDimensions: [...item.requiredDimensions],
+    supportedSources: [...item.supportedSources],
+    blockerCodes: [...item.blockerCodes],
+    gapCodes: [...item.gapCodes],
+  }));
+
+  return {
+    status: 'BLOCKED',
+    items,
+    blockerCodes: uniqueSorted(items.flatMap((item) => item.blockerCodes)),
+    gapCodes: uniqueSorted(items.flatMap((item) => item.gapCodes)),
+  };
 }
 
 function cloneComponent(component: ClientAccountingSummaryShadowComponent): ClientAccountingSummaryShadowComponent {
