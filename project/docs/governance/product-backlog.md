@@ -298,7 +298,7 @@ Depends On: ACCT-1
 Unlock Condition: Journal Engine posting çekirdeği hazır
 Estimated Size: M (Codex BE)
 Related Modules: client-settlement (offset/payout), accounting journal
-Status: BACKLOG
+Status: READY FOR OWNER CLOSURE (ACCT-4 closure gate merged: `project/docs/finance/acct-4-offset-payout-closure-gate.md`; design gate + ACCT-4A service contract lock complete; #718 squash `886f3cf634bec5bb7b0b24854057ab7d223f31ea`, final canonical HEAD difference explained by later web-only #719)
 
 ID: ACCT-5
 Title: Financial Statements (PHASE 5)
