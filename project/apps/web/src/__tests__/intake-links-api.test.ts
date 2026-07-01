@@ -28,6 +28,18 @@ describe("intake link api (staff, AUTH VAR)", () => {
     expect(body.clientId).toBe("cl1");
     expect(body.scope).toEqual(["ADDRESS", "INCOME_SOURCE"]);
   });
+  it("createClientWorkspaceIntakeLink → POST workspace URL + Authorization Bearer + gövdede clientId yok", async () => {
+    const fn = mockFetch(true, { data: { link: { id: "l2" }, rawToken: "r2", intakeUrl: "u2" } });
+    const result = await api.createClientWorkspaceIntakeLink("cl1", "c1", { scope: ["ADDRESS"] });
+    const [url, opts] = fn.mock.calls[0];
+    expect(String(url)).toContain("/api/clients/cl1/cases/c1/intake-links");
+    expect(opts.method).toBe("POST");
+    expect((opts.headers as Record<string, string>).Authorization).toBe("Bearer test-token");
+    const body = JSON.parse(opts.body);
+    expect(body).toEqual({ scope: ["ADDRESS"] });
+    expect(body.clientId).toBeUndefined();
+    expect(result.intakeUrl).toBe("u2");
+  });
 
   it("listIntakeLinks → GET + Authorization Bearer + status query", async () => {
     const fn = mockFetch(true, []);

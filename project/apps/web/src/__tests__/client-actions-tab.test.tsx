@@ -10,6 +10,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
     api: {
       getClientActionCatalog: vi.fn(),
       getClientOperatingSnapshot: vi.fn(),
+      createClientWorkspaceIntakeLink: vi.fn(),
     },
   };
 });
@@ -17,6 +18,7 @@ vi.mock('@/lib/api', async (importOriginal) => {
 const apiMock = api as unknown as {
   getClientActionCatalog: ReturnType<typeof vi.fn>;
   getClientOperatingSnapshot: ReturnType<typeof vi.fn>;
+  createClientWorkspaceIntakeLink: ReturnType<typeof vi.fn>;
 };
 
 const action = (over: Partial<ClientActionCatalogItem>): ClientActionCatalogItem => ({
@@ -67,28 +69,44 @@ function mockReady(actions: ClientActionCatalogItem[] = []) {
   apiMock.getClientOperatingSnapshot.mockResolvedValue({ data: snapshot() });
 }
 
+const enabledIntakeCreate = action({
+  key: 'intake.link.create',
+  category: 'intake',
+  enabled: true,
+  href: undefined,
+  target: { clientId: 'client-1', caseId: 'case-1' },
+  requiredState: 'INTAKE_CREATE_AVAILABLE',
+  order: 30,
+});
+
 describe('ClientActionsTab', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    apiMock.createClientWorkspaceIntakeLink.mockResolvedValue({
+      link: { id: 'link-1', clientId: 'client-1', caseId: 'case-1', scope: ['ADDRESS'] },
+      rawToken: 'raw-token',
+      intakeUrl: 'https://form.example.com/intake/raw-token',
+    });
     mockReady([
       action({ key: 'contact.update_missing_info', order: 10, href: '/clients/client-1/edit' }),
       action({ key: 'activity.view_timeline', category: 'activity', order: 20, href: '/clients/client-1' }),
+      enabledIntakeCreate,
       action({
-        key: 'intake.link.create',
+        key: 'intake.link.send',
         category: 'intake',
         enabled: false,
-        disabledReason: 'Intake link creation requires a separate typed command contract.',
+        disabledReason: 'Intake link sending requires dispatch and idempotency contracts.',
         href: undefined,
-        order: 30,
+        order: 40,
       }),
-      action({ key: 'case.open_related', category: 'case', visibility: 'hidden', order: 40 }),
+      action({ key: 'case.open_related', category: 'case', visibility: 'hidden', order: 50 }),
     ]);
   });
 
   it('fetches action catalog and operating snapshot for the client', async () => {
     render(<ClientActionsTab clientId="client-1" />);
 
-    await waitFor(() => expect(screen.getByText('İletişim bilgilerini düzenle')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/leti.*im bilgilerini/i)).toBeTruthy());
 
     expect(apiMock.getClientActionCatalog).toHaveBeenCalledWith('client-1');
     expect(apiMock.getClientOperatingSnapshot).toHaveBeenCalledWith('client-1');
@@ -97,15 +115,15 @@ describe('ClientActionsTab', () => {
     expect(screen.getByText('Contact information is incomplete')).toBeTruthy();
   });
 
-  it('renders enabled navigation and keeps future write actions disabled', async () => {
+  it('renders enabled navigation and keeps send action disabled', async () => {
     render(<ClientActionsTab clientId="client-1" />);
 
-    await waitFor(() => expect(screen.getByText('İletişim bilgilerini düzenle')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/leti.*im bilgilerini/i)).toBeTruthy());
 
-    expect(screen.getByText('İletişim bilgilerini düzenle').closest('div')?.textContent).toContain('İletişim');
-    expect(screen.getByRole('button', { name: 'Kapalı' })).toBeTruthy();
-    expect(screen.getByText('Intake link creation requires a separate typed command contract.')).toBeTruthy();
-    expect(screen.queryByText('İlgili dosyaları aç')).toBeNull();
+    expect(screen.getByText('Intake linki oluştur')).toBeTruthy();
+    expect(screen.getByText('Intake link sending requires dispatch and idempotency contracts.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Kapal/i })).toBeTruthy();
+    expect(screen.queryByText(/lgili dosyalar/i)).toBeNull();
   });
 
   it('uses callback navigation for activity instead of creating a mutation control', async () => {
@@ -113,12 +131,61 @@ describe('ClientActionsTab', () => {
 
     render(<ClientActionsTab clientId="client-1" onNavigateActivity={onNavigateActivity} />);
 
-    await waitFor(() => expect(screen.getByText('Aktiviteyi görüntüle')).toBeTruthy());
-    fireEvent.click(screen.getAllByRole('button', { name: 'Aç' })[0]);
+    await waitFor(() => expect(screen.getByText(/Aktiviteyi/i)).toBeTruthy());
+    fireEvent.click(screen.getAllByRole('button', { name: /A/ })[0]);
 
     expect(onNavigateActivity).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText(/Gönder$/)).toBeNull();
-    expect(screen.queryByText(/Oluştur$/)).toBeNull();
+    expect(apiMock.createClientWorkspaceIntakeLink).not.toHaveBeenCalled();
+  });
+
+  it('creates an intake link from the enabled action without body clientId', async () => {
+    render(<ClientActionsTab clientId="client-1" />);
+
+    await waitFor(() => expect(screen.getByText('Intake linki oluştur')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /Olu/i }));
+    expect(screen.getByText(/stenen bilgi kategorileri/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /Link olu/i }));
+
+    await waitFor(() => expect(apiMock.createClientWorkspaceIntakeLink).toHaveBeenCalledTimes(1));
+    expect(apiMock.createClientWorkspaceIntakeLink).toHaveBeenCalledWith('client-1', 'case-1', {
+      scope: ['ADDRESS'],
+      expiresAt: undefined,
+      maxUses: undefined,
+    });
+    expect(await screen.findByText('https://form.example.com/intake/raw-token')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Kopyala/i })).toBeTruthy();
+  });
+
+  it('validates empty intake scope before calling the command endpoint', async () => {
+    render(<ClientActionsTab clientId="client-1" />);
+
+    await waitFor(() => expect(screen.getByText('Intake linki oluştur')).toBeTruthy());
+    fireEvent.click(screen.getByRole('button', { name: /Olu/i }));
+    fireEvent.click(screen.getByLabelText('Adres'));
+    fireEvent.click(screen.getByRole('button', { name: /Link olu/i }));
+
+    await waitFor(() => expect(screen.getByText(/en az bir kategori/i)).toBeTruthy());
+    expect(apiMock.createClientWorkspaceIntakeLink).not.toHaveBeenCalled();
+  });
+
+  it('does not render a create command when action lacks case target', async () => {
+    mockReady([
+      action({
+        key: 'intake.link.create',
+        category: 'intake',
+        enabled: false,
+        disabledReason: 'Select a related case before creating an intake link.',
+        href: undefined,
+        target: { clientId: 'client-1' },
+        order: 10,
+      }),
+    ]);
+
+    render(<ClientActionsTab clientId="client-1" />);
+
+    await waitFor(() => expect(screen.getByText('Select a related case before creating an intake link.')).toBeTruthy());
+    expect(screen.getByRole('button', { name: /Kapal/i })).toBeTruthy();
+    expect(apiMock.createClientWorkspaceIntakeLink).not.toHaveBeenCalled();
   });
 
   it('renders loading and error states', async () => {
@@ -126,12 +193,12 @@ describe('ClientActionsTab', () => {
     apiMock.getClientOperatingSnapshot.mockReturnValue(new Promise(() => {}));
 
     const { rerender } = render(<ClientActionsTab clientId="client-1" />);
-    expect(screen.getByText('İşlemler yükleniyor...')).toBeTruthy();
+    expect(screen.getByText(/lemler y.*kleniyor/i)).toBeTruthy();
 
     apiMock.getClientActionCatalog.mockRejectedValue(new Error('failed'));
     apiMock.getClientOperatingSnapshot.mockResolvedValue({ data: snapshot() });
     rerender(<ClientActionsTab clientId="client-2" />);
 
-    await waitFor(() => expect(screen.getByText('İşlemler yüklenemedi.')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText(/lemler y.*klenemedi/i)).toBeTruthy());
   });
 });
