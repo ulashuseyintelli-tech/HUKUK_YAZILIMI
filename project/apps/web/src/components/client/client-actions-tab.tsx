@@ -125,6 +125,23 @@ function severityClass(severity: ClientOperatingSnapshot['signals'][number]['sev
   return 'border-blue-200 bg-blue-50 text-blue-700';
 }
 
+const RETRY_AS_NEW_SIGNAL_KEYS = new Set(['intake.delivery_failed', 'intake.delivery_stuck']);
+
+function isRetryAsNewSignal(signal: ClientOperatingSnapshot['signals'][number]) {
+  return RETRY_AS_NEW_SIGNAL_KEYS.has(signal.key);
+}
+
+function retryAsNewSignalDetail(signal: ClientOperatingSnapshot['signals'][number]) {
+  if (signal.key === 'intake.delivery_stuck') {
+    return 'Önceki gönderim tamamlanmadan kaldı. Bu işlem aynı linki yeniden göndermez; yeni bağlantı oluşturur ve yeni e-posta gönderimi dener.';
+  }
+  return 'Önceki gönderim başarısız oldu. Bu işlem aynı linki yeniden göndermez; yeni bağlantı oluşturur ve yeni e-posta gönderimi dener.';
+}
+
+function retryAsNewFormNotice(signal: ClientOperatingSnapshot['signals'][number]) {
+  const prefix = signal.key === 'intake.delivery_stuck' ? 'Önceki gönderim tamamlanmadan kaldı.' : 'Önceki gönderim başarısız oldu.';
+  return `${prefix} Yeni bir intake bağlantısı oluşturulacak ve yeni e-posta gönderimi denenecek. Eski link otomatik iptal edilmez.`;
+}
 function disabledText(item: ClientActionCatalogItem) {
   return item.disabledReason || item.requiredState || 'Bu işlem sonraki fazda açılacak.';
 }
@@ -139,6 +156,7 @@ export function ClientActionsTab({ clientId, onNavigateActivity }: ClientActions
   const [state, setState] = useState<LoadState>('loading');
   const [actions, setActions] = useState<ClientActionCatalogItem[]>([]);
   const [snapshot, setSnapshot] = useState<ClientOperatingSnapshot | null>(null);
+  const [retryOpenRequest, setRetryOpenRequest] = useState(0);
 
   const refreshModels = useCallback(async () => {
     const [catalog, snap] = await Promise.all([api.getClientActionCatalog(clientId), api.getClientOperatingSnapshot(clientId)]);
@@ -171,6 +189,8 @@ export function ClientActionsTab({ clientId, onNavigateActivity }: ClientActions
   }, [clientId]);
 
   const enabledCount = useMemo(() => actions.filter((item) => item.enabled).length, [actions]);
+  const retryAsNewSignal = useMemo(() => snapshot?.signals.find(isRetryAsNewSignal) ?? null, [snapshot]);
+  const retryActionAvailable = useMemo(() => actions.some((item) => item.key === 'intake.link.create' && item.enabled && !!item.target?.caseId), [actions]);
 
   if (state === 'loading') {
     return (
@@ -222,15 +242,31 @@ export function ClientActionsTab({ clientId, onNavigateActivity }: ClientActions
 
       {snapshot?.signals.length ? (
         <div className="space-y-2">
-          {snapshot.signals.map((signal) => (
-            <div key={`${signal.key}-${signal.target.caseId ?? 'client'}`} className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${severityClass(signal.severity)}`}>
-              <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
-              <div>
-                <p className="font-medium">{signal.label}</p>
-                <p className="text-xs opacity-80">{signal.description}</p>
+          {snapshot.signals.map((signal) => {
+            const retrySignal = isRetryAsNewSignal(signal);
+            return (
+              <div key={`${signal.key}-${signal.target.caseId ?? 'client'}`} className={`flex items-start gap-2 rounded-lg border px-3 py-2 text-sm ${severityClass(signal.severity)}`}>
+                <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">{signal.label}</p>
+                  <p className="text-xs opacity-80">{signal.description}</p>
+                  {retrySignal && (
+                    <div className="mt-2 space-y-2">
+                      <p className="text-xs opacity-90">{retryAsNewSignalDetail(signal)} Eski link otomatik iptal edilmez.</p>
+                      <button
+                        type="button"
+                        disabled={!retryActionAvailable}
+                        onClick={() => setRetryOpenRequest((value) => value + 1)}
+                        className="rounded-md border border-amber-300 bg-white px-3 py-1 text-xs font-medium text-amber-800 hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {retryActionAvailable ? 'Yeni link oluştur ve e-posta ile gönder' : 'Intake link oluşturma için ilgili dosya seçimi gerekli'}
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         <div className="flex items-center gap-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-600">
@@ -238,10 +274,16 @@ export function ClientActionsTab({ clientId, onNavigateActivity }: ClientActions
           Operasyonel uyarı yok.
         </div>
       )}
-
       <div className="grid gap-3 md:grid-cols-2">
         {actions.map((item) => (
-          <ActionItem key={item.key} item={item} onNavigateActivity={onNavigateActivity} onRefreshModels={refreshModels} />
+          <ActionItem
+            key={item.key}
+            item={item}
+            onNavigateActivity={onNavigateActivity}
+            onRefreshModels={refreshModels}
+            retryAsNewSignal={item.key === 'intake.link.create' ? retryAsNewSignal : null}
+            retryOpenRequest={item.key === 'intake.link.create' ? retryOpenRequest : 0}
+          />
         ))}
       </div>
     </div>
@@ -287,10 +329,14 @@ function ActionItem({
   item,
   onNavigateActivity,
   onRefreshModels,
+  retryAsNewSignal,
+  retryOpenRequest,
 }: {
   item: ClientActionCatalogItem;
   onNavigateActivity?: () => void;
   onRefreshModels: () => Promise<void>;
+  retryAsNewSignal?: ClientOperatingSnapshot['signals'][number] | null;
+  retryOpenRequest: number;
 }) {
   const label = ACTION_LABELS[item.key] || item.label;
   const description = ACTION_DESCRIPTIONS[item.key] || item.description;
@@ -399,6 +445,14 @@ function ActionItem({
     }
   };
 
+  useEffect(() => {
+    if (!retryAsNewSignal || retryOpenRequest < 1 || !canCreateIntakeLink) return;
+    setFormOpen(true);
+    setCommandError('');
+    setCreated(null);
+    setDeliveryResult(null);
+  }, [canCreateIntakeLink, retryAsNewSignal, retryOpenRequest]);
+
   const isBusy = runningCommand !== null;
 
   return (
@@ -457,6 +511,13 @@ function ActionItem({
 
       {canCreateIntakeLink && formOpen && (
         <form onSubmit={handleCreateIntakeLink} className="mt-4 space-y-3 rounded-lg border border-blue-100 bg-blue-50/40 p-3">
+          {retryAsNewSignal && (
+            <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+              <p className="font-medium">Yeniden yeni link oluştur ve gönder</p>
+              <p className="mt-1">{retryAsNewFormNotice(retryAsNewSignal)}</p>
+              <p className="mt-1">Bu mevcut linki yeniden gönderme veya aynı link retry işlemi değildir.</p>
+            </div>
+          )}
           <div>
             <p className="text-xs font-medium text-gray-700">İstenen bilgi kategorileri</p>
             <div className="mt-2 grid gap-1.5 sm:grid-cols-2">

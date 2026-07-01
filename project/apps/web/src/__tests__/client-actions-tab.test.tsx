@@ -183,6 +183,49 @@ describe('ClientActionsTab', () => {
     expect(apiMock.getClientOperatingSnapshot).toHaveBeenCalledTimes(2);
   });
 
+  it.each<[string, string, RegExp]>([
+    ['intake.delivery_failed', 'Intake link delivery failed', /Önceki g.nderim ba.ar.s.z oldu/i],
+    ['intake.delivery_stuck', 'Intake link delivery is stuck', /Önceki g.nderim tamamlanmadan kald./i],
+  ])('opens the retry-as-new flow from %s signal without using existing-link resend', async (key, label, copyMatcher) => {
+    apiMock.getClientOperatingSnapshot.mockResolvedValue({
+      data: snapshot({
+        signals: [
+          {
+            key,
+            label,
+            description: 'Delivery needs manual attention.',
+            severity: 'warning',
+            actionKey: 'intake.link.create',
+            target: { clientId: 'client-1', caseId: 'case-1' },
+          },
+        ],
+      }),
+    });
+
+    render(<ClientActionsTab clientId="client-1" />);
+
+    await waitFor(() => expect(screen.getByText(label)).toBeTruthy());
+    expect(screen.getByText(copyMatcher)).toBeTruthy();
+    expect(screen.getByText(/Eski link otomatik iptal edilmez/i)).toBeTruthy();
+    expect(screen.getByText('Intake link sending requires dispatch and idempotency contracts.')).toBeTruthy();
+    expect(screen.getByRole('button', { name: /Kapal/i })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole('button', { name: /Yeni link olu.tur ve e-posta ile g.nder/i }));
+
+    await waitFor(() => expect(screen.getByText(/Yeniden yeni link olu.tur ve g.nder/i)).toBeTruthy());
+    expect(screen.getByText(/mevcut linki yeniden g.nderme veya ayn. link retry/i)).toBeTruthy();
+    fireEvent.click(screen.getByRole('button', { name: /^Link olu.tur ve e-posta ile g.nder$/i }));
+
+    await waitFor(() => expect(apiMock.createClientWorkspaceIntakeLinkAndDeliver).toHaveBeenCalledTimes(1));
+    expect(apiMock.createClientWorkspaceIntakeLinkAndDeliver).toHaveBeenCalledWith('client-1', 'case-1', {
+      scope: ['ADDRESS'],
+      expiresAt: undefined,
+      maxUses: undefined,
+    });
+    expect(apiMock.createClientWorkspaceIntakeLink).not.toHaveBeenCalled();
+    expect(await screen.findByText(/e-posta g.nderildi/i)).toBeTruthy();
+    expect(screen.queryByText('https://form.example.com/intake/raw-token')).toBeNull();
+  });
   it('shows failed delivery status without optimistic success', async () => {
     apiMock.createClientWorkspaceIntakeLinkAndDeliver.mockResolvedValueOnce({
       link: { id: 'link-2', clientId: 'client-1', caseId: 'case-1', scope: ['ADDRESS'] },
