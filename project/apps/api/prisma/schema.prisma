@@ -3465,6 +3465,7 @@ model ExpenseRequest {
 
   // YENİ: Ödeme kayıtları
   payments ExpensePayment[]
+  paymentReversals ExpensePaymentReversal[]
 
   // YENİ: Audit log
   auditLogs ExpenseAuditLog[]
@@ -3578,6 +3579,7 @@ model ExpensePayment {
   id               String         @id @default(cuid())
   expenseRequestId String
   expenseRequest   ExpenseRequest @relation(fields: [expenseRequestId], references: [id], onDelete: Cascade)
+  reversals        ExpensePaymentReversal[]
 
   // Ödeme Bilgileri
   amount      Decimal  @db.Decimal(15, 2)
@@ -3594,6 +3596,64 @@ model ExpensePayment {
 
   @@index([expenseRequestId])
   @@index([paymentDate])
+}
+
+enum ExpensePaymentReversalKind {
+  REVERSAL
+}
+
+enum ExpensePaymentReversalStatus {
+  PENDING
+  JOURNAL_REVERSED
+  BALANCE_REVERSED
+  COMPLETED
+  FAILED
+}
+
+model ExpensePaymentReversal {
+  id       String @id @default(cuid())
+  tenantId String
+
+  expensePaymentId String
+  expensePayment   ExpensePayment @relation(fields: [expensePaymentId], references: [id], onDelete: Restrict)
+
+  expenseRequestId String
+  expenseRequest   ExpenseRequest @relation(fields: [expenseRequestId], references: [id], onDelete: Restrict)
+
+  kind   ExpensePaymentReversalKind   @default(REVERSAL)
+  status ExpensePaymentReversalStatus @default(PENDING)
+
+  amount   Decimal @db.Decimal(15, 2)
+  currency String  @default("TRY")
+
+  originalJournalEntryId String                 @unique
+  originalJournalEntry   AccountingJournalEntry @relation("ExpensePaymentReversalOriginalJournalEntry", fields: [originalJournalEntryId], references: [id], onDelete: Restrict)
+  reversalJournalEntryId String?                @unique
+  reversalJournalEntry   AccountingJournalEntry? @relation("ExpensePaymentReversalReversalJournalEntry", fields: [reversalJournalEntryId], references: [id], onDelete: Restrict)
+
+  originalBalanceLedgerId String?        @unique
+  originalBalanceLedger   BalanceLedger? @relation("ExpensePaymentReversalOriginalBalanceLedger", fields: [originalBalanceLedgerId], references: [id], onDelete: Restrict)
+  reversalBalanceLedgerId String?        @unique
+  reversalBalanceLedger   BalanceLedger? @relation("ExpensePaymentReversalReversalBalanceLedger", fields: [reversalBalanceLedgerId], references: [id], onDelete: Restrict)
+
+  idempotencyKey String
+  reason         String   @db.Text
+  requestedById  String
+  requestedAt    DateTime @default(now())
+  completedAt    DateTime?
+  failureCode    String?
+  metadata       Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([tenantId, expensePaymentId, kind])
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId])
+  @@index([expensePaymentId])
+  @@index([expenseRequestId])
+  @@index([tenantId, status])
+  @@index([requestedAt])
 }
 
 // Masraf Audit Log
@@ -4006,6 +4066,8 @@ model AccountingJournalEntry {
   createdAt DateTime @default(now())
 
   lines AccountingJournalLine[]
+  expensePaymentReversalOriginals ExpensePaymentReversal[] @relation("ExpensePaymentReversalOriginalJournalEntry")
+  expensePaymentReversalResults   ExpensePaymentReversal[] @relation("ExpensePaymentReversalReversalJournalEntry")
 
   @@unique([tenantId, idempotencyKey])
   @@unique([tenantId, sourceType, sourceId, sourceAction], map: "accounting_journal_entry_source_unique")
@@ -5738,6 +5800,8 @@ model BalanceLedger {
   createdById String?
 
   createdAt DateTime @default(now())
+  expensePaymentReversalOriginals ExpensePaymentReversal[] @relation("ExpensePaymentReversalOriginalBalanceLedger")
+  expensePaymentReversalResults   ExpensePaymentReversal[] @relation("ExpensePaymentReversalReversalBalanceLedger")
 
   @@index([tenantId])
   @@index([caseBalanceId])
