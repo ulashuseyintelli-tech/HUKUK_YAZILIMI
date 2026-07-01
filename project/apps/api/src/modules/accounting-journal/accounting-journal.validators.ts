@@ -122,6 +122,8 @@ export function validateJournalBusiness(draft: JournalEntryDraft): JournalValida
       return validateExpensePaymentBusiness(draft);
     case 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION':
       return validateCollectionDispositionExpenseApplicationBusiness(draft);
+    case 'ACCOUNTING_JOURNAL_ENTRY':
+      return validateAccountingJournalEntryBusiness(draft);
     default:
       return { ok: true, draft };
   }
@@ -720,6 +722,42 @@ function validateCollectionDispositionExpenseApplicationLine(
     }));
   }
 }
+function validateAccountingJournalEntryBusiness(draft: JournalEntryDraft): JournalValidationResult {
+  const errors: JournalValidationError[] = [];
+
+  if (draft.sourceAction !== 'reversal') {
+    errors.push(validationError('INVALID_SOURCE_ACTION', 'AccountingJournalEntry journal sourceAction must be reversal.', 'sourceAction', {
+      sourceAction: draft.sourceAction,
+    }));
+  }
+
+  if (draft.entryType !== 'ACCOUNTING_JOURNAL_REVERSAL') {
+    errors.push(validationError('INVALID_SOURCE_ACTION', 'AccountingJournalEntry reversal entryType must be ACCOUNTING_JOURNAL_REVERSAL.', 'entryType', {
+      entryType: draft.entryType,
+    }));
+  }
+
+  if (!draft.reversalOf || draft.reversalOf.journalEntryId !== draft.sourceId) {
+    errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'AccountingJournalEntry reversal must reference the original journal entry id.', 'reversalOf', {
+      sourceId: draft.sourceId,
+      reversalJournalEntryId: draft.reversalOf?.journalEntryId ?? null,
+    }));
+  }
+
+  if (draft.reversalOf?.sourceType === 'ACCOUNTING_JOURNAL_ENTRY' && draft.reversalOf.sourceAction === 'reversal') {
+    errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'AccountingJournalEntry reversal cannot reverse another reversal source.', 'reversalOf', {
+      reversalSourceType: draft.reversalOf.sourceType,
+      reversalSourceAction: draft.reversalOf.sourceAction,
+    }));
+  }
+
+  if (draft.lines.length === 0) {
+    errors.push(validationError('INVALID_LINE_SHAPE', 'AccountingJournalEntry reversal must contain inverse lines.', 'lines'));
+  }
+
+  return errors.length === 0 ? { ok: true, draft } : { ok: false, errors };
+}
+
 function validateClientPayoutBusiness(draft: JournalEntryDraft): JournalValidationResult {
   const errors: JournalValidationError[] = [];
 

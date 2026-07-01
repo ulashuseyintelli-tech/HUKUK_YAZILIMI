@@ -21,6 +21,17 @@ type ExistingJournalEntry = {
   _count: { lines: number };
 };
 
+type OriginalReversalJournalEntry = {
+  id: string;
+  tenantId: string;
+  entryType: string;
+  sourceType: string;
+  sourceId: string;
+  sourceAction: string;
+  reversalOfEntryId: string | null;
+  reversedByEntry: { id: string } | null;
+};
+
 @Injectable()
 export class AccountingJournalWriterService {
   constructor(private readonly prisma: PrismaService) {}
@@ -53,6 +64,11 @@ export class AccountingJournalWriterService {
           existingSourceAction: existingByIdempotency.sourceAction,
         })],
       };
+    }
+
+    const reversalOriginalError = await this.validateReversalOriginal(draft, db);
+    if (reversalOriginalError) {
+      return { ok: false, errors: [reversalOriginalError] };
     }
 
     try {
@@ -111,6 +127,17 @@ export class AccountingJournalWriterService {
       if (isUniqueConflict(error)) {
         const racedExisting = await this.findBySource(draft, db);
         if (racedExisting) return this.replayOrRejectExisting(draft, racedExisting);
+
+        const existingReversal = await this.findByReversalOf(draft, db);
+        if (existingReversal) {
+          return {
+            ok: false,
+            errors: [writerError('REVERSAL_ALREADY_EXISTS', 'Accounting journal original entry already has a reversal.', draft, {
+              existingJournalEntryId: existingReversal.id,
+              originalJournalEntryId: draft.reversalOf?.journalEntryId ?? null,
+            })],
+          };
+        }
       }
       return {
         ok: false,
@@ -119,6 +146,81 @@ export class AccountingJournalWriterService {
         })],
       };
     }
+  }
+
+  private async validateReversalOriginal(draft: ValidatedJournalEntryDraft, db: AccountingJournalWriteClient): Promise<JournalWriterError | null> {
+    if (draft.sourceType !== 'ACCOUNTING_JOURNAL_ENTRY' || draft.sourceAction !== 'reversal') return null;
+
+    const originalJournalEntryId = draft.reversalOf?.journalEntryId ?? null;
+    if (!originalJournalEntryId || originalJournalEntryId !== draft.sourceId) {
+      return writerError('REVERSAL_ORIGINAL_NOT_FOUND', 'Accounting journal reversal requires the original journal entry id.', draft, {
+        reversalJournalEntryId: originalJournalEntryId,
+      });
+    }
+
+    const original = await db.accountingJournalEntry.findUnique({
+      where: { id: originalJournalEntryId },
+      select: originalReversalEntrySelect,
+    }) as OriginalReversalJournalEntry | null;
+
+    if (!original) {
+      return writerError('REVERSAL_ORIGINAL_NOT_FOUND', 'Accounting journal original entry was not found.', draft, {
+        originalJournalEntryId,
+      });
+    }
+
+    if (original.tenantId !== draft.tenantId) {
+      return writerError('TENANT_MISMATCH', 'Accounting journal reversal original entry belongs to a different tenant.', draft, {
+        originalJournalEntryId,
+        originalTenantId: original.tenantId,
+      });
+    }
+
+    if (original.entryType === 'ACCOUNTING_JOURNAL_REVERSAL' || original.reversalOfEntryId) {
+      return writerError('REVERSAL_ORIGINAL_NOT_REVERSIBLE', 'Accounting journal reversal entries cannot be reversed.', draft, {
+        originalJournalEntryId,
+        originalEntryType: original.entryType,
+        originalReversalOfEntryId: original.reversalOfEntryId,
+      });
+    }
+
+    if (original.reversedByEntry) {
+      return writerError('REVERSAL_ALREADY_EXISTS', 'Accounting journal original entry already has a reversal.', draft, {
+        originalJournalEntryId,
+        existingJournalEntryId: original.reversedByEntry.id,
+      });
+    }
+
+    if (
+      !draft.reversalOf ||
+      draft.reversalOf.sourceType !== original.sourceType ||
+      draft.reversalOf.sourceId !== original.sourceId ||
+      draft.reversalOf.sourceAction !== original.sourceAction
+    ) {
+      return writerError('REVERSAL_ORIGINAL_NOT_FOUND', 'Accounting journal reversal original source tuple does not match persisted original entry.', draft, {
+        originalJournalEntryId,
+        expectedSourceType: original.sourceType,
+        expectedSourceId: original.sourceId,
+        expectedSourceAction: original.sourceAction,
+        reversalSourceType: draft.reversalOf?.sourceType ?? null,
+        reversalSourceId: draft.reversalOf?.sourceId ?? null,
+        reversalSourceAction: draft.reversalOf?.sourceAction ?? null,
+      });
+    }
+
+    return null;
+  }
+
+  private async findByReversalOf(draft: ValidatedJournalEntryDraft, db: AccountingJournalWriteClient): Promise<ExistingJournalEntry | null> {
+    if (!draft.reversalOf?.journalEntryId) return null;
+
+    return db.accountingJournalEntry.findFirst({
+      where: {
+        tenantId: draft.tenantId,
+        reversalOfEntryId: draft.reversalOf.journalEntryId,
+      },
+      select: existingEntrySelect,
+    });
   }
 
   private async findBySource(draft: ValidatedJournalEntryDraft, db: AccountingJournalWriteClient): Promise<ExistingJournalEntry | null> {
@@ -174,6 +276,17 @@ const existingEntrySelect = {
   sourceId: true,
   sourceAction: true,
   _count: { select: { lines: true } },
+} as const;
+
+const originalReversalEntrySelect = {
+  id: true,
+  tenantId: true,
+  entryType: true,
+  sourceType: true,
+  sourceId: true,
+  sourceAction: true,
+  reversalOfEntryId: true,
+  reversedByEntry: { select: { id: true } },
 } as const;
 
 function journalMetadataWithContract(draft: ValidatedJournalEntryDraft): Prisma.InputJsonValue {

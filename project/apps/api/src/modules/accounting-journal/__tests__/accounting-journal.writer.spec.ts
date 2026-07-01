@@ -1,6 +1,9 @@
 import { Prisma } from '@prisma/client';
 import { buildAccountingJournal } from '../accounting-journal.builder';
 import type {
+  AccountingJournalReversalLinePayload,
+  AccountingJournalReversalPayload,
+  AccountingJournalReversalSource,
   BalanceLedgerJournalSource,
   ClientOffsetJournalSource,
   ClientPayoutJournalSource,
@@ -54,10 +57,113 @@ function draft() {
   return validated.draft;
 }
 
+function accountingJournalReversalLine(overrides: Partial<AccountingJournalReversalLinePayload> = {}): AccountingJournalReversalLinePayload {
+  return {
+    lineNo: overrides.lineNo ?? 1,
+    accountCode: overrides.accountCode ?? 'CLIENT_PAYABLE',
+    direction: overrides.direction ?? 'DEBIT',
+    amount: overrides.amount ?? '125.50',
+    currency: overrides.currency ?? 'TRY',
+    caseId: overrides.caseId ?? 'case-1',
+    clientId: overrides.clientId ?? 'client-1',
+    caseClientId: overrides.caseClientId ?? 'cc-1',
+    collectionId: overrides.collectionId ?? 'collection-1',
+    dispositionLineId: overrides.dispositionLineId ?? 'line-1',
+    payoutId: overrides.payoutId ?? null,
+    offsetId: overrides.offsetId ?? null,
+    expenseRequestId: overrides.expenseRequestId ?? null,
+    expensePaymentId: overrides.expensePaymentId ?? null,
+    expenseApplicationId: overrides.expenseApplicationId ?? null,
+    balanceLedgerId: overrides.balanceLedgerId ?? null,
+  };
+}
+
+function accountingJournalReversalSource(
+  overrides: Partial<Omit<AccountingJournalReversalSource, 'payload' | 'sourceType' | 'sourceAction'>> & {
+    payload?: Partial<AccountingJournalReversalPayload>;
+  } = {},
+): AccountingJournalReversalSource {
+  const originalJournalEntryId = overrides.sourceId ?? overrides.payload?.originalJournalEntryId ?? 'journal-original-1';
+  const originalLines = overrides.payload?.originalLines ?? [
+    accountingJournalReversalLine({ lineNo: 1, accountCode: 'CLIENT_PAYABLE', direction: 'DEBIT', amount: '125.50' }),
+    accountingJournalReversalLine({
+      lineNo: 2,
+      accountCode: 'CASH_CLEARING',
+      direction: 'CREDIT',
+      amount: '125.50',
+      caseId: 'case-1',
+      clientId: null,
+      caseClientId: null,
+      collectionId: null,
+      dispositionLineId: null,
+      payoutId: 'payout-1',
+    }),
+  ];
+
+  return {
+    tenantId: overrides.tenantId ?? 'tenant-1',
+    sourceType: 'ACCOUNTING_JOURNAL_ENTRY',
+    sourceId: originalJournalEntryId,
+    sourceVersion: overrides.sourceVersion ?? `2026-07-01T13:00:00.000Z:${originalJournalEntryId}:reversal`,
+    sourceAction: 'reversal',
+    occurredAt: overrides.occurredAt ?? '2026-07-01T13:00:00.000Z',
+    effectiveDate: overrides.effectiveDate ?? '2026-07-01',
+    actorId: overrides.actorId ?? 'user-1',
+    currency: overrides.currency ?? 'TRY',
+    sourceHash: overrides.sourceHash ?? 'hash-generic-reversal',
+    metadata: overrides.metadata ?? { test: true },
+    payload: {
+      originalJournalEntryId,
+      originalEntryType: 'CLIENT_PAYOUT_RECORDED',
+      originalCaseId: 'case-1',
+      originalCurrency: overrides.currency ?? 'TRY',
+      originalSourceType: 'CLIENT_PAYOUT',
+      originalSourceId: 'payout-1',
+      originalSourceAction: 'recorded',
+      originalSourceVersion: '2026-06-30T08:00:00.000Z:payout-1',
+      originalLines,
+      ...(overrides.payload ?? {}),
+    },
+  };
+}
+
+function accountingJournalReversalDraft(sourceOverride: AccountingJournalReversalSource = accountingJournalReversalSource()) {
+  const built = buildAccountingJournal(sourceOverride);
+  expect(built.ok).toBe(true);
+  if (!built.ok) throw new Error('build failed');
+  const validated = validateJournalDraft(built.draft);
+  expect(validated.ok).toBe(true);
+  if (!validated.ok) throw new Error('validation failed');
+  return validated.draft;
+}
+
+function persistedOriginal(overrides: Partial<{
+  id: string;
+  tenantId: string;
+  entryType: string;
+  sourceType: string;
+  sourceId: string;
+  sourceAction: string;
+  reversalOfEntryId: string | null;
+  reversedByEntry: { id: string } | null;
+}> = {}) {
+  return {
+    id: overrides.id ?? 'journal-original-1',
+    tenantId: overrides.tenantId ?? 'tenant-1',
+    entryType: overrides.entryType ?? 'CLIENT_PAYOUT_RECORDED',
+    sourceType: overrides.sourceType ?? 'CLIENT_PAYOUT',
+    sourceId: overrides.sourceId ?? 'payout-1',
+    sourceAction: overrides.sourceAction ?? 'recorded',
+    reversalOfEntryId: Object.prototype.hasOwnProperty.call(overrides, 'reversalOfEntryId') ? overrides.reversalOfEntryId! : null,
+    reversedByEntry: Object.prototype.hasOwnProperty.call(overrides, 'reversedByEntry') ? overrides.reversedByEntry! : null,
+  };
+}
+
 function dbMock() {
   return {
     accountingJournalEntry: {
       findFirst: jest.fn(),
+      findUnique: jest.fn(),
       create: jest.fn(),
     },
   } as any;
@@ -595,5 +701,128 @@ describe('AccountingJournalWriterService expense application source shape', () =
         }),
       }),
     );
+  });
+});
+
+
+describe('AccountingJournalWriterService generic reversal contract', () => {
+  it('creates a generic reversal with reversalOfEntryId after validating the persisted original', async () => {
+    const db = dbMock();
+    const d = accountingJournalReversalDraft();
+    db.accountingJournalEntry.findFirst.mockResolvedValue(null);
+    db.accountingJournalEntry.findUnique.mockResolvedValue(persistedOriginal());
+    db.accountingJournalEntry.create.mockResolvedValue({ id: 'journal-reversal-1', _count: { lines: 2 } });
+    const writer = new AccountingJournalWriterService({} as any);
+
+    const result = await writer.write({ draft: d }, db);
+
+    expect(result).toEqual({
+      ok: true,
+      output: expect.objectContaining({ status: 'CREATED', journalEntryId: 'journal-reversal-1', lineCount: 2 }),
+    });
+    expect(db.accountingJournalEntry.findUnique).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'journal-original-1' },
+    }));
+    expect(db.accountingJournalEntry.create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({
+        sourceType: 'ACCOUNTING_JOURNAL_ENTRY',
+        sourceId: 'journal-original-1',
+        sourceAction: 'reversal',
+        entryType: 'ACCOUNTING_JOURNAL_REVERSAL',
+        reversalOfEntryId: 'journal-original-1',
+        lines: {
+          create: expect.arrayContaining([
+            expect.objectContaining({ accountCode: 'CLIENT_PAYABLE', direction: 'CREDIT' }),
+            expect.objectContaining({ accountCode: 'CASH_CLEARING', direction: 'DEBIT' }),
+          ]),
+        },
+      }),
+    }));
+  });
+
+  it('replays an existing generic reversal through deterministic source idempotency', async () => {
+    const db = dbMock();
+    const d = accountingJournalReversalDraft();
+    db.accountingJournalEntry.findFirst.mockResolvedValueOnce({
+      id: 'journal-reversal-existing',
+      idempotencyKey: d.idempotencyKey,
+      sourceHash: d.sourceHash,
+      sourceType: d.sourceType,
+      sourceId: d.sourceId,
+      sourceAction: d.sourceAction,
+      _count: { lines: 2 },
+    });
+    const writer = new AccountingJournalWriterService({} as any);
+
+    const result = await writer.write({ draft: d }, db);
+
+    expect(result).toEqual({
+      ok: true,
+      output: expect.objectContaining({ status: 'REPLAYED', journalEntryId: 'journal-reversal-existing', lineCount: 2 }),
+    });
+    expect(db.accountingJournalEntry.findUnique).not.toHaveBeenCalled();
+    expect(db.accountingJournalEntry.create).not.toHaveBeenCalled();
+  });
+
+  it('guards missing, cross-tenant, already-reversed, and reversal-of-reversal originals', async () => {
+    const cases: Array<{
+      original: ReturnType<typeof persistedOriginal> | null;
+      expectedCode: string;
+    }> = [
+      { original: null, expectedCode: 'REVERSAL_ORIGINAL_NOT_FOUND' },
+      { original: persistedOriginal({ tenantId: 'tenant-other' }), expectedCode: 'TENANT_MISMATCH' },
+      { original: persistedOriginal({ reversedByEntry: { id: 'journal-reversal-existing' } }), expectedCode: 'REVERSAL_ALREADY_EXISTS' },
+      { original: persistedOriginal({ entryType: 'ACCOUNTING_JOURNAL_REVERSAL' }), expectedCode: 'REVERSAL_ORIGINAL_NOT_REVERSIBLE' },
+      { original: persistedOriginal({ reversalOfEntryId: 'journal-original-parent' }), expectedCode: 'REVERSAL_ORIGINAL_NOT_REVERSIBLE' },
+    ];
+
+    for (const item of cases) {
+      const db = dbMock();
+      db.accountingJournalEntry.findFirst.mockResolvedValue(null);
+      db.accountingJournalEntry.findUnique.mockResolvedValue(item.original);
+      const writer = new AccountingJournalWriterService({} as any);
+
+      const result = await writer.write({ draft: accountingJournalReversalDraft() }, db);
+
+      expect(result).toEqual({ ok: false, errors: [expect.objectContaining({ code: item.expectedCode })] });
+      expect(db.accountingJournalEntry.create).not.toHaveBeenCalled();
+    }
+  });
+
+  it('rejects a persisted original source tuple that does not match the reversal snapshot', async () => {
+    const db = dbMock();
+    db.accountingJournalEntry.findFirst.mockResolvedValue(null);
+    db.accountingJournalEntry.findUnique.mockResolvedValue(persistedOriginal({ sourceId: 'payout-other' }));
+    const writer = new AccountingJournalWriterService({} as any);
+
+    const result = await writer.write({ draft: accountingJournalReversalDraft() }, db);
+
+    expect(result).toEqual({ ok: false, errors: [expect.objectContaining({ code: 'REVERSAL_ORIGINAL_NOT_FOUND' })] });
+    expect(db.accountingJournalEntry.create).not.toHaveBeenCalled();
+  });
+
+  it('reports a reversal relation race as REVERSAL_ALREADY_EXISTS', async () => {
+    const db = dbMock();
+    const d = accountingJournalReversalDraft();
+    db.accountingJournalEntry.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({
+        id: 'journal-reversal-raced',
+        idempotencyKey: 'acct-journal:v1:tenant-1:ACCOUNTING_JOURNAL_ENTRY:journal-original-1:reversal:raced',
+        sourceHash: 'hash-raced',
+        sourceType: 'ACCOUNTING_JOURNAL_ENTRY',
+        sourceId: 'journal-original-1',
+        sourceAction: 'reversal',
+        _count: { lines: 2 },
+      });
+    db.accountingJournalEntry.findUnique.mockResolvedValue(persistedOriginal());
+    db.accountingJournalEntry.create.mockRejectedValueOnce(uniqueConflict());
+    const writer = new AccountingJournalWriterService({} as any);
+
+    const result = await writer.write({ draft: d }, db);
+
+    expect(result).toEqual({ ok: false, errors: [expect.objectContaining({ code: 'REVERSAL_ALREADY_EXISTS' })] });
   });
 });

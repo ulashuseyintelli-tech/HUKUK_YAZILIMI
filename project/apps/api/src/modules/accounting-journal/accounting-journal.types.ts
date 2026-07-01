@@ -202,12 +202,35 @@ export type CollectionDispositionExpenseApplicationJournalSource = JournalSource
   CollectionDispositionExpenseApplicationSourceAction,
   CollectionDispositionExpenseApplicationPayload
 >;
+export interface AccountingJournalReversalLinePayload {
+  lineNo: number;
+  accountCode: AccountingAccountCode;
+  direction: AccountingJournalDirection;
+  amount: MoneyAmount;
+  currency: string;
+  caseId: string | null;
+  clientId: string | null;
+  caseClientId: string | null;
+  collectionId: string | null;
+  dispositionLineId: string | null;
+  payoutId: string | null;
+  offsetId: string | null;
+  expenseRequestId: string | null;
+  expensePaymentId: string | null;
+  expenseApplicationId: string | null;
+  balanceLedgerId: string | null;
+}
+
 export interface AccountingJournalReversalPayload {
   originalJournalEntryId: string;
+  originalEntryType: AccountingJournalEntryType;
+  originalCaseId: string | null;
+  originalCurrency: string;
   originalSourceType: AccountingJournalSourceType;
   originalSourceId: string;
   originalSourceAction: string;
   originalSourceVersion: string | null;
+  originalLines: ReadonlyArray<AccountingJournalReversalLinePayload>;
 }
 
 export interface ManualAdjustmentJournalPayload {
@@ -223,11 +246,19 @@ export interface ManualAdjustmentJournalPayload {
   }>;
 }
 
-export type AccountingJournalEntrySource = JournalSourceBase<
+export type AccountingJournalReversalSource = JournalSourceBase<
   'ACCOUNTING_JOURNAL_ENTRY',
-  'reversal' | 'manual-adjustment',
-  AccountingJournalReversalPayload | ManualAdjustmentJournalPayload
+  'reversal',
+  AccountingJournalReversalPayload
 >;
+
+export type ManualAdjustmentJournalSource = JournalSourceBase<
+  'ACCOUNTING_JOURNAL_ENTRY',
+  'manual-adjustment',
+  ManualAdjustmentJournalPayload
+>;
+
+export type AccountingJournalEntrySource = AccountingJournalReversalSource | ManualAdjustmentJournalSource;
 
 export type JournalSource =
   | ClientOffsetJournalSource
@@ -367,6 +398,7 @@ export type JournalWriterErrorCode =
   | 'SOURCE_HASH_MISMATCH'
   | 'REVERSAL_ALREADY_EXISTS'
   | 'REVERSAL_ORIGINAL_NOT_FOUND'
+  | 'REVERSAL_ORIGINAL_NOT_REVERSIBLE'
   | 'TENANT_MISMATCH'
   | 'DB_WRITE_FAILED';
 
