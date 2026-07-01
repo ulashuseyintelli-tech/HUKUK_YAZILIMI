@@ -1,12 +1,12 @@
 # ACCT-4 Offset / Payout Closure Gate
 
-**Status:** Ready for owner closure.
+**Status:** Closed by owner decision.
 **Scope:** Closure review for ACCT-4 design gate and ACCT-4A contract lock. Documentation/status-only; no runtime, schema, migration, controller, UI, posting, writer, legal ledger, or TBK100 behavior change.
 **Related:** `docs/finance/acct-4-offset-payout-integration-design-gate.md`, PR #718, PR #719, `docs/governance/active-roadmap.md` PHASE 4, `docs/governance/product-backlog.md` ACCT-4.
 
 ## Decision
 
-ACCT-4 can be marked **READY FOR OWNER CLOSURE**.
+ACCT-4 is **CLOSED** by owner decision. Owner karari: ACCT-4 fazi kapatildi. READY FOR OWNER CLOSURE -> CLOSED.
 
 No remaining ACCT-4-specific contract, service-test, documentation, controller-boundary, schema, migration, legal-ledger, or TBK100 blocker was found.
 
@@ -69,4 +69,4 @@ Any future expansion in those areas requires a new design gate or the relevant n
 
 ## Result
 
-ACCT-4 is closure-ready because the design boundary is documented and the live offset/payout journal relationships are regression-protected at service/spec level.
+ACCT-4 is closed by owner decision because the design boundary is documented and the live offset/payout journal relationships are regression-protected at service/spec level.
