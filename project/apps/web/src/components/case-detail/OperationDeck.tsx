@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   FileText, ListTodo, Receipt, Database, FolderOpen, MessageSquare,
   ChevronDown, Plus, AlertTriangle, Clock, Zap, User, Check, X,
@@ -167,6 +167,22 @@ interface RelatedCase {
 }
 
 
+// S8-B FAZ-2 — CaseFeeAgreement (akdi ücret sözleşmesi). Backend otoritesi; FE HESAPLAMAZ.
+interface CaseFeeAgreementSummary {
+  id: string;
+  feeType: "FLAT_AMOUNT" | "PERCENTAGE_OF_COLLECTION";
+  flatAmount: string | null;
+  percentageBps: number | null;
+  status: "DRAFT" | "ACTIVE" | "SUPERSEDED" | "TERMINATED";
+  note?: string | null;
+}
+interface CaseFeeAgreementInput {
+  feeType: "FLAT_AMOUNT" | "PERCENTAGE_OF_COLLECTION";
+  flatAmount?: string;
+  percentageBps?: number;
+  note?: string;
+}
+
 interface OperationDeckProps {
   caseId: string;
   notes?: Note[]; // Geriye uyumluluk
@@ -185,6 +201,11 @@ interface OperationDeckProps {
     dispositionId: string,
     input: DistributionRecommendationInput,
   ) => Promise<DistributionRecommendationResult>;
+  // S8-B FAZ-2 — CaseFeeAgreement CRUD (controller hazır; PR-4 FE editörü). Yalnız ACTIVE düzenlenebilir.
+  onFetchActiveFeeAgreement?: (caseClientId: string) => Promise<CaseFeeAgreementSummary | null>;
+  onCreateFeeAgreement?: (caseClientId: string, input: CaseFeeAgreementInput) => Promise<CaseFeeAgreementSummary>;
+  onUpdateFeeAgreement?: (agreementId: string, input: CaseFeeAgreementInput) => Promise<CaseFeeAgreementSummary>;
+  onTerminateFeeAgreement?: (agreementId: string) => Promise<CaseFeeAgreementSummary>;
   tasks?: Task[];
   financeItems?: FinanceItem[];
   uyapQueries?: UyapQuery[];
@@ -330,6 +351,10 @@ export function OperationDeck({
   onApproveDisposition,
   onPostDisposition,
   onPrepareDistributionRecommendation,
+  onFetchActiveFeeAgreement,
+  onCreateFeeAgreement,
+  onUpdateFeeAgreement,
+  onTerminateFeeAgreement,
   tasks = [],
   financeItems = [],
   uyapQueries = [],
@@ -360,6 +385,148 @@ export function OperationDeck({
     DistributionRecommendationResult["expenseModule"]["candidates"]
   >([]);
   const [recommendationError, setRecommendationError] = useState<string | null>(null);
+
+  // S8-B FAZ-2 — CaseFeeAgreement (akdi ücret sözleşmesi) kartı state'i. Backend otoritesi; FE HESAPLAMAZ.
+  // undefined=henüz çekilmedi · null=çekildi, ACTIVE sözleşme yok.
+  const [feeAgreementsByCaseClientId, setFeeAgreementsByCaseClientId] = useState<
+    Record<string, CaseFeeAgreementSummary | null | undefined>
+  >({});
+  const [feeAgreementLoadingId, setFeeAgreementLoadingId] = useState<string | null>(null);
+  const [feeAgreementFormFor, setFeeAgreementFormFor] = useState<string | null>(null); // caseClientId
+  const [feeAgreementFormMode, setFeeAgreementFormMode] = useState<"create" | "edit">("create");
+  const [feeAgreementEditingId, setFeeAgreementEditingId] = useState<string | null>(null);
+  const [feeAgreementFeeType, setFeeAgreementFeeType] = useState<"FLAT_AMOUNT" | "PERCENTAGE_OF_COLLECTION">("FLAT_AMOUNT");
+  const [feeAgreementAmountInput, setFeeAgreementAmountInput] = useState("");
+  const [feeAgreementPercentInput, setFeeAgreementPercentInput] = useState("");
+  const [feeAgreementNoteInput, setFeeAgreementNoteInput] = useState("");
+  const [feeAgreementValidationError, setFeeAgreementValidationError] = useState<string | null>(null);
+  const [feeAgreementSubmitError, setFeeAgreementSubmitError] = useState<string | null>(null);
+  const [feeAgreementSubmitting, setFeeAgreementSubmitting] = useState(false);
+  const [feeAgreementTerminatingId, setFeeAgreementTerminatingId] = useState<string | null>(null);
+
+  // Panel açıldığında (accounting sekmesi) her uygun caseClient için ACTIVE sözleşmeyi lazy-fetch et.
+  useEffect(() => {
+    if (activePanel !== "accounting" || !onFetchActiveFeeAgreement) return;
+    for (const client of eligibleDispositionClients) {
+      if (feeAgreementsByCaseClientId[client.id] !== undefined) continue;
+      setFeeAgreementLoadingId(client.id);
+      onFetchActiveFeeAgreement(client.id)
+        .then((agreement) => {
+          setFeeAgreementsByCaseClientId((prev) => ({ ...prev, [client.id]: agreement }));
+        })
+        .catch(() => {
+          // Read hatası sessizce yutulmaz ama kart "—" gösterip devam eder; kritik akış değil.
+          setFeeAgreementsByCaseClientId((prev) => ({ ...prev, [client.id]: null }));
+        })
+        .finally(() => setFeeAgreementLoadingId(null));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activePanel, eligibleDispositionClients, onFetchActiveFeeAgreement]);
+
+  /** Backend hata mesajını kullanıcı diline çevirir (mesaj backend otoritesini değiştirmez). */
+  const friendlyFeeAgreementError = (message: string): string => {
+    const m = message || "";
+    if (/zaten ACTIVE/i.test(m)) return "Bu müvekkil için zaten aktif bir ücret sözleşmesi var. Sayfayı yenileyin.";
+    if (/eşzamanlı değişti/i.test(m)) return "Sözleşme başka bir işlemle değişti. Sayfayı yenileyip tekrar deneyin.";
+    if (/Sonlandırılacak ACTIVE/i.test(m)) return "Sonlandırılacak aktif sözleşme bulunamadı (zaten değişmiş olabilir).";
+    if (/Yalnız ACTIVE sözleşme güncellenebilir/i.test(m)) return "Bu sözleşme artık aktif değil (başka bir işlemle değişmiş olabilir). Sayfayı yenileyin.";
+    if (/geçersiz\/yabancı/i.test(m)) return `Müvekkil doğrulaması başarısız: ${m}`;
+    return m || "İşlem tamamlanamadı.";
+  };
+
+  const closeFeeAgreementForm = () => {
+    setFeeAgreementFormFor(null);
+    setFeeAgreementEditingId(null);
+    setFeeAgreementFeeType("FLAT_AMOUNT");
+    setFeeAgreementAmountInput("");
+    setFeeAgreementPercentInput("");
+    setFeeAgreementNoteInput("");
+    setFeeAgreementValidationError(null);
+    setFeeAgreementSubmitError(null);
+  };
+
+  const openCreateFeeAgreementForm = (caseClientId: string) => {
+    closeFeeAgreementForm();
+    setFeeAgreementFormMode("create");
+    setFeeAgreementFormFor(caseClientId);
+  };
+
+  const openEditFeeAgreementForm = (caseClientId: string, agreement: CaseFeeAgreementSummary) => {
+    closeFeeAgreementForm();
+    setFeeAgreementFormMode("edit");
+    setFeeAgreementFormFor(caseClientId);
+    setFeeAgreementEditingId(agreement.id);
+    setFeeAgreementFeeType(agreement.feeType);
+    setFeeAgreementAmountInput(agreement.flatAmount ?? "");
+    setFeeAgreementPercentInput(
+      agreement.percentageBps != null ? (agreement.percentageBps / 100).toString() : "",
+    );
+    setFeeAgreementNoteInput(agreement.note ?? "");
+  };
+
+  const submitFeeAgreementForm = async (caseClientId: string) => {
+    setFeeAgreementValidationError(null);
+    setFeeAgreementSubmitError(null);
+
+    const input: CaseFeeAgreementInput = { feeType: feeAgreementFeeType, note: feeAgreementNoteInput.trim() || undefined };
+    if (feeAgreementFeeType === "FLAT_AMOUNT") {
+      const amt = parseAmountCents(feeAgreementAmountInput);
+      if (!Number.isFinite(amt) || amt <= 0) {
+        setFeeAgreementValidationError("Geçerli bir pozitif tutar girin.");
+        return;
+      }
+      input.flatAmount = formatAmountInput(amt);
+    } else {
+      // Kullanıcı yüzde (%) girer; basis-points'e ÇEVRİLİR (hesaplama DEĞİL — birim dönüşümü, backend faithful-int bekler).
+      const pct = Number(feeAgreementPercentInput.trim().replace(",", "."));
+      if (!Number.isFinite(pct) || pct <= 0 || pct > 100) {
+        setFeeAgreementValidationError("Geçerli bir yüzde girin (0-100 arası).");
+        return;
+      }
+      input.percentageBps = Math.round(pct * 100);
+    }
+
+    setFeeAgreementSubmitting(true);
+    try {
+      let result: CaseFeeAgreementSummary;
+      if (feeAgreementFormMode === "create" && onCreateFeeAgreement) {
+        result = await onCreateFeeAgreement(caseClientId, input);
+      } else if (feeAgreementFormMode === "edit" && feeAgreementEditingId && onUpdateFeeAgreement) {
+        result = await onUpdateFeeAgreement(feeAgreementEditingId, input);
+      } else {
+        return;
+      }
+      setFeeAgreementsByCaseClientId((prev) => ({ ...prev, [caseClientId]: result }));
+      closeFeeAgreementForm();
+    } catch (error: any) {
+      setFeeAgreementSubmitError(friendlyFeeAgreementError(error?.message));
+    } finally {
+      setFeeAgreementSubmitting(false);
+    }
+  };
+
+  const handleTerminateFeeAgreement = async (caseClientId: string, agreement: CaseFeeAgreementSummary) => {
+    if (!onTerminateFeeAgreement) return;
+    const confirmed = typeof window === "undefined" || window.confirm("Bu ücret sözleşmesini sonlandırmak istediğinize emin misiniz?");
+    if (!confirmed) return;
+    setFeeAgreementTerminatingId(agreement.id);
+    try {
+      const result = await onTerminateFeeAgreement(agreement.id);
+      setFeeAgreementsByCaseClientId((prev) => ({ ...prev, [caseClientId]: result.status === "ACTIVE" ? result : null }));
+    } catch (error: any) {
+      alert(friendlyFeeAgreementError(error?.message));
+    } finally {
+      setFeeAgreementTerminatingId(null);
+    }
+  };
+
+  const feeAgreementSummaryLabel = (agreement: CaseFeeAgreementSummary): string => {
+    if (agreement.feeType === "FLAT_AMOUNT") {
+      return `Sabit ücret: ${formatCents(parseAmountCents(agreement.flatAmount ?? "0"))}`;
+    }
+    const pct = agreement.percentageBps != null ? (agreement.percentageBps / 100).toString() : "?";
+    return `Tahsilatın %${pct}'i`;
+  };
 
   const resetRecommendationState = () => {
     setDistributionFeeInput("");
@@ -1207,6 +1374,161 @@ export function OperationDeck({
                 </p>
                 <p className="mt-1 text-[11px] text-teal-700">Tahsilatların müvekkil payı, ücret/masraf mahsubu ve payout öncesi dağıtım durumunu gösterir.</p>
               </div>
+
+              {/* S8-B FAZ-2 — Ücret Sözleşmesi kartı (her uygun caseClient için bir kart; genelde tek). */}
+              {eligibleDispositionClients.length > 0 && onFetchActiveFeeAgreement && (
+                <div className="mb-4 space-y-2">
+                  {eligibleDispositionClients.map((client) => {
+                    const agreement = feeAgreementsByCaseClientId[client.id];
+                    const isLoading = feeAgreementLoadingId === client.id && agreement === undefined;
+                    const isFormOpen = feeAgreementFormFor === client.id;
+                    const isActive = Boolean(agreement && agreement.status === "ACTIVE");
+                    const isTerminating = isActive && feeAgreementTerminatingId === agreement!.id;
+
+                    return (
+                      <div key={client.id} className="rounded-lg border border-indigo-100 bg-indigo-50/40 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <div>
+                            <p className="text-[10px] font-semibold uppercase tracking-wide text-indigo-600">
+                              Ücret Sözleşmesi{eligibleDispositionClients.length > 1 ? ` — ${client.name}` : ""}
+                            </p>
+                            {isLoading && <p className="mt-1 text-xs text-slate-400">Yükleniyor…</p>}
+                            {!isLoading && isActive && agreement && (
+                              <p className="mt-1 text-sm font-medium text-slate-700">{feeAgreementSummaryLabel(agreement)}</p>
+                            )}
+                            {!isLoading && !isActive && (
+                              <p className="mt-1 text-sm text-slate-500">Aktif ücret sözleşmesi yok.</p>
+                            )}
+                          </div>
+                          {!isLoading && !isFormOpen && (
+                            <div className="flex shrink-0 gap-2">
+                              {isActive && agreement ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    onClick={() => openEditFeeAgreementForm(client.id, agreement)}
+                                    className="rounded-md border border-indigo-200 bg-white px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-50"
+                                  >
+                                    Düzenle
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleTerminateFeeAgreement(client.id, agreement)}
+                                    disabled={isTerminating}
+                                    className="inline-flex items-center gap-1 rounded-md border border-red-200 bg-white px-2 py-1 text-xs font-medium text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-60"
+                                  >
+                                    {isTerminating && <Loader2 className="h-3 w-3 animate-spin" />}
+                                    Sonlandır
+                                  </button>
+                                </>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => openCreateFeeAgreementForm(client.id)}
+                                  className="inline-flex items-center gap-1 rounded-md border border-indigo-300 bg-white px-2 py-1 text-xs font-medium text-indigo-700 hover:bg-indigo-100"
+                                >
+                                  <Plus className="h-3 w-3" /> Yeni Sözleşme
+                                </button>
+                              )}
+                            </div>
+                          )}
+                        </div>
+
+                        {isFormOpen && (
+                          <div className="mt-3 space-y-2 rounded-md border border-indigo-200 bg-white p-3">
+                            <div className="grid gap-2 sm:grid-cols-2">
+                              <label className="text-xs font-medium text-slate-600">
+                                Ücret türü
+                                <select
+                                  aria-label="Ücret türü"
+                                  value={feeAgreementFeeType}
+                                  onChange={(e) => setFeeAgreementFeeType(e.target.value as "FLAT_AMOUNT" | "PERCENTAGE_OF_COLLECTION")}
+                                  className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                >
+                                  <option value="FLAT_AMOUNT">Sabit tutar</option>
+                                  <option value="PERCENTAGE_OF_COLLECTION">Tahsilat yüzdesi</option>
+                                </select>
+                              </label>
+                              {feeAgreementFeeType === "FLAT_AMOUNT" ? (
+                                <label className="text-xs font-medium text-slate-600">
+                                  Tutar (₺)
+                                  <input
+                                    aria-label="Ücret tutarı"
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={feeAgreementAmountInput}
+                                    onChange={(e) => setFeeAgreementAmountInput(e.target.value)}
+                                    placeholder="0.00"
+                                    className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                  />
+                                </label>
+                              ) : (
+                                <label className="text-xs font-medium text-slate-600">
+                                  Yüzde (%)
+                                  <input
+                                    aria-label="Ücret yüzdesi"
+                                    type="number"
+                                    min="0"
+                                    max="100"
+                                    step="0.01"
+                                    value={feeAgreementPercentInput}
+                                    onChange={(e) => setFeeAgreementPercentInput(e.target.value)}
+                                    placeholder="0.00"
+                                    className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                                  />
+                                </label>
+                              )}
+                            </div>
+                            <label className="block text-xs font-medium text-slate-600">
+                              Not (opsiyonel)
+                              <input
+                                aria-label="Sözleşme notu"
+                                value={feeAgreementNoteInput}
+                                onChange={(e) => setFeeAgreementNoteInput(e.target.value)}
+                                className="mt-1 w-full rounded-md border border-slate-300 bg-white px-2 py-2 text-sm text-slate-800 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                              />
+                            </label>
+                            {feeAgreementValidationError && (
+                              <p className="flex items-center gap-1 text-xs text-red-600">
+                                <AlertTriangle className="h-3 w-3 shrink-0" /> {feeAgreementValidationError}
+                              </p>
+                            )}
+                            {feeAgreementSubmitError && (
+                              <p className="flex items-center gap-1 text-xs text-red-600">
+                                <AlertTriangle className="h-3 w-3 shrink-0" /> {feeAgreementSubmitError}
+                              </p>
+                            )}
+                            <p className="text-[11px] text-slate-400">
+                              Tutar/yüzde geçerliliği ve tek-aktif kuralı backend tarafından kesin doğrulanır.
+                            </p>
+                            <div className="flex justify-end gap-2">
+                              <button
+                                type="button"
+                                onClick={closeFeeAgreementForm}
+                                disabled={feeAgreementSubmitting}
+                                className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                Vazgeç
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => submitFeeAgreementForm(client.id)}
+                                disabled={feeAgreementSubmitting}
+                                className="inline-flex items-center gap-1.5 rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                              >
+                                {feeAgreementSubmitting && <Loader2 className="h-3 w-3 animate-spin" />}
+                                {feeAgreementFormMode === "create" ? "Oluştur" : "Kaydet (yeni versiyon)"}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
               {postingActionMessage && (
                 <div className="mb-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
                   {postingActionMessage}
