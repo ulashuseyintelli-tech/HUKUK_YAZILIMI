@@ -11,6 +11,78 @@ if (typeof window !== "undefined") {
 }
 
 // PR-5: ErrorLog UI tipleri (backend ErrorLog modeliyle hizalı; metadata backend-redacted gelir).
+
+export type ClientActionKey =
+  | 'contact.update_missing_info'
+  | 'intake.link.create'
+  | 'intake.link.send'
+  | 'poa.reminder.send'
+  | 'notification.template.send'
+  | 'case.open_related'
+  | 'activity.view_timeline';
+
+export interface ClientActionCatalogItem {
+  key: ClientActionKey;
+  label: string;
+  description: string;
+  category: 'intake' | 'poa' | 'notification' | 'document' | 'contact' | 'case' | 'activity';
+  enabled: boolean;
+  disabledReason?: string;
+  visibility: 'visible' | 'hidden' | 'forbidden';
+  dangerLevel: 'low' | 'medium' | 'high';
+  requiredRole?: string;
+  requiredState?: string;
+  target?: { clientId: string; caseId?: string | null };
+  href?: string;
+  order: number;
+}
+
+export interface ClientActionCatalogResponse {
+  data: ClientActionCatalogItem[];
+}
+
+export interface ClientOperatingSignal {
+  key: string;
+  label: string;
+  description: string;
+  severity: 'info' | 'warning' | 'critical';
+  actionKey?: ClientActionKey;
+  target: { clientId: string; caseId?: string | null };
+}
+
+export interface ClientOperatingSnapshot {
+  clientId: string;
+  health: 'healthy' | 'attention' | 'blocked';
+  riskLevel: 'low' | 'medium' | 'high';
+  contact: {
+    status: 'complete' | 'missing' | 'waived';
+    missingFields: string[];
+    followUpStatus: string | null;
+    openTaskCount: number;
+    overdueTaskCount: number;
+    nextFollowUpAt: string | null;
+    escalationLevel: string | null;
+  };
+  poa: {
+    status: 'active' | 'missing' | 'expiring' | 'expired_or_inactive';
+    activeCount: number;
+    nearestValidUntil: string | null;
+  };
+  intake: {
+    status: 'none' | 'link_active' | 'submitted' | 'in_review' | 'completed' | 'rejected';
+    latestSubmission: { id: string; status: string; caseId: string | null; occurredAt: string } | null;
+    latestLink: { id: string; status: string; caseId: string | null; expiresAt: string | null } | null;
+  };
+  notification: {
+    status: 'none' | 'healthy' | 'pending' | 'failed';
+    latest: { id: string; status: string; type: string | null; channel: string | null; caseId: string | null; occurredAt: string } | null;
+  };
+  signals: ClientOperatingSignal[];
+}
+
+export interface ClientOperatingSnapshotResponse {
+  data: ClientOperatingSnapshot;
+}
 export interface ErrorLogRecord {
   id: string;
   tenantId?: string | null;
@@ -584,6 +656,14 @@ class ApiClient {
     return this.request<{ data: any }>(`/clients/${id}`);
   }
 
+
+  async getClientActionCatalog(id: string) {
+    return this.request<ClientActionCatalogResponse>(`/clients/${id}/action-catalog`);
+  }
+
+  async getClientOperatingSnapshot(id: string) {
+    return this.request<ClientOperatingSnapshotResponse>(`/clients/${id}/operating-snapshot`);
+  }
   async createClient(data: any) {
     return this.request<any>("/clients", {
       method: "POST",

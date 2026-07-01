@@ -28,6 +28,7 @@ import {
 import { api } from '@/lib/api';
 import type { Client } from '@/lib/api/client.types';
 import { ClientActivityTab } from '@/components/client/client-activity-tab';
+import { ClientActionsTab } from '@/components/client/client-actions-tab';
 import { ClientIntelligenceTab } from '@/components/client/client-intelligence-tab';
 import { ClientIntakeTab } from '@/components/client/client-intake-tab';
 import {
@@ -60,7 +61,7 @@ interface ClientPoaRow {
   status?: string | null;
 }
 
-type TabId = 'overview' | 'identity' | 'cases' | 'poa' | 'intelligence' | 'intake' | 'activity';
+type TabId = 'overview' | 'identity' | 'cases' | 'poa' | 'intelligence' | 'intake' | 'actions' | 'activity';
 
 interface ClientProfileProps {
   clientId: string;
@@ -164,6 +165,7 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
     { id: 'poa', label: 'Vekalet', count: poas.length },
     { id: 'intelligence', label: 'İstihbarat' },
     { id: 'intake', label: 'Intake' },
+    { id: 'actions', label: 'İşlemler' },
     { id: 'activity', label: 'Aktivite' },
   ];
 
@@ -362,6 +364,9 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
 
           {/* Intake */}
           {tab === 'intake' && <ClientIntakeTab cases={cases} />}
+
+          {/* İşlemler */}
+          {tab === 'actions' && <ClientActionsTab clientId={clientId} onNavigateActivity={() => setTab('activity')} />}
 
           {/* Aktivite */}
           {tab === 'activity' && <ClientActivityTab clientId={clientId} />}
