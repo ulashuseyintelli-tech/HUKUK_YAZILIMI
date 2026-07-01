@@ -58,6 +58,7 @@ import { FinanceRiskEngine } from './finance-risk.engine';
     ClientSettlementReadService,
     ClientAccountingJournalMovementsReaderService,
     ClientAccountingMovementsReadService,
+    ClientAccountingSummaryShadowReportService,
     ClientOffsetService,
     ClientPayoutManualReversalService,
     ClientPayoutManualReversalReadService,
