@@ -3,6 +3,7 @@ import type {
   ClientPayoutJournalSource,
   ClientOffsetJournalSource,
   CollectionDispositionLineJournalSource,
+  ExpensePaymentJournalSource,
   ExpenseRequestJournalSource,
   JournalBuildError,
   JournalBuildResult,
@@ -48,6 +49,8 @@ export function buildAccountingJournal(source: JournalSource): JournalBuildResul
       return buildBalanceLedgerJournal(source);
     case 'EXPENSE_REQUEST':
       return buildExpenseRequestJournal(source);
+    case 'EXPENSE_PAYMENT':
+      return buildExpensePaymentJournal(source);
     case 'ACCOUNTING_JOURNAL_ENTRY':
       return buildError('UNMAPPED_SOURCE', `Journal builder skeleton does not yet map ${source.sourceType}.`, 'sourceType', {
         sourceType: source.sourceType,
@@ -382,6 +385,90 @@ function expenseRequestLine(
     offsetId: null,
     expenseRequestId: source.payload.expenseRequestId,
     expensePaymentId: null,
+    expenseApplicationId: null,
+    balanceLedgerId: null,
+  };
+}
+function buildExpensePaymentJournal(source: ExpensePaymentJournalSource): JournalBuildResult {
+  if (source.sourceAction !== 'recorded') {
+    return buildError('UNSUPPORTED_SOURCE_ACTION', 'ExpensePayment sourceAction must be recorded; reversal/refund are not mapped.', 'sourceAction', {
+      sourceAction: source.sourceAction,
+    });
+  }
+
+  if (source.payload.expensePaymentId !== source.sourceId) {
+    return buildError('INVALID_SOURCE_PAYLOAD', 'ExpensePayment payload expensePaymentId must match sourceId.', 'payload.expensePaymentId', {
+      sourceId: source.sourceId,
+      expensePaymentId: source.payload.expensePaymentId,
+    });
+  }
+
+  const idempotencyMaterial = journalIdempotencyMaterialFromSource(source);
+  const idempotencyKey = buildJournalIdempotencyKey(idempotencyMaterial);
+  if (!source.tenantId || !source.sourceId || !source.sourceAction || !source.sourceVersion) {
+    return buildError('INVALID_IDEMPOTENCY_MATERIAL', 'Journal source is missing idempotency material.', null, {
+      idempotencyKey,
+    });
+  }
+
+  const metadata: JournalMetadata = {
+    ...source.metadata,
+    description: 'Expense payment recorded',
+    expenseRequestId: source.payload.expenseRequestId,
+    expensePaymentId: source.payload.expensePaymentId,
+    paymentMethod: source.payload.paymentMethod,
+    reference: source.payload.reference,
+  };
+
+  const draft: JournalEntryDraft = {
+    tenantId: source.tenantId,
+    caseId: source.payload.caseId,
+    currency: source.currency,
+    entryType: 'EXPENSE_PAYMENT_RECORDED',
+    sourceType: source.sourceType,
+    sourceId: source.sourceId,
+    sourceAction: source.sourceAction,
+    sourceVersion: source.sourceVersion,
+    idempotencyKey,
+    idempotencyMaterial,
+    sourceHash: source.sourceHash,
+    sourceOccurredAt: source.occurredAt,
+    effectiveDate: source.effectiveDate,
+    postedById: source.actorId,
+    description: null,
+    metadata,
+    reversalOf: null,
+    lines: [
+      expensePaymentLine(source, 1, 'CASH_CLEARING', 'DEBIT'),
+      expensePaymentLine(source, 2, 'CLIENT_EXPENSE_RECEIVABLE', 'CREDIT'),
+    ],
+  };
+
+  return { ok: true, draft };
+}
+
+function expensePaymentLine(
+  source: ExpensePaymentJournalSource,
+  lineNo: number,
+  accountCode: JournalLineDraft['accountCode'],
+  direction: JournalLineDraft['direction'],
+): JournalLineDraft {
+  return {
+    lineNo,
+    tenantId: source.tenantId,
+    accountCode,
+    direction,
+    amount: source.payload.amount,
+    currency: source.currency,
+    caseId: source.payload.caseId,
+    clientId: source.payload.clientId,
+    caseClientId: null,
+    collectionId: null,
+    dispositionLineId: null,
+    payoutId: null,
+    offsetId: null,
+    expenseRequestId: source.payload.expenseRequestId,
+    expensePaymentId: source.payload.expensePaymentId,
     expenseApplicationId: null,
     balanceLedgerId: null,
   };

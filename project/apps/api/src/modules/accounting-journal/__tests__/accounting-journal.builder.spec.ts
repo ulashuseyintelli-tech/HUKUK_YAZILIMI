@@ -13,6 +13,8 @@ import type {
   ClientPayoutRecordedPayload,
   CollectionDispositionLineJournalSource,
   CollectionDispositionLinePostedPayload,
+  ExpensePaymentJournalSource,
+  ExpensePaymentRecordedPayload,
   ExpenseRequestJournalSource,
   ExpenseRequestJournalSourcePayload,
   JournalEntryDraft,
@@ -885,6 +887,139 @@ describe('AccountingJournalBuilder ExpenseRequest source skeleton', () => {
 
     const syntheticDimension = buildExpenseRequestDraft();
     lineByAccount(syntheticDimension, 'FIRM_EXPENSE_REIMBURSEMENT').payoutId = 'payout-foreign';
+    const syntheticResult = validateJournalBusiness(syntheticDimension);
+    expect(syntheticResult.ok).toBe(false);
+    if (syntheticResult.ok) throw new Error('Expected synthetic dimension to fail.');
+    expect(syntheticResult.errors.map((error) => error.code)).toContain('FORBIDDEN_SYNTHETIC_DIMENSION');
+  });
+});
+interface ExpensePaymentSourceOverrides {
+  tenantId?: string;
+  sourceId?: string;
+  sourceVersion?: string;
+  sourceAction?: ExpensePaymentJournalSource['sourceAction'];
+  occurredAt?: string;
+  effectiveDate?: string;
+  actorId?: string | null;
+  currency?: string;
+  sourceHash?: string | null;
+  metadata?: JournalMetadata;
+  payload?: Partial<ExpensePaymentRecordedPayload>;
+}
+
+function expensePaymentSource(overrides: ExpensePaymentSourceOverrides = {}): ExpensePaymentJournalSource {
+  const expensePaymentId = overrides.sourceId ?? 'expense-payment-1';
+  const payload: ExpensePaymentRecordedPayload = {
+    amount: '125.00',
+    caseId: 'case-expense-payment-1',
+    clientId: 'client-1',
+    expenseRequestId: 'expense-request-1',
+    expensePaymentId,
+    paymentMethod: 'BANK_TRANSFER',
+    reference: 'DEKONT-1',
+    ...(overrides.payload ?? {}),
+  };
+
+  return {
+    tenantId: overrides.tenantId ?? 'tenant-1',
+    sourceType: 'EXPENSE_PAYMENT',
+    sourceId: expensePaymentId,
+    sourceVersion: overrides.sourceVersion ?? `2026-07-01T11:00:00.000Z:${expensePaymentId}:RECORDED`,
+    sourceAction: overrides.sourceAction ?? 'recorded',
+    occurredAt: overrides.occurredAt ?? '2026-07-01T11:00:00.000Z',
+    effectiveDate: overrides.effectiveDate ?? '2026-07-01',
+    actorId: overrides.actorId ?? 'user-1',
+    currency: overrides.currency ?? 'TRY',
+    sourceHash: overrides.sourceHash ?? 'expense-payment-hash-1',
+    metadata: overrides.metadata ?? { sourceName: 'expense-payment-test' },
+    payload,
+  };
+}
+
+function buildExpensePaymentDraft(source: ExpensePaymentJournalSource = expensePaymentSource()): JournalEntryDraft {
+  const result = buildAccountingJournal(source);
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(JSON.stringify(result.errors));
+  return result.draft;
+}
+
+describe('AccountingJournalBuilder ExpensePayment source skeleton', () => {
+  it('maps recorded payment to cash debit and expense receivable credit with request/payment dimensions', () => {
+    const draft = buildExpensePaymentDraft(expensePaymentSource({
+      tenantId: 'tenant-payment',
+      sourceId: 'expense-payment-recorded',
+      payload: {
+        amount: '325.40',
+        caseId: 'case-expense-payment-recorded',
+        clientId: 'client-expense-payment',
+        expenseRequestId: 'expense-request-recorded',
+        paymentMethod: 'CASH',
+        reference: 'MAKBUZ-42',
+      },
+    }));
+
+    const cash = lineByAccount(draft, 'CASH_CLEARING');
+    const receivable = lineByAccount(draft, 'CLIENT_EXPENSE_RECEIVABLE');
+
+    expect(draft.entryType).toBe('EXPENSE_PAYMENT_RECORDED');
+    expect(draft.sourceAction).toBe('recorded');
+    expect(draft.idempotencyKey).toBe(
+      'acct-journal:v1:tenant-payment:EXPENSE_PAYMENT:expense-payment-recorded:recorded:2026-07-01T11:00:00.000Z:expense-payment-recorded:RECORDED',
+    );
+    expect(draft.metadata).toEqual(expect.objectContaining({
+      expenseRequestId: 'expense-request-recorded',
+      expensePaymentId: 'expense-payment-recorded',
+      paymentMethod: 'CASH',
+      reference: 'MAKBUZ-42',
+    }));
+    expect(cash).toEqual(expect.objectContaining({
+      direction: 'DEBIT',
+      amount: '325.40',
+      caseId: 'case-expense-payment-recorded',
+      clientId: 'client-expense-payment',
+      caseClientId: null,
+      expenseRequestId: 'expense-request-recorded',
+      expensePaymentId: 'expense-payment-recorded',
+    }));
+    expect(receivable).toEqual(expect.objectContaining({
+      direction: 'CREDIT',
+      amount: '325.40',
+      caseId: 'case-expense-payment-recorded',
+      clientId: 'client-expense-payment',
+      caseClientId: null,
+      expenseRequestId: 'expense-request-recorded',
+      expensePaymentId: 'expense-payment-recorded',
+    }));
+    expect(validateJournalDraft(draft).ok).toBe(true);
+  });
+
+  it('keeps reversal/refund outside the ExpensePayment recorded skeleton', () => {
+    const result = buildAccountingJournal(expensePaymentSource({ sourceAction: 'reversal' as any }));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('Expected ExpensePayment reversal action to be rejected.');
+    expect(result.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'UNSUPPORTED_SOURCE_ACTION', path: 'sourceAction' }),
+    ]));
+  });
+
+  it('business validator requires expenseRequestId and expensePaymentId and blocks unrelated dimensions', () => {
+    const missingRequest = buildExpensePaymentDraft();
+    lineByAccount(missingRequest, 'CLIENT_EXPENSE_RECEIVABLE').expenseRequestId = null;
+    const missingRequestResult = validateJournalBusiness(missingRequest);
+    expect(missingRequestResult.ok).toBe(false);
+    if (missingRequestResult.ok) throw new Error('Expected missing expenseRequestId to fail.');
+    expect(missingRequestResult.errors.map((error) => error.code)).toContain('MISSING_REQUIRED_DIMENSION');
+
+    const missingPayment = buildExpensePaymentDraft();
+    lineByAccount(missingPayment, 'CASH_CLEARING').expensePaymentId = null;
+    const missingPaymentResult = validateJournalBusiness(missingPayment);
+    expect(missingPaymentResult.ok).toBe(false);
+    if (missingPaymentResult.ok) throw new Error('Expected missing expensePaymentId to fail.');
+    expect(missingPaymentResult.errors.map((error) => error.code)).toContain('MISSING_REQUIRED_DIMENSION');
+
+    const syntheticDimension = buildExpensePaymentDraft();
+    lineByAccount(syntheticDimension, 'CLIENT_EXPENSE_RECEIVABLE').caseClientId = 'case-client-foreign';
     const syntheticResult = validateJournalBusiness(syntheticDimension);
     expect(syntheticResult.ok).toBe(false);
     if (syntheticResult.ok) throw new Error('Expected synthetic dimension to fail.');

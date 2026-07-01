@@ -95,6 +95,10 @@ describe('Accounting journal source adapter contracts', () => {
     expect(validateJournalSourceIdentity(sourceIdentity({ sourceType: 'EXPENSE_REQUEST', sourceAction: 'recorded' })).ok).toBe(true);
     expect(validateJournalSourceIdentity(sourceIdentity({ sourceType: 'EXPENSE_REQUEST', sourceAction: 'cancel' })).ok).toBe(true);
   });
+
+  it('source identity contract: accepts ExpensePayment recorded skeleton action', () => {
+    expect(validateJournalSourceIdentity(sourceIdentity({ sourceType: 'EXPENSE_PAYMENT', sourceAction: 'recorded' })).ok).toBe(true);
+  });
   it('source loader contract: request shape is tenant-scoped and async without implementation coupling', async () => {
     const identity = sourceIdentity({ tenantId: 'tenant-scoped' });
     const loader: JournalSourceLoader = {
