@@ -41,6 +41,31 @@ describe("intake link api (staff, AUTH VAR)", () => {
     expect(result.intakeUrl).toBe("u2");
   });
 
+  it("createClientWorkspaceIntakeLinkAndDeliver -> POST workspace create-and-deliver URL + Idempotency-Key header + safe body", async () => {
+    const fn = mockFetch(true, {
+      data: {
+        link: { id: "l3" },
+        delivery: { id: "d1", status: "sent", channel: "EMAIL", notificationId: "n1", attemptCount: 1 },
+      },
+    });
+
+    const result = await api.createClientWorkspaceIntakeLinkAndDeliver("cl1", "c1", { scope: ["ADDRESS"] });
+
+    const [url, opts] = fn.mock.calls[0];
+    expect(String(url)).toContain("/api/clients/cl1/cases/c1/intake-links/create-and-deliver");
+    expect(opts.method).toBe("POST");
+    expect((opts.headers as Record<string, string>).Authorization).toBe("Bearer test-token");
+    expect((opts.headers as Record<string, string>)["Idempotency-Key"]).toEqual(expect.any(String));
+    const body = JSON.parse(opts.body);
+    expect(body).toEqual({ scope: ["ADDRESS"] });
+    expect(body.clientId).toBeUndefined();
+    expect(body.tenantId).toBeUndefined();
+    expect(body.rawToken).toBeUndefined();
+    expect(body.intakeUrl).toBeUndefined();
+    expect(body.idempotencyKey).toBeUndefined();
+    expect(result.delivery.status).toBe("sent");
+    expect(JSON.stringify(result)).not.toContain("intake/raw");
+  });
   it("listIntakeLinks → GET + Authorization Bearer + status query", async () => {
     const fn = mockFetch(true, []);
     await api.listIntakeLinks("c1", "ACTIVE");
