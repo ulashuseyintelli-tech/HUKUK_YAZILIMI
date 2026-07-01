@@ -92,6 +92,7 @@ const SUPPORTED_SOURCE_TYPES: ReadonlyArray<AccountingJournalSourceType> = [
   'CLIENT_PAYOUT',
   'CLIENT_OFFSET',
   'BALANCE_LEDGER',
+  'EXPENSE_REQUEST',
   'ACCOUNTING_JOURNAL_ENTRY',
 ];
 
@@ -100,6 +101,7 @@ const SUPPORTED_SOURCE_ACTIONS: ReadonlyArray<JournalSourceAction> = [
   'recorded',
   'apply',
   'reversal',
+  'cancel',
   'manual-adjustment',
 ];
 

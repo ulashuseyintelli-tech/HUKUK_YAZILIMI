@@ -3,6 +3,7 @@ import type {
   ClientPayoutJournalSource,
   ClientOffsetJournalSource,
   CollectionDispositionLineJournalSource,
+  ExpenseRequestJournalSource,
   JournalBuildError,
   JournalBuildResult,
   JournalEntryDraft,
@@ -45,6 +46,8 @@ export function buildAccountingJournal(source: JournalSource): JournalBuildResul
       return buildClientPayoutJournal(source);
     case 'BALANCE_LEDGER':
       return buildBalanceLedgerJournal(source);
+    case 'EXPENSE_REQUEST':
+      return buildExpenseRequestJournal(source);
     case 'ACCOUNTING_JOURNAL_ENTRY':
       return buildError('UNMAPPED_SOURCE', `Journal builder skeleton does not yet map ${source.sourceType}.`, 'sourceType', {
         sourceType: source.sourceType,
@@ -249,6 +252,139 @@ function parseDispositionLineSource(value: string | null | undefined): string | 
   if (!value) return null;
   const prefix = 'disposition_line:';
   return value.startsWith(prefix) ? value.slice(prefix.length) : null;
+}
+function buildExpenseRequestJournal(source: ExpenseRequestJournalSource): JournalBuildResult {
+  const isRecorded = source.payload.kind === 'RECORDED';
+  const expectedAction = isRecorded ? 'recorded' : 'cancel';
+  if (source.sourceAction !== expectedAction) {
+    return buildError('UNSUPPORTED_SOURCE_ACTION', 'ExpenseRequest sourceAction must match payload kind.', 'sourceAction', {
+      expectedAction,
+      actualAction: source.sourceAction,
+      kind: source.payload.kind,
+    });
+  }
+
+  if (source.payload.expenseRequestId !== source.sourceId) {
+    return buildError('INVALID_SOURCE_PAYLOAD', 'ExpenseRequest payload expenseRequestId must match sourceId.', 'payload.expenseRequestId', {
+      sourceId: source.sourceId,
+      expenseRequestId: source.payload.expenseRequestId,
+    });
+  }
+
+  if (isRecorded && source.payload.cancelGuard) {
+    return buildError('INVALID_SOURCE_PAYLOAD', 'ExpenseRequest recorded source must not carry cancelGuard.', 'payload.cancelGuard', {
+      cancelGuard: expenseRequestCancelGuardMetadata(source.payload.cancelGuard),
+    });
+  }
+
+  if (!isRecorded) {
+    if (!source.payload.cancelGuard) {
+      return buildError('INVALID_SOURCE_PAYLOAD', 'ExpenseRequest cancel skeleton requires cancelGuard.', 'payload.cancelGuard', {
+        sourceId: source.sourceId,
+      });
+    }
+
+    const hasRetainedActivity =
+      source.payload.cancelGuard.hasExpensePayments ||
+      source.payload.cancelGuard.hasClientOffsets ||
+      source.payload.cancelGuard.hasReimbursementApplications;
+    if (hasRetainedActivity) {
+      return buildError('UNMAPPED_SOURCE', 'ExpenseRequest cancel with settled activity is guarded and not mapped for live journal posting.', 'payload.cancelGuard', {
+        cancelGuard: expenseRequestCancelGuardMetadata(source.payload.cancelGuard),
+      });
+    }
+  }
+
+  const idempotencyMaterial = journalIdempotencyMaterialFromSource(source);
+  const idempotencyKey = buildJournalIdempotencyKey(idempotencyMaterial);
+  if (!source.tenantId || !source.sourceId || !source.sourceAction || !source.sourceVersion) {
+    return buildError('INVALID_IDEMPOTENCY_MATERIAL', 'Journal source is missing idempotency material.', null, {
+      idempotencyKey,
+    });
+  }
+
+  const metadata: JournalMetadata = {
+    ...source.metadata,
+    description: isRecorded ? 'Expense request recorded' : 'Expense request cancelled',
+    expenseRequestId: source.payload.expenseRequestId,
+    expenseRequestKind: source.payload.kind,
+    cancelGuard: source.payload.cancelGuard ? expenseRequestCancelGuardMetadata(source.payload.cancelGuard) : null,
+  };
+
+  const draft: JournalEntryDraft = {
+    tenantId: source.tenantId,
+    caseId: source.payload.caseId,
+    currency: source.currency,
+    entryType: isRecorded ? 'EXPENSE_REQUEST_RECORDED' : 'EXPENSE_REQUEST_CANCELLED',
+    sourceType: source.sourceType,
+    sourceId: source.sourceId,
+    sourceAction: source.sourceAction,
+    sourceVersion: source.sourceVersion,
+    idempotencyKey,
+    idempotencyMaterial,
+    sourceHash: source.sourceHash,
+    sourceOccurredAt: source.occurredAt,
+    effectiveDate: source.effectiveDate,
+    postedById: source.actorId,
+    description: null,
+    metadata,
+    reversalOf: isRecorded
+      ? null
+      : {
+          sourceType: 'EXPENSE_REQUEST',
+          sourceId: source.sourceId,
+          sourceAction: 'recorded',
+          sourceVersion: null,
+          journalEntryId: null,
+        },
+    lines: isRecorded
+      ? [
+          expenseRequestLine(source, 1, 'CLIENT_EXPENSE_RECEIVABLE', 'DEBIT'),
+          expenseRequestLine(source, 2, 'FIRM_EXPENSE_REIMBURSEMENT', 'CREDIT'),
+        ]
+      : [
+          expenseRequestLine(source, 1, 'FIRM_EXPENSE_REIMBURSEMENT', 'DEBIT'),
+          expenseRequestLine(source, 2, 'CLIENT_EXPENSE_RECEIVABLE', 'CREDIT'),
+        ],
+  };
+
+  return { ok: true, draft };
+}
+
+function expenseRequestCancelGuardMetadata(
+  guard: NonNullable<ExpenseRequestJournalSource['payload']['cancelGuard']>,
+): JournalMetadata {
+  return {
+    hasExpensePayments: guard.hasExpensePayments,
+    hasClientOffsets: guard.hasClientOffsets,
+    hasReimbursementApplications: guard.hasReimbursementApplications,
+  };
+}
+function expenseRequestLine(
+  source: ExpenseRequestJournalSource,
+  lineNo: number,
+  accountCode: JournalLineDraft['accountCode'],
+  direction: JournalLineDraft['direction'],
+): JournalLineDraft {
+  return {
+    lineNo,
+    tenantId: source.tenantId,
+    accountCode,
+    direction,
+    amount: source.payload.amount,
+    currency: source.currency,
+    caseId: source.payload.caseId,
+    clientId: source.payload.clientId,
+    caseClientId: null,
+    collectionId: null,
+    dispositionLineId: null,
+    payoutId: null,
+    offsetId: null,
+    expenseRequestId: source.payload.expenseRequestId,
+    expensePaymentId: null,
+    expenseApplicationId: null,
+    balanceLedgerId: null,
+  };
 }
 function buildClientPayoutJournal(source: ClientPayoutJournalSource): JournalBuildResult {
   if (source.sourceAction !== 'recorded') {

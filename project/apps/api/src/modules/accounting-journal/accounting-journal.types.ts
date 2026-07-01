@@ -4,6 +4,8 @@ export type AccountingJournalEntryType =
   | 'CLIENT_OFFSET_APPLIED'
   | 'CLIENT_OFFSET_REVERSED'
   | 'CLIENT_ADVANCE_LEDGER_RECORDED'
+  | 'EXPENSE_REQUEST_RECORDED'
+  | 'EXPENSE_REQUEST_CANCELLED'
   | 'ACCOUNTING_JOURNAL_REVERSAL';
 
 export type AccountingJournalSourceType =
@@ -11,6 +13,7 @@ export type AccountingJournalSourceType =
   | 'CLIENT_PAYOUT'
   | 'CLIENT_OFFSET'
   | 'BALANCE_LEDGER'
+  | 'EXPENSE_REQUEST'
   | 'ACCOUNTING_JOURNAL_ENTRY';
 
 export type AccountingAccountCode =
@@ -24,7 +27,7 @@ export type AccountingAccountCode =
 
 export type AccountingJournalDirection = 'DEBIT' | 'CREDIT';
 
-export type JournalSourceAction = 'posted' | 'recorded' | 'apply' | 'reversal' | 'manual-adjustment';
+export type JournalSourceAction = 'posted' | 'recorded' | 'apply' | 'reversal' | 'cancel' | 'manual-adjustment';
 
 export type JournalMetadataValue =
   | string
@@ -132,6 +135,31 @@ export interface BalanceLedgerRecordedPayload {
 
 export type BalanceLedgerJournalSource = JournalSourceBase<'BALANCE_LEDGER', 'posted', BalanceLedgerRecordedPayload>;
 
+export type ExpenseRequestSourceAction = 'recorded' | 'cancel';
+
+export type ExpenseRequestJournalKind = 'RECORDED' | 'CANCEL';
+
+export interface ExpenseRequestCancelGuard {
+  hasExpensePayments: boolean;
+  hasClientOffsets: boolean;
+  hasReimbursementApplications: boolean;
+}
+
+export interface ExpenseRequestJournalSourcePayload {
+  kind: ExpenseRequestJournalKind;
+  amount: MoneyAmount;
+  caseId: string;
+  clientId: string;
+  expenseRequestId: string;
+  cancelGuard: ExpenseRequestCancelGuard | null;
+}
+
+export type ExpenseRequestJournalSource = JournalSourceBase<
+  'EXPENSE_REQUEST',
+  ExpenseRequestSourceAction,
+  ExpenseRequestJournalSourcePayload
+>;
+
 export interface AccountingJournalReversalPayload {
   originalJournalEntryId: string;
   originalSourceType: AccountingJournalSourceType;
@@ -164,6 +192,7 @@ export type JournalSource =
   | CollectionDispositionLineJournalSource
   | ClientPayoutJournalSource
   | BalanceLedgerJournalSource
+  | ExpenseRequestJournalSource
   | AccountingJournalEntrySource;
 
 export interface JournalIdempotencyMaterial {

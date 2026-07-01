@@ -6,6 +6,7 @@ import type {
   ClientPayoutJournalSource,
   CollectionDispositionLineJournalSource,
   CollectionDispositionLinePostedPayload,
+  ExpenseRequestJournalSource,
 } from '../accounting-journal.types';
 import { validateJournalDraft } from '../accounting-journal.validators';
 import { AccountingJournalWriterService } from '../accounting-journal.writer';
@@ -362,5 +363,79 @@ describe('AccountingJournalWriterService BalanceLedger duplicate safety', () => 
 
     expect(result).toEqual({ ok: false, errors: [expect.objectContaining({ code: 'SOURCE_HASH_MISMATCH' })] });
     expect(db.accountingJournalEntry.create).not.toHaveBeenCalled();
+  });
+});
+function expenseRequestSource(): ExpenseRequestJournalSource {
+  return {
+    tenantId: 'tenant-1',
+    sourceType: 'EXPENSE_REQUEST',
+    sourceId: 'expense-request-1',
+    sourceVersion: '2026-07-01T10:00:00.000Z:expense-request-1:RECORDED',
+    sourceAction: 'recorded',
+    occurredAt: '2026-07-01T10:00:00.000Z',
+    effectiveDate: '2026-07-01',
+    actorId: 'user-1',
+    currency: 'TRY',
+    sourceHash: 'hash-expense-request',
+    metadata: { test: true },
+    payload: {
+      kind: 'RECORDED',
+      amount: '175.25',
+      caseId: 'case-expense-request-1',
+      clientId: 'client-1',
+      expenseRequestId: 'expense-request-1',
+      cancelGuard: null,
+    },
+  };
+}
+
+function expenseRequestDraft() {
+  const built = buildAccountingJournal(expenseRequestSource());
+  expect(built.ok).toBe(true);
+  if (!built.ok) throw new Error('build failed');
+  const validated = validateJournalDraft(built.draft);
+  expect(validated.ok).toBe(true);
+  if (!validated.ok) throw new Error('validation failed');
+  return validated.draft;
+}
+
+describe('AccountingJournalWriterService ExpenseRequest source shape', () => {
+  it('persists expense request dimensions on both skeleton lines', async () => {
+    const db = dbMock();
+    db.accountingJournalEntry.findFirst.mockResolvedValue(null);
+    db.accountingJournalEntry.create.mockResolvedValue({ id: 'journal-expense-request', _count: { lines: 2 } });
+    const writer = new AccountingJournalWriterService({} as any);
+
+    const result = await writer.write({ draft: expenseRequestDraft() }, db);
+
+    expect(result).toEqual({
+      ok: true,
+      output: expect.objectContaining({ status: 'CREATED', journalEntryId: 'journal-expense-request', lineCount: 2 }),
+    });
+    expect(db.accountingJournalEntry.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          sourceType: 'EXPENSE_REQUEST',
+          sourceId: 'expense-request-1',
+          sourceAction: 'recorded',
+          lines: {
+            create: expect.arrayContaining([
+              expect.objectContaining({
+                accountCode: 'CLIENT_EXPENSE_RECEIVABLE',
+                expenseRequestId: 'expense-request-1',
+                expensePaymentId: null,
+                expenseApplicationId: null,
+              }),
+              expect.objectContaining({
+                accountCode: 'FIRM_EXPENSE_REIMBURSEMENT',
+                expenseRequestId: 'expense-request-1',
+                expensePaymentId: null,
+                expenseApplicationId: null,
+              }),
+            ]),
+          },
+        }),
+      }),
+    );
   });
 });
