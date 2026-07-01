@@ -13,9 +13,12 @@ function build() {
     update: jest.fn(async (_id: string, _t: string, d: any) => ({ id: "c1", ...d })),
     findOne: jest.fn(async () => ({ id: "c1" })),
   } as any;
-  const ctrl = new ClientController(service);
+  const intakeLinkService = {
+    createForClientWorkspace: jest.fn(async () => ({ link: { id: 'lnk-1' }, rawToken: 'raw-token', intakeUrl: 'https://form.example.com/intake/raw-token' })),
+  } as any;
+  const ctrl = new ClientController(service, intakeLinkService);
   const req = { user: { id: "u1", tenantId: "t1" } } as any;
-  return { ctrl, service, req };
+  return { ctrl, service, intakeLinkService, req };
 }
 
 describe("ClientController — Task 2 lenient validation", () => {
@@ -70,6 +73,27 @@ describe("ClientController — Task 2 lenient validation", () => {
     expect(dtoArg.extra).toBeUndefined();
   });
 
+  it("createIntakeLink: path client/case kullanir ve body clientId tasimaz", async () => {
+    const { ctrl, intakeLinkService, req } = build();
+
+    const res = await ctrl.createIntakeLink(req, "client-1", "case-1", { scope: ["ADDRESS"] } as any);
+
+    expect(intakeLinkService.createForClientWorkspace).toHaveBeenCalledWith(
+      "t1",
+      "client-1",
+      "case-1",
+      "u1",
+      expect.objectContaining({ scope: ["ADDRESS"] }),
+    );
+    expect(res).toEqual({ data: { link: { id: "lnk-1" }, rawToken: "raw-token", intakeUrl: "https://form.example.com/intake/raw-token" } });
+  });
+
+  it("createIntakeLink: body clientId gelirse reddeder", async () => {
+    const { ctrl, intakeLinkService, req } = build();
+
+    await expect(ctrl.createIntakeLink(req, "client-1", "case-1", { clientId: "evil", scope: ["ADDRESS"] } as any)).rejects.toBeInstanceOf(BadRequestException);
+    expect(intakeLinkService.createForClientWorkspace).not.toHaveBeenCalled();
+  });
   it("findOne not-found → NotFoundException (Task 1 korunur)", async () => {
     const { ctrl, service, req } = build();
     service.findOne.mockResolvedValueOnce(null);

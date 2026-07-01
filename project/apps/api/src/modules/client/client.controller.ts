@@ -1,5 +1,7 @@
 import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request, Query, ForbiddenException, NotFoundException, ValidationPipe } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ClientIntakeLinkService } from '../client-intake-link/client-intake-link.service';
+import { CreateClientWorkspaceIntakeLinkDto } from '../client-intake-link/dto/client-intake-link.dto';
 import { ClientService } from './client.service';
 import { CreateClientDto, UpdateClientDto } from './dto/create-client.dto';
 
@@ -11,7 +13,7 @@ interface AuthRequest {
 @Controller('clients')
 @UseGuards(JwtAuthGuard)
 export class ClientController {
-  constructor(private clientService: ClientService) {}
+  constructor(private clientService: ClientService, private clientIntakeLinkService: ClientIntakeLinkService) {}
 
   // Task 2 (owner-locked 2026-06-30): client gövde doğrulaması GÜVENLİ/KADEMELİ.
   // app.main.ts global ValidationPipe forbidNonWhitelisted:true → route-level pipe onu OVERRIDE EDEMEZ
@@ -23,6 +25,12 @@ export class ClientController {
     forbidNonWhitelisted: false,
     transform: true,
     skipMissingProperties: true,
+  });
+
+  private readonly intakeLinkBodyPipe = new ValidationPipe({
+    whitelist: true,
+    forbidNonWhitelisted: true,
+    transform: true,
   });
 
   // Tüm müvekkilleri listele
@@ -65,6 +73,24 @@ export class ClientController {
     return this.clientService.getOperatingSnapshot(clientId, req.user.tenantId);
   }
 
+  // Client Workspace intake link create command (create-only; dispatch yok)
+  @Post(':clientId/cases/:caseId/intake-links')
+  async createIntakeLink(
+    @Request() req: AuthRequest,
+    @Param('clientId') clientId: string,
+    @Param('caseId') caseId: string,
+    @Body() body: any,
+  ) {
+    const dto = await this.intakeLinkBodyPipe.transform(body, { type: 'body', metatype: CreateClientWorkspaceIntakeLinkDto });
+    const result = await this.clientIntakeLinkService.createForClientWorkspace(
+      req.user.tenantId,
+      clientId,
+      caseId,
+      req.user.id,
+      dto as CreateClientWorkspaceIntakeLinkDto,
+    );
+    return { data: result };
+  }
   // Fetch one client
   @Get(':id')
   async findOne(@Request() req: any, @Param('id') id: string) {

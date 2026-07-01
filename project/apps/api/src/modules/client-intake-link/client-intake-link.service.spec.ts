@@ -15,6 +15,7 @@ const USER = 'user-1';
 const mockPrisma: any = {
   case: { findFirst: jest.fn() },
   client: { findFirst: jest.fn() },
+  caseClient: { findFirst: jest.fn() },
   clientIntakeLink: { create: jest.fn(), update: jest.fn(), findFirst: jest.fn(), findMany: jest.fn() },
 };
 const mockDispatcher: any = { dispatch: jest.fn().mockResolvedValue({ status: 'sent' }) };
@@ -27,6 +28,9 @@ describe('ClientIntakeLinkService', () => {
     jest.clearAllMocks();
     mockDispatcher.dispatch.mockResolvedValue({ status: 'sent' });
     mockOffice.getOrCreate.mockResolvedValue({ name: 'Test Büro' });
+    mockPrisma.case.findFirst.mockResolvedValue({ id: CASE });
+    mockPrisma.client.findFirst.mockResolvedValue({ id: CLIENT });
+    mockPrisma.caseClient.findFirst.mockResolvedValue({ id: 'case-client-1' });
     process.env.PUBLIC_INTAKE_BASE_URL = 'https://form.example.com';
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -94,6 +98,53 @@ describe('ClientIntakeLinkService', () => {
     });
   });
 
+  describe('createForClientWorkspace', () => {
+    beforeEach(() => {
+      mockPrisma.clientIntakeLink.create.mockResolvedValue({ id: 'lnk-1', status: 'ACTIVE', expiresAt: null });
+    });
+
+    it('client workspace create command link uretir ama notification dispatch yapmaz', async () => {
+      const res = await service.createForClientWorkspace(TENANT, CLIENT, CASE, USER, { scope: ['ADDRESS'] as any });
+
+      expect(mockPrisma.case.findFirst).toHaveBeenCalledWith({ where: { id: CASE, tenantId: TENANT }, select: { id: true } });
+      expect(mockPrisma.client.findFirst).toHaveBeenCalledWith({ where: { id: CLIENT, tenantId: TENANT, isActive: true }, select: { id: true } });
+      expect(mockPrisma.caseClient.findFirst).toHaveBeenCalledWith({ where: { caseId: CASE, clientId: CLIENT }, select: { id: true } });
+
+      const createArg = mockPrisma.clientIntakeLink.create.mock.calls[0][0];
+      expect(createArg.data).toMatchObject({ tenantId: TENANT, caseId: CASE, clientId: CLIENT, status: 'ACTIVE', scope: ['ADDRESS'], createdById: USER });
+      expect(createArg.data.tokenHash).toMatch(/^[a-f0-9]{64}$/);
+      expect(JSON.stringify(createArg.data)).not.toContain(res.rawToken);
+      expect(createHash('sha256').update(res.rawToken).digest('hex')).toBe(createArg.data.tokenHash);
+      expect(createArg.select.tokenHash).toBeUndefined();
+      expect(res.intakeUrl).toBe(`https://form.example.com/intake/${res.rawToken}`);
+      expect(mockDispatcher.dispatch).not.toHaveBeenCalled();
+      expect(mockOffice.getOrCreate).not.toHaveBeenCalled();
+    });
+
+    it('client workspace create command case/client relation yoksa reddeder', async () => {
+      mockPrisma.caseClient.findFirst.mockResolvedValue(null);
+
+      await expect(service.createForClientWorkspace(TENANT, CLIENT, CASE, USER, { scope: ['ADDRESS'] as any })).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.clientIntakeLink.create).not.toHaveBeenCalled();
+      expect(mockDispatcher.dispatch).not.toHaveBeenCalled();
+    });
+
+    it('client workspace create command cross-tenant veya inactive client icin reddeder', async () => {
+      mockPrisma.client.findFirst.mockResolvedValue(null);
+
+      await expect(service.createForClientWorkspace(TENANT, CLIENT, CASE, USER, { scope: ['ADDRESS'] as any })).rejects.toThrow(NotFoundException);
+      expect(mockPrisma.caseClient.findFirst).not.toHaveBeenCalled();
+      expect(mockPrisma.clientIntakeLink.create).not.toHaveBeenCalled();
+    });
+
+    it('client workspace create command gecmis expiresAt reddeder', async () => {
+      await expect(
+        service.createForClientWorkspace(TENANT, CLIENT, CASE, USER, { scope: ['ADDRESS'] as any, expiresAt: '2000-01-01T00:00:00Z' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(mockPrisma.clientIntakeLink.create).not.toHaveBeenCalled();
+      expect(mockDispatcher.dispatch).not.toHaveBeenCalled();
+    });
+  });
   describe('revoke', () => {
     it('ACTIVE → REVOKED', async () => {
       mockPrisma.clientIntakeLink.findFirst.mockResolvedValue({ id: 'lnk-1', status: 'ACTIVE' });
