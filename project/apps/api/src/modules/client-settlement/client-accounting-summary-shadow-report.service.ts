@@ -145,7 +145,7 @@ export type ExpensePaymentBackfillEvidenceStatus =
   | 'VALUE_MISMATCH'
   | 'DIMENSION_MISMATCH'
   | 'REVERSAL_REFUND_POLICY_BLOCKED'
-  | 'PARENT_CANCELLED_OR_SETTLED_BLOCKED';
+  | 'PARENT_CANCELLED_BLOCKED';
 
 export interface ExpensePaymentBackfillEvidenceItem {
   expensePaymentId: string;
@@ -167,6 +167,7 @@ export interface ExpensePaymentBackfillEvidenceItem {
     journalExpenseRequestId: string | null;
     journalExpensePaymentId: string | null;
     sourceAction: string | null;
+    policyReason: string | null;
   };
 }
 
@@ -1638,7 +1639,7 @@ function buildExpensePaymentEvidenceItem(
   if (payment.expenseRequest.status === 'CANCELLED') {
     return expensePaymentEvidenceItem(
       payment,
-      'PARENT_CANCELLED_OR_SETTLED_BLOCKED',
+      'PARENT_CANCELLED_BLOCKED',
       legacyValue,
       journalValue,
       delta,
@@ -1725,6 +1726,9 @@ function expensePaymentEvidenceItem(
       journalExpenseRequestId: line?.expenseRequestId ?? null,
       journalExpensePaymentId: line?.expensePaymentId ?? null,
       sourceAction: entry?.sourceAction ?? null,
+      policyReason: status === 'REVERSAL_REFUND_POLICY_BLOCKED'
+        ? 'EXPENSE_PAYMENT_REVERSAL_REFUND_DOMAIN_POLICY_MISSING'
+        : null,
     },
   };
 }
@@ -1736,7 +1740,7 @@ function emptyExpensePaymentEvidenceStatusCounts(): Record<ExpensePaymentBackfil
     VALUE_MISMATCH: 0,
     DIMENSION_MISMATCH: 0,
     REVERSAL_REFUND_POLICY_BLOCKED: 0,
-    PARENT_CANCELLED_OR_SETTLED_BLOCKED: 0,
+    PARENT_CANCELLED_BLOCKED: 0,
   };
 }
 
