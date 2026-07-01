@@ -26,6 +26,7 @@ import { ClientPayoutManualReversalService } from './client-payout-manual-revers
 import { FinanceApprovalIntentBuilder } from './finance-approval-intent.builder';
 import { FinanceRiskEngine } from './finance-risk.engine';
 import { CaseFeeAgreementService } from './case-fee-agreement.service';
+import { CaseFeeAgreementController } from './case-fee-agreement.controller';
 
 /**
  * TM3 M1/M2/M3/M1R - Muvekkil Settlement Bridge (Claude domaini).
@@ -44,6 +45,7 @@ import { CaseFeeAgreementService } from './case-fee-agreement.service';
     ClientAccountingController,
     ClientOffsetController,
     ClientPayoutManualReversalController,
+    CaseFeeAgreementController,
   ],
   providers: [
     CollectionDispositionService,
