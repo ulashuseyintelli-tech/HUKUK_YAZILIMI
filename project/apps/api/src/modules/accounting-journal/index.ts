@@ -4,6 +4,7 @@ export * from './accounting-journal-cutover-readiness.service';
 export * from './accounting-journal-cutover-readiness.types';
 export * from './accounting-journal-legal-shadow-compare.service';
 export * from './accounting-journal-posting-mode';
+export * from './accounting-journal-reversal.service';
 export * from './accounting-journal-source-hash';
 export * from './accounting-journal-source.types';
 export * from './accounting-journal.types';
