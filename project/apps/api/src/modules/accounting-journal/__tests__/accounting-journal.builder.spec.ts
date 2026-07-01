@@ -13,6 +13,8 @@ import type {
   ClientPayoutRecordedPayload,
   CollectionDispositionLineJournalSource,
   CollectionDispositionLinePostedPayload,
+  ExpenseRequestJournalSource,
+  ExpenseRequestJournalSourcePayload,
   JournalEntryDraft,
   JournalMetadata,
   JournalValidationErrorCode,
@@ -734,6 +736,155 @@ describe('AccountingJournalBuilder BalanceLedger recorded contract', () => {
 
     const syntheticDimension = buildBalanceLedgerDraft();
     lineByAccount(syntheticDimension, 'CLIENT_ADVANCE_BALANCE').caseClientId = 'case-client-synthetic';
+    const syntheticResult = validateJournalBusiness(syntheticDimension);
+    expect(syntheticResult.ok).toBe(false);
+    if (syntheticResult.ok) throw new Error('Expected synthetic dimension to fail.');
+    expect(syntheticResult.errors.map((error) => error.code)).toContain('FORBIDDEN_SYNTHETIC_DIMENSION');
+  });
+});
+interface ExpenseRequestSourceOverrides {
+  tenantId?: string;
+  sourceId?: string;
+  sourceVersion?: string;
+  sourceAction?: ExpenseRequestJournalSource['sourceAction'];
+  occurredAt?: string;
+  effectiveDate?: string;
+  actorId?: string | null;
+  currency?: string;
+  sourceHash?: string | null;
+  metadata?: JournalMetadata;
+  payload?: Partial<ExpenseRequestJournalSourcePayload>;
+}
+
+function expenseRequestSource(overrides: ExpenseRequestSourceOverrides = {}): ExpenseRequestJournalSource {
+  const expenseRequestId = overrides.sourceId ?? 'expense-request-1';
+  const payload: ExpenseRequestJournalSourcePayload = {
+    kind: 'RECORDED',
+    amount: '175.25',
+    caseId: 'case-expense-request-1',
+    clientId: 'client-1',
+    expenseRequestId,
+    cancelGuard: null,
+    ...(overrides.payload ?? {}),
+  };
+
+  return {
+    tenantId: overrides.tenantId ?? 'tenant-1',
+    sourceType: 'EXPENSE_REQUEST',
+    sourceId: expenseRequestId,
+    sourceVersion: overrides.sourceVersion ?? `2026-07-01T10:00:00.000Z:${expenseRequestId}:${payload.kind}`,
+    sourceAction: overrides.sourceAction ?? (payload.kind === 'CANCEL' ? 'cancel' : 'recorded'),
+    occurredAt: overrides.occurredAt ?? '2026-07-01T10:00:00.000Z',
+    effectiveDate: overrides.effectiveDate ?? '2026-07-01',
+    actorId: overrides.actorId ?? 'user-1',
+    currency: overrides.currency ?? 'TRY',
+    sourceHash: overrides.sourceHash ?? 'expense-request-hash-1',
+    metadata: overrides.metadata ?? { sourceName: 'expense-request-test' },
+    payload,
+  };
+}
+
+function buildExpenseRequestDraft(source: ExpenseRequestJournalSource = expenseRequestSource()): JournalEntryDraft {
+  const result = buildAccountingJournal(source);
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(JSON.stringify(result.errors));
+  return result.draft;
+}
+
+describe('AccountingJournalBuilder ExpenseRequest source skeleton', () => {
+  it('maps recorded expense request to receivable debit and reimbursement credit with expenseRequestId', () => {
+    const draft = buildExpenseRequestDraft(expenseRequestSource({
+      tenantId: 'tenant-expense',
+      sourceId: 'expense-request-recorded',
+      payload: { amount: '275.75', caseId: 'case-expense-recorded', clientId: 'client-expense-recorded' },
+    }));
+
+    const receivable = lineByAccount(draft, 'CLIENT_EXPENSE_RECEIVABLE');
+    const reimbursement = lineByAccount(draft, 'FIRM_EXPENSE_REIMBURSEMENT');
+
+    expect(draft.entryType).toBe('EXPENSE_REQUEST_RECORDED');
+    expect(draft.sourceAction).toBe('recorded');
+    expect(draft.idempotencyKey).toBe(
+      'acct-journal:v1:tenant-expense:EXPENSE_REQUEST:expense-request-recorded:recorded:2026-07-01T10:00:00.000Z:expense-request-recorded:RECORDED',
+    );
+    expect(receivable).toEqual(expect.objectContaining({
+      direction: 'DEBIT',
+      amount: '275.75',
+      caseId: 'case-expense-recorded',
+      clientId: 'client-expense-recorded',
+      caseClientId: null,
+      expenseRequestId: 'expense-request-recorded',
+    }));
+    expect(reimbursement).toEqual(expect.objectContaining({
+      direction: 'CREDIT',
+      amount: '275.75',
+      caseId: 'case-expense-recorded',
+      clientId: 'client-expense-recorded',
+      caseClientId: null,
+      expenseRequestId: 'expense-request-recorded',
+    }));
+    expect(validateJournalDraft(draft).ok).toBe(true);
+  });
+
+  it('maps guarded cancel skeleton to inverse lines and recorded reversal reference', () => {
+    const draft = buildExpenseRequestDraft(expenseRequestSource({
+      sourceId: 'expense-request-cancel',
+      payload: {
+        kind: 'CANCEL',
+        amount: '90.00',
+        cancelGuard: {
+          hasExpensePayments: false,
+          hasClientOffsets: false,
+          hasReimbursementApplications: false,
+        },
+      },
+    }));
+
+    const receivable = lineByAccount(draft, 'CLIENT_EXPENSE_RECEIVABLE');
+    const reimbursement = lineByAccount(draft, 'FIRM_EXPENSE_REIMBURSEMENT');
+
+    expect(draft.entryType).toBe('EXPENSE_REQUEST_CANCELLED');
+    expect(draft.sourceAction).toBe('cancel');
+    expect(draft.reversalOf).toEqual(expect.objectContaining({
+      sourceType: 'EXPENSE_REQUEST',
+      sourceId: 'expense-request-cancel',
+      sourceAction: 'recorded',
+    }));
+    expect(reimbursement).toEqual(expect.objectContaining({ direction: 'DEBIT', amount: '90.00', expenseRequestId: 'expense-request-cancel' }));
+    expect(receivable).toEqual(expect.objectContaining({ direction: 'CREDIT', amount: '90.00', expenseRequestId: 'expense-request-cancel' }));
+    expect(validateJournalDraft(draft).ok).toBe(true);
+  });
+
+  it('keeps cancel guarded when settled activity exists', () => {
+    const result = buildAccountingJournal(expenseRequestSource({
+      sourceId: 'expense-request-cancel-blocked',
+      payload: {
+        kind: 'CANCEL',
+        cancelGuard: {
+          hasExpensePayments: true,
+          hasClientOffsets: false,
+          hasReimbursementApplications: false,
+        },
+      },
+    }));
+
+    expect(result.ok).toBe(false);
+    if (result.ok) throw new Error('Expected guarded ExpenseRequest cancel to be unmapped.');
+    expect(result.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'UNMAPPED_SOURCE', path: 'payload.cancelGuard' }),
+    ]));
+  });
+
+  it('business validator requires expenseRequestId and blocks unrelated dimensions', () => {
+    const missingExpenseRequest = buildExpenseRequestDraft();
+    lineByAccount(missingExpenseRequest, 'CLIENT_EXPENSE_RECEIVABLE').expenseRequestId = null;
+    const missingResult = validateJournalBusiness(missingExpenseRequest);
+    expect(missingResult.ok).toBe(false);
+    if (missingResult.ok) throw new Error('Expected missing expenseRequestId to fail.');
+    expect(missingResult.errors.map((error) => error.code)).toContain('MISSING_REQUIRED_DIMENSION');
+
+    const syntheticDimension = buildExpenseRequestDraft();
+    lineByAccount(syntheticDimension, 'FIRM_EXPENSE_REIMBURSEMENT').payoutId = 'payout-foreign';
     const syntheticResult = validateJournalBusiness(syntheticDimension);
     expect(syntheticResult.ok).toBe(false);
     if (syntheticResult.ok) throw new Error('Expected synthetic dimension to fail.');
