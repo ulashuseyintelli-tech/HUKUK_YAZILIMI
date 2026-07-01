@@ -314,8 +314,8 @@ export class CaseBalanceService {
   }
 
   /// <remarks>
-  /// Çaðrýldýðý yerler:
-  /// - CaseBalanceService.buildBalanceLedgerJournalDraft() › canonical live source kaynaklý BalanceLedger journal suppress kontrolü
+  /// Ã‡aÄŸrÄ±ldÄ±ÄŸÄ± yerler:
+  /// - CaseBalanceService.buildBalanceLedgerJournalDraft() â†’ canonical live source kaynaklÄ± BalanceLedger journal suppress kontrolÃ¼
   /// </remarks>
   private isSuppressedBalanceLedgerJournalSource(source: string | null | undefined, sourceId: string | null | undefined): boolean {
     return (
@@ -333,8 +333,8 @@ export class CaseBalanceService {
   }
 
   /// <remarks>
-  /// Çaðrýldýðý yerler:
-  /// - CaseBalanceService.isDispositionLineBalanceLedgerSource() › disposition_line source format parse
+  /// Ã‡aÄŸrÄ±ldÄ±ÄŸÄ± yerler:
+  /// - CaseBalanceService.isDispositionLineBalanceLedgerSource() â†’ disposition_line source format parse
   /// </remarks>
   private parseDispositionLineSource(value: string | null | undefined): string | null {
     if (!value) return null;
@@ -349,8 +349,8 @@ export class CaseBalanceService {
   }
 
   /// <remarks>
-  /// Çaðrýldýðý yerler:
-  /// - CaseBalanceService.buildBalanceLedgerJournalDraft() › journal amount normalize
+  /// Ã‡aÄŸrÄ±ldÄ±ÄŸÄ± yerler:
+  /// - CaseBalanceService.buildBalanceLedgerJournalDraft() â†’ journal amount normalize
   /// </remarks>
   private positiveJournalAmount(amount: Prisma.Decimal | number | string): string {
     const decimal = new Prisma.Decimal(amount as Prisma.Decimal.Value);
