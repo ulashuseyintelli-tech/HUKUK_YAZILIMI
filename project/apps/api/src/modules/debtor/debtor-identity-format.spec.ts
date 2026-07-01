@@ -30,7 +30,13 @@ describe("DebtorService — Gate-4 kimlik format validasyonu", () => {
     } as any;
   }
   function makeSvc(prisma: any) {
-    return new DebtorService(prisma); // create/update lifecycle guard kullanmaz
+    // create/update lifecycle guard kullanmaz; Task D1A audit/officeApproval placeholder (bu dosya
+    // negatif-validasyon testleri — gate/audit'e ulaşmadan önce reddedilir).
+    return new DebtorService(
+      prisma,
+      { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any,
+      {} as any,
+    );
   }
 
   // ───────────────────────── CREATE — negatif ─────────────────────────

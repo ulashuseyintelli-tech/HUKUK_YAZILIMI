@@ -31,7 +31,7 @@ const estateExisting = {
 describe("DebtorService.update — ESTATE (PR-D2b)", () => {
   it("estateHeirs gönderilince: deleteMany + create AYNI transaction'da, scalar update ile", async () => {
     const prisma = buildEstatePrisma(estateExisting) as any;
-    const svc = new DebtorService(prisma);
+    const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
     await svc.update("t1", "e1", {
       estateHeirs: [
@@ -52,7 +52,7 @@ describe("DebtorService.update — ESTATE (PR-D2b)", () => {
 
   it("deceasedName değişince name/identityNo recompute (X Mirasçıları formatı)", async () => {
     const prisma = buildEstatePrisma(estateExisting) as any;
-    const svc = new DebtorService(prisma);
+    const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
     await svc.update("t1", "e1", { deceasedName: "Mehmet Demir", deceasedTckn: "33333333333", estateHeirs: [{ name: "M" }] } as any);
 
@@ -63,7 +63,7 @@ describe("DebtorService.update — ESTATE (PR-D2b)", () => {
 
   it("estateHeirs GÖNDERİLMEZSE transaction kullanılmaz, mirasçılara dokunulmaz", async () => {
     const prisma = buildEstatePrisma(estateExisting) as any;
-    const svc = new DebtorService(prisma);
+    const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
     await svc.update("t1", "e1", { deceasedName: "Yeni Ad" } as any);
 

@@ -12,11 +12,20 @@ import { AddressController } from "./address.controller";
 import { CollectionModule } from "../collection/collection.module";
 import { CaseDebtorLifecycleGuardModule } from "../case-debtor-lifecycle-guard/case-debtor-lifecycle-guard.module";
 import { PermissionDiagnosticsModule } from "../permission-diagnostics/permission-diagnostics.module";
+import { AuditModule } from "../audit/audit.module";
+import { OfficeApprovalModule } from "../office-approval/office-approval.module";
 
 @Module({
   // G3d: ThirdPartyService alacak haczi tahsilatını kanonik CollectionService'ten yansıtır.
   // P2b-2b-1: CaseDebtorController'da EDIT_PARTIES observe hook için GuidedOpenObserveService.
-  imports: [CollectionModule, CaseDebtorLifecycleGuardModule, PermissionDiagnosticsModule],
+  // Task D1A: AuditModule (create/update/delete audit) + OfficeApprovalModule (delete capability gate).
+  imports: [
+    CollectionModule,
+    CaseDebtorLifecycleGuardModule,
+    PermissionDiagnosticsModule,
+    AuditModule,
+    OfficeApprovalModule,
+  ],
   controllers: [
     DebtorController,
     CaseDebtorController,

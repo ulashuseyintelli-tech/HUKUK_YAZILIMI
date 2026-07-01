@@ -157,22 +157,31 @@ export class DebtorController {
   }
 
   @Post()
-  create(@CurrentUser("tenantId") tenantId: string, @Body() dto: CreateDebtorDto) {
-    return this.debtorService.create(tenantId, dto);
+  create(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @Body() dto: CreateDebtorDto
+  ) {
+    return this.debtorService.create(tenantId, dto, { userId });
   }
 
   @Put(":id")
   update(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Param("id") id: string,
     @Body() dto: UpdateDebtorDto
   ) {
-    return this.debtorService.update(tenantId, id, dto);
+    return this.debtorService.update(tenantId, id, dto, { userId });
   }
 
   @Delete(":id")
-  delete(@CurrentUser("tenantId") tenantId: string, @Param("id") id: string) {
-    return this.debtorService.delete(tenantId, id);
+  delete(
+    @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
+    @Param("id") id: string
+  ) {
+    return this.debtorService.delete(tenantId, id, { userId });
   }
 
   // ==================== DUPLICATE CHECK ====================

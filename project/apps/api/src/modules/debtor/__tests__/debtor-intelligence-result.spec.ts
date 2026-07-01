@@ -59,7 +59,7 @@ describe("DebtorService.createIntelligence (transaction)", () => {
       address: { id: "a1", verified: false, verifiedSource: null, confidenceScore: 10, riskFlags: [] },
       task: { id: "tk", status: "PENDING" },
     }) as any;
-    const svc = new DebtorService(prisma);
+    const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
     await svc.createIntelligence("t1", "d1", "u9", { addressId: "a1", intelType: "LOCATION_VERIFICATION", result: "VERIFIED_PRESENT", confidence: 95 });
 
@@ -71,7 +71,7 @@ describe("DebtorService.createIntelligence (transaction)", () => {
 
   it("INCONCLUSIVE → yalnız kayıt, adres update YOK", async () => {
     const prisma = buildPrisma({ address: { id: "a1", verified: true, verifiedSource: "UYAP", confidenceScore: 90, riskFlags: [] } }) as any;
-    const svc = new DebtorService(prisma);
+    const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
     await svc.createIntelligence("t1", "d1", "u9", { addressId: "a1", intelType: "LOCATION_VERIFICATION", result: "INCONCLUSIVE" });
 
@@ -81,13 +81,13 @@ describe("DebtorService.createIntelligence (transaction)", () => {
 
   it("tenant guard: borçlu yoksa NotFound", async () => {
     const prisma = buildPrisma({ debtor: null }) as any;
-    const svc = new DebtorService(prisma);
+    const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
     await expect(svc.createIntelligence("t1", "dX", "u9", { intelType: "LOCATION_VERIFICATION", result: "IN_FIELD" })).rejects.toThrow();
   });
 
   it("addressId başka borçluya aitse BadRequest", async () => {
     const prisma = buildPrisma({ debtor: { id: "d1" }, address: null }) as any; // address.findFirst null
-    const svc = new DebtorService(prisma);
+    const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
     await expect(svc.createIntelligence("t1", "d1", "u9", { addressId: "aX", intelType: "LOCATION_VERIFICATION", result: "VERIFIED_PRESENT" })).rejects.toThrow();
   });
 });

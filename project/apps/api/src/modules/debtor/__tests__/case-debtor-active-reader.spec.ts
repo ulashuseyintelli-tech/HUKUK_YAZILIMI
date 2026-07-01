@@ -86,7 +86,14 @@ describe("PR-L7a DebtorService.getDebtorsForCase active-only readers", () => {
       },
     };
 
-    return { service: new DebtorService(prisma), prisma };
+    return {
+      service: new DebtorService(
+        prisma,
+        { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any,
+        {} as any,
+      ),
+      prisma,
+    };
   }
 
   it("default reader only queries ACTIVE CaseDebtor records", async () => {

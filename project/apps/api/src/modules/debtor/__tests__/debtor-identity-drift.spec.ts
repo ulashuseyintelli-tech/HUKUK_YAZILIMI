@@ -25,7 +25,7 @@ describe("DebtorService.update — identity/name drift fix", () => {
       name: "Ali Veli", identityNo: "11111111111",
     };
     const prisma = buildPrisma(existing) as any;
-    const svc = new DebtorService(prisma);
+    const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
     await svc.update("t1", "d1", { tckn: "22222222222" } as any);
 
@@ -43,7 +43,7 @@ describe("DebtorService.update — identity/name drift fix", () => {
       name: "X A.Ş.", identityNo: "1111111111",
     };
     const prisma = buildPrisma(existing) as any;
-    const svc = new DebtorService(prisma);
+    const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
     await svc.update("t1", "d2", { vkn: "2222222222" } as any);
 
@@ -61,7 +61,7 @@ describe("DebtorService.update — identity/name drift fix", () => {
       name: "Ali Veli", identityNo: "11111111111",
     };
     const prisma = buildPrisma(existing) as any;
-    const svc = new DebtorService(prisma);
+    const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
     await svc.update("t1", "d3", { lastName: "Yılmaz" } as any);
 

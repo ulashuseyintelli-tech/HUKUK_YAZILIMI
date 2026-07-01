@@ -3,6 +3,7 @@ import {
   NotFoundException,
   BadRequestException,
   ConflictException,
+  ForbiddenException,
 } from "@nestjs/common";
 import { PrismaService } from "@/prisma/prisma.service";
 import { normalizePersonName } from "@/common/name-match.util";
@@ -20,6 +21,11 @@ import {
   UpdateDebtorAddressDto,
   DebtorType,
 } from "./dto/debtor.dto";
+// Task D1A: lifecycle audit + actor + capability (owner-locked 2026-07-02 Option B — bkz. delete()).
+import { AuditService } from "@/modules/audit/audit.service";
+import { OfficeApprovalService } from "@/modules/office-approval/office-approval.service";
+import type { AuditActor } from "@/modules/client/client.service";
+import { buildDebtorFieldDiff, buildDebtorRemoveSnapshot } from "./debtor-audit.util";
 
 // ==================== PR-D5-a: DEPRECATED addressType/isMernis → KANONİK type/source ====================
 // Frontend hâlâ DTO addressType (EV/IS/TEBLIGAT/MERNIS/KEP) + isMernis gönderir; backend KANONİK
@@ -295,6 +301,8 @@ const DebtorIssueLabelMap: Record<DebtorIssueCode, string> = {
 export class DebtorService {
   constructor(
     private prisma: PrismaService,
+    private audit: AuditService,
+    private officeApproval: OfficeApprovalService,
     private readonly caseDebtorLifecycleGuard?: CaseDebtorLifecycleGuardService
   ) {}
 
@@ -303,6 +311,21 @@ export class DebtorService {
       throw new Error("CaseDebtorLifecycleGuardService is required for CaseDebtor lifecycle writes.");
     }
     return this.caseDebtorLifecycleGuard;
+  }
+
+  /**
+   * Task D1A (owner-locked 2026-07-02, Option B) — borçlu FİZİKSEL SİLME yetkisi.
+   * ClientService.assertCanManageLifecycle / PortalService.assertCanManagePortalAccess ile BİREBİR
+   * desen (reuse, yeni altyapı YOK): PARTNER veya canApproveOfficeActions=true delege avukat.
+   * Staff/normal kullanıcı 403. YALNIZ delete() çağırır — create()/update() capability-gate'e
+   * TABİ DEĞİL (owner kararı: yalnız fiziksel silme kısıtlanır).
+   */
+  private async assertCanManageDebtorLifecycle(userId: string | undefined, tenantId: string): Promise<void> {
+    if (!userId || !(await this.officeApproval.isApproverEligible(userId, tenantId))) {
+      throw new ForbiddenException(
+        "Borçlu kaydını silme yetkiniz yok (PARTNER veya yetkilendirilmiş avukat gerekir)"
+      );
+    }
   }
 
   // ==================== CRUD OPERATIONS ====================
@@ -420,7 +443,13 @@ export class DebtorService {
   }
 
 
-  async create(tenantId: string, dto: CreateDebtorDto) {
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DebtorController.create() → POST /debtors (userId req.user.id'den; Task D1A)
+  /// - CaseService.create() → dosya-içi inline borçlu taraması (actor GEÇİLMEZ; case-flow henüz
+  ///   actor taşımıyor — audit userId=undefined kalır, mevcut davranış, bu tur kapsamı DIŞI)
+  /// </remarks>
+  async create(tenantId: string, dto: CreateDebtorDto, actor?: AuditActor) {
     // Validate required fields based on type
     this.validateDebtorByType(dto);
 
@@ -533,13 +562,28 @@ export class DebtorService {
       },
     });
 
+    // Task D1A: DEBTOR_CREATE audit (aktör YALNIZ auth context'ten; body/dto'dan türetilmez).
+    // create() transaction'a sarılı DEĞİL (mevcut davranış korunur) → standalone log().
+    await this.audit.log({
+      tenantId,
+      action: 'DEBTOR_CREATE',
+      entityType: 'DEBTOR',
+      entityId: debtor.id,
+      userId: actor?.userId,
+      metadata: { fieldDiff: buildDebtorFieldDiff(null, debtor) },
+    });
+
     // PR-D4c: completeness görevini senkronla (best-effort).
     await this.syncDebtorTaskByIdSafe(tenantId, debtor.id);
 
     return debtor;
   }
 
-  async update(tenantId: string, id: string, dto: UpdateDebtorDto) {
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - DebtorController.update() → PUT /debtors/:id (userId req.user.id'den; Task D1A)
+  /// </remarks>
+  async update(tenantId: string, id: string, dto: UpdateDebtorDto, actor?: AuditActor) {
     const existing = await this.findOne(tenantId, id);
 
     // If type is changing, validate new type requirements
@@ -649,6 +693,18 @@ export class DebtorService {
       });
     }
 
+    // Task D1A: DEBTOR_UPDATE audit (aktör YALNIZ auth context'ten; body/dto'dan türetilmez).
+    // update() transaction'a sarılı DEĞİL (estateHeirs dalı hariç, o zaten kendi tx'inde) →
+    // standalone log() (sanitized field diff, ham PII yok).
+    await this.audit.log({
+      tenantId,
+      action: 'DEBTOR_UPDATE',
+      entityType: 'DEBTOR',
+      entityId: id,
+      userId: actor?.userId,
+      metadata: { fieldDiff: buildDebtorFieldDiff(existing, result) },
+    });
+
     // PR-D4c: completeness görevini senkronla (best-effort).
     await this.syncDebtorTaskByIdSafe(tenantId, id);
 
@@ -657,10 +713,19 @@ export class DebtorService {
 
   /// <remarks>
   /// Çağrıldığı yerler:
-  /// - DebtorController.delete() → DELETE /debtors/:id (borçlu hard-delete preflight)
+  /// - DebtorController.delete() → DELETE /debtors/:id (userId req.user.id'den; Task D1A)
+  ///
+  /// Task D1A (owner-locked 2026-07-02, Option B): borçlu KULLANILMIŞSA (dosya/tarihçe/adres/
+  /// görev/istihbarat/vb. bağımlılık) bu metod ZATEN 400 ile bloklar — DEĞİŞMEDİ (13-katmanlı
+  /// guard aynen korunur). YALNIZ hiç kullanılmamış (footprint'siz) taslak kayıt fiziksel
+  /// silinebilir; O YOL ARTIK capability-gate'li (PARTNER/delege avukat) + audit-snapshot'lı.
   /// </remarks>
-  async delete(tenantId: string, id: string) {
-    await this.findOne(tenantId, id);
+  async delete(tenantId: string, id: string, actor?: AuditActor) {
+    const existing = await this.findOne(tenantId, id);
+
+    // Task D1A: fiziksel silme yetkisi — bağımlılık kontrollerinden ÖNCE (yetkisiz aktöre
+    // borçlunun bağımlılık durumu bile sızdırılmaz; fail-fast).
+    await this.assertCanManageDebtorLifecycle(actor?.userId, tenantId);
 
     const caseDebtorCount = await this.prisma.caseDebtor.count({
       where: {
@@ -736,7 +801,21 @@ export class DebtorService {
       );
     }
 
-    return this.prisma.debtor.delete({ where: { id } });
+    // Task D1A: snapshot-audit + fiziksel silme AYNI transaction (ClientService.remove() C0-a
+    // deseniyle birebir — audit yazılamazsa silme de rollback olur; geri-dönüşsüz eylem için
+    // atomiklik şart).
+    return this.prisma.$transaction(async (tx) => {
+      const deleted = await tx.debtor.delete({ where: { id } });
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: 'DEBTOR_DELETE',
+        entityType: 'DEBTOR',
+        entityId: id,
+        userId: actor?.userId,
+        metadata: { hardDelete: true, oldSnapshot: buildDebtorRemoveSnapshot(existing) },
+      });
+      return deleted;
+    });
   }
 
   // ==================== PR-D4c: COMPLETENESS TASK SYNC ====================

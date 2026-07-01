@@ -56,7 +56,7 @@ describe("DebtorService.addAddress — kanonik type/source yazımı (PR-D5-a)", 
 
   it("IS adresi → DebtorAddress.type=BUSINESS_HQ + source=USER_INPUT (deprecated kolona YAZILMAZ — D5-final-1)", async () => {
     const prisma = buildPrisma() as any;
-    const svc = new DebtorService(prisma);
+    const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
     await svc.addAddress("t1", "d1", { addressType: "IS", street: "X Cd.", city: "İstanbul", isMernis: false } as any);
 
@@ -70,7 +70,7 @@ describe("DebtorService.addAddress — kanonik type/source yazımı (PR-D5-a)", 
 
   it("isMernis=true adresi → type=source=MERNIS", async () => {
     const prisma = buildPrisma() as any;
-    const svc = new DebtorService(prisma);
+    const svc = new DebtorService(prisma, { logInTransaction: jest.fn().mockResolvedValue(undefined), log: jest.fn().mockResolvedValue(undefined) } as any, {} as any);
 
     await svc.addAddress("t1", "d1", { addressType: "EV", street: "Y Sk.", city: "Ankara", isMernis: true } as any);
 
