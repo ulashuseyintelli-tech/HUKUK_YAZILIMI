@@ -66,6 +66,23 @@ describe("intake link api (staff, AUTH VAR)", () => {
     expect(result.delivery.status).toBe("sent");
     expect(JSON.stringify(result)).not.toContain("intake/raw");
   });
+  it("createClientWorkspaceIntakeLinkAndDeliver retry-as-new calls use a fresh Idempotency-Key", async () => {
+    const fn = mockFetch(true, {
+      data: {
+        link: { id: "l3" },
+        delivery: { id: "d1", status: "sent", channel: "EMAIL", notificationId: "n1", attemptCount: 1 },
+      },
+    });
+
+    await api.createClientWorkspaceIntakeLinkAndDeliver("cl1", "c1", { scope: ["ADDRESS"] });
+    await api.createClientWorkspaceIntakeLinkAndDeliver("cl1", "c1", { scope: ["ADDRESS"] });
+
+    const firstKey = (fn.mock.calls[0][1].headers as Record<string, string>)["Idempotency-Key"];
+    const secondKey = (fn.mock.calls[1][1].headers as Record<string, string>)["Idempotency-Key"];
+    expect(firstKey).toEqual(expect.any(String));
+    expect(secondKey).toEqual(expect.any(String));
+    expect(secondKey).not.toBe(firstKey);
+  });
   it("listIntakeLinks → GET + Authorization Bearer + status query", async () => {
     const fn = mockFetch(true, []);
     await api.listIntakeLinks("c1", "ACTIVE");
