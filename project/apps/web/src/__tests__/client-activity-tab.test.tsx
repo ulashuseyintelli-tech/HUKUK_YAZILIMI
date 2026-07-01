@@ -82,6 +82,16 @@ describe('ClientActivityTab', () => {
     );
   });
 
+  it('renders error state when client timeline request fails', async () => {
+    apiMock.get.mockRejectedValue(new Error('timeline failed'));
+
+    render(<ClientActivityTab clientId="client-1" />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Bildirim aktivitesi y?klenemedi.')).toBeTruthy();
+    });
+  });
+
   it('renders notification timeline rows without full body', async () => {
     apiMock.get.mockResolvedValue(timelineResponse([notificationItem()]));
 
