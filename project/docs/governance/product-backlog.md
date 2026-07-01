@@ -286,7 +286,7 @@ Depends On: ACCT-1 event-mapping contract
 Unlock Condition: —
 Estimated Size: M-L (Codex BE → Claude FE pre-fill)
 Related Modules: client-settlement disposition, OperationDeck (FE pre-fill)
-Status: READY FOR OWNER CLOSURE (ACCT-3 closure gate merged: `project/docs/finance/acct-3-distribution-recommendation-closure-gate.md`; A-D advisory contract/docs/controller boundary complete; no behavior/schema/posting/writer/legal-ledger/TBK100 change)
+Status: CLOSED (Owner decision: ACCT-3 phase closed, `READY FOR OWNER CLOSURE` -> `CLOSED`; ACCT-3 closure gate merged: `project/docs/finance/acct-3-distribution-recommendation-closure-gate.md`; A-D advisory contract/docs/controller boundary complete; no behavior/schema/posting/writer/legal-ledger/TBK100 change)
 
 ID: ACCT-4
 Title: Offset / Payout Integration (PHASE 4)
