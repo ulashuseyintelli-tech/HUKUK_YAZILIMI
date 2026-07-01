@@ -231,12 +231,12 @@ Bu maddeler POST-P4 ana eksenidir (decision-log 2026-06-29; ADR-010). Sıra `act
 
 ID: ACCT-1
 Title: Accounting Journal Engine (PHASE 1)
-Problem: #645 (S9F) persisted double-entry journal ŞEMASI MERGED ama UNWIRED (posting service/controller/endpoint yok). Tahsilat/distribution/offset/payout olayları kanonik muhasebe kaydına yazılmıyor.
+Problem: ACCT-1 is now partially wired: CollectionDispositionLine, ClientPayout, ClientOffset, and direct CREDIT/DEBIT BalanceLedger paths write AccountingJournal entries; remaining closure gaps are generic reversal/manual-adjustment semantics, expense live writer wiring, and any posting-mode cutover decision.
 Business Value: Read-time türetilen cari → kanonik POSTED ledger; trial balance / ekstre / firma-geneli mutabakat açılır.
-Technical Value: Posting + Reversal + Idempotency (idempotencyKey @@unique) + Reconciliation (computeOutstanding) + Validation (Σdebit=Σcredit) + Event Mapping. Mevcut accounting-ledger-dry-run.service mapping/invariant'ı posting kaynağı. DEFAULT-OFF flag + SHADOW-mode.
+Technical Value: Writer/builder/validator/idempotency/source replay exist for wired sources. Posting-mode helper exists but is not the live gate for existing fail-closed writer paths; DEFAULT-OFF/SHADOW gating of live paths requires separate owner/mimari decision. Reversal/manual-adjustment and expense live wiring remain design-gate-first.
 Priority: HIGH
 Depends On: #645 şema (MET); ADR-010 SoT north-star
-Unlock Condition: Posting-rules + account-mapping design-gate owner onayı (kod öncesi); #645 migration apply teyidi
+Unlock Condition: Owner-selected next ACCT-1 slice for generic reversal/manual-adjustment or expense live writer wiring; any posting-mode behavior change requires owner/mimari decision.
 Estimated Size: L (Codex BE; design-gate-first; behavior-changing)
 Related Modules: client-settlement, AccountingJournalEntry/AccountingJournalLine, accounting-ledger-dry-run.service
 Status: READY
@@ -263,7 +263,8 @@ Depends On: ACCT-1D-0, ACCT-1 writer foundation, client offset/payout journal wi
 Unlock Condition: Confirm direct/unlinked BalanceLedger query paths and idempotency source keys; product/accounting decision for `ADJUST`/`REFUND` remains separate.
 Estimated Size: M (Codex BE; design-gate-first)
 Related Modules: CaseBalanceService, BalanceLedger, AccountingJournalWriterService, accounting-ledger-dry-run.service
-Status: READY
+Status: DONE
+Evidence: `9d74b4e7` (#685) direct BalanceLedger journal wiring + `5e861b23` (#687) contract hardening; direct CREDIT/DEBIT BalanceLedger writes are live, correlated `disposition_line:*` rows are suppressed, and ADJUST/REFUND remain future product/accounting decisions.
 ID: ACCT-2
 Title: Trial Balance (PHASE 2)
 Problem: Journal'ın doğru yazıldığını doğrulayacak hızlı kontrol ekranı yok; SoT geçişi için faithfulness kanıtı gerekli.
