@@ -723,13 +723,24 @@ function validateCollectionDispositionExpenseApplicationLine(
   }
 }
 function validateAccountingJournalEntryBusiness(draft: JournalEntryDraft): JournalValidationResult {
-  const errors: JournalValidationError[] = [];
+  if (draft.sourceAction === 'manual-adjustment') {
+    return validateAccountingJournalManualAdjustmentBusiness(draft);
+  }
 
   if (draft.sourceAction !== 'reversal') {
-    errors.push(validationError('INVALID_SOURCE_ACTION', 'AccountingJournalEntry journal sourceAction must be reversal.', 'sourceAction', {
-      sourceAction: draft.sourceAction,
-    }));
+    return {
+      ok: false,
+      errors: [validationError('INVALID_SOURCE_ACTION', 'AccountingJournalEntry journal sourceAction must be reversal or manual-adjustment.', 'sourceAction', {
+        sourceAction: draft.sourceAction,
+      })],
+    };
   }
+
+  return validateAccountingJournalReversalBusiness(draft);
+}
+
+function validateAccountingJournalReversalBusiness(draft: JournalEntryDraft): JournalValidationResult {
+  const errors: JournalValidationError[] = [];
 
   if (draft.entryType !== 'ACCOUNTING_JOURNAL_REVERSAL') {
     errors.push(validationError('INVALID_SOURCE_ACTION', 'AccountingJournalEntry reversal entryType must be ACCOUNTING_JOURNAL_REVERSAL.', 'entryType', {
@@ -758,6 +769,92 @@ function validateAccountingJournalEntryBusiness(draft: JournalEntryDraft): Journ
   return errors.length === 0 ? { ok: true, draft } : { ok: false, errors };
 }
 
+function validateAccountingJournalManualAdjustmentBusiness(draft: JournalEntryDraft): JournalValidationResult {
+  const errors: JournalValidationError[] = [];
+
+  if (draft.entryType !== 'ACCOUNTING_JOURNAL_MANUAL_ADJUSTMENT') {
+    errors.push(validationError('INVALID_SOURCE_ACTION', 'AccountingJournalEntry manual adjustment entryType must be ACCOUNTING_JOURNAL_MANUAL_ADJUSTMENT.', 'entryType', {
+      entryType: draft.entryType,
+    }));
+  }
+
+  if (draft.reversalOf !== null) {
+    errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'AccountingJournalEntry manual adjustment must not carry reversal reference.', 'reversalOf', {
+      reversalSourceType: draft.reversalOf.sourceType,
+      reversalSourceId: draft.reversalOf.sourceId,
+      reversalSourceAction: draft.reversalOf.sourceAction,
+    }));
+  }
+
+  if (draft.lines.length < 2) {
+    errors.push(validationError('INVALID_LINE_SHAPE', 'AccountingJournalEntry manual adjustment must contain at least two lines.', 'lines', {
+      lineCount: draft.lines.length,
+    }));
+  }
+
+  const reason = draft.metadata.reason;
+  if (typeof reason !== 'string' || reason.trim().length === 0) {
+    errors.push(validationError('MISSING_REQUIRED_FIELD', 'AccountingJournalEntry manual adjustment requires reason.', 'metadata.reason'));
+  }
+
+  const adjustmentAmount = draft.metadata.adjustmentAmount;
+  const parsedAdjustmentAmount = typeof adjustmentAmount === 'string' ? parseMoney(adjustmentAmount) : null;
+  if (!parsedAdjustmentAmount) {
+    errors.push(validationError('MISSING_REQUIRED_FIELD', 'AccountingJournalEntry manual adjustment requires adjustmentAmount.', 'metadata.adjustmentAmount'));
+  } else if (parsedAdjustmentAmount.errorCode) {
+    errors.push(validationError(parsedAdjustmentAmount.errorCode, 'AccountingJournalEntry manual adjustment amount must be positive with max 2 decimal places.', 'metadata.adjustmentAmount', {
+      amount: adjustmentAmount,
+    }));
+  }
+
+  const forbiddenFinancialDimensionFields = [
+    'collectionId',
+    'dispositionLineId',
+    'payoutId',
+    'offsetId',
+    'expenseRequestId',
+    'expensePaymentId',
+    'expenseApplicationId',
+    'balanceLedgerId',
+  ] as const;
+
+  let debitTotal = 0n;
+  let creditTotal = 0n;
+  let hasInvalidLineAmount = false;
+
+  for (let index = 0; index < draft.lines.length; index += 1) {
+    const line = draft.lines[index];
+    const parsedLineAmount = parseMoney(line.amount);
+    if (parsedLineAmount.errorCode) {
+      hasInvalidLineAmount = true;
+    } else if (line.direction === 'DEBIT') {
+      debitTotal += parsedLineAmount.cents;
+    } else if (line.direction === 'CREDIT') {
+      creditTotal += parsedLineAmount.cents;
+    }
+
+    for (const field of forbiddenFinancialDimensionFields) {
+      if (line[field] !== null) {
+        errors.push(validationError('FORBIDDEN_SYNTHETIC_DIMENSION', 'AccountingJournalEntry manual adjustment lines must not carry source-specific financial dimensions.', `lines[${index}].${field}`, {
+          field,
+          value: line[field],
+        }));
+      }
+    }
+  }
+
+  if (parsedAdjustmentAmount && !parsedAdjustmentAmount.errorCode && !hasInvalidLineAmount) {
+    if (debitTotal !== parsedAdjustmentAmount.cents || creditTotal !== parsedAdjustmentAmount.cents) {
+      errors.push(validationError('INVALID_AMOUNT', 'AccountingJournalEntry manual adjustment amount must equal debit and credit totals.', 'metadata.adjustmentAmount', {
+        amountCents: parsedAdjustmentAmount.cents.toString(),
+        debitCents: debitTotal.toString(),
+        creditCents: creditTotal.toString(),
+      }));
+    }
+  }
+
+  return errors.length === 0 ? { ok: true, draft } : { ok: false, errors };
+}
 function validateClientPayoutBusiness(draft: JournalEntryDraft): JournalValidationResult {
   const errors: JournalValidationError[] = [];
 

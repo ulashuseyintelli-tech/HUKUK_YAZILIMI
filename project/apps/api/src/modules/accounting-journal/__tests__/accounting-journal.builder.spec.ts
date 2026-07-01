@@ -25,6 +25,8 @@ import type {
   JournalEntryDraft,
   JournalMetadata,
   JournalValidationErrorCode,
+  ManualAdjustmentJournalLinePayload,
+  ManualAdjustmentJournalPayload,
   ManualAdjustmentJournalSource,
 } from '../accounting-journal.types';
 import {
@@ -199,6 +201,61 @@ function buildAccountingJournalReversalDraft(source: AccountingJournalReversalSo
   if (!result.ok) throw new Error(JSON.stringify(result.errors));
   return result.draft;
 }
+function manualAdjustmentLine(overrides: Partial<ManualAdjustmentJournalLinePayload> = {}): ManualAdjustmentJournalLinePayload {
+  return {
+    accountCode: overrides.accountCode ?? 'CASH_CLEARING',
+    direction: overrides.direction ?? 'DEBIT',
+    amount: overrides.amount ?? '10.00',
+    caseId: overrides.caseId ?? 'case-manual-1',
+    clientId: overrides.clientId ?? 'client-manual-1',
+    caseClientId: overrides.caseClientId ?? 'case-client-manual-1',
+  };
+}
+
+interface ManualAdjustmentSourceOverrides extends Partial<Omit<ManualAdjustmentJournalSource, 'sourceType' | 'sourceAction' | 'payload'>> {
+  payload?: Partial<Omit<ManualAdjustmentJournalPayload, 'lines'>> & {
+    lines?: ManualAdjustmentJournalPayload['lines'];
+  };
+}
+
+function manualAdjustmentSource(overrides: ManualAdjustmentSourceOverrides = {}): ManualAdjustmentJournalSource {
+  const sourceId = overrides.sourceId ?? 'manual-adjustment-1';
+  const basePayload: ManualAdjustmentJournalPayload = {
+    amount: '10.00',
+    reason: 'Correct opening client balance',
+    evidenceRef: null,
+    lines: [
+      manualAdjustmentLine({ accountCode: 'CASH_CLEARING', direction: 'DEBIT', amount: '10.00' }),
+      manualAdjustmentLine({ accountCode: 'CLIENT_PAYABLE', direction: 'CREDIT', amount: '10.00' }),
+    ],
+  };
+
+  return {
+    tenantId: overrides.tenantId ?? 'tenant-1',
+    sourceType: 'ACCOUNTING_JOURNAL_ENTRY',
+    sourceId,
+    sourceVersion: overrides.sourceVersion ?? `2026-07-01T14:00:00.000Z:${sourceId}:manual-adjustment`,
+    sourceAction: 'manual-adjustment',
+    occurredAt: overrides.occurredAt ?? '2026-07-01T14:00:00.000Z',
+    effectiveDate: overrides.effectiveDate ?? '2026-07-01',
+    actorId: overrides.actorId ?? 'user-1',
+    currency: overrides.currency ?? 'TRY',
+    sourceHash: overrides.sourceHash ?? 'manual-adjustment-hash-1',
+    metadata: overrides.metadata ?? { sourceName: 'manual-adjustment-test' },
+    payload: {
+      ...basePayload,
+      ...overrides.payload,
+    },
+  };
+}
+
+function buildManualAdjustmentDraft(source: ManualAdjustmentJournalSource = manualAdjustmentSource()): JournalEntryDraft {
+  const result = buildAccountingJournal(source);
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(JSON.stringify(result.errors));
+  return result.draft;
+}
+
 describe('AccountingJournalBuilder contract skeleton', () => {
   it('builder purity rule: CLIENT_OFFSET draft is deterministic and source object is not mutated', () => {
     const source = clientOffsetSource();
@@ -1339,7 +1396,7 @@ describe('AccountingJournalEntry generic reversal contract', () => {
     expect(validateJournalDraft(draft).ok).toBe(true);
   });
 
-  it('rejects mismatched original id, reversal-of-reversal, and manual adjustment mapping', () => {
+  it('rejects mismatched original id and reversal-of-reversal', () => {
     const sourceMismatch = buildAccountingJournal(accountingJournalReversalSource({
       sourceId: 'journal-original-1',
       payload: { originalJournalEntryId: 'journal-other' },
@@ -1358,20 +1415,7 @@ describe('AccountingJournalEntry generic reversal contract', () => {
     expect(reversalOfReversal.errors).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: 'INVALID_SOURCE_PAYLOAD', path: 'payload.originalEntryType' }),
     ]));
-
-    const manualAdjustment: ManualAdjustmentJournalSource = {
-      ...accountingJournalReversalSource(),
-      sourceAction: 'manual-adjustment',
-      payload: { amount: '10.00', reason: 'manual correction', lines: [] },
-    };
-    const manualResult = buildAccountingJournal(manualAdjustment);
-    expect(manualResult.ok).toBe(false);
-    if (manualResult.ok) throw new Error('Expected manual adjustment to remain unmapped.');
-    expect(manualResult.errors).toEqual(expect.arrayContaining([
-      expect.objectContaining({ code: 'UNMAPPED_SOURCE', path: 'sourceAction' }),
-    ]));
   });
-
   it('business validator requires original journal reference for generic reversal drafts', () => {
     const missingReference = buildAccountingJournalReversalDraft();
     missingReference.reversalOf = null;
@@ -1386,5 +1430,117 @@ describe('AccountingJournalEntry generic reversal contract', () => {
     expect(wrongEntryTypeResult.ok).toBe(false);
     if (wrongEntryTypeResult.ok) throw new Error('Expected wrong generic reversal entryType to fail.');
     expect(wrongEntryTypeResult.errors.map((error) => error.code)).toContain('INVALID_SOURCE_ACTION');
+  });
+});
+
+describe('AccountingJournalEntry manual adjustment contract', () => {
+  it('maps manual-adjustment source to ACCOUNTING_JOURNAL_MANUAL_ADJUSTMENT draft', () => {
+    const source = manualAdjustmentSource({
+      sourceId: 'manual-adjustment-100',
+      payload: {
+        amount: '25.00',
+        reason: 'Correct client payable balance',
+        evidenceRef: 'evidence://manual-adjustment/100',
+        lines: [
+          manualAdjustmentLine({ accountCode: 'CASH_CLEARING', direction: 'DEBIT', amount: '25.00', caseId: 'case-manual-100' }),
+          manualAdjustmentLine({ accountCode: 'CLIENT_PAYABLE', direction: 'CREDIT', amount: '25.00', caseId: 'case-manual-100' }),
+        ],
+      },
+    });
+    const draft = buildManualAdjustmentDraft(source);
+
+    expect(draft.entryType).toBe('ACCOUNTING_JOURNAL_MANUAL_ADJUSTMENT');
+    expect(draft.sourceType).toBe('ACCOUNTING_JOURNAL_ENTRY');
+    expect(draft.sourceAction).toBe('manual-adjustment');
+    expect(draft.caseId).toBe('case-manual-100');
+    expect(draft.reversalOf).toBeNull();
+    expect(draft.idempotencyKey).toBe(buildJournalIdempotencyKey(journalIdempotencyMaterialFromSource(source)));
+    expect(draft.metadata).toEqual(expect.objectContaining({
+      description: 'Accounting journal manual adjustment',
+      adjustmentAmount: '25.00',
+      reason: 'Correct client payable balance',
+      evidenceRef: 'evidence://manual-adjustment/100',
+    }));
+    expect(draft.lines).toHaveLength(2);
+    expect(draft.lines[0]).toEqual(expect.objectContaining({
+      lineNo: 1,
+      accountCode: 'CASH_CLEARING',
+      direction: 'DEBIT',
+      amount: '25.00',
+      collectionId: null,
+      dispositionLineId: null,
+      payoutId: null,
+      offsetId: null,
+      expenseRequestId: null,
+      expensePaymentId: null,
+      expenseApplicationId: null,
+      balanceLedgerId: null,
+    }));
+    expect(validateJournalDraft(draft).ok).toBe(true);
+  });
+
+  it('business validator enforces manual adjustment reason, entry type, reversal and dimensions', () => {
+    const missingReason = buildManualAdjustmentDraft();
+    missingReason.metadata.reason = '  ';
+    const missingReasonResult = validateJournalBusiness(missingReason);
+    expect(missingReasonResult.ok).toBe(false);
+    if (missingReasonResult.ok) throw new Error('Expected missing manual adjustment reason to fail.');
+    expect(missingReasonResult.errors.map((error) => error.code)).toContain('MISSING_REQUIRED_FIELD');
+
+    const wrongEntryType = buildManualAdjustmentDraft();
+    wrongEntryType.entryType = 'ACCOUNTING_JOURNAL_REVERSAL';
+    const wrongEntryTypeResult = validateJournalBusiness(wrongEntryType);
+    expect(wrongEntryTypeResult.ok).toBe(false);
+    if (wrongEntryTypeResult.ok) throw new Error('Expected wrong manual adjustment entryType to fail.');
+    expect(wrongEntryTypeResult.errors.map((error) => error.code)).toContain('INVALID_SOURCE_ACTION');
+
+    const reversalReference = buildManualAdjustmentDraft();
+    reversalReference.reversalOf = {
+      sourceType: 'ACCOUNTING_JOURNAL_ENTRY',
+      sourceId: 'journal-original-1',
+      sourceAction: 'reversal',
+      sourceVersion: '1',
+      journalEntryId: 'journal-original-1',
+    };
+    const reversalReferenceResult = validateJournalBusiness(reversalReference);
+    expect(reversalReferenceResult.ok).toBe(false);
+    if (reversalReferenceResult.ok) throw new Error('Expected manual adjustment reversalOf to fail.');
+    expect(reversalReferenceResult.errors.map((error) => error.code)).toContain('UNSUPPORTED_BUSINESS_RULE');
+
+    const singleLine = buildManualAdjustmentDraft();
+    singleLine.lines = singleLine.lines.slice(0, 1);
+    const singleLineResult = validateJournalBusiness(singleLine);
+    expect(singleLineResult.ok).toBe(false);
+    if (singleLineResult.ok) throw new Error('Expected single-line manual adjustment to fail.');
+    expect(singleLineResult.errors.map((error) => error.code)).toContain('INVALID_LINE_SHAPE');
+
+    const financialDimension = buildManualAdjustmentDraft();
+    financialDimension.lines[0].collectionId = 'collection-foreign';
+    const financialDimensionResult = validateJournalBusiness(financialDimension);
+    expect(financialDimensionResult.ok).toBe(false);
+    if (financialDimensionResult.ok) throw new Error('Expected source-specific manual adjustment dimension to fail.');
+    expect(financialDimensionResult.errors.map((error) => error.code)).toContain('FORBIDDEN_SYNTHETIC_DIMENSION');
+  });
+
+  it('validator rejects unbalanced or amount-mismatched manual adjustment drafts', () => {
+    const unbalanced = buildManualAdjustmentDraft(manualAdjustmentSource({
+      payload: {
+        lines: [
+          manualAdjustmentLine({ accountCode: 'CASH_CLEARING', direction: 'DEBIT', amount: '10.00' }),
+          manualAdjustmentLine({ accountCode: 'CLIENT_PAYABLE', direction: 'CREDIT', amount: '9.00' }),
+        ],
+      },
+    }));
+    const unbalancedResult = validateJournalDraft(unbalanced);
+    expect(unbalancedResult.ok).toBe(false);
+    if (unbalancedResult.ok) throw new Error('Expected unbalanced manual adjustment to fail.');
+    expect(unbalancedResult.errors.map((error) => error.code)).toContain('UNBALANCED_ENTRY');
+
+    const amountMismatch = buildManualAdjustmentDraft();
+    amountMismatch.metadata.adjustmentAmount = '11.00';
+    const amountMismatchResult = validateJournalBusiness(amountMismatch);
+    expect(amountMismatchResult.ok).toBe(false);
+    if (amountMismatchResult.ok) throw new Error('Expected manual adjustment amount mismatch to fail.');
+    expect(amountMismatchResult.errors.map((error) => error.code)).toContain('INVALID_AMOUNT');
   });
 });

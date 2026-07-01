@@ -2,6 +2,8 @@ import type {
   AccountingJournalEntrySource,
   AccountingJournalReversalLinePayload,
   AccountingJournalReversalSource,
+  ManualAdjustmentJournalLinePayload,
+  ManualAdjustmentJournalSource,
   BalanceLedgerJournalSource,
   ClientPayoutJournalSource,
   ClientOffsetJournalSource,
@@ -806,10 +808,8 @@ function clientOffsetLine(
 }
 
 function buildAccountingJournalEntryJournal(source: AccountingJournalEntrySource): JournalBuildResult {
-  if (source.sourceAction !== 'reversal') {
-    return buildError('UNMAPPED_SOURCE', 'AccountingJournalEntry manual adjustment is not mapped for live journal posting.', 'sourceAction', {
-      sourceAction: source.sourceAction,
-    });
+  if (source.sourceAction === 'manual-adjustment') {
+    return buildManualAdjustmentJournal(source);
   }
 
   if (source.payload.originalJournalEntryId !== source.sourceId) {
@@ -893,6 +893,98 @@ function buildAccountingJournalEntryJournal(source: AccountingJournalEntrySource
   };
 
   return { ok: true, draft };
+}
+
+function buildManualAdjustmentJournal(source: ManualAdjustmentJournalSource): JournalBuildResult {
+  const reason = source.payload.reason.trim();
+  if (!reason) {
+    return buildError('INVALID_SOURCE_PAYLOAD', 'AccountingJournalEntry manual adjustment requires reason.', 'payload.reason');
+  }
+
+  const lineCount = Array.isArray(source.payload.lines) ? source.payload.lines.length : 0;
+  if (lineCount < 2) {
+    return buildError('INVALID_SOURCE_PAYLOAD', 'AccountingJournalEntry manual adjustment requires at least two lines.', 'payload.lines', {
+      lineCount,
+    });
+  }
+
+  const idempotencyMaterial = journalIdempotencyMaterialFromSource(source);
+  const idempotencyKey = buildJournalIdempotencyKey(idempotencyMaterial);
+  if (!source.tenantId || !source.sourceId || !source.sourceAction || !source.sourceVersion) {
+    return buildError('INVALID_IDEMPOTENCY_MATERIAL', 'Journal source is missing idempotency material.', null, {
+      idempotencyKey,
+    });
+  }
+
+  const metadata: JournalMetadata = {
+    ...source.metadata,
+    description: 'Accounting journal manual adjustment',
+    adjustmentAmount: source.payload.amount,
+    reason,
+    evidenceRef: source.payload.evidenceRef,
+  };
+
+  const draft: JournalEntryDraft = {
+    tenantId: source.tenantId,
+    caseId: commonManualAdjustmentCaseId(source.payload.lines),
+    currency: source.currency,
+    entryType: 'ACCOUNTING_JOURNAL_MANUAL_ADJUSTMENT',
+    sourceType: source.sourceType,
+    sourceId: source.sourceId,
+    sourceAction: source.sourceAction,
+    sourceVersion: source.sourceVersion,
+    idempotencyKey,
+    idempotencyMaterial,
+    sourceHash: source.sourceHash,
+    sourceOccurredAt: source.occurredAt,
+    effectiveDate: source.effectiveDate,
+    postedById: source.actorId,
+    description: null,
+    metadata,
+    reversalOf: null,
+    lines: source.payload.lines.map((line, index) => manualAdjustmentLine(source, index + 1, line)),
+  };
+
+  return { ok: true, draft };
+}
+
+function manualAdjustmentLine(
+  source: ManualAdjustmentJournalSource,
+  lineNo: number,
+  line: ManualAdjustmentJournalLinePayload,
+): JournalLineDraft {
+  return {
+    lineNo,
+    tenantId: source.tenantId,
+    accountCode: line.accountCode,
+    direction: line.direction,
+    amount: line.amount,
+    currency: source.currency,
+    caseId: line.caseId,
+    clientId: line.clientId,
+    caseClientId: line.caseClientId,
+    collectionId: null,
+    dispositionLineId: null,
+    payoutId: null,
+    offsetId: null,
+    expenseRequestId: null,
+    expensePaymentId: null,
+    expenseApplicationId: null,
+    balanceLedgerId: null,
+  };
+}
+
+function commonManualAdjustmentCaseId(lines: ReadonlyArray<ManualAdjustmentJournalLinePayload>): string | null {
+  let caseId: string | null = null;
+  for (const line of lines) {
+    if (!line.caseId) continue;
+    if (caseId === null) {
+      caseId = line.caseId;
+      continue;
+    }
+    if (caseId !== line.caseId) return null;
+  }
+  return caseId;
 }
 
 function accountingJournalEntryReversalLine(

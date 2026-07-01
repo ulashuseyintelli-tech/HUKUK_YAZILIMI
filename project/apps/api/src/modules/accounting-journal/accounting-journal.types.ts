@@ -9,7 +9,8 @@ export type AccountingJournalEntryType =
   | 'EXPENSE_PAYMENT_RECORDED'
   | 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION_APPLIED'
   | 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION_REVERSED'
-  | 'ACCOUNTING_JOURNAL_REVERSAL';
+  | 'ACCOUNTING_JOURNAL_REVERSAL'
+  | 'ACCOUNTING_JOURNAL_MANUAL_ADJUSTMENT';
 
 export type AccountingJournalSourceType =
   | 'COLLECTION_DISPOSITION_LINE'
@@ -233,17 +234,20 @@ export interface AccountingJournalReversalPayload {
   originalLines: ReadonlyArray<AccountingJournalReversalLinePayload>;
 }
 
+export interface ManualAdjustmentJournalLinePayload {
+  accountCode: AccountingAccountCode;
+  direction: AccountingJournalDirection;
+  amount: MoneyAmount;
+  caseId: string | null;
+  clientId: string | null;
+  caseClientId: string | null;
+}
+
 export interface ManualAdjustmentJournalPayload {
   amount: MoneyAmount;
   reason: string;
-  lines: ReadonlyArray<{
-    accountCode: AccountingAccountCode;
-    direction: AccountingJournalDirection;
-    amount: MoneyAmount;
-    caseId: string | null;
-    clientId: string | null;
-    caseClientId: string | null;
-  }>;
+  evidenceRef: string | null;
+  lines: ReadonlyArray<ManualAdjustmentJournalLinePayload>;
 }
 
 export type AccountingJournalReversalSource = JournalSourceBase<
