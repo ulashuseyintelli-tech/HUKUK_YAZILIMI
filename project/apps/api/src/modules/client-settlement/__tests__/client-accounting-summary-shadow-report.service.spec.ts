@@ -88,16 +88,18 @@ describe('ClientAccountingSummaryShadowReportService', () => {
 
     expect(component(report, 'expensePaid')).toEqual(
       expect.objectContaining({
-        coverage: 'GAP',
+        coverage: 'BLOCKER',
         legacySources: ['ExpenseRequest', 'ExpensePayment'],
-        gapCodes: expect.arrayContaining(['EXPENSE_PAYMENT_JOURNAL_SOURCE_MISSING']),
+        journalSources: ['EXPENSE_PAYMENT'],
+        blockerCodes: expect.arrayContaining(['EXPENSE_PAYMENT_LIVE_POSTING_MISSING']),
+        gapCodes: expect.not.arrayContaining(['EXPENSE_PAYMENT_JOURNAL_SOURCE_MISSING']),
       }),
     );
     expect(component(report, 'expenseUnpaid')).toEqual(
       expect.objectContaining({
         coverage: 'BLOCKER',
         blockerCodes: expect.arrayContaining([
-          'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_COVERAGE_MISSING',
+          'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_WIRING_MISSING',
         ]),
       }),
     );
@@ -130,14 +132,13 @@ describe('ClientAccountingSummaryShadowReportService', () => {
     expect(report.primarySwitchUnchanged).toBe(true);
     expect(report.blockerCodes).toEqual(
       expect.arrayContaining([
-        'EXPENSE_REQUEST_JOURNAL_COVERAGE_MISSING',
+        'EXPENSE_REQUEST_LIVE_POSTING_MISSING',
         'CASE_CONTEXT_COLLECTION_JOURNAL_COVERAGE_MISSING',
         'CASE_BALANCE_SNAPSHOT_REPLAY_UNVERIFIED',
       ]),
     );
     expect(report.gapCodes).toEqual(
       expect.arrayContaining([
-        'EXPENSE_REQUEST_JOURNAL_SOURCE_MISSING',
         'COLLECTION_JOURNAL_SOURCE_MISSING',
         'CASE_BALANCE_SNAPSHOT_NOT_JOURNAL_DERIVED',
       ]),
@@ -146,53 +147,60 @@ describe('ClientAccountingSummaryShadowReportService', () => {
   });
 
 
-  it('reports missing expense request source policy', () => {
+  it('recognizes ExpenseRequest contract and retains live posting blockers', () => {
     const report = buildReport();
     const item = expensePolicyItem(report, 'expenseRequested');
 
     expect(item).toEqual(
       expect.objectContaining({
         responsePath: 'clientScoped.expenseRequested',
-        coverage: 'MISSING_SOURCE',
+        coverage: 'CONTRACT_EXISTS',
         requiredSources: ['EXPENSE_REQUEST'],
-        requiredActions: ['recorded'],
+        requiredActions: ['recorded', 'cancel'],
         requiredDimensions: expect.arrayContaining(['tenantId', 'clientId', 'caseId', 'expenseRequestId', 'currency']),
-        supportedSources: [],
-        blockerCodes: ['EXPENSE_REQUEST_JOURNAL_COVERAGE_MISSING'],
-        gapCodes: ['EXPENSE_REQUEST_JOURNAL_SOURCE_MISSING'],
+        supportedSources: ['EXPENSE_REQUEST'],
+        blockerCodes: expect.arrayContaining([
+          'EXPENSE_REQUEST_LIVE_POSTING_MISSING',
+          'EXPENSE_REQUEST_BACKFILL_MISSING',
+          'EXPENSE_REQUEST_VALUE_SHADOW_MISSING',
+          'EXPENSE_REQUEST_CANCEL_POLICY_BLOCKED',
+        ]),
+        gapCodes: [],
       }),
     );
   });
 
-  it('reports missing expense payment source policy', () => {
+  it('recognizes ExpensePayment contract and retains reversal/refund blockers', () => {
     const report = buildReport();
     const item = expensePolicyItem(report, 'expensePaid');
 
     expect(item).toEqual(
       expect.objectContaining({
         responsePath: 'clientScoped.expensePaid',
-        coverage: 'MISSING_SOURCE',
+        coverage: 'CONTRACT_EXISTS',
         requiredSources: ['EXPENSE_PAYMENT'],
         requiredActions: ['recorded'],
         requiredDimensions: expect.arrayContaining(['expenseRequestId', 'expensePaymentId']),
-        supportedSources: [],
-        blockerCodes: ['EXPENSE_PAYMENT_JOURNAL_COVERAGE_MISSING'],
-        gapCodes: expect.arrayContaining([
-          'EXPENSE_PAYMENT_JOURNAL_SOURCE_MISSING',
-          'EXPENSE_REQUEST_PAID_TOTAL_PROJECTION_ONLY',
+        supportedSources: ['EXPENSE_PAYMENT'],
+        blockerCodes: expect.arrayContaining([
+          'EXPENSE_PAYMENT_LIVE_POSTING_MISSING',
+          'EXPENSE_PAYMENT_BACKFILL_MISSING',
+          'EXPENSE_PAYMENT_VALUE_SHADOW_MISSING',
+          'EXPENSE_PAYMENT_REVERSAL_REFUND_POLICY_MISSING',
         ]),
+        gapCodes: ['EXPENSE_REQUEST_PAID_TOTAL_PROJECTION_ONLY'],
       }),
     );
   });
 
-  it('reports missing reimbursement application policy', () => {
+  it('recognizes ExpenseApplication apply/reversal contract and retains wiring/backfill blockers', () => {
     const report = buildReport();
     const item = expensePolicyItem(report, 'reimbursementApplication');
 
     expect(item).toEqual(
       expect.objectContaining({
         responsePath: 'clientScoped.expenseUnpaid.reimbursementApplication',
-        coverage: 'MISSING_POLICY',
+        coverage: 'CONTRACT_EXISTS',
         requiredSources: ['COLLECTION_DISPOSITION_EXPENSE_APPLICATION'],
         requiredActions: ['apply', 'reversal'],
         requiredDimensions: expect.arrayContaining([
@@ -201,12 +209,13 @@ describe('ClientAccountingSummaryShadowReportService', () => {
           'collectionDispositionLineId',
           'reimbursementScope',
         ]),
-        supportedSources: ['COLLECTION_DISPOSITION_LINE'],
+        supportedSources: ['COLLECTION_DISPOSITION_EXPENSE_APPLICATION'],
         blockerCodes: expect.arrayContaining([
-          'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_COVERAGE_MISSING',
-          'EXPENSE_REIMBURSEMENT_REVERSAL_JOURNAL_POLICY_MISSING',
+          'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_WIRING_MISSING',
+          'EXPENSE_REIMBURSEMENT_APPLICATION_BACKFILL_MISSING',
+          'EXPENSE_REIMBURSEMENT_APPLICATION_VALUE_SHADOW_MISSING',
         ]),
-        gapCodes: ['EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_SOURCE_MISSING'],
+        gapCodes: [],
       }),
     );
   });
@@ -223,9 +232,9 @@ describe('ClientAccountingSummaryShadowReportService', () => {
     ]);
     expect(report.expenseCoveragePolicy.blockerCodes).toEqual(
       expect.arrayContaining([
-        'EXPENSE_REQUEST_JOURNAL_COVERAGE_MISSING',
-        'EXPENSE_PAYMENT_JOURNAL_COVERAGE_MISSING',
-        'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_COVERAGE_MISSING',
+        'EXPENSE_REQUEST_LIVE_POSTING_MISSING',
+        'EXPENSE_PAYMENT_LIVE_POSTING_MISSING',
+        'EXPENSE_REIMBURSEMENT_APPLICATION_JOURNAL_WIRING_MISSING',
       ]),
     );
     expect(report.candidateStatus).toBe('BLOCKED');
