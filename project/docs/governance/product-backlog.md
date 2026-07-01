@@ -310,7 +310,7 @@ Depends On: ACCT-1, ACCT-2
 Unlock Condition: Journal + Trial Balance faithfulness kanıtlandı
 Estimated Size: M-L (Codex BE → Claude FE)
 Related Modules: accounting journal, client-accounting, FE statements
-Status: BACKLOG
+Status: READY FOR OWNER CLOSURE (ACCT-5 closure gate merged: `project/docs/finance/acct-5-financial-statements-closure-gate.md`; design gate #725, ACCT-5A #727, ACCT-5B #728, ACCT-5C #730 complete; read contract, projection service, HTTP boundary, and reporting-vs-diagnostic separation verified; no schema/migration/UI/posting/writer/legal-ledger/TBK100 change)
 
 ID: ACCT-6
 Title: Reporting (PHASE 6)
