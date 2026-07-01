@@ -79,6 +79,8 @@ export interface Client {
   /** Vekalet tipi ayrı modülde; burada opak bırakıldı. */
   powerOfAttorneys?: unknown[];
   _count?: { cases?: number };
+  /** Task 10A: portal erişim durumu (read-only). Açma/kapatma /settings/clients'ta kalır. */
+  hasPortalAccess?: boolean;
 }
 
 /** Yazma payload alt-girdileri (CreateClientDto nested DTO'larıyla hizalı). */

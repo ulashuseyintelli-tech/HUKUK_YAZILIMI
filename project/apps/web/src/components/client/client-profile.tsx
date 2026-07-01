@@ -7,9 +7,10 @@
  * (gerçek entegrasyonu maskeliyordu). Artık kanonik `Client` (@/lib/api/client.types) + YALNIZ gerçek veri:
  *   - api.getClient(id)  → kimlik/iletişim/adres + powerOfAttorneys (POA sekmesi)
  *   - api.getCases({ clientId }) → Dosyalar sekmesi (findOne cases içermez)
- * v1 sekmeleri: Genel · Kimlik & İletişim · Dosyalar · Vekalet · Bilgi Talepleri · İstihbarat ·
- * Intake · İşlemler · Aktivite. Bilgi Talepleri (ClientInfoRequest) = legacy/email adapter kanalı,
- * İstihbarat/Intake canonical'dır (kör merge yok; bkz. client-info-requests-tab.tsx).
+ * v1 sekmeleri: Genel · Kimlik & İletişim · Dosyalar · Vekalet · Portal · Bilgi Talepleri ·
+ * İstihbarat · Intake · İşlemler · Aktivite. Bilgi Talepleri (ClientInfoRequest) = legacy/email
+ * adapter kanalı, İstihbarat/Intake canonical'dır (kör merge yok; bkz. client-info-requests-tab.tsx).
+ * Portal sekmesi salt-okuma (Task 10A) — create/disable PortalAccessModal'da kalır (tekrarlanmaz).
  * Muhasebe/Banka ayrı kapsamdır.
  * Mock fallback YOK; hata/boş durumları açıkça gösterilir.
  */
@@ -34,6 +35,7 @@ import { ClientActionsTab } from '@/components/client/client-actions-tab';
 import { ClientIntelligenceTab } from '@/components/client/client-intelligence-tab';
 import { ClientIntakeTab } from '@/components/client/client-intake-tab';
 import { ClientInfoRequestsTab } from '@/components/client/client-info-requests-tab';
+import { ClientPortalTab } from '@/components/client/client-portal-tab';
 import {
   clientDisplayName,
   clientIdentity,
@@ -69,6 +71,7 @@ type TabId =
   | 'identity'
   | 'cases'
   | 'poa'
+  | 'portal'
   | 'info-requests'
   | 'intelligence'
   | 'intake'
@@ -175,6 +178,7 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
     { id: 'identity', label: 'Kimlik & İletişim' },
     { id: 'cases', label: 'Dosyalar', count: cases.length },
     { id: 'poa', label: 'Vekalet', count: poas.length },
+    { id: 'portal', label: 'Portal' },
     { id: 'info-requests', label: 'Bilgi Talepleri' },
     { id: 'intelligence', label: 'İstihbarat' },
     { id: 'intake', label: 'Intake' },
@@ -371,6 +375,9 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
               )}
             </div>
           )}
+
+          {/* Portal */}
+          {tab === 'portal' && <ClientPortalTab clientId={clientId} hasPortalAccess={client.hasPortalAccess} />}
 
           {/* Bilgi Talepleri */}
           {tab === 'info-requests' && <ClientInfoRequestsTab cases={cases} />}
