@@ -11,6 +11,8 @@ import type {
   ClientOffsetJournalSourcePayload,
   ClientPayoutJournalSource,
   ClientPayoutRecordedPayload,
+  CollectionDispositionExpenseApplicationJournalSource,
+  CollectionDispositionExpenseApplicationPayload,
   CollectionDispositionLineJournalSource,
   CollectionDispositionLinePostedPayload,
   ExpensePaymentJournalSource,
@@ -1024,5 +1026,203 @@ describe('AccountingJournalBuilder ExpensePayment source skeleton', () => {
     expect(syntheticResult.ok).toBe(false);
     if (syntheticResult.ok) throw new Error('Expected synthetic dimension to fail.');
     expect(syntheticResult.errors.map((error) => error.code)).toContain('FORBIDDEN_SYNTHETIC_DIMENSION');
+  });
+});
+interface ExpenseApplicationSourceOverrides {
+  tenantId?: string;
+  sourceId?: string;
+  sourceVersion?: string;
+  sourceAction?: CollectionDispositionExpenseApplicationJournalSource['sourceAction'];
+  occurredAt?: string;
+  effectiveDate?: string;
+  actorId?: string | null;
+  currency?: string;
+  sourceHash?: string | null;
+  metadata?: JournalMetadata;
+  payload?: Partial<CollectionDispositionExpenseApplicationPayload>;
+}
+
+function expenseApplicationSource(overrides: ExpenseApplicationSourceOverrides = {}): CollectionDispositionExpenseApplicationJournalSource {
+  const expenseApplicationId = overrides.sourceId ?? 'expense-application-1';
+  const payload: CollectionDispositionExpenseApplicationPayload = {
+    kind: 'APPLY',
+    amount: '80.00',
+    caseId: 'case-expense-application-1',
+    clientId: 'client-1',
+    expenseRequestId: 'expense-request-1',
+    expenseApplicationId,
+    collectionId: 'collection-1',
+    collectionDispositionId: 'disposition-1',
+    collectionDispositionLineId: 'disposition-line-1',
+    reimbursementScope: 'CLIENT_FRONTED',
+    reversesApplicationId: null,
+    ...(overrides.payload ?? {}),
+  };
+
+  return {
+    tenantId: overrides.tenantId ?? 'tenant-1',
+    sourceType: 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION',
+    sourceId: expenseApplicationId,
+    sourceVersion: overrides.sourceVersion ?? `2026-07-01T12:00:00.000Z:${expenseApplicationId}:${payload.kind}`,
+    sourceAction: overrides.sourceAction ?? (payload.kind === 'REVERSAL' ? 'reversal' : 'apply'),
+    occurredAt: overrides.occurredAt ?? '2026-07-01T12:00:00.000Z',
+    effectiveDate: overrides.effectiveDate ?? '2026-07-01',
+    actorId: overrides.actorId ?? 'user-1',
+    currency: overrides.currency ?? 'TRY',
+    sourceHash: overrides.sourceHash ?? 'expense-application-hash-1',
+    metadata: overrides.metadata ?? { sourceName: 'expense-application-test' },
+    payload,
+  };
+}
+
+function buildExpenseApplicationDraft(
+  source: CollectionDispositionExpenseApplicationJournalSource = expenseApplicationSource(),
+): JournalEntryDraft {
+  const result = buildAccountingJournal(source);
+  expect(result.ok).toBe(true);
+  if (!result.ok) throw new Error(JSON.stringify(result.errors));
+  return result.draft;
+}
+
+describe('AccountingJournalBuilder expense application source skeleton', () => {
+  it('maps APPLY to reimbursement debit and expense receivable credit with request/application dimensions', () => {
+    const draft = buildExpenseApplicationDraft(expenseApplicationSource({
+      tenantId: 'tenant-expense-application',
+      sourceId: 'expense-application-apply',
+      payload: {
+        amount: '150.75',
+        caseId: 'case-expense-application-apply',
+        clientId: 'client-expense-application',
+        expenseRequestId: 'expense-request-apply',
+        collectionId: 'collection-apply',
+        collectionDispositionId: 'disposition-apply',
+        collectionDispositionLineId: 'disposition-line-apply',
+        reimbursementScope: 'CLIENT_FRONTED',
+      },
+    }));
+
+    const reimbursement = lineByAccount(draft, 'CLIENT_EXPENSE_REIMBURSEMENT_PAYABLE');
+    const receivable = lineByAccount(draft, 'CLIENT_EXPENSE_RECEIVABLE');
+
+    expect(draft.entryType).toBe('COLLECTION_DISPOSITION_EXPENSE_APPLICATION_APPLIED');
+    expect(draft.sourceAction).toBe('apply');
+    expect(draft.reversalOf).toBeNull();
+    expect(draft.idempotencyKey).toBe(
+      'acct-journal:v1:tenant-expense-application:COLLECTION_DISPOSITION_EXPENSE_APPLICATION:expense-application-apply:apply:2026-07-01T12:00:00.000Z:expense-application-apply:APPLY',
+    );
+    expect(draft.metadata).toEqual(expect.objectContaining({
+      expenseRequestId: 'expense-request-apply',
+      expenseApplicationId: 'expense-application-apply',
+      collectionDispositionId: 'disposition-apply',
+      collectionDispositionLineId: 'disposition-line-apply',
+      reimbursementScope: 'CLIENT_FRONTED',
+      reversesApplicationId: null,
+    }));
+    expect(reimbursement).toEqual(expect.objectContaining({
+      direction: 'DEBIT',
+      amount: '150.75',
+      caseId: 'case-expense-application-apply',
+      clientId: 'client-expense-application',
+      caseClientId: null,
+      collectionId: 'collection-apply',
+      dispositionLineId: 'disposition-line-apply',
+      expenseRequestId: 'expense-request-apply',
+      expenseApplicationId: 'expense-application-apply',
+    }));
+    expect(receivable).toEqual(expect.objectContaining({
+      direction: 'CREDIT',
+      amount: '150.75',
+      expenseRequestId: 'expense-request-apply',
+      expenseApplicationId: 'expense-application-apply',
+    }));
+    expect(validateJournalDraft(draft).ok).toBe(true);
+  });
+
+  it('maps REVERSAL to inverse lines and original APPLY reversal reference', () => {
+    const draft = buildExpenseApplicationDraft(expenseApplicationSource({
+      sourceId: 'expense-application-reversal',
+      payload: {
+        kind: 'REVERSAL',
+        amount: '45.50',
+        reimbursementScope: 'FIRM_FRONTED',
+        reversesApplicationId: 'expense-application-apply-original',
+      },
+    }));
+
+    const receivable = lineByAccount(draft, 'CLIENT_EXPENSE_RECEIVABLE');
+    const reimbursement = lineByAccount(draft, 'FIRM_EXPENSE_REIMBURSEMENT');
+
+    expect(draft.entryType).toBe('COLLECTION_DISPOSITION_EXPENSE_APPLICATION_REVERSED');
+    expect(draft.sourceAction).toBe('reversal');
+    expect(draft.reversalOf).toEqual(expect.objectContaining({
+      sourceType: 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION',
+      sourceId: 'expense-application-apply-original',
+      sourceAction: 'apply',
+    }));
+    expect(receivable).toEqual(expect.objectContaining({ direction: 'DEBIT', amount: '45.50', expenseApplicationId: 'expense-application-reversal' }));
+    expect(reimbursement).toEqual(expect.objectContaining({ direction: 'CREDIT', amount: '45.50', expenseApplicationId: 'expense-application-reversal' }));
+    expect(validateJournalDraft(draft).ok).toBe(true);
+  });
+
+  it('enforces expense application apply/reversal source invariants', () => {
+    const applyWithOriginal = buildAccountingJournal(expenseApplicationSource({
+      payload: { reversesApplicationId: 'expense-application-original' },
+    }));
+    expect(applyWithOriginal.ok).toBe(false);
+    if (applyWithOriginal.ok) throw new Error('Expected APPLY with reversesApplicationId to fail.');
+    expect(applyWithOriginal.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'INVALID_SOURCE_PAYLOAD', path: 'payload.reversesApplicationId' }),
+    ]));
+
+    const reversalWithoutOriginal = buildAccountingJournal(expenseApplicationSource({
+      payload: { kind: 'REVERSAL', reversesApplicationId: null },
+    }));
+    expect(reversalWithoutOriginal.ok).toBe(false);
+    if (reversalWithoutOriginal.ok) throw new Error('Expected REVERSAL without original to fail.');
+    expect(reversalWithoutOriginal.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'INVALID_SOURCE_PAYLOAD', path: 'payload.reversesApplicationId' }),
+    ]));
+
+    const actionMismatch = buildAccountingJournal(expenseApplicationSource({
+      sourceAction: 'apply',
+      payload: { kind: 'REVERSAL', reversesApplicationId: 'expense-application-original' },
+    }));
+    expect(actionMismatch.ok).toBe(false);
+    if (actionMismatch.ok) throw new Error('Expected action/kind mismatch to fail.');
+    expect(actionMismatch.errors).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'UNSUPPORTED_SOURCE_ACTION', path: 'sourceAction' }),
+    ]));
+  });
+
+  it('business validator requires request/application dimensions and blocks unrelated dimensions', () => {
+    const missingRequest = buildExpenseApplicationDraft();
+    lineByAccount(missingRequest, 'CLIENT_EXPENSE_RECEIVABLE').expenseRequestId = null;
+    const missingRequestResult = validateJournalBusiness(missingRequest);
+    expect(missingRequestResult.ok).toBe(false);
+    if (missingRequestResult.ok) throw new Error('Expected missing expenseRequestId to fail.');
+    expect(missingRequestResult.errors.map((error) => error.code)).toContain('MISSING_REQUIRED_DIMENSION');
+
+    const missingApplication = buildExpenseApplicationDraft();
+    lineByAccount(missingApplication, 'CLIENT_EXPENSE_REIMBURSEMENT_PAYABLE').expenseApplicationId = null;
+    const missingApplicationResult = validateJournalBusiness(missingApplication);
+    expect(missingApplicationResult.ok).toBe(false);
+    if (missingApplicationResult.ok) throw new Error('Expected missing expenseApplicationId to fail.');
+    expect(missingApplicationResult.errors.map((error) => error.code)).toContain('MISSING_REQUIRED_DIMENSION');
+
+    const syntheticDimension = buildExpenseApplicationDraft();
+    lineByAccount(syntheticDimension, 'CLIENT_EXPENSE_RECEIVABLE').expensePaymentId = 'expense-payment-foreign';
+    const syntheticResult = validateJournalBusiness(syntheticDimension);
+    expect(syntheticResult.ok).toBe(false);
+    if (syntheticResult.ok) throw new Error('Expected synthetic dimension to fail.');
+    expect(syntheticResult.errors.map((error) => error.code)).toContain('FORBIDDEN_SYNTHETIC_DIMENSION');
+
+    const reversalMissingRef = buildExpenseApplicationDraft(expenseApplicationSource({
+      payload: { kind: 'REVERSAL', reversesApplicationId: 'expense-application-original' },
+    }));
+    reversalMissingRef.reversalOf = null;
+    const reversalMissingRefResult = validateJournalBusiness(reversalMissingRef);
+    expect(reversalMissingRefResult.ok).toBe(false);
+    if (reversalMissingRefResult.ok) throw new Error('Expected missing reversal reference to fail.');
+    expect(reversalMissingRefResult.errors.map((error) => error.code)).toContain('UNSUPPORTED_BUSINESS_RULE');
   });
 });

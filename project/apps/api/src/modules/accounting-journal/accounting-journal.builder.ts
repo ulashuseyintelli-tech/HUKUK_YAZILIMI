@@ -2,6 +2,7 @@ import type {
   BalanceLedgerJournalSource,
   ClientPayoutJournalSource,
   ClientOffsetJournalSource,
+  CollectionDispositionExpenseApplicationJournalSource,
   CollectionDispositionLineJournalSource,
   ExpensePaymentJournalSource,
   ExpenseRequestJournalSource,
@@ -51,6 +52,8 @@ export function buildAccountingJournal(source: JournalSource): JournalBuildResul
       return buildExpenseRequestJournal(source);
     case 'EXPENSE_PAYMENT':
       return buildExpensePaymentJournal(source);
+    case 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION':
+      return buildCollectionDispositionExpenseApplicationJournal(source);
     case 'ACCOUNTING_JOURNAL_ENTRY':
       return buildError('UNMAPPED_SOURCE', `Journal builder skeleton does not yet map ${source.sourceType}.`, 'sourceType', {
         sourceType: source.sourceType,
@@ -470,6 +473,150 @@ function expensePaymentLine(
     expenseRequestId: source.payload.expenseRequestId,
     expensePaymentId: source.payload.expensePaymentId,
     expenseApplicationId: null,
+    balanceLedgerId: null,
+  };
+}
+function buildCollectionDispositionExpenseApplicationJournal(
+  source: CollectionDispositionExpenseApplicationJournalSource,
+): JournalBuildResult {
+  const isApply = source.payload.kind === 'APPLY';
+  const expectedAction = isApply ? 'apply' : 'reversal';
+  if (source.sourceAction !== expectedAction) {
+    return buildError('UNSUPPORTED_SOURCE_ACTION', 'CollectionDispositionExpenseApplication sourceAction must match payload kind.', 'sourceAction', {
+      expectedAction,
+      actualAction: source.sourceAction,
+      kind: source.payload.kind,
+    });
+  }
+
+  if (source.payload.expenseApplicationId !== source.sourceId) {
+    return buildError('INVALID_SOURCE_PAYLOAD', 'CollectionDispositionExpenseApplication payload expenseApplicationId must match sourceId.', 'payload.expenseApplicationId', {
+      sourceId: source.sourceId,
+      expenseApplicationId: source.payload.expenseApplicationId,
+    });
+  }
+
+  if (isApply && source.payload.reversesApplicationId) {
+    return buildError('INVALID_SOURCE_PAYLOAD', 'Expense application APPLY source must not carry reversesApplicationId.', 'payload.reversesApplicationId', {
+      reversesApplicationId: source.payload.reversesApplicationId,
+    });
+  }
+
+  if (!isApply) {
+    if (!source.payload.reversesApplicationId) {
+      return buildError('INVALID_SOURCE_PAYLOAD', 'Expense application REVERSAL source requires reversesApplicationId.', 'payload.reversesApplicationId', {
+        sourceId: source.sourceId,
+      });
+    }
+    if (source.payload.reversesApplicationId === source.sourceId) {
+      return buildError('INVALID_SOURCE_PAYLOAD', 'Expense application REVERSAL source must not self-reference.', 'payload.reversesApplicationId', {
+        sourceId: source.sourceId,
+        reversesApplicationId: source.payload.reversesApplicationId,
+      });
+    }
+  }
+
+  const reimbursementAccount = expenseApplicationReimbursementAccount(source.payload.reimbursementScope);
+  if (!reimbursementAccount) {
+    return buildError('INVALID_SOURCE_PAYLOAD', 'Expense application reimbursementScope is not mapped.', 'payload.reimbursementScope', {
+      reimbursementScope: source.payload.reimbursementScope,
+    });
+  }
+
+  const idempotencyMaterial = journalIdempotencyMaterialFromSource(source);
+  const idempotencyKey = buildJournalIdempotencyKey(idempotencyMaterial);
+  if (!source.tenantId || !source.sourceId || !source.sourceAction || !source.sourceVersion) {
+    return buildError('INVALID_IDEMPOTENCY_MATERIAL', 'Journal source is missing idempotency material.', null, {
+      idempotencyKey,
+    });
+  }
+
+  const metadata: JournalMetadata = {
+    ...source.metadata,
+    description: isApply ? 'Expense reimbursement application applied' : 'Expense reimbursement application reversed',
+    expenseApplicationKind: source.payload.kind,
+    expenseRequestId: source.payload.expenseRequestId,
+    expenseApplicationId: source.payload.expenseApplicationId,
+    collectionId: source.payload.collectionId,
+    collectionDispositionId: source.payload.collectionDispositionId,
+    collectionDispositionLineId: source.payload.collectionDispositionLineId,
+    reimbursementScope: source.payload.reimbursementScope,
+    reversesApplicationId: source.payload.reversesApplicationId,
+  };
+
+  const draft: JournalEntryDraft = {
+    tenantId: source.tenantId,
+    caseId: source.payload.caseId,
+    currency: source.currency,
+    entryType: isApply
+      ? 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION_APPLIED'
+      : 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION_REVERSED',
+    sourceType: source.sourceType,
+    sourceId: source.sourceId,
+    sourceAction: source.sourceAction,
+    sourceVersion: source.sourceVersion,
+    idempotencyKey,
+    idempotencyMaterial,
+    sourceHash: source.sourceHash,
+    sourceOccurredAt: source.occurredAt,
+    effectiveDate: source.effectiveDate,
+    postedById: source.actorId,
+    description: null,
+    metadata,
+    reversalOf: isApply
+      ? null
+      : {
+          sourceType: 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION',
+          sourceId: source.payload.reversesApplicationId ?? source.sourceId,
+          sourceAction: 'apply',
+          sourceVersion: null,
+          journalEntryId: null,
+        },
+    lines: isApply
+      ? [
+          expenseApplicationLine(source, 1, reimbursementAccount, 'DEBIT'),
+          expenseApplicationLine(source, 2, 'CLIENT_EXPENSE_RECEIVABLE', 'CREDIT'),
+        ]
+      : [
+          expenseApplicationLine(source, 1, 'CLIENT_EXPENSE_RECEIVABLE', 'DEBIT'),
+          expenseApplicationLine(source, 2, reimbursementAccount, 'CREDIT'),
+        ],
+  };
+
+  return { ok: true, draft };
+}
+
+function expenseApplicationReimbursementAccount(
+  reimbursementScope: CollectionDispositionExpenseApplicationJournalSource['payload']['reimbursementScope'],
+): JournalLineDraft['accountCode'] | null {
+  if (reimbursementScope === 'CLIENT_FRONTED') return 'CLIENT_EXPENSE_REIMBURSEMENT_PAYABLE';
+  if (reimbursementScope === 'FIRM_FRONTED') return 'FIRM_EXPENSE_REIMBURSEMENT';
+  return null;
+}
+
+function expenseApplicationLine(
+  source: CollectionDispositionExpenseApplicationJournalSource,
+  lineNo: number,
+  accountCode: JournalLineDraft['accountCode'],
+  direction: JournalLineDraft['direction'],
+): JournalLineDraft {
+  return {
+    lineNo,
+    tenantId: source.tenantId,
+    accountCode,
+    direction,
+    amount: source.payload.amount,
+    currency: source.currency,
+    caseId: source.payload.caseId,
+    clientId: source.payload.clientId,
+    caseClientId: null,
+    collectionId: source.payload.collectionId,
+    dispositionLineId: source.payload.collectionDispositionLineId,
+    payoutId: null,
+    offsetId: null,
+    expenseRequestId: source.payload.expenseRequestId,
+    expensePaymentId: null,
+    expenseApplicationId: source.payload.expenseApplicationId,
     balanceLedgerId: null,
   };
 }

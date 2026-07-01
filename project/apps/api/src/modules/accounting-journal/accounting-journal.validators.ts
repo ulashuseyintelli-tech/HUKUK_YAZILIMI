@@ -120,6 +120,8 @@ export function validateJournalBusiness(draft: JournalEntryDraft): JournalValida
       return validateExpenseRequestBusiness(draft);
     case 'EXPENSE_PAYMENT':
       return validateExpensePaymentBusiness(draft);
+    case 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION':
+      return validateCollectionDispositionExpenseApplicationBusiness(draft);
     default:
       return { ok: true, draft };
   }
@@ -559,6 +561,161 @@ function validateExpensePaymentLine(
       payoutId: line.payoutId,
       offsetId: line.offsetId,
       expenseApplicationId: line.expenseApplicationId,
+      balanceLedgerId: line.balanceLedgerId,
+    }));
+  }
+}
+function validateCollectionDispositionExpenseApplicationBusiness(draft: JournalEntryDraft): JournalValidationResult {
+  const errors: JournalValidationError[] = [];
+  const isApply = draft.sourceAction === 'apply';
+  const isReversal = draft.sourceAction === 'reversal';
+
+  if (!isApply && !isReversal) {
+    errors.push(validationError('INVALID_SOURCE_ACTION', 'CollectionDispositionExpenseApplication sourceAction must be apply or reversal.', 'sourceAction', {
+      sourceAction: draft.sourceAction,
+    }));
+  }
+
+  const expectedEntryType = isApply
+    ? 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION_APPLIED'
+    : 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION_REVERSED';
+  if ((isApply || isReversal) && draft.entryType !== expectedEntryType) {
+    errors.push(validationError('INVALID_SOURCE_ACTION', 'CollectionDispositionExpenseApplication entryType must match sourceAction.', 'entryType', {
+      expectedEntryType,
+      entryType: draft.entryType,
+    }));
+  }
+
+  if (isApply && draft.reversalOf) {
+    errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'Expense application APPLY journal must not carry reversal reference.', 'reversalOf', {
+      reversalSourceType: draft.reversalOf.sourceType,
+      reversalSourceId: draft.reversalOf.sourceId,
+      reversalSourceAction: draft.reversalOf.sourceAction,
+    }));
+  }
+
+  if (isReversal) {
+    const expectedOriginalId = typeof draft.metadata.reversesApplicationId === 'string' ? draft.metadata.reversesApplicationId : null;
+    const invalidReversalReference =
+      !draft.reversalOf ||
+      draft.reversalOf.sourceType !== 'COLLECTION_DISPOSITION_EXPENSE_APPLICATION' ||
+      draft.reversalOf.sourceAction !== 'apply' ||
+      !draft.reversalOf.sourceId ||
+      draft.reversalOf.sourceId === draft.sourceId ||
+      (expectedOriginalId !== null && draft.reversalOf.sourceId !== expectedOriginalId);
+
+    if (invalidReversalReference) {
+      errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'Expense application REVERSAL journal must reference the original APPLY source.', 'reversalOf', {
+        reversalSourceType: draft.reversalOf?.sourceType ?? null,
+        reversalSourceId: draft.reversalOf?.sourceId ?? null,
+        reversalSourceAction: draft.reversalOf?.sourceAction ?? null,
+        expectedOriginalId,
+        sourceId: draft.sourceId,
+      }));
+    }
+  }
+
+  if (draft.lines.length !== 2) {
+    errors.push(validationError('INVALID_LINE_SHAPE', 'Expense application journal must contain exactly reimbursement and expense receivable legs.', 'lines', {
+      lineCount: draft.lines.length,
+    }));
+  }
+
+  if (typeof draft.metadata.collectionDispositionId !== 'string' || draft.metadata.collectionDispositionId.length === 0) {
+    errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'Expense application journal metadata requires collectionDispositionId.', 'metadata.collectionDispositionId'));
+  }
+
+  if (typeof draft.metadata.collectionDispositionLineId !== 'string' || draft.metadata.collectionDispositionLineId.length === 0) {
+    errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'Expense application journal metadata requires collectionDispositionLineId.', 'metadata.collectionDispositionLineId'));
+  }
+
+  const reimbursementScope = draft.metadata.reimbursementScope;
+  const reimbursementAccount = reimbursementScope === 'CLIENT_FRONTED'
+    ? 'CLIENT_EXPENSE_REIMBURSEMENT_PAYABLE'
+    : reimbursementScope === 'FIRM_FRONTED'
+      ? 'FIRM_EXPENSE_REIMBURSEMENT'
+      : null;
+
+  if (!reimbursementAccount) {
+    errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'Expense application reimbursementScope must map to a reimbursement account.', 'metadata.reimbursementScope', {
+      reimbursementScope,
+    }));
+  }
+
+  const receivableLine = findSingleLine(errors, draft.lines, 'CLIENT_EXPENSE_RECEIVABLE', 'Expense application receivable leg');
+  const reimbursementLine = reimbursementAccount
+    ? findSingleLine(errors, draft.lines, reimbursementAccount, 'Expense application reimbursement leg')
+    : null;
+
+  if (receivableLine) validateCollectionDispositionExpenseApplicationLine(errors, draft, receivableLine, isApply ? 'CREDIT' : 'DEBIT');
+  if (reimbursementLine) validateCollectionDispositionExpenseApplicationLine(errors, draft, reimbursementLine, isApply ? 'DEBIT' : 'CREDIT');
+
+  return errors.length === 0 ? { ok: true, draft } : { ok: false, errors };
+}
+
+function validateCollectionDispositionExpenseApplicationLine(
+  errors: JournalValidationError[],
+  draft: JournalEntryDraft,
+  line: JournalLineDraft,
+  expectedDirection: 'DEBIT' | 'CREDIT',
+) {
+  if (line.direction !== expectedDirection) {
+    errors.push(validationError('INVALID_ACCOUNT_DIRECTION', 'Expense application journal leg has invalid direction.', `lines[${line.lineNo}].direction`, {
+      expectedDirection,
+      direction: line.direction,
+    }));
+  }
+
+  if (!line.caseId) {
+    errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'Expense application journal line requires caseId.', `lines[${line.lineNo}].caseId`));
+  }
+
+  if (draft.caseId && line.caseId && line.caseId !== draft.caseId) {
+    errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'Expense application journal line caseId must match entry caseId.', `lines[${line.lineNo}].caseId`, {
+      entryCaseId: draft.caseId,
+      lineCaseId: line.caseId,
+    }));
+  }
+
+  if (!line.clientId) {
+    errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'Expense application journal line requires clientId.', `lines[${line.lineNo}].clientId`));
+  }
+
+  if (!line.expenseRequestId) {
+    errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'Expense application journal line requires expenseRequestId.', `lines[${line.lineNo}].expenseRequestId`));
+  }
+
+  if (line.expenseApplicationId !== draft.sourceId) {
+    errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'Expense application journal line must carry expenseApplicationId from sourceId.', `lines[${line.lineNo}].expenseApplicationId`, {
+      expectedExpenseApplicationId: draft.sourceId,
+      expenseApplicationId: line.expenseApplicationId,
+    }));
+  }
+
+  const expectedDispositionLineId = typeof draft.metadata.collectionDispositionLineId === 'string'
+    ? draft.metadata.collectionDispositionLineId
+    : null;
+  if (!line.dispositionLineId) {
+    errors.push(validationError('MISSING_REQUIRED_DIMENSION', 'Expense application journal line requires dispositionLineId.', `lines[${line.lineNo}].dispositionLineId`));
+  } else if (expectedDispositionLineId && line.dispositionLineId !== expectedDispositionLineId) {
+    errors.push(validationError('UNSUPPORTED_BUSINESS_RULE', 'Expense application journal line dispositionLineId must match metadata collectionDispositionLineId.', `lines[${line.lineNo}].dispositionLineId`, {
+      expectedDispositionLineId,
+      dispositionLineId: line.dispositionLineId,
+    }));
+  }
+
+  if (
+    line.caseClientId ||
+    line.payoutId ||
+    line.offsetId ||
+    line.expensePaymentId ||
+    line.balanceLedgerId
+  ) {
+    errors.push(validationError('FORBIDDEN_SYNTHETIC_DIMENSION', 'Expense application journal line must not carry unrelated source dimensions.', `lines[${line.lineNo}]`, {
+      caseClientId: line.caseClientId,
+      payoutId: line.payoutId,
+      offsetId: line.offsetId,
+      expensePaymentId: line.expensePaymentId,
       balanceLedgerId: line.balanceLedgerId,
     }));
   }
