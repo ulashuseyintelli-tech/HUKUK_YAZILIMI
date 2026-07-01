@@ -78,6 +78,77 @@ export interface ClientActionCatalogResponse {
   data: ClientActionCatalogItem[];
 }
 
+export type ClientOperatingHealth = 'healthy' | 'attention' | 'blocked';
+export type ClientOperatingRiskLevel = 'low' | 'medium' | 'high';
+export type ClientOperatingSignalSeverity = 'info' | 'warning' | 'critical';
+export type ClientOperatingSignalKey =
+  | 'contact.missing_info'
+  | 'contact.follow_up_overdue'
+  | 'poa.missing_or_inactive'
+  | 'poa.expiring'
+  | 'intake.pending_review'
+  | 'notification.failed';
+
+export interface ClientOperatingSignal {
+  key: ClientOperatingSignalKey;
+  label: string;
+  description: string;
+  severity: ClientOperatingSignalSeverity;
+  actionKey?: ClientActionKey;
+  target: { clientId: string; caseId?: string | null };
+}
+
+export interface ClientOperatingSnapshot {
+  clientId: string;
+  health: ClientOperatingHealth;
+  riskLevel: ClientOperatingRiskLevel;
+  contact: {
+    status: 'complete' | 'missing' | 'waived';
+    missingFields: string[];
+    followUpStatus: string | null;
+    openTaskCount: number;
+    overdueTaskCount: number;
+    nextFollowUpAt: string | null;
+    escalationLevel: string | null;
+  };
+  poa: {
+    status: 'active' | 'missing' | 'expiring' | 'expired_or_inactive';
+    activeCount: number;
+    nearestValidUntil: string | null;
+  };
+  intake: {
+    status: 'none' | 'link_active' | 'submitted' | 'in_review' | 'completed' | 'rejected';
+    latestSubmission: {
+      id: string;
+      status: string;
+      caseId: string | null;
+      occurredAt: string;
+    } | null;
+    latestLink: {
+      id: string;
+      status: string;
+      caseId: string | null;
+      expiresAt: string | null;
+    } | null;
+  };
+  notification: {
+    status: 'none' | 'healthy' | 'pending' | 'failed';
+    latest: {
+      id: string;
+      status: string;
+      type: string | null;
+      channel: string | null;
+      caseId: string | null;
+      occurredAt: string;
+    } | null;
+  };
+  signals: ClientOperatingSignal[];
+}
+
+export interface ClientOperatingSnapshotResponse {
+  data: ClientOperatingSnapshot;
+}
+
 interface ClientTimelineCursor {
   occurredAt: string;
   source: ClientTimelineSource;
@@ -245,6 +316,89 @@ export class ClientService {
 
     return {
       data: buildClientActionCatalog(id),
+    };
+  }
+
+  /**
+   * Client Workspace Operating Snapshot V1 (read-only).
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - ClientController.operatingSnapshot() -> GET /clients/:clientId/operating-snapshot (Client Workspace health read model)
+   * </remarks>
+   */
+  async getOperatingSnapshot(id: string, tenantId: string): Promise<ClientOperatingSnapshotResponse> {
+    const client = await this.prisma.client.findFirst({
+      where: { id, tenantId, isActive: true },
+      select: {
+        id: true,
+        phone: true,
+        email: true,
+        contactFollowUpStatus: true,
+      },
+    });
+    if (!client) throw new NotFoundException('Client not found');
+
+    const [poas, latestSubmission, latestLink, latestNotification, openTasks] = await Promise.all([
+      this.prisma.clientPowerOfAttorney.findMany({
+        where: { clientId: id, isActive: true },
+        orderBy: [{ validUntil: 'asc' }, { createdAt: 'desc' }],
+        take: 10,
+        select: { id: true, status: true, validUntil: true },
+      }),
+      this.prisma.clientIntakeSubmission.findFirst({
+        where: { tenantId, clientId: id },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: {
+          id: true,
+          status: true,
+          submittedAt: true,
+          claimedAt: true,
+          reviewedAt: true,
+          createdAt: true,
+          caseId: true,
+        },
+      }),
+      this.prisma.clientIntakeLink.findFirst({
+        where: { tenantId, clientId: id },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: { id: true, status: true, expiresAt: true, caseId: true },
+      }),
+      this.prisma.clientNotification.findFirst({
+        where: { tenantId, clientId: id },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        select: {
+          id: true,
+          type: true,
+          channel: true,
+          status: true,
+          sentAt: true,
+          deliveredAt: true,
+          createdAt: true,
+          caseId: true,
+        },
+      }),
+      this.prisma.task.findMany({
+        where: {
+          tenantId,
+          clientId: id,
+          taskCategory: 'OPERATIONAL_COMPLETENESS',
+          status: { in: ['PENDING', 'IN_PROGRESS'] },
+        },
+        orderBy: [{ dueDate: 'asc' }, { id: 'asc' }],
+        select: {
+          id: true,
+          status: true,
+          dueDate: true,
+          missingFields: true,
+          escalationLevel: true,
+          nextFollowUpAt: true,
+        },
+      }),
+    ]);
+
+    return {
+      data: buildClientOperatingSnapshot(id, client, poas, latestSubmission, latestLink, latestNotification, openTasks),
     };
   }
 
@@ -1024,4 +1178,200 @@ function buildClientActionCatalog(clientId: string): ClientActionCatalogItem[] {
       order: 70,
     },
   ];
+}
+function buildClientOperatingSnapshot(
+  clientId: string,
+  client: { phone?: string | null; email?: string | null; contactFollowUpStatus?: string | null },
+  poas: Array<{ status?: string | null; validUntil?: Date | string | null }>,
+  latestSubmission: any | null,
+  latestLink: any | null,
+  latestNotification: any | null,
+  openTasks: Array<{ dueDate?: Date | string | null; escalationLevel?: string | null; nextFollowUpAt?: Date | string | null }>,
+): ClientOperatingSnapshot {
+  const now = new Date();
+  const target = { clientId };
+  const signals: ClientOperatingSignal[] = [];
+  const missingContactFields = computeMissingContactFields(client);
+  const overdueTasks = openTasks.filter((task) => isPastDate(task.dueDate, now));
+  const nextFollowUpAt = earliestDate(openTasks.map((task) => task.nextFollowUpAt ?? task.dueDate));
+  const escalationLevel = openTasks.find((task) => task.escalationLevel)?.escalationLevel ?? null;
+  const contactStatus = client.contactFollowUpStatus === 'WAIVED'
+    ? 'waived'
+    : missingContactFields.length > 0
+      ? 'missing'
+      : 'complete';
+
+  if (contactStatus === 'missing') {
+    signals.push({
+      key: 'contact.missing_info',
+      label: 'Contact information is incomplete',
+      description: `Missing contact fields: ${missingContactFields.join(', ')}`,
+      severity: 'warning',
+      actionKey: 'contact.update_missing_info',
+      target,
+    });
+  }
+  if (overdueTasks.length > 0) {
+    signals.push({
+      key: 'contact.follow_up_overdue',
+      label: 'Contact follow-up is overdue',
+      description: 'At least one operational completeness task is past due.',
+      severity: 'critical',
+      actionKey: 'contact.update_missing_info',
+      target,
+    });
+  }
+
+  const activePoas = poas.filter((poa) => String(poa.status ?? '').toUpperCase() === 'ACTIVE' && !isPastDate(poa.validUntil, now));
+  const nearestValidUntil = earliestDate(activePoas.map((poa) => poa.validUntil));
+  const poaExpiring = !!nearestValidUntil && new Date(nearestValidUntil).getTime() <= now.getTime() + 30 * 24 * 60 * 60 * 1000;
+  const poaStatus = activePoas.length === 0
+    ? poas.length > 0
+      ? 'expired_or_inactive'
+      : 'missing'
+    : poaExpiring
+      ? 'expiring'
+      : 'active';
+
+  if (poaStatus === 'missing' || poaStatus === 'expired_or_inactive') {
+    signals.push({
+      key: 'poa.missing_or_inactive',
+      label: 'Active POA is missing',
+      description: 'No active power of attorney is available for this client.',
+      severity: 'warning',
+      actionKey: 'poa.reminder.send',
+      target,
+    });
+  } else if (poaStatus === 'expiring') {
+    signals.push({
+      key: 'poa.expiring',
+      label: 'POA is expiring soon',
+      description: 'The nearest active power of attorney expires within 30 days.',
+      severity: 'warning',
+      actionKey: 'poa.reminder.send',
+      target,
+    });
+  }
+
+  const intakeStatus = computeIntakeStatus(latestSubmission, latestLink);
+  if (intakeStatus === 'submitted' || intakeStatus === 'in_review') {
+    signals.push({
+      key: 'intake.pending_review',
+      label: 'Intake needs review',
+      description: 'Latest intake submission is not completed yet.',
+      severity: 'warning',
+      target: { clientId, caseId: latestSubmission?.caseId ?? null },
+    });
+  }
+
+  const notificationStatus = computeNotificationStatus(latestNotification);
+  if (notificationStatus === 'failed') {
+    signals.push({
+      key: 'notification.failed',
+      label: 'Latest notification failed',
+      description: 'The latest client notification has failed status.',
+      severity: 'warning',
+      actionKey: 'notification.template.send',
+      target: { clientId, caseId: latestNotification?.caseId ?? null },
+    });
+  }
+
+  const riskLevel = signals.some((signal) => signal.severity === 'critical')
+    ? 'high'
+    : signals.some((signal) => signal.severity === 'warning')
+      ? 'medium'
+      : 'low';
+  const health = riskLevel === 'high' ? 'blocked' : riskLevel === 'medium' ? 'attention' : 'healthy';
+
+  return {
+    clientId,
+    health,
+    riskLevel,
+    contact: {
+      status: contactStatus,
+      missingFields: contactStatus === 'missing' ? missingContactFields : [],
+      followUpStatus: client.contactFollowUpStatus ?? null,
+      openTaskCount: openTasks.length,
+      overdueTaskCount: overdueTasks.length,
+      nextFollowUpAt,
+      escalationLevel,
+    },
+    poa: {
+      status: poaStatus,
+      activeCount: activePoas.length,
+      nearestValidUntil,
+    },
+    intake: {
+      status: intakeStatus,
+      latestSubmission: latestSubmission
+        ? {
+            id: latestSubmission.id,
+            status: latestSubmission.status,
+            caseId: latestSubmission.caseId ?? null,
+            occurredAt: toIso(latestSubmission.reviewedAt ?? latestSubmission.claimedAt ?? latestSubmission.submittedAt ?? latestSubmission.createdAt),
+          }
+        : null,
+      latestLink: latestLink
+        ? {
+            id: latestLink.id,
+            status: latestLink.status,
+            caseId: latestLink.caseId ?? null,
+            expiresAt: toIsoOrNull(latestLink.expiresAt),
+          }
+        : null,
+    },
+    notification: {
+      status: notificationStatus,
+      latest: latestNotification
+        ? {
+            id: latestNotification.id,
+            status: latestNotification.status,
+            type: latestNotification.type ?? null,
+            channel: latestNotification.channel ?? null,
+            caseId: latestNotification.caseId ?? null,
+            occurredAt: toIso(latestNotification.deliveredAt ?? latestNotification.sentAt ?? latestNotification.createdAt),
+          }
+        : null,
+    },
+    signals,
+  };
+}
+
+function computeIntakeStatus(latestSubmission: any | null, latestLink: any | null): ClientOperatingSnapshot['intake']['status'] {
+  if (latestSubmission) {
+    const status = String(latestSubmission.status ?? '').toUpperCase();
+    if (status === 'CLIENT_SUBMITTED') return 'submitted';
+    if (status === 'IN_REVIEW' || status === 'PARTIALLY_PROMOTED') return 'in_review';
+    if (status === 'COMPLETED') return 'completed';
+    if (status === 'REJECTED') return 'rejected';
+  }
+  if (String(latestLink?.status ?? '').toUpperCase() === 'ACTIVE') return 'link_active';
+  return 'none';
+}
+
+function computeNotificationStatus(latestNotification: any | null): ClientOperatingSnapshot['notification']['status'] {
+  if (!latestNotification) return 'none';
+  const status = String(latestNotification.status ?? '').toUpperCase();
+  if (status === 'FAILED') return 'failed';
+  if (status === 'PENDING') return 'pending';
+  return 'healthy';
+}
+
+function earliestDate(values: Array<Date | string | null | undefined>): string | null {
+  const dates = values
+    .filter((value): value is Date | string => !!value)
+    .map((value) => new Date(value))
+    .filter((value) => !Number.isNaN(value.getTime()))
+    .sort((a, b) => a.getTime() - b.getTime());
+  return dates[0] ? dates[0].toISOString() : null;
+}
+
+function isPastDate(value: Date | string | null | undefined, now: Date): boolean {
+  if (!value) return false;
+  const date = new Date(value);
+  return !Number.isNaN(date.getTime()) && date.getTime() < now.getTime();
+}
+
+function toIsoOrNull(value: Date | string | null | undefined): string | null {
+  return value ? toIso(value) : null;
 }

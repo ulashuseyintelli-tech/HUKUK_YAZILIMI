@@ -56,6 +56,15 @@ export class ClientController {
     return this.clientService.getActionCatalog(clientId, req.user.tenantId);
   }
 
+  // Client Workspace operating snapshot (read-only V1)
+  @Get(':clientId/operating-snapshot')
+  async operatingSnapshot(
+    @Request() req: any,
+    @Param('clientId') clientId: string,
+  ) {
+    return this.clientService.getOperatingSnapshot(clientId, req.user.tenantId);
+  }
+
   // Fetch one client
   @Get(':id')
   async findOne(@Request() req: any, @Param('id') id: string) {
