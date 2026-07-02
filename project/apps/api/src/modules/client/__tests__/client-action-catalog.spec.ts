@@ -10,7 +10,7 @@ const defaultClient = {
   powerOfAttorneys: [],
 };
 
-function buildHarness(opts: { client?: any } = {}) {
+function buildHarness(opts: { client?: any; deliveries?: any[] } = {}) {
   const prisma: any = {
     client: {
       findFirst: jest
@@ -38,7 +38,7 @@ function buildHarness(opts: { client?: any } = {}) {
       update: jest.fn(),
     },
     poaExpiryNotificationDelivery: {
-      findMany: jest.fn(),
+      findMany: jest.fn().mockResolvedValue(opts.deliveries ?? []),
       create: jest.fn(),
       update: jest.fn(),
       updateMany: jest.fn(),
@@ -94,7 +94,7 @@ describe('ClientService.getActionCatalog', () => {
           where: { isActive: true },
           orderBy: [{ validUntil: 'asc' }, { createdAt: 'desc' }],
           take: 10,
-          select: { status: true, isLimited: true, validUntil: true },
+          select: { id: true, status: true, isLimited: true, validUntil: true },
         },
       },
     });
@@ -230,10 +230,10 @@ describe('ClientService.getActionCatalog', () => {
   });
 
   it('enables POA reminder only when an active limited POA expires within 30 days', async () => {
-    const { svc } = buildHarness({
+    const { svc, prisma } = buildHarness({
       client: {
         ...defaultClient,
-        powerOfAttorneys: [{ status: 'ACTIVE', isLimited: true, validUntil: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000) }],
+        powerOfAttorneys: [{ id: 'poa-expiring', status: 'ACTIVE', isLimited: true, validUntil: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000) }],
       },
     });
 
@@ -248,6 +248,100 @@ describe('ClientService.getActionCatalog', () => {
     });
     expect(poaAction?.disabledReason).toBeUndefined();
     expect(poaAction?.href).toBeUndefined();
+    expect(prisma.poaExpiryNotificationDelivery.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({
+        tenantId: 'tenant-1',
+        clientId: 'client-1',
+        poaId: { in: ['poa-expiring'] },
+        windowKey: 'D30',
+      }),
+      select: expect.not.objectContaining({ poaId: true, dedupeKey: true, recipientEmail: true, lastError: true }),
+    }));
+  });
+
+  it('keeps POA reminder disabled after a current-window SENT artifact without leaking delivery internals', async () => {
+    const { svc } = buildHarness({
+      client: {
+        ...defaultClient,
+        powerOfAttorneys: [{ id: 'poa-expiring', status: 'ACTIVE', isLimited: true, validUntil: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000) }],
+      },
+      deliveries: [{ status: 'SENT', attempts: 1, sentAt: new Date(), poaId: 'poa-expiring', dedupeKey: 'secret-dedupe', recipientEmail: 'recipient@example.test' }],
+    });
+
+    const result = await svc.getActionCatalog('client-1', 'tenant-1');
+    const poaAction = result.data.find((item) => item.key === 'poa.reminder.send');
+    const serialized = JSON.stringify(poaAction);
+
+    expect(poaAction).toMatchObject({
+      enabled: false,
+      requiredState: 'POA_REMINDER_SENT_CURRENT_WINDOW',
+      disabledReason: 'POA reminder was already sent for the current expiry window; renewal is still needed.',
+      target: { clientId: 'client-1' },
+    });
+    expect(serialized).not.toContain('poa-expiring');
+    expect(serialized).not.toContain('secret-dedupe');
+    expect(serialized).not.toContain('recipient@example.test');
+  });
+
+  it('keeps POA reminder disabled while current-window delivery is freshly pending', async () => {
+    const { svc } = buildHarness({
+      client: {
+        ...defaultClient,
+        powerOfAttorneys: [{ id: 'poa-expiring', status: 'ACTIVE', isLimited: true, validUntil: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000) }],
+      },
+      deliveries: [{ status: 'PENDING', attempts: 1, reservedAt: new Date() }],
+    });
+
+    const result = await svc.getActionCatalog('client-1', 'tenant-1');
+    const poaAction = result.data.find((item) => item.key === 'poa.reminder.send');
+
+    expect(poaAction).toMatchObject({
+      enabled: false,
+      requiredState: 'POA_REMINDER_DELIVERY_PENDING',
+      disabledReason: 'POA reminder delivery is already pending for the current expiry window.',
+    });
+  });
+
+  it.each([
+    ['stale pending', { status: 'PENDING', attempts: 1, reservedAt: new Date(Date.now() - 20 * 60 * 1000) }],
+    ['retry-due failed', { status: 'FAILED', attempts: 1, nextRetryAt: new Date(Date.now() - 60 * 1000) }],
+  ])('keeps POA reminder enabled for %s delivery state', async (_label, delivery) => {
+    const { svc } = buildHarness({
+      client: {
+        ...defaultClient,
+        powerOfAttorneys: [{ id: 'poa-expiring', status: 'ACTIVE', isLimited: true, validUntil: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000) }],
+      },
+      deliveries: [delivery],
+    });
+
+    const result = await svc.getActionCatalog('client-1', 'tenant-1');
+    const poaAction = result.data.find((item) => item.key === 'poa.reminder.send');
+
+    expect(poaAction).toMatchObject({
+      enabled: true,
+      requiredState: 'POA_REMINDER_RETRY_AVAILABLE',
+      target: { clientId: 'client-1' },
+    });
+    expect(poaAction?.disabledReason).toBeUndefined();
+  });
+
+  it.each([
+    ['retry waiting', { status: 'FAILED', attempts: 1, nextRetryAt: new Date(Date.now() + 60 * 60 * 1000) }, 'POA_REMINDER_RETRY_WAITING'],
+    ['max attempts', { status: 'FAILED', attempts: 3, nextRetryAt: null }, 'POA_REMINDER_MAX_ATTEMPTS_REACHED'],
+  ])('keeps POA reminder disabled for %s delivery state', async (_label, delivery, requiredState) => {
+    const { svc } = buildHarness({
+      client: {
+        ...defaultClient,
+        powerOfAttorneys: [{ id: 'poa-expiring', status: 'ACTIVE', isLimited: true, validUntil: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000) }],
+      },
+      deliveries: [delivery],
+    });
+
+    const result = await svc.getActionCatalog('client-1', 'tenant-1');
+    const poaAction = result.data.find((item) => item.key === 'poa.reminder.send');
+
+    expect(poaAction).toMatchObject({ enabled: false, requiredState });
+    expect(poaAction?.disabledReason).toEqual(expect.any(String));
   });
 
   it('keeps POA reminder disabled for missing, inactive, unlimited, or non-expiring POA state', async () => {

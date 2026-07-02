@@ -96,6 +96,9 @@ export type ClientOperatingSignalKey =
   | 'contact.follow_up_overdue'
   | 'poa.missing_or_inactive'
   | 'poa.expiring'
+  | 'poa.reminder_sent'
+  | 'poa.reminder_delivery_pending'
+  | 'poa.reminder_delivery_failed'
   | 'intake.pending_review'
   | 'intake.delivery_failed'
   | 'intake.delivery_stuck'
@@ -172,6 +175,9 @@ const CLIENT_TIMELINE_MAX_LIMIT = 100;
 const CLIENT_TIMELINE_DEFAULT_SOURCES: ClientTimelineSource[] = ['client_notification', 'intake_submission'];
 const CLIENT_TIMELINE_ALLOWED_SOURCES = new Set<ClientTimelineSource>(CLIENT_TIMELINE_DEFAULT_SOURCES);
 const CLIENT_INTAKE_DELIVERY_STALE_MS = 15 * 60 * 1000;
+const CLIENT_POA_REMINDER_WINDOW_KEY = 'D30';
+const CLIENT_POA_DELIVERY_LOCK_TIMEOUT_MS = 15 * 60 * 1000;
+const CLIENT_POA_DELIVERY_MAX_ATTEMPTS = 3;
 
 /** Müvekkil için contact-task dedupe anahtarı (tek aktif görev garantisi). */
 export function contactTaskDedupeKey(clientId: string): string {
@@ -197,6 +203,37 @@ export class ClientService {
     private officeApproval: OfficeApprovalService,
     private poaExpiryDelivery?: PoaExpiryDeliveryService,
   ) {}
+
+  private async getPoaReminderDeliveryState(
+    tenantId: string,
+    clientId: string,
+    poas?: Array<{ id?: string | null; status?: string | null; isLimited?: boolean | null; validUntil?: Date | string | null }> | null,
+  ): Promise<ClientPoaReminderDeliveryState> {
+    const poaIds = currentPoaReminderCandidateIds(poas);
+    if (poaIds.length === 0) return { status: 'none' };
+
+    const rows = await (this.prisma as any).poaExpiryNotificationDelivery.findMany({
+      where: {
+        tenantId,
+        clientId,
+        poaId: { in: poaIds },
+        windowKey: CLIENT_POA_REMINDER_WINDOW_KEY,
+        status: { in: ['PENDING', 'SENT', 'FAILED'] },
+      },
+      orderBy: [{ updatedAt: 'desc' }, { id: 'desc' }],
+      take: 20,
+      select: {
+        status: true,
+        attempts: true,
+        reservedAt: true,
+        nextRetryAt: true,
+        sentAt: true,
+        updatedAt: true,
+      },
+    });
+
+    return buildPoaReminderDeliveryState(rows);
+  }
 
   /**
    * Task 8A (owner-locked 2026-07-02) — müvekkil lifecycle (archive/delete) mutasyon yetkisi.
@@ -354,16 +391,19 @@ export class ClientService {
           where: { isActive: true },
           orderBy: [{ validUntil: 'asc' }, { createdAt: 'desc' }],
           take: 10,
-          select: { status: true, isLimited: true, validUntil: true },
+          select: { id: true, status: true, isLimited: true, validUntil: true },
         },
       },
     });
     if (!client) throw new NotFoundException('Client not found');
 
+    const poaReminderDelivery = await this.getPoaReminderDeliveryState(tenantId, client.id, client.powerOfAttorneys);
+
     return {
       data: buildClientActionCatalog({
         actorRole: normalizeClientActionRole(actorRole),
         client,
+        poaReminderDelivery,
       }),
     };
   }
@@ -394,7 +434,7 @@ export class ClientService {
         where: { clientId: id, isActive: true },
         orderBy: [{ validUntil: 'asc' }, { createdAt: 'desc' }],
         take: 10,
-        select: { id: true, status: true, validUntil: true },
+        select: { id: true, status: true, isLimited: true, validUntil: true },
       }),
       this.prisma.clientIntakeSubmission.findFirst({
         where: { tenantId, clientId: id },
@@ -466,8 +506,10 @@ export class ClientService {
       }),
     ]);
 
+    const poaReminderDelivery = await this.getPoaReminderDeliveryState(tenantId, id, poas);
+
     return {
-      data: buildClientOperatingSnapshot(id, client, poas, latestSubmission, latestLink, latestNotification, latestDeliveryIssue, openTasks),
+      data: buildClientOperatingSnapshot(id, client, poas, poaReminderDelivery, latestSubmission, latestLink, latestNotification, latestDeliveryIssue, openTasks),
     };
   }
   /**
@@ -1183,12 +1225,34 @@ interface ClientActionCatalogClientState {
   email?: string | null;
   contactFollowUpStatus?: string | null;
   caseClients?: Array<{ caseId: string | null }> | null;
-  powerOfAttorneys?: Array<{ status?: string | null; isLimited?: boolean | null; validUntil?: Date | string | null }> | null;
+  powerOfAttorneys?: Array<{ id?: string | null; status?: string | null; isLimited?: boolean | null; validUntil?: Date | string | null }> | null;
+}
+
+type ClientPoaReminderDeliveryStatus =
+  | 'none'
+  | 'sent'
+  | 'pending_fresh'
+  | 'retry_available'
+  | 'retry_waiting'
+  | 'max_attempts';
+
+interface ClientPoaReminderDeliveryState {
+  status: ClientPoaReminderDeliveryStatus;
+}
+
+interface ClientPoaReminderDeliveryRow {
+  status?: string | null;
+  attempts?: number | null;
+  reservedAt?: Date | string | null;
+  nextRetryAt?: Date | string | null;
+  sentAt?: Date | string | null;
+  updatedAt?: Date | string | null;
 }
 
 interface ClientActionCatalogContext {
   actorRole: ClientActionRole;
   client: ClientActionCatalogClientState;
+  poaReminderDelivery: ClientPoaReminderDeliveryState;
 }
 
 const CLIENT_ACTION_ROLE_RANK: Record<ClientActionRole, number> = {
@@ -1218,10 +1282,8 @@ function buildClientActionCatalog(context: ClientActionCatalogContext): ClientAc
       ? 'Select a related case before creating an intake link.'
       : 'No related cases are linked to this client yet.';
   const missingContactFields = computeMissingContactFields(context.client);
-  const poaReminderEnabled = hasPoaReminderEligiblePowerOfAttorney(context.client.powerOfAttorneys);
-  const poaReminderDisabledReason = poaReminderEnabled
-    ? undefined
-    : 'POA reminder is available only for active limited powers of attorney expiring within 30 days.';
+  const poaReminderBaseEnabled = hasPoaReminderEligiblePowerOfAttorney(context.client.powerOfAttorneys);
+  const poaReminderAction = buildPoaReminderActionAvailability(poaReminderBaseEnabled, context.poaReminderDelivery);
   const contactState = context.client.contactFollowUpStatus === 'WAIVED'
     ? 'CONTACT_FOLLOW_UP_WAIVED'
     : missingContactFields.length > 0
@@ -1309,12 +1371,12 @@ function buildClientActionCatalog(context: ClientActionCatalogContext): ClientAc
       label: 'Send POA reminder',
       description: 'Send a dedupe-aware internal POA expiry reminder for active expiring powers of attorney.',
       category: 'poa',
-      enabled: poaReminderEnabled,
-      disabledReason: poaReminderDisabledReason,
+      enabled: poaReminderAction.enabled,
+      disabledReason: poaReminderAction.disabledReason,
       visibility: 'visible',
       dangerLevel: 'medium',
       requiredRole: 'USER',
-      requiredState: poaReminderEnabled ? 'POA_EXPIRING_ACTIVE' : 'POA_REMINDER_NOT_ELIGIBLE',
+      requiredState: poaReminderAction.requiredState,
       target,
       order: 60,
     },
@@ -1340,19 +1402,109 @@ function buildClientActionCatalog(context: ClientActionCatalogContext): ClientAc
     .sort((a, b) => a.order - b.order);
 }
 
-function hasPoaReminderEligiblePowerOfAttorney(
-  poas?: Array<{ status?: string | null; isLimited?: boolean | null; validUntil?: Date | string | null }> | null,
+function currentPoaReminderCandidateIds(
+  poas?: Array<{ id?: string | null; status?: string | null; isLimited?: boolean | null; validUntil?: Date | string | null }> | null,
   now: Date = new Date(),
-): boolean {
+): string[] {
   const until = new Date(now);
   until.setDate(until.getDate() + 30);
-  return (poas ?? []).some((poa) => {
-    if (String(poa.status ?? '').toUpperCase() !== 'ACTIVE') return false;
-    if (poa.isLimited !== true || !poa.validUntil) return false;
-    const validUntil = new Date(poa.validUntil);
-    if (Number.isNaN(validUntil.getTime())) return false;
-    return validUntil >= now && validUntil <= until;
-  });
+  return (poas ?? [])
+    .filter((poa) => {
+      if (!poa.id || String(poa.status ?? '').toUpperCase() !== 'ACTIVE') return false;
+      if (poa.isLimited !== true || !poa.validUntil) return false;
+      const validUntil = new Date(poa.validUntil);
+      if (Number.isNaN(validUntil.getTime())) return false;
+      return validUntil >= now && validUntil <= until;
+    })
+    .map((poa) => poa.id!);
+}
+
+function hasPoaReminderEligiblePowerOfAttorney(
+  poas?: Array<{ id?: string | null; status?: string | null; isLimited?: boolean | null; validUntil?: Date | string | null }> | null,
+  now: Date = new Date(),
+): boolean {
+  return currentPoaReminderCandidateIds(poas, now).length > 0;
+}
+
+function buildPoaReminderDeliveryState(
+  rows: ClientPoaReminderDeliveryRow[],
+  now: Date = new Date(),
+): ClientPoaReminderDeliveryState {
+  const staleCutoff = new Date(now.getTime() - CLIENT_POA_DELIVERY_LOCK_TIMEOUT_MS);
+  const normalized = rows.map((row) => ({
+    ...row,
+    status: String(row.status ?? '').toUpperCase(),
+    attempts: Number(row.attempts ?? 0),
+    reservedAt: toDateOrNull(row.reservedAt),
+    nextRetryAt: toDateOrNull(row.nextRetryAt),
+  }));
+
+  if (normalized.some((row) => row.status === 'PENDING' && !!row.reservedAt && row.reservedAt >= staleCutoff)) {
+    return { status: 'pending_fresh' };
+  }
+  if (normalized.some((row) => row.status === 'PENDING' && (!row.reservedAt || row.reservedAt < staleCutoff))) {
+    return { status: 'retry_available' };
+  }
+  if (normalized.some((row) => row.status === 'FAILED' && row.attempts < CLIENT_POA_DELIVERY_MAX_ATTEMPTS && (!row.nextRetryAt || row.nextRetryAt <= now))) {
+    return { status: 'retry_available' };
+  }
+  if (normalized.some((row) => row.status === 'FAILED' && row.attempts >= CLIENT_POA_DELIVERY_MAX_ATTEMPTS)) {
+    return { status: 'max_attempts' };
+  }
+  if (normalized.some((row) => row.status === 'FAILED')) {
+    return { status: 'retry_waiting' };
+  }
+  if (normalized.some((row) => row.status === 'SENT')) {
+    return { status: 'sent' };
+  }
+  return { status: 'none' };
+}
+
+function buildPoaReminderActionAvailability(
+  hasEligiblePoa: boolean,
+  delivery: ClientPoaReminderDeliveryState,
+): { enabled: boolean; requiredState: string; disabledReason?: string } {
+  if (!hasEligiblePoa) {
+    return {
+      enabled: false,
+      requiredState: 'POA_REMINDER_NOT_ELIGIBLE',
+      disabledReason: 'POA reminder is available only for active limited powers of attorney expiring within 30 days.',
+    };
+  }
+
+  if (delivery.status === 'pending_fresh') {
+    return {
+      enabled: false,
+      requiredState: 'POA_REMINDER_DELIVERY_PENDING',
+      disabledReason: 'POA reminder delivery is already pending for the current expiry window.',
+    };
+  }
+  if (delivery.status === 'sent') {
+    return {
+      enabled: false,
+      requiredState: 'POA_REMINDER_SENT_CURRENT_WINDOW',
+      disabledReason: 'POA reminder was already sent for the current expiry window; renewal is still needed.',
+    };
+  }
+  if (delivery.status === 'retry_waiting') {
+    return {
+      enabled: false,
+      requiredState: 'POA_REMINDER_RETRY_WAITING',
+      disabledReason: 'POA reminder delivery failed and retry is not due yet.',
+    };
+  }
+  if (delivery.status === 'max_attempts') {
+    return {
+      enabled: false,
+      requiredState: 'POA_REMINDER_MAX_ATTEMPTS_REACHED',
+      disabledReason: 'POA reminder delivery reached the retry limit and needs operational attention.',
+    };
+  }
+  if (delivery.status === 'retry_available') {
+    return { enabled: true, requiredState: 'POA_REMINDER_RETRY_AVAILABLE' };
+  }
+
+  return { enabled: true, requiredState: 'POA_EXPIRING_ACTIVE' };
 }
 
 function poaReminderCommandStatus(result: PoaExpiryDeliveryRunResult): ClientPoaReminderSendStatus {
@@ -1381,7 +1533,8 @@ function applyClientActionPolicy(item: ClientActionCatalogItem, actorRole: Clien
 function buildClientOperatingSnapshot(
   clientId: string,
   client: { phone?: string | null; email?: string | null; contactFollowUpStatus?: string | null },
-  poas: Array<{ status?: string | null; validUntil?: Date | string | null }>,
+  poas: Array<{ id?: string | null; status?: string | null; isLimited?: boolean | null; validUntil?: Date | string | null }>,
+  poaReminderDelivery: ClientPoaReminderDeliveryState,
   latestSubmission: any | null,
   latestLink: any | null,
   latestNotification: any | null,
@@ -1451,6 +1604,9 @@ function buildClientOperatingSnapshot(
       actionKey: 'poa.reminder.send',
       target,
     });
+
+    const followUpSignal = buildPoaReminderFollowUpSignal(poaReminderDelivery, target);
+    if (followUpSignal) signals.push(followUpSignal);
   }
 
   const intakeStatus = computeIntakeStatus(latestSubmission, latestLink);
@@ -1558,6 +1714,45 @@ function buildClientOperatingSnapshot(
   };
 }
 
+function buildPoaReminderFollowUpSignal(
+  delivery: ClientPoaReminderDeliveryState,
+  target: { clientId: string },
+): ClientOperatingSignal | null {
+  if (delivery.status === 'sent') {
+    return {
+      key: 'poa.reminder_sent',
+      label: 'POA reminder was sent',
+      description: 'A POA reminder was sent for the current expiry window; renewal is still needed.',
+      severity: 'info',
+      actionKey: 'poa.reminder.send',
+      target,
+    };
+  }
+  if (delivery.status === 'pending_fresh') {
+    return {
+      key: 'poa.reminder_delivery_pending',
+      label: 'POA reminder delivery is pending',
+      description: 'A POA reminder delivery is already pending for the current expiry window.',
+      severity: 'info',
+      actionKey: 'poa.reminder.send',
+      target,
+    };
+  }
+  if (delivery.status === 'retry_waiting' || delivery.status === 'max_attempts') {
+    return {
+      key: 'poa.reminder_delivery_failed',
+      label: 'POA reminder delivery needs attention',
+      description: delivery.status === 'max_attempts'
+        ? 'POA reminder delivery reached the retry limit and needs operational attention.'
+        : 'POA reminder delivery failed and retry is not due yet.',
+      severity: 'warning',
+      actionKey: 'poa.reminder.send',
+      target,
+    };
+  }
+  return null;
+}
+
 function computeIntakeStatus(latestSubmission: any | null, latestLink: any | null): ClientOperatingSnapshot['intake']['status'] {
   if (latestSubmission) {
     const status = String(latestSubmission.status ?? '').toUpperCase();
@@ -1585,6 +1780,12 @@ function earliestDate(values: Array<Date | string | null | undefined>): string |
     .filter((value) => !Number.isNaN(value.getTime()))
     .sort((a, b) => a.getTime() - b.getTime());
   return dates[0] ? dates[0].toISOString() : null;
+}
+
+function toDateOrNull(value: Date | string | null | undefined): Date | null {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date;
 }
 
 function isPastDate(value: Date | string | null | undefined, now: Date): boolean {
