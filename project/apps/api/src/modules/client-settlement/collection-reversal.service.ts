@@ -8,6 +8,7 @@ import {
   type CollectionDispositionExpenseApplicationJournalSource,
 } from '../accounting-journal';
 import type { ActionHandlerContext } from '../icrabot/v28-engine/action-handler.service';
+import { clientOffsetLockKey } from './expense-remaining-lock';
 
 interface ExpenseApplicationJournalRow {
   id: string;
@@ -469,6 +470,10 @@ export class CollectionReversalService {
       if (!expenseRequest) {
         throw new ConflictException(`Expense application reversal target request missing: ${a.expenseRequestId}`);
       }
+      // ROLL-001b: ClientOffsetService (APPLY/REVERSAL) ve DispositionPostingService (reimbursement APPLY,
+      // ROLL-001) ile BİREBİR aynı key — computeExpenseRemaining'in TÜM yazarları (bu REVERSAL dahil) aynı
+      // kilit altında serialize olur. Lock, reversal create()'den ÖNCE alınır.
+      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${clientOffsetLockKey(disp.tenantId, expenseRequest.clientId, a.currency)}))`;
       const reversalApplication = await tx.collectionDispositionExpenseApplication.create({
         data: {
           tenantId: disp.tenantId,

@@ -48,6 +48,7 @@ function allocation(overrides: Record<string, any> = {}) {
 
 function buildPrisma(disp: any | null, allocations: any[] = []) {
   const prisma: any = {
+    $executeRaw: jest.fn().mockResolvedValue(1), // ROLL-001b: pg_advisory_xact_lock
     collectionDisposition: {
       findUnique: jest.fn().mockResolvedValue(disp),
       update: jest.fn().mockResolvedValue({ id: disp?.id ?? 'disp1', status: 'REVERSED' }),
@@ -363,6 +364,53 @@ describe('CollectionReversalService.reverseFromPaymentReversed', () => {
         }),
       }),
     );    expectNoForbiddenFinancialMutation(prisma); // projection unwind â‰  payout/ledger/statement
+  });
+
+  // ROLL-001b: reimbursement REVERSAL yolu, DispositionPostingService (ROLL-001) ve ClientOffsetService ile
+  // AYNI advisory-lock key'ini uretmeli.
+  it('FAZ-1b: REVERSAL cagirir pg_advisory_xact_lock, key = clientOffsetLockKey(tenantId, expenseRequest.clientId, a.currency)', async () => {
+    const prisma = buildPrisma(disposition());
+    prisma.collectionDispositionExpenseApplication.findMany = jest
+      .fn()
+      .mockResolvedValueOnce([{ id: 'app1', expenseRequestId: 'er1', collectionDispositionLineId: 'line1', amount: AMOUNT, currency: 'TRY', reimbursementScope: 'CLIENT_FRONTED' }])
+      .mockResolvedValueOnce([]);
+    await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(1);
+    // clientOffsetLockKey('t1', 'client-1', 'TRY') = 'client-offset:t1:client-1:TRY' - tagged-template cagrisinin
+    // ilk argumani strings[], ikincisi interpolated key degeri.
+    const call = (prisma.$executeRaw as jest.Mock).mock.calls[0];
+    expect(call[1]).toBe('client-offset:t1:client-1:TRY');
+  });
+
+  it('FAZ-1b: advisory-lock, REVERSAL create() isleminden ONCE alinir', async () => {
+    const prisma = buildPrisma(disposition());
+    prisma.collectionDispositionExpenseApplication.findMany = jest
+      .fn()
+      .mockResolvedValueOnce([{ id: 'app1', expenseRequestId: 'er1', collectionDispositionLineId: 'line1', amount: AMOUNT, currency: 'TRY', reimbursementScope: 'CLIENT_FRONTED' }])
+      .mockResolvedValueOnce([]);
+    await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
+    const lockOrder = (prisma.$executeRaw as jest.Mock).mock.invocationCallOrder[0];
+    const createOrder = (prisma.collectionDispositionExpenseApplication.create as jest.Mock).mock.invocationCallOrder[0];
+    expect(lockOrder).toBeLessThan(createOrder);
+  });
+
+  it('FAZ-1b: ayni dispositionda 2 farkli expenseRequestId ile lock 2 kez, farkli key\'lerle cagrilir', async () => {
+    const prisma = buildPrisma(disposition());
+    prisma.collectionDispositionExpenseApplication.findMany = jest
+      .fn()
+      .mockResolvedValueOnce([
+        { id: 'app1', expenseRequestId: 'er1', collectionDispositionLineId: 'line1', amount: AMOUNT, currency: 'TRY', reimbursementScope: 'CLIENT_FRONTED' },
+        { id: 'app2', expenseRequestId: 'er2', collectionDispositionLineId: 'line2', amount: AMOUNT, currency: 'TRY', reimbursementScope: 'FIRM_FRONTED' },
+      ])
+      .mockResolvedValueOnce([]);
+    prisma.expenseRequest.findFirst = jest
+      .fn()
+      .mockResolvedValueOnce({ clientId: 'client-1' })
+      .mockResolvedValueOnce({ clientId: 'client-2' });
+    await svc(prisma).reverseFromPaymentReversed({ collectionId: 'col1' }, 'case1', CTX);
+    expect(prisma.$executeRaw).toHaveBeenCalledTimes(2);
+    const keys = (prisma.$executeRaw as jest.Mock).mock.calls.map((c: any[]) => c[1]);
+    expect(keys).toEqual(['client-offset:t1:client-1:TRY', 'client-offset:t1:client-2:TRY']);
   });
 
   it('FAZ-1b: reimbursement reversal journal write hatasi fail-closed throw eder', async () => {
