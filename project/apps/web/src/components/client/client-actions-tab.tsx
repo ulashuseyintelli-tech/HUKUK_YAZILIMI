@@ -17,7 +17,7 @@ import {
   ShieldAlert,
   UserRound,
 } from 'lucide-react';
-import { api, type ClientActionCatalogItem, type ClientOperatingSnapshot, type ClientWorkspaceCreateAndDeliverResult, type ClientWorkspacePoaReminderResult, type ClientWorkspaceTemplateNotificationCode, type ClientWorkspaceTemplateNotificationResult, type CreateClientWorkspaceIntakeLinkInput, type CreateIntakeLinkResult, type IntakeFieldCategory } from '@/lib/api';
+import { api, type ClientActionCatalogItem, type ClientOperatingSnapshot, type ClientWorkspaceCreateAndDeliverResult, type ClientWorkspaceDocumentRequestCode, type ClientWorkspaceDocumentRequestResult, type ClientWorkspacePoaReminderResult, type ClientWorkspaceTemplateNotificationCode, type ClientWorkspaceTemplateNotificationResult, type CreateClientWorkspaceIntakeLinkInput, type CreateIntakeLinkResult, type IntakeFieldCategory } from '@/lib/api';
 
 interface ClientActionsTabProps {
   clientId: string;
@@ -42,6 +42,7 @@ const ACTION_LABELS: Partial<Record<ClientActionCatalogItem['key'], string>> = {
   'intake.link.send': 'Intake linki gönder',
   'poa.reminder.send': 'Vekalet hatırlatması gönder',
   'notification.template.send': 'Sablon bildirim gonder',
+  'document.request.send': 'Belge talebi gonder',
   'case.open_related': 'İlgili dosyaları aç',
   'activity.view_timeline': 'Aktiviteyi görüntüle',
 };
@@ -52,6 +53,7 @@ const ACTION_DESCRIPTIONS: Partial<Record<ClientActionCatalogItem['key'], string
   'intake.link.send': 'Gerçek gönderim sonraki typed command fazında açılır.',
   'poa.reminder.send': 'Süresi yaklaşan aktif vekalet için iç ekip hatırlatması gönderir.',
   'notification.template.send': 'V1 allowlist sablonlarindan guvenli muvekkil bildirimi gonderir.',
+  'document.request.send': 'V1 allowlist belge talebini guvenli bildirim altyapisiyla gonderir.',
   'case.open_related': 'Müvekkile bağlı dosyalar görünümüne gider.',
   'activity.view_timeline': 'Read-only aktivite zaman çizelgesine geçer.',
 };
@@ -76,6 +78,11 @@ const TEMPLATE_NOTIFICATION_OPTIONS: Array<{ value: ClientWorkspaceTemplateNotif
   { value: 'DOSYA_DURUMU', label: 'Dosya durumu' },
 ];
 const DEFAULT_TEMPLATE_NOTIFICATION_CODE: ClientWorkspaceTemplateNotificationCode = 'GENEL_BILGILENDIRME';
+const DOCUMENT_REQUEST_OPTIONS: Array<{ value: ClientWorkspaceDocumentRequestCode; label: string }> = [
+  { value: 'GENEL_BELGE', label: 'Genel belge' },
+  { value: 'DOSYA_EVRAKI', label: 'Dosya evraki' },
+];
+const DEFAULT_DOCUMENT_REQUEST_CODES: ClientWorkspaceDocumentRequestCode[] = ['GENEL_BELGE'];
 const SNAPSHOT_LABELS = {
   health: {
     healthy: 'Sağlıklı',
@@ -114,6 +121,7 @@ function actionIcon(key: ClientActionCatalogItem['key']) {
   if (key.startsWith('intake.')) return <ClipboardList className="h-4 w-4" />;
   if (key.startsWith('poa.')) return <FileText className="h-4 w-4" />;
   if (key.startsWith('notification.')) return <Mail className="h-4 w-4" />;
+  if (key.startsWith('document.')) return <FileText className="h-4 w-4" />;
   if (key.startsWith('activity.')) return <Clock className="h-4 w-4" />;
   return <ArrowRight className="h-4 w-4" />;
 }
@@ -351,6 +359,18 @@ function templateNotificationStatusClass(status: ClientWorkspaceTemplateNotifica
   return 'border-amber-200 bg-amber-50 text-amber-800';
 }
 
+function documentRequestStatusText(result: ClientWorkspaceDocumentRequestResult) {
+  if (result.status === 'sent') return 'Belge talebi gonderildi.';
+  if (result.status === 'skipped') return 'Bu belge talebi daha once islendigi icin tekrar gonderilmedi.';
+  return 'Belge talebi gonderilemedi.';
+}
+
+function documentRequestStatusClass(status: ClientWorkspaceDocumentRequestResult['status']) {
+  if (status === 'sent') return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+  if (status === 'failed') return 'border-red-200 bg-red-50 text-red-800';
+  return 'border-amber-200 bg-amber-50 text-amber-800';
+}
+
 function commandErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
@@ -374,21 +394,25 @@ function ActionItem({
   const isIntakeCreate = item.key === 'intake.link.create';
   const isPoaReminder = item.key === 'poa.reminder.send';
   const isTemplateNotification = item.key === 'notification.template.send';
+  const isDocumentRequest = item.key === 'document.request.send';
   const isLink = item.enabled && !!item.href && !isActivity;
   const canCreateIntakeLink = isIntakeCreate && item.enabled && !!item.target?.clientId && !!item.target?.caseId;
   const canSendPoaReminder = isPoaReminder && item.enabled && !!item.target?.clientId;
   const canSendTemplateNotification = isTemplateNotification && item.enabled && !!item.target?.clientId;
+  const canSendDocumentRequest = isDocumentRequest && item.enabled && !!item.target?.clientId;
   const [formOpen, setFormOpen] = useState(false);
   const [scope, setScope] = useState<Set<IntakeFieldCategory>>(() => new Set(DEFAULT_INTAKE_SCOPE));
   const [expiresAt, setExpiresAt] = useState('');
   const [maxUses, setMaxUses] = useState('');
   const [templateCode, setTemplateCode] = useState<ClientWorkspaceTemplateNotificationCode>(DEFAULT_TEMPLATE_NOTIFICATION_CODE);
-  const [runningCommand, setRunningCommand] = useState<'create' | 'deliver' | 'poaReminder' | 'templateNotification' | null>(null);
+  const [documentCodes, setDocumentCodes] = useState<Set<ClientWorkspaceDocumentRequestCode>>(() => new Set(DEFAULT_DOCUMENT_REQUEST_CODES));
+  const [runningCommand, setRunningCommand] = useState<'create' | 'deliver' | 'poaReminder' | 'templateNotification' | 'documentRequest' | null>(null);
   const [commandError, setCommandError] = useState('');
   const [created, setCreated] = useState<CreateIntakeLinkResult | null>(null);
   const [deliveryResult, setDeliveryResult] = useState<ClientWorkspaceCreateAndDeliverResult | null>(null);
   const [poaReminderResult, setPoaReminderResult] = useState<ClientWorkspacePoaReminderResult | null>(null);
   const [templateNotificationResult, setTemplateNotificationResult] = useState<ClientWorkspaceTemplateNotificationResult | null>(null);
+  const [documentRequestResult, setDocumentRequestResult] = useState<ClientWorkspaceDocumentRequestResult | null>(null);
   const [copied, setCopied] = useState(false);
 
   const resetCommandForm = () => {
@@ -403,6 +427,15 @@ function ActionItem({
       const next = new Set(prev);
       if (next.has(category)) next.delete(category);
       else next.add(category);
+      return next;
+    });
+  };
+
+  const toggleDocumentCode = (code: ClientWorkspaceDocumentRequestCode) => {
+    setDocumentCodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(code)) next.delete(code);
+      else next.add(code);
       return next;
     });
   };
@@ -437,6 +470,8 @@ function ActionItem({
     setRunningCommand('create');
     setDeliveryResult(null);
     setPoaReminderResult(null);
+    setTemplateNotificationResult(null);
+    setDocumentRequestResult(null);
     try {
       const result = await api.createClientWorkspaceIntakeLink(item.target.clientId, item.target.caseId, input);
       setCreated(result);
@@ -459,6 +494,8 @@ function ActionItem({
     setRunningCommand('deliver');
     setCreated(null);
     setPoaReminderResult(null);
+    setTemplateNotificationResult(null);
+    setDocumentRequestResult(null);
     try {
       const result = await api.createClientWorkspaceIntakeLinkAndDeliver(item.target.clientId, item.target.caseId, input);
       setDeliveryResult(result);
@@ -481,6 +518,7 @@ function ActionItem({
     setDeliveryResult(null);
     setPoaReminderResult(null);
     setTemplateNotificationResult(null);
+    setDocumentRequestResult(null);
     try {
       const result = await api.sendClientWorkspacePoaReminder(item.target!.clientId);
       setPoaReminderResult(result);
@@ -501,6 +539,7 @@ function ActionItem({
     setDeliveryResult(null);
     setPoaReminderResult(null);
     setTemplateNotificationResult(null);
+    setDocumentRequestResult(null);
     try {
       const result = await api.sendClientWorkspaceTemplateNotification(item.target!.clientId, {
         templateCode,
@@ -511,6 +550,38 @@ function ActionItem({
       await onRefreshModels();
     } catch (error) {
       setCommandError(commandErrorMessage(error, 'Sablon bildirimi gonderilemedi.'));
+    } finally {
+      setRunningCommand(null);
+    }
+  };
+
+  const handleDocumentRequest = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!canSendDocumentRequest || runningCommand) return;
+
+    const selectedDocumentCodes = Array.from(documentCodes);
+    if (selectedDocumentCodes.length === 0) {
+      setCommandError('Lutfen en az bir belge talebi secin.');
+      return;
+    }
+
+    setRunningCommand('documentRequest');
+    setCommandError('');
+    setCreated(null);
+    setDeliveryResult(null);
+    setPoaReminderResult(null);
+    setTemplateNotificationResult(null);
+    setDocumentRequestResult(null);
+    try {
+      const result = await api.sendClientWorkspaceDocumentRequest(item.target!.clientId, {
+        documentCodes: selectedDocumentCodes,
+        ...(item.target?.caseId ? { caseId: item.target.caseId } : {}),
+      });
+      setDocumentRequestResult(result);
+      setFormOpen(false);
+      await onRefreshModels();
+    } catch (error) {
+      setCommandError(commandErrorMessage(error, 'Belge talebi gonderilemedi.'));
     } finally {
       setRunningCommand(null);
     }
@@ -536,6 +607,7 @@ function ActionItem({
     setDeliveryResult(null);
     setPoaReminderResult(null);
     setTemplateNotificationResult(null);
+    setDocumentRequestResult(null);
   }, [canCreateIntakeLink, retryAsNewSignal, retryOpenRequest]);
 
   const isBusy = runningCommand !== null;
@@ -593,6 +665,17 @@ function ActionItem({
             {runningCommand === 'poaReminder' ? 'Gönderiliyor...' : 'Gönder'}
           </button>
         ) : canSendTemplateNotification ? (
+          <button
+            type="button"
+            onClick={() => {
+              setFormOpen((value) => !value);
+              setCommandError('');
+            }}
+            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50"
+          >
+            {formOpen ? 'Kapat' : 'Sec'}
+          </button>
+        ) : canSendDocumentRequest ? (
           <button
             type="button"
             onClick={() => {
@@ -737,6 +820,55 @@ function ActionItem({
           </div>
         </form>
       )}
+
+      {canSendDocumentRequest && formOpen && (
+        <form onSubmit={handleDocumentRequest} className="mt-4 space-y-3 rounded-lg border border-blue-100 bg-blue-50/40 p-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <p className="text-xs font-medium text-gray-700">Belge talebi tipleri</p>
+              <div className="mt-2 space-y-1.5">
+                {DOCUMENT_REQUEST_OPTIONS.map((option) => (
+                  <label key={option.value} className="flex items-center gap-2 text-sm text-gray-700">
+                    <input
+                      type="checkbox"
+                      checked={documentCodes.has(option.value)}
+                      onChange={() => toggleDocumentCode(option.value)}
+                      className="rounded border-gray-300"
+                    />
+                    {option.label}
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="text-xs text-gray-600">
+              <p className="font-medium text-gray-700">Kapsam</p>
+              <p className="mt-1">Alici, govde, token ve saglayici payload alanlari backend tarafinda guvenli sekilde uretilir.</p>
+              {item.target?.caseId && <p className="mt-1">Dosya baglami kullanilacak.</p>}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="submit"
+              disabled={isBusy}
+              className="rounded-md bg-blue-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-60"
+            >
+              {runningCommand === 'documentRequest' ? 'Gonderiliyor...' : 'Belge talebi gonder'}
+            </button>
+            <button
+              type="button"
+              disabled={isBusy}
+              onClick={() => {
+                setFormOpen(false);
+                setCommandError('');
+                setDocumentCodes(new Set(DEFAULT_DOCUMENT_REQUEST_CODES));
+              }}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-white disabled:opacity-60"
+            >
+              Vazgec
+            </button>
+          </div>
+        </form>
+      )}
       {created && (
         <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
           <p className="text-sm font-medium text-emerald-800">Link oluşturuldu</p>
@@ -770,6 +902,13 @@ function ActionItem({
           <p className="text-sm font-medium">{templateNotificationStatusText(templateNotificationResult)}</p>
           <p className="mt-1 text-xs opacity-80">Sablon: {TEMPLATE_NOTIFICATION_OPTIONS.find((option) => option.value === templateNotificationResult.templateCode)?.label ?? templateNotificationResult.templateCode}</p>
           <p className="mt-1 text-xs opacity-80">Yanitta alici, govde, dedupe veya saglayici hata detayi gosterilmez.</p>
+        </div>
+      )}
+      {documentRequestResult && (
+        <div className={`mt-4 rounded-lg border p-3 ${documentRequestStatusClass(documentRequestResult.status)}`}>
+          <p className="text-sm font-medium">{documentRequestStatusText(documentRequestResult)}</p>
+          <p className="mt-1 text-xs opacity-80">Belgeler: {documentRequestResult.documentCodes.map((code) => DOCUMENT_REQUEST_OPTIONS.find((option) => option.value === code)?.label ?? code).join(', ')}</p>
+          <p className="mt-1 text-xs opacity-80">Yanitta alici, govde, token, dedupe veya saglayici hata detayi gosterilmez.</p>
         </div>
       )}
       {poaReminderResult && (

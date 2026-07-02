@@ -118,6 +118,55 @@ describe("intake link api (staff, AUTH VAR)", () => {
     expect(JSON.stringify(result)).not.toContain("provider");
   });
 
+  it("sendClientWorkspaceDocumentRequest -> POST workspace document request URL + Idempotency-Key + safe allowlist body", async () => {
+    const fn = mockFetch(true, {
+      data: { clientId: "cl1", caseId: "case-1", documentCodes: ["GENEL_BELGE"], status: "sent", documentRequestId: "dr1", notificationId: "n1" },
+    });
+
+    const result = await api.sendClientWorkspaceDocumentRequest("cl1", {
+      documentCodes: ["GENEL_BELGE"],
+      caseId: "case-1",
+    });
+
+    const [url, opts] = fn.mock.calls[0];
+    expect(String(url)).toContain("/api/clients/cl1/document-requests/send");
+    expect(opts.method).toBe("POST");
+    expect((opts.headers as Record<string, string>).Authorization).toBe("Bearer test-token");
+    expect((opts.headers as Record<string, string>)["Idempotency-Key"]).toEqual(expect.any(String));
+    const body = JSON.parse(opts.body);
+    expect(body).toEqual({ documentCodes: ["GENEL_BELGE"], caseId: "case-1" });
+    expect(body.clientId).toBeUndefined();
+    expect(body.tenantId).toBeUndefined();
+    expect(body.rawToken).toBeUndefined();
+    expect(body.intakeUrl).toBeUndefined();
+    expect(body.idempotencyKey).toBeUndefined();
+    expect(body.recipient).toBeUndefined();
+    expect(body.body).toBeUndefined();
+    expect(body.tokens).toBeUndefined();
+    expect(body.dedupeKey).toBeUndefined();
+    expect(body.providerPayload).toBeUndefined();
+    expect(result.status).toBe("sent");
+    expect(JSON.stringify(result)).not.toContain("dedupe");
+    expect(JSON.stringify(result)).not.toContain("@example");
+    expect(JSON.stringify(result)).not.toContain("rendered");
+    expect(JSON.stringify(result)).not.toContain("provider");
+  });
+
+  it("sendClientWorkspaceDocumentRequest calls use a fresh Idempotency-Key", async () => {
+    const fn = mockFetch(true, {
+      data: { clientId: "cl1", caseId: "case-1", documentCodes: ["GENEL_BELGE"], status: "sent", documentRequestId: "dr1", notificationId: "n1" },
+    });
+
+    await api.sendClientWorkspaceDocumentRequest("cl1", { documentCodes: ["GENEL_BELGE"], caseId: "case-1" });
+    await api.sendClientWorkspaceDocumentRequest("cl1", { documentCodes: ["GENEL_BELGE"], caseId: "case-1" });
+
+    const firstKey = (fn.mock.calls[0][1].headers as Record<string, string>)["Idempotency-Key"];
+    const secondKey = (fn.mock.calls[1][1].headers as Record<string, string>)["Idempotency-Key"];
+    expect(firstKey).toEqual(expect.any(String));
+    expect(secondKey).toEqual(expect.any(String));
+    expect(secondKey).not.toBe(firstKey);
+  });
+
   it("sendClientWorkspaceTemplateNotification calls use a fresh Idempotency-Key", async () => {
     const fn = mockFetch(true, {
       data: { clientId: "cl1", caseId: null, templateCode: "GENEL_BILGILENDIRME", status: "sent", notificationId: "n1" },
