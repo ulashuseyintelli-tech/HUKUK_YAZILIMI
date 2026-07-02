@@ -16,6 +16,7 @@ import { ClientSettlementReadService } from './client-settlement-read.service';
 import { FinanceApprovalIntentBuilder } from './finance-approval-intent.builder';
 import { FinanceRiskEngine } from './finance-risk.engine';
 import { FinanceRiskCollectionDispositionInput, FinanceRiskDecision, FinanceRiskEvaluation } from './finance-risk.types';
+import { clientOffsetLockKey } from './expense-remaining-lock';
 
 const HELD = CollectionDispositionLineType.HELD_PENDING_DISTRIBUTION;
 /** CLUSTER'da caseClientId zorunlu olan müvekkile-atfedilen tipler. */
@@ -276,6 +277,15 @@ export class DispositionPostingService {
           // FAZ-1b: reimbursement → ExpenseRequest kapatma PROJECTION'ı (APPLY application). paidTotal MUTATE YOK
           // (projection-first); kapanış computeExpenseRemaining tarafından Σ application'lardan türetilir.
           if (!l.expenseRequestId) throw new BadRequestException(`Reimbursement satırı expenseRequestId taşımıyor (line ${l.id})`);
+          // ROLL-001: lock-key için clientId gerekli — minimal probe read (lock ÖNCESİ, henüz validasyon/hesap YOK).
+          const erForLock = await tx.expenseRequest.findFirst({
+            where: { id: l.expenseRequestId, tenantId, caseId: disp.caseId },
+            select: { clientId: true },
+          });
+          if (!erForLock) throw new BadRequestException(`Reimbursement hedefi masraf bulunamadı/scope dışı (line ${l.id})`);
+          // ClientOffsetService (APPLY/REVERSAL) ile BİREBİR aynı key — computeExpenseRemaining üzerinde
+          // eşzamanlı APPLY yarışını (over-apply) önler. Lock, authoritative okuma+hesaptan ÖNCE alınır.
+          await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${clientOffsetLockKey(tenantId, erForLock.clientId, disp.currency)}))`;
           const er = await tx.expenseRequest.findFirst({
             where: { id: l.expenseRequestId, tenantId, caseId: disp.caseId },
             select: { totalAmount: true, paidTotal: true, currency: true, status: true, expenseApprovalStatus: true, clientId: true },

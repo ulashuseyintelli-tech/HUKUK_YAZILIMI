@@ -13,6 +13,7 @@ import { isOfficeAdminCapacity } from '../policy-engine/effective-permission-map
 import { Capacity } from '../policy-engine/types/effective-permission.types';
 import { ClientSettlementReadService } from './client-settlement-read.service';
 import { CreateClientOffsetDto, ReverseClientOffsetDto, PreviewClientOffsetDto } from './dto/client-offset.dto';
+import { clientOffsetLockKey } from './expense-remaining-lock';
 
 const ZERO = new Prisma.Decimal(0);
 const ELIGIBLE_ROLES = ['ALACAKLI', 'ORTAK_ALACAKLI'];
@@ -724,7 +725,7 @@ export class ClientOffsetService {
   }
 
   /// <remarks>
-  /// Çaðrýldýðý yerler:
+  /// ï¿½aï¿½rï¿½ldï¿½ï¿½ï¿½ yerler:
   /// - ClientOffsetService.createOffset() -> POST /client-offsets (APPLY source row journal write)
   /// - ClientOffsetService.reverseOffset() -> POST /client-offsets/:offsetId/reverse (REVERSAL source row journal write)
   /// </remarks>
@@ -802,8 +803,10 @@ export class ClientOffsetService {
   private clientOffsetJournalSourceVersion(offsetId: string, createdAt: Date): string {
     return `${createdAt.toISOString()}:${offsetId}`;
   }
+  // ROLL-001: DispositionPostingService (reimbursement APPLY) AYNI key'i Ã¼retir (expense-remaining-lock.ts) â€”
+  // cross-service advisory-lock serialize iÃ§in iki servis de BÄ°REBÄ°R aynÄ± string'i Ã¼retmeli.
   private lockKey(tenantId: string, clientId: string, currency: string): string {
-    return `client-offset:${tenantId}:${clientId}:${currency}`;
+    return clientOffsetLockKey(tenantId, clientId, currency);
   }
 
   private parsePositiveAmount(raw: string): Prisma.Decimal {
