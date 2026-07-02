@@ -81,10 +81,11 @@ export class CollectionController {
   @Post(":id/cancel")
   cancel(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") actorUserId: string,
     @Param("id") id: string,
     @Body() dto: CancelCollectionDto
   ) {
-    return this.collectionService.cancel(tenantId, id, dto);
+    return this.collectionService.cancel(tenantId, id, dto, actorUserId);
   }
 
   // ==================== KAPAK HESABI ====================

@@ -199,12 +199,13 @@ describe('DomainEventIngestService — Validation', () => {
       'CASE_SUSPENDED',
       'DEBTOR_IDENTITY_CORRECTED',
       'INTEREST_POLICY_ASSIGNED',
+      'PAYMENT_REVERSED',
     ])('rejects %s with SYSTEM actor', async (eventType) => {
       const { tx } = createMockTx();
       const event = buildEvent({
         eventType,
         causedBy:
-          eventType === 'CASE_REOPENED' ? 'evt-prior-close' : undefined,
+          eventType === 'CASE_REOPENED' || eventType === 'PAYMENT_REVERSED' ? 'evt-prior-event' : undefined,
         actor: { type: 'SYSTEM' },
       });
 

@@ -3553,7 +3553,13 @@ export class CaseService {
   /// Çağrıldığı yerler:
   /// - CaseController.cancelCollection() → POST /cases/:id/collections/:collectionId/cancel (dosya detayından tahsilat iptali; route caseId + tenant guard)
   /// </remarks>
-  async cancelCollection(tenantId: string, caseId: string, collectionId: string, reason?: string) {
+  async cancelCollection(
+    tenantId: string,
+    caseId: string,
+    collectionId: string,
+    actorUserId: string,
+    reason?: string,
+  ) {
     const collection = await this.prisma.collection.findFirst({
       where: { id: collectionId, caseId, tenantId },
       select: { id: true },
@@ -3563,7 +3569,7 @@ export class CaseService {
     // G3d: kanonik cancel'a delege; route caseId + tenant guard bu katmanda fail-closed uygulanır.
     return this.collectionService.cancel(tenantId, collectionId, {
       cancelReason: reason || "",
-    }, caseId);
+    }, actorUserId, caseId);
   }
 
   /// <remarks>
