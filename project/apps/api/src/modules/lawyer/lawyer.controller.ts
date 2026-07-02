@@ -168,13 +168,14 @@ export class LawyerController {
     return this.lawyerService.update(tenantId, id, data, { userId: actorUserId, role: actorRole });
   }
 
-  // Avukat sil
+  // Avukat pasifleştir (L1A: fiziksel silme değil, isActive=false)
   @Delete(":id")
   delete(
     @CurrentUser("tenantId") tenantId: string,
+    @CurrentUser("id") userId: string,
     @Param("id") id: string
   ) {
-    return this.lawyerService.delete(tenantId, id);
+    return this.lawyerService.delete(tenantId, id, { userId });
   }
 
   // Sıralama güncelle

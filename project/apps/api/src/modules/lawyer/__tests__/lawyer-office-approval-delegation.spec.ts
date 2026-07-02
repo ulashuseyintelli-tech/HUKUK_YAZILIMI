@@ -24,7 +24,9 @@ const build = (opts: { self?: Record<string, unknown>; actorUser?: unknown } = {
     user: { findUnique: jest.fn().mockResolvedValue(opts.actorUser ?? null) }, // actor PARTNER lookup
   };
   const audit: any = { log: jest.fn().mockResolvedValue(undefined) };
-  return { svc: new LawyerService(prisma, audit), prisma, audit };
+  // L1A: constructor 3. parametre (OfficeApprovalService) aldı; delegation testleri deactivate'e dokunmaz → boş mock yeter.
+  const officeApproval: any = { isApproverEligible: jest.fn() };
+  return { svc: new LawyerService(prisma, audit, officeApproval), prisma, audit };
 };
 
 const ADMIN = { userId: "admin1", role: "ADMIN" };
