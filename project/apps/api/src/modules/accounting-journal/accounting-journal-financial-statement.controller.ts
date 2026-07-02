@@ -1,6 +1,5 @@
 import { BadRequestException, Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
-import { AdminGuard } from '../auth/guards/admin.guard';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AccountingJournalFinancialStatementProjectionService } from './accounting-journal-financial-statement.projection.service';
 import type {
@@ -36,9 +35,15 @@ export class AccountingJournalFinancialStatementController {
   /// Cagrildigi yerler:
   /// - AccountingJournalFinancialStatementController.getFinancialStatement() -> GET /accounting-journal/financial-statements (read-only Financial Statement HTTP boundary).
   /// - AccountingJournalFinancialStatementProjectionService.getClientCaseStatement() -> journal-derived projection reader, no posting/writer/legal-ledger/TBK100 behavior.
+  ///
+  /// ACCT-5A (owner karar 2026-07-02): AdminGuard KALDIRILDI. Codebase kurali: case-scope finansal OKUMA
+  /// = office-wide (yalniz JwtAuthGuard + tenant-scope; ayni desen case-fee-agreement/disposition-outstanding/
+  /// distribution-recommendation okumalarinda zaten var). Finansal MUTASYON icin ayri capability/approval
+  /// ekseni var (fee-agreement create/update/terminate, offset apply/reverse, journal manual-adjustment) — bu
+  /// endpoint salt-okuma oldugu icin o eksene girmez. Yeni bir PartnerGuard/rol-ekseni EKLENMEDI (owner karari:
+  /// mevcut iki-eksenli modeli [read=JwtAuthGuard, write=capability] bozma).
   /// </remarks>
   @Get('financial-statements')
-  @UseGuards(AdminGuard)
   async getFinancialStatement(
     @CurrentUser('tenantId') tenantId: string,
     @Query() query: FinancialStatementQuery = {},
