@@ -66,6 +66,24 @@ describe("intake link api (staff, AUTH VAR)", () => {
     expect(result.delivery.status).toBe("sent");
     expect(JSON.stringify(result)).not.toContain("intake/raw");
   });
+
+  it("sendClientWorkspacePoaReminder -> POST workspace POA reminder URL + Authorization Bearer + no unsafe body", async () => {
+    const fn = mockFetch(true, {
+      data: { clientId: "cl1", status: "sent", scanned: 1, recipients: 1, sent: 1, failed: 0, skipped: 0 },
+    });
+
+    const result = await api.sendClientWorkspacePoaReminder("cl1");
+
+    const [url, opts] = fn.mock.calls[0];
+    expect(String(url)).toContain("/api/clients/cl1/poa-reminders/send");
+    expect(opts.method).toBe("POST");
+    expect((opts.headers as Record<string, string>).Authorization).toBe("Bearer test-token");
+    expect(opts.body).toBeUndefined();
+    expect(result.status).toBe("sent");
+    expect(JSON.stringify(result)).not.toContain("dedupe");
+    expect(JSON.stringify(result)).not.toContain("@example");
+  });
+
   it("createClientWorkspaceIntakeLinkAndDeliver retry-as-new calls use a fresh Idempotency-Key", async () => {
     const fn = mockFetch(true, {
       data: {

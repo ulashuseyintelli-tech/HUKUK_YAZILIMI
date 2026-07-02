@@ -17,7 +17,7 @@ import {
   ShieldAlert,
   UserRound,
 } from 'lucide-react';
-import { api, type ClientActionCatalogItem, type ClientOperatingSnapshot, type ClientWorkspaceCreateAndDeliverResult, type CreateClientWorkspaceIntakeLinkInput, type CreateIntakeLinkResult, type IntakeFieldCategory } from '@/lib/api';
+import { api, type ClientActionCatalogItem, type ClientOperatingSnapshot, type ClientWorkspaceCreateAndDeliverResult, type ClientWorkspacePoaReminderResult, type CreateClientWorkspaceIntakeLinkInput, type CreateIntakeLinkResult, type IntakeFieldCategory } from '@/lib/api';
 
 interface ClientActionsTabProps {
   clientId: string;
@@ -50,7 +50,7 @@ const ACTION_DESCRIPTIONS: Partial<Record<ClientActionCatalogItem['key'], string
   'contact.update_missing_info': 'Müvekkil kimlik ve iletişim ekranına gider.',
   'intake.link.create': 'Uygun ilgili dosya için intake linki oluşturma hazırlığı.',
   'intake.link.send': 'Gerçek gönderim sonraki typed command fazında açılır.',
-  'poa.reminder.send': 'Vekalet teslim motoru hazır olduğunda açılır.',
+  'poa.reminder.send': 'Süresi yaklaşan aktif vekalet için iç ekip hatırlatması gönderir.',
   'notification.template.send': 'Bildirim dispatch sözleşmesi hazır olduğunda açılır.',
   'case.open_related': 'Müvekkile bağlı dosyalar görünümüne gider.',
   'activity.view_timeline': 'Read-only aktivite zaman çizelgesine geçer.',
@@ -321,6 +321,19 @@ function deliveryStatusClass(status: ClientWorkspaceCreateAndDeliverResult['deli
   return 'border-amber-200 bg-amber-50 text-amber-800';
 }
 
+function poaReminderStatusText(result: ClientWorkspacePoaReminderResult) {
+  if (result.status === 'sent') return 'Vekalet hatırlatması gönderildi.';
+  if (result.status === 'partial') return 'Vekalet hatırlatması kısmen gönderildi.';
+  if (result.status === 'failed') return 'Vekalet hatırlatması gönderilemedi.';
+  return 'Gönderilecek yeni vekalet hatırlatması bulunamadı.';
+}
+
+function poaReminderStatusClass(status: ClientWorkspacePoaReminderResult['status']) {
+  if (status === 'sent') return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+  if (status === 'failed') return 'border-red-200 bg-red-50 text-red-800';
+  return 'border-amber-200 bg-amber-50 text-amber-800';
+}
+
 function commandErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
@@ -342,16 +355,19 @@ function ActionItem({
   const description = ACTION_DESCRIPTIONS[item.key] || item.description;
   const isActivity = item.key === 'activity.view_timeline';
   const isIntakeCreate = item.key === 'intake.link.create';
+  const isPoaReminder = item.key === 'poa.reminder.send';
   const isLink = item.enabled && !!item.href && !isActivity;
   const canCreateIntakeLink = isIntakeCreate && item.enabled && !!item.target?.clientId && !!item.target?.caseId;
+  const canSendPoaReminder = isPoaReminder && item.enabled && !!item.target?.clientId;
   const [formOpen, setFormOpen] = useState(false);
   const [scope, setScope] = useState<Set<IntakeFieldCategory>>(() => new Set(DEFAULT_INTAKE_SCOPE));
   const [expiresAt, setExpiresAt] = useState('');
   const [maxUses, setMaxUses] = useState('');
-  const [runningCommand, setRunningCommand] = useState<'create' | 'deliver' | null>(null);
+  const [runningCommand, setRunningCommand] = useState<'create' | 'deliver' | 'poaReminder' | null>(null);
   const [commandError, setCommandError] = useState('');
   const [created, setCreated] = useState<CreateIntakeLinkResult | null>(null);
   const [deliveryResult, setDeliveryResult] = useState<ClientWorkspaceCreateAndDeliverResult | null>(null);
+  const [poaReminderResult, setPoaReminderResult] = useState<ClientWorkspacePoaReminderResult | null>(null);
   const [copied, setCopied] = useState(false);
 
   const resetCommandForm = () => {
@@ -399,6 +415,7 @@ function ActionItem({
 
     setRunningCommand('create');
     setDeliveryResult(null);
+    setPoaReminderResult(null);
     try {
       const result = await api.createClientWorkspaceIntakeLink(item.target.clientId, item.target.caseId, input);
       setCreated(result);
@@ -420,6 +437,7 @@ function ActionItem({
 
     setRunningCommand('deliver');
     setCreated(null);
+    setPoaReminderResult(null);
     try {
       const result = await api.createClientWorkspaceIntakeLinkAndDeliver(item.target.clientId, item.target.caseId, input);
       setDeliveryResult(result);
@@ -428,6 +446,25 @@ function ActionItem({
       await onRefreshModels();
     } catch (error) {
       setCommandError(commandErrorMessage(error, 'Intake linki oluşturuldu/gönderildi durumu alınamadı.'));
+    } finally {
+      setRunningCommand(null);
+    }
+  };
+
+  const handlePoaReminder = async () => {
+    if (!canSendPoaReminder || runningCommand) return;
+
+    setRunningCommand('poaReminder');
+    setCommandError('');
+    setCreated(null);
+    setDeliveryResult(null);
+    setPoaReminderResult(null);
+    try {
+      const result = await api.sendClientWorkspacePoaReminder(item.target!.clientId);
+      setPoaReminderResult(result);
+      await onRefreshModels();
+    } catch (error) {
+      setCommandError(commandErrorMessage(error, 'Vekalet hatırlatması gönderilemedi.'));
     } finally {
       setRunningCommand(null);
     }
@@ -451,6 +488,7 @@ function ActionItem({
     setCommandError('');
     setCreated(null);
     setDeliveryResult(null);
+    setPoaReminderResult(null);
   }, [canCreateIntakeLink, retryAsNewSignal, retryOpenRequest]);
 
   const isBusy = runningCommand !== null;
@@ -497,6 +535,15 @@ function ActionItem({
             className="inline-flex shrink-0 items-center gap-1 rounded-md border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50"
           >
             {formOpen ? 'Kapat' : 'Oluştur'}
+          </button>
+        ) : canSendPoaReminder ? (
+          <button
+            type="button"
+            disabled={isBusy}
+            onClick={handlePoaReminder}
+            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-60"
+          >
+            {runningCommand === 'poaReminder' ? 'Gönderiliyor...' : 'Gönder'}
           </button>
         ) : (
           <button
@@ -617,6 +664,15 @@ function ActionItem({
           )}
         </div>
       )}
+      {poaReminderResult && (
+        <div className={`mt-4 rounded-lg border p-3 ${poaReminderStatusClass(poaReminderResult.status)}`}>
+          <p className="text-sm font-medium">{poaReminderStatusText(poaReminderResult)}</p>
+          <p className="mt-1 text-xs opacity-80">
+            Gönderilen: {poaReminderResult.sent}, başarısız: {poaReminderResult.failed}, atlanan: {poaReminderResult.skipped}.
+          </p>
+        </div>
+      )}
+
     </div>
   );
 }
