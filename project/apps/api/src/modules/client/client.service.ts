@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 import { OfficeApprovalService } from '../office-approval/office-approval.service';
 import { PoaExpiryDeliveryService, type PoaExpiryDeliveryRunResult } from '../automation/poa-expiry-delivery.service';
+import { NotificationDispatcherService, type DispatchResult } from '../client-notification/notification-dispatcher.service';
 import { buildClientFieldDiff, buildContactsDiff, buildClientRemoveSnapshot } from './client-audit.util';
 import { assertCreateIdentityChecksum } from './client-identity-checksum.util';
 
@@ -86,6 +87,24 @@ export type ClientPoaReminderSendStatus = 'sent' | 'partial' | 'failed' | 'skipp
 export interface ClientPoaReminderSendResult extends PoaExpiryDeliveryRunResult {
   clientId: string;
   status: ClientPoaReminderSendStatus;
+}
+
+export const CLIENT_TEMPLATE_NOTIFICATION_CODES = ['GENEL_BILGILENDIRME', 'DOSYA_DURUMU'] as const;
+export type ClientTemplateNotificationCode = typeof CLIENT_TEMPLATE_NOTIFICATION_CODES[number];
+
+export interface ClientTemplateNotificationSendInput {
+  templateCode: ClientTemplateNotificationCode;
+  caseId?: string;
+}
+
+export type ClientTemplateNotificationSendStatus = 'sent' | 'skipped' | 'failed';
+
+export interface ClientTemplateNotificationSendResult {
+  clientId: string;
+  caseId: string | null;
+  templateCode: ClientTemplateNotificationCode;
+  status: ClientTemplateNotificationSendStatus;
+  notificationId?: string;
 }
 
 export type ClientOperatingHealth = 'healthy' | 'attention' | 'blocked';
@@ -178,6 +197,7 @@ const CLIENT_INTAKE_DELIVERY_STALE_MS = 15 * 60 * 1000;
 const CLIENT_POA_REMINDER_WINDOW_KEY = 'D30';
 const CLIENT_POA_DELIVERY_LOCK_TIMEOUT_MS = 15 * 60 * 1000;
 const CLIENT_POA_DELIVERY_MAX_ATTEMPTS = 3;
+const CLIENT_TEMPLATE_NOTIFICATION_DEDUPE_PREFIX = 'CLIENT_WORKSPACE_TEMPLATE_NOTIFICATION';
 
 /** Müvekkil için contact-task dedupe anahtarı (tek aktif görev garantisi). */
 export function contactTaskDedupeKey(clientId: string): string {
@@ -202,6 +222,7 @@ export class ClientService {
     private audit: AuditService,
     private officeApproval: OfficeApprovalService,
     private poaExpiryDelivery?: PoaExpiryDeliveryService,
+    private notificationDispatcher?: NotificationDispatcherService,
   ) {}
 
   private async getPoaReminderDeliveryState(
@@ -386,6 +407,11 @@ export class ClientService {
         phone: true,
         email: true,
         contactFollowUpStatus: true,
+        contacts: {
+          where: { type: 'EMAIL' },
+          take: 1,
+          select: { id: true },
+        },
         caseClients: {
           where: { case: { tenantId } },
           orderBy: { createdAt: 'desc' },
@@ -402,13 +428,17 @@ export class ClientService {
     });
     if (!client) throw new NotFoundException('Client not found');
 
-    const poaReminderDelivery = await this.getPoaReminderDeliveryState(tenantId, client.id, client.powerOfAttorneys);
+    const [poaReminderDelivery, templateNotificationAction] = await Promise.all([
+      this.getPoaReminderDeliveryState(tenantId, client.id, client.powerOfAttorneys),
+      this.getTemplateNotificationActionAvailability(tenantId, client),
+    ]);
 
     return {
       data: buildClientActionCatalog({
         actorRole: normalizeClientActionRole(actorRole),
         client,
         poaReminderDelivery,
+        templateNotificationAction,
       }),
     };
   }
@@ -542,6 +572,115 @@ export class ClientService {
       status: poaReminderCommandStatus(result),
       ...result,
     };
+  }
+
+  /**
+   * Client Workspace template notification typed command V1.
+   *
+   * <remarks>
+   * Cagrildigi yerler:
+   * - ClientController.sendTemplateNotification() -> POST /clients/:clientId/template-notifications/send (manual typed command)
+   * </remarks>
+   */
+  async sendTemplateNotification(
+    id: string,
+    tenantId: string,
+    userId: string,
+    idempotencyKey: string | undefined,
+    input: ClientTemplateNotificationSendInput,
+  ): Promise<ClientTemplateNotificationSendResult> {
+    const normalizedKey = String(idempotencyKey ?? '').trim();
+    if (!normalizedKey) throw new BadRequestException('Idempotency-Key header is required');
+    if (!CLIENT_TEMPLATE_NOTIFICATION_CODES.includes(input.templateCode)) throw new BadRequestException('Unsupported templateCode');
+    if (!this.notificationDispatcher) throw new Error('Notification dispatcher is not configured');
+
+    const client = await this.prisma.client.findFirst({
+      where: { id, tenantId, isActive: true },
+      select: { id: true, name: true, firstName: true, lastName: true, email: true },
+    });
+    if (!client) throw new NotFoundException('Client not found');
+
+    const relatedCase = input.caseId
+      ? await this.prisma.case.findFirst({
+          where: {
+            id: input.caseId,
+            tenantId,
+            caseClients: { some: { clientId: client.id } },
+          },
+          select: {
+            id: true,
+            fileNumber: true,
+            executionFileNumber: true,
+            executionOffice: { select: { name: true } },
+          },
+        })
+      : null;
+    if (input.caseId && !relatedCase) throw new NotFoundException('Case not found');
+
+    const tokens = buildTemplateNotificationTokens(client, relatedCase);
+    const dedupeKey = this.buildTemplateNotificationDedupeKey(client.id, input.templateCode, relatedCase?.id ?? null, normalizedKey);
+    const dispatch = await this.notificationDispatcher.dispatch(tenantId, userId, {
+      clientId: client.id,
+      caseId: relatedCase?.id,
+      templateCode: input.templateCode,
+      type: templateNotificationType(input.templateCode),
+      tokens,
+      persistedTokens: tokens,
+      refType: 'ClientWorkspaceTemplateNotification',
+      refId: [client.id, relatedCase?.id ?? 'client', normalizedKey].join(':'),
+      dedupeKey,
+    });
+
+    return buildTemplateNotificationCommandResult(client.id, relatedCase?.id ?? null, input.templateCode, dispatch);
+  }
+
+  private buildTemplateNotificationDedupeKey(
+    clientId: string,
+    templateCode: ClientTemplateNotificationCode,
+    caseId: string | null,
+    idempotencyKey: string,
+  ): string {
+    return [CLIENT_TEMPLATE_NOTIFICATION_DEDUPE_PREFIX, clientId, templateCode, caseId ?? 'client', idempotencyKey].join(':');
+  }
+
+  private async getTemplateNotificationActionAvailability(
+    tenantId: string,
+    client: { email?: string | null; contacts?: Array<{ id?: string | null }> | null },
+  ): Promise<{ enabled: boolean; requiredState: string; disabledReason?: string }> {
+    if (!this.notificationDispatcher) {
+      return {
+        enabled: false,
+        requiredState: 'NOTIFICATION_DISPATCH_CONTRACT_READY',
+        disabledReason: 'Template notification requires a notification dispatch contract.',
+      };
+    }
+
+    const hasRecipient = !!String(client.email ?? '').trim() || (client.contacts?.length ?? 0) > 0;
+    if (!hasRecipient) {
+      return {
+        enabled: false,
+        requiredState: 'CLIENT_EMAIL_MISSING',
+        disabledReason: 'Template notification requires a client email recipient.',
+      };
+    }
+
+    const activeTemplateCount = await (this.prisma as any).messageTemplate.count({
+      where: {
+        tenantId,
+        code: { in: [...CLIENT_TEMPLATE_NOTIFICATION_CODES] },
+        isActive: true,
+        channel: 'EMAIL',
+      },
+    });
+    if (activeTemplateCount < CLIENT_TEMPLATE_NOTIFICATION_CODES.length) {
+      return {
+        enabled: false,
+        requiredState: 'TEMPLATE_NOTIFICATION_TEMPLATE_MISSING',
+        disabledReason: 'Template notification requires active V1 email templates.',
+      };
+    }
+
+    return { enabled: true, requiredState: 'TEMPLATE_NOTIFICATION_READY' };
   }
 
 
@@ -1258,6 +1397,7 @@ interface ClientActionCatalogContext {
   actorRole: ClientActionRole;
   client: ClientActionCatalogClientState;
   poaReminderDelivery: ClientPoaReminderDeliveryState;
+  templateNotificationAction: { enabled: boolean; requiredState: string; disabledReason?: string };
 }
 
 const CLIENT_ACTION_ROLE_RANK: Record<ClientActionRole, number> = {
@@ -1289,6 +1429,7 @@ function buildClientActionCatalog(context: ClientActionCatalogContext): ClientAc
   const missingContactFields = computeMissingContactFields(context.client);
   const poaReminderBaseEnabled = hasPoaReminderEligiblePowerOfAttorney(context.client.powerOfAttorneys);
   const poaReminderAction = buildPoaReminderActionAvailability(poaReminderBaseEnabled, context.poaReminderDelivery);
+  const templateNotificationAction = context.templateNotificationAction;
   const contactState = context.client.contactFollowUpStatus === 'WAIVED'
     ? 'CONTACT_FOLLOW_UP_WAIVED'
     : missingContactFields.length > 0
@@ -1390,12 +1531,12 @@ function buildClientActionCatalog(context: ClientActionCatalogContext): ClientAc
       label: 'Send template notification',
       description: 'Future typed command; V1 catalog does not create or send notifications.',
       category: 'notification',
-      enabled: false,
-      disabledReason: 'Template notification requires a notification dispatch contract.',
+      enabled: templateNotificationAction.enabled,
+      disabledReason: templateNotificationAction.disabledReason,
       visibility: 'visible',
       dangerLevel: 'medium',
       requiredRole: 'USER',
-      requiredState: 'NOTIFICATION_DISPATCH_CONTRACT_READY',
+      requiredState: templateNotificationAction.requiredState,
       target,
       order: 70,
     },
@@ -1519,6 +1660,42 @@ function poaReminderCommandStatus(result: PoaExpiryDeliveryRunResult): ClientPoa
   return 'skipped';
 }
 
+function buildTemplateNotificationTokens(
+  client: { name?: string | null; firstName?: string | null; lastName?: string | null; email?: string | null },
+  relatedCase: { fileNumber?: string | null; executionFileNumber?: string | null; executionOffice?: { name?: string | null } | null } | null,
+): Record<string, string> {
+  const clientName = client.name || [client.firstName, client.lastName].filter(Boolean).join(' ') || 'M�vekkil';
+  return {
+    clientName,
+    caseFileNumber: relatedCase?.fileNumber ?? '',
+    executionFileNumber: relatedCase?.executionFileNumber ?? '',
+    executionOfficeName: relatedCase?.executionOffice?.name ?? '',
+    lawyerName: '',
+    officeName: '',
+    officePhone: '',
+    officeEmail: '',
+  };
+}
+
+function templateNotificationType(templateCode: ClientTemplateNotificationCode): string {
+  if (templateCode === 'DOSYA_DURUMU') return 'DOSYA_DURUMU';
+  return 'GENEL_BILGILENDIRME';
+}
+
+function buildTemplateNotificationCommandResult(
+  clientId: string,
+  caseId: string | null,
+  templateCode: ClientTemplateNotificationCode,
+  dispatch: DispatchResult,
+): ClientTemplateNotificationSendResult {
+  return {
+    clientId,
+    caseId,
+    templateCode,
+    status: dispatch.status,
+    ...(dispatch.notificationId ? { notificationId: dispatch.notificationId } : {}),
+  };
+}
 function applyClientActionPolicy(item: ClientActionCatalogItem, actorRole: ClientActionRole): ClientActionCatalogItem | null {
   if (item.visibility !== 'visible') return null;
   const requiredRole = normalizeClientActionRole(item.requiredRole);
