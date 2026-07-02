@@ -8,6 +8,11 @@ function buildApproval(eligible = true) {
   return { isApproverEligible: jest.fn().mockResolvedValue(eligible) } as any;
 }
 
+// A1A: audit mock — capability/lifecycle testleri etkilenmez, yalnız yeni audit-yazımı testleri kullanır.
+function buildAudit() {
+  return { log: jest.fn().mockResolvedValue(undefined), logInTransaction: jest.fn().mockResolvedValue(undefined) } as any;
+}
+
 function buildPrisma(
   over: {
     txActive?: unknown; // create: tx.findFirst (mevcut ACTIVE)
@@ -24,9 +29,11 @@ function buildPrisma(
     caseFeeAgreement: {
       findFirst: jest
         .fn()
-        // create akışı ilk çağrı = existingActive; update akışı ilk çağrı = current.
+        // create akışı ilk çağrı = existingActive; update akışı ilk çağrı = current;
+        // A1A: terminate akışı ilk çağrı = before-snapshot (over.current ile paylaşılır).
         .mockResolvedValueOnce(over.txActive ?? over.current ?? null),
-      updateMany: jest.fn().mockResolvedValue({ count: over.fenceCount ?? 1 }),
+      // A1A: terminate artık $transaction içinde tx.updateMany kullanıyor (fenceCount=update, termCount=terminate).
+      updateMany: jest.fn().mockResolvedValue({ count: over.fenceCount ?? over.termCount ?? 1 }),
       create: jest.fn().mockImplementation(({ data }: any) => ({ id: 'cfa-new', ...data })),
     },
   };
@@ -41,14 +48,16 @@ function buildPrisma(
     caseClient: {
       // 'caseClient' in over: explicit null (tenant-dışı senaryo) korunur; ?? null'ı
       // default {id:'cc-1'} ile yutup testi etkisiz bırakıyordu (mock kusuru).
-      findFirst: jest.fn().mockResolvedValue('caseClient' in over ? over.caseClient : { id: 'cc-1' }),
+      // A1A: caseId de eklendi (resolveCaseId audit-zenginleştirmesi için); mevcut testler bunu
+      // hiç assert etmiyor, davranışları değişmez.
+      findFirst: jest.fn().mockResolvedValue('caseClient' in over ? over.caseClient : { id: 'cc-1', caseId: 'case-1' }),
     },
     $transaction: jest.fn().mockImplementation(async (cb: any) => cb(tx)),
   };
   return { prisma, tx };
 }
 
-const svc = (p: any, a?: any) => new CaseFeeAgreementService(p, a ?? buildApproval());
+const svc = (p: any, a?: any, aud?: any) => new CaseFeeAgreementService(p, a ?? buildApproval(), aud ?? buildAudit());
 
 const FLAT = { caseClientId: 'cc-1', feeType: 'FLAT_AMOUNT', flatAmount: '2000.00' } as any;
 const PCT = { caseClientId: 'cc-1', feeType: 'PERCENTAGE_OF_COLLECTION', percentageBps: 1500 } as any;
@@ -138,6 +147,31 @@ describe('CaseFeeAgreementService — create', () => {
     const { prisma: p2 } = buildPrisma();
     await expect(svc(p2).create(TENANT, { ...PCT, percentageBps: 10001 } as any, ACTOR)).rejects.toBeInstanceOf(BadRequestException);
   });
+
+  it('A1A: audit AYNI transaction içinde actor + newValues ile yazılır (CASE_FEE_AGREEMENT_CREATE)', async () => {
+    const { prisma, tx } = buildPrisma();
+    const audit = buildAudit();
+    await svc(prisma, undefined, audit).create(TENANT, FLAT, ACTOR);
+    expect(audit.logInTransaction).toHaveBeenCalledTimes(1);
+    const [txArg, input] = audit.logInTransaction.mock.calls[0];
+    expect(txArg).toBe(tx);
+    expect(input).toMatchObject({
+      tenantId: TENANT,
+      action: 'CASE_FEE_AGREEMENT_CREATE',
+      entityType: 'CASE_FEE_AGREEMENT',
+      entityId: 'cfa-new',
+      userId: 'u-1',
+    });
+    expect(input.newValues).toMatchObject({ caseId: 'case-1', caseClientId: 'cc-1', feeType: 'FLAT_AMOUNT', status: 'ACTIVE' });
+    expect(input.oldValues).toBeUndefined();
+  });
+
+  it('A1A: mevcut ACTIVE varsa (Conflict) → transaction rollback, audit YAZILMAZ', async () => {
+    const { prisma } = buildPrisma({ txActive: { id: 'cfa-old' } });
+    const audit = buildAudit();
+    await expect(svc(prisma, undefined, audit).create(TENANT, FLAT, ACTOR)).rejects.toBeInstanceOf(ConflictException);
+    expect(audit.logInTransaction).not.toHaveBeenCalled();
+  });
 });
 
 describe('CaseFeeAgreementService — update (versiyonlama)', () => {
@@ -153,10 +187,38 @@ describe('CaseFeeAgreementService — update (versiyonlama)', () => {
     expect(r.id).toBe('cfa-new');
   });
 
+  it('A1A: audit AYNI transaction içinde eski/yeni versiyon bağlamıyla yazılır (CASE_FEE_AGREEMENT_UPDATE)', async () => {
+    const { prisma, tx } = buildPrisma({
+      current: { id: 'cfa-old', caseClientId: 'cc-9', status: 'ACTIVE', feeType: 'FLAT_AMOUNT', flatAmount: '2000', percentageBps: null, feeBase: 'GROSS', effectiveFrom: new Date('2026-01-01'), note: 'eski not' },
+    });
+    const audit = buildAudit();
+    await svc(prisma, undefined, audit).update(TENANT, 'cfa-old', { feeType: 'FLAT_AMOUNT', flatAmount: '3000' } as any, ACTOR);
+
+    expect(audit.logInTransaction).toHaveBeenCalledTimes(1);
+    const [txArg, input] = audit.logInTransaction.mock.calls[0];
+    expect(txArg).toBe(tx);
+    expect(input).toMatchObject({
+      tenantId: TENANT,
+      action: 'CASE_FEE_AGREEMENT_UPDATE',
+      entityType: 'CASE_FEE_AGREEMENT',
+      entityId: 'cfa-old',
+      userId: 'u-1',
+    });
+    expect(input.oldValues).toMatchObject({ caseId: 'case-1', status: 'ACTIVE', feeType: 'FLAT_AMOUNT', flatAmount: '2000', note: 'eski not' });
+    expect(input.newValues).toMatchObject({ caseId: 'case-1', status: 'SUPERSEDED', newAgreementId: 'cfa-new' });
+  });
+
   it('hedef ACTIVE değil → Conflict', async () => {
     const { prisma, tx } = buildPrisma({ current: { id: 'cfa-old', caseClientId: 'cc-9', status: 'SUPERSEDED' } });
     await expect(svc(prisma).update(TENANT, 'cfa-old', { feeType: 'FLAT_AMOUNT', flatAmount: '3000' } as any, ACTOR)).rejects.toBeInstanceOf(ConflictException);
     expect(tx.caseFeeAgreement.create).not.toHaveBeenCalled();
+  });
+
+  it('A1A: hedef ACTIVE değil (Conflict) → audit YAZILMAZ', async () => {
+    const { prisma } = buildPrisma({ current: { id: 'cfa-old', caseClientId: 'cc-9', status: 'SUPERSEDED' } });
+    const audit = buildAudit();
+    await expect(svc(prisma, undefined, audit).update(TENANT, 'cfa-old', { feeType: 'FLAT_AMOUNT', flatAmount: '3000' } as any, ACTOR)).rejects.toBeInstanceOf(ConflictException);
+    expect(audit.logInTransaction).not.toHaveBeenCalled();
   });
 
   it('kayıt yok → NotFound', async () => {
@@ -173,9 +235,9 @@ describe('CaseFeeAgreementService — update (versiyonlama)', () => {
 
 describe('CaseFeeAgreementService — terminate / read', () => {
   it('terminate ACTIVE → TERMINATED (updateMany count 1)', async () => {
-    const { prisma } = buildPrisma({ termCount: 1, byId: { id: 'x', status: 'TERMINATED' } });
+    const { prisma, tx } = buildPrisma({ termCount: 1, byId: { id: 'x', status: 'TERMINATED' } });
     const r = await svc(prisma).terminate(TENANT, 'x', ACTOR);
-    expect(prisma.caseFeeAgreement.updateMany).toHaveBeenCalledWith(
+    expect(tx.caseFeeAgreement.updateMany).toHaveBeenCalledWith(
       expect.objectContaining({ data: { status: 'TERMINATED' } }),
     );
     expect(r.status).toBe('TERMINATED');
@@ -184,6 +246,36 @@ describe('CaseFeeAgreementService — terminate / read', () => {
   it('terminate: ACTIVE yok → Conflict', async () => {
     const { prisma } = buildPrisma({ termCount: 0 });
     await expect(svc(prisma).terminate(TENANT, 'x', ACTOR)).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('A1A: audit AYNI transaction içinde actor + oldValues ile yazılır (CASE_FEE_AGREEMENT_TERMINATE)', async () => {
+    const { prisma, tx } = buildPrisma({
+      termCount: 1,
+      byId: { id: 'x', status: 'TERMINATED' },
+      current: { id: 'x', caseClientId: 'cc-9', status: 'ACTIVE', feeType: 'FLAT_AMOUNT', flatAmount: '2000', note: null },
+    });
+    const audit = buildAudit();
+    await svc(prisma, undefined, audit).terminate(TENANT, 'x', ACTOR);
+
+    expect(audit.logInTransaction).toHaveBeenCalledTimes(1);
+    const [txArg, input] = audit.logInTransaction.mock.calls[0];
+    expect(txArg).toBe(tx);
+    expect(input).toMatchObject({
+      tenantId: TENANT,
+      action: 'CASE_FEE_AGREEMENT_TERMINATE',
+      entityType: 'CASE_FEE_AGREEMENT',
+      entityId: 'x',
+      userId: 'u-1',
+      newValues: { caseId: 'case-1', status: 'TERMINATED' },
+    });
+    expect(input.oldValues).toMatchObject({ caseId: 'case-1', status: 'ACTIVE', feeType: 'FLAT_AMOUNT', flatAmount: '2000' });
+  });
+
+  it('A1A: ACTIVE yok (Conflict) → audit YAZILMAZ', async () => {
+    const { prisma } = buildPrisma({ termCount: 0 });
+    const audit = buildAudit();
+    await expect(svc(prisma, undefined, audit).terminate(TENANT, 'x', ACTOR)).rejects.toBeInstanceOf(ConflictException);
+    expect(audit.logInTransaction).not.toHaveBeenCalled();
   });
 
   it('getById yoksa → NotFound', async () => {
