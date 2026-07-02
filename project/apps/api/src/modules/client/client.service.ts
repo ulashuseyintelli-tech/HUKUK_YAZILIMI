@@ -283,6 +283,11 @@ export class ClientService {
    * case-fee-agreement.service.ts:assertCanManage ile BİREBİR desen (reuse, yeni altyapı YOK):
    * PARTNER veya canApproveOfficeActions=true delege avukat. Staff/normal kullanıcı 403.
    * Reactivate-via-create (dedup yan-etkisi) BU KAPSAM DIŞI — kasıtlı olarak dokunulmadı.
+   *
+   * @remarks Çağrıldığı yerler:
+   * - ClientService.remove() → DELETE /clients/:id (soft-delete, isActive:false)
+   * - ClientService.update() → PUT /clients/:id, YALNIZ data.isActive mevcut değerden FARKLIYSA
+   *   (CBND-6/H5 — deaktivasyon VE reaktivasyon, generic update yan-kapısı kapatıldı)
    */
   private async assertCanManageLifecycle(userId: string | undefined, tenantId: string): Promise<void> {
     if (!userId || !(await this.officeApproval.isApproverEligible(userId, tenantId))) {
@@ -1149,6 +1154,14 @@ export class ClientService {
       include: { contacts: true },
     });
     if (!existing) throw new NotFoundException('Müvekkil bulunamadı');
+
+    // CBND-6 (H5): isActive değişimi generic update ile yan-kapıdan geçemez. remove() ile AYNI
+    // lifecycle capability gate (assertCanManageLifecycle) — hem deaktivasyon (true→false) hem
+    // reaktivasyon (false→true) buraya tabi; aynı değer/eksik alan → no-op, gate çalışmaz.
+    // Transaction'dan ÖNCE (yetkisiz aktör hiçbir yazma yapmaz), remove()'daki desenle birebir.
+    if (data.isActive !== undefined && data.isActive !== existing.isActive) {
+      await this.assertCanManageLifecycle(actor?.userId, tenantId);
+    }
 
     // PR-U4: UPDATE-PATH kimlik-block (önce guard YOKTU). Müvekkilde TCKN zorunlu/kesin ayrıştırıcı →
     // isim-review YOK (false-positive riski); yalnız kesin kimlik (TCKN/VKN) collision block.

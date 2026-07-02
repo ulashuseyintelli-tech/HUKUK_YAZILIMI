@@ -93,6 +93,70 @@ describe("ClientService.update — P0.5 tenant-scoped + P0.7 parity", () => {
   });
 });
 
+describe("ClientService.update — CBND-6 (H5) isActive lifecycle gate (generic update yan-kapısı kapalı)", () => {
+  it("deaktivasyon (true→false), ineligible aktör → ForbiddenException, updateMany HİÇ çağrılmaz", async () => {
+    const { svc, tx, officeApproval } = buildHarness({
+      existing: { id: "c1", tenantId: "t1", isActive: true, contacts: [] },
+      officeApprovalEligible: false,
+    });
+    await expect(
+      svc.update("c1", "t1", { type: "PERSON", isActive: false }, { userId: "u2" }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(officeApproval.isApproverEligible).toHaveBeenCalledWith("u2", "t1");
+    expect(tx.client.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("reaktivasyon (false→true), ineligible aktör → ForbiddenException, updateMany HİÇ çağrılmaz", async () => {
+    const { svc, tx, officeApproval } = buildHarness({
+      existing: { id: "c1", tenantId: "t1", isActive: false, contacts: [] },
+      officeApprovalEligible: false,
+    });
+    await expect(
+      svc.update("c1", "t1", { type: "PERSON", isActive: true }, { userId: "u2" }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(officeApproval.isApproverEligible).toHaveBeenCalledWith("u2", "t1");
+    expect(tx.client.updateMany).not.toHaveBeenCalled();
+  });
+
+  it("reaktivasyon (false→true), eligible aktör → başarıyla yazılır", async () => {
+    const { svc, tx } = buildHarness({
+      existing: { id: "c1", tenantId: "t1", isActive: false, contacts: [] },
+      updated: { id: "c1", isActive: true },
+      officeApprovalEligible: true,
+    });
+    const result = await svc.update("c1", "t1", { type: "PERSON", isActive: true }, { userId: "u1" });
+    expect(result).toBeTruthy();
+    expect(tx.client.updateMany.mock.calls[0][0].data.isActive).toBe(true);
+  });
+
+  it("isActive gönderilmiş ama AYNI değer (no-op) → gate hiç çalışmaz, officeApproval çağrılmaz", async () => {
+    const { svc, tx, officeApproval } = buildHarness({
+      existing: { id: "c1", tenantId: "t1", isActive: true, contacts: [] },
+      officeApprovalEligible: false, // ineligible olsa BİLE no-op olduğu için gate tetiklenmemeli
+    });
+    const result = await svc.update("c1", "t1", { type: "PERSON", isActive: true }, { userId: "u2" });
+    expect(result).toBeTruthy();
+    expect(officeApproval.isApproverEligible).not.toHaveBeenCalled();
+    expect(tx.client.updateMany).toHaveBeenCalled();
+  });
+
+  it("isActive gönderilmemiş (undefined) → gate hiç çalışmaz (mevcut davranış korunur)", async () => {
+    const { svc, officeApproval } = buildHarness({ officeApprovalEligible: false });
+    await svc.update("c1", "t1", { type: "PERSON", firstName: "A" }, { userId: "u2" });
+    expect(officeApproval.isApproverEligible).not.toHaveBeenCalled();
+  });
+
+  it("userId yoksa (actor eksik) ve isActive değişiyorsa → ForbiddenException (fail-closed, remove() ile tutarlı)", async () => {
+    const { svc, tx } = buildHarness({
+      existing: { id: "c1", tenantId: "t1", isActive: true, contacts: [] },
+    });
+    await expect(
+      svc.update("c1", "t1", { type: "PERSON", isActive: false }, {}),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(tx.client.updateMany).not.toHaveBeenCalled();
+  });
+});
+
 describe("ClientService.remove — P0.5 tenant-scoped soft-delete", () => {
   it("P0.5: updateMany {id, tenantId} ile soft-delete (isActive=false)", async () => {
     const { svc, tx } = buildHarness({ existing: { id: "c1", tenantId: "t1", isActive: true } });
