@@ -207,7 +207,7 @@ export function ClientActionsTab({ clientId, onNavigateActivity }: ClientActions
 
   if (state === 'loading') {
     return (
-      <div className="flex items-center justify-center py-8 text-sm text-gray-500">
+      <div className="flex items-center justify-center rounded-lg border bg-gray-50 py-8 text-sm text-gray-500" role="status" aria-label="Islemler yukleniyor">
         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
         İşlemler yükleniyor...
       </div>
@@ -216,7 +216,7 @@ export function ClientActionsTab({ clientId, onNavigateActivity }: ClientActions
 
   if (state === 'error') {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+      <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
         <AlertCircle className="h-4 w-4 shrink-0" />
         İşlemler yüklenemedi.
       </div>
@@ -400,6 +400,7 @@ function ActionItem({
   const canSendPoaReminder = isPoaReminder && item.enabled && !!item.target?.clientId;
   const canSendTemplateNotification = isTemplateNotification && item.enabled && !!item.target?.clientId;
   const canSendDocumentRequest = isDocumentRequest && item.enabled && !!item.target?.clientId;
+  const formId = `client-action-form-${item.key.replace(/\./g, '-')}`;
   const [formOpen, setFormOpen] = useState(false);
   const [scope, setScope] = useState<Set<IntakeFieldCategory>>(() => new Set(DEFAULT_INTAKE_SCOPE));
   const [expiresAt, setExpiresAt] = useState('');
@@ -625,7 +626,7 @@ function ActionItem({
           </div>
           <p className="mt-1 text-sm text-gray-600">{description}</p>
           {!item.enabled && <p className="mt-2 text-xs text-amber-700">{disabledText(item)}</p>}
-          {commandError && <p className="mt-2 text-xs text-red-600">{commandError}</p>}
+          {commandError && <p className="mt-2 text-xs text-red-600" role="alert">{commandError}</p>}
         </div>
         {isActivity && item.enabled ? (
           <button
@@ -647,6 +648,8 @@ function ActionItem({
         ) : canCreateIntakeLink ? (
           <button
             type="button"
+            aria-expanded={formOpen}
+            aria-controls={formId}
             onClick={() => {
               setFormOpen((value) => !value);
               setCommandError('');
@@ -667,6 +670,8 @@ function ActionItem({
         ) : canSendTemplateNotification ? (
           <button
             type="button"
+            aria-expanded={formOpen}
+            aria-controls={formId}
             onClick={() => {
               setFormOpen((value) => !value);
               setCommandError('');
@@ -678,6 +683,8 @@ function ActionItem({
         ) : canSendDocumentRequest ? (
           <button
             type="button"
+            aria-expanded={formOpen}
+            aria-controls={formId}
             onClick={() => {
               setFormOpen((value) => !value);
               setCommandError('');
@@ -698,7 +705,7 @@ function ActionItem({
       </div>
 
       {canCreateIntakeLink && formOpen && (
-        <form onSubmit={handleCreateIntakeLink} className="mt-4 space-y-3 rounded-lg border border-blue-100 bg-blue-50/40 p-3">
+        <form id={formId} onSubmit={handleCreateIntakeLink} className="mt-4 space-y-3 rounded-lg border border-blue-100 bg-blue-50/40 p-3">
           {retryAsNewSignal && (
             <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
               <p className="font-medium">Yeniden yeni link oluştur ve gönder</p>
@@ -778,7 +785,7 @@ function ActionItem({
       )}
 
       {canSendTemplateNotification && formOpen && (
-        <form onSubmit={handleTemplateNotification} className="mt-4 space-y-3 rounded-lg border border-blue-100 bg-blue-50/40 p-3">
+        <form id={formId} onSubmit={handleTemplateNotification} className="mt-4 space-y-3 rounded-lg border border-blue-100 bg-blue-50/40 p-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="text-xs font-medium text-gray-700">
               Sablon
@@ -822,7 +829,7 @@ function ActionItem({
       )}
 
       {canSendDocumentRequest && formOpen && (
-        <form onSubmit={handleDocumentRequest} className="mt-4 space-y-3 rounded-lg border border-blue-100 bg-blue-50/40 p-3">
+        <form id={formId} onSubmit={handleDocumentRequest} className="mt-4 space-y-3 rounded-lg border border-blue-100 bg-blue-50/40 p-3">
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
               <p className="text-xs font-medium text-gray-700">Belge talebi tipleri</p>

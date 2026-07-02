@@ -150,7 +150,7 @@ export function ClientActivityTab({ clientId }: ClientActivityTabProps) {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center py-8 text-sm text-gray-500">
+      <div className="flex items-center justify-center rounded-lg border bg-gray-50 py-8 text-sm text-gray-500" role="status" aria-label="Aktivite yukleniyor">
         <Clock className="mr-2 h-4 w-4 animate-spin" />
         Aktivite yükleniyor...
       </div>
@@ -159,7 +159,7 @@ export function ClientActivityTab({ clientId }: ClientActivityTabProps) {
 
   if (error) {
     return (
-      <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+      <div className="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700" role="alert">
         <AlertCircle className="h-4 w-4 shrink-0" />
         Bildirim aktivitesi yüklenemedi.
       </div>
@@ -168,32 +168,32 @@ export function ClientActivityTab({ clientId }: ClientActivityTabProps) {
 
   if (items.length === 0) {
     return (
-      <p className="py-6 text-center text-sm text-gray-500">
+      <p className="rounded-lg border bg-gray-50 px-4 py-6 text-center text-sm text-gray-500" role="status">
         Bu müvekkil için kayıtlı bildirim aktivitesi yok.
       </p>
     );
   }
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-3" role="list" aria-label="Client activity timeline">
       {items.map((item) => {
         const status = item.status.toUpperCase();
         const meta = timelineMeta(item);
 
         return (
-          <div key={item.id} className="rounded-lg border p-4">
+          <div key={item.id} className="min-w-0 rounded-lg border p-4" role="listitem">
             <div className="flex items-start gap-3">
               <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gray-50">
                 <ActivityIcon item={item} />
               </div>
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-medium text-gray-900">{item.title}</p>
+                  <p className="break-words font-medium text-gray-900">{item.title}</p>
                   <span className={`rounded px-2 py-0.5 text-xs ${statusClass(item.status)}`}>
                     {STATUS_LABELS[status] || item.status}
                   </span>
                 </div>
-                <p className="mt-1 text-sm text-gray-600">{item.summary}</p>
+                <p className="mt-1 break-words text-sm text-gray-600">{item.summary}</p>
                 <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-500">
                   {meta.map((part) => (
                     <span key={part}>{part}</span>
