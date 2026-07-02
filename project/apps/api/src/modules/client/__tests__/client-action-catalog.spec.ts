@@ -7,6 +7,7 @@ const defaultClient = {
   email: 'client@example.com',
   contactFollowUpStatus: null,
   caseClients: [{ caseId: 'case-1' }],
+  powerOfAttorneys: [],
 };
 
 function buildHarness(opts: { client?: any } = {}) {
@@ -88,6 +89,12 @@ describe('ClientService.getActionCatalog', () => {
           orderBy: { createdAt: 'desc' },
           take: 2,
           select: { caseId: true },
+        },
+        powerOfAttorneys: {
+          where: { isActive: true },
+          orderBy: [{ validUntil: 'asc' }, { createdAt: 'desc' }],
+          take: 10,
+          select: { status: true, isLimited: true, validUntil: true },
         },
       },
     });
@@ -222,6 +229,50 @@ describe('ClientService.getActionCatalog', () => {
     }
   });
 
+  it('enables POA reminder only when an active limited POA expires within 30 days', async () => {
+    const { svc } = buildHarness({
+      client: {
+        ...defaultClient,
+        powerOfAttorneys: [{ status: 'ACTIVE', isLimited: true, validUntil: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000) }],
+      },
+    });
+
+    const result = await svc.getActionCatalog('client-1', 'tenant-1');
+    const poaAction = result.data.find((item) => item.key === 'poa.reminder.send');
+
+    expect(poaAction).toMatchObject({
+      enabled: true,
+      visibility: 'visible',
+      requiredState: 'POA_EXPIRING_ACTIVE',
+      target: { clientId: 'client-1' },
+    });
+    expect(poaAction?.disabledReason).toBeUndefined();
+    expect(poaAction?.href).toBeUndefined();
+  });
+
+  it('keeps POA reminder disabled for missing, inactive, unlimited, or non-expiring POA state', async () => {
+    const { svc } = buildHarness({
+      client: {
+        ...defaultClient,
+        powerOfAttorneys: [
+          { status: 'EXPIRED', isLimited: true, validUntil: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+          { status: 'ACTIVE', isLimited: false, validUntil: new Date(Date.now() + 5 * 24 * 60 * 60 * 1000) },
+          { status: 'ACTIVE', isLimited: true, validUntil: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000) },
+        ],
+      },
+    });
+
+    const result = await svc.getActionCatalog('client-1', 'tenant-1');
+    const poaAction = result.data.find((item) => item.key === 'poa.reminder.send');
+
+    expect(poaAction).toMatchObject({
+      enabled: false,
+      visibility: 'visible',
+      requiredState: 'POA_REMINDER_NOT_ELIGIBLE',
+      disabledReason: 'POA reminder is available only for active limited powers of attorney expiring within 30 days.',
+      target: { clientId: 'client-1' },
+    });
+  });
   it('omits role-forbidden actions instead of returning disabled leakage', async () => {
     const { svc } = buildHarness();
 

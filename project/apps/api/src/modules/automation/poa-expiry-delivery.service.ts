@@ -49,6 +49,11 @@ export interface PoaExpiryDeliveryRunResult {
   skipped: number;
 }
 
+interface PoaExpiryDeliveryScope {
+  tenantId?: string;
+  clientId?: string;
+}
+
 const POA_EXPIRY_WINDOW_KEY = "D30";
 const POA_EXPIRY_LOOKAHEAD_DAYS = 30;
 const POA_DELIVERY_LOCK_TIMEOUT_MINUTES = 15;
@@ -69,15 +74,36 @@ export class PoaExpiryDeliveryService {
   /// - AutomationService.sendExpiringPoaNotifications() → @Cron EVERY_DAY_AT_9AM (POA expiry gerçek teslimat motoru)
   /// </remarks>
   async sendExpiringPoaNotifications(now: Date = new Date()): Promise<PoaExpiryDeliveryRunResult> {
+    return this.sendExpiringPoaNotificationsScoped(now);
+  }
+
+  /// <remarks>
+  /// Cagrildigi yerler:
+  /// - ClientService.sendPoaReminder() -> POST /clients/:clientId/poa-reminders/send (manual typed command)
+  /// </remarks>
+  async sendExpiringPoaNotificationsForClient(
+    tenantId: string,
+    clientId: string,
+    now: Date = new Date(),
+  ): Promise<PoaExpiryDeliveryRunResult> {
+    return this.sendExpiringPoaNotificationsScoped(now, { tenantId, clientId });
+  }
+
+  private async sendExpiringPoaNotificationsScoped(
+    now: Date = new Date(),
+    scope: PoaExpiryDeliveryScope = {},
+  ): Promise<PoaExpiryDeliveryRunResult> {
     const until = new Date(now);
     until.setDate(until.getDate() + POA_EXPIRY_LOOKAHEAD_DAYS);
 
     const poas = await (this.prisma as any).clientPowerOfAttorney.findMany({
       where: {
+        ...(scope.clientId ? { clientId: scope.clientId } : {}),
         isLimited: true,
         isActive: true,
         status: "ACTIVE",
         validUntil: { gte: now, lte: until },
+        ...(scope.tenantId ? { client: { tenantId: scope.tenantId } } : {}),
       },
       include: {
         client: { select: { id: true, displayName: true, tenantId: true } },
