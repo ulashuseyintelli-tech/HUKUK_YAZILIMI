@@ -17,7 +17,7 @@ import {
   ShieldAlert,
   UserRound,
 } from 'lucide-react';
-import { api, type ClientActionCatalogItem, type ClientOperatingSnapshot, type ClientWorkspaceCreateAndDeliverResult, type ClientWorkspacePoaReminderResult, type CreateClientWorkspaceIntakeLinkInput, type CreateIntakeLinkResult, type IntakeFieldCategory } from '@/lib/api';
+import { api, type ClientActionCatalogItem, type ClientOperatingSnapshot, type ClientWorkspaceCreateAndDeliverResult, type ClientWorkspacePoaReminderResult, type ClientWorkspaceTemplateNotificationCode, type ClientWorkspaceTemplateNotificationResult, type CreateClientWorkspaceIntakeLinkInput, type CreateIntakeLinkResult, type IntakeFieldCategory } from '@/lib/api';
 
 interface ClientActionsTabProps {
   clientId: string;
@@ -41,7 +41,7 @@ const ACTION_LABELS: Partial<Record<ClientActionCatalogItem['key'], string>> = {
   'intake.link.create': 'Intake linki oluştur',
   'intake.link.send': 'Intake linki gönder',
   'poa.reminder.send': 'Vekalet hatırlatması gönder',
-  'notification.template.send': 'Şablon bildirim gönder',
+  'notification.template.send': 'Sablon bildirim gonder',
   'case.open_related': 'İlgili dosyaları aç',
   'activity.view_timeline': 'Aktiviteyi görüntüle',
 };
@@ -51,7 +51,7 @@ const ACTION_DESCRIPTIONS: Partial<Record<ClientActionCatalogItem['key'], string
   'intake.link.create': 'Uygun ilgili dosya için intake linki oluşturma hazırlığı.',
   'intake.link.send': 'Gerçek gönderim sonraki typed command fazında açılır.',
   'poa.reminder.send': 'Süresi yaklaşan aktif vekalet için iç ekip hatırlatması gönderir.',
-  'notification.template.send': 'Bildirim dispatch sözleşmesi hazır olduğunda açılır.',
+  'notification.template.send': 'V1 allowlist sablonlarindan guvenli muvekkil bildirimi gonderir.',
   'case.open_related': 'Müvekkile bağlı dosyalar görünümüne gider.',
   'activity.view_timeline': 'Read-only aktivite zaman çizelgesine geçer.',
 };
@@ -71,6 +71,11 @@ const INTAKE_SCOPE_LABELS: Record<IntakeFieldCategory, string> = {
 
 const INTAKE_SCOPE_OPTIONS = Object.keys(INTAKE_SCOPE_LABELS) as IntakeFieldCategory[];
 const DEFAULT_INTAKE_SCOPE: IntakeFieldCategory[] = ['ADDRESS'];
+const TEMPLATE_NOTIFICATION_OPTIONS: Array<{ value: ClientWorkspaceTemplateNotificationCode; label: string }> = [
+  { value: 'GENEL_BILGILENDIRME', label: 'Genel bilgilendirme' },
+  { value: 'DOSYA_DURUMU', label: 'Dosya durumu' },
+];
+const DEFAULT_TEMPLATE_NOTIFICATION_CODE: ClientWorkspaceTemplateNotificationCode = 'GENEL_BILGILENDIRME';
 const SNAPSHOT_LABELS = {
   health: {
     healthy: 'Sağlıklı',
@@ -334,6 +339,18 @@ function poaReminderStatusClass(status: ClientWorkspacePoaReminderResult['status
   return 'border-amber-200 bg-amber-50 text-amber-800';
 }
 
+function templateNotificationStatusText(result: ClientWorkspaceTemplateNotificationResult) {
+  if (result.status === 'sent') return 'Sablon bildirimi gonderildi.';
+  if (result.status === 'skipped') return 'Bu sablon bildirimi daha once gonderildigi icin tekrar gonderilmedi.';
+  return 'Sablon bildirimi gonderilemedi.';
+}
+
+function templateNotificationStatusClass(status: ClientWorkspaceTemplateNotificationResult['status']) {
+  if (status === 'sent') return 'border-emerald-200 bg-emerald-50 text-emerald-800';
+  if (status === 'failed') return 'border-red-200 bg-red-50 text-red-800';
+  return 'border-amber-200 bg-amber-50 text-amber-800';
+}
+
 function commandErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error && error.message ? error.message : fallback;
 }
@@ -356,18 +373,22 @@ function ActionItem({
   const isActivity = item.key === 'activity.view_timeline';
   const isIntakeCreate = item.key === 'intake.link.create';
   const isPoaReminder = item.key === 'poa.reminder.send';
+  const isTemplateNotification = item.key === 'notification.template.send';
   const isLink = item.enabled && !!item.href && !isActivity;
   const canCreateIntakeLink = isIntakeCreate && item.enabled && !!item.target?.clientId && !!item.target?.caseId;
   const canSendPoaReminder = isPoaReminder && item.enabled && !!item.target?.clientId;
+  const canSendTemplateNotification = isTemplateNotification && item.enabled && !!item.target?.clientId;
   const [formOpen, setFormOpen] = useState(false);
   const [scope, setScope] = useState<Set<IntakeFieldCategory>>(() => new Set(DEFAULT_INTAKE_SCOPE));
   const [expiresAt, setExpiresAt] = useState('');
   const [maxUses, setMaxUses] = useState('');
-  const [runningCommand, setRunningCommand] = useState<'create' | 'deliver' | 'poaReminder' | null>(null);
+  const [templateCode, setTemplateCode] = useState<ClientWorkspaceTemplateNotificationCode>(DEFAULT_TEMPLATE_NOTIFICATION_CODE);
+  const [runningCommand, setRunningCommand] = useState<'create' | 'deliver' | 'poaReminder' | 'templateNotification' | null>(null);
   const [commandError, setCommandError] = useState('');
   const [created, setCreated] = useState<CreateIntakeLinkResult | null>(null);
   const [deliveryResult, setDeliveryResult] = useState<ClientWorkspaceCreateAndDeliverResult | null>(null);
   const [poaReminderResult, setPoaReminderResult] = useState<ClientWorkspacePoaReminderResult | null>(null);
+  const [templateNotificationResult, setTemplateNotificationResult] = useState<ClientWorkspaceTemplateNotificationResult | null>(null);
   const [copied, setCopied] = useState(false);
 
   const resetCommandForm = () => {
@@ -459,12 +480,37 @@ function ActionItem({
     setCreated(null);
     setDeliveryResult(null);
     setPoaReminderResult(null);
+    setTemplateNotificationResult(null);
     try {
       const result = await api.sendClientWorkspacePoaReminder(item.target!.clientId);
       setPoaReminderResult(result);
       await onRefreshModels();
     } catch (error) {
       setCommandError(commandErrorMessage(error, 'Vekalet hatırlatması gönderilemedi.'));
+    } finally {
+      setRunningCommand(null);
+    }
+  };
+  const handleTemplateNotification = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!canSendTemplateNotification || runningCommand) return;
+
+    setRunningCommand('templateNotification');
+    setCommandError('');
+    setCreated(null);
+    setDeliveryResult(null);
+    setPoaReminderResult(null);
+    setTemplateNotificationResult(null);
+    try {
+      const result = await api.sendClientWorkspaceTemplateNotification(item.target!.clientId, {
+        templateCode,
+        ...(item.target?.caseId ? { caseId: item.target.caseId } : {}),
+      });
+      setTemplateNotificationResult(result);
+      setFormOpen(false);
+      await onRefreshModels();
+    } catch (error) {
+      setCommandError(commandErrorMessage(error, 'Sablon bildirimi gonderilemedi.'));
     } finally {
       setRunningCommand(null);
     }
@@ -489,6 +535,7 @@ function ActionItem({
     setCreated(null);
     setDeliveryResult(null);
     setPoaReminderResult(null);
+    setTemplateNotificationResult(null);
   }, [canCreateIntakeLink, retryAsNewSignal, retryOpenRequest]);
 
   const isBusy = runningCommand !== null;
@@ -544,6 +591,17 @@ function ActionItem({
             className="inline-flex shrink-0 items-center gap-1 rounded-md border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50 disabled:opacity-60"
           >
             {runningCommand === 'poaReminder' ? 'Gönderiliyor...' : 'Gönder'}
+          </button>
+        ) : canSendTemplateNotification ? (
+          <button
+            type="button"
+            onClick={() => {
+              setFormOpen((value) => !value);
+              setCommandError('');
+            }}
+            className="inline-flex shrink-0 items-center gap-1 rounded-md border border-blue-200 px-3 py-1.5 text-sm font-medium text-blue-700 hover:bg-blue-50"
+          >
+            {formOpen ? 'Kapat' : 'Sec'}
           </button>
         ) : (
           <button
@@ -636,6 +694,49 @@ function ActionItem({
         </form>
       )}
 
+      {canSendTemplateNotification && formOpen && (
+        <form onSubmit={handleTemplateNotification} className="mt-4 space-y-3 rounded-lg border border-blue-100 bg-blue-50/40 p-3">
+          <div className="grid gap-3 sm:grid-cols-2">
+            <label className="text-xs font-medium text-gray-700">
+              Sablon
+              <select
+                value={templateCode}
+                onChange={(event) => setTemplateCode(event.target.value as ClientWorkspaceTemplateNotificationCode)}
+                className="mt-1 w-full rounded-md border border-gray-300 px-3 py-2 text-sm font-normal"
+              >
+                {TEMPLATE_NOTIFICATION_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
+            </label>
+            <div className="text-xs text-gray-600">
+              <p className="font-medium text-gray-700">Kapsam</p>
+              <p className="mt-1">Alici, govde ve token alanlari backend tarafinda guvenli sekilde uretilir.</p>
+              {item.target?.caseId && <p className="mt-1">Dosya baglami kullanilacak.</p>}
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="submit"
+              disabled={isBusy}
+              className="rounded-md bg-blue-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-800 disabled:opacity-60"
+            >
+              {runningCommand === 'templateNotification' ? 'Gonderiliyor...' : 'Sablon bildirimi gonder'}
+            </button>
+            <button
+              type="button"
+              disabled={isBusy}
+              onClick={() => {
+                setFormOpen(false);
+                setCommandError('');
+              }}
+              className="rounded-md border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-600 hover:bg-white disabled:opacity-60"
+            >
+              Vazgec
+            </button>
+          </div>
+        </form>
+      )}
       {created && (
         <div className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
           <p className="text-sm font-medium text-emerald-800">Link oluşturuldu</p>
@@ -662,6 +763,13 @@ function ActionItem({
           {deliveryResult.delivery.status === 'failed' && deliveryResult.delivery.error && (
             <p className="mt-2 text-xs">{deliveryResult.delivery.error}</p>
           )}
+        </div>
+      )}
+      {templateNotificationResult && (
+        <div className={`mt-4 rounded-lg border p-3 ${templateNotificationStatusClass(templateNotificationResult.status)}`}>
+          <p className="text-sm font-medium">{templateNotificationStatusText(templateNotificationResult)}</p>
+          <p className="mt-1 text-xs opacity-80">Sablon: {TEMPLATE_NOTIFICATION_OPTIONS.find((option) => option.value === templateNotificationResult.templateCode)?.label ?? templateNotificationResult.templateCode}</p>
+          <p className="mt-1 text-xs opacity-80">Yanitta alici, govde, dedupe veya saglayici hata detayi gosterilmez.</p>
         </div>
       )}
       {poaReminderResult && (

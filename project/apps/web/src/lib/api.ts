@@ -704,6 +704,18 @@ class ApiClient {
     return response.data;
   }
 
+  async sendClientWorkspaceTemplateNotification(clientId: string, input: ClientWorkspaceTemplateNotificationInput) {
+    const body: ClientWorkspaceTemplateNotificationInput = {
+      templateCode: input.templateCode,
+      ...(input.caseId ? { caseId: input.caseId } : {}),
+    };
+    const response = await this.request<{ data: ClientWorkspaceTemplateNotificationResult }>(`/clients/${clientId}/template-notifications/send`, {
+      method: "POST",
+      headers: { "Idempotency-Key": generateClientWorkspaceIdempotencyKey() },
+      body: JSON.stringify(body),
+    });
+    return response.data;
+  }
   async createClient(data: any) {
     return this.request<any>("/clients", {
       method: "POST",
@@ -3394,6 +3406,21 @@ export interface ClientWorkspacePoaReminderResult {
   skipped: number;
 }
 
+export type ClientWorkspaceTemplateNotificationCode = 'GENEL_BILGILENDIRME' | 'DOSYA_DURUMU';
+export type ClientWorkspaceTemplateNotificationStatus = 'sent' | 'skipped' | 'failed';
+
+export interface ClientWorkspaceTemplateNotificationInput {
+  templateCode: ClientWorkspaceTemplateNotificationCode;
+  caseId?: string;
+}
+
+export interface ClientWorkspaceTemplateNotificationResult {
+  clientId: string;
+  caseId: string | null;
+  templateCode: ClientWorkspaceTemplateNotificationCode;
+  status: ClientWorkspaceTemplateNotificationStatus;
+  notificationId?: string;
+}
 // ============================================
 // Client Intake Review Types (Faz 4.7 PR-C1) — review-only (promote tipleri YOK)
 // ============================================
