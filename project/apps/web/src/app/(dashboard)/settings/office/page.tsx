@@ -303,7 +303,7 @@ function OfficeSettingsInner() {
   const handleSaveLawyer = (data: any) => submitLawyer(data, false);
 
   const handleDeleteLawyer = async (id: string) => {
-    if (!confirm("Silmek istediğinize emin misiniz?")) return;
+    if (!confirm("Avukat pasifleştirilecek, kalıcı olarak silinmeyecektir. Devam edilsin mi?")) return;
     try { await api.delete(`/lawyers/${id}`); await loadOffice(); showSaved(); } catch (e) { console.error(e); }
   };
 
@@ -731,7 +731,7 @@ function OfficeSettingsInner() {
                         {lawyer.isDefaultForNewCases ? '⭐ Varsayılan' : '☆ Seç'}
                       </button>
                       <button onClick={() => { setEditingLawyer(lawyer); setShowLawyerModal(true); }} className="p-1.5 hover:bg-indigo-100 rounded-md" title="Düzenle"><Pencil className="h-3.5 w-3.5 text-gray-500" /></button>
-                      <button onClick={() => handleDeleteLawyer(lawyer.id)} className="p-1.5 hover:bg-red-100 rounded-md" title="Sil"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
+                      <button onClick={() => handleDeleteLawyer(lawyer.id)} className="p-1.5 hover:bg-red-100 rounded-md" title="Pasifleştir"><Trash2 className="h-3.5 w-3.5 text-red-500" /></button>
                     </div>
                   </div>
                 ))}

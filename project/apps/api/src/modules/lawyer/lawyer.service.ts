@@ -3,6 +3,8 @@ import { PrismaService } from "@/prisma/prisma.service";
 import { LawyerRole, LawyerRank } from "@prisma/client";
 import { normalizePersonName } from "@/common/name-match.util";
 import { AuditService } from "../audit/audit.service";
+import { OfficeApprovalService } from "../office-approval/office-approval.service";
+import type { AuditActor } from "@/modules/client/client.service";
 
 // K1-4b: Office Approval delegation flag'ini (canApproveOfficeActions) değiştirme yetkisi olan aktör.
 //  - userId: truthful @CurrentUser("id").  role: @CurrentUser("role") (ADMIN kısa-yolu).
@@ -65,9 +67,11 @@ export function withDisplayNames<T extends { name: string; surname: string; titl
 @Injectable()
 export class LawyerService {
   // K1-4b: AuditService @Global (AuditModule) — ek import gerekmez; office-approval delegation değişimini loglar.
+  // L1A: OfficeApprovalService deactivate capability-gate için (ClientService.assertCanManageLifecycle ile birebir desen).
   constructor(
     private prisma: PrismaService,
     private audit: AuditService,
+    private officeApproval: OfficeApprovalService,
   ) {}
 
   // Tüm avukatları getir (displayName ile birlikte)
@@ -381,18 +385,61 @@ export class LawyerService {
     throw new ForbiddenException("Office approval delegation yalnız PARTNER veya ADMIN tarafından değiştirilebilir.");
   }
 
-  // Avukat sil (kalıcı silme)
-  async delete(tenantId: string, id: string) {
-    await this.findOne(tenantId, id);
+  /**
+   * L1A (owner-locked 2026-07-02) — Lawyer artık kalıcı kimlik: fiziksel silme YOK.
+   * ClientService.remove() / DebtorService.assertCanManageDebtorLifecycle ile BİREBİR desen
+   * (reuse, yeni altyapı YOK): PARTNER veya canApproveOfficeActions=true delege avukat.
+   * CaseLawyer/PowerOfAttorney/Case.responsibleLawyer ilişkilerine DOKUNULMAZ — bu da
+   * önceden var olan (geçmişli avukatlarda hard-delete'i FK hatasıyla çökerten) latent
+   * hatayı yan etki olarak kapatır.
+   */
+  private async assertCanManageLawyerLifecycle(userId: string | undefined, tenantId: string): Promise<void> {
+    if (!userId || !(await this.officeApproval.isApproverEligible(userId, tenantId))) {
+      throw new ForbiddenException(
+        "Avukat kaydını pasifleştirme yetkiniz yok (PARTNER veya yetkilendirilmiş avukat gerekir)"
+      );
+    }
+  }
 
-    // Önce CaseLawyer ilişkilerini sil
-    await this.prisma.caseLawyer.deleteMany({
-      where: { lawyerId: id },
-    });
+  /// <remarks>
+  /// Çağrıldığı yerler:
+  /// - LawyerController.delete() → DELETE /lawyers/:id (userId req.user.id'den; Task L1A)
+  ///
+  /// Task L1A: bu artık fiziksel silme DEĞİL, isActive=false pasifleştirmedir. Zaten pasif olan
+  /// bir kayıt için idempotent şekilde tekrar uygulanır (ClientService.remove() ile birebir);
+  /// ayrı bir "already inactive" dalı YOK — no-op görünümü updateMany'nin doğal sonucu.
+  /// </remarks>
+  async delete(tenantId: string, id: string, actor?: AuditActor) {
+    const existing = await this.findOne(tenantId, id);
 
-    // Sonra avukatı kalıcı olarak sil
-    return this.prisma.lawyer.delete({
-      where: { id },
+    // L1A: pasifleştirme yetkisi — transaction'dan ÖNCE (yetkisiz aktör hiçbir yazma yapmaz).
+    await this.assertCanManageLawyerLifecycle(actor?.userId, tenantId);
+
+    // L1A: soft-deactivate + audit AYNI transaction (old snapshot deactivate ÖNCESİ alındı).
+    return this.prisma.$transaction(async (tx) => {
+      const { count } = await tx.lawyer.updateMany({
+        where: { id, tenantId },
+        data: { isActive: false },
+      });
+      if (count === 0) throw new NotFoundException("Avukat bulunamadı");
+      await this.audit.logInTransaction(tx, {
+        tenantId,
+        action: "LAWYER_DEACTIVATE",
+        entityType: "LAWYER",
+        entityId: id,
+        userId: actor?.userId,
+        metadata: {
+          softDelete: true,
+          oldSnapshot: {
+            name: existing.name,
+            surname: existing.surname,
+            barNumberMasked: existing.barNumber ? `****${String(existing.barNumber).slice(-4)}` : null,
+            lawyerRank: existing.lawyerRank,
+            wasActive: existing.isActive,
+          },
+        },
+      });
+      return { ...existing, isActive: false };
     });
   }
 
