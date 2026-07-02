@@ -215,6 +215,20 @@ export enum ActionCode {
    * CpeRequiredGuard dormant olduğundan güvenlik buna bağlı DEĞİL.
    */
   MANAGE_FEE_AGREEMENT = 'MANAGE_FEE_AGREEMENT',
+
+  // ============================================
+  // Collection Disposition Actions (R4 — Low-Risk Rollout Cleanup Pack)
+  // ============================================
+
+  /**
+   * Dağıtım kararını kesinleştir (CollectionDisposition → POSTED) - HIGH risk, finansal etki bu adımda doğar
+   * (OFFSET_CLIENT_ADVANCE→BalanceLedger CREDIT, proceeds satırları, reimbursement application). R4 v1: yetki
+   * DispositionPostingService.post() içinde explicit enforce (yalnız DISTRIBUTION_APPROVED statüsünden POSTED'e
+   * geçer; approve() adımı zaten PARTNER/yetkilendirilmiş avukat + P4 4-göz ister). @CpeRequired YALNIZ
+   * future-compat metadata; CpeRequiredGuard dormant olduğundan güvenlik buna bağlı DEĞİL, mevcut statü-makinesi
+   * gate'i korunur.
+   */
+  POST_COLLECTION_DISPOSITION = 'POST_COLLECTION_DISPOSITION',
 }
 
 /**
@@ -295,6 +309,9 @@ export const ACTION_RISK_LEVELS: Record<ActionCode, RiskLevel> = {
 
   // S8-B FAZ-2 - Akdi ücret sözleşmesi yönetimi
   [ActionCode.MANAGE_FEE_AGREEMENT]: RiskLevel.HIGH,
+
+  // R4 - Dağıtım kararını kesinleştir (CollectionDisposition POST)
+  [ActionCode.POST_COLLECTION_DISPOSITION]: RiskLevel.HIGH,
 };
 
 /**
