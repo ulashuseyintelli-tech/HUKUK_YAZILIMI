@@ -343,8 +343,18 @@ describe('DistributionRecommendationService (S8-B FAZ-1a)', () => {
 
 describe('DistributionRecommendationService (S8-B FAZ-2 — CaseFeeAgreement recommendation)', () => {
   const FLAG = 'FEE_AGREEMENT_RECOMMENDATION_ENABLED';
-  afterEach(() => {
+  // Prisma, @prisma/client import anında .env'i process.env'e yükler (bkz test/test-db-env.ts) —
+  // gerçek .env'de bu flag true ise ambient sızıntı "flag OFF (default)" testini bozar. beforeEach
+  // her testi deterministik/temiz başlatır; testler kendi ihtiyaçlarını (flag ON) ondan SONRA set eder.
+  const originalFlagValue = process.env[FLAG];
+
+  beforeEach(() => {
     delete process.env[FLAG];
+  });
+
+  afterEach(() => {
+    if (originalFlagValue === undefined) delete process.env[FLAG];
+    else process.env[FLAG] = originalFlagValue;
   });
 
   it('flag OFF (default) + active agreement + manuel yok -> legacy (fee=0) korunur, agreement okunur ama uygulanmaz, WARN loglanır', async () => {
