@@ -16,7 +16,9 @@ describe("CaseDebtorService selectedAddress ownership guard", () => {
         update: jest.fn(),
       },
     };
-    service = new CaseDebtorService(prisma);
+    // C1A: constructor 2 yeni parametre aldı (AuditService, OfficeApprovalService); bu testler
+    // removeCaseDebtor'a dokunmaz → boş mock yeter.
+    service = new CaseDebtorService(prisma, {} as any, {} as any);
   });
 
   it("addDebtorToCase foreign selectedAddressId değerini reddeder", async () => {
