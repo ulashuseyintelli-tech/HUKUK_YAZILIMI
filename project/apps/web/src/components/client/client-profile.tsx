@@ -10,7 +10,8 @@
  * v1 sekmeleri: Genel · Kimlik & İletişim · Dosyalar · Vekalet · Portal · Bilgi Talepleri ·
  * İstihbarat · Intake · İşlemler · Aktivite. Bilgi Talepleri (ClientInfoRequest) = legacy/email
  * adapter kanalı, İstihbarat/Intake canonical'dır (kör merge yok; bkz. client-info-requests-tab.tsx).
- * Portal sekmesi salt-okuma (Task 10A) — create/disable PortalAccessModal'da kalır (tekrarlanmaz).
+ * Portal sekmesi artık create/disable de yapar (A2B, Task 10A üstüne) — legacy PortalAccessModal
+ * (settings/clients) silinmedi, ayrıca kalır.
  * Muhasebe/Banka ayrı kapsamdır.
  * Mock fallback YOK; hata/boş durumları açıkça gösterilir.
  */
@@ -398,7 +399,14 @@ export function ClientProfile({ clientId }: ClientProfileProps) {
           )}
 
           {/* Portal */}
-          {tab === 'portal' && <ClientPortalTab clientId={clientId} hasPortalAccess={client.hasPortalAccess} />}
+          {tab === 'portal' && (
+            <ClientPortalTab
+              clientId={clientId}
+              hasPortalAccess={client.hasPortalAccess}
+              portalUser={client.portalUser}
+              onChanged={refreshClient}
+            />
+          )}
 
           {/* Bilgi Talepleri */}
           {tab === 'info-requests' && <ClientInfoRequestsTab cases={cases} />}

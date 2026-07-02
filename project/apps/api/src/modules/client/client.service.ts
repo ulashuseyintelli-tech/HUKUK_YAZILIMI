@@ -332,6 +332,12 @@ export class ClientService {
           where: { isCurrent: true },
           orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
         },
+        // A2B: Portal Option B — whitelist-select. passwordHash/resetToken/resetTokenExp/
+        // twoFactorSecret KESİNLİKLE dönmez (sızıntı riski); yalnız FE'nin görüntülemesi
+        // gereken 3 alan.
+        portalUser: {
+          select: { email: true, lastLoginAt: true, loginCount: true },
+        },
       },
     });
   }
